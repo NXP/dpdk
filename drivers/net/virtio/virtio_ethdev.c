@@ -1244,19 +1244,26 @@ virtio_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_LOG(DEBUG, "configure");
 
+	/* NXP:XXX: This is disabled for rime being to make l3fwd functional */
+#if 0
 	if (rxmode->hw_ip_checksum) {
 		PMD_DRV_LOG(ERR, "HW IP checksum not supported");
 		return -EINVAL;
 	}
+#endif
 
 	hw->vlan_strip = rxmode->hw_vlan_strip;
 
+	/* NXP:XXX: This is disabled for rime being to make tesppmd
+	* fwd mode functional */
+#if 0
 	if (rxmode->hw_vlan_filter
 	    && !vtpci_with_feature(hw, VIRTIO_NET_F_CTRL_VLAN)) {
 		PMD_DRV_LOG(NOTICE,
 			    "vlan filtering not available on this host");
 		return -ENOTSUP;
 	}
+#endif
 
 	if (pci_dev->driver->drv_flags & RTE_PCI_DRV_INTR_LSC)
 		if (vtpci_irq_config(hw, 0) == VIRTIO_MSI_NO_VECTOR) {
