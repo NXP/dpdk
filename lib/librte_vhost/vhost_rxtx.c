@@ -870,6 +870,8 @@ rte_vhost_dequeue_burst(struct virtio_net *dev, uint16_t queue_id,
 	if (free_entries == 0)
 		goto out;
 
+	rte_smp_rmb();
+
 	LOG_DEBUG(VHOST_DATA, "%s (%"PRIu64")\n", __func__, dev->device_fh);
 
 	/* Prefetch available ring to retrieve head indexes. */

@@ -43,7 +43,11 @@ extern "C" {
 
 #include "generic/rte_atomic.h"
 
-#define dmb(opt)  do { asm volatile("dmb " #opt : : : "memory"); } while (0)
+/* NXP::HACK::HACK::HACK::Use DSB instead of DMB to resolve
+ * vHost-virtionet ring corruption issue. Chnage it back to DSB after
+ * proper solution
+ */
+#define dmb(opt)  do { asm volatile("dsb " #opt : : : "memory"); } while (0)
 
 /**
  * General memory barrier.
