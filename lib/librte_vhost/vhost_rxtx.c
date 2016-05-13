@@ -852,7 +852,7 @@ rte_vhost_dequeue_burst(struct virtio_net *dev, uint16_t queue_id,
 					 &dev->broadcast_rarp.cnt, 1, 0))) {
 		rarp_mbuf = rte_pktmbuf_alloc(mbuf_pool);
 		if (rarp_mbuf == NULL) {
-			RTE_LOG(ERR, VHOST_DATA,
+			RTE_LOG(DEBUG, VHOST_DATA,
 				"Failed to allocate memory for mbuf.\n");
 			return 0;
 		}
@@ -902,7 +902,7 @@ rte_vhost_dequeue_burst(struct virtio_net *dev, uint16_t queue_id,
 
 		pkts[i] = rte_pktmbuf_alloc(mbuf_pool);
 		if (unlikely(pkts[i] == NULL)) {
-			RTE_LOG(ERR, VHOST_DATA,
+			RTE_LOG(DEBUG, VHOST_DATA,
 				"Failed to allocate memory for mbuf.\n");
 			break;
 		}
