@@ -85,7 +85,7 @@ enum cdev_type {
 
 #define MAX_STR_LEN 32
 #define MAX_KEY_SIZE 128
-#define MAX_PKT_BURST 32
+#define MAX_PKT_BURST 1
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 
 /*
@@ -621,7 +621,7 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 
 	unsigned lcore_id = rte_lcore_id();
 	uint64_t prev_tsc = 0, diff_tsc, cur_tsc, timer_tsc = 0;
-	unsigned i, j, portid, nb_rx;
+	unsigned i, j, portid, nb_rx = 0;
 	struct lcore_queue_conf *qconf = &lcore_queue_conf[lcore_id];
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
 			US_PER_S * BURST_TX_DRAIN_US;
@@ -761,7 +761,7 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 		for (i = 0; i < qconf->nb_rx_ports; i++) {
 			portid = qconf->rx_port_list[i];
 
-			cparams = &port_cparams[i];
+			cparams = &port_cparams[0];
 
 			nb_rx = rte_eth_rx_burst((uint8_t) portid, 0,
 						 pkts_burst, MAX_PKT_BURST);
@@ -1517,7 +1517,7 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 		struct rte_cryptodev_info dev_info;
 
 		struct rte_cryptodev_config conf = {
-			.nb_queue_pairs = 1,
+			.nb_queue_pairs = 8,
 			.socket_id = SOCKET_ID_ANY,
 			.session_mp = {
 				.nb_objs = 2048,
@@ -1756,11 +1756,20 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 
 		qp_conf.nb_descriptors = 2048;
 
-		retval = rte_cryptodev_queue_pair_setup(cdev_id, 0, &qp_conf,
-				SOCKET_ID_ANY);
+		for (i = 0; i < conf.nb_queue_pairs; i++) {
+			retval = rte_cryptodev_queue_pair_setup(cdev_id, i, &qp_conf,
+					SOCKET_ID_ANY);
+			if (retval < 0) {
+				printf("Failed to setup queue pair %u on cryptodev %u",
+						i, cdev_id);
+				return -1;
+			}
+		}
+		/* Start device */
+		retval = rte_cryptodev_start(cdev_id);
 		if (retval < 0) {
-			printf("Failed to setup queue pair %u on cryptodev %u",
-					0, cdev_id);
+			printf("rte_cryptodev_start:err=%d, cdev_id=%u\n",
+					retval, (unsigned) cdev_id);
 			return -1;
 		}
 
@@ -1997,7 +2006,7 @@ main(int argc, char **argv)
 	if (enabled_cdevcount < 0)
 		rte_exit(EXIT_FAILURE, "Failed to initialize crypto devices\n");
 
-	if (enabled_cdevcount < enabled_portcount)
+	if (enabled_cdevcount < 1)//enabled_portcount)
 		rte_exit(EXIT_FAILURE, "Number of capable crypto devices (%d) "
 				"has to be more or equal to number of ports (%d)\n",
 				enabled_cdevcount, enabled_portcount);
