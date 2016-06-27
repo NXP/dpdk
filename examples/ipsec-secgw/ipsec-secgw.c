@@ -1079,7 +1079,7 @@ cryptodevs_init(void)
 	struct rte_cryptodev_config dev_conf;
 	struct rte_cryptodev_qp_conf qp_conf;
 	uint16_t idx, max_nb_qps, qp, i;
-	int16_t cdev_id;
+	int16_t cdev_id, retval;
 	struct rte_hash_parameters params = { 0 };
 
 	params.entries = CDEV_MAP_ENTRIES;
@@ -1129,7 +1129,7 @@ cryptodevs_init(void)
 			continue;
 
 		dev_conf.socket_id = rte_cryptodev_socket_id(cdev_id);
-		dev_conf.nb_queue_pairs = qp;
+		dev_conf.nb_queue_pairs = 8;//qp;
 		dev_conf.session_mp.nb_objs = CDEV_MP_NB_OBJS;
 		dev_conf.session_mp.cache_size = CDEV_MP_CACHE_SZ;
 
@@ -1143,6 +1143,14 @@ cryptodevs_init(void)
 						&qp_conf, dev_conf.socket_id))
 				rte_panic("Failed to setup queue %u for "
 						"cdev_id %u\n",	0, cdev_id);
+		/* Start device */
+		retval = rte_cryptodev_start(cdev_id);
+		if (retval < 0) {
+			printf("rte_cryptodev_start:err=%d, cdev_id=%u\n",
+					retval, (unsigned) cdev_id);
+			return -1;
+		}
+
 	}
 
 	printf("\n");
