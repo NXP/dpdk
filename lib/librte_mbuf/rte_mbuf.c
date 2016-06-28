@@ -177,7 +177,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	return rte_mempool_create(name, n, elt_size,
 		cache_size, sizeof(struct rte_pktmbuf_pool_private),
 		rte_pktmbuf_pool_init, &mbp_priv, rte_pktmbuf_init, NULL,
-#if defined(RTE_LIBRTE_DPAA2_PMD)
+#if defined(RTE_LIBRTE_DPAA2_PMD) || defined(RTE_LIBRTE_DPAA_PMD)
 		socket_id, MEMPOOL_F_HW_PKT_POOL);
 #else
 		socket_id, 0);

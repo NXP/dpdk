@@ -13,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of Freescale Semiconductor, Inc or the names of its
+ *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -30,40 +30,48 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <unistd.h>
-#include <limits.h>
-#include <string.h>
-#include <dirent.h>
 
-#include <rte_log.h>
-#include <rte_eal.h>
-#include <rte_lcore.h>
-#include <rte_common.h>
-#include <rte_string_fns.h>
-#include <rte_debug.h>
-#include "eal_private.h"
+#ifndef _DPAA_LOGS_H_
+#define _DPAA_LOGS_H_
 
-#ifdef RTE_LIBRTE_DPAA2_PMD
-#include "eal_vfio_fsl_mc.h"
+#define PMD_INIT_LOG(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ##args)
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_INIT
+#define PMD_INIT_FUNC_TRACE() PMD_INIT_LOG(DEBUG, " >>")
+#else
+#define PMD_INIT_FUNC_TRACE() do { } while (0)
 #endif
 
-
-#if (defined RTE_LIBRTE_DPAA_PMD)
-extern int usdpaa_pre_rte_eal_init(void);
+#ifdef RTE_LIBRTE_DPAA_DEBUG_RX
+#define PMD_RX_LOG(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
+#else
+#define PMD_RX_LOG(level, fmt, args...) do { } while(0)
 #endif
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_TX
+#define PMD_TX_LOG(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
+#else
+#define PMD_TX_LOG(level, fmt, args...) do { } while(0)
+#endif
 
-/* Initialize any soc init related functions if any before thread creation*/
-int
-rte_eal_soc_pre_init(void)
-{
-#ifdef RTE_LIBRTE_DPAA2_PMD
-	if (rte_eal_dpaa2_init() < 0)
-		RTE_LOG(WARNING, EAL, "Cannot init FSL_MC SCAN \n");
+#ifdef RTE_LIBRTE_DPAA_DEBUG_TX_FREE
+#define PMD_TX_FREE_LOG(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
+#else
+#define PMD_TX_FREE_LOG(level, fmt, args...) do { } while(0)
 #endif
-#if (defined RTE_LIBRTE_DPAA_PMD)
-	if (usdpaa_pre_rte_eal_init())
-		RTE_LOG(WARNING, EAL, "Cannot init FSL_DPAA \n");
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+#define PMD_DRV_LOG_RAW(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt, __func__, ## args)
+#else
+#define PMD_DRV_LOG_RAW(level, fmt, args...) do { } while (0)
 #endif
-	return 0;
-}
+
+#define PMD_DRV_LOG(level, fmt, args...) \
+	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
+
+#endif /* _DPAA_LOGS_H_ */
