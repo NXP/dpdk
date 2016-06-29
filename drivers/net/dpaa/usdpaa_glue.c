@@ -50,10 +50,11 @@
 #include <rte_ring.h>
 #include <rte_memzone.h>
 #include <rte_malloc.h>
+#include <rte_byteorder.h>
 
 #include "rte_eth_dpaa.h"
 #include "dpaa_logs.h"
-
+#include "dpaa_pkt_annot.h"
 
 #define USDPAA_ETH_AUTONEG_DUPLEX 0       /**< Auto-negotiate duplex. */
 #define USDPAA_ETH_HALF_DUPLEX    1       /**< Half-duplex connection. */
@@ -276,6 +277,37 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 	return NULL;
 }
 
+
+static inline void usdpaa_eth_packet_type(struct rte_mbuf *m)
+{
+	uint32_t pkt_type = 0;
+	fm_prs_result_t *prs = GET_PRS_RESULT((uint8_t *)m->buf_addr, prs);
+
+	if (L2_ETH_MAC_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L2_ETHER;
+
+	if (L3_IPV4_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L3_IPV4;
+
+	if (L3_IPV6_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L3_IPV6;
+
+	if (L3_OPT_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L3_IPV4_EXT;
+
+	if (L4_TCP_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L4_TCP;
+
+	if (L4_UDP_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L4_UDP;
+
+	if (L4_SCTP_PRESENT(prs))
+		pkt_type |= RTE_PTYPE_L4_SCTP;
+
+	m->packet_type = pkt_type;
+
+}
+
 /* DQRR callback for Rx FQs */
 static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 				      struct qman_fq *fq,
@@ -308,8 +340,11 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	usdpaa_mbuf = (struct rte_mbuf *)((char *)ptr - tmp);
 	usdpaa_mbuf->buf_addr = ptr;
 	usdpaa_mbuf->data_off = fd->offset;
-	/*todo - add annotation parsing for packet type*/
-	usdpaa_mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+	if (def_rx_flag)
+		usdpaa_mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+	else
+		usdpaa_eth_packet_type(usdpaa_mbuf);
+
 	usdpaa_mbuf->data_len = fd->length20;
 	usdpaa_mbuf->pkt_len = fd->length20;
 
@@ -385,7 +420,6 @@ static int net_if_tx_init(struct qman_fq *fq, const struct fman_if *fif)
 		fif->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
-
 void usdpaa_buf_release(uint32_t bpid, uint64_t addr)
 {
 	struct pool_info_entry *e;
@@ -521,7 +555,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = bman_acquire(pool_info->bp,
 					&bufs[n], count, 0);
 		if (ret <= 0) {
-			printf("Failed to allocate buffers %d", ret);
+			PMD_DRV_LOG(WARNING,"Failed to allocate buffers %d", ret);
 			return -1;
 		}
 		n = ret;
@@ -555,7 +589,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		}
 	}
 	if (ret < 0 || n == 0) {
-		printf("Failed to allocate buffers %d", ret);
+		PMD_DRV_LOG(WARNING,"Failed to allocate buffers %d", ret);
 		return -1;
 	}
 set_buf:
