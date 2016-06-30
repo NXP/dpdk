@@ -60,6 +60,10 @@
 
 #include "rte_mempool.h"
 
+#ifdef RTE_LIBRTE_DPAA2_PMD
+#include "eal_vfio_fsl_mc.h"
+#endif
+
 TAILQ_HEAD(rte_mempool_list, rte_tailq_entry);
 
 static struct rte_tailq_elem rte_mempool_tailq = {
@@ -316,6 +320,13 @@ rte_mempool_calc_obj_size(uint32_t elt_size, uint32_t flags,
 
 	/* this is the size of an object, including header and trailer */
 	sz->total_size = sz->header_size + sz->elt_size + sz->trailer_size;
+#ifdef RTE_LIBRTE_DPAA2_PMD /*todo - dpaa1 ?*/
+	if (flags & MEMPOOL_F_HW_PKT_POOL)
+		sz->total_size += DPAA2_ALIGN_ROUNDUP(
+			DPAA2_MBUF_HW_ANNOTATION +
+			DPAA2_FD_PTA_SIZE +
+			RTE_PKTMBUF_HEADROOM, DPAA2_PACKET_LAYOUT_ALIGN);
+#endif
 
 	return sz->total_size;
 }
@@ -590,6 +601,7 @@ rte_mempool_xmem_create(const char *name, unsigned n, unsigned elt_size,
 	mp->cache_size = cache_size;
 	mp->cache_flushthresh = CALC_CACHE_FLUSHTHRESH(cache_size);
 	mp->private_data_size = private_data_size;
+	mp->hw_pool_priv = NULL;
 
 	/* calculate address of the first element for continuous mempool. */
 	obj = (char *)mp + MEMPOOL_HEADER_SIZE(mp, pg_num) +
@@ -917,3 +929,39 @@ void rte_mempool_walk(void (*func)(const struct rte_mempool *, void *),
 
 	rte_rwlock_read_unlock(RTE_EAL_MEMPOOL_RWLOCK);
 }
+
+int __attribute__((weak))
+hw_mbuf_create_pool(
+struct rte_mempool __rte_unused *mp)
+{
+	RTE_LOG(WARNING, MBUF, "%s/n", __func__);
+	return -1;
+}
+
+int __attribute__((weak))
+hw_mbuf_init(
+	struct rte_mempool __rte_unused*mp,
+	void __rte_unused *_m)
+{
+	RTE_LOG(WARNING, MBUF, "%s/n", __func__);
+	return -1;
+}
+
+int __attribute__((weak))
+hw_mbuf_alloc_bulk(struct rte_mempool __rte_unused *pool,
+			void __rte_unused **obj_table,
+			unsigned __rte_unused count)
+{
+	RTE_LOG(WARNING, MBUF, "%s/n", __func__);
+	return -1;
+}
+
+int __attribute__((weak))
+hw_mbuf_free_bulk(struct rte_mempool __rte_unused *mp,
+			void __rte_unused * const *obj_table,
+			unsigned __rte_unused n)
+{
+	RTE_LOG(WARNING, MBUF, "%s/n", __func__);
+	return -1;
+}
+

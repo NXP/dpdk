@@ -216,13 +216,22 @@ struct rte_mempool {
 	/**< Virtual address of the <size + 1> mempool object. */
 	phys_addr_t elt_pa[MEMPOOL_PG_NUM_DEFAULT];
 	/**< Array of physical page addresses for the mempool objects buffer. */
-
+	void *hw_pool_priv;
+	/**<Cookie for hw offloaded mempool, default value is UINT64_MAX*/
 }  __rte_cache_aligned;
 
 #define MEMPOOL_F_NO_SPREAD      0x0001 /**< Do not spread in memory. */
 #define MEMPOOL_F_NO_CACHE_ALIGN 0x0002 /**< Do not align objs on cache lines.*/
 #define MEMPOOL_F_SP_PUT         0x0004 /**< Default put is "single-producer".*/
 #define MEMPOOL_F_SC_GET         0x0008 /**< Default get is "single-consumer".*/
+#define MEMPOOL_F_HW_PKT_POOL    0x0040 /**< HW offload for packet buffer mgmt*/
+
+int hw_mbuf_create_pool(struct rte_mempool *mp);
+int hw_mbuf_init(struct rte_mempool *mp, void *_m);
+int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
+			 void **obj_table, unsigned count);
+int hw_mbuf_free_bulk(struct rte_mempool *mp, void * const *obj_table,
+		     unsigned n);
 
 /**
  * @internal When debug is enabled, store some statistics.
@@ -877,6 +886,11 @@ static inline void __attribute__((always_inline))
 rte_mempool_put_bulk(struct rte_mempool *mp, void * const *obj_table,
 		     unsigned n)
 {
+	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
+		(mp->hw_pool_priv)) {
+		if (hw_mbuf_free_bulk(mp, obj_table, n) == 0)
+			return;
+	}
 	__mempool_check_cookies(mp, obj_table, n, 0);
 	__mempool_put_bulk(mp, obj_table, n, !(mp->flags & MEMPOOL_F_SP_PUT));
 }
@@ -1091,6 +1105,13 @@ static inline int __attribute__((always_inline))
 rte_mempool_get_bulk(struct rte_mempool *mp, void **obj_table, unsigned n)
 {
 	int ret;
+
+	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
+		(mp->hw_pool_priv)) {
+		ret = hw_mbuf_alloc_bulk(mp, obj_table, n);
+		if (ret > -2)
+			return ret;
+	}
 	ret = __mempool_get_bulk(mp, obj_table, n,
 				 !(mp->flags & MEMPOOL_F_SC_GET));
 	if (ret == 0)

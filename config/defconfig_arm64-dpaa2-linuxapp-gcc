@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright(c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -40,3 +40,11 @@ CONFIG_RTE_ARCH_ARM_TUNE="cortex-a57+fp+simd"
 #
 CONFIG_RTE_MAX_LCORE=8
 CONFIG_RTE_MAX_NUMA_NODES=1
+
+# Compile software PMD backed by FSL DPAA2 files
+#
+CONFIG_RTE_LIBRTE_DPAA2_PMD=y
+CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=n
+CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n

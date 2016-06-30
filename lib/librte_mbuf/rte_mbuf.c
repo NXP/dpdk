@@ -106,6 +106,8 @@ rte_pktmbuf_pool_init(struct rte_mempool *mp, void *opaque_arg)
 
 	mbp_priv = rte_mempool_get_priv(mp);
 	memcpy(mbp_priv, user_mbp_priv, sizeof(*mbp_priv));
+	if (mp->flags & MEMPOOL_F_HW_PKT_POOL)
+		hw_mbuf_create_pool(mp);
 }
 
 /*
@@ -122,6 +124,11 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	struct rte_mbuf *m = _m;
 	uint32_t mbuf_size, buf_len, priv_size;
 
+	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
+		(mp->hw_pool_priv)) {
+		if (hw_mbuf_init(mp, m) == 0)
+			return;
+	}
 	priv_size = rte_pktmbuf_priv_size(mp);
 	mbuf_size = sizeof(struct rte_mbuf) + priv_size;
 	buf_len = rte_pktmbuf_data_room_size(mp);
@@ -170,7 +177,11 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	return rte_mempool_create(name, n, elt_size,
 		cache_size, sizeof(struct rte_pktmbuf_pool_private),
 		rte_pktmbuf_pool_init, &mbp_priv, rte_pktmbuf_init, NULL,
+#if defined(RTE_LIBRTE_DPAA2_PMD)
+		socket_id, MEMPOOL_F_HW_PKT_POOL);
+#else
 		socket_id, 0);
+#endif
 }
 
 /* do some sanity checks on a mbuf: panic if it fails */
