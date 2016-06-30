@@ -56,9 +56,12 @@
 #include "dpaa_logs.h"
 #include "dpaa_pkt_annot.h"
 
-#define USDPAA_ETH_AUTONEG_DUPLEX 0       /**< Auto-negotiate duplex. */
-#define USDPAA_ETH_HALF_DUPLEX    1       /**< Half-duplex connection. */
-#define USDPAA_ETH_FULL_DUPLEX    2       /**< Full-duplex connection. */
+#define ETH_LINK_HALF_DUPLEX    0 /**< Half-duplex connection. */
+#define ETH_LINK_FULL_DUPLEX    1 /**< Full-duplex connection. */
+#define ETH_LINK_DOWN           0 /**< Link is down. */
+#define ETH_LINK_UP             1 /**< Link is up. */
+#define ETH_LINK_FIXED          0 /**< No autonegotiation. */
+#define ETH_LINK_AUTONEG        1 /**< Autonegotiated. */
 
 /* Alignment to use for cpu-local structs to avoid coherency problems. */
 #define MAX_CACHELINE			64
@@ -815,7 +818,8 @@ void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link)
 		printf("%s:: invalid link_speed %d\n", net_if->name, net_if->fif->mac_type);
 
 	link->link_status = net_if->valid;
-	link->link_duplex = USDPAA_ETH_FULL_DUPLEX;
+	link->link_duplex = ETH_LINK_FULL_DUPLEX;
+	link->link_autoneg = ETH_LINK_AUTONEG;
 }
 
 static inline void usdpaa_memac_status(struct memac_regs *regs,

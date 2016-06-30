@@ -314,6 +314,33 @@ void usdpaa_eth_queue_release(void *rtxq)
 {
 }
 
+int usdpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	/* Currently we don't need to set anything specefic
+	 * in hardware for MTU (to be checked again). So just return zero in
+	 * order to make sure that setting mtu from Applicaiton doesn't return
+	 * any error
+	 */
+	return 0;
+}
+
+int usdpaa_link_down(struct rte_eth_dev *dev)
+{
+	/*TBD:XXX: Need to find ways to do phy up/down operation from user space*/
+	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken on PHY\n",
+		    __func__);
+	return 0;
+}
+
+int usdpaa_link_up(struct rte_eth_dev *dev)
+{
+	/*TBD:XXX: Need to find ways to do phy up/down operation from user space*/
+	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken on PHY\n",
+		    __func__);
+	return 0;
+}
+
+
 static struct eth_dev_ops usdpaa_devops = {
 	.dev_configure = usdpaa_eth_dev_configure,
 	.dev_start = usdpaa_eth_dev_start,
@@ -332,6 +359,9 @@ static struct eth_dev_ops usdpaa_devops = {
 	.stats_reset = usdpaa_eth_stats_reset,
 	.promiscuous_enable = usdpaa_eth_promiscuous_enable,
 	.promiscuous_disable  = usdpaa_eth_promiscuous_disable,
+	.mtu_set = usdpaa_mtu_set,
+	.dev_set_link_down = usdpaa_link_down,
+	.dev_set_link_up = usdpaa_link_up,
 };
 
 static int usdpaa_pci_devinit(struct rte_pci_driver *pci_drv,
