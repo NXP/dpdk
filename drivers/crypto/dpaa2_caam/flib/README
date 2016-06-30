@@ -1,0 +1,67 @@
+Copyright 2008-2013 Freescale Semiconductor, Inc.
+
+Runtime Assembler provides an easy and flexible runtime method for writing
+SEC descriptors.
+
+1. What's supported
+===================
+1.1 Initialization/verification code for descriptor buffer.
+1.2 Configuration/verification code for SEC commands:
+       FIFOLOAD and SEQFIFOLOAD;
+       FIFOSTORE and SEQFIFOSTORE;
+       SHARED HEADER and JOB HEADER;
+       JUMP;
+       KEY;
+       LOAD and SEQLOAD;
+       MATH;
+       MOVE and MOVELEN;
+       NFIFO - pseudo command (shortcut for writing FIFO entries using LOAD command);
+       PKA OPERATION and ALGORITHM OPERATION;
+       PROTOCOL;
+       SEQ IN PTR and SEQ OUT PTR;
+       SIGNATURE;
+       STORE and SEQSTORE.
+1.3 Support for referential code:
+	patching routines for LOAD, MOVE, JUMP and HEADER commands.
+	raw patching (i.e. patch any 4-byte word from descriptor)
+1.4 Support for extended (32/36/40-bit) pointer size.
+1.5 SEC Eras 1-6
+	Below is a non-exhaustive list of platforms:
+	Era 1 - P4080R1
+	Era 2 - P4080R2
+	Era 3 - P1010, P1023, P3041, P5020
+	Era 4 - BSC9131, BSC9132, P4080R3
+	Era 5 - P5040, B4860, T4240R1
+	Era 6 - C290, T4240R2, T1040, T2080
+
+2. What's not supported
+=======================
+2.1 SEC Eras 7 and 8.
+
+3. Integration
+==============
+To integrate this tool into your project, rta.h file must be included.
+
+4. Run
+======
+The examples are located in 'tests' directory:
+   tests/
+        kasumi_dcrc_decap_opt.c
+        test_nfifo.c
+        test_operation_alg.c
+        make_rsa_keys_1.c
+        ...
+
+The provided Makefile contains the necessary include paths and compiler flags
+to build all examples.
+
+$ cd tests
+$ make all
+ or
+$ make <test_name>
+
+In order to run all examples, use
+$ make check
+
+This will automatically build the tests and run all of them sequentially,
+saving the output in corresponding *.desc files.

@@ -41,9 +41,9 @@
 #define MIN_NUM_OPS_INFLIGHT            (128)
 #define DEFAULT_NUM_OPS_INFLIGHT        (128)
 
-#define MAX_NUM_QPS_PER_QAT_DEVICE      (2)
-#define DEFAULT_NUM_QPS_PER_QAT_DEVICE  (2)
-#define DEFAULT_BURST_SIZE              (64)
+#define MAX_NUM_QPS_PER_QAT_DEVICE      (8)
+#define DEFAULT_NUM_QPS_PER_QAT_DEVICE  (8)
+#define DEFAULT_BURST_SIZE              (16)
 #define DEFAULT_NUM_XFORMS              (2)
 #define NUM_MBUFS                       (8191)
 #define MBUF_CACHE_SIZE                 (250)

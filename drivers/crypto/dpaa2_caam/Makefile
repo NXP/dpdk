@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -27,30 +27,50 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
+include $(RTE_SDK)/mk/rte.vars.mk
 
-# NXP (Freescale) - Soc Architecture with WRIOP and QBMAN support
-CONFIG_RTE_MACHINE="dpaa2"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a57+fp+simd"
+#ifeq ($(AESNI_MULTI_BUFFER_LIB_PATH),)
+#$(error "Please define AESNI_MULTI_BUFFER_LIB_PATH environment variable")
+#endif
 
-#
-# Compile Environment Abstraction Layer
-#
-CONFIG_RTE_MAX_LCORE=8
-CONFIG_RTE_MAX_NUMA_NODES=1
+# library name
+LIB = librte_pmd_dpaa2_caam.a
 
-# Compile software PMD backed by FSL DPAA2 files
-#
-CONFIG_RTE_LIBRTE_DPAA2_PMD=y
-CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=n
-CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n
+# build flags
+CFLAGS += -g -O3
+#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += "-Wno-error"
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include/drivers
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/driver/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_caam/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
-#FSL DPAA2 caam driver 
-CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM=y
-CONFIG_RTE_LIBRTE_DPAA2_CAAM_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA2_CAAM_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA2_CAAM_DEBUG_RX=n
+# library version
+LIBABIVER := 1
+
+# versioning export map
+EXPORT_MAP := rte_pmd_dpaa2_caam_version.map
+
+# external library include paths
+#CFLAGS += -I$(AESNI_MULTI_BUFFER_LIB_PATH)
+#CFLAGS += -I$(AESNI_MULTI_BUFFER_LIB_PATH)/include
+CFLAGS += -Iinclude
+LDLIBS += -lcrypto
+
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += dpaa2_caam_dpseci.c
+
+# export include files
+SYMLINK-y-include +=
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_cryptodev
+
+include $(RTE_SDK)/mk/rte.lib.mk

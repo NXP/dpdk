@@ -155,6 +155,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_QAT)        += -lrte_pmd_qat
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_MB)   += -lrte_pmd_aesni_mb
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_GCM)   += -lrte_pmd_aesni_gcm
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO) += -lrte_pmd_null_crypto
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM)     += -lrte_pmd_dpaa2_caam
 
 # AESNI MULTI BUFFER / GCM PMDs are dependent on the IPSec_MB library
 ifeq ($(CONFIG_RTE_LIBRTE_PMD_AESNI_MB),y)
