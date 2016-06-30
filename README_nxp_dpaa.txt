@@ -40,7 +40,7 @@ Following information can be used to obtain these components:
 
      Cross compiled toolchain For ARM64
      ==================================
-	get the linaro gcc-4.9 toolchain.
+    get the linaro gcc-4.9 toolchain from:
 https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
@@ -94,7 +94,7 @@ How to run DPDK Applications
 2. Upload the dpdk applications binaries and below setup files to the LS1 board.
    the configuration files includes:
    3. usdpaa_config_ls1043.xml;    dpdk/ext
-   4. usdpaa_policy_hash_ipv4.xml; dpdk/ext
+   4. usdpaa_policy_hash_ipv4_*queue.xml; dpdk/ext  #(* = 1/2/4)
    	# mount hugetlb file system
    	if [ ! -d /mnt/hugetlbfs ]; then
 	        mkdir /mnt/hugetlbfs
@@ -104,7 +104,18 @@ How to run DPDK Applications
 	mount -t hugetlbfs nodev /mnt/hugetlbfs/
 
 	#set config and policy file for fman
-	fmc -c usdpaa_config_ls1043.xml -p usdpaa_policy_hash_ipv4.xml -a
+	#Use the respective policy file to support only the number of queues per
+	#DPDK port which the application needs to run. You can select either
+	#from 1 or 2 or 3 queue policy files.
+	#Anyone of the below one policy file should be used along
+	#with configuration file while running the fmc script based
+	#on the number of queues to be used per port in the application.
+	#1. ext/usdpaa_policy_hash_ipv4_1queue.xml
+	#2. ext/usdpaa_policy_hash_ipv4_2queue.xml
+	#3. ext/usdpaa_policy_hash_ipv4_4queue.xml
+
+	fmc -c usdpaa_config_ls1043.xml -p usdpaa_policy_hash_ipv4_*queue.xml -a
+		(* = 1/2/4)
 
    NOTE: fmc should be availabe in rootfs.
 
@@ -193,14 +204,14 @@ Building and Use PKTGEN with DPDK
 
  Get the code from: git://dpdk.org/apps/pktgen-dpdk
 #do the make install in DPDK. 
-export KERNEL_PATH=<To a compiled KERNEL; In this case, ls2085 Yocto compiled kernel>
-source <DPDK Source DIR>/standalone_dpaa2 
+export KERNEL_PATH=<To a compiled KERNEL; In this case, ls1043 Yocto compiled kernel>
+source <DPDK Source DIR>/standalone_dpaa
 export RTE_SDK=<DPDK Source DIR>
 make
 
 Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 
-Copy "Pktgen.lua" and "pktgen" (available at: app/app/arm64-dpaa2-linuxapp-gcc/pktgen) to the board.
+Copy "Pktgen.lua" and "pktgen" (available at: app/app/arm64-dpaa-linuxapp-gcc/pktgen) to the board.
 
 example Command to run: 
 
@@ -208,7 +219,7 @@ example Command to run:
 ./pktgen -l 0-3 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[1].0, [2].1, [3].2"
 
 #2 port - 2 core each
-./pktgen -l 0-7 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[2:3].0, [4:5].1"
+./pktgen -l 0-3 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[0:1].0, [2:3].1"
 
 #To start traffic on specific port:
 start 0
@@ -225,12 +236,11 @@ NXP platform support:
 -	The code is not optimized for the performance. 
 
 Code Location: stash
-Branch: v16.04-rc2
-Tag: 
+Branch: v16.07-nxp-rc1
+Tag:
 
-DPDK base version used: Release 16.04
+DPDK base version used: DPDK Upstream Master branch (479e160b2)
 More info on DPDK :  www.dpdk.org
 
 LS2 Release - SDK2.0
 NXP contact: hemant.agrawal@nxp.com
-
