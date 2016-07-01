@@ -258,6 +258,23 @@ testsuite_setup(void)
 		}
 	}
 
+	/* Create 2 ARMCE devices if required */
+	if (gbl_cryptodev_type == RTE_CRYPTODEV_ARMCE_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(
+				RTE_CRYPTODEV_ARMCE_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				int dev_id = rte_eal_vdev_init(
+					CRYPTODEV_NAME_ARMCE_PMD, NULL);
+
+				TEST_ASSERT(dev_id >= 0,
+					"Failed to create instance %u of"
+					" pmd : %s",
+					i, CRYPTODEV_NAME_ARMCE_PMD);
+			}
+		}
+	}
+
 	nb_devs = rte_cryptodev_count();
 	if (nb_devs < 1) {
 		RTE_LOG(ERR, USER1, "No crypto devices found?");
@@ -818,7 +835,6 @@ static const uint8_t catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA1_digest[] = {
 	0x42, 0x1a, 0x7d, 0x3d, 0xf5, 0x82, 0x80, 0xf1,
 	0x18, 0x8c, 0x1d, 0x32
 };
-
 
 static int
 test_AES_CBC_HMAC_SHA1_encrypt_digest(void)
@@ -4538,6 +4554,36 @@ static struct unit_test_suite cryptodev_null_testsuite  = {
 	}
 };
 
+static struct unit_test_suite cryptodev_armce_testsuite  = {
+	.suite_name = "Crypto Device ARM Crypto Extension Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA1_encrypt_digest),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA1_decrypt_digest_verify),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA256_encrypt_digest),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA256_decrypt_digest_verify),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA512_encrypt_digest),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA512_decrypt_digest_verify),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_AES_CBC_HMAC_SHA1_encrypt_digest_sessionless),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_not_in_place_crypto),
+
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
 static int
 test_cryptodev_dpaa2_caam(void /*argv __rte_unused, int argc __rte_unused*/)
 {
@@ -4600,6 +4646,19 @@ static struct test_command cryptodev_null_cmd = {
 };
 
 static int
+test_cryptodev_armce(void)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_ARMCE_PMD;
+
+	return unit_test_suite_runner(&cryptodev_armce_testsuite);
+}
+
+static struct test_command cryptodev_armce_cmd = {
+	.command = "cryptodev_armce_autotest",
+	.callback = test_cryptodev_armce,
+};
+
+static int
 test_cryptodev_sw_snow3g(void /*argv __rte_unused, int argc __rte_unused*/)
 {
 	gbl_cryptodev_type = RTE_CRYPTODEV_SNOW3G_PMD;
@@ -4617,4 +4676,5 @@ REGISTER_TEST_COMMAND(cryptodev_qat_cmd);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_cmd);
 REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_cmd);
 REGISTER_TEST_COMMAND(cryptodev_null_cmd);
+REGISTER_TEST_COMMAND(cryptodev_armce_cmd);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_cmd);

@@ -148,6 +148,23 @@ testsuite_setup(void)
 		}
 	}
 
+	/* Create 2 ARMCE devices if required */
+	if (gbl_cryptodev_preftest_devtype == RTE_CRYPTODEV_ARMCE_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(
+				RTE_CRYPTODEV_ARMCE_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				int dev_id = rte_eal_vdev_init(
+					CRYPTODEV_NAME_ARMCE_PMD, NULL);
+
+				TEST_ASSERT(dev_id >= 0,
+					"Failed to create instance %u of"
+					" pmd : %s",
+					i, CRYPTODEV_NAME_ARMCE_PMD);
+			}
+		}
+	}
+
 	nb_devs = rte_cryptodev_count();
 	if (nb_devs < 1) {
 		RTE_LOG(ERR, USER1, "No crypto devices found?");
@@ -2078,6 +2095,14 @@ perftest_dpaa2_caam_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 	return unit_test_suite_runner(&cryptodev_testsuite);
 }
 
+static int
+perftest_armce_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_preftest_devtype = RTE_CRYPTODEV_ARMCE_PMD;
+
+	return unit_test_suite_runner(&cryptodev_testsuite);
+}
+
 static struct test_command cryptodev_aesni_mb_perf_cmd = {
 	.command = "cryptodev_aesni_mb_perftest",
 	.callback = perftest_aesni_mb_cryptodev,
@@ -2093,6 +2118,12 @@ static struct test_command cryptodev_dpaa2_caam_perf_cmd = {
 	.callback = perftest_dpaa2_caam_cryptodev,
 };
 
+static struct test_command cryptodev_armce_perf_cmd = {
+	.command = "cryptodev_armce_perftest",
+	.callback = perftest_armce_cryptodev,
+};
+
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_perf_cmd);
 REGISTER_TEST_COMMAND(cryptodev_qat_perf_cmd);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_caam_perf_cmd);
+REGISTER_TEST_COMMAND(cryptodev_armce_perf_cmd);

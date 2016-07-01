@@ -62,9 +62,10 @@ How to Build DPDK Applications
    applications:
 
      1. export KERNEL_PATH=<path to LS2 Linux kernel code>
-     2. source standalone-dpaa2
-     3. make config T=arm64-dpaa2-linuxapp-gcc
-     4. make install T=arm64-dpaa2-linuxapp-gcc
+     2. export OPENSSL_PATH=<path to OpenSSL library>
+     3. source standalone-dpaa2
+     4. make config T=arm64-dpaa2-linuxapp-gcc
+     5. make install T=arm64-dpaa2-linuxapp-gcc
         - If installation is required in a specific directory, use following:
         make install T=arm64-dpaa2-linuxapp-gcc DESTDIR=<Path to install dir>
 
@@ -216,6 +217,16 @@ Traffic to port 4: 4.1.1.0/24
           to get "ping response" from Host Machine
 
             # ping 9.9.9.1
+
+7. Running DPDK test Application for ARM-CE:
+
+       1. To launch regression tests:
+           # ./test
+           RTE>>cryptodev_armce_autotest
+
+       2. To launch performance/benchmark tests:
+           # ./test
+           RTE>>cryptodev_armce_perftest
 
 ===============================================================================
 Building and Use PKTGEN with DPDK

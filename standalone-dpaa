@@ -30,6 +30,12 @@ fi
 export XML_ZLIB_PATH=${RTE_SDK}/ext
 export PATH=${CROSS_PATH}:$PATH
 
+echo "OPENSSL_PATH is configured as:" $OPENSSL_PATH
+if [[ -z ${OPENSSL_PATH} ]]
+then
+        echo "WARNING: OPENSSL_PATH is not set";
+fi
+
 #Update and uncomment the following for yacto - SDK based release path for LS1043A
 #SDK_INSTALL_PATH=/home/sxl/ls1043/Linux-LS1043A-SDK-V0.5-20151223-yocto
 #SDK_TARGET_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/sysroots/ls1043ardb

@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright (c) 2015 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -28,30 +28,33 @@
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#
-# machine:
-#
-#   - can define ARCH variable (overridden by cmdline value)
-#   - can define CROSS variable (overridden by cmdline value)
-#   - define MACHINE_CFLAGS variable (overridden by cmdline value)
-#   - define MACHINE_LDFLAGS variable (overridden by cmdline value)
-#   - define MACHINE_ASFLAGS variable (overridden by cmdline value)
-#   - can define CPU_CFLAGS variable (overridden by cmdline value) that
-#     overrides the one defined in arch.
-#   - can define CPU_LDFLAGS variable (overridden by cmdline value) that
-#     overrides the one defined in arch.
-#   - can define CPU_ASFLAGS variable (overridden by cmdline value) that
-#     overrides the one defined in arch.
-#   - may override any previously defined variable
-#
+include $(RTE_SDK)/mk/rte.vars.mk
 
-# ARCH =
-# CROSS =
-# MACHINE_CFLAGS =
-# MACHINE_LDFLAGS =
-# MACHINE_ASFLAGS =
-# CPU_CFLAGS =
-# CPU_LDFLAGS =
-# CPU_ASFLAGS =
-MACHINE_CFLAGS += -march=armv8-a -mcpu=cortex-a53+fp+simd \
-		  -DRTE_MACHINE_CPUFLAG_NEON
+
+# library name
+LIB = librte_pmd_armce.a
+
+# build flags
+CFLAGS += -O3 -I${OPENSSL_PATH}/include/
+CFLAGS += $(WERROR_FLAGS)
+LDFLAGS += -l:ssl -l:crypto
+
+# library version
+LIBABIVER := 1
+
+# versioning export map
+EXPORT_MAP := rte_pmd_armce_version.map
+
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += armce_pmd.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += armce_pmd_ops.c
+
+# export include files
+SYMLINK-y-include +=
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_cryptodev
+
+include $(RTE_SDK)/mk/rte.lib.mk

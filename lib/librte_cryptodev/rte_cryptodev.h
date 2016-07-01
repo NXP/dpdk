@@ -61,6 +61,8 @@ extern "C" {
 /**< SNOW 3G PMD device name */
 #define CRYPTODEV_NAME_DPAA2_CAAM_PMD	("cryptodev_dpaa2_caam_pmd")
 /**< NXP DPAA2 - SEC PMD device name */
+#define CRYPTODEV_NAME_ARMCE_PMD	("cryptodev_armce_pmd")
+/**< NXP ARM NEON Crypto Extension PMD device name */
 
 /** Crypto device type */
 enum rte_cryptodev_type {
@@ -70,6 +72,7 @@ enum rte_cryptodev_type {
 	RTE_CRYPTODEV_QAT_SYM_PMD,	/**< QAT PMD Symmetric Crypto */
 	RTE_CRYPTODEV_SNOW3G_PMD,	/**< SNOW 3G PMD */
 	RTE_CRYPTODEV_DPAA2_CAAM_PMD, /**< NXP DPAA2 - SEC PMD */
+	RTE_CRYPTODEV_ARMCE_PMD, /**< NXP ARM NEON Crypto Extension PMD */
 };
 
 extern const char **rte_cyptodev_names;

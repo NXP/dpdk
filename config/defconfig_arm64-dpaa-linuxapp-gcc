@@ -35,6 +35,9 @@
 CONFIG_RTE_MACHINE="dpaa"
 CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
 
+# Compile ARMCE based crypto
+CONFIG_RTE_LIBRTE_PMD_ARMCE=n
+
 #
 # Compile Environment Abstraction Layer
 #

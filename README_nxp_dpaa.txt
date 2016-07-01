@@ -67,9 +67,10 @@ How to Build DPDK Applications
 	the below standalone-dpaa
      1. export KERNEL_PATH=<path to LS1043 Linux kernel code>
      2. export CROSS_COMPILE=/opt/gcc-linaro-aarch64-linux-gnu-4.9-2014.09_linux/bin/aarch64-linux-gnu-
-     3. source standalone-dpaa
-     4. make config T=arm64-dpaa-linuxapp-gcc
-     5. make install T=arm64-dpaa-linuxapp-gcc
+     3. export OPENSSL_PATH=<path to OpenSSL library>
+     4. source standalone-dpaa
+     5. make config T=arm64-dpaa-linuxapp-gcc
+     6. make install T=arm64-dpaa-linuxapp-gcc
 
 3. Steps for compiling the DPDK examples
 	The basic testpmd application is compiled by default. It should be available in build/app
@@ -198,6 +199,15 @@ Traffic to port 4: 4.1.1.0/24
           to get "ping response" from Host Machine
 
             # ping 9.9.9.1
+7. Running DPDK test Application for ARM-CE:
+
+       1. To launch regression tests:
+           # ./test
+           RTE>>cryptodev_armce_autotest
+
+       2. To launch performance/benchmark tests:
+           # ./test
+           RTE>>cryptodev_armce_perftest
 
 ===============================================================================
 Building and Use PKTGEN with DPDK
