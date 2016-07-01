@@ -72,12 +72,15 @@
 #define FSL_USDPAA_FUNC		0
 #define USDPAA_DRV_NAME		"usdpaa_pci_driver"
 
-#define FSL_USDPAA_MAX_RXS	76
-#define FSL_USDPAA_MAX_TXS	8
+#define FSL_USDPAA_MAX_RXS	8
+#define FSL_USDPAA_MAX_TXS	RTE_MAX_LCORE
 
-static int usdpaa_pci_devinit(struct rte_pci_driver *, struct rte_pci_device *);
-static uint16_t usdpaa_eth_tx_drop_all(void *q, struct rte_mbuf **bufs,
-				   uint16_t nb_bufs);
+static int usdpaa_pci_devinit(struct rte_pci_driver *,
+			      struct rte_pci_device *);
+
+static uint16_t usdpaa_eth_tx_drop_all(void *q,
+				       struct rte_mbuf **bufs,
+			uint16_t nb_bufs);
 
 static struct rte_pci_id usdpaa_pci_id[2] = {
 	{FSL_VENDOR_ID, FSL_DEVICE_ID, FSL_SUBSYSTEM_VENDOR,
@@ -94,25 +97,6 @@ static struct rte_pci_driver usdpaa_pci_driver = {
 #define PCI_DEV_ADDR(dev) \
 		((dev->addr.domain << 24) | (dev->addr.bus << 16) | \
 		 (dev->addr.devid << 8) | (dev->addr.function))
-
-#define MAX_PKTS_BURST 32
-struct usdpaa_mbufs{
-	struct rte_mbuf* mbuf[MAX_PKTS_BURST];
-	int next;
-};
-__thread struct usdpaa_mbufs dpaa_bufs;
-
-struct rte_mbuf** usdpaa_get_mbuf_slot()
-{
-	if (dpaa_bufs.next == MAX_PKTS_BURST)
-		dpaa_bufs.next = 0;
-
-	if (dpaa_bufs.mbuf[dpaa_bufs.next] == NULL)
-		return &dpaa_bufs.mbuf[dpaa_bufs.next++];
-
-	return NULL;
-}
-
 
 static int
 usdpaa_eth_dev_configure(struct rte_eth_dev *dev)
@@ -177,8 +161,8 @@ static void usdpaa_eth_dev_close(struct rte_eth_dev *dev)
 static void usdpaa_eth_dev_info(struct rte_eth_dev *dev,
 				struct rte_eth_dev_info *dev_info)
 {
-	dev_info->max_rx_queues = FSL_USDPAA_MAX_RXS;
-	dev_info->max_tx_queues = FSL_USDPAA_MAX_TXS;
+	dev_info->max_rx_queues = usdpaa_get_num_rx_queue(dev->data->port_id);
+	dev_info->max_tx_queues = FSL_USDPAA_MAX_TXS/* iface->nb_tx_queues*/;
 	dev_info->min_rx_bufsize = 0;
 	dev_info->max_rx_pktlen = 2048;
 	dev_info->max_mac_addrs = 0;
@@ -242,45 +226,15 @@ static void usdpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 	usdpaa_set_promisc_mode(port_id, DISABLE_OP);
 }
 
-static uint16_t usdpaa_eth_queue_rx(void *q,
-				   struct rte_mbuf **bufs,
-				   uint16_t nb_bufs)
+static uint16_t usdpaa_eth_tx_drop_all(void *q,
+				       struct rte_mbuf **bufs,
+		uint16_t nb_bufs)
 {
-	int i, ret;
-
-	if (!thread_portal_init) {
-		ret = usdpaa_portal_init((void *)0);
-		if (ret) {
-			printf("Failure in affining portal\n");
-			return 0;
-		}
-	}
-	if (nb_bufs > MAX_PKTS_BURST)
-		nb_bufs = MAX_PKTS_BURST;
-
-	dpaa_bufs.next = 0;
-	ret = usdpaa_volatile_deq(q, nb_bufs, 1);
-	for (i = 0; i < ret; i++) {
-		if (!dpaa_bufs.mbuf[i])
-			break;
-
-		bufs[i] = dpaa_bufs.mbuf[i];
-		dpaa_bufs.mbuf[i] = NULL;
-	}
-
-	return i;
-}
-
-static uint16_t usdpaa_eth_tx_drop_all(void *q, struct rte_mbuf **bufs,
-				   uint16_t nb_bufs)
-{
-
-	/* Drop all incomming packets. No need to free packets here
+	/* Drop all incoming packets. No need to free packets here
 	 * because the rte_eth f/w frees up the packets through tx_buffer
 	 * callback in case this functions returns count less than nb_bufs
 	 */
 	return 0;
-
 }
 
 int usdpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
@@ -306,7 +260,7 @@ int usdpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			      struct rte_mempool *mp)
 {
 	usdpaa_set_rx_queues(dev->data->port_id, queue_idx,
-		&(dev->data->rx_queues[queue_idx]));
+			     dev->data->rx_queues);
 	return 0;
 }
 
@@ -339,7 +293,6 @@ int usdpaa_link_up(struct rte_eth_dev *dev)
 		    __func__);
 	return 0;
 }
-
 
 static struct eth_dev_ops usdpaa_devops = {
 	.dev_configure = usdpaa_eth_dev_configure,
@@ -382,7 +335,7 @@ static int usdpaa_pci_devinit(struct rte_pci_driver *pci_drv,
 	}
 
 	PMD_DRV_LOG(DEBUG, "%s::allocated eth device port id %d\n", __func__,
-		ethdev->data->port_id);
+		    ethdev->data->port_id);
 
 	ethdev->dev_ops = &usdpaa_devops;
 	ethdev->pci_dev = pci_dev;

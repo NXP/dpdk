@@ -40,6 +40,13 @@
 
 #define ENABLE_OP	1
 #define DISABLE_OP	0
+
+#define MAX_PKTS_BURST 32
+struct usdpaa_mbufs {
+	struct rte_mbuf *mbuf[MAX_PKTS_BURST];
+	int next;
+};
+
 struct usdpaa_eth_link {
 	uint32_t link_speed;        /**< ETH_SPEED_NUM_ */
 	uint16_t link_duplex  : 2;  /**< ETH_LINK_[HALF/FULL]_DUPLEX */
@@ -57,7 +64,7 @@ struct usdpaa_eth_stats {
 };
 
 struct dpaaeth_txq {
-	        int port_id;
+		int port_id;
 };
 
 extern __thread bool thread_portal_init;
@@ -70,13 +77,25 @@ void usdpaa_set_promisc_mode(uint32_t port_id, uint32_t op);
 void usdpaa_port_control(uint32_t port_id, uint32_t op);
 int usdpaa_add_devices_to_pcilist(int num_ethports);
 void *usdpaa_get_pktbuf(uint32_t size, uint32_t *bpid);
-struct net_if *portid_to_iface(uint32_t portid);
-uint16_t usdpaa_eth_ring_tx(void *q,
-				   struct rte_mbuf **bufs,
-				   uint16_t nb_bufs);
 void usdpaa_enable_pkio(void);
 void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link);
 void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats);
-struct rte_mbuf** usdpaa_get_mbuf_slot(void);
+
+uint16_t usdpaa_eth_queue_rx(void *q,
+			     struct rte_mbuf **bufs,
+			uint16_t nb_bufs);
+
+uint16_t usdpaa_eth_ring_tx(void *q,
+			    struct rte_mbuf **bufs,
+			uint16_t nb_bufs);
+
+uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
+uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+void display_frame(uint32_t fqid, struct qm_fd *fd);
+#else
+#define display_frame(a, b)
+#endif
 
 #endif
