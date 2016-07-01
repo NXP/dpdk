@@ -1,7 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright(c) 2010-2015 Intel Corporation. All rights reserved.
-#   All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -13,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Intel Corporation nor the names of its
+#     * Neither the name of Freescale Semiconductor nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -28,35 +27,26 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
 
-include $(RTE_SDK)/mk/rte.vars.mk
+#include "defconfig_arm64-armv8a-linuxapp-gcc"
 
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_AF_PACKET) += af_packet
-DIRS-$(CONFIG_RTE_LIBRTE_BNX2X_PMD) += bnx2x
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_BOND) += bonding
-DIRS-$(CONFIG_RTE_LIBRTE_CXGBE_PMD) += cxgbe
-DIRS-$(CONFIG_RTE_LIBRTE_E1000_PMD) += e1000
-DIRS-$(CONFIG_RTE_LIBRTE_ENA_PMD) += ena
-DIRS-$(CONFIG_RTE_LIBRTE_ENIC_PMD) += enic
-DIRS-$(CONFIG_RTE_LIBRTE_FM10K_PMD) += fm10k
-DIRS-$(CONFIG_RTE_LIBRTE_I40E_PMD) += i40e
-DIRS-$(CONFIG_RTE_LIBRTE_IXGBE_PMD) += ixgbe
-DIRS-$(CONFIG_RTE_LIBRTE_MLX4_PMD) += mlx4
-DIRS-$(CONFIG_RTE_LIBRTE_MLX5_PMD) += mlx5
-DIRS-$(CONFIG_RTE_LIBRTE_MPIPE_PMD) += mpipe
-DIRS-$(CONFIG_RTE_LIBRTE_NFP_PMD) += nfp
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_NULL) += null
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_PCAP) += pcap
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_RING) += ring
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_SZEDATA2) += szedata2
-DIRS-$(CONFIG_RTE_LIBRTE_VIRTIO_PMD) += virtio
-DIRS-$(CONFIG_RTE_LIBRTE_VMXNET3_PMD) += vmxnet3
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_XENVIRT) += xenvirt
-DIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2
-DIRS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa/usdpaa dpaa
+# NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
+CONFIG_RTE_MACHINE="dpaa"
+CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
 
-ifeq ($(CONFIG_RTE_LIBRTE_VHOST),y)
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_VHOST) += vhost
-endif # $(CONFIG_RTE_LIBRTE_VHOST)
+#
+# Compile Environment Abstraction Layer
+#
+CONFIG_RTE_MAX_LCORE=4
+CONFIG_RTE_MAX_NUMA_NODES=1
+CONFIG_RTE_EAL_VFIO=n
 
-include $(RTE_SDK)/mk/rte.subdir.mk
+
+# Compile software PMD backed by FSL - DPAA 
+#
+CONFIG_RTE_LIBRTE_DPAA_PMD=y
+CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=n
+CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
+CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n
+

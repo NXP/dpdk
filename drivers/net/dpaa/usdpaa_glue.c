@@ -564,7 +564,7 @@ set_buf:
 		priv_size = sizeof(struct rte_mbuf) +
 				rte_pktmbuf_priv_size(pool);
 		m[i] = (struct rte_mbuf *)((char *)bufaddr - priv_size);
-		RTE_ASSERT(rte_mbuf_refcnt_read(m[i]) == 0);
+		RTE_MBUF_ASSERT(rte_mbuf_refcnt_read(m[i]) == 0);
 		rte_mbuf_refcnt_set(m[i], 1);
 		i = i + 1;
 	}
