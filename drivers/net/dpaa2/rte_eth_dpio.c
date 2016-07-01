@@ -194,14 +194,10 @@ int dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	return 0;
 }
 
-int
-dpaa2_affine_qbman_swp(void)
+static inline struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;
-
-	if (thread_io_info.dpio_dev)
-		return 0;
 
 	/* Get DPIO dev handle from list using index */
 	TAILQ_FOREACH(dpio_dev, dpio_dev_list, next) {
@@ -209,44 +205,40 @@ dpaa2_affine_qbman_swp(void)
 			break;
 	}
 	if (!dpio_dev)
-		return -1;
-
-	/* Populate the thread_io_info structure */
-	thread_io_info.dpio_dev = dpio_dev;
+		return NULL;
 
 	ret = dpaa2_configure_stashing(dpio_dev);
 	if (ret) {
 		RTE_LOG(ERR, EAL, "dpaa2_configure_stashing failed");
 	}
-	return ret;
+	return dpio_dev;
+}
+int
+dpaa2_affine_qbman_swp(void)
+{
+	if (thread_io_info.dpio_dev)
+		return 0;
+
+	/* Populate the thread_io_info structure */
+	thread_io_info.dpio_dev = dpaa2_get_qbman_swp();
+	if (thread_io_info.dpio_dev)
+		return 0;
+	else
+		return -1;
 }
 
 int
 dpaa2_affine_qbman_swp_sec(void)
 {
-	struct dpaa2_dpio_dev *dpio_dev = NULL;
-	int ret;
-
 	if (thread_io_info.sec_dpio_dev)
 		return 0;
 
-	/* Get DPIO dev handle from list using index */
-	TAILQ_FOREACH(dpio_dev, dpio_dev_list, next) {
-		if (dpio_dev && rte_atomic16_test_and_set(&dpio_dev->ref_count) == 0) {
-			break;
-		}
-	}
-	if (!dpio_dev)
-		return -1;
-
 	/* Populate the thread_io_info structure */
-	thread_io_info.sec_dpio_dev = dpio_dev;
-
-	ret = dpaa2_configure_stashing(dpio_dev);
-	if (ret) {
-		RTE_LOG(ERR, EAL, "dpaa2_configure_stashing failed");
-	}
-	return ret;
+	thread_io_info.sec_dpio_dev = dpaa2_get_qbman_swp();
+	if (thread_io_info.sec_dpio_dev)
+		return 0;
+	else
+		return -1;
 }
 
 int
