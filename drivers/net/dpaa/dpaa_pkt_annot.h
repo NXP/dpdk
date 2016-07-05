@@ -67,7 +67,13 @@
 #define IPSEC_PRESENT	3
 #define SCTP_PRESENT	4
 
-#define DEFAULT_ICEOF   80
+/* internal offset from where IC is copied to packet buffer*/
+#define DEFAULT_ICIOF		32
+/* IC transfer size */
+#define DEFAULT_ICSZ		48
+/* IC offset from buffer header address */
+#define DEFAULT_ICEOF	(DEFAULT_ICIOF + DEFAULT_ICSZ)
+
 /**
  * FMan parse result array
  */

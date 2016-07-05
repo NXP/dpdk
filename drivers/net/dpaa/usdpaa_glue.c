@@ -51,6 +51,7 @@
 #include <rte_memzone.h>
 #include <rte_malloc.h>
 #include <rte_byteorder.h>
+
 #include "rte_eth_dpaa.h"
 #include "dpaa_logs.h"
 #include "dpaa_pkt_annot.h"
@@ -83,7 +84,17 @@
 #define ADMIN_FQ_NUM	4 /* Upper limit for loops */
 
 /* Maximum release/acquire from BMAN */
-#define DPAA_MBUF_MAX_ACQ_REL  7
+#define DPAA_MBUF_MAX_ACQ_REL  8
+
+struct pool_info_entry {
+	struct rte_mempool *mp;
+	struct bman_pool *bp;
+
+	uint32_t bpid;
+	uint32_t size;
+	uint32_t meta_data_size;
+};
+
 struct net_if_admin {
 	struct qman_fq fq;
 	int idx; /* ADMIN_FQ_<x> */
@@ -121,6 +132,7 @@ struct net_if {
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
 	const struct fman_if *fif;
+	struct pool_info_entry *bp_info;
 };
 
 struct fman_if_internal {
@@ -136,19 +148,12 @@ struct fman_if_internal {
 static struct net_if *dpaa_ifacs;
 static struct usdpaa_netcfg_info *netcfg;
 
-struct pool_info_entry {
-	uint32_t bpid;
-	uint32_t size;
-	struct rte_mempool *mp;
-	struct bman_pool *bp;
-};
-
 static inline int mempool_to_bpid(struct rte_mempool *mp)
 {
-	struct pool_info_entry *pool_info;
+	struct pool_info_entry *bp_info;
 
-	pool_info = (struct pool_info_entry *)mp->hw_pool_priv;
-	return pool_info->bpid;
+	bp_info = (struct pool_info_entry *)mp->pool_data;
+	return bp_info->bpid;
 }
 
 __thread bool thread_portal_init;
@@ -157,9 +162,8 @@ static unsigned int num_usdpaa_ports;
 static int usdpaa_init(void);
 static int net_if_init(struct net_if *dpaa_intf,
 		       const struct fm_eth_port_cfg *cfg);
-
-static struct bman_pool *init_bpid(int bpid, uint32_t sz);
-static inline void *__usdpaa_get_pktbuf(struct pool_info_entry *pool_info);
+static void *usdpaa_get_pktbuf(struct pool_info_entry *bp_info);
+static struct bman_pool *init_bpid(int bpid);
 
 /* Static BPID index allocator, increments continuously */
 rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
@@ -175,14 +179,6 @@ static struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
  * done on default Rx Queues */
 char *def_rx_flag;
 
-#define DPAA1_HW_ANNOTATION	256
-#define DPAA1_FD_PTA_SIZE	64
-#define DPAA1_HEADER_SIZE_NDATA \
-	((sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM) + \
-	DPAA1_FD_PTA_SIZE + DPAA1_HW_ANNOTATION)
-#define DPAA1_FD_BUF_TO_MBUF(data) \
-	(struct rte_mbuf *)((char *)data - DPAA1_HEADER_SIZE_NDATA)
-
 static inline struct pool_info_entry *bpid_to_pool_info(int bpid)
 {
 	return &dpaa_pool_table[bpid];
@@ -191,7 +187,7 @@ static inline struct pool_info_entry *bpid_to_pool_info(int bpid)
 static inline
 struct pool_info_entry *mempool_to_pool_info(struct rte_mempool *mp)
 {
-	return (struct pool_info_entry *)mp->hw_pool_priv;
+	return (struct pool_info_entry *)mp->pool_data;
 }
 
 static inline
@@ -211,14 +207,14 @@ uint32_t usdpaa_get_num_tx_queue(uint32_t portid)
 	return dpaa_ifacs[portid].nb_tx_queues;
 }
 
-static inline void  usdpaa_buf_free(struct pool_info_entry *e, uint64_t addr)
+static inline void  usdpaa_buf_free(struct pool_info_entry *bp_info, uint64_t addr)
 {
 	struct bm_buffer buf;
 	int ret;
 
 	bm_buffer_set64(&buf, addr);
 retry:
-	ret = bman_release(e->bp, &buf, 1, 0);
+	ret = bman_release(bp_info->bp, &buf, 1, 0);
 	if (ret) {
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
 		goto retry;
@@ -228,23 +224,23 @@ retry:
 /* Drop a frame (releases buffers to Bman) */
 static inline void drop_frame(const struct qm_fd *fd)
 {
-	struct pool_info_entry *e;
+	struct pool_info_entry *bp_info;
 	struct bm_buffer buf;
 	int ret;
 
 	BUG_ON(fd->format != qm_fd_contig);
 	bm_buffer_set64(&buf, qm_fd_addr(fd));
 retry:
-	e = bpid_to_pool_info(fd->bpid);
-	ret = bman_release(e->bp, &buf, 1, 0);
+	bp_info = bpid_to_pool_info(fd->bpid);
+	ret = bman_release(bp_info->bp, &buf, 1, 0);
 	if (ret) {
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
 		goto retry;
 	}
 }
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-void display_frame(uint32_t fqid, struct qm_fd *fd)
+#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY)
+void display_frame(uint32_t fqid, const struct qm_fd *fd)
 {
 	int ii;
 	char *ptr;
@@ -292,10 +288,11 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 	return NULL;
 }
 
-static inline void usdpaa_eth_packet_type(struct rte_mbuf *m)
+static inline void usdpaa_eth_packet_type(struct rte_mbuf *m,
+					  uint64_t fd_virt_addr)
 {
 	uint32_t pkt_type = 0;
-	fm_prs_result_t *prs = GET_PRS_RESULT((uint8_t *)m->buf_addr, prs);
+	fm_prs_result_t *prs = GET_PRS_RESULT(fd_virt_addr, prs);
 
 	if (L2_ETH_MAC_PRESENT(prs))
 		pkt_type |= RTE_PTYPE_L2_ETHER;
@@ -340,8 +337,8 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	const struct qm_fd *fd;
 	struct net_if_rx *rx;
 	void *ptr;
-	struct rte_mbuf *usdpaa_mbuf, **p;
-	struct pool_info_entry *e;
+	struct rte_mbuf *mbuf, **p;
+	struct pool_info_entry *bp_info;
 	uint32_t tmp;
 
 	p = usdpaa_get_mbuf_slot();
@@ -351,37 +348,41 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	fd = &dqrr->fd;
 	if (unlikely(fd->format != qm_fd_contig)) {
 		printf("%s::dropping packet in sg form\n", __func__);
-		usdpaa_mbuf = NULL;
+		mbuf = NULL;
 		goto errret;
 	}
 	display_frame(dqrr->fqid, fd);
 
 	rx = container_of(fq, struct net_if_rx, fq);
 	ptr = usdpaa_mem_ptov(fd->addr);
-	e = bpid_to_pool_info(fd->bpid);
-	tmp = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(e->mp);
+	if (!ptr) {
+		printf("%s::unable to convert physical address\n", __func__);
+		mbuf = NULL;
+		goto errret;
+	}
+	bp_info = bpid_to_pool_info(fd->bpid);
 
-	usdpaa_mbuf = (struct rte_mbuf *)((char *)ptr - tmp);
-	usdpaa_mbuf->buf_addr = ptr;
-	usdpaa_mbuf->data_off = fd->offset;
+	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
+	mbuf->buf_addr = ptr;
+	mbuf->data_off = fd->offset;
 	if (def_rx_flag)
-		usdpaa_mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+		mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
 	else
-		usdpaa_eth_packet_type(usdpaa_mbuf);
+		usdpaa_eth_packet_type(mbuf, (uint64_t)mbuf->buf_addr);
 
-	usdpaa_mbuf->data_len = fd->length20;
-	usdpaa_mbuf->pkt_len = fd->length20;
+	mbuf->data_len = fd->length20;
+	mbuf->pkt_len = fd->length20;
 
-	usdpaa_mbuf->port = rx->ifid;
-	usdpaa_mbuf->nb_segs = 1;
-	usdpaa_mbuf->ol_flags = 0;
-	usdpaa_mbuf->next = NULL;
-	rte_mbuf_refcnt_set(usdpaa_mbuf, 1);
-	*p = usdpaa_mbuf;
+	mbuf->port = rx->ifid;
+	mbuf->nb_segs = 1;
+	mbuf->ol_flags = 0;
+	mbuf->next = NULL;
+	rte_mbuf_refcnt_set(mbuf, 1);
+	*p = mbuf;
 
 	return qman_cb_dqrr_consume;
 errret:
-	usdpaa_buf_free(e, qm_fd_addr(fd));
+	usdpaa_buf_free(bp_info, qm_fd_addr(fd));
 	return qman_cb_dqrr_consume;
 }
 
@@ -415,7 +416,7 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 			     struct rte_mbuf **bufs,
 			uint16_t nb_bufs)
 {
-	int i, ret;
+	int i = 0, ret;
 
 	if (unlikely(!thread_portal_init)) {
 		ret = usdpaa_portal_init((void *)0);
@@ -429,12 +430,13 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 
 	dpaa_bufs.next = 0;
 	ret = usdpaa_volatile_deq(q, nb_bufs, 1);
-	for (i = 0; i < ret; i++) {
+	while (i < ret) {
 		if (!dpaa_bufs.mbuf[i])
 			break;
 
 		bufs[i] = dpaa_bufs.mbuf[i];
 		dpaa_bufs.mbuf[i] = NULL;
+		i++;
 	}
 
 	return i;
@@ -445,44 +447,46 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 				      struct net_if *iface, struct qm_fd *fd)
 {
 	int ret;
-	struct rte_mbuf *usdpaa_pktbuf;
+	struct rte_mbuf *usdpaa_mbuf;
 	struct rte_mempool *mp;
 	static int retry_cnt;
 
 	mp = mbuf->pool;
 	if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
-		struct pool_info_entry *e;
+		struct pool_info_entry *bp_info;
 
-		e = mempool_to_pool_info(mbuf->pool);
+		bp_info = mempool_to_pool_info(mbuf->pool);
 		fd->addr = mbuf->buf_physaddr;
 		fd->offset = mbuf->data_off;
-		fd->bpid = e->bpid;
+		fd->bpid = bp_info->bpid;
 		fd->length20 = mbuf->pkt_len;
 	} else {
-		uint32_t bpid;
+		if (!iface || !iface->bp_info) {
+			printf("%s:iface or bp_info not available\n", __func__);
+			rte_pktmbuf_free(mbuf);
+			return;
+		}
 		/* allocate pktbuffer on bpid for usdpaa port */
-		usdpaa_pktbuf = usdpaa_get_pktbuf(mbuf->pkt_len, &bpid);
-		if (unlikely(!usdpaa_pktbuf)) {
+		usdpaa_mbuf = usdpaa_get_pktbuf(iface->bp_info);
+		if (unlikely(!usdpaa_mbuf)) {
 			printf("%s::no usdpaa buffers\n", __func__);
 			rte_pktmbuf_free(mbuf);
 			return;
 		}
-		memcpy(usdpaa_pktbuf->buf_addr + mbuf->data_off,
+		memcpy(usdpaa_mbuf->buf_addr + mbuf->data_off,
 		       (void *)(mbuf->buf_addr + mbuf->data_off),
 			mbuf->pkt_len);
 
-		fd->addr = rte_mempool_virt2phy(mp, usdpaa_pktbuf->buf_addr);
-		fd->bpid = bpid;
+		fd->addr = usdpaa_mbuf->buf_physaddr;
+		fd->bpid = iface->bp_info->bpid;
 		fd->offset = mbuf->data_off;
 		fd->length20 = mbuf->pkt_len;
 		rte_pktmbuf_free(mbuf);
 	}
 	display_frame((iface->tx_fqs)->fqid, fd);
 retry:
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::Enqueing packet %p bufaddr %llx  to fqid %x\n",
-	       __func__, mbuf, fd.addr, (iface->tx_fqs)->fqid);
-#endif
+	PMD_DRV_LOG(DEBUG, "Enqueing packet %p bufaddr %llx  to fqid %x\n",
+		    mbuf, fd->addr, (iface->tx_fqs)->fqid);
 	ret = qman_enqueue(iface->tx_fqs, fd, 0);
 	if (ret) {
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
@@ -501,7 +505,7 @@ uint16_t usdpaa_eth_ring_tx(void *q,
 			    struct rte_mbuf **bufs,
 			uint16_t nb_bufs)
 {
-	int ii, ret;
+	int ii;
 	struct dpaaeth_txq *txq = q;
 	struct qm_fd fd;
 	struct net_if *iface;
@@ -577,17 +581,8 @@ static int net_if_tx_init(struct qman_fq *fq, const struct fman_if *fif)
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
 
-void usdpaa_buf_release(uint32_t bpid, uint64_t addr)
-{
-	struct pool_info_entry *e;
-
-	e = bpid_to_pool_info(bpid);
-	usdpaa_buf_free(e, addr);
-}
-
 int hw_mbuf_create_pool(struct rte_mempool *mp)
 {
-	int i;
 	uint32_t bpid;
 	struct bman_pool *bp;
 
@@ -597,100 +592,66 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	 */
 	bpid = rte_atomic32_add_return(&bpid_alloc, 1);
 
-	if (bpid > NUM_BP_POOL_ENTRIES)
+	if (bpid > NUM_BP_POOL_ENTRIES) {
+		fprintf(stderr, "error: exceeding bpid requirements\n");
 		return -2;
+	}
 
-	bp = init_bpid(bpid, mp->elt_size);
-	if (!bp)
+	bp = init_bpid(bpid);
+	if (!bp) {
+		fprintf(stderr, "error: init_bpid failed\n");
 		return -2;
+	}
 
 	dpaa_pool_table[bpid].mp = mp;
 	dpaa_pool_table[bpid].bpid = bpid;
 	dpaa_pool_table[bpid].size = mp->elt_size;
 	dpaa_pool_table[bpid].bp = bp;
-	mp->hw_pool_priv = (void *)&dpaa_pool_table[bpid];
+	dpaa_pool_table[bpid].meta_data_size =
+		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
+	mp->pool_data = (void *)&dpaa_pool_table[bpid];
 
-	/* populate the pool to the fman interfaces */
-	for (i = 0; i < netcfg->num_ethports; i++) {
-		struct fm_eth_port_cfg *pcfg;
-		const struct fman_if *fif;
+	/* TODO: Replace with mp->pool_data->flags after creating appropriate
+	 * pool_data structure
+	 */
+	mp->flags |= MEMPOOL_F_HW_PKT_POOL;
 
-		pcfg = &netcfg->port_cfg[i];
-		fif = pcfg->fman_if;
-		fman_if_set_bp(fif, mp->size, bpid, mp->elt_size);
-		dpaa_ifacs[i].valid = 1;
-	}
-
+	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", bpid);
 	return 0;
 }
 
-/* hw generated buffer layout:
- *
- *   [struct rte_mbuf][priv_size][HW_ANNOTATION][FD_OFFSET][HEADROOM][DATA]
- */
-int hw_mbuf_init(struct rte_mempool *mp, void *_m)
+void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 {
-	int ret;
-	struct pool_info_entry *e;
-	struct rte_mbuf *m = _m;
-	uint32_t buf_len, mbuf_desc_size, head_room;
-	uint32_t sz, bpid;
-	struct bm_buffer bufs;
+	/* TODO:
+	 * 1. Release bp_list memory allocation
+	 * 2. opposite of dpbp_enable()
+	 * <More>
+	 */
 
-	if (!netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA buffer pool not configured\n");
-		return -1;
-	}
-
-	memset(m, 0, mp->elt_size);
-
-	head_room = RTE_PKTMBUF_HEADROOM + DPAA1_FD_PTA_SIZE +
-			DPAA1_HW_ANNOTATION;
-
-	buf_len = head_room + rte_pktmbuf_data_room_size(mp);
-	mbuf_desc_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
-
-	m->buf_addr = (char *)_m + mbuf_desc_size; /*ptr points to fd->offset and packet*/
-	m->buf_physaddr = rte_mempool_virt2phy(mp, m) + mbuf_desc_size;
-	bm_buffer_set64(&bufs, m->buf_physaddr);
-
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::released buffer : Physical address = %p\t"
-		"Virtual Address = %p into pool %p\n", __func__,
-		m->buf_physaddr, m->buf_addr, mp);
-#endif
-	e = mempool_to_pool_info(mp);
-	do {
-		ret = bman_release(e->bp, &bufs, 1, 0);
-	} while (ret == -EBUSY);
-
-	/* start of buffer is after mbuf structure and priv data */
-	m->priv_size = rte_pktmbuf_priv_size(mp);
-	m->buf_len = buf_len;
-
-	m->packet_type |= RTE_PTYPE_L3_IPV4; /* todo - this should be set rx packet. */
-	m->data_len = rte_pktmbuf_data_room_size(mp);
-	m->pkt_len = rte_pktmbuf_data_room_size(mp);
-	m->data_off = head_room;
-
-	m->pool = mp;
-	m->nb_segs = 1;
-	m->port = 0xff;
-
-	return 0;
+	PMD_DRV_LOG(DEBUG, "(%s) called\n", __func__);
+	return;
 }
 
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
-		       void **obj_table,
+			void **obj_table,
 			unsigned count)
 {
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	static int alloc;
+#endif
 	void *bufaddr;
-	int bpid, ret;
-	unsigned ii, i = 0, n = 0;
+	int ret;
+	unsigned int i = 0, n = 0;
 	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
-	int32_t priv_size;
-	struct bm_buffer bufs[64];
-	struct pool_info_entry *pool_info;
+	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
+	struct pool_info_entry *bp_info;
+
+	bp_info = mempool_to_pool_info(pool);
+
+	if (!netcfg || !bp_info) {
+		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
+		return -2;
+	}
 
 	if (!thread_portal_init) {
 		ret = usdpaa_portal_init((void *)0);
@@ -700,15 +661,8 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		}
 	}
 
-	if (!netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
-		return -2;
-	}
-
-	pool_info = mempool_to_pool_info(pool);
-
 	if (count < DPAA_MBUF_MAX_ACQ_REL) {
-		ret = bman_acquire(pool_info->bp,
+		ret = bman_acquire(bp_info->bp,
 				   &bufs[n], count, 0);
 		if (ret <= 0) {
 			PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
@@ -722,28 +676,32 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = 0;
 		/* Acquire is all-or-nothing, so we drain in 7s,
 		 * then in 1s for the remainder. */
-		if ((count - n) > DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(pool_info->bp,
+		if ((count - n) >= DPAA_MBUF_MAX_ACQ_REL) {
+			ret = bman_acquire(bp_info->bp,
 					   &bufs[n], DPAA_MBUF_MAX_ACQ_REL, 0);
 			if (ret == DPAA_MBUF_MAX_ACQ_REL) {
 				n += ret;
 			}
-		}
-		if (ret < DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(pool_info->bp,
-					   &bufs[n], 1, 0);
+		} else {
+			ret =  bman_acquire(bp_info->bp,
+					    &bufs[n], count - n, 0);
 			if (ret > 0) {
-				PMD_DRV_LOG(DEBUG, "Drained buffer: %x",
-					    bufs[n]);
+				PMD_DRV_LOG(DEBUG, "ret = %d bpid =%d alloc %d,"
+					"count=%d Drained buffer: %x",
+					ret, bp_info->bpid,
+					alloc, count - n, bufs[n]);
 				n += ret;
 			}
 		}
 		if (ret < 0) {
-			PMD_DRV_LOG(WARNING, "Buffer aquire failed with"
+			PMD_DRV_LOG(WARNING, "Buffer acquire failed with"
 				"err code: %d", ret);
 			break;
 		}
 	}
+	if (count != n)
+		goto free_buf;
+
 	if (ret < 0 || n == 0) {
 		PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
 		return -1;
@@ -751,22 +709,40 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 set_buf:
 	while (i < count) {
 		bufaddr = (void *)usdpaa_mem_ptov(bufs[i].addr);
-		priv_size = sizeof(struct rte_mbuf) +
-				rte_pktmbuf_priv_size(pool);
-		m[i] = (struct rte_mbuf *)((char *)bufaddr - priv_size);
+		m[i] = (struct rte_mbuf *)((char *)bufaddr
+			- bp_info->meta_data_size);
 		RTE_ASSERT(rte_mbuf_refcnt_read(m[i]) == 0);
 		rte_mbuf_refcnt_set(m[i], 1);
 		i = i + 1;
 	}
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	alloc += n;
+	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d bpid =%d",
+		    alloc, count, n, bp_info->bpid);
+#endif
 	return 0;
+free_buf:
+	PMD_DRV_LOG(WARNING, "unable alloc required bufs count =%d n=%d",
+		    count, n);
+	i = 0;
+	while (i < n) {
+retry:
+		ret = bman_release(bp_info->bp, &bufs[i], 1, 0);
+		if (ret) {
+			cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
+			goto retry;
+		}
+		i++;
+	}
+	return -1;
 }
 
-int hw_mbuf_free_bulk(struct rte_mempool *mp,
-		      void *const *obj_table,
+int hw_mbuf_free_bulk(struct rte_mempool *pool,
+			void *const *obj_table,
 			unsigned n)
 {
 	struct rte_mbuf **mb = (struct rte_mbuf **)obj_table;
-	struct pool_info_entry *e;
+	struct pool_info_entry *bp_info;
 	unsigned i = 0;
 	int ret;
 
@@ -783,12 +759,56 @@ int hw_mbuf_free_bulk(struct rte_mempool *mp,
 		return -1;
 	}
 	while (i < n) {
-		e = mempool_to_pool_info(mb[i]->pool);
-		usdpaa_buf_free(e, mb[i]->buf_physaddr);
+		bp_info = mempool_to_pool_info(pool);
+		usdpaa_buf_free(bp_info,
+			(uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
+				+ bp_info->meta_data_size);
 		i = i + 1;
 	}
 
 	return 0;
+}
+
+unsigned int hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
+{
+	/* TODO: incomplete */
+	return 0;
+}
+
+struct rte_mempool_ops dpaa_mpool_ops = {
+	.name = "dpaa",
+	.alloc = hw_mbuf_create_pool,
+	.free = hw_mbuf_free_pool,
+	.enqueue = hw_mbuf_free_bulk,
+	.dequeue = hw_mbuf_alloc_bulk,
+	.get_count = hw_mbuf_get_count,
+};
+
+MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
+
+static void *usdpaa_get_pktbuf(struct pool_info_entry *bp_info)
+{
+	int ret;
+	uint64_t buf = 0;
+	struct bm_buffer bufs;
+
+	ret = bman_acquire(bp_info->bp, &bufs, 1, 0);
+	if (ret <= 0) {
+		PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
+		return (void *)buf;
+	}
+
+	PMD_DRV_LOG(DEBUG, "located pool sz %d , bpid %d",
+		    bp_info->size, bufs.bpid);
+	PMD_DRV_LOG(DEBUG, "got buffer 0x%llx from pool %d",
+		    bufs.addr, bufs.bpid);
+
+	buf = (uint64_t)usdpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
+	if (!buf)
+		goto out;
+
+out:
+	return (void *)buf;
 }
 
 /* Initialise an Rx FQ */
@@ -803,28 +823,28 @@ static int net_if_rx_init(struct net_if *dpaa_intf,
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		printf("%s::reserve rx fqid %d for ifid %d failed\n", __func__,
-		       fqid, rx->ifid);
+		printf("%s::reserve rx fqid %d for ifid %d failed\n",
+		       __func__, fqid, rx->ifid);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
 	rx->tx_fqid = dpaa_intf->tx_fqs[overall % NET_IF_NUM_TX].fqid;
 	rx->fq.cb.dqrr = cb_rx;
 	rx->ifid = dpaa_intf->ifid;
-	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d for ifid %d\n", __func__,
-		    &rx->fq, fqid, rx->ifid);
+	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d for ifid %d\n",
+		    __func__, &rx->fq, fqid, rx->ifid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, &rx->fq);
 	if (ret) {
-		printf("%s::create rx fqid %d for ifid %d failed\n", __func__,
-		       fqid, rx->ifid);
+		printf("%s::create rx fqid %d for ifid %d failed\n",
+		       __func__, fqid, rx->ifid);
 		return ret;
 	}
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTA;
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::fqid %x, wq %d ifid %d\n", __func__, fqid,
-	       NET_IF_RX_PRIORITY, dpaa_intf->ifid);
-#endif
+
+	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d ifid %d\n", fqid,
+		    NET_IF_RX_PRIORITY, dpaa_intf->ifid);
+
 	opts.fqd.dest.wq = NET_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			   QM_FQCTRL_PREFERINCACHE;
@@ -834,8 +854,8 @@ static int net_if_rx_init(struct net_if *dpaa_intf,
 	opts.fqd.context_a.stashing.context_cl = NET_IF_RX_CONTEXT_STASH;
 	ret = qman_init_fq(&rx->fq, 0, &opts);
 	if (ret)
-		printf("%s::init rx fqid %d for ifid %d failed %d\n", __func__,
-		       fqid, rx->ifid, ret);
+		printf("%s::init rx fqid %d for ifid %d failed %d\n",
+		       __func__, fqid, rx->ifid, ret);
 	return ret;
 }
 
@@ -1007,7 +1027,8 @@ void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats)
 	struct fman_if_internal *itif;
 	void *regs;
 
-	itif = container_of(net_if->fif, struct fman_if_internal, itif);
+	itif = container_of((struct fman_if *)(net_if->fif),
+			    struct fman_if_internal, itif);
 	regs = itif->ccsr_map;
 
 	if (net_if->fif->is_memac)
@@ -1016,7 +1037,7 @@ void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats)
 		usdpaa_dtsec_status(regs, stats);
 }
 
-static struct bman_pool *init_bpid(int bpid, uint32_t sz)
+static struct bman_pool *init_bpid(int bpid)
 {
 	struct bm_buffer bufs[8];
 	struct bman_pool *bp = NULL;
@@ -1024,7 +1045,7 @@ static struct bman_pool *init_bpid(int bpid, uint32_t sz)
 	int ret = 0;
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("request bman pool: bpid %d, size %d\n", bpid, sz);
+	printf("request bman pool: bpid %d\n", bpid);
 #endif
 
 	/* Drain (if necessary) then seed buffer pools */
@@ -1068,7 +1089,6 @@ static int do_global_init(void)
 	for (loop = 0; loop < netcfg->num_ethports; loop++) {
 		struct fman_if_bpool *bp, *tmp_bp;
 		struct fm_eth_port_cfg *pcfg;
-		int bp_idx = 0;
 		int ret;
 
 		pcfg = &netcfg->port_cfg[loop];
@@ -1206,63 +1226,49 @@ static int usdpaa_init(void)
 	return netcfg->num_ethports;
 }
 
-void usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
-			  void **rx_queues)
+int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
+			 void **rx_queues, struct rte_mempool *mp)
 {
 	struct net_if *iface = &dpaa_ifacs[portid];
 	struct net_if_rx_fqrange *fqrange;
 
+	if (!iface->bp_info || iface->bp_info->mp != mp) {
+		struct fman_if_ic_params icp;
+		uint32_t fd_offset;
+
+		if (!mp->pool_data) {
+			printf("\n ??? ERR - %s not a offloaded buffer pool",
+			       __func__);
+			return -1;
+		}
+		iface->bp_info = mempool_to_pool_info(mp);
+
+		memset(&icp, 0, sizeof(icp));
+		/* set ICEOF for to the default value , which is 0*/
+		icp.iciof = DEFAULT_ICIOF;
+		icp.iceof = DEFAULT_ICEOF;
+		icp.icsz = DEFAULT_ICSZ;
+		fman_if_set_ic_params(iface->fif, &icp);
+
+		fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
+		fman_if_set_fdoff(iface->fif, fd_offset);
+		fman_if_set_bp(iface->fif, mp->size,
+			       iface->bp_info->bpid, mp->elt_size);
+		iface->valid = 1;
+		PMD_DRV_LOG(INFO, "if =%s - fd_offset = %d offset = %d",
+			iface->name, fd_offset,
+			fman_if_get_fdoff(iface->fif));
+	}
+
 	if (def_rx_flag) {
 		rx_queues[queue_id] = &iface->admin[ADMIN_FQ_RX_DEFAULT].fq;
-		return;
+		return 0;
 	}
 	list_for_each_entry(fqrange, &iface->rx_list, list) {
 		rx_queues[queue_id] = &fqrange->rx[queue_id].fq;
 		break;
 	}
-	return;
-}
-
-static inline void *__usdpaa_get_pktbuf(struct pool_info_entry *pool_info)
-{
-	uint32_t ii;
-	struct bm_buffer bufs;
-
-	bman_acquire(pool_info->bp, &bufs, 1, 0);
-
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::located pool sz %d , bpid %d\n", __func__,
-	       dpaa_pool_table[ii].size, bufs.bpid);
-	printf("%s::got buffer 0x%llx from pool %d\n", __func__,
-	       bufs.addr, bufs.bpid);
-#endif
-	return ((void *)usdpaa_mem_ptov(bufs.addr));
-}
-
-void *usdpaa_get_pktbuf(uint32_t size, uint32_t *bpid)
-{
-	uint32_t ii;
-	struct pool_info_entry *pool_info = NULL;
-	void *buf = NULL;
-
-	for (ii = 0; ii < USDPAA_MAX_BPOOLS; ii++) {
-		if (size <= dpaa_pool_table[ii].size) {
-			pool_info = &dpaa_pool_table[ii];
-			break;
-		}
-	}
-
-	if (!pool_info)
-		return NULL;
-
-	buf = (void *)__usdpaa_get_pktbuf(pool_info);
-	if (!buf)
-		goto out;
-
-	*bpid = pool_info->bpid;
-
-out:
-	return buf;
+	return 0;
 }
 
 char *usdpaa_get_iface_macaddr(uint32_t portid)

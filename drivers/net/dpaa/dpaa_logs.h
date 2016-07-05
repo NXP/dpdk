@@ -73,4 +73,11 @@
 #define PMD_DRV_LOG(level, fmt, args...) \
 	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
+#define PMD_DRV_LOG2(level, fmt, args...) \
+	RTE_LOG(level, PMD, "%s(): " fmt, __func__, ## args)
+#else
+#define PMD_DRV_LOG2(level, fmt, args...) do { } while (0)
+#endif
+
 #endif /* _DPAA_LOGS_H_ */
