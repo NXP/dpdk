@@ -56,6 +56,9 @@
 /* tx fd send batching */
 /* #define QBMAN_MULTI_TX */
 
+#define DPAA2_MIN_RX_BUF_SIZE 512
+#define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
+
 #define RTE_ETH_DPAA2_SNAPSHOT_LEN 65535
 #define RTE_ETH_DPAA2_SNAPLEN 4096
 #define RTE_ETH_DPAA2_PROMISC 1
@@ -764,10 +767,10 @@ dpaa2_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->driver_name = drivername;
 	dev_info->if_index = priv->hw_id;
 	dev_info->max_mac_addrs = priv->max_unicast_filters;
-	dev_info->max_rx_pktlen = (uint32_t)-1;
+	dev_info->max_rx_pktlen = DPAA2_MAX_RX_PKT_LEN;
 	dev_info->max_rx_queues = (uint16_t)priv->nb_rx_queues;
 	dev_info->max_tx_queues = (uint16_t)priv->nb_tx_queues;
-	dev_info->min_rx_bufsize = 0;
+	dev_info->min_rx_bufsize = DPAA2_MIN_RX_BUF_SIZE;
 	dev_info->pci_dev = dev->pci_dev;
 /*	dev_info->rx_offload_capa =
 		DEV_RX_OFFLOAD_IPV4_CKSUM |
@@ -1566,8 +1569,7 @@ static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	}
 
 	/* check that mtu is within the allowed range */
-
-	if ((mtu < ETHER_MIN_MTU) || (frame_size > ETHER_MAX_JUMBO_FRAME_LEN))
+	if ((mtu < ETHER_MIN_MTU) || (frame_size > DPAA2_MAX_RX_PKT_LEN))
 		return -EINVAL;
 
 	/* Set the Max Rx frame length as 'mtu' +
