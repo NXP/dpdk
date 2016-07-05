@@ -84,7 +84,7 @@
 #define ADMIN_FQ_NUM	4 /* Upper limit for loops */
 
 /* Maximum release/acquire from BMAN */
-#define DPAA_MBUF_MAX_ACQ_REL  7
+#define DPAA_MBUF_MAX_ACQ_REL  8
 struct net_if_admin {
 	struct qman_fq fq;
 	int idx; /* ADMIN_FQ_<x> */
@@ -244,8 +244,8 @@ retry:
 	}
 }
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-void display_frame(uint32_t fqid, struct qm_fd *fd)
+#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY)
+void display_frame(uint32_t fqid, const struct qm_fd *fd)
 {
 	int ii;
 	char *ptr;
@@ -480,10 +480,8 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 	}
 	display_frame((iface->tx_fqs)->fqid, fd);
 retry:
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::Enqueing packet %p bufaddr %llx  to fqid %x\n",
-	       __func__, mbuf, fd.addr, (iface->tx_fqs)->fqid);
-#endif
+	PMD_DRV_LOG(DEBUG, "Enqueing packet %p bufaddr %llx  to fqid %x\n",
+	       mbuf, fd->addr, (iface->tx_fqs)->fqid);
 	ret = qman_enqueue(iface->tx_fqs, fd, 0);
 	if (ret) {
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
@@ -598,12 +596,16 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	 */
 	bpid = rte_atomic32_add_return(&bpid_alloc, 1);
 
-	if (bpid > NUM_BP_POOL_ENTRIES)
+	if (bpid > NUM_BP_POOL_ENTRIES) {
+		fprintf(stderr, "error: exceeding bpid requirements\n");
 		return -2;
+	}
 
 	bp = init_bpid(bpid, mp->elt_size);
-	if (!bp)
+	if (!bp) {
+		fprintf(stderr, "error: init_bpid failed\n");
 		return -2;
+	}
 
 	dpaa_pool_table[bpid].mp = mp;
 	dpaa_pool_table[bpid].bpid = bpid;
@@ -655,11 +657,10 @@ int hw_mbuf_init(struct rte_mempool *mp, void *_m)
 	m->buf_physaddr = rte_mempool_virt2phy(mp, m) + mbuf_desc_size;
 	bm_buffer_set64(&bufs, m->buf_physaddr);
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::released buffer : Physical address = %p\t"
-		"Virtual Address = %p into pool %p\n", __func__,
+	PMD_DRV_LOG2(INFO, "released buffer : Physical address = %p\t"
+		"Virtual Address = %p into pool %p\n",
 		m->buf_physaddr, m->buf_addr, mp);
-#endif
+
 	e = mempool_to_pool_info(mp);
 	do {
 		ret = bman_release(e->bp, &bufs, 1, 0);
@@ -685,13 +686,23 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		       void **obj_table,
 			unsigned count)
 {
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	static int alloc;
+#endif
 	void *bufaddr;
-	int bpid, ret;
+	int ret;
 	unsigned ii, i = 0, n = 0;
 	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
 	int32_t priv_size;
 	struct bm_buffer bufs[64];
 	struct pool_info_entry *pool_info;
+
+	pool_info = mempool_to_pool_info(pool);
+
+	if (!netcfg || !pool_info) {
+		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
+		return -2;
+	}
 
 	if (!thread_portal_init) {
 		ret = usdpaa_portal_init((void *)0);
@@ -700,13 +711,6 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 			return 0;
 		}
 	}
-
-	if (!netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
-		return -2;
-	}
-
-	pool_info = mempool_to_pool_info(pool);
 
 	if (count < DPAA_MBUF_MAX_ACQ_REL) {
 		ret = bman_acquire(pool_info->bp,
@@ -723,28 +727,30 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = 0;
 		/* Acquire is all-or-nothing, so we drain in 7s,
 		 * then in 1s for the remainder. */
-		if ((count - n) > DPAA_MBUF_MAX_ACQ_REL) {
+		if ((count - n) >= DPAA_MBUF_MAX_ACQ_REL) {
 			ret = bman_acquire(pool_info->bp,
 					   &bufs[n], DPAA_MBUF_MAX_ACQ_REL, 0);
 			if (ret == DPAA_MBUF_MAX_ACQ_REL) {
 				n += ret;
 			}
-		}
-		if (ret < DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(pool_info->bp,
-					   &bufs[n], 1, 0);
+		} else {
+			ret =  bman_acquire(pool_info->bp,
+				   &bufs[n], count - n, 0);
 			if (ret > 0) {
-				PMD_DRV_LOG(DEBUG, "Drained buffer: %x",
-					    bufs[n]);
+				PMD_DRV_LOG(DEBUG, "ret = %d bpid =%d alloc %d, count=%d Drained buffer: %x",
+					ret, pool_info->bpid, alloc, count -n, bufs[n]);
 				n += ret;
 			}
 		}
 		if (ret < 0) {
-			PMD_DRV_LOG(WARNING, "Buffer aquire failed with"
+			PMD_DRV_LOG(WARNING, "Buffer acquire failed with"
 				"err code: %d", ret);
 			break;
 		}
 	}
+	if (count != n)
+		goto free_buf;
+
 	if (ret < 0 || n == 0) {
 		PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
 		return -1;
@@ -759,7 +765,27 @@ set_buf:
 		rte_mbuf_refcnt_set(m[i], 1);
 		i = i + 1;
 	}
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	alloc +=n;
+	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d bpid =%d",
+		alloc, count, n, pool_info->bpid);
+#endif
 	return 0;
+free_buf:
+	PMD_DRV_LOG(WARNING, "unable alloc required bufs count =%d n=%d",
+		count, n);
+	i = 0;
+	while (i < n) {
+retry:
+		ret = bman_release(pool_info->bp, &bufs[i], 1, 0);
+		if (ret) {
+			cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
+			goto retry;
+		}
+		i++;
+	}
+	return -1;
+
 }
 
 int hw_mbuf_free_bulk(struct rte_mempool *mp,
@@ -822,10 +848,10 @@ static int net_if_rx_init(struct net_if *dpaa_intf,
 	}
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTA;
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::fqid %x, wq %d ifid %d\n", __func__, fqid,
+
+	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d ifid %d\n", fqid,
 	       NET_IF_RX_PRIORITY, dpaa_intf->ifid);
-#endif
+
 	opts.fqd.dest.wq = NET_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			   QM_FQCTRL_PREFERINCACHE;
@@ -1231,12 +1257,10 @@ static inline void *__usdpaa_get_pktbuf(struct pool_info_entry *pool_info)
 
 	bman_acquire(pool_info->bp, &bufs, 1, 0);
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::located pool sz %d , bpid %d\n", __func__,
+	PMD_DRV_LOG(DEBUG, "located pool sz %d , bpid %d",
 	       dpaa_pool_table[ii].size, bufs.bpid);
-	printf("%s::got buffer 0x%llx from pool %d\n", __func__,
+	PMD_DRV_LOG(DEBUG, "got buffer 0x%llx from pool %d",
 	       bufs.addr, bufs.bpid);
-#endif
 	return ((void *)usdpaa_mem_ptov(bufs.addr));
 }
 
