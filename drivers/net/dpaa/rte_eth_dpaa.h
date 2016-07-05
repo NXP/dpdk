@@ -41,6 +41,17 @@
 #define ENABLE_OP	1
 #define DISABLE_OP	0
 
+#define DPAA_MBUF_HW_ANNOTATION		64
+#define DPAA_FD_PTA_SIZE		64
+
+#if (DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
+#error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
+#endif
+
+/* we will re-use the HEADROOM for annotation in RX */
+#define DPAA_HW_BUF_RESERVE	0
+#define DPAA_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
+
 #define MAX_PKTS_BURST 32
 struct usdpaa_mbufs {
 	struct rte_mbuf *mbuf[MAX_PKTS_BURST];
@@ -65,35 +76,40 @@ struct usdpaa_eth_stats {
 
 struct dpaaeth_txq {
 		int port_id;
+		int queue_id;
+		struct rte_eth_dev *dev;
 };
 
 extern __thread bool thread_portal_init;
 
+int add_usdpaa_devices_to_pcilist(int num_ethports);
+int usdpaa_portal_init(void *arg);
 int usdpaa_get_num_ports(void);
 int usdpaa_pre_rte_eal_init(void);
 char *usdpaa_get_iface_macaddr(uint32_t portid);
-void usdpaa_buf_release(uint32_t bpid, uint64_t addr);
 void usdpaa_set_promisc_mode(uint32_t port_id, uint32_t op);
 void usdpaa_port_control(uint32_t port_id, uint32_t op);
 int usdpaa_add_devices_to_pcilist(int num_ethports);
-void *usdpaa_get_pktbuf(uint32_t size, uint32_t *bpid);
 void usdpaa_enable_pkio(void);
 void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link);
 void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats);
 
 uint16_t usdpaa_eth_queue_rx(void *q,
 			     struct rte_mbuf **bufs,
-			uint16_t nb_bufs);
+			    uint16_t nb_bufs);
 
 uint16_t usdpaa_eth_ring_tx(void *q,
 			    struct rte_mbuf **bufs,
-				   uint16_t nb_bufs);
+			    uint16_t nb_bufs);
 
 uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
 uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-void display_frame(uint32_t fqid, struct qm_fd *fd);
+int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
+			 void **rx_queues, struct rte_mempool *mp);
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
+void display_frame(uint32_t fqid, const struct qm_fd *fd);
 #else
 #define display_frame(a, b)
 #endif

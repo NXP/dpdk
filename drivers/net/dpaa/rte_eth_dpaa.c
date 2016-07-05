@@ -75,6 +75,9 @@
 #define FSL_USDPAA_MAX_RXS	8
 #define FSL_USDPAA_MAX_TXS	RTE_MAX_LCORE
 
+#define DPAA_MIN_RX_BUF_SIZE 512
+#define DPAA_MAX_RX_PKT_LEN  9600 /* FMAN support*/
+
 static int usdpaa_pci_devinit(struct rte_pci_driver *,
 			      struct rte_pci_device *);
 
@@ -83,7 +86,7 @@ static uint16_t usdpaa_eth_tx_drop_all(void *q,
 			uint16_t nb_bufs);
 
 static struct rte_pci_id usdpaa_pci_id[2] = {
-	{FSL_VENDOR_ID, FSL_DEVICE_ID, FSL_SUBSYSTEM_VENDOR,
+	{0, FSL_VENDOR_ID, FSL_DEVICE_ID, FSL_SUBSYSTEM_VENDOR,
 		FSL_SUBSYSTEM_DEVICE},
 	{0, 0, 0, 0}
 };
@@ -99,7 +102,7 @@ static struct rte_pci_driver usdpaa_pci_driver = {
 		 (dev->addr.devid << 8) | (dev->addr.function))
 
 static int
-usdpaa_eth_dev_configure(struct rte_eth_dev *dev)
+usdpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 {
 	return 0;
 }
@@ -163,8 +166,8 @@ static void usdpaa_eth_dev_info(struct rte_eth_dev *dev,
 {
 	dev_info->max_rx_queues = usdpaa_get_num_rx_queue(dev->data->port_id);
 	dev_info->max_tx_queues = FSL_USDPAA_MAX_TXS/* iface->nb_tx_queues*/;
-	dev_info->min_rx_bufsize = 0;
-	dev_info->max_rx_pktlen = 2048;
+	dev_info->min_rx_bufsize = DPAA_MIN_RX_BUF_SIZE;
+	dev_info->max_rx_pktlen = DPAA_MAX_RX_PKT_LEN;
 	dev_info->max_mac_addrs = 0;
 	dev_info->max_hash_mac_addrs = 0;
 	dev_info->max_vfs = dev->pci_dev->max_vfs;
@@ -180,7 +183,7 @@ static void usdpaa_eth_dev_info(struct rte_eth_dev *dev,
 }
 
 static int usdpaa_eth_link_update(struct rte_eth_dev *dev,
-				  int wait_to_complete)
+				  int wait_to_complete __rte_unused)
 {
 	struct rte_eth_link *link = &dev->data->dev_link;
 	struct usdpaa_eth_link arg;
@@ -226,9 +229,9 @@ static void usdpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 	usdpaa_set_promisc_mode(port_id, DISABLE_OP);
 }
 
-static uint16_t usdpaa_eth_tx_drop_all(void *q,
-				       struct rte_mbuf **bufs,
-		uint16_t nb_bufs)
+static uint16_t usdpaa_eth_tx_drop_all(void *q  __rte_unused,
+				       struct rte_mbuf **bufs __rte_unused,
+				uint16_t nb_bufs __rte_unused)
 {
 	/* Drop all incoming packets. No need to free packets here
 	 * because the rte_eth f/w frees up the packets through tx_buffer
@@ -238,8 +241,9 @@ static uint16_t usdpaa_eth_tx_drop_all(void *q,
 }
 
 int usdpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			      uint16_t nb_desc, unsigned int socket_id,
-			      const struct rte_eth_txconf *tx_conf)
+			      uint16_t nb_desc __rte_unused,
+			      unsigned int socket_id __rte_unused,
+			      const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct dpaaeth_txq *txq;
 
@@ -249,26 +253,43 @@ int usdpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		return -ENOMEM;
 
 	txq->port_id = dev->data->port_id;
+	txq->queue_id = queue_idx;
+	txq->dev = dev;
 	dev->data->tx_queues[queue_idx] = txq;
 
 	return 0;
 }
 
+void usdpaa_eth_tx_queue_release(void *txq)
+{
+	struct dpaaeth_txq *q = (struct dpaaeth_txq *)txq;
+
+	if (txq && q->dev->data->tx_queues[q->queue_id]) {
+		rte_free(txq);
+		q->dev->data->tx_queues[q->queue_id] = NULL;
+	}
+	printf("\n(%s) called for 1=%p\n", __func__, q);
+	return;
+}
+
 int usdpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			      uint16_t nb_desc, unsigned int socket_id,
-			      const struct rte_eth_rxconf *rx_conf,
+			      uint16_t nb_desc __rte_unused,
+			      unsigned int socket_id __rte_unused,
+			      const struct rte_eth_rxconf *rx_conf __rte_unused,
 			      struct rte_mempool *mp)
 {
-	usdpaa_set_rx_queues(dev->data->port_id, queue_idx,
-			     dev->data->rx_queues);
-	return 0;
+	return usdpaa_set_rx_queues(dev->data->port_id, queue_idx,
+			     dev->data->rx_queues, mp);
 }
 
-void usdpaa_eth_queue_release(void *rtxq)
+void usdpaa_eth_rx_queue_release(void *rxq)
 {
+	printf("\n(%s) called for 1=%p\n", __func__, rxq);
+	return;
 }
 
-int usdpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+int usdpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
+		   uint16_t mtu __rte_unused)
 {
 	/* Currently we don't need to set anything specefic
 	 * in hardware for MTU (to be checked again). So just return zero in
@@ -280,44 +301,53 @@ int usdpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 
 int usdpaa_link_down(struct rte_eth_dev *dev)
 {
-	/*TBD:XXX: Need to find ways to do phy up/down operation from user space*/
-	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken on PHY\n",
-		    __func__);
+	usdpaa_eth_dev_stop(dev);
 	return 0;
 }
 
 int usdpaa_link_up(struct rte_eth_dev *dev)
 {
-	/*TBD:XXX: Need to find ways to do phy up/down operation from user space*/
-	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken on PHY\n",
+	usdpaa_eth_dev_start(dev);
+	return 0;
+}
+
+static int
+usdpaa_flow_ctrl_set(struct rte_eth_dev *dev  __rte_unused,
+		     struct rte_eth_fc_conf *fc_conf  __rte_unused)
+{
+	/*TBD:XXX: to be implemented*/
+	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken\n",
 		    __func__);
+
 	return 0;
 }
 
 static struct eth_dev_ops usdpaa_devops = {
-	.dev_configure = usdpaa_eth_dev_configure,
-	.dev_start = usdpaa_eth_dev_start,
-	.dev_stop = usdpaa_eth_dev_stop,
-	.dev_close = usdpaa_eth_dev_close,
-	.dev_infos_get = usdpaa_eth_dev_info,
+	.dev_configure		  = usdpaa_eth_dev_configure,
+	.dev_start		  = usdpaa_eth_dev_start,
+	.dev_stop		  = usdpaa_eth_dev_stop,
+	.dev_close		  = usdpaa_eth_dev_close,
+	.dev_infos_get		  = usdpaa_eth_dev_info,
 	.dev_supported_ptypes_get = usdpaa_supported_ptypes_get,
 
-	.rx_queue_setup = usdpaa_eth_rx_queue_setup,
-	.tx_queue_setup = usdpaa_eth_tx_queue_setup,
-	.rx_queue_release = usdpaa_eth_queue_release,
-	.tx_queue_release = usdpaa_eth_queue_release,
+	.rx_queue_setup		  = usdpaa_eth_rx_queue_setup,
+	.tx_queue_setup		  = usdpaa_eth_tx_queue_setup,
+	.rx_queue_release	  = usdpaa_eth_rx_queue_release,
+	.tx_queue_release	  = usdpaa_eth_tx_queue_release,
 
-	.link_update = usdpaa_eth_link_update,
-	.stats_get = usdpaa_eth_stats_get,
-	.stats_reset = usdpaa_eth_stats_reset,
-	.promiscuous_enable = usdpaa_eth_promiscuous_enable,
-	.promiscuous_disable  = usdpaa_eth_promiscuous_disable,
-	.mtu_set = usdpaa_mtu_set,
-	.dev_set_link_down = usdpaa_link_down,
-	.dev_set_link_up = usdpaa_link_up,
+	.flow_ctrl_set		  = usdpaa_flow_ctrl_set,
+
+	.link_update		  = usdpaa_eth_link_update,
+	.stats_get		  = usdpaa_eth_stats_get,
+	.stats_reset		  = usdpaa_eth_stats_reset,
+	.promiscuous_enable	  = usdpaa_eth_promiscuous_enable,
+	.promiscuous_disable	  = usdpaa_eth_promiscuous_disable,
+	.mtu_set		  = usdpaa_mtu_set,
+	.dev_set_link_down	  = usdpaa_link_down,
+	.dev_set_link_up	  = usdpaa_link_up,
 };
 
-static int usdpaa_pci_devinit(struct rte_pci_driver *pci_drv,
+static int usdpaa_pci_devinit(struct rte_pci_driver *pci_drv __rte_unused,
 			      struct rte_pci_device *pci_dev)
 {
 	struct rte_eth_dev *ethdev;
@@ -385,11 +415,12 @@ int add_usdpaa_devices_to_pcilist(int num_ethports)
 		dev->addr.domain = FSL_USDPAA_DOMAIN;
 		dev->addr.bus = FSL_USDPAA_BUSID;
 		dev->addr.devid = ii;
+		dev->id.class_id = 0;
 		dev->id.vendor_id = FSL_VENDOR_ID;
 		dev->id.device_id = FSL_DEVICE_ID;
 		dev->id.subsystem_vendor_id = FSL_SUBSYSTEM_VENDOR;
 		dev->id.subsystem_device_id = FSL_SUBSYSTEM_DEVICE;
-		dev->numa_node = -1;
+		dev->numa_node = 0;
 
 		/* device is valid, add in list (sorted) */
 		insert_devices_into_pcilist(dev);
