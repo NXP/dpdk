@@ -75,6 +75,9 @@
 #define FSL_USDPAA_MAX_RXS	8
 #define FSL_USDPAA_MAX_TXS	RTE_MAX_LCORE
 
+#define DPAA_MIN_RX_BUF_SIZE 512
+#define DPAA_MAX_RX_PKT_LEN  9600 /* FMAN support*/
+
 static int usdpaa_pci_devinit(struct rte_pci_driver *,
 			      struct rte_pci_device *);
 
@@ -163,8 +166,8 @@ static void usdpaa_eth_dev_info(struct rte_eth_dev *dev,
 {
 	dev_info->max_rx_queues = usdpaa_get_num_rx_queue(dev->data->port_id);
 	dev_info->max_tx_queues = FSL_USDPAA_MAX_TXS/* iface->nb_tx_queues*/;
-	dev_info->min_rx_bufsize = 0;
-	dev_info->max_rx_pktlen = 2048;
+	dev_info->min_rx_bufsize = DPAA_MIN_RX_BUF_SIZE;
+	dev_info->max_rx_pktlen = DPAA_MAX_RX_PKT_LEN;
 	dev_info->max_mac_addrs = 0;
 	dev_info->max_hash_mac_addrs = 0;
 	dev_info->max_vfs = dev->pci_dev->max_vfs;
@@ -389,7 +392,7 @@ int add_usdpaa_devices_to_pcilist(int num_ethports)
 		dev->id.device_id = FSL_DEVICE_ID;
 		dev->id.subsystem_vendor_id = FSL_SUBSYSTEM_VENDOR;
 		dev->id.subsystem_device_id = FSL_SUBSYSTEM_DEVICE;
-		dev->numa_node = -1;
+		dev->numa_node = 0;
 
 		/* device is valid, add in list (sorted) */
 		insert_devices_into_pcilist(dev);

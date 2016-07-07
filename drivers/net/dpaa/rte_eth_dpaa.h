@@ -92,8 +92,8 @@ uint16_t usdpaa_eth_ring_tx(void *q,
 uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
 uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-void display_frame(uint32_t fqid, struct qm_fd *fd);
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
+void display_frame(uint32_t fqid, const struct qm_fd *fd);
 #else
 #define display_frame(a, b)
 #endif

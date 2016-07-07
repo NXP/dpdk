@@ -54,7 +54,12 @@
 /* #define DPAA2_STASHING */
 
 /* tx fd send batching */
-/* #define QBMAN_MULTI_TX */
+/*#define QBMAN_MULTI_TX*/
+/* #define DPAA2_CGR_SUPPORT */
+
+
+#define DPAA2_MIN_RX_BUF_SIZE 512
+#define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
 
 #define RTE_ETH_DPAA2_SNAPSHOT_LEN 65535
 #define RTE_ETH_DPAA2_SNAPLEN 4096
@@ -584,10 +589,11 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Clear the unused FD fields before sending*/
 #ifdef QBMAN_MULTI_TX
 	while (nb_pkts) {
+#ifdef DPAA2_CGR_SUPPORT
 		/*Check if the queue is congested*/
 		if (qbman_result_is_CSCN(dpaa2_q->cscn))
 			goto skip_tx;
-
+#endif
 		frames_to_send = (nb_pkts >> 3) ? MAX_SLOTS : nb_pkts;
 
 		for (loop = 0; loop < frames_to_send; loop++) {
@@ -600,7 +606,13 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				printf("\n non hw offload bufffer ");
 				/* alloc should be from the default buffer pool
 				attached to this interface */
-				bpid = priv->bp_list->buf_pool.bpid;
+				if (priv->bp_list) {
+					bpid = priv->bp_list->buf_pool.bpid;
+				} else {
+					printf("\n ??? why no bpool attached");
+					num_tx = 0;
+					goto skip_tx;
+				}
 				if (eth_copy_mbuf_to_fd(*bufs, &fd_arr[loop], bpid)) {
 					bufs++;
 					continue;
@@ -622,9 +634,11 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		nb_pkts -= frames_to_send;
 	}
 #else
+#ifdef DPAA2_CGR_SUPPORT
 	/*Check if the queue is congested*/
-/* if(qbman_result_is_CSCN(dpaa2_q->cscn)) */
-/* goto skip_tx; */
+	if(qbman_result_is_CSCN(dpaa2_q->cscn))
+		goto skip_tx;
+#endif
 
 	fd.simple.frc = 0;
 	DPAA2_RESET_FD_CTRL((&fd));
@@ -670,7 +684,7 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	dpaa2_q->tx_pkts += num_tx;
 	dpaa2_q->err_pkts += nb_pkts - num_tx;
 #endif
- skip_tx:
+skip_tx:
 	return num_tx;
 }
 
@@ -764,10 +778,10 @@ dpaa2_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->driver_name = drivername;
 	dev_info->if_index = priv->hw_id;
 	dev_info->max_mac_addrs = priv->max_unicast_filters;
-	dev_info->max_rx_pktlen = (uint32_t)-1;
+	dev_info->max_rx_pktlen = DPAA2_MAX_RX_PKT_LEN;
 	dev_info->max_rx_queues = (uint16_t)priv->nb_rx_queues;
 	dev_info->max_tx_queues = (uint16_t)priv->nb_tx_queues;
-	dev_info->min_rx_bufsize = 0;
+	dev_info->min_rx_bufsize = DPAA2_MIN_RX_BUF_SIZE;
 	dev_info->pci_dev = dev->pci_dev;
 /*	dev_info->rx_offload_capa =
 		DEV_RX_OFFLOAD_IPV4_CKSUM |
@@ -1243,7 +1257,7 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_tx_flow_cfg cfg;
 	struct dpni_tx_conf_cfg tx_conf_cfg;
-#ifdef QBMAN_MULTI_TX
+#ifdef DPAA2_CGR_SUPPORT
 	struct dpni_congestion_notification_cfg cong_notif_cfg;
 #endif
 	uint32_t tc_idx;
@@ -1307,7 +1321,7 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	else
 		dpaa2_q->flow_id = flow_id;
 
-#ifdef QBMAN_MULTI_TX
+#ifdef DPAA2_CGR_SUPPORT
 	cong_notif_cfg.units = DPNI_CONGESTION_UNIT_BYTES;
 	/*Notify about congestion when the queue size is 128 frames with each \
 	  frame 64 bytes size*/
@@ -1566,8 +1580,7 @@ static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	}
 
 	/* check that mtu is within the allowed range */
-
-	if ((mtu < ETHER_MIN_MTU) || (frame_size > ETHER_MAX_JUMBO_FRAME_LEN))
+	if ((mtu < ETHER_MIN_MTU) || (frame_size > DPAA2_MAX_RX_PKT_LEN))
 		return -EINVAL;
 
 	/* Set the Max Rx frame length as 'mtu' +
