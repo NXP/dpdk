@@ -35,9 +35,6 @@
 CONFIG_RTE_MACHINE="dpaa"
 CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
 
-# Compile ARMCE based crypto
-CONFIG_RTE_LIBRTE_PMD_ARMCE=n
-
 #
 # Compile Environment Abstraction Layer
 #
@@ -45,6 +42,14 @@ CONFIG_RTE_MAX_LCORE=4
 CONFIG_RTE_MAX_NUMA_NODES=1
 CONFIG_RTE_EAL_VFIO=n
 
+#
+#Kernel KNI component - disable by default to avoid kernel
+#code dependency
+#
+CONFIG_RTE_KNI_KMOD=n
+
+# Compile ARMCE based crypto
+CONFIG_RTE_LIBRTE_PMD_ARMCE=n
 
 # Compile software PMD backed by FSL - DPAA 
 #
