@@ -168,9 +168,9 @@ struct qbman_fle {
 	(fle->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0
 
 #define DPAA2_INLINE_MBUF_FROM_BUF(buf, meta_data_size) \
-	((struct rte_mbuf *)((uint64_t)buf - meta_data_size))
+	((struct rte_mbuf *)((uint64_t)buf + meta_data_size))
 #define DPAA2_BUF_FROM_INLINE_MBUF(mbuf, meta_data_size) \
-	((uint8_t *)((uint64_t)mbuf + meta_data_size))
+	((uint8_t *)((uint64_t)mbuf - meta_data_size))
 
 #define DPAA2_ASAL_VAL (DPAA2_MBUF_HW_ANNOTATION / 64)
 

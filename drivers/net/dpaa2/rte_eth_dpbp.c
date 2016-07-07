@@ -63,6 +63,8 @@ struct bp_info bpid_info[MAX_BPID];
 
 struct dpaa2_bp_list *h_bp_list;
 
+static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid);
+
 int
 dpaa2_create_dpbp_device(
 		int dpbp_id)
@@ -110,8 +112,8 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct dpaa2_bp_list *bp_list;
 	struct dpbp_attr dpbp_attr;
-	uint32_t bpid;
 	int ret;
+	int mbuf_alignsize, mdata_alignsize;
 
 	if (!avail_dpbp) {
 		PMD_DRV_LOG(ERR, "DPAA2 resources not available\n");
@@ -142,27 +144,50 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 		return -1;
 	}
 
+	/*
+	* +-------+---------+-----------+-------------+----------+---------\
+	* | SW-An | HW-An |/| rte_mbuf  | priv_size |/| HEADROOM | Data... /
+	* |       |       |\|           |           |\|          |         \
+	* +-------+-------|-+-----------+-----------|-+----------+---------/
+	*                 \  \                      \  \
+	*                Pad |                     Pad |
+	*                  mbuf_alignsize             mdata_alignsize
+	*/
+
+	/* Aligning the rte_mbuf from Annotation area */
+	/* TODO: Needs revisit. This assumes 256KB alignment of Annotation
+	 * area. Converting to 64 raises issue in port initialization
+	 */
+	mbuf_alignsize = DPAA2_ALIGN_ROUNDUP(DPAA2_HW_BUF_RESERVE,
+				DPAA2_PACKET_LAYOUT_ALIGN);
+
+	/* Aligning the meta-data size until data start */
+	mdata_alignsize = DPAA2_ALIGN_ROUNDUP((mbuf_alignsize
+				+ sizeof(struct rte_mbuf)
+				+ rte_pktmbuf_priv_size(mp)
+				+ RTE_PKTMBUF_HEADROOM),
+				DPAA2_PACKET_LAYOUT_ALIGN);
+
 	/* Set parameters of buffer pool list */
 	bp_list->buf_pool.num_bufs = mp->size;
-	bp_list->buf_pool.size = mp->elt_size
-			- sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp);
+	bp_list->buf_pool.size = mp->elt_size - mdata_alignsize;
 	bp_list->buf_pool.bpid = dpbp_attr.bpid;
 	bp_list->buf_pool.h_bpool_mem = NULL;
 	bp_list->buf_pool.mp = mp;
 	bp_list->buf_pool.dpbp_node = avail_dpbp;
 	bp_list->next = h_bp_list;
 
-	bpid = dpbp_attr.bpid;
-
 	/* Increment the available DPBP */
 	avail_dpbp = avail_dpbp->next;
 
-	bpid_info[bpid].meta_data_size = sizeof(struct rte_mbuf)
-				+ rte_pktmbuf_priv_size(mp);
-	bpid_info[bpid].bp_list = bp_list;
-	bpid_info[bpid].bpid = bpid;
+	/* meta_data_size is area from start of buffer until start of
+	*  rte_mbuf
+	*/
+	bpid_info[dpbp_attr.bpid].meta_data_size = mbuf_alignsize;
+	bpid_info[dpbp_attr.bpid].bp_list = bp_list;
+	bpid_info[dpbp_attr.bpid].bpid = dpbp_attr.bpid;
 
-	mp->hw_pool_priv = (void *)&bpid_info[bpid];
+	mp->hw_pool_priv = (void *)&bpid_info[dpbp_attr.bpid];
 
 	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", dpbp_attr.bpid);
 
@@ -170,40 +195,13 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	return 0;
 }
 
-static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid)
-{
-	struct qbman_release_desc releasedesc;
-	struct qbman_swp *swp;
-	int ret;
-
-	if (!thread_io_info.dpio_dev) {
-		ret = dpaa2_affine_qbman_swp();
-		if (ret != 0) {
-			PMD_DRV_LOG(ERR, "Failed to allocate IO portal");
-			return;
-		}
-	}
-	swp = thread_io_info.dpio_dev->sw_portal;
-
-	/* Create a release descriptor required for releasing
-	 * buffers into BMAN */
-	qbman_release_desc_clear(&releasedesc);
-	qbman_release_desc_set_bpid(&releasedesc, bpid);
-
-	DPAA2_MODIFY_VADDR_TO_IOVA(buf, uint64_t);
-	do {
-		/* Release buffer into the BMAN */
-		ret = qbman_swp_release(swp, &releasedesc, &buf, 1);
-	} while (ret == -EBUSY);
-	PMD_TX_FREE_LOG(DEBUG, "Released %p address to BMAN\n", buf);
-}
-
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
-		       void **obj_table, unsigned count)
+			 void **obj_table, unsigned count)
 {
+#ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	static int alloc;
+#endif
 	struct qbman_swp *swp;
-	uint32_t mbuf_size;
 	uint16_t bpid;
 	uint64_t bufs[64];
 	int ret;
@@ -244,19 +242,19 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	while (n < count) {
 		ret = 0;
 		/* Acquire is all-or-nothing, so we drain in 7s,
-		 * then in 1s for the remainder. */
+		 * then the remainder.
+		 */
 		if ((count - n) > DPAA2_MBUF_MAX_ACQ_REL) {
 			ret = qbman_swp_acquire(swp, bpid, &bufs[n],
 						DPAA2_MBUF_MAX_ACQ_REL);
 			if (ret == DPAA2_MBUF_MAX_ACQ_REL) {
 				n += ret;
 			}
-		}
-		if (ret < DPAA2_MBUF_MAX_ACQ_REL) {
-			ret = qbman_swp_acquire(swp, bpid, &bufs[n], 1);
+		} else {
+			ret = qbman_swp_acquire(swp, bpid, &bufs[n], count - n);
 			if (ret > 0) {
 				PMD_DRV_LOG(DEBUG, "Drained buffer: %x",
-					    bufs[n]);
+					bufs[n]);
 				n += ret;
 			}
 		}
@@ -266,36 +264,51 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 			break;
 		}
 	}
+
+	/* This function either returns expected buffers or error */
+	if (count != n) {
+		i = 0;
+		/* Releasing all buffers allocated */
+		while (i < n) {
+			dpaa2_mbuf_release(bufs[i], bpid);
+			i++;
+		}
+		return -1;
+	}
+
 	if (ret < 0 || n == 0) {
 		PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
 		return -1;
 	}
+
 set_buf:
+	for (i = 0; i < n; i++ ) {
+		/* Cannot handle a situation where bufs[i] is NULL */
+		RTE_MBUF_ASSERT(bufs[i]);
 
-	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
-
-	for (i = 0; i < n; i++) {
 		DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
-
-		mt[i] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
-		PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN\n", (void *)bufs[i], (void *)mt[i]);
-		if (!bufs[i] || !mt[i]) {
-			printf("\n ??????? how come we have a null buffer %p, %p",
-			       (void *)bufs[i], (void *)mt[i]);
-		}
+		mt[i] = (struct rte_mbuf *)(bufs[i] + bp_info->meta_data_size);
+		PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN\n",
+			(void *)bufs[i], (void *)mt[i]);
 	}
 
+#ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	alloc += n;
 	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d",
-		    alloc, count, n);
+		alloc, count, n);
+#endif
 	return 0;
 }
 
 int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
-		      unsigned n)
+		     unsigned n)
 {
 	unsigned i;
 	struct rte_mbuf *m;
+	uint64_t buf;
+	struct qbman_release_desc releasedesc;
+	struct qbman_swp *swp;
+	int ret;
 	struct bp_info *bp_info;
 
 	PMD_DRV_LOG(DEBUG, "%s/n", __func__);
@@ -305,20 +318,75 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		PMD_DRV_LOG(INFO, "DPAA2 buffer pool not configured\n");
 		return -1;
 	}
+
+	if (!thread_io_info.dpio_dev) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret != 0) {
+			PMD_DRV_LOG(ERR, "Failed to allocate IO portal");
+			return ret;
+		}
+	}
+	swp = thread_io_info.dpio_dev->sw_portal;
+
+	/* Create a release descriptor required for releasing
+	 * buffers into BMAN */
+	qbman_release_desc_clear(&releasedesc);
+	qbman_release_desc_set_bpid(&releasedesc, bp_info->bpid);
+
+	/*todo - optimize it*/
 	for (i = 0; i < n; i++) {
 		m = (struct rte_mbuf *)(obj_table[i]);
-		dpaa2_mbuf_release((uint64_t)m->buf_addr, bp_info->bpid);
+		buf = (uint64_t)DPAA2_BUF_FROM_INLINE_MBUF(m,
+					bp_info->meta_data_size);
+		DPAA2_MODIFY_VADDR_TO_IOVA(buf, uint64_t);
+		do {
+			/* Release buffer into the BMAN */
+			ret = qbman_swp_release(swp, &releasedesc, &buf, 1);
+		} while (ret == -EBUSY);
+		PMD_TX_FREE_LOG(DEBUG, "Released %p address to BMAN\n", buf);
 	}
 
 	return 0;
 }
 
+static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid)
+{
+	struct qbman_release_desc releasedesc;
+	struct qbman_swp *swp;
+	int ret;
+
+	if (!thread_io_info.dpio_dev) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret != 0) {
+			PMD_DRV_LOG(ERR, "Failed to allocate IO portal");
+			return;
+		}
+	}
+	swp = thread_io_info.dpio_dev->sw_portal;
+
+	/* Create a release descriptor required for releasing
+	 * buffers into BMAN */
+	qbman_release_desc_clear(&releasedesc);
+	qbman_release_desc_set_bpid(&releasedesc, bpid);
+
+	DPAA2_MODIFY_VADDR_TO_IOVA(buf, uint64_t);
+	do {
+		/* Release buffer into the BMAN */
+		ret = qbman_swp_release(swp, &releasedesc, &buf, 1);
+	} while (ret == -EBUSY);
+	PMD_TX_FREE_LOG(DEBUG, "Released %p address to BMAN\n", buf);
+}
+
+/* hw generated buffer layout:
+ *
+ *[SW_PTA][HW_ANNOT][cache_ALIGN]   [struct rte_mbuf][priv_size][HEADROOM][DATA]
+ */
 int hw_mbuf_init(
 		struct rte_mempool *mp,
 		void *_m)
 {
-	struct rte_mbuf *m = _m;
-	uint32_t mbuf_size, buf_len, priv_size, head_size;
+	struct rte_mbuf *m;
+	uint32_t mbuf_size, buf_len, priv_size;
 	struct bp_info *bp_info;
 
 	bp_info = mempool_to_bpinfo(mp);
@@ -335,38 +403,39 @@ int hw_mbuf_init(
 	RTE_MBUF_ASSERT(RTE_ALIGN(priv_size, RTE_MBUF_PRIV_ALIGN) == priv_size);
 	RTE_MBUF_ASSERT(mp->elt_size >= mbuf_size);
 
-	memset(m, 0, mp->elt_size);
-
-	/*update it in global list as well */
-	bpid_info[bp_info->bpid].meta_data_size = mbuf_size;
-
-	head_size = DPAA2_FD_PTA_SIZE + DPAA2_MBUF_HW_ANNOTATION
-			+ RTE_PKTMBUF_HEADROOM;
-	head_size = DPAA2_ALIGN_ROUNDUP(head_size,
-					DPAA2_PACKET_LAYOUT_ALIGN);
-	head_size -= DPAA2_FD_PTA_SIZE + DPAA2_MBUF_HW_ANNOTATION;
+	memset(_m, 0, mp->elt_size);
 
 	buf_len = rte_pktmbuf_data_room_size(mp)
-		- DPAA2_FD_PTA_SIZE + DPAA2_MBUF_HW_ANNOTATION;
+			- bp_info->meta_data_size;
 
 	RTE_MBUF_ASSERT(buf_len <= UINT16_MAX);
 
+	m = (struct rte_mbuf *)
+		((unsigned char *)_m + bp_info->meta_data_size);
+
 	/* start of buffer is after mbuf structure and priv data */
 	m->priv_size = priv_size;
-	m->buf_addr = (char *)m + mbuf_size;
-	m->buf_physaddr = rte_mempool_virt2phy(mp, m) + mbuf_size;
+	m->buf_addr = (char *)_m + mbuf_size + bp_info->meta_data_size;
+	m->buf_physaddr = rte_mempool_virt2phy(mp, _m)
+		+ bp_info->meta_data_size + mbuf_size;
 	m->buf_len = (uint16_t)buf_len;
 
 	/* keep some headroom between start of buffer and data */
-	m->data_off = RTE_MIN(head_size, (uint16_t)m->buf_len);
+	m->data_off = RTE_MIN(RTE_PKTMBUF_HEADROOM, (uint16_t)m->buf_len);
 
 	/* init some constant fields */
 	m->pool = mp;
 	m->nb_segs = 1;
 	m->port = 0xff;
 
+	PMD_DRV_LOG(DEBUG2,"buf =%p, meta = %d, bpid = %d"
+		"mbuf =%p, buf_addr =%p, data_off = %d, buf_len=%d, elt_sz=%d ",
+		_m,  bp_info->meta_data_size,
+		bp_info->bpid, m, m->buf_addr, m->data_off,
+		m->buf_len, mp->elt_size);
+
 	/* Release the mempool buffer to BMAN */
-	dpaa2_mbuf_release((uint64_t)m->buf_addr, bp_info->bpid);
+	dpaa2_mbuf_release((uint64_t)_m, bp_info->bpid);
 	return 0;
 }
 
