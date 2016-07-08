@@ -91,9 +91,10 @@ setup_test_string(struct rte_mempool *mpool,
 		const char *string, size_t len, uint8_t blocksize)
 {
 	struct rte_mbuf *m = rte_pktmbuf_alloc(mpool);
+	int buf_len = rte_pktmbuf_data_room_size(mpool);
 	size_t t_len = len - (blocksize ? (len % blocksize) : 0);
 
-	memset(m->buf_addr, 0, m->buf_len);
+	memset(m->buf_addr, 0, buf_len);
 	if (m) {
 		char *dst = rte_pktmbuf_append(m, t_len);
 
