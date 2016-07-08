@@ -48,8 +48,6 @@
 #define DPAA2_FD_PTA_SIZE		64
 #define DPAA2_PACKET_LAYOUT_ALIGN	256
 
-#define DPAA2_HW_BUF_RESERVE	(DPAA2_MBUF_HW_ANNOTATION + DPAA2_FD_PTA_SIZE)
-
 #define DPAA2_ALIGN_ROUNDUP(x, align) ((align) * (((x) + align - 1) / (align)))
 #define DPAA2_ALIGN_ROUNDUP_PTR(x, align)\
 	((void *)DPAA2_ALIGN_ROUNDUP((uintptr_t)(x), (uintptr_t)(align)))

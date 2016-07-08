@@ -210,13 +210,13 @@ rte_dpni_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 }
 
 static inline void
-dpaa2_eth_parse_packet(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
+dpaa2_eth_parse_packet(struct rte_mbuf *mbuf)
 {
 	uint32_t pkt_type = 0;
-	struct pkt_annotation *annotation =
-			(struct pkt_annotation *)hw_annot_addr;
+	struct pkt_annotation *annotation = (struct pkt_annotation *)
+		((uint8_t *)mbuf->buf_addr + DPAA2_FD_PTA_SIZE);
 
-	PMD_DRV_LOG(DEBUG, "\n 1 annotation = 0x%lx   ", annotation->word4);
+	PMD_DRV_LOG(DEBUG, "\n 1 annotation = 0x%x   ", annotation->word4);
 
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L2_ETHER;
@@ -255,28 +255,24 @@ struct rte_mbuf *eth_fd_to_mbuf(const struct qbman_fd *fd)
 		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
 			bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 
-	/* need to repopulated some of the fields,
-	as they may have changed in last transmission*/
+	PMD_DRV_LOG(DEBUG, "\nmbuf %p BMAN buf addr %p",
+		    (void *)mbuf, mbuf->buf_addr);
 
-	/* FD offset is from fd addr,  this should be adjusted w.r.t mbuf->buf_addr*/
-	mbuf->data_off = DPAA2_GET_FD_OFFSET(fd) -
-		((uint64_t)mbuf->buf_addr - DPAA2_GET_FD_ADDR(fd));
+	PMD_DRV_LOG(DEBUG, "\nfdaddr =%lx bpid =%d meta =%d off =%d, len =%d\n",
+		    DPAA2_GET_FD_ADDR(fd),
+		DPAA2_GET_FD_BPID(fd),
+		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
+		DPAA2_GET_FD_OFFSET(fd),
+		DPAA2_GET_FD_LEN(fd));
+
+	mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
 	mbuf->data_len = DPAA2_GET_FD_LEN(fd);
 	mbuf->pkt_len = mbuf->data_len;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
 
-	PMD_DRV_LOG(DEBUG, "to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
-		"fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
-		mbuf, mbuf->buf_addr, mbuf->data_off,
-		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
-		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
-		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
-
 	/* Parse the packet */
-	dpaa2_eth_parse_packet(mbuf,
-		(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-		 + DPAA2_FD_PTA_SIZE);
+	dpaa2_eth_parse_packet(mbuf);
 
 	mbuf->nb_segs = 1;
 	mbuf->ol_flags = 0;
@@ -291,21 +287,22 @@ static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	fd->simple.bpid_offset = 0;
 
 	DPAA2_SET_FD_ADDR(fd,
-			DPAA2_VADDR_TO_IOVA(DPAA2_BUF_FROM_INLINE_MBUF(mbuf,
-					  bpid_info[bpid].meta_data_size)));
+			  DPAA2_VADDR_TO_IOVA(DPAA2_BUF_FROM_INLINE_MBUF(mbuf,
+								       bpid_info[bpid].meta_data_size)));
 	DPAA2_SET_FD_LEN(fd, mbuf->data_len);
 	DPAA2_SET_FD_BPID(fd, bpid);
-	/* mbuf data offset + buf_addr from the fd address */
-	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off
-		+ ((uint64_t)mbuf->buf_addr - DPAA2_GET_FD_ADDR(fd)));
+	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
 
-	PMD_DRV_LOG(DEBUG,"to_fd-mbuf =%p, mbuf->buf_addr =%p, off = %d,"
-		"fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
-		mbuf, mbuf->buf_addr, mbuf->data_off,
-		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
+	PMD_DRV_LOG(DEBUG, "\nmbuf %p BMAN buf addr %p",
+		    (void *)mbuf, mbuf->buf_addr);
+
+	PMD_DRV_LOG(DEBUG, "\nfdaddr =%lx bpid =%d meta =%d off =%d, len =%d\n",
+		    DPAA2_GET_FD_ADDR(fd),
+		DPAA2_GET_FD_BPID(fd),
 		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
-		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
+		DPAA2_GET_FD_OFFSET(fd),
+		DPAA2_GET_FD_LEN(fd));
 
 	return;
 }
@@ -583,8 +580,6 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 	swp = thread_io_info.dpio_dev->sw_portal;
 
-	PMD_DRV_LOG(DEBUG, "===> dev =%p, fqid =%d", dev, dpaa2_q->fqid);
-
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
 	qbman_eq_desc_set_no_orp(&eqdesc, DPAA2_EQ_RESP_ERR_FQ);
@@ -624,7 +619,6 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					continue;
 				}
 			} else {
-				RTE_MBUF_ASSERT(mp);
 				bpid = mempool_to_bpid(mp);
 				eth_mbuf_to_fd(*bufs, &fd_arr[loop], bpid);
 			}
@@ -657,17 +651,13 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		mp = bufs[loop]->pool;
 		/* Not a hw_pkt pool allocated frame */
 		if (mp && !(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+			printf("\n non hw offload bufffer ");
 			/* alloc should be from the default buffer pool
 			attached to this interface */
 			if (priv->bp_list) {
 				bpid = priv->bp_list->buf_pool.bpid;
 			} else {
-				/* Buffer not from offloaded area as well as
-				* lacks buffer pool identifier. Cannot
-				* continue.
-				*/
-				PMD_DRV_LOG(ERROR, "\n No Buffer pool "
-						"attached.\n");
+				printf("\n ??? why no bpool attached");
 				num_tx = 0;
 				goto skip_tx;
 			}
@@ -677,7 +667,6 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				continue;
 			}
 		} else {
-			RTE_MBUF_ASSERT(mp);
 			bpid = mempool_to_bpid(mp);
 			eth_mbuf_to_fd(bufs[loop], &fd, bpid);
 		}
@@ -1172,27 +1161,6 @@ static int dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_pools_cfg bpool_cfg;
 	struct dpaa2_bp_list *bp_list = (struct dpaa2_bp_list *)blist;
-	struct dpni_buffer_layout layout;
-
-	/* ... rx buffer layout .
-	- need to set it w.r.t mbuf-priv size.- which was not known before */
-	/*Check alignment for buffer layouts first*/
-	/* currently considering no mbuf priv size */
-
-	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	layout.options = DPNI_BUF_LAYOUT_OPT_DATA_HEAD_ROOM;
-	layout.data_head_room =
-		bpid_info[bp_list->buf_pool.dpbp_node->dpbp_id].meta_data_size
-		+ sizeof(struct rte_mbuf)
-		+ rte_pktmbuf_priv_size(bp_list->buf_pool.mp)
-		+ RTE_PKTMBUF_HEADROOM - DPAA2_HW_BUF_RESERVE;
-
-	retcode = dpni_set_rx_buffer_layout(dpni, CMD_PRI_LOW, priv->token,
-					&layout);
-	if (retcode) {
-		PMD_DRV_LOG(ERR, "Err(%d) in setting rx buffer layout\n", ret);
-		return retcode;
-	}
 
 	/*Attach buffer pool to the network interface as described by the user*/
 	bpool_cfg.num_dpbp = 1;
@@ -2192,8 +2160,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... rx buffer layout ... */
 	/*Check alignment for buffer layouts first*/
-	/* currently considering no mbuf priv size */
-	tot_size = DPAA2_HW_BUF_RESERVE + sizeof(struct rte_mbuf) +
+	tot_size = DPAA2_FD_PTA_SIZE + DPAA2_MBUF_HW_ANNOTATION
 			+ RTE_PKTMBUF_HEADROOM;
 	tot_size = DPAA2_ALIGN_ROUNDUP(tot_size,
 				       DPAA2_PACKET_LAYOUT_ALIGN);
@@ -2206,7 +2173,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 				DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
 
 	layout.pass_frame_status = 1;
-	layout.data_head_room = tot_size - DPAA2_HW_BUF_RESERVE;
+	layout.data_head_room =
+		tot_size - (DPAA2_FD_PTA_SIZE + DPAA2_MBUF_HW_ANNOTATION);
 	layout.private_data_size = DPAA2_FD_PTA_SIZE;
 	layout.pass_timestamp = 1;
 	layout.pass_parser_result = 1;
