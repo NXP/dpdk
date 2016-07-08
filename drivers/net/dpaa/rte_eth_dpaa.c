@@ -296,6 +296,16 @@ int usdpaa_link_up(struct rte_eth_dev *dev)
 		    __func__);
 	return 0;
 }
+static int
+usdpaa_flow_ctrl_set(struct rte_eth_dev *dev  __rte_unused,
+		struct rte_eth_fc_conf *fc_conf  __rte_unused)
+{
+	/*TBD:XXX: to be implemented*/
+	PMD_DRV_LOG(NOTICE, "%s:: Empty place holder, no action taken\n",
+		    __func__);
+
+	return 0;
+}
 
 static struct eth_dev_ops usdpaa_devops = {
 	.dev_configure = usdpaa_eth_dev_configure,
@@ -309,6 +319,8 @@ static struct eth_dev_ops usdpaa_devops = {
 	.tx_queue_setup = usdpaa_eth_tx_queue_setup,
 	.rx_queue_release = usdpaa_eth_queue_release,
 	.tx_queue_release = usdpaa_eth_queue_release,
+
+	.flow_ctrl_set	      = usdpaa_flow_ctrl_set,
 
 	.link_update = usdpaa_eth_link_update,
 	.stats_get = usdpaa_eth_stats_get,
