@@ -480,7 +480,8 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		q_storage->active_dqs = dq_storage;
 		thread_io_info.global_active_dqs = dq_storage;
 	}
-	while (!qbman_check_command_complete(swp, thread_io_info.global_active_dqs))
+	if (thread_io_info.global_active_dqs)
+		while (!qbman_check_command_complete(swp, thread_io_info.global_active_dqs))
 		;
 	dq_storage = q_storage->active_dqs;
 	while (!is_last) {
@@ -1380,6 +1381,20 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	return 0;
 }
 
+void
+dpaa2_rx_queue_release(void *q)
+{
+	printf("\n(%s) called for 1=%p\n", __func__, q);
+	return;
+}
+
+void
+dpaa2_tx_queue_release(void *q)
+{
+	printf("\n(%s) called for 1=%p\n", __func__, q);
+	return;
+}
+
 static const uint32_t *
 dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 {
@@ -1635,6 +1650,12 @@ static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	return 0;
 }
 
+static int
+dpaa2_flow_ctrl_set(struct rte_eth_dev *dev  __rte_unused,
+			struct rte_eth_fc_conf *fc_conf  __rte_unused)
+{
+	return 0;
+}
 static void
 dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr,
@@ -2019,62 +2040,36 @@ static struct eth_dev_ops ops = {
 	.promiscuous_disable  = dpaa2_dev_promiscuous_disable,
 	.allmulticast_enable  = dpaa2_dev_allmulticast_enable,
 	.allmulticast_disable = dpaa2_dev_allmulticast_disable,
-	/* .dev_set_link_up    = ixgbe_dev_set_link_up, */
-	/* .dev_set_link_down  = ixgbe_dev_set_link_down, */
+	.dev_set_link_up      = NULL,
+	.dev_set_link_down    = NULL,
 	.link_update	      = dpaa2_dev_get_link_info,
 	.stats_get	      = dpaa2_dev_stats_get,
-	/* .xstats_get	      = ixgbe_dev_xstats_get, */
 	.stats_reset	      = dpaa2_dev_stats_reset,
-	/* .xstats_reset	      = ixgbe_dev_xstats_reset, */
-	/* .queue_stats_mapping_set      = i40e_dev_queue_stats_mapping_set, */
 	.dev_infos_get	      = dpaa2_eth_dev_info,
-	.dev_supported_ptypes_get     = dpaa2_supported_ptypes_get,
+	.dev_supported_ptypes_get = dpaa2_supported_ptypes_get,
 	.mtu_set	      = dpaa2_dev_mtu_set,
-	.vlan_filter_set	      = dpaa2_vlan_filter_set,
-/* .vlan_tpid_set		      = i40e_vlan_tpid_set, */
-	.vlan_offload_set	      = dpaa2_vlan_offload_set,
-/* .vlan_strip_queue_set	      = i40e_vlan_strip_queue_set, */
-/* .vlan_pvid_set		      = i40e_vlan_pvid_set, */
-/* .rx_queue_start	      = i40e_dev_rx_queue_start, */
-/* .rx_queue_stop		      = i40e_dev_rx_queue_stop, */
-/* .tx_queue_start	      = i40e_dev_tx_queue_start, */
-/* .tx_queue_stop		      = i40e_dev_tx_queue_stop, */
+	.vlan_filter_set      = dpaa2_vlan_filter_set,
+	.vlan_tpid_set        = NULL,
+	.vlan_offload_set     = dpaa2_vlan_offload_set,
+	.vlan_strip_queue_set = NULL,
+	.vlan_pvid_set        = NULL,
 	.rx_queue_setup	      = dpaa2_rx_queue_setup,
-/* .rx_queue_intr_enable	      = i40e_dev_rx_queue_intr_enable, */
-/* .rx_queue_intr_disable	      = i40e_dev_rx_queue_intr_disable, */
-/* .rx_queue_release	      = i40e_dev_rx_queue_release, */
-/* .rx_queue_count	      = i40e_dev_rx_queue_count, */
+	.rx_queue_release      = dpaa2_rx_queue_release,
 	.tx_queue_setup	      = dpaa2_tx_queue_setup,
-/* .tx_queue_release	      = i40e_dev_tx_queue_release, */
-/* .dev_led_on		      = i40e_dev_led_on, */
-/* .dev_led_off		      = i40e_dev_led_off, */
-/* .flow_ctrl_get		      = i40e_flow_ctrl_get, */
-/* .flow_ctrl_set		      = i40e_flow_ctrl_set, */
-/* .priority_flow_ctrl_set       = i40e_priority_flow_ctrl_set, */
-	.mac_addr_add		      = dpaa2_dev_add_mac_addr,
-	.mac_addr_remove	      = dpaa2_dev_remove_mac_addr,
-/* .reta_update		      = i40e_dev_rss_reta_update, */
-/* .reta_query		      = i40e_dev_rss_reta_query, */
-/* .rss_hash_update	      = i40e_dev_rss_hash_update, */
-/* .rss_hash_conf_get	      = i40e_dev_rss_hash_conf_get, */
-/* .filter_ctrl		      = i40e_dev_filter_ctrl, */
-/* .rxq_info_get		      = i40e_rxq_info_get, */
-/* .txq_info_get		      = i40e_txq_info_get, */
-/* .mirror_rule_set	      = i40e_mirror_rule_set, */
-/* .mirror_rule_reset	      = i40e_mirror_rule_reset, */
-	.timesync_enable	      = dpaa2_timestamp_enable,
-	.timesync_disable	      = dpaa2_timestamp_disable,
-/* .timesync_read_rx_timestamp   = i40e_timesync_read_rx_timestamp, */
-/* .timesync_read_tx_timestamp   = i40e_timesync_read_tx_timestamp, */
-/* .get_dcb_info		      = i40e_dev_get_dcb_info, */
-/* .timesync_adjust_time	      = i40e_timesync_adjust_time, */
-/* .timesync_read_time	      = i40e_timesync_read_time, */
-/* .timesync_write_time	      = i40e_timesync_write_time, */
-/* .get_reg_length	      = i40e_get_reg_length, */
-/* .get_reg		      = i40e_get_regs, */
-/* .get_eeprom_length	      = i40e_get_eeprom_length, */
-/* .get_eeprom		      = i40e_get_eeprom, */
-	.mac_addr_set		      = dpaa2_dev_set_mac_addr,
+	.tx_queue_release      = dpaa2_tx_queue_release,
+	.dev_led_on           = NULL,
+	.dev_led_off          = NULL,
+	.set_queue_rate_limit = NULL,
+	.flow_ctrl_get	      = NULL,
+	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
+	.priority_flow_ctrl_set = NULL,
+	.mac_addr_add         = dpaa2_dev_add_mac_addr,
+	.mac_addr_remove      = dpaa2_dev_remove_mac_addr,
+	.rxq_info_get         = NULL,
+	.txq_info_get         = NULL,
+	.timesync_enable      = dpaa2_timestamp_enable,
+	.timesync_disable     = dpaa2_timestamp_disable,
+	.mac_addr_set         = dpaa2_dev_set_mac_addr,
 };
 
 static int
