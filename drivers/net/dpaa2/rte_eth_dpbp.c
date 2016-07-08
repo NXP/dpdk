@@ -63,6 +63,8 @@ struct bp_info bpid_info[MAX_BPID];
 
 struct dpaa2_bp_list *h_bp_list;
 
+static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid);
+
 int
 dpaa2_create_dpbp_device(
 		int dpbp_id)
@@ -244,19 +246,19 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	while (n < count) {
 		ret = 0;
 		/* Acquire is all-or-nothing, so we drain in 7s,
-		 * then in 1s for the remainder. */
+		 * then the remainder.
+		 */
 		if ((count - n) > DPAA2_MBUF_MAX_ACQ_REL) {
 			ret = qbman_swp_acquire(swp, bpid, &bufs[n],
 						DPAA2_MBUF_MAX_ACQ_REL);
 			if (ret == DPAA2_MBUF_MAX_ACQ_REL) {
 				n += ret;
 			}
-		}
-		if (ret < DPAA2_MBUF_MAX_ACQ_REL) {
-			ret = qbman_swp_acquire(swp, bpid, &bufs[n], 1);
+		} else {
+			ret = qbman_swp_acquire(swp, bpid, &bufs[n], count - n);
 			if (ret > 0) {
 				PMD_DRV_LOG(DEBUG, "Drained buffer: %x",
-					    bufs[n]);
+					bufs[n]);
 				n += ret;
 			}
 		}
@@ -266,6 +268,18 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 			break;
 		}
 	}
+
+	/* This function either returns expected buffers or error */
+	if (count != n) {
+		i = 0;
+		/* Releasing all buffers allocated */
+		while (i < n) {
+			dpaa2_mbuf_release(bufs[i], bpid);
+			i++;
+		}
+		return -1;
+	}
+
 	if (ret < 0 || n == 0) {
 		PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
 		return -1;
