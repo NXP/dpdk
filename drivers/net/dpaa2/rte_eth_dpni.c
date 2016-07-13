@@ -831,6 +831,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->dev = dev;
+		mc_q->flow_id = DPNI_NEW_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
 	}
 
@@ -1254,7 +1255,8 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 			const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct dpaa2_queue *dpaa2_q;
+	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)
+		dev->data->tx_queues[tx_queue_id];
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_tx_flow_cfg cfg;
 	struct dpni_tx_conf_cfg tx_conf_cfg;
@@ -1262,10 +1264,13 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	struct dpni_congestion_notification_cfg cong_notif_cfg;
 #endif
 	uint32_t tc_idx;
-	uint16_t flow_id = DPNI_NEW_FLOW_ID;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
+
+	/* Return if queue already configured */
+	if (dpaa2_q->flow_id != DPNI_NEW_FLOW_ID)
+		return 0;
 
 	memset(&cfg, 0, sizeof(struct dpni_tx_flow_cfg));
 	cfg.l3_chksum_gen = 1;
@@ -1289,7 +1294,8 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	else
 		tc_idx = tx_queue_id;
 
-	ret = dpni_set_tx_flow(dpni, CMD_PRI_LOW, priv->token, &flow_id, &cfg);
+	ret = dpni_set_tx_flow(dpni, CMD_PRI_LOW, priv->token,
+			       &(dpaa2_q->flow_id), &cfg);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "Error in setting the tx flow:"
 					"ErrorCode = %x\n", ret);
@@ -1297,7 +1303,7 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 	}
 	/*Set tx-conf and error configuration*/
 	ret = dpni_set_tx_conf(dpni, CMD_PRI_LOW, priv->token,
-			       flow_id, &tx_conf_cfg);
+			       dpaa2_q->flow_id, &tx_conf_cfg);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "Error in setting tx conf settings: "
 					"ErrorCode = %x", ret);
@@ -1314,13 +1320,7 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 			return -1;
 		}
 	}
-	/*todo - add the queue id support instead of hard queue id as "0" */
-	dpaa2_q = (struct dpaa2_queue *)dev->data->tx_queues[tx_queue_id];
 	dpaa2_q->tc_index = tc_idx;
-	if (flow_id == DPNI_NEW_FLOW_ID)
-		dpaa2_q->flow_id = 0;
-	else
-		dpaa2_q->flow_id = flow_id;
 
 #ifdef DPAA2_CGR_SUPPORT
 	cong_notif_cfg.units = DPNI_CONGESTION_UNIT_BYTES;
