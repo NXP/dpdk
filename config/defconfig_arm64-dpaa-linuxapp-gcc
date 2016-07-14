@@ -41,7 +41,7 @@ CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
 CONFIG_RTE_MAX_LCORE=4
 CONFIG_RTE_MAX_NUMA_NODES=1
 CONFIG_RTE_EAL_VFIO=n
-
+CONFIG_RTE_PKTMBUF_HEADROOM=128
 #
 #Kernel KNI component - disable by default to avoid kernel
 #code dependency

@@ -3,8 +3,8 @@ NXP DPDK README FOR LS-DPAA1 PLATFORM
 ===============================================================================
 
 NXP DPDK provides a set of data plane libraries and network interface
-controller driver for LS1 platforms. 
-This README provides information about building and executing DPDK based 
+controller driver for LS1 platforms.
+This README provides information about building and executing DPDK based
 applications for LS-DPAA1 platform
 
 ===============================================================================
@@ -27,7 +27,7 @@ Following information can be used to obtain these components:
      Use following command to get the DPDK code
 
        # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git
-       # git checkout -b v16.04-rc2 remotes/origin/v16.04-rc2
+       # git checkout -b v16.04-nxp remotes/origin/v16.04-nxp
 
 
      Linux kernel code for LS1 platform
@@ -35,7 +35,7 @@ Following information can be used to obtain these components:
      Use following command to get the linux code
 
        # install SDK released by NXP(previously freescale) for ls1043ardb
-       # find the source for linux 
+       # find the source for linux
 
 
      Cross compiled toolchain For ARM64
@@ -69,8 +69,7 @@ How to Build DPDK Applications
      2. export CROSS_COMPILE=/opt/gcc-linaro-aarch64-linux-gnu-4.9-2014.09_linux/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
      4. source standalone-dpaa
-     5. make config T=arm64-dpaa-linuxapp-gcc
-     6. make install T=arm64-dpaa-linuxapp-gcc
+     5. make install T=arm64-dpaa-linuxapp-gcc
 
 3. Steps for compiling the DPDK examples
 	The basic testpmd application is compiled by default. It should be available in build/app
@@ -84,6 +83,10 @@ How to Build DPDK Applications
            # make -C examples/l2fwd
      4. Compilation of L3FWD example
            # make -C examples/l3fwd
+     5. Compilation of L2FWD-Crypto example
+           # make -C examples/l2fwd-crypto
+     6. Compilation of Test example
+           # make -C app/test
 
 ===============================================================================
 
@@ -96,7 +99,7 @@ How to run DPDK Applications
    the configuration files includes:
    3. usdpaa_config_ls1043.xml;    dpdk/ext
    4. usdpaa_policy_hash_ipv4_*queue.xml; dpdk/ext  #(* = 1/2/4)
-   	# mount hugetlb file system
+	# mount hugetlb file system
    	if [ ! -d /mnt/hugetlbfs ]; then
 	        mkdir /mnt/hugetlbfs
 	fi
@@ -117,6 +120,7 @@ How to run DPDK Applications
 
 	fmc -c usdpaa_config_ls1043.xml -p usdpaa_policy_hash_ipv4_*queue.xml -a
 		(* = 1/2/4)
+	export DPAA_NUM_RX_QUEUES=1 (or 2/4) based on the executed policy file.
 
    NOTE: fmc should be availabe in rootfs.
 
@@ -141,13 +145,40 @@ How to run DPDK Applications
 
    Execute following commands to run DPDK L2FWD on LS1 board
 
-       # ./l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1 -R
+       # ./l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
                         OR
-       # ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -R
+       # ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
 
        Now pump traffic from the Spirent to the enabled ports
 
-5. Running DPDK L3FWD Application
+5. Running DPDK L2FWD-CRYPTO Application
+   ==============================
+
+   Execute following commands to run DPDK L2FWD-CRYPTO on LS2 board
+
+   Case: Encrypt then Authenticate
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain CIPHER_HASH  \
+		--cipher_algo AES_CBC --cipher_op ENCRYPT --cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+		--auth_algo SHA1_HMAC --auth_op GENERATE
+   Case: Encrypt only
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain CIPHER_ONLY --cipher_algo AES_CBC --cipher_op ENCRYPT --cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+   Case: Authenticate only
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain HASH_ONLY --auth_algo SHA1_HMAC --auth_op GENERATE
+   Case: Authenticate then Encrypt
+       # To be supported in future.
+
+       Now pump traffic from the Spirent to the enabled ports
+
+6. Running DPDK TEST application for Crypto tests
+   Execute following commands to run DPDK test on LS2 board
+       # ./test
+   Execute following commands to run Crypto tests on RTE command line
+       # RTE>>cryptodev_dpaa2_sec_autotest
+	This is for functional verification of Encrypt+Hash Generate and then Decrypt+Hash Verify for AES-CBC-HMAC-SHA1. More test cases will be added in future.
+
+       # RTE>>cryptodev_dpaa2_sec_perftest
+	This is for taking performance numbers of Crypto operations.
+7. Running DPDK L3FWD Application
    ============================== 
    Execute following commands to run DPDK L3FWD on LS1 board
 
@@ -164,7 +195,7 @@ Traffic to port 2: 2.1.1.0/24
 Traffic to port 3: 3.1.1.0/24
 Traffic to port 4: 4.1.1.0/24
 
-6. Running DPDK KNI Application
+8. Running DPDK KNI Application
    ============================ 
 
    Execute following commands to run DPDK KNI
@@ -214,7 +245,6 @@ Building and Use PKTGEN with DPDK
 
  Get the code from: git://dpdk.org/apps/pktgen-dpdk
 #do the make install in DPDK. 
-export KERNEL_PATH=<To a compiled KERNEL; In this case, ls1043 Yocto compiled kernel>
 source <DPDK Source DIR>/standalone_dpaa
 export RTE_SDK=<DPDK Source DIR>
 make
@@ -246,10 +276,10 @@ NXP platform support:
 -	The code is not optimized for the performance. 
 
 Code Location: stash
-Branch: v16.07-nxp-rc1
+Branch: 16.04-qoriq
 Tag:
 
-DPDK base version used: DPDK Upstream Master branch (479e160b2)
+DPDK base version used: Release 16.04
 More info on DPDK :  www.dpdk.org
 
 LS2 Release - SDK2.0

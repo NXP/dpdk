@@ -30,7 +30,6 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #ifndef _DPAA_LOGS_H_
 #define _DPAA_LOGS_H_
 
@@ -47,21 +46,21 @@
 #define PMD_RX_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
 #else
-#define PMD_RX_LOG(level, fmt, args...) do { } while(0)
+#define PMD_RX_LOG(level, fmt, args...) do { } while (0)
 #endif
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_TX
 #define PMD_TX_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
 #else
-#define PMD_TX_LOG(level, fmt, args...) do { } while(0)
+#define PMD_TX_LOG(level, fmt, args...) do { } while (0)
 #endif
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_TX_FREE
 #define PMD_TX_FREE_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
 #else
-#define PMD_TX_FREE_LOG(level, fmt, args...) do { } while(0)
+#define PMD_TX_FREE_LOG(level, fmt, args...) do { } while (0)
 #endif
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER

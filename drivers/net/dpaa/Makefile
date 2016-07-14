@@ -35,7 +35,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_pmd_dpaa.a
 
-CFLAGS += -D _GNU_SOURCE -DDEF_CFG_PATH=$(DEF_CFG_PATH) -DDEF_PCD_PATH=$(DEF_PCD_PATH ) -DDPAA_DEF_RX=$(DPAA_DEF_RX)
+CFLAGS += -D _GNU_SOURCE
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
@@ -47,16 +47,16 @@ CFLAGS +=-Wno-strict-aliasing
 CFLAGS +=-Wno-missing-prototypes
 CFLAGS +=-Wno-missing-declarations
 CFLAGS +=-Wno-unused-function
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/usdpaa/include
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_net
 EXPORT_MAP := rte_pmd_dpaa_version.map
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
-	usdpaa_glue.c \
-	rte_eth_dpaa.c
-DIRS-y += usdpaa
+	dpaa_ethdev.c \
+	dpaa_rxtx.c
+DIRS-y += base
 SYMLINK-y-include +=
 
 # this lib depends upon:

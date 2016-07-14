@@ -49,7 +49,7 @@
 
 
 #if (defined RTE_LIBRTE_DPAA_PMD)
-extern int usdpaa_pre_rte_eal_init(void);
+extern int dpaa_pre_rte_eal_init(void);
 #endif
 
 
@@ -62,7 +62,7 @@ rte_eal_soc_pre_init(void)
 		RTE_LOG(WARNING, EAL, "Cannot init FSL_MC SCAN \n");
 #endif
 #if (defined RTE_LIBRTE_DPAA_PMD)
-	if (usdpaa_pre_rte_eal_init())
+	if (dpaa_pre_rte_eal_init())
 		RTE_LOG(WARNING, EAL, "Cannot init FSL_DPAA \n");
 #endif
 	return 0;
