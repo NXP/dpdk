@@ -41,6 +41,12 @@ CONFIG_RTE_ARCH_ARM_TUNE="cortex-a57+fp+simd"
 CONFIG_RTE_MAX_LCORE=8
 CONFIG_RTE_MAX_NUMA_NODES=1
 
+#
+#Kernel KNI component - disable by default to avoid kernel
+#code dependency
+#
+CONFIG_RTE_KNI_KMOD=n
+
 # Compile software PMD backed by FSL DPAA2 files
 #
 CONFIG_RTE_LIBRTE_DPAA2_PMD=y
