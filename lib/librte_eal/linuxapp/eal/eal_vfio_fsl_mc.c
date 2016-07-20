@@ -216,7 +216,6 @@ int vfio_dmamap_mem_region(uint64_t vaddr,
 	/* SET DMA MAP for IOMMU */
 	group = &vfio_groups[0];
 	if (ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map)) {
-		/* todo changes these to RTE_LOG */
 		RTE_LOG(ERR, EAL, "SWP: VFIO_IOMMU_MAP_DMA API Error %d.\n", errno);
 		return -1;
 	}
