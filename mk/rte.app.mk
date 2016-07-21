@@ -103,6 +103,14 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BOND)       += -lrte_pmd_bond
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_XENVIRT)    += -lrte_pmd_xenvirt -lxenstore
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)	    += -lrte_pmd_dpaa2
 
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA_PMD),y)
+	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lz
+	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -L$(XML_ZLIB_PATH) -lxml2
+	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lm
+	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lnxp_usdpaa
+	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lrte_pmd_dpaa
+endif
+
 ifeq ($(CONFIG_RTE_BUILD_SHARED_LIB),n)
 # plugins (link only if static libraries)
 
