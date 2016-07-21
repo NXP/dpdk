@@ -147,12 +147,8 @@ mempool_add_elem(struct rte_mempool *mp, void *obj, phys_addr_t physaddr)
 	tlr->cookie = RTE_MEMPOOL_TRAILER_COOKIE;
 #endif
 
-#ifdef RTE_LIBRTE_DPAA2_PMD
-	rte_mempool_ops_initelt(mp, obj);
-#else
 	/* enqueue in ring */
 	rte_mempool_ops_enqueue_bulk(mp, &obj, 1);
-#endif
 }
 
 /* call obj_cb() for each mempool element */

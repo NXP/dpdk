@@ -289,9 +289,7 @@ static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
 
-	DPAA2_SET_FD_ADDR(fd,
-			DPAA2_VADDR_TO_IOVA(DPAA2_BUF_FROM_INLINE_MBUF(mbuf,
-				       bpid_info[bpid].meta_data_size)));
+	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
 	DPAA2_SET_FD_LEN(fd, mbuf->data_len);
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
@@ -326,7 +324,7 @@ static int eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
 
-	DPAA2_SET_FD_ADDR(fd, m->buf_addr);
+	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(m));
 	DPAA2_SET_FD_LEN(fd, mbuf->data_len);
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
@@ -501,8 +499,9 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			}
 		}
 		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
-		mbuf = DPAA2_IOVA_TO_VADDR(DPAA2_INLINE_MBUF_FROM_BUF(DPAA2_GET_FD_ADDR(fd[num_rx]),
-								      bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size));
+		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
+				DPAA2_GET_FD_ADDR(fd[num_rx])
+				 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
 		/* Prefeth mbuf */
 		rte_prefetch0(mbuf);
 		/* Prefetch Annotation address from where we get parse results */
