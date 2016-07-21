@@ -1,0 +1,32 @@
+#/*
+# * Copyright (c) 2014 Freescale Semiconductor, Inc. All rights reserved.
+# */
+
+#!/bin/bash
+export ARCH=arm64
+export TARGET=LS2085
+if [[ -z ${CROSS_COMPILE} ]]
+then
+        echo "ERROR: CROSS_COMPILE is not set";
+fi
+echo "CROSS_COMPILE is configured:" $CROSS_COMPILE
+
+export CROSS=${CROSS_COMPILE}
+export CC=${CROSS_COMPILE}gcc
+export CXX=${CROSS_COMPILE}g++
+export LD=${CROSS_COMPILE}ld
+export AR=${CROSS_COMPILE}ar
+export AS=${CROSS_COMPILE}as
+export RANLIB=${CROSS_COMPILE}ranlib
+echo "KERNEL_PATH is configured as:" $KERNEL_PATH
+export RTE_SDK=${PWD}
+export RTE_TARGET=arm64-dpaa2-linuxapp-gcc
+export RTE_KERNELDIR=${KERNEL_PATH}
+if [[ -z ${RTE_KERNELDIR} ]]
+then
+        echo "ERROR: RTE_KERNELDIR or KERNEL_PATH is not set";
+fi
+
+#export PATH=${CROSS_PATH}:$PATH
+echo "Setup for DPDK DPAA2-QorIQ compilation";
+echo "CROSS is configured:" $CROSS
