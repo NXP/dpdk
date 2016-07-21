@@ -1,0 +1,44 @@
+#/*
+# * Copyright (c) 2014 Freescale Semiconductor, Inc. All rights reserved.
+# */
+
+#!/bin/bash
+export ARCH=arm64
+export TARGET=LS1043
+
+export CROSS=${CROSS_COMPILE}
+
+export CC=${CROSS_COMPILE}gcc
+export CXX=${CROSS_COMPILE}g++
+export LD=${CROSS_COMPILE}ld
+export AR=${CROSS_COMPILE}ar
+export AS=${CROSS_COMPILE}as
+export RANLIB=${CROSS_COMPILE}ranlib
+echo "CROSS_COMPILE is configured:" $CROSS_COMPILE
+if [[ -z ${CROSS_COMPILE} ]]
+then
+        echo "ERROR: CROSS_COMPILE is not set";
+fi
+echo "KERNEL_PATH is configured as:" $KERNEL_PATH
+export RTE_SDK=${PWD}
+export RTE_TARGET=arm64-dpaa-linuxapp-gcc
+export RTE_KERNELDIR=${KERNEL_PATH}
+if [[ -z ${RTE_KERNELDIR} ]]
+then
+        echo "ERROR: RTE_KERNELDIR or KERNEL_PATH is not set";
+fi
+export XML_ZLIB_PATH=${RTE_SDK}/ext
+export PATH=${CROSS_PATH}:$PATH
+
+#Update and uncomment the following for yacto - SDK based release path for LS1043A
+#SDK_INSTALL_PATH=/home/sxl/ls1043/Linux-LS1043A-SDK-V0.5-20151223-yocto
+#SDK_TARGET_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/sysroots/ls1043ardb
+#dpaa1 based application needs the limxml2.a and libz.a, they are built independently
+#export XML_ZLIB_PATH=/home/sxl/stash/usdpaa-lib
+#export KERNEL_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/work/ls1043ardb-fsl-linux/linux-ls1043a/3.19-r0/git
+#export RTE_SDK=${DPDK_INSTALL_PATH}
+
+echo "Setup for DPDK DPAA-QorIQ compilation";
+echo "CROSS is configured:" $CROSS
+echo "XML_ZLIB_PATH (libxml.a and libz.a path) is configured as:" $XML_ZLIB_PATH
+
