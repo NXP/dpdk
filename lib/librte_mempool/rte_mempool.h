@@ -374,13 +374,6 @@ typedef int (*rte_mempool_alloc_t)(struct rte_mempool *mp);
  */
 typedef void (*rte_mempool_free_t)(struct rte_mempool *mp);
 
-#ifdef RTE_LIBRTE_DPAA2_PMD
-/**
- * Initialize a elements in the external pool.
- */
-typedef int (*rte_mempool_initelt_t)(struct rte_mempool *mp, void *obj_table);
-#endif
-
 /**
  * Enqueue an object into the external pool.
  */
@@ -403,9 +396,6 @@ struct rte_mempool_ops {
 	char name[RTE_MEMPOOL_OPS_NAMESIZE]; /**< Name of mempool ops struct. */
 	rte_mempool_alloc_t alloc;       /**< Allocate private data. */
 	rte_mempool_free_t free;         /**< Free the external pool. */
-#ifdef RTE_LIBRTE_DPAA2_PMD
-	rte_mempool_initelt_t initelt;	 /**< Initialize elements in pool */
-#endif
 	rte_mempool_enqueue_t enqueue;   /**< Enqueue an object. */
 	rte_mempool_dequeue_t dequeue;   /**< Dequeue an object. */
 	rte_mempool_get_count get_count; /**< Get qty of available objs. */
@@ -507,26 +497,6 @@ rte_mempool_ops_enqueue_bulk(struct rte_mempool *mp, void * const *obj_table,
 
 	ops = rte_mempool_get_ops(mp->ops_index);
 	return ops->enqueue(mp, obj_table, n);
-}
-
-/*
- * @internal wrapper for mempool_ops obj init callback.
- *
- * @param mp
- *   Pointer to the memory pool.
- * @param obj
- *   Pointer to a rte_mbuf object
- * @return
- *   - 0: Success; n objects supplied.
- *   - <0: Error; code of enqueue function.
- */
-static inline int
-rte_mempool_ops_initelt(struct rte_mempool *mp, void *obj)
-{
-       struct rte_mempool_ops *ops;
-
-       ops = rte_mempool_get_ops(mp->ops_index);
-       return ops->initelt(mp, obj);
 }
 
 /**

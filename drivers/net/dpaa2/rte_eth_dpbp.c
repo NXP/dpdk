@@ -63,8 +63,6 @@ struct bp_info bpid_info[MAX_BPID];
 
 struct dpaa2_bp_list *h_bp_list;
 
-static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid);
-
 int
 dpaa2_create_dpbp_device(
 		int dpbp_id)
@@ -218,7 +216,6 @@ static inline void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid)
 	qbman_release_desc_clear(&releasedesc);
 	qbman_release_desc_set_bpid(&releasedesc, bpid);
 
-	DPAA2_MODIFY_VADDR_TO_IOVA(buf, uint64_t);
 	do {
 		/* Release buffer into the BMAN */
 		ret = qbman_swp_release(swp, &releasedesc, &buf, 1);
@@ -235,12 +232,12 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct qbman_swp *swp;
 	uint32_t mbuf_size;
 	uint16_t bpid;
-	uint64_t bufs[64];
+	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE];
 	int ret;
 	unsigned i, n = 0;
 	struct bp_info *bp_info;
 
-	PMD_DRV_LOG(DEBUG, "%s/n", __func__);
+	PMD_DRV_LOG_RAW(INFO, "%s/n", __func__);
 	bp_info = mempool_to_bpinfo(pool);
 
 	if (!(bp_info->bp_list)) {
@@ -308,7 +305,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	}
 
 	if (ret < 0 || n == 0) {
-		PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
+		PMD_DRV_LOG_RAW(ERR, "Failed to allocate buffers %d", ret);
 		return -1;
 	}
 set_buf:
@@ -324,7 +321,7 @@ set_buf:
 
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	alloc += n;
-	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d",
+	PMD_DRV_LOG_RAW(INFO, "Total = %d , req = %d done = %d",
 		alloc, count, n);
 #endif
 	return 0;
@@ -334,10 +331,9 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		      unsigned n)
 {
 	unsigned i;
-	struct rte_mbuf *m;
 	struct bp_info *bp_info;
 
-	PMD_DRV_LOG(DEBUG, "%s/n", __func__);
+	PMD_DRV_LOG_RAW(INFO, "%s/n", __func__);
 
 	bp_info = mempool_to_bpinfo(pool);
 	if (!(bp_info->bp_list)) {
@@ -346,76 +342,17 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 	}
 	/* TODO - optimize it */
 	for (i = 0; i < n; i++) {
-		m = (struct rte_mbuf *)(obj_table[i]);
-		dpaa2_mbuf_release((uint64_t)m->buf_addr, bp_info->bpid);
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+		dpaa2_mbuf_release(
+			(uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
+			+ bp_info->meta_data_size, bp_info->bpid);
+#else
+		dpaa2_mbuf_release((uint64_t)obj_table[i]
+			+ bp_info->meta_data_size, bp_info->bpid);
+#endif
+
 	}
 
-	return 0;
-}
-
-/* hw generated buffer layout:
- *
- * [struct rte_mbuf][priv_size][HEADROOM][DATA]
- * swannot + hw annot is part of HEADROOM of the buffer.
- */
-int hw_mbuf_init(
-		struct rte_mempool *mp,
-		void *_m)
-{
-	struct rte_mbuf *m = _m;
-	uint32_t mbuf_size, buf_len, priv_size, head_size;
-	struct bp_info *bp_info;
-
-	bp_info = mempool_to_bpinfo(mp);
-
-	if (!bp_info->bp_list) {
-		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
-		return -1;
-	}
-	/*todo - assuming that h_bp_list will be at top node*/
-
-	priv_size = rte_pktmbuf_priv_size(mp);
-	mbuf_size = sizeof(struct rte_mbuf) + priv_size;
-
-	RTE_ASSERT(RTE_ALIGN(priv_size, RTE_MBUF_PRIV_ALIGN) == priv_size);
-	RTE_ASSERT(mp->elt_size >= mbuf_size);
-
-	memset(m, 0, mp->elt_size);
-
-	/*update it in global list as well */
-	bpid_info[bp_info->bpid].meta_data_size = mbuf_size;
-
-	head_size = DPAA2_HW_BUF_RESERVE + RTE_PKTMBUF_HEADROOM;
-	head_size = RTE_ALIGN_CEIL(head_size,
-					DPAA2_PACKET_LAYOUT_ALIGN);
-	head_size -= DPAA2_HW_BUF_RESERVE;
-
-	buf_len = rte_pktmbuf_data_room_size(mp) - DPAA2_HW_BUF_RESERVE;
-
-	RTE_ASSERT(buf_len <= UINT16_MAX);
-
-	/* start of buffer is after mbuf structure and priv data */
-	m->priv_size = priv_size;
-	m->buf_addr = (char *)m + mbuf_size;
-	m->buf_physaddr = rte_mempool_virt2phy(mp, m) + mbuf_size;
-	m->buf_len = (uint16_t)buf_len;
-
-	/* keep some headroom between start of buffer and data */
-	m->data_off = RTE_MIN(head_size, (uint16_t)m->buf_len);
-
-	/* init some constant fields */
-	m->pool = mp;
-	m->nb_segs = 1;
-	m->port = 0xff;
-
-	PMD_DRV_LOG2(DEBUG, "buf =%p, meta = %d, bpid = %d"
-		"mbuf =%p, buf_addr =%p, data_off = %d, buf_len=%d, elt_sz=%d ",
-		_m,  bp_info->meta_data_size,
-		bp_info->bpid, m, m->buf_addr, m->data_off,
-		m->buf_len, mp->elt_size);
-
-	/* Release the mempool buffer to BMAN */
-	dpaa2_mbuf_release((uint64_t)m->buf_addr, bp_info->bpid);
 	return 0;
 }
 
@@ -432,7 +369,6 @@ struct rte_mempool_ops dpaa2_mpool_ops = {
 	.enqueue = hw_mbuf_free_bulk,
 	.dequeue = hw_mbuf_alloc_bulk,
 	.get_count = hw_mbuf_get_count,
-	.initelt = hw_mbuf_init
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
