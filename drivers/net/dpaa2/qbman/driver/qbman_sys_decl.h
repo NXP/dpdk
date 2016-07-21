@@ -62,6 +62,7 @@ static inline void prefetch_for_load(void *p)
 {
 	asm volatile("prfm pldl1keep, [%0, #64]" : : "r" (p));
 }
+
 static inline void prefetch_for_store(void *p)
 {
 	asm volatile("prfm pstl1keep, [%0, #64]" : : "r" (p));

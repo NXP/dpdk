@@ -182,14 +182,13 @@ int qbman_swp_dequeue_thresh(struct qbman_swp *s, unsigned int thresh);
 int qbman_swp_dequeue_set_timeout(struct qbman_swp *s, unsigned int timeout);
 int qbman_swp_dequeue_get_timeout(struct qbman_swp *s, unsigned int *timeout);
 
-
 /* ------------------- */
 /* Push-mode dequeuing */
 /* ------------------- */
 
 /* The user of a portal can enable and disable push-mode dequeuing of up to 16
  * channels independently. It does not specify this toggling by channel IDs, but
- * rather by specifing the index (from 0 to 15) that has been mapped to the
+ * rather by specifying the index (from 0 to 15) that has been mapped to the
  * desired channel.
  */
 
@@ -633,7 +632,6 @@ uint8_t qbman_result_SCN_state_in_mem(const struct qbman_result *scn);
  */
 uint32_t qbman_result_SCN_rid_in_mem(const struct qbman_result *scn);
 
-
 /* Type-specific "resource IDs". Mainly for illustration purposes, though it
  * also gives the appropriate type widths.
  */
@@ -866,7 +864,7 @@ void qbman_eq_desc_set_eqdi(struct qbman_eq_desc *d, int enable);
  * being rescheduled.)
  */
 void qbman_eq_desc_set_dca(struct qbman_eq_desc *d, int enable,
-				uint32_t dqrr_idx, int park);
+			   uint32_t dqrr_idx, int park);
 
 /**
  * qbman_swp_enqueue() - Issue an enqueue command.
@@ -1043,7 +1041,7 @@ int qbman_swp_fq_xoff(struct qbman_swp *s, uint32_t fqid);
  * Return 0 for success, or negative error code for failure.
  */
 int qbman_swp_CDAN_set_context(struct qbman_swp *s, uint16_t channelid,
-				uint64_t ctx);
+			       uint64_t ctx);
 
 /**
  * qbman_swp_CDAN_enable() - Enable CDAN for the channel.

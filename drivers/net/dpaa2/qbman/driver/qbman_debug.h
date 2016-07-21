@@ -135,6 +135,6 @@ int qbman_wqchan_query(struct qbman_swp *s, uint16_t chanid,
 void qbman_wqchan_attr_get_wqlen(struct qbman_attr *attr, int wq, uint32_t *len);
 void qbman_wqchan_attr_get_cdan_ctx(struct qbman_attr *attr, uint64_t *cdan_ctx);
 void qbman_wqchan_attr_get_cdan_wqid(struct qbman_attr *attr,
-				    uint16_t *cdan_wqid);
+				     uint16_t *cdan_wqid);
 void qbman_wqchan_attr_get_ctrl(struct qbman_attr *attr, uint8_t *ctrl);
 void qbman_wqchan_attr_get_chanid(struct qbman_attr *attr, uint16_t *chanid);
