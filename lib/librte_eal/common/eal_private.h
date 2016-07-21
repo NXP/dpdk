@@ -325,4 +325,9 @@ int rte_eal_hugepage_init(void);
  */
 int rte_eal_hugepage_attach(void);
 
+/**
+ * Initialize any soc init related functions if any before thread creation
+  */
+int rte_eal_soc_pre_init(void);
+
 #endif /* _EAL_PRIVATE_H_ */

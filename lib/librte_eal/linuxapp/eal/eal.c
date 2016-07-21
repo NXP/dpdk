@@ -814,6 +814,9 @@ rte_eal_init(int argc, char **argv)
 	if (rte_eal_tailqs_init() < 0)
 		rte_panic("Cannot init tail queues for objects\n");
 
+	if (rte_eal_soc_pre_init() < 0)
+		rte_panic("Cannot pre init soc\n");
+
 #ifdef RTE_LIBRTE_IVSHMEM
 	if (rte_eal_ivshmem_obj_init() < 0)
 		rte_panic("Cannot init IVSHMEM objects\n");

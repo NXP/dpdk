@@ -85,6 +85,9 @@ rte_mempool_register_ops(const struct rte_mempool_ops *h)
 	ops->enqueue = h->enqueue;
 	ops->dequeue = h->dequeue;
 	ops->get_count = h->get_count;
+#ifdef RTE_LIBRTE_DPAA2_PMD
+	ops->initelt = h->initelt;
+#endif
 
 	rte_spinlock_unlock(&rte_mempool_ops_table.sl);
 
