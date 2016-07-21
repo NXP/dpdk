@@ -47,6 +47,7 @@ static inline void word_copy(void *d, const void *s, unsigned int cnt)
 {
 	uint32_t *dd = d;
 	const uint32_t *ss = s;
+
 	while (cnt--)
 		*(dd++) = *(ss++);
 }
@@ -57,10 +58,11 @@ static inline void word_copy(void *d, const void *s, unsigned int cnt)
  * as two 32-bit words with the least-significant word first, irrespective of
  * host endianness. */
 static inline void u64_to_le32_copy(void *d, const uint64_t *s,
-					unsigned int cnt)
+				    unsigned int cnt)
 {
 	uint32_t *dd = d;
 	const uint32_t *ss = (const uint32_t *)s;
+
 	while (cnt--) {
 		/* TBD: the toolchain was choking on the use of 64-bit types up
 		 * until recently so this works entirely with 32-bit variables.
@@ -76,11 +78,13 @@ static inline void u64_to_le32_copy(void *d, const uint64_t *s,
 #endif
 	}
 }
+
 static inline void u64_from_le32_copy(uint64_t *d, const void *s,
-					unsigned int cnt)
+				      unsigned int cnt)
 {
 	const uint32_t *ss = s;
 	uint32_t *dd = (uint32_t *)d;
+
 	while (cnt--) {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 		dd[1] = *(ss++);
@@ -100,6 +104,7 @@ static inline uint32_t make_le32(uint32_t val)
 	return ((val & 0xff) << 24) | ((val & 0xff00) << 8) |
 		((val & 0xff0000) >> 8) | ((val & 0xff000000) >> 24);
 }
+
 static inline uint32_t make_le24(uint32_t val)
 {
 	return (((val & 0xff) << 16) | (val & 0xff00) |
@@ -145,7 +150,6 @@ struct qbman_swp_sys {
 static inline void qbman_cinh_write(struct qbman_swp_sys *s, uint32_t offset,
 				    uint32_t val)
 {
-
 	__raw_writel(val, s->addr_cinh + offset);
 #ifdef QBMAN_CINH_TRACE
 	pr_info("qbman_cinh_write(%p:%d:0x%03x) 0x%08x\n",
@@ -164,7 +168,7 @@ static inline uint32_t qbman_cinh_read(struct qbman_swp_sys *s, uint32_t offset)
 }
 
 static inline void *qbman_cena_write_start(struct qbman_swp_sys *s,
-						uint32_t offset)
+					   uint32_t offset)
 {
 	void *shadow = s->cena + offset;
 
@@ -178,7 +182,7 @@ static inline void *qbman_cena_write_start(struct qbman_swp_sys *s,
 }
 
 static inline void *qbman_cena_write_start_wo_shadow(struct qbman_swp_sys *s,
-						uint32_t offset)
+						     uint32_t offset)
 {
 #ifdef QBMAN_CENA_TRACE
 	pr_info("qbman_cena_write_start(%p:%d:0x%03x)\n",
@@ -189,7 +193,7 @@ static inline void *qbman_cena_write_start_wo_shadow(struct qbman_swp_sys *s,
 }
 
 static inline void qbman_cena_write_complete(struct qbman_swp_sys *s,
-						uint32_t offset, void *cmd)
+					     uint32_t offset, void *cmd)
 {
 	const uint32_t *shadow = cmd;
 	int loop;
@@ -207,7 +211,7 @@ static inline void qbman_cena_write_complete(struct qbman_swp_sys *s,
 }
 
 static inline void qbman_cena_write_complete_wo_shadow(struct qbman_swp_sys *s,
-						uint32_t offset)
+						       uint32_t offset)
 {
 #ifdef QBMAN_CENA_TRACE
 	pr_info("qbman_cena_write_complete(%p:%d:0x%03x)\n",
@@ -256,7 +260,7 @@ static inline void *qbman_cena_read_wo_shadow(struct qbman_swp_sys *s,
 }
 
 static inline void qbman_cena_invalidate(struct qbman_swp_sys *s,
-						  uint32_t offset)
+					 uint32_t offset)
 {
 	dccivac(s->addr_cena + offset);
 }
@@ -297,11 +301,12 @@ static inline void qbman_cena_prefetch(struct qbman_swp_sys *s,
  * EP is (SWP_CFG,0,1) - EQCR_CI stashing priority (<- TRUE)
  */
 static inline uint32_t qbman_set_swp_cfg(uint8_t max_fill, uint8_t wn,
-					uint8_t est, uint8_t rpm, uint8_t dcm,
+					 uint8_t est, uint8_t rpm, uint8_t dcm,
 					uint8_t epm, int sd, int sp, int se,
 					int dp, int de, int ep)
 {
 	uint32_t reg;
+
 	reg = e32_uint8_t(20, (uint32_t)(3 + (max_fill >> 3)), max_fill) |
 		e32_uint8_t(16, 3, est) |
 		e32_uint8_t(12, 2, rpm) | e32_uint8_t(10, 2, dcm) |
@@ -316,6 +321,7 @@ static inline int qbman_swp_sys_init(struct qbman_swp_sys *s,
 				     uint8_t dqrr_size)
 {
 	uint32_t reg;
+
 	s->addr_cena = d->cena_bar;
 	s->addr_cinh = d->cinh_bar;
 	s->idx = (uint32_t)d->idx;

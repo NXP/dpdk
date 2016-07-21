@@ -78,7 +78,7 @@ static struct qb_attr_code code_bp_bpscn_ctx_lo = QB_CODE(10, 0, 32);
 static struct qb_attr_code code_bp_bpscn_ctx_hi = QB_CODE(11, 0, 32);
 static struct qb_attr_code code_bp_hw_targ = QB_CODE(12, 0, 16);
 static struct qb_attr_code code_bp_state = QB_CODE(1, 24, 3);
-static struct qb_attr_code code_bp_fill = QB_CODE(2 , 0, 32);
+static struct qb_attr_code code_bp_fill = QB_CODE(2, 0, 32);
 static struct qb_attr_code code_bp_hdptr = QB_CODE(3, 0, 32);
 static struct qb_attr_code code_bp_sdcnt = QB_CODE(13, 0, 8);
 static struct qb_attr_code code_bp_hdcnt = QB_CODE(13, 8, 8);
@@ -148,6 +148,7 @@ void qbman_bp_attr_get_swdet(struct qbman_attr *a, uint32_t *swdet)
 	*swdet = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swdet,
 					  p));
 }
+
 void qbman_bp_attr_get_swdxt(struct qbman_attr *a, uint32_t *swdxt)
 {
 	uint32_t *p = ATTR32(a);
@@ -155,6 +156,7 @@ void qbman_bp_attr_get_swdxt(struct qbman_attr *a, uint32_t *swdxt)
 	*swdxt = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swdxt,
 					  p));
 }
+
 void qbman_bp_attr_get_hwdet(struct qbman_attr *a, uint32_t *hwdet)
 {
 	uint32_t *p = ATTR32(a);
@@ -162,6 +164,7 @@ void qbman_bp_attr_get_hwdet(struct qbman_attr *a, uint32_t *hwdet)
 	*hwdet = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_hwdet,
 					  p));
 }
+
 void qbman_bp_attr_get_hwdxt(struct qbman_attr *a, uint32_t *hwdxt)
 {
 	uint32_t *p = ATTR32(a);
@@ -718,7 +721,7 @@ void qbman_cgr_attr_get_cscn_ctx(struct qbman_attr *d, uint64_t *cscn_ctx)
 			(uint64_t)qb_attr_code_decode(&code_cgr_cscn_ctx_lo, p);
 }
 
-#define WRED_EDP_WORD(n) (18 + n/4)
+#define WRED_EDP_WORD(n) (18 + n / 4)
 #define WRED_EDP_OFFSET(n) (8 * (n % 4))
 #define WRED_PARM_DP_WORD(n) (n + 20)
 #define WRED_WE_EDP(n) (16 + n * 2)
@@ -743,17 +746,17 @@ void qbman_cgr_attr_wred_dp_decompose(uint32_t dp, uint64_t *minth,
 	step_s = (uint8_t)(dp >> 6) & 0x1f;
 	pn = (uint8_t)dp & 0x3f;
 
-	*maxp = (uint8_t)(((pn<<2) * 100)/256);
+	*maxp = (uint8_t)(((pn << 2) * 100) / 256);
 
 	if (mn == 0)
 		*maxth = ma;
 	else
-		*maxth = ((ma+256) * (1<<(mn-1)));
+		*maxth = ((ma + 256) * (1 << (mn - 1)));
 
 	if (step_s == 0)
 		*minth = *maxth - step_i;
 	else
-		*minth = *maxth - (256 + step_i) * (1<<(step_s - 1));
+		*minth = *maxth - (256 + step_i) * (1 << (step_s - 1));
 }
 
 void qbman_cgr_attr_wred_get_parm_dp(struct qbman_attr *d, uint32_t idx,
@@ -892,7 +895,7 @@ int qbman_wqchan_query(struct qbman_swp *s, uint16_t chanid,
 void qbman_wqchan_attr_get_wqlen(struct qbman_attr *attr, int wq, uint32_t *len)
 {
 	uint32_t *p = ATTR32(attr);
-	struct qb_attr_code code_wqchan_len = QB_CODE(wq+ 8, 0, 24);
+	struct qb_attr_code code_wqchan_len = QB_CODE(wq + 8, 0, 24);
 	*len = qb_attr_code_decode(&code_wqchan_len, p);
 }
 
@@ -907,7 +910,7 @@ void qbman_wqchan_attr_get_cdan_ctx(struct qbman_attr *attr, uint64_t *cdan_ctx)
 }
 
 void qbman_wqchan_attr_get_cdan_wqid(struct qbman_attr *attr,
-				    uint16_t *cdan_wqid)
+				     uint16_t *cdan_wqid)
 {
 	uint32_t *p = ATTR32(attr);
 	*cdan_wqid = (uint16_t)qb_attr_code_decode(&code_wqchan_cdan_wqid, p);
@@ -918,6 +921,7 @@ void qbman_wqchan_attr_get_ctrl(struct qbman_attr *attr, uint8_t *ctrl)
 	uint32_t *p = ATTR32(attr);
 	*ctrl = (uint8_t)qb_attr_code_decode(&code_wqchan_ctrl, p);
 }
+
 void qbman_wqchan_attr_get_chanid(struct qbman_attr *attr, uint16_t *chanid)
 {
 	uint32_t *p = ATTR32(attr);

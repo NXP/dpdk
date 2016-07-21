@@ -84,7 +84,7 @@ struct qbman_swp {
 		uint32_t valid_bit; /* 0x00 or 0x80 */
 		/* We need to determine when vdq is no longer busy. This depends
 		 * on whether the "busy" (last-submitted) dequeue command is
-		 * targetting DQRR or main-memory, and detected is based on the
+		 * targeting DQRR or main-memory, and detected is based on the
 		 * presence of the dequeue command's "token" showing up in
 		 * dequeue entries in DQRR or main-memory (respectively). */
 		struct qbman_result *storage; /* NULL if DQRR */
@@ -124,6 +124,7 @@ static inline void *qbman_swp_mc_complete(struct qbman_swp *swp, void *cmd,
 					  uint32_t cmd_verb)
 {
 	int loopvar;
+
 	qbman_swp_mc_submit(swp, cmd, cmd_verb);
 	DBG_POLL_START(loopvar);
 	do {
@@ -172,6 +173,7 @@ static inline void qb_attr_code_rotate_ms(struct qb_attr_code *code,
 		code->lsoffset -= 32;
 	}
 }
+
 static inline void qb_attr_code_rotate_ls(struct qb_attr_code *code,
 					  unsigned int bits)
 {
@@ -189,6 +191,7 @@ static inline void qb_attr_code_rotate_ls(struct qb_attr_code *code,
 		code->lsoffset += 32;
 	}
 }
+
 /* Implement a loop of code rotations until 'expr' evaluates to FALSE (0). */
 #define qb_attr_code_for_ms(code, bits, expr) \
 		for (; expr; qb_attr_code_rotate_ms(code, bits))
@@ -197,12 +200,13 @@ static inline void qb_attr_code_rotate_ls(struct qb_attr_code *code,
 
 /* decode a field from a cacheline */
 static inline uint32_t qb_attr_code_decode(const struct qb_attr_code *code,
-				      const uint32_t *cacheline)
+					   const uint32_t *cacheline)
 {
 	return d32_uint32_t(code->lsoffset, code->width, cacheline[code->word]);
 }
+
 static inline uint64_t qb_attr_code_decode_64(const struct qb_attr_code *code,
-				      const uint64_t *cacheline)
+					      const uint64_t *cacheline)
 {
 	return cacheline[code->word / 2];
 }
@@ -215,8 +219,9 @@ static inline void qb_attr_code_encode(const struct qb_attr_code *code,
 		r32_uint32_t(code->lsoffset, code->width, cacheline[code->word])
 		| e32_uint32_t(code->lsoffset, code->width, val);
 }
+
 static inline void qb_attr_code_encode_64(const struct qb_attr_code *code,
-				       uint64_t *cacheline, uint64_t val)
+					  uint64_t *cacheline, uint64_t val)
 {
 	cacheline[code->word / 2] = val;
 }
@@ -229,7 +234,7 @@ static inline void qb_attr_code_encode_64(const struct qb_attr_code *code,
  * encoding, will become 0xfffffff9 if you cast the return value to uint32_t).
  */
 static inline int32_t qb_attr_code_makesigned(const struct qb_attr_code *code,
-					  uint32_t val)
+					      uint32_t val)
 {
 	BUG_ON(val >= (1u << code->width));
 	/* code->width should never exceed the width of val. If it does then a
@@ -252,7 +257,7 @@ static inline int32_t qb_attr_code_makesigned(const struct qb_attr_code *code,
  * a "descriptor" type that the caller can instantiate however they like.
  * Ultimately though, it is just a cacheline of binary storage (or something
  * smaller when it is known that the descriptor doesn't need all 64 bytes) for
- * holding pre-formatted pieces of harware commands. The performance-critical
+ * holding pre-formatted pieces of hardware commands. The performance-critical
  * code can then copy these descriptors directly into hardware command
  * registers more efficiently than trying to construct/format commands
  * on-the-fly. The API user sees the descriptor as an array of 32-bit words in
