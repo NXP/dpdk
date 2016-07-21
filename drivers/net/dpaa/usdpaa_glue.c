@@ -117,6 +117,8 @@ struct net_if {
 	struct qman_fq *tx_fqs; /* array size NET_IF_NUM_TX */
 	struct net_if_admin admin[ADMIN_FQ_NUM];
 	struct list_head rx_list; /* list of "struct net_if_rx_fqrange" */
+	uint16_t nb_rx_queues;
+	uint16_t nb_tx_queues;
 	uint32_t ifid;
 	const struct fman_if *fif;
 };
@@ -131,7 +133,7 @@ struct fman_if_internal {
 
 #define USDPAA_MAX_BPOOLS	64 /* total number of bpools on SOC */
 
-static struct net_if *interfaces;
+static struct net_if *dpaa_ifacs;
 static struct usdpaa_netcfg_info *netcfg;
 
 struct pool_info_entry {
@@ -150,15 +152,14 @@ static inline int mempool_to_bpid(struct rte_mempool *mp)
 }
 
 __thread bool thread_portal_init;
+static __thread struct usdpaa_mbufs dpaa_bufs;
 static unsigned int num_usdpaa_ports;
 static int usdpaa_init(void);
-static int net_if_init(struct net_if *interface,
+static int net_if_init(struct net_if *dpaa_intf,
 		       const struct fm_eth_port_cfg *cfg);
 
 static struct bman_pool *init_bpid(int bpid, uint32_t sz);
 static inline void *__usdpaa_get_pktbuf(struct pool_info_entry *pool_info);
-void usdpaa_send_packet(struct rte_mbuf *mbuf, struct net_if *iface,
-			struct qm_fd *fd);
 
 /* Static BPID index allocator, increments continuously */
 rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
@@ -190,9 +191,24 @@ static inline struct pool_info_entry *bpid_to_pool_info(int bpid)
 static inline
 struct pool_info_entry *mempool_to_pool_info(struct rte_mempool *mp)
 {
-	int i;
-
 	return (struct pool_info_entry *)mp->hw_pool_priv;
+}
+
+static inline
+struct net_if *portid_to_iface(uint32_t portid)
+{
+	return &dpaa_ifacs[portid];
+}
+
+uint32_t usdpaa_get_num_rx_queue(uint32_t portid)
+{
+/* todo add error checks */
+	return dpaa_ifacs[portid].nb_rx_queues;
+}
+
+uint32_t usdpaa_get_num_tx_queue(uint32_t portid)
+{
+	return dpaa_ifacs[portid].nb_tx_queues;
 }
 
 static inline void  usdpaa_buf_free(struct pool_info_entry *e, uint64_t addr)
@@ -228,7 +244,7 @@ retry:
 }
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-static void display_frame(uint32_t fqid, struct qm_fd *fd)
+void display_frame(uint32_t fqid, struct qm_fd *fd)
 {
 	int ii;
 	char *ptr;
@@ -249,8 +265,6 @@ static void display_frame(uint32_t fqid, struct qm_fd *fd)
 	}
 	printf("\n");
 }
-#else
-#define display_frame(a, b)
 #endif
 /* DQRR callback used by Tx FQs (used when retiring and draining) as well as
  * admin FQs ([rt]x_error, rx_default, tx_confirm). */
@@ -277,7 +291,6 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 
 	return NULL;
 }
-
 
 static inline void usdpaa_eth_packet_type(struct rte_mbuf *m)
 {
@@ -306,7 +319,17 @@ static inline void usdpaa_eth_packet_type(struct rte_mbuf *m)
 		pkt_type |= RTE_PTYPE_L4_SCTP;
 
 	m->packet_type = pkt_type;
+}
 
+static inline struct rte_mbuf **usdpaa_get_mbuf_slot(void)
+{
+	if (dpaa_bufs.next == MAX_PKTS_BURST)
+		dpaa_bufs.next = 0;
+
+	if (dpaa_bufs.mbuf[dpaa_bufs.next] == NULL)
+		return &dpaa_bufs.mbuf[dpaa_bufs.next++];
+
+	return NULL;
 }
 
 /* DQRR callback for Rx FQs */
@@ -362,14 +385,146 @@ errret:
 	return qman_cb_dqrr_consume;
 }
 
+static inline unsigned usdpaa_volatile_deq(
+	struct qman_fq *fq, unsigned len, bool exact)
+{
+	unsigned pkts = 0;
+	int ret;
+	struct qm_mcr_queryfq_np np;
+	enum qman_fq_state state;
+	uint32_t flags;
+	uint32_t vdqcr;
+
+	qman_query_fq_np(fq, &np);
+	if (np.frm_cnt) {
+		vdqcr = QM_VDQCR_NUMFRAMES_SET(len);
+		if (exact)
+			vdqcr |= QM_VDQCR_EXACT;
+		ret = qman_volatile_dequeue(fq, 0, vdqcr);
+		if (ret)
+			return 0;
+		do {
+			pkts += qman_poll_dqrr(len);
+			qman_fq_state(fq, &state, &flags);
+		} while (flags & QMAN_FQ_STATE_VDQCR);
+	}
+	return pkts;
+}
+
+uint16_t usdpaa_eth_queue_rx(void *q,
+			     struct rte_mbuf **bufs,
+			uint16_t nb_bufs)
+{
+	int i, ret;
+
+	if (unlikely(!thread_portal_init)) {
+		ret = usdpaa_portal_init((void *)0);
+		if (ret) {
+			printf("Failure in affining portal\n");
+			return 0;
+		}
+	}
+	if (unlikely(nb_bufs > MAX_PKTS_BURST))
+		nb_bufs = MAX_PKTS_BURST;
+
+	dpaa_bufs.next = 0;
+	ret = usdpaa_volatile_deq(q, nb_bufs, 1);
+	for (i = 0; i < ret; i++) {
+		if (!dpaa_bufs.mbuf[i])
+			break;
+
+		bufs[i] = dpaa_bufs.mbuf[i];
+		dpaa_bufs.mbuf[i] = NULL;
+	}
+
+	return i;
+}
+
+/* usdpaa transmit function */
+static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
+				      struct net_if *iface, struct qm_fd *fd)
+{
+	int ret;
+	struct rte_mbuf *usdpaa_pktbuf;
+	struct rte_mempool *mp;
+	static int retry_cnt;
+
+	mp = mbuf->pool;
+	if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+		struct pool_info_entry *e;
+
+		e = mempool_to_pool_info(mbuf->pool);
+		fd->addr = mbuf->buf_physaddr;
+		fd->offset = mbuf->data_off;
+		fd->bpid = e->bpid;
+		fd->length20 = mbuf->pkt_len;
+	} else {
+		uint32_t bpid;
+		/* allocate pktbuffer on bpid for usdpaa port */
+		usdpaa_pktbuf = usdpaa_get_pktbuf(mbuf->pkt_len, &bpid);
+		if (unlikely(!usdpaa_pktbuf)) {
+			printf("%s::no usdpaa buffers\n", __func__);
+			rte_pktmbuf_free(mbuf);
+			return;
+		}
+		memcpy(usdpaa_pktbuf->buf_addr + mbuf->data_off,
+		       (void *)(mbuf->buf_addr + mbuf->data_off),
+			mbuf->pkt_len);
+
+		fd->addr = rte_mempool_virt2phy(mp, usdpaa_pktbuf->buf_addr);
+		fd->bpid = bpid;
+		fd->offset = mbuf->data_off;
+		fd->length20 = mbuf->pkt_len;
+		rte_pktmbuf_free(mbuf);
+	}
+	display_frame((iface->tx_fqs)->fqid, fd);
+retry:
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	printf("%s::Enqueing packet %p bufaddr %llx  to fqid %x\n",
+	       __func__, mbuf, fd.addr, (iface->tx_fqs)->fqid);
+#endif
+	ret = qman_enqueue(iface->tx_fqs, fd, 0);
+	if (ret) {
+		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
+		if (retry_cnt == 10) {
+			printf("\n");
+			retry_cnt = 0;
+		} else {
+			printf("*");
+			retry_cnt++;
+		}
+		goto retry;
+	}
+}
+
+uint16_t usdpaa_eth_ring_tx(void *q,
+			    struct rte_mbuf **bufs,
+			uint16_t nb_bufs)
+{
+	int ii, ret;
+	struct dpaaeth_txq *txq = q;
+	struct qm_fd fd;
+	struct net_if *iface;
+
+	iface = portid_to_iface(txq->port_id);
+	memset(&fd, 0, sizeof(struct qm_fd));
+	fd.format = QM_FD_CONTIG;
+
+	for (ii = 0; ii < nb_bufs; ii++) {
+		usdpaa_send_packet(bufs[ii], iface, &fd);
+	}
+
+	return ii;
+}
+
 /* Helper to determine whether an admin FQ is used on the given interface */
-static int net_if_admin_is_used(struct net_if *interface, int idx)
+static int net_if_admin_is_used(struct net_if *dpaa_intf, int idx)
 {
 	if ((idx < 0) || (idx >= ADMIN_FQ_NUM))
 		return 0;
 	/* Offline ports don't support tx_error nor tx_confirm */
 	if ((idx <= ADMIN_FQ_RX_DEFAULT) ||
-	    (interface->cfg->fman_if->mac_type != fman_offline))
+	    (dpaa_intf->cfg->fman_if->mac_type != fman_offline))
 		return 1;
 	return 0;
 }
@@ -421,6 +576,7 @@ static int net_if_tx_init(struct qman_fq *fq, const struct fman_if *fif)
 		fif->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
+
 void usdpaa_buf_release(uint32_t bpid, uint64_t addr)
 {
 	struct pool_info_entry *e;
@@ -462,7 +618,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 		pcfg = &netcfg->port_cfg[i];
 		fif = pcfg->fman_if;
 		fman_if_set_bp(fif, mp->size, bpid, mp->elt_size);
-		interfaces[i].valid = 1;
+		dpaa_ifacs[i].valid = 1;
 	}
 
 	return 0;
@@ -555,7 +711,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = bman_acquire(pool_info->bp,
 				   &bufs[n], count, 0);
 		if (ret <= 0) {
-			PMD_DRV_LOG(WARNING,"Failed to allocate buffers %d", ret);
+			PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
 			return -1;
 		}
 		n = ret;
@@ -589,7 +745,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		}
 	}
 	if (ret < 0 || n == 0) {
-		PMD_DRV_LOG(WARNING,"Failed to allocate buffers %d", ret);
+		PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
 		return -1;
 	}
 set_buf:
@@ -636,7 +792,7 @@ int hw_mbuf_free_bulk(struct rte_mempool *mp,
 }
 
 /* Initialise an Rx FQ */
-static int net_if_rx_init(struct net_if *interface,
+static int net_if_rx_init(struct net_if *dpaa_intf,
 			  struct net_if_rx_fqrange *fqrange,
 			  int offset, int overall,
 			  uint32_t fqid)
@@ -652,9 +808,9 @@ static int net_if_rx_init(struct net_if *interface,
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	rx->tx_fqid = interface->tx_fqs[overall % NET_IF_NUM_TX].fqid;
+	rx->tx_fqid = dpaa_intf->tx_fqs[overall % NET_IF_NUM_TX].fqid;
 	rx->fq.cb.dqrr = cb_rx;
-	rx->ifid = interface->ifid;
+	rx->ifid = dpaa_intf->ifid;
 	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d for ifid %d\n", __func__,
 		    &rx->fq, fqid, rx->ifid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, &rx->fq);
@@ -667,7 +823,7 @@ static int net_if_rx_init(struct net_if *interface,
 		       QM_INITFQ_WE_CONTEXTA;
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
 	printf("%s::fqid %x, wq %d ifid %d\n", __func__, fqid,
-	       NET_IF_RX_PRIORITY, interface->ifid);
+	       NET_IF_RX_PRIORITY, dpaa_intf->ifid);
 #endif
 	opts.fqd.dest.wq = NET_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
@@ -684,55 +840,57 @@ static int net_if_rx_init(struct net_if *interface,
 }
 
 /* Initialise a network interface */
-static int net_if_init(struct net_if *interface,
+static int net_if_init(struct net_if *dpaa_intf,
 		       const struct fm_eth_port_cfg *cfg)
 {
 	const struct fman_if *fif = cfg->fman_if;
 	struct fm_eth_port_fqrange *fq_range;
 	int ret, loop;
 
-	interface->cfg = cfg;
+	dpaa_intf->cfg = cfg;
 	/* give the interface a name */
-	sprintf(&interface->name[0], "fm%d-gb%d", (cfg->fman_if->fman_idx + 1),
+	sprintf(&dpaa_intf->name[0], "fm%d-gb%d", (cfg->fman_if->fman_idx + 1),
 		cfg->fman_if->mac_idx);
 
 	/* get the mac address */
-	memcpy(&interface->mac_addr, &cfg->fman_if->mac_addr.ether_addr_octet,
+	memcpy(&dpaa_intf->mac_addr, &cfg->fman_if->mac_addr.ether_addr_octet,
 	       ETH_ALEN);
 
-	printf("%s::interface %s macaddr::", __func__, interface->name);
+	printf("%s::interface %s macaddr::", __func__, dpaa_intf->name);
 	for (loop = 0; loop < ETH_ALEN; loop++) {
 		if (loop != (ETH_ALEN - 1))
-			printf("%02x:", interface->mac_addr[loop]);
+			printf("%02x:", dpaa_intf->mac_addr[loop]);
 		else
-			printf("%02x\n", interface->mac_addr[loop]);
+			printf("%02x\n", dpaa_intf->mac_addr[loop]);
 	}
 	/* Initialise Tx FQs */
-	interface->tx_fqs = calloc(NET_IF_NUM_TX, sizeof(interface->tx_fqs[0]));
-	if (!interface->tx_fqs)
+	dpaa_intf->tx_fqs = calloc(NET_IF_NUM_TX, sizeof(dpaa_intf->tx_fqs[0]));
+	if (!dpaa_intf->tx_fqs)
 		return -ENOMEM;
 	for (loop = 0; loop < NET_IF_NUM_TX; loop++) {
-		ret = net_if_tx_init(&interface->tx_fqs[loop], fif);
+		ret = net_if_tx_init(&dpaa_intf->tx_fqs[loop], fif);
 		if (ret)
 			return ret;
-	PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x\n", __func__, interface->tx_fqs[loop].fqid);
+		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x\n",
+			    __func__, dpaa_intf->tx_fqs[loop].fqid);
 	}
+	dpaa_intf->nb_tx_queues = NET_IF_NUM_TX;
 
 	/* Initialise admin FQs */
-	if (!ret && net_if_admin_is_used(interface, ADMIN_FQ_RX_ERROR))
-		ret = net_if_admin_init(&interface->admin[ADMIN_FQ_RX_ERROR],
+	if (!ret && net_if_admin_is_used(dpaa_intf, ADMIN_FQ_RX_ERROR))
+		ret = net_if_admin_init(&dpaa_intf->admin[ADMIN_FQ_RX_ERROR],
 					fif->fqid_rx_err,
 					ADMIN_FQ_RX_ERROR);
-	if (!ret && net_if_admin_is_used(interface, ADMIN_FQ_RX_DEFAULT))
-		ret = net_if_admin_init(&interface->admin[ADMIN_FQ_RX_DEFAULT],
+	if (!ret && net_if_admin_is_used(dpaa_intf, ADMIN_FQ_RX_DEFAULT))
+		ret = net_if_admin_init(&dpaa_intf->admin[ADMIN_FQ_RX_DEFAULT],
 					cfg->rx_def,
 					ADMIN_FQ_RX_DEFAULT);
-	if (!ret && net_if_admin_is_used(interface, ADMIN_FQ_TX_ERROR))
-		ret = net_if_admin_init(&interface->admin[ADMIN_FQ_TX_ERROR],
+	if (!ret && net_if_admin_is_used(dpaa_intf, ADMIN_FQ_TX_ERROR))
+		ret = net_if_admin_init(&dpaa_intf->admin[ADMIN_FQ_TX_ERROR],
 					fif->fqid_tx_err,
 					ADMIN_FQ_TX_ERROR);
-	if (!ret && net_if_admin_is_used(interface, ADMIN_FQ_TX_CONFIRM))
-		ret = net_if_admin_init(&interface->admin[ADMIN_FQ_TX_CONFIRM],
+	if (!ret && net_if_admin_is_used(dpaa_intf, ADMIN_FQ_TX_CONFIRM))
+		ret = net_if_admin_init(&dpaa_intf->admin[ADMIN_FQ_TX_CONFIRM],
 					fif->fqid_tx_confirm,
 					ADMIN_FQ_TX_CONFIRM);
 	if (ret) {
@@ -741,7 +899,7 @@ static int net_if_init(struct net_if *interface,
 	}
 
 	/* Initialise each Rx FQ-range for the interface */
-	INIT_LIST_HEAD(&interface->rx_list);
+	INIT_LIST_HEAD(&dpaa_intf->rx_list);
 	loop = 0;
 	list_for_each_entry(fq_range, cfg->list, list) {
 		unsigned int tmp;
@@ -758,7 +916,7 @@ static int net_if_init(struct net_if *interface,
 			return -ENOMEM;
 		/* Initialise each Rx FQ within the range */
 		for (tmp = 0; tmp < fq_range->count; tmp++, loop++) {
-			ret = net_if_rx_init(interface, newrange, tmp, loop,
+			ret = net_if_rx_init(dpaa_intf, newrange, tmp, loop,
 					     fq_range->start + tmp);
 			if (ret) {
 				printf("%s::net_if_rx_init failed for %d\n",
@@ -766,11 +924,12 @@ static int net_if_init(struct net_if *interface,
 				return ret;
 			}
 		}
+		dpaa_intf->nb_rx_queues += fq_range->count;
 		/* Range initialised, at it to the interface's rx-list */
-		list_add_tail(&newrange->list, &interface->rx_list);
+		list_add_tail(&newrange->list, &dpaa_intf->rx_list);
 	}
 	/* save fif in the interface struture */
-	interface->fif = fif;
+	dpaa_intf->fif = fif;
 	PMD_DRV_LOG(DEBUG, "%s::all rxfqs created\n", __func__);
 
 	/* Disable RX, disable promiscous mode */
@@ -783,7 +942,7 @@ void usdpaa_set_promisc_mode(uint32_t port_id, uint32_t op)
 {
 	struct net_if *net_if;
 
-	net_if = &interfaces[port_id];
+	net_if = &dpaa_ifacs[port_id];
 	if (op == ENABLE_OP)
 		fman_if_promiscuous_enable(net_if->fif);
 	else
@@ -794,7 +953,7 @@ void usdpaa_port_control(uint32_t port_id, uint32_t op)
 {
 	struct net_if *net_if;
 
-	net_if = &interfaces[port_id];
+	net_if = &dpaa_ifacs[port_id];
 	if (op == ENABLE_OP)
 		fman_if_enable_rx(net_if->fif);
 	else
@@ -803,7 +962,7 @@ void usdpaa_port_control(uint32_t port_id, uint32_t op)
 
 void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link)
 {
-	struct net_if *net_if =  &interfaces[port_id];
+	struct net_if *net_if =  &dpaa_ifacs[port_id];
 
 	if (net_if->fif->mac_type == fman_mac_1g)
 		link->link_speed = 1000;
@@ -844,7 +1003,7 @@ static inline void usdpaa_dtsec_status(struct dtsec_regs *regs,
 
 void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats)
 {
-	struct net_if *net_if = &interfaces[port_id];
+	struct net_if *net_if = &dpaa_ifacs[port_id];
 	struct fman_if_internal *itif;
 	void *regs;
 
@@ -913,9 +1072,9 @@ static int do_global_init(void)
 		int ret;
 
 		pcfg = &netcfg->port_cfg[loop];
-		interfaces[loop].ifid = loop;
+		dpaa_ifacs[loop].ifid = loop;
 
-		ret = net_if_init(&interfaces[loop], pcfg);
+		ret = net_if_init(&dpaa_ifacs[loop], pcfg);
 		if (ret) {
 			fprintf(stderr, "Fail: net_if_init(%d)\n", loop);
 			return ret;
@@ -1019,8 +1178,8 @@ static int usdpaa_init(void)
 		fprintf(stderr, "Fail: no network interfaces available\n");
 		return -1;
 	}
-	interfaces = calloc(netcfg->num_ethports, sizeof(*interfaces));
-	if (!interfaces)
+	dpaa_ifacs = calloc(netcfg->num_ethports, sizeof(*dpaa_ifacs));
+	if (!dpaa_ifacs)
 		return -ENOMEM;
 
 	for (ii = 0; ii < netcfg->num_ethports; ii++) {
@@ -1029,7 +1188,7 @@ static int usdpaa_init(void)
 
 		cfg = &netcfg->port_cfg[ii];
 		fman_if = cfg->fman_if;
-		sprintf(&interfaces->name[0], "fm%d-gb%d",
+		sprintf(&dpaa_ifacs->name[0], "fm%d-gb%d",
 			(fman_if->fman_idx + 1),
 				fman_if->mac_idx);
 	}
@@ -1050,43 +1209,18 @@ static int usdpaa_init(void)
 void usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
 			  void **rx_queues)
 {
-	struct net_if *iface = &interfaces[portid];
+	struct net_if *iface = &dpaa_ifacs[portid];
 	struct net_if_rx_fqrange *fqrange;
 
 	if (def_rx_flag) {
-		rx_queues[0] = &iface->admin[ADMIN_FQ_RX_DEFAULT].fq;
-		return 0;
+		rx_queues[queue_id] = &iface->admin[ADMIN_FQ_RX_DEFAULT].fq;
+		return;
 	}
 	list_for_each_entry(fqrange, &iface->rx_list, list) {
-		rx_queues[0] = &fqrange->rx[queue_id].fq;
+		rx_queues[queue_id] = &fqrange->rx[queue_id].fq;
 		break;
 	}
-	return 0;
-}
-
-unsigned usdpaa_volatile_deq(struct qman_fq *fq, unsigned len, bool exact)
-{
-	unsigned pkts = 0;
-	int ret;
-	struct qm_mcr_queryfq_np np;
-	enum qman_fq_state state;
-	uint32_t flags;
-	uint32_t vdqcr;
-
-	qman_query_fq_np(fq, &np);
-	if (np.frm_cnt) {
-		vdqcr = QM_VDQCR_NUMFRAMES_SET(len);
-		if (exact)
-			vdqcr |= QM_VDQCR_EXACT;
-		ret = qman_volatile_dequeue(fq, 0, vdqcr);
-		if (ret)
-			return 0;
-		do {
-			pkts += qman_poll_dqrr(len);
-			qman_fq_state(fq, &state, &flags);
-		} while (flags & QMAN_FQ_STATE_VDQCR);
-	}
-	return pkts;
+	return;
 }
 
 static inline void *__usdpaa_get_pktbuf(struct pool_info_entry *pool_info)
@@ -1131,93 +1265,11 @@ out:
 	return buf;
 }
 
-struct net_if *portid_to_iface(uint32_t portid)
-{
-	return &interfaces[portid];
-}
-
-uint16_t usdpaa_eth_ring_tx(void *q,
-			    struct rte_mbuf **bufs,
-				   uint16_t nb_bufs)
-{
-	int ii, ret;
-	struct dpaaeth_txq *txq = q;
-	struct qm_fd fd;
-	struct net_if *iface;
-
-	iface = portid_to_iface(txq->port_id);
-	memset(&fd, 0, sizeof(struct qm_fd));
-	fd.format = QM_FD_CONTIG;
-
-	for (ii = 0; ii < nb_bufs; ii++) {
-		usdpaa_send_packet(bufs[ii], iface, &fd);
-	}
-
-	return ii;
-}
-
-/* usdpaa transmit function */
-void usdpaa_send_packet(struct rte_mbuf *mbuf, struct net_if *iface,
-			struct qm_fd *fd)
-{
-	int ret;
-	struct rte_mbuf *usdpaa_pktbuf;
-	struct rte_mempool *mp;
-	static int retry_cnt;
-
-	mp = mbuf->pool;
-	if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
-		struct pool_info_entry *e;
-
-		e = mempool_to_pool_info(mbuf->pool);
-		fd->addr = mbuf->buf_physaddr;
-		fd->offset = mbuf->data_off;
-		fd->bpid = e->bpid;
-		fd->length20 = mbuf->pkt_len;
-	} else {
-		uint32_t bpid;
-		/* allocate pktbuffer on bpid for usdpaa port */
-		usdpaa_pktbuf = usdpaa_get_pktbuf(mbuf->pkt_len, &bpid);
-		if (unlikely(!usdpaa_pktbuf)) {
-			printf("%s::no usdpaa buffers\n", __func__);
-			rte_pktmbuf_free(mbuf);
-			return;
-		}
-		memcpy(usdpaa_pktbuf->buf_addr + mbuf->data_off,
-		       (void *)(mbuf->buf_addr + mbuf->data_off),
-			mbuf->pkt_len);
-
-		fd->addr = rte_mempool_virt2phy(mp, usdpaa_pktbuf->buf_addr);
-		fd->bpid = bpid;
-		fd->offset = mbuf->data_off;
-		fd->length20 = mbuf->pkt_len;
-		rte_pktmbuf_free(mbuf);
-	}
-	display_frame((iface->tx_fqs)->fqid, fd);
-retry:
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%s::Enqueing packet %p bufaddr %llx  to fqid %x\n",
-	       __func__, mbuf, fd.addr, (iface->tx_fqs)->fqid);
-#endif
-	ret = qman_enqueue(iface->tx_fqs, fd, 0);
-	if (ret) {
-		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
-		if (retry_cnt == 10) {
-			printf("\n");
-			retry_cnt = 0;
-		} else {
-			printf("*");
-			retry_cnt++;
-		}
-		goto retry;
-	}
-}
-
 char *usdpaa_get_iface_macaddr(uint32_t portid)
 {
 	struct net_if *iface;
 
-	iface = &interfaces[portid];
+	iface = &dpaa_ifacs[portid];
 
 	return &iface->mac_addr[0];
 }
