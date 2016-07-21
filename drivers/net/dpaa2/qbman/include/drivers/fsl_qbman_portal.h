@@ -1071,4 +1071,17 @@ int qbman_swp_CDAN_disable(struct qbman_swp *s, uint16_t channelid);
  */
 int qbman_swp_CDAN_set_context_enable(struct qbman_swp *s, uint16_t channelid,
 				      uint64_t ctx);
+int qbman_swp_fill_ring(struct qbman_swp *s,
+			const struct qbman_eq_desc *d,
+		       const struct qbman_fd *fd,
+		       uint8_t burst_index);
+int qbman_swp_flush_ring(struct qbman_swp *s);
+void qbman_sync(void);
+int qbman_swp_send_multiple(struct qbman_swp *s,
+			    const struct qbman_eq_desc *d,
+			    const struct qbman_fd *fd,
+			    int frames_to_send);
+
+int qbman_check_command_complete(struct qbman_swp *s,
+				 const struct qbman_result *dq);
 #endif /* !_FSL_QBMAN_PORTAL_H */
