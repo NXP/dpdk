@@ -27,6 +27,13 @@ if [[ -z ${RTE_KERNELDIR} ]]
 then
         echo "ERROR: RTE_KERNELDIR or KERNEL_PATH is not set";
 fi
+
+echo "OPENSSL_PATH is configured as:" $OPENSSL_PATH
+if [[ -z ${OPENSSL_PATH} ]]
+then
+        echo "WARNING: OPENSSL_PATH is not set";
+fi
+
 export XML_ZLIB_PATH=${RTE_SDK}/ext/dpaa
 export PATH=${CROSS_PATH}:$PATH
 
