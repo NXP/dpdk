@@ -58,7 +58,33 @@ How to Build DPDK Applications
      NOTE: if toolchain is installed at location other than "/opt" then above
      lines needs to be modified appropriately.
 
-2. Execute following commands from Linux(Host) shell prompt for generating
+2. OpenSSL cross compilation (for ARM CE - crypto support)
+
+   Cross compilation requires cross compiling the individual libraries.  In order for
+   a cross compiled executable to run on a target system, one must build the same
+   version as that which is installed on the target rootfs.
+
+   # Clone openssl repository
+   $ git clone git://git.openssl.org/openssl.git
+   $ cd openssl
+
+   # Checkout the specific tag to match openssl library in your target rootfs
+   $ git checkout OpenSSL_1_0_2h
+
+
+   # Build and install 64 bit version of openssl
+   $ ./Configure linux-aarch64  --prefix=<OpenSSL library path> shared
+   $ make depend
+   $ make
+   $ make install
+   $ export OPENSSL_PATH=<OpenSSL library path>
+
+  NOTE: ARMCE is enabled by default and OpenSSL PATH is needed.
+	If ARMCE (crypto) is not needed,
+		modify config/defconfig_arm64-dpaa-linuxapp-gcc
+		CONFIG_RTE_LIBRTE_PMD_ARMCE=n
+
+3. Execute following commands from Linux(Host) shell prompt for generating
    DPDK libraries, which are required for compiling DPDK examples and
    applications:
 
@@ -71,7 +97,7 @@ How to Build DPDK Applications
      4. source standalone-dpaa
      5. make install T=arm64-dpaa-linuxapp-gcc
 
-3. Steps for compiling the DPDK examples
+4. Steps for compiling the DPDK examples
 	The basic testpmd application is compiled by default. It should be available in build/app
 	or install directory.
      1. Before executing following step, all the steps mentioned in point no. "4."
