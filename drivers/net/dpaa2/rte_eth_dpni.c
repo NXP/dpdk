@@ -54,7 +54,7 @@
 /* #define DPAA2_STASHING */
 
 /* tx fd send batching */
-/*#define QBMAN_MULTI_TX*/
+#define QBMAN_MULTI_TX
 /* #define DPAA2_CGR_SUPPORT */
 
 
