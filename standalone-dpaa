@@ -27,8 +27,12 @@ if [[ -z ${RTE_KERNELDIR} ]]
 then
         echo "ERROR: RTE_KERNELDIR or KERNEL_PATH is not set";
 fi
-export XML_ZLIB_PATH=${RTE_SDK}/ext
+export XML_ZLIB_PATH=${RTE_SDK}/ext/dpaa
 export PATH=${CROSS_PATH}:$PATH
+
+# Refresh submodules
+git submodule init
+git submodule update
 
 #Update and uncomment the following for yacto - SDK based release path for LS1043A
 #SDK_INSTALL_PATH=/home/sxl/ls1043/Linux-LS1043A-SDK-V0.5-20151223-yocto
