@@ -73,6 +73,22 @@
 #define DEFAULT_ICSZ		48
 /* IC offset from buffer header address */
 #define DEFAULT_ICEOF	(DEFAULT_ICIOF + DEFAULT_ICSZ)
+#define DEFAULT_TX_ICEOF	16
+
+/*
+ * Values for the L3R field of the FM Parse Results
+ */
+/* L3 Type field: First IP Present IPv4 */
+#define DPAA_L3_PARSE_RESULT_IPV4 0x80
+/* L3 Type field: First IP Present IPv6 */
+#define DPAA_L3_PARSE_RESULT_IPV6	0x40
+/* Values for the L4R field of the FM Parse Results
+ * See $8.8.4.7.20 - L4 HXS - L4 Results from DPAA-Rev2 Reference Manual.
+ */
+/* L4 Type field: UDP */
+#define DPAA_L4_PARSE_RESULT_UDP	0x40
+/* L4 Type field: TCP */
+#define DPAA_L4_PARSE_RESULT_TCP	0x20
 
 /**
  * FMan parse result array
@@ -102,6 +118,9 @@ typedef struct fm_prs_result {
 
 #define GET_PRS_RESULT(buf, prs_res) \
 	(typeof(prs_res))(buf + DEFAULT_ICEOF)
+
+#define GET_TX_PRS(buf, prs_res) \
+	(typeof(prs_res))(buf + DEFAULT_TX_ICEOF)
 
 #define L2_ETH_MAC_PRESENT(prs) \
 	(rte_be_to_cpu_16((prs)->l2r) & ETH_PRESENT_MASK)

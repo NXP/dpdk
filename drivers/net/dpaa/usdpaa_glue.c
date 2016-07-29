@@ -86,6 +86,11 @@
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
 
+#define NET_TX_CKSUM_OFFLOAD_MASK (             \
+		PKT_TX_IP_CKSUM |                \
+		PKT_TX_TCP_CKSUM |                 \
+		PKT_TX_UDP_CKSUM)
+
 struct pool_info_entry {
 	struct rte_mempool *mp;
 	struct bman_pool *bp;
@@ -288,7 +293,7 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 	return NULL;
 }
 
-static inline void usdpaa_eth_packet_type(struct rte_mbuf *m,
+static inline void usdpaa_eth_packet_info(struct rte_mbuf *m,
 					  uint64_t fd_virt_addr)
 {
 	uint32_t pkt_type = 0;
@@ -316,6 +321,8 @@ static inline void usdpaa_eth_packet_type(struct rte_mbuf *m,
 		pkt_type |= RTE_PTYPE_L4_SCTP;
 
 	m->packet_type = pkt_type;
+	m->l2_len = prs->ip_off[0];
+	m->l3_len = prs->l4_off - prs->ip_off[0];
 }
 
 static inline struct rte_mbuf **usdpaa_get_mbuf_slot(void)
@@ -368,7 +375,7 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	if (def_rx_flag)
 		mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
 	else
-		usdpaa_eth_packet_type(mbuf, (uint64_t)mbuf->buf_addr);
+		usdpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
 
 	mbuf->data_len = fd->length20;
 	mbuf->pkt_len = fd->length20;
@@ -441,7 +448,6 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 
 	return i;
 }
-
 /* usdpaa transmit function */
 static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 				      struct net_if *iface, struct qm_fd *fd)
@@ -477,13 +483,48 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 		       (void *)(mbuf->buf_addr + mbuf->data_off),
 			mbuf->pkt_len);
 
+		/* Copy required fields */
+		usdpaa_mbuf->data_off = mbuf->data_off;
+		usdpaa_mbuf->ol_flags = mbuf->ol_flags;
+		usdpaa_mbuf->packet_type = mbuf->packet_type;
+		usdpaa_mbuf->tx_offload = mbuf->tx_offload;
+
 		fd->addr = usdpaa_mbuf->buf_physaddr;
 		fd->bpid = iface->bp_info->bpid;
 		fd->offset = mbuf->data_off;
 		fd->length20 = mbuf->pkt_len;
 		rte_pktmbuf_free(mbuf);
+		mbuf = usdpaa_mbuf;
 	}
 	display_frame((iface->tx_fqs)->fqid, fd);
+
+	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK) {
+		fm_prs_result_t *prs;
+
+		if (mbuf->data_off < DEFAULT_TX_ICEOF +
+				sizeof(fm_prs_result_t)) {
+			printf("Checksum offload Error: Not enough Headroom "
+				"space for correct Checksum offload.\n");
+			goto retry;
+		}
+
+		prs = GET_TX_PRS(mbuf->buf_addr, prs);
+		if (mbuf->packet_type & RTE_PTYPE_L3_IPV4)
+			prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
+		else if (mbuf->packet_type & RTE_PTYPE_L3_IPV6)
+			prs->l3r = DPAA_L3_PARSE_RESULT_IPV6;
+
+		if (mbuf->packet_type & RTE_PTYPE_L4_TCP)
+			prs->l4r = DPAA_L4_PARSE_RESULT_TCP;
+		else if (mbuf->packet_type & RTE_PTYPE_L4_UDP)
+			prs->l4r = DPAA_L4_PARSE_RESULT_UDP;
+
+		prs->ip_off[0] = mbuf->l2_len;
+		prs->l4_off = mbuf->l3_len + mbuf->l2_len;
+		/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
+		fd->cmd = 0x50000000;
+	}
+
 retry:
 	PMD_DRV_LOG(DEBUG, "Enqueing packet %p bufaddr %llx  to fqid %x\n",
 		    mbuf, fd->addr, (iface->tx_fqs)->fqid);
