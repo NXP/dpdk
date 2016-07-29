@@ -232,7 +232,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct qbman_swp *swp;
 	uint32_t mbuf_size;
 	uint16_t bpid;
-	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE];
+	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
 	int ret;
 	unsigned i, n = 0;
 	struct bp_info *bp_info;
