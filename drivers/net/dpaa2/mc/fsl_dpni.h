@@ -679,7 +679,7 @@ int dpni_extract_extended_cfg(struct dpni_extended_cfg	*cfg,
  */
 #define DPNI_ERROR_L3CE		0x00000004
 /**
- * Parser L3 checksum error
+ * Parser L4 checksum error
  */
 #define DPNI_ERROR_L4CE		0x00000001
 

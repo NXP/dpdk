@@ -92,6 +92,11 @@ static const char *drivername = "DPNI PMD";
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256
 
+#define DPAA2_TX_CKSUM_OFFLOAD_MASK ( \
+		PKT_TX_IP_CKSUM | \
+		PKT_TX_TCP_CKSUM | \
+		PKT_TX_UDP_CKSUM)
+
 struct dpaa2_queue {
 	void *dev;
 	int32_t eventfd;	/*!< Event Fd of this queue */
@@ -245,6 +250,12 @@ dpaa2_eth_parse_packet(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_UNKNOWN_PROTOCOL))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_UNKNOWN;
 
+	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
+		mbuf->ol_flags |= PKT_RX_IP_CKSUM_BAD;
+
+	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L4CE))
+		mbuf->ol_flags |= PKT_RX_L4_CKSUM_BAD;
+
 	mbuf->packet_type = pkt_type;
 }
 
@@ -283,6 +294,14 @@ struct rte_mbuf *eth_fd_to_mbuf(const struct qbman_fd *fd)
 	return mbuf;
 }
 
+static inline void eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
+				struct qbman_fd *fd __rte_unused)
+{
+	/*if (mbuf->ol_flags & DPAA2_TX_CKSUM_OFFLOAD_MASK) {
+		todo - enable checksum validation on per packet basis
+	}*/
+}
+
 static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 						      struct qbman_fd *fd, uint16_t bpid)
 {
@@ -301,6 +320,8 @@ static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
 		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
+
+	eth_check_offload (mbuf, fd);
 
 	return;
 }
@@ -321,6 +342,12 @@ static int eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	       (void *)((char *)mbuf->buf_addr + mbuf->data_off),
 		mbuf->pkt_len);
 
+	/* Copy required fields */
+	m->data_off = mbuf->data_off;
+	m->ol_flags = mbuf->ol_flags;
+	m->packet_type = mbuf->packet_type;
+	m->tx_offload = mbuf->tx_offload;
+
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
 
@@ -329,6 +356,8 @@ static int eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
+
+	eth_check_offload(m, fd);
 
 	PMD_DRV_LOG(DEBUG, "\nmbuf %p BMAN buf addr %p",
 		    (void *)mbuf, mbuf->buf_addr);
@@ -790,16 +819,15 @@ dpaa2_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->max_tx_queues = (uint16_t)priv->nb_tx_queues;
 	dev_info->min_rx_bufsize = DPAA2_MIN_RX_BUF_SIZE;
 	dev_info->pci_dev = dev->pci_dev;
-/*	dev_info->rx_offload_capa =
+	dev_info->rx_offload_capa =
 		DEV_RX_OFFLOAD_IPV4_CKSUM |
-		DEV_RX_OFFLOAD_UDP_CKSUM  |
+		DEV_RX_OFFLOAD_UDP_CKSUM |
 		DEV_RX_OFFLOAD_TCP_CKSUM;
 	dev_info->tx_offload_capa =
-		DEV_TX_OFFLOAD_IPV4_CKSUM  |
-		DEV_TX_OFFLOAD_UDP_CKSUM   |
-		DEV_TX_OFFLOAD_TCP_CKSUM   |
+		DEV_TX_OFFLOAD_IPV4_CKSUM |
+		DEV_TX_OFFLOAD_UDP_CKSUM |
+		DEV_TX_OFFLOAD_TCP_CKSUM |
 		DEV_TX_OFFLOAD_SCTP_CKSUM;
-*/
 }
 
 static int
@@ -1295,9 +1323,9 @@ dpaa2_tx_queue_setup(struct rte_eth_dev *dev,
 
 	memset(&cfg, 0, sizeof(struct dpni_tx_flow_cfg));
 	cfg.l3_chksum_gen = 1;
-	cfg.options |= DPNI_TX_FLOW_OPT_L3_CHKSUM_GEN;
+	cfg.options = DPNI_TX_FLOW_OPT_L3_CHKSUM_GEN;
 	cfg.l4_chksum_gen = 1;
-	cfg.options = DPNI_TX_FLOW_OPT_L4_CHKSUM_GEN;
+	cfg.options |= DPNI_TX_FLOW_OPT_L4_CHKSUM_GEN;
 	memset(&tx_conf_cfg, 0, sizeof(struct dpni_tx_conf_cfg));
 	tx_conf_cfg.errors_only = TRUE;
 
@@ -1414,6 +1442,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	struct dpni_queue_attr cfg;
+	struct dpni_error_cfg	err_cfg;
 	uint16_t qdid;
 	struct dpaa2_queue *dpaa2_q;
 	int ret, i, mask = 0;
@@ -1446,6 +1475,33 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 			return ret;
 		}
 		dpaa2_q->fqid = cfg.fqid;
+	}
+	ret = dpni_set_l3_chksum_validation(dpni, CMD_PRI_LOW,
+		priv->token, TRUE);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "Error to get l3 csum:ErrorCode = %d\n", ret);
+		return ret;
+	}
+
+	ret = dpni_set_l4_chksum_validation(dpni, CMD_PRI_LOW,
+		priv->token, TRUE);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "Error to get l4 csum:ErrorCode = %d\n", ret);
+		return ret;
+	}
+
+	/*for checksum issue, send them to normal path and set it in annotation */
+	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
+
+	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
+	err_cfg.set_frame_annotation = TRUE;
+
+	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW,
+			priv->token, &err_cfg);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "Error to dpni_set_errors_behavior:"
+				"code = %d\n", ret);
+		return ret;
 	}
 	/*
 	 * VLAN Offload Settings
@@ -1750,28 +1806,6 @@ int dpni_set_vlan_insertion(struct fsl_mc_io *mc_io,
 			    uint32_t cmd_flags,
 			    uint16_t token,
 			    int en)
-
-dpni_set_errors_behavior
-
-int dpni_get_l3_chksum_validation(struct fsl_mc_io *mc_io,
-				  uint32_t cmd_flags,
-				  uint16_t token,
-				  int *en)
-
-int dpni_set_l3_chksum_validation(struct fsl_mc_io *mc_io,
-				  uint32_t cmd_flags,
-				  uint16_t token,
-				  int en)
-
-int dpni_get_l4_chksum_validation(struct fsl_mc_io *mc_io,
-				  uint32_t cmd_flags,
-				  uint16_t token,
-				  int *en)
-
-int dpni_set_l4_chksum_validation(struct fsl_mc_io *mc_io,
-				  uint32_t cmd_flags,
-				  uint16_t token,
-				  int en)
 
 */
 
