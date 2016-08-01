@@ -256,6 +256,23 @@ testsuite_setup(void)
 		}
 	}
 
+	/* Create 2 ARMCE devices if required */
+	if (gbl_cryptodev_type == RTE_CRYPTODEV_ARMCE_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(
+				RTE_CRYPTODEV_ARMCE_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				int dev_id = rte_eal_vdev_init(
+					RTE_STR(CRYPTODEV_NAME_ARMCE_PMD), NULL);
+
+				TEST_ASSERT(dev_id >= 0,
+					    "Failed to create instance %u of"
+					" pmd : %s",
+					i, RTE_STR(CRYPTODEV_NAME_ARMCE_PMD));
+			}
+		}
+	}
+
 	nb_devs = rte_cryptodev_count();
 	if (nb_devs < 1) {
 		RTE_LOG(ERR, USER1, "No crypto devices found?");
@@ -1086,6 +1103,36 @@ test_AES_qat_all(void)
 	status = test_AES_all_tests(ts_params->mbuf_pool,
 		ts_params->op_mpool, ts_params->valid_devs[0],
 		RTE_CRYPTODEV_QAT_SYM_PMD);
+
+	TEST_ASSERT_EQUAL(status, 0, "Test failed");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_AES_dpaa2_sec_all(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	int status;
+
+	status = test_AES_all_tests(ts_params->mbuf_pool,
+				    ts_params->op_mpool, ts_params->valid_devs[0],
+		RTE_CRYPTODEV_DPAA2_SEC_PMD);
+
+	TEST_ASSERT_EQUAL(status, 0, "Test failed");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_AES_armce_all(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	int status;
+
+	status = test_AES_all_tests(ts_params->mbuf_pool,
+				    ts_params->op_mpool, ts_params->valid_devs[0],
+		RTE_CRYPTODEV_ARMCE_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
 
@@ -3955,6 +4002,28 @@ static struct unit_test_suite cryptodev_qat_testsuite  = {
 	}
 };
 
+static struct unit_test_suite cryptodev_armce_testsuite  = {
+	.suite_name = "Crypto Device ARMCE Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_armce_all),
+
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
+static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
+	.suite_name = "Crypto Device DPAA2-CAAM Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_dpaa2_sec_all),
+
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
 static struct unit_test_suite cryptodev_aesni_mb_testsuite  = {
 	.suite_name = "Crypto Device AESNI MB Unit Test Suite",
 	.setup = testsuite_setup,
@@ -4159,6 +4228,20 @@ static struct unit_test_suite cryptodev_null_testsuite  = {
 };
 
 static int
+test_cryptodev_armce(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_ARMCE_PMD;
+	return unit_test_suite_runner(&cryptodev_armce_testsuite);
+}
+
+static int
+test_cryptodev_dpaa2_sec(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_DPAA2_SEC_PMD;
+	return unit_test_suite_runner(&cryptodev_dpaa2_sec_testsuite);
+}
+
+static int
 test_cryptodev_qat(void /*argv __rte_unused, int argc __rte_unused*/)
 {
 	gbl_cryptodev_type = RTE_CRYPTODEV_QAT_SYM_PMD;
@@ -4205,6 +4288,8 @@ test_cryptodev_sw_kasumi(void /*argv __rte_unused, int argc __rte_unused*/)
 	return unit_test_suite_runner(&cryptodev_sw_kasumi_testsuite);
 }
 
+REGISTER_TEST_COMMAND(cryptodev_armce_autotest, test_cryptodev_armce);
+REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_autotest, test_cryptodev_dpaa2_sec);
 REGISTER_TEST_COMMAND(cryptodev_qat_autotest, test_cryptodev_qat);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_autotest, test_cryptodev_aesni_mb);
 REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_autotest, test_cryptodev_aesni_gcm);

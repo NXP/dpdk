@@ -42,7 +42,7 @@
 #include "test.h"
 #include "test_cryptodev.h"
 
-
+#define DPDK88				1
 #define PERF_NUM_OPS_INFLIGHT		(128)
 #define DEFAULT_NUM_REQS_TO_SUBMIT	(10000000)
 
@@ -129,6 +129,10 @@ static const char *pmd_name(enum rte_cryptodev_type pmd)
 		return RTE_STR(CRYPTODEV_NAME_QAT_SYM_PMD);
 	case RTE_CRYPTODEV_SNOW3G_PMD:
 		return RTE_STR(CRYPTODEV_NAME_SNOW3G_PMD);
+	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
+		return RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD);
+	case RTE_CRYPTODEV_ARMCE_PMD:
+		return RTE_STR(CRYPTODEV_NAME_ARMCE_PMD);
 	default:
 		return "";
 	}
@@ -301,7 +305,7 @@ testsuite_setup(void)
 
 	rte_cryptodev_info_get(ts_params->dev_id, &info);
 
-	ts_params->conf.nb_queue_pairs = DEFAULT_NUM_QPS_PER_QAT_DEVICE;
+	ts_params->conf.nb_queue_pairs = info.max_nb_queue_pairs;/* DEFAULT_NUM_QPS_PER_QAT_DEVICE; */
 	ts_params->conf.socket_id = SOCKET_ID_ANY;
 	ts_params->conf.session_mp.nb_objs = info.sym.max_nb_sessions;
 
@@ -1840,8 +1844,11 @@ test_perf_crypto_qp_vary_burst_size(uint16_t dev_num)
 
 	/* Setup Cipher Parameters */
 	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+#ifdef DPDK88
+	ut_params->cipher_xform.next = NULL;
+#else
 	ut_params->cipher_xform.next = &ut_params->auth_xform;
-
+#endif
 	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
 	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_DECRYPT;
 	ut_params->cipher_xform.cipher.key.data = aes_cbc_128_key;
@@ -1850,8 +1857,11 @@ test_perf_crypto_qp_vary_burst_size(uint16_t dev_num)
 
 	/* Setup HMAC Parameters */
 	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+#ifdef DPDK88
+	ut_params->auth_xform.next = &ut_params->auth_xform;
+#else
 	ut_params->auth_xform.next = NULL;
-
+#endif
 	ut_params->auth_xform.auth.op = RTE_CRYPTO_AUTH_OP_VERIFY;
 	ut_params->auth_xform.auth.algo = RTE_CRYPTO_AUTH_SHA256_HMAC;
 	ut_params->auth_xform.auth.key.data = hmac_sha256_key;
@@ -2366,8 +2376,12 @@ test_perf_set_crypto_op(struct rte_crypto_op *op, struct rte_mbuf *m,
 	op->sym->auth.aad.length = AES_CBC_CIPHER_IV_LENGTH;
 
 	/* Cipher Parameters */
-	op->sym->cipher.iv.data = aes_cbc_iv;
+	op->sym->cipher.iv.data = (uint8_t *)m->buf_addr + m->data_off;
+	op->sym->cipher.iv.phys_addr = rte_pktmbuf_mtophys(m);
 	op->sym->cipher.iv.length = AES_CBC_CIPHER_IV_LENGTH;
+
+	rte_memcpy(op->sym->cipher.iv.data, aes_cbc_iv,
+		   AES_CBC_CIPHER_IV_LENGTH);
 
 	/* Data lengths/offsets Parameters */
 	op->sym->auth.data.offset = 0;
@@ -2468,7 +2482,9 @@ test_perf_aes_sha(uint8_t dev_id, uint16_t queue_id,
 				rte_pktmbuf_free(mbufs[k]);
 			return -1;
 		}
-
+		/* Make room for Digest and IV in mbuf */
+		rte_pktmbuf_append(mbufs[i], digest_length);
+		rte_pktmbuf_prepend(mbufs[i], AES_CBC_CIPHER_IV_LENGTH);
 	}
 
 
@@ -2919,7 +2935,25 @@ perftest_qat_snow3g_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 	return unit_test_suite_runner(&cryptodev_snow3g_testsuite);
 }
 
+static int
+perftest_dpaa2_sec_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_DPAA2_SEC_PMD;
+
+	return unit_test_suite_runner(&cryptodev_testsuite);
+}
+
+static int
+perftest_armce_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_ARMCE_PMD;
+
+	return unit_test_suite_runner(&cryptodev_testsuite);
+}
+
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_perftest, perftest_aesni_mb_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_qat_perftest, perftest_qat_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_perftest, perftest_sw_snow3g_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_qat_snow3g_perftest, perftest_qat_snow3g_cryptodev);
+REGISTER_TEST_COMMAND(cryptodev_armce_perftest, perftest_armce_cryptodev);
+REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_perftest, perftest_dpaa2_sec_cryptodev);
