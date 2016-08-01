@@ -27,39 +27,42 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
+include $(RTE_SDK)/mk/rte.vars.mk
 
-# NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
-CONFIG_RTE_MACHINE="dpaa"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
+# library name
+LIB = librte_pmd_dpaa_sec.a
 
-#
-# Compile Environment Abstraction Layer
-#
-CONFIG_RTE_MAX_LCORE=4
-CONFIG_RTE_MAX_NUMA_NODES=1
-CONFIG_RTE_EAL_VFIO=n
-CONFIG_RTE_PKTMBUF_HEADROOM=128
-#
-#Kernel KNI component - disable by default to avoid kernel
-#code dependency
-#
-CONFIG_RTE_KNI_KMOD=n
+# build flags
+CFLAGS += -g -O3
+#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += "-Wno-error"
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
+# reference to flib in dpaa2_caam/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_caam/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_caam/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
-# Compile ARMCE based crypto
-CONFIG_RTE_LIBRTE_PMD_ARMCE=n
+# library version
+LIBABIVER := 1
 
-# Compile software PMD backed by FSL - DPAA 
-#
-CONFIG_RTE_LIBRTE_DPAA_PMD=y
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n
+# versioning export map
+EXPORT_MAP := pmd_dpaa_sec_version.map
 
-# Compile crypto for DPAA
-CONFIG_RTE_LIBRTE_PMD_DPAA_SEC=y
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=n
+# external library include paths
+CFLAGS += -Iinclude
+LDLIBS += -lcrypto
+
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
+
+# export include files
+SYMLINK-y-include +=
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_cryptodev
+
+include $(RTE_SDK)/mk/rte.lib.mk
