@@ -38,9 +38,8 @@ CFLAGS += -g -O3
 #CFLAGS += $(WERROR_FLAGS)
 CFLAGS += "-Wno-error"
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
-# reference to flib in dpaa2_caam/
-CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_caam/
-CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_caam/
+# reference to flib in dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 

@@ -4260,7 +4260,7 @@ test_null_burst_operation(void)
 	return TEST_SUCCESS;
 }
 
-static struct unit_test_suite cryptodev_dpaa2_caam_testsuite  = {
+static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 	.suite_name = "Crypto DPAA2 CAAM Unit Test Suite",
 	.setup = testsuite_setup,
 	.teardown = testsuite_teardown,
@@ -4279,13 +4279,32 @@ static struct unit_test_suite cryptodev_dpaa2_caam_testsuite  = {
 				test_AES_CBC_HMAC_SHA1_encrypt_digest),
 		TEST_CASE_ST(ut_setup, ut_teardown,
 				test_AES_CBC_HMAC_SHA1_decrypt_digest_verify),
-
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
 
-
-
+static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
+	.suite_name = "Crypto DPAA SEC Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+#if 0
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_device_configure_invalid_dev_id),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_device_configure_invalid_queue_pair_ids),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_queue_pair_descriptor_setup),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_multi_session),
+#endif
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_AES_CBC_HMAC_SHA1_encrypt_digest),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_AES_CBC_HMAC_SHA1_decrypt_digest_verify),
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
 
 static struct unit_test_suite cryptodev_qat_testsuite  = {
 	.suite_name = "Crypto QAT Unit Test Suite",
@@ -4586,14 +4605,25 @@ static struct unit_test_suite cryptodev_armce_testsuite  = {
 };
 
 static int
-test_cryptodev_dpaa2_caam(void /*argv __rte_unused, int argc __rte_unused*/)
+test_cryptodev_dpaa2_sec(void /*argv __rte_unused, int argc __rte_unused*/)
 {
-	gbl_cryptodev_type = RTE_CRYPTODEV_DPAA2_CAAM_PMD;
-	return unit_test_suite_runner(&cryptodev_dpaa2_caam_testsuite);
+	gbl_cryptodev_type = RTE_CRYPTODEV_DPAA2_SEC_PMD;
+	return unit_test_suite_runner(&cryptodev_dpaa2_sec_testsuite);
 }
-static struct test_command cryptodev_dpaa2_caam_cmd = {
-	.command = "cryptodev_dpaa2_caam_autotest",
-	.callback = test_cryptodev_dpaa2_caam,
+static struct test_command cryptodev_dpaa2_sec_cmd = {
+	.command = "cryptodev_dpaa2_sec_autotest",
+	.callback = test_cryptodev_dpaa2_sec,
+};
+
+static int
+test_cryptodev_dpaa_sec(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_DPAA_SEC_PMD;
+	return unit_test_suite_runner(&cryptodev_dpaa_sec_testsuite);
+}
+static struct test_command cryptodev_dpaa_sec_cmd = {
+	.command = "cryptodev_dpaa_sec_autotest",
+	.callback = test_cryptodev_dpaa_sec,
 };
 
 static int
@@ -4672,7 +4702,8 @@ static struct test_command cryptodev_sw_snow3g_cmd = {
 	.callback = test_cryptodev_sw_snow3g,
 };
 
-REGISTER_TEST_COMMAND(cryptodev_dpaa2_caam_cmd);
+REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_cmd);
+REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_cmd);
 REGISTER_TEST_COMMAND(cryptodev_qat_cmd);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_cmd);
 REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_cmd);

@@ -2088,9 +2088,17 @@ perftest_qat_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
-perftest_dpaa2_caam_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+perftest_dpaa2_sec_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 {
-	gbl_cryptodev_preftest_devtype = RTE_CRYPTODEV_DPAA2_CAAM_PMD;
+	gbl_cryptodev_preftest_devtype = RTE_CRYPTODEV_DPAA2_SEC_PMD;
+
+	return unit_test_suite_runner(&cryptodev_testsuite);
+}
+
+static int
+perftest_dpaa_sec_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_preftest_devtype = RTE_CRYPTODEV_DPAA_SEC_PMD;
 
 	return unit_test_suite_runner(&cryptodev_testsuite);
 }
@@ -2113,9 +2121,14 @@ static struct test_command cryptodev_qat_perf_cmd = {
 	.callback = perftest_qat_cryptodev,
 };
 
-static struct test_command cryptodev_dpaa2_caam_perf_cmd = {
-	.command = "cryptodev_dpaa2_caam_perftest",
-	.callback = perftest_dpaa2_caam_cryptodev,
+static struct test_command cryptodev_dpaa2_sec_perf_cmd = {
+	.command = "cryptodev_dpaa2_sec_perftest",
+	.callback = perftest_dpaa2_sec_cryptodev,
+};
+
+static struct test_command cryptodev_dpaa_sec_perf_cmd = {
+	.command = "cryptodev_dpaa_sec_perftest",
+	.callback = perftest_dpaa_sec_cryptodev,
 };
 
 static struct test_command cryptodev_armce_perf_cmd = {
@@ -2125,5 +2138,6 @@ static struct test_command cryptodev_armce_perf_cmd = {
 
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_perf_cmd);
 REGISTER_TEST_COMMAND(cryptodev_qat_perf_cmd);
-REGISTER_TEST_COMMAND(cryptodev_dpaa2_caam_perf_cmd);
+REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_perf_cmd);
+REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_perf_cmd);
 REGISTER_TEST_COMMAND(cryptodev_armce_perf_cmd);

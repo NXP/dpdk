@@ -35,7 +35,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #endif
 
 # library name
-LIB = librte_pmd_dpaa2_caam.a
+LIB = librte_pmd_dpaa2_sec.a
 
 # build flags
 CFLAGS += -g -O3
@@ -46,7 +46,7 @@ CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include/drivers
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/driver/
-CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_caam/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
@@ -54,7 +54,7 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 LIBABIVER := 1
 
 # versioning export map
-EXPORT_MAP := rte_pmd_dpaa2_caam_version.map
+EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 
 # external library include paths
 #CFLAGS += -I$(AESNI_MULTI_BUFFER_LIB_PATH)
@@ -63,14 +63,14 @@ CFLAGS += -Iinclude
 LDLIBS += -lcrypto
 
 # library source files
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += dpaa2_caam_dpseci.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_dpseci.c
 
 # export include files
 SYMLINK-y-include +=
 
 # library dependencies
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_eal
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_mbuf
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CAAM) += lib/librte_cryptodev
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_cryptodev
 
 include $(RTE_SDK)/mk/rte.lib.mk

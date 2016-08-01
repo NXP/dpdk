@@ -39,14 +39,14 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include "dpaa2_caam_priv.h"
+#include "dpaa2_sec_priv.h"
 #include <rte_cryptodev_pmd.h>
 #include <rte_common.h>
 #include <rte_eth_dpaa2_pvt.h>
 
 #include <net/if.h>
 
-#include "dpaa2_caam_logs.h"
+#include "dpaa2_sec_logs.h"
 
 /* MC header files */
 #include <fsl_dpbp.h>
@@ -86,7 +86,7 @@ static inline void print_fle(const struct qbman_fle *fle)
 	printf("frc:              %lu\n", fle->frc);
 }
 
-static inline int build_authenc_fd(dpaa2_caam_session *sess,
+static inline int build_authenc_fd(dpaa2_sec_session *sess,
 		struct rte_crypto_op *op,
 		struct qbman_fd *fd, uint16_t bpid)
 {
@@ -210,7 +210,7 @@ static inline int build_authenc_fd(dpaa2_caam_session *sess,
 }
 
 static inline int build_auth_fd(
-		dpaa2_caam_session *sess,
+		dpaa2_sec_session *sess,
 		struct rte_crypto_op *op,
 		struct qbman_fd *fd,
 		uint16_t bpid)
@@ -292,7 +292,7 @@ static inline int build_auth_fd(
 	return 0;
 }
 
-static int build_cipher_fd(dpaa2_caam_session *sess, struct rte_crypto_op *op,
+static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 					struct qbman_fd *fd, uint16_t bpid)
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
@@ -380,7 +380,7 @@ static int build_cipher_fd(dpaa2_caam_session *sess, struct rte_crypto_op *op,
 	return 0;
 }
 static uint16_t
-dpaa2_caam_enqueue_burst(void *qp, struct rte_crypto_op **ops,
+dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		uint16_t nb_ops)
 {
 	/* Function to transmit the frames to given device and VQ*/
@@ -388,15 +388,15 @@ dpaa2_caam_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	int32_t ret;
 	struct qbman_fd fd;
 	struct qbman_eq_desc eqdesc;
-	struct dpaa2_caam_qp *dpaa2_qp = (struct dpaa2_caam_qp *)qp;
+	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_swp *swp;
 	uint16_t num_tx = 0;
 	/*todo - need to support multiple buffer pools */
 	uint16_t bpid;
 	struct rte_mempool *mb_pool;
 	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
-	struct dpaa2_caam_dev_private *priv = dev->data->dev_private;
-	dpaa2_caam_session *sess;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	dpaa2_sec_session *sess;
 
 	if (ops[0]->sym->sess_type != RTE_CRYPTO_SYM_OP_WITH_SESSION) {
 		PMD_DRV_LOG(ERR, "sessionless crypto op not supported\n");
@@ -421,20 +421,20 @@ dpaa2_caam_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	for (loop = 0; loop < nb_ops; loop++) {
 
 		memset(&fd,0, sizeof(struct qbman_fd));
-		sess = (dpaa2_caam_session *)ops[loop]->sym->session->_private;
+		sess = (dpaa2_sec_session *)ops[loop]->sym->session->_private;
 		mb_pool = ops[loop]->sym->m_src->pool;
 		bpid = mempool_to_bpid(mb_pool);
 		switch (sess->ctxt_type) {
-		case DPAA2_CAAM_CIPHER:
+		case DPAA2_SEC_CIPHER:
 			ret = build_cipher_fd(sess, ops[loop], &fd, bpid);
 			break;
-		case DPAA2_CAAM_AUTH:
+		case DPAA2_SEC_AUTH:
 			ret = build_auth_fd(sess, ops[loop], &fd, bpid);
 			break;
-		case DPAA2_CAAM_CIPHER_HASH:
+		case DPAA2_SEC_CIPHER_HASH:
 			ret = build_authenc_fd(sess, ops[loop], &fd, bpid);
 			break;
-		case DPAA2_CAAM_HASH_CIPHER:
+		case DPAA2_SEC_HASH_CIPHER:
 		default:
 			PMD_DRV_LOG(ERR, "Unsupported session\n");
 			return 0;
@@ -465,12 +465,12 @@ struct rte_crypto_op *sec_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct qbman_fle *fle, *fle1, *sge;
 	struct rte_crypto_op *op;
-	
+
 	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
 	PMD_DRV_LOG(DEBUG,"FLE addr = %x - %x, offset = %x",
 		fle->addr_hi, fle->addr_lo, fle->fin_bpid_offset);
-	
+
 	/* TODO we are using the first FLE entry to store Mbuf.
 	   Currently we donot know which FLE has the mbuf stored.
 	   So while retreiving we can go back 1 FLE from the FD -ADDR
@@ -505,11 +505,11 @@ struct rte_crypto_op *sec_fd_to_mbuf(const struct qbman_fd *fd)
 }
 
 static uint16_t
-dpaa2_caam_dequeue_burst(void *qp, struct rte_crypto_op **ops,
+dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		uint16_t nb_ops)
 {
 	/* Function is responsible to receive frames for a given device and VQ*/
-	struct dpaa2_caam_qp *dpaa2_qp = (struct dpaa2_caam_qp *)qp;
+	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_result *dq_storage;
 	uint32_t fqid = dpaa2_qp->rx_vq.fqid;
 	int ret, num_rx = 0;
@@ -595,10 +595,10 @@ dpaa2_caam_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 /** Release queue pair */
 static int
-dpaa2_caam_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
+dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 {
-	struct dpaa2_caam_qp *qp =
-		(struct dpaa2_caam_qp *)dev->data->queue_pairs[queue_pair_id];
+	struct dpaa2_sec_qp *qp =
+		(struct dpaa2_sec_qp *)dev->data->queue_pairs[queue_pair_id];
 
 	if(qp->rx_vq.q_storage)
 		rte_free(qp->rx_vq.q_storage);
@@ -609,12 +609,12 @@ dpaa2_caam_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 
 /** Setup a queue pair */
 static int
-dpaa2_caam_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 		__rte_unused const struct rte_cryptodev_qp_conf *qp_conf,
 		__rte_unused int socket_id)
 {
-	struct dpaa2_caam_dev_private *priv = dev->data->dev_private;
-	struct dpaa2_caam_qp *qp;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_qp *qp;
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	struct dpseci_rx_queue_cfg cfg;
 	int32_t retcode;
@@ -630,7 +630,7 @@ dpaa2_caam_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 
 	memset(&cfg, 0, sizeof(struct dpseci_rx_queue_cfg));
 
-	qp = rte_malloc(NULL, sizeof(struct dpaa2_caam_qp),
+	qp = rte_malloc(NULL, sizeof(struct dpaa2_sec_qp),
 			RTE_CACHE_LINE_SIZE);
 	if (!qp) {
 		PMD_DRV_LOG(ERR, "malloc failed for rx/tx queues\n");
@@ -639,7 +639,7 @@ dpaa2_caam_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 
 	qp->rx_vq.dev = dev;
 	qp->tx_vq.dev = dev;
-	qp->rx_vq.q_storage = rte_malloc("sec dq storage", 
+	qp->rx_vq.q_storage = rte_malloc("sec dq storage",
 		sizeof(struct queue_storage_info_t),
 		RTE_CACHE_LINE_SIZE);
 	if(!qp->rx_vq.q_storage)
@@ -657,7 +657,7 @@ dpaa2_caam_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 
 /** Start queue pair */
 static int
-dpaa2_caam_queue_pair_start(__rte_unused struct rte_cryptodev *dev,
+dpaa2_sec_queue_pair_start(__rte_unused struct rte_cryptodev *dev,
 		__rte_unused uint16_t queue_pair_id)
 {
 	return 0;
@@ -665,7 +665,7 @@ dpaa2_caam_queue_pair_start(__rte_unused struct rte_cryptodev *dev,
 
 /** Stop queue pair */
 static int
-dpaa2_caam_queue_pair_stop(__rte_unused struct rte_cryptodev *dev,
+dpaa2_sec_queue_pair_stop(__rte_unused struct rte_cryptodev *dev,
 		__rte_unused uint16_t queue_pair_id)
 {
 	return 0;
@@ -673,32 +673,32 @@ dpaa2_caam_queue_pair_stop(__rte_unused struct rte_cryptodev *dev,
 
 /** Return the number of allocated queue pairs */
 static uint32_t
-dpaa2_caam_queue_pair_count(struct rte_cryptodev *dev)
+dpaa2_sec_queue_pair_count(struct rte_cryptodev *dev)
 {
 	return dev->data->nb_queue_pairs;
 }
 
 /** Returns the size of the aesni gcm session structure */
 static unsigned
-dpaa2_caam_session_get_size(struct rte_cryptodev *dev __rte_unused)
+dpaa2_sec_session_get_size(struct rte_cryptodev *dev __rte_unused)
 {
-	return sizeof(dpaa2_caam_session);
+	return sizeof(dpaa2_sec_session);
 }
 
 static void
-dpaa2_caam_session_initialize(struct rte_mempool *mp,
+dpaa2_sec_session_initialize(struct rte_mempool *mp,
 		void *sess)
 {
-	sess = (dpaa2_caam_session *)rte_zmalloc(NULL,
-			sizeof(dpaa2_caam_session), RTE_CACHE_LINE_SIZE);
+	sess = (dpaa2_sec_session *)rte_zmalloc(NULL,
+			sizeof(dpaa2_sec_session), RTE_CACHE_LINE_SIZE);
 	return;
 }
 
-static int dpaa2_caam_cipher_init(struct rte_cryptodev *dev,
+static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		struct rte_crypto_sym_xform *xform,
-		dpaa2_caam_session *session)
+		dpaa2_sec_session *session)
 {
-	struct dpaa2_caam_cipher_ctxt *ctxt = &(session->ext_params.cipher_ctxt);
+	struct dpaa2_sec_cipher_ctxt *ctxt = &(session->ext_params.cipher_ctxt);
 	struct alginfo cipherdata;
 	unsigned int bufsize, i;
 	struct ctxt_priv *priv;
@@ -767,9 +767,9 @@ static int dpaa2_caam_cipher_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	flc->word2_rflc_31_0 = lower_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	flc->word3_rflc_63_32 = upper_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
 
 	for (i =0;i <bufsize ;i++ )
@@ -784,11 +784,11 @@ error_out:
 	return -1;
 }
 
-static int dpaa2_caam_auth_init(struct rte_cryptodev *dev,
+static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 		struct rte_crypto_sym_xform *xform,
-		dpaa2_caam_session *session)
+		dpaa2_sec_session *session)
 {
-	struct dpaa2_caam_auth_ctxt *ctxt = &(session->ext_params.auth_ctxt);
+	struct dpaa2_sec_auth_ctxt *ctxt = &(session->ext_params.auth_ctxt);
 	struct alginfo authdata;
 	unsigned int bufsize;
 	struct ctxt_priv *priv;
@@ -862,9 +862,9 @@ static int dpaa2_caam_auth_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	flc->word2_rflc_31_0 = lower_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	flc->word3_rflc_63_32 = upper_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
 
 	return 0;
@@ -875,11 +875,11 @@ error_out:
 	return -1;
 }
 
-static int dpaa2_caam_aead_init(struct rte_cryptodev *dev,
+static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		struct rte_crypto_sym_xform *xform,
-		dpaa2_caam_session *session)
+		dpaa2_sec_session *session)
 {
-	struct dpaa2_caam_aead_ctxt *ctxt = &(session->ext_params.aead_ctxt);
+	struct dpaa2_sec_aead_ctxt *ctxt = &(session->ext_params.aead_ctxt);
 	struct alginfo authdata, cipherdata;
 	unsigned int bufsize;
 	struct ctxt_priv *priv;
@@ -892,13 +892,13 @@ static int dpaa2_caam_aead_init(struct rte_cryptodev *dev,
 		auth_xform = &xform->next->auth;
 		session->ctxt_type =
 			(cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
-			DPAA2_CAAM_CIPHER_HASH : DPAA2_CAAM_HASH_CIPHER;
+			DPAA2_SEC_CIPHER_HASH : DPAA2_SEC_HASH_CIPHER;
 	} else {
 		cipher_xform = &xform->next->cipher;
 		auth_xform = &xform->auth;
 		session->ctxt_type =
 			(cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
-			DPAA2_CAAM_HASH_CIPHER : DPAA2_CAAM_CIPHER_HASH ;
+			DPAA2_SEC_HASH_CIPHER : DPAA2_SEC_CIPHER_HASH ;
 	}
 	/* For SEC AEAD only one descriptor is required */
 	priv = (struct ctxt_priv *)rte_zmalloc(NULL,
@@ -1024,7 +1024,7 @@ static int dpaa2_caam_aead_init(struct rte_cryptodev *dev,
 	}
 	session->dir = (cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ? DIR_ENC : DIR_DEC;
 
-	if (session->ctxt_type == DPAA2_CAAM_CIPHER_HASH) {
+	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH) {
 		/* TODO: add support for other Algos. IV length = 16 for AES */
 		bufsize = cnstr_shdsc_authenc(priv->flc_desc[0].desc, 1,
 				0, &cipherdata, &authdata, 16,//ctxt->iv.length,
@@ -1036,9 +1036,9 @@ static int dpaa2_caam_aead_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	flc->word2_rflc_31_0 = lower_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	flc->word3_rflc_63_32 = upper_32_bits(
-			(uint64_t)&(((struct dpaa2_caam_qp *)dev->data->queue_pairs[0])->rx_vq));
+			(uint64_t)&(((struct dpaa2_sec_qp *)dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
 
 	return 0;
@@ -1052,11 +1052,11 @@ error_out:
 
 
 static void *
-dpaa2_caam_session_configure(struct rte_cryptodev *dev,
+dpaa2_sec_session_configure(struct rte_cryptodev *dev,
 		struct rte_crypto_sym_xform *xform,	void *sess)
 {
-	struct dpaa2_caam_dev_private *internals = dev->data->dev_private;
-	dpaa2_caam_session *session = sess;
+	struct dpaa2_sec_dev_private *internals = dev->data->dev_private;
+	dpaa2_sec_session *session = sess;
 
 	if (unlikely(sess == NULL)) {
 		PMD_DRV_LOG(ERR, "invalid session struct");
@@ -1064,25 +1064,25 @@ dpaa2_caam_session_configure(struct rte_cryptodev *dev,
 	}
 	/* Cipher Only */
 	if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER && xform->next == NULL) {
-		session->ctxt_type = DPAA2_CAAM_CIPHER;
-		dpaa2_caam_cipher_init(dev, xform, session);
+		session->ctxt_type = DPAA2_SEC_CIPHER;
+		dpaa2_sec_cipher_init(dev, xform, session);
 
 	/* Authentication Only */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH && xform->next == NULL) {
-		session->ctxt_type = DPAA2_CAAM_AUTH;
-		dpaa2_caam_auth_init(dev, xform, session);
+		session->ctxt_type = DPAA2_SEC_AUTH;
+		dpaa2_sec_auth_init(dev, xform, session);
 
 	/* Cipher then Authenticate */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER &&
 			xform->next->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
 		session->ext_params.aead_ctxt.auth_cipher_text = TRUE;
-		dpaa2_caam_aead_init(dev, xform, session);
+		dpaa2_sec_aead_init(dev, xform, session);
 
 	/* Authenticate then Cipher */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
 			xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
 		session->ext_params.aead_ctxt.auth_cipher_text = FALSE;
-		dpaa2_caam_aead_init(dev, xform, session);
+		dpaa2_sec_aead_init(dev, xform, session);
 	} else {
 		PMD_DRV_LOG(ERR, "Invalid crypto type");
 		return NULL;
@@ -1093,14 +1093,14 @@ dpaa2_caam_session_configure(struct rte_cryptodev *dev,
 
 /** Clear the memory of session so it doesn't leave key material behind */
 static void
-dpaa2_caam_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
+dpaa2_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 {
 	if (sess)
-		memset(sess, 0, sizeof(dpaa2_caam_session));
+		memset(sess, 0, sizeof(dpaa2_sec_session));
 }
 
 static int
-dpaa2_caam_dev_configure(struct rte_cryptodev *dev)
+dpaa2_sec_dev_configure(struct rte_cryptodev *dev)
 {
 	return -ENOTSUP;
 }
@@ -1125,17 +1125,17 @@ fail:
 	{
 		rte_free(q_storage->dq_storage[i]);
 	}
-	return -1; 
+	return -1;
 }
 
 static int
-dpaa2_caam_dev_start(struct rte_cryptodev *dev)
+dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 {
-	struct dpaa2_caam_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	struct dpseci_attr attr;
 	struct dpaa2_queue *dpaa2_q;
-	struct dpaa2_caam_qp **qp = (struct dpaa2_caam_qp **)dev->data->queue_pairs;
+	struct dpaa2_sec_qp **qp = (struct dpaa2_sec_qp **)dev->data->queue_pairs;
 	struct dpseci_rx_queue_attr rx_attr;
 	struct dpseci_tx_queue_attr tx_attr;
 	int ret, i;
@@ -1176,9 +1176,9 @@ get_attr_failure:
 }
 
 static void
-dpaa2_caam_dev_stop(struct rte_cryptodev *dev)
+dpaa2_sec_dev_stop(struct rte_cryptodev *dev)
 {
-	struct dpaa2_caam_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	int ret;
 
@@ -1198,13 +1198,13 @@ dpaa2_caam_dev_stop(struct rte_cryptodev *dev)
 }
 
 static int
-dpaa2_caam_dev_close(struct rte_cryptodev *dev)
+dpaa2_sec_dev_close(struct rte_cryptodev *dev)
 {
-	struct dpaa2_caam_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	int ret;
 
-	/*Function is reverse of dpaa2_caam_dev_init.
+	/*Function is reverse of dpaa2_sec_dev_init.
 	 * It does the following:
 	 * 1. Detach a DPSECI from attached resources i.e. buffer pools, dpbp_id.
 	 * 2. Close the DPSECI device
@@ -1227,91 +1227,91 @@ dpaa2_caam_dev_close(struct rte_cryptodev *dev)
 }
 
 static void
-dpaa2_caam_dev_infos_get(struct rte_cryptodev *dev, struct rte_cryptodev_info *info)
+dpaa2_sec_dev_infos_get(struct rte_cryptodev *dev, struct rte_cryptodev_info *info)
 {
-	struct dpaa2_caam_dev_private *internals = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *internals = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 	if (info != NULL) {
 		info->max_nb_queue_pairs = internals->max_nb_queue_pairs;
 		info->feature_flags = dev->feature_flags;
-		info->capabilities = dpaa2_caam_capabilities;
+		info->capabilities = dpaa2_sec_capabilities;
 		info->sym.max_nb_sessions = internals->max_nb_sessions;
-		info->dev_type = RTE_CRYPTODEV_DPAA2_CAAM_PMD;
+		info->dev_type = RTE_CRYPTODEV_DPAA2_SEC_PMD;
 	}
 }
 
 static
-void dpaa2_caam_stats_get(struct rte_cryptodev *dev,
+void dpaa2_sec_stats_get(struct rte_cryptodev *dev,
 			 struct rte_cryptodev_stats *stats)
 {
 	return;// -ENOTSUP;
 }
 
 static
-void dpaa2_caam_stats_reset(struct rte_cryptodev *dev)
+void dpaa2_sec_stats_reset(struct rte_cryptodev *dev)
 {
 	return;// -ENOTSUP;
 }
 
 static struct rte_cryptodev_ops crypto_ops = {
-	.dev_configure	      = dpaa2_caam_dev_configure,
-	.dev_start	      = dpaa2_caam_dev_start,
-	.dev_stop	      = dpaa2_caam_dev_stop,
-	.dev_close	      = dpaa2_caam_dev_close,
-	.dev_infos_get        = dpaa2_caam_dev_infos_get,
-	.stats_get	      = dpaa2_caam_stats_get,
-	.stats_reset	      = dpaa2_caam_stats_reset,
-	.queue_pair_setup     = dpaa2_caam_queue_pair_setup,
-	.queue_pair_release   = dpaa2_caam_queue_pair_release,
-	.queue_pair_start     = dpaa2_caam_queue_pair_start,
-	.queue_pair_stop      = dpaa2_caam_queue_pair_stop,
-	.queue_pair_count     = dpaa2_caam_queue_pair_count,
-	.session_get_size     = dpaa2_caam_session_get_size,
-	.session_initialize   = dpaa2_caam_session_initialize,
-	.session_configure    = dpaa2_caam_session_configure,
-	.session_clear        = dpaa2_caam_session_clear,
+	.dev_configure	      = dpaa2_sec_dev_configure,
+	.dev_start	      = dpaa2_sec_dev_start,
+	.dev_stop	      = dpaa2_sec_dev_stop,
+	.dev_close	      = dpaa2_sec_dev_close,
+	.dev_infos_get        = dpaa2_sec_dev_infos_get,
+	.stats_get	      = dpaa2_sec_stats_get,
+	.stats_reset	      = dpaa2_sec_stats_reset,
+	.queue_pair_setup     = dpaa2_sec_queue_pair_setup,
+	.queue_pair_release   = dpaa2_sec_queue_pair_release,
+	.queue_pair_start     = dpaa2_sec_queue_pair_start,
+	.queue_pair_stop      = dpaa2_sec_queue_pair_stop,
+	.queue_pair_count     = dpaa2_sec_queue_pair_count,
+	.session_get_size     = dpaa2_sec_session_get_size,
+	.session_initialize   = dpaa2_sec_session_initialize,
+	.session_configure    = dpaa2_sec_session_configure,
+	.session_clear        = dpaa2_sec_session_clear,
 };
 
 static int
-dpaa2_caam_uninit(const char *name)
+dpaa2_sec_uninit(const char *name)
 {
 	if (name == NULL)
 		return -EINVAL;
 
-	DPAA2_CAAM_LOG_INFO("Closing DPAA2_CAAM crypto device %s on numa socket %u\n",
+	DPAA2_SEC_LOG_INFO("Closing DPAA2_SEC crypto device %s on numa socket %u\n",
 			name, rte_socket_id());
 
 	return 0;
 }
 
 static int
-dpaa2_caam_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_drv,
+dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_drv,
 			struct rte_cryptodev *dev)
 {
-	struct dpaa2_caam_dev_private *internals;
+	struct dpaa2_sec_dev_private *internals;
 	struct fsl_mc_io *dpseci;
 	uint16_t token;
 	struct dpseci_attr attr;
 	int retcode, hw_id = dev->pci_dev->addr.devid;
 
-	DPAA2_CAAM_INIT_FUNC_TRACE();
+	DPAA2_SEC_INIT_FUNC_TRACE();
 	PMD_DRV_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
 		dev->pci_dev->addr.bus,
 		dev->pci_dev->addr.devid,
 		dev->pci_dev->addr.function);
 
-	dev->dev_type = RTE_CRYPTODEV_DPAA2_CAAM_PMD;
+	dev->dev_type = RTE_CRYPTODEV_DPAA2_SEC_PMD;
 	dev->dev_ops = &crypto_ops;
 
-	dev->enqueue_burst = dpaa2_caam_enqueue_burst;
-	dev->dequeue_burst = dpaa2_caam_dequeue_burst;
+	dev->enqueue_burst = dpaa2_sec_enqueue_burst;
+	dev->dequeue_burst = dpaa2_sec_dequeue_burst;
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING |
 			RTE_CRYPTODEV_FF_HW_ACCELERATED;
 
 	internals = dev->data->dev_private;
-	internals->max_nb_sessions = 2048;//RTE_DPAA2_CAAM_PMD_MAX_NB_SESSIONS;
+	internals->max_nb_sessions = 2048;//RTE_DPAA2_SEC_PMD_MAX_NB_SESSIONS;
 
 	/*
 	 * For secondary processes, we don't initialise any further as primary
@@ -1358,12 +1358,12 @@ dpaa2_caam_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_
 init_error:
 	printf("driver %s: create failed\n", dev->data->name);
 
-//	dpaa2_caam_uninit(crypto_dev_name);
+//	dpaa2_sec_uninit(crypto_dev_name);
 	return -EFAULT;
 }
 
 
-static struct rte_pci_id pci_id_dpaa2_caam_map[] = {
+static struct rte_pci_id pci_id_dpaa2_sec_map[] = {
 		{
 			.vendor_id = FSL_VENDOR_ID,
 			.device_id = FSL_MC_DPSECI_DEVID,
@@ -1372,34 +1372,34 @@ static struct rte_pci_id pci_id_dpaa2_caam_map[] = {
 		},
 };
 
-static struct rte_cryptodev_driver rte_dpaa2_caam_pmd = {
+static struct rte_cryptodev_driver rte_dpaa2_sec_pmd = {
 	{
-		.name = "rte_dpaa2_caam_pmd",
-		.id_table = pci_id_dpaa2_caam_map,
+		.name = "rte_dpaa2_sec_pmd",
+		.id_table = pci_id_dpaa2_sec_map,
 //		.drv_flags = RTE_PCI_DRV_NEED_MAPPING,
 	},
-	.cryptodev_init = dpaa2_caam_dev_init,
-	.dev_private_size = sizeof(struct dpaa2_caam_dev_private),
+	.cryptodev_init = dpaa2_sec_dev_init,
+	.dev_private_size = sizeof(struct dpaa2_sec_dev_private),
 };
 
 static int
-rte_dpaa2_caam_pmd_init(const char *name __rte_unused, const char *params __rte_unused)
+rte_dpaa2_sec_pmd_init(const char *name __rte_unused, const char *params __rte_unused)
 {
 //	PMD_INIT_FUNC_TRACE();
-	return rte_cryptodev_pmd_driver_register(&rte_dpaa2_caam_pmd, PMD_PDEV);
+	return rte_cryptodev_pmd_driver_register(&rte_dpaa2_sec_pmd, PMD_PDEV);
 }
 
 //static int
-//rte_dpaa2_caam_pmd_uninit(const char *name __rte_unused, const char *params __rte_unused)
+//rte_dpaa2_sec_pmd_uninit(const char *name __rte_unused, const char *params __rte_unused)
 //{
 //	PMD_INIT_FUNC_TRACE();
-//	return rte_cryptodev_pmd_driver_unregister(&rte_dpaa2_caam_pmd, PMD_PDEV);
+//	return rte_cryptodev_pmd_driver_unregister(&rte_dpaa2_sec_pmd, PMD_PDEV);
 //}
 
-static struct rte_driver pmd_dpaa2_caam_drv = {
-	.name = CRYPTODEV_NAME_DPAA2_CAAM_PMD,
+static struct rte_driver pmd_dpaa2_sec_drv = {
+	.name = CRYPTODEV_NAME_DPAA2_SEC_PMD,
 	.type = PMD_PDEV,
-	.init = rte_dpaa2_caam_pmd_init,
+	.init = rte_dpaa2_sec_pmd_init,
 };
 
-PMD_REGISTER_DRIVER(pmd_dpaa2_caam_drv);
+PMD_REGISTER_DRIVER(pmd_dpaa2_sec_drv);

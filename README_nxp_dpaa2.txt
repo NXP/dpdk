@@ -157,10 +157,10 @@ How to run DPDK Applications
    Execute following commands to run DPDK test on LS2 board
        # ./test
    Execute following commands to run Crypto tests on RTE command line
-       # RTE>>cryptodev_dpaa2_caam_autotest
+       # RTE>>cryptodev_dpaa2_sec_autotest
 	This is for functional verification of Encrypt+Hash Generate and then Decrypt+Hash Verify for AES-CBC-HMAC-SHA1. More test cases will be added in future.
 
-       # RTE>>cryptodev_dpaa2_caam_perftest
+       # RTE>>cryptodev_dpaa2_sec_perftest
 	This is for taking performance numbers of Crypto operations.
 
 7. Running DPDK L3FWD Application

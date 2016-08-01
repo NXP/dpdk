@@ -30,69 +30,69 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _RTE_DPAA2_CAAM_PMD_PRIVATE_H_
-#define _RTE_DPAA2_CAAM_PMD_PRIVATE_H_
+#ifndef _RTE_DPAA2_SEC_PMD_PRIVATE_H_
+#define _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 
-#define DPAA2_CAAM_INIT_LOG(level, fmt, args...) \
+#define DPAA2_SEC_INIT_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, RTE_LOGTYPE_PMD, \
 		"PMD: %s(): " fmt "\n", __func__, ##args)
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_CAAM_DEBUG_INIT
-#define DPAA2_CAAM_INIT_FUNC_TRACE() PMD_INIT_LOG(DEBUG, " >>")
+#ifdef RTE_LIBRTE_PMD_DPAA2_SEC_DEBUG_INIT
+#define DPAA2_SEC_INIT_FUNC_TRACE() PMD_INIT_LOG(DEBUG, " >>")
 #else
-#define DPAA2_CAAM_INIT_FUNC_TRACE() do { } while (0)
+#define DPAA2_SEC_INIT_FUNC_TRACE() do { } while (0)
 #endif
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_CAAM_DEBUG_RX
-#define DPAA2_CAAM_RX_LOG(level, fmt, args...) \
+#ifdef RTE_LIBRTE_PMD_DPAA2_SEC_DEBUG_RX
+#define DPAA2_SEC_RX_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
 #else
-#define DPAA2_CAAM_RX_LOG(level, fmt, args...) do { } while (0)
+#define DPAA2_SEC_RX_LOG(level, fmt, args...) do { } while (0)
 #endif
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_CAAM_DEBUG_TX
-#define DPAA2_CAAM_TX_LOG(level, fmt, args...) \
+#ifdef RTE_LIBRTE_PMD_DPAA2_SEC_DEBUG_TX
+#define DPAA2_SEC_TX_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
 #else
-#define DPAA2_CAAM_TX_LOG(level, fmt, args...) do { } while (0)
+#define DPAA2_SEC_TX_LOG(level, fmt, args...) do { } while (0)
 #endif
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_CAAM_DEBUG_DRIVER
-#define DPAA2_CAAM_DRV_LOG_RAW(level, fmt, args...) \
+#ifdef RTE_LIBRTE_PMD_DPAA2_SEC_DEBUG_DRIVER
+#define DPAA2_SEC_DRV_LOG_RAW(level, fmt, args...) \
 	RTE_LOG(level, PMD, "%s(): " fmt, __func__, ## args)
 #else
-#define DPAA2_CAAM_DRV_LOG_RAW(level, fmt, args...) do { } while (0)
+#define DPAA2_SEC_DRV_LOG_RAW(level, fmt, args...) do { } while (0)
 #endif
 
-#define DPAA2_CAAM_DRV_LOG(level, fmt, args...) \
-	DPAA2_CAAM_DRV_LOG_RAW(level, fmt "\n", ## args)
+#define DPAA2_SEC_DRV_LOG(level, fmt, args...) \
+	DPAA2_SEC_DRV_LOG_RAW(level, fmt "\n", ## args)
 
 
-#define DPAA2_CAAM_LOG_ERR(fmt, args...) \
+#define DPAA2_SEC_LOG_ERR(fmt, args...) \
 	RTE_LOG(ERR, CRYPTODEV, "[%s] %s() line %u: " fmt "\n",  \
-			CRYPTODEV_NAME_DPAA2_CAAM_PMD, \
+			CRYPTODEV_NAME_DPAA2_SEC_PMD, \
 			__func__, __LINE__, ## args)
 
-#ifdef RTE_LIBRTE_DPAA2_CAAM_MB_DEBUG
-#define DPAA2_CAAM_LOG_INFO(fmt, args...) \
+#ifdef RTE_LIBRTE_DPAA2_SEC_MB_DEBUG
+#define DPAA2_SEC_LOG_INFO(fmt, args...) \
 	RTE_LOG(INFO, CRYPTODEV, "[%s] %s() line %u: " fmt "\n", \
-			CRYPTODEV_NAME_DPAA2_CAAM_PMD, \
+			CRYPTODEV_NAME_DPAA2_SEC_PMD, \
 			__func__, __LINE__, ## args)
 
-#define DPAA2_CAAM_LOG_DBG(fmt, args...) \
+#define DPAA2_SEC_LOG_DBG(fmt, args...) \
 	RTE_LOG(DEBUG, CRYPTODEV, "[%s] %s() line %u: " fmt "\n", \
-			CRYPTODEV_NAME_DPAA2_CAAM_PMD, \
+			CRYPTODEV_NAME_DPAA2_SEC_PMD, \
 			__func__, __LINE__, ## args)
 #else
-#define DPAA2_CAAM_LOG_INFO(fmt, args...)
-#define DPAA2_CAAM_LOG_DBG(fmt, args...)
+#define DPAA2_SEC_LOG_INFO(fmt, args...)
+#define DPAA2_SEC_LOG_DBG(fmt, args...)
 #endif
 
 
 #define MAX_QUEUES		64
 #define MAX_DESC_SIZE	64
-/** private data structure for each DPAA2_CAAM device */
-struct dpaa2_caam_dev_private {
+/** private data structure for each DPAA2_SEC device */
+struct dpaa2_sec_dev_private {
 	void *mc_portal; /**< MC Portal for configuring this device */
 	void *hw; /**< Hardware handle for this device.Used by NADK framework */
 	int32_t hw_id; /**< An unique ID of this device instance */
@@ -116,7 +116,7 @@ struct dpaa2_queue {
 	struct queue_storage_info_t *q_storage;
 };
 
-struct dpaa2_caam_qp {
+struct dpaa2_sec_qp {
 	struct dpaa2_queue rx_vq;
 	struct dpaa2_queue tx_vq;
 };
@@ -199,19 +199,19 @@ struct ctxt_priv {
 	struct sec_flc_desc flc_desc[0];
 };
 
-enum dpaa2_caam_op_type {
-	DPAA2_CAAM_NONE,  /*!< No Cipher operations*/
-	DPAA2_CAAM_CIPHER,/*!< CIPHER operations */
-	DPAA2_CAAM_AUTH,  /*!< Authentication Operations */
-	DPAA2_CAAM_CIPHER_HASH,  /*!< Authenticated Encryption with associated data */
-	DPAA2_CAAM_HASH_CIPHER,  /*!< Encryption with Authenticated associated data */
-	DPAA2_CAAM_IPSEC, /*!< IPSEC protocol operations*/
-	DPAA2_CAAM_PDCP,  /*!< PDCP protocol operations*/
-	DPAA2_CAAM_PKC,   /*!< Public Key Cryptographic Operations */
-	DPAA2_CAAM_MAX
+enum dpaa2_sec_op_type {
+	DPAA2_SEC_NONE,  /*!< No Cipher operations*/
+	DPAA2_SEC_CIPHER,/*!< CIPHER operations */
+	DPAA2_SEC_AUTH,  /*!< Authentication Operations */
+	DPAA2_SEC_CIPHER_HASH,  /*!< Authenticated Encryption with associated data */
+	DPAA2_SEC_HASH_CIPHER,  /*!< Encryption with Authenticated associated data */
+	DPAA2_SEC_IPSEC, /*!< IPSEC protocol operations*/
+	DPAA2_SEC_PDCP,  /*!< PDCP protocol operations*/
+	DPAA2_SEC_PKC,   /*!< Public Key Cryptographic Operations */
+	DPAA2_SEC_MAX
 };
 
-struct dpaa2_caam_cipher_ctxt {
+struct dpaa2_sec_cipher_ctxt {
 	struct {
 		uint8_t *data;
 		uint16_t length;
@@ -219,12 +219,12 @@ struct dpaa2_caam_cipher_ctxt {
 	uint8_t *init_counter;  /*!< Set initial counter for CTR mode */
 };
 
-struct dpaa2_caam_auth_ctxt {
+struct dpaa2_sec_auth_ctxt {
 	uint8_t trunc_len;              /*!< Length for output ICV, should
 					  * be 0 if no truncation required */
 };
 
-struct dpaa2_caam_aead_ctxt {
+struct dpaa2_sec_aead_ctxt {
 	struct {
 		uint8_t *data;
 		uint16_t length;
@@ -235,7 +235,7 @@ struct dpaa2_caam_aead_ctxt {
 					  * be 0 if no truncation required */
 };
 
-typedef struct dpaa2_caam_session_entry {
+typedef struct dpaa2_sec_session_entry {
 	void *ctxt;
 	uint8_t ctxt_type;
 	uint8_t dir;         /*!< Operation Direction */
@@ -251,16 +251,16 @@ typedef struct dpaa2_caam_session_entry {
 	} auth_key;
 	uint8_t status;
 	union {
-		struct dpaa2_caam_cipher_ctxt cipher_ctxt;
-		struct dpaa2_caam_auth_ctxt auth_ctxt;
-		struct dpaa2_caam_aead_ctxt aead_ctxt;
+		struct dpaa2_sec_cipher_ctxt cipher_ctxt;
+		struct dpaa2_sec_auth_ctxt auth_ctxt;
+		struct dpaa2_sec_aead_ctxt aead_ctxt;
 //		struct nadk_ipsec_ctxt ipsec_ctxt;
 //		struct nadk_pdcp_ctxt pdcp_ctxt;
 //		struct nadk_null_sec_ctxt null_sec_ctxt;
 	} ext_params;
-} dpaa2_caam_session;
+} dpaa2_sec_session;
 
-static const struct rte_cryptodev_capabilities dpaa2_caam_capabilities[] = {
+static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 	{	/* SHA1 HMAC */
 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
 		.sym = {
@@ -457,4 +457,4 @@ static const struct rte_cryptodev_capabilities dpaa2_caam_capabilities[] = {
 	},
 	RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
 };
-#endif /* _RTE_DPAA2_CAAM_PMD_PRIVATE_H_ */
+#endif /* _RTE_DPAA2_SEC_PMD_PRIVATE_H_ */
