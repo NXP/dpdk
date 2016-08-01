@@ -78,6 +78,16 @@
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  9600 /* FMAN support*/
 
+#define DPAA_RSS_OFFLOAD_ALL ( \
+	ETH_RSS_FRAG_IPV4 | \
+	ETH_RSS_NONFRAG_IPV4_TCP | \
+	ETH_RSS_NONFRAG_IPV4_UDP | \
+	ETH_RSS_NONFRAG_IPV4_SCTP | \
+	ETH_RSS_FRAG_IPV6 | \
+	ETH_RSS_NONFRAG_IPV6_TCP | \
+	ETH_RSS_NONFRAG_IPV6_UDP | \
+	ETH_RSS_NONFRAG_IPV6_SCTP)
+
 static int usdpaa_pci_devinit(struct rte_pci_driver *,
 			      struct rte_pci_device *);
 
@@ -172,6 +182,7 @@ static void usdpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_hash_mac_addrs = 0;
 	dev_info->max_vfs = dev->pci_dev->max_vfs;
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
+	dev_info->flow_type_rss_offloads = DPAA_RSS_OFFLOAD_ALL;
 	dev_info->rx_offload_capa =
 		(DEV_RX_OFFLOAD_IPV4_CKSUM |
 		DEV_RX_OFFLOAD_UDP_CKSUM  |
