@@ -72,11 +72,11 @@
 static const char *drivername = "DPNI PMD";
 
 #define MAX_TCS			DPNI_MAX_TC
-#define MAX_RX_QUEUES		64
-#define MAX_TX_QUEUES		64
+#define MAX_RX_QUEUES		16
+#define MAX_TX_QUEUES		16
 
 /*Maximum number of slots available in TX ring*/
-#define MAX_SLOTS		8
+#define MAX_TX_RING_SLOTS		8
 
 /*Threshold for a queue to *Enter* Congestion state.
   It is set to 128 frames of size 64 bytes.*/
@@ -595,7 +595,7 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		if (qbman_result_is_CSCN(dpaa2_q->cscn))
 			goto skip_tx;
 #endif
-		frames_to_send = (nb_pkts >> 3) ? MAX_SLOTS : nb_pkts;
+		frames_to_send = (nb_pkts >> 3) ? MAX_TX_RING_SLOTS : nb_pkts;
 
 		for (loop = 0; loop < frames_to_send; loop++) {
 			fd_arr[loop].simple.frc = 0;
