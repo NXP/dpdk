@@ -68,11 +68,12 @@
 #define SCTP_PRESENT	4
 
 /* internal offset from where IC is copied to packet buffer*/
-#define DEFAULT_ICIOF		32
+#define DEFAULT_ICIOF          32
 /* IC transfer size */
-#define DEFAULT_ICSZ		48
-/* IC offset from buffer header address */
-#define DEFAULT_ICEOF	(DEFAULT_ICIOF + DEFAULT_ICSZ)
+#define DEFAULT_ICSZ	48
+
+/* IC offsets from buffer header address */
+#define DEFAULT_RX_ICEOF	80
 #define DEFAULT_TX_ICEOF	16
 
 /*
@@ -93,7 +94,7 @@
 /**
  * FMan parse result array
  */
-typedef struct fm_prs_result {
+struct dpaa_eth_parse_results_t {
 	 uint8_t     lpid;		 /**< Logical port id */
 	 uint8_t     shimr;		 /**< Shim header result  */
 	 uint16_t    l2r;		 /**< Layer 2 result */
@@ -114,13 +115,25 @@ typedef struct fm_prs_result {
 	 uint8_t     gre_off;		 /**< GRE offset */
 	 uint8_t     l4_off;		 /**< Layer 4 offset */
 	 uint8_t     nxthdr_off;	 /**< Parser end point */
-} fm_prs_result_t;
+} __attribute__ ((__packed__));
 
-#define GET_PRS_RESULT(buf, prs_res) \
-	(typeof(prs_res))(buf + DEFAULT_ICEOF)
+/* The structure is the Prepended Data to the Frame which is used by FMAN */
+struct annotations_t {
+	uint8_t reserved[DEFAULT_RX_ICEOF];
+	struct dpaa_eth_parse_results_t parse;	/**< Pointer to Parsed result*/
+	uint64_t timestamp;		/**< TimeStamp */
+	uint64_t hash;			/**< Hash Result */
+};
 
-#define GET_TX_PRS(buf, prs_res) \
-	(typeof(prs_res))(buf + DEFAULT_TX_ICEOF)
+
+#define GET_ANNOTATIONS(_buf) \
+	(struct annotations_t *)(_buf)
+
+#define GET_RX_PRS(_buf) \
+	(struct dpaa_eth_parse_results_t *)(_buf + DEFAULT_RX_ICEOF)
+
+#define GET_TX_PRS(_buf) \
+	(struct dpaa_eth_parse_results_t *)(_buf + DEFAULT_TX_ICEOF)
 
 #define L2_ETH_MAC_PRESENT(prs) \
 	(rte_be_to_cpu_16((prs)->l2r) & ETH_PRESENT_MASK)

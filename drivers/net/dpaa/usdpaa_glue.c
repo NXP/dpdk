@@ -296,8 +296,9 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 static inline void usdpaa_eth_packet_info(struct rte_mbuf *m,
 					  uint64_t fd_virt_addr)
 {
+	struct dpaa_eth_parse_results_t *prs = GET_RX_PRS(fd_virt_addr);
+	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint32_t pkt_type = 0;
-	fm_prs_result_t *prs = GET_PRS_RESULT(fd_virt_addr, prs);
 
 	if (L2_ETH_MAC_PRESENT(prs))
 		pkt_type |= RTE_PTYPE_L2_ETHER;
@@ -323,6 +324,7 @@ static inline void usdpaa_eth_packet_info(struct rte_mbuf *m,
 	m->packet_type = pkt_type;
 	m->l2_len = prs->ip_off[0];
 	m->l3_len = prs->l4_off - prs->ip_off[0];
+	m->hash.rss = (uint32_t)(rte_be_to_cpu_64(annot->hash));
 }
 
 static inline struct rte_mbuf **usdpaa_get_mbuf_slot(void)
@@ -495,20 +497,21 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 		fd->length20 = mbuf->pkt_len;
 		rte_pktmbuf_free(mbuf);
 		mbuf = usdpaa_mbuf;
+
 	}
 	display_frame((iface->tx_fqs)->fqid, fd);
 
 	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK) {
-		fm_prs_result_t *prs;
+		struct dpaa_eth_parse_results_t *prs;
 
 		if (mbuf->data_off < DEFAULT_TX_ICEOF +
-				sizeof(fm_prs_result_t)) {
+				sizeof(struct dpaa_eth_parse_results_t)) {
 			printf("Checksum offload Error: Not enough Headroom "
 				"space for correct Checksum offload.\n");
 			goto retry;
 		}
 
-		prs = GET_TX_PRS(mbuf->buf_addr, prs);
+		prs = GET_TX_PRS(mbuf->buf_addr);
 		if (mbuf->packet_type & RTE_PTYPE_L3_IPV4)
 			prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
 		else if (mbuf->packet_type & RTE_PTYPE_L3_IPV6)
@@ -1290,7 +1293,7 @@ int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
 		memset(&icp, 0, sizeof(icp));
 		/* set ICEOF for to the default value , which is 0*/
 		icp.iciof = DEFAULT_ICIOF;
-		icp.iceof = DEFAULT_ICEOF;
+		icp.iceof = DEFAULT_RX_ICEOF;
 		icp.icsz = DEFAULT_ICSZ;
 		fman_if_set_ic_params(iface->fif, &icp);
 
