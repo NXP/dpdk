@@ -286,7 +286,10 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 				n += ret;
 			}
 		}
-		if (ret < 0) {
+		/* In case of less than requested number of buffers available
+		 * in pool, qbman_swp_acquire returns 0
+		 */
+		if (ret <= 0) {
 			PMD_DRV_LOG(WARNING, "Buffer aquire failed with"
 				"err code: %d", ret);
 			break;
