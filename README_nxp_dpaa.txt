@@ -109,6 +109,10 @@ How to Build DPDK Applications
            # make -C examples/l2fwd
      4. Compilation of L3FWD example
            # make -C examples/l3fwd
+     5. Compilation of L2FWD-Crypto example
+           # make -C examples/l2fwd-crypto
+     6. Compilation of Test example
+           # make -C app/test
 
 ===============================================================================
 
@@ -172,7 +176,34 @@ How to run DPDK Applications
 
        Now pump traffic from the Spirent to the enabled ports
 
-5. Running DPDK L3FWD Application
+5. Running DPDK L2FWD-CRYPTO Application
+   ==============================
+
+   Execute following commands to run DPDK L2FWD-CRYPTO on LS2 board
+
+   Case: Encrypt then Authenticate
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain CIPHER_HASH  \
+		--cipher_algo AES_CBC --cipher_op ENCRYPT --cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+		--auth_algo SHA1_HMAC --auth_op GENERATE
+   Case: Encrypt only
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain CIPHER_ONLY --cipher_algo AES_CBC --cipher_op ENCRYPT --cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+   Case: Authenticate only
+       # ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x3 -q 1 -s --chain HASH_ONLY --auth_algo SHA1_HMAC --auth_op GENERATE
+   Case: Authenticate then Encrypt
+       # To be supported in future.
+
+       Now pump traffic from the Spirent to the enabled ports
+
+6. Running DPDK TEST application for Crypto tests
+   Execute following commands to run DPDK test on LS2 board
+       # ./test
+   Execute following commands to run Crypto tests on RTE command line
+       # RTE>>cryptodev_dpaa2_sec_autotest
+	This is for functional verification of Encrypt+Hash Generate and then Decrypt+Hash Verify for AES-CBC-HMAC-SHA1. More test cases will be added in future.
+
+       # RTE>>cryptodev_dpaa2_sec_perftest
+	This is for taking performance numbers of Crypto operations.
+7. Running DPDK L3FWD Application
    ============================== 
    Execute following commands to run DPDK L3FWD on LS1 board
 
@@ -189,7 +220,7 @@ Traffic to port 2: 2.1.1.0/24
 Traffic to port 3: 3.1.1.0/24
 Traffic to port 4: 4.1.1.0/24
 
-6. Running DPDK KNI Application
+8. Running DPDK KNI Application
    ============================ 
 
    Execute following commands to run DPDK KNI
@@ -237,11 +268,12 @@ Traffic to port 4: 4.1.1.0/24
 ===============================================================================
 Building and Use PKTGEN with DPDK
 
- Get the code from: git://dpdk.org/apps/pktgen-dpdk
+ Get the code from:
+git clone https://github.com/qoriq-open-source/pktgen-dpdk.git
 #do the make install in DPDK. 
 source <DPDK Source DIR>/standalone_dpaa
 export RTE_SDK=<DPDK Source DIR>
-make
+make -j8 EXTRA_CFLAGS="-std=gnu99"
 
 Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 

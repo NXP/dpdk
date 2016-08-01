@@ -244,6 +244,13 @@ Traffic to port 4: 4.1.1.0/24
 
             # ping 9.9.9.1
 
+7. Running DPDK test Application for ARM-CE:
+       1. To launch regression tests:
+           # ./test
+           RTE>>cryptodev_armce_autotest
+       2. To launch performance/benchmark tests:
+           # ./test
+           RTE>>cryptodev_armce_perftest
 
 ===============================================================================
 Building and Use PKTGEN with DPDK
