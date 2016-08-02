@@ -50,7 +50,7 @@ CONFIG_RTE_KNI_KMOD=n
 
 
 # Compile ARMCE based crypto
-CONFIG_RTE_LIBRTE_PMD_ARMCE=n
+CONFIG_RTE_LIBRTE_PMD_ARMCE=y
 
 # Compile software PMD backed by FSL DPAA2 files
 #
