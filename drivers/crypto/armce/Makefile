@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -27,41 +27,34 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
+include $(RTE_SDK)/mk/rte.vars.mk
 
-# NXP (Freescale) - Soc Architecture with WRIOP and QBMAN support
-CONFIG_RTE_MACHINE="dpaa2"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a57+fp+simd"
 
-#
-# Compile Environment Abstraction Layer
-#
-CONFIG_RTE_MAX_LCORE=8
-CONFIG_RTE_MAX_NUMA_NODES=1
+# library name
+LIB = librte_pmd_armce.a
 
-CONFIG_RTE_PKTMBUF_HEADROOM=256
-#
-#Kernel KNI component - disable by default to avoid kernel
-#code dependency
-#
-CONFIG_RTE_KNI_KMOD=n
+# build flags
+CFLAGS += -O3 -I${OPENSSL_PATH}/include/
+CFLAGS += $(WERROR_FLAGS)
+#LDFLAGS += -L$(OPENSSL_PATH)/lib -l:ssl -l:crypto
 
-# Compile ARMCE based crypto
-CONFIG_RTE_LIBRTE_PMD_ARMCE=n
+# library version
+LIBABIVER := 1
 
-# Compile software PMD backed by FSL DPAA2 files
-#
-CONFIG_RTE_LIBRTE_DPAA2_PMD=y
-CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=n
-CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n
-CONFIG_RTE_MBUF_DEFAULT_MEMPOOL_OPS="dpaa2"
+# versioning export map
+EXPORT_MAP := rte_pmd_armce_version.map
 
-#FSL DPAA2 caam driver
-CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC=y
-CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_RX=n
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += armce_pmd.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += armce_pmd_ops.c
+
+# export include files
+SYMLINK-y-include +=
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += lib/librte_cryptodev
+
+include $(RTE_SDK)/mk/rte.lib.mk

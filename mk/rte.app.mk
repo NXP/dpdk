@@ -148,6 +148,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_GCM)  += -L$(AESNI_MULTI_BUFFER_LIB_PATH) 
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO) += -lrte_pmd_null_crypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_QAT)        += -lrte_pmd_qat -lcrypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC)     += -lrte_pmd_dpaa2_sec
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE)  += -L${OPENSSL_PATH}/lib -lssl -lcrypto -lrte_pmd_armce
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G)     += -lrte_pmd_snow3g
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G)     += -L$(LIBSSO_SNOW3G_PATH)/build -lsso_snow3g
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_KASUMI)     += -lrte_pmd_kasumi
