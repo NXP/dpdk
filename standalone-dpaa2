@@ -27,6 +27,12 @@ then
         echo "ERROR: RTE_KERNELDIR or KERNEL_PATH is not set";
 fi
 
+echo "OPENSSL_PATH is configured as:" $OPENSSL_PATH
+if [[ -z ${OPENSSL_PATH} ]]
+then
+        echo "WARNING: OPENSSL_PATH is not set";
+fi
+
 #export PATH=${CROSS_PATH}:$PATH
 echo "Setup for DPDK DPAA2-QorIQ compilation";
 echo "CROSS is configured:" $CROSS
