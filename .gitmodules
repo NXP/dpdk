@@ -1,4 +1,4 @@
 [submodule "ext"]
 	path = ext
 	url = ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git
-	branch = 16.07-qoriq
+	branch = master
