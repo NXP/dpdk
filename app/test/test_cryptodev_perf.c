@@ -1745,7 +1745,7 @@ test_perf_crypto_qp_vary_burst_size(uint16_t dev_num)
 	/* Setup HMAC Parameters */
 	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
 #ifdef DPDK88
-	ut_params->auth_xform.next = &ut_params->auth_xform;
+	ut_params->auth_xform.next = &ut_params->cipher_xform;
 #else
 	ut_params->auth_xform.next = NULL;
 #endif
