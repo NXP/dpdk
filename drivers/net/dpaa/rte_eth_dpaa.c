@@ -88,6 +88,8 @@
 	ETH_RSS_NONFRAG_IPV6_UDP | \
 	ETH_RSS_NONFRAG_IPV6_SCTP)
 
+#define QBMAN_MULTI_TX
+
 static int usdpaa_pci_devinit(struct rte_pci_driver *,
 			      struct rte_pci_device *);
 
@@ -150,8 +152,13 @@ static int usdpaa_eth_dev_start(struct rte_eth_dev *dev)
 	}
 
 	port_id = dev->data->port_id;
+
 	/* Change tx callback to the real one */
+#ifdef QBMAN_MULTI_TX
+	dev->tx_pkt_burst = usdpaa_eth_tx_multi;
+#else
 	dev->tx_pkt_burst = usdpaa_eth_ring_tx;
+#endif
 
 	usdpaa_port_control(port_id, ENABLE_OP);
 	return ret;

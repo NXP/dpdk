@@ -2467,6 +2467,82 @@ int qman_enqueue(struct qman_fq *fq, const struct qm_fd *fd, u32 flags)
 }
 EXPORT_SYMBOL(qman_enqueue);
 
+int qman_enqueue_multi(struct qman_fq *fq,
+		const struct qm_fd *fd,
+		int frames_to_send)
+{
+	struct qman_portal *p = get_affine_portal();
+	struct qm_portal *portal = &p->p;
+	register struct qm_eqcr *eqcr = &portal->eqcr;
+	struct qm_eqcr_entry *eq = eqcr->cursor, *prev_eq;
+	unsigned long irqflags __maybe_unused;
+	u8 i, diff, old_ci, sent = 0;
+
+	PORTAL_IRQ_LOCK(p, (*irqflags));
+
+	/* Update the available entries if no entry is free */
+	if (!eqcr->available) {
+		old_ci = eqcr->ci;
+		eqcr->ci = qm_cl_in(EQCR_CI) & (QM_EQCR_SIZE - 1);
+		diff = qm_cyc_diff(QM_EQCR_SIZE, old_ci, eqcr->ci);
+		eqcr->available += diff;
+		if (!diff) {
+			PORTAL_IRQ_UNLOCK(p, (*irqflags));
+			put_affine_portal();
+			return 0;
+		}
+	}
+
+	/* try to send as many frames as possible */
+	while (eqcr->available && frames_to_send--) {
+		eq->fqid = cpu_to_be32(fq->fqid);
+#ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+		eq->tag = cpu_to_be32(fq->key);
+#else
+		eq->tag = cpu_to_be32((u32)(uintptr_t)fq);
+#endif
+		eq->fd.opaque_addr = fd->opaque_addr;
+		eq->fd.addr = cpu_to_be40(fd->addr);
+		eq->fd.status = cpu_to_be32(fd->status);
+		eq->fd.opaque = cpu_to_be32(fd->opaque);
+
+		eq = (void *)((unsigned long)(eq + 1) &
+			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+		eqcr->available--;
+		sent++;
+		fd++;
+	}
+	lwsync();
+
+	/* in order for flushes to complete faster */
+	/*For that we use a following trick: we record all lines in 32 bit word */
+	eq = eqcr->cursor;
+	for (i = 0; i < sent; i++) {
+		eq->__dont_write_directly__verb =
+			QM_EQCR_VERB_CMD_ENQUEUE | eqcr->vbit;
+		prev_eq = eq;
+		eq = (void *)((unsigned long)(eq + 1) &
+			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+		if (unlikely((prev_eq +1) != eq))
+			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
+	}
+
+	/* We need  to flush all the lines but without load/store operations between them */
+	eq = eqcr->cursor;
+	for (i = 0; i < sent; i++) {
+		dcbf(eq);
+		eq = (void *)((unsigned long)(eq + 1) &
+			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+	}
+	/* Update cursor for the next call */
+	eqcr->cursor = eq;
+
+	PORTAL_IRQ_UNLOCK(p, irqflags);
+	put_affine_portal();
+	return sent;
+}
+EXPORT_SYMBOL(qman_enqueue_multi);
+
 int qman_p_enqueue_orp(struct qman_portal *p, struct qman_fq *fq,
 		       const struct qm_fd *fd, u32 flags,
 				struct qman_fq *orp, u16 orp_seqnum)
