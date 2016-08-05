@@ -44,7 +44,7 @@ all:
 else
 
 # binary name
-APP = nxp-vhost-switch
+APP = nxp-vhost
 
 # all source are stored in SRCS-y
 SRCS-y := main.c
