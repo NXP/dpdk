@@ -102,6 +102,10 @@ uint16_t usdpaa_eth_ring_tx(void *q,
 			    struct rte_mbuf **bufs,
 			    uint16_t nb_bufs);
 
+uint16_t usdpaa_eth_tx_multi(void *q,
+			    struct rte_mbuf **bufs,
+			    uint16_t nb_bufs);
+
 uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
 uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
 

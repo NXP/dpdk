@@ -2245,6 +2245,10 @@ int qman_volatile_dequeue(struct qman_fq *fq, u32 flags, u32 vdqcr);
  */
 int qman_enqueue(struct qman_fq *fq, const struct qm_fd *fd, u32 flags);
 
+int qman_enqueue_multi(struct qman_fq *fq,
+		const struct qm_fd *fd,
+		int frames_to_send);
+
 typedef int (*qman_cb_precommit) (void *arg);
 /**
  * qman_enqueue_precommit - Enqueue a frame to a frame queue and call cb

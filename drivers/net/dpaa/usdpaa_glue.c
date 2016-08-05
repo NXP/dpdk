@@ -91,6 +91,20 @@
 		PKT_TX_TCP_CKSUM |                 \
 		PKT_TX_UDP_CKSUM)
 
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
+
+#define DPAA_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid) \
+	do { \
+		(_fd)->cmd = 0; \
+		(_fd)->opaque_addr = 0; \
+		(_fd)->format = QM_FD_CONTIG; \
+		(_fd)->addr = (_mbuf)->buf_physaddr; \
+		(_fd)->offset = (_mbuf)->data_off; \
+		(_fd)->bpid = _bpid; \
+		(_fd)->length20 = (_mbuf)->pkt_len; \
+	} while (0);
+
 struct pool_info_entry {
 	struct rte_mempool *mp;
 	struct bman_pool *bp;
@@ -327,6 +341,35 @@ static inline void usdpaa_eth_packet_info(struct rte_mbuf *m,
 	m->hash.rss = (uint32_t)(rte_be_to_cpu_64(annot->hash));
 }
 
+static inline void usdpaa_csum_offload(struct rte_mbuf *mbuf,
+		struct qm_fd *fd)
+{
+	struct dpaa_eth_parse_results_t *prs;
+
+	if (mbuf->data_off < DEFAULT_TX_ICEOF +
+			sizeof(struct dpaa_eth_parse_results_t)) {
+		printf("Checksum offload Error: Not enough Headroom "
+			"space for correct Checksum offload.\n");
+		return;
+	}
+
+	prs = GET_TX_PRS(mbuf->buf_addr);
+	if (mbuf->packet_type & RTE_PTYPE_L3_IPV4)
+		prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
+	else if (mbuf->packet_type & RTE_PTYPE_L3_IPV6)
+		prs->l3r = DPAA_L3_PARSE_RESULT_IPV6;
+
+	if (mbuf->packet_type & RTE_PTYPE_L4_TCP)
+		prs->l4r = DPAA_L4_PARSE_RESULT_TCP;
+	else if (mbuf->packet_type & RTE_PTYPE_L4_UDP)
+		prs->l4r = DPAA_L4_PARSE_RESULT_UDP;
+
+	prs->ip_off[0] = mbuf->l2_len;
+	prs->l4_off = mbuf->l3_len + mbuf->l2_len;
+	/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
+	fd->cmd = 0x50000000;
+}
+
 static inline struct rte_mbuf **usdpaa_get_mbuf_slot(void)
 {
 	if (dpaa_bufs.next == MAX_PKTS_BURST)
@@ -456,24 +499,15 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 {
 	int ret;
 	struct rte_mbuf *usdpaa_mbuf;
+	struct pool_info_entry *bp_info;
 	struct rte_mempool *mp;
 	static int retry_cnt;
 
 	mp = mbuf->pool;
 	if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
-		struct pool_info_entry *bp_info;
-
 		bp_info = mempool_to_pool_info(mbuf->pool);
-		fd->addr = mbuf->buf_physaddr;
-		fd->offset = mbuf->data_off;
-		fd->bpid = bp_info->bpid;
-		fd->length20 = mbuf->pkt_len;
+		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd, bp_info->bpid);
 	} else {
-		if (!iface || !iface->bp_info) {
-			printf("%s:iface or bp_info not available\n", __func__);
-			rte_pktmbuf_free(mbuf);
-			return;
-		}
 		/* allocate pktbuffer on bpid for usdpaa port */
 		usdpaa_mbuf = usdpaa_get_pktbuf(iface->bp_info);
 		if (unlikely(!usdpaa_mbuf)) {
@@ -481,52 +515,26 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 			rte_pktmbuf_free(mbuf);
 			return;
 		}
-		memcpy(usdpaa_mbuf->buf_addr + mbuf->data_off,
-		       (void *)(mbuf->buf_addr + mbuf->data_off),
-			mbuf->pkt_len);
 
-		/* Copy required fields */
+		memcpy(usdpaa_mbuf->buf_addr + mbuf->data_off, (void *)
+			(mbuf->buf_addr + mbuf->data_off), mbuf->pkt_len);
+
+		/* Copy only required fields */
 		usdpaa_mbuf->data_off = mbuf->data_off;
+		usdpaa_mbuf->pkt_len = mbuf->pkt_len;
 		usdpaa_mbuf->ol_flags = mbuf->ol_flags;
 		usdpaa_mbuf->packet_type = mbuf->packet_type;
 		usdpaa_mbuf->tx_offload = mbuf->tx_offload;
-
-		fd->addr = usdpaa_mbuf->buf_physaddr;
-		fd->bpid = iface->bp_info->bpid;
-		fd->offset = mbuf->data_off;
-		fd->length20 = mbuf->pkt_len;
 		rte_pktmbuf_free(mbuf);
 		mbuf = usdpaa_mbuf;
+
+		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd, iface->bp_info->bpid);
 
 	}
 	display_frame((iface->tx_fqs)->fqid, fd);
 
-	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK) {
-		struct dpaa_eth_parse_results_t *prs;
-
-		if (mbuf->data_off < DEFAULT_TX_ICEOF +
-				sizeof(struct dpaa_eth_parse_results_t)) {
-			printf("Checksum offload Error: Not enough Headroom "
-				"space for correct Checksum offload.\n");
-			goto retry;
-		}
-
-		prs = GET_TX_PRS(mbuf->buf_addr);
-		if (mbuf->packet_type & RTE_PTYPE_L3_IPV4)
-			prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
-		else if (mbuf->packet_type & RTE_PTYPE_L3_IPV6)
-			prs->l3r = DPAA_L3_PARSE_RESULT_IPV6;
-
-		if (mbuf->packet_type & RTE_PTYPE_L4_TCP)
-			prs->l4r = DPAA_L4_PARSE_RESULT_TCP;
-		else if (mbuf->packet_type & RTE_PTYPE_L4_UDP)
-			prs->l4r = DPAA_L4_PARSE_RESULT_UDP;
-
-		prs->ip_off[0] = mbuf->l2_len;
-		prs->l4_off = mbuf->l3_len + mbuf->l2_len;
-		/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
-		fd->cmd = 0x50000000;
-	}
+	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK)
+		usdpaa_csum_offload(mbuf, fd);
 
 retry:
 	PMD_DRV_LOG(DEBUG, "Enqueing packet %p bufaddr %llx  to fqid %x\n",
@@ -563,6 +571,73 @@ uint16_t usdpaa_eth_ring_tx(void *q,
 	}
 
 	return ii;
+}
+
+uint16_t usdpaa_eth_tx_multi(void *q,
+			struct rte_mbuf **bufs,
+			uint16_t nb_bufs)
+{
+	struct dpaaeth_txq *txq = q;
+	struct net_if *iface = portid_to_iface(txq->port_id);
+	struct rte_mbuf *mbuf;
+	struct rte_mempool *mp;
+	struct pool_info_entry *bp_info;
+	struct qm_fd fd_arr[MAX_TX_RING_SLOTS];
+	uint32_t frames_to_send, loop, i = 0;
+
+	while (nb_bufs) {
+		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
+
+		for (loop = 0; loop < frames_to_send; loop++, i++) {
+			mbuf = bufs[i];
+			mp = mbuf->pool;
+			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+				bp_info = mempool_to_pool_info(mp);
+				DPAA_MBUF_TO_CONTIG_FD(mbuf,
+					&fd_arr[loop], bp_info->bpid);
+			} else {
+				struct rte_mbuf *usdpaa_mbuf;
+				/* allocate pktbuffer on bpid for usdpaa port */
+				usdpaa_mbuf = usdpaa_get_pktbuf(iface->bp_info);
+				if (!usdpaa_mbuf) {
+					PMD_DRV_LOG(DEBUG, "no usdpaa buffers.\n");
+					/* Set frames_to_send & nb_bufs so that packets
+					 * are transmitted till last frame */
+					frames_to_send = loop;
+					nb_bufs = loop;
+					goto send_pkts;
+				}
+
+				memcpy(usdpaa_mbuf->buf_addr + mbuf->data_off, (void *)
+					(mbuf->buf_addr + mbuf->data_off), mbuf->pkt_len);
+
+				/* Copy only the required fields */
+				usdpaa_mbuf->data_off = mbuf->data_off;
+				usdpaa_mbuf->pkt_len = mbuf->pkt_len;
+				usdpaa_mbuf->ol_flags = mbuf->ol_flags;
+				usdpaa_mbuf->packet_type = mbuf->packet_type;
+				usdpaa_mbuf->tx_offload = mbuf->tx_offload;
+				rte_pktmbuf_free(mbuf);
+				mbuf = usdpaa_mbuf;
+
+				DPAA_MBUF_TO_CONTIG_FD(mbuf,
+					&fd_arr[loop], iface->bp_info->bpid);
+			}
+
+			if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK)
+				usdpaa_csum_offload(mbuf, &fd_arr[loop]);
+		}
+
+send_pkts:
+		loop = 0;
+		while (loop < frames_to_send) {
+			loop += qman_enqueue_multi(iface->tx_fqs, &fd_arr[loop],
+					frames_to_send - loop);
+		}
+		nb_bufs -= frames_to_send;
+	}
+
+	return i;
 }
 
 /* Helper to determine whether an admin FQ is used on the given interface */
