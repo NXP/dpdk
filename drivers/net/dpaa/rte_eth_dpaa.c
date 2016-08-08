@@ -258,45 +258,13 @@ static uint16_t usdpaa_eth_tx_drop_all(void *q  __rte_unused,
 	return 0;
 }
 
-int usdpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			      uint16_t nb_desc __rte_unused,
-			      unsigned int socket_id __rte_unused,
-			      const struct rte_eth_txconf *tx_conf __rte_unused)
-{
-	struct dpaaeth_txq *txq;
-
-	 /* Allocate the tx queue data structure. */
-	txq = rte_zmalloc("ethdev TX queue", sizeof(*txq), RTE_CACHE_LINE_SIZE);
-	if (!txq)
-		return -ENOMEM;
-
-	txq->port_id = dev->data->port_id;
-	txq->queue_id = queue_idx;
-	txq->dev = dev;
-	dev->data->tx_queues[queue_idx] = txq;
-
-	return 0;
-}
-
-void usdpaa_eth_tx_queue_release(void *txq)
-{
-	struct dpaaeth_txq *q = (struct dpaaeth_txq *)txq;
-
-	if (txq && q->dev->data->tx_queues[q->queue_id]) {
-		rte_free(txq);
-		q->dev->data->tx_queues[q->queue_id] = NULL;
-	}
-	printf("\n(%s) called for 1=%p\n", __func__, q);
-	return;
-}
-
 int usdpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			      uint16_t nb_desc __rte_unused,
 			      unsigned int socket_id __rte_unused,
 			      const struct rte_eth_rxconf *rx_conf __rte_unused,
 			      struct rte_mempool *mp)
 {
-	return usdpaa_set_rx_queues(dev->data->port_id, queue_idx,
+	return usdpaa_set_rx_queue(dev->data->port_id, queue_idx,
 			     dev->data->rx_queues, mp);
 }
 
@@ -304,6 +272,20 @@ void usdpaa_eth_rx_queue_release(void *rxq)
 {
 	printf("\n(%s) called for 1=%p\n", __func__, rxq);
 	return;
+}
+
+int usdpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
+			      uint16_t nb_desc __rte_unused,
+			      unsigned int socket_id __rte_unused,
+			      const struct rte_eth_txconf *tx_conf __rte_unused)
+{
+	return usdpaa_set_tx_queue(dev->data->port_id, queue_idx,
+			     dev->data->tx_queues);
+}
+
+void usdpaa_eth_tx_queue_release(void *txq)
+{
+	printf("\n(%s) called for 1=%p\n", __func__, txq);
 }
 
 int usdpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
