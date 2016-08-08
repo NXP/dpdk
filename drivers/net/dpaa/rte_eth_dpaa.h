@@ -74,12 +74,6 @@ struct usdpaa_eth_stats {
 	uint64_t oerrors;   /**< Total number of failed transmitted packets. */
 };
 
-struct dpaaeth_txq {
-		int port_id;
-		int queue_id;
-		struct rte_eth_dev *dev;
-};
-
 extern __thread bool thread_portal_init;
 
 int add_usdpaa_devices_to_pcilist(int num_ethports);
@@ -109,8 +103,11 @@ uint16_t usdpaa_eth_tx_multi(void *q,
 uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
 uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
 
-int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
-			 void **rx_queues, struct rte_mempool *mp);
+int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
+			 void **tx_queues, struct rte_mempool *mp);
+
+int usdpaa_set_tx_queue(uint32_t portid, uint32_t queue_id,
+			 void **rx_queues);
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
 void display_frame(uint32_t fqid, const struct qm_fd *fd);

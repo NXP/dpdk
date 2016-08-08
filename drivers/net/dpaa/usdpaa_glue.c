@@ -69,7 +69,6 @@
 #define NET_IF_TX_PRIORITY		3
 #define NET_IF_ADMIN_PRIORITY		4
 
-#define NET_IF_NUM_TX			1
 #define NET_IF_RX_PRIORITY		4
 #define NET_IF_RX_ANNOTATION_STASH	0
 #define NET_IF_RX_DATA_STASH		1
@@ -119,20 +118,14 @@ struct net_if_admin {
 	int idx; /* ADMIN_FQ_<x> */
 };
 
-/* Each "rx_hash" (PCD) FQ is represented by one of these */
-struct net_if_rx {
+struct net_if_queue {
 	struct qman_fq fq;
-	/* Each Rx FQ is "pre-mapped" to a Tx FQ. Eg. if there are 32 Rx FQs and
-	 * 2 Tx FQs for each interface, then each Tx FQ will be reflecting
-	 * frames from 16 Rx FQs.
-	 */
-	uint32_t tx_fqid;
 	uint32_t ifid;
-} __attribute__((aligned(MAX_CACHELINE)));
+};
 
 /* Each PCD FQ-range within an interface is represented by one of these */
 struct net_if_rx_fqrange {
-	struct net_if_rx *rx; /* array size ::rx_count */
+	struct net_if_queue *rx; /* array size ::rx_count */
 	unsigned int rx_count;
 	struct list_head list;
 };
@@ -144,9 +137,9 @@ struct net_if {
 	char name[NETIF_ETHER_DEV_NAME_SIZE];
 	char mac_addr[ETH_ALEN];
 	const struct fm_eth_port_cfg *cfg;
-	struct qman_fq *tx_fqs; /* array size NET_IF_NUM_TX */
 	struct net_if_admin admin[ADMIN_FQ_NUM];
 	struct list_head rx_list; /* list of "struct net_if_rx_fqrange" */
+	struct net_if_queue *tx_queues;
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
@@ -387,7 +380,7 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 				      const struct qm_dqrr_entry *dqrr)
 {
 	const struct qm_fd *fd;
-	struct net_if_rx *rx;
+	struct net_if_queue *rx;
 	void *ptr;
 	struct rte_mbuf *mbuf, **p;
 	struct pool_info_entry *bp_info;
@@ -405,7 +398,7 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	}
 	display_frame(dqrr->fqid, fd);
 
-	rx = container_of(fq, struct net_if_rx, fq);
+	rx = container_of(fq, struct net_if_queue, fq);
 	ptr = usdpaa_mem_ptov(fd->addr);
 	if (!ptr) {
 		printf("%s::unable to convert physical address\n", __func__);
@@ -531,15 +524,15 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd, iface->bp_info->bpid);
 
 	}
-	display_frame((iface->tx_fqs)->fqid, fd);
+	display_frame(iface->tx_queues[0].fq.fqid, fd);
 
 	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK)
 		usdpaa_csum_offload(mbuf, fd);
 
 retry:
 	PMD_DRV_LOG(DEBUG, "Enqueing packet %p bufaddr %llx  to fqid %x\n",
-		    mbuf, fd->addr, (iface->tx_fqs)->fqid);
-	ret = qman_enqueue(iface->tx_fqs, fd, 0);
+		    mbuf, fd->addr, (iface->tx_queues[0].fq.fqid));
+	ret = qman_enqueue(&iface->tx_queues[0].fq, fd, 0);
 	if (ret) {
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
 		if (retry_cnt == 10) {
@@ -557,12 +550,11 @@ uint16_t usdpaa_eth_ring_tx(void *q,
 			    struct rte_mbuf **bufs,
 			uint16_t nb_bufs)
 {
-	int ii;
-	struct dpaaeth_txq *txq = q;
+	struct net_if_queue *txq = container_of(q, struct net_if_queue, fq);;
+	struct net_if *iface = &dpaa_ifacs[txq->ifid];
 	struct qm_fd fd;
-	struct net_if *iface;
+	int ii;
 
-	iface = portid_to_iface(txq->port_id);
 	memset(&fd, 0, sizeof(struct qm_fd));
 	fd.format = QM_FD_CONTIG;
 
@@ -577,8 +569,6 @@ uint16_t usdpaa_eth_tx_multi(void *q,
 			struct rte_mbuf **bufs,
 			uint16_t nb_bufs)
 {
-	struct dpaaeth_txq *txq = q;
-	struct net_if *iface = portid_to_iface(txq->port_id);
 	struct rte_mbuf *mbuf;
 	struct rte_mempool *mp;
 	struct pool_info_entry *bp_info;
@@ -596,6 +586,8 @@ uint16_t usdpaa_eth_tx_multi(void *q,
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
 					&fd_arr[loop], bp_info->bpid);
 			} else {
+				struct net_if_queue *txq = container_of(q, struct net_if_queue, fq);;
+				struct net_if *iface = &dpaa_ifacs[txq->ifid];
 				struct rte_mbuf *usdpaa_mbuf;
 				/* allocate pktbuffer on bpid for usdpaa port */
 				usdpaa_mbuf = usdpaa_get_pktbuf(iface->bp_info);
@@ -631,7 +623,7 @@ uint16_t usdpaa_eth_tx_multi(void *q,
 send_pkts:
 		loop = 0;
 		while (loop < frames_to_send) {
-			loop += qman_enqueue_multi(iface->tx_fqs, &fd_arr[loop],
+			loop += qman_enqueue_multi(q, &fd_arr[loop],
 					frames_to_send - loop);
 		}
 		nb_bufs -= frames_to_send;
@@ -939,7 +931,7 @@ static int net_if_rx_init(struct net_if *dpaa_intf,
 			  int offset, int overall,
 			  uint32_t fqid)
 {
-	struct net_if_rx *rx = &fqrange->rx[offset];
+	struct net_if_queue *rx = &fqrange->rx[offset];
 	struct qm_mcc_initfq opts;
 	int ret;
 
@@ -950,7 +942,6 @@ static int net_if_rx_init(struct net_if *dpaa_intf,
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	rx->tx_fqid = dpaa_intf->tx_fqs[overall % NET_IF_NUM_TX].fqid;
 	rx->fq.cb.dqrr = cb_rx;
 	rx->ifid = dpaa_intf->ifid;
 	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d for ifid %d\n",
@@ -987,7 +978,7 @@ static int net_if_init(struct net_if *dpaa_intf,
 {
 	const struct fman_if *fif = cfg->fman_if;
 	struct fm_eth_port_fqrange *fq_range;
-	int ret, loop;
+	int num_cores, ret, loop;
 
 	dpaa_intf->cfg = cfg;
 	/* give the interface a name */
@@ -1005,18 +996,6 @@ static int net_if_init(struct net_if *dpaa_intf,
 		else
 			printf("%02x\n", dpaa_intf->mac_addr[loop]);
 	}
-	/* Initialise Tx FQs */
-	dpaa_intf->tx_fqs = calloc(NET_IF_NUM_TX, sizeof(dpaa_intf->tx_fqs[0]));
-	if (!dpaa_intf->tx_fqs)
-		return -ENOMEM;
-	for (loop = 0; loop < NET_IF_NUM_TX; loop++) {
-		ret = net_if_tx_init(&dpaa_intf->tx_fqs[loop], fif);
-		if (ret)
-			return ret;
-		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x\n",
-			    __func__, dpaa_intf->tx_fqs[loop].fqid);
-	}
-	dpaa_intf->nb_tx_queues = NET_IF_NUM_TX;
 
 	/* Initialise admin FQs */
 	if (!ret && net_if_admin_is_used(dpaa_intf, ADMIN_FQ_RX_ERROR))
@@ -1070,6 +1049,26 @@ static int net_if_init(struct net_if *dpaa_intf,
 		/* Range initialised, at it to the interface's rx-list */
 		list_add_tail(&newrange->list, &dpaa_intf->rx_list);
 	}
+
+	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
+	num_cores = rte_lcore_count();
+	dpaa_intf->tx_queues = rte_zmalloc(NULL, sizeof(struct net_if_queue) *
+		num_cores, MAX_CACHELINE);
+	if (!dpaa_intf->tx_queues)
+		return -ENOMEM;
+
+	for (loop = 0; loop < num_cores; loop++) {
+		ret = net_if_tx_init(&dpaa_intf->tx_queues[loop].fq, fif);
+		if (ret)
+			return ret;
+		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x\n",
+			    __func__, dpaa_intf->tx_queues[loop].fq.fqid);
+		printf("%s::tx_fqid %x\n", __func__,
+			dpaa_intf->tx_queues[loop].fq.fqid);
+		dpaa_intf->tx_queues[loop].ifid = dpaa_intf->ifid;
+	}
+	dpaa_intf->nb_tx_queues = num_cores;
+
 	/* save fif in the interface struture */
 	dpaa_intf->fif = fif;
 	PMD_DRV_LOG(DEBUG, "%s::all rxfqs created\n", __func__);
@@ -1348,7 +1347,7 @@ static int usdpaa_init(void)
 	return netcfg->num_ethports;
 }
 
-int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
+int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
 			 void **rx_queues, struct rte_mempool *mp)
 {
 	struct net_if *iface = &dpaa_ifacs[portid];
@@ -1390,6 +1389,15 @@ int usdpaa_set_rx_queues(uint32_t portid, uint32_t queue_id,
 		rx_queues[queue_id] = &fqrange->rx[queue_id].fq;
 		break;
 	}
+	return 0;
+}
+
+int usdpaa_set_tx_queue(uint32_t portid,
+		uint32_t queue_id,
+		void **tx_queues)
+{
+	struct net_if *iface = &dpaa_ifacs[portid];;
+	tx_queues[queue_id] = &iface->tx_queues[queue_id].fq;
 	return 0;
 }
 
