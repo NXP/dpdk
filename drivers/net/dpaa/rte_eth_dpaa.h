@@ -92,11 +92,7 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 			     struct rte_mbuf **bufs,
 			    uint16_t nb_bufs);
 
-uint16_t usdpaa_eth_ring_tx(void *q,
-			    struct rte_mbuf **bufs,
-			    uint16_t nb_bufs);
-
-uint16_t usdpaa_eth_tx_multi(void *q,
+uint16_t usdpaa_eth_queue_tx(void *q,
 			    struct rte_mbuf **bufs,
 			    uint16_t nb_bufs);
 

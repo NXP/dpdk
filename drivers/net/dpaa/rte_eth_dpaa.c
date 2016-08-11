@@ -154,11 +154,7 @@ static int usdpaa_eth_dev_start(struct rte_eth_dev *dev)
 	port_id = dev->data->port_id;
 
 	/* Change tx callback to the real one */
-#ifdef QBMAN_MULTI_TX
-	dev->tx_pkt_burst = usdpaa_eth_tx_multi;
-#else
-	dev->tx_pkt_burst = usdpaa_eth_ring_tx;
-#endif
+	dev->tx_pkt_burst = usdpaa_eth_queue_tx;
 
 	usdpaa_port_control(port_id, ENABLE_OP);
 	return ret;
