@@ -575,6 +575,7 @@ static int vfio_process_group_devices(void)
 			dev->id.vendor_id = FSL_VENDOR_ID;
 			dev->id.device_id = (strcmp(object_type, "dpseci")) ?
 					FSL_MC_DPNI_DEVID : FSL_MC_DPSECI_DEVID;
+			dev->addr.function = dev->id.device_id;
 
 			TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 		}
