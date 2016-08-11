@@ -104,15 +104,15 @@ uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
 uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
 
 int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
-			 void **tx_queues, struct rte_mempool *mp);
+			 void **rx_queues, struct rte_mempool *mp);
 
 int usdpaa_set_tx_queue(uint32_t portid, uint32_t queue_id,
-			 void **rx_queues);
+			 void **tx_queues);
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
-void display_frame(uint32_t fqid, const struct qm_fd *fd);
+void display_frame(const struct qm_fd *fd);
 #else
-#define display_frame(a, b)
+#define display_frame(a)
 #endif
 
 #endif
