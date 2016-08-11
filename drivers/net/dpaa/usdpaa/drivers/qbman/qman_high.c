@@ -1215,6 +1215,55 @@ inline int qman_p_poll_dqrr(struct qman_portal *p, unsigned int limit)
 }
 EXPORT_SYMBOL(qman_p_poll_dqrr);
 
+struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
+{
+	struct qman_portal *p = get_poll_portal();
+	struct qm_dqrr_entry *dq;
+	enum qman_cb_dqrr_result res;
+	int ret;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	struct qm_dqrr_entry *shadow;
+#endif
+
+	qm_dqrr_pvb_update(&p->p);
+	dq = qm_dqrr_current(&p->p);
+	if (!dq) {
+		put_poll_portal();
+		return NULL;
+	}
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	shadow = &p->shadow_dqrr[DQRR_PTR2IDX(dq)];
+	*shadow = *dq;
+	dq = shadow;
+	shadow->fqid = be32_to_cpu(shadow->fqid);
+	shadow->contextB = be32_to_cpu(shadow->contextB);
+	shadow->seqnum = be16_to_cpu(shadow->seqnum);
+	hw_fd_to_cpu(&shadow->fd);
+#endif
+
+	if (dq->stat & QM_DQRR_STAT_FQ_EMPTY)
+		fq_clear(fq, QMAN_FQ_STATE_NE);
+	put_poll_portal();
+
+	return dq;
+}
+EXPORT_SYMBOL(qman_dequeue);
+
+void qman_dqrr_consume(struct qman_fq *fq,
+		struct qm_dqrr_entry *dq)
+{
+	struct qman_portal *p = get_poll_portal();
+	if (dq->stat & QM_DQRR_STAT_DQCR_EXPIRED)
+		clear_vdqcr(p, fq);
+
+	qm_dqrr_cdc_consume_1ptr(&p->p, dq, 0);
+	qm_dqrr_next(&p->p);
+
+	put_poll_portal();
+}
+EXPORT_SYMBOL(qman_dqrr_consume);
+
 int qman_poll_dqrr(unsigned int limit)
 {
 	struct qman_portal *p = get_poll_portal();
@@ -2180,6 +2229,31 @@ int qman_p_volatile_dequeue(struct qman_portal *p, struct qman_fq *fq,
 	return 0;
 }
 EXPORT_SYMBOL(qman_p_volatile_dequeue);
+
+int qman_set_vdq(struct qman_fq *fq, u16 num)
+{
+	struct qman_portal *p;
+	uint32_t vdqcr;
+	int ret;
+
+	vdqcr = QM_VDQCR_EXACT;
+	vdqcr |= QM_VDQCR_NUMFRAMES_SET(num);
+
+	if ((fq->state != qman_fq_state_parked) &&
+	    (fq->state != qman_fq_state_retired))
+		return -EINVAL;
+	if (fq_isset(fq, QMAN_FQ_STATE_VDQCR))
+		return -EBUSY;
+	vdqcr = (vdqcr & ~QM_VDQCR_FQID_MASK) | fq->fqid;
+
+	ret = set_vdqcr(&p, fq, vdqcr);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+EXPORT_SYMBOL(qman_set_vdqcr);
+
 
 int qman_volatile_dequeue(struct qman_fq *fq, u32 flags __maybe_unused,
 			  u32 vdqcr)

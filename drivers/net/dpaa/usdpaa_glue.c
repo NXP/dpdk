@@ -123,13 +123,6 @@ struct net_if_queue {
 	uint32_t ifid;
 };
 
-/* Each PCD FQ-range within an interface is represented by one of these */
-struct net_if_rx_fqrange {
-	struct net_if_queue *rx; /* array size ::rx_count */
-	unsigned int rx_count;
-	struct list_head list;
-};
-
 /* Each network interface is represented by one of these */
 #define NETIF_ETHER_DEV_NAME_SIZE 32
 struct net_if {
@@ -138,7 +131,7 @@ struct net_if {
 	char mac_addr[ETH_ALEN];
 	const struct fm_eth_port_cfg *cfg;
 	struct net_if_admin admin[ADMIN_FQ_NUM];
-	struct list_head rx_list; /* list of "struct net_if_rx_fqrange" */
+	struct net_if_queue *rx_queues;
 	struct net_if_queue *tx_queues;
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
@@ -169,7 +162,6 @@ static inline int mempool_to_bpid(struct rte_mempool *mp)
 }
 
 __thread bool thread_portal_init;
-static __thread struct usdpaa_mbufs dpaa_bufs;
 static unsigned int num_usdpaa_ports;
 static int usdpaa_init(void);
 static int net_if_init(struct net_if *dpaa_intf,
@@ -233,31 +225,12 @@ retry:
 	}
 }
 
-/* Drop a frame (releases buffers to Bman) */
-static inline void drop_frame(const struct qm_fd *fd)
-{
-	struct pool_info_entry *bp_info;
-	struct bm_buffer buf;
-	int ret;
-
-	BUG_ON(fd->format != qm_fd_contig);
-	bm_buffer_set64(&buf, qm_fd_addr(fd));
-retry:
-	bp_info = bpid_to_pool_info(fd->bpid);
-	ret = bman_release(bp_info->bp, &buf, 1, 0);
-	if (ret) {
-		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
-		goto retry;
-	}
-}
-
 #if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY)
-void display_frame(uint32_t fqid, const struct qm_fd *fd)
+void display_frame(const struct qm_fd *fd)
 {
 	int ii;
 	char *ptr;
 
-	printf("%s::fqid %x\n", __func__, fqid);
 	printf("%s::bpid %x addr %08x%08x, format %d off %d, len %d stat %x\n",
 	       __func__, fd->bpid, fd->addr_hi, fd->addr_lo, fd->format,
 		fd->offset, fd->length20, fd->status);
@@ -274,16 +247,6 @@ void display_frame(uint32_t fqid, const struct qm_fd *fd)
 	printf("\n");
 }
 #endif
-/* DQRR callback used by Tx FQs (used when retiring and draining) as well as
- * admin FQs ([rt]x_error, rx_default, tx_confirm). */
-static enum qman_cb_dqrr_result cb_drop(struct qman_portal *qm __always_unused,
-					struct qman_fq *fq __always_unused,
-				      const struct qm_dqrr_entry *dqrr)
-{
-	display_frame(dqrr->fqid, &dqrr->fd);
-	drop_frame(&dqrr->fd);
-	return qman_cb_dqrr_consume;
-}
 
 /* todo - this is costly, need to write a fast coversion routine */
 static void *usdpaa_mem_ptov(phys_addr_t paddr)
@@ -363,46 +326,25 @@ static inline void usdpaa_csum_offload(struct rte_mbuf *mbuf,
 	fd->cmd = 0x50000000;
 }
 
-static inline struct rte_mbuf **usdpaa_get_mbuf_slot(void)
+static inline struct rte_mbuf *usdpaa_eth_fd_to_mbuf(struct qman_fq *fq,
+		struct qm_fd *fd)
 {
-	if (dpaa_bufs.next == MAX_PKTS_BURST)
-		dpaa_bufs.next = 0;
-
-	if (dpaa_bufs.mbuf[dpaa_bufs.next] == NULL)
-		return &dpaa_bufs.mbuf[dpaa_bufs.next++];
-
-	return NULL;
-}
-
-/* DQRR callback for Rx FQs */
-static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
-				      struct qman_fq *fq,
-				      const struct qm_dqrr_entry *dqrr)
-{
-	const struct qm_fd *fd;
 	struct net_if_queue *rx;
 	void *ptr;
-	struct rte_mbuf *mbuf, **p;
+	struct rte_mbuf *mbuf;
 	struct pool_info_entry *bp_info;
 	uint32_t tmp;
 
-	p = usdpaa_get_mbuf_slot();
-	if (!p)
-		return qman_cb_dqrr_defer;
-
-	fd = &dqrr->fd;
 	if (unlikely(fd->format != qm_fd_contig)) {
 		printf("%s::dropping packet in sg form\n", __func__);
-		mbuf = NULL;
 		goto errret;
 	}
-	display_frame(dqrr->fqid, fd);
+	display_frame(fd);
 
 	rx = container_of(fq, struct net_if_queue, fq);
 	ptr = usdpaa_mem_ptov(fd->addr);
 	if (!ptr) {
 		printf("%s::unable to convert physical address\n", __func__);
-		mbuf = NULL;
 		goto errret;
 	}
 	bp_info = bpid_to_pool_info(fd->bpid);
@@ -423,45 +365,24 @@ static enum qman_cb_dqrr_result cb_rx(struct qman_portal *qm __always_unused,
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
-	*p = mbuf;
 
-	return qman_cb_dqrr_consume;
+	return mbuf;
 errret:
 	usdpaa_buf_free(bp_info, qm_fd_addr(fd));
-	return qman_cb_dqrr_consume;
-}
-
-static inline unsigned usdpaa_volatile_deq(
-	struct qman_fq *fq, unsigned len, bool exact)
-{
-	unsigned pkts = 0;
-	int ret;
-	struct qm_mcr_queryfq_np np;
-	enum qman_fq_state state;
-	uint32_t flags;
-	uint32_t vdqcr;
-
-	qman_query_fq_np(fq, &np);
-	if (np.frm_cnt) {
-		vdqcr = QM_VDQCR_NUMFRAMES_SET(len);
-		if (exact)
-			vdqcr |= QM_VDQCR_EXACT;
-		ret = qman_volatile_dequeue(fq, 0, vdqcr);
-		if (ret)
-			return 0;
-		do {
-			pkts += qman_poll_dqrr(len);
-			qman_fq_state(fq, &state, &flags);
-		} while (flags & QMAN_FQ_STATE_VDQCR);
-	}
-	return pkts;
+	return NULL;
 }
 
 uint16_t usdpaa_eth_queue_rx(void *q,
-			     struct rte_mbuf **bufs,
-			uint16_t nb_bufs)
+		struct rte_mbuf **bufs,
+		uint16_t nb_bufs)
 {
-	int i = 0, ret;
+	struct qm_mcr_queryfq_np np;
+	enum qman_fq_state state;
+	struct qman_fq *fq = q;
+	struct qm_dqrr_entry *dq;
+	struct qm_fd *fd;
+	uint32_t num_rx = 0;
+	int ret;
 
 	if (unlikely(!thread_portal_init)) {
 		ret = usdpaa_portal_init((void *)0);
@@ -470,22 +391,30 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 			return 0;
 		}
 	}
+
 	if (unlikely(nb_bufs > MAX_PKTS_BURST))
 		nb_bufs = MAX_PKTS_BURST;
 
-	dpaa_bufs.next = 0;
-	ret = usdpaa_volatile_deq(q, nb_bufs, 1);
-	while (i < ret) {
-		if (!dpaa_bufs.mbuf[i])
-			break;
+	qman_query_fq_np(fq, &np);
+	if (!np.frm_cnt) 
+		return 0;
 
-		bufs[i] = dpaa_bufs.mbuf[i];
-		dpaa_bufs.mbuf[i] = NULL;
-		i++;
-	}
+	ret = qman_set_vdq(fq, nb_bufs);
+	if (ret)
+		return 0;
 
-	return i;
+	do {
+		dq = qman_dequeue(fq);
+		if (!dq)
+			continue;
+
+		bufs[num_rx++] = usdpaa_eth_fd_to_mbuf(fq, &dq->fd);
+		qman_dqrr_consume(fq, dq);
+	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
+
+	return num_rx;
 }
+
 /* usdpaa transmit function */
 static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 				      struct net_if *iface, struct qm_fd *fd)
@@ -524,7 +453,7 @@ static inline void usdpaa_send_packet(struct rte_mbuf *mbuf,
 		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd, iface->bp_info->bpid);
 
 	}
-	display_frame(iface->tx_queues[0].fq.fqid, fd);
+	display_frame(fd);
 
 	if (mbuf->ol_flags & NET_TX_CKSUM_OFFLOAD_MASK)
 		usdpaa_csum_offload(mbuf, fd);
@@ -654,10 +583,7 @@ static int net_if_admin_init(struct net_if_admin *a, uint32_t fqid, int idx)
 	if (ret)
 		return -EINVAL;
 	a->idx = idx;
-	if (idx == ADMIN_FQ_RX_DEFAULT)
-		a->fq.cb.dqrr = cb_rx;
-	else
-		a->fq.cb.dqrr = cb_drop;
+
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, &a->fq);
 	if (ret)
 		return ret;
@@ -666,13 +592,54 @@ static int net_if_admin_init(struct net_if_admin *a, uint32_t fqid, int idx)
 	return qman_init_fq(&a->fq, 0, &opts);
 }
 
-/* Initialise a Tx FQ */
-static int net_if_tx_init(struct qman_fq *fq, const struct fman_if *fif)
+/* Initialise an Rx FQ */
+static int net_if_rx_init(struct qman_fq *fq,
+		uint32_t fqid)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
 
-	fq->cb.dqrr = cb_drop;
+	ret = qman_reserve_fqid(fqid);
+	if (ret) {
+		printf("%s::reserve rx fqid %d failed\n",
+		       __func__, fqid);
+		return -EINVAL;
+	}
+	/* "map" this Rx FQ to one of the interfaces Tx FQID */
+	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d\n",
+		__func__, fq, fqid);
+	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
+	if (ret) {
+		printf("%s::create rx fqid %d failed\n", __func__, fqid);
+		return ret;
+	}
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
+		       QM_INITFQ_WE_CONTEXTA;
+
+	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d ifid %d\n", fqid,
+		    NET_IF_RX_PRIORITY, dpaa_intf->ifid);
+
+	opts.fqd.dest.wq = NET_IF_RX_PRIORITY;
+	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
+			   QM_FQCTRL_PREFERINCACHE;
+	opts.fqd.context_a.stashing.exclusive = 0;
+	opts.fqd.context_a.stashing.annotation_cl = NET_IF_RX_ANNOTATION_STASH;
+	opts.fqd.context_a.stashing.data_cl = NET_IF_RX_DATA_STASH;
+	opts.fqd.context_a.stashing.context_cl = NET_IF_RX_CONTEXT_STASH;
+	ret = qman_init_fq(fq, 0, &opts);
+	if (ret)
+		printf("%s::init rx fqid %d failed %d\n",
+		       __func__, fqid, ret);
+	return ret;
+}
+
+/* Initialise a Tx FQ */
+static int net_if_tx_init(struct qman_fq *fq,
+		const struct fman_if *fif)
+{
+	struct qm_mcc_initfq opts;
+	int ret;
+
 	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
 			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);
 	if (ret)
@@ -925,53 +892,6 @@ out:
 	return (void *)buf;
 }
 
-/* Initialise an Rx FQ */
-static int net_if_rx_init(struct net_if *dpaa_intf,
-			  struct net_if_rx_fqrange *fqrange,
-			  int offset, int overall,
-			  uint32_t fqid)
-{
-	struct net_if_queue *rx = &fqrange->rx[offset];
-	struct qm_mcc_initfq opts;
-	int ret;
-
-	ret = qman_reserve_fqid(fqid);
-	if (ret) {
-		printf("%s::reserve rx fqid %d for ifid %d failed\n",
-		       __func__, fqid, rx->ifid);
-		return -EINVAL;
-	}
-	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	rx->fq.cb.dqrr = cb_rx;
-	rx->ifid = dpaa_intf->ifid;
-	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d for ifid %d\n",
-		    __func__, &rx->fq, fqid, rx->ifid);
-	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, &rx->fq);
-	if (ret) {
-		printf("%s::create rx fqid %d for ifid %d failed\n",
-		       __func__, fqid, rx->ifid);
-		return ret;
-	}
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTA;
-
-	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d ifid %d\n", fqid,
-		    NET_IF_RX_PRIORITY, dpaa_intf->ifid);
-
-	opts.fqd.dest.wq = NET_IF_RX_PRIORITY;
-	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
-			   QM_FQCTRL_PREFERINCACHE;
-	opts.fqd.context_a.stashing.exclusive = 0;
-	opts.fqd.context_a.stashing.annotation_cl = NET_IF_RX_ANNOTATION_STASH;
-	opts.fqd.context_a.stashing.data_cl = NET_IF_RX_DATA_STASH;
-	opts.fqd.context_a.stashing.context_cl = NET_IF_RX_CONTEXT_STASH;
-	ret = qman_init_fq(&rx->fq, 0, &opts);
-	if (ret)
-		printf("%s::init rx fqid %d for ifid %d failed %d\n",
-		       __func__, fqid, rx->ifid, ret);
-	return ret;
-}
-
 /* Initialise a network interface */
 static int net_if_init(struct net_if *dpaa_intf,
 		       const struct fm_eth_port_cfg *cfg)
@@ -1019,35 +939,29 @@ static int net_if_init(struct net_if *dpaa_intf,
 		return ret;
 	}
 
-	/* Initialise each Rx FQ-range for the interface */
-	INIT_LIST_HEAD(&dpaa_intf->rx_list);
 	loop = 0;
 	list_for_each_entry(fq_range, cfg->list, list) {
-		unsigned int tmp;
-		struct net_if_rx_fqrange *newrange;
-
-		newrange = rte_malloc(NULL, sizeof(*newrange), MAX_CACHELINE);
-		if (!newrange)
+		dpaa_intf->rx_queues = rte_zmalloc(NULL, sizeof(struct net_if_queue) *
+			fq_range->count, MAX_CACHELINE);
+		if (!dpaa_intf->rx_queues)
 			return -ENOMEM;
 
-		newrange->rx_count = fq_range->count;
-		tmp = newrange->rx_count * sizeof(newrange->rx[0]);
-		newrange->rx = rte_zmalloc(NULL, tmp, MAX_CACHELINE);
-		if (!newrange->rx)
-			return -ENOMEM;
 		/* Initialise each Rx FQ within the range */
-		for (tmp = 0; tmp < fq_range->count; tmp++, loop++) {
-			ret = net_if_rx_init(dpaa_intf, newrange, tmp, loop,
-					     fq_range->start + tmp);
+		for (loop = 0; loop < fq_range->count; loop++) {
+			ret = net_if_rx_init(&dpaa_intf->rx_queues[loop].fq,
+				fq_range->start + loop);
 			if (ret) {
 				printf("%s::net_if_rx_init failed for %d\n",
 				       __func__, fq_range->start);
 				return ret;
 			}
+			dpaa_intf->rx_queues[loop].ifid = dpaa_intf->ifid;
 		}
-		dpaa_intf->nb_rx_queues += fq_range->count;
-		/* Range initialised, at it to the interface's rx-list */
-		list_add_tail(&newrange->list, &dpaa_intf->rx_list);
+		dpaa_intf->nb_rx_queues = fq_range->count;
+
+		/* We support only one fm_eth_port_fqrange entry
+		 * from fm_eth_port_cfg */
+		break;
 	}
 
 	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
@@ -1063,8 +977,6 @@ static int net_if_init(struct net_if *dpaa_intf,
 			return ret;
 		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x\n",
 			    __func__, dpaa_intf->tx_queues[loop].fq.fqid);
-		printf("%s::tx_fqid %x\n", __func__,
-			dpaa_intf->tx_queues[loop].fq.fqid);
 		dpaa_intf->tx_queues[loop].ifid = dpaa_intf->ifid;
 	}
 	dpaa_intf->nb_tx_queues = num_cores;
@@ -1351,7 +1263,6 @@ int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
 			 void **rx_queues, struct rte_mempool *mp)
 {
 	struct net_if *iface = &dpaa_ifacs[portid];
-	struct net_if_rx_fqrange *fqrange;
 
 	if (!iface->bp_info || iface->bp_info->mp != mp) {
 		struct fman_if_ic_params icp;
@@ -1385,10 +1296,8 @@ int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
 		rx_queues[queue_id] = &iface->admin[ADMIN_FQ_RX_DEFAULT].fq;
 		return 0;
 	}
-	list_for_each_entry(fqrange, &iface->rx_list, list) {
-		rx_queues[queue_id] = &fqrange->rx[queue_id].fq;
-		break;
-	}
+	rx_queues[queue_id] = &iface->rx_queues[queue_id].fq;
+
 	return 0;
 }
 
