@@ -310,6 +310,8 @@ static inline void usdpaa_checksum_offload(struct rte_mbuf *mbuf,
 	}
 
 	prs = GET_TX_PRS(mbuf->buf_addr);
+	prs->l3r = 0;
+	prs->l4r = 0;
 	if ((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4)
 		prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
 	else if ((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV6)
