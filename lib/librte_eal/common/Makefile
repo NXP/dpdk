@@ -52,10 +52,19 @@ GENERIC_INC += rte_spinlock.h rte_memcpy.h rte_cpuflags.h rte_rwlock.h
 ARCH_DIR ?= $(RTE_ARCH)
 ARCH_INC := $(notdir $(wildcard $(RTE_SDK)/lib/librte_eal/common/include/arch/$(ARCH_DIR)/*.h))
 
+ifeq ($(CONFIG_RTE_LIBRTE_ARM_PERFCOUNTER),y)
+ARM_PERF_INC += $(notdir $(wildcard $(RTE_SDK)/lib/librte_eal/common/include/arch/arm/perf/*.h))
+endif
+
 SYMLINK-$(CONFIG_RTE_LIBRTE_EAL)-include := $(addprefix include/,$(INC))
 SYMLINK-$(CONFIG_RTE_LIBRTE_EAL)-include += \
 	$(addprefix include/arch/$(ARCH_DIR)/,$(ARCH_INC))
 SYMLINK-$(CONFIG_RTE_LIBRTE_EAL)-include/generic := \
 	$(addprefix include/generic/,$(GENERIC_INC))
+
+ifeq ($(CONFIG_RTE_LIBRTE_ARM_PERFCOUNTER),y)
+SYMLINK-$(CONFIG_RTE_LIBRTE_EAL)-include += \
+	$(addprefix include/arch/arm/perf/,$(ARM_PERF_INC))
+endif
 
 include $(RTE_SDK)/mk/rte.install.mk

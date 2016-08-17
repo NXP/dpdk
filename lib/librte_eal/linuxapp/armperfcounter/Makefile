@@ -31,10 +31,29 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-DIRS-$(CONFIG_RTE_EXEC_ENV_LINUXAPP) += eal
-DIRS-$(CONFIG_RTE_EAL_IGB_UIO) += igb_uio
-DIRS-$(CONFIG_RTE_KNI_KMOD) += kni
-DIRS-$(CONFIG_RTE_LIBRTE_XEN_DOM0) += xen_dom0
-DIRS-$(CONFIG_RTE_LIBRTE_ARM_PERFCOUNTER) += armperfcounter
+#
+# module name and path
+#
+MODULE = rte_perfcount
 
-include $(RTE_SDK)/mk/rte.subdir.mk
+#
+# CFLAGS
+#
+MODULE_CFLAGS += -I$(SRCDIR) --param max-inline-insns-single=50
+MODULE_CFLAGS += -I$(RTE_OUTPUT)/include
+MODULE_CFLAGS += -include $(RTE_OUTPUT)/include/rte_config.h
+MODULE_CFLAGS += -Wall -Werror
+
+ifeq ($(shell lsb_release -si 2>/dev/null),Ubuntu)
+MODULE_CFLAGS += -DUBUNTU_RELEASE_CODE=$(shell lsb_release -sr | tr -d .)
+UBUNTU_KERNEL_CODE := $(shell echo `grep UTS_RELEASE $(RTE_KERNELDIR)/include/generated/utsrelease.h \
+	 | cut -d '"' -f2 | cut -d- -f1,2 | tr .- ,`,1)
+MODULE_CFLAGS += -D"UBUNTU_KERNEL_CODE=UBUNTU_KERNEL_VERSION($(UBUNTU_KERNEL_CODE))"
+endif
+
+# this lib needs main eal
+#DEPDIRS-y += lib/librte_eal/linuxapp/eal
+
+SRCS-y += perf_counters.c
+
+include $(RTE_SDK)/mk/rte.module.mk
