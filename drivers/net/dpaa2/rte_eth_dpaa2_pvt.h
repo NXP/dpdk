@@ -95,13 +95,14 @@ struct dpaa2_dpio_dev {
 struct queue_storage_info_t {
 	struct qbman_result *dq_storage[NUM_DQS_PER_QUEUE];
 	struct qbman_result *active_dqs;
+	int active_dpio_id;
 	int toggle;
 };
 
 struct thread_io_info_t {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct dpaa2_dpio_dev *sec_dpio_dev;
-	struct qbman_result *global_active_dqs;
+	//struct qbman_result *global_active_dqs;
 };
 
 /*! Global per thread DPIO portal */
