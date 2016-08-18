@@ -229,7 +229,7 @@ dpaa2_eth_parse_packet(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L3_IPV4;
 
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT))
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT))
 		pkt_type /* mbuf->packet_type */ |= RTE_PTYPE_L3_IPV6;
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT))
@@ -238,16 +238,16 @@ dpaa2_eth_parse_packet(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_UDP_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_UDP;
 
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_TCP_PRESENT))
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_TCP_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_TCP;
 
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_SCTP_PRESENT))
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_SCTP_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_SCTP;
 
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_ICMP_PRESENT))
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_ICMP_PRESENT))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_ICMP;
 
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_UNKNOWN_PROTOCOL))
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_UNKNOWN_PROTOCOL))
 		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_UNKNOWN;
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
