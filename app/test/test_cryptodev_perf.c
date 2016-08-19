@@ -146,6 +146,8 @@ static const char *pmd_name(enum rte_cryptodev_type pmd)
 		return RTE_STR(CRYPTODEV_NAME_SNOW3G_PMD);
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
 		return RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD);
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
+		return RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD);
 	case RTE_CRYPTODEV_ARMCE_PMD:
 		return RTE_STR(CRYPTODEV_NAME_ARMCE_PMD);
 	default:
@@ -3573,6 +3575,14 @@ perftest_dpaa2_sec_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
+perftest_dpaa_sec_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_DPAA_SEC_PMD;
+
+	return unit_test_suite_runner(&cryptodev_testsuite);
+}
+
+static int
 perftest_armce_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 {
 	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_ARMCE_PMD;
@@ -3594,4 +3604,5 @@ REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_perftest, perftest_sw_snow3g_cryptodev
 REGISTER_TEST_COMMAND(cryptodev_qat_snow3g_perftest, perftest_qat_snow3g_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_armce_perftest, perftest_armce_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_perftest, perftest_dpaa2_sec_cryptodev);
+REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_perftest, perftest_dpaa_sec_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_libcrypto_perftest, perftest_libcrypto_cryptodev);

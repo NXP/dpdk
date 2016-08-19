@@ -1451,8 +1451,23 @@ test_AES_dpaa2_sec_all(void)
 	int status;
 
 	status = test_AES_all_tests(ts_params->mbuf_pool,
-				    ts_params->op_mpool, ts_params->valid_devs[0],
+		ts_params->op_mpool, ts_params->valid_devs[0],
 		RTE_CRYPTODEV_DPAA2_SEC_PMD);
+
+	TEST_ASSERT_EQUAL(status, 0, "Test failed");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_AES_dpaa_sec_all(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	int status;
+
+	status = test_AES_all_tests(ts_params->mbuf_pool,
+		ts_params->op_mpool, ts_params->valid_devs[0],
+		RTE_CRYPTODEV_DPAA_SEC_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
 
@@ -1466,7 +1481,7 @@ test_AES_armce_all(void)
 	int status;
 
 	status = test_AES_all_tests(ts_params->mbuf_pool,
-				    ts_params->op_mpool, ts_params->valid_devs[0],
+		ts_params->op_mpool, ts_params->valid_devs[0],
 		RTE_CRYPTODEV_ARMCE_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
@@ -5043,7 +5058,7 @@ static struct unit_test_suite cryptodev_armce_testsuite  = {
 };
 
 static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
-	.suite_name = "Crypto Device DPAA2-CAAM Unit Test Suite",
+	.suite_name = "Crypto Device DPAA2-SEC Unit Test Suite",
 	.setup = testsuite_setup,
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
@@ -5082,6 +5097,17 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 				authenticated_encryption_3DES192CBC_HMAC_SHA1),
 			TEST_CASE_ST(ut_setup, ut_teardown,
 				authenticated_decryption_3DES192CBC_HMAC_SHA1),
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
+static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
+	.suite_name = "Crypto Device DPAA-SEC Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_dpaa_sec_all),
+
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -5433,6 +5459,13 @@ test_cryptodev_dpaa2_sec(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
+test_cryptodev_dpaa_sec(void /*argv __rte_unused, int argc __rte_unused*/)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_DPAA_SEC_PMD;
+	return unit_test_suite_runner(&cryptodev_dpaa_sec_testsuite);
+}
+
+static int
 test_cryptodev_qat(void /*argv __rte_unused, int argc __rte_unused*/)
 {
 	gbl_cryptodev_type = RTE_CRYPTODEV_QAT_SYM_PMD;
@@ -5489,6 +5522,7 @@ test_cryptodev_sw_kasumi(void /*argv __rte_unused, int argc __rte_unused*/)
 
 REGISTER_TEST_COMMAND(cryptodev_armce_autotest, test_cryptodev_armce);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_autotest, test_cryptodev_dpaa2_sec);
+REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_autotest, test_cryptodev_dpaa_sec);
 REGISTER_TEST_COMMAND(cryptodev_qat_autotest, test_cryptodev_qat);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_autotest, test_cryptodev_aesni_mb);
 REGISTER_TEST_COMMAND(cryptodev_libcrypto_autotest, test_cryptodev_libcrypto);
