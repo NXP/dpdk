@@ -113,11 +113,11 @@ struct dpaa2_annot_hdr {
 /** General Macro to define a particular bit position*/
 #define BIT_POS(x)			((uint64_t)1 << ((x)))
 /** Set a bit in the variable */
-#define BIT_SET_AT_POS(var, pos)	(var |= pos)
+#define BIT_SET_AT_POS(var, pos)	(var |= (pos))
 /** Reset the bit in the variable */
 #define BIT_RESET_AT_POS(var, pos)	(var &= ~(pos))
 /** Check the bit is set in the variable */
-#define BIT_ISSET_AT_POS(var, pos)	((var & pos) ? 1 : 0)
+#define BIT_ISSET_AT_POS(var, pos)	((var & (pos)) ? 1 : 0)
 /**
  * Macrso to define bit position in word3
  */

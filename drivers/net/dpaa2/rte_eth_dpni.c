@@ -232,16 +232,38 @@ dpaa2_rx_parse(uint64_t hw_annot_addr)
 
 	PMD_DRV_LOG(DEBUG, "\n 1 annotation = 0x%lx   ", annotation->word4);
 
-	if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
-		pkt_type |= RTE_PTYPE_L2_ETHER;
+	if (BIT_ISSET_AT_POS(annotation->word3, L2_ARP_PRESENT)) {
+		pkt_type = RTE_PTYPE_L2_ETHER_ARP;
+		goto parse_done;
+	} else if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
+		pkt_type = RTE_PTYPE_L2_ETHER;
+	else
+		goto parse_done;
 
-	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT)) {
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT |
+				L3_IPV4_N_PRESENT)) {
 		pkt_type |= RTE_PTYPE_L3_IPV4;
-		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT))
+		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT |
+				L3_IP_N_OPT_PRESENT))
 			pkt_type |= RTE_PTYPE_L3_IPV4_EXT;
 
-	} else if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT))
+	} else if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT |
+				L3_IPV6_N_PRESENT)) {
 		pkt_type |= RTE_PTYPE_L3_IPV6;
+		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT |
+				L3_IP_N_OPT_PRESENT))
+			pkt_type |= RTE_PTYPE_L3_IPV6_EXT;
+	} else
+		goto parse_done;
+
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_FIRST_FRAGMENT |
+				L3_IP_1_MORE_FRAGMENT |
+				L3_IP_N_FIRST_FRAGMENT |
+				L3_IP_N_MORE_FRAGMENT)) {
+		pkt_type |= RTE_PTYPE_L4_FRAG;
+		goto parse_done;
+	} else
+		pkt_type |= RTE_PTYPE_L4_NONFRAG;
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_UDP_PRESENT))
 		pkt_type |= RTE_PTYPE_L4_UDP;
@@ -258,6 +280,7 @@ dpaa2_rx_parse(uint64_t hw_annot_addr)
 	else if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_UNKNOWN_PROTOCOL))
 		pkt_type |= RTE_PTYPE_UNKNOWN;
 
+parse_done:
 	return pkt_type;
 }
 
@@ -266,6 +289,9 @@ dpaa2_rx_offload(uint64_t hw_annot_addr, struct rte_mbuf *mbuf)
 {
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
+
+	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT | L2_VLAN_N_PRESENT))
+		mbuf->ol_flags |= PKT_RX_VLAN_PKT;
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
 		mbuf->ol_flags |= PKT_RX_IP_CKSUM_BAD;
