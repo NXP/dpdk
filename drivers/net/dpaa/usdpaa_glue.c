@@ -436,8 +436,7 @@ uint16_t usdpaa_eth_queue_rx(void *q,
 	if (unlikely(nb_bufs > MAX_PKTS_BURST))
 		nb_bufs = MAX_PKTS_BURST;
 
-	qman_query_fq_np(fq, &np);
-	if (!np.frm_cnt) 
+	if (!qman_query_fq_has_pkts(fq))
 		return 0;
 
 	ret = qman_set_vdq(fq, nb_bufs);
