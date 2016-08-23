@@ -2205,6 +2205,14 @@ int qman_fq_flow_control(struct qman_fq *fq, int xon);
 int qman_query_fq(struct qman_fq *fq, struct qm_fqd *fqd);
 
 /**
+ * qman_query_fq_has_pkts - Queries non-programmable FQD fields and returns '1'
+ * if packets are in the frame queue. If there are no packets on frame
+ * queue '0' is returned.
+ * @fq: the frame queue object to be queried
+ */
+int qman_query_fq_has_pkts(struct qman_fq *fq);
+
+/**
  * qman_query_fq_np - Queries non-programmable FQD fields
  * @fq: the frame queue object to be queried
  * @np: storage for the queried FQD fields

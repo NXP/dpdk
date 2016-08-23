@@ -1963,6 +1963,30 @@ int qman_query_fq(struct qman_fq *fq, struct qm_fqd *fqd)
 }
 EXPORT_SYMBOL(qman_query_fq);
 
+int qman_query_fq_has_pkts(struct qman_fq *fq)
+{
+	struct qm_mc_command *mcc;
+	struct qm_mc_result *mcr;
+	struct qman_portal *p = get_affine_portal();
+	unsigned long irqflags __maybe_unused;
+	int ret = 0;
+	u8 res;
+
+	PORTAL_IRQ_LOCK(p, irqflags);
+	mcc = qm_mc_start(&p->p);
+	mcc->queryfq.fqid = cpu_to_be32(fq->fqid);
+	qm_mc_commit(&p->p, QM_MCC_VERB_QUERYFQ_NP);
+	while (!(mcr = qm_mc_result(&p->p)))
+		cpu_relax();
+	res = mcr->result;
+	if (res == QM_MCR_RESULT_OK)
+		ret = !!mcr->queryfq_np.frm_cnt;
+	PORTAL_IRQ_UNLOCK(p, irqflags);
+	put_affine_portal();
+	return ret;
+}
+EXPORT_SYMBOL(qman_query_fq_has_pkts);
+
 int qman_query_fq_np(struct qman_fq *fq, struct qm_mcr_queryfq_np *np)
 {
 	struct qm_mc_command *mcc;
