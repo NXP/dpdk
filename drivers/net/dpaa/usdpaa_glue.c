@@ -179,10 +179,6 @@ rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
 
 static struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
 
-/* Environment variable to check if polling of packets is to be
- * done on default Rx Queues */
-char *def_rx_flag;
-
 static inline struct pool_info_entry *bpid_to_pool_info(int bpid)
 {
 	return &dpaa_pool_table[bpid];
@@ -409,11 +405,7 @@ static inline struct rte_mbuf *usdpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
-
-	if (def_rx_flag)
-		mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
-	else
-		usdpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
+	usdpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
 
 	return mbuf;
 errret:
@@ -1179,7 +1171,6 @@ static int usdpaa_init(void)
 
 	pcd_file = getenv("DEF_PCD_PATH");
 	cfg_file = getenv("DEF_CFG_PATH");
-	def_rx_flag = getenv("DPAA_DEF_RX");
 
 	if (!cfg_file || !pcd_file) {
 		RTE_LOG(ERR, EAL, "dpaa pcd & cfg not set in env\n");
@@ -1271,11 +1262,6 @@ int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
 		PMD_DRV_LOG(INFO, "if =%s - fd_offset = %d offset = %d",
 			iface->name, fd_offset,
 			fman_if_get_fdoff(iface->fif));
-	}
-
-	if (def_rx_flag) {
-		rx_queues[queue_id] = &iface->admin[ADMIN_FQ_RX_DEFAULT].fq;
-		return 0;
 	}
 	rx_queues[queue_id] = &iface->rx_queues[queue_id].fq;
 
