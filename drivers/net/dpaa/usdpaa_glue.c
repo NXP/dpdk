@@ -263,38 +263,81 @@ static void *usdpaa_mem_ptov(phys_addr_t paddr)
 	return NULL;
 }
 
+static inline void usdpaa_slow_parsing(struct rte_mbuf *m,
+		uint64_t prs)
+{
+	/* To be implemented */
+}
+
 static inline void usdpaa_eth_packet_info(struct rte_mbuf *m,
 					  uint64_t fd_virt_addr)
 {
-	struct dpaa_eth_parse_results_t *prs = GET_RX_PRS(fd_virt_addr);
-	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
-	uint32_t pkt_type = 0;
+	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);;
+	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
-	if (L2_ETH_MAC_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L2_ETHER;
+	switch (prs) {
+		case DPAA_PKT_TYPE_NONE:
+			m->packet_type = 0;
+			break;
+		case DPAA_PKT_TYPE_ETHER:
+			m->packet_type = RTE_PTYPE_L2_ETHER;
+			break;
+		case DPAA_PKT_TYPE_IPV4:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV4;
+			break;
+		case DPAA_PKT_TYPE_IPV6:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV6;
+			break;
+		case DPAA_PKT_TYPE_IPV4_EXT:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L3_IPV4_EXT;
+			break;
+		case DPAA_PKT_TYPE_IPV6_EXT:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L3_IPV6_EXT;
+			break;
+		case DPAA_PKT_TYPE_IPV4_TCP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP;
+			break;
+		case DPAA_PKT_TYPE_IPV6_TCP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP;
+			break;
+		case DPAA_PKT_TYPE_IPV4_UDP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
+			break;
+		case DPAA_PKT_TYPE_IPV6_UDP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP;
+			break;
+		case DPAA_PKT_TYPE_IPV4_SCTP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_SCTP;
+			break;
+		case DPAA_PKT_TYPE_IPV6_SCTP:
+			m->packet_type = RTE_PTYPE_L2_ETHER |
+				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_SCTP;
+			break;
+		/* More switch cases can also be added */
+		default:
+			usdpaa_slow_parsing(m, prs);
+	}
 
-	if (L3_IPV4_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L3_IPV4;
+	m->l2_len = annot->parse.ip_off[0];
+	m->l3_len = annot->parse.l4_off - annot->parse.ip_off[0];
 
-	if (L3_IPV6_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L3_IPV6;
-
-	if (L3_OPT_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L3_IPV4_EXT;
-
-	if (L4_TCP_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L4_TCP;
-
-	if (L4_UDP_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L4_UDP;
-
-	if (L4_SCTP_PRESENT(prs))
-		pkt_type |= RTE_PTYPE_L4_SCTP;
-
-	m->packet_type = pkt_type;
-	m->l2_len = prs->ip_off[0];
-	m->l3_len = prs->l4_off - prs->ip_off[0];
+	/* Set the hash values */
 	m->hash.rss = (uint32_t)(rte_be_to_cpu_64(annot->hash));
+	m->ol_flags = PKT_RX_RSS_HASH;
+
+	/* Check if Vlan is present */
+	if (prs & DPAA_PARSE_VLAN_MASK)
+		m->ol_flags |= PKT_RX_VLAN_PKT;
+
 }
 
 static inline void usdpaa_checksum_offload(struct rte_mbuf *mbuf,
@@ -349,16 +392,15 @@ static inline struct rte_mbuf *usdpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 		printf("%s::unable to convert physical address\n", __func__);
 		goto errret;
 	}
+	/* Prefetch the Parse results and packet data to L1 */
+	rte_prefetch0(ptr + DEFAULT_RX_ICEOF);
+	rte_prefetch0(ptr + fd->offset);
+
 	bp_info = bpid_to_pool_info(fd->bpid);
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	mbuf->buf_addr = ptr;
 	mbuf->data_off = fd->offset;
-	if (def_rx_flag)
-		mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
-	else
-		usdpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
-
 	mbuf->data_len = fd->length20;
 	mbuf->pkt_len = fd->length20;
 
@@ -367,6 +409,11 @@ static inline struct rte_mbuf *usdpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
+
+	if (def_rx_flag)
+		mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+	else
+		usdpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
 
 	return mbuf;
 errret:
