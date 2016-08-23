@@ -223,65 +223,107 @@ rte_dpni_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static inline void
-dpaa2_eth_parse_packet(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
+static inline uint32_t __attribute__((hot))
+dpaa2_rx_parse(uint64_t hw_annot_addr)
 {
-	uint32_t pkt_type = 0;
-	struct pkt_annotation *annotation =
-			(struct pkt_annotation *)hw_annot_addr;
+	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
+	struct dpaa2_annot_hdr *annotation =
+			(struct dpaa2_annot_hdr *)hw_annot_addr;
 
 	PMD_DRV_LOG(DEBUG, "\n 1 annotation = 0x%lx   ", annotation->word4);
 
-	if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L2_ETHER;
+	if (BIT_ISSET_AT_POS(annotation->word3, L2_ARP_PRESENT)) {
+		pkt_type = RTE_PTYPE_L2_ETHER_ARP;
+		goto parse_done;
+	} else if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
+		pkt_type = RTE_PTYPE_L2_ETHER;
+	else
+		goto parse_done;
 
-	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT))
-	{
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L3_IPV4;
-		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT))
-                	pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L3_IPV4_EXT;
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT |
+				L3_IPV4_N_PRESENT)) {
+		pkt_type |= RTE_PTYPE_L3_IPV4;
+		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT |
+				L3_IP_N_OPT_PRESENT))
+			pkt_type |= RTE_PTYPE_L3_IPV4_EXT;
 
-	}
-	else if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT))
-		pkt_type /* mbuf->packet_type */ |= RTE_PTYPE_L3_IPV6;
+	} else if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV6_1_PRESENT |
+				L3_IPV6_N_PRESENT)) {
+		pkt_type |= RTE_PTYPE_L3_IPV6;
+		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT |
+				L3_IP_N_OPT_PRESENT))
+			pkt_type |= RTE_PTYPE_L3_IPV6_EXT;
+	} else
+		goto parse_done;
+
+	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_FIRST_FRAGMENT |
+				L3_IP_1_MORE_FRAGMENT |
+				L3_IP_N_FIRST_FRAGMENT |
+				L3_IP_N_MORE_FRAGMENT)) {
+		pkt_type |= RTE_PTYPE_L4_FRAG;
+		goto parse_done;
+	} else
+		pkt_type |= RTE_PTYPE_L4_NONFRAG;
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_UDP_PRESENT))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_UDP;
+		pkt_type |= RTE_PTYPE_L4_UDP;
 
 	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_TCP_PRESENT))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_TCP;
+		pkt_type |= RTE_PTYPE_L4_TCP;
 
 	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_SCTP_PRESENT))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_SCTP;
+		pkt_type |= RTE_PTYPE_L4_SCTP;
 
 	else if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_ICMP_PRESENT))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_L4_ICMP;
+		pkt_type |= RTE_PTYPE_L4_ICMP;
 
 	else if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_UNKNOWN_PROTOCOL))
-		pkt_type/* mbuf->packet_type */ |= RTE_PTYPE_UNKNOWN;
+		pkt_type |= RTE_PTYPE_UNKNOWN;
+
+parse_done:
+	return pkt_type;
+}
+
+static inline void __attribute__((hot))
+dpaa2_rx_offload(uint64_t hw_annot_addr, struct rte_mbuf *mbuf)
+{
+	struct dpaa2_annot_hdr *annotation =
+			(struct dpaa2_annot_hdr *)hw_annot_addr;
+
+	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT | L2_VLAN_N_PRESENT))
+		mbuf->ol_flags |= PKT_RX_VLAN_PKT;
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
 		mbuf->ol_flags |= PKT_RX_IP_CKSUM_BAD;
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L4CE))
 		mbuf->ol_flags |= PKT_RX_L4_CKSUM_BAD;
-
-	mbuf->packet_type = pkt_type;
 }
 
-static inline
-struct rte_mbuf *eth_fd_to_mbuf(const struct qbman_fd *fd)
+static inline struct rte_mbuf * __attribute__((hot))
+eth_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
 		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
 			bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+
 	/* need to repopulated some of the fields,
 	as they may have changed in last transmission*/
-
-
+	mbuf->nb_segs = 1;
+	mbuf->ol_flags = 0;
 	mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
 	mbuf->data_len = DPAA2_GET_FD_LEN(fd);
 	mbuf->pkt_len = mbuf->data_len;
+
+	/* Parse the packet */
+	/* parse results are after the private - sw annotation area */
+	mbuf->packet_type = dpaa2_rx_parse(
+			(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			 + DPAA2_FD_PTA_SIZE);
+
+	dpaa2_rx_offload((uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			 + DPAA2_FD_PTA_SIZE, mbuf);
+
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
 
@@ -292,19 +334,11 @@ struct rte_mbuf *eth_fd_to_mbuf(const struct qbman_fd *fd)
 		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
 
-	/* Parse the packet */
-	/* parse results are after the private - sw annotation area */
-	dpaa2_eth_parse_packet(mbuf,
-			       (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-		 + DPAA2_FD_PTA_SIZE);
-
-	mbuf->nb_segs = 1;
-	mbuf->ol_flags = 0;
-
 	return mbuf;
 }
 
-static inline void eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
+static inline void __attribute__((hot))
+eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
 				struct qbman_fd *fd __rte_unused)
 {
 	/*if (mbuf->ol_flags & DPAA2_TX_CKSUM_OFFLOAD_MASK) {
@@ -312,8 +346,9 @@ static inline void eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
 	}*/
 }
 
-static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
-						      struct qbman_fd *fd, uint16_t bpid)
+static void __attribute__ ((noinline)) __attribute__((hot))
+eth_mbuf_to_fd(struct rte_mbuf *mbuf,
+	struct qbman_fd *fd, uint16_t bpid)
 {
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
@@ -336,8 +371,9 @@ static void __attribute__ ((noinline)) eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	return;
 }
 
-static int eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
-			       struct qbman_fd *fd, uint16_t bpid)
+static int
+eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
+	struct qbman_fd *fd, uint16_t bpid)
 {
 	struct rte_mbuf *m;
 	void *mb = NULL;
@@ -495,7 +531,7 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
 	struct qbman_result *dq_storage;
 	uint32_t fqid = dpaa2_q->fqid;
-	int ret, i, num_rx = 0;
+	int ret, num_rx = 0;
 	uint8_t is_last = 0, status;
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd[16];
@@ -571,15 +607,15 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_FD_PTA_SIZE + 16));
 		/*Prefetch Data buffer*/
 		/* rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_GET_FD_OFFSET(fd[num_rx]))); */
+
+		bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
+		bufs[num_rx]->port = dev->data->port_id;
+
 		dq_storage++;
 		num_rx++;
 		
 	} /* End of Packet Rx loop */
 
-	for (i = 0; i < num_rx; i++) {
-		bufs[i] = eth_fd_to_mbuf(fd[i]);
-		bufs[i]->port = dev->data->port_id;
-	}
 	if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
 		while (!qbman_check_command_complete(swp, get_swp_active_dqs(thread_io_info.dpio_dev->index)))
 			;
