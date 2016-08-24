@@ -42,7 +42,7 @@ struct process_interrupt {
 	struct list_head node;
 };
 
-static LIST_HEAD(process_irq_list);
+static COMPAT_LIST_HEAD(process_irq_list);
 static pthread_mutex_t process_irq_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void process_interrupt_install(struct process_interrupt *irq)

@@ -41,7 +41,7 @@ struct list_head {
 	struct list_head *next;
 };
 
-#define LIST_HEAD(n) \
+#define COMPAT_LIST_HEAD(n) \
 struct list_head n = { \
 	.prev = &n, \
 	.next = &n \

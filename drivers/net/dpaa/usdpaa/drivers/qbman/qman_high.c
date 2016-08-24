@@ -29,6 +29,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "qman_low.h"
+#include <rte_branch_prediction.h>
 
 /* Compilation constants */
 #define DQRR_MAXFILL	15

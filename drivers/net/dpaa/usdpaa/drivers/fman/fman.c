@@ -205,7 +205,7 @@ u32 fman_dealloc_bufs_mask_hi;
 u32 fman_dealloc_bufs_mask_lo;
 
 static int ccsr_map_fd = -1;
-static LIST_HEAD(__ifs);
+static COMPAT_LIST_HEAD(__ifs);
 
 /* This is the (const) global variable that callers have read-only access to.
  * Internally, we have read-write access directly to __ifs. */
@@ -216,17 +216,17 @@ static int _dtsec_set_stn_mac_addr(struct __fman_if *m, uint8_t *eth)
 	void *reg = &((struct dtsec_regs *)m->ccsr_map)->maccfg1;
 	u32 val = in_be32(reg);
 
-	memcpy(&m->__if.mac_addr, eth, ETH_ALEN);
+	memcpy(&m->__if.mac_addr, eth, ETHER_ADDR_LEN);
 	reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr1;
-	val = (m->__if.mac_addr.ether_addr_octet[2] |
-	       (m->__if.mac_addr.ether_addr_octet[3] << 8) |
-	       (m->__if.mac_addr.ether_addr_octet[4] << 16) |
-	       (m->__if.mac_addr.ether_addr_octet[5] << 24));
+	val = (m->__if.mac_addr.addr_bytes[2] |
+	       (m->__if.mac_addr.addr_bytes[3] << 8) |
+	       (m->__if.mac_addr.addr_bytes[4] << 16) |
+	       (m->__if.mac_addr.addr_bytes[5] << 24));
 	out_be32(reg, val);
 
 	reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr2;
-	val = ((m->__if.mac_addr.ether_addr_octet[0] << 16) |
-	       (m->__if.mac_addr.ether_addr_octet[1] << 24));
+	val = ((m->__if.mac_addr.addr_bytes[0] << 16) |
+	       (m->__if.mac_addr.addr_bytes[1] << 24));
 	out_be32(reg, val);
 
 	return 0;
@@ -341,7 +341,7 @@ static int find_mac_name(struct ether_addr *mac_addr, char *name)
 		my_err(_errno, errno, "Retrieving mac failed for: %s\n",
 		       inf->ifa_name);
 
-		if (!memcmp(&ifr.ifr_hwaddr.sa_data, mac_addr, ETH_ALEN)) {
+		if (!memcmp(&ifr.ifr_hwaddr.sa_data, mac_addr, ETHER_ADDR_LEN)) {
 			strcpy(name, inf->ifa_name);
 			_errno = 0;
 			break;
@@ -565,7 +565,7 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 					   &lenp);
 		my_err(!mac_addr, -EINVAL, "%s: no local-mac-address\n",
 		       mname);
-		memcpy(&__if->__if.macless_info.peer_mac, mac_addr, ETH_ALEN);
+		memcpy(&__if->__if.macless_info.peer_mac, mac_addr, ETHER_ADDR_LEN);
 
 		_errno = find_mac_name(&__if->__if.macless_info.peer_mac,
 				       &__if->__if.macless_info.macless_name[0]);
@@ -597,7 +597,7 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 					   &lenp);
 		my_err(!mac_addr, -EINVAL, "%s: no local-mac-address\n",
 		       mname);
-		memcpy(&__if->__if.mac_addr, mac_addr, ETH_ALEN);
+		memcpy(&__if->__if.mac_addr, mac_addr, ETHER_ADDR_LEN);
 
 		/* Extract the Tx port (it's the second of the two port handles)
 		 * and get its channel ID */
@@ -866,7 +866,7 @@ static int fman_if_init_onic(const struct device_node *dpa_node)
 				   &lenp);
 	my_err(!mac_addr, -EINVAL, "%s: no local-mac-address\n",
 	       mname);
-	memcpy(&__if->__if.onic_info.peer_mac, mac_addr, ETH_ALEN);
+	memcpy(&__if->__if.onic_info.peer_mac, mac_addr, ETHER_ADDR_LEN);
 
 	_errno = find_mac_name(&__if->__if.onic_info.peer_mac,
 			       &__if->__if.onic_info.macless_name[0]);

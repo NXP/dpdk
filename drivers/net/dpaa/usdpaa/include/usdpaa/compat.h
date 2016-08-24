@@ -47,7 +47,7 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
-#include <net/ethernet.h>
+#include <linux/types.h>
 
 /* This defines any configuration symbols that are required by <usdpaa/xxx.h>
  * headers. */
@@ -63,8 +63,6 @@
 #define __always_unused	__attribute__((unused))
 #define __packed	__attribute__((__packed__))
 #define __user
-#define likely(x)	__builtin_expect(!!(x), 1)
-#define unlikely(x)	__builtin_expect(!!(x), 0)
 #define ____cacheline_aligned __attribute__((aligned(L1_CACHE_BYTES)))
 #undef container_of
 #define container_of(ptr, type, member) ({ \

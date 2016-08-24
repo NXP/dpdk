@@ -127,17 +127,17 @@ int memac_set_station_mac_addr(const struct fman_if *p, uint8_t *eth)
 	void *reg = &((struct memac_regs *)m->ccsr_map)->command_config;
 	u32 val = in_be32(reg);
 
-	memcpy(&m->__if.mac_addr, eth, ETH_ALEN);
+	memcpy(&m->__if.mac_addr, eth, ETHER_ADDR_LEN);
 	reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
-	val = (m->__if.mac_addr.ether_addr_octet[0] |
-	       (m->__if.mac_addr.ether_addr_octet[1] << 8) |
-	       (m->__if.mac_addr.ether_addr_octet[2] << 16) |
-	       (m->__if.mac_addr.ether_addr_octet[3] << 24));
+	val = (m->__if.mac_addr.addr_bytes[0] |
+	       (m->__if.mac_addr.addr_bytes[1] << 8) |
+	       (m->__if.mac_addr.addr_bytes[2] << 16) |
+	       (m->__if.mac_addr.addr_bytes[3] << 24));
 	out_be32(reg, val);
 
 	reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
-	val = ((m->__if.mac_addr.ether_addr_octet[4] << 0) |
-	       (m->__if.mac_addr.ether_addr_octet[5] << 8));
+	val = ((m->__if.mac_addr.addr_bytes[4] << 0) |
+	       (m->__if.mac_addr.addr_bytes[5] << 8));
 	out_be32(reg, val);
 
 	return 0;

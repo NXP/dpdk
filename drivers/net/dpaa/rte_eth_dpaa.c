@@ -200,12 +200,8 @@ static int usdpaa_eth_link_update(struct rte_eth_dev *dev,
 				  int wait_to_complete __rte_unused)
 {
 	struct rte_eth_link *link = &dev->data->dev_link;
-	struct usdpaa_eth_link arg;
 
-	usdpaa_get_iface_link(dev->data->port_id, &arg);
-	link->link_speed = arg.link_speed;
-	link->link_duplex = arg.link_duplex;
-	link->link_status = arg.link_status;
+	usdpaa_get_iface_link(dev->data->port_id, link);
 
 	return 0;
 }
@@ -213,13 +209,7 @@ static int usdpaa_eth_link_update(struct rte_eth_dev *dev,
 static void usdpaa_eth_stats_get(struct rte_eth_dev *dev,
 				 struct rte_eth_stats *stats)
 {
-	struct usdpaa_eth_stats mystats;
-
-	usdpaa_get_iface_stats(dev->data->port_id, &mystats);
-	stats->ipackets = mystats.ipackets;
-	stats->opackets = mystats.opackets;
-	stats->ibytes = mystats.ibytes;
-	stats->obytes = mystats.obytes;
+	usdpaa_get_iface_stats(dev->data->port_id, stats);
 }
 
 static void usdpaa_eth_stats_reset(struct rte_eth_dev *dev)

@@ -80,7 +80,7 @@ static const struct dt_dir *node2dir(const struct device_node *n)
 static int alive;
 static struct dt_dir root_dir;
 static const char *base_dir;
-static LIST_HEAD(linear);
+static COMPAT_LIST_HEAD(linear);
 
 static int my_open_dir(const char *relative_path, struct dirent ***d)
 {

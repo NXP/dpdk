@@ -30,6 +30,7 @@
  */
 
 #include "bman_low.h"
+#include <rte_branch_prediction.h>
 
 /* Compilation constants */
 #define RCR_THRESH	2	/* reread h/w CI when running out of space */

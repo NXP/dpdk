@@ -34,6 +34,7 @@
 #define __FMAN_H
 
 #include <net/if.h>
+#include <rte_ether.h>
 #include <usdpaa/compat.h>
 #include <usdpaa/fsl_qman.h>
 #include <stdbool.h>
@@ -481,9 +482,9 @@ static inline void fman_if_disable_all_rx(void)
  */
 #define ETH_MAC_PRINTF_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 #define ETH_MAC_PRINTF_ARGS(a) \
-		(a)->ether_addr_octet[0], (a)->ether_addr_octet[1], \
-		(a)->ether_addr_octet[2], (a)->ether_addr_octet[3], \
-		(a)->ether_addr_octet[4], (a)->ether_addr_octet[5]
+		(a)->addr_bytes[0], (a)->addr_bytes[1], \
+		(a)->addr_bytes[2], (a)->addr_bytes[3], \
+		(a)->addr_bytes[4], (a)->addr_bytes[5]
 
 /* To iterate the "bpool_list" for an interface. Eg;
  *        struct fman_if *p = get_ptr_to_some_interface();
