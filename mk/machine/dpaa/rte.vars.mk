@@ -53,5 +53,8 @@
 # CPU_CFLAGS =
 # CPU_LDFLAGS =
 # CPU_ASFLAGS =
-MACHINE_CFLAGS += -march=armv8-a -mcpu=cortex-a53+fp+simd \
-		  -DRTE_MACHINE_CPUFLAG_NEON
+MACHINE_CFLAGS += -march=armv8-a+crc
+
+ifdef CONFIG_RTE_ARCH_ARM_TUNE
+MACHINE_CFLAGS += -mcpu=$(CONFIG_RTE_ARCH_ARM_TUNE)
+endif
