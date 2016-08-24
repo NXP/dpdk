@@ -128,7 +128,7 @@ struct net_if_queue {
 struct net_if {
 	int valid;
 	char name[NETIF_ETHER_DEV_NAME_SIZE];
-	char mac_addr[ETH_ALEN];
+	char mac_addr[ETHER_ADDR_LEN];
 	const struct fm_eth_port_cfg *cfg;
 	struct net_if_admin admin[ADMIN_FQ_NUM];
 	struct net_if_queue *rx_queues;
@@ -878,12 +878,12 @@ static int net_if_init(struct net_if *dpaa_intf,
 		cfg->fman_if->mac_idx);
 
 	/* get the mac address */
-	memcpy(&dpaa_intf->mac_addr, &cfg->fman_if->mac_addr.ether_addr_octet,
-	       ETH_ALEN);
+	memcpy(&dpaa_intf->mac_addr, &cfg->fman_if->mac_addr.addr_bytes,
+	       ETHER_ADDR_LEN);
 
 	printf("%s::interface %s macaddr::", __func__, dpaa_intf->name);
-	for (loop = 0; loop < ETH_ALEN; loop++) {
-		if (loop != (ETH_ALEN - 1))
+	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
+		if (loop != (ETHER_ADDR_LEN - 1))
 			printf("%02x:", dpaa_intf->mac_addr[loop]);
 		else
 			printf("%02x\n", dpaa_intf->mac_addr[loop]);
@@ -985,7 +985,7 @@ void usdpaa_port_control(uint32_t port_id, uint32_t op)
 		fman_if_disable_rx(net_if->fif);
 }
 
-void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link)
+void usdpaa_get_iface_link(uint32_t port_id, struct rte_eth_link *link)
 {
 	struct net_if *net_if =  &dpaa_ifacs[port_id];
 
@@ -1002,7 +1002,7 @@ void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link)
 }
 
 static inline void usdpaa_memac_status(struct memac_regs *regs,
-				       struct usdpaa_eth_stats *stats)
+				       struct rte_eth_stats *stats)
 {
 	/* read recved packet count */
 	stats->ipackets = ((u64)in_be32(&regs->rfrm_u)) << 32 | in_be32(&regs->rfrm_l);
@@ -1016,7 +1016,7 @@ static inline void usdpaa_memac_status(struct memac_regs *regs,
 }
 
 static inline void usdpaa_dtsec_status(struct dtsec_regs *regs,
-				       struct usdpaa_eth_stats *stats)
+				       struct rte_eth_stats *stats)
 {
 	stats->ipackets = in_be32(&regs->rpkt);
 	stats->ibytes = in_be32(&regs->rbyt);
@@ -1026,7 +1026,7 @@ static inline void usdpaa_dtsec_status(struct dtsec_regs *regs,
 	stats->oerrors = in_be32(&regs->tdrp);
 }
 
-void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats)
+void usdpaa_get_iface_stats(uint32_t port_id, struct rte_eth_stats *stats)
 {
 	struct net_if *net_if = &dpaa_ifacs[port_id];
 	struct fman_if_internal *itif;

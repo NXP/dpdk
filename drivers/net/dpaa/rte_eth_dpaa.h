@@ -34,6 +34,7 @@
 #define DPDK_APP_H 1
 
 #include <stdbool.h>
+#include <rte_ethdev.h>
 
 #define MAX_ETHDEV_NAME 32
 #define ETHDEV_NAME_PREFIX      "dpaaeth"
@@ -58,22 +59,6 @@ struct usdpaa_mbufs {
 	int next;
 };
 
-struct usdpaa_eth_link {
-	uint32_t link_speed;        /**< ETH_SPEED_NUM_ */
-	uint16_t link_duplex  : 2;  /**< ETH_LINK_[HALF/FULL]_DUPLEX */
-	uint16_t link_autoneg : 1;  /**< ETH_LINK_SPEED_[AUTONEG/FIXED] */
-	uint16_t link_status  : 1;  /**< ETH_LINK_[DOWN/UP] */
-};
-
-struct usdpaa_eth_stats {
-	uint64_t ipackets;  /**< Total number of successfully received packets. */
-	uint64_t opackets;  /**< Total number of successfully transmitted packets.*/
-	uint64_t ibytes;    /**< Total number of successfully received bytes. */
-	uint64_t obytes;    /**< Total number of successfully transmitted bytes. */
-	uint64_t ierrors;   /**< Total number of erroneous received packets. */
-	uint64_t oerrors;   /**< Total number of failed transmitted packets. */
-};
-
 extern __thread bool thread_portal_init;
 
 int add_usdpaa_devices_to_pcilist(int num_ethports);
@@ -85,8 +70,8 @@ void usdpaa_set_promisc_mode(uint32_t port_id, uint32_t op);
 void usdpaa_port_control(uint32_t port_id, uint32_t op);
 int usdpaa_add_devices_to_pcilist(int num_ethports);
 void usdpaa_enable_pkio(void);
-void usdpaa_get_iface_link(uint32_t port_id, struct usdpaa_eth_link *link);
-void usdpaa_get_iface_stats(uint32_t port_id, struct usdpaa_eth_stats *stats);
+void usdpaa_get_iface_link(uint32_t port_id, struct rte_eth_link *link);
+void usdpaa_get_iface_stats(uint32_t port_id, struct rte_eth_stats *stats);
 
 uint16_t usdpaa_eth_queue_rx(void *q,
 			     struct rte_mbuf **bufs,

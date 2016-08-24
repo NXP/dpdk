@@ -34,6 +34,7 @@
 #include <internal/process.h>
 #include "qman_private.h"
 #include <sys/ioctl.h>
+#include <rte_branch_prediction.h>
 
 /* Global variable containing revision id (even on non-control plane systems
  * where CCSR isn't available) */
@@ -62,7 +63,7 @@ static __thread struct usdpaa_ioctl_portal_map map = {
 };
 
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-static LIST_HEAD(master_list);
+static COMPAT_LIST_HEAD(master_list);
 static pthread_mutex_t master_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct qman_master {

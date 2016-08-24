@@ -38,7 +38,7 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <error.h>
-#include <netinet/if_ether.h>
+#include <net/if_arp.h>
 
 #include <assert.h>
 #include <unistd.h>
@@ -197,9 +197,9 @@ static inline int get_num_netcfg_interfaces(char *str)
 static inline int str2mac(const char *macaddr, struct ether_addr *mac)
 {
 	if (sscanf(macaddr, "[%02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx]",
-		   &mac->ether_addr_octet[0], &mac->ether_addr_octet[1],
-		&mac->ether_addr_octet[2], &mac->ether_addr_octet[3],
-		&mac->ether_addr_octet[4], &mac->ether_addr_octet[5]) != 6) {
+		   &mac->addr_bytes[0], &mac->addr_bytes[1],
+		&mac->addr_bytes[2], &mac->addr_bytes[3],
+		&mac->addr_bytes[4], &mac->addr_bytes[5]) != 6) {
 		error(0, EINVAL, "%s", __func__);
 		return -EINVAL;
 	}
@@ -239,7 +239,7 @@ int set_mac_addr(const char *vname, struct ether_addr *mac)
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, vname, sizeof(ifr.ifr_name) - 1);
 	ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
-	memcpy(ifr.ifr_hwaddr.sa_data, mac->ether_addr_octet, sizeof(*mac));
+	memcpy(ifr.ifr_hwaddr.sa_data, mac->addr_bytes, sizeof(*mac));
 	ret = ioctl(skfd, SIOCSIFHWADDR, &ifr);
 
 	return ret;

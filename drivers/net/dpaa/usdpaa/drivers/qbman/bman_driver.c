@@ -34,6 +34,7 @@
 #include <internal/process.h>
 #include "bman_private.h"
 #include <sys/ioctl.h>
+#include <rte_branch_prediction.h>
 /*
  * Global variables of the max portal/pool number this bman version supported
  */
@@ -56,7 +57,7 @@ static __thread struct usdpaa_ioctl_portal_map map = {
 };
 
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-static LIST_HEAD(master_list);
+static COMPAT_LIST_HEAD(master_list);
 static pthread_mutex_t master_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct bman_master {
