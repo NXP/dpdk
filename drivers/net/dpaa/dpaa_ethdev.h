@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright (c) 2014 Freescale Semiconductor. All rights reserved.
+ *   Copyright (c) 2014-2016 Freescale Semiconductor. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -29,18 +29,36 @@
  *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/* System headers */
-#ifndef DPDK_APP_H
-#define DPDK_APP_H 1
+#ifndef __DPDK_ETHDEV_H__
+#define __DPDK_ETHDEV_H__
 
+/* System headers */
 #include <stdbool.h>
 #include <rte_ethdev.h>
 
+#include "dpaa_ethdev.h"
+#include "dpaa_logs.h"
+#include "dpaa_pkt_annot.h"
+
+#include <usdpaa/fsl_usd.h>
+#include <usdpaa/fsl_qman.h>
+#include <usdpaa/fsl_bman.h>
+#include <usdpaa/of.h>
+#include <usdpaa/usdpaa_netcfg.h>
+
+#define FSL_CLASS_ID		0
+#define FSL_VENDOR_ID		0x1957
+#define FSL_DEVICE_ID		0x410	 /* custom */
+#define FSL_FMAN_ETH_CLASS	0x020000 /* ethernet */
+#define FSL_SUBSYSTEM_VENDOR	0
+#define FSL_SUBSYSTEM_DEVICE	0
+
+#define FSL_DPAA_DOMAIN	2
+#define FSL_DPAA_BUSID	16
+#define FSL_DPAA_FUNC		0
+
 #define MAX_ETHDEV_NAME 32
 #define ETHDEV_NAME_PREFIX      "dpaaeth"
-
-#define ENABLE_OP	1
-#define DISABLE_OP	0
 
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
@@ -51,86 +69,138 @@
 
 /* we will re-use the HEADROOM for annotation in RX */
 #define DPAA_HW_BUF_RESERVE	0
-#define DPAA_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
-
-#define ETH_LINK_HALF_DUPLEX    0 /**< Half-duplex connection. */
-#define ETH_LINK_FULL_DUPLEX    1 /**< Full-duplex connection. */
-#define ETH_LINK_DOWN           0 /**< Link is down. */
-#define ETH_LINK_UP             1 /**< Link is up. */
-#define ETH_LINK_FIXED          0 /**< No autonegotiation. */
-#define ETH_LINK_AUTONEG        1 /**< Autonegotiated. */
+#define DPAA_PACKET_LAYOUT_ALIGN	64
 
 /* Alignment to use for cpu-local structs to avoid coherency problems. */
 #define MAX_CACHELINE			64
 
-#define NET_IF_TX_PRIORITY		3
-#define NET_IF_ADMIN_PRIORITY		4
+#define DPAA_IF_TX_PRIORITY		3
+#define DPAA_IF_ADMIN_PRIORITY		4
 
-#define NET_IF_RX_PRIORITY		4
-#define NET_IF_RX_ANNOTATION_STASH	2
-#define NET_IF_RX_DATA_STASH		1
-#define NET_IF_RX_CONTEXT_STASH		0
+#define DPAA_IF_RX_PRIORITY		4
+#define DPAA_IF_RX_ANNOTATION_STASH	2
+#define DPAA_IF_RX_DATA_STASH		1
+#define DPAA_IF_RX_CONTEXT_STASH		0
 #define CPU_SPIN_BACKOFF_CYCLES		512
 
 /* Each "admin" FQ is represented by one of these */
-#define ADMIN_FQ_RX_ERROR   0
-#define ADMIN_FQ_RX_DEFAULT 1
-#define ADMIN_FQ_TX_ERROR   2
-#define ADMIN_FQ_TX_CONFIRM 3
-#define ADMIN_FQ_NUM	4 /* Upper limit for loops */
+enum {
+	ADMIN_FQ_RX_ERROR,
+	ADMIN_FQ_RX_DEFAULT,
+	ADMIN_FQ_TX_ERROR,
+	ADMIN_FQ_TX_CONFIRM,
+	ADMIN_FQ_NUM /* Upper limit for loops */
+};
+
+#define DPAA_MIN_RX_BUF_SIZE 512
+#define DPAA_MAX_RX_PKT_LEN  9600
+
+/* total number of bpools on SoC */
+#define DPAA_MAX_BPOOLS	64
+
+/* Define pool_table for entries DPAA_MAX_BPOOLS+1 because
+ * the atomic operations supported give only atomic_add_and_return()
+ * so it causes 0th entry empty always
+ * */
+#define NUM_BP_POOL_ENTRIES (DPAA_MAX_BPOOLS + 1)
 
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
 
-#define NET_TX_CKSUM_OFFLOAD_MASK (             \
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
+
+#define DPAA_RSS_OFFLOAD_ALL ( \
+	ETH_RSS_FRAG_IPV4 | \
+	ETH_RSS_NONFRAG_IPV4_TCP | \
+	ETH_RSS_NONFRAG_IPV4_UDP | \
+	ETH_RSS_NONFRAG_IPV4_SCTP | \
+	ETH_RSS_FRAG_IPV6 | \
+	ETH_RSS_NONFRAG_IPV6_TCP | \
+	ETH_RSS_NONFRAG_IPV6_UDP | \
+	ETH_RSS_NONFRAG_IPV6_SCTP)
+
+#define DPAA_TX_CKSUM_OFFLOAD_MASK (             \
 		PKT_TX_IP_CKSUM |                \
 		PKT_TX_TCP_CKSUM |                 \
 		PKT_TX_UDP_CKSUM)
 
-/*Maximum number of slots available in TX ring*/
-#define MAX_TX_RING_SLOTS	8
+struct pool_info_entry {
+	struct rte_mempool *mp;
+	struct bman_pool *bp;
 
-#define MAX_PKTS_BURST 32
-struct usdpaa_mbufs {
-	struct rte_mbuf *mbuf[MAX_PKTS_BURST];
-	int next;
+	uint32_t bpid;
+	uint32_t size;
+	uint32_t meta_data_size;
+};
+
+struct dpaa_if_queue {
+	struct qman_fq fq;
+	uint32_t ifid;
+};
+
+/* Each network interface is represented by one of these */
+struct dpaa_if {
+	int valid;
+	char name[MAX_ETHDEV_NAME];
+	char mac_addr[ETHER_ADDR_LEN];
+	const struct fm_eth_port_cfg *cfg;
+	struct dpaa_if_queue admin[ADMIN_FQ_NUM];
+	struct dpaa_if_queue *rx_queues;
+	struct dpaa_if_queue *tx_queues;
+	uint16_t nb_rx_queues;
+	uint16_t nb_tx_queues;
+	uint32_t ifid;
+	const struct fman_if *fif;
+	struct pool_info_entry *bp_info;
+};
+
+struct fman_if_internal {
+	struct fman_if itif;
+	char node_path[PATH_MAX];
+	uint64_t regs_size;
+	void *ccsr_map;
+	struct list_head node;
 };
 
 extern __thread bool thread_portal_init;
+extern struct dpaa_if *dpaa_ifacs;
+extern struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
 
-int add_usdpaa_devices_to_pcilist(int num_ethports);
-int usdpaa_portal_init(void *arg);
-int usdpaa_get_num_ports(void);
-int usdpaa_pre_rte_eal_init(void);
-char *usdpaa_get_iface_macaddr(uint32_t portid);
-void usdpaa_set_promisc_mode(uint32_t port_id, uint32_t op);
-void usdpaa_port_control(uint32_t port_id, uint32_t op);
-int usdpaa_add_devices_to_pcilist(int num_ethports);
-void usdpaa_enable_pkio(void);
-void usdpaa_get_iface_link(uint32_t port_id, struct rte_eth_link *link);
-void usdpaa_get_iface_stats(uint32_t port_id, struct rte_eth_stats *stats);
+#define DPAA_PORTID_TO_IFACE(__portid) \
+	&dpaa_ifacs[__portid];
 
-uint16_t usdpaa_eth_queue_rx(void *q,
-			     struct rte_mbuf **bufs,
-			    uint16_t nb_bufs);
+#define DPAA_NUM_RX_QUEUE(__portid) \
+	dpaa_ifacs[__portid].nb_rx_queues;
 
-uint16_t usdpaa_eth_queue_tx(void *q,
-			    struct rte_mbuf **bufs,
-			    uint16_t nb_bufs);
+#define DPAA_NUM_TX_QUEUE(__portid) \
+	dpaa_ifacs[__portid].nb_tx_queues;
 
-uint32_t usdpaa_get_num_rx_queue(uint32_t portid);
-uint32_t usdpaa_get_num_tx_queue(uint32_t portid);
+#define DPAA_IF_MAC_ADDR(__portid) \
+	&dpaa_ifacs[__portid].mac_addr[0];
 
-int usdpaa_set_rx_queue(uint32_t portid, uint32_t queue_id,
-			 void **rx_queues, struct rte_mempool *mp);
+#define DPAA_BPID_TO_POOL_INFO(__bpid) \
+	&dpaa_pool_table[__bpid];
 
-int usdpaa_set_tx_queue(uint32_t portid, uint32_t queue_id,
-			 void **tx_queues);
+#define DPAA_MEMPOOL_TO_BPID(__mp) \
+	((struct pool_info_entry *)__mp->pool_data)->bpid;
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY
-void display_frame(const struct qm_fd *fd);
-#else
-#define display_frame(a)
-#endif
+#define DPAA_MEMPOOL_TO_POOL_INFO(__mp) \
+	(struct pool_info_entry *)__mp->pool_data;
+
+/* todo - this is costly, need to write a fast coversion routine */
+static inline void *dpaa_mem_ptov(phys_addr_t paddr)
+{
+	const struct rte_memseg *memseg = rte_eal_get_physmem_layout();
+	int i;
+
+	for (i = 0; i < RTE_MAX_MEMSEG && memseg[i].addr != NULL; i++) {
+		if (paddr >= memseg[i].phys_addr && paddr <
+			memseg[i].phys_addr + memseg[i].len)
+			return memseg[i].addr + (paddr - memseg[i].phys_addr);
+	}
+
+	return NULL;
+}
 
 #endif

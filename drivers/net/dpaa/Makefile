@@ -54,7 +54,8 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_net
 EXPORT_MAP := rte_pmd_dpaa_version.map
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
-	dpaa_ethdev.c
+	dpaa_ethdev.c \
+	dpaa_rxtx.c
 DIRS-y += base
 SYMLINK-y-include +=
 
