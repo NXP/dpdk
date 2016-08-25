@@ -53,6 +53,43 @@
 #define DPAA_HW_BUF_RESERVE	0
 #define DPAA_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
 
+#define ETH_LINK_HALF_DUPLEX    0 /**< Half-duplex connection. */
+#define ETH_LINK_FULL_DUPLEX    1 /**< Full-duplex connection. */
+#define ETH_LINK_DOWN           0 /**< Link is down. */
+#define ETH_LINK_UP             1 /**< Link is up. */
+#define ETH_LINK_FIXED          0 /**< No autonegotiation. */
+#define ETH_LINK_AUTONEG        1 /**< Autonegotiated. */
+
+/* Alignment to use for cpu-local structs to avoid coherency problems. */
+#define MAX_CACHELINE			64
+
+#define NET_IF_TX_PRIORITY		3
+#define NET_IF_ADMIN_PRIORITY		4
+
+#define NET_IF_RX_PRIORITY		4
+#define NET_IF_RX_ANNOTATION_STASH	2
+#define NET_IF_RX_DATA_STASH		1
+#define NET_IF_RX_CONTEXT_STASH		0
+#define CPU_SPIN_BACKOFF_CYCLES		512
+
+/* Each "admin" FQ is represented by one of these */
+#define ADMIN_FQ_RX_ERROR   0
+#define ADMIN_FQ_RX_DEFAULT 1
+#define ADMIN_FQ_TX_ERROR   2
+#define ADMIN_FQ_TX_CONFIRM 3
+#define ADMIN_FQ_NUM	4 /* Upper limit for loops */
+
+/* Maximum release/acquire from BMAN */
+#define DPAA_MBUF_MAX_ACQ_REL  8
+
+#define NET_TX_CKSUM_OFFLOAD_MASK (             \
+		PKT_TX_IP_CKSUM |                \
+		PKT_TX_TCP_CKSUM |                 \
+		PKT_TX_UDP_CKSUM)
+
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
+
 #define MAX_PKTS_BURST 32
 struct usdpaa_mbufs {
 	struct rte_mbuf *mbuf[MAX_PKTS_BURST];

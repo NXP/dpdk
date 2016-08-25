@@ -47,16 +47,15 @@ CFLAGS +=-Wno-strict-aliasing
 CFLAGS +=-Wno-missing-prototypes
 CFLAGS +=-Wno-missing-declarations
 CFLAGS +=-Wno-unused-function
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/usdpaa/include
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_net
 EXPORT_MAP := rte_pmd_dpaa_version.map
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
-	usdpaa_glue.c \
-	rte_eth_dpaa.c
-DIRS-y += usdpaa
+	dpaa_ethdev.c
+DIRS-y += base
 SYMLINK-y-include +=
 
 # this lib depends upon:
