@@ -31,7 +31,7 @@
 
 include ../../Makefile.inc
 CFLAGS += -I../../include/
-OBJS = 	fman.o
+OBJS = 	fman_hw.o
 LIB = libusdpaa_fman.a
 
 all: $(OBJS)

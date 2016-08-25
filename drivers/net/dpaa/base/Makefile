@@ -10,8 +10,8 @@ include $(RTE_SDK)/mk/rte.vars.mk
 LIB = libnxp_usdpaa.a
 
 CFLAGS += -O3 -DCONFIG_ARM64
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/usdpaa/include
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/usdpaa/include/libxml2/include/
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/libxml2/include/
 
 # all source are stored in SRCS-y
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
