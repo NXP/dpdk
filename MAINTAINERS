@@ -431,6 +431,10 @@ M: Declan Doherty <declan.doherty@intel.com>
 F: drivers/crypto/null/
 F: doc/guides/cryptodevs/null.rst
 
+LibCrypto Crypto PMD
+M: Declan Doherty <declan.doherty@intel.com>
+F: drivers/crypto/libcrypto/
+F: doc/guides/cryptodevs/libcrypto.rst
 
 Packet processing
 -----------------
