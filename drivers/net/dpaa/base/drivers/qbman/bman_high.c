@@ -566,7 +566,7 @@ u32 bman_poll_slow(void)
 	struct bman_portal *p = get_poll_portal();
 	u32 ret;
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-	if (unlikely(p->sharing_redirect))
+	if (unlikely(p->sharing_redirect != NULL))
 		ret = (u32)-1;
 	else
 #endif
@@ -586,7 +586,7 @@ void bman_poll(void)
 {
 	struct bman_portal *p = get_poll_portal();
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-	if (unlikely(p->sharing_redirect))
+	if (unlikely(p->sharing_redirect != NULL))
 		goto done;
 #endif
 	if (!(p->slowpoll--)) {

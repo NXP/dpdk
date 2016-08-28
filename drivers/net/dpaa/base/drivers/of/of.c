@@ -71,7 +71,7 @@ struct dt_file {
 
 static const struct dt_dir *node2dir(const struct device_node *n)
 {
-	const struct dt_node *dn = container_of(n, struct dt_node, node);
+	struct dt_node *dn = container_of((struct device_node *)n, struct dt_node, node);
 	const struct dt_dir *d = container_of(dn, struct dt_dir, node);
 	assert(!dn->is_file);
 	return d;

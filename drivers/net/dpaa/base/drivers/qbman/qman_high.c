@@ -1204,7 +1204,7 @@ inline int qman_p_poll_dqrr(struct qman_portal *p, unsigned int limit)
 	int ret;
 
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-	if (unlikely(p->sharing_redirect))
+	if (unlikely(p->sharing_redirect != NULL))
 		ret = -EINVAL;
 	else
 #endif
@@ -1219,7 +1219,7 @@ EXPORT_SYMBOL(qman_p_poll_dqrr);
 struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 {
 	struct qman_portal *p = get_poll_portal();
-	struct qm_dqrr_entry *dq;
+	const struct qm_dqrr_entry *dq;
 	enum qman_cb_dqrr_result res;
 	int ret;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -1247,7 +1247,7 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 		fq_clear(fq, QMAN_FQ_STATE_NE);
 	put_poll_portal();
 
-	return dq;
+	return (struct qm_dqrr_entry *)dq;
 }
 EXPORT_SYMBOL(qman_dequeue);
 
@@ -1280,7 +1280,7 @@ u32 qman_p_poll_slow(struct qman_portal *p)
 {
 	u32 ret;
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-	if (unlikely(p->sharing_redirect))
+	if (unlikely(p->sharing_redirect != NULL))
 		ret = (u32)-1;
 	else
 #endif
@@ -1309,7 +1309,7 @@ EXPORT_SYMBOL(qman_poll_slow);
 void qman_p_poll(struct qman_portal *p)
 {
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
-	if (unlikely(p->sharing_redirect))
+	if (unlikely(p->sharing_redirect != NULL))
 		return;
 #endif
 	if ((~p->irq_sources) & QM_PIRQ_SLOW) {

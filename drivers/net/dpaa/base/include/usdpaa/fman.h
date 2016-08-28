@@ -401,75 +401,75 @@ int fman_init(void);
 void fman_finish(void);
 
 /* Set promiscuous mode on an interface */
-void fm_mac_set_promiscuous(const struct fman_if *p);
+void fm_mac_set_promiscuous(struct fman_if *p);
 
 /* Get mac config*/
-int fm_mac_config(const struct fman_if *p, uint8_t *eth);
+int fm_mac_config(struct fman_if *p, uint8_t *eth);
 
 /* Get MAC address for a particular interface */
-int fm_mac_add_exact_match_mac_addr(const struct fman_if *p, uint8_t *eth);
+int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Add station MAC address on MEMAC */
-int memac_set_station_mac_addr(const struct fman_if *p, uint8_t *eth);
-int memac_get_station_mac_addr(const struct fman_if *p, uint8_t *eth);
+int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
+int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Set ignore pause option for a specific interface */
-void fm_mac_set_rx_ignore_pause_frames(const struct fman_if *p, bool enable);
+void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
 
 /* Enable Loopback mode */
-void fm_mac_config_loopback(const struct fman_if *p, bool enable);
+void fm_mac_config_loopback(struct fman_if *p, bool enable);
 
 /* Set max frame length */
-void fm_mac_conf_max_frame_len(const struct fman_if *p,
+void fm_mac_conf_max_frame_len(struct fman_if *p,
 			unsigned int max_frame_len);
 
 /* Enable/disable Rx promiscuous mode on specified interface */
-void fman_if_promiscuous_enable(const struct fman_if *);
-void fman_if_promiscuous_disable(const struct fman_if *);
+void fman_if_promiscuous_enable(struct fman_if *);
+void fman_if_promiscuous_disable(struct fman_if *);
 
 /* Add multicast MAC address on MEMAC */
-int memac_add_hash_mac_addr(const struct fman_if *p, uint8_t *eth);
+int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Enable/disable Rx on specific interfaces */
-void fman_if_enable_rx(const struct fman_if *);
-void fman_if_disable_rx(const struct fman_if *);
+void fman_if_enable_rx(struct fman_if *);
+void fman_if_disable_rx(struct fman_if *);
 
 /* Enable/disable loopback on specific interfaces */
-void fman_if_loopback_enable(const struct fman_if *);
-void fman_if_loopback_disable(const struct fman_if *);
+void fman_if_loopback_enable(struct fman_if *);
+void fman_if_loopback_disable(struct fman_if *);
 
 /* Set buffer pool on specific interface */
-void fman_if_set_bp(const struct fman_if *fm_if, unsigned num, int bpid,
+void fman_if_set_bp(struct fman_if *fm_if, unsigned num, int bpid,
 		    size_t bufsize);
 /* Get interface fd->offset value */
-int fman_if_get_fdoff(const struct fman_if *fm_if);
+int fman_if_get_fdoff(struct fman_if *fm_if);
 
 /* Set default error fqid on specific interface */
-void fman_if_set_err_fqid(const struct fman_if *fm_if, uint32_t err_fqid);
+void fman_if_set_err_fqid(struct fman_if *fm_if, uint32_t err_fqid);
 
 /* Get IC transfer params */
-int fman_if_get_ic_params(const struct fman_if *fm_if, struct fman_if_ic_params *icp);
+int fman_if_get_ic_params(struct fman_if *fm_if, struct fman_if_ic_params *icp);
 
 /* Set IC transfer params */
-int fman_if_set_ic_params(const struct fman_if *fm_if,
+int fman_if_set_ic_params(struct fman_if *fm_if,
 			  const struct fman_if_ic_params *icp);
 
 /* Set interface fd->offset value */
-void fman_if_set_fdoff(const struct fman_if *fm_if, uint32_t fd_offset);
+void fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset);
 
 /* Set interface next invoked action for dequeue operation */
-void fman_if_set_dnia(const struct fman_if *fm_if, uint32_t nia);
+void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)
 {
-	const struct fman_if *__if;
+	struct fman_if *__if;
 	list_for_each_entry(__if, fman_if_list, node)
 		fman_if_enable_rx(__if);
 }
 static inline void fman_if_disable_all_rx(void)
 {
-	const struct fman_if *__if;
+	struct fman_if *__if;
 	list_for_each_entry(__if, fman_if_list, node)
 		fman_if_disable_rx(__if);
 }

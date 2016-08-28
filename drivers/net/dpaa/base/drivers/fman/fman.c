@@ -1085,7 +1085,7 @@ void fman_finish(void)
 	ccsr_map_fd = -1;
 }
 
-int fm_mac_add_exact_match_mac_addr(const struct fman_if *p, uint8_t *eth)
+int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1104,7 +1104,7 @@ int fm_mac_add_exact_match_mac_addr(const struct fman_if *p, uint8_t *eth)
 		return memac_set_station_mac_addr(p, eth);
 }
 
-int fm_mac_config(const struct fman_if *p,  uint8_t *eth)
+int fm_mac_config(struct fman_if *p,  uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1123,7 +1123,7 @@ int fm_mac_config(const struct fman_if *p,  uint8_t *eth)
 		return memac_get_station_mac_addr(p, eth);
 }
 
-void fm_mac_set_rx_ignore_pause_frames(const struct fman_if *p, bool enable)
+void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	u32 value = 0;
@@ -1159,7 +1159,7 @@ void fm_mac_set_rx_ignore_pause_frames(const struct fman_if *p, bool enable)
 	}
 }
 
-void fm_mac_config_loopback(const struct fman_if *p, bool enable)
+void fm_mac_config_loopback(struct fman_if *p, bool enable)
 {
 	if (enable)
 		/* Enable loopback mode */
@@ -1169,7 +1169,7 @@ void fm_mac_config_loopback(const struct fman_if *p, bool enable)
 		fman_if_loopback_disable(p);
 }
 
-void fm_mac_conf_max_frame_len(const struct fman_if *p,
+void fm_mac_conf_max_frame_len(struct fman_if *p,
 			       unsigned int max_frame_len)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
@@ -1193,12 +1193,12 @@ void fm_mac_conf_max_frame_len(const struct fman_if *p,
 	}
 }
 
-void fm_mac_set_promiscuous(const struct fman_if *p)
+void fm_mac_set_promiscuous(struct fman_if *p)
 {
 	fman_if_promiscuous_enable(p);
 }
 
-void fman_if_promiscuous_enable(const struct fman_if *p)
+void fman_if_promiscuous_enable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1223,7 +1223,7 @@ void fman_if_promiscuous_enable(const struct fman_if *p)
 	}
 }
 
-void fman_if_promiscuous_disable(const struct fman_if *p)
+void fman_if_promiscuous_disable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1248,7 +1248,7 @@ void fman_if_promiscuous_disable(const struct fman_if *p)
 	}
 }
 
-void fman_if_enable_rx(const struct fman_if *p)
+void fman_if_enable_rx(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1267,7 +1267,7 @@ void fman_if_enable_rx(const struct fman_if *p)
 			 in_be32(__if->ccsr_map + 8) | 3);
 }
 
-void fman_if_disable_rx(const struct fman_if *p)
+void fman_if_disable_rx(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1287,7 +1287,7 @@ void fman_if_disable_rx(const struct fman_if *p)
 			 in_be32(__if->ccsr_map + 8) & ~(u32)2);
 }
 
-void fman_if_loopback_enable(const struct fman_if *p)
+void fman_if_loopback_enable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1314,7 +1314,7 @@ void fman_if_loopback_enable(const struct fman_if *p)
 	}
 }
 
-void fman_if_loopback_disable(const struct fman_if *p)
+void fman_if_loopback_disable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1341,7 +1341,7 @@ void fman_if_loopback_disable(const struct fman_if *p)
 	}
 }
 
-void fman_if_set_bp(const struct fman_if *fm_if, unsigned num __always_unused,
+void fman_if_set_bp(struct fman_if *fm_if, unsigned num __always_unused,
 		    int bpid, size_t bufsize)
 {
 	u32 fmbm_ebmpi;
@@ -1365,7 +1365,7 @@ void fman_if_set_bp(const struct fman_if *fm_if, unsigned num __always_unused,
 		 fmbm_ebmpi);
 }
 
-int fman_if_get_fdoff(const struct fman_if *fm_if)
+int fman_if_get_fdoff(struct fman_if *fm_if)
 {
 	u32 fmbm_ricp;
 	int fdoff;
@@ -1389,7 +1389,7 @@ int fman_if_get_fdoff(const struct fman_if *fm_if)
 	return fdoff;
 }
 
-void fman_if_set_err_fqid(const struct fman_if *fm_if, uint32_t err_fqid)
+void fman_if_set_err_fqid(struct fman_if *fm_if, uint32_t err_fqid)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
@@ -1410,7 +1410,7 @@ void fman_if_set_err_fqid(const struct fman_if *fm_if, uint32_t err_fqid)
 	}
 }
 
-int fman_if_get_ic_params(const struct fman_if *fm_if, struct fman_if_ic_params *icp)
+int fman_if_get_ic_params(struct fman_if *fm_if, struct fman_if_ic_params *icp)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	int val = 0;
@@ -1440,7 +1440,7 @@ int fman_if_get_ic_params(const struct fman_if *fm_if, struct fman_if_ic_params 
 	return 0;
 }
 
-int fman_if_set_ic_params(const struct fman_if *fm_if,
+int fman_if_set_ic_params(struct fman_if *fm_if,
 			  const struct fman_if_ic_params *icp)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
@@ -1472,7 +1472,7 @@ int fman_if_set_ic_params(const struct fman_if *fm_if,
 	return 0;
 }
 
-void fman_if_set_fdoff(const struct fman_if *fm_if, uint32_t fd_offset)
+void fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned *fmbm_rebm;
@@ -1489,7 +1489,7 @@ void fman_if_set_fdoff(const struct fman_if *fm_if, uint32_t fd_offset)
 	out_be32(fmbm_rebm, in_be32(fmbm_rebm) | (fd_offset << 16));
 }
 
-void fman_if_set_dnia(const struct fman_if *fm_if, uint32_t nia)
+void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned *fmqm_pndn;
