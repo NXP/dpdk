@@ -1193,6 +1193,11 @@ void fm_mac_conf_max_frame_len(struct fman_if *p,
 	}
 }
 
+void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
+{
+	memac_stats_get(p, stats);
+}
+
 void fm_mac_set_promiscuous(struct fman_if *p)
 {
 	fman_if_promiscuous_enable(p);

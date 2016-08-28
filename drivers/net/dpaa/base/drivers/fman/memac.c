@@ -142,3 +142,26 @@ int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 
 	return 0;
 }
+
+void memac_stats_get(struct fman_if *p,
+		struct rte_eth_stats *stats)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct memac_regs *regs = m->ccsr_map;
+
+	/* read recved packet count */
+	stats->ipackets = ((u64)in_be32(&regs->rfrm_u)) << 32 |
+			in_be32(&regs->rfrm_l);
+	stats->ibytes = ((u64)in_be32(&regs->roct_u)) << 32 |
+			in_be32(&regs->roct_l);
+	stats->ierrors = ((u64)in_be32(&regs->rerr_u)) << 32 |
+			in_be32(&regs->rerr_l);
+
+	/* read xmited packet count */
+	stats->opackets = ((u64)in_be32(&regs->tfrm_u)) << 32 |
+			in_be32(&regs->tfrm_l);
+	stats->obytes = ((u64)in_be32(&regs->toct_u)) << 32 |
+			in_be32(&regs->toct_l);
+	stats->oerrors = ((u64)in_be32(&regs->terr_u)) << 32 |
+			in_be32(&regs->terr_l);
+}

@@ -38,6 +38,7 @@
 #include <usdpaa/compat.h>
 #include <usdpaa/fsl_qman.h>
 #include <stdbool.h>
+#include <rte_ethdev.h>
 
 #define MEMAC_NUM_OF_PADDRS 7 /* Num of additional exact match MAC adr regs */
 
@@ -412,6 +413,8 @@ int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth);
 /* Add station MAC address on MEMAC */
 int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
 int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
+void memac_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
+void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
 
 /* Set ignore pause option for a specific interface */
 void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);

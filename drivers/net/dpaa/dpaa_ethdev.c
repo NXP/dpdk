@@ -854,33 +854,12 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	return 0;
 }
 
-/* Should be in fman.c/memac.c */
-static inline void dpaa_memac_status(struct memac_regs *regs,
-		struct rte_eth_stats *stats)
-{
-	/* read recved packet count */
-	stats->ipackets = ((u64)in_be32(&regs->rfrm_u)) << 32 | in_be32(&regs->rfrm_l);
-	stats->ibytes = ((u64)in_be32(&regs->roct_u)) << 32 | in_be32(&regs->roct_l);
-	stats->ierrors = ((u64)in_be32(&regs->rerr_u)) << 32 | in_be32(&regs->rerr_l);
-
-	/* read xmited packet count */
-	stats->opackets = ((u64)in_be32(&regs->tfrm_u)) << 32 | in_be32(&regs->tfrm_l);
-	stats->obytes = ((u64)in_be32(&regs->toct_u)) << 32 | in_be32(&regs->toct_l);
-	stats->oerrors = ((u64)in_be32(&regs->terr_u)) << 32 | in_be32(&regs->terr_l);
-}
-
 static void dpaa_eth_stats_get(struct rte_eth_dev *dev,
 		struct rte_eth_stats *stats)
 {
 	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
-	struct fman_if_internal *itif;
-	void *regs;
 
-	itif = container_of((struct fman_if *)(iface->fif),
-			    struct fman_if_internal, itif);
-	regs = itif->ccsr_map;
-
-	dpaa_memac_status(regs, stats);
+	fman_if_stats_get(iface->fif, stats);
 }
 
 static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
