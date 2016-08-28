@@ -161,7 +161,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 
 /* Initialise a Tx FQ */
 static int dpaa_tx_queue_init(struct qman_fq *fq,
-		const struct fman_if *fif)
+		struct fman_if *fif)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
@@ -429,7 +429,7 @@ MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
 static int dpaa_if_init(struct dpaa_if *dpaa_intf,
 		const struct fm_eth_port_cfg *cfg)
 {
-	const struct fman_if *fif = cfg->fman_if;
+	struct fman_if *fif = cfg->fman_if;
 	struct fm_eth_port_fqrange *fq_range;
 	int num_cores, ret = 0, loop;
 

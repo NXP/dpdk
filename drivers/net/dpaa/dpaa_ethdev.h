@@ -151,7 +151,7 @@ struct dpaa_if {
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
-	const struct fman_if *fif;
+	struct fman_if *fif;
 	struct pool_info_entry *bp_info;
 };
 

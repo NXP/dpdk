@@ -78,7 +78,7 @@ static uint32_t get_mac_hash_code(uint64_t eth_addr)
 	return xorVal;
 }
 
-int memac_add_hash_mac_addr(const struct fman_if *p, uint8_t *eth)
+int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	uint64_t eth_addr;
 	void *hashtable_ctrl;
@@ -100,7 +100,7 @@ int memac_add_hash_mac_addr(const struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int memac_get_station_mac_addr(const struct fman_if *p, uint8_t *eth)
+int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *mac_reg =  &((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
@@ -120,7 +120,7 @@ int memac_get_station_mac_addr(const struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int memac_set_station_mac_addr(const struct fman_if *p, uint8_t *eth)
+int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 
