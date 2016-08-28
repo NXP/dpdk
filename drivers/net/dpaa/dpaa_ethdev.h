@@ -73,24 +73,7 @@
 
 /* Alignment to use for cpu-local structs to avoid coherency problems. */
 #define MAX_CACHELINE			64
-
-#define DPAA_IF_TX_PRIORITY		3
-#define DPAA_IF_ADMIN_PRIORITY		4
-
-#define DPAA_IF_RX_PRIORITY		4
-#define DPAA_IF_RX_ANNOTATION_STASH	2
-#define DPAA_IF_RX_DATA_STASH		1
-#define DPAA_IF_RX_CONTEXT_STASH		0
 #define CPU_SPIN_BACKOFF_CYCLES		512
-
-/* Each "admin" FQ is represented by one of these */
-enum {
-	ADMIN_FQ_RX_ERROR,
-	ADMIN_FQ_RX_DEFAULT,
-	ADMIN_FQ_TX_ERROR,
-	ADMIN_FQ_TX_CONFIRM,
-	ADMIN_FQ_NUM /* Upper limit for loops */
-};
 
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  9600
@@ -110,6 +93,23 @@ enum {
 /*Maximum number of slots available in TX ring*/
 #define MAX_TX_RING_SLOTS	8
 
+#define DPAA_IF_TX_PRIORITY		3
+#define DPAA_IF_ADMIN_PRIORITY		4
+#define DPAA_IF_RX_PRIORITY		4
+
+#define DPAA_IF_RX_ANNOTATION_STASH	2
+#define DPAA_IF_RX_DATA_STASH		1
+#define DPAA_IF_RX_CONTEXT_STASH		0
+
+/* Each "admin" FQ is represented by one of these */
+enum {
+	ADMIN_FQ_RX_ERROR,
+	ADMIN_FQ_RX_DEFAULT,
+	ADMIN_FQ_TX_ERROR,
+	ADMIN_FQ_TX_CONFIRM,
+	ADMIN_FQ_NUM /* Upper limit for loops */
+};
+
 #define DPAA_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_FRAG_IPV4 | \
 	ETH_RSS_NONFRAG_IPV4_TCP | \
@@ -128,7 +128,6 @@ enum {
 struct pool_info_entry {
 	struct rte_mempool *mp;
 	struct bman_pool *bp;
-
 	uint32_t bpid;
 	uint32_t size;
 	uint32_t meta_data_size;
@@ -153,14 +152,6 @@ struct dpaa_if {
 	uint32_t ifid;
 	struct fman_if *fif;
 	struct pool_info_entry *bp_info;
-};
-
-struct fman_if_internal {
-	struct fman_if itif;
-	char node_path[PATH_MAX];
-	uint64_t regs_size;
-	void *ccsr_map;
-	struct list_head node;
 };
 
 extern __thread bool thread_portal_init;
