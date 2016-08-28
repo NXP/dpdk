@@ -231,7 +231,6 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 		struct qm_fd *fd)
 {
-	struct dpaa_if_queue *rx;
 	void *ptr;
 	struct rte_mbuf *mbuf;
 	struct pool_info_entry *bp_info;
@@ -243,7 +242,6 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	}
 	dpaa_display_frame(fd);
 
-	rx = container_of(fq, struct dpaa_if_queue, fq);
 	ptr = dpaa_mem_ptov(fd->addr);
 	if (!ptr) {
 		PMD_DRV_LOG(ERROR, "unable to convert physical address");
@@ -261,7 +259,7 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	mbuf->data_len = fd->length20;
 	mbuf->pkt_len = fd->length20;
 
-	mbuf->port = rx->ifid;
+	mbuf->port = fq->ifid;
 	mbuf->nb_segs = 1;
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
@@ -383,8 +381,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
 					&fd_arr[loop], bp_info->bpid);
 			} else {
-				struct dpaa_if_queue *txq =
-					container_of(q, struct dpaa_if_queue, fq);
+				struct qman_fq *txq = q;
 				struct dpaa_if *iface = &dpaa_ifacs[txq->ifid];
 				mbuf = dpaa_get_dmable_mbuf(mbuf, iface, q);
 				if (!mbuf) {

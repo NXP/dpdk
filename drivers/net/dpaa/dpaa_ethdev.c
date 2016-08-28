@@ -99,7 +99,7 @@ static int dpaa_pci_devinit(struct rte_pci_driver *pci_drv __rte_unused,
 /* Initialise a admin FQ ([rt]x_error, rx_default, tx_confirm). */
 static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf, uint32_t fqid, int idx)
 {
-	struct dpaa_if_queue *a= &dpaa_intf->admin[idx];
+	struct qman_fq *a= &dpaa_intf->admin[idx];
 	struct qm_mcc_initfq opts;
 	int ret;
 
@@ -112,12 +112,12 @@ static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf, uint32_t fqid, int i
 	if (ret)
 		return -EINVAL;
 
-	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, &a->fq);
+	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, a);
 	if (ret)
 		return ret;
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL;
 	opts.fqd.dest.wq = DPAA_IF_ADMIN_PRIORITY;
-	return qman_init_fq(&a->fq, 0, &opts);
+	return qman_init_fq(a, 0, &opts);
 }
 
 /* Initialise an Rx FQ */
@@ -474,14 +474,14 @@ static int dpaa_if_init(struct dpaa_if *dpaa_intf,
 
 	loop = 0;
 	list_for_each_entry(fq_range, cfg->list, list) {
-		dpaa_intf->rx_queues = rte_zmalloc(NULL, sizeof(struct dpaa_if_queue) *
+		dpaa_intf->rx_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
 			fq_range->count, MAX_CACHELINE);
 		if (!dpaa_intf->rx_queues)
 			return -ENOMEM;
 
 		/* Initialise each Rx FQ within the range */
 		for (loop = 0; loop < fq_range->count; loop++) {
-			ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop].fq,
+			ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop],
 				fq_range->start + loop);
 			if (ret) {
 				printf("%s::dpaa_rx_queue_init failed for %d\n",
@@ -499,17 +499,17 @@ static int dpaa_if_init(struct dpaa_if *dpaa_intf,
 
 	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
 	num_cores = rte_lcore_count();
-	dpaa_intf->tx_queues = rte_zmalloc(NULL, sizeof(struct dpaa_if_queue) *
+	dpaa_intf->tx_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
 		num_cores, MAX_CACHELINE);
 	if (!dpaa_intf->tx_queues)
 		return -ENOMEM;
 
 	for (loop = 0; loop < num_cores; loop++) {
-		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop].fq, fif);
+		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop], fif);
 		if (ret)
 			return ret;
 		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x",
-			    __func__, dpaa_intf->tx_queues[loop].fq.fqid);
+			    __func__, dpaa_intf->tx_queues[loop].fqid);
 		dpaa_intf->tx_queues[loop].ifid = dpaa_intf->ifid;
 	}
 	dpaa_intf->nb_tx_queues = num_cores;
@@ -914,7 +914,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			iface->name, fd_offset,
 			fman_if_get_fdoff(iface->fif));
 	}
-	dev->data->rx_queues[queue_idx] = &iface->rx_queues[queue_idx].fq;
+	dev->data->rx_queues[queue_idx] = &iface->rx_queues[queue_idx];
 
 	return 0;
 }
@@ -931,7 +931,7 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];;
-	dev->data->tx_queues[queue_idx] = &iface->tx_queues[queue_idx].fq;
+	dev->data->tx_queues[queue_idx] = &iface->tx_queues[queue_idx];
 	return 0;
 }
 

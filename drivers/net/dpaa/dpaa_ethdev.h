@@ -133,20 +133,15 @@ struct pool_info_entry {
 	uint32_t meta_data_size;
 };
 
-struct dpaa_if_queue {
-	struct qman_fq fq;
-	uint32_t ifid;
-};
-
 /* Each network interface is represented by one of these */
 struct dpaa_if {
 	int valid;
 	char name[MAX_ETHDEV_NAME];
 	char mac_addr[ETHER_ADDR_LEN];
 	const struct fm_eth_port_cfg *cfg;
-	struct dpaa_if_queue admin[ADMIN_FQ_NUM];
-	struct dpaa_if_queue *rx_queues;
-	struct dpaa_if_queue *tx_queues;
+	struct qman_fq admin[ADMIN_FQ_NUM];
+	struct qman_fq *rx_queues;
+	struct qman_fq *tx_queues;
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
