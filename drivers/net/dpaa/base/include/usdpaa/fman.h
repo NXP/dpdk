@@ -410,10 +410,7 @@ int fm_mac_config(struct fman_if *p, uint8_t *eth);
 /* Get MAC address for a particular interface */
 int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth);
 
-/* Add station MAC address on MEMAC */
-int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
-int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
-void memac_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
+/* Get the FMAN statistics */
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
 
 /* Set ignore pause option for a specific interface */
@@ -429,9 +426,6 @@ void fm_mac_conf_max_frame_len(struct fman_if *p,
 /* Enable/disable Rx promiscuous mode on specified interface */
 void fman_if_promiscuous_enable(struct fman_if *);
 void fman_if_promiscuous_disable(struct fman_if *);
-
-/* Add multicast MAC address on MEMAC */
-int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Enable/disable Rx on specific interfaces */
 void fman_if_enable_rx(struct fman_if *);
