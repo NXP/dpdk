@@ -511,7 +511,6 @@ struct qman_portal *qman_create_portal(
 	portal->pdev = platform_device_alloc(buf, -1);
 	if (!portal->pdev)
 		goto fail_devalloc;
-
 	ret = platform_device_add(portal->pdev);
 	if (ret)
 		goto fail_devadd;
@@ -3871,7 +3870,7 @@ int qman_ceetm_lni_set_commit_rate(struct qm_ceetm_lni *lni,
 	lni->cr_token_bucket_limit = token_limit;
 	if (!lni->shaper_enable)
 		return 0;
-	query_opts.cid = CEETM_COMMAND_LNI_SHAPER | lni->idx;
+	query_opts.cid = cpu_to_be16(CEETM_COMMAND_LNI_SHAPER | lni->idx);
 	query_opts.dcpid = lni->dcp_idx;
 	ret = qman_ceetm_query_mapping_shaper_tcfc(&query_opts,
 						   &query_result);
@@ -3880,12 +3879,13 @@ int qman_ceetm_lni_set_commit_rate(struct qm_ceetm_lni *lni,
 		return -EINVAL;
 	}
 
-	config_opts.cid = CEETM_COMMAND_LNI_SHAPER | lni->idx;
+	config_opts.cid = cpu_to_be16(CEETM_COMMAND_LNI_SHAPER | lni->idx);
 	config_opts.dcpid = lni->dcp_idx;
 	config_opts.shaper_config.crtcr = cpu_to_be24((token_rate->whole << 13)
 						      | (token_rate->fraction));
 	config_opts.shaper_config.crtbl = cpu_to_be16(token_limit);
 	config_opts.shaper_config.cpl = query_result.shaper_query.cpl;
+	config_opts.shaper_config.oal = query_result.shaper_query.oal;
 	config_opts.shaper_config.ertcr = query_result.shaper_query.ertcr;
 	config_opts.shaper_config.ertbl = query_result.shaper_query.ertbl;
 	config_opts.shaper_config.mps = query_result.shaper_query.mps;
@@ -5282,6 +5282,7 @@ int qman_ceetm_ccg_release(struct qm_ceetm_ccg *ccg)
 	config_opts.cm_config.cscn_tupd = cpu_to_be16(PORTAL_IDX(p));
 	ret = qman_ceetm_configure_ccgr(&config_opts);
 	spin_unlock_irqrestore(&p->ccgr_lock, irqflags);
+	put_affine_portal();
 
 	list_del(&ccg->node);
 	kfree(ccg);
@@ -5513,7 +5514,7 @@ int qman_ceetm_cscn_dcp_get(struct qm_ceetm_ccg *ccg,
 
 	*vcgid = query_result.cm_query.cdv;
 
-	*cscn_enabled = (cpu_to_be16(query_result.cm_query.cscn_targ_dcp >>
+	*cscn_enabled = (be16_to_cpu(query_result.cm_query.cscn_targ_dcp >>
 				     dcp_idx)) & 0x1;
 	return 0;
 }

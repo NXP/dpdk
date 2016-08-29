@@ -479,7 +479,8 @@ int qman_global_init(void)
 		of_device_is_compatible(dt_node, "fsl,qman-portal-3.1.2") ||
 		of_device_is_compatible(dt_node, "fsl,qman-portal-3.1.3"))
 		qman_ip_rev = QMAN_REV31;
-	else if (of_device_is_compatible(dt_node, "fsl,qman-portal-3.2.0"))
+	else if (of_device_is_compatible(dt_node, "fsl,qman-portal-3.2.0") ||
+		of_device_is_compatible(dt_node, "fsl,qman-portal-3.2.1"))
 		qman_ip_rev = QMAN_REV32;
 	else
 		qman_ip_rev = QMAN_REV11;
