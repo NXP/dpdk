@@ -22,7 +22,6 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
 	drivers/qbman/bman_high.c \
 	drivers/qbman/bman_driver.c \
 	drivers/qbman/qman_high.c \
-	drivers/qbman/qman_utility.c \
 	drivers/qbman/qman_driver.c \
 	drivers/qbman/dpa_alloc.c \
 	drivers/qbman/dpa_sys.c \

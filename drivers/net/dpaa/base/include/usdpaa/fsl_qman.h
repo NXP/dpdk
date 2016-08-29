@@ -1595,25 +1595,6 @@ static inline int QM_MCR_QUERYCONGESTION(struct __qm_mcr_querycongestion *p,
 	return p->__state[__CGR_WORD(cgr)] & (0x80000000 >> __CGR_SHIFT(cgr));
 }
 
-
-/*********************/
-/* Utility interface */
-/*********************/
-
-/* Represents an allocator over a range of FQIDs. NB, accesses are not locked,
- * spinlock them yourself if needed. */
-struct qman_fqid_pool;
-
-/* Create/destroy a FQID pool, num must be a multiple of 32. NB, _destroy()
- * always succeeds, but returns non-zero if there were "leaked" FQID
- * allocations. */
-struct qman_fqid_pool *qman_fqid_pool_create(u32 fqid_start, u32 num);
-int qman_fqid_pool_destroy(struct qman_fqid_pool *pool);
-/* Alloc/free a FQID from the range. _alloc() returns zero for success. */
-int qman_fqid_pool_alloc(struct qman_fqid_pool *pool, u32 *fqid);
-void qman_fqid_pool_free(struct qman_fqid_pool *pool, u32 fqid);
-u32 qman_fqid_pool_used(struct qman_fqid_pool *pool);
-
 /*******************************************************************/
 /* Managed (aka "shared" or "mux/demux") portal, high-level i/face */
 /*******************************************************************/

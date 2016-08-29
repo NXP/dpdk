@@ -36,7 +36,7 @@ CFLAGS += -I../../../../include/rts/
 dist_DATA = 06-usdpaa-uio.rules
 
 OBJS = 	bman_high.o bman_driver.o \
-	qman_high.o qman_utility.o qman_driver.o \
+	qman_high.o qman_driver.o \
 	dpa_alloc.o dpa_sys.o
 
 LIB = libusdpaa_qbman.a
