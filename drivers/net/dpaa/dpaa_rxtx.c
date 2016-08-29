@@ -60,6 +60,7 @@
 #include <rte_ring.h>
 
 #include "dpaa_ethdev.h"
+#include "dpaa_rxtx.h"
 
 #include <usdpaa/fsl_usd.h>
 #include <usdpaa/fsl_qman.h>
