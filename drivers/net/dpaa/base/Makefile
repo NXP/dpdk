@@ -16,7 +16,6 @@ CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/libxml2/include/
 # all source are stored in SRCS-y
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
 	drivers/fman/fman.c \
-	drivers/fman/memac.c \
 	drivers/of/of.c \
 	drivers/process/process.c \
 	drivers/qbman/bman_high.c \
