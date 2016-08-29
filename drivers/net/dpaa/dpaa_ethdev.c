@@ -59,8 +59,6 @@
 #include <rte_ring.h>
 
 #include "dpaa_ethdev.h"
-#include "dpaa_logs.h"
-#include "dpaa_pkt_annot.h"
 #include "dpaa_rxtx.h"
 
 #include <usdpaa/fsl_usd.h>
