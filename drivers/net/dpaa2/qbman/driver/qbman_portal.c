@@ -515,12 +515,11 @@ int qbman_swp_fill_ring(struct qbman_swp *s,
 		s->eqcr.available += diff;
 		if (!diff)
 			return -EBUSY;
-
 	}
 	p = qbman_cena_write_start_wo_shadow(&s->sys,
-				     QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
+					     QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
 	/* word_copy(&p[1], &cl[1], 7); */
-	memcpy(&p[1], &cl[1], 7*4);
+	memcpy(&p[1], &cl[1], 7 * 4);
 	/* word_copy(&p[8], fd, sizeof(*fd) >> 2); */
 	memcpy(&p[8], fd, sizeof(struct qbman_fd));
 
@@ -1399,7 +1398,7 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
 				 QBMAN_CENA_SWP_EQCR_CI) & 0xF;
 		diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
-			   eqcr_ci, s->eqcr.ci);
+				   eqcr_ci, s->eqcr.ci);
 		if (!diff)
 			goto done;
 		s->eqcr.available += diff;
@@ -1408,9 +1407,9 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 	/* we are trying to send frames_to_send  if we have enough space in the ring */
 	while (s->eqcr.available && frames_to_send--) {
 		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-						QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
 		/* Write command (except of first byte) and FD */
-		memcpy(&p[1], &cl[1], 7*4);
+		memcpy(&p[1], &cl[1], 7 * 4);
 		memcpy(&p[8], &fd[sent], sizeof(struct qbman_fd));
 
 		initial_pi++;
@@ -1419,7 +1418,7 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 		sent++;
 	}
 
-	done:
+done:
 	initial_pi =  s->eqcr.pi;
 	lwsync();
 
@@ -1429,7 +1428,7 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 	initial_pi =  s->eqcr.pi;
 	for (i = 0; i < sent; i++) {
 		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-						QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
 
 		p[0] = cl[0] | s->eqcr.pi_vb;
 		initial_pi++;
