@@ -262,12 +262,6 @@ struct rte_mempool {
 #define MEMPOOL_F_POOL_CREATED   0x0010 /**< Internal: pool is created. */
 #define MEMPOOL_F_NO_PHYS_CONTIG 0x0020 /**< Don't need physically contiguous objs. */
 
-/* TODO: This should be removed once mempool integration is complete. Primary
- * reason for this is identification of DPAA1/2 memory pool for forwarding
- * case
- */
-#define MEMPOOL_F_HW_PKT_POOL   0x0080
-
 /**
  * @internal When debug is enabled, store some statistics.
  *

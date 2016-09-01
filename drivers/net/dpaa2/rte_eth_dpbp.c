@@ -59,7 +59,7 @@
 static struct dpbp_node *g_dpbp_list;
 static struct dpbp_node *avail_dpbp;
 
-struct bp_info bpid_info[MAX_BPID];
+struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 struct dpaa2_bp_list *h_bp_list;
 
@@ -167,8 +167,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
-	/* TODO: Replace with mp->pool_data->flags after creating appropriate
-	 * pool_data structure
+	/* Identification for our offloaded pool_data structure
 	 */
 	mp->flags |= MEMPOOL_F_HW_PKT_POOL;
 	return 0;
@@ -235,7 +234,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
 	int ret;
 	unsigned i, n = 0;
-	struct bp_info *bp_info;
+	struct dpaa2_bp_info *bp_info;
 
 	PMD_DRV_LOG_RAW(INFO, "%s/n", __func__);
 	bp_info = mempool_to_bpinfo(pool);
@@ -334,7 +333,7 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		      unsigned n)
 {
 	unsigned i;
-	struct bp_info *bp_info;
+	struct dpaa2_bp_info *bp_info;
 
 	PMD_DRV_LOG_RAW(INFO, "%s/n", __func__);
 

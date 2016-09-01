@@ -63,7 +63,7 @@
 #include <flib/desc/algo.h>
 
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
-extern struct bp_info bpid_info[MAX_BPID];
+extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 static inline void print_fd(const struct qbman_fd *fd)
 {
