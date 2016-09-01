@@ -63,8 +63,7 @@ struct usdpaa_netcfg_info {
  * cfg_file: FMC config XML file
  * Returns the configuration information in newly allocated memory.
  */
-struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(const char *pcd_file,
-						 const char *cfg_file);
+struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(void);
 
 /* cfg_ptr: configuration information pointer.
  * Frees the resources allocated by the configuration layer.
