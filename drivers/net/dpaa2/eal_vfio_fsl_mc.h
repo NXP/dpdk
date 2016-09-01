@@ -83,6 +83,7 @@ int vfio_dmamap_mem_region(
 
 /* initialize the NXP/FSL dpaa2 accelerators */
 int rte_eal_dpaa2_init(void);
+int rte_eal_dpaa2_dmamap(void);
 
 int dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 			     struct vfio_device_info *obj_info,

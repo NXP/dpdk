@@ -45,16 +45,16 @@
 #include <libgen.h>
 #include <dirent.h>
 
-#include "rte_pci.h"
-#include "eal_vfio.h"
+#include <eal_vfio.h>
 
 #include <rte_log.h>
 
-#include "eal_vfio_fsl_mc.h"
 
-#include "rte_pci_dev_ids.h"
-#include "eal_filesystem.h"
-#include "eal_private.h"
+#include <rte_eth_dpaa2_pvt.h>
+#include <eal_vfio_fsl_mc.h>
+
+#include <eal_filesystem.h>
+#include <eal_private.h>
 
 #ifndef VFIO_MAX_GROUPS
 #define VFIO_MAX_GROUPS 64
@@ -68,7 +68,6 @@
 /* Number of VFIO containers & groups with in */
 static struct fsl_vfio_group vfio_groups[VFIO_MAX_GRP];
 static struct fsl_vfio_container vfio_containers[VFIO_MAX_CONTAINERS];
-static char *ls2bus_container;
 static int container_device_fd;
 static uint32_t *msi_intr_vaddr;
 void *(*mcp_ptr_list);
@@ -79,7 +78,7 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 	struct fsl_vfio_container *container;
 	int i, fd, ret;
 
-	/* Try connecting to vfio container already created */
+	/* Try connecting to vfio container if already created */
 	for (i = 0; i < VFIO_MAX_CONTAINERS; i++) {
 		container = &vfio_containers[i];
 		if (!ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER, &container->fd)) {
@@ -91,19 +90,12 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 	}
 
 	/* Opens main vfio file descriptor which represents the "container" */
-	fd = open("/dev/vfio/vfio", O_RDWR);
+	fd = vfio_get_container_fd();
 	if (fd < 0) {
-		RTE_LOG(ERR, EAL, "vfio: failed to open /dev/vfio/vfio\n");
+		RTE_LOG(ERR, EAL, "vfio: failed to open container\n");
 		return -errno;
 	}
 
-	ret = ioctl(fd, VFIO_GET_API_VERSION);
-	if (ret != VFIO_API_VERSION) {
-		RTE_LOG(ERR, EAL, "vfio: supported vfio version: %d, "
-			"reported version: %d", VFIO_API_VERSION, ret);
-		close(fd);
-		return -EINVAL;
-	}
 #ifndef DPAA2_STAGE2_STASHING
 	/* Check whether support for SMMU type IOMMU prresent or not */
 	if (ioctl(fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU)) {
@@ -278,47 +270,7 @@ static int32_t setup_dmamap(void)
 	return 0;
 }
 
-static int vfio_set_group(struct fsl_vfio_group *group, int groupid)
-{
-	char path[PATH_MAX];
-	struct vfio_group_status status = { .argsz = sizeof(status) };
-
-	/* Open the VFIO file corresponding to the IOMMU group */
-	snprintf(path, sizeof(path), "/dev/vfio/%d", groupid);
-
-	group->fd = open(path, O_RDWR);
-	if (group->fd < 0) {
-		RTE_LOG(ERR, EAL, "vfio: error opening %s\n", path);
-		return -1;
-	}
-
-	/* Test & Verify that group is VIABLE & AVAILABLE */
-	if (ioctl(group->fd, VFIO_GROUP_GET_STATUS, &status)) {
-		RTE_LOG(ERR, EAL, "vfio: error getting group status\n");
-		close(group->fd);
-		return -1;
-	}
-	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
-		RTE_LOG(ERR, EAL, "vfio: group not viable\n");
-		close(group->fd);
-		return -1;
-	}
-	/* Since Group is VIABLE, Store the groupid */
-	group->groupid = groupid;
-
-	/* Now connect this IOMMU group to given container */
-	if (vfio_connect_container(group)) {
-		RTE_LOG(ERR, EAL,
-			"vfio: error sonnecting container with group %d\n",
-			groupid);
-		close(group->fd);
-		return -1;
-	}
-
-	return 0;
-}
-
-static int32_t setup_vfio_grp(char  *vfio_container)
+static int32_t dpaa2_setup_vfio_grp(void)
 {
 	char path[PATH_MAX];
 	char iommu_group_path[PATH_MAX], *group_name;
@@ -326,18 +278,31 @@ static int32_t setup_vfio_grp(char  *vfio_container)
 	struct stat st;
 	int groupid;
 	int ret, len, i;
+	char *container;
+	struct vfio_group_status status = { .argsz = sizeof(status) };
 
-	printf("\tProcessing Container = %s\n", vfio_container);
-	sprintf(path, "/sys/bus/fsl-mc/devices/%s", vfio_container);
-	/* Check whether ls-container exists or not */
-	printf("\tcontainer device path = %s\n", path);
+	/* if already done once */
+	if (container_device_fd)
+		return 0;
+
+	container = getenv("DPRC");
+
+	if (container == NULL) {
+		RTE_LOG(WARNING, EAL, "vfio container not set in env DPRC\n");
+		return -1;
+	}
+	printf("\tProcessing Container = %s\n", container);
+	snprintf(path, sizeof(path), "%s/%s", SYSFS_FSL_MC_DEVICES, container);
+
+	/* Check whether fsl-mc container exists or not */
+	RTE_LOG(INFO, EAL, "\tcontainer device path = %s\n", path);
 	if (stat(path, &st) < 0) {
 		RTE_LOG(ERR, EAL, "vfio: Error (%d) getting FSL-MC device (%s)\n",
 			errno,  path);
 		return -errno;
 	}
 
-	/* DPRC container exists. NOw checkout the IOMMU Group */
+	/* DPRC container exists. Now checkout the IOMMU Group */
 	strncat(path, "/iommu_group", sizeof(path) - strlen(path) - 1);
 
 	len = readlink(path, iommu_group_path, PATH_MAX);
@@ -366,16 +331,46 @@ static int32_t setup_vfio_grp(char  *vfio_container)
 		}
 	}
 
-	if (vfio_set_group(group, groupid)) {
-		RTE_LOG(ERR, EAL, "group setup failure - %d\n", groupid);
-		return -ENODEV;
+	/* Open the VFIO file corresponding to the IOMMU group */
+	snprintf(path, sizeof(path), "/dev/vfio/%d", groupid);
+
+	group->fd = open(path, O_RDWR);
+	if (group->fd < 0) {
+		RTE_LOG(ERR, EAL, "vfio: error opening %s\n", path);
+		return -1;
+	}
+
+	/* Test & Verify that group is VIABLE & AVAILABLE */
+	if (ioctl(group->fd, VFIO_GROUP_GET_STATUS, &status)) {
+		RTE_LOG(ERR, EAL, "vfio: error getting group status\n");
+		close(group->fd);
+		return -1;
+	}
+	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
+		RTE_LOG(ERR, EAL, "vfio: group not viable\n");
+		close(group->fd);
+		return -1;
+	}
+	/* Since Group is VIABLE, Store the groupid */
+	group->groupid = groupid;
+
+	/* check if group does not have a container yet */
+	if (!(status.flags & VFIO_GROUP_FLAGS_CONTAINER_SET)) {
+		/* Now connect this IOMMU group to given container */
+		if (vfio_connect_container(group)) {
+			RTE_LOG(ERR, EAL,
+				"vfio: error sonnecting container with group %d\n",
+				groupid);
+			close(group->fd);
+			return -1;
+		}
 	}
 
 	/* Get Device information */
-	ret = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, vfio_container);
+	ret = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, container);
 	if (ret < 0) {
 		RTE_LOG(ERR, EAL, "\tvfio: error getting device %s fd from group %d\n",
-			vfio_container, group->groupid);
+			container, group->groupid);
 		return ret;
 	}
 	container_device_fd = ret;
@@ -449,6 +444,15 @@ static int vfio_process_group_devices(void)
 	int64_t v_addr;
 	int ndev_count;
 	struct fsl_vfio_group *group = &vfio_groups[0];
+	static int process_once;
+
+	/* if already done once */
+	if (process_once) {
+		printf ("\n %s - Already scanned once - re-scan not supported",
+			__func__);
+		return 0;
+	}
+	process_once = 0;
 
 	sprintf(path, "/sys/kernel/iommu_groups/%d/devices", group->groupid);
 
@@ -602,44 +606,13 @@ FAILURE:
 	return -1;
 }
 
-/*
- * Scan the content of the PCI bus, and the devices in the devices
- * list
- */
-static int
-fsl_mc_scan(void)
-{
-	char path[PATH_MAX];
-	struct stat st;
-
-	ls2bus_container = getenv("DPRC");
-
-	if (ls2bus_container == NULL) {
-		RTE_LOG(WARNING, EAL, "vfio container not set in env DPRC\n");
-		return -1;
-	}
-
-	snprintf(path, sizeof(path), "%s/%s", SYSFS_FSL_MC_DEVICES,
-		 ls2bus_container);
-	/* Check whether LS-Container exists or not */
-	RTE_LOG(INFO, EAL, "\tcontainer device path = %s\n", path);
-	if (stat(path, &st) < 0) {
-		RTE_LOG(ERR, EAL, "vfio:fsl-mc device does not exists\n");
-		return -1;
-	}
-	return 0;
-}
-
 /* Init the FSL-MC- LS2 EAL subsystem */
 int
 rte_eal_dpaa2_init(void)
 {
-	if (fsl_mc_scan() < 0)
-		return -1;
-
 #ifdef VFIO_PRESENT
-	if (setup_vfio_grp(ls2bus_container)) {
-		RTE_LOG(ERR, EAL, "setup_vfio_grp\n");
+	if (dpaa2_setup_vfio_grp()) {
+		RTE_LOG(ERR, EAL, "dpaa2_setup_vfio_grp\n");
 		return -1;
 	}
 	if (vfio_process_group_devices()) {
