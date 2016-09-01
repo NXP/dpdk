@@ -428,8 +428,8 @@ static int dpaa_if_init(struct dpaa_if *dpaa_intf,
 		const struct fm_eth_port_cfg *cfg)
 {
 	struct fman_if *fif = cfg->fman_if;
-	struct fm_eth_port_fqrange *fq_range;
-	int num_cores, ret = 0, loop;
+	int num_cores, loop, ret = 0;
+	int num_rx_fqs, fqid;
 
 	dpaa_intf->cfg = cfg;
 	/* give the interface a name */
@@ -470,30 +470,25 @@ static int dpaa_if_init(struct dpaa_if *dpaa_intf,
 	dpaa_intf->admin[ADMIN_FQ_TX_ERROR].ifid = dpaa_intf->ifid;
 	dpaa_intf->admin[ADMIN_FQ_TX_CONFIRM].ifid = dpaa_intf->ifid;
 
-	loop = 0;
-	list_for_each_entry(fq_range, cfg->list, list) {
-		dpaa_intf->rx_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
-			fq_range->count, MAX_CACHELINE);
-		if (!dpaa_intf->rx_queues)
-			return -ENOMEM;
+	if (getenv("DPAA_NUM_RX_QUEUES"))
+		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
+	else
+		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
 
-		/* Initialise each Rx FQ within the range */
-		for (loop = 0; loop < fq_range->count; loop++) {
-			ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop],
-				fq_range->start + loop);
-			if (ret) {
-				printf("%s::dpaa_rx_queue_init failed for %d\n",
-				       __func__, fq_range->start);
-				return ret;
-			}
-			dpaa_intf->rx_queues[loop].ifid = dpaa_intf->ifid;
+	dpaa_intf->rx_queues = rte_zmalloc(NULL,
+		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
+	for (loop = 0; loop < num_rx_fqs; loop++) {
+		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
+			DPAA_PCD_FQID_MULTIPLIER + loop;
+		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
+		if (ret) {
+			printf("%s::dpaa_rx_queue_init failed for %x\n",
+				__func__, fqid);
+			return ret;
 		}
-		dpaa_intf->nb_rx_queues = fq_range->count;
-
-		/* We support only one fm_eth_port_fqrange entry
-		 * from fm_eth_port_cfg */
-		break;
+		dpaa_intf->rx_queues[loop].ifid = dpaa_intf->ifid;
 	}
+	dpaa_intf->nb_rx_queues = num_rx_fqs;
 
 	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
 	num_cores = rte_lcore_count();
@@ -531,16 +526,6 @@ static int dpaa_init(void)
 	char	*cfg_file;
 	char	*pcd_file;
 
-	pcd_file = getenv("DEF_PCD_PATH");
-	cfg_file = getenv("DEF_CFG_PATH");
-
-	if (!cfg_file || !pcd_file) {
-		RTE_LOG(ERR, EAL, "dpaa pcd & cfg not set in env\n");
-		return -1;
-	}
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("cfgpath %s, pcdpath %s\n", cfg_file, pcd_file);
-#endif
 	ret = of_init();
 	if (ret) {
 		printf("of_init Failed %d\n", ret);
@@ -551,10 +536,9 @@ static int dpaa_init(void)
 	 * are not necessarily from the XML files, such as the pool channels
 	 * that the application is allowed to use (these are currently
 	 * hard-coded into the netcfg code). */
-	netcfg = usdpaa_netcfg_acquire(pcd_file, cfg_file);
+	netcfg = usdpaa_netcfg_acquire();
 	if (!netcfg) {
-		fprintf(stderr, "Fail: usdpaa_netcfg_acquire(%s,%s)\n",
-			pcd_file, cfg_file);
+		fprintf(stderr, "Fail: usdpaa_netcfg_acquire\n");
 		return -1;
 	}
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER

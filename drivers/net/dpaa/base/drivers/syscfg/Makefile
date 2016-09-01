@@ -31,8 +31,7 @@
 
 include ../../Makefile.inc
 CFLAGS += -I../../include/
-CFLAGS += -I../../include/qoriq/libxml2/include/
-OBJS = 	fmc_netcfg_parser.o usdpaa_netcfg_layer.o
+OBJS = 	usdpaa_netcfg_layer.o
 LIB = libusdpaa_syscfg.a
 
 all: $(OBJS)

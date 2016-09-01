@@ -31,7 +31,6 @@
  */
 
 #include <usdpaa/usdpaa_netcfg.h>
-#include "fmc_netcfg_parser.h"
 
 #include <inttypes.h>
 #include <usdpaa/of.h>
@@ -471,8 +470,7 @@ static inline int netcfg_interface_match(uint8_t fman,
 	return 0;
 }
 
-struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(const char *pcd_file,
-						 const char *cfg_file)
+struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(void)
 {
 	struct fman_if *__if;
 	int _errno, idx;
@@ -500,14 +498,6 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(const char *pcd_file,
 		use_all_interfaces = 1;
 	else if (unlikely(_errno < 0)) {
 		error(0, -_errno, "%s", __func__);
-		return NULL;
-	}
-
-	/* Initialise the XML parser */
-	_errno = fmc_netcfg_parser_init(pcd_file, cfg_file);
-	if (unlikely(_errno)) {
-		fprintf(stderr, "%s:%hu:%s(): xml parser init failed "
-			"(ERRNO = %d)\n", __FILE__, __LINE__, __func__, _errno);
 		return NULL;
 	}
 
@@ -543,29 +533,24 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(const char *pcd_file,
 	if (use_all_interfaces == 0)
 		idx += netcfg_interface->numof_fman_enabled_macless;
 	list_for_each_entry(__if, fman_if_list, node) {
-		struct fmc_netcfg_fqs xmlcfg;
 		bool is_offline;
 		struct fm_eth_port_cfg *cfg = &usdpaa_netcfg->port_cfg[idx];
 		/* Hook in the fman driver interface */
 		cfg->fman_if = __if;
 		/* Extract FMC configuration only for
 		   command-line interfaces */
-		if (__if->mac_type == fman_onic) {
+		if (__if->mac_type == fman_onic ||
+		   (__if->mac_type == fman_offline)) {
 			cfg->rx_def = __if->fqid_rx_def;
 			continue;
 		}
 
 		is_offline = __if->mac_type == fman_offline ? true : false;
-		_errno = fmc_netcfg_get_info(__if->fman_idx, is_offline,
-					     __if->mac_idx, &xmlcfg);
-		if (_errno == 0) {
-			if (use_all_interfaces || netcfg_interface_match(
-			   __if->fman_idx, __if->mac_type, __if->mac_idx)) {
-				cfg->list = xmlcfg.list;
-				cfg->rx_def = __if->fqid_rx_def;
-				num_cfg_ports++;
-				idx++;
-			}
+		if (use_all_interfaces || netcfg_interface_match(
+		   __if->fman_idx, __if->mac_type, __if->mac_idx)) {
+			cfg->rx_def = __if->fqid_rx_def;
+			num_cfg_ports++;
+			idx++;
 		}
 	}
 	if (!use_all_interfaces) {
@@ -583,13 +568,11 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(const char *pcd_file,
 	return usdpaa_netcfg;
 
 error:
-	fmc_netcfg_parser_exit();
 	return NULL;
 }
 
 void usdpaa_netcfg_release(struct usdpaa_netcfg_info *cfg_ptr)
 {
-	fmc_netcfg_parser_exit();
 	free(cfg_ptr);
 	/* Close socket for shared interfaces */
 	if (skfd >= 0) {

@@ -91,6 +91,11 @@
 /*Maximum number of slots available in TX ring*/
 #define MAX_TX_RING_SLOTS	8
 
+/* PCD frame queues */
+#define DPAA_PCD_FQID_START		0x400
+#define DPAA_PCD_FQID_MULTIPLIER	0x100
+#define DPAA_DEFAULT_NUM_PCD_QUEUES	1
+
 #define DPAA_IF_TX_PRIORITY		3
 #define DPAA_IF_ADMIN_PRIORITY		4
 #define DPAA_IF_RX_PRIORITY		4
