@@ -1242,8 +1242,17 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 	hw_fd_to_cpu(&shadow->fd);
 #endif
 
+	if (!(dq->stat & QM_DQRR_STAT_FD_VALID)) {
+		/* Invalid DQRR - put the portal and consume the DQRR.
+		 * Return NULL to user as no packet is seen */
+		put_poll_portal();
+		qman_dqrr_consume(fq, (struct qm_dqrr_entry *)dq);
+		return NULL;
+	}
+
 	if (dq->stat & QM_DQRR_STAT_FQ_EMPTY)
 		fq_clear(fq, QMAN_FQ_STATE_NE);
+
 	put_poll_portal();
 
 	return (struct qm_dqrr_entry *)dq;
