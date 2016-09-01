@@ -64,6 +64,8 @@ typedef uint64_t  dma_addr_t;
 
 #define NUM_MAX_RECV_FRAMES	16
 
+#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool */
+
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
 #define NUM_DQS_PER_QUEUE       2
@@ -102,7 +104,6 @@ struct queue_storage_info_t {
 struct thread_io_info_t {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct dpaa2_dpio_dev *sec_dpio_dev;
-	//struct qbman_result *global_active_dqs;
 };
 
 /*! Global per thread DPIO portal */
@@ -239,13 +240,13 @@ struct dpaa2_bp_list {
 	struct buf_pool buf_pool;
 };
 
-struct bp_info {
+struct dpaa2_bp_info {
 	uint32_t meta_data_size;
 	uint32_t bpid;
 	struct dpaa2_bp_list *bp_list;
 };
 
-#define mempool_to_bpinfo(mp) ((struct bp_info *)mp->pool_data)
+#define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)mp->pool_data)
 #define mempool_to_bpid(mp) ((mempool_to_bpinfo(mp))->bpid)
 
 extern struct dpaa2_bp_list *h_bp_list;

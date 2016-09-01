@@ -50,13 +50,13 @@
 
 #include <fsl_qbman_portal.h>
 #include <fsl_dpio.h>
+#include <eal_vfio_fsl_mc.h>
 
 /* #define DPAA2_STASHING */
 
 /* tx fd send batching */
 #define QBMAN_MULTI_TX
 /* #define DPAA2_CGR_SUPPORT */
-
 
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
@@ -145,7 +145,7 @@ static struct rte_pci_id pci_id_dpaa2_map[] = {
 	{RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPNI_DEVID)},
 };
 
-extern struct bp_info bpid_info[MAX_BPID];
+extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 static void dpaa2_print_stats(struct rte_eth_dev *dev)
 {
@@ -1188,8 +1188,8 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
 		q_storage->dq_storage[i] = rte_malloc(NULL,
-		NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
-		RTE_CACHE_LINE_SIZE);
+			NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
+			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
 			goto fail;
 		/*setting toggle for initial condition*/
