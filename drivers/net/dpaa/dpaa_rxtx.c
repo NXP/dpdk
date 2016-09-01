@@ -291,9 +291,6 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		}
 	}
 
-	if (!qman_query_fq_has_pkts(fq))
-		return 0;
-
 	ret = qman_set_vdq(fq, nb_bufs);
 	if (ret)
 		return 0;
