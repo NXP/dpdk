@@ -51,6 +51,12 @@ CONFIG_RTE_KNI_KMOD=n
 # Compile ARMCE based crypto
 CONFIG_RTE_LIBRTE_PMD_ARMCE=y
 
+#
+# Compile PMD for Software backed device
+#
+CONFIG_RTE_LIBRTE_PMD_LIBCRYPTO=y
+CONFIG_RTE_LIBRTE_PMD_LIBCRYPTO_DEBUG=n
+
 # Compile software PMD backed by FSL DPAA2 files
 #
 CONFIG_RTE_LIBRTE_DPAA2_PMD=y
