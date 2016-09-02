@@ -749,14 +749,19 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
 		break;
-	case RTE_CRYPTO_CIPHER_AES_GCM:
-	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
-	case RTE_CRYPTO_CIPHER_NULL:
-	case RTE_CRYPTO_CIPHER_3DES_ECB:
-	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_CTR:
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
+	case RTE_CRYPTO_CIPHER_AES_GCM:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
+	case RTE_CRYPTO_CIPHER_AES_ECB:
+	case RTE_CRYPTO_CIPHER_3DES_ECB:
+	case RTE_CRYPTO_CIPHER_AES_XTS:
+	case RTE_CRYPTO_CIPHER_AES_F8:
+	case RTE_CRYPTO_CIPHER_ARC4:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
+	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
+	case RTE_CRYPTO_CIPHER_NULL:
 		PMD_DRV_LOG(ERR, "Crypto: Unsupported Cipher alg %u",
 			    xform->cipher.algo);
 		goto error_out;
@@ -840,7 +845,25 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 		session->auth_alg = RTE_CRYPTO_AUTH_MD5_HMAC;
 		break;
 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+		authdata.algtype = OP_ALG_ALGSEL_SHA256;
+		authdata.algmode = OP_ALG_AAI_HMAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_SHA256_HMAC;
+		break;
+	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+		authdata.algtype = OP_ALG_ALGSEL_SHA384;
+		authdata.algmode = OP_ALG_AAI_HMAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_SHA384_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
+		authdata.algtype = OP_ALG_ALGSEL_SHA512;
+		authdata.algmode = OP_ALG_AAI_HMAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_SHA512_HMAC;
+		break;
+	case RTE_CRYPTO_AUTH_SHA224_HMAC:
+		authdata.algtype = OP_ALG_ALGSEL_SHA224;
+		authdata.algmode = OP_ALG_AAI_HMAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_SHA224_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_AES_GCM:
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
@@ -849,9 +872,7 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_SHA256:
 	case RTE_CRYPTO_AUTH_SHA512:
 	case RTE_CRYPTO_AUTH_SHA224:
-	case RTE_CRYPTO_AUTH_SHA224_HMAC:
 	case RTE_CRYPTO_AUTH_SHA384:
-	case RTE_CRYPTO_AUTH_SHA384_HMAC:
 	case RTE_CRYPTO_AUTH_MD5:
 	case RTE_CRYPTO_AUTH_AES_CCM:
 	case RTE_CRYPTO_AUTH_AES_GMAC:
