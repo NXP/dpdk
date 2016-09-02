@@ -187,7 +187,9 @@ static const struct aes_test_case aes_test_cases[] = {
 		.test_data = &aes_test_data_6,
 		.op_mask = AES_TEST_OP_AUTH_VERIFY_DEC,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
-			AES_TEST_TARGET_PMD_QAT
+			AES_TEST_TARGET_PMD_QAT |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
 		.test_descr = "AES-128-CBC XCBC Encryption Digest",
@@ -241,6 +243,7 @@ static const struct aes_test_case aes_test_cases[] = {
 		.test_data = &aes_test_data_9,
 		.op_mask = AES_TEST_OP_ENC_AUTH_GEN,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -249,6 +252,7 @@ static const struct aes_test_case aes_test_cases[] = {
 		.test_data = &aes_test_data_9,
 		.op_mask = AES_TEST_OP_AUTH_VERIFY_DEC,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 };
