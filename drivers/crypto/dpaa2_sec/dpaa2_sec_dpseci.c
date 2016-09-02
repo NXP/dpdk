@@ -610,6 +610,8 @@ dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 		rte_free(qp->rx_vq.q_storage);
 	rte_free(qp);
 
+	dev->data->queue_pairs[queue_pair_id] = NULL;
+
 	return 0;
 }
 
@@ -1170,7 +1172,7 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 		PMD_DRV_LOG(ERR, "DPSEC ATTRIBUTE READ FAILED, disabling DPSEC\n");
 		goto get_attr_failure;
 	}
-	for (i = 0; i < attr.num_rx_queues; i++) {
+	for (i = 0; i < attr.num_rx_queues && qp[i]; i++) {
 		dpaa2_q = &qp[i]->rx_vq;
 		if (dpaa2_alloc_dq_storage(dpaa2_q->q_storage))
 			return -1;
@@ -1179,7 +1181,7 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 		dpaa2_q->fqid = rx_attr.fqid;
 		PMD_DRV_LOG(DEBUG, "rx_fqid: %d", dpaa2_q->fqid);
 	}
-	for (i = 0; i < attr.num_tx_queues; i++) {
+	for (i = 0; i < attr.num_tx_queues && qp[i]; i++) {
 		dpaa2_q = &qp[i]->tx_vq;
 		dpseci_get_tx_queue(dpseci, CMD_PRI_LOW, priv->token, i,
 				    &tx_attr);
@@ -1298,7 +1300,7 @@ dpaa2_sec_uninit(const char *name)
 	if (name == NULL)
 		return -EINVAL;
 
-	DPAA2_SEC_LOG_INFO("Closing DPAA2_SEC crypto device %s on numa socket %u\n",
+	PMD_DRV_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
 			   name, rte_socket_id());
 
 	return 0;
