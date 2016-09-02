@@ -2518,17 +2518,21 @@ test_perf_aes_sha(uint8_t dev_id, uint16_t queue_id,
 			total_enqueued += burst_enqueued;
 		}
 
-		/* dequeue burst */
-		burst_dequeued = rte_cryptodev_dequeue_burst(dev_id, queue_id,
-				proc_ops, pparams->burst_size);
-		if (burst_dequeued == 0)
-			failed_polls++;
-		else {
-			processed += burst_dequeued;
+		do {
+			/* dequeue burst */
+			burst_dequeued = rte_cryptodev_dequeue_burst(dev_id,
+					queue_id,
+					proc_ops, pparams->burst_size);
+			if (burst_dequeued == 0)
+				failed_polls++;
+			else {
+				processed += burst_dequeued;
 
-			for (l = 0; l < burst_dequeued; l++)
-				rte_crypto_op_free(proc_ops[l]);
-		}
+				for (l = 0; l < burst_dequeued; l++)
+					rte_crypto_op_free(proc_ops[l]);
+			}
+		} while ((total_enqueued - processed) >
+				(pparams->burst_size * NUM_MBUF_SETS));
 		j++;
 	}
 
