@@ -48,18 +48,6 @@ struct dpaa2_sec_dev_private {
 	/**< Max number of sessions supported by device */
 };
 
-struct dpaa2_queue {
-	void *dev;
-	int32_t eventfd;	/*!< Event Fd of this queue */
-	uint32_t fqid;	/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
-	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
-	uint64_t rx_pkts;
-	uint64_t tx_pkts;
-	uint64_t err_pkts;
-	struct queue_storage_info_t *q_storage;
-};
-
 struct dpaa2_sec_qp {
 	struct dpaa2_queue rx_vq;
 	struct dpaa2_queue tx_vq;
