@@ -306,6 +306,21 @@ testsuite_setup(void)
 		}
 	}
 
+	/* Create 2 ARMCE devices if required */
+	if (gbl_cryptodev_perftest_devtype == RTE_CRYPTODEV_ARMCE_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(RTE_CRYPTODEV_ARMCE_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				ret = rte_eal_vdev_init(
+					RTE_STR(CRYPTODEV_NAME_ARMCE_PMD), NULL);
+
+				TEST_ASSERT(ret == 0,
+					"Failed to create instance %u of pmd : %s",
+					i, RTE_STR(CRYPTODEV_NAME_ARMCE_PMD));
+			}
+		}
+	}
+
 	nb_devs = rte_cryptodev_count();
 	if (nb_devs < 1) {
 		RTE_LOG(ERR, USER1, "No crypto devices found?\n");
@@ -2641,7 +2656,7 @@ test_perf_set_crypto_op_aes(struct rte_crypto_op *op, struct rte_mbuf *m,
 	op->sym->cipher.iv.length = AES_CIPHER_IV_LENGTH;
 
 	rte_memcpy(op->sym->cipher.iv.data, aes_iv,
-		   AES_CBC_CIPHER_IV_LENGTH);
+		   AES_CIPHER_IV_LENGTH);
 
 	/* Data lengths/offsets Parameters */
 	op->sym->auth.data.offset = 0;
@@ -2776,7 +2791,7 @@ test_perf_aes_sha(uint8_t dev_id, uint16_t queue_id,
 		}
 		/* Make room for Digest and IV in mbuf */
 		rte_pktmbuf_append(mbufs[i], digest_length);
-		rte_pktmbuf_prepend(mbufs[i], AES_CBC_CIPHER_IV_LENGTH);
+		rte_pktmbuf_prepend(mbufs[i], AES_CIPHER_IV_LENGTH);
 	}
 
 
