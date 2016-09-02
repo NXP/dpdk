@@ -62,6 +62,12 @@ typedef uint64_t  dma_addr_t;
 #define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
 #endif
 
+/* tx fd send batching */
+#define QBMAN_MULTI_TX
+
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
+
 #define NUM_MAX_RECV_FRAMES	16
 
 #define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool */
@@ -99,6 +105,21 @@ struct queue_storage_info_t {
 	struct qbman_result *active_dqs;
 	int active_dpio_id;
 	int toggle;
+};
+
+struct dpaa2_queue {
+	void *dev;
+	int32_t eventfd;	/*!< Event Fd of this queue */
+	uint32_t fqid;	/*!< Unique ID of this queue */
+	uint8_t tc_index;	/*!< traffic class identifier */
+	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
+	uint64_t rx_pkts;
+	uint64_t tx_pkts;
+	uint64_t err_pkts;
+	union {
+		struct queue_storage_info_t *q_storage;
+		struct qbman_result *cscn;
+	};
 };
 
 struct thread_io_info_t {

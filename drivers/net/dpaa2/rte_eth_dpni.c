@@ -54,8 +54,6 @@
 
 /* #define DPAA2_STASHING */
 
-/* tx fd send batching */
-#define QBMAN_MULTI_TX
 /* #define DPAA2_CGR_SUPPORT */
 
 #define DPAA2_MIN_RX_BUF_SIZE 512
@@ -75,9 +73,6 @@ static const char *drivername = "DPNI PMD";
 #define MAX_RX_QUEUES		16
 #define MAX_TX_QUEUES		16
 
-/*Maximum number of slots available in TX ring*/
-#define MAX_TX_RING_SLOTS		8
-
 /*Threshold for a queue to *Enter* Congestion state.
   It is set to 128 frames of size 64 bytes.*/
 #define CONG_ENTER_THRESHOLD   (128 * 64)
@@ -96,21 +91,6 @@ static const char *drivername = "DPNI PMD";
 		PKT_TX_IP_CKSUM | \
 		PKT_TX_TCP_CKSUM | \
 		PKT_TX_UDP_CKSUM)
-
-struct dpaa2_queue {
-	void *dev;
-	int32_t eventfd;	/*!< Event Fd of this queue */
-	uint32_t fqid;	/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
-	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
-	uint64_t rx_pkts;
-	uint64_t tx_pkts;
-	uint64_t err_pkts;
-	union {
-		struct queue_storage_info_t *q_storage;
-		struct qbman_result *cscn;
-	};
-};
 
 struct dpaa2_dev_priv {
 	void *hw;
@@ -658,7 +638,7 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	uint32_t loop;
 	int32_t ret;
 #ifdef QBMAN_MULTI_TX
-	struct qbman_fd fd_arr[8];
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t frames_to_send;
 #else
 	struct qbman_fd fd;
