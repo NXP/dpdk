@@ -39,10 +39,10 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include "dpaa2_sec_priv.h"
 #include <rte_cryptodev_pmd.h>
 #include <rte_common.h>
 #include <rte_eth_dpaa2_pvt.h>
+#include "dpaa2_sec_priv.h"
 
 #include <net/if.h>
 
@@ -1326,8 +1326,8 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	dev->enqueue_burst = dpaa2_sec_enqueue_burst;
 	dev->dequeue_burst = dpaa2_sec_dequeue_burst;
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
-			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING |
-			RTE_CRYPTODEV_FF_HW_ACCELERATED;
+			RTE_CRYPTODEV_FF_HW_ACCELERATED |
+			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
 
 	internals = dev->data->dev_private;
 	internals->max_nb_sessions = 2048;/*RTE_DPAA2_SEC_PMD_MAX_NB_SESSIONS*/
@@ -1338,7 +1338,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	 * RX function
 	 */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-		printf("Device already initialised by primary process\n");
+		PMD_DRV_LOG(DEBUG, "Device already initialised by primary process");
 		return 0;
 	}
 
@@ -1384,6 +1384,7 @@ static struct rte_pci_id pci_id_dpaa2_sec_map[] = {
 		{
 			RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPSECI_DEVID),
 		},
+		{.device_id = 0},
 };
 
 static struct rte_cryptodev_driver rte_dpaa2_sec_pmd = {
@@ -1398,21 +1399,13 @@ static struct rte_cryptodev_driver rte_dpaa2_sec_pmd = {
 static int
 rte_dpaa2_sec_pmd_init(const char *name __rte_unused, const char *params __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
 	return rte_cryptodev_pmd_driver_register(&rte_dpaa2_sec_pmd, PMD_PDEV);
 }
 
-/*
-static int
-rte_dpaa2_sec_pmd_uninit(const char *name __rte_unused, const char *params __rte_unused)
-{
-	PMD_INIT_FUNC_TRACE();
-	return rte_cryptodev_pmd_driver_unregister(&rte_dpaa2_sec_pmd, PMD_PDEV);
-}
-*/
 static struct rte_driver pmd_dpaa2_sec_drv = {
 	.type = PMD_PDEV,
 	.init = rte_dpaa2_sec_pmd_init,
 };
 
 PMD_REGISTER_DRIVER(pmd_dpaa2_sec_drv, CRYPTODEV_NAME_DPAA2_SEC_PMD);
-/*DRIVER_REGISTER_PCI_TABLE(CRYPTODEV_NAME_DPAA2_SEC_PMD, pci_id_dpaa2_sec_map);*/
