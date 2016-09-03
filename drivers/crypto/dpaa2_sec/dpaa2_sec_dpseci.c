@@ -385,6 +385,29 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	return 0;
 }
 
+static inline int
+build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
+			   struct qbman_fd *fd, uint16_t bpid)
+{
+	int ret = -1;
+	switch (sess->ctxt_type) {
+	case DPAA2_SEC_CIPHER:
+		ret = build_cipher_fd(sess, op, fd, bpid);
+		break;
+	case DPAA2_SEC_AUTH:
+		ret = build_auth_fd(sess, op, fd, bpid);
+		break;
+	case DPAA2_SEC_CIPHER_HASH:
+		ret = build_authenc_fd(sess, op, fd, bpid);
+		break;
+	case DPAA2_SEC_HASH_CIPHER:
+	default:
+		PMD_DRV_LOG(ERR, "Unsupported session\n");
+	}
+	return ret;
+}
+
+
 static uint16_t
 dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			uint16_t nb_ops)
@@ -392,7 +415,12 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	/* Function to transmit the frames to given device and VQ*/
 	uint32_t loop;
 	int32_t ret;
+#ifdef QBMAN_MULTI_TX
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
+	uint32_t frames_to_send;
+#else
 	struct qbman_fd fd;
+#endif
 	struct qbman_eq_desc eqdesc;
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_swp *swp;
@@ -426,30 +454,43 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	}
 	swp = thread_io_info.sec_dpio_dev->sw_portal;
 
+#ifdef QBMAN_MULTI_TX
+	while (nb_ops) {
+		frames_to_send = (nb_ops >> 3) ? MAX_TX_RING_SLOTS : nb_ops;
+
+		for (loop = 0; loop < frames_to_send; loop++) {
+			/*Clear the unused FD fields before sending*/
+			memset(&fd_arr[loop], 0, sizeof(struct qbman_fd));
+			sess = (dpaa2_sec_session *)(*ops)->sym->session->_private;
+			mb_pool = (*ops)->sym->m_src->pool;
+			bpid = mempool_to_bpid(mb_pool);
+			ret = build_sec_fd(sess, *ops, &fd_arr[loop], bpid);
+			if (ret) {
+				PMD_DRV_LOG(ERR, "Improper packet contents for crypto operation\n");
+				goto skip_tx;
+			}
+			ops++;
+		}
+		loop = 0;
+		while (loop < frames_to_send) {
+			loop += qbman_swp_send_multiple(swp, &eqdesc,
+					&fd_arr[loop], frames_to_send - loop);
+		}
+
+		num_tx += frames_to_send;
+		nb_ops -= frames_to_send;
+	}
+#else
 	/*Prepare each packet which is to be sent*/
-	for (loop = 0; loop < nb_ops; loop++) {
+	for (loop = 0; nb_ops; loop++, nb_ops--) {
 		memset(&fd, 0, sizeof(struct qbman_fd));
 		sess = (dpaa2_sec_session *)ops[loop]->sym->session->_private;
 		mb_pool = ops[loop]->sym->m_src->pool;
 		bpid = mempool_to_bpid(mb_pool);
-		switch (sess->ctxt_type) {
-		case DPAA2_SEC_CIPHER:
-			ret = build_cipher_fd(sess, ops[loop], &fd, bpid);
-			break;
-		case DPAA2_SEC_AUTH:
-			ret = build_auth_fd(sess, ops[loop], &fd, bpid);
-			break;
-		case DPAA2_SEC_CIPHER_HASH:
-			ret = build_authenc_fd(sess, ops[loop], &fd, bpid);
-			break;
-		case DPAA2_SEC_HASH_CIPHER:
-		default:
-			PMD_DRV_LOG(ERR, "Unsupported session\n");
-			return 0;
-		}
+		ret = build_sec_fd(sess, ops[loop], &fd, bpid);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Improper packet contents for crypto operation\n");
-			return 0;
+			goto skip_tx;
 		}
 		/*Enqueue a packet to the QBMAN*/
 		do {
@@ -463,8 +504,10 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		/* rte_pktmbuf_free(bufs[loop]); */
 		num_tx++;
 	}
+#endif
+skip_tx:
 	dpaa2_qp->tx_vq.tx_pkts += num_tx;
-	dpaa2_qp->tx_vq.err_pkts += nb_ops - num_tx;
+	dpaa2_qp->tx_vq.err_pkts += nb_ops;
 	return num_tx;
 }
 
