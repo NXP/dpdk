@@ -1267,12 +1267,74 @@ static
 void dpaa2_sec_stats_get(struct rte_cryptodev *dev,
 			 struct rte_cryptodev_stats *stats)
 {
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
+	struct dpseci_sec_counters counters = {0};
+	struct dpaa2_sec_qp **qp = (struct dpaa2_sec_qp **)
+					dev->data->queue_pairs;
+	int ret, i;
+
+	PMD_INIT_FUNC_TRACE();
+	if (stats == NULL) {
+		PMD_DRV_LOG(ERR, "invalid stats ptr NULL");
+		return;
+	}
+	for (i = 0; i < dev->data->nb_queue_pairs; i++) {
+		if (qp[i] == NULL) {
+			PMD_DRV_LOG(DEBUG, "Uninitialised queue pair");
+			continue;
+		}
+
+		stats->enqueued_count += qp[i]->tx_vq.tx_pkts;
+		stats->dequeued_count += qp[i]->rx_vq.rx_pkts;
+		stats->enqueue_err_count += qp[i]->tx_vq.err_pkts;
+		stats->dequeue_err_count += qp[i]->rx_vq.err_pkts;
+	}
+
+	ret = dpseci_get_sec_counters(dpseci, CMD_PRI_LOW, priv->token, &counters);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "dpseci_get_sec_counters failed\n");
+	} else {
+		PMD_DRV_LOG(INFO, "dpseci hw stats:"
+			"\n\tNumber of Requests Dequeued = %ul"
+			"\n\tNumber of Outbound Encrypt Requests = %ul"
+			"\n\tNumber of Inbound Decrypt Requests = %ul"
+			"\n\tNumber of Outbound Bytes Encrypted = %ul"
+			"\n\tNumber of Outbound Bytes Protected = %ul"
+			"\n\tNumber of Inbound Bytes Decrypted = %ul"
+			"\n\tNumber of Inbound Bytes Validated = %ul",
+			counters.dequeued_requests,
+			counters.ob_enc_requests,
+			counters.ib_dec_requests,
+			counters.ob_enc_bytes,
+			counters.ob_prot_bytes,
+			counters.ib_dec_bytes,
+			counters.ib_valid_bytes);
+	}
+
 	return;
 }
 
 static
 void dpaa2_sec_stats_reset(struct rte_cryptodev *dev)
 {
+	int i;
+	struct dpaa2_sec_qp **qp = (struct dpaa2_sec_qp **)(dev->data->queue_pairs);
+
+	PMD_INIT_FUNC_TRACE();
+
+	for (i = 0; i < dev->data->nb_queue_pairs; i++) {
+		if (qp[i] == NULL) {
+			PMD_DRV_LOG(DEBUG, "Uninitialised queue pair");
+			continue;
+		}
+		qp[i]->tx_vq.rx_pkts = 0;
+		qp[i]->tx_vq.tx_pkts = 0;
+		qp[i]->tx_vq.err_pkts = 0;
+		qp[i]->rx_vq.rx_pkts = 0;
+		qp[i]->rx_vq.tx_pkts = 0;
+		qp[i]->rx_vq.err_pkts = 0;
+	}
 	return;
 }
 
