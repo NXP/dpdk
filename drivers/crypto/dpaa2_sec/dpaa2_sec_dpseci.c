@@ -580,13 +580,14 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		}
 
 		fd = qbman_result_DQ_fd(dq_storage);
+		ops[num_rx] = sec_fd_to_mbuf(fd);
+
 		if (unlikely(fd->simple.frc)) {
 			/* TODO Parse SEC errors */
 			printf("SEC returned Error - %x\n", fd->simple.frc);
-			break;
-		}
-		ops[num_rx] = sec_fd_to_mbuf(fd);
-		ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		} else
+			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 
 		num_rx++;
 		dq_storage++;
