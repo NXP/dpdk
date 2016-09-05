@@ -112,13 +112,6 @@ struct dpaa2_dev_priv {
 	uint32_t options;
 };
 
-struct swp_active_dqs {
-	struct qbman_result *global_active_dqs;
-	uint64_t reserved[7];
-};
-
-#define NUM_MAX_SWP 64
-
 struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
 
 static struct rte_pci_id pci_id_dpaa2_map[] = {
@@ -480,28 +473,6 @@ eth_dpaa2_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	PMD_DRV_LOG(INFO, "Ethernet Received %d Packets\n", num_rx);
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
-}
-
-inline int check_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	if(global_active_dqs_list[dpio_dev_index].global_active_dqs!=NULL)
-		return 1;
-	return 0;
-}
-
-inline void clear_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
-}
-
-inline struct qbman_result* get_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
-}
-
-inline void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
-{
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
 }
 
 static uint16_t
@@ -1161,7 +1132,19 @@ dpaa2_remove_flow_distribution(struct rte_eth_dev *eth_dev, uint8_t tc_index)
 	return ret;
 }
 
-static int
+void
+dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage)
+{
+
+	int i = 0;
+
+	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
+		if (q_storage->dq_storage[i])
+			rte_free(q_storage->dq_storage[i]);
+	}
+}
+
+int
 dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 {
 	int i = 0;

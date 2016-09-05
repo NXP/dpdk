@@ -127,8 +127,19 @@ struct thread_io_info_t {
 	struct dpaa2_dpio_dev *sec_dpio_dev;
 };
 
+struct swp_active_dqs {
+	struct qbman_result *global_active_dqs;
+	uint64_t reserved[7];
+};
+
+#define NUM_MAX_SWP 64
+
+/* Active dq list for pre-fetch support */
+extern struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
+
 /*! Global per thread DPIO portal */
 extern __thread struct thread_io_info_t thread_io_info;
+
 /*! Global MCP list */
 extern void *(*mcp_ptr_list);
 
@@ -340,6 +351,38 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 #define DPAA2_MODIFY_VADDR_TO_IOVA(_mem, _type)
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type)
 #endif
+
+int
+dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);
+
+void
+dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage);
+
+static inline 
+int check_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	if(global_active_dqs_list[dpio_dev_index].global_active_dqs!=NULL)
+		return 1;
+	return 0;
+}
+
+static inline
+void clear_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
+}
+
+static inline 
+struct qbman_result* get_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
+}
+
+static inline 
+void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
+}
 
 /* Function definitions for Mempool operations */
 int hw_mbuf_init(struct rte_mempool *mp, void *_m);
