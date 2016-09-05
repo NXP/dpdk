@@ -643,6 +643,146 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	return num_rx;
 }
 
+/*Packet dq option with prefetch support */
+static uint16_t
+dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
+			uint16_t nb_ops)
+{
+	/* Function is responsible to receive frames for a given device and VQ*/
+	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
+	struct qbman_result *dq_storage;
+	uint32_t fqid = dpaa2_qp->rx_vq.fqid;
+	int ret, num_rx = 0;
+	uint8_t is_last = 0, status;
+	struct qbman_swp *swp;
+	const struct qbman_fd *fd[16];
+	struct qbman_pull_desc pulldesc;
+	struct queue_storage_info_t *q_storage = dpaa2_qp->rx_vq.q_storage;
+	/*dev is stored in tx_vq */
+	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+
+	if (!thread_io_info.sec_dpio_dev) {
+		ret = dpaa2_affine_qbman_swp_sec();
+		if (ret) {
+			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			return 0;
+		}
+	}
+	swp = thread_io_info.sec_dpio_dev->sw_portal;
+	if (!q_storage->active_dqs) {
+		q_storage->toggle = 0;
+		dq_storage = q_storage->dq_storage[q_storage->toggle];
+		qbman_pull_desc_clear(&pulldesc);
+		qbman_pull_desc_set_numframes(&pulldesc, nb_ops);
+		qbman_pull_desc_set_fq(&pulldesc, fqid);
+		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
+					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+		if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
+			while (!qbman_check_command_complete(swp,
+				get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+				;
+			clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
+		}
+		while (1) {
+			if (qbman_swp_pull(swp, &pulldesc)) {
+				PMD_DRV_LOG(WARNING, "SEC VDQ command is not issued."
+					    "QBMAN is busy\n");
+				/* Portal was busy, try again */
+				continue;
+			}
+			break;
+		}
+		q_storage->active_dqs = dq_storage;
+		q_storage->active_dpio_id = thread_io_info.sec_dpio_dev->index;
+		set_swp_active_dqs(thread_io_info.sec_dpio_dev->index, dq_storage);
+	}
+	dq_storage = q_storage->active_dqs;
+	/* Check if the previous issued command is completed.
+	 * Also seems like the SWP is shared between the Ethernet Driver
+	 * and the SEC driver.*/
+	while (!qbman_check_command_complete(swp, dq_storage))
+		;
+	if(dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
+		clear_swp_active_dqs(q_storage->active_dpio_id);
+	while (!is_last) {
+		/* Loop until the dq_storage is updated with
+		 * new token by QBMAN */
+//		struct rte_mbuf *mbuf;
+
+		while (!qbman_result_has_new_result(swp, dq_storage))
+			;
+		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
+		/* Check whether Last Pull command is Expired and
+		setting Condition for Loop termination */
+		if (qbman_result_DQ_is_pull_complete(dq_storage)) {
+			is_last = 1;
+			/* Check for valid frame. */
+			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
+			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
+				PMD_DRV_LOG2(DEBUG, "No frame is delivered\n");
+				continue;
+			}
+		}
+		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
+#if 0
+		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
+				DPAA2_GET_FD_ADDR(fd[num_rx])
+				 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
+		/* Prefeth mbuf */
+		rte_prefetch0(mbuf);
+		/* Prefetch Annotation address from where we get parse results */
+		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_FD_PTA_SIZE + 16));
+		/*Prefetch Data buffer*/
+		/* rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_GET_FD_OFFSET(fd[num_rx]))); */
+#endif
+		ops[num_rx] = sec_fd_to_mbuf(fd[num_rx]);
+		if (unlikely(fd[num_rx]->simple.frc)) {
+			/* TODO Parse SEC errors */
+			printf("SEC returned Error - %x\n", fd[num_rx]->simple.frc);
+			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		} else
+			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+
+		dq_storage++;
+		num_rx++;
+		
+	} /* End of Packet Rx loop */
+
+	if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
+		while (!qbman_check_command_complete(swp,
+			get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+			;
+		clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
+	}
+	q_storage->toggle ^= 1;
+	dq_storage = q_storage->dq_storage[q_storage->toggle];
+	qbman_pull_desc_clear(&pulldesc);
+	qbman_pull_desc_set_numframes(&pulldesc, nb_ops);
+	qbman_pull_desc_set_fq(&pulldesc, fqid);
+	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
+				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+	/*Issue a volatile dequeue command. */
+	while (1) {
+		if (qbman_swp_pull(swp, &pulldesc)) {
+			PMD_DRV_LOG(WARNING, "VDQ command is not issued."
+				"QBMAN is busy\n");
+			continue;
+		}
+		break;
+	}
+	q_storage->active_dqs = dq_storage;
+	q_storage->active_dpio_id = thread_io_info.sec_dpio_dev->index;
+	set_swp_active_dqs(thread_io_info.sec_dpio_dev->index, dq_storage);
+
+	dpaa2_qp->rx_vq.rx_pkts += num_rx;
+
+	PMD_DRV_LOG(DEBUG, "SEC Received %d Packets\n", num_rx);
+	/*Return the total number of packets received to DPAA2 app*/
+	return num_rx;
+}
+
+
 /** Release queue pair */
 static int
 dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
@@ -650,8 +790,10 @@ dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 	struct dpaa2_sec_qp *qp =
 		(struct dpaa2_sec_qp *)dev->data->queue_pairs[queue_pair_id];
 
-	if (qp->rx_vq.q_storage)
+	if (qp->rx_vq.q_storage) {
+		dpaa2_free_dq_storage(qp->rx_vq.q_storage);
 		rte_free(qp->rx_vq.q_storage);
+	}
 	rte_free(qp);
 
 	dev->data->queue_pairs[queue_pair_id] = NULL;
@@ -694,9 +836,16 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	qp->rx_vq.q_storage = rte_malloc("sec dq storage",
 		sizeof(struct queue_storage_info_t),
 		RTE_CACHE_LINE_SIZE);
-	if (!qp->rx_vq.q_storage)
+	if (!qp->rx_vq.q_storage){
+		PMD_DRV_LOG(ERR, "malloc failed for q_storage\n");
 		return -1;
+	}
 	memset(qp->rx_vq.q_storage, 0, sizeof(struct queue_storage_info_t));
+
+	if (dpaa2_alloc_dq_storage(qp->rx_vq.q_storage)){
+		PMD_DRV_LOG(ERR, "dpaa2_alloc_dq_storage failed\n");
+		return -1;
+	}
 
 	dev->data->queue_pairs[qp_id] = qp;
 
@@ -1189,29 +1338,6 @@ dpaa2_sec_dev_configure(struct rte_cryptodev *dev)
 }
 
 static int
-dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
-{
-	int i;
-
-	for (i = 0; i < 1/*NUM_DQS_PER_QUEUE*/; i++) {
-		q_storage->dq_storage[i] = rte_malloc(NULL,
-		NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
-		RTE_CACHE_LINE_SIZE);
-		if (!q_storage->dq_storage[i])
-			goto fail;
-		/*setting toggle for initial condition*/
-		q_storage->toggle = -1;
-	}
-	return 0;
-fail:
-	i -= 1;
-	while (i >= 0) {
-		rte_free(q_storage->dq_storage[i]);
-	}
-	return -1;
-}
-
-static int
 dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 {
 	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
@@ -1239,8 +1365,6 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 	}
 	for (i = 0; i < attr.num_rx_queues && qp[i]; i++) {
 		dpaa2_q = &qp[i]->rx_vq;
-		if (dpaa2_alloc_dq_storage(dpaa2_q->q_storage))
-			return -1;
 		dpseci_get_rx_queue(dpseci, CMD_PRI_LOW, priv->token, i,
 				    &rx_attr);
 		dpaa2_q->fqid = rx_attr.fqid;
@@ -1453,7 +1577,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	dev->dev_ops = &crypto_ops;
 
 	dev->enqueue_burst = dpaa2_sec_enqueue_burst;
-	dev->dequeue_burst = dpaa2_sec_dequeue_burst;
+	dev->dequeue_burst = dpaa2_sec_dequeue_prefetch_burst;
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_HW_ACCELERATED |
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
