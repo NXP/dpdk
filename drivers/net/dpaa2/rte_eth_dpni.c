@@ -1329,18 +1329,19 @@ dpaa2_rx_queue_setup(struct rte_eth_dev *dev,
 
 	cfg.options = cfg.options | DPNI_QUEUE_OPT_USER_CTX;
 
-#ifdef DPAA2_STASHING
-	cfg.options = cfg.options | DPNI_QUEUE_OPT_FLC;
-#endif
-
 	cfg.user_ctx = (uint64_t)(dpaa2_q);
-#ifdef DPAA2_STASHING
-	cfg.flc_cfg.flc_type = DPNI_FLC_STASH;
-	cfg.flc_cfg.frame_data_size = DPNI_STASH_SIZE_64B;
-	/* Enabling Annotation stashing */
-	cfg.options |= DPNI_FLC_STASH_FRAME_ANNOTATION;
-	cfg.flc_cfg.options = DPNI_FLC_STASH_FRAME_ANNOTATION;
-#endif
+
+	/*if ls2088 or rev2 device, enable the stashing */
+	if ((qbman_get_version() & 0xFFFF0000) > QMAN_REV_4000) {
+
+		cfg.options = cfg.options | DPNI_QUEUE_OPT_FLC;
+		cfg.flc_cfg.flc_type = DPNI_FLC_STASH;
+		cfg.flc_cfg.frame_data_size = DPNI_STASH_SIZE_64B;
+
+		/* Enabling Annotation stashing */
+		cfg.options |= DPNI_FLC_STASH_FRAME_ANNOTATION;
+		cfg.flc_cfg.options = DPNI_FLC_STASH_FRAME_ANNOTATION;
+	}
 	ret = dpni_set_rx_flow(dpni, CMD_PRI_LOW, priv->token,
 			       tc_id, flow_id, &cfg);
 	if (ret) {
