@@ -1084,4 +1084,6 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 
 int qbman_check_command_complete(struct qbman_swp *s,
 				 const struct qbman_result *dq);
+
+int qbman_get_version(void);
 #endif /* !_FSL_QBMAN_PORTAL_H */

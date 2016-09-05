@@ -60,8 +60,6 @@
 #define VFIO_MAX_GROUPS 64
 #endif
 
-/* #define DPAA2_STAGE2_STASHING */
-
 /** Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES "/sys/bus/fsl-mc/devices"
 
@@ -96,7 +94,6 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 		return -errno;
 	}
 
-#ifndef DPAA2_STAGE2_STASHING
 	/* Check whether support for SMMU type IOMMU prresent or not */
 	if (ioctl(fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU)) {
 		/* Connect group to container */
@@ -118,29 +115,7 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 		close(fd);
 		return -EINVAL;
 	}
-#else
-	/* Check whether support for SMMU type IOMMU stage 2 present or not */
-	if (ioctl(fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_NESTING_IOMMU)) {
-		/* Connect group to container */
-		ret = ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER, &fd);
-		if (ret) {
-			RTE_LOG(ERR, EAL, "vfio: failed to set group container:\n");
-			close(fd);
-			return -errno;
-		}
 
-		ret = ioctl(fd, VFIO_SET_IOMMU, VFIO_TYPE1_NESTING_IOMMU);
-		if (ret) {
-			RTE_LOG(ERR, EAL, "vfio: failed to set iommu-2 for container:\n");
-			close(fd);
-			return -errno;
-		}
-	} else {
-		RTE_LOG(ERR, EAL, "vfio error: No supported IOMMU-2\n");
-		close(fd);
-		return -EINVAL;
-	}
-#endif
 	container = NULL;
 	for (i = 0; i < VFIO_MAX_CONTAINERS; i++) {
 		if (vfio_containers[i].used)
