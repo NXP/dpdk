@@ -63,11 +63,35 @@
 #define DIGEST_BYTE_LENGTH_SNOW3G_UIA2		(BYTE_LENGTH(32))
 #define DIGEST_BYTE_LENGTH_KASUMI_F9		(BYTE_LENGTH(32))
 #define AES_XCBC_MAC_KEY_SZ			(16)
+#define DIGEST_BYTE_LENGTH_AES_GMAC		(BYTE_LENGTH(128))
 
 #define TRUNCATED_DIGEST_BYTE_LENGTH_SHA1		(12)
 #define TRUNCATED_DIGEST_BYTE_LENGTH_SHA224		(16)
 #define TRUNCATED_DIGEST_BYTE_LENGTH_SHA256		(16)
 #define TRUNCATED_DIGEST_BYTE_LENGTH_SHA384		(24)
 #define TRUNCATED_DIGEST_BYTE_LENGTH_SHA512		(32)
+
+struct crypto_testsuite_params {
+	struct rte_mempool *mbuf_pool;
+	struct rte_mempool *op_mpool;
+	struct rte_cryptodev_config conf;
+	struct rte_cryptodev_qp_conf qp_conf;
+
+	uint8_t valid_devs[RTE_CRYPTO_MAX_DEVS];
+	uint8_t valid_dev_count;
+};
+
+struct crypto_unittest_params {
+	struct rte_crypto_sym_xform cipher_xform;
+	struct rte_crypto_sym_xform auth_xform;
+
+	struct rte_cryptodev_sym_session *sess;
+
+	struct rte_crypto_op *op;
+
+	struct rte_mbuf *obuf, *ibuf;
+
+	uint8_t *digest;
+};
 
 #endif /* TEST_CRYPTODEV_H_ */

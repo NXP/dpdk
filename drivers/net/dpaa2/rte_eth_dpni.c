@@ -50,13 +50,11 @@
 
 #include <fsl_qbman_portal.h>
 #include <fsl_dpio.h>
+#include <eal_vfio_fsl_mc.h>
 
 /* #define DPAA2_STASHING */
 
-/* tx fd send batching */
-#define QBMAN_MULTI_TX
 /* #define DPAA2_CGR_SUPPORT */
-
 
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
@@ -74,9 +72,6 @@ static const char *drivername = "DPNI PMD";
 #define MAX_TCS			DPNI_MAX_TC
 #define MAX_RX_QUEUES		16
 #define MAX_TX_QUEUES		16
-
-/*Maximum number of slots available in TX ring*/
-#define MAX_TX_RING_SLOTS		8
 
 /*Threshold for a queue to *Enter* Congestion state.
   It is set to 128 frames of size 64 bytes.*/
@@ -96,21 +91,6 @@ static const char *drivername = "DPNI PMD";
 		PKT_TX_IP_CKSUM | \
 		PKT_TX_TCP_CKSUM | \
 		PKT_TX_UDP_CKSUM)
-
-struct dpaa2_queue {
-	void *dev;
-	int32_t eventfd;	/*!< Event Fd of this queue */
-	uint32_t fqid;	/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
-	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
-	uint64_t rx_pkts;
-	uint64_t tx_pkts;
-	uint64_t err_pkts;
-	union {
-		struct queue_storage_info_t *q_storage;
-		struct qbman_result *cscn;
-	};
-};
 
 struct dpaa2_dev_priv {
 	void *hw;
@@ -132,20 +112,13 @@ struct dpaa2_dev_priv {
 	uint32_t options;
 };
 
-struct swp_active_dqs {
-	struct qbman_result *global_active_dqs;
-	uint64_t reserved[7];
-};
-
-#define NUM_MAX_SWP 64
-
 struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
 
 static struct rte_pci_id pci_id_dpaa2_map[] = {
 	{RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPNI_DEVID)},
 };
 
-extern struct bp_info bpid_info[MAX_BPID];
+extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 static void dpaa2_print_stats(struct rte_eth_dev *dev)
 {
@@ -502,28 +475,6 @@ eth_dpaa2_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	return num_rx;
 }
 
-inline int check_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	if(global_active_dqs_list[dpio_dev_index].global_active_dqs!=NULL)
-		return 1;
-	return 0;
-}
-
-inline void clear_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
-}
-
-inline struct qbman_result* get_swp_active_dqs(uint16_t dpio_dev_index)
-{
-	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
-}
-
-inline void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
-{
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
-}
-
 static uint16_t
 eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
@@ -658,7 +609,7 @@ eth_dpaa2_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	uint32_t loop;
 	int32_t ret;
 #ifdef QBMAN_MULTI_TX
-	struct qbman_fd fd_arr[8];
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t frames_to_send;
 #else
 	struct qbman_fd fd;
@@ -1181,15 +1132,27 @@ dpaa2_remove_flow_distribution(struct rte_eth_dev *eth_dev, uint8_t tc_index)
 	return ret;
 }
 
-static int
+void
+dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage)
+{
+
+	int i = 0;
+
+	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
+		if (q_storage->dq_storage[i])
+			rte_free(q_storage->dq_storage[i]);
+	}
+}
+
+int
 dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 {
 	int i = 0;
 
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
 		q_storage->dq_storage[i] = rte_malloc(NULL,
-		NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
-		RTE_CACHE_LINE_SIZE);
+			NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
+			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
 			goto fail;
 		/*setting toggle for initial condition*/
@@ -1349,18 +1312,19 @@ dpaa2_rx_queue_setup(struct rte_eth_dev *dev,
 
 	cfg.options = cfg.options | DPNI_QUEUE_OPT_USER_CTX;
 
-#ifdef DPAA2_STASHING
-	cfg.options = cfg.options | DPNI_QUEUE_OPT_FLC;
-#endif
-
 	cfg.user_ctx = (uint64_t)(dpaa2_q);
-#ifdef DPAA2_STASHING
-	cfg.flc_cfg.flc_type = DPNI_FLC_STASH;
-	cfg.flc_cfg.frame_data_size = DPNI_STASH_SIZE_64B;
-	/* Enabling Annotation stashing */
-	cfg.options |= DPNI_FLC_STASH_FRAME_ANNOTATION;
-	cfg.flc_cfg.options = DPNI_FLC_STASH_FRAME_ANNOTATION;
-#endif
+
+	/*if ls2088 or rev2 device, enable the stashing */
+	if ((qbman_get_version() & 0xFFFF0000) > QMAN_REV_4000) {
+
+		cfg.options = cfg.options | DPNI_QUEUE_OPT_FLC;
+		cfg.flc_cfg.flc_type = DPNI_FLC_STASH;
+		cfg.flc_cfg.frame_data_size = DPNI_STASH_SIZE_64B;
+
+		/* Enabling Annotation stashing */
+		cfg.options |= DPNI_FLC_STASH_FRAME_ANNOTATION;
+		cfg.flc_cfg.options = DPNI_FLC_STASH_FRAME_ANNOTATION;
+	}
 	ret = dpni_set_rx_flow(dpni, CMD_PRI_LOW, priv->token,
 			       tc_id, flow_id, &cfg);
 	if (ret) {

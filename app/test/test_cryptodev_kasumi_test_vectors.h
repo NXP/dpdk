@@ -36,30 +36,30 @@
 struct kasumi_test_data {
 	struct {
 		uint8_t data[64];
-		unsigned len;
+		unsigned int len;
 	} key;
 
 	struct {
 		uint8_t data[64] __rte_aligned(16);
-		unsigned len;
+		unsigned int len;
 	} iv;
 
 	struct {
 		uint8_t data[1024];
-		unsigned len; /* length must be in Bits */
+		unsigned int len; /* length must be in Bits */
 	} plaintext;
 
 	struct {
 		uint8_t data[1024];
-		unsigned len; /* length must be in Bits */
+		unsigned int len; /* length must be in Bits */
 	} ciphertext;
 
 	struct {
-		unsigned len;
+		unsigned int len;
 	} validCipherLenInBits;
 
 	struct {
-		unsigned len;
+		unsigned int len;
 	} validCipherOffsetLenInBits;
 };
 

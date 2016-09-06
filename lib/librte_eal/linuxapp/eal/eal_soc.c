@@ -44,7 +44,7 @@
 #include "eal_private.h"
 
 #ifdef RTE_LIBRTE_DPAA2_PMD
-#include "eal_vfio_fsl_mc.h"
+extern int rte_eal_dpaa2_init(void);
 #endif
 
 #if (defined RTE_LIBRTE_DPAA_PMD)

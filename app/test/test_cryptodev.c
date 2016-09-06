@@ -43,7 +43,11 @@
 #include "test.h"
 #include "test_cryptodev.h"
 
+#include "test_cryptodev_operations.h"
 #include "test_cryptodev_aes.h"
+#include "test_cryptodev_hash_test_vectors.h"
+#include "test_cryptodev_aes_test_vectors.h"
+#include "test_cryptodev_des_test_vectors.h"
 #include "test_cryptodev_kasumi_test_vectors.h"
 #include "test_cryptodev_kasumi_hash_test_vectors.h"
 #include "test_cryptodev_snow3g_test_vectors.h"
@@ -51,29 +55,6 @@
 #include "test_cryptodev_gcm_test_vectors.h"
 
 static enum rte_cryptodev_type gbl_cryptodev_type;
-
-struct crypto_testsuite_params {
-	struct rte_mempool *mbuf_pool;
-	struct rte_mempool *op_mpool;
-	struct rte_cryptodev_config conf;
-	struct rte_cryptodev_qp_conf qp_conf;
-
-	uint8_t valid_devs[RTE_CRYPTO_MAX_DEVS];
-	uint8_t valid_dev_count;
-};
-
-struct crypto_unittest_params {
-	struct rte_crypto_sym_xform cipher_xform;
-	struct rte_crypto_sym_xform auth_xform;
-
-	struct rte_cryptodev_sym_session *sess;
-
-	struct rte_crypto_op *op;
-
-	struct rte_mbuf *obuf, *ibuf;
-
-	uint8_t *digest;
-};
 
 #define ALIGN_POW2_ROUNDUP(num, align) \
 	(((num) + (align) - 1) & ~((align) - 1))
@@ -83,12 +64,16 @@ struct crypto_unittest_params {
  */
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
-		struct crypto_unittest_params *ut_params);
+		struct crypto_unittest_params *ut_params, uint8_t *cipher_key,
+		uint8_t *hmac_key);
 
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_perform(struct rte_cryptodev_sym_session *sess,
 		struct crypto_unittest_params *ut_params,
-		struct crypto_testsuite_params *ts_param);
+		struct crypto_testsuite_params *ts_param,
+		const uint8_t *cipher,
+		const uint8_t *digest,
+		const uint8_t *iv);
 
 static struct rte_mbuf *
 setup_test_string(struct rte_mempool *mpool,
@@ -192,6 +177,23 @@ testsuite_setup(void)
 					"Failed to create instance %u of"
 					" pmd : %s",
 					i, RTE_STR(CRYPTODEV_NAME_AESNI_MB_PMD));
+			}
+		}
+	}
+
+	/* Create 2 LIBCRYPTO devices if required */
+	if (gbl_cryptodev_type == RTE_CRYPTODEV_LIBCRYPTO_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(
+				RTE_CRYPTODEV_LIBCRYPTO_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				ret = rte_eal_vdev_init(
+					RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD), NULL);
+
+				TEST_ASSERT(ret == 0,
+					"Failed to create instance %u of"
+					" pmd : %s",
+					i, RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD));
 			}
 		}
 	}
@@ -838,6 +840,314 @@ static const uint8_t catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA1_digest[] = {
 };
 
 
+/* Multisession Vector context Test */
+/*Begin Session 0 */
+static uint8_t ms_aes_cbc_key0[] = {
+	0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+	0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static uint8_t ms_aes_cbc_iv0[] = {
+	0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+	0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static const uint8_t ms_aes_cbc_cipher0[] = {
+		0x3C, 0xE4, 0xEE, 0x42, 0xB6, 0x9B, 0xC3, 0x38,
+		0x5F, 0xAD, 0x54, 0xDC, 0xA8, 0x32, 0x81, 0xDC,
+		0x7A, 0x6F, 0x85, 0x58, 0x07, 0x35, 0xED, 0xEB,
+		0xAD, 0x79, 0x79, 0x96, 0xD3, 0x0E, 0xA6, 0xD9,
+		0xAA, 0x86, 0xA4, 0x8F, 0xB5, 0xD6, 0x6E, 0x6D,
+		0x0C, 0x91, 0x2F, 0xC4, 0x67, 0x98, 0x0E, 0xC4,
+		0x8D, 0x83, 0x68, 0x69, 0xC4, 0xD3, 0x94, 0x34,
+		0xC4, 0x5D, 0x60, 0x55, 0x22, 0x87, 0x8F, 0x6F,
+		0x17, 0x8E, 0x75, 0xE4, 0x02, 0xF5, 0x1B, 0x99,
+		0xC8, 0x39, 0xA9, 0xAB, 0x23, 0x91, 0x12, 0xED,
+		0x08, 0xE7, 0xD9, 0x25, 0x89, 0x24, 0x4F, 0x8D,
+		0x68, 0xF3, 0x10, 0x39, 0x0A, 0xEE, 0x45, 0x24,
+		0xDF, 0x7A, 0x9D, 0x00, 0x25, 0xE5, 0x35, 0x71,
+		0x4E, 0x40, 0x59, 0x6F, 0x0A, 0x13, 0xB3, 0x72,
+		0x1D, 0x98, 0x63, 0x94, 0x89, 0xA5, 0x39, 0x8E,
+		0xD3, 0x9C, 0x8A, 0x7F, 0x71, 0x2F, 0xC7, 0xCD,
+		0x81, 0x05, 0xDC, 0xC0, 0x8D, 0xCE, 0x6D, 0x18,
+		0x30, 0xC4, 0x72, 0x51, 0xF0, 0x27, 0xC8, 0xF6,
+		0x60, 0x5B, 0x7C, 0xB2, 0xE3, 0x49, 0x0C, 0x29,
+		0xC6, 0x9F, 0x39, 0x57, 0x80, 0x55, 0x24, 0x2C,
+		0x9B, 0x0F, 0x5A, 0xB3, 0x89, 0x55, 0x31, 0x96,
+		0x0D, 0xCD, 0xF6, 0x51, 0x03, 0x2D, 0x89, 0x26,
+		0x74, 0x44, 0xD6, 0xE8, 0xDC, 0xEA, 0x44, 0x55,
+		0x64, 0x71, 0x9C, 0x9F, 0x5D, 0xBA, 0x39, 0x46,
+		0xA8, 0x17, 0xA1, 0x9C, 0x52, 0x9D, 0xBC, 0x6B,
+		0x4A, 0x98, 0xE6, 0xEA, 0x33, 0xEC, 0x58, 0xB4,
+		0x43, 0xF0, 0x32, 0x45, 0xA4, 0xC1, 0x55, 0xB7,
+		0x5D, 0xB5, 0x59, 0xB2, 0xE3, 0x96, 0xFF, 0xA5,
+		0xAF, 0xE1, 0x86, 0x1B, 0x42, 0xE6, 0x3B, 0xA0,
+		0x90, 0x4A, 0xE8, 0x8C, 0x21, 0x7F, 0x36, 0x1E,
+		0x5B, 0x65, 0x25, 0xD1, 0xC1, 0x5A, 0xCA, 0x3D,
+		0x10, 0xED, 0x2D, 0x79, 0xD0, 0x0F, 0x58, 0x44,
+		0x69, 0x81, 0xF5, 0xD4, 0xC9, 0x0F, 0x90, 0x76,
+		0x1F, 0x54, 0xD2, 0xD5, 0x97, 0xCE, 0x2C, 0xE3,
+		0xEF, 0xF4, 0xB7, 0xC6, 0x3A, 0x87, 0x7F, 0x83,
+		0x2A, 0xAF, 0xCD, 0x90, 0x12, 0xA7, 0x7D, 0x85,
+		0x1D, 0x62, 0xD3, 0x85, 0x25, 0x05, 0xDB, 0x45,
+		0x92, 0xA3, 0xF6, 0xA2, 0xA8, 0x41, 0xE4, 0x25,
+		0x86, 0x87, 0x67, 0x24, 0xEC, 0x89, 0x23, 0x2A,
+		0x9B, 0x20, 0x4D, 0x93, 0xEE, 0xE2, 0x2E, 0xC1,
+		0x0B, 0x15, 0x33, 0xCF, 0x00, 0xD1, 0x1A, 0xDA,
+		0x93, 0xFD, 0x28, 0x21, 0x5B, 0xCF, 0xD1, 0xF3,
+		0x5A, 0x81, 0xBA, 0x82, 0x5E, 0x2F, 0x61, 0xB4,
+		0x05, 0x71, 0xB5, 0xF4, 0x39, 0x3C, 0x1F, 0x60,
+		0x00, 0x7A, 0xC4, 0xF8, 0x35, 0x20, 0x6C, 0x3A,
+		0xCC, 0x03, 0x8F, 0x7B, 0xA2, 0xB6, 0x65, 0x8A,
+		0xB6, 0x5F, 0xFD, 0x25, 0xD3, 0x5F, 0x92, 0xF9,
+		0xAE, 0x17, 0x9B, 0x5E, 0x6E, 0x9A, 0xE4, 0x55,
+		0x10, 0x25, 0x07, 0xA4, 0xAF, 0x21, 0x69, 0x13,
+		0xD8, 0xFA, 0x31, 0xED, 0xF7, 0xA7, 0xA7, 0x3B,
+		0xB8, 0x96, 0x8E, 0x10, 0x86, 0x74, 0xD8, 0xB1,
+		0x34, 0x9E, 0x9B, 0x6A, 0x26, 0xA8, 0xD4, 0xD0,
+		0xB5, 0xF6, 0xDE, 0xE7, 0xCA, 0x06, 0xDC, 0xA3,
+		0x6F, 0xEE, 0x6B, 0x1E, 0xB5, 0x30, 0x99, 0x23,
+		0xF9, 0x76, 0xF0, 0xA0, 0xCF, 0x3B, 0x94, 0x7B,
+		0x19, 0x8D, 0xA5, 0x0C, 0x18, 0xA6, 0x1D, 0x07,
+		0x89, 0xBE, 0x5B, 0x61, 0xE5, 0xF1, 0x42, 0xDB,
+		0xD4, 0x2E, 0x02, 0x1F, 0xCE, 0xEF, 0x92, 0xB1,
+		0x1B, 0x56, 0x50, 0xF2, 0x16, 0xE5, 0xE7, 0x4F,
+		0xFD, 0xBB, 0x3E, 0xD2, 0xFC, 0x3C, 0xC6, 0x0F,
+		0xF9, 0x12, 0x4E, 0xCB, 0x1E, 0x0C, 0x15, 0x84,
+		0x2A, 0x14, 0x8A, 0x02, 0xE4, 0x7E, 0x95, 0x5B,
+		0x86, 0xDB, 0x9B, 0x62, 0x5B, 0x19, 0xD2, 0x17,
+		0xFA, 0x13, 0xBB, 0x6B, 0x3F, 0x45, 0x9F, 0xBF
+};
+
+
+static  uint8_t ms_hmac_key0[] = {
+		0xFF, 0x1A, 0x7D, 0x3D, 0xF5, 0x82, 0x80, 0xF1,
+		0xF1, 0x35, 0x5C, 0x3B, 0xDD, 0x9A, 0x65, 0xBA,
+		0x58, 0x34, 0x85, 0x65, 0x1C, 0x42, 0x50, 0x76,
+		0x9A, 0xAF, 0x88, 0x1B, 0xB6, 0x8F, 0xF8, 0x60,
+		0xA2, 0x5A, 0x7F, 0x3F, 0xF4, 0x72, 0x70, 0xF1,
+		0xF5, 0x35, 0x4C, 0x3B, 0xDD, 0x90, 0x65, 0xB0,
+		0x47, 0x3A, 0x75, 0x61, 0x5C, 0xA2, 0x10, 0x76,
+		0x9A, 0xAF, 0x77, 0x5B, 0xB6, 0x7F, 0xF7, 0x60
+};
+
+static const uint8_t ms_hmac_digest0[] = {
+		0x43, 0x52, 0xED, 0x34, 0xAB, 0x36, 0xB2, 0x51,
+		0xFB, 0xA3, 0xA6, 0x7C, 0x38, 0xFC, 0x42, 0x8F,
+		0x57, 0x64, 0xAB, 0x81, 0xA7, 0x89, 0xB7, 0x6C,
+		0xA0, 0xDC, 0xB9, 0x4D, 0xC4, 0x30, 0xF9, 0xD4,
+		0x10, 0x82, 0x55, 0xD0, 0xAB, 0x32, 0xFB, 0x56,
+		0x0D, 0xE4, 0x68, 0x3D, 0x76, 0xD0, 0x7B, 0xE4,
+		0xA6, 0x2C, 0x34, 0x9E, 0x8C, 0x41, 0xF8, 0x23,
+		0x28, 0x1B, 0x3A, 0x90, 0x26, 0x34, 0x47, 0x90
+		};
+
+/* End Session 0 */
+/* Begin session 1 */
+
+static  uint8_t ms_aes_cbc_key1[] = {
+		0xf1, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+		0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static  uint8_t ms_aes_cbc_iv1[] = {
+	0xf1, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+	0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static const uint8_t ms_aes_cbc_cipher1[] = {
+		0x5A, 0x7A, 0x67, 0x5D, 0xB8, 0xE1, 0xDC, 0x71,
+		0x39, 0xA8, 0x74, 0x93, 0x9C, 0x4C, 0xFE, 0x23,
+		0x61, 0xCD, 0xA4, 0xB3, 0xD9, 0xCE, 0x99, 0x09,
+		0x2A, 0x23, 0xF3, 0x29, 0xBF, 0x4C, 0xB4, 0x6A,
+		0x1B, 0x6B, 0x73, 0x4D, 0x48, 0x0C, 0xCF, 0x6C,
+		0x5E, 0x34, 0x9E, 0x7F, 0xBC, 0x8F, 0xCC, 0x8F,
+		0x75, 0x1D, 0x3D, 0x77, 0x10, 0x76, 0xC8, 0xB9,
+		0x99, 0x6F, 0xD6, 0x56, 0x75, 0xA9, 0xB2, 0x66,
+		0xC2, 0x24, 0x2B, 0x9C, 0xFE, 0x40, 0x8E, 0x43,
+		0x20, 0x97, 0x1B, 0xFA, 0xD0, 0xCF, 0x04, 0xAB,
+		0xBB, 0xF6, 0x5D, 0xF5, 0xA0, 0x19, 0x7C, 0x23,
+		0x5D, 0x80, 0x8C, 0x49, 0xF6, 0x76, 0x88, 0x29,
+		0x27, 0x4C, 0x59, 0x2B, 0x43, 0xA6, 0xB2, 0x26,
+		0x27, 0x78, 0xBE, 0x1B, 0xE1, 0x4F, 0x5A, 0x1F,
+		0xFC, 0x68, 0x08, 0xE7, 0xC4, 0xD1, 0x34, 0x68,
+		0xB7, 0x13, 0x14, 0x41, 0x62, 0x6B, 0x1F, 0x77,
+		0x0C, 0x68, 0x1D, 0x0D, 0xED, 0x89, 0xAA, 0xD8,
+		0x97, 0x02, 0xBA, 0x5E, 0xD4, 0x84, 0x25, 0x97,
+		0x03, 0xA5, 0xA6, 0x13, 0x66, 0x02, 0xF4, 0xC3,
+		0xF3, 0xD3, 0xCC, 0x95, 0xC3, 0x87, 0x46, 0x90,
+		0x1F, 0x6E, 0x14, 0xA8, 0x00, 0xF2, 0x6F, 0xD5,
+		0xA1, 0xAD, 0xD5, 0x40, 0xA2, 0x0F, 0x32, 0x7E,
+		0x99, 0xA3, 0xF5, 0x53, 0xC3, 0x26, 0xA1, 0x45,
+		0x01, 0x88, 0x57, 0x84, 0x3E, 0x7B, 0x4E, 0x0B,
+		0x3C, 0xB5, 0x3E, 0x9E, 0xE9, 0x78, 0x77, 0xC5,
+		0xC0, 0x89, 0xA8, 0xF8, 0xF1, 0xA5, 0x2D, 0x5D,
+		0xF9, 0xC6, 0xFB, 0xCB, 0x05, 0x23, 0xBD, 0x6E,
+		0x5E, 0x14, 0xC6, 0x57, 0x73, 0xCF, 0x98, 0xBD,
+		0x10, 0x8B, 0x18, 0xA6, 0x01, 0x5B, 0x13, 0xAE,
+		0x8E, 0xDE, 0x1F, 0xB5, 0xB7, 0x40, 0x6C, 0xC1,
+		0x1E, 0xA1, 0x19, 0x20, 0x9E, 0x95, 0xE0, 0x2F,
+		0x1C, 0xF5, 0xD9, 0xD0, 0x2B, 0x1E, 0x82, 0x25,
+		0x62, 0xB4, 0xEB, 0xA1, 0x1F, 0xCE, 0x44, 0xA1,
+		0xCB, 0x92, 0x01, 0x6B, 0xE4, 0x26, 0x23, 0xE3,
+		0xC5, 0x67, 0x35, 0x55, 0xDA, 0xE5, 0x27, 0xEE,
+		0x8D, 0x12, 0x84, 0xB7, 0xBA, 0xA7, 0x1C, 0xD6,
+		0x32, 0x3F, 0x67, 0xED, 0xFB, 0x5B, 0x8B, 0x52,
+		0x46, 0x8C, 0xF9, 0x69, 0xCD, 0xAE, 0x79, 0xAA,
+		0x37, 0x78, 0x49, 0xEB, 0xC6, 0x8E, 0x76, 0x63,
+		0x84, 0xFF, 0x9D, 0x22, 0x99, 0x51, 0xB7, 0x5E,
+		0x83, 0x4C, 0x8B, 0xDF, 0x5A, 0x07, 0xCC, 0xBA,
+		0x42, 0xA5, 0x98, 0xB6, 0x47, 0x0E, 0x66, 0xEB,
+		0x23, 0x0E, 0xBA, 0x44, 0xA8, 0xAA, 0x20, 0x71,
+		0x79, 0x9C, 0x77, 0x5F, 0xF5, 0xFE, 0xEC, 0xEF,
+		0xC6, 0x64, 0x3D, 0x84, 0xD0, 0x2B, 0xA7, 0x0A,
+		0xC3, 0x72, 0x5B, 0x9C, 0xFA, 0xA8, 0x87, 0x95,
+		0x94, 0x11, 0x38, 0xA7, 0x1E, 0x58, 0xE3, 0x73,
+		0xC6, 0xC9, 0xD1, 0x7B, 0x92, 0xDB, 0x0F, 0x49,
+		0x74, 0xC2, 0xA2, 0x0E, 0x35, 0x57, 0xAC, 0xDB,
+		0x9A, 0x1C, 0xCF, 0x5A, 0x32, 0x3E, 0x26, 0x9B,
+		0xEC, 0xB3, 0xEF, 0x9C, 0xFE, 0xBE, 0x52, 0xAC,
+		0xB1, 0x29, 0xDD, 0xFD, 0x07, 0xE2, 0xEE, 0xED,
+		0xE4, 0x46, 0x37, 0xFE, 0xD1, 0xDC, 0xCD, 0x02,
+		0xF9, 0x31, 0xB0, 0xFB, 0x36, 0xB7, 0x34, 0xA4,
+		0x76, 0xE8, 0x57, 0xBF, 0x99, 0x92, 0xC7, 0xAF,
+		0x98, 0x10, 0xE2, 0x70, 0xCA, 0xC9, 0x2B, 0x82,
+		0x06, 0x96, 0x88, 0x0D, 0xB3, 0xAC, 0x9E, 0x6D,
+		0x43, 0xBC, 0x5B, 0x31, 0xCF, 0x65, 0x8D, 0xA6,
+		0xC7, 0xFE, 0x73, 0xE1, 0x54, 0xF7, 0x10, 0xF9,
+		0x86, 0xF7, 0xDF, 0xA1, 0xA1, 0xD8, 0xAE, 0x35,
+		0xB3, 0x90, 0xDC, 0x6F, 0x43, 0x7A, 0x8B, 0xE0,
+		0xFE, 0x8F, 0x33, 0x4D, 0x29, 0x6C, 0x45, 0x53,
+		0x73, 0xDD, 0x21, 0x0B, 0x85, 0x30, 0xB5, 0xA5,
+		0xF3, 0x5D, 0xEC, 0x79, 0x61, 0x9D, 0x9E, 0xB3
+
+};
+
+static uint8_t ms_hmac_key1[] = {
+		0xFE, 0x1A, 0x7D, 0x3D, 0xF5, 0x82, 0x80, 0xF1,
+		0xF1, 0x35, 0x5C, 0x3B, 0xDD, 0x9A, 0x65, 0xBA,
+		0x58, 0x34, 0x85, 0x65, 0x1C, 0x42, 0x50, 0x76,
+		0x9A, 0xAF, 0x88, 0x1B, 0xB6, 0x8F, 0xF8, 0x60,
+		0xA2, 0x5A, 0x7F, 0x3F, 0xF4, 0x72, 0x70, 0xF1,
+		0xF5, 0x35, 0x4C, 0x3B, 0xDD, 0x90, 0x65, 0xB0,
+		0x47, 0x3A, 0x75, 0x61, 0x5C, 0xA2, 0x10, 0x76,
+		0x9A, 0xAF, 0x77, 0x5B, 0xB6, 0x7F, 0xF7, 0x60
+};
+
+static const uint8_t ms_hmac_digest1[] = {
+		0xCE, 0x6E, 0x5F, 0x77, 0x96, 0x9A, 0xB1, 0x69,
+		0x2D, 0x5E, 0xF3, 0x2F, 0x32, 0x10, 0xCB, 0x50,
+		0x0E, 0x09, 0x56, 0x25, 0x07, 0x34, 0xC9, 0x20,
+		0xEC, 0x13, 0x43, 0x23, 0x5C, 0x08, 0x8B, 0xCD,
+		0xDC, 0x86, 0x8C, 0xEE, 0x0A, 0x95, 0x2E, 0xB9,
+		0x8C, 0x7B, 0x02, 0x7A, 0xD4, 0xE1, 0x49, 0xB4,
+		0x45, 0xB5, 0x52, 0x37, 0xC6, 0xFF, 0xFE, 0xAA,
+		0x0A, 0x87, 0xB8, 0x51, 0xF9, 0x2A, 0x01, 0x8F
+};
+/* End Session 1  */
+/* Begin Session 2 */
+static  uint8_t ms_aes_cbc_key2[] = {
+		0xff, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+		0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static  uint8_t ms_aes_cbc_iv2[] = {
+		0xff, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+		0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff
+};
+
+static const uint8_t ms_aes_cbc_cipher2[] = {
+		0xBB, 0x3C, 0x68, 0x25, 0xFD, 0xB6, 0xA2, 0x91,
+		0x20, 0x56, 0xF6, 0x30, 0x35, 0xFC, 0x9E, 0x97,
+		0xF2, 0x90, 0xFC, 0x7E, 0x3E, 0x0A, 0x75, 0xC8,
+		0x4C, 0xF2, 0x2D, 0xAC, 0xD3, 0x93, 0xF0, 0xC5,
+		0x14, 0x88, 0x8A, 0x23, 0xC2, 0x59, 0x9A, 0x98,
+		0x4B, 0xD5, 0x2C, 0xDA, 0x43, 0xA9, 0x34, 0x69,
+		0x7C, 0x6D, 0xDB, 0xDC, 0xCB, 0xC0, 0xA0, 0x09,
+		0xA7, 0x86, 0x16, 0x4B, 0xBF, 0xA8, 0xB6, 0xCF,
+		0x7F, 0x74, 0x1F, 0x22, 0xF0, 0xF6, 0xBB, 0x44,
+		0x8B, 0x4C, 0x9E, 0x23, 0xF8, 0x9F, 0xFC, 0x5B,
+		0x9E, 0x9C, 0x2A, 0x79, 0x30, 0x8F, 0xBF, 0xA9,
+		0x68, 0xA1, 0x20, 0x71, 0x7C, 0x77, 0x22, 0x34,
+		0x07, 0xCD, 0xC6, 0xF6, 0x50, 0x0A, 0x08, 0x99,
+		0x17, 0x98, 0xE3, 0x93, 0x8A, 0xB0, 0xEE, 0xDF,
+		0xC2, 0xBA, 0x3B, 0x44, 0x73, 0xDF, 0xDD, 0xDC,
+		0x14, 0x4D, 0x3B, 0xBB, 0x5E, 0x58, 0xC1, 0x26,
+		0xA7, 0xAE, 0x47, 0xF3, 0x24, 0x6D, 0x4F, 0xD3,
+		0x6E, 0x3E, 0x33, 0xE6, 0x7F, 0xCA, 0x50, 0xAF,
+		0x5D, 0x3D, 0xA0, 0xDD, 0xC9, 0xF3, 0x30, 0xD3,
+		0x6E, 0x8B, 0x2E, 0x12, 0x24, 0x34, 0xF0, 0xD3,
+		0xC7, 0x8D, 0x23, 0x29, 0xAA, 0x05, 0xE1, 0xFA,
+		0x2E, 0xF6, 0x8D, 0x37, 0x86, 0xC0, 0x6D, 0x13,
+		0x2D, 0x98, 0xF3, 0x52, 0x39, 0x22, 0xCE, 0x38,
+		0xC2, 0x1A, 0x72, 0xED, 0xFB, 0xCC, 0xE4, 0x71,
+		0x5A, 0x0C, 0x0D, 0x09, 0xF8, 0xE8, 0x1B, 0xBC,
+		0x53, 0xC8, 0xD8, 0x8F, 0xE5, 0x98, 0x5A, 0xB1,
+		0x06, 0xA6, 0x5B, 0xE6, 0xA2, 0x88, 0x21, 0x9E,
+		0x36, 0xC0, 0x34, 0xF9, 0xFB, 0x3B, 0x0A, 0x22,
+		0x00, 0x00, 0x39, 0x48, 0x8D, 0x23, 0x74, 0x62,
+		0x72, 0x91, 0xE6, 0x36, 0xAA, 0x77, 0x9C, 0x72,
+		0x9D, 0xA8, 0xC3, 0xA9, 0xD5, 0x44, 0x72, 0xA6,
+		0xB9, 0x28, 0x8F, 0x64, 0x4C, 0x8A, 0x64, 0xE6,
+		0x4E, 0xFA, 0xEF, 0x87, 0xDE, 0x7B, 0x22, 0x44,
+		0xB0, 0xDF, 0x2E, 0x5F, 0x0B, 0xA5, 0xF2, 0x24,
+		0x07, 0x5C, 0x2D, 0x39, 0xB7, 0x3D, 0x8A, 0xE5,
+		0x0E, 0x9D, 0x4E, 0x50, 0xED, 0x03, 0x99, 0x8E,
+		0xF0, 0x06, 0x55, 0x4E, 0xA2, 0x24, 0xE7, 0x17,
+		0x46, 0xDF, 0x6C, 0xCD, 0xC6, 0x44, 0xE8, 0xF9,
+		0xB9, 0x1B, 0x36, 0xF6, 0x7F, 0x10, 0xA4, 0x7D,
+		0x90, 0xBD, 0xE4, 0xAA, 0xD6, 0x9E, 0x18, 0x9D,
+		0x22, 0x35, 0xD6, 0x55, 0x54, 0xAA, 0xF7, 0x22,
+		0xA3, 0x3E, 0xEF, 0xC8, 0xA2, 0x34, 0x8D, 0xA9,
+		0x37, 0x63, 0xA6, 0xC3, 0x57, 0xCB, 0x0C, 0x49,
+		0x7D, 0x02, 0xBE, 0xAA, 0x13, 0x75, 0xB7, 0x4E,
+		0x52, 0x62, 0xA5, 0xC2, 0x33, 0xC7, 0x6C, 0x1B,
+		0xF6, 0x34, 0xF6, 0x09, 0xA5, 0x0C, 0xC7, 0xA2,
+		0x61, 0x48, 0x62, 0x7D, 0x17, 0x15, 0xE3, 0x95,
+		0xC8, 0x63, 0xD2, 0xA4, 0x43, 0xA9, 0x49, 0x07,
+		0xB2, 0x3B, 0x2B, 0x62, 0x7D, 0xCB, 0x51, 0xB3,
+		0x25, 0x33, 0x47, 0x0E, 0x14, 0x67, 0xDC, 0x6A,
+		0x9B, 0x51, 0xAC, 0x9D, 0x8F, 0xA2, 0x2B, 0x57,
+		0x8C, 0x5C, 0x5F, 0x76, 0x23, 0x92, 0x0F, 0x84,
+		0x46, 0x0E, 0x40, 0x85, 0x38, 0x60, 0xFA, 0x61,
+		0x20, 0xC5, 0xE3, 0xF1, 0x70, 0xAC, 0x1B, 0xBF,
+		0xC4, 0x2B, 0xC5, 0x67, 0xD1, 0x43, 0xC5, 0x17,
+		0x74, 0x71, 0x69, 0x6F, 0x82, 0x89, 0x19, 0x8A,
+		0x70, 0x43, 0x92, 0x01, 0xC4, 0x63, 0x7E, 0xB1,
+		0x59, 0x4E, 0xCD, 0xEA, 0x93, 0xA4, 0x52, 0x53,
+		0x9B, 0x61, 0x5B, 0xD2, 0x3E, 0x19, 0x39, 0xB7,
+		0x32, 0xEA, 0x8E, 0xF8, 0x1D, 0x76, 0x5C, 0xB2,
+		0x73, 0x2D, 0x91, 0xC0, 0x18, 0xED, 0x25, 0x2A,
+		0x53, 0x64, 0xF0, 0x92, 0x31, 0x55, 0x21, 0xA8,
+		0x24, 0xA9, 0xD1, 0x02, 0xF6, 0x6C, 0x2B, 0x70,
+		0xA9, 0x59, 0xC1, 0xD6, 0xC3, 0x57, 0x5B, 0x92
+};
+
+static  uint8_t ms_hmac_key2[] = {
+		0xFC, 0x1A, 0x7D, 0x3D, 0xF5, 0x82, 0x80, 0xF1,
+		0xF1, 0x35, 0x5C, 0x3B, 0xDD, 0x9A, 0x65, 0xBA,
+		0x58, 0x34, 0x85, 0x65, 0x1C, 0x42, 0x50, 0x76,
+		0x9A, 0xAF, 0x88, 0x1B, 0xB6, 0x8F, 0xF8, 0x60,
+		0xA2, 0x5A, 0x7F, 0x3F, 0xF4, 0x72, 0x70, 0xF1,
+		0xF5, 0x35, 0x4C, 0x3B, 0xDD, 0x90, 0x65, 0xB0,
+		0x47, 0x3A, 0x75, 0x61, 0x5C, 0xA2, 0x10, 0x76,
+		0x9A, 0xAF, 0x77, 0x5B, 0xB6, 0x7F, 0xF7, 0x60
+};
+
+static const uint8_t ms_hmac_digest2[] = {
+		0xA5, 0x0F, 0x9C, 0xFB, 0x08, 0x62, 0x59, 0xFF,
+		0x80, 0x2F, 0xEB, 0x4B, 0xE1, 0x46, 0x21, 0xD6,
+		0x02, 0x98, 0xF2, 0x8E, 0xF4, 0xEC, 0xD4, 0x77,
+		0x86, 0x4C, 0x31, 0x28, 0xC8, 0x25, 0x80, 0x27,
+		0x3A, 0x72, 0x5D, 0x6A, 0x56, 0x8A, 0xD3, 0x82,
+		0xB0, 0xEC, 0x31, 0x6D, 0x8B, 0x6B, 0xB4, 0x24,
+		0xE7, 0x62, 0xC1, 0x52, 0xBC, 0x14, 0x1B, 0x8E,
+		0xEC, 0x9A, 0xF1, 0x47, 0x80, 0xD2, 0xB0, 0x59
+};
+
+/* End Session 2 */
+
+
 static int
 test_AES_CBC_HMAC_SHA1_encrypt_digest(void)
 {
@@ -968,17 +1278,24 @@ static const uint8_t catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA512_digest[] = {
 
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
-		struct crypto_unittest_params *ut_params);
+		struct crypto_unittest_params *ut_params,
+		uint8_t *cipher_key,
+		uint8_t *hmac_key);
 
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_perform(struct rte_cryptodev_sym_session *sess,
 		struct crypto_unittest_params *ut_params,
-		struct crypto_testsuite_params *ts_params);
+		struct crypto_testsuite_params *ts_params,
+		const uint8_t *cipher,
+		const uint8_t *digest,
+		const uint8_t *iv);
 
 
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
-		struct crypto_unittest_params *ut_params)
+		struct crypto_unittest_params *ut_params,
+		uint8_t *cipher_key,
+		uint8_t *hmac_key)
 {
 
 	/* Setup Cipher Parameters */
@@ -987,7 +1304,7 @@ test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
 
 	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
 	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_DECRYPT;
-	ut_params->cipher_xform.cipher.key.data = aes_cbc_key;
+	ut_params->cipher_xform.cipher.key.data = cipher_key;
 	ut_params->cipher_xform.cipher.key.length = CIPHER_KEY_LENGTH_AES_CBC;
 
 	/* Setup HMAC Parameters */
@@ -996,7 +1313,7 @@ test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
 
 	ut_params->auth_xform.auth.op = RTE_CRYPTO_AUTH_OP_VERIFY;
 	ut_params->auth_xform.auth.algo = RTE_CRYPTO_AUTH_SHA512_HMAC;
-	ut_params->auth_xform.auth.key.data = hmac_sha512_key;
+	ut_params->auth_xform.auth.key.data = hmac_key;
 	ut_params->auth_xform.auth.key.length = HMAC_KEY_LENGTH_SHA512;
 	ut_params->auth_xform.auth.digest_length = DIGEST_BYTE_LENGTH_SHA512;
 
@@ -1007,12 +1324,15 @@ test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
 static int
 test_AES_CBC_HMAC_SHA512_decrypt_perform(struct rte_cryptodev_sym_session *sess,
 		struct crypto_unittest_params *ut_params,
-		struct crypto_testsuite_params *ts_params)
+		struct crypto_testsuite_params *ts_params,
+		const uint8_t *cipher,
+		const uint8_t *digest,
+		const uint8_t *iv)
 {
 	/* Generate test mbuf data and digest */
 	ut_params->ibuf = setup_test_string(ts_params->mbuf_pool,
 			(const char *)
-			catch_22_quote_2_512_bytes_AES_CBC_ciphertext,
+			cipher,
 			QUOTE_512_BYTES, 0);
 
 	ut_params->digest = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
@@ -1020,7 +1340,7 @@ test_AES_CBC_HMAC_SHA512_decrypt_perform(struct rte_cryptodev_sym_session *sess,
 	TEST_ASSERT_NOT_NULL(ut_params->digest, "no room to append digest");
 
 	rte_memcpy(ut_params->digest,
-			catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA512_digest,
+			digest,
 			DIGEST_BYTE_LENGTH_SHA512);
 
 	/* Generate Crypto op data structure */
@@ -1050,7 +1370,7 @@ test_AES_CBC_HMAC_SHA512_decrypt_perform(struct rte_cryptodev_sym_session *sess,
 			ut_params->ibuf, 0);
 	sym_op->cipher.iv.length = CIPHER_IV_LENGTH_AES_CBC;
 
-	rte_memcpy(sym_op->cipher.iv.data, aes_cbc_iv,
+	rte_memcpy(sym_op->cipher.iv.data, iv,
 			CIPHER_IV_LENGTH_AES_CBC);
 
 	sym_op->cipher.data.offset = CIPHER_IV_LENGTH_AES_CBC;
@@ -1088,6 +1408,21 @@ test_AES_mb_all(void)
 	status = test_AES_all_tests(ts_params->mbuf_pool,
 		ts_params->op_mpool, ts_params->valid_devs[0],
 		RTE_CRYPTODEV_AESNI_MB_PMD);
+
+	TEST_ASSERT_EQUAL(status, 0, "Test failed");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_AES_libcrypto_all(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	int status;
+
+	status = test_AES_all_tests(ts_params->mbuf_pool,
+		ts_params->op_mpool, ts_params->valid_devs[0],
+		RTE_CRYPTODEV_LIBCRYPTO_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
 
@@ -3030,6 +3365,589 @@ test_snow3g_encrypted_authentication_test_case_1(void)
 	return test_snow3g_encrypted_authentication(&snow3g_test_case_6);
 }
 
+/* ***** HASH Tests ***** */
+static int
+authentication_MD5(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&md5_test_vector);
+}
+
+static int
+authentication_verify_MD5(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&md5_test_vector);
+}
+
+static int
+authentication_HMAC_MD5(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_md5_test_vector);
+}
+
+static int
+authentication_verify_HMAC_MD5(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_md5_test_vector);
+}
+
+static int
+authentication_SHA1(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&sha1_test_vector);
+}
+
+static int
+authentication_verify_SHA1(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&sha1_test_vector);
+}
+
+static int
+authentication_HMAC_SHA1(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_sha1_test_vector);
+}
+
+static int
+authentication_verify_HMAC_SHA1(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_sha1_test_vector);
+}
+
+static int
+authentication_SHA224(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&sha224_test_vector);
+}
+
+static int
+authentication_verify_SHA224(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&sha224_test_vector);
+}
+
+static int
+authentication_HMAC_SHA224(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_sha224_test_vector);
+}
+
+static int
+authentication_verify_HMAC_SHA224(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_sha224_test_vector);
+}
+
+static int
+authentication_SHA256(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&sha256_test_vector);
+}
+
+static int
+authentication_verify_SHA256(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&sha256_test_vector);
+}
+
+static int
+authentication_HMAC_SHA256(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_sha256_test_vector);
+}
+
+static int
+authentication_verify_HMAC_SHA256(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_sha256_test_vector);
+}
+
+static int
+authentication_SHA384(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&sha384_test_vector);
+}
+
+static int
+authentication_verify_SHA384(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&sha384_test_vector);
+}
+
+static int
+authentication_HMAC_SHA384(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_sha384_test_vector);
+}
+
+static int
+authentication_verify_HMAC_SHA384(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_sha384_test_vector);
+}
+
+static int
+authentication_SHA512(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&sha512_test_vector);
+}
+
+static int
+authentication_verify_SHA512(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&sha512_test_vector);
+}
+
+static int
+authentication_HMAC_SHA512(void)
+{
+	return test_authentication(&testsuite_params, &unittest_params,
+			&hmac_sha512_test_vector);
+}
+
+static int
+authentication_verify_HMAC_SHA512(void)
+{
+	return test_authentication_verify(&testsuite_params, &unittest_params,
+			&hmac_sha512_test_vector);
+}
+
+static int
+authentication_AES128_GMAC(void)
+{
+	return test_authentication_GMAC(&testsuite_params, &unittest_params,
+			&aes128_gmac_test_vector);
+}
+
+static int
+authentication_verify_AES128_GMAC(void)
+{
+	return test_authentication_verify_GMAC(&testsuite_params, &unittest_params,
+			&aes128_gmac_test_vector);
+}
+
+static int
+authentication_AES192_GMAC(void)
+{
+	return test_authentication_GMAC(&testsuite_params, &unittest_params,
+			&aes192_gmac_test_vector);
+}
+
+static int
+authentication_verify_AES192_GMAC(void)
+{
+	return test_authentication_verify_GMAC(&testsuite_params, &unittest_params,
+			&aes192_gmac_test_vector);
+}
+
+static int
+authentication_AES256_GMAC(void)
+{
+	return test_authentication_GMAC(&testsuite_params, &unittest_params,
+			&aes256_gmac_test_vector);
+}
+
+static int
+authentication_verify_AES256_GMAC(void)
+{
+	return test_authentication_verify_GMAC(&testsuite_params, &unittest_params,
+			&aes256_gmac_test_vector);
+}
+
+/* ***** AES Tests ***** */
+static int
+encryption_AES128CTR(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes128ctr_test_vector);
+}
+
+static int
+decryption_AES128CTR(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes128ctr_test_vector);
+}
+
+static int
+encryption_AES192CTR(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes192ctr_test_vector);
+}
+
+static int
+decryption_AES192CTR(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes192ctr_test_vector);
+}
+
+static int
+encryption_AES256CTR(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes256ctr_test_vector);
+}
+
+static int
+decryption_AES256CTR(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes256ctr_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&aes128ctr_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&aes128ctr_hmac_sha1_test_vector);
+}
+
+static int
+encryption_AES128CBC(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes128cbc_test_vector);
+}
+
+static int
+decryption_AES128CBC(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes128cbc_test_vector);
+}
+
+static int
+encryption_AES192CBC(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes192cbc_test_vector);
+}
+
+static int
+decryption_AES192CBC(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes192cbc_test_vector);
+}
+
+static int
+encryption_AES256CBC(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&aes256cbc_test_vector);
+}
+
+static int
+decryption_AES256CBC(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&aes256cbc_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&aes128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&aes128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CBC_HMAC_SHA1_sessionless(void)
+{
+	return test_authenticated_encryption_sessionless(&testsuite_params,
+			&unittest_params,
+			&aes128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CBC_HMAC_SHA1_sessionless(void)
+{
+	return test_authenticated_decryption_sessionless(&testsuite_params,
+			&unittest_params,
+			&aes128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CBC_AES128_GMAC(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes128_gmac_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CBC_AES128_GMAC(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes128_gmac_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CBC_AES192_GMAC(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes192_gmac_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CBC_AES192_GMAC(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes192_gmac_test_vector);
+}
+
+static int
+authenticated_encryption_AES128CBC_AES256_GMAC(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes256_gmac_test_vector);
+}
+
+static int
+authenticated_decryption_AES128CBC_AES256_GMAC(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&aes128cbc_aes256_gmac_test_vector);
+}
+
+/* ***** DES Tests ***** */
+static int
+encryption_3DES128CBC(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_test_vector);
+}
+
+static int
+decryption_3DES128CBC(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_test_vector);
+}
+
+static int
+encryption_3DES192CBC(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_test_vector);
+}
+
+static int
+decryption_3DES192CBC(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_test_vector);
+}
+
+static int
+encryption_3DES128CTR(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_test_vector);
+}
+
+static int
+decryption_3DES128CTR(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_test_vector);
+}
+
+static int
+encryption_3DES192CTR(void)
+{
+	return test_encryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_test_vector);
+}
+
+static int
+decryption_3DES192CTR(void)
+{
+	return test_decryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CBC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CBC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CBC_HMAC_SHA1_sessionless(void)
+{
+	return test_authenticated_encryption_sessionless(&testsuite_params,
+			&unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CBC_HMAC_SHA1_sessionless(void)
+{
+	return test_authenticated_decryption_sessionless(&testsuite_params,
+			&unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CBC_HMAC_SHA1_out_of_place(void)
+{
+	return test_authenticated_encryption_out_of_place(&testsuite_params,
+			&unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CBC_HMAC_SHA1_out_of_place(void)
+{
+	return test_authenticated_decryption_out_of_place(&testsuite_params,
+			&unittest_params,
+			&triple_des128cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES192CBC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES192CBC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES192CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES192CBC_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des192cbc_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CTR_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CTR_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES128CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES128CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des128ctr_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES192CTR_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES192CTR_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_sha1_test_vector);
+}
+
+static int
+authenticated_encryption_3DES192CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_encryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_hmac_sha1_test_vector);
+}
+
+static int
+authenticated_decryption_3DES192CTR_HMAC_SHA1(void)
+{
+	return test_authenticated_decryption(&testsuite_params, &unittest_params,
+			&triple_des192ctr_hmac_sha1_test_vector);
+}
+
 /* ***** AES-GCM Tests ***** */
 
 static int
@@ -3490,7 +4408,8 @@ test_multi_session(void)
 
 	uint16_t i;
 
-	test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(ut_params);
+	test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(ut_params,
+			aes_cbc_key, hmac_sha512_key);
 
 
 	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
@@ -3509,10 +4428,13 @@ test_multi_session(void)
 				i);
 
 		/* Attempt to send a request on each session */
-		TEST_ASSERT_SUCCESS(test_AES_CBC_HMAC_SHA512_decrypt_perform(
-				sessions[i], ut_params, ts_params),
-				"Failed to perform decrypt on request "
-				"number %u.", i);
+		TEST_ASSERT_SUCCESS(
+				test_AES_CBC_HMAC_SHA512_decrypt_perform(sessions[i], ut_params,
+						ts_params,
+						catch_22_quote_2_512_bytes_AES_CBC_ciphertext,
+						catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA512_digest,
+						aes_cbc_iv),
+				"Failed to perform decrypt on request number %u.", i);
 		/* free crypto operation structure */
 		if (ut_params->op)
 			rte_crypto_op_free(ut_params->op);
@@ -3543,6 +4465,113 @@ test_multi_session(void)
 	for (i = 0; i < dev_info.sym.max_nb_sessions; i++)
 		rte_cryptodev_sym_session_free(ts_params->valid_devs[0],
 				sessions[i]);
+
+	rte_free(sessions);
+
+	return TEST_SUCCESS;
+}
+
+
+struct multi_session_params {
+	struct crypto_unittest_params ut_params;
+	uint8_t *cipher_key;
+	uint8_t *hmac_key;
+	const uint8_t *cipher;
+	const uint8_t *digest;
+	uint8_t *iv;
+};
+
+#define MB_SESSION_NUMBER 3
+
+static int
+test_multi_session_random_usage(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct rte_cryptodev_info dev_info;
+	struct rte_cryptodev_sym_session **sessions;
+	uint32_t i, j;
+	struct multi_session_params ut_paramz[] = {
+
+		{
+			.cipher_key = ms_aes_cbc_key0,
+			.hmac_key = ms_hmac_key0,
+			.cipher = ms_aes_cbc_cipher0,
+			.digest = ms_hmac_digest0,
+			.iv = ms_aes_cbc_iv0
+		},
+		{
+			.cipher_key = ms_aes_cbc_key1,
+			.hmac_key = ms_hmac_key1,
+			.cipher = ms_aes_cbc_cipher1,
+			.digest = ms_hmac_digest1,
+			.iv = ms_aes_cbc_iv1
+		},
+		{
+			.cipher_key = ms_aes_cbc_key2,
+			.hmac_key = ms_hmac_key2,
+			.cipher = ms_aes_cbc_cipher2,
+			.digest = ms_hmac_digest2,
+			.iv = ms_aes_cbc_iv2
+		},
+
+	};
+
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+
+	sessions = rte_malloc(NULL,
+			(sizeof(struct rte_cryptodev_sym_session *)
+					* dev_info.sym.max_nb_sessions) + 1, 0);
+
+	for (i = 0; i < MB_SESSION_NUMBER; i++) {
+		rte_memcpy(&ut_paramz[i].ut_params, &testsuite_params,
+				sizeof(struct crypto_unittest_params));
+
+		test_AES_CBC_HMAC_SHA512_decrypt_create_session_params(
+				&ut_paramz[i].ut_params, ut_paramz[i].cipher_key,
+				ut_paramz[i].hmac_key);
+
+		/* Create multiple crypto sessions*/
+		sessions[i] = rte_cryptodev_sym_session_create(ts_params->valid_devs[0],
+				&ut_paramz[i].ut_params.auth_xform);
+
+		TEST_ASSERT_NOT_NULL(sessions[i],
+				"Session creation failed at session number %u", i);
+
+	}
+
+	srand(time(NULL));
+	for (i = 0; i < 40000; i++) {
+
+		j = rand() % MB_SESSION_NUMBER;
+
+		TEST_ASSERT_SUCCESS(
+				test_AES_CBC_HMAC_SHA512_decrypt_perform(sessions[j],
+						&ut_paramz[j].ut_params, ts_params, ut_paramz[j].cipher,
+						ut_paramz[j].digest, ut_paramz[j].iv),
+				"Failed to perform decrypt on request number %u.", i);
+
+		if (ut_paramz[j].ut_params.op)
+			rte_crypto_op_free(ut_paramz[j].ut_params.op);
+
+		/*
+		 * free mbuf - both obuf and ibuf are usually the same,
+		 * so check if they point at the same address is necessary,
+		 * to avoid freeing the mbuf twice.
+		 */
+		if (ut_paramz[j].ut_params.obuf) {
+			rte_pktmbuf_free(ut_paramz[j].ut_params.obuf);
+			if (ut_paramz[j].ut_params.ibuf == ut_paramz[j].ut_params.obuf)
+				ut_paramz[j].ut_params.ibuf = 0;
+			ut_paramz[j].ut_params.obuf = 0;
+		}
+		if (ut_paramz[j].ut_params.ibuf) {
+			rte_pktmbuf_free(ut_paramz[j].ut_params.ibuf);
+			ut_paramz[j].ut_params.ibuf = 0;
+		}
+	}
+
+	for (i = 0; i < MB_SESSION_NUMBER; i++)
+		rte_cryptodev_sym_session_free(ts_params->valid_devs[0], sessions[i]);
 
 	rte_free(sessions);
 
@@ -4019,7 +5048,40 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
 		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_dpaa2_sec_all),
-
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_MD5),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_MD5),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA224),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA224),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA256),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA256),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA384),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA384),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA512),
+			TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA512),
+			TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES128CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES128CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES192CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES192CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES256CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES256CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES128CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES128CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES192CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES192CBC),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_encryption_AES128CBC_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_decryption_AES128CBC_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_encryption_3DES128CBC_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_decryption_3DES128CBC_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_encryption_3DES192CBC_HMAC_SHA1),
+			TEST_CASE_ST(ut_setup, ut_teardown,
+				authenticated_decryption_3DES192CBC_HMAC_SHA1),
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -4030,6 +5092,135 @@ static struct unit_test_suite cryptodev_aesni_mb_testsuite  = {
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
 		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_mb_all),
+
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
+static struct unit_test_suite cryptodev_libcrypto_testsuite  = {
+	.suite_name = "Crypto Device LIBCRYPTO Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_multi_session),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_multi_session_random_usage),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_libcrypto_all),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_MD5),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_MD5),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA224),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_SHA224),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA256),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_SHA256),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA384),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_SHA384),
+		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA512),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_SHA512),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_MD5),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_MD5),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA224),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA224),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA256),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA256),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA384),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA384),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_HMAC_SHA512),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_HMAC_SHA512),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_AES128_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_AES128_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_AES192_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_AES192_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_AES256_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_AES256_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES128CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES128CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES192CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES192CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES256CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES256CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES128CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES128CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES192CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES192CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_AES256CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_AES256CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES128CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES128CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES192CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES192CBC),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES128CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES128CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, encryption_3DES192CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown, decryption_3DES192CTR),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_AES128_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_AES128_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_AES192_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_AES192_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_AES256_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_AES256_GMAC),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CBC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CBC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES192CBC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES192CBC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES192CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES192CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CTR_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CTR_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES192CTR_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES192CTR_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES192CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES192CTR_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_HMAC_SHA1_sessionless),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_HMAC_SHA1_sessionless),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CBC_HMAC_SHA1_sessionless),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CBC_HMAC_SHA1_sessionless),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_3DES128CBC_HMAC_SHA1_out_of_place),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_3DES128CBC_HMAC_SHA1_out_of_place),
 
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
@@ -4257,6 +5448,14 @@ test_cryptodev_aesni_mb(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
+test_cryptodev_libcrypto(void)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_LIBCRYPTO_PMD;
+
+	return unit_test_suite_runner(&cryptodev_libcrypto_testsuite);
+}
+
+static int
 test_cryptodev_aesni_gcm(void)
 {
 	gbl_cryptodev_type = RTE_CRYPTODEV_AESNI_GCM_PMD;
@@ -4292,6 +5491,7 @@ REGISTER_TEST_COMMAND(cryptodev_armce_autotest, test_cryptodev_armce);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_autotest, test_cryptodev_dpaa2_sec);
 REGISTER_TEST_COMMAND(cryptodev_qat_autotest, test_cryptodev_qat);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_autotest, test_cryptodev_aesni_mb);
+REGISTER_TEST_COMMAND(cryptodev_libcrypto_autotest, test_cryptodev_libcrypto);
 REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_autotest, test_cryptodev_aesni_gcm);
 REGISTER_TEST_COMMAND(cryptodev_null_autotest, test_cryptodev_null);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_autotest, test_cryptodev_sw_snow3g);
