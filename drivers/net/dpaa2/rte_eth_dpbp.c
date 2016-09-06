@@ -106,6 +106,15 @@ dpaa2_create_dpbp_device(
 	return 0;
 }
 
+int hw_mbuf_pool_verify(const struct rte_mempool *mp __rte_unused)
+{
+	if (!avail_dpbp) {
+		PMD_DRV_LOG(WARNING, "DPAA2 mempool resources not available\n");
+		return -1;
+	}
+	return 0;
+}
+
 int hw_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct dpaa2_bp_list *bp_list;
@@ -371,6 +380,7 @@ struct rte_mempool_ops dpaa2_mpool_ops = {
 	.enqueue = hw_mbuf_free_bulk,
 	.dequeue = hw_mbuf_alloc_bulk,
 	.get_count = hw_mbuf_get_count,
+	.pool_verify = hw_mbuf_pool_verify,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
