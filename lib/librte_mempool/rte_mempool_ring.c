@@ -126,6 +126,7 @@ static const struct rte_mempool_ops ops_mp_mc = {
 	.enqueue = common_ring_mp_enqueue,
 	.dequeue = common_ring_mc_dequeue,
 	.get_count = common_ring_get_count,
+	.pool_verify = NULL,
 };
 
 static const struct rte_mempool_ops ops_sp_sc = {
@@ -135,6 +136,7 @@ static const struct rte_mempool_ops ops_sp_sc = {
 	.enqueue = common_ring_sp_enqueue,
 	.dequeue = common_ring_sc_dequeue,
 	.get_count = common_ring_get_count,
+	.pool_verify = NULL,
 };
 
 static const struct rte_mempool_ops ops_mp_sc = {
@@ -144,6 +146,7 @@ static const struct rte_mempool_ops ops_mp_sc = {
 	.enqueue = common_ring_mp_enqueue,
 	.dequeue = common_ring_sc_dequeue,
 	.get_count = common_ring_get_count,
+	.pool_verify = NULL,
 };
 
 static const struct rte_mempool_ops ops_sp_mc = {
@@ -153,6 +156,7 @@ static const struct rte_mempool_ops ops_sp_mc = {
 	.enqueue = common_ring_sp_enqueue,
 	.dequeue = common_ring_mc_dequeue,
 	.get_count = common_ring_get_count,
+	.pool_verify = NULL,
 };
 
 MEMPOOL_REGISTER_OPS(ops_mp_mc);

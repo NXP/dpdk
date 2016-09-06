@@ -123,6 +123,18 @@ rte_mempool_ops_get_count(const struct rte_mempool *mp)
 	return ops->get_count(mp);
 }
 
+/* wrapper to check if given external mempool is available for this instance.*/
+int
+rte_mempool_ops_pool_verify(const struct rte_mempool *mp)
+{
+	struct rte_mempool_ops *ops;
+
+	ops = rte_mempool_get_ops(mp->ops_index);
+	if (ops->pool_verify)
+		return ops->pool_verify(mp);
+	return 0;
+}
+
 /* sets mempool ops previously registered by rte_mempool_register_ops. */
 int
 rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
@@ -145,6 +157,12 @@ rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
 
 	if (ops == NULL)
 		return -EINVAL;
+
+	/*verify if the given mempool is available for this instance */
+	if (ops->pool_verify) {
+		if (ops->pool_verify(mp))
+			return -EOPNOTSUPP;
+	}
 
 	mp->ops_index = i;
 	mp->pool_config = pool_config;
