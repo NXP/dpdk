@@ -512,9 +512,10 @@ skip_tx:
 }
 
 static inline
-struct rte_crypto_op *sec_fd_to_mbuf(const struct qbman_fd *fd)
+struct rte_crypto_op *sec_fd_to_mbuf(
+	const struct qbman_fd *fd)
 {
-	struct qbman_fle *fle, *fle1, *sge;
+	struct qbman_fle *fle;
 	struct rte_crypto_op *op;
 
 	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
@@ -532,15 +533,16 @@ struct rte_crypto_op *sec_fd_to_mbuf(const struct qbman_fd *fd)
 		/* TODO complete it. */
 		printf("\n????????? Non inline buffer - WHAT to DO?");
 		return NULL;
-	} else
-		op = (struct rte_crypto_op *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR((fle - 1)));
+	}
+	op = (struct rte_crypto_op *)DPAA2_IOVA_TO_VADDR(
+			DPAA2_GET_FLE_ADDR((fle - 1)));
+
+	/* Prefeth op */
+	rte_prefetch0(op->sym->m_src);
 
 	PMD_DRV_LOG(DEBUG, "\nmbuf %p BMAN buf addr %p",
 		    (void *)op->sym->m_src, op->sym->m_src->buf_addr);
 
-	if (unlikely(DPAA2_GET_FD_IVP(fd))) {
-		printf("\nHit wrong leg\n");
-	}
 	PMD_DRV_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
 		    DPAA2_GET_FD_ADDR(fd),
 		DPAA2_GET_FD_BPID(fd),
@@ -549,7 +551,7 @@ struct rte_crypto_op *sec_fd_to_mbuf(const struct qbman_fd *fd)
 		DPAA2_GET_FD_LEN(fd));
 
 	/* Not the inline used fle */
-	if (fle != op->sym->m_src->buf_addr)
+	//if (fle != op->sym->m_src->buf_addr)
 		rte_free(fle - 1);
 
 	return op;
@@ -708,8 +710,6 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	while (!is_last) {
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN */
-//		struct rte_mbuf *mbuf;
-
 		while (!qbman_result_has_new_result(swp, dq_storage))
 			;
 		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
@@ -725,21 +725,12 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 			}
 		}
 		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
-#if 0
-		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
-				DPAA2_GET_FD_ADDR(fd[num_rx])
-				 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
-		/* Prefeth mbuf */
-		rte_prefetch0(mbuf);
-		/* Prefetch Annotation address from where we get parse results */
-		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_FD_PTA_SIZE + 16));
-		/*Prefetch Data buffer*/
-		/* rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_GET_FD_OFFSET(fd[num_rx]))); */
-#endif
+
 		ops[num_rx] = sec_fd_to_mbuf(fd[num_rx]);
 		if (unlikely(fd[num_rx]->simple.frc)) {
 			/* TODO Parse SEC errors */
-			printf("SEC returned Error - %x\n", fd[num_rx]->simple.frc);
+			printf("SEC returned Error - %x\n",
+				fd[num_rx]->simple.frc);
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
 		} else
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
