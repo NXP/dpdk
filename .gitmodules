@@ -1,0 +1,4 @@
+[submodule "ext"]
+	path = ext
+	url = http://sw-stash.freescale.net/scm/gitam/dpdk-extras.git
+	branch = master
