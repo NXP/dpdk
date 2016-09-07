@@ -57,7 +57,7 @@ rte_eal_soc_pre_init(void)
 {
 #ifdef RTE_LIBRTE_DPAA2_PMD
 	if (rte_eal_dpaa2_init() < 0)
-		RTE_LOG(WARNING, EAL, "Cannot init FSL_MC SCAN\n");
+		RTE_LOG(WARNING, EAL, "Cannot init FSL_DPAA2 SCAN\n");
 #endif
 #if (defined RTE_LIBRTE_DPAA_PMD)
 	if (dpaa_pre_rte_eal_init())
