@@ -37,7 +37,6 @@ LIB = librte_pmd_armce.a
 # build flags
 CFLAGS += -O3 -I${OPENSSL_PATH}/include/
 CFLAGS += $(WERROR_FLAGS)
-#LDFLAGS += -L$(OPENSSL_PATH)/lib -l:ssl -l:crypto
 
 # library version
 LIBABIVER := 1
