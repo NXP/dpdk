@@ -61,6 +61,8 @@
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
+#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool*/
+
 #if (DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
 #error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
 #endif
