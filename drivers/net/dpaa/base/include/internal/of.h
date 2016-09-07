@@ -62,7 +62,7 @@ const struct device_node *of_find_compatible_node(
 		dev_node = of_find_compatible_node(dev_node, type, compatible))
 
 const void *of_get_property(const struct device_node *from, const char *name,
-				size_t *lenp) __attribute__((nonnull(2)));
+			    size_t *lenp) __attribute__((nonnull(2)));
 bool of_device_is_available(const struct device_node *dev_node);
 
 const struct device_node *of_find_node_by_phandle(phandle ph);
@@ -80,22 +80,22 @@ uint32_t of_n_addr_cells(const struct device_node *dev_node);
 uint32_t of_n_size_cells(const struct device_node *dev_node);
 
 const uint32_t *of_get_address(const struct device_node *dev_node, size_t idx,
-				uint64_t *size, uint32_t *flags);
+			       uint64_t *size, uint32_t *flags);
 
 uint64_t of_translate_address(const struct device_node *dev_node,
-				const u32 *addr) __attribute__((nonnull));
+			      const u32 *addr) __attribute__((nonnull));
 
 bool of_device_is_compatible(const struct device_node *dev_node,
-				const char *compatible);
+			     const char *compatible);
 
 struct device_node *of_find_node_with_property(struct device_node *from,
-	const char *prop_name);
+					       const char *prop_name);
 
 static inline void of_node_put(struct device_node *node)
 {
 }
 
-extern struct device_node *of_find_node_with_property(
+struct device_node *of_find_node_with_property(
 	struct device_node *from, const char *prop_name);
 
 #endif	/*  __OF_INTERNAL_H */

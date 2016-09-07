@@ -44,6 +44,7 @@ struct dpa_alloc {
 	struct list_head list;
 	spinlock_t lock;
 };
+
 #define DECLARE_DPA_ALLOC(name) \
 	struct dpa_alloc name = { \
 		.list = { \
@@ -68,15 +69,15 @@ void dpa_alloc_free(struct dpa_alloc *alloc, u32 fqid, u32 count);
 				__stringify_1(x)); \
 			exit(EXIT_FAILURE); \
 		} \
-	} while(0)
+	} while (0)
 #else
-#define DPA_ASSERT(x)		do { ; } while(0)
+#define DPA_ASSERT(x)		do { ; } while (0)
 #endif
 
 /* This is the interface from the platform-agnostic driver code to (de)register
  * interrupt handlers. We simply create/destroy corresponding structs. */
 int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
-			unsigned long flags, const char *name, void *arg);
+		      unsigned long flags, const char *name, void *arg);
 int qbman_free_irq(int irq, void *arg);
 
 void qbman_invoke_irq(int irq);

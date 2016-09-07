@@ -80,7 +80,7 @@
 	} while (0);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
-		uint64_t addr)
+		    uint64_t addr)
 {
 	struct bm_buffer buf;
 	int ret;
@@ -120,15 +120,15 @@ void dpaa_display_frame(const struct qm_fd *fd)
 #endif
 
 static inline void dpaa_slow_parsing(struct rte_mbuf *m,
-		uint64_t prs)
+				     uint64_t prs)
 {
 	/*TBD:XXX: to be implemented*/
 }
 
 static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
-					  uint64_t fd_virt_addr)
+					uint64_t fd_virt_addr)
 {
-	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);;
+	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
 	switch (prs) {
@@ -193,11 +193,10 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 	/* Check if Vlan is present */
 	if (prs & DPAA_PARSE_VLAN_MASK)
 		m->ol_flags |= PKT_RX_VLAN_PKT;
-
 }
 
 static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
-		struct qm_fd *fd)
+					 struct qm_fd *fd)
 {
 	struct dpaa_eth_parse_results_t *prs;
 
@@ -228,7 +227,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 }
 
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
-		struct qm_fd *fd)
+						   struct qm_fd *fd)
 {
 	void *ptr;
 	struct rte_mbuf *mbuf;
@@ -272,7 +271,7 @@ errret:
 }
 
 uint16_t dpaa_eth_queue_rx(void *q,
-		struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
 	struct qm_mcr_queryfq_np np;
@@ -333,7 +332,7 @@ out:
 }
 
 static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
-		struct dpaa_if *iface,
+					     struct dpaa_if *iface,
 		struct qman_fq *fq)
 {
 	struct rte_mbuf *dpaa_mbuf;
@@ -357,7 +356,7 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 }
 
 uint16_t dpaa_eth_queue_tx(void *q,
-			struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 			uint16_t nb_bufs)
 {
 	struct rte_mbuf *mbuf;
@@ -375,10 +374,11 @@ uint16_t dpaa_eth_queue_tx(void *q,
 			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
-					&fd_arr[loop], bp_info->bpid);
+						       &fd_arr[loop], bp_info->bpid);
 			} else {
 				struct qman_fq *txq = q;
 				struct dpaa_if *iface = &dpaa_ifacs[txq->ifid];
+
 				mbuf = dpaa_get_dmable_mbuf(mbuf, iface, q);
 				if (!mbuf) {
 					PMD_DRV_LOG(DEBUG, "no dpaa buffers.\n");
@@ -390,7 +390,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				}
 
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
-					&fd_arr[loop], iface->bp_info->bpid);
+						       &fd_arr[loop], iface->bp_info->bpid);
 			}
 
 			if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
@@ -408,5 +408,4 @@ send_pkts:
 
 	return i;
 }
-
 

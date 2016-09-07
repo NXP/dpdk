@@ -1260,9 +1260,10 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 EXPORT_SYMBOL(qman_dequeue);
 
 void qman_dqrr_consume(struct qman_fq *fq,
-		struct qm_dqrr_entry *dq)
+		       struct qm_dqrr_entry *dq)
 {
 	struct qman_portal *p = get_poll_portal();
+
 	if (dq->stat & QM_DQRR_STAT_DQCR_EXPIRED)
 		clear_vdqcr(p, fq);
 
@@ -1977,6 +1978,7 @@ int qman_query_fq_has_pkts(struct qman_fq *fq)
 	struct qm_mc_command *mcc;
 	struct qm_mc_result *mcr;
 	struct qman_portal *p = get_affine_portal();
+
 	unsigned long irqflags __maybe_unused;
 	int ret = 0;
 	u8 res;
@@ -2287,7 +2289,6 @@ int qman_set_vdq(struct qman_fq *fq, u16 num)
 }
 EXPORT_SYMBOL(qman_set_vdqcr);
 
-
 int qman_volatile_dequeue(struct qman_fq *fq, u32 flags __maybe_unused,
 			  u32 vdqcr)
 {
@@ -2575,13 +2576,14 @@ int qman_enqueue(struct qman_fq *fq, const struct qm_fd *fd, u32 flags)
 EXPORT_SYMBOL(qman_enqueue);
 
 int qman_enqueue_multi(struct qman_fq *fq,
-		const struct qm_fd *fd,
+		       const struct qm_fd *fd,
 		int frames_to_send)
 {
 	struct qman_portal *p = get_affine_portal();
 	struct qm_portal *portal = &p->p;
 	register struct qm_eqcr *eqcr = &portal->eqcr;
 	struct qm_eqcr_entry *eq = eqcr->cursor, *prev_eq;
+
 	unsigned long irqflags __maybe_unused;
 	u8 i, diff, old_ci, sent = 0;
 
@@ -2630,7 +2632,7 @@ int qman_enqueue_multi(struct qman_fq *fq,
 		prev_eq = eq;
 		eq = (void *)((unsigned long)(eq + 1) &
 			(~(unsigned long)(QM_EQCR_SIZE << 6)));
-		if (unlikely((prev_eq +1) != eq))
+		if (unlikely((prev_eq + 1) != eq))
 			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
 	}
 

@@ -58,7 +58,7 @@
 #define CMD_CFG_PROMIS_EN	0x00000010 /* 27 Promiscuous operation enable */
 #define CMD_CFG_PAUSE_IGNORE	0x00000100 /* 23 Ignore Pause frame quanta */
 
-/* Max recieve frame length mask */
+/* Max receive frame length mask */
 #define MAXFRM_SIZE_MEMAC	0x00007fe0
 #define MAXFRM_RX_MASK		0x0000ffff
 
@@ -385,12 +385,12 @@ struct fman_if_bpool {
 
 /* Internal Context transfer params - FMBM_RICP*/
 struct fman_if_ic_params {
-        /*IC offset in the packet buffer */
-        uint16_t iceof;
-        /*IC internal offset */
-        uint16_t iciof;
-        /*IC size to copy */
-        uint16_t icsz;
+	/*IC offset in the packet buffer */
+	uint16_t iceof;
+	/*IC internal offset */
+	uint16_t iciof;
+	/*IC size to copy */
+	uint16_t icsz;
 };
 
 /* And this is the base list node that the interfaces are added to. (See
@@ -421,7 +421,7 @@ void fm_mac_config_loopback(struct fman_if *p, bool enable);
 
 /* Set max frame length */
 void fm_mac_conf_max_frame_len(struct fman_if *p,
-			unsigned int max_frame_len);
+			       unsigned int max_frame_len);
 
 /* Enable/disable Rx promiscuous mode on specified interface */
 void fman_if_promiscuous_enable(struct fman_if *);
@@ -461,12 +461,15 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 static inline void fman_if_enable_all_rx(void)
 {
 	struct fman_if *__if;
+
 	list_for_each_entry(__if, fman_if_list, node)
 		fman_if_enable_rx(__if);
 }
+
 static inline void fman_if_disable_all_rx(void)
 {
 	struct fman_if *__if;
+
 	list_for_each_entry(__if, fman_if_list, node)
 		fman_if_disable_rx(__if);
 }

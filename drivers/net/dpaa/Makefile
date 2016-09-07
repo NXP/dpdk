@@ -35,7 +35,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_pmd_dpaa.a
 
-CFLAGS += -D _GNU_SOURCE -DDEF_CFG_PATH=$(DEF_CFG_PATH) -DDEF_PCD_PATH=$(DEF_PCD_PATH ) -DDPAA_DEF_RX=$(DPAA_DEF_RX)
+CFLAGS += -D _GNU_SOURCE
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"

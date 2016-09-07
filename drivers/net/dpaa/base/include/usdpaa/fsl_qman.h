@@ -104,7 +104,6 @@ static inline u32 QM_SDQCR_CHANNELS_POOL_CONV(u16 channel)
 #define QM_VDQCR_NUMFRAMES_GET(n)	(((n) >> 24) & 0x3f)
 #define QM_VDQCR_NUMFRAMES_TILLEMPTY	QM_VDQCR_NUMFRAMES_SET(0)
 
-
 /* ------------------------------------------------------- */
 /* --- Qman data structures (and associated constants) --- */
 
@@ -228,6 +227,7 @@ static inline dma_addr_t qm_fd_addr(const struct qm_fd *fd)
 {
 	return (dma_addr_t)fd->addr;
 }
+
 /* Macro, so we compile better if 'v' isn't always 64-bit */
 #define qm_fd_addr_set64(fd, v) \
 	do { \
@@ -243,11 +243,11 @@ static inline dma_addr_t qm_fd_addr(const struct qm_fd *fd)
  */
 #define QM_FD_FMT_20(cmd, addr_hi, addr_lo, fmt, off, len) \
 	{ 0, 0, 0, 0, 0, addr_hi, addr_lo, \
-	{ (((fmt)&0x7) << 29) | (((off)&0x1ff) << 20) | ((len)&0xfffff) }, \
+	{ (((fmt) & 0x7) << 29) | (((off) & 0x1ff) << 20) | ((len) & 0xfffff) }, \
 	{ cmd } }
 #define QM_FD_FMT_29(cmd, addr_hi, addr_lo, fmt, len) \
 	{ 0, 0, 0, 0, 0, addr_hi, addr_lo, \
-	{ (((fmt)&0x7) << 29) | ((len)&0x1fffffff) }, \
+	{ (((fmt) & 0x7) << 29) | ((len) & 0x1fffffff) }, \
 	{ cmd } }
 
 /* See 2.2.1.3 Multi-Core Datapath Acceleration Architecture */
@@ -308,10 +308,12 @@ static inline u64 qm_sg_entry_get64(const struct qm_sg_entry *sg)
 {
 	return sg->addr;
 }
+
 static inline dma_addr_t qm_sg_addr(const struct qm_sg_entry *sg)
 {
 	return (dma_addr_t)sg->addr;
 }
+
 /* Macro, so we compile better if 'v' isn't always 64-bit */
 #define qm_sg_entry_set64(sg, v) \
 	do { \
@@ -360,6 +362,7 @@ struct qm_dqrr_entry {
 	struct qm_fd fd;
 	u8 __reserved4[32];
 };
+
 #define QM_DQRR_VERB_VBIT		0x80
 #define QM_DQRR_VERB_MASK		0x7f	/* where the verb contains; */
 #define QM_DQRR_VERB_FRAME_DEQUEUE	0x60	/* "this format" */
@@ -566,15 +569,18 @@ static inline u64 qm_fqd_stashing_get64(const struct qm_fqd *fqd)
 	return ((u64)fqd->context_a.context_hi << 32) |
 		(u64)fqd->context_a.context_lo;
 }
+
 static inline dma_addr_t qm_fqd_stashing_addr(const struct qm_fqd *fqd)
 {
 	return (dma_addr_t)qm_fqd_stashing_get64(fqd);
 }
+
 static inline u64 qm_fqd_context_a_get64(const struct qm_fqd *fqd)
 {
 	return ((u64)fqd->context_a.hi << 32) |
 		(u64)fqd->context_a.lo;
 }
+
 /* Macro, so we compile better when 'v' isn't necessarily 64-bit */
 #define qm_fqd_stashing_set64(fqd, v) \
 	do { \
@@ -590,10 +596,11 @@ static inline u64 qm_fqd_context_a_get64(const struct qm_fqd *fqd)
 	} while (0)
 /* convert a threshold value into mant+exp representation */
 static inline int qm_fqd_taildrop_set(struct qm_fqd_taildrop *td, u32 val,
-					int roundup)
+				      int roundup)
 {
 	u32 e = 0;
 	int oddbit = 0;
+
 	if (val > 0xe0000000)
 		return -ERANGE;
 	while (val > 0xff) {
@@ -607,6 +614,7 @@ static inline int qm_fqd_taildrop_set(struct qm_fqd_taildrop *td, u32 val,
 	td->mant = val;
 	return 0;
 }
+
 /* and the other direction */
 static inline u32 qm_fqd_taildrop_get(const struct qm_fqd_taildrop *td)
 {
@@ -714,11 +722,13 @@ static inline u64 qm_cgr_cs_thres_get64(const struct qm_cgr_cs_thres *th)
 {
 	return (u64)th->TA << th->Tn;
 }
+
 static inline int qm_cgr_cs_thres_set64(struct qm_cgr_cs_thres *th, u64 val,
 					int roundup)
 {
 	u32 e = 0;
 	int oddbit = 0;
+
 	while (val > 0xff) {
 		oddbit = val & 1;
 		val >>= 1;
@@ -1234,20 +1244,24 @@ static inline u64 qm_mcr_querycgr_i_get64(const struct qm_mcr_querycgr *q)
 {
 	return ((u64)q->i_bcnt_hi << 32) | (u64)q->i_bcnt_lo;
 }
+
 static inline u64 qm_mcr_querycgr_a_get64(const struct qm_mcr_querycgr *q)
 {
 	return ((u64)q->a_bcnt_hi << 32) | (u64)q->a_bcnt_lo;
 }
+
 static inline u64 qm_mcr_cgrtestwrite_i_get64(
 					const struct qm_mcr_cgrtestwrite *q)
 {
 	return ((u64)q->i_bcnt_hi << 32) | (u64)q->i_bcnt_lo;
 }
+
 static inline u64 qm_mcr_cgrtestwrite_a_get64(
 					const struct qm_mcr_cgrtestwrite *q)
 {
 	return ((u64)q->a_bcnt_hi << 32) | (u64)q->a_bcnt_lo;
 }
+
 /* Macro, so we compile better if 'v' isn't always 64-bit */
 #define qm_mcr_querycgr_i_set64(q, v) \
 	do { \
@@ -1264,6 +1278,7 @@ static inline u64 qm_mcr_cgrtestwrite_a_get64(
 struct __qm_mcr_querycongestion {
 	u32 __state[8];
 };
+
 struct qm_mcr_querycongestion {
 	u8 __reserved[30];
 	/* Access this struct using QM_MCR_QUERYCONGESTION() */
@@ -1590,7 +1605,7 @@ struct qm_mc_result {
 #define __CGR_SHIFT(num)	(num & 0x1f)
 #define __CGR_NUM		(sizeof(struct __qm_mcr_querycongestion) << 3)
 static inline int QM_MCR_QUERYCONGESTION(struct __qm_mcr_querycongestion *p,
-					u8 cgr)
+					 u8 cgr)
 {
 	return p->__state[__CGR_WORD(cgr)] & (0x80000000 >> __CGR_SHIFT(cgr));
 }
@@ -1658,6 +1673,7 @@ enum qman_cb_dqrr_result {
 	/* Like qman_cb_dqrr_stop, but consumes the current entry. */
 	qman_cb_dqrr_consume_stop
 };
+
 typedef enum qman_cb_dqrr_result (*qman_cb_dqrr)(struct qman_portal *qm,
 					struct qman_fq *fq,
 					const struct qm_dqrr_entry *dqrr);
@@ -1903,7 +1919,7 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq);
  * dequeue.
  */
 void qman_dqrr_consume(struct qman_fq *fq,
-		struct qm_dqrr_entry *dq);
+		       struct qm_dqrr_entry *dq);
 
 /**
  * qman_poll_dqrr - process DQRR (fast-path) entries
@@ -1995,7 +2011,7 @@ void qman_static_dequeue_del(u32 pools);
 u32 qman_static_dequeue_get(void);
 
 /**
- * qman_dca - Perform a Discrete Consumption Acknowledgement
+ * qman_dca - Perform a Discrete Consumption Acknowledgment
  * @dq: the DQRR entry to be consumed
  * @park_request: indicates whether the held-active @fq should be parked
  *
@@ -2246,14 +2262,14 @@ int qman_volatile_dequeue(struct qman_fq *fq, u32 flags, u32 vdqcr);
  * function will block. If FLAG_INTERRUPT is set, the EQCI bit of the portal
  * interrupt will assert when Qman consumes the EQCR entry (subject to "status
  * disable", "enable", and "inhibit" registers). If FLAG_DCA is set, Qman will
- * perform an implied "discrete consumption acknowledgement" on the dequeue
+ * perform an implied "discrete consumption acknowledgment" on the dequeue
  * ring's (DQRR) entry, at the ring index specified by the FLAG_DCA_IDX(x)
  * macro. (As an alternative to issuing explicit DCA actions on DQRR entries,
  * this implicit DCA can delay the release of a "held active" frame queue
  * corresponding to a DQRR entry until Qman consumes the EQCR entry - providing
  * order-preservation semantics in packet-forwarding scenarios.) If FLAG_DCA is
  * set, then FLAG_DCA_PARK can also be set to imply that the DQRR consumption
- * acknowledgement should "park request" the "held active" frame queue. Ie.
+ * acknowledgment should "park request" the "held active" frame queue. Ie.
  * when the portal eventually releases that frame queue, it will be left in the
  * Parked state rather than Tentatively Scheduled or Truly Scheduled. If the
  * portal is watching congestion groups, the QMAN_ENQUEUE_FLAG_WATCH_CGR flag
@@ -2268,7 +2284,7 @@ int qman_volatile_dequeue(struct qman_fq *fq, u32 flags, u32 vdqcr);
 int qman_enqueue(struct qman_fq *fq, const struct qm_fd *fd, u32 flags);
 
 int qman_enqueue_multi(struct qman_fq *fq,
-		const struct qm_fd *fd,
+		       const struct qm_fd *fd,
 		int frames_to_send);
 
 typedef int (*qman_cb_precommit) (void *arg);
@@ -2286,7 +2302,7 @@ typedef int (*qman_cb_precommit) (void *arg);
  * the enqueue can't fail.
  */
 int qman_enqueue_precommit(struct qman_fq *fq, const struct qm_fd *fd,
-		u32 flags, qman_cb_precommit cb, void *cb_arg);
+			   u32 flags, qman_cb_precommit cb, void *cb_arg);
 
 /**
  * qman_enqueue_orp - Enqueue a frame to a frame queue using an ORP
@@ -2325,7 +2341,7 @@ int qman_enqueue_precommit(struct qman_fq *fq, const struct qm_fd *fd,
  * previous use has finished.
  */
 int qman_enqueue_orp(struct qman_fq *fq, const struct qm_fd *fd, u32 flags,
-			struct qman_fq *orp, u16 orp_seqnum);
+		     struct qman_fq *orp, u16 orp_seqnum);
 
 /**
  * qman_alloc_fqid_range - Allocate a contiguous range of FQIDs
@@ -2343,6 +2359,7 @@ int qman_alloc_fqid_range(u32 *result, u32 count, u32 align, int partial);
 static inline int qman_alloc_fqid(u32 *result)
 {
 	int ret = qman_alloc_fqid_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
 
@@ -2361,7 +2378,6 @@ static inline void qman_release_fqid(u32 fqid)
 }
 
 void qman_seed_fqid_range(u32 fqid, unsigned int count);
-
 
 int qman_shutdown_fq(u32 fqid);
 
@@ -2394,6 +2410,7 @@ int qman_alloc_pool_range(u32 *result, u32 count, u32 align, int partial);
 static inline int qman_alloc_pool(u32 *result)
 {
 	int ret = qman_alloc_pool_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
 
@@ -2437,7 +2454,7 @@ void qman_seed_pool_range(u32 id, unsigned int count);
  * (which only modifies the specified parameters).
  */
 int qman_create_cgr(struct qman_cgr *cgr, u32 flags,
-			struct qm_mcc_initcgr *opts);
+		    struct qm_mcc_initcgr *opts);
 
 /**
  * qman_create_cgr_to_dcp - Register a congestion group object to DCP portal
@@ -2448,7 +2465,7 @@ int qman_create_cgr(struct qman_cgr *cgr, u32 flags,
  *
  */
 int qman_create_cgr_to_dcp(struct qman_cgr *cgr, u32 flags, u16 dcp_portal,
-				struct qm_mcc_initcgr *opts);
+			   struct qm_mcc_initcgr *opts);
 
 /**
  * qman_delete_cgr - Deregisters a congestion group object
@@ -2475,7 +2492,7 @@ int qman_delete_cgr(struct qman_cgr *cgr);
  * only modifies the specified parameters).
  */
 int qman_modify_cgr(struct qman_cgr *cgr, u32 flags,
-			struct qm_mcc_initcgr *opts);
+		    struct qm_mcc_initcgr *opts);
 
 /**
 * qman_query_cgr - Queries CGR fields
@@ -2506,6 +2523,7 @@ int qman_alloc_cgrid_range(u32 *result, u32 count, u32 align, int partial);
 static inline int qman_alloc_cgrid(u32 *result)
 {
 	int ret = qman_alloc_cgrid_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
 
@@ -2533,7 +2551,6 @@ static inline int qman_reserve_cgrid(u32 id)
 
 void qman_seed_cgrid_range(u32 id, unsigned int count);
 
-
 	/* Helpers */
 	/* ------- */
 /**
@@ -2557,6 +2574,7 @@ static inline int qman_poll_fq_for_init(struct qman_fq *fq)
 {
 	struct qm_mcr_queryfq_np np;
 	int err;
+
 	err = qman_query_fq_np(fq, &np);
 	if (err)
 		return err;
@@ -2705,7 +2723,7 @@ struct qm_ceetm_lfq {
  * Return 0 for success, or -EINVAL if prescaler or qman clock is not available.
   */
 int qman_ceetm_bps2tokenrate(u64 bps,
-				struct qm_ceetm_rate *token_rate,
+			     struct qm_ceetm_rate *token_rate,
 				int rounding);
 
 /**
@@ -2718,16 +2736,18 @@ int qman_ceetm_bps2tokenrate(u64 bps,
  * Return 0 for success, or -EINVAL if prescaler or qman clock is not available.
  */
 int qman_ceetm_tokenrate2bps(const struct qm_ceetm_rate *token_rate,
-			      u64 *bps,
+			     u64 *bps,
 			      int rounding);
 
 int qman_alloc_ceetm0_channel_range(u32 *result, u32 count, u32 align,
-								int partial);
+				    int partial);
 static inline int qman_alloc_ceetm0_channel(u32 *result)
 {
 	int ret = qman_alloc_ceetm0_channel_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
+
 void qman_release_ceetm0_channel_range(u32 channelid, u32 count);
 static inline void qman_release_ceetm0_channelid(u32 channelid)
 {
@@ -2742,19 +2762,21 @@ static inline int qman_reserve_ceetm0_channelid(u32 channelid)
 
 void qman_seed_ceetm0_channel_range(u32 channelid, u32 count);
 
-
 int qman_alloc_ceetm1_channel_range(u32 *result, u32 count, u32 align,
-								int partial);
+				    int partial);
 static inline int qman_alloc_ceetm1_channel(u32 *result)
 {
 	int ret = qman_alloc_ceetm1_channel_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
+
 void qman_release_ceetm1_channel_range(u32 channelid, u32 count);
 static inline void qman_release_ceetm1_channelid(u32 channelid)
 {
 	qman_release_ceetm1_channel_range(channelid, 1);
 }
+
 int qman_reserve_ceetm1_channel_range(u32 channelid, u32 count);
 static inline int qman_reserve_ceetm1_channelid(u32 channelid)
 {
@@ -2763,19 +2785,21 @@ static inline int qman_reserve_ceetm1_channelid(u32 channelid)
 
 void qman_seed_ceetm1_channel_range(u32 channelid, u32 count);
 
-
 int qman_alloc_ceetm0_lfqid_range(u32 *result, u32 count, u32 align,
-								int partial);
+				  int partial);
 static inline int qman_alloc_ceetm0_lfqid(u32 *result)
 {
 	int ret = qman_alloc_ceetm0_lfqid_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
+
 void qman_release_ceetm0_lfqid_range(u32 lfqid, u32 count);
 static inline void qman_release_ceetm0_lfqid(u32 lfqid)
 {
 	qman_release_ceetm0_lfqid_range(lfqid, 1);
 }
+
 int qman_reserve_ceetm0_lfqid_range(u32 lfqid, u32 count);
 static inline int qman_reserve_ceetm0_lfqid(u32 lfqid)
 {
@@ -2784,19 +2808,21 @@ static inline int qman_reserve_ceetm0_lfqid(u32 lfqid)
 
 void qman_seed_ceetm0_lfqid_range(u32 lfqid, u32 count);
 
-
 int qman_alloc_ceetm1_lfqid_range(u32 *result, u32 count, u32 align,
-								int partial);
+				  int partial);
 static inline int qman_alloc_ceetm1_lfqid(u32 *result)
 {
 	int ret = qman_alloc_ceetm1_lfqid_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
+
 void qman_release_ceetm1_lfqid_range(u32 lfqid, u32 count);
 static inline void qman_release_ceetm1_lfqid(u32 lfqid)
 {
 	qman_release_ceetm1_lfqid_range(lfqid, 1);
 }
+
 int qman_reserve_ceetm1_lfqid_range(u32 lfqid, u32 count);
 static inline int qman_reserve_ceetm1_lfqid(u32 lfqid)
 {
@@ -2804,7 +2830,6 @@ static inline int qman_reserve_ceetm1_lfqid(u32 lfqid)
 }
 
 void qman_seed_ceetm1_lfqid_range(u32 lfqid, u32 count);
-
 
 	/* ----------------------------- */
 	/* CEETM :: sub-portals          */
@@ -2931,7 +2956,7 @@ int qman_ceetm_sp_get_lni(struct qm_ceetm_sp *sp,
  * b) -EIO if calling configure shaper command returns error.
  */
 int qman_ceetm_lni_enable_shaper(struct qm_ceetm_lni *lni, int coupled,
-								int oal);
+				 int oal);
 int qman_ceetm_lni_disable_shaper(struct qm_ceetm_lni *lni);
 
 /**
@@ -2947,7 +2972,7 @@ int qman_ceetm_lni_is_shaper_enabled(struct qm_ceetm_lni *lni);
  * qman_ceetm_lni_get_excess_rate - Set/get the shaper CR/ER token rate and
  * token limit for the given LNI.
  * @lni: the given LNI.
- * @token_rate: the desired token rate for "set" fuction, or the token rate of
+ * @token_rate: the desired token rate for "set" function, or the token rate of
  * the LNI queried by "get" function.
  * @token_limit: the desired token bucket limit for "set" function, or the token
  * limit of the given LNI queried by "get" function.
@@ -2976,7 +3001,7 @@ int qman_ceetm_lni_get_excess_rate(struct qm_ceetm_lni *lni,
  * qman_ceetm_lni_get_excess_rate_bps - Set/get the shaper CR/ER rate
  * and token limit for the given LNI.
  * @lni: the given LNI.
- * @bps: the desired shaping rate in bps for "set" fuction, or the shaping rate
+ * @bps: the desired shaping rate in bps for "set" function, or the shaping rate
  * of the LNI queried by "get" function.
  * @token_limit: the desired token bucket limit for "set" function, or the token
  * limit of the given LNI queried by "get" function.
@@ -3070,7 +3095,7 @@ int qman_ceetm_channel_release(struct qm_ceetm_channel *channel);
  * shaper has been enabled/disabled or the management command returns error.
  */
 int qman_ceetm_channel_enable_shaper(struct qm_ceetm_channel *channel,
-							 int coupled);
+				     int coupled);
 int qman_ceetm_channel_disable_shaper(struct qm_ceetm_channel *channel);
 
 /**
@@ -3096,16 +3121,16 @@ int qman_ceetm_channel_is_shaper_enabled(struct qm_ceetm_channel *channel);
  * the query shaper command returns error.
  */
 int qman_ceetm_channel_set_commit_rate(struct qm_ceetm_channel *channel,
-				   const struct qm_ceetm_rate *token_rate,
+				       const struct qm_ceetm_rate *token_rate,
 				   u16 token_limit);
 int qman_ceetm_channel_get_commit_rate(struct qm_ceetm_channel *channel,
-				   struct qm_ceetm_rate *token_rate,
+				       struct qm_ceetm_rate *token_rate,
 				   u16 *token_limit);
 int qman_ceetm_channel_set_excess_rate(struct qm_ceetm_channel *channel,
-				   const struct qm_ceetm_rate *token_rate,
+				       const struct qm_ceetm_rate *token_rate,
 				   u16 token_limit);
 int qman_ceetm_channel_get_excess_rate(struct qm_ceetm_channel *channel,
-				   struct qm_ceetm_rate *token_rate,
+				       struct qm_ceetm_rate *token_rate,
 				   u16 *token_limit);
 /**
  * qman_ceetm_channel_set_commit_rate_bps
@@ -3181,11 +3206,11 @@ int qman_ceetm_channel_get_weight(struct qm_ceetm_channel *channel,
  * -EINVAL if the query scheduler command returns error.
  */
 int qman_ceetm_channel_set_group(struct qm_ceetm_channel *channel,
-			     int group_b,
+				 int group_b,
 			     unsigned int prio_a,
 			     unsigned int prio_b);
 int qman_ceetm_channel_get_group(struct qm_ceetm_channel *channel,
-			     int *group_b,
+				 int *group_b,
 			     unsigned int *prio_a,
 			     unsigned int *prio_b);
 
@@ -3213,9 +3238,9 @@ int qman_ceetm_channel_set_group_er_eligibility(struct qm_ceetm_channel
  * Return zero for success, or -EINVAL if eligibility setting fails.
 */
 int qman_ceetm_channel_set_cq_cr_eligibility(struct qm_ceetm_channel *channel,
-					unsigned int idx, int cre);
+					     unsigned int idx, int cre);
 int qman_ceetm_channel_set_cq_er_eligibility(struct qm_ceetm_channel *channel,
-					unsigned int idx, int ere);
+					     unsigned int idx, int ere);
 
 	/* --------------------- */
 	/* CEETM :: class queues */
@@ -3251,7 +3276,7 @@ int qman_ceetm_cq_claim(struct qm_ceetm_cq **cq,
  * error, or returns -ENOMEM if allocating CQ memory fails.
  */
 int qman_ceetm_cq_claim_A(struct qm_ceetm_cq **cq,
-				struct qm_ceetm_channel *channel,
+			  struct qm_ceetm_channel *channel,
 				unsigned int idx,
 				struct qm_ceetm_ccg *ccg);
 
@@ -3268,7 +3293,7 @@ int qman_ceetm_cq_claim_A(struct qm_ceetm_cq **cq,
  * error, or returns -ENOMEM if allocating CQ memory fails.
  */
 int qman_ceetm_cq_claim_B(struct qm_ceetm_cq **cq,
-				struct qm_ceetm_channel *channel,
+			  struct qm_ceetm_channel *channel,
 				unsigned int idx,
 				struct qm_ceetm_ccg *ccg);
 
@@ -3355,7 +3380,7 @@ int qman_ceetm_get_queue_weight_in_ratio(struct qm_ceetm_cq *cq, u32 *ratio);
  * Returns zero for success or -EINVAL if the given weight code is illegal.
  */
 int qman_ceetm_wbfs2ratio(struct qm_ceetm_weight_code *weight_code,
-			   u32 *numerator,
+			  u32 *numerator,
 			   u32 *denominator);
 /**
  * qman_ceetm_ratio2wbfs - Given a weight, find the nearest possible weight code
@@ -3369,7 +3394,7 @@ int qman_ceetm_wbfs2ratio(struct qm_ceetm_weight_code *weight_code,
  * the range of weights.
  */
 int qman_ceetm_ratio2wbfs(u32 numerator,
-			   u32 denominator,
+			  u32 denominator,
 			   struct qm_ceetm_weight_code *weight_code,
 			   int rounding);
 
@@ -3387,7 +3412,7 @@ int qman_ceetm_ratio2wbfs(u32 numerator,
  *
  */
 int qman_ceetm_cq_get_dequeue_statistics(struct qm_ceetm_cq *cq, u32 flags,
-					u64 *frame_count, u64 *byte_count);
+					 u64 *frame_count, u64 *byte_count);
 
 /**
  * qman_ceetm_drain_cq - drain the CQ till it is empty.
@@ -3409,7 +3434,7 @@ int qman_ceetm_drain_cq(struct qm_ceetm_cq *cq);
  * allocating memory for lfq fails, or -EINVAL if configuring LFQMT fails.
  */
 int qman_ceetm_lfq_claim(struct qm_ceetm_lfq **lfq,
-				struct qm_ceetm_cq *cq);
+			 struct qm_ceetm_cq *cq);
 
 /**
  * qman_ceetm_lfq_release - Releases a previously claimed logical FQID.
@@ -3431,10 +3456,10 @@ int qman_ceetm_lfq_release(struct qm_ceetm_lfq *lfq);
  * context pair.
  */
 int qman_ceetm_lfq_set_context(struct qm_ceetm_lfq *lfq,
-				u64 context_a,
+			       u64 context_a,
 				u32 context_b);
 int qman_ceetm_lfq_get_context(struct qm_ceetm_lfq *lfq,
-				u64 *context_a,
+			       u64 *context_a,
 				u32 *context_b);
 
 /**
@@ -3488,7 +3513,7 @@ int qman_ceetm_ccg_claim(struct qm_ceetm_ccg **ccg,
 			 struct qm_ceetm_channel *channel,
 			 unsigned int idx,
 			 void (*cscn)(struct qm_ceetm_ccg *,
-				       void *cb_ctx,
+				      void *cb_ctx,
 				       int congested),
 			 void *cb_ctx);
 
@@ -3541,6 +3566,7 @@ struct qm_ceetm_ccg_params {
 	struct qm_cgr_wr_parm wr_parm_y;
 	struct qm_cgr_wr_parm wr_parm_r;
 };
+
 /* Bits used in 'we_mask' to qman_ceetm_ccg_set(), controls which attributes of
  * the CCGR are to be updated. */
 #define QM_CCGR_WE_MODE         0x0001 /* mode (bytes/frames) */
@@ -3572,10 +3598,10 @@ struct qm_ceetm_ccg_params {
  * function.
  */
 int qman_ceetm_ccg_set(struct qm_ceetm_ccg *ccg,
-			u16 we_mask,
+		       u16 we_mask,
 			const struct qm_ceetm_ccg_params *params);
 int qman_ceetm_ccg_get(struct qm_ceetm_ccg *ccg,
-			struct qm_ceetm_ccg_params *params);
+		       struct qm_ceetm_ccg_params *params);
 
 /** qman_ceetm_cscn_swp_set - Add or remove a software portal from the target
  * mask.
@@ -3591,12 +3617,12 @@ int qman_ceetm_ccg_get(struct qm_ceetm_ccg *ccg,
  * Return 0 for success, or -EINVAL if command in set/get function fails.
  */
 int qman_ceetm_cscn_swp_set(struct qm_ceetm_ccg *ccg,
-				u16 swp_idx,
+			    u16 swp_idx,
 				unsigned int cscn_enabled,
 				u16 we_mask,
 				const struct qm_ceetm_ccg_params *params);
 int qman_ceetm_cscn_swp_get(struct qm_ceetm_ccg *ccg,
-				u16 swp_idx,
+			    u16 swp_idx,
 				unsigned int *cscn_enabled);
 
 /** qman_ceetm_cscn_dcp_set - Add or remove a direct connect portal from the\
@@ -3614,13 +3640,13 @@ int qman_ceetm_cscn_swp_get(struct qm_ceetm_ccg *ccg,
  * Return 0 for success, or -EINVAL if command in set/get function fails.
   */
 int qman_ceetm_cscn_dcp_set(struct qm_ceetm_ccg *ccg,
-				u16 dcp_idx,
+			    u16 dcp_idx,
 				u8 vcgid,
 				unsigned int cscn_enabled,
 				u16 we_mask,
 				const struct qm_ceetm_ccg_params *params);
 int qman_ceetm_cscn_dcp_get(struct qm_ceetm_ccg *ccg,
-				u16 dcp_idx,
+			    u16 dcp_idx,
 				u8 *vcgid,
 				unsigned int *cscn_enabled);
 
@@ -3637,7 +3663,7 @@ int qman_ceetm_cscn_dcp_get(struct qm_ceetm_ccg *ccg,
  *
  */
 int qman_ceetm_ccg_get_reject_statistics(struct qm_ceetm_ccg *ccg, u32 flags,
-					u64 *frame_count, u64 *byte_count);
+					 u64 *frame_count, u64 *byte_count);
 
 /**
  * qman_set_wpm - Set waterfall power management
@@ -3677,16 +3703,16 @@ void qman_p_static_dequeue_add(struct qman_portal *p, u32 pools);
 void qman_p_static_dequeue_del(struct qman_portal *p, u32 pools);
 u32 qman_p_static_dequeue_get(struct qman_portal *p);
 void qman_p_dca(struct qman_portal *p, struct qm_dqrr_entry *dq,
-						int park_request);
+		int park_request);
 int qman_p_volatile_dequeue(struct qman_portal *p, struct qman_fq *fq,
-				u32 flags __maybe_unused, u32 vdqcr);
+			    u32 flags __maybe_unused, u32 vdqcr);
 int qman_p_enqueue(struct qman_portal *p, struct qman_fq *fq,
-					const struct qm_fd *fd, u32 flags);
+		   const struct qm_fd *fd, u32 flags);
 int qman_p_enqueue_orp(struct qman_portal *p, struct qman_fq *fq,
-				const struct qm_fd *fd, u32 flags,
+		       const struct qm_fd *fd, u32 flags,
 				struct qman_fq *orp, u16 orp_seqnum);
 int qman_p_enqueue_precommit(struct qman_portal *p, struct qman_fq *fq,
-				const struct qm_fd *fd, u32 flags,
+			     const struct qm_fd *fd, u32 flags,
 				qman_cb_precommit cb, void *cb_arg);
 
 /* Swap a 48 bit address */
@@ -3720,7 +3746,7 @@ int qman_p_enqueue_precommit(struct qman_portal *p, struct qman_fq *fq,
 /* Swap a 24 bit address */
 #define __bswap_24(x)							\
 	(0ull | (((x) & 0xffull) << 16) | ((x) & 0xff00ull) |		\
-	 (((x) & 0xff0000ull)) >>16)
+	 (((x) & 0xff0000ull)) >> 16)
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define cpu_to_be24(x) (x)

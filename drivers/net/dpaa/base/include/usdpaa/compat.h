@@ -109,14 +109,17 @@ static inline int cpumask_test_cpu(int cpu, cpumask_t *mask)
 {
 	return CPU_ISSET(cpu, mask);
 }
+
 static inline void cpumask_set_cpu(int cpu, cpumask_t *mask)
 {
 	CPU_SET(cpu, mask);
 }
+
 static inline void cpumask_clear_cpu(int cpu, cpumask_t *mask)
 {
 	CPU_CLR(cpu, mask);
 }
+
 #define DEFINE_PER_CPU(t, x)	__thread t per_cpu__##x
 #define per_cpu(x, c)		per_cpu__##x
 #define get_cpu_var(x)		per_cpu__##x
@@ -135,10 +138,12 @@ static inline int atomic_read(const atomic_t *v)
 {
 	return v->v;
 }
+
 static inline void atomic_set(atomic_t *v, int i)
 {
 	v->v = i;
 }
+
 #if defined(__aarch64__)
 static inline long __atomic_add(long *i, long v)
 {
@@ -155,7 +160,7 @@ static inline long __atomic_add(long *i, long v)
 
 	return result;
 }
-#elif defined( __powerpc__) || defined(__powerpc64__)
+#elif defined(__powerpc__) || defined(__powerpc64__)
 static inline long
 __atomic_add(long *ptr, long val)
 {
@@ -179,10 +184,12 @@ static inline void atomic_inc(atomic_t *v)
 {
 	__atomic_add((long *)&v->v, 1);
 }
+
 static inline int atomic_dec_and_test(atomic_t *v)
 {
 	return __atomic_add((long *)&v->v, -1) == 0;
 }
+
 static inline void atomic_dec(atomic_t *v)
 {
 	__atomic_add((long *)&v->v, -1);
@@ -222,17 +229,19 @@ do { \
 static inline u32 in_be32(volatile void *__p)
 {
 	volatile u32 *p = __p;
+
 	return be32toh(*p);
 }
+
 static inline void out_be32(volatile void *__p, u32 val)
 {
 	volatile u32 *p = __p;
 	*p = htobe32(val);
 }
+
 #define hwsync __sync_synchronize
 #define dcbt_ro(p) __builtin_prefetch(p, 0)
 #define dcbt_rw(p) __builtin_prefetch(p, 1)
-
 
 #if defined(__aarch64__)
 #define lwsync() \
@@ -254,17 +263,16 @@ static inline void out_be32(volatile void *__p, u32 val)
 #define dcbz(p) \
 	do { \
 		asm volatile("dc zva, %0" : : "r" (p) : "memory");	\
-	} while(0)
+	} while (0)
 #define dcbz_64(p) dcbz(p)
 
 #define dcbit_ro(p) \
 	do { \
 		dcbi(p);						\
 		asm volatile("prfm pldl1keep, [%0, #64]" : : "r" (p));	\
-	} while(0)
+	} while (0)
 
-
-#elif defined( __powerpc__) || defined(__powerpc64__)
+#elif defined(__powerpc__) || defined(__powerpc64__)
 #ifdef CONFIG_PPC_E500MC
 
 #define lwsync() \
@@ -273,8 +281,8 @@ static inline void out_be32(volatile void *__p, u32 val)
 	} while (0)
 
 #define dcbf(p) \
-        do { \
-               asm volatile ("dcbf 0,%0" : : "r" (p)); \
+	do { \
+	       asm volatile ("dcbf 0,%0" : : "r" (p)); \
        } while (0)
 
 #define dcbi(p) dcbf(p)
@@ -327,7 +335,7 @@ static inline void out_be32(volatile void *__p, u32 val)
 #define barrier() \
 	do { \
 		asm volatile ("" : : : "memory"); \
-	} while(0)
+	} while (0)
 #define cpu_relax barrier
 
 /* Debugging */
@@ -367,21 +375,21 @@ do { \
 		pr_crit("BUG: %s:%d\n", __FILE__, __LINE__); \
 		abort(); \
 	} \
-} while(0)
+} while (0)
 #define might_sleep_if(c)	BUG_ON(c)
 #define msleep(x) \
 do { \
 	pr_crit("BUG: illegal call %s:%d\n", __FILE__, __LINE__); \
 	exit(EXIT_FAILURE); \
-} while(0)
+} while (0)
 #else
 #ifdef pr_debug
 #undef pr_debug
 #endif
-#define pr_debug(fmt, args...)	do { ; } while(0)
-#define BUG_ON(c)		do { ; } while(0)
-#define might_sleep_if(c)	do { ; } while(0)
-#define msleep(x)		do { ; } while(0)
+#define pr_debug(fmt, args...)	do { ; } while (0)
+#define BUG_ON(c)		do { ; } while (0)
+#define might_sleep_if(c)	do { ; } while (0)
+#define msleep(x)		do { ; } while (0)
 #endif
 #define WARN_ON(c, str) \
 do { \
@@ -415,12 +423,11 @@ do { \
 #endif
 #define upper_32_bits(x) ((u32)(((x) >> 16) >> 16))
 
-
 #if defined(__aarch64__)
 static inline uint64_t mfatb(void)
 {
-
 	uint64_t ret, ret_new, timeout = 200;
+
 	asm volatile ("mrs %0, cntvct_el0" : "=r" (ret));
 	asm volatile ("mrs %0, cntvct_el0" : "=r" (ret_new));
 	while (ret != ret_new && timeout--) {
@@ -430,7 +437,7 @@ static inline uint64_t mfatb(void)
 	BUG_ON(!timeout && (ret != ret_new));
 	return ret * 64;
 }
-#elif defined( __powerpc__) || defined(__powerpc64__)
+#elif defined(__powerpc__) || defined(__powerpc64__)
 
 /* PPAC inlines require cpu_spin(); */
 /* Alternate Time Base */
@@ -447,23 +454,25 @@ static inline uint64_t mfatb(void)
 static inline uint64_t mfatb(void)
 {
 	uint32_t hi, lo, chk;
+
 	do {
 		hi = mfspr(SPR_ATBU);
 		lo = mfspr(SPR_ATBL);
 		chk = mfspr(SPR_ATBU);
 	} while (unlikely(hi != chk));
-	return (uint64_t) hi << 32 | (uint64_t) lo;
+	return (uint64_t)hi << 32 | (uint64_t) lo;
 }
 
 static inline uint64_t mftb(void)
 {
 	uint32_t hi, lo, chk;
+
 	do {
 		hi = mfspr(SPR_TBU);
 		lo = mfspr(SPR_TBL);
 		chk = mfspr(SPR_TBU);
 	} while (unlikely(hi != chk));
-	return (uint64_t) hi << 32 | (uint64_t) lo;
+	return (uint64_t)hi << 32 | (uint64_t) lo;
 }
 
 #endif
@@ -472,17 +481,19 @@ static inline uint64_t mftb(void)
 static inline void cpu_spin(int cycles)
 {
 	uint64_t now = mfatb();
+
 	while (mfatb() < (now + cycles))
 		;
 }
 
 static inline void __hexdump(unsigned long start, unsigned long end,
-			unsigned long p, size_t sz, const unsigned char *c)
+			     unsigned long p, size_t sz, const unsigned char *c)
 {
 	while (start < end) {
 		unsigned int pos = 0;
 		char buf[64];
 		int nl = 0;
+
 		pos += sprintf(buf + pos, "%08lx: ", start);
 		do {
 			if ((start < p) || (start >= (p + sz)))
@@ -494,9 +505,9 @@ static inline void __hexdump(unsigned long start, unsigned long end,
 				nl = 1;
 			} else {
 				nl = 0;
-				if(!(start & 1))
+				if (!(start & 1))
 					buf[pos++] = ' ';
-				if(!(start & 3))
+				if (!(start & 3))
 					buf[pos++] = ' ';
 			}
 		} while (start & 15);
@@ -506,12 +517,14 @@ static inline void __hexdump(unsigned long start, unsigned long end,
 		pr_info("%s", buf);
 	}
 }
+
 static inline void hexdump(const void *ptr, size_t sz)
 {
 	unsigned long p = (unsigned long)ptr;
 	unsigned long start = p & ~(unsigned long)15;
 	unsigned long end = (p + sz + 15) & ~(unsigned long)15;
 	const unsigned char *c = ptr;
+
 	__hexdump(start, end, p, sz, c);
 }
 

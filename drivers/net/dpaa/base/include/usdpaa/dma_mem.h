@@ -45,19 +45,20 @@ enum dma_data_direction {
 	DMA_FROM_DEVICE = 2,
 	DMA_NONE = 3,
 };
+
 #define DMA_BIT_MASK(n) (((uint64_t)1 << (n)) - 1)
 int dma_set_mask(void *dev __always_unused, uint64_t v __always_unused);
 dma_addr_t dma_map_single(void *dev __always_unused, void *cpu_addr,
-			size_t size __maybe_unused,
+			  size_t size __maybe_unused,
 			enum dma_data_direction direction __always_unused);
 int dma_mapping_error(void *dev __always_unused,
-			dma_addr_t dma_addr __always_unused);
+		      dma_addr_t dma_addr __always_unused);
 
 /* The following definitions and interfaces are USDPAA-specific */
 
 struct dma_mem;
 
-struct dma_mem * dma_mem_map_memzone(void *vaddr, dma_addr_t paddr,
+struct dma_mem *dma_mem_map_memzone(void *vaddr, dma_addr_t paddr,
 				     size_t len);
 
 /* With the _SHARED flag, <name> can and should be non-NULL, and will name the
@@ -123,14 +124,18 @@ struct __dma_mem_addr {
 	dma_addr_t phys;
 	void *virt;
 };
+
 static inline void *dma_mem_ptov(struct dma_mem *map, dma_addr_t p)
 {
 	struct __dma_mem_addr *a = (struct __dma_mem_addr *)map;
+
 	return (void *)((unsigned long)(p - a->phys) + (unsigned long)a->virt);
 }
+
 static inline dma_addr_t dma_mem_vtop(struct dma_mem *map, void *v)
 {
 	struct __dma_mem_addr *a = (struct __dma_mem_addr *)map;
+
 	return a->phys + ((unsigned long)v - (unsigned long)a->virt);
 }
 
@@ -145,14 +150,17 @@ static inline void *__dma_mem_ptov(dma_addr_t p)
 {
 	return dma_mem_ptov(dma_mem_generic, p);
 }
+
 static inline dma_addr_t __dma_mem_vtop(void *v)
 {
 	return dma_mem_vtop(dma_mem_generic, v);
 }
+
 static inline void *__dma_mem_memalign(size_t boundary, size_t size)
 {
 	return dma_mem_memalign(dma_mem_generic, boundary, size);
 }
+
 static inline void __dma_mem_free(void *ptr)
 {
 	return dma_mem_free(dma_mem_generic, ptr);

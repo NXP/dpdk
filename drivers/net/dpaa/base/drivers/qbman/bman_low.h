@@ -134,11 +134,11 @@ enum bm_rcr_pmode {		/* matches BCSP_CFG::RPM */
 	bm_rcr_pce = 1,		/* PI index, cache-enabled */
 	bm_rcr_pvb = 2		/* valid-bit */
 };
+
 enum bm_rcr_cmode {		/* s/w-only */
 	bm_rcr_cci,		/* CI index, cache-inhibited */
 	bm_rcr_cce		/* CI index, cache-enabled */
 };
-
 
 /* ------------------------- */
 /* --- Portal structures --- */
@@ -183,7 +183,6 @@ struct bm_portal {
 	struct bm_portal_config config;
 } ____cacheline_aligned;
 
-
 /* --------------- */
 /* --- RCR API --- */
 
@@ -204,15 +203,16 @@ static inline void RCR_INC(struct bm_rcr *rcr)
 	 * fast code with essentially no branching overheads. We increment to
 	 * the next RCR pointer and handle overflow and 'vbit'. */
 	struct bm_rcr_entry *partial = rcr->cursor + 1;
+
 	rcr->cursor = RCR_CARRYCLEAR(partial);
 	if (partial != rcr->cursor)
 		rcr->vbit ^= BM_RCR_VERB_VBIT;
 }
 
 static inline int bm_rcr_init(struct bm_portal *portal, enum bm_rcr_pmode pmode,
-		__maybe_unused enum bm_rcr_cmode cmode)
+			      __maybe_unused enum bm_rcr_cmode cmode)
 {
-	/* This use of 'register', as well as all other occurances, is because
+	/* This use of 'register', as well as all other occurrences, is because
 	 * it has been observed to generate much faster code with gcc than is
 	 * otherwise the case. */
 	register struct bm_rcr *rcr = &portal->rcr;
@@ -243,6 +243,7 @@ static inline void bm_rcr_finish(struct bm_portal *portal)
 	register struct bm_rcr *rcr = &portal->rcr;
 	u8 pi = bm_in(RCR_PI_CINH) & (BM_RCR_SIZE - 1);
 	u8 ci = bm_in(RCR_CI_CINH) & (BM_RCR_SIZE - 1);
+
 	DPA_ASSERT(!rcr->busy);
 	if (pi != RCR_PTR2IDX(rcr->cursor))
 		pr_crit("losing uncommited RCR entries\n");
@@ -255,6 +256,7 @@ static inline void bm_rcr_finish(struct bm_portal *portal)
 static inline struct bm_rcr_entry *bm_rcr_start(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(!rcr->busy);
 	if (!rcr->available)
 		return NULL;
@@ -268,6 +270,7 @@ static inline struct bm_rcr_entry *bm_rcr_start(struct bm_portal *portal)
 static inline void bm_rcr_abort(struct bm_portal *portal)
 {
 	__maybe_unused register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->busy);
 #ifdef CONFIG_FSL_DPA_CHECKING
 	rcr->busy = 0;
@@ -278,6 +281,7 @@ static inline struct bm_rcr_entry *bm_rcr_pend_and_next(
 					struct bm_portal *portal, u8 myverb)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->busy);
 	DPA_ASSERT(rcr->pmode != bm_rcr_pvb);
 	if (rcr->available == 1)
@@ -293,6 +297,7 @@ static inline struct bm_rcr_entry *bm_rcr_pend_and_next(
 static inline void bm_rcr_pci_commit(struct bm_portal *portal, u8 myverb)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->busy);
 	DPA_ASSERT(rcr->pmode == bm_rcr_pci);
 	rcr->cursor->__dont_write_directly__verb = myverb | rcr->vbit;
@@ -308,6 +313,7 @@ static inline void bm_rcr_pci_commit(struct bm_portal *portal, u8 myverb)
 static inline void bm_rcr_pce_prefetch(struct bm_portal *portal)
 {
 	__maybe_unused register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->pmode == bm_rcr_pce);
 	bm_cl_invalidate(RCR_PI);
 	bm_cl_touch_rw(RCR_PI);
@@ -316,6 +322,7 @@ static inline void bm_rcr_pce_prefetch(struct bm_portal *portal)
 static inline void bm_rcr_pce_commit(struct bm_portal *portal, u8 myverb)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->busy);
 	DPA_ASSERT(rcr->pmode == bm_rcr_pce);
 	rcr->cursor->__dont_write_directly__verb = myverb | rcr->vbit;
@@ -332,6 +339,7 @@ static inline void bm_rcr_pvb_commit(struct bm_portal *portal, u8 myverb)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
 	struct bm_rcr_entry *rcursor;
+
 	DPA_ASSERT(rcr->busy);
 	DPA_ASSERT(rcr->pmode == bm_rcr_pvb);
 	lwsync();
@@ -349,6 +357,7 @@ static inline u8 bm_rcr_cci_update(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
 	u8 diff, old_ci = rcr->ci;
+
 	DPA_ASSERT(rcr->cmode == bm_rcr_cci);
 	rcr->ci = bm_in(RCR_CI_CINH) & (BM_RCR_SIZE - 1);
 	diff = bm_cyc_diff(BM_RCR_SIZE, old_ci, rcr->ci);
@@ -359,6 +368,7 @@ static inline u8 bm_rcr_cci_update(struct bm_portal *portal)
 static inline void bm_rcr_cce_prefetch(struct bm_portal *portal)
 {
 	__maybe_unused register struct bm_rcr *rcr = &portal->rcr;
+
 	DPA_ASSERT(rcr->cmode == bm_rcr_cce);
 	bm_cl_touch_ro(RCR_CI);
 }
@@ -367,6 +377,7 @@ static inline u8 bm_rcr_cce_update(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
 	u8 diff, old_ci = rcr->ci;
+
 	DPA_ASSERT(rcr->cmode == bm_rcr_cce);
 	rcr->ci = bm_cl_in(RCR_CI) & (BM_RCR_SIZE - 1);
 	bm_cl_invalidate(RCR_CI);
@@ -378,12 +389,14 @@ static inline u8 bm_rcr_cce_update(struct bm_portal *portal)
 static inline u8 bm_rcr_get_ithresh(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	return rcr->ithresh;
 }
 
 static inline void bm_rcr_set_ithresh(struct bm_portal *portal, u8 ithresh)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	rcr->ithresh = ithresh;
 	bm_out(RCR_ITR, ithresh);
 }
@@ -391,15 +404,16 @@ static inline void bm_rcr_set_ithresh(struct bm_portal *portal, u8 ithresh)
 static inline u8 bm_rcr_get_avail(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	return rcr->available;
 }
 
 static inline u8 bm_rcr_get_fill(struct bm_portal *portal)
 {
 	register struct bm_rcr *rcr = &portal->rcr;
+
 	return BM_RCR_SIZE - 1 - rcr->available;
 }
-
 
 /* ------------------------------ */
 /* --- Management command API --- */
@@ -407,6 +421,7 @@ static inline u8 bm_rcr_get_fill(struct bm_portal *portal)
 static inline int bm_mc_init(struct bm_portal *portal)
 {
 	register struct bm_mc *mc = &portal->mc;
+
 	mc->cr = portal->addr.addr_ce + BM_CL_CR;
 	mc->rr = portal->addr.addr_ce + BM_CL_RR0;
 	mc->rridx = (__raw_readb(&mc->cr->__dont_write_directly__verb) &
@@ -421,6 +436,7 @@ static inline int bm_mc_init(struct bm_portal *portal)
 static inline void bm_mc_finish(struct bm_portal *portal)
 {
 	__maybe_unused register struct bm_mc *mc = &portal->mc;
+
 	DPA_ASSERT(mc->state == mc_idle);
 #ifdef CONFIG_FSL_DPA_CHECKING
 	if (mc->state != mc_idle)
@@ -431,6 +447,7 @@ static inline void bm_mc_finish(struct bm_portal *portal)
 static inline struct bm_mc_command *bm_mc_start(struct bm_portal *portal)
 {
 	register struct bm_mc *mc = &portal->mc;
+
 	DPA_ASSERT(mc->state == mc_idle);
 #ifdef CONFIG_FSL_DPA_CHECKING
 	mc->state = mc_user;
@@ -442,6 +459,7 @@ static inline struct bm_mc_command *bm_mc_start(struct bm_portal *portal)
 static inline void bm_mc_abort(struct bm_portal *portal)
 {
 	__maybe_unused register struct bm_mc *mc = &portal->mc;
+
 	DPA_ASSERT(mc->state == mc_user);
 #ifdef CONFIG_FSL_DPA_CHECKING
 	mc->state = mc_idle;
@@ -452,6 +470,7 @@ static inline void bm_mc_commit(struct bm_portal *portal, u8 myverb)
 {
 	register struct bm_mc *mc = &portal->mc;
 	struct bm_mc_result *rr = mc->rr + mc->rridx;
+
 	DPA_ASSERT(mc->state == mc_user);
 	lwsync();
 	mc->cr->__dont_write_directly__verb = myverb | mc->vbit;
@@ -466,6 +485,7 @@ static inline struct bm_mc_result *bm_mc_result(struct bm_portal *portal)
 {
 	register struct bm_mc *mc = &portal->mc;
 	struct bm_mc_result *rr = mc->rr + mc->rridx;
+
 	DPA_ASSERT(mc->state == mc_hw);
 	/* The inactive response register's verb byte always returns zero until
 	 * its command is submitted and completed. This includes the valid-bit,
@@ -482,7 +502,6 @@ static inline struct bm_mc_result *bm_mc_result(struct bm_portal *portal)
 	return rr;
 }
 
-
 /* ------------------------------------- */
 /* --- Portal interrupt register API --- */
 
@@ -498,9 +517,10 @@ static inline void bm_isr_finish(__always_unused struct bm_portal *portal)
 #define SCN_REG(bpid) BM_REG_SCN((bpid) / 32)
 #define SCN_BIT(bpid) (0x80000000 >> (bpid & 31))
 static inline void bm_isr_bscn_mask(struct bm_portal *portal, u8 bpid,
-					int enable)
+				    int enable)
 {
 	u32 val;
+
 	DPA_ASSERT(bpid < bman_pool_max);
 	/* REG_SCN for bpid=0..31, REG_SCN+4 for bpid=32..63 */
 	val = __bm_in(&portal->addr, SCN_REG(bpid));
@@ -521,7 +541,7 @@ static inline u32 __bm_isr_read(struct bm_portal *portal, enum bm_isr_reg n)
 }
 
 static inline void __bm_isr_write(struct bm_portal *portal, enum bm_isr_reg n,
-					u32 val)
+				  u32 val)
 {
 #if defined(CONFIG_ARM64)
 	__bm_out(&portal->addr, BM_REG_ISR + (n << 6), val);
@@ -538,6 +558,7 @@ static inline int bm_shutdown_pool(struct bm_portal *p, u32 bpid)
 
 	int aq_count = 0;
 	bool stop = false;
+
 	while (!stop) {
 		/* Aquire buffers until empty */
 		bm_cmd = bm_mc_start(p);

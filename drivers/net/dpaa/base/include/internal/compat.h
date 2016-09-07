@@ -101,7 +101,7 @@ do { \
 
 /* printk() stuff */
 #define printk(fmt, args...)	do_not_use_printk
-#define nada(fmt, args...)	do { ; } while(0)
+#define nada(fmt, args...)	do { ; } while (0)
 
 /* Debug stuff */
 #ifdef CONFIG_FSL_BMAN_CHECKING
@@ -112,9 +112,9 @@ do { \
 				__stringify_1(x)); \
 			exit(EXIT_FAILURE); \
 		} \
-	} while(0)
+	} while (0)
 #else
-#define BM_ASSERT(x)		do { ; } while(0)
+#define BM_ASSERT(x)		do { ; } while (0)
 #endif
 #ifdef CONFIG_FSL_QMAN_CHECKING
 #define QM_ASSERT(x) \
@@ -124,9 +124,9 @@ do { \
 				__stringify_1(x)); \
 			exit(EXIT_FAILURE); \
 		} \
-	} while(0)
+	} while (0)
 #else
-#define QM_ASSERT(x)		do { ; } while(0)
+#define QM_ASSERT(x)		do { ; } while (0)
 #endif
 
 /* Interrupt stuff */
@@ -135,16 +135,16 @@ typedef uint32_t	irqreturn_t;
 #ifdef CONFIG_FSL_DPA_IRQ_SAFETY
 #error "Won't work"
 #endif
-#define local_irq_disable()	do { ; } while(0)
-#define local_irq_enable()	do { ; } while(0)
-#define local_irq_save(v)	do { ; } while(0)
-#define local_irq_restore(v)	do { ; } while(0)
+#define local_irq_disable()	do { ; } while (0)
+#define local_irq_enable()	do { ; } while (0)
+#define local_irq_save(v)	do { ; } while (0)
+#define local_irq_restore(v)	do { ; } while (0)
 #define request_irq(irq, isr, args, devname, portal) \
 	qbman_request_irq(irq, isr, args, devname, portal)
 #define free_irq(irq, portal) \
 	qbman_free_irq(irq, portal)
 #define irq_can_set_affinity(x)	0
-#define irq_set_affinity(x,y)	0
+#define irq_set_affinity(x, y)	0
 
 /* memcpy() stuff - when you know alignments in advance */
 #ifdef CONFIG_TRY_BETTER_MEMCPY
@@ -153,27 +153,32 @@ static inline void copy_words(void *dest, const void *src, size_t sz)
 	u32 *__dest = dest;
 	const u32 *__src = src;
 	size_t __sz = sz >> 2;
+
 	BUG_ON((unsigned long)dest & 0x3);
 	BUG_ON((unsigned long)src & 0x3);
 	BUG_ON(sz & 0x3);
 	while (__sz--)
 		*(__dest++) = *(__src++);
 }
+
 static inline void copy_shorts(void *dest, const void *src, size_t sz)
 {
 	u16 *__dest = dest;
 	const u16 *__src = src;
 	size_t __sz = sz >> 1;
+
 	BUG_ON((unsigned long)dest & 0x1);
 	BUG_ON((unsigned long)src & 0x1);
 	BUG_ON(sz & 0x1);
 	while (__sz--)
 		*(__dest++) = *(__src++);
 }
+
 static inline void copy_bytes(void *dest, const void *src, size_t sz)
 {
 	u8 *__dest = dest;
 	const u8 *__src = src;
+
 	while (sz--)
 		*(__dest++) = *(__src++);
 }
@@ -239,7 +244,7 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 #define complete(n) \
 do { \
 	*n = 1; \
-} while(0)
+} while (0)
 #define wait_for_completion(n) \
 do { \
 	while (!*n) { \
@@ -247,25 +252,28 @@ do { \
 		qman_poll(); \
 	} \
 	*n = 0; \
-} while(0)
+} while (0)
 
 /* Platform device stuff */
 struct platform_device { void *dev; };
 static inline struct
 platform_device *platform_device_alloc(const char *name __always_unused,
-					int id __always_unused)
+				       int id __always_unused)
 {
 	struct platform_device *ret = malloc(sizeof(*ret));
+
 	if (ret)
 		ret->dev = NULL;
 	return ret;
 }
+
 #define platform_device_add(pdev)	0
-#define platform_device_del(pdev)	do { ; } while(0)
+#define platform_device_del(pdev)	do { ; } while (0)
 static inline void platform_device_put(struct platform_device *pdev)
 {
 	free(pdev);
 }
+
 struct resource {
 	int unused;
 };
@@ -277,52 +285,64 @@ struct resource {
 static inline void *kzalloc(size_t sz, gfp_t __foo __always_unused)
 {
 	void *ptr = malloc(sz);
+
 	if (ptr)
 		memset(ptr, 0, sz);
 	return ptr;
 }
+
 static inline unsigned long get_zeroed_page(gfp_t __foo __always_unused)
 {
 	void *p;
+
 	if (posix_memalign(&p, 4096, 4096))
 		return 0;
 	memset(p, 0, 4096);
 	return (unsigned long)p;
 }
+
 struct kmem_cache {
 	size_t sz;
 	size_t align;
 };
+
 #define SLAB_HWCACHE_ALIGN	0
 static inline struct kmem_cache *kmem_cache_create(const char *n __always_unused,
-		 size_t sz, size_t align, unsigned long flags __always_unused,
+						   size_t sz, size_t align, unsigned long flags __always_unused,
 			void (*c)(void *) __always_unused)
 {
 	struct kmem_cache *ret = malloc(sizeof(*ret));
+
 	if (ret) {
 		ret->sz = sz;
 		ret->align = align;
 	}
 	return ret;
 }
+
 static inline void kmem_cache_destroy(struct kmem_cache *c)
 {
 	free(c);
 }
+
 static inline void *kmem_cache_alloc(struct kmem_cache *c, gfp_t f __always_unused)
 {
 	void *p;
+
 	if (posix_memalign(&p, c->align, c->sz))
 		return NULL;
 	return p;
 }
+
 static inline void kmem_cache_free(struct kmem_cache *c __always_unused, void *p)
 {
 	free(p);
 }
+
 static inline void *kmem_cache_zalloc(struct kmem_cache *c, gfp_t f)
 {
 	void *ret = kmem_cache_alloc(c, f);
+
 	if (ret)
 		memset(ret, 0, c->sz);
 	return ret;
@@ -334,58 +354,72 @@ static inline void *kmem_cache_zalloc(struct kmem_cache *c, gfp_t f)
 #define BITS_MASK(idx)	((unsigned long)1 << ((idx) & (BITS_PER_ULONG - 1)))
 #define BITS_IDX(idx)	((idx) >> SHIFT_PER_ULONG)
 static inline unsigned long test_bits(unsigned long mask,
-				volatile unsigned long *p)
+				      volatile unsigned long *p)
 {
 	return *p & mask;
 }
+
 static inline int test_bit(int idx, volatile unsigned long *bits)
 {
 	return test_bits(BITS_MASK(idx), bits + BITS_IDX(idx));
 }
+
 static inline void set_bits(unsigned long mask, volatile unsigned long *p)
 {
 	*p |= mask;
 }
+
 static inline void set_bit(int idx, volatile unsigned long *bits)
 {
 	set_bits(BITS_MASK(idx), bits + BITS_IDX(idx));
 }
+
 static inline void clear_bits(unsigned long mask, volatile unsigned long *p)
 {
 	*p &= ~mask;
 }
+
 static inline void clear_bit(int idx, volatile unsigned long *bits)
 {
 	clear_bits(BITS_MASK(idx), bits + BITS_IDX(idx));
 }
+
 static inline unsigned long test_and_set_bits(unsigned long mask,
-					volatile unsigned long *p)
+					      volatile unsigned long *p)
 {
 	unsigned long ret = test_bits(mask, p);
+
 	set_bits(mask, p);
 	return ret;
 }
+
 static inline int test_and_set_bit(int idx, volatile unsigned long *bits)
 {
 	int ret = test_bit(idx, bits);
+
 	set_bit(idx, bits);
 	return ret;
 }
+
 static inline int test_and_clear_bit(int idx, volatile unsigned long *bits)
 {
 	int ret = test_bit(idx, bits);
+
 	clear_bit(idx, bits);
 	return ret;
 }
+
 static inline int find_next_zero_bit(unsigned long *bits, int limit, int idx)
 {
 	while ((++idx < limit) && test_bit(idx, bits))
 		;
 	return idx;
 }
+
 static inline int find_first_zero_bit(unsigned long *bits, int limit)
 {
 	int idx = 0;
+
 	while (test_bit(idx, bits) && (++idx < limit))
 		;
 	return idx;

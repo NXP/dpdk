@@ -311,7 +311,7 @@ int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 }
 
 void memac_stats_get(struct fman_if *p,
-		struct rte_eth_stats *stats)
+		     struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 	struct memac_regs *regs = m->ccsr_map;
@@ -332,7 +332,6 @@ void memac_stats_get(struct fman_if *p,
 	stats->oerrors = ((u64)in_be32(&regs->terr_u)) << 32 |
 			in_be32(&regs->terr_l);
 }
-
 
 static int _dtsec_set_stn_mac_addr(struct __fman_if *m, uint8_t *eth)
 {
