@@ -90,9 +90,6 @@
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
 
-/*Maximum number of slots available in TX ring*/
-#define MAX_TX_RING_SLOTS	8
-
 /* PCD frame queues */
 #define DPAA_PCD_FQID_START		0x400
 #define DPAA_PCD_FQID_MULTIPLIER	0x100

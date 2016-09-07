@@ -3,8 +3,8 @@ NXP DPDK README FOR LS-DPAA2 PLATFORM
 ===============================================================================
 
 NXP DPDK provides a set of data plane libraries and network interface
-controller driver for LS2 and QorIQ platforms. 
-This README provides information about building and executing DPDK based 
+controller driver for LS2 and QorIQ platforms.
+This README provides information about building and executing DPDK based
 applications for LS-DPAA2 platform
 
 ===============================================================================
@@ -12,7 +12,7 @@ applications for LS-DPAA2 platform
 Components for Build & Execution Environment
 --------------------------------------------
 
-To sucessfully build and execute DPDK based applications for LS2 platform, 
+To successfully build and execute DPDK based applications for LS2 platform,
 following components are required:
 
 1. DPDK source code
@@ -27,7 +27,7 @@ Following information can be used to obtain these components:
      Use following command to get the DPDK code
 
        # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git
-       # git checkout -b v16.04-rc2 remotes/origin/v16.04-rc2
+       # git checkout -b 16.04-nxp remotes/origin/16.04-nxp
 
 
      Linux kernel code for LS2 platform
@@ -124,21 +124,21 @@ How to run DPDK Applications
  If you are planning to run l3fwd or any other multiple TX Queue based application please export
  following parameters for resourcing
 	export MAX_TCS=8
-	export MAX_DIST_PER_TC=8,8,8,8,8,8,8,8
+	export MAX_DIST_PER_TC=8,1,1,1,1,1,1,1
 
 	#if you plan to run pktgen, please also increase the number of buffer pool available
 	export DPBP_COUNT=16
- 
+
    Run the following on the board:
       1. /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
       2. export DPRC=<dprc_container_created_by_dynamic_DPL>
 
 3. Running DPDK testpmd Application
-   ============================== 
+   ==============================
 
    Execute following commands to run DPDK testpmd on LS2 board
 
-   #./testpmd -c 0xF -n 4 -- -i --portmask=0x3 --nb-cores=2 
+   #./testpmd -c 0xF -n 4 -- -i --portmask=0x3 --nb-cores=2
    - this will run test_pmd on dpni.0 and dpni.2 w.r.t dpmac.3 and dpmac.3
    - you can change the number of cores.
 
@@ -151,7 +151,7 @@ How to run DPDK Applications
    identified, with their detailed information.
 
 4. Running DPDK L2FWD Application
-   ============================== 
+   ==============================
 
    Execute following commands to run DPDK L2FWD on LS2 board
 
@@ -190,7 +190,7 @@ How to run DPDK Applications
 	This is for taking performance numbers of Crypto operations.
 
 7. Running DPDK L3FWD Application
-   ============================== 
+   ==============================
    NOTE: enabled multiple tx queue i.e. TC support for the ports during restool config using dynamicdpl
    Execute following commands to run DPDK L2FWD on LS2 board
 
@@ -209,7 +209,7 @@ Traffic to port 3: 3.1.1.0/24
 Traffic to port 4: 4.1.1.0/24
 
 8. Running DPDK KNI Application
-   ============================ 
+   ============================
 
    Execute following commands to run DPDK KNI
 
@@ -245,11 +245,9 @@ Traffic to port 4: 4.1.1.0/24
             # ping 9.9.9.1
 
 7. Running DPDK test Application for ARM-CE:
-
        1. To launch regression tests:
            # ./test
            RTE>>cryptodev_armce_autotest
-
        2. To launch performance/benchmark tests:
            # ./test
            RTE>>cryptodev_armce_perftest
@@ -268,7 +266,7 @@ Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 
 Copy "Pktgen.lua" and "pktgen" (available at: app/app/arm64-dpaa2-linuxapp-gcc/pktgen) to the board.
 
-example Command to run: 
+example Command to run:
 
 #3 port - 1 core each
 ./pktgen -l 0-3 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[1].0, [2].1, [3].2"
@@ -285,7 +283,7 @@ str
 stp
 =============================================================================
 Applications:
--	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified. 
+-	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
 
 Features:
 -	Support for LS2-BUS in DPDK VFIO support function
@@ -293,15 +291,14 @@ Features:
 -	Able to run DPDK on single core and multiple cores.
 
 NXP platform support:
--	The code is not optimized for the performance. 
+-	The code is not optimized for the performance.
 
 Code Location: stash
-Branch: v16.04-rc2
-Tag: 
+Branch: 16.04-nxp
+Tag:
 
 DPDK base version used: Release 16.04
 More info on DPDK :  www.dpdk.org
 
 LS2 Release - EAR6 & SDK2.0
 NXP contact: hemant.agrawal@nxp.com
-

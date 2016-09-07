@@ -31,6 +31,7 @@
  */
 
 #include <time.h>
+#include <net/if.h>
 #include <rte_mbuf.h>
 #include <rte_cryptodev.h>
 #include <rte_malloc.h>
@@ -41,21 +42,15 @@
 #include <rte_dev.h>
 #include <rte_cryptodev_pmd.h>
 #include <rte_common.h>
-#include <rte_eth_dpaa2_pvt.h>
-#include "dpaa2_sec_priv.h"
-
-#include <net/if.h>
-
-#include "dpaa2_sec_logs.h"
 
 /* MC header files */
-#include <fsl_dpbp.h>
 #include <fsl_dpseci.h>
-#include <fsl_dpio.h>
 
-/*QBMAN header files*/
-#include <fsl_qbman_portal.h>
-#include <fsl_qbman_base.h>
+#include <dpaa2_hw_pvt.h>
+#include <dpaa2_hw_dpbp.h>
+
+#include "dpaa2_sec_priv.h"
+#include "dpaa2_sec_logs.h"
 
 /* RTA header files */
 #include <flib/desc/ipsec.h>
@@ -681,7 +676,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
 			while (!qbman_check_command_complete(swp,
-							     get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+				    get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
 				;
 			clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
 		}
