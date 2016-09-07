@@ -58,7 +58,6 @@
 #define ARMCE_LOG_DBG(fmt, args...)
 #endif
 
-
 enum armce_chain_order {
 	HASH_ONLY,
 	CIPHER_ONLY,
@@ -86,7 +85,6 @@ struct armce_qp {
 	/**< Queue pair statistics */
 } __rte_cache_aligned;
 
-
 /** ARMCE private session structure */
 struct armce_session {
 	struct {
@@ -111,7 +109,7 @@ struct armce_session {
 /** Set and validate ARMCE session parameters */
 extern int
 armce_set_session_parameters(struct armce_session *sess,
-		const struct rte_crypto_sym_xform *xform);
+			     const struct rte_crypto_sym_xform *xform);
 
 /** device specific operations function pointer structure */
 extern struct rte_cryptodev_ops *rte_armce_pmd_ops;

@@ -160,6 +160,10 @@ xform_get_evp_auth(const struct rte_crypto_sym_xform *xform)
 		return EVP_sha256();
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
 		return EVP_sha512();
+	case RTE_CRYPTO_AUTH_SHA224_HMAC:
+		return EVP_sha224();
+	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+		return EVP_sha384();
 	default:
 		ARMCE_LOG_ERR("Could not find a valid hmac algorithm");
 		return NULL;
@@ -492,7 +496,7 @@ get_session(struct armce_qp *qp, struct rte_crypto_sym_op *op)
 /** Enqueue burst */
 static uint16_t
 armce_pmd_enqueue_burst(void *queue_pair, struct rte_crypto_op **ops,
-		uint16_t nb_ops)
+			uint16_t nb_ops)
 {
 	struct armce_qp *qp = queue_pair;
 	struct armce_session *sess;
@@ -527,14 +531,14 @@ enqueue_err:
 /** Dequeue burst */
 static uint16_t
 armce_pmd_dequeue_burst(void *queue_pair, struct rte_crypto_op **ops,
-		uint16_t nb_ops)
+			uint16_t nb_ops)
 {
 	struct armce_qp *qp = queue_pair;
 
 	unsigned nb_dequeued;
 
 	nb_dequeued = rte_ring_dequeue_burst(qp->processed_pkts,
-			(void **)ops, nb_ops);
+					     (void **)ops, nb_ops);
 	qp->qp_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
@@ -545,7 +549,7 @@ static int cryptodev_armce_uninit(const char *name);
 /** Create crypto device */
 static int
 cryptodev_armce_create(const char *name,
-		struct rte_crypto_vdev_init_params *init_params)
+		       struct rte_crypto_vdev_init_params *init_params)
 {
 	struct rte_cryptodev *dev;
 	char crypto_dev_name[RTE_CRYPTODEV_NAME_MAX_LEN];
@@ -571,13 +575,13 @@ cryptodev_armce_create(const char *name,
 
 	/* create a unique device name */
 	if (create_unique_device_name(crypto_dev_name,
-			RTE_CRYPTODEV_NAME_MAX_LEN) != 0) {
+				      RTE_CRYPTODEV_NAME_MAX_LEN) != 0) {
 		ARMCE_LOG_ERR("failed to create unique cryptodev name");
 		return -EINVAL;
 	}
 
 	dev = rte_cryptodev_pmd_virtual_dev_init(crypto_dev_name,
-			sizeof(struct armce_private),
+						 sizeof(struct armce_private),
 			init_params->socket_id);
 	if (dev == NULL) {
 		ARMCE_LOG_ERR("failed to create cryptodev vdev");
@@ -611,7 +615,7 @@ init_error:
 /** Initialise armce device */
 static int
 cryptodev_armce_init(const char *name,
-		const char *input_args)
+		     const char *input_args)
 {
 	struct rte_crypto_vdev_init_params init_params = {
 		RTE_CRYPTODEV_VDEV_DEFAULT_MAX_NB_QUEUE_PAIRS,
@@ -622,11 +626,11 @@ cryptodev_armce_init(const char *name,
 	rte_cryptodev_parse_vdev_init_params(&init_params, input_args);
 
 	RTE_LOG(INFO, PMD, "Initialising %s on NUMA node %d\n", name,
-			init_params.socket_id);
+		init_params.socket_id);
 	RTE_LOG(INFO, PMD, "  Max number of queue pairs = %d\n",
-			init_params.max_nb_queue_pairs);
+		init_params.max_nb_queue_pairs);
 	RTE_LOG(INFO, PMD, "  Max number of sessions = %d\n",
-			init_params.max_nb_sessions);
+		init_params.max_nb_sessions);
 
 	/* OpenSSL init */
 	ERR_load_crypto_strings();
@@ -644,7 +648,7 @@ cryptodev_armce_uninit(const char *name)
 		return -EINVAL;
 
 	RTE_LOG(INFO, PMD, "Closing armce device %s on numa socket %u\n",
-			name, rte_socket_id());
+		name, rte_socket_id());
 
 	/* OpenSSL cleanup */
 	EVP_cleanup();

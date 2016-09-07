@@ -196,7 +196,7 @@ armce_pmd_close(__rte_unused struct rte_cryptodev *dev)
 /** Get device statistics */
 static void
 armce_pmd_stats_get(struct rte_cryptodev *dev,
-		struct rte_cryptodev_stats *stats)
+		    struct rte_cryptodev_stats *stats)
 {
 	int qp_id;
 
@@ -224,11 +224,10 @@ armce_pmd_stats_reset(struct rte_cryptodev *dev)
 	}
 }
 
-
 /** Get device info */
 static void
 armce_pmd_info_get(struct rte_cryptodev *dev,
-		struct rte_cryptodev_info *dev_info)
+		   struct rte_cryptodev_info *dev_info)
 {
 	struct armce_private *internals = dev->data->dev_private;
 
@@ -255,7 +254,7 @@ armce_pmd_qp_release(struct rte_cryptodev *dev, uint16_t qp_id)
 /** set a unique name for the queue pair based on it's name, dev_id and qp_id */
 static int
 armce_pmd_qp_set_unique_name(struct rte_cryptodev *dev,
-		struct armce_qp *qp)
+			     struct armce_qp *qp)
 {
 	unsigned n = snprintf(qp->name, sizeof(qp->name),
 			"armce_pmd_%u_qp_%u",
@@ -270,7 +269,7 @@ armce_pmd_qp_set_unique_name(struct rte_cryptodev *dev,
 /** Create a ring to place process packets on */
 static struct rte_ring *
 armce_pmd_qp_create_processed_pkts_ring(struct armce_qp *qp,
-		unsigned ring_size, int socket_id)
+					unsigned ring_size, int socket_id)
 {
 	struct rte_ring *r;
 
@@ -296,7 +295,7 @@ armce_pmd_qp_create_processed_pkts_ring(struct armce_qp *qp,
 /** Setup a queue pair */
 static int
 armce_pmd_qp_setup(struct rte_cryptodev *dev, uint16_t qp_id,
-		const struct rte_cryptodev_qp_conf *qp_conf,
+		   const struct rte_cryptodev_qp_conf *qp_conf,
 		 int socket_id)
 {
 	struct armce_private *internals = dev->data->dev_private;
@@ -316,7 +315,7 @@ armce_pmd_qp_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 
 	/* Allocate the queue pair data structure. */
 	qp = rte_zmalloc_socket("ARMCE PMD Queue Pair", sizeof(*qp),
-					RTE_CACHE_LINE_SIZE, socket_id);
+				RTE_CACHE_LINE_SIZE, socket_id);
 	if (qp == NULL) {
 		ARMCE_LOG_ERR("Failed to allocate queue pair memory");
 		return (-ENOMEM);
@@ -354,7 +353,7 @@ qp_setup_cleanup:
 /** Start queue pair */
 static int
 armce_pmd_qp_start(__rte_unused struct rte_cryptodev *dev,
-		__rte_unused uint16_t queue_pair_id)
+		   __rte_unused uint16_t queue_pair_id)
 {
 	return -ENOTSUP;
 }
@@ -362,7 +361,7 @@ armce_pmd_qp_start(__rte_unused struct rte_cryptodev *dev,
 /** Stop queue pair */
 static int
 armce_pmd_qp_stop(__rte_unused struct rte_cryptodev *dev,
-		__rte_unused uint16_t queue_pair_id)
+		  __rte_unused uint16_t queue_pair_id)
 {
 	return -ENOTSUP;
 }
@@ -384,7 +383,7 @@ armce_pmd_session_get_size(struct rte_cryptodev *dev __rte_unused)
 /** Configure a armce crypto session from a crypto xform chain */
 static void *
 armce_pmd_session_configure(struct rte_cryptodev *dev __rte_unused,
-		struct rte_crypto_sym_xform *xform, void *sess)
+			    struct rte_crypto_sym_xform *xform, void *sess)
 {
 	int retval;
 
@@ -405,7 +404,7 @@ armce_pmd_session_configure(struct rte_cryptodev *dev __rte_unused,
 /** Clear the memory of session so it doesn't leave key material behind */
 static void
 armce_pmd_session_clear(struct rte_cryptodev *dev __rte_unused,
-		void *sess)
+			void *sess)
 {
 	struct armce_session *armce_sess = sess;
 
