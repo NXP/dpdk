@@ -75,11 +75,11 @@ int fsl_dma_chan_basic_direct_init(struct dma_ch *dma_ch);
 int fsl_dma_chan_bwc(struct dma_ch *dma_ch, uint8_t bwc);
 int fsl_dma_wait(struct dma_ch *dma_ch);
 int fsl_dma_direct_start(struct dma_ch *dma_ch, dma_addr_t src_phys,
-			dma_addr_t dest_phys, uint32_t len);
+			 dma_addr_t dest_phys, uint32_t len);
 int fsl_dma_chain_link_build(struct dma_link_setup_data *link_data,
-			struct dma_link_dsc *link_dsc, uint64_t link_dsc_phys,
+			     struct dma_link_dsc *link_dsc, uint64_t link_dsc_phys,
 			uint32_t link_count);
 int fsl_dma_chain_basic_start(struct dma_ch *dma_ch,
-			struct dma_link_setup_data *link_data,
+			      struct dma_link_setup_data *link_data,
 			uint64_t link_dsc_phys);
 #endif

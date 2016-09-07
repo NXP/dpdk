@@ -106,8 +106,8 @@
  *		0x8000 - Ethernet type
  *	ShimR & Logical Port ID 0x0000
  */
-#define DPAA_PARSE_MASK 		0x00E044EC00800000
-#define DPAA_PARSE_VLAN_MASK 		0x0000000000700000
+#define DPAA_PARSE_MASK		0x00E044EC00800000
+#define DPAA_PARSE_VLAN_MASK		0x0000000000700000
 
 /* Parsed values (Little Endian) */
 #define DPAA_PKT_TYPE_NONE		0x0000000000000000
@@ -157,7 +157,6 @@ struct annotations_t {
 	uint64_t hash;			/**< Hash Result */
 };
 
-
 #define GET_ANNOTATIONS(_buf) \
 	(struct annotations_t *)(_buf)
 
@@ -189,14 +188,14 @@ struct annotations_t {
 	((((prs)->l4r & L4_TYPE_MASK) >> L4_TYPE_SHIFT) == SCTP_PRESENT)
 
 uint16_t dpaa_eth_queue_rx(void *q,
-		struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs);
 
 uint16_t dpaa_eth_queue_tx(void *q,
-			struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 			uint16_t nb_bufs);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
-		uint64_t addr);
+		    uint64_t addr);
 
 #endif

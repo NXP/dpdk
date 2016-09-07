@@ -46,11 +46,12 @@ struct list_head n = { \
 	.prev = &n, \
 	.next = &n \
 }
+
 #define INIT_LIST_HEAD(p) \
 do { \
 	struct list_head *__p298 = (p); \
-	__p298->prev = __p298->next =__p298; \
-} while(0)
+	__p298->prev = __p298->next = __p298; \
+} while (0)
 
 #undef container_of
 #define container_of(ptr, type, member) ({ \
@@ -58,14 +59,14 @@ do { \
 		(type *)((char *)__mptr - offsetof(type, member)); })
 
 #define list_entry(node, type, member) \
-		container_of(node,type,member)
+		container_of(node, type, member)
 
 #define list_empty(p) \
 ({ \
 	const struct list_head *__p298 = (p); \
 	((__p298->next == __p298) && (__p298->prev == __p298)); \
 })
-#define list_add(p,l) \
+#define list_add(p, l) \
 do { \
 	struct list_head *__p298 = (p); \
 	struct list_head *__l298 = (l); \
@@ -73,8 +74,8 @@ do { \
 	__p298->prev = __l298; \
 	__l298->next->prev = __p298; \
 	__l298->next = __p298; \
-} while(0)
-#define list_add_tail(p,l) \
+} while (0)
+#define list_add_tail(p, l) \
 do { \
 	struct list_head *__p298 = (p); \
 	struct list_head *__l298 = (l); \
@@ -82,7 +83,7 @@ do { \
 	__p298->next = __l298; \
 	__l298->prev->next = __p298; \
 	__l298->prev = __p298; \
-} while(0)
+} while (0)
 #define list_for_each(i, l)				\
 	for (i = (l)->next; i != (l); i = i->next)
 #define list_for_each_safe(i, j, l)			\
@@ -100,6 +101,6 @@ do { \
 do { \
 	(i)->next->prev = (i)->prev; \
 	(i)->prev->next = (i)->next; \
-} while(0)
+} while (0)
 
 #endif /* HEADER_USDPAA_COMPAT_LIST_H */

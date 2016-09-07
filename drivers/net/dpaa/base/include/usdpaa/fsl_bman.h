@@ -47,6 +47,7 @@ extern "C" {
 struct bman_depletion {
 	u32 __state[2];
 };
+
 #define BMAN_DEPLETION_EMPTY { { 0x00000000, 0x00000000 } }
 #define BMAN_DEPLETION_FULL { { 0xffffffff, 0xffffffff } }
 #define __bmdep_word(x) ((x) >> 5)
@@ -56,18 +57,22 @@ static inline void bman_depletion_init(struct bman_depletion *c)
 {
 	c->__state[0] = c->__state[1] = 0;
 }
+
 static inline void bman_depletion_fill(struct bman_depletion *c)
 {
 	c->__state[0] = c->__state[1] = ~0;
 }
+
 static inline int bman_depletion_get(const struct bman_depletion *c, u8 bpid)
 {
 	return c->__state[__bmdep_word(bpid)] & __bmdep_bit(bpid);
 }
+
 static inline void bman_depletion_set(struct bman_depletion *c, u8 bpid)
 {
 	c->__state[__bmdep_word(bpid)] |= __bmdep_bit(bpid);
 }
+
 static inline void bman_depletion_unset(struct bman_depletion *c, u8 bpid)
 {
 	c->__state[__bmdep_word(bpid)] &= ~__bmdep_bit(bpid);
@@ -115,12 +120,14 @@ static inline u64 bm_buffer_get64(const struct bm_buffer *buf)
 {
 	return buf->addr;
 }
+
 static inline dma_addr_t bm_buf_addr(const struct bm_buffer *buf)
 {
 	return (dma_addr_t)buf->addr;
 }
+
 /* Macro, so we compile better if 'v' isn't always 64-bit */
-/* Note: this first version is causing a noticable performance degradation,
+/* Note: this first version is causing a noticeable performance degradation,
  * which needs analysis, so leaving it commented out for now. The second version
  * achieves optimal performance. */
 #if 0
@@ -177,8 +184,8 @@ struct bm_mc_command {
 #define BM_MCC_VERB_CMD_QUERY		0x40
 #define BM_MCC_VERB_ACQUIRE_BUFCOUNT	0x0f	/* values 1..8 go here */
 
-/* See 1.5.3.3: "Acquire Reponse" */
-/* See 1.5.3.4: "Query Reponse" */
+/* See 1.5.3.3: "Acquire Response" */
+/* See 1.5.3.4: "Query Response" */
 struct bm_pool_state {
 	u8 __reserved1[32];
 	/* "availability state" and "depletion state" */
@@ -188,6 +195,7 @@ struct bm_pool_state {
 		struct bman_depletion state;
 	} as, ds;
 };
+
 struct bm_mc_result {
 	union {
 		struct {
@@ -213,9 +221,9 @@ struct bm_mc_result {
 #define BM_MCR_VERB_CMD_ERR_ECC		0x70
 #define BM_MCR_VERB_ACQUIRE_BUFCOUNT	BM_MCC_VERB_ACQUIRE_BUFCOUNT /* 0..8 */
 /* Determine the "availability state" of pool 'p' from a query result 'r' */
-#define BM_MCR_QUERY_AVAILABILITY(r,p) bman_depletion_get(&r->query.as.state,p)
+#define BM_MCR_QUERY_AVAILABILITY(r, p) bman_depletion_get(&r->query.as.state, p)
 /* Determine the "depletion state" of pool 'p' from a query result 'r' */
-#define BM_MCR_QUERY_DEPLETION(r,p) bman_depletion_get(&r->query.ds.state,p)
+#define BM_MCR_QUERY_DEPLETION(r, p) bman_depletion_get(&r->query.ds.state, p)
 
 /*******************************************************************/
 /* Managed (aka "shared" or "mux/demux") portal, high-level i/face */
@@ -399,6 +407,7 @@ int bman_alloc_bpid_range(u32 *result, u32 count, u32 align, int partial);
 static inline int bman_alloc_bpid(u32 *result)
 {
 	int ret = bman_alloc_bpid_range(result, 1, 0, 0);
+
 	return (ret > 0) ? 0 : ret;
 }
 
@@ -423,7 +432,6 @@ static inline int bman_reserve_bpid(u32 bpid)
 }
 
 void bman_seed_bpid_range(u32 bpid, unsigned int count);
-
 
 int bman_shutdown_pool(u32 bpid);
 
@@ -477,7 +485,7 @@ const struct bman_pool_params *bman_get_params(const struct bman_pool *pool);
  * it returns zero.
  */
 int bman_release(struct bman_pool *pool, const struct bm_buffer *bufs, u8 num,
-			u32 flags);
+		 u32 flags);
 
 /**
  * bman_acquire - Acquire buffer(s) from a buffer pool
@@ -490,7 +498,7 @@ int bman_release(struct bman_pool *pool, const struct bm_buffer *bufs, u8 num,
  * negative error code if a h/w error or pool starvation was encountered.
  */
 int bman_acquire(struct bman_pool *pool, struct bm_buffer *bufs, u8 num,
-			u32 flags);
+		 u32 flags);
 
 /**
  * bman_flush_stockpile - Flush stockpile buffer(s) to the buffer pool
@@ -498,7 +506,7 @@ int bman_acquire(struct bman_pool *pool, struct bm_buffer *bufs, u8 num,
  * @flags: bit-mask of BMAN_RELEASE_FLAG_*** options
  *
  * Adds stockpile buffers to RCR entries until the stockpile is empty.
- * The return value will be a negative error code if a h/w error occured.
+ * The return value will be a negative error code if a h/w error occurred.
  * If BMAN_RELEASE_FLAG_NOW flag is passed and RCR ring is full,
  * -EAGAIN will be returned.
  */

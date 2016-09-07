@@ -60,6 +60,7 @@ struct dt_dir {
 	struct dt_file *s_cells;
 	struct dt_file *reg;
 };
+
 #define BUF_MAX 256
 struct dt_file {
 	struct dt_node node;
@@ -73,6 +74,7 @@ static const struct dt_dir *node2dir(const struct device_node *n)
 {
 	struct dt_node *dn = container_of((struct device_node *)n, struct dt_node, node);
 	const struct dt_dir *d = container_of(dn, struct dt_dir, node);
+
 	assert(!dn->is_file);
 	return d;
 }
@@ -107,6 +109,7 @@ static int my_open_file(const char *relative_path)
 {
 	int ret;
 	char full_path[PATH_MAX];
+
 	snprintf(full_path, PATH_MAX, "%s/%s", base_dir, relative_path);
 	ret = open(full_path, O_RDONLY);
 	if (ret < 0) {
@@ -120,6 +123,7 @@ static void process_file(struct dirent *dent, struct dt_dir *parent)
 {
 	int fd;
 	struct dt_file *f = malloc(sizeof(*f));
+
 	if (!f) {
 		perror("malloc");
 		return;
@@ -127,7 +131,7 @@ static void process_file(struct dirent *dent, struct dt_dir *parent)
 	f->node.is_file = 1;
 	snprintf(f->node.node.name, NAME_MAX, "%s", dent->d_name);
 	snprintf(f->node.node.full_name, PATH_MAX, "%s/%s",
-		parent->node.node.full_name, dent->d_name);
+		 parent->node.node.full_name, dent->d_name);
 	f->parent = parent;
 	fd = my_open_file(f->node.node.full_name);
 	if (fd < 0) {
@@ -168,9 +172,9 @@ static int iterate_dir(struct dirent **d, int num, struct dt_dir *dt)
 				return -ENOMEM;
 			}
 			snprintf(subdir->node.node.name, NAME_MAX, "%s",
-				d[loop]->d_name);
+				 d[loop]->d_name);
 			snprintf(subdir->node.node.full_name, PATH_MAX, "%s/%s",
-				dt->node.node.full_name, d[loop]->d_name);
+				 dt->node.node.full_name, d[loop]->d_name);
 			subdir->parent = dt;
 			ret = process_dir(subdir->node.node.full_name, subdir);
 			if (ret)
@@ -208,6 +212,7 @@ static void linear_dir(struct dt_dir *d)
 {
 	struct dt_file *f;
 	struct dt_dir *dd;
+
 	d->compatible = NULL;
 	d->status = NULL;
 	d->lphandle = NULL;
@@ -278,6 +283,7 @@ static void destroy_dir(struct dt_dir *d)
 {
 	struct dt_file *f, *tmpf;
 	struct dt_dir *dd, *tmpd;
+
 	list_for_each_entry_safe(f, tmpf, &d->files, node.list) {
 		list_del(&f->node.list);
 		free(f);
@@ -301,6 +307,7 @@ static void print_dir(struct dt_dir *d)
 {
 	struct dt_file *f;
 	struct dt_dir *dd;
+
 	list_for_each_entry(f, &d->files, node.list)
 		printf("%s\n", f->node.node.full_name);
 	list_for_each_entry(dd, &d->subdirs, node.list)
@@ -323,6 +330,7 @@ static int check_compatible(const struct dt_file *f, const char *compatible)
 {
 	const char *c = (char *)f->buf;
 	unsigned int len, remains = f->len;
+
 	while (remains) {
 		len = strlen(c);
 		if (!strcmp(c, compatible))
@@ -343,6 +351,7 @@ const struct device_node *of_find_compatible_node(
 					const char *compatible)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (list_empty(&linear))
 		return NULL;
@@ -351,7 +360,7 @@ const struct device_node *of_find_compatible_node(
 	else
 		d = node2dir(from);
 	for (d = next_linear(d); d && (!d->compatible ||
-			!check_compatible(d->compatible, compatible));
+				       !check_compatible(d->compatible, compatible));
 			d = next_linear(d))
 		;
 	if (d)
@@ -360,10 +369,11 @@ const struct device_node *of_find_compatible_node(
 }
 
 const void *of_get_property(const struct device_node *from, const char *name,
-				size_t *lenp)
+			    size_t *lenp)
 {
 	const struct dt_dir *d;
 	const struct dt_file *f;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	d = node2dir(from);
 	list_for_each_entry(f, &d->files, node.list)
@@ -378,6 +388,7 @@ const void *of_get_property(const struct device_node *from, const char *name,
 bool of_device_is_available(const struct device_node *dev_node)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	d = node2dir(dev_node);
 	if (!d->status)
@@ -392,10 +403,11 @@ bool of_device_is_available(const struct device_node *dev_node)
 const struct device_node *of_find_node_by_phandle(phandle ph)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	list_for_each_entry(d, &linear, linear)
 		if (d->lphandle && (d->lphandle->len == 4) &&
-				!memcmp(d->lphandle->buf, &ph, 4))
+		    !memcmp(d->lphandle->buf, &ph, 4))
 			return &d->node.node;
 	return NULL;
 }
@@ -403,6 +415,7 @@ const struct device_node *of_find_node_by_phandle(phandle ph)
 const struct device_node *of_get_parent(const struct device_node *dev_node)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (!dev_node)
 		return NULL;
@@ -416,6 +429,7 @@ const struct device_node *of_get_next_child(const struct device_node *dev_node,
 					    const struct device_node *prev)
 {
 	const struct dt_dir *p, *c;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (!dev_node)
 		return NULL;
@@ -441,6 +455,7 @@ const struct device_node *of_get_next_child(const struct device_node *dev_node,
 uint32_t of_n_addr_cells(const struct device_node *dev_node)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (!dev_node)
 		return OF_DEFAULT_NA;
@@ -461,6 +476,7 @@ uint32_t of_n_addr_cells(const struct device_node *dev_node)
 uint32_t of_n_size_cells(const struct device_node *dev_node)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (!dev_node)
 		return OF_DEFAULT_NA;
@@ -479,12 +495,13 @@ uint32_t of_n_size_cells(const struct device_node *dev_node)
 }
 
 const uint32_t *of_get_address(const struct device_node *dev_node, size_t idx,
-				uint64_t *size, uint32_t *flags)
+			       uint64_t *size, uint32_t *flags)
 {
 	const struct dt_dir *d;
 	const unsigned char *buf;
 	uint32_t na = of_n_addr_cells(dev_node);
 	uint32_t ns = of_n_size_cells(dev_node);
+
 	if (!dev_node)
 		d = &root_dir;
 	else
@@ -551,9 +568,10 @@ uint64_t of_translate_address(const struct device_node *dev_node,
 }
 
 bool of_device_is_compatible(const struct device_node *dev_node,
-				const char *compatible)
+			     const char *compatible)
 {
 	const struct dt_dir *d;
+
 	WARN_ON(!alive, "Device-tree driver not initialised");
 	if (!dev_node)
 		d = &root_dir;
@@ -565,7 +583,7 @@ bool of_device_is_compatible(const struct device_node *dev_node,
 }
 
 struct device_node *of_find_node_with_property(struct device_node *from,
-	const char *prop_name)
+					       const char *prop_name)
 {
 	const struct dt_dir *d;
 	const struct dt_file *f;

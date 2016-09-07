@@ -406,7 +406,7 @@ static int parse_cmd_line_args(const char *str)
 			cli_info->name = pch;
 			i++;
 		} else {
-			cli_info = &(netcfg_interface->interface_info[i - 1]);
+			cli_info = &netcfg_interface->interface_info[i - 1];
 			cli_info->mac_present = 1;
 			ret = get_mac_addr(cli_info->name, &cli_info->peer_mac);
 			if (ret != 0)
@@ -540,7 +540,7 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(void)
 		/* Extract FMC configuration only for
 		   command-line interfaces */
 		if (__if->mac_type == fman_onic ||
-		   (__if->mac_type == fman_offline)) {
+		    (__if->mac_type == fman_offline)) {
 			cfg->rx_def = __if->fqid_rx_def;
 			continue;
 		}
