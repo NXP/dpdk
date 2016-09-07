@@ -412,6 +412,17 @@ unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 	return 0;
 }
 
+int dpaa_mbuf_pool_verify(const struct rte_mempool *mp __rte_unused)
+{
+	/*if dpaa init fails, means no dpaa pool will be avaialbe */
+	if (!netcfg) {
+		PMD_DRV_LOG(WARNING, "DPAA mempool resources not available\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 struct rte_mempool_ops dpaa_mpool_ops = {
 	.name = "dpaa",
 	.alloc = dpaa_mbuf_create_pool,
@@ -419,6 +430,7 @@ struct rte_mempool_ops dpaa_mpool_ops = {
 	.enqueue = dpaa_mbuf_free_bulk,
 	.dequeue = dpaa_mbuf_alloc_bulk,
 	.get_count = dpaa_mbuf_get_count,
+	.pool_verify = dpaa_mbuf_pool_verify,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
