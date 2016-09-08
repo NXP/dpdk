@@ -645,7 +645,7 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 		struct rte_eth_fc_conf *fc_conf)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct rte_eth_fc_conf *net_fc = &dpaa_intf->fc_conf;
+	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
 
 	if (fc_conf->high_water < fc_conf->low_water) {
 		printf("\nERR - %s Incorrect Flow Control Configuration\n",
@@ -680,18 +680,27 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 
 static int
 dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
-		struct rte_eth_fc_conf *fc_conf)
+		     struct rte_eth_fc_conf *fc_conf)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct rte_eth_fc_conf *net_fc = &dpaa_intf->fc_conf;
-
-	fc_conf->pause_time = net_fc->pause_time;
-	fc_conf->high_water = net_fc->high_water;
-	fc_conf->low_water = net_fc->low_water;
-	fc_conf->send_xon = net_fc->send_xon;
-	fc_conf->mac_ctrl_frame_fwd = net_fc->mac_ctrl_frame_fwd;
-	fc_conf->mode = net_fc->mode;
-	fc_conf->autoneg = net_fc->autoneg;
+	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
+	int ret;
+	if (net_fc) {
+		fc_conf->pause_time = net_fc->pause_time;
+		fc_conf->high_water = net_fc->high_water;
+		fc_conf->low_water = net_fc->low_water;
+		fc_conf->send_xon = net_fc->send_xon;
+		fc_conf->mac_ctrl_frame_fwd = net_fc->mac_ctrl_frame_fwd;
+		fc_conf->mode = net_fc->mode;
+		fc_conf->autoneg = net_fc->autoneg;
+		return 0;
+	}
+	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
+	} else
+		fc_conf->mode = RTE_FC_NONE;
 
 	return 0;
 }
