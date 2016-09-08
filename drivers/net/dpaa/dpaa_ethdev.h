@@ -141,7 +141,7 @@ struct dpaa_if {
 	uint32_t ifid;
 	struct fman_if *fif;
 	struct pool_info_entry *bp_info;
-	struct rte_eth_fc_conf fc_conf;
+	struct rte_eth_fc_conf *fc_conf;
 };
 
 extern __thread bool thread_portal_init;
