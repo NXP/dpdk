@@ -239,7 +239,6 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 		goto errret;
 	}
 	dpaa_display_frame(fd);
-
 	ptr = dpaa_mem_ptov(fd->addr);
 	if (!ptr) {
 		PMD_DRV_LOG(ERROR, "unable to convert physical address");
@@ -353,6 +352,47 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 	dpaa_mbuf->tx_offload = mbuf->tx_offload;
 	rte_pktmbuf_free(mbuf);
 	return dpaa_mbuf;
+}
+int dpaa_get_flow_control(uint32_t portid, struct rte_eth_fc_conf *fc_conf)
+{
+	struct dpaa_if *iface = &dpaa_ifacs[portid];
+	int ret = fman_if_get_fc_threshold(iface->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(iface->fif);
+	} else
+		fc_conf->mode = RTE_FC_NONE;
+
+	return 0;
+}
+
+int dpaa_set_flow_control(uint32_t portid, struct rte_eth_fc_conf *fc_conf)
+{
+	struct dpaa_if *iface = &dpaa_ifacs[portid];
+
+	if (!iface->bp_info) {
+		printf("\n ??? ERR - %s buffer pool info not found",
+			__func__);
+		return -1;
+	}
+	if (fc_conf->high_water < fc_conf->low_water) {
+		printf("\nERR - %s Incorrect Flow Control Configuration\n",
+			__func__);
+		return -1;
+	}
+	/*TBD:XXX: Implementation for RTE_FC_RX_PAUSE mode*/
+	if (fc_conf->mode == RTE_FC_NONE)
+		return 0;
+	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
+				fc_conf->mode == RTE_FC_FULL) {
+		fman_if_set_fc_threshold(iface->fif,
+			fc_conf->high_water, fc_conf->low_water,
+			iface->bp_info->bpid);
+		if (fc_conf->pause_time)
+			fman_if_set_fc_quanta(iface->fif, fc_conf->pause_time);
+	}
+
+	return 0;
 }
 
 uint16_t dpaa_eth_queue_tx(void *q,
