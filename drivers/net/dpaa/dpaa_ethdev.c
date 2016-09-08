@@ -947,11 +947,46 @@ int dpaa_link_up(struct rte_eth_dev *dev)
 }
 
 static int
-dpaa_flow_ctrl_set(struct rte_eth_dev *dev  __rte_unused,
-		   struct rte_eth_fc_conf *fc_conf  __rte_unused)
+dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
+		   struct rte_eth_fc_conf *fc_conf)
 {
-	/*TBD:XXX: to be implemented*/
-	return 0;
+	struct rte_eth_fc_conf *net_fc;
+	if (!(dpaa_ifacs[dev->data->port_id].fc_conf)) {
+		dpaa_ifacs[dev->data->port_id].fc_conf = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
+		if (!dpaa_ifacs[dev->data->port_id].fc_conf) {
+			printf("%s::unable to save flow control info\n",
+								__func__);
+			return -ENOMEM;
+		}
+	}
+	net_fc = dpaa_ifacs[dev->data->port_id].fc_conf;
+	net_fc->pause_time = fc_conf->pause_time;
+	net_fc->high_water = fc_conf->high_water;
+	net_fc->low_water = fc_conf->low_water;
+	net_fc->send_xon = fc_conf->send_xon;
+	net_fc->mac_ctrl_frame_fwd = fc_conf->mac_ctrl_frame_fwd;
+	net_fc->mode = fc_conf->mode;
+	net_fc->autoneg = fc_conf->autoneg;
+
+	return dpaa_set_flow_control(dev->data->port_id, fc_conf);
+}
+static int
+dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
+		     struct rte_eth_fc_conf *fc_conf)
+{
+	struct rte_eth_fc_conf *net_fc;
+	net_fc = dpaa_ifacs[dev->data->port_id].fc_conf;
+	if (net_fc) {
+		fc_conf->pause_time = net_fc->pause_time;
+		fc_conf->high_water = net_fc->high_water;
+		fc_conf->low_water = net_fc->low_water;
+		fc_conf->send_xon = net_fc->send_xon;
+		fc_conf->mac_ctrl_frame_fwd = net_fc->mac_ctrl_frame_fwd;
+		fc_conf->mode = net_fc->mode;
+		fc_conf->autoneg = net_fc->autoneg;
+	}
+	return dpaa_get_flow_control(dev->data->port_id, fc_conf);
 }
 
 static struct eth_dev_ops dpaa_devops = {
@@ -967,6 +1002,7 @@ static struct eth_dev_ops dpaa_devops = {
 	.rx_queue_release	  = dpaa_eth_rx_queue_release,
 	.tx_queue_release	  = dpaa_eth_tx_queue_release,
 
+	.flow_ctrl_get		  = dpaa_flow_ctrl_get,
 	.flow_ctrl_set		  = dpaa_flow_ctrl_set,
 
 	.link_update		  = dpaa_eth_link_update,
