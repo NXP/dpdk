@@ -131,7 +131,7 @@ static inline void cpumask_clear_cpu(int cpu, cpumask_t *mask)
 
 /* Atomic stuff */
 typedef struct {
-	volatile long v;
+	long v;
 } atomic_t;
 /* NB: __atomic_*() functions copied and twiddled from lwe_atomic.h */
 static inline int atomic_read(const atomic_t *v)

@@ -189,10 +189,12 @@ static inline void *dpaa_mem_ptov(phys_addr_t paddr)
 	for (i = 0; i < RTE_MAX_MEMSEG && memseg[i].addr != NULL; i++) {
 		if (paddr >= memseg[i].phys_addr && paddr <
 			memseg[i].phys_addr + memseg[i].len)
-			return memseg[i].addr + (paddr - memseg[i].phys_addr);
+			return (uint8_t *)(memseg[i].addr) + (paddr - memseg[i].phys_addr);
 	}
 
 	return NULL;
 }
+
+int dpaa_portal_init(void *arg);
 
 #endif

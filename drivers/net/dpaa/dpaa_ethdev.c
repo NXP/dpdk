@@ -73,7 +73,7 @@ static struct rte_pci_id dpaa_pci_id[2] = {
 		FSL_DEVICE_ID,
 		FSL_SUBSYSTEM_VENDOR,
 		FSL_SUBSYSTEM_DEVICE},
-	{0, 0, 0, 0}
+	{0, 0, 0, 0, 0}
 };
 
 #define PCI_DEV_ADDR(dev) \
@@ -378,7 +378,6 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		void *const *obj_table,
 		unsigned n)
 {
-	struct rte_mbuf **mb = (struct rte_mbuf **)obj_table;
 	struct pool_info_entry *bp_info;
 	unsigned i = 0;
 	int ret;
@@ -853,7 +852,7 @@ static void dpaa_eth_stats_get(struct rte_eth_dev *dev,
 	fman_if_stats_get(iface->fif, stats);
 }
 
-static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
+static void dpaa_eth_stats_reset(struct rte_eth_dev *dev __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 	return;
@@ -912,7 +911,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
-void dpaa_eth_rx_queue_release(void *rxq)
+void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Rx queue release", rxq);
 	return;
@@ -929,7 +928,7 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
-void dpaa_eth_tx_queue_release(void *txq)
+void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Tx queue release", txq);
 	return;
@@ -958,6 +957,36 @@ int dpaa_link_up(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static int dpaa_set_flow_control(uint32_t portid,
+		struct rte_eth_fc_conf *fc_conf)
+{
+	struct dpaa_if *iface = &dpaa_ifacs[portid];
+
+	if (!iface->bp_info) {
+		printf("\n ??? ERR - %s buffer pool info not found",
+			__func__);
+		return -1;
+	}
+	if (fc_conf->high_water < fc_conf->low_water) {
+		printf("\nERR - %s Incorrect Flow Control Configuration\n",
+			__func__);
+		return -1;
+	}
+	/*TBD:XXX: Implementation for RTE_FC_RX_PAUSE mode*/
+	if (fc_conf->mode == RTE_FC_NONE)
+		return 0;
+	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
+				fc_conf->mode == RTE_FC_FULL) {
+		fman_if_set_fc_threshold(iface->fif,
+			fc_conf->high_water, fc_conf->low_water,
+			iface->bp_info->bpid);
+		if (fc_conf->pause_time)
+			fman_if_set_fc_quanta(iface->fif, fc_conf->pause_time);
+	}
+
+	return 0;
+}
+
 static int
 dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 		   struct rte_eth_fc_conf *fc_conf)
@@ -983,6 +1012,21 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 
 	return dpaa_set_flow_control(dev->data->port_id, fc_conf);
 }
+
+static int dpaa_get_flow_control(uint32_t portid,
+		struct rte_eth_fc_conf *fc_conf)
+{
+	struct dpaa_if *iface = &dpaa_ifacs[portid];
+	int ret = fman_if_get_fc_threshold(iface->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(iface->fif);
+	} else
+		fc_conf->mode = RTE_FC_NONE;
+
+	return 0;
+}
+
 static int
 dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 		     struct rte_eth_fc_conf *fc_conf)
