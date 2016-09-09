@@ -119,8 +119,8 @@ void dpaa_display_frame(const struct qm_fd *fd)
 #define dpaa_display_frame(a)
 #endif
 
-static inline void dpaa_slow_parsing(struct rte_mbuf *m,
-				     uint64_t prs)
+static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
+				     uint64_t prs __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 }
@@ -229,10 +229,9 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 						   struct qm_fd *fd)
 {
-	void *ptr;
+	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
 	struct rte_mbuf *mbuf;
-	struct pool_info_entry *bp_info;
-	uint32_t tmp;
+	void *ptr;
 
 	if (unlikely(fd->format != qm_fd_contig)) {
 		PMD_DRV_LOG(ERROR, "dropping packet in sg form");
@@ -245,10 +244,8 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 		goto errret;
 	}
 	/* Prefetch the Parse results and packet data to L1 */
-	rte_prefetch0(ptr + DEFAULT_RX_ICEOF);
-	rte_prefetch0(ptr + fd->offset);
-
-	bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
+	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
+	rte_prefetch0((void *)((uint8_t *)ptr + fd->offset));
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	mbuf->buf_addr = ptr;
@@ -273,11 +270,8 @@ uint16_t dpaa_eth_queue_rx(void *q,
 			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
-	struct qm_mcr_queryfq_np np;
-	enum qman_fq_state state;
 	struct qman_fq *fq = q;
 	struct qm_dqrr_entry *dq;
-	struct qm_fd *fd;
 	uint32_t num_rx = 0;
 	int ret;
 
@@ -331,8 +325,7 @@ out:
 }
 
 static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
-					     struct dpaa_if *iface,
-		struct qman_fq *fq)
+		struct dpaa_if *iface)
 {
 	struct rte_mbuf *dpaa_mbuf;
 
@@ -341,8 +334,8 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 	if (!dpaa_mbuf)
 		return NULL;
 
-	memcpy(dpaa_mbuf->buf_addr + mbuf->data_off, (void *)
-		(mbuf->buf_addr + mbuf->data_off), mbuf->pkt_len);
+	memcpy((uint8_t *)(dpaa_mbuf->buf_addr) + mbuf->data_off, (void *)
+		((uint8_t *)(mbuf->buf_addr) + mbuf->data_off), mbuf->pkt_len);
 
 	/* Copy only the required fields */
 	dpaa_mbuf->data_off = mbuf->data_off;
@@ -353,57 +346,25 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 	rte_pktmbuf_free(mbuf);
 	return dpaa_mbuf;
 }
-int dpaa_get_flow_control(uint32_t portid, struct rte_eth_fc_conf *fc_conf)
-{
-	struct dpaa_if *iface = &dpaa_ifacs[portid];
-	int ret = fman_if_get_fc_threshold(iface->fif);
-	if (ret) {
-		fc_conf->mode = RTE_FC_TX_PAUSE;
-		fc_conf->pause_time = fman_if_get_fc_quanta(iface->fif);
-	} else
-		fc_conf->mode = RTE_FC_NONE;
-
-	return 0;
-}
-
-int dpaa_set_flow_control(uint32_t portid, struct rte_eth_fc_conf *fc_conf)
-{
-	struct dpaa_if *iface = &dpaa_ifacs[portid];
-
-	if (!iface->bp_info) {
-		printf("\n ??? ERR - %s buffer pool info not found",
-			__func__);
-		return -1;
-	}
-	if (fc_conf->high_water < fc_conf->low_water) {
-		printf("\nERR - %s Incorrect Flow Control Configuration\n",
-			__func__);
-		return -1;
-	}
-	/*TBD:XXX: Implementation for RTE_FC_RX_PAUSE mode*/
-	if (fc_conf->mode == RTE_FC_NONE)
-		return 0;
-	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
-				fc_conf->mode == RTE_FC_FULL) {
-		fman_if_set_fc_threshold(iface->fif,
-			fc_conf->high_water, fc_conf->low_water,
-			iface->bp_info->bpid);
-		if (fc_conf->pause_time)
-			fman_if_set_fc_quanta(iface->fif, fc_conf->pause_time);
-	}
-
-	return 0;
-}
 
 uint16_t dpaa_eth_queue_tx(void *q,
-			   struct rte_mbuf **bufs,
-			uint16_t nb_bufs)
+		struct rte_mbuf **bufs,
+		uint16_t nb_bufs)
 {
 	struct rte_mbuf *mbuf;
 	struct rte_mempool *mp;
 	struct pool_info_entry *bp_info;
 	struct qm_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t frames_to_send, loop, i = 0;
+	int ret;
+
+	if (unlikely(!thread_portal_init)) {
+		ret = dpaa_portal_init((void *)0);
+		if (ret) {
+			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			return 0;
+		}
+	}
 
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
@@ -419,7 +380,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				struct qman_fq *txq = q;
 				struct dpaa_if *iface = &dpaa_ifacs[txq->ifid];
 
-				mbuf = dpaa_get_dmable_mbuf(mbuf, iface, q);
+				mbuf = dpaa_get_dmable_mbuf(mbuf, iface);
 				if (!mbuf) {
 					PMD_DRV_LOG(DEBUG, "no dpaa buffers.\n");
 					/* Set frames_to_send & nb_bufs so that packets
