@@ -35,7 +35,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_pmd_dpaa.a
 
-CFLAGS += -D _GNU_SOURCE
+CFLAGS += -D _GNU_SOURCE -DCONFIG_ARM64
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
@@ -54,9 +54,18 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_net
 EXPORT_MAP := rte_pmd_dpaa_version.map
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
+	base/drivers/fman/fman.c \
+	base/drivers/of/of.c \
+	base/drivers/process/process.c \
+	base/drivers/qbman/bman_high.c \
+	base/drivers/qbman/bman_driver.c \
+	base/drivers/qbman/qman_high.c \
+	base/drivers/qbman/qman_driver.c \
+	base/drivers/qbman/dpa_alloc.c \
+	base/drivers/qbman/dpa_sys.c \
+	base/drivers/syscfg/usdpaa_netcfg_layer.c \
 	dpaa_ethdev.c \
 	dpaa_rxtx.c
-DIRS-y += base
 SYMLINK-y-include +=
 
 # this lib depends upon:
