@@ -85,6 +85,7 @@ rte_mempool_register_ops(const struct rte_mempool_ops *h)
 	ops->enqueue = h->enqueue;
 	ops->dequeue = h->dequeue;
 	ops->get_count = h->get_count;
+	ops->pool_verify = h->pool_verify;
 
 	rte_spinlock_unlock(&rte_mempool_ops_table.sl);
 
