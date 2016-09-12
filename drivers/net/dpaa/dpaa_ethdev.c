@@ -890,7 +890,6 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
 			DPAA_PCD_FQID_MULTIPLIER + loop;
-		printf("Initializing Rx FQID: %x\n", fqid);
 		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
 		if (ret) {
 			printf("%s::dpaa_rx_queue_init failed for %x\n",
