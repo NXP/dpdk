@@ -35,7 +35,7 @@
 #if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(CONFIG_PPC64)
 #error "_PPC64 requires _FSL_QMAN_FQ_LOOKUP"
 #endif
-#if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(CONFIG_ARM64)
+#if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(RTE_ARCH_ARM64)
 #error "_ARM64 requires _FSL_QMAN_FQ_LOOKUP"
 #endif
 
