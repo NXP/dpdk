@@ -152,24 +152,11 @@ struct dpaa_if {
 	uint32_t ifid;
 	struct fman_if *fif;
 	struct pool_info_entry *bp_info;
-	struct rte_eth_fc_conf *fc_conf;
+	struct rte_eth_fc_conf fc_conf;
 };
 
 extern __thread bool thread_portal_init;
-extern struct dpaa_if *dpaa_ifacs;
 extern struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
-
-#define DPAA_PORTID_TO_IFACE(__portid) \
-	&dpaa_ifacs[__portid];
-
-#define DPAA_NUM_RX_QUEUE(__portid) \
-	dpaa_ifacs[__portid].nb_rx_queues;
-
-#define DPAA_NUM_TX_QUEUE(__portid) \
-	dpaa_ifacs[__portid].nb_tx_queues;
-
-#define DPAA_IF_MAC_ADDR(__portid) \
-	&dpaa_ifacs[__portid].mac_addr[0];
 
 #define DPAA_BPID_TO_POOL_INFO(__bpid) \
 	&dpaa_pool_table[__bpid];

@@ -80,7 +80,7 @@
 	} while (0);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
-		    uint64_t addr)
+		uint64_t addr)
 {
 	struct bm_buffer buf;
 	int ret;
@@ -120,13 +120,13 @@ void dpaa_display_frame(const struct qm_fd *fd)
 #endif
 
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
-				     uint64_t prs __rte_unused)
+		uint64_t prs __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 }
 
 static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
-					uint64_t fd_virt_addr)
+		uint64_t fd_virt_addr)
 {
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
@@ -196,7 +196,7 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 }
 
 static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
-					 struct qm_fd *fd)
+		struct qm_fd *fd)
 {
 	struct dpaa_eth_parse_results_t *prs;
 
@@ -227,9 +227,10 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 }
 
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
-						   struct qm_fd *fd)
+		struct qm_fd *fd)
 {
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
+	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct rte_mbuf *mbuf;
 	void *ptr;
 
@@ -253,7 +254,7 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	mbuf->data_len = fd->length20;
 	mbuf->pkt_len = fd->length20;
 
-	mbuf->port = fq->ifid;
+	mbuf->port = dpaa_intf->ifid;
 	mbuf->nb_segs = 1;
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
@@ -267,7 +268,7 @@ errret:
 }
 
 uint16_t dpaa_eth_queue_rx(void *q,
-			   struct rte_mbuf **bufs,
+		struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
 	struct qman_fq *fq = q;
@@ -325,12 +326,12 @@ out:
 }
 
 static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
-		struct dpaa_if *iface)
+		struct dpaa_if *dpaa_intf)
 {
 	struct rte_mbuf *dpaa_mbuf;
 
 	/* allocate pktbuffer on bpid for dpaa port */
-	dpaa_mbuf = dpaa_get_pktbuf(iface->bp_info);
+	dpaa_mbuf = dpaa_get_pktbuf(dpaa_intf->bp_info);
 	if (!dpaa_mbuf)
 		return NULL;
 
@@ -378,9 +379,9 @@ uint16_t dpaa_eth_queue_tx(void *q,
 						       &fd_arr[loop], bp_info->bpid);
 			} else {
 				struct qman_fq *txq = q;
-				struct dpaa_if *iface = &dpaa_ifacs[txq->ifid];
+				struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 
-				mbuf = dpaa_get_dmable_mbuf(mbuf, iface);
+				mbuf = dpaa_get_dmable_mbuf(mbuf, dpaa_intf);
 				if (!mbuf) {
 					PMD_DRV_LOG(DEBUG, "no dpaa buffers.\n");
 					/* Set frames_to_send & nb_bufs so that packets
@@ -391,7 +392,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				}
 
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
-						       &fd_arr[loop], iface->bp_info->bpid);
+						       &fd_arr[loop], dpaa_intf->bp_info->bpid);
 			}
 
 			if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
@@ -410,3 +411,13 @@ send_pkts:
 	return i;
 }
 
+uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
+		struct rte_mbuf **bufs __rte_unused,
+		uint16_t nb_bufs __rte_unused)
+{
+	/* Drop all incoming packets. No need to free packets here
+	 * because the rte_eth f/w frees up the packets through tx_buffer
+	 * callback in case this functions returns count less than nb_bufs
+	 */
+	return 0;
+}

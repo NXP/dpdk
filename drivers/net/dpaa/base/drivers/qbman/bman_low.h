@@ -55,7 +55,7 @@
 
 #endif
 
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 
 /* Cache-inhibited register offsets */
 #define BM_REG_RCR_PI_CINH	0x3000
@@ -533,7 +533,7 @@ static inline void bm_isr_bscn_mask(struct bm_portal *portal, u8 bpid,
 
 static inline u32 __bm_isr_read(struct bm_portal *portal, enum bm_isr_reg n)
 {
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 	return __bm_in(&portal->addr, BM_REG_ISR + (n << 6));
 #else
 	return __bm_in(&portal->addr, BM_REG_ISR + (n << 2));
@@ -543,7 +543,7 @@ static inline u32 __bm_isr_read(struct bm_portal *portal, enum bm_isr_reg n)
 static inline void __bm_isr_write(struct bm_portal *portal, enum bm_isr_reg n,
 				  u32 val)
 {
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 	__bm_out(&portal->addr, BM_REG_ISR + (n << 6), val);
 #else
 	__bm_out(&portal->addr, BM_REG_ISR + (n << 2), val);

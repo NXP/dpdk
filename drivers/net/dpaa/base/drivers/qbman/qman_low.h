@@ -71,7 +71,7 @@
 
 #endif
 
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 
 #define QM_REG_EQCR_PI_CINH	0x3000
 #define QM_REG_EQCR_CI_CINH	0x3040
@@ -1201,7 +1201,7 @@ static inline void qm_isr_set_iperiod(struct qm_portal *portal, u16 iperiod)
 
 static inline u32 __qm_isr_read(struct qm_portal *portal, enum qm_isr_reg n)
 {
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 	return __qm_in(&portal->addr, QM_REG_ISR + (n << 6));
 #else
 	return __qm_in(&portal->addr, QM_REG_ISR + (n << 2));
@@ -1211,7 +1211,7 @@ static inline u32 __qm_isr_read(struct qm_portal *portal, enum qm_isr_reg n)
 static inline void __qm_isr_write(struct qm_portal *portal, enum qm_isr_reg n,
 				  u32 val)
 {
-#if defined(CONFIG_ARM64)
+#if defined(RTE_ARCH_ARM64)
 	__qm_out(&portal->addr, QM_REG_ISR + (n << 6), val);
 #else
 	__qm_out(&portal->addr, QM_REG_ISR + (n << 2), val);
