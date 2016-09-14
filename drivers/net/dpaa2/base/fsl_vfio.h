@@ -30,49 +30,46 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DPAA2_LOGS_H_
-#define _DPAA2_LOGS_H_
+#ifndef _FSL_VFIO_H_
+#define _FSL_VFIO_H_
 
-#define PMD_INIT_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ##args)
+#include "eal_vfio.h"
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_INIT
-#define PMD_INIT_FUNC_TRACE() PMD_INIT_LOG(DEBUG, " >>")
-#else
-#define PMD_INIT_FUNC_TRACE() do { } while (0)
-#endif
+#define FSL_VENDOR_ID		0x1957
+#define FSL_MC_DPNI_DEVID	7
+#define FSL_MC_DPSECI_DEVID	3
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_RX
-#define PMD_RX_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_RX_LOG(level, fmt, args...) do { } while (0)
-#endif
+#define VFIO_MAX_GRP		1
+#define VFIO_MAX_CONTAINERS	1
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_TX
-#define PMD_TX_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_TX_LOG(level, fmt, args...) do { } while (0)
-#endif
+typedef struct fsl_vfio_device {
+	int fd; /* fsl_mc root container device ?? */
+	int index; /*index of child object */
+	struct fsl_vfio_device *child; /* Child object */
+} fsl_vfio_device;
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_TX_FREE
-#define PMD_TX_FREE_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_TX_FREE_LOG(level, fmt, args...) do { } while (0)
-#endif
+typedef struct fsl_vfio_group {
+	int fd; /* /dev/vfio/"groupid" */
+	int groupid;
+	struct fsl_vfio_container *container;
+	int object_index;
+	struct fsl_vfio_device *vfio_device;
+} fsl_vfio_group;
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
-#define PMD_DRV_LOG_RAW(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt, __func__, ## args)
-#else
-#define PMD_DRV_LOG_RAW(level, fmt, args...) do { } while (0)
-#endif
+typedef struct fsl_vfio_container {
+	int fd; /* /dev/vfio/vfio */
+	int used;
+	int index; /* index in group list */
+	struct fsl_vfio_group *group_list[VFIO_MAX_GRP];
+} fsl_vfio_container;
 
-#define PMD_DRV_LOG2(level, fmt, args...) do { } while (0)
+int vfio_dmamap_mem_region(
+	uint64_t vaddr,
+	uint64_t iova,
+	uint64_t size);
 
-#define PMD_DRV_LOG(level, fmt, args...) \
-	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
+/* initialize the NXP/FSL dpaa2 accelerators */
+int rte_eal_dpaa2_init(void);
+int rte_eal_dpaa2_dmamap(void);
 
-#endif /* _DPAA2_LOGS_H_ */
+#endif /* _FSL_VFIO_H_ */
