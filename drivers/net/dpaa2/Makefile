@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright (c) 2014 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -29,6 +29,7 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
+RTE_SDK_DPAA2=$(RTE_SDK)/drivers/net/dpaa2
 
 #
 # library name
@@ -47,11 +48,12 @@ CFLAGS +=-Wno-missing-prototypes
 CFLAGS +=-Wno-missing-declarations
 CFLAGS +=-Wno-unused-function
 
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/driver/
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/
+CFLAGS += -I$(RTE_SDK_DPAA2)/
+CFLAGS += -I$(RTE_SDK_DPAA2)/base
+CFLAGS += -I$(RTE_SDK_DPAA2)/base/mc
+CFLAGS += -I$(RTE_SDK_DPAA2)/base/qbman/include
+CFLAGS += -I$(RTE_SDK_DPAA2)/base/qbman/include/drivers
+CFLAGS += -I$(RTE_SDK_DPAA2)/base/qbman/driver/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/
 CFLAGS += -I$(RTE_SDK)/lib/librte_ether
@@ -60,26 +62,32 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 EXPORT_MAP := rte_pmd_dpaa2_version.map
 
 LIBABIVER := 1
+
 #
-# all source are stored in SRCS-y
+# Include QBMAN and MC drivers
 #
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += \
-	mc/dpbp.c \
-	mc/dpio.c \
-	mc/dpni.c \
-	mc/dpseci.c \
-	mc/mc_sys.c
+	base/mc/dpbp.c \
+	base/mc/dpio.c \
+	base/mc/dpni.c \
+	base/mc/dpseci.c \
+	base/mc/mc_sys.c
 
 #
 # all source are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += \
-	qbman/driver/qbman_portal.c
+	base/qbman/driver/qbman_portal.c
 
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpni.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpio.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpbp.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += eal_vfio_fsl_mc.c
+# Core DPAA2 logic
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/fsl_vfio.c
+
+# Interfaces with DPDK
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpni.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpio.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpbp.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_rxtx.c
 
 #
 # Export include files

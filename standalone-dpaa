@@ -34,10 +34,9 @@ then
         echo "WARNING: OPENSSL_PATH is not set";
 fi
 
-export XML_ZLIB_PATH=${RTE_SDK}/ext/dpaa
 export PATH=${CROSS_PATH}:$PATH
 
-# Refresh submodules
+# Initialize/fetch submodules
 git submodule init
 git submodule update
 
@@ -45,11 +44,9 @@ git submodule update
 #SDK_INSTALL_PATH=/home/sxl/ls1043/Linux-LS1043A-SDK-V0.5-20151223-yocto
 #SDK_TARGET_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/sysroots/ls1043ardb
 #dpaa1 based application needs the limxml2.a and libz.a, they are built independently
-#export XML_ZLIB_PATH=/home/sxl/stash/usdpaa-lib
+
 #export KERNEL_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/work/ls1043ardb-fsl-linux/linux-ls1043a/3.19-r0/git
 #export RTE_SDK=${DPDK_INSTALL_PATH}
 
 echo "Setup for DPDK DPAA-QorIQ compilation";
 echo "CROSS is configured:" $CROSS
-echo "XML_ZLIB_PATH (libxml.a and libz.a path) is configured as:" $XML_ZLIB_PATH
-

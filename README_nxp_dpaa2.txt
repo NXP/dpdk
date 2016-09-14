@@ -255,10 +255,10 @@ Traffic to port 4: 4.1.1.0/24
 ===============================================================================
 Building and Use PKTGEN with DPDK
 
- Get the code from:
-git clone https://github.com/qoriq-open-source/pktgen-dpdk.git
-#do the make install in DPDK.
-source <DPDK Source DIR>/standalone_dpaa2
+ Get the code from: git://dpdk.org/apps/pktgen-dpdk
+#do the make install in DPDK. 
+export KERNEL_PATH=<To a compiled KERNEL; In this case, ls2085 Yocto compiled kernel>
+source <DPDK Source DIR>/standalone_dpaa2 
 export RTE_SDK=<DPDK Source DIR>
 make -j8 EXTRA_CFLAGS="-std=gnu99"
 
@@ -297,7 +297,7 @@ Code Location: stash
 Branch: 16.07-qoriq
 Tag:
 
-DPDK base version used: Release 16.07-rc3
+DPDK base version used: Release 16.07
 More info on DPDK :  www.dpdk.org
 
 LS2 Release - EAR6 & SDK2.0
