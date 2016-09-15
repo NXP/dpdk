@@ -268,12 +268,11 @@ Traffic to port 4: 4.1.1.0/24
 ===============================================================================
 Building and Use PKTGEN with DPDK
 
- Get the code from:
-git clone https://github.com/qoriq-open-source/pktgen-dpdk.git
+ Get the code from: git://dpdk.org/apps/pktgen-dpdk
 #do the make install in DPDK. 
 source <DPDK Source DIR>/standalone_dpaa
 export RTE_SDK=<DPDK Source DIR>
-make -j8 EXTRA_CFLAGS="-std=gnu99"
+make
 
 Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 
@@ -305,7 +304,7 @@ Code Location: stash
 Branch: 16.07-qoriq
 Tag:
 
-DPDK base version used: Release 16.07-rc3
+DPDK base version used: Release 16.07
 More info on DPDK :  www.dpdk.org
 
 LS2 Release - SDK2.0

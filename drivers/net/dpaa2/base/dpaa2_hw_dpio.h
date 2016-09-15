@@ -30,49 +30,25 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DPAA2_LOGS_H_
-#define _DPAA2_LOGS_H_
+#ifndef _DPAA2_HW_DPIO_H_
+#define _DPAA2_HW_DPIO_H_
 
-#define PMD_INIT_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ##args)
+/*Stashing Macros*/
+#define DPAA2_CORE_CLUSTER_BASE		0x04
+#define DPAA2_CORE_CLUSTER_FIRST	(DPAA2_CORE_CLUSTER_BASE + 0)
+#define DPAA2_CORE_CLUSTER_SECOND	(DPAA2_CORE_CLUSTER_BASE + 1)
+#define DPAA2_CORE_CLUSTER_THIRD	(DPAA2_CORE_CLUSTER_BASE + 2)
+#define DPAA2_CORE_CLUSTER_FOURTH	(DPAA2_CORE_CLUSTER_BASE + 3)
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_INIT
-#define PMD_INIT_FUNC_TRACE() PMD_INIT_LOG(DEBUG, " >>")
-#else
-#define PMD_INIT_FUNC_TRACE() do { } while (0)
-#endif
+/* TODO */
+int dpaa2_affine_qbman_swp(void);
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_RX
-#define PMD_RX_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_RX_LOG(level, fmt, args...) do { } while (0)
-#endif
+/* TODO */
+int dpaa2_affine_qbman_swp_sec(void);
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_TX
-#define PMD_TX_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_TX_LOG(level, fmt, args...) do { } while (0)
-#endif
+/* TODO */
+int dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
+			     struct vfio_device_info *obj_info,
+			     int object_id);
 
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_TX_FREE
-#define PMD_TX_FREE_LOG(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt "\n", __func__, ## args)
-#else
-#define PMD_TX_FREE_LOG(level, fmt, args...) do { } while (0)
-#endif
-
-#ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
-#define PMD_DRV_LOG_RAW(level, fmt, args...) \
-	RTE_LOG(level, PMD, "%s(): " fmt, __func__, ## args)
-#else
-#define PMD_DRV_LOG_RAW(level, fmt, args...) do { } while (0)
-#endif
-
-#define PMD_DRV_LOG2(level, fmt, args...) do { } while (0)
-
-#define PMD_DRV_LOG(level, fmt, args...) \
-	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
-
-#endif /* _DPAA2_LOGS_H_ */
+#endif /* _DPAA2_HW_DPIO_H_ */

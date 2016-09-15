@@ -31,6 +31,7 @@
  */
 
 #include <time.h>
+#include <net/if.h>
 #include <rte_mbuf.h>
 #include <rte_cryptodev.h>
 #include <rte_malloc.h>
@@ -41,21 +42,15 @@
 #include <rte_dev.h>
 #include <rte_cryptodev_pmd.h>
 #include <rte_common.h>
-#include <rte_eth_dpaa2_pvt.h>
-#include "dpaa2_sec_priv.h"
-
-#include <net/if.h>
-
-#include "dpaa2_sec_logs.h"
 
 /* MC header files */
-#include <fsl_dpbp.h>
 #include <fsl_dpseci.h>
-#include <fsl_dpio.h>
 
-/*QBMAN header files*/
-#include <fsl_qbman_portal.h>
-#include <fsl_qbman_base.h>
+#include <dpaa2_hw_pvt.h>
+#include <dpaa2_hw_dpbp.h>
+
+#include "dpaa2_sec_priv.h"
+#include "dpaa2_sec_logs.h"
 
 /* RTA header files */
 #include <flib/desc/ipsec.h>
@@ -387,9 +382,10 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 
 static inline int
 build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
-			   struct qbman_fd *fd, uint16_t bpid)
+	     struct qbman_fd *fd, uint16_t bpid)
 {
 	int ret = -1;
+
 	switch (sess->ctxt_type) {
 	case DPAA2_SEC_CIPHER:
 		ret = build_cipher_fd(sess, op, fd, bpid);
@@ -406,7 +402,6 @@ build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	}
 	return ret;
 }
-
 
 static uint16_t
 dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
@@ -550,9 +545,8 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 		DPAA2_GET_FD_OFFSET(fd),
 		DPAA2_GET_FD_LEN(fd));
 
-	/* Not the inline used fle */
-	//if (fle != op->sym->m_src->buf_addr)
-		rte_free(fle - 1);
+	/* free the fle memory */
+	rte_free(fle - 1);
 
 	return op;
 }
@@ -648,7 +642,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 /*Packet dq option with prefetch support */
 static uint16_t
 dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
-			uint16_t nb_ops)
+				 uint16_t nb_ops)
 {
 	/* Function is responsible to receive frames for a given device and VQ*/
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
@@ -682,7 +676,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
 			while (!qbman_check_command_complete(swp,
-				get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+				    get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
 				;
 			clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
 		}
@@ -705,7 +699,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	 * and the SEC driver.*/
 	while (!qbman_check_command_complete(swp, dq_storage))
 		;
-	if(dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
+	if (dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
 		clear_swp_active_dqs(q_storage->active_dpio_id);
 	while (!is_last) {
 		/* Loop until the dq_storage is updated with
@@ -730,19 +724,19 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		if (unlikely(fd[num_rx]->simple.frc)) {
 			/* TODO Parse SEC errors */
 			printf("SEC returned Error - %x\n",
-				fd[num_rx]->simple.frc);
+			       fd[num_rx]->simple.frc);
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
 		} else
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 
 		dq_storage++;
 		num_rx++;
-		
+
 	} /* End of Packet Rx loop */
 
 	if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
 		while (!qbman_check_command_complete(swp,
-			get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+						     get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
 			;
 		clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
 	}
@@ -772,7 +766,6 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
-
 
 /** Release queue pair */
 static int
@@ -827,13 +820,13 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	qp->rx_vq.q_storage = rte_malloc("sec dq storage",
 		sizeof(struct queue_storage_info_t),
 		RTE_CACHE_LINE_SIZE);
-	if (!qp->rx_vq.q_storage){
+	if (!qp->rx_vq.q_storage) {
 		PMD_DRV_LOG(ERR, "malloc failed for q_storage\n");
 		return -1;
 	}
 	memset(qp->rx_vq.q_storage, 0, sizeof(struct queue_storage_info_t));
 
-	if (dpaa2_alloc_dq_storage(qp->rx_vq.q_storage)){
+	if (dpaa2_alloc_dq_storage(qp->rx_vq.q_storage)) {
 		PMD_DRV_LOG(ERR, "dpaa2_alloc_dq_storage failed\n");
 		return -1;
 	}
@@ -1543,7 +1536,7 @@ dpaa2_sec_uninit(const char *name)
 		return -EINVAL;
 
 	PMD_DRV_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
-			   name, rte_socket_id());
+		    name, rte_socket_id());
 
 	return 0;
 }
@@ -1560,7 +1553,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 
 	PMD_INIT_FUNC_TRACE();
 	PMD_DRV_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
-		    dev->pci_dev->addr.bus,
+		dev->pci_dev->addr.bus,
 		dev->pci_dev->addr.devid,
 		dev->pci_dev->addr.function);
 
