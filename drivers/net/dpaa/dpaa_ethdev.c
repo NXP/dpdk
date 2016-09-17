@@ -84,8 +84,8 @@ static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf,
 	int ret;
 
 	/* Offline ports don't support tx_error nor tx_confirm */
-	if ((idx <= ADMIN_FQ_RX_DEFAULT) ||
-	    (dpaa_intf->cfg->fman_if->mac_type != fman_offline))
+	if ((dpaa_intf->cfg->fman_if->mac_type == fman_offline) &&
+		(idx <= ADMIN_FQ_RX_DEFAULT))
 		return 0;
 
 	ret = qman_reserve_fqid(fqid);
