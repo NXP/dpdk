@@ -1689,3 +1689,15 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia)
 
 	out_be32(fmqm_pndn, nia);
 }
+
+void fman_if_discard_rx_errors(struct fman_if *fm_if)
+{
+	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
+	unsigned *fmbm_rfsdm, *fmbm_rfsem;
+
+	fmbm_rfsem = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsem;
+	out_be32(fmbm_rfsem, 0);
+
+	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsdm;
+	out_be32(fmbm_rfsdm, 0xFFFFFFFF);
+}
