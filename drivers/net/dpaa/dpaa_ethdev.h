@@ -99,21 +99,11 @@
 #define DPAA_DEFAULT_NUM_PCD_QUEUES	1
 
 #define DPAA_IF_TX_PRIORITY		3
-#define DPAA_IF_ADMIN_PRIORITY		4
 #define DPAA_IF_RX_PRIORITY		4
 
 #define DPAA_IF_RX_ANNOTATION_STASH	2
 #define DPAA_IF_RX_DATA_STASH		1
 #define DPAA_IF_RX_CONTEXT_STASH		0
-
-/* Each "admin" FQ is represented by one of these */
-enum {
-	ADMIN_FQ_RX_ERROR,
-	ADMIN_FQ_RX_DEFAULT,
-	ADMIN_FQ_TX_ERROR,
-	ADMIN_FQ_TX_CONFIRM,
-	ADMIN_FQ_NUM /* Upper limit for loops */
-};
 
 #define DPAA_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_FRAG_IPV4 | \
@@ -144,7 +134,6 @@ struct dpaa_if {
 	char name[MAX_ETHDEV_NAME];
 	char mac_addr[ETHER_ADDR_LEN];
 	const struct fm_eth_port_cfg *cfg;
-	struct qman_fq admin[ADMIN_FQ_NUM];
 	struct qman_fq *rx_queues;
 	struct qman_fq *tx_queues;
 	uint16_t nb_rx_queues;
