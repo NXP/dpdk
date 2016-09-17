@@ -74,113 +74,6 @@ __thread bool thread_portal_init;
 rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
 struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
 
-/* Initialise a admin FQ ([rt]x_error, rx_default, tx_confirm). */
-static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf,
-		uint32_t fqid,
-		int idx)
-{
-	struct qman_fq *a = &dpaa_intf->admin[idx];
-	struct qm_mcc_initfq opts;
-	int ret;
-
-	/* Offline ports don't support tx_error nor tx_confirm */
-	if ((dpaa_intf->cfg->fman_if->mac_type == fman_offline) &&
-		(idx <= ADMIN_FQ_RX_DEFAULT))
-		return 0;
-
-	ret = qman_reserve_fqid(fqid);
-	if (ret)
-		return -EINVAL;
-
-	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, a);
-	if (ret)
-		return ret;
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL;
-	opts.fqd.dest.wq = DPAA_IF_ADMIN_PRIORITY;
-	return qman_init_fq(a, 0, &opts);
-}
-
-/* Initialise an Rx FQ */
-static int dpaa_rx_queue_init(struct qman_fq *fq,
-		uint32_t fqid)
-{
-	struct qm_mcc_initfq opts;
-	int ret;
-
-	ret = qman_reserve_fqid(fqid);
-	if (ret) {
-		PMD_DRV_LOG(ERROR, "reserve rx fqid %d failed", fqid);
-		return -EINVAL;
-	}
-	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d",
-		    __func__, fq, fqid);
-	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
-	if (ret) {
-		PMD_DRV_LOG(ERROR, "create rx fqid %d failed", fqid);
-		return ret;
-	}
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTA;
-
-	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d", fqid,
-		    DPAA_IF_RX_PRIORITY);
-
-	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
-	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
-			   QM_FQCTRL_PREFERINCACHE;
-	opts.fqd.context_a.stashing.exclusive = 0;
-	opts.fqd.context_a.stashing.annotation_cl = DPAA_IF_RX_ANNOTATION_STASH;
-	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
-	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
-	ret = qman_init_fq(fq, 0, &opts);
-	if (ret)
-		PMD_DRV_LOG(ERROR, "init rx fqid %d failed %d", fqid, ret);
-	return ret;
-}
-
-/* Initialise a Tx FQ */
-static int dpaa_tx_queue_init(struct qman_fq *fq,
-		struct fman_if *fman_intf)
-{
-	struct qm_mcc_initfq opts;
-	int ret;
-
-	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
-			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);
-	if (ret)
-		return ret;
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTB | QM_INITFQ_WE_CONTEXTA;
-	opts.fqd.dest.channel = fman_intf->tx_channel_id;
-	opts.fqd.dest.wq = DPAA_IF_TX_PRIORITY;
-	opts.fqd.fq_ctrl = QM_FQCTRL_PREFERINCACHE;
-	opts.fqd.context_b = 0;
-	/* no tx-confirmation */
-	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
-	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
-	PMD_DRV_LOG(DEBUG, "%s::initializing fqid %d for fman_intf fm%d-gb%d chanl %d\n",
-		__func__, fq->fqid, (fman_intf->fman_idx + 1), fman_intf->mac_idx,
-		fman_intf->tx_channel_id);
-	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
-}
-
-static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
-{
-	struct rte_eth_fc_conf *fc_conf = dpaa_intf->fc_conf;
-	int ret;
-
-	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
-	if (ret) {
-		fc_conf->mode = RTE_FC_TX_PAUSE;
-		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
-	} else {
-		fc_conf->mode = RTE_FC_NONE;
-	}
-
-	return 0;
- }
-
 static struct bman_pool *dpaa_bpid_init(int bpid)
 {
 	struct bm_buffer bufs[8];
@@ -865,6 +758,87 @@ static struct eth_dev_ops dpaa_devops = {
 	.dev_set_link_up	  = dpaa_link_up,
 };
 
+static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
+{
+	struct rte_eth_fc_conf *fc_conf = &dpaa_intf->fc_conf;
+	int ret;
+
+	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
+	} else {
+		fc_conf->mode = RTE_FC_NONE;
+	}
+
+	return 0;
+ }
+
+/* Initialise an Rx FQ */
+static int dpaa_rx_queue_init(struct qman_fq *fq,
+		uint32_t fqid)
+{
+	struct qm_mcc_initfq opts;
+	int ret;
+
+	ret = qman_reserve_fqid(fqid);
+	if (ret) {
+		PMD_DRV_LOG(ERROR, "reserve rx fqid %d failed", fqid);
+		return -EINVAL;
+	}
+	/* "map" this Rx FQ to one of the interfaces Tx FQID */
+	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d",
+		    __func__, fq, fqid);
+	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
+	if (ret) {
+		PMD_DRV_LOG(ERROR, "create rx fqid %d failed", fqid);
+		return ret;
+	}
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
+		       QM_INITFQ_WE_CONTEXTA;
+
+	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d", fqid,
+		    DPAA_IF_RX_PRIORITY);
+
+	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
+	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
+			   QM_FQCTRL_PREFERINCACHE;
+	opts.fqd.context_a.stashing.exclusive = 0;
+	opts.fqd.context_a.stashing.annotation_cl = DPAA_IF_RX_ANNOTATION_STASH;
+	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
+	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
+	ret = qman_init_fq(fq, 0, &opts);
+	if (ret)
+		PMD_DRV_LOG(ERROR, "init rx fqid %d failed %d", fqid, ret);
+	return ret;
+}
+
+/* Initialise a Tx FQ */
+static int dpaa_tx_queue_init(struct qman_fq *fq,
+		struct fman_if *fman_intf)
+{
+	struct qm_mcc_initfq opts;
+	int ret;
+
+	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
+			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);
+	if (ret)
+		return ret;
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
+		       QM_INITFQ_WE_CONTEXTB | QM_INITFQ_WE_CONTEXTA;
+	opts.fqd.dest.channel = fman_intf->tx_channel_id;
+	opts.fqd.dest.wq = DPAA_IF_TX_PRIORITY;
+	opts.fqd.fq_ctrl = QM_FQCTRL_PREFERINCACHE;
+	opts.fqd.context_b = 0;
+	/* no tx-confirmation */
+	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
+	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
+	PMD_DRV_LOG(DEBUG, "%s::initializing fqid %d for fman_intf fm%d-gb%d chanl %d\n",
+		__func__, fq->fqid, (fman_intf->fman_idx + 1), fman_intf->mac_idx,
+		fman_intf->tx_channel_id);
+	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
+}
+
 /* Initialise a network interface */
 static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -894,27 +868,6 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->ifid = dev_id;
 	dpaa_intf->cfg = cfg;
 
-	/* Initialise admin FQs */
-	ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_rx_err,
-				    ADMIN_FQ_RX_ERROR);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, cfg->rx_def,
-					    ADMIN_FQ_RX_DEFAULT);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_tx_err,
-					    ADMIN_FQ_TX_ERROR);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_tx_confirm,
-					    ADMIN_FQ_TX_CONFIRM);
-	if (ret) {
-		printf("%s::admin create FQ failed\n", __func__);
-		return ret;
-	}
-	dpaa_intf->admin[ADMIN_FQ_RX_ERROR].dpaa_intf = dpaa_intf;
-	dpaa_intf->admin[ADMIN_FQ_RX_DEFAULT].dpaa_intf = dpaa_intf;
-	dpaa_intf->admin[ADMIN_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
-	dpaa_intf->admin[ADMIN_FQ_TX_CONFIRM].dpaa_intf = dpaa_intf;
-
 	/* Initialize Rx FQ's */
 	if (getenv("DPAA_NUM_RX_QUEUES"))
 		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
@@ -926,7 +879,6 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
 			DPAA_PCD_FQID_MULTIPLIER + loop;
-		printf("Initializing Rx FQID: %x\n", fqid);
 		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
 		if (ret) {
 			printf("%s::dpaa_rx_queue_init failed for %x\n",
