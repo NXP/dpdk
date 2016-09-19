@@ -85,9 +85,7 @@
 
 #define MAX_JUMBO_PKT_LEN  9600
 
-#define	BUF_SIZE	RTE_MBUF_DEFAULT_DATAROOM
-#define MBUF_SIZE	\
-	(BUF_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
+#define	MBUF_DATA_SIZE	RTE_MBUF_DEFAULT_BUF_SIZE
 
 #define NB_MBUF 8192
 
@@ -910,11 +908,13 @@ setup_queue_tbl(struct rx_queue *rxq, uint32_t lcore, uint32_t queue)
 
 	snprintf(buf, sizeof(buf), "mbuf_pool_%u_%u", lcore, queue);
 
-	if ((rxq->pool = rte_mempool_create(buf, nb_mbuf, MBUF_SIZE, 0,
-			sizeof(struct rte_pktmbuf_pool_private),
-			rte_pktmbuf_pool_init, NULL, rte_pktmbuf_init, NULL,
-			socket, MEMPOOL_F_SP_PUT | MEMPOOL_F_SC_GET)) == NULL) {
-		RTE_LOG(ERR, IP_RSMBL, "mempool_create(%s) failed", buf);
+	rxq->pool = rte_pktmbuf_pool_create(buf, nb_mbuf,
+		0, /* cache size */
+		0, /* priv size */
+		MBUF_DATA_SIZE, socket);
+	if (rxq->pool == NULL) {
+		RTE_LOG(ERR, IP_RSMBL,
+			"rte_pktmbuf_pool_create(%s) failed", buf);
 		return -1;
 	}
 
