@@ -146,6 +146,7 @@ How to run DPDK Applications
 
 	fmc -c usdpaa_config_ls1043.xml -p usdpaa_policy_hash_ipv4_*queue.xml -a
 		(* = 1/2/4)
+	export DPAA_NUM_RX_QUEUES=1 (or 2/4) based on the executed policy file.
 
    NOTE: fmc should be availabe in rootfs.
 
