@@ -161,10 +161,10 @@ struct annotations_t {
 	(struct annotations_t *)(_buf)
 
 #define GET_RX_PRS(_buf) \
-	(struct dpaa_eth_parse_results_t *)(_buf + DEFAULT_RX_ICEOF)
+	(struct dpaa_eth_parse_results_t *)((uint8_t *)_buf + DEFAULT_RX_ICEOF)
 
 #define GET_TX_PRS(_buf) \
-	(struct dpaa_eth_parse_results_t *)(_buf + DEFAULT_TX_ICEOF)
+	(struct dpaa_eth_parse_results_t *)((uint8_t *)_buf + DEFAULT_TX_ICEOF)
 
 #define L2_ETH_MAC_PRESENT(prs) \
 	(rte_be_to_cpu_16((prs)->l2r) & ETH_PRESENT_MASK)
@@ -194,6 +194,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 uint16_t dpaa_eth_queue_tx(void *q,
 			   struct rte_mbuf **bufs,
 			uint16_t nb_bufs);
+
+uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
+		struct rte_mbuf **bufs __rte_unused,
+		uint16_t nb_bufs __rte_unused);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
 		    uint64_t addr);

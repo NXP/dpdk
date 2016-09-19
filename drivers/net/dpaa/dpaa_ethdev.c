@@ -67,34 +67,17 @@
 #include <usdpaa/of.h>
 #include <usdpaa/usdpaa_netcfg.h>
 
-static struct rte_pci_id dpaa_pci_id[2] = {
-	{FSL_VENDOR_ID,
-		FSL_DEVICE_ID,
-		FSL_SUBSYSTEM_VENDOR,
-		FSL_SUBSYSTEM_DEVICE},
-	{0, 0, 0, 0}
-};
-
-#define PCI_DEV_ADDR(dev) \
-	((dev->addr.domain << 24) | (dev->addr.bus << 16) | \
-	 (dev->addr.devid << 8) | (dev->addr.function))
-
-struct dpaa_if *dpaa_ifacs;
-static struct usdpaa_netcfg_info *netcfg;
-
+static struct usdpaa_netcfg_info *dpaa_netcfg;
 __thread bool thread_portal_init;
-static unsigned int num_dpaa_ports;
 
 /* Static BPID index allocator, increments continuously */
 rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
-
 struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
 
-static int dpaa_pci_devinit(struct rte_pci_driver *pci_drv __rte_unused,
-			    struct rte_pci_device *pci_dev);
-
 /* Initialise a admin FQ ([rt]x_error, rx_default, tx_confirm). */
-static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf, uint32_t fqid, int idx)
+static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf,
+		uint32_t fqid,
+		int idx)
 {
 	struct qman_fq *a = &dpaa_intf->admin[idx];
 	struct qm_mcc_initfq opts;
@@ -119,7 +102,7 @@ static int dpaa_admin_queue_init(struct dpaa_if *dpaa_intf, uint32_t fqid, int i
 
 /* Initialise an Rx FQ */
 static int dpaa_rx_queue_init(struct qman_fq *fq,
-			      uint32_t fqid)
+		uint32_t fqid)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
@@ -140,8 +123,8 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTA;
 
-	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d ifid %d", fqid,
-		    DPAA_IF_RX_PRIORITY, dpaa_intf->ifid);
+	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d", fqid,
+		    DPAA_IF_RX_PRIORITY);
 
 	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
@@ -158,7 +141,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 
 /* Initialise a Tx FQ */
 static int dpaa_tx_queue_init(struct qman_fq *fq,
-			      struct fman_if *fif)
+		struct fman_if *fman_intf)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
@@ -169,25 +152,40 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 		return ret;
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTB | QM_INITFQ_WE_CONTEXTA;
-	opts.fqd.dest.channel = fif->tx_channel_id;
+	opts.fqd.dest.channel = fman_intf->tx_channel_id;
 	opts.fqd.dest.wq = DPAA_IF_TX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_PREFERINCACHE;
 	opts.fqd.context_b = 0;
 	/* no tx-confirmation */
 	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
-	PMD_DRV_LOG(DEBUG, "%s::initializing fqid %d for iface fm%d-gb%d chanl %d\n",
-		    __func__, fq->fqid, (fif->fman_idx + 1), fif->mac_idx,
-		fif->tx_channel_id);
+	PMD_DRV_LOG(DEBUG, "%s::initializing fqid %d for fman_intf fm%d-gb%d chanl %d\n",
+		__func__, fq->fqid, (fman_intf->fman_idx + 1), fman_intf->mac_idx,
+		fman_intf->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
+
+static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
+{
+	struct rte_eth_fc_conf *fc_conf = dpaa_intf->fc_conf;
+	int ret;
+
+	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
+	} else {
+		fc_conf->mode = RTE_FC_NONE;
+	}
+
+	return 0;
+ }
 
 static struct bman_pool *dpaa_bpid_init(int bpid)
 {
 	struct bm_buffer bufs[8];
 	struct bman_pool *bp = NULL;
-	unsigned int num_bufs = 0;
-	int ret = 0;
+	int num_bufs = 0, ret = 0;
 
 	PMD_DRV_LOG(DEBUG, "request bman pool: bpid %d", bpid);
 	/* Drain (if necessary) then seed buffer pools */
@@ -222,8 +220,8 @@ static struct bman_pool *dpaa_bpid_init(int bpid)
 
 int hw_mbuf_create_pool(struct rte_mempool *mp)
 {
-	uint32_t bpid;
 	struct bman_pool *bp;
+	uint32_t bpid;
 
 	/*XXX: bpid_alloc needs to be changed to a bitmap, so that
 	 * we can take care of destroy_pool kind of API too. Current
@@ -272,7 +270,7 @@ int hw_mbuf_init(struct rte_mempool *mp, void *_m)
 	uint32_t sz, bpid;
 	struct bm_buffer bufs;
 
-	if (!netcfg) {
+	if (!dpaa_netcfg) {
 		PMD_DRV_LOG(WARNING, "DPAA buffer pool not configured\n");
 		return -1;
 	}
@@ -315,25 +313,16 @@ int hw_mbuf_init(struct rte_mempool *mp, void *_m)
 }
 
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
-		       void **obj_table,
-			unsigned count)
+		void **obj_table,
+		unsigned count)
 {
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	static int alloc;
-#endif
-	void *bufaddr;
-	int ret;
-	unsigned int i = 0, n = 0;
 	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
 	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
 	struct pool_info_entry *bp_info;
+	void *bufaddr;
+	int i = 0, n = 0, ret;
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
-
-	if (!netcfg || !bp_info) {
-		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
-		return -2;
-	}
 
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
@@ -400,12 +389,9 @@ set_buf:
 		rte_mbuf_refcnt_set(m[i], 1);
 		i = i + 1;
 	}
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	alloc += n;
-	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d bpid =%d",
-		    alloc, count, n, bp_info->bpid);
-#endif
-	return 0;
+  	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
+		    count, n, bp_info->bpid);
+ 	return 0;
 free_buf:
 	PMD_DRV_LOG(WARNING, "unable alloc required bufs count =%d n=%d",
 		    count, n);
@@ -423,13 +409,11 @@ retry:
 }
 
 int hw_mbuf_free_bulk(struct rte_mempool *pool,
-		      void *const *obj_table,
-			unsigned n)
+		void *const *obj_table,
+		unsigned n)
 {
-	struct rte_mbuf **mb = (struct rte_mbuf **)obj_table;
 	struct pool_info_entry *bp_info;
-	unsigned i = 0;
-	int ret;
+	int i = 0, ret;
 
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
@@ -439,10 +423,6 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool,
 		}
 	}
 
-	if (!netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA2 buffer pool not configured\n");
-		return -1;
-	}
 	while (i < n) {
 		bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 		dpaa_buf_free(bp_info,
@@ -466,143 +446,51 @@ void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 	return;
 }
 
-/* Initialise a network interface */
-static int dpaa_if_init(struct dpaa_if *dpaa_intf,
-			const struct fm_eth_port_cfg *cfg)
-{
-	struct fman_if *fif = cfg->fman_if;
-	int num_cores, loop, ret = 0;
-	int num_rx_fqs, fqid;
-
-	dpaa_intf->cfg = cfg;
-	/* give the interface a name */
-	sprintf(&dpaa_intf->name[0], "fm%d-gb%d", (cfg->fman_if->fman_idx + 1),
-		cfg->fman_if->mac_idx);
-
-	/* get the mac address */
-	memcpy(&dpaa_intf->mac_addr, &cfg->fman_if->mac_addr.addr_bytes,
-	       ETHER_ADDR_LEN);
-
-	printf("%s::interface %s macaddr::", __func__, dpaa_intf->name);
-	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
-		if (loop != (ETHER_ADDR_LEN - 1))
-			printf("%02x:", dpaa_intf->mac_addr[loop]);
-		else
-			printf("%02x\n", dpaa_intf->mac_addr[loop]);
-	}
-
-	/* Initialise admin FQs */
-	ret = dpaa_admin_queue_init(dpaa_intf, fif->fqid_rx_err,
-				    ADMIN_FQ_RX_ERROR);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, cfg->rx_def,
-					    ADMIN_FQ_RX_DEFAULT);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, fif->fqid_tx_err,
-					    ADMIN_FQ_TX_ERROR);
-	if (!ret)
-		ret = dpaa_admin_queue_init(dpaa_intf, fif->fqid_tx_confirm,
-					    ADMIN_FQ_TX_CONFIRM);
-	if (ret) {
-		printf("%s::admin create FQ failed\n", __func__);
-		return ret;
-	}
-
-	dpaa_intf->admin[ADMIN_FQ_RX_ERROR].ifid = dpaa_intf->ifid;
-	dpaa_intf->admin[ADMIN_FQ_RX_DEFAULT].ifid = dpaa_intf->ifid;
-	dpaa_intf->admin[ADMIN_FQ_TX_ERROR].ifid = dpaa_intf->ifid;
-	dpaa_intf->admin[ADMIN_FQ_TX_CONFIRM].ifid = dpaa_intf->ifid;
-
-	if (getenv("DPAA_NUM_RX_QUEUES"))
-		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
-	else
-		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
-
-	dpaa_intf->rx_queues = rte_zmalloc(NULL,
-		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
-	for (loop = 0; loop < num_rx_fqs; loop++) {
-		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
-			DPAA_PCD_FQID_MULTIPLIER + loop;
-		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
-		if (ret) {
-			printf("%s::dpaa_rx_queue_init failed for %x\n",
-			       __func__, fqid);
-			return ret;
-		}
-		dpaa_intf->rx_queues[loop].ifid = dpaa_intf->ifid;
-	}
-	dpaa_intf->nb_rx_queues = num_rx_fqs;
-
-	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
-	num_cores = rte_lcore_count();
-	dpaa_intf->tx_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
-		num_cores, MAX_CACHELINE);
-	if (!dpaa_intf->tx_queues)
-		return -ENOMEM;
-
-	for (loop = 0; loop < num_cores; loop++) {
-		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop], fif);
-		if (ret)
-			return ret;
-		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x",
-			    __func__, dpaa_intf->tx_queues[loop].fqid);
-		dpaa_intf->tx_queues[loop].ifid = dpaa_intf->ifid;
-	}
-	dpaa_intf->nb_tx_queues = num_cores;
-
-	/* save fif in the interface struture */
-	dpaa_intf->fif = fif;
-	PMD_DRV_LOG(DEBUG, "all rxfqs created");
-
-	/* Disable RX, disable promiscous mode */
-	fman_if_disable_rx(fif);
-	fman_if_promiscuous_disable(fif);
-	return 0;
-}
 
 static int dpaa_init(void)
 {
-	/* Determine number of cores (==number of threads) */
-	/* Load the device-tree driver */
-	int ii, ret;
+	int dev_id, ret;
 
+	/* Load the device-tree driver */
 	ret = of_init();
 	if (ret) {
 		printf("of_init Failed %d\n", ret);
 		return -1;
 	}
-	/* Parse FMC policy and configuration files for the network
-	 * configuration. This also "extracts" other settings into 'netcfg' that
-	 * are not necessarily from the XML files, such as the pool channels
-	 * that the application is allowed to use (these are currently
-	 * hard-coded into the netcfg code). */
-	netcfg = usdpaa_netcfg_acquire();
-	if (!netcfg) {
+
+	/* Get the interface configurations from device-tree */
+	dpaa_netcfg = usdpaa_netcfg_acquire();
+	if (!dpaa_netcfg) {
 		fprintf(stderr, "Fail: usdpaa_netcfg_acquire\n");
 		return -1;
 	}
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%d ethports available\n", netcfg->num_ethports);
-	dump_usdpaa_netcfg(netcfg);
-#endif
-	if (!netcfg->num_ethports) {
+	if (!dpaa_netcfg->num_ethports) {
 		fprintf(stderr, "Fail: no network interfaces available\n");
 		return -1;
 	}
-	dpaa_ifacs = calloc(netcfg->num_ethports, sizeof(*dpaa_ifacs));
-	if (!dpaa_ifacs)
-		return -ENOMEM;
 
-	for (ii = 0; ii < netcfg->num_ethports; ii++) {
-		struct fm_eth_port_cfg *cfg;
-		struct fman_if *fman_if;
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	printf("%d ethports available\n", dpaa_netcfg->num_ethports);
+	dump_usdpaa_netcfg(dpaa_netcfg);
+#endif
 
-		cfg = &netcfg->port_cfg[ii];
-		fman_if = cfg->fman_if;
-		sprintf(&dpaa_ifacs->name[0], "fm%d-gb%d",
-			(fman_if->fman_idx + 1),
-				fman_if->mac_idx);
+	for (dev_id = 0; dev_id < dpaa_netcfg->num_ethports; dev_id++) {
+		struct rte_pci_device *dev;
+
+		dev = malloc(sizeof(struct rte_pci_device));
+		if (dev == NULL) {
+			return -1;
+		}
+		memset(dev, 0, sizeof(*dev));
+		/* store device id of fman device */
+		dev->addr.devid = dev_id;
+		dev->id.vendor_id = FSL_VENDOR_ID;
+		dev->id.device_id = FSL_DEVICE_ID;
+		dev->addr.function = dev->id.device_id;
+
+		TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 	}
+
 	/* Load the Qman/Bman drivers */
 	ret = qman_global_init();
 	if (ret) {
@@ -614,7 +502,8 @@ static int dpaa_init(void)
 		fprintf(stderr, "Fail: %s: %d\n", "bman_global_init()", ret);
 		return -1;
 	}
-	return netcfg->num_ethports;
+
+	return 0;
 }
 
 int dpaa_portal_init(void *arg)
@@ -660,127 +549,22 @@ int dpaa_portal_init(void *arg)
 	return 0;
 }
 
-static int dpaa_global_init(void)
-{
-	unsigned int loop;
-
-	/* Create and initialise the network interfaces */
-	PMD_DRV_LOG(DEBUG, "creating %d ifaces", netcfg->num_ethports);
-	for (loop = 0; loop < netcfg->num_ethports; loop++) {
-		struct fman_if_bpool *bp, *tmp_bp;
-		struct fm_eth_port_cfg *pcfg;
-		int ret;
-
-		pcfg = &netcfg->port_cfg[loop];
-		dpaa_ifacs[loop].ifid = loop;
-
-		ret = dpaa_if_init(&dpaa_ifacs[loop], pcfg);
-		if (ret) {
-			PMD_DRV_LOG(ERROR, "dpaa_if_init(%d) failed", loop);
-			return ret;
-		}
-		/* reset bpool list, initialize bpool dynamically */
-		list_for_each_entry_safe(bp, tmp_bp, &pcfg->fman_if->bpool_list, node) {
-			list_del(&bp->node);
-			free(bp);
-		}
-	}
-	return 0;
-}
-
-static inline void insert_devices_into_pcilist(struct rte_pci_device *dev)
-{
-	uint32_t devaddr;
-	uint32_t newdevaddr;
-	struct rte_pci_device *dev2 = NULL;
-
-	if (!(TAILQ_EMPTY(&pci_device_list))) {
-		newdevaddr = PCI_DEV_ADDR(dev);
-		TAILQ_FOREACH(dev2, &pci_device_list, next) {
-			devaddr = PCI_DEV_ADDR(dev2);
-
-			if (newdevaddr < devaddr) {
-				TAILQ_INSERT_BEFORE(dev2, dev, next);
-				return;
-			}
-		}
-	}
-	TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
-}
-
-static struct rte_pci_driver dpaa_pci_driver = {
-	.name = "dpaa_pci_driver",
-	.id_table = dpaa_pci_id,
-	.devinit = dpaa_pci_devinit
-};
-
-int add_dpaa_devices_to_pcilist(int num_ethports)
-{
-	int ii;
-	struct rte_pci_device *dev;
-
-	for (ii = 0; ii < num_ethports; ii++) {
-		dev = calloc(1, sizeof(struct rte_pci_device));
-		if (!dev) {
-			printf("%s::unable to allocate dev for %d\n",
-			       __func__, ii);
-			return -1;
-		}
-		dev->addr.domain = FSL_DPAA_DOMAIN;
-		dev->addr.bus = FSL_DPAA_BUSID;
-		dev->addr.devid = ii;
-		dev->id.vendor_id = FSL_VENDOR_ID;
-		dev->id.device_id = FSL_DEVICE_ID;
-		dev->id.subsystem_vendor_id = FSL_SUBSYSTEM_VENDOR;
-		dev->id.subsystem_device_id = FSL_SUBSYSTEM_DEVICE;
-		dev->numa_node = 0;
-
-		/* device is valid, add in list (sorted) */
-		insert_devices_into_pcilist(dev);
-	}
-	printf("%s::%d devices added to pci list\n", __func__, ii);
-	rte_eal_pci_register(&dpaa_pci_driver);
-
-	return 0;
-}
-
 int dpaa_pre_rte_eal_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = dpaa_init();
-	if (ret <= 0) {
+	if (ret) {
 		printf("Cannot init dpaa\n");
 		return -1;
 	}
 
-	num_dpaa_ports = ret;
-
-	if (dpaa_portal_init((void *)1)) {
+	ret = dpaa_portal_init((void *)1);
+	if (ret) {
 		printf("dpaa portal init failed\n");
 		return -1;
 	}
-	PMD_DRV_LOG(DEBUG, "%s::global init, net portals\n", __func__);
-	if (dpaa_global_init()) {
-		printf("%s::dpaa_global_init failed\n", __func__);
-		return -1;
-	}
-	if (add_dpaa_devices_to_pcilist(num_dpaa_ports)) {
-		printf("Cannot init non pci dev list\n");
-		return -1;
-	}
 
-	return 0;
-}
-
-static uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
-				     struct rte_mbuf **bufs __rte_unused,
-		uint16_t nb_bufs __rte_unused)
-{
-	/* Drop all incoming packets. No need to free packets here
-	 * because the rte_eth f/w frees up the packets through tx_buffer
-	 * callback in case this functions returns count less than nb_bufs
-	 */
 	return 0;
 }
 
@@ -811,20 +595,20 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev)
 
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	/* Change tx callback to the real one */
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
 
-	fman_if_enable_rx(iface->fif);
+	fman_if_enable_rx(dpaa_intf->fif);
 	return 0;
 }
 
 static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	fman_if_disable_rx(iface->fif);
+	fman_if_disable_rx(dpaa_intf->fif);
 	dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 }
 
@@ -836,8 +620,10 @@ static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 			      struct rte_eth_dev_info *dev_info)
 {
-	dev_info->max_rx_queues = DPAA_NUM_RX_QUEUE(dev->data->port_id);
-	dev_info->max_tx_queues = DPAA_NUM_TX_QUEUE(dev->data->port_id);
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	dev_info->max_rx_queues = dpaa_intf->nb_rx_queues;
+	dev_info->max_tx_queues = dpaa_intf->nb_tx_queues;
 	dev_info->min_rx_bufsize = DPAA_MIN_RX_BUF_SIZE;
 	dev_info->max_rx_pktlen = DPAA_MAX_RX_PKT_LEN;
 	dev_info->max_mac_addrs = 0;
@@ -858,18 +644,18 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 				int wait_to_complete __rte_unused)
 {
-	struct dpaa_if *iface =  &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_link *link = &dev->data->dev_link;
 
-	if (iface->fif->mac_type == fman_mac_1g)
+	if (dpaa_intf->fif->mac_type == fman_mac_1g)
 		link->link_speed = 1000;
-	else if (iface->fif->mac_type == fman_mac_10g)
+	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
 		link->link_speed = 10000;
 	else
 		PMD_DRV_LOG(ERROR, "%s:: invalid link_speed %d",
-			    iface->name, iface->fif->mac_type);
+			    dpaa_intf->name, dpaa_intf->fif->mac_type);
 
-	link->link_status = iface->valid;
+	link->link_status = dpaa_intf->valid;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
 	link->link_autoneg = ETH_LINK_AUTONEG;
 	return 0;
@@ -878,12 +664,12 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 static void dpaa_eth_stats_get(struct rte_eth_dev *dev,
 			       struct rte_eth_stats *stats)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	fman_if_stats_get(iface->fif, stats);
+	fman_if_stats_get(dpaa_intf->fif, stats);
 }
 
-static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
+static void dpaa_eth_stats_reset(struct rte_eth_dev *dev __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 	return;
@@ -891,27 +677,27 @@ static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
 
 static void dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	fman_if_promiscuous_enable(iface->fif);
+	fman_if_promiscuous_enable(dpaa_intf->fif);
 }
 
 static void dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	fman_if_promiscuous_disable(iface->fif);
+	fman_if_promiscuous_disable(dpaa_intf->fif);
 }
 
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			    uint16_t nb_desc __rte_unused,
+		uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
 		const struct rte_eth_rxconf *rx_conf __rte_unused,
 		struct rte_mempool *mp)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	if (!iface->bp_info || iface->bp_info->mp != mp) {
+	if (!dpaa_intf->bp_info || dpaa_intf->bp_info->mp != mp) {
 		struct fman_if_ic_params icp;
 		uint32_t fd_offset;
 
@@ -919,47 +705,47 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			PMD_DRV_LOG(ERROR, "not an offloaded buffer pool");
 			return -1;
 		}
-		iface->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+		dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 
 		memset(&icp, 0, sizeof(icp));
 		/* set ICEOF for to the default value , which is 0*/
 		icp.iciof = DEFAULT_ICIOF;
 		icp.iceof = DEFAULT_RX_ICEOF;
 		icp.icsz = DEFAULT_ICSZ;
-		fman_if_set_ic_params(iface->fif, &icp);
+		fman_if_set_ic_params(dpaa_intf->fif, &icp);
 
 		fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
-		fman_if_set_fdoff(iface->fif, fd_offset);
-		fman_if_set_bp(iface->fif, mp->size,
-			       iface->bp_info->bpid, mp->elt_size);
-		iface->valid = 1;
+		fman_if_set_fdoff(dpaa_intf->fif, fd_offset);
+		fman_if_set_bp(dpaa_intf->fif, mp->size,
+			       dpaa_intf->bp_info->bpid, mp->elt_size);
+		dpaa_intf->valid = 1;
 		PMD_DRV_LOG(INFO, "if =%s - fd_offset = %d offset = %d",
-			    iface->name, fd_offset,
-			fman_if_get_fdoff(iface->fif));
+			    dpaa_intf->name, fd_offset,
+			fman_if_get_fdoff(dpaa_intf->fif));
 	}
-	dev->data->rx_queues[queue_idx] = &iface->rx_queues[queue_idx];
+	dev->data->rx_queues[queue_idx] = &dpaa_intf->rx_queues[queue_idx];
 
 	return 0;
 }
 
-void dpaa_eth_rx_queue_release(void *rxq)
+void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Rx queue release", rxq);
 	return;
 }
 
 int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			    uint16_t nb_desc __rte_unused,
+		uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
 		const struct rte_eth_txconf *tx_conf __rte_unused)
 {
-	struct dpaa_if *iface = &dpaa_ifacs[dev->data->port_id];
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	dev->data->tx_queues[queue_idx] = &iface->tx_queues[queue_idx];
+	dev->data->tx_queues[queue_idx] = &dpaa_intf->tx_queues[queue_idx];
 	return 0;
 }
 
-void dpaa_eth_tx_queue_release(void *txq)
+void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Tx queue release", txq);
 	return;
@@ -990,19 +776,31 @@ int dpaa_link_up(struct rte_eth_dev *dev)
 
 static int
 dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
-		   struct rte_eth_fc_conf *fc_conf)
+		struct rte_eth_fc_conf *fc_conf)
 {
-	struct rte_eth_fc_conf *net_fc;
-	if (!(dpaa_ifacs[dev->data->port_id].fc_conf)) {
-		dpaa_ifacs[dev->data->port_id].fc_conf = rte_zmalloc(NULL,
-			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
-		if (!dpaa_ifacs[dev->data->port_id].fc_conf) {
-			printf("%s::unable to save flow control info\n",
-								__func__);
-			return -ENOMEM;
-		}
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
+
+	if (fc_conf->high_water < fc_conf->low_water) {
+		printf("\nERR - %s Incorrect Flow Control Configuration\n",
+			__func__);
+		return -EINVAL;
 	}
-	net_fc = dpaa_ifacs[dev->data->port_id].fc_conf;
+
+	/*TBD:XXX: Implementation for RTE_FC_RX_PAUSE mode*/
+	/*TBD:XXX: In case of RTE_FC_NONE disable flow control in h/w. */
+	if (fc_conf->mode == RTE_FC_NONE)
+		return 0;
+	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
+				fc_conf->mode == RTE_FC_FULL) {
+		fman_if_set_fc_threshold(dpaa_intf->fif,
+			fc_conf->high_water, fc_conf->low_water,
+			dpaa_intf->bp_info->bpid);
+		if (fc_conf->pause_time)
+			fman_if_set_fc_quanta(dpaa_intf->fif, fc_conf->pause_time);
+	}
+
+	/* Save the information in dpaa device */
 	net_fc->pause_time = fc_conf->pause_time;
 	net_fc->high_water = fc_conf->high_water;
 	net_fc->low_water = fc_conf->low_water;
@@ -1011,14 +809,16 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 	net_fc->mode = fc_conf->mode;
 	net_fc->autoneg = fc_conf->autoneg;
 
-	return dpaa_set_flow_control(dev->data->port_id, fc_conf);
+	return 0;
 }
+
 static int
 dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 		     struct rte_eth_fc_conf *fc_conf)
 {
-	struct rte_eth_fc_conf *net_fc;
-	net_fc = dpaa_ifacs[dev->data->port_id].fc_conf;
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
+	int ret;
 	if (net_fc) {
 		fc_conf->pause_time = net_fc->pause_time;
 		fc_conf->high_water = net_fc->high_water;
@@ -1027,8 +827,16 @@ dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 		fc_conf->mac_ctrl_frame_fwd = net_fc->mac_ctrl_frame_fwd;
 		fc_conf->mode = net_fc->mode;
 		fc_conf->autoneg = net_fc->autoneg;
+		return 0;
 	}
-	return dpaa_get_flow_control(dev->data->port_id, fc_conf);
+	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
+	if (ret) {
+		fc_conf->mode = RTE_FC_TX_PAUSE;
+		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
+	} else
+		fc_conf->mode = RTE_FC_NONE;
+
+	return 0;
 }
 
 static struct eth_dev_ops dpaa_devops = {
@@ -1057,35 +865,150 @@ static struct eth_dev_ops dpaa_devops = {
 	.dev_set_link_up	  = dpaa_link_up,
 };
 
-static int dpaa_pci_devinit(struct rte_pci_driver *pci_drv __rte_unused,
-			    struct rte_pci_device *pci_dev)
+/* Initialise a network interface */
+static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 {
-	struct rte_eth_dev *ethdev;
-	char devname[MAX_ETHDEV_NAME];
-	char *mac_addr;
+	struct dpaa_if *dpaa_intf = eth_dev->data->dev_private;
+	int dev_id = eth_dev->pci_dev->addr.devid;
+	struct fm_eth_port_cfg *cfg = &dpaa_netcfg->port_cfg[dev_id];
+	struct fman_if *fman_intf = cfg->fman_if;
+	struct fman_if_bpool *bp, *tmp_bp;
+	int num_cores, num_rx_fqs, fqid;
+	int loop, ret = 0;
 
-	PMD_DRV_LOG(DEBUG, "%s::drv %p, dev %p\n", __func__, pci_drv, pci_dev);
-
-	/* alloc ethdev entry */
-	sprintf(devname, "%s%d\n", ETHDEV_NAME_PREFIX, pci_dev->addr.devid);
-	ethdev = rte_eth_dev_allocate(devname, RTE_ETH_DEV_VIRTUAL);
-	if (!ethdev) {
-		PMD_DRV_LOG(ERROR, "unable to allocate ethdev");
-		return -1;
+	/* give the interface a name */
+	sprintf(dpaa_intf->name, "fm%d-gb%d", (fman_intf->fman_idx + 1), fman_intf->mac_idx);
+	/* get the mac address */
+	memcpy(dpaa_intf->mac_addr, fman_intf->mac_addr.addr_bytes,
+	       ETHER_ADDR_LEN);
+	printf("%s::interface %s macaddr::", __func__, dpaa_intf->name);
+	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
+		if (loop != (ETHER_ADDR_LEN - 1))
+			printf("%02x:", dpaa_intf->mac_addr[loop]);
+		else
+			printf("%02x\n", dpaa_intf->mac_addr[loop]);
 	}
 
-	PMD_DRV_LOG(DEBUG, "allocated eth device port id %d",
-		    ethdev->data->port_id);
+	/* save fman_if & cfg in the interface struture */
+	dpaa_intf->fif = fman_intf;
+	dpaa_intf->ifid = dev_id;
+	dpaa_intf->cfg = cfg;
 
-	ethdev->dev_ops = &dpaa_devops;
-	ethdev->pci_dev = pci_dev;
+	/* Initialise admin FQs */
+	ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_rx_err,
+				    ADMIN_FQ_RX_ERROR);
+	if (!ret)
+		ret = dpaa_admin_queue_init(dpaa_intf, cfg->rx_def,
+					    ADMIN_FQ_RX_DEFAULT);
+	if (!ret)
+		ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_tx_err,
+					    ADMIN_FQ_TX_ERROR);
+	if (!ret)
+		ret = dpaa_admin_queue_init(dpaa_intf, fman_intf->fqid_tx_confirm,
+					    ADMIN_FQ_TX_CONFIRM);
+	if (ret) {
+		printf("%s::admin create FQ failed\n", __func__);
+		return ret;
+	}
+	dpaa_intf->admin[ADMIN_FQ_RX_ERROR].dpaa_intf = dpaa_intf;
+	dpaa_intf->admin[ADMIN_FQ_RX_DEFAULT].dpaa_intf = dpaa_intf;
+	dpaa_intf->admin[ADMIN_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
+	dpaa_intf->admin[ADMIN_FQ_TX_CONFIRM].dpaa_intf = dpaa_intf;
 
-	/* assign rx and tx ops */
-	ethdev->rx_pkt_burst = dpaa_eth_queue_rx;
-	ethdev->tx_pkt_burst = dpaa_eth_tx_drop_all;
+	/* Initialize Rx FQ's */
+	if (getenv("DPAA_NUM_RX_QUEUES"))
+		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
+	else
+		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
 
-	mac_addr = DPAA_IF_MAC_ADDR(ethdev->data->port_id);
-	ethdev->data->mac_addrs = (struct ether_addr *)mac_addr;
+	dpaa_intf->rx_queues = rte_zmalloc(NULL,
+		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
+	for (loop = 0; loop < num_rx_fqs; loop++) {
+		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
+			DPAA_PCD_FQID_MULTIPLIER + loop;
+		printf("Initializing Rx FQID: %x\n", fqid);
+		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
+		if (ret) {
+			printf("%s::dpaa_rx_queue_init failed for %x\n",
+			       __func__, fqid);
+			return ret;
+		}
+		dpaa_intf->rx_queues[loop].dpaa_intf = dpaa_intf;
+	}
+	dpaa_intf->nb_rx_queues = num_rx_fqs;
+
+	/* Initialise Tx FQs. Have as many Tx FQ's as number of cores */
+	num_cores = rte_lcore_count();
+	dpaa_intf->tx_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
+		num_cores, MAX_CACHELINE);
+	if (!dpaa_intf->tx_queues)
+		return -ENOMEM;
+
+	for (loop = 0; loop < num_cores; loop++) {
+		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop], fman_intf);
+		if (ret)
+			return ret;
+		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x",
+			    __func__, dpaa_intf->tx_queues[loop].fqid);
+		dpaa_intf->tx_queues[loop].dpaa_intf = dpaa_intf;
+	}
+	dpaa_intf->nb_tx_queues = num_cores;
+	PMD_DRV_LOG(DEBUG, "all fqs created");
+
+	/* Get the inital configuration for flow control */
+	dpaa_fc_set_default(dpaa_intf);
+
+	/* reset bpool list, initialize bpool dynamically */
+	list_for_each_entry_safe(bp, tmp_bp, &cfg->fman_if->bpool_list, node) {
+		list_del(&bp->node);
+		free(bp);
+	}
+
+	/* Populate ethdev structure */
+	eth_dev->dev_ops = &dpaa_devops;
+	eth_dev->data->nb_rx_queues = dpaa_intf->nb_rx_queues;
+	eth_dev->data->nb_tx_queues = dpaa_intf->nb_tx_queues;
+	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
+	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
+	eth_dev->data->mac_addrs = (struct ether_addr *)dpaa_intf->mac_addr;
+
+	/* Disable RX, disable promiscous mode */
+	fman_if_disable_rx(fman_intf);
+	fman_if_promiscuous_disable(fman_intf);
 
 	return 0;
 }
+
+static struct rte_pci_id pci_id_dpaa_map[] = {
+	{FSL_VENDOR_ID, FSL_DEVICE_ID,
+		FSL_SUBSYSTEM_VENDOR, FSL_SUBSYSTEM_DEVICE},
+	{0, 0, 0, 0}
+};
+
+static struct eth_driver rte_dpaa_pmd = {
+	{
+		.name = "rte_dpaa_pmd",
+		.id_table = pci_id_dpaa_map,
+	},
+	.eth_dev_init = dpaa_eth_dev_init,
+	.dev_private_size = sizeof(struct dpaa_if),
+};
+
+static int
+rte_dpaa_pmd_init(
+		const char *name __rte_unused,
+		const char *params __rte_unused)
+{
+	RTE_LOG(INFO, PMD, "rte_dpaa_pmd_init() called for %s\n", name);
+	rte_eth_driver_register(&rte_dpaa_pmd);
+
+	return 0;
+}
+
+static struct rte_driver rte_dpaa_driver = {
+	.name = "rte_dpaa_driver",
+	.type = PMD_PDEV,
+	.init = rte_dpaa_pmd_init,
+};
+
+PMD_REGISTER_DRIVER(rte_dpaa_driver);

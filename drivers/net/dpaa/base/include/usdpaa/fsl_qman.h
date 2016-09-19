@@ -1744,8 +1744,8 @@ struct qman_fq {
 	 * sizeof(qman_fq) being a constant). */
 	spinlock_t fqlock;
 	u32 fqid;
-	/* Interface ID (for DPDK use) */
-	u32 ifid;
+	/* DPDK Interface */
+	void *dpaa_intf;
 	volatile unsigned long flags;
 	enum qman_fq_state state;
 	int cgr_groupid;

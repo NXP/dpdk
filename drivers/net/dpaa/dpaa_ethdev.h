@@ -61,8 +61,6 @@
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
-#define MAX_TX_RING_SLOTS    8
-
 #if (DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
 #error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
 #endif
@@ -89,6 +87,9 @@
 
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
+
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
 
 /* PCD frame queues */
 #define DPAA_PCD_FQID_START		0x400
@@ -153,20 +154,7 @@ struct dpaa_if {
 };
 
 extern __thread bool thread_portal_init;
-extern struct dpaa_if *dpaa_ifacs;
 extern struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
-
-#define DPAA_PORTID_TO_IFACE(__portid) \
-	&dpaa_ifacs[__portid];
-
-#define DPAA_NUM_RX_QUEUE(__portid) \
-	dpaa_ifacs[__portid].nb_rx_queues;
-
-#define DPAA_NUM_TX_QUEUE(__portid) \
-	dpaa_ifacs[__portid].nb_tx_queues;
-
-#define DPAA_IF_MAC_ADDR(__portid) \
-	&dpaa_ifacs[__portid].mac_addr[0];
 
 #define DPAA_BPID_TO_POOL_INFO(__bpid) \
 	&dpaa_pool_table[__bpid];
@@ -186,10 +174,12 @@ static inline void *dpaa_mem_ptov(phys_addr_t paddr)
 	for (i = 0; i < RTE_MAX_MEMSEG && memseg[i].addr != NULL; i++) {
 		if (paddr >= memseg[i].phys_addr && paddr <
 			memseg[i].phys_addr + memseg[i].len)
-			return memseg[i].addr + (paddr - memseg[i].phys_addr);
+			return (uint8_t *)(memseg[i].addr) + (paddr - memseg[i].phys_addr);
 	}
 
 	return NULL;
 }
+
+int dpaa_portal_init(void *arg);
 
 #endif

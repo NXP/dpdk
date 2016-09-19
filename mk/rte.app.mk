@@ -129,7 +129,6 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)	    += -lrte_pmd_dpaa2
 
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_PMD),y)
 	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lm
-	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lnxp_usdpaa
 	_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += -lrte_pmd_dpaa
 endif
 

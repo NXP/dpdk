@@ -27,7 +27,7 @@ Following information can be used to obtain these components:
      Use following command to get the DPDK code
 
        # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git
-       # git checkout -b v16.04-nxp remotes/origin/v16.04-nxp
+       # git checkout -b 16.04-nxp remotes/origin/16.04-nxp
 
 
      Linux kernel code for LS1 platform
@@ -302,7 +302,7 @@ NXP platform support:
 -	The code is not optimized for the performance. 
 
 Code Location: stash
-Branch: 16.04-qoriq
+Branch: 16.04-nxp
 Tag:
 
 DPDK base version used: Release 16.04
