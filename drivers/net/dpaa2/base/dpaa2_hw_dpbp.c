@@ -172,7 +172,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 
 	mp->pool_data = (void *)&bpid_info[bpid];
 
-	PMD_DRV_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
+	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
 	/* Identification for our offloaded pool_data structure

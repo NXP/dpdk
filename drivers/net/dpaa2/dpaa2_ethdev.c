@@ -352,7 +352,6 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		    dev, rx_queue_id, mb_pool, rx_conf);
 
 	if (!priv->bp_list || priv->bp_list->mp != mb_pool) {
-		RTE_VERIFY(mb_pool->pool_data);
 		bpid = mempool_to_bpid(mb_pool);
 		ret = dpaa2_attach_bp_list(priv,
 					   bpid_info[bpid].bp_list);

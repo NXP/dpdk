@@ -338,7 +338,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					continue;
 				}
 			} else {
-				RTE_ASSERT(mp);
 				bpid = mempool_to_bpid(mp);
 				eth_mbuf_to_fd(*bufs, &fd_arr[loop], bpid);
 			}
