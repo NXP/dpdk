@@ -223,11 +223,14 @@ each RX queue uses its own mempool.
 
     snprintf(buf, sizeof(buf), "mbuf_pool_%u_%u", lcore, queue);
 
-    if ((rxq->pool = rte_mempool_create(buf, nb_mbuf, MBUF_SIZE, 0, sizeof(struct rte_pktmbuf_pool_private), rte_pktmbuf_pool_init, NULL,
-        rte_pktmbuf_init, NULL, socket, MEMPOOL_F_SP_PUT | MEMPOOL_F_SC_GET)) == NULL) {
-
-            RTE_LOG(ERR, IP_RSMBL, "mempool_create(%s) failed", buf);
-            return -1;
+    rxq->pool = rte_pktmbuf_pool_create(buf, nb_mbuf,
+    	0, /* cache size */
+    	0, /* priv size */
+    	MBUF_DATA_SIZE, socket);
+    if (rxq->pool == NULL) {
+    	RTE_LOG(ERR, IP_RSMBL,
+    		"rte_pktmbuf_pool_create(%s) failed", buf);
+    	return -1;
     }
 
 Packet Reassembly and Forwarding
