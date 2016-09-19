@@ -13,6 +13,9 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
+ *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+ *       contributors may be used to endorse or promote products derived
+ *       from this software without specific prior written permission.
  *
  *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -62,6 +65,98 @@ struct dpaa_auth {
 	uint32_t key_len;
 };
 
+struct dpaa_sec_qp {
+	struct dpaa_sec_qi *qi;
+	struct qman_fq inq;
+	struct qman_fq outq;
+	int rx_pkts;
+	int rx_errs;
+	int tx_pkts;
+	int tx_errs;
+};
+
+#define DPAA_SEC_MAX_DESC_SIZE  128
+/* code or cmd block to caam */
+struct sec_cdb {
+	struct {
+		union {
+			uint32_t word;
+			struct {
+#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
+				uint16_t rsvd63_48;
+				unsigned int rsvd47_39:9;
+				unsigned int idlen:7;
+#else
+				unsigned int idlen:7;
+				unsigned int rsvd47_39:9;
+				uint16_t rsvd63_48;
+#endif
+			} field;
+		} __packed hi;
+
+		union {
+			uint32_t word;
+			struct {
+#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
+				unsigned int rsvd31_30:2;
+				unsigned int fsgt:1;
+				unsigned int lng:1;
+				unsigned int offset:2;
+				unsigned int abs:1;
+				unsigned int add_buf:1;
+				uint8_t pool_id;
+				uint16_t pool_buffer_size;
+#else
+				uint16_t pool_buffer_size;
+				uint8_t pool_id;
+				unsigned int add_buf:1;
+				unsigned int abs:1;
+				unsigned int offset:2;
+				unsigned int lng:1;
+				unsigned int fsgt:1;
+				unsigned int rsvd31_30:2;
+#endif
+			} field;
+		} __packed lo;
+	} __packed sh_hdr;
+
+	uint32_t sh_desc[DPAA_SEC_MAX_DESC_SIZE];
+};
+
+struct dpaa_sec_ses {
+	enum dpaa_crypto_dir dir;
+	struct dpaa_cipher cipher;
+	struct dpaa_auth   auth;
+	uint32_t auth_trunc_len;
+	void   *priv; /* private interface to do crypto */
+};
+
+#define RTE_MAX_NB_SEC_QPS 8
+#define RTE_MAX_NB_SEC_SES 2048
+/* internal sec queue interface */
+struct dpaa_sec_qi {
+	void *sec_hw;
+	struct dpaa_sec_qp qps[RTE_MAX_NB_SEC_QPS]; /* i/o queue for sec */
+	unsigned max_nb_queue_pairs;
+	unsigned max_nb_sessions;
+	struct dpaa_sec_ses *ses; /* session associated with the sec */
+	struct sec_cdb cdb; /* code block for sec session */
+};
+
+struct dpaa_sec_job {
+	/* sg[0] output, sg[1] input, others are possible sub frames */
+	struct qm_sg_entry sg[16];
+};
+
+#define DPAA_MAX_NB_MAX_DIGEST	32
+struct dpaa_sec_op_ctx {
+	struct dpaa_sec_job job;
+	struct rte_crypto_op *op;
+	uint32_t fd_status;
+	uint32_t auth_only_len;
+	uint8_t digest[DPAA_MAX_NB_MAX_DIGEST];
+};
+
 static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 	{	/* SHA1 HMAC */
 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
@@ -104,6 +199,27 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 				.aad_size = { 0 }
 			}
 		}
+	},
+	{	/* SHA384 HMAC */
+		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+		{.sym = {
+			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
+			{.auth = {
+				.algo = RTE_CRYPTO_AUTH_SHA384_HMAC,
+				.block_size = 128,
+				.key_size = {
+					.min = 128,
+					.max = 128,
+					.increment = 0
+				},
+				.digest_size = {
+					.min = 48,
+					.max = 48,
+					.increment = 0
+				},
+				.aad_size = { 0 }
+			}, }
+		}, }
 	},
 	{	/* SHA512 HMAC */
 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,

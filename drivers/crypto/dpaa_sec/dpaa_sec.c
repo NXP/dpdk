@@ -13,6 +13,9 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
+ *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+ *       contributors may be used to endorse or promote products derived
+ *       from this software without specific prior written permission.
  *
  *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -64,109 +67,17 @@
 		((dev->addr.domain << 24) | (dev->addr.bus << 16) | \
 		 (dev->addr.devid << 8) | (dev->addr.function))
 
-#define DPAA_SEC_MAX_DESC_SIZE  64
 #define NUM_POOL_CHANNELS	4
 #define DPAA_SEC_MAX_DEVS	4
 #define DPAA_SEC_DEV_ID_START	16
 #define DPAA_SEC_BURST		32
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
+#define SEC_ERA RTA_SEC_ERA_8
 
 enum rta_sec_era rta_sec_era;
 
 static __thread struct rte_crypto_op **dpaa_sec_ops;
 static __thread int dpaa_sec_op_nb;
-
-struct dpaa_sec_qp {
-	struct dpaa_sec_qi *qi;
-	struct qman_fq inq;
-	struct qman_fq outq;
-	int rx_pkts;
-	int rx_errs;
-	int tx_pkts;
-	int tx_errs;
-};
-
-#define RTE_MAX_NB_SEC_QPS 8
-#define RTE_MAX_NB_SEC_SES 2048
-
-/* code or cmd block to caam */
-struct sec_cdb {
-	struct {
-		union {
-			uint32_t word;
-			struct {
-#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
-				uint16_t rsvd63_48;
-				unsigned int rsvd47_39:9;
-				unsigned int idlen:7;
-#else
-				unsigned int idlen:7;
-				unsigned int rsvd47_39:9;
-				uint16_t rsvd63_48;
-#endif
-			} field;
-		} __packed hi;
-
-		union {
-			uint32_t word;
-			struct {
-#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
-				unsigned int rsvd31_30:2;
-				unsigned int fsgt:1;
-				unsigned int lng:1;
-				unsigned int offset:2;
-				unsigned int abs:1;
-				unsigned int add_buf:1;
-				uint8_t pool_id;
-				uint16_t pool_buffer_size;
-#else
-				uint16_t pool_buffer_size;
-				uint8_t pool_id;
-				unsigned int add_buf:1;
-				unsigned int abs:1;
-				unsigned int offset:2;
-				unsigned int lng:1;
-				unsigned int fsgt:1;
-				unsigned int rsvd31_30:2;
-#endif
-			} field;
-		} __packed lo;
-	} __packed sh_hdr;
-
-	uint32_t sh_desc[DPAA_SEC_MAX_DESC_SIZE];
-};
-
-struct dpaa_sec_ses {
-	enum dpaa_crypto_dir dir;
-	struct dpaa_cipher cipher;
-	struct dpaa_auth   auth;
-	uint32_t auth_trunc_len;
-	void   *priv; /* private interface to do crypto */
-};
-
-/* internal sec queue interface */
-struct dpaa_sec_qi {
-	void *sec_hw;
-	struct dpaa_sec_qp qps[RTE_MAX_NB_SEC_QPS]; /* i/o queue for sec */
-	unsigned max_nb_queue_pairs;
-	unsigned max_nb_sessions;
-	struct dpaa_sec_ses *ses; /* session associated with the sec */
-	struct sec_cdb cdb; /* code block for sec session */
-};
-
-struct dpaa_sec_job {
-	/* sg[0] output, sg[1] input, others are possible sub frames */
-	struct qm_sg_entry sg[16];
-};
-
-#define DPAA_MAX_NB_MAX_DIGEST	32
-struct dpaa_sec_op_ctx {
-	struct dpaa_sec_job job;
-	struct rte_crypto_op *op;
-	uint32_t fd_status;
-	uint8_t digest[DPAA_MAX_NB_MAX_DIGEST];
-	uint32_t auth_only_len;
-};
 
 static inline struct dpaa_sec_ses *dpaa_sec_get_ses(struct rte_crypto_op *op)
 {
@@ -382,6 +293,18 @@ static inline uint32_t caam_auth_alg(struct dpaa_sec_ses *ses)
 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		return OP_ALG_ALGSEL_SHA1;
 
+	case RTE_CRYPTO_AUTH_SHA224_HMAC:
+		return OP_ALG_ALGSEL_SHA224;
+
+	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+		return OP_ALG_ALGSEL_SHA256;
+
+	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+		return OP_ALG_ALGSEL_SHA384;
+
+	case RTE_CRYPTO_AUTH_SHA512_HMAC:
+		return OP_ALG_ALGSEL_SHA512;
+
 	default:
 		PMD_DRV_LOG(ERR, "Crypto: unsupported auth alg %u\n",
 			    ses->auth.alg);
@@ -425,11 +348,10 @@ void dpaa_dump_bytes(char *p, int len)
 #define POOL_BUF_SIZE 1024
 #define CAAM_BURST_NUM_DEFAULT 1
 /* prepare command block of the session */
-static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses, struct dpaa_sec_job *cf)
+static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 {
 	struct alginfo alginfo_c, alginfo_a;
 	uint32_t shared_desc_len;
-	struct dpaa_sec_op_ctx *ctx;
 	struct dpaa_sec_qi *qi;
 	struct sec_cdb *cdb;
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
@@ -438,7 +360,6 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses, struct dpaa_sec_job *cf)
 	int swap = true;
 #endif
 
-	ctx = container_of(cf, struct dpaa_sec_op_ctx, job);
 	qi = ses->priv;
 	cdb = &qi->cdb;
 	memset(cdb, 0, sizeof(struct sec_cdb));
@@ -476,17 +397,15 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses, struct dpaa_sec_job *cf)
 					NULL, ses->cipher.iv_len,
 					ses->dir);
 	} else if (is_auth_only(ses)) {
-		ses->auth_trunc_len = ctx->op->sym->auth.digest.length;
 		shared_desc_len = cnstr_shdsc_hmac(cdb->sh_desc, true,
 					swap, &alginfo_a,
 					!ses->dir, ses->auth_trunc_len);
 	} else {
 		/* TODO: add support for other Algos. IV length = 16 for AES */
-		ses->auth_trunc_len = ctx->op->sym->auth.digest.length;
 		ses->cipher.iv_len = 16;
 		shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
 					swap, &alginfo_c, &alginfo_a,
-					ses->cipher.iv_len, ctx->auth_only_len,
+					ses->cipher.iv_len, 0/*auth_only_len*/,
 					ses->auth_trunc_len, ses->dir);
 	}
 	cdb->sh_hdr.hi.field.idlen = shared_desc_len;
@@ -499,7 +418,6 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses, struct dpaa_sec_job *cf)
 	return 0;
 }
 
-#define SEC_ERA RTA_SEC_ERA_8
 static inline unsigned usdpaa_volatile_deq(
 	struct qman_fq *fq, unsigned len, bool exact)
 {
@@ -646,7 +564,7 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 	/* output */
 	sg = &cf->sg[0];
 	qm_sg_entry_set64(sg, start_addr + sym->cipher.data.offset);
-	sg->length = sym->cipher.data.length;
+	sg->length = sym->cipher.data.length + sym->cipher.iv.length;
 	cpu_to_hw_sg(sg);
 
 	/* input */
@@ -672,7 +590,6 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 
 	return cf;
 }
-
 
 static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 {
@@ -718,26 +635,19 @@ static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 		cpu_to_hw_sg(sg);
 
 		sg++;
-		/* auth result or digest */
-		rte_memcpy(ctx->digest, sym->auth.digest.data,
-			   sym->auth.digest.length);
-		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
-		qm_sg_entry_set64(sg, sym->auth.digest.phys_addr);
-		sg->length = sym->auth.digest.length;
-		length += sg->length;
-		cpu_to_hw_sg(sg);
 
-		sg++;
 		qm_sg_entry_set64(sg, start_addr + sym->auth.data.offset);
 		sg->length = sym->auth.data.length;
 		length += sg->length;
 		cpu_to_hw_sg(sg);
 
-		/* let's check digest by hw */
+		memcpy(ctx->digest, sym->auth.digest.data,sym->auth.digest.length);
+		memset(sym->auth.digest.data,0,sym->auth.digest.length);
 		sg++;
-		start_addr = dpaa_mem_vtop(ctx->digest);
-		qm_sg_entry_set64(sg, start_addr);
+
+		qm_sg_entry_set64(sg,dpaa_mem_vtop(ctx->digest));
 		sg->length = sym->auth.digest.length;
+		length += sg->length;
 		sg->final = 1;
 		cpu_to_hw_sg(sg);
 	}
@@ -794,8 +704,6 @@ int dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 	if (unlikely(!cf))
 		return -1;
 
-	dpaa_sec_prep_cdb(ses, cf);
-
 	memset(&fd, 0, sizeof(struct qm_fd));
 	qm_fd_addr_set64(&fd, dpaa_mem_vtop(cf->sg));
 	fd._format1 = qm_fd_compound;
@@ -816,6 +724,9 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	int32_t ret;
 	struct dpaa_sec_qp *dpaa_qp = (struct dpaa_sec_qp *)qp;
 	uint16_t num_tx = 0;
+
+	if (unlikely(nb_ops == 0))
+		return 0;
 
 	if (ops[0]->sym->sess_type != RTE_CRYPTO_SYM_OP_WITH_SESSION) {
 		PMD_DRV_LOG(ERR, "sessionless crypto op not supported\n");
@@ -919,14 +830,6 @@ dpaa_sec_session_initialize(struct rte_mempool *mp, void *ses)
 {
 }
 
-static inline void reverse_copy(uint8_t *dest, uint8_t *src, uint32_t len)
-{
-	uint32_t i;
-
-	for (i = 0; i < len; i++)
-		dest[i] = src[len - 1 - i];
-}
-
 static int dpaa_ses_cipher_init(struct rte_cryptodev *dev,
 				struct rte_crypto_sym_xform *xform,
 				struct dpaa_sec_ses *session)
@@ -940,13 +843,8 @@ static int dpaa_ses_cipher_init(struct rte_cryptodev *dev,
 	}
 	session->cipher.key_len = xform->cipher.key.length;
 
-#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 	memcpy(session->cipher.key_data, xform->cipher.key.data,
 	       xform->cipher.key.length);
-#else
-	reverse_copy(session->cipher.key_data, xform->cipher.key.data,
-		     xform->cipher.key.length);
-#endif
 	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
 			DPAA_CRYPTO_ENCODE : DPAA_CRYPTO_DECODE;
 
@@ -965,14 +863,10 @@ static int dpaa_ses_auth_init(struct rte_cryptodev *dev,
 		return -1;
 	}
 	session->auth.key_len = xform->auth.key.length;
+	session->auth_trunc_len = xform->auth.digest_length;
 
-#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 	memcpy(session->auth.key_data, xform->auth.key.data,
 	       xform->auth.key.length);
-#else
-	reverse_copy(session->auth.key_data, xform->auth.key.data,
-		     xform->auth.key.length);
-#endif
 	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
 		       DPAA_CRYPTO_ENCODE : DPAA_CRYPTO_DECODE;
 
@@ -1005,14 +899,24 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 	/* Cipher then Authenticate */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER &&
 		   xform->next->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
-		dpaa_ses_cipher_init(dev, xform, session);
-		dpaa_ses_auth_init(dev, xform->next, session);
+		if (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) {
+			dpaa_ses_cipher_init(dev, xform, session);
+			dpaa_ses_auth_init(dev, xform->next, session);
+		} else {
+			PMD_DRV_LOG(ERR, "Not supported: Authenticate then Cipher");
+			return NULL;
+		}
 
 	/* Authenticate then Cipher */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
 		   xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
-		PMD_DRV_LOG(ERR, "Not supported: Authenticate then Cipher");
-		return NULL;
+		if (xform->auth.op == RTE_CRYPTO_AUTH_OP_VERIFY) {
+			dpaa_ses_auth_init(dev, xform, session);
+			dpaa_ses_cipher_init(dev, xform->next, session);
+		} else {
+			PMD_DRV_LOG(ERR, "Not supported: Authenticate then Cipher");
+			return NULL;
+		}
 	} else {
 		PMD_DRV_LOG(ERR, "Invalid crypto type");
 		return NULL;
@@ -1021,6 +925,7 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 	qi = dev->data->dev_private;
 	session->priv = qi;
 	qi->ses = session;
+	dpaa_sec_prep_cdb(session/*, cf*/);
 
 	return session;
 }

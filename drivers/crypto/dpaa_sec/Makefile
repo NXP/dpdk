@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -37,9 +37,10 @@ LIB = librte_pmd_dpaa_sec.a
 CFLAGS += -g -O3
 #CFLAGS += $(WERROR_FLAGS)
 CFLAGS += "-Wno-error"
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/
 # reference to flib in dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
