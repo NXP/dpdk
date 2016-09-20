@@ -172,7 +172,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 
 	mp->pool_data = (void *)&bpid_info[bpid];
 
-	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", dpbp_attr.bpid);
+	PMD_DRV_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
 	/* Identification for our offloaded pool_data structure
@@ -368,6 +368,15 @@ unsigned hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 	return 0;
 }
 
+int hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
+{
+	if (!avail_dpbp) {
+		PMD_DRV_LOG(WARNING, "DPAA2 mempool resources not available\n");
+		return -1;
+	}
+	return 0;
+}
+
 struct rte_mempool_ops dpaa2_mpool_ops = {
 	.name = "dpaa2",
 	.alloc = hw_mbuf_create_pool,
@@ -375,6 +384,7 @@ struct rte_mempool_ops dpaa2_mpool_ops = {
 	.enqueue = hw_mbuf_free_bulk,
 	.dequeue = hw_mbuf_alloc_bulk,
 	.get_count = hw_mbuf_get_count,
+	.supported = hw_mbuf_supported,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
