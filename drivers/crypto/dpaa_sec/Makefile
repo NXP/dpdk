@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -53,7 +53,7 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 LIBABIVER := 1
 
 # versioning export map
-EXPORT_MAP := pmd_dpaa_sec_version.map
+EXPORT_MAP := rte_pmd_dpaa_sec_version.map
 
 # external library include paths
 CFLAGS += -Iinclude
