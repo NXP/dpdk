@@ -295,7 +295,7 @@ unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 }
 
 static
-int dpaa_mbuf_pool_verify(const struct rte_mempool *mp __rte_unused)
+int dpaa_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 {
 	/*if dpaa init fails, means no dpaa pool will be avaialbe */
 	if (!dpaa_netcfg) {
@@ -313,7 +313,7 @@ struct rte_mempool_ops dpaa_mpool_ops = {
 	.enqueue = dpaa_mbuf_free_bulk,
 	.dequeue = dpaa_mbuf_alloc_bulk,
 	.get_count = dpaa_mbuf_get_count,
-	.pool_verify = dpaa_mbuf_pool_verify,
+	.supported = dpaa_mbuf_supported,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
