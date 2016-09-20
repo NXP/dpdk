@@ -238,6 +238,11 @@ static int setup_dmamap(void)
 		/* SET DMA MAP for IOMMU */
 		group = &vfio_groups[0];
 
+		if (!group->container) {
+			PMD_DRV_LOG(ERR, " Container is not connected yet.");
+			return -1;
+		}
+
 		PMD_DRV_LOG(DEBUG, "-->Initial SHM Virtual ADDR %llX",
 			    dma_map.vaddr);
 		PMD_DRV_LOG(DEBUG, "-----> DMA size 0x%llX\n", dma_map.size);
@@ -631,11 +636,11 @@ rte_eal_dpaa2_dmamap(void)
 	/* Set up SMMU */
 	if (!is_dma_done) {
 		ret = setup_dmamap();
-		is_dma_done = 1;
 		if (ret) {
 			PMD_DRV_LOG(ERR, "DPAA2: Unable to DMA Map devices");
 			return ret;
 		}
+		is_dma_done = 1;
 		PMD_DRV_LOG(INFO, "DPAA2: Devices DMA mapped successfully");
 	} else
 		PMD_DRV_LOG(INFO, "DPAA2: Devices Already DMA mapped");
