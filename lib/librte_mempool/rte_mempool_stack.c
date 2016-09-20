@@ -142,7 +142,7 @@ static struct rte_mempool_ops ops_stack = {
 	.enqueue = stack_enqueue,
 	.dequeue = stack_dequeue,
 	.get_count = stack_get_count,
-	.pool_verify = NULL,
+	.supported = NULL,
 };
 
 MEMPOOL_REGISTER_OPS(ops_stack);
