@@ -80,7 +80,7 @@
 	} while (0);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
-		uint64_t addr)
+		    uint64_t addr)
 {
 	struct bm_buffer buf;
 	int ret;
@@ -120,67 +120,67 @@ void dpaa_display_frame(const struct qm_fd *fd)
 #endif
 
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
-		uint64_t prs __rte_unused)
+				     uint64_t prs __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 }
 
 static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
-		uint64_t fd_virt_addr)
+					uint64_t fd_virt_addr)
 {
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
 	switch (prs) {
-		case DPAA_PKT_TYPE_NONE:
-			m->packet_type = 0;
-			break;
-		case DPAA_PKT_TYPE_ETHER:
-			m->packet_type = RTE_PTYPE_L2_ETHER;
-			break;
-		case DPAA_PKT_TYPE_IPV4:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV4;
-			break;
-		case DPAA_PKT_TYPE_IPV6:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV6;
-			break;
-		case DPAA_PKT_TYPE_IPV4_EXT:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV4_EXT;
-			break;
-		case DPAA_PKT_TYPE_IPV6_EXT:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV6_EXT;
-			break;
-		case DPAA_PKT_TYPE_IPV4_TCP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP;
-			break;
-		case DPAA_PKT_TYPE_IPV6_TCP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP;
-			break;
-		case DPAA_PKT_TYPE_IPV4_UDP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
-			break;
-		case DPAA_PKT_TYPE_IPV6_UDP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP;
-			break;
-		case DPAA_PKT_TYPE_IPV4_SCTP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_SCTP;
-			break;
-		case DPAA_PKT_TYPE_IPV6_SCTP:
-			m->packet_type = RTE_PTYPE_L2_ETHER |
-				RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_SCTP;
-			break;
-		/* More switch cases can be added */
-		default:
-			dpaa_slow_parsing(m, prs);
+	case DPAA_PKT_TYPE_NONE:
+		m->packet_type = 0;
+		break;
+	case DPAA_PKT_TYPE_ETHER:
+		m->packet_type = RTE_PTYPE_L2_ETHER;
+		break;
+	case DPAA_PKT_TYPE_IPV4:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4;
+		break;
+	case DPAA_PKT_TYPE_IPV6:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6;
+		break;
+	case DPAA_PKT_TYPE_IPV4_EXT:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4_EXT;
+		break;
+	case DPAA_PKT_TYPE_IPV6_EXT:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6_EXT;
+		break;
+	case DPAA_PKT_TYPE_IPV4_TCP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP;
+		break;
+	case DPAA_PKT_TYPE_IPV6_TCP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP;
+		break;
+	case DPAA_PKT_TYPE_IPV4_UDP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
+		break;
+	case DPAA_PKT_TYPE_IPV6_UDP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP;
+		break;
+	case DPAA_PKT_TYPE_IPV4_SCTP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_SCTP;
+		break;
+	case DPAA_PKT_TYPE_IPV6_SCTP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_SCTP;
+		break;
+	/* More switch cases can be added */
+	default:
+		dpaa_slow_parsing(m, prs);
 	}
 
 	m->l2_len = annot->parse.ip_off[0];
@@ -196,13 +196,13 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 }
 
 static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
-		struct qm_fd *fd)
+					 struct qm_fd *fd)
 {
 	struct dpaa_eth_parse_results_t *prs;
 
 	if (mbuf->data_off < DEFAULT_TX_ICEOF +
 			sizeof(struct dpaa_eth_parse_results_t)) {
-		PMD_DRV_LOG(ERROR, "Checksum offload Error: Not enough Headroom "
+		PMD_DRV_LOG(ERROR, "Checksum offload Err: Not enough Headroom "
 			"space for correct Checksum offload.");
 		return;
 	}
@@ -227,7 +227,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 }
 
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
-		struct qm_fd *fd)
+						   struct qm_fd *fd)
 {
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
@@ -268,7 +268,7 @@ errret:
 }
 
 uint16_t dpaa_eth_queue_rx(void *q,
-		struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
 	struct qman_fq *fq = q;
@@ -326,7 +326,7 @@ out:
 }
 
 static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
-		struct dpaa_if *dpaa_intf)
+					     struct dpaa_if *dpaa_intf)
 {
 	struct rte_mbuf *dpaa_mbuf;
 
@@ -349,7 +349,7 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 }
 
 uint16_t dpaa_eth_queue_tx(void *q,
-		struct rte_mbuf **bufs,
+			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
 	struct rte_mbuf *mbuf;
@@ -376,23 +376,24 @@ uint16_t dpaa_eth_queue_tx(void *q,
 			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				DPAA_MBUF_TO_CONTIG_FD(mbuf,
-						       &fd_arr[loop], bp_info->bpid);
+					       &fd_arr[loop], bp_info->bpid);
 			} else {
 				struct qman_fq *txq = q;
 				struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 
 				mbuf = dpaa_get_dmable_mbuf(mbuf, dpaa_intf);
 				if (!mbuf) {
-					PMD_DRV_LOG(DEBUG, "no dpaa buffers.\n");
-					/* Set frames_to_send & nb_bufs so that packets
-					 * are transmitted till previous frame */
+					PMD_DRV_LOG(DEBUG, "no dpaa buffers.");
+					/* Set frames_to_send & nb_bufs so that
+					 * packets are transmitted till
+					 * previous frame */
 					frames_to_send = loop;
 					nb_bufs = loop;
 					goto send_pkts;
 				}
 
-				DPAA_MBUF_TO_CONTIG_FD(mbuf,
-						       &fd_arr[loop], dpaa_intf->bp_info->bpid);
+				DPAA_MBUF_TO_CONTIG_FD(mbuf, &fd_arr[loop],
+						dpaa_intf->bp_info->bpid);
 			}
 
 			if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
@@ -412,7 +413,7 @@ send_pkts:
 }
 
 uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
-		struct rte_mbuf **bufs __rte_unused,
+			      struct rte_mbuf **bufs __rte_unused,
 		uint16_t nb_bufs __rte_unused)
 {
 	/* Drop all incoming packets. No need to free packets here

@@ -41,6 +41,8 @@
  * words and an inline implementation of CRC64). We include it only in order to
  * instantiate the one global variable it depends on. */
 #include <fsl_fman.h>
+#include <usdpaa/fsl_bman.h>
+
 
 #include <internal/of.h>
 #include <usdpaa/of.h>
@@ -676,7 +678,8 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 					__if->__if.mac_idx = 10;
 					break;
 				default:
-					my_err(1, -EINVAL, "Invalid regs_addr: %#x\n",
+					my_err(1, -EINVAL,
+						"Invalid regs_addr: %#lx\n",
 					       regs_addr_host);
 			}
 		}
@@ -942,13 +945,12 @@ static int fman_if_init_onic(const struct device_node *dpa_node)
 	struct fman_if_bpool *bpool;
 	const phandle *pools_phandle;
 	const phandle *tx_channel_id, *mac_addr;
-	const phandle *rx_phandle, *tx_phandle;
+	const phandle *rx_phandle;
 	const struct device_node *pool_node;
 	const char *mname;
 	const char *dname = dpa_node->full_name;
 	size_t lenp;
 	int _errno;
-	int i;
 	const phandle *p_oh_node = NULL;
 	const struct device_node *oh_node = NULL;
 	const struct device_node *oh_node2 = NULL;
@@ -1121,8 +1123,6 @@ int fman_init(void)
 {
 	const struct device_node *dpa_node;
 	int _errno;
-	size_t lenp;
-	const char *mprop = "fsl,fman-mac";
 
 	/* If multiple dependencies try to initialise the Fman driver, don't
 	 * panic. */

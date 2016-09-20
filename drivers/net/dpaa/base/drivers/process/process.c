@@ -113,7 +113,7 @@ int process_alloc(enum usdpaa_id_type id_type, uint32_t *base, uint32_t num,
 	ret = ioctl(fd, USDPAA_IOCTL_ID_ALLOC, &id);
 	if (ret)
 		return ret;
-	for (ret = 0; ret < id.num; ret++)
+	for (ret = 0; ret < (int)id.num; ret++)
 		base[ret] = id.base + ret;
 	return id.num;
 }

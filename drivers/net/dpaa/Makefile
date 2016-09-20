@@ -41,7 +41,7 @@ CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
 else
 CFLAGS += -O3
-#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += $(WERROR_FLAGS) -Wno-cast-qual  -Wno-pointer-arith
 endif
 CFLAGS +=-Wno-strict-aliasing
 CFLAGS +=-Wno-missing-prototypes

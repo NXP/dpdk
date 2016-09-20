@@ -87,7 +87,8 @@ done:
 /* This is the interface from the platform-agnostic driver code to (de)register
  * interrupt handlers. We simply create/destroy corresponding structs. */
 int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
-		      unsigned long flags, const char *name, void *arg)
+		      unsigned long flags, const char *name,
+		      void *arg __maybe_unused)
 {
 	struct process_interrupt *irq_node =
 		kmalloc(sizeof(*irq_node), GFP_KERNEL);
@@ -103,7 +104,7 @@ int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
 	return 0;
 }
 
-int qbman_free_irq(int irq, void *arg)
+int qbman_free_irq(int irq, __maybe_unused void *arg)
 {
 	struct process_interrupt *irq_node = process_interrupt_find(irq);
 

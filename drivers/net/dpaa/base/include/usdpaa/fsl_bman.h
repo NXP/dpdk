@@ -533,6 +533,9 @@ u32 bman_query_free_buffers(struct bman_pool *pool);
  * @thresholds: the new thresholds
  */
 int bman_update_pool_thresholds(struct bman_pool *pool, const u32 *thresholds);
+
+int bm_pool_set_hw_threshold(u32 bpid, const u32 low_thresh, const u32 high_thresh);
+
 #endif
 #ifdef __cplusplus
 }

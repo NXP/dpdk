@@ -1219,8 +1219,6 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 {
 	struct qman_portal *p = get_poll_portal();
 	const struct qm_dqrr_entry *dq;
-	enum qman_cb_dqrr_result res;
-	int ret;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 	struct qm_dqrr_entry *shadow;
 #endif

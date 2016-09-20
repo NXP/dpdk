@@ -471,6 +471,9 @@ void fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset);
 /* Set interface next invoked action for dequeue operation */
 void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 
+/* discard error packets on rx */
+void fman_if_discard_rx_errors(struct fman_if *fm_if);
+
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)
 {
