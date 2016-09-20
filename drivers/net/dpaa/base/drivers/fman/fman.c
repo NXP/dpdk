@@ -273,7 +273,8 @@ int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	void *mac_reg =  &((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
+	void *mac_reg =
+		&((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
 	u32 val = in_be32(mac_reg);
 
 	eth[0] = (val & 0x000000ff) >> 0;
@@ -313,7 +314,7 @@ int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-void memac_stats_get(struct fman_if *p,
+static void memac_stats_get(struct fman_if *p,
 		     struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);

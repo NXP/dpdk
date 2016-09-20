@@ -3064,6 +3064,7 @@ int qm_set_clock(u64 clock_hz)
 EXPORT_SYMBOL(qm_set_clock);
 
 /* CEETM management command */
+static
 int qman_ceetm_configure_lfqmt(struct qm_mcc_ceetm_lfqmt_config *opts)
 {
 	struct qm_mc_command *mcc;
@@ -3094,6 +3095,12 @@ int qman_ceetm_configure_lfqmt(struct qm_mcc_ceetm_lfqmt_config *opts)
 	return 0;
 }
 
+static
+int qman_ceetm_query_lfqmt(int lfqid,
+			   struct qm_mcr_ceetm_lfqmt_query *lfqmt_query)
+			    __attribute__((unused));
+
+static
 int qman_ceetm_query_lfqmt(int lfqid,
 			   struct qm_mcr_ceetm_lfqmt_query *lfqmt_query)
 {
@@ -3126,6 +3133,7 @@ int qman_ceetm_query_lfqmt(int lfqid,
 	return 0;
 }
 
+static
 int qman_ceetm_configure_cq(struct qm_mcc_ceetm_cq_config *opts)
 {
 	struct qm_mc_command *mcc;
@@ -3190,6 +3198,7 @@ int qman_ceetm_query_cq(unsigned int cqid, unsigned int dcpid,
 	return 0;
 }
 
+static
 int qman_ceetm_configure_dct(struct qm_mcc_ceetm_dct_config *opts)
 {
 	struct qm_mc_command *mcc;
@@ -3220,6 +3229,7 @@ int qman_ceetm_configure_dct(struct qm_mcc_ceetm_dct_config *opts)
 	return 0;
 }
 
+static
 int qman_ceetm_query_dct(struct qm_mcc_ceetm_dct_query *opts,
 			 struct qm_mcr_ceetm_dct_query *dct_query)
 {
@@ -3252,6 +3262,7 @@ int qman_ceetm_query_dct(struct qm_mcc_ceetm_dct_query *opts,
 	return 0;
 }
 
+static
 int qman_ceetm_configure_class_scheduler(
 			struct qm_mcc_ceetm_class_scheduler_config *opts)
 {
@@ -3284,6 +3295,7 @@ int qman_ceetm_configure_class_scheduler(
 	return 0;
 }
 
+static
 int qman_ceetm_query_class_scheduler(struct qm_ceetm_channel *channel,
 				     struct qm_mcr_ceetm_class_scheduler_query *query)
 {
@@ -3318,6 +3330,7 @@ int qman_ceetm_query_class_scheduler(struct qm_ceetm_channel *channel,
 	return 0;
 }
 
+static
 int qman_ceetm_configure_mapping_shaper_tcfc(
 		struct qm_mcc_ceetm_mapping_shaper_tcfc_config *opts)
 {
@@ -3350,6 +3363,7 @@ int qman_ceetm_configure_mapping_shaper_tcfc(
 	return 0;
 }
 
+static
 int qman_ceetm_query_mapping_shaper_tcfc(
 		struct qm_mcc_ceetm_mapping_shaper_tcfc_query *opts,
 		struct qm_mcr_ceetm_mapping_shaper_tcfc_query *response)
@@ -3385,6 +3399,7 @@ int qman_ceetm_query_mapping_shaper_tcfc(
 	return 0;
 }
 
+static
 int qman_ceetm_configure_ccgr(struct qm_mcc_ceetm_ccgr_config *opts)
 {
 	struct qm_mc_command *mcc;
@@ -3416,6 +3431,7 @@ int qman_ceetm_configure_ccgr(struct qm_mcc_ceetm_ccgr_config *opts)
 	return 0;
 }
 
+static
 int qman_ceetm_query_ccgr(struct qm_mcc_ceetm_ccgr_query *ccgr_query,
 			  struct qm_mcr_ceetm_ccgr_query *response)
 {
@@ -3449,6 +3465,7 @@ int qman_ceetm_query_ccgr(struct qm_mcc_ceetm_ccgr_query *ccgr_query,
 	return 0;
 }
 
+static
 int qman_ceetm_cq_peek_pop_xsfdrread(struct qm_ceetm_cq *cq,
 				     u8 command_type, u16 xsfdr,
 			struct qm_mcr_ceetm_cq_peek_pop_xsfdrread *cq_ppxr)
@@ -3495,6 +3512,7 @@ int qman_ceetm_cq_peek_pop_xsfdrread(struct qm_ceetm_cq *cq,
 	return 0;
 }
 
+static
 int qman_ceetm_query_statistics(u16 cid,
 				enum qm_dc_portal dcp_idx,
 			u16 command_type,
@@ -3533,8 +3551,16 @@ int qman_ceetm_query_statistics(u16 cid,
 	return 0;
 }
 
+static
 int qman_ceetm_write_statistics(u16 cid, enum qm_dc_portal dcp_idx,
-				u16 command_type, u64 frame_count, u64 byte_count)
+				u16 command_type,
+				u64 frame_count,
+				u64 byte_count) __attribute__((unused));
+
+static
+int qman_ceetm_write_statistics(u16 cid, enum qm_dc_portal dcp_idx,
+				u16 command_type,
+				u64 frame_count, u64 byte_count)
 {
 	struct qm_mc_command *mcc;
 	struct qm_mc_result *mcr;
@@ -5529,7 +5555,13 @@ int qman_ceetm_cscn_dcp_get(struct qm_ceetm_ccg *ccg,
 }
 EXPORT_SYMBOL(qman_ceetm_cscn_dcp_get);
 
-int qman_ceetm_querycongestion(struct __qm_mcr_querycongestion *ccg_state,
+static 
+int qman_ceetm_querycongestion(
+			       struct __qm_mcr_querycongestion *ccg_state,
+			       unsigned int dcp_idx) __attribute__((unused));
+static
+int qman_ceetm_querycongestion(
+			       struct __qm_mcr_querycongestion *ccg_state,
 			       unsigned int dcp_idx)
 {
 	struct qm_mc_command *mcc;

@@ -45,7 +45,7 @@ struct process_interrupt {
 static COMPAT_LIST_HEAD(process_irq_list);
 static pthread_mutex_t process_irq_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void process_interrupt_install(struct process_interrupt *irq)
+static void process_interrupt_install(struct process_interrupt *irq)
 {
 	int ret;
 	/* Add the irq to the end of the list */
@@ -56,7 +56,7 @@ void process_interrupt_install(struct process_interrupt *irq)
 	assert(!ret);
 }
 
-void process_interrupt_remove(struct process_interrupt *irq)
+static void process_interrupt_remove(struct process_interrupt *irq)
 {
 	int ret;
 
@@ -67,7 +67,7 @@ void process_interrupt_remove(struct process_interrupt *irq)
 	assert(!ret);
 }
 
-struct process_interrupt *process_interrupt_find(int irq_num)
+static struct process_interrupt *process_interrupt_find(int irq_num)
 {
 	int ret;
 	struct process_interrupt *i = NULL;

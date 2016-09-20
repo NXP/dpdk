@@ -474,6 +474,12 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 /* discard error packets on rx */
 void fman_if_discard_rx_errors(struct fman_if *fm_if);
 
+int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
+
+int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
+
+int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
+
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)
 {

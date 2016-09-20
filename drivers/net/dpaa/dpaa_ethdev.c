@@ -33,7 +33,6 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <limits.h>
 #include <sched.h>
 #include <pthread.h>
@@ -54,7 +53,6 @@
 #include <rte_alarm.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
-#include <rte_atomic.h>
 #include <rte_malloc.h>
 #include <rte_ring.h>
 
@@ -328,17 +326,6 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool,
 	return 0;
 }
 
-void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
-{
-	/* TODO:
-	 * 1. Release bp_list memory allocation
-	 * 2. opposite of dpbp_enable()
-	 * <More>
-	 */
-
-	PMD_DRV_LOG(DEBUG, "(%s) called\n", __func__);
-	return;
-}
 
 static int dpaa_init(void)
 {
@@ -583,6 +570,7 @@ static void dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 	fman_if_promiscuous_disable(dpaa_intf->fif);
 }
 
+static
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
@@ -622,12 +610,14 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
+static
 void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Rx queue release", rxq);
 	return;
 }
 
+static
 int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
@@ -639,13 +629,13 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
-void dpaa_eth_tx_queue_release(void *txq __rte_unused)
+static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Tx queue release", txq);
 	return;
 }
 
-int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
+static int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
 		 uint16_t mtu __rte_unused)
 {
 	/* Currently we don't need to set anything specefic
@@ -656,13 +646,13 @@ int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
 	return 0;
 }
 
-int dpaa_link_down(struct rte_eth_dev *dev)
+static int dpaa_link_down(struct rte_eth_dev *dev)
 {
 	dpaa_eth_dev_stop(dev);
 	return 0;
 }
 
-int dpaa_link_up(struct rte_eth_dev *dev)
+static int dpaa_link_up(struct rte_eth_dev *dev)
 {
 	dpaa_eth_dev_start(dev);
 	return 0;

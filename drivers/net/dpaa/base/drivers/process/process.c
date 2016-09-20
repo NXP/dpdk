@@ -334,7 +334,7 @@ struct usdpaa_ioctl_raw_portal {
 #define USDPAA_IOCTL_FREE_RAW_PORTAL \
 	_IOR(USDPAA_IOCTL_MAGIC, 0x0D, struct usdpaa_ioctl_raw_portal)
 
-int process_portal_allocate(struct usdpaa_ioctl_raw_portal *portal)
+static int process_portal_allocate(struct usdpaa_ioctl_raw_portal *portal)
 {
 	int ret = check_fd();
 
@@ -349,7 +349,7 @@ int process_portal_allocate(struct usdpaa_ioctl_raw_portal *portal)
 	return 0;
 }
 
-int process_portal_free(struct usdpaa_ioctl_raw_portal *portal)
+static int process_portal_free(struct usdpaa_ioctl_raw_portal *portal)
 {
 	int ret = check_fd();
 
