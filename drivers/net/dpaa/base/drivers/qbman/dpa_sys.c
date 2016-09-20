@@ -45,7 +45,7 @@ struct process_interrupt {
 static COMPAT_LIST_HEAD(process_irq_list);
 static pthread_mutex_t process_irq_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void process_interrupt_install(struct process_interrupt *irq)
+static void process_interrupt_install(struct process_interrupt *irq)
 {
 	int ret;
 	/* Add the irq to the end of the list */
@@ -56,7 +56,7 @@ void process_interrupt_install(struct process_interrupt *irq)
 	assert(!ret);
 }
 
-void process_interrupt_remove(struct process_interrupt *irq)
+static void process_interrupt_remove(struct process_interrupt *irq)
 {
 	int ret;
 
@@ -67,7 +67,7 @@ void process_interrupt_remove(struct process_interrupt *irq)
 	assert(!ret);
 }
 
-struct process_interrupt *process_interrupt_find(int irq_num)
+static struct process_interrupt *process_interrupt_find(int irq_num)
 {
 	int ret;
 	struct process_interrupt *i = NULL;
@@ -87,7 +87,8 @@ done:
 /* This is the interface from the platform-agnostic driver code to (de)register
  * interrupt handlers. We simply create/destroy corresponding structs. */
 int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
-		      unsigned long flags, const char *name, void *arg)
+		      unsigned long flags, const char *name,
+		      void *arg __maybe_unused)
 {
 	struct process_interrupt *irq_node =
 		kmalloc(sizeof(*irq_node), GFP_KERNEL);
@@ -103,7 +104,7 @@ int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
 	return 0;
 }
 
-int qbman_free_irq(int irq, void *arg)
+int qbman_free_irq(int irq, __maybe_unused void *arg)
 {
 	struct process_interrupt *irq_node = process_interrupt_find(irq);
 

@@ -31,6 +31,8 @@
 
 #include "dpa_sys.h"
 #include <internal/process.h>
+#include <usdpaa/fsl_bman.h>
+
 
 int bman_alloc_bpid_range(u32 *result, u32 count, u32 align, int partial)
 {

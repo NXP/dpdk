@@ -196,7 +196,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 			uint16_t nb_bufs);
 
 uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
-		struct rte_mbuf **bufs __rte_unused,
+			      struct rte_mbuf **bufs __rte_unused,
 		uint16_t nb_bufs __rte_unused);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,

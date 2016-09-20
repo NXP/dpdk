@@ -33,7 +33,6 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <limits.h>
 #include <sched.h>
 #include <pthread.h>
@@ -54,7 +53,6 @@
 #include <rte_alarm.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
-#include <rte_atomic.h>
 #include <rte_malloc.h>
 #include <rte_ring.h>
 
@@ -111,7 +109,7 @@ static struct bman_pool *dpaa_bpid_init(int bpid)
 	return bp;
 }
 
-int dpaa_mbuf_create_pool(struct rte_mempool *mp)
+static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct bman_pool *bp;
 	uint32_t bpid;
@@ -150,6 +148,7 @@ int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	return 0;
 }
 
+static
 void dpaa_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 {
 	/* TODO:
@@ -162,6 +161,7 @@ void dpaa_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 	return;
 }
 
+static
 int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		void **obj_table,
 		unsigned count)
@@ -170,7 +170,8 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
 	struct pool_info_entry *bp_info;
 	void *bufaddr;
-	int i = 0, n = 0, ret;
+	int ret;
+	unsigned i = 0, n = 0;
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 
@@ -186,7 +187,7 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = bman_acquire(bp_info->bp,
 				   &bufs[n], count, 0);
 		if (ret <= 0) {
-			PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
+			PMD_DRV_LOG(WARNING, "Fail to allocate buffers %d", ret);
 			return -1;
 		}
 		n = ret;
@@ -239,9 +240,9 @@ set_buf:
 		rte_mbuf_refcnt_set(m[i], 1);
 		i = i + 1;
 	}
-  	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
+	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
 		    count, n, bp_info->bpid);
- 	return 0;
+	return 0;
 free_buf:
 	PMD_DRV_LOG(WARNING, "unable alloc required bufs count =%d n=%d",
 		    count, n);
@@ -258,12 +259,14 @@ retry:
 	return -1;
 }
 
+static
 int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		void *const *obj_table,
 		unsigned n)
 {
 	struct pool_info_entry *bp_info;
-	int i = 0, ret;
+	int ret;
+	unsigned i = 0;
 
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
@@ -284,12 +287,14 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	return 0;
 }
 
+static
 unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 {
 	/*TBD:XXX: to be implemented*/
 	return 0;
 }
 
+static
 int dpaa_mbuf_pool_verify(const struct rte_mempool *mp __rte_unused)
 {
 	/*if dpaa init fails, means no dpaa pool will be avaialbe */
@@ -394,7 +399,8 @@ int dpaa_portal_init(void *arg)
 	id = pthread_self();
 	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t), &cpuset);
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "pthread_setaffinity_np failed on core :%d", cpu);
+		PMD_DRV_LOG(ERROR, "pthread_setaffinity_np failed on core :%d",
+				cpu);
 		return -1;
 	}
 
@@ -555,8 +561,9 @@ static void dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 	fman_if_promiscuous_disable(dpaa_intf->fif);
 }
 
+static
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-		uint16_t nb_desc __rte_unused,
+			    uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
 		const struct rte_eth_rxconf *rx_conf __rte_unused,
 		struct rte_mempool *mp)
@@ -594,14 +601,16 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
+static
 void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Rx queue release", rxq);
 	return;
 }
 
+static
 int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-		uint16_t nb_desc __rte_unused,
+			    uint16_t nb_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
 		const struct rte_eth_txconf *tx_conf __rte_unused)
 {
@@ -611,30 +620,30 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
-void dpaa_eth_tx_queue_release(void *txq __rte_unused)
+static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "%p Tx queue release", txq);
 	return;
 }
 
-int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
+static int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
 		 uint16_t mtu __rte_unused)
 {
 	/* Currently we don't need to set anything specefic
 	 * in hardware for MTU (to be checked again). So just return zero in
-	 * order to make sure that setting mtu from Applicaiton doesn't return
+	 * order to make sure that setting mtu from Application doesn't return
 	 * any error
 	 */
 	return 0;
 }
 
-int dpaa_link_down(struct rte_eth_dev *dev)
+static int dpaa_link_down(struct rte_eth_dev *dev)
 {
 	dpaa_eth_dev_stop(dev);
 	return 0;
 }
 
-int dpaa_link_up(struct rte_eth_dev *dev)
+static int dpaa_link_up(struct rte_eth_dev *dev)
 {
 	dpaa_eth_dev_start(dev);
 	return 0;
@@ -642,14 +651,14 @@ int dpaa_link_up(struct rte_eth_dev *dev)
 
 static int
 dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
-		struct rte_eth_fc_conf *fc_conf)
+		   struct rte_eth_fc_conf *fc_conf)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
 
 	if (fc_conf->high_water < fc_conf->low_water) {
 		printf("\nERR - %s Incorrect Flow Control Configuration\n",
-			__func__);
+		       __func__);
 		return -EINVAL;
 	}
 
@@ -658,12 +667,13 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 	if (fc_conf->mode == RTE_FC_NONE)
 		return 0;
 	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
-				fc_conf->mode == RTE_FC_FULL) {
-		fman_if_set_fc_threshold(dpaa_intf->fif,
-			fc_conf->high_water, fc_conf->low_water,
-			dpaa_intf->bp_info->bpid);
+		 fc_conf->mode == RTE_FC_FULL) {
+		fman_if_set_fc_threshold(dpaa_intf->fif, fc_conf->high_water, 
+				fc_conf->low_water,
+				dpaa_intf->bp_info->bpid);
 		if (fc_conf->pause_time)
-			fman_if_set_fc_quanta(dpaa_intf->fif, fc_conf->pause_time);
+			fman_if_set_fc_quanta(dpaa_intf->fif,
+				fc_conf->pause_time);
 	}
 
 	/* Save the information in dpaa device */
@@ -680,11 +690,12 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 
 static int
 dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
-		     struct rte_eth_fc_conf *fc_conf)
+		   struct rte_eth_fc_conf *fc_conf)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
 	int ret;
+
 	if (net_fc) {
 		fc_conf->pause_time = net_fc->pause_time;
 		fc_conf->high_water = net_fc->high_water;
@@ -733,7 +744,7 @@ static struct eth_dev_ops dpaa_devops = {
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 {
-	struct rte_eth_fc_conf *fc_conf = &dpaa_intf->fc_conf;
+	struct rte_eth_fc_conf *fc_conf = dpaa_intf->fc_conf;
 	int ret;
 
 	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
@@ -749,7 +760,7 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 
 /* Initialise an Rx FQ */
 static int dpaa_rx_queue_init(struct qman_fq *fq,
-		uint32_t fqid)
+			      uint32_t fqid)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
@@ -788,7 +799,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 
 /* Initialise a Tx FQ */
 static int dpaa_tx_queue_init(struct qman_fq *fq,
-		struct fman_if *fman_intf)
+			      struct fman_if *fman_intf)
 {
 	struct qm_mcc_initfq opts;
 	int ret;
@@ -806,9 +817,9 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	/* no tx-confirmation */
 	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
-	PMD_DRV_LOG(DEBUG, "%s::initializing fqid %d for fman_intf fm%d-gb%d chanl %d\n",
-		__func__, fq->fqid, (fman_intf->fman_idx + 1), fman_intf->mac_idx,
-		fman_intf->tx_channel_id);
+	PMD_DRV_LOG(DEBUG, "init fqid %d for fman_intf fm%d-gb%d chan %d\n",
+		    	fq->fqid, (fman_intf->fman_idx + 1),
+			fman_intf->mac_idx, fman_intf->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
 
@@ -824,7 +835,8 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	int loop, ret = 0;
 
 	/* give the interface a name */
-	sprintf(dpaa_intf->name, "fm%d-gb%d", (fman_intf->fman_idx + 1), fman_intf->mac_idx);
+	sprintf(dpaa_intf->name, "fm%d-gb%d",
+		(fman_intf->fman_idx + 1), fman_intf->mac_idx);
 	/* get the mac address */
 	memcpy(dpaa_intf->mac_addr, fman_intf->mac_addr.addr_bytes,
 	       ETHER_ADDR_LEN);
@@ -880,7 +892,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->nb_tx_queues = num_cores;
 	PMD_DRV_LOG(DEBUG, "all fqs created");
 
-	/* Get the inital configuration for flow control */
+	/* Get the initial configuration for flow control */
 	dpaa_fc_set_default(dpaa_intf);
 
 	/* reset bpool list, initialize bpool dynamically */
@@ -897,7 +909,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 	eth_dev->data->mac_addrs = (struct ether_addr *)dpaa_intf->mac_addr;
 
-	/* Disable RX, disable promiscous mode */
+	/* Disable RX, disable promiscuous mode */
 	fman_if_disable_rx(fman_intf);
 	fman_if_promiscuous_disable(fman_intf);
 	fman_if_discard_rx_errors(fman_intf);

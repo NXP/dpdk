@@ -173,4 +173,6 @@ static inline void *dpaa_mem_ptov(phys_addr_t paddr)
 
 int dpaa_portal_init(void *arg);
 
+int dpaa_pre_rte_eal_init(void);
+
 #endif

@@ -41,6 +41,8 @@
  * words and an inline implementation of CRC64). We include it only in order to
  * instantiate the one global variable it depends on. */
 #include <fsl_fman.h>
+#include <usdpaa/fsl_bman.h>
+
 
 #include <internal/of.h>
 #include <usdpaa/of.h>
@@ -271,7 +273,8 @@ int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	void *mac_reg =  &((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
+	void *mac_reg =
+		&((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
 	u32 val = in_be32(mac_reg);
 
 	eth[0] = (val & 0x000000ff) >> 0;
@@ -311,7 +314,7 @@ int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-void memac_stats_get(struct fman_if *p,
+static void memac_stats_get(struct fman_if *p,
 		     struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
@@ -676,7 +679,8 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 					__if->__if.mac_idx = 10;
 					break;
 				default:
-					my_err(1, -EINVAL, "Invalid regs_addr: %#x\n",
+					my_err(1, -EINVAL,
+						"Invalid regs_addr: %#lx\n",
 					       regs_addr_host);
 			}
 		}
@@ -942,13 +946,12 @@ static int fman_if_init_onic(const struct device_node *dpa_node)
 	struct fman_if_bpool *bpool;
 	const phandle *pools_phandle;
 	const phandle *tx_channel_id, *mac_addr;
-	const phandle *rx_phandle, *tx_phandle;
+	const phandle *rx_phandle;
 	const struct device_node *pool_node;
 	const char *mname;
 	const char *dname = dpa_node->full_name;
 	size_t lenp;
 	int _errno;
-	int i;
 	const phandle *p_oh_node = NULL;
 	const struct device_node *oh_node = NULL;
 	const struct device_node *oh_node2 = NULL;
@@ -1121,8 +1124,6 @@ int fman_init(void)
 {
 	const struct device_node *dpa_node;
 	int _errno;
-	size_t lenp;
-	const char *mprop = "fsl,fman-mac";
 
 	/* If multiple dependencies try to initialise the Fman driver, don't
 	 * panic. */

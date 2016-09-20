@@ -957,7 +957,7 @@ static inline int __bman_acquire(struct bman_pool *pool, struct bm_buffer *bufs,
 }
 
 int bman_acquire(struct bman_pool *pool, struct bm_buffer *bufs, u8 num,
-		 u32 flags)
+		 u32 flags __maybe_unused)
 {
 	int ret;
 #ifdef CONFIG_FSL_DPA_CHECKING

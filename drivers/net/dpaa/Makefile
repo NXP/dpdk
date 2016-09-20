@@ -41,12 +41,8 @@ CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
 else
 CFLAGS += -O3
-#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += $(WERROR_FLAGS) -Wno-cast-qual  -Wno-pointer-arith
 endif
-CFLAGS +=-Wno-strict-aliasing
-CFLAGS +=-Wno-missing-prototypes
-CFLAGS +=-Wno-missing-declarations
-CFLAGS +=-Wno-unused-function
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include

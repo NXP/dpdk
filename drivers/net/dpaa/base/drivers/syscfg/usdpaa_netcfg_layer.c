@@ -74,8 +74,8 @@ static int skfd = -1;
 const char *fm_interfaces;
 
 static const struct argp_option argp_opts[] = {
-	{"fm-interfaces",	'i',	"FILE",	0,	"FMAN interfaces"},
-	{}
+	{"fm-interfaces", 'i', "FILE", 0, "FMAN interfaces", 0},
+	{ 0 }
 };
 
 static error_t netcfg_parser(int key, char *arg, struct argp_state *state __attribute__((unused)))
@@ -90,7 +90,7 @@ static error_t netcfg_parser(int key, char *arg, struct argp_state *state __attr
 	return 0;
 }
 
-const struct argp netcfg_argp = {argp_opts, netcfg_parser, 0, 0};
+const struct argp netcfg_argp = {argp_opts, netcfg_parser, 0, 0, 0, 0, 0};
 
 void dump_usdpaa_netcfg(struct usdpaa_netcfg_info *cfg_ptr)
 {
@@ -533,7 +533,7 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(void)
 	if (use_all_interfaces == 0)
 		idx += netcfg_interface->numof_fman_enabled_macless;
 	list_for_each_entry(__if, fman_if_list, node) {
-		bool is_offline;
+		__maybe_unused bool is_offline;
 		struct fm_eth_port_cfg *cfg = &usdpaa_netcfg->port_cfg[idx];
 		/* Hook in the fman driver interface */
 		cfg->fman_if = __if;
