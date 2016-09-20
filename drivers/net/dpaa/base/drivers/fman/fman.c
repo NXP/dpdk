@@ -487,7 +487,7 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 	struct fman_if_bpool *bpool;
 
 	const phandle *mac_phandle, *ports_phandle, *pools_phandle;
-	const phandle *tx_channel_id, *mac_addr, *cell_idx;
+	const phandle *tx_channel_id = NULL, *mac_addr, *cell_idx;
 	const phandle *rx_phandle, *tx_phandle;
 	uint64_t tx_phandle_host[4] = {0};
 	uint64_t rx_phandle_host[4] = {0};
