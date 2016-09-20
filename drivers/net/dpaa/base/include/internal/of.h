@@ -91,10 +91,6 @@ bool of_device_is_compatible(const struct device_node *dev_node,
 struct device_node *of_find_node_with_property(struct device_node *from,
 					       const char *prop_name);
 
-static inline void of_node_put(struct device_node *node)
-{
-}
-
 struct device_node *of_find_node_with_property(
 	struct device_node *from, const char *prop_name);
 

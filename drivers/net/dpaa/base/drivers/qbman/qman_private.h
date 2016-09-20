@@ -77,7 +77,7 @@ static inline void qman_cgrs_unset(struct qman_cgrs *c, int num)
 
 static inline int qman_cgrs_next(struct qman_cgrs *c, int num)
 {
-	while ((++num < __CGR_NUM) && !qman_cgrs_get(c, num))
+	while ((++num < (int)__CGR_NUM) && !qman_cgrs_get(c, num))
 		;
 	return num;
 }
@@ -134,7 +134,7 @@ static inline void qman_ccgrs_fill(struct qman_ccgrs *c)
 
 static inline int qman_ccgrs_get(struct qman_ccgrs *c, int num)
 {
-	if (num < __CGR_NUM)
+	if (num < (int)__CGR_NUM)
 		return QM_MCR_QUERYCONGESTION(&c->q[0], num);
 	else
 		return QM_MCR_QUERYCONGESTION(&c->q[1], (num - __CGR_NUM));
@@ -142,7 +142,7 @@ static inline int qman_ccgrs_get(struct qman_ccgrs *c, int num)
 
 static inline int qman_ccgrs_next(struct qman_ccgrs *c, int num)
 {
-	while ((++num < __CGR_NUM) && !qman_ccgrs_get(c, num))
+	while ((++num < (int)__CGR_NUM) && !qman_ccgrs_get(c, num))
 		;
 	return num;
 }

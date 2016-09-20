@@ -383,7 +383,7 @@ static __init int fsl_ceetm_init(const struct device_node *node)
 		return -EINVAL;
 	}
 
-	for (i = 0; i < be32_to_cpu(range[1]); i++) {
+	for (i = 0; i < (int)be32_to_cpu(range[1]); i++) {
 		sp = kzalloc(sizeof(*sp), GFP_KERNEL);
 		if (!sp) {
 			pr_err("Can't alloc memory for sub-portal %d\n",
@@ -413,7 +413,7 @@ static __init int fsl_ceetm_init(const struct device_node *node)
 		return -EINVAL;
 	}
 
-	for (i = 0; i < be32_to_cpu(range[1]); i++) {
+	for (i = 0; i < (int)be32_to_cpu(range[1]); i++) {
 		lni = kzalloc(sizeof(*lni), GFP_KERNEL);
 		if (!lni) {
 			pr_err("Can't alloc memory for LNI %d\n",
