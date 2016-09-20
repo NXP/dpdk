@@ -1,7 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
-#   All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -13,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Intel Corporation nor the names of its
+#     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -31,15 +30,39 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_GCM) += aesni_gcm
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_MB) += aesni_mb
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_LIBCRYPTO) += libcrypto
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_QAT) += qat
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G) += snow3g
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_KASUMI) += kasumi
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO) += null
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE) += armce
+# library name
+LIB = librte_pmd_dpaa_sec.a
 
-include $(RTE_SDK)/mk/rte.subdir.mk
+# build flags
+CFLAGS += -g -O3
+#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += "-Wno-error"
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/
+# reference to flib in dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
+
+# library version
+LIBABIVER := 1
+
+# versioning export map
+EXPORT_MAP := pmd_dpaa_sec_version.map
+
+# external library include paths
+CFLAGS += -Iinclude
+LDLIBS += -lcrypto
+
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
+
+# export include files
+SYMLINK-y-include +=
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_cryptodev
+
+include $(RTE_SDK)/mk/rte.lib.mk

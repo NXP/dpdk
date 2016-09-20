@@ -58,10 +58,10 @@
 
 #define AES_TEST_TARGET_PMD_MB		0x0001 /* Multi-buffer flag */
 #define AES_TEST_TARGET_PMD_QAT		0x0002 /* QAT flag */
-
 #define AES_TEST_TARGET_PMD_DPAA2_SEC	0x0004 /* DPAA2_SEC flag */
 #define AES_TEST_TARGET_PMD_ARMCE	0x0008 /* ARMCE flag */
 #define AES_TEST_TARGET_PMD_LIBCRYPTO	0x0010 /* SW LIBCRYPTO flag */
+#define AES_TEST_TARGET_PMD_DPAA_SEC	0x0020 /* DPAA_SEC flag */
 
 
 #define AES_TEST_OP_CIPHER		(AES_TEST_OP_ENCRYPT |		\
@@ -141,6 +141,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -152,6 +153,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -162,6 +164,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -173,6 +176,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -183,6 +187,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -203,6 +208,7 @@ static const struct aes_test_case aes_test_cases[] = {
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_QAT |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -243,6 +249,7 @@ static const struct aes_test_case aes_test_cases[] = {
 		.op_mask = AES_TEST_OP_ENC_AUTH_GEN,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE |
 			AES_TEST_TARGET_PMD_LIBCRYPTO
 	},
@@ -254,6 +261,7 @@ static const struct aes_test_case aes_test_cases[] = {
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
 			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -261,8 +269,9 @@ static const struct aes_test_case aes_test_cases[] = {
 		.test_data = &aes_test_data_9,
 		.op_mask = AES_TEST_OP_ENC_AUTH_GEN,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
-			AES_TEST_TARGET_PMD_DPAA2_SEC |
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 	{
@@ -271,8 +280,9 @@ static const struct aes_test_case aes_test_cases[] = {
 		.test_data = &aes_test_data_9,
 		.op_mask = AES_TEST_OP_AUTH_VERIFY_DEC,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
-			AES_TEST_TARGET_PMD_DPAA2_SEC |
 			AES_TEST_TARGET_PMD_LIBCRYPTO |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_ARMCE
 	},
 };
@@ -313,6 +323,7 @@ test_AES_one_case(const struct aes_test_case *t,
 	switch (cryptodev_type) {
 	case RTE_CRYPTODEV_QAT_SYM_PMD:
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
 	case RTE_CRYPTODEV_ARMCE_PMD:
 	case RTE_CRYPTODEV_LIBCRYPTO_PMD:
 		digest_len = tdata->digest.len;
@@ -700,6 +711,9 @@ test_AES_all_tests(struct rte_mempool *mbuf_pool,
 		break;
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
 		target_pmd_mask = AES_TEST_TARGET_PMD_DPAA2_SEC;
+		break;
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
+		target_pmd_mask = AES_TEST_TARGET_PMD_DPAA_SEC;
 		break;
 	case RTE_CRYPTODEV_ARMCE_PMD:
 		target_pmd_mask = AES_TEST_TARGET_PMD_ARMCE;
