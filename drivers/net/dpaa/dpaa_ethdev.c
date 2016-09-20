@@ -236,8 +236,7 @@ set_buf:
 		bufaddr = (void *)dpaa_mem_ptov(bufs[i].addr);
 		m[i] = (struct rte_mbuf *)((char *)bufaddr
 			- bp_info->meta_data_size);
-		RTE_ASSERT(rte_mbuf_refcnt_read(m[i]) == 0);
-		rte_mbuf_refcnt_set(m[i], 1);
+		rte_mbuf_refcnt_set(m[i], 0);
 		i = i + 1;
 	}
 	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
