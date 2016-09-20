@@ -303,6 +303,7 @@ set_buf:
 	for (i = 0; i < n; i++) {
 		DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
 		obj_table[i] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
+		rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[i], 0);
 		PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
 			    (void *)bufs[i], (void *)obj_table[i]);
 	}
