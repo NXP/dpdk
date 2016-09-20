@@ -662,7 +662,18 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 		   struct rte_eth_fc_conf *fc_conf)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
+	struct rte_eth_fc_conf *net_fc;
+
+	if (!(dpaa_intf->fc_conf)) {
+		dpaa_intf->fc_conf = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
+		if (!dpaa_intf->fc_conf) {
+			printf("%s::unable to save flow control info\n",
+								__func__);
+			return -ENOMEM;
+		}
+	}
+	net_fc = dpaa_intf->fc_conf;
 
 	if (fc_conf->high_water < fc_conf->low_water) {
 		printf("\nERR - %s Incorrect Flow Control Configuration\n",
@@ -752,9 +763,19 @@ static struct eth_dev_ops dpaa_devops = {
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 {
-	struct rte_eth_fc_conf *fc_conf = dpaa_intf->fc_conf;
+	struct rte_eth_fc_conf *fc_conf;
 	int ret;
 
+	if (!(dpaa_intf->fc_conf)) {
+		dpaa_intf->fc_conf = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
+		if (!dpaa_intf->fc_conf) {
+			printf("%s::unable to save flow control info\n",
+								__func__);
+			return -ENOMEM;
+		}
+	}
+	fc_conf = dpaa_intf->fc_conf;
 	ret = fman_if_get_fc_threshold(dpaa_intf->fif);
 	if (ret) {
 		fc_conf->mode = RTE_FC_TX_PAUSE;
