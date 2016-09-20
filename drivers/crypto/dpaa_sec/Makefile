@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -32,11 +32,16 @@ include $(RTE_SDK)/mk/rte.vars.mk
 
 # library name
 LIB = librte_pmd_dpaa_sec.a
-
 # build flags
-CFLAGS += -g -O3
-#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -D _GNU_SOURCE
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT),y)
+CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
+else
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
+endif
+
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/
 # reference to flib in dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
@@ -48,7 +53,7 @@ CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 LIBABIVER := 1
 
 # versioning export map
-EXPORT_MAP := pmd_dpaa_sec_version.map
+EXPORT_MAP := rte_pmd_dpaa_sec_version.map
 
 # external library include paths
 CFLAGS += -Iinclude
