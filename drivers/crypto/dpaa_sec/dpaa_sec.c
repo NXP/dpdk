@@ -32,6 +32,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <sched.h>
 #include <net/if.h>
 
 #include <rte_mbuf.h>
@@ -95,7 +96,7 @@ static inline void dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 	rte_free(ctx);
 }
 
-static inline struct dpaa_sec_job *dpaa_sec_alloc_job()
+static inline struct dpaa_sec_job *dpaa_sec_alloc_job(void)
 {
 	struct dpaa_sec_op_ctx *ctx;
 
@@ -141,8 +142,8 @@ static inline void *dpaa_mem_ptov(phys_addr_t paddr)
 	return NULL;
 }
 
-static void ern_sec_fq_handler(struct qman_portal *qm, struct qman_fq *fq,
-			       const struct qm_mr_entry *msg)
+static void ern_sec_fq_handler(struct qman_portal *qm __rte_unused,
+		struct qman_fq *fq, const struct qm_mr_entry *msg)
 {
 	printf("sec fq %d error, RC = %x, seqnum = %x\n", fq->fqid,
 	       msg->ern.rc, msg->ern.seqnum);
@@ -335,7 +336,7 @@ static inline uint32_t caam_cipher_alg(struct dpaa_sec_ses *ses)
 	return 0;
 }
 
-void dpaa_dump_bytes(char *p, int len)
+static inline void dpaa_dump_bytes(char *p, int len)
 {
 	int i;
 
@@ -365,7 +366,7 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	memset(cdb, 0, sizeof(struct sec_cdb));
 
 	alginfo_c.algtype = caam_cipher_alg(ses);
-	if (alginfo_c.algtype == DPAA_SEC_ALG_UNSUPPORT) {
+	if (alginfo_c.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
 		PMD_DRV_LOG(ERR, "not supported cipher alg\n");
 		return -1;
 	}
@@ -378,7 +379,7 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 
 
 	alginfo_a.algtype = caam_auth_alg(ses);
-	if (alginfo_c.algtype == DPAA_SEC_ALG_UNSUPPORT) {
+	if (alginfo_c.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
 		PMD_DRV_LOG(ERR, "not supported auth alg\n");
 		return -1;
 	}
@@ -546,7 +547,6 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 {
 	struct rte_crypto_sym_op *sym = op->sym;
 	struct rte_mbuf *mbuf = sym->m_src;
-	struct dpaa_sec_ses *ses;
 	struct dpaa_sec_job *cf;
 	struct dpaa_sec_op_ctx *ctx;
 	struct qm_sg_entry *sg;
@@ -558,7 +558,6 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 
 	ctx = container_of(cf, struct dpaa_sec_op_ctx, job);
 	ctx->op = op;
-	ses = dpaa_get_sec_ses(op);
 	start_addr = rte_pktmbuf_mtophys(mbuf);
 
 	/* output */
@@ -682,7 +681,8 @@ static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 	return cf;
 }
 
-int dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
+static int
+dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 {
 	struct dpaa_sec_job *cf;
 	struct dpaa_sec_ses *ses;
@@ -749,7 +749,7 @@ static uint16_t
 dpaa_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		       uint16_t nb_ops)
 {
-	uint16_t i, num_rx;
+	uint16_t num_rx;
 	struct dpaa_sec_qp *dpaa_qp = (struct dpaa_sec_qp *)qp;
 
 	num_rx = dpaa_sec_deq(dpaa_qp, ops, nb_ops);
@@ -770,7 +770,6 @@ dpaa_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 {
 	struct dpaa_sec_qi *qi;
 	struct dpaa_sec_qp *qp = NULL;
-	int ret;
 
 	PMD_DRV_LOG(DEBUG, "dev =%p, queue =%d, conf =%p", dev, qp_id, qp_conf);
 
@@ -826,11 +825,12 @@ dpaa_sec_session_get_size(struct rte_cryptodev *dev __rte_unused)
 }
 
 static void
-dpaa_sec_session_initialize(struct rte_mempool *mp, void *ses)
+dpaa_sec_session_initialize(struct rte_mempool *mp __rte_unused,
+				void *ses __rte_unused)
 {
 }
 
-static int dpaa_ses_cipher_init(struct rte_cryptodev *dev,
+static int dpaa_ses_cipher_init(struct rte_cryptodev *dev __rte_unused,
 				struct rte_crypto_sym_xform *xform,
 				struct dpaa_sec_ses *session)
 {
@@ -851,7 +851,7 @@ static int dpaa_ses_cipher_init(struct rte_cryptodev *dev,
 	return 0;
 }
 
-static int dpaa_ses_auth_init(struct rte_cryptodev *dev,
+static int dpaa_ses_auth_init(struct rte_cryptodev *dev __rte_unused,
 			      struct rte_crypto_sym_xform *xform,
 			      struct dpaa_sec_ses *session)
 {
@@ -943,8 +943,8 @@ dpaa_sec_dev_configure(struct rte_cryptodev *dev)
 {
 	struct dpaa_sec_qi *qi;
 	struct dpaa_sec_qp *qp;
-	uint32_t flags;
-	int i, ret;
+	uint32_t i;
+	int ret;
 
 	qi = dev->data->dev_private;
 	for (i = 0; i < qi->max_nb_queue_pairs; i++) {
@@ -968,18 +968,18 @@ dpaa_sec_dev_configure(struct rte_cryptodev *dev)
 }
 
 static int
-dpaa_sec_dev_start(struct rte_cryptodev *dev)
+dpaa_sec_dev_start(struct rte_cryptodev *dev __rte_unused)
 {
 	return 0;
 }
 
 static void
-dpaa_sec_dev_stop(struct rte_cryptodev *dev)
+dpaa_sec_dev_stop(struct rte_cryptodev *dev __rte_unused)
 {
 }
 
 static int
-dpaa_sec_dev_close(struct rte_cryptodev *dev)
+dpaa_sec_dev_close(struct rte_cryptodev *dev __rte_unused)
 {
 	return 0;
 }
@@ -1001,25 +1001,27 @@ dpaa_sec_dev_infos_get(struct rte_cryptodev *dev,
 }
 
 static
-void dpaa_sec_stats_get(struct rte_cryptodev *dev,
-			struct rte_cryptodev_stats *stats)
+void dpaa_sec_stats_get(struct rte_cryptodev *dev __rte_unused,
+			struct rte_cryptodev_stats *stats __rte_unused)
 {
 	/* -ENOTSUP; */
 }
 
 static
-void dpaa_sec_stats_reset(struct rte_cryptodev *dev)
+void dpaa_sec_stats_reset(struct rte_cryptodev *dev __rte_unused)
 {
 	/* -ENOTSUP; */
 }
 
 static int
-dpaa_sec_uninit(const char *name)
+dpaa_sec_dev_uninit(__attribute__((unused))
+		  const struct rte_cryptodev_driver *crypto_drv,
+		  struct rte_cryptodev *dev)
 {
-	if (name == NULL)
+	if (dev->data->name == NULL)
 		return -EINVAL;
 
-	DPAA_CAAM_LOG_INFO("Closing dpaa crypto device %s\n", name);
+	PMD_DRV_LOG("Closing dpaa crypto device %s\n", dev->data->name);
 
 	return 0;
 }
@@ -1048,7 +1050,6 @@ dpaa_sec_dev_init(__attribute__((unused))
 		  struct rte_cryptodev_driver *crypto_drv,
 		  struct rte_cryptodev *dev)
 {
-	int ret;
 	struct dpaa_sec_qi *qi;
 
 	rta_set_sec_era(SEC_ERA);
@@ -1098,6 +1099,7 @@ static struct rte_cryptodev_driver dpaa_sec_pmd = {
 		.id_table = pci_id_dpaa_sec_map,
 	},
 	.cryptodev_init = dpaa_sec_dev_init,
+	.cryptodev_uninit = dpaa_sec_dev_uninit,
 	.dev_private_size = sizeof(struct dpaa_sec_qi),
 };
 
