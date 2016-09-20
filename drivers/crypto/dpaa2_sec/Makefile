@@ -30,18 +30,18 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-#ifeq ($(AESNI_MULTI_BUFFER_LIB_PATH),)
-#$(error "Please define AESNI_MULTI_BUFFER_LIB_PATH environment variable")
-#endif
-
 # library name
 LIB = librte_pmd_dpaa2_sec.a
 
 # build flags
-CFLAGS += -g -O3
-#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -D _GNU_SOURCE
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT),y)
+CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
+else
+CFLAGS += -O3
+#CFLAGS += $(WERROR_FLAGS)
+endif
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/mc
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/qbman/include
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/qbman/include/drivers
@@ -57,8 +57,6 @@ LIBABIVER := 1
 EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 
 # external library include paths
-#CFLAGS += -I$(AESNI_MULTI_BUFFER_LIB_PATH)
-#CFLAGS += -I$(AESNI_MULTI_BUFFER_LIB_PATH)/include
 CFLAGS += -Iinclude
 LDLIBS += -lcrypto
 
