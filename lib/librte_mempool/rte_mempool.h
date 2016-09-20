@@ -75,6 +75,7 @@
 #include <rte_branch_prediction.h>
 #include <rte_ring.h>
 #include <rte_memcpy.h>
+#include <rte_common.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -386,10 +387,10 @@ typedef int (*rte_mempool_dequeue_t)(struct rte_mempool *mp,
 typedef unsigned (*rte_mempool_get_count)(const struct rte_mempool *mp);
 
 /**
- * Return if the given external mempool is available for this instance.
+ * Return if the given external mempool is supported for this instance.
  * it is optional to implement for mempools
  */
-typedef int (*rte_mempool_pool_verify)(const struct rte_mempool *mp);
+typedef int (*rte_mempool_supported)(const struct rte_mempool *mp);
 
 /** Structure defining mempool operations structure */
 struct rte_mempool_ops {
@@ -399,8 +400,8 @@ struct rte_mempool_ops {
 	rte_mempool_enqueue_t enqueue;   /**< Enqueue an object. */
 	rte_mempool_dequeue_t dequeue;   /**< Dequeue an object. */
 	rte_mempool_get_count get_count; /**< Get qty of available objs. */
-	rte_mempool_pool_verify pool_verify;
-	/**< Verify if external mempool is available for usages*/
+	rte_mempool_supported supported;
+	/**< Verify if external mempool is supported for usages*/
 } __rte_cache_aligned;
 
 #define RTE_MEMPOOL_MAX_OPS_IDX 16  /**< Max registered ops structs */
@@ -527,11 +528,11 @@ rte_mempool_ops_free(struct rte_mempool *mp);
  * @param mp
  *   Pointer to the memory pool.
  * @return
- *   0: Success; external mempool instance is available
- * - <0: Error; external mempool instance is not available
+ *   0: Success; external mempool instance is supported
+ * - <0: Error; external mempool instance is not supported
  */
 int
-rte_mempool_ops_pool_verify(const struct rte_mempool *mp);
+rte_mempool_ops_supported(const struct rte_mempool *mp);
 
 /**
  * Set the ops of a mempool.
@@ -549,7 +550,7 @@ rte_mempool_ops_pool_verify(const struct rte_mempool *mp);
  *   - 0: Success; the mempool is now using the requested ops functions.
  *   - -EINVAL - Invalid ops struct name provided.
  *   - -EEXIST - mempool already has an ops struct assigned.
- *   - -EOPNOTSUPP  - mempool instance not available.
+ *   - -EOPNOTSUPP  - mempool instance not supported.
  */
 int
 rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,

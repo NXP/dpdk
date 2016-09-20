@@ -85,7 +85,7 @@ rte_mempool_register_ops(const struct rte_mempool_ops *h)
 	ops->enqueue = h->enqueue;
 	ops->dequeue = h->dequeue;
 	ops->get_count = h->get_count;
-	ops->pool_verify = h->pool_verify;
+	ops->supported = h->supported;
 
 	rte_spinlock_unlock(&rte_mempool_ops_table.sl);
 
@@ -124,15 +124,15 @@ rte_mempool_ops_get_count(const struct rte_mempool *mp)
 	return ops->get_count(mp);
 }
 
-/* wrapper to check if given external mempool is available for this instance.*/
+/* wrapper to check if given external mempool is supported for this instance.*/
 int
-rte_mempool_ops_pool_verify(const struct rte_mempool *mp)
+rte_mempool_ops_supported(const struct rte_mempool *mp)
 {
 	struct rte_mempool_ops *ops;
 
 	ops = rte_mempool_get_ops(mp->ops_index);
-	if (ops->pool_verify)
-		return ops->pool_verify(mp);
+	if (ops->supported)
+		return ops->supported(mp);
 	return 0;
 }
 
@@ -159,9 +159,9 @@ rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
 	if (ops == NULL)
 		return -EINVAL;
 
-	/*verify if the given mempool is available for this instance */
-	if (ops->pool_verify) {
-		if (ops->pool_verify(mp))
+	/*verify if the given mempool is supported for this instance */
+	if (ops->supported) {
+		if (ops->supported(mp))
 			return -EOPNOTSUPP;
 	}
 
