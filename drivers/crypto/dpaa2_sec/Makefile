@@ -40,7 +40,7 @@ CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
 else
 CFLAGS += -O3
-#CFLAGS += $(WERROR_FLAGS)
+CFLAGS += $(WERROR_FLAGS)
 endif
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/mc
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/qbman/include

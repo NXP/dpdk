@@ -58,6 +58,7 @@
 /* DPAA2 Global constants */
 #include <dpaa2_hw_pvt.h>
 
+#include "dpaa2_logs.h"
 /* DPAA2 Base interface files */
 #include <dpaa2_hw_dpbp.h>
 #include <dpaa2_hw_dpni.h>
