@@ -48,6 +48,7 @@
 
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_hw_dpbp.h>
+#include <dpaa2_hw_dpio.h>
 
 #include "dpaa2_sec_priv.h"
 #include "dpaa2_sec_logs.h"
@@ -57,29 +58,30 @@
 #include <flib/desc/pdcp.h>
 #include <flib/desc/algo.h>
 
+#define NO_PREFETCH 0
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
 extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 static inline void print_fd(const struct qbman_fd *fd)
 {
-	printf("addr_lo:          %p\n", fd->simple.addr_lo);
-	printf("addr_hi:          %p\n", fd->simple.addr_hi);
-	printf("len:              %lu\n", fd->simple.len);
-	printf("bpid:             %lu\n", DPAA2_GET_FD_BPID(fd));
-	printf("fi_bpid_off:      %lu\n", fd->simple.bpid_offset);
-	printf("frc:              %lu\n", fd->simple.frc);
-	printf("ctrl:             %lu\n", fd->simple.ctrl);
-	printf("flc_lo:           %p\n", fd->simple.flc_lo);
-	printf("flc_hi:           %p\n\n", fd->simple.flc_hi);
+	printf("addr_lo:          %u\n", fd->simple.addr_lo);
+	printf("addr_hi:          %u\n", fd->simple.addr_hi);
+	printf("len:              %u\n", fd->simple.len);
+	printf("bpid:             %u\n", DPAA2_GET_FD_BPID(fd));
+	printf("fi_bpid_off:      %u\n", fd->simple.bpid_offset);
+	printf("frc:              %u\n", fd->simple.frc);
+	printf("ctrl:             %u\n", fd->simple.ctrl);
+	printf("flc_lo:           %u\n", fd->simple.flc_lo);
+	printf("flc_hi:           %u\n\n", fd->simple.flc_hi);
 }
 
 static inline void print_fle(const struct qbman_fle *fle)
 {
-	printf("addr_lo:          %p\n", fle->addr_lo);
-	printf("addr_hi:          %p\n", fle->addr_hi);
-	printf("len:              %lu\n", fle->length);
-	printf("fi_bpid_off:      %lu\n", fle->fin_bpid_offset);
-	printf("frc:              %lu\n", fle->frc);
+	printf("addr_lo:          %u\n", fle->addr_lo);
+	printf("addr_hi:          %u\n", fle->addr_hi);
+	printf("len:              %u\n", fle->length);
+	printf("fi_bpid_off:      %u\n", fle->fin_bpid_offset);
+	printf("frc:              %u\n", fle->frc);
 }
 
 static inline int build_authenc_fd(dpaa2_sec_session *sess,
@@ -93,7 +95,6 @@ static inline int build_authenc_fd(dpaa2_sec_session *sess,
 	uint32_t auth_only_len = sym_op->auth.data.length -
 				sym_op->cipher.data.length;
 	int icv_len = sym_op->auth.digest.length;
-	int iv_len = sym_op->cipher.iv.length;
 	uint8_t *old_icv;
 	uint32_t mem_len = (7 * sizeof(struct qbman_fle)) + icv_len;
 
@@ -423,8 +424,6 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	/*todo - need to support multiple buffer pools */
 	uint16_t bpid;
 	struct rte_mempool *mb_pool;
-	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 	dpaa2_sec_session *sess;
 
 	if (unlikely(nb_ops == 0))
@@ -551,6 +550,7 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 	return op;
 }
 
+#if NO_PREFETCH
 static uint16_t
 dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 			uint16_t nb_ops)
@@ -638,6 +638,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
+#else
 
 /*Packet dq option with prefetch support */
 static uint16_t
@@ -654,9 +655,6 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	const struct qbman_fd *fd[16];
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_qp->rx_vq.q_storage;
-	/*dev is stored in tx_vq */
-	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 
 	if (!thread_io_info.sec_dpio_dev) {
 		ret = dpaa2_affine_qbman_swp_sec();
@@ -766,7 +764,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
-
+#endif
 /** Release queue pair */
 static int
 dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
@@ -871,11 +869,9 @@ dpaa2_sec_session_get_size(struct rte_cryptodev *dev __rte_unused)
 }
 
 static void
-dpaa2_sec_session_initialize(struct rte_mempool *mp,
-			     void *sess)
+dpaa2_sec_session_initialize(struct rte_mempool *mp __rte_unused,
+			     void *sess __rte_unused)
 {
-	sess = (dpaa2_sec_session *)rte_zmalloc(NULL,
-			sizeof(dpaa2_sec_session), RTE_CACHE_LINE_SIZE);
 	return;
 }
 
@@ -1270,7 +1266,6 @@ static void *
 dpaa2_sec_session_configure(struct rte_cryptodev *dev,
 			    struct rte_crypto_sym_xform *xform,	void *sess)
 {
-	struct dpaa2_sec_dev_private *internals = dev->data->dev_private;
 	dpaa2_sec_session *session = sess;
 
 	if (unlikely(sess == NULL)) {
@@ -1316,7 +1311,7 @@ dpaa2_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 }
 
 static int
-dpaa2_sec_dev_configure(struct rte_cryptodev *dev)
+dpaa2_sec_dev_configure(struct rte_cryptodev *dev __rte_unused)
 {
 	return -ENOTSUP;
 }
@@ -1530,13 +1525,14 @@ static struct rte_cryptodev_ops crypto_ops = {
 };
 
 static int
-dpaa2_sec_uninit(const char *name)
+dpaa2_sec_uninit(__attribute__((unused)) const struct rte_cryptodev_driver *crypto_drv,
+		 struct rte_cryptodev *dev)
 {
-	if (name == NULL)
+	if (dev->data->name == NULL)
 		return -EINVAL;
 
 	PMD_DRV_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
-		    name, rte_socket_id());
+		    dev->data->name, rte_socket_id());
 
 	return 0;
 }
@@ -1561,7 +1557,11 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	dev->dev_ops = &crypto_ops;
 
 	dev->enqueue_burst = dpaa2_sec_enqueue_burst;
+#if NO_PREFETCH
+	dev->dequeue_burst = dpaa2_sec_dequeue_burst;
+#else
 	dev->dequeue_burst = dpaa2_sec_dequeue_prefetch_burst;
+#endif
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_HW_ACCELERATED |
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
@@ -1592,13 +1592,13 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	if (retcode != 0) {
 		printf("Cannot open the dpsec device: Error Code = %x\n",
 		       retcode);
-		return -1;
+		goto init_error;
 	}
 	retcode = dpseci_get_attributes(dpseci, CMD_PRI_LOW, token, &attr);
 	if (retcode != 0) {
 		printf("Cannot get dpsec device attributed: Error Code = %x\n",
 		       retcode);
-		return -1;
+		goto init_error;
 	}
 	sprintf(dev->data->name, "dpsec-%u", hw_id);
 
@@ -1630,6 +1630,7 @@ static struct rte_cryptodev_driver rte_dpaa2_sec_pmd = {
 		.id_table = pci_id_dpaa2_sec_map,
 	},
 	.cryptodev_init = dpaa2_sec_dev_init,
+	.cryptodev_uninit = dpaa2_sec_uninit,
 	.dev_private_size = sizeof(struct dpaa2_sec_dev_private),
 };
 

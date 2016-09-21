@@ -33,7 +33,6 @@
 #ifndef _DPAA2_HW_DPNI_H_
 #define _DPAA2_HW_DPNI_H_
 
-#include <dpaa2_logs.h>
 #include <dpaa2_hw_dpni_annot.h>
 
 /* #define DPAA2_CGR_SUPPORT */
@@ -98,11 +97,6 @@ int dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
 int dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv, void *blist);
 
 /* FIXME */
-int
-dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);
-
-void
-dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage);
 
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse(uint64_t hw_annot_addr)
