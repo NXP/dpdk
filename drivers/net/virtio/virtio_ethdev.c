@@ -1344,10 +1344,12 @@ virtio_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_LOG(DEBUG, "configure");
 
+#if 0
 	if (rxmode->hw_ip_checksum) {
 		PMD_DRV_LOG(ERR, "HW IP checksum not supported");
 		return -EINVAL;
 	}
+#endif
 
 	hw->vlan_strip = rxmode->hw_vlan_strip;
 
