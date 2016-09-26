@@ -16,7 +16,7 @@
 #endif
 
 /* Max size of any SEC descriptor in 32-bit words, inclusive of header */
-#define MAX_CAAM_DESCSIZE	128
+#define MAX_CAAM_DESCSIZE	64
 
 #define CAAM_CMD_SZ sizeof(uint32_t)
 #define CAAM_PTR_SZ sizeof(dma_addr_t)

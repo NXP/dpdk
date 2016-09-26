@@ -34,7 +34,7 @@
 #define _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 
 #define MAX_QUEUES		64
-#define MAX_DESC_SIZE		128
+#define MAX_DESC_SIZE		64
 /** private data structure for each DPAA2_SEC device */
 struct dpaa2_sec_dev_private {
 	void *mc_portal; /**< MC Portal for configuring this device */
