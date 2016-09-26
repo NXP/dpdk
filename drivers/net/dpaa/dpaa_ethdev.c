@@ -167,13 +167,19 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		unsigned count)
 {
 	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
-	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
+	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE * 2];
 	struct pool_info_entry *bp_info;
 	void *bufaddr;
 	int ret;
 	unsigned i = 0, n = 0;
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
+
+	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
+		PMD_DRV_LOG(ERR, "Unable to allocate requested (%u) buffers",
+			    count);
+		return -1;
+	}
 
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
