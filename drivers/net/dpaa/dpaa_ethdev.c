@@ -331,11 +331,11 @@ static int dpaa_init(void)
 	/* Get the interface configurations from device-tree */
 	dpaa_netcfg = usdpaa_netcfg_acquire();
 	if (!dpaa_netcfg) {
-		fprintf(stderr, "Fail: usdpaa_netcfg_acquire\n");
+		PMD_DRV_LOG(ERR, "Fail: usdpaa_netcfg_acquire");
 		return -1;
 	}
 	if (!dpaa_netcfg->num_ethports) {
-		fprintf(stderr, "Fail: no network interfaces available\n");
+		PMD_DRV_LOG(ERR, "Fail: no network interfaces available\n");
 		return -1;
 	}
 
@@ -425,10 +425,8 @@ int dpaa_pre_rte_eal_init(void)
 	int ret;
 
 	ret = dpaa_init();
-	if (ret) {
-		printf("Cannot init dpaa\n");
+	if (ret)
 		return -1;
-	}
 
 	ret = dpaa_portal_init((void *)1);
 	if (ret) {
