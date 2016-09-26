@@ -238,7 +238,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct qbman_swp *swp;
 	uint32_t mbuf_size;
 	uint16_t bpid;
-	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE + 1];
+	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE * 2];
 	int ret;
 	unsigned i, n = 0;
 	struct dpaa2_bp_info *bp_info;
@@ -252,6 +252,12 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bpid = bp_info->bpid;
 
+	if (count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2)) {
+		PMD_DRV_LOG(ERR, " Unable to serve requested (%u) buffers",
+			    count);
+		return -1;
+	}
+
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
@@ -262,7 +268,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	swp = thread_io_info.dpio_dev->sw_portal;
 
 	/* if number of buffers requested is less than 7 */
-	if (count < DPAA2_MBUF_MAX_ACQ_REL) {
+	if (unlikely(count < DPAA2_MBUF_MAX_ACQ_REL)) {
 		ret = qbman_swp_acquire(swp, bpid, &bufs[n], count);
 		if (ret <= 0) {
 			PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
