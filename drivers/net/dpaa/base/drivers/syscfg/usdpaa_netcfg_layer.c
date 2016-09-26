@@ -513,6 +513,10 @@ struct usdpaa_netcfg_info *usdpaa_netcfg_acquire(void)
 	list_for_each_entry(__if, fman_if_list, node)
 		num_ports++;
 
+	if (!num_ports) {
+		fprintf(stderr, "DPAA: fman ports not available\n");
+		return NULL;
+	}
 	/* Allocate space for all enabled mac ports */
 	size = sizeof(*usdpaa_netcfg) +
 		(num_ports * sizeof(struct fm_eth_port_cfg));
