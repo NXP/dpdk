@@ -73,7 +73,6 @@
 #define DPAA_SEC_DEV_ID_START	16
 #define DPAA_SEC_BURST		32
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
-#define SEC_ERA RTA_SEC_ERA_8
 
 enum rta_sec_era rta_sec_era;
 
@@ -1052,8 +1051,6 @@ dpaa_sec_dev_init(__attribute__((unused))
 {
 	struct dpaa_sec_qi *qi;
 
-	rta_set_sec_era(SEC_ERA);
-
 	PMD_INIT_FUNC_TRACE();
 	PMD_DRV_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
 		    dev->pci_dev->addr.bus,
@@ -1123,12 +1120,40 @@ static inline void insert_devices_into_pcilist(struct rte_pci_device *dev)
 	TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 }
 
+#include <internal/of.h>
+/**
+ * @brief	Reads the SEC device and ERA from DTS by using the of library
+ * @returns	-1 if the SEC device not available (i.e. the property does
+ *		not exist in DTS), 
+ */
+static inline int dpaa_sec_available(void)
+{
+	const struct device_node *caam_node;
+
+	for_each_compatible_node(caam_node, NULL, "fsl,sec-v4.0") {
+		const uint32_t *prop = of_get_property(caam_node,
+				"fsl,sec-era",
+				NULL);
+		if (prop) {
+			rta_set_sec_era(INTL_SEC_ERA(rte_cpu_to_be_32(*prop)));
+		}
+		return 0;
+	}
+
+	return -1;
+}
+
 static int
 dpaa_sec_pmd_init(const char *name __rte_unused,
 		  const char *params __rte_unused)
 {
 	struct rte_pci_device *dev;
 	int i;
+
+	if (dpaa_sec_available()) {
+		PMD_DRV_LOG(INFO, "FSL DPAA SEC not available");
+		return -1;
+	}
 
 	for (i = 0; i < DPAA_SEC_MAX_DEVS; i++) {
 		dev = rte_zmalloc(0, sizeof(struct rte_pci_device),
