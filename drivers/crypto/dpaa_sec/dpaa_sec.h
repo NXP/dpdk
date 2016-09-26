@@ -75,7 +75,7 @@ struct dpaa_sec_qp {
 	int tx_errs;
 };
 
-#define DPAA_SEC_MAX_DESC_SIZE  128
+#define DPAA_SEC_MAX_DESC_SIZE  64
 /* code or cmd block to caam */
 struct sec_cdb {
 	struct {
