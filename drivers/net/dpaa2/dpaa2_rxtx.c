@@ -82,7 +82,9 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	dq_storage = dpaa2_q->q_storage->dq_storage[0];
 
 	qbman_pull_desc_clear(&pulldesc);
-	qbman_pull_desc_set_numframes(&pulldesc, nb_pkts);
+	qbman_pull_desc_set_numframes(&pulldesc,
+		(nb_pkts > NUM_MAX_RECV_FRAMES) ?
+			NUM_MAX_RECV_FRAMES : nb_pkts);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	/* todo optimization - we can have dq_storage_phys available*/
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
@@ -166,7 +168,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		q_storage->toggle = 0;
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
 		qbman_pull_desc_clear(&pulldesc);
-		qbman_pull_desc_set_numframes(&pulldesc, nb_pkts);
+		qbman_pull_desc_set_numframes(&pulldesc,
+			(nb_pkts > NUM_MAX_RECV_FRAMES) ?
+				NUM_MAX_RECV_FRAMES : nb_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
@@ -239,7 +243,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	q_storage->toggle ^= 1;
 	dq_storage = q_storage->dq_storage[q_storage->toggle];
 	qbman_pull_desc_clear(&pulldesc);
-	qbman_pull_desc_set_numframes(&pulldesc, nb_pkts);
+	qbman_pull_desc_set_numframes(&pulldesc, NUM_MAX_RECV_FRAMES);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 			    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
