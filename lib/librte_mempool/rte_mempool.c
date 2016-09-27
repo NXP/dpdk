@@ -591,7 +591,7 @@ rte_mempool_xmem_create(const char *name, unsigned n, unsigned elt_size,
 	mp->cache_size = cache_size;
 	mp->cache_flushthresh = CALC_CACHE_FLUSHTHRESH(cache_size);
 	mp->private_data_size = private_data_size;
-	mp->hw_pool_priv = NULL;
+	mp->pool_data = NULL;
 
 	/* calculate address of the first element for continuous mempool. */
 	obj = (char *)mp + MEMPOOL_HEADER_SIZE(mp, pg_num) +

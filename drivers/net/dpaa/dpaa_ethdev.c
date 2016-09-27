@@ -137,7 +137,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	dpaa_pool_table[bpid].bp = bp;
 	dpaa_pool_table[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
-	mp->hw_pool_priv = (void *)&dpaa_pool_table[bpid];
+	mp->pool_data = (void *)&dpaa_pool_table[bpid];
 
 	/* TODO: Replace with mp->pool_data->flags after creating appropriate
 	 * pool_data structure
@@ -580,7 +580,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		struct fman_if_ic_params icp;
 		uint32_t fd_offset;
 
-		if (!mp->hw_pool_priv) {
+		if (!mp->pool_data) {
 			PMD_DRV_LOG(ERROR, "not an offloaded buffer pool");
 			return -1;
 		}

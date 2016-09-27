@@ -216,7 +216,7 @@ struct rte_mempool {
 	/**< Virtual address of the <size + 1> mempool object. */
 	phys_addr_t elt_pa[MEMPOOL_PG_NUM_DEFAULT];
 	/**< Array of physical page addresses for the mempool objects buffer. */
-	void *hw_pool_priv;
+	void *pool_data;
 	/**<Cookie for hw offloaded mempool, default value is UINT64_MAX*/
 }  __rte_cache_aligned;
 
@@ -887,7 +887,7 @@ rte_mempool_put_bulk(struct rte_mempool *mp, void * const *obj_table,
 		     unsigned n)
 {
 	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
-		(mp->hw_pool_priv)) {
+		(mp->pool_data)) {
 		if (hw_mbuf_free_bulk(mp, obj_table, n) == 0)
 			return;
 	}
@@ -1107,7 +1107,7 @@ rte_mempool_get_bulk(struct rte_mempool *mp, void **obj_table, unsigned n)
 	int ret;
 
 	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
-		(mp->hw_pool_priv)) {
+		(mp->pool_data)) {
 		ret = hw_mbuf_alloc_bulk(mp, obj_table, n);
 		if (ret > -2)
 			return ret;

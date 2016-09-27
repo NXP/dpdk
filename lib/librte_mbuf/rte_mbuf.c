@@ -125,7 +125,7 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	uint32_t mbuf_size, buf_len, priv_size;
 
 	if ((mp->flags & MEMPOOL_F_HW_PKT_POOL) &&
-		(mp->hw_pool_priv)) {
+		(mp->pool_data)) {
 		if (hw_mbuf_init(mp, m) == 0)
 			return;
 	}

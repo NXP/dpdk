@@ -87,7 +87,7 @@ struct dpaa2_bp_info {
 	struct dpaa2_bp_list *bp_list;
 };
 
-#define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)mp->hw_pool_priv)
+#define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)mp->pool_data)
 #define mempool_to_bpid(mp) ((mempool_to_bpinfo(mp))->bpid)
 
 extern struct dpaa2_bp_info bpid_info[MAX_BPID];
