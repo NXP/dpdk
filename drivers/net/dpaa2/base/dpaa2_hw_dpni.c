@@ -377,27 +377,27 @@ dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 	uint64_t value;
 
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME, &value);
+					 priv->token, DPNI_CNT_ING_FRAME, &value);
 	printf("Rx packets: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_BYTE, &value);
+					 priv->token, DPNI_CNT_ING_BYTE, &value);
 	printf("Rx bytes: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_MCAST_FRAME, &value);
+					 priv->token, DPNI_CNT_ING_MCAST_FRAME, &value);
 	printf("Rx Multicast: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME_DROP, &value);
+					 priv->token, DPNI_CNT_ING_FRAME_DROP, &value);
 	printf("Rx dropped: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME_DISCARD, &value);
+					 priv->token, DPNI_CNT_ING_FRAME_DISCARD, &value);
 	printf("Rx discarded: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_FRAME, &value);
+					 priv->token, DPNI_CNT_EGR_FRAME, &value);
 	printf("Tx packets: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_BYTE, &value);
+					 priv->token, DPNI_CNT_EGR_BYTE, &value);
 	printf("Tx bytes: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_FRAME_DISCARD, &value);
+					 priv->token, DPNI_CNT_EGR_FRAME_DISCARD, &value);
 	printf("Tx dropped: %ld\n", value);
 }

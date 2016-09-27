@@ -94,21 +94,16 @@ extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
 int dpaa2_create_dpbp_device(int dpbp_id);
 
-/* TODO */
 int hw_mbuf_create_pool(struct rte_mempool *mp);
 
-/* TODO */
 void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused);
 
-/* TODO */
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		       void **obj_table, unsigned count);
 
-/* TODO */
 int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		      unsigned n);
 
-/* TODO */
 unsigned hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused);
 
 #endif /* _DPAA2_HW_DPBP_H_ */
