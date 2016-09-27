@@ -198,7 +198,7 @@ int vfio_dmamap_mem_region(uint64_t vaddr,
 	group = &vfio_groups[0];
 	if (ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map)) {
 		PMD_DRV_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API Error %d",
-			    errno);
+				    errno);
 		return -1;
 	}
 	return 0;
@@ -526,8 +526,8 @@ static int vfio_process_group_devices(void)
 	while ((dir = readdir(d)) != NULL) {
 		if (dir->d_type != DT_LNK)
 			continue;
-		if (!strncmp("dprc", dir->d_name, 4) || !strncmp("dpmcp",
-								 dir->d_name, 5))
+		if (!strncmp("dprc", dir->d_name, 4)
+			|| !strncmp("dpmcp", dir->d_name, 5))
 			continue;
 		dev_name = malloc(sizeof(dir->d_name));
 		if (!dev_name) {

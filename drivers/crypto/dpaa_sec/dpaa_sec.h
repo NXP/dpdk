@@ -13,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+ *     * Neither the name of Freescale Semiconductor, Inc nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -75,7 +75,7 @@ struct dpaa_sec_qp {
 	int tx_errs;
 };
 
-#define DPAA_SEC_MAX_DESC_SIZE  128
+#define DPAA_SEC_MAX_DESC_SIZE  64
 /* code or cmd block to caam */
 struct sec_cdb {
 	struct {
