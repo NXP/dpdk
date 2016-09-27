@@ -203,19 +203,19 @@ void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 	return;
 }
 
-void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid)
+static
+void dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
+			    void * const *obj_table,
+			    uint32_t bpid,
+			    uint32_t meta_data_size,
+			    int count)
 {
 	struct qbman_release_desc releasedesc;
 	struct qbman_swp *swp;
 	int ret;
+	int i, n;
+	uint64_t bufs[DPAA2_MBUF_MAX_ACQ_REL];
 
-	if (!thread_io_info.dpio_dev) {
-		ret = dpaa2_affine_qbman_swp();
-		if (ret != 0) {
-			PMD_DRV_LOG(ERR, "Failed to allocate IO portal");
-			return;
-		}
-	}
 	swp = thread_io_info.dpio_dev->sw_portal;
 
 	/* Create a release descriptor required for releasing
@@ -223,11 +223,41 @@ void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid)
 	qbman_release_desc_clear(&releasedesc);
 	qbman_release_desc_set_bpid(&releasedesc, bpid);
 
+	n = count % DPAA2_MBUF_MAX_ACQ_REL;
+
+	/* convert mbuf to buffers  for the remainder*/
+	for (i = 0; i < n ; i++) {
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+		bufs[i] = (uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
+				+ meta_data_size;
+#else
+		bufs[i] = (uint64_t)obj_table[i] + meta_data_size;
+#endif
+	}
+	/* feed them to bman*/
 	do {
-		/* Release buffer into the BMAN */
-		ret = qbman_swp_release(swp, &releasedesc, &buf, 1);
+		ret = qbman_swp_release(swp, &releasedesc, bufs, n);
 	} while (ret == -EBUSY);
-	PMD_TX_FREE_LOG(DEBUG, "Released %p address to BMAN\n", buf);
+
+	/* if there are more buffers to free */
+	while (n < count) {
+		/* convert mbuf to buffers */
+		for (i = 0; i < DPAA2_MBUF_MAX_ACQ_REL; i++) {
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+			bufs[i] = (uint64_t)
+				rte_mempool_virt2phy(pool, obj_table[n + i])
+					+ meta_data_size;
+#else
+			bufs[i] = (uint64_t)obj_table[n + i] + meta_data_size;
+#endif
+		}
+
+		do {
+			ret = qbman_swp_release(swp, &releasedesc, bufs,
+						DPAA2_MBUF_MAX_ACQ_REL);
+			} while (ret == -EBUSY);
+		n += DPAA2_MBUF_MAX_ACQ_REL;
+	}
 }
 
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
@@ -239,9 +269,9 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct qbman_swp *swp;
 	uint32_t mbuf_size;
 	uint16_t bpid;
-	uint64_t bufs[RTE_MEMPOOL_CACHE_MAX_SIZE * 2];
-	int ret;
-	unsigned i, n = 0;
+	uint64_t bufs[7];
+	int i, ret;
+	unsigned n = 0;
 	struct dpaa2_bp_info *bp_info;
 
 	bp_info = mempool_to_bpinfo(pool);
@@ -253,12 +283,6 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bpid = bp_info->bpid;
 
-	if (count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2)) {
-		PMD_DRV_LOG(ERR, " Unable to serve requested (%u) buffers",
-			    count);
-		return -1;
-	}
-
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
@@ -268,72 +292,42 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	}
 	swp = thread_io_info.dpio_dev->sw_portal;
 
-	/* if number of buffers requested is less than 7 */
-	if (unlikely(count < DPAA2_MBUF_MAX_ACQ_REL)) {
-		ret = qbman_swp_acquire(swp, bpid, &bufs[n], count);
-		if (ret <= 0) {
-			PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
-			return -1;
-		}
-		n = ret;
-		goto set_buf;
-	}
+	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
 
 	while (n < count) {
-		ret = 0;
 		/* Acquire is all-or-nothing, so we drain in 7s,
 		 * then the remainder.
 		 */
 		if ((count - n) > DPAA2_MBUF_MAX_ACQ_REL) {
-			ret = qbman_swp_acquire(swp, bpid, &bufs[n],
+			ret = qbman_swp_acquire(swp, bpid, bufs,
 						DPAA2_MBUF_MAX_ACQ_REL);
-			if (ret == DPAA2_MBUF_MAX_ACQ_REL) {
-				n += ret;
-			}
 		} else {
-			ret = qbman_swp_acquire(swp, bpid, &bufs[n],
+			ret = qbman_swp_acquire(swp, bpid, bufs,
 						count - n);
-			if (ret > 0) {
-				PMD_DRV_LOG(DEBUG, "Drained buffer: %lx",
-					    bufs[n]);
-				n += ret;
-			}
 		}
 		/* In case of less than requested number of buffers available
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			PMD_DRV_LOG(ERR, "Buffer aquire failed with"
+			PMD_DRV_LOG(ERR, "Buffer acquire failed with"
 				    "err code: %d", ret);
-			break;
+			/* The API expect the exact number of requested buffers */
+			/* Releasing all buffers allocated */
+			dpaa2_mbuf_release(pool, obj_table, bpid,
+					   bp_info->meta_data_size, n);
+			return -1;
 		}
-	}
-
-	/* This function either returns expected buffers or error */
-	if (count != n) {
-		i = 0;
-		/* Releasing all buffers allocated */
-		while (i < n) {
-			dpaa2_mbuf_release(bufs[i], bpid);
-			i++;
+		/* assigning mbuf from the acquired objects */
+		for (i = 0; (i < ret) && bufs[i]; i++) {
+			/* TODO-errata - objerved that bufs may be null
+			i.e. first buffer is valid, remaining 6 buffers may be null */
+			DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
+			obj_table[n] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
+			rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[n], 0);
+			PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
+				    (void *)bufs[i], (void *)obj_table[n]);
+			n++;
 		}
-		return -1;
-	}
-
-	if (ret < 0 || n == 0) {
-		PMD_DRV_LOG(ERR, "Failed to allocate buffers %d", ret);
-		return -1;
-	}
-set_buf:
-
-	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
-
-	for (i = 0; i < n; i++) {
-		DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
-		obj_table[i] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
-		rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[i], 0);
-		PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
-			    (void *)bufs[i], (void *)obj_table[i]);
 	}
 
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
@@ -347,7 +341,6 @@ set_buf:
 int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		      unsigned n)
 {
-	unsigned i;
 	struct dpaa2_bp_info *bp_info;
 
 	bp_info = mempool_to_bpinfo(pool);
@@ -355,17 +348,8 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		PMD_DRV_LOG(ERR, "DPAA2 buffer pool not configured");
 		return -1;
 	}
-	/* TODO - optimize it */
-	for (i = 0; i < n; i++) {
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		dpaa2_mbuf_release(
-			(uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
-			+ bp_info->meta_data_size, bp_info->bpid);
-#else
-		dpaa2_mbuf_release((uint64_t)obj_table[i]
-			+ bp_info->meta_data_size, bp_info->bpid);
-#endif
-	}
+	dpaa2_mbuf_release(pool, obj_table, bp_info->bpid,
+			   bp_info->meta_data_size, n);
 
 	return 0;
 }
