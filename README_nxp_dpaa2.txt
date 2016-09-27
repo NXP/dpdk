@@ -18,7 +18,7 @@ following components are required:
 1. DPDK source code
 2. Cross compiled toolchain for ARM64 platform
 3. Linux kernel for LS2 platform
-4. LS208x board
+4. LS208x board or LS1088 board
 
 Following information can be used to obtain these components:
 
@@ -32,15 +32,16 @@ Following information can be used to obtain these components:
 
      Linux kernel code for LS2 platform
      ==================================
-     Use following command to get the DPDK code
+     Use following command to get the linux code
 
-       # git clone ssh://git@sw-stash.freescale.net/dnnpi/ls2-linux.git
+       # install SDK released by NXP(previously freescale) for ls2
+       # find the source for linux
 
 
      Cross compiled toolchain For ARM64
      ==================================
-	get the linaro gcc-4.9 toolchain.
-https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
+    get the linaro gcc-4.9 toolchain from:
+ https://releases.linaro.org/14.11/components/toolchain/binaries/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
 export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
@@ -57,7 +58,7 @@ How to Build DPDK Applications
      NOTE: if toolchain is installed at location other than "/opt" then above
      lines needs to be modified appropriately.
 
-2. OpenSSL cross compilation (ARM-CE - crypto enablement)
+2. OpenSSL cross compilation (for ARM CE - crypto support)
 
    Cross compilation requires cross compiling the individual libraries.  In order for
    a cross compiled executable to run on a target system, one must build the same
@@ -83,22 +84,22 @@ How to Build DPDK Applications
 		modify config/defconfig_arm64-dpaa2-linuxapp-gcc
 		CONFIG_RTE_LIBRTE_PMD_ARMCE=n
 
-
 3. Execute following commands from Linux(Host) shell prompt for generating
    DPDK libraries, which are required for compiling DPDK examples and
    applications:
 
      1. export KERNEL_PATH=<path to LS2 Linux kernel code>
-     2. source standalone-dpaa2
+     2. export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
-     4. make install T=arm64-dpaa2-linuxapp-gcc
+     4. source standalone-dpaa2
+     5. make install T=arm64-dpaa2-linuxapp-gcc
         - If installation is required in a specific directory, use following:
         make install T=arm64-dpaa2-linuxapp-gcc DESTDIR=<Path to install dir>
 
 4. Steps for compiling the DPDK examples
 	The basic testpmd application is compiled by default. It should be available in build/app
 	or install directory.
-     1. Before executing following step, all the steps mentioned in point no. "2"
+     1. Before executing following step, all the steps mentioned in point no. "3"
         above must have been executed. export the RTE_TARGET
 	export RTE_TARGET=arm64-dpaa2-linuxapp-gcc
      2. compilation of KNI example
@@ -130,7 +131,7 @@ How to run DPDK Applications
 	export DPBP_COUNT=16
 
    Run the following on the board:
-      1. /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
+      1. source /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
       2. export DPRC=<dprc_container_created_by_dynamic_DPL>
 
 3. Running DPDK testpmd Application
@@ -155,13 +156,37 @@ How to run DPDK Applications
 
    Execute following commands to run DPDK L2FWD on LS2 board
 
-       # ./l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1 -R
+       # ./l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
                         OR
-       # ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -R
+       # ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
 
        Now pump traffic from the Spirent to the enabled ports
 
-5. Running DPDK L2FWD-CRYPTO Application
+7. Running DPDK L3FWD Application
+   ==============================
+
+   NOTE: enabled multiple tx queue i.e. TC support for the ports during restool config using dynamic dpl
+   Execute following commands to run DPDK L3FWD on LS2 board
+
+	1 core - 1 Port, 1 queue per port =>
+	./l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)"
+
+	4 core - 2 Port, 2 queue per port =>
+	./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
+
+	4 core - 2 Port with dest mac =>
+	./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
+
+	8 core - 2 Port with 4 queue per port =>
+	./l3fwd -c 0xFF -n 1 -- -p 0x3 --config="(0,0,0),(0,1,1),(0,2,2),(0,3,3),(1,0,4),(1,1,5),(1,2,6),(1,3,7)"
+
+       Now pump traffic from the Spirent to the enabled ports as per the given streams
+		Traffic to port 1: 1.1.1.0/24
+		Traffic to port 2: 2.1.1.0/24
+		Traffic to port 3: 3.1.1.0/24
+		Traffic to port 4: 4.1.1.0/24
+
+6. Running DPDK L2FWD-CRYPTO Application
    ==============================
 
    Execute following commands to run DPDK L2FWD-CRYPTO on LS2 board
@@ -179,7 +204,10 @@ How to run DPDK Applications
 
        Now pump traffic from the Spirent to the enabled ports
 
-6. Running DPDK TEST application for Crypto tests
+7. Running DPDK TEST application for Crypto tests
+   ==============================
+
+   Transfer the test utility to board
    Execute following commands to run DPDK test on LS2 board
        # ./test
    Execute following commands to run Crypto tests on RTE command line
@@ -189,26 +217,19 @@ How to run DPDK Applications
        # RTE>>cryptodev_dpaa2_sec_perftest
 	This is for taking performance numbers of Crypto operations.
 
-7. Running DPDK L3FWD Application
+8. Running DPDK test Application for ARM-CE:
    ==============================
-   NOTE: enabled multiple tx queue i.e. TC support for the ports during restool config using dynamicdpl
-   Execute following commands to run DPDK L2FWD on LS2 board
 
-	./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
-			OR
-	./l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)"
-			OR
-	./l3fwd -c 0xFF -n 1 -- -p 0x3 --config="(0,0,0),(0,1,1),(0,2,2),(0,3,3),(1,0,4),(1,1,5),(1,2,6),(1,3,7)"
+       1. To launch regression tests:
+           # ./test
+           RTE>>cryptodev_armce_autotest
 
-./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
+       2. To launch performance/benchmark tests:
+           # ./test
+           RTE>>cryptodev_armce_perftest
 
-       Now pump traffic from the Spirent to the enabled ports as per the given streams
-Traffic to port 1: 1.1.1.0/24
-Traffic to port 2: 2.1.1.0/24
-Traffic to port 3: 3.1.1.0/24
-Traffic to port 4: 4.1.1.0/24
 
-8. Running DPDK KNI Application
+9. Running DPDK KNI Application
    ============================
 
    Execute following commands to run DPDK KNI
@@ -244,54 +265,44 @@ Traffic to port 4: 4.1.1.0/24
 
             # ping 9.9.9.1
 
-7. Running DPDK test Application for ARM-CE:
-       1. To launch regression tests:
-           # ./test
-           RTE>>cryptodev_armce_autotest
-       2. To launch performance/benchmark tests:
-           # ./test
-           RTE>>cryptodev_armce_perftest
+10. Building and Use PKTGEN with DPDK
+   ============================
 
-===============================================================================
-Building and Use PKTGEN with DPDK
+	Get the code from: git://dpdk.org/apps/pktgen-dpdk
+	#do the make install in DPDK.
+	source <DPDK Source DIR>/standalone_dpaa
+	export RTE_SDK=<DPDK Source DIR>
+	make
 
- Get the code from: git://dpdk.org/apps/pktgen-dpdk
-#do the make install in DPDK. 
-export KERNEL_PATH=<To a compiled KERNEL; In this case, ls2085 Yocto compiled kernel>
-source <DPDK Source DIR>/standalone_dpaa2 
-export RTE_SDK=<DPDK Source DIR>
-make -j8 EXTRA_CFLAGS="-std=gnu99"
+	Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 
-Note: you may need pcap library installed in your toolchain (compiled for ARM64)
+	Copy "Pktgen.lua" and "pktgen" 	to the board.
+	(available at: app/app/arm64-dpaa2-linuxapp-gcc/pktgen)
 
-Copy "Pktgen.lua" and "pktgen" (available at: app/app/arm64-dpaa2-linuxapp-gcc/pktgen) to the board.
+	example Command to run:
 
-example Command to run:
+	#3 port - 1 core each
+	./pktgen -l 0-3 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[1].0, [2].1, [3].2"
 
-#3 port - 1 core each
-./pktgen -l 0-3 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[1].0, [2].1, [3].2"
+	#2 port - 2 core each
+	./pktgen -l 0-7 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[2:3].0, [4:5].1"
 
-#2 port - 2 core each
-./pktgen -l 0-7 -n 3 --proc-type auto --file-prefix pg --log-level 8 -- -T -P -m "[2:3].0, [4:5].1"
+	#To start traffic on specific port:
+	start 0
+	stop 0
 
-#To start traffic on specific port:
-start 0
-stop 0
+	#To start on all ports
+	str
+	stp
 
-#To start on all ports
-str
-stp
 =============================================================================
 Applications:
 -	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
 
 Features:
 -	Support for LS2-BUS in DPDK VFIO support function
--	Addition of WRIOP-MC as a poll mode driver (pmd) in DPDK.
+-	Addition of WRIOP-MC based poll mode driver (pmd) in DPDK.
 -	Able to run DPDK on single core and multiple cores.
-
-NXP platform support:
--	The code is not optimized for the performance.
 
 Code Location: stash
 Branch: 16.07-qoriq

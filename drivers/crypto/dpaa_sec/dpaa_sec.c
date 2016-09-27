@@ -13,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
+ *     * Neither the name of Freescale Semiconductor, Inc nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -1124,7 +1124,7 @@ static inline void insert_devices_into_pcilist(struct rte_pci_device *dev)
 /**
  * @brief	Reads the SEC device and ERA from DTS by using the of library
  * @returns	-1 if the SEC device not available (i.e. the property does
- *		not exist in DTS), 
+ *		not exist in DTS),
  */
 static inline int dpaa_sec_available(void)
 {
