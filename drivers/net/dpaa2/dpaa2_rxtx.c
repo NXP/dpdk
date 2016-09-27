@@ -83,12 +83,12 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_numframes(&pulldesc,
-		(nb_pkts > NUM_MAX_RECV_FRAMES) ?
+				      (nb_pkts > NUM_MAX_RECV_FRAMES) ?
 			NUM_MAX_RECV_FRAMES : nb_pkts);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	/* todo optimization - we can have dq_storage_phys available*/
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 
 	/*Issue a volatile dequeue command. */
 	while (1) {
@@ -169,14 +169,15 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_numframes(&pulldesc,
-			(nb_pkts > NUM_MAX_RECV_FRAMES) ?
+					      (nb_pkts > NUM_MAX_RECV_FRAMES) ?
 				NUM_MAX_RECV_FRAMES : nb_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
 			while (!qbman_check_command_complete(swp,
-				get_swp_active_dqs(thread_io_info.dpio_dev->index)));
+							     get_swp_active_dqs(thread_io_info.dpio_dev->index)))
+				;
 			clear_swp_active_dqs(thread_io_info.dpio_dev->index);
 		}
 		while (1) {
@@ -193,6 +194,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		set_swp_active_dqs(thread_io_info.dpio_dev->index, dq_storage);
 	}
 	dq_storage = q_storage->active_dqs;
+	/* Check if the previous issued command is completed.
+	 * Also seems like the SWP is shared between the Ethernet Driver
+	 * and the SEC driver.*/
 	while (!qbman_check_command_complete(swp, dq_storage))
 		;
 	if (dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
@@ -236,7 +240,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
 		while (!qbman_check_command_complete(swp,
-			get_swp_active_dqs(thread_io_info.dpio_dev->index)))
+						     get_swp_active_dqs(thread_io_info.dpio_dev->index)))
 			;
 		clear_swp_active_dqs(thread_io_info.dpio_dev->index);
 	}
@@ -246,7 +250,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, NUM_MAX_RECV_FRAMES);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
@@ -337,7 +341,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					goto skip_tx;
 				}
 				if (eth_copy_mbuf_to_fd(*bufs,
-					&fd_arr[loop], bpid)) {
+							&fd_arr[loop], bpid)) {
 					bufs++;
 					continue;
 				}
@@ -403,7 +407,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			ret = qbman_swp_enqueue(swp, &eqdesc, &fd);
 			if (ret != 0) {
 				PMD_DRV_LOG(DEBUG,
-					"Error in transmiting the frame\n");
+					    "Error in transmiting the frame\n");
 			}
 		} while (ret != 0);
 

@@ -116,7 +116,7 @@ static int cpuinfo_arm(FILE *file)
 		if (part >= 0)
 			break;
 		if ((pos = strstr(str, "CPU part")) != NULL &&
-			 (pos = strchr(pos, ':')) != NULL)
+		    (pos = strchr(pos, ':')) != NULL)
 			sscanf(++pos, "%x", &part);
 	}
 
@@ -124,11 +124,11 @@ static int cpuinfo_arm(FILE *file)
 	if (part == ARM_CORTEX_A53) {
 		dpaa2_soc_family = NXP_LS1088;
 		printf("Detected NXP LS108x with %s\n",
-			    ARM_CORTEX_A53_INFO);
+		       ARM_CORTEX_A53_INFO);
 	} else if (part == ARM_CORTEX_A57) {
 		dpaa2_soc_family = NXP_LS2085;
 		printf("Detected NXP LS208x Rev1.0 with %s\n",
-				ARM_CORTEX_A57_INFO);
+		       ARM_CORTEX_A57_INFO);
 	} else if (part == ARM_CORTEX_A72) {
 		dpaa2_soc_family = NXP_LS2088;
 		printf("Detected NXP LS208x with %s\n", ARM_CORTEX_A72_INFO);
@@ -150,7 +150,6 @@ check_cpu_part(void)
 
 	fclose(stream);
 }
-
 
 static int
 configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)

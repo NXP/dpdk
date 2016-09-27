@@ -491,16 +491,16 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 }
 
 void
-dpaa2_dev_rx_queue_release(void *q)
+dpaa2_dev_rx_queue_release(void *q __rte_unused)
 {
-	printf("\n(%s) called for 1=%p\n", __func__, q);
+	PMD_DRV_LOG(INFO, "Not implemented");
 	return;
 }
 
 void
-dpaa2_dev_tx_queue_release(void *q)
+dpaa2_dev_tx_queue_release(void *q __rte_unused)
 {
-	printf("\n(%s) called for 1=%p\n", __func__, q);
+	PMD_DRV_LOG(INFO, "Not implemented");
 	return;
 }
 

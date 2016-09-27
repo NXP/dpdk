@@ -88,7 +88,7 @@ dpaa2_create_dpbp_device(
 	/* Open the dpbp object */
 	dpbp_node->dpbp.regs = mcp_ptr_list[MC_PORTAL_INDEX];
 	ret = dpbp_open(&dpbp_node->dpbp,
-		CMD_PRI_LOW, dpbp_id, &dpbp_node->token);
+			CMD_PRI_LOW, dpbp_id, &dpbp_node->token);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "Resource alloc failure with err code: %d",
 			    ret);
@@ -269,7 +269,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	struct qbman_swp *swp;
 	uint32_t mbuf_size;
 	uint16_t bpid;
-	uint64_t bufs[7];
+	uint64_t bufs[DPAA2_MBUF_MAX_ACQ_REL];
 	int i, ret;
 	unsigned n = 0;
 	struct dpaa2_bp_info *bp_info;

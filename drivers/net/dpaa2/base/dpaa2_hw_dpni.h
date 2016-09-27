@@ -166,7 +166,7 @@ dpaa2_dev_rx_offload(uint64_t hw_annot_addr, struct rte_mbuf *mbuf)
 		(struct dpaa2_annot_hdr *)hw_annot_addr;
 
 	if (BIT_ISSET_AT_POS(annotation->word3,
-			L2_VLAN_1_PRESENT | L2_VLAN_N_PRESENT))
+			     L2_VLAN_1_PRESENT | L2_VLAN_N_PRESENT))
 		mbuf->ol_flags |= PKT_RX_VLAN_PKT;
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
