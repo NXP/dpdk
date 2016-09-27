@@ -80,7 +80,7 @@ static int container_device_fd;
 static uint32_t *msi_intr_vaddr;
 void *(*mcp_ptr_list);
 static uint32_t mcp_id;
-static int is_dma_done = 0;
+static int is_dma_done;
 
 static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 {
@@ -114,7 +114,7 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 		close(fd);
 		return -EINVAL;
 	}
-	/* Check whether support for SMMU type IOMMU prresent or not */
+	/* Check whether support for SMMU type IOMMU present or not */
 	if (ioctl(fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU)) {
 		/* Connect group to container */
 		ret = ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER, &fd);
@@ -205,7 +205,7 @@ int vfio_dmamap_mem_region(uint64_t vaddr,
 	group = &vfio_groups[0];
 	if (ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map)) {
 		PMD_DRV_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API Error %d",
-			errno);
+				    errno);
 		return -1;
 	}
 	return 0;
@@ -405,7 +405,7 @@ static int64_t vfio_map_mcp_obj(struct fsl_vfio_group *group, char *mcp_obj)
 	/* getting device info*/
 	ret = ioctl(mc_fd, VFIO_DEVICE_GET_INFO, &d_info);
 	if (ret < 0) {
-		PMD_DRV_LOG(ERR," VFIO error getting DEVICE_INFO");
+		PMD_DRV_LOG(ERR, "VFIO error getting DEVICE_INFO");
 		goto MC_FAILURE;
 	}
 
@@ -474,8 +474,7 @@ static int vfio_process_group_devices(void)
 					free(mcp_obj);
 				mcp_obj = malloc(sizeof(dir->d_name));
 				if (!mcp_obj) {
-					PMD_DRV_LOG(ERR,
-						"Unable to allocate memory");
+					PMD_DRV_LOG(ERR, "Unable to allocate memory");
 					return -ENOMEM;
 				}
 				strcpy(mcp_obj, dir->d_name);
@@ -534,8 +533,8 @@ static int vfio_process_group_devices(void)
 	while ((dir = readdir(d)) != NULL) {
 		if (dir->d_type != DT_LNK)
 			continue;
-		if (!strncmp("dprc", dir->d_name, 4) || !strncmp("dpmcp",
-		    dir->d_name, 5))
+		if (!strncmp("dprc", dir->d_name, 4)
+			|| !strncmp("dpmcp", dir->d_name, 5))
 			continue;
 		dev_name = malloc(sizeof(dir->d_name));
 		if (!dev_name) {

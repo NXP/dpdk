@@ -173,7 +173,7 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 
 	mp->hw_pool_priv = (void *)&bpid_info[bpid];
 
-	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", dpbp_attr.bpid);
+	PMD_DRV_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
 	/* Identification for our offloaded pool_data structure
@@ -276,7 +276,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			PMD_DRV_LOG(ERR, "Buffer aquire failed with"
+			PMD_DRV_LOG(ERR, "Buffer acquire failed with"
 				    "err code: %d", ret);
 			break;
 		}

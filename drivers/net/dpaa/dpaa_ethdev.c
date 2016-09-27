@@ -685,7 +685,7 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 		return 0;
 	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
 		 fc_conf->mode == RTE_FC_FULL) {
-		fman_if_set_fc_threshold(dpaa_intf->fif, fc_conf->high_water, 
+		fman_if_set_fc_threshold(dpaa_intf->fif, fc_conf->high_water,
 				fc_conf->low_water,
 				dpaa_intf->bp_info->bpid);
 		if (fc_conf->pause_time)

@@ -145,7 +145,7 @@ struct dpaa_if {
 extern __thread bool thread_portal_init;
 extern struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
 
-#define DPAA_BPID_TO_POOL_INFO(__bpid) &dpaa_pool_table[__bpid];
+#define DPAA_BPID_TO_POOL_INFO(__bpid) &dpaa_pool_table[__bpid]
 
 #define DPAA_MEMPOOL_TO_BPID(__mp) \
 	((struct pool_info_entry *)__mp->hw_pool_priv)->bpid

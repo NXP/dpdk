@@ -1127,7 +1127,7 @@ static inline void insert_devices_into_pcilist(struct rte_pci_device *dev)
 /**
  * @brief	Reads the SEC device and ERA from DTS by using the of library
  * @returns	-1 if the SEC device not available (i.e. the property does
- *		not exist in DTS), 
+ *		not exist in DTS),
  */
 static inline int dpaa_sec_available(void)
 {
