@@ -71,17 +71,85 @@ TAILQ_HEAD(dpio_device_list, dpaa2_dpio_dev);
 static struct dpio_device_list *dpio_dev_list; /*!< DPIO device list */
 static uint32_t io_space_count;
 
-#define DPAA2_CORE_CLUSTER_GET(sdest, cpu_id) \
-do { \
-	if (cpu_id == 0 || cpu_id == 1) \
-		sdest = DPAA2_CORE_CLUSTER_FIRST; \
-	else if (cpu_id == 2 || cpu_id == 3) \
-		sdest = DPAA2_CORE_CLUSTER_SECOND; \
-	else if (cpu_id == 4 || cpu_id == 5) \
-		sdest = DPAA2_CORE_CLUSTER_THIRD; \
-	else \
-		sdest = DPAA2_CORE_CLUSTER_FOURTH; \
-} while (0)
+#define ARM_CORTEX_A53		0xD03
+#define ARM_CORTEX_A57		0xD07
+#define ARM_CORTEX_A72		0xD08
+
+static int dpaa2_soc_core = ARM_CORTEX_A72;
+
+#define NXP_LS2085	1
+#define NXP_LS2088	2
+#define NXP_LS1088	3
+
+static int dpaa2_soc_family  = NXP_LS2088;
+
+/*Stashing Macros default for LS208x*/
+static int dpaa2_core_cluster_base = 0x04;
+static int dpaa2_cluster_sz = 2;
+
+/* Set the STASH Destination depending on Current CPU ID.
+   Valid values of SDEST are 4,5,6,7. Where,
+   CPU 0-1 will have SDEST 4
+   CPU 2-3 will have SDEST 5.....and so on.
+*/
+static int
+dpaa2_core_cluster_sdest(int cpu_id)
+{
+	int x = cpu_id / dpaa2_cluster_sz;
+
+	if (x > 3)
+		x = 3;
+
+	return dpaa2_core_cluster_base + x;
+}
+
+static int cpuinfo_arm(FILE *file)
+{
+	char str[128], *pos;
+	int part = -1;
+
+	#define ARM_CORTEX_A53_INFO	"Cortex-A53"
+	#define ARM_CORTEX_A57_INFO	"Cortex-A57"
+	#define ARM_CORTEX_A72_INFO	"Cortex-A72"
+
+	while (fgets(str, sizeof(str), file) != NULL) {
+		if (part >= 0)
+			break;
+		if ((pos = strstr(str, "CPU part")) != NULL &&
+		    (pos = strchr(pos, ':')) != NULL)
+			sscanf(++pos, "%x", &part);
+	}
+
+	dpaa2_soc_core = part;
+	if (part == ARM_CORTEX_A53) {
+		dpaa2_soc_family = NXP_LS1088;
+		printf("Detected NXP LS108x with %s\n",
+		       ARM_CORTEX_A53_INFO);
+	} else if (part == ARM_CORTEX_A57) {
+		dpaa2_soc_family = NXP_LS2085;
+		printf("Detected NXP LS208x Rev1.0 with %s\n",
+		       ARM_CORTEX_A57_INFO);
+	} else if (part == ARM_CORTEX_A72) {
+		dpaa2_soc_family = NXP_LS2088;
+		printf("Detected NXP LS208x with %s\n", ARM_CORTEX_A72_INFO);
+	}
+	return 0;
+}
+
+static void
+check_cpu_part(void)
+{
+	FILE *stream;
+
+	stream = fopen("/proc/cpuinfo", "r");
+	if (!stream) {
+		PMD_DRV_LOG(WARNING, "Unable to open /proc/cpuinfo\n");
+		return;
+	}
+	cpuinfo_arm(stream);
+
+	fclose(stream);
+}
 
 static int
 configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
@@ -188,7 +256,8 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	   CPU 0-1 will have SDEST 4
 	   CPU 2-3 will have SDEST 5.....and so on.
 	*/
-	DPAA2_CORE_CLUSTER_GET(sdest, cpu_id);
+
+	sdest = dpaa2_core_cluster_sdest(cpu_id);
 	PMD_DRV_LOG(INFO, "Portal= %d  CPU= %u SDEST= %d\n",
 		    dpio_dev->index, cpu_id, sdest);
 
@@ -257,6 +326,16 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
+	static int first_time;
+
+	if (!first_time) {
+		check_cpu_part();
+		if (dpaa2_soc_family == NXP_LS1088) {
+			dpaa2_core_cluster_base = 0x02;
+			dpaa2_cluster_sz = 4;
+		}
+		first_time = 1;
+	}
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
 		PMD_DRV_LOG(ERR, "ERROR, Not sufficient number "
