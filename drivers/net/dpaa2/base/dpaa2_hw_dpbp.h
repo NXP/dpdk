@@ -101,9 +101,6 @@ int hw_mbuf_create_pool(struct rte_mempool *mp);
 void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused);
 
 /* TODO */
-void dpaa2_mbuf_release(uint64_t buf, uint32_t bpid);
-
-/* TODO */
 int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		       void **obj_table, unsigned count);
 
