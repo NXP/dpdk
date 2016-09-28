@@ -86,17 +86,15 @@ struct dpaa2_dev_priv {
 };
 
 /* Externally exposed functions */
-/* FIXME */
 void dpaa2_dev_print_stats(struct rte_eth_dev *dev);
 
-/* FIXME */
 int dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
-				  uint32_t req_dist_set);
+				       uint32_t req_dist_set);
 
-/* FIXME */
+int dpaa2_remove_flow_distribution(struct rte_eth_dev *eth_dev,
+					 uint8_t tc_index);
+
 int dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv, void *blist);
-
-/* FIXME */
 
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse(uint64_t hw_annot_addr)
@@ -222,6 +220,10 @@ eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
 		todo - enable checksum validation on per packet basis
 	}*/
 }
+
+static void
+eth_mbuf_to_fd(struct rte_mbuf *mbuf,
+		struct qbman_fd *fd, uint16_t bpid) __attribute__((unused));
 
 static void __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,

@@ -115,7 +115,8 @@ dpaa2_create_dpbp_device(
 	return 0;
 }
 
-int hw_mbuf_create_pool(struct rte_mempool *mp)
+static int
+hw_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct dpaa2_bp_list *bp_list;
 	struct dpbp_attr dpbp_attr;
@@ -182,7 +183,8 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	return 0;
 }
 
-void hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
+static void
+hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 {
 	/* TODO:
 	 * 1. Release bp_list memory allocation
@@ -338,7 +340,8 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	return 0;
 }
 
-int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
+static int
+hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 		      unsigned n)
 {
 	struct dpaa2_bp_info *bp_info;
@@ -354,13 +357,15 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
 	return 0;
 }
 
-unsigned hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
+static unsigned
+hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 {
 	/* TODO: incomplete */
 	return 0;
 }
 
-int hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
+static int
+hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 {
 	if (!avail_dpbp) {
 		PMD_DRV_LOG(WARNING, "DPAA2 mempool resources not available\n");
