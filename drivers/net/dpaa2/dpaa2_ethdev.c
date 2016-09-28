@@ -490,14 +490,14 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	return 0;
 }
 
-void
+static void
 dpaa2_dev_rx_queue_release(void *q __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "Not implemented");
 	return;
 }
 
-void
+static void
 dpaa2_dev_tx_queue_release(void *q __rte_unused)
 {
 	PMD_DRV_LOG(INFO, "Not implemented");
@@ -868,7 +868,7 @@ dpaa2_dev_set_mac_addr(struct rte_eth_dev *dev,
 	return;
 }
 
-int
+static int
 dpaa2_dev_get_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr)
 {
