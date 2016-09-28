@@ -44,8 +44,6 @@ CFLAGS += -O3 -g
 CFLAGS += $(WERROR_FLAGS)
 endif
 CFLAGS +=-Wno-strict-aliasing
-CFLAGS +=-Wno-missing-prototypes
-CFLAGS +=-Wno-missing-declarations
 CFLAGS +=-Wno-unused-function
 
 CFLAGS += -I$(RTE_SDK_DPAA2)/

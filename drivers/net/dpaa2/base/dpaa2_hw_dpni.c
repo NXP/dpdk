@@ -101,8 +101,7 @@ dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
 	return 0;
 }
 
-int
-dpaa2_remove_flow_distribution(
+int dpaa2_remove_flow_distribution(
 	struct rte_eth_dev *eth_dev,
 	uint8_t tc_index)
 {
