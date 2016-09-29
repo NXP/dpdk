@@ -316,11 +316,11 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Clear the unused FD fields before sending*/
 #ifdef QBMAN_MULTI_TX
 	while (nb_pkts) {
-#ifdef DPAA2_CGR_SUPPORT
+
 		/*Check if the queue is congested*/
-		if (qbman_result_is_CSCN(dpaa2_q->cscn))
+		if (dpaa2_q->cscn && qbman_result_is_CSCN(dpaa2_q->cscn))
 			goto skip_tx;
-#endif
+
 		frames_to_send = (nb_pkts >> 3) ? MAX_TX_RING_SLOTS : nb_pkts;
 
 		for (loop = 0; loop < frames_to_send; loop++) {
@@ -362,11 +362,10 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		nb_pkts -= frames_to_send;
 	}
 #else
-#ifdef DPAA2_CGR_SUPPORT
+
 	/*Check if the queue is congested*/
-	if (qbman_result_is_CSCN(dpaa2_q->cscn))
+	if (dpaa2_q->cscn && qbman_result_is_CSCN(dpaa2_q->cscn))
 		goto skip_tx;
-#endif
 
 	fd.simple.frc = 0;
 	DPAA2_RESET_FD_CTRL((&fd));

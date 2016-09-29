@@ -35,8 +35,6 @@
 
 #include <dpaa2_hw_dpni_annot.h>
 
-/* #define DPAA2_CGR_SUPPORT */
-
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
 
@@ -47,7 +45,27 @@
 /*! Maximum number of flow distributions per traffic class */
 #define MAX_DIST_PER_TC		16
 
+/*default tc to be used for ,congestion, distribution etc configuration. */
 #define DPAA2_DEF_TC		0
+
+/* Threshold for a queue to *Enter* Congestion state.
+ * It is set to 128 frames.
+ */
+#define CONG_ENTER_TX_THRESHOLD   (128)
+
+/* Threshold for a queue to *Exit* Congestion state.
+ */
+#define CONG_EXIT_TX_THRESHOLD    (98)
+
+/* Threshold for a queue to *Enter* Congestion state.
+ * It is set to 512 frames.
+ */
+#define CONG_ENTER_RX_THRESHOLD   (512)
+
+/* Threshold for a queue to *Exit* Congestion state.
+ */
+#define CONG_EXIT_RX_THRESHOLD    (384)
+
 
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256
@@ -56,6 +74,10 @@
 		PKT_TX_IP_CKSUM | \
 		PKT_TX_TCP_CKSUM | \
 		PKT_TX_UDP_CKSUM)
+
+/* Disable Congestion control support
+ * default is enable */
+#define DPAA2_NO_CGR_SUPPORT		0x01
 
 struct dpaa2_dev_priv {
 	void *hw;
@@ -68,13 +90,14 @@ struct dpaa2_dev_priv {
 	void *tx_vq[MAX_TX_QUEUES];
 
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
+	uint32_t options;
 	uint16_t num_dist_per_tc[MAX_TCS];
-
 	uint8_t max_unicast_filters;
 	uint8_t max_multicast_filters;
 	uint8_t max_vlan_filters;
+	uint8_t max_congestion_ctrl;
 	uint8_t num_tc;
-	uint32_t options;
+	uint8_t flags; /*dpaa2 config flags */
 };
 
 /* Externally exposed functions */
