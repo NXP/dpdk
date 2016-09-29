@@ -162,109 +162,6 @@ void dpaa_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 }
 
 static
-int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
-		void **obj_table,
-		unsigned count)
-{
-	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
-	struct bm_buffer bufs[RTE_MEMPOOL_CACHE_MAX_SIZE * 2];
-	struct pool_info_entry *bp_info;
-	void *bufaddr;
-	int ret;
-	unsigned i = 0, n = 0;
-
-	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
-
-	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
-		PMD_DRV_LOG(ERR, "Unable to allocate requested (%u) buffers",
-			    count);
-		return -1;
-	}
-
-	if (!thread_portal_init) {
-		ret = dpaa_portal_init((void *)0);
-		if (ret) {
-			PMD_DRV_LOG(ERROR, "Failure in affining portal");
-			return 0;
-		}
-	}
-
-	if (count < DPAA_MBUF_MAX_ACQ_REL) {
-		ret = bman_acquire(bp_info->bp,
-				   &bufs[n], count, 0);
-		if (ret <= 0) {
-			PMD_DRV_LOG(WARNING, "Fail to allocate buffers %d", ret);
-			return -1;
-		}
-		n = ret;
-		goto set_buf;
-	}
-
-	while (n < count) {
-		ret = 0;
-		/* Acquire is all-or-nothing, so we drain in 7s,
-		 * then in 1s for the remainder. */
-		if ((count - n) >= DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(bp_info->bp,
-					   &bufs[n], DPAA_MBUF_MAX_ACQ_REL, 0);
-			if (ret == DPAA_MBUF_MAX_ACQ_REL) {
-				n += ret;
-			}
-		} else {
-			ret =  bman_acquire(bp_info->bp,
-					    &bufs[n], count - n, 0);
-			if (ret > 0) {
-				PMD_DRV_LOG(DEBUG, "ret = %d bpid =%d alloc %d,"
-					"count=%d Drained buffer: %x",
-					ret, bp_info->bpid,
-					alloc, count - n, bufs[n]);
-				n += ret;
-			}
-		}
-		/* In case of less than requested number of buffers available
-		 * in pool, bman_acquire can return 0
-		 */
-		if (ret <= 0) {
-			PMD_DRV_LOG(WARNING, "Buffer acquire failed with"
-				"err code: %d", ret);
-			break;
-		}
-	}
-	if (count != n)
-		goto free_buf;
-
-	if (ret < 0 || n == 0) {
-		PMD_DRV_LOG(WARNING, "Failed to allocate buffers %d", ret);
-		return -1;
-	}
-set_buf:
-	while (i < count) {
-		bufaddr = (void *)dpaa_mem_ptov(bufs[i].addr);
-		m[i] = (struct rte_mbuf *)((char *)bufaddr
-			- bp_info->meta_data_size);
-		rte_mbuf_refcnt_set(m[i], 0);
-		i = i + 1;
-	}
-	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
-		    count, n, bp_info->bpid);
-	return 0;
-free_buf:
-	PMD_DRV_LOG(WARNING, "unable alloc required bufs count =%d n=%d",
-		    count, n);
-	i = 0;
-	while (i < n) {
-retry:
-		ret = bman_release(bp_info->bp, &bufs[i], 1, 0);
-		if (ret) {
-			cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
-			goto retry;
-		}
-		i++;
-	}
-	return -1;
-}
-
-static
 int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		void *const *obj_table,
 		unsigned n)
@@ -291,6 +188,76 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 
 	return 0;
 }
+
+static
+int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
+		void **obj_table,
+		unsigned count)
+{
+	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
+	struct bm_buffer bufs[DPAA_MBUF_MAX_ACQ_REL];
+	struct pool_info_entry *bp_info;
+	void *bufaddr;
+	int i, ret;
+	unsigned n = 0;
+
+	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
+
+	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
+		PMD_DRV_LOG(ERR, "Unable to allocate requested (%u) buffers",
+			    count);
+		return -1;
+	}
+
+	if (!thread_portal_init) {
+		ret = dpaa_portal_init((void *)0);
+		if (ret) {
+			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			return 0;
+		}
+	}
+
+	while (n < count) {
+		/* Acquire is all-or-nothing, so we drain in 7s,
+		 * then the remainder.
+		 */
+		if ((count - n) > DPAA_MBUF_MAX_ACQ_REL) {
+			ret = bman_acquire(bp_info->bp,
+				   bufs, DPAA_MBUF_MAX_ACQ_REL, 0);
+		} else {
+			ret = bman_acquire(bp_info->bp,
+				   bufs, count - n, 0);
+		}
+		/* In case of less than requested number of buffers available
+		 * in pool, qbman_swp_acquire returns 0
+		 */
+		if (ret <= 0) {
+			PMD_DRV_LOG(ERR, "Buffer acquire failed with"
+				    "err code: %d", ret);
+			/* The API expect the exact number of requested buffers */
+			/* Releasing all buffers allocated */
+			dpaa_mbuf_free_bulk(pool, obj_table, n);
+			return -1;
+		}
+		/* assigning mbuf from the acquired objects */
+		for (i = 0; (i < ret) && bufs[i].addr; i++) {
+			/* TODO-errata - objerved that bufs may be null
+			i.e. first buffer is valid, remaining 6 buffers may be null */
+			bufaddr = (void *)dpaa_mem_ptov(bufs[i].addr);
+			m[n] = (struct rte_mbuf *)((char *)bufaddr
+						- bp_info->meta_data_size);
+			rte_mbuf_refcnt_set(m[n], 0);
+			PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
+				    (void *)bufaddr, (void *)m[n]);
+			n++;
+		}
+	}
+
+	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
+		    count, n, bp_info->bpid);
+	return 0;
+}
+
 
 static
 unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
