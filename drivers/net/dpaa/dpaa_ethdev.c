@@ -509,10 +509,11 @@ static void dpaa_eth_stats_get(struct rte_eth_dev *dev,
 	fman_if_stats_get(dpaa_intf->fif, stats);
 }
 
-static void dpaa_eth_stats_reset(struct rte_eth_dev *dev __rte_unused)
+static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
 {
-	/*TBD:XXX: to be implemented*/
-	return;
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	fman_if_stats_reset(dpaa_intf->fif);
 }
 
 static void dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
@@ -899,6 +900,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	/* Disable RX, disable promiscuous mode */
 	fman_if_disable_rx(fman_intf);
 	fman_if_promiscuous_disable(fman_intf);
+	fman_if_stats_reset(fman_intf);
 
 	return 0;
 }
