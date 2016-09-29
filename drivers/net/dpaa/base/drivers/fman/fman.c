@@ -248,7 +248,7 @@ static uint32_t get_mac_hash_code(uint64_t eth_addr)
 	return xorVal;
 }
 
-int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
+int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	uint64_t eth_addr;
 	void *hashtable_ctrl;
@@ -270,7 +270,7 @@ int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
+int fman_memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *mac_reg =
@@ -291,7 +291,7 @@ int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
+int fman_memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 
@@ -314,7 +314,7 @@ int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-static void memac_stats_get(struct fman_if *p,
+static void fman_memac_stats_get(struct fman_if *p,
 		     struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
@@ -335,6 +335,21 @@ static void memac_stats_get(struct fman_if *p,
 			in_be32(&regs->toct_l);
 	stats->oerrors = ((u64)in_be32(&regs->terr_u)) << 32 |
 			in_be32(&regs->terr_l);
+}
+
+static void fman_memac_reset_stat(struct fman_if *p)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct memac_regs *regs = m->ccsr_map;
+	uint32_t tmp;
+
+	tmp = in_be32(&regs->statn_config);
+
+	tmp |= STATS_CFG_CLR;
+
+	out_be32(&regs->statn_config, tmp);
+
+	while (in_be32(&regs->statn_config) & STATS_CFG_CLR);
 }
 
 static int _dtsec_set_stn_mac_addr(struct __fman_if *m, uint8_t *eth)
@@ -1225,7 +1240,7 @@ int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth)
 	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
 		return _dtsec_set_stn_mac_addr(__if, eth);
 	else
-		return memac_set_station_mac_addr(p, eth);
+		return fman_memac_set_station_mac_addr(p, eth);
 }
 
 int fm_mac_config(struct fman_if *p,  uint8_t *eth)
@@ -1244,7 +1259,7 @@ int fm_mac_config(struct fman_if *p,  uint8_t *eth)
 	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
 		return _dtsec_get_stn_mac_addr(__if, eth);
 	else
-		return memac_get_station_mac_addr(p, eth);
+		return fman_memac_get_station_mac_addr(p, eth);
 }
 
 void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
@@ -1319,7 +1334,12 @@ void fm_mac_conf_max_frame_len(struct fman_if *p,
 
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
 {
-	memac_stats_get(p, stats);
+	fman_memac_stats_get(p, stats);
+}
+
+void fman_if_stats_reset(struct fman_if *p)
+{
+	fman_memac_reset_stat(p);
 }
 
 void fm_mac_set_promiscuous(struct fman_if *p)

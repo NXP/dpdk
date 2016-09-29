@@ -58,6 +58,11 @@
 #define CMD_CFG_PROMIS_EN	0x00000010 /* 27 Promiscuous operation enable */
 #define CMD_CFG_PAUSE_IGNORE	0x00000100 /* 23 Ignore Pause frame quanta */
 
+/* Statistics Configuration Register (STATN_CONFIG) */
+#define STATS_CFG_CLR           0x00000004 /* 29 Reset all counters */
+#define STATS_CFG_CLR_ON_RD     0x00000002 /* 30 Clear on read */
+#define STATS_CFG_SATURATE      0x00000001 /* 31 Saturate at the maximum val */
+
 /* Max receive frame length mask */
 #define MAXFRM_SIZE_MEMAC	0x00007fe0
 #define MAXFRM_RX_MASK		0x0000ffff
@@ -413,6 +418,9 @@ int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth);
 /* Get the FMAN statistics */
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
 
+/* Reset the FMAN statistics */
+void fman_if_stats_reset(struct fman_if *p);
+
 /* Set ignore pause option for a specific interface */
 void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
 
@@ -474,11 +482,11 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 /* discard error packets on rx */
 void fman_if_discard_rx_errors(struct fman_if *fm_if);
 
-int memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
+int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
-int memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
+int fman_memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
 
-int memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
+int fman_memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)
