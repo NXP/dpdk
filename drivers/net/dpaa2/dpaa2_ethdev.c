@@ -382,6 +382,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		PMD_DRV_LOG(ERR, "Error in setting the rx flow: = %d\n", ret);
 		return -1;
 	}
+
 	return 0;
 }
 
@@ -398,10 +399,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_tx_flow_cfg cfg;
 	struct dpni_tx_conf_cfg tx_conf_cfg;
-#ifdef DPAA2_CGR_SUPPORT
-	struct dpni_congestion_notification_cfg cong_notif_cfg;
-#endif
-	uint32_t tc_idx;
+	uint32_t tc_id;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -428,9 +426,9 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	}*/
 
 	if (priv->num_tc == 1)
-		tc_idx = 0;
+		tc_id = 0;
 	else
-		tc_idx = tx_queue_id;
+		tc_id = tx_queue_id;
 
 	ret = dpni_set_tx_flow(dpni, CMD_PRI_LOW, priv->token,
 			       &dpaa2_q->flow_id, &cfg);
@@ -458,32 +456,34 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			return -1;
 		}
 	}
-	dpaa2_q->tc_index = tc_idx;
+	dpaa2_q->tc_index = tc_id;
 
-#ifdef DPAA2_CGR_SUPPORT
-	cong_notif_cfg.units = DPNI_CONGESTION_UNIT_BYTES;
-	/*Notify about congestion when the queue size is 128 frames with each \
-	  frame 64 bytes size*/
-	cong_notif_cfg.threshold_entry = CONG_ENTER_THRESHOLD;
-	/*Notify that the queue is not congested when the number of frames in \
-	  the queue is below this thershold.
-	  TODO: Check if this value is the optimum value for better performance*/
-	cong_notif_cfg.threshold_exit = CONG_EXIT_THRESHOLD;
-	cong_notif_cfg.message_ctx = 0;
-	cong_notif_cfg.message_iova = (uint64_t)dpaa2_q->cscn;
-	cong_notif_cfg.dest_cfg.dest_type = DPNI_DEST_NONE;
-	cong_notif_cfg.options = DPNI_CONG_OPT_WRITE_MEM_ON_ENTER |
-		DPNI_CONG_OPT_WRITE_MEM_ON_EXIT | DPNI_CONG_OPT_COHERENT_WRITE;
+	if (!(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
+		struct dpni_congestion_notification_cfg cong_notif_cfg;
+		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
+		/*Notify about congestion when the queue size is 128 frames */
+		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
+		/*Notify that the queue is not congested when the number of frames in \
+		  the queue is below this thershold.
+		  TODO: Check if this value is the optimum value for better performance*/
+		cong_notif_cfg.threshold_exit = CONG_EXIT_TX_THRESHOLD;
+		cong_notif_cfg.message_ctx = 0;
+		cong_notif_cfg.message_iova = (uint64_t)dpaa2_q->cscn;
+		cong_notif_cfg.dest_cfg.dest_type = DPNI_DEST_NONE;
+		cong_notif_cfg.options = DPNI_CONG_OPT_WRITE_MEM_ON_ENTER |
+					 DPNI_CONG_OPT_WRITE_MEM_ON_EXIT |
+					 DPNI_CONG_OPT_COHERENT_WRITE;
 
-	ret = dpni_set_tx_tc_congestion_notification(dpni, CMD_PRI_LOW,
-						     priv->token,
-						     tc_idx, &cong_notif_cfg);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Error in setting tx congestion notification "
-			    "settings: ErrorCode = %x", ret);
-		return -1;
+		ret = dpni_set_tx_tc_congestion_notification(dpni, CMD_PRI_LOW,
+							     priv->token,
+							     tc_id,
+							     &cong_notif_cfg);
+		if (ret) {
+			PMD_DRV_LOG(ERR, "Error in setting tx congestion"
+				    "notification: ErrorCode = %d", -ret);
+			return -ret;
+		}
 	}
-#endif
 	return 0;
 }
 
@@ -566,6 +566,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		}
 		dpaa2_q->fqid = cfg.fqid;
 	}
+
 	ret = dpni_set_l3_chksum_validation(dpni, CMD_PRI_LOW,
 					    priv->token, TRUE);
 	if (ret) {
@@ -1255,11 +1256,20 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	priv->max_unicast_filters = attr.max_unicast_filters;
 	priv->max_multicast_filters = attr.max_multicast_filters;
+	priv->max_congestion_ctrl = attr.max_congestion_ctrl;
 
 	if (attr.options & DPNI_OPT_VLAN_FILTER)
 		priv->max_vlan_filters = attr.max_vlan_filters;
 	else
 		priv->max_vlan_filters = 0;
+
+	priv->flags = 0;
+
+	/*If congestion control support is not required */
+	if(getenv("DPAA2_NO_CGR_SUPPORT")) {
+		priv->flags |= DPAA2_NO_CGR_SUPPORT;
+	}
+
 
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
