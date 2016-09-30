@@ -127,7 +127,7 @@ void dump_usdpaa_netcfg(struct usdpaa_netcfg_info *cfg_ptr)
 			if (__if->mac_type != fman_mac_less) {
 				printf("\ttx_channel_id: 0x%02x\n",
 				       __if->tx_channel_id);
-				if (list_empty(p_cfg->list)) {
+				if (!p_cfg->list || list_empty(p_cfg->list)) {
 					printf("PCD List not found\n");
 				} else {
 					printf("\tfqid_rx_hash:\n");
@@ -145,7 +145,7 @@ void dump_usdpaa_netcfg(struct usdpaa_netcfg_info *cfg_ptr)
 		} else {
 			printf("\ttx_channel_id: 0x%02x\n",
 			       __if->tx_channel_id);
-			if (list_empty(p_cfg->list)) {
+			if (!p_cfg->list || list_empty(p_cfg->list)) {
 				printf("PCD List not found\n");
 			} else {
 				printf("\tfqid_rx_hash:\n");
