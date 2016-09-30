@@ -88,8 +88,10 @@ static inline void dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 {
 	if (!ctx->fd_status)
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
-	else
+	else {
+		PMD_DRV_LOG(ERR,"\nSEC return err: %x\n",ctx->fd_status);
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+	}
 
 	/* report op status to sym->op and then free the ctx memeory  */
 	rte_free(ctx);
@@ -402,10 +404,12 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 					!ses->dir, ses->auth_trunc_len);
 	} else {
 		/* TODO: add support for other Algos. IV length = 16 for AES */
+		/* Auth_only_len is set as 0 here and it will be overwritten
+		   in fd for each packet.*/
 		ses->cipher.iv_len = 16;
 		shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
 					swap, &alginfo_c, &alginfo_a,
-					ses->cipher.iv_len, 0/*auth_only_len*/,
+					ses->cipher.iv_len, 0,
 					ses->auth_trunc_len, ses->dir);
 	}
 	cdb->sh_hdr.hi.field.idlen = shared_desc_len;
@@ -686,6 +690,8 @@ dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 	struct dpaa_sec_ses *ses;
 	struct qm_fd fd;
 	int ret;
+	uint32_t auth_only_len = op->sym->auth.data.length -
+				op->sym->cipher.data.length;
 
 	ses = dpaa_get_sec_ses(op);
 
@@ -706,6 +712,10 @@ dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 	qm_fd_addr_set64(&fd, dpaa_mem_vtop(cf->sg));
 	fd._format1 = qm_fd_compound;
 	fd.length29 = sizeof(2 * sizeof(struct qm_sg_entry));
+	/* Auth_only_len is set as 0 in descriptor and it is overwritten
+	   here in the fd.cmd which will update the DPOVRD reg. */
+	if (auth_only_len)
+		fd.cmd = 0x80000000 | auth_only_len;
 	do {
 		ret = qman_enqueue(&qp->inq, &fd, 0);
 	} while (ret != 0);
