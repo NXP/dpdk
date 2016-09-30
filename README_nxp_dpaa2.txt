@@ -131,7 +131,8 @@ How to run DPDK Applications
 	export DPBP_COUNT=16
 
    Run the following on the board:
-      1. source /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
+      1. source /usr/bin/dpdk-example/extras/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
+      or, source /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
       2. export DPRC=<dprc_container_created_by_dynamic_DPL>
 
 3. Running DPDK testpmd Application
