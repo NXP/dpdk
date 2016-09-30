@@ -202,7 +202,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 
 	if (mbuf->data_off < DEFAULT_TX_ICEOF +
 			sizeof(struct dpaa_eth_parse_results_t)) {
-		PMD_DRV_LOG(ERROR, "Checksum offload Err: Not enough Headroom "
+		PMD_DRV_LOG(ERR, "Checksum offload Err: Not enough Headroom "
 			"space for correct Checksum offload.");
 		return;
 	}
@@ -235,13 +235,13 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	void *ptr;
 
 	if (unlikely(fd->format != qm_fd_contig)) {
-		PMD_DRV_LOG(ERROR, "dropping packet in sg form");
+		PMD_DRV_LOG(ERR, "dropping packet in sg form");
 		goto errret;
 	}
 	dpaa_display_frame(fd);
 	ptr = dpaa_mem_ptov(fd->addr);
 	if (!ptr) {
-		PMD_DRV_LOG(ERROR, "unable to convert physical address");
+		PMD_DRV_LOG(ERR, "unable to convert physical address");
 		goto errret;
 	}
 	/* Prefetch the Parse results and packet data to L1 */
@@ -279,7 +279,7 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	if (unlikely(!thread_portal_init)) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "Failure in affining portal");
 			return 0;
 		}
 	}
@@ -362,7 +362,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 	if (unlikely(!thread_portal_init)) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "Failure in affining portal");
 			return 0;
 		}
 	}
