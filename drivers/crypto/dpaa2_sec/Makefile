@@ -35,7 +35,7 @@ LIB = librte_pmd_dpaa2_sec.a
 
 # build flags
 CFLAGS += -D _GNU_SOURCE
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT),y)
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
 else
