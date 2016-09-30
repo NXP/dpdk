@@ -349,7 +349,7 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	/*todo - check the length stuff, idealy this should be only cipher data length */
 	fle->length = sym_op->cipher.data.length + sym_op->cipher.iv.length;
 
-	PMD_DRV_LOG(DEBUG, "1 - flc = %p, fle = %p FLE addr = %x - %x, length\n",
+	PMD_DRV_LOG(DEBUG, "1 - flc = %p, fle = %p FLE addr = %x - %x, length %d\n",
 		    flc, fle,
 		fle->addr_hi, fle->addr_lo, fle->length);
 
@@ -372,7 +372,7 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SET_FLE_FIN(fle);
 
 	PMD_DRV_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
-		    DPAA2_GET_FD_ADDR(fd),
+		    (void *)DPAA2_GET_FD_ADDR(fd),
 			DPAA2_GET_FD_BPID(fd),
 			bpid_info[bpid].meta_data_size,
 			DPAA2_GET_FD_OFFSET(fd),
@@ -538,11 +538,11 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 		    (void *)op->sym->m_src, op->sym->m_src->buf_addr);
 
 	PMD_DRV_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
-		    DPAA2_GET_FD_ADDR(fd),
-		DPAA2_GET_FD_BPID(fd),
-		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
-		DPAA2_GET_FD_OFFSET(fd),
-		DPAA2_GET_FD_LEN(fd));
+		    (void *) DPAA2_GET_FD_ADDR(fd),
+		    DPAA2_GET_FD_BPID(fd),
+		    bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
+		    DPAA2_GET_FD_OFFSET(fd),
+		    DPAA2_GET_FD_LEN(fd));
 
 	/* free the fle memory */
 	rte_free(fle - 1);
@@ -1467,13 +1467,13 @@ void dpaa2_sec_stats_get(struct rte_cryptodev *dev,
 		PMD_DRV_LOG(ERR, "dpseci_get_sec_counters failed\n");
 	} else {
 		PMD_DRV_LOG(INFO, "dpseci hw stats:"
-			"\n\tNumber of Requests Dequeued = %ul"
-			"\n\tNumber of Outbound Encrypt Requests = %ul"
-			"\n\tNumber of Inbound Decrypt Requests = %ul"
-			"\n\tNumber of Outbound Bytes Encrypted = %ul"
-			"\n\tNumber of Outbound Bytes Protected = %ul"
-			"\n\tNumber of Inbound Bytes Decrypted = %ul"
-			"\n\tNumber of Inbound Bytes Validated = %ul",
+			"\n\tNumber of Requests Dequeued = %lu"
+			"\n\tNumber of Outbound Encrypt Requests = %lu"
+			"\n\tNumber of Inbound Decrypt Requests = %lu"
+			"\n\tNumber of Outbound Bytes Encrypted = %lu"
+			"\n\tNumber of Outbound Bytes Protected = %lu"
+			"\n\tNumber of Inbound Bytes Decrypted = %lu"
+			"\n\tNumber of Inbound Bytes Validated = %lu",
 			counters.dequeued_requests,
 			counters.ob_enc_requests,
 			counters.ib_dec_requests,
