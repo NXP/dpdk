@@ -86,7 +86,7 @@ static struct bman_pool *dpaa_bpid_init(int bpid)
 
 	bp = bman_new_pool(&params);
 	if (!bp) {
-		PMD_DRV_LOG(ERROR, "bman_new_pool() failed");
+		PMD_DRV_LOG(ERR, "bman_new_pool() failed");
 		return NULL;
 	}
 
@@ -103,7 +103,7 @@ static struct bman_pool *dpaa_bpid_init(int bpid)
 			num_bufs += ret;
 	} while (ret > 0);
 	if (num_bufs)
-		PMD_DRV_LOG(WARN, "drained %u bufs from BPID %d",
+		PMD_DRV_LOG(WARNING, "drained %u bufs from BPID %d",
 			    num_bufs, bpid);
 
 	return bp;
@@ -121,13 +121,13 @@ int hw_mbuf_create_pool(struct rte_mempool *mp)
 	bpid = rte_atomic32_add_return(&bpid_alloc, 1);
 
 	if (bpid > NUM_BP_POOL_ENTRIES) {
-		PMD_DRV_LOG(ERROR, "exceeding bpid requirements");
+		PMD_DRV_LOG(ERR, "exceeding bpid requirements");
 		return -2;
 	}
 
 	bp = dpaa_bpid_init(bpid);
 	if (!bp) {
-		PMD_DRV_LOG(ERROR, "dpaa_bpid_init failed\n");
+		PMD_DRV_LOG(ERR, "dpaa_bpid_init failed\n");
 		return -2;
 	}
 
@@ -218,7 +218,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "Failure in affining portal");
 			return 0;
 		}
 	}
@@ -248,10 +248,10 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 			ret =  bman_acquire(bp_info->bp,
 					    &bufs[n], count - n, 0);
 			if (ret > 0) {
-				PMD_DRV_LOG(DEBUG, "ret = %d bpid =%d alloc %d,"
+				PMD_DRV_LOG(DEBUG, "ret = %d bpid =%d"
 					"count=%d Drained buffer: %x",
 					ret, bp_info->bpid,
-					alloc, count - n, bufs[n]);
+					count - n, bufs[n]);
 				n += ret;
 			}
 		}
@@ -309,7 +309,7 @@ int hw_mbuf_free_bulk(struct rte_mempool *pool,
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERROR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "Failure in affining portal");
 			return 0;
 		}
 	}
@@ -407,21 +407,20 @@ int dpaa_portal_init(void *arg)
 	id = pthread_self();
 	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t), &cpuset);
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "pthread_setaffinity_np failed on core :%d",
-				cpu);
+		PMD_DRV_LOG(ERR, "pthread_setaffinity_np failed on core :%d", cpu);
 		return -1;
 	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "bman_thread_init failed on core %d", cpu);
+		PMD_DRV_LOG(ERR, "bman_thread_init failed on core %d", cpu);
 		return -1;
 	}
 	/* Initialise qman thread portals */
 	ret = qman_thread_init();
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "bman_thread_init failed on core %d", cpu);
+		PMD_DRV_LOG(ERR, "bman_thread_init failed on core %d", cpu);
 		return -1;
 	}
 	thread_portal_init = true;
@@ -530,7 +529,7 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
 		link->link_speed = 10000;
 	else
-		PMD_DRV_LOG(ERROR, "%s:: invalid link_speed %d",
+		PMD_DRV_LOG(ERR, "%s:: invalid link_speed %d",
 			    dpaa_intf->name, dpaa_intf->fif->mac_type);
 
 	link->link_status = dpaa_intf->valid;
@@ -581,7 +580,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		uint32_t fd_offset;
 
 		if (!mp->pool_data) {
-			PMD_DRV_LOG(ERROR, "not an offloaded buffer pool");
+			PMD_DRV_LOG(ERR, "not an offloaded buffer pool");
 			return -1;
 		}
 		dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
@@ -633,7 +632,7 @@ static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 }
 
 static int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
-		 uint16_t mtu __rte_unused)
+						uint16_t mtu __rte_unused)
 {
 	/* Currently we don't need to set anything specefic
 	 * in hardware for MTU (to be checked again). So just return zero in
@@ -667,7 +666,7 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
 		if (!dpaa_intf->fc_conf) {
 			printf("%s::unable to save flow control info\n",
-								__func__);
+			       __func__);
 			return -ENOMEM;
 		}
 	}
@@ -686,11 +685,10 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
 		 fc_conf->mode == RTE_FC_FULL) {
 		fman_if_set_fc_threshold(dpaa_intf->fif, fc_conf->high_water,
-				fc_conf->low_water,
+					 fc_conf->low_water,
 				dpaa_intf->bp_info->bpid);
 		if (fc_conf->pause_time)
-			fman_if_set_fc_quanta(dpaa_intf->fif,
-				fc_conf->pause_time);
+			fman_if_set_fc_quanta(dpaa_intf->fif, fc_conf->pause_time);
 	}
 
 	/* Save the information in dpaa device */
@@ -768,8 +766,7 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 		dpaa_intf->fc_conf = rte_zmalloc(NULL,
 			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
 		if (!dpaa_intf->fc_conf) {
-			printf("%s::unable to save flow control info\n",
-								__func__);
+			printf("%s::unable to save flow control info\n", __func__);
 			return -ENOMEM;
 		}
 	}
@@ -794,7 +791,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "reserve rx fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "reserve rx fqid %d failed", fqid);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
@@ -802,7 +799,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 		    __func__, fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		PMD_DRV_LOG(ERROR, "create rx fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "create rx fqid %d failed", fqid);
 		return ret;
 	}
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
@@ -820,7 +817,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		PMD_DRV_LOG(ERROR, "init rx fqid %d failed %d", fqid, ret);
+		PMD_DRV_LOG(ERR, "init rx fqid %d failed %d", fqid, ret);
 	return ret;
 }
 
@@ -845,8 +842,8 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
 	PMD_DRV_LOG(DEBUG, "init fqid %d for fman_intf fm%d-gb%d chan %d\n",
-		    	fq->fqid, (fman_intf->fman_idx + 1),
-			fman_intf->mac_idx, fman_intf->tx_channel_id);
+				fq->fqid, (fman_intf->fman_idx + 1),
+				fman_intf->mac_idx, fman_intf->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
 

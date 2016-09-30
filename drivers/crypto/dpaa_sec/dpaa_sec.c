@@ -142,7 +142,8 @@ static inline void *dpaa_mem_ptov(phys_addr_t paddr)
 }
 
 static void ern_sec_fq_handler(struct qman_portal *qm __rte_unused,
-		struct qman_fq *fq, const struct qm_mr_entry *msg)
+						       struct qman_fq *fq,
+							   const struct qm_mr_entry *msg)
 {
 	printf("sec fq %d error, RC = %x, seqnum = %x\n", fq->fqid,
 	       msg->ern.rc, msg->ern.seqnum);
@@ -376,7 +377,6 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	alginfo_c.key_type = RTA_DATA_IMM;
 	alginfo_c.algmode = OP_ALG_AAI_CBC;
 
-
 	alginfo_a.algtype = caam_auth_alg(ses);
 	if (alginfo_c.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
 		PMD_DRV_LOG(ERR, "not supported auth alg\n");
@@ -462,7 +462,6 @@ static int dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops,
 
 static inline struct dpaa_sec_ses *dpaa_get_sec_ses(struct rte_crypto_op *op)
 {
-
 	return (struct dpaa_sec_ses *)op->sym->session->_private;
 }
 
@@ -639,11 +638,11 @@ static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 		length += sg->length;
 		cpu_to_hw_sg(sg);
 
-		memcpy(ctx->digest, sym->auth.digest.data,sym->auth.digest.length);
-		memset(sym->auth.digest.data,0,sym->auth.digest.length);
+		memcpy(ctx->digest, sym->auth.digest.data, sym->auth.digest.length);
+		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
 		sg++;
 
-		qm_sg_entry_set64(sg,dpaa_mem_vtop(ctx->digest));
+		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
 		sg->length = sym->auth.digest.length;
 		length += sg->length;
 		sg->final = 1;
@@ -825,7 +824,7 @@ dpaa_sec_session_get_size(struct rte_cryptodev *dev __rte_unused)
 
 static void
 dpaa_sec_session_initialize(struct rte_mempool *mp __rte_unused,
-				void *ses __rte_unused)
+						    void *ses __rte_unused)
 {
 }
 
@@ -1020,7 +1019,7 @@ dpaa_sec_dev_uninit(__attribute__((unused))
 	if (dev->data->name == NULL)
 		return -EINVAL;
 
-	PMD_DRV_LOG("Closing dpaa crypto device %s\n", dev->data->name);
+	PMD_DRV_LOG(INFO, "Closing dpaa crypto device %s\n", dev->data->name);
 
 	return 0;
 }
@@ -1070,7 +1069,7 @@ dpaa_sec_dev_init(__attribute__((unused))
 	qi = rte_zmalloc(NULL, crypto_drv->dev_private_size,
 			 RTE_CACHE_LINE_SIZE);
 	if (unlikely(!qi)) {
-		printf("cannot alloc private device for sec!\n");
+		PMD_DRV_LOG(ERR, "cannot alloc private device for sec!\n");
 		return -1;
 	}
 	qi->max_nb_queue_pairs = RTE_MAX_NB_SEC_QPS;
@@ -1173,7 +1172,7 @@ dpaa_sec_pmd_init(const char *name __rte_unused,
 		dev->id.device_id = FSL_DEVICE_ID;
 		dev->id.subsystem_vendor_id = FSL_VENDOR_ID;
 		dev->id.subsystem_device_id = FSL_SUBSYSTEM_SEC;
-		dev->numa_node = -1;
+		dev->numa_node = 0;
 
 		/* device is valid, add in list (sorted) */
 		insert_devices_into_pcilist(dev);
