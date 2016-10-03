@@ -59,6 +59,8 @@
 #include <flib/desc/algo.h>
 
 #define NO_PREFETCH 0
+#define TDES_CBC_IV_LEN 8
+#define AES_CBC_IV_LEN 16
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
 extern struct dpaa2_bp_info bpid_info[MAX_BPID];
 
@@ -919,11 +921,13 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CBC;
+		ctxt->iv.length = AES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
+		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 	case RTE_CRYPTO_CIPHER_3DES_CTR:
@@ -1212,11 +1216,13 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CBC;
+		ctxt->iv.length = AES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
+		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_AES_GCM:
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
@@ -1238,9 +1244,8 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 				DIR_ENC : DIR_DEC;
 
 	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH) {
-		/* TODO: add support for other Algos. IV length = 16 for AES */
 		bufsize = cnstr_shdsc_authenc(priv->flc_desc[0].desc, 1,
-					      0, &cipherdata, &authdata, 16,/*ctxt->iv.length,*/
+				0, &cipherdata, &authdata, ctxt->iv.length,
 				ctxt->auth_only_len, ctxt->trunc_len,
 				session->dir);
 	} else {

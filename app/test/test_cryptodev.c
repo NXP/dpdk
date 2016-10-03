@@ -357,7 +357,6 @@ ut_setup(void)
 	memset(ut_params, 0, sizeof(*ut_params));
 
 	/* Reconfigure device to default parameters */
-	ts_params->conf.nb_queue_pairs = DEFAULT_NUM_QPS_PER_QAT_DEVICE;
 	ts_params->conf.socket_id = SOCKET_ID_ANY;
 	ts_params->conf.session_mp.nb_objs =
 			(gbl_cryptodev_type == RTE_CRYPTODEV_QAT_SYM_PMD) ?
