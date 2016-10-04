@@ -96,6 +96,17 @@ xform_get_evp_cipher(const struct rte_crypto_sym_xform *xform)
 				      "key cipher config");
 			return NULL;
 		}
+	case RTE_CRYPTO_CIPHER_3DES_CBC:
+		switch (key_len_bits) {
+		case 128:
+			return EVP_des_ede_cbc();
+		case 192:
+			return EVP_des_ede3_cbc();
+		default:
+			ARMCE_LOG_ERR("Could not find a valid "
+				      "key cipher config");
+			return NULL;
+		}
 	default:
 		ARMCE_LOG_ERR("Could not find a valid cipher algorithm");
 		return NULL;
@@ -154,6 +165,8 @@ static const EVP_MD *
 xform_get_evp_auth(const struct rte_crypto_sym_xform *xform)
 {
 	switch (xform->auth.algo) {
+	case RTE_CRYPTO_AUTH_MD5_HMAC:
+		return EVP_md5();
 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		return EVP_sha1();
 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
