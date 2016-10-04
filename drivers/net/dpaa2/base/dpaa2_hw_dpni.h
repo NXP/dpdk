@@ -47,15 +47,7 @@
 /*! Maximum number of flow distributions per traffic class */
 #define MAX_DIST_PER_TC		16
 
-/* Threshold for a queue to *Enter* Congestion state.
- * It is set to 128 frames of size 64 bytes.
- */
-#define CONG_ENTER_THRESHOLD   (128 * 64)
-
-/* Threshold for a queue to *Exit* Congestion state.
- * It is set to 98 frames of size 64 bytes.
- */
-#define CONG_EXIT_THRESHOLD    (98 * 64)
+#define DPAA2_DEF_TC		0
 
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256

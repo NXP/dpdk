@@ -214,13 +214,13 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 		DEV_TX_OFFLOAD_UDP_CKSUM |
 		DEV_TX_OFFLOAD_TCP_CKSUM |
 		DEV_TX_OFFLOAD_SCTP_CKSUM;
+	dev_info->speed_capa = ETH_LINK_SPEED_1G | ETH_LINK_SPEED_10G;
 }
 
 static int
 dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	uint8_t tc_idx;
 	uint16_t dist_idx;
 	uint32_t vq_id;
 	struct dpaa2_queue *mc_q, *mcq;
@@ -256,13 +256,12 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	}
 
 	vq_id = 0;
-	for (tc_idx = 0; tc_idx < priv->num_tc; tc_idx++) {
-		for (dist_idx = 0; dist_idx < priv->num_dist_per_tc[tc_idx]; dist_idx++) {
-			mcq = (struct dpaa2_queue *)priv->rx_vq[vq_id];
-			mcq->tc_index = tc_idx;
-			mcq->flow_id = dist_idx;
-			vq_id++;
-		}
+	for (dist_idx = 0; dist_idx < priv->num_dist_per_tc[DPAA2_DEF_TC];
+	     dist_idx++) {
+		mcq = (struct dpaa2_queue *)priv->rx_vq[vq_id];
+		mcq->tc_index = DPAA2_DEF_TC;
+		mcq->flow_id = dist_idx;
+		vq_id++;
 	}
 
 	return 0;
@@ -344,7 +343,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	struct dpaa2_queue *dpaa2_q;
 	struct dpni_queue_cfg cfg;
-	uint8_t tc_id, flow_id;
+	uint8_t flow_id;
 	uint32_t bpid;
 	int ret;
 
@@ -361,12 +360,10 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q = (struct dpaa2_queue *)dev->data->rx_queues[rx_queue_id];
 
 	/*Get the tc id and flow id from given VQ id*/
-	tc_id = rx_queue_id / MAX_DIST_PER_TC;
-	flow_id = rx_queue_id % MAX_DIST_PER_TC;
+	flow_id = rx_queue_id % priv->num_dist_per_tc[dpaa2_q->tc_index];
 	memset(&cfg, 0, sizeof(struct dpni_queue_cfg));
 
 	cfg.options = cfg.options | DPNI_QUEUE_OPT_USER_CTX;
-
 	cfg.user_ctx = (uint64_t)(dpaa2_q);
 
 	/*if ls2088 or rev2 device, enable the stashing */
@@ -380,7 +377,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		cfg.flc_cfg.options = DPNI_FLC_STASH_FRAME_ANNOTATION;
 	}
 	ret = dpni_set_rx_flow(dpni, CMD_PRI_LOW, priv->token,
-			       tc_id, flow_id, &cfg);
+			       dpaa2_q->tc_index, flow_id, &cfg);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "Error in setting the rx flow: = %d\n", ret);
 		return -1;
@@ -560,7 +557,8 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	for (i = 0; i < data->nb_rx_queues; i++) {
 		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[i];
 		ret = dpni_get_rx_flow(dpni, CMD_PRI_LOW, priv->token,
-				       dpaa2_q->tc_index, dpaa2_q->flow_id, &cfg);
+				       dpaa2_q->tc_index,
+				       dpaa2_q->flow_id, &cfg);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Error to get flow "
 				"information Error code = %d\n", ret);
@@ -1235,9 +1233,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->num_tc = attr.max_tcs;
 	for (i = 0; i < attr.max_tcs; i++) {
 		priv->num_dist_per_tc[i] = ext_cfg->tc_cfg[i].max_dist;
-		priv->nb_rx_queues += priv->num_dist_per_tc[i];
 		break;
 	}
+
+	/* Distribution is per Tc only, so choosing RX queues from default TC only */
+	priv->nb_rx_queues = priv->num_dist_per_tc[DPAA2_DEF_TC];
+
 	if (attr.max_tcs == 1)
 		priv->nb_tx_queues = attr.max_senders;
 	else
