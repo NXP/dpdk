@@ -1225,7 +1225,6 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 {
-	struct rte_eth_dev_data *data = eth_dev->data;
 	struct fsl_mc_io *dpni_dev;
 	struct dpni_attr attr;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
@@ -1324,10 +1323,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "dpaa2_alloc_rx_tx_queuesFailed\n");
-		return -1;
+		return -ret;
 	}
-
-	data->mac_addrs = (struct ether_addr *)malloc(sizeof(struct ether_addr));
 
 	/* Allocate memory for storing MAC addresses */
 	eth_dev->data->mac_addrs = rte_zmalloc("dpni",
@@ -1341,22 +1338,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpni_get_primary_mac_addr(dpni_dev, CMD_PRI_LOW,
 					priv->token,
-				(uint8_t *)(data->mac_addrs[0].addr_bytes));
+				(uint8_t *)(eth_dev->data->mac_addrs[0].addr_bytes));
 	if (ret) {
 		PMD_DRV_LOG(ERR, "DPNI get mac address failed:"
 					" Error Code = %d\n", ret);
-		return -1;
-	}
-
-	PMD_DRV_LOG(INFO, "Adding Broadcast Address...");
-	memset(data->mac_addrs[1].addr_bytes, 0xff, ETH_ADDR_LEN);
-	ret = dpni_add_mac_addr(dpni_dev, CMD_PRI_LOW,
-				priv->token,
-				(uint8_t *)(data->mac_addrs[1].addr_bytes));
-	if (ret) {
-		PMD_DRV_LOG(ERR, "DPNI set broadcast mac address failed:"
-					" Error Code = %0x\n", ret);
-		return -1;
+		return -ret;
 	}
 
 	/* ... rx buffer layout ... */
