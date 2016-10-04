@@ -366,6 +366,15 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	cfg.options = cfg.options | DPNI_QUEUE_OPT_USER_CTX;
 	cfg.user_ctx = (uint64_t)(dpaa2_q);
 
+	if (!(priv->flags & DPAA2_PER_TC_RX_TAILDROP) &&
+	    !(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
+		/*enabling per queue congestion control */
+		cfg.options = cfg.options | DPNI_QUEUE_OPT_TAILDROP_THRESHOLD;
+		cfg.tail_drop_threshold = CONG_THRESHOLD_RX_Q;
+		PMD_DRV_LOG(INFO, "Enabling Early Drop on queue = %d",
+			    rx_queue_id);
+	}
+
 	/*if ls2088 or rev2 device, enable the stashing */
 	if ((qbman_get_version() & 0xFFFF0000) > QMAN_REV_4000) {
 		cfg.options = cfg.options | DPNI_QUEUE_OPT_FLC;
@@ -565,6 +574,41 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 			return ret;
 		}
 		dpaa2_q->fqid = cfg.fqid;
+	}
+
+	if (priv->max_congestion_ctrl &&
+	    (priv->flags & DPAA2_PER_TC_RX_TAILDROP) &&
+	    !(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
+
+		struct dpni_early_drop_cfg tailcfg = {0};
+		uint8_t *early_drop_buf;
+		/* Note - doing it only for the first queue  - as we are only
+			using 1 TC for the time being */
+		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[DPAA2_DEF_TC];
+
+		early_drop_buf = rte_malloc(NULL, 256, 1);
+		if (!early_drop_buf) {
+			PMD_DRV_LOG(ERR, "No data memory\n");
+			return -1;
+		}
+		tailcfg.mode = DPNI_EARLY_DROP_MODE_TAIL;
+		tailcfg.units = DPNI_CONGESTION_UNIT_FRAMES;
+		tailcfg.tail_drop_threshold = DPAA2_DEF_TC_THRESHOLD;
+
+		dpni_prepare_early_drop(&tailcfg, early_drop_buf);
+
+		ret = dpni_set_rx_tc_early_drop(dpni,
+						CMD_PRI_LOW,
+						priv->token,
+						dpaa2_q->tc_index,
+						(uint64_t)early_drop_buf);
+		if (ret) {
+			PMD_DRV_LOG(ERR,"Error in setting rx_tc_early_drop"
+				    " ErrCode = %d", -ret);
+			return -ret;
+		}
+		PMD_DRV_LOG(INFO, "Enabling Early Drop on TC = %d",
+			dpaa2_q->tc_index);
 	}
 
 	ret = dpni_set_l3_chksum_validation(dpni, CMD_PRI_LOW,
@@ -1268,8 +1312,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	/*If congestion control support is not required */
 	if(getenv("DPAA2_NO_CGR_SUPPORT")) {
 		priv->flags |= DPAA2_NO_CGR_SUPPORT;
+		PMD_DRV_LOG(INFO, "Disabling the congestion control support");
 	}
 
+	/*Tail drop to be configured on per TC instead of per queue */
+	if(getenv("DPAA2_PER_TC_RX_TAILDROP")) {
+		priv->flags |= DPAA2_PER_TC_RX_TAILDROP;
+		PMD_DRV_LOG(INFO, "Enabling per TC tail drop on RX");
+	}
 
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {

@@ -66,6 +66,14 @@
  */
 #define CONG_EXIT_RX_THRESHOLD    (384)
 
+/* Threshold for a queue to start tail drop on complete TC
+ * It is set to 512 frames.
+ */
+#define DPAA2_DEF_TC_THRESHOLD    (512)
+
+/* RX queue tail drop threshhold
+ * currently considering 1500 bytes 64 packets */
+#define CONG_THRESHOLD_RX_Q  (1500 * 64)
 
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256
@@ -78,6 +86,10 @@
 /* Disable Congestion control support
  * default is enable */
 #define DPAA2_NO_CGR_SUPPORT		0x01
+
+/* Per TC tail drop or Per queue tail drop
+ * default is per queue tail drop */
+#define DPAA2_PER_TC_RX_TAILDROP	0x02
 
 struct dpaa2_dev_priv {
 	void *hw;
