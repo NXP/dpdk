@@ -73,6 +73,8 @@
 #define DPAA_SEC_DEV_ID_START	16
 #define DPAA_SEC_BURST		32
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
+#define TDES_CBC_IV_LEN		8
+#define AES_CBC_IV_LEN		16
 
 enum rta_sec_era rta_sec_era;
 
@@ -324,9 +326,11 @@ static inline uint32_t caam_cipher_alg(struct dpaa_sec_ses *ses)
 		return 0;
 
 	case RTE_CRYPTO_CIPHER_AES_CBC:
+		ses->cipher.iv_len = AES_CBC_IV_LEN;
 		return OP_ALG_ALGSEL_AES;
 
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
+		ses->cipher.iv_len = TDES_CBC_IV_LEN;
 		return OP_ALG_ALGSEL_3DES;
 
 	default:
@@ -392,8 +396,6 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	alginfo_a.algmode = OP_ALG_AAI_HMAC;
 
 	if (is_cipher_only(ses)) {
-		/* TODO: add support for other Algos. IV length = 16 for AES */
-		ses->cipher.iv_len = 16;
 		shared_desc_len = cnstr_shdsc_blkcipher(cdb->sh_desc, true,
 					swap, &alginfo_c,
 					NULL, ses->cipher.iv_len,
@@ -403,10 +405,8 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 					swap, &alginfo_a,
 					!ses->dir, ses->auth_trunc_len);
 	} else {
-		/* TODO: add support for other Algos. IV length = 16 for AES */
 		/* Auth_only_len is set as 0 here and it will be overwritten
 		   in fd for each packet.*/
-		ses->cipher.iv_len = 16;
 		shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
 					swap, &alginfo_c, &alginfo_a,
 					ses->cipher.iv_len, 0,
@@ -510,7 +510,7 @@ static inline struct dpaa_sec_job *build_auth_only(struct rte_crypto_op *op)
 		/* need to extend the input to a compound frame */
 		sg->extension = 1;
 		qm_sg_entry_set64(sg, dpaa_mem_vtop(&cf->sg[2]));
-		sg->length = sym->auth.data.length;
+		sg->length = sym->auth.data.length + sym->auth.digest.length;
 		sg->final = 1;
 		cpu_to_hw_sg(sg);
 
@@ -519,11 +519,6 @@ static inline struct dpaa_sec_job *build_auth_only(struct rte_crypto_op *op)
 		rte_memcpy(old_digest, sym->auth.digest.data,
 			   sym->auth.digest.length);
 		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
-		qm_sg_entry_set64(sg, sym->auth.digest.phys_addr);
-		sg->length = sym->auth.digest.length;
-		cpu_to_hw_sg(sg);
-
-		sg++;
 		qm_sg_entry_set64(sg, start_addr + sym->auth.data.offset);
 		sg->length = sym->auth.data.length;
 		cpu_to_hw_sg(sg);
