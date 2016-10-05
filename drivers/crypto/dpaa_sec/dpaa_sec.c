@@ -91,7 +91,7 @@ static inline void dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 	if (!ctx->fd_status)
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 	else {
-		PMD_DRV_LOG(ERR,"\nSEC return err: %x\n",ctx->fd_status);
+		PMD_DRV_LOG(ERR,"SEC return err: 0x%x\n",ctx->fd_status);
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
 	}
 
