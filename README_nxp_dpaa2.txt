@@ -41,7 +41,7 @@ Following information can be used to obtain these components:
      Cross compiled toolchain For ARM64
      ==================================
     get the linaro gcc-4.9 toolchain from:
- https://releases.linaro.org/14.11/components/toolchain/binaries/aarch64-linux-gnu/
+    https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
 export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
