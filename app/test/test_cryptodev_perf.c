@@ -98,7 +98,7 @@ test_perf_create_snow3g_session(uint8_t dev_id, enum chain_mode chain,
 		enum rte_crypto_cipher_algorithm cipher_algo,
 		unsigned int cipher_key_len, enum rte_crypto_auth_algorithm auth_algo);
 static struct rte_cryptodev_sym_session *
-test_perf_create_libcrypto_session(uint8_t dev_id, enum chain_mode chain,
+test_perf_create_openssl_session(uint8_t dev_id, enum chain_mode chain,
 		enum rte_crypto_cipher_algorithm cipher_algo,
 		unsigned int cipher_key_len, enum rte_crypto_auth_algorithm auth_algo);
 static struct rte_mbuf *
@@ -293,17 +293,17 @@ testsuite_setup(void)
 		}
 	}
 
-	/* Create 2 LIBCRYPTO devices if required */
-	if (gbl_cryptodev_perftest_devtype == RTE_CRYPTODEV_LIBCRYPTO_PMD) {
-		nb_devs = rte_cryptodev_count_devtype(RTE_CRYPTODEV_LIBCRYPTO_PMD);
+	/* Create 2 OPENSSL devices if required */
+	if (gbl_cryptodev_perftest_devtype == RTE_CRYPTODEV_OPENSSL_PMD) {
+		nb_devs = rte_cryptodev_count_devtype(RTE_CRYPTODEV_OPENSSL_PMD);
 		if (nb_devs < 2) {
 			for (i = nb_devs; i < 2; i++) {
 				ret = rte_eal_vdev_init(
-					RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD), NULL);
+					RTE_STR(CRYPTODEV_NAME_OPENSSL_PMD), NULL);
 
 				TEST_ASSERT(ret == 0,
 					"Failed to create instance %u of pmd : %s",
-					i, RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD));
+					i, RTE_STR(CRYPTODEV_NAME_OPENSSL_PMD));
 			}
 		}
 	}
@@ -2206,7 +2206,7 @@ test_perf_snow3G_vary_burst_size(void)
 }
 
 static int
-test_perf_libcrypto_optimise_cyclecount(struct perf_test_params *pparams)
+test_perf_openssl_optimise_cyclecount(struct perf_test_params *pparams)
 {
 	uint32_t num_to_submit = pparams->total_operations;
 	struct rte_crypto_op *c_ops[num_to_submit];
@@ -2232,7 +2232,7 @@ test_perf_libcrypto_optimise_cyclecount(struct perf_test_params *pparams)
 	}
 
 	/* Create Crypto session*/
-	sess = test_perf_create_libcrypto_session(ts_params->dev_id,
+	sess = test_perf_create_openssl_session(ts_params->dev_id,
 			pparams->chain, pparams->cipher_algo,
 			pparams->cipher_key_length, pparams->auth_algo);
 	TEST_ASSERT_NOT_NULL(sess, "Session creation failed");
@@ -2548,7 +2548,7 @@ test_perf_create_snow3g_session(uint8_t dev_id, enum chain_mode chain,
 }
 
 static struct rte_cryptodev_sym_session *
-test_perf_create_libcrypto_session(uint8_t dev_id, enum chain_mode chain,
+test_perf_create_openssl_session(uint8_t dev_id, enum chain_mode chain,
 		enum rte_crypto_cipher_algorithm cipher_algo,
 		unsigned int cipher_key_len,
 		enum rte_crypto_auth_algorithm auth_algo)
@@ -3027,7 +3027,7 @@ test_perf_snow3g(uint8_t dev_id, uint16_t queue_id,
 }
 
 static int
-test_perf_libcrypto(uint8_t dev_id, uint16_t queue_id,
+test_perf_openssl(uint8_t dev_id, uint16_t queue_id,
 		struct perf_test_params *pparams)
 {
 	uint16_t i, k, l, m;
@@ -3073,7 +3073,7 @@ test_perf_libcrypto(uint8_t dev_id, uint16_t queue_id,
 	}
 
 	/* Create Crypto session*/
-	sess = test_perf_create_libcrypto_session(ts_params->dev_id,
+	sess = test_perf_create_openssl_session(ts_params->dev_id,
 			pparams->chain, pparams->cipher_algo,
 			pparams->cipher_key_length, pparams->auth_algo);
 	TEST_ASSERT_NOT_NULL(sess, "Session creation failed");
@@ -3318,7 +3318,7 @@ test_perf_snow3G_vary_pkt_size(void)
 }
 
 static int
-test_perf_libcrypto_vary_pkt_size(void)
+test_perf_openssl_vary_pkt_size(void)
 {
 	unsigned int total_operations = 1000000;
 	unsigned int burst_size = { 64 };
@@ -3392,7 +3392,7 @@ test_perf_libcrypto_vary_pkt_size(void)
 				"EmptyPolls\n");
 		for (j = 0; j < RTE_DIM(buf_lengths); j++) {
 			params_set[i].buf_size = buf_lengths[j];
-			test_perf_libcrypto(testsuite_params.dev_id, 0, &params_set[i]);
+			test_perf_openssl(testsuite_params.dev_id, 0, &params_set[i]);
 		}
 	}
 
@@ -3400,7 +3400,7 @@ test_perf_libcrypto_vary_pkt_size(void)
 }
 
 static int
-test_perf_libcrypto_vary_burst_size(void)
+test_perf_openssl_vary_burst_size(void)
 {
 	unsigned int total_operations = 4096;
 	uint16_t buf_lengths[] = { 40 };
@@ -3470,7 +3470,7 @@ test_perf_libcrypto_vary_burst_size(void)
 
 	for (j = 0; j < RTE_DIM(buf_lengths); j++) {
 		params_set[i].buf_size = buf_lengths[j];
-		test_perf_libcrypto_optimise_cyclecount(&params_set[i]);
+		test_perf_openssl_optimise_cyclecount(&params_set[i]);
 		}
 	}
 
@@ -3521,15 +3521,15 @@ static struct unit_test_suite cryptodev_snow3g_testsuite  = {
 	}
 };
 
-static struct unit_test_suite cryptodev_libcrypto_testsuite  = {
-	.suite_name = "Crypto Device LIBCRYPTO Unit Test Suite",
+static struct unit_test_suite cryptodev_openssl_testsuite  = {
+	.suite_name = "Crypto Device OPENSSL Unit Test Suite",
 	.setup = testsuite_setup,
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
 		TEST_CASE_ST(ut_setup, ut_teardown,
-				test_perf_libcrypto_vary_pkt_size),
+				test_perf_openssl_vary_pkt_size),
 		TEST_CASE_ST(ut_setup, ut_teardown,
-				test_perf_libcrypto_vary_burst_size),
+				test_perf_openssl_vary_burst_size),
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -3591,11 +3591,11 @@ perftest_armce_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
-perftest_libcrypto_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
+perftest_openssl_cryptodev(void /*argv __rte_unused, int argc __rte_unused*/)
 {
-	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_LIBCRYPTO_PMD;
+	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_OPENSSL_PMD;
 
-	return unit_test_suite_runner(&cryptodev_libcrypto_testsuite);
+	return unit_test_suite_runner(&cryptodev_openssl_testsuite);
 }
 
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_perftest, perftest_aesni_mb_cryptodev);
@@ -3605,4 +3605,4 @@ REGISTER_TEST_COMMAND(cryptodev_qat_snow3g_perftest, perftest_qat_snow3g_cryptod
 REGISTER_TEST_COMMAND(cryptodev_armce_perftest, perftest_armce_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_perftest, perftest_dpaa2_sec_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_perftest, perftest_dpaa_sec_cryptodev);
-REGISTER_TEST_COMMAND(cryptodev_libcrypto_perftest, perftest_libcrypto_cryptodev);
+REGISTER_TEST_COMMAND(cryptodev_openssl_perftest, perftest_openssl_cryptodev);

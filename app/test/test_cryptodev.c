@@ -181,19 +181,19 @@ testsuite_setup(void)
 		}
 	}
 
-	/* Create 2 LIBCRYPTO devices if required */
-	if (gbl_cryptodev_type == RTE_CRYPTODEV_LIBCRYPTO_PMD) {
+	/* Create 2 OPENSSL devices if required */
+	if (gbl_cryptodev_type == RTE_CRYPTODEV_OPENSSL_PMD) {
 		nb_devs = rte_cryptodev_count_devtype(
-				RTE_CRYPTODEV_LIBCRYPTO_PMD);
+				RTE_CRYPTODEV_OPENSSL_PMD);
 		if (nb_devs < 2) {
 			for (i = nb_devs; i < 2; i++) {
 				ret = rte_eal_vdev_init(
-					RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD), NULL);
+					RTE_STR(CRYPTODEV_NAME_OPENSSL_PMD), NULL);
 
 				TEST_ASSERT(ret == 0,
 					"Failed to create instance %u of"
 					" pmd : %s",
-					i, RTE_STR(CRYPTODEV_NAME_LIBCRYPTO_PMD));
+					i, RTE_STR(CRYPTODEV_NAME_OPENSSL_PMD));
 			}
 		}
 	}
@@ -1414,14 +1414,14 @@ test_AES_mb_all(void)
 }
 
 static int
-test_AES_libcrypto_all(void)
+test_AES_openssl_all(void)
 {
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	int status;
 
 	status = test_AES_all_tests(ts_params->mbuf_pool,
 		ts_params->op_mpool, ts_params->valid_devs[0],
-		RTE_CRYPTODEV_LIBCRYPTO_PMD);
+		RTE_CRYPTODEV_OPENSSL_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
 
@@ -5190,8 +5190,8 @@ static struct unit_test_suite cryptodev_aesni_mb_testsuite  = {
 	}
 };
 
-static struct unit_test_suite cryptodev_libcrypto_testsuite  = {
-	.suite_name = "Crypto Device LIBCRYPTO Unit Test Suite",
+static struct unit_test_suite cryptodev_openssl_testsuite  = {
+	.suite_name = "Crypto Device OPENSSL Unit Test Suite",
 	.setup = testsuite_setup,
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
@@ -5199,7 +5199,7 @@ static struct unit_test_suite cryptodev_libcrypto_testsuite  = {
 				test_multi_session),
 		TEST_CASE_ST(ut_setup, ut_teardown,
 				test_multi_session_random_usage),
-		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_libcrypto_all),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_openssl_all),
 		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_MD5),
 		TEST_CASE_ST(ut_setup, ut_teardown, authentication_verify_MD5),
 		TEST_CASE_ST(ut_setup, ut_teardown,	authentication_SHA1),
@@ -5548,11 +5548,11 @@ test_cryptodev_aesni_mb(void /*argv __rte_unused, int argc __rte_unused*/)
 }
 
 static int
-test_cryptodev_libcrypto(void)
+test_cryptodev_openssl(void)
 {
-	gbl_cryptodev_type = RTE_CRYPTODEV_LIBCRYPTO_PMD;
+	gbl_cryptodev_type = RTE_CRYPTODEV_OPENSSL_PMD;
 
-	return unit_test_suite_runner(&cryptodev_libcrypto_testsuite);
+	return unit_test_suite_runner(&cryptodev_openssl_testsuite);
 }
 
 static int
@@ -5592,7 +5592,7 @@ REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_autotest, test_cryptodev_dpaa2_sec);
 REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_autotest, test_cryptodev_dpaa_sec);
 REGISTER_TEST_COMMAND(cryptodev_qat_autotest, test_cryptodev_qat);
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_autotest, test_cryptodev_aesni_mb);
-REGISTER_TEST_COMMAND(cryptodev_libcrypto_autotest, test_cryptodev_libcrypto);
+REGISTER_TEST_COMMAND(cryptodev_openssl_autotest, test_cryptodev_openssl);
 REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_autotest, test_cryptodev_aesni_gcm);
 REGISTER_TEST_COMMAND(cryptodev_null_autotest, test_cryptodev_null);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_autotest, test_cryptodev_sw_snow3g);
