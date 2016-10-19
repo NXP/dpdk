@@ -74,7 +74,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
@@ -93,8 +93,8 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			PMD_DRV_LOG(ERR, "VDQ command is not issued."
-				"QBMAN is busy\n");
+			PMD_RX_LOG(ERR, "VDQ command is not issued."
+				   "QBMAN is busy\n");
 			/* Portal was busy, try again */
 			continue;
 		}
@@ -121,7 +121,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-				PMD_DRV_LOG(DEBUG, "No frame is delivered\n");
+				PMD_RX_LOG(DEBUG, "No frame is delivered\n");
 				continue;
 			}
 		}
@@ -136,7 +136,6 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	dpaa2_q->rx_pkts += num_rx;
 
-	PMD_DRV_LOG(INFO, "Ethernet Received %d Packets\n", num_rx);
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
@@ -159,7 +158,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
@@ -182,8 +181,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				PMD_DRV_LOG(WARNING, "VDQ command is not issued."
-					    "QBMAN is busy\n");
+				PMD_RX_LOG(WARNING, "VDQ command is not issued."
+					   "QBMAN is busy\n");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -216,14 +215,14 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-				PMD_DRV_LOG2(DEBUG, "No frame is delivered\n");
+				PMD_RX_LOG(DEBUG, "No frame is delivered\n");
 				continue;
 			}
 		}
 		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
 		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
-				DPAA2_GET_FD_ADDR(fd[num_rx])
-				 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
+			DPAA2_GET_FD_ADDR(fd[num_rx])
+			 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
 		/* Prefeth mbuf */
 		rte_prefetch0(mbuf);
 		/* Prefetch Annotation address from where we get parse results */
@@ -254,8 +253,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			PMD_DRV_LOG(WARNING, "VDQ command is not issued."
-				"QBMAN is busy\n");
+			PMD_RX_LOG(WARNING, "VDQ command is not issued."
+				   "QBMAN is busy\n");
 			continue;
 		}
 		break;
@@ -266,7 +265,6 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	dpaa2_q->rx_pkts += num_rx;
 
-	PMD_DRV_LOG2(INFO, "Ethernet Received %d Packets\n", num_rx);
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
@@ -298,13 +296,13 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
 	swp = thread_io_info.dpio_dev->sw_portal;
 
-	PMD_DRV_LOG(DEBUG, "===> dev =%p, fqid =%d", dev, dpaa2_q->fqid);
+	PMD_TX_LOG(DEBUG, "===> dev =%p, fqid =%d", dev, dpaa2_q->fqid);
 
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
@@ -316,7 +314,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Clear the unused FD fields before sending*/
 #ifdef QBMAN_MULTI_TX
 	while (nb_pkts) {
-
 		/*Check if the queue is congested*/
 		if (dpaa2_q->cscn && qbman_result_is_CSCN(dpaa2_q->cscn))
 			goto skip_tx;
@@ -330,13 +327,13 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			mp = (*bufs)->pool;
 			/* Not a hw_pkt pool allocated frame */
 			if (mp && !(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
-				printf("\n non hw offload bufffer ");
+				PMD_TX_LOG(ERR, "non hw offload bufffer ");
 				/* alloc should be from the default buffer pool
 				attached to this interface */
 				if (priv->bp_list) {
 					bpid = priv->bp_list->buf_pool.bpid;
 				} else {
-					printf("\n ??? why no bpool attached");
+					PMD_TX_LOG(ERR, "error: why no bpool attached");
 					num_tx = 0;
 					goto skip_tx;
 				}
@@ -386,7 +383,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				* lacks buffer pool identifier. Cannot
 				* continue.
 				*/
-				PMD_DRV_LOG(ERR, "No Buffer pool "
+				PMD_TX_LOG(ERR, "No Buffer pool "
 						"attached.\n");
 				num_tx = 0;
 				goto skip_tx;
@@ -405,8 +402,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		do {
 			ret = qbman_swp_enqueue(swp, &eqdesc, &fd);
 			if (ret != 0) {
-				PMD_DRV_LOG(DEBUG,
-					    "Error in transmiting the frame\n");
+				PMD_TX_LOG(DEBUG,
+					   "Error in transmiting the frame\n");
 			}
 		} while (ret != 0);
 

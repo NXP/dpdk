@@ -58,8 +58,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 		struct dpkg_profile_cfg *kg_cfg);
 
 int
-dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
-			      uint32_t req_dist_set)
+dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
+		      uint32_t req_dist_set)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct fsl_mc_io *dpni = priv->hw;
@@ -71,7 +71,7 @@ dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
 	p_params = rte_malloc(
 		NULL, DIST_PARAM_IOVA_SIZE, RTE_CACHE_LINE_SIZE);
 	if (!p_params) {
-		PMD_DRV_LOG(ERR, "Memory unavaialble\n");
+		RTE_LOG(ERR, PMD, "Memory unavaialble\n");
 		return -ENOMEM;
 	}
 	memset(p_params, 0, DIST_PARAM_IOVA_SIZE);
@@ -84,7 +84,7 @@ dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
 
 	ret = dpni_prepare_key_cfg(&kg_cfg, p_params);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Unable to prepare extract parameters\n");
+		RTE_LOG(ERR, PMD, "Unable to prepare extract parameters\n");
 		rte_free(p_params);
 		return ret;
 	}
@@ -93,15 +93,15 @@ dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
 				  &tc_cfg);
 	rte_free(p_params);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Setting distribution for Rx failed with"
-			"err code: %d\n", ret);
+		RTE_LOG(ERR, PMD, "Setting distribution for Rx failed with"
+			" err code: %d\n", ret);
 		return ret;
 	}
 
 	return 0;
 }
 
-int dpaa2_remove_flow_distribution(
+int dpaa2_remove_flow_dist(
 	struct rte_eth_dev *eth_dev,
 	uint8_t tc_index)
 {
@@ -115,7 +115,7 @@ int dpaa2_remove_flow_distribution(
 	p_params = rte_malloc(
 		NULL, DIST_PARAM_IOVA_SIZE, RTE_CACHE_LINE_SIZE);
 	if (!p_params) {
-		PMD_DRV_LOG(ERR, "Memory unavaialble\n");
+		RTE_LOG(ERR, PMD, "Memory unavaialble\n");
 		return -ENOMEM;
 	}
 	memset(p_params, 0, DIST_PARAM_IOVA_SIZE);
@@ -127,7 +127,7 @@ int dpaa2_remove_flow_distribution(
 
 	ret = dpni_prepare_key_cfg(&kg_cfg, p_params);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Unable to prepare extract parameters\n");
+		RTE_LOG(ERR, PMD, "Unable to prepare extract parameters\n");
 		rte_free(p_params);
 		return ret;
 	}
@@ -136,8 +136,8 @@ int dpaa2_remove_flow_distribution(
 				  &tc_cfg);
 	rte_free(p_params);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Setting distribution for Rx failed with"
-			"err code: %d\n", ret);
+		RTE_LOG(ERR, PMD, "Setting distribution for Rx failed with"
+			" err code: %d\n", ret);
 		return ret;
 	}
 	return ret;
@@ -269,8 +269,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 				break;
 
 			default:
-				PMD_DRV_LOG(WARNING, "Bad flow distribution option %x\n",
-							dist_field);
+				PMD_DRV_LOG(WARNING, "Bad flow distribution"
+					    " option %x\n", dist_field);
 			}
 		}
 		req_dist_set = req_dist_set >> 1;
@@ -343,8 +343,8 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	retcode = dpni_set_rx_buffer_layout(dpni, CMD_PRI_LOW, priv->token,
 					    &layout);
 	if (retcode) {
-		PMD_DRV_LOG(ERR, "Err(%d) in setting rx buffer layout\n",
-					retcode);
+		PMD_INIT_LOG(ERR, "Err(%d) in setting rx buffer layout\n",
+			     retcode);
 		return retcode;
 	}
 
@@ -358,8 +358,8 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 
 	retcode = dpni_set_pools(dpni, CMD_PRI_LOW, priv->token, &bpool_cfg);
 	if (retcode != 0) {
-		PMD_DRV_LOG(ERR, "Error in attaching the buffer pool list"
-				"bpid = %d Error code = %d\n",
+		PMD_INIT_LOG(ERR, "Error in attaching the buffer pool list"
+				" bpid = %d Error code = %d\n",
 				bpool_cfg.pools[0].dpbp_id, retcode);
 		return retcode;
 	}
@@ -376,27 +376,27 @@ dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 	uint64_t value;
 
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_ING_FRAME, &value);
+			 priv->token, DPNI_CNT_ING_FRAME, &value);
 	printf("Rx packets: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_ING_BYTE, &value);
+			 priv->token, DPNI_CNT_ING_BYTE, &value);
 	printf("Rx bytes: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_ING_MCAST_FRAME, &value);
+			 priv->token, DPNI_CNT_ING_MCAST_FRAME, &value);
 	printf("Rx Multicast: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_ING_FRAME_DROP, &value);
+			 priv->token, DPNI_CNT_ING_FRAME_DROP, &value);
 	printf("Rx dropped: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_ING_FRAME_DISCARD, &value);
+			 priv->token, DPNI_CNT_ING_FRAME_DISCARD, &value);
 	printf("Rx discarded: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_EGR_FRAME, &value);
+			 priv->token, DPNI_CNT_EGR_FRAME, &value);
 	printf("Tx packets: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_EGR_BYTE, &value);
+			 priv->token, DPNI_CNT_EGR_BYTE, &value);
 	printf("Tx bytes: %ld\n", value);
 	dpni_get_counter(dpni, CMD_PRI_LOW,
-					 priv->token, DPNI_CNT_EGR_FRAME_DISCARD, &value);
+			 priv->token, DPNI_CNT_EGR_FRAME_DISCARD, &value);
 	printf("Tx dropped: %ld\n", value);
 }

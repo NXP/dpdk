@@ -71,7 +71,7 @@
  */
 #define DPAA2_DEF_TC_THRESHOLD    (512)
 
-/* RX queue tail drop threshhold
+/* RX queue tail drop threshold
  * currently considering 1500 bytes 64 packets */
 #define CONG_THRESHOLD_RX_Q  (1500 * 64)
 
@@ -115,11 +115,11 @@ struct dpaa2_dev_priv {
 /* Externally exposed functions */
 void dpaa2_dev_print_stats(struct rte_eth_dev *dev);
 
-int dpaa2_setup_flow_distribution(struct rte_eth_dev *eth_dev,
-				       uint32_t req_dist_set);
+int dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
+			  uint32_t req_dist_set);
 
-int dpaa2_remove_flow_distribution(struct rte_eth_dev *eth_dev,
-					 uint8_t tc_index);
+int dpaa2_remove_flow_dist(struct rte_eth_dev *eth_dev,
+			   uint8_t tc_index);
 
 int dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv, void *blist);
 
@@ -130,15 +130,16 @@ dpaa2_dev_rx_parse(uint64_t hw_annot_addr)
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
 
-	PMD_DRV_LOG(DEBUG, "\n 1 annotation = 0x%lx   ", annotation->word4);
+	PMD_RX_LOG(DEBUG, "annotation = 0x%lx   ", annotation->word4);
 
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_ARP_PRESENT)) {
 		pkt_type = RTE_PTYPE_L2_ETHER_ARP;
 		goto parse_done;
-	} else if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT))
+	} else if (BIT_ISSET_AT_POS(annotation->word3, L2_ETH_MAC_PRESENT)) {
 		pkt_type = RTE_PTYPE_L2_ETHER;
-	else
+	} else {
 		goto parse_done;
+	}
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_IPV4_1_PRESENT |
 			     L3_IPV4_N_PRESENT)) {
@@ -153,8 +154,9 @@ dpaa2_dev_rx_parse(uint64_t hw_annot_addr)
 		if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_OPT_PRESENT |
 		    L3_IP_N_OPT_PRESENT))
 			pkt_type |= RTE_PTYPE_L3_IPV6_EXT;
-	} else
+	} else {
 		goto parse_done;
+	}
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_IP_1_FIRST_FRAGMENT |
 	    L3_IP_1_MORE_FRAGMENT |
@@ -162,8 +164,9 @@ dpaa2_dev_rx_parse(uint64_t hw_annot_addr)
 	    L3_IP_N_MORE_FRAGMENT)) {
 		pkt_type |= RTE_PTYPE_L4_FRAG;
 		goto parse_done;
-	} else
+	} else {
 		pkt_type |= RTE_PTYPE_L4_NONFRAG;
+	}
 
 	if (BIT_ISSET_AT_POS(annotation->word4, L3_PROTO_UDP_PRESENT))
 		pkt_type |= RTE_PTYPE_L4_UDP;
@@ -229,7 +232,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
 
-	PMD_DRV_LOG(DEBUG, "to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
+	PMD_RX_LOG(DEBUG, "to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
 		mbuf, mbuf->buf_addr, mbuf->data_off,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
@@ -250,7 +253,7 @@ eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
 
 static void
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,
-		struct qbman_fd *fd, uint16_t bpid) __attribute__((unused));
+	       struct qbman_fd *fd, uint16_t bpid) __attribute__((unused));
 
 static void __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,
@@ -265,7 +268,7 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
 
-	PMD_DRV_LOG(DEBUG, "mbuf =%p, mbuf->buf_addr =%p, off = %d,"
+	PMD_TX_LOG(DEBUG, "mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
 		mbuf, mbuf->buf_addr, mbuf->data_off,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
@@ -273,8 +276,6 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
 
 	eth_check_offload(mbuf, fd);
-
-	return;
 }
 
 static inline int __attribute__((hot))
@@ -285,7 +286,7 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	void *mb = NULL;
 
 	if (hw_mbuf_alloc_bulk(bpid_info[bpid].bp_list->buf_pool.mp, &mb, 1)) {
-		PMD_DRV_LOG(WARNING, "Unable to allocated DPAA2 buffer");
+		PMD_TX_LOG(WARNING, "Unable to allocated DPAA2 buffer");
 		rte_pktmbuf_free(mbuf);
 		return -1;
 	}
@@ -311,11 +312,11 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 
 	eth_check_offload(m, fd);
 
-	PMD_DRV_LOG(DEBUG, " mbuf %p BMAN buf addr %p",
-		    (void *)mbuf, mbuf->buf_addr);
+	PMD_TX_LOG(DEBUG, " mbuf %p BMAN buf addr %p",
+		   (void *)mbuf, mbuf->buf_addr);
 
-	PMD_DRV_LOG(DEBUG, " fdaddr =%lx bpid =%d meta =%d off =%d, len =%d",
-		    DPAA2_GET_FD_ADDR(fd),
+	PMD_TX_LOG(DEBUG, " fdaddr =%lx bpid =%d meta =%d off =%d, len =%d",
+		   DPAA2_GET_FD_ADDR(fd),
 		DPAA2_GET_FD_BPID(fd),
 		bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
 		DPAA2_GET_FD_OFFSET(fd),
