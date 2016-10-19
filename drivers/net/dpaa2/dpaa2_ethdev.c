@@ -280,7 +280,9 @@ fail:
 	while (i >= 0) {
 		dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
 		rte_free(dpaa2_q->q_storage);
+		priv->rx_vq[i--] = NULL;
 	}
+	rte_free(mc_q);
 	return -1;
 }
 
@@ -314,8 +316,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (eth_conf->rxmode.mq_mode != ETH_MQ_RX_RSS &&
 	    data->nb_rx_queues > 1) {
 		PMD_INIT_LOG(ERR, "Distribution is not enabled, "
-			     "but Rx queues more than 1\n");
-		return -1;
+			    "but Rx queues more than 1\n");
+		goto fail_tx_queue;
 	}
 
 	if (eth_conf->rxmode.mq_mode == ETH_MQ_RX_RSS) {
@@ -326,7 +328,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 				eth_conf->rx_adv_conf.rss_conf.rss_hf);
 		if (ret) {
 			PMD_INIT_LOG(ERR, "dpaa2_setup_flow_distribution failed\n");
-			return ret;
+			goto fail_tx_queue;
 		}
 	}
 
@@ -336,6 +338,11 @@ fail_tx_queue:
 	while (i >= 0) {
 		dpaa2_q = (struct dpaa2_queue *)data->tx_queues[i];
 		rte_free(dpaa2_q->cscn);
+		data->tx_queues[i--] = NULL;
+	}
+	for (i = 0; i < data->nb_rx_queues; i++) {
+		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[i];
+		dpaa2_free_dq_storage(dpaa2_q->q_storage);
 	}
 	return -1;
 }
@@ -564,8 +571,6 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	dev->data->dev_link.link_status = 1;
-
 	ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure %d in enabling dpni %d device\n",
@@ -685,11 +690,10 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	dev->data->dev_link.link_status = 0;
-
 	ret = dpni_disable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Failure in disabling dpni %d device\n", priv->hw_id);
+		PMD_INIT_LOG(ERR, "Failure (ret %d) in disabling dpni %d dev\n",
+			     ret, priv->hw_id);
 		return;
 	}
 
@@ -701,19 +705,22 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 static void
 dpaa2_dev_close(struct rte_eth_dev *dev)
 {
+	struct rte_eth_dev_data *data = dev->data;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	int ret;
+	int i, ret;
 	struct rte_eth_link link;
+	struct dpaa2_queue *dpaa2_q;
 
 	PMD_INIT_FUNC_TRACE();
 
-	/*Function is reverse of dpaa2_dev_init.
-	 * It does the following:
-	 * 1. Detach a DPNI from attached resources i.e. buffer pools, dpbp_id.
-	 * 2. Close the DPNI device
-	 * 3. Free the allocated reqources.
-	 */
+	for (i = 0; i < data->nb_tx_queues; i++) {
+		dpaa2_q = (struct dpaa2_queue *)data->tx_queues[i];
+		if (!dpaa2_q->cscn) {
+			rte_free(dpaa2_q->cscn);
+			dpaa2_q->cscn = NULL;
+		}
+	}
 
 	/* Clean the device first */
 	ret = dpni_reset(dpni, CMD_PRI_LOW, priv->token);
@@ -722,18 +729,6 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 			     " error code %d\n", ret);
 		return;
 	}
-
-	/*Close the device at underlying layer*/
-	ret = dpni_close(dpni, CMD_PRI_LOW, priv->token);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Failure closing dpni device with"
-			    " error code %d\n", ret);
-		return;
-	}
-
-	/*Free the allocated memory for ethernet private data and dpni*/
-	priv->hw = NULL;
-	free(dpni);
 
 	memset(&link, 0, sizeof(link));
 	dpaa2_dev_atomic_write_link_status(dev, &link);
@@ -1258,6 +1253,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 {
+	struct rte_pci_device *pci_dev;
 	struct fsl_mc_io *dpni_dev;
 	struct dpni_attr attr;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
@@ -1268,7 +1264,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	hw_id = eth_dev->pci_dev->addr.devid;
+	/* For secondary processes, the primary has done all the work */
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
+	pci_dev = eth_dev->pci_dev;
+	hw_id = pci_dev->addr.devid;
+
+	rte_eth_copy_pci_info(eth_dev, pci_dev);
 
 	dpni_dev = (struct fsl_mc_io *)malloc(sizeof(struct fsl_mc_io));
 	if (!dpni_dev) {
@@ -1445,16 +1448,73 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+static int
+dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	int i, ret;
+	struct dpaa2_queue *dpaa2_q;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return -EPERM;
+
+	if (!dpni) {
+		PMD_INIT_LOG(WARNING, "Already closed or not started");
+		return -1;
+	}
+
+	dpaa2_dev_close(eth_dev);
+
+	if (priv->rx_vq[0]) {
+		/* cleaning up queue storage */
+		for (i = 0; i < priv->nb_rx_queues; i++) {
+			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
+			if (dpaa2_q->q_storage)
+				rte_free(dpaa2_q->q_storage);
+		}
+		/*free the all queue memory */
+		rte_free(priv->rx_vq[0]);
+		priv->rx_vq[0] = NULL;
+	}
+
+	/* Allocate memory for storing MAC addresses */
+	if (eth_dev->data->mac_addrs) {
+		rte_free(eth_dev->data->mac_addrs);
+		eth_dev->data->mac_addrs = NULL;
+	}
+
+	/*Close the device at underlying layer*/
+	ret = dpni_close(dpni, CMD_PRI_LOW, priv->token);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Failure closing dpni device with"
+			" error code %d\n", ret);
+	}
+
+	/*Free the allocated memory for ethernet private data and dpni*/
+	priv->hw = NULL;
+	free(dpni);
+
+	eth_dev->dev_ops = NULL;
+	eth_dev->rx_pkt_burst = NULL;
+	eth_dev->tx_pkt_burst = NULL;
+
+	return 0;
+}
+
 static struct rte_pci_id pci_id_dpaa2_map[] = {
 	{RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPNI_DEVID)},
 };
 
 static struct eth_driver rte_dpaa2_dpni = {
-	{
+	.pci_drv = {
 		.name = "rte_dpaa2_dpni",
 		.id_table = pci_id_dpaa2_map,
 	},
 	.eth_dev_init = dpaa2_dev_init,
+	.eth_dev_uninit = dpaa2_dev_uninit,
 	.dev_private_size = sizeof(struct dpaa2_dev_priv),
 };
 
