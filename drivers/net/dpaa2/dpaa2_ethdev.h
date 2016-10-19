@@ -38,5 +38,5 @@ uint16_t dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs,
 uint16_t dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs,
 			       uint16_t nb_pkts);
 uint16_t dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
-
+uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 #endif /* _DPAA2_ETHDEV_H */

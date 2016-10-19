@@ -58,6 +58,11 @@
 /* Name of the DPAA2 Net PMD */
 static const char *drivername = "DPNI PMD";
 
+static int dpaa2_dev_link_update(struct rte_eth_dev *dev,
+				      int wait_to_complete);
+static int dpaa2_dev_set_link_up(struct rte_eth_dev *dev);
+static int dpaa2_dev_set_link_down(struct rte_eth_dev *dev);
+
 /**
  * Atomically reads the link status information from global
  * structure rte_eth_dev.
@@ -578,6 +583,9 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		return ret;
 	}
 
+	/* Power up the phy. Needed to make the link go Up */
+	dpaa2_dev_set_link_up(dev);
+
 	ret = dpni_get_qdid(dpni, CMD_PRI_LOW, priv->token, &qdid);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error to get qdid:ErrorCode = %d\n", ret);
@@ -689,6 +697,8 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	struct rte_eth_link link;
 
 	PMD_INIT_FUNC_TRACE();
+
+	dpaa2_dev_set_link_down(dev);
 
 	ret = dpni_disable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
@@ -1030,54 +1040,6 @@ dpaa2_dev_timestamp_disable(struct rte_eth_dev *dev)
 	return ret;
 }
 
-/* return 0 means link status changed, -1 means not changed */
-static int
-dpaa2_dev_get_link_info(struct rte_eth_dev *dev,
-			int wait_to_complete __rte_unused)
-{
-	int ret;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	struct rte_eth_link link, old;
-	struct dpni_link_state state = {0};
-
-	PMD_INIT_FUNC_TRACE();
-
-	if (dpni == NULL) {
-		PMD_DRV_LOG(ERR, "error : dpni is NULL");
-		return 0;
-	}
-	memset(&old, 0, sizeof(old));
-	dpaa2_dev_atomic_read_link_status(dev, &old);
-
-	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
-	if (ret < 0) {
-		PMD_DRV_LOG(ERR, "error: dpni_get_link_state %d", ret);
-		return 0;
-	}
-
-	if (state.up == 0) {
-		dpaa2_dev_atomic_write_link_status(dev, &link);
-		if (state.up == old.link_status)
-			return -1;
-		return 0;
-	}
-	link.link_status = state.up;
-	link.link_speed = state.rate;
-
-	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
-		link.link_duplex = ETH_LINK_HALF_DUPLEX;
-	else
-		link.link_duplex = ETH_LINK_FULL_DUPLEX;
-
-	dpaa2_dev_atomic_write_link_status(dev, &link);
-
-	if (link.link_status == old.link_status)
-		return -1;
-
-	return 0;
-}
-
 static
 void dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats)
@@ -1209,6 +1171,159 @@ error:
 	return;
 };
 
+/* return 0 means link status changed, -1 means not changed */
+static int
+dpaa2_dev_link_update(struct rte_eth_dev *dev,
+			int wait_to_complete __rte_unused)
+{
+	int ret;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct rte_eth_link link, old;
+	struct dpni_link_state state = {0};
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (dpni == NULL) {
+		RTE_LOG(ERR, PMD, "error : dpni is NULL");
+		return 0;
+	}
+	memset(&old, 0, sizeof(old));
+	dpaa2_dev_atomic_read_link_status(dev, &old);
+
+	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
+	if (ret < 0) {
+		RTE_LOG(ERR, PMD, "error: dpni_get_link_state %d", ret);
+		return 0;
+	}
+
+	if ((old.link_status == state.up) && (old.link_speed == state.rate)) {
+		RTE_LOG(DEBUG, PMD, "No change in status\n");
+		return -1;
+	}
+
+	memset(&link, 0, sizeof(struct rte_eth_link));
+	link.link_status = state.up;
+	link.link_speed = state.rate;
+
+	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
+		link.link_duplex = ETH_LINK_HALF_DUPLEX;
+	else
+		link.link_duplex = ETH_LINK_FULL_DUPLEX;
+
+	dpaa2_dev_atomic_write_link_status(dev, &link);
+
+	if (link.link_status)
+		PMD_DRV_LOG(INFO, "Link is Up\n");
+	else
+		PMD_DRV_LOG(INFO, "Link is Down\n");
+	return 0;
+}
+
+/**
+ * Toggle the DPNI to enable, if not already enabled.
+ * This is not strictly PHY up/down - it is more of logical toggling.
+ */
+static int
+dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	int en = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = (struct fsl_mc_io *)priv->hw;
+
+	if (dpni == NULL) {
+		RTE_LOG(ERR, PMD, "dpni is NULL");
+		return ret;
+	}
+
+	/* Check if DPNI is currently enabled */
+	ret = dpni_is_enabled(dpni, CMD_PRI_LOW, priv->token, &en);
+	if (ret) {
+		/* Unable to obtain dpni status; Not continuing */
+		PMD_DRV_LOG(ERR, "Interface Link UP failed (%d)", ret);
+		return -EINVAL;
+	}
+
+	/* Enable link if not already enabled */
+	if (!en) {
+		ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
+		if (ret) {
+			PMD_DRV_LOG(ERR, "Interface Link UP failed (%d)", ret);
+			return -EINVAL;
+		}
+		/*changing tx burst function to start  enqueues */
+		dev->tx_pkt_burst = dpaa2_dev_tx;
+	}
+	dev->data->dev_link.link_status = 1;
+
+	PMD_INIT_LOG(INFO, "Link UP successful");
+	return ret;
+}
+
+/**
+ * Toggle the DPNI to disable, if not already disabled.
+ * This is not strictly PHY up/down - it is more of logical toggling.
+ */
+static int
+dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	int dpni_enabled = 0;
+	int retries = 10;
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = (struct fsl_mc_io *)priv->hw;
+
+	if (dpni == NULL) {
+		RTE_LOG(ERR, PMD, "dpni is NULL");
+		return ret;
+	}
+
+	/*changing  tx burst function to avoid any more enqueues */
+	dev->tx_pkt_burst = dummy_dev_tx;
+
+	/* Loop while dpni_disable() attempts to drain the egress FQs
+	 * and confirm them back to us.
+	 */
+	do {
+		ret = dpni_disable(dpni, 0, priv->token);
+		if (ret) {
+			PMD_DRV_LOG(ERR, "dpni disable failed (%d)", ret);
+			return ret;
+		}
+		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
+		if (ret) {
+			PMD_DRV_LOG(ERR, "dpni_is_enabled failed (%d)", ret);
+			return ret;
+		}
+		if (dpni_enabled)
+			/* Allow the MC some slack */
+			rte_delay_us(100 * 1000);
+	} while (dpni_enabled && --retries);
+
+	if (!retries) {
+		PMD_DRV_LOG(WARNING, "Retry count exceeded disabling DPNI\n");
+		/* todo- we may have to manually cleanup queues.
+		 */
+	} else {
+		PMD_INIT_LOG(INFO, "Link DOWN successful");
+	}
+
+	dev->data->dev_link.link_status = 0;
+
+	return ret;
+}
+
 static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_configure	      = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,
@@ -1218,9 +1333,9 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.promiscuous_disable  = dpaa2_dev_promiscuous_disable,
 	.allmulticast_enable  = dpaa2_dev_allmulticast_enable,
 	.allmulticast_disable = dpaa2_dev_allmulticast_disable,
-	.dev_set_link_up      = NULL,
-	.dev_set_link_down    = NULL,
-	.link_update	      = dpaa2_dev_get_link_info,
+	.dev_set_link_up      = dpaa2_dev_set_link_up,
+	.dev_set_link_down    = dpaa2_dev_set_link_down,
+	.link_update	      = dpaa2_dev_link_update,
 	.stats_get	      = dpaa2_dev_stats_get,
 	.stats_reset	      = dpaa2_dev_stats_reset,
 	.dev_infos_get	      = dpaa2_dev_info_get,
