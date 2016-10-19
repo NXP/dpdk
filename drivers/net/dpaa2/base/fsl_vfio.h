@@ -68,6 +68,16 @@ int vfio_dmamap_mem_region(
 	uint64_t iova,
 	uint64_t size);
 
+int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);
+int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index);
+
+int dpaa2_intr_mask(struct rte_intr_handle *intr_handle, int index);
+int dpaa2_intr_unmask(struct rte_intr_handle *intr_handle, int index);
+
+int dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
+		      int vfio_dev_fd,
+		      int num_irqs);
+
 /* initialize the NXP/FSL dpaa2 accelerators */
 int rte_eal_dpaa2_init(void);
 int rte_eal_dpaa2_dmamap(void);

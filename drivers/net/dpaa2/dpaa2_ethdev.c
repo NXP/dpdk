@@ -562,6 +562,98 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 	return NULL;
 }
 
+/*
+ * It executes link_update after knowing an interrupt is prsent.
+ *
+ * @param dev
+ *  Pointer to struct rte_eth_dev.
+ *
+ * @return
+ *  - On success, zero.
+ *  - On failure, a negative value.
+ */
+static int
+dpaa2_interrupt_action(struct rte_eth_dev *dev)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	int ret;
+	int irq_index = DPNI_IRQ_INDEX;
+	unsigned int status, clear = 0;
+
+	if (dpni == NULL) {
+		RTE_LOG(ERR, PMD, "dpni is NULL");
+		return -1;
+	}
+
+	ret = dpni_get_irq_status(dpni, CMD_PRI_LOW, priv->token,
+				  irq_index, &status);
+	if (unlikely(ret)) {
+		RTE_LOG(ERR, PMD, "Can't get irq status (err %d)", ret);
+		clear = 0xffffffff;
+		goto out;
+	}
+
+	if (status & DPNI_IRQ_EVENT_LINK_CHANGED) {
+		clear = DPNI_IRQ_EVENT_LINK_CHANGED;
+		dpaa2_dev_link_update(dev, 0);
+		/* calling all the applications registered for link status event */
+		_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
+	}
+
+out:
+	dpni_clear_irq_status(dpni, CMD_PRI_LOW, priv->token, irq_index, clear);
+	return 0;
+}
+
+/**
+ * Interrupt handler which shall be registered at first.
+ *
+ * @param handle
+ *  Pointer to interrupt handle.
+ * @param param
+ *  The address of parameter (struct rte_eth_dev *) regsitered before.
+ *
+ * @return
+ *  void
+ */
+static void
+dpaa2_interrupt_handler(__rte_unused struct rte_intr_handle *handle,
+			void *param)
+{
+	PMD_INIT_FUNC_TRACE();
+
+	dpaa2_interrupt_action((struct rte_eth_dev *)param);
+}
+
+static int 
+dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
+{
+	int err = 0;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	int irq_index = DPNI_IRQ_INDEX;
+	unsigned int mask = DPNI_IRQ_EVENT_LINK_CHANGED;
+
+	PMD_INIT_FUNC_TRACE();
+
+	err = dpni_set_irq_mask(dpni, CMD_PRI_LOW, priv->token,
+				irq_index, mask);
+	if (err < 0) {
+		PMD_INIT_LOG(ERR, "Error: dpni_set_irq_mask():%d (%s)", err,
+					strerror(-err));
+		return err;
+	}
+
+	err = dpni_set_irq_enable(dpni, CMD_PRI_LOW, priv->token,
+				  irq_index, enable);
+	if (err < 0)
+		PMD_INIT_LOG(ERR, "Error: dpni_set_irq_enable():%d (%s)", err,
+					strerror(-err));
+
+	return err;
+}
+
 static int
 dpaa2_dev_start(struct rte_eth_dev *dev)
 {
@@ -573,6 +665,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	uint16_t qdid;
 	struct dpaa2_queue *dpaa2_q;
 	int ret, i, mask = 0;
+	struct rte_intr_handle *intr_handle = &dev->pci_dev->intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -679,6 +772,22 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	if (mask)
 		dpaa2_vlan_offload_set(dev, mask);
 
+	/* if the interrupts were configured on this devices*/
+	if (intr_handle->fd && priv->hw_id != 6) {
+		/* Registering LSC interrupt handler */
+		rte_intr_callback_register(intr_handle,
+					   dpaa2_interrupt_handler,
+					   (void *)dev);
+
+		/* enable vfio intr/eventfd mapping */
+		dpaa2_intr_enable(intr_handle, 0);
+
+		/* check if lsc interrupt is enabled */
+		if (dev->data->dev_conf.intr_conf.lsc != 0)
+			/*enable dpni_irqs */
+			dpaa2_eth_setup_irqs(dev, 1);
+	}
+
 	return 0;
 }
 
@@ -695,8 +804,19 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	int ret;
 	struct rte_eth_link link;
+	struct rte_intr_handle *intr_handle = &dev->pci_dev->intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
+
+	/*disable dpni irqs */
+	dpaa2_eth_setup_irqs(dev, 0);
+
+	/* disable vfio intr before callback unregister */
+	dpaa2_intr_disable(intr_handle, 0);
+
+	/* Unregistering LSC interrupt handler */
+	rte_intr_callback_unregister(intr_handle,
+				     dpaa2_interrupt_handler, (void *)dev);
 
 	dpaa2_dev_set_link_down(dev);
 
@@ -1627,6 +1747,7 @@ static struct eth_driver rte_dpaa2_dpni = {
 	.pci_drv = {
 		.name = "rte_dpaa2_dpni",
 		.id_table = pci_id_dpaa2_map,
+		.drv_flags = RTE_PCI_DRV_INTR_LSC,
 	},
 	.eth_dev_init = dpaa2_dev_init,
 	.eth_dev_uninit = dpaa2_dev_uninit,
