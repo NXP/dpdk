@@ -70,6 +70,9 @@
 #define VFIO_MAX_GROUPS 64
 #endif
 
+#define FSL_VFIO_LOG(level, fmt, args...) \
+	RTE_LOG(level, EAL, "%s(): " fmt "\n", __func__, ##args)
+
 /** Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES "/sys/bus/fsl-mc/devices"
 
@@ -92,7 +95,7 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 		container = &vfio_containers[i];
 		if (!ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER,
 			   &container->fd)) {
-			PMD_DRV_LOG(DEBUG, " Container pre-exists with"
+			FSL_VFIO_LOG(INFO, " Container pre-exists with"
 				    " FD[0x%x] for this group",
 				    container->fd);
 			vfio_group->container = container;
@@ -103,7 +106,7 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 	/* Opens main vfio file descriptor which represents the "container" */
 	fd = vfio_get_container_fd();
 	if (fd < 0) {
-		PMD_DRV_LOG(ERR, " Failed to open VFIO container");
+		FSL_VFIO_LOG(ERR, " Failed to open VFIO container");
 		return -errno;
 	}
 
@@ -112,19 +115,19 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 		/* Connect group to container */
 		ret = ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER, &fd);
 		if (ret) {
-			PMD_DRV_LOG(ERR, " Failed to setup group container");
+			FSL_VFIO_LOG(ERR, " Failed to setup group container");
 			close(fd);
 			return -errno;
 		}
 
 		ret = ioctl(fd, VFIO_SET_IOMMU, VFIO_TYPE1_IOMMU);
 		if (ret) {
-			PMD_DRV_LOG(ERR, " Failed to setup VFIO iommu");
+			FSL_VFIO_LOG(ERR, " Failed to setup VFIO iommu");
 			close(fd);
 			return -errno;
 		}
 	} else {
-		PMD_DRV_LOG(ERR, " No supported IOMMU available");
+		FSL_VFIO_LOG(ERR, " No supported IOMMU available");
 		close(fd);
 		return -EINVAL;
 	}
@@ -133,11 +136,11 @@ static int vfio_connect_container(struct fsl_vfio_group *vfio_group)
 	for (i = 0; i < VFIO_MAX_CONTAINERS; i++) {
 		if (vfio_containers[i].used)
 			continue;
-		PMD_DRV_LOG(DEBUG, " Unused container at index %d", i);
+		FSL_VFIO_LOG(DEBUG, " Unused container at index %d", i);
 		container = &vfio_containers[i];
 	}
 	if (!container) {
-		PMD_DRV_LOG(ERR, " No free container found");
+		FSL_VFIO_LOG(ERR, " No free container found");
 		close(fd);
 		return -ENOMEM;
 	}
@@ -165,8 +168,7 @@ static int vfio_map_irq_region(struct fsl_vfio_group *group)
 	vaddr = (unsigned long *)mmap(NULL, 0x1000, PROT_WRITE |
 		PROT_READ, MAP_SHARED, container_device_fd, 0x6030000);
 	if (vaddr == MAP_FAILED) {
-		PMD_DRV_LOG(ERR, " Unable to map region (errno = %d)",
-			    errno);
+		FSL_VFIO_LOG(ERR, " Unable to map region (errno = %d)", errno);
 		return -errno;
 	}
 
@@ -176,7 +178,7 @@ static int vfio_map_irq_region(struct fsl_vfio_group *group)
 	if (ret == 0)
 		return 0;
 
-	PMD_DRV_LOG(ERR, " vfio_map_irq_region fails (errno = %d)", errno);
+	FSL_VFIO_LOG(ERR, " vfio_map_irq_region fails (errno = %d)", errno);
 	return -errno;
 }
 
@@ -197,8 +199,7 @@ int vfio_dmamap_mem_region(uint64_t vaddr,
 	/* SET DMA MAP for IOMMU */
 	group = &vfio_groups[0];
 	if (ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map)) {
-		PMD_DRV_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API Error %d",
-				    errno);
+		FSL_VFIO_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API Error %d", errno);
 		return -1;
 	}
 	return 0;
@@ -219,13 +220,12 @@ static int setup_dmamap(void)
 	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
 		memseg = rte_eal_get_physmem_layout();
 		if (memseg == NULL) {
-			PMD_DRV_LOG(ERR, " Error Cannot get physical layout.");
+			FSL_VFIO_LOG(ERR, " Error Cannot get physical layout.");
 			return -ENODEV;
 		}
 
-		if (memseg[i].addr == NULL && memseg[i].len == 0) {
+		if (memseg[i].addr == NULL && memseg[i].len == 0)
 			break;
-		}
 
 		dma_map.size = memseg[i].len;
 		dma_map.vaddr = memseg[i].addr_64;
@@ -239,23 +239,22 @@ static int setup_dmamap(void)
 		group = &vfio_groups[0];
 
 		if (!group->container) {
-			PMD_DRV_LOG(ERR, " Container is not connected yet.");
+			FSL_VFIO_LOG(ERR, " Container is not connected yet.");
 			return -1;
 		}
 
-		PMD_DRV_LOG(DEBUG, "-->Initial SHM Virtual ADDR %llX",
-			    dma_map.vaddr);
-		PMD_DRV_LOG(DEBUG, "-----> DMA size 0x%llX\n", dma_map.size);
+		FSL_VFIO_LOG(DEBUG, "-->Initial SHM Virtual ADDR %llX",
+			     dma_map.vaddr);
+		FSL_VFIO_LOG(DEBUG, "-----> DMA size 0x%llX\n", dma_map.size);
 		ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA,
 			    &dma_map);
 		if (ret) {
-			PMD_DRV_LOG(ERR,
-				    " VFIO_IOMMU_MAP_DMA API Error %d",
-				    errno);
+			FSL_VFIO_LOG(ERR, " VFIO_IOMMU_MAP_DMA API Error %d",
+				     errno);
 			return ret;
 		}
-		PMD_DRV_LOG(DEBUG, "-----> dma_map.vaddr = 0x%llX",
-			    dma_map.vaddr);
+		FSL_VFIO_LOG(DEBUG, "-----> dma_map.vaddr = 0x%llX",
+			     dma_map.vaddr);
 	}
 
 	/* TODO - This is a W.A. as VFIO currently does not add the mapping of
@@ -285,18 +284,17 @@ static int dpaa2_setup_vfio_grp(void)
 	container = getenv("DPRC");
 
 	if (container == NULL) {
-		PMD_DRV_LOG(ERR, " VFIO container not set in env DPRC");
+		FSL_VFIO_LOG(ERR, " VFIO container not set in env DPRC");
 		return -1;
 	}
-	PMD_DRV_LOG(DEBUG, " Processing Container = %s", container);
+	RTE_LOG(INFO, PMD, "DPAA2: Processing Container = %s\n", container);
 	snprintf(path, sizeof(path), "%s/%s", SYSFS_FSL_MC_DEVICES, container);
 
 	/* Check whether fsl-mc container exists or not */
-	PMD_DRV_LOG(DEBUG, " container device path = %s", path);
+	FSL_VFIO_LOG(DEBUG, " container device path = %s", path);
 	if (stat(path, &st) < 0) {
-		PMD_DRV_LOG(ERR,
-			    "vfio: Error (%d) getting FSL-MC device (%s)",
-			    errno,  path);
+		FSL_VFIO_LOG(ERR, "vfio: Error (%d) getting FSL-MC device (%s)",
+			     errno,  path);
 		return -errno;
 	}
 
@@ -305,27 +303,27 @@ static int dpaa2_setup_vfio_grp(void)
 
 	len = readlink(path, iommu_group_path, PATH_MAX);
 	if (len == -1) {
-		PMD_DRV_LOG(ERR, " vfio: error no iommu_group for device");
-		PMD_DRV_LOG(ERR, "   %s: len = %d, errno = %d",
-			    path, len, errno);
+		FSL_VFIO_LOG(ERR, " vfio: error no iommu_group for device");
+		FSL_VFIO_LOG(ERR, "   %s: len = %d, errno = %d",
+			     path, len, errno);
 		return -errno;
 	}
 
 	iommu_group_path[len] = 0;
 	group_name = basename(iommu_group_path);
 	if (sscanf(group_name, "%d", &groupid) != 1) {
-		PMD_DRV_LOG(ERR, " VFIO error reading %s", path);
+		FSL_VFIO_LOG(ERR, " VFIO error reading %s", path);
 		return -errno;
 	}
 
-	PMD_DRV_LOG(DEBUG, " VFIO iommu group id = %d", groupid);
+	FSL_VFIO_LOG(DEBUG, " VFIO iommu group id = %d", groupid);
 
 	/* Check if group already exists */
 	for (i = 0; i < VFIO_MAX_GRP; i++) {
 		group = &vfio_groups[i];
 		if (group->groupid == groupid) {
-			PMD_DRV_LOG(ERR, " groupid already exists %d",
-				    groupid);
+			FSL_VFIO_LOG(ERR, " groupid already exists %d",
+				     groupid);
 			return 0;
 		}
 	}
@@ -335,18 +333,18 @@ static int dpaa2_setup_vfio_grp(void)
 
 	group->fd = open(path, O_RDWR);
 	if (group->fd < 0) {
-		PMD_DRV_LOG(ERR, " VFIO error opening %s", path);
+		FSL_VFIO_LOG(ERR, " VFIO error opening %s", path);
 		return -1;
 	}
 
 	/* Test & Verify that group is VIABLE & AVAILABLE */
 	if (ioctl(group->fd, VFIO_GROUP_GET_STATUS, &status)) {
-		PMD_DRV_LOG(ERR, " VFIO error getting group status");
+		FSL_VFIO_LOG(ERR, " VFIO error getting group status");
 		close(group->fd);
 		return -1;
 	}
 	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
-		PMD_DRV_LOG(ERR, " VFIO group not viable");
+		FSL_VFIO_LOG(ERR, " VFIO group not viable");
 		close(group->fd);
 		return -1;
 	}
@@ -357,8 +355,7 @@ static int dpaa2_setup_vfio_grp(void)
 	if (!(status.flags & VFIO_GROUP_FLAGS_CONTAINER_SET)) {
 		/* Now connect this IOMMU group to given container */
 		if (vfio_connect_container(group)) {
-			PMD_DRV_LOG(ERR,
-				    " VFIO error connecting container with"
+			FSL_VFIO_LOG(ERR, "VFIO error connecting container with"
 				    " groupid %d", groupid);
 			close(group->fd);
 			return -1;
@@ -368,13 +365,13 @@ static int dpaa2_setup_vfio_grp(void)
 	/* Get Device information */
 	ret = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, container);
 	if (ret < 0) {
-		PMD_DRV_LOG(ERR, " VFIO error getting device %s fd from group"
+		FSL_VFIO_LOG(ERR, " VFIO error getting device %s fd from group"
 			    " %d", container, group->groupid);
 		return ret;
 	}
 	container_device_fd = ret;
-	PMD_DRV_LOG(DEBUG, " VFIO Container FD is [0x%X]",
-		    container_device_fd);
+	FSL_VFIO_LOG(DEBUG, " VFIO Container FD is [0x%X]",
+		     container_device_fd);
 
 	return 0;
 }
@@ -390,7 +387,7 @@ static int64_t vfio_map_mcp_obj(struct fsl_vfio_group *group, char *mcp_obj)
 	/* getting the mcp object's fd*/
 	mc_fd = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, mcp_obj);
 	if (mc_fd < 0) {
-		PMD_DRV_LOG(ERR, " VFIO error getting device %s fd from group"
+		FSL_VFIO_LOG(ERR, " VFIO error getting device %s fd from group"
 			    " %d", mcp_obj, group->fd);
 		return v_addr;
 	}
@@ -398,19 +395,19 @@ static int64_t vfio_map_mcp_obj(struct fsl_vfio_group *group, char *mcp_obj)
 	/* getting device info*/
 	ret = ioctl(mc_fd, VFIO_DEVICE_GET_INFO, &d_info);
 	if (ret < 0) {
-		PMD_DRV_LOG(ERR, "VFIO error getting DEVICE_INFO");
+		FSL_VFIO_LOG(ERR, "VFIO error getting DEVICE_INFO");
 		goto MC_FAILURE;
 	}
 
 	/* getting device region info*/
 	ret = ioctl(mc_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info);
 	if (ret < 0) {
-		PMD_DRV_LOG(ERR, " VFIO error getting REGION_INFO");
+		FSL_VFIO_LOG(ERR, " VFIO error getting REGION_INFO");
 		goto MC_FAILURE;
 	}
 
-	PMD_DRV_LOG(DEBUG, " region offset = %llx  , region size = %llx",
-		    reg_info.offset, reg_info.size);
+	FSL_VFIO_LOG(DEBUG, " region offset = %llx  , region size = %llx",
+		     reg_info.offset, reg_info.size);
 
 	v_addr = (uint64_t)mmap(NULL, reg_info.size,
 		PROT_WRITE | PROT_READ, MAP_SHARED,
@@ -437,12 +434,13 @@ static int vfio_process_group_devices(void)
 	char path[PATH_MAX];
 	int64_t v_addr;
 	int ndev_count;
+	int dpio_count = 0, dpbp_count = 0;
 	struct fsl_vfio_group *group = &vfio_groups[0];
 	static int process_once;
 
 	/* if already done once */
 	if (process_once) {
-		PMD_DRV_LOG(DEBUG, "\n %s - Already scanned once - re-scan "
+		FSL_VFIO_LOG(DEBUG, "\n %s - Already scanned once - re-scan "
 			    "not supported", __func__);
 		return 0;
 	}
@@ -452,7 +450,7 @@ static int vfio_process_group_devices(void)
 
 	d = opendir(path);
 	if (!d) {
-		PMD_DRV_LOG(ERR, "Unable to open directory %s", path);
+		FSL_VFIO_LOG(ERR, "Unable to open directory %s", path);
 		return -1;
 	}
 
@@ -467,7 +465,7 @@ static int vfio_process_group_devices(void)
 					free(mcp_obj);
 				mcp_obj = malloc(sizeof(dir->d_name));
 				if (!mcp_obj) {
-					PMD_DRV_LOG(ERR, "Unable to allocate memory");
+					FSL_VFIO_LOG(ERR, "Unable to allocate memory");
 					return -ENOMEM;
 				}
 				strcpy(mcp_obj, dir->d_name);
@@ -480,17 +478,17 @@ static int vfio_process_group_devices(void)
 	closedir(d);
 
 	if (!mcp_obj) {
-		PMD_DRV_LOG(ERR, "DPAA2 MCP Object not Found");
+		FSL_VFIO_LOG(ERR, "DPAA2 MCP Object not Found");
 		return -ENODEV;
 	}
-	PMD_DRV_LOG(DEBUG, "Total devices in container = %d, MCP ID = %d",
-		    ndev_count, mcp_id);
+	RTE_LOG(INFO, PMD, "Total devices in container = %d, MCP ID = %d\n",
+		     ndev_count, mcp_id);
 
 	/* Allocate the memory depends upon number of objects in a group*/
 	group->vfio_device = (struct fsl_vfio_device *)malloc(ndev_count *
 			     sizeof(struct fsl_vfio_device));
 	if (!(group->vfio_device)) {
-		PMD_DRV_LOG(ERR, " Unable to allocate memory");
+		FSL_VFIO_LOG(ERR, " Unable to allocate memory\n");
 		free(mcp_obj);
 		return -ENOMEM;
 	}
@@ -498,7 +496,7 @@ static int vfio_process_group_devices(void)
 	/* Allocate memory for MC Portal list */
 	mcp_ptr_list = malloc(sizeof(void *) * 1);
 	if (!mcp_ptr_list) {
-		PMD_DRV_LOG(ERR, " Unable to allocate memory!");
+		FSL_VFIO_LOG(ERR, " Unable to allocate memory!");
 		free(mcp_obj);
 		goto FAILURE;
 	}
@@ -506,44 +504,44 @@ static int vfio_process_group_devices(void)
 	v_addr = vfio_map_mcp_obj(group, mcp_obj);
 	free(mcp_obj);
 	if (v_addr == (int64_t)MAP_FAILED) {
-		PMD_DRV_LOG(ERR, " Error mapping region (err = %d)", errno);
+		FSL_VFIO_LOG(ERR, " Error mapping region (err = %d)", errno);
 		goto FAILURE;
 	}
 
-	PMD_DRV_LOG(DEBUG, " DPAA2 MC has VIR_ADD = 0x%ld", v_addr);
+	FSL_VFIO_LOG(DEBUG, " DPAA2 MC has VIR_ADD = 0x%ld", v_addr);
 
 	mcp_ptr_list[0] = (void *)v_addr;
 
 	d = opendir(path);
 	if (!d) {
-		PMD_DRV_LOG(ERR, " Unable to open %s Directory", path);
+		FSL_VFIO_LOG(ERR, " Unable to open %s Directory", path);
 		goto FAILURE;
 	}
 
 	i = 0;
-	PMD_DRV_LOG(DEBUG, "\nDPAA2 - Parsing devices:");
+	FSL_VFIO_LOG(DEBUG, "DPAA2 - Parsing devices:");
 	/* Parsing each object and initiating them*/
 	while ((dir = readdir(d)) != NULL) {
 		if (dir->d_type != DT_LNK)
 			continue;
-		if (!strncmp("dprc", dir->d_name, 4)
-			|| !strncmp("dpmcp", dir->d_name, 5))
+		if (!strncmp("dprc", dir->d_name, 4) ||
+		    !strncmp("dpmcp", dir->d_name, 5))
 			continue;
 		dev_name = malloc(sizeof(dir->d_name));
 		if (!dev_name) {
-			PMD_DRV_LOG(ERR, " Unable to allocate memory");
+			FSL_VFIO_LOG(ERR, " Unable to allocate memory");
 			goto FAILURE;
 		}
 		strcpy(dev_name, dir->d_name);
 		object_type = strtok(dir->d_name, ".");
 		temp_obj = strtok(NULL, ".");
 		sscanf(temp_obj, "%d", &object_id);
-		PMD_DRV_LOG(DEBUG, " - %s ", dev_name);
+		FSL_VFIO_LOG(DEBUG, " - %s ", dev_name);
 
 		/* getting the device fd*/
 		dev_fd = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, dev_name);
 		if (dev_fd < 0) {
-			PMD_DRV_LOG(ERR, " VFIO_GROUP_GET_DEVICE_FD error"
+			FSL_VFIO_LOG(ERR, " VFIO_GROUP_GET_DEVICE_FD error"
 				    " Device fd: %s, Group: %d",
 				    dev_name, group->fd);
 			free(dev_name);
@@ -557,8 +555,7 @@ static int vfio_process_group_devices(void)
 		i++;
 		/* Get Device inofrmation */
 		if (ioctl(vdev->fd, VFIO_DEVICE_GET_INFO, &device_info)) {
-			PMD_DRV_LOG(ERR,
-				    " VFIO_DEVICE_FSL_MC_GET_INFO failed");
+			FSL_VFIO_LOG(ERR, "VFIO_DEVICE_FSL_MC_GET_INFO failed");
 			goto FAILURE;
 		}
 
@@ -567,9 +564,9 @@ static int vfio_process_group_devices(void)
 			struct rte_pci_device *dev;
 
 			dev = malloc(sizeof(struct rte_pci_device));
-			if (dev == NULL) {
+			if (dev == NULL)
 				return -1;
-			}
+
 			memset(dev, 0, sizeof(*dev));
 			/* store hw_id of dpni/dpseci device */
 			dev->addr.devid = object_id;
@@ -578,27 +575,35 @@ static int vfio_process_group_devices(void)
 					FSL_MC_DPNI_DEVID : FSL_MC_DPSECI_DEVID;
 			dev->addr.function = dev->id.device_id;
 
+			RTE_LOG(INFO, PMD, "DPAA2: Added [%s-%d]\n",
+				object_type, object_id);
+
 			TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 		}
 
 		if (!strcmp(object_type, "dpio")) {
-			dpaa2_create_dpio_device(vdev, &device_info,
-						 object_id);
+			ret = dpaa2_create_dpio_device(vdev,
+						       &device_info, object_id);
+			if (!ret)
+				dpio_count++;
 		}
 
 		if (!strcmp(object_type, "dpbp")) {
-			dpaa2_create_dpbp_device(object_id);
+			ret = dpaa2_create_dpbp_device(object_id);
+			if (!ret)
+				dpbp_count++;
 		}
 	}
 	closedir(d);
 
 	ret = dpaa2_affine_qbman_swp();
 	if (ret) {
-		PMD_DRV_LOG(DEBUG, "(%s): Error in affining qbman swp",
-			    __func__);
-		PMD_DRV_LOG(ERR, " DPAA2: Unable to initialize HW");
+		FSL_VFIO_LOG(DEBUG, "Error in affining qbman swp %d", ret);
+		FSL_VFIO_LOG(ERR, " DPAA2: Unable to initialize HW");
 	}
 
+	RTE_LOG(INFO, PMD, "DPAA2: Added dpbp_count = %d dpio_count=%d\n",
+		     dpbp_count, dpio_count);
 	return 0;
 
 FAILURE:
@@ -613,16 +618,16 @@ rte_eal_dpaa2_init(void)
 {
 #ifdef VFIO_PRESENT
 	if (dpaa2_setup_vfio_grp()) {
-		PMD_DRV_LOG(DEBUG, "dpaa2_setup_vfio_grp");
-		PMD_DRV_LOG(ERR, "DPAA2: Unable to setup VFIO");
+		FSL_VFIO_LOG(DEBUG, "dpaa2_setup_vfio_grp");
+		FSL_VFIO_LOG(ERR, "DPAA2: Unable to setup VFIO");
 		return -1;
 	}
 	if (vfio_process_group_devices()) {
-		PMD_DRV_LOG(DEBUG, "vfio_process_group_devices");
-		PMD_DRV_LOG(ERR, "DPAA2: Unable to setup devices");
+		FSL_VFIO_LOG(DEBUG, "vfio_process_group_devices");
+		FSL_VFIO_LOG(ERR, "DPAA2: Unable to setup devices");
 		return -1;
 	}
-	PMD_DRV_LOG(INFO, "DPAA2: Device setup completed");
+	RTE_LOG(INFO, PMD, "DPAA2: Device setup completed\n");
 #endif
 	return 0;
 }
@@ -636,13 +641,13 @@ rte_eal_dpaa2_dmamap(void)
 	if (!is_dma_done) {
 		ret = setup_dmamap();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "DPAA2: Unable to DMA Map devices");
+			RTE_LOG(ERR, PMD, "DPAA2: Unable to DMA Map devices");
 			return ret;
 		}
 		is_dma_done = 1;
-		PMD_DRV_LOG(INFO, "DPAA2: Devices DMA mapped successfully");
-	} else
-		PMD_DRV_LOG(INFO, "DPAA2: Devices Already DMA mapped");
-
+		RTE_LOG(INFO, PMD, "DPAA2: Devices DMA mapped successfully\n");
+	} else {
+		RTE_LOG(INFO, PMD, "DPAA2: Devices Already DMA mapped\n\n");
+	}
 	return ret;
 }

@@ -81,7 +81,7 @@ dpaa2_create_dpbp_device(
 	/* Allocate DPAA2 dpbp handle */
 	dpbp_node = (struct dpbp_node *)malloc(sizeof(struct dpbp_node));
 	if (!dpbp_node) {
-		PMD_DRV_LOG(ERR, "Memory allocation failed for DPBP Device");
+		PMD_INIT_LOG(ERR, "Memory allocation failed for DPBP Device");
 		return -1;
 	}
 
@@ -90,8 +90,8 @@ dpaa2_create_dpbp_device(
 	ret = dpbp_open(&dpbp_node->dpbp,
 			CMD_PRI_LOW, dpbp_id, &dpbp_node->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Resource alloc failure with err code: %d",
-			    ret);
+		PMD_INIT_LOG(ERR, "Resource alloc failure with err code: %d",
+			     ret);
 		free(dpbp_node);
 		return -1;
 	}
@@ -99,8 +99,8 @@ dpaa2_create_dpbp_device(
 	/* Clean the device first */
 	ret = dpbp_reset(&dpbp_node->dpbp, CMD_PRI_LOW, dpbp_node->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Failure cleaning dpbp device with"
-			"error code %d\n", ret);
+		PMD_INIT_LOG(ERR, "Failure cleaning dpbp device with"
+					" error code %d\n", ret);
 		return -1;
 	}
 
@@ -110,7 +110,7 @@ dpaa2_create_dpbp_device(
 	g_dpbp_list = dpbp_node;
 	avail_dpbp = g_dpbp_list;
 
-	PMD_DRV_LOG(INFO, "Buffer resource initialized");
+	PMD_INIT_LOG(DEBUG, "Buffer pool resource initialized %d", dpbp_id);
 
 	return 0;
 }
@@ -130,16 +130,16 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 
 	ret = dpbp_enable(&avail_dpbp->dpbp, CMD_PRI_LOW, avail_dpbp->token);
 	if (ret != 0) {
-		PMD_DRV_LOG(ERR, "Resource enable failure with"
-			"err code: %d\n", ret);
+		PMD_INIT_LOG(ERR, "Resource enable failure with"
+			" err code: %d\n", ret);
 		return -1;
 	}
 
 	ret = dpbp_get_attributes(&avail_dpbp->dpbp, CMD_PRI_LOW,
 				  avail_dpbp->token, &dpbp_attr);
 	if (ret != 0) {
-		PMD_DRV_LOG(ERR, "Resource read failure with"
-			"err code: %d\n", ret);
+		PMD_INIT_LOG(ERR, "Resource read failure with"
+			     " err code: %d\n", ret);
 		ret = dpbp_disable(&avail_dpbp->dpbp, CMD_PRI_LOW,
 				   avail_dpbp->token);
 		return -1;
@@ -148,7 +148,7 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 	/* Allocate the bp_list which will be added into global_bp_list */
 	bp_list = (struct dpaa2_bp_list *)malloc(sizeof(struct dpaa2_bp_list));
 	if (!bp_list) {
-		PMD_DRV_LOG(ERR, "No heap memory available");
+		PMD_INIT_LOG(ERR, "No heap memory available");
 		return -1;
 	}
 
@@ -174,7 +174,7 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 
 	mp->pool_data = (void *)&bpid_info[bpid];
 
-	PMD_DRV_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
+	PMD_INIT_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
 	/* Identification for our offloaded pool_data structure
@@ -201,16 +201,14 @@ hw_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
 		/* TODO: Should be changed to rte_free */
 		free(bp);
 	}
-
-	return;
 }
 
 static
 void dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
-			    void * const *obj_table,
-			    uint32_t bpid,
-			    uint32_t meta_data_size,
-			    int count)
+			void * const *obj_table,
+			uint32_t bpid,
+			uint32_t meta_data_size,
+			int count)
 {
 	struct qbman_release_desc releasedesc;
 	struct qbman_swp *swp;
@@ -279,7 +277,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	bp_info = mempool_to_bpinfo(pool);
 
 	if (!(bp_info->bp_list)) {
-		printf("\nDPAA2 buffer pool not configured\n");
+		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured\n");
 		return -2;
 	}
 
@@ -288,7 +286,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (!thread_io_info.dpio_dev) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
-			PMD_DRV_LOG(ERR, "Failed to allocate IO portal");
+			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
 			return -1;
 		}
 	}
@@ -311,8 +309,8 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			PMD_DRV_LOG(ERR, "Buffer acquire failed with"
-				    "err code: %d", ret);
+			PMD_TX_LOG(ERR, "Buffer acquire failed with"
+				   " err code: %d", ret);
 			/* The API expect the exact number of requested buffers */
 			/* Releasing all buffers allocated */
 			dpaa2_mbuf_release(pool, obj_table, bpid,
@@ -326,29 +324,29 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 			DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
 			obj_table[n] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
 			rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[n], 0);
-			PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
-				    (void *)bufs[i], (void *)obj_table[n]);
+			PMD_TX_LOG(DEBUG, "Acquired %p address %p from BMAN",
+				   (void *)bufs[i], (void *)obj_table[n]);
 			n++;
 		}
 	}
 
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	alloc += n;
-	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d",
-		    alloc, count, n);
+	PMD_TX_LOG(DEBUG, "Total = %d , req = %d done = %d",
+		   alloc, count, n);
 #endif
 	return 0;
 }
 
 static int
-hw_mbuf_free_bulk(struct rte_mempool *pool, void * const *obj_table,
-		      unsigned n)
+hw_mbuf_free_bulk(struct rte_mempool *pool,
+		  void * const *obj_table, unsigned n)
 {
 	struct dpaa2_bp_info *bp_info;
 
 	bp_info = mempool_to_bpinfo(pool);
 	if (!(bp_info->bp_list)) {
-		PMD_DRV_LOG(ERR, "DPAA2 buffer pool not configured");
+		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured");
 		return -1;
 	}
 	dpaa2_mbuf_release(pool, obj_table, bp_info->bpid,
@@ -368,7 +366,7 @@ static int
 hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 {
 	if (!avail_dpbp) {
-		PMD_DRV_LOG(WARNING, "DPAA2 mempool resources not available\n");
+		PMD_INIT_LOG(WARNING, "DPAA2 mempool resource not available\n");
 		return -1;
 	}
 	return 0;

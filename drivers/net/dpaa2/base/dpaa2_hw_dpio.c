@@ -87,8 +87,19 @@ static int dpaa2_soc_family  = NXP_LS2088;
 static int dpaa2_core_cluster_base = 0x04;
 static int dpaa2_cluster_sz = 2;
 
+/* For LS208X platform There are four clusters with following mapping:
+ * Cluster 1 (ID = x04) : CPU0, CPU1;
+ * Cluster 2 (ID = x05) : CPU2, CPU3;
+ * Cluster 3 (ID = x06) : CPU4, CPU5;
+ * Cluster 4 (ID = x07) : CPU6, CPU7;
+ */
+/* For LS108X platform There are two clusters with following mapping:
+ * Cluster 1 (ID = x02) : CPU0, CPU1, CPU2, CPU3;
+ * Cluster 2 (ID = x03) : CPU4, CPU5, CPU6, CPU7;
+ */
+
 /* Set the STASH Destination depending on Current CPU ID.
-   Valid values of SDEST are 4,5,6,7. Where,
+   e.g. Valid values of SDEST are 4,5,6,7. Where,
    CPU 0-1 will have SDEST 4
    CPU 2-3 will have SDEST 5.....and so on.
 */
@@ -123,15 +134,16 @@ static int cpuinfo_arm(FILE *file)
 	dpaa2_soc_core = part;
 	if (part == ARM_CORTEX_A53) {
 		dpaa2_soc_family = NXP_LS1088;
-		printf("Detected NXP LS108x with %s\n",
+		printf("\n########## Detected NXP LS108x with %s\n",
 		       ARM_CORTEX_A53_INFO);
 	} else if (part == ARM_CORTEX_A57) {
 		dpaa2_soc_family = NXP_LS2085;
-		printf("Detected NXP LS208x Rev1.0 with %s\n",
+		printf("\n########## Detected NXP LS208x Rev1.0 with %s\n",
 		       ARM_CORTEX_A57_INFO);
 	} else if (part == ARM_CORTEX_A72) {
 		dpaa2_soc_family = NXP_LS2088;
-		printf("Detected NXP LS208x with %s\n", ARM_CORTEX_A72_INFO);
+		printf("\n########## Detected NXP LS208x with %s\n",
+		       ARM_CORTEX_A72_INFO);
 	}
 	return 0;
 }
@@ -143,7 +155,7 @@ check_cpu_part(void)
 
 	stream = fopen("/proc/cpuinfo", "r");
 	if (!stream) {
-		PMD_DRV_LOG(WARNING, "Unable to open /proc/cpuinfo\n");
+		PMD_INIT_LOG(WARNING, "Unable to open /proc/cpuinfo\n");
 		return;
 	}
 	cpuinfo_arm(stream);
@@ -159,28 +171,28 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 
 	dpio_dev->dpio = malloc(sizeof(struct fsl_mc_io));
 	if (!dpio_dev->dpio) {
-		PMD_DRV_LOG(ERR, "Memory allocation failure\n");
+		PMD_INIT_LOG(ERR, "Memory allocation failure\n");
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "\t Alocated  DPIO[%p]", dpio_dev->dpio);
+	PMD_DRV_LOG(DEBUG, "\t Allocated  DPIO Portal[%p]", dpio_dev->dpio);
 	dpio_dev->dpio->regs = dpio_dev->mc_portal;
 	if (dpio_open(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->hw_id,
 		      &dpio_dev->token)) {
-		PMD_DRV_LOG(ERR, "Failed to allocate IO space\n");
+		PMD_INIT_LOG(ERR, "Failed to allocate IO space\n");
 		free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_reset(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
-		PMD_DRV_LOG(ERR, "Failed to reset dpio\n");
+		PMD_INIT_LOG(ERR, "Failed to reset dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
 		free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_enable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
-		PMD_DRV_LOG(ERR, "Failed to Enable dpio\n");
+		PMD_INIT_LOG(ERR, "Failed to Enable dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
 		free(dpio_dev->dpio);
 		return -1;
@@ -188,16 +200,16 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 
 	if (dpio_get_attributes(dpio_dev->dpio, CMD_PRI_LOW,
 				dpio_dev->token, &attr)) {
-		PMD_DRV_LOG(ERR, "DPIO Get attribute failed\n");
+		PMD_INIT_LOG(ERR, "DPIO Get attribute failed\n");
 		dpio_disable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW,  dpio_dev->token);
 		free(dpio_dev->dpio);
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "Qbman Portal ID %d", attr.qbman_portal_id);
-	PMD_DRV_LOG(INFO, "Portal CE addr 0x%lX", attr.qbman_portal_ce_offset);
-	PMD_DRV_LOG(INFO, "Portal CI addr 0x%lX", attr.qbman_portal_ci_offset);
+	PMD_INIT_LOG(DEBUG, "Qbman Portal ID %d", attr.qbman_portal_id);
+	PMD_INIT_LOG(DEBUG, "Portal CE adr 0x%lX", attr.qbman_portal_ce_offset);
+	PMD_INIT_LOG(DEBUG, "Portal CI adr 0x%lX", attr.qbman_portal_ci_offset);
 
 	/* Configure & setup SW portal */
 	p_des.block = NULL;
@@ -207,9 +219,6 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	p_des.irq = -1;
 	p_des.qman_version = attr.qbman_version;
 
-	PMD_DRV_LOG(INFO, "Portal CE addr 0x%p", p_des.cena_bar);
-	PMD_DRV_LOG(INFO, "Portal CI addr 0x%p", p_des.cinh_bar);
-
 	dpio_dev->sw_portal = qbman_swp_init(&p_des);
 	if (dpio_dev->sw_portal == NULL) {
 		PMD_DRV_LOG(ERR, " QBMan SW Portal Init failed\n");
@@ -218,7 +227,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "QBMan SW Portal 0x%p\n", dpio_dev->sw_portal);
+	PMD_INIT_LOG(DEBUG, "QBMan SW Portal 0x%p\n", dpio_dev->sw_portal);
 
 	return 0;
 }
@@ -234,7 +243,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	if (cpu_id < 0) {
 		cpu_id = rte_get_master_lcore();
 		if (cpu_id < 0) {
-			PMD_DRV_LOG(ERR, "\tGetting CPU Index failed\n");
+			RTE_LOG(ERR, PMD, "\tGetting CPU Index failed\n");
 			return -1;
 		}
 	}
@@ -258,7 +267,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	*/
 
 	sdest = dpaa2_core_cluster_sdest(cpu_id);
-	PMD_DRV_LOG(INFO, "Portal= %d  CPU= %u SDEST= %d\n",
+	PMD_DRV_LOG(DEBUG, "Portal= %d  CPU= %u SDEST= %d\n",
 		    dpio_dev->index, cpu_id, sdest);
 
 	ret = dpio_set_stashing_destination(dpio_dev->dpio, CMD_PRI_LOW,
@@ -285,9 +294,9 @@ static inline struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 		return NULL;
 
 	ret = dpaa2_configure_stashing(dpio_dev);
-	if (ret) {
-		RTE_LOG(ERR, EAL, "dpaa2_configure_stashing failed");
-	}
+	if (ret)
+		PMD_DRV_LOG(ERR, "dpaa2_configure_stashing failed");
+
 	return dpio_dev;
 }
 
@@ -338,7 +347,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	}
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
-		PMD_DRV_LOG(ERR, "ERROR, Not sufficient number "
+		PMD_INIT_LOG(ERR, "ERROR, Not sufficient number "
 				"of DPIO regions.\n");
 		return -1;
 	}
@@ -346,7 +355,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	if (!dpio_dev_list) {
 		dpio_dev_list = malloc(sizeof(struct dpio_device_list));
 		if (NULL == dpio_dev_list) {
-			PMD_DRV_LOG(ERR, "Memory alloc failed for DPIO list\n");
+			PMD_INIT_LOG(ERR, "Memory alloc failed for DPIO list\n");
 			return -1;
 		}
 
@@ -356,7 +365,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 
 	dpio_dev = malloc(sizeof(struct dpaa2_dpio_dev));
 	if (!dpio_dev) {
-		PMD_DRV_LOG(ERR, "Memory allocation failed for DPIO Device\n");
+		PMD_INIT_LOG(ERR, "Memory allocation failed for DPIO Device\n");
 		return -1;
 	}
 
@@ -370,12 +379,12 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 
 	reg_info.index = 0;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
-		printf("vfio: error getting region info\n");
+		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "\t  Region Offset = %llx", reg_info.offset);
-	PMD_DRV_LOG(INFO, "\t  Region Size = %llx", reg_info.size);
+	PMD_DRV_LOG(DEBUG, "\t  Region Offset = %llx", reg_info.offset);
+	PMD_DRV_LOG(DEBUG, "\t  Region Size = %llx", reg_info.size);
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
@@ -385,27 +394,27 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	   SMMU fault for DQRR statshing transaction. */
 	if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
 				   reg_info.offset, reg_info.size)) {
-		PMD_DRV_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
+		PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
 		return -1;
 	}
 
 	reg_info.index = 1;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
-		printf("vfio: error getting region info\n");
+		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "\t  Region Offset = %llx", reg_info.offset);
-	PMD_DRV_LOG(INFO, "\t  Region Size = %llx", reg_info.size);
+	PMD_DRV_LOG(DEBUG, "\t  Region Offset = %llx", reg_info.offset);
+	PMD_DRV_LOG(DEBUG, "\t  Region Size = %llx", reg_info.size);
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
 				dpio_dev->vfio_fd, reg_info.offset);
 
 	if (configure_dpio_qbman_swp(dpio_dev)) {
-		PMD_DRV_LOG(ERR,
-			    "Fail to configure the dpio qbman portal for %d\n",
-			 dpio_dev->hw_id);
+		PMD_INIT_LOG(ERR,
+			     "Fail to configure the dpio qbman portal for %d\n",
+			     dpio_dev->hw_id);
 		return -1;
 	}
 
