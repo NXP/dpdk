@@ -422,5 +422,15 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	dpio_dev->index = io_space_count;
 	TAILQ_INSERT_HEAD(dpio_dev_list, dpio_dev, next);
 
+	dpio_dev->intr_handle = malloc(sizeof(struct rte_intr_handle));
+	if (!dpio_dev->intr_handle) {
+		PMD_INIT_LOG(ERR, "malloc failed for dpio_dev->intr_handle\n");
+		return -1;
+	}
+
+	dpaa2_vfio_setup_intr(dpio_dev->intr_handle,
+			      vdev->fd,
+			      obj_info->num_irqs);
+
 	return 0;
 }

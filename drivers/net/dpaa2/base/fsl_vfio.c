@@ -44,6 +44,7 @@
 #include <sys/vfs.h>
 #include <libgen.h>
 #include <dirent.h>
+#include <sys/eventfd.h>
 
 #include <eal_filesystem.h>
 #include <eal_private.h>
@@ -75,6 +76,8 @@
 
 /** Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES "/sys/bus/fsl-mc/devices"
+
+#define IRQ_SET_BUF_LEN  (sizeof(struct vfio_irq_set) + sizeof(int))
 
 /* Number of VFIO containers & groups with in */
 static struct fsl_vfio_group vfio_groups[VFIO_MAX_GRP];
@@ -419,6 +422,171 @@ MC_FAILURE:
 	return v_addr;
 }
 
+int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
+{
+	int len, ret;
+	char irq_set_buf[IRQ_SET_BUF_LEN];
+	struct vfio_irq_set *irq_set;
+	int *fd_ptr;
+
+	len = sizeof(irq_set_buf);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->count = 1;
+	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->index = index;
+	irq_set->start = 0;
+	fd_ptr = (int *) &irq_set->data;
+	*fd_ptr = intr_handle->fd;
+
+	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
+
+	if (ret) {
+		RTE_LOG(ERR, EAL, "Error: dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
+			intr_handle->fd, errno, strerror(errno));
+		return ret;
+	}
+
+	return ret;
+}
+
+int dpaa2_intr_unmask(struct rte_intr_handle *intr_handle, int index)
+{
+	int len, ret;
+	char irq_set_buf[IRQ_SET_BUF_LEN];
+	struct vfio_irq_set *irq_set;
+	int *fd_ptr;
+
+	len = sizeof(irq_set_buf);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->count = 1;
+	irq_set->flags = VFIO_IRQ_SET_ACTION_UNMASK | VFIO_IRQ_SET_DATA_BOOL;
+	irq_set->index = index;
+	irq_set->start = 0;
+	fd_ptr = (int *) &irq_set->data;
+	*fd_ptr = 1;
+
+	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
+
+	if (ret) {
+		RTE_LOG(ERR, EAL, "Error: dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
+			intr_handle->fd, errno, strerror(errno));
+	}
+
+	return ret;
+}
+
+int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
+{
+	struct vfio_irq_set *irq_set;
+	char irq_set_buf[IRQ_SET_BUF_LEN];
+	int len, ret;
+
+	len = sizeof(struct vfio_irq_set);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->index = index;
+	irq_set->start = 0;
+	irq_set->count = 0;
+
+	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
+	if (ret)
+		RTE_LOG(ERR, EAL,
+			"Error disabling dpaa2 interrupts for fd %d\n",
+			intr_handle->fd);
+
+	return ret;
+}
+
+int dpaa2_intr_mask(struct rte_intr_handle *intr_handle, int index)
+{
+	struct vfio_irq_set *irq_set;
+	char irq_set_buf[IRQ_SET_BUF_LEN];
+	int len, ret;
+	int *fd_ptr;
+
+	len = sizeof(struct vfio_irq_set);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->flags = VFIO_IRQ_SET_ACTION_MASK | VFIO_IRQ_SET_DATA_BOOL;
+	irq_set->index = index;
+	irq_set->start = 0;
+	irq_set->count = 1;
+	fd_ptr = (int *) &irq_set->data;
+	*fd_ptr = 1;
+
+	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
+	if (ret)
+		RTE_LOG(ERR, EAL,
+			"Error disabling dpaa2 interrupts for fd %d\n",
+			intr_handle->fd);
+
+	return ret;
+}
+
+
+/* set up interrupt support (but not enable interrupts) */
+int
+dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
+		      int vfio_dev_fd,
+		      int num_irqs)
+{
+	int i, ret;
+
+	/* start from MSI-X interrupt type */
+	for (i = 0; i < num_irqs; i++) {
+		struct vfio_irq_info irq_info = { .argsz = sizeof(irq_info) };
+		int fd = -1;
+
+		irq_info.index = i;
+
+		ret = ioctl(vfio_dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info);
+		if (ret < 0) {
+			FSL_VFIO_LOG(ERR, "  cannot get IRQ (%d) info, "
+					"error %i (%s)", i, errno,
+					strerror(errno));
+			return -1;
+		}
+
+		FSL_VFIO_LOG(DEBUG, "IRQ Info (Count=%d, Flags=%d)",
+			     irq_info.count, irq_info.flags);
+
+		/* if this vector cannot be used with eventfd, fail if we explicitly
+		 * specified interrupt type, otherwise continue */
+		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
+			if (internal_config.vfio_intr_mode != RTE_INTR_MODE_NONE) {
+				FSL_VFIO_LOG(ERR, "  interrupt vector does not"
+						 " support eventfd!\n");
+				return -1;
+			}
+			continue;
+		}
+
+		/* set up an eventfd for interrupts */
+		fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+		if (fd < 0) {
+			FSL_VFIO_LOG(ERR, "  cannot set up eventfd, error %i"
+					 "(%s)\n", errno, strerror(errno));
+			return -1;
+		}
+
+		intr_handle->fd = fd;
+		intr_handle->type = RTE_INTR_HANDLE_EXT;
+		intr_handle->vfio_dev_fd = vfio_dev_fd;
+
+		return 0;
+	}
+
+	/* if we're here, we haven't found a suitable interrupt vector */
+	return -1;
+}
+
 /* Following function shall fetch total available list of MC devices
  * from VFIO container & populate private list of devices and other
  * data structures
@@ -577,6 +745,11 @@ static int vfio_process_group_devices(void)
 
 			RTE_LOG(INFO, PMD, "DPAA2: Added [%s-%d]\n",
 				object_type, object_id);
+			/* Enable IRQ for DPNI devices */
+			if (dev->id.device_id == FSL_MC_DPNI_DEVID)
+				dpaa2_vfio_setup_intr(&(dev->intr_handle),
+						      vdev->fd,
+						      device_info.num_irqs);
 
 			TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 		}
