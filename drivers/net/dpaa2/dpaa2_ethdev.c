@@ -982,15 +982,6 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	return 0;
 }
 
-static int
-dpaa2_dev_flow_ctrl_set(struct rte_eth_dev *dev  __rte_unused,
-			struct rte_eth_fc_conf *fc_conf  __rte_unused)
-{
-	PMD_INIT_FUNC_TRACE();
-
-	return 0;
-}
-
 static void
 dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr,
@@ -1081,82 +1072,6 @@ dpaa2_dev_get_mac_addr(struct rte_eth_dev *dev,
 
 	if (ret)
 		PMD_DRV_LOG(ERR, "error: Getting the MAC ADDR failed %d", ret);
-	return ret;
-}
-
-static int
-dpaa2_dev_timestamp_enable(struct rte_eth_dev *dev)
-{
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	struct dpni_buffer_layout layout;
-	int ret;
-
-	PMD_INIT_FUNC_TRACE();
-
-	layout.options = DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
-	layout.pass_timestamp = TRUE;
-
-	ret = dpni_set_rx_buffer_layout(dpni, CMD_PRI_LOW, priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Enabling timestamp for Rx failed with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
-	ret = dpni_set_tx_buffer_layout(dpni, CMD_PRI_LOW, priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Enabling timestamp failed for Tx with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
-	ret = dpni_set_tx_conf_buffer_layout(dpni, CMD_PRI_LOW,
-					     priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Enabling timestamp failed for Tx-conf with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
-static int
-dpaa2_dev_timestamp_disable(struct rte_eth_dev *dev)
-{
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	struct dpni_buffer_layout layout;
-	int ret;
-
-	PMD_INIT_FUNC_TRACE();
-
-	layout.options = DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
-	layout.pass_timestamp = FALSE;
-
-	ret = dpni_set_rx_buffer_layout(dpni, CMD_PRI_LOW, priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Disabling timestamp failed for Rx with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
-	ret = dpni_set_tx_buffer_layout(dpni, CMD_PRI_LOW, priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Disabling timestamp failed for Tx with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
-	ret = dpni_set_tx_conf_buffer_layout(dpni, CMD_PRI_LOW,
-					     priv->token, &layout);
-	if (ret) {
-		PMD_DRV_LOG(ERR, "Disabling timestamp failed for Tx-conf with"
-			    " err code: %d", ret);
-		return ret;
-	}
-
 	return ret;
 }
 
@@ -1474,14 +1389,12 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_led_off          = NULL,
 	.set_queue_rate_limit = NULL,
 	.flow_ctrl_get	      = NULL,
-	.flow_ctrl_set	      = dpaa2_dev_flow_ctrl_set,
+	.flow_ctrl_set	      = NULL,
 	.priority_flow_ctrl_set = NULL,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
 	.mac_addr_remove      = dpaa2_dev_remove_mac_addr,
 	.rxq_info_get         = NULL,
 	.txq_info_get         = NULL,
-	.timesync_enable      = dpaa2_dev_timestamp_enable,
-	.timesync_disable     = dpaa2_dev_timestamp_disable,
 	.mac_addr_set         = dpaa2_dev_set_mac_addr,
 };
 
@@ -1623,7 +1536,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
 	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				DPNI_BUF_LAYOUT_OPT_TIMESTAMP |
 				DPNI_BUF_LAYOUT_OPT_PARSER_RESULT |
 				DPNI_BUF_LAYOUT_OPT_DATA_HEAD_ROOM |
 				DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
@@ -1632,7 +1544,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	layout.data_head_room = tot_size
 		- DPAA2_FD_PTA_SIZE - DPAA2_MBUF_HW_ANNOTATION;
 	layout.private_data_size = DPAA2_FD_PTA_SIZE;
-	layout.pass_timestamp = 1;
 	layout.pass_parser_result = 1;
 	PMD_INIT_LOG(DEBUG, "Tot_size = %d, head room = %d, private = %d",
 		     tot_size, layout.data_head_room, layout.private_data_size);
@@ -1646,10 +1557,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... tx buffer layout ... */
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
+	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
 	layout.pass_frame_status = 1;
-	layout.pass_timestamp = 1;
 	ret = dpni_set_tx_buffer_layout(dpni_dev, CMD_PRI_LOW,
 					priv->token, &layout);
 	if (ret) {
@@ -1660,10 +1569,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... tx-conf and error buffer layout ... */
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
+	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
 	layout.pass_frame_status = 1;
-	layout.pass_timestamp = 1;
 	ret = dpni_set_tx_conf_buffer_layout(dpni_dev, CMD_PRI_LOW,
 					     priv->token, &layout);
 	if (ret) {
