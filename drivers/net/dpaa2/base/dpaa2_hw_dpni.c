@@ -218,6 +218,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 			case ETH_RSS_NONFRAG_IPV6_TCP:
 			case ETH_RSS_NONFRAG_IPV4_UDP:
 			case ETH_RSS_NONFRAG_IPV6_UDP:
+			case ETH_RSS_IPV6_TCP_EX:
+			case ETH_RSS_IPV6_UDP_EX:
 
 				if (l4_configured)
 					break;
