@@ -1719,6 +1719,9 @@ void fman_if_discard_rx_errors(struct fman_if *fm_if)
 	fmbm_rfsem = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsem;
 	out_be32(fmbm_rfsem, 0);
 
+	/* Configure the discard mask to discard the error packets which have
+	 * DMA errors, Frame size error, Header error etc. The mask 0x010CE3F0
+	 * is to configured discard all the errors which come in the FD[STATUS] */
 	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsdm;
-	out_be32(fmbm_rfsdm, 0xFFFFFFFF);
+	out_be32(fmbm_rfsdm, 0x010CE3F0);
 }
