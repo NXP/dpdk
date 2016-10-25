@@ -73,7 +73,7 @@
 #define DEFAULT_ICSZ	48
 
 /* IC offsets from buffer header address */
-#define DEFAULT_RX_ICEOF	80
+#define DEFAULT_RX_ICEOF	16
 #define DEFAULT_TX_ICEOF	16
 
 /*
