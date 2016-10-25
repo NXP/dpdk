@@ -898,6 +898,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->mac_addrs = (struct ether_addr *)dpaa_intf->mac_addr;
 
 	/* Disable RX, disable promiscuous mode */
+	fman_if_discard_rx_errors(fman_intf);
 	fman_if_disable_rx(fman_intf);
 	fman_if_promiscuous_disable(fman_intf);
 	fman_if_stats_reset(fman_intf);
