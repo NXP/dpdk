@@ -766,11 +766,9 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 		PMD_DRV_LOG(ERR, "create rx fqid %d failed", fqid);
 		return ret;
 	}
+
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTA;
-
-	PMD_DRV_LOG(DEBUG, "fqid %x, wq %d", fqid,
-		    DPAA_IF_RX_PRIORITY);
 
 	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
@@ -810,6 +808,32 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 				fman_intf->mac_idx, fman_intf->tx_channel_id);
 	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 }
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+/* Initialise a DEBUG FQ ([rt]x_error, rx_default). */
+static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
+{
+	struct qm_mcc_initfq opts;
+	int ret;
+
+	ret = qman_reserve_fqid(fqid);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "reserve debug fqid %d failed", fqid);
+		return -EINVAL;
+	}
+	/* "map" this Rx FQ to one of the interfaces Tx FQID */
+	PMD_DRV_LOG(DEBUG, "%s::creating debug fq %p, fqid %d",
+		    __func__, fq, fqid);
+	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "create debug fqid %d failed", fqid);
+		return ret;
+	}
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL;
+	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
+	return qman_init_fq(fq, 0, &opts);
+}
+#endif
 
 /* Initialise a network interface */
 static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
@@ -878,6 +902,16 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		dpaa_intf->tx_queues[loop].dpaa_intf = dpaa_intf;
 	}
 	dpaa_intf->nb_tx_queues = num_cores;
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	dpaa_debug_queue_init(&dpaa_intf->debug_queues[
+		DPAA_DEBUG_FQ_RX_ERROR], fman_intf->fqid_rx_err);
+	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_RX_ERROR].dpaa_intf = dpaa_intf;
+	dpaa_debug_queue_init(&dpaa_intf->debug_queues[
+		DPAA_DEBUG_FQ_TX_ERROR], fman_intf->fqid_tx_err);
+	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
+#endif
+
 	PMD_DRV_LOG(DEBUG, "all fqs created");
 
 	/* Get the initial configuration for flow control */
