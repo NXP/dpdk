@@ -83,9 +83,9 @@
 		PKT_TX_TCP_CKSUM | \
 		PKT_TX_UDP_CKSUM)
 
-/* Disable Congestion control support
- * default is enable */
-#define DPAA2_NO_CGR_SUPPORT		0x01
+/* Enable TX Congestion control support
+ * default is disable */
+#define DPAA2_TX_CGR_SUPPORT		0x01
 
 /* Per TC tail drop or Per queue tail drop
  * default is per queue tail drop */

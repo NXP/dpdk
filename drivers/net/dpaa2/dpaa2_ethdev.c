@@ -392,9 +392,8 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	cfg.options = cfg.options | DPNI_QUEUE_OPT_USER_CTX;
 	cfg.user_ctx = (uint64_t)(dpaa2_q);
 
-	if (!(priv->flags & DPAA2_PER_TC_RX_TAILDROP) &&
-	    !(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
-		/*enabling per queue congestion control */
+	if (!(priv->flags & DPAA2_PER_TC_RX_TAILDROP)) {
+		/*enabling per rx queue congestion control */
 		cfg.options = cfg.options | DPNI_QUEUE_OPT_TAILDROP_THRESHOLD;
 		cfg.tail_drop_threshold = CONG_THRESHOLD_RX_Q;
 		PMD_INIT_LOG(DEBUG, "Enabling Early Drop on queue = %d",
@@ -493,7 +492,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	}
 	dpaa2_q->tc_index = tc_id;
 
-	if (!(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
+	if (priv->flags & DPAA2_TX_CGR_SUPPORT) {
 		struct dpni_congestion_notification_cfg cong_notif_cfg;
 
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
@@ -700,8 +699,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	}
 
 	if (priv->max_congestion_ctrl &&
-	    (priv->flags & DPAA2_PER_TC_RX_TAILDROP) &&
-	    !(priv->flags & DPAA2_NO_CGR_SUPPORT)) {
+	    (priv->flags & DPAA2_PER_TC_RX_TAILDROP)) {
 		struct dpni_early_drop_cfg tailcfg = {0};
 		uint8_t *early_drop_buf;
 		/* Note - doing it only for the first queue  - as we are only
@@ -1492,10 +1490,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	priv->flags = 0;
 
-	/*If congestion control support is not required */
-	if (getenv("DPAA2_NO_CGR_SUPPORT")) {
-		priv->flags |= DPAA2_NO_CGR_SUPPORT;
-		PMD_INIT_LOG(INFO, "Disabling the congestion control support");
+	/*If congestion control support is required */
+	if (getenv("DPAA2_TX_CGR_SUPPORT")) {
+		priv->flags |= DPAA2_TX_CGR_SUPPORT;
+		PMD_INIT_LOG(INFO, "Enable the tx congestion control support");
 	}
 
 	/*Tail drop to be configured on per TC instead of per queue */
