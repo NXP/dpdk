@@ -100,6 +100,8 @@ static inline int build_authenc_fd(dpaa2_sec_session *sess,
 	uint8_t *old_icv;
 	uint32_t mem_len = (7 * sizeof(struct qbman_fle)) + icv_len;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* TODO we are using the first FLE entry to store Mbuf.
 	   Currently we donot know which FLE has the mbuf stored.
 	   So while retreiving we can go back 1 FLE from the FD -ADDR
@@ -108,7 +110,7 @@ static inline int build_authenc_fd(dpaa2_sec_session *sess,
 	/* todo - we can use some mempool to avoid malloc here */
 	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
 	if (!fle) {
-		PMD_DRV_LOG(ERR, "Memory alloc failed for SGE\n");
+		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
 		return -1;
 	}
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_OP_VADDR_TO_IOVA(op));
@@ -139,15 +141,15 @@ static inline int build_authenc_fd(dpaa2_sec_session *sess,
 	DPAA2_SET_FD_COMPOUND_FMT(fd);
 	DPAA2_SET_FD_FLC(fd, DPAA2_VADDR_TO_IOVA(flc));
 
-	PMD_DRV_LOG(DEBUG, "\nauth_off: 0x%x/length %d, digest-len=%d\n"
-			"cipher_off: 0x%x/length %d, iv-len=%d data_off: 0x%x\n",
-		sym_op->auth.data.offset,
-		sym_op->auth.data.length,
-		sym_op->auth.digest.length,
-		sym_op->cipher.data.offset,
-		sym_op->cipher.data.length,
-		sym_op->cipher.iv.length,
-		sym_op->m_src->data_off);
+	PMD_TX_LOG(DEBUG, "auth_off: 0x%x/length %d, digest-len=%d\n"
+		   "cipher_off: 0x%x/length %d, iv-len=%d data_off: 0x%x\n",
+		   sym_op->auth.data.offset,
+		   sym_op->auth.data.length,
+		   sym_op->auth.digest.length,
+		   sym_op->cipher.data.offset,
+		   sym_op->cipher.data.length,
+		   sym_op->cipher.iv.length,
+		   sym_op->m_src->data_off);
 
 	/* Configure Output FLE with Scatter/Gather Entry */
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
@@ -223,9 +225,11 @@ static inline int build_auth_fd(
 	struct ctxt_priv *priv = sess->ctxt;
 	uint8_t *old_digest;
 
+	PMD_INIT_FUNC_TRACE();
+
 	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
 	if (!fle) {
-		PMD_DRV_LOG(ERR, "Memory alloc failed for FLE\n");
+		RTE_LOG(ERR, PMD, "Memory alloc failed for FLE\n");
 		return -1;
 	}
 	/* TODO we are using the first FLE entry to store Mbuf.
@@ -274,10 +278,10 @@ static inline int build_auth_fd(
 		}
 		DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
 		DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset +
-				sym_op->m_src->data_off);
+				     sym_op->m_src->data_off);
 
 		DPAA2_SET_FD_LEN(fd, sym_op->auth.data.length +
-				sym_op->auth.digest.length);
+				 sym_op->auth.digest.length);
 		sge->length = sym_op->auth.data.length;
 		sge++;
 		old_digest = (uint8_t *)(sge + 1);
@@ -304,10 +308,12 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* todo - we can use some mempool to avoid malloc here */
 	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
 	if (!fle) {
-		PMD_DRV_LOG(ERR, "Memory alloc failed for SGE\n");
+		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
 		return -1;
 	}
 	/* TODO we are using the first FLE entry to store Mbuf.
@@ -339,11 +345,11 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SET_FD_COMPOUND_FMT(fd);
 	DPAA2_SET_FD_FLC(fd, DPAA2_VADDR_TO_IOVA(flc));
 
-	PMD_DRV_LOG(DEBUG, "cipher_off: 0x%x/length %d, iv-len=%d data_off: 0x%x",
-		    sym_op->cipher.data.offset,
-		sym_op->cipher.data.length,
-		sym_op->cipher.iv.length,
-		sym_op->m_src->data_off);
+	PMD_TX_LOG(DEBUG, "cipher_off: 0x%x/length %d,ivlen=%d data_off: 0x%x",
+		   sym_op->cipher.data.offset,
+		   sym_op->cipher.data.length,
+		   sym_op->cipher.iv.length,
+		   sym_op->m_src->data_off);
 
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
 	DPAA2_SET_FLE_OFFSET(fle, sym_op->cipher.data.offset + sym_op->m_src->data_off);
@@ -351,9 +357,8 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	/*todo - check the length stuff, idealy this should be only cipher data length */
 	fle->length = sym_op->cipher.data.length + sym_op->cipher.iv.length;
 
-	PMD_DRV_LOG(DEBUG, "1 - flc = %p, fle = %p FLE addr = %x - %x, length %d\n",
-		    flc, fle,
-		fle->addr_hi, fle->addr_lo, fle->length);
+	PMD_TX_LOG(DEBUG, "1 - flc = %p, fle = %p FLEaddr = %x-%x, length %d",
+		   flc, fle, fle->addr_hi, fle->addr_lo, fle->length);
 
 	fle++;
 
@@ -373,12 +378,12 @@ static int build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SET_FLE_FIN(sge);
 	DPAA2_SET_FLE_FIN(fle);
 
-	PMD_DRV_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
-		    (void *)DPAA2_GET_FD_ADDR(fd),
-			DPAA2_GET_FD_BPID(fd),
-			bpid_info[bpid].meta_data_size,
-			DPAA2_GET_FD_OFFSET(fd),
-			DPAA2_GET_FD_LEN(fd));
+	PMD_TX_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
+		   (void *)DPAA2_GET_FD_ADDR(fd),
+		   DPAA2_GET_FD_BPID(fd),
+		   bpid_info[bpid].meta_data_size,
+		   DPAA2_GET_FD_OFFSET(fd),
+		   DPAA2_GET_FD_LEN(fd));
 
 	return 0;
 }
@@ -388,6 +393,8 @@ build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	     struct qbman_fd *fd, uint16_t bpid)
 {
 	int ret = -1;
+
+	PMD_INIT_FUNC_TRACE();
 
 	switch (sess->ctxt_type) {
 	case DPAA2_SEC_CIPHER:
@@ -401,7 +408,7 @@ build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 		break;
 	case DPAA2_SEC_HASH_CIPHER:
 	default:
-		PMD_DRV_LOG(ERR, "Unsupported session\n");
+		RTE_LOG(ERR, PMD, "error: Unsupported session\n");
 	}
 	return ret;
 }
@@ -432,7 +439,7 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		return 0;
 
 	if (ops[0]->sym->sess_type != RTE_CRYPTO_SYM_OP_WITH_SESSION) {
-		PMD_DRV_LOG(ERR, "sessionless crypto op not supported\n");
+		RTE_LOG(ERR, PMD, "sessionless crypto op not supported\n");
 		return 0;
 	}
 	/*Prepare enqueue descriptor*/
@@ -444,7 +451,7 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	if (!thread_io_info.sec_dpio_dev) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
@@ -462,7 +469,8 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			bpid = mempool_to_bpid(mb_pool);
 			ret = build_sec_fd(sess, *ops, &fd_arr[loop], bpid);
 			if (ret) {
-				PMD_DRV_LOG(ERR, "Improper packet contents for crypto operation\n");
+				PMD_DRV_LOG(ERR, "error: Improper packet"
+					    " contents for crypto operation\n");
 				goto skip_tx;
 			}
 			ops++;
@@ -470,7 +478,8 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		loop = 0;
 		while (loop < frames_to_send) {
 			loop += qbman_swp_send_multiple(swp, &eqdesc,
-					&fd_arr[loop], frames_to_send - loop);
+							&fd_arr[loop],
+							frames_to_send - loop);
 		}
 
 		num_tx += frames_to_send;
@@ -485,15 +494,15 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		bpid = mempool_to_bpid(mb_pool);
 		ret = build_sec_fd(sess, ops[loop], &fd, bpid);
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Improper packet contents for crypto operation\n");
+			PMD_TX_LOG(ERR, "error: Improper packet contents"
+				   " for crypto operation\n");
 			goto skip_tx;
 		}
 		/*Enqueue a packet to the QBMAN*/
 		do {
 			ret = qbman_swp_enqueue(swp, &eqdesc, &fd);
-			if (ret != 0) {
-				PMD_DRV_LOG(ERR, "Error in transmiting the frame\n");
-			}
+			if (ret != 0)
+				PMD_TX_LOG(ERR, "Error in transmiting the frame\n");
 		} while (ret != 0);
 
 		/* Free the buffer shell */
@@ -516,8 +525,8 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 
 	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
-	PMD_DRV_LOG(DEBUG, "FLE addr = %x - %x, offset = %x",
-		    fle->addr_hi, fle->addr_lo, fle->fin_bpid_offset);
+	PMD_RX_LOG(DEBUG, "FLE addr = %x - %x, offset = %x",
+		   fle->addr_hi, fle->addr_lo, fle->fin_bpid_offset);
 
 	/* TODO we are using the first FLE entry to store Mbuf.
 	   Currently we donot know which FLE has the mbuf stored.
@@ -527,7 +536,7 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 
 	if (unlikely(DPAA2_GET_FD_IVP(fd))) {
 		/* TODO complete it. */
-		printf("\n????????? Non inline buffer - WHAT to DO?");
+		RTE_LOG(ERR, PMD, "error: Non inline buffer - WHAT to DO?");
 		return NULL;
 	}
 	op = (struct rte_crypto_op *)DPAA2_IOVA_TO_VADDR(
@@ -536,15 +545,15 @@ struct rte_crypto_op *sec_fd_to_mbuf(
 	/* Prefeth op */
 	rte_prefetch0(op->sym->m_src);
 
-	PMD_DRV_LOG(DEBUG, "\nmbuf %p BMAN buf addr %p",
-		    (void *)op->sym->m_src, op->sym->m_src->buf_addr);
+	PMD_RX_LOG(DEBUG, "mbuf %p BMAN buf addr %p",
+		   (void *)op->sym->m_src, op->sym->m_src->buf_addr);
 
-	PMD_DRV_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
-		    (void *) DPAA2_GET_FD_ADDR(fd),
-		    DPAA2_GET_FD_BPID(fd),
-		    bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
-		    DPAA2_GET_FD_OFFSET(fd),
-		    DPAA2_GET_FD_LEN(fd));
+	PMD_RX_LOG(DEBUG, "fdaddr =%p bpid =%d meta =%d off =%d, len =%d",
+		   (void *)DPAA2_GET_FD_ADDR(fd),
+		   DPAA2_GET_FD_BPID(fd),
+		   bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
+		   DPAA2_GET_FD_OFFSET(fd),
+		   DPAA2_GET_FD_LEN(fd));
 
 	/* free the fle memory */
 	rte_free(fle - 1);
@@ -570,7 +579,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	if (!thread_io_info.sec_dpio_dev) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
@@ -579,8 +588,8 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_numframes(&pulldesc,
-			(nb_ops > NUM_MAX_RECV_FRAMES) ?
-			NUM_MAX_RECV_FRAMES : nb_ops);
+				      (nb_ops > NUM_MAX_RECV_FRAMES) ?
+				      NUM_MAX_RECV_FRAMES : nb_ops);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)DPAA2_VADDR_TO_IOVA(dq_storage), 1);
@@ -588,7 +597,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			PMD_DRV_LOG(ERR, "SEC VDQ command is not issued."
+			RTE_LOG(WARNING, PMD, "SEC VDQ command is not issued."
 				"QBMAN is busy\n");
 			/* Portal was busy, try again */
 			continue;
@@ -617,7 +626,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-				PMD_DRV_LOG(DEBUG, "No frame is delivered\n");
+				PMD_RX_LOG(DEBUG, "No frame is delivered");
 				continue;
 			}
 		}
@@ -627,10 +636,11 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 		if (unlikely(fd->simple.frc)) {
 			/* TODO Parse SEC errors */
-			printf("SEC returned Error - %x\n", fd->simple.frc);
+			RTE_LOG(ERR, PMD, "SEC returned Error - %x\n", fd->simple.frc);
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
-		} else
+		} else {
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+		}
 
 		num_rx++;
 		dq_storage++;
@@ -638,7 +648,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 	dpaa2_qp->rx_vq.rx_pkts += num_rx;
 
-	PMD_DRV_LOG(DEBUG, "SEC Received %d Packets\n", num_rx);
+	PMD_RX_LOG(DEBUG, "SEC Received %d Packets", num_rx);
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
@@ -663,7 +673,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	if (!thread_io_info.sec_dpio_dev) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal\n");
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
@@ -673,21 +683,21 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_numframes(&pulldesc,
-			(nb_ops > NUM_MAX_RECV_FRAMES) ?
+					      (nb_ops > NUM_MAX_RECV_FRAMES) ?
 			NUM_MAX_RECV_FRAMES : nb_ops);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
 			while (!qbman_check_command_complete(swp,
-				    get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+							     get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
 				;
 			clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				PMD_DRV_LOG(WARNING, "SEC VDQ command is not issued."
-					    "QBMAN is busy\n");
+				RTE_LOG(WARNING, PMD, "SEC VDQ command is not issued."
+					"QBMAN is busy\n");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -718,7 +728,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-				PMD_DRV_LOG2(DEBUG, "No frame is delivered\n");
+				PMD_RX_LOG(DEBUG, "No frame is delivered");
 				continue;
 			}
 		}
@@ -727,12 +737,12 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		ops[num_rx] = sec_fd_to_mbuf(fd[num_rx]);
 		if (unlikely(fd[num_rx]->simple.frc)) {
 			/* TODO Parse SEC errors */
-			printf("SEC returned Error - %x\n",
-			       fd[num_rx]->simple.frc);
+			RTE_LOG(ERR, PMD, "SEC returned Error - %x\n",
+				fd[num_rx]->simple.frc);
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
-		} else
+		} else {
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
-
+		}
 		dq_storage++;
 		num_rx++;
 
@@ -754,7 +764,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			PMD_DRV_LOG(WARNING, "VDQ command is not issued."
+			RTE_LOG(WARNING, PMD, "VDQ command is not issued."
 				"QBMAN is busy\n");
 			continue;
 		}
@@ -766,7 +776,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 
 	dpaa2_qp->rx_vq.rx_pkts += num_rx;
 
-	PMD_DRV_LOG(DEBUG, "SEC Received %d Packets\n", num_rx);
+	PMD_RX_LOG(DEBUG, "SEC Received %d Packets\n", num_rx);
 	/*Return the total number of packets received to DPAA2 app*/
 	return num_rx;
 }
@@ -777,6 +787,8 @@ dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 {
 	struct dpaa2_sec_qp *qp =
 		(struct dpaa2_sec_qp *)dev->data->queue_pairs[queue_pair_id];
+
+	PMD_INIT_FUNC_TRACE();
 
 	if (qp->rx_vq.q_storage) {
 		dpaa2_free_dq_storage(qp->rx_vq.q_storage);
@@ -801,6 +813,8 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	struct dpseci_rx_queue_cfg cfg;
 	int32_t retcode;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* If qp is already in use free ring memory and qp metadata. */
 	if (dev->data->queue_pairs[qp_id] != NULL) {
 		PMD_DRV_LOG(INFO, "QP already setup");
@@ -815,7 +829,7 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	qp = rte_malloc(NULL, sizeof(struct dpaa2_sec_qp),
 			RTE_CACHE_LINE_SIZE);
 	if (!qp) {
-		PMD_DRV_LOG(ERR, "malloc failed for rx/tx queues\n");
+		RTE_LOG(ERR, PMD, "malloc failed for rx/tx queues\n");
 		return -1;
 	}
 
@@ -825,13 +839,13 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 		sizeof(struct queue_storage_info_t),
 		RTE_CACHE_LINE_SIZE);
 	if (!qp->rx_vq.q_storage) {
-		PMD_DRV_LOG(ERR, "malloc failed for q_storage\n");
+		RTE_LOG(ERR, PMD, "malloc failed for q_storage\n");
 		return -1;
 	}
 	memset(qp->rx_vq.q_storage, 0, sizeof(struct queue_storage_info_t));
 
 	if (dpaa2_alloc_dq_storage(qp->rx_vq.q_storage)) {
-		PMD_DRV_LOG(ERR, "dpaa2_alloc_dq_storage failed\n");
+		RTE_LOG(ERR, PMD, "dpaa2_alloc_dq_storage failed\n");
 		return -1;
 	}
 
@@ -849,6 +863,8 @@ static int
 dpaa2_sec_queue_pair_start(__rte_unused struct rte_cryptodev *dev,
 			   __rte_unused uint16_t queue_pair_id)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -857,6 +873,8 @@ static int
 dpaa2_sec_queue_pair_stop(__rte_unused struct rte_cryptodev *dev,
 			  __rte_unused uint16_t queue_pair_id)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -864,6 +882,8 @@ dpaa2_sec_queue_pair_stop(__rte_unused struct rte_cryptodev *dev,
 static uint32_t
 dpaa2_sec_queue_pair_count(struct rte_cryptodev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return dev->data->nb_queue_pairs;
 }
 
@@ -871,6 +891,8 @@ dpaa2_sec_queue_pair_count(struct rte_cryptodev *dev)
 static unsigned
 dpaa2_sec_session_get_size(struct rte_cryptodev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return sizeof(dpaa2_sec_session);
 }
 
@@ -878,7 +900,7 @@ static void
 dpaa2_sec_session_initialize(struct rte_mempool *mp __rte_unused,
 			     void *sess __rte_unused)
 {
-	return;
+	PMD_INIT_FUNC_TRACE();
 }
 
 static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
@@ -891,12 +913,14 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* For SEC CIPHER only one descriptor is required. */
 	priv = (struct ctxt_priv *)rte_zmalloc(NULL,
 			sizeof(struct ctxt_priv) + sizeof(struct sec_flc_desc),
 			RTE_CACHE_LINE_SIZE);
 	if (priv == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for priv CTXT");
+		RTE_LOG(ERR, PMD, "No Memory for priv CTXT");
 		return -1;
 	}
 
@@ -905,7 +929,7 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	session->cipher_key.data = rte_zmalloc(NULL, xform->cipher.key.length,
 			RTE_CACHE_LINE_SIZE);
 	if (session->cipher_key.data == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for cipher key");
+		RTE_LOG(ERR, PMD, "No Memory for cipher key");
 		return -1;
 	}
 	session->cipher_key.length = xform->cipher.key.length;
@@ -942,12 +966,12 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
 	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_NULL:
-		PMD_DRV_LOG(ERR, "Crypto: Unsupported Cipher alg %u",
-			    xform->cipher.algo);
+		RTE_LOG(ERR, PMD, "Crypto: Unsupported Cipher alg %u",
+			xform->cipher.algo);
 		goto error_out;
 	default:
-		PMD_DRV_LOG(ERR, "Crypto: Undefined Cipher specified %u\n",
-			    xform->cipher.algo);
+		RTE_LOG(ERR, PMD, "Crypto: Undefined Cipher specified %u\n",
+			xform->cipher.algo);
 		goto error_out;
 	}
 	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
@@ -990,13 +1014,15 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* For SEC AUTH three descriptors are required for various stages */
 	priv = (struct ctxt_priv *)rte_zmalloc(NULL,
 			sizeof(struct ctxt_priv) + 3 *
 			sizeof(struct sec_flc_desc),
 			RTE_CACHE_LINE_SIZE);
 	if (priv == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for priv CTXT");
+		RTE_LOG(ERR, PMD, "No Memory for priv CTXT");
 		return -1;
 	}
 
@@ -1060,12 +1086,12 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
-		PMD_DRV_LOG(ERR, "Crypto: Unsupported auth alg %u",
-			    xform->auth.algo);
+		RTE_LOG(ERR, PMD, "Crypto: Unsupported auth alg %u",
+			xform->auth.algo);
 		goto error_out;
 	default:
-		PMD_DRV_LOG(ERR, "Crypto: Undefined Auth specified %u\n",
-			    xform->auth.algo);
+		RTE_LOG(ERR, PMD, "Crypto: Undefined Auth specified %u\n",
+			xform->auth.algo);
 		goto error_out;
 	}
 	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
@@ -1102,7 +1128,9 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct rte_crypto_cipher_xform *cipher_xform;
 	struct rte_crypto_auth_xform *auth_xform;
 
-	if (session->ext_params.aead_ctxt.auth_cipher_text == TRUE) {
+	PMD_INIT_FUNC_TRACE();
+
+	if (session->ext_params.aead_ctxt.auth_cipher_text) {
 		cipher_xform = &xform->cipher;
 		auth_xform = &xform->next->auth;
 		session->ctxt_type =
@@ -1120,23 +1148,23 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 			sizeof(struct ctxt_priv) + sizeof(struct sec_flc_desc),
 			RTE_CACHE_LINE_SIZE);
 	if (priv == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for priv CTXT");
+		RTE_LOG(ERR, PMD, "No Memory for priv CTXT");
 		return -1;
 	}
 
 	flc = &priv->flc_desc[0].flc;
 
 	session->cipher_key.data = rte_zmalloc(NULL, cipher_xform->key.length,
-			RTE_CACHE_LINE_SIZE);
+					       RTE_CACHE_LINE_SIZE);
 	if (session->cipher_key.data == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for cipher key");
+		RTE_LOG(ERR, PMD, "No Memory for cipher key");
 		return -1;
 	}
 	session->cipher_key.length = cipher_xform->key.length;
 	session->auth_key.data = rte_zmalloc(NULL, auth_xform->key.length,
-			RTE_CACHE_LINE_SIZE);
+					     RTE_CACHE_LINE_SIZE);
 	if (session->auth_key.data == NULL) {
-		PMD_DRV_LOG(ERR, "\nNo Memory for auth key");
+		RTE_LOG(ERR, PMD, "No Memory for auth key");
 		goto error_out;
 	}
 	session->auth_key.length = auth_xform->key.length;
@@ -1198,12 +1226,12 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
-		PMD_DRV_LOG(ERR, "Crypto: Unsupported auth alg %u",
-			    auth_xform->algo);
+		RTE_LOG(ERR, PMD, "Crypto: Unsupported auth alg %u",
+			auth_xform->algo);
 		goto error_out;
 	default:
-		PMD_DRV_LOG(ERR, "Crypto: Undefined Auth specified %u\n",
-			    auth_xform->algo);
+		RTE_LOG(ERR, PMD, "Crypto: Undefined Auth specified %u\n",
+			auth_xform->algo);
 		goto error_out;
 	}
 	cipherdata.key = (uint64_t)session->cipher_key.data;
@@ -1232,12 +1260,12 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-		PMD_DRV_LOG(ERR, "Crypto: Unsupported Cipher alg %u",
-			    cipher_xform->algo);
+		RTE_LOG(ERR, PMD, "Crypto: Unsupported Cipher alg %u",
+			cipher_xform->algo);
 		goto error_out;
 	default:
-		PMD_DRV_LOG(ERR, "Crypto: Undefined Cipher specified %u\n",
-			    cipher_xform->algo);
+		RTE_LOG(ERR, PMD, "Crypto: Undefined Cipher specified %u\n",
+			cipher_xform->algo);
 		goto error_out;
 	}
 	session->dir = (cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
@@ -1245,11 +1273,11 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 
 	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH) {
 		bufsize = cnstr_shdsc_authenc(priv->flc_desc[0].desc, 1,
-				0, &cipherdata, &authdata, ctxt->iv.length,
-				ctxt->auth_only_len, ctxt->trunc_len,
-				session->dir);
+					      0, &cipherdata, &authdata, ctxt->iv.length,
+					      ctxt->auth_only_len, ctxt->trunc_len,
+					      session->dir);
 	} else {
-		PMD_DRV_LOG(ERR, "Hash before cipher not supported");
+		RTE_LOG(ERR, PMD, "Hash before cipher not supported");
 		goto error_out;
 	}
 
@@ -1270,15 +1298,16 @@ error_out:
 	return -1;
 }
 
-
 static void *
 dpaa2_sec_session_configure(struct rte_cryptodev *dev,
 			    struct rte_crypto_sym_xform *xform,	void *sess)
 {
 	dpaa2_sec_session *session = sess;
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (unlikely(sess == NULL)) {
-		PMD_DRV_LOG(ERR, "invalid session struct");
+		RTE_LOG(ERR, PMD, "invalid session struct");
 		return NULL;
 	}
 	/* Cipher Only */
@@ -1288,23 +1317,23 @@ dpaa2_sec_session_configure(struct rte_cryptodev *dev,
 
 	/* Authentication Only */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
-			xform->next == NULL) {
+		   xform->next == NULL) {
 		session->ctxt_type = DPAA2_SEC_AUTH;
 		dpaa2_sec_auth_init(dev, xform, session);
 
 	/* Cipher then Authenticate */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER &&
-			xform->next->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
+		   xform->next->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
 		session->ext_params.aead_ctxt.auth_cipher_text = TRUE;
 		dpaa2_sec_aead_init(dev, xform, session);
 
 	/* Authenticate then Cipher */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
-			xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
+		   xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
 		session->ext_params.aead_ctxt.auth_cipher_text = FALSE;
 		dpaa2_sec_aead_init(dev, xform, session);
 	} else {
-		PMD_DRV_LOG(ERR, "Invalid crypto type");
+		RTE_LOG(ERR, PMD, "Invalid crypto type");
 		return NULL;
 	}
 
@@ -1315,6 +1344,8 @@ dpaa2_sec_session_configure(struct rte_cryptodev *dev,
 static void
 dpaa2_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	if (sess)
 		memset(sess, 0, sizeof(dpaa2_sec_session));
 }
@@ -1322,6 +1353,8 @@ dpaa2_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 static int
 dpaa2_sec_dev_configure(struct rte_cryptodev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return -ENOTSUP;
 }
 
@@ -1338,17 +1371,19 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 	struct dpseci_tx_queue_attr tx_attr;
 	int ret, i;
 
+	PMD_INIT_FUNC_TRACE();
+
 	memset(&attr, 0, sizeof(struct dpseci_attr));
 
 	ret = dpseci_enable(dpseci, CMD_PRI_LOW, priv->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "DPSECI with HW_ID = %d ENABLE FAILED\n",
-			    priv->hw_id);
+		PMD_INIT_LOG(ERR, "DPSECI with HW_ID = %d ENABLE FAILED\n",
+			     priv->hw_id);
 		goto get_attr_failure;
 	}
 	ret = dpseci_get_attributes(dpseci, CMD_PRI_LOW, priv->token, &attr);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "DPSEC ATTRIBUTE READ FAILED, disabling DPSEC\n");
+		PMD_INIT_LOG(ERR, "DPSEC ATTRIBUTE READ FAILED, disabling DPSEC\n");
 		goto get_attr_failure;
 	}
 	for (i = 0; i < attr.num_rx_queues && qp[i]; i++) {
@@ -1356,14 +1391,14 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 		dpseci_get_rx_queue(dpseci, CMD_PRI_LOW, priv->token, i,
 				    &rx_attr);
 		dpaa2_q->fqid = rx_attr.fqid;
-		PMD_DRV_LOG(DEBUG, "rx_fqid: %d", dpaa2_q->fqid);
+		PMD_INIT_LOG(DEBUG, "rx_fqid: %d", dpaa2_q->fqid);
 	}
 	for (i = 0; i < attr.num_tx_queues && qp[i]; i++) {
 		dpaa2_q = &qp[i]->tx_vq;
 		dpseci_get_tx_queue(dpseci, CMD_PRI_LOW, priv->token, i,
 				    &tx_attr);
 		dpaa2_q->fqid = tx_attr.fqid;
-		PMD_DRV_LOG(DEBUG, "tx_fqid: %d", dpaa2_q->fqid);
+		PMD_INIT_LOG(DEBUG, "tx_fqid: %d", dpaa2_q->fqid);
 	}
 
 	return 0;
@@ -1379,20 +1414,21 @@ dpaa2_sec_dev_stop(struct rte_cryptodev *dev)
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	int ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	ret = dpseci_disable(dpseci, CMD_PRI_LOW, priv->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Failure in disabling dpseci %d device\n",
-			    priv->hw_id);
+		PMD_INIT_LOG(ERR, "Failure in disabling dpseci %d device",
+			     priv->hw_id);
 		return;
 	}
 
 	ret = dpseci_reset(dpseci, CMD_PRI_LOW, priv->token);
 	if (ret < 0) {
-		PMD_DRV_LOG(ERR, "SEC Device cannot be reset:Error Code = %0x\n",
-			    ret);
+		PMD_INIT_LOG(ERR, "SEC Device cannot be reset:Error = %0x\n",
+			     ret);
 		return;
 	}
-	return;
 }
 
 static int
@@ -1401,6 +1437,8 @@ dpaa2_sec_dev_close(struct rte_cryptodev *dev)
 	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	int ret;
+
+	PMD_INIT_FUNC_TRACE();
 
 	/*Function is reverse of dpaa2_sec_dev_init.
 	 * It does the following:
@@ -1412,8 +1450,8 @@ dpaa2_sec_dev_close(struct rte_cryptodev *dev)
 	/*Close the device at underlying layer*/
 	ret = dpseci_close(dpseci, CMD_PRI_LOW, priv->token);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "Failure closing dpseci device with"
-			"error code %d\n", ret);
+		PMD_INIT_LOG(ERR, "Failure closing dpseci device with"
+			     " error code %d\n", ret);
 		return -1;
 	}
 
@@ -1472,23 +1510,21 @@ void dpaa2_sec_stats_get(struct rte_cryptodev *dev,
 		PMD_DRV_LOG(ERR, "dpseci_get_sec_counters failed\n");
 	} else {
 		PMD_DRV_LOG(INFO, "dpseci hw stats:"
-			"\n\tNumber of Requests Dequeued = %lu"
-			"\n\tNumber of Outbound Encrypt Requests = %lu"
-			"\n\tNumber of Inbound Decrypt Requests = %lu"
-			"\n\tNumber of Outbound Bytes Encrypted = %lu"
-			"\n\tNumber of Outbound Bytes Protected = %lu"
-			"\n\tNumber of Inbound Bytes Decrypted = %lu"
-			"\n\tNumber of Inbound Bytes Validated = %lu",
-			counters.dequeued_requests,
-			counters.ob_enc_requests,
-			counters.ib_dec_requests,
-			counters.ob_enc_bytes,
-			counters.ob_prot_bytes,
-			counters.ib_dec_bytes,
-			counters.ib_valid_bytes);
+			    "\n\tNumber of Requests Dequeued = %lu"
+			    "\n\tNumber of Outbound Encrypt Requests = %lu"
+			    "\n\tNumber of Inbound Decrypt Requests = %lu"
+			    "\n\tNumber of Outbound Bytes Encrypted = %lu"
+			    "\n\tNumber of Outbound Bytes Protected = %lu"
+			    "\n\tNumber of Inbound Bytes Decrypted = %lu"
+			    "\n\tNumber of Inbound Bytes Validated = %lu",
+			    counters.dequeued_requests,
+			    counters.ob_enc_requests,
+			    counters.ib_dec_requests,
+			    counters.ob_enc_bytes,
+			    counters.ob_prot_bytes,
+			    counters.ib_dec_bytes,
+			    counters.ib_valid_bytes);
 	}
-
-	return;
 }
 
 static
@@ -1540,8 +1576,8 @@ dpaa2_sec_uninit(__attribute__((unused)) const struct rte_cryptodev_driver *cryp
 	if (dev->data->name == NULL)
 		return -EINVAL;
 
-	PMD_DRV_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
-		    dev->data->name, rte_socket_id());
+	PMD_INIT_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
+		     dev->data->name, rte_socket_id());
 
 	return 0;
 }
@@ -1557,10 +1593,10 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	int retcode, hw_id = dev->pci_dev->addr.devid;
 
 	PMD_INIT_FUNC_TRACE();
-	PMD_DRV_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
-		dev->pci_dev->addr.bus,
-		dev->pci_dev->addr.devid,
-		dev->pci_dev->addr.function);
+	PMD_INIT_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
+		     dev->pci_dev->addr.bus,
+		     dev->pci_dev->addr.devid,
+		     dev->pci_dev->addr.function);
 
 	dev->dev_type = RTE_CRYPTODEV_DPAA2_SEC_PMD;
 	dev->dev_ops = &crypto_ops;
@@ -1576,7 +1612,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
 
 	internals = dev->data->dev_private;
-	internals->max_nb_sessions = 2048;/*RTE_DPAA2_SEC_PMD_MAX_NB_SESSIONS*/
+	internals->max_nb_sessions = RTE_DPAA2_SEC_PMD_MAX_NB_SESSIONS;
 
 	/*
 	 * For secondary processes, we don't initialise any further as primary
@@ -1584,7 +1620,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	 * RX function
 	 */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-		PMD_DRV_LOG(DEBUG, "Device already initialised by primary process");
+		PMD_INIT_LOG(DEBUG, "Device already init by primary process");
 		return 0;
 	}
 
@@ -1592,21 +1628,21 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	dpseci = (struct fsl_mc_io *)rte_calloc(NULL, 1,
 				sizeof(struct fsl_mc_io), 0);
 	if (!dpseci) {
-		printf("Error in allocating the memory for dpsec object\n");
+		PMD_INIT_LOG(ERR, "Error in allocating the memory for dpsec object");
 		return -1;
 	}
 	dpseci->regs = mcp_ptr_list[0];
 
 	retcode = dpseci_open(dpseci, CMD_PRI_LOW, hw_id, &token);
 	if (retcode != 0) {
-		printf("Cannot open the dpsec device: Error Code = %x\n",
-		       retcode);
+		PMD_INIT_LOG(ERR, "Cannot open the dpsec device: Error = %x",
+			     retcode);
 		goto init_error;
 	}
 	retcode = dpseci_get_attributes(dpseci, CMD_PRI_LOW, token, &attr);
 	if (retcode != 0) {
-		printf("Cannot get dpsec device attributed: Error Code = %x\n",
-		       retcode);
+		PMD_INIT_LOG(ERR, "Cannot get dpsec device attributed: Error = %x",
+			     retcode);
 		goto init_error;
 	}
 	sprintf(dev->data->name, "dpsec-%u", hw_id);
@@ -1616,11 +1652,11 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	internals->hw = dpseci;
 	internals->token = token;
 
-	PMD_DRV_LOG(DEBUG, "driver %s: created\n", dev->data->name);
+	PMD_INIT_LOG(DEBUG, "driver %s: created\n", dev->data->name);
 	return 0;
 
 init_error:
-	printf("driver %s: create failed\n", dev->data->name);
+	PMD_INIT_LOG(ERR, "driver %s: create failed\n", dev->data->name);
 
 	/* dpaa2_sec_uninit(crypto_dev_name); */
 	return -EFAULT;
