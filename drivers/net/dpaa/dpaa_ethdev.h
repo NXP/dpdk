@@ -100,10 +100,15 @@
 
 #define DPAA_IF_TX_PRIORITY		3
 #define DPAA_IF_RX_PRIORITY		4
+#define DPAA_IF_DEBUG_PRIORITY		7
 
 #define DPAA_IF_RX_ANNOTATION_STASH	1
 #define DPAA_IF_RX_DATA_STASH		1
 #define DPAA_IF_RX_CONTEXT_STASH		0
+
+/* Each "debug" FQ is represented by one of these */
+#define DPAA_DEBUG_FQ_RX_ERROR   0
+#define DPAA_DEBUG_FQ_TX_ERROR   1
 
 #define DPAA_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_FRAG_IPV4 | \
@@ -136,6 +141,7 @@ struct dpaa_if {
 	const struct fm_eth_port_cfg *cfg;
 	struct qman_fq *rx_queues;
 	struct qman_fq *tx_queues;
+	struct qman_fq debug_queues[2];
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
