@@ -1668,11 +1668,11 @@ int fman_if_set_ic_params(struct fman_if *fm_if,
 	if (__if->__if.mac_type == fman_offline) {
 		unsigned *fmbm_oicp =
 			  &((struct oh_bmi_regs *)__if->bmi_map)->fmbm_oicp;
-		out_be32(fmbm_oicp, in_be32(fmbm_oicp) | val);
+		out_be32(fmbm_oicp, val);
 	} else {
 		unsigned *fmbm_ricp =
 			  &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_ricp;
-		out_be32(fmbm_ricp, in_be32(fmbm_ricp) | val);
+		out_be32(fmbm_ricp, val);
 	}
 
 	return 0;
@@ -1719,6 +1719,9 @@ void fman_if_discard_rx_errors(struct fman_if *fm_if)
 	fmbm_rfsem = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsem;
 	out_be32(fmbm_rfsem, 0);
 
+	/* Configure the discard mask to discard the error packets which have
+	 * DMA errors, Frame size error, Header error etc. The mask 0x010CE3F0
+	 * is to configured discard all the errors which come in the FD[STATUS] */
 	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsdm;
-	out_be32(fmbm_rfsdm, 0xFFFFFFFF);
+	out_be32(fmbm_rfsdm, 0x010CE3F0);
 }
