@@ -215,7 +215,6 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-				PMD_RX_LOG(DEBUG, "No frame is delivered");
 				continue;
 			}
 		}

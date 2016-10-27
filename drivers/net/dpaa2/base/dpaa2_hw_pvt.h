@@ -119,6 +119,7 @@ struct queue_storage_info_t {
 };
 
 struct dpaa2_queue {
+	struct rte_mempool *mb_pool; /**< mbuf pool to populate RX ring. */
 	void *dev;
 	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */

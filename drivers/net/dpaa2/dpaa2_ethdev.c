@@ -262,12 +262,18 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 
 		memset(dpaa2_q->q_storage, 0,
 		       sizeof(struct queue_storage_info_t));
+		if (dpaa2_alloc_dq_storage(dpaa2_q->q_storage))
+			goto fail;
 	}
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->dev = dev;
 		mc_q->flow_id = DPNI_NEW_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
+		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
+		dpaa2_q->cscn = rte_malloc(NULL, sizeof(struct qbman_result), 16);
+		if (!dpaa2_q->cscn)
+			goto fail_tx;
 	}
 
 	vq_id = 0;
@@ -280,10 +286,20 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	}
 
 	return 0;
-fail:
+fail_tx:
 	i -= 1;
 	while (i >= 0) {
+		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
+		rte_free(dpaa2_q->cscn);
+		priv->tx_vq[i--] = NULL;
+	}
+	i = priv->nb_rx_queues;
+fail:
+	i -= 1;
+	mc_q = priv->rx_vq[0];
+	while (i >= 0) {
 		dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
+		dpaa2_free_dq_storage(dpaa2_q->q_storage);
 		rte_free(dpaa2_q->q_storage);
 		priv->rx_vq[i--] = NULL;
 	}
@@ -295,34 +311,17 @@ static int
 dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	struct rte_eth_dev_data *data = dev->data;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct rte_eth_conf *eth_conf = &data->dev_conf;
-	struct dpaa2_queue *dpaa2_q;
-	int i, ret;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
-
-	for (i = 0; i < data->nb_rx_queues; i++) {
-		data->rx_queues[i] = priv->rx_vq[i];
-		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[i];
-		if (dpaa2_alloc_dq_storage(dpaa2_q->q_storage))
-			return -1;
-	}
-
-	for (i = 0; i < data->nb_tx_queues; i++) {
-		data->tx_queues[i] = priv->tx_vq[i];
-		dpaa2_q = (struct dpaa2_queue *)data->tx_queues[i];
-		dpaa2_q->cscn = rte_malloc(NULL, sizeof(struct qbman_result), 16);
-		if (!dpaa2_q->cscn)
-			goto fail_tx_queue;
-	}
 
 	/* Check for correct configuration */
 	if (eth_conf->rxmode.mq_mode != ETH_MQ_RX_RSS &&
 	    data->nb_rx_queues > 1) {
 		PMD_INIT_LOG(ERR, "Distribution is not enabled, "
 			    "but Rx queues more than 1\n");
-		goto fail_tx_queue;
+		return -1;
 	}
 
 	if (eth_conf->rxmode.mq_mode == ETH_MQ_RX_RSS) {
@@ -333,23 +332,10 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 				eth_conf->rx_adv_conf.rss_conf.rss_hf);
 		if (ret) {
 			PMD_INIT_LOG(ERR, "dpaa2_setup_flow_distribution failed\n");
-			goto fail_tx_queue;
+			return ret;
 		}
 	}
-
 	return 0;
-fail_tx_queue:
-	i -= 1;
-	while (i >= 0) {
-		dpaa2_q = (struct dpaa2_queue *)data->tx_queues[i];
-		rte_free(dpaa2_q->cscn);
-		data->tx_queues[i--] = NULL;
-	}
-	for (i = 0; i < data->nb_rx_queues; i++) {
-		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[i];
-		dpaa2_free_dq_storage(dpaa2_q->q_storage);
-	}
-	return -1;
 }
 
 /* Function to setup RX flow information. It contains traffic class ID,
@@ -383,7 +369,8 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (ret)
 			return ret;
 	}
-	dpaa2_q = (struct dpaa2_queue *)dev->data->rx_queues[rx_queue_id];
+	dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[rx_queue_id];
+	dpaa2_q->mb_pool = mb_pool; /**< mbuf pool to populate RX ring. */
 
 	/*Get the tc id and flow id from given VQ id*/
 	flow_id = rx_queue_id % priv->num_dist_per_tc[dpaa2_q->tc_index];
@@ -416,7 +403,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		PMD_INIT_LOG(ERR, "Error in setting the rx flow: = %d\n", ret);
 		return -1;
 	}
-
+	dev->data->rx_queues[rx_queue_id] = dpaa2_q;
 	return 0;
 }
 
@@ -429,7 +416,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)
-		dev->data->tx_queues[tx_queue_id];
+		priv->tx_vq[tx_queue_id];
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_tx_flow_cfg cfg;
 	struct dpni_tx_conf_cfg tx_conf_cfg;
@@ -519,6 +506,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			return -ret;
 		}
 	}
+	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 	return 0;
 }
 
@@ -526,16 +514,12 @@ static void
 dpaa2_dev_rx_queue_release(void *q __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
-
-	PMD_INIT_LOG(INFO, "Not implemented");
 }
 
 static void
 dpaa2_dev_tx_queue_release(void *q __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
-
-	PMD_INIT_LOG(INFO, "Not implemented");
 }
 
 static const uint32_t *
@@ -1227,7 +1211,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
 	if (ret < 0) {
 		RTE_LOG(ERR, PMD, "error: dpni_get_link_state %d", ret);
-		return 0;
+		return -1;
 	}
 
 	if ((old.link_status == state.up) && (old.link_speed == state.rate)) {
@@ -1247,9 +1231,9 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	dpaa2_dev_atomic_write_link_status(dev, &link);
 
 	if (link.link_status)
-		PMD_DRV_LOG(INFO, "Link is Up\n");
+		PMD_DRV_LOG(INFO, "Port %d Link is Up\n", dev->data->port_id);
 	else
-		PMD_DRV_LOG(INFO, "Link is Down\n");
+		PMD_DRV_LOG(INFO, "Port %d Link is Down\n", dev->data->port_id);
 	return 0;
 }
 
@@ -1290,12 +1274,12 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 			PMD_DRV_LOG(ERR, "Interface Link UP failed (%d)", ret);
 			return -EINVAL;
 		}
-		/*changing tx burst function to start  enqueues */
-		dev->tx_pkt_burst = dpaa2_dev_tx;
 	}
+	/*changing tx burst function to start  enqueues */
+	dev->tx_pkt_burst = dpaa2_dev_tx;
 	dev->data->dev_link.link_status = 1;
 
-	PMD_INIT_LOG(INFO, "Link UP successful");
+	PMD_DRV_LOG(INFO, "Port %d Link UP successful", dev->data->port_id);
 	return ret;
 }
 
@@ -1349,7 +1333,7 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		PMD_INIT_LOG(INFO, "Link DOWN successful");
+		PMD_DRV_LOG(INFO, "Port %d Link DOWN successful", dev->data->port_id);
 	}
 
 	dev->data->dev_link.link_status = 0;
@@ -1375,24 +1359,17 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_supported_ptypes_get = dpaa2_supported_ptypes_get,
 	.mtu_set	      = dpaa2_dev_mtu_set,
 	.vlan_filter_set      = dpaa2_vlan_filter_set,
-	.vlan_tpid_set        = NULL,
 	.vlan_offload_set     = dpaa2_vlan_offload_set,
-	.vlan_strip_queue_set = NULL,
-	.vlan_pvid_set        = NULL,
 	.rx_queue_setup	      = dpaa2_dev_rx_queue_setup,
 	.rx_queue_release      = dpaa2_dev_rx_queue_release,
 	.tx_queue_setup	      = dpaa2_dev_tx_queue_setup,
 	.tx_queue_release      = dpaa2_dev_tx_queue_release,
-	.dev_led_on           = NULL,
-	.dev_led_off          = NULL,
 	.set_queue_rate_limit = NULL,
 	.flow_ctrl_get	      = NULL,
 	.flow_ctrl_set	      = NULL,
 	.priority_flow_ctrl_set = NULL,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
 	.mac_addr_remove      = dpaa2_dev_remove_mac_addr,
-	.rxq_info_get         = NULL,
-	.txq_info_get         = NULL,
 	.mac_addr_set         = dpaa2_dev_set_mac_addr,
 };
 
