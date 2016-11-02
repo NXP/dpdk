@@ -91,6 +91,8 @@
 /* L4 Type field: TCP */
 #define DPAA_L4_PARSE_RESULT_TCP	0x20
 
+#define DPA_SGT_MAX_ENTRIES 16 /* maximum number of entries in SG Table */
+
 /* Parsing mask (Little Endian) - 0x00E044EC00800000
  *	Classification Plan ID 0x00
  *	L4R 0xE0 -

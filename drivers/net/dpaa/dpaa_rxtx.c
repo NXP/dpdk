@@ -225,6 +225,60 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 	/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
 	fd->cmd = 0x50000000;
 }
+struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
+{
+	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
+	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
+	struct rte_mbuf *first_seg, *prev_seg, *cur_seg, *temp;
+	struct qm_sg_entry *sgt, *sg_temp;
+	void *ptr;
+	void *vaddr, *sg_vaddr;
+	int i = 0;
+	uint8_t fd_offset = fd->offset;
+
+	vaddr = dpaa_mem_ptov(qm_fd_addr(fd));
+	if (!vaddr) {
+		PMD_DRV_LOG(ERR, "unable to convert physical address");
+		return NULL;
+	}
+	sgt = vaddr + fd_offset;
+	sg_temp = &sgt[i++];
+	hw_sg_to_cpu(sg_temp);
+	temp = (struct rte_mbuf *)((char *)vaddr - bp_info->meta_data_size);
+	sg_vaddr = dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+
+	first_seg = (struct rte_mbuf *)((char *)sg_vaddr - bp_info->meta_data_size);
+	first_seg->data_off = sg_temp->offset;
+	first_seg->data_len = sg_temp->length;
+	first_seg->pkt_len = sg_temp->length;
+
+	first_seg->port = dpaa_intf->ifid;
+	first_seg->nb_segs = 1;
+	first_seg->ol_flags = 0;
+	prev_seg = first_seg;
+	while (i < DPA_SGT_MAX_ENTRIES) {
+		sg_temp = &sgt[i++];
+		hw_sg_to_cpu(sg_temp);
+		sg_vaddr = dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+		cur_seg = (struct rte_mbuf *)((char *)sg_vaddr - bp_info->meta_data_size);
+		cur_seg->data_off = sg_temp->offset;
+		cur_seg->data_len = sg_temp->length;
+		first_seg->pkt_len += sg_temp->length;
+		first_seg->nb_segs += 1;
+		prev_seg->next = cur_seg;
+		if (sg_temp->final) {
+			cur_seg->next = NULL;
+			break;
+		} else
+			prev_seg = cur_seg;
+	}
+
+	rte_mbuf_refcnt_set(first_seg, 1);
+	dpaa_eth_packet_info(first_seg, (uint64_t)vaddr);
+	rte_pktmbuf_free_seg(temp);
+
+	return first_seg;
+}
 
 static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 						   struct qm_fd *fd)
@@ -234,7 +288,9 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	struct rte_mbuf *mbuf;
 	void *ptr;
 
-	if (unlikely(fd->format != qm_fd_contig)) {
+	if (unlikely(fd->format == qm_fd_sg))
+		return dpaa_eth_sg_to_mbuf(fq, fd);
+	else if (unlikely(fd->format != qm_fd_contig)) {
 		PMD_DRV_LOG(ERR, "dropping packet in sg form");
 		goto errret;
 	}
@@ -249,7 +305,6 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	rte_prefetch0((void *)((uint8_t *)ptr + fd->offset));
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
-	mbuf->buf_addr = ptr;
 	mbuf->data_off = fd->offset;
 	mbuf->data_len = fd->length20;
 	mbuf->pkt_len = fd->length20;
@@ -292,7 +347,6 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		dq = qman_dequeue(fq);
 		if (!dq)
 			continue;
-
 		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(fq, &dq->fd);
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
@@ -348,6 +402,47 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 	return dpaa_mbuf;
 }
 
+int8_t dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf, struct qm_fd *fd, uint32_t bpid)
+{
+	struct rte_mbuf *cur_seg = mbuf;
+	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
+	struct rte_mbuf *temp;
+	struct qm_sg_entry *sg_temp, *sgt;
+	int i = 0;
+
+	temp = rte_pktmbuf_alloc(bp_info->mp);
+	if (!temp) {
+		PMD_DRV_LOG(ERR, "Failure in allocation mbuf");
+		return -1;
+	}
+	sgt = temp->buf_addr + temp->data_off;
+	fd->cmd = 0;
+	fd->opaque_addr = 0;
+	fd->format = QM_FD_SG;
+	fd->addr = temp->buf_physaddr;
+	fd->offset = temp->data_off;
+	fd->bpid = bpid;
+	fd->length20 = mbuf->pkt_len;
+
+	while (i < DPA_SGT_MAX_ENTRIES) {
+		sg_temp = &sgt[i++];
+		sg_temp->opaque = 0;
+		sg_temp->val = 0;
+		sg_temp->addr = cur_seg->buf_physaddr;
+		sg_temp->offset = cur_seg->data_off;
+		sg_temp->length = cur_seg->data_len;
+		sg_temp->bpid = bpid;
+		cur_seg = cur_seg->next;
+		if (cur_seg == NULL) {
+			sg_temp->final = 1;
+			cpu_to_hw_sg(sg_temp);
+			break;
+		}
+		cpu_to_hw_sg(sg_temp);
+	}
+	return 0;
+}
+
 uint16_t dpaa_eth_queue_tx(void *q,
 			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
@@ -369,14 +464,32 @@ uint16_t dpaa_eth_queue_tx(void *q,
 
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
-
 		for (loop = 0; loop < frames_to_send; loop++, i++) {
+
 			mbuf = bufs[i];
 			mp = mbuf->pool;
 			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
-				DPAA_MBUF_TO_CONTIG_FD(mbuf,
+				if (mbuf->nb_segs == 1) {
+					DPAA_MBUF_TO_CONTIG_FD(mbuf,
 					       &fd_arr[loop], bp_info->bpid);
+				} else if (mbuf->nb_segs > 1 && mbuf->nb_segs <= DPA_SGT_MAX_ENTRIES) {
+					if (dpaa_eth_mbuf_to_sg_fd(mbuf,
+						&fd_arr[loop], bp_info->bpid)) {
+						PMD_DRV_LOG(DEBUG, "Unable to create Scatter Gather FD");
+						frames_to_send = loop;
+						nb_bufs = loop;
+						goto send_pkts;
+					}
+				} else {
+					PMD_DRV_LOG(DEBUG, "Number of Segments not supported");
+					/* Set frames_to_send & nb_bufs so that
+					 * packets are transmitted till
+					 * previous frame */
+					frames_to_send = loop;
+					nb_bufs = loop;
+					goto send_pkts;
+				}
 			} else {
 				struct qman_fq *txq = q;
 				struct dpaa_if *dpaa_intf = txq->dpaa_intf;

@@ -542,6 +542,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	if (!dpaa_intf->bp_info || dpaa_intf->bp_info->mp != mp) {
 		struct fman_if_ic_params icp;
 		uint32_t fd_offset;
+		uint32_t bp_size;
 
 		if (!mp->pool_data) {
 			PMD_DRV_LOG(ERR, "not an offloaded buffer pool");
@@ -558,8 +559,11 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 		fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
 		fman_if_set_fdoff(dpaa_intf->fif, fd_offset);
+
+		/* Buffer pool size should be equal to Dataroom Size*/
+		bp_size = rte_pktmbuf_data_room_size(mp);
 		fman_if_set_bp(dpaa_intf->fif, mp->size,
-			       dpaa_intf->bp_info->bpid, mp->elt_size);
+			       dpaa_intf->bp_info->bpid, bp_size);
 		dpaa_intf->valid = 1;
 		PMD_DRV_LOG(INFO, "if =%s - fd_offset = %d offset = %d",
 			    dpaa_intf->name, fd_offset,
@@ -595,14 +599,11 @@ static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 	return;
 }
 
-static int dpaa_mtu_set(struct rte_eth_dev *dev __rte_unused,
-						uint16_t mtu __rte_unused)
+static int dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
-	/* Currently we don't need to set anything specefic
-	 * in hardware for MTU (to be checked again). So just return zero in
-	 * order to make sure that setting mtu from Application doesn't return
-	 * any error
-	 */
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	fman_if_set_maxfrm(dpaa_intf->fif, mtu);
 	return 0;
 }
 
