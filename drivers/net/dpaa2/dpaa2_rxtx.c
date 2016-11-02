@@ -314,7 +314,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 #ifdef QBMAN_MULTI_TX
 	while (nb_pkts) {
 		/*Check if the queue is congested*/
-		if (dpaa2_q->cscn && qbman_result_is_CSCN(dpaa2_q->cscn))
+		if (qbman_result_SCN_state_in_mem(dpaa2_q->cscn))
 			goto skip_tx;
 
 		frames_to_send = (nb_pkts >> 3) ? MAX_TX_RING_SLOTS : nb_pkts;
@@ -360,7 +360,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 #else
 
 	/*Check if the queue is congested*/
-	if (dpaa2_q->cscn && qbman_result_is_CSCN(dpaa2_q->cscn))
+	if (qbman_result_SCN_state_in_mem(dpaa2_q->cscn))
 		goto skip_tx;
 
 	fd.simple.frc = 0;
