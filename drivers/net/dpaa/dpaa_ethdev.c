@@ -67,28 +67,24 @@
 
 static struct usdpaa_netcfg_info *dpaa_netcfg;
 __thread bool thread_portal_init;
+struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
 
-/* Static BPID index allocator, increments continuously */
-rte_atomic32_t bpid_alloc = RTE_ATOMIC64_INIT(0);
-struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
-
-static struct bman_pool *dpaa_bpid_init(int bpid)
+static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 {
+	struct bman_pool *bp;
 	struct bm_buffer bufs[8];
-	struct bman_pool *bp = NULL;
+	uint8_t bpid;
 	int num_bufs = 0, ret = 0;
-
-	PMD_DRV_LOG(DEBUG, "request bman pool: bpid %d", bpid);
-	/* Drain (if necessary) then seed buffer pools */
 	struct bman_pool_params params = {
-		.bpid = bpid
+		.flags = BMAN_POOL_FLAG_DYNAMIC_BPID
 	};
 
 	bp = bman_new_pool(&params);
 	if (!bp) {
 		PMD_DRV_LOG(ERR, "bman_new_pool() failed");
-		return NULL;
+		return -ENODEV;
 	}
+	bpid = bman_get_params(bp)->bpid;
 
 	/* Drain the pool of anything already in it. */
 	do {
@@ -105,31 +101,6 @@ static struct bman_pool *dpaa_bpid_init(int bpid)
 	if (num_bufs)
 		PMD_DRV_LOG(WARNING, "drained %u bufs from BPID %d",
 			    num_bufs, bpid);
-
-	return bp;
-}
-
-static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
-{
-	struct bman_pool *bp;
-	uint32_t bpid;
-
-	/*XXX: bpid_alloc needs to be changed to a bitmap, so that
-	 * we can take care of destroy_pool kind of API too. Current
-	 * implementation doesn't allow deallocation of entry
-	 */
-	bpid = rte_atomic32_add_return(&bpid_alloc, 1);
-
-	if (bpid > NUM_BP_POOL_ENTRIES) {
-		PMD_DRV_LOG(ERR, "exceeding bpid requirements");
-		return -2;
-	}
-
-	bp = dpaa_bpid_init(bpid);
-	if (!bp) {
-		PMD_DRV_LOG(ERR, "dpaa_bpid_init failed\n");
-		return -2;
-	}
 
 	dpaa_pool_table[bpid].mp = mp;
 	dpaa_pool_table[bpid].bpid = bpid;
@@ -149,15 +120,12 @@ static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 }
 
 static
-void dpaa_mbuf_free_pool(struct rte_mempool *mp __rte_unused)
+void dpaa_mbuf_free_pool(struct rte_mempool *mp)
 {
-	/* TODO:
-	 * 1. Release bp_list memory allocation
-	 * 2. opposite of dpbp_enable()
-	 * <More>
-	 */
+	struct pool_info_entry *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 
 	PMD_DRV_LOG(DEBUG, "(%s) called\n", __func__);
+	bman_free_pool(bp_info->bp);
 	return;
 }
 

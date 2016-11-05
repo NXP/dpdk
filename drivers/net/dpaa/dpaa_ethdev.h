@@ -79,13 +79,7 @@
 #define DPAA_MAX_RX_PKT_LEN  9600
 
 /* total number of bpools on SoC */
-#define DPAA_MAX_BPOOLS	64
-
-/* Define pool_table for entries DPAA_MAX_BPOOLS+1 because
- * the atomic operations supported give only atomic_add_and_return()
- * so it causes 0th entry empty always
- * */
-#define NUM_BP_POOL_ENTRIES (DPAA_MAX_BPOOLS + 1)
+#define DPAA_MAX_BPOOLS	256
 
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
@@ -151,7 +145,7 @@ struct dpaa_if {
 };
 
 extern __thread bool thread_portal_init;
-extern struct pool_info_entry dpaa_pool_table[NUM_BP_POOL_ENTRIES];
+extern struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
 
 #define DPAA_BPID_TO_POOL_INFO(__bpid) &dpaa_pool_table[__bpid]
 
