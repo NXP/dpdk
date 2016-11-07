@@ -45,7 +45,8 @@ extern "C" {
 
 /* fix missing __builtin_bswap16 for gcc older then 4.8 */
 #if !(__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8))
-
+/* this may be used for pmdinfogen from host compiler */
+#if (defined __arm__ || defined __aarch64__)
 static inline uint16_t rte_arch_bswap16(uint16_t _x)
 {
 	register uint16_t x = _x;
@@ -56,7 +57,12 @@ static inline uint16_t rte_arch_bswap16(uint16_t _x)
 		      );
 	return x;
 }
-
+#else
+static inline uint16_t rte_arch_bswap16(uint16_t _x)
+{
+	return (_x >> 8) | ((_x << 8) & 0xff00);
+}
+#endif
 #define rte_bswap16(x) ((uint16_t)(__builtin_constant_p(x) ? \
 				   rte_constant_bswap16(x) : \
 				   rte_arch_bswap16(x)))
