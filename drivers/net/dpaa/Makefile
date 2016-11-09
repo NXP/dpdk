@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -29,25 +29,31 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
+RTE_SDK_DPAA=$(RTE_SDK)/drivers/net/dpaa
 
 #
 # library name
 #
 LIB = librte_pmd_dpaa.a
 
-CFLAGS += -D _GNU_SOURCE
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
 else
 CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS) -Wno-cast-qual  -Wno-pointer-arith
+CFLAGS += $(WERROR_FLAGS)
 endif
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include
+CFLAGS +=-Wno-cast-qual
+CFLAGS +=-Wno-pointer-arith
+CFLAGS += -D _GNU_SOURCE
+
+CFLAGS += -I$(RTE_SDK_DPAA)/
+CFLAGS += -I$(RTE_SDK_DPAA)/base/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
-CFLAGS += -I$(RTE_SDK)/lib/librte_net
 EXPORT_MAP := rte_pmd_dpaa_version.map
+
+LIBABIVER := 1
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
 	base/drivers/fman/fman.c \
@@ -59,9 +65,15 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
 	base/drivers/qbman/qman_driver.c \
 	base/drivers/qbman/dpa_alloc.c \
 	base/drivers/qbman/dpa_sys.c \
-	base/drivers/syscfg/usdpaa_netcfg_layer.c \
-	dpaa_ethdev.c \
-	dpaa_rxtx.c
+	base/drivers/syscfg/usdpaa_netcfg_layer.c
+
+# Interfaces with DPDK
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
+
+#
+# Export include files
+#
 SYMLINK-y-include +=
 
 # this lib depends upon:
