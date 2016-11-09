@@ -85,10 +85,13 @@ void  dpaa_buf_free(struct pool_info_entry *bp_info,
 	struct bm_buffer buf;
 	int ret;
 
+	PMD_TX_LOG(DEBUG, " Freeing %p to bpid: %d", addr, bp_info->bpid);
+
 	bm_buffer_set64(&buf, addr);
 retry:
 	ret = bman_release(bp_info->bp, &buf, 1, 0);
 	if (ret) {
+		PMD_TX_LOG(DEBUG, " BMAN busy. Retrying...");
 		cpu_spin(CPU_SPIN_BACKOFF_CYCLES);
 		goto retry;
 	}
@@ -122,6 +125,8 @@ void dpaa_display_frame(const struct qm_fd *fd)
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
 				     uint64_t prs __rte_unused)
 {
+	PMD_RX_LOG(DEBUG, " Slow parsing");
+
 	/*TBD:XXX: to be implemented*/
 }
 
@@ -130,6 +135,8 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 {
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
+
+	PMD_RX_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
 
 	switch (prs) {
 	case DPAA_PKT_TYPE_NONE:
@@ -200,6 +207,8 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 {
 	struct dpaa_eth_parse_results_t *prs;
 
+	PMD_TX_LOG(DEBUG, " Offloading checksum for mbuf: %p", mbuf);
+
 	if (mbuf->data_off < DEFAULT_TX_ICEOF +
 			sizeof(struct dpaa_eth_parse_results_t)) {
 		PMD_DRV_LOG(ERR, "Checksum offload Err: Not enough Headroom "
@@ -235,6 +244,8 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 	void *vaddr, *sg_vaddr;
 	int i = 0;
 	uint8_t fd_offset = fd->offset;
+
+	PMD_RX_LOG(DEBUG, "Received an SG frame");
 
 	vaddr = dpaa_mem_ptov(qm_fd_addr(fd));
 	if (!vaddr) {
@@ -287,6 +298,8 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct rte_mbuf *mbuf;
 	void *ptr;
+
+	PMD_RX_LOG(DEBUG, " FD--->MBUF");
 
 	if (unlikely(fd->format == qm_fd_sg))
 		return dpaa_eth_sg_to_mbuf(fq, fd);
@@ -351,6 +364,8 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
 
+	PMD_RX_LOG(DEBUG, "Received %d buffers on queue: %p", num_rx, q);
+
 	return num_rx;
 }
 
@@ -366,9 +381,7 @@ static void *dpaa_get_pktbuf(struct pool_info_entry *bp_info)
 		return (void *)buf;
 	}
 
-	PMD_DRV_LOG(DEBUG, "located pool sz %d , bpid %d",
-		    bp_info->size, bufs.bpid);
-	PMD_DRV_LOG(DEBUG, "got buffer 0x%llx from pool %d",
+	PMD_RX_LOG(DEBUG, "got buffer 0x%llx from pool %d",
 		    bufs.addr, bufs.bpid);
 
 	buf = (uint64_t)dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
@@ -411,6 +424,8 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	struct rte_mbuf *temp;
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
+
+	PMD_TX_LOG(DEBUG, "Creating SG FD to transmit");
 
 	temp = rte_pktmbuf_alloc(bp_info->mp);
 	if (!temp) {
@@ -464,6 +479,8 @@ uint16_t dpaa_eth_queue_tx(void *q,
 		}
 	}
 
+	PMD_TX_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
+
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++, i++) {
@@ -471,6 +488,8 @@ uint16_t dpaa_eth_queue_tx(void *q,
 			mbuf = bufs[i];
 			mp = mbuf->pool;
 			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+				PMD_TX_LOG(DEBUG, "BMAN offloaded buffer, "
+					"mbuf: %p", mbuf);
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				if (mbuf->nb_segs == 1) {
 					DPAA_MBUF_TO_CONTIG_FD(mbuf,
@@ -496,6 +515,8 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				struct qman_fq *txq = q;
 				struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 
+				PMD_TX_LOG(DEBUG, "Non-BMAN offloaded buffer."
+					"Allocating an offloaded buffer");
 				mbuf = dpaa_get_dmable_mbuf(mbuf, dpaa_intf);
 				if (!mbuf) {
 					PMD_DRV_LOG(DEBUG, "no dpaa buffers.");
@@ -524,6 +545,8 @@ send_pkts:
 		nb_bufs -= frames_to_send;
 	}
 
+	PMD_TX_LOG(DEBUG, "Transmitted %d buffers on queue: %p", i, q);
+
 	return i;
 }
 
@@ -531,6 +554,8 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 			      struct rte_mbuf **bufs __rte_unused,
 		uint16_t nb_bufs __rte_unused)
 {
+	PMD_TX_LOG(DEBUG, "Drop all packets");
+
 	/* Drop all incoming packets. No need to free packets here
 	 * because the rte_eth f/w frees up the packets through tx_buffer
 	 * callback in case this functions returns count less than nb_bufs

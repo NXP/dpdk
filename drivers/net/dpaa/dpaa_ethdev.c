@@ -79,6 +79,8 @@ static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 		.flags = BMAN_POOL_FLAG_DYNAMIC_BPID
 	};
 
+	PMD_INIT_FUNC_TRACE();
+
 	bp = bman_new_pool(&params);
 	if (!bp) {
 		PMD_DRV_LOG(ERR, "bman_new_pool() failed");
@@ -115,7 +117,7 @@ static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	 */
 	mp->flags |= MEMPOOL_F_HW_PKT_POOL;
 
-	PMD_DRV_LOG(INFO, "BP List created for bpid =%d\n", bpid);
+	PMD_DRV_LOG(INFO, "BMAN pool created for bpid =%d", bpid);
 	return 0;
 }
 
@@ -124,8 +126,10 @@ void dpaa_mbuf_free_pool(struct rte_mempool *mp)
 {
 	struct pool_info_entry *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 
-	PMD_DRV_LOG(DEBUG, "(%s) called\n", __func__);
+	PMD_INIT_FUNC_TRACE();
+
 	bman_free_pool(bp_info->bp);
+	PMD_DRV_LOG(INFO, "BMAN pool freed for bpid =%d", bp_info->bpid);
 	return;
 }
 
@@ -134,25 +138,31 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		void *const *obj_table,
 		unsigned n)
 {
-	struct pool_info_entry *bp_info;
+	struct pool_info_entry *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 	int ret;
 	unsigned i = 0;
+
+	PMD_TX_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
+		    n, bp_info->bpid);
 
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "dpaa_portal_init failed "
+				"with ret: %d", ret);
 			return 0;
 		}
 	}
 
 	while (i < n) {
-		bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 		dpaa_buf_free(bp_info,
 			      (uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
 				+ bp_info->meta_data_size);
 		i = i + 1;
 	}
+
+	PMD_TX_LOG(DEBUG, " freed %d buffers in bpid =%d",
+		    n, bp_info->bpid);
 
 	return 0;
 }
@@ -171,6 +181,9 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 
+	PMD_RX_LOG(DEBUG, " Request to alloc %d buffers in bpid = %d",
+		    count, bp_info->bpid);
+
 	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
 		PMD_DRV_LOG(ERR, "Unable to allocate requested (%u) buffers",
 			    count);
@@ -180,7 +193,8 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (!thread_portal_init) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
-			PMD_DRV_LOG(ERR, "Failure in affining portal");
+			PMD_DRV_LOG(ERR, "dpaa_portal_init failed with "
+				"ret: %d", ret);
 			return 0;
 		}
 	}
@@ -190,11 +204,10 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * then the remainder.
 		 */
 		if ((count - n) > DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(bp_info->bp,
-							   bufs, DPAA_MBUF_MAX_ACQ_REL, 0);
+			ret = bman_acquire(bp_info->bp, bufs,
+				DPAA_MBUF_MAX_ACQ_REL, 0);
 		} else {
-			ret = bman_acquire(bp_info->bp,
-							   bufs, count - n, 0);
+			ret = bman_acquire(bp_info->bp, bufs, count - n, 0);
 		}
 		/* In case of less than requested number of buffers available
 		 * in pool, qbman_swp_acquire returns 0
@@ -215,20 +228,22 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 			m[n] = (struct rte_mbuf *)((char *)bufaddr
 						- bp_info->meta_data_size);
 			rte_mbuf_refcnt_set(m[n], 0);
-			PMD_DRV_LOG(DEBUG, "Acquired %p address %p from BMAN",
+			PMD_RX_LOG(DEBUG, "Acquired %p address %p from BMAN",
 				    (void *)bufaddr, (void *)m[n]);
 			n++;
 		}
 	}
 
-	PMD_DRV_LOG(DEBUG, " req = %d done = %d bpid =%d",
-		    count, n, bp_info->bpid);
+	PMD_RX_LOG(DEBUG, " allocated %d buffers from bpid =%d",
+		    n, bp_info->bpid);
 	return 0;
 }
 
 static
 unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	/*TBD:XXX: to be implemented*/
 	return 0;
 }
@@ -236,9 +251,11 @@ unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
 static
 int dpaa_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	/*if dpaa init fails, means no dpaa pool will be avaialbe */
 	if (!dpaa_netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA mempool resources not available\n");
+		PMD_DRV_LOG(WARNING, "DPAA mempool resources not available");
 		return -1;
 	}
 
@@ -261,26 +278,27 @@ static int dpaa_init(void)
 {
 	int dev_id, ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* Load the device-tree driver */
 	ret = of_init();
 	if (ret) {
-		printf("of_init Failed %d\n", ret);
+		PMD_DRV_LOG(ERR, "of_init failed with ret: %d", ret);
 		return -1;
 	}
 
 	/* Get the interface configurations from device-tree */
 	dpaa_netcfg = usdpaa_netcfg_acquire();
 	if (!dpaa_netcfg) {
-		PMD_DRV_LOG(ERR, "Fail: usdpaa_netcfg_acquire");
+		PMD_DRV_LOG(ERR, "usdpaa_netcfg_acquire failed");
 		return -1;
 	}
 	if (!dpaa_netcfg->num_ethports) {
-		PMD_DRV_LOG(ERR, "Fail: no network interfaces available\n");
+		PMD_DRV_LOG(ERR, "no network interfaces available");
 		return -1;
 	}
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	printf("%d ethports available\n", dpaa_netcfg->num_ethports);
 	dump_usdpaa_netcfg(dpaa_netcfg);
 #endif
 
@@ -304,12 +322,12 @@ static int dpaa_init(void)
 	/* Load the Qman/Bman drivers */
 	ret = qman_global_init();
 	if (ret) {
-		fprintf(stderr, "Fail: %s: %d\n", "qman_global_init()", ret);
+		PMD_DRV_LOG(ERR, "qman_global_init failed with ret: %d", ret);
 		return -1;
 	}
 	ret = bman_global_init();
 	if (ret) {
-		fprintf(stderr, "Fail: %s: %d\n", "bman_global_init()", ret);
+		PMD_DRV_LOG(ERR, "bman_global_init failed with ret: %d", ret);
 		return -1;
 	}
 
@@ -322,6 +340,8 @@ int dpaa_portal_init(void *arg)
 	pthread_t id;
 	uint32_t cpu;
 	int ret;
+
+	PMD_INIT_FUNC_TRACE();
 
 	if (thread_portal_init)
 		return 0;
@@ -338,20 +358,23 @@ int dpaa_portal_init(void *arg)
 	id = pthread_self();
 	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t), &cpuset);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "pthread_setaffinity_np failed on core :%d", cpu);
+		PMD_DRV_LOG(ERR, "pthread_setaffinity_np failed on "
+			"core :%d with ret: %d", cpu, ret);
 		return -1;
 	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
 	if (ret) {
-		PMD_DRV_LOG(ERR, "bman_thread_init failed on core %d", cpu);
+		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
+			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
 	/* Initialise qman thread portals */
 	ret = qman_thread_init();
 	if (ret) {
-		PMD_DRV_LOG(ERR, "bman_thread_init failed on core %d", cpu);
+		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
+			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
 	thread_portal_init = true;
@@ -362,6 +385,8 @@ int dpaa_portal_init(void *arg)
 int dpaa_pre_rte_eal_init(void)
 {
 	int ret;
+
+	PMD_INIT_FUNC_TRACE();
 
 	ret = dpaa_init();
 	if (ret)
@@ -379,6 +404,8 @@ int dpaa_pre_rte_eal_init(void)
 static int
 dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -396,6 +423,8 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev)
 		RTE_PTYPE_L4_SCTP
 	};
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (dev->rx_pkt_burst == dpaa_eth_queue_rx)
 		return ptypes;
 	return NULL;
@@ -404,6 +433,8 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev)
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
 
 	/* Change tx callback to the real one */
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
@@ -416,12 +447,16 @@ static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
+	PMD_INIT_FUNC_TRACE();
+
 	fman_if_disable_rx(dpaa_intf->fif);
 	dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 }
 
 static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	dpaa_eth_dev_stop(dev);
 }
 
@@ -429,6 +464,8 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 			      struct rte_eth_dev_info *dev_info)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
 
 	dev_info->max_rx_queues = dpaa_intf->nb_rx_queues;
 	dev_info->max_tx_queues = dpaa_intf->nb_tx_queues;
@@ -455,12 +492,14 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_link *link = &dev->data->dev_link;
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (dpaa_intf->fif->mac_type == fman_mac_1g)
 		link->link_speed = 1000;
 	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
 		link->link_speed = 10000;
 	else
-		PMD_DRV_LOG(ERR, "%s:: invalid link_speed %d",
+		PMD_DRV_LOG(ERR, "invalid link_speed %d",
 			    dpaa_intf->name, dpaa_intf->fif->mac_type);
 
 	link->link_status = dpaa_intf->valid;
@@ -474,12 +513,16 @@ static void dpaa_eth_stats_get(struct rte_eth_dev *dev,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
+	PMD_INIT_FUNC_TRACE();
+
 	fman_if_stats_get(dpaa_intf->fif, stats);
 }
 
 static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
 
 	fman_if_stats_reset(dpaa_intf->fif);
 }
@@ -488,12 +531,16 @@ static void dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
+	PMD_INIT_FUNC_TRACE();
+
 	fman_if_promiscuous_enable(dpaa_intf->fif);
 }
 
 static void dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
 
 	fman_if_promiscuous_disable(dpaa_intf->fif);
 }
@@ -506,6 +553,10 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		struct rte_mempool *mp)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+
+	PMD_DRV_LOG(INFO, "Rx queue setup for queue index: %d", queue_idx);
 
 	if (!dpaa_intf->bp_info || dpaa_intf->bp_info->mp != mp) {
 		struct fman_if_ic_params icp;
@@ -545,7 +596,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 static
 void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
-	PMD_DRV_LOG(INFO, "%p Rx queue release", rxq);
+	PMD_INIT_FUNC_TRACE();
+
 	return;
 }
 
@@ -557,13 +609,16 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
+	PMD_INIT_FUNC_TRACE();
+
+	PMD_DRV_LOG(INFO, "Tx queue setup for queue index: %d", queue_idx);
 	dev->data->tx_queues[queue_idx] = &dpaa_intf->tx_queues[queue_idx];
 	return 0;
 }
 
 static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
-	PMD_DRV_LOG(INFO, "%p Tx queue release", txq);
+	PMD_INIT_FUNC_TRACE();
 	return;
 }
 
@@ -571,18 +626,24 @@ static int dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
+	PMD_INIT_FUNC_TRACE();
+
 	fman_if_set_maxfrm(dpaa_intf->fif, mtu);
 	return 0;
 }
 
 static int dpaa_link_down(struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	dpaa_eth_dev_stop(dev);
 	return 0;
 }
 
 static int dpaa_link_up(struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	dpaa_eth_dev_start(dev);
 	return 0;
 }
@@ -594,20 +655,20 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_fc_conf *net_fc;
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (!(dpaa_intf->fc_conf)) {
 		dpaa_intf->fc_conf = rte_zmalloc(NULL,
 			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
 		if (!dpaa_intf->fc_conf) {
-			printf("%s::unable to save flow control info\n",
-			       __func__);
+			PMD_DRV_LOG(ERR, "unable to save flow control info");
 			return -ENOMEM;
 		}
 	}
 	net_fc = dpaa_intf->fc_conf;
 
 	if (fc_conf->high_water < fc_conf->low_water) {
-		printf("\nERR - %s Incorrect Flow Control Configuration\n",
-		       __func__);
+		PMD_DRV_LOG(ERR, "Incorrect Flow Control Configuration");
 		return -EINVAL;
 	}
 
@@ -643,6 +704,8 @@ dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_fc_conf *net_fc = dpaa_intf->fc_conf;
 	int ret;
+
+	PMD_INIT_FUNC_TRACE();
 
 	if (net_fc) {
 		fc_conf->pause_time = net_fc->pause_time;
@@ -695,11 +758,13 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 	struct rte_eth_fc_conf *fc_conf;
 	int ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (!(dpaa_intf->fc_conf)) {
 		dpaa_intf->fc_conf = rte_zmalloc(NULL,
 			sizeof(struct rte_eth_fc_conf), MAX_CACHELINE);
 		if (!dpaa_intf->fc_conf) {
-			printf("%s::unable to save flow control info\n", __func__);
+			PMD_DRV_LOG(ERR, "unable to save flow control info");
 			return -ENOMEM;
 		}
 	}
@@ -722,17 +787,19 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	struct qm_mcc_initfq opts;
 	int ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "reserve rx fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "reserve rx fqid %d failed with ret: %d",
+			fqid, ret);
 		return -EINVAL;
 	}
-	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	PMD_DRV_LOG(DEBUG, "%s::creating rx fq %p, fqid %d",
-		    __func__, fq, fqid);
+	PMD_DRV_LOG(DEBUG, "creating rx fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "create rx fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "create rx fqid %d failed with ret: %d",
+			fqid, ret);
 		return ret;
 	}
 
@@ -748,7 +815,8 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		PMD_DRV_LOG(ERR, "init rx fqid %d failed %d", fqid, ret);
+		PMD_DRV_LOG(ERR, "init rx fqid %d failed with ret: %d",
+			fqid, ret);
 	return ret;
 }
 
@@ -759,10 +827,14 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	struct qm_mcc_initfq opts;
 	int ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
 			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);
-	if (ret)
+	if (ret) {
+		PMD_DRV_LOG(ERR, "create tx fq failed with ret: %d", ret);
 		return ret;
+	}
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTB | QM_INITFQ_WE_CONTEXTA;
 	opts.fqd.dest.channel = fman_intf->tx_channel_id;
@@ -772,10 +844,11 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	/* no tx-confirmation */
 	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
-	PMD_DRV_LOG(DEBUG, "init fqid %d for fman_intf fm%d-gb%d chan %d\n",
-				fq->fqid, (fman_intf->fman_idx + 1),
-				fman_intf->mac_idx, fman_intf->tx_channel_id);
-	return qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
+	PMD_DRV_LOG(DEBUG, "init tx fq %p, fqid %d", fq, fq->fqid);
+	ret = qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
+	if (ret)
+		PMD_DRV_LOG(ERR, "init tx fqid %d failed %d", fq->fqid, ret);
+	return ret;
 }
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
@@ -785,22 +858,29 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	struct qm_mcc_initfq opts;
 	int ret;
 
+	PMD_INIT_FUNC_TRACE();
+
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "reserve debug fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "reserve debug fqid %d failed with ret: %d",
+			fqid, ret);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	PMD_DRV_LOG(DEBUG, "%s::creating debug fq %p, fqid %d",
-		    __func__, fq, fqid);
+	PMD_DRV_LOG(DEBUG, "creating debug fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "create debug fqid %d failed", fqid);
+		PMD_DRV_LOG(ERR, "create debug fqid %d failed with ret: %d",
+			fqid, ret);
 		return ret;
 	}
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL;
 	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
-	return qman_init_fq(fq, 0, &opts);
+	ret = qman_init_fq(fq, 0, &opts);
+	if (ret)
+		PMD_DRV_LOG(ERR, "init debug fqid %d failed with ret: %d",
+			fqid, ret);
+	return ret;
 }
 #endif
 
@@ -814,6 +894,8 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	struct fman_if_bpool *bp, *tmp_bp;
 	int num_cores, num_rx_fqs, fqid;
 	int loop, ret = 0;
+
+	PMD_INIT_FUNC_TRACE();
 
 	/* give the interface a name */
 	sprintf(dpaa_intf->name, "fm%d-gb%d",
@@ -846,11 +928,8 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
 			DPAA_PCD_FQID_MULTIPLIER + loop;
 		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
-		if (ret) {
-			printf("%s::dpaa_rx_queue_init failed for %x\n",
-			       __func__, fqid);
+		if (ret)
 			return ret;
-		}
 		dpaa_intf->rx_queues[loop].dpaa_intf = dpaa_intf;
 	}
 	dpaa_intf->nb_rx_queues = num_rx_fqs;
@@ -866,8 +945,6 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop], fman_intf);
 		if (ret)
 			return ret;
-		PMD_DRV_LOG(DEBUG, "%s::tx_fqid %x",
-			    __func__, dpaa_intf->tx_queues[loop].fqid);
 		dpaa_intf->tx_queues[loop].dpaa_intf = dpaa_intf;
 	}
 	dpaa_intf->nb_tx_queues = num_cores;
