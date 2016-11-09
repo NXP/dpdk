@@ -62,8 +62,6 @@ struct bman_portal {
 	 * you'll never guess the hash-function ... */
 	struct bman_pool *cb[64];
 	char irqname[MAX_IRQNAME];
-	/* Track if the portal was alloced by the driver */
-	u8 alloced;
 };
 
 /* For an explanation of the locking, redirection, or affine-portal logic,
@@ -211,16 +209,6 @@ struct bman_portal *bman_create_portal(
 	int ret;
 	u8 bpid = 0;
 
-	if (!portal) {
-		portal = kmalloc(sizeof(*portal), GFP_KERNEL);
-		if (!portal) {
-			pr_err("Can't allocate memory for bman portal\n");
-			return NULL;
-		}
-		portal->alloced = 1;
-	} else
-		portal->alloced = 0;
-
 	__p = &portal->p;
 
 	/* prep the low-level portal struct with the mapped addresses from the
@@ -230,7 +218,7 @@ struct bman_portal *bman_create_portal(
 	__p->addr.addr_ci = config->addr_virt[DPA_PORTAL_CI];
 	if (bm_rcr_init(__p, bm_rcr_pvb, bm_rcr_cce)) {
 		pr_err("Bman RCR initialisation failed\n");
-		goto fail_rcr;
+		return NULL;
 	}
 	if (bm_mc_init(__p)) {
 		pr_err("Bman MC initialisation failed\n");
@@ -304,9 +292,6 @@ fail_isr:
 	bm_mc_finish(__p);
 fail_mc:
 	bm_rcr_finish(__p);
-fail_rcr:
-	if (portal->alloced)
-		kfree(portal);
 	return NULL;
 }
 
@@ -363,8 +348,6 @@ void bman_destroy_portal(struct bman_portal *bm)
 	bm_mc_finish(&bm->p);
 	bm_rcr_finish(&bm->p);
 	bm->config = NULL;
-	if (bm->alloced)
-		kfree(bm);
 }
 
 const struct bm_portal_config *bman_destroy_affine_portal(void)
