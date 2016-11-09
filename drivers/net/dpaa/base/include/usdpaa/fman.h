@@ -460,9 +460,6 @@ int fman_if_get_fc_quanta(struct fman_if *fm_if);
 /* Set Flow Control pause quanta on specific interface */
 int fman_if_set_fc_quanta(struct fman_if *fm_if, u16 pause_quanta);
 
-/* Get interface fd->offset value */
-int fman_if_get_fdoff(struct fman_if *fm_if);
-
 /* Set default error fqid on specific interface */
 void fman_if_set_err_fqid(struct fman_if *fm_if, uint32_t err_fqid);
 
@@ -473,8 +470,17 @@ int fman_if_get_ic_params(struct fman_if *fm_if, struct fman_if_ic_params *icp);
 int fman_if_set_ic_params(struct fman_if *fm_if,
 			  const struct fman_if_ic_params *icp);
 
+/* Get interface fd->offset value */
+int fman_if_get_fdoff(struct fman_if *fm_if);
+
 /* Set interface fd->offset value */
 void fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset);
+
+/* Get interface Max Frame length (MTU) */
+uint16_t fman_if_get_maxfrm(struct fman_if *fm_if);
+
+/* Set interface  Max Frame length (MTU) */
+void fman_if_set_maxfrm(struct fman_if *fm_if, uint16_t max_frm);
 
 /* Set interface next invoked action for dequeue operation */
 void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);

@@ -1695,6 +1695,40 @@ void fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset)
 	out_be32(fmbm_rebm, in_be32(fmbm_rebm) | (fd_offset << 16));
 }
 
+void fman_if_set_maxfrm(struct fman_if *fm_if, uint16_t max_frm)
+{
+	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
+	unsigned *reg_maxfrm;
+
+	assert(ccsr_map_fd != -1);
+
+	if (__if->__if.mac_type == fman_mac_less ||
+	    __if->__if.mac_type == fman_onic ||
+	    __if->__if.mac_type == fman_offline)
+		return;
+
+	reg_maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+
+	out_be32(reg_maxfrm, (in_be32(reg_maxfrm) & 0xFFFF0000) | max_frm);
+}
+
+uint16_t fman_if_get_maxfrm(struct fman_if *fm_if)
+{
+	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
+	unsigned *reg_maxfrm;
+
+	assert(ccsr_map_fd != -1);
+
+	if (__if->__if.mac_type == fman_mac_less ||
+	    __if->__if.mac_type == fman_onic ||
+	    __if->__if.mac_type == fman_offline)
+		return;
+
+	reg_maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+
+	return (in_be32(reg_maxfrm) | 0x0000FFFF);
+}
+
 void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
