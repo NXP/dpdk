@@ -204,4 +204,10 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
 		    uint64_t addr);
 
+int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
+		struct qm_fd *fd,
+		uint32_t bpid);
+
+struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd);
+
 #endif

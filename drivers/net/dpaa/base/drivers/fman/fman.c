@@ -1722,7 +1722,7 @@ uint16_t fman_if_get_maxfrm(struct fman_if *fm_if)
 	if (__if->__if.mac_type == fman_mac_less ||
 	    __if->__if.mac_type == fman_onic ||
 	    __if->__if.mac_type == fman_offline)
-		return;
+		return 0;
 
 	reg_maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
 

@@ -225,13 +225,13 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 	/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
 	fd->cmd = 0x50000000;
 }
+
 struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 {
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct rte_mbuf *first_seg, *prev_seg, *cur_seg, *temp;
 	struct qm_sg_entry *sgt, *sg_temp;
-	void *ptr;
 	void *vaddr, *sg_vaddr;
 	int i = 0;
 	uint8_t fd_offset = fd->offset;
@@ -402,7 +402,9 @@ static struct rte_mbuf *dpaa_get_dmable_mbuf(struct rte_mbuf *mbuf,
 	return dpaa_mbuf;
 }
 
-int8_t dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf, struct qm_fd *fd, uint32_t bpid)
+int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
+		struct qm_fd *fd,
+		uint32_t bpid)
 {
 	struct rte_mbuf *cur_seg = mbuf;
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
