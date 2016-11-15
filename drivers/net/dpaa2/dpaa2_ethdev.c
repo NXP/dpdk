@@ -455,15 +455,16 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			       &dpaa2_q->flow_id, &cfg);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error in setting the tx flow:"
-			     " ErrorCode = %x\n", ret);
+			     " ErrorCode = %x\n", -ret);
 			return -1;
 	}
+#if 0
 	/*Set tx-conf and error configuration*/
 	ret = dpni_set_tx_conf(dpni, CMD_PRI_LOW, priv->token,
 			       dpaa2_q->flow_id, &tx_conf_cfg);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error in setting tx conf settings: "
-			     " ErrorCode = %x", ret);
+			     " ErrorCode = %x", -ret);
 		return -1;
 	}
 
@@ -472,11 +473,12 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		ret = dpni_set_tx_conf(dpni, CMD_PRI_LOW, priv->token,
 				       DPNI_COMMON_TX_CONF, &tx_conf_cfg);
 		if (ret) {
-			PMD_INIT_LOG(ERR, "Error in setting tx conf settings: "
-				     " ErrorCode = %x", ret);
+			PMD_INIT_LOG(ERR, "Error in setting tx common conf"
+				" settings: ErrorCode = %x", -ret);
 			return -1;
 		}
 	}
+#endif
 	dpaa2_q->tc_index = tc_id;
 
 	if (priv->flags & DPAA2_TX_CGR_SUPPORT) {
