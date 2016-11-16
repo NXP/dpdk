@@ -1,4 +1,5 @@
 /* Copyright 2013-2015 Freescale Semiconductor Inc.
+ *  Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -131,12 +132,13 @@ struct dpkg_extract {
 			enum net_prot			prot;
 			enum dpkg_extract_from_hdr_type type;
 			uint32_t			field;
-			uint8_t			size;
-			uint8_t			offset;
-			uint8_t			hdr_index;
+			uint8_t				size;
+			uint8_t				offset;
+			uint8_t				hdr_index;
 		} from_hdr;
 		/**
-		 * struct from_data - Used when 'type = DPKG_EXTRACT_FROM_DATA'
+		 * struct from_data
+		 *	Used when 'type = DPKG_EXTRACT_FROM_DATA'
 		 * @size: Size in bytes
 		 * @offset: Byte offset
 		 */
@@ -146,7 +148,8 @@ struct dpkg_extract {
 		} from_data;
 
 		/**
-		 * struct from_parse - Used when 'type = DPKG_EXTRACT_FROM_PARSE'
+		 * struct from_parse
+		 *	Used when 'type = DPKG_EXTRACT_FROM_PARSE'
 		 * @size: Size in bytes
 		 * @offset: Byte offset
 		 */
@@ -156,7 +159,7 @@ struct dpkg_extract {
 		} from_parse;
 	} extract;
 
-	uint8_t		num_of_byte_masks;
+	uint8_t			num_of_byte_masks;
 	struct dpkg_mask	masks[DPKG_NUM_OF_MASKS];
 };
 

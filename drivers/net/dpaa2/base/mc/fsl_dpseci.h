@@ -1,4 +1,5 @@
-/* Copyright 2013-2015 Freescale Semiconductor Inc.
+/* Copyright 2013-2016 Freescale Semiconductor Inc.
+ *  Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -107,9 +108,10 @@ struct dpseci_cfg {
 /**
  * dpseci_create() - Create the DPSECI object
  * @mc_io:	Pointer to MC portal's I/O object
+ * @dprc_token:	Parent container token; '0' for default container
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @cfg:	Configuration structure
- * @token:	Returned token; use in subsequent API calls
+ * @obj_id: returned object id
  *
  * Create the DPSECI object, allocate required resources and
  * perform required initialization.
@@ -117,31 +119,39 @@ struct dpseci_cfg {
  * The object can be created either by declaring it in the
  * DPL file, or by calling this function.
  *
- * This function returns a unique authentication token,
- * associated with the specific object ID and the specific MC
- * portal; this token must be used in all subsequent calls to
- * this specific object. For objects that are created using the
- * DPL file, call dpseci_open() function to get an authentication
- * token first.
+ * The function accepts an authentication token of a parent
+ * container that this object should be assigned to. The token
+ * can be '0' so the object will be assigned to the default container.
+ * The newly created object can be opened with the returned
+ * object id and using the container's associated tokens and MC portals.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpseci_create(struct fsl_mc_io		*mc_io,
+		  uint16_t			dprc_token,
 		  uint32_t			cmd_flags,
 		  const struct dpseci_cfg	*cfg,
-		  uint16_t			*token);
+		  uint32_t			*obj_id);
 
 /**
  * dpseci_destroy() - Destroy the DPSECI object and release all its resources.
  * @mc_io:	Pointer to MC portal's I/O object
+ * @dprc_token: Parent container token; '0' for default container
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPSECI object
+ * @object_id:	The object id; it must be a valid id within the container that
+ * created this object;
+ *
+ * The function accepts the authentication token of the parent container that
+ * created the object (not the one that currently owns the object). The object
+ * is searched within parent using the provided 'object_id'.
+ * All tokens to the object must be closed before calling destroy.
  *
  * Return:	'0' on Success; error code otherwise.
  */
 int dpseci_destroy(struct fsl_mc_io	*mc_io,
+		   uint16_t		dprc_token,
 		   uint32_t		cmd_flags,
-		   uint16_t		token);
+		   uint32_t		object_id);
 
 /**
  * dpseci_enable() - Enable the DPSECI, allow sending and receiving frames.
@@ -297,7 +307,7 @@ int dpseci_get_irq_enable(struct fsl_mc_io	*mc_io,
 int dpseci_set_irq_mask(struct fsl_mc_io	*mc_io,
 			uint32_t		cmd_flags,
 			uint16_t		token,
-			uint8_t		irq_index,
+			uint8_t			irq_index,
 			uint32_t		mask);
 
 /**
@@ -316,7 +326,7 @@ int dpseci_set_irq_mask(struct fsl_mc_io	*mc_io,
 int dpseci_get_irq_mask(struct fsl_mc_io	*mc_io,
 			uint32_t		cmd_flags,
 			uint16_t		token,
-			uint8_t		irq_index,
+			uint8_t			irq_index,
 			uint32_t		*mask);
 
 /**
@@ -358,23 +368,13 @@ int dpseci_clear_irq_status(struct fsl_mc_io	*mc_io,
 /**
  * struct dpseci_attr - Structure representing DPSECI attributes
  * @id: DPSECI object ID
- * @version: DPSECI version
  * @num_tx_queues: number of queues towards the SEC
  * @num_rx_queues: number of queues back from the SEC
  */
 struct dpseci_attr {
-	int		id;
-	/**
-	 * struct version - DPSECI version
-	 * @major: DPSECI major version
-	 * @minor: DPSECI minor version
-	 */
-	struct {
-		uint16_t major;
-		uint16_t minor;
-	} version;
-	uint8_t num_tx_queues;
-	uint8_t num_rx_queues;
+	int	id;
+	uint8_t	num_tx_queues;
+	uint8_t	num_rx_queues;
 };
 
 /**
@@ -421,7 +421,7 @@ enum dpseci_dest {
 struct dpseci_dest_cfg {
 	enum dpseci_dest	dest_type;
 	int			dest_id;
-	uint8_t		priority;
+	uint8_t			priority;
 };
 
 /**
@@ -431,17 +431,17 @@ struct dpseci_dest_cfg {
 /**
  * Select to modify the user's context associated with the queue
  */
-#define DPSECI_QUEUE_OPT_USER_CTX	0x00000001
+#define DPSECI_QUEUE_OPT_USER_CTX		0x00000001
 
 /**
  * Select to modify the queue's destination
  */
-#define DPSECI_QUEUE_OPT_DEST		0x00000002
+#define DPSECI_QUEUE_OPT_DEST			0x00000002
 
 /**
  * Select to modify the queue's order preservation
  */
-#define DPSECI_QUEUE_OPT_ORDER_PRESERVATION    0x00000004
+#define DPSECI_QUEUE_OPT_ORDER_PRESERVATION	0x00000004
 
 /**
  * struct dpseci_rx_queue_cfg - DPSECI RX queue configuration
@@ -579,20 +579,20 @@ struct dpseci_sec_attr {
 	uint16_t	ip_id;
 	uint8_t	major_rev;
 	uint8_t	minor_rev;
-	uint8_t     era;
-	uint8_t     deco_num;
-	uint8_t     zuc_auth_acc_num;
-	uint8_t     zuc_enc_acc_num;
-	uint8_t     snow_f8_acc_num;
-	uint8_t     snow_f9_acc_num;
-	uint8_t     crc_acc_num;
-	uint8_t     pk_acc_num;
-	uint8_t     kasumi_acc_num;
-	uint8_t     rng_acc_num;
-	uint8_t     md_acc_num;
-	uint8_t     arc4_acc_num;
-	uint8_t     des_acc_num;
-	uint8_t     aes_acc_num;
+	uint8_t	era;
+	uint8_t	deco_num;
+	uint8_t	zuc_auth_acc_num;
+	uint8_t	zuc_enc_acc_num;
+	uint8_t	snow_f8_acc_num;
+	uint8_t	snow_f9_acc_num;
+	uint8_t	crc_acc_num;
+	uint8_t	pk_acc_num;
+	uint8_t	kasumi_acc_num;
+	uint8_t	rng_acc_num;
+	uint8_t	md_acc_num;
+	uint8_t	arc4_acc_num;
+	uint8_t	des_acc_num;
+	uint8_t	aes_acc_num;
 };
 
 /**
@@ -607,7 +607,7 @@ struct dpseci_sec_attr {
 int dpseci_get_sec_attr(struct fsl_mc_io		*mc_io,
 			uint32_t			cmd_flags,
 			uint16_t			token,
-			struct dpseci_sec_attr *attr);
+			struct dpseci_sec_attr		*attr);
 
 /**
  * struct dpseci_sec_counters - Structure representing global SEC counters and
@@ -641,7 +641,21 @@ struct dpseci_sec_counters {
  */
 int dpseci_get_sec_counters(struct fsl_mc_io		*mc_io,
 			    uint32_t			cmd_flags,
-		uint16_t			token,
-		struct dpseci_sec_counters *counters);
+			    uint16_t			token,
+			    struct dpseci_sec_counters	*counters);
+
+/**
+ * dpseci_get_api_version() - Get Data Path SEC Interface API version
+ * @mc_io:  Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @major_ver:	Major version of data path sec API
+ * @minor_ver:	Minor version of data path sec API
+ *
+ * Return:  '0' on Success; Error code otherwise.
+ */
+int dpseci_get_api_version(struct fsl_mc_io *mc_io,
+			   uint32_t cmd_flags,
+			   uint16_t *major_ver,
+			   uint16_t *minor_ver);
 
 #endif /* __FSL_DPSECI_H */
