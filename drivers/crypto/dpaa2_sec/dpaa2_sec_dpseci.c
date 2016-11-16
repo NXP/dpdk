@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -1593,7 +1594,7 @@ dpaa2_sec_dev_init(__attribute__((unused)) struct rte_cryptodev_driver *crypto_d
 	int retcode, hw_id = dev->pci_dev->addr.devid;
 
 	PMD_INIT_FUNC_TRACE();
-	PMD_INIT_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
+	PMD_INIT_LOG(DEBUG, "Found crypto device at %02x:%02x.%x",
 		     dev->pci_dev->addr.bus,
 		     dev->pci_dev->addr.devid,
 		     dev->pci_dev->addr.function);
