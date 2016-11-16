@@ -1,4 +1,5 @@
-/* Copyright 2013-2015 Freescale Semiconductor Inc.
+/* Copyright 2013-2016 Freescale Semiconductor Inc.
+ *  Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,38 +34,39 @@
 #define _FSL_DPIO_CMD_H
 
 /* DPIO Version */
-#define DPIO_VER_MAJOR				3
+#define DPIO_VER_MAJOR				4
 #define DPIO_VER_MINOR				2
 
 /* Command IDs */
-#define DPIO_CMDID_CLOSE				0x800
-#define DPIO_CMDID_OPEN					0x803
-#define DPIO_CMDID_CREATE				0x903
-#define DPIO_CMDID_DESTROY				0x900
+#define DPIO_CMDID_CLOSE                                ((0x800 << 4) | (0x1))
+#define DPIO_CMDID_OPEN                                 ((0x803 << 4) | (0x1))
+#define DPIO_CMDID_CREATE                               ((0x903 << 4) | (0x1))
+#define DPIO_CMDID_DESTROY                              ((0x983 << 4) | (0x1))
+#define DPIO_CMDID_GET_API_VERSION                      ((0xa03 << 4) | (0x1))
 
-#define DPIO_CMDID_ENABLE				0x002
-#define DPIO_CMDID_DISABLE				0x003
-#define DPIO_CMDID_GET_ATTR				0x004
-#define DPIO_CMDID_RESET				0x005
-#define DPIO_CMDID_IS_ENABLED				0x006
+#define DPIO_CMDID_ENABLE                               ((0x002 << 4) | (0x1))
+#define DPIO_CMDID_DISABLE                              ((0x003 << 4) | (0x1))
+#define DPIO_CMDID_GET_ATTR                             ((0x004 << 4) | (0x1))
+#define DPIO_CMDID_RESET                                ((0x005 << 4) | (0x1))
+#define DPIO_CMDID_IS_ENABLED                           ((0x006 << 4) | (0x1))
 
-#define DPIO_CMDID_SET_IRQ				0x010
-#define DPIO_CMDID_GET_IRQ				0x011
-#define DPIO_CMDID_SET_IRQ_ENABLE			0x012
-#define DPIO_CMDID_GET_IRQ_ENABLE			0x013
-#define DPIO_CMDID_SET_IRQ_MASK				0x014
-#define DPIO_CMDID_GET_IRQ_MASK				0x015
-#define DPIO_CMDID_GET_IRQ_STATUS			0x016
-#define DPIO_CMDID_CLEAR_IRQ_STATUS			0x017
+#define DPIO_CMDID_SET_IRQ                              ((0x010 << 4) | (0x1))
+#define DPIO_CMDID_GET_IRQ                              ((0x011 << 4) | (0x1))
+#define DPIO_CMDID_SET_IRQ_ENABLE                       ((0x012 << 4) | (0x1))
+#define DPIO_CMDID_GET_IRQ_ENABLE                       ((0x013 << 4) | (0x1))
+#define DPIO_CMDID_SET_IRQ_MASK                         ((0x014 << 4) | (0x1))
+#define DPIO_CMDID_GET_IRQ_MASK                         ((0x015 << 4) | (0x1))
+#define DPIO_CMDID_GET_IRQ_STATUS                       ((0x016 << 4) | (0x1))
+#define DPIO_CMDID_CLEAR_IRQ_STATUS                     ((0x017 << 4) | (0x1))
 
-#define DPIO_CMDID_SET_STASHING_DEST		0x120
-#define DPIO_CMDID_GET_STASHING_DEST		0x121
-#define DPIO_CMDID_ADD_STATIC_DEQUEUE_CHANNEL		0x122
-#define DPIO_CMDID_REMOVE_STATIC_DEQUEUE_CHANNEL	0x123
+#define DPIO_CMDID_SET_STASHING_DEST                    ((0x120 << 4) | (0x1))
+#define DPIO_CMDID_GET_STASHING_DEST                    ((0x121 << 4) | (0x1))
+#define DPIO_CMDID_ADD_STATIC_DEQUEUE_CHANNEL           ((0x122 << 4) | (0x1))
+#define DPIO_CMDID_REMOVE_STATIC_DEQUEUE_CHANNEL        ((0x123 << 4) | (0x1))
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPIO_CMD_OPEN(cmd, dpio_id) \
-	MC_CMD_OP(cmd, 0, 0,  32, int,     dpio_id)
+	MC_CMD_OP(cmd, 0, 0,  32, uint32_t,     dpio_id)
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPIO_CMD_CREATE(cmd, cfg) \
@@ -157,9 +159,8 @@ do { \
 	MC_RSP_OP(cmd, 0, 56, 4,  enum dpio_channel_mode, attr->channel_mode);\
 	MC_RSP_OP(cmd, 1, 0,  64, uint64_t, attr->qbman_portal_ce_offset);\
 	MC_RSP_OP(cmd, 2, 0,  64, uint64_t, attr->qbman_portal_ci_offset);\
-	MC_RSP_OP(cmd, 3, 0,  16, uint16_t, attr->version.major);\
-	MC_RSP_OP(cmd, 3, 16, 16, uint16_t, attr->version.minor);\
-	MC_RSP_OP(cmd, 3, 32, 32, uint32_t, attr->qbman_version);\
+	MC_RSP_OP(cmd, 3, 0, 32, uint32_t, attr->qbman_version);\
+	MC_RSP_OP(cmd, 4, 0,  32, uint32_t, attr->clk);\
 } while (0)
 
 /*                cmd, param, offset, width, type, arg_name */
@@ -181,4 +182,12 @@ do { \
 /*                cmd, param, offset, width, type, arg_name */
 #define DPIO_CMD_REMOVE_STATIC_DEQUEUE_CHANNEL(cmd, dpcon_id) \
 	MC_CMD_OP(cmd, 0, 0,  32, int,      dpcon_id)
+
+/*                cmd, param, offset, width, type,      arg_name */
+#define DPIO_RSP_GET_API_VERSION(cmd, major, minor) \
+do { \
+	MC_RSP_OP(cmd, 0, 0,  16, uint16_t, major);\
+	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, minor);\
+} while (0)
+
 #endif /* _FSL_DPIO_CMD_H */

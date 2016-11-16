@@ -1,4 +1,5 @@
-/* Copyright 2013-2015 Freescale Semiconductor Inc.
+/* Copyright 2013-2016 Freescale Semiconductor Inc.
+ *  Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -49,9 +50,9 @@ struct fsl_mc_io;
  * already created object; an object may have been declared in
  * the DPL or by calling the dpio_create() function.
  * This function returns a unique authentication token,
- * associated with the specific object ID and the specific MC
- * portal; this token must be used in all subsequent commands for
- * this specific object.
+ * associated with the specific object ID and any MC portals
+ * assigned to the parent container; this token must be used in
+ * all subsequent commands for this specific object.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
@@ -92,15 +93,16 @@ enum dpio_channel_mode {
  */
 struct dpio_cfg {
 	enum dpio_channel_mode	channel_mode;
-	uint8_t		num_priorities;
+	uint8_t			num_priorities;
 };
 
 /**
  * dpio_create() - Create the DPIO object.
  * @mc_io:	Pointer to MC portal's I/O object
+ * @dprc_token:	Parent container token; '0' for default container
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @cfg:	Configuration structure
- * @token:	Returned token; use in subsequent API calls
+ * @obj_id: returned object id
  *
  * Create the DPIO object, allocate required resources and
  * perform required initialization.
@@ -108,31 +110,39 @@ struct dpio_cfg {
  * The object can be created either by declaring it in the
  * DPL file, or by calling this function.
  *
- * This function returns a unique authentication token,
- * associated with the specific object ID and the specific MC
- * portal; this token must be used in all subsequent calls to
- * this specific object. For objects that are created using the
- * DPL file, call dpio_open() function to get an authentication
- * token first.
+ * The function accepts an authentication token of a parent
+ * container that this object should be assigned to. The token
+ * can be '0' so the object will be assigned to the default container.
+ * The newly created object can be opened with the returned
+ * object id and using the container's associated tokens and MC portals.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpio_create(struct fsl_mc_io	*mc_io,
+		uint16_t		dprc_token,
 		uint32_t		cmd_flags,
 		const struct dpio_cfg	*cfg,
-		uint16_t		*token);
+		uint32_t		*obj_id);
 
 /**
  * dpio_destroy() - Destroy the DPIO object and release all its resources.
  * @mc_io:	Pointer to MC portal's I/O object
+ * @dprc_token: Parent container token; '0' for default container
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPIO object
+ * @object_id:	The object id; it must be a valid id within the container that
+ * created this object;
+ *
+ * The function accepts the authentication token of the parent container that
+ * created the object (not the one that currently owns the object). The object
+ * is searched within parent using the provided 'object_id'.
+ * All tokens to the object must be closed before calling destroy.
  *
  * Return:	'0' on Success; Error code otherwise
  */
 int dpio_destroy(struct fsl_mc_io	*mc_io,
-		 uint32_t		cmd_flags,
-		 uint16_t		token);
+		 uint16_t		dprc_token,
+		uint32_t		cmd_flags,
+		uint32_t		object_id);
 
 /**
  * dpio_enable() - Enable the DPIO, allow I/O portal operations.
@@ -170,7 +180,7 @@ int dpio_disable(struct fsl_mc_io	*mc_io,
 int dpio_is_enabled(struct fsl_mc_io	*mc_io,
 		    uint32_t		cmd_flags,
 		    uint16_t		token,
-		    int		*en);
+		    int			*en);
 
 /**
  * dpio_reset() - Reset the DPIO, returns the object to initial state.
@@ -181,7 +191,7 @@ int dpio_is_enabled(struct fsl_mc_io	*mc_io,
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpio_reset(struct fsl_mc_io	*mc_io,
-	       uint32_t			cmd_flags,
+	       uint32_t		cmd_flags,
 	       uint16_t		token);
 
 /**
@@ -225,7 +235,7 @@ int dpio_get_stashing_destination(struct fsl_mc_io	*mc_io,
 int dpio_add_static_dequeue_channel(struct fsl_mc_io	*mc_io,
 				    uint32_t		cmd_flags,
 				    uint16_t		token,
-				    int		dpcon_id,
+				    int			dpcon_id,
 				    uint8_t		*channel_index);
 
 /**
@@ -240,7 +250,7 @@ int dpio_add_static_dequeue_channel(struct fsl_mc_io	*mc_io,
 int dpio_remove_static_dequeue_channel(struct fsl_mc_io	*mc_io,
 				       uint32_t		cmd_flags,
 				       uint16_t		token,
-				       int			dpcon_id);
+				       int		dpcon_id);
 
 /**
  * DPIO IRQ Index and Events
@@ -416,7 +426,6 @@ int dpio_clear_irq_status(struct fsl_mc_io	*mc_io,
 /**
  * struct dpio_attr - Structure representing DPIO attributes
  * @id: DPIO object ID
- * @version: DPIO version
  * @qbman_portal_ce_offset: offset of the software portal cache-enabled area
  * @qbman_portal_ci_offset: offset of the software portal cache-inhibited area
  * @qbman_portal_id: Software portal ID
@@ -427,21 +436,13 @@ int dpio_clear_irq_status(struct fsl_mc_io	*mc_io,
  */
 struct dpio_attr {
 	int			id;
-	/**
-	 * struct version - DPIO version
-	 * @major: DPIO major version
-	 * @minor: DPIO minor version
-	 */
-	struct {
-		uint16_t major;
-		uint16_t minor;
-	} version;
 	uint64_t		qbman_portal_ce_offset;
 	uint64_t		qbman_portal_ci_offset;
 	uint16_t		qbman_portal_id;
 	enum dpio_channel_mode	channel_mode;
 	uint8_t			num_priorities;
 	uint32_t		qbman_version;
+	uint32_t		clk;
 };
 
 /**
@@ -457,4 +458,19 @@ int dpio_get_attributes(struct fsl_mc_io	*mc_io,
 			uint32_t		cmd_flags,
 			uint16_t		token,
 			struct dpio_attr	*attr);
+
+/**
+ * dpio_get_api_version() - Get Data Path I/O API version
+ * @mc_io:  Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @major_ver:	Major version of data path i/o API
+ * @minor_ver:	Minor version of data path i/o API
+ *
+ * Return:  '0' on Success; Error code otherwise.
+ */
+int dpio_get_api_version(struct fsl_mc_io *mc_io,
+			 uint32_t cmd_flags,
+			 uint16_t *major_ver,
+			 uint16_t *minor_ver);
+
 #endif /* __FSL_DPIO_H */

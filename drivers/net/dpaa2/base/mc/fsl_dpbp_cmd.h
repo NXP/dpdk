@@ -1,4 +1,5 @@
-/* Copyright 2013-2015 Freescale Semiconductor Inc.
+/* Copyright 2013-2016 Freescale Semiconductor Inc.
+ *  Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,32 +34,33 @@
 #define _FSL_DPBP_CMD_H
 
 /* DPBP Version */
-#define DPBP_VER_MAJOR				2
+#define DPBP_VER_MAJOR				3
 #define DPBP_VER_MINOR				2
 
 /* Command IDs */
-#define DPBP_CMDID_CLOSE				0x800
-#define DPBP_CMDID_OPEN					0x804
-#define DPBP_CMDID_CREATE				0x904
-#define DPBP_CMDID_DESTROY				0x900
+#define DPBP_CMDID_CLOSE                        ((0x800 << 4) | (0x1))
+#define DPBP_CMDID_OPEN                         ((0x804 << 4) | (0x1))
+#define DPBP_CMDID_CREATE                       ((0x904 << 4) | (0x1))
+#define DPBP_CMDID_DESTROY                      ((0x984 << 4) | (0x1))
+#define DPBP_CMDID_GET_API_VERSION              ((0xa04 << 4) | (0x1))
 
-#define DPBP_CMDID_ENABLE				0x002
-#define DPBP_CMDID_DISABLE				0x003
-#define DPBP_CMDID_GET_ATTR				0x004
-#define DPBP_CMDID_RESET				0x005
-#define DPBP_CMDID_IS_ENABLED				0x006
+#define DPBP_CMDID_ENABLE                       ((0x002 << 4) | (0x1))
+#define DPBP_CMDID_DISABLE                      ((0x003 << 4) | (0x1))
+#define DPBP_CMDID_GET_ATTR                     ((0x004 << 4) | (0x1))
+#define DPBP_CMDID_RESET                        ((0x005 << 4) | (0x1))
+#define DPBP_CMDID_IS_ENABLED                   ((0x006 << 4) | (0x1))
 
-#define DPBP_CMDID_SET_IRQ				0x010
-#define DPBP_CMDID_GET_IRQ				0x011
-#define DPBP_CMDID_SET_IRQ_ENABLE			0x012
-#define DPBP_CMDID_GET_IRQ_ENABLE			0x013
-#define DPBP_CMDID_SET_IRQ_MASK				0x014
-#define DPBP_CMDID_GET_IRQ_MASK				0x015
-#define DPBP_CMDID_GET_IRQ_STATUS			0x016
-#define DPBP_CMDID_CLEAR_IRQ_STATUS			0x017
+#define DPBP_CMDID_SET_IRQ                      ((0x010 << 4) | (0x1))
+#define DPBP_CMDID_GET_IRQ                      ((0x011 << 4) | (0x1))
+#define DPBP_CMDID_SET_IRQ_ENABLE               ((0x012 << 4) | (0x1))
+#define DPBP_CMDID_GET_IRQ_ENABLE               ((0x013 << 4) | (0x1))
+#define DPBP_CMDID_SET_IRQ_MASK                 ((0x014 << 4) | (0x1))
+#define DPBP_CMDID_GET_IRQ_MASK                 ((0x015 << 4) | (0x1))
+#define DPBP_CMDID_GET_IRQ_STATUS               ((0x016 << 4) | (0x1))
+#define DPBP_CMDID_CLEAR_IRQ_STATUS             ((0x017 << 4) | (0x1))
 
-#define DPBP_CMDID_SET_NOTIFICATIONS		0x01b0
-#define DPBP_CMDID_GET_NOTIFICATIONS		0x01b1
+#define DPBP_CMDID_SET_NOTIFICATIONS            ((0x01b0 << 4) | (0x1))
+#define DPBP_CMDID_GET_NOTIFICATIONS            ((0x01b1 << 4) | (0x1))
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPBP_CMD_OPEN(cmd, dpbp_id) \
@@ -142,8 +144,6 @@ do { \
 do { \
 	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, attr->bpid); \
 	MC_RSP_OP(cmd, 0, 32, 32, int,	    attr->id);\
-	MC_RSP_OP(cmd, 1, 0,  16, uint16_t, attr->version.major);\
-	MC_RSP_OP(cmd, 1, 16, 16, uint16_t, attr->version.minor);\
 } while (0)
 
 /*                cmd, param, offset, width, type, arg_name */
@@ -169,4 +169,12 @@ do { \
 	MC_RSP_OP(cmd, 3, 0,  64, uint64_t, cfg->message_ctx);\
 	MC_RSP_OP(cmd, 4, 0,  64, uint64_t, cfg->message_iova);\
 } while (0)
+
+/*                cmd, param, offset, width, type,      arg_name */
+#define DPBP_RSP_GET_API_VERSION(cmd, major, minor) \
+do { \
+	MC_RSP_OP(cmd, 0, 0,  16, uint16_t, major);\
+	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, minor);\
+} while (0)
+
 #endif /* _FSL_DPBP_CMD_H */
