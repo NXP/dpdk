@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -267,7 +268,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	*/
 
 	sdest = dpaa2_core_cluster_sdest(cpu_id);
-	PMD_DRV_LOG(DEBUG, "Portal= %d  CPU= %u SDEST= %d\n",
+	PMD_DRV_LOG(DEBUG, "Portal= %d  CPU= %u SDEST= %d",
 		    dpio_dev->index, cpu_id, sdest);
 
 	ret = dpio_set_stashing_destination(dpio_dev->dpio, CMD_PRI_LOW,

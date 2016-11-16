@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -104,10 +105,8 @@ struct dpaa2_dev_priv {
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
 	uint32_t options;
 	uint16_t num_dist_per_tc[MAX_TCS];
-	uint8_t max_unicast_filters;
-	uint8_t max_multicast_filters;
+	uint8_t max_mac_filters;
 	uint8_t max_vlan_filters;
-	uint8_t max_congestion_ctrl;
 	uint8_t num_tc;
 	uint8_t flags; /*dpaa2 config flags */
 };

@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -342,8 +343,8 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 
 	layout.data_head_room =
 		tot_size - DPAA2_FD_PTA_SIZE - DPAA2_MBUF_HW_ANNOTATION;
-	retcode = dpni_set_rx_buffer_layout(dpni, CMD_PRI_LOW, priv->token,
-					    &layout);
+	retcode = dpni_set_buffer_layout(dpni, CMD_PRI_LOW, priv->token,
+					 DPNI_QUEUE_RX, &layout);
 	if (retcode) {
 		PMD_INIT_LOG(ERR, "Err(%d) in setting rx buffer layout\n",
 			     retcode);
@@ -375,30 +376,41 @@ dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	uint64_t value;
+	uint8_t page0 = 0, page1 = 1, page2 = 2;
+	int retcode;
+	union dpni_statistics value;
 
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME, &value);
-	printf("Rx packets: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_BYTE, &value);
-	printf("Rx bytes: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_MCAST_FRAME, &value);
-	printf("Rx Multicast: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME_DROP, &value);
-	printf("Rx dropped: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_ING_FRAME_DISCARD, &value);
-	printf("Rx discarded: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_FRAME, &value);
-	printf("Tx packets: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_BYTE, &value);
-	printf("Tx bytes: %ld\n", value);
-	dpni_get_counter(dpni, CMD_PRI_LOW,
-			 priv->token, DPNI_CNT_EGR_FRAME_DISCARD, &value);
-	printf("Tx dropped: %ld\n", value);
+	memset(&value, 0, sizeof(union dpni_statistics));
+
+	PMD_INIT_FUNC_TRACE();
+
+	/*Get Counters from page_0*/
+	retcode = dpni_get_statistics(dpni, CMD_PRI_LOW, priv->token,
+				      page0, &value);
+	if (retcode)
+		return;
+	printf("Rx packets: %ld\n", value.page_0.ingress_all_frames);
+	printf("Rx bytes: %ld\n", value.page_0.ingress_all_bytes);
+	printf("Rx Multicast: %ld\n", value.page_0.ingress_multicast_frames);
+	printf("Rx Broadcast: %ld\n", value.page_0.ingress_broadcast_frames);
+
+	/*Get Counters from page_1*/
+	retcode = dpni_get_statistics(dpni, CMD_PRI_LOW, priv->token,
+				      page1, &value);
+	if (retcode)
+		return;
+	printf("Tx packets: %ld\n", value.page_1.egress_all_frames);
+	printf("Tx bytes: %ld\n", value.page_1.egress_all_bytes);
+	printf("Tx Multicast pkt: %ld\n", value.page_1.egress_multicast_frames);
+	printf("Tx Broadcast pkt: %ld\n", value.page_1.egress_broadcast_frames);
+
+	/*Get Counters from page_2*/
+	retcode = dpni_get_statistics(dpni, CMD_PRI_LOW, priv->token,
+				      page2, &value);
+	if (retcode)
+		return;
+	printf("Rx discarded: %ld\n", value.page_2.ingress_discarded_frames);
+	printf("Rx no buffer: %ld\n", value.page_2.ingress_nobuffer_discards);
+	printf("Tx dropped: %ld\n", value.page_2.egress_discarded_frames);
+
 }
