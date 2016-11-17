@@ -401,10 +401,36 @@ int dpaa_pre_rte_eal_init(void)
 	return 0;
 }
 
+static int dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (mtu < ETHER_MIN_MTU)
+		return -EINVAL;
+
+	fman_if_set_maxfrm(dpaa_intf->fif, mtu);
+
+	if (mtu > ETHER_MAX_LEN)
+		dev->data->dev_conf.rxmode.jumbo_frame = 1;
+	else
+		dev->data->dev_conf.rxmode.jumbo_frame = 0;
+
+	dev->data->dev_conf.rxmode.max_rx_pkt_len = mtu;
+	return 0;
+}
+
 static int
-dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
+dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	PMD_INIT_FUNC_TRACE();
+
+	if (dev->data->dev_conf.rxmode.jumbo_frame == 1 &&
+		dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_MTU)
+		dpaa_mtu_set(dev, dev->data->dev_conf.rxmode.max_rx_pkt_len);
+	else
+		return -1;
 
 	return 0;
 }
@@ -620,16 +646,6 @@ static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
 	return;
-}
-
-static int dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
-{
-	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-
-	PMD_INIT_FUNC_TRACE();
-
-	fman_if_set_maxfrm(dpaa_intf->fif, mtu);
-	return 0;
 }
 
 static int dpaa_link_down(struct rte_eth_dev *dev)
