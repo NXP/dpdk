@@ -110,10 +110,6 @@ static inline uint32_t make_le24(uint32_t val)
 	return (((val & 0xff) << 16) | (val & 0xff00) |
 		((val & 0xff0000) >> 16));
 }
-#else
-#define make_le32(val) (val)
-#define make_le24(val) (val)
-#endif
 static inline void make_le32_n(uint32_t *val, unsigned int num)
 {
 	while (num--) {
@@ -121,6 +117,12 @@ static inline void make_le32_n(uint32_t *val, unsigned int num)
 		val++;
 	}
 }
+#else
+#define make_le32(val) (val)
+#define make_le24(val) (val)
+#define make_le32_n(val, len) do {} while (0)
+#endif
+
 
 	/******************/
 	/* Portal access  */
