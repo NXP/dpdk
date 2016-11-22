@@ -32,9 +32,8 @@
 #include <fsl_mc_sys.h>
 #include <fsl_mc_cmd.h>
 
-/* ODP framework using MC poratl in shared mode. Following
-   changes to introduce Locks must be maintained while
-   merging the FLIB.
+/** User space framework uses MC Portal in shared mode. Following change
+* introduces lock in MC FLIB
 */
 
 /**

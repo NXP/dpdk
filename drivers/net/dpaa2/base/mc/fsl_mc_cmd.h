@@ -1,5 +1,5 @@
 /* Copyright 2013-2016 Freescale Semiconductor Inc.
- *  Copyright (c) 2016 NXP.
+ * Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -37,8 +37,7 @@
 
 #define MAKE_UMASK64(_width) \
 	((uint64_t)((_width) < 64 ? ((uint64_t)1 << (_width)) - 1 : \
-				    (uint64_t)-1))
-
+		       (uint64_t)-1))
 static inline uint64_t mc_enc(int lsoffset, int width, uint64_t val)
 {
 	return (uint64_t)(((uint64_t)val & MAKE_UMASK64(width)) << lsoffset);
