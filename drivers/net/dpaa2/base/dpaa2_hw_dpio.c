@@ -32,18 +32,20 @@
  */
 #include <unistd.h>
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/queue.h>
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <stdarg.h>
+#include <inttypes.h>
+#include <signal.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/queue.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/mman.h>
-#include <sys/vfs.h>
-#include <libgen.h>
+#include <sys/syscall.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
@@ -66,7 +68,8 @@
 
 #define NUM_HOST_CPUS RTE_MAX_LCORE
 
-__thread struct thread_io_info_t thread_io_info;
+struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
+RTE_DEFINE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 
 TAILQ_HEAD(dpio_device_list, dpaa2_dpio_dev);
 static struct dpio_device_list *dpio_dev_list; /*!< DPIO device list */
@@ -294,6 +297,9 @@ static inline struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 	if (!dpio_dev)
 		return NULL;
 
+	PMD_DRV_LOG(DEBUG, "New Portal=0x%x (%d) affined thread - %lu",
+		    dpio_dev, dpio_dev->index, syscall(SYS_gettid));
+
 	ret = dpaa2_configure_stashing(dpio_dev);
 	if (ret)
 		PMD_DRV_LOG(ERR, "dpaa2_configure_stashing failed");
@@ -304,29 +310,90 @@ static inline struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 int
 dpaa2_affine_qbman_swp(void)
 {
-	if (thread_io_info.dpio_dev)
-		return 0;
+	unsigned lcore_id = rte_lcore_id();
+	uint64_t tid = syscall(SYS_gettid);
 
-	/* Populate the thread_io_info structure */
-	thread_io_info.dpio_dev = dpaa2_get_qbman_swp();
-	if (thread_io_info.dpio_dev)
-		return 0;
-	else
+	if (lcore_id == LCORE_ID_ANY)
+		lcore_id = rte_get_master_lcore();
+	/* if the core id is not supported */
+	else if (lcore_id >= RTE_MAX_LCORE)
 		return -1;
+
+	if (dpaa2_io_portal[lcore_id].dpio_dev) {
+		PMD_DRV_LOG(INFO, "DPAA Portal=0x%x (%d) is being shared"
+			    " between thread %lu and current  %lu",
+			    dpaa2_io_portal[lcore_id].dpio_dev,
+			    dpaa2_io_portal[lcore_id].dpio_dev->index,
+			    dpaa2_io_portal[lcore_id].net_tid,
+			    tid);
+		RTE_PER_LCORE(_dpaa2_io).dpio_dev
+			= dpaa2_io_portal[lcore_id].dpio_dev;
+		rte_atomic16_inc(&dpaa2_io_portal[lcore_id].dpio_dev->ref_count);
+		dpaa2_io_portal[lcore_id].net_tid = tid;
+
+		PMD_DRV_LOG(DEBUG, "Old Portal=0x%x (%d) affined thread - %lu",
+			    dpaa2_io_portal[lcore_id].dpio_dev,
+			    dpaa2_io_portal[lcore_id].dpio_dev->index,
+			    tid);
+		return 0;
+	}
+
+	/* Populate the dpaa2_io_portal structure */
+	dpaa2_io_portal[lcore_id].dpio_dev = dpaa2_get_qbman_swp();
+
+	if (dpaa2_io_portal[lcore_id].dpio_dev) {
+		RTE_PER_LCORE(_dpaa2_io).dpio_dev
+			= dpaa2_io_portal[lcore_id].dpio_dev;
+		dpaa2_io_portal[lcore_id].net_tid = tid;
+
+		return 0;
+	} else {
+		return -1;
+	}
 }
 
 int
 dpaa2_affine_qbman_swp_sec(void)
 {
-	if (thread_io_info.sec_dpio_dev)
-		return 0;
+	unsigned lcore_id = rte_lcore_id();
+	uint64_t tid = syscall(SYS_gettid);
 
-	/* Populate the thread_io_info structure */
-	thread_io_info.sec_dpio_dev = dpaa2_get_qbman_swp();
-	if (thread_io_info.sec_dpio_dev)
-		return 0;
-	else
+	if (lcore_id == LCORE_ID_ANY)
+		lcore_id = rte_get_master_lcore();
+	/* if the core id is not supported */
+	else if (lcore_id >= RTE_MAX_LCORE)
 		return -1;
+
+	if (dpaa2_io_portal[lcore_id].sec_dpio_dev) {
+		PMD_DRV_LOG(INFO, "DPAA Portal=0x%x (%d) is being shared"
+			    " between thread %lu and current  %lu",
+			    dpaa2_io_portal[lcore_id].sec_dpio_dev,
+			    dpaa2_io_portal[lcore_id].sec_dpio_dev->index,
+			    dpaa2_io_portal[lcore_id].sec_tid,
+			    tid);
+		RTE_PER_LCORE(_dpaa2_io).sec_dpio_dev
+			= dpaa2_io_portal[lcore_id].sec_dpio_dev;
+		rte_atomic16_inc(&dpaa2_io_portal[lcore_id].sec_dpio_dev->ref_count);
+		dpaa2_io_portal[lcore_id].sec_tid = tid;
+
+		PMD_DRV_LOG(DEBUG, "Old Portal=0x%x (%d) affined thread - %lu",
+			    dpaa2_io_portal[lcore_id].sec_dpio_dev,
+			    dpaa2_io_portal[lcore_id].sec_dpio_dev->index,
+			    tid);
+		return 0;
+	}
+
+	/* Populate the dpaa2_io_portal structure */
+	dpaa2_io_portal[lcore_id].sec_dpio_dev = dpaa2_get_qbman_swp();
+
+	if (dpaa2_io_portal[lcore_id].sec_dpio_dev) {
+		RTE_PER_LCORE(_dpaa2_io).sec_dpio_dev
+			= dpaa2_io_portal[lcore_id].sec_dpio_dev;
+		dpaa2_io_portal[lcore_id].sec_tid = tid;
+		return 0;
+	} else {
+		return -1;
+	}
 }
 
 int
