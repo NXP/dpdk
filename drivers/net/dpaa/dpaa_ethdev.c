@@ -36,6 +36,8 @@
 #include <limits.h>
 #include <sched.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
 
 #include <rte_config.h>
 #include <rte_byteorder.h>
@@ -142,7 +144,7 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	int ret;
 	unsigned i = 0;
 
-	PMD_TX_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
+	PMD_TX_FREE_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
 		    n, bp_info->bpid);
 
 	if (!thread_portal_init) {
@@ -161,7 +163,7 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		i = i + 1;
 	}
 
-	PMD_TX_LOG(DEBUG, " freed %d buffers in bpid =%d",
+	PMD_TX_FREE_LOG(DEBUG, " freed %d buffers in bpid =%d",
 		    n, bp_info->bpid);
 
 	return 0;
@@ -228,7 +230,7 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 			m[n] = (struct rte_mbuf *)((char *)bufaddr
 						- bp_info->meta_data_size);
 			rte_mbuf_refcnt_set(m[n], 0);
-			PMD_RX_LOG(DEBUG, "Acquired %p address %p from BMAN",
+			PMD_DRV_LOG2(DEBUG, "Acquired %p address %p from BMAN",
 				    (void *)bufaddr, (void *)m[n]);
 			n++;
 		}
@@ -351,7 +353,6 @@ int dpaa_portal_init(void *arg)
 	else
 		cpu = rte_lcore_id();
 
-	PMD_DRV_LOG(DEBUG, "arg %p, cpu %d", arg, cpu);
 	/* Set CPU affinity for this thread */
 	CPU_ZERO(&cpuset);
 	CPU_SET(cpu, &cpuset);
@@ -362,6 +363,9 @@ int dpaa_portal_init(void *arg)
 			"core :%d with ret: %d", cpu, ret);
 		return -1;
 	}
+
+	PMD_DRV_LOG(INFO, "arg %p, cpu %d thread=%lu",
+		    arg, cpu, syscall(SYS_gettid));
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();

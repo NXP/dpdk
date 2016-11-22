@@ -85,7 +85,7 @@ void  dpaa_buf_free(struct pool_info_entry *bp_info,
 	struct bm_buffer buf;
 	int ret;
 
-	PMD_TX_LOG(DEBUG, " Freeing %p to bpid: %d", addr, bp_info->bpid);
+	PMD_TX_FREE_LOG(DEBUG, " Freeing %p to bpid: %d", addr, bp_info->bpid);
 
 	bm_buffer_set64(&buf, addr);
 retry:
@@ -363,8 +363,6 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(fq, &dq->fd);
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
-
-	PMD_RX_LOG(DEBUG, "Received %d buffers on queue: %p", num_rx, q);
 
 	return num_rx;
 }
