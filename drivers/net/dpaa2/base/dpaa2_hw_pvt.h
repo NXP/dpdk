@@ -62,15 +62,15 @@
 #define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
 #endif
 
-/* tx fd send batching */
 #define QBMAN_MULTI_TX
+	/** < tx fd send batching */
 
-/*Maximum number of slots available in TX ring*/
 #define MAX_TX_RING_SLOTS	8
+	/** <Maximum number of slots available in TX ring*/
 
 #define NUM_MAX_RECV_FRAMES	16
 
-#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool */
+#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mpool flag to check offloaded pool */
 
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
@@ -93,18 +93,23 @@
 #define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
 
 struct dpaa2_dpio_dev {
-	TAILQ_ENTRY(dpaa2_dpio_dev) next; /**< Pointer to Next device instance */
+	TAILQ_ENTRY(dpaa2_dpio_dev) next;
+		/**< Pointer to Next device instance */
 	uint16_t index; /**< Index of a instance in the list */
-	rte_atomic16_t ref_count; /**< How many thread contexts are sharing this.*/
+	rte_atomic16_t ref_count;
+		/**< How many thread contexts are sharing this.*/
 	struct fsl_mc_io *dpio; /** handle to DPIO portal object */
 	uint16_t token;
 	struct qbman_swp *sw_portal; /** SW portal object */
-	const struct qbman_result *dqrr[4]; /**< DQRR Entry for this SW portal */
+	const struct qbman_result *dqrr[4];
+		/**< DQRR Entry for this SW portal */
 	pthread_mutex_t lock; /** Required when Portal is shared */
 	void *mc_portal; /**< MC Portal for configuring this device */
-	uintptr_t qbman_portal_ce_paddr; /**< Physical address of Cache Enabled Area */
+	uintptr_t qbman_portal_ce_paddr;
+		/**< Physical address of Cache Enabled Area */
 	uintptr_t ce_size; /**< Size of the CE region */
-	uintptr_t qbman_portal_ci_paddr; /**< Physical address of Cache Inhibit Area */
+	uintptr_t qbman_portal_ci_paddr;
+		/**< Physical address of Cache Inhibit Area */
 	uintptr_t ci_size; /**< Size of the CI region */
 	void *intr_handle;
 	int32_t	vfio_fd; /**< File descriptor received via VFIO */
@@ -179,47 +184,53 @@ struct qbman_fle {
 #define MAX_BPID 256
 
 /*Macros to define operations on FD*/
-#define DPAA2_SET_FD_ADDR(fd, addr)				\
+#define DPAA2_SET_FD_ADDR(fd, addr) do {			\
 	fd->simple.addr_lo = lower_32_bits((uint64_t)addr);	\
-	fd->simple.addr_hi = upper_32_bits((uint64_t)addr);
+	fd->simple.addr_hi = upper_32_bits((uint64_t)addr);	\
+} while (0)
 #define DPAA2_SET_FD_LEN(fd, length)	fd->simple.len = length
-#define DPAA2_SET_FD_BPID(fd, bpid)	fd->simple.bpid_offset |= bpid;
+#define DPAA2_SET_FD_BPID(fd, bpid)	(fd->simple.bpid_offset |= bpid)
 #define DPAA2_SET_FD_IVP(fd)   ((fd->simple.bpid_offset |= 0x00004000))
-#define DPAA2_SET_FD_OFFSET(fd, offset)	(fd->simple.bpid_offset |= (uint32_t)(offset) << 16);
-#define DPAA2_SET_FD_INTERNAL_JD(fd, len) fd->simple.frc = (0x80000000 | (len));
-#define DPAA2_SET_FD_FRC(fd, frc)	fd->simple.frc = frc;
-#define DPAA2_RESET_FD_CTRL(fd)	fd->simple.ctrl = 0;
+#define DPAA2_SET_FD_OFFSET(fd, offset)	\
+	((fd->simple.bpid_offset |= (uint32_t)(offset) << 16))
+#define DPAA2_SET_FD_INTERNAL_JD(fd, len) fd->simple.frc = (0x80000000 | (len))
+#define DPAA2_SET_FD_FRC(fd, frc)	fd->simple.frc = frc
+#define DPAA2_RESET_FD_CTRL(fd)	fd->simple.ctrl = 0
 
 #define	DPAA2_SET_FD_ASAL(fd, asal)	(fd->simple.ctrl |= (asal << 16))
-#define DPAA2_SET_FD_FLC(fd, addr)				\
+#define DPAA2_SET_FD_FLC(fd, addr)	do { \
 	fd->simple.flc_lo = lower_32_bits((uint64_t)addr);	\
-	fd->simple.flc_hi = upper_32_bits((uint64_t)addr);
-#define DPAA2_SET_FLE_INTERNAL_JD(fle, len) fle->frc = (0x80000000 | (len));
+	fd->simple.flc_hi = upper_32_bits((uint64_t)addr);	\
+} while (0)
+#define DPAA2_SET_FLE_INTERNAL_JD(fle, len) (fle->frc = (0x80000000 | (len)))
 #define DPAA2_GET_FLE_ADDR(fle)					\
 	(uint64_t)((((uint64_t)(fle->addr_hi)) << 32) + fle->addr_lo)
-#define DPAA2_SET_FLE_ADDR(fle, addr)	\
+#define DPAA2_SET_FLE_ADDR(fle, addr) do { \
 	fle->addr_lo = lower_32_bits((uint64_t)addr);     \
-	fle->addr_hi = upper_32_bits((uint64_t)addr);
-#define DPAA2_SET_FLE_OFFSET(fle, offset) (fle)->fin_bpid_offset |= (uint32_t)(offset) << 16;
-#define DPAA2_SET_FLE_BPID(fle, bpid)	(fle)->fin_bpid_offset |= (uint64_t)bpid;
-#define DPAA2_GET_FLE_BPID(fle, bpid)	(fle->fin_bpid_offset & 0x000000ff)
-#define DPAA2_SET_FLE_FIN(fle)	fle->fin_bpid_offset |= (uint64_t)1 << 31;
+	fle->addr_hi = upper_32_bits((uint64_t)addr);	  \
+} while (0)
+#define DPAA2_SET_FLE_OFFSET(fle, offset) \
+	((fle)->fin_bpid_offset |= (uint32_t)(offset) << 16)
+#define DPAA2_SET_FLE_BPID(fle, bpid) ((fle)->fin_bpid_offset |= (uint64_t)bpid)
+#define DPAA2_GET_FLE_BPID(fle, bpid) (fle->fin_bpid_offset & 0x000000ff)
+#define DPAA2_SET_FLE_FIN(fle)	(fle->fin_bpid_offset |= (uint64_t)1 << 31)
 #define DPAA2_SET_FLE_IVP(fle)   (((fle)->fin_bpid_offset |= 0x00004000))
 #define DPAA2_SET_FD_COMPOUND_FMT(fd)	\
-	fd->simple.bpid_offset |= (uint32_t)1 << 28;
+	(fd->simple.bpid_offset |= (uint32_t)1 << 28)
 #define DPAA2_GET_FD_ADDR(fd)	\
-	(uint64_t)((((uint64_t)(fd->simple.addr_hi)) << 32) + fd->simple.addr_lo)
+((uint64_t)((((uint64_t)(fd->simple.addr_hi)) << 32) + fd->simple.addr_lo))
+
 #define DPAA2_GET_FD_LEN(fd)	(fd->simple.len)
 #define DPAA2_GET_FD_BPID(fd)	((fd->simple.bpid_offset & 0x00003FFF))
 #define DPAA2_GET_FD_IVP(fd)   ((fd->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	((fd->simple.bpid_offset & 0x0FFF0000) >> 16)
 #define DPAA2_GET_FD_FRC(fd)	(fd->simple.frc)
 #define DPAA2_GET_FD_FLC(fd)	\
-	(uint64_t)((((uint64_t)(fd->simple.flc_hi)) << 32) + fd->simple.flc_lo)
+((uint64_t)((((uint64_t)(fd->simple.flc_hi)) << 32) + fd->simple.flc_lo))
 
-#define DPAA2_SET_FLE_SG_EXT(fle)	fle->fin_bpid_offset |= (uint64_t)1 << 29;
+#define DPAA2_SET_FLE_SG_EXT(fle) (fle->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
-	(fle->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0
+	((fle->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0)
 
 #define DPAA2_INLINE_MBUF_FROM_BUF(buf, meta_data_size) \
 	((struct rte_mbuf *)((uint64_t)buf - meta_data_size))
@@ -231,16 +242,21 @@ struct qbman_fle {
 /*Macros to define QBMAN enqueue options */
 #define DPAA2_ETH_EQ_DISABLE		0	/*!< Dont Enqueue the Frame */
 #define DPAA2_ETH_EQ_RESP_ON_SUCC	1	/*!< Enqueue the Frame with
-							response after success*/
+						 * response after success
+						 */
 #define DPAA2_ETH_EQ_RESP_ON_FAIL	2	/*!< Enqueue the Frame with
-							response after failure*/
+						 * response after failure
+						 */
 #define DPAA2_ETH_EQ_NO_RESP		3	/*!< Enqueue the Frame without
-							response*/
+						 * response
+						 */
 /* Only Enqueue Error responses will be
- * pushed on FQID_ERR of Enqueue FQ */
+ * pushed on FQID_ERR of Enqueue FQ
+ */
 #define DPAA2_EQ_RESP_ERR_FQ		0
 /* All Enqueue responses will be pushed on address
- * set with qbman_eq_desc_set_response */
+ * set with qbman_eq_desc_set_response
+ */
 #define DPAA2_EQ_RESP_ALWAYS		1
 
 int
@@ -258,8 +274,9 @@ static void *dpaa2_mem_ptov(phys_addr_t paddr)
 
 	for (i = 0; i < RTE_MAX_MEMSEG && memseg[i].addr_64 != 0; i++) {
 		if (paddr >= memseg[i].phys_addr &&
-		    (char *)paddr < (char *)memseg[i].phys_addr + memseg[i].len)
-			return (void *)(memseg[i].addr_64 + (paddr - memseg[i].phys_addr));
+		   (char *)paddr < (char *)memseg[i].phys_addr + memseg[i].len)
+			return (void *)(memseg[i].addr_64
+				+ (paddr - memseg[i].phys_addr));
 	}
 	return NULL;
 }
@@ -272,12 +289,13 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 	for (i = 0; i < RTE_MAX_MEMSEG && memseg[i].addr_64 != 0; i++) {
 		if (vaddr >= memseg[i].addr_64 &&
 		    vaddr < memseg[i].addr_64 + memseg[i].len)
-			return memseg[i].phys_addr + (vaddr - memseg[i].addr_64);
+			return memseg[i].phys_addr
+				+ (vaddr - memseg[i].addr_64);
 	}
 	return (phys_addr_t)(NULL);
 }
 
-/*
+/**
  * When we are using Physical addresses as IO Virtual Addresses,
  * we call conversion routines nadk_mem_vtop & nadk_mem_ptov wherever required.
  * These routines are called with help of below MACRO's

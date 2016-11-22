@@ -130,9 +130,12 @@ static int cpuinfo_arm(FILE *file)
 	while (fgets(str, sizeof(str), file) != NULL) {
 		if (part >= 0)
 			break;
-		if ((pos = strstr(str, "CPU part")) != NULL &&
-		    (pos = strchr(pos, ':')) != NULL)
-			sscanf(++pos, "%x", &part);
+		pos = strstr(str, "CPU part");
+		if (pos != NULL) {
+			pos = strchr(pos, ':');
+			if (pos != NULL)
+				sscanf(++pos, "%x", &part);
+		}
 	}
 
 	dpaa2_soc_core = part;
@@ -423,7 +426,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	if (!dpio_dev_list) {
 		dpio_dev_list = malloc(sizeof(struct dpio_device_list));
 		if (NULL == dpio_dev_list) {
-			PMD_INIT_LOG(ERR, "Memory alloc failed for DPIO list\n");
+			PMD_INIT_LOG(ERR, "Memory alloc failed in DPIO list\n");
 			return -1;
 		}
 

@@ -168,7 +168,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_ETH;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_ETH_TYPE;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -190,7 +191,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_IP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_IP_SRC;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -199,7 +201,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_IP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_IP_DST;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -208,7 +211,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_IP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_IP_PROTO;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				kg_cfg->num_extracts++;
@@ -230,7 +234,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_TCP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_TCP_PORT_SRC;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -239,7 +244,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_TCP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_TCP_PORT_SRC;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -256,7 +262,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_SCTP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_SCTP_PORT_SRC;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -265,7 +272,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					NET_PROT_SCTP;
 				kg_cfg->extracts[i].extract.from_hdr.field =
 					NH_FLD_SCTP_PORT_DST;
-				kg_cfg->extracts[i].type = DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
 				kg_cfg->extracts[i].extract.from_hdr.type =
 					DPKG_FULL_FIELD;
 				i++;
@@ -412,5 +420,4 @@ dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 	printf("Rx discarded: %ld\n", value.page_2.ingress_discarded_frames);
 	printf("Rx no buffer: %ld\n", value.page_2.ingress_nobuffer_discards);
 	printf("Tx dropped: %ld\n", value.page_2.egress_discarded_frames);
-
 }
