@@ -1,5 +1,5 @@
 /* Copyright 2013-2016 Freescale Semiconductor Inc.
- *  Copyright (c) 2016 NXP.
+ * Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -77,9 +77,9 @@ int dpseci_close(struct fsl_mc_io *mc_io,
 
 int dpseci_create(struct fsl_mc_io	*mc_io,
 		  uint16_t	dprc_token,
-		uint32_t	cmd_flags,
-		const struct dpseci_cfg	*cfg,
-		uint32_t	*obj_id)
+		  uint32_t	cmd_flags,
+		  const struct dpseci_cfg	*cfg,
+		  uint32_t	*obj_id)
 {
 	struct mc_command cmd = { 0 };
 	int err;
@@ -103,8 +103,8 @@ int dpseci_create(struct fsl_mc_io	*mc_io,
 
 int dpseci_destroy(struct fsl_mc_io	*mc_io,
 		   uint16_t	dprc_token,
-		uint32_t	cmd_flags,
-		uint32_t	object_id)
+		   uint32_t	cmd_flags,
+		   uint32_t	object_id)
 {
 	struct mc_command cmd = { 0 };
 
