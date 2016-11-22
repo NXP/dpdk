@@ -72,7 +72,8 @@ struct qb_attr_code code_generic_rslt = QB_CODE(0, 8, 8);
 /*************************/
 
 /* we put these here because at least some of them are required by
- * qbman_swp_init() */
+ * qbman_swp_init()
+ */
 struct qb_attr_code code_sdqcr_dct = QB_CODE(0, 24, 2);
 struct qb_attr_code code_sdqcr_fc = QB_CODE(0, 29, 1);
 struct qb_attr_code code_sdqcr_tok = QB_CODE(0, 16, 8);
@@ -93,8 +94,9 @@ enum qbman_sdqcr_fc {
 struct qb_attr_code code_sdqcr_dqsrc = QB_CODE(0, 0, 16);
 
 /* We need to keep track of which SWP triggered a pull command
-   so keep an array of portal IDs and use the token field to
-   be able to find the proper portal */
+ * so keep an array of portal IDs and use the token field to
+ * be able to find the proper portal
+ */
 #define MAX_QBMAN_PORTALS  35
 static struct qbman_swp *portal_idx_map[MAX_QBMAN_PORTALS];
 
@@ -158,9 +160,10 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 		return NULL;
 	}
 	/* SDQCR needs to be initialized to 0 when no channels are
-	   being dequeued from or else the QMan HW will indicate an
-	   error.  The values that were calculated above will be
-	   applied when dequeues from a specific channel are enabled */
+	 * being dequeued from or else the QMan HW will indicate an
+	 * error.  The values that were calculated above will be
+	 * applied when dequeues from a specific channel are enabled
+	 */
 	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_SDQCR, 0);
 	eqcr_pi = qbman_cinh_read(&p->sys, QBMAN_CINH_SWP_EQCR_PI);
 	p->eqcr.pi = eqcr_pi & 0xF;
@@ -450,14 +453,14 @@ static int qbman_swp_enqueue_array_mode(struct qbman_swp *s,
 	if (!EQAR_SUCCESS(eqar))
 		return -EBUSY;
 	p = qbman_cena_write_start_wo_shadow(&s->sys,
-					     QBMAN_CENA_SWP_EQCR(EQAR_IDX(eqar)));
+			QBMAN_CENA_SWP_EQCR(EQAR_IDX(eqar)));
 	word_copy(&p[1], &cl[1], 7);
 	word_copy(&p[8], fd, sizeof(*fd) >> 2);
 	/* Set the verb byte, have to substitute in the valid-bit */
 	lwsync();
 	p[0] = cl[0] | EQAR_VB(eqar);
 	qbman_cena_write_complete_wo_shadow(&s->sys,
-					    QBMAN_CENA_SWP_EQCR(EQAR_IDX(eqar)));
+			QBMAN_CENA_SWP_EQCR(EQAR_IDX(eqar)));
 	return 0;
 }
 
@@ -482,14 +485,14 @@ static int qbman_swp_enqueue_ring_mode(struct qbman_swp *s,
 	}
 
 	p = qbman_cena_write_start_wo_shadow(&s->sys,
-					     QBMAN_CENA_SWP_EQCR(s->eqcr.pi & 7));
+		QBMAN_CENA_SWP_EQCR(s->eqcr.pi & 7));
 	word_copy(&p[1], &cl[1], 7);
 	word_copy(&p[8], fd, sizeof(*fd) >> 2);
 	lwsync();
 	/* Set the verb byte, have to substitute in the valid-bit */
 	p[0] = cl[0] | s->eqcr.pi_vb;
 	qbman_cena_write_complete_wo_shadow(&s->sys,
-					    QBMAN_CENA_SWP_EQCR(s->eqcr.pi & 7));
+		QBMAN_CENA_SWP_EQCR(s->eqcr.pi & 7));
 	s->eqcr.pi++;
 	s->eqcr.pi &= 0xF;
 	s->eqcr.available--;
@@ -519,7 +522,7 @@ int qbman_swp_fill_ring(struct qbman_swp *s,
 			return -EBUSY;
 	}
 	p = qbman_cena_write_start_wo_shadow(&s->sys,
-					     QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
+		QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
 	/* word_copy(&p[1], &cl[1], 7); */
 	memcpy(&p[1], &cl[1], 7 * 4);
 	/* word_copy(&p[8], fd, sizeof(*fd) >> 2); */
@@ -774,7 +777,7 @@ const struct qbman_result *qbman_swp_dqrr_next(struct qbman_swp *s)
 			s->dqrr.reset_bug = 0;
 		}
 		qbman_cena_invalidate_prefetch(&s->sys,
-					       QBMAN_CENA_SWP_DQRR(s->dqrr.next_idx));
+				QBMAN_CENA_SWP_DQRR(s->dqrr.next_idx));
 	}
 	dq = qbman_cena_read_wo_shadow(&s->sys,
 				       QBMAN_CENA_SWP_DQRR(s->dqrr.next_idx));
@@ -868,7 +871,8 @@ int qbman_check_command_complete(struct qbman_swp *s,
 	/* The user trying to poll for a result treats "dq" as const. It is
 	 * however the same address that was provided to us non-const in the
 	 * first place, for directing hardware DMA to. So we can cast away the
-	 * const because it is mutable from our perspective. */
+	 * const because it is mutable from our perspective.
+	 */
 	uint32_t *p = (uint32_t *)(unsigned long)qb_cl(dq);
 	uint32_t token;
 
@@ -876,11 +880,13 @@ int qbman_check_command_complete(struct qbman_swp *s,
 	if (token == 0)
 		return 0;
 	/* TODO: Remove qbman_swp from parameters and make it a local
-	   once we've tested the reserve portal map change */
+	 * once we've tested the reserve portal map change
+	 */
 	s = portal_idx_map[token - 1];
-	/*When token is set it indicates that  VDQ command has been fetched by qbman and
-	 *is working on it. It is safe for software to issue another VDQ command, so
-	 *incrementing the busy variable.*/
+	/* When token is set it indicates that VDQ command has been fetched
+	 * by qbman and is working on it. It is safe for software to issue
+	 * another VDQ command, so incrementing the busy variable.
+	 */
 	if (s->vdq.storage == dq) {
 		s->vdq.storage = NULL;
 		atomic_inc(&s->vdq.busy);
@@ -1406,10 +1412,12 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 		s->eqcr.available += diff;
 	}
 
-	/* we are trying to send frames_to_send  if we have enough space in the ring */
+	/* we are trying to send frames_to_send,
+	 * if we have enough space in the ring
+	 */
 	while (s->eqcr.available && frames_to_send--) {
 		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+					QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
 		/* Write command (except of first byte) and FD */
 		memcpy(&p[1], &cl[1], 7 * 4);
 		memcpy(&p[8], &fd[sent], sizeof(struct qbman_fd));
@@ -1424,13 +1432,13 @@ done:
 	initial_pi =  s->eqcr.pi;
 	lwsync();
 
-	/* in order for flushes to complete faster */
-	/*For that we use a following trick: we record all lines in 32 bit word */
+	/* in order for flushes to complete faster:
+	 * we use a following trick: we record all lines in 32 bit word */
 
 	initial_pi =  s->eqcr.pi;
 	for (i = 0; i < sent; i++) {
 		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+					QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
 
 		p[0] = cl[0] | s->eqcr.pi_vb;
 		initial_pi++;
@@ -1442,11 +1450,15 @@ done:
 
 	initial_pi = s->eqcr.pi;
 
-	/* We need  to flush all the lines but without load/store operations between them */
-  /* We assign start_pointer  before we start loop so that in loop we do not read it from memory */
+	/* We need  to flush all the lines but without
+	 * load/store operations between them.
+	 * We assign start_pointer before we start loop so that
+	 * in loop we do not read it from memory
+	 */
 	start_pointer = (uint64_t)s->sys.addr_cena;
 	for (i = 0; i < sent; i++) {
-		p = (uint32_t *)(start_pointer + QBMAN_CENA_SWP_EQCR(initial_pi & 7));
+		p = (uint32_t *)(start_pointer
+				 + QBMAN_CENA_SWP_EQCR(initial_pi & 7));
 		dcbf((uint64_t)p);
 		initial_pi++;
 		initial_pi &= 0xF;

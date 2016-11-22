@@ -150,10 +150,10 @@ do { \
 #ifdef pr_debug
 #undef pr_debug
 #endif
-#define pr_debug(fmt, args...)	do { ; } while (0)
-#define BUG_ON(c)		do { ; } while (0)
-#define might_sleep_if(c)	do { ; } while (0)
-#define msleep(x)		do { ; } while (0)
+#define pr_debug(fmt, args...) {}
+#define BUG_ON(c) {}
+#define might_sleep_if(c) {}
+#define msleep(x) {}
 #endif
 #define WARN_ON(c, str) \
 do { \
@@ -185,7 +185,8 @@ struct list_head n = { \
 #define INIT_LIST_HEAD(p) \
 do { \
 	struct list_head *__p298 = (p); \
-	__p298->prev = __p298->next = __p298; \
+	__p298->next = __p298; \
+	__p298->prev = __p298->next; \
 } while (0)
 #define list_entry(node, type, member) \
 	(type *)((void *)node - offsetof(type, member))
@@ -240,36 +241,15 @@ do { \
 typedef unsigned int	gfp_t;
 typedef uint32_t	phandle;
 
-#define noinline	__attribute__((noinline))
 #define __iomem
 #define EINTR		4
 #define ENODEV		19
-#define MODULE_AUTHOR(s)
-#define MODULE_LICENSE(s)
-#define MODULE_DESCRIPTION(s)
-#define MODULE_PARM_DESC(x, y)
-#define EXPORT_SYMBOL(x)
-#define module_init(fn) int m_##fn(void) { return fn(); }
-#define module_exit(fn) void m_##fn(void) { fn(); }
-#define module_param(x, y, z)
-#define module_param_string(w, x, y, z)
 #define GFP_KERNEL	0
-#define __KERNEL__
-#define __init
-#define __raw_readb(p)	*(const volatile unsigned char *)(p)
-#define __raw_readl(p)	*(const volatile unsigned int *)(p)
-#define __raw_writel(v, p) \
-do { \
-	*(volatile unsigned int *)(p) = (v); \
-} while (0)
+#define __raw_readb(p)	(*(const volatile unsigned char *)(p))
+#define __raw_readl(p)	(*(const volatile unsigned int *)(p))
+#define __raw_writel(v, p) {*(volatile unsigned int *)(p) = (v); }
 
-/* printk() stuff */
-#define printk(fmt, args...)	do_not_use_printk
-#define nada(fmt, args...)	do { ; } while (0)
 
-/* Interrupt stuff */
-typedef uint32_t	irqreturn_t;
-#define IRQ_HANDLED	0
 
 /* memcpy() stuff - when you know alignments in advance */
 #ifdef CONFIG_TRY_BETTER_MEMCPY
@@ -347,8 +327,8 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 					spin_unlock(x);		\
 					local_irq_enable();	\
 				} while (0)
-#define spin_lock_irqsave(x, f)	do { spin_lock_irq(x); } while (0)
-#define spin_unlock_irqrestore(x, f) do { spin_unlock_irq(x); } while (0)
+#define spin_lock_irqsave(x, f)	spin_lock_irq(x)
+#define spin_unlock_irqrestore(x, f) spin_unlock_irq(x)
 
 #define raw_spinlock_t				spinlock_t
 #define raw_spin_lock_init(x)			spin_lock_init(x)
@@ -356,11 +336,8 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 #define raw_spin_unlock_irqrestore(x, f)	spin_unlock(x)
 
 /* Completion stuff */
-#define DECLARE_COMPLETION(n) int n = 0;
-#define complete(n) \
-do { \
-	*n = 1; \
-} while (0)
+#define DECLARE_COMPLETION(n) int n = 0
+#define complete(n) { *n = 1; }
 #define wait_for_completion(n) \
 do { \
 	while (!*n) { \
@@ -370,34 +347,11 @@ do { \
 	*n = 0; \
 } while (0)
 
-/* Platform device stuff */
-struct platform_device { void *dev; };
-static inline struct
-platform_device *platform_device_alloc(const char *name __always_unused,
-				       int id __always_unused)
-{
-	struct platform_device *ret = malloc(sizeof(*ret));
-
-	if (ret)
-		ret->dev = NULL;
-	return ret;
-}
-
-#define platform_device_add(pdev)	0
-#define platform_device_del(pdev)	do { ; } while (0)
-static inline void platform_device_put(struct platform_device *pdev)
-{
-	free(pdev);
-}
-
-struct resource {
-	int unused;
-};
 
 /* Allocator stuff */
 #define kmalloc(sz, t)	malloc(sz)
 #define vmalloc(sz)	malloc(sz)
-#define kfree(p)	do { if (p) free(p); } while (0)
+#define kfree(p)	{ if (p) free(p); }
 static inline void *kzalloc(size_t sz, gfp_t __foo __always_unused)
 {
 	void *ptr = malloc(sz);
@@ -420,53 +374,6 @@ static inline unsigned long get_zeroed_page(gfp_t __foo __always_unused)
 static inline void free_page(unsigned long p)
 {
 	free((void *)p);
-}
-
-struct kmem_cache {
-	size_t sz;
-	size_t align;
-};
-
-#define SLAB_HWCACHE_ALIGN	0
-static inline struct kmem_cache *kmem_cache_create(const char *n __always_unused,
-						   size_t sz, size_t align, unsigned long flags __always_unused,
-			void (*c)(void *) __always_unused)
-{
-	struct kmem_cache *ret = malloc(sizeof(*ret));
-
-	if (ret) {
-		ret->sz = sz;
-		ret->align = align;
-	}
-	return ret;
-}
-
-static inline void kmem_cache_destroy(struct kmem_cache *c)
-{
-	free(c);
-}
-
-static inline void *kmem_cache_alloc(struct kmem_cache *c, gfp_t f __always_unused)
-{
-	void *p;
-
-	if (posix_memalign(&p, c->align, c->sz))
-		return NULL;
-	return p;
-}
-
-static inline void kmem_cache_free(struct kmem_cache *c __always_unused, void *p)
-{
-	free(p);
-}
-
-static inline void *kmem_cache_zalloc(struct kmem_cache *c, gfp_t f)
-{
-	void *ret = kmem_cache_alloc(c, f);
-
-	if (ret)
-		memset(ret, 0, c->sz);
-	return ret;
 }
 
 /* Bitfield stuff. */
@@ -551,6 +458,12 @@ static inline u64 div64_u64(u64 n, u64 d)
 	return n / d;
 }
 
+/**
+ * General memory barrier.
+ *
+ * Guarantees that the LOAD and STORE operations generated before the
+ * barrier occur before the LOAD and STORE operations generated after.
+ */
 #define dmb(opt) { asm volatile("dmb " #opt : : : "memory"); }
 #define smp_mb() dmb(ish)
 
