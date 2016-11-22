@@ -241,7 +241,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->flow_id = DPNI_NEW_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
-		dpaa2_q->cscn = rte_malloc(NULL, sizeof(struct qbman_result), 16);
+		dpaa2_q->cscn = rte_malloc(NULL,
+					   sizeof(struct qbman_result), 16);
 		if (!dpaa2_q->cscn)
 			goto fail_tx;
 	}
@@ -301,7 +302,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		ret = dpaa2_setup_flow_dist(dev,
 				eth_conf->rx_adv_conf.rss_conf.rss_hf);
 		if (ret) {
-			PMD_INIT_LOG(ERR, "dpaa2_setup_flow_distribution failed\n");
+			PMD_INIT_LOG(ERR, "unable to set flow distribution."
+				     "please check queue config\n");
 			return ret;
 		}
 	}
@@ -448,9 +450,6 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	}
 #endif
 	if (tx_queue_id == 0) {
-		/*TODO : Commenting below code as there is no support for common
-		* tx-conf and error queue
-		*/
 		/*Set tx-conf and error configuration*/
 		ret = dpni_set_tx_confirmation_mode(dpni, CMD_PRI_LOW,
 						    priv->token,
@@ -578,7 +577,7 @@ dpaa2_interrupt_action(struct rte_eth_dev *dev)
 	if (status & DPNI_IRQ_EVENT_LINK_CHANGED) {
 		clear = DPNI_IRQ_EVENT_LINK_CHANGED;
 		dpaa2_dev_link_update(dev, 0);
-		/* calling all the applications registered for link status event */
+		/* calling all the apps registered for link status event */
 		_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
 	}
 
@@ -607,7 +606,7 @@ dpaa2_interrupt_handler(__rte_unused struct rte_intr_handle *handle,
 	dpaa2_interrupt_action((struct rte_eth_dev *)param);
 }
 
-static int 
+static int
 dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
 {
 	int err = 0;
@@ -740,7 +739,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		return ret;
 	}
 
-	/*for checksum issue, send them to normal path and set it in annotation */
+	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
@@ -984,7 +983,8 @@ dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 	ret = dpni_add_mac_addr(dpni, CMD_PRI_LOW,
 				priv->token, addr->addr_bytes);
 	if (ret)
-		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed %d", ret);
+		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed:"
+			" err = %d", ret);
 }
 
 static void
@@ -1009,7 +1009,8 @@ dpaa2_dev_remove_mac_addr(struct rte_eth_dev *dev,
 	ret = dpni_remove_mac_addr(dpni, CMD_PRI_LOW,
 				   priv->token, macaddr->addr_bytes);
 	if (ret)
-		RTE_LOG(ERR, PMD, "error: Removing the MAC ADDR failed %d", ret);
+		RTE_LOG(ERR, PMD, "error: Removing the MAC ADDR failed:"
+			" err = %d", ret);
 }
 
 static void
@@ -1286,7 +1287,8 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		PMD_DRV_LOG(INFO, "Port %d Link DOWN successful", dev->data->port_id);
+		PMD_DRV_LOG(INFO, "Port %d Link DOWN successful",
+			    dev->data->port_id);
 	}
 
 	dev->data->dev_link.link_status = 0;
@@ -1383,7 +1385,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		break;
 	}
 
-	/* Distribution is per Tc only, so choosing RX queues from default TC only */
+	/* Distribution is per Tc only,
+	 * so choosing RX queues from default TC only
+	 */
 	priv->nb_rx_queues = priv->num_dist_per_tc[DPAA2_DEF_TC];
 
 	if (attr.num_tcs == 1)
@@ -1583,9 +1587,9 @@ rte_pmd_dpaa2_devinit(
 	PMD_INIT_FUNC_TRACE();
 
 	ret = rte_eal_dpaa2_dmamap();
-	if (!ret) {
-		/* DMA Mapping has been completed*/
-	}
+	if (!ret)
+		PMD_INIT_LOG(DEBUG, "DMA Mapping has been completed");
+
 	rte_eth_driver_register(&rte_dpaa2_dpni);
 	return 0;
 }

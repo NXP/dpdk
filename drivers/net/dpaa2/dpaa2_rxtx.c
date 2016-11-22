@@ -88,7 +88,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	/* todo optimization - we can have dq_storage_phys available*/
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 
 	/*Issue a volatile dequeue command. */
 	while (1) {
@@ -172,7 +172,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				NUM_MAX_RECV_FRAMES : nb_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 			while (!qbman_check_command_complete(swp,
 							     get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
@@ -214,9 +214,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			is_last = 1;
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
-			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
+			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0))
 				continue;
-			}
 		}
 		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
 		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
@@ -224,7 +223,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			 - bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
 		/* Prefeth mbuf */
 		rte_prefetch0(mbuf);
-		/* Prefetch Annotation address from where we get parse results */
+		/* Prefetch Annotation address for the parse results */
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx])
 				+ DPAA2_FD_PTA_SIZE + 16));
 
@@ -238,7 +237,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 		while (!qbman_check_command_complete(swp,
-						     get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
+			get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
 			;
 		clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
 	}
@@ -248,7 +247,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, NUM_MAX_RECV_FRAMES);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
@@ -332,7 +331,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				if (priv->bp_list) {
 					bpid = priv->bp_list->buf_pool.bpid;
 				} else {
-					PMD_TX_LOG(ERR, "error: why no bpool attached");
+					PMD_TX_LOG(ERR, "errr: why no bpool"
+						   " attached");
 					num_tx = 0;
 					goto skip_tx;
 				}
@@ -441,4 +441,3 @@ dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	(void)nb_pkts;
 	return 0;
 }
-
