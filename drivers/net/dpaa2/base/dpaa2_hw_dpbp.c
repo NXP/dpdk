@@ -216,7 +216,14 @@ void dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	int i, n;
 	uint64_t bufs[DPAA2_MBUF_MAX_ACQ_REL];
 
-	swp = thread_io_info.dpio_dev->sw_portal;
+	if (!DPAA2_PER_LCORE_DPIO) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret != 0) {
+			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			return;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
 
 	/* Create a release descriptor required for releasing
 	 * buffers into BMAN */
@@ -283,14 +290,14 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bpid = bp_info->bpid;
 
-	if (!thread_io_info.dpio_dev) {
+	if (!DPAA2_PER_LCORE_DPIO) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
 			return -1;
 		}
 	}
-	swp = thread_io_info.dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_PORTAL;
 
 	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
 

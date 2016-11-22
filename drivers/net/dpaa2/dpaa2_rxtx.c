@@ -71,14 +71,14 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_pull_desc pulldesc;
 	struct rte_eth_dev *dev = dpaa2_q->dev;
 
-	if (!thread_io_info.dpio_dev) {
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_PORTAL;
 	dq_storage = dpaa2_q->q_storage->dq_storage[0];
 
 	qbman_pull_desc_clear(&pulldesc);
@@ -155,14 +155,14 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
 	struct rte_eth_dev *dev = dpaa2_q->dev;
 
-	if (!thread_io_info.dpio_dev) {
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_PORTAL;
 	if (!q_storage->active_dqs) {
 		q_storage->toggle = 0;
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
@@ -173,11 +173,11 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
-		if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
+		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 			while (!qbman_check_command_complete(swp,
-							     get_swp_active_dqs(thread_io_info.dpio_dev->index)))
+							     get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
 				;
-			clear_swp_active_dqs(thread_io_info.dpio_dev->index);
+			clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
@@ -189,8 +189,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			break;
 		}
 		q_storage->active_dqs = dq_storage;
-		q_storage->active_dpio_id = thread_io_info.dpio_dev->index;
-		set_swp_active_dqs(thread_io_info.dpio_dev->index, dq_storage);
+		q_storage->active_dpio_id = DPAA2_PER_LCORE_DPIO->index;
+		set_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index, dq_storage);
 	}
 	dq_storage = q_storage->active_dqs;
 	/* Check if the previous issued command is completed.
@@ -236,11 +236,11 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	} /* End of Packet Rx loop */
 
-	if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
+	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 		while (!qbman_check_command_complete(swp,
-						     get_swp_active_dqs(thread_io_info.dpio_dev->index)))
+						     get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
 			;
-		clear_swp_active_dqs(thread_io_info.dpio_dev->index);
+		clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
 	}
 	q_storage->toggle ^= 1;
 	dq_storage = q_storage->dq_storage[q_storage->toggle];
@@ -259,8 +259,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		break;
 	}
 	q_storage->active_dqs = dq_storage;
-	q_storage->active_dpio_id = thread_io_info.dpio_dev->index;
-	set_swp_active_dqs(thread_io_info.dpio_dev->index, dq_storage);
+	q_storage->active_dpio_id = DPAA2_PER_LCORE_DPIO->index;
+	set_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index, dq_storage);
 
 	dpaa2_q->rx_pkts += num_rx;
 
@@ -292,14 +292,14 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct rte_eth_dev *dev = dpaa2_q->dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 
-	if (!thread_io_info.dpio_dev) {
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_PORTAL;
 
 	PMD_TX_LOG(DEBUG, "===> dev =%p, fqid =%d", dev, dpaa2_q->fqid);
 
