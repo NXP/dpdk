@@ -68,7 +68,8 @@
 #define MAX_TX_RING_SLOTS	8
 	/** <Maximum number of slots available in TX ring*/
 
-#define NUM_MAX_RECV_FRAMES	16
+#define DPAA2_DQRR_RING_SIZE	16
+	/** <Maximum number of slots available in RX ring*/
 
 #define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mpool flag to check offloaded pool */
 

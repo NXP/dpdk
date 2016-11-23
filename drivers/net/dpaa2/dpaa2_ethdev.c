@@ -536,8 +536,9 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 		RTE_PTYPE_UNKNOWN
 	};
 
-	if (dev->rx_pkt_burst == dpaa2_dev_prefetch_rx ||
-	    dev->rx_pkt_burst == dpaa2_dev_rx)
+	if (dev->rx_pkt_burst == dpaa2_dev_rx ||
+		dev->rx_pkt_burst == dpaa2_dev_prefetch_rx ||
+		dev->rx_pkt_burst == dpaa2_dev_prefetch2_rx)
 		return ptypes;
 	return NULL;
 }
@@ -1497,11 +1498,19 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		return -1;
 	}
 
-	/* TODO - Set the MTU if required */
-
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
-	eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;/*dpaa2_dev_rx;*/
+	eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
+
+	/*If no prefetch is configured. */
+	if (getenv("DPAA2_RX_NO_PREFETCH")) {
+		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
+		PMD_INIT_LOG(INFO, "No Prefetch enabled");
+	} else if (getenv("DPAA2_RX_PREFETCH_2")) {
+		/*If double prefetch is configured. */
+		eth_dev->rx_pkt_burst = dpaa2_dev_prefetch2_rx;
+		PMD_INIT_LOG(INFO, "Double Prefetch Enabled");
+	}
 
 	return 0;
 }
