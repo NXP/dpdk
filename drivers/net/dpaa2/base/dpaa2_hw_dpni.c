@@ -308,7 +308,7 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
 		q_storage->dq_storage[i] = rte_malloc(NULL,
-			NUM_MAX_RECV_FRAMES * sizeof(struct qbman_result),
+			DPAA2_DQRR_RING_SIZE * sizeof(struct qbman_result),
 			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
 			goto fail;

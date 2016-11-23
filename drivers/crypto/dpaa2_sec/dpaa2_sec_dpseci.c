@@ -589,8 +589,8 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_numframes(&pulldesc,
-				      (nb_ops > NUM_MAX_RECV_FRAMES) ?
-				      NUM_MAX_RECV_FRAMES : nb_ops);
+				      (nb_ops > DPAA2_DQRR_RING_SIZE) ?
+				      DPAA2_DQRR_RING_SIZE : nb_ops);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)DPAA2_VADDR_TO_IOVA(dq_storage), 1);
@@ -684,8 +684,8 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_numframes(&pulldesc,
-					      (nb_ops > NUM_MAX_RECV_FRAMES) ?
-					       NUM_MAX_RECV_FRAMES : nb_ops);
+					      (nb_ops > DPAA2_DQRR_RING_SIZE) ?
+					       DPAA2_DQRR_RING_SIZE : nb_ops);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
@@ -758,7 +758,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	q_storage->toggle ^= 1;
 	dq_storage = q_storage->dq_storage[q_storage->toggle];
 	qbman_pull_desc_clear(&pulldesc);
-	qbman_pull_desc_set_numframes(&pulldesc, NUM_MAX_RECV_FRAMES);
+	qbman_pull_desc_set_numframes(&pulldesc, DPAA2_DQRR_RING_SIZE);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
