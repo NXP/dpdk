@@ -344,7 +344,7 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	uint32_t num_rx = 0;
 	int ret;
 
-	if (unlikely(!thread_portal_init)) {
+	if (unlikely(!RTE_PER_LCORE(_dpaa_io))) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Failure in affining portal");
@@ -469,7 +469,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 	uint32_t frames_to_send, loop, i = 0;
 	int ret;
 
-	if (unlikely(!thread_portal_init)) {
+	if (unlikely(!RTE_PER_LCORE(_dpaa_io))) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Failure in affining portal");
