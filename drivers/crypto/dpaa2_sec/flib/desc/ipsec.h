@@ -1215,6 +1215,50 @@ static inline int cnstr_shdsc_ipsec_new_decap(uint32_t *descbuf, bool ps,
 }
 
 /**
+ * IPSEC_AUTH_VAR_BASE_DESC_LEN - IPsec encap/decap shared descriptor length
+ *				for the case of variable-length authentication
+ *				only data.
+ *				Note: Only for SoCs with SEC_ERA >= 3.
+ *
+ * Accounts only for the "base" commands and is intended to be used by upper
+ * layers to determine whether keys can be inlined or not. To be used as first
+ * parameter of rta_inline_query().
+ */
+#define IPSEC_AUTH_VAR_BASE_DESC_LEN	(27 * CAAM_CMD_SZ)
+
+/**
+ * IPSEC_AUTH_VAR_AES_DEC_BASE_DESC_LEN - IPsec AES decap shared descriptor
+ *                              length for variable-length authentication only
+ *                              data.
+ *                              Note: Only for SoCs with SEC_ERA >= 3.
+ *
+ * Accounts only for the "base" commands and is intended to be used by upper
+ * layers to determine whether key can be inlined or not. To be used as first
+ * parameter of rta_inline_query().
+ */
+#define IPSEC_AUTH_VAR_AES_DEC_BASE_DESC_LEN	\
+				(IPSEC_AUTH_VAR_BASE_DESC_LEN + CAAM_CMD_SZ)
+
+/**
+ * IPSEC_AUTH_BASE_DESC_LEN - IPsec encap/decap shared descriptor length
+ *
+ * Accounts only for the "base" commands and is intended to be used by upper
+ * layers to determine whether key can be inlined or not. To be used as first
+ * parameter of rta_inline_query().
+ */
+#define IPSEC_AUTH_BASE_DESC_LEN	(19 * CAAM_CMD_SZ)
+
+/**
+ * IPSEC_AUTH_AES_DEC_BASE_DESC_LEN - IPsec AES decap shared descriptor length
+ *
+ * Accounts only for the "base" commands and is intended to be used by upper
+ * layers to determine whether key can be inlined or not. To be used as first
+ * parameter of rta_inline_query().
+ */
+#define IPSEC_AUTH_AES_DEC_BASE_DESC_LEN	(IPSEC_AUTH_BASE_DESC_LEN + \
+						CAAM_CMD_SZ)
+
+/**
  * cnstr_shdsc_authenc - authenc-like descriptor
  * @descbuf: pointer to buffer used for descriptor construction
  * @ps: if 36/40bit addressing is desired, this parameter must be true
