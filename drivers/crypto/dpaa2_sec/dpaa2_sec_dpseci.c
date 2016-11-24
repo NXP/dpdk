@@ -1128,6 +1128,7 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct sec_flow_context *flc;
 	struct rte_crypto_cipher_xform *cipher_xform;
 	struct rte_crypto_auth_xform *auth_xform;
+	int err;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1271,6 +1272,30 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	}
 	session->dir = (cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
 				DIR_ENC : DIR_DEC;
+
+	priv->flc_desc[0].desc[0] = authdata.keylen;
+	priv->flc_desc[0].desc[1] = cipherdata.keylen;
+	err = rta_inline_query(IPSEC_AUTH_VAR_BASE_DESC_LEN,
+			0, (unsigned *)priv->flc_desc[0].desc,
+			&priv->flc_desc[0].desc[2], 2);
+
+	if (err < 0) {
+		PMD_DRV_LOG(ERR, "Crypto: Incorrect key lengths");
+		goto error_out;
+	}
+
+	if (priv->flc_desc[0].desc[2] & 1)
+		authdata.key_type = RTA_DATA_PTR;
+	else
+		authdata.key_type = RTA_DATA_IMM;
+
+	if (priv->flc_desc[0].desc[2] & (1<<1))
+		cipherdata.key_type = RTA_DATA_PTR;
+	else
+		cipherdata.key_type = RTA_DATA_IMM;
+	priv->flc_desc[0].desc[0] = 0;
+	priv->flc_desc[0].desc[1] = 0;
+	priv->flc_desc[0].desc[2] = 0;
 
 	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH) {
 		bufsize = cnstr_shdsc_authenc(priv->flc_desc[0].desc, 1,
