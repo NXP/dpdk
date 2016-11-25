@@ -202,7 +202,8 @@ int vfio_dmamap_mem_region(uint64_t vaddr,
 	/* SET DMA MAP for IOMMU */
 	group = &vfio_groups[0];
 	if (ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA, &dma_map)) {
-		FSL_VFIO_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API Error %d", errno);
+		FSL_VFIO_LOG(ERR, "SWP: VFIO_IOMMU_MAP_DMA API"
+			     " Error %d", errno);
 		return -1;
 	}
 	return 0;
@@ -223,7 +224,7 @@ static int setup_dmamap(void)
 	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
 		memseg = rte_eal_get_physmem_layout();
 		if (memseg == NULL) {
-			FSL_VFIO_LOG(ERR, " Error Cannot get physical layout.");
+			FSL_VFIO_LOG(ERR, "Error Cannot get physical layout.");
 			return -ENODEV;
 		}
 
@@ -261,8 +262,8 @@ static int setup_dmamap(void)
 	}
 
 	/* TODO - This is a W.A. as VFIO currently does not add the mapping of
-	    the interrupt region to SMMU. This should be removed once the
-	    support is added in the Kernel.
+	 * the interrupt region to SMMU. This should be removed once the
+	 * support is added in the Kernel.
 	 */
 	vfio_map_irq_region(group);
 
@@ -431,19 +432,20 @@ int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 
 	len = sizeof(irq_set_buf);
 
-	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set = (struct vfio_irq_set *)irq_set_buf;
 	irq_set->argsz = len;
 	irq_set->count = 1;
-	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->flags =
+		VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
 	irq_set->index = index;
 	irq_set->start = 0;
-	fd_ptr = (int *) &irq_set->data;
+	fd_ptr = (int *)&irq_set->data;
 	*fd_ptr = intr_handle->fd;
 
 	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
 
 	if (ret) {
-		RTE_LOG(ERR, EAL, "Error: dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
+		RTE_LOG(ERR, EAL, "Error:dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
 			intr_handle->fd, errno, strerror(errno));
 		return ret;
 	}
@@ -460,13 +462,13 @@ int dpaa2_intr_unmask(struct rte_intr_handle *intr_handle, int index)
 
 	len = sizeof(irq_set_buf);
 
-	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set = (struct vfio_irq_set *)irq_set_buf;
 	irq_set->argsz = len;
 	irq_set->count = 1;
 	irq_set->flags = VFIO_IRQ_SET_ACTION_UNMASK | VFIO_IRQ_SET_DATA_BOOL;
 	irq_set->index = index;
 	irq_set->start = 0;
-	fd_ptr = (int *) &irq_set->data;
+	fd_ptr = (int *)&irq_set->data;
 	*fd_ptr = 1;
 
 	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
@@ -487,7 +489,7 @@ int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 
 	len = sizeof(struct vfio_irq_set);
 
-	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set = (struct vfio_irq_set *)irq_set_buf;
 	irq_set->argsz = len;
 	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
 	irq_set->index = index;
@@ -512,13 +514,13 @@ int dpaa2_intr_mask(struct rte_intr_handle *intr_handle, int index)
 
 	len = sizeof(struct vfio_irq_set);
 
-	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set = (struct vfio_irq_set *)irq_set_buf;
 	irq_set->argsz = len;
 	irq_set->flags = VFIO_IRQ_SET_ACTION_MASK | VFIO_IRQ_SET_DATA_BOOL;
 	irq_set->index = index;
 	irq_set->start = 0;
 	irq_set->count = 1;
-	fd_ptr = (int *) &irq_set->data;
+	fd_ptr = (int *)&irq_set->data;
 	*fd_ptr = 1;
 
 	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
@@ -557,10 +559,13 @@ dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 		FSL_VFIO_LOG(DEBUG, "IRQ Info (Count=%d, Flags=%d)",
 			     irq_info.count, irq_info.flags);
 
-		/* if this vector cannot be used with eventfd, fail if we explicitly
-		 * specified interrupt type, otherwise continue */
+		/* if this vector cannot be used with eventfd,
+		 * fail if we explicitly
+		 * specified interrupt type, otherwise continue
+		 */
 		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
-			if (internal_config.vfio_intr_mode != RTE_INTR_MODE_NONE) {
+			if (internal_config.vfio_intr_mode
+			    != RTE_INTR_MODE_NONE) {
 				FSL_VFIO_LOG(ERR, "  interrupt vector does not"
 						 " support eventfd!\n");
 				return -1;
@@ -633,7 +638,8 @@ static int vfio_process_group_devices(void)
 					free(mcp_obj);
 				mcp_obj = malloc(sizeof(dir->d_name));
 				if (!mcp_obj) {
-					FSL_VFIO_LOG(ERR, "Unable to allocate memory");
+					FSL_VFIO_LOG(ERR, "Unable to"
+						    " allocate memory");
 					return -ENOMEM;
 				}
 				strcpy(mcp_obj, dir->d_name);
@@ -723,7 +729,7 @@ static int vfio_process_group_devices(void)
 		i++;
 		/* Get Device inofrmation */
 		if (ioctl(vdev->fd, VFIO_DEVICE_GET_INFO, &device_info)) {
-			FSL_VFIO_LOG(ERR, "VFIO_DEVICE_FSL_MC_GET_INFO failed");
+			FSL_VFIO_LOG(ERR, "VFIO_DEVICE_FSL_MC_GET_INFO fail");
 			goto FAILURE;
 		}
 
@@ -740,14 +746,14 @@ static int vfio_process_group_devices(void)
 			dev->addr.devid = object_id;
 			dev->id.vendor_id = FSL_VENDOR_ID;
 			dev->id.device_id = (strcmp(object_type, "dpseci")) ?
-					FSL_MC_DPNI_DEVID : FSL_MC_DPSECI_DEVID;
+				FSL_MC_DPNI_DEVID : FSL_MC_DPSECI_DEVID;
 			dev->addr.function = dev->id.device_id;
 
 			RTE_LOG(INFO, PMD, "DPAA2: Added [%s-%d]\n",
 				object_type, object_id);
 			/* Enable IRQ for DPNI devices */
 			if (dev->id.device_id == FSL_MC_DPNI_DEVID)
-				dpaa2_vfio_setup_intr(&(dev->intr_handle),
+				dpaa2_vfio_setup_intr(&dev->intr_handle,
 						      vdev->fd,
 						      device_info.num_irqs);
 
@@ -756,7 +762,8 @@ static int vfio_process_group_devices(void)
 
 		if (!strcmp(object_type, "dpio")) {
 			ret = dpaa2_create_dpio_device(vdev,
-						       &device_info, object_id);
+						       &device_info,
+						       object_id);
 			if (!ret)
 				dpio_count++;
 		}

@@ -60,19 +60,19 @@ struct fsl_mc_io {
 
 #define cpu_to_le64(x) __cpu_to_le64(x)
 #ifndef dmb
-#define dmb()          do {\
-	 __asm__ __volatile__ ("" : : : "memory");\
-} while (0)
-
+#define dmb() {__asm__ __volatile__("" : : : "memory"); }
 #endif
 #define __iormb()       dmb()
 #define __iowmb()       dmb()
 #define __arch_getq(a)                  (*(volatile unsigned long *)(a))
 #define __arch_putq(v, a)                (*(volatile unsigned long *)(a) = (v))
 #define __arch_putq32(v, a)                (*(volatile unsigned int *)(a) = (v))
-#define readq(c)        ({ uint64_t __v = __arch_getq(c); __iormb(); __v; })
-#define writeq(v, c)     ({ uint64_t __v = v; __iowmb(); __arch_putq(__v, c); __v; })
-#define writeq32(v, c) ({ uint32_t __v = v; __iowmb(); __arch_putq32(__v, c); __v; })
+#define readq(c)        \
+	({ uint64_t __v = __arch_getq(c); __iormb(); __v; })
+#define writeq(v, c)     \
+	({ uint64_t __v = v; __iowmb(); __arch_putq(__v, c); __v; })
+#define writeq32(v, c) \
+	({ uint32_t __v = v; __iowmb(); __arch_putq32(__v, c); __v; })
 #define ioread64(_p)	    readq(_p)
 #define iowrite64(_v, _p)   writeq(_v, _p)
 #define iowrite32(_v, _p)   writeq32(_v, _p)

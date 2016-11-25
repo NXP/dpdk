@@ -449,14 +449,14 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	qbman_eq_desc_set_response(&eqdesc, 0, 0);
 	qbman_eq_desc_set_fq(&eqdesc, dpaa2_qp->tx_vq.fqid);
 
-	if (!thread_io_info.sec_dpio_dev) {
+	if (!DPAA2_PER_LCORE_SEC_DPIO) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.sec_dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_SEC_PORTAL;
 
 #ifdef QBMAN_MULTI_TX
 	while (nb_ops) {
@@ -577,20 +577,20 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
 
-	if (!thread_io_info.sec_dpio_dev) {
+	if (!DPAA2_PER_LCORE_SEC_DPIO) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.sec_dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_SEC_PORTAL;
 	dq_storage = dpaa2_qp->rx_vq.q_storage->dq_storage[0];
 
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_numframes(&pulldesc,
-				      (nb_ops > NUM_MAX_RECV_FRAMES) ?
-				      NUM_MAX_RECV_FRAMES : nb_ops);
+				      (nb_ops > DPAA2_DQRR_RING_SIZE) ?
+				      DPAA2_DQRR_RING_SIZE : nb_ops);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)DPAA2_VADDR_TO_IOVA(dq_storage), 1);
@@ -671,29 +671,29 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_qp->rx_vq.q_storage;
 
-	if (!thread_io_info.sec_dpio_dev) {
+	if (!DPAA2_PER_LCORE_SEC_DPIO) {
 		ret = dpaa2_affine_qbman_swp_sec();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
 			return 0;
 		}
 	}
-	swp = thread_io_info.sec_dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_SEC_PORTAL;
 	if (!q_storage->active_dqs) {
 		q_storage->toggle = 0;
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_numframes(&pulldesc,
-					      (nb_ops > NUM_MAX_RECV_FRAMES) ?
-			NUM_MAX_RECV_FRAMES : nb_ops);
+					      (nb_ops > DPAA2_DQRR_RING_SIZE) ?
+					       DPAA2_DQRR_RING_SIZE : nb_ops);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
-		if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
+			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+		if (check_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)) {
 			while (!qbman_check_command_complete(swp,
-							     get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+					get_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)))
 				;
-			clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
+			clear_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index);
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
@@ -705,8 +705,8 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 			break;
 		}
 		q_storage->active_dqs = dq_storage;
-		q_storage->active_dpio_id = thread_io_info.sec_dpio_dev->index;
-		set_swp_active_dqs(thread_io_info.sec_dpio_dev->index, dq_storage);
+		q_storage->active_dpio_id = DPAA2_PER_LCORE_SEC_DPIO->index;
+		set_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index, dq_storage);
 	}
 	dq_storage = q_storage->active_dqs;
 	/* Check if the previous issued command is completed.
@@ -749,16 +749,16 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 
 	} /* End of Packet Rx loop */
 
-	if (check_swp_active_dqs(thread_io_info.sec_dpio_dev->index)) {
+	if (check_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)) {
 		while (!qbman_check_command_complete(swp,
-						     get_swp_active_dqs(thread_io_info.sec_dpio_dev->index)))
+		       get_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)))
 			;
-		clear_swp_active_dqs(thread_io_info.sec_dpio_dev->index);
+		clear_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index);
 	}
 	q_storage->toggle ^= 1;
 	dq_storage = q_storage->dq_storage[q_storage->toggle];
 	qbman_pull_desc_clear(&pulldesc);
-	qbman_pull_desc_set_numframes(&pulldesc, NUM_MAX_RECV_FRAMES);
+	qbman_pull_desc_set_numframes(&pulldesc, DPAA2_DQRR_RING_SIZE);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
@@ -772,8 +772,8 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		break;
 	}
 	q_storage->active_dqs = dq_storage;
-	q_storage->active_dpio_id = thread_io_info.sec_dpio_dev->index;
-	set_swp_active_dqs(thread_io_info.sec_dpio_dev->index, dq_storage);
+	q_storage->active_dpio_id = DPAA2_PER_LCORE_SEC_DPIO->index;
+	set_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index, dq_storage);
 
 	dpaa2_qp->rx_vq.rx_pkts += num_rx;
 

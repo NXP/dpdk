@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -37,13 +38,6 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/vfs.h>
-#include <libgen.h>
-#include <rte_mbuf.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
@@ -216,10 +210,18 @@ void dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	int i, n;
 	uint64_t bufs[DPAA2_MBUF_MAX_ACQ_REL];
 
-	swp = thread_io_info.dpio_dev->sw_portal;
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret != 0) {
+			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			return;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
 
 	/* Create a release descriptor required for releasing
-	 * buffers into BMAN */
+	 * buffers into QBMAN
+	 */
 	qbman_release_desc_clear(&releasedesc);
 	qbman_release_desc_set_bpid(&releasedesc, bpid);
 
@@ -283,14 +285,14 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bpid = bp_info->bpid;
 
-	if (!thread_io_info.dpio_dev) {
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
 			return -1;
 		}
 	}
-	swp = thread_io_info.dpio_dev->sw_portal;
+	swp = DPAA2_PER_LCORE_PORTAL;
 
 	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
 
@@ -311,7 +313,7 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		if (ret <= 0) {
 			PMD_TX_LOG(ERR, "Buffer acquire failed with"
 				   " err code: %d", ret);
-			/* The API expect the exact number of requested buffers */
+			/* The API expect the exact number of requested bufs */
 			/* Releasing all buffers allocated */
 			dpaa2_mbuf_release(pool, obj_table, bpid,
 					   bp_info->meta_data_size, n);
@@ -319,8 +321,10 @@ int hw_mbuf_alloc_bulk(struct rte_mempool *pool,
 		}
 		/* assigning mbuf from the acquired objects */
 		for (i = 0; (i < ret) && bufs[i]; i++) {
-			/* TODO-errata - objerved that bufs may be null
-			i.e. first buffer is valid, remaining 6 buffers may be null */
+			/* TODO-errata - observed that bufs may be null
+			 * i.e. first buffer is valid,
+			 * remaining 6 buffers may be null
+			 */
 			DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
 			obj_table[n] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
 			rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[n], 0);

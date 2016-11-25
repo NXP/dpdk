@@ -52,11 +52,11 @@
 /* Threshold for a queue to *Enter* Congestion state.
  * It is set to 32KB
  */
-#define CONG_ENTER_TX_THRESHOLD   (32*1024)
+#define CONG_ENTER_TX_THRESHOLD   (32 * 1024)
 
 /* Threshold for a queue to *Exit* Congestion state.
  */
-#define CONG_EXIT_TX_THRESHOLD    (24*1024)
+#define CONG_EXIT_TX_THRESHOLD    (24 * 1024)
 
 /* Threshold for a queue to *Enter* Congestion state.
  * It is set to 512 frames.

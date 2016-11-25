@@ -1,5 +1,5 @@
 /* Copyright 2013-2016 Freescale Semiconductor Inc.
- *  Copyright (c) 2016 NXP.
+ * Copyright (c) 2016 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -503,9 +503,9 @@ int dpni_set_errors_behavior(struct fsl_mc_io *mc_io,
 
 int dpni_get_buffer_layout(struct fsl_mc_io *mc_io,
 			   uint32_t cmd_flags,
-			      uint16_t token,
-			      enum dpni_queue_type qtype,
-			      struct dpni_buffer_layout *layout)
+			   uint16_t token,
+			   enum dpni_queue_type qtype,
+			   struct dpni_buffer_layout *layout)
 {
 	struct mc_command cmd = { 0 };
 	int err;
