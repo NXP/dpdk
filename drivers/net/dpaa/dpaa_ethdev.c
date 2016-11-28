@@ -35,7 +35,10 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sched.h>
+#include <signal.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
 
 #include <rte_config.h>
 #include <rte_byteorder.h>
@@ -66,7 +69,8 @@
 #include <usdpaa/usdpaa_netcfg.h>
 
 static struct usdpaa_netcfg_info *dpaa_netcfg;
-__thread bool thread_portal_init;
+struct dpaa_portal dpaa_io_portal[RTE_MAX_LCORE];
+RTE_DEFINE_PER_LCORE(bool, _dpaa_io);
 struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
 
 static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
@@ -142,10 +146,10 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	int ret;
 	unsigned i = 0;
 
-	PMD_TX_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
+	PMD_TX_FREE_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
 		    n, bp_info->bpid);
 
-	if (!thread_portal_init) {
+	if (!RTE_PER_LCORE(_dpaa_io)) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "dpaa_portal_init failed "
@@ -161,7 +165,7 @@ int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		i = i + 1;
 	}
 
-	PMD_TX_LOG(DEBUG, " freed %d buffers in bpid =%d",
+	PMD_TX_FREE_LOG(DEBUG, " freed %d buffers in bpid =%d",
 		    n, bp_info->bpid);
 
 	return 0;
@@ -190,7 +194,7 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		return -1;
 	}
 
-	if (!thread_portal_init) {
+	if (!RTE_PER_LCORE(_dpaa_io)) {
 		ret = dpaa_portal_init((void *)0);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "dpaa_portal_init failed with "
@@ -228,7 +232,7 @@ int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 			m[n] = (struct rte_mbuf *)((char *)bufaddr
 						- bp_info->meta_data_size);
 			rte_mbuf_refcnt_set(m[n], 0);
-			PMD_RX_LOG(DEBUG, "Acquired %p address %p from BMAN",
+			PMD_DRV_LOG2(DEBUG, "Acquired %p address %p from BMAN",
 				    (void *)bufaddr, (void *)m[n]);
 			n++;
 		}
@@ -338,20 +342,23 @@ int dpaa_portal_init(void *arg)
 {
 	cpu_set_t cpuset;
 	pthread_t id;
-	uint32_t cpu;
+	uint32_t cpu = rte_lcore_id();
 	int ret;
+	uint32_t qman_idx = QBMAN_ANY_PORTAL_IDX;
+	uint32_t bman_idx = QBMAN_ANY_PORTAL_IDX;
+	uint64_t tid = syscall(SYS_gettid);
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (thread_portal_init)
+	if (RTE_PER_LCORE(_dpaa_io))
 		return 0;
 
-	if ((uint64_t)arg == 1)
+	if ((uint64_t)arg == 1 || cpu == LCORE_ID_ANY)
 		cpu = rte_get_master_lcore();
-	else
-		cpu = rte_lcore_id();
+	/* if the core id is not supported */
+	else if (cpu >= RTE_MAX_LCORE)
+		return -1;
 
-	PMD_DRV_LOG(DEBUG, "arg %p, cpu %d", arg, cpu);
 	/* Set CPU affinity for this thread */
 	CPU_ZERO(&cpuset);
 	CPU_SET(cpu, &cpuset);
@@ -363,21 +370,45 @@ int dpaa_portal_init(void *arg)
 		return -1;
 	}
 
-	/* Initialise bman thread portals */
-	ret = bman_thread_init();
+	PMD_DRV_LOG(DEBUG, "arg %p, cpu %d thread=%lu", arg, cpu, tid);
+
+	/*if the portal was previously allocated for this thread */
+	if (dpaa_io_portal[cpu].alloc) {
+		bman_idx = dpaa_io_portal[cpu].bman_idx;
+		qman_idx = dpaa_io_portal[cpu].qman_idx;
+	}
+
+	/* Initialise or reconfigure bman thread portals */
+	ret = bman_thread_init_idx_reuse(bman_idx);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
-	/* Initialise qman thread portals */
-	ret = qman_thread_init();
+	/* Initialise or reconfigure qman thread portals */
+	ret = qman_thread_init_idx_reuse(qman_idx);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
-	thread_portal_init = true;
+	dpaa_io_portal[cpu].qman_idx = qman_get_portal_config()->index;
+	dpaa_io_portal[cpu].bman_idx = bman_get_portal_config()->index;
+	if (dpaa_io_portal[cpu].alloc) {
+		rte_atomic16_inc(&dpaa_io_portal[cpu].ref_count);
+		PMD_DRV_LOG(INFO, "DPAA Portal %d is being shared by %x threads"
+			    " e.g. thread %lu and current thread %lu",
+			    dpaa_io_portal[cpu].qman_idx,
+			    rte_atomic16_read(&dpaa_io_portal[cpu].ref_count),
+			    dpaa_io_portal[cpu].tid, tid);
+
+	} else {
+		rte_atomic16_test_and_set(&dpaa_io_portal[cpu].ref_count);
+	}
+	dpaa_io_portal[cpu].alloc = true;
+	RTE_PER_LCORE(_dpaa_io) = true;
+	/* update the last used thread id */
+	dpaa_io_portal[cpu].tid = tid;
 
 	return 0;
 }
@@ -426,12 +457,13 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	PMD_INIT_FUNC_TRACE();
 
-	if (dev->data->dev_conf.rxmode.jumbo_frame == 1 &&
-		dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_MTU)
-		dpaa_mtu_set(dev, dev->data->dev_conf.rxmode.max_rx_pkt_len);
-	else
-		return -1;
-
+	if (dev->data->dev_conf.rxmode.jumbo_frame == 1) {
+		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_MTU)
+			return dpaa_mtu_set(dev,
+				dev->data->dev_conf.rxmode.max_rx_pkt_len);
+		else
+			return -1;
+	}
 	return 0;
 }
 

@@ -146,7 +146,17 @@ struct dpaa_if {
 	struct rte_eth_fc_conf *fc_conf;
 };
 
-extern __thread bool thread_portal_init;
+struct dpaa_portal {
+	bool alloc; /* portal ID allocated to this thread */
+	rte_atomic16_t ref_count; /**< num of thread contexts are sharing.*/
+	uint32_t bman_idx; /**< BMAN Portal ID*/
+	uint32_t qman_idx; /**< QMAN Portal ID*/
+	uint64_t tid;/**< Parent Thread id for this portal */
+};
+
+/*! Global per thread portal */
+RTE_DECLARE_PER_LCORE(bool, _dpaa_io);
+
 extern struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
 
 #define DPAA_BPID_TO_POOL_INFO(__bpid) &dpaa_pool_table[__bpid]

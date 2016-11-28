@@ -47,8 +47,10 @@ extern "C" {
 /* Thread-entry/exit hooks; */
 int qman_thread_init(void);
 int qman_thread_init_idx(uint32_t idx);
+int qman_thread_init_idx_reuse(uint32_t idx);
 int bman_thread_init(void);
 int bman_thread_init_idx(uint32_t idx);
+int bman_thread_init_idx_reuse(uint32_t idx);
 int qman_thread_finish(void);
 int bman_thread_finish(void);
 
@@ -67,6 +69,7 @@ int bman_thread_finish_slave(void);
 #endif
 
 #define QBMAN_ANY_PORTAL_IDX 0xffffffff
+#define QBMAN_MAX_PORTAL 32
 
 /* Obtain and free raw (unitialized) portals */
 
