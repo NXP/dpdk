@@ -75,6 +75,9 @@
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
 #define TDES_CBC_IV_LEN		8
 #define AES_CBC_IV_LEN		16
+/* Minimum job descriptor consists of a oneword job descriptor HEADER and
+   a pointer to the shared descriptor*/
+#define MIN_JOB_DESC_SIZE	(CAAM_CMD_SZ + CAAM_PTR_SZ)
 
 enum rta_sec_era rta_sec_era;
 
@@ -361,6 +364,7 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	uint32_t shared_desc_len;
 	struct dpaa_sec_qi *qi;
 	struct sec_cdb *cdb;
+	int err;
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 	int swap = false;
 #else
@@ -405,6 +409,32 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 					swap, &alginfo_a,
 					!ses->dir, ses->auth_trunc_len);
 	} else {
+		cdb->sh_desc[0] = alginfo_c.keylen;
+		cdb->sh_desc[1] = alginfo_a.keylen;
+		err = rta_inline_query(IPSEC_AUTH_VAR_AES_DEC_BASE_DESC_LEN,
+				MIN_JOB_DESC_SIZE, (unsigned *)cdb->sh_desc,
+				&cdb->sh_desc[2], 2);
+
+		if (err < 0) {
+			PMD_DRV_LOG(ERR, "Crypto: Incorrect key lengths");
+			return err;
+		}
+		if (cdb->sh_desc[2] & 1)
+			alginfo_c.key_type = RTA_DATA_IMM;
+		else {
+			alginfo_c.key = (uint64_t)dpaa_mem_vtop((void *)alginfo_c.key);
+			alginfo_c.key_type = RTA_DATA_PTR;
+		}
+		if (cdb->sh_desc[2] & (1<<1))
+			alginfo_a.key_type = RTA_DATA_IMM;
+		else {
+			alginfo_a.key = (uint64_t)dpaa_mem_vtop((void *)alginfo_a.key);
+			alginfo_a.key_type = RTA_DATA_PTR;
+		}
+		cdb->sh_desc[0] = 0;
+		cdb->sh_desc[1] = 0;
+		cdb->sh_desc[2] = 0;
+
 		/* Auth_only_len is set as 0 here and it will be overwritten
 		   in fd for each packet.*/
 		shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
