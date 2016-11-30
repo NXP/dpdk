@@ -38,8 +38,6 @@
 #include <rte_malloc.h>
 #include <rte_memcpy.h>
 #include <rte_string_fns.h>
-#include <rte_cycles.h>
-#include <rte_kvargs.h>
 #include <rte_dev.h>
 #include <rte_ethdev.h>
 
@@ -105,6 +103,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	 * respect to the above issues PULL command.
 	 */
 	while (!is_last) {
+		struct rte_mbuf *mbuf;
 		/*Check if the previous issued command is completed.
 		*Also seems like the SWP is shared between the Ethernet Driver
 		*and the SEC driver.*/
@@ -127,6 +126,15 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 
 		fd = qbman_result_DQ_fd(dq_storage);
+		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
+			DPAA2_GET_FD_ADDR(fd)
+			 - bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		/* Prefeth mbuf */
+		rte_prefetch0(mbuf);
+		/* Prefetch Annotation address for the parse results */
+		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd)
+						+ DPAA2_FD_PTA_SIZE + 16));
+
 		bufs[num_rx] = eth_fd_to_mbuf(fd);
 		bufs[num_rx]->port = dev->data->port_id;
 
@@ -436,12 +444,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/* Function to transmit the frames to given device and VQ*/
 	uint32_t loop;
 	int32_t ret;
-#ifdef QBMAN_MULTI_TX
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t frames_to_send;
-#else
-	struct qbman_fd fd;
-#endif
 	struct rte_mempool *mp;
 	struct qbman_eq_desc eqdesc;
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
@@ -470,7 +474,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			     dpaa2_q->flow_id, dpaa2_q->tc_index);
 
 	/*Clear the unused FD fields before sending*/
-#ifdef QBMAN_MULTI_TX
 	while (nb_pkts) {
 		/*Check if the queue is congested*/
 		if (qbman_result_SCN_state_in_mem(dpaa2_q->cscn))
@@ -517,62 +520,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		dpaa2_q->tx_pkts += frames_to_send;
 		nb_pkts -= frames_to_send;
 	}
-#else
-
-	/*Check if the queue is congested*/
-	if (qbman_result_SCN_state_in_mem(dpaa2_q->cscn))
-		goto skip_tx;
-
-	fd.simple.frc = 0;
-	DPAA2_RESET_FD_CTRL((&fd));
-	DPAA2_SET_FD_FLC((&fd), NULL);
-	loop = 0;
-
-	while (loop < nb_pkts) {
-		/*Prepare each packet which is to be sent*/
-		mp = bufs[loop]->pool;
-		/* Not a hw_pkt pool allocated frame */
-		if (mp && !(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
-			/* alloc should be from the default buffer pool
-			attached to this interface */
-			if (priv->bp_list) {
-				bpid = priv->bp_list->buf_pool.bpid;
-			} else {
-				/* Buffer not from offloaded area as well as
-				* lacks buffer pool identifier. Cannot
-				* continue.
-				*/
-				PMD_TX_LOG(ERR, "No Buffer pool "
-						"attached.\n");
-				num_tx = 0;
-				goto skip_tx;
-			}
-
-			if (eth_copy_mbuf_to_fd(bufs[loop], &fd, bpid)) {
-				loop++;
-				continue;
-			}
-		} else {
-			RTE_ASSERT(mp);
-			bpid = mempool_to_bpid(mp);
-			eth_mbuf_to_fd(bufs[loop], &fd, bpid);
-		}
-		/*Enqueue a single packet to the QBMAN*/
-		do {
-			ret = qbman_swp_enqueue(swp, &eqdesc, &fd);
-			if (ret != 0) {
-				PMD_TX_LOG(DEBUG,
-					   "Error in transmiting the frame\n");
-			}
-		} while (ret != 0);
-
-		/* Free the buffer shell */
-		/* rte_pktmbuf_free(bufs[loop]); */
-		num_tx++; loop++;
-	}
-	dpaa2_q->tx_pkts += num_tx;
-	dpaa2_q->err_pkts += nb_pkts - num_tx;
-#endif
 skip_tx:
 	return num_tx;
 }

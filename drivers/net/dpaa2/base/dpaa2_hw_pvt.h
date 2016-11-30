@@ -62,9 +62,6 @@
 #define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
 #endif
 
-#define QBMAN_MULTI_TX
-	/** < tx fd send batching */
-
 #define MAX_TX_RING_SLOTS	8
 	/** <Maximum number of slots available in TX ring*/
 
