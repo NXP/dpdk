@@ -64,7 +64,6 @@ enum openssl_chain_order {
 	OPENSSL_CHAIN_ONLY_AUTH,
 	OPENSSL_CHAIN_CIPHER_AUTH,
 	OPENSSL_CHAIN_AUTH_CIPHER,
-	OPENSSL_CHAIN_COMBINED,
 	OPENSSL_CHAIN_NOT_SUPPORTED
 };
 
@@ -78,6 +77,8 @@ enum openssl_cipher_mode {
 enum openssl_auth_mode {
 	OPENSSL_AUTH_AS_AUTH,
 	OPENSSL_AUTH_AS_HMAC,
+	OPENSSL_AUTH_AS_CIPHER,
+	OPENSSL_AUTH_NULL
 };
 
 /** private data structure for each OPENSSL crypto device */
@@ -117,8 +118,8 @@ struct openssl_session {
 		/**< cipher algorithm */
 
 		struct {
-			uint8_t data[32];
-			/**< key data */
+			uint8_t *data;
+			/**< pointer to key data */
 			size_t length;
 			/**< key length in bytes */
 		} key;
@@ -127,6 +128,9 @@ struct openssl_session {
 		/**< pointer to EVP algorithm function */
 		EVP_CIPHER_CTX *ctx;
 		/**< pointer to EVP context structure */
+
+		uint8_t key_ede[24];
+		/**< key data storage to be used in ede process */
 	} cipher;
 
 	/** Authentication Parameters */
@@ -135,8 +139,6 @@ struct openssl_session {
 		/**< auth operation generate or verify */
 		enum openssl_auth_mode mode;
 		/**< auth operation mode */
-		enum rte_crypto_auth_algorithm algo;
-		/**< cipher algorithm */
 
 		union {
 			struct {
@@ -154,6 +156,19 @@ struct openssl_session {
 				EVP_MD_CTX *ctx;
 				/**< pointer to EVP context structure */
 			} hmac;
+
+			struct {
+				struct {
+					uint8_t *data;
+					/**< pointer to key data */
+					size_t length;
+					/**< key length in bytes */
+				} key;
+				const EVP_CIPHER *evp_algo;
+				/**< pointer to EVP algorithm function */
+				EVP_CIPHER_CTX *ctx;
+				/**< pointer to EVP context structure */
+			} cipher;
 		};
 	} auth;
 

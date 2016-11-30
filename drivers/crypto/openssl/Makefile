@@ -35,6 +35,7 @@ LIB = librte_pmd_openssl.a
 
 # build flags
 CFLAGS += -O3
+CFLAGS += -I${OPENSSL_PATH}/include/
 CFLAGS += $(WERROR_FLAGS)
 
 # library version
