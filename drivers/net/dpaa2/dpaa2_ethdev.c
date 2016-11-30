@@ -370,7 +370,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -1;
 	}
 
-	if (!(priv->flags & DPAA2_PER_TC_RX_TAILDROP)) {
+	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
 		struct dpni_taildrop taildrop;
 
 		taildrop.enable = 1;
@@ -480,8 +480,6 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
 		/*Notify that the queue is not congested when the data in
 		* the queue is below this thershold.
-		* TODO: Check if this value is the optimum value for better
-		* performance
 		*/
 		cong_notif_cfg.threshold_exit = CONG_EXIT_TX_THRESHOLD;
 		cong_notif_cfg.message_ctx = 0;
@@ -682,7 +680,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_q->fqid = qid.fqid;
 	}
 
-	if ((priv->flags & DPAA2_PER_TC_RX_TAILDROP)) {
+	if (priv->flags & DPAA2_PER_TC_RX_TAILDROP) {
 		struct dpni_early_drop_cfg tailcfg = {0};
 		uint8_t *early_drop_buf;
 		/* Note - doing it only for the first queue  - as we are only
@@ -695,8 +693,8 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 			return -1;
 		}
 		tailcfg.mode = DPNI_EARLY_DROP_MODE_TAIL;
-		tailcfg.units = DPNI_CONGESTION_UNIT_FRAMES;
-		tailcfg.tail_drop_threshold = DPAA2_DEF_TC_THRESHOLD;
+		tailcfg.units = DPNI_CONGESTION_UNIT_BYTES;
+		tailcfg.tail_drop_threshold = CONG_THRESHOLD_RX_TC;
 
 		dpni_prepare_early_drop(&tailcfg, early_drop_buf);
 
@@ -1418,10 +1416,16 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(INFO, "Enable the tx congestion control support");
 	}
 
-	/*Tail drop to be configured on per TC instead of per queue */
+	/*Tail drop to be configured on per TC*/
 	if (getenv("DPAA2_PER_TC_RX_TAILDROP")) {
 		priv->flags |= DPAA2_PER_TC_RX_TAILDROP;
 		PMD_INIT_LOG(INFO, "Enabling per TC tail drop on RX");
+	}
+
+	/*Tail drop to be disabled on queue */
+	if (getenv("DPAA2_RX_TAILDROP_OFF")) {
+		priv->flags |= DPAA2_RX_TAILDROP_OFF;
+		PMD_INIT_LOG(INFO, "Disabling per queue tail drop on RX");
 	}
 
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);

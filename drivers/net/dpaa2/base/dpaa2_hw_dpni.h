@@ -58,23 +58,11 @@
  */
 #define CONG_EXIT_TX_THRESHOLD    (24 * 1024)
 
-/* Threshold for a queue to *Enter* Congestion state.
- * It is set to 512 frames.
- */
-#define CONG_ENTER_RX_THRESHOLD   (512)
-
-/* Threshold for a queue to *Exit* Congestion state.
- */
-#define CONG_EXIT_RX_THRESHOLD    (384)
-
-/* Threshold for a queue to start tail drop on complete TC
- * It is set to 512 frames.
- */
-#define DPAA2_DEF_TC_THRESHOLD    (512)
-
 /* RX queue tail drop threshold
- * currently considering 1500 bytes 24 packets */
-#define CONG_THRESHOLD_RX_Q  (1500 * 24)
+ * currently considering 32 KB packets */
+#define CONG_THRESHOLD_RX_Q  (32 * 1024)
+
+#define CONG_THRESHOLD_RX_TC  (32 * 1024)
 
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256
@@ -91,6 +79,9 @@
 /* Per TC tail drop or Per queue tail drop
  * default is per queue tail drop */
 #define DPAA2_PER_TC_RX_TAILDROP	0x02
+
+/*Disable RX tail drop */
+#define DPAA2_RX_TAILDROP_OFF	0x04
 
 struct dpaa2_dev_priv {
 	void *hw;
