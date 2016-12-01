@@ -59,6 +59,9 @@
 #include <flib/desc/pdcp.h>
 #include <flib/desc/algo.h>
 
+/* Minimum job descriptor consists of a oneword job descriptor HEADER and
+   a pointer to the shared descriptor*/
+#define MIN_JOB_DESC_SIZE	(CAAM_CMD_SZ + CAAM_PTR_SZ)
 #define NO_PREFETCH 0
 #define TDES_CBC_IV_LEN 8
 #define AES_CBC_IV_LEN 16
@@ -1273,26 +1276,28 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	session->dir = (cipher_xform->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
 				DIR_ENC : DIR_DEC;
 
-	priv->flc_desc[0].desc[0] = authdata.keylen;
-	priv->flc_desc[0].desc[1] = cipherdata.keylen;
-	err = rta_inline_query(IPSEC_AUTH_VAR_BASE_DESC_LEN,
-			0, (unsigned *)priv->flc_desc[0].desc,
+	priv->flc_desc[0].desc[0] = cipherdata.keylen;
+	priv->flc_desc[0].desc[1] = authdata.keylen;
+	err = rta_inline_query(IPSEC_AUTH_VAR_AES_DEC_BASE_DESC_LEN,
+			MIN_JOB_DESC_SIZE, (unsigned *)priv->flc_desc[0].desc,
 			&priv->flc_desc[0].desc[2], 2);
 
 	if (err < 0) {
 		PMD_DRV_LOG(ERR, "Crypto: Incorrect key lengths");
 		goto error_out;
 	}
-
 	if (priv->flc_desc[0].desc[2] & 1)
-		authdata.key_type = RTA_DATA_PTR;
-	else
-		authdata.key_type = RTA_DATA_IMM;
-
-	if (priv->flc_desc[0].desc[2] & (1<<1))
-		cipherdata.key_type = RTA_DATA_PTR;
-	else
 		cipherdata.key_type = RTA_DATA_IMM;
+	else {
+		cipherdata.key = DPAA2_VADDR_TO_IOVA(cipherdata.key);
+		cipherdata.key_type = RTA_DATA_PTR;
+	}
+	if (priv->flc_desc[0].desc[2] & (1<<1))
+		authdata.key_type = RTA_DATA_IMM;
+	else {
+		authdata.key = DPAA2_VADDR_TO_IOVA(authdata.key);
+		authdata.key_type = RTA_DATA_PTR;
+	}
 	priv->flc_desc[0].desc[0] = 0;
 	priv->flc_desc[0].desc[1] = 0;
 	priv->flc_desc[0].desc[2] = 0;
