@@ -123,7 +123,6 @@ static inline void make_le32_n(uint32_t *val, unsigned int num)
 #define make_le32_n(val, len) do {} while (0)
 #endif
 
-
 	/******************/
 	/* Portal access  */
 	/******************/

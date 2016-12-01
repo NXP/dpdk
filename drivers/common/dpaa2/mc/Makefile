@@ -29,53 +29,29 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_DPAA2=$(RTE_SDK)/drivers/common/dpaa2
+RTE_SDK_MC=$(RTE_SDK)/drivers/common/dpaa2
 
 #
 # library name
 #
-LIB = librte_pmd_dpaa2.a
+LIB = libdpaa2_mc.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
+CFLAGS += -O3 -g
 CFLAGS += $(WERROR_FLAGS)
-endif
 CFLAGS +=-Wno-strict-aliasing
-CFLAGS +=-Wno-unused-function
 
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base
-CFLAGS += -I$(RTE_SDK_DPAA2)/mc
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/
-CFLAGS += -I$(RTE_SDK)/lib/librte_ether
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
+CFLAGS += -I$(RTE_SDK_MC)/mc
+EXPORT_MAP := rte_pmd_dpaa2_mc_version.map
 
-# versioning export map
-EXPORT_MAP := rte_pmd_dpaa2_version.map
-
-# library version
 LIBABIVER := 1
 
-# Core DPAA2 logic
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/fsl_vfio.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpni.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpio.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpbp.c
-
-# Interfaces with DPDK
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_rxtx.c
+SRCS-y += \
+	dpbp.c \
+	dpio.c \
+	dpni.c \
+	dpseci.c \
+	mc_sys.c
 
 
-# library dependencies
-DEPDIRS-y += lib/librte_eal
-DEPDIRS-y += drivers/common/dpaa/mc
-DEPDIRS-y += drivers/common/dpaa/qbman
-
+# this lib depends upon:
 include $(RTE_SDK)/mk/rte.lib.mk

@@ -101,8 +101,8 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_CFGFILE)        += -lrte_cfgfile
 
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BOND)       += -lrte_pmd_bond
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_XENVIRT)    += -lrte_pmd_xenvirt -lxenstore
-_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pmd_dpaa2
-_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_pmd_dpaa -lm
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pmd_dpaa2 -ldpaa2_mc -ldpaa2_qbman
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_pmd_dpaa -lm -ldpaa_drivers
 
 ifeq ($(CONFIG_RTE_BUILD_SHARED_LIB),n)
 # plugins (link only if static libraries)
@@ -141,9 +141,9 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_GCM)  += -L$(AESNI_MULTI_BUFFER_LIB_PATH) 
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_OPENSSL)  += -L${OPENSSL_PATH}/lib  -lrte_pmd_openssl  -lcrypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO)+= -lrte_pmd_null_crypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_QAT)        += -lrte_pmd_qat -lcrypto
-_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC)  += -lrte_pmd_dpaa2_sec
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC)  += -lrte_pmd_dpaa2_sec -ldpaa2_mc -ldpaa2_qbman
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE)      += -L${OPENSSL_PATH}/lib -lrte_pmd_armce  -lcrypto
-_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC)   += -lrte_pmd_dpaa_sec
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC)   += -lrte_pmd_dpaa_sec -ldpaa_drivers
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G)     += -lrte_pmd_snow3g
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G)     += -L$(LIBSSO_SNOW3G_PATH)/build -lsso_snow3g
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_KASUMI)     += -lrte_pmd_kasumi

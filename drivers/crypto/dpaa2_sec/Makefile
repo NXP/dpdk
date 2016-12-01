@@ -29,8 +29,11 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
+RTE_SDK_DPAA2=$(RTE_SDK)/drivers/common/dpaa2
 
+#
 # library name
+#
 LIB = librte_pmd_dpaa2_sec.a
 
 # build flags
@@ -42,19 +45,24 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/mc
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/qbman/include
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base/
+
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base
+CFLAGS += -I$(RTE_SDK_DPAA2)/mc
+CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include
+CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include/drivers
+CFLAGS += -I$(RTE_SDK_DPAA2)/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
+
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
+
+# versioning export map
+EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 
 # library version
 LIBABIVER := 1
 
-# versioning export map
-EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 
 # external library include paths
 CFLAGS += -Iinclude
@@ -63,12 +71,11 @@ LDLIBS += -lcrypto
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_dpseci.c
 
-# export include files
-SYMLINK-y-include +=
-
 # library dependencies
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_mbuf
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_cryptodev
+DEPDIRS-y += drivers/common/dpaa/mc
+DEPDIRS-y += drivers/common/dpaa/qbman
 
 include $(RTE_SDK)/mk/rte.lib.mk
