@@ -30,7 +30,9 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
+#
 # library name
+#
 LIB = librte_pmd_dpaa_sec.a
 # build flags
 CFLAGS += -D _GNU_SOURCE
@@ -42,18 +44,19 @@ CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
 
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa/base/include/
-# reference to flib in dpaa2_sec/
-CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa/include
+# reference to flib in dpaa_sec/
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
+# versioning export map
+EXPORT_MAP := rte_pmd_dpaa_sec_version.map
+
 # library version
 LIBABIVER := 1
 
-# versioning export map
-EXPORT_MAP := rte_pmd_dpaa_sec_version.map
 
 # external library include paths
 CFLAGS += -Iinclude
@@ -62,12 +65,10 @@ LDLIBS += -lcrypto
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
 
-# export include files
-SYMLINK-y-include +=
-
 # library dependencies
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_eal
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_mbuf
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_cryptodev
+DEPDIRS-y += drivers/common/dpaa/usdpaa
 
 include $(RTE_SDK)/mk/rte.lib.mk

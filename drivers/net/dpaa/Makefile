@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright (c) 2014 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -29,7 +29,7 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_DPAA=$(RTE_SDK)/drivers/net/dpaa
+RTE_SDK_DPAA=$(RTE_SDK)/drivers/common/dpaa
 
 #
 # library name
@@ -43,39 +43,25 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
-CFLAGS +=-Wno-cast-qual
 CFLAGS +=-Wno-pointer-arith
 CFLAGS += -D _GNU_SOURCE
 
 CFLAGS += -I$(RTE_SDK_DPAA)/
-CFLAGS += -I$(RTE_SDK_DPAA)/base/include
+CFLAGS += -I$(RTE_SDK_DPAA)/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
 EXPORT_MAP := rte_pmd_dpaa_version.map
 
 LIBABIVER := 1
 
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
-	base/drivers/fman/fman.c \
-	base/drivers/of/of.c \
-	base/drivers/process/process.c \
-	base/drivers/qbman/bman_high.c \
-	base/drivers/qbman/bman_driver.c \
-	base/drivers/qbman/qman_high.c \
-	base/drivers/qbman/qman_driver.c \
-	base/drivers/qbman/dpa_alloc.c \
-	base/drivers/qbman/dpa_sys.c \
-	base/drivers/syscfg/usdpaa_netcfg_layer.c
 
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
 
-#
-# Export include files
-#
-SYMLINK-y-include +=
 
-# this lib depends upon:
+# library dependencies
 DEPDIRS-y += lib/librte_eal
+DEPDIRS-y += drivers/common/dpaa
+
 include $(RTE_SDK)/mk/rte.lib.mk
