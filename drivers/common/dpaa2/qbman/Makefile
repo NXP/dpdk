@@ -35,7 +35,7 @@ RTE_SDK_QBMAN=$(RTE_SDK)/drivers/common/dpaa2
 #
 # library name
 #
-LIB = libdpaa_drivers.a
+LIB = libdpaa2_qbman.a
 
 CFLAGS += -O3 -g
 CFLAGS += $(WERROR_FLAGS)
