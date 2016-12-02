@@ -35,6 +35,16 @@ DPDK_17.02 {
         dpni_set_rx_tc_dist;
         dpni_set_tx_confirmation_mode;
         dpni_set_unicast_promisc;
+        dpseci_close;
+        dpseci_disable;
+        dpseci_enable;
+        dpseci_get_attributes;
+        dpseci_get_rx_queue;
+        dpseci_get_sec_counters;
+        dpseci_get_tx_queue;
+        dpseci_open;
+        dpseci_reset;
+        dpseci_set_rx_queue;
         rte_fslmc_driver_register;
         rte_fslmc_driver_unregister;
 

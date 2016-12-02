@@ -50,6 +50,7 @@ LIBABIVER := 1
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
         mc/dpni.c \
+        mc/dpseci.c \
         mc/dpbp.c \
         mc/dpio.c \
         mc/mc_sys.c
