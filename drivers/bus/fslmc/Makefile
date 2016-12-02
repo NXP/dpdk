@@ -37,12 +37,19 @@ LIB = librte_bus_fslmc.a
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
+CFLAGS += "-Wno-strict-aliasing"
+
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
 
 # versioning export map
 EXPORT_MAP := rte_bus_fslmc_version.map
 
 # library version
 LIBABIVER := 1
+
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
+        mc/mc_sys.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
 
