@@ -49,6 +49,7 @@ EXPORT_MAP := rte_bus_fslmc_version.map
 LIBABIVER := 1
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
+        mc/dpni.c \
         mc/mc_sys.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
