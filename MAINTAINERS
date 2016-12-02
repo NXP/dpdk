@@ -361,6 +361,7 @@ M: Hemant Agrawal <hemant.agrawal@nxp.com>
 F: drivers/bus/fslmc/
 F: drivers/common/dpaa2/
 F: drivers/net/dpaa2/
+F: doc/guides/nics/dpaa2.rst
 
 QLogic bnx2x
 M: Harish Patil <harish.patil@cavium.com>

@@ -15,7 +15,6 @@ DPDK Release 17.02
 
       firefox build/doc/html/guides/rel_notes/release_17_02.html
 
-
 New Features
 ------------
 
@@ -250,6 +249,17 @@ New Features
   See the :ref:`Elastic Flow Distributor Library <Efd_Library>` documentation in
   the Programmers Guide document, for more information.
 
+* **Added a new driver for NXP DPAA2 - FSLMC bus.**
+
+  Added the new bus "fslmc" driver for NXP DPAA2 devices. See the
+  "Network Interface Controller Drivers" document for more details on this new
+  driver.
+
+* **Added a new driver for NXP DPAA2 Network PMD.**
+
+  Added the new "dpaa2" net driver for NXP DPAA2 devices. See the
+  "Network Interface Controller Drivers" document for more details on this new
+  driver.
 
 Resolved Issues
 ---------------
