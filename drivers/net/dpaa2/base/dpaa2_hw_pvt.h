@@ -176,6 +176,20 @@ struct qbman_fle {
 	uint32_t reserved[3]; /* Not used currently */
 };
 
+struct qbman_sge {
+	uint32_t addr_lo;
+	uint32_t addr_hi;
+	uint32_t length;
+	uint32_t fin_bpid_offset;
+};
+
+/* There are three types of frames: Single, Scatter Gather and Frame Lists */
+enum qbman_fd_format {
+	qbman_fd_single = 0,
+	qbman_fd_list,
+	qbman_fd_sg
+};
+
 /* Maximum release/acquire from QBMAN */
 #define DPAA2_MBUF_MAX_ACQ_REL	7
 
@@ -210,25 +224,26 @@ struct qbman_fle {
 #define DPAA2_SET_FLE_OFFSET(fle, offset) \
 	((fle)->fin_bpid_offset |= (uint32_t)(offset) << 16)
 #define DPAA2_SET_FLE_BPID(fle, bpid) ((fle)->fin_bpid_offset |= (uint64_t)bpid)
-#define DPAA2_GET_FLE_BPID(fle, bpid) (fle->fin_bpid_offset & 0x000000ff)
-#define DPAA2_SET_FLE_FIN(fle)	(fle->fin_bpid_offset |= (uint64_t)1 << 31)
+#define DPAA2_GET_FLE_BPID(fle) ((fle)->fin_bpid_offset & 0x000000ff)
+#define DPAA2_SET_FLE_FIN(fle)	((fle)->fin_bpid_offset |= (uint64_t)1 << 31)
 #define DPAA2_SET_FLE_IVP(fle)   (((fle)->fin_bpid_offset |= 0x00004000))
 #define DPAA2_SET_FD_COMPOUND_FMT(fd)	\
-	(fd->simple.bpid_offset |= (uint32_t)1 << 28)
+	((fd)->simple.bpid_offset |= (uint32_t)1 << 28)
 #define DPAA2_GET_FD_ADDR(fd)	\
-((uint64_t)((((uint64_t)(fd->simple.addr_hi)) << 32) + fd->simple.addr_lo))
+((uint64_t)((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
 
-#define DPAA2_GET_FD_LEN(fd)	(fd->simple.len)
-#define DPAA2_GET_FD_BPID(fd)	((fd->simple.bpid_offset & 0x00003FFF))
-#define DPAA2_GET_FD_IVP(fd)   ((fd->simple.bpid_offset & 0x00004000) >> 14)
+#define DPAA2_GET_FD_LEN(fd)	((fd)->simple.len)
+#define DPAA2_GET_FD_BPID(fd)	((fd)->simple.bpid_offset & 0x00003FFF)
+#define DPAA2_GET_FD_IVP(fd)   (((fd)->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	((fd->simple.bpid_offset & 0x0FFF0000) >> 16)
-#define DPAA2_GET_FD_FRC(fd)	(fd->simple.frc)
+#define DPAA2_GET_FD_FRC(fd)	((fd)->simple.frc)
 #define DPAA2_GET_FD_FLC(fd)	\
-((uint64_t)((((uint64_t)(fd->simple.flc_hi)) << 32) + fd->simple.flc_lo))
+((uint64_t)((((uint64_t)((fd)->simple.flc_hi)) << 32) + (fd)->simple.flc_lo))
 
-#define DPAA2_SET_FLE_SG_EXT(fle) (fle->fin_bpid_offset |= (uint64_t)1 << 29)
+#define DPAA2_GET_FLE_OFFSET(fle) (((fle)->fin_bpid_offset & 0x0FFF0000) >> 16)
+#define DPAA2_SET_FLE_SG_EXT(fle) ((fle)->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
-	((fle->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0)
+	(((fle)->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0)
 
 #define DPAA2_INLINE_MBUF_FROM_BUF(buf, meta_data_size) \
 	((struct rte_mbuf *)((uint64_t)buf - meta_data_size))
@@ -236,6 +251,18 @@ struct qbman_fle {
 	((uint8_t *)((uint64_t)mbuf + meta_data_size))
 
 #define DPAA2_ASAL_VAL (DPAA2_MBUF_HW_ANNOTATION / 64)
+
+#define DPAA2_FD_SET_FORMAT(fd, format)	do {				\
+		(fd)->simple.bpid_offset &= 0xCFFFFFFF;			\
+		(fd)->simple.bpid_offset |= (uint32_t)format << 28;	\
+} while (0)
+#define DPAA2_FD_GET_FORMAT(fd)	(((fd)->simple.bpid_offset >> 28) & 0x3)
+
+#define DPAA2_SG_SET_FINAL(sg, fin)	do {				\
+		(sg)->fin_bpid_offset &= 0x7FFFFFFF;			\
+		(sg)->fin_bpid_offset |= (uint32_t)fin << 31;		\
+} while (0)
+#define DPAA2_SG_IS_FINAL(sg) (!!((sg)->fin_bpid_offset >> 31))
 
 /*Macros to define QBMAN enqueue options */
 #define DPAA2_ETH_EQ_DISABLE		0	/*!< Dont Enqueue the Frame */

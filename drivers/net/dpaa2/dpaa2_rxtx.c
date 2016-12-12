@@ -135,7 +135,10 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd)
 						+ DPAA2_FD_PTA_SIZE + 16));
 
-		bufs[num_rx] = eth_fd_to_mbuf(fd);
+		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
+			bufs[num_rx] = eth_sg_fd_to_mbuf(fd);
+		else
+			bufs[num_rx] = eth_fd_to_mbuf(fd);
 		bufs[num_rx]->port = dev->data->port_id;
 
 		num_rx++;
@@ -235,7 +238,10 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx])
 				+ DPAA2_FD_PTA_SIZE + 16));
 
-		bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
+		if (unlikely(DPAA2_FD_GET_FORMAT(fd[num_rx]) == qbman_fd_sg))
+			bufs[num_rx] = eth_sg_fd_to_mbuf(fd[num_rx]);
+		else
+			bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
 		bufs[num_rx]->port = dev->data->port_id;
 
 		dq_storage++;
@@ -385,7 +391,10 @@ repeat:
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx])
 				+ DPAA2_FD_PTA_SIZE + 16));
 
-		bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
+		if (unlikely(DPAA2_FD_GET_FORMAT(fd[num_rx]) == qbman_fd_sg))
+			bufs[num_rx] = eth_sg_fd_to_mbuf(fd[num_rx]);
+		else
+			bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
 		bufs[num_rx]->port = dev->data->port_id;
 
 		dq_storage++;
@@ -499,6 +508,12 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					num_tx = 0;
 					goto skip_tx;
 				}
+				if (unlikely((*bufs)->nb_segs > 1)) {
+					PMD_TX_LOG(ERR, "S/G support not added"
+						" for non hw offload buffer");
+					num_tx = 0;
+					goto skip_tx;
+				}
 				if (eth_copy_mbuf_to_fd(*bufs,
 							&fd_arr[loop], bpid)) {
 					bufs++;
@@ -506,7 +521,12 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				}
 			} else {
 				bpid = mempool_to_bpid(mp);
-				eth_mbuf_to_fd(*bufs, &fd_arr[loop], bpid);
+				if (unlikely((*bufs)->nb_segs > 1))
+					eth_mbuf_to_sg_fd(*bufs,
+							  &fd_arr[loop], bpid);
+				else
+					eth_mbuf_to_fd(*bufs,
+							&fd_arr[loop], bpid);
 			}
 			bufs++;
 		}
