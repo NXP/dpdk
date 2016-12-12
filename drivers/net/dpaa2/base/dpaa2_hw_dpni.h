@@ -195,6 +195,67 @@ dpaa2_dev_rx_offload(uint64_t hw_annot_addr, struct rte_mbuf *mbuf)
 }
 
 static inline struct rte_mbuf *__attribute__((hot))
+eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
+{
+	struct qbman_sge *sgt, *sge;
+	dma_addr_t sg_addr;
+	int i = 0;
+	uint64_t fd_addr;
+	struct rte_mbuf *first_seg, *next_seg, *cur_seg;
+
+	fd_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+
+	/*Get Scatter gather table address*/
+	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
+
+	sge = &sgt[i++];
+	sg_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
+
+	/*First Scatter gather entry*/
+	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
+			bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+	/*Prepare all the metadata for first segment*/
+	first_seg->buf_addr = (uint8_t *)sg_addr;
+	first_seg->ol_flags = 0;
+	first_seg->data_off = DPAA2_GET_FLE_OFFSET(sge);
+	first_seg->data_len = sge->length  & 0x1FFFF;
+	first_seg->pkt_len = DPAA2_GET_FD_LEN(fd);
+	first_seg->nb_segs = 1;
+
+	first_seg->packet_type = dpaa2_dev_rx_parse(
+			 (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			 + DPAA2_FD_PTA_SIZE);
+	dpaa2_dev_rx_offload((uint64_t)DPAA2_IOVA_TO_VADDR(
+			DPAA2_GET_FD_ADDR(fd)) +
+			DPAA2_FD_PTA_SIZE, first_seg);
+	rte_mbuf_refcnt_set(first_seg, 1);
+	cur_seg = first_seg;
+	while (!DPAA2_SG_IS_FINAL(sge)) {
+		sge = &sgt[i++];
+		sg_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(
+				DPAA2_GET_FLE_ADDR(sge));
+		next_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
+			bpid_info[DPAA2_GET_FLE_BPID(sge)].meta_data_size);
+		next_seg->buf_addr  = (uint8_t *)sg_addr;
+		next_seg->data_off  = DPAA2_GET_FLE_OFFSET(sge);
+		next_seg->data_len  = sge->length  & 0x1FFFF;
+		first_seg->nb_segs += 1;
+		rte_mbuf_refcnt_set(next_seg, 1);
+		cur_seg->next = next_seg;
+		cur_seg = next_seg;
+	}
+	/* Saving the S/G Table in the end without incrementing the nb_segs,
+	 * so that it can be reused in case of forwarding. While in rxonly
+	 * case it will be freed automatically in rte_pktmbuf_free() call,
+	 * because it free all the segments till the next pointer is NULL */
+	cur_seg->next = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
+			bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+	rte_mbuf_refcnt_set(cur_seg->next, 1);
+
+	return (void *)first_seg;
+}
+
+static inline struct rte_mbuf *__attribute__((hot))
 eth_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
@@ -239,6 +300,58 @@ eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
 	/*if (mbuf->ol_flags & DPAA2_TX_CKSUM_OFFLOAD_MASK) {
 		todo - enable checksum validation on per packet basis
 	}*/
+}
+
+static void __attribute__ ((noinline)) __attribute__((hot))
+eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
+		  struct qbman_fd *fd, uint16_t bpid)
+{
+	struct rte_mbuf *last_seg = mbuf, *cur_seg = mbuf;
+	struct qbman_sge *sgt, *sge = NULL;
+	int i;
+
+	/*First Prepare FD to be transmited*/
+	/*Resetting the buffer pool id and offset field*/
+	fd->simple.bpid_offset = 0;
+
+	/* last segment of pkt is used to save the S/G table. In case of
+	 * forwarding SGT is stored as a mbuf in last segment without
+	 * incrementing the nb_segs. In case of TX only, S/G table is
+	 * is allocated here and set in the last seg. */
+	for (i = 0; i < mbuf->nb_segs - 1; i++)
+		last_seg = last_seg->next;
+
+	if (last_seg->next == NULL) {
+		last_seg->next = rte_pktmbuf_alloc(mbuf->pool);
+		if (last_seg->next == NULL) {
+			PMD_TX_LOG(ERR, "No memory to allocate S/G table");
+			return;
+		}
+	}
+
+	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(last_seg->next));
+	DPAA2_SET_FD_LEN(fd, mbuf->pkt_len);
+	DPAA2_SET_FD_OFFSET(fd, last_seg->next->data_off);
+	DPAA2_SET_FD_BPID(fd, bpid);
+	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
+	DPAA2_FD_SET_FORMAT(fd, qbman_fd_sg);
+	/*Set Scatter gather table and Scatter gather entries*/
+	sgt = (struct qbman_sge *)
+		(DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+				+ DPAA2_GET_FD_OFFSET(fd));
+	for (i = 0; i < mbuf->nb_segs; i++) {
+		/*First Scatter gather entry*/
+		sge = &sgt[i];
+		/*Resetting the buffer pool id and offset field*/
+		sge->fin_bpid_offset = 0;
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(cur_seg));
+		DPAA2_SET_FLE_OFFSET(sge, cur_seg->data_off);
+		sge->length = cur_seg->data_len;
+		DPAA2_SET_FLE_BPID(sge, mempool_to_bpid(cur_seg->pool));
+		cur_seg = cur_seg->next;
+	};
+	DPAA2_SG_SET_FINAL(sge, true);
+	eth_check_offload(mbuf, fd);
 }
 
 static void

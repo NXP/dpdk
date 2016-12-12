@@ -63,6 +63,7 @@ static int dpaa2_dev_link_update(struct rte_eth_dev *dev,
 				      int wait_to_complete);
 static int dpaa2_dev_set_link_up(struct rte_eth_dev *dev);
 static int dpaa2_dev_set_link_down(struct rte_eth_dev *dev);
+static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
 
 /**
  * Atomically reads the link status information from global
@@ -286,6 +287,14 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (eth_conf->rxmode.jumbo_frame == 1) {
+		if (eth_conf->rxmode.max_rx_pkt_len <= DPAA2_MAX_RX_PKT_LEN)
+			return dpaa2_dev_mtu_set(dev,
+					eth_conf->rxmode.max_rx_pkt_len);
+		else
+			return -1;
+	}
 
 	/* Check for correct configuration */
 	if (eth_conf->rxmode.mq_mode != ETH_MQ_RX_RSS &&
@@ -949,6 +958,11 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	/* check that mtu is within the allowed range */
 	if ((mtu < ETHER_MIN_MTU) || (frame_size > DPAA2_MAX_RX_PKT_LEN))
 		return -EINVAL;
+
+	if (frame_size > ETHER_MAX_LEN)
+		dev->data->dev_conf.rxmode.jumbo_frame = 1;
+	else
+		dev->data->dev_conf.rxmode.jumbo_frame = 0;
 
 	/* Set the Max Rx frame length as 'mtu' +
 	 * Maximum Ethernet header length */
