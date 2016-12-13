@@ -3737,7 +3737,7 @@ int qman_ceetm_sp_claim(struct qm_ceetm_sp **sp, enum qm_dc_portal dcp_idx,
 		   (dcp_idx == qm_dc_portal_fman1));
 
 	if ((sp_idx < qman_ceetms[dcp_idx].sp_range[0]) ||
-	    (sp_idx > (qman_ceetms[dcp_idx].sp_range[0] +
+		(sp_idx >= (qman_ceetms[dcp_idx].sp_range[0] +
 		qman_ceetms[dcp_idx].sp_range[1]))) {
 		pr_err("Sub-portal index doesn't exist\n");
 		return -EINVAL;
@@ -3783,7 +3783,7 @@ int qman_ceetm_lni_claim(struct qm_ceetm_lni **lni, enum qm_dc_portal dcp_idx,
 	struct qm_ceetm_lni *p;
 
 	if ((lni_idx < qman_ceetms[dcp_idx].lni_range[0]) ||
-	    (lni_idx > (qman_ceetms[dcp_idx].lni_range[0] +
+		(lni_idx >= (qman_ceetms[dcp_idx].lni_range[0] +
 		qman_ceetms[dcp_idx].lni_range[1]))) {
 		pr_err("The lni index is out of range\n");
 		return -EINVAL;
@@ -4222,6 +4222,7 @@ int qman_ceetm_channel_claim(struct qm_ceetm_channel **channel,
 
 	p->idx = channel_idx;
 	p->dcp_idx = lni->dcp_idx;
+	p->lni_idx = lni->idx;
 	list_add_tail(&p->node, &lni->channels);
 	INIT_LIST_HEAD(&p->class_queues);
 	INIT_LIST_HEAD(&p->ccgs);
@@ -4307,7 +4308,7 @@ int qman_ceetm_channel_enable_shaper(struct qm_ceetm_channel *channel,
 
 	query_opts.cid = cpu_to_be16((CEETM_COMMAND_CHANNEL_MAPPING |
 				channel->idx));
-	query_opts.dcpid = (u8)channel->dcp_idx;
+	query_opts.dcpid = channel->dcp_idx;
 
 	if (qman_ceetm_query_mapping_shaper_tcfc(&query_opts, &query_result)) {
 		pr_err("Can't query channel mapping\n");
