@@ -36,6 +36,10 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_common_dpaa2_qbman.a
 
+ifeq ($(CONFIG_RTE_LIBRTE_FSLMC_BUS),y)
+CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
+endif
+
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 

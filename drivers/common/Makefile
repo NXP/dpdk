@@ -31,6 +31,10 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
+ifeq ($(CONFIG_RTE_LIBRTE_FSLMC_BUS),y)
+CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
+endif
+
 DIRS-$(CONFIG_RTE_LIBRTE_DPAA2_COMMON) += dpaa2
 
 include $(RTE_SDK)/mk/rte.subdir.mk

@@ -1,6 +1,5 @@
 #   BSD LICENSE
 #
-#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #   Copyright (c) 2016 NXP. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
@@ -13,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of NXP nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -28,21 +27,26 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
-
-# NXP (Freescale) - Soc Architecture with WRIOP and QBMAN support
-CONFIG_RTE_MACHINE="dpaa2"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a57+fp+simd"
+include $(RTE_SDK)/mk/rte.vars.mk
 
 #
-# Compile Environment Abstraction Layer
+# library name
 #
-CONFIG_RTE_MAX_LCORE=8
-CONFIG_RTE_MAX_NUMA_NODES=1
+LIB = librte_bus_fslmc.a
 
-#
-# Compile NXP DPAA2 FSL-MC Bus
-#
-CONFIG_RTE_LIBRTE_FSLMC_BUS=y
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
+
+# versioning export map
+EXPORT_MAP := rte_bus_fslmc_version.map
+
+# library version
+LIBABIVER := 1
+
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += lib/librte_eal
+
+include $(RTE_SDK)/mk/rte.lib.mk
