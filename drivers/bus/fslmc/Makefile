@@ -35,6 +35,10 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_bus_fslmc.a
 
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
+CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
+endif
+
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += "-Wno-strict-aliasing"

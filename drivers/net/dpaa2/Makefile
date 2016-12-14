@@ -1,7 +1,7 @@
 #   BSD LICENSE
 #
-#   Copyright(c) 2016 NXP. All rights reserved.
-#   All rights reserved.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 NXP. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -13,7 +13,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of NXP nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -34,28 +34,28 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 # library name
 #
-LIB = librte_common_dpaa2_qbman.a
-
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
-endif
-
-ifeq ($(CONFIG_RTE_LIBRTE_FSLMC_BUS),y)
-CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
-endif
+LIB = librte_pmd_dpaa2.a
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
-EXPORT_MAP := rte_common_dpaa2_qbman_version.map
+# versioning export map
+EXPORT_MAP := rte_pmd_dpaa2_version.map
 
+# library version
 LIBABIVER := 1
 
-# all source are stored in SRCS-y
-#
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_COMMON) += \
-	qbman_portal.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += lib/librte_eal lib/librte_ether
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/bus/fslmc
+
+LDLIBS += -lrte_bus_fslmc
 
 include $(RTE_SDK)/mk/rte.lib.mk

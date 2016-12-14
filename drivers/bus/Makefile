@@ -31,6 +31,8 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
+CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
+
 DIRS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc
 
 include $(RTE_SDK)/mk/rte.subdir.mk
