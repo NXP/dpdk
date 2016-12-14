@@ -41,6 +41,7 @@ CFLAGS += "-Wno-strict-aliasing"
 
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
 # versioning export map
 EXPORT_MAP := rte_bus_fslmc_version.map
@@ -55,6 +56,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
         mc/dpio.c \
         mc/mc_sys.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
 
 # library dependencies
