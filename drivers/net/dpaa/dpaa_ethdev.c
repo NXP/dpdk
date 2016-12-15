@@ -458,7 +458,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	if (dev->data->dev_conf.rxmode.jumbo_frame == 1) {
-		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_MTU)
+		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_RX_PKT_LEN)
 			return dpaa_mtu_set(dev,
 				dev->data->dev_conf.rxmode.max_rx_pkt_len);
 		else
