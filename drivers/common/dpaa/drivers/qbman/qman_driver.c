@@ -56,12 +56,11 @@ struct qm_ceetm qman_ceetms[QMAN_CEETM_MAX];
 /* the qman ceetm instances on the given SoC */
 u8 num_ceetms;
 
-static struct qm_portal_config pcfg[QBMAN_MAX_PORTAL];
+static __thread int fd = -1;
+static __thread struct qm_portal_config pcfg;
 static __thread struct usdpaa_ioctl_portal_map map = {
 	.type = usdpaa_portal_qman
 };
-
-static int fd[QBMAN_MAX_PORTAL];
 
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
 static COMPAT_LIST_HEAD(master_list);
@@ -81,7 +80,6 @@ static int __init fsl_qman_portal_init(uint32_t index, int is_shared)
 	struct qman_portal *portal;
 	int loop, ret;
 	struct usdpaa_ioctl_irq_map irq_map;
-	int cpu;
 
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
 	struct qman_master *master;
@@ -93,56 +91,50 @@ static int __init fsl_qman_portal_init(uint32_t index, int is_shared)
 		error(0, ret, "pthread_getaffinity_np()");
 		return ret;
 	}
-	cpu = -1;
+	pcfg.public_cfg.cpu = -1;
 	for (loop = 0; loop < CPU_SETSIZE; loop++)
 		if (CPU_ISSET(loop, &cpuset)) {
-			if (cpu != -1) {
+			if (pcfg.public_cfg.cpu != -1) {
 				pr_err("Thread is not affine to 1 cpu\n");
 				return -EINVAL;
 			}
-			cpu = loop;
+			pcfg.public_cfg.cpu = loop;
 		}
-	if (cpu == -1) {
+	if (pcfg.public_cfg.cpu == -1) {
 		pr_err("Bug in getaffinity handling!\n");
 		return -EINVAL;
 	}
 
 	/* Allocate and map a qman portal */
 	map.index = index;
-
 	ret = process_portal_map(&map);
 	if (ret) {
 		error(0, ret, "process_portal_map()");
 		return ret;
 	}
-	index = map.index;
-
-	pcfg[index].public_cfg.cpu = cpu;
-	pcfg[index].public_cfg.channel = map.channel;
-	pcfg[index].public_cfg.pools = map.pools;
-	pcfg[index].public_cfg.index = map.index;
+	pcfg.public_cfg.channel = map.channel;
+	pcfg.public_cfg.pools = map.pools;
+	pcfg.public_cfg.index = map.index;
 
 	/* Make the portal's cache-[enabled|inhibited] regions */
-	pcfg[index].addr_virt[DPA_PORTAL_CE] = map.addr.cena;
-	pcfg[index].addr_virt[DPA_PORTAL_CI] = map.addr.cinh;
+	pcfg.addr_virt[DPA_PORTAL_CE] = map.addr.cena;
+	pcfg.addr_virt[DPA_PORTAL_CI] = map.addr.cinh;
 
-	if (fd[index] == -1)
-		fd[index] = open("/dev/fsl-usdpaa-irq", O_RDONLY);
-
-	if (fd[index] == -1) {
+	fd = open("/dev/fsl-usdpaa-irq", O_RDONLY);
+	if (fd == -1) {
 		pr_err("QMan irq init failed\n");
 		process_portal_unmap(&map.addr);
 		return -EBUSY;
 	}
 
-	pcfg[index].public_cfg.is_shared = is_shared;
-	pcfg[index].node = NULL;
-	pcfg[index].public_cfg.irq = fd[index];
+	pcfg.public_cfg.is_shared = is_shared;
+	pcfg.node = NULL;
+	pcfg.public_cfg.irq = fd;
 
-	portal = qman_create_affine_portal(&pcfg[index], NULL);
+	portal = qman_create_affine_portal(&pcfg, NULL);
 	if (!portal) {
 		pr_err("Qman portal initialisation failed (%d)\n",
-		       pcfg[index].public_cfg.cpu);
+		       pcfg.public_cfg.cpu);
 		process_portal_unmap(&map.addr);
 		return -EBUSY;
 	}
@@ -152,7 +144,7 @@ static int __init fsl_qman_portal_init(uint32_t index, int is_shared)
 	if (!master) {
 		pr_err("Memory allocation failed for qman master\n");
 		qman_destroy_affine_portal();
-		close(fd[index]);
+		close(fd);
 		process_portal_unmap(&map.addr);
 		return -ENOMEM;
 	}
@@ -170,7 +162,7 @@ static int __init fsl_qman_portal_init(uint32_t index, int is_shared)
 
 	irq_map.type = usdpaa_portal_qman;
 	irq_map.portal_cinh = map.addr.cinh;
-	process_portal_irq_map(fd[index], &irq_map);
+	process_portal_irq_map(fd, &irq_map);
 	return 0;
 }
 
@@ -209,10 +201,10 @@ static int fsl_qman_portal_finish(void)
 	free(master);
 #endif
 
-	process_portal_irq_unmap(fd[map.index]);
+	process_portal_irq_unmap(fd);
 
 	cfg = qman_destroy_affine_portal();
-	BUG_ON(cfg != &pcfg[map.index]);
+	BUG_ON(cfg != &pcfg);
 	ret = process_portal_unmap(&map.addr);
 	if (ret)
 		error(0, ret, "process_portal_unmap()");
@@ -228,27 +220,6 @@ int qman_thread_init(void)
 
 int qman_thread_init_idx(uint32_t idx)
 {
-	/* Convert from contiguous/virtual cpu numbering to real cpu when
-	 * calling into the code that is dependent on the device naming */
-	return fsl_qman_portal_init(idx, 0);
-}
-
-int qman_thread_init_idx_reuse(uint32_t idx)
-{
-	/* if specific portal, try to unmap it first */
-	if (idx != QBMAN_ANY_PORTAL_IDX) {
-		int ret;
-		struct usdpaa_portal_map qmap;
-
-		qmap.cena = pcfg[idx].addr_virt[DPA_PORTAL_CE];
-		qmap.cinh = pcfg[idx].addr_virt[DPA_PORTAL_CI];
-
-		process_portal_irq_unmap(fd[idx]);
-		ret = process_portal_unmap(&qmap);
-		if (ret)
-			error(0, ret, "process_portal_unmap()");
-	}
-
 	/* Convert from contiguous/virtual cpu numbering to real cpu when
 	 * calling into the code that is dependent on the device naming */
 	return fsl_qman_portal_init(idx, 0);
@@ -354,18 +325,18 @@ int qman_thread_finish(void)
 
 int qman_thread_fd(void)
 {
-	return fd[map.index];
+	return fd;
 }
 
 void qman_thread_irq(void)
 {
-	qbman_invoke_irq(pcfg[map.index].public_cfg.irq);
+	qbman_invoke_irq(pcfg.public_cfg.irq);
 
 	/* Now we need to uninhibit interrupts. This is the only code outside
 	 * the regular portal driver that manipulates any portal register, so
 	 * rather than breaking that encapsulation I am simply hard-coding the
 	 * offset to the inhibit register here. */
-	out_be32(pcfg[map.index].addr_virt[DPA_PORTAL_CI] + 0xe0c, 0);
+	out_be32(pcfg.addr_virt[DPA_PORTAL_CI] + 0xe0c, 0);
 }
 
 static __init int fsl_ceetm_init(const struct device_node *node)
@@ -475,7 +446,6 @@ int qman_global_init(void)
 	uint64_t phys_addr;
 	uint64_t regs_size;
 	const u32 *clk;
-	int i;
 
 	static int done;
 
@@ -586,10 +556,6 @@ int qman_global_init(void)
 	if (ret)
 		return ret;
 #endif
-	/* initialize fd with -1 */
-	for (i = 0; i < QBMAN_MAX_PORTAL; i++)
-		fd[i] = -1;
-
 	return 0;
 }
 
