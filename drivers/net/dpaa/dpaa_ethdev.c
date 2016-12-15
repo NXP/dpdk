@@ -69,9 +69,11 @@
 #include <usdpaa/usdpaa_netcfg.h>
 
 static struct usdpaa_netcfg_info *dpaa_netcfg;
-struct dpaa_portal dpaa_io_portal[RTE_MAX_LCORE];
 RTE_DEFINE_PER_LCORE(bool, _dpaa_io);
 struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
+
+/* define a variable to hold the portal_key, once created.*/
+static pthread_key_t dpaa_portal_key;
 
 static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 {
@@ -278,6 +280,28 @@ struct rte_mempool_ops dpaa_mpool_ops = {
 
 MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
 
+static void dpaa_portal_finish(void* arg)
+{
+	struct dpaa_portal *dpaa_io_portal = (struct dpaa_portal *)arg;
+
+	PMD_DRV_LOG(DEBUG, "cleanup! I am %p", (void *)syscall(SYS_gettid));
+
+	if (dpaa_io_portal == NULL) {
+		PMD_DRV_LOG(ERR, "thread is not having the key");
+		return;
+	}
+	bman_thread_finish();
+	qman_thread_finish();
+
+	RTE_PER_LCORE(_dpaa_io) = false;
+
+	/*Free the thread memory */
+	free(dpaa_io_portal);
+	pthread_setspecific(dpaa_portal_key, NULL);
+
+	return;
+}
+
 static int dpaa_init(void)
 {
 	int dev_id, ret;
@@ -323,6 +347,13 @@ static int dpaa_init(void)
 		TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 	}
 
+	/* create the key, supplying a function that'll be invoked
+	 *     when a portal affined thread will be deleted.*/
+	ret = pthread_key_create(&dpaa_portal_key, dpaa_portal_finish);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "pthread_key_create failed with ret: %d", ret);
+	}
+
 	/* Load the Qman/Bman drivers */
 	ret = qman_global_init();
 	if (ret) {
@@ -344,14 +375,14 @@ int dpaa_portal_init(void *arg)
 	pthread_t id;
 	uint32_t cpu = rte_lcore_id();
 	int ret;
-	uint32_t qman_idx = QBMAN_ANY_PORTAL_IDX;
-	uint32_t bman_idx = QBMAN_ANY_PORTAL_IDX;
-	uint64_t tid = syscall(SYS_gettid);
+	struct dpaa_portal *dpaa_io_portal;
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (RTE_PER_LCORE(_dpaa_io))
 		return 0;
+
+	PMD_DRV_LOG(DEBUG, "Init! I am %p", (void *)syscall(SYS_gettid));
 
 	if ((uint64_t)arg == 1 || cpu == LCORE_ID_ANY)
 		cpu = rte_get_master_lcore();
@@ -370,45 +401,33 @@ int dpaa_portal_init(void *arg)
 		return -1;
 	}
 
-	PMD_DRV_LOG(DEBUG, "arg %p, cpu %d thread=%lu", arg, cpu, tid);
-
-	/*if the portal was previously allocated for this thread */
-	if (dpaa_io_portal[cpu].alloc) {
-		bman_idx = dpaa_io_portal[cpu].bman_idx;
-		qman_idx = dpaa_io_portal[cpu].qman_idx;
-	}
-
-	/* Initialise or reconfigure bman thread portals */
-	ret = bman_thread_init_idx_reuse(bman_idx);
+	/* Initialise bman thread portals */
+	ret = bman_thread_init();
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
-	/* Initialise or reconfigure qman thread portals */
-	ret = qman_thread_init_idx_reuse(qman_idx);
+	/* Initialise qman thread portals */
+	ret = qman_thread_init();
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
 		return -1;
 	}
-	dpaa_io_portal[cpu].qman_idx = qman_get_portal_config()->index;
-	dpaa_io_portal[cpu].bman_idx = bman_get_portal_config()->index;
-	if (dpaa_io_portal[cpu].alloc) {
-		rte_atomic16_inc(&dpaa_io_portal[cpu].ref_count);
-		PMD_DRV_LOG(INFO, "DPAA Portal %d is being shared by %x threads"
-			    " e.g. thread %lu and current thread %lu",
-			    dpaa_io_portal[cpu].qman_idx,
-			    rte_atomic16_read(&dpaa_io_portal[cpu].ref_count),
-			    dpaa_io_portal[cpu].tid, tid);
 
-	} else {
-		rte_atomic16_test_and_set(&dpaa_io_portal[cpu].ref_count);
+	dpaa_io_portal = malloc(sizeof(struct dpaa_portal));
+
+	dpaa_io_portal->qman_idx = qman_get_portal_config()->index;
+	dpaa_io_portal->bman_idx = bman_get_portal_config()->index;
+	dpaa_io_portal->tid = syscall(SYS_gettid);
+
+	ret = pthread_setspecific(dpaa_portal_key, (void*)dpaa_io_portal);
+	if (ret) {
+		PMD_DRV_LOG(ERR, "pthread_setspecific failed on "
+			"core %d with ret: %d", cpu, ret);
 	}
-	dpaa_io_portal[cpu].alloc = true;
 	RTE_PER_LCORE(_dpaa_io) = true;
-	/* update the last used thread id */
-	dpaa_io_portal[cpu].tid = tid;
 
 	return 0;
 }

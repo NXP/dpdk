@@ -147,8 +147,6 @@ struct dpaa_if {
 };
 
 struct dpaa_portal {
-	bool alloc; /* portal ID allocated to this thread */
-	rte_atomic16_t ref_count; /**< num of thread contexts are sharing.*/
 	uint32_t bman_idx; /**< BMAN Portal ID*/
 	uint32_t qman_idx; /**< QMAN Portal ID*/
 	uint64_t tid;/**< Parent Thread id for this portal */
