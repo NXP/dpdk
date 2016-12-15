@@ -112,6 +112,8 @@ How to Build DPDK Applications
            # make -C examples/l2fwd-crypto
      6. Compilation of Test example
            # make -C app/test
+     7. Compilation of IP_FRAGMENNTATION example
+           # make -C examples/ip_fragmentation
 
 ===============================================================================
 
@@ -309,6 +311,16 @@ How to run DPDK Applications
 	str
 	stp
 
+11. Running DPDK IP_FRAGMENTATION Application
+   ==============================
+
+   Execute following commands to run DPDK IP_FRAGMENTATION on LS1 board
+
+       # ./ip_fragmentation -c 0x1 -n 1 -- -p 0x1
+                        OR
+       # ./ip_fragmentation -c 0x3 -n 1 -- -p 0x3
+
+       Now pump traffic from the Spirent to the enabled ports
 =============================================================================
 Applications:
 -	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
