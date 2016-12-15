@@ -34,7 +34,7 @@ Following information can be used to obtain these components:
      ==================================
      Use following command to get the linux code
 
-       # install SDK released by NXP(previously freescale) for ls1043ardb
+       # install SDK released by NXP(previously freescale) for ls1043ardb or ls1046ardb
        # find the source for linux
 
 
@@ -88,7 +88,7 @@ How to Build DPDK Applications
    DPDK libraries, which are required for compiling DPDK examples and
    applications:
 
-     1. export KERNEL_PATH=<path to LS1043 Linux kernel code>
+     1. export KERNEL_PATH=<path to LS104x Linux kernel code>
      2. export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
      4. source standalone-dpaa
@@ -99,7 +99,7 @@ How to Build DPDK Applications
 4. Steps for compiling the DPDK examples
 	The basic testpmd application is compiled by default. It should be available in build/app
 	or install directory.
-     1. Before executing following step, all the steps mentioned in point no. "3."
+     1. Before executing following step, all the steps mentioned in point no. "3"
         above must have been executed. export the RTE_TARGET
 	export RTE_TARGET=arm64-dpaa-linuxapp-gcc
      2. compilation of KNI example
@@ -121,8 +121,8 @@ How to run DPDK Applications
    in the dtb file.
 
 2. Upload the dpdk applications binaries and below setup files to the LS1 board.
-   the configuration files includes:
-   3. usdpaa_config_ls1043.xml;    dpdk/ext
+   the configuration files (in dpdk/ext) includes:
+   3. usdpaa_config_ls1043.xml or ls1046.xml
    4. usdpaa_policy_hash_ipv4_*queue.xml; dpdk/ext  #(* = 1/2/4)
 	# mount hugetlb file system
    	if [ ! -d /mnt/hugetlbfs ]; then

@@ -1,5 +1,5 @@
 ..  BSD LICENSE
-    Copyright(c) 2015 - 2016 Intel Corporation. All rights reserved.
+    Copyright(c) 2016 NXP. All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
@@ -11,7 +11,7 @@
     notice, this list of conditions and the following disclaimer in
     the documentation and/or other materials provided with the
     distribution.
-    * Neither the name of Intel Corporation nor the names of its
+    * Neither the name of NXP nor the names of its
     contributors may be used to endorse or promote products derived
     from this software without specific prior written permission.
 
@@ -27,20 +27,44 @@
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Crypto Device Drivers
-=====================
+NXP(R) DPAA2 CAAM Accelerartor Based (DPAA2_SEC) Crypto Poll Mode Driver
+==================================================
+
+The DPAA2_SEC PMD provides poll mode crypto driver support for NXP DPAA2 CAAM
+hardware accelerator.
 
 
-.. toctree::
-    :maxdepth: 2
-    :numbered:
+Features
+--------
 
-    overview
-    aesni_mb
-    aesni_gcm
-    dpaa2_sec
-    kasumi
-    openssl
-    null
-    snow3g
-    qat
+The DPAA2 PMD has support for:
+
+Cipher algorithms:
+
+* ``RTE_CRYPTO_CIPHER_3DES_CBC``
+* ``RTE_CRYPTO_CIPHER_AES128_CBC``
+* ``RTE_CRYPTO_CIPHER_AES192_CBC``
+* ``RTE_CRYPTO_CIPHER_AES256_CBC``
+
+Hash algorithms:
+
+* ``RTE_CRYPTO_AUTH_SHA1_HMAC``
+* ``RTE_CRYPTO_AUTH_SHA224_HMAC``
+* ``RTE_CRYPTO_AUTH_SHA256_HMAC``
+* ``RTE_CRYPTO_AUTH_SHA384_HMAC``
+* ``RTE_CRYPTO_AUTH_SHA512_HMAC``
+* ``RTE_CRYPTO_AUTH_MD5_HMAC``
+
+
+Limitations
+-----------
+
+* Chained mbufs are not supported.
+* Hash followed by Cipher mode is not supported
+* Only supports the session-oriented API implementation (session-less APIs are not supported).
+
+
+Installations
+-------------
+
+
