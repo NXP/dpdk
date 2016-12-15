@@ -61,8 +61,6 @@
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
-#define DPAA_MAX_MTU 9600
-
 #define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool*/
 
 #if (DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
@@ -78,7 +76,7 @@
 #define CPU_SPIN_BACKOFF_CYCLES		512
 
 #define DPAA_MIN_RX_BUF_SIZE 512
-#define DPAA_MAX_RX_PKT_LEN  9600
+#define DPAA_MAX_RX_PKT_LEN  10240
 
 /* total number of bpools on SoC */
 #define DPAA_MAX_BPOOLS	256

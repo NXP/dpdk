@@ -262,6 +262,7 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 	first_seg->data_off = sg_temp->offset;
 	first_seg->data_len = sg_temp->length;
 	first_seg->pkt_len = sg_temp->length;
+	rte_mbuf_refcnt_set(first_seg, 1);
 
 	first_seg->port = dpaa_intf->ifid;
 	first_seg->nb_segs = 1;
@@ -276,6 +277,7 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 		cur_seg->data_len = sg_temp->length;
 		first_seg->pkt_len += sg_temp->length;
 		first_seg->nb_segs += 1;
+		rte_mbuf_refcnt_set(cur_seg, 1);
 		prev_seg->next = cur_seg;
 		if (sg_temp->final) {
 			cur_seg->next = NULL;
@@ -284,7 +286,6 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 			prev_seg = cur_seg;
 	}
 
-	rte_mbuf_refcnt_set(first_seg, 1);
 	dpaa_eth_packet_info(first_seg, (uint64_t)vaddr);
 	rte_pktmbuf_free_seg(temp);
 
@@ -417,11 +418,11 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		struct qm_fd *fd,
 		uint32_t bpid)
 {
-	struct rte_mbuf *cur_seg = mbuf;
+	struct rte_mbuf *cur_seg = mbuf, *prev_seg;
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
-	struct rte_mbuf *temp;
+	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
-	int i = 0;
+	int i = 0, refcnt = 0;
 
 	PMD_TX_LOG(DEBUG, "Creating SG FD to transmit");
 
@@ -446,7 +447,25 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		sg_temp->addr = cur_seg->buf_physaddr;
 		sg_temp->offset = cur_seg->data_off;
 		sg_temp->length = cur_seg->data_len;
-		sg_temp->bpid = bpid;
+		if (RTE_MBUF_DIRECT(cur_seg))
+			sg_temp->bpid = bpid;
+		else {
+			/* Get owner MBUF from indirect buffer */
+			mi = rte_mbuf_from_indirect(cur_seg);
+			if (rte_mbuf_refcnt_read(mi) > 1) {
+				/*If refcnt > 1, invalid bpid is set to ensure owner buffer is not freed by HW */
+				sg_temp->bpid = 0xff;
+			} else {
+				/* update refcnt here else while freeing the indirect mbuf will lead to freeing
+				   of Owner MBUF */
+				rte_mbuf_refcnt_update(mi, 1);
+				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(mi->pool);
+			}
+			if (!refcnt) {
+				prev_seg = cur_seg;
+				refcnt = 1;
+			}
+		}
 		cur_seg = cur_seg->next;
 		if (cur_seg == NULL) {
 			sg_temp->final = 1;
@@ -455,6 +474,8 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		}
 		cpu_to_hw_sg(sg_temp);
 	}
+	if (refcnt)
+		rte_pktmbuf_free(prev_seg);
 	return 0;
 }
 
