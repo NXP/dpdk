@@ -34,7 +34,7 @@ Following information can be used to obtain these components:
      ==================================
      Use following command to get the linux code
 
-       # install SDK released by NXP(previously freescale) for ls2
+       # install SDK released by NXP(previously freescale) for ls208x or ls108x
        # find the source for linux
 
 
@@ -122,17 +122,12 @@ How to run DPDK Applications
 
 2. Get the dpdk applications binaries and dynamic_dpl.sh on the LS2 board.
  It may already be present in your rootfs
- If you are planning to run l3fwd or any other multiple TX Queue based application please export
- following parameters for resourcing
-	export MAX_TCS=8
-	export MAX_DIST_PER_TC=8,1,1,1,1,1,1,1
 
 	#if you plan to run pktgen, please also increase the number of buffer pool available
 	export DPBP_COUNT=16
 
    Run the following on the board:
       1. source /usr/bin/dpdk-example/extras/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
-      or, source /usr/odp/scripts/dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
       2. export DPRC=<dprc_container_created_by_dynamic_DPL>
 
 3. Running DPDK testpmd Application
@@ -166,7 +161,6 @@ How to run DPDK Applications
 7. Running DPDK L3FWD Application
    ==============================
 
-   NOTE: enabled multiple tx queue i.e. TC support for the ports during restool config using dynamic dpl
    Execute following commands to run DPDK L3FWD on LS2 board
 
 	1 core - 1 Port, 1 queue per port =>
@@ -178,8 +172,8 @@ How to run DPDK Applications
 	4 core - 2 Port with dest mac =>
 	./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
 
-	8 core - 2 Port with 4 queue per port =>
-	./l3fwd -c 0xFF -n 1 -- -p 0x3 --config="(0,0,0),(0,1,1),(0,2,2),(0,3,3),(1,0,4),(1,1,5),(1,2,6),(1,3,7)"
+	8 core - 4 Port with 4 queue per port =>
+	./l3fwd -c 0xFF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
 
        Now pump traffic from the Spirent to the enabled ports as per the given streams
 		Traffic to port 1: 1.1.1.0/24
@@ -312,5 +306,5 @@ Tag:
 DPDK base version used: Release 16.07
 More info on DPDK :  www.dpdk.org
 
-LS2 Release - EAR6 & SDK2.0
+LS2 Release - SDK2.0
 NXP contact: hemant.agrawal@nxp.com
