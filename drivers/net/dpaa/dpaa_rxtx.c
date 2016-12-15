@@ -85,7 +85,7 @@ void  dpaa_buf_free(struct pool_info_entry *bp_info,
 	struct bm_buffer buf;
 	int ret;
 
-	PMD_TX_FREE_LOG(DEBUG, " Freeing %p to bpid: %d", addr, bp_info->bpid);
+	PMD_TX_FREE_LOG(DEBUG, "Free 0x%lx to bpid: %d", addr, bp_info->bpid);
 
 	bm_buffer_set64(&buf, addr);
 retry:
