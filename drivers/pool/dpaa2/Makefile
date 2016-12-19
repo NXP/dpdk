@@ -31,18 +31,44 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
+#
+# library name
+#
+LIB = librte_pool_dpaa2.a
+
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
+CONFIG_RTE_LIBRTE_DPAA2_POOL = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
 endif
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_POOL),y)
-CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_DPAA2_POOL)
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
+CFLAGS += -O0 -g
+CFLAGS += "-Wno-error"
+else
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
 endif
 
-ifeq ($(CONFIG_RTE_LIBRTE_FSLMC_BUS),y)
-CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
-endif
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
-DIRS-$(CONFIG_RTE_LIBRTE_DPAA2_COMMON) += qbman
+# versioning export map
+EXPORT_MAP := rte_pool_dpaa2_version.map
 
-include $(RTE_SDK)/mk/rte.subdir.mk
+# Lbrary version
+LIBABIVER := 1
+
+# all source are stored in SRCS-y
+#
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_POOL) += dpaa2_hw_mempool.c
+
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_POOL) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_POOL) += lib/librte_mempool
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_POOL) += drivers/common/dpaa2
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_POOL) += drivers/bus/fslmc
+
+LDLIBS += -lrte_common_dpaa2_qbman
+LDLIBS += -lrte_bus_fslmc
+
+include $(RTE_SDK)/mk/rte.lib.mk

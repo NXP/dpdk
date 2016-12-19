@@ -31,58 +31,65 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DPAA2_HW_PVT_H_
-#define _DPAA2_HW_PVT_H_
+#ifndef _DPAA2_HW_DPBP_H_
+#define _DPAA2_HW_DPBP_H_
 
-#include <mc/fsl_mc_sys.h>
-#include <fsl_qbman_portal.h>
+#define DPAA2_MAX_BUF_POOLS	8
 
-
-#define MC_PORTAL_INDEX		0
-#define NUM_DPIO_REGIONS	2
-
-#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mpool flag to check offloaded pool */
-
-/* Maximum release/acquire from QBMAN */
-#define DPAA2_MBUF_MAX_ACQ_REL	7
-
-#define MAX_BPID 256
-
-struct dpaa2_dpio_dev {
-	TAILQ_ENTRY(dpaa2_dpio_dev) next;
-		/**< Pointer to Next device instance */
-	uint16_t index; /**< Index of a instance in the list */
-	rte_atomic16_t ref_count;
-		/**< How many thread contexts are sharing this.*/
-	struct fsl_mc_io *dpio; /** handle to DPIO portal object */
-	uint16_t token;
-	struct qbman_swp *sw_portal; /** SW portal object */
-	const struct qbman_result *dqrr[4];
-		/**< DQRR Entry for this SW portal */
-	void *mc_portal; /**< MC Portal for configuring this device */
-	uintptr_t qbman_portal_ce_paddr;
-		/**< Physical address of Cache Enabled Area */
-	uintptr_t ce_size; /**< Size of the CE region */
-	uintptr_t qbman_portal_ci_paddr;
-		/**< Physical address of Cache Inhibit Area */
-	uintptr_t ci_size; /**< Size of the CI region */
-	int32_t	vfio_fd; /**< File descriptor received via VFIO */
-	int32_t hw_id; /**< An unique ID of this DPIO device instance */
+struct buf_pool_cfg {
+	void *addr; /*!< The address from where DPAA2 will carve out the
+		     * buffers. 'addr' should be 'NULL' if user wants
+		     * to create buffers from the memory which user
+		     * asked DPAA2 to reserve during 'nadk init'
+		     */
+	phys_addr_t    phys_addr;  /*!< corresponding physical address
+				    * of the memory provided in addr
+				    */
+	uint32_t num; /*!< number of buffers */
+	uint32_t size; /*!< size of each buffer. 'size' should include
+			* any headroom to be reserved and alignment
+			*/
+	uint16_t align; /*!< Buffer alignment (in bytes) */
+	uint16_t bpid; /*!< The buffer pool id. This will be filled
+			*in by DPAA2 for each buffer pool
+			*/
 };
 
-struct dpaa2_dpbp_dev {
-	TAILQ_ENTRY(dpaa2_dpbp_dev) next;
-		/**< Pointer to Next device instance */
-	struct fsl_mc_io dpbp;  /** handle to DPBP portal object */
-	uint16_t token;
-	rte_atomic16_t in_use;
-	uint32_t dpbp_id; /*HW ID for DPBP object */
+struct buf_pool {
+	uint32_t size;
+	uint32_t num_bufs;
+	uint16_t bpid;
+	uint8_t *h_bpool_mem;
+	struct rte_mempool *mp;
+	struct dpaa2_dpbp_dev *dpbp_node;
 };
 
-/*! Global MCP list */
-extern void *(*rte_mcp_ptr_list);
+/*!
+ * Buffer pool list configuration structure. User need to give DPAA2 the
+ * valid number of 'num_buf_pools'.
+ */
+struct dpaa2_bp_list_cfg {
+	struct buf_pool_cfg buf_pool; /* Configuration of each buffer pool*/
+};
 
-struct dpaa2_dpbp_dev *dpaa2_alloc_dpbp_dev(void);
-void dpaa2_free_dpbp_dev(struct dpaa2_dpbp_dev *dpbp);
+struct dpaa2_bp_list {
+	struct dpaa2_bp_list *next;
+	struct rte_mempool *mp;
+	struct buf_pool buf_pool;
+};
 
-#endif
+struct dpaa2_bp_info {
+	uint32_t meta_data_size;
+	uint32_t bpid;
+	struct dpaa2_bp_list *bp_list;
+};
+
+#define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)(mp)->pool_data)
+#define mempool_to_bpid(mp) ((mempool_to_bpinfo(mp))->bpid)
+
+extern struct dpaa2_bp_info rte_dpaa2_bpid_info[MAX_BPID];
+
+int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
+		       void **obj_table, unsigned int count);
+
+#endif /* _DPAA2_HW_DPBP_H_ */
