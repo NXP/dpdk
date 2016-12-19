@@ -50,6 +50,7 @@ CFLAGS += "-Wno-strict-aliasing"
 
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
 # versioning export map
@@ -65,10 +66,14 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
         mc/dpio.c \
         mc/mc_sys.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
 
 # library dependencies
 DEPDIRS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/common/dpaa2
+
+LDLIBS += -lrte_common_dpaa2_qbman
 
 include $(RTE_SDK)/mk/rte.lib.mk

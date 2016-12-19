@@ -1,6 +1,7 @@
 DPDK_17.02 {
 	global:
 
+        dpaa2_affine_qbman_swp;
         dpbp_disable;
         dpbp_enable;
         dpbp_get_attributes;
@@ -45,6 +46,7 @@ DPDK_17.02 {
         dpseci_open;
         dpseci_reset;
         dpseci_set_rx_queue;
+        per_lcore__dpaa2_io;
         rte_fslmc_driver_register;
         rte_fslmc_driver_unregister;
         rte_mcp_ptr_list;
