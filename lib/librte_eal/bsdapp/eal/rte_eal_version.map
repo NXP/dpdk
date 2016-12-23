@@ -183,5 +183,8 @@ DPDK_17.02 {
 	rte_bus_register;
 	rte_bus_scan;
 	rte_bus_unregister;
+	vfio_get_container_fd;
+	vfio_get_group_fd;
+	vfio_get_group_no;
 
 } DPDK_16.11;
