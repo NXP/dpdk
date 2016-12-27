@@ -131,7 +131,7 @@ struct dpaa_sec_ses {
 	void   *priv; /* private interface to do crypto */
 };
 
-#define RTE_MAX_NB_SEC_QPS 8
+#define RTE_MAX_NB_SEC_QPS 1
 #define RTE_MAX_NB_SEC_SES 2048
 /* internal sec queue interface */
 struct dpaa_sec_qi {
