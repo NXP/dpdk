@@ -119,6 +119,16 @@
 		PKT_TX_TCP_CKSUM |                 \
 		PKT_TX_UDP_CKSUM)
 
+/**************************************************************************//**
+	DPAA Frame descriptor macros
+*/ /***************************************************************************/
+#define DPAA_FD_CMD_FCO			0x80000000  /**< Frame queue Context Override */
+#define DPAA_FD_CMD_RPD			0x40000000  /**< Read Prepended Data */
+#define DPAA_FD_CMD_UPD			0x20000000  /**< Update Prepended Data */
+#define DPAA_FD_CMD_DTC			0x10000000  /**< Do IP/TCP/UDP Checksum */
+#define DPAA_FD_CMD_DCL4C		0x10000000  /**< Didn't calculate L4 Checksum */
+#define DPAA_FD_CMD_CFQ			0x00ffffff  /**< Confirmation Frame Queue */
+
 struct pool_info_entry {
 	struct rte_mempool *mp;
 	struct bman_pool *bp;
