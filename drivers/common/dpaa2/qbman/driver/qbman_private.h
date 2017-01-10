@@ -85,8 +85,12 @@
  *                reg_val = r32_int(19, 1, reg_value);
  *
  */
+#ifdef __LP64__
+#define MAKE_MASK32(width) ((uint32_t)(( 1ULL << width) - 1))
+#else
 #define MAKE_MASK32(width) (width == 32 ? 0xffffffff : \
 				 (uint32_t)((1 << width) - 1))
+#endif
 #define DECLARE_CODEC32(t) \
 static inline uint32_t e32_##t(uint32_t lsoffset, uint32_t width, t val) \
 { \
