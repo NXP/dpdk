@@ -418,7 +418,7 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		struct qm_fd *fd,
 		uint32_t bpid)
 {
-	struct rte_mbuf *cur_seg = mbuf, *prev_seg;
+	struct rte_mbuf *cur_seg = mbuf, *prev_seg = NULL;
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
 	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
