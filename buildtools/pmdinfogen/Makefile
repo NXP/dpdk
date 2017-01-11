@@ -42,6 +42,7 @@ HOSTAPP = dpdk-pmdinfogen
 SRCS-y += pmdinfogen.c
 
 HOST_CFLAGS += $(WERROR_FLAGS) -g
+HOST_CFLAGS += "-Wno-int-to-pointer-cast"
 HOST_CFLAGS += -I$(RTE_OUTPUT)/include
 
 DEPDIRS-y += lib/librte_eal
