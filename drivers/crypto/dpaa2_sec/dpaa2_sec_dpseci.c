@@ -71,6 +71,11 @@
 #define NO_PREFETCH 0
 #define TDES_CBC_IV_LEN 8
 #define AES_CBC_IV_LEN 16
+/* FLE_POOL_NUM_BUFS is set as per the ipsec-secgw application */
+#define FLE_POOL_NUM_BUFS	32000
+#define FLE_POOL_BUF_SIZE	256
+#define FLE_POOL_CACHE_SIZE	512
+
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
 
 static inline int
@@ -84,24 +89,24 @@ build_authenc_fd(dpaa2_sec_session *sess,
 	struct sec_flow_context *flc;
 	uint32_t auth_only_len = sym_op->auth.data.length -
 				sym_op->cipher.data.length;
-	int icv_len = sym_op->auth.digest.length;
+	int icv_len = sym_op->auth.digest.length, retval;
 	uint8_t *old_icv;
-	uint32_t mem_len = (7 * sizeof(struct qbman_fle)) + icv_len;
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* we are using the first FLE entry to store Mbuf.
-	 * Currently we donot know which FLE has the mbuf stored.
-	 * So while retreiving we can go back 1 FLE from the FD -ADDR
-	 * to get the MBUF Addr from the previous FLE.
-	 * We can have a better approach to use the inline Mbuf
-	 */
-	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
-	if (!fle) {
+	/* TODO we are using the first FLE entry to store Mbuf and session ctxt.
+	   Currently we donot know which FLE has the mbuf stored.
+	   So while retreiving we can go back 1 FLE from the FD -ADDR
+	   to get the MBUF Addr from the previous FLE.
+	   We can have a better approach to use the inline Mbuf*/
+	retval = rte_mempool_get(priv->fle_pool, (void **)(&fle));
+	if (retval) {
 		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
 		return -1;
 	}
+	memset(fle, 0, FLE_POOL_BUF_SIZE);
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_OP_VADDR_TO_IOVA(op));
+	DPAA2_FLE_SAVE_CTXT(fle, priv);
 	fle = fle + 1;
 	sge = fle + 2;
 	if (likely(bpid < MAX_BPID)) {
@@ -212,28 +217,27 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
 	struct qbman_fle *fle, *sge;
-	uint32_t mem_len = (sess->dir == DIR_ENC) ?
-			   (3 * sizeof(struct qbman_fle)) :
-			   (5 * sizeof(struct qbman_fle) +
-			    sym_op->auth.digest.length);
+	int retval;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
 	uint8_t *old_digest;
 
 	PMD_INIT_FUNC_TRACE();
 
-	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
-	if (!fle) {
-		RTE_LOG(ERR, PMD, "Memory alloc failed for FLE\n");
+	retval = rte_mempool_get(priv->fle_pool, (void **)(&fle));
+	if (retval) {
+		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
 		return -1;
 	}
-	/* TODO we are using the first FLE entry to store Mbuf.
+	memset(fle, 0, FLE_POOL_BUF_SIZE);
+	/* we are using the first FLE entry to store Mbuf and session.
 	 * Currently we donot know which FLE has the mbuf stored.
 	 * So while retreiving we can go back 1 FLE from the FD -ADDR
 	 * to get the MBUF Addr from the previous FLE.
 	 * We can have a better approach to use the inline Mbuf
 	 */
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_OP_VADDR_TO_IOVA(op));
+	DPAA2_FLE_SAVE_CTXT(fle, priv);
 	fle = fle + 1;
 
 	if (likely(bpid < MAX_BPID)) {
@@ -304,25 +308,26 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
 	struct qbman_fle *fle, *sge;
-	uint32_t mem_len = (5 * sizeof(struct qbman_fle));
+	int retval;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* todo - we can use some mempool to avoid malloc here */
-	fle = rte_zmalloc(NULL, mem_len, RTE_CACHE_LINE_SIZE);
-	if (!fle) {
+	retval = rte_mempool_get(priv->fle_pool, (void **)(&fle));
+	if (retval) {
 		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
 		return -1;
 	}
-	/* TODO we are using the first FLE entry to store Mbuf.
+	memset(fle, 0, FLE_POOL_BUF_SIZE);
+	/* we are using the first FLE entry to store Mbuf and session ctxt
 	 * Currently we donot know which FLE has the mbuf stored.
 	 * So while retreiving we can go back 1 FLE from the FD -ADDR
 	 * to get the MBUF Addr from the previous FLE.
 	 * We can have a better approach to use the inline Mbuf
 	 */
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_OP_VADDR_TO_IOVA(op));
+	DPAA2_FLE_SAVE_CTXT(fle, priv);
 	fle = fle + 1;
 	sge = fle + 2;
 
@@ -495,6 +500,7 @@ sec_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct qbman_fle *fle;
 	struct rte_crypto_op *op;
+	struct ctxt_priv *priv;
 
 	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
@@ -530,7 +536,8 @@ sec_fd_to_mbuf(const struct qbman_fd *fd)
 		   DPAA2_GET_FD_LEN(fd));
 
 	/* free the fle memory */
-	rte_free(fle - 1);
+	priv = (struct ctxt_priv *)DPAA2_GET_FLE_CTXT(fle - 1);
+	rte_mempool_put(priv->fle_pool,(void *)(fle-1));
 
 	return op;
 }
@@ -760,6 +767,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		      dpaa2_sec_session *session)
 {
 	struct dpaa2_sec_cipher_ctxt *ctxt = &session->ext_params.cipher_ctxt;
+	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo cipherdata;
 	int bufsize, i;
 	struct ctxt_priv *priv;
@@ -775,6 +783,8 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		RTE_LOG(ERR, PMD, "No Memory for priv CTXT");
 		return -1;
 	}
+
+	priv->fle_pool = dev_priv->fle_pool;
 
 	flc = &priv->flc_desc[0].flc;
 
@@ -869,6 +879,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 		    dpaa2_sec_session *session)
 {
 	struct dpaa2_sec_auth_ctxt *ctxt = &session->ext_params.auth_ctxt;
+	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
 	unsigned int bufsize;
 	struct ctxt_priv *priv;
@@ -886,6 +897,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 		return -1;
 	}
 
+	priv->fle_pool = dev_priv->fle_pool;
 	flc = &priv->flc_desc[DESC_INITFINAL].flc;
 
 	session->auth_key.data = rte_zmalloc(NULL, xform->auth.key.length,
@@ -989,6 +1001,7 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		    dpaa2_sec_session *session)
 {
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
+	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
 	unsigned int bufsize;
 	struct ctxt_priv *priv;
@@ -1021,6 +1034,7 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		return -1;
 	}
 
+	priv->fle_pool = dev_priv->fle_pool;
 	flc = &priv->flc_desc[0].flc;
 
 	session->cipher_key.data = rte_zmalloc(NULL, cipher_xform->key.length,
@@ -1483,6 +1497,10 @@ static int
 dpaa2_sec_uninit(const struct rte_cryptodev_driver *crypto_drv __rte_unused,
 		 struct rte_cryptodev *dev)
 {
+	struct dpaa2_sec_dev_private *internals = dev->data->dev_private;
+
+	rte_mempool_free(internals->fle_pool);
+
 	PMD_INIT_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
 		     dev->data->name, rte_socket_id());
 
@@ -1499,6 +1517,7 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	uint16_t token;
 	struct dpseci_attr attr;
 	int retcode, hw_id;
+	char str[20];
 
 	PMD_INIT_FUNC_TRACE();
 	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
@@ -1558,6 +1577,20 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	cryptodev->data->nb_queue_pairs = internals->max_nb_queue_pairs;
 	internals->hw = dpseci;
 	internals->token = token;
+
+	sprintf(str, "fle_pool_%d", cryptodev->data->dev_id);
+	internals->fle_pool = rte_mempool_create((const char *)str,
+			FLE_POOL_NUM_BUFS,
+			FLE_POOL_BUF_SIZE,
+			FLE_POOL_CACHE_SIZE, 0,
+			NULL, NULL, NULL, NULL,
+			SOCKET_ID_ANY, 0);
+	if (!internals->fle_pool) {
+		RTE_LOG(ERR, PMD, "%s create failed", str);
+		goto init_error;
+	} else
+		RTE_LOG(INFO, PMD, "%s created: %p\n", str,
+				internals->fle_pool);
 
 	PMD_INIT_LOG(DEBUG, "driver %s: created\n", cryptodev->data->name);
 	return 0;
