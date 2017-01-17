@@ -41,9 +41,11 @@
 CC        = $(CROSS)gcc
 KERNELCC  = $(CROSS)gcc
 CPP       = $(CROSS)cpp
-# for now, we don't use as but nasm.
-# AS      = $(CROSS)as
+ifeq ($(CONFIG_RTE_ARCH_X86),y)
 AS        = nasm
+else
+AS        = $(CROSS)as
+endif
 AR        = $(CROSS)ar
 LD        = $(CROSS)ld
 OBJCOPY   = $(CROSS)objcopy
