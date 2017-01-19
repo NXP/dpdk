@@ -270,7 +270,7 @@ int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int fman_memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
+int fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *mac_reg =
@@ -291,28 +291,63 @@ int fman_memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-int fman_memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth)
+static void
+fman_memac_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	void *reg;
+
+	if (addr_num) {
+		reg = &((struct memac_regs *)m->ccsr_map)->
+				mac_addr[addr_num-1].mac_addr_l;
+		out_be32(reg, 0x0);
+		reg = &((struct memac_regs *)m->ccsr_map)->
+					mac_addr[addr_num-1].mac_addr_u;
+		out_be32(reg, 0x0);
+	} else {
+		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
+		out_be32(reg, 0x0);
+		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
+		out_be32(reg, 0x0);
+	}
+}
+
+static int
+fman_memac_add_mac_addr(struct fman_if *p, uint8_t *eth,
+				       uint8_t addr_num)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 
-	void *reg = &((struct memac_regs *)m->ccsr_map)->command_config;
-	u32 val = in_be32(reg);
+	void *reg;
+	u32 val;
 
 	memcpy(&m->__if.mac_addr, eth, ETHER_ADDR_LEN);
-	reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
+
+	if (addr_num)
+		reg = &((struct memac_regs *)m->ccsr_map)->
+					mac_addr[addr_num-1].mac_addr_l;
+	else
+		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
+
 	val = (m->__if.mac_addr.addr_bytes[0] |
 	       (m->__if.mac_addr.addr_bytes[1] << 8) |
 	       (m->__if.mac_addr.addr_bytes[2] << 16) |
 	       (m->__if.mac_addr.addr_bytes[3] << 24));
 	out_be32(reg, val);
 
-	reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
+	if (addr_num)
+		reg = &((struct memac_regs *)m->ccsr_map)->
+					mac_addr[addr_num-1].mac_addr_u;
+	else
+		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
+
 	val = ((m->__if.mac_addr.addr_bytes[4] << 0) |
 	       (m->__if.mac_addr.addr_bytes[5] << 8));
 	out_be32(reg, val);
 
 	return 0;
 }
+
 
 static void fman_memac_stats_get(struct fman_if *p,
 		     struct rte_eth_stats *stats)
@@ -350,46 +385,6 @@ static void fman_memac_reset_stat(struct fman_if *p)
 	out_be32(&regs->statn_config, tmp);
 
 	while (in_be32(&regs->statn_config) & STATS_CFG_CLR);
-}
-
-static int _dtsec_set_stn_mac_addr(struct __fman_if *m, uint8_t *eth)
-{
-	void *reg = &((struct dtsec_regs *)m->ccsr_map)->maccfg1;
-	u32 val = in_be32(reg);
-
-	memcpy(&m->__if.mac_addr, eth, ETHER_ADDR_LEN);
-	reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr1;
-	val = (m->__if.mac_addr.addr_bytes[2] |
-	       (m->__if.mac_addr.addr_bytes[3] << 8) |
-	       (m->__if.mac_addr.addr_bytes[4] << 16) |
-	       (m->__if.mac_addr.addr_bytes[5] << 24));
-	out_be32(reg, val);
-
-	reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr2;
-	val = ((m->__if.mac_addr.addr_bytes[0] << 16) |
-	       (m->__if.mac_addr.addr_bytes[1] << 24));
-	out_be32(reg, val);
-
-	return 0;
-}
-
-static int _dtsec_get_stn_mac_addr(struct __fman_if *m, uint8_t *eth)
-{
-	void *reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr1;
-	u32 val = in_be32(reg);
-
-	eth[2] = (val & 0x000000ff) >> 0;
-	eth[3] = (val & 0x0000ff00) >> 8;
-	eth[4] = (val & 0x00ff0000) >> 16;
-	eth[5] = (val & 0xff000000) >> 24;
-
-	reg = &((struct dtsec_regs *)m->ccsr_map)->macstnaddr2;
-	val = in_be32(reg);
-
-	eth[0] = (val & 0x00ff0000) >> 16;
-	eth[1] = (val & 0xff00ff00) >> 24;
-
-	return 0;
 }
 
 static void if_destructor(struct __fman_if *__if)
@@ -1224,7 +1219,8 @@ void fman_finish(void)
 	ccsr_map_fd = -1;
 }
 
-int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth)
+int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth,
+				    uint8_t addr_num)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
@@ -1234,13 +1230,27 @@ int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth)
 	if ((__if->__if.mac_type == fman_offline) ||
 	    (__if->__if.mac_type == fman_mac_less)) {
 		my_log(EINVAL, "port type (%d)\n", __if->__if.mac_type);
-		return EINVAL;
+		return -EINVAL;
 	}
 
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
-		return _dtsec_set_stn_mac_addr(__if, eth);
-	else
-		return fman_memac_set_station_mac_addr(p, eth);
+	return fman_memac_add_mac_addr(p, eth, addr_num);
+}
+
+int fm_mac_rem_exact_match_mac_addr(struct fman_if *p, int8_t addr_num)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+
+	assert(ccsr_map_fd != -1);
+
+	/* Do nothing for Offline or Macless ports */
+	if ((__if->__if.mac_type == fman_offline) ||
+	    (__if->__if.mac_type == fman_mac_less)) {
+		my_log(EINVAL, "port type (%d)\n", __if->__if.mac_type);
+		return -EINVAL;
+	}
+
+	fman_memac_clear_mac_addr(p, addr_num);
+	return 0;
 }
 
 int fm_mac_config(struct fman_if *p,  uint8_t *eth)
@@ -1256,10 +1266,7 @@ int fm_mac_config(struct fman_if *p,  uint8_t *eth)
 		return EINVAL;
 	}
 
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
-		return _dtsec_get_stn_mac_addr(__if, eth);
-	else
-		return fman_memac_get_station_mac_addr(p, eth);
+	return fman_memac_get_primary_mac_addr(p, eth);
 }
 
 void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
