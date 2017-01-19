@@ -39,6 +39,7 @@ EXPORT_MAP := rte_vhost_version.map
 LIBABIVER := 3
 
 CFLAGS += $(WERROR_FLAGS) -I$(SRCDIR) -O3 -D_FILE_OFFSET_BITS=64
+CFLAGS += "-Wno-array-bounds"
 ifeq ($(CONFIG_RTE_LIBRTE_VHOST_USER),y)
 CFLAGS += -I vhost_user
 LDLIBS += -lpthread
