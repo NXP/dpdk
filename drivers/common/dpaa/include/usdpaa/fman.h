@@ -412,8 +412,12 @@ void fm_mac_set_promiscuous(struct fman_if *p);
 /* Get mac config*/
 int fm_mac_config(struct fman_if *p, uint8_t *eth);
 
-/* Get MAC address for a particular interface */
-int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth);
+/* Set MAC address for a particular interface */
+int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth,
+					      uint8_t addr_num);
+
+/* Remove a MAC address for a particular interface */
+int fm_mac_rem_exact_match_mac_addr(struct fman_if *p, int8_t addr_num);
 
 /* Get the FMAN statistics */
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
@@ -490,9 +494,8 @@ void fman_if_discard_rx_errors(struct fman_if *fm_if);
 
 int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
-int fman_memac_get_station_mac_addr(struct fman_if *p, uint8_t *eth);
+int fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth);
 
-int fman_memac_set_station_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)

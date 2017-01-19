@@ -81,6 +81,9 @@
 /* total number of bpools on SoC */
 #define DPAA_MAX_BPOOLS	256
 
+/*max mac filter for memac(8) including primary mac addr*/
+#define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
+
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  8
 
@@ -131,7 +134,6 @@ struct pool_info_entry {
 struct dpaa_if {
 	int valid;
 	char name[MAX_ETHDEV_NAME];
-	char mac_addr[ETHER_ADDR_LEN];
 	const struct fm_eth_port_cfg *cfg;
 	struct qman_fq *rx_queues;
 	struct qman_fq *tx_queues;
