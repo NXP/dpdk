@@ -42,17 +42,6 @@
 
 #define MEMAC_NUM_OF_PADDRS 7 /* Num of additional exact match MAC adr regs */
 
-/* dTSEC MAC Registers */
-#define MACCFG1_LOOPBACK	0x00000100
-#define MACCFG1_RX_FLOW		0x00000020
-
-#define MAXFRM_SIZE_DTSEC	0x00002580
-#define MAXFRM_MASK		0x00003fff
-
-#define RCTRL_MPROM		0x00000008
-#define RCTRL_UPROM		0x00000001
-#define RCTRL_PROM		(RCTRL_UPROM | RCTRL_MPROM)
-
 /* Control and Configuration Register (COMMAND_CONFIG) for MEMAC */
 #define CMD_CFG_LOOPBACK_EN	0x00000400 /* 21 XGMII/GMII loopback enable */
 #define CMD_CFG_PROMIS_EN	0x00000010 /* 27 Promiscuous operation enable */
@@ -222,98 +211,6 @@ struct memac_regs {
 	uint32_t hg_fifos_status;	/* 0x374 fifos status */
 	uint32_t rhm;			/* 0x378 rx messages counter */
 	uint32_t thm;			/* 0x37C tx messages counter */
-};
-
-struct dtsec_regs {
-	/* dTSEC General Control and Status Registers */
-	uint32_t tsec_id;	/* 0x000 ETSEC_ID register */
-	uint32_t tsec_id2;	/* 0x004 ETSEC_ID2 register */
-	uint32_t ievent;	/* 0x008 Interrupt event register */
-	uint32_t imask;		/* 0x00C Interrupt mask register */
-	uint32_t reserved0010[1];
-	uint32_t ecntrl;	/* 0x014 E control register */
-	uint32_t ptv;		/* 0x018 Pause time value register */
-	uint32_t tbipa;		/* 0x01C TBI PHY address register */
-	uint32_t tmr_ctrl;	/* 0x020 Time-stamp Control register */
-	uint32_t tmr_pevent;	/* 0x024 Time-stamp event register */
-	uint32_t tmr_pemask;	/* 0x028 Timer event mask register */
-	uint32_t reserved002c[5];
-	uint32_t tctrl;		/* 0x040 Transmit control register */
-	uint32_t reserved0044[3];
-	uint32_t rctrl;		/* 0x050 Receive control register */
-	uint32_t reserved0054[11];
-	uint32_t igaddr[8];	/* 0x080-0x09C Individual/group address */
-	uint32_t gaddr[8];	/* 0x0A0-0x0BC Group address registers 0-7 */
-	uint32_t reserved00c0[16];
-	uint32_t maccfg1;		/* 0x100 MAC configuration #1 */
-	uint32_t maccfg2;		/* 0x104 MAC configuration #2 */
-	uint32_t ipgifg;		/* 0x108 IPG/IFG */
-	uint32_t hafdup;		/* 0x10C Half-duplex */
-	uint32_t maxfrm;		/* 0x110 Maximum frame */
-	uint32_t reserved0114[10];
-	uint32_t ifstat;		/* 0x13C Interface status */
-	uint32_t macstnaddr1;		/* 0x140 Station Address,part 1 */
-	uint32_t macstnaddr2;		/* 0x144 Station Address,part 2  */
-	struct {
-	    uint32_t exact_match1; /* octets 1-4 */
-	    uint32_t exact_match2; /* octets 5-6 */
-	} macaddr[15];	/* 0x148-0x1BC mac exact match addresses 1-15 */
-	uint32_t reserved01c0[16];
-	uint32_t tr64;	/* 0x200 transmit and receive 64 byte frame counter */
-	uint32_t tr127;	/* 0x204 transmit and receive 65 to 127 byte frame
-			 * counter */
-	uint32_t tr255;	/* 0x208 transmit and receive 128 to 255 byte frame
-			 * counter */
-	uint32_t tr511;	/* 0x20C transmit and receive 256 to 511 byte frame
-			 * counter */
-	uint32_t tr1k;	/* 0x210 transmit and receive 512 to 1023 byte frame
-			 * counter */
-	uint32_t trmax;	/* 0x214 transmit and receive 1024 to 1518 byte frame
-			 * counter */
-	uint32_t trmgv;	/* 0x218 transmit and receive 1519 to 1522 byte good
-			 * VLAN frame count */
-	uint32_t rbyt;	/* 0x21C receive byte counter */
-	uint32_t rpkt;	/* 0x220 receive packet counter */
-	uint32_t rfcs;	/* 0x224 receive FCS error counter */
-	uint32_t rmca;	/* 0x228 RMCA receive multicast packet counter */
-	uint32_t rbca;	/* 0x22C receive broadcast packet counter */
-	uint32_t rxcf;	/* 0x230 receive control frame packet counter */
-	uint32_t rxpf;	/* 0x234 receive pause frame packet counter */
-	uint32_t rxuo;	/* 0x238 receive unknown OP code counter */
-	uint32_t raln;	/* 0x23C receive alignment error counter */
-	uint32_t rflr;	/* 0x240 receive frame length error counter */
-	uint32_t rcde;	/* 0x244 receive code error counter */
-	uint32_t rcse;	/* 0x248 receive carrier sense error counter */
-	uint32_t rund;	/* 0x24C receive undersize packet counter */
-	uint32_t rovr;	/* 0x250 receive oversize packet counter */
-	uint32_t rfrg;	/* 0x254 receive fragments counter */
-	uint32_t rjbr;	/* 0x258 receive jabber counter */
-	uint32_t rdrp;	/* 0x25C receive drop */
-	uint32_t tbyt;	/* 0x260 transmit byte counter */
-	uint32_t tpkt;	/* 0x264 transmit packet counter */
-	uint32_t tmca;	/* 0x268 transmit multicast packet counter */
-	uint32_t tbca;	/* 0x26C transmit broadcast packet counter */
-	uint32_t txpf;	/* 0x270 transmit pause control frame counter */
-	uint32_t tdfr;	/* 0x274 transmit deferral packet counter */
-	uint32_t tedf;	/* 0x278 transmit excessive deferral packet counter */
-	uint32_t tscl;	/* 0x27C transmit single collision packet counter */
-	uint32_t tmcl;	/* 0x280 transmit multiple collision packet counter */
-	uint32_t tlcl;	/* 0x284 transmit late collision packet counter */
-	uint32_t txcl;	/* 0x288 transmit excessive collision packet counter */
-	uint32_t tncl;	/* 0x28C transmit total collision counter */
-	uint32_t reserved0290[1];
-	uint32_t tdrp;	/* 0x294 transmit drop frame counter */
-	uint32_t tjbr;	/* 0x298 transmit jabber frame counter */
-	uint32_t tfcs;	/* 0x29C transmit FCS error counter */
-	uint32_t txcf;	/* 0x2A0 transmit control frame counter */
-	uint32_t tovr;	/* 0x2A4 transmit oversize frame counter */
-	uint32_t tund;	/* 0x2A8 transmit undersize frame counter */
-	uint32_t tfrg;	/* 0x2AC transmit fragments frame counter */
-	uint32_t car1;	/* 0x2B0 carry register one register* */
-	uint32_t car2;	/* 0x2B4 carry register two register* */
-	uint32_t cam1;	/* 0x2B8 carry register one mask register */
-	uint32_t cam2;	/* 0x2BC carry register two mask register */
-	uint32_t reserved02c0[848];
 };
 
 /* information for macless comes from device tree */
