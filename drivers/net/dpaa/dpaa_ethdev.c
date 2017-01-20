@@ -548,7 +548,7 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_tx_queues = dpaa_intf->nb_tx_queues;
 	dev_info->min_rx_bufsize = DPAA_MIN_RX_BUF_SIZE;
 	dev_info->max_rx_pktlen = DPAA_MAX_RX_PKT_LEN;
-	dev_info->max_mac_addrs = 0;
+	dev_info->max_mac_addrs = DPAA_MAX_MAC_FILTER;
 	dev_info->max_hash_mac_addrs = 0;
 	dev_info->max_vfs = dev->pci_dev->max_vfs;
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
@@ -794,6 +794,56 @@ dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static void
+dpaa_dev_add_mac_addr(struct rte_eth_dev *dev,
+			     struct ether_addr *addr,
+			     uint32_t index,
+			     __rte_unused uint32_t pool)
+{
+	int ret;
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+
+	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
+					      addr->addr_bytes, index);
+
+	if (ret)
+		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed:"
+			" err = %d", ret);
+}
+
+static void
+dpaa_dev_remove_mac_addr(struct rte_eth_dev *dev,
+			  uint32_t index)
+{
+	int ret;
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+
+	ret = fm_mac_rem_exact_match_mac_addr(dpaa_intf->fif, index);
+
+	if (ret)
+		RTE_LOG(ERR, PMD, "error: Removing the MAC ADDR failed:"
+			" err = %d", ret);
+}
+
+static void
+dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
+		       struct ether_addr *addr)
+{
+	int ret;
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+
+	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
+					      addr->addr_bytes, 0);
+	if (ret)
+		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
+}
+
 static struct eth_dev_ops dpaa_devops = {
 	.dev_configure		  = dpaa_eth_dev_configure,
 	.dev_start		  = dpaa_eth_dev_start,
@@ -818,6 +868,10 @@ static struct eth_dev_ops dpaa_devops = {
 	.mtu_set		  = dpaa_mtu_set,
 	.dev_set_link_down	  = dpaa_link_down,
 	.dev_set_link_up	  = dpaa_link_up,
+	.mac_addr_add		  = dpaa_dev_add_mac_addr,
+	.mac_addr_remove	  = dpaa_dev_remove_mac_addr,
+	.mac_addr_set		  = dpaa_dev_set_mac_addr,
+
 };
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
@@ -967,16 +1021,6 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	/* give the interface a name */
 	sprintf(dpaa_intf->name, "fm%d-gb%d",
 		(fman_intf->fman_idx + 1), fman_intf->mac_idx);
-	/* get the mac address */
-	memcpy(dpaa_intf->mac_addr, fman_intf->mac_addr.addr_bytes,
-	       ETHER_ADDR_LEN);
-	printf("%s::interface %s macaddr::", __func__, dpaa_intf->name);
-	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
-		if (loop != (ETHER_ADDR_LEN - 1))
-			printf("%02x:", dpaa_intf->mac_addr[loop]);
-		else
-			printf("%02x\n", dpaa_intf->mac_addr[loop]);
-	}
 
 	/* save fman_if & cfg in the interface struture */
 	dpaa_intf->fif = fman_intf;
@@ -1042,7 +1086,29 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->nb_tx_queues = dpaa_intf->nb_tx_queues;
 	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
 	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
-	eth_dev->data->mac_addrs = (struct ether_addr *)dpaa_intf->mac_addr;
+
+	/* Allocate memory for storing MAC addresses */
+	eth_dev->data->mac_addrs = rte_zmalloc("mac_addr",
+		ETHER_ADDR_LEN * DPAA_MAX_MAC_FILTER, 0);
+	if (eth_dev->data->mac_addrs == NULL) {
+		PMD_INIT_LOG(ERR, "Failed to allocate %d bytes needed to "
+						"store MAC addresses",
+				ETHER_ADDR_LEN * DPAA_MAX_MAC_FILTER);
+		return -ENOMEM;
+	}
+
+	/* copy the primary mac address */
+	memcpy(eth_dev->data->mac_addrs[0].addr_bytes,
+		fman_intf->mac_addr.addr_bytes,
+		ETHER_ADDR_LEN);
+
+	printf("interface %s macaddr::", dpaa_intf->name);
+	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
+		if (loop != (ETHER_ADDR_LEN - 1))
+			printf("%02x:", fman_intf->mac_addr.addr_bytes[loop]);
+		else
+			printf("%02x\n", fman_intf->mac_addr.addr_bytes[loop]);
+	}
 
 	/* Disable RX, disable promiscuous mode */
 	fman_if_discard_rx_errors(fman_intf);
