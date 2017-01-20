@@ -1273,6 +1273,7 @@ void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	u32 value = 0;
+	void *cmdcfg;
 
 	assert(ccsr_map_fd != -1);
 
@@ -1284,25 +1285,13 @@ void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
 	}
 
 	/* Set Rx Ignore Pause Frames */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		void *rx_control =
-				&((struct dtsec_regs *)__if->ccsr_map)->maccfg1;
-		if (enable)
-			value = in_be32(rx_control) | MACCFG1_RX_FLOW;
-		else
-			value = in_be32(rx_control) & ~MACCFG1_RX_FLOW;
+	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	if (enable)
+		value = in_be32(cmdcfg) | CMD_CFG_PAUSE_IGNORE;
+	else
+		value = in_be32(cmdcfg) & ~CMD_CFG_PAUSE_IGNORE;
 
-		out_be32(rx_control, value);
-	} else {
-		void *cmdcfg =
-			 &((struct memac_regs *)__if->ccsr_map)->command_config;
-		if (enable)
-			value = in_be32(cmdcfg) | CMD_CFG_PAUSE_IGNORE;
-		else
-			value = in_be32(cmdcfg) & ~CMD_CFG_PAUSE_IGNORE;
-
-		out_be32(cmdcfg, value);
-	}
+	out_be32(cmdcfg, value);
 }
 
 void fm_mac_config_loopback(struct fman_if *p, bool enable)
@@ -1319,6 +1308,7 @@ void fm_mac_conf_max_frame_len(struct fman_if *p,
 			       unsigned int max_frame_len)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	unsigned *maxfrm;
 
 	assert(ccsr_map_fd != -1);
 
@@ -1328,15 +1318,8 @@ void fm_mac_conf_max_frame_len(struct fman_if *p,
 		return;
 
 	/* Set Max frame length */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		unsigned *maxfrm =
-				&((struct dtsec_regs *)__if->ccsr_map)->maxfrm;
-		out_be32(maxfrm, (MAXFRM_MASK & max_frame_len));
-	} else {
-		unsigned *maxfrm =
-			 &((struct memac_regs *)__if->ccsr_map)->maxfrm;
-		out_be32(maxfrm, (MAXFRM_RX_MASK & max_frame_len));
-	}
+	maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+	out_be32(maxfrm, (MAXFRM_RX_MASK & max_frame_len));
 }
 
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
@@ -1357,6 +1340,7 @@ void fm_mac_set_promiscuous(struct fman_if *p)
 void fman_if_promiscuous_enable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	void *cmdcfg;
 
 	assert(ccsr_map_fd != -1);
 
@@ -1368,20 +1352,14 @@ void fman_if_promiscuous_enable(struct fman_if *p)
 	}
 
 	/* Enable Rx promiscuous mode */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		void *rx_control =
-				&((struct dtsec_regs *)__if->ccsr_map)->rctrl;
-		out_be32(rx_control, in_be32(rx_control) | RCTRL_PROM);
-	} else {
-		void *cmdcfg =
-			 &((struct memac_regs *)__if->ccsr_map)->command_config;
-		out_be32(cmdcfg, in_be32(cmdcfg) | CMD_CFG_PROMIS_EN);
-	}
+	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	out_be32(cmdcfg, in_be32(cmdcfg) | CMD_CFG_PROMIS_EN);
 }
 
 void fman_if_promiscuous_disable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	void *cmdcfg;
 
 	assert(ccsr_map_fd != -1);
 
@@ -1393,15 +1371,8 @@ void fman_if_promiscuous_disable(struct fman_if *p)
 	}
 
 	/* Disable Rx promiscuous mode */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		void *rx_control =
-				&((struct dtsec_regs *)__if->ccsr_map)->rctrl;
-		out_be32(rx_control, in_be32(rx_control) & (~RCTRL_PROM));
-	} else {
-		void *cmdcfg =
-			 &((struct memac_regs *)__if->ccsr_map)->command_config;
-		out_be32(cmdcfg, in_be32(cmdcfg) & (~CMD_CFG_PROMIS_EN));
-	}
+	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	out_be32(cmdcfg, in_be32(cmdcfg) & (~CMD_CFG_PROMIS_EN));
 }
 
 void fman_if_enable_rx(struct fman_if *p)
@@ -1415,12 +1386,7 @@ void fman_if_enable_rx(struct fman_if *p)
 		return;
 
 	/* enable Rx and Tx */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
-		out_be32(__if->ccsr_map + 0x100,
-			 in_be32(__if->ccsr_map + 0x100) | 0x5);
-	else
-		out_be32(__if->ccsr_map + 8,
-			 in_be32(__if->ccsr_map + 8) | 3);
+	out_be32(__if->ccsr_map + 8, in_be32(__if->ccsr_map + 8) | 3);
 }
 
 void fman_if_disable_rx(struct fman_if *p)
@@ -1435,12 +1401,7 @@ void fman_if_disable_rx(struct fman_if *p)
 		return;
 
 	/* only disable Rx, not Tx */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac))
-		out_be32(__if->ccsr_map + 0x100,
-			 in_be32(__if->ccsr_map + 0x100) & ~(u32)0x4);
-	else
-		out_be32(__if->ccsr_map + 8,
-			 in_be32(__if->ccsr_map + 8) & ~(u32)2);
+	out_be32(__if->ccsr_map + 8, in_be32(__if->ccsr_map + 8) & ~(u32)2);
 }
 
 void fman_if_loopback_enable(struct fman_if *p)
@@ -1455,11 +1416,7 @@ void fman_if_loopback_enable(struct fman_if *p)
 		return;
 
 	/* Enable loopback mode */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		unsigned *maccfg =
-				&((struct dtsec_regs *)__if->ccsr_map)->maccfg1;
-		out_be32(maccfg, in_be32(maccfg) | MACCFG1_LOOPBACK);
-	} else if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
+	if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
 		unsigned *ifmode =
 			 &((struct memac_regs *)__if->ccsr_map)->if_mode;
 		out_be32(ifmode, in_be32(ifmode) | IF_MODE_RLP);
@@ -1482,11 +1439,7 @@ void fman_if_loopback_disable(struct fman_if *p)
 		return;
 
 	/* Disable loopback mode */
-	if ((__if->__if.mac_type == fman_mac_1g) && (!__if->__if.is_memac)) {
-		unsigned *maccfg =
-				&((struct dtsec_regs *)__if->ccsr_map)->maccfg1;
-		out_be32(maccfg, in_be32(maccfg) & ~MACCFG1_LOOPBACK);
-	} else if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
+	if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
 		unsigned *ifmode =
 			 &((struct memac_regs *)__if->ccsr_map)->if_mode;
 		out_be32(ifmode, in_be32(ifmode) & ~IF_MODE_RLP);
