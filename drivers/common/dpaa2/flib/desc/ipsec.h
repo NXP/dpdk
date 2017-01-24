@@ -1269,8 +1269,8 @@ static inline int cnstr_shdsc_ipsec_new_decap(uint32_t *descbuf, bool ps,
  *            Valid algorithm values - one of OP_ALG_ALGSEL_* {MD5, SHA1,
  *            SHA224, SHA256, SHA384, SHA512}
  * Note: The key for authentication is supposed to be given as plain text.
- * Note: There's no support for keys longer than the corresponding digest size,
- *       according to the selected algorithm.
+ * Note: There's no support for keys longer than the block size of the
+ *       underlying hash function, according to the selected algorithm.
  *
  * @ivlen: length of the IV to be read from the input frame, before any data
  *         to be processed
