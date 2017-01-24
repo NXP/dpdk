@@ -205,8 +205,8 @@ static inline int cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
  * @trunc_len: Length of the truncated ICV to be written in the output buffer, 0
  *             if no truncation is needed
  *
- * Note: There's no support for keys longer than the corresponding digest size,
- * according to the selected algorithm.
+ * Note: There's no support for keys longer than the block size of the
+ * underlying hash function, according to the selected algorithm.
  *
  * Return: size of descriptor written in words or negative number on error
  */
@@ -259,7 +259,7 @@ static inline int cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
 	SHR_HDR(p, SHR_SERIAL, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SHRD);
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, storelen,
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
 	/* Do operation */
