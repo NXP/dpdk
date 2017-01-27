@@ -203,9 +203,14 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	n = count % DPAA2_MBUF_MAX_ACQ_REL;
 
 	/* convert mbuf to buffers  for the remainder*/
-	for (i = 0; i < n ; i++)
+	for (i = 0; i < n ; i++) {
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+		bufs[i] = (uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
+				+ meta_data_size;
+#else
 		bufs[i] = (uint64_t)obj_table[i] + meta_data_size;
-
+#endif
+	}
 	/* feed them to bman*/
 	do {
 		ret = qbman_swp_release(swp, &releasedesc, bufs, n);
@@ -214,8 +219,15 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	/* if there are more buffers to free */
 	while (n < count) {
 		/* convert mbuf to buffers */
-		for (i = 0; i < DPAA2_MBUF_MAX_ACQ_REL; i++)
+		for (i = 0; i < DPAA2_MBUF_MAX_ACQ_REL; i++) {
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+			bufs[i] = (uint64_t)
+				rte_mempool_virt2phy(pool, obj_table[n + i])
+					+ meta_data_size;
+#else
 			bufs[i] = (uint64_t)obj_table[n + i] + meta_data_size;
+#endif
+		}
 
 		do {
 			ret = qbman_swp_release(swp, &releasedesc, bufs,
@@ -288,6 +300,7 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 			 * i.e. first buffer is valid,
 			 * remaining 6 buffers may be null
 			 */
+			DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
 			obj_table[n] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
 			rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[n], 0);
 			PMD_TX_LOG(DEBUG, "Acquired %p address %p from BMAN",
