@@ -39,8 +39,13 @@ ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
 CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
 endif
 
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
+CFLAGS += -O0 -g
+CFLAGS += "-Wno-error"
+else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
+endif
 CFLAGS += "-Wno-strict-aliasing"
 
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
