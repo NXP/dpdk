@@ -30,7 +30,6 @@
  */
 #include "qman_low.h"
 #include <rte_branch_prediction.h>
-
 /* Compilation constants */
 #define DQRR_MAXFILL	15
 #define EQCR_ITHRESH	4	/* if EQCR congests, interrupt threshold */
@@ -1260,6 +1259,14 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 		return NULL;
 	}
 
+	if (!(dq->stat & QM_DQRR_STAT_FD_VALID)) {
+		/* Invalid DQRR - put the portal and consume the DQRR.
+		 * Return NULL to user as no packet is seen */
+		put_poll_portal();
+		qman_dqrr_consume(fq, (struct qm_dqrr_entry *)dq);
+		return NULL;
+	}
+
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 	shadow = &p->shadow_dqrr[DQRR_PTR2IDX(dq)];
 	*shadow = *dq;
@@ -1269,14 +1276,6 @@ struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 	shadow->seqnum = be16_to_cpu(shadow->seqnum);
 	hw_fd_to_cpu(&shadow->fd);
 #endif
-
-	if (!(dq->stat & QM_DQRR_STAT_FD_VALID)) {
-		/* Invalid DQRR - put the portal and consume the DQRR.
-		 * Return NULL to user as no packet is seen */
-		put_poll_portal();
-		qman_dqrr_consume(fq, (struct qm_dqrr_entry *)dq);
-		return NULL;
-	}
 
 	if (dq->stat & QM_DQRR_STAT_FQ_EMPTY)
 		fq_clear(fq, QMAN_FQ_STATE_NE);
