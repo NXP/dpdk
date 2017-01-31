@@ -659,7 +659,7 @@ struct qman_portal *qman_create_affine_portal(
 
 /* These checks are BUG_ON()s because the driver is already supposed to avoid
  * these cases. */
-struct qman_portal *qman_create_affine_slave(struct qman_portal *redirect)
+struct qman_portal *qman_create_affine_slave(struct qman_portal *redirect __maybe_unused)
 {
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
 	struct qman_portal *p = get_raw_affine_portal();
