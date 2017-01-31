@@ -315,7 +315,7 @@ struct bman_portal *bman_create_affine_portal(
 	return portal;
 }
 
-struct bman_portal *bman_create_affine_slave(struct bman_portal *redirect)
+struct bman_portal *bman_create_affine_slave(struct bman_portal *redirect __maybe_unused)
 {
 #ifdef CONFIG_FSL_DPA_PORTAL_SHARE
 	struct bman_portal *p = get_raw_affine_portal();

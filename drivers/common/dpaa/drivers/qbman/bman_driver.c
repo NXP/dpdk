@@ -218,14 +218,14 @@ int bman_thread_init_idx(uint32_t idx)
 	return fsl_bman_portal_init(idx, 0);
 }
 
+#ifdef CONFIG_FSL_DPA_PORTAL_SHARE
+
 int bman_thread_init_shared_idx(uint32_t idx)
 {
 	/* Convert from contiguous/virtual cpu numbering to real cpu when
 	 * calling into the code that is dependent on the device naming */
 	return fsl_bman_portal_init(idx, 1);
 }
-
-#ifdef CONFIG_FSL_DPA_PORTAL_SHARE
 
 static int fsl_bman_slave_portal_init(const struct bman_portal_config *cfg)
 {
