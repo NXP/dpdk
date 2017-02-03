@@ -186,6 +186,7 @@ static inline void mc_write_command(struct mc_command __iomem *portal,
 {
 	int i;
 	uint32_t word;
+	char* header = (char*)&portal->header;
 
 	/* copy command parameters into the portal */
 	for (i = 0; i < MC_CMD_NUM_OF_PARAMS; i++)
@@ -193,10 +194,10 @@ static inline void mc_write_command(struct mc_command __iomem *portal,
 
 	/* submit the command by writing the header */
 	word = (uint32_t)mc_dec(cmd->header, 32, 32);
-	iowrite32(word, (((uint32_t *)&portal->header) + 1));
+	iowrite32(word, (((uint32_t *)header) + 1));
 
 	word = (uint32_t)mc_dec(cmd->header, 0, 32);
-	iowrite32(word, (uint32_t *)&portal->header);
+	iowrite32(word, (uint32_t *)header);
 }
 
 /**

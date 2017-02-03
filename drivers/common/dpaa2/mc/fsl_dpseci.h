@@ -33,6 +33,8 @@
 #ifndef __FSL_DPSECI_H
 #define __FSL_DPSECI_H
 
+#include <fsl_dpopr.h>
+
 /* Data Path SEC Interface API
  * Contains initialization APIs and runtime control APIs for DPSECI
  */
@@ -91,7 +93,20 @@ int dpseci_close(struct fsl_mc_io	*mc_io,
 		 uint16_t		token);
 
 /**
+ * Enable the Order Restoration support
+ */
+#define DPSECI_OPT_HAS_OPR					0x000040
+
+/**
+ * Order Point Records are shared for the entire DPSECI
+ */
+#define DPSECI_OPT_OPR_SHARED				0x000080
+
+/**
  * struct dpseci_cfg - Structure representing DPSECI configuration
+ * @options: Any combination of the following options:
+ *		DPSECI_OPT_HAS_OPR
+ *		DPSECI_OPT_OPR_SHARED
  * @num_tx_queues: num of queues towards the SEC
  * @num_rx_queues: num of queues back from the SEC
  * @priorities: Priorities for the SEC hardware processing;
@@ -100,6 +115,7 @@ int dpseci_close(struct fsl_mc_io	*mc_io,
  *		valid priorities are configured with values 1-8;
  */
 struct dpseci_cfg {
+	uint32_t options;
 	uint8_t num_tx_queues;
 	uint8_t num_rx_queues;
 	uint8_t priorities[DPSECI_PRIO_NUM];
@@ -202,54 +218,6 @@ int dpseci_is_enabled(struct fsl_mc_io	*mc_io,
 int dpseci_reset(struct fsl_mc_io	*mc_io,
 		 uint32_t		cmd_flags,
 		 uint16_t		token);
-
-/**
- * struct dpseci_irq_cfg - IRQ configuration
- * @addr:	Address that must be written to signal a message-based interrupt
- * @val:	Value to write into irq_addr address
- * @irq_num: A user defined number associated with this IRQ
- */
-struct dpseci_irq_cfg {
-	     uint64_t		addr;
-	     uint32_t		val;
-	     int		irq_num;
-};
-
-/**
- * dpseci_set_irq() - Set IRQ information for the DPSECI to trigger an interrupt
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPSECI object
- * @irq_index:	Identifies the interrupt index to configure
- * @irq_cfg:	IRQ configuration
- *
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpseci_set_irq(struct fsl_mc_io		*mc_io,
-		   uint32_t			cmd_flags,
-		   uint16_t			token,
-		   uint8_t			irq_index,
-		   struct dpseci_irq_cfg	*irq_cfg);
-
-/**
- * dpseci_get_irq() - Get IRQ information from the DPSECI
- *
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPSECI object
- * @irq_index:	The interrupt index to configure
- * @type:	Interrupt type: 0 represents message interrupt
- *		type (both irq_addr and irq_val are valid)
- * @irq_cfg:	IRQ attributes
- *
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpseci_get_irq(struct fsl_mc_io		*mc_io,
-		   uint32_t			cmd_flags,
-		   uint16_t			token,
-		   uint8_t			irq_index,
-		   int				*type,
-		   struct dpseci_irq_cfg	*irq_cfg);
 
 /**
  * dpseci_set_irq_enable() - Set overall interrupt state.
@@ -657,5 +625,42 @@ int dpseci_get_api_version(struct fsl_mc_io *mc_io,
 			   uint32_t cmd_flags,
 			   uint16_t *major_ver,
 			   uint16_t *minor_ver);
+
+/**
+ * dpseci_set_opr() - Set Order Restoration configuration.
+ * @mc_io:		Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:		Token of DPSECI object
+ * @index:  	The queue index
+ * @options:	Configuration mode options
+ *				can be OPR_OPT_CREATE or OPR_OPT_RETIRE
+ * @cfg:		Configuration options for the OPR
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpseci_set_opr(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  uint8_t index,
+		  uint8_t options,
+		  struct opr_cfg *cfg);
+
+/**
+ * dpseci_get_opr() - Retrieve Order Restoration config and query.
+ * @mc_io:		Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:		Token of DPSECI object
+ * @index:  	The queue index
+ * @cfg:		Returned OPR configuration
+ * @qry:		Returned OPR query
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpseci_get_opr(struct fsl_mc_io *mc_io,
+		      uint32_t cmd_flags,
+		     uint16_t token,
+			 uint8_t index,
+			 struct opr_cfg *cfg,
+			 struct opr_qry *qry);
 
 #endif /* __FSL_DPSECI_H */
