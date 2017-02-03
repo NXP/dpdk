@@ -239,7 +239,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->dev = dev;
-		mc_q->flow_id = DPNI_NEW_FLOW_ID;
+		mc_q->flow_id = 0xffff;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
 		dpaa2_q->cscn = rte_malloc(NULL,
@@ -422,7 +422,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	PMD_INIT_FUNC_TRACE();
 
 	/* Return if queue already configured */
-	if (dpaa2_q->flow_id != DPNI_NEW_FLOW_ID)
+	if (dpaa2_q->flow_id != 0xffff)
 		return 0;
 
 	memset(&tx_conf_cfg, 0, sizeof(struct dpni_queue));

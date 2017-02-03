@@ -83,7 +83,7 @@ dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
 	tc_cfg.dist_size = eth_dev->data->nb_rx_queues;
 	tc_cfg.dist_mode = DPNI_DIST_MODE_HASH;
 
-	ret = dpni_prepare_key_cfg(&kg_cfg, p_params);
+	ret = dpkg_prepare_key_cfg(&kg_cfg, p_params);
 	if (ret) {
 		RTE_LOG(ERR, PMD, "Unable to prepare extract parameters\n");
 		rte_free(p_params);
@@ -126,7 +126,7 @@ int dpaa2_remove_flow_dist(
 	tc_cfg.dist_size = 0;
 	tc_cfg.dist_mode = DPNI_DIST_MODE_NONE;
 
-	ret = dpni_prepare_key_cfg(&kg_cfg, p_params);
+	ret = dpkg_prepare_key_cfg(&kg_cfg, p_params);
 	if (ret) {
 		RTE_LOG(ERR, PMD, "Unable to prepare extract parameters\n");
 		rte_free(p_params);
