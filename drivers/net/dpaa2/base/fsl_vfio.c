@@ -221,6 +221,13 @@ static int setup_dmamap(void)
 	int i;
 	const struct rte_memseg *memseg;
 
+	/* SET DMA MAP for IOMMU */
+	group = &vfio_groups[0];
+	if (!group->container) {
+		FSL_VFIO_LOG(ERR, " Container is not connected yet.");
+		return -1;
+	}
+
 	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
 		memseg = rte_eal_get_physmem_layout();
 		if (memseg == NULL) {
@@ -238,15 +245,6 @@ static int setup_dmamap(void)
 #else
 		dma_map.iova = dma_map.vaddr;
 #endif
-
-		/* SET DMA MAP for IOMMU */
-		group = &vfio_groups[0];
-
-		if (!group->container) {
-			FSL_VFIO_LOG(ERR, " Container is not connected yet.");
-			return -1;
-		}
-
 		FSL_VFIO_LOG(DEBUG, "-->Initial SHM Virtual ADDR %llX",
 			     dma_map.vaddr);
 		FSL_VFIO_LOG(DEBUG, "-----> DMA size 0x%llX\n", dma_map.size);
@@ -273,7 +271,7 @@ static int setup_dmamap(void)
 static int dpaa2_setup_vfio_grp(void)
 {
 	char path[PATH_MAX];
-	char iommu_group_path[PATH_MAX], *group_name;
+	char iommu_group_path[PATH_MAX + 1], *group_name;
 	struct fsl_vfio_group *group = NULL;
 	struct stat st;
 	int groupid;
@@ -640,6 +638,7 @@ static int vfio_process_group_devices(void)
 				if (!mcp_obj) {
 					FSL_VFIO_LOG(ERR, "Unable to"
 						    " allocate memory");
+					closedir(d);
 					return -ENOMEM;
 				}
 				strcpy(mcp_obj, dir->d_name);
@@ -650,6 +649,7 @@ static int vfio_process_group_devices(void)
 		}
 	}
 	closedir(d);
+	d = NULL;
 
 	if (!mcp_obj) {
 		FSL_VFIO_LOG(ERR, "DPAA2 MCP Object not Found");
@@ -738,8 +738,10 @@ static int vfio_process_group_devices(void)
 			struct rte_pci_device *dev;
 
 			dev = malloc(sizeof(struct rte_pci_device));
-			if (dev == NULL)
-				return -1;
+			if (dev == NULL) {
+				FSL_VFIO_LOG(ERR, "device malloc failed");
+				goto FAILURE;
+			}
 
 			memset(dev, 0, sizeof(*dev));
 			/* store hw_id of dpni/dpseci device */
@@ -787,6 +789,12 @@ static int vfio_process_group_devices(void)
 	return 0;
 
 FAILURE:
+	if (d)
+		closedir(d);
+	if (mcp_ptr_list) {
+		free(mcp_ptr_list);
+		mcp_ptr_list = NULL;
+	}
 	free(group->vfio_device);
 	group->vfio_device = NULL;
 	return -1;

@@ -924,7 +924,7 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_cipher_ctxt *ctxt = &session->ext_params.cipher_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo cipherdata;
-	unsigned int bufsize, i;
+	int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -947,6 +947,7 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 			RTE_CACHE_LINE_SIZE);
 	if (session->cipher_key.data == NULL) {
 		RTE_LOG(ERR, PMD, "No Memory for cipher key");
+		rte_free(priv);
 		return -1;
 	}
 	session->cipher_key.length = xform->cipher.key.length;
@@ -997,6 +998,10 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
 					&cipherdata, NULL, ctxt->iv.length,
 			session->dir);
+	if (bufsize < 0) {
+		RTE_LOG(ERR, PMD, "Crypto: Descriptor build failed\n");
+		goto error_out;
+	}
 	flc->dhr = 0;
 	flc->bpv0 = 0x1;
 	flc->mode_bits = 0x8000;
@@ -1018,6 +1023,7 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 
 error_out:
 	rte_free(session->cipher_key.data);
+	rte_free(priv);
 	return -1;
 }
 
@@ -1622,8 +1628,6 @@ dpaa2_sec_uninit(__attribute__((unused)) const struct rte_cryptodev_driver *cryp
 		 struct rte_cryptodev *dev)
 {
 	struct dpaa2_sec_dev_private *internals = dev->data->dev_private;
-	if (dev->data->name == NULL)
-		return -EINVAL;
 
 	rte_mempool_free(internals->fle_pool);
 
