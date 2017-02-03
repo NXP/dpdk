@@ -496,7 +496,12 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			DPAA2_SET_FD_FLC((&fd_arr[loop]), NULL);
 			mp = (*bufs)->pool;
 			/* Not a hw_pkt pool allocated frame */
-			if (mp && !(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+			if (!mp) {
+				PMD_TX_LOG(ERR, "err: no bpool"
+					   " attached");
+				goto skip_tx;
+			}
+			if (!(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
 				PMD_TX_LOG(ERR, "non hw offload bufffer ");
 				/* alloc should be from the default buffer pool
 				attached to this interface */
@@ -505,13 +510,11 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				} else {
 					PMD_TX_LOG(ERR, "errr: why no bpool"
 						   " attached");
-					num_tx = 0;
 					goto skip_tx;
 				}
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					PMD_TX_LOG(ERR, "S/G support not added"
 						" for non hw offload buffer");
-					num_tx = 0;
 					goto skip_tx;
 				}
 				if (eth_copy_mbuf_to_fd(*bufs,

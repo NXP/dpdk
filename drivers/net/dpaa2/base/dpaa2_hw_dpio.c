@@ -451,6 +451,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	reg_info.index = 0;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
+		free(dpio_dev);
 		return -1;
 	}
 
@@ -466,6 +467,7 @@ dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
 	if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
 				   reg_info.offset, reg_info.size)) {
 		PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
+		free(dpio_dev);
 		return -1;
 	}
 
