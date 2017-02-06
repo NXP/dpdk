@@ -75,11 +75,11 @@
 	do { \
 		(_fd)->cmd = 0; \
 		(_fd)->opaque_addr = 0; \
-		(_fd)->format = QM_FD_CONTIG; \
+		(_fd)->opaque = QM_FD_CONTIG << DPAA_FD_FORMAT_SHIFT; \
+		(_fd)->opaque |= ((_mbuf)->data_off) << DPAA_FD_OFFSET_SHIFT; \
+		(_fd)->opaque |= (_mbuf)->pkt_len; \
 		(_fd)->addr = (_mbuf)->buf_physaddr; \
-		(_fd)->offset = (_mbuf)->data_off; \
 		(_fd)->bpid = _bpid; \
-		(_fd)->length20 = (_mbuf)->pkt_len; \
 	} while (0);
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
@@ -193,8 +193,9 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 		dpaa_slow_parsing(m, prs);
 	}
 
-	m->l2_len = annot->parse.ip_off[0];
-	m->l3_len = annot->parse.l4_off - annot->parse.ip_off[0];
+	m->tx_offload = annot->parse.ip_off[0];
+	m->tx_offload |= (annot->parse.l4_off - annot->parse.ip_off[0])
+					<< DPAA_PKT_L3_LEN_SHIFT;
 
 	/* Set the hash values */
 	m->hash.rss = (uint32_t)(rte_be_to_cpu_64(annot->hash));
@@ -272,10 +273,9 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 	fd->cmd = DPAA_FD_CMD_RPD | DPAA_FD_CMD_DTC;
 }
 
-struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
+struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 {
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
-	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct rte_mbuf *first_seg, *prev_seg, *cur_seg, *temp;
 	struct qm_sg_entry *sgt, *sg_temp;
 	void *vaddr, *sg_vaddr;
@@ -301,7 +301,7 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 	first_seg->pkt_len = sg_temp->length;
 	rte_mbuf_refcnt_set(first_seg, 1);
 
-	first_seg->port = dpaa_intf->ifid;
+	first_seg->port = ifid;
 	first_seg->nb_segs = 1;
 	first_seg->ol_flags = 0;
 	prev_seg = first_seg;
@@ -329,19 +329,21 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd)
 	return first_seg;
 }
 
-static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
-						   struct qm_fd *fd)
+static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
+							uint32_t ifid)
 {
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
-	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct rte_mbuf *mbuf;
 	void *ptr;
+	uint8_t format = (fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
+	uint16_t offset = (fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
+	uint32_t length = fd->opaque & DPAA_FD_LENGTH_MASK;
 
 	PMD_RX_LOG(DEBUG, " FD--->MBUF");
 
-	if (unlikely(fd->format == qm_fd_sg))
-		return dpaa_eth_sg_to_mbuf(fq, fd);
-	else if (unlikely(fd->format != qm_fd_contig)) {
+	if (unlikely(format == qm_fd_sg))
+		return dpaa_eth_sg_to_mbuf(fd, ifid);
+	else if (unlikely(format != qm_fd_contig)) {
 		PMD_DRV_LOG(ERR, "dropping packet in sg form");
 		goto errret;
 	}
@@ -351,16 +353,16 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qman_fq *fq,
 		PMD_DRV_LOG(ERR, "unable to convert physical address");
 		goto errret;
 	}
+	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	/* Prefetch the Parse results and packet data to L1 */
 	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
-	rte_prefetch0((void *)((uint8_t *)ptr + fd->offset));
+	rte_prefetch0((void *)((uint8_t *)ptr + offset));
 
-	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
-	mbuf->data_off = fd->offset;
-	mbuf->data_len = fd->length20;
-	mbuf->pkt_len = fd->length20;
+	mbuf->data_off = offset;
+	mbuf->data_len = length;
+	mbuf->pkt_len = length;
 
-	mbuf->port = dpaa_intf->ifid;
+	mbuf->port = ifid;
 	mbuf->nb_segs = 1;
 	mbuf->ol_flags = 0;
 	mbuf->next = NULL;
@@ -379,7 +381,7 @@ uint16_t dpaa_eth_queue_rx(void *q,
 {
 	struct qman_fq *fq = q;
 	struct qm_dqrr_entry *dq;
-	uint32_t num_rx = 0;
+	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
 	int ret;
 
 	if (unlikely(!RTE_PER_LCORE(_dpaa_io))) {
@@ -398,7 +400,7 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		dq = qman_dequeue(fq);
 		if (!dq)
 			continue;
-		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(fq, &dq->fd);
+		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(&dq->fd, ifid);
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
 

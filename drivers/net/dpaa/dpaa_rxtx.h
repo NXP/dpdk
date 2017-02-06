@@ -124,6 +124,14 @@
 #define DPAA_PKT_TYPE_IPV6_UDP		0x0040004000800000
 #define DPAA_PKT_TYPE_IPV4_SCTP	0x0080008000800000
 #define DPAA_PKT_TYPE_IPV6_SCTP	0x0080004000800000
+#define DPAA_PKT_L3_LEN_SHIFT	7
+ 
+/* FD structure masks and offset */
+#define DPAA_FD_FORMAT_MASK 0xE0000000
+#define DPAA_FD_OFFSET_MASK 0x1FF00000
+#define DPAA_FD_LENGTH_MASK 0xFFFFF
+#define DPAA_FD_FORMAT_SHIFT 29
+#define DPAA_FD_OFFSET_SHIFT 20
 
 
 /**
@@ -209,6 +217,6 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		struct qm_fd *fd,
 		uint32_t bpid);
 
-struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qman_fq *fq, struct qm_fd *fd);
+struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid);
 
 #endif
