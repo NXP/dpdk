@@ -38,89 +38,90 @@
 #define DPNI_VER_MINOR				0
 
 /* Command IDs */
-#define DPNI_CMDID_OPEN                                ((0x801 << 4) | (0x1))
-#define DPNI_CMDID_CLOSE                               ((0x800 << 4) | (0x1))
-#define DPNI_CMDID_CREATE                              ((0x901 << 4) | (0x1))
-#define DPNI_CMDID_DESTROY                             ((0x981 << 4) | (0x1))
-#define DPNI_CMDID_GET_API_VERSION                     ((0xa01 << 4) | (0x1))
+#define DPNI_CMDID_OPEN                                0x8011
+#define DPNI_CMDID_CLOSE                               0x8001
+#define DPNI_CMDID_CREATE                              0x9011
+#define DPNI_CMDID_DESTROY                             0x9811
+#define DPNI_CMDID_GET_API_VERSION                     0xa011
 
-#define DPNI_CMDID_ENABLE                              ((0x002 << 4) | (0x1))
-#define DPNI_CMDID_DISABLE                             ((0x003 << 4) | (0x1))
-#define DPNI_CMDID_GET_ATTR                            ((0x004 << 4) | (0x1))
-#define DPNI_CMDID_RESET                               ((0x005 << 4) | (0x1))
-#define DPNI_CMDID_IS_ENABLED                          ((0x006 << 4) | (0x1))
+#define DPNI_CMDID_ENABLE                              0x0021
+#define DPNI_CMDID_DISABLE                             0x0031
+#define DPNI_CMDID_GET_ATTR                            0x0041
+#define DPNI_CMDID_RESET                               0x0051
+#define DPNI_CMDID_IS_ENABLED                          0x0061
 
-#define DPNI_CMDID_SET_IRQ                             ((0x010 << 4) | (0x1))
-#define DPNI_CMDID_GET_IRQ                             ((0x011 << 4) | (0x1))
-#define DPNI_CMDID_SET_IRQ_ENABLE                      ((0x012 << 4) | (0x1))
-#define DPNI_CMDID_GET_IRQ_ENABLE                      ((0x013 << 4) | (0x1))
-#define DPNI_CMDID_SET_IRQ_MASK                        ((0x014 << 4) | (0x1))
-#define DPNI_CMDID_GET_IRQ_MASK                        ((0x015 << 4) | (0x1))
-#define DPNI_CMDID_GET_IRQ_STATUS                      ((0x016 << 4) | (0x1))
-#define DPNI_CMDID_CLEAR_IRQ_STATUS                    ((0x017 << 4) | (0x1))
+#define DPNI_CMDID_SET_IRQ_ENABLE                      0x0121
+#define DPNI_CMDID_GET_IRQ_ENABLE                      0x0131
+#define DPNI_CMDID_SET_IRQ_MASK                        0x0141
+#define DPNI_CMDID_GET_IRQ_MASK                        0x0151
+#define DPNI_CMDID_GET_IRQ_STATUS                      0x0161
+#define DPNI_CMDID_CLEAR_IRQ_STATUS                    0x0171
 
-#define DPNI_CMDID_SET_POOLS                           ((0x200 << 4) | (0x1))
-#define DPNI_CMDID_SET_ERRORS_BEHAVIOR                 ((0x20B << 4) | (0x1))
+#define DPNI_CMDID_SET_POOLS                           0x2001
+#define DPNI_CMDID_SET_ERRORS_BEHAVIOR                 0x20b1
 
-#define DPNI_CMDID_GET_QDID                            ((0x210 << 4) | (0x1))
-#define DPNI_CMDID_GET_SP_INFO                         ((0x211 << 4) | (0x1))
-#define DPNI_CMDID_GET_TX_DATA_OFFSET                  ((0x212 << 4) | (0x1))
-#define DPNI_CMDID_GET_LINK_STATE                      ((0x215 << 4) | (0x1))
-#define DPNI_CMDID_SET_MAX_FRAME_LENGTH                ((0x216 << 4) | (0x1))
-#define DPNI_CMDID_GET_MAX_FRAME_LENGTH                ((0x217 << 4) | (0x1))
-#define DPNI_CMDID_SET_LINK_CFG                        ((0x21A << 4) | (0x1))
-#define DPNI_CMDID_SET_TX_SHAPING                      ((0x21B << 4) | (0x1))
+#define DPNI_CMDID_GET_QDID                            0x2101
+#define DPNI_CMDID_GET_SP_INFO                         0x2111
+#define DPNI_CMDID_GET_TX_DATA_OFFSET                  0x2121
+#define DPNI_CMDID_GET_LINK_STATE                      0x2151
+#define DPNI_CMDID_SET_MAX_FRAME_LENGTH                0x2161
+#define DPNI_CMDID_GET_MAX_FRAME_LENGTH                0x2171
+#define DPNI_CMDID_SET_LINK_CFG                        0x21a1
+#define DPNI_CMDID_SET_TX_SHAPING                      0x21b1
 
-#define DPNI_CMDID_SET_MCAST_PROMISC                   ((0x220 << 4) | (0x1))
-#define DPNI_CMDID_GET_MCAST_PROMISC                   ((0x221 << 4) | (0x1))
-#define DPNI_CMDID_SET_UNICAST_PROMISC                 ((0x222 << 4) | (0x1))
-#define DPNI_CMDID_GET_UNICAST_PROMISC                 ((0x223 << 4) | (0x1))
-#define DPNI_CMDID_SET_PRIM_MAC                        ((0x224 << 4) | (0x1))
-#define DPNI_CMDID_GET_PRIM_MAC                        ((0x225 << 4) | (0x1))
-#define DPNI_CMDID_ADD_MAC_ADDR                        ((0x226 << 4) | (0x1))
-#define DPNI_CMDID_REMOVE_MAC_ADDR                     ((0x227 << 4) | (0x1))
-#define DPNI_CMDID_CLR_MAC_FILTERS                     ((0x228 << 4) | (0x1))
+#define DPNI_CMDID_SET_MCAST_PROMISC                   0x2201
+#define DPNI_CMDID_GET_MCAST_PROMISC                   0x2211
+#define DPNI_CMDID_SET_UNICAST_PROMISC                 0x2221
+#define DPNI_CMDID_GET_UNICAST_PROMISC                 0x2231
+#define DPNI_CMDID_SET_PRIM_MAC                        0x2241
+#define DPNI_CMDID_GET_PRIM_MAC                        0x2251
+#define DPNI_CMDID_ADD_MAC_ADDR                        0x2261
+#define DPNI_CMDID_REMOVE_MAC_ADDR                     0x2271
+#define DPNI_CMDID_CLR_MAC_FILTERS                     0x2281
 
-#define DPNI_CMDID_ENABLE_VLAN_FILTER                  ((0x230 << 4) | (0x1))
-#define DPNI_CMDID_ADD_VLAN_ID                         ((0x231 << 4) | (0x1))
-#define DPNI_CMDID_REMOVE_VLAN_ID                      ((0x232 << 4) | (0x1))
-#define DPNI_CMDID_CLR_VLAN_FILTERS                    ((0x233 << 4) | (0x1))
+#define DPNI_CMDID_ENABLE_VLAN_FILTER                  0x2301
+#define DPNI_CMDID_ADD_VLAN_ID                         0x2311
+#define DPNI_CMDID_REMOVE_VLAN_ID                      0x2321
+#define DPNI_CMDID_CLR_VLAN_FILTERS                    0x2331
 
-#define DPNI_CMDID_SET_RX_TC_DIST                      ((0x235 << 4) | (0x1))
+#define DPNI_CMDID_SET_RX_TC_DIST                      0x2351
 
-#define DPNI_CMDID_SET_RX_TC_POLICING                  ((0x23E << 4) | (0x1))
+#define DPNI_CMDID_SET_RX_TC_POLICING                  0x23e1
 
-#define DPNI_CMDID_SET_QOS_TBL                         ((0x240 << 4) | (0x1))
-#define DPNI_CMDID_ADD_QOS_ENT                         ((0x241 << 4) | (0x1))
-#define DPNI_CMDID_REMOVE_QOS_ENT                      ((0x242 << 4) | (0x1))
-#define DPNI_CMDID_CLR_QOS_TBL                         ((0x243 << 4) | (0x1))
-#define DPNI_CMDID_ADD_FS_ENT                          ((0x244 << 4) | (0x1))
-#define DPNI_CMDID_REMOVE_FS_ENT                       ((0x245 << 4) | (0x1))
-#define DPNI_CMDID_CLR_FS_ENT                          ((0x246 << 4) | (0x1))
+#define DPNI_CMDID_SET_QOS_TBL                         0x2401
+#define DPNI_CMDID_ADD_QOS_ENT                         0x2411
+#define DPNI_CMDID_REMOVE_QOS_ENT                      0x2421
+#define DPNI_CMDID_CLR_QOS_TBL                         0x2431
+#define DPNI_CMDID_ADD_FS_ENT                          0x2441
+#define DPNI_CMDID_REMOVE_FS_ENT                       0x2451
+#define DPNI_CMDID_CLR_FS_ENT                          0x2461
 
-#define DPNI_CMDID_SET_TX_PRIORITIES                   ((0x250 << 4) | (0x1))
-#define DPNI_CMDID_GET_RX_TC_POLICING                  ((0x251 << 4) | (0x1))
+#define DPNI_CMDID_SET_TX_PRIORITIES                   0x2501
+#define DPNI_CMDID_GET_RX_TC_POLICING                  0x2511
 
-#define DPNI_CMDID_GET_STATISTICS                      ((0x25D << 4) | (0x1))
-#define DPNI_CMDID_RESET_STATISTICS                    ((0x25E << 4) | (0x1))
-#define DPNI_CMDID_GET_QUEUE                           ((0x25F << 4) | (0x1))
-#define DPNI_CMDID_SET_QUEUE                           ((0x260 << 4) | (0x1))
-#define DPNI_CMDID_GET_TAILDROP                        ((0x261 << 4) | (0x1))
-#define DPNI_CMDID_SET_TAILDROP                        ((0x262 << 4) | (0x1))
+#define DPNI_CMDID_GET_STATISTICS                      0x25d1
+#define DPNI_CMDID_RESET_STATISTICS                    0x25e1
+#define DPNI_CMDID_GET_QUEUE                           0x25f1
+#define DPNI_CMDID_SET_QUEUE                           0x2601
+#define DPNI_CMDID_GET_TAILDROP                        0x2611
+#define DPNI_CMDID_SET_TAILDROP                        0x2621
 
-#define DPNI_CMDID_GET_PORT_MAC_ADDR                   ((0x263 << 4) | (0x1))
+#define DPNI_CMDID_GET_PORT_MAC_ADDR                   0x2631
 
-#define DPNI_CMDID_GET_BUFFER_LAYOUT                   ((0x264 << 4) | (0x1))
-#define DPNI_CMDID_SET_BUFFER_LAYOUT                   ((0x265 << 4) | (0x1))
+#define DPNI_CMDID_GET_BUFFER_LAYOUT                   0x2641
+#define DPNI_CMDID_SET_BUFFER_LAYOUT                   0x2651
 
-#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION         ((0x267 << 4) | (0x1))
-#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION         ((0x268 << 4) | (0x1))
-#define DPNI_CMDID_SET_EARLY_DROP                      ((0x269 << 4) | (0x1))
-#define DPNI_CMDID_GET_EARLY_DROP                      ((0x26A << 4) | (0x1))
-#define DPNI_CMDID_GET_OFFLOAD                         ((0x26B << 4) | (0x1))
-#define DPNI_CMDID_SET_OFFLOAD                         ((0x26C << 4) | (0x1))
-#define DPNI_CMDID_SET_TX_CONFIRMATION_MODE            ((0x266 << 4) | (0x1))
-#define DPNI_CMDID_GET_TX_CONFIRMATION_MODE            ((0x26D << 4) | (0x1))
+#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION         0x2671
+#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION         0x2681
+#define DPNI_CMDID_SET_EARLY_DROP                      0x2691
+#define DPNI_CMDID_GET_EARLY_DROP                      0x26a1
+#define DPNI_CMDID_GET_OFFLOAD                         0x26b1
+#define DPNI_CMDID_SET_OFFLOAD                         0x26c1
+#define DPNI_CMDID_SET_TX_CONFIRMATION_MODE            0x2661
+#define DPNI_CMDID_GET_TX_CONFIRMATION_MODE            0x26d1
+
+#define DPNI_CMDID_SET_OPR                             0x26e1
+#define DPNI_CMDID_GET_OPR                             0x26f1
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPNI_CMD_OPEN(cmd, dpni_id) \
@@ -173,28 +174,6 @@ do { \
 	MC_RSP_OP(cmd, 0, 0,  1,  int,	    en)
 
 /*                cmd, param, offset, width, type, arg_name */
-#define DPNI_CMD_SET_IRQ(cmd, irq_index, irq_cfg) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  32, uint32_t, irq_cfg->val); \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index); \
-	MC_CMD_OP(cmd, 1, 0,  64, uint64_t, irq_cfg->addr); \
-	MC_CMD_OP(cmd, 2, 0,  32, int,	    irq_cfg->irq_num); \
-} while (0)
-
-/*                cmd, param, offset, width, type, arg_name */
-#define DPNI_CMD_GET_IRQ(cmd, irq_index) \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index)
-
-/*                cmd, param, offset, width, type, arg_name */
-#define DPNI_RSP_GET_IRQ(cmd, type, irq_cfg) \
-do { \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, irq_cfg->val); \
-	MC_RSP_OP(cmd, 1, 0,  64, uint64_t, irq_cfg->addr); \
-	MC_RSP_OP(cmd, 2, 0,  32, int,      irq_cfg->irq_num); \
-	MC_RSP_OP(cmd, 2, 32, 32, int,	    type); \
-} while (0)
-
-/*                cmd, param, offset, width, type, arg_name */
 #define DPNI_CMD_SET_IRQ_ENABLE(cmd, irq_index, en) \
 do { \
 	MC_CMD_OP(cmd, 0, 0,  8,  uint8_t,  en); \
@@ -244,13 +223,13 @@ do { \
 
 /* DPNI_CMD_GET_ATTR is not used, no input parameters */
 
-#define DPNI_RSP_GET_ATTR(cmd, attr) \
+#define DPNI_RSP_GET_ATTRIBUTES(cmd, attr) \
 do { \
 	MC_RSP_OP(cmd, 0,  0, 32, uint32_t, (attr)->options); \
 	MC_RSP_OP(cmd, 0, 32,  8, uint8_t,  (attr)->num_queues); \
 	MC_RSP_OP(cmd, 0, 40,  8, uint8_t,  (attr)->num_tcs); \
 	MC_RSP_OP(cmd, 0, 48,  8, uint8_t,  (attr)->mac_filter_entries); \
-	MC_RSP_OP(cmd, 1,  0,  8, uint8_t, (attr)->vlan_filter_entries); \
+	MC_RSP_OP(cmd, 1,  0,  8, uint8_t,  (attr)->vlan_filter_entries); \
 	MC_RSP_OP(cmd, 1, 16,  8, uint8_t,  (attr)->qos_entries); \
 	MC_RSP_OP(cmd, 1, 32, 16, uint16_t, (attr)->fs_entries); \
 	MC_RSP_OP(cmd, 2,  0,  8, uint8_t,  (attr)->qos_key_size); \
@@ -720,7 +699,7 @@ do { \
 	MC_CMD_OP(cmd, 0,  0,  8, enum dpni_queue_type, qtype); \
 	MC_CMD_OP(cmd, 0,  8,  8, uint8_t, tc); \
 	MC_CMD_OP(cmd, 1,  0, 32, uint32_t, (cfg)->dest_cfg.dest_id); \
-	MC_CMD_OP(cmd, 1,  0, 16, uint16_t, (cfg)->notification_mode); \
+	MC_CMD_OP(cmd, 1, 32, 16, uint16_t, (cfg)->notification_mode); \
 	MC_CMD_OP(cmd, 1, 48,  8, uint8_t, (cfg)->dest_cfg.priority); \
 	MC_CMD_OP(cmd, 1, 56,  4, enum dpni_dest, (cfg)->dest_cfg.dest_type); \
 	MC_CMD_OP(cmd, 1, 60,  2, enum dpni_congestion_unit, (cfg)->units); \
@@ -747,6 +726,48 @@ do { \
 	MC_RSP_OP(cmd, 3,  0, 64, uint64_t, (cfg)->message_ctx); \
 	MC_RSP_OP(cmd, 4,  0, 32, uint32_t, (cfg)->threshold_entry); \
 	MC_RSP_OP(cmd, 4, 32, 32, uint32_t, (cfg)->threshold_exit); \
+} while (0)
+
+/*            cmd, param, offset, width, type, arg_name */
+#define DPNI_CMD_SET_OPR(cmd, tc_id, index, options, cfg) \
+do { \
+	MC_CMD_OP(cmd, 0, 8,  8, uint8_t, tc_id); \
+	MC_CMD_OP(cmd, 0, 16,  8, uint8_t, index); \
+	MC_CMD_OP(cmd, 0, 24,  8, uint8_t, options); \
+	MC_CMD_OP(cmd, 1, 24, 8, uint8_t, (cfg)->oloe);\
+	MC_CMD_OP(cmd, 1, 32, 8, uint8_t, (cfg)->oeane); \
+	MC_CMD_OP(cmd, 1, 40, 8, uint8_t, (cfg)->olws); \
+	MC_CMD_OP(cmd, 1, 48, 8, uint8_t, (cfg)->oa); \
+	MC_CMD_OP(cmd, 1, 56, 8, uint8_t, (cfg)->oprrws); \
+} while (0)
+
+/*                cmd, param, offset, width, type, arg_name */
+#define DPNI_CMD_GET_OPR(cmd, tc_id, index) \
+do { \
+	MC_CMD_OP(cmd, 0, 8, 8, uint8_t, tc_id); \
+	MC_CMD_OP(cmd, 0, 16, 8, uint8_t, index); \
+} while (0)
+
+/*                cmd, param, offset, width, type, arg_name */
+#define DPNI_RSP_GET_OPR(cmd, cfg, qry) \
+do { \
+	MC_RSP_OP(cmd, 1,  0,  1, char, (qry)->rip); \
+	MC_RSP_OP(cmd, 1,  1,  1, char, (qry)->enable); \
+	MC_RSP_OP(cmd, 1, 24, 8, uint8_t, (cfg)->oloe);\
+	MC_RSP_OP(cmd, 1, 32, 8, uint8_t, (cfg)->oeane); \
+	MC_RSP_OP(cmd, 1, 40, 8, uint8_t, (cfg)->olws); \
+	MC_RSP_OP(cmd, 1, 48, 8, uint8_t, (cfg)->oa); \
+	MC_RSP_OP(cmd, 1, 56, 8, uint8_t, (cfg)->oprrws); \
+	MC_RSP_OP(cmd, 2, 0, 16, uint16_t, (qry)->nesn); \
+	MC_RSP_OP(cmd, 2, 32, 16, uint16_t, (qry)->ndsn); \
+	MC_RSP_OP(cmd, 3, 0, 16, uint16_t, (qry)->ea_tseq); \
+	MC_RSP_OP(cmd, 3, 16, 1, char, (qry)->tseq_nlis); \
+	MC_RSP_OP(cmd, 3, 32, 16, uint16_t, (qry)->ea_hseq); \
+	MC_RSP_OP(cmd, 3, 48, 1, char, (qry)->hseq_nlis); \
+	MC_RSP_OP(cmd, 4, 0, 16, uint16_t, (qry)->ea_hptr); \
+	MC_RSP_OP(cmd, 4, 32, 16, uint16_t, (qry)->ea_tptr); \
+	MC_RSP_OP(cmd, 5, 0, 16, uint16_t, (qry)->opr_vid); \
+	MC_RSP_OP(cmd, 5, 32, 16, uint16_t, (qry)->opr_id); \
 } while (0)
 
 #endif /* _FSL_DPNI_CMD_H */

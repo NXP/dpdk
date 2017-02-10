@@ -736,7 +736,7 @@ dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 	memset(&fd, 0, sizeof(struct qm_fd));
 	qm_fd_addr_set64(&fd, dpaa_mem_vtop(cf->sg));
 	fd._format1 = qm_fd_compound;
-	fd.length29 = sizeof(2 * sizeof(struct qm_sg_entry));
+	fd.length29 = 2 * sizeof(struct qm_sg_entry);
 	/* Auth_only_len is set as 0 in descriptor and it is overwritten
 	   here in the fd.cmd which will update the DPOVRD reg. */
 	if (auth_only_len)
@@ -1049,11 +1049,8 @@ void dpaa_sec_stats_reset(struct rte_cryptodev *dev __rte_unused)
 static int
 dpaa_sec_dev_uninit(__attribute__((unused))
 		  const struct rte_cryptodev_driver *crypto_drv,
-		  struct rte_cryptodev *dev)
+		  struct rte_cryptodev *dev __rte_unused)
 {
-	if (dev->data->name == NULL)
-		return -EINVAL;
-
 	PMD_DRV_LOG(INFO, "Closing dpaa crypto device %s\n", dev->data->name);
 
 	return 0;

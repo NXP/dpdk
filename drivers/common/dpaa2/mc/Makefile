@@ -48,6 +48,7 @@ LIBABIVER := 1
 SRCS-y += \
 	dpbp.c \
 	dpio.c \
+	dpkg.c \
 	dpni.c \
 	dpseci.c \
 	mc_sys.c

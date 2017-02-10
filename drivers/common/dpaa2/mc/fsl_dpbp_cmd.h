@@ -38,29 +38,29 @@
 #define DPBP_VER_MINOR				2
 
 /* Command IDs */
-#define DPBP_CMDID_CLOSE                        ((0x800 << 4) | (0x1))
-#define DPBP_CMDID_OPEN                         ((0x804 << 4) | (0x1))
-#define DPBP_CMDID_CREATE                       ((0x904 << 4) | (0x1))
-#define DPBP_CMDID_DESTROY                      ((0x984 << 4) | (0x1))
-#define DPBP_CMDID_GET_API_VERSION              ((0xa04 << 4) | (0x1))
+#define DPBP_CMDID_CLOSE                        0x8001
+#define DPBP_CMDID_OPEN                         0x8041
+#define DPBP_CMDID_CREATE                       0x9041
+#define DPBP_CMDID_DESTROY                      0x9841
+#define DPBP_CMDID_GET_API_VERSION              0xa041
 
-#define DPBP_CMDID_ENABLE                       ((0x002 << 4) | (0x1))
-#define DPBP_CMDID_DISABLE                      ((0x003 << 4) | (0x1))
-#define DPBP_CMDID_GET_ATTR                     ((0x004 << 4) | (0x1))
-#define DPBP_CMDID_RESET                        ((0x005 << 4) | (0x1))
-#define DPBP_CMDID_IS_ENABLED                   ((0x006 << 4) | (0x1))
+#define DPBP_CMDID_ENABLE                       0x0021
+#define DPBP_CMDID_DISABLE                      0x0031
+#define DPBP_CMDID_GET_ATTR                     0x0041
+#define DPBP_CMDID_RESET                        0x0051
+#define DPBP_CMDID_IS_ENABLED                   0x0061
 
-#define DPBP_CMDID_SET_IRQ                      ((0x010 << 4) | (0x1))
-#define DPBP_CMDID_GET_IRQ                      ((0x011 << 4) | (0x1))
-#define DPBP_CMDID_SET_IRQ_ENABLE               ((0x012 << 4) | (0x1))
-#define DPBP_CMDID_GET_IRQ_ENABLE               ((0x013 << 4) | (0x1))
-#define DPBP_CMDID_SET_IRQ_MASK                 ((0x014 << 4) | (0x1))
-#define DPBP_CMDID_GET_IRQ_MASK                 ((0x015 << 4) | (0x1))
-#define DPBP_CMDID_GET_IRQ_STATUS               ((0x016 << 4) | (0x1))
-#define DPBP_CMDID_CLEAR_IRQ_STATUS             ((0x017 << 4) | (0x1))
+#define DPBP_CMDID_SET_IRQ_ENABLE               0x0121
+#define DPBP_CMDID_GET_IRQ_ENABLE               0x0131
+#define DPBP_CMDID_SET_IRQ_MASK                 0x0141
+#define DPBP_CMDID_GET_IRQ_MASK                 0x0151
+#define DPBP_CMDID_GET_IRQ_STATUS               0x0161
+#define DPBP_CMDID_CLEAR_IRQ_STATUS             0x0171
 
-#define DPBP_CMDID_SET_NOTIFICATIONS            ((0x01b0 << 4) | (0x1))
-#define DPBP_CMDID_GET_NOTIFICATIONS            ((0x01b1 << 4) | (0x1))
+#define DPBP_CMDID_SET_NOTIFICATIONS            0x1b01
+#define DPBP_CMDID_GET_NOTIFICATIONS            0x1b11
+
+#define DPBP_CMDID_GET_FREE_BUFFERS_NUM         0x1b21
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPBP_CMD_OPEN(cmd, dpbp_id) \
@@ -69,28 +69,6 @@
 /*                cmd, param, offset, width, type, arg_name */
 #define DPBP_RSP_IS_ENABLED(cmd, en) \
 	MC_RSP_OP(cmd, 0, 0,  1,  int,	    en)
-
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_SET_IRQ(cmd, irq_index, irq_cfg) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  8,  uint8_t,  irq_index);\
-	MC_CMD_OP(cmd, 0, 32, 32, uint32_t, irq_cfg->val);\
-	MC_CMD_OP(cmd, 1, 0,  64, uint64_t, irq_cfg->addr); \
-	MC_CMD_OP(cmd, 2, 0,  32, int,	    irq_cfg->irq_num); \
-} while (0)
-
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_GET_IRQ(cmd, irq_index) \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index)
-
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_GET_IRQ(cmd, type, irq_cfg) \
-do { \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, irq_cfg->val); \
-	MC_RSP_OP(cmd, 1, 0,  64, uint64_t, irq_cfg->addr); \
-	MC_RSP_OP(cmd, 2, 0,  32, int,	    irq_cfg->irq_num); \
-	MC_RSP_OP(cmd, 2, 32, 32, int,	    type); \
-} while (0)
 
 /*                cmd, param, offset, width, type, arg_name */
 #define DPBP_CMD_SET_IRQ_ENABLE(cmd, irq_index, en) \
@@ -142,8 +120,8 @@ do { \
 /*                cmd, param, offset, width, type,	arg_name */
 #define DPBP_RSP_GET_ATTRIBUTES(cmd, attr) \
 do { \
-	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, attr->bpid); \
-	MC_RSP_OP(cmd, 0, 32, 32, int,	    attr->id);\
+	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, (attr)->bpid); \
+	MC_RSP_OP(cmd, 0, 32, 32, int,	    (attr)->id);\
 } while (0)
 
 /*                cmd, param, offset, width, type, arg_name */
@@ -176,5 +154,9 @@ do { \
 	MC_RSP_OP(cmd, 0, 0,  16, uint16_t, major);\
 	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, minor);\
 } while (0)
+
+/*                cmd, param, offset, width, type, arg_name */
+#define DPBP_RSP_GET_NUM_FREE_BUFS(cmd, num_free_bufs) \
+	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, num_free_bufs)
 
 #endif /* _FSL_DPBP_CMD_H */

@@ -174,4 +174,17 @@ struct dpkg_profile_cfg {
 	struct dpkg_extract extracts[DPKG_MAX_NUM_OF_EXTRACTS];
 };
 
+/**
+ * dpkg_prepare_key_cfg() - function prepare extract parameters
+ * @cfg: defining a full Key Generation profile (rule)
+ * @key_cfg_buf: Zeroed 256 bytes of memory before mapping it to DMA
+ *
+ * This function has to be called before the following functions:
+ *	- dpni_set_rx_tc_dist()
+ *	- dpni_set_qos_table()
+ *	- dpkg_prepare_key_cfg()
+ */
+int dpkg_prepare_key_cfg(const struct dpkg_profile_cfg	*cfg,
+			 uint8_t *key_cfg_buf);
+
 #endif /* __FSL_DPKG_H_ */

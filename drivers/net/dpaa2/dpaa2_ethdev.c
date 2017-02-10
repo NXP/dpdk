@@ -239,7 +239,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->dev = dev;
-		mc_q->flow_id = DPNI_NEW_FLOW_ID;
+		mc_q->flow_id = 0xffff;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
 		dpaa2_q->cscn = rte_malloc(NULL,
@@ -422,7 +422,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	PMD_INIT_FUNC_TRACE();
 
 	/* Return if queue already configured */
-	if (dpaa2_q->flow_id != DPNI_NEW_FLOW_ID)
+	if (dpaa2_q->flow_id != 0xffff)
 		return 0;
 
 	memset(&tx_conf_cfg, 0, sizeof(struct dpni_queue));
@@ -1342,6 +1342,51 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 };
 
 static int
+dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	int i;
+	struct dpaa2_queue *dpaa2_q;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return -EPERM;
+
+	if (!dpni) {
+		PMD_INIT_LOG(WARNING, "Already closed or not started");
+		return -1;
+	}
+
+	dpaa2_dev_close(eth_dev);
+
+	if (priv->rx_vq[0]) {
+		/* cleaning up queue storage */
+		for (i = 0; i < priv->nb_rx_queues; i++) {
+			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
+			if (dpaa2_q->q_storage)
+				rte_free(dpaa2_q->q_storage);
+		}
+		/*free the all queue memory */
+		rte_free(priv->rx_vq[0]);
+		priv->rx_vq[0] = NULL;
+	}
+
+	/* free memory for storing MAC addresses */
+	if (eth_dev->data->mac_addrs) {
+		rte_free(eth_dev->data->mac_addrs);
+		eth_dev->data->mac_addrs = NULL;
+	}
+
+	eth_dev->dev_ops = NULL;
+	eth_dev->rx_pkt_burst = NULL;
+	eth_dev->tx_pkt_burst = NULL;
+
+	return 0;
+}
+
+static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 {
 	struct rte_pci_device *pci_dev;
@@ -1349,7 +1394,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpni_attr attr;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
-	int i, ret, hw_id;
+	int i, ret = -1, hw_id;
 	int tot_size;
 
 	PMD_INIT_FUNC_TRACE();
@@ -1368,12 +1413,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(ERR, "malloc failed for dpni device\n");
 		return -1;
 	}
+	priv->hw = dpni_dev;
 
 	dpni_dev->regs = mcp_ptr_list[0];
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure in opening dpni@%d device with"
 			" error code %d\n", hw_id, ret);
+		free(dpni_dev);
 		return -1;
 	}
 
@@ -1382,14 +1429,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure cleaning dpni@%d device with"
 			" error code %d\n", hw_id, ret);
-		return -1;
+		goto init_err;
 	}
 
 	ret = dpni_get_attributes(dpni_dev, CMD_PRI_LOW, priv->token, &attr);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure in getting dpni@%d attribute, "
 			" error code %d\n", hw_id, ret);
-		return -1;
+		goto init_err;
 	}
 
 	priv->num_tc = attr.num_tcs;
@@ -1414,7 +1461,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->nb_rx_queues = priv->nb_rx_queues;
 	eth_dev->data->nb_tx_queues = priv->nb_tx_queues;
 
-	priv->hw = dpni_dev;
 	priv->hw_id = hw_id;
 	priv->options = attr.options;
 
@@ -1445,7 +1491,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "dpaa2_alloc_rx_tx_queuesFailed\n");
-		return -ret;
+		goto init_err;
 	}
 
 	/* Allocate memory for storing MAC addresses */
@@ -1455,7 +1501,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(ERR, "Failed to allocate %d bytes needed to "
 						"store MAC addresses",
 				ETHER_ADDR_LEN * attr.mac_filter_entries);
-		return -ENOMEM;
+		goto init_err;
 	}
 
 	ret = dpni_get_primary_mac_addr(dpni_dev, CMD_PRI_LOW,
@@ -1464,7 +1510,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret) {
 		PMD_INIT_LOG(ERR, "DPNI get mac address failed:"
 					" Error Code = %d\n", ret);
-		return -ret;
+		goto init_err;
 	}
 
 	/* ... rx buffer layout ... */
@@ -1489,7 +1535,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 				     DPNI_QUEUE_RX, &layout);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Err(%d) in setting rx buffer layout", ret);
-		return -1;
+		goto init_err;
 	}
 
 	/* ... tx buffer layout ... */
@@ -1501,7 +1547,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error (%d) in setting tx buffer"
 				  " layout", ret);
-		return -1;
+		goto init_err;
 	}
 
 	/* ... tx-conf and error buffer layout ... */
@@ -1513,7 +1559,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error (%d) in setting tx-conf buffer"
 				  " layout", ret);
-		return -1;
+		goto init_err;
 	}
 
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
@@ -1531,62 +1577,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	return 0;
-}
-
-static int
-dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
-{
-	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	int i, ret;
-	struct dpaa2_queue *dpaa2_q;
-
-	PMD_INIT_FUNC_TRACE();
-
-	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
-		return -EPERM;
-
-	if (!dpni) {
-		PMD_INIT_LOG(WARNING, "Already closed or not started");
-		return -1;
-	}
-
-	dpaa2_dev_close(eth_dev);
-
-	if (priv->rx_vq[0]) {
-		/* cleaning up queue storage */
-		for (i = 0; i < priv->nb_rx_queues; i++) {
-			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
-			if (dpaa2_q->q_storage)
-				rte_free(dpaa2_q->q_storage);
-		}
-		/*free the all queue memory */
-		rte_free(priv->rx_vq[0]);
-		priv->rx_vq[0] = NULL;
-	}
-
-	/* Allocate memory for storing MAC addresses */
-	if (eth_dev->data->mac_addrs) {
-		rte_free(eth_dev->data->mac_addrs);
-		eth_dev->data->mac_addrs = NULL;
-	}
-
-	/*Close the device at underlying layer*/
-	ret = dpni_close(dpni, CMD_PRI_LOW, priv->token);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Failure closing dpni device with"
-			" error code %d\n", ret);
-	}
-
-	/*Free the allocated memory for ethernet private data and dpni*/
-	priv->hw = NULL;
-	free(dpni);
-
-	eth_dev->dev_ops = NULL;
-	eth_dev->rx_pkt_burst = NULL;
-	eth_dev->tx_pkt_burst = NULL;
-
-	return 0;
+init_err:
+	dpaa2_dev_uninit(eth_dev);
+	return ret;
 }
 
 static struct rte_pci_id pci_id_dpaa2_map[] = {

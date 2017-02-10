@@ -95,6 +95,8 @@ dpaa2_create_dpbp_device(
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure cleaning dpbp device with"
 					" error code %d\n", ret);
+		dpbp_close(&dpbp_node->dpbp, CMD_PRI_LOW, dpbp_node->token);
+		free(dpbp_node);
 		return -1;
 	}
 

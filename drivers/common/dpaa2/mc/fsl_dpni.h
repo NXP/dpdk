@@ -34,6 +34,7 @@
 #define __FSL_DPNI_H
 
 #include <fsl_dpkg.h>
+#include <fsl_dpopr.h>
 
 struct fsl_mc_io;
 
@@ -65,10 +66,7 @@ struct fsl_mc_io;
  * All flows within traffic class considered; see dpni_set_queue()
  */
 #define DPNI_ALL_TC_FLOWS			(uint16_t)(-1)
-/**
- * Generate new flow ID; see dpni_set_queue()
- */
-#define DPNI_NEW_FLOW_ID			(uint16_t)(-1)
+
 /**
  * Tx traffic is always released to a buffer pool on transmit, there are no
  * resources allocated to have the frames confirmed back to the source after
@@ -105,6 +103,16 @@ struct fsl_mc_io;
  * Disables the flow steering table.
  */
 #define DPNI_OPT_NO_FS				0x000020
+
+/**
+ * Enable the Order Restoration support
+ */
+#define DPNI_OPT_HAS_OPR				0x000040
+
+/**
+ * Order Point Records are shared for the entire TC
+ */
+#define DPNI_OPT_OPR_PER_TC				0x000080
 
 /**
  * dpni_open() - Open a control session for the specified object
@@ -361,53 +369,6 @@ int dpni_reset(struct fsl_mc_io	*mc_io,
  * IRQ event - indicates a change in link state
  */
 #define DPNI_IRQ_EVENT_LINK_CHANGED		0x00000001
-
-/**
- * struct dpni_irq_cfg - IRQ configuration
- * @addr:	Address that must be written to signal a message-based interrupt
- * @val:	Value to write into irq_addr address
- * @irq_num: A user defined number associated with this IRQ
- */
-struct dpni_irq_cfg {
-	     uint64_t		addr;
-	     uint32_t		val;
-	     int		irq_num;
-};
-
-/**
- * dpni_set_irq() - Set IRQ information for the DPNI to trigger an interrupt.
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPNI object
- * @irq_index:	Identifies the interrupt index to configure
- * @irq_cfg:	IRQ configuration
- *
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpni_set_irq(struct fsl_mc_io	*mc_io,
-		 uint32_t		cmd_flags,
-		 uint16_t		token,
-		 uint8_t		irq_index,
-		 struct dpni_irq_cfg	*irq_cfg);
-
-/**
- * dpni_get_irq() - Get IRQ information from the DPNI.
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPNI object
- * @irq_index:	The interrupt index to configure
- * @type:	Interrupt type: 0 represents message interrupt
- *		type (both irq_addr and irq_val are valid)
- * @irq_cfg:	IRQ attributes
- *
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpni_get_irq(struct fsl_mc_io	*mc_io,
-		 uint32_t		cmd_flags,
-		 uint16_t		token,
-		 uint8_t		irq_index,
-		 int			*type,
-		 struct dpni_irq_cfg	*irq_cfg);
 
 /**
  * dpni_set_irq_enable() - Set overall interrupt state.
@@ -819,7 +780,7 @@ int dpni_get_offload(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @qtype:	Type of queue to get QDID for.  For applications lookig to
- *		transmit traffic this should be set to DPNI_QUEUE_TX
+ * 		transmit traffic this should be set to DPNI_QUEUE_TX
  * @qdid:	Returned virtual QDID value that should be used as an argument
  *			in all enqueue operations
  *
@@ -1369,18 +1330,6 @@ struct dpni_fs_tbl_cfg {
 };
 
 /**
- * dpni_prepare_key_cfg() - function prepare extract parameters
- * @cfg: defining a full Key Generation profile (rule)
- * @key_cfg_buf: Zeroed 256 bytes of memory before mapping it to DMA
- *
- * This function has to be called before the following functions:
- *	- dpni_set_rx_tc_dist()
- *	- dpni_set_qos_table()
- */
-int dpni_prepare_key_cfg(const struct dpkg_profile_cfg	*cfg,
-			 uint8_t			*key_cfg_buf);
-
-/**
  * struct dpni_rx_tc_dist_cfg - Rx traffic class distribution configuration
  * @dist_size: Set the distribution size;
  *	supported values: 1,2,3,4,6,7,8,12,14,16,24,28,32,48,56,64,96,
@@ -1388,7 +1337,7 @@ int dpni_prepare_key_cfg(const struct dpkg_profile_cfg	*cfg,
  * @dist_mode: Distribution mode
  * @key_cfg_iova: I/O virtual address of 256 bytes DMA-able memory filled with
  *		the extractions to be used for the distribution key by calling
- *		dpni_prepare_key_cfg() relevant only when
+ *		dpkg_prepare_key_cfg() relevant only when
  *		'dist_mode != DPNI_DIST_MODE_NONE', otherwise it can be '0'
  * @fs_cfg: Flow Steering table configuration; only relevant if
  *		'dist_mode = DPNI_DIST_MODE_FS'
@@ -1408,7 +1357,7 @@ struct dpni_rx_tc_dist_cfg {
  * @tc_id:	Traffic class selection (0-7)
  * @cfg:	Traffic class distribution configuration
  *
- * warning: if 'dist_mode != DPNI_DIST_MODE_NONE', call dpni_prepare_key_cfg()
+ * warning: if 'dist_mode != DPNI_DIST_MODE_NONE', call dpkg_prepare_key_cfg()
  *			first to prepare the key_cfg_iova parameter
  *
  * Return:	'0' on Success; error code otherwise.
@@ -1778,59 +1727,12 @@ int dpni_get_congestion_notification(struct fsl_mc_io		*mc_io,
 				     uint8_t			tc_id,
 				struct dpni_congestion_notification_cfg *cfg);
 
-/**
- * enum dpni_flc_type - DPNI FLC types
- * @DPNI_FLC_USER_DEFINED: select the FLC to be used for user defined value
- * @DPNI_FLC_STASH: select the FLC to be used for stash control
- */
-enum dpni_flc_type {
-	DPNI_FLC_USER_DEFINED = 0,
-	DPNI_FLC_STASH = 1,
-};
-
-/**
- * enum dpni_stash_size - DPNI FLC stashing size
- * @DPNI_STASH_SIZE_0B: no stash
- * @DPNI_STASH_SIZE_64B: stashes 64 bytes
- * @DPNI_STASH_SIZE_128B: stashes 128 bytes
- * @DPNI_STASH_SIZE_192B: stashes 192 bytes
- */
-enum dpni_stash_size {
-	DPNI_STASH_SIZE_0B = 0,
-	DPNI_STASH_SIZE_64B = 1,
-	DPNI_STASH_SIZE_128B = 2,
-	DPNI_STASH_SIZE_192B = 3,
-};
-
 /* DPNI FLC stash options */
 
 /**
  * stashes the whole annotation area (up to 192 bytes)
  */
 #define DPNI_FLC_STASH_FRAME_ANNOTATION	0x00000001
-
-/**
- * struct dpni_flc_cfg - Structure representing DPNI FLC configuration
- * @flc_type: FLC type
- * @options: Mask of available options;
- *	use 'DPNI_FLC_STASH_<X>' values
- * @frame_data_size: Size of frame data to be stashed
- * @flow_context_size: Size of flow context to be stashed
- * @flow_context: 1. In case flc_type is 'DPNI_FLC_USER_DEFINED':
- *			this value will be provided in the frame descriptor
- *			(FD[FLC])
- *		  2. In case flc_type is 'DPNI_FLC_STASH':
- *			this value will be I/O virtual address of the
- *			flow-context;
- *			Must be cacheline-aligned and DMA-able memory
- */
-struct dpni_flc_cfg {
-	enum dpni_flc_type	flc_type;
-	uint32_t		options;
-	enum dpni_stash_size	frame_data_size;
-	enum dpni_stash_size	flow_context_size;
-	uint64_t		flow_context;
-};
 
 /**
  * struct dpni_queue - Queue structure
@@ -1871,9 +1773,24 @@ struct dpni_queue {
 	uint64_t user_context;
 	/**
 	 * struct flc - FD FLow Context structure
-	 * @value:		FLC value to set
+	 * @value:		Default FLC value for traffic dequeued from
+	 * 	this queue.  Please check description of FD structure for more
+	 * 	information.
+	 * 	Note that FLC values set using dpni_add_fs_entry, if any, take
+	 * 	precedence over values per queue.
 	 * @stash_control:	Boolean, indicates whether the 6 lowest
-	 *			significant bits are used for stash control.
+	 * 	significant bits are used for stash control.  If set, the 6
+	 * 	least significant bits in value are interpreted as follows:
+	 * 	- bits 0-1: indicates the number of 64 byte units of context
+	 * 	that are stashed.  FLC value is interpreted as a memory address
+	 * 	in this case, excluding the 6 LS bits.
+	 * 	- bits 2-3: indicates the number of 64 byte units of frame
+	 * 	annotation to be stashed.  Annotation is placed at FD[ADDR].
+	 * 	- bits 4-5: indicates the number of 64 byte units of frame
+	 * 	data to be stashed.  Frame data is placed at FD[ADDR] +
+	 * 	FD[OFFSET].
+	 * 	For more details check the Frame Descriptor section in the
+	 * 	hardware documentation.
 	 */
 	struct {
 		uint64_t value;
@@ -1927,6 +1844,8 @@ enum dpni_confirmation_mode {
  * Calling this function with 'mode' set to DPNI_CONF_SINGLE switches all
  * Tx confirmations to a shared Tx conf queue.  The ID of the queue when
  * calling dpni_set/get_queue is -1.
+ * Tx confirmation mode can only be changed while the DPNI is disabled.
+ * Executing this command while the DPNI is enabled will return an error.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
@@ -1939,7 +1858,7 @@ int dpni_set_tx_confirmation_mode(struct fsl_mc_io		*mc_io,
  * struct dpni_qos_tbl_cfg - Structure representing QOS table configuration
  * @key_cfg_iova: I/O virtual address of 256 bytes DMA-able memory filled with
  *		key extractions to be used as the QoS criteria by calling
- *		dpni_prepare_key_cfg()
+ *		dpkg_prepare_key_cfg()
  * @discard_on_miss: Set to '1' to discard frames in case of no match (miss);
  *		'0' to use the 'default_tc' in such cases
  * @default_tc: Used in case of no-match and 'discard_on_miss'= 0
@@ -1960,7 +1879,7 @@ struct dpni_qos_tbl_cfg {
  * This function and all QoS-related functions require that
  *'max_tcs > 1' was set at DPNI creation.
  *
- * warning: Before calling this function, call dpni_prepare_key_cfg() to
+ * warning: Before calling this function, call dpkg_prepare_key_cfg() to
  *			prepare the key_cfg_iova parameter
  *
  * Return:	'0' on Success; Error code otherwise.
@@ -2031,10 +1950,44 @@ int dpni_clear_qos_table(struct fsl_mc_io	*mc_io,
 			 uint32_t		cmd_flags,
 			 uint16_t		token);
 
+
+/**
+ * Discard matching traffic.  If set, this takes precedence over any other
+ * configuration and matching traffic is always discarded.
+ */
 #define DPNI_FS_OPT_DISCARD		0x1
+
+/**
+ * Set FLC value.  If set, flc member of truct dpni_fs_action_cfg is used to
+ * override the FLC value set per queue.
+ * For more details check the Frame Descriptor section in the hardware
+ * documentation.
+ */
 #define DPNI_FS_OPT_SET_FLC		0x2
+
+/*
+ * Indicates whether the 6 lowest significant bits of FLC are used for stash
+ * control.  If set, the 6 least significant bits in value are interpreted as
+ * follows:
+ * 	- bits 0-1: indicates the number of 64 byte units of context that are
+ * 	stashed.  FLC value is interpreted as a memory address in this case,
+ * 	excluding the 6 LS bits.
+ * 	- bits 2-3: indicates the number of 64 byte units of frame annotation
+ * 	to be stashed.  Annotation is placed at FD[ADDR].
+ * 	- bits 4-5: indicates the number of 64 byte units of frame data to be
+ * 	stashed.  Frame data is placed at FD[ADDR] + FD[OFFSET].
+ * This flag is ignored if DPNI_FS_OPT_SET_FLC is not specified.
+ */
 #define DPNI_FS_OPT_SET_STASH_CONTROL	0x4
 
+/**
+ * struct dpni_fs_action_cfg - Action configuration for table look-up
+ * @flc: FLC value for traffic matching this rule.  Please check the Frame
+ * Descriptor section in the hardware documentation for more information.
+ * @flow_id: Identifies the Rx queue used for matching traffic.  Supported
+ * 	values are in range 0 to num_queue-1.
+ * @options: Any combination of DPNI_FS_OPT_ values.
+ */
 struct dpni_fs_action_cfg {
 	uint64_t flc;
 	uint16_t flow_id;
@@ -2259,15 +2212,21 @@ struct dpni_taildrop {
 
 /**
  * dpni_set_taildrop() - Set taildrop per queue or TC
+ *
+ * Setting a per-TC taildrop (cg_point = DPNI_CP_GROUP) will reset any current
+ * congestion notification or early drop (WRED) configuration previously applied
+ * to the same TC.
+ *
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
- * @cg_point:	Congestion point
- * @q_type:	Queue type - Rx and Tx queues are supported
+ * @cg_point:	Congestion point.  DPNI_CP_QUEUE is only supported in
+ * 	combination with DPNI_QUEUE_RX.
+ * @q_type:	Queue type, can be DPNI_QUEUE_RX or DPNI_QUEUE_TX.
  * @tc:		Traffic class to apply this taildrop to
  * @q_index:	Index of the queue if the DPNI supports multiple queues for
  *			traffic distribution.
- *			Ignored if CONGESTION_POINT is not 0.
+ *			Ignored if CONGESTION_POINT is not DPNI_CP_QUEUE.
  * @taildrop:	Taildrop structure
  *
  * Return:  '0' on Success; Error code otherwise.
@@ -2304,5 +2263,50 @@ int dpni_get_taildrop(struct fsl_mc_io *mc_io,
 		      uint8_t tc,
 		      uint8_t q_index,
 		      struct dpni_taildrop *taildrop);
+
+/**
+ * dpni_set_opr() - Set Order Restoration configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @tc:			Traffic class, in range 0 to NUM_TCS - 1
+ * @index:		Selects the specific queue out of the set allocated
+ *				for the same TC. Value must be in range 0 to
+ *				NUM_QUEUES - 1
+ * @options:	Configuration mode options
+ *				can be OPR_OPT_CREATE or OPR_OPT_RETIRE
+ * @cfg:		Configuration options for the OPR
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_set_opr(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  uint8_t tc,
+		  uint8_t index,
+		  uint8_t options,
+		  struct opr_cfg *cfg);
+
+/**
+ * dpni_get_opr() - Retrieve Order Restoration config and query.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @tc:			Traffic class, in range 0 to NUM_TCS - 1
+ * @index:		Selects the specific queue out of the set allocated
+ *				for the same TC. Value must be in range 0 to
+ *				NUM_QUEUES - 1
+ * @cfg:		Returned OPR configuration
+ * @qry:		Returned OPR query
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_get_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 struct opr_cfg *cfg,
+		 struct opr_qry *qry);
 
 #endif /* __FSL_DPNI_H */
