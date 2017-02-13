@@ -819,6 +819,30 @@ extern struct rte_cryptodev_sym_session *
 rte_cryptodev_sym_session_free(uint8_t dev_id,
 		struct rte_cryptodev_sym_session *session);
 
+/**
+ * Attach queue pair with sym session.
+ *
+ * @param	qp_id		Queue pair to which session will be attached.
+ * @param	session		Session pointer previously allocated by
+ *				*rte_cryptodev_sym_session_create*.
+ *
+ */
+extern void
+rte_cryptodev_queue_pair_attach_sym_session(uint16_t qp_id,
+		struct rte_cryptodev_sym_session *session);
+
+/**
+ * Detach queue pair with sym session.
+ *
+ * @param	qp_id		Queue pair to which session is attached.
+ * @param	session		Session pointer previously allocated by
+ *				*rte_cryptodev_sym_session_create*.
+ *
+ */
+extern void
+rte_cryptodev_queue_pair_detach_sym_session(uint16_t qp_id,
+		struct rte_cryptodev_sym_session *session);
+
 
 #ifdef __cplusplus
 }
