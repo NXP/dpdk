@@ -361,11 +361,33 @@ hw_mbuf_free_bulk(struct rte_mempool *pool,
 	return 0;
 }
 
-static unsigned
-hw_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
+static unsigned int
+hw_mbuf_get_count(const struct rte_mempool *mp)
 {
-	/* TODO: incomplete */
-	return 0;
+	int ret;
+	unsigned int num_of_bufs = 0;
+	struct dpaa2_bp_info *bp_info;
+	struct dpbp_node *dpbp_node;
+
+	if (!mp) {
+		RTE_LOG(ERR, PMD, "Invalid mempool provided");
+		return 0;
+	}
+
+	bp_info = mempool_to_bpinfo(mp);
+	dpbp_node = bp_info->bp_list->buf_pool.dpbp_node;
+
+	ret = dpbp_get_num_free_bufs(&dpbp_node->dpbp, CMD_PRI_LOW,
+				     dpbp_node->token, &num_of_bufs);
+	if (ret) {
+		RTE_LOG(ERR, PMD, "Unable to obtain free buf count (err=%d)",
+			ret);
+		return 0;
+	}
+
+	RTE_LOG(DEBUG, PMD, "Free bufs = %u", num_of_bufs);
+
+	return num_of_bufs;
 }
 
 static int
