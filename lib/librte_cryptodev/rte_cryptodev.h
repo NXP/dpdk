@@ -255,6 +255,9 @@ struct rte_cryptodev_info {
 	struct {
 		unsigned max_nb_sessions;
 		/**< Maximum number of sessions supported by device. */
+		unsigned max_nb_sessions_per_qp;
+		/**< Maximum number of sessions per queue pair.
+		 * Default 0 for infinite sessions. */
 	} sym;
 };
 
