@@ -47,6 +47,7 @@
 static inline int
 create_session(struct ipsec_ctx *ipsec_ctx __rte_unused, struct ipsec_sa *sa)
 {
+	struct rte_cryptodev_info cdev_info;
 	unsigned long cdev_id_qp = 0;
 	int32_t ret;
 	struct cdev_key key = { 0 };
@@ -72,6 +73,12 @@ create_session(struct ipsec_ctx *ipsec_ctx __rte_unused, struct ipsec_sa *sa)
 
 	sa->crypto_session = rte_cryptodev_sym_session_create(
 			ipsec_ctx->tbl[cdev_id_qp].id, sa->xforms);
+
+	rte_cryptodev_info_get(ipsec_ctx->tbl[cdev_id_qp].id, &cdev_info);
+	if (cdev_info.sym.max_nb_sessions_per_qp > 0)
+		rte_cryptodev_queue_pair_attach_sym_session(
+				ipsec_ctx->tbl[cdev_id_qp].qp,
+				sa->crypto_session);
 
 	sa->cdev_id_qp = cdev_id_qp;
 

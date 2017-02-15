@@ -65,16 +65,6 @@ struct dpaa_auth {
 	uint32_t key_len;
 };
 
-struct dpaa_sec_qp {
-	struct dpaa_sec_qi *qi;
-	struct qman_fq inq;
-	struct qman_fq outq;
-	int rx_pkts;
-	int rx_errs;
-	int tx_pkts;
-	int tx_errs;
-};
-
 #define DPAA_SEC_MAX_DESC_SIZE  64
 /* code or cmd block to caam */
 struct sec_cdb {
@@ -128,10 +118,22 @@ struct dpaa_sec_ses {
 	struct dpaa_cipher cipher;
 	struct dpaa_auth   auth;
 	uint32_t auth_trunc_len;
-	void   *priv; /* private interface to do crypto */
+	struct dpaa_sec_qp *qp;
 };
 
-#define RTE_MAX_NB_SEC_QPS 1
+struct dpaa_sec_qp {
+	struct dpaa_sec_qi *qi;
+	struct sec_cdb cdb;		/* cmd block associated with qp */
+	struct dpaa_sec_ses *ses; 	/* session associated with qp */
+	struct qman_fq inq;
+	struct qman_fq outq;
+	int rx_pkts;
+	int rx_errs;
+	int tx_pkts;
+	int tx_errs;
+};
+
+#define RTE_MAX_NB_SEC_QPS 2048
 #define RTE_MAX_NB_SEC_SES 2048
 /* internal sec queue interface */
 struct dpaa_sec_qi {
@@ -139,8 +141,6 @@ struct dpaa_sec_qi {
 	struct dpaa_sec_qp qps[RTE_MAX_NB_SEC_QPS]; /* i/o queue for sec */
 	unsigned max_nb_queue_pairs;
 	unsigned max_nb_sessions;
-	struct dpaa_sec_ses *ses; /* session associated with the sec */
-	struct sec_cdb cdb; /* code block for sec session */
 };
 
 struct dpaa_sec_job {

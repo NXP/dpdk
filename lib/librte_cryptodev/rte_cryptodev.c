@@ -1147,6 +1147,48 @@ rte_cryptodev_sym_session_create(uint8_t dev_id,
 	return sess;
 }
 
+void
+rte_cryptodev_queue_pair_attach_sym_session(uint16_t qp_id,
+		struct rte_cryptodev_sym_session *sess)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_pmd_is_valid_dev(sess->dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", sess->dev_id);
+		return;
+	}
+
+	dev = &rte_crypto_devices[sess->dev_id];
+
+	RTE_FUNC_PTR_OR_RET(*dev->dev_ops->qp_attach_session);
+	if (dev->dev_ops->qp_attach_session(dev, qp_id, sess->_private)) {
+		CDEV_LOG_ERR("dev_id %d failed to attach qp: %d with session",
+				sess->dev_id, qp_id);
+		return;
+	}
+}
+
+void
+rte_cryptodev_queue_pair_detach_sym_session(uint16_t qp_id,
+		struct rte_cryptodev_sym_session *sess)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_pmd_is_valid_dev(sess->dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", sess->dev_id);
+		return;
+	}
+
+	dev = &rte_crypto_devices[sess->dev_id];
+
+	RTE_FUNC_PTR_OR_RET(*dev->dev_ops->qp_detach_session);
+	if (dev->dev_ops->qp_detach_session(dev, qp_id, sess->_private)) {
+		CDEV_LOG_ERR("dev_id %d failed to detach qp: %d from session",
+				sess->dev_id, qp_id);
+		return;
+	}
+}
+
 struct rte_cryptodev_sym_session *
 rte_cryptodev_sym_session_free(uint8_t dev_id,
 		struct rte_cryptodev_sym_session *sess)
