@@ -461,7 +461,7 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
 	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
-	int i = 0, refcnt = 0;
+	int i = 0;
 
 	PMD_TX_LOG(DEBUG, "Creating SG FD to transmit");
 
@@ -503,26 +503,29 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		sg_temp->addr = cur_seg->buf_physaddr;
 		sg_temp->offset = cur_seg->data_off;
 		sg_temp->length = cur_seg->data_len;
-		if (RTE_MBUF_DIRECT(cur_seg))
-			sg_temp->bpid = bpid;
-		else {
+		if (RTE_MBUF_DIRECT(cur_seg)) {
+			if (rte_mbuf_refcnt_read(cur_seg) > 1) {
+				/*If refcnt > 1, invalid bpid is set to ensure buffer is not freed by HW */
+				sg_temp->bpid = 0xff;
+				rte_mbuf_refcnt_update(cur_seg, -1);
+			} else
+				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
+			cur_seg = cur_seg->next;
+		} else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
 			if (rte_mbuf_refcnt_read(mi) > 1) {
 				/*If refcnt > 1, invalid bpid is set to ensure owner buffer is not freed by HW */
 				sg_temp->bpid = 0xff;
 			} else {
-				/* update refcnt here else while freeing the indirect mbuf will lead to freeing
-				   of Owner MBUF */
-				rte_mbuf_refcnt_update(mi, 1);
 				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(mi->pool);
+				rte_mbuf_refcnt_update(mi, 1);
 			}
-			if (!refcnt) {
-				prev_seg = cur_seg;
-				refcnt = 1;
-			}
+			prev_seg = cur_seg;
+			cur_seg = cur_seg->next;
+			prev_seg->next = NULL;
+			rte_pktmbuf_free(prev_seg);
 		}
-		cur_seg = cur_seg->next;
 		if (cur_seg == NULL) {
 			sg_temp->final = 1;
 			cpu_to_hw_sg(sg_temp);
@@ -530,8 +533,6 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		}
 		cpu_to_hw_sg(sg_temp);
 	}
-	if (refcnt)
-		rte_pktmbuf_free(prev_seg);
 	return 0;
 }
 
@@ -539,7 +540,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 			   struct rte_mbuf **bufs,
 		uint16_t nb_bufs)
 {
-	struct rte_mbuf *mbuf;
+	struct rte_mbuf *mbuf, *mi = NULL;
 	struct rte_mempool *mp;
 	struct pool_info_entry *bp_info;
 	struct qm_fd fd_arr[MAX_TX_RING_SLOTS];
@@ -561,14 +562,37 @@ uint16_t dpaa_eth_queue_tx(void *q,
 		for (loop = 0; loop < frames_to_send; loop++, i++) {
 
 			mbuf = bufs[i];
-			mp = mbuf->pool;
+			if (RTE_MBUF_DIRECT(mbuf))
+				mp = mbuf->pool;
+			else {
+				mi = rte_mbuf_from_indirect(mbuf);
+				mp = mi->pool;
+			}
 			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
 				PMD_TX_LOG(DEBUG, "BMAN offloaded buffer, "
 					"mbuf: %p", mbuf);
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				if (mbuf->nb_segs == 1) {
-					DPAA_MBUF_TO_CONTIG_FD(mbuf,
-					       &fd_arr[loop], bp_info->bpid);
+					if (RTE_MBUF_DIRECT(mbuf)) {
+						if (rte_mbuf_refcnt_read(mbuf) > 1) {
+							DPAA_MBUF_TO_CONTIG_FD(mbuf,
+								&fd_arr[loop], 0xff);
+							rte_mbuf_refcnt_update(mbuf, -1);
+						} else {
+							DPAA_MBUF_TO_CONTIG_FD(mbuf,
+								&fd_arr[loop], bp_info->bpid);
+						}
+					} else {
+						if (rte_mbuf_refcnt_read(mi) > 1) {
+							DPAA_MBUF_TO_CONTIG_FD(mbuf,
+								&fd_arr[loop], 0xff);
+						} else {
+							rte_mbuf_refcnt_update(mi, 1);
+							DPAA_MBUF_TO_CONTIG_FD(mbuf,
+								&fd_arr[loop], bp_info->bpid);
+						}
+						rte_pktmbuf_free(mbuf);
+					}
 					if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK) {
 						if (mbuf->data_off < DEFAULT_TX_ICEOF +
 							sizeof(struct dpaa_eth_parse_results_t)) {
