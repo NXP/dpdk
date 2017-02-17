@@ -201,7 +201,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 	dma_addr_t sg_addr;
 	int i = 0;
 	uint64_t fd_addr;
-	struct rte_mbuf *first_seg, *next_seg, *cur_seg;
+	struct rte_mbuf *first_seg, *next_seg, *cur_seg, *temp;
 
 	fd_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
@@ -242,15 +242,13 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 		first_seg->nb_segs += 1;
 		rte_mbuf_refcnt_set(next_seg, 1);
 		cur_seg->next = next_seg;
+		next_seg->next = NULL;
 		cur_seg = next_seg;
 	}
-	/* Saving the S/G Table in the end without incrementing the nb_segs,
-	 * so that it can be reused in case of forwarding. While in rxonly
-	 * case it will be freed automatically in rte_pktmbuf_free() call,
-	 * because it free all the segments till the next pointer is NULL */
-	cur_seg->next = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
+	temp = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
 			bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
-	rte_mbuf_refcnt_set(cur_seg->next, 1);
+	rte_mbuf_refcnt_set(temp, 1);
+	rte_pktmbuf_free_seg(temp);
 
 	return (void *)first_seg;
 }
@@ -306,7 +304,7 @@ static void __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		  struct qbman_fd *fd, uint16_t bpid)
 {
-	struct rte_mbuf *last_seg = mbuf, *cur_seg = mbuf;
+	struct rte_mbuf *cur_seg = mbuf, *prev_seg, *mi, *temp;
 	struct qbman_sge *sgt, *sge = NULL;
 	int i;
 
@@ -314,31 +312,22 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
 
-	/* last segment of pkt is used to save the S/G table. In case of
-	 * forwarding SGT is stored as a mbuf in last segment without
-	 * incrementing the nb_segs. In case of TX only, S/G table is
-	 * is allocated here and set in the last seg. */
-	for (i = 0; i < mbuf->nb_segs - 1; i++)
-		last_seg = last_seg->next;
-
-	if (last_seg->next == NULL) {
-		last_seg->next = rte_pktmbuf_alloc(mbuf->pool);
-		if (last_seg->next == NULL) {
-			PMD_TX_LOG(ERR, "No memory to allocate S/G table");
-			return;
-		}
+	temp = rte_pktmbuf_alloc(mbuf->pool);
+	if (temp == NULL) {
+		PMD_TX_LOG(ERR, "No memory to allocate S/G table");
+		return;
 	}
 
-	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(last_seg->next));
+	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(temp));
 	DPAA2_SET_FD_LEN(fd, mbuf->pkt_len);
-	DPAA2_SET_FD_OFFSET(fd, last_seg->next->data_off);
+	DPAA2_SET_FD_OFFSET(fd, temp->data_off);
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
 	DPAA2_FD_SET_FORMAT(fd, qbman_fd_sg);
 	/*Set Scatter gather table and Scatter gather entries*/
-	sgt = (struct qbman_sge *)
-		(DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-				+ DPAA2_GET_FD_OFFSET(fd));
+	sgt = (struct qbman_sge *)(DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			+ DPAA2_GET_FD_OFFSET(fd));
+
 	for (i = 0; i < mbuf->nb_segs; i++) {
 		/*First Scatter gather entry*/
 		sge = &sgt[i];
@@ -347,9 +336,34 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(cur_seg));
 		DPAA2_SET_FLE_OFFSET(sge, cur_seg->data_off);
 		sge->length = cur_seg->data_len;
-		DPAA2_SET_FLE_BPID(sge, mempool_to_bpid(cur_seg->pool));
-		cur_seg = cur_seg->next;
-	};
+		if (RTE_MBUF_DIRECT(cur_seg)) {
+			if (rte_mbuf_refcnt_read(cur_seg) > 1) {
+				/* If refcnt > 1, invalid bpid is set to ensure
+				   buffer is not freed by HW */
+				DPAA2_SET_FLE_BPID(sge, 0xff);
+				rte_mbuf_refcnt_update(cur_seg, -1);
+			} else
+				DPAA2_SET_FLE_BPID(sge,
+						mempool_to_bpid(cur_seg->pool));
+			cur_seg = cur_seg->next;
+		} else {
+			/* Get owner MBUF from indirect buffer */
+			mi = rte_mbuf_from_indirect(cur_seg);
+			if (rte_mbuf_refcnt_read(mi) > 1) {
+				/* If refcnt > 1, invalid bpid is set to ensure
+				   owner buffer is not freed by HW */
+				DPAA2_SET_FLE_BPID(sge, 0xff);
+			} else {
+				DPAA2_SET_FLE_BPID(sge,
+						mempool_to_bpid(mi->pool));
+				rte_mbuf_refcnt_update(mi, 1);
+			}
+			prev_seg = cur_seg;
+			cur_seg = cur_seg->next;
+			prev_seg->next = NULL;
+			rte_pktmbuf_free(prev_seg);
+		}
+	}
 	DPAA2_SG_SET_FINAL(sge, true);
 	eth_check_offload(mbuf, fd);
 }
@@ -362,8 +376,23 @@ static void __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	       struct qbman_fd *fd, uint16_t bpid)
 {
+	struct rte_mbuf *mi = NULL;
+
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
+	if (RTE_MBUF_DIRECT(mbuf)) {
+		if (rte_mbuf_refcnt_read(mbuf) > 1) {
+			bpid = 0xff;
+			rte_mbuf_refcnt_update(mbuf, -1);
+		}
+	} else {
+		mi = rte_mbuf_from_indirect(mbuf);
+		if (rte_mbuf_refcnt_read(mi) > 1) {
+			bpid = 0xff;
+		} else {
+			rte_mbuf_refcnt_update(mi, 1);
+		}
+	}
 
 	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
 	DPAA2_SET_FD_LEN(fd, mbuf->data_len);
@@ -379,6 +408,8 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
 
 	eth_check_offload(mbuf, fd);
+	if (mi)
+		rte_pktmbuf_free(mbuf);
 }
 
 static inline int __attribute__((hot))
