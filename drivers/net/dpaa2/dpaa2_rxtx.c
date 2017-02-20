@@ -454,6 +454,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	uint32_t loop;
 	int32_t ret;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
+	struct rte_mbuf *mi;
 	uint32_t frames_to_send;
 	struct rte_mempool *mp;
 	struct qbman_eq_desc eqdesc;
@@ -494,7 +495,12 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			fd_arr[loop].simple.frc = 0;
 			DPAA2_RESET_FD_CTRL((&fd_arr[loop]));
 			DPAA2_SET_FD_FLC((&fd_arr[loop]), NULL);
-			mp = (*bufs)->pool;
+			if (RTE_MBUF_DIRECT(*bufs))
+				mp = (*bufs)->pool;
+			else {
+				mi = rte_mbuf_from_indirect(*bufs);
+				mp = mi->pool;
+			}
 			/* Not a hw_pkt pool allocated frame */
 			if (!mp) {
 				PMD_TX_LOG(ERR, "err: no bpool"
