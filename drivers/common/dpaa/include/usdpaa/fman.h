@@ -389,6 +389,10 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 /* discard error packets on rx */
 void fman_if_discard_rx_errors(struct fman_if *fm_if);
 
+void fman_if_set_mcast_filter_table(struct fman_if *p);
+
+void fman_if_reset_mcast_filter_table(struct fman_if *p);
+
 int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
 int fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth);
