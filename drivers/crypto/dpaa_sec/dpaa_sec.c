@@ -717,7 +717,7 @@ dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 
 	ses = dpaa_get_sec_ses(op);
 
-	if (unlikely(!qp->ses)) {
+	if (unlikely(!qp->ses || qp->ses != ses)) {
 		qp->ses = ses;
 		ses->qp = qp;
 		dpaa_sec_prep_cdb(ses);
