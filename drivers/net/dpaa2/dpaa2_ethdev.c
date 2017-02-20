@@ -1309,6 +1309,146 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	return ret;
 }
 
+static int
+dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	struct dpni_link_state state = {0};
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = (struct fsl_mc_io *)priv->hw;
+
+	if (dpni == NULL || fc_conf == NULL) {
+		RTE_LOG(ERR, PMD, "dpni is NULL");
+		return ret;
+	}
+
+	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
+	if (ret) {
+		RTE_LOG(ERR, PMD, "error: dpni_get_link_state %d", ret);
+		return ret;
+	}
+
+	memset(fc_conf, 0, sizeof(struct rte_eth_fc_conf));
+	if (state.options & DPNI_LINK_OPT_PAUSE) {
+		/* DPNI_LINK_OPT_PAUSE set
+		 *  if ASYM_PAUSE not set,
+		 *	RX Side flow control (handle recieved Pause frame)
+		 *	TX side flow control (send Pause frame)
+		 *  if ASYM_PAUSE set,
+		 *	RX Side flow control (handle recieved Pause frame)
+		 *	No TX side flow control (send Pause frame disabled)
+		 */
+		if (!(state.options & DPNI_LINK_OPT_ASYM_PAUSE))
+			fc_conf->mode = RTE_FC_FULL;
+		else
+			fc_conf->mode = RTE_FC_RX_PAUSE;
+	} else {
+		/* DPNI_LINK_OPT_PAUSE not set
+		 *  if ASYM_PAUSE set,
+		 *	TX side flow control (send Pause frame)
+		 *	No RX side flow control (No action on pause frame rx)
+		 *  if ASYM_PAUSE not set,
+		 *	Flow control disabled
+		 */
+		if (state.options & DPNI_LINK_OPT_ASYM_PAUSE)
+			fc_conf->mode = RTE_FC_TX_PAUSE;
+		else
+			fc_conf->mode = RTE_FC_NONE;
+	}
+
+	return ret;
+}
+
+static int
+dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	struct dpni_link_state state = {0};
+	struct dpni_link_cfg cfg = {0};
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = (struct fsl_mc_io *)priv->hw;
+
+	if (dpni == NULL) {
+		RTE_LOG(ERR, PMD, "dpni is NULL");
+		return ret;
+	}
+
+	/* It is necessary to obtain the current state before setting fc_conf
+	 * as MC would return error in case rate, autoneg or duplex values are
+	 * different.
+	 */
+	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
+	if (ret) {
+		RTE_LOG(ERR, PMD, "Unable to get link state (err=%d)", ret);
+		return -1;
+	}
+
+	/* Disable link before setting configuration */
+	dpaa2_dev_set_link_down(dev);
+
+	/* Based on fc_conf, update cfg */
+	cfg.rate = state.rate;
+	cfg.options = state.options;
+
+	/* update cfg with fc_conf */
+	switch (fc_conf->mode) {
+		case RTE_FC_FULL:
+			/* Full flow control;
+			 * OPT_PAUSE set, ASYM_PAUSE not set
+			 */
+			cfg.options |= DPNI_LINK_OPT_PAUSE;
+			cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+		case RTE_FC_TX_PAUSE:
+			/* Enable RX flow control
+			 * OPT_PAUSE not set;
+			 * ASYM_PAUSE set;
+			 */
+			cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+			cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+			break;
+		case RTE_FC_RX_PAUSE:
+			/* Enable TX Flow control
+			 * OPT_PAUSE set
+			 * ASYM_PAUSE set
+			 */
+			cfg.options |= DPNI_LINK_OPT_PAUSE;
+			cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+			break;
+		case RTE_FC_NONE:
+			/* Disable Flow control
+			 * OPT_PAUSE not set
+			 * ASYM_PAUSE not set
+			 */
+			cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+			cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+			break;
+		default:
+			RTE_LOG(ERR, PMD, "Incorrect Flow control flag (%d)",
+				fc_conf->mode);
+			return -1;
+	}
+
+	ret = dpni_set_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
+	if (ret)
+		RTE_LOG(ERR, PMD, "Unable to set Link configuration (err=%d)",
+			ret);
+
+	/* Enable link */
+	dpaa2_dev_set_link_up(dev);
+
+	return ret;
+}
+
 static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_configure	      = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,
@@ -1333,8 +1473,8 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.tx_queue_setup	      = dpaa2_dev_tx_queue_setup,
 	.tx_queue_release      = dpaa2_dev_tx_queue_release,
 	.set_queue_rate_limit = NULL,
-	.flow_ctrl_get	      = NULL,
-	.flow_ctrl_set	      = NULL,
+	.flow_ctrl_get	      = dpaa2_flow_ctrl_get,
+	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
 	.priority_flow_ctrl_set = NULL,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
 	.mac_addr_remove      = dpaa2_dev_remove_mac_addr,
