@@ -198,6 +198,7 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 		    out_pkt->pkt_len - sizeof(struct ipv4_hdr));
 
 		out_pkt->ol_flags |= PKT_TX_IP_CKSUM;
+		out_pkt->packet_type = pkt_in->packet_type;
 		out_pkt->l3_len = sizeof(struct ipv4_hdr);
 
 		/* Write the fragment to the output list */
