@@ -32,6 +32,8 @@
 include $(RTE_SDK)/mk/rte.vars.mk
 
 DIRS-y += common
+DIRS-y += bus
+DIRS-y += pool
 DIRS-y += net
 DIRS-$(CONFIG_RTE_LIBRTE_CRYPTODEV) += crypto
 

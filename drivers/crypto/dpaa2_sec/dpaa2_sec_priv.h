@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -43,9 +44,9 @@ struct dpaa2_sec_dev_private {
 	int32_t hw_id; /**< An unique ID of this device instance */
 	int32_t vfio_fd; /**< File descriptor received via VFIO */
 	uint16_t token; /**< Token required by DPxxx objects */
-	unsigned max_nb_queue_pairs;
+	unsigned int max_nb_queue_pairs;
 
-	unsigned max_nb_sessions;
+	unsigned int max_nb_sessions;
 	/**< Max number of sessions supported by device */
 };
 
@@ -136,8 +137,12 @@ enum dpaa2_sec_op_type {
 	DPAA2_SEC_NONE,  /*!< No Cipher operations*/
 	DPAA2_SEC_CIPHER,/*!< CIPHER operations */
 	DPAA2_SEC_AUTH,  /*!< Authentication Operations */
-	DPAA2_SEC_CIPHER_HASH,  /*!< Authenticated Encryption with associated data */
-	DPAA2_SEC_HASH_CIPHER,  /*!< Encryption with Authenticated associated data */
+	DPAA2_SEC_CIPHER_HASH,  /*!< Authenticated Encryption with
+				 * associated data
+				 */
+	DPAA2_SEC_HASH_CIPHER,  /*!< Encryption with Authenticated
+				 * associated data
+				 */
 	DPAA2_SEC_IPSEC, /*!< IPSEC protocol operations*/
 	DPAA2_SEC_PDCP,  /*!< PDCP protocol operations*/
 	DPAA2_SEC_PKC,   /*!< Public Key Cryptographic Operations */
@@ -154,7 +159,8 @@ struct dpaa2_sec_cipher_ctxt {
 
 struct dpaa2_sec_auth_ctxt {
 	uint8_t trunc_len;              /*!< Length for output ICV, should
-					  * be 0 if no truncation required */
+					 * be 0 if no truncation required
+					 */
 };
 
 struct dpaa2_sec_aead_ctxt {
@@ -165,7 +171,8 @@ struct dpaa2_sec_aead_ctxt {
 	uint16_t auth_only_len; /*!< Length of data for Auth only */
 	uint8_t auth_cipher_text;       /**< Authenticate/cipher ordering */
 	uint8_t trunc_len;              /*!< Length for output ICV, should
-					  * be 0 if no truncation required */
+					 * be 0 if no truncation required
+					 */
 };
 
 typedef struct dpaa2_sec_session_entry {
@@ -173,7 +180,7 @@ typedef struct dpaa2_sec_session_entry {
 	uint8_t ctxt_type;
 	uint8_t dir;         /*!< Operation Direction */
 	enum rte_crypto_cipher_algorithm cipher_alg; /*!< Cipher Algorithm*/
-	enum rte_crypto_auth_algorithm auth_alg;     /*!< Authentication Algorithm*/
+	enum rte_crypto_auth_algorithm auth_alg; /*!< Authentication Algorithm*/
 	struct {
 		uint8_t *data;	/**< pointer to key data */
 		size_t length;	/**< key length in bytes */
@@ -187,9 +194,6 @@ typedef struct dpaa2_sec_session_entry {
 		struct dpaa2_sec_cipher_ctxt cipher_ctxt;
 		struct dpaa2_sec_auth_ctxt auth_ctxt;
 		struct dpaa2_sec_aead_ctxt aead_ctxt;
-/*		struct nadk_ipsec_ctxt ipsec_ctxt;
-		struct nadk_pdcp_ctxt pdcp_ctxt;
-		struct nadk_null_sec_ctxt null_sec_ctxt;*/
 	} ext_params;
 } dpaa2_sec_session;
 

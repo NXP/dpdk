@@ -101,8 +101,6 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_CFGFILE)        += -lrte_cfgfile
 
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BOND)       += -lrte_pmd_bond
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_XENVIRT)    += -lrte_pmd_xenvirt -lxenstore
-_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pmd_dpaa2 -ldpaa2_mc -ldpaa2_qbman
-_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_pmd_dpaa -lm -ldpaa_drivers
 
 ifeq ($(CONFIG_RTE_BUILD_SHARED_LIB),n)
 # plugins (link only if static libraries)
@@ -111,6 +109,11 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AF_PACKET)  += -lrte_pmd_af_packet
 _LDLIBS-$(CONFIG_RTE_LIBRTE_BNX2X_PMD)      += -lrte_pmd_bnx2x -lz
 _LDLIBS-$(CONFIG_RTE_LIBRTE_BNXT_PMD)       += -lrte_pmd_bnxt
 _LDLIBS-$(CONFIG_RTE_LIBRTE_CXGBE_PMD)      += -lrte_pmd_cxgbe
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_pmd_dpaa -lm -ldpaa_drivers
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pmd_dpaa2
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_common_dpaa2_qbman
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pool_dpaa2
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_bus_fslmc
 _LDLIBS-$(CONFIG_RTE_LIBRTE_E1000_PMD)      += -lrte_pmd_e1000
 _LDLIBS-$(CONFIG_RTE_LIBRTE_ENA_PMD)        += -lrte_pmd_ena
 _LDLIBS-$(CONFIG_RTE_LIBRTE_ENIC_PMD)       += -lrte_pmd_enic
@@ -141,7 +144,10 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_AESNI_GCM)  += -L$(AESNI_MULTI_BUFFER_LIB_PATH) 
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_OPENSSL)  += -L${OPENSSL_PATH}/lib  -lrte_pmd_openssl  -lcrypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO)+= -lrte_pmd_null_crypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_QAT)        += -lrte_pmd_qat -lcrypto
-_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC)  += -lrte_pmd_dpaa2_sec -ldpaa2_mc -ldpaa2_qbman
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC)  += -lrte_pmd_dpaa2_sec
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_common_dpaa2_qbman
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pool_dpaa2
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_bus_fslmc
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_ARMCE)      += -L${OPENSSL_PATH}/lib -lrte_pmd_armce  -lcrypto
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC)   += -lrte_pmd_dpaa_sec -ldpaa_drivers
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SNOW3G)     += -lrte_pmd_snow3g

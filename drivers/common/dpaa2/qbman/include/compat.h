@@ -1,4 +1,7 @@
-/* Copyright (c) 2008-2011 Freescale Semiconductor, Inc.
+/*-
+ *   BSD LICENSE
+ *
+ * Copyright (c) 2008-2016 Freescale Semiconductor, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,16 +56,15 @@
 #include <dirent.h>
 #include <inttypes.h>
 #include <error.h>
+#include <rte_atomic.h>
 
 /* The following definitions are primarily to allow the single-source driver
  * interfaces to be included by arbitrary program code. Ie. for interfaces that
  * are also available in kernel-space, these definitions provide compatibility
- * with certain attributes and types used in those interfaces. */
+ * with certain attributes and types used in those interfaces.
+ */
 
 /* Required compiler attributes */
-#define __maybe_unused	__attribute__((unused))
-#define __always_unused	__attribute__((unused))
-#define __packed	__attribute__((__packed__))
 #define __user
 #define likely(x)	__builtin_expect(!!(x), 1)
 #define unlikely(x)	__builtin_expect(!!(x), 0)
@@ -73,11 +75,6 @@
 		(type *)((char *)__mptr - offsetof(type, member)); })
 #define __stringify_1(x) #x
 #define __stringify(x)	__stringify_1(x)
-#define panic(x) \
-do { \
-	printf("panic: %s", x); \
-	abort(); \
-} while (0)
 
 #ifdef ARRAY_SIZE
 #undef ARRAY_SIZE
@@ -91,8 +88,8 @@ typedef uint32_t	u32;
 typedef uint64_t	u64;
 typedef uint64_t	dma_addr_t;
 typedef cpu_set_t	cpumask_t;
-#define spinlock_t	pthread_mutex_t
 typedef	u32		compat_uptr_t;
+
 static inline void __user *compat_ptr(compat_uptr_t uptr)
 {
 	return (void __user *)(unsigned long)uptr;
@@ -124,37 +121,15 @@ static inline void out_be32(volatile void *__p, u32 val)
 	} while (0)
 #define pr_crit(fmt, args...)	 prflush("CRIT:" fmt, ##args)
 #define pr_err(fmt, args...)	 prflush("ERR:" fmt, ##args)
-#define pr_warn(fmt, args...) prflush("WARN:" fmt, ##args)
+#define pr_warn(fmt, args...)	 prflush("WARN:" fmt, ##args)
 #define pr_info(fmt, args...)	 prflush(fmt, ##args)
 
-#define BUG()	abort()
-#ifdef CONFIG_BUGON
-#ifdef pr_debug
-#undef pr_debug
-#endif
-#define pr_debug(fmt, args...)	printf(fmt, ##args)
-#define BUG_ON(c) \
-do { \
-	if (c) { \
-		pr_crit("BUG: %s:%d\n", __FILE__, __LINE__); \
-		abort(); \
-	} \
-} while (0)
-#define might_sleep_if(c)	BUG_ON(c)
-#define msleep(x) \
-do { \
-	pr_crit("BUG: illegal call %s:%d\n", __FILE__, __LINE__); \
-	exit(EXIT_FAILURE); \
-} while (0)
-#else
 #ifdef pr_debug
 #undef pr_debug
 #endif
 #define pr_debug(fmt, args...) {}
-#define BUG_ON(c) {}
 #define might_sleep_if(c) {}
 #define msleep(x) {}
-#endif
 #define WARN_ON(c, str) \
 do { \
 	static int warned_##__LINE__; \
@@ -164,6 +139,7 @@ do { \
 		warned_##__LINE__ = 1; \
 	} \
 } while (0)
+#define QBMAN_BUG_ON(c) WARN_ON(c, "BUG")
 
 #define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
 
@@ -249,8 +225,6 @@ typedef uint32_t	phandle;
 #define __raw_readl(p)	(*(const volatile unsigned int *)(p))
 #define __raw_writel(v, p) {*(volatile unsigned int *)(p) = (v); }
 
-
-
 /* memcpy() stuff - when you know alignments in advance */
 #ifdef CONFIG_TRY_BETTER_MEMCPY
 static inline void copy_words(void *dest, const void *src, size_t sz)
@@ -259,9 +233,9 @@ static inline void copy_words(void *dest, const void *src, size_t sz)
 	const u32 *__src = src;
 	size_t __sz = sz >> 2;
 
-	BUG_ON((unsigned long)dest & 0x3);
-	BUG_ON((unsigned long)src & 0x3);
-	BUG_ON(sz & 0x3);
+	QBMAN_BUG_ON((unsigned long)dest & 0x3);
+	QBMAN_BUG_ON((unsigned long)src & 0x3);
+	QBMAN_BUG_ON(sz & 0x3);
 	while (__sz--)
 		*(__dest++) = *(__src++);
 }
@@ -272,9 +246,9 @@ static inline void copy_shorts(void *dest, const void *src, size_t sz)
 	const u16 *__src = src;
 	size_t __sz = sz >> 1;
 
-	BUG_ON((unsigned long)dest & 0x1);
-	BUG_ON((unsigned long)src & 0x1);
-	BUG_ON(sz & 0x1);
+	QBMAN_BUG_ON((unsigned long)dest & 0x1);
+	QBMAN_BUG_ON((unsigned long)src & 0x1);
+	QBMAN_BUG_ON(sz & 0x1);
 	while (__sz--)
 		*(__dest++) = *(__src++);
 }
@@ -293,48 +267,6 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 #define copy_bytes memcpy
 #endif
 
-/* Spinlock stuff */
-#define spinlock_t		pthread_mutex_t
-#define __SPIN_LOCK_UNLOCKED(x)	PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
-#define DEFINE_SPINLOCK(x)	spinlock_t x = __SPIN_LOCK_UNLOCKED(x)
-#define spin_lock_init(x) \
-	do { \
-		__maybe_unused int __foo;	\
-		pthread_mutexattr_t __foo_attr;	\
-		__foo = pthread_mutexattr_init(&__foo_attr);	\
-		BUG_ON(__foo);	\
-		__foo = pthread_mutexattr_settype(&__foo_attr,	\
-						  PTHREAD_MUTEX_ADAPTIVE_NP); \
-		BUG_ON(__foo);	\
-		__foo = pthread_mutex_init(x, &__foo_attr); \
-		BUG_ON(__foo); \
-	} while (0)
-#define spin_lock(x) \
-	do { \
-		__maybe_unused int __foo = pthread_mutex_lock(x); \
-		BUG_ON(__foo); \
-	} while (0)
-#define spin_unlock(x) \
-	do { \
-		__maybe_unused int __foo = pthread_mutex_unlock(x); \
-		BUG_ON(__foo); \
-	} while (0)
-#define spin_lock_irq(x)	do {				\
-					local_irq_disable();	\
-					spin_lock(x);		\
-				} while (0)
-#define spin_unlock_irq(x)	do {				\
-					spin_unlock(x);		\
-					local_irq_enable();	\
-				} while (0)
-#define spin_lock_irqsave(x, f)	spin_lock_irq(x)
-#define spin_unlock_irqrestore(x, f) spin_unlock_irq(x)
-
-#define raw_spinlock_t				spinlock_t
-#define raw_spin_lock_init(x)			spin_lock_init(x)
-#define raw_spin_lock_irqsave(x, f)		spin_lock(x)
-#define raw_spin_unlock_irqrestore(x, f)	spin_unlock(x)
-
 /* Completion stuff */
 #define DECLARE_COMPLETION(n) int n = 0
 #define complete(n) { *n = 1; }
@@ -347,12 +279,11 @@ do { \
 	*n = 0; \
 } while (0)
 
-
 /* Allocator stuff */
 #define kmalloc(sz, t)	malloc(sz)
 #define vmalloc(sz)	malloc(sz)
 #define kfree(p)	{ if (p) free(p); }
-static inline void *kzalloc(size_t sz, gfp_t __foo __always_unused)
+static inline void *kzalloc(size_t sz, gfp_t __foo __rte_unused)
 {
 	void *ptr = malloc(sz);
 
@@ -361,7 +292,7 @@ static inline void *kzalloc(size_t sz, gfp_t __foo __always_unused)
 	return ptr;
 }
 
-static inline unsigned long get_zeroed_page(gfp_t __foo __always_unused)
+static inline unsigned long get_zeroed_page(gfp_t __foo __rte_unused)
 {
 	void *p;
 
@@ -458,93 +389,18 @@ static inline u64 div64_u64(u64 n, u64 d)
 	return n / d;
 }
 
-/**
- * General memory barrier.
- *
- * Guarantees that the LOAD and STORE operations generated before the
- * barrier occur before the LOAD and STORE operations generated after.
- */
-#define dmb(opt) { asm volatile("dmb " #opt : : : "memory"); }
-#define smp_mb() dmb(ish)
+#define atomic_t                rte_atomic32_t
+#define atomic_read(v)          rte_atomic32_read(v)
+#define atomic_set(v, i)        rte_atomic32_set(v, i)
 
-/* Atomic stuff */
-typedef struct {
-	int counter;
-} atomic_t;
+#define atomic_inc(v)           rte_atomic32_add(v, 1)
+#define atomic_dec(v)           rte_atomic32_sub(v, 1)
 
-#define atomic_read(v)  (*(volatile int *)&(v)->counter)
-#define atomic_set(v, i) (((v)->counter) = (i))
-static inline void atomic_add(int i, atomic_t *v)
-{
-	unsigned long tmp;
-	int result;
+#define atomic_inc_and_test(v)  rte_atomic32_inc_and_test(v)
+#define atomic_dec_and_test(v)  rte_atomic32_dec_and_test(v)
 
-	asm volatile("// atomic_add\n"
-	"1:	ldxr    %w0, %2\n"
-	"	add     %w0, %w0, %w3\n"
-	"	stxr    %w1, %w0, %2\n"
-	"	cbnz    %w1, 1b"
-	: "=&r" (result), "=&r" (tmp), "+Q" (v->counter)
-	: "Ir" (i));
-}
-
-static inline int atomic_add_return(int i, atomic_t *v)
-{
-	unsigned long tmp;
-	int result;
-
-	asm volatile("// atomic_add_return\n"
-	"1:	ldxr    %w0, %2\n"
-	"	add     %w0, %w0, %w3\n"
-	"	stlxr   %w1, %w0, %2\n"
-	"	cbnz    %w1, 1b"
-	: "=&r" (result), "=&r" (tmp), "+Q" (v->counter)
-	: "Ir" (i)
-	: "memory");
-
-	smp_mb();
-	return result;
-}
-
-static inline void atomic_sub(int i, atomic_t *v)
-{
-	unsigned long tmp;
-	int result;
-
-	asm volatile("// atomic_sub\n"
-	"1:	ldxr    %w0, %2\n"
-	"	sub     %w0, %w0, %w3\n"
-	"	stxr    %w1, %w0, %2\n"
-	"	cbnz    %w1, 1b"
-	: "=&r" (result), "=&r" (tmp), "+Q" (v->counter)
-	: "Ir" (i));
-}
-
-static inline int atomic_sub_return(int i, atomic_t *v)
-{
-	unsigned long tmp;
-	int result;
-
-	asm volatile("// atomic_sub_return\n"
-	"1:	ldxr    %w0, %2\n"
-	"	sub     %w0, %w0, %w3\n"
-	"	stlxr   %w1, %w0, %2\n"
-	"	cbnz    %w1, 1b"
-	: "=&r" (result), "=&r" (tmp), "+Q" (v->counter)
-	: "Ir" (i)
-	: "memory");
-
-	smp_mb();
-	return result;
-}
-
-#define atomic_inc(v)           atomic_add(1, v)
-#define atomic_dec(v)           atomic_sub(1, v)
-
-#define atomic_inc_and_test(v)  (atomic_add_return(1, v) == 0)
-#define atomic_dec_and_test(v)  (atomic_sub_return(1, v) == 0)
-#define atomic_inc_return(v)    (atomic_add_return(1, v))
-#define atomic_dec_return(v)    (atomic_sub_return(1, v))
-#define atomic_sub_and_test(i, v) (atomic_sub_return(i, v) == 0)
+#define atomic_inc_return(v)    rte_atomic32_add_return(v, 1)
+#define atomic_dec_return(v)    rte_atomic32_sub_return(v, 1)
+#define atomic_sub_and_test(i, v) (rte_atomic32_sub_return(v, i) == 0)
 
 #endif /* HEADER_COMPAT_H */
