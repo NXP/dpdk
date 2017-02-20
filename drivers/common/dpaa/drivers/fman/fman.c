@@ -226,6 +226,28 @@ const struct list_head *fman_if_list = &__ifs;
 #define GROUP_ADDRESS		0x0000010000000000LL
 #define HASH_CTRL_ADDR_MASK	0x0000003F
 
+void fman_if_set_mcast_filter_table(struct fman_if *p)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	void *hashtable_ctrl;
+	uint32_t i;
+
+	hashtable_ctrl = &((struct memac_regs *)__if->ccsr_map)->hashtable_ctrl;
+	for (i = 0; i < 64; i++)
+		out_be32(hashtable_ctrl, i|HASH_CTRL_MCAST_EN);
+}
+
+void fman_if_reset_mcast_filter_table(struct fman_if *p)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	void *hashtable_ctrl;
+	uint32_t i;
+
+	hashtable_ctrl = &((struct memac_regs *)__if->ccsr_map)->hashtable_ctrl;
+	for (i = 0; i < 64; i++)
+		out_be32(hashtable_ctrl, i & ~HASH_CTRL_MCAST_EN);
+}
+
 static uint32_t get_mac_hash_code(uint64_t eth_addr)
 {
 	uint64_t	mask1, mask2;
