@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ *   Copyright (c) 2016 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -81,28 +82,29 @@ struct dpaa2_annot_hdr {
 	uint64_t word4;
 
 	/**<	word5:
-		ShimOffset_1 + ShimOffset_2 + IPPIDOffset + EthOffset +
-		LLC+SNAPOffset + VLANTCIOffset_1 + VLANTCIOffset_n +
-		LastETypeOffset (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
-	*/
+	 *	ShimOffset_1 + ShimOffset_2 + IPPIDOffset + EthOffset +
+	 *	LLC+SNAPOffset + VLANTCIOffset_1 + VLANTCIOffset_n +
+	 *	LastETypeOffset (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
+	 */
 	uint64_t word5;
 
 	/**<	word6:
-		PPPoEOffset + MPLSOffset_1 + MPLSOffset_n + ARPorIPOffset_1
-		+ IPOffset_norMInEncapO + GREOffset + L4Offset +
-		GTPorESPorIPSecOffset(1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
-	*/
+	 *	PPPoEOffset + MPLSOffset_1 + MPLSOffset_n + ARPorIPOffset_1
+	 *	+ IPOffset_norMInEncapO + GREOffset + L4Offset +
+	 *	GTPorESPorIPSecOffset(1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
+	 */
 	uint64_t word6;
 
 	/**<	word7:
-		RoutingHdrOfset1 + RoutingHdrOfset2 + NxtHdrOffset + IPv6FragOffset +
-		GrossRunningSum + RunningSum(1 + 1 + 1 + 1 + 2 + 2 bytes)
-	*/
+	 *	RoutingHdrOfset1 + RoutingHdrOfset2 + NxtHdrOffset
+	 *	+ IPv6FragOffset + GrossRunningSum
+	 *	+ RunningSum(1 + 1 + 1 + 1 + 2 + 2 bytes)
+	 */
 	uint64_t word7;
 
 	/**<	word8:
-		ParseErrorcode + Soft Parsing Context (1 + 7 bytes)
-	*/
+	 *	ParseErrorcode + Soft Parsing Context (1 + 7 bytes)
+	 */
 	uint64_t word8;
 };
 
@@ -113,18 +115,18 @@ struct dpaa2_annot_hdr {
 /** General Macro to define a particular bit position*/
 #define BIT_POS(x)			((uint64_t)1 << ((x)))
 /** Set a bit in the variable */
-#define BIT_SET_AT_POS(var, pos)	(var |= (pos))
+#define BIT_SET_AT_POS(var, pos)	((var) |= (pos))
 /** Reset the bit in the variable */
-#define BIT_RESET_AT_POS(var, pos)	(var &= ~(pos))
+#define BIT_RESET_AT_POS(var, pos)	((var) &= ~(pos))
 /** Check the bit is set in the variable */
-#define BIT_ISSET_AT_POS(var, pos)	((var & (pos)) ? 1 : 0)
+#define BIT_ISSET_AT_POS(var, pos)	(((var) & (pos)) ? 1 : 0)
 /**
  * Macrso to define bit position in word3
  */
-#define NEXT_HDR(var)			((uint64_t)var & 0xFFFF000000000000)
+#define NEXT_HDR(var)			((uint64_t)(var) & 0xFFFF000000000000)
 #define FAF_EXTN_IPV6_ROUTE_HDR_PRESENT(var)	BIT_POS(16)
-#define FAF_EXTN_RESERVED(var)		((uint64_t)var & 0x00007FFF00000000)
-#define FAF_USER_DEFINED_RESERVED(var)	((uint64_t)var & 0x00000000FF000000)
+#define FAF_EXTN_RESERVED(var)		((uint64_t)(var) & 0x00007FFF00000000)
+#define FAF_USER_DEFINED_RESERVED(var)	((uint64_t)(var) & 0x00000000FF000000)
 #define SHIM_SHELL_SOFT_PARSING_ERRROR		BIT_POS(23)
 #define PARSING_ERROR				BIT_POS(22)
 #define L2_ETH_MAC_PRESENT			BIT_POS(21)

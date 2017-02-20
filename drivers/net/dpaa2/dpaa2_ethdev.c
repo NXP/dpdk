@@ -44,17 +44,13 @@
 #include <rte_dev.h>
 #include <rte_ethdev.h>
 
-/* DPAA2 Global constants */
-#include <dpaa2_logs.h>
+#include <fslmc_logs.h>
+#include <fslmc_vfio.h>
 #include <dpaa2_hw_pvt.h>
-
-/* DPAA2 Base interface files */
-#include <dpaa2_hw_dpbp.h>
-#include <dpaa2_hw_dpni.h>
+#include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
 
-/* DPDK Interfaces */
-#include <dpaa2_ethdev.h>
+#include "dpaa2_ethdev.h"
 
 /* Name of the DPAA2 Net PMD */
 static const char *drivername = "DPNI PMD";
@@ -157,10 +153,10 @@ dpaa2_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 	if (mask & ETH_VLAN_FILTER_MASK) {
 		if (dev->data->dev_conf.rxmode.hw_vlan_filter)
 			ret = dpni_enable_vlan_filter(dpni, CMD_PRI_LOW,
-						      priv->token, TRUE);
+						      priv->token, true);
 		else
 			ret = dpni_enable_vlan_filter(dpni, CMD_PRI_LOW,
-						      priv->token, FALSE);
+						      priv->token, false);
 		if (ret < 0)
 			RTE_LOG(ERR, PMD, "Unable to set vlan filter ret = %d",
 				ret);
@@ -347,7 +343,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (!priv->bp_list || priv->bp_list->mp != mb_pool) {
 		bpid = mempool_to_bpid(mb_pool);
 		ret = dpaa2_attach_bp_list(priv,
-					   bpid_info[bpid].bp_list);
+					   rte_dpaa2_bpid_info[bpid].bp_list);
 		if (ret)
 			return ret;
 	}
@@ -367,9 +363,9 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		cfg.flc.stash_control = true;
 		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
 		/* 00 00 00 - last 6 bit represent annotation, context stashing,
-		*  data stashing setting 01 01 00 (0x14) to enable
-		*  1 line annotation, 1 line context
-		*/
+		 * data stashing setting 01 01 00 (0x14) to enable
+		 * 1 line annotation, 1 line context
+		 */
 		cfg.flc.value |= 0x14;
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
@@ -646,7 +642,7 @@ static int
 dpaa2_dev_start(struct rte_eth_dev *dev)
 {
 	struct rte_eth_dev_data *data = dev->data;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct dpaa2_dev_priv *priv = data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	struct dpni_queue cfg;
 	struct dpni_error_cfg	err_cfg;
@@ -720,28 +716,28 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	}
 
 	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_RX_L3_CSUM, TRUE);
+			       DPNI_OFF_RX_L3_CSUM, true);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error to set RX l3 csum:Error = %d\n", ret);
 		return ret;
 	}
 
 	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_RX_L4_CSUM, TRUE);
+			       DPNI_OFF_RX_L4_CSUM, true);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error to get RX l4 csum:Error = %d\n", ret);
 		return ret;
 	}
 
 	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_TX_L3_CSUM, TRUE);
+			       DPNI_OFF_TX_L3_CSUM, true);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error to set TX l3 csum:Error = %d\n", ret);
 		return ret;
 	}
 
 	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_TX_L4_CSUM, TRUE);
+			       DPNI_OFF_TX_L4_CSUM, true);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Error to get TX l4 csum:Error = %d\n", ret);
 		return ret;
@@ -751,7 +747,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
-	err_cfg.set_frame_annotation = TRUE;
+	err_cfg.set_frame_annotation = true;
 
 	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW,
 				       priv->token, &err_cfg);
@@ -788,12 +784,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	return 0;
 }
 
-/*********************************************************************
- *
+/**
  *  This routine disables all traffic on the adapter by issuing a
  *  global reset on the MAC.
- *
- **********************************************************************/
+ */
 static void
 dpaa2_dev_stop(struct rte_eth_dev *dev)
 {
@@ -876,7 +870,7 @@ dpaa2_dev_promiscuous_enable(
 		return;
 	}
 
-	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, TRUE);
+	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, true);
 	if (ret < 0)
 		RTE_LOG(ERR, PMD, "Unable to enable promiscuous mode %d", ret);
 }
@@ -896,7 +890,7 @@ dpaa2_dev_promiscuous_disable(
 		return;
 	}
 
-	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, FALSE);
+	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, false);
 	if (ret < 0)
 		RTE_LOG(ERR, PMD, "Unable to disable promiscuous mode %d", ret);
 }
@@ -965,7 +959,8 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 		dev->data->dev_conf.rxmode.jumbo_frame = 0;
 
 	/* Set the Max Rx frame length as 'mtu' +
-	 * Maximum Ethernet header length */
+	 * Maximum Ethernet header length
+	 */
 	ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW, priv->token,
 					mtu + ETH_VLAN_HLEN);
 	if (ret) {
@@ -1047,7 +1042,7 @@ dpaa2_dev_set_mac_addr(struct rte_eth_dev *dev,
 	if (ret)
 		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
 }
-
+#if 0
 static int
 dpaa2_dev_get_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr)
@@ -1070,7 +1065,7 @@ dpaa2_dev_get_mac_addr(struct rte_eth_dev *dev,
 		PMD_DRV_LOG(ERR, "error: Getting the MAC ADDR failed %d", ret);
 	return ret;
 }
-
+#endif
 static
 void dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats)
@@ -1450,7 +1445,7 @@ dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 }
 
 static struct eth_dev_ops dpaa2_ethdev_ops = {
-	.dev_configure	      = dpaa2_eth_dev_configure,
+	.dev_configure	  = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,
 	.dev_stop	      = dpaa2_dev_stop,
 	.dev_close	      = dpaa2_dev_close,
@@ -1460,18 +1455,18 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.allmulticast_disable = dpaa2_dev_allmulticast_disable,
 	.dev_set_link_up      = dpaa2_dev_set_link_up,
 	.dev_set_link_down    = dpaa2_dev_set_link_down,
-	.link_update	      = dpaa2_dev_link_update,
-	.stats_get	      = dpaa2_dev_stats_get,
-	.stats_reset	      = dpaa2_dev_stats_reset,
-	.dev_infos_get	      = dpaa2_dev_info_get,
+	.link_update	   = dpaa2_dev_link_update,
+	.stats_get	       = dpaa2_dev_stats_get,
+	.stats_reset	   = dpaa2_dev_stats_reset,
+	.dev_infos_get	   = dpaa2_dev_info_get,
 	.dev_supported_ptypes_get = dpaa2_supported_ptypes_get,
-	.mtu_set	      = dpaa2_dev_mtu_set,
+	.mtu_set           = dpaa2_dev_mtu_set,
 	.vlan_filter_set      = dpaa2_vlan_filter_set,
 	.vlan_offload_set     = dpaa2_vlan_offload_set,
-	.rx_queue_setup	      = dpaa2_dev_rx_queue_setup,
-	.rx_queue_release      = dpaa2_dev_rx_queue_release,
-	.tx_queue_setup	      = dpaa2_dev_tx_queue_setup,
-	.tx_queue_release      = dpaa2_dev_tx_queue_release,
+	.rx_queue_setup    = dpaa2_dev_rx_queue_setup,
+	.rx_queue_release  = dpaa2_dev_rx_queue_release,
+	.tx_queue_setup    = dpaa2_dev_tx_queue_setup,
+	.tx_queue_release  = dpaa2_dev_tx_queue_release,
 	.set_queue_rate_limit = NULL,
 	.flow_ctrl_get	      = dpaa2_flow_ctrl_get,
 	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
@@ -1553,9 +1548,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(ERR, "malloc failed for dpni device\n");
 		return -1;
 	}
-	priv->hw = dpni_dev;
 
-	dpni_dev->regs = mcp_ptr_list[0];
+	dpni_dev->regs = rte_mcp_ptr_list[0];
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Failure in opening dpni@%d device with"
@@ -1598,16 +1592,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	PMD_INIT_LOG(DEBUG, "num_tc %d", priv->num_tc);
 	PMD_INIT_LOG(DEBUG, "nb_rx_queues %d", priv->nb_rx_queues);
 
-	eth_dev->data->nb_rx_queues = priv->nb_rx_queues;
-	eth_dev->data->nb_tx_queues = priv->nb_tx_queues;
-
+	priv->hw = dpni_dev;
 	priv->hw_id = hw_id;
 	priv->options = attr.options;
-
 	priv->max_mac_filters = attr.mac_filter_entries;
-
 	priv->max_vlan_filters = attr.vlan_filter_entries;
-
 	priv->flags = 0;
 
 	/*If congestion control support is required */
@@ -1705,6 +1694,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
 	eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
+	rte_fslmc_vfio_dmamap();
 
 	/*If no prefetch is configured. */
 	if (getenv("DPAA2_RX_NO_PREFETCH")) {
@@ -1723,7 +1713,7 @@ init_err:
 }
 
 static struct rte_pci_id pci_id_dpaa2_map[] = {
-	{RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPNI_DEVID)},
+	{RTE_PCI_DEVICE(DPAA2_VENDOR_ID, DPAA2_MC_DPNI_DEVID)},
 };
 
 static struct eth_driver rte_dpaa2_dpni = {
@@ -1742,13 +1732,7 @@ rte_pmd_dpaa2_devinit(
 		const char *name __rte_unused,
 		const char *params __rte_unused)
 {
-	int ret = 0;
-
 	PMD_INIT_FUNC_TRACE();
-
-	ret = rte_eal_dpaa2_dmamap();
-	if (!ret)
-		PMD_INIT_LOG(DEBUG, "DMA Mapping has been completed");
 
 	rte_eth_driver_register(&rte_dpaa2_dpni);
 	return 0;

@@ -1,6 +1,7 @@
 #   BSD LICENSE
 #
 #   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 NXP. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -29,7 +30,6 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_DPAA2=$(RTE_SDK)/drivers/common/dpaa2
 
 #
 # library name
@@ -37,7 +37,6 @@ RTE_SDK_DPAA2=$(RTE_SDK)/drivers/common/dpaa2
 LIB = librte_pmd_dpaa2_sec.a
 
 # build flags
-CFLAGS += -D _GNU_SOURCE
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
@@ -45,16 +44,14 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
+CFLAGS += -D _GNU_SOURCE
 
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base
-CFLAGS += -I$(RTE_SDK_DPAA2)/mc
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK_DPAA2)/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
-
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/portal
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
+CFLAGS += -I$(RTE_SDK)/drivers/pool/dpaa2
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
 # versioning export map
@@ -63,19 +60,18 @@ EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 # library version
 LIBABIVER := 1
 
-
-# external library include paths
-CFLAGS += -Iinclude
-LDLIBS += -lcrypto
-
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_dpseci.c
 
 # library dependencies
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_mbuf
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_cryptodev
-DEPDIRS-y += drivers/common/dpaa/mc
-DEPDIRS-y += drivers/common/dpaa/qbman
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal lib/librte_cryptodev
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_mempool lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/common/dpaa2
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/bus/fslmc
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/pool/dpaa2
+
+LDLIBS += -lrte_common_dpaa2_qbman
+LDLIBS += -lrte_bus_fslmc
+LDLIBS += -lrte_pool_dpaa2
 
 include $(RTE_SDK)/mk/rte.lib.mk

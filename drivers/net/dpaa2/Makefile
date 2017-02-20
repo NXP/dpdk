@@ -1,6 +1,7 @@
 #   BSD LICENSE
 #
 #   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (c) 2016 NXP. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -29,7 +30,6 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_DPAA2=$(RTE_SDK)/drivers/common/dpaa2
 
 #
 # library name
@@ -43,17 +43,13 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
-CFLAGS +=-Wno-strict-aliasing
-CFLAGS +=-Wno-unused-function
 
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
-CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/base
-CFLAGS += -I$(RTE_SDK_DPAA2)/mc
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include
-CFLAGS += -I$(RTE_SDK_DPAA2)/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/
-CFLAGS += -I$(RTE_SDK)/lib/librte_ether
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/portal
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
+CFLAGS += -I$(RTE_SDK)/drivers/pool/dpaa2
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
 # versioning export map
@@ -62,20 +58,19 @@ EXPORT_MAP := rte_pmd_dpaa2_version.map
 # library version
 LIBABIVER := 1
 
-# Core DPAA2 logic
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/fsl_vfio.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpni.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpio.c
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += base/dpaa2_hw_dpbp.c
-
-# Interfaces with DPDK
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_rxtx.c
-
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
 
 # library dependencies
-DEPDIRS-y += lib/librte_eal
-DEPDIRS-y += drivers/common/dpaa/mc
-DEPDIRS-y += drivers/common/dpaa/qbman
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += lib/librte_eal lib/librte_ether
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += lib/librte_mempool lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/common/dpaa2
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/bus/fslmc
+DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/pool/dpaa2
+
+LDLIBS += -lrte_common_dpaa2_qbman
+LDLIBS += -lrte_bus_fslmc
+LDLIBS += -lrte_pool_dpaa2
 
 include $(RTE_SDK)/mk/rte.lib.mk

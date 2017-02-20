@@ -44,14 +44,11 @@
 #include <rte_dev.h>
 #include <rte_ethdev.h>
 
-/* DPAA2 Global constants */
+#include <fslmc_logs.h>
 #include <dpaa2_hw_pvt.h>
-#include "dpaa2_logs.h"
+#include <dpaa2_hw_mempool.h>
 
-/* DPAA2 Base interface files */
-#include <dpaa2_hw_dpbp.h>
-#include <dpaa2_hw_dpni.h>
-#include <dpaa2_hw_dpio.h>
+#include "../dpaa2_ethdev.h"
 
 static void
 dpaa2_distset_to_dpkg_profile_cfg(
@@ -288,40 +285,6 @@ dpaa2_distset_to_dpkg_profile_cfg(
 	kg_cfg->num_extracts = i;
 }
 
-void
-dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage)
-{
-	int i = 0;
-
-	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
-		if (q_storage->dq_storage[i])
-			rte_free(q_storage->dq_storage[i]);
-	}
-}
-
-int
-dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
-{
-	int i = 0;
-
-	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
-		q_storage->dq_storage[i] = rte_malloc(NULL,
-			DPAA2_DQRR_RING_SIZE * sizeof(struct qbman_result),
-			RTE_CACHE_LINE_SIZE);
-		if (!q_storage->dq_storage[i])
-			goto fail;
-		/*setting toggle for initial condition*/
-		q_storage->toggle = -1;
-	}
-	return 0;
-fail:
-	i -= 1;
-	while (i >= 0)
-		rte_free(q_storage->dq_storage[i]);
-
-	return -1;
-}
-
 int
 dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 		     void *blist)
@@ -337,7 +300,8 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	int tot_size;
 
 	/* ... rx buffer layout .
-	Check alignment for buffer layouts first*/
+	 * Check alignment for buffer layouts first
+	 */
 
 	/* ... rx buffer layout ... */
 	tot_size = DPAA2_HW_BUF_RESERVE + RTE_PKTMBUF_HEADROOM;
@@ -376,8 +340,8 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	priv->bp_list = bp_list;
 	return 0;
 }
-
-void
+#if 0
+static void
 dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -419,3 +383,4 @@ dpaa2_dev_print_stats(struct rte_eth_dev *dev)
 	printf("Rx no buffer: %ld\n", value.page_2.ingress_nobuffer_discards);
 	printf("Tx dropped: %ld\n", value.page_2.egress_discarded_frames);
 }
+#endif

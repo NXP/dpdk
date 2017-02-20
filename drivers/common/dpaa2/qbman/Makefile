@@ -30,28 +30,41 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_QBMAN=$(RTE_SDK)/drivers/common/dpaa2
 
 #
 # library name
 #
-LIB = libdpaa2_qbman.a
+LIB = librte_common_dpaa2_qbman.a
 
-CFLAGS += -O3 -g
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
+CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
+endif
+
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_POOL),y)
+CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_DPAA2_POOL)
+endif
+
+ifeq ($(CONFIG_RTE_LIBRTE_FSLMC_BUS),y)
+CONFIG_RTE_LIBRTE_DPAA2_COMMON = $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
+endif
+
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
+CFLAGS += -O0 -g
+CFLAGS += "-Wno-error"
+else
+CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
-CFLAGS +=-Wno-strict-aliasing
+endif
 
-CFLAGS += -I$(RTE_SDK_QBMAN)/qbman/include
-CFLAGS += -I$(RTE_SDK_QBMAN)/qbman/include/drivers
-CFLAGS += -I$(RTE_SDK_QBMAN)/qbman/driver/
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
 
+EXPORT_MAP := rte_common_dpaa2_qbman_version.map
 
 LIBABIVER := 1
 
 # all source are stored in SRCS-y
 #
-SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += \
-	driver/qbman_portal.c
-
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_COMMON) += \
+	qbman_portal.c
 
 include $(RTE_SDK)/mk/rte.lib.mk
