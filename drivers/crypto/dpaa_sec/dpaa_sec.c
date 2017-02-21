@@ -51,10 +51,10 @@
 #include <usdpaa/fsl_usd.h>
 #include <usdpaa/fsl_qman.h>
 /* RTA header files */
-#include <flib/desc/common.h>
-#include <flib/desc/algo.h>
-#include <flib/desc/ipsec.h>
-#include <flib/rta.h>
+#include <hw/desc/common.h>
+#include <hw/desc/algo.h>
+#include <hw/desc/ipsec.h>
+#include <hw/rta.h>
 
 #include "dpaa_sec.h"
 #include "dpaa_sec_log.h"
