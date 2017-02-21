@@ -160,6 +160,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 	first_seg->data_len = sge->length  & 0x1FFFF;
 	first_seg->pkt_len = DPAA2_GET_FD_LEN(fd);
 	first_seg->nb_segs = 1;
+	first_seg->next = NULL;
 
 	first_seg->packet_type = dpaa2_dev_rx_parse(
 			 (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
@@ -280,7 +281,7 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 			if (rte_mbuf_refcnt_read(cur_seg) > 1) {
 				/* If refcnt > 1, invalid bpid is set to ensure
 				   buffer is not freed by HW */
-				DPAA2_SET_FLE_BPID(sge, 0xff);
+				DPAA2_SET_FLE_IVP(sge);
 				rte_mbuf_refcnt_update(cur_seg, -1);
 			} else
 				DPAA2_SET_FLE_BPID(sge,
@@ -292,7 +293,7 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 			if (rte_mbuf_refcnt_read(mi) > 1) {
 				/* If refcnt > 1, invalid bpid is set to ensure
 				   owner buffer is not freed by HW */
-				DPAA2_SET_FLE_BPID(sge, 0xff);
+				DPAA2_SET_FLE_IVP(sge);
 			} else {
 				DPAA2_SET_FLE_BPID(sge,
 						mempool_to_bpid(mi->pool));
@@ -322,16 +323,15 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	fd->simple.bpid_offset = 0;
 	if (RTE_MBUF_DIRECT(mbuf)) {
 		if (rte_mbuf_refcnt_read(mbuf) > 1) {
-			bpid = 0xff;
+			DPAA2_SET_FD_IVP(fd);
 			rte_mbuf_refcnt_update(mbuf, -1);
 		}
 	} else {
 		mi = rte_mbuf_from_indirect(mbuf);
-		if (rte_mbuf_refcnt_read(mi) > 1) {
-			bpid = 0xff;
-		} else {
+		if (rte_mbuf_refcnt_read(mi) > 1)
+			DPAA2_SET_FD_IVP(fd);
+		else
 			rte_mbuf_refcnt_update(mi, 1);
-		}
 	}
 
 	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
