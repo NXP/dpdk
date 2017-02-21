@@ -46,7 +46,7 @@ endif
 
 CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa/include
 # reference to flib in dpaa_sec/
-CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
