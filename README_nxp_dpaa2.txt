@@ -1,9 +1,9 @@
 ===============================================================================
-NXP DPDK README FOR LS-DPAA2 PLATFORM
+NXP DPDK README FOR LS-DPAA2 PLATFORM e.g LS208x, LS108x
 ===============================================================================
 
 NXP DPDK provides a set of data plane libraries and network interface
-controller driver for LS2 and QorIQ platforms.
+controller driver for Layerscape platforms
 This README provides information about building and executing DPDK based
 applications for LS-DPAA2 platform
 
@@ -40,7 +40,7 @@ Following information can be used to obtain these components:
 
      Cross compiled toolchain For ARM64
      ==================================
-    get the linaro gcc-4.9 toolchain from:
+    get the linaro gcc-4.9 or later toolchain from:
     https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
@@ -88,7 +88,10 @@ How to Build DPDK Applications
    DPDK libraries, which are required for compiling DPDK examples and
    applications:
 
-     1. export KERNEL_PATH=<path to LS2 Linux kernel code>
+     1. export KERNEL_PATH=<path to LS2 Linux kernel code - prebuild>
+	if you don't have kernel sources, you may disable KNI
+		modify config/defconfig_arm64-dpaa2-linuxapp-gcc
+		CONFIG_RTE_KNI_KMOD=n	
      2. export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
      4. source standalone-dpaa2
