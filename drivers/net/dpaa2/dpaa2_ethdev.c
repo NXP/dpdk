@@ -364,7 +364,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
 		/* 00 00 00 - last 6 bit represent annotation, context stashing,
 		 * data stashing setting 01 01 00 (0x14) to enable
-		 * 1 line annotation, 1 line context
+		 * 1 line data, 1 line annotation
 		 */
 		cfg.flc.value |= 0x14;
 	}
@@ -1530,7 +1530,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
 	int i, ret = -1, hw_id;
-	int tot_size;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1639,31 +1638,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret) {
 		PMD_INIT_LOG(ERR, "DPNI get mac address failed:"
 					" Error Code = %d\n", ret);
-		goto init_err;
-	}
-
-	/* ... rx buffer layout ... */
-	tot_size = DPAA2_HW_BUF_RESERVE + RTE_PKTMBUF_HEADROOM;
-	tot_size = RTE_ALIGN_CEIL(tot_size,
-				  DPAA2_PACKET_LAYOUT_ALIGN);
-
-	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				DPNI_BUF_LAYOUT_OPT_PARSER_RESULT |
-				DPNI_BUF_LAYOUT_OPT_DATA_HEAD_ROOM |
-				DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
-
-	layout.pass_frame_status = 1;
-	layout.data_head_room = tot_size
-		- DPAA2_FD_PTA_SIZE - DPAA2_MBUF_HW_ANNOTATION;
-	layout.private_data_size = DPAA2_FD_PTA_SIZE;
-	layout.pass_parser_result = 1;
-	PMD_INIT_LOG(DEBUG, "Tot_size = %d, head room = %d, private = %d",
-		     tot_size, layout.data_head_room, layout.private_data_size);
-	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
-				     DPNI_QUEUE_RX, &layout);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Err(%d) in setting rx buffer layout", ret);
 		goto init_err;
 	}
 
