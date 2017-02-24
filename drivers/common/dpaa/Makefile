@@ -41,6 +41,7 @@ CFLAGS += -O3 -g
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS +=-Wno-pointer-arith
 CFLAGS +=-Wno-cast-qual
+CFLAGS +=-Wno-free-nonheap-object
 CFLAGS += -D _GNU_SOURCE
 
 CFLAGS += -I$(RTE_SDK_DPAA)/
