@@ -78,6 +78,10 @@
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  10240
 
+/* RX queue tail drop threshold
+ * currently considering 32 KB packets */
+#define CONG_THRESHOLD_RX_Q  (32 * 1024)
+
 /* total number of bpools on SoC */
 #define DPAA_MAX_BPOOLS	256
 
