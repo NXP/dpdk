@@ -529,6 +529,7 @@ struct qm_fqd {
 	 * commands, this field is always 'td', and 'oac_query' (below) reflects
 	 * the Overhead ACcounting values. */
 	union {
+		uint16_t opaque_td;
 		struct qm_fqd_taildrop td;
 		struct qm_fqd_oac oac_init;
 	};

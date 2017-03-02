@@ -302,6 +302,7 @@ static inline void cpu_to_hw_fqd(struct qm_fqd *fqd)
 	fqd->ics_cred = cpu_to_be16(fqd->ics_cred);
 	fqd->context_b = cpu_to_be32(fqd->context_b);
 	fqd->context_a.opaque = cpu_to_be64(fqd->context_a.opaque);
+	fqd->opaque_td = cpu_to_be16(fqd->opaque_td);
 }
 
 static inline void hw_fqd_to_cpu(struct qm_fqd *fqd)
