@@ -247,7 +247,6 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 	static int alloc;
 #endif
 	struct qbman_swp *swp;
-	uint32_t mbuf_size;
 	uint16_t bpid;
 	uint64_t bufs[DPAA2_MBUF_MAX_ACQ_REL];
 	int i, ret;
@@ -272,8 +271,6 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	mbuf_size = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(pool);
-
 	while (n < count) {
 		/* Acquire is all-or-nothing, so we drain in 7s,
 		 * then the remainder.
@@ -294,17 +291,14 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 			/* The API expect the exact number of requested bufs */
 			/* Releasing all buffers allocated */
 			rte_dpaa2_mbuf_release(pool, obj_table, bpid,
-					   bp_info->meta_data_size, n);
+					       bp_info->meta_data_size, n);
 			return -1;
 		}
 		/* assigning mbuf from the acquired objects */
 		for (i = 0; (i < ret) && bufs[i]; i++) {
-			/* TODO-errata - observed that bufs may be null
-			 * i.e. first buffer is valid,
-			 * remaining 6 buffers may be null
-			 */
 			DPAA2_MODIFY_IOVA_TO_VADDR(bufs[i], uint64_t);
-			obj_table[n] = (struct rte_mbuf *)(bufs[i] - mbuf_size);
+			obj_table[n] = (struct rte_mbuf *)
+				       (bufs[i] - bp_info->meta_data_size);
 			rte_mbuf_refcnt_set((struct rte_mbuf *)obj_table[n], 0);
 			PMD_TX_LOG(DEBUG, "Acquired %p address %p from BMAN",
 				   (void *)bufs[i], (void *)obj_table[n]);
