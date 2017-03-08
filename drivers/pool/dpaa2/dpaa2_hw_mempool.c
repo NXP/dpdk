@@ -201,6 +201,8 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	qbman_release_desc_set_bpid(&releasedesc, bpid);
 
 	n = count % DPAA2_MBUF_MAX_ACQ_REL;
+	if (unlikely(!n))
+		goto aligned;
 
 	/* convert mbuf to buffers  for the remainder*/
 	for (i = 0; i < n ; i++) {
@@ -216,6 +218,7 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 		ret = qbman_swp_release(swp, &releasedesc, bufs, n);
 	} while (ret == -EBUSY);
 
+aligned:
 	/* if there are more buffers to free */
 	while (n < count) {
 		/* convert mbuf to buffers */
