@@ -78,6 +78,10 @@
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
    a pointer to the shared descriptor*/
 #define MIN_JOB_DESC_SIZE	(CAAM_CMD_SZ + CAAM_PTR_SZ)
+/* CTX_POOL_NUM_BUFS is set as per the ipsec-secgw application */
+#define CTX_POOL_NUM_BUFS	32000
+#define CTX_POOL_BUF_SIZE	sizeof(struct dpaa_sec_op_ctx)
+#define CTX_POOL_CACHE_SIZE	512
 
 enum rta_sec_era rta_sec_era;
 
@@ -99,20 +103,28 @@ static inline void dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 	}
 
 	/* report op status to sym->op and then free the ctx memeory  */
-	rte_free(ctx);
+	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
 }
 
-static inline struct dpaa_sec_job *dpaa_sec_alloc_job(void)
+static inline struct
+dpaa_sec_op_ctx *dpaa_sec_alloc_ctx(struct dpaa_sec_ses *ses)
 {
 	struct dpaa_sec_op_ctx *ctx;
+	int retval;
 
-	ctx = rte_zmalloc(NULL, sizeof(*ctx), RTE_CACHE_LINE_SIZE);
-	if (!ctx) {
-		printf("Alloc sec descriptor failed!\n");
+	retval = rte_mempool_get(ses->ctx_pool, (void **)(&ctx));
+	if (!ctx || retval) {
+		PMD_DRV_LOG(ERR,"Alloc sec descriptor failed!\n");
 		return NULL;
 	}
+	dcbz_64(&ctx->job.sg[0]);
+	dcbz_64(&ctx->job.sg[5]);
+	dcbz_64(&ctx->job.sg[9]);
+	dcbz_64(&ctx->job.sg[13]);
 
-	return &ctx->job;
+	ctx->ctx_pool = ses->ctx_pool;
+
+	return ctx;
 }
 
 static inline phys_addr_t dpaa_mem_vtop(void *vaddr)
@@ -508,21 +520,20 @@ static inline struct dpaa_sec_job *build_auth_only(struct rte_crypto_op *op)
 {
 	struct rte_crypto_sym_op *sym = op->sym;
 	struct rte_mbuf *mbuf = sym->m_src;
-	struct dpaa_sec_ses *ses;
+	struct dpaa_sec_ses *ses = dpaa_get_sec_ses(op);
 	struct dpaa_sec_job *cf;
 	struct dpaa_sec_op_ctx *ctx;
 	struct qm_sg_entry *sg;
 	phys_addr_t start_addr;
 	uint8_t *old_digest;
 
-	cf = dpaa_sec_alloc_job();
-	if (!cf)
+	ctx = dpaa_sec_alloc_ctx(ses);
+	if (!ctx)
 		return NULL;
 
-	ctx = container_of(cf, struct dpaa_sec_op_ctx, job);
+	cf = &ctx->job;
 	ctx->op = op;
 	old_digest = ctx->digest;
-	ses = dpaa_get_sec_ses(op);
 
 	start_addr = rte_pktmbuf_mtophys(mbuf);
 	/* output */
@@ -571,16 +582,17 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 {
 	struct rte_crypto_sym_op *sym = op->sym;
 	struct rte_mbuf *mbuf = sym->m_src;
+	struct dpaa_sec_ses *ses = dpaa_get_sec_ses(op);
 	struct dpaa_sec_job *cf;
 	struct dpaa_sec_op_ctx *ctx;
 	struct qm_sg_entry *sg;
 	phys_addr_t start_addr;
 
-	cf = dpaa_sec_alloc_job();
-	if (!cf)
+	ctx = dpaa_sec_alloc_ctx(ses);
+	if (!ctx)
 		return NULL;
 
-	ctx = container_of(cf, struct dpaa_sec_op_ctx, job);
+	cf = &ctx->job;
 	ctx->op = op;
 	start_addr = rte_pktmbuf_mtophys(mbuf);
 
@@ -618,25 +630,26 @@ static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 {
 	struct rte_crypto_sym_op *sym = op->sym;
 	struct rte_mbuf *mbuf = sym->m_src;
-	struct dpaa_sec_ses *ses;
+	struct dpaa_sec_ses *ses = dpaa_get_sec_ses(op);
 	struct dpaa_sec_job *cf;
 	struct dpaa_sec_op_ctx *ctx;
 	struct qm_sg_entry *sg;
 	phys_addr_t start_addr;
 	uint32_t length = 0;
 
+
 	start_addr = mbuf->buf_physaddr + mbuf->data_off;
 
-	cf = dpaa_sec_alloc_job();
-	if (!cf)
+	ctx = dpaa_sec_alloc_ctx(ses);
+	if (!ctx)
 		return NULL;
 
-	ctx = container_of(cf, struct dpaa_sec_op_ctx, job);
+	cf = &ctx->job;
 	ctx->op = op;
 	ctx->auth_only_len = sym->auth.data.length - sym->cipher.data.length;
-	ses = dpaa_get_sec_ses(op);
 
 	/* input */
+	rte_prefetch0(cf->sg);
 	sg = &cf->sg[2];
 	qm_sg_entry_set64(&cf->sg[1], dpaa_mem_vtop(sg));
 	if (is_encode(ses)) {
@@ -952,6 +965,7 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 			   struct rte_crypto_sym_xform *xform, void *ses)
 {
 	struct dpaa_sec_ses *session = ses;
+	struct dpaa_sec_qi *qi = dev->data->dev_private;
 
 	if (unlikely(ses == NULL)) {
 		PMD_DRV_LOG(ERR, "invalid session struct");
@@ -994,6 +1008,8 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 		PMD_DRV_LOG(ERR, "Invalid crypto type");
 		return NULL;
 	}
+
+	session->ctx_pool = qi->ctx_pool;
 
 	return session;
 }
@@ -1086,8 +1102,13 @@ void dpaa_sec_stats_reset(struct rte_cryptodev *dev __rte_unused)
 static int
 dpaa_sec_dev_uninit(__attribute__((unused))
 		  const struct rte_cryptodev_driver *crypto_drv,
-		  struct rte_cryptodev *dev __rte_unused)
+		  struct rte_cryptodev *dev)
 {
+	struct dpaa_sec_qi *qi = dev->data->dev_private;
+
+	rte_mempool_free(qi->ctx_pool);
+	rte_free(qi);
+
 	PMD_DRV_LOG(INFO, "Closing dpaa crypto device %s\n", dev->data->name);
 
 	return 0;
@@ -1120,6 +1141,7 @@ dpaa_sec_dev_init(__attribute__((unused))
 		  struct rte_cryptodev *dev)
 {
 	struct dpaa_sec_qi *qi;
+	char str[20];
 
 	PMD_INIT_FUNC_TRACE();
 	PMD_DRV_LOG(DEBUG, "Found crypto device at %02x:%02x.%x\n",
@@ -1145,6 +1167,19 @@ dpaa_sec_dev_init(__attribute__((unused))
 	}
 	qi->max_nb_queue_pairs = RTE_MAX_NB_SEC_QPS;
 	qi->max_nb_sessions = RTE_MAX_NB_SEC_SES;
+	sprintf(str, "ctx_pool_%d", dev->data->dev_id);
+	qi->ctx_pool = rte_mempool_create((const char *)str,
+			CTX_POOL_NUM_BUFS,
+			CTX_POOL_BUF_SIZE,
+			CTX_POOL_CACHE_SIZE, 0,
+			NULL, NULL, NULL, NULL,
+			SOCKET_ID_ANY, 0);
+	if (!qi->ctx_pool) {
+		RTE_LOG(ERR, PMD, "%s create failed", str);
+		goto init_error;
+	} else
+		RTE_LOG(INFO, PMD, "%s created: %p\n", str, qi->ctx_pool);
+
 	dev->data->dev_private = qi;
 
 	dpaa_sec_dev_configure(dev);
@@ -1152,6 +1187,11 @@ dpaa_sec_dev_init(__attribute__((unused))
 	PMD_DRV_LOG(DEBUG, "driver %s: created\n", dev->data->name);
 
 	return 0;
+
+init_error:
+	rte_free(qi);
+	PMD_INIT_LOG(ERR, "driver %s: create failed\n", dev->data->name);
+	return -EFAULT;
 }
 
 static struct rte_pci_id pci_id_dpaa_sec_map[] = {
