@@ -29,8 +29,8 @@
  *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __DPDK_ETHDEV_H__
-#define __DPDK_ETHDEV_H__
+#ifndef __DPAA_ETHDEV_H__
+#define __DPAA_ETHDEV_H__
 
 /* System headers */
 #include <stdbool.h>
