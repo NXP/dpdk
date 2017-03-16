@@ -119,6 +119,7 @@ struct dpaa_sec_ses {
 	struct dpaa_auth   auth;
 	uint32_t auth_trunc_len;
 	struct dpaa_sec_qp *qp;
+	struct rte_mempool *ctx_pool; /* session mempool for dpaa_sec_op_ctx */
 };
 
 struct dpaa_sec_qp {
@@ -138,6 +139,7 @@ struct dpaa_sec_qp {
 /* internal sec queue interface */
 struct dpaa_sec_qi {
 	void *sec_hw;
+	struct rte_mempool *ctx_pool; /* per dev mempool for dpaa_sec_op_ctx */
 	struct dpaa_sec_qp qps[RTE_MAX_NB_SEC_QPS]; /* i/o queue for sec */
 	unsigned max_nb_queue_pairs;
 	unsigned max_nb_sessions;
@@ -152,6 +154,7 @@ struct dpaa_sec_job {
 struct dpaa_sec_op_ctx {
 	struct dpaa_sec_job job;
 	struct rte_crypto_op *op;
+	struct rte_mempool *ctx_pool; /* mempool pointer for dpaa_sec_op_ctx */
 	uint32_t fd_status;
 	uint32_t auth_only_len;
 	uint8_t digest[DPAA_MAX_NB_MAX_DIGEST];
