@@ -139,7 +139,11 @@ do { \
 		warned_##__LINE__ = 1; \
 	} \
 } while (0)
+#ifdef CONFIG_BUGON
 #define QBMAN_BUG_ON(c) WARN_ON(c, "BUG")
+#else
+#define QBMAN_BUG_ON(c) {}
+#endif
 
 #define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
 
