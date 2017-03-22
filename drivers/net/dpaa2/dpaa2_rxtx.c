@@ -317,22 +317,8 @@ static void __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	       struct qbman_fd *fd, uint16_t bpid)
 {
-	struct rte_mbuf *mi = NULL;
-
 	/*Resetting the buffer pool id and offset field*/
 	fd->simple.bpid_offset = 0;
-	if (RTE_MBUF_DIRECT(mbuf)) {
-		if (rte_mbuf_refcnt_read(mbuf) > 1) {
-			DPAA2_SET_FD_IVP(fd);
-			rte_mbuf_refcnt_update(mbuf, -1);
-		}
-	} else {
-		mi = rte_mbuf_from_indirect(mbuf);
-		if (rte_mbuf_refcnt_read(mi) > 1)
-			DPAA2_SET_FD_IVP(fd);
-		else
-			rte_mbuf_refcnt_update(mi, 1);
-	}
 
 	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
 	DPAA2_SET_FD_LEN(fd, mbuf->data_len);
@@ -348,8 +334,21 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
 
 	eth_check_offload(mbuf, fd);
-	if (mi)
+
+	if (RTE_MBUF_DIRECT(mbuf)) {
+		if (rte_mbuf_refcnt_read(mbuf) > 1) {
+			DPAA2_SET_FD_IVP(fd);
+			rte_mbuf_refcnt_update(mbuf, -1);
+		}
+	} else {
+		struct rte_mbuf *mi;
+		mi = rte_mbuf_from_indirect(mbuf);
+		if (rte_mbuf_refcnt_read(mi) > 1)
+			DPAA2_SET_FD_IVP(fd);
+		else
+			rte_mbuf_refcnt_update(mi, 1);
 		rte_pktmbuf_free(mbuf);
+	}
 }
 
 static inline int __attribute__((hot))
