@@ -58,6 +58,7 @@
 /* RTA header files */
 #include <hw/desc/ipsec.h>
 #include <hw/desc/algo.h>
+#include <hw/desc/addl_algo.h>
 
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
  * a pointer to the shared descriptor
@@ -71,12 +72,155 @@
 #define NO_PREFETCH 0
 #define TDES_CBC_IV_LEN 8
 #define AES_CBC_IV_LEN 16
+#define AES_CTR_IV_LEN 16
+#define AES_GCM_IV_LEN 12
 /* FLE_POOL_NUM_BUFS is set as per the ipsec-secgw application */
 #define FLE_POOL_NUM_BUFS	32000
 #define FLE_POOL_BUF_SIZE	256
 #define FLE_POOL_CACHE_SIZE	512
 
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
+
+
+static inline int build_authenc_gcm_fd(dpaa2_sec_session *sess,
+				   struct rte_crypto_op *op,
+		struct qbman_fd *fd, uint16_t bpid)
+{
+	struct rte_crypto_sym_op *sym_op = op->sym;
+	struct ctxt_priv *priv = sess->ctxt;
+	struct qbman_fle *fle, *sge;
+	struct sec_flow_context *flc;
+	uint32_t auth_only_len = sym_op->auth.aad.length;
+	int icv_len = sym_op->auth.digest.length, retval;
+	uint8_t *old_icv;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* TODO we are using the first FLE entry to store Mbuf and session ctxt.
+	   Currently we donot know which FLE has the mbuf stored.
+	   So while retreiving we can go back 1 FLE from the FD -ADDR
+	   to get the MBUF Addr from the previous FLE.
+	   We can have a better approach to use the inline Mbuf*/
+	retval = rte_mempool_get(priv->fle_pool, (void **)(&fle));
+	if (retval) {
+		RTE_LOG(ERR, PMD, "Memory alloc failed for SGE\n");
+		return -1;
+	}
+	memset(fle, 0, FLE_POOL_BUF_SIZE);
+	DPAA2_SET_FLE_ADDR(fle, DPAA2_OP_VADDR_TO_IOVA(op));
+	DPAA2_FLE_SAVE_CTXT(fle, priv);
+	fle = fle + 1;
+	sge = fle + 2;
+	if (likely(bpid < MAX_BPID)) {
+		DPAA2_SET_FD_BPID(fd, bpid);
+		DPAA2_SET_FLE_BPID(fle, bpid);
+		DPAA2_SET_FLE_BPID(fle + 1, bpid);
+		DPAA2_SET_FLE_BPID(sge, bpid);
+		DPAA2_SET_FLE_BPID(sge + 1, bpid);
+		DPAA2_SET_FLE_BPID(sge + 2, bpid);
+		DPAA2_SET_FLE_BPID(sge + 3, bpid);
+	} else {
+		DPAA2_SET_FD_IVP(fd);
+		DPAA2_SET_FLE_IVP(fle);
+		DPAA2_SET_FLE_IVP((fle + 1));
+		DPAA2_SET_FLE_IVP(sge);
+		DPAA2_SET_FLE_IVP((sge + 1));
+		DPAA2_SET_FLE_IVP((sge + 2));
+		DPAA2_SET_FLE_IVP((sge + 3));
+	}
+
+	/* Save the shared descriptor */
+	flc = &priv->flc_desc[0].flc;
+	/* Configure FD as a FRAME LIST */
+	DPAA2_SET_FD_ADDR(fd, DPAA2_VADDR_TO_IOVA(fle));
+	DPAA2_SET_FD_COMPOUND_FMT(fd);
+	DPAA2_SET_FD_FLC(fd, DPAA2_VADDR_TO_IOVA(flc));
+
+	PMD_TX_LOG(DEBUG, "auth_off: 0x%x/length %d, digest-len=%d\n"
+		   "cipher_off: 0x%x/length %d, iv-len=%d data_off: 0x%x\n",
+		   sym_op->auth.data.offset,
+		   sym_op->auth.data.length,
+		   sym_op->auth.digest.length,
+		   sym_op->cipher.data.offset,
+		   sym_op->cipher.data.length,
+		   sym_op->cipher.iv.length,
+		   sym_op->m_src->data_off);
+
+	/* Configure Output FLE with Scatter/Gather Entry */
+	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
+	if (auth_only_len)
+		DPAA2_SET_FLE_INTERNAL_JD(fle, auth_only_len);
+	fle->length = (sess->dir == DIR_ENC) ?
+			(sym_op->cipher.data.length + icv_len + auth_only_len) :
+			sym_op->cipher.data.length + auth_only_len;
+
+	DPAA2_SET_FLE_SG_EXT(fle);
+
+	/* Configure Output SGE for Encap/Decap */
+	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
+	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset +
+				sym_op->m_src->data_off - auth_only_len);
+	sge->length = sym_op->cipher.data.length + auth_only_len;
+
+	if (sess->dir == DIR_ENC) {
+		sge++;
+		DPAA2_SET_FLE_ADDR(sge,
+				DPAA2_VADDR_TO_IOVA(sym_op->auth.digest.data));
+		sge->length = sym_op->auth.digest.length;
+		DPAA2_SET_FD_LEN(fd, (sym_op->cipher.data.length +
+					sym_op->cipher.iv.length + auth_only_len));
+	}
+	DPAA2_SET_FLE_FIN(sge);
+
+	sge++;
+	fle++;
+
+	/* Configure Input FLE with Scatter/Gather Entry */
+	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
+	DPAA2_SET_FLE_SG_EXT(fle);
+	DPAA2_SET_FLE_FIN(fle);
+	fle->length = (sess->dir == DIR_ENC) ?
+			(sym_op->cipher.data.length + sym_op->cipher.iv.length + auth_only_len) :
+			(sym_op->cipher.data.length + sym_op->cipher.iv.length + auth_only_len +
+			 sym_op->auth.digest.length);
+
+	/* Configure Input SGE for Encap/Decap */
+	DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(sym_op->cipher.iv.data));
+	sge->length = sym_op->cipher.iv.length;
+	sge++;
+	if (auth_only_len) {
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(sym_op->auth.aad.data));
+		sge->length = sym_op->auth.aad.length;
+		DPAA2_SET_FLE_BPID(sge, bpid);
+		sge++;
+	}
+
+	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
+	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset +
+				sym_op->m_src->data_off);
+	sge->length = sym_op->cipher.data.length;
+	if (sess->dir == DIR_DEC) {
+		sge++;
+		old_icv = (uint8_t *)(sge + 1);
+		memcpy(old_icv,	sym_op->auth.digest.data,
+		       sym_op->auth.digest.length);
+		memset(sym_op->auth.digest.data, 0, sym_op->auth.digest.length);
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(old_icv));
+		sge->length = sym_op->auth.digest.length;
+		DPAA2_SET_FD_LEN(fd, (sym_op->cipher.data.length +
+				 sym_op->auth.digest.length +
+				 sym_op->cipher.iv.length +
+				 auth_only_len));
+	}
+	DPAA2_SET_FLE_FIN(sge);
+
+	if (auth_only_len) {
+		DPAA2_SET_FLE_INTERNAL_JD(fle, auth_only_len);
+		DPAA2_SET_FD_INTERNAL_JD(fd, auth_only_len);
+	}
+
+	return 0;
+}
 
 static inline int
 build_authenc_fd(dpaa2_sec_session *sess,
@@ -211,9 +355,11 @@ build_authenc_fd(dpaa2_sec_session *sess,
 	return 0;
 }
 
-static inline int
-build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
-	      struct qbman_fd *fd, uint16_t bpid)
+static inline int build_auth_fd(
+		dpaa2_sec_session *sess,
+		struct rte_crypto_op *op,
+		struct qbman_fd *fd,
+		uint16_t bpid)
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
 	struct qbman_fle *fle, *sge;
@@ -412,7 +558,10 @@ build_sec_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 		ret = build_auth_fd(sess, op, fd, bpid);
 		break;
 	case DPAA2_SEC_CIPHER_HASH:
-		ret = build_authenc_fd(sess, op, fd, bpid);
+		if (sess->cipher_alg == RTE_CRYPTO_CIPHER_AES_GCM)
+			ret = build_authenc_gcm_fd(sess, op, fd, bpid);
+		else
+			ret = build_authenc_fd(sess, op, fd, bpid);
 		break;
 	case DPAA2_SEC_HASH_CIPHER:
 	default:
@@ -495,8 +644,9 @@ skip_tx:
 	return num_tx;
 }
 
-static inline struct rte_crypto_op *
-sec_fd_to_mbuf(const struct qbman_fd *fd)
+static inline
+struct rte_crypto_op *sec_fd_to_mbuf(
+	const struct qbman_fd *fd)
 {
 	struct qbman_fle *fle;
 	struct rte_crypto_op *op;
@@ -818,6 +968,11 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		ctxt->iv.length = AES_CTR_IV_LEN;
+		break;
 	case RTE_CRYPTO_CIPHER_3DES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_GCM:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
@@ -881,7 +1036,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_auth_ctxt *ctxt = &session->ext_params.auth_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	unsigned int bufsize;
+	unsigned int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -977,6 +1132,8 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
 				   1, 0, &authdata, !session->dir,
 				   ctxt->trunc_len);
+	if (bufsize <= 0)
+		goto error_out;
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	flc->word2_rflc_31_0 = lower_32_bits(
@@ -986,6 +1143,9 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 			(uint64_t)&(((struct dpaa2_sec_qp *)
 			dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
+	for (i = 0; i < bufsize; i++)
+		PMD_DRV_LOG(DEBUG, "DESC[%d]:0x%x\n",
+			    i, priv->flc_desc[DESC_INITFINAL].desc[i]);
 
 	return 0;
 
@@ -1003,7 +1163,7 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
-	unsigned int bufsize;
+	unsigned int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_cipher_xform *cipher_xform;
@@ -1096,8 +1256,12 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA512_HMAC;
 		break;
-	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_AES_GCM:
+		authdata.algtype = OP_ALG_ALGSEL_AES;
+		authdata.algmode = OP_ALG_AAI_GCM;
+		session->auth_alg = RTE_CRYPTO_AUTH_AES_GCM;
+		break;
+	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
@@ -1138,12 +1302,23 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
 		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
+	case RTE_CRYPTO_CIPHER_AES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		ctxt->iv.length = AES_CTR_IV_LEN;
+		break;
 	case RTE_CRYPTO_CIPHER_AES_GCM:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
+		cipherdata.algmode = OP_ALG_AAI_GCM;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_GCM;
+		ctxt->iv.length = AES_GCM_IV_LEN;
+		break;
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
 	case RTE_CRYPTO_CIPHER_NULL:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
-	case RTE_CRYPTO_CIPHER_AES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 		RTE_LOG(ERR, PMD, "Crypto: Unsupported Cipher alg %u",
@@ -1184,13 +1359,26 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	priv->flc_desc[0].desc[1] = 0;
 	priv->flc_desc[0].desc[2] = 0;
 
-	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH) {
+	if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH &&
+			session->cipher_alg != RTE_CRYPTO_CIPHER_AES_GCM) {
 		bufsize = cnstr_shdsc_authenc(priv->flc_desc[0].desc, 1,
 					      0, &cipherdata, &authdata,
 					      ctxt->iv.length,
 					      ctxt->auth_only_len,
 					      ctxt->trunc_len,
 					      session->dir);
+	} else if (session->ctxt_type == DPAA2_SEC_CIPHER_HASH &&
+			session->cipher_alg == RTE_CRYPTO_CIPHER_AES_GCM) {
+		if (session->dir == DIR_ENC)
+			bufsize = cnstr_shdsc_gcm_encap(
+					priv->flc_desc[0].desc, 1, 0,
+					&cipherdata, ctxt->iv.length,
+					ctxt->trunc_len);
+		else
+			bufsize = cnstr_shdsc_gcm_decap(
+					priv->flc_desc[0].desc, 1, 0,
+					&cipherdata, ctxt->iv.length,
+					ctxt->trunc_len);
 	} else {
 		RTE_LOG(ERR, PMD, "Hash before cipher not supported");
 		goto error_out;
@@ -1204,6 +1392,9 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 			(uint64_t)&(((struct dpaa2_sec_qp *)
 			dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
+	for (i = 0; i < bufsize; i++)
+		PMD_DRV_LOG(DEBUG, "DESC[%d]:0x%x\n",
+			    i, priv->flc_desc[0].desc[i]);
 
 	return 0;
 
