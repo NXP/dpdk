@@ -64,6 +64,7 @@
 #define NO_PREFETCH 0
 #define TDES_CBC_IV_LEN 8
 #define AES_CBC_IV_LEN 16
+#define AES_CTR_IV_LEN 16
 /* FLE_POOL_NUM_BUFS is set as per the ipsec-secgw application */
 #define FLE_POOL_NUM_BUFS	32000
 #define FLE_POOL_BUF_SIZE	256
@@ -990,6 +991,11 @@ static int dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		ctxt->iv.length = AES_CTR_IV_LEN;
+		break;
 	case RTE_CRYPTO_CIPHER_3DES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_GCM:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
@@ -1052,7 +1058,7 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_auth_ctxt *ctxt = &session->ext_params.auth_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	unsigned int bufsize;
+	unsigned int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -1073,6 +1079,11 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 
 	session->auth_key.data = rte_zmalloc(NULL, xform->auth.key.length,
 			RTE_CACHE_LINE_SIZE);
+	if (session->auth_key.data == NULL) {
+		RTE_LOG(ERR, PMD, "No Memory for auth key");
+		rte_free(priv);
+		return -1;
+	}
 	session->auth_key.length = xform->auth.key.length;
 
 	memcpy(session->auth_key.data, xform->auth.key.data,
@@ -1152,11 +1163,16 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 			(uint64_t)&(((struct dpaa2_sec_qp *)
 			dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
+	for (i = 0; i < bufsize; i++)
+		PMD_DRV_LOG(DEBUG, "DESC[%d]:0x%x\n",
+			    i, priv->flc_desc[DESC_INITFINAL].desc[i]);
+
 
 	return 0;
 
 error_out:
 	rte_free(session->auth_key.data);
+	rte_free(priv);
 	return -1;
 }
 
@@ -1167,7 +1183,7 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
-	unsigned int bufsize;
+	unsigned int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_cipher_xform *cipher_xform;
@@ -1203,16 +1219,19 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 
 	session->cipher_key.data = rte_zmalloc(NULL, cipher_xform->key.length,
 					       RTE_CACHE_LINE_SIZE);
-	if (session->cipher_key.data == NULL) {
+	if (session->cipher_key.data == NULL && cipher_xform->key.length > 0) {
 		RTE_LOG(ERR, PMD, "No Memory for cipher key");
+		rte_free(priv);
 		return -1;
 	}
 	session->cipher_key.length = cipher_xform->key.length;
 	session->auth_key.data = rte_zmalloc(NULL, auth_xform->key.length,
 					     RTE_CACHE_LINE_SIZE);
-	if (session->auth_key.data == NULL) {
+	if (session->auth_key.data == NULL && auth_xform->key.length > 0) {
 		RTE_LOG(ERR, PMD, "No Memory for auth key");
-		goto error_out;
+		rte_free(session->cipher_key.data);
+		rte_free(priv);
+		return -1;
 	}
 	session->auth_key.length = auth_xform->key.length;
 	memcpy(session->cipher_key.data, cipher_xform->key.data,
@@ -1299,12 +1318,18 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
 		ctxt->iv.length = TDES_CBC_IV_LEN;
 		break;
+	case RTE_CRYPTO_CIPHER_AES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		ctxt->iv.length = AES_CTR_IV_LEN;
+		break;
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_GCM:
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
 	case RTE_CRYPTO_CIPHER_NULL:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
-	case RTE_CRYPTO_CIPHER_AES_CTR:
 	case RTE_CRYPTO_CIPHER_AES_CCM:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 		RTE_LOG(ERR, PMD, "Crypto: Unsupported Cipher alg %u",
@@ -1365,12 +1390,16 @@ static int dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 			(uint64_t)&(((struct dpaa2_sec_qp *)
 			dev->data->queue_pairs[0])->rx_vq));
 	session->ctxt = priv;
+	for (i = 0; i < bufsize; i++)
+		PMD_DRV_LOG(DEBUG, "DESC[%d]:0x%x\n",
+			    i, priv->flc_desc[0].desc[i]);
 
 	return 0;
 
 error_out:
 	rte_free(session->cipher_key.data);
 	rte_free(session->auth_key.data);
+	rte_free(priv);
 	return -1;
 }
 
@@ -1421,9 +1450,17 @@ static void
 dpaa2_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 {
 	PMD_INIT_FUNC_TRACE();
+	dpaa2_sec_session *s = (dpaa2_sec_session *)sess;
 
-	if (sess)
+	if (s) {
+		if (s->ctxt)
+			rte_free(s->ctxt);
+		if (&(s->cipher_key))
+			rte_free(s->cipher_key.data);
+		if (&(s->auth_key))
+			rte_free(s->auth_key.data);
 		memset(sess, 0, sizeof(dpaa2_sec_session));
+	}
 }
 
 static int
