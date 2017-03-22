@@ -490,6 +490,9 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			bufs[num_rx] = eth_fd_to_mbuf(fd);
 		bufs[num_rx]->port = dev->data->port_id;
 
+		if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+			rte_vlan_strip(bufs[num_rx]);
+
 		num_rx++;
 		dq_storage++;
 	} /* End of Packet Rx loop */
@@ -592,6 +595,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
 		bufs[num_rx]->port = dev->data->port_id;
+		if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+			rte_vlan_strip(bufs[num_rx]);
 
 		dq_storage++;
 		num_rx++;
@@ -745,6 +750,8 @@ repeat:
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd[num_rx]);
 		bufs[num_rx]->port = dev->data->port_id;
+		if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+			rte_vlan_strip(bufs[num_rx]);
 
 		dq_storage++;
 		num_rx++;
