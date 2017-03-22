@@ -877,7 +877,11 @@ dpaa2_dev_promiscuous_enable(
 
 	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, true);
 	if (ret < 0)
-		RTE_LOG(ERR, PMD, "Unable to enable promiscuous mode %d", ret);
+		RTE_LOG(ERR, PMD, "Unable to enable U promisc mode %d", ret);
+
+	ret = dpni_set_multicast_promisc(dpni, CMD_PRI_LOW, priv->token, true);
+	if (ret < 0)
+		RTE_LOG(ERR, PMD, "Unable to enable M promisc mode %d", ret);
 }
 
 static void
@@ -897,7 +901,15 @@ dpaa2_dev_promiscuous_disable(
 
 	ret = dpni_set_unicast_promisc(dpni, CMD_PRI_LOW, priv->token, false);
 	if (ret < 0)
-		RTE_LOG(ERR, PMD, "Unable to disable promiscuous mode %d", ret);
+		RTE_LOG(ERR, PMD, "Unable to disable U promisc mode %d", ret);
+
+	if (dev->data->all_multicast == 0) {
+		ret = dpni_set_multicast_promisc(dpni, CMD_PRI_LOW,
+						 priv->token, false);
+		if (ret < 0)
+			RTE_LOG(ERR, PMD, "Unable to disable M promisc mode %d",
+				ret);
+	}
 }
 
 static void
@@ -933,6 +945,10 @@ dpaa2_dev_allmulticast_disable(struct rte_eth_dev *dev)
 		RTE_LOG(ERR, PMD, "dpni is NULL");
 		return;
 	}
+
+	/* must remain on for all promiscuous */
+	if (dev->data->promiscuous == 1)
+		return;
 
 	ret = dpni_set_multicast_promisc(dpni, CMD_PRI_LOW, priv->token, false);
 	if (ret < 0)
@@ -1119,7 +1135,11 @@ void dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 	if (retcode)
 		goto err;
 
-	stats->ierrors = value.page_2.ingress_discarded_frames;
+	/* Ingress drop frame count due to confiured rules*/
+	stats->ierrors = value.page_2.ingress_filtered_frames;
+	/* Ingress drop frame count due to error*/
+	stats->ierrors += value.page_2.ingress_discarded_frames;
+
 	stats->oerrors = value.page_2.egress_discarded_frames;
 	stats->imissed = value.page_2.ingress_nobuffer_discards;
 
