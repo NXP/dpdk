@@ -285,10 +285,15 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	if (eth_conf->rxmode.jumbo_frame == 1) {
-		if (eth_conf->rxmode.max_rx_pkt_len <= DPAA2_MAX_RX_PKT_LEN)
-			return dpaa2_dev_mtu_set(dev,
+		if (eth_conf->rxmode.max_rx_pkt_len <= DPAA2_MAX_RX_PKT_LEN) {
+			ret = dpaa2_dev_mtu_set(dev,
 					eth_conf->rxmode.max_rx_pkt_len);
-		else
+			if (ret) {
+				PMD_INIT_LOG(ERR, "unable to set mtu."
+					     "please check queue config\n");
+				return ret;
+			}
+		} else
 			return -1;
 	}
 
