@@ -75,6 +75,8 @@
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
 #define TDES_CBC_IV_LEN		8
 #define AES_CBC_IV_LEN		16
+#define AES_CTR_IV_LEN 16
+
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
    a pointer to the shared descriptor*/
 #define MIN_JOB_DESC_SIZE	(CAAM_CMD_SZ + CAAM_PTR_SZ)
@@ -300,61 +302,68 @@ static inline int is_decode(struct dpaa_sec_ses *ses)
 	return ses->dir == DPAA_CRYPTO_DECODE;
 }
 
-static inline uint32_t caam_auth_alg(struct dpaa_sec_ses *ses)
+static inline void
+caam_auth_alg(struct dpaa_sec_ses *ses, struct alginfo *alginfo_a)
 {
 	switch (ses->auth.alg) {
 	case RTE_CRYPTO_AUTH_NULL:
 		ses->auth_trunc_len = 0;
-		return 0;
-
+		break;
 	case RTE_CRYPTO_AUTH_MD5_HMAC:
-		return OP_ALG_ALGSEL_MD5;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_MD5;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
-		return OP_ALG_ALGSEL_SHA1;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_SHA1;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
-		return OP_ALG_ALGSEL_SHA224;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_SHA224;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
-		return OP_ALG_ALGSEL_SHA256;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_SHA256;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
-		return OP_ALG_ALGSEL_SHA384;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_SHA384;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
-		return OP_ALG_ALGSEL_SHA512;
-
+		alginfo_a->algtype = OP_ALG_ALGSEL_SHA512;
+		alginfo_a->algmode = OP_ALG_AAI_HMAC;
+		break;
 	default:
 		PMD_DRV_LOG(ERR, "Crypto: unsupported auth alg %u\n",
 			    ses->auth.alg);
-		return DPAA_SEC_ALG_UNSUPPORT;
 	}
-
-	return 0;
 }
 
-static inline uint32_t caam_cipher_alg(struct dpaa_sec_ses *ses)
+static inline void
+caam_cipher_alg(struct dpaa_sec_ses *ses, struct alginfo *alginfo_c)
 {
 	switch (ses->cipher.alg) {
 	case RTE_CRYPTO_CIPHER_NULL:
-		return 0;
-
+		break;
 	case RTE_CRYPTO_CIPHER_AES_CBC:
 		ses->cipher.iv_len = AES_CBC_IV_LEN;
-		return OP_ALG_ALGSEL_AES;
-
+		alginfo_c->algtype = OP_ALG_ALGSEL_AES;
+		alginfo_c->algmode = OP_ALG_AAI_CBC;
+		break;
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
 		ses->cipher.iv_len = TDES_CBC_IV_LEN;
-		return OP_ALG_ALGSEL_3DES;
-
+		alginfo_c->algtype = OP_ALG_ALGSEL_3DES;
+		alginfo_c->algmode = OP_ALG_AAI_CBC;
+		break;
+	case RTE_CRYPTO_CIPHER_AES_CTR:
+		ses->cipher.iv_len = AES_CTR_IV_LEN;
+		alginfo_c->algtype = OP_ALG_ALGSEL_AES;
+		alginfo_c->algmode = OP_ALG_AAI_CTR;
+		break;
 	default:
 		PMD_DRV_LOG(ERR, "Crypto: unsupported cipher alg %d\n",
 			    ses->cipher.alg);
-		return DPAA_SEC_ALG_UNSUPPORT;
 	}
-
-	return 0;
 }
 
 static inline void dpaa_dump_bytes(char *p, int len)
@@ -372,7 +381,7 @@ static inline void dpaa_dump_bytes(char *p, int len)
 /* prepare command block of the session */
 static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 {
-	struct alginfo alginfo_c, alginfo_a;
+	struct alginfo alginfo_c = {0}, alginfo_a = {0};
 	uint32_t shared_desc_len;
 	struct sec_cdb *cdb = &ses->qp->cdb;
 	int err;
@@ -384,7 +393,7 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 
 	memset(cdb, 0, sizeof(struct sec_cdb));
 
-	alginfo_c.algtype = caam_cipher_alg(ses);
+	caam_cipher_alg(ses, &alginfo_c);
 	if (alginfo_c.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
 		PMD_DRV_LOG(ERR, "not supported cipher alg\n");
 		return -1;
@@ -394,10 +403,9 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	alginfo_c.keylen = ses->cipher.key_len;
 	alginfo_c.key_enc_flags = 0;
 	alginfo_c.key_type = RTA_DATA_IMM;
-	alginfo_c.algmode = OP_ALG_AAI_CBC;
 
-	alginfo_a.algtype = caam_auth_alg(ses);
-	if (alginfo_c.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
+	caam_auth_alg(ses, &alginfo_a);
+	if (alginfo_a.algtype == (unsigned)DPAA_SEC_ALG_UNSUPPORT) {
 		PMD_DRV_LOG(ERR, "not supported auth alg\n");
 		return -1;
 	}
@@ -406,7 +414,6 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 	alginfo_a.keylen = ses->auth.key_len;
 	alginfo_a.key_enc_flags = 0;
 	alginfo_a.key_type = RTA_DATA_IMM;
-	alginfo_a.algmode = OP_ALG_AAI_HMAC;
 
 	if (is_cipher_only(ses)) {
 		shared_desc_len = cnstr_shdsc_blkcipher(cdb->sh_desc, true,
@@ -1018,8 +1025,17 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 static void
 dpaa_sec_session_clear(struct rte_cryptodev *dev __rte_unused, void *sess)
 {
-	if (sess)
-		memset(sess, 0, sizeof(struct dpaa_sec_ses));
+	struct dpaa_sec_ses *s = (struct dpaa_sec_ses *)sess;
+	if (s) {
+		if (&s->cipher) {
+			rte_free(s->cipher.key_data);
+			rte_free(s->cipher.iv_data);
+		}
+		if (&s->auth)
+			rte_free(s->auth.key_data);
+
+		memset(s, 0, sizeof(struct dpaa_sec_ses));
+	}
 }
 
 static int
