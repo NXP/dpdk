@@ -39,9 +39,9 @@ DPDK_16.07 {
 	qbman_result_DQ_flags;
 	qbman_result_has_new_result;
 	qbman_swp_acquire;
+	qbman_swp_enqueue_multiple;
 	qbman_swp_pull;
 	qbman_swp_release;
-	qbman_swp_send_multiple;
 	rte_fslmc_vfio_dmamap;
 	rte_mcp_ptr_list;
 

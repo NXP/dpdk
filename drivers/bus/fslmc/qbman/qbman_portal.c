@@ -503,15 +503,26 @@ static int qbman_swp_enqueue_ring_mode(struct qbman_swp *s,
 	return 0;
 }
 
-int qbman_swp_fill_ring(struct qbman_swp *s,
-			const struct qbman_eq_desc *d,
-			const struct qbman_fd *fd,
-			__attribute__((unused)) uint8_t burst_index)
+int qbman_swp_enqueue(struct qbman_swp *s, const struct qbman_eq_desc *d,
+		      const struct qbman_fd *fd)
+{
+	if (s->sys.eqcr_mode == qman_eqcr_vb_array)
+		return qbman_swp_enqueue_array_mode(s, d, fd);
+	else    /* Use ring mode by default */
+		return qbman_swp_enqueue_ring_mode(s, d, fd);
+}
+
+int qbman_swp_enqueue_multiple(struct qbman_swp *s,
+			       const struct qbman_eq_desc *d,
+			       const struct qbman_fd *fd,
+			       int num_frames)
 {
 	uint32_t *p;
 	const uint32_t *cl = qb_cl(d);
-	uint32_t eqcr_ci;
+	uint32_t eqcr_ci, eqcr_pi;
 	uint8_t diff;
+	int i, num_enqueued = 0;
+	uint64_t addr_cena;
 
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
@@ -521,53 +532,49 @@ int qbman_swp_fill_ring(struct qbman_swp *s,
 				   eqcr_ci, s->eqcr.ci);
 		s->eqcr.available += diff;
 		if (!diff)
-			return -EBUSY;
+			return 0;
 	}
-	p = qbman_cena_write_start_wo_shadow(&s->sys,
-		QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
-	memcpy(&p[1], &cl[1], 7 * 4);
-	memcpy(&p[8], fd, sizeof(struct qbman_fd));
 
-	/* lwsync(); */
-	p[0] = cl[0] | s->eqcr.pi_vb;
+	eqcr_pi = s->eqcr.pi;
+	num_enqueued = (s->eqcr.available < num_frames) ?
+			s->eqcr.available : num_frames;
+	s->eqcr.available -= num_enqueued;
+	/* Fill in the EQCR ring */
+	for (i = 0; i < num_enqueued; i++) {
+		p = qbman_cena_write_start_wo_shadow(&s->sys,
+					QBMAN_CENA_SWP_EQCR(eqcr_pi & 7));
+		memcpy(&p[1], &cl[1], 28);
+		memcpy(&p[8], &fd[i], sizeof(*fd));
+		eqcr_pi++;
+		eqcr_pi &= 0xF;
+	}
 
-	s->eqcr.pi++;
-	s->eqcr.pi &= 0xF;
-	s->eqcr.available--;
-	if (!(s->eqcr.pi & 7))
-		s->eqcr.pi_vb ^= QB_VALID_BIT;
-
-	return 0;
-}
-
-int qbman_swp_flush_ring(struct qbman_swp *s)
-{
-	void *ptr = s->sys.addr_cena;
-
-	dcbf((uint64_t)ptr);
-	dcbf((uint64_t)ptr + 0x40);
-	dcbf((uint64_t)ptr + 0x80);
-	dcbf((uint64_t)ptr + 0xc0);
-	dcbf((uint64_t)ptr + 0x100);
-	dcbf((uint64_t)ptr + 0x140);
-	dcbf((uint64_t)ptr + 0x180);
-	dcbf((uint64_t)ptr + 0x1c0);
-
-	return 0;
-}
-
-void qbman_sync(void)
-{
 	lwsync();
-}
 
-int qbman_swp_enqueue(struct qbman_swp *s, const struct qbman_eq_desc *d,
-		      const struct qbman_fd *fd)
-{
-	if (s->sys.eqcr_mode == qman_eqcr_vb_array)
-		return qbman_swp_enqueue_array_mode(s, d, fd);
-	else    /* Use ring mode by default */
-		return qbman_swp_enqueue_ring_mode(s, d, fd);
+	/* Set the verb byte, have to substitute in the valid-bit */
+	eqcr_pi = s->eqcr.pi;
+	for (i = 0; i < num_enqueued; i++) {
+		p = qbman_cena_write_start_wo_shadow(&s->sys,
+					QBMAN_CENA_SWP_EQCR(eqcr_pi & 7));
+		p[0] = cl[0] | s->eqcr.pi_vb;
+		eqcr_pi++;
+		eqcr_pi &= 0xF;
+		if (!(eqcr_pi & 7))
+			s->eqcr.pi_vb ^= QB_VALID_BIT;
+	}
+
+	/* Flush all the cacheline without load/store in between */
+	eqcr_pi = s->eqcr.pi;
+	addr_cena = (uint64_t)s->sys.addr_cena;
+	for (i = 0; i < num_enqueued; i++) {
+		dcbf((uint64_t *)(addr_cena +
+				QBMAN_CENA_SWP_EQCR(eqcr_pi & 7)));
+		eqcr_pi++;
+		eqcr_pi &= 0xF;
+	}
+	s->eqcr.pi = eqcr_pi;
+
+	return num_enqueued;
 }
 
 /*************************/
@@ -1400,88 +1407,4 @@ struct qbman_result *qbman_get_dqrr_from_idx(struct qbman_swp *s, uint8_t idx)
 
 	dq = qbman_cena_read(&s->sys, QBMAN_CENA_SWP_DQRR(idx));
 	return dq;
-}
-
-int qbman_swp_send_multiple(struct qbman_swp *s,
-			    const struct qbman_eq_desc *d,
-			    const struct qbman_fd *fd,
-			    int frames_to_send)
-{
-	uint32_t *p;
-	const uint32_t *cl = qb_cl(d);
-	uint32_t eqcr_ci;
-	uint8_t diff;
-	int sent = 0;
-	int i;
-	int initial_pi = s->eqcr.pi;
-	uint64_t start_pointer;
-
-	if (!s->eqcr.available) {
-		eqcr_ci = s->eqcr.ci;
-		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
-				 QBMAN_CENA_SWP_EQCR_CI) & 0xF;
-		diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
-				   eqcr_ci, s->eqcr.ci);
-		if (!diff)
-			goto done;
-		s->eqcr.available += diff;
-	}
-
-	/* we are trying to send frames_to_send,
-	 * if we have enough space in the ring
-	 */
-	while (s->eqcr.available && frames_to_send--) {
-		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-					QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
-		/* Write command (except of first byte) and FD */
-		memcpy(&p[1], &cl[1], 7 * 4);
-		memcpy(&p[8], &fd[sent], sizeof(struct qbman_fd));
-
-		initial_pi++;
-		initial_pi &= 0xF;
-		s->eqcr.available--;
-		sent++;
-	}
-
-done:
-	initial_pi =  s->eqcr.pi;
-	lwsync();
-
-	/* in order for flushes to complete faster:
-	 * we use a following trick: we record all lines in 32 bit word
-	 */
-
-	initial_pi =  s->eqcr.pi;
-	for (i = 0; i < sent; i++) {
-		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-					QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
-
-		p[0] = cl[0] | s->eqcr.pi_vb;
-		initial_pi++;
-		initial_pi &= 0xF;
-
-		if (!(initial_pi & 7))
-			s->eqcr.pi_vb ^= QB_VALID_BIT;
-	}
-
-	initial_pi = s->eqcr.pi;
-
-	/* We need  to flush all the lines but without
-	 * load/store operations between them.
-	 * We assign start_pointer before we start loop so that
-	 * in loop we do not read it from memory
-	 */
-	start_pointer = (uint64_t)s->sys.addr_cena;
-	for (i = 0; i < sent; i++) {
-		p = (uint32_t *)(start_pointer
-				 + QBMAN_CENA_SWP_EQCR(initial_pi & 7));
-		dcbf((uint64_t)p);
-		initial_pi++;
-		initial_pi &= 0xF;
-	}
-
-	/* Update producer index for the next call */
-	s->eqcr.pi = initial_pi;
-
-	return sent;
 }
