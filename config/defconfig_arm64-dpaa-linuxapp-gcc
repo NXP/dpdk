@@ -33,7 +33,7 @@
 
 # NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
 CONFIG_RTE_MACHINE="dpaa"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a53+fp+simd"
+CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
 
 #
 # Compile Environment Abstraction Layer
