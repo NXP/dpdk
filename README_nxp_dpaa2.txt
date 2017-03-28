@@ -294,8 +294,16 @@ How to run DPDK Applications
 	stp
 
 =============================================================================
-Applications:
--	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
+11.Applications validated on DPDK-DPAA2
+ 1. l2fwd
+ 2. l3fwd
+ 3. l2fwd-crypto
+ 4. link_status_interrupt (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
+ 5. ip_fragmentation
+ 6. ip_reassembly
+ 7. kni
+ 8. cmdline
+ 9. timer
 
 Features:
 -	Support for LS2-BUS in DPDK VFIO support function
