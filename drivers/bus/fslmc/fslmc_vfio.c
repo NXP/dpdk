@@ -341,34 +341,6 @@ int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 	return ret;
 }
 
-int dpaa2_intr_unmask(struct rte_intr_handle *intr_handle, int index)
-{
-	int len, ret;
-	char irq_set_buf[IRQ_SET_BUF_LEN];
-	struct vfio_irq_set *irq_set;
-	int *fd_ptr;
-
-	len = sizeof(irq_set_buf);
-
-	irq_set = (struct vfio_irq_set *)irq_set_buf;
-	irq_set->argsz = len;
-	irq_set->count = 1;
-	irq_set->flags = VFIO_IRQ_SET_ACTION_UNMASK | VFIO_IRQ_SET_DATA_BOOL;
-	irq_set->index = index;
-	irq_set->start = 0;
-	fd_ptr = (int *)&irq_set->data;
-	*fd_ptr = 1;
-
-	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
-
-	if (ret) {
-		RTE_LOG(ERR, EAL, "Error: dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
-			intr_handle->fd, errno, strerror(errno));
-	}
-
-	return ret;
-}
-
 int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 {
 	struct vfio_irq_set *irq_set;
@@ -392,34 +364,6 @@ int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 
 	return ret;
 }
-
-int dpaa2_intr_mask(struct rte_intr_handle *intr_handle, int index)
-{
-	struct vfio_irq_set *irq_set;
-	char irq_set_buf[IRQ_SET_BUF_LEN];
-	int len, ret;
-	int *fd_ptr;
-
-	len = sizeof(struct vfio_irq_set);
-
-	irq_set = (struct vfio_irq_set *)irq_set_buf;
-	irq_set->argsz = len;
-	irq_set->flags = VFIO_IRQ_SET_ACTION_MASK | VFIO_IRQ_SET_DATA_BOOL;
-	irq_set->index = index;
-	irq_set->start = 0;
-	irq_set->count = 1;
-	fd_ptr = (int *)&irq_set->data;
-	*fd_ptr = 1;
-
-	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
-	if (ret)
-		RTE_LOG(ERR, EAL,
-			"Error disabling dpaa2 interrupts for fd %d\n",
-			intr_handle->fd);
-
-	return ret;
-}
-
 
 /* set up interrupt support (but not enable interrupts) */
 int
@@ -470,7 +414,7 @@ dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 		}
 
 		intr_handle->fd = fd;
-		intr_handle->type = RTE_INTR_HANDLE_EXT;
+		intr_handle->type = RTE_INTR_HANDLE_VFIO_MSI;
 		intr_handle->vfio_dev_fd = vfio_dev_fd;
 
 		return 0;

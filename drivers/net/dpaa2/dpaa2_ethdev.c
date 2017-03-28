@@ -591,8 +591,11 @@ dpaa2_interrupt_action(struct rte_eth_dev *dev)
 	}
 
 out:
-	dpni_clear_irq_status(dpni, CMD_PRI_LOW, priv->token, irq_index, clear);
-	return 0;
+	ret = dpni_clear_irq_status(dpni, CMD_PRI_LOW, priv->token, irq_index, clear);
+	if (unlikely(ret))
+		RTE_LOG(ERR, PMD, "Can't clear irq status (err %d)", ret);
+
+	return ret;
 }
 
 /**
@@ -771,14 +774,18 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_vlan_offload_set(dev, mask);
 
 	/* if the interrupts were configured on this devices*/
-	if (intr_handle->fd && priv->hw_id != 6) {
+	if (intr_handle->fd) {
 		/* Registering LSC interrupt handler */
 		rte_intr_callback_register(intr_handle,
 					   dpaa2_interrupt_handler,
 					   (void *)dev);
 
 		/* enable vfio intr/eventfd mapping */
-		dpaa2_intr_enable(intr_handle, 0);
+		/* 
+		 * Interrupt index 0 is required, so we can not use
+		 * rte_intr_enable.
+ 		 */
+		dpaa2_intr_enable(intr_handle, DPNI_IRQ_INDEX);
 
 		/* check if lsc interrupt is enabled */
 		if (dev->data->dev_conf.intr_conf.lsc != 0)
@@ -808,7 +815,7 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	dpaa2_eth_setup_irqs(dev, 0);
 
 	/* disable vfio intr before callback unregister */
-	dpaa2_intr_disable(intr_handle, 0);
+	dpaa2_intr_disable(intr_handle, DPNI_IRQ_INDEX);
 
 	/* Unregistering LSC interrupt handler */
 	rte_intr_callback_unregister(intr_handle,
