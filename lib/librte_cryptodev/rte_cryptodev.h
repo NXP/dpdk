@@ -69,6 +69,8 @@ extern "C" {
 /**< NXP DPAA - SEC PMD device name */
 #define CRYPTODEV_NAME_ARMCE_PMD	cryptodev_armce_pmd
 /**< NXP ARM NEON Crypto Extension PMD device name */
+#define CRYPTODEV_NAME_ARMV8_PMD	cryptodev_armv8
+/**< ARMv8 Crypto PMD device name */
 
 /** Crypto device type */
 enum rte_cryptodev_type {
@@ -82,6 +84,7 @@ enum rte_cryptodev_type {
 	RTE_CRYPTODEV_DPAA_SEC_PMD,     /**< NXP DPAA - SEC PMD */
 	RTE_CRYPTODEV_ARMCE_PMD,        /**< NXP ARM NEON Crypto Extension PMD */
 	RTE_CRYPTODEV_OPENSSL_PMD,    /**<  OpenSSL PMD */
+	RTE_CRYPTODEV_ARMV8_PMD,	/**< ARMv8 crypto PMD */
 };
 
 extern const char **rte_cyptodev_names;
