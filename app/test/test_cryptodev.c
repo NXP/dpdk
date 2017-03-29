@@ -275,6 +275,28 @@ testsuite_setup(void)
 		}
 	}
 
+	/* Create 2 ARMv8 devices if required */
+	if (gbl_cryptodev_type == RTE_CRYPTODEV_ARMV8_PMD) {
+#ifndef RTE_LIBRTE_PMD_ARMV8_CRYPTO
+		RTE_LOG(ERR, USER1, "CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO must be"
+			" enabled in config file to run this testsuite.\n");
+		return TEST_FAILED;
+#endif
+		nb_devs = rte_cryptodev_count_devtype(
+				RTE_CRYPTODEV_ARMV8_PMD);
+		if (nb_devs < 2) {
+			for (i = nb_devs; i < 2; i++) {
+				ret = rte_eal_vdev_init(
+					RTE_STR(CRYPTODEV_NAME_ARMV8_PMD),
+					NULL);
+
+				TEST_ASSERT(ret == 0, "Failed to create "
+					"instance %u of pmd : %s", i,
+					RTE_STR(CRYPTODEV_NAME_ARMV8_PMD));
+			}
+		}
+	}
+
 	nb_devs = rte_cryptodev_count();
 	if (nb_devs < 1) {
 		RTE_LOG(ERR, USER1, "No crypto devices found?");
@@ -1482,6 +1504,21 @@ test_AES_armce_all(void)
 	status = test_AES_all_tests(ts_params->mbuf_pool,
 		ts_params->op_mpool, ts_params->valid_devs[0],
 		RTE_CRYPTODEV_ARMCE_PMD);
+
+	TEST_ASSERT_EQUAL(status, 0, "Test failed");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_AES_chain_armv8_all(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	int status;
+
+	status = test_AES_all_tests(ts_params->mbuf_pool,
+		ts_params->op_mpool, ts_params->valid_devs[0],
+		RTE_CRYPTODEV_ARMV8_PMD);
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
 
@@ -5510,6 +5547,21 @@ static struct unit_test_suite cryptodev_null_testsuite  = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
+static struct unit_test_suite cryptodev_armv8_testsuite  = {
+	.suite_name = "Crypto Device ARMv8 Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_chain_armv8_all),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_encryption_AES128CBC_HMAC_SHA1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			authenticated_decryption_AES128CBC_HMAC_SHA1),
+
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
 
 static int
 test_cryptodev_armce(void /*argv __rte_unused, int argc __rte_unused*/)
@@ -5586,6 +5638,15 @@ test_cryptodev_sw_kasumi(void /*argv __rte_unused, int argc __rte_unused*/)
 
 	return unit_test_suite_runner(&cryptodev_sw_kasumi_testsuite);
 }
+static int
+test_cryptodev_armv8(void)
+{
+	gbl_cryptodev_type = RTE_CRYPTODEV_ARMV8_PMD;
+
+	return unit_test_suite_runner(&cryptodev_armv8_testsuite);
+}
+
+
 
 REGISTER_TEST_COMMAND(cryptodev_armce_autotest, test_cryptodev_armce);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_autotest, test_cryptodev_dpaa2_sec);
@@ -5597,3 +5658,4 @@ REGISTER_TEST_COMMAND(cryptodev_aesni_gcm_autotest, test_cryptodev_aesni_gcm);
 REGISTER_TEST_COMMAND(cryptodev_null_autotest, test_cryptodev_null);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_autotest, test_cryptodev_sw_snow3g);
 REGISTER_TEST_COMMAND(cryptodev_sw_kasumi_autotest, test_cryptodev_sw_kasumi);
+REGISTER_TEST_COMMAND(cryptodev_sw_armv8_autotest, test_cryptodev_armv8);
