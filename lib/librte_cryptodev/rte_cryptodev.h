@@ -227,6 +227,10 @@ struct rte_cryptodev_capabilities {
 /**< Utilises CPU AES-NI instructions */
 #define	RTE_CRYPTODEV_FF_HW_ACCELERATED		(1ULL << 7)
 /**< Operations are off-loaded to an external hardware accelerator */
+#define	RTE_CRYPTODEV_FF_CPU_NEON		(1ULL << 10)
+/**< Utilises CPU NEON instructions */
+#define	RTE_CRYPTODEV_FF_CPU_ARM_CE		(1ULL << 11)
+/**< Utilises ARM CPU Cryptographic Extensions */
 
 
 /**
