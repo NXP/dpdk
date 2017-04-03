@@ -40,6 +40,8 @@ export PATH=${CROSS_PATH}:$PATH
 git submodule init
 git submodule update
 
+export ARMV8_CRYPTO_LIB_PATH=${RTE_SDK}/armv8_crypto
+make CC=${CROSS_COMPILE}gcc -C ${ARMV8_CRYPTO_LIB_PATH} CFLAGS="-O3 -Wall -static -I${ARMV8_CRYPTO_LIB_PATH} -I${ARMV8_CRYPTO_LIB_PATH}/asm/include"
 #Update and uncomment the following for yacto - SDK based release path for LS1043A
 #SDK_INSTALL_PATH=/home/sxl/ls1043/Linux-LS1043A-SDK-V0.5-20151223-yocto
 #SDK_TARGET_PATH=$SDK_INSTALL_PATH/build_ls1043ardb_release/tmp/sysroots/ls1043ardb

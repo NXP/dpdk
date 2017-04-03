@@ -2,3 +2,6 @@
 	path = ext
 	url = ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git
 	branch = master
+[submodule "armv8_crypto"]
+	path = armv8_crypto
+	url = https://github.com/caviumnetworks/armv8_crypto

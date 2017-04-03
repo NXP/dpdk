@@ -212,6 +212,10 @@ rte_cryptodev_get_feature_name(uint64_t flag)
 		return "CPU_AESNI";
 	case RTE_CRYPTODEV_FF_HW_ACCELERATED:
 		return "HW_ACCELERATED";
+	case RTE_CRYPTODEV_FF_CPU_NEON:
+		return "CPU_NEON";
+	case RTE_CRYPTODEV_FF_CPU_ARM_CE:
+		return "CPU_ARM_CE";
 
 	default:
 		return NULL;

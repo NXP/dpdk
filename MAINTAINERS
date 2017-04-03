@@ -431,6 +431,12 @@ M: Declan Doherty <declan.doherty@intel.com>
 F: drivers/crypto/openssl/
 F: doc/guides/cryptodevs/openssl.rst
 
+ARMv8 Crypto PMD
+M: Zbigniew Bodek <zbigniew.bodek@caviumnetworks.com>
+M: Jerin Jacob <jerin.jacob@caviumnetworks.com>
+F: drivers/crypto/armv8/
+F: doc/guides/cryptodevs/armv8.rst
+
 Null Crypto PMD
 M: Declan Doherty <declan.doherty@intel.com>
 F: drivers/crypto/null/

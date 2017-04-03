@@ -1,6 +1,7 @@
+#
 #   BSD LICENSE
 #
-#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+#   Copyright (C) Cavium networks Ltd. 2017.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -12,7 +13,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor nor the names of its
+#     * Neither the name of Cavium networks nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -29,53 +30,43 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
+include $(RTE_SDK)/mk/rte.vars.mk
 
-# NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
-CONFIG_RTE_MACHINE="dpaa"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
+ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),config)
+ifeq ($(ARMV8_CRYPTO_LIB_PATH),)
+$(error "Please define ARMV8_CRYPTO_LIB_PATH environment variable")
+endif
+endif
+endif
 
-#
-# Compile Environment Abstraction Layer
-#
-CONFIG_RTE_MAX_LCORE=4
-CONFIG_RTE_MAX_NUMA_NODES=1
-CONFIG_RTE_EAL_VFIO=n
-CONFIG_RTE_PKTMBUF_HEADROOM=128
+# library name
+LIB = librte_pmd_armv8.a
 
-# Compile ARMCE based crypto
-CONFIG_RTE_LIBRTE_PMD_ARMCE=y
+# build flags
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
 
-# FSL DPAA based hw mempool
-CONFIG_RTE_MBUF_DEFAULT_MEMPOOL_OPS="dpaa"
+# library version
+LIBABIVER := 1
 
-# Compile software PMD backed by FSL - DPAA
-#
-CONFIG_RTE_LIBRTE_DPAA_PMD=y
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_RX=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_TX=n
-CONFIG_RTE_LIBRTE_ETHDEV_DEBUG=n
-#CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG
+# versioning export map
+EXPORT_MAP := rte_armv8_pmd_version.map
 
-#FSL DPAA caam driver
-CONFIG_RTE_LIBRTE_PMD_DPAA_SEC=y
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=n
+# external library dependencies
+CFLAGS += -I$(ARMV8_CRYPTO_LIB_PATH)
+CFLAGS += -I$(ARMV8_CRYPTO_LIB_PATH)/asm/include
+LDLIBS += -L$(ARMV8_CRYPTO_LIB_PATH) -larmv8_crypto
 
-#
-# Number of sessions to create in the session memory pool
-# on a single DPAA SEC device.
-#
-CONFIG_RTE_DPAA_SEC_PMD_MAX_NB_SESSIONS=2048
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += rte_armv8_pmd.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += rte_armv8_pmd_ops.c
 
-# Compile ARM perfcounter kernel module
-CONFIG_RTE_LIBRTE_ARM_PERFCOUNTER=n
+# library dependencies
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += lib/librte_eal
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += lib/librte_mbuf
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += lib/librte_mempool
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += lib/librte_ring
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO) += lib/librte_cryptodev
 
-#
-# Compile PMD for ARMv8 Crypto device
-#
-CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO=n
-CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO_DEBUG=n
+include $(RTE_SDK)/mk/rte.lib.mk

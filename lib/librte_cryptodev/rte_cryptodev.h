@@ -69,6 +69,8 @@ extern "C" {
 /**< NXP DPAA - SEC PMD device name */
 #define CRYPTODEV_NAME_ARMCE_PMD	cryptodev_armce_pmd
 /**< NXP ARM NEON Crypto Extension PMD device name */
+#define CRYPTODEV_NAME_ARMV8_PMD	cryptodev_armv8
+/**< ARMv8 Crypto PMD device name */
 
 /** Crypto device type */
 enum rte_cryptodev_type {
@@ -82,6 +84,7 @@ enum rte_cryptodev_type {
 	RTE_CRYPTODEV_DPAA_SEC_PMD,     /**< NXP DPAA - SEC PMD */
 	RTE_CRYPTODEV_ARMCE_PMD,        /**< NXP ARM NEON Crypto Extension PMD */
 	RTE_CRYPTODEV_OPENSSL_PMD,    /**<  OpenSSL PMD */
+	RTE_CRYPTODEV_ARMV8_PMD,	/**< ARMv8 crypto PMD */
 };
 
 extern const char **rte_cyptodev_names;
@@ -224,6 +227,10 @@ struct rte_cryptodev_capabilities {
 /**< Utilises CPU AES-NI instructions */
 #define	RTE_CRYPTODEV_FF_HW_ACCELERATED		(1ULL << 7)
 /**< Operations are off-loaded to an external hardware accelerator */
+#define	RTE_CRYPTODEV_FF_CPU_NEON		(1ULL << 10)
+/**< Utilises CPU NEON instructions */
+#define	RTE_CRYPTODEV_FF_CPU_ARM_CE		(1ULL << 11)
+/**< Utilises ARM CPU Cryptographic Extensions */
 
 
 /**
