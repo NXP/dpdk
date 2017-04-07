@@ -288,6 +288,7 @@ How to run DPDK Applications
    ============================
 
 	Get the code from: git://dpdk.org/apps/pktgen-dpdk
+	- DPDK 16.07 works upto PKTGEN 3.1.2
 	#do the make install in DPDK.
 	source <DPDK Source DIR>/standalone_dpaa
 	export RTE_SDK=<DPDK Source DIR>
