@@ -135,6 +135,7 @@ static inline int cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
 {
 	struct program prg;
 	struct program *p = &prg;
+	unsigned int iv_off = 0;
 	const bool is_aes_dec = (dir == DIR_DEC) &&
 				(cipherdata->algtype == OP_ALG_ALGSEL_AES);
 	LABEL(keyjmp);
@@ -172,12 +173,15 @@ static inline int cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
 			      OP_ALG_AS_INITFINAL, ICV_CHECK_DISABLE, dir);
 	}
 
+	if (cipherdata->algmode == OP_ALG_AAI_CTR)
+		iv_off = 16;
+
 	if (iv)
 		/* IV load, convert size */
-		LOAD(p, (uintptr_t)iv, CONTEXT1, 0, ivlen, IMMED | COPY);
+		LOAD(p, (uintptr_t)iv, CONTEXT1, iv_off, ivlen, IMMED | COPY);
 	else
 		/* IV is present first before the actual message */
-		SEQLOAD(p, CONTEXT1, 0, ivlen, 0);
+		SEQLOAD(p, CONTEXT1, iv_off, ivlen, 0);
 
 	MATHB(p, SEQINSZ, SUB, MATH2, VSEQINSZ, 4, 0);
 	MATHB(p, SEQINSZ, SUB, MATH2, VSEQOUTSZ, 4, 0);

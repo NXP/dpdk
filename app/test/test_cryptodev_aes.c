@@ -92,6 +92,8 @@ static const struct aes_test_case aes_test_cases[] = {
 		.op_mask = AES_TEST_OP_ENC_AUTH_GEN,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_OPENSSL |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_QAT
 	},
 	{
@@ -101,6 +103,8 @@ static const struct aes_test_case aes_test_cases[] = {
 		.op_mask = AES_TEST_OP_AUTH_VERIFY_DEC,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_OPENSSL |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_QAT
 	},
 	{
@@ -123,6 +127,8 @@ static const struct aes_test_case aes_test_cases[] = {
 		.op_mask = AES_TEST_OP_ENC_AUTH_GEN,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_OPENSSL |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_QAT
 	},
 	{
@@ -132,6 +138,8 @@ static const struct aes_test_case aes_test_cases[] = {
 		.op_mask = AES_TEST_OP_AUTH_VERIFY_DEC,
 		.pmd_mask = AES_TEST_TARGET_PMD_MB |
 			AES_TEST_TARGET_PMD_OPENSSL |
+			AES_TEST_TARGET_PMD_DPAA2_SEC |
+			AES_TEST_TARGET_PMD_DPAA_SEC |
 			AES_TEST_TARGET_PMD_QAT
 	},
 	{

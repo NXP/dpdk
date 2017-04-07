@@ -1334,6 +1334,7 @@ static inline int cnstr_shdsc_authenc(uint32_t *descbuf, bool ps, bool swap,
 {
 	struct program prg;
 	struct program *p = &prg;
+	unsigned int iv_off = 0;
 	const bool is_aes_dec = (dir == DIR_DEC) &&
 				(cipherdata->algtype == OP_ALG_ALGSEL_AES);
 
@@ -1457,8 +1458,11 @@ static inline int cnstr_shdsc_authenc(uint32_t *descbuf, bool ps, bool swap,
 
 	SET_LABEL(p, aonly_len_offset);
 
+	if (cipherdata->algmode == OP_ALG_AAI_CTR)
+		iv_off = 16;
+
 	/* Read IV */
-	SEQLOAD(p, CONTEXT1, 0, ivlen, 0);
+	SEQLOAD(p, CONTEXT1, iv_off, ivlen, 0);
 
 	/*
 	 * Read data needed only for authentication. This is overwritten above
