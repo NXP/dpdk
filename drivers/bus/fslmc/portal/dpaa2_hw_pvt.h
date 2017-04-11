@@ -56,8 +56,6 @@
 #define DPAA2_DQRR_RING_SIZE	16
 	/** <Maximum number of slots available in RX ring*/
 
-#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mpool flag to check offloaded pool */
-
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
 #define NUM_DQS_PER_QUEUE       2
@@ -66,8 +64,6 @@
 #define MC_PORTAL_SIZE		64
 #define MC_PORTAL_ID_TO_PADDR(portal_id) \
 (MC_PORTALS_BASE_PADDR + (portal_id) * MC_PORTAL_STRIDE)
-
-#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mpool flag to check offloaded pool */
 
 /* Maximum release/acquire from QBMAN */
 #define DPAA2_MBUF_MAX_ACQ_REL	7
