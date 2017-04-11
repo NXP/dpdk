@@ -359,7 +359,7 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	void *mb = NULL;
 
 	if (rte_dpaa2_mbuf_alloc_bulk(
-		rte_dpaa2_bpid_info[bpid].bp_list->buf_pool.mp, &mb, 1)) {
+		rte_dpaa2_bpid_info[bpid].bp_list->mp, &mb, 1)) {
 		PMD_TX_LOG(WARNING, "Unable to allocated DPAA2 buffer");
 		rte_pktmbuf_free(mbuf);
 		return -1;
@@ -863,7 +863,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					   " attached");
 				goto skip_tx;
 			}
-			if (!(mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+			if (mp->ops_index != priv->bp_list->dpaa2_ops_index) {
 				PMD_TX_LOG(ERR, "non hw offload bufffer ");
 				/* alloc should be from the default buffer pool
 				attached to this interface */

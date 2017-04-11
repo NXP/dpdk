@@ -112,12 +112,13 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 			- sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp);
 	bp_list->buf_pool.bpid = dpbp_attr.bpid;
 	bp_list->buf_pool.h_bpool_mem = NULL;
-	bp_list->buf_pool.mp = mp;
 	bp_list->buf_pool.dpbp_node = avail_dpbp;
+	/* Identification for our offloaded pool_data structure */
+	bp_list->dpaa2_ops_index = mp->ops_index;
 	bp_list->next = h_bp_list;
+	bp_list->mp = mp;
 
 	bpid = dpbp_attr.bpid;
-
 
 	rte_dpaa2_bpid_info[bpid].meta_data_size = sizeof(struct rte_mbuf)
 				+ rte_pktmbuf_priv_size(mp);
@@ -129,9 +130,6 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 	PMD_INIT_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
-	/* Identification for our offloaded pool_data structure
-	 */
-	mp->flags |= MEMPOOL_F_HW_PKT_POOL;
 	return 0;
 }
 
