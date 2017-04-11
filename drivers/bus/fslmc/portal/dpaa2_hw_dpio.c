@@ -480,6 +480,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	reg_info.index = 1;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
+		free(dpio_dev);
 		return -1;
 	}
 
@@ -494,6 +495,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 		PMD_INIT_LOG(ERR,
 			     "Fail to configure the dpio qbman portal for %d\n",
 			     dpio_dev->hw_id);
+		free(dpio_dev);
 		return -1;
 	}
 
