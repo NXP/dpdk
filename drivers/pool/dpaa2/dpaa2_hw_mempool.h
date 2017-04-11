@@ -60,7 +60,6 @@ struct buf_pool {
 	uint32_t num_bufs;
 	uint16_t bpid;
 	uint8_t *h_bpool_mem;
-	struct rte_mempool *mp;
 	struct dpaa2_dpbp_dev *dpbp_node;
 };
 
@@ -75,6 +74,7 @@ struct dpaa2_bp_list_cfg {
 struct dpaa2_bp_list {
 	struct dpaa2_bp_list *next;
 	struct rte_mempool *mp;
+	int32_t dpaa2_ops_index;
 	struct buf_pool buf_pool;
 };
 
