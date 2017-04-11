@@ -623,6 +623,7 @@ FAILURE:
 		free(rte_mcp_ptr_list);
 		rte_mcp_ptr_list = NULL;
 	}
+
 	free(group->vfio_device);
 	group->vfio_device = NULL;
 	return -1;
@@ -644,19 +645,20 @@ int fslmc_vfio_setup_group(void)
 
 	if (container == NULL) {
 		FSLMC_VFIO_LOG(ERR, "VFIO container not set in env DPRC");
-		return -1;
+		return -EOPNOTSUPP;
 	}
+
 	/* get group number */
 	ret = vfio_get_group_no(SYSFS_FSL_MC_DEVICES, container, &groupid);
 	if (ret == 0) {
-		RTE_LOG(WARNING, EAL, "  %s not managed by VFIO driver, skipping\n",
+		RTE_LOG(WARNING, EAL, "%s not managed by VFIO, skipping\n",
 			container);
-		return 1;
+		return -EOPNOTSUPP;
 	}
 
 	/* if negative, something failed */
 	if (ret < 0)
-		return -1;
+		return ret;
 
 	FSLMC_VFIO_LOG(DEBUG, "VFIO iommu group id = %d", groupid);
 
@@ -671,24 +673,27 @@ int fslmc_vfio_setup_group(void)
 	}
 
 	/* get the actual group fd */
-	group->fd = vfio_get_group_fd(groupid);
-	if (group->fd < 0)
-		return -1;
+	ret = vfio_get_group_fd(groupid);
+	if (ret < 0)
+		return ret;
+	group->fd = ret;
 
 	/*
 	 * at this point, we know that this group is viable (meaning,
 	 * all devices are either bound to VFIO or not bound to anything)
 	 */
 
-	if (ioctl(group->fd, VFIO_GROUP_GET_STATUS, &status)) {
+	ret = ioctl(group->fd, VFIO_GROUP_GET_STATUS, &status);
+	if (ret) {
 		FSLMC_VFIO_LOG(ERR, " VFIO error getting group status");
 		close(group->fd);
-		return -1;
+		return ret;
 	}
+
 	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
 		FSLMC_VFIO_LOG(ERR, "VFIO group not viable");
 		close(group->fd);
-		return -1;
+		return -EPERM;
 	}
 	/* Since Group is VIABLE, Store the groupid */
 	group->groupid = groupid;
@@ -696,11 +701,12 @@ int fslmc_vfio_setup_group(void)
 	/* check if group does not have a container yet */
 	if (!(status.flags & VFIO_GROUP_FLAGS_CONTAINER_SET)) {
 		/* Now connect this IOMMU group to given container */
-		if (vfio_connect_container(group)) {
+		ret = vfio_connect_container(group);
+		if (ret) {
 			FSLMC_VFIO_LOG(ERR, "VFIO error connecting container"
 				       " with groupid %d", groupid);
 			close(group->fd);
-			return -1;
+			return ret;
 		}
 	}
 
