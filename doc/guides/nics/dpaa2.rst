@@ -342,13 +342,13 @@ of each driver follows.
              .      . . . . . . . . . .| DPIO driver|             .
             .      .                   |  (DPIO)    |             .
            .      .                    +-----+------+             .
-          .      .                           |                    .
-         .      .                            |                    .
-    +----+------+-------+                    |                    .
+          .      .                     |  QBMAN     |             .
+         .      .                      |  Driver    |             .
+    +----+------+-------+              +-----+----- |             .
     |   dpaa2 bus       |                    |                    .
-    |   VFIO fsl-mc-bus |....................|.....................
+    |   VFIO fslmc-bus  |....................|.....................
     |                   |                    |
-    | /soc/fsl-mc       |                    |
+    |     /bus/fslmc    |                    |
     +-------------------+                    |
                                              |
     ========================== HARDWARE =====|=======================
@@ -374,10 +374,10 @@ Key functions include:
 - Scanning and parsing the various MC objects and adding them to
   their respective device list.
 
-Additionally, it also provides the object driver for generic objects.
+Additionally, it also provides the object driver for generic MC objects.
 
 DPIO driver
-^^^^^^^^^^^
+~~~~~~~~~~~
 
 The DPIO driver is bound to DPIO objects and provides services that allow
 other drivers such as the Ethernet driver to enqueue and dequeue data for
@@ -400,8 +400,8 @@ and dequeue data.
 The DPIO driver operates on behalf of all DPAA2 drivers
 active  --  Ethernet, crypto, compression, etc.
 
-DPBP driver
-^^^^^^^^^^^
+DPBP based Mempool driver
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The DPBP driver is bound to a DPBP objects and provides sevices to
 create a hardware offloaded packet buffer mempool.
@@ -436,9 +436,29 @@ Supported DPAA2 SoCs
 Prerequisites
 -------------
 
-This driver relies on external libraries and kernel drivers for resources
-allocations and initialization. The following dependencies are not part of
-DPDK and must be installed separately:
+There are three main pre-requisities for executing DPAA2 PMD on a DPAA2
+compatible board:
+
+1. **ARM 64 Tool Chain**
+
+   For example, the `*aarch64* Linaro Toolchain <https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-linux-gnu>`_.
+
+2. **Linux Kernel**
+
+   It can be obtained from `NXP's Github hosting <https://github.com/qoriq-open-source/linux>`_.
+
+3. **Rootfile system**
+
+   Any *aarch64* supporting filesystem can be used. For example,
+   Ubuntu 15.10 (Wily) or 16.04 LTS (Xenial) userland which can be obtained
+   from `here <http://cdimage.ubuntu.com/ubuntu-base/releases/16.04/release/ubuntu-base-16.04.1-base-arm64.tar.gz>`_.
+
+As an alternative method, DPAA2 PMD can also be executed using images provided
+as part of SDK from NXP. The SDK includes all the above prerequisites necessary
+to bring up a DPAA2 board.
+
+The following dependencies are not part of DPDK and must be installed
+separately:
 
 - **NXP Linux SDK**
 
@@ -466,6 +486,11 @@ Currently supported by DPDK:
 
 - Follow the DPDK :ref:`Getting Started Guide for Linux <linux_gsg>` to setup the basic DPDK environment.
 
+.. note::
+
+   Some part of fslmc bus code (mc flib - object library) routines are
+   dual licensed (BSD & GPLv2).
+
 Pre-Installation Configuration
 ------------------------------
 
@@ -475,16 +500,15 @@ Config File Options
 The following options can be modified in the ``config`` file.
 Please note that enabling debugging options may affect system performance.
 
+- ``CONFIG_RTE_LIBRTE_FSLMC_BUS`` (default ``n``)
+
+  By default it is enabled only for defconfig_arm64-dpaa2-* config.
+  Toggle compilation of the ``librte_bus_fslmc`` driver.
+
 - ``CONFIG_RTE_LIBRTE_DPAA2_PMD`` (default ``n``)
 
   By default it is enabled only for defconfig_arm64-dpaa2-* config.
   Toggle compilation of the ``librte_pmd_dpaa2`` driver.
-
-- ``CONFIG_RTE_LIBRTE_DPAA2_COMMON`` (default ``n``)
-
-  By default it is enabled only for defconfig_arm64-dpaa2-* config.
-  Toggle compilation of the ``librte_pmd_dpaa2_mc``,
-  ``librte_pmd_dpaa2_qbman`` and  ``librte_pmd_fslmcbus`` driver.
 
 - ``CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER`` (default ``n``)
 
@@ -530,11 +554,11 @@ Running testpmd
 This section demonstrates how to launch ``testpmd`` with DPAA2 device
 managed by ``librte_pmd_dpaa2`` in the Linux operating system.
 
-#. Configure the resource container,
+#. Configure the resource container:
 
-Configure resources in MC and create the DPRC container
+   Configure resources in MC and create the DPRC container:
 
-    .. code-block:: console
+   .. code-block:: console
 
       export the DPRC container
       e.g. export DPRCT=dprc.2
@@ -544,8 +568,33 @@ Configure resources in MC and create the DPRC container
    .. code-block:: console
 
       ./arm64-dpaa2-linuxapp-gcc/testpmd -c 0xff -n 1 \
-        -- -i --portmask=0x1 --nb-cores=1 --no-flush-rx
+        -- -i --portmask=0x3 --nb-cores=1 --no-flush-rx
 
+   Example output:
+
+   .. code-block:: console
+
+        .....
+        EAL: Registered [pci] bus.
+        EAL: Registered [fslmc] bus.
+        EAL: Detected 8 lcore(s)
+        EAL: Probing VFIO support...
+        EAL: VFIO support initialized
+        .....
+        PMD: DPAA2: Processing Container = dprc.2
+        EAL: fslmc: DPRC contains = 51 devices
+        EAL: fslmc: Bus scan completed
+        .....
+        Configuring Port 0 (socket 0)
+        Port 0: 00:00:00:00:00:01
+        Configuring Port 1 (socket 0)
+        Port 1: 00:00:00:00:00:02
+        .....
+        Checking link statuses...
+        Port 0 Link Up - speed 10000 Mbps - full-duplex
+        Port 1 Link Up - speed 10000 Mbps - full-duplex
+        Done
+        testpmd>
 
 Limitations
 -----------
