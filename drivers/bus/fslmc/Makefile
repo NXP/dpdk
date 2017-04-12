@@ -1,6 +1,7 @@
 #   BSD LICENSE
 #
-#   Copyright (c) 2016 NXP. All rights reserved.
+#   Copyright(c) 2016 NXP.
+#   All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -35,10 +36,6 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_bus_fslmc.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
-endif
-
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
 CFLAGS += -O0 -g
 CFLAGS += "-Wno-error"
@@ -46,14 +43,12 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
-CFLAGS += "-Wno-strict-aliasing"
 
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
-CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
-CFLAGS += -I$(RTE_SDK)/drivers/pool/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common
 
 # versioning export map
 EXPORT_MAP := rte_bus_fslmc_version.map
@@ -62,9 +57,9 @@ EXPORT_MAP := rte_bus_fslmc_version.map
 LIBABIVER := 1
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-        mc/dpkg.c \
-        mc/dpni.c \
-        mc/dpseci.c \
+        qbman/qbman_portal.c
+
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
         mc/dpbp.c \
         mc/dpio.c \
         mc/mc_sys.c
@@ -72,11 +67,5 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpbp.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
-
-# library dependencies
-DEPDIRS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += lib/librte_eal
-DEPDIRS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += drivers/common/dpaa2
-
-LDLIBS += -lrte_common_dpaa2_qbman
 
 include $(RTE_SDK)/mk/rte.lib.mk

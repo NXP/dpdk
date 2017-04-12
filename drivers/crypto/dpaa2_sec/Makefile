@@ -47,11 +47,12 @@ endif
 CFLAGS += -D _GNU_SOURCE
 
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/mc
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/portal
-CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa2/qbman/include
-CFLAGS += -I$(RTE_SDK)/drivers/pool/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/mempool/dpaa2/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
 # versioning export map
@@ -62,16 +63,16 @@ LIBABIVER := 1
 
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_dpseci.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += mc/dpseci.c
 
 # library dependencies
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal lib/librte_cryptodev
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_eal
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_mempool lib/librte_mbuf
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/common/dpaa2
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += lib/librte_cryptodev
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/bus/fslmc
-DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/pool/dpaa2
+DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += drivers/mempool/dpaa2
 
-LDLIBS += -lrte_common_dpaa2_qbman
 LDLIBS += -lrte_bus_fslmc
-LDLIBS += -lrte_pool_dpaa2
+LDLIBS += -lrte_mempool_dpaa2
 
 include $(RTE_SDK)/mk/rte.lib.mk

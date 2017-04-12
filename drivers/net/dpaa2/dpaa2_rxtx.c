@@ -266,7 +266,8 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
 	DPAA2_FD_SET_FORMAT(fd, qbman_fd_sg);
 	/*Set Scatter gather table and Scatter gather entries*/
-	sgt = (struct qbman_sge *)(DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+	sgt = (struct qbman_sge *)(
+			(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
 			+ DPAA2_GET_FD_OFFSET(fd));
 
 	for (i = 0; i < mbuf->nb_segs; i++) {
