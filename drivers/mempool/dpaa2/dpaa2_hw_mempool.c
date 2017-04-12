@@ -59,26 +59,26 @@ struct dpaa2_bp_info rte_dpaa2_bpid_info[MAX_BPID];
 static struct dpaa2_bp_list *h_bp_list;
 
 static int
-hw_mbuf_create_pool(struct rte_mempool *mp)
+rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct dpaa2_bp_list *bp_list;
 	struct dpaa2_dpbp_dev *avail_dpbp;
 	struct dpbp_attr dpbp_attr;
 	uint32_t bpid;
-	int ret;
+	int ret, p_ret;
 
 	avail_dpbp = dpaa2_alloc_dpbp_dev();
 
 	if (!avail_dpbp) {
 		PMD_DRV_LOG(ERR, "DPAA2 resources not available");
-		return -1;
+		return -ENOENT;
 	}
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
-			return 0;
+			return ret;
 		}
 	}
 
@@ -86,7 +86,7 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 	if (ret != 0) {
 		PMD_INIT_LOG(ERR, "Resource enable failure with"
 			" err code: %d\n", ret);
-		return -1;
+		return ret;
 	}
 
 	ret = dpbp_get_attributes(&avail_dpbp->dpbp, CMD_PRI_LOW,
@@ -94,16 +94,18 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 	if (ret != 0) {
 		PMD_INIT_LOG(ERR, "Resource read failure with"
 			     " err code: %d\n", ret);
+		p_ret = ret;
 		ret = dpbp_disable(&avail_dpbp->dpbp, CMD_PRI_LOW,
 				   avail_dpbp->token);
-		return -1;
+		return p_ret;
 	}
 
 	/* Allocate the bp_list which will be added into global_bp_list */
-	bp_list = (struct dpaa2_bp_list *)malloc(sizeof(struct dpaa2_bp_list));
+	bp_list = rte_malloc(NULL, sizeof(struct dpaa2_bp_list),
+			     RTE_CACHE_LINE_SIZE);
 	if (!bp_list) {
 		PMD_INIT_LOG(ERR, "No heap memory available");
-		return -1;
+		return -ENOMEM;
 	}
 
 	/* Set parameters of buffer pool list */
@@ -134,7 +136,7 @@ hw_mbuf_create_pool(struct rte_mempool *mp)
 }
 
 static void
-hw_mbuf_free_pool(struct rte_mempool *mp)
+rte_hw_mbuf_free_pool(struct rte_mempool *mp)
 {
 	struct dpaa2_bp_info *bpinfo;
 	struct dpaa2_bp_list *bp;
@@ -170,8 +172,8 @@ hw_mbuf_free_pool(struct rte_mempool *mp)
 	dpaa2_free_dpbp_dev(dpbp_node);
 }
 
-static
-void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
+static void
+rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 			void * const *obj_table,
 			uint32_t bpid,
 			uint32_t meta_data_size,
@@ -202,7 +204,7 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	if (unlikely(!n))
 		goto aligned;
 
-	/* convert mbuf to buffers  for the remainder*/
+	/* convert mbuf to buffers for the remainder */
 	for (i = 0; i < n ; i++) {
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 		bufs[i] = (uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
@@ -211,7 +213,8 @@ void rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 		bufs[i] = (uint64_t)obj_table[i] + meta_data_size;
 #endif
 	}
-	/* feed them to bman*/
+
+	/* feed them to bman */
 	do {
 		ret = qbman_swp_release(swp, &releasedesc, bufs, n);
 	} while (ret == -EBUSY);
@@ -223,8 +226,8 @@ aligned:
 		for (i = 0; i < DPAA2_MBUF_MAX_ACQ_REL; i++) {
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 			bufs[i] = (uint64_t)
-				rte_mempool_virt2phy(pool, obj_table[n + i])
-					+ meta_data_size;
+				  rte_mempool_virt2phy(pool, obj_table[n + i])
+				  + meta_data_size;
 #else
 			bufs[i] = (uint64_t)obj_table[n + i] + meta_data_size;
 #endif
@@ -233,13 +236,14 @@ aligned:
 		do {
 			ret = qbman_swp_release(swp, &releasedesc, bufs,
 						DPAA2_MBUF_MAX_ACQ_REL);
-			} while (ret == -EBUSY);
+		} while (ret == -EBUSY);
 		n += DPAA2_MBUF_MAX_ACQ_REL;
 	}
 }
 
-int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
-		       void **obj_table, unsigned int count)
+int
+rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
+			  void **obj_table, unsigned int count)
 {
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	static int alloc;
@@ -255,7 +259,7 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	if (!(bp_info->bp_list)) {
 		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured\n");
-		return -2;
+		return -ENOENT;
 	}
 
 	bpid = bp_info->bpid;
@@ -264,7 +268,7 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
-			return -1;
+			return ret;
 		}
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
@@ -289,8 +293,8 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 			/* The API expect the exact number of requested bufs */
 			/* Releasing all buffers allocated */
 			rte_dpaa2_mbuf_release(pool, obj_table, bpid,
-					       bp_info->meta_data_size, n);
-			return -1;
+					   bp_info->meta_data_size, n);
+			return ret;
 		}
 		/* assigning mbuf from the acquired objects */
 		for (i = 0; (i < ret) && bufs[i]; i++) {
@@ -313,7 +317,7 @@ int rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 }
 
 static int
-hw_mbuf_free_bulk(struct rte_mempool *pool,
+rte_hw_mbuf_free_bulk(struct rte_mempool *pool,
 		  void * const *obj_table, unsigned int n)
 {
 	struct dpaa2_bp_info *bp_info;
@@ -321,7 +325,7 @@ hw_mbuf_free_bulk(struct rte_mempool *pool,
 	bp_info = mempool_to_bpinfo(pool);
 	if (!(bp_info->bp_list)) {
 		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured");
-		return -1;
+		return -ENOENT;
 	}
 	rte_dpaa2_mbuf_release(pool, obj_table, bp_info->bpid,
 			   bp_info->meta_data_size, n);
@@ -330,7 +334,7 @@ hw_mbuf_free_bulk(struct rte_mempool *pool,
 }
 
 static unsigned int
-hw_mbuf_get_count(const struct rte_mempool *mp)
+rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 {
 	int ret;
 	unsigned int num_of_bufs = 0;
@@ -359,7 +363,7 @@ hw_mbuf_get_count(const struct rte_mempool *mp)
 }
 
 static int
-hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
+rte_hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 {
 	if (dpaa2_dpbp_supported()) {
 		PMD_INIT_LOG(WARNING, "DPAA2 mempool resource not available\n");
@@ -370,12 +374,12 @@ hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
 
 struct rte_mempool_ops dpaa2_mpool_ops = {
 	.name = "dpaa2",
-	.alloc = hw_mbuf_create_pool,
-	.free = hw_mbuf_free_pool,
-	.enqueue = hw_mbuf_free_bulk,
+	.alloc = rte_hw_mbuf_create_pool,
+	.free = rte_hw_mbuf_free_pool,
+	.enqueue = rte_hw_mbuf_free_bulk,
 	.dequeue = rte_dpaa2_mbuf_alloc_bulk,
-	.get_count = hw_mbuf_get_count,
-	.supported = hw_mbuf_supported,
+	.get_count = rte_hw_mbuf_get_count,
+	.supported = rte_hw_mbuf_supported,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
