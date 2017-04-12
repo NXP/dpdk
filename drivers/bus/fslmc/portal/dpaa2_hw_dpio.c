@@ -406,9 +406,9 @@ dpaa2_affine_qbman_swp_sec(void)
 }
 
 int
-dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
-			 struct vfio_device_info *obj_info,
-		int object_id)
+dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
+		      struct vfio_device_info *obj_info,
+		      int object_id)
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
