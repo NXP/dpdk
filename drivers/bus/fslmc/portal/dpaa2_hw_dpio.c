@@ -429,13 +429,13 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 		return -1;
 	}
 
-	dpio_dev = malloc(sizeof(struct dpaa2_dpio_dev));
+	dpio_dev = rte_malloc(NULL, sizeof(struct dpaa2_dpio_dev),
+			      RTE_CACHE_LINE_SIZE);
 	if (!dpio_dev) {
 		PMD_INIT_LOG(ERR, "Memory allocation failed for DPIO Device\n");
 		return -1;
 	}
 
-	PMD_DRV_LOG(INFO, "\t Aloocated DPIO [%p]", dpio_dev);
 	dpio_dev->dpio = NULL;
 	dpio_dev->hw_id = object_id;
 	dpio_dev->vfio_fd = vdev->fd;
@@ -446,12 +446,10 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	reg_info.index = 0;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
-		free(dpio_dev);
+		rte_free(dpio_dev);
 		return -1;
 	}
 
-	PMD_DRV_LOG(DEBUG, "\t  Region Offset = %llx", reg_info.offset);
-	PMD_DRV_LOG(DEBUG, "\t  Region Size = %llx", reg_info.size);
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
@@ -463,19 +461,17 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
 				   reg_info.offset, reg_info.size)) {
 		PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
-		free(dpio_dev);
+		rte_free(dpio_dev);
 		return -1;
 	}
 
 	reg_info.index = 1;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
-		free(dpio_dev);
+		rte_free(dpio_dev);
 		return -1;
 	}
 
-	PMD_DRV_LOG(DEBUG, "\t  Region Offset = %llx", reg_info.offset);
-	PMD_DRV_LOG(DEBUG, "\t  Region Size = %llx", reg_info.size);
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
@@ -485,7 +481,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 		PMD_INIT_LOG(ERR,
 			     "Fail to configure the dpio qbman portal for %d\n",
 			     dpio_dev->hw_id);
-		free(dpio_dev);
+		rte_free(dpio_dev);
 		return -1;
 	}
 
@@ -494,7 +490,9 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
 	PMD_INIT_LOG(DEBUG, "DPAA2:Added [dpio-%d]", object_id);
 
-	dpio_dev->intr_handle = malloc(sizeof(struct rte_intr_handle));
+	dpio_dev->intr_handle = rte_malloc(NULL,
+					   sizeof(struct rte_intr_handle),
+					   0);
 	if (!dpio_dev->intr_handle) {
 		PMD_INIT_LOG(ERR, "malloc failed for dpio_dev->intr_handle\n");
 		return -1;

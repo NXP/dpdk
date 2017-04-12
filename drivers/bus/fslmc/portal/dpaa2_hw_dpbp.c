@@ -65,8 +65,7 @@ dpaa2_create_dpbp_device(
 	int ret;
 
 	/* Allocate DPAA2 dpbp handle */
-	dpbp_node = (struct dpaa2_dpbp_dev *)
-			malloc(sizeof(struct dpaa2_dpbp_dev));
+	dpbp_node = rte_malloc(NULL, sizeof(struct dpaa2_dpbp_dev), 0);
 	if (!dpbp_node) {
 		PMD_INIT_LOG(ERR, "Memory allocation failed for DPBP Device");
 		return -1;
@@ -79,7 +78,7 @@ dpaa2_create_dpbp_device(
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Resource alloc failure with err code: %d",
 			     ret);
-		free(dpbp_node);
+		rte_free(dpbp_node);
 		return -1;
 	}
 
@@ -89,7 +88,7 @@ dpaa2_create_dpbp_device(
 		PMD_INIT_LOG(ERR, "Failure cleaning dpbp device with"
 					" error code %d\n", ret);
 		dpbp_close(&dpbp_node->dpbp, CMD_PRI_LOW, dpbp_node->token);
-		free(dpbp_node);
+		rte_free(dpbp_node);
 		return -1;
 	}
 
