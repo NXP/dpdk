@@ -95,6 +95,16 @@
 #define	IPV6_DEFAULT_PAYLOAD	(IPV6_MTU_DEFAULT - sizeof(struct ipv6_hdr))
 
 /*
+ * Configure fragmentation size for IPv4 and IPv6 packets
+ */
+static uint32_t frag_size_v4 = IPV4_MTU_DEFAULT;
+static uint32_t frag_size_v6 = IPV6_MTU_DEFAULT;
+#define MIN_IPV4_FRAG_SIZE 64
+#define MAX_IPV4_FRAG_SIZE 9600
+#define MIN_IPV6_FRAG_SIZE 1280
+#define MAX_IPV6_FRAG_SIZE 9600
+
+/*
  * Max number of fragments per packet expected - defined by config file.
  */
 #define	MAX_PACKET_FRAG RTE_LIBRTE_IP_FRAG_MAX_FRAG
@@ -300,14 +310,14 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 		}
 
 		/* if we don't need to do any fragmentation */
-		if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
+		if (likely (frag_size_v4 >= m->pkt_len)) {
 			qconf->tx_mbufs[port_out].m_table[len] = m;
 			len2 = 1;
 		} else {
 			len2 = rte_ipv4_fragment_packet(m,
 				&qconf->tx_mbufs[port_out].m_table[len],
 				(uint16_t)(MBUF_TABLE_SIZE - len),
-				IPV4_MTU_DEFAULT,
+				frag_size_v4,
 				rxq->direct_pool, rxq->indirect_pool);
 
 			/* Free input packet */
@@ -336,14 +346,14 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 		}
 
 		/* if we don't need to do any fragmentation */
-		if (likely (IPV6_MTU_DEFAULT >= m->pkt_len)) {
+		if (likely (frag_size_v6 >= m->pkt_len)) {
 			qconf->tx_mbufs[port_out].m_table[len] = m;
 			len2 = 1;
 		} else {
 			len2 = rte_ipv6_fragment_packet(m,
 				&qconf->tx_mbufs[port_out].m_table[len],
 				(uint16_t)(MBUF_TABLE_SIZE - len),
-				IPV6_MTU_DEFAULT,
+				frag_size_v6,
 				rxq->direct_pool, rxq->indirect_pool);
 
 			/* Free input packet */
@@ -489,8 +499,12 @@ print_usage(const char *prgname)
 {
 	printf("%s [EAL options] -- -p PORTMASK [-q NQ]\n"
 	       "  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
-	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n",
-	       prgname);
+	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
+	       "  --frag_size_v4=<num>: optional,  IPv4 fragment size in decimal"
+	       ",Condition:(frag_size_v4 - 20) should be a multiple of 8, default is %d \n"
+	       "  --frag_size_v6=<num>: optional,  IPv6 fragment size in decimal"
+	       ",Condition:(frag_size_v6 - 40) should be a multiple of 8, default is %d\n",
+	       prgname, frag_size_v4, frag_size_v6);
 }
 
 static int
@@ -528,6 +542,29 @@ parse_nqueue(const char *q_arg)
 	return n;
 }
 
+static uint32_t
+parse_frag_size(const char *str, uint32_t min, uint32_t max,
+				uint8_t hdr_size, uint32_t *val)
+{
+	char *end;
+	uint64_t v;
+
+	/* parse decimal string */
+	errno = 0;
+	v = strtoul(str, &end, 10);
+	if (errno != 0 || *end != '\0')
+		return -EINVAL;
+
+	if (v < min || v > max)
+		return -EINVAL;
+
+	if ((v - hdr_size) % 8)
+		return -EINVAL;
+
+	*val = (uint32_t)v;
+	return 0;
+}
+
 /* Parse the argument given in the command line of the application */
 static int
 parse_args(int argc, char **argv)
@@ -537,6 +574,8 @@ parse_args(int argc, char **argv)
 	int option_index;
 	char *prgname = argv[0];
 	static struct option lgopts[] = {
+		{"frag_size_v4", 1, 0, 0},
+		{"frag_size_v6", 1, 0, 0},
 		{NULL, 0, 0, 0}
 	};
 
@@ -568,8 +607,40 @@ parse_args(int argc, char **argv)
 
 		/* long options */
 		case 0:
-			print_usage(prgname);
-			return -1;
+			if (!strncmp(lgopts[option_index].name,
+				"frag_size_v4", 12)) {
+				ret = parse_frag_size(optarg,
+						MIN_IPV4_FRAG_SIZE,
+						MAX_IPV4_FRAG_SIZE,
+						sizeof(struct ipv4_hdr),
+						&frag_size_v4);
+				if (ret) {
+					printf("invalid value: \"%s\" for "
+						"parameter %s\n",
+						optarg,
+						lgopts[option_index].name);
+					print_usage(prgname);
+					return ret;
+				}
+			}
+			if (!strncmp(lgopts[option_index].name,
+				"frag_size_v6", 12)) {
+				ret = parse_frag_size(optarg,
+						MIN_IPV6_FRAG_SIZE,
+						MAX_IPV6_FRAG_SIZE,
+						sizeof(struct ipv6_hdr),
+						&frag_size_v6);
+				if (ret) {
+					printf("invalid value: \"%s\" for "
+						"parameter %s\n",
+						optarg,
+						lgopts[option_index].name);
+					print_usage(prgname);
+					return ret;
+				}
+			}
+
+			break;
 
 		default:
 			print_usage(prgname);
