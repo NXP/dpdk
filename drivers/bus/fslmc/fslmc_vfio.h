@@ -82,11 +82,15 @@ int rte_fslmc_vfio_dmamap(void);
 /* initialize the NXP/FSL dpaa2 accelerators */
 int rte_eal_dpaa2_init(void);
 
-/* create dpio device */
-int dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
-			     struct vfio_device_info *obj_info,
-			     int object_id);
-
-int dpaa2_create_dpbp_device(int dpbp_id);
+int dpaa2_create_dpni_dev(struct fslmc_vfio_device *vdev,
+			  struct vfio_device_info *obj_info,
+			  int object_id);
+int dpaa2_create_dpseci_dev(struct fslmc_vfio_device *vdev,
+			    struct vfio_device_info *obj_info,
+			    int object_id);
+int dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
+			  struct vfio_device_info *obj_info,
+			  int object_id);
+int dpaa2_create_dpbp_dev(int object_id);
 
 #endif /* _FSLMC_VFIO_H_ */

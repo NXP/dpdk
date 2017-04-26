@@ -543,7 +543,6 @@ int fslmc_vfio_process_group(void)
 		object_type = strtok(dir->d_name, ".");
 		temp_obj = strtok(NULL, ".");
 		sscanf(temp_obj, "%d", &object_id);
-		FSLMC_VFIO_LOG(DEBUG, " - %s ", dev_name);
 
 		/* getting the device fd*/
 		dev_fd = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, dev_name);
@@ -565,46 +564,34 @@ int fslmc_vfio_process_group(void)
 			FSLMC_VFIO_LOG(ERR, "DPAA2 VFIO_DEVICE_GET_INFO fail");
 			goto FAILURE;
 		}
-		if (!strcmp(object_type, "dpni") ||
-		    !strcmp(object_type, "dpseci")) {
-			struct rte_pci_device *dev;
 
-			dev = malloc(sizeof(struct rte_pci_device));
-			if (dev == NULL) {
-				FSLMC_VFIO_LOG(ERR, "device malloc failed");
-				goto FAILURE;
-			}
-
-			memset(dev, 0, sizeof(*dev));
-			/* store hw_id of dpni/dpseci device */
-			dev->addr.devid = object_id;
-			dev->id.vendor_id = DPAA2_VENDOR_ID;
-			dev->id.device_id = (strcmp(object_type, "dpseci")) ?
-				DPAA2_MC_DPNI_DEVID : DPAA2_MC_DPSECI_DEVID;
-			dev->addr.function = dev->id.device_id;
-
-			FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added [%s-%d]\n",
-				      object_type, object_id);
-			/* Enable IRQ for DPNI devices */
-			if (dev->id.device_id == DPAA2_MC_DPNI_DEVID)
-				dpaa2_vfio_setup_intr(&dev->intr_handle,
-						      vdev->fd,
-						      device_info.num_irqs);
-
-			TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
-		}
-		if (!strcmp(object_type, "dpio")) {
-			ret = dpaa2_create_dpio_device(vdev,
-						       &device_info,
-						       object_id);
+		if (!strcmp(object_type, "dpni")) {
+			ret = dpaa2_create_dpni_dev(vdev,
+						    &device_info,
+						    object_id);
+		} else if (!strcmp(object_type, "dpseci")) {
+			ret = dpaa2_create_dpseci_dev(vdev,
+						      &device_info,
+						      object_id);
+		} else if (!strcmp(object_type, "dpio")) {
+			ret = dpaa2_create_dpio_dev(vdev,
+						    &device_info,
+						    object_id);
 			if (!ret)
 				dpio_count++;
-		}
-		if (!strcmp(object_type, "dpbp")) {
-			ret = dpaa2_create_dpbp_device(object_id);
+		} else if (!strcmp(object_type, "dpbp")) {
+			ret = dpaa2_create_dpbp_dev(object_id);
 			if (!ret)
 				dpbp_count++;
+		} else {
+			FSLMC_VFIO_LOG(DEBUG, "%s-%d Not supported",
+				       object_type, object_id);
+			continue;
 		}
+		if (ret)
+			FSLMC_VFIO_LOG(ERR, "%s-%d create failed",
+				       object_type, object_id);
+
 	}
 	closedir(d);
 
@@ -612,8 +599,8 @@ int fslmc_vfio_process_group(void)
 	if (ret)
 		FSLMC_VFIO_LOG(DEBUG, "Error in affining qbman swp %d", ret);
 
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpbp_count = %d dpio_count=%d\n",
-		      dpbp_count, dpio_count);
+	FSLMC_VFIO_LOG(DEBUG, "DPAA2: dpbp_count = %d dpio_count=%d\n",
+		       dpbp_count, dpio_count);
 	return 0;
 
 FAILURE:
