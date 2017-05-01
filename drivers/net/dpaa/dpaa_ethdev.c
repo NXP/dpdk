@@ -109,10 +109,6 @@ static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	if (num_bufs)
 		PMD_DRV_LOG(WARNING, "drained %u bufs from BPID %d",
 			    num_bufs, bpid);
-	else {
-		PMD_DRV_LOG(ERR, "No buffers drained from BPID %d", bpid);
-		return -ENOMEM;
-	}
 
 	dpaa_pool_table[bpid].mp = mp;
 	dpaa_pool_table[bpid].bpid = bpid;
