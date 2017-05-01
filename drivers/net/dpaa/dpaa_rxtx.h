@@ -93,6 +93,9 @@
 
 #define DPA_SGT_MAX_ENTRIES 16 /* maximum number of entries in SG Table */
 
+#define DPAA_MAX_DEQUEUE_NUM_FRAMES    63
+	/** <Maximum number of frames to be dequeued in a single rx call*/
+
 /* Parsing mask (Little Endian) - 0x00E044EC00800000
  *	Classification Plan ID 0x00
  *	L4R 0xE0 -

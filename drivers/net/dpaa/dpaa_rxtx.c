@@ -391,8 +391,8 @@ uint16_t dpaa_eth_queue_rx(void *q,
 			return 0;
 		}
 	}
-
-	ret = qman_set_vdq(fq, nb_bufs);
+	ret = qman_set_vdq(fq, (nb_bufs > DPAA_MAX_DEQUEUE_NUM_FRAMES) ?
+				DPAA_MAX_DEQUEUE_NUM_FRAMES : nb_bufs);
 	if (ret)
 		return 0;
 
