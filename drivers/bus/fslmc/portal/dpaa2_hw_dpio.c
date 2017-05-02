@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright (c) 2016 NXP. All rights reserved.
+ *   Copyright 2016-2017 NXP. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -61,6 +61,7 @@
 #include <fslmc_vfio.h>
 #include "dpaa2_hw_pvt.h"
 #include "dpaa2_hw_dpio.h"
+#include <mc/fsl_dpmng.h>
 
 #define NUM_HOST_CPUS RTE_MAX_LCORE
 
@@ -74,28 +75,13 @@ static struct dpio_dev_list dpio_dev_list
 	= TAILQ_HEAD_INITIALIZER(dpio_dev_list); /*!< DPIO device list */
 static uint32_t io_space_count;
 
-#define ARM_CORTEX_A53		0xD03
-#define ARM_CORTEX_A57		0xD07
-#define ARM_CORTEX_A72		0xD08
-
-static int dpaa2_soc_core = ARM_CORTEX_A72;
-
-#define NXP_LS2085	1
-#define NXP_LS2088	2
-#define NXP_LS1088	3
-
-static int dpaa2_soc_family  = NXP_LS2088;
-
-/*Stashing Macros*/
-#define DPAA2_CORE_CLUSTER_BASE		0x04
-#define DPAA2_CORE_CLUSTER_FIRST	(DPAA2_CORE_CLUSTER_BASE + 0)
-#define DPAA2_CORE_CLUSTER_SECOND	(DPAA2_CORE_CLUSTER_BASE + 1)
-#define DPAA2_CORE_CLUSTER_THIRD	(DPAA2_CORE_CLUSTER_BASE + 2)
-#define DPAA2_CORE_CLUSTER_FOURTH	(DPAA2_CORE_CLUSTER_BASE + 3)
-
 /*Stashing Macros default for LS208x*/
 static int dpaa2_core_cluster_base = 0x04;
 static int dpaa2_cluster_sz = 2;
+
+#define SVR_LS1080A             0x87030000
+#define SVR_LS2080A             0x87010000
+#define SVR_LS2088A             0x87090000
 
 /* For LS208X platform There are four clusters with following mapping:
  * Cluster 1 (ID = x04) : CPU0, CPU1;
@@ -108,11 +94,6 @@ static int dpaa2_cluster_sz = 2;
  * Cluster 2 (ID = x03) : CPU4, CPU5, CPU6, CPU7;
  */
 
-/* Set the STASH Destination depending on Current CPU ID.
- * e.g. Valid values of SDEST are 4,5,6,7. Where,
- * CPU 0-1 will have SDEST 4
- * CPU 2-3 will have SDEST 5.....and so on.
- */
 static int
 dpaa2_core_cluster_sdest(int cpu_id)
 {
@@ -122,58 +103,6 @@ dpaa2_core_cluster_sdest(int cpu_id)
 		x = 3;
 
 	return dpaa2_core_cluster_base + x;
-}
-
-static int cpuinfo_arm(FILE *file)
-{
-	char str[128], *pos;
-	int part = -1;
-
-	#define ARM_CORTEX_A53_INFO	"Cortex-A53"
-	#define ARM_CORTEX_A57_INFO	"Cortex-A57"
-	#define ARM_CORTEX_A72_INFO	"Cortex-A72"
-
-	while (fgets(str, sizeof(str), file) != NULL) {
-		if (part >= 0)
-			break;
-		pos = strstr(str, "CPU part");
-		if (pos != NULL) {
-			pos = strchr(pos, ':');
-			if (pos != NULL)
-				sscanf(++pos, "%x", &part);
-		}
-	}
-
-	dpaa2_soc_core = part;
-	if (part == ARM_CORTEX_A53) {
-		dpaa2_soc_family = NXP_LS1088;
-		printf("\n########## Detected NXP LS108x with %s\n",
-		       ARM_CORTEX_A53_INFO);
-	} else if (part == ARM_CORTEX_A57) {
-		dpaa2_soc_family = NXP_LS2085;
-		printf("\n########## Detected NXP LS208x Rev1.0 with %s\n",
-		       ARM_CORTEX_A57_INFO);
-	} else if (part == ARM_CORTEX_A72) {
-		dpaa2_soc_family = NXP_LS2088;
-		printf("\n########## Detected NXP LS208x with %s\n",
-		       ARM_CORTEX_A72_INFO);
-	}
-	return 0;
-}
-
-static void
-check_cpu_part(void)
-{
-	FILE *stream;
-
-	stream = fopen("/proc/cpuinfo", "r");
-	if (!stream) {
-		PMD_INIT_LOG(WARNING, "Unable to open /proc/cpuinfo\n");
-		return;
-	}
-	cpuinfo_arm(stream);
-
-	fclose(stream);
 }
 
 static int
@@ -246,6 +175,25 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 {
 	int sdest;
 	int cpu_id, ret;
+	static int first_time;
+
+	/* find the SoC type for the first time */
+	if (!first_time) {
+		struct mc_soc_version mc_plat_info = {0};
+
+		if (mc_get_soc_version(dpio_dev->dpio,
+				       CMD_PRI_LOW, &mc_plat_info)) {
+			PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
+		} else {
+			 if ((mc_plat_info.svr & 0xffff0000) == SVR_LS1080A) {
+				dpaa2_core_cluster_base = 0x02;
+				dpaa2_cluster_sz = 4;
+				PMD_INIT_LOG(DEBUG,
+					     "\tLS108x(A53) Platform Detected");
+			}
+		}
+		first_time = 1;
+	}
 
 	/* Set the Stashing Destination */
 	cpu_id = rte_lcore_id();
@@ -271,8 +219,6 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 
 	/* Set the STASH Destination depending on Current CPU ID.
 	 * Valid values of SDEST are 4,5,6,7. Where,
-	 * CPU 0-1 will have SDEST 4
-	 * CPU 2-3 will have SDEST 5.....and so on.
 	 */
 
 	sdest = dpaa2_core_cluster_sdest(cpu_id);
@@ -410,16 +356,6 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
-	static int first_time;
-
-	if (!first_time) {
-		check_cpu_part();
-		if (dpaa2_soc_family == NXP_LS1088) {
-			dpaa2_core_cluster_base = 0x02;
-			dpaa2_cluster_sz = 4;
-		}
-		first_time = 1;
-	}
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
 		PMD_INIT_LOG(ERR, "ERROR, Not sufficient number "
