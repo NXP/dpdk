@@ -67,9 +67,11 @@
 struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
 RTE_DEFINE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 
+struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
+
 TAILQ_HEAD(dpio_dev_list, dpaa2_dpio_dev);
 static struct dpio_dev_list dpio_dev_list
-		= TAILQ_HEAD_INITIALIZER(dpio_dev_list); /*!< DPIO device list */
+	= TAILQ_HEAD_INITIALIZER(dpio_dev_list); /*!< DPIO device list */
 static uint32_t io_space_count;
 
 #define ARM_CORTEX_A53		0xD03
@@ -219,8 +221,6 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	}
 
 	PMD_INIT_LOG(DEBUG, "Qbman Portal ID %d", attr.qbman_portal_id);
-	PMD_INIT_LOG(DEBUG, "Portal CE adr 0x%lX", attr.qbman_portal_ce_offset);
-	PMD_INIT_LOG(DEBUG, "Portal CI adr 0x%lX", attr.qbman_portal_ci_offset);
 
 	/* Configure & setup SW portal */
 	p_des.block = NULL;
@@ -237,8 +237,6 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		free(dpio_dev->dpio);
 		return -1;
 	}
-
-	PMD_INIT_LOG(DEBUG, "QBMan SW Portal 0x%p\n", dpio_dev->sw_portal);
 
 	return 0;
 }
@@ -488,7 +486,7 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	io_space_count++;
 	dpio_dev->index = io_space_count;
 	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
-	PMD_INIT_LOG(DEBUG, "DPAA2:Added [dpio-%d]", object_id);
+	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio-%d]", object_id);
 
 	dpio_dev->intr_handle = rte_malloc(NULL,
 					   sizeof(struct rte_intr_handle),

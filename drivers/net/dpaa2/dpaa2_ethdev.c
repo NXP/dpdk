@@ -54,7 +54,7 @@
 
 /* Name of the DPAA2 Net PMD */
 static const char *drivername = "DPNI PMD";
-
+static int dpaa2_dev_uninit(struct rte_eth_dev *eth_dev);
 static int dpaa2_dev_link_update(struct rte_eth_dev *dev,
 				      int wait_to_complete);
 static int dpaa2_dev_set_link_up(struct rte_eth_dev *dev);
@@ -118,7 +118,7 @@ dpaa2_vlan_filter_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on)
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = priv->hw;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -145,7 +145,7 @@ static void
 dpaa2_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = priv->hw;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -486,11 +486,11 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		struct dpni_congestion_notification_cfg cong_notif_cfg;
 
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_BYTES;
-		/*Notify about congestion when the queue size is 32 KB */
+		/* Notify about congestion when the queue size is 32 KB */
 		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
-		/*Notify that the queue is not congested when the data in
-		* the queue is below this thershold.
-		*/
+		/* Notify that the queue is not congested when the data in
+		 * the queue is below this thershold.
+		 */
 		cong_notif_cfg.threshold_exit = CONG_EXIT_TX_THRESHOLD;
 		cong_notif_cfg.message_ctx = 0;
 		cong_notif_cfg.message_iova = (uint64_t)dpaa2_q->cscn;
@@ -506,8 +506,9 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 						       tc_id,
 						       &cong_notif_cfg);
 		if (ret) {
-			PMD_INIT_LOG(ERR, "Error in setting tx congestion"
-				     " notification: ErrorCode = %d", -ret);
+			PMD_INIT_LOG(ERR,
+					     "Error in setting tx congestion notification: = %d",
+						 -ret);
 			return -ret;
 		}
 	}
@@ -545,8 +546,7 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 	};
 
 	if (dev->rx_pkt_burst == dpaa2_dev_rx ||
-		dev->rx_pkt_burst == dpaa2_dev_prefetch_rx ||
-		dev->rx_pkt_burst == dpaa2_dev_prefetch2_rx)
+	    dev->rx_pkt_burst == dpaa2_dev_prefetch_rx)
 		return ptypes;
 	return NULL;
 }
@@ -657,7 +657,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	uint16_t qdid;
 	struct dpni_queue_id qid;
 	struct dpaa2_queue *dpaa2_q;
-	int ret, i, mask = 0;
+	int ret, i;
 	struct rte_intr_handle *intr_handle = &dev->pci_dev->intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
@@ -764,14 +764,9 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 			     "code = %d\n", ret);
 		return ret;
 	}
-	/*
-	 * VLAN Offload Settings
-	 */
+	/* VLAN Offload Settings */
 	if (priv->max_vlan_filters)
-		mask = ETH_VLAN_FILTER_MASK;
-
-	if (mask)
-		dpaa2_vlan_offload_set(dev, mask);
+		dpaa2_vlan_offload_set(dev, ETH_VLAN_FILTER_MASK);
 
 	/* if the interrupts were configured on this devices*/
 	if (intr_handle->fd) {
@@ -1002,8 +997,8 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 static void
 dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr,
-		 __rte_unused uint32_t index,
-		 __rte_unused uint32_t pool)
+		       __rte_unused uint32_t index,
+		       __rte_unused uint32_t pool)
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -1142,9 +1137,9 @@ void dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 	if (retcode)
 		goto err;
 
-	/* Ingress drop frame count due to confiured rules*/
+	/* Ingress drop frame count due to configured rules */
 	stats->ierrors = value.page_2.ingress_filtered_frames;
-	/* Ingress drop frame count due to error*/
+	/* Ingress drop frame count due to error */
 	stats->ierrors += value.page_2.ingress_discarded_frames;
 
 	stats->oerrors = value.page_2.egress_discarded_frames;
@@ -1249,7 +1244,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	dpni = (struct fsl_mc_io *)priv->hw;
 
 	if (dpni == NULL) {
-		RTE_LOG(ERR, PMD, "dpni is NULL");
+		RTE_LOG(ERR, PMD, "Device has not yet been configured");
 		return ret;
 	}
 
@@ -1269,7 +1264,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 			return -EINVAL;
 		}
 	}
-	/*changing tx burst function to start  enqueues */
+	/* changing tx burst function to start enqueues */
 	dev->tx_pkt_burst = dpaa2_dev_tx;
 	dev->data->dev_link.link_status = 1;
 
@@ -1296,7 +1291,7 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	dpni = (struct fsl_mc_io *)priv->hw;
 
 	if (dpni == NULL) {
-		RTE_LOG(ERR, PMD, "dpni is NULL");
+		RTE_LOG(ERR, PMD, "Device has not yet been configured");
 		return ret;
 	}
 
@@ -1350,7 +1345,7 @@ dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	dpni = (struct fsl_mc_io *)priv->hw;
 
 	if (dpni == NULL || fc_conf == NULL) {
-		RTE_LOG(ERR, PMD, "dpni is NULL");
+		RTE_LOG(ERR, PMD, "device not configured");
 		return ret;
 	}
 
@@ -1364,10 +1359,10 @@ dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	if (state.options & DPNI_LINK_OPT_PAUSE) {
 		/* DPNI_LINK_OPT_PAUSE set
 		 *  if ASYM_PAUSE not set,
-		 *	RX Side flow control (handle recieved Pause frame)
+		 *	RX Side flow control (handle received Pause frame)
 		 *	TX side flow control (send Pause frame)
 		 *  if ASYM_PAUSE set,
-		 *	RX Side flow control (handle recieved Pause frame)
+		 *	RX Side flow control (handle received Pause frame)
 		 *	No TX side flow control (send Pause frame disabled)
 		 */
 		if (!(state.options & DPNI_LINK_OPT_ASYM_PAUSE))
@@ -1429,40 +1424,40 @@ dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 
 	/* update cfg with fc_conf */
 	switch (fc_conf->mode) {
-		case RTE_FC_FULL:
-			/* Full flow control;
-			 * OPT_PAUSE set, ASYM_PAUSE not set
-			 */
-			cfg.options |= DPNI_LINK_OPT_PAUSE;
-			cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
-		case RTE_FC_TX_PAUSE:
-			/* Enable RX flow control
-			 * OPT_PAUSE not set;
-			 * ASYM_PAUSE set;
-			 */
-			cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
-			cfg.options &= ~DPNI_LINK_OPT_PAUSE;
-			break;
-		case RTE_FC_RX_PAUSE:
-			/* Enable TX Flow control
-			 * OPT_PAUSE set
-			 * ASYM_PAUSE set
-			 */
-			cfg.options |= DPNI_LINK_OPT_PAUSE;
-			cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
-			break;
-		case RTE_FC_NONE:
-			/* Disable Flow control
-			 * OPT_PAUSE not set
-			 * ASYM_PAUSE not set
-			 */
-			cfg.options &= ~DPNI_LINK_OPT_PAUSE;
-			cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
-			break;
-		default:
-			RTE_LOG(ERR, PMD, "Incorrect Flow control flag (%d)",
-				fc_conf->mode);
-			return -1;
+	case RTE_FC_FULL:
+		/* Full flow control;
+		 * OPT_PAUSE set, ASYM_PAUSE not set
+		 */
+		cfg.options |= DPNI_LINK_OPT_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+	case RTE_FC_TX_PAUSE:
+		/* Enable RX flow control
+		 * OPT_PAUSE not set;
+		 * ASYM_PAUSE set;
+		 */
+		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+		break;
+	case RTE_FC_RX_PAUSE:
+		/* Enable TX Flow control
+		 * OPT_PAUSE set
+		 * ASYM_PAUSE set
+		 */
+		cfg.options |= DPNI_LINK_OPT_PAUSE;
+		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+		break;
+	case RTE_FC_NONE:
+		/* Disable Flow control
+		 * OPT_PAUSE not set
+		 * ASYM_PAUSE not set
+		 */
+		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+		break;
+	default:
+		RTE_LOG(ERR, PMD, "Incorrect Flow control flag (%d)",
+			fc_conf->mode);
+		return -1;
 	}
 
 	ret = dpni_set_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
@@ -1499,59 +1494,12 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.rx_queue_release  = dpaa2_dev_rx_queue_release,
 	.tx_queue_setup    = dpaa2_dev_tx_queue_setup,
 	.tx_queue_release  = dpaa2_dev_tx_queue_release,
-	.set_queue_rate_limit = NULL,
 	.flow_ctrl_get	      = dpaa2_flow_ctrl_get,
 	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
-	.priority_flow_ctrl_set = NULL,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
 	.mac_addr_remove      = dpaa2_dev_remove_mac_addr,
 	.mac_addr_set         = dpaa2_dev_set_mac_addr,
 };
-
-static int
-dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
-{
-	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	int i;
-	struct dpaa2_queue *dpaa2_q;
-
-	PMD_INIT_FUNC_TRACE();
-
-	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
-		return -EPERM;
-
-	if (!dpni) {
-		PMD_INIT_LOG(WARNING, "Already closed or not started");
-		return -1;
-	}
-
-	dpaa2_dev_close(eth_dev);
-
-	if (priv->rx_vq[0]) {
-		/* cleaning up queue storage */
-		for (i = 0; i < priv->nb_rx_queues; i++) {
-			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
-			if (dpaa2_q->q_storage)
-				rte_free(dpaa2_q->q_storage);
-		}
-		/*free the all queue memory */
-		rte_free(priv->rx_vq[0]);
-		priv->rx_vq[0] = NULL;
-	}
-
-	/* free memory for storing MAC addresses */
-	if (eth_dev->data->mac_addrs) {
-		rte_free(eth_dev->data->mac_addrs);
-		eth_dev->data->mac_addrs = NULL;
-	}
-
-	eth_dev->dev_ops = NULL;
-	eth_dev->rx_pkt_burst = NULL;
-	eth_dev->tx_pkt_burst = NULL;
-
-	return 0;
-}
 
 static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
@@ -1574,7 +1522,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	rte_eth_copy_pci_info(eth_dev, pci_dev);
 
-	dpni_dev = (struct fsl_mc_io *)malloc(sizeof(struct fsl_mc_io));
+	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
 	if (!dpni_dev) {
 		PMD_INIT_LOG(ERR, "malloc failed for dpni device\n");
 		return -1;
@@ -1583,9 +1531,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	dpni_dev->regs = rte_mcp_ptr_list[0];
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
-		PMD_INIT_LOG(ERR, "Failure in opening dpni@%d device with"
-			" error code %d\n", hw_id, ret);
-		free(dpni_dev);
+		PMD_INIT_LOG(ERR,
+			     "Failure in opening dpni@%d with err code %d\n",
+			     hw_id, ret);
+		rte_free(dpni_dev);
 		return -1;
 	}
 
@@ -1599,8 +1548,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpni_get_attributes(dpni_dev, CMD_PRI_LOW, priv->token, &attr);
 	if (ret) {
-		PMD_INIT_LOG(ERR, "Failure in getting dpni@%d attribute, "
-			" error code %d\n", hw_id, ret);
+		PMD_INIT_LOG(ERR,
+			     "Failure in get dpni@%d attribute, err code %d\n",
+			     hw_id, ret);
 		goto init_err;
 	}
 
@@ -1642,12 +1592,13 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(INFO, "Enabling per TC tail drop on RX");
 	}
 
-	/*Tail drop to be disabled on queue */
+	/* Tail drop to be disabled on queue */
 	if (getenv("DPAA2_RX_TAILDROP_OFF")) {
 		priv->flags |= DPAA2_RX_TAILDROP_OFF;
 		PMD_INIT_LOG(INFO, "Disabling per queue tail drop on RX");
 	}
 
+	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "dpaa2_alloc_rx_tx_queuesFailed\n");
@@ -1658,9 +1609,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->mac_addrs = rte_zmalloc("dpni",
 		ETHER_ADDR_LEN * attr.mac_filter_entries, 0);
 	if (eth_dev->data->mac_addrs == NULL) {
-		PMD_INIT_LOG(ERR, "Failed to allocate %d bytes needed to "
-						"store MAC addresses",
-				ETHER_ADDR_LEN * attr.mac_filter_entries);
+		PMD_INIT_LOG(ERR,
+		   "Failed to allocate %d bytes needed to store MAC addresses",
+			     ETHER_ADDR_LEN * attr.mac_filter_entries);
+		ret = -ENOMEM;
 		goto init_err;
 	}
 
@@ -1668,8 +1620,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 					priv->token,
 			(uint8_t *)(eth_dev->data->mac_addrs[0].addr_bytes));
 	if (ret) {
-		PMD_INIT_LOG(ERR, "DPNI get mac address failed:"
-					" Error Code = %d\n", ret);
+		PMD_INIT_LOG(ERR, "DPNI get mac address failed:Err Code = %d\n",
+			     ret);
 		goto init_err;
 	}
 
@@ -1680,8 +1632,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
 				     DPNI_QUEUE_TX, &layout);
 	if (ret) {
-		PMD_INIT_LOG(ERR, "Error (%d) in setting tx buffer"
-				  " layout", ret);
+		PMD_INIT_LOG(ERR, "Error (%d) in setting tx buffer layout",
+			     ret);
 		goto init_err;
 	}
 
@@ -1692,8 +1644,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
 				     DPNI_QUEUE_TX_CONFIRM, &layout);
 	if (ret) {
-		PMD_INIT_LOG(ERR, "Error (%d) in setting tx-conf buffer"
-				  " layout", ret);
+		PMD_INIT_LOG(ERR, "Error (%d) in setting tx-conf buffer layout",
+			     ret);
 		goto init_err;
 	}
 
@@ -1706,16 +1658,69 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA2_RX_NO_PREFETCH")) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		PMD_INIT_LOG(INFO, "No Prefetch enabled");
-	} else if (getenv("DPAA2_RX_PREFETCH_2")) {
-		/*If double prefetch is configured. */
-		eth_dev->rx_pkt_burst = dpaa2_dev_prefetch2_rx;
-		PMD_INIT_LOG(INFO, "Double Prefetch Enabled");
 	}
 
 	return 0;
 init_err:
 	dpaa2_dev_uninit(eth_dev);
 	return ret;
+}
+
+static int
+dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	int i, ret;
+	struct dpaa2_queue *dpaa2_q;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return -EPERM;
+
+	if (!dpni) {
+		PMD_INIT_LOG(WARNING, "Already closed or not started");
+		return -1;
+	}
+
+	dpaa2_dev_close(eth_dev);
+
+	if (priv->rx_vq[0]) {
+		/* cleaning up queue storage */
+		for (i = 0; i < priv->nb_rx_queues; i++) {
+			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
+			if (dpaa2_q->q_storage)
+				rte_free(dpaa2_q->q_storage);
+		}
+		/*free the all queue memory */
+		rte_free(priv->rx_vq[0]);
+		priv->rx_vq[0] = NULL;
+	}
+
+	/* free memory for storing MAC addresses */
+	if (eth_dev->data->mac_addrs) {
+		rte_free(eth_dev->data->mac_addrs);
+		eth_dev->data->mac_addrs = NULL;
+	}
+
+	/* Close the device at underlying layer*/
+	ret = dpni_close(dpni, CMD_PRI_LOW, priv->token);
+	if (ret) {
+		PMD_INIT_LOG(ERR,
+			     "Failure closing dpni device with err code %d\n",
+			     ret);
+	}
+
+	/* Free the allocated memory for ethernet private data and dpni*/
+	priv->hw = NULL;
+	rte_free(dpni);
+
+	eth_dev->dev_ops = NULL;
+	eth_dev->rx_pkt_burst = NULL;
+	eth_dev->tx_pkt_burst = NULL;
+
+	return 0;
 }
 
 static struct rte_pci_id pci_id_dpaa2_map[] = {

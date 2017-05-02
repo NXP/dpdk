@@ -32,8 +32,6 @@
 #ifndef __FSL_DPOPR_H_
 #define __FSL_DPOPR_H_
 
-#include <fsl_net.h>
-
 /* Data Path Order Restoration API
  * Contains initialization APIs and runtime APIs for the Order Restoration
  */

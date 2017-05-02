@@ -134,7 +134,6 @@ static int vfio_connect_container(struct fslmc_vfio_group *vfio_group)
 	for (i = 0; i < VFIO_MAX_CONTAINERS; i++) {
 		if (vfio_containers[i].used)
 			continue;
-		FSLMC_VFIO_LOG(DEBUG, "Unused container at index %d", i);
 		container = &vfio_containers[i];
 	}
 	if (!container) {
@@ -247,7 +246,7 @@ int rte_fslmc_vfio_dmamap(void)
 
 		FSLMC_VFIO_LOG(DEBUG, "-->Initial SHM Virtual ADDR %llX",
 			     dma_map.vaddr);
-		FSLMC_VFIO_LOG(DEBUG, "-----> DMA size 0x%llX\n", dma_map.size);
+		FSLMC_VFIO_LOG(DEBUG, "-----> DMA size 0x%llX", dma_map.size);
 		ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA,
 			    &dma_map);
 		if (ret) {
@@ -255,8 +254,6 @@ int rte_fslmc_vfio_dmamap(void)
 				       "(errno = %d)", errno);
 			return ret;
 		}
-		FSLMC_VFIO_LOG(DEBUG, "-----> dma_map.vaddr = 0x%llX",
-			     dma_map.vaddr);
 	}
 
 	/* TODO - This is a W.A. as VFIO currently does not add the mapping of
@@ -484,7 +481,6 @@ int fslmc_vfio_process_group(void)
 	}
 	closedir(d);
 	d = NULL;
-
 	if (!mcp_obj) {
 		FSLMC_VFIO_LOG(ERR, "DPAA2 MCP Object not Found");
 		return -ENODEV;
@@ -515,8 +511,6 @@ int fslmc_vfio_process_group(void)
 		goto FAILURE;
 	}
 
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2 MC has VIR_ADD = %ld", v_addr);
-
 	rte_mcp_ptr_list[0] = (void *)v_addr;
 
 	d = opendir(path);
@@ -526,7 +520,6 @@ int fslmc_vfio_process_group(void)
 	}
 
 	i = 0;
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2 - Parsing devices:");
 	/* Parsing each object and initiating them*/
 	while ((dir = readdir(d)) != NULL) {
 		if (dir->d_type != DT_LNK)
@@ -599,8 +592,8 @@ int fslmc_vfio_process_group(void)
 	if (ret)
 		FSLMC_VFIO_LOG(DEBUG, "Error in affining qbman swp %d", ret);
 
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2: dpbp_count = %d dpio_count=%d\n",
-		       dpbp_count, dpio_count);
+	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpbp_count = %d dpio_count=%d",
+		      dpbp_count, dpio_count);
 	return 0;
 
 FAILURE:

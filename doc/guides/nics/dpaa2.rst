@@ -49,6 +49,8 @@ Contents summary
 - Overview of DPAA2 objects
 - DPAA2 driver architecture overview
 
+.. _dpaa2_overview:
+
 DPAA2 Overview
 ~~~~~~~~~~~~~~
 
@@ -534,67 +536,66 @@ Please note that enabling debugging options may affect system performance.
 
   Toggle display of transmit fast path buffer free run-time message
 
+Environment Options
+~~~~~~~~~~~~~~~~~~~
 
-Driver Compilation
-~~~~~~~~~~~~~~~~~~
+The following options can be provided before executing a DPDK based application
+on DPAA2 platform.
 
-To compile the DPAA2 PMD for Linux arm64 gcc target, run the
-following ``make`` command:
+- ``DPAA2_RX_NO_PREFETCH`` (default ``not set``)
 
-.. code-block:: console
+  Configure to disable the parallel rx packet fetch mode. In some latency sensitive
+  usecases, this may perform better.
 
-   cd <DPDK-source-directory>
-   make config T=arm64-dpaa2-linuxapp-gcc install
+- ``DPAA2_TX_CGR_SUPPORT`` (default ``not set``)
 
-.. _dpaa2_testpmd_example:
+  Configure to enable the tx queue congestion notification.
 
-Running testpmd
-~~~~~~~~~~~~~~~
+- ``DPAA2_RX_TAILDROP_OFF`` (default ``not set``)
 
-This section demonstrates how to launch ``testpmd`` with DPAA2 device
-managed by ``librte_pmd_dpaa2`` in the Linux operating system.
+  Configure to disable the rx tail drop offset configuration. Configuring this
+  will make the size of RX queue infinite.
 
-#. Configure the resource container:
+Driver compilation and testing
+------------------------------
 
-   Configure resources in MC and create the DPRC container:
+Refer to the document :ref:`compiling and testing a PMD for a NIC <pmd_build_and_test>`
+for details.
 
-   .. code-block:: console
+#. Running testpmd:
 
-      export the DPRC container
-      e.g. export DPRCT=dprc.2
+   Follow instructions available in the document
+   :ref:`compiling and testing a PMD for a NIC <pmd_build_and_test>`
+   to run testpmd.
 
-#. Start ``testpmd`` with basic parameters:
+   Example output:
 
    .. code-block:: console
 
       ./arm64-dpaa2-linuxapp-gcc/testpmd -c 0xff -n 1 \
         -- -i --portmask=0x3 --nb-cores=1 --no-flush-rx
 
-   Example output:
-
-   .. code-block:: console
-
-        .....
-        EAL: Registered [pci] bus.
-        EAL: Registered [fslmc] bus.
-        EAL: Detected 8 lcore(s)
-        EAL: Probing VFIO support...
-        EAL: VFIO support initialized
-        .....
-        PMD: DPAA2: Processing Container = dprc.2
-        EAL: fslmc: DPRC contains = 51 devices
-        EAL: fslmc: Bus scan completed
-        .....
-        Configuring Port 0 (socket 0)
-        Port 0: 00:00:00:00:00:01
-        Configuring Port 1 (socket 0)
-        Port 1: 00:00:00:00:00:02
-        .....
-        Checking link statuses...
-        Port 0 Link Up - speed 10000 Mbps - full-duplex
-        Port 1 Link Up - speed 10000 Mbps - full-duplex
-        Done
-        testpmd>
+      .....
+      EAL: Registered [pci] bus.
+      EAL: Registered [fslmc] bus.
+      EAL: Detected 8 lcore(s)
+      EAL: Probing VFIO support...
+      EAL: VFIO support initialized
+      .....
+      PMD: DPAA2: Processing Container = dprc.2
+      EAL: fslmc: DPRC contains = 51 devices
+      EAL: fslmc: Bus scan completed
+      .....
+      Configuring Port 0 (socket 0)
+      Port 0: 00:00:00:00:00:01
+      Configuring Port 1 (socket 0)
+      Port 1: 00:00:00:00:00:02
+      .....
+      Checking link statuses...
+      Port 0 Link Up - speed 10000 Mbps - full-duplex
+      Port 1 Link Up - speed 10000 Mbps - full-duplex
+      Done
+      testpmd>
 
 Limitations
 -----------

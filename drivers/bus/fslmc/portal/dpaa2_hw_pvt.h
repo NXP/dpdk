@@ -266,12 +266,6 @@ enum qbman_fd_format {
  */
 #define DPAA2_EQ_RESP_ALWAYS		1
 
-int
-dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);
-
-void
-dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage);
-
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 static void *dpaa2_mem_ptov(phys_addr_t paddr) __attribute__((unused));
 /* todo - this is costly, need to write a fast coversion routine */
