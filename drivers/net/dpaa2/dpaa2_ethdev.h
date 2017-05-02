@@ -57,7 +57,8 @@
 #define CONG_EXIT_TX_THRESHOLD    (24 * 1024)
 
 /* RX queue tail drop threshold
- * currently considering 32 KB packets */
+ * currently considering 32 KB packets
+ */
 #define CONG_THRESHOLD_RX_Q  (32 * 1024)
 
 #define CONG_THRESHOLD_RX_TC  (32 * 1024)
@@ -71,14 +72,15 @@
 		PKT_TX_UDP_CKSUM)
 
 /* Enable TX Congestion control support
- * default is disable */
-#define DPAA2_TX_CGR_SUPPORT		0x01
+ * default is disable
+ */
+#define DPAA2_TX_CGR_SUPPORT	0x01
 
 /* Per TC tail drop or Per queue tail drop
  * default is per queue tail drop */
 #define DPAA2_PER_TC_RX_TAILDROP	0x02
 
-/*Disable RX tail drop */
+/* Disable RX tail drop, default is enable */
 #define DPAA2_RX_TAILDROP_OFF	0x04
 
 struct dpaa2_dev_priv {
@@ -108,11 +110,8 @@ int dpaa2_remove_flow_dist(struct rte_eth_dev *eth_dev,
 
 int dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv, void *blist);
 
-uint16_t dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs,
-		      uint16_t nb_pkts);
+uint16_t dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 uint16_t dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs,
-			       uint16_t nb_pkts);
-uint16_t dpaa2_dev_prefetch2_rx(void *queue, struct rte_mbuf **bufs,
 			       uint16_t nb_pkts);
 uint16_t dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);

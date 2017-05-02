@@ -95,7 +95,7 @@ int dpaa2_create_dpbp_dev(int object_id)
 
 	TAILQ_INSERT_TAIL(&dpbp_dev_list, dpbp_node, next);
 
-	PMD_INIT_LOG(DEBUG, "DPAA2:Added [dpbp-%d]", object_id);
+	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpbp-%d]", object_id);
 
 	return 0;
 }
