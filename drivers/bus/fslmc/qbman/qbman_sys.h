@@ -47,6 +47,9 @@
 #undef QBMAN_CINH_TRACE
 #undef QBMAN_CENA_TRACE
 
+#define CENA_WRITE_ENABLE 0
+#define CINH_WRITE_ENABLE 1
+
 static inline void word_copy(void *d, const void *s, unsigned int cnt)
 {
 	uint32_t *dd = d;
@@ -199,7 +202,11 @@ static inline void *qbman_cena_write_start_wo_shadow(struct qbman_swp_sys *s,
 		s->addr_cena, s->idx, offset);
 #endif
 	QBMAN_BUG_ON(offset & 63);
+#ifdef RTE_ARCH_64
 	return (s->addr_cena + offset);
+#else
+	return (s->addr_cinh + offset);
+#endif
 }
 
 static inline void qbman_cena_write_complete(struct qbman_swp_sys *s,
@@ -212,11 +219,19 @@ static inline void qbman_cena_write_complete(struct qbman_swp_sys *s,
 		s->addr_cena, s->idx, offset, shadow);
 	hexdump(cmd, 64);
 #endif
+#ifdef RTE_ARCH_64
 	for (loop = 15; loop >= 1; loop--)
 		__raw_writel(shadow[loop], s->addr_cena +
 					 offset + loop * 4);
 	lwsync();
 		__raw_writel(shadow[0], s->addr_cena + offset);
+#else
+	for (loop = 15; loop >= 1; loop--)
+		__raw_writel(shadow[loop], s->addr_cinh +
+					 offset + loop * 4);
+	lwsync();
+	__raw_writel(shadow[0], s->addr_cinh + offset);
+#endif
 	dcbf(s->addr_cena + offset);
 }
 
@@ -246,9 +261,15 @@ static inline void *qbman_cena_read(struct qbman_swp_sys *s, uint32_t offset)
 		s->addr_cena, s->idx, offset, shadow);
 #endif
 
+#ifdef RTE_ARCH_64
 	for (loop = 0; loop < 16; loop++)
 		shadow[loop] = __raw_readl(s->addr_cena + offset
 					+ loop * 4);
+#else
+	for (loop = 0; loop < 16; loop++)
+		shadow[loop] = __raw_readl(s->addr_cinh + offset
+					+ loop * 4);
+#endif
 #ifdef QBMAN_CENA_TRACE
 	hexdump(shadow, 64);
 #endif
@@ -332,6 +353,7 @@ static inline int qbman_swp_sys_init(struct qbman_swp_sys *s,
 				     uint8_t dqrr_size)
 {
 	uint32_t reg;
+	uint8_t wn = CENA_WRITE_ENABLE;
 
 	s->addr_cena = d->cena_bar;
 	s->addr_cinh = d->cinh_bar;
@@ -351,11 +373,14 @@ static inline int qbman_swp_sys_init(struct qbman_swp_sys *s,
 	reg = qbman_cinh_read(s, QBMAN_CINH_SWP_CFG);
 	QBMAN_BUG_ON(reg);
 #endif
+#ifndef RTE_ARCH_64
+	wn = CINH_WRITE_ENABLE;
+#endif
 	if (s->eqcr_mode == qman_eqcr_vb_array)
-		reg = qbman_set_swp_cfg(dqrr_size, 0, 0, 3, 2, 3, 1, 1, 1, 1,
+		reg = qbman_set_swp_cfg(dqrr_size, wn, 0, 3, 2, 3, 1, 1, 1, 1,
 					1, 1);
 	else
-		reg = qbman_set_swp_cfg(dqrr_size, 0, 2, 3, 2, 2, 1, 1, 1, 1,
+		reg = qbman_set_swp_cfg(dqrr_size, wn, 2, 3, 2, 2, 1, 1, 1, 1,
 					1, 1);
 	qbman_cinh_write(s, QBMAN_CINH_SWP_CFG, reg);
 	reg = qbman_cinh_read(s, QBMAN_CINH_SWP_CFG);
@@ -381,5 +406,9 @@ qbman_cena_write_start_wo_shadow_fast(struct qbman_swp_sys *s,
 		s->addr_cena, s->idx, offset);
 #endif
 	QBMAN_BUG_ON(offset & 63);
+#ifdef RTE_ARCH_64
 	return (s->addr_cena + offset);
+#else
+	return (s->addr_cinh + offset);
+#endif
 }
