@@ -2868,6 +2868,7 @@ test_perf_set_crypto_op_aes(struct rte_crypto_op *op, struct rte_mbuf *m,
 	op->sym->cipher.iv.data = (uint8_t *)m->buf_addr + m->data_off;
 	op->sym->cipher.iv.phys_addr = rte_pktmbuf_mtophys(m);
 	op->sym->cipher.iv.length = AES_CIPHER_IV_LENGTH;
+	op->sym->auth.aad.data = op->sym->cipher.iv.data;
 
 	rte_memcpy(op->sym->cipher.iv.data, aes_iv,
 		   AES_CIPHER_IV_LENGTH);
