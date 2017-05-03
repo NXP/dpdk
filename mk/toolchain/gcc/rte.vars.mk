@@ -87,6 +87,7 @@ endif
 # which are not necessarily fatal. Report as warnings.
 ifeq ($(CONFIG_RTE_ARCH_ARMv7),y)
 WERROR_FLAGS += -Wno-error=cast-align
+WERROR_FLAGS += -Wno-error
 endif
 
 # process cpu flags

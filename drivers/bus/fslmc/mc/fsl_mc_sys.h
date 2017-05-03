@@ -71,8 +71,8 @@ struct fsl_mc_io {
 #endif
 #define __iormb()       dmb()
 #define __iowmb()       dmb()
-#define __arch_getq(a)                  (*(volatile unsigned long *)(a))
-#define __arch_putq(v, a)                (*(volatile unsigned long *)(a) = (v))
+#define __arch_getq(a)                  (*(volatile uint64_t *)(a))
+#define __arch_putq(v, a)                (*(volatile uint64_t *)(a) = (v))
 #define __arch_putq32(v, a)                (*(volatile unsigned int *)(a) = (v))
 #define readq(c)        \
 	({ uint64_t __v = __arch_getq(c); __iormb(); __v; })

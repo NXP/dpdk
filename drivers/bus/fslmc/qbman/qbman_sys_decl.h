@@ -58,16 +58,19 @@
 	/****************/
 	/* arch assists */
 	/****************/
+#ifdef RTE_ARCH_64
 #define dcbz(p) { asm volatile("dc zva, %0" : : "r" (p) : "memory"); }
 #define lwsync() { asm volatile("dmb st" : : : "memory"); }
 #define dcbf(p) { asm volatile("dc cvac, %0" : : "r"(p) : "memory"); }
 #define dccivac(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
-static inline void prefetch_for_load(void *p)
-{
-	asm volatile("prfm pldl1keep, [%0, #64]" : : "r" (p));
-}
+#define prefetch_for_load(p) { asm volatile("prfm pldl1keep, [%0, #64]" : : "r" (p)); }
+#define prefetch_for_store(p) { asm volatile("prfm pstl1keep, [%0, #64]" : : "r" (p)); }
+#else
+#define dcbz(p)
+#define lwsync() { asm volatile("dmb st" : : : "memory"); }
+#define dcbf(p)
+#define dccivac(p)
+#define prefetch_for_load(p) { asm volatile ("pld [%0]" : : "r" (p)); }
+#define prefetch_for_store(p) { asm volatile ("pld [%0]" : : "r" (p)); }
+#endif
 
-static inline void prefetch_for_store(void *p)
-{
-	asm volatile("prfm pstl1keep, [%0, #64]" : : "r" (p));
-}
