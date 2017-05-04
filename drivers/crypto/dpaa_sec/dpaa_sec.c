@@ -53,6 +53,7 @@
 /* RTA header files */
 #include <hw/desc/common.h>
 #include <hw/desc/algo.h>
+#include <hw/desc/addl_algo.h>
 #include <hw/desc/ipsec.h>
 #include <hw/rta.h>
 
@@ -75,7 +76,8 @@
 #define DPAA_SEC_ALG_UNSUPPORT	(-1)
 #define TDES_CBC_IV_LEN		8
 #define AES_CBC_IV_LEN		16
-#define AES_CTR_IV_LEN 16
+#define AES_CTR_IV_LEN		16
+#define AES_GCM_IV_LEN		12
 
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
    a pointer to the shared descriptor*/
@@ -333,6 +335,10 @@ caam_auth_alg(struct dpaa_sec_ses *ses, struct alginfo *alginfo_a)
 		alginfo_a->algtype = OP_ALG_ALGSEL_SHA512;
 		alginfo_a->algmode = OP_ALG_AAI_HMAC;
 		break;
+	case RTE_CRYPTO_AUTH_AES_GCM:
+		alginfo_a->algtype = OP_ALG_ALGSEL_AES;
+		alginfo_a->algmode = OP_ALG_AAI_GCM;
+		break;
 	default:
 		PMD_DRV_LOG(ERR, "Crypto: unsupported auth alg %u\n",
 			    ses->auth.alg);
@@ -359,6 +365,11 @@ caam_cipher_alg(struct dpaa_sec_ses *ses, struct alginfo *alginfo_c)
 		ses->cipher.iv_len = AES_CTR_IV_LEN;
 		alginfo_c->algtype = OP_ALG_ALGSEL_AES;
 		alginfo_c->algmode = OP_ALG_AAI_CTR;
+		break;
+	case RTE_CRYPTO_CIPHER_AES_GCM:
+		ses->cipher.iv_len = AES_GCM_IV_LEN;
+		alginfo_c->algtype = OP_ALG_ALGSEL_AES;
+		alginfo_c->algmode = OP_ALG_AAI_GCM;
 		break;
 	default:
 		PMD_DRV_LOG(ERR, "Crypto: unsupported cipher alg %d\n",
@@ -453,10 +464,24 @@ static int dpaa_sec_prep_cdb(struct dpaa_sec_ses *ses)
 
 		/* Auth_only_len is set as 0 here and it will be overwritten
 		   in fd for each packet.*/
-		shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
+		if (ses->cipher.alg != RTE_CRYPTO_CIPHER_AES_GCM)
+			shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc, true,
 					swap, &alginfo_c, &alginfo_a,
 					ses->cipher.iv_len, 0,
 					ses->auth_trunc_len, ses->dir);
+		else {
+			if (ses->dir == DIR_ENC)
+				shared_desc_len = cnstr_shdsc_gcm_encap(
+						cdb->sh_desc, true, swap,
+						&alginfo_c, ses->cipher.iv_len,
+						ses->auth_trunc_len);
+			else
+				shared_desc_len = cnstr_shdsc_gcm_decap(
+						cdb->sh_desc, true, swap,
+						&alginfo_c, ses->cipher.iv_len,
+						ses->auth_trunc_len);
+
+		}
 	}
 	cdb->sh_hdr.hi.field.idlen = shared_desc_len;
 	cdb->sh_hdr.hi.word = rte_cpu_to_be_32(cdb->sh_hdr.hi.word);
@@ -633,6 +658,112 @@ static inline struct dpaa_sec_job *build_cipher_only(struct rte_crypto_op *op)
 	return cf;
 }
 
+static inline struct
+dpaa_sec_job *build_cipher_auth_gcm(struct rte_crypto_op *op)
+{
+	struct rte_crypto_sym_op *sym = op->sym;
+	struct rte_mbuf *mbuf = sym->m_src;
+	struct dpaa_sec_ses *ses = dpaa_get_sec_ses(op);
+	struct dpaa_sec_job *cf;
+	struct dpaa_sec_op_ctx *ctx;
+	struct qm_sg_entry *sg;
+	phys_addr_t start_addr;
+	uint32_t length = 0;
+
+
+	start_addr = mbuf->buf_physaddr + mbuf->data_off;
+
+	ctx = dpaa_sec_alloc_ctx(ses);
+	if (!ctx)
+		return NULL;
+
+	cf = &ctx->job;
+	ctx->op = op;
+	ctx->auth_only_len = sym->auth.aad.length;
+
+	/* input */
+	rte_prefetch0(cf->sg);
+	sg = &cf->sg[2];
+	qm_sg_entry_set64(&cf->sg[1], dpaa_mem_vtop(sg));
+	if (is_encode(ses)) {
+		qm_sg_entry_set64(sg, sym->cipher.iv.phys_addr);
+		sg->length = sym->cipher.iv.length;
+		length += sg->length;
+		cpu_to_hw_sg(sg);
+
+		sg++;
+		if (ctx->auth_only_len) {
+			qm_sg_entry_set64(sg, dpaa_mem_vtop(sym->auth.aad.data));
+			sg->length = sym->auth.aad.length;
+			length += sg->length;
+			cpu_to_hw_sg(sg);
+			sg++;
+		}
+		qm_sg_entry_set64(sg, start_addr + sym->cipher.data.offset);
+		sg->length = sym->cipher.data.length;
+		length += sg->length;
+		sg->final = 1;
+		cpu_to_hw_sg(sg);
+	} else {
+		qm_sg_entry_set64(sg, sym->cipher.iv.phys_addr);
+		sg->length = sym->cipher.iv.length;
+		length += sg->length;
+		cpu_to_hw_sg(sg);
+
+		sg++;
+		if (ctx->auth_only_len) {
+			qm_sg_entry_set64(sg, dpaa_mem_vtop(sym->auth.aad.data));
+			sg->length = sym->auth.aad.length;
+			length += sg->length;
+			cpu_to_hw_sg(sg);
+			sg++;
+		}
+		qm_sg_entry_set64(sg, start_addr + sym->cipher.data.offset);
+		sg->length = sym->cipher.data.length;
+		length += sg->length;
+		cpu_to_hw_sg(sg);
+
+		memcpy(ctx->digest, sym->auth.digest.data, sym->auth.digest.length);
+		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
+		sg++;
+
+		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
+		sg->length = sym->auth.digest.length;
+		length += sg->length;
+		sg->final = 1;
+		cpu_to_hw_sg(sg);
+	}
+	/* input compound frame */
+	cf->sg[1].length = length;
+	cf->sg[1].extension = 1;
+	cf->sg[1].final = 1;
+	cpu_to_hw_sg(&cf->sg[1]);
+
+	/* output */
+	sg++;
+	qm_sg_entry_set64(&cf->sg[0], dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(sg, start_addr + sym->cipher.data.offset - ctx->auth_only_len);
+	sg->length = sym->cipher.data.length + ctx->auth_only_len;
+	length = sg->length;
+	if (is_encode(ses)) {
+		cpu_to_hw_sg(sg);
+		/* set auth output */
+		sg++;
+		qm_sg_entry_set64(sg, sym->auth.digest.phys_addr);
+		sg->length = sym->auth.digest.length;
+		length += sg->length;
+	}
+	sg->final = 1;
+	cpu_to_hw_sg(sg);
+
+	/* output compound frame */
+	cf->sg[0].length = length;
+	cf->sg[0].extension = 1;
+	cpu_to_hw_sg(&cf->sg[0]);
+
+	return cf;
+}
+
 static inline struct dpaa_sec_job *build_cipher_auth(struct rte_crypto_op *op)
 {
 	struct rte_crypto_sym_op *sym = op->sym;
@@ -747,9 +878,13 @@ dpaa_sec_enqueue_op(struct rte_crypto_op *op,  struct dpaa_sec_qp *qp)
 		cf = build_auth_only(op);
 	else if (is_cipher_only(ses))
 		cf = build_cipher_only(op);
-	else if (is_auth_cipher(ses))
-		cf = build_cipher_auth(op);
-	else {
+	else if (is_auth_cipher(ses)) {
+		if (ses->cipher.alg == RTE_CRYPTO_CIPHER_AES_GCM) {
+			cf = build_cipher_auth_gcm(op);
+			auth_only_len = op->sym->auth.aad.length;
+		} else
+			cf = build_cipher_auth(op);
+	} else {
 		printf("not supported sec op\n");
 		return -1;
 	}
@@ -893,7 +1028,7 @@ static int dpaa_ses_cipher_init(struct rte_cryptodev *dev __rte_unused,
 	session->cipher.alg = xform->cipher.algo;
 	session->cipher.key_data = rte_zmalloc(NULL, xform->cipher.key.length,
 					       RTE_CACHE_LINE_SIZE);
-	if (session->cipher.key_data == NULL) {
+	if (session->cipher.key_data == NULL && xform->cipher.key.length > 0) {
 		PMD_DRV_LOG(ERR, "\nNo Memory for cipher key");
 		return -1;
 	}
@@ -914,7 +1049,7 @@ static int dpaa_ses_auth_init(struct rte_cryptodev *dev __rte_unused,
 	session->auth.alg = xform->auth.algo;
 	session->auth.key_data = rte_zmalloc(NULL, xform->auth.key.length,
 					     RTE_CACHE_LINE_SIZE);
-	if (session->auth.key_data == NULL) {
+	if (session->auth.key_data == NULL && xform->auth.key.length > 0) {
 		PMD_DRV_LOG(ERR, "\nNo Memory for auth key");
 		return -1;
 	}
@@ -1004,7 +1139,7 @@ dpaa_sec_session_configure(struct rte_cryptodev *dev,
 	/* Authenticate then Cipher */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
 		   xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
-		if (xform->auth.op == RTE_CRYPTO_AUTH_OP_VERIFY) {
+		if (xform->next->cipher.op == RTE_CRYPTO_CIPHER_OP_DECRYPT) {
 			dpaa_ses_auth_init(dev, xform, session);
 			dpaa_ses_cipher_init(dev, xform->next, session);
 		} else {
