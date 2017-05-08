@@ -190,7 +190,11 @@ static inline void *qbman_cena_write_start(struct qbman_swp_sys *s,
 		s->addr_cena, s->idx, offset, shadow);
 #endif
 	QBMAN_BUG_ON(offset & 63);
+#ifdef RTE_ARCH_64
 	dcbz(shadow);
+#else
+	memset(shadow, 0, 64);
+#endif
 	return shadow;
 }
 
