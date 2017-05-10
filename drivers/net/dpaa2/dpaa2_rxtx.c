@@ -231,15 +231,6 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 	return mbuf;
 }
 
-static inline void __attribute__((hot))
-eth_check_offload(struct rte_mbuf *mbuf __rte_unused,
-		  struct qbman_fd *fd __rte_unused)
-{
-	/*if (mbuf->ol_flags & DPAA2_TX_CKSUM_OFFLOAD_MASK) {
-		todo - enable checksum validation on per packet basis
-	}*/
-}
-
 static int __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		  struct qbman_fd *fd, uint16_t bpid)
@@ -333,9 +324,6 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
-
-	eth_check_offload(mbuf, fd);
-
 	if (RTE_MBUF_DIRECT(mbuf)) {
 		if (rte_mbuf_refcnt_read(mbuf) > 1) {
 			DPAA2_SET_FD_IVP(fd);
@@ -385,8 +373,6 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_OFFSET(fd, mbuf->data_off);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
-
-	eth_check_offload(m, fd);
 
 	PMD_TX_LOG(DEBUG, " mbuf %p BMAN buf addr %p",
 		   (void *)mbuf, mbuf->buf_addr);
