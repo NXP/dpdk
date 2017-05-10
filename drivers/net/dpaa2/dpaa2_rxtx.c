@@ -568,8 +568,6 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN
 		 */
-		struct rte_mbuf *mbuf;
-
 		while (!qbman_result_has_new_result(swp, dq_storage))
 			;
 		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
@@ -584,11 +582,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				continue;
 		}
 		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
-		mbuf = (struct rte_mbuf *)DPAA2_IOVA_TO_VADDR(
-			DPAA2_GET_FD_ADDR(fd[num_rx])
-			 - rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd[num_rx])].meta_data_size);
-		/* Prefeth mbuf */
-		rte_prefetch0(mbuf);
+
 		/* Prefetch Annotation address for the parse results */
 		rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx])
 				+ DPAA2_FD_PTA_SIZE + 16));
