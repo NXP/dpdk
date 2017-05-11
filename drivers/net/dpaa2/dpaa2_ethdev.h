@@ -66,11 +66,6 @@
 /* Size of the input SMMU mapped memory required by MC */
 #define DIST_PARAM_IOVA_SIZE 256
 
-#define DPAA2_TX_CKSUM_OFFLOAD_MASK ( \
-		PKT_TX_IP_CKSUM | \
-		PKT_TX_TCP_CKSUM | \
-		PKT_TX_UDP_CKSUM)
-
 /* Enable TX Congestion control support
  * default is disable
  */
