@@ -44,7 +44,7 @@ CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
 
-CFLAGS += -I$(RTE_SDK)/drivers/common/dpaa/include
+CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include
 # reference to flib in dpaa_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
@@ -69,6 +69,6 @@ SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_eal
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_mbuf
 DEPDIRS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += lib/librte_cryptodev
-DEPDIRS-y += drivers/common/dpaa/usdpaa
+DEPDIRS-y += drivers/bus/dpaa/usdpaa
 
 include $(RTE_SDK)/mk/rte.lib.mk

@@ -30,7 +30,7 @@
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include $(RTE_SDK)/mk/rte.vars.mk
-RTE_SDK_DPAA=$(RTE_SDK)/drivers/common/dpaa
+RTE_SDK_DPAA=$(RTE_SDK)/drivers/bus/dpaa
 
 #
 # library name
