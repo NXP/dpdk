@@ -833,8 +833,11 @@ rte_cryptodev_sym_session_free(uint8_t dev_id,
  * @param	session		Session pointer previously allocated by
  *				*rte_cryptodev_sym_session_create*.
  *
+ * @return
+ *  - On success, zero.
+ *  - On failure, a negative value.
  */
-extern void
+int
 rte_cryptodev_queue_pair_attach_sym_session(uint16_t qp_id,
 		struct rte_cryptodev_sym_session *session);
 
@@ -845,8 +848,11 @@ rte_cryptodev_queue_pair_attach_sym_session(uint16_t qp_id,
  * @param	session		Session pointer previously allocated by
  *				*rte_cryptodev_sym_session_create*.
  *
+ * @return
+ *  - On success, zero.
+ *  - On failure, a negative value.
  */
-extern void
+int
 rte_cryptodev_queue_pair_detach_sym_session(uint16_t qp_id,
 		struct rte_cryptodev_sym_session *session);
 
