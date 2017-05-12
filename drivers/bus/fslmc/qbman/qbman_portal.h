@@ -123,12 +123,12 @@ struct qbman_swp {
  * non-NULL if only if the response is complete).
  */
 void *qbman_swp_mc_start(struct qbman_swp *p);
-void qbman_swp_mc_submit(struct qbman_swp *p, void *cmd, uint32_t cmd_verb);
+void qbman_swp_mc_submit(struct qbman_swp *p, void *cmd, uint8_t cmd_verb);
 void *qbman_swp_mc_result(struct qbman_swp *p);
 
 /* Wraps up submit + poll-for-result */
 static inline void *qbman_swp_mc_complete(struct qbman_swp *swp, void *cmd,
-					  uint32_t cmd_verb)
+					  uint8_t cmd_verb)
 {
 	int loopvar;
 
