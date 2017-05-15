@@ -74,7 +74,7 @@
 #define FLE_POOL_CACHE_SIZE	512
 
 enum rta_sec_era rta_sec_era = RTA_SEC_ERA_8;
-
+#if 0
 static inline void print_fd(const struct qbman_fd *fd)
 {
 	printf("addr_lo:          %x\n", fd->simple.addr_lo);
@@ -96,6 +96,7 @@ static inline void print_fle(const struct qbman_fle *fle)
 	printf("fi_bpid_off:      %x\n", fle->fin_bpid_offset);
 	printf("frc:              %x\n", fle->frc);
 }
+#endif
 
 static inline int build_authenc_gcm_fd(dpaa2_sec_session *sess,
 				   struct rte_crypto_op *op,
