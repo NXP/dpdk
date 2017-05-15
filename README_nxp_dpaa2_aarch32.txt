@@ -26,9 +26,13 @@ Following information can be used to obtain these components:
      ==========================
      Use following command to get the DPDK code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git
-       # git checkout -b 16.07-qoriq remotes/origin/16.07-qoriq
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git  -b fsl-sdk-v2.0-1703        (Internal git repository)
+       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk.git -b fsl-sdk-v2.0-1703  (External git repository)
 
+      Use following command to get the dpdk-extras script related code
+
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git   -b fsl-sdk-v2.0-1703      (Internal git repository)
+       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk-extras.git -b fsl-sdk-v2.0-1703 (External git repository)
 
      Linux kernel code for LS2 platform
      ==================================
