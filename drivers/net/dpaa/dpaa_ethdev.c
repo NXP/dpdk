@@ -116,12 +116,8 @@ static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	dpaa_pool_table[bpid].bp = bp;
 	dpaa_pool_table[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
+	dpaa_pool_table[bpid].dpaa_ops_index = mp->ops_index;
 	mp->pool_data = (void *)&dpaa_pool_table[bpid];
-
-	/* TODO: Replace with mp->pool_data->flags after creating appropriate
-	 * pool_data structure
-	 */
-	mp->flags |= MEMPOOL_F_HW_PKT_POOL;
 
 	PMD_DRV_LOG(INFO, "BMAN pool created for bpid =%d", bpid);
 	return 0;

@@ -568,10 +568,11 @@ uint16_t dpaa_eth_queue_tx(void *q,
 				mi = rte_mbuf_from_indirect(mbuf);
 				mp = mi->pool;
 			}
-			if (mp && (mp->flags & MEMPOOL_F_HW_PKT_POOL)) {
+
+			bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+			if (mp->ops_index == bp_info->dpaa_ops_index) {
 				PMD_TX_LOG(DEBUG, "BMAN offloaded buffer, "
 					"mbuf: %p", mbuf);
-				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				if (mbuf->nb_segs == 1) {
 					if (RTE_MBUF_DIRECT(mbuf)) {
 						if (rte_mbuf_refcnt_read(mbuf) > 1) {

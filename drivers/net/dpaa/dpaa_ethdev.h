@@ -61,8 +61,6 @@
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
-#define MEMPOOL_F_HW_PKT_POOL 0x8000 /**< mempool flag to identify offloaded pool*/
-
 #if (DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
 #error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
 #endif
@@ -142,6 +140,7 @@ struct pool_info_entry {
 	uint32_t bpid;
 	uint32_t size;
 	uint32_t meta_data_size;
+	int32_t dpaa_ops_index;
 };
 
 /* Each network interface is represented by one of these */
