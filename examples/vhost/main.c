@@ -104,7 +104,7 @@ static uint32_t promiscuous;
 
 /* number of devices/queues to support*/
 static uint32_t num_queues = 0;
-static uint32_t num_devices;
+static uint32_t num_devices = 1;
 
 static struct rte_mempool *mbuf_pool;
 static int mergeable;
@@ -294,9 +294,6 @@ port_init(uint8_t port)
 	/* Enable vlan offload */
 	txconf->txq_flags &= ~ETH_TXQ_FLAGS_NOVLANOFFL;
 
-	/*configure the number of supported virtio devices based on VMDQ limits */
-	num_devices = dev_info.max_vmdq_pools;
-
 	rx_ring_size = RTE_TEST_RX_DESC_DEFAULT;
 	tx_ring_size = RTE_TEST_TX_DESC_DEFAULT;
 	tx_rings = (uint16_t)rte_lcore_count();
@@ -332,6 +329,12 @@ port_init(uint8_t port)
 	}
 
 	rx_rings = (uint16_t)dev_info.max_rx_queues;
+
+	/* NXP:XXX: Set Tx/Rx rings to 1. dev_info returns 8 but
+	 * rte_eth_dev_configure() fails if packet distribution is disabled and
+	 * multiple rings are configured.
+	 */
+	rx_rings = tx_rings = 1;
 	/* Configure ethernet device. */
 	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
 	if (retval != 0) {
@@ -1144,7 +1147,7 @@ switch_worker(void *arg __rte_unused)
 	tx_q = &lcore_tx_queue[lcore_id];
 	for (i = 0; i < rte_lcore_count(); i++) {
 		if (lcore_ids[i] == lcore_id) {
-			tx_q->txq_id = i;
+			tx_q->txq_id = 0;
 			break;
 		}
 	}
@@ -1170,7 +1173,7 @@ switch_worker(void *arg __rte_unused)
 				continue;
 			}
 
-			if (likely(vdev->ready == DEVICE_RX))
+			if (likely(vdev->ready == DEVICE_RX) || unlikely(vdev->ready == DEVICE_MAC_LEARNING))
 				drain_eth_rx(vdev);
 
 			if (likely(!vdev->remove))
