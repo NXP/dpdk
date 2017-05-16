@@ -60,7 +60,7 @@
 #endif
 
 /* the maximum number of external ports supported */
-#define MAX_SUP_PORTS 1
+#define MAX_SUP_PORTS RTE_MAX_ETHPORTS
 
 #define MBUF_CACHE_SIZE	128
 #define MBUF_DATA_SIZE	RTE_MBUF_DEFAULT_BUF_SIZE
@@ -104,7 +104,7 @@ static uint32_t promiscuous;
 
 /* number of devices/queues to support*/
 static uint32_t num_queues = 0;
-static uint32_t num_devices = 1;
+static uint32_t num_devices = RTE_MAX_ETHPORTS;
 
 static struct rte_mempool *mbuf_pool;
 static int mergeable;
@@ -277,6 +277,7 @@ port_init(uint8_t port)
 	uint16_t rx_ring_size, tx_ring_size;
 	int retval;
 	uint16_t q;
+	int lcore, port_added = 0;
 
 	/* The max pool number from dev_info will be used to validate the pool number specified in cmd line */
 	rte_eth_dev_info_get (port, &dev_info);
@@ -378,6 +379,21 @@ port_init(uint8_t port)
 
 	if (promiscuous)
 		rte_eth_promiscuous_enable(port);
+
+	/* Assign the port to the lcore */
+	RTE_LCORE_FOREACH_SLAVE(lcore) {
+		/* Add multi port logic if required */
+		if (lcore_info[lcore].port_id == INVALID_PORT_ID) {
+			lcore_info[lcore].port_id = port;
+			port_added = 1;
+			break;
+		}
+	}
+
+	if (port_added == 0) {
+		RTE_LOG(ERR, VHOST_PORT, "No free core for this port\n");
+		return -1;
+	}
 
 	rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
 	RTE_LOG(INFO, VHOST_PORT, "Max virtio devices supported: %u\n", num_devices);
@@ -730,6 +746,8 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 {
 	struct ether_hdr *pkt_hdr;
 	int i, ret;
+	const uint16_t lcore_id = rte_lcore_id();
+	uint8_t port_id;
 
 	/* Learn MAC address of guest device from packet */
 	pkt_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
@@ -757,7 +775,8 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 		vdev->vlan_tag);
 
 	/* Register the MAC address. */
-	ret = rte_eth_dev_mac_addr_add(ports[0], &vdev->mac_address,
+	port_id = lcore_info[lcore_id].port_id;
+	ret = rte_eth_dev_mac_addr_add(port_id, &vdev->mac_address,
 				(uint32_t)vdev->vid + vmdq_pool_base);
 	if (ret)
 		RTE_LOG(ERR, VHOST_DATA,
@@ -766,7 +785,7 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 
 	/* Enable stripping of the vlan tag as we handle routing. */
 	if (vlan_strip)
-		rte_eth_dev_set_vlan_strip_on_queue(ports[0],
+		rte_eth_dev_set_vlan_strip_on_queue(port_id,
 			(uint16_t)vdev->vmdq_rx_q, 1);
 
 	/* Set device as ready for RX. */
@@ -785,24 +804,28 @@ unlink_vmdq(struct vhost_dev *vdev)
 	unsigned i = 0;
 	unsigned rx_count;
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	const uint16_t lcore_id = rte_lcore_id();
+	uint8_t port_id;
+
+	port_id = lcore_info[lcore_id].port_id;
 
 	if (vdev->ready == DEVICE_RX) {
 		/*clear MAC and VLAN settings*/
-		rte_eth_dev_mac_addr_remove(ports[0], &vdev->mac_address);
+		rte_eth_dev_mac_addr_remove(port_id, &vdev->mac_address);
 		for (i = 0; i < 6; i++)
 			vdev->mac_address.addr_bytes[i] = 0;
 
 		vdev->vlan_tag = 0;
 
 		/*Clear out the receive buffers*/
-		rx_count = rte_eth_rx_burst(ports[0],
+		rx_count = rte_eth_rx_burst(port_id,
 					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
 
 		while (rx_count) {
 			for (i = 0; i < rx_count; i++)
 				rte_pktmbuf_free(pkts_burst[i]);
 
-			rx_count = rte_eth_rx_burst(ports[0],
+			rx_count = rte_eth_rx_burst(port_id,
 					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
 		}
 
@@ -937,8 +960,11 @@ static inline void __attribute__((always_inline))
 do_drain_mbuf_table(struct mbuf_table *tx_q)
 {
 	uint16_t count;
+	uint8_t port_id;
+	const uint16_t lcore_id = rte_lcore_id();
 
-	count = rte_eth_tx_burst(ports[0], tx_q->txq_id,
+	port_id = lcore_info[lcore_id].port_id;
+	count = rte_eth_tx_burst(port_id, tx_q->txq_id,
 				 tx_q->m_table, tx_q->len);
 	if (unlikely(count < tx_q->len))
 		free_pkts(&tx_q->m_table[count], tx_q->len - count);
@@ -1063,8 +1089,11 @@ drain_eth_rx(struct vhost_dev *vdev)
 {
 	uint16_t rx_count, enqueue_count;
 	struct rte_mbuf *pkts[MAX_PKT_BURST];
+	uint8_t port_id;
+	const uint16_t lcore_id = rte_lcore_id();
 
-	rx_count = rte_eth_rx_burst(ports[0], vdev->vmdq_rx_q,
+	port_id = lcore_info[lcore_id].port_id;
+	rx_count = rte_eth_rx_burst(port_id, vdev->vmdq_rx_q,
 				    pkts, MAX_PKT_BURST);
 	if (!rx_count)
 		return;
@@ -1419,6 +1448,7 @@ main(int argc, char *argv[])
 	static pthread_t tid;
 	char thread_name[RTE_MAX_THREAD_NAME_LEN];
 	uint64_t flags = 0;
+	int lcore;
 
 	signal(SIGINT, sigint_handler);
 
@@ -1445,6 +1475,8 @@ main(int argc, char *argv[])
 
 	/* Get the number of physical ports. */
 	nb_ports = rte_eth_dev_count();
+	if (nb_ports > RTE_MAX_ETHPORTS)
+		nb_ports = RTE_MAX_ETHPORTS;
 
 	/*
 	 * Update the global var NUM_PORTS and global array PORTS
@@ -1472,6 +1504,10 @@ main(int argc, char *argv[])
 		vmdq_conf_default.rx_adv_conf.vmdq_rx_conf.enable_loop_back = 1;
 		RTE_LOG(DEBUG, VHOST_CONFIG,
 			"Enable loop back for L2 switch in vmdq.\n");
+	}
+
+	RTE_LCORE_FOREACH_SLAVE(lcore) {
+		lcore_info[lcore].port_id = INVALID_PORT_ID;
 	}
 
 	/* initialize all ports */
