@@ -94,7 +94,7 @@
 
 #define	MAX_FLOW_NUM	UINT16_MAX
 #define	MIN_FLOW_NUM	1
-#define	DEF_FLOW_NUM	0x1000
+#define	DEF_FLOW_NUM	0x500
 
 /* TTL numbers are in ms. */
 #define	MAX_FLOW_TTL	(3600 * MS_PER_S)
