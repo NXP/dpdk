@@ -78,7 +78,7 @@
 
 /* we will re-use the HEADROOM for annotation in RX */
 #define DPAA2_HW_BUF_RESERVE	0
-#define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
+#define DPAA2_PACKET_LAYOUT_ALIGN	256 /*todo should be 64 */
 
 struct dpaa2_dpio_dev {
 	TAILQ_ENTRY(dpaa2_dpio_dev) next;
