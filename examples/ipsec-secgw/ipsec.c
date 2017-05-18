@@ -75,11 +75,17 @@ create_session(struct ipsec_ctx *ipsec_ctx __rte_unused, struct ipsec_sa *sa)
 			ipsec_ctx->tbl[cdev_id_qp].id, sa->xforms);
 
 	rte_cryptodev_info_get(ipsec_ctx->tbl[cdev_id_qp].id, &cdev_info);
-	if (cdev_info.sym.max_nb_sessions_per_qp > 0)
-		rte_cryptodev_queue_pair_attach_sym_session(
+	if (cdev_info.sym.max_nb_sessions_per_qp > 0) {
+		ret = rte_cryptodev_queue_pair_attach_sym_session(
 				ipsec_ctx->tbl[cdev_id_qp].qp,
 				sa->crypto_session);
-
+		if (ret < 0) {
+			RTE_LOG(ERR, IPSEC,
+				"Session cannot be attached to qp %u ",
+				ipsec_ctx->tbl[cdev_id_qp].qp);
+			return -1;
+		}
+	}
 	sa->cdev_id_qp = cdev_id_qp;
 
 	return 0;
@@ -131,6 +137,7 @@ ipsec_enqueue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 		priv->sa = sa;
 
 		priv->cop.type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
+		priv->cop.status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
 
 		rte_prefetch0(&priv->sym_cop);
 		priv->cop.sym = &priv->sym_cop;
