@@ -84,6 +84,8 @@ struct lcore_info {
 
 	/* Flag to synchronize device removal. */
 	volatile uint8_t	dev_removal_flag;
+	/* Physical port ID associated with this core*/
+	uint8_t			port_id;
 
 	struct vhost_dev_tailq_list vdev_list;
 };
