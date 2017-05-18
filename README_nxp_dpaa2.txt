@@ -295,8 +295,51 @@ How to run DPDK Applications
 	str
 	stp
 
+11. How to run l2fwd over VM using Vhost Switch application
+   ==========================================================================
+
+	1. Compilation of VHOST example
+		# make -C examples/vhost
+
+	2. Runnnig the VHOST-SWITCH Application:
+
+		Execute the following commands on console to run vhost-switch:
+
+		# source /usr/bin/dpdk-example/extras/dynamic_dpl.sh dpmac.1 dpmac.2
+		# mkdir /mnt/huge
+		# mount -t hugetlbfs nodev /mnt/huge -o pagesize=1024M
+		# ./vhost-switch -c 3 -n 2 --socket-mem 1024 --huge-dir /mnt/huge -- -p 0x1 --dev-basename sock1 -P
+
+		Note: Vhost-switch requires one core extra than number of ports given in the command line.
+
+	3. Running QEMU:
+
+		Execute the following commands to run QEMU:
+
+		* Open a new terimnal and do SSH to the board
+		# /usr/bin/qemu-system-aarch64 -nographic -object memory-backend-file,id=mem,size=4096M,mem-path=/hugetlbfs,share=on -cpu host -machine type=virt -kernel /boot/Image -enable-kvm -initrd /boot/fsl-image-core-ls2088ardb.ext2.gz -append 'root=/dev/ram0 rw console=ttyAMA0,115200 rootwait earlyprintk ramdisk_size=1000000' -m 4096M -numa node,memdev=mem -serial tcp::4446,server,telnet -chardev socket,id=char1,path=/var/volatile/tmp/sock1 -netdev type=vhost-user,id=hostnet1,chardev=char1 -device virtio-net-pci,disable-modern=false,addr=0x4,netdev=hostnet1,id=net1 -smp 4
+
+	4. Running L2FWD on VM:
+
+		Execute the following commands to run L2FWD on Virtual Machine:
+
+		* Open a new terminal and run the below command:
+		# telnet <board_ip> 4446
+
+		# /usr/share/tools/dpdk_nic_bind.py -b uio_pci_generic 0000:00:04.0
+		Note: Please run "lspci" on console to know the VIRTIO address
+
+		# mkdir /mnt/hugepages
+		# mount -t hugetlbfs none /mnt/hugepages
+		# echo 512 > /proc/sys/vm/nr_hugepages
+		# /usr/bin/dpdk-example/l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
+
+		Now pump traffic from the Spirent to the enabled port
+
 =============================================================================
-11.Applications validated on DPDK-DPAA2
+
+12. Applications validated on DPDK-DPAA2
+  =====================================
  1. l2fwd
  2. l3fwd
  3. l2fwd-crypto
@@ -306,6 +349,7 @@ How to run DPDK Applications
  7. kni
  8. cmdline
  9. timer
+ 10. vhost
 
 Features:
 -	Support for LS2-BUS in DPDK VFIO support function
