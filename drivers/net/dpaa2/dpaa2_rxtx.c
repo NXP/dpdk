@@ -615,7 +615,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	dpaa2_q->rx_pkts += num_rx;
 
-	/* Return the total number of packets received to DPAA2 app*/
+	/* Return the total number of packets received to DPAA2 app */
 	return num_rx;
 }
 

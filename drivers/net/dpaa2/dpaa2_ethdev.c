@@ -699,7 +699,6 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		/* Note - doing it only for the first queue  - as we are only
 			using 1 TC for the time being */
 		dpaa2_q = (struct dpaa2_queue *)data->rx_queues[DPAA2_DEF_TC];
-		/*todo why 256 */
 		early_drop_buf = rte_malloc(NULL, 256, 1);
 		if (!early_drop_buf) {
 			PMD_INIT_LOG(ERR, "No data memory\n");
