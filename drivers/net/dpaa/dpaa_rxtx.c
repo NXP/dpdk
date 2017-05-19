@@ -156,6 +156,20 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV6;
 		break;
+	case DPAA_PKT_TYPE_IPV4_FRAG:
+	case DPAA_PKT_TYPE_IPV4_FRAG_UDP:
+	case DPAA_PKT_TYPE_IPV4_FRAG_TCP:
+	case DPAA_PKT_TYPE_IPV4_FRAG_SCTP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_FRAG;
+		break;
+	case DPAA_PKT_TYPE_IPV6_FRAG:
+	case DPAA_PKT_TYPE_IPV6_FRAG_UDP:
+	case DPAA_PKT_TYPE_IPV6_FRAG_TCP:
+	case DPAA_PKT_TYPE_IPV6_FRAG_SCTP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_FRAG;
+		break;
 	case DPAA_PKT_TYPE_IPV4_EXT:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV4_EXT;
@@ -179,6 +193,22 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 	case DPAA_PKT_TYPE_IPV6_UDP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP;
+		break;
+	case DPAA_PKT_TYPE_IPV4_EXT_UDP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4_EXT | RTE_PTYPE_L4_UDP;
+		break;
+	case DPAA_PKT_TYPE_IPV6_EXT_UDP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_UDP;
+		break;
+	case DPAA_PKT_TYPE_IPV4_EXT_TCP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4_EXT | RTE_PTYPE_L4_TCP;
+		break;
+	case DPAA_PKT_TYPE_IPV6_EXT_TCP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_TCP;
 		break;
 	case DPAA_PKT_TYPE_IPV4_SCTP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |

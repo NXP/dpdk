@@ -96,39 +96,68 @@
 #define DPAA_MAX_DEQUEUE_NUM_FRAMES    63
 	/** <Maximum number of frames to be dequeued in a single rx call*/
 
-/* Parsing mask (Little Endian) - 0x00E044EC00800000
+/* Parsing mask (Little Endian) - 0x00E0C4ED00800000
  *	Classification Plan ID 0x00
  *	L4R 0xE0 -
  *		0x20 - TCP
  *		0x40 - UDP
  *		0x80 - SCTP
- *	L3R 0xEC44 (in Big Endian) -
+ *	L3R 0xEDC4 (in Big Endian) -
  *		0x8000 - IPv4
  *		0x4000 - IPv6
- *		0x8040 - IPv4 Ext
- *		0x4040 - IPv6 Ext
+ *		0x8140 - IPv4 Ext + Frag
+ *		0x8040 - IPv4 Frag
+ *		0x8100 - IPv4 Ext
+ *		0x4140 - IPv6 Ext + Frag
+ *		0x4040 - IPv6 Frag
+ *		0x4100 - IPv6 Ext
  *	L2R 0x8000 (in Big Endian) -
  *		0x8000 - Ethernet type
  *	ShimR & Logical Port ID 0x0000
  */
-#define DPAA_PARSE_MASK		0x00E044EC00800000
+#define DPAA_PARSE_MASK			0x00E0C4ED00800000
 #define DPAA_PARSE_VLAN_MASK		0x0000000000700000
 
 /* Parsed values (Little Endian) */
 #define DPAA_PKT_TYPE_NONE		0x0000000000000000
 #define DPAA_PKT_TYPE_ETHER		0x0000000000800000
-#define DPAA_PKT_TYPE_IPV4		0x0000008000800000
-#define DPAA_PKT_TYPE_IPV6		0x0000004000800000
-#define DPAA_PKT_TYPE_IPV4_EXT		0x0000408000800000
-#define DPAA_PKT_TYPE_IPV6_EXT		0x0000404000800000
-#define DPAA_PKT_TYPE_IPV4_TCP		0x0020008000800000
-#define DPAA_PKT_TYPE_IPV6_TCP		0x0020004000800000
-#define DPAA_PKT_TYPE_IPV4_UDP		0x0040008000800000
-#define DPAA_PKT_TYPE_IPV6_UDP		0x0040004000800000
-#define DPAA_PKT_TYPE_IPV4_SCTP	0x0080008000800000
-#define DPAA_PKT_TYPE_IPV6_SCTP	0x0080004000800000
+#define DPAA_PKT_TYPE_IPV4	(0x0000008000000000 | DPAA_PKT_TYPE_ETHER)
+#define DPAA_PKT_TYPE_IPV6	(0x0000004000000000 | DPAA_PKT_TYPE_ETHER)
+#define DPAA_PKT_TYPE_GRE	(0x0000002000000000 | DPAA_PKT_TYPE_ETHER)
+#define DPAA_PKT_TYPE_IPV4_FRAG	(0x0000400000000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_IPV6_FRAG	(0x0000400000000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_IPV4_EXT	(0x0000000100000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_IPV6_EXT	(0x0000000100000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_IPV4_TCP	(0x0020000000000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_IPV6_TCP	(0x0020000000000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_IPV4_UDP	(0x0040000000000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_IPV6_UDP	(0x0040000000000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_IPV4_SCTP	(0x0080000000000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_IPV6_SCTP	(0x0080000000000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_IPV4_FRAG_TCP (0x0020000000000000 | DPAA_PKT_TYPE_IPV4_FRAG)
+#define DPAA_PKT_TYPE_IPV6_FRAG_TCP (0x0020000000000000 | DPAA_PKT_TYPE_IPV6_FRAG)
+#define DPAA_PKT_TYPE_IPV4_FRAG_UDP (0x0040000000000000 | DPAA_PKT_TYPE_IPV4_FRAG)
+#define DPAA_PKT_TYPE_IPV6_FRAG_UDP (0x0040000000000000 | DPAA_PKT_TYPE_IPV6_FRAG)
+#define DPAA_PKT_TYPE_IPV4_FRAG_SCTP (0x0080000000000000 | DPAA_PKT_TYPE_IPV4_FRAG)
+#define DPAA_PKT_TYPE_IPV6_FRAG_SCTP (0x0080000000000000 | DPAA_PKT_TYPE_IPV6_FRAG)
+#define DPAA_PKT_TYPE_IPV4_EXT_UDP (0x0040000000000000 | DPAA_PKT_TYPE_IPV4_EXT)
+#define DPAA_PKT_TYPE_IPV6_EXT_UDP (0x0040000000000000 | DPAA_PKT_TYPE_IPV6_EXT)
+#define DPAA_PKT_TYPE_IPV4_EXT_TCP (0x0020000000000000 | DPAA_PKT_TYPE_IPV4_EXT)
+#define DPAA_PKT_TYPE_IPV6_EXT_TCP (0x0020000000000000 | DPAA_PKT_TYPE_IPV6_EXT)
+#define DPAA_PKT_TYPE_TUNNEL_4_4 (0x0000000800000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_TUNNEL_6_6 (0x0000000400000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_TUNNEL_4_6 (0x0000000400000000 | DPAA_PKT_TYPE_IPV4)
+#define DPAA_PKT_TYPE_TUNNEL_6_4 (0x0000000800000000 | DPAA_PKT_TYPE_IPV6)
+#define DPAA_PKT_TYPE_TUNNEL_4_4_UDP (0x0040000000000000 | DPAA_PKT_TYPE_TUNNEL_4_4)
+#define DPAA_PKT_TYPE_TUNNEL_6_6_UDP (0x0040000000000000 | DPAA_PKT_TYPE_TUNNEL_6_6)
+#define DPAA_PKT_TYPE_TUNNEL_4_6_UDP (0x0040000000000000 | DPAA_PKT_TYPE_TUNNEL_4_6)
+#define DPAA_PKT_TYPE_TUNNEL_6_4_UDP (0x0040000000000000 | DPAA_PKT_TYPE_TUNNEL_6_4)
+#define DPAA_PKT_TYPE_TUNNEL_4_4_TCP (0x0020000000000000 | DPAA_PKT_TYPE_TUNNEL_4_4)
+#define DPAA_PKT_TYPE_TUNNEL_6_6_TCP (0x0020000000000000 | DPAA_PKT_TYPE_TUNNEL_6_6)
+#define DPAA_PKT_TYPE_TUNNEL_4_6_TCP (0x0020000000000000 | DPAA_PKT_TYPE_TUNNEL_4_6)
+#define DPAA_PKT_TYPE_TUNNEL_6_4_TCP (0x0020000000000000 | DPAA_PKT_TYPE_TUNNEL_6_4)
 #define DPAA_PKT_L3_LEN_SHIFT	7
- 
+
 /* FD structure masks and offset */
 #define DPAA_FD_FORMAT_MASK 0xE0000000
 #define DPAA_FD_OFFSET_MASK 0x1FF00000
@@ -143,9 +172,80 @@
 struct dpaa_eth_parse_results_t {
 	 uint8_t     lpid;		 /**< Logical port id */
 	 uint8_t     shimr;		 /**< Shim header result  */
-	 uint16_t    l2r;		 /**< Layer 2 result */
-	 uint16_t    l3r;		 /**< Layer 3 result */
-	 uint8_t     l4r;		 /**< Layer 4 result */
+	 union {
+		uint16_t              l2r;	/**< Layer 2 result */
+		struct {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+			uint16_t      ethernet:1;
+			uint16_t      vlan:1;
+			uint16_t      llc_snap:1;
+			uint16_t      mpls:1;
+			uint16_t      ppoe_ppp:1;
+			uint16_t      unused_1:3;
+			uint16_t      unknown_eth_proto:1;
+			uint16_t      eth_frame_type:2;
+			uint16_t      l2r_err:5;
+			/*00-unicast, 01-multicast, 11-broadcast*/
+#else
+			uint16_t      l2r_err:5;
+			uint16_t      eth_frame_type:2;
+			uint16_t      unknown_eth_proto:1;
+			uint16_t      unused_1:3;
+			uint16_t      ppoe_ppp:1;
+			uint16_t      mpls:1;
+			uint16_t      llc_snap:1;
+			uint16_t      vlan:1;
+			uint16_t      ethernet:1;
+#endif
+		}__attribute__((__packed__));
+	 } __attribute__((__packed__));
+	 union {
+		uint16_t              l3r;	/**< Layer 3 result */
+		struct {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+			uint16_t      first_ipv4:1;
+			uint16_t      first_ipv6:1;
+			uint16_t      gre:1;
+			uint16_t      min_enc:1;
+			uint16_t      last_ipv4:1;
+			uint16_t      last_ipv6:1;
+			uint16_t      first_info_err:1;/*0 info, 1 error*/
+			uint16_t      first_ip_err_code:5;
+			uint16_t      last_info_err:1;	/*0 info, 1 error*/
+			uint16_t      last_ip_err_code:3;
+#else
+			uint16_t      last_ip_err_code:3;
+			uint16_t      last_info_err:1;	/*0 info, 1 error*/
+			uint16_t      first_ip_err_code:5;
+			uint16_t      first_info_err:1;/*0 info, 1 error*/
+			uint16_t      last_ipv6:1;
+			uint16_t      last_ipv4:1;
+			uint16_t      min_enc:1;
+			uint16_t      gre:1;
+			uint16_t      first_ipv6:1;
+			uint16_t      first_ipv4:1;
+#endif
+#define first_ip_option        first_ip_err_code & 0x01
+#define first_unknown_ip_proto first_ip_err_code & 0x02
+#define first_fragmented       first_ip_err_code & 0x04
+#define first_ip_type          first_ip_err_code & 0x18
+
+		}__attribute__((__packed__));
+	 } __attribute__((__packed__));
+	 union {
+		uint8_t               l4r;	/**< Layer 4 result */
+		struct{
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+			uint8_t	       l4_type:3;
+			uint8_t	       l4_info_err:1;
+			uint8_t	       l4_result:4; /*if type IPSec: 1 ESP, 2 AH*/
+#else
+			uint8_t        l4_result:4; /*if type IPSec: 1 ESP, 2 AH*/
+			uint8_t        l4_info_err:1;
+			uint8_t        l4_type:3;
+#endif
+		} __attribute__((__packed__));
+	 } __attribute__((__packed__));
 	 uint8_t     cplan;		 /**< Classification plan id */
 	 uint16_t    nxthdr;		 /**< Next Header  */
 	 uint16_t    cksum;		 /**< Checksum */
