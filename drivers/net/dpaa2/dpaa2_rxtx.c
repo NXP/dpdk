@@ -442,12 +442,12 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		 * Also seems like the SWP is shared between the
 		 * Ethernet Driver and the SEC driver.
 		 */
-		while (!qbman_check_command_complete(swp, dq_storage))
+		while (!qbman_check_command_complete(dq_storage))
 			;
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN
 		 */
-		while (!qbman_result_has_new_result(swp, dq_storage))
+		while (!qbman_check_new_result(dq_storage))
 			;
 		/* Check whether Last Pull command is Expired and
 		 * setting Condition for Loop termination
@@ -523,7 +523,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
-			while (!qbman_check_command_complete(swp,
+			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
 				;
 			clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
@@ -546,7 +546,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	 * Also seems like the SWP is shared between the Ethernet Driver
 	 * and the SEC driver.
 	 */
-	while (!qbman_check_command_complete(swp, dq_storage))
+	while (!qbman_check_command_complete(dq_storage))
 		;
 	if (dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
 		clear_swp_active_dqs(q_storage->active_dpio_id);
@@ -554,7 +554,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN
 		 */
-		while (!qbman_result_has_new_result(swp, dq_storage))
+		while (!qbman_check_new_result(dq_storage))
 			;
 		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
 		/* Check whether Last Pull command is Expired and
@@ -588,7 +588,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
-		while (!qbman_check_command_complete(swp,
+		while (!qbman_check_command_complete(
 		       get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
 			;
 		clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
@@ -661,7 +661,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Clear the unused FD fields before sending*/
 	while (nb_pkts) {
 		/*Check if the queue is congested*/
-		if (qbman_result_SCN_state_in_mem(dpaa2_q->cscn))
+		if (qbman_result_SCN_state(dpaa2_q->cscn))
 			goto skip_tx;
 
 		frames_to_send = (nb_pkts >> 3) ? MAX_TX_RING_SLOTS : nb_pkts;

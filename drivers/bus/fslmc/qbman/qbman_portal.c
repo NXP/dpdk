@@ -102,7 +102,7 @@ struct qb_attr_code code_sdqcr_dqsrc = QB_CODE(0, 0, 16);
  * so keep an array of portal IDs and use the token field to
  * be able to find the proper portal
  */
-#define MAX_QBMAN_PORTALS  35
+#define MAX_QBMAN_PORTALS  64
 static struct qbman_swp *portal_idx_map[MAX_QBMAN_PORTALS];
 
 /*********************************/
@@ -857,9 +857,51 @@ void qbman_swp_dqrr_consume(struct qbman_swp *s,
 /*********************************/
 /* Polling user-provided storage */
 /*********************************/
+int qbman_result_has_new_result(struct qbman_swp *s,
+				  const struct qbman_result *dq)
+{
+	/* To avoid converting the little-endian DQ entry to host-endian prior
+	 * to us knowing whether there is a valid entry or not (and run the
+	 * risk of corrupting the incoming hardware LE write), we detect in
+	 * hardware endianness rather than host. This means we need a different
+	 * "code" depending on whether we are BE or LE in software, which is
+	 * where DQRR_TOK_OFFSET comes in...
+	 */
+	static struct qb_attr_code code_dqrr_tok_detect =
+					QB_CODE(0, DQRR_TOK_OFFSET, 8);
+	/* The user trying to poll for a result treats "dq" as const. It is
+	 * however the same address that was provided to us non-const in the
+	 * first place, for directing hardware DMA to. So we can cast away the
+	 * const because it is mutable from our perspective.
+	 */
+	uint32_t *p = (uint32_t *)(unsigned long)qb_cl(dq);
+	uint32_t token;
 
-int qbman_result_has_new_result(__attribute__((unused)) struct qbman_swp *s,
-				const struct qbman_result *dq)
+	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
+	if (token != 1)
+		return 0;
+	qb_attr_code_encode(&code_dqrr_tok_detect, &p[1], 0);
+
+	/* Only now do we convert from hardware to host endianness. Also, as we
+	 * are returning success, the user has promised not to call us again, so
+	 * there's no risk of us converting the endianness twice...
+	 */
+	make_le32_n(p, 16);
+
+	/* VDQCR "no longer busy" hook - not quite the same as DQRR, because the
+	 * fact "VDQCR" shows busy doesn't mean that we hold the result that
+	 * makes it available. Eg. we may be looking at our 10th dequeue result,
+	 * having released VDQCR after the 1st result and it is now busy due to
+	 * some other command!
+	 */
+	if (s->vdq.storage == dq) {
+		s->vdq.storage = NULL;
+		atomic_inc(&s->vdq.busy);
+	}
+	return 1;
+}
+
+int qbman_check_new_result(struct qbman_result *dq)
 {
 	/* To avoid converting the little-endian DQ entry to host-endian prior
 	 * to us knowing whether there is a valid entry or not (and run the
@@ -896,9 +938,9 @@ int qbman_result_has_new_result(__attribute__((unused)) struct qbman_swp *s,
 	return 1;
 }
 
-int qbman_check_command_complete(struct qbman_swp *s,
-				 const struct qbman_result *dq)
+int qbman_check_command_complete(struct qbman_result *dq)
 {
+	struct qbman_swp *s;
 	/* To avoid converting the little-endian DQ entry to host-endian prior
 	 * to us knowing whether there is a valid entry or not (and run the
 	 * risk of corrupting the incoming hardware LE write), we detect in
@@ -919,18 +961,20 @@ int qbman_check_command_complete(struct qbman_swp *s,
 	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
 	if (token == 0)
 		return 0;
-	/* TODO: Remove qbman_swp from parameters and make it a local
-	 * once we've tested the reserve portal map change
-	 */
+
 	s = portal_idx_map[token - 1];
-	/* When token is set it indicates that VDQ command has been fetched
-	 * by qbman and is working on it. It is safe for software to issue
-	 * another VDQ command, so incrementing the busy variable.
+	/*
+	 * VDQCR "no longer busy" hook - not quite the same as DQRR, because the
+	 * fact "VDQCR" shows busy doesn't mean that we hold the result that
+	 * makes it available. Eg. we may be looking at our 10th dequeue result,
+	 * having released VDQCR after the 1st result and it is now busy due to
+	 * some other command!
 	 */
 	if (s->vdq.storage == dq) {
 		s->vdq.storage = NULL;
 		atomic_inc(&s->vdq.busy);
 	}
+
 	return 1;
 }
 
@@ -1073,10 +1117,6 @@ const struct qbman_fd *qbman_result_DQ_fd(const struct qbman_result *dq)
 
 static struct qb_attr_code code_scn_state = QB_CODE(0, 16, 8);
 static struct qb_attr_code code_scn_rid = QB_CODE(1, 0, 24);
-static struct qb_attr_code code_scn_state_in_mem =
-			QB_CODE(0, SCN_STATE_OFFSET_IN_MEM, 8);
-static struct qb_attr_code code_scn_rid_in_mem =
-			QB_CODE(1, SCN_RID_OFFSET_IN_MEM, 24);
 static struct qb_attr_code code_scn_ctx_lo = QB_CODE(2, 0, 32);
 
 uint8_t qbman_result_SCN_state(const struct qbman_result *scn)
@@ -1100,43 +1140,27 @@ uint64_t qbman_result_SCN_ctx(const struct qbman_result *scn)
 	return qb_attr_code_decode_64(&code_scn_ctx_lo, p);
 }
 
-uint8_t qbman_result_SCN_state_in_mem(const struct qbman_result *scn)
-{
-	const uint32_t *p = qb_cl(scn);
-
-	return (uint8_t)qb_attr_code_decode(&code_scn_state_in_mem, p);
-}
-
-uint32_t qbman_result_SCN_rid_in_mem(const struct qbman_result *scn)
-{
-	const uint32_t *p = qb_cl(scn);
-	uint32_t result_rid;
-
-	result_rid = qb_attr_code_decode(&code_scn_rid_in_mem, p);
-	return make_le24(result_rid);
-}
-
 /*****************/
 /* Parsing BPSCN */
 /*****************/
 uint16_t qbman_result_bpscn_bpid(const struct qbman_result *scn)
 {
-	return (uint16_t)qbman_result_SCN_rid_in_mem(scn) & 0x3FFF;
+	return (uint16_t)qbman_result_SCN_rid(scn) & 0x3FFF;
 }
 
 int qbman_result_bpscn_has_free_bufs(const struct qbman_result *scn)
 {
-	return !(int)(qbman_result_SCN_state_in_mem(scn) & 0x1);
+	return !(int)(qbman_result_SCN_state(scn) & 0x1);
 }
 
 int qbman_result_bpscn_is_depleted(const struct qbman_result *scn)
 {
-	return (int)(qbman_result_SCN_state_in_mem(scn) & 0x2);
+	return (int)(qbman_result_SCN_state(scn) & 0x2);
 }
 
 int qbman_result_bpscn_is_surplus(const struct qbman_result *scn)
 {
-	return (int)(qbman_result_SCN_state_in_mem(scn) & 0x4);
+	return (int)(qbman_result_SCN_state(scn) & 0x4);
 }
 
 uint64_t qbman_result_bpscn_ctx(const struct qbman_result *scn)
@@ -1156,7 +1180,7 @@ uint64_t qbman_result_bpscn_ctx(const struct qbman_result *scn)
 /*****************/
 uint16_t qbman_result_cgcu_cgid(const struct qbman_result *scn)
 {
-	return (uint16_t)qbman_result_SCN_rid_in_mem(scn) & 0xFFFF;
+	return (uint16_t)qbman_result_SCN_rid(scn) & 0xFFFF;
 }
 
 uint64_t qbman_result_cgcu_icnt(const struct qbman_result *scn)

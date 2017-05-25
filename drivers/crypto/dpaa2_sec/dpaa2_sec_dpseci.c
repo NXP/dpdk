@@ -788,13 +788,13 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		 * Also seems like the SWP is shared between the Ethernet Driver
 		 * and the SEC driver.
 		 */
-		while (!qbman_check_command_complete(swp, dq_storage))
+		while (!qbman_check_command_complete(dq_storage))
 			;
 
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN
 		 */
-		while (!qbman_result_has_new_result(swp, dq_storage))
+		while (!qbman_check_new_result(dq_storage))
 			;
 		/* Check whether Last Pull command is Expired and
 		 * setting Condition for Loop termination
@@ -868,7 +868,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)) {
-			while (!qbman_check_command_complete(swp,
+			while (!qbman_check_command_complete(
 					get_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)))
 				;
 			clear_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index);
@@ -890,14 +890,14 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
 	 * and the SEC driver.*/
-	while (!qbman_check_command_complete(swp, dq_storage))
+	while (!qbman_check_command_complete(dq_storage))
 		;
 	if (dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
 		clear_swp_active_dqs(q_storage->active_dpio_id);
 	while (!is_last) {
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN */
-		while (!qbman_result_has_new_result(swp, dq_storage))
+		while (!qbman_check_new_result(dq_storage))
 			;
 		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
 		/* Check whether Last Pull command is Expired and
@@ -928,7 +928,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	} /* End of Packet Rx loop */
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)) {
-		while (!qbman_check_command_complete(swp,
+		while (!qbman_check_command_complete(
 		       get_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)))
 			;
 		clear_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index);

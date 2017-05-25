@@ -417,6 +417,19 @@ struct qbman_result *qbman_get_dqrr_from_idx(struct qbman_swp *s, uint8_t idx);
 int qbman_result_has_new_result(struct qbman_swp *s,
 				const struct qbman_result *dq);
 
+/**
+ * qbman_check_command_complete() - Check if the previous issued dq commnd
+ * is completed and results are available in memory.
+ * @s: the software portal object.
+ * @dq: the dequeue result read from the memory.
+ *
+ * Return 1 for getting a valid dequeue result, or 0 for not getting a valid
+ * dequeue result.
+ */
+int qbman_check_command_complete(struct qbman_result *dq);
+
+int qbman_check_new_result(struct qbman_result *dq);
+
 /* -------------------------------------------------------- */
 /* Parsing dequeue entries (DQRR and user-provided storage) */
 /* -------------------------------------------------------- */
@@ -647,24 +660,6 @@ uint32_t qbman_result_SCN_rid(const struct qbman_result *scn);
  * Return the context.
  */
 uint64_t qbman_result_SCN_ctx(const struct qbman_result *scn);
-
-/**
- * qbman_result_SCN_state_in_mem() - Get the state in notification written
- * in memory
- * @scn: the state change notification.
- *
- * Return the state.
- */
-uint8_t qbman_result_SCN_state_in_mem(const struct qbman_result *scn);
-
-/**
- * qbman_result_SCN_rid_in_mem() - Get the resource id in notification written
- * in memory.
- * @scn: the state change notification.
- *
- * Return the resource id.
- */
-uint32_t qbman_result_SCN_rid_in_mem(const struct qbman_result *scn);
 
 /* Type-specific "resource IDs". Mainly for illustration purposes, though it
  * also gives the appropriate type widths.
@@ -1118,7 +1113,4 @@ int qbman_swp_CDAN_disable(struct qbman_swp *s, uint16_t channelid);
  */
 int qbman_swp_CDAN_set_context_enable(struct qbman_swp *s, uint16_t channelid,
 				      uint64_t ctx);
-
-int qbman_check_command_complete(struct qbman_swp *s,
-				 const struct qbman_result *dq);
 #endif /* !_FSL_QBMAN_PORTAL_H */
