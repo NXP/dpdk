@@ -79,10 +79,6 @@ static uint32_t io_space_count;
 static int dpaa2_core_cluster_base = 0x04;
 static int dpaa2_cluster_sz = 2;
 
-#define SVR_LS1080A             0x87030000
-#define SVR_LS2080A             0x87010000
-#define SVR_LS2088A             0x87090000
-
 /* For LS208X platform There are four clusters with following mapping:
  * Cluster 1 (ID = x04) : CPU0, CPU1;
  * Cluster 2 (ID = x05) : CPU2, CPU3;

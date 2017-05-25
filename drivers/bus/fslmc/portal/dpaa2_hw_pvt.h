@@ -50,6 +50,10 @@
 #define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
 #endif
 
+#define SVR_LS1080A             0x87030000
+#define SVR_LS2080A             0x87010000
+#define SVR_LS2088A             0x87090000
+
 #define MAX_TX_RING_SLOTS	8
 	/** <Maximum number of slots available in TX ring*/
 

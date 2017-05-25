@@ -46,6 +46,8 @@
 
 #include <fslmc_logs.h>
 #include <fslmc_vfio.h>
+#include <mc/fsl_dpmng.h>
+
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
@@ -333,6 +335,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct mc_soc_version mc_plat_info = {0};
 	struct dpaa2_queue *dpaa2_q;
 	struct dpni_queue cfg;
 	uint8_t options = 0;
@@ -363,7 +366,11 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	cfg.user_context = (uint64_t)(dpaa2_q);
 
 	/*if ls2088 or rev2 device, enable the stashing */
-	if ((qbman_get_version() & 0xFFFF0000) > QMAN_REV_4000) {
+
+	if (mc_get_soc_version(dpni, CMD_PRI_LOW, &mc_plat_info))
+		PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
+
+	if ((mc_plat_info.svr & 0xffff0000) != SVR_LS2080A) {
 		options |= DPNI_QUEUE_OPT_FLC;
 		cfg.flc.stash_control = true;
 		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
