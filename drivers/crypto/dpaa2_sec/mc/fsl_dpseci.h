@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright (c) 2016-2017 NXP.
+ * Copyright 2017 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
