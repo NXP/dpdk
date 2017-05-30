@@ -352,6 +352,7 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
+	struct mc_soc_version mc_plat_info = {0};
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
 		PMD_INIT_LOG(ERR, "ERROR, Not sufficient number "
@@ -384,16 +385,6 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
 				dpio_dev->vfio_fd, reg_info.offset);
-
-	/* Create Mapping for QBMan Cache Enabled area. This is a fix for
-	 * SMMU fault for DQRR statshing transaction.
-	 */
-	if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
-				   reg_info.offset, reg_info.size)) {
-		PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
-		rte_free(dpio_dev);
-		return -1;
-	}
 
 	reg_info.index = 1;
 	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
@@ -431,6 +422,24 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	dpaa2_vfio_setup_intr(dpio_dev->intr_handle,
 			      vdev->fd,
 			      obj_info->num_irqs);
+	/* Create Mapping for QBMan Cache Enabled area. This is a fix for
+	 * SMMU fault for DQRR statshing transaction. Only valid for
+	 * LS2080 and LS2085 Platforms.
+	 */
+
+	if (mc_get_soc_version(dpio_dev->dpio, CMD_PRI_LOW, &mc_plat_info))
+			PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
+	else {
+		 if (((mc_plat_info.svr & 0xffff0000) == SVR_LS2080A) ||
+			 ((mc_plat_info.svr & 0xffff0000) == SVR_LS2085A)) {
+			if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
+				   reg_info.offset, reg_info.size)) {
+				PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
+				rte_free(dpio_dev);
+				return -1;
+			}
+		}
+	}
 
 	return 0;
 }

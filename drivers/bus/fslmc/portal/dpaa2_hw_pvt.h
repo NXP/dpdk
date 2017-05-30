@@ -52,6 +52,7 @@
 
 #define SVR_LS1080A             0x87030000
 #define SVR_LS2080A             0x87010000
+#define SVR_LS2085A             0x021C0000
 #define SVR_LS2088A             0x87090000
 
 #define MAX_TX_RING_SLOTS	8
