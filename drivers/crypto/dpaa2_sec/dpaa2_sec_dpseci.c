@@ -1205,7 +1205,7 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_auth_ctxt *ctxt = &session->ext_params.auth_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	unsigned int bufsize, i;
+	int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -1301,6 +1301,8 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
 				   1, 0, &authdata, !session->dir,
 				   ctxt->trunc_len);
+	if (bufsize <= 0)
+		goto error_out;
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	flc->word2_rflc_31_0 = lower_32_bits(
@@ -1313,7 +1315,6 @@ static int dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	for (i = 0; i < bufsize; i++)
 		PMD_DRV_LOG(DEBUG, "DESC[%d]:0x%x\n",
 			    i, priv->flc_desc[DESC_INITFINAL].desc[i]);
-
 
 	return 0;
 
