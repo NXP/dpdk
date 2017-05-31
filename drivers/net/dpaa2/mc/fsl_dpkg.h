@@ -93,6 +93,15 @@ struct dpkg_mask {
 	uint8_t offset;
 };
 
+/* Macros for accessing command fields smaller than 1byte */
+#define DPKG_MASK(field)	\
+	GENMASK(DPKG_##field##_SHIFT + DPKG_##field##_SIZE - 1, \
+		DPKG_##field##_SHIFT)
+#define dpkg_set_field(var, field, val)	\
+	((var) |= (((val) << DPKG_##field##_SHIFT) & DPKG_MASK(field)))
+#define dpkg_get_field(var, field)	\
+	(((var) & DPKG_MASK(field)) >> DPKG_##field##_SHIFT)
+
 /**
  * struct dpkg_extract - A structure for defining a single extraction
  * @type: Determines how the union below is interpreted:
@@ -136,12 +145,12 @@ struct dpkg_extract {
 		 */
 
 		struct {
-			enum net_prot			prot;
+			enum net_prot prot;
 			enum dpkg_extract_from_hdr_type type;
-			uint32_t			field;
-			uint8_t				size;
-			uint8_t				offset;
-			uint8_t				hdr_index;
+			uint32_t field;
+			uint8_t size;
+			uint8_t offset;
+			uint8_t hdr_index;
 		} from_hdr;
 		/**
 		 * struct from_data
@@ -166,8 +175,8 @@ struct dpkg_extract {
 		} from_parse;
 	} extract;
 
-	uint8_t			num_of_byte_masks;
-	struct dpkg_mask	masks[DPKG_NUM_OF_MASKS];
+	uint8_t num_of_byte_masks;
+	struct dpkg_mask masks[DPKG_NUM_OF_MASKS];
 };
 
 /**
@@ -181,17 +190,48 @@ struct dpkg_profile_cfg {
 	struct dpkg_extract extracts[DPKG_MAX_NUM_OF_EXTRACTS];
 };
 
-/**
- * dpkg_prepare_key_cfg() - function prepare extract parameters
- * @cfg: defining a full Key Generation profile (rule)
- * @key_cfg_buf: Zeroed 256 bytes of memory before mapping it to DMA
- *
- * This function has to be called before the following functions:
- *	- dpni_set_rx_tc_dist()
- *	- dpni_set_qos_table()
- *	- dpkg_prepare_key_cfg()
+/* dpni_set_rx_tc_dist extension (structure of the DMA-able memory at
+ * key_cfg_iova)
  */
-int dpkg_prepare_key_cfg(const struct dpkg_profile_cfg	*cfg,
+struct dpni_mask_cfg {
+	uint8_t mask;
+	uint8_t offset;
+};
+
+#define DPKG_EFH_TYPE_SHIFT		0
+#define DPKG_EFH_TYPE_SIZE		4
+#define DPKG_EXTRACT_TYPE_SHIFT		0
+#define DPKG_EXTRACT_TYPE_SIZE		4
+
+struct dpni_dist_extract {
+	/* word 0 */
+	uint8_t prot;
+	/* EFH type stored in the 4 least significant bits */
+	uint8_t efh_type;
+	uint8_t size;
+	uint8_t offset;
+	uint32_t field;
+	/* word 1 */
+	uint8_t hdr_index;
+	uint8_t constant;
+	uint8_t num_of_repeats;
+	uint8_t num_of_byte_masks;
+	/* Extraction type is stored in the 4 LSBs */
+	uint8_t extract_type;
+	uint8_t pad[3];
+	/* word 2 */
+	struct dpni_mask_cfg masks[4];
+};
+
+struct dpni_ext_set_rx_tc_dist {
+	/* extension word 0 */
+	uint8_t num_extracts;
+	uint8_t pad[7];
+	/* words 1..25 */
+	struct dpni_dist_extract extracts[10];
+};
+
+int dpkg_prepare_key_cfg(const struct dpkg_profile_cfg *cfg,
 			 uint8_t *key_cfg_buf);
 
 #endif /* __FSL_DPKG_H_ */

@@ -334,6 +334,7 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	bpool_cfg.pools[0].backup_pool = 0;
 	bpool_cfg.pools[0].buffer_size = RTE_ALIGN_CEIL(bp_list->buf_pool.size,
 						DPAA2_PACKET_LAYOUT_ALIGN);
+	bpool_cfg.pools[0].priority_mask = 0;
 
 	retcode = dpni_set_pools(dpni, CMD_PRI_LOW, priv->token, &bpool_cfg);
 	if (retcode != 0) {

@@ -42,128 +42,132 @@
 
 /* DPBP Version */
 #define DPBP_VER_MAJOR				3
-#define DPBP_VER_MINOR				2
+#define DPBP_VER_MINOR				3
+
+/* Command versioning */
+#define DPBP_CMD_BASE_VERSION			1
+#define DPBP_CMD_ID_OFFSET			4
+
+#define DPBP_CMD(id)	((id << DPBP_CMD_ID_OFFSET) | DPBP_CMD_BASE_VERSION)
 
 /* Command IDs */
-#define DPBP_CMDID_CLOSE                        0x8001
-#define DPBP_CMDID_OPEN                         0x8041
-#define DPBP_CMDID_CREATE                       0x9041
-#define DPBP_CMDID_DESTROY                      0x9841
-#define DPBP_CMDID_GET_API_VERSION              0xa041
+#define DPBP_CMDID_CLOSE		DPBP_CMD(0x800)
+#define DPBP_CMDID_OPEN			DPBP_CMD(0x804)
+#define DPBP_CMDID_CREATE		DPBP_CMD(0x904)
+#define DPBP_CMDID_DESTROY		DPBP_CMD(0x984)
+#define DPBP_CMDID_GET_API_VERSION	DPBP_CMD(0xa04)
 
-#define DPBP_CMDID_ENABLE                       0x0021
-#define DPBP_CMDID_DISABLE                      0x0031
-#define DPBP_CMDID_GET_ATTR                     0x0041
-#define DPBP_CMDID_RESET                        0x0051
-#define DPBP_CMDID_IS_ENABLED                   0x0061
+#define DPBP_CMDID_ENABLE		DPBP_CMD(0x002)
+#define DPBP_CMDID_DISABLE		DPBP_CMD(0x003)
+#define DPBP_CMDID_GET_ATTR		DPBP_CMD(0x004)
+#define DPBP_CMDID_RESET		DPBP_CMD(0x005)
+#define DPBP_CMDID_IS_ENABLED		DPBP_CMD(0x006)
 
-#define DPBP_CMDID_SET_IRQ_ENABLE               0x0121
-#define DPBP_CMDID_GET_IRQ_ENABLE               0x0131
-#define DPBP_CMDID_SET_IRQ_MASK                 0x0141
-#define DPBP_CMDID_GET_IRQ_MASK                 0x0151
-#define DPBP_CMDID_GET_IRQ_STATUS               0x0161
-#define DPBP_CMDID_CLEAR_IRQ_STATUS             0x0171
+#define DPBP_CMDID_SET_IRQ_ENABLE	DPBP_CMD(0x012)
+#define DPBP_CMDID_GET_IRQ_ENABLE	DPBP_CMD(0x013)
+#define DPBP_CMDID_SET_IRQ_MASK		DPBP_CMD(0x014)
+#define DPBP_CMDID_GET_IRQ_MASK		DPBP_CMD(0x015)
+#define DPBP_CMDID_GET_IRQ_STATUS	DPBP_CMD(0x016)
+#define DPBP_CMDID_CLEAR_IRQ_STATUS	DPBP_CMD(0x017)
 
-#define DPBP_CMDID_SET_NOTIFICATIONS            0x1b01
-#define DPBP_CMDID_GET_NOTIFICATIONS            0x1b11
+#define DPBP_CMDID_SET_NOTIFICATIONS	DPBP_CMD(0x1b0)
+#define DPBP_CMDID_GET_NOTIFICATIONS	DPBP_CMD(0x1b1)
 
-#define DPBP_CMDID_GET_FREE_BUFFERS_NUM         0x1b21
+#define DPBP_CMDID_GET_FREE_BUFFERS_NUM	DPBP_CMD(0x1b2)
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_OPEN(cmd, dpbp_id) \
-	MC_CMD_OP(cmd, 0, 0,  32, int,	    dpbp_id)
+#pragma pack(push, 1)
+struct dpbp_cmd_open {
+	uint32_t dpbp_id;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_IS_ENABLED(cmd, en) \
-	MC_RSP_OP(cmd, 0, 0,  1,  int,	    en)
+struct dpbp_cmd_destroy {
+	uint32_t object_id;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_SET_IRQ_ENABLE(cmd, irq_index, en) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  8,  uint8_t,  en); \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index);\
-} while (0)
+#define DPBP_ENABLE			0x1
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_GET_IRQ_ENABLE(cmd, irq_index) \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index)
+struct dpbp_rsp_is_enabled {
+	uint8_t enabled;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_GET_IRQ_ENABLE(cmd, en) \
-	MC_RSP_OP(cmd, 0, 0,  8,  uint8_t,  en)
+struct dpbp_cmd_set_irq_enable {
+	uint8_t enable;
+	uint8_t pad[3];
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_SET_IRQ_MASK(cmd, irq_index, mask) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  32, uint32_t, mask);\
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index);\
-} while (0)
+struct dpbp_cmd_get_irq_enable {
+	uint32_t pad;
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_GET_IRQ_MASK(cmd, irq_index) \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index)
+struct dpbp_rsp_get_irq_enable {
+	uint8_t enabled;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_GET_IRQ_MASK(cmd, mask) \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, mask)
+struct dpbp_cmd_set_irq_mask {
+	uint32_t mask;
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_GET_IRQ_STATUS(cmd, irq_index, status) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  32, uint32_t, status);\
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index);\
-} while (0)
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_GET_IRQ_STATUS(cmd, status) \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, status)
+struct dpbp_cmd_get_irq_mask {
+	uint32_t pad;
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_CLEAR_IRQ_STATUS(cmd, irq_index, status) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  32, uint32_t, status); \
-	MC_CMD_OP(cmd, 0, 32, 8,  uint8_t,  irq_index);\
-} while (0)
+struct dpbp_rsp_get_irq_mask {
+	uint32_t mask;
+};
 
-/*                cmd, param, offset, width, type,	arg_name */
-#define DPBP_RSP_GET_ATTRIBUTES(cmd, attr) \
-do { \
-	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, (attr)->bpid); \
-	MC_RSP_OP(cmd, 0, 32, 32, int,	    (attr)->id);\
-} while (0)
+struct dpbp_cmd_get_irq_status {
+	uint32_t status;
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_SET_NOTIFICATIONS(cmd, cfg) \
-do { \
-	MC_CMD_OP(cmd, 0, 0,  32, uint32_t, cfg->depletion_entry); \
-	MC_CMD_OP(cmd, 0, 32, 32, uint32_t, cfg->depletion_exit);\
-	MC_CMD_OP(cmd, 1, 0,  32, uint32_t, cfg->surplus_entry);\
-	MC_CMD_OP(cmd, 1, 32, 32, uint32_t, cfg->surplus_exit);\
-	MC_CMD_OP(cmd, 2, 0,  16, uint16_t, cfg->options);\
-	MC_CMD_OP(cmd, 3, 0,  64, uint64_t, cfg->message_ctx);\
-	MC_CMD_OP(cmd, 4, 0,  64, uint64_t, cfg->message_iova);\
-} while (0)
+struct dpbp_rsp_get_irq_status {
+	uint32_t status;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_CMD_GET_NOTIFICATIONS(cmd, cfg) \
-do { \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, cfg->depletion_entry); \
-	MC_RSP_OP(cmd, 0, 32, 32, uint32_t, cfg->depletion_exit);\
-	MC_RSP_OP(cmd, 1, 0,  32, uint32_t, cfg->surplus_entry);\
-	MC_RSP_OP(cmd, 1, 32, 32, uint32_t, cfg->surplus_exit);\
-	MC_RSP_OP(cmd, 2, 0,  16, uint16_t, cfg->options);\
-	MC_RSP_OP(cmd, 3, 0,  64, uint64_t, cfg->message_ctx);\
-	MC_RSP_OP(cmd, 4, 0,  64, uint64_t, cfg->message_iova);\
-} while (0)
+struct dpbp_cmd_clear_irq_status {
+	uint32_t status;
+	uint8_t irq_index;
+};
 
-/*                cmd, param, offset, width, type,      arg_name */
-#define DPBP_RSP_GET_API_VERSION(cmd, major, minor) \
-do { \
-	MC_RSP_OP(cmd, 0, 0,  16, uint16_t, major);\
-	MC_RSP_OP(cmd, 0, 16, 16, uint16_t, minor);\
-} while (0)
+struct dpbp_rsp_get_attributes {
+	uint16_t pad;
+	uint16_t bpid;
+	uint32_t id;
+};
 
-/*                cmd, param, offset, width, type, arg_name */
-#define DPBP_RSP_GET_NUM_FREE_BUFS(cmd, num_free_bufs) \
-	MC_RSP_OP(cmd, 0, 0,  32, uint32_t, num_free_bufs)
+struct dpbp_cmd_set_notifications {
+	uint32_t depletion_entry;
+	uint32_t depletion_exit;
+	uint32_t surplus_entry;
+	uint32_t surplus_exit;
+	uint16_t options;
+	uint16_t pad[3];
+	uint64_t message_ctx;
+	uint64_t message_iova;
+};
 
+struct dpbp_rsp_get_notifications {
+	uint32_t depletion_entry;
+	uint32_t depletion_exit;
+	uint32_t surplus_entry;
+	uint32_t surplus_exit;
+	uint16_t options;
+	uint16_t pad[3];
+	uint64_t message_ctx;
+	uint64_t message_iova;
+};
+
+struct dpbp_rsp_get_api_version {
+	uint16_t major;
+	uint16_t minor;
+};
+
+struct dpbp_rsp_get_num_free_bufs {
+	uint32_t num_free_bufs;
+};
+#pragma pack(pop)
 #endif /* _FSL_DPBP_CMD_H */

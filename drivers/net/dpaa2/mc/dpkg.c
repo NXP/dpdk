@@ -40,83 +40,69 @@
 #include <fsl_mc_cmd.h>
 #include <fsl_dpkg.h>
 
-int dpkg_prepare_key_cfg(const struct dpkg_profile_cfg *cfg,
-			 uint8_t *key_cfg_buf)
+/**
+ * dpkg_prepare_key_cfg() - function prepare extract parameters
+ * @cfg: defining a full Key Generation profile (rule)
+ * @key_cfg_buf: Zeroed 256 bytes of memory before mapping it to DMA
+ *
+ * This function has to be called before the following functions:
+ *	- dpni_set_rx_tc_dist()
+ *	- dpni_set_qos_table()
+ *	- dpkg_prepare_key_cfg()
+ */
+int
+dpkg_prepare_key_cfg(const struct dpkg_profile_cfg *cfg, uint8_t *key_cfg_buf)
 {
 	int i, j;
-	int offset = 0;
-	int param = 1;
-	uint64_t *params = (uint64_t *)key_cfg_buf;
+	struct dpni_ext_set_rx_tc_dist *dpni_ext;
+	struct dpni_dist_extract *extr;
 
-	if (!key_cfg_buf || !cfg)
+	if (cfg->num_extracts > DPKG_MAX_NUM_OF_EXTRACTS)
 		return -EINVAL;
 
-	params[0] |= mc_enc(0, 8, cfg->num_extracts);
-	params[0] = cpu_to_le64(params[0]);
-
-	if (cfg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS)
-		return -EINVAL;
+	dpni_ext = (struct dpni_ext_set_rx_tc_dist *)key_cfg_buf;
+	dpni_ext->num_extracts = cfg->num_extracts;
 
 	for (i = 0; i < cfg->num_extracts; i++) {
+		extr = &dpni_ext->extracts[i];
+
 		switch (cfg->extracts[i].type) {
 		case DPKG_EXTRACT_FROM_HDR:
-			params[param] |= mc_enc(0, 8,
-					cfg->extracts[i].extract.from_hdr.prot);
-			params[param] |= mc_enc(8, 4,
-					cfg->extracts[i].extract.from_hdr.type);
-			params[param] |= mc_enc(16, 8,
-					cfg->extracts[i].extract.from_hdr.size);
-			params[param] |= mc_enc(24, 8,
-					cfg->extracts[i].extract.
-					from_hdr.offset);
-			params[param] |= mc_enc(32, 32,
-					cfg->extracts[i].extract.
-					from_hdr.field);
-			params[param] = cpu_to_le64(params[param]);
-			param++;
-			params[param] |= mc_enc(0, 8,
-					cfg->extracts[i].extract.
-					from_hdr.hdr_index);
+			extr->prot = cfg->extracts[i].extract.from_hdr.prot;
+			dpkg_set_field(extr->efh_type, EFH_TYPE,
+				       cfg->extracts[i].extract.from_hdr.type);
+			extr->size = cfg->extracts[i].extract.from_hdr.size;
+			extr->offset = cfg->extracts[i].extract.from_hdr.offset;
+			extr->field = cpu_to_le32(
+				cfg->extracts[i].extract.from_hdr.field);
+			extr->hdr_index =
+				cfg->extracts[i].extract.from_hdr.hdr_index;
 			break;
 		case DPKG_EXTRACT_FROM_DATA:
-			params[param] |= mc_enc(16, 8,
-					cfg->extracts[i].extract.
-					from_data.size);
-			params[param] |= mc_enc(24, 8,
-					cfg->extracts[i].extract.
-					from_data.offset);
-			params[param] = cpu_to_le64(params[param]);
-			param++;
+			extr->size = cfg->extracts[i].extract.from_data.size;
+			extr->offset =
+				cfg->extracts[i].extract.from_data.offset;
 			break;
 		case DPKG_EXTRACT_FROM_PARSE:
-			params[param] |= mc_enc(16, 8,
-					cfg->extracts[i].extract.
-					from_parse.size);
-			params[param] |= mc_enc(24, 8,
-					cfg->extracts[i].extract.
-					from_parse.offset);
-			params[param] = cpu_to_le64(params[param]);
-			param++;
+			extr->size = cfg->extracts[i].extract.from_parse.size;
+			extr->offset =
+				cfg->extracts[i].extract.from_parse.offset;
 			break;
 		default:
 			return -EINVAL;
 		}
-		params[param] |= mc_enc(
-			24, 8, cfg->extracts[i].num_of_byte_masks);
-		params[param] |= mc_enc(32, 4, cfg->extracts[i].type);
-		params[param] = cpu_to_le64(params[param]);
-		param++;
-		for (offset = 0, j = 0;
-			j < DPKG_NUM_OF_MASKS;
-			offset += 16, j++) {
-			params[param] |= mc_enc(
-				(offset), 8, cfg->extracts[i].masks[j].mask);
-			params[param] |= mc_enc(
-				(offset + 8), 8,
-				cfg->extracts[i].masks[j].offset);
+
+		extr->num_of_byte_masks = cfg->extracts[i].num_of_byte_masks;
+		dpkg_set_field(extr->extract_type, EXTRACT_TYPE,
+			       cfg->extracts[i].type);
+
+		for (j = 0; j < DPKG_NUM_OF_MASKS; j++) {
+			extr->masks[j].mask = cfg->extracts[i].masks[j].mask;
+			extr->masks[j].offset =
+				cfg->extracts[i].masks[j].offset;
 		}
-		params[param] = cpu_to_le64(params[param]);
-		param++;
 	}
+
 	return 0;
 }
+
