@@ -762,6 +762,9 @@ static int fman_if_init(const struct device_node *dpa_node, int is_macless)
 		 * and get its channel ID */
 		ports_phandle = of_get_property(mac_node, "fsl,port-handles",
 						&lenp);
+		if (!ports_phandle)
+			ports_phandle = of_get_property(mac_node, "fsl,fman-ports",
+						&lenp);
 		my_err(!ports_phandle, -EINVAL, "%s: no fsl,port-handles\n",
 		       mname);
 		assert(lenp == (2 * sizeof(phandle)));
