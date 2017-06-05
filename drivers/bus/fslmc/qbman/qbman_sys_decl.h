@@ -63,8 +63,14 @@
 #define lwsync() { asm volatile("dmb st" : : : "memory"); }
 #define dcbf(p) { asm volatile("dc cvac, %0" : : "r"(p) : "memory"); }
 #define dccivac(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
-#define prefetch_for_load(p) { asm volatile("prfm pldl1keep, [%0, #64]" : : "r" (p)); }
-#define prefetch_for_store(p) { asm volatile("prfm pstl1keep, [%0, #64]" : : "r" (p)); }
+static inline void prefetch_for_load(void *p)
+{
+	asm volatile("prfm pldl1keep, [%0, #0]" : : "r" (p));
+}
+static inline void prefetch_for_store(void *p)
+{
+	asm volatile("prfm pstl1keep, [%0, #0]" : : "r" (p));
+}
 #else
 #define dcbz(p)
 #define lwsync() { asm volatile("dmb st" : : : "memory"); }

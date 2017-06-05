@@ -40,7 +40,8 @@ uint32_t qman_version;
 
 #define QBMAN_EQCR_SIZE 8
 
-static inline u8 qm_cyc_diff(u8 ringsize, u8 first, u8 last)
+static inline uint8_t qm_cyc_diff(uint8_t ringsize, uint8_t first,
+				  uint8_t last)
 {
 	/* 'first' is included, 'last' is excluded */
 	if (first <= last)
