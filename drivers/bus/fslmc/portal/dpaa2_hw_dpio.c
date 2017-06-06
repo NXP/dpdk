@@ -430,8 +430,7 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	if (mc_get_soc_version(dpio_dev->dpio, CMD_PRI_LOW, &mc_plat_info))
 			PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
 	else {
-		 if (((mc_plat_info.svr & 0xffff0000) == SVR_LS2080A) ||
-			 ((mc_plat_info.svr & 0xffff0000) == SVR_LS2085A)) {
+		 if ((mc_plat_info.svr & 0xffff0000) == SVR_LS2080A) {
 			if (vfio_dmamap_mem_region(dpio_dev->qbman_portal_ce_paddr,
 				   reg_info.offset, reg_info.size)) {
 				PMD_INIT_LOG(ERR, "DMAMAP for Portal CE area failed.\n");
