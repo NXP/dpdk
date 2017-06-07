@@ -796,7 +796,6 @@ struct qbman_eq_desc {
 			uint8_t wae;
 			uint8_t rspid;
 			uint64_t rsp_addr;
-			uint8_t fd[32];
 		} eq;
 	};
 };
@@ -960,7 +959,8 @@ void qbman_eq_desc_set_dca(struct qbman_eq_desc *d, int enable,
 int qbman_swp_enqueue(struct qbman_swp *s, const struct qbman_eq_desc *d,
 		      const struct qbman_fd *fd);
 /**
- * qbman_swp_enqueue_multiple() - Enqueue multiple frames
+ * qbman_swp_enqueue_multiple() - Enqueue multiple frames with same
+				  eq descriptor
  * @s: the software portal used for enqueue.
  * @d: the enqueue descriptor.
  * @fd: the frame descriptor to be enqueued.
@@ -972,6 +972,20 @@ int qbman_swp_enqueue_multiple(struct qbman_swp *s,
 			       const struct qbman_eq_desc *d,
 			       const struct qbman_fd *fd,
 			       int num_frames);
+/**
+ * qbman_swp_enqueue_multiple_desc() - Enqueue multiple frames with
+ *				       individual eq descriptor.
+ * @s: the software portal used for enqueue.
+ * @d: the enqueue descriptor.
+ * @fd: the frame descriptor to be enqueued.
+ * @num_frames: the number of the frames to be enqueued.
+ *
+ * Return the number of enqueued frames, -EBUSY if the EQCR is not ready.
+ */
+int qbman_swp_enqueue_multiple_desc(struct qbman_swp *s,
+				    const struct qbman_eq_desc *d,
+				    const struct qbman_fd *fd,
+				    int num_frames);
 
 /* TODO:
  * qbman_swp_enqueue_thresh() - Set threshold for EQRI interrupt.
