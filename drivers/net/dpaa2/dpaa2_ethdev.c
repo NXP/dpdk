@@ -1561,10 +1561,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	priv->num_tc = attr.num_tcs;
-	for (i = 0; i < attr.num_tcs; i++) {
+	for (i = 0; i < attr.num_tcs; i++)
 		priv->num_dist_per_tc[i] = attr.num_queues;
-		break;
-	}
 
 	/* Distribution is per Tc only,
 	 * so choosing RX queues from default TC only

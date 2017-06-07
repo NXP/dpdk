@@ -216,7 +216,6 @@ int rte_fslmc_vfio_dmamap(void)
 
 	if (is_dma_done)
 		return 0;
-	is_dma_done = 1;
 
 	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
 		memseg = rte_eal_get_physmem_layout();
@@ -225,8 +224,10 @@ int rte_fslmc_vfio_dmamap(void)
 			return -ENODEV;
 		}
 
-		if (memseg[i].addr == NULL && memseg[i].len == 0)
-			break;
+		if (memseg[i].addr == NULL && memseg[i].len == 0) {
+			FSLMC_VFIO_LOG(ERR, "Invalid memory segment");
+			return -1;
+		}
 
 		dma_map.size = memseg[i].len;
 		dma_map.vaddr = memseg[i].addr_64;
@@ -261,6 +262,7 @@ int rte_fslmc_vfio_dmamap(void)
 	 * support is added in the Kernel.
 	 */
 	vfio_map_irq_region(group);
+	is_dma_done = 1;
 
 	return 0;
 }

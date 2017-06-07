@@ -686,13 +686,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				if (priv->bp_list) {
-					bpid = priv->bp_list->buf_pool.bpid;
-				} else {
-					PMD_TX_LOG(ERR,
-						   "err: no bpool attached");
-					goto skip_tx;
-				}
+				bpid = priv->bp_list->buf_pool.bpid;
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					PMD_TX_LOG(ERR, "S/G support not added"
 						" for non hw offload buffer");
