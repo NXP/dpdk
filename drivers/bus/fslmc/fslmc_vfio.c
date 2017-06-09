@@ -74,6 +74,9 @@
 
 #define IRQ_SET_BUF_LEN  (sizeof(struct vfio_irq_set) + sizeof(int))
 
+unsigned short kernel_major_ver; /**< Running Linux major version number */
+unsigned short kernel_minor_ver; /**< Running Linux minor version number */
+
 /* Number of VFIO containers & groups with in */
 static struct fslmc_vfio_group vfio_groups[VFIO_MAX_GRP];
 static struct fslmc_vfio_container vfio_containers[VFIO_MAX_CONTAINERS];
@@ -257,11 +260,14 @@ int rte_fslmc_vfio_dmamap(void)
 		}
 	}
 
-	/* TODO - This is a W.A. as VFIO currently does not add the mapping of
-	 * the interrupt region to SMMU. This should be removed once the
-	 * support is added in the Kernel.
+	/* For Linux version < 4.9, VFIO doesn't add the mapping of IRQ region
+	 * in SMMU. This needs to be done explicitly.
 	 */
-	vfio_map_irq_region(group);
+	if (kernel_major_ver == 4 && kernel_minor_ver <= 4) {
+		/* Only applicable for Linux 4.1 and Linux 4.4 */
+		vfio_map_irq_region(group);
+	}
+
 	is_dma_done = 1;
 
 	return 0;
@@ -706,10 +712,41 @@ int fslmc_vfio_setup_group(void)
 	return 0;
 }
 
+static int
+get_kernel_version_info(void) {
+	int ret;
+	FILE *version_file;
+
+	version_file = fopen(LINUX_VERSION_FILE, "r");
+	if (!version_file)
+		return -1;
+
+	ret = fscanf(version_file, "Linux version %hi.%hi",
+		     &kernel_major_ver, &kernel_minor_ver);
+	if (ret <= 0) {
+		return -1;
+	}
+
+	FSLMC_VFIO_LOG(DEBUG, "Kernel major.minor = %hi.%hi",
+		       kernel_major_ver, kernel_minor_ver);
+
+	fclose(version_file);
+
+	return 0;
+}
+
 /* Init the FSL-MC- LS2 EAL subsystem */
 int
 rte_eal_dpaa2_init(void)
 {
+	int ret;
+
+	ret = get_kernel_version_info();
+	if (ret) {
+		FSLMC_VFIO_LOG(ERR, "Unable to get Linux kernel version.");
+		return -1;
+	}
+
 #ifdef VFIO_PRESENT
 	if (fslmc_vfio_setup_group()) {
 		FSLMC_VFIO_LOG(DEBUG, "dpaa2_setup_vfio_grp");

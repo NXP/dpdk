@@ -42,6 +42,11 @@
 
 #define VFIO_MAX_GRP 1
 
+#define LINUX_VERSION_FILE	"/proc/version"
+
+extern unsigned short kernel_major_ver; /**< Linux major version number */
+extern unsigned short kernel_minor_ver; /**< Linux minor version number */
+
 typedef struct fslmc_vfio_device {
 	int fd; /* fslmc root container device ?? */
 	int index; /*index of child object */
