@@ -943,17 +943,22 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	}
 
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTA | QM_INITFQ_WE_TDTHRESH;
+		       QM_INITFQ_WE_CONTEXTA;
 
 	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
-			   QM_FQCTRL_PREFERINCACHE | QM_FQCTRL_TDE;
+			   QM_FQCTRL_PREFERINCACHE;
 	opts.fqd.context_a.stashing.exclusive = 0;
 	opts.fqd.context_a.stashing.annotation_cl = DPAA_IF_RX_ANNOTATION_STASH;
 	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 
-	qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
+	/*Enable tail drop */
+	if (!getenv("DPAA_RX_TAILDROP_OFF")) {
+		opts.we_mask = opts.we_mask | QM_INITFQ_WE_TDTHRESH;
+		opts.fqd.fq_ctrl = opts.fqd.fq_ctrl | QM_FQCTRL_TDE;
+		qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
+	}
 
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
