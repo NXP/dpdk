@@ -96,7 +96,7 @@
 #define DPAA_MAX_DEQUEUE_NUM_FRAMES    63
 	/** <Maximum number of frames to be dequeued in a single rx call*/
 
-/* Parsing mask (Little Endian) - 0x00E0C4ED00800000
+/* Parsing mask (Little Endian) - 0x00E044ED00800000
  *	Classification Plan ID 0x00
  *	L4R 0xE0 -
  *		0x20 - TCP
@@ -115,7 +115,7 @@
  *		0x8000 - Ethernet type
  *	ShimR & Logical Port ID 0x0000
  */
-#define DPAA_PARSE_MASK			0x00E0C4ED00800000
+#define DPAA_PARSE_MASK			0x00E044ED00800000
 #define DPAA_PARSE_VLAN_MASK		0x0000000000700000
 
 /* Parsed values (Little Endian) */
