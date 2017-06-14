@@ -46,7 +46,7 @@
 
 #define FSL_CLASS_ID		0
 #define FSL_VENDOR_ID		0x1957
-#define FSL_DEVICE_ID		0x410	 /* custom */
+#define FSL_ETH_DEVICE_ID	0x410	 /* custom */
 #define FSL_FMAN_ETH_CLASS	0x020000 /* ethernet */
 #define FSL_SUBSYSTEM_VENDOR	0
 #define FSL_SUBSYSTEM_DEVICE	0

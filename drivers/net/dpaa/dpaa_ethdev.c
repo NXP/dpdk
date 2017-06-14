@@ -337,7 +337,7 @@ static int dpaa_init(void)
 		/* store device id of fman device */
 		dev->addr.devid = dev_id;
 		dev->id.vendor_id = FSL_VENDOR_ID;
-		dev->id.device_id = FSL_DEVICE_ID;
+		dev->id.device_id = FSL_ETH_DEVICE_ID;
 		dev->addr.function = dev->id.device_id;
 
 		TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
@@ -1150,7 +1150,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 }
 
 static struct rte_pci_id pci_id_dpaa_map[] = {
-	{FSL_CLASS_ID, FSL_VENDOR_ID, FSL_DEVICE_ID,
+	{FSL_CLASS_ID, FSL_VENDOR_ID, FSL_ETH_DEVICE_ID,
 		FSL_SUBSYSTEM_VENDOR, FSL_SUBSYSTEM_DEVICE},
 	{0, 0, 0, 0, 0}
 };

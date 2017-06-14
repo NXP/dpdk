@@ -61,8 +61,7 @@
 #include "dpaa_sec_log.h"
 
 #define FSL_VENDOR_ID		0x1957
-#define FSL_DEVICE_ID		0x410
-#define FSL_SUBSYSTEM_SEC	1
+#define FSL_SEC_DEVICE_ID	0x420
 #define FSL_USDPAA_DOMAIN	2
 #define FSL_USDPAA_BUSID	16
 #define PCI_DEV_ADDR(dev) \
@@ -1347,7 +1346,7 @@ init_error:
 
 static struct rte_pci_id pci_id_dpaa_sec_map[] = {
 		{
-			RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_DEVICE_ID),
+			RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_SEC_DEVICE_ID),
 		},
 };
 
@@ -1428,9 +1427,7 @@ dpaa_sec_pmd_init(const char *name __rte_unused,
 		dev->addr.bus = FSL_USDPAA_BUSID;
 		dev->addr.devid = DPAA_SEC_DEV_ID_START + i;
 		dev->id.vendor_id = FSL_VENDOR_ID;
-		dev->id.device_id = FSL_DEVICE_ID;
-		dev->id.subsystem_vendor_id = FSL_VENDOR_ID;
-		dev->id.subsystem_device_id = FSL_SUBSYSTEM_SEC;
+		dev->id.device_id = FSL_SEC_DEVICE_ID;
 		dev->numa_node = 0;
 
 		/* device is valid, add in list (sorted) */
