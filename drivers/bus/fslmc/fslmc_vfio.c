@@ -336,7 +336,6 @@ int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 	*fd_ptr = intr_handle->fd;
 
 	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
-
 	if (ret) {
 		RTE_LOG(ERR, EAL, "Error:dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
 			intr_handle->fd, errno, strerror(errno));
@@ -597,8 +596,10 @@ int fslmc_vfio_process_group(void)
 	closedir(d);
 
 	ret = dpaa2_affine_qbman_swp();
-	if (ret)
-		FSLMC_VFIO_LOG(DEBUG, "Error in affining qbman swp %d", ret);
+	if (ret) {
+		FSLMC_VFIO_LOG(ERR, "Error in affining qbman swp %d", ret);
+		return ret;
+	}
 
 	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpbp_count = %d dpio_count=%d",
 		      dpbp_count, dpio_count);

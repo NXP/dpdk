@@ -189,6 +189,7 @@ rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			rte_panic("DPAA2 IO Portal alloc fail:can not proceed");
 			return;
 		}
 	}
@@ -268,6 +269,7 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			rte_panic("DPAA2 IO Portal alloc fail:can not proceed");
 			return ret;
 		}
 	}
