@@ -220,16 +220,16 @@ int rte_fslmc_vfio_dmamap(void)
 	if (is_dma_done)
 		return 0;
 
-	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
-		memseg = rte_eal_get_physmem_layout();
-		if (memseg == NULL) {
-			FSLMC_VFIO_LOG(ERR, "Cannot get physical layout.");
-			return -ENODEV;
-		}
+	memseg = rte_eal_get_physmem_layout();
+	if (memseg == NULL) {
+		FSLMC_VFIO_LOG(ERR, "Cannot get physical layout.");
+		return -ENODEV;
+	}
 
+	for (i = 0; i < RTE_MAX_MEMSEG; i++) {
 		if (memseg[i].addr == NULL && memseg[i].len == 0) {
-			FSLMC_VFIO_LOG(ERR, "Invalid memory segment");
-			return -1;
+			FSLMC_VFIO_LOG(DEBUG, "Total %d segments found.", i);
+			break;
 		}
 
 		dma_map.size = memseg[i].len;
@@ -258,6 +258,12 @@ int rte_fslmc_vfio_dmamap(void)
 				       "(errno = %d)", errno);
 			return ret;
 		}
+	}
+
+	/* Verifying that at least single segment is available */
+	if (i <= 0) {
+		FSLMC_VFIO_LOG(ERR, "No Segments found for VFIO Mapping");
+		return -1;
 	}
 
 	/* For Linux version < 4.9, VFIO doesn't add the mapping of IRQ region
