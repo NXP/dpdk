@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright (c) 2014-2016 Freescale Semiconductor. All rights reserved.
+ *   Copyright (c) 2014-2016 Freescale Semiconductor, Inc. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -13,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of Freescale Semiconductor nor the names of its
+ *     * Neither the name of  Freescale Semiconductor, Inc nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -38,11 +38,11 @@
 
 #include "dpaa_logs.h"
 
-#include <usdpaa/fsl_usd.h>
-#include <usdpaa/fsl_qman.h>
-#include <usdpaa/fsl_bman.h>
-#include <usdpaa/of.h>
-#include <usdpaa/usdpaa_netcfg.h>
+#include <fsl_usd.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
+#include <of.h>
+#include <netcfg.h>
 
 #define FSL_CLASS_ID		0
 #define FSL_VENDOR_ID		0x1957
@@ -71,23 +71,17 @@
 
 /* Alignment to use for cpu-local structs to avoid coherency problems. */
 #define MAX_CACHELINE			64
-#define CPU_SPIN_BACKOFF_CYCLES		512
 
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  10240
 
 /* RX queue tail drop threshold
- * currently considering 32 KB packets */
+ * currently considering 32 KB packets.
+ */
 #define CONG_THRESHOLD_RX_Q  (32 * 1024)
-
-/* total number of bpools on SoC */
-#define DPAA_MAX_BPOOLS	256
 
 /*max mac filter for memac(8) including primary mac addr*/
 #define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
-
-/* Maximum release/acquire from BMAN */
-#define DPAA_MBUF_MAX_ACQ_REL  8
 
 /*Maximum number of slots available in TX ring*/
 #define MAX_TX_RING_SLOTS	8
@@ -121,27 +115,24 @@
 
 #define DPAA_TX_CKSUM_OFFLOAD_MASK (             \
 		PKT_TX_IP_CKSUM |                \
-		PKT_TX_TCP_CKSUM |                 \
+		PKT_TX_TCP_CKSUM |               \
 		PKT_TX_UDP_CKSUM)
 
-/**************************************************************************//**
-	DPAA Frame descriptor macros
-*/ /***************************************************************************/
-#define DPAA_FD_CMD_FCO			0x80000000  /**< Frame queue Context Override */
-#define DPAA_FD_CMD_RPD			0x40000000  /**< Read Prepended Data */
-#define DPAA_FD_CMD_UPD			0x20000000  /**< Update Prepended Data */
-#define DPAA_FD_CMD_DTC			0x10000000  /**< Do IP/TCP/UDP Checksum */
-#define DPAA_FD_CMD_DCL4C		0x10000000  /**< Didn't calculate L4 Checksum */
-#define DPAA_FD_CMD_CFQ			0x00ffffff  /**< Confirmation Frame Queue */
 
-struct pool_info_entry {
-	struct rte_mempool *mp;
-	struct bman_pool *bp;
-	uint32_t bpid;
-	uint32_t size;
-	uint32_t meta_data_size;
-	int32_t dpaa_ops_index;
-};
+/* DPAA Frame descriptor macros */
+
+#define DPAA_FD_CMD_FCO			0x80000000
+/**< Frame queue Context Override */
+#define DPAA_FD_CMD_RPD			0x40000000
+/**< Read Prepended Data */
+#define DPAA_FD_CMD_UPD			0x20000000
+/**< Update Prepended Data */
+#define DPAA_FD_CMD_DTC			0x10000000
+/**< Do IP/TCP/UDP Checksum */
+#define DPAA_FD_CMD_DCL4C		0x10000000
+/**< Didn't calculate L4 Checksum */
+#define DPAA_FD_CMD_CFQ			0x00ffffff
+/**< Confirmation Frame Queue */
 
 /* Each network interface is represented by one of these */
 struct dpaa_if {
@@ -168,18 +159,8 @@ struct dpaa_portal {
 /*! Global per thread portal */
 RTE_DECLARE_PER_LCORE(bool, _dpaa_io);
 
-extern struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
-
-#define DPAA_BPID_TO_POOL_INFO(__bpid) &dpaa_pool_table[__bpid]
-
-#define DPAA_MEMPOOL_TO_BPID(__mp) \
-	((struct pool_info_entry *)__mp->pool_data)->bpid
-
-#define DPAA_MEMPOOL_TO_POOL_INFO(__mp) \
-	(struct pool_info_entry *)__mp->pool_data
-
 /* todo - this is costly, need to write a fast coversion routine */
-static inline void *dpaa_mem_ptov(phys_addr_t paddr)
+static inline void *rte_dpaa_mem_ptov(phys_addr_t paddr)
 {
 	const struct rte_memseg *memseg = rte_eal_get_physmem_layout();
 	int i;

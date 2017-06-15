@@ -33,7 +33,7 @@
 #ifndef HEADER_USDPAA_COMPAT_H
 #define HEADER_USDPAA_COMPAT_H
 
-/* All <usdpaa/xxx.h> headers include this header, directly or otherwise. This
+/* All <xxx.h> headers include this header, directly or otherwise. This
  * should provide the minimal set of system includes and base-definitions
  * required by these headers, such that C code can include USDPAA headers
  * without pre-requisites. */
@@ -49,9 +49,9 @@
 #include <pthread.h>
 #include <linux/types.h>
 
-/* This defines any configuration symbols that are required by <usdpaa/xxx.h>
+/* This defines any configuration symbols that are required by <xxx.h>
  * headers. */
-#include <usdpaa/conf.h>
+#include <conf.h>
 
 /* The following definitions are primarily to allow the single-source driver
  * interfaces to be included by arbitrary program code. Ie. for interfaces that
@@ -407,7 +407,7 @@ do { \
 /* "struct list_head" is needed by fsl_qman.h and fman.h, and the latter is not
  * much use to users unless related logic is available too
  * ("list_for_each_entry()", etc), so we put all of it in here; */
-#include <usdpaa/compat_list.h>
+#include <dpaa_list.h>
 
 /* Other miscellaneous interfaces our APIs depend on; */
 

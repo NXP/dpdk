@@ -29,7 +29,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "bman_low.h"
+#include "bman.h"
 #include <rte_branch_prediction.h>
 
 /* Compilation constants */

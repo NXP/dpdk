@@ -48,8 +48,8 @@
 #include <rte_byteorder.h>
 #include <rte_cryptodev_pmd.h>
 
-#include <usdpaa/fsl_usd.h>
-#include <usdpaa/fsl_qman.h>
+#include <fsl_usd.h>
+#include <fsl_qman.h>
 /* RTA header files */
 #include <hw/desc/common.h>
 #include <hw/desc/algo.h>

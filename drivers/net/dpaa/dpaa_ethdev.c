@@ -59,222 +59,21 @@
 #include <rte_malloc.h>
 #include <rte_ring.h>
 
+#include "dpaa_mempool.h"
 #include "dpaa_ethdev.h"
 #include "dpaa_rxtx.h"
 
-#include <usdpaa/fsl_usd.h>
-#include <usdpaa/fsl_qman.h>
-#include <usdpaa/fsl_bman.h>
-#include <usdpaa/of.h>
-#include <usdpaa/usdpaa_netcfg.h>
+#include <fsl_usd.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
+#include <of.h>
+#include <netcfg.h>
 
-static struct usdpaa_netcfg_info *dpaa_netcfg;
+struct usdpaa_netcfg_info *dpaa_netcfg;
 RTE_DEFINE_PER_LCORE(bool, _dpaa_io);
-struct pool_info_entry dpaa_pool_table[DPAA_MAX_BPOOLS];
 
 /* define a variable to hold the portal_key, once created.*/
 static pthread_key_t dpaa_portal_key;
-
-static int dpaa_mbuf_create_pool(struct rte_mempool *mp)
-{
-	struct bman_pool *bp;
-	struct bm_buffer bufs[8];
-	uint8_t bpid;
-	int num_bufs = 0, ret = 0;
-	struct bman_pool_params params = {
-		.flags = BMAN_POOL_FLAG_DYNAMIC_BPID
-	};
-
-	PMD_INIT_FUNC_TRACE();
-
-	bp = bman_new_pool(&params);
-	if (!bp) {
-		PMD_DRV_LOG(ERR, "bman_new_pool() failed");
-		return -ENODEV;
-	}
-	bpid = bman_get_params(bp)->bpid;
-
-	/* Drain the pool of anything already in it. */
-	do {
-		/* Acquire is all-or-nothing, so we drain in 8s, then in 1s for
-		 * the remainder.
-		 */
-		if (ret != 1)
-			ret = bman_acquire(bp, bufs, 8, 0);
-		if (ret < 8)
-			ret = bman_acquire(bp, bufs, 1, 0);
-		if (ret > 0)
-			num_bufs += ret;
-	} while (ret > 0);
-	if (num_bufs)
-		PMD_DRV_LOG(WARNING, "drained %u bufs from BPID %d",
-			    num_bufs, bpid);
-
-	dpaa_pool_table[bpid].mp = mp;
-	dpaa_pool_table[bpid].bpid = bpid;
-	dpaa_pool_table[bpid].size = mp->elt_size;
-	dpaa_pool_table[bpid].bp = bp;
-	dpaa_pool_table[bpid].meta_data_size =
-		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
-	dpaa_pool_table[bpid].dpaa_ops_index = mp->ops_index;
-	mp->pool_data = (void *)&dpaa_pool_table[bpid];
-
-	PMD_DRV_LOG(INFO, "BMAN pool created for bpid =%d", bpid);
-	return 0;
-}
-
-static
-void dpaa_mbuf_free_pool(struct rte_mempool *mp)
-{
-	struct pool_info_entry *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
-
-	PMD_INIT_FUNC_TRACE();
-
-	bman_free_pool(bp_info->bp);
-	PMD_DRV_LOG(INFO, "BMAN pool freed for bpid =%d", bp_info->bpid);
-	return;
-}
-
-static
-int dpaa_mbuf_free_bulk(struct rte_mempool *pool,
-		void *const *obj_table,
-		unsigned n)
-{
-	struct pool_info_entry *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
-	int ret;
-	unsigned i = 0;
-
-	PMD_TX_FREE_LOG(DEBUG, " Request to free %d buffers in bpid = %d",
-		    n, bp_info->bpid);
-
-	if (!RTE_PER_LCORE(_dpaa_io)) {
-		ret = dpaa_portal_init((void *)0);
-		if (ret) {
-			PMD_DRV_LOG(ERR, "dpaa_portal_init failed "
-				"with ret: %d", ret);
-			return 0;
-		}
-	}
-
-	while (i < n) {
-		dpaa_buf_free(bp_info,
-			      (uint64_t)rte_mempool_virt2phy(pool, obj_table[i])
-				+ bp_info->meta_data_size);
-		i = i + 1;
-	}
-
-	PMD_TX_FREE_LOG(DEBUG, " freed %d buffers in bpid =%d",
-		    n, bp_info->bpid);
-
-	return 0;
-}
-
-static
-int dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
-		void **obj_table,
-		unsigned count)
-{
-	struct rte_mbuf **m = (struct rte_mbuf **)obj_table;
-	struct bm_buffer bufs[DPAA_MBUF_MAX_ACQ_REL];
-	struct pool_info_entry *bp_info;
-	void *bufaddr;
-	int i, ret;
-	unsigned n = 0;
-
-	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
-
-	PMD_RX_LOG(DEBUG, " Request to alloc %d buffers in bpid = %d",
-		    count, bp_info->bpid);
-
-	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
-		PMD_DRV_LOG(ERR, "Unable to allocate requested (%u) buffers",
-			    count);
-		return -1;
-	}
-
-	if (!RTE_PER_LCORE(_dpaa_io)) {
-		ret = dpaa_portal_init((void *)0);
-		if (ret) {
-			PMD_DRV_LOG(ERR, "dpaa_portal_init failed with "
-				"ret: %d", ret);
-			return 0;
-		}
-	}
-
-	while (n < count) {
-		/* Acquire is all-or-nothing, so we drain in 7s,
-		 * then the remainder.
-		 */
-		if ((count - n) > DPAA_MBUF_MAX_ACQ_REL) {
-			ret = bman_acquire(bp_info->bp, bufs,
-				DPAA_MBUF_MAX_ACQ_REL, 0);
-		} else {
-			ret = bman_acquire(bp_info->bp, bufs, count - n, 0);
-		}
-		/* In case of less than requested number of buffers available
-		 * in pool, qbman_swp_acquire returns 0
-		 */
-		if (ret <= 0) {
-			PMD_DRV_LOG(ERR, "Buffer acquire failed with"
-				    "err code: %d", ret);
-			/* The API expect the exact number of requested buffers */
-			/* Releasing all buffers allocated */
-			dpaa_mbuf_free_bulk(pool, obj_table, n);
-			return -1;
-		}
-		/* assigning mbuf from the acquired objects */
-		for (i = 0; (i < ret) && bufs[i].addr; i++) {
-			/* TODO-errata - objerved that bufs may be null
-			i.e. first buffer is valid, remaining 6 buffers may be null */
-			bufaddr = (void *)dpaa_mem_ptov(bufs[i].addr);
-			m[n] = (struct rte_mbuf *)((char *)bufaddr
-						- bp_info->meta_data_size);
-			rte_mbuf_refcnt_set(m[n], 0);
-			PMD_DRV_LOG2(DEBUG, "Acquired %p address %p from BMAN",
-				    (void *)bufaddr, (void *)m[n]);
-			n++;
-		}
-	}
-
-	PMD_RX_LOG(DEBUG, " allocated %d buffers from bpid =%d",
-		    n, bp_info->bpid);
-	return 0;
-}
-
-static
-unsigned int dpaa_mbuf_get_count(const struct rte_mempool *mp __rte_unused)
-{
-	PMD_INIT_FUNC_TRACE();
-
-	/*TBD:XXX: to be implemented*/
-	return 0;
-}
-
-static
-int dpaa_mbuf_supported(const struct rte_mempool *mp __rte_unused)
-{
-	PMD_INIT_FUNC_TRACE();
-
-	/*if dpaa init fails, means no dpaa pool will be avaialbe */
-	if (!dpaa_netcfg) {
-		PMD_DRV_LOG(WARNING, "DPAA mempool resources not available");
-		return -1;
-	}
-
-	return 0;
-}
-
-struct rte_mempool_ops dpaa_mpool_ops = {
-	.name = "dpaa",
-	.alloc = dpaa_mbuf_create_pool,
-	.free = dpaa_mbuf_free_pool,
-	.enqueue = dpaa_mbuf_free_bulk,
-	.dequeue = dpaa_mbuf_alloc_bulk,
-	.get_count = dpaa_mbuf_get_count,
-	.supported = dpaa_mbuf_supported,
-};
-
-MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
 
 static void dpaa_portal_finish(void* arg)
 {
@@ -383,8 +182,9 @@ int dpaa_portal_init(void *arg)
 	if ((uint64_t)arg == 1 || cpu == LCORE_ID_ANY)
 		cpu = rte_get_master_lcore();
 	/* if the core id is not supported */
-	else if (cpu >= RTE_MAX_LCORE)
-		return -1;
+	else
+		if (cpu >= RTE_MAX_LCORE)
+			return -1;
 
 	/* Set CPU affinity for this thread */
 	CPU_ZERO(&cpuset);
@@ -394,7 +194,7 @@ int dpaa_portal_init(void *arg)
 	if (ret) {
 		PMD_DRV_LOG(ERR, "pthread_setaffinity_np failed on "
 			"core :%d with ret: %d", cpu, ret);
-		return -1;
+		return ret;
 	}
 
 	/* Initialise bman thread portals */
@@ -402,27 +202,44 @@ int dpaa_portal_init(void *arg)
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
-		return -1;
+		return ret;
 	}
+
+	PMD_DRV_LOG(DEBUG, "BMAN thread initialized");
+
 	/* Initialise qman thread portals */
 	ret = qman_thread_init();
 	if (ret) {
 		PMD_DRV_LOG(ERR, "bman_thread_init failed on "
 			"core %d with ret: %d", cpu, ret);
-		return -1;
+		bman_thread_finish();
+		return ret;
 	}
 
-	dpaa_io_portal = malloc(sizeof(struct dpaa_portal));
+	PMD_DRV_LOG(DEBUG, "QMAN thread initialized");
+
+	dpaa_io_portal = rte_malloc(NULL, sizeof(struct dpaa_portal),
+				    RTE_CACHE_LINE_SIZE);
+	if (!dpaa_io_portal) {
+		PMD_DRV_LOG(ERR, "Unable to allocate memory");
+		bman_thread_finish();
+		qman_thread_finish();
+		return -ENOMEM;
+	}
 
 	dpaa_io_portal->qman_idx = qman_get_portal_config()->index;
 	dpaa_io_portal->bman_idx = bman_get_portal_config()->index;
 	dpaa_io_portal->tid = syscall(SYS_gettid);
 
-	ret = pthread_setspecific(dpaa_portal_key, (void*)dpaa_io_portal);
+	ret = pthread_setspecific(dpaa_portal_key, (void *)dpaa_io_portal);
 	if (ret) {
 		PMD_DRV_LOG(ERR, "pthread_setspecific failed on "
-			"core %d with ret: %d", cpu, ret);
+			    "core %d with ret: %d", cpu, ret);
+		dpaa_portal_finish(NULL);
+
+		return ret;
 	}
+
 	RTE_PER_LCORE(_dpaa_io) = true;
 
 	return 0;
@@ -473,7 +290,8 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	if (dev->data->dev_conf.rxmode.jumbo_frame == 1) {
-		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <= DPAA_MAX_RX_PKT_LEN)
+		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <=
+		    DPAA_MAX_RX_PKT_LEN)
 			return dpaa_mtu_set(dev,
 				dev->data->dev_conf.rxmode.max_rx_pkt_len);
 		else
@@ -512,8 +330,8 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 
 	/* Change tx callback to the real one */
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
-
 	fman_if_enable_rx(dpaa_intf->fif);
+
 	return 0;
 }
 
@@ -573,7 +391,7 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
 		link->link_speed = 10000;
 	else
-		PMD_DRV_LOG(ERR, "invalid link_speed %d",
+		PMD_DRV_LOG(ERR, "invalid link_speed: %s, %d",
 			    dpaa_intf->name, dpaa_intf->fif->mac_type);
 
 	link->link_status = dpaa_intf->valid;
@@ -641,9 +459,9 @@ static void dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
 static
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc __rte_unused,
-		unsigned int socket_id __rte_unused,
-		const struct rte_eth_rxconf *rx_conf __rte_unused,
-		struct rte_mempool *mp)
+			    unsigned int socket_id __rte_unused,
+			    const struct rte_eth_rxconf *rx_conf __rte_unused,
+			    struct rte_mempool *mp)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
@@ -690,8 +508,6 @@ static
 void dpaa_eth_rx_queue_release(void *rxq __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
-
-	return;
 }
 
 static
@@ -712,7 +528,6 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 static void dpaa_eth_tx_queue_release(void *txq __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
-	return;
 }
 
 static int dpaa_link_down(struct rte_eth_dev *dev)
@@ -757,15 +572,16 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 
 	/*TBD:XXX: Implementation for RTE_FC_RX_PAUSE mode*/
 	/*TBD:XXX: In case of RTE_FC_NONE disable flow control in h/w. */
-	if (fc_conf->mode == RTE_FC_NONE)
+	if (fc_conf->mode == RTE_FC_NONE) {
 		return 0;
-	else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
+	} else if (fc_conf->mode == RTE_FC_TX_PAUSE ||
 		 fc_conf->mode == RTE_FC_FULL) {
 		fman_if_set_fc_threshold(dpaa_intf->fif, fc_conf->high_water,
 					 fc_conf->low_water,
 				dpaa_intf->bp_info->bpid);
 		if (fc_conf->pause_time)
-			fman_if_set_fc_quanta(dpaa_intf->fif, fc_conf->pause_time);
+			fman_if_set_fc_quanta(dpaa_intf->fif,
+					      fc_conf->pause_time);
 	}
 
 	/* Save the information in dpaa device */
@@ -804,8 +620,9 @@ dpaa_flow_ctrl_get(struct rte_eth_dev *dev,
 	if (ret) {
 		fc_conf->mode = RTE_FC_TX_PAUSE;
 		fc_conf->pause_time = fman_if_get_fc_quanta(dpaa_intf->fif);
-	} else
+	} else {
 		fc_conf->mode = RTE_FC_NONE;
+	}
 
 	return 0;
 }
@@ -917,7 +734,7 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 	}
 
 	return 0;
- }
+}
 
 /* Initialise an Rx FQ */
 static int dpaa_rx_queue_init(struct qman_fq *fq,
@@ -1026,7 +843,7 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
 		PMD_DRV_LOG(ERR, "init debug fqid %d failed with ret: %d",
-			fqid, ret);
+			    fqid, ret);
 	return ret;
 }
 #endif
@@ -1034,16 +851,20 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 /* Initialise a network interface */
 static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 {
-	struct dpaa_if *dpaa_intf = eth_dev->data->dev_private;
-	int dev_id = eth_dev->pci_dev->addr.devid;
-	struct fm_eth_port_cfg *cfg = &dpaa_netcfg->port_cfg[dev_id];
-	struct fman_if *fman_intf = cfg->fman_if;
-	struct fman_if_bpool *bp, *tmp_bp;
 	int num_cores, num_rx_fqs, fqid;
 	int loop, ret = 0;
+	int dev_id;
+	struct dpaa_if *dpaa_intf;
+	struct fm_eth_port_cfg *cfg;
+	struct fman_if *fman_intf;
+	struct fman_if_bpool *bp, *tmp_bp;
 
 	PMD_INIT_FUNC_TRACE();
 
+	dev_id = eth_dev->pci_dev->addr.devid;
+	dpaa_intf = eth_dev->data->dev_private;
+	cfg = &dpaa_netcfg->port_cfg[dev_id];
+	fman_intf = cfg->fman_if;
 	/* give the interface a name */
 	sprintf(dpaa_intf->name, "fm%d-gb%d",
 		(fman_intf->fman_idx + 1), fman_intf->mac_idx);
@@ -1058,6 +879,12 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
 	else
 		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
+
+	/* Each device can not have more than DPAA_PCD_FQID_MULTIPLIER RX queues */
+	if (num_rx_fqs <= 0 || num_rx_fqs > DPAA_PCD_FQID_MULTIPLIER) {
+		PMD_INIT_LOG(ERR, "Invalid number of RX queues\n");
+		return -EINVAL;
+	}
 
 	dpaa_intf->rx_queues = rte_zmalloc(NULL,
 		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
@@ -1079,7 +906,8 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		return -ENOMEM;
 
 	for (loop = 0; loop < num_cores; loop++) {
-		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop], fman_intf);
+		ret = dpaa_tx_queue_init(&dpaa_intf->tx_queues[loop],
+					 fman_intf);
 		if (ret)
 			return ret;
 		dpaa_intf->tx_queues[loop].dpaa_intf = dpaa_intf;
@@ -1128,7 +956,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 		fman_intf->mac_addr.addr_bytes,
 		ETHER_ADDR_LEN);
 
-	printf("interface %s macaddr::", dpaa_intf->name);
+	PMD_DRV_LOG(DEBUG, "interface %s macaddr:", dpaa_intf->name);
 	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
 		if (loop != (ETHER_ADDR_LEN - 1))
 			printf("%02x:", fman_intf->mac_addr.addr_bytes[loop]);
@@ -1139,7 +967,7 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	/* Disable RX mode */
 	fman_if_discard_rx_errors(fman_intf);
 	fman_if_disable_rx(fman_intf);
-	/* Disable promiscous mode */
+	/* Disable promiscuous mode */
 	fman_if_promiscuous_disable(fman_intf);
 	/* Disable multicast */
 	fman_if_reset_mcast_filter_table(fman_intf);

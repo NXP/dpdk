@@ -58,6 +58,7 @@ LIBABIVER := 1
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_mempool.c
 
 
 # library dependencies

@@ -35,9 +35,9 @@
 
 #include <sched.h>
 
-#include <usdpaa/compat.h>
+#include <compat.h>
 
-/* <usdpaa/compat.h> already includes system headers and definitions required
+/* <compat.h> already includes system headers and definitions required
  * via the APIs, so these includes and definitions should only supply whatever
  * additions are required to compile the implementations. */
 #include <stdio.h>
@@ -446,7 +446,7 @@ static inline int find_first_zero_bit(unsigned long *bits, int limit)
  * a true rb-tree.
  */
 
-#if 0 /* declared in <usdpaa/compat.h>, required by <usdpaa/fsl_qman.h> */
+#if 0 /* declared in <compat.h>, required by <fsl_qman.h> */
 struct rb_node {
 	struct rb_node *prev, *next;
 };

@@ -33,7 +33,7 @@
 #ifndef USDPAA_NETCFG_H
 #define USDPAA_NETCFG_H
 
-#include <usdpaa/fman.h>
+#include <fman.h>
 #include <argp.h>
 /* Represents a contiguous range of FQIDs (to be linked into a per-port list) */
 struct fm_eth_port_fqrange {

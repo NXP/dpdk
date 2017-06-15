@@ -30,7 +30,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <usdpaa/of.h>
+#include <of.h>
 #include <internal/of.h>
 
 #define OF_DEFAULT_NA 1

@@ -53,15 +53,15 @@ LIBABIVER := 1
 #
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += \
 	base/fman/fman.c \
-	base/of/of.c \
-	base/process/process.c \
-	base/qbman/bman_high.c \
+	base/fman/of.c \
+	base/qbman/process.c \
+	base/qbman/bman.c \
 	base/qbman/bman_driver.c \
-	base/qbman/qman_high.c \
+	base/qbman/qman.c \
 	base/qbman/qman_driver.c \
-	base/qbman/dpa_alloc.c \
-	base/qbman/dpa_sys.c \
-	base/syscfg/usdpaa_netcfg_layer.c
+	base/qbman/dpaa_alloc.c \
+	base/qbman/dpaa_sys.c \
+	base/fman/netcfg_layer.c
 
 
 include $(RTE_SDK)/mk/rte.lib.mk

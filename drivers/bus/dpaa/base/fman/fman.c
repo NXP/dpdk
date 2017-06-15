@@ -35,17 +35,17 @@
 #include <ifaddrs.h>
 
 /* This header declares the driver interface we implement */
-#include <usdpaa/fman.h>
+#include <fman.h>
 
 /* This header declares things about Fman hardware itself (the format of status
  * words and an inline implementation of CRC64). We include it only in order to
  * instantiate the one global variable it depends on. */
 #include <fsl_fman.h>
-#include <usdpaa/fsl_bman.h>
+#include <fsl_bman.h>
 
 
 #include <internal/of.h>
-#include <usdpaa/of.h>
+#include <of.h>
 
 /* Instantiate the global variable that the inline CRC64 implementation (in
  * <fsl_fman.h>) depends on. */

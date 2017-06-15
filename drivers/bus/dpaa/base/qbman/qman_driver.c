@@ -30,9 +30,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <usdpaa/fsl_usd.h>
-#include <internal/process.h>
-#include "qman_private.h"
+#include <fsl_usd.h>
+#include <process.h>
+#include "qman_priv.h"
 #include <sys/ioctl.h>
 #include <rte_branch_prediction.h>
 

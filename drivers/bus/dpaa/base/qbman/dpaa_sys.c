@@ -30,8 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <internal/process.h>
-#include "dpa_sys.h"
+#include <process.h>
+#include "dpaa_sys.h"
 
 struct process_interrupt {
 	int irq;
