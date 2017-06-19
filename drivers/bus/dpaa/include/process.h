@@ -37,8 +37,8 @@
  * driver-internal interface. The other parts (ioctl() specifics) are private to
  * the process driver itself. */
 
-#include <usdpaa/compat.h>
-#include <usdpaa/fsl_qman.h>
+#include <compat.h>
+#include <fsl_qman.h>
 #include <internal/compat.h>
 
 /******************************/

@@ -31,8 +31,8 @@
 #define HEADER_USDPAA_CONF_H
 
 /*
- * This header is included by <usdpaa/compat.h>, and thus by all other
- * <usdpaa/xxx.h> headers. It should provide the minimal set of configuration
+ * This header is included by <compat.h>, and thus by all other
+ * <xxx.h> headers. It should provide the minimal set of configuration
  * primitives required by these headers, and thus by any code (internal,
  * application, or 3rd party) that includes them.
  *

@@ -29,8 +29,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "dpa_sys.h"
-#include <usdpaa/fsl_bman.h>
+#include "dpaa_sys.h"
+#include <fsl_bman.h>
 
 /* Revision info (for errata and feature handling) */
 #define BMAN_REV10 0x0100

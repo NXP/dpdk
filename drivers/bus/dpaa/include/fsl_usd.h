@@ -33,9 +33,9 @@
 #ifndef FSL_USD_H
 #define FSL_USD_H
 
-#include <usdpaa/compat.h>
-#include <usdpaa/fsl_qman.h>
-#include <usdpaa/fsl_bman.h>
+#include <compat.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
 
 #ifdef __cplusplus
 extern "C" {

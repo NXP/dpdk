@@ -37,7 +37,7 @@ extern "C" {
 /*
  * This header should define all configuration symbols that have no API
  * impact. For those that affect the API (and especially the ABI!), put them in
- * <usdpaa/conf.h> instead.
+ * <conf.h> instead.
  */
 
 /* The process device underlies process-wide user/kernel interactions, such as

@@ -62,14 +62,15 @@
 #include <rte_tcp.h>
 #include <rte_udp.h>
 
+#include "dpaa_mempool.h"
 #include "dpaa_ethdev.h"
 #include "dpaa_rxtx.h"
 
-#include <usdpaa/fsl_usd.h>
-#include <usdpaa/fsl_qman.h>
-#include <usdpaa/fsl_bman.h>
-#include <usdpaa/of.h>
-#include <usdpaa/usdpaa_netcfg.h>
+#include <fsl_usd.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
+#include <of.h>
+#include <netcfg.h>
 
 #define DPAA_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid) \
 	do { \
@@ -80,7 +81,7 @@
 		(_fd)->opaque |= (_mbuf)->pkt_len; \
 		(_fd)->addr = (_mbuf)->buf_physaddr; \
 		(_fd)->bpid = _bpid; \
-	} while (0);
+	} while (0)
 
 void  dpaa_buf_free(struct pool_info_entry *bp_info,
 		    uint64_t addr)
@@ -110,7 +111,7 @@ void dpaa_display_frame(const struct qm_fd *fd)
 	       __func__, fd->bpid, fd->addr_hi, fd->addr_lo, fd->format,
 		fd->offset, fd->length20, fd->status);
 
-	ptr = (char *)dpaa_mem_ptov(fd->addr);
+	ptr = (char *)rte_dpaa_mem_ptov(fd->addr);
 	ptr += fd->offset;
 	printf("%02x ", *ptr);
 	for (ii = 1; ii < fd->length20; ii++) {
@@ -129,7 +130,6 @@ static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
 				     uint64_t prs __rte_unused)
 {
 	PMD_RX_LOG(DEBUG, " Slow parsing");
-
 	/*TBD:XXX: to be implemented*/
 }
 
@@ -245,31 +245,39 @@ static inline void dpaa_checksum(struct rte_mbuf *mbuf)
 
 	PMD_TX_LOG(DEBUG, "Calculating checksum for mbuf: %p", mbuf);
 
-	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4)
-		|| ((mbuf->packet_type & RTE_PTYPE_L3_MASK)
-			== RTE_PTYPE_L3_IPV4_EXT)) {
+	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) ||
+	    ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+	    RTE_PTYPE_L3_IPV4_EXT)) {
 		ipv4_hdr = (struct ipv4_hdr *)l3_hdr;
 		ipv4_hdr->hdr_checksum = 0;
 		ipv4_hdr->hdr_checksum = rte_ipv4_cksum(ipv4_hdr);
-	} else if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV6)
-		 || ((mbuf->packet_type & RTE_PTYPE_L3_MASK)
-			== RTE_PTYPE_L3_IPV6_EXT))
+	} else if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+		   RTE_PTYPE_L3_IPV6) ||
+		   ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+		   RTE_PTYPE_L3_IPV6_EXT))
 		ipv6_hdr = (struct ipv6_hdr *)l3_hdr;
 
 	if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_TCP) {
-		struct tcp_hdr *tcp_hdr = (struct tcp_hdr *)(l3_hdr + mbuf->l3_len);
+		struct tcp_hdr *tcp_hdr = (struct tcp_hdr *)(l3_hdr +
+					  mbuf->l3_len);
 		tcp_hdr->cksum = 0;
 		if (eth_hdr->ether_type == htons(ETHER_TYPE_IPv4))
-			tcp_hdr->cksum = rte_ipv4_udptcp_cksum(ipv4_hdr, tcp_hdr);
+			tcp_hdr->cksum = rte_ipv4_udptcp_cksum(ipv4_hdr,
+							       tcp_hdr);
 		else /* assume ethertype == ETHER_TYPE_IPv6 */
-			tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ipv6_hdr, tcp_hdr);
-	} else if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_UDP) {
-		struct udp_hdr *udp_hdr = (struct udp_hdr *)(l3_hdr + mbuf->l3_len);
+			tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ipv6_hdr,
+							       tcp_hdr);
+	} else if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) ==
+		   RTE_PTYPE_L4_UDP) {
+		struct udp_hdr *udp_hdr = (struct udp_hdr *)(l3_hdr +
+							     mbuf->l3_len);
 		udp_hdr->dgram_cksum = 0;
 		if (eth_hdr->ether_type == htons(ETHER_TYPE_IPv4))
-			udp_hdr->dgram_cksum = rte_ipv4_udptcp_cksum(ipv4_hdr, udp_hdr);
+			udp_hdr->dgram_cksum = rte_ipv4_udptcp_cksum(ipv4_hdr,
+								     udp_hdr);
 		else /* assume ethertype == ETHER_TYPE_IPv6 */
-			udp_hdr->dgram_cksum = rte_ipv6_udptcp_cksum(ipv6_hdr, udp_hdr);
+			udp_hdr->dgram_cksum = rte_ipv6_udptcp_cksum(ipv6_hdr,
+								     udp_hdr);
 	}
 }
 
@@ -283,13 +291,14 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 	prs = GET_TX_PRS(prs_buf);
 	prs->l3r = 0;
 	prs->l4r = 0;
-	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4)
-		|| ((mbuf->packet_type & RTE_PTYPE_L3_MASK)
-			== RTE_PTYPE_L3_IPV4_EXT))
+	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) ||
+	   ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+	   RTE_PTYPE_L3_IPV4_EXT))
 		prs->l3r = DPAA_L3_PARSE_RESULT_IPV4;
-	else if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV6)
-		 || ((mbuf->packet_type & RTE_PTYPE_L3_MASK)
-			== RTE_PTYPE_L3_IPV6_EXT))
+	else if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+		   RTE_PTYPE_L3_IPV6) ||
+		 ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
+		RTE_PTYPE_L3_IPV6_EXT))
 		prs->l3r = DPAA_L3_PARSE_RESULT_IPV6;
 
 	if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_TCP)
@@ -314,7 +323,7 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 
 	PMD_RX_LOG(DEBUG, "Received an SG frame");
 
-	vaddr = dpaa_mem_ptov(qm_fd_addr(fd));
+	vaddr = rte_dpaa_mem_ptov(qm_fd_addr(fd));
 	if (!vaddr) {
 		PMD_DRV_LOG(ERR, "unable to convert physical address");
 		return NULL;
@@ -323,9 +332,10 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	sg_temp = &sgt[i++];
 	hw_sg_to_cpu(sg_temp);
 	temp = (struct rte_mbuf *)((char *)vaddr - bp_info->meta_data_size);
-	sg_vaddr = dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+	sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
 
-	first_seg = (struct rte_mbuf *)((char *)sg_vaddr - bp_info->meta_data_size);
+	first_seg = (struct rte_mbuf *)((char *)sg_vaddr -
+						bp_info->meta_data_size);
 	first_seg->data_off = sg_temp->offset;
 	first_seg->data_len = sg_temp->length;
 	first_seg->pkt_len = sg_temp->length;
@@ -335,11 +345,12 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	first_seg->nb_segs = 1;
 	first_seg->ol_flags = 0;
 	prev_seg = first_seg;
-	while (i < DPA_SGT_MAX_ENTRIES) {
+	while (i < DPAA_SGT_MAX_ENTRIES) {
 		sg_temp = &sgt[i++];
 		hw_sg_to_cpu(sg_temp);
-		sg_vaddr = dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
-		cur_seg = (struct rte_mbuf *)((char *)sg_vaddr - bp_info->meta_data_size);
+		sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+		cur_seg = (struct rte_mbuf *)((char *)sg_vaddr -
+						      bp_info->meta_data_size);
 		cur_seg->data_off = sg_temp->offset;
 		cur_seg->data_len = sg_temp->length;
 		first_seg->pkt_len += sg_temp->length;
@@ -349,8 +360,9 @@ struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 		if (sg_temp->final) {
 			cur_seg->next = NULL;
 			break;
-		} else
+		} else {
 			prev_seg = cur_seg;
+		}
 	}
 
 	dpaa_eth_packet_info(first_seg, (uint64_t)vaddr);
@@ -365,8 +377,10 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 	struct pool_info_entry *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
 	struct rte_mbuf *mbuf;
 	void *ptr;
-	uint8_t format = (fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
-	uint16_t offset = (fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
+	uint8_t format =
+		(fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
+	uint16_t offset =
+		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
 	uint32_t length = fd->opaque & DPAA_FD_LENGTH_MASK;
 
 	PMD_RX_LOG(DEBUG, " FD--->MBUF");
@@ -378,7 +392,7 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 		goto errret;
 	}
 	dpaa_display_frame(fd);
-	ptr = dpaa_mem_ptov(fd->addr);
+	ptr = rte_dpaa_mem_ptov(fd->addr);
 	if (!ptr) {
 		PMD_DRV_LOG(ERR, "unable to convert physical address");
 		goto errret;
@@ -407,7 +421,7 @@ errret:
 
 uint16_t dpaa_eth_queue_rx(void *q,
 			   struct rte_mbuf **bufs,
-		uint16_t nb_bufs)
+			   uint16_t nb_bufs)
 {
 	struct qman_fq *fq = q;
 	struct qm_dqrr_entry *dq;
@@ -452,7 +466,7 @@ static void *dpaa_get_pktbuf(struct pool_info_entry *bp_info)
 	PMD_RX_LOG(DEBUG, "got buffer 0x%llx from pool %d",
 		    bufs.addr, bufs.bpid);
 
-	buf = (uint64_t)dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
+	buf = (uint64_t)rte_dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
 	if (!buf)
 		goto out;
 
@@ -525,8 +539,7 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	fd->bpid = bpid;
 	fd->length20 = mbuf->pkt_len;
 
-
-	while (i < DPA_SGT_MAX_ENTRIES) {
+	while (i < DPAA_SGT_MAX_ENTRIES) {
 		sg_temp = &sgt[i++];
 		sg_temp->opaque = 0;
 		sg_temp->val = 0;
@@ -535,17 +548,22 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		sg_temp->length = cur_seg->data_len;
 		if (RTE_MBUF_DIRECT(cur_seg)) {
 			if (rte_mbuf_refcnt_read(cur_seg) > 1) {
-				/*If refcnt > 1, invalid bpid is set to ensure buffer is not freed by HW */
+				/*If refcnt > 1, invalid bpid is set to ensure
+				 * buffer is not freed by HW.
+				 */
 				sg_temp->bpid = 0xff;
 				rte_mbuf_refcnt_update(cur_seg, -1);
 			} else
-				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
+				sg_temp->bpid =
+					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
 			if (rte_mbuf_refcnt_read(mi) > 1) {
-				/*If refcnt > 1, invalid bpid is set to ensure owner buffer is not freed by HW */
+				/*If refcnt > 1, invalid bpid is set to ensure
+				 * owner buffer is not freed by HW.
+				 */
 				sg_temp->bpid = 0xff;
 			} else {
 				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(mi->pool);
@@ -566,9 +584,8 @@ int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	return 0;
 }
 
-uint16_t dpaa_eth_queue_tx(void *q,
-			   struct rte_mbuf **bufs,
-		uint16_t nb_bufs)
+uint16_t
+dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 {
 	struct rte_mbuf *mbuf, *mi = NULL;
 	struct rte_mempool *mp;
@@ -590,11 +607,10 @@ uint16_t dpaa_eth_queue_tx(void *q,
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++, i++) {
-
 			mbuf = bufs[i];
-			if (RTE_MBUF_DIRECT(mbuf))
+			if (RTE_MBUF_DIRECT(mbuf)) {
 				mp = mbuf->pool;
-			else {
+			} else {
 				mi = rte_mbuf_from_indirect(mbuf);
 				mp = mi->pool;
 			}
@@ -627,7 +643,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 					if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK) {
 						if (mbuf->data_off < DEFAULT_TX_ICEOF +
 							sizeof(struct dpaa_eth_parse_results_t)) {
-							PMD_DRV_LOG(ERR, "Checksum offload Err: "
+							PMD_DRV_LOG(DEBUG, "Checksum offload Err: "
 								"Not enough Headroom "
 								"space for correct Checksum offload."
 								"So Calculating checksum in Software.");
@@ -636,7 +652,7 @@ uint16_t dpaa_eth_queue_tx(void *q,
 							dpaa_checksum_offload(mbuf, &fd_arr[loop],
 								mbuf->buf_addr);
 					}
-				} else if (mbuf->nb_segs > 1 && mbuf->nb_segs <= DPA_SGT_MAX_ENTRIES) {
+				} else if (mbuf->nb_segs > 1 && mbuf->nb_segs <= DPAA_SGT_MAX_ENTRIES) {
 					if (dpaa_eth_mbuf_to_sg_fd(mbuf,
 						&fd_arr[loop], bp_info->bpid)) {
 						PMD_DRV_LOG(DEBUG, "Unable to create Scatter Gather FD");
@@ -648,7 +664,8 @@ uint16_t dpaa_eth_queue_tx(void *q,
 					PMD_DRV_LOG(DEBUG, "Number of Segments not supported");
 					/* Set frames_to_send & nb_bufs so that
 					 * packets are transmitted till
-					 * previous frame */
+					 * previous frame.
+					 */
 					frames_to_send = loop;
 					nb_bufs = loop;
 					goto send_pkts;
@@ -664,7 +681,8 @@ uint16_t dpaa_eth_queue_tx(void *q,
 					PMD_DRV_LOG(DEBUG, "no dpaa buffers.");
 					/* Set frames_to_send & nb_bufs so that
 					 * packets are transmitted till
-					 * previous frame */
+					 * previous frame.
+					 */
 					frames_to_send = loop;
 					nb_bufs = loop;
 					goto send_pkts;

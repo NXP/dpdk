@@ -33,7 +33,7 @@
 #ifndef __DMA_MEM_H
 #define __DMA_MEM_H
 
-#include <usdpaa/compat.h>
+#include <compat.h>
 
 /* These types are for linux-compatibility, eg. they're used by single-source
  * qbman drivers. Only dma_addr_t is in compat.h, because it is required by

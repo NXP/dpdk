@@ -30,10 +30,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <usdpaa/usdpaa_netcfg.h>
+#include <netcfg.h>
 
 #include <inttypes.h>
-#include <usdpaa/of.h>
+#include <of.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <error.h>

@@ -35,8 +35,8 @@
 
 #include <net/if.h>
 #include <rte_ether.h>
-#include <usdpaa/compat.h>
-#include <usdpaa/fsl_qman.h>
+#include <compat.h>
+#include <fsl_qman.h>
 #include <stdbool.h>
 #include <rte_ethdev.h>
 

@@ -29,8 +29,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "dpa_sys.h"
-#include <usdpaa/fsl_qman.h>
+#include "dpaa_sys.h"
+#include <fsl_qman.h>
 
 #if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(CONFIG_PPC64)
 #error "_PPC64 requires _FSL_QMAN_FQ_LOOKUP"
@@ -264,7 +264,7 @@ int qman_setup_fq_lookup_table(size_t num_entries);
 /*************************************************/
 
 /* Note: most functions are only used by the high-level interface, so are
- * inlined from qman_low.h. The stuff below is for use by other parts of the
+ * inlined from qman.h. The stuff below is for use by other parts of the
  * driver. */
 
 /* For qm_dqrr_sdqcr_set(); Choose one SOURCE. Choose one COUNT. Choose one

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2011 Freescale Semiconductor, Inc.
+/* Copyright (c) 2011 Freescale Semiconductor, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,56 +30,41 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef HEADER_DPA_SYS_H
-#define HEADER_DPA_SYS_H
+#ifndef __OF_H
+#define	__OF_H
 
-#include <usdpaa/dma_mem.h>
-#include <internal/of.h>
+#include <compat.h>
 
-/* For now, USDPAA FQID/BPID allocation uses the common logic in dpa_alloc.c via the
- * following interface. This is to match the kernel's implementation, but it
- * will be replaced by an interface that calls into the kernel for allocations,
- * once the dynamic portal->cpu affinity stuff is complete. */
-struct dpa_alloc {
-	struct list_head list;
-	spinlock_t lock;
-};
-
-#define DECLARE_DPA_ALLOC(name) \
-	struct dpa_alloc name = { \
-		.list = { \
-			.prev = &name.list, \
-			.next = &name.list \
-		}, \
-		.lock = __SPIN_LOCK_UNLOCKED(name.lock) \
-	}
-int dpa_alloc_new(struct dpa_alloc *alloc, u32 *result, u32 count, u32 align,
-		  int partial);
-void dpa_alloc_free(struct dpa_alloc *alloc, u32 fqid, u32 count);
-
-/* For 2-element tables related to cache-inhibited and cache-enabled mappings */
-#define DPA_PORTAL_CE 0
-#define DPA_PORTAL_CI 1
-
-#ifdef CONFIG_FSL_DPA_CHECKING
-#define DPA_ASSERT(x) \
-	do { \
-		if (!(x)) { \
-			pr_crit("ASSERT: (%s:%d) %s\n", __FILE__, __LINE__, \
-				__stringify_1(x)); \
-			exit(EXIT_FAILURE); \
-		} \
-	} while (0)
-#else
-#define DPA_ASSERT(x)		do { ; } while (0)
+/* Make this conditional, so it can be overridden by the including code and/or by
+ * the build flags. */
+#ifndef OF_INIT_DEFAULT_PATH
+#define OF_INIT_DEFAULT_PATH "/proc/device-tree"
 #endif
 
-/* This is the interface from the platform-agnostic driver code to (de)register
- * interrupt handlers. We simply create/destroy corresponding structs. */
-int qbman_request_irq(int irq, irqreturn_t (*isr)(int irq, void *arg),
-		      unsigned long flags, const char *name, void *arg);
-int qbman_free_irq(int irq, void *arg);
+/* of_init() must be called prior to initialisation or use of any driver
+ * subsystem that is device-tree-dependent. Eg. Qman/Bman, config layers, etc.
+ * The path is should usually be "/proc/device-tree". */
+int of_init_path(const char *dt_path);
 
-void qbman_invoke_irq(int irq);
+/* Use of this wrapper is recommended. */
+static inline int of_init(void)
+{
+	return of_init_path(OF_INIT_DEFAULT_PATH);
+}
 
-#endif /* HEADER_DPA_SYS_H */
+/* of_finish() allows a controlled tear-down of the device-tree layer, eg. if a
+ * full USDPAA reload is desired without a process exit. */
+void of_finish(void);
+
+/* Read a numeric property according to its size and return it as a 64-bit value
+ */
+static inline uint64_t of_read_number(const __be32 *cell, int size)
+{
+	uint64_t r = 0;
+
+	while (size--)
+		r = (r << 32) | be32toh(*(cell++));
+	return r;
+}
+
+#endif	/*  __OF_H */

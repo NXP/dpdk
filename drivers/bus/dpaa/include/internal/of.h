@@ -35,7 +35,7 @@
 
 #include <internal/compat.h>
 
-/* The external header <usdpaa/of.h> declares the of_init() and of_finish()
+/* The external header <of.h> declares the of_init() and of_finish()
  * functions for applications to call prior to initialisation of all other
  * driver layers and after their teardown (respectively). The rest of the
  * device-tree logic described here is internal, and is used *within* driver

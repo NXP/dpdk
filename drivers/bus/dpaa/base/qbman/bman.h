@@ -29,7 +29,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "bman_private.h"
+#include "bman_priv.h"
 
 /***************************/
 /* Portal register assists */

@@ -30,11 +30,11 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <internal/process.h>
+#include <process.h>
 #include <internal/conf.h>
 
 #include <sys/ioctl.h>
-#include <usdpaa/fsl_usd.h>
+#include <fsl_usd.h>
 
 /* As higher-level drivers will be built on top of this (dma_mem, qbman, ...),
  * it's preferable that the process driver itself not provide any exported API.
@@ -61,7 +61,7 @@ static int check_fd(void)
 }
 
 /* Reproduce the definitions from <linux/fsl_usdpaa.h>. The only definitions
- * missing from here are in <internal/process.h> in order to be available to the
+ * missing from here are in <process.h> in order to be available to the
  * inter-driver interface. */
 
 /******************************/
