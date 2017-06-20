@@ -171,39 +171,41 @@ ipsec_dequeue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 	struct rte_crypto_op *cops[max_pkts];
 	struct ipsec_sa *sa;
 	struct rte_mbuf *pkt;
+	int pending = 1;
+	while (nb_pkts < max_pkts && pending == 1) {
+		pending = 0;
+		for (i = 0; i < ipsec_ctx->nb_qps; i++) {
+			struct cdev_qp *cqp;
 
-	for (i = 0; i < ipsec_ctx->nb_qps && nb_pkts < max_pkts; i++) {
-		struct cdev_qp *cqp;
+			cqp = &ipsec_ctx->tbl[ipsec_ctx->last_qp++];
+			if (ipsec_ctx->last_qp == ipsec_ctx->nb_qps)
+				ipsec_ctx->last_qp %= ipsec_ctx->nb_qps;
 
-		cqp = &ipsec_ctx->tbl[ipsec_ctx->last_qp++];
-		if (ipsec_ctx->last_qp == ipsec_ctx->nb_qps)
-			ipsec_ctx->last_qp %= ipsec_ctx->nb_qps;
-
-		if (cqp->in_flight == 0)
-			continue;
-
-		nb_cops = rte_cryptodev_dequeue_burst(cqp->id, cqp->qp,
+			if (cqp->in_flight == 0)
+				continue;
+			pending = 1;
+			nb_cops = rte_cryptodev_dequeue_burst(cqp->id, cqp->qp,
 				cops, max_pkts - nb_pkts);
 
-		cqp->in_flight -= nb_cops;
+			cqp->in_flight -= nb_cops;
 
-		for (j = 0; j < nb_cops; j++) {
-			pkt = cops[j]->sym->m_src;
-			rte_prefetch0(pkt);
+			for (j = 0; j < nb_cops; j++) {
+				pkt = cops[j]->sym->m_src;
+				rte_prefetch0(pkt);
 
-			priv = get_priv(pkt);
-			sa = priv->sa;
+				priv = get_priv(pkt);
+				sa = priv->sa;
 
-			RTE_ASSERT(sa != NULL);
+				RTE_ASSERT(sa != NULL);
 
-			ret = xform_func(pkt, sa, cops[j]);
-			if (unlikely(ret))
-				rte_pktmbuf_free(pkt);
-			else
-				pkts[nb_pkts++] = pkt;
+				ret = xform_func(pkt, sa, cops[j]);
+				if (unlikely(ret))
+					rte_pktmbuf_free(pkt);
+				else
+					pkts[nb_pkts++] = pkt;
+			}
 		}
 	}
-
 	/* return packets */
 	return nb_pkts;
 }
