@@ -160,6 +160,12 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	struct rte_pktmbuf_pool_private mbp_priv;
 	unsigned elt_size;
 	int ret;
+	const char *ops[] = {
+			RTE_MBUF_DEFAULT_MEMPOOL_OPS,
+			"ring_mp_mc",
+			NULL,
+		};
+	const char **op;
 
 	if (RTE_ALIGN(priv_size, RTE_MBUF_PRIV_ALIGN) != priv_size) {
 		RTE_LOG(ERR, MBUF, "mbuf priv_size=%u is not aligned\n",
@@ -177,12 +183,23 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	if (mp == NULL)
 		return NULL;
 
-	ret = rte_mempool_set_ops_byname(mp,
-		RTE_MBUF_DEFAULT_MEMPOOL_OPS, NULL);
-	if (ret != 0) {
-		RTE_LOG(ERR, MBUF, "error setting mempool handler\n");
+	/*Check the perfered mempool ops based on config*/
+	for (op = &ops[0]; *op != NULL; op++) {
+		ret = rte_mempool_ops_check_support(mp, *op);
+		if (ret == 0)
+			break;
+	}
+	if (*op != NULL) {
+		ret = rte_mempool_set_ops_byname(mp, *op, NULL);
+		if (ret != 0) {
+			RTE_LOG(ERR, MBUF, "error setting mempool handler\n");
+			rte_mempool_free(mp);
+			rte_errno = -ret;
+			return NULL;
+		}
+	} else {
 		rte_mempool_free(mp);
-		rte_errno = -ret;
+		rte_errno = ENOTSUP;
 		return NULL;
 	}
 	rte_pktmbuf_pool_init(mp, &mbp_priv);
