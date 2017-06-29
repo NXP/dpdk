@@ -85,6 +85,7 @@ rte_mempool_register_ops(const struct rte_mempool_ops *h)
 	ops->enqueue = h->enqueue;
 	ops->dequeue = h->dequeue;
 	ops->get_count = h->get_count;
+	ops->supported = h->supported;
 
 	rte_spinlock_unlock(&rte_mempool_ops_table.sl);
 
@@ -123,6 +124,31 @@ rte_mempool_ops_get_count(const struct rte_mempool *mp)
 	return ops->get_count(mp);
 }
 
+/* check if given mempool is supported  and compatible for this instance. */
+int
+rte_mempool_ops_check_support(const struct rte_mempool *mp, const char *name)
+{
+	unsigned i;
+	struct rte_mempool_ops *ops = NULL;
+
+	for (i = 0; i < rte_mempool_ops_table.num_ops; i++) {
+		if (!strcmp(name, rte_mempool_ops_table.ops[i].name)) {
+			ops = &rte_mempool_ops_table.ops[i];
+			break;
+		}
+	}
+
+	if (ops == NULL)
+		return -EINVAL;
+
+	if (ops->supported) {
+		if (ops->supported(mp))
+			return -ENOTSUP;
+	}
+
+	return 0;
+}
+
 /* sets mempool ops previously registered by rte_mempool_register_ops. */
 int
 rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
@@ -145,6 +171,12 @@ rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
 
 	if (ops == NULL)
 		return -EINVAL;
+
+	/* verify if the given mempool is supported for this instance  */
+	if (ops->supported) {
+		if (ops->supported(mp))
+			return -ENOTSUP;
+	}
 
 	mp->ops_index = i;
 	mp->pool_config = pool_config;

@@ -389,6 +389,12 @@ typedef int (*rte_mempool_dequeue_t)(struct rte_mempool *mp,
  */
 typedef unsigned (*rte_mempool_get_count)(const struct rte_mempool *mp);
 
+/**
+ * Return if the given mempool is supported and compatible for this instance.
+ * it is optional to implement for mempools
+ */
+typedef int (*rte_mempool_supported)(const struct rte_mempool *mp);
+
 /** Structure defining mempool operations structure */
 struct rte_mempool_ops {
 	char name[RTE_MEMPOOL_OPS_NAMESIZE]; /**< Name of mempool ops struct. */
@@ -397,6 +403,8 @@ struct rte_mempool_ops {
 	rte_mempool_enqueue_t enqueue;   /**< Enqueue an object. */
 	rte_mempool_dequeue_t dequeue;   /**< Dequeue an object. */
 	rte_mempool_get_count get_count; /**< Get qty of available objs. */
+	rte_mempool_supported supported;
+	/**< Verify if mempool is supported for usages*/
 } __rte_cache_aligned;
 
 #define RTE_MEMPOOL_MAX_OPS_IDX 16  /**< Max registered ops structs */
@@ -518,6 +526,21 @@ void
 rte_mempool_ops_free(struct rte_mempool *mp);
 
 /**
+ * Check the given mempool availability and compatibility.
+ *
+ * @param mp
+ *   Pointer to the memory pool.
+ * @param name
+ *   Name of the ops structure to use for this mempool.
+ * @return
+ *   0: Success;  mempool instance is supported and compatible.
+ * - <0: Error; mempool instance is not supported or not compatible.
+ */
+int
+rte_mempool_ops_check_support(const struct rte_mempool *mp,
+				      const char *name);
+
+/**
  * Set the ops of a mempool.
  *
  * This can only be done on a mempool that is not populated, i.e. just after
@@ -533,6 +556,7 @@ rte_mempool_ops_free(struct rte_mempool *mp);
  *   - 0: Success; the mempool is now using the requested ops functions.
  *   - -EINVAL - Invalid ops struct name provided.
  *   - -EEXIST - mempool already has an ops struct assigned.
+ *   - -ENOTSUP  - mempool instance not supported.
  */
 int
 rte_mempool_set_ops_byname(struct rte_mempool *mp, const char *name,
