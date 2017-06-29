@@ -91,7 +91,7 @@ static void dpaa_portal_finish(void* arg)
 	RTE_PER_LCORE(_dpaa_io) = false;
 
 	/*Free the thread memory */
-	free(dpaa_io_portal);
+	rte_free(dpaa_io_portal);
 	pthread_setspecific(dpaa_portal_key, NULL);
 
 	return;
