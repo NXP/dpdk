@@ -580,6 +580,10 @@ F: drivers/event/sw/
 F: test/test/test_eventdev_sw.c
 F: doc/guides/eventdevs/sw.rst
 
+NXP DPAA2 Eventdev PMD
+M: Hemant Agrawal <hemant.agrawal@nxp.com>
+M: Nipun Gupta <nipun.gupta@nxp.com>
+F: drivers/event/dpaa2/
 
 Packet processing
 -----------------
