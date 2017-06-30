@@ -584,6 +584,7 @@ NXP DPAA2 Eventdev PMD
 M: Hemant Agrawal <hemant.agrawal@nxp.com>
 M: Nipun Gupta <nipun.gupta@nxp.com>
 F: drivers/event/dpaa2/
+F: doc/guides/eventdevs/dpaa2.rst
 
 Packet processing
 -----------------
