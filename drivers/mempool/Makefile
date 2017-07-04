@@ -32,6 +32,8 @@ include $(RTE_SDK)/mk/rte.vars.mk
 
 core-libs := librte_eal librte_mempool librte_ring
 
+DIRS-$(CONFIG_RTE_LIBRTE_DPAA_MEMPOOL) += dpaa
+DEPDIRS-dpaa = $(core-libs)
 DIRS-$(CONFIG_RTE_LIBRTE_DPAA2_MEMPOOL) += dpaa2
 DEPDIRS-dpaa2 = $(core-libs)
 DIRS-$(CONFIG_RTE_DRIVER_MEMPOOL_RING) += ring
