@@ -44,10 +44,6 @@
 #include "dpaa_sys.h"
 #include <fsl_qman.h>
 
-#if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(RTE_ARCH_ARM64)
-#error "_ARM64 requires _FSL_QMAN_FQ_LOOKUP"
-#endif
-
 /* Congestion Groups */
 /*
  * This wrapper represents a bit-array for the state of the 256 QMan congestion
@@ -200,13 +196,6 @@ void qm_set_liodns(struct qm_portal_config *pcfg);
  */
 int qman_testwrite_cgr(struct qman_cgr *cgr, u64 i_bcnt,
 		       struct qm_mcr_cgrtestwrite *result);
-
-#ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
-/* If the fq object pointer is greater than the size of context_b field,
- * than a lookup table is required.
- */
-int qman_setup_fq_lookup_table(size_t num_entries);
-#endif
 
 /*   QMan s/w corenet portal, low-level i/face	 */
 
