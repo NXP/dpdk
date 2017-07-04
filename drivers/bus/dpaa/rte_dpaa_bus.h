@@ -35,6 +35,12 @@
 #include <rte_bus.h>
 #include <rte_mempool.h>
 
+#include <fsl_usd.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
+#include <of.h>
+#include <netcfg.h>
+
 #define FSL_DPAA_BUS_NAME	"FSL_DPAA_BUS"
 
 #define DEV_TO_DPAA_DEVICE(ptr)	\

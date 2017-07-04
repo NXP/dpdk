@@ -1,7 +1,46 @@
 DPDK_17.05 {
 	global:
 
+	bman_acquire;
+	bman_free_pool;
+	bman_get_params;
+	bman_new_pool;
+	bman_release;
+	dpaa_netcfg;
+	fman_ccsr_map_fd;
+	fman_dealloc_bufs_mask_hi;
+	fman_dealloc_bufs_mask_lo;
+	fman_if_disable_rx;
+	fman_if_enable_rx;
+	fman_if_discard_rx_errors;
+	fman_if_get_fc_threshold;
+	fman_if_get_fc_quanta;
+	fman_if_promiscuous_disable;
+	fman_if_promiscuous_enable;
+	fman_if_reset_mcast_filter_table;
+	fman_if_set_bp;
+	fman_if_set_fc_threshold;
+	fman_if_set_fc_quanta;
+	fman_if_set_fdoff;
+	fman_if_set_ic_params;
+	fman_if_set_maxfrm;
+	fman_if_set_mcast_filter_table;
+	fman_if_stats_get;
+	fman_if_stats_reset;
+	fm_mac_add_exact_match_mac_addr;
+	fm_mac_rem_exact_match_mac_addr;
+	netcfg_acquire;
+	netcfg_release;
+	qman_create_fq;
+	qman_dequeue;
+	qman_dqrr_consume;
+	qman_enqueue_multi;
+	qman_init_fq;
+	qman_set_vdq;
+	qman_reserve_fqid_range;
 	rte_dpaa_driver_register;
 	rte_dpaa_driver_unregister;
+	rte_dpaa_mem_ptov;
+	rte_dpaa_portal_init;
 
 };
