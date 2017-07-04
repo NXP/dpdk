@@ -44,7 +44,12 @@ CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
 
+CFLAGS +=-Wno-pointer-arith
+CFLAGS +=-Wno-cast-qual
+CFLAGS += -D _GNU_SOURCE
+
 CFLAGS += -I$(RTE_BUS_DPAA)/
+CFLAGS += -I$(RTE_BUS_DPAA)/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 
@@ -58,5 +63,7 @@ LIBABIVER := 1
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_BUS) += \
 	dpaa_bus.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_BUS) += \
+	base/fman/of.c \
 
 include $(RTE_SDK)/mk/rte.lib.mk
