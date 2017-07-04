@@ -32,6 +32,9 @@ include $(RTE_SDK)/mk/rte.vars.mk
 
 core-libs := librte_eal librte_mbuf librte_mempool librte_ring librte_ether
 
+DIRS-$(CONFIG_RTE_LIBRTE_DPAA_BUS) += dpaa
+DEPDIRS-dpaa = $(core-libs)
+
 DIRS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc
 DEPDIRS-fslmc = $(core-libs)
 

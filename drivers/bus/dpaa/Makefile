@@ -1,7 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright 2016 Freescale Semiconductor, Inc.
-#   Copyright 2017 NXP.
+#   Copyright 2016 NXP.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -28,18 +27,36 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+include $(RTE_SDK)/mk/rte.vars.mk
+RTE_BUS_DPAA=$(RTE_SDK)/drivers/bus/dpaa
+
 #
+# library name
+#
+LIB = librte_bus_dpaa.a
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
+CFLAGS += -O0 -g
+CFLAGS += "-Wno-error"
+else
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
+endif
 
-# NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
-CONFIG_RTE_MACHINE="dpaa"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
-CONFIG_RTE_LIBRTE_VHOST_NUMA=n
-CONFIG_RTE_EAL_NUMA_AWARE_HUGEPAGES=n
+CFLAGS += -I$(RTE_BUS_DPAA)/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 
-# NXP DPAA Bus
-CONFIG_RTE_LIBRTE_DPAA_BUS=y
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_BUS=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
+# versioning export map
+EXPORT_MAP := rte_bus_dpaa_version.map
+
+LIBABIVER := 1
+
+# all source are stored in SRCS-y
+#
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_BUS) += \
+	dpaa_bus.c
+
+
+include $(RTE_SDK)/mk/rte.lib.mk
