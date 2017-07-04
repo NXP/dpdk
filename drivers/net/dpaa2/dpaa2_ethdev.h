@@ -55,6 +55,8 @@
  */
 #define CONG_EXIT_TX_THRESHOLD    480
 
+#define CONG_RETRY_COUNT 18000
+
 /* RX queue tail drop threshold
  * currently considering 32 KB packets
  */
