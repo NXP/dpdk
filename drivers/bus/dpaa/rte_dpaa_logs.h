@@ -37,6 +37,7 @@
 
 extern int dpaa_logtype_bus;
 extern int dpaa_logtype_mempool;
+extern int dpaa_logtype_pmd;
 
 #define DPAA_BUS_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, dpaa_logtype_bus, "%s(): " fmt "\n", \
@@ -87,5 +88,40 @@ extern int dpaa_logtype_mempool;
 
 #define DPAA_MEMPOOL_INFO(fmt, args...) \
 	DPAA_MEMPOOL_LOG(INFO, fmt, ## args)
+
+/* PMD related logs */
+
+#define DPAA_PMD_LOG(level, fmt, args...) \
+	rte_log(RTE_LOG_ ## level, dpaa_logtype_mempool, "%s(): " fmt "\n", \
+		__func__, ##args)
+
+#define PMD_INIT_FUNC_TRACE() DPAA_MEMPOOL_LOG(DEBUG, " >>")
+
+/* DEBUG and WARN are conditional to compiled configuration */
+#ifdef RTE_LIBRTE_DPAA_PMD_DEBUG
+#define DPAA_PMDL_DEBUG(fmt, args...) \
+	DPAA_PMD_LOG(DEBUG, fmt, ## args)
+
+#define DPAA_PMD_WARN(fmt, args...) \
+	DPAA_PMD_LOG(WARN, fmt, ## args)
+#else /* RTE_LIBRTE_DPAA_MEMPOOL_DEBUG */
+#define DPAA_PMD_DEBUG(fmt, args...) do { } while (0)
+#define DPAA_PMD_WARN(fmt, args...)  do { } while (0)
+#endif /* RTE_LIBRTE_DPAA_MEMPOOL_DEBUG */
+
+/* ERR and INFO are unconditional */
+#define DPAA_PMD_ERR(fmt, args...) \
+	DPAA_PMD_LOG(ERR, fmt, ## args)
+
+#define DPAA_PMD_INFO(fmt, args...) \
+	DPAA_PMD_LOG(INFO, fmt, ## args)
+
+/* DP Logs, toggled out at compile time if level lower than current level */
+#define DPAA_RX_LOG(level, fmt, args...) \
+	RTE_LOG_DP(level, PMD, fmt, ## args)
+#define DPAA_TX_LOG(level, fmt, args...) \
+	RTE_LOG_DP(level, PMD, fmt, ## args)
+#define DPAA_DP_LOG(level, fmt, args...) \
+	RTE_LOG_DP(level, PMD, fmt, ## args)
 
 #endif /* _DPAA_LOGS_H_ */
