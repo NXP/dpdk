@@ -43,11 +43,13 @@ else
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 endif
+CFLAGS +=-Wno-pointer-arith
 
 CFLAGS += -I$(RTE_SDK_DPAA)/
 CFLAGS += -I$(RTE_SDK_DPAA)/include
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include/
+CFLAGS += -I$(RTE_SDK)/drivers/mempool/dpaa
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
 
@@ -57,7 +59,9 @@ LIBABIVER := 1
 
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
 
 LDLIBS += -lrte_bus_dpaa
+LDLIBS += -lrte_mempool_dpaa
 
 include $(RTE_SDK)/mk/rte.lib.mk

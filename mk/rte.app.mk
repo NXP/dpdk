@@ -182,6 +182,7 @@ endif # CONFIG_RTE_LIBRTE_DPAA2_PMD
 
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA_PMD),y)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_bus_dpaa
+_LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_PMD)       += -lrte_mempool_dpaa
 endif
 
 endif # !CONFIG_RTE_BUILD_SHARED_LIBS

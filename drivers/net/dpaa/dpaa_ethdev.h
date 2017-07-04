@@ -38,6 +38,13 @@
 #include <rte_ethdev.h>
 
 #include <rte_dpaa_logs.h>
+#include <dpaa_mempool.h>
+
+#include <fsl_usd.h>
+#include <fsl_qman.h>
+#include <fsl_bman.h>
+#include <of.h>
+#include <netcfg.h>
 
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
