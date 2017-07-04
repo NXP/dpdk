@@ -71,7 +71,7 @@
 /* Enable TX Congestion control support
  * default is disable
  */
-#define DPAA2_TX_CGR_SUPPORT	0x01
+#define DPAA2_TX_CGR_OFF	0x01
 
 /* Per TC tail drop or Per queue tail drop
  * default is per queue tail drop */
