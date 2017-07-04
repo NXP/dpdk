@@ -69,6 +69,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA_BUS) += \
 	base/fman/fman_hw.c \
 	base/fman/of.c \
 	base/fman/netcfg_layer.c \
-	base/qbman/process.c
+	base/qbman/process.c \
+	base/qbman/dpaa_sys.c
 
 include $(RTE_SDK)/mk/rte.lib.mk
