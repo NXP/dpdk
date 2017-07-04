@@ -1886,6 +1886,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->max_vlan_filters = attr.vlan_filter_entries;
 	priv->flags = 0;
 
+	/*If Tx congestion control support is not required */
+	if (getenv("DPAA2_TX_CGR_OFF")) {
+		priv->flags |= DPAA2_TX_CGR_OFF;
+		PMD_INIT_LOG(INFO, "Disable the tx congestion control support");
+	}
+
 	/* Tail drop size, td_threshold = 0 means disable it on queue */
 	if (getenv("DPAA2_RX_TAILDROP_SIZE"))
 		td_threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
