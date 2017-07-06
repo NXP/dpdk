@@ -34,7 +34,6 @@
 #define __DPAA2_EVENTDEV_H__
 
 #include <rte_eventdev_pmd.h>
-#include <rte_eventdev_pmd_vdev.h>
 #include <rte_atomic.h>
 #include <mc/fsl_dpcon.h>
 #include <mc/fsl_mc_sys.h>
