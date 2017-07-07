@@ -68,7 +68,7 @@ vfio_get_group_fd(int iommu_group_no)
 	char filename[PATH_MAX];
 
 	/* check if we already have the group descriptor open */
-	for (i = 0; i < vfio_cfg.vfio_group_idx; i++)
+	for (i = 0; i < VFIO_MAX_GROUPS; i++)
 		if (vfio_cfg.vfio_groups[i].group_no == iommu_group_no)
 			return vfio_cfg.vfio_groups[i].fd;
 
