@@ -207,6 +207,16 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 	}
 
 	cpu_id = dpaa2_cpu[lcoreid];
+	/*
+	 *  In case of running DPDK on the Virtual Machine the Stashing
+	 *  Destination gets set in the H/W w.r.t. the Virtual CPU ID's.
+	 *  As a W.A. environment variable HOST_START_CPU tells which
+	 *  the offset of the host start core of the Virtual Machine threads.
+	 */
+	if (getenv("DPAA2_HOST_START_CPU")) {
+		cpu_id += atoi(getenv("DPAA2_HOST_START_CPU"));
+		cpu_id = cpu_id % NUM_HOST_CPUS;
+	}
 
 	/* Set the STASH Destination depending on Current CPU ID.
 	 * Valid values of SDEST are 4,5,6,7. Where,
