@@ -572,8 +572,10 @@ int fslmc_vfio_process_group(void)
 	closedir(d);
 
 	ret = dpaa2_affine_qbman_swp();
-	if (ret)
-		FSLMC_VFIO_LOG(DEBUG, "Error in affining qbman swp %d", ret);
+	if (ret) {
+		FSLMC_VFIO_LOG(ERR, "Error in affining qbman swp %d", ret);
+		return ret;
+	}
 
 	return 0;
 
