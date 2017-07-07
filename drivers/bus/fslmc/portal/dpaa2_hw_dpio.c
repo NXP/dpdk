@@ -107,7 +107,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	struct qbman_swp_desc p_des;
 	struct dpio_attr attr;
 
-	dpio_dev->dpio = malloc(sizeof(struct fsl_mc_io));
+	dpio_dev->dpio = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
 	if (!dpio_dev->dpio) {
 		PMD_INIT_LOG(ERR, "Memory allocation failure\n");
 		return -1;
@@ -118,21 +118,21 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	if (dpio_open(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->hw_id,
 		      &dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to allocate IO space\n");
-		free(dpio_dev->dpio);
+		rte_free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_reset(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to reset dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		free(dpio_dev->dpio);
+		rte_free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_enable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to Enable dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		free(dpio_dev->dpio);
+		rte_free(dpio_dev->dpio);
 		return -1;
 	}
 
@@ -141,7 +141,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		PMD_INIT_LOG(ERR, "DPIO Get attribute failed\n");
 		dpio_disable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW,  dpio_dev->token);
-		free(dpio_dev->dpio);
+		rte_free(dpio_dev->dpio);
 		return -1;
 	}
 
@@ -159,7 +159,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	if (dpio_dev->sw_portal == NULL) {
 		PMD_DRV_LOG(ERR, " QBMan SW Portal Init failed\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		free(dpio_dev->dpio);
+		rte_free(dpio_dev->dpio);
 		return -1;
 	}
 

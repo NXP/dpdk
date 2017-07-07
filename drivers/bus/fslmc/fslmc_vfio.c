@@ -477,8 +477,8 @@ int fslmc_vfio_process_group(void)
 			ndev_count++;
 			if (!strncmp("dpmcp", dir->d_name, 5)) {
 				if (mcp_obj)
-					free(mcp_obj);
-				mcp_obj = malloc(sizeof(dir->d_name));
+					rte_free(mcp_obj);
+				mcp_obj = rte_malloc(NULL, sizeof(dir->d_name), 0);
 				if (!mcp_obj) {
 					FSLMC_VFIO_LOG(ERR, "mcp obj:Unable to"
 						    " allocate memory");
@@ -501,24 +501,24 @@ int fslmc_vfio_process_group(void)
 	RTE_LOG(INFO, EAL, "fslmc: DPRC contains = %d devices\n", ndev_count);
 
 	/* Allocate the memory depends upon number of objects in a group*/
-	group->vfio_device = (struct fslmc_vfio_device *)malloc(ndev_count *
-			     sizeof(struct fslmc_vfio_device));
+	group->vfio_device = rte_malloc(NULL, ndev_count *
+			     sizeof(struct fslmc_vfio_device), 0);
 	if (!(group->vfio_device)) {
 		FSLMC_VFIO_LOG(ERR, "vfio device: Unable to allocate memory\n");
-		free(mcp_obj);
+		rte_free(mcp_obj);
 		return -ENOMEM;
 	}
 
 	/* Allocate memory for MC Portal list */
-	rte_mcp_ptr_list = malloc(sizeof(void *) * 1);
+	rte_mcp_ptr_list = rte_malloc(NULL, sizeof(void *) * 1, 0);
 	if (!rte_mcp_ptr_list) {
 		FSLMC_VFIO_LOG(ERR, "portal list: Unable to allocate memory!");
-		free(mcp_obj);
+		rte_free(mcp_obj);
 		goto FAILURE;
 	}
 
 	v_addr = vfio_map_mcp_obj(group, mcp_obj);
-	free(mcp_obj);
+	rte_free(mcp_obj);
 	if (v_addr == (int64_t)MAP_FAILED) {
 		FSLMC_VFIO_LOG(ERR, "Error mapping region (errno = %d)", errno);
 		goto FAILURE;
@@ -540,7 +540,7 @@ int fslmc_vfio_process_group(void)
 		if (!strncmp("dprc", dir->d_name, 4) ||
 		    !strncmp("dpmcp", dir->d_name, 5))
 			continue;
-		dev_name = malloc(sizeof(dir->d_name));
+		dev_name = rte_malloc(NULL, sizeof(dir->d_name), 0);
 		if (!dev_name) {
 			FSLMC_VFIO_LOG(ERR, "name: Unable to allocate memory");
 			goto FAILURE;
@@ -556,11 +556,11 @@ int fslmc_vfio_process_group(void)
 			FSLMC_VFIO_LOG(ERR, "VFIO_GROUP_GET_DEVICE_FD error"
 				    " Device fd: %s, Group: %d",
 				    dev_name, group->fd);
-			free(dev_name);
+			rte_free(dev_name);
 			goto FAILURE;
 		}
 
-		free(dev_name);
+		rte_free(dev_name);
 		vdev = &group->vfio_device[group->object_index++];
 		vdev->fd = dev_fd;
 		vdev->index = i;
@@ -614,12 +614,10 @@ int fslmc_vfio_process_group(void)
 FAILURE:
 	if (d)
 		closedir(d);
-	if (rte_mcp_ptr_list) {
-		free(rte_mcp_ptr_list);
-		rte_mcp_ptr_list = NULL;
-	}
+	rte_free(rte_mcp_ptr_list);
+	rte_mcp_ptr_list = NULL;
 
-	free(group->vfio_device);
+	rte_free(group->vfio_device);
 	group->vfio_device = NULL;
 	return -1;
 }
