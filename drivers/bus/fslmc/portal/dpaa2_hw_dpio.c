@@ -231,7 +231,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	return 0;
 }
 
-static inline struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
+struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;

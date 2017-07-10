@@ -60,6 +60,7 @@
 #include <rte_ethdev.h>
 
 #include "fslmc_vfio.h"
+#include "debug.h"
 
 #include "portal/dpaa2_hw_pvt.h"
 #include "portal/dpaa2_hw_dpio.h"
@@ -607,7 +608,7 @@ int fslmc_vfio_process_group(void)
 		return ret;
 	}
 
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpbp_count = %d dpio_count=%d",
+	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpio_count = %d dpio_count=%d",
 		      dpbp_count, dpio_count);
 	return 0;
 
@@ -762,6 +763,9 @@ rte_eal_dpaa2_init(void)
 		FSLMC_VFIO_LOG(DEBUG, "vfio_process_group_devices");
 		FSLMC_VFIO_LOG(ERR, "DPAA2: Unable to setup devices");
 		return -1;
+	}
+	if (dpaa2_platform_debug_init()) {
+		RTE_LOG(INFO, PMD, "DPAA2 Platform debug init failed.\n");
 	}
 	RTE_LOG(INFO, PMD, "DPAA2: Device setup completed\n");
 #endif

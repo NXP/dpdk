@@ -59,6 +59,9 @@ int dpaa2_affine_qbman_swp(void);
 /* Affine additional DPIO portal to current crypto processing thread */
 int dpaa2_affine_qbman_swp_sec(void);
 
+/* Get free available sw portal*/
+struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void);
+
 /* allocate memory for FQ - dq storage */
 int
 dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);

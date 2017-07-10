@@ -113,6 +113,30 @@ struct dpaa2_dpbp_dev *dpaa2_alloc_dpbp_dev(void)
 	return dpbp_dev;
 }
 
+struct dpaa2_dpbp_dev *dpaa2_get_dpbp_dev_from_name(char *dev_name)
+{
+	struct dpaa2_dpbp_dev *dpbp_dev = NULL;
+	uint32_t device_id;
+	char *temp_obj;
+	int is_enable = 0;
+
+	temp_obj = strtok(dev_name, ".");
+	temp_obj = strtok(NULL, ".");
+	sscanf(temp_obj, "%d", &device_id);
+
+	/* Get DPBP dev handle from list using index */
+	TAILQ_FOREACH(dpbp_dev, &dpbp_dev_list, next) {
+		if (dpbp_dev && dpbp_dev->dpbp_id == device_id) {
+			if (!dpbp_is_enabled(&dpbp_dev->dpbp, CMD_PRI_LOW, dpbp_dev->token, &is_enable)) {
+				if (is_enable)
+					break;
+			}
+		}
+	}
+
+	return dpbp_dev;
+}
+
 void dpaa2_free_dpbp_dev(struct dpaa2_dpbp_dev *dpbp)
 {
 	struct dpaa2_dpbp_dev *dpbp_dev = NULL;

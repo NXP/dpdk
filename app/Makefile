@@ -38,5 +38,6 @@ DIRS-$(CONFIG_RTE_TEST_PMD) += test-pmd
 DIRS-$(CONFIG_RTE_LIBRTE_CMDLINE) += cmdline_test
 DIRS-$(CONFIG_RTE_EXEC_ENV_LINUXAPP) += proc_info
 DIRS-$(CONFIG_RTE_LIBRTE_PDUMP) += pdump
+DIRS-$(CONFIG_RTE_DEBUG) += debug
 
 include $(RTE_SDK)/mk/rte.subdir.mk

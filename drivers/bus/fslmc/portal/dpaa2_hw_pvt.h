@@ -372,6 +372,7 @@ void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
 	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
 }
 struct dpaa2_dpbp_dev *dpaa2_alloc_dpbp_dev(void);
+struct dpaa2_dpbp_dev *dpaa2_get_dpbp_dev_from_name(char *dev_name);
 void dpaa2_free_dpbp_dev(struct dpaa2_dpbp_dev *dpbp);
 int dpaa2_dpbp_supported(void);
 
