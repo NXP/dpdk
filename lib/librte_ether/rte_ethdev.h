@@ -991,12 +991,13 @@ struct rte_eth_dev_callback;
 /** @internal Structure to keep track of registered callbacks */
 TAILQ_HEAD(rte_eth_dev_cb_list, rte_eth_dev_callback);
 
-
+#ifndef RTE_PMD_DEBUG_TRACE
 #ifdef RTE_LIBRTE_ETHDEV_DEBUG
 #define RTE_PMD_DEBUG_TRACE(...) \
 	rte_pmd_debug_trace(__func__, __VA_ARGS__)
 #else
 #define RTE_PMD_DEBUG_TRACE(...)
+#endif
 #endif
 
 

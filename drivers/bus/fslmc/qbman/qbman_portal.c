@@ -69,6 +69,13 @@
 /* Pre-defined attribute codes */
 /*******************************/
 
+struct qb_attr_code code_generic_verb = QB_CODE(0, 0, 7);
+struct qb_attr_code code_generic_rslt = QB_CODE(0, 8, 8);
+
+/*******************************/
+/* Pre-defined attribute codes */
+/*******************************/
+
 #define QMAN_RESPONSE_VERB_MASK   0x7f
 
 /*************************/
@@ -289,6 +296,7 @@ void qbman_swp_mc_submit(struct qbman_swp *p, void *cmd, uint8_t cmd_verb)
 	 * caller wants to OR but has forgotten to do so.
 	 */
 	QBMAN_BUG_ON((*v & cmd_verb) != *v);
+
 	*v = cmd_verb | p->mc.valid_bit;
 	qbman_cena_write_complete(&p->sys, QBMAN_CENA_SWP_CR, cmd);
 #ifdef QBMAN_CHECKING

@@ -50,9 +50,14 @@ endif
 
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/mc
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common
+CFLAGS += -D _GNU_SOURCE
 
 # versioning export map
 EXPORT_MAP := rte_bus_fslmc_version.map
@@ -61,7 +66,8 @@ EXPORT_MAP := rte_bus_fslmc_version.map
 LIBABIVER := 1
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-        qbman/qbman_portal.c
+        qbman/qbman_portal.c \
+        qbman/qbman_debug.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
 	mc/dpmng.c \
@@ -73,5 +79,6 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_common.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpbp.c
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
+SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fsldebug.c
 
 include $(RTE_SDK)/mk/rte.lib.mk

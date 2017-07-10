@@ -97,6 +97,6 @@ dpaa2_create_dpseci_dev(struct fslmc_vfio_device *vdev __rte_unused,
 	if (!dev)
 		return -1;
 
-	PMD_INIT_LOG(DEBUG, "DPAA2:Added [dpseci-%d]", object_id);
+	PMD_INIT_LOG(DEBUG, "DPAA2:Added [dpseci.%d]", object_id);
 	return 0;
 }

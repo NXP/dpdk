@@ -1936,7 +1936,7 @@ dpaa2_sec_dev_init(__attribute__((unused))
 			     retcode);
 		goto init_error;
 	}
-	sprintf(cryptodev->data->name, "dpsec-%u", hw_id);
+	sprintf(cryptodev->data->name, "dpseci.%u", hw_id);
 
 	internals->max_nb_queue_pairs = attr.num_tx_queues;
 	cryptodev->data->nb_queue_pairs = internals->max_nb_queue_pairs;

@@ -40,7 +40,6 @@
  * *not* to provide linux compatibility.
  */
 
-#include "qbman_sys_decl.h"
 
 /* Trace the 3 different classes of read/write access to QBMan. #undef as
  * required.
