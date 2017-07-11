@@ -64,11 +64,6 @@
  * a pointer to the shared descriptor
  */
 #define MIN_JOB_DESC_SIZE	(CAAM_CMD_SZ + CAAM_PTR_SZ)
-#define FSL_VENDOR_ID           0x1957
-#define FSL_DEVICE_ID           0x410
-#define FSL_SUBSYSTEM_SEC       1
-#define FSL_MC_DPSECI_DEVID     3
-
 #define NO_PREFETCH 0
 #define TDES_CBC_IV_LEN 8
 #define AES_CBC_IV_LEN 16
@@ -1762,7 +1757,7 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 			     retcode);
 		goto init_error;
 	}
-	sprintf(cryptodev->data->name, "dpsec-%u", hw_id);
+	sprintf(cryptodev->data->name, "dpseci.%u", hw_id);
 
 	internals->max_nb_queue_pairs = attr.num_tx_queues;
 	cryptodev->data->nb_queue_pairs = internals->max_nb_queue_pairs;
@@ -1794,7 +1789,7 @@ init_error:
 }
 
 static int
-cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv,
+cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv __rte_unused,
 			  struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_cryptodev *cryptodev;
@@ -1802,7 +1797,7 @@ cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv,
 
 	int retval;
 
-	sprintf(cryptodev_name, "dpsec-%d", dpaa2_dev->object_id);
+	sprintf(cryptodev_name, "dpseci.%d", dpaa2_dev->object_id);
 
 	cryptodev = rte_cryptodev_pmd_allocate(cryptodev_name, rte_socket_id());
 	if (cryptodev == NULL)
@@ -1822,7 +1817,6 @@ cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv,
 
 	dpaa2_dev->cryptodev = cryptodev;
 	cryptodev->device = &dpaa2_dev->device;
-	cryptodev->driver = (struct rte_cryptodev_driver *)dpaa2_drv;
 
 	/* init user callbacks */
 	TAILQ_INIT(&(cryptodev->link_intr_cbs));
