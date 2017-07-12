@@ -50,8 +50,12 @@
  */
 
 /* Required compiler attributes */
+#ifndef likely
 #define likely(x)	__builtin_expect(!!(x), 1)
+#endif
+#ifndef unlikely
 #define unlikely(x)	__builtin_expect(!!(x), 0)
+#endif
 
 /* Required types */
 typedef uint64_t	dma_addr_t;

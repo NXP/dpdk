@@ -23,10 +23,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <fsl_qbman_debug.h>
 #include "qbman_portal.h"
-#include "qbman_debug.h"
-#include <unistd.h>
-#include "include/fsl_qbman_portal.h"
 
 /* QBMan portal management command code */
 #define QBMAN_BP_QUERY            0x32
@@ -38,702 +36,497 @@
 #define QBMAN_CGR_STAT_QUERY      0x55
 #define QBMAN_CGR_STAT_QUERY_CLR  0x56
 
-#define QBMAN_QUERY_RESPONSE_LEN  60
-
-enum qbman_attr_usage_e {
-	qbman_attr_usage_fq,
-	qbman_attr_usage_bpool,
-	qbman_attr_usage_cgr,
-	qbman_attr_usage_wqchan
+struct qbman_bp_query_desc {
+	uint8_t verb;
+	uint8_t reserved;
+	uint16_t bpid;
+	uint8_t reserved2[60];
 };
 
-struct int_qbman_attr {
-	uint32_t words[32];
-	enum qbman_attr_usage_e usage;
-};
-
-#define attr_type_set(a, e) \
-{ \
-	struct qbman_attr *__attr = a; \
-	enum qbman_attr_usage_e __usage = e; \
-	((struct int_qbman_attr *)__attr)->usage = __usage; \
-}
-
-#define ATTR32(d) (&(d)->dont_manipulate_directly[0])
-#define ATTR32_1(d) (&(d)->dont_manipulate_directly[16])
-
-static struct qb_attr_code code_bp_bpid = QB_CODE(0, 16, 16);
-static struct qb_attr_code code_bp_bdi = QB_CODE(1, 16, 1);
-static struct qb_attr_code code_bp_va = QB_CODE(1, 17, 1);
-static struct qb_attr_code code_bp_wae = QB_CODE(1, 18, 1);
-static struct qb_attr_code code_bp_swdet = QB_CODE(4, 0, 16);
-static struct qb_attr_code code_bp_swdxt = QB_CODE(4, 16, 16);
-static struct qb_attr_code code_bp_hwdet = QB_CODE(5, 0, 16);
-static struct qb_attr_code code_bp_hwdxt = QB_CODE(5, 16, 16);
-static struct qb_attr_code code_bp_swset = QB_CODE(6, 0, 16);
-static struct qb_attr_code code_bp_swsxt = QB_CODE(6, 16, 16);
-static struct qb_attr_code code_bp_vbpid = QB_CODE(7, 0, 14);
-static struct qb_attr_code code_bp_icid = QB_CODE(7, 16, 15);
-static struct qb_attr_code code_bp_pl = QB_CODE(7, 31, 1);
-static struct qb_attr_code code_bp_bpscn_addr_lo = QB_CODE(8, 0, 32);
-static struct qb_attr_code code_bp_bpscn_addr_hi = QB_CODE(9, 0, 32);
-static struct qb_attr_code code_bp_bpscn_ctx_lo = QB_CODE(10, 0, 32);
-static struct qb_attr_code code_bp_bpscn_ctx_hi = QB_CODE(11, 0, 32);
-static struct qb_attr_code code_bp_hw_targ = QB_CODE(12, 0, 16);
-static struct qb_attr_code code_bp_state = QB_CODE(1, 24, 3);
-static struct qb_attr_code code_bp_fill = QB_CODE(2 , 0, 32);
-static struct qb_attr_code code_bp_hdptr = QB_CODE(3, 0, 32);
-static struct qb_attr_code code_bp_sdcnt = QB_CODE(13, 0, 8);
-static struct qb_attr_code code_bp_hdcnt = QB_CODE(13, 8, 8);
-static struct qb_attr_code code_bp_sscnt = QB_CODE(13, 16, 8);
-
-static void qbman_bp_attr_clear(struct qbman_attr *a)
-{
-	memset(a, 0, sizeof(*a));
-	attr_type_set(a, qbman_attr_usage_bpool);
-}
+#define QB_BP_STATE_SHIFT  24
+#define QB_BP_VA_SHIFT     1
+#define QB_BP_VA_MASK      0x2
+#define QB_BP_WAE_SHIFT    2
+#define QB_BP_WAE_MASK     0x4
+#define QB_BP_PL_SHIFT     15
+#define QB_BP_PL_MASK      0x8000
+#define QB_BP_ICID_MASK    0x7FFF
 
 int qbman_bp_query(struct qbman_swp *s, uint32_t bpid,
-		   struct qbman_attr *a)
+		   struct qbman_bp_query_rslt *r)
 {
-	uint32_t *p;
-	uint32_t rslt;
-	uint32_t *attr = ATTR32(a);
-
-	qbman_bp_attr_clear(a);
+	struct qbman_bp_query_desc *p;
 
 	/* Start the management command */
-	p = qbman_swp_mc_start(s);
+	p = (struct qbman_bp_query_desc *)qbman_swp_mc_start(s);
 	if (!p)
 		return -EBUSY;
 
 	/* Encode the caller-provided attributes */
-	qb_attr_code_encode(&code_bp_bpid, p, bpid);
+	p->bpid = bpid;
 
 	/* Complete the management command */
-	p = qbman_swp_mc_complete(s, p, p[0] | QBMAN_BP_QUERY);
-
-	/* Decode the outcome */
-	rslt = qb_attr_code_decode(&code_generic_rslt, p);
-	QBMAN_BUG_ON(qb_attr_code_decode(&code_generic_verb, p) != QBMAN_BP_QUERY);
-
-	/* Determine success or failure */
-	if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-		pr_err("Query of BPID 0x%x failed, code=0x%02x\n", bpid, rslt);
+	*r = *(struct qbman_bp_query_rslt *)qbman_swp_mc_complete(s, p,
+						 QBMAN_BP_QUERY);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query BPID %d failed, no response\n",
+			bpid);
 		return -EIO;
 	}
 
-	/* For the query, word[0] of the result contains only the
-	 * verb/rslt fields, so skip word[0].
-	 */
-	memcpy(&attr[1], &p[1], QBMAN_QUERY_RESPONSE_LEN);
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_BP_QUERY);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query of BPID 0x%x failed, code=0x%02x\n", bpid,
+								r->rslt);
+		return -EIO;
+	}
+
 	return 0;
 }
 
-void qbman_bp_attr_get_bdi(struct qbman_attr *a, int *bdi, int *va, int *wae)
+int qbman_bp_get_bdi(struct qbman_bp_query_rslt *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*bdi = !!qb_attr_code_decode(&code_bp_bdi, p);
-	*va = !!qb_attr_code_decode(&code_bp_va, p);
-	*wae = !!qb_attr_code_decode(&code_bp_wae, p);
+	return r->bdi & 1;
 }
 
-static uint32_t qbman_bp_thresh_to_value(uint32_t val)
+int qbman_bp_get_va(struct qbman_bp_query_rslt *r)
+{
+	return (r->bdi & QB_BP_VA_MASK) >> QB_BP_VA_MASK;
+}
+
+int qbman_bp_get_wae(struct qbman_bp_query_rslt *r)
+{
+	return (r->bdi & QB_BP_WAE_MASK) >> QB_BP_WAE_SHIFT;
+}
+
+static uint16_t qbman_bp_thresh_to_value(uint16_t val)
 {
 	return (val & 0xff) << ((val & 0xf00) >> 8);
 }
 
-void qbman_bp_attr_get_swdet(struct qbman_attr *a, uint32_t *swdet)
+uint16_t qbman_bp_get_swdet(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
 
-	*swdet = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swdet,
-					  p));
-}
-void qbman_bp_attr_get_swdxt(struct qbman_attr *a, uint32_t *swdxt)
-{
-	uint32_t *p = ATTR32(a);
-
-	*swdxt = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swdxt,
-					  p));
-}
-void qbman_bp_attr_get_hwdet(struct qbman_attr *a, uint32_t *hwdet)
-{
-	uint32_t *p = ATTR32(a);
-
-	*hwdet = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_hwdet,
-					  p));
-}
-void qbman_bp_attr_get_hwdxt(struct qbman_attr *a, uint32_t *hwdxt)
-{
-	uint32_t *p = ATTR32(a);
-
-	*hwdxt = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_hwdxt,
-					  p));
+	return qbman_bp_thresh_to_value(r->swdet);
 }
 
-void qbman_bp_attr_get_swset(struct qbman_attr *a, uint32_t *swset)
+uint16_t qbman_bp_get_swdxt(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*swset = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swset,
-					  p));
+	return qbman_bp_thresh_to_value(r->swdxt);
 }
 
-void qbman_bp_attr_get_swsxt(struct qbman_attr *a, uint32_t *swsxt)
+uint16_t qbman_bp_get_hwdet(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*swsxt = qbman_bp_thresh_to_value(qb_attr_code_decode(&code_bp_swsxt,
-					  p));
+	return qbman_bp_thresh_to_value(r->hwdet);
 }
 
-void qbman_bp_attr_get_vbpid(struct qbman_attr *a, uint32_t *vbpid)
+uint16_t qbman_bp_get_hwdxt(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*vbpid = qb_attr_code_decode(&code_bp_vbpid, p);
+	return qbman_bp_thresh_to_value(r->hwdxt);
 }
 
-void qbman_bp_attr_get_icid(struct qbman_attr *a, uint32_t *icid, int *pl)
+uint16_t qbman_bp_get_swset(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*icid = qb_attr_code_decode(&code_bp_icid, p);
-	*pl = !!qb_attr_code_decode(&code_bp_pl, p);
+	return qbman_bp_thresh_to_value(r->swset);
 }
 
-void qbman_bp_attr_get_bpscn_addr(struct qbman_attr *a, uint64_t *bpscn_addr)
+uint16_t qbman_bp_get_swsxt(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
 
-	*bpscn_addr = ((uint64_t)qb_attr_code_decode(&code_bp_bpscn_addr_hi,
-			p) << 32) |
-			(uint64_t)qb_attr_code_decode(&code_bp_bpscn_addr_lo,
-			p);
+	return qbman_bp_thresh_to_value(r->swsxt);
 }
 
-void qbman_bp_attr_get_bpscn_ctx(struct qbman_attr *a, uint64_t *bpscn_ctx)
+uint16_t qbman_bp_get_vbpid(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*bpscn_ctx = ((uint64_t)qb_attr_code_decode(&code_bp_bpscn_ctx_hi, p)
-			<< 32) |
-			(uint64_t)qb_attr_code_decode(&code_bp_bpscn_ctx_lo,
-			p);
+	return r->vbpid;
 }
 
-void qbman_bp_attr_get_hw_targ(struct qbman_attr *a, uint32_t *hw_targ)
+uint16_t qbman_bp_get_icid(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	*hw_targ = qb_attr_code_decode(&code_bp_hw_targ, p);
+	return r->icid & QB_BP_ICID_MASK;
 }
 
-int qbman_bp_info_has_free_bufs(struct qbman_attr *a)
+int qbman_bp_get_pl(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return !(int)(qb_attr_code_decode(&code_bp_state, p) & 0x1);
+	return (r->icid & QB_BP_PL_MASK) >> QB_BP_PL_SHIFT;
 }
 
-int qbman_bp_info_is_depleted(struct qbman_attr *a)
+uint64_t qbman_bp_get_bpscn_addr(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return (int)(qb_attr_code_decode(&code_bp_state, p) & 0x2);
+	return r->bpscn_addr;
 }
 
-int qbman_bp_info_is_surplus(struct qbman_attr *a)
+uint64_t qbman_bp_get_bpscn_ctx(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return (int)(qb_attr_code_decode(&code_bp_state, p) & 0x4);
+	return r->bpscn_ctx;
 }
 
-uint32_t qbman_bp_info_num_free_bufs(struct qbman_attr *a)
+uint16_t qbman_bp_get_hw_targ(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return qb_attr_code_decode(&code_bp_fill, p);
+	return r->hw_targ;
 }
 
-uint32_t qbman_bp_info_hdptr(struct qbman_attr *a)
+int qbman_bp_has_free_bufs(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return qb_attr_code_decode(&code_bp_hdptr, p);
+	return !(int)(r->state & 0x1);
 }
 
-uint32_t qbman_bp_info_sdcnt(struct qbman_attr *a)
+int qbman_bp_is_depleted(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return qb_attr_code_decode(&code_bp_sdcnt, p);
+	return (int)((r->state & 0x2) >> 1);
 }
 
-uint32_t qbman_bp_info_hdcnt(struct qbman_attr *a)
+int qbman_bp_is_surplus(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return qb_attr_code_decode(&code_bp_hdcnt, p);
+	return (int)((r->state & 0x4) >> 2);
 }
 
-uint32_t qbman_bp_info_sscnt(struct qbman_attr *a)
+uint32_t qbman_bp_num_free_bufs(struct qbman_bp_query_rslt  *r)
 {
-	uint32_t *p = ATTR32(a);
-
-	return qb_attr_code_decode(&code_bp_sscnt, p);
+	return r->fill;
 }
 
-static struct qb_attr_code code_fq_fqid = QB_CODE(1, 0, 24);
-static struct qb_attr_code code_fq_cgrid = QB_CODE(2, 16, 16);
-static struct qb_attr_code code_fq_destwq = QB_CODE(3, 0, 15);
-static struct qb_attr_code code_fq_fqctrl = QB_CODE(3, 24, 8);
-static struct qb_attr_code code_fq_icscred = QB_CODE(4, 0, 15);
-static struct qb_attr_code code_fq_tdthresh = QB_CODE(4, 16, 13);
-static struct qb_attr_code code_fq_oa_len = QB_CODE(5, 0, 12);
-static struct qb_attr_code code_fq_oa_ics = QB_CODE(5, 14, 1);
-static struct qb_attr_code code_fq_oa_cgr = QB_CODE(5, 15, 1);
-static struct qb_attr_code code_fq_mctl_bdi = QB_CODE(5, 24, 1);
-static struct qb_attr_code code_fq_mctl_ff = QB_CODE(5, 25, 1);
-static struct qb_attr_code code_fq_mctl_va = QB_CODE(5, 26, 1);
-static struct qb_attr_code code_fq_mctl_ps = QB_CODE(5, 27, 1);
-static struct qb_attr_code code_fq_ctx_lower32 = QB_CODE(6, 0, 32);
-static struct qb_attr_code code_fq_ctx_upper32 = QB_CODE(7, 0, 32);
-static struct qb_attr_code code_fq_icid = QB_CODE(8, 0, 15);
-static struct qb_attr_code code_fq_pl = QB_CODE(8, 15, 1);
-static struct qb_attr_code code_fq_vfqid = QB_CODE(9, 0, 24);
-static struct qb_attr_code code_fq_erfqid = QB_CODE(10, 0, 24);
-
-static void qbman_fq_attr_clear(struct qbman_attr *a)
+uint32_t qbman_bp_get_hdptr(struct qbman_bp_query_rslt  *r)
 {
-	memset(a, 0, sizeof(*a));
-	attr_type_set(a, qbman_attr_usage_fq);
+	return r->hdptr;
 }
+
+uint32_t qbman_bp_get_sdcnt(struct qbman_bp_query_rslt  *r)
+{
+	return r->sdcnt;
+}
+
+uint32_t qbman_bp_get_hdcnt(struct qbman_bp_query_rslt  *r)
+{
+	return r->hdcnt;
+}
+
+uint32_t qbman_bp_get_sscnt(struct qbman_bp_query_rslt  *r)
+{
+	return r->sscnt;
+}
+
+struct qbman_fq_query_desc {
+	uint8_t verb;
+	uint8_t reserved[3];
+	uint32_t fqid;
+	uint8_t reserved2[57];
+};
 
 /* FQ query function for programmable fields */
-int qbman_fq_query(struct qbman_swp *s, uint32_t fqid, struct qbman_attr *desc)
+int qbman_fq_query(struct qbman_swp *s, uint32_t fqid,
+		   struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p;
-	uint32_t rslt;
-	uint32_t *d = ATTR32(desc);
+	struct qbman_fq_query_desc *p;
 
-	qbman_fq_attr_clear(desc);
-
-	p = qbman_swp_mc_start(s);
+	p = (struct qbman_fq_query_desc *)qbman_swp_mc_start(s);
 	if (!p)
 		return -EBUSY;
 
-	qb_attr_code_encode(&code_fq_fqid, p, fqid);
-	p = qbman_swp_mc_complete(s, p, QBMAN_FQ_QUERY);
-
-	/* Decode the outcome */
-	rslt = qb_attr_code_decode(&code_generic_rslt, p);
-	QBMAN_BUG_ON(qb_attr_code_decode(&code_generic_verb, p) != QBMAN_FQ_QUERY);
-
-	/* Determine success or failure */
-	if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-		pr_err("Query of FQID 0x%x failed, code=0x%02x\n",
-		       fqid, rslt);
+	p->fqid = fqid;
+	*r = *(struct qbman_fq_query_rslt *)qbman_swp_mc_complete(s, p,
+					  QBMAN_FQ_QUERY);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query FQID %d failed, no response\n",
+			fqid);
 		return -EIO;
 	}
-	/* For the configure, word[0] of the command contains only the WE-mask.
-	 * For the query, word[0] of the result contains only the verb/rslt
-	 * fields. Skip word[0] in the latter case. */
-	memcpy(&d[1], &p[1], QBMAN_QUERY_RESPONSE_LEN);
+
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_FQ_QUERY);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query of FQID 0x%x failed, code=0x%02x\n",
+		       fqid, r->rslt);
+		return -EIO;
+	}
+
 	return 0;
 }
 
-void qbman_fq_attr_get_fqctrl(struct qbman_attr *d, uint32_t *fqctrl)
+uint8_t qbman_fq_attr_get_fqctrl(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*fqctrl = qb_attr_code_decode(&code_fq_fqctrl, p);
+	return r->fq_ctrl;
 }
 
-void qbman_fq_attr_get_cgrid(struct qbman_attr *d, uint32_t *cgrid)
+uint16_t qbman_fq_attr_get_cgrid(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*cgrid = qb_attr_code_decode(&code_fq_cgrid, p);
+	return r->cgid;
 }
 
-void qbman_fq_attr_get_destwq(struct qbman_attr *d, uint32_t *destwq)
+uint16_t qbman_fq_attr_get_destwq(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*destwq = qb_attr_code_decode(&code_fq_destwq, p);
+	return r->dest_wq;
 }
 
-void qbman_fq_attr_get_icscred(struct qbman_attr *d, uint32_t *icscred)
+static uint16_t qbman_thresh_to_value(uint16_t val)
 {
-	uint32_t *p = ATTR32(d);
-
-	*icscred = qb_attr_code_decode(&code_fq_icscred, p);
+	return ((val & 0x1FE0) >> 5) << (val & 0x1F);
 }
 
-static struct qb_attr_code code_tdthresh_exp = QB_CODE(0, 0, 5);
-static struct qb_attr_code code_tdthresh_mant = QB_CODE(0, 5, 8);
-static uint32_t qbman_thresh_to_value(uint32_t val)
+uint16_t qbman_fq_attr_get_tdthresh(struct qbman_fq_query_rslt *r)
 {
-	uint32_t m, e;
-
-	m = qb_attr_code_decode(&code_tdthresh_mant, &val);
-	e = qb_attr_code_decode(&code_tdthresh_exp, &val);
-	return m << e;
+	return qbman_thresh_to_value(r->td_thresh);
 }
 
-void qbman_fq_attr_get_tdthresh(struct qbman_attr *d, uint32_t *tdthresh)
+int qbman_fq_attr_get_oa_ics(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*tdthresh = qbman_thresh_to_value(qb_attr_code_decode(&code_fq_tdthresh,
-					p));
+	return (int)(r->oal_oac >> 14) & 0x1;
 }
 
-void qbman_fq_attr_get_oa(struct qbman_attr *d,
-			  int *oa_ics, int *oa_cgr, int32_t *oa_len)
+int qbman_fq_attr_get_oa_cgr(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*oa_ics = !!qb_attr_code_decode(&code_fq_oa_ics, p);
-	*oa_cgr = !!qb_attr_code_decode(&code_fq_oa_cgr, p);
-	*oa_len = qb_attr_code_makesigned(&code_fq_oa_len,
-			qb_attr_code_decode(&code_fq_oa_len, p));
+	return (int)(r->oal_oac >> 15);
 }
 
-void qbman_fq_attr_get_mctl(struct qbman_attr *d,
-			    int *bdi, int *ff, int *va, int *ps)
+uint16_t qbman_fq_attr_get_oal(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*bdi = !!qb_attr_code_decode(&code_fq_mctl_bdi, p);
-	*ff = !!qb_attr_code_decode(&code_fq_mctl_ff, p);
-	*va = !!qb_attr_code_decode(&code_fq_mctl_va, p);
-	*ps = !!qb_attr_code_decode(&code_fq_mctl_ps, p);
+	return (r->oal_oac & 0x0FFF);
 }
 
-void qbman_fq_attr_get_ctx(struct qbman_attr *d, uint32_t *hi, uint32_t *lo)
+int qbman_fq_attr_get_bdi(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*hi = qb_attr_code_decode(&code_fq_ctx_upper32, p);
-	*lo = qb_attr_code_decode(&code_fq_ctx_lower32, p);
+	return (r->mctl & 0x1);
 }
 
-void qbman_fq_attr_get_icid(struct qbman_attr *d, uint32_t *icid, int *pl)
+int qbman_fq_attr_get_ff(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*icid = qb_attr_code_decode(&code_fq_icid, p);
-	*pl = !!qb_attr_code_decode(&code_fq_pl, p);
+	return (r->mctl & 0x2) >> 1;
 }
 
-void qbman_fq_attr_get_vfqid(struct qbman_attr *d, uint32_t *vfqid)
+int qbman_fq_attr_get_va(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*vfqid = qb_attr_code_decode(&code_fq_vfqid, p);
+	return (r->mctl & 0x4) >> 2;
 }
 
-void qbman_fq_attr_get_erfqid(struct qbman_attr *d, uint32_t *erfqid)
+int qbman_fq_attr_get_ps(struct qbman_fq_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-
-	*erfqid = qb_attr_code_decode(&code_fq_erfqid, p);
+	return (r->mctl & 0x8) >> 3;
 }
 
-/* Query FQ Non-Programmalbe Fields */
-static struct qb_attr_code code_fq_np_state = QB_CODE(0, 16, 3);
-static struct qb_attr_code code_fq_np_fe = QB_CODE(0, 19, 1);
-static struct qb_attr_code code_fq_np_x = QB_CODE(0, 20, 1);
-static struct qb_attr_code code_fq_np_r = QB_CODE(0, 21, 1);
-static struct qb_attr_code code_fq_np_oe = QB_CODE(0, 22, 1);
-static struct qb_attr_code code_fq_np_frm_cnt = QB_CODE(6, 0, 24);
-static struct qb_attr_code code_fq_np_byte_cnt = QB_CODE(7, 0, 32);
+int qbman_fq_attr_get_pps(struct qbman_fq_query_rslt *r)
+{
+	return (r->mctl & 0x30) >> 4;
+}
+
+uint16_t qbman_fq_attr_get_icid(struct qbman_fq_query_rslt *r)
+{
+	return r->icid & 0x7FFF;
+}
+
+int qbman_fq_attr_get_pl(struct qbman_fq_query_rslt *r)
+{
+	return (int)((r->icid & 0x8000) >> 15);
+}
+
+uint32_t qbman_fq_attr_get_vfqid(struct qbman_fq_query_rslt *r)
+{
+	return r->vfqid & 0x00FFFFFF;
+}
+
+uint32_t qbman_fq_attr_get_erfqid(struct qbman_fq_query_rslt *r)
+{
+	return r->fqid_er & 0x00FFFFFF;
+}
+
+uint16_t qbman_fq_attr_get_opridsz(struct qbman_fq_query_rslt *r)
+{
+	return r->opridsz;
+}
 
 int qbman_fq_query_state(struct qbman_swp *s, uint32_t fqid,
-			 struct qbman_attr *state)
+			 struct qbman_fq_query_np_rslt *r)
 {
-	uint32_t *p;
-	uint32_t rslt;
-	uint32_t *d = ATTR32(state);
+	struct qbman_fq_query_desc *p;
 
-	qbman_fq_attr_clear(state);
-
-	p = qbman_swp_mc_start(s);
+	p = (struct qbman_fq_query_desc *)qbman_swp_mc_start(s);
 	if (!p)
 		return -EBUSY;
-	qb_attr_code_encode(&code_fq_fqid, p, fqid);
-	p = qbman_swp_mc_complete(s, p, QBMAN_FQ_QUERY_NP);
 
-	/* Decode the outcome */
-	rslt = qb_attr_code_decode(&code_generic_rslt, p);
-	QBMAN_BUG_ON(qb_attr_code_decode(&code_generic_verb, p) != QBMAN_FQ_QUERY_NP);
-
-	/* Determine success or failure */
-	if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-		pr_err("Query NP fields of FQID 0x%x failed, code=0x%02x\n",
-		       fqid, rslt);
+	p->fqid = fqid;
+	*r = *(struct qbman_fq_query_np_rslt *)qbman_swp_mc_complete(s, p,
+						QBMAN_FQ_QUERY_NP);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query FQID %d NP fields failed, no response\n",
+			fqid);
 		return -EIO;
 	}
-	memcpy(&d[0], &p[0], QBMAN_QUERY_RESPONSE_LEN + 4);
+
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_FQ_QUERY_NP);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query NP fields of FQID 0x%x failed, code=0x%02x\n",
+		       fqid, r->rslt);
+		return -EIO;
+	}
+
 	return 0;
 }
 
-uint32_t qbman_fq_state_schedstate(const struct qbman_attr *state)
+uint8_t qbman_fq_state_schedstate(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return qb_attr_code_decode(&code_fq_np_state, p);
+	return r->st1 & 0x7;
 }
 
-int qbman_fq_state_force_eligible(const struct qbman_attr *state)
+int qbman_fq_state_force_eligible(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return !!qb_attr_code_decode(&code_fq_np_fe, p);
+	return (int)((r->st1 & 0x8) >> 3);
 }
 
-int qbman_fq_state_xoff(const struct qbman_attr *state)
+int qbman_fq_state_xoff(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return !!qb_attr_code_decode(&code_fq_np_x, p);
+	return (int)((r->st1 & 0x10) >> 4);
 }
 
-int qbman_fq_state_retirement_pending(const struct qbman_attr *state)
+int qbman_fq_state_retirement_pending(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return !!qb_attr_code_decode(&code_fq_np_r, p);
+	return (int)((r->st1 & 0x20) >> 5);
 }
 
-int qbman_fq_state_overflow_error(const struct qbman_attr *state)
+int qbman_fq_state_overflow_error(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return !!qb_attr_code_decode(&code_fq_np_oe, p);
+	return (int)((r->st1 & 0x40) >> 6);
 }
 
-uint32_t qbman_fq_state_frame_count(const struct qbman_attr *state)
+uint32_t qbman_fq_state_frame_count(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return qb_attr_code_decode(&code_fq_np_frm_cnt, p);
+	return (r->frm_cnt & 0x00FFFFFF);
 }
 
-uint32_t qbman_fq_state_byte_count(const struct qbman_attr *state)
+uint32_t qbman_fq_state_byte_count(const struct qbman_fq_query_np_rslt *r)
 {
-	const uint32_t *p = ATTR32(state);
-
-	return qb_attr_code_decode(&code_fq_np_byte_cnt, p);
+	return r->byte_cnt;
 }
 
 /* Query CGR */
-static struct qb_attr_code code_cgr_cgid = QB_CODE(0, 16, 16);
-static struct qb_attr_code code_cgr_cscn_wq_en_enter = QB_CODE(2, 0, 1);
-static struct qb_attr_code code_cgr_cscn_wq_en_exit = QB_CODE(2, 1, 1);
-static struct qb_attr_code code_cgr_cscn_wq_icd = QB_CODE(2, 2, 1);
-static struct qb_attr_code code_cgr_mode = QB_CODE(3, 16, 2);
-static struct qb_attr_code code_cgr_rej_cnt_mode = QB_CODE(3, 18, 1);
-static struct qb_attr_code code_cgr_cscn_bdi = QB_CODE(3, 19, 1);
-static struct qb_attr_code code_cgr_cscn_wr_en_enter = QB_CODE(3, 24, 1);
-static struct qb_attr_code code_cgr_cscn_wr_en_exit = QB_CODE(3, 25, 1);
-static struct qb_attr_code code_cgr_cg_wr_ae = QB_CODE(3, 26, 1);
-static struct qb_attr_code code_cgr_cscn_dcp_en = QB_CODE(3, 27, 1);
-static struct qb_attr_code code_cgr_cg_wr_va = QB_CODE(3, 28, 1);
-static struct qb_attr_code code_cgr_i_cnt_wr_en = QB_CODE(4, 0, 1);
-static struct qb_attr_code code_cgr_i_cnt_wr_bnd = QB_CODE(4, 1, 5);
-static struct qb_attr_code code_cgr_td_en = QB_CODE(4, 8, 1);
-static struct qb_attr_code code_cgr_cs_thres = QB_CODE(4, 16, 13);
-static struct qb_attr_code code_cgr_cs_thres_x = QB_CODE(5, 0, 13);
-static struct qb_attr_code code_cgr_td_thres = QB_CODE(5, 16, 13);
-static struct qb_attr_code code_cgr_cscn_tdcp = QB_CODE(6, 0, 16);
-static struct qb_attr_code code_cgr_cscn_wqid = QB_CODE(6, 16, 16);
-static struct qb_attr_code code_cgr_cscn_vcgid = QB_CODE(7, 0, 16);
-static struct qb_attr_code code_cgr_cg_icid = QB_CODE(7, 16, 15);
-static struct qb_attr_code code_cgr_cg_pl = QB_CODE(7, 31, 1);
-static struct qb_attr_code code_cgr_cg_wr_addr_lo = QB_CODE(8, 0, 32);
-static struct qb_attr_code code_cgr_cg_wr_addr_hi = QB_CODE(9, 0, 32);
-static struct qb_attr_code code_cgr_cscn_ctx_lo = QB_CODE(10, 0, 32);
-static struct qb_attr_code code_cgr_cscn_ctx_hi = QB_CODE(11, 0, 32);
+struct qbman_cgr_query_desc {
+	uint8_t verb;
+	uint8_t reserved;
+	uint16_t cgid;
+	uint8_t reserved2[60];
+};
 
-static void qbman_cgr_attr_clear(struct qbman_attr *a)
+int qbman_cgr_query(struct qbman_swp *s, uint32_t cgid,
+		    struct qbman_cgr_query_rslt *r)
 {
-	memset(a, 0, sizeof(*a));
-	attr_type_set(a, qbman_attr_usage_cgr);
-}
+	struct qbman_cgr_query_desc *p;
 
-int qbman_cgr_query(struct qbman_swp *s, uint32_t cgid, struct qbman_attr *attr)
-{
-	uint32_t *p;
-	uint32_t verb, rslt;
-	uint32_t *d[2];
-	int i;
-	uint32_t query_verb;
+	p = (struct qbman_cgr_query_desc *)qbman_swp_mc_start(s);
+	if (!p)
+		return -EBUSY;
 
-	d[0] = ATTR32(attr);
-	d[1] = ATTR32_1(attr);
-
-	qbman_cgr_attr_clear(attr);
-
-	for (i = 0; i < 2; i++) {
-		p = qbman_swp_mc_start(s);
-		if (!p)
-			return -EBUSY;
-		query_verb = i ? QBMAN_WRED_QUERY : QBMAN_CGR_QUERY;
-
-		qb_attr_code_encode(&code_cgr_cgid, p, cgid);
-		p = qbman_swp_mc_complete(s, p, p[0] | query_verb);
-
-		/* Decode the outcome */
-		verb = qb_attr_code_decode(&code_generic_verb, p);
-		rslt = qb_attr_code_decode(&code_generic_rslt, p);
-		QBMAN_BUG_ON(verb != query_verb);
-
-		/* Determine success or failure */
-		if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-			pr_err("Query CGID 0x%x failed,", cgid);
-			pr_err(" verb=0x%02x, code=0x%02x\n", verb, rslt);
-			return -EIO;
-		}
-		/* For the configure, word[0] of the command contains only the
-		 * verb/cgid. For the query, word[0] of the result contains
-		 * only the verb/rslt fields. Skip word[0] in the latter case.
-		 */
-		memcpy(&d[i][1], &p[1], QBMAN_QUERY_RESPONSE_LEN);
+	p->cgid = cgid;
+	*r = *(struct qbman_cgr_query_rslt *)qbman_swp_mc_complete(s, p,
+							QBMAN_CGR_QUERY);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query CGID %d failed, no response\n",
+			cgid);
+		return -EIO;
 	}
+
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_CGR_QUERY);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query CGID 0x%x failed,code=0x%02x\n", cgid, r->rslt);
+		return -EIO;
+	}
+
 	return 0;
 }
 
-void qbman_cgr_attr_get_ctl1(struct qbman_attr *d, int *cscn_wq_en_enter,
-			     int *cscn_wq_en_exit, int *cscn_wq_icd)
-	{
-	uint32_t *p = ATTR32(d);
-	*cscn_wq_en_enter = !!qb_attr_code_decode(&code_cgr_cscn_wq_en_enter,
-									 p);
-	*cscn_wq_en_exit = !!qb_attr_code_decode(&code_cgr_cscn_wq_en_exit, p);
-	*cscn_wq_icd = !!qb_attr_code_decode(&code_cgr_cscn_wq_icd, p);
+int qbman_cgr_get_cscn_wq_en_enter(struct qbman_cgr_query_rslt *r)
+{
+	return (int)(r->ctl1 & 0x1);
 }
 
-void qbman_cgr_attr_get_mode(struct qbman_attr *d, uint32_t *mode,
-			     int *rej_cnt_mode, int *cscn_bdi)
+int qbman_cgr_get_cscn_wq_en_exit(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*mode = qb_attr_code_decode(&code_cgr_mode, p);
-	*rej_cnt_mode = !!qb_attr_code_decode(&code_cgr_rej_cnt_mode, p);
-	*cscn_bdi = !!qb_attr_code_decode(&code_cgr_cscn_bdi, p);
+	return (int)((r->ctl1 & 0x2) >> 1);
 }
 
-void qbman_cgr_attr_get_ctl2(struct qbman_attr *d, int *cscn_wr_en_enter,
-			     int *cscn_wr_en_exit, int *cg_wr_ae,
-			     int *cscn_dcp_en, int *cg_wr_va)
+int qbman_cgr_get_cscn_wq_icd(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*cscn_wr_en_enter = !!qb_attr_code_decode(&code_cgr_cscn_wr_en_enter,
-									p);
-	*cscn_wr_en_exit = !!qb_attr_code_decode(&code_cgr_cscn_wr_en_exit, p);
-	*cg_wr_ae = !!qb_attr_code_decode(&code_cgr_cg_wr_ae, p);
-	*cscn_dcp_en = !!qb_attr_code_decode(&code_cgr_cscn_dcp_en, p);
-	*cg_wr_va = !!qb_attr_code_decode(&code_cgr_cg_wr_va, p);
+	return (int)((r->ctl1 & 0x4) >> 2);
 }
 
-void qbman_cgr_attr_get_iwc(struct qbman_attr *d, int *i_cnt_wr_en,
-			    uint32_t *i_cnt_wr_bnd)
+uint8_t qbman_cgr_get_mode(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*i_cnt_wr_en = !!qb_attr_code_decode(&code_cgr_i_cnt_wr_en, p);
-	*i_cnt_wr_bnd = qb_attr_code_decode(&code_cgr_i_cnt_wr_bnd, p);
+	return r->mode & 0x3;
 }
 
-void qbman_cgr_attr_get_tdc(struct qbman_attr *d, int *td_en)
+int qbman_cgr_get_rej_cnt_mode(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*td_en = !!qb_attr_code_decode(&code_cgr_td_en, p);
+	return (int)((r->mode & 0x4) >> 2);
 }
 
-void qbman_cgr_attr_get_cs_thres(struct qbman_attr *d, uint32_t *cs_thres)
+int qbman_cgr_get_cscn_bdi(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*cs_thres = qbman_thresh_to_value(qb_attr_code_decode(
-						&code_cgr_cs_thres, p));
+	return (int)((r->mode & 0x8) >> 3);
 }
 
-void qbman_cgr_attr_get_cs_thres_x(struct qbman_attr *d,
-				   uint32_t *cs_thres_x)
+uint16_t qbman_cgr_attr_get_cs_thres(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*cs_thres_x = qbman_thresh_to_value(qb_attr_code_decode(
-					    &code_cgr_cs_thres_x, p));
+	return qbman_thresh_to_value(r->cs_thres);
 }
 
-void qbman_cgr_attr_get_td_thres(struct qbman_attr *d, uint32_t *td_thres)
+uint16_t qbman_cgr_attr_get_cs_thres_x(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*td_thres = qbman_thresh_to_value(qb_attr_code_decode(
-					  &code_cgr_td_thres, p));
+	return qbman_thresh_to_value(r->cs_thres_x);
 }
 
-void qbman_cgr_attr_get_cscn_tdcp(struct qbman_attr *d, uint32_t *cscn_tdcp)
+uint16_t qbman_cgr_attr_get_td_thres(struct qbman_cgr_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*cscn_tdcp = qb_attr_code_decode(&code_cgr_cscn_tdcp, p);
+	return qbman_thresh_to_value(r->td_thres);
 }
 
-void qbman_cgr_attr_get_cscn_wqid(struct qbman_attr *d, uint32_t *cscn_wqid)
+int qbman_cgr_wred_query(struct qbman_swp *s, uint32_t cgid,
+			struct qbman_wred_query_rslt *r)
 {
-	uint32_t *p = ATTR32(d);
-	*cscn_wqid = qb_attr_code_decode(&code_cgr_cscn_wqid, p);
+	struct qbman_cgr_query_desc *p;
+
+	p = (struct qbman_cgr_query_desc *)qbman_swp_mc_start(s);
+	if (!p)
+		return -EBUSY;
+
+	p->cgid = cgid;
+	*r = *(struct qbman_wred_query_rslt *)qbman_swp_mc_complete(s, p,
+							QBMAN_WRED_QUERY);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query CGID WRED %d failed, no response\n",
+			cgid);
+		return -EIO;
+	}
+
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_WRED_QUERY);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query CGID WRED 0x%x failed,code=0x%02x\n",
+							 cgid, r->rslt);
+		return -EIO;
+	}
+
+	return 0;
 }
 
-void qbman_cgr_attr_get_cscn_vcgid(struct qbman_attr *d,
-				   uint32_t *cscn_vcgid)
+int qbman_cgr_attr_wred_get_edp(struct qbman_wred_query_rslt *r, uint32_t idx)
 {
-	uint32_t *p = ATTR32(d);
-	*cscn_vcgid = qb_attr_code_decode(&code_cgr_cscn_vcgid, p);
+	return (int)(r->edp[idx] & 1);
 }
 
-void qbman_cgr_attr_get_cg_icid(struct qbman_attr *d, uint32_t *icid,
-				int *pl)
+uint32_t qbman_cgr_attr_wred_get_parm_dp(struct qbman_wred_query_rslt *r,
+					 uint32_t idx) 
 {
-	uint32_t *p = ATTR32(d);
-	*icid = qb_attr_code_decode(&code_cgr_cg_icid, p);
-	*pl = !!qb_attr_code_decode(&code_cgr_cg_pl, p);
-}
-
-void qbman_cgr_attr_get_cg_wr_addr(struct qbman_attr *d,
-				   uint64_t *cg_wr_addr)
-{
-	uint32_t *p = ATTR32(d);
-	*cg_wr_addr = ((uint64_t)qb_attr_code_decode(&code_cgr_cg_wr_addr_hi,
-			p) << 32) |
-			(uint64_t)qb_attr_code_decode(&code_cgr_cg_wr_addr_lo,
-			p);
-}
-
-void qbman_cgr_attr_get_cscn_ctx(struct qbman_attr *d, uint64_t *cscn_ctx)
-{
-	uint32_t *p = ATTR32(d);
-	*cscn_ctx = ((uint64_t)qb_attr_code_decode(&code_cgr_cscn_ctx_hi, p)
-			<< 32) |
-			(uint64_t)qb_attr_code_decode(&code_cgr_cscn_ctx_lo, p);
-}
-
-#define WRED_EDP_WORD(n) (18 + n/4)
-#define WRED_EDP_OFFSET(n) (8 * (n % 4))
-#define WRED_PARM_DP_WORD(n) (n + 20)
-#define WRED_WE_EDP(n) (16 + n * 2)
-#define WRED_WE_PARM_DP(n) (17 + n * 2)
-void qbman_cgr_attr_wred_get_edp(struct qbman_attr *d, uint32_t idx,
-				 int *edp)
-{
-	uint32_t *p = ATTR32(d);
-	struct qb_attr_code code_wred_edp = QB_CODE(WRED_EDP_WORD(idx),
-						WRED_EDP_OFFSET(idx), 8);
-	*edp = (int)qb_attr_code_decode(&code_wred_edp, p);
+	return r->wred_parm_dp[idx];
 }
 
 void qbman_cgr_attr_wred_dp_decompose(uint32_t dp, uint64_t *minth,
@@ -760,63 +553,64 @@ void qbman_cgr_attr_wred_dp_decompose(uint32_t dp, uint64_t *minth,
 		*minth = *maxth - (256 + step_i) * (1<<(step_s - 1));
 }
 
-void qbman_cgr_attr_wred_get_parm_dp(struct qbman_attr *d, uint32_t idx,
-				     uint32_t *dp)
-{
-	uint32_t *p = ATTR32(d);
-	struct qb_attr_code code_wred_parm_dp = QB_CODE(WRED_PARM_DP_WORD(idx),
-						0, 8);
-	*dp = qb_attr_code_decode(&code_wred_parm_dp, p);
-}
-
 /* Query CGR/CCGR/CQ statistics */
-static struct qb_attr_code code_cgr_stat_ct = QB_CODE(4, 0, 32);
-static struct qb_attr_code code_cgr_stat_frame_cnt_lo = QB_CODE(4, 0, 32);
-static struct qb_attr_code code_cgr_stat_frame_cnt_hi = QB_CODE(5, 0, 8);
-static struct qb_attr_code code_cgr_stat_byte_cnt_lo = QB_CODE(6, 0, 32);
-static struct qb_attr_code code_cgr_stat_byte_cnt_hi = QB_CODE(7, 0, 16);
+struct qbman_cgr_statistics_query_desc {
+	uint8_t verb;
+	uint8_t reserved;
+	uint16_t cgid;
+	uint8_t reserved1;
+	uint8_t ct;
+	uint8_t reserved2[58];
+};
+
+struct qbman_cgr_statistics_query_rslt {
+	uint8_t verb;
+	uint8_t rslt;
+	uint8_t reserved[14];
+	uint64_t frm_cnt;
+	uint64_t byte_cnt;
+	uint32_t reserved2[8];
+};
+
 static int qbman_cgr_statistics_query(struct qbman_swp *s, uint32_t cgid,
 				      int clear, uint32_t command_type,
 				      uint64_t *frame_cnt, uint64_t *byte_cnt)
 {
-	uint32_t *p;
-	uint32_t verb, rslt;
+	struct qbman_cgr_statistics_query_desc *p;
+	struct qbman_cgr_statistics_query_rslt *r;
 	uint32_t query_verb;
-	uint32_t hi, lo;
 
-	p = qbman_swp_mc_start(s);
+	p = (struct qbman_cgr_statistics_query_desc *)qbman_swp_mc_start(s);
 	if (!p)
 		return -EBUSY;
 
-	qb_attr_code_encode(&code_cgr_cgid, p, cgid);
+	p->cgid = cgid;
 	if (command_type < 2)
-		qb_attr_code_encode(&code_cgr_stat_ct, p, command_type);
+		p->ct = command_type;
 	query_verb = clear ?
 			QBMAN_CGR_STAT_QUERY_CLR : QBMAN_CGR_STAT_QUERY;
-	p = qbman_swp_mc_complete(s, p, p[0] | query_verb);
-
-	/* Decode the outcome */
-	verb = qb_attr_code_decode(&code_generic_verb, p);
-	rslt = qb_attr_code_decode(&code_generic_rslt, p);
-	QBMAN_BUG_ON(verb != query_verb);
-
-	/* Determine success or failure */
-	if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-		pr_err("Query statistics of CGID 0x%x failed,", cgid);
-		pr_err(" verb=0x%02x code=0x%02x\n", verb, rslt);
+	r = (struct qbman_cgr_statistics_query_rslt *)qbman_swp_mc_complete(s,
+							p, query_verb);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query CGID %d statistics failed, no response\n",
+			cgid);
 		return -EIO;
 	}
 
-	if (*frame_cnt) {
-		hi = qb_attr_code_decode(&code_cgr_stat_frame_cnt_hi, p);
-		lo = qb_attr_code_decode(&code_cgr_stat_frame_cnt_lo, p);
-		*frame_cnt = ((uint64_t)hi << 32) | (uint64_t)lo;
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != query_verb);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query statistics of CGID 0x%x failed, code=0x%02x\n",
+						cgid, r->rslt);
+		return -EIO;
 	}
-	if (*byte_cnt) {
-		hi = qb_attr_code_decode(&code_cgr_stat_byte_cnt_hi, p);
-		lo = qb_attr_code_decode(&code_cgr_stat_byte_cnt_lo, p);
-		*byte_cnt = ((uint64_t)hi << 32) | (uint64_t)lo;
-	}
+
+	if (*frame_cnt)
+		*frame_cnt = r->frm_cnt & 0xFFFFFFFFFFllu;
+	if (*byte_cnt)
+		*byte_cnt = r->byte_cnt & 0xFFFFFFFFFFllu;
 
 	return 0;
 }
@@ -843,88 +637,70 @@ int qbman_cq_dequeue_statistics(struct qbman_swp *s, uint32_t cgid, int clear,
 }
 
 /* WQ Chan Query */
-static struct qb_attr_code code_wqchan_chanid = QB_CODE(0, 16, 16);
-static struct qb_attr_code code_wqchan_cdan_ctx_lo = QB_CODE(2, 0, 32);
-static struct qb_attr_code code_wqchan_cdan_ctx_hi = QB_CODE(3, 0, 32);
-static struct qb_attr_code code_wqchan_cdan_wqid = QB_CODE(1, 16, 16);
-static struct qb_attr_code code_wqchan_ctrl = QB_CODE(1, 8, 8);
-
-static void qbman_wqchan_attr_clear(struct qbman_attr *a)
-{
-	memset(a, 0, sizeof(*a));
-	attr_type_set(a, qbman_attr_usage_wqchan);
-}
+struct qbman_wqchan_query_desc {
+	uint8_t verb;
+	uint8_t reserved;
+	uint16_t chid;
+	uint8_t reserved2[60];
+};
 
 int qbman_wqchan_query(struct qbman_swp *s, uint16_t chanid,
-		       struct qbman_attr *a)
+		       struct qbman_wqchan_query_rslt *r)
 {
-	uint32_t *p;
-	uint32_t rslt;
-	uint32_t *attr = ATTR32(a);
-
-	qbman_wqchan_attr_clear(a);
+	struct qbman_wqchan_query_desc *p;
 
 	/* Start the management command */
-	p = qbman_swp_mc_start(s);
+	p = (struct qbman_wqchan_query_desc *)qbman_swp_mc_start(s);
 	if (!p)
 		return -EBUSY;
 
 	/* Encode the caller-provided attributes */
-	qb_attr_code_encode(&code_wqchan_chanid, p, chanid);
+	p->chid = chanid;
 
 	/* Complete the management command */
-	p = qbman_swp_mc_complete(s, p, p[0] | QBMAN_WQ_QUERY);
-
-	/* Decode the outcome */
-	rslt = qb_attr_code_decode(&code_generic_rslt, p);
-	QBMAN_BUG_ON(qb_attr_code_decode(&code_generic_verb, p) != QBMAN_WQ_QUERY);
-
-	/* Determine success or failure */
-	if (unlikely(rslt != QBMAN_MC_RSLT_OK)) {
-		pr_err("Query of WQCHAN 0x%x failed, code=0x%02x\n",
-		       chanid, rslt);
+	*r = *(struct qbman_wqchan_query_rslt *)qbman_swp_mc_complete(s, p,
+							QBMAN_WQ_QUERY);
+	if (unlikely(!r)) {
+		pr_err("qbman: Query WQ Channel %d failed, no response\n",
+			chanid);
 		return -EIO;
 	}
 
-	/* For the query, word[0] of the result contains only the
-	 * verb/rslt fields, so skip word[0].
-	 */
-	memcpy(&attr[1], &p[1], QBMAN_QUERY_RESPONSE_LEN);
+	/* Decode the outcome */
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_WQ_QUERY);
+
+	/* Determine success or failure */
+	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
+		pr_err("Query of WQCHAN 0x%x failed, code=0x%02x\n",
+		       chanid, r->rslt);
+		return -EIO;
+	}
+
 	return 0;
 }
 
-void qbman_wqchan_attr_get_wqlen(struct qbman_attr *attr, int wq, uint32_t *len)
+uint32_t qbman_wqchan_attr_get_wqlen(struct qbman_wqchan_query_rslt *r, int wq)
 {
-	uint32_t *p = ATTR32(attr);
-	struct qb_attr_code code_wqchan_len = QB_CODE(wq+ 8, 0, 24);
-	*len = qb_attr_code_decode(&code_wqchan_len, p);
+	return r->wq_len[wq] & 0x00FFFFFF;
 }
 
-void qbman_wqchan_attr_get_cdan_ctx(struct qbman_attr *attr, uint64_t *cdan_ctx)
+uint64_t qbman_wqchan_attr_get_cdan_ctx(struct qbman_wqchan_query_rslt *r)
 {
-	uint32_t lo, hi;
-	uint32_t *p = ATTR32(attr);
-
-	lo = qb_attr_code_decode(&code_wqchan_cdan_ctx_lo, p);
-	hi = qb_attr_code_decode(&code_wqchan_cdan_ctx_hi, p);
-	*cdan_ctx = ((uint64_t)hi << 32) | (uint64_t)lo;
+	return r->cdan_ctx;
 }
 
-void qbman_wqchan_attr_get_cdan_wqid(struct qbman_attr *attr,
-				    uint16_t *cdan_wqid)
+uint16_t qbman_wqchan_attr_get_cdan_wqid(struct qbman_wqchan_query_rslt *r)
 {
-	uint32_t *p = ATTR32(attr);
-	*cdan_wqid = (uint16_t)qb_attr_code_decode(&code_wqchan_cdan_wqid, p);
+	return r->cdan_wqid;
 }
 
-void qbman_wqchan_attr_get_ctrl(struct qbman_attr *attr, uint8_t *ctrl)
+uint8_t qbman_wqchan_attr_get_ctrl(struct qbman_wqchan_query_rslt *r)
 {
-	uint32_t *p = ATTR32(attr);
-	*ctrl = (uint8_t)qb_attr_code_decode(&code_wqchan_ctrl, p);
+	return r->ctrl;
 }
-void qbman_wqchan_attr_get_chanid(struct qbman_attr *attr, uint16_t *chanid)
+
+uint16_t qbman_wqchan_attr_get_chanid(struct qbman_wqchan_query_rslt *r)
 {
-	uint32_t *p = ATTR32(attr);
-	*chanid = (uint16_t)qb_attr_code_decode(&code_wqchan_chanid, p);
+	return r->chid;
 }
 

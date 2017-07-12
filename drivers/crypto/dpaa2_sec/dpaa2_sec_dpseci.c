@@ -769,7 +769,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 				      DPAA2_DQRR_RING_SIZE : nb_ops);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				    (dma_addr_t)DPAA2_VADDR_TO_IOVA(dq_storage),
+				    (uint64_t)DPAA2_VADDR_TO_IOVA(dq_storage),
 				    1);
 
 	/*Issue a volatile dequeue command. */
@@ -869,7 +869,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 					       DPAA2_DQRR_RING_SIZE : nb_ops);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)) {
 			while (!qbman_check_command_complete(
 					get_swp_active_dqs(DPAA2_PER_LCORE_SEC_DPIO->index)))
@@ -942,7 +942,7 @@ dpaa2_sec_dequeue_prefetch_burst(void *qp, struct rte_crypto_op **ops,
 	qbman_pull_desc_set_numframes(&pulldesc, DPAA2_DQRR_RING_SIZE);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+				    (uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/*Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
