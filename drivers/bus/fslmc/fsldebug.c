@@ -1068,7 +1068,7 @@ static void *open_socket(void *arg  __attribute__((__unused__)))
 	struct sockaddr_in server_addr, client_addr;
 	socklen_t client_addr_size;
 	fd_set readset;
-
+	unsigned int lcore_id = rte_lcore_id();
 	void *msg;
 	char *port;
 	uint16_t port_no = DEFAULT_PLAT_DEBUG_PORT;
@@ -1104,7 +1104,7 @@ static void *open_socket(void *arg  __attribute__((__unused__)))
 
 	client_addr_size = sizeof(client_addr);
 
-	debug_dpio = dpaa2_get_qbman_swp();
+	debug_dpio = dpaa2_get_qbman_swp(lcore_id);
 
 	while (1) {
 		/*wait on udpSocket for any msg */

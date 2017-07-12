@@ -46,13 +46,13 @@
 #define lower_32_bits(x) ((uint32_t)(x))
 #define upper_32_bits(x) ((uint32_t)(((x) >> 16) >> 16))
 
-#ifndef ETH_VLAN_HLEN
-#define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
-#endif
-
 #define SVR_LS1080A             0x87030000
 #define SVR_LS2080A             0x87010000
 #define SVR_LS2088A             0x87090000
+
+#ifndef ETH_VLAN_HLEN
+#define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
+#endif
 
 #define MAX_TX_RING_SLOTS	8
 	/** <Maximum number of slots available in TX ring*/
@@ -63,11 +63,6 @@
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
 #define NUM_DQS_PER_QUEUE       2
-#define MC_PORTALS_BASE_PADDR   0x00080C000000ULL
-#define MC_PORTAL_STRIDE        0x10000
-#define MC_PORTAL_SIZE		64
-#define MC_PORTAL_ID_TO_PADDR(portal_id) \
-(MC_PORTALS_BASE_PADDR + (portal_id) * MC_PORTAL_STRIDE)
 
 /* Maximum release/acquire from QBMAN */
 #define DPAA2_MBUF_MAX_ACQ_REL	7
@@ -82,7 +77,7 @@
 
 /* we will re-use the HEADROOM for annotation in RX */
 #define DPAA2_HW_BUF_RESERVE	0
-#define DPAA2_PACKET_LAYOUT_ALIGN	256 /*todo should be 64 */
+#define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
 
 struct dpaa2_dpio_dev {
 	TAILQ_ENTRY(dpaa2_dpio_dev) next;
@@ -146,7 +141,7 @@ struct swp_active_dqs {
 
 #define NUM_MAX_SWP 64
 
-extern struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
+extern struct swp_active_dqs rte_global_active_dqs_list[NUM_MAX_SWP];
 
 /*! Global MCP list */
 extern void *(*rte_mcp_ptr_list);
@@ -211,30 +206,24 @@ enum qbman_fd_format {
 	((fle)->fin_bpid_offset |= (uint32_t)(offset) << 16)
 #define DPAA2_SET_FLE_BPID(fle, bpid) ((fle)->fin_bpid_offset |= (uint64_t)bpid)
 #define DPAA2_GET_FLE_BPID(fle) ((fle)->fin_bpid_offset & 0x000000ff)
-#define DPAA2_SET_FLE_FIN(fle)	((fle)->fin_bpid_offset |= (uint64_t)1 << 31)
+#define DPAA2_SET_FLE_FIN(fle)	(fle->fin_bpid_offset |= (uint64_t)1 << 31)
 #define DPAA2_SET_FLE_IVP(fle)   (((fle)->fin_bpid_offset |= 0x00004000))
 #define DPAA2_SET_FD_COMPOUND_FMT(fd)	\
-	((fd)->simple.bpid_offset |= (uint32_t)1 << 28)
+	(fd->simple.bpid_offset |= (uint32_t)1 << 28)
 #define DPAA2_GET_FD_ADDR(fd)	\
 ((uint64_t)((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
 
 #define DPAA2_GET_FD_LEN(fd)	((fd)->simple.len)
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
-#define DPAA2_GET_FD_IVP(fd)   (((fd)->simple.bpid_offset & 0x00004000) >> 14)
+#define DPAA2_GET_FD_IVP(fd)   ((fd->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	(((fd)->simple.bpid_offset & 0x0FFF0000) >> 16)
-#define DPAA2_GET_FD_FRC(fd)	((fd)->simple.frc)
-#define DPAA2_GET_FD_FLC(fd)	\
-((uint64_t)((((uint64_t)((fd)->simple.flc_hi)) << 32) + (fd)->simple.flc_lo))
-
 #define DPAA2_GET_FLE_OFFSET(fle) (((fle)->fin_bpid_offset & 0x0FFF0000) >> 16)
-#define DPAA2_SET_FLE_SG_EXT(fle) ((fle)->fin_bpid_offset |= (uint64_t)1 << 29)
+#define DPAA2_SET_FLE_SG_EXT(fle) (fle->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
-	(((fle)->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0)
+	((fle->fin_bpid_offset & ((uint64_t)1 << 29)) ? 1 : 0)
 
 #define DPAA2_INLINE_MBUF_FROM_BUF(buf, meta_data_size) \
 	((struct rte_mbuf *)((uint64_t)(buf) - (meta_data_size)))
-#define DPAA2_BUF_FROM_INLINE_MBUF(mbuf, meta_data_size) \
-	((uint8_t *)((uint64_t)mbuf + meta_data_size))
 
 #define DPAA2_ASAL_VAL (DPAA2_MBUF_HW_ANNOTATION / 64)
 
@@ -249,18 +238,6 @@ enum qbman_fd_format {
 		(sg)->fin_bpid_offset |= (uint32_t)fin << 31;		\
 } while (0)
 #define DPAA2_SG_IS_FINAL(sg) (!!((sg)->fin_bpid_offset >> 31))
-
-/*Macros to define QBMAN enqueue options */
-#define DPAA2_ETH_EQ_DISABLE		0	/*!< Dont Enqueue the Frame */
-#define DPAA2_ETH_EQ_RESP_ON_SUCC	1	/*!< Enqueue the Frame with
-						 * response after success
-						 */
-#define DPAA2_ETH_EQ_RESP_ON_FAIL	2	/*!< Enqueue the Frame with
-						 * response after failure
-						 */
-#define DPAA2_ETH_EQ_NO_RESP		3	/*!< Enqueue the Frame without
-						 * response
-						 */
 /* Only Enqueue Error responses will be
  * pushed on FQID_ERR of Enqueue FQ
  */
@@ -323,12 +300,6 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 #define DPAA2_IOVA_TO_VADDR(_iova) dpaa2_mem_ptov((phys_addr_t)(_iova))
 
 /**
- * macro to convert modify the memory containing Virtual address to IOVA
- */
-#define DPAA2_MODIFY_VADDR_TO_IOVA(_mem, _type) \
-	{_mem = (_type)(dpaa2_mem_vtop((uint64_t)(_mem))); }
-
-/**
  * macro to convert modify the memory containing IOVA to Virtual address
  */
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type) \
@@ -338,38 +309,36 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 
 #define DPAA2_MBUF_VADDR_TO_IOVA(mbuf) ((mbuf)->buf_addr)
 #define DPAA2_OP_VADDR_TO_IOVA(op) (op)
-
 #define DPAA2_VADDR_TO_IOVA(_vaddr) (_vaddr)
 #define DPAA2_IOVA_TO_VADDR(_iova) (_iova)
-#define DPAA2_MODIFY_VADDR_TO_IOVA(_mem, _type)
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type)
 
 #endif /* RTE_LIBRTE_DPAA2_USE_PHYS_IOVA */
 
 static inline
-int check_swp_active_dqs(uint16_t dpio_dev_index)
+int check_swp_active_dqs(uint16_t dpio_index)
 {
-	if (global_active_dqs_list[dpio_dev_index].global_active_dqs != NULL)
+	if (rte_global_active_dqs_list[dpio_index].global_active_dqs != NULL)
 		return 1;
 	return 0;
 }
 
 static inline
-void clear_swp_active_dqs(uint16_t dpio_dev_index)
+void clear_swp_active_dqs(uint16_t dpio_index)
 {
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
+	rte_global_active_dqs_list[dpio_index].global_active_dqs = NULL;
 }
 
 static inline
-struct qbman_result *get_swp_active_dqs(uint16_t dpio_dev_index)
+struct qbman_result *get_swp_active_dqs(uint16_t dpio_index)
 {
-	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
+	return rte_global_active_dqs_list[dpio_index].global_active_dqs;
 }
 
 static inline
-void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
+void set_swp_active_dqs(uint16_t dpio_index, struct qbman_result *dqs)
 {
-	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
+	rte_global_active_dqs_list[dpio_index].global_active_dqs = dqs;
 }
 struct dpaa2_dpbp_dev *dpaa2_alloc_dpbp_dev(void);
 struct dpaa2_dpbp_dev *dpaa2_get_dpbp_dev_from_name(char *dev_name);

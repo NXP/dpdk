@@ -128,8 +128,11 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	rte_dpaa2_bpid_info[bpid].bp_list = bp_list;
 	rte_dpaa2_bpid_info[bpid].bpid = bpid;
 
-	bp_info = rte_malloc(NULL, sizeof(struct dpaa2_bp_info), RTE_CACHE_LINE_SIZE);
-	rte_memcpy(bp_info, (void *)&rte_dpaa2_bpid_info[bpid], sizeof(struct dpaa2_bp_info));
+	bp_info = rte_malloc(NULL,
+			     sizeof(struct dpaa2_bp_info),
+			     RTE_CACHE_LINE_SIZE);
+	rte_memcpy(bp_info, (void *)&rte_dpaa2_bpid_info[bpid],
+		   sizeof(struct dpaa2_bp_info));
 	mp->pool_data = (void *)bp_info;
 
 	PMD_INIT_LOG(DEBUG, "BP List created for bpid =%d", dpbp_attr.bpid);
@@ -192,7 +195,7 @@ rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
-			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			RTE_LOG(ERR, PMD, "Failed to allocate IO portal\n");
 			rte_panic("DPAA2 IO Portal alloc fail:can not proceed");
 			return;
 		}
@@ -272,7 +275,7 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
-			RTE_LOG(ERR, PMD, "Failed to allocate IO portal");
+			RTE_LOG(ERR, PMD, "Failed to allocate IO portal\n");
 			rte_panic("DPAA2 IO Portal alloc fail:can not proceed");
 			return ret;
 		}
@@ -300,7 +303,7 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 			/* Releasing all buffers allocated */
 			rte_dpaa2_mbuf_release(pool, obj_table, bpid,
 					   bp_info->meta_data_size, n);
-			return -1;
+			return -ENOBUFS;
 		}
 		/* assigning mbuf from the acquired objects */
 		for (i = 0; (i < ret) && bufs[i]; i++) {
@@ -333,7 +336,7 @@ rte_hw_mbuf_free_bulk(struct rte_mempool *pool,
 
 	bp_info = mempool_to_bpinfo(pool);
 	if (!(bp_info->bp_list)) {
-		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured");
+		RTE_LOG(ERR, PMD, "DPAA2 buffer pool not configured\n");
 		return -ENOENT;
 	}
 	rte_dpaa2_mbuf_release(pool, obj_table, bp_info->bpid,
@@ -355,7 +358,7 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 	struct dpaa2_dpbp_dev *dpbp_node;
 
 	if (!mp || !mp->pool_data) {
-		RTE_LOG(ERR, PMD, "Invalid mempool provided");
+		RTE_LOG(ERR, PMD, "Invalid mempool provided\n");
 		return 0;
 	}
 
@@ -365,12 +368,12 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 	ret = dpbp_get_num_free_bufs(&dpbp_node->dpbp, CMD_PRI_LOW,
 				     dpbp_node->token, &num_of_bufs);
 	if (ret) {
-		RTE_LOG(ERR, PMD, "Unable to obtain free buf count (err=%d)",
+		RTE_LOG(ERR, PMD, "Unable to obtain free buf count (err=%d)\n",
 			ret);
 		return 0;
 	}
 
-	RTE_LOG(DEBUG, PMD, "Free bufs = %u", num_of_bufs);
+	RTE_LOG(DEBUG, PMD, "Free bufs = %u\n", num_of_bufs);
 
 	return num_of_bufs;
 }

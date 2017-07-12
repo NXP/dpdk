@@ -151,7 +151,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 
 	/* First Scatter gather entry */
 	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
-			rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	/* Prepare all the metadata for first segment */
 	first_seg->buf_addr = (uint8_t *)sg_addr;
 	first_seg->ol_flags = 0;
@@ -185,7 +185,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 		cur_seg = next_seg;
 	}
 	temp = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
-			rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	rte_mbuf_refcnt_set(temp, 1);
 	rte_pktmbuf_free_seg(temp);
 
@@ -584,7 +584,6 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 		dq_storage++;
 		num_rx++;
-
 	}
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
@@ -691,7 +690,14 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				bpid = priv->bp_list->buf_pool.bpid;
+				if (priv->bp_list) {
+					bpid = priv->bp_list->buf_pool.bpid;
+				} else {
+					PMD_TX_LOG(ERR,
+						   "err: no bpool attached");
+					num_tx = 0;
+					goto skip_tx;
+				}
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					PMD_TX_LOG(ERR, "S/G support not added"
 						" for non hw offload buffer");

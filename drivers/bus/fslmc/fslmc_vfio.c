@@ -97,9 +97,9 @@ static int vfio_connect_container(struct fslmc_vfio_group *vfio_group)
 		container = &vfio_containers[i];
 		if (!ioctl(vfio_group->fd, VFIO_GROUP_SET_CONTAINER,
 			   &container->fd)) {
-			FSLMC_VFIO_LOG(INFO, "Container pre-exists with"
-				    " FD[0x%x] for this group",
-				    container->fd);
+			FSLMC_VFIO_LOG(INFO,
+			    "Container pre-exists with FD[0x%x] for this group",
+			    container->fd);
 			vfio_group->container = container;
 			return 0;
 		}
@@ -255,8 +255,8 @@ int rte_fslmc_vfio_dmamap(void)
 		ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA,
 			    &dma_map);
 		if (ret) {
-			FSLMC_VFIO_LOG(ERR, "VFIO_IOMMU_MAP_DMA API"
-				       "(errno = %d)", errno);
+			FSLMC_VFIO_LOG(ERR, "VFIO_IOMMU_MAP_DMA API(errno = %d)",
+				       errno);
 			return ret;
 		}
 	}
@@ -291,8 +291,8 @@ static int64_t vfio_map_mcp_obj(struct fslmc_vfio_group *group, char *mcp_obj)
 	/* getting the mcp object's fd*/
 	mc_fd = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, mcp_obj);
 	if (mc_fd < 0) {
-		FSLMC_VFIO_LOG(ERR, "error in VFIO get device %s fd from group"
-			    " %d", mcp_obj, group->fd);
+		FSLMC_VFIO_LOG(ERR, "error in VFIO get dev %s fd from group %d",
+			       mcp_obj, group->fd);
 		return v_addr;
 	}
 
@@ -311,7 +311,7 @@ static int64_t vfio_map_mcp_obj(struct fslmc_vfio_group *group, char *mcp_obj)
 	}
 
 	FSLMC_VFIO_LOG(DEBUG, "region offset = %llx  , region size = %llx",
-		     reg_info.offset, reg_info.size);
+		       reg_info.offset, reg_info.size);
 
 	v_addr = (uint64_t)mmap(NULL, reg_info.size,
 		PROT_WRITE | PROT_READ, MAP_SHARED,
@@ -323,7 +323,7 @@ MC_FAILURE:
 	return v_addr;
 }
 
-int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
+int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 {
 	int len, ret;
 	char irq_set_buf[IRQ_SET_BUF_LEN];
@@ -352,7 +352,7 @@ int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 	return ret;
 }
 
-int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
+int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 {
 	struct vfio_irq_set *irq_set;
 	char irq_set_buf[IRQ_SET_BUF_LEN];
@@ -444,20 +444,19 @@ int fslmc_vfio_process_group(void)
 	struct fslmc_vfio_device *vdev;
 	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
 	char *temp_obj, *object_type, *mcp_obj, *dev_name;
-	int32_t object_id, i, dev_fd, ret;
+	int32_t object_id, i, dev_fd, ret = 0;
 	DIR *d;
 	struct dirent *dir;
 	char path[PATH_MAX];
 	int64_t v_addr;
 	int ndev_count;
-	int dpio_count = 0, dpbp_count = 0;
 	struct fslmc_vfio_group *group = &vfio_groups[0];
 	static int process_once;
 
 	/* if already done once */
 	if (process_once) {
-		FSLMC_VFIO_LOG(DEBUG, "Already scanned once - re-scan "
-			    "not supported");
+		FSLMC_VFIO_LOG(DEBUG,
+			       "Already scanned once - re-scan not supported");
 		return 0;
 	}
 	process_once = 0;
@@ -481,8 +480,8 @@ int fslmc_vfio_process_group(void)
 					rte_free(mcp_obj);
 				mcp_obj = rte_malloc(NULL, sizeof(dir->d_name), 0);
 				if (!mcp_obj) {
-					FSLMC_VFIO_LOG(ERR, "mcp obj:Unable to"
-						    " allocate memory");
+					FSLMC_VFIO_LOG(ERR,
+						       "mcp obj:alloc failed");
 					closedir(d);
 					return -ENOMEM;
 				}
@@ -554,9 +553,9 @@ int fslmc_vfio_process_group(void)
 		/* getting the device fd*/
 		dev_fd = ioctl(group->fd, VFIO_GROUP_GET_DEVICE_FD, dev_name);
 		if (dev_fd < 0) {
-			FSLMC_VFIO_LOG(ERR, "VFIO_GROUP_GET_DEVICE_FD error"
-				    " Device fd: %s, Group: %d",
-				    dev_name, group->fd);
+			FSLMC_VFIO_LOG(ERR,
+				       "GET_DEVICE_FD error fd: %s, Group: %d",
+				       dev_name, group->fd);
 			rte_free(dev_name);
 			goto FAILURE;
 		}
@@ -571,32 +570,48 @@ int fslmc_vfio_process_group(void)
 			FSLMC_VFIO_LOG(ERR, "DPAA2 VFIO_DEVICE_GET_INFO fail");
 			goto FAILURE;
 		}
+		if (!strcmp(object_type, "dpni") ||
+		    !strcmp(object_type, "dpseci")) {
+				struct rte_pci_device *dev;
 
-		if (!strcmp(object_type, "dpni")) {
-			ret = dpaa2_create_dpni_dev(vdev,
-						    &device_info,
-						    object_id);
-		} else if (!strcmp(object_type, "dpseci")) {
-			ret = dpaa2_create_dpseci_dev(vdev,
-						      &device_info,
-						      object_id);
+				dev = rte_malloc(NULL, sizeof(struct rte_pci_device), 0);
+				if (dev == NULL) {
+					FSLMC_VFIO_LOG(ERR, "device malloc failed");
+					goto FAILURE;
+				}
+
+				memset(dev, 0, sizeof(*dev));
+				/* store hw_id of dpni/dpseci device */
+				dev->addr.devid = object_id;
+				dev->id.vendor_id = DPAA2_VENDOR_ID;
+				dev->id.device_id = (strcmp(object_type, "dpseci")) ?
+					DPAA2_MC_DPNI_DEVID : DPAA2_MC_DPSECI_DEVID;
+				dev->addr.function = dev->id.device_id;
+
+				FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added [%s.%d]\n",
+                                      object_type, object_id);
+				/* Enable IRQ for DPNI devices */
+				if (dev->id.device_id == DPAA2_MC_DPNI_DEVID)
+					dpaa2_vfio_setup_intr(&dev->intr_handle,
+										  vdev->fd,
+										  device_info.num_irqs);
+
+				TAILQ_INSERT_TAIL(&pci_device_list, dev, next);
 		} else if (!strcmp(object_type, "dpio")) {
-			ret = dpaa2_create_dpio_dev(vdev,
-						    &device_info,
-						    object_id);
-			if (!ret)
-				dpio_count++;
+			ret = dpaa2_create_dpio_device(vdev,
+						       &device_info,
+						       object_id);
 		} else if (!strcmp(object_type, "dpbp")) {
-			ret = dpaa2_create_dpbp_dev(object_id);
-			if (!ret)
-				dpbp_count++;
+			ret = dpaa2_create_dpbp_device(vdev,
+						       &device_info,
+						       object_id);
 		} else {
-			FSLMC_VFIO_LOG(DEBUG, "%s-%d Not supported",
+			FSLMC_VFIO_LOG(DEBUG, "%s.%d Not supported",
 				       object_type, object_id);
 			continue;
 		}
 		if (ret)
-			FSLMC_VFIO_LOG(ERR, "%s-%d create failed",
+			FSLMC_VFIO_LOG(ERR, "%s.%d create failed",
 				       object_type, object_id);
 
 	}
@@ -608,8 +623,6 @@ int fslmc_vfio_process_group(void)
 		return ret;
 	}
 
-	FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added dpio_count = %d dpio_count=%d",
-		      dpbp_count, dpio_count);
 	return 0;
 
 FAILURE:

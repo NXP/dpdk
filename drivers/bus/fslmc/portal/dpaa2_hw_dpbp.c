@@ -57,7 +57,10 @@ TAILQ_HEAD(dpbp_dev_list, dpaa2_dpbp_dev);
 static struct dpbp_dev_list dpbp_dev_list
 	= TAILQ_HEAD_INITIALIZER(dpbp_dev_list); /*!< DPBP device list */
 
-int dpaa2_create_dpbp_dev(int object_id)
+int
+dpaa2_create_dpbp_device(struct fslmc_vfio_device *vdev __rte_unused,
+			 struct vfio_device_info *obj_info __rte_unused,
+			 int dpbp_id)
 {
 	struct dpaa2_dpbp_dev *dpbp_node;
 	int ret;
@@ -72,7 +75,7 @@ int dpaa2_create_dpbp_dev(int object_id)
 	/* Open the dpbp object */
 	dpbp_node->dpbp.regs = rte_mcp_ptr_list[MC_PORTAL_INDEX];
 	ret = dpbp_open(&dpbp_node->dpbp,
-			CMD_PRI_LOW, object_id, &dpbp_node->token);
+			CMD_PRI_LOW, dpbp_id, &dpbp_node->token);
 	if (ret) {
 		PMD_INIT_LOG(ERR, "Resource alloc failure with err code: %d",
 			     ret);
@@ -90,12 +93,12 @@ int dpaa2_create_dpbp_dev(int object_id)
 		return -1;
 	}
 
-	dpbp_node->dpbp_id = object_id;
+	dpbp_node->dpbp_id = dpbp_id;
 	rte_atomic16_init(&dpbp_node->in_use);
 
 	TAILQ_INSERT_TAIL(&dpbp_dev_list, dpbp_node, next);
 
-	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpbp-%d]", object_id);
+	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpbp.%d]", dpbp_id);
 
 	return 0;
 }
