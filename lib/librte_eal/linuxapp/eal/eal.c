@@ -722,6 +722,13 @@ static int rte_eal_vfio_setup(void)
 		vfio_enabled |= pci_vfio_is_enabled();
 	}
 
+#ifdef RTE_LIBRTE_FSLMC_BUS
+	if (!vfio_enabled) {
+		if (!vfio_enable("vfio_fsl_mc"))
+			vfio_enabled = 1;
+	}
+#endif
+
 	if (vfio_enabled) {
 
 		/* if we are primary process, create a thread to communicate with
