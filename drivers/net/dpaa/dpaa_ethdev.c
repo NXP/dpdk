@@ -889,8 +889,11 @@ static int dpaa_eth_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->rx_queues = rte_zmalloc(NULL,
 		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
 	for (loop = 0; loop < num_rx_fqs; loop++) {
-		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
-			DPAA_PCD_FQID_MULTIPLIER + loop;
+		if (getenv("DPAA_DEFAULT_Q_ONLY"))
+			fqid = cfg->rx_def;
+		else
+			fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
+				DPAA_PCD_FQID_MULTIPLIER + loop;
 		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
 		if (ret)
 			return ret;

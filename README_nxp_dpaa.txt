@@ -329,6 +329,17 @@ How to run DPDK Applications
        # ./ip_fragmentation -c 0x3 -n 1 -- -p 0x3
 
        Now pump traffic from the Spirent to the enabled ports
+
+12. Running DPDK Application without fmc
+   ==============================
+
+   # Set environment variable DPAA_DEFAULT_Q_ONLY
+	export DPAA_DEFAULT_Q_ONLY=1
+
+   # Run l2fwd app as earlier
+   # Run l3fwd app with "--parse-ptype" option
+	./l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)" --parse-ptype
+
 =============================================================================
 Applications:
 -	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
