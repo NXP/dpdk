@@ -627,12 +627,14 @@ int fslmc_vfio_setup_group(void)
 	if (ret) {
 		FSLMC_VFIO_LOG(ERR, " VFIO error getting group status");
 		close(group->fd);
+		clear_group(group->fd);
 		return ret;
 	}
 
 	if (!(status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
 		FSLMC_VFIO_LOG(ERR, "VFIO group not viable");
 		close(group->fd);
+		clear_group(group->fd);
 		return -EPERM;
 	}
 	/* Since Group is VIABLE, Store the groupid */
@@ -646,6 +648,7 @@ int fslmc_vfio_setup_group(void)
 			FSLMC_VFIO_LOG(ERR, "VFIO error connecting container"
 				       " with groupid %d", groupid);
 			close(group->fd);
+			clear_group(group->fd);
 			return ret;
 		}
 	}
@@ -655,6 +658,8 @@ int fslmc_vfio_setup_group(void)
 	if (ret < 0) {
 		FSLMC_VFIO_LOG(ERR, "VFIO error getting device %s fd from"
 			       " group  %d", container, group->groupid);
+		close(group->fd);
+		clear_group(group->fd);
 		return ret;
 	}
 	container_device_fd = ret;
