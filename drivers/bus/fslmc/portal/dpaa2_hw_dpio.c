@@ -447,7 +447,6 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
-	int vfio_dev_fd;
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
 		PMD_INIT_LOG(ERR, "ERROR, Not sufficient number "
@@ -464,14 +463,12 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 
 	dpio_dev->dpio = NULL;
 	dpio_dev->hw_id = object_id;
-	dpio_dev->intr_handle.vfio_dev_fd = vdev->fd;
 	rte_atomic16_init(&dpio_dev->ref_count);
 	/* Using single portal  for all devices */
 	dpio_dev->mc_portal = rte_mcp_ptr_list[MC_PORTAL_INDEX];
 
 	reg_info.index = 0;
-	vfio_dev_fd = dpio_dev->intr_handle.vfio_dev_fd;
-	if (ioctl(vfio_dev_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -480,10 +477,10 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				vfio_dev_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	reg_info.index = 1;
-	if (ioctl(vfio_dev_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -492,7 +489,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				vfio_dev_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	if (configure_dpio_qbman_swp(dpio_dev)) {
 		PMD_INIT_LOG(ERR,
@@ -504,6 +501,13 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 
 	io_space_count++;
 	dpio_dev->index = io_space_count;
+
+	if (rte_dpaa2_vfio_setup_intr(&dpio_dev->intr_handle, vdev->fd, 1)) {
+		PMD_INIT_LOG(ERR, "Fail to setup interrupt for %d\n",
+			     dpio_dev->hw_id);
+		rte_free(dpio_dev);
+	}
+
 	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
 	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio.%d]", object_id);
 
