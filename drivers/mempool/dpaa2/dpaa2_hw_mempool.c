@@ -369,6 +369,16 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 	return num_of_bufs;
 }
 
+static int
+rte_hw_mbuf_supported(const struct rte_mempool *mp __rte_unused)
+{
+	if (dpaa2_dpbp_supported()) {
+		PMD_INIT_LOG(WARNING, "DPAA2 mempool resource not available\n");
+		return -1;
+	}
+	return 0;
+}
+
 struct rte_mempool_ops dpaa2_mpool_ops = {
 	.name = "dpaa2",
 	.alloc = rte_hw_mbuf_create_pool,
@@ -376,6 +386,7 @@ struct rte_mempool_ops dpaa2_mpool_ops = {
 	.enqueue = rte_hw_mbuf_free_bulk,
 	.dequeue = rte_dpaa2_mbuf_alloc_bulk,
 	.get_count = rte_hw_mbuf_get_count,
+	.supported = rte_hw_mbuf_supported,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
