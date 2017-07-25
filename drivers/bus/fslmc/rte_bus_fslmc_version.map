@@ -55,6 +55,7 @@ DPDK_17.08 {
 
 	dpaa2_io_portal;
 	dpaa2_get_qbman_swp;
+	dpaa2_dpbp_supported;
 	dpci_set_rx_queue;
 	dpcon_open;
 	dpcon_get_attributes;
