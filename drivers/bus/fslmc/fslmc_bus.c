@@ -56,6 +56,8 @@ rte_fslmc_scan(void)
 
 	ret = fslmc_vfio_setup_group();
 	if (ret) {
+		if (ret == -EOPNOTSUPP)
+			return 0;
 		FSLMC_BUS_LOG(ERR, "fslmc: Unable to setup VFIO");
 		return ret;
 	}
