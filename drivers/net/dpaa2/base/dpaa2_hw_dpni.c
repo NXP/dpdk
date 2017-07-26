@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -42,7 +42,6 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 
 #include <fslmc_logs.h>
 #include <dpaa2_hw_pvt.h>
@@ -91,8 +90,9 @@ dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
 				  &tc_cfg);
 	rte_free(p_params);
 	if (ret) {
-		RTE_LOG(ERR, PMD, "Setting distribution for Rx failed with"
-			" err code: %d\n", ret);
+		RTE_LOG(ERR, PMD,
+			"Setting distribution for Rx failed with err: %d\n",
+			ret);
 		return ret;
 	}
 
@@ -134,8 +134,9 @@ int dpaa2_remove_flow_dist(
 				  &tc_cfg);
 	rte_free(p_params);
 	if (ret)
-		RTE_LOG(ERR, PMD, "Setting distribution for Rx failed with"
-			" err code: %d\n", ret);
+		RTE_LOG(ERR, PMD,
+			"Setting distribution for Rx failed with err: %d\n",
+			ret);
 	return ret;
 }
 

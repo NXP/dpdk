@@ -267,7 +267,7 @@ cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
 	SHR_HDR(p, SHR_SERIAL, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SHRD);
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, storelen,
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
 	/* Do operation */

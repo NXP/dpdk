@@ -8,16 +8,21 @@
  * DEBUG FRAMEWORK
  */
 
+#define _GNU_SOURCE
 
 /* Linux libc standard headers */
 #include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <limits.h>
+#include <sched.h>
+#include <signal.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
 
+#include <rte_common.h>
 #include <rte_ethdev.h>
 #include <dpaa2_ethdev.h>
 #include <portal/dpaa2_hw_pvt.h>

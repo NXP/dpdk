@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -97,7 +97,7 @@ struct dpaa2_dpio_dev {
 	uintptr_t qbman_portal_ci_paddr;
 		/**< Physical address of Cache Inhibit Area */
 	uintptr_t ci_size; /**< Size of the CI region */
-	void *intr_handle;
+	struct rte_intr_handle intr_handle; /* Interrupt related info */
 	int32_t	vfio_fd; /**< File descriptor received via VFIO */
 	int32_t hw_id; /**< An unique ID of this DPIO device instance */
 };

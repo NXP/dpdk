@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -46,19 +46,17 @@
 
 #include <fslmc_logs.h>
 #include <fslmc_vfio.h>
-#include <mc/fsl_dpmng.h>
-
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
-
+#include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
 
 /* Name of the DPAA2 Net PMD */
 static const char *drivername = "DPNI PMD";
 static int dpaa2_dev_uninit(struct rte_eth_dev *eth_dev);
 static int dpaa2_dev_link_update(struct rte_eth_dev *dev,
-				      int wait_to_complete);
+				 int wait_to_complete);
 static int dpaa2_dev_set_link_up(struct rte_eth_dev *dev);
 static int dpaa2_dev_set_link_down(struct rte_eth_dev *dev);
 static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
@@ -553,28 +551,33 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 	return NULL;
 }
 
-/*
- * It executes link_update after knowing an interrupt is prsent.
+/**
+ * Dpaa2 link Interrupt handler
  *
- * @param dev
- *  Pointer to struct rte_eth_dev.
+ * @param handle
+ *  Pointer to interrupt handle.
+ * @param param
+ *  The address of parameter (struct rte_eth_dev *) regsitered before.
  *
  * @return
- *  - On success, zero.
- *  - On failure, a negative value.
+ *  void
  */
-static int
-dpaa2_interrupt_action(struct rte_eth_dev *dev)
+static void
+dpaa2_interrupt_handler(__rte_unused struct rte_intr_handle *handle,
+			void *param)
 {
+	struct rte_eth_dev *dev = param;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	int ret;
 	int irq_index = DPNI_IRQ_INDEX;
 	unsigned int status, clear = 0;
 
+	PMD_INIT_FUNC_TRACE();
+
 	if (dpni == NULL) {
 		RTE_LOG(ERR, PMD, "dpni is NULL");
-		return -1;
+		return;
 	}
 
 	ret = dpni_get_irq_status(dpni, CMD_PRI_LOW, priv->token,
@@ -591,33 +594,11 @@ dpaa2_interrupt_action(struct rte_eth_dev *dev)
 		/* calling all the apps registered for link status event */
 		_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
 	}
-
 out:
-	ret = dpni_clear_irq_status(dpni, CMD_PRI_LOW, priv->token, irq_index, clear);
+	ret = dpni_clear_irq_status(dpni, CMD_PRI_LOW, priv->token,
+				    irq_index, clear);
 	if (unlikely(ret))
 		RTE_LOG(ERR, PMD, "Can't clear irq status (err %d)", ret);
-
-	return ret;
-}
-
-/**
- * Interrupt handler which shall be registered at first.
- *
- * @param handle
- *  Pointer to interrupt handle.
- * @param param
- *  The address of parameter (struct rte_eth_dev *) regsitered before.
- *
- * @return
- *  void
- */
-static void
-dpaa2_interrupt_handler(__rte_unused struct rte_intr_handle *handle,
-			void *param)
-{
-	PMD_INIT_FUNC_TRACE();
-
-	dpaa2_interrupt_action((struct rte_eth_dev *)param);
 }
 
 static int
@@ -635,7 +616,7 @@ dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
 				irq_index, mask);
 	if (err < 0) {
 		PMD_INIT_LOG(ERR, "Error: dpni_set_irq_mask():%d (%s)", err,
-					strerror(-err));
+			     strerror(-err));
 		return err;
 	}
 
@@ -643,7 +624,7 @@ dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
 				  irq_index, enable);
 	if (err < 0)
 		PMD_INIT_LOG(ERR, "Error: dpni_set_irq_enable():%d (%s)", err,
-					strerror(-err));
+			     strerror(-err));
 
 	return err;
 }
@@ -770,23 +751,21 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_vlan_offload_set(dev, ETH_VLAN_FILTER_MASK);
 
 	/* if the interrupts were configured on this devices*/
-	if (intr_handle->fd) {
+	if ((intr_handle->fd) &&
+	    (dev->data->dev_conf.intr_conf.lsc != 0)) {
 		/* Registering LSC interrupt handler */
 		rte_intr_callback_register(intr_handle,
 					   dpaa2_interrupt_handler,
 					   (void *)dev);
 
-		/* enable vfio intr/eventfd mapping */
-		/* 
+		/* enable vfio intr/eventfd mapping
 		 * Interrupt index 0 is required, so we can not use
 		 * rte_intr_enable.
- 		 */
+		 */
 		rte_dpaa2_intr_enable(intr_handle, DPNI_IRQ_INDEX);
 
-		/* check if lsc interrupt is enabled */
-		if (dev->data->dev_conf.intr_conf.lsc != 0)
-			/*enable dpni_irqs */
-			dpaa2_eth_setup_irqs(dev, 1);
+		/* enable dpni_irqs */
+		dpaa2_eth_setup_irqs(dev, 1);
 	}
 
 	return 0;
@@ -807,15 +786,20 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/*disable dpni irqs */
-	dpaa2_eth_setup_irqs(dev, 0);
+	/* reset interrupt callback  */
+	if ((intr_handle->fd) &&
+	    (dev->data->dev_conf.intr_conf.lsc != 0)) {
+		/*disable dpni irqs */
+		dpaa2_eth_setup_irqs(dev, 0);
 
-	/* disable vfio intr before callback unregister */
-	rte_dpaa2_intr_disable(intr_handle, DPNI_IRQ_INDEX);
+		/* disable vfio intr before callback unregister */
+		rte_dpaa2_intr_disable(intr_handle, DPNI_IRQ_INDEX);
 
-	/* Unregistering LSC interrupt handler */
-	rte_intr_callback_unregister(intr_handle,
-				     dpaa2_interrupt_handler, (void *)dev);
+		/* Unregistering LSC interrupt handler */
+		rte_intr_callback_unregister(intr_handle,
+					     dpaa2_interrupt_handler,
+					     (void *)dev);
+	}
 
 	dpaa2_dev_set_link_down(dev);
 
@@ -1225,7 +1209,8 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 		PMD_DRV_LOG(INFO, "Port %d Link is Up\n", dev->data->port_id);
 	else
 		PMD_DRV_LOG(INFO, "Port %d Link is Down\n", dev->data->port_id);
-	return 0;
+
+	return (old.link_status == link.link_status) ? -1 : 0;
 }
 
 /**

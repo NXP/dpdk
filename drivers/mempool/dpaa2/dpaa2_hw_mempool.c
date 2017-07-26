@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -47,7 +47,6 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 
 #include <fslmc_logs.h>
 #include <mc/fsl_dpbp.h>
@@ -319,7 +318,7 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_DRIVER
 	alloc += n;
-	PMD_DRV_LOG(DEBUG, "Total = %d , req = %d done = %d",
+	PMD_TX_LOG(DEBUG, "Total = %d , req = %d done = %d",
 		   alloc, count, n);
 #endif
 	return 0;

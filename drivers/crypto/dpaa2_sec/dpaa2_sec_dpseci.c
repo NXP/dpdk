@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -806,7 +806,8 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 			is_last = 1;
 			/* Check for valid frame. */
 			status = (uint8_t)qbman_result_DQ_flags(dq_storage);
-			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
+			if (unlikely(
+				(status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
 				PMD_RX_LOG(DEBUG, "No frame is delivered");
 				continue;
 			}
@@ -1954,9 +1955,7 @@ dpaa2_sec_dev_init(__attribute__((unused))
 	if (!internals->fle_pool) {
 		RTE_LOG(ERR, PMD, "%s create failed\n", str);
 		goto init_error;
-	} else
-		RTE_LOG(INFO, PMD, "%s created: %p\n", str,
-				internals->fle_pool);
+	}
 
 	PMD_INIT_LOG(DEBUG, "driver %s: created\n", cryptodev->data->name);
 	return 0;

@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -378,9 +378,9 @@ int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 
 /* set up interrupt support (but not enable interrupts) */
 int
-dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
-		      int vfio_dev_fd,
-		      int num_irqs)
+rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
+			  int vfio_dev_fd,
+			  int num_irqs)
 {
 	int i, ret;
 
@@ -393,34 +393,28 @@ dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 
 		ret = ioctl(vfio_dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info);
 		if (ret < 0) {
-			FSLMC_VFIO_LOG(ERR, "  cannot get IRQ (%d) info, "
-					"error %i (%s)", i, errno,
-					strerror(errno));
+			FSLMC_VFIO_LOG(ERR,
+				       "cannot get IRQ(%d) info, error %i (%s)",
+				       i, errno, strerror(errno));
 			return -1;
 		}
 
 		FSLMC_VFIO_LOG(DEBUG, "IRQ Info (Count=%d, Flags=%d)",
-			     irq_info.count, irq_info.flags);
+			       irq_info.count, irq_info.flags);
 
 		/* if this vector cannot be used with eventfd,
 		 * fail if we explicitly
 		 * specified interrupt type, otherwise continue
 		 */
-		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
-			if (internal_config.vfio_intr_mode
-			    != RTE_INTR_MODE_NONE) {
-				FSLMC_VFIO_LOG(ERR, "  interrupt vector does not"
-						 " support eventfd!\n");
-				return -1;
-			}
+		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0)
 			continue;
-		}
 
 		/* set up an eventfd for interrupts */
 		fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 		if (fd < 0) {
-			FSLMC_VFIO_LOG(ERR, "  cannot set up eventfd, error %i"
-					 "(%s)\n", errno, strerror(errno));
+			FSLMC_VFIO_LOG(ERR,
+				       "cannot set up eventfd, error %i (%s)\n",
+				       errno, strerror(errno));
 			return -1;
 		}
 
@@ -592,7 +586,7 @@ int fslmc_vfio_process_group(void)
                                       object_type, object_id);
 				/* Enable IRQ for DPNI devices */
 				if (dev->id.device_id == DPAA2_MC_DPNI_DEVID)
-					dpaa2_vfio_setup_intr(&dev->intr_handle,
+					rte_dpaa2_vfio_setup_intr(&dev->intr_handle,
 										  vdev->fd,
 										  device_info.num_irqs);
 
@@ -722,6 +716,7 @@ int fslmc_vfio_setup_group(void)
 	if (ret < 0) {
 		FSLMC_VFIO_LOG(ERR, "VFIO error getting device %s fd from"
 			       " group  %d", container, group->groupid);
+		close(group->fd);
 		return ret;
 	}
 	container_device_fd = ret;

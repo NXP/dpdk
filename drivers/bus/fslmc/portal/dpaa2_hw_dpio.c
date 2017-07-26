@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2017 NXP. All rights reserved.
+ *   Copyright 2016-2017 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -55,7 +55,6 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 
 #include <fslmc_logs.h>
 #include <fslmc_vfio.h>
@@ -370,7 +369,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->mc_portal = rte_mcp_ptr_list[MC_PORTAL_INDEX];
 
 	reg_info.index = 0;
-	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -379,10 +378,10 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				dpio_dev->vfio_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	reg_info.index = 1;
-	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -391,7 +390,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				dpio_dev->vfio_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	if (configure_dpio_qbman_swp(dpio_dev)) {
 		PMD_INIT_LOG(ERR,
@@ -403,20 +402,16 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 
 	io_space_count++;
 	dpio_dev->index = io_space_count;
+
+	if (rte_dpaa2_vfio_setup_intr(&dpio_dev->intr_handle, vdev->fd, 1)) {
+		PMD_INIT_LOG(ERR, "Fail to setup interrupt for %d\n",
+			     dpio_dev->hw_id);
+		rte_free(dpio_dev);
+	}
+
 	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
 	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio.%d]", object_id);
 
-	dpio_dev->intr_handle = rte_malloc(NULL,
-					   sizeof(struct rte_intr_handle),
-					   0);
-	if (!dpio_dev->intr_handle) {
-		PMD_INIT_LOG(ERR, "malloc failed for dpio_dev->intr_handle\n");
-		return -1;
-	}
-
-	dpaa2_vfio_setup_intr(dpio_dev->intr_handle,
-			      vdev->fd,
-			      obj_info->num_irqs);
 	/* Create Mapping for QBMan Cache Enabled area. This is a fix for
 	 * SMMU fault for DQRR statshing transaction. Only valid for
 	 * LS2080 and LS2085 Platforms.

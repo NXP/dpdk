@@ -164,4 +164,4 @@ static inline void *qbman_swp_mc_complete(struct qbman_swp *swp, void *cmd,
  * an inline) is necessary to work with different descriptor types and to work
  * correctly with const and non-const inputs (and similarly-qualified outputs).
  */
-#define qb_cl(d) (&(d)->dont_manipulate_directly[0])
+#define qb_cl(d) (&(d)->donot_manipulate_directly[0])

@@ -1,7 +1,6 @@
 #   BSD LICENSE
 #
 #   Copyright 2016 NXP.
-#   All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -57,7 +56,6 @@ CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common
-CFLAGS += -D _GNU_SOURCE
 
 # versioning export map
 EXPORT_MAP := rte_bus_fslmc_version.map
@@ -71,8 +69,8 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
 	mc/dpmng.c \
-	mc/dpbp.c \
-	mc/dpio.c \
+        mc/dpbp.c \
+        mc/dpio.c \
 	mc/mc_sys.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c

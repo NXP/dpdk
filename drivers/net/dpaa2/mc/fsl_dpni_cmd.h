@@ -100,19 +100,6 @@
 
 #define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V2(0x235)
 
-#define DPNI_CMDID_SET_RX_TC_POLICING		DPNI_CMD(0x23E)
-
-#define DPNI_CMDID_SET_QOS_TBL			DPNI_CMD(0x240)
-#define DPNI_CMDID_ADD_QOS_ENT			DPNI_CMD(0x241)
-#define DPNI_CMDID_REMOVE_QOS_ENT		DPNI_CMD(0x242)
-#define DPNI_CMDID_CLR_QOS_TBL			DPNI_CMD(0x243)
-#define DPNI_CMDID_ADD_FS_ENT			DPNI_CMD(0x244)
-#define DPNI_CMDID_REMOVE_FS_ENT		DPNI_CMD(0x245)
-#define DPNI_CMDID_CLR_FS_ENT			DPNI_CMD(0x246)
-
-#define DPNI_CMDID_SET_TX_PRIORITIES		DPNI_CMD(0x250)
-#define DPNI_CMDID_GET_RX_TC_POLICING		DPNI_CMD(0x251)
-
 #define DPNI_CMDID_GET_STATISTICS		DPNI_CMD(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
 #define DPNI_CMDID_GET_QUEUE			DPNI_CMD(0x25F)
@@ -133,10 +120,6 @@
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
 #define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD(0x26D)
-#define DPNI_CMDID_SET_OPR			DPNI_CMD(0x26e)
-#define DPNI_CMDID_GET_OPR			DPNI_CMD(0x26f)
-#define DPNI_CMDID_LOAD_SW_SEQUENCE			DPNI_CMD(0x270)
-#define DPNI_CMDID_ENABLE_SW_SEQUENCE		DPNI_CMD(0x271)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -371,19 +354,6 @@ struct dpni_rsp_get_link_state {
 	uint64_t options;
 };
 
-#define DPNI_COUPLED_SHIFT	0
-#define DPNI_COUPLED_SIZE	1
-
-struct dpni_cmd_set_tx_shaping {
-	uint16_t tx_cr_max_burst_size;
-	uint16_t tx_er_max_burst_size;
-	uint32_t pad;
-	uint32_t tx_cr_rate_limit;
-	uint32_t tx_er_rate_limit;
-	/* from LSB: coupled:1 */
-	uint8_t coupled;
-};
-
 struct dpni_cmd_set_max_frame_length {
 	uint16_t max_frame_length;
 };
@@ -533,100 +503,6 @@ struct dpni_cmd_set_queue {
 	uint64_t user_context;
 };
 
-#define DPNI_DISCARD_ON_MISS_SHIFT	0
-#define DPNI_DISCARD_ON_MISS_SIZE	1
-
-struct dpni_cmd_set_qos_table {
-	uint32_t pad;
-	uint8_t default_tc;
-	/* only the LSB */
-	uint8_t discard_on_miss;
-	uint16_t pad1[21];
-	uint64_t key_cfg_iova;
-};
-
-struct dpni_cmd_add_qos_entry {
-	uint16_t pad;
-	uint8_t tc_id;
-	uint8_t key_size;
-	uint16_t index;
-	uint16_t pad2;
-	uint64_t key_iova;
-	uint64_t mask_iova;
-};
-
-struct dpni_cmd_remove_qos_entry {
-	uint8_t pad1[3];
-	uint8_t key_size;
-	uint32_t pad2;
-	uint64_t key_iova;
-	uint64_t mask_iova;
-};
-
-struct dpni_cmd_add_fs_entry {
-	uint16_t options;
-	uint8_t tc_id;
-	uint8_t key_size;
-	uint16_t index;
-	uint16_t flow_id;
-	uint64_t key_iova;
-	uint64_t mask_iova;
-	uint64_t flc;
-};
-
-struct dpni_cmd_remove_fs_entry {
-	uint16_t pad1;
-	uint8_t tc_id;
-	uint8_t key_size;
-	uint32_t pad2;
-	uint64_t key_iova;
-	uint64_t mask_iova;
-};
-
-struct dpni_cmd_clear_fs_entries {
-	uint16_t pad;
-	uint8_t tc_id;
-};
-
-#define DPNI_MODE_SHIFT		0
-#define DPNI_MODE_SIZE		4
-#define DPNI_COLOR_SHIFT	4
-#define DPNI_COLOR_SIZE		4
-#define DPNI_UNITS_SHIFT	0
-#define DPNI_UNITS_SIZE		4
-
-struct dpni_cmd_set_rx_tc_policing {
-	/* from LSB: mode:4 color:4 */
-	uint8_t mode_color;
-	/* from LSB: units: 4 */
-	uint8_t units;
-	uint8_t tc_id;
-	uint8_t pad;
-	uint32_t options;
-	uint32_t cir;
-	uint32_t cbs;
-	uint32_t eir;
-	uint32_t ebs;
-};
-
-struct dpni_cmd_get_rx_tc_policing {
-	uint16_t pad;
-	uint8_t tc_id;
-};
-
-struct dpni_rsp_get_rx_tc_policing {
-	/* from LSB: mode:4 color:4 */
-	uint8_t mode_color;
-	/* from LSB: units: 4 */
-	uint8_t units;
-	uint16_t pad;
-	uint32_t options;
-	uint32_t cir;
-	uint32_t cbs;
-	uint32_t eir;
-	uint32_t ebs;
-};
-
 #define DPNI_DROP_MODE_SHIFT	0
 #define DPNI_DROP_MODE_SIZE	2
 #define DPNI_DROP_UNITS_SHIFT	2
@@ -641,12 +517,14 @@ struct dpni_early_drop {
 	uint8_t pad1[7];
 	uint64_t green_max_threshold;
 	uint64_t green_min_threshold;
+	uint64_t pad2;
 	uint8_t yellow_drop_probability;
-	uint8_t pad2[7];
+	uint8_t pad3[7];
 	uint64_t yellow_max_threshold;
 	uint64_t yellow_min_threshold;
+	uint64_t pad4;
 	uint8_t red_drop_probability;
-	uint8_t pad3[7];
+	uint8_t pad5[7];
 	uint64_t red_max_threshold;
 	uint64_t red_min_threshold;
 };
@@ -748,87 +626,5 @@ struct dpni_rsp_get_congestion_notification {
 	uint32_t threshold_exit;
 };
 
-struct dpni_cmd_set_opr {
-	uint8_t pad0;
-	uint8_t tc_id;
-	uint8_t index;
-	uint8_t options;
-	uint8_t pad1[7];
-	uint8_t oloe;
-	uint8_t oeane;
-	uint8_t olws;
-	uint8_t oa;
-	uint8_t oprrws;
-};
-
-struct dpni_cmd_get_opr {
-	uint8_t pad;
-	uint8_t tc_id;
-	uint8_t index;
-};
-
-#define DPNI_RIP_SHIFT	0
-#define DPNI_RIP_SIZE		1
-#define DPNI_OPR_ENABLE_SHIFT	1
-#define DPNI_OPR_ENABLE_SIZE	1
-#define DPNI_TSEQ_NLIS_SHIFT	0
-#define DPNI_TSEQ_NLIS_SIZE	1
-#define DPNI_HSEQ_NLIS_SHIFT	0
-#define DPNI_HSEQ_NLIS_SIZE	1
-
-struct dpni_rsp_get_opr {
-	uint64_t pad0;
-	/* from LSB: rip:1 enable:1 */
-	uint8_t flags;
-	uint16_t pad1;
-	uint8_t oloe;
-	uint8_t oeane;
-	uint8_t olws;
-	uint8_t oa;
-	uint8_t oprrws;
-	uint16_t nesn;
-	uint16_t pad8;
-	uint16_t ndsn;
-	uint16_t pad2;
-	uint16_t ea_tseq;
-	/* only the LSB */
-	uint8_t tseq_nlis;
-	uint8_t pad3;
-	uint16_t ea_hseq;
-	/* only the LSB */
-	uint8_t hseq_nlis;
-	uint8_t pad4;
-	uint16_t ea_hptr;
-	uint16_t pad5;
-	uint16_t ea_tptr;
-	uint16_t pad6;
-	uint16_t opr_vid;
-	uint16_t pad7;
-	uint16_t opr_id;
-};
-
-struct dpni_load_sw_sequence {
-	uint8_t dest;
-	uint8_t pad0[7];
-	uint16_t ss_offset;
-	uint16_t pad1;
-	uint16_t ss_size;
-	uint16_t pad2;
-	uint64_t ss_iova;
-};
-
-struct dpni_enable_sw_sequence {
-	uint8_t dest;
-	uint8_t pad0[7];
-	uint16_t ss_offset;
-	uint16_t hxs;
-	uint8_t set_start;
-	uint8_t pad1[3];
-	uint8_t param_offset;
-	uint8_t pad2[3];
-	uint8_t param_size;
-	uint8_t pad3[3];
-	uint64_t param_iova;
-};
 #pragma pack(pop)
 #endif /* _FSL_DPNI_CMD_H */

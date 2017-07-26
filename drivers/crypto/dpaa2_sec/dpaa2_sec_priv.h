@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -324,27 +324,6 @@ static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 			}, }
 		}, }
 	},
-	{	/* AES XCBC MAC */
-		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
-		{.sym = {
-			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
-			{.auth = {
-				.algo = RTE_CRYPTO_AUTH_AES_XCBC_MAC,
-				.block_size = 16,
-				.key_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				},
-				.digest_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				},
-				.aad_size = { 0 }
-			}, }
-		}, }
-	},
 	{	/* AES GCM (AUTH) */
 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
 		{.sym = {
@@ -451,71 +430,7 @@ static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 			}, }
 		}, }
 	},
-	{	/* 3DES CTR */
-		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
-		{.sym = {
-			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
-			{.cipher = {
-				.algo = RTE_CRYPTO_CIPHER_3DES_CTR,
-				.block_size = 8,
-				.key_size = {
-					.min = 16,
-					.max = 24,
-					.increment = 8
-				},
-				.iv_size = {
-					.min = 8,
-					.max = 8,
-					.increment = 0
-				}
-			}, }
-		}, }
-	},
-	{	/* SNOW3G (UIA2) */
-		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
-		.sym = {
-			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
-			.auth = {
-				.algo = RTE_CRYPTO_AUTH_SNOW3G_UIA2,
-				.block_size = 16,
-				.key_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				},
-				.digest_size = {
-					.min = 4,
-					.max = 4,
-					.increment = 0
-				},
-				.aad_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				}
-			}
-		}
-	},
-	{	/* SNOW3G (UEA2) */
-		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
-		.sym = {
-			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
-			.cipher = {
-				.algo = RTE_CRYPTO_CIPHER_SNOW3G_UEA2,
-				.block_size = 16,
-				.key_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				},
-				.iv_size = {
-					.min = 16,
-					.max = 16,
-					.increment = 0
-				}
-			}
-		}
-	},
+
 	RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
 };
 #endif /* _RTE_DPAA2_SEC_PMD_PRIVATE_H_ */
