@@ -69,7 +69,7 @@ extern "C" {
 #define BURST_TX_DRAIN_US 100
 
 #ifndef APP_MAX_LCORE
-#if (APP_MAX_LCORE > 64)
+#if (RTE_MAX_LCORE > 64)
 #define APP_MAX_LCORE 64
 #else
 #define APP_MAX_LCORE RTE_MAX_LCORE

@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright 2016 NXP.
+#   Copyright (C) Cavium networks 2017. All rights reserved.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of NXP nor the names of its
+#     * Neither the name of Cavium networks nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -27,53 +27,27 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-include $(RTE_SDK)/mk/rte.vars.mk
-
 #
-# library name
-#
-LIB = librte_bus_fslmc.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
-endif
+#include "common_linuxapp"
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-endif
+CONFIG_RTE_MACHINE="armv8a"
 
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common
+CONFIG_RTE_ARCH="arm64"
+CONFIG_RTE_ARCH_ARM64=y
+CONFIG_RTE_ARCH_64=y
 
-# versioning export map
-EXPORT_MAP := rte_bus_fslmc_version.map
+CONFIG_RTE_FORCE_INTRINSICS=y
 
-# library version
-LIBABIVER := 1
+# Maximum available cache line size in arm64 implementations.
+# Setting to maximum available cache line size in generic config
+# to address minimum DMA alignment across all arm64 implementations.
+CONFIG_RTE_CACHE_LINE_SIZE=128
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-        qbman/qbman_portal.c
+CONFIG_RTE_EAL_IGB_UIO=n
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-	mc/dpmng.c \
-        mc/dpbp.c \
-        mc/dpio.c \
-        mc/mc_sys.c \
-	mc/dpcon.c \
-	mc/dpci.c
+CONFIG_RTE_LIBRTE_FM10K_PMD=n
+CONFIG_RTE_LIBRTE_SFC_EFX_PMD=n
+CONFIG_RTE_LIBRTE_AVP_PMD=n
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpbp.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpci.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
-
-include $(RTE_SDK)/mk/rte.lib.mk
+CONFIG_RTE_SCHED_VECTOR=n

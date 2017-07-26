@@ -40,13 +40,13 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/vfs.h>
 #include <libgen.h>
 #include <dirent.h>
 #include <sys/eventfd.h>
 
+#include <eal_filesystem.h>
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 #include <rte_malloc.h>
@@ -55,7 +55,6 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 #include <rte_bus.h>
 
 #include "rte_fslmc.h"
@@ -347,36 +346,110 @@ fslmc_bus_add_device(struct rte_dpaa2_device *dev)
 
 #define IRQ_SET_BUF_LEN  (sizeof(struct vfio_irq_set) + sizeof(int))
 
-int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle,
-			  uint32_t index)
+int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index)
 {
-	struct vfio_irq_set *irq_set;
+	int len, ret;
 	char irq_set_buf[IRQ_SET_BUF_LEN];
-	int *fd_ptr, fd, ret;
+	struct vfio_irq_set *irq_set;
+	int *fd_ptr;
 
-	/* Prepare vfio_irq_set structure and SET the IRQ in VFIO */
-	/* Give the eventfd to VFIO */
-	fd = eventfd(0, 0);
+	len = sizeof(irq_set_buf);
+
 	irq_set = (struct vfio_irq_set *)irq_set_buf;
-	irq_set->argsz = sizeof(irq_set_buf);
+	irq_set->argsz = len;
 	irq_set->count = 1;
-	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
-			 VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->flags =
+		VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
 	irq_set->index = index;
 	irq_set->start = 0;
 	fd_ptr = (int *)&irq_set->data;
-	*fd_ptr = fd;
+	*fd_ptr = intr_handle->fd;
 
 	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
-	if (ret < 0) {
-		FSLMC_VFIO_LOG(ERR, "Unable to set IRQ in VFIO, ret: %d\n",
-			       ret);
-		return -1;
+	if (ret) {
+		RTE_LOG(ERR, EAL, "Error:dpaa2 SET IRQs fd=%d, err = %d(%s)\n",
+			intr_handle->fd, errno, strerror(errno));
+		return ret;
 	}
 
-	/* Set the FD and update the flags */
-	intr_handle->fd = fd;
-	return 0;
+	return ret;
+}
+
+int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
+{
+	struct vfio_irq_set *irq_set;
+	char irq_set_buf[IRQ_SET_BUF_LEN];
+	int len, ret;
+
+	len = sizeof(struct vfio_irq_set);
+
+	irq_set = (struct vfio_irq_set *)irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->index = index;
+	irq_set->start = 0;
+	irq_set->count = 0;
+
+	ret = ioctl(intr_handle->vfio_dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
+	if (ret)
+		RTE_LOG(ERR, EAL,
+			"Error disabling dpaa2 interrupts for fd %d\n",
+			intr_handle->fd);
+
+	return ret;
+}
+
+/* set up interrupt support (but not enable interrupts) */
+int
+rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
+			  int vfio_dev_fd,
+			  int num_irqs)
+{
+	int i, ret;
+
+	/* start from MSI-X interrupt type */
+	for (i = 0; i < num_irqs; i++) {
+		struct vfio_irq_info irq_info = { .argsz = sizeof(irq_info) };
+		int fd = -1;
+
+		irq_info.index = i;
+
+		ret = ioctl(vfio_dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info);
+		if (ret < 0) {
+			FSLMC_VFIO_LOG(ERR,
+				       "cannot get IRQ(%d) info, error %i (%s)",
+				       i, errno, strerror(errno));
+			return -1;
+		}
+
+		FSLMC_VFIO_LOG(DEBUG, "IRQ Info (Count=%d, Flags=%d)",
+			       irq_info.count, irq_info.flags);
+
+		/* if this vector cannot be used with eventfd,
+		 * fail if we explicitly
+		 * specified interrupt type, otherwise continue
+		 */
+		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0)
+			continue;
+
+		/* set up an eventfd for interrupts */
+		fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+		if (fd < 0) {
+			FSLMC_VFIO_LOG(ERR,
+				       "cannot set up eventfd, error %i (%s)\n",
+				       errno, strerror(errno));
+			return -1;
+		}
+
+		intr_handle->fd = fd;
+		intr_handle->type = RTE_INTR_HANDLE_VFIO_MSI;
+		intr_handle->vfio_dev_fd = vfio_dev_fd;
+
+		return 0;
+	}
+
+	/* if we're here, we haven't found a suitable interrupt vector */
+	return -1;
 }
 
 /* Following function shall fetch total available list of MC devices
@@ -532,6 +605,13 @@ int fslmc_vfio_process_group(void)
 			dev->device.name = dev->name;
 
 			fslmc_bus_add_device(dev);
+
+			/* Enable IRQ for DPNI devices */
+			if (dev->dev_type == DPAA2_MC_DPNI_DEVID)
+				rte_dpaa2_vfio_setup_intr(&dev->intr_handle,
+							  vdev->fd,
+							  device_info.num_irqs);
+
 			FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added %s", dev->name);
 		} else {
 			/* Parse all other objects */

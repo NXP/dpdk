@@ -129,6 +129,13 @@ void dpaa2_free_dpbp_dev(struct dpaa2_dpbp_dev *dpbp)
 	}
 }
 
+int dpaa2_dpbp_supported(void)
+{
+	if (TAILQ_EMPTY(&dpbp_dev_list))
+		return -1;
+	return 0;
+}
+
 static struct rte_dpaa2_object rte_dpaa2_dpbp_obj = {
 	.object_id = DPAA2_MC_DPBP_DEVID,
 	.create = dpaa2_create_dpbp_device,

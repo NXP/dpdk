@@ -166,6 +166,7 @@ DPDK_17.02 {
 DPDK_17.05 {
 	global:
 
+	clear_group;
 	rte_cpu_is_supported;
 	rte_intr_free_epoll_fd;
 	rte_log_dump;

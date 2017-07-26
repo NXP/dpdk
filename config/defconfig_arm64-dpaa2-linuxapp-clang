@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright 2016 NXP.
+#   Copyright 2017 NXP.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -27,53 +27,67 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
 
-include $(RTE_SDK)/mk/rte.vars.mk
+#include "defconfig_arm64-armv8a-linuxapp-clang"
+
+# NXP (Freescale) - Soc Architecture with WRIOP and QBMAN support
+CONFIG_RTE_MACHINE="dpaa2"
+CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
 
 #
-# library name
+# Compile Environment Abstraction Layer
 #
-LIB = librte_bus_fslmc.a
+CONFIG_RTE_MAX_LCORE=8
+CONFIG_RTE_MAX_NUMA_NODES=1
+CONFIG_RTE_CACHE_LINE_SIZE=64
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CONFIG_RTE_LIBRTE_FSLMC_BUS = $(CONFIG_RTE_LIBRTE_DPAA2_PMD)
-endif
+CONFIG_RTE_PKTMBUF_HEADROOM=256
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-endif
+#
+# Compile PMD for Software backed device
+#
+CONFIG_RTE_LIBRTE_PMD_OPENSSL=y
+CONFIG_RTE_LIBRTE_PMD_OPENSSL_DEBUG=n
 
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
-CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common
+#
+# Compile Support Libraries for DPAA2
+#
+CONFIG_RTE_LIBRTE_DPAA2_MEMPOOL=y
+CONFIG_RTE_MBUF_DEFAULT_MEMPOOL_OPS="dpaa2"
+CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=n
 
-# versioning export map
-EXPORT_MAP := rte_bus_fslmc_version.map
+#
+# Compile NXP DPAA2 FSL-MC Bus
+#
+CONFIG_RTE_LIBRTE_FSLMC_BUS=y
 
-# library version
-LIBABIVER := 1
+#
+# Compile burst-oriented NXP DPAA2 PMD driver
+#
+CONFIG_RTE_LIBRTE_DPAA2_PMD=y
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_RX=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX=n
+CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX_FREE=n
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-        qbman/qbman_portal.c
+#
+# Compile NXP DPAA2 crypto sec driver for CAAM HW
+#
+CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC=y
+CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT=n
+CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_DRIVER=n
+CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_RX=n
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
-	mc/dpmng.c \
-        mc/dpbp.c \
-        mc/dpio.c \
-        mc/mc_sys.c \
-	mc/dpcon.c \
-	mc/dpci.c
+#
+# Number of sessions to create in the session memory pool
+# on a single DPAA2 SEC device.
+#
+CONFIG_RTE_DPAA2_SEC_PMD_MAX_NB_SESSIONS=2048
 
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpbp.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpci.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_vfio.c
-SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += fslmc_bus.c
-
-include $(RTE_SDK)/mk/rte.lib.mk
+#
+# Compile schedule-oriented NXP DPAA2 EVENTDEV driver
+#
+CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV=y
+CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV_DEBUG=n

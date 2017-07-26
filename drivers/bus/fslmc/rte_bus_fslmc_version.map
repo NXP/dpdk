@@ -55,6 +55,7 @@ DPDK_17.08 {
 
 	dpaa2_io_portal;
 	dpaa2_get_qbman_swp;
+	dpaa2_dpbp_supported;
 	dpci_set_rx_queue;
 	dpcon_open;
 	dpcon_get_attributes;
@@ -75,6 +76,8 @@ DPDK_17.08 {
 	qbman_swp_interrupt_clear_status;
 	qbman_swp_push_set;
 	rte_dpaa2_alloc_dpci_dev;
+	rte_dpaa2_intr_disable;
+	rte_dpaa2_intr_enable;
 	rte_fslmc_object_register;
 	rte_global_active_dqs_list;
 
