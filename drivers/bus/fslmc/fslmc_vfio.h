@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -73,12 +73,12 @@ int vfio_dmamap_mem_region(
 	uint64_t iova,
 	uint64_t size);
 
-int dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);
-int dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index);
+int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);
+int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index);
 
-int dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
-		      int vfio_dev_fd,
-		      int num_irqs);
+int rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
+			      int vfio_dev_fd,
+			      int num_irqs);
 
 int fslmc_vfio_setup_group(void);
 int fslmc_vfio_process_group(void);
@@ -87,15 +87,11 @@ int rte_fslmc_vfio_dmamap(void);
 /* initialize the NXP/FSL dpaa2 accelerators */
 int rte_eal_dpaa2_init(void);
 
-int dpaa2_create_dpni_dev(struct fslmc_vfio_device *vdev,
+int dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 			  struct vfio_device_info *obj_info,
 			  int object_id);
-int dpaa2_create_dpseci_dev(struct fslmc_vfio_device *vdev,
-			    struct vfio_device_info *obj_info,
-			    int object_id);
-int dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
+int dpaa2_create_dpbp_device(struct fslmc_vfio_device *vdev,
 			  struct vfio_device_info *obj_info,
 			  int object_id);
-int dpaa2_create_dpbp_dev(int object_id);
 
 #endif /* _FSLMC_VFIO_H_ */

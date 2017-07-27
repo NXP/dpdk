@@ -25,7 +25,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "rte_common.h"
+
 #include "qbman_portal.h"
 
 /* QBMan portal management command codes */
@@ -64,13 +64,6 @@
 #define QBMAN_FQ_FORCE		0x49
 #define QBMAN_FQ_XON		0x4d
 #define QBMAN_FQ_XOFF		0x4e
-
-/*******************************/
-/* Pre-defined attribute codes */
-/*******************************/
-
-struct qb_attr_code code_generic_verb = QB_CODE(0, 0, 7);
-struct qb_attr_code code_generic_rslt = QB_CODE(0, 8, 8);
 
 /*******************************/
 /* Pre-defined attribute codes */
@@ -296,7 +289,6 @@ void qbman_swp_mc_submit(struct qbman_swp *p, void *cmd, uint8_t cmd_verb)
 	 * caller wants to OR but has forgotten to do so.
 	 */
 	QBMAN_BUG_ON((*v & cmd_verb) != *v);
-
 	*v = cmd_verb | p->mc.valid_bit;
 	qbman_cena_write_complete(&p->sys, QBMAN_CENA_SWP_CR, cmd);
 #ifdef QBMAN_CHECKING
@@ -938,6 +930,7 @@ int qbman_check_new_result(struct qbman_result *dq)
 int qbman_check_command_complete(struct qbman_result *dq)
 {
 	struct qbman_swp *s;
+
 	if (dq->dq.tok == 0)
 		return 0;
 
@@ -1222,7 +1215,8 @@ int qbman_swp_acquire(struct qbman_swp *s, uint16_t bpid, uint64_t *buffers,
 	/* Complete the management command */
 	r = qbman_swp_mc_complete(s, p, QBMAN_MC_ACQUIRE);
 	if (unlikely(!r)) {
-		pr_err("qbman: acquire from BPID %d failed, no response\n", bpid);
+		pr_err("qbman: acquire from BPID %d failed, no response\n",
+		       bpid);
 		return -EIO;
 	}
 
@@ -1374,7 +1368,8 @@ static int qbman_swp_CDAN_set(struct qbman_swp *s, uint16_t channelid,
 	}
 
 	/* Decode the outcome */
-	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK) != QBMAN_WQCHAN_CONFIGURE);
+	QBMAN_BUG_ON((r->verb & QBMAN_RESPONSE_VERB_MASK)
+		     != QBMAN_WQCHAN_CONFIGURE);
 
 	/* Determine success or failure */
 	if (unlikely(r->rslt != QBMAN_MC_RSLT_OK)) {
@@ -1416,7 +1411,7 @@ int qbman_swp_CDAN_set_context_enable(struct qbman_swp *s, uint16_t channelid,
 				  1, ctx);
 }
 
-uint8_t qbman_get_dqrr_idx(struct qbman_result *dqrr)
+uint8_t qbman_get_dqrr_idx(const struct qbman_result *dqrr)
 {
 	return QBMAN_IDX_FROM_DQRR(dqrr);
 }

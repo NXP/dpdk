@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP. All rights reserved.
+ *   Copyright 2016 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -40,7 +40,6 @@
 #include <rte_memcpy.h>
 #include <rte_string_fns.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 
 #include <fslmc_logs.h>
 #include <fslmc_vfio.h>
@@ -136,7 +135,7 @@ static inline struct rte_mbuf *__attribute__((hot))
 eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct qbman_sge *sgt, *sge;
-	dma_addr_t sg_addr;
+	uint64_t sg_addr;
 	int i = 0;
 	uint64_t fd_addr;
 	struct rte_mbuf *first_seg, *next_seg, *cur_seg, *temp;
@@ -151,7 +150,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 
 	/* First Scatter gather entry */
 	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
-			rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	/* Prepare all the metadata for first segment */
 	first_seg->buf_addr = (uint8_t *)sg_addr;
 	first_seg->ol_flags = 0;
@@ -185,7 +184,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 		cur_seg = next_seg;
 	}
 	temp = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
-			rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	rte_mbuf_refcnt_set(temp, 1);
 	rte_pktmbuf_free_seg(temp);
 
@@ -420,7 +419,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	/* todo optimization - we can have dq_storage_phys available*/
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 
 	/*Issue a volatile dequeue command. */
 	while (1) {
@@ -521,7 +520,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					       DPAA2_DQRR_RING_SIZE : nb_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
@@ -584,7 +583,6 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 		dq_storage++;
 		num_rx++;
-
 	}
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
@@ -599,7 +597,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, DPAA2_DQRR_RING_SIZE);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/* Issue a volatile dequeue command. */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
@@ -691,7 +689,14 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				bpid = priv->bp_list->buf_pool.bpid;
+				if (priv->bp_list) {
+					bpid = priv->bp_list->buf_pool.bpid;
+				} else {
+					PMD_TX_LOG(ERR,
+						   "err: no bpool attached");
+					num_tx = 0;
+					goto skip_tx;
+				}
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					PMD_TX_LOG(ERR, "S/G support not added"
 						" for non hw offload buffer");

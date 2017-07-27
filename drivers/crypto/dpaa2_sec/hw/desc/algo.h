@@ -29,9 +29,10 @@
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_snow_f8(uint32_t *descbuf, bool ps, bool swap,
-			 struct alginfo *cipherdata, uint8_t dir,
-			 uint32_t count, uint8_t bearer, uint8_t direction)
+static inline int
+cnstr_shdsc_snow_f8(uint32_t *descbuf, bool ps, bool swap,
+		    struct alginfo *cipherdata, uint8_t dir,
+		    uint32_t count, uint8_t bearer, uint8_t direction)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -79,9 +80,10 @@ static inline int cnstr_shdsc_snow_f8(uint32_t *descbuf, bool ps, bool swap,
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_snow_f9(uint32_t *descbuf, bool ps, bool swap,
-			 struct alginfo *authdata, uint8_t dir, uint32_t count,
-			 uint32_t fresh, uint8_t direction, uint32_t datalen)
+static inline int
+cnstr_shdsc_snow_f9(uint32_t *descbuf, bool ps, bool swap,
+		    struct alginfo *authdata, uint8_t dir, uint32_t count,
+		    uint32_t fresh, uint8_t direction, uint32_t datalen)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -129,9 +131,10 @@ static inline int cnstr_shdsc_snow_f9(uint32_t *descbuf, bool ps, bool swap,
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
-			       struct alginfo *cipherdata, uint8_t *iv,
-			       uint32_t ivlen, uint8_t dir)
+static inline int
+cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
+		      struct alginfo *cipherdata, uint8_t *iv,
+		      uint32_t ivlen, uint8_t dir)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -209,14 +212,15 @@ static inline int cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
  * @trunc_len: Length of the truncated ICV to be written in the output buffer, 0
  *             if no truncation is needed
  *
- * Note: There's no support for keys longer than the corresponding digest size,
- * according to the selected algorithm.
+ * Note: There's no support for keys longer than the block size of the
+ * underlying hash function, according to the selected algorithm.
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
-				   struct alginfo *authdata, uint8_t do_icv,
-				   uint8_t trunc_len)
+static inline int
+cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
+		 struct alginfo *authdata, uint8_t do_icv,
+		 uint8_t trunc_len)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -263,7 +267,7 @@ static inline int cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
 	SHR_HDR(p, SHR_SERIAL, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SHRD);
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, storelen,
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
 	/* Do operation */
@@ -312,9 +316,10 @@ static inline int cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_kasumi_f8(uint32_t *descbuf, bool ps, bool swap,
-			   struct alginfo *cipherdata, uint8_t dir,
-			   uint32_t count, uint8_t bearer, uint8_t direction)
+static inline int
+cnstr_shdsc_kasumi_f8(uint32_t *descbuf, bool ps, bool swap,
+		      struct alginfo *cipherdata, uint8_t dir,
+		      uint32_t count, uint8_t bearer, uint8_t direction)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -362,10 +367,11 @@ static inline int cnstr_shdsc_kasumi_f8(uint32_t *descbuf, bool ps, bool swap,
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_kasumi_f9(uint32_t *descbuf, bool ps, bool swap,
-			   struct alginfo *authdata, uint8_t dir,
-			   uint32_t count, uint32_t fresh, uint8_t direction,
-			   uint32_t datalen)
+static inline int
+cnstr_shdsc_kasumi_f9(uint32_t *descbuf, bool ps, bool swap,
+		      struct alginfo *authdata, uint8_t dir,
+		      uint32_t count, uint32_t fresh, uint8_t direction,
+		      uint32_t datalen)
 {
 	struct program prg;
 	struct program *p = &prg;
@@ -404,7 +410,8 @@ static inline int cnstr_shdsc_kasumi_f9(uint32_t *descbuf, bool ps, bool swap,
  *
  * Return: size of descriptor written in words or negative number on error
  */
-static inline int cnstr_shdsc_crc(uint32_t *descbuf, bool swap)
+static inline int
+cnstr_shdsc_crc(uint32_t *descbuf, bool swap)
 {
 	struct program prg;
 	struct program *p = &prg;

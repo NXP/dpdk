@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2017 NXP. All rights reserved.
+ *   Copyright 2016-2017 NXP.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -55,7 +55,6 @@
 #include <rte_cycles.h>
 #include <rte_kvargs.h>
 #include <rte_dev.h>
-#include <rte_ethdev.h>
 
 #include <fslmc_logs.h>
 #include <fslmc_vfio.h>
@@ -68,7 +67,7 @@
 struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
 RTE_DEFINE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 
-struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
+struct swp_active_dqs rte_global_active_dqs_list[NUM_MAX_SWP];
 
 TAILQ_HEAD(dpio_dev_list, dpaa2_dpio_dev);
 static struct dpio_dev_list dpio_dev_list
@@ -107,7 +106,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	struct qbman_swp_desc p_des;
 	struct dpio_attr attr;
 
-	dpio_dev->dpio = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
+	dpio_dev->dpio = malloc(sizeof(struct fsl_mc_io));
 	if (!dpio_dev->dpio) {
 		PMD_INIT_LOG(ERR, "Memory allocation failure\n");
 		return -1;
@@ -118,21 +117,21 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	if (dpio_open(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->hw_id,
 		      &dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to allocate IO space\n");
-		rte_free(dpio_dev->dpio);
+		free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_reset(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to reset dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		rte_free(dpio_dev->dpio);
+		free(dpio_dev->dpio);
 		return -1;
 	}
 
 	if (dpio_enable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token)) {
 		PMD_INIT_LOG(ERR, "Failed to Enable dpio\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		rte_free(dpio_dev->dpio);
+		free(dpio_dev->dpio);
 		return -1;
 	}
 
@@ -141,7 +140,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		PMD_INIT_LOG(ERR, "DPIO Get attribute failed\n");
 		dpio_disable(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW,  dpio_dev->token);
-		rte_free(dpio_dev->dpio);
+		free(dpio_dev->dpio);
 		return -1;
 	}
 
@@ -159,7 +158,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	if (dpio_dev->sw_portal == NULL) {
 		PMD_DRV_LOG(ERR, " QBMan SW Portal Init failed\n");
 		dpio_close(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->token);
-		rte_free(dpio_dev->dpio);
+		free(dpio_dev->dpio);
 		return -1;
 	}
 
@@ -167,10 +166,9 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 }
 
 static int
-dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
+dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
-	int sdest;
-	int cpu_id, ret;
+	int sdest, ret;
 	static int first_time;
 
 	/* find the SoC type for the first time */
@@ -180,19 +178,15 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 		if (mc_get_soc_version(dpio_dev->dpio,
 				       CMD_PRI_LOW, &mc_plat_info)) {
 			PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
-		} else {
-			 if ((mc_plat_info.svr & 0xffff0000) == SVR_LS1080A) {
-				dpaa2_core_cluster_base = 0x02;
-				dpaa2_cluster_sz = 4;
-				PMD_INIT_LOG(DEBUG,
-					     "\tLS108x(A53) Platform Detected");
-			}
+		} else if ((mc_plat_info.svr & 0xffff0000) == SVR_LS1080A) {
+			dpaa2_core_cluster_base = 0x02;
+			dpaa2_cluster_sz = 4;
+			PMD_INIT_LOG(DEBUG, "\tLS108x (A53) Platform Detected");
 		}
 		first_time = 1;
 	}
 
 	/* Set the Stashing Destination */
-	cpu_id = rte_lcore_id();
 	if (cpu_id < 0) {
 		cpu_id = rte_get_master_lcore();
 		if (cpu_id < 0) {
@@ -231,7 +225,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev)
 	return 0;
 }
 
-struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
+struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int cpu_id)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;
@@ -247,7 +241,7 @@ struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 	PMD_DRV_LOG(DEBUG, "New Portal=0x%x (%d) affined thread - %lu",
 		    dpio_dev, dpio_dev->index, syscall(SYS_gettid));
 
-	ret = dpaa2_configure_stashing(dpio_dev);
+	ret = dpaa2_configure_stashing(dpio_dev, cpu_id);
 	if (ret)
 		PMD_DRV_LOG(ERR, "dpaa2_configure_stashing failed");
 
@@ -287,7 +281,7 @@ dpaa2_affine_qbman_swp(void)
 	}
 
 	/* Populate the dpaa2_io_portal structure */
-	dpaa2_io_portal[lcore_id].dpio_dev = dpaa2_get_qbman_swp();
+	dpaa2_io_portal[lcore_id].dpio_dev = dpaa2_get_qbman_swp(lcore_id);
 
 	if (dpaa2_io_portal[lcore_id].dpio_dev) {
 		RTE_PER_LCORE(_dpaa2_io).dpio_dev
@@ -333,7 +327,7 @@ dpaa2_affine_qbman_swp_sec(void)
 	}
 
 	/* Populate the dpaa2_io_portal structure */
-	dpaa2_io_portal[lcore_id].sec_dpio_dev = dpaa2_get_qbman_swp();
+	dpaa2_io_portal[lcore_id].sec_dpio_dev = dpaa2_get_qbman_swp(lcore_id);
 
 	if (dpaa2_io_portal[lcore_id].sec_dpio_dev) {
 		RTE_PER_LCORE(_dpaa2_io).sec_dpio_dev
@@ -346,9 +340,9 @@ dpaa2_affine_qbman_swp_sec(void)
 }
 
 int
-dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
-		      struct vfio_device_info *obj_info,
-		      int object_id)
+dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
+			 struct vfio_device_info *obj_info,
+			 int object_id)
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
@@ -375,7 +369,7 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	dpio_dev->mc_portal = rte_mcp_ptr_list[MC_PORTAL_INDEX];
 
 	reg_info.index = 0;
-	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -384,10 +378,10 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				dpio_dev->vfio_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	reg_info.index = 1;
-	if (ioctl(dpio_dev->vfio_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -396,7 +390,7 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				dpio_dev->vfio_fd, reg_info.offset);
+				vdev->fd, reg_info.offset);
 
 	if (configure_dpio_qbman_swp(dpio_dev)) {
 		PMD_INIT_LOG(ERR,
@@ -408,20 +402,16 @@ dpaa2_create_dpio_dev(struct fslmc_vfio_device *vdev,
 
 	io_space_count++;
 	dpio_dev->index = io_space_count;
-	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
-	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio-%d]", object_id);
 
-	dpio_dev->intr_handle = rte_malloc(NULL,
-					   sizeof(struct rte_intr_handle),
-					   0);
-	if (!dpio_dev->intr_handle) {
-		PMD_INIT_LOG(ERR, "malloc failed for dpio_dev->intr_handle\n");
-		return -1;
+	if (rte_dpaa2_vfio_setup_intr(&dpio_dev->intr_handle, vdev->fd, 1)) {
+		PMD_INIT_LOG(ERR, "Fail to setup interrupt for %d\n",
+			     dpio_dev->hw_id);
+		rte_free(dpio_dev);
 	}
 
-	dpaa2_vfio_setup_intr(dpio_dev->intr_handle,
-			      vdev->fd,
-			      obj_info->num_irqs);
+	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
+	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio.%d]", object_id);
+
 	/* Create Mapping for QBMan Cache Enabled area. This is a fix for
 	 * SMMU fault for DQRR statshing transaction. Only valid for
 	 * LS2080 and LS2085 Platforms.

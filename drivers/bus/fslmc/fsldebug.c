@@ -8,16 +8,21 @@
  * DEBUG FRAMEWORK
  */
 
+#define _GNU_SOURCE
 
 /* Linux libc standard headers */
 #include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <limits.h>
+#include <sched.h>
+#include <signal.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
 
+#include <rte_common.h>
 #include <rte_ethdev.h>
 #include <dpaa2_ethdev.h>
 #include <portal/dpaa2_hw_pvt.h>
@@ -28,7 +33,7 @@
 #include <fsl_dpseci.h>
 #include <fsl_dpbp.h>
 
-#include <qbman/qbman_debug.h>
+#include <fsl_qbman_debug.h>
 #include "debug.h"
 
 #define BUFLEN 64
@@ -510,7 +515,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr a;
+				struct qbman_fq_query_rslt a;
 				uint32_t cgrid;
 				uint32_t fqid;
 				struct dpaa2_queue *eth_vq;
@@ -528,7 +533,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_cgrid(&a, &cgrid);
+						cgrid = qbman_fq_attr_get_cgrid(&a);
 						nbytes = sprintf(str, "\t\t\tCongestion group ID\t: %u\t"
 								"for RX FQID: %u\n", cgrid, fqid);
 					}
@@ -540,7 +545,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_cgrid(&a, &cgrid);
+						cgrid = qbman_fq_attr_get_cgrid(&a);
 						nbytes = sprintf(str, "\t\t\tCongestion group ID\t: %u\t"
 								"for TX FQID: %u\n", cgrid, fqid);
 					}
@@ -566,7 +571,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr a;
+				struct qbman_fq_query_rslt a;
 				uint32_t destwq;
 				uint32_t fqid;
 				struct dpaa2_queue *eth_vq;
@@ -584,7 +589,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_destwq(&a, &destwq);
+						destwq = qbman_fq_attr_get_destwq(&a);
 						nbytes = sprintf(str, "\t\t\tScheduling Priority\t: %u\t"
 								"for RX FQID: %u\n", destwq, fqid);
 					}
@@ -596,7 +601,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_destwq(&a, &destwq);
+						destwq = qbman_fq_attr_get_destwq(&a);
 						nbytes = sprintf(str, "\t\t\tScheduling Priority\t: %u\t"
 								"for TX FQID: %u\n", destwq, fqid);
 					}
@@ -623,7 +628,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr a;
+				struct qbman_fq_query_rslt a;
 				uint32_t tdthresh;
 				uint32_t fqid;
 				struct dpaa2_queue *eth_vq;
@@ -641,7 +646,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_tdthresh(&a, &tdthresh);
+						tdthresh = qbman_fq_attr_get_tdthresh(&a);
 						nbytes = sprintf(str, "\t\t\tTail drop threashold\t: %u\t"
 								"for RX FQID: %u\n", tdthresh, fqid);
 					}
@@ -653,7 +658,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_tdthresh(&a, &tdthresh);
+						tdthresh = qbman_fq_attr_get_tdthresh(&a);
 						nbytes = sprintf(str, "\t\t\tTail drop threashold\t: %u\t"
 								"for TX FQID: %u\n", tdthresh, fqid);
 					}
@@ -679,9 +684,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr a;
-				uint32_t hi;
-				uint32_t lo;
+				struct qbman_fq_query_rslt a;
 				uint64_t ctx;
 				uint32_t fqid;
 				struct dpaa2_queue *eth_vq;
@@ -699,8 +702,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_ctx(&a, &hi, &lo);
-						ctx = ((uint64_t)hi << 32) | lo;
+						ctx = a.fqd_ctx;
 						nbytes = sprintf(str, "\t\t\tFQ Context\t\t: %lu\t"
 								"for RX FQID: %u\n", ctx, fqid);
 					}
@@ -712,8 +714,7 @@ static void event_handler(void *msg)
 					if (fqid > 0) {
 						str = str + nbytes;
 						qbman_fq_query(s, fqid, &a);
-						qbman_fq_attr_get_ctx(&a, &hi, &lo);
-						ctx = ((uint64_t)hi << 32) | lo;
+						ctx = a.fqd_ctx;
 						nbytes = sprintf(str, "\t\t\tFQ Context\t\t: %lu\t"
 								"for TX FQID: %u\n", ctx, fqid);
 					}
@@ -739,7 +740,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr state;
+				struct qbman_fq_query_np_rslt state;
 				uint32_t fqid;
 				uint32_t schd_st;
 				struct dpaa2_queue *eth_vq;
@@ -799,7 +800,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr state;
+				struct qbman_fq_query_np_rslt state;
 				uint32_t fqid;
 				uint32_t frame_cnt;
 				struct dpaa2_queue *eth_vq;
@@ -860,7 +861,7 @@ static void event_handler(void *msg)
 
 			if ((event_msg->cmd) == DPAA2_DEBUG_CMD_GET) {
 				struct qbman_swp *s;
-				struct qbman_attr state;
+				struct qbman_fq_query_np_rslt state;
 				uint32_t fqid;
 				uint32_t byte_cnt;
 				struct dpaa2_queue *eth_vq;
@@ -1068,7 +1069,7 @@ static void *open_socket(void *arg  __attribute__((__unused__)))
 	struct sockaddr_in server_addr, client_addr;
 	socklen_t client_addr_size;
 	fd_set readset;
-
+	unsigned int lcore_id = rte_lcore_id();
 	void *msg;
 	char *port;
 	uint16_t port_no = DEFAULT_PLAT_DEBUG_PORT;
@@ -1104,7 +1105,7 @@ static void *open_socket(void *arg  __attribute__((__unused__)))
 
 	client_addr_size = sizeof(client_addr);
 
-	debug_dpio = dpaa2_get_qbman_swp();
+	debug_dpio = dpaa2_get_qbman_swp(lcore_id);
 
 	while (1) {
 		/*wait on udpSocket for any msg */

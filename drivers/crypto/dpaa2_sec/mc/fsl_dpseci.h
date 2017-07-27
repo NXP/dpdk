@@ -40,8 +40,6 @@
 #ifndef __FSL_DPSECI_H
 #define __FSL_DPSECI_H
 
-#include <fsl_dpopr.h>
-
 /* Data Path SEC Interface API
  * Contains initialization APIs and runtime control APIs for DPSECI
  */
@@ -75,16 +73,6 @@ int dpseci_close(struct fsl_mc_io *mc_io,
  * Enable the Congestion Group support
  */
 #define DPSECI_OPT_HAS_CG				0x000020
-
-/**
- * Enable the Order Restoration support
- */
-#define DPSECI_OPT_HAS_OPR				0x000040
-
-/**
- * Order Point Records are shared for the entire DPSECI
- */
-#define DPSECI_OPT_OPR_SHARED				0x000080
 
 /**
  * struct dpseci_cfg - Structure representing DPSECI configuration
@@ -133,42 +121,6 @@ int dpseci_is_enabled(struct fsl_mc_io *mc_io,
 int dpseci_reset(struct fsl_mc_io *mc_io,
 		 uint32_t cmd_flags,
 		 uint16_t token);
-
-int dpseci_set_irq_enable(struct fsl_mc_io *mc_io,
-			  uint32_t cmd_flags,
-			  uint16_t token,
-			  uint8_t irq_index,
-			  uint8_t en);
-
-int dpseci_get_irq_enable(struct fsl_mc_io *mc_io,
-			  uint32_t cmd_flags,
-			  uint16_t token,
-			  uint8_t irq_index,
-			  uint8_t *en);
-
-int dpseci_set_irq_mask(struct fsl_mc_io *mc_io,
-			uint32_t cmd_flags,
-			uint16_t token,
-			uint8_t irq_index,
-			uint32_t mask);
-
-int dpseci_get_irq_mask(struct fsl_mc_io *mc_io,
-			uint32_t cmd_flags,
-			uint16_t token,
-			uint8_t irq_index,
-			uint32_t *mask);
-
-int dpseci_get_irq_status(struct fsl_mc_io *mc_io,
-			  uint32_t cmd_flags,
-			  uint16_t token,
-			  uint8_t irq_index,
-			  uint32_t *status);
-
-int dpseci_clear_irq_status(struct fsl_mc_io *mc_io,
-			    uint32_t cmd_flags,
-			    uint16_t token,
-			    uint8_t irq_index,
-			    uint32_t status);
 
 /**
  * struct dpseci_attr - Structure representing DPSECI attributes
@@ -397,21 +349,6 @@ int dpseci_get_api_version(struct fsl_mc_io *mc_io,
 			   uint32_t cmd_flags,
 			   uint16_t *major_ver,
 			   uint16_t *minor_ver);
-
-int dpseci_set_opr(struct fsl_mc_io *mc_io,
-		   uint32_t cmd_flags,
-		   uint16_t token,
-		   uint8_t index,
-		   uint8_t options,
-		   struct opr_cfg *cfg);
-
-int dpseci_get_opr(struct fsl_mc_io *mc_io,
-		   uint32_t cmd_flags,
-		   uint16_t token,
-		   uint8_t index,
-		   struct opr_cfg *cfg,
-		   struct opr_qry *qry);
-
 /**
  * enum dpseci_congestion_unit - DPSECI congestion units
  * @DPSECI_CONGESTION_UNIT_BYTES: bytes units

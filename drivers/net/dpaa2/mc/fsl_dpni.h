@@ -41,7 +41,6 @@
 #define __FSL_DPNI_H
 
 #include <fsl_dpkg.h>
-#include <fsl_dpopr.h>
 
 struct fsl_mc_io;
 
@@ -110,16 +109,6 @@ struct fsl_mc_io;
  * Disables the flow steering table.
  */
 #define DPNI_OPT_NO_FS				0x000020
-
-/**
- * Enable the Order Restoration support
- */
-#define DPNI_OPT_HAS_OPR				0x000040
-
-/**
- * Order Point Records are shared for the entire TC
- */
-#define DPNI_OPT_OPR_PER_TC				0x000080
 
 int dpni_open(struct fsl_mc_io *mc_io,
 	      uint32_t cmd_flags,
@@ -533,20 +522,6 @@ int dpni_get_qdid(struct fsl_mc_io *mc_io,
 		  enum dpni_queue_type qtype,
 		  uint16_t *qdid);
 
-/**
- * struct dpni_sp_info - Structure representing DPNI storage-profile information
- * (relevant only for DPNI owned by AIOP)
- * @spids: array of storage-profiles
- */
-struct dpni_sp_info {
-	uint16_t spids[DPNI_MAX_SP];
-};
-
-int dpni_get_sp_info(struct fsl_mc_io *mc_io,
-		     uint32_t cmd_flags,
-		     uint16_t token,
-		     struct dpni_sp_info *sp_info);
-
 int dpni_get_tx_data_offset(struct fsl_mc_io *mc_io,
 			    uint32_t cmd_flags,
 			    uint16_t token,
@@ -666,23 +641,6 @@ int dpni_get_link_state(struct fsl_mc_io *mc_io,
 			uint16_t token,
 			struct dpni_link_state *state);
 
-/**
- * struct dpni_tx_shaping - Structure representing DPNI tx shaping configuration
- * @rate_limit:		Rate in Mbps
- * @max_burst_size:	Burst size in bytes (up to 64KB)
- */
-struct dpni_tx_shaping_cfg {
-	uint32_t rate_limit;
-	uint16_t max_burst_size;
-};
-
-int dpni_set_tx_shaping(struct fsl_mc_io *mc_io,
-			uint32_t cmd_flags,
-			uint16_t token,
-			const struct dpni_tx_shaping_cfg *tx_cr_shaper,
-			const struct dpni_tx_shaping_cfg *tx_er_shaper,
-			int coupled);
-
 int dpni_set_max_frame_length(struct fsl_mc_io *mc_io,
 			      uint32_t cmd_flags,
 			      uint16_t token,
@@ -774,41 +732,6 @@ int dpni_clear_vlan_filters(struct fsl_mc_io *mc_io,
 			    uint16_t token);
 
 /**
- * enum dpni_tx_schedule_mode - DPNI Tx scheduling mode
- * @DPNI_TX_SCHED_STRICT_PRIORITY: strict priority
- * @DPNI_TX_SCHED_WEIGHTED: weighted based scheduling
- */
-enum dpni_tx_schedule_mode {
-	DPNI_TX_SCHED_STRICT_PRIORITY,
-	DPNI_TX_SCHED_WEIGHTED,
-};
-
-/**
- * struct dpni_tx_schedule_cfg - Structure representing Tx scheduling conf
- * @mode:		Scheduling mode
- * @delta_bandwidth:	Bandwidth represented in weights from 100 to 10000;
- *	not applicable for 'strict-priority' mode;
- */
-struct dpni_tx_schedule_cfg {
-	enum dpni_tx_schedule_mode	mode;
-	uint16_t			delta_bandwidth;
-};
-
-/**
- * struct dpni_tx_priorities_cfg - Structure representing transmission
- *					priorities for DPNI TCs
- * @tc_sched:	An array of traffic-classes
- */
-struct dpni_tx_priorities_cfg {
-	struct dpni_tx_schedule_cfg tc_sched[DPNI_MAX_TC];
-};
-
-int dpni_set_tx_priorities(struct fsl_mc_io			*mc_io,
-			   uint32_t				cmd_flags,
-			   uint16_t				token,
-			   const struct dpni_tx_priorities_cfg	*cfg);
-
-/**
  * enum dpni_dist_mode - DPNI distribution mode
  * @DPNI_DIST_MODE_NONE: No distribution
  * @DPNI_DIST_MODE_HASH: Use hash distribution; only relevant if
@@ -870,90 +793,6 @@ int dpni_set_rx_tc_dist(struct fsl_mc_io *mc_io,
 			uint16_t token,
 			uint8_t tc_id,
 			const struct dpni_rx_tc_dist_cfg *cfg);
-
-/**
- * Set to select color aware mode (otherwise - color blind)
- */
-#define DPNI_POLICER_OPT_COLOR_AWARE	0x00000001
-/**
- * Set to discard frame with RED color
- */
-#define DPNI_POLICER_OPT_DISCARD_RED	0x00000002
-
-/**
- * enum dpni_policer_mode - selecting the policer mode
- * @DPNI_POLICER_MODE_NONE: Policer is disabled
- * @DPNI_POLICER_MODE_PASS_THROUGH: Policer pass through
- * @DPNI_POLICER_MODE_RFC_2698: Policer algorithm RFC 2698
- * @DPNI_POLICER_MODE_RFC_4115: Policer algorithm RFC 4115
- */
-enum dpni_policer_mode {
-	DPNI_POLICER_MODE_NONE = 0,
-	DPNI_POLICER_MODE_PASS_THROUGH,
-	DPNI_POLICER_MODE_RFC_2698,
-	DPNI_POLICER_MODE_RFC_4115
-};
-
-/**
- * enum dpni_policer_unit - DPNI policer units
- * @DPNI_POLICER_UNIT_BYTES: bytes units
- * @DPNI_POLICER_UNIT_FRAMES: frames units
- */
-enum dpni_policer_unit {
-	DPNI_POLICER_UNIT_BYTES = 0,
-	DPNI_POLICER_UNIT_FRAMES
-};
-
-/**
- * enum dpni_policer_color - selecting the policer color
- * @DPNI_POLICER_COLOR_GREEN: Green color
- * @DPNI_POLICER_COLOR_YELLOW: Yellow color
- * @DPNI_POLICER_COLOR_RED: Red color
- */
-enum dpni_policer_color {
-	DPNI_POLICER_COLOR_GREEN = 0,
-	DPNI_POLICER_COLOR_YELLOW,
-	DPNI_POLICER_COLOR_RED
-};
-
-/**
- * struct dpni_rx_tc_policing_cfg - Policer configuration
- * @options: Mask of available options; use 'DPNI_POLICER_OPT_<X>' values
- * @mode: policer mode
- * @default_color: For pass-through mode the policer re-colors with this
- *	color any incoming packets. For Color aware non-pass-through mode:
- *	policer re-colors with this color all packets with FD[DROPP]>2.
- * @units: Bytes or Packets
- * @cir: Committed information rate (CIR) in Kbps or packets/second
- * @cbs: Committed burst size (CBS) in bytes or packets
- * @eir: Peak information rate (PIR, rfc2698) in Kbps or packets/second
- *	 Excess information rate (EIR, rfc4115) in Kbps or packets/second
- * @ebs: Peak burst size (PBS, rfc2698) in bytes or packets
- *       Excess burst size (EBS, rfc4115) in bytes or packets
- */
-struct dpni_rx_tc_policing_cfg {
-	uint32_t options;
-	enum dpni_policer_mode mode;
-	enum dpni_policer_unit units;
-	enum dpni_policer_color default_color;
-	uint32_t cir;
-	uint32_t cbs;
-	uint32_t eir;
-	uint32_t ebs;
-};
-
-
-int dpni_set_rx_tc_policing(struct fsl_mc_io *mc_io,
-			    uint32_t cmd_flags,
-			    uint16_t token,
-			    uint8_t tc_id,
-			    const struct dpni_rx_tc_policing_cfg *cfg);
-
-int dpni_get_rx_tc_policing(struct fsl_mc_io *mc_io,
-			    uint32_t cmd_flags,
-			    uint16_t token,
-			    uint8_t tc_id,
-			    struct dpni_rx_tc_policing_cfg *cfg);
 
 /**
  * enum dpni_congestion_unit - DPNI congestion units
@@ -1251,116 +1090,6 @@ int dpni_get_tx_confirmation_mode(struct fsl_mc_io *mc_io,
 				  uint16_t token,
 				  enum dpni_confirmation_mode *mode);
 
-/**
- * struct dpni_qos_tbl_cfg - Structure representing QOS table configuration
- * @key_cfg_iova: I/O virtual address of 256 bytes DMA-able memory filled with
- *		key extractions to be used as the QoS criteria by calling
- *		dpkg_prepare_key_cfg()
- * @discard_on_miss: Set to '1' to discard frames in case of no match (miss);
- *		'0' to use the 'default_tc' in such cases
- * @default_tc: Used in case of no-match and 'discard_on_miss'= 0
- */
-struct dpni_qos_tbl_cfg {
-	uint64_t key_cfg_iova;
-	int discard_on_miss;
-	uint8_t default_tc;
-};
-
-int dpni_set_qos_table(struct fsl_mc_io *mc_io,
-		       uint32_t cmd_flags,
-		       uint16_t token,
-		       const struct dpni_qos_tbl_cfg *cfg);
-
-/**
- * struct dpni_rule_cfg - Rule configuration for table lookup
- * @key_iova: I/O virtual address of the key (must be in DMA-able memory)
- * @mask_iova: I/O virtual address of the mask (must be in DMA-able memory)
- * @key_size: key and mask size (in bytes)
- */
-struct dpni_rule_cfg {
-	uint64_t key_iova;
-	uint64_t mask_iova;
-	uint8_t key_size;
-};
-
-int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
-		       uint32_t cmd_flags,
-		       uint16_t token,
-		       const struct dpni_rule_cfg *cfg,
-		       uint8_t tc_id,
-		       uint16_t index);
-
-int dpni_remove_qos_entry(struct fsl_mc_io *mc_io,
-			  uint32_t cmd_flags,
-			  uint16_t token,
-			  const struct dpni_rule_cfg *cfg);
-
-int dpni_clear_qos_table(struct fsl_mc_io *mc_io,
-			 uint32_t cmd_flags,
-			 uint16_t token);
-
-/**
- * Discard matching traffic.  If set, this takes precedence over any other
- * configuration and matching traffic is always discarded.
- */
- #define DPNI_FS_OPT_DISCARD            0x1
-
-/**
- * Set FLC value.  If set, flc member of truct dpni_fs_action_cfg is used to
- * override the FLC value set per queue.
- * For more details check the Frame Descriptor section in the hardware
- * documentation.
- */
-#define DPNI_FS_OPT_SET_FLC            0x2
-
-/*
- * Indicates whether the 6 lowest significant bits of FLC are used for stash
- * control.  If set, the 6 least significant bits in value are interpreted as
- * follows:
- *     - bits 0-1: indicates the number of 64 byte units of context that are
- *     stashed.  FLC value is interpreted as a memory address in this case,
- *     excluding the 6 LS bits.
- *     - bits 2-3: indicates the number of 64 byte units of frame annotation
- *     to be stashed.  Annotation is placed at FD[ADDR].
- *     - bits 4-5: indicates the number of 64 byte units of frame data to be
- *     stashed.  Frame data is placed at FD[ADDR] + FD[OFFSET].
- * This flag is ignored if DPNI_FS_OPT_SET_FLC is not specified.
- */
-#define DPNI_FS_OPT_SET_STASH_CONTROL  0x4
-
-/**
- * struct dpni_fs_action_cfg - Action configuration for table look-up
- * @flc: FLC value for traffic matching this rule.  Please check the Frame
- * Descriptor section in the hardware documentation for more information.
- * @flow_id: Identifies the Rx queue used for matching traffic.  Supported
- *     values are in range 0 to num_queue-1.
- * @options: Any combination of DPNI_FS_OPT_ values.
- */
-struct dpni_fs_action_cfg {
-	uint64_t flc;
-	uint16_t flow_id;
-	uint16_t options;
-};
-
-int dpni_add_fs_entry(struct fsl_mc_io *mc_io,
-		      uint32_t cmd_flags,
-		      uint16_t token,
-		      uint8_t tc_id,
-		      uint16_t index,
-		      const struct dpni_rule_cfg *cfg,
-		      const struct dpni_fs_action_cfg *action);
-
-int dpni_remove_fs_entry(struct fsl_mc_io *mc_io,
-			 uint32_t cmd_flags,
-			 uint16_t token,
-			 uint8_t tc_id,
-			 const struct dpni_rule_cfg *cfg);
-
-int dpni_clear_fs_entries(struct fsl_mc_io *mc_io,
-			  uint32_t cmd_flags,
-			  uint16_t token,
-			  uint8_t tc_id);
-
 int dpni_get_api_version(struct fsl_mc_io *mc_io,
 			 uint32_t cmd_flags,
 			 uint16_t *major_ver,
@@ -1474,94 +1203,4 @@ int dpni_get_taildrop(struct fsl_mc_io *mc_io,
 		      uint8_t tc,
 		      uint8_t q_index,
 		      struct dpni_taildrop *taildrop);
-
-int dpni_set_opr(struct fsl_mc_io *mc_io,
-		 uint32_t cmd_flags,
-		 uint16_t token,
-		 uint8_t tc,
-		 uint8_t index,
-		 uint8_t options,
-		 struct opr_cfg *cfg);
-
-int dpni_get_opr(struct fsl_mc_io *mc_io,
-		 uint32_t cmd_flags,
-		 uint16_t token,
-		 uint8_t tc,
-		 uint8_t index,
-		 struct opr_cfg *cfg,
-		 struct opr_qry *qry);
-
-/**
- * enum dpni_soft_sequence_dest - Enumeration of WRIOP software sequence destinations
- * @DPNI_SS_INGRESS: Ingress parser
- * @DPNI_SS_EGRESS: Egress parser
- */
-enum dpni_soft_sequence_dest {
-	DPNI_SS_INGRESS = 0,
-	DPNI_SS_EGRESS = 1,
-};
-
-/**
- * struct dpni_load_ss_cfg - Structure for Software Sequence load configuration
- * @dest:	Destination of the Software Sequence: ingress or egress parser
- * @ss_size: Size of the Software Sequence
- * @ss_offset:	The offset where to load the Software Sequence (0x20-0x7FD)
- * @ss_iova: I/O virtual address of the Software Sequence
- */
-struct dpni_load_ss_cfg{
-	enum dpni_soft_sequence_dest dest;
-	uint16_t ss_size;
-	uint16_t ss_offset;
-	uint64_t ss_iova;
-};
-
-/**
- * struct dpni_enable_ss_cfg - Structure for software sequence enable configuration
- * @dest:	Destination of the Software Sequence: ingress or egress parser
- * @hxs: HXS to attach the software sequence to
- * @set_start: If the Software Sequence or HDR it is attached to is set as parser start
- *             If hxs=DUMMY_LAST_HXS the ss_offset is set directly as parser start
- *             else the hdr index code is set as parser start
- * @ss_offset: The offset of the Software Sequence to enable or set as parse start
- * @param_size: Size of the software sequence parameters
- * @param_offset: Offset in the parameter zone for the software sequence parameters
- * @param_iova: I/O virtual address of the parameters
- */
-struct dpni_enable_ss_cfg{
-	enum dpni_soft_sequence_dest dest;
-	uint16_t hxs;
-	uint8_t set_start;
-	uint16_t ss_offset;
-	uint8_t param_size;
-	uint8_t param_offset;
-	uint64_t param_iova;
-};
-
-/**
- * dpni_load_sw_sequence() - Loads a software sequence in parser memory.
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPNI object
- * @cfg:	Software sequence load configuration
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpni_load_sw_sequence(struct fsl_mc_io *mc_io,
-	      uint32_t cmd_flags,
-	      uint16_t token,
-		  struct dpni_load_ss_cfg *cfg);
-
-/**
- * dpni_eanble_sw_sequence() - Enables a software sequence in the parser profile
- * corresponding to the ingress or egress of the DPNI.
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPNI object
- * @cfg:	Software sequence enable configuration
- * Return:	'0' on Success; Error code otherwise.
- */
-int dpni_enable_sw_sequence(struct fsl_mc_io *mc_io,
-	      uint32_t cmd_flags,
-	      uint16_t token,
-		  struct dpni_enable_ss_cfg *cfg);
-
 #endif /* __FSL_DPNI_H */

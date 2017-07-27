@@ -194,7 +194,7 @@ void qbman_swp_interrupt_set_inhibit(struct qbman_swp *p, int inhibit);
 /**
  * struct qbman_result - structure for qbman dequeue response and/or
  * notification.
- * @dont_manipulate_directly: the 16 32bit data to represent the whole
+ * @donot_manipulate_directly: the 16 32bit data to represent the whole
  * possible qbman dequeue result.
  */
 struct qbman_result {
@@ -284,7 +284,7 @@ void qbman_swp_push_set(struct qbman_swp *s, uint8_t channel_idx, int enable);
  */
 struct qbman_pull_desc {
 	union {
-		uint32_t dont_manipulate_directly[16];
+		uint32_t donot_manipulate_directly[16];
 		struct pull {
 			uint8_t verb;
 			uint8_t numf;
@@ -329,7 +329,7 @@ void qbman_pull_desc_clear(struct qbman_pull_desc *d);
  */
 void qbman_pull_desc_set_storage(struct qbman_pull_desc *d,
 				 struct qbman_result *storage,
-				 dma_addr_t storage_phys,
+				 uint64_t storage_phys,
 				 int stash);
 /**
  * qbman_pull_desc_set_numframes() - Set the number of frames to be dequeued.
@@ -416,7 +416,7 @@ void qbman_swp_dqrr_consume(struct qbman_swp *s, const struct qbman_result *dq);
  *
  * Return dqrr index.
  */
-uint8_t qbman_get_dqrr_idx(struct qbman_result *dqrr);
+uint8_t qbman_get_dqrr_idx(const struct qbman_result *dqrr);
 
 /**
  * qbman_get_dqrr_from_idx() - Use index to get the dqrr entry from the
@@ -781,7 +781,7 @@ uint64_t qbman_result_cgcu_icnt(const struct qbman_result *scn);
 /* struct qbman_eq_desc - structure of enqueue descriptor */
 struct qbman_eq_desc {
 	union {
-		uint32_t dont_manipulate_directly[8];
+		uint32_t donot_manipulate_directly[8];
 		struct eq {
 			uint8_t verb;
 			uint8_t dca;
@@ -802,11 +802,11 @@ struct qbman_eq_desc {
 
 /**
  * struct qbman_eq_response - structure of enqueue response
- * @dont_manipulate_directly: the 16 32bit data to represent the whole
+ * @donot_manipulate_directly: the 16 32bit data to represent the whole
  * enqueue response.
  */
 struct qbman_eq_response {
-	uint32_t dont_manipulate_directly[16];
+	uint32_t donot_manipulate_directly[16];
 };
 
 /**
@@ -880,7 +880,7 @@ void qbman_eq_desc_set_orp_nesn(struct qbman_eq_desc *d, uint16_t opr_id,
  * expresses a cache-warming attribute.
  */
 void qbman_eq_desc_set_response(struct qbman_eq_desc *d,
-				dma_addr_t storage_phys,
+				uint64_t storage_phys,
 				int stash);
 
 /**
@@ -1002,12 +1002,12 @@ int qbman_swp_enqueue_thresh(struct qbman_swp *s, unsigned int thresh);
 	/*******************/
 /**
  * struct qbman_release_desc - The structure for buffer release descriptor
- * @dont_manipulate_directly: the 32bit data to represent the whole
+ * @donot_manipulate_directly: the 32bit data to represent the whole
  * possible settings of qbman release descriptor.
  */
 struct qbman_release_desc {
 	union {
-		uint32_t dont_manipulate_directly[16];
+		uint32_t donot_manipulate_directly[16];
 		struct br {
 			uint8_t verb;
 			uint8_t reserved;

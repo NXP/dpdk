@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016 NXP.
+ * Copyright 2016-2017 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -109,39 +109,6 @@ struct dpio_cmd_destroy {
 struct dpio_rsp_is_enabled {
 	/* only the LSB */
 	uint8_t en;
-};
-
-struct dpio_cmd_get_irq {
-	uint32_t pad;
-	uint8_t irq_index;
-};
-
-struct dpio_cmd_set_irq_enable {
-	uint8_t en;
-	uint8_t pad[3];
-	uint8_t irq_index;
-};
-
-struct dpio_rsp_get_irq_enable {
-	uint8_t en;
-};
-
-struct dpio_cmd_set_irq_mask {
-	uint32_t mask;
-	uint8_t irq_index;
-};
-
-struct dpio_rsp_get_irq_mask {
-	uint32_t mask;
-};
-
-struct dpio_cmd_irq_status {
-	uint32_t status;
-	uint8_t irq_index;
-};
-
-struct dpio_rsp_get_irq_status {
-	uint32_t status;
 };
 
 #define DPIO_ATTR_CHANNEL_MODE_SHIFT	0

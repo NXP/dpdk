@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016 NXP.
+ * Copyright 2016-2017 NXP.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -88,49 +88,6 @@ struct dpbp_cmd_destroy {
 
 struct dpbp_rsp_is_enabled {
 	uint8_t enabled;
-};
-
-struct dpbp_cmd_set_irq_enable {
-	uint8_t enable;
-	uint8_t pad[3];
-	uint8_t irq_index;
-};
-
-struct dpbp_cmd_get_irq_enable {
-	uint32_t pad;
-	uint8_t irq_index;
-};
-
-struct dpbp_rsp_get_irq_enable {
-	uint8_t enabled;
-};
-
-struct dpbp_cmd_set_irq_mask {
-	uint32_t mask;
-	uint8_t irq_index;
-};
-
-struct dpbp_cmd_get_irq_mask {
-	uint32_t pad;
-	uint8_t irq_index;
-};
-
-struct dpbp_rsp_get_irq_mask {
-	uint32_t mask;
-};
-
-struct dpbp_cmd_get_irq_status {
-	uint32_t status;
-	uint8_t irq_index;
-};
-
-struct dpbp_rsp_get_irq_status {
-	uint32_t status;
-};
-
-struct dpbp_cmd_clear_irq_status {
-	uint32_t status;
-	uint8_t irq_index;
 };
 
 struct dpbp_rsp_get_attributes {
