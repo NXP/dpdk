@@ -35,6 +35,7 @@ LIB = librte_pmd_openssl.a
 
 # build flags
 CFLAGS += -O3
+CFLAGS += -I${OPENSSL_PATH}/include/
 CFLAGS += $(WERROR_FLAGS)
 
 # library version
@@ -44,7 +45,7 @@ LIBABIVER := 1
 EXPORT_MAP := rte_pmd_openssl_version.map
 
 # external library dependencies
-LDLIBS += -lcrypto
+LDLIBS += -L${OPENSSL_PATH}/lib -lcrypto
 
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_OPENSSL) += rte_openssl_pmd.c
