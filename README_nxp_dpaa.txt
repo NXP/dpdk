@@ -26,12 +26,12 @@ Following information can be used to obtain these components:
      ==========================
      Use following command to get the DPDK code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b DPDK-LX2-SIM-1707  (Internal git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b REL_LX2_SIM_1707  (Internal git repository)
        # git clone https://github.com/qoriq-open-source/dpdk.git -b 16.07-qoriq (External git repository)
 
       Use following command to get the dpdk-extras script related code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git     (Internal git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git -b REL_LX2_SIM_1707 (Internal git repository)
        # git clone https://github.com/qoriq-open-source/dpdk-extras.git -b master  (External git repository)
 
      Linux kernel code for LS1 platform
