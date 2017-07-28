@@ -26,13 +26,13 @@ Following information can be used to obtain these components:
      ==========================
      Use following command to get the DPDK code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git  -b fsl-sdk-v2.0-1703        (Internal git repository)
-       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk.git -b fsl-sdk-v2.0-1703  (External git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b DPDK-LX2-SIM-1707  (Internal git repository)
+       # git clone https://github.com/qoriq-open-source/dpdk.git -b 16.07-qoriq (External git repository)
 
       Use following command to get the dpdk-extras script related code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git -b fsl-sdk-v2.0-1703        (Internal git repository)
-       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk-extras.git -b fsl-sdk-v2.0-1703 (External git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git     (Internal git repository)
+       # git clone https://github.com/qoriq-open-source/dpdk-extras.git -b master  (External git repository)
 
      Linux kernel code for LS1 platform
      ==================================
@@ -44,11 +44,11 @@ Following information can be used to obtain these components:
 
      Cross compiled toolchain For ARM64
      ==================================
-    get the linaro gcc-4.9 or later toolchain from:
-    https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
+    get the gcc-4.9 or later toolchain from Linaro. e.g.
+    https://releases.linaro.org/components/toolchain/binaries/6.3-2017.05/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
-export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+export CROSS_COMPILE=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 
 ===============================================================================
 
@@ -57,7 +57,7 @@ How to Build DPDK Applications
 1. Script "standalone-dpaa" is present in DPDK code. Open it and check the
    CROSS_PATH.
 
-     --> export CROSS_PATH=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/
+     --> export CROSS_PATH=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/
 
      NOTE: if toolchain is installed at location other than "/opt" then above
      lines needs to be modified appropriately.
@@ -95,8 +95,8 @@ How to Build DPDK Applications
      1. export KERNEL_PATH=<path to LS104x Linux kernel code - pre build>
 	if you don't have kernel sources, you may disable KNI
 		modify config/defconfig_arm64-dpaa2-linuxapp-gcc
-		CONFIG_RTE_KNI_KMOD=n	
-     2. export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+		CONFIG_RTE_KNI_KMOD=n
+     2. export CROSS_COMPILE=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
      4. source standalone-dpaa
      5. make install T=arm64-dpaa-linuxapp-gcc
@@ -341,8 +341,24 @@ How to run DPDK Applications
 	./l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)" --parse-ptype
 
 =============================================================================
-Applications:
--	Able to run L2FWD, L3FWD, Kernel Network Interface (KNI) demo unmodified.
+13. Applications validated on DPDK-DPAA2
+  =====================================
+ 1. l2fwd
+ 2. l3fwd
+ 3. l2fwd-crypto
+ 4. ip_fragmentation
+ 5. ip_reassembly
+ 6. ipv4_multicast
+ 7. kni
+ 8. cmdline
+ 9. timer
+ 10. vhost
+ 11. ethtool
+ 12. l3fwd-acl
+ 13. skelton
+ 14. rxtx_callback
+ 15. ipsecgw
+
 
 Features:
 -	Support for Port detection post FMC configuration
@@ -356,5 +372,5 @@ Tag:
 DPDK base version used: Release 16.07
 More info on DPDK :  www.dpdk.org
 
-LS1 Release - SDK2.0
+LS1 Release - LSDK
 NXP contact: hemant.agrawal@nxp.com

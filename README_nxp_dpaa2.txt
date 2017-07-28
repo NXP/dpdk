@@ -1,11 +1,11 @@
 ===============================================================================
-NXP DPDK README FOR LS-DPAA2 PLATFORM e.g LS208x, LS108x
+NXP DPDK README FOR DPAA2 PLATFORM e.g LS208x, LS108x, LX2160
 ===============================================================================
 
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
 This README provides information about building and executing DPDK based
-applications for LS-DPAA2 platform
+applications for DPAA2 platform
 
 ===============================================================================
 
@@ -17,38 +17,38 @@ following components are required:
 
 1. DPDK source code
 2. Cross compiled toolchain for ARM64 platform
-3. Linux kernel for LS2 platform
-4. LS208x board or LS1088 board
+3. Linux kernel for LS platform
+4. LS208x, LS108x or LX216x board
 
 Following information can be used to obtain these components:
 
-     DPDK code for LS2 platform
+     DPDK code for DPAA2 platform
      ==========================
      Use following command to get the DPDK code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b fsl-sdk-v2.0-1703        (Internal git repository)
-       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk.git -b fsl-sdk-v2.0-1703 (External git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b DPDK-LX2-SIM-1707  (Internal git repository)
+       # git clone https://github.com/qoriq-open-source/dpdk.git -b 16.07-qoriq (External git repository)
 
       Use following command to get the dpdk-extras script related code
 
-       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git  -b fsl-sdk-v2.0-1703        (Internal git repository)
-       # git clone http://git.freescale.com/git/cgit.cgi/ppc/sdk/dpdk-extras.git -b fsl-sdk-v2.0-1703  (External git repository)
+       # git clone ssh://git@sw-stash.freescale.net/gitam/dpdk-extras.git     (Internal git repository)
+       # git clone https://github.com/qoriq-open-source/dpdk-extras.git -b master  (External git repository)
 
-     Linux kernel code for LS2 platform
+     Linux kernel code for DPAA2 platform
      ==================================
      Use following command to get the linux code
 
-       # install SDK released by NXP(previously freescale) for ls208x or ls108x
+       # install LSDK released by NXP(previously freescale)
        # find the source for linux
 
 
      Cross compiled toolchain For ARM64
      ==================================
-    get the linaro gcc-4.9 or later toolchain from:
-    https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/
+    get the gcc-4.9 or later toolchain from Linaro. e.g.
+    https://releases.linaro.org/components/toolchain/binaries/6.3-2017.05/aarch64-linux-gnu/
 
 set the CROSS_COMPILE path e.g
-export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+export CROSS_COMPILE=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 
 ===============================================================================
 
@@ -57,7 +57,7 @@ How to Build DPDK Applications
 1. Script "standalone-dpaa2" is present in DPDK code. Open it and check the
    CROSS_PATH.
 
-     --> export CROSS_PATH=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/
+     --> export CROSS_PATH=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/
 
      NOTE: if toolchain is installed at location other than "/opt" then above
      lines needs to be modified appropriately.
@@ -95,8 +95,8 @@ How to Build DPDK Applications
      1. export KERNEL_PATH=<path to LS2 Linux kernel code - prebuild>
 	if you don't have kernel sources, you may disable KNI
 		modify config/defconfig_arm64-dpaa2-linuxapp-gcc
-		CONFIG_RTE_KNI_KMOD=n	
-     2. export CROSS_COMPILE=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+		CONFIG_RTE_KNI_KMOD=n
+     2. export CROSS_COMPILE=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
      3. export OPENSSL_PATH=<path to OpenSSL library>
      4. source standalone-dpaa2
      5. make install T=arm64-dpaa2-linuxapp-gcc
@@ -347,13 +347,21 @@ How to run DPDK Applications
  1. l2fwd
  2. l3fwd
  3. l2fwd-crypto
- 4. link_status_interrupt (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
- 5. ip_fragmentation
- 6. ip_reassembly
- 7. kni
- 8. cmdline
- 9. timer
- 10. vhost
+ 4. l2fwd-keepalive
+ 5. link_status_interrupt (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
+ 6. ip_fragmentation
+ 7. ip_reassembly
+ 8. ipv4_multicast
+ 9. kni
+ 10. cmdline
+ 11. timer
+ 12. vhost
+ 13. ethtool
+ 14. l3fwd-acl
+ 15. skelton
+ 16. rxtx_callback
+ 17. ipsecgw
+
 
 Features:
 -	Support for LS2-BUS in DPDK VFIO support function
@@ -367,5 +375,5 @@ Tag:
 DPDK base version used: Release 16.07
 More info on DPDK :  www.dpdk.org
 
-LS2 Release - SDK2.0
+LS2 Release - LSDK
 NXP contact: hemant.agrawal@nxp.com
