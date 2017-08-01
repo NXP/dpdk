@@ -47,8 +47,9 @@ CFLAGS +=-Wno-pointer-arith
 
 CFLAGS += -I$(RTE_SDK_DPAA)/
 CFLAGS += -I$(RTE_SDK_DPAA)/include
+CFLAGS += -I$(RTE_SDK_DPAA)/fmlib
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa
-CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include/
+CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include
 CFLAGS += -I$(RTE_SDK)/drivers/mempool/dpaa
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal/include
@@ -58,7 +59,9 @@ EXPORT_MAP := rte_pmd_dpaa_version.map
 LIBABIVER := 1
 
 # Interfaces with DPDK
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += fmlib/fm_lib.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_flow.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
 
 LDLIBS += -lrte_bus_dpaa

@@ -66,6 +66,7 @@
 
 #include <dpaa_ethdev.h>
 #include <dpaa_rxtx.h>
+#include <dpaa_flow.h>
 
 #include <fsl_usd.h>
 #include <fsl_qman.h>
@@ -74,6 +75,8 @@
 
 /* Keep track of whether QMAN and BMAN have been globally initialized */
 static int is_global_init;
+static int fmc_q = 1;	/* Indicates the uses of TOOL tool for distribution */
+static int default_q;	/* use default queue - FMC is not executed*/
 
 static int
 dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
@@ -99,6 +102,8 @@ dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 static int
 dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 {
+	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
+
 	PMD_INIT_FUNC_TRACE();
 
 	if (dev->data->dev_conf.rxmode.jumbo_frame == 1) {
@@ -109,6 +114,23 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 		else
 			return -1;
 	}
+
+	/* Check for correct configuration */
+	if (eth_conf->rxmode.mq_mode != ETH_MQ_RX_RSS &&
+	    dev->data->nb_rx_queues > 1) {
+		DPAA_PMD_ERR("Distribution is not enabled, "
+			    "but Rx queues more than 1\n");
+		return -1;
+	}
+
+	if (!(default_q || fmc_q)) {
+		if (dpaa_fm_config(dev, eth_conf->
+					rx_adv_conf.rss_conf.rss_hf)) {
+			DPAA_PMD_ERR("FM port configuration: Failed\n");
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
@@ -524,6 +546,24 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
 }
 
+static int
+dpaa_dev_rss_hash_update(struct rte_eth_dev *dev,
+			 struct rte_eth_rss_conf *rss_conf)
+{
+	PMD_INIT_FUNC_TRACE();
+
+	if (!(default_q || fmc_q)) {
+		if (dpaa_fm_config(dev, rss_conf->rss_hf)) {
+			DPAA_PMD_ERR("FM port configuration: Failed\n");
+			return -1;
+		}
+	} else {
+		DPAA_PMD_ERR("Function not supported\n");
+		return -ENOTSUP;
+	}
+	return 0;
+}
+
 static struct eth_dev_ops dpaa_devops = {
 	.dev_configure		  = dpaa_eth_dev_configure,
 	.dev_start		  = dpaa_eth_dev_start,
@@ -555,6 +595,7 @@ static struct eth_dev_ops dpaa_devops = {
 	.mac_addr_set		  = dpaa_dev_set_mac_addr,
 
 	.fw_version_get		  = dpaa_fw_version_get,
+	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 };
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
@@ -727,10 +768,17 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->cfg = cfg;
 
 	/* Initialize Rx FQ's */
-	if (getenv("DPAA_NUM_RX_QUEUES"))
-		num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
-	else
+	if (default_q) {
 		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
+	} else if (fmc_q) {
+		if (getenv("DPAA_NUM_RX_QUEUES"))
+			num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
+		else
+			num_rx_fqs = 1;
+	} else {
+		num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
+	}
+
 
 	/* Each device can not have more than DPAA_PCD_FQID_MULTIPLIER RX
 	 * queues.
@@ -743,8 +791,11 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->rx_queues = rte_zmalloc(NULL,
 		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
 	for (loop = 0; loop < num_rx_fqs; loop++) {
-		fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
-			DPAA_PCD_FQID_MULTIPLIER + loop;
+		if (default_q)
+			fqid = cfg->rx_def;
+		else
+			fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
+				DPAA_PCD_FQID_MULTIPLIER + loop;
 		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
 		if (ret)
 			return ret;
@@ -790,8 +841,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* Populate ethdev structure */
 	eth_dev->dev_ops = &dpaa_devops;
-	eth_dev->data->nb_rx_queues = dpaa_intf->nb_rx_queues;
-	eth_dev->data->nb_tx_queues = dpaa_intf->nb_tx_queues;
 	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
 	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 
@@ -845,6 +894,12 @@ dpaa_dev_uninit(struct rte_eth_dev *dev)
 	if (!dpaa_intf) {
 		DPAA_PMD_WARN("Already closed or not started");
 		return -1;
+	}
+
+	/* DPAA FM deconfig */
+	if (!(default_q || fmc_q)) {
+		if (dpaa_fm_deconfig(dpaa_intf))
+			DPAA_PMD_WARN("DPAA FM deconfig failed\n");
 	}
 
 	dpaa_eth_dev_close(dev);
@@ -906,6 +961,19 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 			return ret;
 		}
 
+		if (getenv("DPAA_DEFAULT_Q_ONLY"))
+			default_q = 1;
+
+		if (getenv("DPAA_DYNAMIC_DIST"))
+			fmc_q = 0;
+
+		if (!(default_q || fmc_q)) {
+			if (dpaa_fm_init()) {
+				DPAA_PMD_ERR("FM init failed\n");
+				return -1;
+			}
+		}
+
 		is_global_init = 1;
 	}
 
@@ -961,6 +1029,28 @@ rte_dpaa_remove(struct rte_dpaa_device *dpaa_dev)
 	rte_eth_dev_release_port(eth_dev);
 
 	return 0;
+}
+
+static void __attribute__((destructor(102))) dpaa_finish(void)
+{
+	if (!(default_q || fmc_q)) {
+		unsigned i;
+
+		for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
+			if (rte_eth_devices[i].dev_ops == &dpaa_devops) {
+				struct dpaa_if *dpaa_intf =
+					rte_eth_devices[i].data->dev_private;
+
+				if (dpaa_intf->valid)
+					if (dpaa_fm_deconfig(dpaa_intf))
+						DPAA_PMD_WARN("DPAA FM "
+							"deconfig failed\n");
+			}
+		}
+		if (is_global_init)
+			if (dpaa_fm_term())
+				DPAA_PMD_WARN("DPAA FM term failed\n");
+	}
 }
 
 static struct rte_dpaa_driver rte_dpaa_pmd = {

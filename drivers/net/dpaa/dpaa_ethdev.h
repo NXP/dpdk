@@ -77,6 +77,7 @@
 #define DPAA_PCD_FQID_START		0x400
 #define DPAA_PCD_FQID_MULTIPLIER	0x100
 #define DPAA_DEFAULT_NUM_PCD_QUEUES	1
+#define DPAA_MAX_NUM_PCD_QUEUES		32
 
 #define DPAA_IF_TX_PRIORITY		3
 #define DPAA_IF_RX_PRIORITY		4
@@ -137,6 +138,10 @@ struct dpaa_if {
 	struct fman_if *fif;
 	struct dpaa_bp_info *bp_info;
 	struct rte_eth_fc_conf *fc_conf;
+	void *port_handle;
+	void *netenv_handle;
+	void *scheme_handle;
+	uint32_t scheme_count;
 };
 
 #endif
