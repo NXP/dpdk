@@ -191,7 +191,7 @@ int qman_setup_fq_lookup_table(size_t num_entries)
 	}
 	memset(qman_fq_lookup_table, 0, num_entries * sizeof(void *));
 	qman_fq_lookup_table_size = num_entries;
-	pr_info("QMan: Allocated lookup table at %p, entry count %lu\n",
+	pr_debug("QMan: Allocated lookup table at %p, entry count %lu\n",
 		qman_fq_lookup_table,
 			(unsigned long)qman_fq_lookup_table_size);
 	return 0;

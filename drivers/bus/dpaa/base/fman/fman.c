@@ -47,6 +47,7 @@
 /* This header declares the driver interface we implement */
 #include <fman.h>
 #include <of.h>
+#include <rte_dpaa_logs.h>
 
 #define QMI_PORT_REGS_OFFSET		0x400
 

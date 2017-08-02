@@ -48,7 +48,6 @@
 #include <rte_ether.h>
 
 #include <compat.h>
-#include <rte_dpaa_logs.h>
 
 #ifndef FMAN_DEVICE_PATH
 #define FMAN_DEVICE_PATH "/dev/mem"

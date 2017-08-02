@@ -107,6 +107,15 @@
 #define pr_warn(fmt, args...)	 prflush("WARN:" fmt, ##args)
 #define pr_info(fmt, args...)	 prflush(fmt, ##args)
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_BUS
+#ifdef pr_debug
+#undef pr_debug
+#endif
+#define pr_debug(fmt, args...)	printf(fmt, ##args)
+#else
+#define pr_debug(fmt, args...) {}
+#endif
+
 #define ASSERT(x) do {\
 	if (!(x)) \
 		rte_panic("DPAA: x"); \
