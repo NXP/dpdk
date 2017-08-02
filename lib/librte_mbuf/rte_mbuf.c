@@ -162,6 +162,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	int ret;
 	const char *ops[] = {
 			RTE_MBUF_DEFAULT_MEMPOOL_OPS,
+			"dpaa2",
 			"ring_mp_mc",
 			NULL,
 		};
