@@ -264,6 +264,19 @@ dpaa_mbuf_get_count(const struct rte_mempool *mp)
 	return bman_query_free_buffers(bp_info->bp);
 }
 
+static int
+dpaa_mbuf_supported(const struct rte_mempool *mp __rte_unused)
+{
+	const struct device_node *bman_node;
+
+	for_each_compatible_node(bman_node, NULL, "fsl,bman") {
+		return 0;
+	}
+
+	DPAA_MEMPOOL_DEBUG("DPAA mempool resource not available\n");
+	return -1;
+}
+
 struct rte_mempool_ops dpaa_mpool_ops = {
 	.name = "dpaa",
 	.alloc = dpaa_mbuf_create_pool,
@@ -271,6 +284,7 @@ struct rte_mempool_ops dpaa_mpool_ops = {
 	.enqueue = dpaa_mbuf_free_bulk,
 	.dequeue = dpaa_mbuf_alloc_bulk,
 	.get_count = dpaa_mbuf_get_count,
+	.supported = dpaa_mbuf_supported,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
