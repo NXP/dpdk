@@ -736,7 +736,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_vlan_offload_set(dev, ETH_VLAN_FILTER_MASK);
 
 	/* if the interrupts were configured on this devices*/
-	if ((intr_handle->fd) &&
+	if (intr_handle && (intr_handle->fd) &&
 	    (dev->data->dev_conf.intr_conf.lsc != 0)) {
 		/* Registering LSC interrupt handler */
 		rte_intr_callback_register(intr_handle,
@@ -772,7 +772,7 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	/* reset interrupt callback  */
-	if ((intr_handle->fd) &&
+	if (intr_handle && (intr_handle->fd) &&
 	    (dev->data->dev_conf.intr_conf.lsc != 0)) {
 		/*disable dpni irqs */
 		dpaa2_eth_setup_irqs(dev, 0);
