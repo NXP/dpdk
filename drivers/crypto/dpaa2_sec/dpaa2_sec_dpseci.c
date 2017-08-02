@@ -1690,6 +1690,7 @@ dpaa2_sec_uninit(const struct rte_cryptodev_driver *crypto_drv __rte_unused,
 	PMD_INIT_LOG(INFO, "Closing DPAA2_SEC device %s on numa socket %u\n",
 		     dev->data->name, rte_socket_id());
 
+	rte_free(internals->hw);
 	return 0;
 }
 
