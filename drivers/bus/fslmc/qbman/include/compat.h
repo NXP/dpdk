@@ -67,7 +67,7 @@ typedef uint64_t	dma_addr_t;
 #define pr_warn(fmt, args...)	 prflush("WARN:" fmt, ##args)
 #define pr_info(fmt, args...)	 prflush(fmt, ##args)
 
-#ifdef CONFIG_BUGON
+#ifdef RTE_LIBRTE_DPAA2_DEBUG_BUS
 #ifdef pr_debug
 #undef pr_debug
 #endif

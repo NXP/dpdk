@@ -612,7 +612,7 @@ int fslmc_vfio_process_group(void)
 							  vdev->fd,
 							  device_info.num_irqs);
 
-			FSLMC_VFIO_LOG(DEBUG, "DPAA2: Added %s", dev->name);
+			RTE_LOG(INFO, EAL, "DPAA2: %s scanned\n", dev->name);
 		} else {
 			/* Parse all other objects */
 			struct rte_dpaa2_object *object;
@@ -664,7 +664,7 @@ int fslmc_vfio_setup_group(void)
 	container = getenv("DPRC");
 
 	if (container == NULL) {
-		FSLMC_VFIO_LOG(ERR, "VFIO container not set in env DPRC");
+		RTE_LOG(DEBUG, EAL, "VFIO container not set in env DPRC");
 		return -EOPNOTSUPP;
 	}
 
