@@ -300,19 +300,19 @@ struct qm_sg_entry {
 } __packed;
 static inline u64 qm_sg_entry_get64(const struct qm_sg_entry *sg)
 {
-	return be64_to_cpu(sg->opaque);
+	return sg->addr;
 }
 
 static inline dma_addr_t qm_sg_addr(const struct qm_sg_entry *sg)
 {
-	return (dma_addr_t)be64_to_cpu(sg->opaque);
+	return (dma_addr_t)sg->addr;
 }
 
 /* Macro, so we compile better if 'v' isn't always 64-bit */
 #define qm_sg_entry_set64(sg, v) \
 	do { \
 		struct qm_sg_entry *__sg931 = (sg); \
-		__sg931->opaque = cpu_to_be64(v); \
+		__sg931->addr = v; \
 	} while (0)
 
 /* See 1.5.8.1: "Enqueue Command" */
@@ -1105,8 +1105,7 @@ struct qm_mc_result {
 static inline int QM_MCR_QUERYCONGESTION(struct __qm_mcr_querycongestion *p,
 					 u8 cgr)
 {
-	return be32_to_cpu(p->state[__CGR_WORD(cgr)]) &
-	       (0x80000000 >> __CGR_SHIFT(cgr));
+	return p->state[__CGR_WORD(cgr)] & (0x80000000 >> __CGR_SHIFT(cgr));
 }
 
 	/* Portal and Frame Queues */

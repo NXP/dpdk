@@ -94,7 +94,7 @@ static inline int qman_cgrs_next(struct qman_cgrs *c, int num)
 static inline void qman_cgrs_cp(struct qman_cgrs *dest,
 				const struct qman_cgrs *src)
 {
-	*dest = *src;
+	memcpy(dest, src, sizeof(*dest));
 }
 
 static inline void qman_cgrs_and(struct qman_cgrs *dest,
