@@ -209,6 +209,8 @@ static const char *pmd_name(enum rte_cryptodev_type pmd)
 		return RTE_STR(CRYPTODEV_NAME_SNOW3G_PMD);
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
 		return RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD);
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
+		return RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD);
 	default:
 		return "";
 	}
@@ -4662,6 +4664,17 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 	}
 };
 
+static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
+	.suite_name = "Crypto Device DPAA_SEC Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			     test_perf_aes_cbc_encrypt_digest_vary_pkt_size),
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
 static struct unit_test_suite cryptodev_gcm_testsuite  = {
 	.suite_name = "Crypto Device AESNI GCM Unit Test Suite",
 	.setup = testsuite_setup,
@@ -4795,6 +4808,14 @@ perftest_dpaa2_sec_cryptodev(void)
 	return unit_test_suite_runner(&cryptodev_dpaa2_sec_testsuite);
 }
 
+static int
+perftest_dpaa_sec_cryptodev(void)
+{
+	gbl_cryptodev_perftest_devtype = RTE_CRYPTODEV_DPAA_SEC_PMD;
+
+	return unit_test_suite_runner(&cryptodev_dpaa_sec_testsuite);
+}
+
 REGISTER_TEST_COMMAND(cryptodev_aesni_mb_perftest, perftest_aesni_mb_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_qat_perftest, perftest_qat_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_sw_snow3g_perftest, perftest_sw_snow3g_cryptodev);
@@ -4808,3 +4829,5 @@ REGISTER_TEST_COMMAND(cryptodev_sw_armv8_perftest,
 		perftest_sw_armv8_cryptodev);
 REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_perftest,
 		      perftest_dpaa2_sec_cryptodev);
+REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_perftest,
+		    perftest_dpaa_sec_cryptodev);

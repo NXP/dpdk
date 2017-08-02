@@ -100,6 +100,7 @@ test_blockcipher_one_case(const struct blockcipher_test_case *t,
 			tdata->auth_key.len);
 
 	switch (cryptodev_type) {
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
 	case RTE_CRYPTODEV_QAT_SYM_PMD:
 	case RTE_CRYPTODEV_OPENSSL_PMD:
@@ -666,6 +667,9 @@ test_blockcipher_all_tests(struct rte_mempool *mbuf_pool,
 		break;
 	case RTE_CRYPTODEV_DPAA2_SEC_PMD:
 		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC;
+		break;
+	case RTE_CRYPTODEV_DPAA_SEC_PMD:
+		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC;
 		break;
 	default:
 		TEST_ASSERT(0, "Unrecognized cryptodev type");
