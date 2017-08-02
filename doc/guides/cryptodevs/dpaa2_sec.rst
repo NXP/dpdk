@@ -126,7 +126,7 @@ fits in the DPAA2 Bus model
 Features
 --------
 
-The DPAA2 PMD has support for:
+The DPAA2_SEC PMD has support for:
 
 Cipher algorithms:
 
@@ -134,6 +134,9 @@ Cipher algorithms:
 * ``RTE_CRYPTO_CIPHER_AES128_CBC``
 * ``RTE_CRYPTO_CIPHER_AES192_CBC``
 * ``RTE_CRYPTO_CIPHER_AES256_CBC``
+* ``RTE_CRYPTO_CIPHER_AES128_CTR``
+* ``RTE_CRYPTO_CIPHER_AES192_CTR``
+* ``RTE_CRYPTO_CIPHER_AES256_CTR``
 
 Hash algorithms:
 
@@ -143,6 +146,10 @@ Hash algorithms:
 * ``RTE_CRYPTO_AUTH_SHA384_HMAC``
 * ``RTE_CRYPTO_AUTH_SHA512_HMAC``
 * ``RTE_CRYPTO_AUTH_MD5_HMAC``
+
+AEAD algorithms:
+
+* ``RTE_CRYPTO_AEAD_AES_GCM``
 
 Supported DPAA2 SoCs
 --------------------
@@ -176,12 +183,12 @@ The following dependencies are not part of DPDK and must be installed separately
 
   SDK and related information can be obtained from:  `NXP QorIQ SDK  <http://www.nxp.com/products/software-and-tools/run-time-software/linux-sdk/linux-sdk-for-qoriq-processors:SDKLINUX>`_.
 
-* **DPDK Helper Scripts**
+* **DPDK Extra Scripts**
 
   DPAA2 based resources can be configured easily with the help of ready scripts
   as provided in the DPDK helper repository.
 
-  `DPDK Helper Scripts <https://github.com/qoriq-open-source/dpdk-helper>`_.
+  `DPDK Extra Scripts <https://github.com/qoriq-open-source/dpdk-extras>`_.
 
 Currently supported by DPDK:
 
