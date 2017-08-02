@@ -672,15 +672,15 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "reserve debug fqid %d failed with ret: %d",
+		DPAA_PMD_LOG(ERR, "reserve debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	PMD_DRV_LOG(DEBUG, "creating debug fq %p, fqid %d", fq, fqid);
+	DPAA_PMD_LOG(DEBUG, "creating debug fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		PMD_DRV_LOG(ERR, "create debug fqid %d failed with ret: %d",
+		DPAA_PMD_LOG(ERR, "create debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return ret;
 	}
@@ -688,7 +688,7 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		PMD_DRV_LOG(ERR, "init debug fqid %d failed with ret: %d",
+		DPAA_PMD_LOG(ERR, "init debug fqid %d failed with ret: %d",
 			    fqid, ret);
 	return ret;
 }
@@ -810,13 +810,14 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		fman_intf->mac_addr.addr_bytes,
 		ETHER_ADDR_LEN);
 
-	DPAA_PMD_DEBUG("interface %s macaddr:", dpaa_device->name);
-	for (loop = 0; loop < ETHER_ADDR_LEN; loop++) {
-		if (loop != (ETHER_ADDR_LEN - 1))
-			printf("%02x:", fman_intf->mac_addr.addr_bytes[loop]);
-		else
-			printf("%02x\n", fman_intf->mac_addr.addr_bytes[loop]);
-	}
+	RTE_LOG(INFO, PMD, "net: dpaa: %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
+		dpaa_device->name,
+		fman_intf->mac_addr.addr_bytes[0],
+		fman_intf->mac_addr.addr_bytes[1],
+		fman_intf->mac_addr.addr_bytes[2],
+		fman_intf->mac_addr.addr_bytes[3],
+		fman_intf->mac_addr.addr_bytes[4],
+		fman_intf->mac_addr.addr_bytes[5]);
 
 	/* Disable RX mode */
 	fman_if_discard_rx_errors(fman_intf);

@@ -37,7 +37,6 @@
 #include <stdbool.h>
 #include <rte_ethdev.h>
 
-#include <rte_dpaa_logs.h>
 #include <dpaa_mempool.h>
 
 #include <fsl_usd.h>
