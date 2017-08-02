@@ -72,6 +72,8 @@ extern "C" {
 /**< Scheduler Crypto PMD device name */
 #define CRYPTODEV_NAME_DPAA2_SEC_PMD	cryptodev_dpaa2_sec_pmd
 /**< NXP DPAA2 - SEC PMD device name */
+#define CRYPTODEV_NAME_DPAA_SEC_PMD	cryptodev_dpaa_sec_pmd
+/**< NXP DPAA - SEC PMD device name */
 
 /** Crypto device type */
 enum rte_cryptodev_type {
@@ -86,6 +88,7 @@ enum rte_cryptodev_type {
 	RTE_CRYPTODEV_ARMV8_PMD,	/**< ARMv8 crypto PMD */
 	RTE_CRYPTODEV_SCHEDULER_PMD,	/**< Crypto Scheduler PMD */
 	RTE_CRYPTODEV_DPAA2_SEC_PMD,    /**< NXP DPAA2 - SEC PMD */
+	RTE_CRYPTODEV_DPAA_SEC_PMD,    /**< NXP DPAA - SEC PMD */
 };
 
 extern const char **rte_cyptodev_names;

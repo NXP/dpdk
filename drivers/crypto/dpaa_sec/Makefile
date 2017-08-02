@@ -1,6 +1,6 @@
 #   BSD LICENSE
 #
-#   Copyright 2016 Freescale Semiconductor, Inc.
+#   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
 #   Copyright 2017 NXP.
 #
 #   Redistribution and use in source and binary forms, with or without
@@ -13,7 +13,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of NXP nor the names of its
+#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -28,59 +28,44 @@
 #   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
-#include "defconfig_arm64-armv8a-linuxapp-gcc"
-
-# NXP (Freescale) - Soc Architecture with FMAN, QMAN & BMAN support
-CONFIG_RTE_MACHINE="dpaa"
-CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
-CONFIG_RTE_LIBRTE_VHOST_NUMA=n
-CONFIG_RTE_EAL_NUMA_AWARE_HUGEPAGES=n
+include $(RTE_SDK)/mk/rte.vars.mk
 
 #
-# Compile Environment Abstraction Layer
+# library name
 #
-CONFIG_RTE_MAX_LCORE=4
-CONFIG_RTE_MAX_NUMA_NODES=1
-CONFIG_RTE_CACHE_LINE_SIZE=64
-CONFIG_RTE_PKTMBUF_HEADROOM=128
+LIB = librte_pmd_dpaa_sec.a
 
-#
-# Compile PMD for Software backed device
-#
-CONFIG_RTE_LIBRTE_PMD_OPENSSL=y
-CONFIG_RTE_LIBRTE_PMD_OPENSSL_DEBUG=n
+# build flags
+CFLAGS += -D _GNU_SOURCE
+ifeq ($(CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT),y)
+CFLAGS += -O0 -g
+CFLAGS += "-Wno-error"
+else
+CFLAGS += -O3
+CFLAGS += $(WERROR_FLAGS)
+endif
 
-# NXP DPAA Bus
-CONFIG_RTE_LIBRTE_DPAA_BUS=y
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_BUS=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY=n
+CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa
+CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec/
+#sharing the hw flib headers from dpaa2_sec pmd
+CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
-# NXP DPAA Mempool
-CONFIG_RTE_LIBRTE_DPAA_MEMPOOL=y
-CONFIG_RTE_LIBRTE_DPAA_MEMPOOL_DEBUG=n
-CONFIG_RTE_MBUF_DEFAULT_MEMPOOL_OPS="dpaa"
+# versioning export map
+EXPORT_MAP := rte_pmd_dpaa_sec_version.map
 
-# Compile software NXP DPAA PMD
-CONFIG_RTE_LIBRTE_DPAA_PMD=y
-CONFIG_RTE_LIBRTE_DPAA_PMD_DEBUG=n
+# library version
+LIBABIVER := 1
 
-#
-# FSL DPAA caam - crypto driver
-#
-CONFIG_RTE_LIBRTE_PMD_DPAA_SEC=y
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=n
-CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=n
+# library source files
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
 
-# DPAA CAAM driver instances
-CONFIG_RTE_LIBRTE_DPAA_MAX_CRYPTODEV=4
+# library dependencies
 
-#
-# Number of sessions to create in the session memory pool
-# on a single DPAA SEC device.
-#
-CONFIG_RTE_DPAA_SEC_PMD_MAX_NB_SESSIONS=2048
+LDLIBS += -lrte_bus_dpaa
+LDLIBS += -lrte_mempool_dpaa
+
+include $(RTE_SDK)/mk/rte.lib.mk
