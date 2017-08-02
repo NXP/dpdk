@@ -138,22 +138,22 @@ netcfg_acquire(void)
 	 * for command-line interfaces.
 	 */
 
-	if (skfd == -1) {
-		/* Open a basic socket to enable/disable shared
-		 * interfaces.
-		 */
-		skfd = socket(AF_PACKET, SOCK_RAW, 0);
-		if (unlikely(skfd < 0)) {
-			/** ASDF: logging would need to be changed */
-			error(0, errno, "%s(): open(SOCK_RAW)", __func__);
-			return NULL;
-		}
+	/* Open a basic socket to enable/disable shared
+	 * interfaces.
+	 */
+	skfd = socket(AF_PACKET, SOCK_RAW, 0);
+	if (unlikely(skfd < 0)) {
+		/** ASDF: logging would need to be changed */
+		error(0, errno, "%s(): open(SOCK_RAW)", __func__);
+		return NULL;
 	}
 
 	/* Initialise the Fman driver */
 	_errno = fman_init();
 	if (_errno) {
 		DPAA_BUS_LOG(ERR, "FMAN driver init failed (%d)", errno);
+		close(skfd);
+		skfd = -1;
 		return NULL;
 	}
 

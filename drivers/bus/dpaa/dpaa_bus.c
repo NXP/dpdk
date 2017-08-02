@@ -321,12 +321,19 @@ dpaa_portal_finish(void *arg)
 	RTE_PER_LCORE(_dpaa_io) = false;
 }
 
+#define DPAA_DEV_PATH "/sys/devices/platform/fsl,dpaa"
+
 static int
 rte_dpaa_bus_scan(void)
 {
 	int ret;
 
 	BUS_INIT_FUNC_TRACE();
+
+	if (access(DPAA_DEV_PATH, F_OK) != 0) {
+		RTE_LOG(DEBUG, EAL, "DPAA Bus not present\n");
+		return 0;
+	}
 
 	/* Load the device-tree driver */
 	ret = of_init();
@@ -341,6 +348,8 @@ rte_dpaa_bus_scan(void)
 		DPAA_BUS_LOG(ERR, "netcfg_acquire failed");
 		return -EINVAL;
 	}
+
+	RTE_LOG(NOTICE, EAL, "DPAA Bus Detected\n");
 
 	if (!dpaa_netcfg->num_ethports) {
 		DPAA_BUS_LOG(INFO, "no network interfaces available");
