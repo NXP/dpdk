@@ -293,7 +293,11 @@ port_init(uint16_t port)
 	txconf->txq_flags &= ~ETH_TXQ_FLAGS_NOVLANOFFL;
 
 	/*configure the number of supported virtio devices based on VMDQ limits */
+#ifdef NXP_NON_UPSTREAMABLE
+	num_devices = 1;
+#else
 	num_devices = dev_info.max_vmdq_pools;
+#endif
 
 	rx_ring_size = RTE_TEST_RX_DESC_DEFAULT;
 	tx_ring_size = RTE_TEST_TX_DESC_DEFAULT;
@@ -331,6 +335,13 @@ port_init(uint16_t port)
 	if (port >= rte_eth_dev_count()) return -1;
 
 	rx_rings = (uint16_t)dev_info.max_rx_queues;
+#ifdef NXP_NON_UPSTREAMABLE
+	/* NXP:XXX: Set Tx/Rx rings to 1. dev_info returns 8 but
+	 * rte_eth_dev_configure() fails if packet distribution is disabled and
+	 * multiple rings are configured.
+	 */
+	rx_rings = tx_rings = 1;
+#endif
 	/* Configure ethernet device. */
 	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
 	if (retval != 0) {
@@ -1157,7 +1168,11 @@ switch_worker(void *arg __rte_unused)
 	tx_q = &lcore_tx_queue[lcore_id];
 	for (i = 0; i < rte_lcore_count(); i++) {
 		if (lcore_ids[i] == lcore_id) {
+#ifdef NXP_NON_UPSTREAMABLE
+			tx_q->txq_id = 0;
+#else
 			tx_q->txq_id = i;
+#endif
 			break;
 		}
 	}
@@ -1183,7 +1198,11 @@ switch_worker(void *arg __rte_unused)
 				continue;
 			}
 
+#ifdef NXP_NON_UPSTREAMABLE
+			if (likely(vdev->ready == DEVICE_RX) || unlikely(vdev->ready == DEVICE_MAC_LEARNING))
+#else
 			if (likely(vdev->ready == DEVICE_RX))
+#endif
 				drain_eth_rx(vdev);
 
 			if (likely(!vdev->remove))
