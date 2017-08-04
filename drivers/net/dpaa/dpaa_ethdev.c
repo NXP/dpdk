@@ -832,48 +832,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
-/* Retire, drain, OOS a FQ. (Dynamically-allocated FQIDs will be released.) */
-static void
-teardown_fq(struct qman_fq *fq)
-{
-	u32 flags;
-	int s = qman_retire_fq(fq, &flags);
-	if (s == 1) {
-		/* Retire is non-blocking, poll for completion */
-		enum qman_fq_state state;
-		do {
-			qman_poll();
-			qman_fq_state(fq, &state, &flags);
-		} while (state != qman_fq_state_retired);
-		if (flags & QMAN_FQ_STATE_NE) {
-			/* FQ isn't empty, drain it */
-			s = qman_volatile_dequeue(fq, 0,
-				QM_VDQCR_NUMFRAMES_TILLEMPTY);
-			if (s) {
-				DPAA_PMD_ERR("Fail: %s: %d\n",
-					     "qman_volatile_dequeue()", s);
-				return;
-			}
-			/* Poll for completion */
-			do {
-				qman_poll();
-				qman_fq_state(fq, &state, &flags);
-			} while (flags & QMAN_FQ_STATE_VDQCR);
-		}
-	}
-	s = qman_oos_fq(fq);
-	if (!(fq->flags & QMAN_FQ_FLAG_DYNAMIC_FQID))
-		qman_release_fqid(fq->fqid);
-	if (s)
-		DPAA_PMD_ERR("Fail: %s: %d\n", "qman_oos_fq()", s);
-	else
-		qman_destroy_fq(fq, 0);
-}
-
 static int
 dpaa_dev_uninit(struct rte_eth_dev *dev)
 {
-	int i;
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
@@ -892,15 +853,8 @@ dpaa_dev_uninit(struct rte_eth_dev *dev)
 	if (dpaa_intf->fc_conf)
 		rte_free(dpaa_intf->fc_conf);
 
-	/* free the all queue memory */
-	for (i = 0; i < dpaa_intf->nb_rx_queues; i++)
-		teardown_fq(&dpaa_intf->rx_queues[i]);
-
 	rte_free(dpaa_intf->rx_queues);
 	dpaa_intf->rx_queues = NULL;
-
-	for (i = 0; i < dpaa_intf->nb_tx_queues; i++)
-		teardown_fq(&dpaa_intf->tx_queues[i]);
 
 	rte_free(dpaa_intf->tx_queues);
 	dpaa_intf->tx_queues = NULL;
