@@ -321,7 +321,8 @@ dpaa_portal_finish(void *arg)
 	RTE_PER_LCORE(_dpaa_io) = false;
 }
 
-#define DPAA_DEV_PATH "/sys/devices/platform/fsl,dpaa"
+#define DPAA_DEV_PATH1 "/sys/devices/platform/soc/soc:fsl,dpaa"
+#define DPAA_DEV_PATH2 "/sys/devices/platform/fsl,dpaa"
 
 static int
 rte_dpaa_bus_scan(void)
@@ -330,7 +331,8 @@ rte_dpaa_bus_scan(void)
 
 	BUS_INIT_FUNC_TRACE();
 
-	if (access(DPAA_DEV_PATH, F_OK) != 0) {
+	if ((access(DPAA_DEV_PATH1, F_OK) != 0) &&
+	    (access(DPAA_DEV_PATH2, F_OK) != 0)) {
 		RTE_LOG(DEBUG, EAL, "DPAA Bus not present\n");
 		return 0;
 	}
