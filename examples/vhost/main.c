@@ -61,7 +61,7 @@
 #endif
 
 /* the maximum number of external ports supported */
-#define MAX_SUP_PORTS 1
+#define MAX_SUP_PORTS RTE_MAX_ETHPORTS
 
 #define MBUF_CACHE_SIZE	128
 #define MBUF_DATA_SIZE	RTE_MBUF_DEFAULT_BUF_SIZE
@@ -275,6 +275,9 @@ port_init(uint16_t port)
 	uint16_t rx_ring_size, tx_ring_size;
 	int retval;
 	uint16_t q;
+#ifdef NXP_NON_UPSTREAMABLE
+	int lcore, port_added = 0;
+#endif
 
 	/* The max pool number from dev_info will be used to validate the pool number specified in cmd line */
 	rte_eth_dev_info_get (port, &dev_info);
@@ -294,7 +297,7 @@ port_init(uint16_t port)
 
 	/*configure the number of supported virtio devices based on VMDQ limits */
 #ifdef NXP_NON_UPSTREAMABLE
-	num_devices = 1;
+	num_devices = RTE_MAX_ETHPORTS;
 #else
 	num_devices = dev_info.max_vmdq_pools;
 #endif
@@ -398,6 +401,23 @@ port_init(uint16_t port)
 
 	if (promiscuous)
 		rte_eth_promiscuous_enable(port);
+
+#ifdef NXP_NON_UPSTREAMABLE
+	/* Assign the port to the lcore */
+	RTE_LCORE_FOREACH_SLAVE(lcore) {
+		/* Add multi port logic if required */
+		if (lcore_info[lcore].port_id == INVALID_PORT_ID) {
+			lcore_info[lcore].port_id = port;
+			port_added = 1;
+			break;
+		}
+	}
+
+	if (port_added == 0) {
+		RTE_LOG(ERR, VHOST_PORT, "No free core for this port\n");
+		return -1;
+	}
+#endif
 
 	rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
 	RTE_LOG(INFO, VHOST_PORT, "Max virtio devices supported: %u\n", num_devices);
@@ -739,6 +759,10 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 {
 	struct ether_hdr *pkt_hdr;
 	int i, ret;
+#ifdef NXP_NON_UPSTREAMABLE
+	const uint16_t lcore_id = rte_lcore_id();
+	uint8_t port_id = lcore_info[lcore_id].port_id;
+#endif
 
 	/* Learn MAC address of guest device from packet */
 	pkt_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
@@ -766,14 +790,23 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 		vdev->vlan_tag);
 
 	/* Register the MAC address. */
+#ifdef NXP_NON_UPSTREAMABLE
+	ret = rte_eth_dev_mac_addr_add(port_id, &vdev->mac_address,
+				(uint32_t)vdev->vid + vmdq_pool_base);
+#else
 	ret = rte_eth_dev_mac_addr_add(ports[0], &vdev->mac_address,
 				(uint32_t)vdev->vid + vmdq_pool_base);
+#endif
 	if (ret)
 		RTE_LOG(ERR, VHOST_DATA,
 			"(%d) failed to add device MAC address to VMDQ\n",
 			vdev->vid);
 
+#ifdef NXP_NON_UPSTREAMABLE
+	rte_eth_dev_set_vlan_strip_on_queue(port_id, vdev->vmdq_rx_q, 1);
+#else
 	rte_eth_dev_set_vlan_strip_on_queue(ports[0], vdev->vmdq_rx_q, 1);
+#endif
 
 	/* Set device as ready for RX. */
 	vdev->ready = DEVICE_RX;
@@ -791,25 +824,45 @@ unlink_vmdq(struct vhost_dev *vdev)
 	unsigned i = 0;
 	unsigned rx_count;
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+#ifdef NXP_NON_UPSTREAMABLE
+	const uint16_t lcore_id = rte_lcore_id();
+	uint8_t port_id;
+
+	port_id = lcore_info[lcore_id].port_id;
+#endif
 
 	if (vdev->ready == DEVICE_RX) {
 		/*clear MAC and VLAN settings*/
+#ifdef NXP_NON_UPSTREAMABLE
+		rte_eth_dev_mac_addr_remove(port_id, &vdev->mac_address);
+#else
 		rte_eth_dev_mac_addr_remove(ports[0], &vdev->mac_address);
+#endif
 		for (i = 0; i < 6; i++)
 			vdev->mac_address.addr_bytes[i] = 0;
 
 		vdev->vlan_tag = 0;
 
 		/*Clear out the receive buffers*/
+#ifdef NXP_NON_UPSTREAMABLE
+		rx_count = rte_eth_rx_burst(port_id,
+					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
+#else
 		rx_count = rte_eth_rx_burst(ports[0],
 					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
+#endif
 
 		while (rx_count) {
 			for (i = 0; i < rx_count; i++)
 				rte_pktmbuf_free(pkts_burst[i]);
 
+#ifdef NXP_NON_UPSTREAMABLE
+			rx_count = rte_eth_rx_burst(port_id,
+					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
+#else
 			rx_count = rte_eth_rx_burst(ports[0],
 					(uint16_t)vdev->vmdq_rx_q, pkts_burst, MAX_PKT_BURST);
+#endif
 		}
 
 		vdev->ready = DEVICE_MAC_LEARNING;
@@ -948,9 +1001,17 @@ static __rte_always_inline void
 do_drain_mbuf_table(struct mbuf_table *tx_q)
 {
 	uint16_t count;
+#ifdef NXP_NON_UPSTREAMABLE
+	uint8_t port_id;
+	const uint16_t lcore_id = rte_lcore_id();
 
+	port_id = lcore_info[lcore_id].port_id;
+	count = rte_eth_tx_burst(port_id, tx_q->txq_id,
+				 tx_q->m_table, tx_q->len);
+#else
 	count = rte_eth_tx_burst(ports[0], tx_q->txq_id,
 				 tx_q->m_table, tx_q->len);
+#endif
 	if (unlikely(count < tx_q->len))
 		free_pkts(&tx_q->m_table[count], tx_q->len - count);
 
@@ -1074,9 +1135,17 @@ drain_eth_rx(struct vhost_dev *vdev)
 {
 	uint16_t rx_count, enqueue_count;
 	struct rte_mbuf *pkts[MAX_PKT_BURST];
+#ifdef NXP_NON_UPSTREAMABLE
+	uint8_t port_id;
+	const uint16_t lcore_id = rte_lcore_id();
 
+	port_id = lcore_info[lcore_id].port_id;
+	rx_count = rte_eth_rx_burst(port_id, vdev->vmdq_rx_q,
+				    pkts, MAX_PKT_BURST);
+#else
 	rx_count = rte_eth_rx_burst(ports[0], vdev->vmdq_rx_q,
 				    pkts, MAX_PKT_BURST);
+#endif
 	if (!rx_count)
 		return;
 
@@ -1466,6 +1535,9 @@ main(int argc, char *argv[])
 	static pthread_t tid;
 	char thread_name[RTE_MAX_THREAD_NAME_LEN];
 	uint64_t flags = 0;
+#ifdef NXP_NON_UPSTREAMABLE
+	int lcore;
+#endif
 
 	signal(SIGINT, sigint_handler);
 
@@ -1493,6 +1565,10 @@ main(int argc, char *argv[])
 
 	/* Get the number of physical ports. */
 	nb_ports = rte_eth_dev_count();
+#ifdef NXP_NON_UPSTREAMABLE
+	if (nb_ports > RTE_MAX_ETHPORTS)
+		nb_ports = RTE_MAX_ETHPORTS;
+#endif
 
 	/*
 	 * Update the global var NUM_PORTS and global array PORTS
@@ -1521,6 +1597,12 @@ main(int argc, char *argv[])
 		RTE_LOG(DEBUG, VHOST_CONFIG,
 			"Enable loop back for L2 switch in vmdq.\n");
 	}
+
+#ifdef NXP_NON_UPSTREAMABLE
+	RTE_LCORE_FOREACH_SLAVE(lcore) {
+		lcore_info[lcore].port_id = INVALID_PORT_ID;
+	}
+#endif
 
 	/* initialize all ports */
 	for (portid = 0; portid < nb_ports; portid++) {
