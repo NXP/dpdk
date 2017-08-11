@@ -42,7 +42,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				2
+#define DPNI_VER_MINOR				3
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -60,7 +60,7 @@
 
 #define DPNI_CMDID_ENABLE			DPNI_CMD(0x002)
 #define DPNI_CMDID_DISABLE			DPNI_CMD(0x003)
-#define DPNI_CMDID_GET_ATTR			DPNI_CMD(0x004)
+#define DPNI_CMDID_GET_ATTR			DPNI_CMD_V2(0x004)
 #define DPNI_CMDID_RESET			DPNI_CMD(0x005)
 #define DPNI_CMDID_IS_ENABLED			DPNI_CMD(0x006)
 
@@ -100,7 +100,7 @@
 
 #define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V2(0x235)
 
-#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD(0x25D)
+#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V2(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
 #define DPNI_CMDID_GET_QUEUE			DPNI_CMD(0x25F)
 #define DPNI_CMDID_SET_QUEUE			DPNI_CMD(0x260)
@@ -114,8 +114,8 @@
 
 #define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD(0x267)
 #define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD(0x268)
-#define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD(0x269)
-#define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD(0x26A)
+#define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD_V2(0x269)
+#define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V2(0x26A)
 #define DPNI_CMDID_GET_OFFLOAD			DPNI_CMD(0x26B)
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
@@ -223,9 +223,9 @@ struct dpni_rsp_get_attr {
 	/* response word 0 */
 	uint32_t options;
 	uint8_t num_queues;
-	uint8_t num_tcs;
+	uint8_t num_rx_tcs;
 	uint8_t mac_filter_entries;
-	uint8_t pad0;
+	uint8_t num_tx_tcs;
 	/* response word 1 */
 	uint8_t vlan_filter_entries;
 	uint8_t pad1;
@@ -328,6 +328,7 @@ struct dpni_rsp_get_tx_data_offset {
 
 struct dpni_cmd_get_statistics {
 	uint8_t page_number;
+	uint8_t param;
 };
 
 struct dpni_rsp_get_statistics {
@@ -423,15 +424,22 @@ struct dpni_cmd_vlan_id {
 	uint16_t vlan_id;
 };
 
-struct traffic_class_cfg {
-	uint16_t delta_bandwidth;
-	/* from LSB: mode: 4 */
-	uint8_t mode;
-	uint8_t pad;
-};
+#define DPNI_SEPARATE_GRP_SHIFT 0
+#define DPNI_SEPARATE_GRP_SIZE  1
+#define DPNI_MODE_1_SHIFT		0
+#define DPNI_MODE_1_SIZE		4
+#define DPNI_MODE_2_SHIFT		4
+#define DPNI_MODE_2_SIZE		4
 
 struct dpni_cmd_set_tx_priorities {
-	struct traffic_class_cfg tc_cfg[8];
+	uint16_t flags;
+	uint8_t prio_group_A;
+	uint8_t prio_group_B;
+	uint32_t pad0;
+	uint8_t modes[4];
+	uint32_t pad1;
+	uint64_t pad2;
+	uint16_t delta_bandwidth[8];
 };
 
 #define DPNI_DIST_MODE_SHIFT		0
@@ -503,28 +511,28 @@ struct dpni_cmd_set_queue {
 	uint64_t user_context;
 };
 
-#define DPNI_DROP_MODE_SHIFT	0
-#define DPNI_DROP_MODE_SIZE	2
+#define DPNI_DROP_ENABLE_SHIFT	0
+#define DPNI_DROP_ENABLE_SIZE	1
 #define DPNI_DROP_UNITS_SHIFT	2
 #define DPNI_DROP_UNITS_SIZE	2
 
 struct dpni_early_drop {
-	/* from LSB: mode:2 units:2 */
+	/* from LSB: enable:1 units:2 */
 	uint8_t flags;
 	uint8_t pad0[3];
-	uint32_t tail_drop_threshold;
+	uint32_t pad1;
 	uint8_t green_drop_probability;
-	uint8_t pad1[7];
+	uint8_t pad2[7];
 	uint64_t green_max_threshold;
 	uint64_t green_min_threshold;
-	uint64_t pad2;
+	uint64_t pad3;
 	uint8_t yellow_drop_probability;
-	uint8_t pad3[7];
+	uint8_t pad4[7];
 	uint64_t yellow_max_threshold;
 	uint64_t yellow_min_threshold;
-	uint64_t pad4;
+	uint64_t pad5;
 	uint8_t red_drop_probability;
-	uint8_t pad5[7];
+	uint8_t pad6[7];
 	uint64_t red_max_threshold;
 	uint64_t red_min_threshold;
 };
