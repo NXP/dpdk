@@ -616,7 +616,8 @@ int dpni_get_attributes(struct fsl_mc_io *mc_io,
 	rsp_params = (struct dpni_rsp_get_attr *)cmd.params;
 	attr->options = le32_to_cpu(rsp_params->options);
 	attr->num_queues = rsp_params->num_queues;
-	attr->num_tcs = rsp_params->num_tcs;
+	attr->num_rx_tcs = rsp_params->num_rx_tcs;
+	attr->num_tx_tcs = rsp_params->num_tx_tcs;
 	attr->mac_filter_entries = rsp_params->mac_filter_entries;
 	attr->vlan_filter_entries = rsp_params->vlan_filter_entries;
 	attr->qos_entries = rsp_params->qos_entries;
@@ -1522,8 +1523,8 @@ int dpni_set_rx_tc_dist(struct fsl_mc_io *mc_io,
  * of previous settings; Note that in this case, Tx error frames are still
  * enqueued to the general transmit errors queue.
  * Calling this function with 'mode' set to DPNI_CONF_SINGLE switches all
- * Tx confirmations to a shared Tx conf queue.  The ID of the queue when
- * calling dpni_set/get_queue is -1.
+ * Tx confirmations to a shared Tx conf queue. 'index' field in dpni_get_queue
+ * command will be ignored.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
@@ -1795,6 +1796,8 @@ int dpni_get_queue(struct fsl_mc_io *mc_io,
  * @token:	Token of DPNI object
  * @page:	Selects the statistics page to retrieve, see
  *		DPNI_GET_STATISTICS output. Pages are numbered 0 to 2.
+ * @param:  Custom parameter for some pages used to select
+ *		a certain statistic source, for example the TC.
  * @stat:	Structure containing the statistics
  *
  * Return:	'0' on Success; Error code otherwise.
@@ -1803,6 +1806,7 @@ int dpni_get_statistics(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			uint8_t page,
+			uint8_t param,
 			union dpni_statistics *stat)
 {
 	struct mc_command cmd = { 0 };
@@ -1816,6 +1820,7 @@ int dpni_get_statistics(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpni_cmd_get_statistics *)cmd.params;
 	cmd_params->page_number = page;
+	cmd_params->param = param;
 
 	/* send command to mc */
 	err = mc_send_command(mc_io, &cmd);
