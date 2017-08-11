@@ -85,20 +85,12 @@ struct fsl_mc_io {
 #define iowrite32(_v, _p)	writeq32(_v, _p)
 #define __iomem
 
-struct fsl_mc_io {
-	void *regs;
-};
-
-#ifndef ENOTSUP
-#define ENOTSUP		95
-#endif
-
 /*GPP is supposed to use MC commands with low priority*/
 #define CMD_PRI_LOW          0 /*!< Low Priority command indication */
 
-struct mc_command;
-
-int mc_send_command(struct fsl_mc_io *mc_io, struct mc_command *cmd);
+struct fsl_mc_io {
+	void *regs;
+};
 
 #endif /* __linux_driver__ */
 
