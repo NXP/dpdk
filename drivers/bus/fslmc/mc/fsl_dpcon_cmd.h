@@ -42,7 +42,7 @@
 
 /* DPCON Version */
 #define DPCON_VER_MAJOR			3
-#define DPCON_VER_MINOR			2
+#define DPCON_VER_MINOR			3
 
 
 /* Command versioning */
