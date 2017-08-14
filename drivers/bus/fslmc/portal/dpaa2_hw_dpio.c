@@ -59,7 +59,7 @@
 #include <rte_dev.h>
 
 #include <fslmc_logs.h>
-#include <fslmc_vfio.h>
+#include <rte_fslmc.h>
 #include "dpaa2_hw_pvt.h"
 #include "dpaa2_hw_dpio.h"
 #include <mc/fsl_dpmng.h>
@@ -447,7 +447,7 @@ dpaa2_affine_qbman_swp_sec(void)
 }
 
 static int
-dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
+dpaa2_create_dpio_device(int vdev_fd,
 			 struct vfio_device_info *obj_info,
 			 int object_id)
 {
@@ -474,7 +474,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->mc_portal = rte_mcp_ptr_list[MC_PORTAL_INDEX];
 
 	reg_info.index = 0;
-	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -483,10 +483,10 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ce_size = reg_info.size;
 	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				vdev->fd, reg_info.offset);
+				vdev_fd, reg_info.offset);
 
 	reg_info.index = 1;
-	if (ioctl(vdev->fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
+	if (ioctl(vdev_fd, VFIO_DEVICE_GET_REGION_INFO, &reg_info)) {
 		PMD_INIT_LOG(ERR, "vfio: error getting region info\n");
 		rte_free(dpio_dev);
 		return -1;
@@ -495,7 +495,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	dpio_dev->ci_size = reg_info.size;
 	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
-				vdev->fd, reg_info.offset);
+				vdev_fd, reg_info.offset);
 
 	if (configure_dpio_qbman_swp(dpio_dev)) {
 		PMD_INIT_LOG(ERR,
@@ -508,7 +508,7 @@ dpaa2_create_dpio_device(struct fslmc_vfio_device *vdev,
 	io_space_count++;
 	dpio_dev->index = io_space_count;
 
-	if (rte_dpaa2_vfio_setup_intr(&dpio_dev->intr_handle, vdev->fd, 1)) {
+	if (rte_dpaa2_vfio_setup_intr(&dpio_dev->intr_handle, vdev_fd, 1)) {
 		PMD_INIT_LOG(ERR, "Fail to setup interrupt for %d\n",
 			     dpio_dev->hw_id);
 		rte_free(dpio_dev);
@@ -552,7 +552,7 @@ fail:
 }
 
 static struct rte_dpaa2_object rte_dpaa2_dpio_obj = {
-	.object_id = DPAA2_MC_DPIO_DEVID,
+	.dev_type = DPAA2_IO,
 	.create = dpaa2_create_dpio_device,
 };
 
