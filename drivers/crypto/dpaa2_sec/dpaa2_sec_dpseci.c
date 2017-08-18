@@ -1777,11 +1777,11 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 		goto init_error;
 	}
 
-	PMD_INIT_LOG(DEBUG, "driver %s: created\n", cryptodev->data->name);
+	RTE_LOG(INFO, PMD, "%s: cryptodev created\n", cryptodev->data->name);
 	return 0;
 
 init_error:
-	PMD_INIT_LOG(ERR, "driver %s: create failed\n", cryptodev->data->name);
+	PMD_INIT_LOG(ERR, "device %s: create failed", cryptodev->data->name);
 
 	/* dpaa2_sec_uninit(crypto_dev_name); */
 	return -EFAULT;

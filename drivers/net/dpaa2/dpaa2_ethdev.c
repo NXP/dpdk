@@ -393,7 +393,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	PMD_INIT_LOG(DEBUG, "dev =%p, queue =%d, pool = %p, conf =%p",
+	PMD_DRV_LOG(DEBUG, "dev =%p, queue =%d, pool = %p, conf =%p",
 		     dev, rx_queue_id, mb_pool, rx_conf);
 
 	if (!priv->bp_list || priv->bp_list->mp != mb_pool) {
@@ -443,8 +443,8 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		taildrop.threshold = CONG_THRESHOLD_RX_Q;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
-		PMD_INIT_LOG(DEBUG, "Enabling Early Drop on queue = %d",
-			     rx_queue_id);
+		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
+			    rx_queue_id);
 		ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
 					DPNI_CP_QUEUE, DPNI_QUEUE_RX,
 					dpaa2_q->tc_index, flow_id, &taildrop);
@@ -683,7 +683,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		return ret;
 	}
 
-	/* Power up the phy. Needed to make the link go Up */
+	/* Power up the phy. Needed to make the link go UP */
 	dpaa2_dev_set_link_up(dev);
 
 	ret = dpni_get_qdid(dpni, CMD_PRI_LOW, priv->token,
@@ -1332,8 +1332,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 		PMD_DRV_LOG(INFO, "Port %d Link is Up\n", dev->data->port_id);
 	else
 		PMD_DRV_LOG(INFO, "Port %d Link is Down\n", dev->data->port_id);
-
-	return (old.link_status == link.link_status) ? -1 : 0;
+	return 0;
 }
 
 /**
@@ -1727,9 +1726,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->nb_tx_queues = attr.num_tx_tcs;
 
 	PMD_DRV_LOG(DEBUG, "RX-TC= %d, nb_rx_queues= %d, nb_tx_queues=%d",
-		    priv->num_rx_tc,
-		    priv->nb_rx_queues,
-		    priv->nb_tx_queues);
+		    priv->num_tc, priv->nb_rx_queues, priv->nb_tx_queues);
 
 	priv->hw = dpni_dev;
 	priv->hw_id = hw_id;
@@ -1809,6 +1806,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 	rte_fslmc_vfio_dmamap();
 
+	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:
 	dpaa2_dev_uninit(eth_dev);
@@ -1869,6 +1867,7 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 	eth_dev->rx_pkt_burst = NULL;
 	eth_dev->tx_pkt_burst = NULL;
 
+	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 }
 
