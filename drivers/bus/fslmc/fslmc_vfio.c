@@ -65,7 +65,7 @@
 #include "portal/dpaa2_hw_dpio.h"
 
 #define FSLMC_VFIO_LOG(level, fmt, args...) \
-	RTE_LOG(level, EAL, "%s(): " fmt "\n", __func__, ##args)
+	RTE_LOG(level, EAL, fmt "\n", ##args)
 
 /** Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES "/sys/bus/fsl-mc/devices"
@@ -102,9 +102,8 @@ fslmc_get_container_group(int *groupid)
 	if (!g_container) {
 		container = getenv("DPRC");
 		if (container == NULL) {
-			RTE_LOG(WARNING, EAL,
-				"Environment variable DPRC not set.\n");
-			return -1;
+			RTE_LOG(WARNING, EAL, "DPAA2: DPRC not available\n");
+			return -EINVAL;
 		}
 
 		if (strlen(container) >= FSLMC_CONTAINER_MAX_LEN) {
@@ -413,9 +412,6 @@ rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 			return -1;
 		}
 
-		FSLMC_VFIO_LOG(DEBUG, "IRQ Info (Count=%d, Flags=%d)",
-			       irq_info.count, irq_info.flags);
-
 		/* if this vector cannot be used with eventfd,
 		 * fail if we explicitly
 		 * specified interrupt type, otherwise continue
@@ -642,10 +638,8 @@ fslmc_vfio_setup_group(void)
 		return 0;
 
 	ret = fslmc_get_container_group(&groupid);
-	if (ret) {
-		FSLMC_VFIO_LOG(ERR, "Unable to obtain VFIO groupid.");
+	if (ret)
 		return ret;
-	}
 
 	/* In case this group was already opened, continue without any
 	 * processing.

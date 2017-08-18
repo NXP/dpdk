@@ -242,8 +242,6 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		return -1;
 	}
 
-	PMD_INIT_LOG(DEBUG, "Qbman Portal ID %d", attr.qbman_portal_id);
-
 	/* Configure & setup SW portal */
 	p_des.block = NULL;
 	p_des.idx = attr.qbman_portal_id;
@@ -515,7 +513,7 @@ dpaa2_create_dpio_device(int vdev_fd,
 	}
 
 	TAILQ_INSERT_TAIL(&dpio_dev_list, dpio_dev, next);
-	PMD_INIT_LOG(DEBUG, "DPAA2: Added [dpio.%d]", object_id);
+	RTE_LOG(DEBUG, PMD, "DPAA2: Added [dpio.%d]\n", object_id);
 
 	return 0;
 }

@@ -45,7 +45,7 @@
 #include <fslmc_vfio.h>
 
 #define FSLMC_BUS_LOG(level, fmt, args...) \
-	RTE_LOG(level, EAL, "%s(): " fmt "\n", __func__, ##args)
+	RTE_LOG(level, EAL, fmt "\n", ##args)
 
 #define VFIO_IOMMU_GROUP_PATH "/sys/kernel/iommu_groups"
 
@@ -135,14 +135,6 @@ scan_one_fslmc_device(char *dev_name)
 
 	/* Add device in the fslmc device list */
 	TAILQ_INSERT_TAIL(&rte_fslmc_bus.device_list, dev, next);
-	if (dev->dev_type == DPAA2_ETH)
-		RTE_LOG(INFO, EAL, "%s: Eth Device scanned.\n",
-			dev->device.name);
-	if (dev->dev_type == DPAA2_CRYPTO)
-		RTE_LOG(INFO, EAL, "%s: Crypto Device scanned.\n",
-			dev->device.name);
-	RTE_LOG(DEBUG, EAL, "Add device (%s) with object ID: %d, Type = %d\n",
-		dev->device.name, dev->object_id, dev->dev_type);
 
 	/* Don't need the duplicated device filesystem entry anymore */
 	if (dup_dev_name)
@@ -200,7 +192,7 @@ rte_fslmc_scan(void)
 		device_count += 1;
 	}
 
-	RTE_LOG(INFO, EAL, "fslmc: Bus scan completed\n");
+	FSLMC_BUS_LOG(INFO, "fslmc: Bus scan completed");
 
 	closedir(dir);
 	return 0;
@@ -211,7 +203,7 @@ scan_fail_cleanup:
 	/* Remove all devices in the list */
 	cleanup_fslmc_device_list();
 scan_fail:
-	RTE_LOG(DEBUG, EAL, "Error in scanning FSLMC Bus. Skipping.\n");
+	FSLMC_BUS_LOG(DEBUG, "FSLMC Bus Not Available. Skipping.");
 	/* Irrespective of failure, scan only return success */
 	return 0;
 }
@@ -233,16 +225,19 @@ rte_fslmc_probe(void)
 	struct rte_dpaa2_device *dev;
 	struct rte_dpaa2_driver *drv;
 
+	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
+		return 0;
+
 	ret = fslmc_vfio_setup_group();
 	if (ret) {
-		FSLMC_BUS_LOG(ERR, "Unable to setup VFIO");
-		goto probe_fail;
+		FSLMC_BUS_LOG(ERR, "Unable to setup VFIO %d", ret);
+		return 0;
 	}
 
 	ret = fslmc_vfio_process_group();
 	if (ret) {
-		FSLMC_BUS_LOG(ERR, "Unable to setup devices");
-		goto probe_fail;
+		FSLMC_BUS_LOG(ERR, "Unable to setup devices %d", ret);
+		return 0;
 	}
 
 	TAILQ_FOREACH(dev, &rte_fslmc_bus.device_list, next) {
@@ -261,10 +256,6 @@ rte_fslmc_probe(void)
 		}
 	}
 
-	return 0;
-
-probe_fail:
-	RTE_LOG(DEBUG, EAL, "Error in probing FSLMC Bus. Skipping.\n");
 	return 0;
 }
 
