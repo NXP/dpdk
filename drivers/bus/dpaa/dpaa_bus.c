@@ -333,7 +333,7 @@ rte_dpaa_bus_scan(void)
 
 	if ((access(DPAA_DEV_PATH1, F_OK) != 0) &&
 	    (access(DPAA_DEV_PATH2, F_OK) != 0)) {
-		RTE_LOG(DEBUG, EAL, "DPAA Bus not present\n");
+		RTE_LOG(DEBUG, EAL, "DPAA Bus not present. Skipping.\n");
 		return 0;
 	}
 
