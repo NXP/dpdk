@@ -115,14 +115,6 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 			return -1;
 	}
 
-	/* Check for correct configuration */
-	if (eth_conf->rxmode.mq_mode != ETH_MQ_RX_RSS &&
-	    dev->data->nb_rx_queues > 1) {
-		DPAA_PMD_ERR("Distribution is not enabled, "
-			    "but Rx queues more than 1\n");
-		return -1;
-	}
-
 	if (!(default_q || fmc_q)) {
 		if (dpaa_fm_config(dev, eth_conf->
 					rx_adv_conf.rss_conf.rss_hf)) {
@@ -550,6 +542,9 @@ static int
 dpaa_dev_rss_hash_update(struct rte_eth_dev *dev,
 			 struct rte_eth_rss_conf *rss_conf)
 {
+	struct rte_eth_dev_data *data = dev->data;
+	struct rte_eth_conf *eth_conf = &data->dev_conf;
+
 	PMD_INIT_FUNC_TRACE();
 
 	if (!(default_q || fmc_q)) {
@@ -557,10 +552,24 @@ dpaa_dev_rss_hash_update(struct rte_eth_dev *dev,
 			DPAA_PMD_ERR("FM port configuration: Failed\n");
 			return -1;
 		}
+		eth_conf->rx_adv_conf.rss_conf.rss_hf = rss_conf->rss_hf;
 	} else {
 		DPAA_PMD_ERR("Function not supported\n");
 		return -ENOTSUP;
 	}
+	return 0;
+}
+
+static int
+dpaa_dev_rss_hash_conf_get(struct rte_eth_dev *dev,
+			    struct rte_eth_rss_conf *rss_conf)
+{
+	struct rte_eth_dev_data *data = dev->data;
+	struct rte_eth_conf *eth_conf = &data->dev_conf;
+
+	/* dpaa does not support rss_key, so length should be 0*/
+	rss_conf->rss_key_len = 0;
+	rss_conf->rss_hf = eth_conf->rx_adv_conf.rss_conf.rss_hf;
 	return 0;
 }
 
@@ -596,6 +605,7 @@ static struct eth_dev_ops dpaa_devops = {
 
 	.fw_version_get		  = dpaa_fw_version_get,
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
+	.rss_hash_conf_get	  = dpaa_dev_rss_hash_conf_get,
 };
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
