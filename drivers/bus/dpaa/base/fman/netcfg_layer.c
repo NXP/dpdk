@@ -143,7 +143,6 @@ netcfg_acquire(void)
 	 */
 	skfd = socket(AF_PACKET, SOCK_RAW, 0);
 	if (unlikely(skfd < 0)) {
-		/** ASDF: logging would need to be changed */
 		error(0, errno, "%s(): open(SOCK_RAW)", __func__);
 		return NULL;
 	}

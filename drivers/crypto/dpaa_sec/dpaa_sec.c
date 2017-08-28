@@ -1338,7 +1338,7 @@ dpaa_sec_dev_init(struct rte_dpaa_driver *crypto_drv __rte_unused,
 		}
 	}
 
-	RTE_LOG(INFO, PMD, "%s: created\n", crypto_dev->data->name);
+	RTE_LOG(INFO, PMD, "%s: cryptodev created", crypto_dev->data->name);
 
 	return 0;
 
