@@ -254,6 +254,15 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	DPAA2_SET_FD_BPID(fd, bpid);
 	DPAA2_SET_FD_ASAL(fd, DPAA2_ASAL_VAL);
 	DPAA2_FD_SET_FORMAT(fd, qbman_fd_sg);
+
+	PMD_TX_LOG(DEBUG, "mbuf =%p,buf_addr =%p, off = %d, num_sg = %d,"
+		"type = %x fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
+		mbuf, mbuf->buf_addr, mbuf->data_off, mbuf->nb_segs,
+		mbuf->packet_type,
+		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
+		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
+
 	/*Set Scatter gather table and Scatter gather entries*/
 	sgt = (struct qbman_sge *)(
 			(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))

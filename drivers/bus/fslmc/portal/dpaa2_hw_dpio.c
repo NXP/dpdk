@@ -210,7 +210,7 @@ configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		return -1;
 	}
 
-	PMD_DRV_LOG(DEBUG, "\t Allocated  DPIO Portal[%p]", dpio_dev->dpio);
+	PMD_DRV_LOG(DEBUG, "Allocated  DPIO Portal[%p]", dpio_dev->dpio);
 	dpio_dev->dpio->regs = dpio_dev->mc_portal;
 	if (dpio_open(dpio_dev->dpio, CMD_PRI_LOW, dpio_dev->hw_id,
 		      &dpio_dev->token)) {

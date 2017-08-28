@@ -978,7 +978,7 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 		PMD_DRV_LOG(ERR, "setting the max frame length failed");
 		return -1;
 	}
-	PMD_DRV_LOG(INFO, "MTU is configured %d for the device\n", mtu);
+	PMD_DRV_LOG(INFO, "MTU is configured %d for the device", mtu);
 	return 0;
 }
 
@@ -1297,8 +1297,6 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	struct rte_eth_link link, old;
 	struct dpni_link_state state = {0};
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (dpni == NULL) {
 		RTE_LOG(ERR, PMD, "dpni is NULL\n");
 		return 0;
@@ -1331,7 +1329,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	if (link.link_status)
 		PMD_DRV_LOG(INFO, "Port %d Link is Up\n", dev->data->port_id);
 	else
-		PMD_DRV_LOG(INFO, "Port %d Link is Down\n", dev->data->port_id);
+		PMD_DRV_LOG(INFO, "Port %d Link is Down", dev->data->port_id);
 	return 0;
 }
 
@@ -1347,8 +1345,6 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni;
 	int en = 0;
 	struct dpni_link_state state = {0};
-
-	PMD_INIT_FUNC_TRACE();
 
 	priv = dev->data->dev_private;
 	dpni = (struct fsl_mc_io *)priv->hw;
@@ -1737,7 +1733,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->nb_tx_queues = attr.num_tx_tcs;
 
 	PMD_DRV_LOG(DEBUG, "RX-TC= %d, nb_rx_queues= %d, nb_tx_queues=%d",
-		    priv->num_tc, priv->nb_rx_queues, priv->nb_tx_queues);
+		    priv->num_rx_tc, priv->nb_rx_queues, priv->nb_tx_queues);
 
 	priv->hw = dpni_dev;
 	priv->hw_id = hw_id;
