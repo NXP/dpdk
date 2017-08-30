@@ -53,6 +53,9 @@ struct rte_dpaa_driver;
 TAILQ_HEAD(rte_dpaa_device_list, rte_dpaa_device);
 TAILQ_HEAD(rte_dpaa_driver_list, rte_dpaa_driver);
 
+/* Configuration variables exported from DPAA bus */
+extern struct netcfg_info *dpaa_netcfg;
+
 enum rte_dpaa_type {
 	FSL_DPAA_ETH = 1,
 	FSL_DPAA_CRYPTO,
