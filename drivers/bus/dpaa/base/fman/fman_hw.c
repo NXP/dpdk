@@ -100,7 +100,7 @@ uint32_t get_mac_hash_code(uint64_t eth_addr)
 }
 
 int
-fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
+fman_if_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	uint64_t eth_addr;
 	void *hashtable_ctrl;
@@ -123,7 +123,7 @@ fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 }
 
 int
-fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
+fman_if_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *mac_reg =
@@ -144,8 +144,8 @@ fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
 	return 0;
 }
 
-static void
-fman_memac_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
+void
+fman_if_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 	void *reg;
@@ -165,9 +165,8 @@ fman_memac_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
 	}
 }
 
-static int
-fman_memac_add_mac_addr(struct fman_if *p, uint8_t *eth,
-				       uint8_t addr_num)
+int
+fman_if_add_mac_addr(struct fman_if *p, uint8_t *eth, uint8_t addr_num)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 
@@ -201,10 +200,40 @@ fman_memac_add_mac_addr(struct fman_if *p, uint8_t *eth,
 	return 0;
 }
 
+void
+fman_if_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	u32 value = 0;
+	void *cmdcfg;
 
-static void
-fman_memac_stats_get(struct fman_if *p,
-		     struct rte_eth_stats *stats)
+	assert(fman_ccsr_map_fd != -1);
+
+	/* Set Rx Ignore Pause Frames */
+	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	if (enable)
+		value = in_be32(cmdcfg) | CMD_CFG_PAUSE_IGNORE;
+	else
+		value = in_be32(cmdcfg) & ~CMD_CFG_PAUSE_IGNORE;
+
+	out_be32(cmdcfg, value);
+}
+
+void
+fman_if_conf_max_frame_len(struct fman_if *p, unsigned int max_frame_len)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	unsigned int *maxfrm;
+
+	assert(fman_ccsr_map_fd != -1);
+
+	/* Set Max frame length */
+	maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+	out_be32(maxfrm, (MAXFRM_RX_MASK & max_frame_len));
+}
+
+void
+fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 	struct memac_regs *regs = m->ccsr_map;
@@ -226,8 +255,8 @@ fman_memac_stats_get(struct fman_if *p,
 			in_be32(&regs->terr_l);
 }
 
-static void
-fman_memac_reset_stat(struct fman_if *p)
+void
+fman_if_stats_reset(struct fman_if *p)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
 	struct memac_regs *regs = m->ccsr_map;
@@ -241,94 +270,6 @@ fman_memac_reset_stat(struct fman_if *p)
 
 	while (in_be32(&regs->statn_config) & STATS_CFG_CLR)
 		;
-}
-
-int
-fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth,
-				    uint8_t addr_num)
-{
-	assert(fman_ccsr_map_fd != -1);
-
-	return fman_memac_add_mac_addr(p, eth, addr_num);
-}
-
-int
-fm_mac_rem_exact_match_mac_addr(struct fman_if *p, int8_t addr_num)
-{
-	assert(fman_ccsr_map_fd != -1);
-
-	fman_memac_clear_mac_addr(p, addr_num);
-	return 0;
-}
-
-int
-fm_mac_config(struct fman_if *p,  uint8_t *eth)
-{
-	assert(fman_ccsr_map_fd != -1);
-
-	return fman_memac_get_primary_mac_addr(p, eth);
-}
-
-void
-fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
-{
-	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	u32 value = 0;
-	void *cmdcfg;
-
-	assert(fman_ccsr_map_fd != -1);
-
-	/* Set Rx Ignore Pause Frames */
-	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
-	if (enable)
-		value = in_be32(cmdcfg) | CMD_CFG_PAUSE_IGNORE;
-	else
-		value = in_be32(cmdcfg) & ~CMD_CFG_PAUSE_IGNORE;
-
-	out_be32(cmdcfg, value);
-}
-
-void
-fm_mac_config_loopback(struct fman_if *p, bool enable)
-{
-	if (enable)
-		/* Enable loopback mode */
-		fman_if_loopback_enable(p);
-	else
-		/* Disable loopback mode */
-		fman_if_loopback_disable(p);
-}
-
-void
-fm_mac_conf_max_frame_len(struct fman_if *p,
-			       unsigned int max_frame_len)
-{
-	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	unsigned int *maxfrm;
-
-	assert(fman_ccsr_map_fd != -1);
-
-	/* Set Max frame length */
-	maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
-	out_be32(maxfrm, (MAXFRM_RX_MASK & max_frame_len));
-}
-
-void
-fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
-{
-	fman_memac_stats_get(p, stats);
-}
-
-void
-fman_if_stats_reset(struct fman_if *p)
-{
-	fman_memac_reset_stat(p);
-}
-
-void
-fm_mac_set_promiscuous(struct fman_if *p)
-{
-	fman_if_promiscuous_enable(p);
 }
 
 void
