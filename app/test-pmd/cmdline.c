@@ -88,6 +88,9 @@
 #ifdef RTE_LIBRTE_PMD_BOND
 #include <rte_eth_bond.h>
 #endif
+#ifdef RTE_LIBRTE_DPAA_PMD
+#include <rte_pmd_dpaa.h>
+#endif
 #ifdef RTE_LIBRTE_IXGBE_PMD
 #include <rte_pmd_ixgbe.h>
 #endif
@@ -11402,7 +11405,10 @@ cmd_set_tx_loopback_parsed(
 	if (ret == -ENOTSUP)
 		ret = rte_pmd_i40e_set_tx_loopback(res->port_id, is_on);
 #endif
-
+#ifdef RTE_LIBRTE_DPAA_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_dpaa_set_tx_loopback(res->port_id, is_on);
+#endif
 	switch (ret) {
 	case 0:
 		break;
