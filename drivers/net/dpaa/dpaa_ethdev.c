@@ -500,8 +500,7 @@ dpaa_dev_add_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
-					      addr->addr_bytes, index);
+	ret = fman_if_add_mac_addr(dpaa_intf->fif, addr->addr_bytes, index);
 
 	if (ret)
 		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed:"
@@ -513,16 +512,11 @@ static void
 dpaa_dev_remove_mac_addr(struct rte_eth_dev *dev,
 			  uint32_t index)
 {
-	int ret;
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_rem_exact_match_mac_addr(dpaa_intf->fif, index);
-
-	if (ret)
-		RTE_LOG(ERR, PMD, "error: Removing the MAC ADDR failed:"
-			" err = %d", ret);
+	fman_if_clear_mac_addr(dpaa_intf->fif, index);
 }
 
 static void
@@ -534,8 +528,7 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
-					      addr->addr_bytes, 0);
+	ret = fman_if_add_mac_addr(dpaa_intf->fif, addr->addr_bytes, 0);
 	if (ret)
 		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
 }

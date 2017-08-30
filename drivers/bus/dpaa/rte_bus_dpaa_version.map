@@ -10,11 +10,15 @@ DPDK_17.05 {
 	fman_ccsr_map_fd;
 	fman_dealloc_bufs_mask_hi;
 	fman_dealloc_bufs_mask_lo;
+	fman_if_add_mac_addr;
+	fman_if_clear_mac_addr;
 	fman_if_disable_rx;
 	fman_if_enable_rx;
 	fman_if_discard_rx_errors;
 	fman_if_get_fc_threshold;
 	fman_if_get_fc_quanta;
+	fman_if_loopback_disable;
+	fman_if_loopback_enable;
 	fman_if_promiscuous_disable;
 	fman_if_promiscuous_enable;
 	fman_if_reset_mcast_filter_table;
@@ -27,8 +31,6 @@ DPDK_17.05 {
 	fman_if_set_mcast_filter_table;
 	fman_if_stats_get;
 	fman_if_stats_reset;
-	fm_mac_add_exact_match_mac_addr;
-	fm_mac_rem_exact_match_mac_addr;
 	netcfg_acquire;
 	netcfg_release;
 	qman_create_fq;
