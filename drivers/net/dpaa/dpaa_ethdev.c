@@ -67,6 +67,7 @@
 #include <dpaa_ethdev.h>
 #include <dpaa_rxtx.h>
 #include <dpaa_flow.h>
+#include <rte_pmd_dpaa.h>
 
 #include <fsl_usd.h>
 #include <fsl_qman.h>
@@ -77,6 +78,8 @@
 static int is_global_init;
 static int fmc_q = 1;	/* Indicates the uses of TOOL tool for distribution */
 static int default_q;	/* use default queue - FMC is not executed*/
+
+static struct rte_dpaa_driver rte_dpaa_pmd;
 
 static int
 dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
@@ -602,6 +605,45 @@ static struct eth_dev_ops dpaa_devops = {
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get	  = dpaa_dev_rss_hash_conf_get,
 };
+
+static bool
+is_device_supported(struct rte_eth_dev *dev, struct rte_dpaa_driver *drv)
+{
+	if (strcmp(dev->data->drv_name,
+		   drv->driver.name))
+		return false;
+
+	return true;
+}
+
+static bool
+is_dpaa_supported(struct rte_eth_dev *dev)
+{
+	return is_device_supported(dev, &rte_dpaa_pmd);
+}
+
+int
+rte_pmd_dpaa_set_tx_loopback(uint8_t port, uint8_t on)
+{
+	struct rte_eth_dev *dev;
+	struct dpaa_if *dpaa_intf;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(port, -ENODEV);
+
+	dev = &rte_eth_devices[port];
+
+	if (!is_dpaa_supported(dev))
+		return -ENOTSUP;
+
+	dpaa_intf = dev->data->dev_private;
+
+	if (on)
+		fman_if_loopback_enable(dpaa_intf->fif);
+	else
+		fman_if_loopback_disable(dpaa_intf->fif);
+
+	return 0;
+}
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 {
