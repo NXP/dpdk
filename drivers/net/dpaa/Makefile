@@ -67,4 +67,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
 LDLIBS += -lrte_bus_dpaa
 LDLIBS += -lrte_mempool_dpaa
 
+# install this header file
+SYMLINK-$(CONFIG_RTE_LIBRTE_DPAA_PMD)-include := rte_pmd_dpaa.h
+
 include $(RTE_SDK)/mk/rte.lib.mk
