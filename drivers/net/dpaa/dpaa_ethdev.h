@@ -121,9 +121,6 @@
 #define DPAA_FD_CMD_CFQ			0x00ffffff
 /**< Confirmation Frame Queue */
 
-/* Configuration variables exported from DPAA bus */
-extern struct netcfg_info *dpaa_netcfg;
-
 /* Each network interface is represented by one of these */
 struct dpaa_if {
 	int valid;
