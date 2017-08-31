@@ -26,36 +26,44 @@ RTE_TARGET=
 
 # defaults ## Modify then to tune default values
 
-platform="dpaa" # set to "dpaa dpaa2" for both platform as default
-build="static"  # set to "static shared" for 2 builds as default
+platform="dpaa dpaa2" # set to "dpaa dpaa2" for both platform as default
+build="static shared"  # set to "static shared" for 2 builds as default
 debug_flag=0
 jobs=4          # Parallel jobs
 silent=0	# If output is dumped to screen
 logoutput=      # File to dump output to, if -s is provided
-clean_all=0	# Clean all before starting build
-all_build=0     # Whether to build debug and non debug by default
+clean_all=1	# Clean all before starting build
+all_build=1     # Whether to build debug and non debug by default
 
-dpaa2_config_list="EXTRA_CFLAGS=\"-g -O0\" EXTRA_LDFLAGS=\"-g -O0\""
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_DEBUG_RX=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX_FREE=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_DRIVER=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_RX=y"
-dpaa2_config_list="$dpaa2_config_list CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV_DEBUG=y"
+dpaa2_config_list="EXTRA_CFLAGS=-g"
+dpaa2_config_list=${dpaa2_config_list}" EXTRA_CFLAGS+=-O0"
+dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS=-g"
+dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS+=-O0"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_RX=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX_FREE=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_DRIVER=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_RX=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV_DEBUG=y"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
 
-dpaa_config_list="EXTRA_CFLAGS=\"-g -O0\" EXTRA_LDFLAGS=\"-g -O0\""
-dpaa_config_list="CONFIG_RTE_LIBRTE_DPAA_DEBUG_BUS=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_MEMPOOL_DEBUG=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_PMD_DEBUG=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=y"
-dpaa_config_list="$dpaa_config_list CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=y"
+dpaa_config_list="EXTRA_CFLAGS=-g"
+dpaa_config_list=${dpaa_config_list}" EXTRA_CFLAGS+=-O0"
+dpaa_config_list=${dpaa_config_list}" EXTRA_LDFLAGS=-g"
+dpaa_config_list=${dpaa_config_list}" EXTRA_LDFLAGS+=-O0"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_DEBUG_BUS=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_MEMPOOL_DEBUG=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_PMD_DEBUG=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=y"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
 
 # Some colors
 
@@ -273,9 +281,9 @@ function build() {
 		for j in ${build}; do
 			# Dump what is being done on screen
 			echo -en "Building: ${BLUE}${i}${NC} platform "
-			echo -en "${BLUE}${j}${NC} mode "
+			echo -en "${BLUE}${j}${NC} mode"
 			if [ ${debug_flag} -eq 1 ]; then
-				echo -en "and ${BLUE}debugging${NC} enabled"
+				echo -en " and ${BLUE}debugging${NC} enabled"
 			fi
 			echo -e "${NC}."
 
@@ -299,7 +307,7 @@ function build() {
 			if [ ${silent} -eq 1 ]; then
 				${cmd} >> $logoutput
 			else
-				$cmd
+				${cmd}
 			fi
 			if [ $? -ne 0 ]; then
 				echo -e "Error in ${RED}${OUTPUT}${NC}"
