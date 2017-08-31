@@ -853,6 +853,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* Populate ethdev structure */
 	eth_dev->dev_ops = &dpaa_devops;
+	eth_dev->data->drv_name = rte_dpaa_pmd.driver.name;
 	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
 	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 
