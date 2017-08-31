@@ -256,6 +256,21 @@ fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
 }
 
 void
+fman_if_stats_get_all(struct fman_if *p, uint64_t *value, int n)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct memac_regs *regs = m->ccsr_map;
+	int i;
+	uint64_t base_offset = offsetof(struct memac_regs, reoct_l);
+
+	for (i = 0; i < n; i++)
+		value[i] = ((u64)in_be32((char *)regs
+				+ base_offset + 8 * i + 4)) << 32 |
+				((u64)in_be32((char *)regs
+				+ base_offset + 8 * i));
+}
+
+void
 fman_if_stats_reset(struct fman_if *p)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
