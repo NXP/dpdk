@@ -172,15 +172,18 @@ ipsec_dequeue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 	struct ipsec_sa *sa;
 	struct rte_mbuf *pkt;
 
-	for (i = 0; i < ipsec_ctx->nb_qps && nb_pkts < max_pkts; i++) {
+	for (i = 0; i < ipsec_ctx->nb_qps && nb_pkts < max_pkts;) {
 		struct cdev_qp *cqp;
 
-		cqp = &ipsec_ctx->tbl[ipsec_ctx->last_qp++];
-		if (ipsec_ctx->last_qp == ipsec_ctx->nb_qps)
-			ipsec_ctx->last_qp %= ipsec_ctx->nb_qps;
+		cqp = &ipsec_ctx->tbl[ipsec_ctx->last_qp];
 
-		if (cqp->in_flight == 0)
+		if (cqp->in_flight == 0) {
+			ipsec_ctx->last_qp++;
+			if (ipsec_ctx->last_qp == ipsec_ctx->nb_qps)
+				ipsec_ctx->last_qp %= ipsec_ctx->nb_qps;
+			i++;
 			continue;
+		}
 
 		nb_cops = rte_cryptodev_dequeue_burst(cqp->id, cqp->qp,
 				cops, max_pkts - nb_pkts);
@@ -201,6 +204,12 @@ ipsec_dequeue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 				rte_pktmbuf_free(pkt);
 			else
 				pkts[nb_pkts++] = pkt;
+		}
+		if (cqp->in_flight < max_pkts) {
+			ipsec_ctx->last_qp++;
+			if (ipsec_ctx->last_qp == ipsec_ctx->nb_qps)
+				ipsec_ctx->last_qp %= ipsec_ctx->nb_qps;
+			i++;
 		}
 	}
 
