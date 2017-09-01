@@ -72,16 +72,18 @@ struct dpaa_device_id {
 	uint8_t fman_id; /**< Fman interface ID, for ETH type device */
 	uint8_t mac_id; /**< Fman MAC interface ID, for ETH type device */
 	uint16_t dev_id; /**< Device Identifier from DPDK */
-	enum rte_dpaa_type device_type; /**< Ethernet or crypto type device */
 };
 
 struct rte_dpaa_device {
 	TAILQ_ENTRY(rte_dpaa_device) next;
 	struct rte_device device;
-	struct rte_eth_dev *eth_dev;
-	struct rte_cryptodev *crypto_dev;
+	union {
+		struct rte_eth_dev *eth_dev;
+		struct rte_cryptodev *crypto_dev;
+	};
 	struct rte_dpaa_driver *driver;
 	struct dpaa_device_id id;
+	enum rte_dpaa_type device_type; /**< Ethernet or crypto type device */
 	char name[RTE_ETH_NAME_MAX_LEN];
 };
 
