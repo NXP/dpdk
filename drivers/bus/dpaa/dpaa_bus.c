@@ -183,7 +183,7 @@ dpaa_create_device_list(void)
 		/* Device identifiers */
 		dev->id.fman_id = fman_intf->fman_idx + 1;
 		dev->id.mac_id = fman_intf->mac_idx;
-		dev->id.device_type = FSL_DPAA_ETH;
+		dev->device_type = FSL_DPAA_ETH;
 		dev->id.dev_id = i;
 
 		/* Create device name */
@@ -219,7 +219,7 @@ dpaa_create_device_list(void)
 			goto cleanup;
 		}
 
-		dev->id.device_type = FSL_DPAA_CRYPTO;
+		dev->device_type = FSL_DPAA_CRYPTO;
 		dev->id.dev_id = rte_dpaa_bus.device_count + i;
 
 		/* Even though RTE_CRYPTODEV_NAME_MAX_LEN is valid length of
@@ -479,7 +479,7 @@ rte_dpaa_device_match(struct rte_dpaa_driver *drv,
 		return ret;
 	}
 
-	if (drv->drv_type == dev->id.device_type) {
+	if (drv->drv_type == dev->device_type) {
 		DPAA_BUS_INFO("Device: %s matches for driver: %s",
 			      dev->name, drv->driver.name);
 		ret = 0; /* Found a match */
