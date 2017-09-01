@@ -117,7 +117,7 @@ struct dt_file {
 	struct dt_node node;
 	struct dt_dir *parent;
 	ssize_t len;
-	uint64_t buf[OF_FILE_BUF_MAX >> 3]; /** ASDF: Why? */
+	uint64_t buf[OF_FILE_BUF_MAX >> 3];
 };
 
 const struct device_node *of_find_compatible_node(

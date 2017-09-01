@@ -101,7 +101,7 @@ TAILQ_HEAD(rte_fman_if_list, __fman_if);
 
 /* Represents the different flavour of network interface */
 enum fman_mac_type {
-	fman_offline = 0, /* ASDF: Should it be removed? */
+	fman_offline = 0,
 	fman_mac_1g,
 	fman_mac_10g,
 };
