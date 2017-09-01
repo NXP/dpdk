@@ -105,6 +105,12 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	bp_info = rte_malloc(NULL,
 			     sizeof(struct dpaa_bp_info),
 			     RTE_CACHE_LINE_SIZE);
+	if (!bp_info) {
+		DPAA_MEMPOOL_WARN("Memory allocation failed for bp_info");
+		bman_free_pool(bp);
+		return -ENOMEM;
+	}
+
 	rte_memcpy(bp_info, (void *)&rte_dpaa_bpid_info[bpid],
 		   sizeof(struct dpaa_bp_info));
 	mp->pool_data = (void *)bp_info;
@@ -120,10 +126,12 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 
 	MEMPOOL_INIT_FUNC_TRACE();
 
-	bman_free_pool(bp_info->bp);
-	DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d", bp_info->bpid);
-	rte_free(mp->pool_data);
-	mp->pool_data = NULL;
+	if (bp_info) {
+		bman_free_pool(bp_info->bp);
+		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d", bp_info->bpid);
+		rte_free(mp->pool_data);
+		mp->pool_data = NULL;
+	}
 }
 
 static void
@@ -202,7 +210,7 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (ret) {
 		DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
 				 ret);
-		return 0;
+		return -1;
 	}
 
 	while (n < count) {
