@@ -216,7 +216,6 @@ fman_if_init(const struct device_node *dpa_node)
 	strncpy(__if->node_path, dpa_node->full_name, PATH_MAX - 1);
 	__if->node_path[PATH_MAX - 1] = '\0';
 
-	/** ASDF: This needs to be revisited */
 	/* Obtain the MAC node used by this interface except macless */
 	mac_phandle = of_get_property(dpa_node, mprop, &lenp);
 	if (!mac_phandle)
@@ -284,7 +283,6 @@ fman_if_init(const struct device_node *dpa_node)
 	else if (of_device_is_compatible(mac_node, "fsl,fman-10g-mac"))
 		__if->__if.mac_type = fman_mac_10g;
 	else if (of_device_is_compatible(mac_node, "fsl,fman-memac")) {
-		/** ASDF: what is memac? */
 		__if->__if.is_memac = 1;
 		char_prop = of_get_property(mac_node, "phy-connection-type",
 					    NULL);
