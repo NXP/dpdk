@@ -169,8 +169,7 @@ dpaa_create_device_list(void)
 
 	/* Creating Ethernet Devices */
 	for (i = 0; i < dpaa_netcfg->num_ethports; i++) {
-		dev = rte_zmalloc(NULL, sizeof(struct rte_dpaa_device),
-				  RTE_CACHE_LINE_SIZE);
+		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
 			DPAA_BUS_LOG(ERR, "Failed to allocate ETH devices");
 			ret = -ENOMEM;
@@ -250,7 +249,7 @@ dpaa_clean_device_list(void)
 
 	TAILQ_FOREACH_SAFE(dev, &rte_dpaa_bus.device_list, next, tdev) {
 		TAILQ_REMOVE(&rte_dpaa_bus.device_list, dev, next);
-		rte_free(dev);
+		free(dev);
 		dev = NULL;
 	}
 }
