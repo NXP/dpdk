@@ -397,13 +397,6 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		return ret;
 	}
 
-	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_FLCTYPE_HASH, true);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Error to get TX l4 csum:Error = %d\n", ret);
-		return ret;
-	}
-
 	/* update the current status */
 	dpaa2_dev_link_update(dev, 0);
 
