@@ -513,7 +513,8 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 			struct rte_net_hdr_lens hdr_lens;
 
 			mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
-					RTE_PTYPE_L3_MASK | RTE_PTYPE_L4_MASK);
+					RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
+					| RTE_PTYPE_L4_MASK);
 			mbuf->l2_len = hdr_lens.l2_len;
 			mbuf->l3_len = hdr_lens.l3_len;
 		}
@@ -627,7 +628,8 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			struct rte_net_hdr_lens hdr_lens;
 
 			mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
-					RTE_PTYPE_L3_MASK | RTE_PTYPE_L4_MASK);
+					RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
+					| RTE_PTYPE_L4_MASK);
 			mbuf->l2_len = hdr_lens.l2_len;
 			mbuf->l3_len = hdr_lens.l3_len;
 		}
