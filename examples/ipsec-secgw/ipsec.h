@@ -57,7 +57,7 @@
 
 #define DEFAULT_MAX_CATEGORIES	1
 
-#define IPSEC_SA_MAX_ENTRIES (128) /* must be power of 2, max 2 power 30 */
+#define IPSEC_SA_MAX_ENTRIES (256) /* must be power of 2, max 2 power 30 */
 #define SPI2IDX(spi) (spi & (IPSEC_SA_MAX_ENTRIES - 1))
 #define INVALID_SPI (0)
 
