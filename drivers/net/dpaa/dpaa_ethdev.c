@@ -198,6 +198,7 @@ dpaa_fw_version_get(struct rte_eth_dev *dev __rte_unused,
 	ret = fscanf(svr_file, "svr:%x", &svr_ver);
 	if (ret <= 0) {
 		DPAA_PMD_ERR("Unable to read SoC device");
+		fclose(svr_file);
 		return -ENOTSUP; /* Not supported on this infra */
 	}
 
@@ -207,6 +208,7 @@ dpaa_fw_version_get(struct rte_eth_dev *dev __rte_unused,
 		       fman_ip_rev);
 
 	ret += 1; /* add the size of '\0' */
+	fclose(svr_file);
 	if (fw_size < (uint32_t)ret)
 		return ret;
 	else
@@ -639,7 +641,7 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 static int dpaa_rx_queue_init(struct qman_fq *fq,
 			      uint32_t fqid)
 {
-	struct qm_mcc_initfq opts;
+	struct qm_mcc_initfq opts = {0};
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -685,7 +687,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 static int dpaa_tx_queue_init(struct qman_fq *fq,
 			      struct fman_if *fman_intf)
 {
-	struct qm_mcc_initfq opts;
+	struct qm_mcc_initfq opts = {0};
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();

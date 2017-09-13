@@ -429,6 +429,8 @@ int dpaa_fm_init(void)
 	pcd_handle = FM_PCD_Open(&fmPcdParams);
 	if (!pcd_handle) {
 		DPAA_PMD_ERR("FM_PCD_Open: Failed\n");
+		/* FM Close */
+		FM_Close(fman_handle);
 		return -1;
 	}
 
@@ -436,6 +438,10 @@ int dpaa_fm_init(void)
 	ret = FM_PCD_Enable(pcd_handle);
 	if (ret) {
 		DPAA_PMD_ERR("FM_PCD_Enable: Failed\n");
+		/* FM PCD Close */
+		FM_PCD_Close(pcd_handle);
+		/* FM Close */
+		FM_Close(fman_handle);
 		return -1;
 	}
 
