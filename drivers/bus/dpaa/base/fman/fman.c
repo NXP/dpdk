@@ -209,10 +209,8 @@ fman_if_init(const struct device_node *dpa_node)
 
 	/* Allocate an object for this network interface */
 	__if = rte_malloc(NULL, sizeof(*__if), RTE_CACHE_LINE_SIZE);
-	if (!__if) {
-		FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*__if));
+	if (!__if)
 		return -ENOMEM;
-	}
 	memset(__if, 0, sizeof(*__if));
 	INIT_LIST_HEAD(&__if->__if.bpool_list);
 	strncpy(__if->node_path, dpa_node->full_name, PATH_MAX - 1);
