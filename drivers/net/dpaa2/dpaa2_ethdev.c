@@ -596,7 +596,7 @@ dpaa2_interrupt_handler(void *param)
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
 	int ret;
 	int irq_index = DPNI_IRQ_INDEX;
-	unsigned int status, clear = 0;
+	unsigned int status = 0, clear = 0;
 
 	PMD_INIT_FUNC_TRACE();
 

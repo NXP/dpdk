@@ -1039,7 +1039,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_auth_ctxt *ctxt = &session->ext_params.auth_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	unsigned int bufsize, i;
+	int bufsize, i;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 

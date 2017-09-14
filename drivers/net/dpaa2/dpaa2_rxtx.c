@@ -586,23 +586,18 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				mp = mi->pool;
 			}
 			/* Not a hw_pkt pool allocated frame */
-			if (!mp) {
+			if (unlikely(!mp || !priv->bp_list)) {
 				PMD_TX_LOG(ERR, "err: no bpool attached");
 				goto send_n_return;
 			}
+
 			if (mp->ops_index != priv->bp_list->dpaa2_ops_index) {
 				PMD_TX_LOG(ERR, "non hw offload bufffer ");
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				if (priv->bp_list) {
-					bpid = priv->bp_list->buf_pool.bpid;
-				} else {
-					PMD_TX_LOG(ERR,
-						   "err: no bpool attached");
-					num_tx = 0;
-					goto send_n_return;
-				}
+				bpid = priv->bp_list->buf_pool.bpid;
+
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					PMD_TX_LOG(ERR, "S/G support not added"
 						" for non hw offload buffer");

@@ -563,8 +563,6 @@ __rta_lte_pdcp_mixed_proto(uint16_t protoinfo)
 	case OP_PCL_LTE_MIXED_AUTH_AES:
 	case OP_PCL_LTE_MIXED_AUTH_ZUC:
 		break;
-	default:
-		return -EINVAL;
 	}
 
 	switch (protoinfo & OP_PCL_LTE_MIXED_ENC_MASK) {
