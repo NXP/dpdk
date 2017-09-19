@@ -157,6 +157,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 	first_seg->data_off = DPAA2_GET_FLE_OFFSET(sge);
 	first_seg->data_len = sge->length  & 0x1FFFF;
 	first_seg->pkt_len = DPAA2_GET_FD_LEN(fd);
+	first_seg->hash.rss = DPAA2_GET_FD_HASH(fd);
 	first_seg->nb_segs = 1;
 	first_seg->next = NULL;
 
@@ -206,6 +207,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 	mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
 	mbuf->data_len = DPAA2_GET_FD_LEN(fd);
 	mbuf->pkt_len = mbuf->data_len;
+	mbuf->hash.rss = DPAA2_GET_FD_HASH(fd);
 
 	/* Parse the packet */
 	/* parse results are after the private - sw annotation area */
