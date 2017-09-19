@@ -45,6 +45,24 @@
 
 #define DES_BLOCK_SIZE 8
 
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+static HMAC_CTX *HMAC_CTX_new(void)
+{
+	HMAC_CTX *ctx = OPENSSL_malloc(sizeof(*ctx));
+	if (ctx != NULL)
+		HMAC_CTX_init(ctx);
+	return ctx;
+}
+
+static void HMAC_CTX_free(HMAC_CTX *ctx)
+{
+	if (ctx != NULL) {
+		HMAC_CTX_cleanup(ctx);
+		OPENSSL_free(ctx);
+	}
+}
+#endif
+
 static int cryptodev_openssl_remove(struct rte_vdev_device *vdev);
 
 /*----------------------------------------------------------------------------*/
@@ -387,12 +405,12 @@ openssl_set_session_auth_parameters(struct openssl_session *sess,
 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
 		sess->auth.mode = OPENSSL_AUTH_AS_HMAC;
-		HMAC_CTX_init(&sess->auth.hmac.ctx);
+		sess->auth.hmac.ctx = HMAC_CTX_new();
 		if (get_auth_algo(xform->auth.algo,
 				&sess->auth.hmac.evp_algo) != 0)
 			return -EINVAL;
 
-		if (HMAC_Init_ex(&sess->auth.hmac.ctx,
+		if (HMAC_Init_ex(sess->auth.hmac.ctx,
 				xform->auth.key.data,
 				xform->auth.key.length,
 				sess->auth.hmac.evp_algo, NULL) != 1)
@@ -470,7 +488,7 @@ openssl_reset_session(struct openssl_session *sess)
 		break;
 	case OPENSSL_AUTH_AS_HMAC:
 		EVP_PKEY_free(sess->auth.hmac.pkey);
-		HMAC_CTX_cleanup(&sess->auth.hmac.ctx);
+		HMAC_CTX_free(sess->auth.hmac.ctx);
 		break;
 	default:
 		break;
@@ -1162,7 +1180,7 @@ process_openssl_auth_op
 	case OPENSSL_AUTH_AS_HMAC:
 		status = process_openssl_auth_hmac(mbuf_src, dst,
 				op->sym->auth.data.offset, srclen,
-				&sess->auth.hmac.ctx);
+				sess->auth.hmac.ctx);
 		break;
 	default:
 		status = -1;
