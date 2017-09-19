@@ -154,7 +154,7 @@ struct openssl_session {
 				/**< pointer to EVP key */
 				const EVP_MD *evp_algo;
 				/**< pointer to EVP algorithm function */
-				HMAC_CTX ctx;
+				HMAC_CTX *ctx;
 				/**< pointer to EVP context structure */
 			} hmac;
 		};
