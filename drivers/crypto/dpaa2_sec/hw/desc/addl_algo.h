@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 NXP.
+ * Copyright 2017 NXP
  *
  * SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  */

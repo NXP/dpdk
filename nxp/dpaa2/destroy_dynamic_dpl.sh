@@ -1,8 +1,5 @@
-#
-# Copyright (c) 2014, Freescale Semiconductor Inc.
-# All rights reserved.
-#
-# SPDX-License-Identifier:     BSD-3-Clause
+#!/usr/bin/env bash
+
 #/* Script to destroy a container*/
 
 if [[ ! $1 ]]

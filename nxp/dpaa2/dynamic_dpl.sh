@@ -1,7 +1,5 @@
-#/*
-# * Copyright (c) 2014-2015 Freescale Semiconductor, Inc. All rights reserved.
-# *
-# */
+#!/usr/bin/env bash
+
 cat > script_help << EOF
 
 
