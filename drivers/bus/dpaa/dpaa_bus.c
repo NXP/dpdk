@@ -88,14 +88,14 @@ compare_dpaa_devices(struct rte_dpaa_device *dev1,
 	int comp = 0;
 
 	/* Segragating ETH from SEC devices */
-	if (dev1->id.device_type > dev2->id.device_type)
+	if (dev1->device_type > dev2->device_type)
 		comp = 1;
-	else if (dev1->id.device_type < dev2->id.device_type)
+	else if (dev1->device_type < dev2->device_type)
 		comp = -1;
 	else
 		comp = 0;
 
-	if ((comp != 0) || (dev1->id.device_type != FSL_DPAA_ETH))
+	if ((comp != 0) || (dev1->device_type != FSL_DPAA_ETH))
 		return comp;
 
 	if (dev1->id.fman_id > dev2->id.fman_id) {
