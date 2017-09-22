@@ -57,7 +57,6 @@
 #include <hw/desc/common.h>
 #include <hw/desc/algo.h>
 #include <hw/desc/ipsec.h>
-#include <hw/desc/addl_algo.h>
 
 #include <rte_dpaa_bus.h>
 #include <dpaa_sec.h>

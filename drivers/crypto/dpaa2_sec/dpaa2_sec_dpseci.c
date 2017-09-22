@@ -58,7 +58,6 @@
 /* RTA header files */
 #include <hw/desc/ipsec.h>
 #include <hw/desc/algo.h>
-#include <hw/desc/addl_algo.h>
 
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
  * a pointer to the shared descriptor
