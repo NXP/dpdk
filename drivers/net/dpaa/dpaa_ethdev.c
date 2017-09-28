@@ -191,6 +191,9 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (!(default_q || fmc_q))
+		dpaa_write_fm_config_to_file();
+
 	/* Change tx callback to the real one */
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
 	fman_if_enable_rx(dpaa_intf->fif);

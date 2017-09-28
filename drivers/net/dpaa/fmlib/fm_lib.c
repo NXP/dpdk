@@ -570,6 +570,33 @@ uint32_t FM_PORT_DeletePCD(t_Handle h_FmPort)
 	return E_OK;
 }
 
+t_Handle CreateDevice(t_Handle h_UserPriv, t_Handle h_DevId)
+{
+    t_Device *p_UserPrivDev = (t_Device*)h_UserPriv;
+    t_Device *p_Dev = NULL;
+
+    p_Dev = (t_Device *)malloc(sizeof(t_Device));
+    if (!p_Dev) {
+	return NULL;
+    }
+
+    memset(p_Dev, 0, sizeof(t_Device));
+    p_Dev->h_UserPriv = h_UserPriv;
+    p_UserPrivDev->owners++;
+    p_Dev->id = PTR_TO_UINT(h_DevId);
+
+    _fml_dbg("Called.\n");
+
+    return (t_Handle) p_Dev;
+}
+
+t_Handle GetDeviceId(t_Handle h_Dev)
+{
+	t_Device *p_Dev = (t_Device *) h_Dev;
+
+	return (t_Handle)p_Dev->id;
+}
+
 #if defined FMAN_V3H
 void Platform_is_FMAN_V3H()
 {
