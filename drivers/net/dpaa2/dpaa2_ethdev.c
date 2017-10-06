@@ -459,10 +459,15 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		cfg.flc.stash_control = true;
 		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
 		/* 00 00 00 - last 6 bit represent annotation, context stashing,
-		 * data stashing setting 01 01 00 (0x14) to enable
-		 * 1 line data, 1 line annotation
+		 * data stashing setting 01 01 00 (0x14)
+		 * (in following order ->DS AS CS)
+		 * to enable 1 line data, 1 line annotation.
+		 * For LX2, this setting should be 01 00 00 (0x10)
 		 */
-		cfg.flc.value |= 0x14;
+		if ((platform_svr & 0xffff0000) == SVR_LX2160A)
+			cfg.flc.value |= 0x10;
+		else
+			cfg.flc.value |= 0x14;
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);
