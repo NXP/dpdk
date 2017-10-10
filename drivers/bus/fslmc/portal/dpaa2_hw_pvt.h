@@ -222,7 +222,8 @@ enum qbman_fd_format {
 	fle->addr_hi = upper_32_bits((uint64_t)addr);	  \
 } while (0)
 #define DPAA2_GET_FLE_CTXT(fle)					\
-	(uint64_t)((((uint64_t)((fle)->reserved[1])) << 32) + (fle)->reserved[0])
+	(uint64_t)((((uint64_t)((fle)->reserved[1])) << 32) + \
+			(fle)->reserved[0])
 #define DPAA2_FLE_SAVE_CTXT(fle, addr) do { \
 	fle->reserved[0] = lower_32_bits((uint64_t)addr);     \
 	fle->reserved[1] = upper_32_bits((uint64_t)addr);	  \
@@ -308,7 +309,7 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 /**
  * When we are using Physical addresses as IO Virtual Addresses,
  * Need to call conversion routines dpaa2_mem_vtop & dpaa2_mem_ptov
- * whereever required.
+ * wherever required.
  * These routines are called with help of below MACRO's
  */
 

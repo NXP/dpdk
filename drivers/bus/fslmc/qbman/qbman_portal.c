@@ -69,7 +69,7 @@
 /* Pre-defined attribute codes */
 /*******************************/
 
-#define QMAN_RESPONSE_VERB_MASK   0x7f
+#define QBMAN_RESPONSE_VERB_MASK   0x7f
 
 /*************************/
 /* SDQCR attribute codes */
@@ -305,7 +305,7 @@ void *qbman_swp_mc_result(struct qbman_swp *p)
 	qbman_cena_invalidate_prefetch(&p->sys,
 				       QBMAN_CENA_SWP_RR(p->mc.valid_bit));
 	ret = qbman_cena_read(&p->sys, QBMAN_CENA_SWP_RR(p->mc.valid_bit));
-	/* Remove the valid-bit - command completed iff the rest is non-zero */
+	/* Remove the valid-bit - command completed if the rest is non-zero */
 	verb = ret[0] & ~QB_VALID_BIT;
 	if (!verb)
 		return NULL;
@@ -819,7 +819,7 @@ const struct qbman_result *qbman_swp_dqrr_next(struct qbman_swp *s)
 		uint8_t pi = qbman_cinh_read(&s->sys, QBMAN_CINH_SWP_DQPI) &
 			     QMAN_DQRR_PI_MASK;
 
-		/* there are new entries iff pi != next_idx */
+		/* there are new entries if pi != next_idx */
 		if (pi == s->dqrr.next_idx)
 			return NULL;
 
@@ -865,11 +865,11 @@ const struct qbman_result *qbman_swp_dqrr_next(struct qbman_swp *s)
 	 * indicate that the vdq is no longer busy
 	 */
 	flags = p->dq.stat;
-	response_verb = verb & QMAN_RESPONSE_VERB_MASK;
+	response_verb = verb & QBMAN_RESPONSE_VERB_MASK;
 	if ((response_verb == QBMAN_RESULT_DQ) &&
 	    (flags & QBMAN_DQ_STAT_VOLATILE) &&
 	    (flags & QBMAN_DQ_STAT_EXPIRED))
-			atomic_inc(&s->vdq.busy);
+		atomic_inc(&s->vdq.busy);
 
 	return p;
 }
@@ -957,7 +957,7 @@ int qbman_check_command_complete(struct qbman_result *dq)
 static inline int __qbman_result_is_x(const struct qbman_result *dq,
 				      uint8_t x)
 {
-	uint8_t response_verb = dq->dq.verb & QMAN_RESPONSE_VERB_MASK;
+	uint8_t response_verb = dq->dq.verb & QBMAN_RESPONSE_VERB_MASK;
 
 	return (response_verb == x);
 }
