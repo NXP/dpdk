@@ -1,7 +1,7 @@
-/*-
+/*
  *   BSD LICENSE
  *
- *   Copyright(c) 2016 Intel Corporation. All rights reserved.
+ *   Copyright(c) 2017 Cavium. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -13,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of Intel Corporation nor the names of its
+ *     * Neither the name of Cavium nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -30,32 +30,22 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <rte_eal.h>
+#ifndef _RTE_PAUSE_ARM32_H_
+#define _RTE_PAUSE_ARM32_H_
 
-#include "eal_filesystem.h"
-#include "eal_internal_cfg.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-int
-rte_eal_primary_proc_alive(const char *config_file_path)
+#include <rte_common.h>
+#include "generic/rte_pause.h"
+
+static inline void rte_pause(void)
 {
-	int config_fd;
-
-	if (config_file_path)
-		config_fd = open(config_file_path, O_RDONLY);
-	else {
-		const char *path;
-
-		path = eal_runtime_config_path();
-		config_fd = open(path, O_RDONLY);
-	}
-	if (config_fd < 0)
-		return 0;
-
-	int ret = lockf(config_fd, F_TEST, 0);
-	close(config_fd);
-
-	return !!ret;
 }
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _RTE_PAUSE_ARM32_H_ */
