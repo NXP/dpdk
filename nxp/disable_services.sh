@@ -1,6 +1,4 @@
 #!/bin/bash
-#/* Copyright 2017 NXP
-# */
 
 ISSUEFILE="/etc/os-release"
 
