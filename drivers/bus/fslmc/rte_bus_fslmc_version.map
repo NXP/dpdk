@@ -22,6 +22,7 @@ DPDK_17.05 {
 	dpio_set_stashing_destination;
 	mc_send_command;
 	per_lcore__dpaa2_io;
+	platform_svr;
 	qbman_check_command_complete;
 	qbman_eq_desc_clear;
 	qbman_eq_desc_set_fq;
