@@ -285,11 +285,14 @@ Please note that enabling debugging options may affect system performance.
 
 - ``CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER`` (default ``n``)
 
-  Toggle display of generic debugging messages
+  Toggles display of bus configurations and enables a debugging queue
+  to fetch error (Rx/Tx) packets to driver. By default, packets with errors
+  (like wrong checksum) are dropped by the hardware.
 
-- ``CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT`` (default ``n``)
+- ``CONFIG_RTE_LIBRTE_DPAA_HWDEBUG`` (default ``n``)
 
-  Toggle display of initialization related messages.
+  Enables debugging of the Queue and Buffer Manager layer which interacts
+  with the DPAA hardware.
 
 - ``CONFIG_RTE_MBUF_DEFAULT_MEMPOOL_OPS`` (default ``dpaa``)
 
@@ -355,6 +358,7 @@ Limitations
 
 Platform Requirement
 ~~~~~~~~~~~~~~~~~~~~
+
 DPAA drivers for DPDK can only work on NXP SoCs as listed in the
 ``Supported DPAA SoCs``.
 
@@ -365,3 +369,10 @@ The DPAA SoC family support a maximum of a 10240 jumbo frame. The value
 is fixed and cannot be changed. So, even when the ``rxmode.max_rx_pkt_len``
 member of ``struct rte_eth_conf`` is set to a value lower than 10240, frames
 up to 10240 bytes can still reach the host interface.
+
+Multiprocess Support
+~~~~~~~~~~~~~~~~~~~~
+
+Current version of DPAA driver doesn't support multi-process applications
+where I/O is performed using secondary processes. This feature would be
+implemented in subsequent versions.
