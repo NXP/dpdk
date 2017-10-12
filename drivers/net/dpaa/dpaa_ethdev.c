@@ -229,7 +229,7 @@ dpaa_fw_version_get(struct rte_eth_dev *dev __rte_unused,
 
 	PMD_INIT_FUNC_TRACE();
 
-	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
 	if (!svr_file) {
 		DPAA_PMD_ERR("Unable to open SoC device");
 		return -ENOTSUP; /* Not supported on this infra */
@@ -1045,13 +1045,17 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA_PMD_ERR("Failed to allocate %d bytes needed to "
 						"store MAC addresses",
 				ETHER_ADDR_LEN * DPAA_MAX_MAC_FILTER);
+		rte_free(dpaa_intf->rx_queues);
+		rte_free(dpaa_intf->tx_queues);
+		dpaa_intf->rx_queues = NULL;
+		dpaa_intf->tx_queues = NULL;
+		dpaa_intf->nb_rx_queues = 0;
+		dpaa_intf->nb_tx_queues = 0;
 		return -ENOMEM;
 	}
 
 	/* copy the primary mac address */
-	memcpy(eth_dev->data->mac_addrs[0].addr_bytes,
-		fman_intf->mac_addr.addr_bytes,
-		ETHER_ADDR_LEN);
+	ether_addr_copy(&fman_intf->mac_addr, &eth_dev->data->mac_addrs[0]);
 
 	RTE_LOG(INFO, PMD, "net: dpaa: %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
 		dpaa_device->name,

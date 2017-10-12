@@ -100,16 +100,16 @@ void fman_if_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
 void fman_if_conf_max_frame_len(struct fman_if *p, unsigned int max_frame_len);
 
 /* Enable/disable Rx promiscuous mode on specified interface */
-void fman_if_promiscuous_enable(struct fman_if *);
-void fman_if_promiscuous_disable(struct fman_if *);
+void fman_if_promiscuous_enable(struct fman_if *p);
+void fman_if_promiscuous_disable(struct fman_if *p);
 
 /* Enable/disable Rx on specific interfaces */
-void fman_if_enable_rx(struct fman_if *);
-void fman_if_disable_rx(struct fman_if *);
+void fman_if_enable_rx(struct fman_if *p);
+void fman_if_disable_rx(struct fman_if *p);
 
 /* Enable/disable loopback on specific interfaces */
-void fman_if_loopback_enable(struct fman_if *);
-void fman_if_loopback_disable(struct fman_if *);
+void fman_if_loopback_enable(struct fman_if *p);
+void fman_if_loopback_disable(struct fman_if *p);
 
 /* Set buffer pool on specific interface */
 void fman_if_set_bp(struct fman_if *fm_if, unsigned int num, int bpid,

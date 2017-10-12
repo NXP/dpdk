@@ -547,9 +547,10 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				 */
 				sg_temp->bpid = 0xff;
 				rte_mbuf_refcnt_update(cur_seg, -1);
-			} else
+			} else {
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
+			}
 			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
