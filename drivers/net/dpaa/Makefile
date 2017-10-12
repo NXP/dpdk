@@ -12,7 +12,7 @@
 #       notice, this list of conditions and the following disclaimer in
 #       the documentation and/or other materials provided with the
 #       distribution.
-#     * Neither the name of Freescale Semiconductor, Inc nor the names of its
+#     * Neither the name of NXP nor the names of its
 #       contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
@@ -36,15 +36,9 @@ RTE_SDK_DPAA=$(RTE_SDK)/drivers/net/dpaa
 #
 LIB = librte_pmd_dpaa.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-endif
-CFLAGS +=-Wno-pointer-arith
-
+CFLAGS := -I$(SRCDIR) $(CFLAGS)
+CFLAGS += -O3 $(WERROR_FLAGS)
+CFLAGS += -Wno-pointer-arith
 CFLAGS += -I$(RTE_SDK_DPAA)/
 CFLAGS += -I$(RTE_SDK_DPAA)/include
 CFLAGS += -I$(RTE_SDK_DPAA)/fmlib
