@@ -423,7 +423,6 @@ extern int fman_ccsr_map_fd;
 	do { \
 		_errno = (rc); \
 		DPAA_BUS_LOG(ERR, fmt "(%d)", ##args, errno); \
-		goto err; \
 	} while (0)
 
 #define FMAN_IP_REV_1	0xC30C4
