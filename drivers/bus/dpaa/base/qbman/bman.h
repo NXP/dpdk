@@ -133,7 +133,7 @@ enum bm_rcr_cmode {		/* s/w-only */
 struct bm_rcr {
 	struct bm_rcr_entry *ring, *cursor;
 	u8 ci, available, ithresh, vbit;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	u32 busy;
 	enum bm_rcr_pmode pmode;
 	enum bm_rcr_cmode cmode;
@@ -144,7 +144,7 @@ struct bm_mc {
 	struct bm_mc_command *cr;
 	struct bm_mc_result *rr;
 	u8 rridx, vbit;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	enum {
 		/* Can only be _mc_start()ed */
 		mc_idle,
@@ -212,7 +212,7 @@ static inline int bm_rcr_init(struct bm_portal *portal, enum bm_rcr_pmode pmode,
 	rcr->available = BM_RCR_SIZE - 1
 		- bm_cyc_diff(BM_RCR_SIZE, rcr->ci, pi);
 	rcr->ithresh = bm_in(RCR_ITR);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 0;
 	rcr->pmode = pmode;
 	rcr->cmode = cmode;
@@ -244,7 +244,7 @@ static inline struct bm_rcr_entry *bm_rcr_start(struct bm_portal *portal)
 	DPAA_ASSERT(!rcr->busy);
 	if (!rcr->available)
 		return NULL;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 1;
 #endif
 	dcbz_64(rcr->cursor);
@@ -256,7 +256,7 @@ static inline void bm_rcr_abort(struct bm_portal *portal)
 	__maybe_unused register struct bm_rcr *rcr = &portal->rcr;
 
 	DPAA_ASSERT(rcr->busy);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 0;
 #endif
 }
@@ -289,7 +289,7 @@ static inline void bm_rcr_pci_commit(struct bm_portal *portal, u8 myverb)
 	rcr->available--;
 	hwsync();
 	bm_out(RCR_PI_CINH, RCR_PTR2IDX(rcr->cursor));
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 0;
 #endif
 }
@@ -314,7 +314,7 @@ static inline void bm_rcr_pce_commit(struct bm_portal *portal, u8 myverb)
 	rcr->available--;
 	lwsync();
 	bm_cl_out(RCR_PI, RCR_PTR2IDX(rcr->cursor));
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 0;
 #endif
 }
@@ -332,7 +332,7 @@ static inline void bm_rcr_pvb_commit(struct bm_portal *portal, u8 myverb)
 	dcbf_64(rcursor);
 	RCR_INC(rcr);
 	rcr->available--;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	rcr->busy = 0;
 #endif
 }
@@ -410,7 +410,7 @@ static inline int bm_mc_init(struct bm_portal *portal)
 	mc->rridx = (__raw_readb(&mc->cr->__dont_write_directly__verb) &
 			BM_MCC_VERB_VBIT) ?  0 : 1;
 	mc->vbit = mc->rridx ? BM_MCC_VERB_VBIT : 0;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mc->state = mc_idle;
 #endif
 	return 0;
@@ -421,7 +421,7 @@ static inline void bm_mc_finish(struct bm_portal *portal)
 	__maybe_unused register struct bm_mc *mc = &portal->mc;
 
 	DPAA_ASSERT(mc->state == mc_idle);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (mc->state != mc_idle)
 		pr_crit("Losing incomplete MC command\n");
 #endif
@@ -432,7 +432,7 @@ static inline struct bm_mc_command *bm_mc_start(struct bm_portal *portal)
 	register struct bm_mc *mc = &portal->mc;
 
 	DPAA_ASSERT(mc->state == mc_idle);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mc->state = mc_user;
 #endif
 	dcbz_64(mc->cr);
@@ -444,7 +444,7 @@ static inline void bm_mc_abort(struct bm_portal *portal)
 	__maybe_unused register struct bm_mc *mc = &portal->mc;
 
 	DPAA_ASSERT(mc->state == mc_user);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mc->state = mc_idle;
 #endif
 }
@@ -459,7 +459,7 @@ static inline void bm_mc_commit(struct bm_portal *portal, u8 myverb)
 	mc->cr->__dont_write_directly__verb = myverb | mc->vbit;
 	dcbf(mc->cr);
 	dcbit_ro(rr);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mc->state = mc_hw;
 #endif
 }
@@ -480,7 +480,7 @@ static inline struct bm_mc_result *bm_mc_result(struct bm_portal *portal)
 	}
 	mc->rridx ^= 1;
 	mc->vbit ^= BM_MCC_VERB_VBIT;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mc->state = mc_idle;
 #endif
 	return rr;

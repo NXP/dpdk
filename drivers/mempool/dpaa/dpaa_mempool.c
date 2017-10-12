@@ -128,7 +128,8 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 
 	if (bp_info) {
 		bman_free_pool(bp_info->bp);
-		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d", bp_info->bpid);
+		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d",
+				  bp_info->bpid);
 		rte_free(mp->pool_data);
 		mp->pool_data = NULL;
 	}
@@ -161,8 +162,8 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	int ret;
 	unsigned int i = 0;
 
-	DPAA_MEMPOOL_DEBUG(" Request to free %d buffers in bpid = %d",
-			   n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Request to free %d buffers in bpid = %d",
+			     n, bp_info->bpid);
 
 	ret = rte_dpaa_portal_init((void *)0);
 	if (ret) {
@@ -178,7 +179,8 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 		i = i + 1;
 	}
 
-	DPAA_MEMPOOL_DEBUG(" freed %d buffers in bpid =%d", n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("freed %d buffers in bpid =%d",
+			     n, bp_info->bpid);
 
 	return 0;
 }
@@ -197,8 +199,8 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 
-	DPAA_MEMPOOL_DEBUG(" Request to alloc %d buffers in bpid = %d",
-			   count, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Request to alloc %d buffers in bpid = %d",
+			     count, bp_info->bpid);
 
 	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
 		DPAA_MEMPOOL_ERR("Unable to allocate requested (%u) buffers",
@@ -227,8 +229,8 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			DPAA_MEMPOOL_DEBUG("Buffer acquire failed with"
-					   " err code: %d", ret);
+			DPAA_MEMPOOL_DPDEBUG("Buffer acquire failed (%d)",
+					     ret);
 			/* The API expect the exact number of requested
 			 * buffers. Releasing all buffers allocated
 			 */
@@ -244,14 +246,14 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 			bufaddr = (void *)rte_dpaa_mem_ptov(bufs[i].addr);
 			m[n] = (struct rte_mbuf *)((char *)bufaddr
 						- bp_info->meta_data_size);
-			DPAA_MEMPOOL_DEBUG("Acquired %p address %p from BMAN",
-					   (void *)bufaddr, (void *)m[n]);
+			DPAA_MEMPOOL_DPDEBUG("Paddr (%p), FD (%p) from BMAN",
+					     (void *)bufaddr, (void *)m[n]);
 			n++;
 		}
 	}
 
-	DPAA_MEMPOOL_DEBUG(" allocated %d buffers from bpid =%d",
-			   n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Allocated %d buffers from bpid=%d",
+			     n, bp_info->bpid);
 	return 0;
 }
 

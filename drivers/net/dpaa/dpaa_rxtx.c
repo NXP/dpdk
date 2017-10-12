@@ -86,7 +86,7 @@
 		(_fd)->bpid = _bpid; \
 	} while (0)
 
-#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY)
+#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER)
 void dpaa_display_frame(const struct qm_fd *fd)
 {
 	int ii;
@@ -114,7 +114,7 @@ void dpaa_display_frame(const struct qm_fd *fd)
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
 				     uint64_t prs __rte_unused)
 {
-	DPAA_RX_LOG(DEBUG, "Slow parsing");
+	DPAA_DP_LOG(DEBUG, "Slow parsing");
 	/*TBD:XXX: to be implemented*/
 }
 
@@ -124,7 +124,7 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
-	DPAA_RX_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
+	DPAA_DP_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
 
 	switch (prs) {
 	case DPAA_PKT_TYPE_NONE:
@@ -233,7 +233,7 @@ static inline void dpaa_checksum(struct rte_mbuf *mbuf)
 	struct ipv4_hdr *ipv4_hdr = (struct ipv4_hdr *)l3_hdr;
 	struct ipv6_hdr *ipv6_hdr = (struct ipv6_hdr *)l3_hdr;
 
-	DPAA_TX_LOG(DEBUG, "Calculating checksum for mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, "Calculating checksum for mbuf: %p", mbuf);
 
 	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) ||
 	    ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
@@ -276,7 +276,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 {
 	struct dpaa_eth_parse_results_t *prs;
 
-	DPAA_TX_LOG(DEBUG, " Offloading checksum for mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, " Offloading checksum for mbuf: %p", mbuf);
 
 	prs = GET_TX_PRS(prs_buf);
 	prs->l3r = 0;
@@ -312,7 +312,7 @@ dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	int i = 0;
 	uint8_t fd_offset = fd->offset;
 
-	DPAA_RX_LOG(DEBUG, "Received an SG frame");
+	DPAA_DP_LOG(DEBUG, "Received an SG frame");
 
 	vaddr = rte_dpaa_mem_ptov(qm_fd_addr(fd));
 	if (!vaddr) {
@@ -373,7 +373,7 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
 	uint32_t length = fd->opaque & DPAA_FD_LENGTH_MASK;
 
-	DPAA_RX_LOG(DEBUG, " FD--->MBUF");
+	DPAA_DP_LOG(DEBUG, " FD--->MBUF");
 
 	if (unlikely(format == qm_fd_sg))
 		return dpaa_eth_sg_to_mbuf(fd, ifid);
@@ -447,7 +447,7 @@ static void *dpaa_get_pktbuf(struct dpaa_bp_info *bp_info)
 		return (void *)buf;
 	}
 
-	DPAA_RX_LOG(DEBUG, "got buffer 0x%lx from pool %d",
+	DPAA_DP_LOG(DEBUG, "got buffer 0x%lx from pool %d",
 		    (uint64_t)bufs.addr, bufs.bpid);
 
 	buf = (uint64_t)rte_dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
@@ -492,7 +492,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
 
-	DPAA_TX_LOG(DEBUG, "Creating SG FD to transmit");
+	DPAA_DP_LOG(DEBUG, "Creating SG FD to transmit");
 
 	temp = rte_pktmbuf_alloc(bp_info->mp);
 	if (!temp) {
@@ -635,7 +635,7 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 		}
 		if (mbuf->data_off < (DEFAULT_TX_ICEOF +
 		    sizeof(struct dpaa_eth_parse_results_t))) {
-			DPAA_TX_LOG(DEBUG, "Checksum offload Err: "
+			DPAA_DP_LOG(DEBUG, "Checksum offload Err: "
 				"Not enough Headroom "
 				"space for correct Checksum offload."
 				"So Calculating checksum in Software.");
@@ -652,7 +652,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		struct dpaa_bp_info *bp_info,
 		struct qm_fd *fd_arr)
 {
-	DPAA_TX_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
 
 	if (mbuf->nb_segs == 1) {
 		/* Case for non-segmented buffers */
@@ -671,7 +671,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 	return 0;
 }
 
-/* Handle all mbufs on an external pool (non-dpaa2) */
+/* Handle all mbufs on an external pool (non-dpaa) */
 static inline uint16_t
 tx_on_external_pool(struct qman_fq *txq, struct rte_mbuf *mbuf,
 		    struct qm_fd *fd_arr)
@@ -679,11 +679,11 @@ tx_on_external_pool(struct qman_fq *txq, struct rte_mbuf *mbuf,
 	struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 	struct rte_mbuf *dmable_mbuf;
 
-	DPAA_TX_LOG(DEBUG, "Non-BMAN offloaded buffer."
+	DPAA_DP_LOG(DEBUG, "Non-BMAN offloaded buffer."
 		    "Allocating an offloaded buffer");
 	dmable_mbuf = dpaa_get_dmable_mbuf(mbuf, dpaa_intf);
 	if (!dmable_mbuf) {
-		DPAA_TX_LOG(DEBUG, "no dpaa buffers.");
+		DPAA_DP_LOG(DEBUG, "no dpaa buffers.");
 		return 1;
 	}
 
@@ -709,7 +709,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 		return 0;
 	}
 
-	DPAA_TX_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
+	DPAA_DP_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
 
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
@@ -759,7 +759,7 @@ send_pkts:
 		nb_bufs -= frames_to_send;
 	}
 
-	DPAA_TX_LOG(DEBUG, "Transmitted %d buffers on queue: %p", i, q);
+	DPAA_DP_LOG(DEBUG, "Transmitted %d buffers on queue: %p", i, q);
 
 	return i;
 }
@@ -768,7 +768,7 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 			      struct rte_mbuf **bufs __rte_unused,
 		uint16_t nb_bufs __rte_unused)
 {
-	DPAA_TX_LOG(DEBUG, "Drop all packets");
+	DPAA_DP_LOG(DEBUG, "Drop all packets");
 
 	/* Drop all incoming packets. No need to free packets here
 	 * because the rte_eth f/w frees up the packets through tx_buffer

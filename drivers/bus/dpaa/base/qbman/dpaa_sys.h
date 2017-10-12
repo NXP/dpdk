@@ -47,11 +47,7 @@
 #define DPAA_PORTAL_CE 0
 #define DPAA_PORTAL_CI 1
 
-#ifdef RTE_LIBRTE_DPAA_CHECKING
-#define DPAA_ASSERT(x) ASSERT(x)
-#else
-#define DPAA_ASSERT(x)	do {  } while (0)
-#endif
+#define DPAA_ASSERT(x) RTE_ASSERT(x)
 
 /* This is the interface from the platform-agnostic driver code to (de)register
  * interrupt handlers. We simply create/destroy corresponding structs.

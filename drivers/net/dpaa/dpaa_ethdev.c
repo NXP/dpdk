@@ -906,15 +906,15 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		DPAA_PMD_LOG(ERR, "reserve debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("Reserve debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	DPAA_PMD_LOG(DEBUG, "creating debug fq %p, fqid %d", fq, fqid);
+	DPAA_PMD_DEBUG("Creating debug fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		DPAA_PMD_LOG(ERR, "create debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("create debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return ret;
 	}
@@ -922,7 +922,7 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		DPAA_PMD_LOG(ERR, "init debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("init debug fqid %d failed with ret: %d",
 			    fqid, ret);
 	return ret;
 }

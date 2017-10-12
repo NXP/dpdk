@@ -377,7 +377,7 @@ static inline int qm_eqcr_init(struct qm_portal *portal,
 	eqcr->available = QM_EQCR_SIZE - 1 -
 			qm_cyc_diff(QM_EQCR_SIZE, eqcr->ci, pi);
 	eqcr->ithresh = qm_in(EQCR_ITR);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	eqcr->busy = 0;
 	eqcr->pmode = pmode;
 #endif
@@ -446,7 +446,7 @@ static inline int qm_dqrr_init(struct qm_portal *portal,
 	dqrr->vbit = (qm_in(DQRR_PI_CINH) & QM_DQRR_SIZE) ?
 			QM_DQRR_VERB_VBIT : 0;
 	dqrr->ithresh = qm_in(DQRR_ITR);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	dqrr->dmode = dmode;
 	dqrr->pmode = pmode;
 	dqrr->cmode = cmode;
@@ -469,7 +469,7 @@ static inline int qm_dqrr_init(struct qm_portal *portal,
 static inline void qm_dqrr_finish(struct qm_portal *portal)
 {
 	__maybe_unused register struct qm_dqrr *dqrr = &portal->dqrr;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if ((dqrr->cmode != qm_dqrr_cdc) &&
 	    (dqrr->ci != DQRR_PTR2IDX(dqrr->cursor)))
 		pr_crit("Ignoring completed DQRR entries\n");
@@ -490,7 +490,7 @@ static inline int qm_mr_init(struct qm_portal *portal,
 	mr->fill = qm_cyc_diff(QM_MR_SIZE, mr->ci, mr->pi);
 	mr->vbit = (qm_in(MR_PI_CINH) & QM_MR_SIZE) ? QM_MR_VERB_VBIT : 0;
 	mr->ithresh = qm_in(MR_ITR);
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	mr->pmode = pmode;
 	mr->cmode = cmode;
 #endif
@@ -1305,7 +1305,7 @@ int qman_init_fq(struct qman_fq *fq, u32 flags, struct qm_mcc_initfq *opts)
 	if ((fq->state != qman_fq_state_oos) &&
 	    (fq->state != qman_fq_state_parked))
 		return -EINVAL;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (unlikely(fq_isset(fq, QMAN_FQ_FLAG_NO_MODIFY)))
 		return -EINVAL;
 #endif
@@ -1400,7 +1400,7 @@ int qman_schedule_fq(struct qman_fq *fq)
 
 	if (fq->state != qman_fq_state_parked)
 		return -EINVAL;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (unlikely(fq_isset(fq, QMAN_FQ_FLAG_NO_MODIFY)))
 		return -EINVAL;
 #endif
@@ -1443,7 +1443,7 @@ int qman_retire_fq(struct qman_fq *fq, u32 *flags)
 	if ((fq->state != qman_fq_state_parked) &&
 	    (fq->state != qman_fq_state_sched))
 		return -EINVAL;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (unlikely(fq_isset(fq, QMAN_FQ_FLAG_NO_MODIFY)))
 		return -EINVAL;
 #endif
@@ -1532,7 +1532,7 @@ int qman_oos_fq(struct qman_fq *fq)
 
 	if (fq->state != qman_fq_state_retired)
 		return -EINVAL;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (unlikely(fq_isset(fq, QMAN_FQ_FLAG_NO_MODIFY)))
 		return -EINVAL;
 #endif
@@ -1575,7 +1575,7 @@ int qman_fq_flow_control(struct qman_fq *fq, int xon)
 		(fq->state == qman_fq_state_parked))
 		return -EINVAL;
 
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (unlikely(fq_isset(fq, QMAN_FQ_FLAG_NO_MODIFY)))
 		return -EINVAL;
 #endif
