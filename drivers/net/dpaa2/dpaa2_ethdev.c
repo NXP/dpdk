@@ -479,10 +479,17 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
 		struct dpni_taildrop taildrop;
+		uint32_t threshold = 0;
+
+		if (getenv("DPAA2_RX_TAILDROP_SIZE"))
+			threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
+
+		if (!threshold)
+			threshold = CONG_THRESHOLD_RX_Q;
 
 		taildrop.enable = 1;
 		/*enabling per rx queue congestion control */
-		taildrop.threshold = CONG_THRESHOLD_RX_Q;
+		taildrop.threshold = threshold;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
