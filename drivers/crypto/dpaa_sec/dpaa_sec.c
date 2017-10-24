@@ -564,7 +564,6 @@ build_auth_only(struct rte_crypto_op *op)
 		/* hash result or digest, save digest first */
 		rte_memcpy(old_digest, sym->auth.digest.data,
 			   sym->auth.digest.length);
-		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
 		qm_sg_entry_set64(sg, start_addr + sym->auth.data.offset);
 		sg->length = sym->auth.data.length;
 		cpu_to_hw_sg(sg);
@@ -703,7 +702,6 @@ build_cipher_auth_gcm(struct rte_crypto_op *op)
 
 		memcpy(ctx->digest, sym->auth.digest.data,
 		       sym->auth.digest.length);
-		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
 		sg++;
 
 		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
@@ -797,7 +795,6 @@ build_cipher_auth(struct rte_crypto_op *op)
 
 		memcpy(ctx->digest, sym->auth.digest.data,
 		       sym->auth.digest.length);
-		memset(sym->auth.digest.data, 0, sym->auth.digest.length);
 		sg++;
 
 		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
