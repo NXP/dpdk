@@ -1157,6 +1157,11 @@ typedef enum qman_cb_dqrr_result (*qman_cb_dqrr)(struct qman_portal *qm,
 					struct qman_fq *fq,
 					const struct qm_dqrr_entry *dqrr);
 
+typedef enum qman_cb_dqrr_result (*qman_dpdk_cb_dqrr)(struct qman_portal *qm,
+					struct qman_fq *fq,
+					const struct qm_dqrr_entry *dqrr,
+					void **bd);
+
 /*
  * This callback type is used when handling ERNs, FQRNs and FQRLs via MR. They
  * are always consumed after the callback returns.
@@ -1215,6 +1220,7 @@ enum qman_fq_state {
  */
 
 struct qman_fq_cb {
+	qman_dpdk_cb_dqrr dqrr_dpdk_cb;	/* for dequeued frames */
 	qman_cb_dqrr dqrr;	/* for dequeued frames */
 	qman_cb_mr ern;		/* for s/w ERNs */
 	qman_cb_mr fqs;		/* frame-queue state changes*/
@@ -1230,6 +1236,9 @@ struct qman_fq {
 	 */
 	spinlock_t fqlock;
 	u32 fqid;
+	u16 ch_id;
+	u8 portal_affined;
+	u8 is_static;
 	/* DPDK Interface */
 	void *dpaa_intf;
 
@@ -1326,6 +1335,8 @@ int qman_get_portal_index(void);
  * member of the cpu mask.
  */
 u16 qman_affine_channel(int cpu);
+
+unsigned int qman_portal_poll_rx(unsigned int poll_limit, void **bufs);
 
 /**
  * qman_set_vdq - Issue a volatile dequeue command

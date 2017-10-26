@@ -334,15 +334,29 @@ _dpaa_portal_init(void *arg)
 	return 0;
 }
 
+static void
+dpaa_thread_poll_add(struct qman_fq *fq)
+{
+	uint32_t sdqcr;
+
+	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(fq->ch_id);
+	qman_static_dequeue_add(sdqcr);
+	fq->portal_affined = true;
+}
+
 /*
  * rte_dpaa_portal_init - Wrapper over _dpaa_portal_init with thread level check
  * XXX Complete this
  */
 int
-rte_dpaa_portal_init(void *arg, struct qman_fq *fq __rte_unused)
+rte_dpaa_portal_init(void *arg, struct qman_fq *fq)
 {
 	if (unlikely(!RTE_PER_LCORE(_dpaa_io)))
 		return _dpaa_portal_init(arg);
+
+	/* Affine above created portal with channel*/
+	if (unlikely(fq && (fq->portal_affined == false)))
+		dpaa_thread_poll_add(fq);
 
 	return 0;
 }

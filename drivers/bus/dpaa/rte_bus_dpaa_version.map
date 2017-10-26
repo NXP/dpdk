@@ -53,6 +53,7 @@ DPDK_17.05 {
 	qman_fq_state;
 	qman_global_init;
 	qman_init_fq;
+	qman_portal_poll_rx;
 	qman_set_vdq;
 	qman_poll_dqrr;
 	qman_query_fq_np;

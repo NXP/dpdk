@@ -79,6 +79,9 @@ static int is_global_init;
 static int fmc_q = 1;	/* Indicates the uses of TOOL tool for distribution */
 static int default_q;	/* use default queue - FMC is not executed*/
 
+static int dpaa_push_mode_queue; /*push mode support*/
+static int dpaa_push_queue_idx; /*Queue index which are in push mode*/
+
 static struct rte_dpaa_driver rte_dpaa_pmd;
 
 struct rte_dpaa_xstats_name_off {
@@ -472,6 +475,10 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    struct rte_mempool *mp)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
+	struct qm_mcc_initfq opts = {0};
+	u32 flags = 0;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -507,8 +514,35 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    dpaa_intf->name, fd_offset,
 			fman_if_get_fdoff(dpaa_intf->fif));
 	}
-	dev->data->rx_queues[queue_idx] = &dpaa_intf->rx_queues[queue_idx];
+	/* checking if push mode only, no error check for now */
+	if (dpaa_push_mode_queue) {
+		dpaa_push_queue_idx++;
+		opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
+		opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK |
+				   QM_FQCTRL_CTXASTASHING |
+				   QM_FQCTRL_PREFERINCACHE;
+		opts.fqd.context_a.stashing.exclusive = 0;
+		opts.fqd.context_a.stashing.annotation_cl =
+						DPAA_IF_RX_ANNOTATION_STASH;
+		opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
+		opts.fqd.context_a.stashing.context_cl =
+						DPAA_IF_RX_CONTEXT_STASH;
 
+		/*Create a channel and associate given queue with the channel*/
+		qman_alloc_pool_range((u32 *)&rxq->ch_id, 1, 1, 0);
+		opts.we_mask = opts.we_mask | QM_INITFQ_WE_DESTWQ;
+		opts.fqd.dest.channel = rxq->ch_id;
+		opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
+		flags = QMAN_INITFQ_FLAG_SCHED;
+		ret = qman_init_fq(rxq, flags, &opts);
+		if (ret)
+			DPAA_PMD_ERR("Channel/Queue association failed. fqid %d"
+				     " ret: %d", rxq->fqid, ret);
+		rxq->cb.dqrr_dpdk_cb = dpaa_rx_cb;
+		rxq->portal_affined = false;
+		rxq->is_static = true;
+	}
+	dev->data->rx_queues[queue_idx] = rxq;
 	return 0;
 }
 
@@ -824,6 +858,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
+	u32 flags = 0;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -841,11 +876,8 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 			fqid, ret);
 		return ret;
 	}
-
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTA;
-
-	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
+	fq->is_static = false;
+	opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			   QM_FQCTRL_PREFERINCACHE;
 	opts.fqd.context_a.stashing.exclusive = 0;
@@ -853,12 +885,15 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 
-	/*Enable tail drop */
+	/* enable tail drop */
 	opts.we_mask = opts.we_mask | QM_INITFQ_WE_TDTHRESH;
 	opts.fqd.fq_ctrl = opts.fqd.fq_ctrl | QM_FQCTRL_TDE;
-	qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
+	ret = qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
+	if (ret)
+		DPAA_PMD_ERR("taildrop on rx fqid %d failed with ret: %d",
+			     fqid, ret);
 
-	ret = qman_init_fq(fq, 0, &opts);
+	ret = qman_init_fq(fq, flags, &opts);
 	if (ret)
 		DPAA_PMD_ERR("init rx fqid %d failed with ret: %d", fqid, ret);
 	return ret;
@@ -972,6 +1007,11 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
 	}
 
+	/* if push mode queues to be enabled. Currenly we are allowing only
+	 * one queue per thread.
+	 */
+	if (getenv("DPAA_PUSH_QUEUES"))
+		dpaa_push_mode_queue = true;
 
 	/* Each device can not have more than DPAA_PCD_FQID_MULTIPLIER RX
 	 * queues.
