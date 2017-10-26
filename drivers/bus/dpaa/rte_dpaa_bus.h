@@ -106,7 +106,6 @@ struct dpaa_portal {
 	uint64_t tid;/**< Parent Thread id for this portal */
 };
 
-/* TODO - this is costly, need to write a fast coversion routine */
 static inline void *rte_dpaa_mem_ptov(phys_addr_t paddr)
 {
 	const struct rte_memseg *memseg = rte_eal_get_physmem_layout();
