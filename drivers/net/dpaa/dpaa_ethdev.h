@@ -68,9 +68,9 @@
 #define DPAA_MAX_RX_PKT_LEN  10240
 
 /* RX queue tail drop threshold
- * currently considering 32 KB packets.
+ * currently considering 64 KB packets.
  */
-#define CONG_THRESHOLD_RX_Q  (32 * 1024)
+#define CONG_THRESHOLD_RX_Q  (64 * 1024)
 
 /*max mac filter for memac(8) including primary mac addr*/
 #define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
