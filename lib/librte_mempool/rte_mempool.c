@@ -379,7 +379,7 @@ rte_mempool_populate_phys(struct rte_mempool *mp, char *vaddr,
 	memhdr->free_cb = free_cb;
 	memhdr->opaque = opaque;
 
-	if (mp->flags & MEMPOOL_F_POOL_BLK_SZ_ALIGNED) {
+	if (mp->flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS) {
 		delta = (uintptr_t)vaddr % total_elt_sz;
 		off = total_elt_sz - delta;
 		/* Validate alignment */
@@ -553,7 +553,7 @@ rte_mempool_populate_default(struct rte_mempool *mp)
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 	for (mz_id = 0, n = mp->size; n > 0; mz_id++, n -= ret) {
-		if (mp->flags & MEMPOOL_F_POOL_BLK_SZ_ALIGNED)
+		if (mp->flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS)
 			size = rte_mempool_xmem_size(n + 1, total_elt_sz,
 							pg_shift);
 		else

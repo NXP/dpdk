@@ -232,7 +232,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 
 #ifdef RTE_LIBRTE_DPAA_MEMPOOL
 	if ((svr_ver & SVR_MASK) == SVR_LS1043A_FAMILY)
-		mp->flags |= MEMPOOL_F_POOL_BLK_SZ_ALIGNED;
+		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS;
 #endif
 	/*Check the perfered mempool ops based on config*/
 	for (op = &ops[0]; *op != NULL; op++) {
