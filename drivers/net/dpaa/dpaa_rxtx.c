@@ -388,7 +388,6 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(const struct qm_fd *fd,
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	/* Prefetch the Parse results and packet data to L1 */
 	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
-	rte_prefetch0((void *)((uint8_t *)ptr + offset));
 
 	mbuf->data_off = offset;
 	mbuf->data_len = length;
@@ -420,7 +419,7 @@ dpaa_rx_cb_mbuf_set(struct qman_fq *fq,
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
-	rte_prefetch0((void *)((uint8_t *)ptr + offset));
+
 	mbuf->data_off = offset;
 	mbuf->data_len = length;
 	mbuf->pkt_len = length;
