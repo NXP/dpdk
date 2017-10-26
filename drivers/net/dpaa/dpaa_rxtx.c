@@ -413,7 +413,7 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
 	int ret;
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_PMD_ERR("Failure in affining portal");
 		return 0;
@@ -704,7 +704,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint16_t state;
 	int ret;
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_PMD_ERR("Failure in affining portal");
 		return 0;

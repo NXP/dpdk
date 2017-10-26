@@ -149,7 +149,7 @@ void rte_dpaa_driver_unregister(struct rte_dpaa_driver *driver);
  * @return
  *	0 in case of success, error otherwise
  */
-int rte_dpaa_portal_init(void *arg);
+int rte_dpaa_portal_init(void *arg, struct qman_fq *fq);
 
 /**
  * Cleanup a DPAA Portal

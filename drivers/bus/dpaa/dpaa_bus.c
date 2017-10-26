@@ -339,7 +339,7 @@ _dpaa_portal_init(void *arg)
  * XXX Complete this
  */
 int
-rte_dpaa_portal_init(void *arg)
+rte_dpaa_portal_init(void *arg, struct qman_fq *fq __rte_unused)
 {
 	if (unlikely(!RTE_PER_LCORE(_dpaa_io)))
 		return _dpaa_portal_init(arg);

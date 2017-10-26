@@ -165,7 +165,7 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	DPAA_MEMPOOL_DPDEBUG("Request to free %d buffers in bpid = %d",
 			     n, bp_info->bpid);
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
 				 ret);
@@ -208,7 +208,7 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		return -1;
 	}
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
 				 ret);
