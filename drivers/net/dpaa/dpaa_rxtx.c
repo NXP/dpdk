@@ -412,7 +412,7 @@ dpaa_rx_cb_mbuf_set(struct qman_fq *fq,
 	struct rte_mbuf *mbuf;
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(dqrr->fd.bpid);
 	const struct qm_fd *fd = &dqrr->fd;
-	void *ptr = rte_dpaa_mem_ptov(fd->addr);
+	void *ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	uint16_t offset =
 		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
