@@ -278,6 +278,11 @@ struct rte_mempool {
  */
 #define MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS 0x0080
 
+/* Indicates that the mempool buffers are allocated from multiple memzones
+ * the buffer may or may not be physically contiguous.
+ */
+#define MEMPOOL_F_MULTI_MEMZONE 0x0100
+
 /**
  * @internal When debug is enabled, store some statistics.
  *

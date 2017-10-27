@@ -368,6 +368,11 @@ rte_mempool_populate_phys(struct rte_mempool *mp, char *vaddr,
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
+	/* Detect pool area has sufficient space for elements */
+	/* otherwise the buffers will be allocated from multiple memzones */
+	if (len < total_elt_sz * mp->size)
+		mp->flags |= MEMPOOL_F_MULTI_MEMZONE;
+
 	memhdr = rte_zmalloc("MEMPOOL_MEMHDR", sizeof(*memhdr), 0);
 	if (memhdr == NULL)
 		return -ENOMEM;
