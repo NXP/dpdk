@@ -62,7 +62,16 @@ struct dpaa_bp_info {
 	uint32_t size;
 	uint32_t meta_data_size;
 	int32_t dpaa_ops_index;
+	int64_t ptov_off;
 };
+
+static inline void *
+DPAA_MEMPOOL_PTOV(struct dpaa_bp_info *bp_info, uint64_t addr)
+{
+	if (bp_info->ptov_off)
+		return ((void *)(addr + bp_info->ptov_off));
+	return rte_dpaa_mem_ptov(addr);
+}
 
 #define DPAA_MEMPOOL_TO_POOL_INFO(__mp) \
 	((struct dpaa_bp_info *)__mp->pool_data)

@@ -314,7 +314,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 
 	DPAA_DP_LOG(DEBUG, "Received an SG frame");
 
-	vaddr = rte_dpaa_mem_ptov(qm_fd_addr(fd));
+	vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	if (!vaddr) {
 		DPAA_PMD_ERR("unable to convert physical address");
 		return NULL;
@@ -323,7 +323,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	sg_temp = &sgt[i++];
 	hw_sg_to_cpu(sg_temp);
 	temp = (struct rte_mbuf *)((char *)vaddr - bp_info->meta_data_size);
-	sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+	sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_sg_entry_get64(sg_temp));
 
 	first_seg = (struct rte_mbuf *)((char *)sg_vaddr -
 						bp_info->meta_data_size);
@@ -339,7 +339,8 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	while (i < DPAA_SGT_MAX_ENTRIES) {
 		sg_temp = &sgt[i++];
 		hw_sg_to_cpu(sg_temp);
-		sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+		sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
+					     qm_sg_entry_get64(sg_temp));
 		cur_seg = (struct rte_mbuf *)((char *)sg_vaddr -
 						      bp_info->meta_data_size);
 		cur_seg->data_off = sg_temp->offset;
@@ -380,7 +381,7 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(const struct qm_fd *fd,
 
 	/* Ignoring case when format != qm_fd_contig */
 	dpaa_display_frame(fd);
-	ptr = rte_dpaa_mem_ptov(fd->addr);
+	ptr = DPAA_MEMPOOL_PTOV(bp_info, fd->addr);
 	/* Ignoring case when ptr would be NULL. That is only possible incase
 	 * of a corrupted packet
 	 */
@@ -411,7 +412,7 @@ dpaa_rx_cb_mbuf_set(struct qman_fq *fq,
 	struct rte_mbuf *mbuf;
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(dqrr->fd.bpid);
 	const struct qm_fd *fd = &dqrr->fd;
-	void *ptr = rte_dpaa_mem_ptov(fd->addr);
+	void *ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	uint16_t offset =
 		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
@@ -506,7 +507,8 @@ static void *dpaa_get_pktbuf(struct dpaa_bp_info *bp_info)
 	DPAA_DP_LOG(DEBUG, "got buffer 0x%lx from pool %d",
 		    (uint64_t)bufs.addr, bufs.bpid);
 
-	buf = (uint64_t)rte_dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
+	buf = (uint64_t)DPAA_MEMPOOL_PTOV(bp_info, bufs.addr)
+				- bp_info->meta_data_size;
 	if (!buf)
 		goto out;
 
