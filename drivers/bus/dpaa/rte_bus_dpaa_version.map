@@ -44,6 +44,7 @@ DPDK_17.05 {
 	of_get_property;
 	platform_svr;
 	qm_channel_caam;
+	qman_alloc_pool_range;
 	qman_create_fq;
 	qman_dequeue;
 	qman_dqrr_consume;
