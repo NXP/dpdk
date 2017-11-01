@@ -51,6 +51,7 @@
 #include <dpaa2_hw_dpio.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
+#include <fsl_qbman_debug.h>
 
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
@@ -478,10 +479,17 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
 		struct dpni_taildrop taildrop;
+		uint32_t threshold = 0;
+
+		if (getenv("DPAA2_RX_TAILDROP_SIZE"))
+			threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
+
+		if (!threshold)
+			threshold = CONG_THRESHOLD_RX_Q;
 
 		taildrop.enable = 1;
 		/*enabling per rx queue congestion control */
-		taildrop.threshold = CONG_THRESHOLD_RX_Q;
+		taildrop.threshold = threshold;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
@@ -598,6 +606,37 @@ static void
 dpaa2_dev_tx_queue_release(void *q __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
+}
+
+static uint32_t
+dpaa2_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
+{
+	int32_t ret;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct dpaa2_queue *dpaa2_q;
+	struct qbman_swp *swp;
+	struct qbman_fq_query_np_rslt state;
+	uint32_t frame_cnt = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
+			return -EINVAL;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[rx_queue_id];
+
+	if (qbman_fq_query_state(swp, dpaa2_q->fqid, &state) == 0) {
+		frame_cnt = qbman_fq_state_frame_count(&state);
+		RTE_LOG(DEBUG, PMD, "RX frame count for q(%d) is %u\n",
+			rx_queue_id, frame_cnt);
+	}
+	return frame_cnt;
 }
 
 static const uint32_t *
@@ -752,6 +791,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
+
+	/* if packet with parse error are not to be dropped */
+	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+		err_cfg.errors |= DPNI_ERROR_PHE;
 
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	err_cfg.set_frame_annotation = true;
@@ -1672,6 +1715,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.rx_queue_release  = dpaa2_dev_rx_queue_release,
 	.tx_queue_setup    = dpaa2_dev_tx_queue_setup,
 	.tx_queue_release  = dpaa2_dev_tx_queue_release,
+	.rx_queue_count       = dpaa2_dev_rx_queue_count,
 	.flow_ctrl_get	      = dpaa2_flow_ctrl_get,
 	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
@@ -1766,6 +1810,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA2_RX_TAILDROP_OFF")) {
 		priv->flags |= DPAA2_RX_TAILDROP_OFF;
 		PMD_INIT_LOG(INFO, "Disabling per queue tail drop on RX");
+	}
+
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		PMD_INIT_LOG(INFO, "Drop parse error packets in hw");
 	}
 
 	/* Allocate memory for hardware structure for queues */

@@ -90,3 +90,11 @@ DPDK_17.11 {
 	rte_dpaa2_dev_type;
 
 } DPDK_17.08;
+
+DPDK_18.02 {
+	global:
+
+	qbman_fq_query_state;
+	qbman_fq_state_frame_count;
+
+} DPDK_17.11;

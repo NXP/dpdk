@@ -305,9 +305,9 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	 *  As a W.A. environment variable HOST_START_CPU tells which
 	 *  the offset of the host start core of the Virtual Machine threads.
 	 */
-	if (getenv("HOST_START_CPU")) {
+	if (getenv("DPAA2_HOST_START_CPU")) {
 		cpu_id +=
-		atoi(getenv("HOST_START_CPU"));
+		atoi(getenv("DPAA2_HOST_START_CPU"));
 		cpu_id = cpu_id % NUM_HOST_CPUS;
 	}
 
