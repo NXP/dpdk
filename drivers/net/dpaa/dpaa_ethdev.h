@@ -67,10 +67,8 @@
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  10240
 
-/* RX queue tail drop threshold
- * currently considering 64 KB packets.
- */
-#define CONG_THRESHOLD_RX_Q  (64 * 1024)
+/* RX queue tail drop threshold (CGR Based) in frame count */
+#define CGR_RX_PERFQ_THRESH 128
 
 /*max mac filter for memac(8) including primary mac addr*/
 #define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
@@ -132,6 +130,7 @@ struct dpaa_if {
 	char *name;
 	const struct fm_eth_port_cfg *cfg;
 	struct qman_fq *rx_queues;
+	struct qman_cgr *cgr_rx;
 	struct qman_fq *tx_queues;
 	struct qman_fq debug_queues[2];
 	uint16_t nb_rx_queues;

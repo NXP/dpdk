@@ -44,8 +44,11 @@ DPDK_17.05 {
 	of_get_property;
 	platform_svr;
 	qm_channel_caam;
+	qman_alloc_cgrid_range;
 	qman_alloc_pool_range;
+	qman_create_cgr;
 	qman_create_fq;
+	qman_delete_cgr;
 	qman_dequeue;
 	qman_dqrr_consume;
 	qman_enqueue;
@@ -58,6 +61,7 @@ DPDK_17.05 {
 	qman_set_vdq;
 	qman_poll_dqrr;
 	qman_query_fq_np;
+	qman_release_cgrid_range;
 	qman_reserve_fqid_range;
 	qman_volatile_dequeue;
 	rte_dpaa_driver_register;

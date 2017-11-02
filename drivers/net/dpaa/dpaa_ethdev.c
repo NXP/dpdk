@@ -84,6 +84,9 @@ static int dpaa_push_queue_idx; /*Queue index which are in push mode*/
 
 static struct rte_dpaa_driver rte_dpaa_pmd;
 
+/* Per FQ Taildrop in frame count */
+static unsigned int td_threshold = CGR_RX_PERFQ_THRESH;
+
 struct rte_dpaa_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint32_t offset;
@@ -534,6 +537,14 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		opts.fqd.dest.channel = rxq->ch_id;
 		opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
 		flags = QMAN_INITFQ_FLAG_SCHED;
+
+		/* Configure FQ with CGR id  */
+		/* XXX - do we need to reconfigure CGR again with init_fq */
+		if (dpaa_intf->cgr_rx) {
+			opts.we_mask |= QM_INITFQ_WE_CGID;
+			opts.fqd.cgid = dpaa_intf->cgr_rx[queue_idx].cgrid;
+			opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
+		}
 		ret = qman_init_fq(rxq, flags, &opts);
 		if (ret)
 			DPAA_PMD_ERR("Channel/Queue association failed. fqid %d"
@@ -853,12 +864,21 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 }
 
 /* Initialise an Rx FQ */
-static int dpaa_rx_queue_init(struct qman_fq *fq,
+static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 			      uint32_t fqid)
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
 	u32 flags = 0;
+	struct qm_mcc_initcgr cgr_opts = {
+		.we_mask = QM_CGR_WE_CS_THRES |
+				QM_CGR_WE_CSTD_EN |
+				QM_CGR_WE_MODE,
+		.cgr = {
+			.cstd_en = QM_CGR_EN,
+			.mode = QMAN_CGR_MODE_FRAME
+		}
+	};
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -885,14 +905,23 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 
-	/* enable tail drop */
-	opts.we_mask = opts.we_mask | QM_INITFQ_WE_TDTHRESH;
-	opts.fqd.fq_ctrl = opts.fqd.fq_ctrl | QM_FQCTRL_TDE;
-	ret = qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
-	if (ret)
-		DPAA_PMD_ERR("taildrop on rx fqid %d failed with ret: %d",
-			     fqid, ret);
-
+	if (cgr_rx) {
+		/* Enable tail drop with cgr on this queue */
+		qm_cgr_cs_thres_set64(&cgr_opts.cgr.cs_thres, td_threshold, 0);
+		cgr_rx->cb = NULL;
+		ret = qman_create_cgr(cgr_rx, QMAN_CGR_FLAG_USE_INIT,
+				      &cgr_opts);
+		if (ret) {
+			DPAA_PMD_WARN(
+				"rx taildrop init fail on rx fqid %d (ret=%d)",
+				fqid, ret);
+			goto without_cgr;
+		}
+		opts.we_mask |= QM_INITFQ_WE_CGID;
+		opts.fqd.cgid = cgr_rx->cgrid;
+		opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
+	}
+without_cgr:
 	ret = qman_init_fq(fq, flags, &opts);
 	if (ret)
 		DPAA_PMD_ERR("init rx fqid %d failed with ret: %d", fqid, ret);
@@ -975,6 +1004,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	struct fm_eth_port_cfg *cfg;
 	struct fman_if *fman_intf;
 	struct fman_if_bpool *bp, *tmp_bp;
+	uint32_t cgrid[DPAA_MAX_NUM_PCD_QUEUES];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1013,6 +1043,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA_PUSH_QUEUES"))
 		dpaa_push_mode_queue = true;
 
+	if (getenv("DPAA_RX_TAILDROP_SIZE"))
+		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_SIZE"));
+
 	/* Each device can not have more than DPAA_PCD_FQID_MULTIPLIER RX
 	 * queues.
 	 */
@@ -1023,13 +1056,34 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	dpaa_intf->rx_queues = rte_zmalloc(NULL,
 		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
+
+	/* If congestion control is enabled globally*/
+	if (td_threshold) {
+		dpaa_intf->cgr_rx = rte_zmalloc(NULL,
+			sizeof(struct qman_cgr) * num_rx_fqs, MAX_CACHELINE);
+
+		ret = qman_alloc_cgrid_range(&cgrid[0], num_rx_fqs, 1, 0);
+		if (ret != num_rx_fqs) {
+			DPAA_PMD_WARN("insufficient CGRIDs available");
+			return -EINVAL;
+		}
+	} else {
+		dpaa_intf->cgr_rx = NULL;
+	}
+
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		if (default_q)
 			fqid = cfg->rx_def;
 		else
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
 				DPAA_PCD_FQID_MULTIPLIER + loop;
-		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
+
+		if (dpaa_intf->cgr_rx)
+			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
+
+		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop],
+			dpaa_intf->cgr_rx ? &dpaa_intf->cgr_rx[loop] : NULL,
+			fqid);
 		if (ret)
 			return ret;
 		dpaa_intf->rx_queues[loop].dpaa_intf = dpaa_intf;
@@ -1085,6 +1139,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA_PMD_ERR("Failed to allocate %d bytes needed to "
 						"store MAC addresses",
 				ETHER_ADDR_LEN * DPAA_MAX_MAC_FILTER);
+		rte_free(dpaa_intf->cgr_rx);
 		rte_free(dpaa_intf->rx_queues);
 		rte_free(dpaa_intf->tx_queues);
 		dpaa_intf->rx_queues = NULL;
@@ -1123,6 +1178,7 @@ static int
 dpaa_dev_uninit(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	int loop;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1145,6 +1201,18 @@ dpaa_dev_uninit(struct rte_eth_dev *dev)
 	/* release configuration memory */
 	if (dpaa_intf->fc_conf)
 		rte_free(dpaa_intf->fc_conf);
+
+	/* Release RX congestion Groups */
+	if (dpaa_intf->cgr_rx) {
+		for (loop = 0; loop < dpaa_intf->nb_rx_queues; loop++)
+			qman_delete_cgr(&dpaa_intf->cgr_rx[loop]);
+
+		qman_release_cgrid_range(dpaa_intf->cgr_rx[loop].cgrid,
+					 dpaa_intf->nb_rx_queues);
+	}
+
+	rte_free(dpaa_intf->cgr_rx);
+	dpaa_intf->cgr_rx = NULL;
 
 	rte_free(dpaa_intf->rx_queues);
 	dpaa_intf->rx_queues = NULL;
