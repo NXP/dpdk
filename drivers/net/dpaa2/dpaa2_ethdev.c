@@ -53,6 +53,9 @@
 #include "dpaa2_ethdev.h"
 #include <fsl_qbman_debug.h>
 
+/* Per FQ Taildrop config in byte count */
+static uint32_t td_threshold = CONG_THRESHOLD_RX_Q;
+
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint8_t page_id; /* dpni statistics page id */
@@ -477,19 +480,12 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -1;
 	}
 
-	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
+	if (td_threshold) {
 		struct dpni_taildrop taildrop;
-		uint32_t threshold = 0;
-
-		if (getenv("DPAA2_RX_TAILDROP_SIZE"))
-			threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
-
-		if (!threshold)
-			threshold = CONG_THRESHOLD_RX_Q;
 
 		taildrop.enable = 1;
 		/*enabling per rx queue congestion control */
-		taildrop.threshold = threshold;
+		taildrop.threshold = td_threshold;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
@@ -1806,11 +1802,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(INFO, "Disable the tx congestion control support");
 	}
 
-	/* Tail drop to be disabled on queue */
-	if (getenv("DPAA2_RX_TAILDROP_OFF")) {
-		priv->flags |= DPAA2_RX_TAILDROP_OFF;
-		PMD_INIT_LOG(INFO, "Disabling per queue tail drop on RX");
-	}
+	/* Tail drop size, td_threshold = 0 means disable it on queue */
+	if (getenv("DPAA2_RX_TAILDROP_SIZE"))
+		td_threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
+
+	PMD_INIT_LOG(INFO, "RX tail drop is %u bytes", td_threshold);
 
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
