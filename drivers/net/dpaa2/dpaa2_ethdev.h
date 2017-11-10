@@ -71,8 +71,38 @@
  */
 #define DPAA2_TX_CGR_OFF	0x01
 
+/* Drop packets with parsing error in hw */
+#define DPAA2_PARSE_ERR_DROP	0x02
+
 /* Disable RX tail drop, default is enable */
 #define DPAA2_RX_TAILDROP_OFF	0x04
+
+/* LX2 FRC Parsed values (Little Endian) */
+#define DPAA2_PKT_TYPE_ETHER		0x0060
+#define DPAA2_PKT_TYPE_IPV4		0x0000
+#define DPAA2_PKT_TYPE_IPV6		0x0020
+#define DPAA2_PKT_TYPE_IPV4_EXT \
+			(0x0001 | DPAA2_PKT_TYPE_IPV4)
+#define DPAA2_PKT_TYPE_IPV6_EXT \
+			(0x0001 | DPAA2_PKT_TYPE_IPV6)
+#define DPAA2_PKT_TYPE_IPV4_TCP \
+			(0x000e | DPAA2_PKT_TYPE_IPV4)
+#define DPAA2_PKT_TYPE_IPV6_TCP \
+			(0x000e | DPAA2_PKT_TYPE_IPV6)
+#define DPAA2_PKT_TYPE_IPV4_UDP \
+			(0x0010 | DPAA2_PKT_TYPE_IPV4)
+#define DPAA2_PKT_TYPE_IPV6_UDP \
+			(0x0010 | DPAA2_PKT_TYPE_IPV6)
+#define DPAA2_PKT_TYPE_IPV4_SCTP	\
+			(0x000f | DPAA2_PKT_TYPE_IPV4)
+#define DPAA2_PKT_TYPE_IPV6_SCTP	\
+			(0x000f | DPAA2_PKT_TYPE_IPV6)
+#define DPAA2_PKT_TYPE_IPV4_ICMP \
+			(0x0003 | DPAA2_PKT_TYPE_IPV4_EXT)
+#define DPAA2_PKT_TYPE_IPV6_ICMP \
+			(0x0003 | DPAA2_PKT_TYPE_IPV6_EXT)
+#define DPAA2_PKT_TYPE_VLAN_1		0x0160
+#define DPAA2_PKT_TYPE_VLAN_2		0x0260
 
 struct dpaa2_dev_priv {
 	void *hw;

@@ -67,6 +67,7 @@
 #include <dpaa_ethdev.h>
 #include <dpaa_rxtx.h>
 #include <dpaa_flow.h>
+#include <rte_pmd_dpaa.h>
 
 #include <fsl_usd.h>
 #include <fsl_qman.h>
@@ -77,6 +78,48 @@
 static int is_global_init;
 static int fmc_q = 1;	/* Indicates the uses of TOOL tool for distribution */
 static int default_q;	/* use default queue - FMC is not executed*/
+
+static int dpaa_push_mode_queue; /*push mode support*/
+static int dpaa_push_queue_idx; /*Queue index which are in push mode*/
+
+static struct rte_dpaa_driver rte_dpaa_pmd;
+
+/* Per FQ Taildrop in frame count */
+static unsigned int td_threshold = CGR_RX_PERFQ_THRESH;
+
+struct rte_dpaa_xstats_name_off {
+	char name[RTE_ETH_XSTATS_NAME_SIZE];
+	uint32_t offset;
+};
+
+static const struct rte_dpaa_xstats_name_off dpaa_xstats_strings[] = {
+	{"rx_align_err",
+		offsetof(struct dpaa_if_stats, raln)},
+	{"rx_valid_pause",
+		offsetof(struct dpaa_if_stats, rxpf)},
+	{"rx_fcs_err",
+		offsetof(struct dpaa_if_stats, rfcs)},
+	{"rx_vlan_frame",
+		offsetof(struct dpaa_if_stats, rvlan)},
+	{"rx_frame_err",
+		offsetof(struct dpaa_if_stats, rerr)},
+	{"rx_drop_err",
+		offsetof(struct dpaa_if_stats, rdrp)},
+	{"rx_undersized",
+		offsetof(struct dpaa_if_stats, rund)},
+	{"rx_oversize_err",
+		offsetof(struct dpaa_if_stats, rovr)},
+	{"rx_fragment_pkt",
+		offsetof(struct dpaa_if_stats, rfrg)},
+	{"tx_valid_pause",
+		offsetof(struct dpaa_if_stats, txpf)},
+	{"tx_fcs_err",
+		offsetof(struct dpaa_if_stats, terr)},
+	{"tx_vlan_frame",
+		offsetof(struct dpaa_if_stats, tvlan)},
+	{"rx_undersized",
+		offsetof(struct dpaa_if_stats, tund)},
+};
 
 static int
 dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
@@ -154,6 +197,9 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (!(default_q || fmc_q))
+		dpaa_write_fm_config_to_file();
+
 	/* Change tx callback to the real one */
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
 	fman_if_enable_rx(dpaa_intf->fif);
@@ -189,7 +235,7 @@ dpaa_fw_version_get(struct rte_eth_dev *dev __rte_unused,
 
 	PMD_INIT_FUNC_TRACE();
 
-	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
 	if (!svr_file) {
 		DPAA_PMD_ERR("Unable to open SoC device");
 		return -ENOTSUP; /* Not supported on this infra */
@@ -284,6 +330,110 @@ static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
 	fman_if_stats_reset(dpaa_intf->fif);
 }
 
+static int
+dpaa_dev_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *xstats,
+		    unsigned int n)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	unsigned int i = 0, num = RTE_DIM(dpaa_xstats_strings);
+	uint64_t values[sizeof(struct dpaa_if_stats) / 8];
+
+	if (xstats == NULL)
+		return 0;
+
+	if (n < num)
+		return num;
+
+	fman_if_stats_get_all(dpaa_intf->fif, values,
+			      sizeof(struct dpaa_if_stats) / 8);
+
+	for (i = 0; i < num; i++) {
+		xstats[i].id = i;
+		xstats[i].value = values[dpaa_xstats_strings[i].offset / 8];
+	}
+	return i;
+}
+
+static int
+dpaa_xstats_get_names(__rte_unused struct rte_eth_dev *dev,
+		      struct rte_eth_xstat_name *xstats_names,
+		      __rte_unused unsigned int limit)
+{
+	unsigned int i, stat_cnt = RTE_DIM(dpaa_xstats_strings);
+
+	if (xstats_names != NULL)
+		for (i = 0; i < stat_cnt; i++)
+			snprintf(xstats_names[i].name,
+				 sizeof(xstats_names[i].name),
+				 "%s",
+				 dpaa_xstats_strings[i].name);
+
+	return stat_cnt;
+}
+
+static int
+dpaa_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
+		      uint64_t *values, unsigned int n)
+{
+	unsigned int i, stat_cnt = RTE_DIM(dpaa_xstats_strings);
+	uint64_t values_copy[sizeof(struct dpaa_if_stats) / 8];
+
+	if (!ids) {
+		struct dpaa_if *dpaa_intf = dev->data->dev_private;
+
+		if (n < stat_cnt)
+			return stat_cnt;
+
+		if (!values)
+			return 0;
+
+		fman_if_stats_get_all(dpaa_intf->fif, values_copy,
+				      sizeof(struct dpaa_if_stats));
+
+		for (i = 0; i < stat_cnt; i++)
+			values[i] =
+				values_copy[dpaa_xstats_strings[i].offset / 8];
+
+		return stat_cnt;
+	}
+
+	dpaa_xstats_get_by_id(dev, NULL, values_copy, stat_cnt);
+
+	for (i = 0; i < n; i++) {
+		if (ids[i] >= stat_cnt) {
+			DPAA_PMD_ERR("id value isn't valid");
+			return -1;
+		}
+		values[i] = values_copy[ids[i]];
+	}
+	return n;
+}
+
+static int
+dpaa_xstats_get_names_by_id(
+	struct rte_eth_dev *dev,
+	struct rte_eth_xstat_name *xstats_names,
+	const uint64_t *ids,
+	unsigned int limit)
+{
+	unsigned int i, stat_cnt = RTE_DIM(dpaa_xstats_strings);
+	struct rte_eth_xstat_name xstats_names_copy[stat_cnt];
+
+	if (!ids)
+		return dpaa_xstats_get_names(dev, xstats_names, limit);
+
+	dpaa_xstats_get_names(dev, xstats_names_copy, limit);
+
+	for (i = 0; i < limit; i++) {
+		if (ids[i] >= stat_cnt) {
+			DPAA_PMD_ERR("id value isn't valid");
+			return -1;
+		}
+		strcpy(xstats_names[i].name, xstats_names_copy[ids[i]].name);
+	}
+	return limit;
+}
+
 static void dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
@@ -328,6 +478,10 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    struct rte_mempool *mp)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
+	struct qm_mcc_initfq opts = {0};
+	u32 flags = 0;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -363,8 +517,43 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    dpaa_intf->name, fd_offset,
 			fman_if_get_fdoff(dpaa_intf->fif));
 	}
-	dev->data->rx_queues[queue_idx] = &dpaa_intf->rx_queues[queue_idx];
+	/* checking if push mode only, no error check for now */
+	if (dpaa_push_mode_queue) {
+		dpaa_push_queue_idx++;
+		opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
+		opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK |
+				   QM_FQCTRL_CTXASTASHING |
+				   QM_FQCTRL_PREFERINCACHE;
+		opts.fqd.context_a.stashing.exclusive = 0;
+		opts.fqd.context_a.stashing.annotation_cl =
+						DPAA_IF_RX_ANNOTATION_STASH;
+		opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
+		opts.fqd.context_a.stashing.context_cl =
+						DPAA_IF_RX_CONTEXT_STASH;
 
+		/*Create a channel and associate given queue with the channel*/
+		qman_alloc_pool_range((u32 *)&rxq->ch_id, 1, 1, 0);
+		opts.we_mask = opts.we_mask | QM_INITFQ_WE_DESTWQ;
+		opts.fqd.dest.channel = rxq->ch_id;
+		opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
+		flags = QMAN_INITFQ_FLAG_SCHED;
+
+		/* Configure FQ with CGR id  */
+		/* XXX - do we need to reconfigure CGR again with init_fq */
+		if (dpaa_intf->cgr_rx) {
+			opts.we_mask |= QM_INITFQ_WE_CGID;
+			opts.fqd.cgid = dpaa_intf->cgr_rx[queue_idx].cgrid;
+			opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
+		}
+		ret = qman_init_fq(rxq, flags, &opts);
+		if (ret)
+			DPAA_PMD_ERR("Channel/Queue association failed. fqid %d"
+				     " ret: %d", rxq->fqid, ret);
+		rxq->cb.dqrr_dpdk_cb = dpaa_rx_cb;
+		rxq->portal_affined = false;
+		rxq->is_static = true;
+	}
+	dev->data->rx_queues[queue_idx] = rxq;
 	return 0;
 }
 
@@ -500,8 +689,7 @@ dpaa_dev_add_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
-					      addr->addr_bytes, index);
+	ret = fman_if_add_mac_addr(dpaa_intf->fif, addr->addr_bytes, index);
 
 	if (ret)
 		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed:"
@@ -513,16 +701,11 @@ static void
 dpaa_dev_remove_mac_addr(struct rte_eth_dev *dev,
 			  uint32_t index)
 {
-	int ret;
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_rem_exact_match_mac_addr(dpaa_intf->fif, index);
-
-	if (ret)
-		RTE_LOG(ERR, PMD, "error: Removing the MAC ADDR failed:"
-			" err = %d", ret);
+	fman_if_clear_mac_addr(dpaa_intf->fif, index);
 }
 
 static void
@@ -534,8 +717,7 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = fm_mac_add_exact_match_mac_addr(dpaa_intf->fif,
-					      addr->addr_bytes, 0);
+	ret = fman_if_add_mac_addr(dpaa_intf->fif, addr->addr_bytes, 0);
 	if (ret)
 		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
 }
@@ -593,6 +775,11 @@ static struct eth_dev_ops dpaa_devops = {
 
 	.link_update		  = dpaa_eth_link_update,
 	.stats_get		  = dpaa_eth_stats_get,
+	.xstats_get		  = dpaa_dev_xstats_get,
+	.xstats_get_by_id	  = dpaa_xstats_get_by_id,
+	.xstats_get_names_by_id	  = dpaa_xstats_get_names_by_id,
+	.xstats_get_names	  = dpaa_xstats_get_names,
+	.xstats_reset		  = dpaa_eth_stats_reset,
 	.stats_reset		  = dpaa_eth_stats_reset,
 	.promiscuous_enable	  = dpaa_eth_promiscuous_enable,
 	.promiscuous_disable	  = dpaa_eth_promiscuous_disable,
@@ -609,6 +796,45 @@ static struct eth_dev_ops dpaa_devops = {
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get	  = dpaa_dev_rss_hash_conf_get,
 };
+
+static bool
+is_device_supported(struct rte_eth_dev *dev, struct rte_dpaa_driver *drv)
+{
+	if (strcmp(dev->data->drv_name,
+		   drv->driver.name))
+		return false;
+
+	return true;
+}
+
+static bool
+is_dpaa_supported(struct rte_eth_dev *dev)
+{
+	return is_device_supported(dev, &rte_dpaa_pmd);
+}
+
+int
+rte_pmd_dpaa_set_tx_loopback(uint8_t port, uint8_t on)
+{
+	struct rte_eth_dev *dev;
+	struct dpaa_if *dpaa_intf;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(port, -ENODEV);
+
+	dev = &rte_eth_devices[port];
+
+	if (!is_dpaa_supported(dev))
+		return -ENOTSUP;
+
+	dpaa_intf = dev->data->dev_private;
+
+	if (on)
+		fman_if_loopback_enable(dpaa_intf->fif);
+	else
+		fman_if_loopback_disable(dpaa_intf->fif);
+
+	return 0;
+}
 
 static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 {
@@ -638,11 +864,21 @@ static int dpaa_fc_set_default(struct dpaa_if *dpaa_intf)
 }
 
 /* Initialise an Rx FQ */
-static int dpaa_rx_queue_init(struct qman_fq *fq,
+static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 			      uint32_t fqid)
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
+	u32 flags = 0;
+	struct qm_mcc_initcgr cgr_opts = {
+		.we_mask = QM_CGR_WE_CS_THRES |
+				QM_CGR_WE_CSTD_EN |
+				QM_CGR_WE_MODE,
+		.cgr = {
+			.cstd_en = QM_CGR_EN,
+			.mode = QMAN_CGR_MODE_FRAME
+		}
+	};
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -660,11 +896,8 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 			fqid, ret);
 		return ret;
 	}
-
-	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
-		       QM_INITFQ_WE_CONTEXTA;
-
-	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
+	fq->is_static = false;
+	opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
 	opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			   QM_FQCTRL_PREFERINCACHE;
 	opts.fqd.context_a.stashing.exclusive = 0;
@@ -672,12 +905,24 @@ static int dpaa_rx_queue_init(struct qman_fq *fq,
 	opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
 	opts.fqd.context_a.stashing.context_cl = DPAA_IF_RX_CONTEXT_STASH;
 
-	/*Enable tail drop */
-	opts.we_mask = opts.we_mask | QM_INITFQ_WE_TDTHRESH;
-	opts.fqd.fq_ctrl = opts.fqd.fq_ctrl | QM_FQCTRL_TDE;
-	qm_fqd_taildrop_set(&opts.fqd.td, CONG_THRESHOLD_RX_Q, 1);
-
-	ret = qman_init_fq(fq, 0, &opts);
+	if (cgr_rx) {
+		/* Enable tail drop with cgr on this queue */
+		qm_cgr_cs_thres_set64(&cgr_opts.cgr.cs_thres, td_threshold, 0);
+		cgr_rx->cb = NULL;
+		ret = qman_create_cgr(cgr_rx, QMAN_CGR_FLAG_USE_INIT,
+				      &cgr_opts);
+		if (ret) {
+			DPAA_PMD_WARN(
+				"rx taildrop init fail on rx fqid %d (ret=%d)",
+				fqid, ret);
+			goto without_cgr;
+		}
+		opts.we_mask |= QM_INITFQ_WE_CGID;
+		opts.fqd.cgid = cgr_rx->cgrid;
+		opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
+	}
+without_cgr:
+	ret = qman_init_fq(fq, flags, &opts);
 	if (ret)
 		DPAA_PMD_ERR("init rx fqid %d failed with ret: %d", fqid, ret);
 	return ret;
@@ -725,15 +970,15 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		DPAA_PMD_LOG(ERR, "reserve debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("Reserve debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	DPAA_PMD_LOG(DEBUG, "creating debug fq %p, fqid %d", fq, fqid);
+	DPAA_PMD_DEBUG("Creating debug fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		DPAA_PMD_LOG(ERR, "create debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("create debug fqid %d failed with ret: %d",
 			fqid, ret);
 		return ret;
 	}
@@ -741,7 +986,7 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		DPAA_PMD_LOG(ERR, "init debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("init debug fqid %d failed with ret: %d",
 			    fqid, ret);
 	return ret;
 }
@@ -759,6 +1004,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	struct fm_eth_port_cfg *cfg;
 	struct fman_if *fman_intf;
 	struct fman_if_bpool *bp, *tmp_bp;
+	uint32_t cgrid[DPAA_MAX_NUM_PCD_QUEUES];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -791,6 +1037,14 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
 	}
 
+	/* if push mode queues to be enabled. Currenly we are allowing only
+	 * one queue per thread.
+	 */
+	if (getenv("DPAA_PUSH_QUEUES"))
+		dpaa_push_mode_queue = true;
+
+	if (getenv("DPAA_RX_TAILDROP_SIZE"))
+		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_SIZE"));
 
 	/* Each device can not have more than DPAA_PCD_FQID_MULTIPLIER RX
 	 * queues.
@@ -802,13 +1056,34 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	dpaa_intf->rx_queues = rte_zmalloc(NULL,
 		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
+
+	/* If congestion control is enabled globally*/
+	if (td_threshold) {
+		dpaa_intf->cgr_rx = rte_zmalloc(NULL,
+			sizeof(struct qman_cgr) * num_rx_fqs, MAX_CACHELINE);
+
+		ret = qman_alloc_cgrid_range(&cgrid[0], num_rx_fqs, 1, 0);
+		if (ret != num_rx_fqs) {
+			DPAA_PMD_WARN("insufficient CGRIDs available");
+			return -EINVAL;
+		}
+	} else {
+		dpaa_intf->cgr_rx = NULL;
+	}
+
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		if (default_q)
 			fqid = cfg->rx_def;
 		else
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
 				DPAA_PCD_FQID_MULTIPLIER + loop;
-		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop], fqid);
+
+		if (dpaa_intf->cgr_rx)
+			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
+
+		ret = dpaa_rx_queue_init(&dpaa_intf->rx_queues[loop],
+			dpaa_intf->cgr_rx ? &dpaa_intf->cgr_rx[loop] : NULL,
+			fqid);
 		if (ret)
 			return ret;
 		dpaa_intf->rx_queues[loop].dpaa_intf = dpaa_intf;
@@ -848,11 +1123,12 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* reset bpool list, initialize bpool dynamically */
 	list_for_each_entry_safe(bp, tmp_bp, &cfg->fman_if->bpool_list, node) {
 		list_del(&bp->node);
-		rte_free(bp);
+		free(bp);
 	}
 
 	/* Populate ethdev structure */
 	eth_dev->dev_ops = &dpaa_devops;
+	eth_dev->data->drv_name = rte_dpaa_pmd.driver.name;
 	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
 	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 
@@ -863,13 +1139,18 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA_PMD_ERR("Failed to allocate %d bytes needed to "
 						"store MAC addresses",
 				ETHER_ADDR_LEN * DPAA_MAX_MAC_FILTER);
+		rte_free(dpaa_intf->cgr_rx);
+		rte_free(dpaa_intf->rx_queues);
+		rte_free(dpaa_intf->tx_queues);
+		dpaa_intf->rx_queues = NULL;
+		dpaa_intf->tx_queues = NULL;
+		dpaa_intf->nb_rx_queues = 0;
+		dpaa_intf->nb_tx_queues = 0;
 		return -ENOMEM;
 	}
 
 	/* copy the primary mac address */
-	memcpy(eth_dev->data->mac_addrs[0].addr_bytes,
-		fman_intf->mac_addr.addr_bytes,
-		ETHER_ADDR_LEN);
+	ether_addr_copy(&fman_intf->mac_addr, &eth_dev->data->mac_addrs[0]);
 
 	RTE_LOG(INFO, PMD, "net: dpaa: %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
 		dpaa_device->name,
@@ -897,6 +1178,7 @@ static int
 dpaa_dev_uninit(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	int loop;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -919,6 +1201,18 @@ dpaa_dev_uninit(struct rte_eth_dev *dev)
 	/* release configuration memory */
 	if (dpaa_intf->fc_conf)
 		rte_free(dpaa_intf->fc_conf);
+
+	/* Release RX congestion Groups */
+	if (dpaa_intf->cgr_rx) {
+		for (loop = 0; loop < dpaa_intf->nb_rx_queues; loop++)
+			qman_delete_cgr(&dpaa_intf->cgr_rx[loop]);
+
+		qman_release_cgrid_range(dpaa_intf->cgr_rx[loop].cgrid,
+					 dpaa_intf->nb_rx_queues);
+	}
+
+	rte_free(dpaa_intf->cgr_rx);
+	dpaa_intf->cgr_rx = NULL;
 
 	rte_free(dpaa_intf->rx_queues);
 	dpaa_intf->rx_queues = NULL;
@@ -989,7 +1283,7 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 		is_global_init = 1;
 	}
 
-	ret = rte_dpaa_portal_init((void *)1);
+	ret = rte_dpaa_portal_init((void *)1, NULL);
 	if (ret) {
 		DPAA_PMD_ERR("Unable to initialize portal");
 		return ret;

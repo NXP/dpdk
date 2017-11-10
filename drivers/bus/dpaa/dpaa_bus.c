@@ -88,14 +88,14 @@ compare_dpaa_devices(struct rte_dpaa_device *dev1,
 	int comp = 0;
 
 	/* Segragating ETH from SEC devices */
-	if (dev1->id.device_type > dev2->id.device_type)
+	if (dev1->device_type > dev2->device_type)
 		comp = 1;
-	else if (dev1->id.device_type < dev2->id.device_type)
+	else if (dev1->device_type < dev2->device_type)
 		comp = -1;
 	else
 		comp = 0;
 
-	if ((comp != 0) || (dev1->id.device_type != FSL_DPAA_ETH))
+	if ((comp != 0) || (dev1->device_type != FSL_DPAA_ETH))
 		return comp;
 
 	if (dev1->id.fman_id > dev2->id.fman_id) {
@@ -169,8 +169,7 @@ dpaa_create_device_list(void)
 
 	/* Creating Ethernet Devices */
 	for (i = 0; i < dpaa_netcfg->num_ethports; i++) {
-		dev = rte_zmalloc(NULL, sizeof(struct rte_dpaa_device),
-				  RTE_CACHE_LINE_SIZE);
+		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
 			DPAA_BUS_LOG(ERR, "Failed to allocate ETH devices");
 			ret = -ENOMEM;
@@ -183,7 +182,7 @@ dpaa_create_device_list(void)
 		/* Device identifiers */
 		dev->id.fman_id = fman_intf->fman_idx + 1;
 		dev->id.mac_id = fman_intf->mac_idx;
-		dev->id.device_type = FSL_DPAA_ETH;
+		dev->device_type = FSL_DPAA_ETH;
 		dev->id.dev_id = i;
 
 		/* Create device name */
@@ -219,7 +218,7 @@ dpaa_create_device_list(void)
 			goto cleanup;
 		}
 
-		dev->id.device_type = FSL_DPAA_CRYPTO;
+		dev->device_type = FSL_DPAA_CRYPTO;
 		dev->id.dev_id = rte_dpaa_bus.device_count + i;
 
 		/* Even though RTE_CRYPTODEV_NAME_MAX_LEN is valid length of
@@ -250,7 +249,7 @@ dpaa_clean_device_list(void)
 
 	TAILQ_FOREACH_SAFE(dev, &rte_dpaa_bus.device_list, next, tdev) {
 		TAILQ_REMOVE(&rte_dpaa_bus.device_list, dev, next);
-		rte_free(dev);
+		free(dev);
 		dev = NULL;
 	}
 }
@@ -335,15 +334,29 @@ _dpaa_portal_init(void *arg)
 	return 0;
 }
 
+static void
+dpaa_thread_poll_add(struct qman_fq *fq)
+{
+	uint32_t sdqcr;
+
+	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(fq->ch_id);
+	qman_static_dequeue_add(sdqcr);
+	fq->portal_affined = true;
+}
+
 /*
  * rte_dpaa_portal_init - Wrapper over _dpaa_portal_init with thread level check
  * XXX Complete this
  */
 int
-rte_dpaa_portal_init(void *arg)
+rte_dpaa_portal_init(void *arg, struct qman_fq *fq)
 {
 	if (unlikely(!RTE_PER_LCORE(_dpaa_io)))
 		return _dpaa_portal_init(arg);
+
+	/* Affine above created portal with channel*/
+	if (unlikely(fq && (fq->portal_affined == false)))
+		dpaa_thread_poll_add(fq);
 
 	return 0;
 }
@@ -479,7 +492,7 @@ rte_dpaa_device_match(struct rte_dpaa_driver *drv,
 		return ret;
 	}
 
-	if (drv->drv_type == dev->id.device_type) {
+	if (drv->drv_type == dev->device_type) {
 		DPAA_BUS_INFO("Device: %s matches for driver: %s",
 			      dev->name, drv->driver.name);
 		ret = 0; /* Found a match */

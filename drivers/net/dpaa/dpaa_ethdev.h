@@ -45,6 +45,11 @@
 #include <of.h>
 #include <netcfg.h>
 
+/* DPAA SoC identifier; If this is not available, it can be concluded
+ * that board is non-DPAA. Single slot is currently supported.
+ */
+#define DPAA_SOC_ID_FILE		"sys/devices/soc0/soc_id"
+
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
@@ -62,10 +67,8 @@
 #define DPAA_MIN_RX_BUF_SIZE 512
 #define DPAA_MAX_RX_PKT_LEN  10240
 
-/* RX queue tail drop threshold
- * currently considering 32 KB packets.
- */
-#define CONG_THRESHOLD_RX_Q  (32 * 1024)
+/* RX queue tail drop threshold (CGR Based) in frame count */
+#define CGR_RX_PERFQ_THRESH 128
 
 /*max mac filter for memac(8) including primary mac addr*/
 #define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
@@ -80,7 +83,7 @@
 #define DPAA_MAX_NUM_PCD_QUEUES		32
 
 #define DPAA_IF_TX_PRIORITY		3
-#define DPAA_IF_RX_PRIORITY		4
+#define DPAA_IF_RX_PRIORITY		0
 #define DPAA_IF_DEBUG_PRIORITY		7
 
 #define DPAA_IF_RX_ANNOTATION_STASH	1
@@ -121,15 +124,13 @@
 #define DPAA_FD_CMD_CFQ			0x00ffffff
 /**< Confirmation Frame Queue */
 
-/* Configuration variables exported from DPAA bus */
-extern struct netcfg_info *dpaa_netcfg;
-
 /* Each network interface is represented by one of these */
 struct dpaa_if {
 	int valid;
 	char *name;
 	const struct fm_eth_port_cfg *cfg;
 	struct qman_fq *rx_queues;
+	struct qman_cgr *cgr_rx;
 	struct qman_fq *tx_queues;
 	struct qman_fq debug_queues[2];
 	uint16_t nb_rx_queues;
@@ -142,6 +143,46 @@ struct dpaa_if {
 	void *netenv_handle;
 	void *scheme_handle;
 	uint32_t scheme_count;
+};
+
+struct dpaa_if_stats {
+	/* Rx Statistics Counter */
+	uint64_t reoct;		/**<Rx Eth Octets Counter */
+	uint64_t roct;		/**<Rx Octet Counters */
+	uint64_t raln;		/**<Rx Alignment Error Counter */
+	uint64_t rxpf;		/**<Rx valid Pause Frame */
+	uint64_t rfrm;		/**<Rx Frame counter */
+	uint64_t rfcs;		/**<Rx frame check seq error */
+	uint64_t rvlan;		/**<Rx Vlan Frame Counter */
+	uint64_t rerr;		/**<Rx Frame error */
+	uint64_t ruca;		/**<Rx Unicast */
+	uint64_t rmca;		/**<Rx Multicast */
+	uint64_t rbca;		/**<Rx Broadcast */
+	uint64_t rdrp;		/**<Rx Dropped Packet */
+	uint64_t rpkt;		/**<Rx packet */
+	uint64_t rund;		/**<Rx undersized packets */
+	uint32_t res_x[14];
+	uint64_t rovr;		/**<Rx oversized but good */
+	uint64_t rjbr;		/**<Rx oversized with bad csum */
+	uint64_t rfrg;		/**<Rx fragment Packet */
+	uint64_t rcnp;		/**<Rx control packets (0x8808 */
+	uint64_t rdrntp;	/**<Rx dropped due to FIFO overflow */
+	uint32_t res01d0[12];
+	/* Tx Statistics Counter */
+	uint64_t teoct;		/**<Tx eth octets */
+	uint64_t toct;		/**<Tx Octets */
+	uint32_t res0210[2];
+	uint64_t txpf;		/**<Tx valid pause frame */
+	uint64_t tfrm;		/**<Tx frame counter */
+	uint64_t tfcs;		/**<Tx FCS error */
+	uint64_t tvlan;		/**<Tx Vlan Frame */
+	uint64_t terr;		/**<Tx frame error */
+	uint64_t tuca;		/**<Tx Unicast */
+	uint64_t tmca;		/**<Tx Multicast */
+	uint64_t tbca;		/**<Tx Broadcast */
+	uint32_t res0258[2];
+	uint64_t tpkt;		/**<Tx Packet */
+	uint64_t tund;		/**<Tx Undersized */
 };
 
 #endif

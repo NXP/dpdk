@@ -51,6 +51,10 @@
 #include <dpaa2_hw_dpio.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
+#include <fsl_qbman_debug.h>
+
+/* Per FQ Taildrop config in byte count */
+static uint32_t td_threshold = CONG_THRESHOLD_RX_Q;
 
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
@@ -334,8 +338,10 @@ fail:
 static int
 dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 {
-	struct rte_eth_dev_data *data = dev->data;
-	struct rte_eth_conf *eth_conf = &data->dev_conf;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = priv->hw;
+	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
+	int rx_ip_csum_offload = false;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -364,6 +370,44 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		}
 	}
 
+	if (eth_conf->rxmode.hw_ip_checksum)
+		rx_ip_csum_offload = true;
+
+	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
+			       DPNI_OFF_RX_L3_CSUM, rx_ip_csum_offload);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Error to set RX l3 csum:Error = %d\n", ret);
+		return ret;
+	}
+
+	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
+			       DPNI_OFF_RX_L4_CSUM, rx_ip_csum_offload);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Error to get RX l4 csum:Error = %d\n", ret);
+		return ret;
+	}
+
+	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
+			       DPNI_OFF_TX_L3_CSUM, true);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Error to set TX l3 csum:Error = %d\n", ret);
+		return ret;
+	}
+
+	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
+			       DPNI_OFF_TX_L4_CSUM, true);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Error to get TX l4 csum:Error = %d\n", ret);
+		return ret;
+	}
+
+	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
+			       DPNI_FLCTYPE_HASH, true);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Error to get TX l4 csum:Error = %d\n", ret);
+		return ret;
+	}
+
 	/* update the current status */
 	dpaa2_dev_link_update(dev, 0);
 
@@ -383,7 +427,6 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	struct mc_soc_version mc_plat_info = {0};
 	struct dpaa2_queue *dpaa2_q;
 	struct dpni_queue cfg;
 	uint8_t options = 0;
@@ -415,18 +458,20 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	/*if ls2088 or rev2 device, enable the stashing */
 
-	if (mc_get_soc_version(dpni, CMD_PRI_LOW, &mc_plat_info))
-		PMD_INIT_LOG(ERR, "\tmc_get_soc_version failed\n");
-
-	if ((mc_plat_info.svr & 0xffff0000) != SVR_LS2080A) {
+	if ((platform_svr & 0xffff0000) != SVR_LS2080A) {
 		options |= DPNI_QUEUE_OPT_FLC;
 		cfg.flc.stash_control = true;
 		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
 		/* 00 00 00 - last 6 bit represent annotation, context stashing,
-		 * data stashing setting 01 01 00 (0x14) to enable
-		 * 1 line data, 1 line annotation
+		 * data stashing setting 01 01 00 (0x14)
+		 * (in following order ->DS AS CS)
+		 * to enable 1 line data, 1 line annotation.
+		 * For LX2, this setting should be 01 00 00 (0x10)
 		 */
-		cfg.flc.value |= 0x14;
+		if ((platform_svr & 0xffff0000) == SVR_LX2160A)
+			cfg.flc.value |= 0x10;
+		else
+			cfg.flc.value |= 0x14;
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);
@@ -435,12 +480,12 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -1;
 	}
 
-	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
+	if (td_threshold) {
 		struct dpni_taildrop taildrop;
 
 		taildrop.enable = 1;
 		/*enabling per rx queue congestion control */
-		taildrop.threshold = CONG_THRESHOLD_RX_Q;
+		taildrop.threshold = td_threshold;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
@@ -557,6 +602,37 @@ static void
 dpaa2_dev_tx_queue_release(void *q __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
+}
+
+static uint32_t
+dpaa2_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
+{
+	int32_t ret;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct dpaa2_queue *dpaa2_q;
+	struct qbman_swp *swp;
+	struct qbman_fq_query_np_rslt state;
+	uint32_t frame_cnt = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			RTE_LOG(ERR, PMD, "Failure in affining portal\n");
+			return -EINVAL;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[rx_queue_id];
+
+	if (qbman_fq_query_state(swp, dpaa2_q->fqid, &state) == 0) {
+		frame_cnt = qbman_fq_state_frame_count(&state);
+		RTE_LOG(DEBUG, PMD, "RX frame count for q(%d) is %u\n",
+			rx_queue_id, frame_cnt);
+	}
+	return frame_cnt;
 }
 
 static const uint32_t *
@@ -709,40 +785,15 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_q->fqid = qid.fqid;
 	}
 
-	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_RX_L3_CSUM, true);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Error to set RX l3 csum:Error = %d\n", ret);
-		return ret;
-	}
-
-	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_RX_L4_CSUM, true);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Error to get RX l4 csum:Error = %d\n", ret);
-		return ret;
-	}
-
-	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_TX_L3_CSUM, true);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Error to set TX l3 csum:Error = %d\n", ret);
-		return ret;
-	}
-
-	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
-			       DPNI_OFF_TX_L4_CSUM, true);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Error to get TX l4 csum:Error = %d\n", ret);
-		return ret;
-	}
-
 	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
+	/* if packet with parse error are not to be dropped */
+	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+		err_cfg.errors |= DPNI_ERROR_PHE;
+
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	err_cfg.set_frame_annotation = true;
-
 	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW,
 				       priv->token, &err_cfg);
 	if (ret) {
@@ -1660,6 +1711,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.rx_queue_release  = dpaa2_dev_rx_queue_release,
 	.tx_queue_setup    = dpaa2_dev_tx_queue_setup,
 	.tx_queue_release  = dpaa2_dev_tx_queue_release,
+	.rx_queue_count       = dpaa2_dev_rx_queue_count,
 	.flow_ctrl_get	      = dpaa2_flow_ctrl_get,
 	.flow_ctrl_set	      = dpaa2_flow_ctrl_set,
 	.mac_addr_add         = dpaa2_dev_add_mac_addr,
@@ -1750,10 +1802,16 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		PMD_INIT_LOG(INFO, "Disable the tx congestion control support");
 	}
 
-	/* Tail drop to be disabled on queue */
-	if (getenv("DPAA2_RX_TAILDROP_OFF")) {
-		priv->flags |= DPAA2_RX_TAILDROP_OFF;
-		PMD_INIT_LOG(INFO, "Disabling per queue tail drop on RX");
+	/* Tail drop size, td_threshold = 0 means disable it on queue */
+	if (getenv("DPAA2_RX_TAILDROP_SIZE"))
+		td_threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
+
+	PMD_INIT_LOG(INFO, "RX tail drop is %u bytes", td_threshold);
+
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		PMD_INIT_LOG(INFO, "Drop parse error packets in hw");
 	}
 
 	/* Allocate memory for hardware structure for queues */

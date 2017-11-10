@@ -53,6 +53,9 @@ struct rte_dpaa_driver;
 TAILQ_HEAD(rte_dpaa_device_list, rte_dpaa_device);
 TAILQ_HEAD(rte_dpaa_driver_list, rte_dpaa_driver);
 
+/* Configuration variables exported from DPAA bus */
+extern struct netcfg_info *dpaa_netcfg;
+
 enum rte_dpaa_type {
 	FSL_DPAA_ETH = 1,
 	FSL_DPAA_CRYPTO,
@@ -69,16 +72,18 @@ struct dpaa_device_id {
 	uint8_t fman_id; /**< Fman interface ID, for ETH type device */
 	uint8_t mac_id; /**< Fman MAC interface ID, for ETH type device */
 	uint16_t dev_id; /**< Device Identifier from DPDK */
-	enum rte_dpaa_type device_type; /**< Ethernet or crypto type device */
 };
 
 struct rte_dpaa_device {
 	TAILQ_ENTRY(rte_dpaa_device) next;
 	struct rte_device device;
-	struct rte_eth_dev *eth_dev;
-	struct rte_cryptodev *crypto_dev;
+	union {
+		struct rte_eth_dev *eth_dev;
+		struct rte_cryptodev *crypto_dev;
+	};
 	struct rte_dpaa_driver *driver;
 	struct dpaa_device_id id;
+	enum rte_dpaa_type device_type; /**< Ethernet or crypto type device */
 	char name[RTE_ETH_NAME_MAX_LEN];
 };
 
@@ -101,7 +106,6 @@ struct dpaa_portal {
 	uint64_t tid;/**< Parent Thread id for this portal */
 };
 
-/* TODO - this is costly, need to write a fast coversion routine */
 static inline void *rte_dpaa_mem_ptov(phys_addr_t paddr)
 {
 	const struct rte_memseg *memseg = rte_eal_get_physmem_layout();
@@ -144,7 +148,7 @@ void rte_dpaa_driver_unregister(struct rte_dpaa_driver *driver);
  * @return
  *	0 in case of success, error otherwise
  */
-int rte_dpaa_portal_init(void *arg);
+int rte_dpaa_portal_init(void *arg, struct qman_fq *fq);
 
 /**
  * Cleanup a DPAA Portal

@@ -116,11 +116,7 @@
 #define pr_debug(fmt, args...) {}
 #endif
 
-#define ASSERT(x) do {\
-	if (!(x)) \
-		rte_panic("DPAA: x"); \
-} while (0)
-#define DPAA_BUG_ON(x) ASSERT(!(x))
+#define DPAA_BUG_ON(x) RTE_ASSERT(x)
 
 /* Required types */
 typedef uint8_t		u8;

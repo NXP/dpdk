@@ -1,4 +1,7 @@
 DPDK_17.05 {
+	global:
+
+	rte_pmd_dpaa_set_tx_loopback;
 
 	local: *;
 };

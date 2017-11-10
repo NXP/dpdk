@@ -40,6 +40,8 @@
 
 #include <fm_port_ext.h>
 
+#define DPAA_MAX_NUM_ETH_DEV	8
+
 #define SCH_EXT_ARR(scheme_params, hdr_idx) \
 	scheme_params->key_extract_and_hash_params.extract_array[hdr_idx]
 
@@ -55,7 +57,95 @@ struct dpaa_fm_info {
 	t_Handle pcd_handle;
 };
 
+/*FM model to read and write from file */
+struct dpaa_fm_model {
+	uint32_t dev_count;
+	t_FmPortParams fm_port_params[DPAA_MAX_NUM_ETH_DEV];
+	t_Handle scheme_devid[DPAA_MAX_NUM_ETH_DEV];
+	t_Handle netenv_devid[DPAA_MAX_NUM_ETH_DEV];
+};
+
 struct dpaa_fm_info fm_info;
+struct dpaa_fm_model fm_model;
+const char *fm_log = "/tmp/fm.bin";
+
+static void fm_prev_cleanup(void)
+{
+	uint32_t fman_id = 0, i = 0;
+	struct dpaa_if dpaa_intf;
+	t_FmPcdParams fmPcdParams = {0};
+
+	fm_info.fman_handle = FM_Open(fman_id);
+	if (!fm_info.fman_handle)
+		return;
+
+	fmPcdParams.h_Fm = fm_info.fman_handle;
+	fmPcdParams.prsSupport = true;
+	fmPcdParams.kgSupport = true;
+	/* FM PCD Open */
+	fm_info.pcd_handle = FM_PCD_Open(&fmPcdParams);
+	if (!fm_info.pcd_handle)
+		return;
+
+	while (i < fm_model.dev_count) {
+		/* FM Port Open */
+		fm_model.fm_port_params[i].h_Fm = fm_info.fman_handle;
+		dpaa_intf.port_handle =
+				FM_PORT_Open(&fm_model.fm_port_params[i]);
+
+		dpaa_intf.scheme_handle = CreateDevice
+				(fm_info.pcd_handle, fm_model.scheme_devid[i]);
+
+		dpaa_intf.netenv_handle = CreateDevice
+				(fm_info.pcd_handle, fm_model.netenv_devid[i]);
+
+		i++;
+		if (!dpaa_intf.netenv_handle || !dpaa_intf.scheme_handle ||
+							!dpaa_intf.port_handle)
+			continue;
+
+		if (dpaa_fm_deconfig(&dpaa_intf))
+			DPAA_PMD_ERR("DPAA FM deconfig failed\n");
+	}
+
+	if (dpaa_fm_term())
+		DPAA_PMD_WARN("DPAA FM term failed\n");
+
+	memset(&fm_model, 0, sizeof(struct dpaa_fm_model));
+}
+
+void dpaa_write_fm_config_to_file(void)
+{
+	size_t bytes_write;
+	FILE *fp = fopen(fm_log, "wb");
+	if (!fp)
+		DPAA_PMD_ERR("File open failed\n");
+	bytes_write = fwrite(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
+	if (!bytes_write) {
+		DPAA_PMD_WARN("No bytes write\n");
+		fclose(fp);
+		return;
+	}
+	fclose(fp);
+}
+
+static void dpaa_read_fm_config_from_file(void)
+{
+	size_t bytes_read;
+	FILE *fp = fopen(fm_log, "rb");
+	if (!fp)
+		return;
+	bytes_read = fread(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
+	if (!bytes_read) {
+		DPAA_PMD_WARN("No bytes read\n");
+		fclose(fp);
+		return;
+	}
+	fclose(fp);
+
+	/*FM cleanup from previous configured app */
+	fm_prev_cleanup();
+}
 
 static inline int set_hashParams_eth(
 	ioc_fm_pcd_kg_scheme_params_t *scheme_params, int hdr_idx)
@@ -415,6 +505,8 @@ int dpaa_fm_init(void)
 	/* Hard-coded : fman id 0 since one fman is present in LS104x */
 	int fman_id = 0, ret;
 
+	dpaa_read_fm_config_from_file();
+
 	/* FM Open */
 	fman_handle = FM_Open(fman_id);
 	if (!fman_handle) {
@@ -526,6 +618,8 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 		return -1;
 	}
 
+	fm_model.netenv_devid[dpaa_intf->ifid] =
+					GetDeviceId(dpaa_intf->netenv_handle);
 	scheme_params.scm_id.relative_scheme_id = dpaa_intf->ifid;
 
 	/* Set PCD Scheme params */
@@ -543,6 +637,8 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 		return -1;
 	}
 
+	fm_model.scheme_devid[dpaa_intf->ifid] =
+					GetDeviceId(dpaa_intf->scheme_handle);
 	dpaa_intf->scheme_count++;
 	return 0;
 }
@@ -582,6 +678,8 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf)
 		return -1;
 	}
 
+	fm_model.fm_port_params[dpaa_intf->ifid] = fm_port_params;
+
 	return 0;
 }
 
@@ -617,6 +715,8 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 		return -1;
 	}
 
+	fm_model.dev_count++;
+
 	return 0;
 }
 
@@ -642,6 +742,10 @@ int dpaa_fm_term(void)
 
 	/* FM Close */
 	FM_Close(fman_handle);
+
+	ret = remove(fm_log);
+	if (ret)
+		DPAA_PMD_ERR("File remove successfully\n");
 
 	return 0;
 }

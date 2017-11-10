@@ -101,7 +101,7 @@ TAILQ_HEAD(rte_fman_if_list, __fman_if);
 
 /* Represents the different flavour of network interface */
 enum fman_mac_type {
-	fman_offline = 0, /* ASDF: Should it be removed? */
+	fman_offline = 0,
 	fman_mac_1g,
 	fman_mac_10g,
 };
@@ -141,35 +141,35 @@ struct memac_regs {
 	/**< 0x0E0 Statistics configuration */
 	uint32_t res00e4[7];
 	/* Rx Statistics Counter */
-	uint32_t reoct_l;
+	uint32_t reoct_l;		/**<Rx Eth Octets Counter */
 	uint32_t reoct_u;
-	uint32_t roct_l;
+	uint32_t roct_l;		/**<Rx Octet Counters */
 	uint32_t roct_u;
-	uint32_t raln_l;
+	uint32_t raln_l;		/**<Rx Alignment Error Counter */
 	uint32_t raln_u;
-	uint32_t rxpf_l;
+	uint32_t rxpf_l;		/**<Rx valid Pause Frame */
 	uint32_t rxpf_u;
-	uint32_t rfrm_l;
+	uint32_t rfrm_l;		/**<Rx Frame counter */
 	uint32_t rfrm_u;
-	uint32_t rfcs_l;
+	uint32_t rfcs_l;		/**<Rx frame check seq error */
 	uint32_t rfcs_u;
-	uint32_t rvlan_l;
+	uint32_t rvlan_l;		/**<Rx Vlan Frame Counter */
 	uint32_t rvlan_u;
-	uint32_t rerr_l;
+	uint32_t rerr_l;		/**<Rx Frame error */
 	uint32_t rerr_u;
-	uint32_t ruca_l;
+	uint32_t ruca_l;		/**<Rx Unicast */
 	uint32_t ruca_u;
-	uint32_t rmca_l;
+	uint32_t rmca_l;		/**<Rx Multicast */
 	uint32_t rmca_u;
-	uint32_t rbca_l;
+	uint32_t rbca_l;		/**<Rx Broadcast */
 	uint32_t rbca_u;
-	uint32_t rdrp_l;
+	uint32_t rdrp_l;		/**<Rx Dropper Packet */
 	uint32_t rdrp_u;
-	uint32_t rpkt_l;
+	uint32_t rpkt_l;		/**<Rx packet */
 	uint32_t rpkt_u;
-	uint32_t rund_l;
+	uint32_t rund_l;		/**<Rx undersized packets */
 	uint32_t rund_u;
-	uint32_t r64_l;
+	uint32_t r64_l;			/**<Rx 64 byte */
 	uint32_t r64_u;
 	uint32_t r127_l;
 	uint32_t r127_u;
@@ -183,43 +183,43 @@ struct memac_regs {
 	uint32_t r1518_u;
 	uint32_t r1519x_l;
 	uint32_t r1519x_u;
-	uint32_t rovr_l;
+	uint32_t rovr_l;		/**<Rx oversized but good */
 	uint32_t rovr_u;
-	uint32_t rjbr_l;
+	uint32_t rjbr_l;		/**<Rx oversized with bad csum */
 	uint32_t rjbr_u;
-	uint32_t rfrg_l;
+	uint32_t rfrg_l;		/**<Rx fragment Packet */
 	uint32_t rfrg_u;
-	uint32_t rcnp_l;
+	uint32_t rcnp_l;		/**<Rx control packets (0x8808 */
 	uint32_t rcnp_u;
-	uint32_t rdrntp_l;
+	uint32_t rdrntp_l;		/**<Rx dropped due to FIFO overflow */
 	uint32_t rdrntp_u;
 	uint32_t res01d0[12];
 	/* Tx Statistics Counter */
-	uint32_t teoct_l;
+	uint32_t teoct_l;		/**<Tx eth octets */
 	uint32_t teoct_u;
-	uint32_t toct_l;
+	uint32_t toct_l;		/**<Tx Octets */
 	uint32_t toct_u;
 	uint32_t res0210[2];
-	uint32_t txpf_l;
+	uint32_t txpf_l;		/**<Tx valid pause frame */
 	uint32_t txpf_u;
-	uint32_t tfrm_l;
+	uint32_t tfrm_l;		/**<Tx frame counter */
 	uint32_t tfrm_u;
-	uint32_t tfcs_l;
+	uint32_t tfcs_l;		/**<Tx FCS error */
 	uint32_t tfcs_u;
-	uint32_t tvlan_l;
+	uint32_t tvlan_l;		/**<Tx Vlan Frame */
 	uint32_t tvlan_u;
-	uint32_t terr_l;
+	uint32_t terr_l;		/**<Tx frame error */
 	uint32_t terr_u;
-	uint32_t tuca_l;
+	uint32_t tuca_l;		/**<Tx Unicast */
 	uint32_t tuca_u;
-	uint32_t tmca_l;
+	uint32_t tmca_l;		/**<Tx Multicast */
 	uint32_t tmca_u;
-	uint32_t tbca_l;
+	uint32_t tbca_l;		/**<Tx Broadcast */
 	uint32_t tbca_u;
 	uint32_t res0258[2];
-	uint32_t tpkt_l;
+	uint32_t tpkt_l;		/**<Tx Packet */
 	uint32_t tpkt_u;
-	uint32_t tund_l;
+	uint32_t tund_l;		/**<Tx Undersized */
 	uint32_t tund_u;
 	uint32_t t64_l;
 	uint32_t t64_u;
@@ -236,7 +236,7 @@ struct memac_regs {
 	uint32_t t1519x_l;
 	uint32_t t1519x_u;
 	uint32_t res02a8[6];
-	uint32_t tcnp_l;
+	uint32_t tcnp_l;		/**<Tx Control Packet type - 0x8808 */
 	uint32_t tcnp_u;
 	uint32_t res02c8[14];
 	/* Line Interface Control */
@@ -423,7 +423,6 @@ extern int fman_ccsr_map_fd;
 	do { \
 		_errno = (rc); \
 		DPAA_BUS_LOG(ERR, fmt "(%d)", ##args, errno); \
-		goto err; \
 	} while (0)
 
 #define FMAN_IP_REV_1	0xC30C4

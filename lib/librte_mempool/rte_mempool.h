@@ -265,6 +265,23 @@ struct rte_mempool {
 #define MEMPOOL_F_SC_GET         0x0008 /**< Default get is "single-consumer".*/
 #define MEMPOOL_F_POOL_CREATED   0x0010 /**< Internal: pool is created. */
 #define MEMPOOL_F_NO_PHYS_CONTIG 0x0020 /**< Don't need physically contiguous objs. */
+/**
+ * This capability flag is advertised by a mempool handler. Used for a case
+ * where mempool driver wants object start address(vaddr) aligned to block
+ * size(/ total element size).
+ *
+ * Note:
+ * - This flag should not be passed by application.
+ *   Flag used for mempool driver only.
+ * - Mempool driver must also set MEMPOOL_F_CAPA_PHYS_CONTIG flag along with
+ *   MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS.
+ */
+#define MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS 0x0080
+
+/* Indicates that the mempool buffers are allocated from multiple memzones
+ * the buffer may or may not be physically contiguous.
+ */
+#define MEMPOOL_F_MULTI_MEMZONE 0x0100
 
 /**
  * @internal When debug is enabled, store some statistics.

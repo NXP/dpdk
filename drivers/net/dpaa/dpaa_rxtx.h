@@ -273,10 +273,12 @@ struct annotations_t {
 	(struct annotations_t *)(_buf)
 
 #define GET_RX_PRS(_buf) \
-	(struct dpaa_eth_parse_results_t *)((uint8_t *)_buf + DEFAULT_RX_ICEOF)
+	(struct dpaa_eth_parse_results_t *)((uint8_t *)(_buf) + \
+	DEFAULT_RX_ICEOF)
 
 #define GET_TX_PRS(_buf) \
-	(struct dpaa_eth_parse_results_t *)((uint8_t *)_buf + DEFAULT_TX_ICEOF)
+	(struct dpaa_eth_parse_results_t *)((uint8_t *)(_buf) + \
+	DEFAULT_TX_ICEOF)
 
 uint16_t dpaa_eth_queue_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs);
 
@@ -286,10 +288,13 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 			      struct rte_mbuf **bufs __rte_unused,
 			      uint16_t nb_bufs __rte_unused);
 
-struct rte_mbuf *dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid);
+struct rte_mbuf *dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid);
 
 int dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 			   struct qm_fd *fd,
 			   uint32_t bpid);
 
+enum qman_cb_dqrr_result dpaa_rx_cb(struct qman_portal *qm __always_unused,
+	struct qman_fq *fq,
+	const struct qm_dqrr_entry *dqrr, void **bd);
 #endif

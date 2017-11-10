@@ -101,6 +101,7 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	rte_dpaa_bpid_info[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
 	rte_dpaa_bpid_info[bpid].dpaa_ops_index = mp->ops_index;
+	rte_dpaa_bpid_info[bpid].ptov_off = 0;
 
 	bp_info = rte_malloc(NULL,
 			     sizeof(struct dpaa_bp_info),
@@ -128,7 +129,8 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 
 	if (bp_info) {
 		bman_free_pool(bp_info->bp);
-		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d", bp_info->bpid);
+		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d",
+				  bp_info->bpid);
 		rte_free(mp->pool_data);
 		mp->pool_data = NULL;
 	}
@@ -161,10 +163,10 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	int ret;
 	unsigned int i = 0;
 
-	DPAA_MEMPOOL_DEBUG(" Request to free %d buffers in bpid = %d",
-			   n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Request to free %d buffers in bpid = %d",
+			     n, bp_info->bpid);
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
 				 ret);
@@ -172,13 +174,25 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	}
 
 	while (i < n) {
+		uint64_t phy = rte_mempool_virt2phy(pool, obj_table[i]);
+
+		if (unlikely(!bp_info->ptov_off)) {
+			/* buffers are not from multiple memzones */
+			if (!(bp_info->mp->flags & MEMPOOL_F_MULTI_MEMZONE)) {
+				bp_info->ptov_off
+						= (uint64_t)obj_table[i] - phy;
+				rte_dpaa_bpid_info[bp_info->bpid].ptov_off
+						= bp_info->ptov_off;
+			}
+		}
+
 		dpaa_buf_free(bp_info,
-			      (uint64_t)rte_mempool_virt2phy(pool,
-			      obj_table[i]) + bp_info->meta_data_size);
+			      (uint64_t)phy + bp_info->meta_data_size);
 		i = i + 1;
 	}
 
-	DPAA_MEMPOOL_DEBUG(" freed %d buffers in bpid =%d", n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("freed %d buffers in bpid =%d",
+			     n, bp_info->bpid);
 
 	return 0;
 }
@@ -197,8 +211,8 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(pool);
 
-	DPAA_MEMPOOL_DEBUG(" Request to alloc %d buffers in bpid = %d",
-			   count, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Request to alloc %d buffers in bpid = %d",
+			     count, bp_info->bpid);
 
 	if (unlikely(count >= (RTE_MEMPOOL_CACHE_MAX_SIZE * 2))) {
 		DPAA_MEMPOOL_ERR("Unable to allocate requested (%u) buffers",
@@ -206,7 +220,7 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		return -1;
 	}
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
 				 ret);
@@ -227,8 +241,8 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			DPAA_MEMPOOL_DEBUG("Buffer acquire failed with"
-					   " err code: %d", ret);
+			DPAA_MEMPOOL_DPDEBUG("Buffer acquire failed (%d)",
+					     ret);
 			/* The API expect the exact number of requested
 			 * buffers. Releasing all buffers allocated
 			 */
@@ -241,17 +255,17 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 			 * i.e. first buffer is valid, remaining 6 buffers
 			 * may be null.
 			 */
-			bufaddr = (void *)rte_dpaa_mem_ptov(bufs[i].addr);
+			bufaddr = DPAA_MEMPOOL_PTOV(bp_info, bufs[i].addr);
 			m[n] = (struct rte_mbuf *)((char *)bufaddr
 						- bp_info->meta_data_size);
-			DPAA_MEMPOOL_DEBUG("Acquired %p address %p from BMAN",
-					   (void *)bufaddr, (void *)m[n]);
+			DPAA_MEMPOOL_DPDEBUG("Paddr (%p), FD (%p) from BMAN",
+					     (void *)bufaddr, (void *)m[n]);
 			n++;
 		}
 	}
 
-	DPAA_MEMPOOL_DEBUG(" allocated %d buffers from bpid =%d",
-			   n, bp_info->bpid);
+	DPAA_MEMPOOL_DPDEBUG("Allocated %d buffers from bpid=%d",
+			     n, bp_info->bpid);
 	return 0;
 }
 

@@ -75,18 +75,14 @@ struct fm_status_t {
 	unsigned int reserved5:4;
 } __attribute__ ((__packed__));
 
-/* Set promiscuous mode on an interface */
-void fm_mac_set_promiscuous(struct fman_if *p);
-
-/* Get mac config*/
-int fm_mac_config(struct fman_if *p, uint8_t *eth);
+/* Get the primary MAC address of a particular interface */
+int fman_if_get_primary_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Set MAC address for a particular interface */
-int fm_mac_add_exact_match_mac_addr(struct fman_if *p, uint8_t *eth,
-					      uint8_t addr_num);
+int fman_if_add_mac_addr(struct fman_if *p, uint8_t *eth, uint8_t addr_num);
 
 /* Remove a MAC address for a particular interface */
-int fm_mac_rem_exact_match_mac_addr(struct fman_if *p, int8_t addr_num);
+void fman_if_clear_mac_addr(struct fman_if *p, uint8_t addr_num);
 
 /* Get the FMAN statistics */
 void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
@@ -94,27 +90,26 @@ void fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats);
 /* Reset the FMAN statistics */
 void fman_if_stats_reset(struct fman_if *p);
 
-/* Set ignore pause option for a specific interface */
-void fm_mac_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
+/* Get all of the FMAN statistics */
+void fman_if_stats_get_all(struct fman_if *p, uint64_t *value, int n);
 
-/* Enable Loopback mode */
-void fm_mac_config_loopback(struct fman_if *p, bool enable);
+/* Set ignore pause option for a specific interface */
+void fman_if_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
 
 /* Set max frame length */
-void fm_mac_conf_max_frame_len(struct fman_if *p,
-			       unsigned int max_frame_len);
+void fman_if_conf_max_frame_len(struct fman_if *p, unsigned int max_frame_len);
 
 /* Enable/disable Rx promiscuous mode on specified interface */
-void fman_if_promiscuous_enable(struct fman_if *);
-void fman_if_promiscuous_disable(struct fman_if *);
+void fman_if_promiscuous_enable(struct fman_if *p);
+void fman_if_promiscuous_disable(struct fman_if *p);
 
 /* Enable/disable Rx on specific interfaces */
-void fman_if_enable_rx(struct fman_if *);
-void fman_if_disable_rx(struct fman_if *);
+void fman_if_enable_rx(struct fman_if *p);
+void fman_if_disable_rx(struct fman_if *p);
 
 /* Enable/disable loopback on specific interfaces */
-void fman_if_loopback_enable(struct fman_if *);
-void fman_if_loopback_disable(struct fman_if *);
+void fman_if_loopback_enable(struct fman_if *p);
+void fman_if_loopback_disable(struct fman_if *p);
 
 /* Set buffer pool on specific interface */
 void fman_if_set_bp(struct fman_if *fm_if, unsigned int num, int bpid,
@@ -165,10 +160,7 @@ void fman_if_set_mcast_filter_table(struct fman_if *p);
 
 void fman_if_reset_mcast_filter_table(struct fman_if *p);
 
-int fman_memac_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
-
-int fman_memac_get_primary_mac_addr(struct fman_if *p, uint8_t *eth);
-
+int fman_if_add_hash_mac_addr(struct fman_if *p, uint8_t *eth);
 
 /* Enable/disable Rx on all interfaces */
 static inline void fman_if_enable_all_rx(void)

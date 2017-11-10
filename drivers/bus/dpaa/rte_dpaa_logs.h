@@ -46,21 +46,23 @@ extern int dpaa_logtype_pmd;
 #define BUS_INIT_FUNC_TRACE() DPAA_BUS_LOG(DEBUG, " >>")
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_BUS
-#define DPAA_BUS_WARN(cond, fmt, args...) \
+#define DPAA_BUS_HWWARN(cond, fmt, args...) \
 	do {\
 		if (cond) \
 			DPAA_BUS_LOG(DEBUG, "WARN: " fmt, ##args); \
 	} while (0)
 #else
-#define DPAA_BUS_WARN(cond, fmt, args...) do { } while (0)
+#define DPAA_BUS_HWWARN(cond, fmt, args...) do { } while (0)
 #endif
 
-#define DPAA_BUS_INFO(fmt, args...) \
-	DPAA_BUS_LOG(INFO, fmt, ## args)
 #define DPAA_BUS_DEBUG(fmt, args...) \
 	DPAA_BUS_LOG(DEBUG, fmt, ## args)
+#define DPAA_BUS_INFO(fmt, args...) \
+	DPAA_BUS_LOG(INFO, fmt, ## args)
 #define DPAA_BUS_ERR(fmt, args...) \
 	DPAA_BUS_LOG(ERR, fmt, ## args)
+#define DPAA_BUS_WARN(fmt, args...) \
+	DPAA_BUS_LOG(WARNING, fmt, ## args)
 
 /* Mempool related logs */
 
@@ -70,24 +72,16 @@ extern int dpaa_logtype_pmd;
 
 #define MEMPOOL_INIT_FUNC_TRACE() DPAA_MEMPOOL_LOG(DEBUG, " >>")
 
-/* DEBUG and WARN are conditional to compiled configuration */
-#ifdef RTE_LIBRTE_DPAA_MEMPOOL_DEBUG
+#define DPAA_MEMPOOL_DPDEBUG(fmt, args...) \
+	RTE_LOG_DP(DEBUG, PMD, fmt, ## args)
 #define DPAA_MEMPOOL_DEBUG(fmt, args...) \
 	DPAA_MEMPOOL_LOG(DEBUG, fmt, ## args)
-
-#define DPAA_MEMPOOL_WARN(fmt, args...) \
-	DPAA_MEMPOOL_LOG(WARNING, fmt, ## args)
-#else /* RTE_LIBRTE_DPAA_MEMPOOL_DEBUG */
-#define DPAA_MEMPOOL_DEBUG(fmt, args...) do { } while (0)
-#define DPAA_MEMPOOL_WARN(fmt, args...)  do { } while (0)
-#endif /* RTE_LIBRTE_DPAA_MEMPOOL_DEBUG */
-
-/* ERR and INFO are unconditional */
 #define DPAA_MEMPOOL_ERR(fmt, args...) \
 	DPAA_MEMPOOL_LOG(ERR, fmt, ## args)
-
 #define DPAA_MEMPOOL_INFO(fmt, args...) \
 	DPAA_MEMPOOL_LOG(INFO, fmt, ## args)
+#define DPAA_MEMPOOL_WARN(fmt, args...) \
+	DPAA_MEMPOOL_LOG(WARNING, fmt, ## args)
 
 /* PMD related logs */
 
@@ -97,30 +91,16 @@ extern int dpaa_logtype_pmd;
 
 #define PMD_INIT_FUNC_TRACE() DPAA_PMD_LOG(DEBUG, " >>")
 
-/* DEBUG and WARN are conditional to compiled configuration */
-#ifdef RTE_LIBRTE_DPAA_PMD_DEBUG
 #define DPAA_PMD_DEBUG(fmt, args...) \
 	DPAA_PMD_LOG(DEBUG, fmt, ## args)
-
-#define DPAA_PMD_WARN(fmt, args...) \
-	DPAA_PMD_LOG(WARNING, fmt, ## args)
-#else /* RTE_LIBRTE_DPAA_PMD_DEBUG */
-#define DPAA_PMD_DEBUG(fmt, args...) do { } while (0)
-#define DPAA_PMD_WARN(fmt, args...)  do { } while (0)
-#endif /* RTE_LIBRTE_DPAA_PMD_DEBUG */
-
-/* ERR and INFO are unconditional */
 #define DPAA_PMD_ERR(fmt, args...) \
 	DPAA_PMD_LOG(ERR, fmt, ## args)
-
 #define DPAA_PMD_INFO(fmt, args...) \
 	DPAA_PMD_LOG(INFO, fmt, ## args)
+#define DPAA_PMD_WARN(fmt, args...) \
+	DPAA_PMD_LOG(WARNING, fmt, ## args)
 
 /* DP Logs, toggled out at compile time if level lower than current level */
-#define DPAA_RX_LOG(level, fmt, args...) \
-	RTE_LOG_DP(level, PMD, fmt, ## args)
-#define DPAA_TX_LOG(level, fmt, args...) \
-	RTE_LOG_DP(level, PMD, fmt, ## args)
 #define DPAA_DP_LOG(level, fmt, args...) \
 	RTE_LOG_DP(level, PMD, fmt, ## args)
 

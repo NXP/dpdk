@@ -86,7 +86,7 @@
 		(_fd)->bpid = _bpid; \
 	} while (0)
 
-#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER_DISPLAY)
+#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER)
 void dpaa_display_frame(const struct qm_fd *fd)
 {
 	int ii;
@@ -114,7 +114,7 @@ void dpaa_display_frame(const struct qm_fd *fd)
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
 				     uint64_t prs __rte_unused)
 {
-	DPAA_RX_LOG(DEBUG, "Slow parsing");
+	DPAA_DP_LOG(DEBUG, "Slow parsing");
 	/*TBD:XXX: to be implemented*/
 }
 
@@ -124,7 +124,7 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m,
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uint64_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
-	DPAA_RX_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
+	DPAA_DP_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
 
 	switch (prs) {
 	case DPAA_PKT_TYPE_NONE:
@@ -233,7 +233,7 @@ static inline void dpaa_checksum(struct rte_mbuf *mbuf)
 	struct ipv4_hdr *ipv4_hdr = (struct ipv4_hdr *)l3_hdr;
 	struct ipv6_hdr *ipv6_hdr = (struct ipv6_hdr *)l3_hdr;
 
-	DPAA_TX_LOG(DEBUG, "Calculating checksum for mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, "Calculating checksum for mbuf: %p", mbuf);
 
 	if (((mbuf->packet_type & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) ||
 	    ((mbuf->packet_type & RTE_PTYPE_L3_MASK) ==
@@ -276,7 +276,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 {
 	struct dpaa_eth_parse_results_t *prs;
 
-	DPAA_TX_LOG(DEBUG, " Offloading checksum for mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, " Offloading checksum for mbuf: %p", mbuf);
 
 	prs = GET_TX_PRS(prs_buf);
 	prs->l3r = 0;
@@ -303,7 +303,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 }
 
 struct rte_mbuf *
-dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
+dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 {
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
 	struct rte_mbuf *first_seg, *prev_seg, *cur_seg, *temp;
@@ -312,9 +312,9 @@ dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	int i = 0;
 	uint8_t fd_offset = fd->offset;
 
-	DPAA_RX_LOG(DEBUG, "Received an SG frame");
+	DPAA_DP_LOG(DEBUG, "Received an SG frame");
 
-	vaddr = rte_dpaa_mem_ptov(qm_fd_addr(fd));
+	vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	if (!vaddr) {
 		DPAA_PMD_ERR("unable to convert physical address");
 		return NULL;
@@ -323,7 +323,7 @@ dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	sg_temp = &sgt[i++];
 	hw_sg_to_cpu(sg_temp);
 	temp = (struct rte_mbuf *)((char *)vaddr - bp_info->meta_data_size);
-	sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+	sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_sg_entry_get64(sg_temp));
 
 	first_seg = (struct rte_mbuf *)((char *)sg_vaddr -
 						bp_info->meta_data_size);
@@ -339,7 +339,8 @@ dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	while (i < DPAA_SGT_MAX_ENTRIES) {
 		sg_temp = &sgt[i++];
 		hw_sg_to_cpu(sg_temp);
-		sg_vaddr = rte_dpaa_mem_ptov(qm_sg_entry_get64(sg_temp));
+		sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
+					     qm_sg_entry_get64(sg_temp));
 		cur_seg = (struct rte_mbuf *)((char *)sg_vaddr -
 						      bp_info->meta_data_size);
 		cur_seg->data_off = sg_temp->offset;
@@ -361,7 +362,7 @@ dpaa_eth_sg_to_mbuf(struct qm_fd *fd, uint32_t ifid)
 	return first_seg;
 }
 
-static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
+static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(const struct qm_fd *fd,
 							uint32_t ifid)
 {
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
@@ -373,14 +374,14 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
 	uint32_t length = fd->opaque & DPAA_FD_LENGTH_MASK;
 
-	DPAA_RX_LOG(DEBUG, " FD--->MBUF");
+	DPAA_DP_LOG(DEBUG, " FD--->MBUF");
 
 	if (unlikely(format == qm_fd_sg))
 		return dpaa_eth_sg_to_mbuf(fd, ifid);
 
 	/* Ignoring case when format != qm_fd_contig */
 	dpaa_display_frame(fd);
-	ptr = rte_dpaa_mem_ptov(fd->addr);
+	ptr = DPAA_MEMPOOL_PTOV(bp_info, fd->addr);
 	/* Ignoring case when ptr would be NULL. That is only possible incase
 	 * of a corrupted packet
 	 */
@@ -388,7 +389,6 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 	/* Prefetch the Parse results and packet data to L1 */
 	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
-	rte_prefetch0((void *)((uint8_t *)ptr + offset));
 
 	mbuf->data_off = offset;
 	mbuf->data_len = length;
@@ -404,6 +404,60 @@ static inline struct rte_mbuf *dpaa_eth_fd_to_mbuf(struct qm_fd *fd,
 	return mbuf;
 }
 
+/*TODO: Function needs to be updated for SG support*/
+static inline void *
+dpaa_rx_cb_mbuf_set(struct qman_fq *fq,
+				    const struct qm_dqrr_entry *dqrr)
+{
+	struct rte_mbuf *mbuf;
+	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(dqrr->fd.bpid);
+	const struct qm_fd *fd = &dqrr->fd;
+	void *ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
+	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
+	uint16_t offset =
+		(fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
+	uint32_t length = fd->opaque & DPAA_FD_LENGTH_MASK;
+
+	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
+	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
+
+	mbuf->data_off = offset;
+	mbuf->data_len = length;
+	mbuf->pkt_len = length;
+	mbuf->port = dpaa_intf->ifid;
+
+	mbuf->nb_segs = 1;
+	mbuf->ol_flags = 0;
+	mbuf->next = NULL;
+	rte_mbuf_refcnt_set(mbuf, 1);
+	dpaa_eth_packet_info(mbuf, (uint64_t)mbuf->buf_addr);
+	return mbuf;
+}
+
+enum qman_cb_dqrr_result dpaa_rx_cb(struct qman_portal *qm __always_unused,
+	struct qman_fq *fq,
+	const struct qm_dqrr_entry *dqrr, void **bufs)
+{
+	*bufs = dpaa_rx_cb_mbuf_set(fq, dqrr);
+	return qman_cb_dqrr_consume;
+}
+
+static uint16_t
+dpaa_eth_queue_portal_rx(struct qman_fq *fq,
+			 struct rte_mbuf **bufs,
+			 uint16_t nb_bufs)
+{
+	int ret;
+
+	ret = rte_dpaa_portal_init((void *)0, fq);
+	if (ret) {
+		DPAA_PMD_ERR("Failure in affining portal");
+		return 0;
+	}
+
+	return qman_portal_poll_rx(nb_bufs, (void **)bufs);
+}
+
 uint16_t dpaa_eth_queue_rx(void *q,
 			   struct rte_mbuf **bufs,
 			   uint16_t nb_bufs)
@@ -413,7 +467,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
 	int ret;
 
-	ret = rte_dpaa_portal_init((void *)0);
+	if (likely(fq->is_static))
+		return dpaa_eth_queue_portal_rx(fq, bufs, nb_bufs);
+
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_PMD_ERR("Failure in affining portal");
 		return 0;
@@ -447,10 +504,11 @@ static void *dpaa_get_pktbuf(struct dpaa_bp_info *bp_info)
 		return (void *)buf;
 	}
 
-	DPAA_RX_LOG(DEBUG, "got buffer 0x%lx from pool %d",
+	DPAA_DP_LOG(DEBUG, "got buffer 0x%lx from pool %d",
 		    (uint64_t)bufs.addr, bufs.bpid);
 
-	buf = (uint64_t)rte_dpaa_mem_ptov(bufs.addr) - bp_info->meta_data_size;
+	buf = (uint64_t)DPAA_MEMPOOL_PTOV(bp_info, bufs.addr)
+				- bp_info->meta_data_size;
 	if (!buf)
 		goto out;
 
@@ -492,7 +550,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
 
-	DPAA_TX_LOG(DEBUG, "Creating SG FD to transmit");
+	DPAA_DP_LOG(DEBUG, "Creating SG FD to transmit");
 
 	temp = rte_pktmbuf_alloc(bp_info->mp);
 	if (!temp) {
@@ -547,9 +605,10 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				 */
 				sg_temp->bpid = 0xff;
 				rte_mbuf_refcnt_update(cur_seg, -1);
-			} else
+			} else {
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
+			}
 			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
@@ -635,7 +694,7 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 		}
 		if (mbuf->data_off < (DEFAULT_TX_ICEOF +
 		    sizeof(struct dpaa_eth_parse_results_t))) {
-			DPAA_TX_LOG(DEBUG, "Checksum offload Err: "
+			DPAA_DP_LOG(DEBUG, "Checksum offload Err: "
 				"Not enough Headroom "
 				"space for correct Checksum offload."
 				"So Calculating checksum in Software.");
@@ -652,7 +711,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		struct dpaa_bp_info *bp_info,
 		struct qm_fd *fd_arr)
 {
-	DPAA_TX_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
+	DPAA_DP_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
 
 	if (mbuf->nb_segs == 1) {
 		/* Case for non-segmented buffers */
@@ -671,7 +730,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 	return 0;
 }
 
-/* Handle all mbufs on an external pool (non-dpaa2) */
+/* Handle all mbufs on an external pool (non-dpaa) */
 static inline uint16_t
 tx_on_external_pool(struct qman_fq *txq, struct rte_mbuf *mbuf,
 		    struct qm_fd *fd_arr)
@@ -679,11 +738,11 @@ tx_on_external_pool(struct qman_fq *txq, struct rte_mbuf *mbuf,
 	struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 	struct rte_mbuf *dmable_mbuf;
 
-	DPAA_TX_LOG(DEBUG, "Non-BMAN offloaded buffer."
+	DPAA_DP_LOG(DEBUG, "Non-BMAN offloaded buffer."
 		    "Allocating an offloaded buffer");
 	dmable_mbuf = dpaa_get_dmable_mbuf(mbuf, dpaa_intf);
 	if (!dmable_mbuf) {
-		DPAA_TX_LOG(DEBUG, "no dpaa buffers.");
+		DPAA_DP_LOG(DEBUG, "no dpaa buffers.");
 		return 1;
 	}
 
@@ -703,13 +762,13 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint16_t state;
 	int ret;
 
-	ret = rte_dpaa_portal_init((void *)0);
+	ret = rte_dpaa_portal_init((void *)0, NULL);
 	if (ret) {
 		DPAA_PMD_ERR("Failure in affining portal");
 		return 0;
 	}
 
-	DPAA_TX_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
+	DPAA_DP_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
 
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs >> 3) ? MAX_TX_RING_SLOTS : nb_bufs;
@@ -759,7 +818,7 @@ send_pkts:
 		nb_bufs -= frames_to_send;
 	}
 
-	DPAA_TX_LOG(DEBUG, "Transmitted %d buffers on queue: %p", i, q);
+	DPAA_DP_LOG(DEBUG, "Transmitted %d buffers on queue: %p", i, q);
 
 	return i;
 }
@@ -768,7 +827,7 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 			      struct rte_mbuf **bufs __rte_unused,
 		uint16_t nb_bufs __rte_unused)
 {
-	DPAA_TX_LOG(DEBUG, "Drop all packets");
+	DPAA_DP_LOG(DEBUG, "Drop all packets");
 
 	/* Drop all incoming packets. No need to free packets here
 	 * because the rte_eth f/w frees up the packets through tx_buffer

@@ -77,7 +77,7 @@ struct bman_pool {
 	/* Used for hash-table admin when using depletion notifications. */
 	struct bman_portal *portal;
 	struct bman_pool *next;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	atomic_t in_use;
 #endif
 };
@@ -239,7 +239,7 @@ struct bman_pool *bman_new_pool(const struct bman_pool_params *params)
 	if (!pool)
 		goto err;
 	pool->params = *params;
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	atomic_set(&pool->in_use, 1);
 #endif
 	if (params->flags & BMAN_POOL_FLAG_DYNAMIC_BPID)
@@ -288,7 +288,7 @@ int bman_release(struct bman_pool *pool, const struct bm_buffer *bufs, u8 num,
 	u32 i = num - 1;
 	u8 avail;
 
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (!num || (num > 8))
 		return -EINVAL;
 	if (pool->params.flags & BMAN_POOL_FLAG_NO_RELEASE)
@@ -330,7 +330,7 @@ int bman_acquire(struct bman_pool *pool, struct bm_buffer *bufs, u8 num,
 	struct bm_mc_result *mcr;
 	int ret, i;
 
-#ifdef RTE_LIBRTE_DPAA_CHECKING
+#ifdef RTE_LIBRTE_DPAA_HWDEBUG
 	if (!num || (num > 8))
 		return -EINVAL;
 	if (pool->params.flags & BMAN_POOL_FLAG_ONLY_RELEASE)

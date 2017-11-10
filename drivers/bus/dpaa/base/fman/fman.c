@@ -42,8 +42,6 @@
 #include <sys/ioctl.h>
 #include <ifaddrs.h>
 
-#include <rte_malloc.h>
-
 /* This header declares the driver interface we implement */
 #include <fman.h>
 #include <of.h>
@@ -72,15 +70,18 @@ if_destructor(struct __fman_if *__if)
 {
 	struct fman_if_bpool *bp, *tmpbp;
 
+	if (!__if)
+		return;
+
 	if (__if->__if.mac_type == fman_offline)
 		goto cleanup;
 
 	list_for_each_entry_safe(bp, tmpbp, &__if->__if.bpool_list, node) {
 		list_del(&bp->node);
-		rte_free(bp);
+		free(bp);
 	}
 cleanup:
-	rte_free(__if);
+	free(__if);
 }
 
 static int
@@ -208,7 +209,7 @@ fman_if_init(const struct device_node *dpa_node)
 	mprop = "fsl,fman-mac";
 
 	/* Allocate an object for this network interface */
-	__if = rte_malloc(NULL, sizeof(*__if), RTE_CACHE_LINE_SIZE);
+	__if = malloc(sizeof(*__if));
 	if (!__if)
 		return -ENOMEM;
 	memset(__if, 0, sizeof(*__if));
@@ -216,30 +217,39 @@ fman_if_init(const struct device_node *dpa_node)
 	strncpy(__if->node_path, dpa_node->full_name, PATH_MAX - 1);
 	__if->node_path[PATH_MAX - 1] = '\0';
 
-	/** ASDF: This needs to be revisited */
 	/* Obtain the MAC node used by this interface except macless */
 	mac_phandle = of_get_property(dpa_node, mprop, &lenp);
-	if (!mac_phandle)
+	if (!mac_phandle) {
 		FMAN_ERR(-EINVAL, "%s: no %s\n", dname, mprop);
+		goto err;
+	}
 	assert(lenp == sizeof(phandle));
 	mac_node = of_find_node_by_phandle(*mac_phandle);
-	if (!mac_node)
+	if (!mac_node) {
 		FMAN_ERR(-ENXIO, "%s: bad 'fsl,fman-mac\n", dname);
+		goto err;
+	}
 	mname = mac_node->full_name;
 
 	/* Map the CCSR regs for the MAC node */
 	regs_addr = of_get_address(mac_node, 0, &__if->regs_size, NULL);
-	if (!regs_addr)
+	if (!regs_addr) {
 		FMAN_ERR(-EINVAL, "of_get_address(%s)\n", mname);
+		goto err;
+	}
 	phys_addr = of_translate_address(mac_node, regs_addr);
-	if (!phys_addr)
+	if (!phys_addr) {
 		FMAN_ERR(-EINVAL, "of_translate_address(%s, %p)\n",
 			 mname, regs_addr);
-			 __if->ccsr_map = mmap(NULL, __if->regs_size,
-			 PROT_READ | PROT_WRITE, MAP_SHARED,
-			 fman_ccsr_map_fd, phys_addr);
-	if (__if->ccsr_map == MAP_FAILED)
+		goto err;
+	}
+	__if->ccsr_map = mmap(NULL, __if->regs_size,
+			      PROT_READ | PROT_WRITE, MAP_SHARED,
+			      fman_ccsr_map_fd, phys_addr);
+	if (__if->ccsr_map == MAP_FAILED) {
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")\n", phys_addr);
+		goto err;
+	}
 	na = of_n_addr_cells(mac_node);
 	/* Get rid of endianness (issues). Convert to host byte order */
 	regs_addr_host = of_read_number(regs_addr, na);
@@ -248,20 +258,26 @@ fman_if_init(const struct device_node *dpa_node)
 	/* Get the index of the Fman this i/f belongs to */
 	fman_node = of_get_parent(mac_node);
 	na = of_n_addr_cells(mac_node);
-	if (!fman_node)
+	if (!fman_node) {
 		FMAN_ERR(-ENXIO, "of_get_parent(%s)\n", mname);
+		goto err;
+	}
 	fname = fman_node->full_name;
 	cell_idx = of_get_property(fman_node, "cell-index", &lenp);
-	if (!cell_idx)
+	if (!cell_idx) {
 		FMAN_ERR(-ENXIO, "%s: no cell-index)\n", fname);
+		goto err;
+	}
 	assert(lenp == sizeof(*cell_idx));
 	cell_idx_host = of_read_number(cell_idx, lenp / sizeof(phandle));
 	__if->__if.fman_idx = cell_idx_host;
 	if (!get_once) {
 		_errno = fman_get_ip_rev(fman_node);
-		if (_errno)
+		if (_errno) {
 			FMAN_ERR(-ENXIO, "%s: ip_rev is not available\n",
 				 fname);
+			goto err;
+		}
 	}
 
 	if (fman_ip_rev >= FMAN_V3) {
@@ -284,7 +300,6 @@ fman_if_init(const struct device_node *dpa_node)
 	else if (of_device_is_compatible(mac_node, "fsl,fman-10g-mac"))
 		__if->__if.mac_type = fman_mac_10g;
 	else if (of_device_is_compatible(mac_node, "fsl,fman-memac")) {
-		/** ASDF: what is memac? */
 		__if->__if.is_memac = 1;
 		char_prop = of_get_property(mac_node, "phy-connection-type",
 					    NULL);
@@ -301,8 +316,10 @@ fman_if_init(const struct device_node *dpa_node)
 			} else if (strstr(char_prop, "xgmii"))
 				__if->__if.mac_type = fman_mac_10g;
 		}
-	} else
+	} else {
 		FMAN_ERR(-EINVAL, "%s: unknown MAC type\n", mname);
+		goto err;
+	}
 
 	/*
 	 * For MAC ports, we cannot rely on cell-index. In
@@ -313,16 +330,20 @@ fman_if_init(const struct device_node *dpa_node)
 	 */
 
 	_errno = fman_get_mac_index(regs_addr_host, &__if->__if.mac_idx);
-	if (_errno)
+	if (_errno) {
 		FMAN_ERR(-EINVAL, "Invalid register address: %lu",
 			 regs_addr_host);
+		goto err;
+	}
 
 	/* Extract the MAC address for private and shared interfaces */
 	mac_addr = of_get_property(mac_node, "local-mac-address",
 				   &lenp);
-	if (!mac_addr)
+	if (!mac_addr) {
 		FMAN_ERR(-EINVAL, "%s: no local-mac-address\n",
 			 mname);
+		goto err;
+	}
 	memcpy(&__if->__if.mac_addr, mac_addr, ETHER_ADDR_LEN);
 
 	/* Extract the Tx port (it's the second of the two port handles)
@@ -333,35 +354,49 @@ fman_if_init(const struct device_node *dpa_node)
 	if (!ports_phandle)
 		ports_phandle = of_get_property(mac_node, "fsl,fman-ports",
 						&lenp);
-	if (!ports_phandle)
+	if (!ports_phandle) {
 		FMAN_ERR(-EINVAL, "%s: no fsl,port-handles\n",
 			 mname);
+		goto err;
+	}
 	assert(lenp == (2 * sizeof(phandle)));
 	tx_node = of_find_node_by_phandle(ports_phandle[1]);
-	if (!tx_node)
+	if (!tx_node) {
 		FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[1]\n", mname);
+		goto err;
+	}
 	/* Extract the channel ID (from tx-port-handle) */
 	tx_channel_id = of_get_property(tx_node, "fsl,qman-channel-id",
 					&lenp);
-	if (!tx_channel_id)
+	if (!tx_channel_id) {
 		FMAN_ERR(-EINVAL, "%s: no fsl-qman-channel-id\n",
 			 tx_node->full_name);
+		goto err;
+	}
 
 	rx_node = of_find_node_by_phandle(ports_phandle[0]);
-	if (!rx_node)
+	if (!rx_node) {
 		FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[0]\n", mname);
+		goto err;
+	}
 	regs_addr = of_get_address(rx_node, 0, &__if->regs_size, NULL);
-	if (!regs_addr)
+	if (!regs_addr) {
 		FMAN_ERR(-EINVAL, "of_get_address(%s)\n", mname);
+		goto err;
+	}
 	phys_addr = of_translate_address(rx_node, regs_addr);
-	if (!phys_addr)
+	if (!phys_addr) {
 		FMAN_ERR(-EINVAL, "of_translate_address(%s, %p)\n",
 			 mname, regs_addr);
+		goto err;
+	}
 	__if->bmi_map = mmap(NULL, __if->regs_size,
 				 PROT_READ | PROT_WRITE, MAP_SHARED,
 				 fman_ccsr_map_fd, phys_addr);
-	if (__if->bmi_map == MAP_FAILED)
+	if (__if->bmi_map == MAP_FAILED) {
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")\n", phys_addr);
+		goto err;
+	}
 
 	/* No channel ID for MAC-less */
 	assert(lenp == sizeof(*tx_channel_id));
@@ -372,8 +407,10 @@ fman_if_init(const struct device_node *dpa_node)
 	 * there are "counts" that must always be 1.)
 	 */
 	rx_phandle = of_get_property(dpa_node, rprop, &lenp);
-	if (!rx_phandle)
+	if (!rx_phandle) {
 		FMAN_ERR(-EINVAL, "%s: no fsl,qman-frame-queues-rx\n", dname);
+		goto err;
+	}
 
 	assert(lenp == (4 * sizeof(phandle)));
 
@@ -391,8 +428,10 @@ fman_if_init(const struct device_node *dpa_node)
 	/* Extract the Tx FQIDs */
 	tx_phandle = of_get_property(dpa_node,
 				     "fsl,qman-frame-queues-tx", &lenp);
-	if (!tx_phandle)
+	if (!tx_phandle) {
 		FMAN_ERR(-EINVAL, "%s: no fsl,qman-frame-queues-tx\n", dname);
+		goto err;
+	}
 
 	assert(lenp == (4 * sizeof(phandle)));
 	/*TODO: Fix for other cases also */
@@ -409,8 +448,10 @@ fman_if_init(const struct device_node *dpa_node)
 	/* Obtain the buffer pool nodes used by this interface */
 	pools_phandle = of_get_property(dpa_node, "fsl,bman-buffer-pools",
 					&lenp);
-	if (!pools_phandle)
+	if (!pools_phandle) {
 		FMAN_ERR(-EINVAL, "%s: no fsl,bman-buffer-pools\n", dname);
+		goto err;
+	}
 	/* For each pool, parse the corresponding node and add a pool object
 	 * to the interface's "bpool_list"
 	 */
@@ -422,19 +463,25 @@ fman_if_init(const struct device_node *dpa_node)
 		uint64_t bpool_host[6] = {0};
 		const char *pname;
 		/* Allocate an object for the pool */
-		bpool = rte_malloc(NULL, sizeof(*bpool), RTE_CACHE_LINE_SIZE);
-		if (!bpool)
+		bpool = malloc(sizeof(*bpool));
+		if (!bpool) {
 			FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*bpool));
+			goto err;
+		}
 		/* Find the pool node */
 		pool_node = of_find_node_by_phandle(*pools_phandle);
-		if (!pool_node)
+		if (!pool_node) {
 			FMAN_ERR(-ENXIO, "%s: bad fsl,bman-buffer-pools\n",
 				 dname);
+			goto err;
+		}
 		pname = pool_node->full_name;
 		/* Extract the BPID property */
 		prop = of_get_property(pool_node, "fsl,bpid", &proplen);
-		if (!prop)
+		if (!prop) {
 			FMAN_ERR(-EINVAL, "%s: no fsl,bpid\n", pname);
+			goto err;
+		}
 		assert(proplen == sizeof(*prop));
 		na = of_n_addr_cells(mac_node);
 		/* Get rid of endianness (issues).
@@ -517,8 +564,10 @@ fman_init(void)
 
 	for_each_compatible_node(dpa_node, NULL, "fsl,dpa-ethernet-init") {
 		_errno = fman_if_init(dpa_node);
-		if (_errno)
+		if (_errno) {
 			FMAN_ERR(_errno, "if_init(%s)\n", dpa_node->full_name);
+			goto err;
+		}
 	}
 
 	return 0;
@@ -553,7 +602,7 @@ fman_finish(void)
 				-errno, strerror(errno));
 		printf("Tearing down %s\n", __if->node_path);
 		list_del(&__if->__if.node);
-		rte_free(__if);
+		free(__if);
 	}
 
 	close(fman_ccsr_map_fd);

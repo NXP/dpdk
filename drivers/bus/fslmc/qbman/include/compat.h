@@ -68,6 +68,16 @@ typedef uint64_t	dma_addr_t;
 #define pr_info(fmt, args...)	 prflush(fmt, ##args)
 
 #ifdef RTE_LIBRTE_DPAA2_DEBUG_BUS
+
+/* Trace the 3 different classes of read/write access to QBMan. #undef as
+ * required.
+ */
+#define QBMAN_CCSR_TRACE
+#define QBMAN_CINH_TRACE
+#define QBMAN_CENA_TRACE
+
+#define QBMAN_CHECKING
+
 #ifdef pr_debug
 #undef pr_debug
 #endif
@@ -76,7 +86,6 @@ typedef uint64_t	dma_addr_t;
 do { \
 	static int warned_##__LINE__; \
 	if ((c) && !warned_##__LINE__) { \
-		pr_warn("%s\n", str); \
 		pr_warn("(%s:%d)\n", __FILE__, __LINE__); \
 		warned_##__LINE__ = 1; \
 	} \

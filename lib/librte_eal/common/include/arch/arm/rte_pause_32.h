@@ -1,8 +1,7 @@
-/*-
+/*
  *   BSD LICENSE
  *
- *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright(c) 2017 Cavium. All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -14,7 +13,7 @@
  *       notice, this list of conditions and the following disclaimer in
  *       the documentation and/or other materials provided with the
  *       distribution.
- *     * Neither the name of Freescale Semiconductor, Inc nor the names of its
+ *     * Neither the name of Cavium nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -31,48 +30,22 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DPAA2_HW_DPIO_H_
-#define _DPAA2_HW_DPIO_H_
+#ifndef _RTE_PAUSE_ARM32_H_
+#define _RTE_PAUSE_ARM32_H_
 
-#include <mc/fsl_dpio.h>
-#include <mc/fsl_mc_sys.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct dpaa2_io_portal_t {
-	struct dpaa2_dpio_dev *dpio_dev;
-	struct dpaa2_dpio_dev *sec_dpio_dev;
-	uint64_t net_tid;
-	uint64_t sec_tid;
-	void *eventdev;
-};
+#include <rte_common.h>
+#include "generic/rte_pause.h"
 
-/*! Global per thread DPIO portal */
-RTE_DECLARE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
+static inline void rte_pause(void)
+{
+}
 
-#define DPAA2_PER_LCORE_DPIO RTE_PER_LCORE(_dpaa2_io).dpio_dev
-#define DPAA2_PER_LCORE_PORTAL DPAA2_PER_LCORE_DPIO->sw_portal
+#ifdef __cplusplus
+}
+#endif
 
-#define DPAA2_PER_LCORE_SEC_DPIO RTE_PER_LCORE(_dpaa2_io).sec_dpio_dev
-#define DPAA2_PER_LCORE_SEC_PORTAL DPAA2_PER_LCORE_SEC_DPIO->sw_portal
-
-/* Variable to store DPAA2 platform type */
-extern uint32_t platform_svr;
-
-extern struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
-
-struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int cpu_id);
-
-/* Affine a DPIO portal to current processing thread */
-int dpaa2_affine_qbman_swp(void);
-
-/* Affine additional DPIO portal to current crypto processing thread */
-int dpaa2_affine_qbman_swp_sec(void);
-
-/* allocate memory for FQ - dq storage */
-int
-dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);
-
-/* free memory for FQ- dq storage */
-void
-dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage);
-
-#endif /* _DPAA2_HW_DPIO_H_ */
+#endif /* _RTE_PAUSE_ARM32_H_ */

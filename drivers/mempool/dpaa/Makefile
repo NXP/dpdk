@@ -35,15 +35,9 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_mempool_dpaa.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-endif
+CFLAGS := -I$(SRCDIR) $(CFLAGS)
+CFLAGS += -O3 $(WERROR_FLAGS)
 CFLAGS += -D _GNU_SOURCE
-
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include/
 CFLAGS += -I$(RTE_SDK)/drivers/mempool/dpaa

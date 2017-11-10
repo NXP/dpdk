@@ -167,8 +167,8 @@ netcfg_acquire(void)
 	/* Allocate space for all enabled mac ports */
 	size = sizeof(*netcfg) +
 		(num_ports * sizeof(struct fm_eth_port_cfg));
-	/** ASDF: Needs to be changed to rte_malloc */
-	netcfg = rte_zmalloc(NULL, size * 1, RTE_CACHE_LINE_SIZE);
+
+	netcfg = calloc(1, size);
 	if (unlikely(netcfg == NULL)) {
 		DPAA_BUS_LOG(ERR, "Unable to allocat mem for netcfg");
 		goto error;
@@ -194,13 +194,18 @@ netcfg_acquire(void)
 	return netcfg;
 
 error:
+	if (netcfg) {
+		free(netcfg);
+		netcfg = NULL;
+	}
+
 	return NULL;
 }
 
 void
 netcfg_release(struct netcfg_info *cfg_ptr)
 {
-	rte_free(cfg_ptr);
+	free(cfg_ptr);
 	/* Close socket for shared interfaces */
 	if (skfd >= 0) {
 		close(skfd);

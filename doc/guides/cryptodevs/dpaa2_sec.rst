@@ -192,8 +192,8 @@ The following dependencies are not part of DPDK and must be installed separately
 
 Currently supported by DPDK:
 
-* NXP SDK **2.0+**.
-* MC Firmware version **10.0.0** and higher.
+- NXP SDK **17.08+**.
+- MC Firmware version **10.3.1** and higher.
 * Supported architectures:  **arm64 LE**.
 
 * Follow the DPDK :ref:`Getting Started Guide for Linux <linux_gsg>` to setup the basic DPDK environment.

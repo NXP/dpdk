@@ -44,10 +44,6 @@
 #include "dpaa_sys.h"
 #include <fsl_qman.h>
 
-#if !defined(CONFIG_FSL_QMAN_FQ_LOOKUP) && defined(RTE_ARCH_ARM64)
-#error "_ARM64 requires _FSL_QMAN_FQ_LOOKUP"
-#endif
-
 /* Congestion Groups */
 /*
  * This wrapper represents a bit-array for the state of the 256 QMan congestion

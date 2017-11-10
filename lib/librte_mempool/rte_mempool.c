@@ -350,7 +350,7 @@ rte_mempool_populate_phys(struct rte_mempool *mp, char *vaddr,
 {
 	unsigned total_elt_sz;
 	unsigned i = 0;
-	size_t off;
+	size_t off, delta;
 	struct rte_mempool_memhdr *memhdr;
 	int ret;
 
@@ -368,6 +368,11 @@ rte_mempool_populate_phys(struct rte_mempool *mp, char *vaddr,
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
+	/* Detect pool area has sufficient space for elements */
+	/* otherwise the buffers will be allocated from multiple memzones */
+	if (len < total_elt_sz * mp->size)
+		mp->flags |= MEMPOOL_F_MULTI_MEMZONE;
+
 	memhdr = rte_zmalloc("MEMPOOL_MEMHDR", sizeof(*memhdr), 0);
 	if (memhdr == NULL)
 		return -ENOMEM;
@@ -379,7 +384,17 @@ rte_mempool_populate_phys(struct rte_mempool *mp, char *vaddr,
 	memhdr->free_cb = free_cb;
 	memhdr->opaque = opaque;
 
-	if (mp->flags & MEMPOOL_F_NO_CACHE_ALIGN)
+	if (mp->flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS) {
+		delta = (uintptr_t)vaddr % total_elt_sz;
+		off = total_elt_sz - delta;
+		/* Validate alignment */
+		if (((uintptr_t)vaddr + off) % total_elt_sz) {
+			RTE_LOG(ERR, MEMPOOL, "vaddr(%p) \
+				not aligned to total_elt_sz(%u)\n",
+				(vaddr + off), total_elt_sz);
+			return -EINVAL;
+		}
+	} else if (mp->flags & MEMPOOL_F_NO_CACHE_ALIGN)
 		off = RTE_PTR_ALIGN_CEIL(vaddr, 8) - vaddr;
 	else
 		off = RTE_PTR_ALIGN_CEIL(vaddr, RTE_CACHE_LINE_SIZE) - vaddr;
@@ -543,7 +558,12 @@ rte_mempool_populate_default(struct rte_mempool *mp)
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 	for (mz_id = 0, n = mp->size; n > 0; mz_id++, n -= ret) {
-		size = rte_mempool_xmem_size(n, total_elt_sz, pg_shift);
+		if (mp->flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS)
+			size = rte_mempool_xmem_size(n + 1, total_elt_sz,
+							pg_shift);
+		else
+			size = rte_mempool_xmem_size(n, total_elt_sz, pg_shift);
+
 
 		ret = snprintf(mz_name, sizeof(mz_name),
 			RTE_MEMPOOL_MZ_FORMAT "_%d", mp->name, mz_id);

@@ -8710,6 +8710,12 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_mb_AES_GCM_auth_decryption_test_case_256_7),
 
+		/** Out of place tests */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_mb_AES_GCM_authenticated_encryption_oop),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_mb_AES_GCM_authenticated_decryption_oop),
+
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -8798,6 +8804,12 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 			test_mb_AES_GCM_auth_decryption_test_case_256_6),
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_mb_AES_GCM_auth_decryption_test_case_256_7),
+
+		/** Out of place tests */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_mb_AES_GCM_authenticated_encryption_oop),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_mb_AES_GCM_authenticated_decryption_oop),
 
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}

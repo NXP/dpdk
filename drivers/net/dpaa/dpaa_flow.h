@@ -36,5 +36,6 @@ int dpaa_fm_init(void);
 int dpaa_fm_term(void);
 int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set);
 int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf);
+void dpaa_write_fm_config_to_file(void);
 
 #endif

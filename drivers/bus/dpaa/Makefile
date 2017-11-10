@@ -36,18 +36,11 @@ RTE_BUS_DPAA=$(RTE_SDK)/drivers/bus/dpaa
 #
 LIB = librte_bus_dpaa.a
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA_DEBUG_INIT),y)
-CFLAGS += -O0 -g
-CFLAGS += "-Wno-error"
-else
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-endif
-
-CFLAGS +=-Wno-pointer-arith
-CFLAGS +=-Wno-cast-qual
+CFLAGS := -I$(SRCDIR) $(CFLAGS)
+CFLAGS += -O3 $(WERROR_FLAGS)
+CFLAGS += -Wno-pointer-arith
+CFLAGS += -Wno-cast-qual
 CFLAGS += -D _GNU_SOURCE
-
 CFLAGS += -I$(RTE_BUS_DPAA)/
 CFLAGS += -I$(RTE_BUS_DPAA)/include
 CFLAGS += -I$(RTE_BUS_DPAA)/base/qbman

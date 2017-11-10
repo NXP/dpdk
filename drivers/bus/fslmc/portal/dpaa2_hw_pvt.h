@@ -204,6 +204,8 @@ enum qbman_fd_format {
 #define DPAA2_SET_FD_OFFSET(fd, offset)	\
 	((fd->simple.bpid_offset |= (uint32_t)(offset) << 16))
 #define DPAA2_SET_FD_INTERNAL_JD(fd, len) fd->simple.frc = (0x80000000 | (len))
+#define DPAA2_GET_FD_FRC_PARSE_SUM(fd)	\
+			((uint16_t)((fd->simple.frc & 0xffff0000) >> 16))
 #define DPAA2_SET_FD_FRC(fd, frc)	fd->simple.frc = frc
 #define DPAA2_RESET_FD_CTRL(fd)	(fd)->simple.ctrl = 0
 
@@ -220,7 +222,8 @@ enum qbman_fd_format {
 	fle->addr_hi = upper_32_bits((uint64_t)addr);	  \
 } while (0)
 #define DPAA2_GET_FLE_CTXT(fle)					\
-	(uint64_t)((((uint64_t)((fle)->reserved[1])) << 32) + (fle)->reserved[0])
+	(uint64_t)((((uint64_t)((fle)->reserved[1])) << 32) + \
+			(fle)->reserved[0])
 #define DPAA2_FLE_SAVE_CTXT(fle, addr) do { \
 	fle->reserved[0] = lower_32_bits((uint64_t)addr);     \
 	fle->reserved[1] = upper_32_bits((uint64_t)addr);	  \
@@ -240,6 +243,7 @@ enum qbman_fd_format {
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
 #define DPAA2_GET_FD_IVP(fd)   ((fd->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	(((fd)->simple.bpid_offset & 0x0FFF0000) >> 16)
+#define DPAA2_GET_FD_HASH(fd)	((fd)->simple.flc_hi)
 #define DPAA2_GET_FLE_OFFSET(fle) (((fle)->fin_bpid_offset & 0x0FFF0000) >> 16)
 #define DPAA2_SET_FLE_SG_EXT(fle) (fle->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
@@ -305,7 +309,7 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 /**
  * When we are using Physical addresses as IO Virtual Addresses,
  * Need to call conversion routines dpaa2_mem_vtop & dpaa2_mem_ptov
- * whereever required.
+ * wherever required.
  * These routines are called with help of below MACRO's
  */
 

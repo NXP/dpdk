@@ -42,13 +42,6 @@
 
 #include "qbman_sys_decl.h"
 
-/* Trace the 3 different classes of read/write access to QBMan. #undef as
- * required.
- */
-#undef QBMAN_CCSR_TRACE
-#undef QBMAN_CINH_TRACE
-#undef QBMAN_CENA_TRACE
-
 /* Debugging assists */
 static inline void __hexdump(unsigned long start, unsigned long end,
 			     unsigned long p, size_t sz, const unsigned char *c)
@@ -85,8 +78,8 @@ static inline void __hexdump(unsigned long start, unsigned long end,
 static inline void hexdump(const void *ptr, size_t sz)
 {
 	unsigned long p = (unsigned long)ptr;
-	unsigned long start = p & ~(unsigned long)15;
-	unsigned long end = (p + sz + 15) & ~(unsigned long)15;
+	unsigned long start = p & ~15;
+	unsigned long end = (p + sz + 15) & ~15;
 	const unsigned char *c = ptr;
 
 	__hexdump(start, end, p, sz, c);
@@ -266,7 +259,7 @@ static inline void *qbman_cena_read_wo_shadow(struct qbman_swp_sys *s,
 					      uint32_t offset)
 {
 #ifdef QBMAN_CENA_TRACE
-	pr_info("qbman_cena_read(%p:%d:0x%03x) %p\n",
+	pr_info("qbman_cena_read(%p:%d:0x%03x)\n",
 		s->addr_cena, s->idx, offset);
 #endif
 	return s->addr_cena + offset;

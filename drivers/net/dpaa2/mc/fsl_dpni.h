@@ -374,7 +374,7 @@ int dpni_get_attributes(struct fsl_mc_io *mc_io,
  */
 #define DPNI_ERROR_L3CE		0x00000004
 /**
- * Parser L3 checksum error
+ * Parser L4 checksum error
  */
 #define DPNI_ERROR_L4CE		0x00000001
 

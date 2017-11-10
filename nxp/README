@@ -320,6 +320,7 @@ Following are some pre-requisites on either platform.
         in either incorrectly configured I/O or I/O loss.
         For details of port numbering, refer the LSDK documentation.
 
+  NOTE: For all the applications, the value n must be always 1 for all platforms.
 
   'testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
@@ -330,7 +331,7 @@ Following are some pre-requisites on either platform.
 
   Execute following commands to run DPDK testpmd
 
-  $./testpmd -c 0xF -n 4 -- -i --portmask=0x3 --nb-cores=2
+  $./testpmd -c 0xF -n 1 -- -i --portmask=0x3 --nb-cores=2
 
   Above command uses a port mask of first two ports. On DPAA and DPAA2 platforms
   this is defined by their respective configuration. See note above.
@@ -384,11 +385,11 @@ Following are some pre-requisites on either platform.
 
   For 4 core - 2 Port, 2 queue per port =>
 
-  $ ./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
+  $ ./l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
 
   For 4 core - 2 Port with dest mac =>
 
-  $ ./l3fwd -c 0xF -n 4 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
+  $ ./l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
 
   For 8 core - 4 Port with 4 queue per port =>
 
@@ -418,7 +419,7 @@ Following are some pre-requisites on either platform.
 
        Execute the following commands on console to run vhost-switch:
 
-       $ ./vhost-switch -c 3 -n 2 --socket-mem 1024 --huge-dir /mnt/huge -- -p 0x1 --dev-basename sock1 -P
+       $ ./vhost-switch -c 3 -n 1 --socket-mem 1024 --huge-dir /mnt/huge -- -p 0x1 --dev-basename sock1 -P
 
        NOTE: Vhost-switch requires one core extra than number of ports given in
              the command line.

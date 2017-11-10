@@ -150,6 +150,44 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	m->next = NULL;
 }
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+unsigned int svr_ver = 0;
+/* NXP LS1043ARDB specific changes
+ * LS1043_MAX_BUF_SIZE indicates max buffer size supported for LS1043 soc.
+ * SVR_LS1043A indicates LS1043 board type.
+ * Errata solution for ls1043
+ */
+static int get_mbuf_dataroom_size(uint16_t *data_room_size, uint16_t priv_size)
+{
+#define SVR_LS1043A_FAMILY	0x87920000
+#define SVR_LS1046A_FAMILY	0x87070000
+#define SVR_MASK		0xffff0000
+#define LS1043_MAX_BUF_SIZE	3904
+	FILE *svr_file = NULL;
+	int ret;
+
+	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	if (svr_file) {
+		ret = fscanf(svr_file, "svr:%x", &svr_ver);
+		if (ret > 0) {
+			if ((svr_ver & SVR_MASK) == SVR_LS1043A_FAMILY) {
+				if (*data_room_size <= LS1043_MAX_BUF_SIZE)
+					*data_room_size = LS1043_MAX_BUF_SIZE
+								- priv_size;
+				else {
+					RTE_LOG(ERR, MBUF,
+						"Buf size not supported\n");
+					fclose(svr_file);
+					return -ENOTSUP;
+				}
+			}
+		}
+		fclose(svr_file);
+	}
+	return 0;
+}
+#endif
+
 /* helper to create a mbuf pool */
 struct rte_mempool *
 rte_pktmbuf_pool_create(const char *name, unsigned n,
@@ -174,6 +212,14 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 		rte_errno = EINVAL;
 		return NULL;
 	}
+
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	ret = get_mbuf_dataroom_size(&data_room_size, priv_size);
+	if (ret != 0) {
+		rte_errno = -ret;
+		return NULL;
+	}
+#endif
 	elt_size = sizeof(struct rte_mbuf) + (unsigned)priv_size +
 		(unsigned)data_room_size;
 	mbp_priv.mbuf_data_room_size = data_room_size;
@@ -184,6 +230,10 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	if (mp == NULL)
 		return NULL;
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	if ((svr_ver & SVR_MASK) == SVR_LS1043A_FAMILY)
+		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS;
+#endif
 	/*Check the perfered mempool ops based on config*/
 	for (op = &ops[0]; *op != NULL; op++) {
 		ret = rte_mempool_ops_check_support(mp, *op);

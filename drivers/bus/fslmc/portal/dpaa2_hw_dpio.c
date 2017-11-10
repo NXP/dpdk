@@ -76,6 +76,9 @@ static struct dpio_dev_list dpio_dev_list
 	= TAILQ_HEAD_INITIALIZER(dpio_dev_list); /*!< DPIO device list */
 static uint32_t io_space_count;
 
+/* Variable to store DPAA2 platform type */
+uint32_t platform_svr;
+
 /*Stashing Macros default for LS208x*/
 static int dpaa2_core_cluster_base = 0x04;
 static int dpaa2_cluster_sz = 2;
@@ -109,6 +112,7 @@ dpaa2_core_cluster_sdest(int cpu_id)
 	return dpaa2_core_cluster_base + x;
 }
 
+#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
 static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 {
 #define STRING_LEN	28
@@ -197,6 +201,7 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 
 	return 0;
 }
+#endif
 
 static int
 configure_dpio_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
@@ -265,10 +270,9 @@ static int
 dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
-	static int first_time;
 
 	/* find the SoC type for the first time */
-	if (!first_time) {
+	if (!platform_svr) {
 		struct mc_soc_version mc_plat_info = {0};
 
 		if (mc_get_soc_version(dpio_dev->dpio,
@@ -283,7 +287,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 			dpaa2_cluster_sz = 2;
 			PMD_INIT_LOG(DEBUG, "\tLX2160 Platform Detected");
 		}
-		first_time = 1;
+		platform_svr = (mc_plat_info.svr & 0xffff0000);
 	}
 
 	/* Set the Stashing Destination */
@@ -301,9 +305,9 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	 *  As a W.A. environment variable HOST_START_CPU tells which
 	 *  the offset of the host start core of the Virtual Machine threads.
 	 */
-	if (getenv("HOST_START_CPU")) {
+	if (getenv("DPAA2_HOST_START_CPU")) {
 		cpu_id +=
-		atoi(getenv("HOST_START_CPU"));
+		atoi(getenv("DPAA2_HOST_START_CPU"));
 		cpu_id = cpu_id % NUM_HOST_CPUS;
 	}
 
@@ -322,10 +326,12 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		return -1;
 	}
 
+#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
 	if (dpaa2_dpio_intr_init(dpio_dev)) {
 		PMD_DRV_LOG(ERR, "Interrupt registration failed for dpio\n");
 		return -1;
 	}
+#endif
 
 	return 0;
 }
