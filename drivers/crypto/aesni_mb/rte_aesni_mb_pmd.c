@@ -494,8 +494,6 @@ static inline void
 verify_digest(JOB_AES_HMAC *job, struct rte_crypto_op *op) {
 	struct rte_mbuf *m_dst = (struct rte_mbuf *)job->user_data2;
 
-	RTE_ASSERT(m_dst == NULL);
-
 	/* Verify digest if required */
 	if (memcmp(job->auth_tag_output, op->sym->auth.digest.data,
 			job->auth_tag_output_len_in_bytes) != 0)
@@ -521,8 +519,6 @@ post_process_mb_job(struct aesni_mb_qp *qp, JOB_AES_HMAC *job)
 	struct rte_crypto_op *op = (struct rte_crypto_op *)job->user_data;
 
 	struct aesni_mb_session *sess;
-
-	RTE_ASSERT(op == NULL);
 
 	if (unlikely(op->status == RTE_CRYPTO_OP_STATUS_ENQUEUED)) {
 		switch (job->status) {
@@ -569,7 +565,7 @@ handle_completed_jobs(struct aesni_mb_qp *qp, JOB_AES_HMAC *job,
 	struct rte_crypto_op *op = NULL;
 	unsigned processed_jobs = 0;
 
-	while (job != NULL && processed_jobs < nb_ops) {
+	while (job != NULL) {
 		op = post_process_mb_job(qp, job);
 
 		if (op) {
@@ -579,6 +575,8 @@ handle_completed_jobs(struct aesni_mb_qp *qp, JOB_AES_HMAC *job,
 			qp->stats.dequeue_err_count++;
 			break;
 		}
+		if (processed_jobs == nb_ops)
+			break;
 
 		job = (*qp->op_fns->job.get_completed_job)(&qp->mb_mgr);
 	}
@@ -623,6 +621,9 @@ aesni_mb_pmd_dequeue_burst(void *queue_pair, struct rte_crypto_op **ops,
 	JOB_AES_HMAC *job;
 
 	int retval, processed_jobs = 0;
+
+	if (unlikely(nb_ops == 0))
+		return 0;
 
 	do {
 		/* Get next operation to process from ingress queue */

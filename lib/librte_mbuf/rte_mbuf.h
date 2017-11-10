@@ -1136,6 +1136,7 @@ static inline struct rte_mbuf *rte_pktmbuf_alloc(struct rte_mempool *mp)
  *    Array size
  *  @return
  *   - 0: Success
+ *   - -ENOENT: Not enough entries in the mempool; no mbufs are retrieved.
  */
 static inline int rte_pktmbuf_alloc_bulk(struct rte_mempool *pool,
 	 struct rte_mbuf **mbufs, unsigned count)
@@ -1453,7 +1454,7 @@ static inline void rte_pktmbuf_refcnt_update(struct rte_mbuf *m, int16_t v)
  */
 static inline uint16_t rte_pktmbuf_headroom(const struct rte_mbuf *m)
 {
-	__rte_mbuf_sanity_check(m, 1);
+	__rte_mbuf_sanity_check(m, 0);
 	return m->data_off;
 }
 
@@ -1467,7 +1468,7 @@ static inline uint16_t rte_pktmbuf_headroom(const struct rte_mbuf *m)
  */
 static inline uint16_t rte_pktmbuf_tailroom(const struct rte_mbuf *m)
 {
-	__rte_mbuf_sanity_check(m, 1);
+	__rte_mbuf_sanity_check(m, 0);
 	return (uint16_t)(m->buf_len - rte_pktmbuf_headroom(m) -
 			  m->data_len);
 }

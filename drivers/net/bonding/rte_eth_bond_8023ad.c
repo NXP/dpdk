@@ -435,7 +435,7 @@ periodic_machine(struct bond_dev_private *internals, uint8_t slave_id)
 			 * In other case (was fast and now it is slow) just switch
 			 * timeout to slow without forcing send of LACP (because standard
 			 * say so)*/
-			if (!is_partner_fast)
+			if (is_partner_fast)
 				SM_FLAG_SET(port, NTT);
 		} else
 			return; /* Nothing changed */
@@ -758,7 +758,7 @@ bond_mode_8023ad_periodic_cb(void *arg)
 		uint16_t key;
 
 		slave_id = internals->active_slaves[i];
-		rte_eth_link_get(slave_id, &link_info);
+		rte_eth_link_get_nowait(slave_id, &link_info);
 		rte_eth_macaddr_get(slave_id, &slave_addr);
 
 		if (link_info.link_status != 0) {

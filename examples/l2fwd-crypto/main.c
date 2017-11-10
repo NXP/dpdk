@@ -842,7 +842,8 @@ l2fwd_crypto_usage(const char *prgname)
 		" (0 to disable, 10 default, 86400 maximum)\n"
 
 		"  --cdev_type HW / SW / ANY\n"
-		"  --chain HASH_CIPHER / CIPHER_HASH\n"
+		"  --chain HASH_CIPHER / CIPHER_HASH / CIPHER_ONLY /"
+		" HASH_ONLY\n"
 
 		"  --cipher_algo ALGO\n"
 		"  --cipher_op ENCRYPT / DECRYPT\n"
@@ -1263,7 +1264,7 @@ display_auth_info(struct l2fwd_crypto_options *options)
 {
 	printf("\n---- Authentication information ---\n");
 	printf("Algorithm: %s\n",
-		rte_crypto_auth_algorithm_strings[options->auth_xform.cipher.algo]);
+		rte_crypto_auth_algorithm_strings[options->auth_xform.auth.algo]);
 	rte_hexdump(stdout, "Auth key:",
 			options->auth_xform.auth.key.data,
 			options->auth_xform.auth.key.length);
@@ -1373,7 +1374,7 @@ l2fwd_crypto_parse_args(struct l2fwd_crypto_options *options,
 
 	l2fwd_crypto_default_options(options);
 
-	while ((opt = getopt_long(argc, argvopt, "p:q:st:", lgopts,
+	while ((opt = getopt_long(argc, argvopt, "p:q:sT:", lgopts,
 			&option_index)) != EOF) {
 		switch (opt) {
 		/* long options */

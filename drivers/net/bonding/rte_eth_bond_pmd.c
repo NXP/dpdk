@@ -654,7 +654,7 @@ bandwidth_left(uint8_t port_id, uint64_t load, uint8_t update_idx,
 {
 	struct rte_eth_link link_status;
 
-	rte_eth_link_get(port_id, &link_status);
+	rte_eth_link_get_nowait(port_id, &link_status);
 	uint64_t link_bwg = link_status.link_speed * 1000000ULL / 8;
 	if (link_bwg == 0)
 		return;
@@ -1690,6 +1690,8 @@ static void
 bond_ethdev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct bond_dev_private *internals = dev->data->dev_private;
+	uint16_t max_nb_rx_queues = UINT16_MAX;
+	uint16_t max_nb_tx_queues = UINT16_MAX;
 
 	dev_info->max_mac_addrs = 1;
 
@@ -1697,8 +1699,29 @@ bond_ethdev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 				  ? internals->candidate_max_rx_pktlen
 				  : ETHER_MAX_JUMBO_FRAME_LEN;
 
-	dev_info->max_rx_queues = (uint16_t)128;
-	dev_info->max_tx_queues = (uint16_t)512;
+	if (internals->slave_count > 0) {
+		/* Max number of tx/rx queues that the bonded device can
+		 * support is the minimum values of the bonded slaves, as
+		 * all slaves must be capable of supporting the same number
+		 * of tx/rx queues.
+		 */
+		struct rte_eth_dev_info slave_info;
+		uint8_t idx;
+
+		for (idx = 0; idx < internals->slave_count; idx++) {
+			rte_eth_dev_info_get(internals->slaves[idx].port_id,
+					&slave_info);
+
+			if (slave_info.max_rx_queues < max_nb_rx_queues)
+				max_nb_rx_queues = slave_info.max_rx_queues;
+
+			if (slave_info.max_tx_queues < max_nb_tx_queues)
+				max_nb_tx_queues = slave_info.max_tx_queues;
+		}
+	}
+
+	dev_info->max_rx_queues = max_nb_rx_queues;
+	dev_info->max_tx_queues = max_nb_tx_queues;
 
 	dev_info->min_rx_bufsize = 0;
 

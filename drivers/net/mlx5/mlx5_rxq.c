@@ -978,10 +978,10 @@ rxq_ctrl_setup(struct rte_eth_dev *dev, struct rxq_ctrl *rxq_ctrl,
 	if (dev->data->dev_conf.intr_conf.rxq) {
 		tmpl.channel = ibv_create_comp_channel(priv->ctx);
 		if (tmpl.channel == NULL) {
-			dev->data->dev_conf.intr_conf.rxq = 0;
 			ret = ENOMEM;
-			ERROR("%p: Comp Channel creation failure: %s",
-			(void *)dev, strerror(ret));
+			ERROR("%p: Rx interrupt completion channel creation"
+			      " failure: %s",
+			      (void *)dev, strerror(ret));
 			goto error;
 		}
 	}
@@ -1310,111 +1310,159 @@ mlx5_rx_burst_secondary_setup(void *dpdk_rxq, struct rte_mbuf **pkts,
 }
 
 /**
- * Fill epoll fd list for rxq interrupts.
+ * Allocate queue vector and fill epoll fd list for Rx interrupts.
  *
  * @param priv
- *   Private structure.
+ *   Pointer to private structure.
  *
  * @return
  *   0 on success, negative on failure.
  */
 int
-priv_intr_efd_enable(struct priv *priv)
+priv_rx_intr_vec_enable(struct priv *priv)
 {
 	unsigned int i;
 	unsigned int rxqs_n = priv->rxqs_n;
 	unsigned int n = RTE_MIN(rxqs_n, (uint32_t)RTE_MAX_RXTX_INTR_VEC_ID);
+	unsigned int count = 0;
 	struct rte_intr_handle *intr_handle = priv->dev->intr_handle;
 
-	if (n == 0)
+	if (!priv->dev->data->dev_conf.intr_conf.rxq)
 		return 0;
-	if (n < rxqs_n) {
-		WARN("rxqs num is larger than EAL max interrupt vector "
-		     "%u > %u unable to supprt rxq interrupts",
-		     rxqs_n, (uint32_t)RTE_MAX_RXTX_INTR_VEC_ID);
-		return -EINVAL;
+	priv_rx_intr_vec_disable(priv);
+	intr_handle->intr_vec = malloc(sizeof(intr_handle->intr_vec[rxqs_n]));
+	if (intr_handle->intr_vec == NULL) {
+		ERROR("failed to allocate memory for interrupt vector,"
+		      " Rx interrupts will not be supported");
+		return -ENOMEM;
 	}
 	intr_handle->type = RTE_INTR_HANDLE_EXT;
 	for (i = 0; i != n; ++i) {
 		struct rxq *rxq = (*priv->rxqs)[i];
 		struct rxq_ctrl *rxq_ctrl =
 			container_of(rxq, struct rxq_ctrl, rxq);
-		int fd = rxq_ctrl->channel->fd;
+		int fd;
 		int flags;
 		int rc;
 
+		/* Skip queues that cannot request interrupts. */
+		if (!rxq || !rxq_ctrl->channel) {
+			/* Use invalid intr_vec[] index to disable entry. */
+			intr_handle->intr_vec[i] =
+				RTE_INTR_VEC_RXTX_OFFSET +
+				RTE_MAX_RXTX_INTR_VEC_ID;
+			continue;
+		}
+		if (count >= RTE_MAX_RXTX_INTR_VEC_ID) {
+			ERROR("too many Rx queues for interrupt vector size"
+			      " (%d), Rx interrupts cannot be enabled",
+			      RTE_MAX_RXTX_INTR_VEC_ID);
+			priv_rx_intr_vec_disable(priv);
+			return -1;
+		}
+		fd = rxq_ctrl->channel->fd;
 		flags = fcntl(fd, F_GETFL);
 		rc = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 		if (rc < 0) {
-			WARN("failed to change rxq interrupt file "
-			     "descriptor %d for queue index %d", fd, i);
+			ERROR("failed to make Rx interrupt file descriptor"
+			      " %d non-blocking for queue index %d", fd, i);
+			priv_rx_intr_vec_disable(priv);
 			return -1;
 		}
-		intr_handle->efds[i] = fd;
+		intr_handle->intr_vec[i] = RTE_INTR_VEC_RXTX_OFFSET + count;
+		intr_handle->efds[count] = fd;
+		count++;
 	}
-	intr_handle->nb_efd = n;
+	if (!count)
+		priv_rx_intr_vec_disable(priv);
+	else
+		intr_handle->nb_efd = count;
 	return 0;
 }
 
 /**
- * Clean epoll fd list for rxq interrupts.
+ * Clean up Rx interrupts handler.
  *
  * @param priv
- *   Private structure.
+ *   Pointer to private structure.
  */
 void
-priv_intr_efd_disable(struct priv *priv)
+priv_rx_intr_vec_disable(struct priv *priv)
 {
 	struct rte_intr_handle *intr_handle = priv->dev->intr_handle;
 
 	rte_intr_free_epoll_fd(intr_handle);
+	free(intr_handle->intr_vec);
+	intr_handle->nb_efd = 0;
+	intr_handle->intr_vec = NULL;
 }
 
+#ifdef HAVE_UPDATE_CQ_CI
+
 /**
- * Create and init interrupt vector array.
+ * DPDK callback for Rx queue interrupt enable.
  *
- * @param priv
- *   Private structure.
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param rx_queue_id
+ *   Rx queue number.
  *
  * @return
  *   0 on success, negative on failure.
  */
 int
-priv_create_intr_vec(struct priv *priv)
+mlx5_rx_intr_enable(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 {
-	unsigned int rxqs_n = priv->rxqs_n;
-	unsigned int i;
-	struct rte_intr_handle *intr_handle = priv->dev->intr_handle;
+	struct priv *priv = mlx5_get_priv(dev);
+	struct rxq *rxq = (*priv->rxqs)[rx_queue_id];
+	struct rxq_ctrl *rxq_ctrl = container_of(rxq, struct rxq_ctrl, rxq);
+	int ret;
 
-	if (rxqs_n == 0)
-		return 0;
-	intr_handle->intr_vec = (int *)
-		rte_malloc("intr_vec", rxqs_n * sizeof(int), 0);
-	if (intr_handle->intr_vec == NULL) {
-		WARN("Failed to allocate memory for intr_vec "
-		     "rxq interrupt will not be supported");
-		return -ENOMEM;
+	if (!rxq || !rxq_ctrl->channel) {
+		ret = EINVAL;
+	} else {
+		ibv_mlx5_exp_update_cq_ci(rxq_ctrl->cq, rxq->cq_ci);
+		ret = ibv_req_notify_cq(rxq_ctrl->cq, 0);
 	}
-	for (i = 0; i != rxqs_n; ++i) {
-		/* 1:1 mapping between rxq and interrupt. */
-		intr_handle->intr_vec[i] = RTE_INTR_VEC_RXTX_OFFSET + i;
-	}
-	return 0;
+	if (ret)
+		WARN("unable to arm interrupt on rx queue %d", rx_queue_id);
+	return -ret;
 }
 
 /**
- * Destroy init interrupt vector array.
+ * DPDK callback for Rx queue interrupt disable.
  *
- * @param priv
- *   Private structure.
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param rx_queue_id
+ *   Rx queue number.
  *
  * @return
  *   0 on success, negative on failure.
  */
-void
-priv_destroy_intr_vec(struct priv *priv)
+int
+mlx5_rx_intr_disable(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 {
-	struct rte_intr_handle *intr_handle = priv->dev->intr_handle;
+	struct priv *priv = mlx5_get_priv(dev);
+	struct rxq *rxq = (*priv->rxqs)[rx_queue_id];
+	struct rxq_ctrl *rxq_ctrl = container_of(rxq, struct rxq_ctrl, rxq);
+	struct ibv_cq *ev_cq;
+	void *ev_ctx;
+	int ret;
 
-	rte_free(intr_handle->intr_vec);
+	if (!rxq || !rxq_ctrl->channel) {
+		ret = EINVAL;
+	} else {
+		ret = ibv_get_cq_event(rxq_ctrl->cq->channel, &ev_cq, &ev_ctx);
+		if (ret || ev_cq != rxq_ctrl->cq)
+			ret = EINVAL;
+	}
+	if (ret)
+		WARN("unable to disable interrupt on rx queue %d",
+		     rx_queue_id);
+	else
+		ibv_ack_cq_events(rxq_ctrl->cq, 1);
+	return -ret;
 }
+
+#endif /* HAVE_UPDATE_CQ_CI */

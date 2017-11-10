@@ -533,6 +533,7 @@ mlx5_tx_burst(void *dpdk_txq, struct rte_mbuf **pkts, uint16_t pkts_n)
 		uint16_t ehdr;
 		uint8_t cs_flags = 0;
 		uint64_t tso = 0;
+		uint16_t tso_segsz = 0;
 #ifdef MLX5_PMD_SOFT_COUNTERS
 		uint32_t total_length = 0;
 #endif
@@ -628,6 +629,7 @@ mlx5_tx_burst(void *dpdk_txq, struct rte_mbuf **pkts, uint16_t pkts_n)
 
 				tso_header_sz = buf->l2_len + vlan_sz +
 						buf->l3_len + buf->l4_len;
+				tso_segsz = buf->tso_segsz;
 
 				if (is_tunneled	&& txq->tunnel_en) {
 					tso_header_sz += buf->outer_l2_len +
@@ -827,7 +829,7 @@ next_pkt:
 			};
 			wqe->eseg = (rte_v128u32_t){
 				0,
-				cs_flags | (htons(buf->tso_segsz) << 16),
+				cs_flags | (htons(tso_segsz) << 16),
 				0,
 				(ehdr << 16) | htons(tso_header_sz),
 			};
@@ -2018,7 +2020,7 @@ mlx5_rx_burst(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts_n)
 			pkt = seg;
 			assert(len >= (rxq->crc_present << 2));
 			/* Update packet information. */
-			pkt->packet_type = 0;
+			pkt->packet_type = rxq_cq_to_pkt_type(cqe);
 			pkt->ol_flags = 0;
 			if (rss_hash_res && rxq->rss_hash) {
 				pkt->hash.rss = rss_hash_res;
@@ -2036,10 +2038,8 @@ mlx5_rx_burst(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts_n)
 						mlx5_flow_mark_get(mark);
 				}
 			}
-			if (rxq->csum | rxq->csum_l2tun) {
-				pkt->packet_type = rxq_cq_to_pkt_type(cqe);
+			if (rxq->csum | rxq->csum_l2tun)
 				pkt->ol_flags |= rxq_cq_to_ol_flags(rxq, cqe);
-			}
 			if (rxq->vlan_strip &&
 			    (cqe->hdr_type_etc &
 			     htons(MLX5_CQE_VLAN_STRIPPED))) {
@@ -2149,77 +2149,4 @@ removed_rx_burst(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts_n)
 	(void)pkts;
 	(void)pkts_n;
 	return 0;
-}
-
-/**
- * DPDK callback for rx queue interrupt enable.
- *
- * @param dev
- *   Pointer to Ethernet device structure.
- * @param rx_queue_id
- *   RX queue number
- *
- * @return
- *   0 on success, negative on failure.
- */
-int
-mlx5_rx_intr_enable(struct rte_eth_dev *dev, uint16_t rx_queue_id)
-{
-#ifdef HAVE_UPDATE_CQ_CI
-	struct priv *priv = mlx5_get_priv(dev);
-	struct rxq *rxq = (*priv->rxqs)[rx_queue_id];
-	struct rxq_ctrl *rxq_ctrl = container_of(rxq, struct rxq_ctrl, rxq);
-	struct ibv_cq *cq = rxq_ctrl->cq;
-	uint16_t ci = rxq->cq_ci;
-	int ret = 0;
-
-	ibv_mlx5_exp_update_cq_ci(cq, ci);
-	ret = ibv_req_notify_cq(cq, 0);
-#else
-	int ret = -1;
-	(void)dev;
-	(void)rx_queue_id;
-#endif
-	if (ret)
-		WARN("unable to arm interrupt on rx queue %d", rx_queue_id);
-	return ret;
-}
-
-/**
- * DPDK callback for rx queue interrupt disable.
- *
- * @param dev
- *   Pointer to Ethernet device structure.
- * @param rx_queue_id
- *   RX queue number
- *
- * @return
- *   0 on success, negative on failure.
- */
-int
-mlx5_rx_intr_disable(struct rte_eth_dev *dev, uint16_t rx_queue_id)
-{
-#ifdef HAVE_UPDATE_CQ_CI
-	struct priv *priv = mlx5_get_priv(dev);
-	struct rxq *rxq = (*priv->rxqs)[rx_queue_id];
-	struct rxq_ctrl *rxq_ctrl = container_of(rxq, struct rxq_ctrl, rxq);
-	struct ibv_cq *cq = rxq_ctrl->cq;
-	struct ibv_cq *ev_cq;
-	void *ev_ctx;
-	int ret = 0;
-
-	ret = ibv_get_cq_event(cq->channel, &ev_cq, &ev_ctx);
-	if (ret || ev_cq != cq)
-		ret = -1;
-	else
-		ibv_ack_cq_events(cq, 1);
-#else
-	int ret = -1;
-	(void)dev;
-	(void)rx_queue_id;
-#endif
-	if (ret)
-		WARN("unable to disable interrupt on rx queue %d",
-		     rx_queue_id);
-	return ret;
 }

@@ -1806,11 +1806,15 @@ i40e_parse_link_speeds(uint16_t link_speeds)
 static int
 i40e_phy_conf_link(struct i40e_hw *hw,
 		   uint8_t abilities,
-		   uint8_t force_speed)
+		   uint8_t force_speed,
+		   bool is_up)
 {
 	enum i40e_status_code status;
 	struct i40e_aq_get_phy_abilities_resp phy_ab;
 	struct i40e_aq_set_phy_config phy_conf;
+	enum i40e_aq_phy_type cnt;
+	uint32_t phy_type_mask = 0;
+
 	const uint8_t mask = I40E_AQ_PHY_FLAG_PAUSE_TX |
 			I40E_AQ_PHY_FLAG_PAUSE_RX |
 			I40E_AQ_PHY_FLAG_PAUSE_RX |
@@ -1828,6 +1832,10 @@ i40e_phy_conf_link(struct i40e_hw *hw,
 	if (status)
 		return ret;
 
+	/* If link already up, no need to set up again */
+	if (is_up && phy_ab.phy_type != 0)
+		return I40E_SUCCESS;
+
 	memset(&phy_conf, 0, sizeof(phy_conf));
 
 	/* bits 0-2 use the values from get_phy_abilities_resp */
@@ -1838,13 +1846,21 @@ i40e_phy_conf_link(struct i40e_hw *hw,
 	if (abilities & I40E_AQ_PHY_AN_ENABLED)
 		phy_conf.link_speed = advt;
 	else
-		phy_conf.link_speed = force_speed;
+		phy_conf.link_speed = is_up ? force_speed : phy_ab.link_speed;
 
 	phy_conf.abilities = abilities;
 
+
+
+	/* To enable link, phy_type mask needs to include each type */
+	for (cnt = I40E_PHY_TYPE_SGMII; cnt < I40E_PHY_TYPE_MAX; cnt++)
+		phy_type_mask |= 1 << cnt;
+
 	/* use get_phy_abilities_resp value for the rest */
-	phy_conf.phy_type = phy_ab.phy_type;
-	phy_conf.phy_type_ext = phy_ab.phy_type_ext;
+	phy_conf.phy_type = is_up ? cpu_to_le32(phy_type_mask) : 0;
+	phy_conf.phy_type_ext = is_up ? (I40E_AQ_PHY_TYPE_EXT_25G_KR |
+		I40E_AQ_PHY_TYPE_EXT_25G_CR | I40E_AQ_PHY_TYPE_EXT_25G_SR |
+		I40E_AQ_PHY_TYPE_EXT_25G_LR) : 0;
 	phy_conf.fec_config = phy_ab.fec_cfg_curr_mod_ext_info;
 	phy_conf.eee_capability = phy_ab.eee_capability;
 	phy_conf.eeer = phy_ab.eeer_val;
@@ -1876,13 +1892,7 @@ i40e_apply_link_speed(struct rte_eth_dev *dev)
 		abilities |= I40E_AQ_PHY_AN_ENABLED;
 	abilities |= I40E_AQ_PHY_LINK_ENABLED;
 
-	/* Skip changing speed on 40G interfaces, FW does not support */
-	if (I40E_PHY_TYPE_SUPPORT_40G(hw->phy.phy_types)) {
-		speed =  I40E_LINK_SPEED_UNKNOWN;
-		abilities |= I40E_AQ_PHY_AN_ENABLED;
-	}
-
-	return i40e_phy_conf_link(hw, abilities, speed);
+	return i40e_phy_conf_link(hw, abilities, speed, true);
 }
 
 static int
@@ -2008,7 +2018,7 @@ i40e_dev_start(struct rte_eth_dev *dev)
 		if (dev->data->dev_conf.intr_conf.lsc != 0)
 			PMD_INIT_LOG(INFO,
 				"lsc won't enable because of no intr multiplex");
-	} else if (dev->data->dev_conf.intr_conf.lsc != 0) {
+	} else {
 		ret = i40e_aq_set_phy_int_mask(hw,
 					       ~(I40E_AQ_EVENT_LINK_UPDOWN |
 					       I40E_AQ_EVENT_MODULE_QUAL_FAIL |
@@ -2016,7 +2026,7 @@ i40e_dev_start(struct rte_eth_dev *dev)
 		if (ret != I40E_SUCCESS)
 			PMD_DRV_LOG(WARNING, "Fail to set phy mask");
 
-		/* Call get_link_info aq commond to enable LSE */
+		/* Call get_link_info aq commond to enable/disable LSE */
 		i40e_dev_link_update(dev, 0);
 	}
 
@@ -2225,7 +2235,7 @@ i40e_dev_set_link_down(struct rte_eth_dev *dev)
 	struct i40e_hw *hw = I40E_DEV_PRIVATE_TO_HW(dev->data->dev_private);
 
 	abilities = I40E_AQ_PHY_ENABLE_ATOMIC_LINK;
-	return i40e_phy_conf_link(hw, abilities, speed);
+	return i40e_phy_conf_link(hw, abilities, speed, false);
 }
 
 int
@@ -2352,9 +2362,6 @@ i40e_update_vsi_stats(struct i40e_vsi *vsi)
 	i40e_stat_update_48(hw, I40E_GLV_BPTCH(idx), I40E_GLV_BPTCL(idx),
 			    vsi->offset_loaded,  &oes->tx_broadcast,
 			    &nes->tx_broadcast);
-	/* exclude CRC bytes */
-	nes->tx_bytes -= (nes->tx_unicast + nes->tx_multicast +
-		nes->tx_broadcast) * ETHER_CRC_LEN;
 	/* GLV_TDPC not supported */
 	i40e_stat_update_32(hw, I40E_GLV_TEPC(idx), vsi->offset_loaded,
 			    &oes->tx_errors, &nes->tx_errors);
@@ -2390,14 +2397,35 @@ i40e_read_stats_registers(struct i40e_pf *pf, struct i40e_hw *hw)
 	i40e_stat_update_48(hw, I40E_GLV_GORCH(hw->port),
 			I40E_GLV_GORCL(hw->port),
 			pf->offset_loaded,
-			&pf->internal_rx_bytes_offset,
-			&pf->internal_rx_bytes);
+			&pf->internal_stats_offset.rx_bytes,
+			&pf->internal_stats.rx_bytes);
 
 	i40e_stat_update_48(hw, I40E_GLV_GOTCH(hw->port),
 			I40E_GLV_GOTCL(hw->port),
 			pf->offset_loaded,
-			&pf->internal_tx_bytes_offset,
-			&pf->internal_tx_bytes);
+			&pf->internal_stats_offset.tx_bytes,
+			&pf->internal_stats.tx_bytes);
+	/* Get total internal rx packet count */
+	i40e_stat_update_48(hw, I40E_GLV_UPRCH(hw->port),
+			    I40E_GLV_UPRCL(hw->port),
+			    pf->offset_loaded,
+			    &pf->internal_stats_offset.rx_unicast,
+			    &pf->internal_stats.rx_unicast);
+	i40e_stat_update_48(hw, I40E_GLV_MPRCH(hw->port),
+			    I40E_GLV_MPRCL(hw->port),
+			    pf->offset_loaded,
+			    &pf->internal_stats_offset.rx_multicast,
+			    &pf->internal_stats.rx_multicast);
+	i40e_stat_update_48(hw, I40E_GLV_BPRCH(hw->port),
+			    I40E_GLV_BPRCL(hw->port),
+			    pf->offset_loaded,
+			    &pf->internal_stats_offset.rx_broadcast,
+			    &pf->internal_stats.rx_broadcast);
+
+	/* exclude CRC size */
+	pf->internal_stats.rx_bytes -= (pf->internal_stats.rx_unicast +
+		pf->internal_stats.rx_multicast +
+		pf->internal_stats.rx_broadcast) * ETHER_CRC_LEN;
 
 	/* Get statistics of struct i40e_eth_stats */
 	i40e_stat_update_48(hw, I40E_GLPRT_GORCH(hw->port),
@@ -2420,7 +2448,17 @@ i40e_read_stats_registers(struct i40e_pf *pf, struct i40e_hw *hw)
 	 * so subtract ETHER_CRC_LEN from the byte counter for each rx packet.
 	 */
 	ns->eth.rx_bytes -= (ns->eth.rx_unicast + ns->eth.rx_multicast +
-		ns->eth.rx_broadcast) * ETHER_CRC_LEN + pf->internal_rx_bytes;
+		ns->eth.rx_broadcast) * ETHER_CRC_LEN;
+
+	/* Workaround: it is possible I40E_GLV_GORCH[H/L] is updated before
+	 * I40E_GLPRT_GORCH[H/L], so there is a small window that cause negtive
+	 * value.
+	 */
+	if (ns->eth.rx_bytes < pf->internal_stats.rx_bytes)
+		ns->eth.rx_bytes = 0;
+	/* exlude internal rx bytes */
+	else
+		ns->eth.rx_bytes -= pf->internal_stats.rx_bytes;
 
 	i40e_stat_update_32(hw, I40E_GLPRT_RDPC(hw->port),
 			    pf->offset_loaded, &os->eth.rx_discards,
@@ -2448,7 +2486,14 @@ i40e_read_stats_registers(struct i40e_pf *pf, struct i40e_hw *hw)
 			    pf->offset_loaded, &os->eth.tx_broadcast,
 			    &ns->eth.tx_broadcast);
 	ns->eth.tx_bytes -= (ns->eth.tx_unicast + ns->eth.tx_multicast +
-		ns->eth.tx_broadcast) * ETHER_CRC_LEN + pf->internal_tx_bytes;
+		ns->eth.tx_broadcast) * ETHER_CRC_LEN;
+
+	/* exclude internal tx bytes */
+	if (ns->eth.tx_bytes < pf->internal_stats.tx_bytes)
+		ns->eth.tx_bytes = 0;
+	else
+		ns->eth.tx_bytes -= pf->internal_stats.tx_bytes;
+
 	/* GLPRT_TEPC not supported */
 
 	/* additional port specific stats */
@@ -4284,6 +4329,8 @@ i40e_vsi_config_tc_queue_mapping(struct i40e_vsi *vsi,
 	for (i = 0; i < I40E_MAX_TRAFFIC_CLASS; i++)
 		if (enabled_tcmap & (1 << i))
 			total_tc++;
+	if (total_tc == 0)
+		total_tc = 1;
 	vsi->enabled_tc = enabled_tcmap;
 
 	/* Number of queues per enabled TC */
@@ -5216,10 +5263,8 @@ i40e_pf_setup(struct i40e_pf *pf)
 	pf->offset_loaded = FALSE;
 	memset(&pf->stats, 0, sizeof(struct i40e_hw_port_stats));
 	memset(&pf->stats_offset, 0, sizeof(struct i40e_hw_port_stats));
-	pf->internal_rx_bytes = 0;
-	pf->internal_tx_bytes = 0;
-	pf->internal_rx_bytes_offset = 0;
-	pf->internal_tx_bytes_offset = 0;
+	memset(&pf->internal_stats, 0, sizeof(struct i40e_eth_stats));
+	memset(&pf->internal_stats_offset, 0, sizeof(struct i40e_eth_stats));
 
 	ret = i40e_pf_get_switch_config(pf);
 	if (ret != I40E_SUCCESS) {
@@ -9150,8 +9195,9 @@ i40e_pctype_to_flowtype(enum i40e_filter_pctype pctype)
  */
 
 /* For both X710 and XL710 */
-#define I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE 0x10000200
-#define I40E_GL_SWR_PRI_JOIN_MAP_0       0x26CE00
+#define I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE_1	0x10000200
+#define I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE_2	0x20000200
+#define I40E_GL_SWR_PRI_JOIN_MAP_0		0x26CE00
 
 #define I40E_GL_SWR_PRI_JOIN_MAP_2_VALUE 0x011f0200
 #define I40E_GL_SWR_PRI_JOIN_MAP_2       0x26CE08
@@ -9203,8 +9249,12 @@ i40e_configure_registers(struct i40e_hw *hw)
 				reg_table[i].val =
 					I40E_X722_GL_SWR_PRI_JOIN_MAP_0_VALUE;
 			else /* For X710/XL710/XXV710 */
-				reg_table[i].val =
-					I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE;
+				if (hw->aq.fw_maj_ver < 6)
+					reg_table[i].val =
+					     I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE_1;
+				else
+					reg_table[i].val =
+					     I40E_GL_SWR_PRI_JOIN_MAP_0_VALUE_2;
 		}
 
 		if (reg_table[i].addr == I40E_GL_SWR_PRI_JOIN_MAP_2) {
