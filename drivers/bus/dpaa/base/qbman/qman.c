@@ -939,7 +939,7 @@ static inline unsigned int __poll_portal_fast(struct qman_portal *p,
 	do {
 		qm_dqrr_pvb_update(&p->p);
 		dq = qm_dqrr_current(&p->p);
-		if (!dq)
+		if (unlikely(!dq))
 			break;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 	/* If running on an LE system the fields of the
@@ -1198,6 +1198,7 @@ int qman_create_fq(u32 fqid, u32 flags, struct qman_fq *fq)
 	}
 	spin_lock_init(&fq->fqlock);
 	fq->fqid = fqid;
+	fq->fqid_le = cpu_to_be32(fqid);
 	fq->flags = flags;
 	fq->state = qman_fq_state_oos;
 	fq->cgr_groupid = 0;
@@ -1986,7 +1987,7 @@ int qman_enqueue(struct qman_fq *fq, const struct qm_fd *fd, u32 flags)
 
 int qman_enqueue_multi(struct qman_fq *fq,
 		       const struct qm_fd *fd,
-		int frames_to_send)
+		       int frames_to_send)
 {
 	struct qman_portal *p = get_affine_portal();
 	struct qm_portal *portal = &p->p;
@@ -2008,7 +2009,7 @@ int qman_enqueue_multi(struct qman_fq *fq,
 
 	/* try to send as many frames as possible */
 	while (eqcr->available && frames_to_send--) {
-		eq->fqid = cpu_to_be32(fq->fqid);
+		eq->fqid = fq->fqid_le;
 #ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
 		eq->tag = cpu_to_be32(fq->key);
 #else
