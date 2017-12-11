@@ -46,6 +46,7 @@
 #include <rte_kvargs.h>
 #include <rte_dev.h>
 #include <rte_ethdev.h>
+#include <rte_mbuf.h>
 
 #include <fslmc_logs.h>
 #include <rte_fslmc.h>
@@ -99,6 +100,8 @@ dpaa2_create_dpbp_device(int vdev_fd __rte_unused,
 	TAILQ_INSERT_TAIL(&dpbp_dev_list, dpbp_node, next);
 
 	RTE_LOG(DEBUG, PMD, "DPAA2: Added [dpbp.%d]\n", dpbp_id);
+
+	rte_mbuf_register_platform_mempool_ops(DPAA2_MEMPOOL_OPS_NAME);
 
 	return 0;
 }
