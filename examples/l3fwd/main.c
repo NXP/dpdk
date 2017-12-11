@@ -41,6 +41,11 @@
 #include <rte_udp.h>
 #include <rte_string_fns.h>
 #include <rte_cpuflags.h>
+#include <rte_eventdev.h>
+#include <rte_event_eth_rx_adapter.h>
+#include <rte_string_fns.h>
+#include <rte_spinlock.h>
+#include <rte_malloc.h>
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
@@ -87,6 +92,38 @@ xmm_t val_eth[RTE_MAX_ETHPORTS];
 
 /* mask of enabled ports */
 uint32_t enabled_port_mask;
+
+struct eventdev_params {
+	uint8_t num_eventqueue;
+	uint8_t num_eventport;
+	uint8_t eventdev_id;
+};
+
+static struct eventdev_params eventdev_config[RTE_MAX_EVENTDEV_COUNT];
+static uint16_t nb_eventdev_params;
+struct eventdev_info *event_devices;
+
+struct connection_info {
+	uint8_t ethdev_id;
+	uint8_t eventq_id;
+	uint8_t event_prio;
+	uint8_t ethdev_rx_qid;
+	int32_t ethdev_rx_qid_mode;
+	int32_t eventdev_id;
+	int32_t adapter_id;
+};
+struct adapter_config {
+	struct connection_info connections[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_connections;
+};
+
+struct adapter_params {
+	struct adapter_config config[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_rx_adapter;
+};
+static struct adapter_params rx_adapter_config;
+struct link_params link_config;
+enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
 
 /* Used only in exact match mode. */
 int ipv6; /**< ipv6 is false by default. */
@@ -282,6 +319,13 @@ print_usage(const char *prgname)
 		" [-P]"
 		" [-E]"
 		" [-L]"
+		" [-e] eventdev config (eventdev, No. of event queues, No. of event ports)"
+		"  [,(eventdev,No. of event queues,No. of event ports)]"
+		" [-a] adapter config (port, queue, queue mode, event queue, event priority,"
+		"  eventdev)[,(port, queue, queue mode, event queue,"
+		"  event priority,eventdev)]"
+		" [-l] port link config (event port, event queue,eventdev,lcore)"
+		"  [,(event port,event queue,eventdev,lcore)]"
 		" --config (port,queue,lcore)[,(port,queue,lcore)]"
 		" [--eth-dest=X,MM:MM:MM:MM:MM:MM]"
 		" [--enable-jumbo [--max-pkt-len PKTLEN]]"
@@ -304,7 +348,15 @@ print_usage(const char *prgname)
 		"  --hash-entry-num: Specify the hash entry number in hexadecimal to be setup\n"
 		"  --ipv6: Set if running ipv6 packets\n"
 		"  --parse-ptype: Set to use software to analyze packet type\n"
-		"  --disable-per-port-pool: Disable separate buffer pool per port\n",
+		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
+		"  -e : Event dev configuration\n"
+		"	(Eventdev ID,Number of event queues,Number of event ports)\n"
+		"  -a : Adapter configuration\n"
+		"	(Ethdev Port ID,Ethdev Rx Queue ID,Ethdev Rx"
+		"	QueueID mode, Event Queue ID,"
+		"	Event Priority,Eventdev ID)\n"
+		"  -l : Event port and Event Queue link configuration\n"
+		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n",
 		prgname);
 }
 
@@ -440,6 +492,362 @@ parse_eth_dest(const char *optarg)
 	*(uint64_t *)(val_eth + portid) = dest_eth_addr[portid];
 }
 
+static int
+parse_eventdev_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENTDEV_ID = 0,
+		FLD_EVENT_QUEUE,
+		FLD_EVENT_PORT,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i;
+	unsigned int size;
+
+	/*First set all eventdev_config to default*/
+	for (i = 0; i < RTE_MAX_EVENTDEV_COUNT; i++) {
+		eventdev_config[i].num_eventqueue = 1;
+		eventdev_config[i].num_eventport = RTE_MAX_LCORE;
+	}
+
+	nb_eventdev_params = 0;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (nb_eventdev_params >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				nb_eventdev_params);
+			return -1;
+		}
+
+		eventdev_config[nb_eventdev_params].num_eventqueue =
+					(uint8_t)int_fld[FLD_EVENT_QUEUE];
+		eventdev_config[nb_eventdev_params].num_eventport =
+					(uint8_t)int_fld[FLD_EVENT_PORT];
+		eventdev_config[nb_eventdev_params].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENTDEV_ID];
+		++nb_eventdev_params;
+	}
+
+	return 0;
+}
+
+static int
+parse_adapter_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_ETHDEV_ID = 0,
+		FLD_ETHDEV_QID,
+		FLD_EVENT_QID_MODE,
+		FLD_EVENTQ_ID,
+		FLD_EVENT_PRIO,
+		FLD_EVENT_DEVID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0, j = 0;
+	unsigned int size;
+
+	index = rx_adapter_config.nb_rx_adapter;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		j = rx_adapter_config.config[index].nb_connections;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				rx_adapter_config.nb_rx_adapter);
+			return -1;
+		}
+
+		rx_adapter_config.config[index].connections[j].ethdev_id =
+					(uint8_t)int_fld[FLD_ETHDEV_ID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid =
+					(uint8_t)int_fld[FLD_ETHDEV_QID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid_mode =
+					(uint8_t)int_fld[FLD_EVENT_QID_MODE];
+		rx_adapter_config.config[index].connections[j].eventq_id =
+					(uint8_t)int_fld[FLD_EVENTQ_ID];
+		rx_adapter_config.config[index].connections[j].event_prio =
+					(uint8_t)int_fld[FLD_EVENT_PRIO];
+		rx_adapter_config.config[index].connections[j].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		rx_adapter_config.config[index].nb_connections++;
+	}
+
+	return 0;
+}
+
+static int
+parse_link_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENT_PORTID = 0,
+		FLD_EVENT_QID,
+		FLD_EVENT_DEVID,
+		FLD_LCORE_ID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0;
+	unsigned int size;
+
+	/*First set all adapter_config to default*/
+	memset(&link_config, 0, sizeof(struct link_params));
+	while ((p = strchr(p0, '(')) != NULL) {
+		index = link_config.nb_links;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				link_config.nb_links);
+			return -1;
+		}
+
+		link_config.links[index].event_portid =
+					(uint8_t)int_fld[FLD_EVENT_PORTID];
+		link_config.links[index].eventq_id =
+					(uint8_t)int_fld[FLD_EVENT_QID];
+		link_config.links[index].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		link_config.links[index].lcore_id =
+					(uint8_t)int_fld[FLD_LCORE_ID];
+		lcore_dequeue_mode[link_config.links[index].lcore_id] =
+					EVENTDEV_DEQUEUE;
+		link_config.nb_links++;
+	}
+
+	return 0;
+}
+
+static int
+eventdev_configure(void)
+{
+	int ret = -1;
+	uint8_t i, j;
+	void *ports, *queues;
+	struct rte_event_dev_config eventdev_conf = {0};
+	struct rte_event_dev_info eventdev_def_conf = {0};
+	struct rte_event_queue_conf eventq_conf = {0};
+	struct rte_event_port_conf port_conf = {0};
+	struct rte_event_eth_rx_adapter_queue_conf queue_conf = {0};
+
+	/*First allocate space for event device information*/
+	event_devices = rte_zmalloc("event-dev",
+				sizeof(struct eventdev_info) * nb_eventdev_params, 0);
+	if (event_devices == NULL) {
+		printf("Error in allocating memory for event devices\n");
+		return ret;
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++) {
+		/*Now allocate space for event ports request from user*/
+		ports = rte_zmalloc("event-ports",
+				sizeof(uint8_t) * eventdev_config[i].num_eventport, 0);
+		if (ports == NULL) {
+			printf("Error in allocating memory for event ports\n");
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].port = ports;
+
+		/*Now allocate space for event queues request from user*/
+		queues = rte_zmalloc("event-queues",
+				sizeof(uint8_t) * eventdev_config[i].num_eventqueue, 0);
+		if (queues == NULL) {
+			printf("Error in allocating memory for event queues\n");
+			rte_free(event_devices[i].port);
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].queue = queues;
+		event_devices[i].dev_id = eventdev_config[i].eventdev_id;
+
+		/* get default values of eventdev*/
+		memset(&eventdev_def_conf, 0,
+		       sizeof(struct rte_event_dev_info));
+		ret = rte_event_dev_info_get(event_devices[i].dev_id,
+				       &eventdev_def_conf);
+		if (ret < 0) {
+			printf("Error in getting event device info, devid: %d\n",
+				event_devices[i].dev_id);
+			return ret;
+		}
+
+		memset(&eventdev_conf, 0, sizeof(struct rte_event_dev_config));
+		eventdev_conf.nb_events_limit = -1;
+		eventdev_conf.nb_event_queues =
+					eventdev_config[i].num_eventqueue;
+		eventdev_conf.nb_event_ports =
+					eventdev_config[i].num_eventport;
+		eventdev_conf.nb_event_queue_flows =
+				eventdev_def_conf.max_event_queue_flows;
+		eventdev_conf.nb_event_port_dequeue_depth =
+				eventdev_def_conf.max_event_port_dequeue_depth;
+		eventdev_conf.nb_event_port_enqueue_depth =
+				eventdev_def_conf.max_event_port_enqueue_depth;
+
+		ret = rte_event_dev_configure(event_devices[i].dev_id,
+					&eventdev_conf);
+		if (ret < 0) {
+			printf("Error in configuring event device\n");
+			return ret;
+		}
+
+		memset(&eventq_conf, 0, sizeof(struct rte_event_queue_conf));
+		eventq_conf.nb_atomic_flows = 1;
+		eventq_conf.schedule_type = RTE_SCHED_TYPE_ATOMIC;
+		for (j = 0; j < eventdev_config[i].num_eventqueue; j++) {
+			ret = rte_event_queue_setup(event_devices[i].dev_id, j,
+					      &eventq_conf);
+			if (ret < 0) {
+				printf("Error in event queue setup\n");
+				return ret;
+			}
+			event_devices[i].queue[j] = j;
+		}
+
+		for (j = 0; j <  eventdev_config[i].num_eventport; j++) {
+			ret = rte_event_port_setup(event_devices[i].dev_id, j, NULL);
+			if (ret < 0) {
+				printf("Error in event port setup\n");
+				return ret;
+			}
+			event_devices[i].port[j] = j;
+		}
+	}
+
+	for (i = 0; i < rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			ret = rte_event_eth_rx_adapter_create(j,
+					rx_adapter_config.config[i].connections[j].eventdev_id,
+					&port_conf);
+			if (ret < 0) {
+				printf("Error in event eth adapter creation\n");
+				return ret;
+			}
+			rx_adapter_config.config[i].connections[j].adapter_id =
+					j;
+		}
+	}
+
+	for (j = 0; j <  link_config.nb_links; j++) {
+		ret = rte_event_port_link(link_config.links[j].eventdev_id,
+				    link_config.links[j].event_portid,
+				    &link_config.links[j].eventq_id, NULL, 1);
+		if (ret < 0) {
+			printf("Error in event port linking\n");
+			return ret;
+		}
+	}
+
+	queue_conf.rx_queue_flags =
+				RTE_EVENT_ETH_RX_ADAPTER_QUEUE_FLOW_ID_VALID;
+
+	for (i = 0; i <  rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			queue_conf.ev.queue_id =
+				rx_adapter_config.config[i].connections[j].eventq_id;
+			queue_conf.ev.priority =
+				rx_adapter_config.config[i].connections[j].event_prio;
+			queue_conf.ev.flow_id =
+				rx_adapter_config.config[i].connections[j].ethdev_id;
+			queue_conf.ev.sched_type =
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid_mode;
+			ret = rte_event_eth_rx_adapter_queue_add(
+				rx_adapter_config.config[i].connections[j].adapter_id,
+				rx_adapter_config.config[i].connections[j].ethdev_id,
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid,
+				&queue_conf);
+			if (ret < 0) {
+				printf("Error in adding eth queue in event adapter\n");
+				return ret;
+			}
+		}
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++) {
+		ret = rte_event_dev_start(event_devices[i].dev_id);
+		if (ret < 0) {
+			printf("Error in starting event device, devid: %d\n",
+				event_devices[i].dev_id);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 #define MAX_JUMBO_PKT_LEN  9600
 #define MEMPOOL_CACHE_SIZE 256
 
@@ -448,6 +856,9 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"L"   /* enable long prefix match */
 	"E"   /* enable exact match */
+	"e:"  /* Event Device configuration */
+	"a:"  /* Rx Adapter configuration */
+	"l:"  /* Event Queue and Adapter link configuration */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -536,6 +947,37 @@ parse_args(int argc, char **argv)
 
 		case 'L':
 			l3fwd_lpm_on = 1;
+			break;
+
+		/*Event device configuration*/
+		case 'e':
+			ret = parse_eventdev_config(optarg);
+			if (ret < 0) {
+				printf("invalid event device configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		/*Rx adapter configuration*/
+		case 'a':
+			ret = parse_adapter_config(optarg);
+			if (ret < 0) {
+				printf("invalid Rx adapter configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			rx_adapter_config.nb_rx_adapter++;
+			break;
+
+		/*Event Queue and Adapter Link configuration*/
+		case 'l':
+			ret = parse_link_config(optarg);
+			if (ret < 0) {
+				printf("invalid Link configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
 			break;
 
 		/* long options */
@@ -1010,6 +1452,13 @@ main(int argc, char **argv)
 	}
 
 	printf("\n");
+
+	if (nb_eventdev_params) {
+		ret = eventdev_configure();
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE,
+				"event dev configure: err=%d\n", ret);
+	}
 
 	/* start ports */
 	RTE_ETH_FOREACH_DEV(portid) {

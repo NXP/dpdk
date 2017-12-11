@@ -15,6 +15,8 @@
 #define NO_HASH_MULTI_LOOKUP 1
 #endif
 
+#define RTE_MAX_EVENTDEV_COUNT	RTE_MAX_LCORE
+
 #define MAX_PKT_BURST     32
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 
@@ -85,6 +87,32 @@ extern uint32_t hash_entry_number;
 extern xmm_t val_eth[RTE_MAX_ETHPORTS];
 
 extern struct lcore_conf lcore_conf[RTE_MAX_LCORE];
+
+struct eventdev_info {
+	uint8_t dev_id;
+	uint8_t *port;
+	uint8_t *queue;
+};
+
+struct link_info {
+	uint8_t event_portid;
+	uint8_t eventq_id;
+	uint8_t eventdev_id;
+	uint8_t lcore_id;
+};
+struct link_params {
+	struct link_info links[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_links;
+};
+
+enum dequeue_mode {
+	QUEUE_DEQUEUE = 0,
+	EVENTDEV_DEQUEUE,
+};
+
+extern struct link_params link_config;
+extern struct eventdev_info *event_devices;
+extern enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
 
 /* Send burst of packets on an output interface */
 static inline int
@@ -194,7 +222,13 @@ int
 em_main_loop(__attribute__((unused)) void *dummy);
 
 int
+em_eventdev_main_loop(__attribute__((unused)) void *dummy);
+
+int
 lpm_main_loop(__attribute__((unused)) void *dummy);
+
+int
+lpm_eventdev_main_loop(__attribute__((unused)) void *dummy);
 
 /* Return ipv4/ipv6 fwd lookup struct for LPM or EM. */
 void *
