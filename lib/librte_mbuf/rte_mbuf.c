@@ -148,6 +148,42 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	m->next = NULL;
 }
 
+static const char *plat_mbuf_pool_ops_name;
+
+int
+rte_mbuf_register_platform_mempool_ops(const char *ops_name)
+{
+	if (plat_mbuf_pool_ops_name == NULL) {
+		plat_mbuf_pool_ops_name = ops_name;
+		return 0;
+	} else {
+		RTE_LOG(ERR, MBUF,
+			"%s is already registered as platform pktmbuf pool ops\n",
+			plat_mbuf_pool_ops_name);
+		return -EACCES;
+	}
+}
+
+const char *
+rte_mbuf_platform_mempool_ops(void)
+{
+	return plat_mbuf_pool_ops_name;
+}
+
+/* Return mbuf pool ops name */
+static const char *
+rte_mbuf_best_mempool_ops(void)
+{
+	const char *default_ops = rte_eal_mbuf_default_mempool_ops();
+
+	/* if mbuf default ops is same as compile time default */
+	if ((strcmp(default_ops, RTE_MBUF_DEFAULT_MEMPOOL_OPS) == 0) &&
+		(plat_mbuf_pool_ops_name != NULL))
+		return plat_mbuf_pool_ops_name;
+	else
+		return default_ops;
+}
+
 /* helper to create a mbuf pool */
 struct rte_mempool *
 rte_pktmbuf_pool_create(const char *name, unsigned n,
@@ -176,7 +212,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	if (mp == NULL)
 		return NULL;
 
-	mp_ops_name = rte_eal_mbuf_default_mempool_ops();
+	mp_ops_name = rte_mbuf_best_mempool_ops();
 	ret = rte_mempool_set_ops_byname(mp, mp_ops_name, NULL);
 	if (ret != 0) {
 		RTE_LOG(ERR, MBUF, "error setting mempool handler\n");

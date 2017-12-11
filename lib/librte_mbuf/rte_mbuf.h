@@ -1081,6 +1081,28 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	int socket_id);
 
 /**
+ * Register the active HW pkt mbuf pool
+ *
+ * Register the platform supported pktmbuf HW pool
+ *
+ * @param pool ops name
+ * @return
+ *   - 0: Success
+ *   - -EACCES: platform mempool is already registered.
+ */
+int
+rte_mbuf_register_platform_mempool_ops(const char *ops_name);
+
+/**
+ * Get registered platform supported pool ops name for mbuf
+ *
+ * @return
+ *   returns default pool ops name.
+ */
+const char*
+rte_mbuf_platform_mempool_ops(void);
+
+/**
  * Get the data room size of mbufs stored in a pktmbuf_pool
  *
  * The data room size is the amount of data that can be stored in a
