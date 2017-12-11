@@ -20,6 +20,7 @@
 #include <rte_ethdev.h>
 #include <rte_cycles.h>
 #include <rte_mbuf.h>
+#include <rte_eventdev.h>
 #include <rte_ip.h>
 #include <rte_tcp.h>
 #include <rte_udp.h>
@@ -38,6 +39,8 @@
 #include <rte_jhash.h>
 #define DEFAULT_HASH_FUNC       rte_jhash
 #endif
+
+#define INVALID_EVENDEV_ID 0xFF
 
 #define IPV6_ADDR_LEN 16
 
@@ -617,6 +620,103 @@ em_cb_parse_ptype(uint16_t port __rte_unused, uint16_t queue __rte_unused,
 	return nb_pkts;
 }
 
+/* main eventdev processing loop */
+int
+em_eventdev_main_loop(__attribute__((unused)) void *dummy)
+{
+	struct rte_event ev[MAX_PKT_BURST];
+	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	struct rte_event_port_conf event_port_conf;
+	unsigned int lcore_id;
+	uint64_t prev_tsc, diff_tsc, cur_tsc;
+	int i, nb_rx;
+	uint8_t queueid;
+	uint16_t portid, dequeue_len, enqueue_len;
+	uint8_t event_port_id = INVALID_EVENDEV_ID;
+	struct lcore_conf *qconf;
+	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
+		US_PER_S * BURST_TX_DRAIN_US;
+
+	prev_tsc = 0;
+
+	lcore_id = rte_lcore_id();
+	qconf = &lcore_conf[lcore_id];
+
+	if (qconf->n_rx_queue == 0) {
+		RTE_LOG(INFO, L3FWD, "lcore %u has nothing to do\n", lcore_id);
+		return 0;
+	}
+
+	RTE_LOG(INFO, L3FWD, "entering main loop on lcore %u\n", lcore_id);
+
+	for (i = 0; i < qconf->n_rx_queue; i++) {
+
+		portid = qconf->rx_queue_list[i].port_id;
+		queueid = qconf->rx_queue_list[i].queue_id;
+		RTE_LOG(INFO, L3FWD,
+			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
+			lcore_id, portid, queueid);
+	}
+
+	for (i = 0; i < link_config.nb_links; i++) {
+		if (link_config.links[i].lcore_id == lcore_id)
+			event_port_id = link_config.links[i].event_portid;
+	}
+
+	rte_event_port_default_conf_get(event_devices[0].dev_id, event_port_id,
+					&event_port_conf);
+	dequeue_len = event_port_conf.dequeue_depth;
+	enqueue_len = event_port_conf.enqueue_depth;
+
+	while (!force_quit) {
+
+		cur_tsc = rte_rdtsc();
+
+		/*
+		 * TX burst queue drain
+		 */
+		diff_tsc = cur_tsc - prev_tsc;
+		if (unlikely(diff_tsc > drain_tsc)) {
+
+			for (i = 0; i < qconf->n_tx_port; ++i) {
+				portid = qconf->tx_port_id[i];
+				if (qconf->tx_mbufs[portid].len == 0)
+					continue;
+				send_burst(qconf,
+					qconf->tx_mbufs[portid].len,
+					portid);
+				qconf->tx_mbufs[portid].len = 0;
+			}
+
+			prev_tsc = cur_tsc;
+		}
+
+		/*
+		 * Read packet from event ports
+		 */
+
+		nb_rx = rte_event_dequeue_burst(event_devices[0].dev_id,
+						event_port_id,
+						ev, dequeue_len, 0);
+		if (nb_rx == 0)
+			continue;
+
+		for (i = 0; i < nb_rx; ++i) {
+			pkts_burst[0] = ev[i].mbuf;
+			portid = ev[i].flow_id;
+#if defined RTE_ARCH_X86 || defined RTE_MACHINE_CPUFLAG_NEON
+			l3fwd_em_send_packets(enqueue_len, pkts_burst, portid,
+					      qconf);
+#else
+			l3fwd_em_no_opt_send_packets(enqueue_len, pkts_burst,
+						     portid, qconf);
+#endif
+		}
+	}
+
+	return 0;
+}
+
 /* main processing loop */
 int
 em_main_loop(__attribute__((unused)) void *dummy)
@@ -635,6 +735,9 @@ em_main_loop(__attribute__((unused)) void *dummy)
 
 	lcore_id = rte_lcore_id();
 	qconf = &lcore_conf[lcore_id];
+
+	if (lcore_dequeue_mode[lcore_id] == EVENTDEV_DEQUEUE)
+		return em_eventdev_main_loop(dummy);
 
 	if (qconf->n_rx_queue == 0) {
 		RTE_LOG(INFO, L3FWD, "lcore %u has nothing to do\n", lcore_id);
