@@ -265,6 +265,18 @@ struct rte_mempool {
 #define MEMPOOL_F_SC_GET         0x0008 /**< Default get is "single-consumer".*/
 #define MEMPOOL_F_POOL_CREATED   0x0010 /**< Internal: pool is created. */
 #define MEMPOOL_F_NO_PHYS_CONTIG 0x0020 /**< Don't need physically contiguous objs. */
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+#define MEMPOOL_F_MBUF		 0x0040 /**< Mbuf Pool */
+#define SVR_LS1043A_FAMILY	 0x87920000
+#define SVR_LS1046A_FAMILY	 0x87070000
+#define SVR_MASK		 0xffff0000
+#define LS1043_OFFSET_CHANGE_IDX 64
+#define LS1043_MAX_BUF_IN_CACHE	 8
+#define LS1043_MAX_BUF_OFFSET	 (LS1043_OFFSET_CHANGE_IDX \
+				* LS1043_MAX_BUF_IN_CACHE)
+extern unsigned int dpaa_svr_family;
+extern unsigned int platform_svr;
+#endif
 /**
  * This capability flag is advertised by a mempool handler. Used for a case
  * where mempool driver wants object start address(vaddr) aligned to block

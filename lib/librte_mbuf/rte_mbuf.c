@@ -109,6 +109,10 @@ rte_pktmbuf_pool_init(struct rte_mempool *mp, void *opaque_arg)
 	memcpy(mbp_priv, user_mbp_priv, sizeof(*mbp_priv));
 }
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+unsigned int dpaa_svr_family;
+unsigned int platform_svr;
+#endif
 /*
  * pktmbuf constructor, given as a callback function to
  * rte_mempool_obj_iter() or rte_mempool_create().
@@ -131,7 +135,12 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	RTE_ASSERT(mp->elt_size >= mbuf_size);
 	RTE_ASSERT(buf_len <= UINT16_MAX);
 
-	memset(m, 0, mp->elt_size);
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	if (platform_svr == SVR_LS1043A_FAMILY)
+		memset(m, 0, mp->elt_size - LS1043_MAX_BUF_OFFSET);
+	else
+#endif
+		memset(m, 0, mp->elt_size);
 
 	/* start of buffer is after mbuf structure and priv data */
 	m->priv_size = priv_size;
@@ -151,7 +160,6 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 }
 
 #ifdef RTE_LIBRTE_DPAA_MEMPOOL
-unsigned int svr_ver = 0;
 /* NXP LS1043ARDB specific changes
  * LS1043_MAX_BUF_SIZE indicates max buffer size supported for LS1043 soc.
  * SVR_LS1043A indicates LS1043 board type.
@@ -159,18 +167,16 @@ unsigned int svr_ver = 0;
  */
 static int get_mbuf_dataroom_size(uint16_t *data_room_size, uint16_t priv_size)
 {
-#define SVR_LS1043A_FAMILY	0x87920000
-#define SVR_LS1046A_FAMILY	0x87070000
-#define SVR_MASK		0xffff0000
 #define LS1043_MAX_BUF_SIZE	3904
 	FILE *svr_file = NULL;
 	int ret;
 
 	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
 	if (svr_file) {
-		ret = fscanf(svr_file, "svr:%x", &svr_ver);
+		ret = fscanf(svr_file, "svr:%x", &dpaa_svr_family);
 		if (ret > 0) {
-			if ((svr_ver & SVR_MASK) == SVR_LS1043A_FAMILY) {
+			platform_svr = dpaa_svr_family & SVR_MASK;
+			if (platform_svr == SVR_LS1043A_FAMILY) {
 				if (*data_room_size <= LS1043_MAX_BUF_SIZE)
 					*data_room_size = LS1043_MAX_BUF_SIZE
 								- priv_size;
@@ -231,8 +237,9 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 		return NULL;
 
 #ifdef RTE_LIBRTE_DPAA_MEMPOOL
-	if ((svr_ver & SVR_MASK) == SVR_LS1043A_FAMILY)
-		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS;
+	if (platform_svr == SVR_LS1043A_FAMILY)
+		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS |
+							MEMPOOL_F_MBUF;
 #endif
 	/*Check the perfered mempool ops based on config*/
 	for (op = &ops[0]; *op != NULL; op++) {
