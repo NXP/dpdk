@@ -52,6 +52,7 @@ extern "C" {
 #include <rte_malloc.h>
 
 #include "rte_eventdev.h"
+#include "rte_event_crypto_adapter.h"
 
 /* Logging Macros */
 #define RTE_EDEV_LOG_ERR(...) \
@@ -95,6 +96,7 @@ extern "C" {
 #define RTE_EVENTDEV_ATTACHED  (1)
 
 struct rte_eth_dev;
+struct rte_cryptodev;
 
 /** Global structure used for maintaining state of allocated event devices */
 struct rte_eventdev_global {
@@ -596,6 +598,170 @@ typedef int (*eventdev_eth_rx_adapter_stats_reset)
 			(const struct rte_eventdev *dev,
 			const struct rte_eth_dev *eth_dev);
 
+/**
+ * Retrieve the event device's crypto adapter capabilities for the
+ * specified crypto device
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @param[out] caps
+ *   A pointer to memory filled with event adapter capabilities.
+ *
+ * @return
+ *   - 0: Success, driver provides event adapter capabilities for the
+ *	crypto device.
+ *   - <0: Error code returned by the driver function.
+ *
+ */
+typedef int (*eventdev_crypto_adapter_caps_get_t)
+					(const struct rte_eventdev *dev,
+					const struct rte_cryptodev *cdev,
+					uint32_t *caps);
+
+struct rte_event_crypto_queue_pair_conf *crypto_queue_conf;
+
+/**
+ * Add Crypto queues to event device. This callback is invoked if
+ * the caps returned from rte_eventdev_crypto_adapter_caps_get(, cdev_id)
+ * has RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT set.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @param queue_pair_id
+ *   Crypto device receive queue index
+ *
+ * @param queue_conf
+ *  Additional configuration structure
+
+ * @return
+ *   - 0: Success, crypto queue added successfully.
+ *   - <0: Error code returned by the driver function.
+ *
+ */
+typedef int (*eventdev_crypto_adapter_queue_add_t)(
+		const struct rte_eventdev *dev,
+		const struct rte_cryptodev *cdev,
+		int32_t queue_pair_id,
+		const struct rte_event_crypto_queue_pair_conf *queue_conf);
+
+/**
+ * Delete crypto queues from event device. This callback is invoked if
+ * the caps returned from eventdev_crypto_adapter_caps_get(, cdev_id)
+ * has RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT set.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @param queue_pair_id
+ *   Crypto device queue index
+ *
+ * @return
+ *   - 0: Success, crypto queue deleted successfully.
+ *   - <0: Error code returned by the driver function.
+ *
+ */
+typedef int (*eventdev_crypto_adapter_queue_del_t)
+					(const struct rte_eventdev *dev,
+					const struct rte_cryptodev *cdev,
+					int32_t queue_pair_id);
+
+/**
+ * Start crypto adapter. This callback is invoked if
+ * the caps returned from eventdev_crypto_adapter_caps_get(.., cdev_id)
+ * has RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT set and queues
+ * from cdev_id have been added to the event device.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param type
+ *   Crypto event adapter type
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @return
+ *   - 0: Success, crypto adapter started successfully.
+ *   - <0: Error code returned by the driver function.
+ */
+typedef int (*eventdev_crypto_adapter_start_t)
+				(const struct rte_eventdev *dev,
+				enum rte_event_crypto_adapter_type type,
+				const struct rte_cryptodev *cdev);
+
+/**
+ * Stop crypto adapter. This callback is invoked if
+ * the caps returned from eventdev_crypto_adapter_caps_get(..,cdev_id)
+ * has RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT set and queues
+ * from cdev_id have been added to the event device.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param type
+ *   Crypto event adapter type
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @return
+ *   - 0: Success, crypto adapter stopped successfully.
+ *   - <0: Error code returned by the driver function.
+ */
+typedef int (*eventdev_crypto_adapter_stop_t)
+				(const struct rte_eventdev *dev,
+				enum rte_event_crypto_adapter_type type,
+				const struct rte_cryptodev *cdev);
+
+struct rte_event_crypto_adapter_stats *crypto_stats;
+
+/**
+ * Retrieve crypto adapter statistics.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @param[out] stats
+ *   Pointer to stats structure
+ *
+ * @return
+ *   Return 0 on success.
+ */
+
+typedef int (*eventdev_crypto_adapter_stats_get)
+			(const struct rte_eventdev *dev,
+			const struct rte_cryptodev *cdev,
+			struct rte_event_crypto_adapter_stats *stats);
+/**
+ * Reset Crypto adapter statistics.
+ *
+ * @param dev
+ *   Event device pointer
+ *
+ * @param cdev
+ *   Crypto device pointer
+ *
+ * @return
+ *   Return 0 on success.
+ */
+typedef int (*eventdev_crypto_adapter_stats_reset)
+			(const struct rte_eventdev *dev,
+			const struct rte_cryptodev *cdev);
+
 /** Event device operations function pointer table */
 struct rte_eventdev_ops {
 	eventdev_info_get_t dev_infos_get;	/**< Get device info. */
@@ -650,6 +816,22 @@ struct rte_eventdev_ops {
 	/**< Get ethernet Rx stats */
 	eventdev_eth_rx_adapter_stats_reset eth_rx_adapter_stats_reset;
 	/**< Reset ethernet Rx stats */
+
+	eventdev_crypto_adapter_caps_get_t crypto_adapter_caps_get;
+	/**< Get crypto adapter capabilities */
+	eventdev_crypto_adapter_queue_add_t crypto_adapter_queue_add;
+	/**< Add queues to crypto adapter */
+	eventdev_crypto_adapter_queue_del_t crypto_adapter_queue_del;
+	/**< Delete queues from crypto adapter */
+	eventdev_crypto_adapter_start_t crypto_adapter_start;
+	/**< Start crypto adapter */
+	eventdev_crypto_adapter_stop_t crypto_adapter_stop;
+	/**< Stop crypto adapter */
+	eventdev_crypto_adapter_stats_get crypto_adapter_stats_get;
+	/**< Get crypto stats */
+	eventdev_crypto_adapter_stats_reset crypto_adapter_stats_reset;
+	/**< Reset crypto stats */
+
 };
 
 /**
