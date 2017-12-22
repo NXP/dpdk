@@ -1027,6 +1027,8 @@ struct rte_event {
 		/**< Opaque event pointer */
 		struct rte_mbuf *mbuf;
 		/**< mbuf pointer if dequeued event is associated with mbuf */
+		struct rte_crypto_op *crypto_op;
+		/**< mbuf pointer if dequeued event is associated with mbuf */
 	};
 };
 
@@ -1045,6 +1047,12 @@ struct rte_event {
  * to the adapter using the ev member of struct rte_event_eth_rx_adapter
  * @see struct rte_event_eth_rx_adapter_queue_conf::ev
  * @see struct rte_event_eth_rx_adapter_queue_conf::rx_queue_flags
+ */
+
+/* Crypto adapter capability bitmap flags */
+#define RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT	0x8
+/**< This flag is sent when the packet transfer mechanism is in HW.
+ * Cryptodev can send packets to the event device using internal event port.
  */
 
 /**
@@ -1068,6 +1076,29 @@ struct rte_event {
  */
 int
 rte_event_eth_rx_adapter_caps_get(uint8_t dev_id, uint8_t eth_port_id,
+				uint32_t *caps);
+
+/**
+ * Retrieve the event device's crypto adapter capabilities for the
+ * specified crypto device
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @param cdev_id
+ *   The identifier of the crypto device.
+ *
+ * @param[out] caps
+ *   A pointer to memory filled with crypto adapter capabilities.
+ *
+ * @return
+ *   - 0: Success, driver provides crypto event adapter capabilities for the
+ *	crypto device.
+ *   - <0: Error code returned by the driver function.
+ *
+ */
+int
+rte_event_crypto_adapter_caps_get(uint8_t dev_id, uint8_t cdev_id,
 				uint32_t *caps);
 
 struct rte_eventdev_driver;
