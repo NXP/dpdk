@@ -34,6 +34,9 @@
 #ifndef _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 #define _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 
+#include <rte_event_crypto_adapter.h>
+#include <rte_security_driver.h>
+
 #define CRYPTODEV_NAME_DPAA2_SEC_PMD	crypto_dpaa2_sec
 /**< NXP DPAA2 - SEC PMD device name */
 
@@ -473,5 +476,14 @@ calc_chksum(void *buffer, int len)
 
 	return  result;
 }
+
+int
+dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
+		int qp_id,
+		uint16_t dpcon_id,
+		const struct rte_event_crypto_queue_pair_conf *conf);
+
+int dpaa2_sec_eventq_detach(const struct rte_cryptodev *dev,
+		int qp_id);
 
 #endif /* _RTE_DPAA2_SEC_PMD_PRIVATE_H_ */
