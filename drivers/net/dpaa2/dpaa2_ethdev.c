@@ -808,6 +808,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
+	/* if packet with parse error are not to be dropped */
+	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+		err_cfg.errors |= DPNI_ERROR_PHE;
+
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	err_cfg.set_frame_annotation = true;
 
@@ -1887,6 +1891,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		td_threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
 
 	PMD_INIT_LOG(DEBUG, "RX tail drop is %u bytes", td_threshold);
+
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		PMD_INIT_LOG(INFO, "Drop parse error packets in hw");
+	}
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
