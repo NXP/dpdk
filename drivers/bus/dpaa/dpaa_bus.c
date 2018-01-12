@@ -57,6 +57,7 @@
 #include <rte_malloc.h>
 #include <rte_ring.h>
 #include <rte_bus.h>
+#include <rte_mbuf.h>
 
 #include <rte_dpaa_bus.h>
 #include <rte_dpaa_logs.h>
@@ -435,6 +436,8 @@ rte_dpaa_bus_scan(void)
 		DPAA_BUS_LOG(ERR, "Unable to create device list. (%d)", ret);
 		return ret;
 	}
+
+	rte_mbuf_register_platform_mempool_ops(DPAA_MEMPOOL_OPS_NAME);
 
 	/* create the key, supplying a function that'll be invoked
 	 * when a portal affined thread will be deleted.
