@@ -53,6 +53,9 @@
 #include "dpaa2_ethdev.h"
 #include <fsl_qbman_debug.h>
 
+/* Per FQ Taildrop config in byte count */
+static uint32_t td_threshold = CONG_THRESHOLD_RX_Q;
+
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint8_t page_id; /* dpni statistics page id */
@@ -497,12 +500,12 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -1;
 	}
 
-	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
+	if (td_threshold) {
 		struct dpni_taildrop taildrop;
 
 		taildrop.enable = 1;
 		/*enabling per rx queue congestion control */
-		taildrop.threshold = CONG_THRESHOLD_RX_Q;
+		taildrop.threshold = td_threshold;
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		PMD_DRV_LOG(DEBUG, "Enabling Early Drop on queue = %d",
@@ -1878,6 +1881,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->max_mac_filters = attr.mac_filter_entries;
 	priv->max_vlan_filters = attr.vlan_filter_entries;
 	priv->flags = 0;
+
+	/* Tail drop size, td_threshold = 0 means disable it on queue */
+	if (getenv("DPAA2_RX_TAILDROP_SIZE"))
+		td_threshold = atoi(getenv("DPAA2_RX_TAILDROP_SIZE"));
+
+	PMD_INIT_LOG(DEBUG, "RX tail drop is %u bytes", td_threshold);
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
