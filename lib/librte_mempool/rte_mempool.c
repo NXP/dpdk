@@ -100,6 +100,21 @@ static unsigned get_gcd(unsigned a, unsigned b)
 	return a;
 }
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+unsigned int dpaa_svr_family;
+void set_dpaa_svr_family(void)
+{
+	FILE *svr_file = NULL;
+
+	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	if (svr_file) {
+		if (fscanf(svr_file, "svr:%x", &dpaa_svr_family) > 0)
+			dpaa_svr_family &= SVR_MASK;
+		fclose(svr_file);
+	}
+}
+#endif
+
 /*
  * Depending on memory configuration, objects addresses are spread
  * between channels and ranks in RAM: the pool allocator will add
@@ -249,6 +264,12 @@ rte_mempool_xmem_size(uint32_t elt_num, size_t total_elt_sz, uint32_t pg_shift,
 		/* alignment need one additional object */
 		elt_num += 1;
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+			flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS)
+		elt_num += LS1043_MAX_MEMZONES;
+#endif
+
 	if (total_elt_sz == 0)
 		return 0;
 
@@ -283,6 +304,12 @@ rte_mempool_xmem_usage(__rte_unused void *vaddr, uint32_t elt_num,
 	if ((flags & mask) == mask)
 		/* alignment need one additional object */
 		elt_num += 1;
+
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+			flags & MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS)
+		elt_num += LS1043_MAX_MEMZONES;
+#endif
 
 	/* if iova is NULL, assume contiguous memory */
 	if (iova == NULL) {

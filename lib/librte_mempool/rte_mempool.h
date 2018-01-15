@@ -292,6 +292,15 @@ struct rte_mempool {
  */
 #define MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS 0x0080
 
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+#define SVR_LS1043A_FAMILY	0x87920000
+#define SVR_MASK		0xffff0000
+#define LS1043_MAX_BUF_SIZE	3904
+#define LS1043_MAX_MEMZONES	512
+extern unsigned int dpaa_svr_family;
+void set_dpaa_svr_family(void);
+#endif
+
 /**
  * @internal When debug is enabled, store some statistics.
  *
