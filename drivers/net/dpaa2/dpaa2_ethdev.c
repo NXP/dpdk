@@ -672,7 +672,8 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
 		RTE_PTYPE_UNKNOWN
 	};
 
-	if (dev->rx_pkt_burst == dpaa2_dev_prefetch_rx)
+	if (dev->rx_pkt_burst == dpaa2_dev_rx ||
+		dev->rx_pkt_burst == dpaa2_dev_prefetch_rx)
 		return ptypes;
 	return NULL;
 }
@@ -1961,6 +1962,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 	rte_fslmc_vfio_dmamap();
 
+	/* If no prefetch is configured. */
+	if (getenv("DPAA2_NO_PREFETCH_RX")) {
+		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
+		PMD_INIT_LOG(INFO, "No Prefetch RX Mode enabled");
+	}
 	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:

@@ -605,6 +605,9 @@ DPAA2:
 
 6. DPAA2_HOST_START_CPU		Define the CPU id for the virtual m/c CPU - so that right
 				QMAN HW stashing can be configured.
+
+7. DPAA2_NO_PREFETCH_RX		Disable prefetch RX mode - better latency and allows different
+				size of pull request in each call.
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
