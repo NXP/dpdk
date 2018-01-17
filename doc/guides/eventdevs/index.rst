@@ -38,5 +38,6 @@ application trough the eventdev API.
     :numbered:
 
     dpaa2
+    dpaa
     sw
     octeontx
