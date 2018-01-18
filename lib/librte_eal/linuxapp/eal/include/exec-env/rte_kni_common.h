@@ -172,6 +172,7 @@ struct rte_kni_device_info {
 
 	/* mbuf size */
 	unsigned mbuf_size;
+	unsigned int mtu;
 	char mac_addr[6];
 };
 
