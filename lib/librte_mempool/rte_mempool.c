@@ -393,6 +393,9 @@ rte_mempool_populate_iova(struct rte_mempool *mp, char *vaddr,
 	size_t off;
 	struct rte_mempool_memhdr *memhdr;
 	int ret;
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	int idx = 0, change = LS1043_OFFSET_CHANGE_IDX;
+#endif
 
 	/* create the internal ring if not already done */
 	if ((mp->flags & MEMPOOL_F_POOL_CREATED) == 0) {
@@ -443,6 +446,25 @@ rte_mempool_populate_iova(struct rte_mempool *mp, char *vaddr,
 		off = RTE_PTR_ALIGN_CEIL(vaddr, RTE_CACHE_LINE_SIZE) - vaddr;
 
 	while (off + total_elt_sz <= len && mp->populated_size < mp->size) {
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	/* Due to A010022 hardware errata on LS1043, buf size is kept 4K
+	 * (including metadata). This size is completely divisible by our L1
+	 * cache size (32K) which leads to cache collisions of buffer metadata
+	 * (mbuf) and performance drop. To minimize these cache collisions,
+	 * offset of buffer is changed after an interval of 8 and value is
+	 * reversed after 64 buffer.
+	 */
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+					mp->flags & MEMPOOL_F_MBUF) {
+		if (idx == LS1043_OFFSET_CHANGE_IDX) {
+			change = -change;
+			idx = 0;
+		}
+		if (idx % LS1043_MAX_BUF_IN_CACHE == 0)
+			off += change;
+		idx++;
+	}
+#endif
 		off += mp->header_size;
 		if (iova == RTE_BAD_IOVA)
 			mempool_add_elem(mp, (char *)vaddr + off,
@@ -662,7 +684,11 @@ rte_mempool_populate_default(struct rte_mempool *mp)
 			goto fail;
 		}
 	}
-
+#ifdef RTE_LIBRTE_DPAA_MEMPOOL
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+			(mp->flags & MEMPOOL_F_MBUF))
+		mp->size -= LS1043_MAX_BUF_OFFSET;
+#endif
 	return mp->size;
 
  fail:

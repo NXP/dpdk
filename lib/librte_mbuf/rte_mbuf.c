@@ -234,7 +234,8 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 
 #ifdef RTE_LIBRTE_DPAA_MEMPOOL
 	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
-		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS;
+		mp->flags |= MEMPOOL_F_CAPA_BLK_ALIGNED_OBJECTS |
+				MEMPOOL_F_MBUF;
 #endif
 	mp_ops_name = rte_mbuf_best_mempool_ops();
 	ret = rte_mempool_set_ops_byname(mp, mp_ops_name, NULL);
