@@ -865,7 +865,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	struct qm_fd fd_arr[DPAA_TX_BURST_SIZE];
 	uint32_t frames_to_send, loop, sent = 0;
 	uint16_t state;
-	int ret;
+	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 
 	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
@@ -883,12 +883,17 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				DPAA_TX_BURST_SIZE : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
+			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+					(mbuf->data_off & 0xF) != 0x0)
+				realloc_mbuf = 1;
+
 			if (likely(RTE_MBUF_DIRECT(mbuf))) {
 				mp = mbuf->pool;
 				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 				if (likely(mp->ops_index ==
 						bp_info->dpaa_ops_index &&
 					mbuf->nb_segs == 1 &&
+					realloc_mbuf == 0 &&
 					rte_mbuf_refcnt_read(mbuf) == 1)) {
 					DPAA_MBUF_TO_CONTIG_FD(mbuf,
 						&fd_arr[loop], bp_info->bpid);
@@ -904,7 +909,8 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			}
 
 			bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
-			if (likely(mp->ops_index == bp_info->dpaa_ops_index)) {
+			if (likely(mp->ops_index == bp_info->dpaa_ops_index &&
+					realloc_mbuf == 0)) {
 				state = tx_on_dpaa_pool(mbuf, bp_info,
 							&fd_arr[loop]);
 				if (unlikely(state)) {
@@ -917,6 +923,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 					goto send_pkts;
 				}
 			} else {
+				realloc_mbuf = 0;
 				state = tx_on_external_pool(q, mbuf,
 							    &fd_arr[loop]);
 				if (unlikely(state)) {
