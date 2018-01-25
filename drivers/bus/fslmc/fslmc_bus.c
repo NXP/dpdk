@@ -142,31 +142,14 @@ static int
 scan_one_fslmc_device(char *dev_name)
 {
 	char *dup_dev_name, *t_ptr;
-	struct rte_dpaa2_device *dev;
-
-	if (!dev_name)
-		return -1;
-
-	/* Ignore the Container name itself */
-	if (!strncmp("dprc", dev_name, 4))
-		return 0;
+	struct rte_dpaa2_device *dev = NULL;
+	enum rte_dpaa2_dev_type dev_type;
+	int ret = -1;
 
 	/* Creating a temporary copy to perform cut-parse over string */
 	dup_dev_name = strdup(dev_name);
 	if (!dup_dev_name) {
 		DPAA2_BUS_ERR("Unable to allocate device name memory");
-		return -ENOMEM;
-	}
-
-	/* For all other devices, we allocate rte_dpaa2_device.
-	 * For those devices where there is no driver, probe would release
-	 * the memory associated with the rte_dpaa2_device after necessary
-	 * initialization.
-	 */
-	dev = calloc(1, sizeof(struct rte_dpaa2_device));
-	if (!dev) {
-		DPAA2_BUS_ERR("Unable to allocate device object");
-		free(dup_dev_name);
 		return -ENOMEM;
 	}
 
@@ -177,23 +160,39 @@ scan_one_fslmc_device(char *dev_name)
 		goto cleanup;
 	}
 	if (!strncmp("dpni", t_ptr, 4))
-		dev->dev_type = DPAA2_ETH;
+		dev_type = DPAA2_ETH;
 	else if (!strncmp("dpseci", t_ptr, 6))
-		dev->dev_type = DPAA2_CRYPTO;
+		dev_type = DPAA2_CRYPTO;
 	else if (!strncmp("dpcon", t_ptr, 5))
-		dev->dev_type = DPAA2_CON;
+		dev_type = DPAA2_CON;
 	else if (!strncmp("dpbp", t_ptr, 4))
-		dev->dev_type = DPAA2_BPOOL;
+		dev_type = DPAA2_BPOOL;
 	else if (!strncmp("dpio", t_ptr, 4))
-		dev->dev_type = DPAA2_IO;
+		dev_type = DPAA2_IO;
 	else if (!strncmp("dpci", t_ptr, 4))
-		dev->dev_type = DPAA2_CI;
+		dev_type = DPAA2_CI;
 	else if (!strncmp("dpmcp", t_ptr, 5))
-		dev->dev_type = DPAA2_MPORTAL;
+		dev_type = DPAA2_MPORTAL;
 	else if (!strncmp("dpdmai", t_ptr, 6))
-		dev->dev_type = DPAA2_QDMA;
-	else
-		dev->dev_type = DPAA2_UNKNOWN;
+		dev_type = DPAA2_QDMA;
+	else {
+		dev_type = DPAA2_UNKNOWN;
+		DPAA2_BUS_DEBUG("Unknown device string observed.");
+		ret = 0;
+		goto cleanup;
+	}
+
+	/* For all other devices, we allocate rte_dpaa2_device.
+	 * For those devices where there is no driver, probe would release
+	 * the memory associated with the rte_dpaa2_device after necessary
+	 * initialization.
+	 */
+	dev = calloc(1, sizeof(struct rte_dpaa2_device));
+	if (!dev) {
+		DPAA2_BUS_ERR("Unable to allocate device object");
+		ret =  -ENOMEM;
+		goto cleanup;
+	}
 
 	/* Update the device found into the device_count table */
 	rte_fslmc_bus.device_count[dev->dev_type]++;
@@ -206,6 +205,7 @@ scan_one_fslmc_device(char *dev_name)
 
 	sscanf(t_ptr, "%hu", &dev->object_id);
 	dev->device.name = strdup(dev_name);
+	dev->dev_type = dev_type;
 	if (!dev->device.name) {
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
 		goto cleanup;
@@ -219,12 +219,15 @@ scan_one_fslmc_device(char *dev_name)
 		free(dup_dev_name);
 
 	return 0;
+
 cleanup:
-	if (dup_dev_name)
-		free(dup_dev_name);
 	if (dev)
 		free(dev);
-	return -1;
+
+	if (dup_dev_name)
+		free(dup_dev_name);
+
+	return ret;
 }
 
 static int
@@ -249,8 +252,8 @@ rte_fslmc_scan(void)
 		goto scan_fail;
 
 	/* Scan devices on the group */
-	sprintf(fslmc_dirpath, "%s/%d/devices", VFIO_IOMMU_GROUP_PATH,
-		groupid);
+	sprintf(fslmc_dirpath, "%s/%s", SYSFS_FSL_MC_DEVICES, fslmc_container);
+
 	dir = opendir(fslmc_dirpath);
 	if (!dir) {
 		DPAA2_BUS_ERR("Unable to open VFIO group directory");
@@ -258,7 +261,7 @@ rte_fslmc_scan(void)
 	}
 
 	while ((entry = readdir(dir)) != NULL) {
-		if (entry->d_name[0] == '.' || entry->d_type != DT_LNK)
+		if (entry->d_name[0] == '.' || entry->d_type != DT_DIR)
 			continue;
 
 		ret = scan_one_fslmc_device(entry->d_name);
