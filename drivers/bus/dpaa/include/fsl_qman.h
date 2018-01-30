@@ -1170,6 +1170,11 @@ typedef void (*qman_dpdk_pull_cb_dqrr)(struct qman_fq **fq,
 					void **bufs,
 					int num_bufs);
 
+/* This callback type is used when handling ucode processed buffers */
+typedef void (*qman_ucode_rx_cb)(struct qman_fq *fq,
+					struct qm_dqrr_entry *dq,
+					void **bufs);
+
 typedef void (*qman_dpdk_cb_prepare)(struct qm_dqrr_entry *dq, void **bufs);
 
 /*
@@ -1234,6 +1239,7 @@ struct qman_fq_cb {
 		qman_dpdk_cb_dqrr dqrr_dpdk_cb;
 		qman_dpdk_pull_cb_dqrr dqrr_dpdk_pull_cb;
 		qman_cb_dqrr dqrr;
+		qman_ucode_rx_cb dqrr_ucode_cb;
 	};
 	qman_dpdk_cb_prepare dqrr_prepare;
 	qman_cb_mr ern;		/* for s/w ERNs */
@@ -1357,6 +1363,9 @@ u32 qman_portal_dequeue(struct rte_event ev[], unsigned int poll_limit,
 u16 qman_affine_channel(int cpu);
 
 unsigned int qman_portal_poll_rx(unsigned int poll_limit,
+				 void **bufs, struct qman_portal *q);
+
+unsigned int qman_portal_ucode_poll_rx(unsigned int poll_limit,
 				 void **bufs, struct qman_portal *q);
 
 /**

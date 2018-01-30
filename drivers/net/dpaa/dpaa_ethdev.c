@@ -196,7 +196,8 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (dev->rx_pkt_burst == dpaa_eth_queue_rx)
+	if (dev->rx_pkt_burst == dpaa_eth_queue_rx ||
+		dev->rx_pkt_burst == dpaa_eth_ucode_queue_rx)
 		return ptypes;
 	return NULL;
 }
@@ -208,7 +209,10 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	/* Change tx callback to the real one */
-	dev->tx_pkt_burst = dpaa_eth_queue_tx;
+	if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
+		dev->tx_pkt_burst = dpaa_eth_ucode_queue_tx;
+	else
+		dev->tx_pkt_burst = dpaa_eth_queue_tx;
 	fman_if_enable_rx(dpaa_intf->fif);
 
 	return 0;
@@ -532,8 +536,9 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		/* In muticore scenario stashing becomes a bottleneck on LS1046.
 		 * So do not enable stashing in this case
 		 */
-		if (dpaa_svr_family != SVR_LS1046A_FAMILY)
-			opts.fqd.context_a.stashing.annotation_cl =
+		if ((dpaa_svr_family != SVR_LS1046A_FAMILY) &&
+			!getenv("DPAA_FMAN_UCODE_SUPPORT"))
+				opts.fqd.context_a.stashing.annotation_cl =
 						DPAA_IF_RX_ANNOTATION_STASH;
 		opts.fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
 		opts.fqd.context_a.stashing.context_cl =
@@ -556,7 +561,10 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		if (ret)
 			DPAA_PMD_ERR("Channel/Queue association failed. fqid %d"
 				     " ret: %d", rxq->fqid, ret);
-		rxq->cb.dqrr_dpdk_pull_cb = dpaa_rx_cb;
+		if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
+			rxq->cb.dqrr_ucode_cb = dpaa_ucode_rx_cb;
+		else
+			rxq->cb.dqrr_dpdk_pull_cb = dpaa_rx_cb;
 		rxq->cb.dqrr_prepare = dpaa_rx_cb_prepare;
 		rxq->is_static = true;
 	}
@@ -1208,8 +1216,10 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* Populate ethdev structure */
 	eth_dev->dev_ops = &dpaa_devops;
-	eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
-	eth_dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
+	if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
+		eth_dev->rx_pkt_burst = dpaa_eth_ucode_queue_rx;
+	else
+		eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
 
 	/* Allocate memory for storing MAC addresses */
 	eth_dev->data->mac_addrs = rte_zmalloc("mac_addr",

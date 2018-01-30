@@ -1215,6 +1215,63 @@ u32 qman_portal_dequeue(struct rte_event ev[], unsigned int poll_limit,
 	return limit;
 }
 
+unsigned int qman_portal_ucode_poll_rx(unsigned int poll_limit,
+				 void **bufs,
+				 struct qman_portal *p)
+{
+	struct qm_portal *portal = &p->p;
+	register struct qm_dqrr *dqrr = &portal->dqrr;
+	struct qm_dqrr_entry *dq[QM_DQRR_SIZE], *shadow[QM_DQRR_SIZE];
+	struct qman_fq *fq;
+	unsigned int limit = 0, rx_number = 0;
+	uint32_t consume = 0;
+
+	do {
+		qm_dqrr_pvb_update(&p->p);
+		if (!dqrr->fill)
+			break;
+
+		dq[rx_number] = dqrr->cursor;
+		dqrr->cursor = DQRR_CARRYCLEAR(dqrr->cursor + 1);
+		/* Prefetch the next DQRR entry */
+		rte_prefetch0(dqrr->cursor);
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+		/* If running on an LE system the fields of the
+		 * dequeue entry must be swapper.  Because the
+		 * QMan HW will ignore writes the DQRR entry is
+		 * copied and the index stored within the copy
+		 */
+		shadow[rx_number] =
+			&p->shadow_dqrr[DQRR_PTR2IDX(dq[rx_number])];
+		shadow[rx_number]->fd.opaque_addr =
+				dq[rx_number]->fd.opaque_addr;
+		shadow[rx_number]->fd.addr =
+				be40_to_cpu(dq[rx_number]->fd.addr);
+		shadow[rx_number]->fd.opaque =
+				be32_to_cpu(dq[rx_number]->fd.opaque);
+#else
+		shadow = dq;
+#endif
+#ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+		fq = qman_fq_lookup_table[be32_to_cpu(dq[rx_number]->contextB)];
+#else
+		fq = (void *)(uintptr_t)be32_to_cpu(dq->contextB);
+#endif
+		fq->cb.dqrr_ucode_cb(fq, shadow[rx_number], &bufs[rx_number]);
+		/* SDQCR: context_b points to the FQ */
+		consume |= (1 << (31 - DQRR_PTR2IDX(shadow[rx_number])));
+		rx_number++;
+		--dqrr->fill;
+	} while (++limit < poll_limit);
+
+	/* Consume all the DQRR enries together */
+	/* TODO Check if we can poll for more buffers than the DQRR SIZE */
+	qm_out(DQRR_DCAP, (1 << 8) | consume);
+
+	return rx_number;
+}
+
 struct qm_dqrr_entry *qman_dequeue(struct qman_fq *fq)
 {
 	struct qman_portal *p = get_affine_portal();

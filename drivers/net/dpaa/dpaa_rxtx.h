@@ -298,4 +298,14 @@ void dpaa_rx_cb(struct qman_fq **fq,
 		struct qm_dqrr_entry **dqrr, void **bufs, int num_bufs);
 
 void dpaa_rx_cb_prepare(struct qm_dqrr_entry *dq, void **bufs);
+
+uint16_t
+dpaa_eth_ucode_queue_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs);
+
+uint16_t
+dpaa_eth_ucode_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs);
+
+void
+dpaa_ucode_rx_cb(struct qman_fq *fq, struct qm_dqrr_entry *dq, void **bufs);
+
 #endif

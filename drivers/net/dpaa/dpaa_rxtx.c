@@ -971,3 +971,179 @@ uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,
 	 */
 	return 0;
 }
+
+static inline struct rte_mbuf *
+dpaa_eth_ucode_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
+{
+	struct dpaa_bp_info *bp_info;
+	struct rte_mbuf *mbuf;
+	void *ptr;
+	uint8_t format =
+		(fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
+
+	DPAA_DP_LOG(DEBUG, " FD--->MBUF");
+
+	if (unlikely(format == qm_fd_sg))
+		return dpaa_eth_sg_to_mbuf(fd, ifid);
+
+	dpaa_display_frame(fd);
+	bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
+	ptr = DPAA_MEMPOOL_PTOV(bp_info, fd->addr);
+	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
+	rte_prefetch0(mbuf);
+	return mbuf;
+}
+
+void
+dpaa_ucode_rx_cb(struct qman_fq *fq, struct qm_dqrr_entry *dq, void **bufs)
+{
+	uint32_t ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
+	*bufs = dpaa_eth_ucode_fd_to_mbuf(&dq->fd, ifid);
+}
+
+static uint16_t
+dpaa_eth_ucode_queue_portal_rx(struct qman_fq *fq,
+			 struct rte_mbuf **bufs,
+			 uint16_t nb_bufs)
+{
+	int ret;
+
+	if (unlikely(fq->qp == NULL)) {
+		ret = rte_dpaa_portal_fq_init((void *)0, fq);
+		if (ret) {
+			DPAA_PMD_ERR("Failure in affining portal %d", ret);
+			return 0;
+		}
+	}
+
+	return qman_portal_ucode_poll_rx(nb_bufs, (void **)bufs, fq->qp);
+}
+
+uint16_t
+dpaa_eth_ucode_queue_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
+{
+	struct qman_fq *fq = q;
+	struct qm_dqrr_entry *dq;
+	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
+	int ret;
+
+	if (likely(fq->is_static))
+		return dpaa_eth_ucode_queue_portal_rx(fq, bufs, nb_bufs);
+
+	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+		ret = rte_dpaa_portal_init((void *)0);
+		if (ret) {
+			DPAA_PMD_ERR("Failure in affining portal");
+			return 0;
+		}
+	}
+
+	ret = qman_set_vdq(fq, (nb_bufs > DPAA_MAX_DEQUEUE_NUM_FRAMES) ?
+				DPAA_MAX_DEQUEUE_NUM_FRAMES : nb_bufs);
+	if (ret)
+		return 0;
+
+	do {
+		dq = qman_dequeue(fq);
+		if (!dq)
+			continue;
+		bufs[num_rx++] = dpaa_eth_ucode_fd_to_mbuf(&dq->fd, ifid);
+		qman_dqrr_consume(fq, dq);
+	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
+
+	return num_rx;
+}
+
+/* Limitation - dpaa_eth_ucode_queue_tx support only single
+ * buffer pool in the system
+ */
+uint16_t
+dpaa_eth_ucode_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
+{
+	struct rte_mbuf *mbuf, *mi = NULL;
+	struct rte_mempool *mp;
+	struct dpaa_bp_info *bp_info;
+	struct qm_fd fd_arr[DPAA_TX_BURST_SIZE];
+	uint32_t frames_to_send, loop, sent = 0;
+	uint16_t state;
+	int ret, realloc_mbuf = 0;
+	struct dpaa_if *dpaa_intf = ((struct qman_fq *)q)->dpaa_intf;
+
+	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+		ret = rte_dpaa_portal_init((void *)0);
+		if (ret) {
+			DPAA_PMD_ERR("Failure in affining portal");
+			return 0;
+		}
+	}
+
+	DPAA_DP_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
+
+	while (nb_bufs) {
+		frames_to_send = (nb_bufs > DPAA_TX_BURST_SIZE) ?
+				DPAA_TX_BURST_SIZE : nb_bufs;
+		for (loop = 0; loop < frames_to_send; loop++) {
+			mbuf = *(bufs++);
+			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+				((mbuf->data_off & 0xF) != 0x0))
+				realloc_mbuf = 1;
+			if (likely(RTE_MBUF_DIRECT(mbuf))) {
+				mp = dpaa_intf->bp_info->mp;
+				bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+				if (likely(mbuf->nb_segs == 1 &&
+						realloc_mbuf == 0 &&
+						rte_mbuf_refcnt_read(mbuf) == 1)) {
+					DPAA_MBUF_TO_CONTIG_FD(mbuf,
+						&fd_arr[loop], bp_info->bpid);
+					if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
+						dpaa_unsegmented_checksum(mbuf, &fd_arr[loop]);
+					continue;
+				}
+			} else {
+				mi = rte_mbuf_from_indirect(mbuf);
+				mp = mi->pool;
+			}
+
+			bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+			if (likely(realloc_mbuf == 0)) {
+				state = tx_on_dpaa_pool(mbuf, bp_info,
+							&fd_arr[loop]);
+				if (unlikely(state)) {
+					/* Set frames_to_send & nb_bufs so
+					 * that packets are transmitted till
+					 * previous frame.
+					 */
+					frames_to_send = loop;
+					nb_bufs = loop;
+					goto send_pkts;
+				}
+			} else {
+				realloc_mbuf = 0;
+				state = tx_on_external_pool(q, mbuf,
+							    &fd_arr[loop]);
+				if (unlikely(state)) {
+					/* Set frames_to_send & nb_bufs so
+					 * that packets are transmitted till
+					 * previous frame.
+					 */
+					frames_to_send = loop;
+					nb_bufs = loop;
+					goto send_pkts;
+				}
+			}
+		}
+
+send_pkts:
+		loop = 0;
+		while (loop < frames_to_send) {
+			loop += qman_enqueue_multi(q, &fd_arr[loop], NULL,
+					frames_to_send - loop);
+		}
+		nb_bufs -= frames_to_send;
+		sent += frames_to_send;
+	}
+
+	DPAA_DP_LOG(DEBUG, "Transmitted %d buffers on queue: %p", sent, q);
+
+	return sent;
+}
