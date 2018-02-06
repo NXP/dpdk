@@ -96,6 +96,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_ETHER)          += -lrte_ethdev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_CRYPTODEV)      += -lrte_cryptodev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_SECURITY)       += -lrte_security
 _LDLIBS-$(CONFIG_RTE_LIBRTE_EVENTDEV)       += -lrte_eventdev
+_LDLIBS-$(CONFIG_RTE_LIBRTE_RAWDEV)         += -lrte_rawdev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_MEMPOOL)        += -lrte_mempool
 _LDLIBS-$(CONFIG_RTE_DRIVER_MEMPOOL_RING)   += -lrte_mempool_ring
 _LDLIBS-$(CONFIG_RTE_LIBRTE_RING)           += -lrte_ring
