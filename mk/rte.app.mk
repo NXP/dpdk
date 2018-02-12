@@ -96,6 +96,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_ETHER)          += -lrte_ethdev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_CRYPTODEV)      += -lrte_cryptodev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_SECURITY)       += -lrte_security
 _LDLIBS-$(CONFIG_RTE_LIBRTE_EVENTDEV)       += -lrte_eventdev
+_LDLIBS-$(CONFIG_RTE_LIBRTE_RAWDEV)         += -lrte_rawdev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_MEMPOOL)        += -lrte_mempool
 _LDLIBS-$(CONFIG_RTE_DRIVER_MEMPOOL_RING)   += -lrte_mempool_ring
 _LDLIBS-$(CONFIG_RTE_LIBRTE_RING)           += -lrte_ring
@@ -202,6 +203,10 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV) += -lrte_pmd_dpaa_event
 _LDLIBS-$(CONFIG_RTE_LIBRTE_OCTEONTX_MEMPOOL) += -lrte_mempool_octeontx
 _LDLIBS-$(CONFIG_RTE_LIBRTE_OCTEONTX_PMD) += -lrte_pmd_octeontx
 endif # CONFIG_RTE_LIBRTE_EVENTDEV
+
+ifeq ($(CONFIG_RTE_LIBRTE_RAWDEV),y)
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_SKELETON_RAWDEV) += -lrte_pmd_skeleton_rawdev
+endif # CONFIG_RTE_LIBRTE_RAWDEV
 
 ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_bus_fslmc
