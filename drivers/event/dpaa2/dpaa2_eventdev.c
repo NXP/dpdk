@@ -152,7 +152,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 				goto send_partial;
 			}
 			rte_memcpy(ev_temp, event, sizeof(struct rte_event));
-			DPAA2_SET_FD_ADDR((&fd_arr[loop]), ev_temp);
+			DPAA2_SET_FD_ADDR((&fd_arr[loop]), (size_t)ev_temp);
 			DPAA2_SET_FD_LEN((&fd_arr[loop]),
 					 sizeof(struct rte_event));
 		}
@@ -284,7 +284,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		qbman_swp_prefetch_dqrr_next(swp);
 
 		fd = qbman_result_DQ_fd(dq);
-		rxq = (struct dpaa2_queue *)qbman_result_DQ_fqd_ctx(dq);
+		rxq = (struct dpaa2_queue *)(size_t)qbman_result_DQ_fqd_ctx(dq);
 		if (rxq) {
 			rxq->cb(swp, fd, dq, rxq, &ev[num_pkts]);
 		} else {
@@ -757,7 +757,7 @@ dpaa2_eventdev_setup_dpci(struct dpaa2_dpci_dev *dpci_dev,
 		dpaa2_eventdev_process_atomic;
 
 	for (i = 0 ; i < DPAA2_EVENT_DPCI_MAX_QUEUES; i++) {
-		rx_queue_cfg.user_ctx = (uint64_t)(&dpci_dev->rx_queue[i]);
+		rx_queue_cfg.user_ctx = (size_t)(&dpci_dev->rx_queue[i]);
 		ret = dpci_set_rx_queue(&dpci_dev->dpci,
 					CMD_PRI_LOW,
 					dpci_dev->token, i,
