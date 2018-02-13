@@ -465,7 +465,7 @@ dpaa2_create_dpio_device(int vdev_fd,
 	}
 
 	dpio_dev->ce_size = reg_info.size;
-	dpio_dev->qbman_portal_ce_paddr = (uint64_t)mmap(NULL, reg_info.size,
+	dpio_dev->qbman_portal_ce_paddr = (size_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
 				vdev_fd, reg_info.offset);
 
@@ -477,7 +477,7 @@ dpaa2_create_dpio_device(int vdev_fd,
 	}
 
 	dpio_dev->ci_size = reg_info.size;
-	dpio_dev->qbman_portal_ci_paddr = (uint64_t)mmap(NULL, reg_info.size,
+	dpio_dev->qbman_portal_ci_paddr = (size_t)mmap(NULL, reg_info.size,
 				PROT_WRITE | PROT_READ, MAP_SHARED,
 				vdev_fd, reg_info.offset);
 
