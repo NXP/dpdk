@@ -261,7 +261,7 @@ int rte_dpaa_portal_init(void *arg)
 
 	BUS_INIT_FUNC_TRACE();
 
-	if ((uint64_t)arg == 1 || cpu == LCORE_ID_ANY)
+	if ((size_t)arg == 1 || cpu == LCORE_ID_ANY)
 		cpu = rte_get_master_lcore();
 	/* if the core id is not supported */
 	else
