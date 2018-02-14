@@ -65,6 +65,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	struct dpci_attr attr;
 	struct dpci_rx_queue_cfg rx_queue_cfg;
 	struct dpci_rx_queue_attr rx_attr;
+	struct dpci_tx_queue_attr tx_attr;
 	int ret, i;
 
 	/* Allocate DPAA2 dpci handle */
@@ -96,16 +97,38 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	}
 
 	/* Set up the Rx Queue */
-	memset(&rx_queue_cfg, 0, sizeof(struct dpci_rx_queue_cfg));
-	ret = dpci_set_rx_queue(&dpci_node->dpci,
-				CMD_PRI_LOW,
-				dpci_node->token,
-				0, &rx_queue_cfg);
-	if (ret) {
-		PMD_INIT_LOG(ERR, "Setting Rx queue failed with err code: %d",
-			     ret);
-		rte_free(dpci_node);
-		return -1;
+	for (i = 0; i < DPAA2_DPCI_MAX_QUEUES; i++) {
+		struct dpaa2_queue *rxq;
+
+		memset(&rx_queue_cfg, 0, sizeof(struct dpci_rx_queue_cfg));
+		ret = dpci_set_rx_queue(&dpci_node->dpci,
+					CMD_PRI_LOW,
+					dpci_node->token,
+					i, &rx_queue_cfg);
+		if (ret) {
+			PMD_INIT_LOG(ERR, "Setting Rx queue failed with err code: %d",
+				     ret);
+			rte_free(dpci_node);
+			return -1;
+		}
+
+		/* Allocate DQ storage for the DPCI Rx queues */
+		rxq = &(dpci_node->rx_queue[i]);
+		rxq->q_storage = rte_malloc("dq_storage",
+					sizeof(struct queue_storage_info_t),
+					RTE_CACHE_LINE_SIZE);
+		if (!rxq->q_storage) {
+			PMD_INIT_LOG(ERR, "q_storage allocation failed\n");
+			rte_free(dpci_node);
+			return -ENOMEM;
+		}
+
+		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
+		if (dpaa2_alloc_dq_storage(rxq->q_storage)) {
+			PMD_INIT_LOG(ERR, "dpaa2_alloc_dq_storage failed\n");
+			rte_free(dpci_node);
+			return -ENOMEM;
+		}
 	}
 
 	/* Enable the device */
@@ -131,8 +154,20 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 			rte_free(dpci_node);
 			return -1;
 		}
+		dpci_node->rx_queue[i].fqid = rx_attr.fqid;
 
-		dpci_node->queue[i].fqid = rx_attr.fqid;
+		ret = dpci_get_tx_queue(&dpci_node->dpci,
+					CMD_PRI_LOW,
+					dpci_node->token, i,
+					&tx_attr);
+		if (ret != 0) {
+			PMD_INIT_LOG(ERR,
+				     "Reading device failed with err code: %d",
+				ret);
+			rte_free(dpci_node);
+			return -1;
+		}
+		dpci_node->tx_queue[i].fqid = tx_attr.fqid;
 	}
 
 	dpci_node->dpci_id = dpci_id;
