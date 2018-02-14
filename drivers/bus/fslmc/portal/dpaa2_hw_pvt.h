@@ -215,7 +215,7 @@ enum qbman_fd_format {
 	((fd)->simple.frc = (0x80000000 | (len)))
 #define DPAA2_GET_FD_FRC_PARSE_SUM(fd)	\
 			((uint16_t)(((fd)->simple.frc & 0xffff0000) >> 16))
-#define DPAA2_SET_FD_FRC(fd, frc)	((fd)->simple.frc = frc)
+#define DPAA2_SET_FD_FRC(fd, _frc)	((fd)->simple.frc = _frc)
 #define DPAA2_RESET_FD_CTRL(fd)	 ((fd)->simple.ctrl = 0)
 
 #define	DPAA2_SET_FD_ASAL(fd, asal)	((fd)->simple.ctrl |= (asal << 16))
@@ -252,6 +252,9 @@ enum qbman_fd_format {
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
 #define DPAA2_GET_FD_IVP(fd)   (((fd)->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	(((fd)->simple.bpid_offset & 0x0FFF0000) >> 16)
+#define DPAA2_GET_FD_FRC(fd)	((fd)->simple.frc)
+#define DPAA2_GET_FD_FLC(fd) \
+	(((uint64_t)((fd)->simple.flc_hi) << 32) + (fd)->simple.flc_lo)
 #define DPAA2_GET_FLE_OFFSET(fle) (((fle)->fin_bpid_offset & 0x0FFF0000) >> 16)
 #define DPAA2_SET_FLE_SG_EXT(fle) ((fle)->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
