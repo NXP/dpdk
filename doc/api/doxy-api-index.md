@@ -62,6 +62,7 @@ The public API headers are grouped by topics:
   [i40e]               (@ref rte_pmd_i40e.h),
   [bnxt]               (@ref rte_pmd_bnxt.h),
   [dpaa]               (@ref rte_pmd_dpaa.h),
+  [dpaa2]              (@ref rte_dpaa2_mempool.h),
   [crypto_scheduler]   (@ref rte_cryptodev_scheduler.h)
 
 - **memory**:
