@@ -103,3 +103,10 @@ DPDK_18.02 {
 	rte_fslmc_get_device_count;
 
 } DPDK_17.11;
+
+DPDK_18.05 {
+	global:
+
+	rte_dpaa2_free_dpci_dev;
+
+} DPDK_18.02;
