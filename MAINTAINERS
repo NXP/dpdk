@@ -714,6 +714,12 @@ F: doc/guides/eventdevs/sw.rst
 F: examples/eventdev_pipeline_sw_pmd/
 F: doc/guides/sample_app_ug/eventdev_pipeline_sw_pmd.rst
 
+Rawdev Drivers
+--------------
+
+DPAA2 CMDIF
+M: Nipun Gupta <nipun.gupta@nxp.com>
+F: drivers/raw/dpaa2_cmdif/
 
 Packet processing
 -----------------
