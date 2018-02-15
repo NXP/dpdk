@@ -29,4 +29,6 @@ LIBABIVER := 1
 #
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF) += dpaa2_cmdif.c
 
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF)-include += rte_pmd_dpaa2_cmdif.h
+
 include $(RTE_SDK)/mk/rte.lib.mk
