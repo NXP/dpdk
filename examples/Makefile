@@ -104,4 +104,8 @@ endif
 
 DIRS-y += eventdev_pipeline_sw_pmd
 
+ifeq ($(CONFIG_RTE_RTE_LIBRTE_PMD_DPAA2_CMDIF),y)
+DIRS-y += cmdif
+endif
+
 include $(RTE_SDK)/mk/rte.extsubdir.mk
