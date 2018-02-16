@@ -73,6 +73,11 @@
 #include "ipsec.h"
 #include "parser.h"
 
+#include <rte_eventdev.h>
+#include <rte_event_eth_rx_adapter.h>
+#include <rte_event_crypto_adapter.h>
+int eventdev_id;
+
 #define RTE_LOGTYPE_IPSEC RTE_LOGTYPE_USER1
 
 #define MAX_JUMBO_PKT_LEN  9600
@@ -90,7 +95,6 @@
 #define OPTION_CONFIG		"config"
 #define OPTION_SINGLE_SA	"single-sa"
 #define OPTION_CRYPTODEV_MASK	"cryptodev_mask"
-
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 
 #define NB_SOCKETS 4
@@ -103,6 +107,8 @@
 #define MAX_LCORE_PARAMS 1024
 
 #define UNPROTECTED_PORT(port) (unprotected_port_mask & (1 << portid))
+
+#define INVALID_EVENDEV_ID 0xFF
 
 /*
  * Configurable number of RX/TX ring descriptors
@@ -163,6 +169,38 @@ static uint32_t nb_lcores;
 static uint32_t single_sa;
 static uint32_t single_sa_idx;
 static uint32_t frame_size;
+struct eventdev_params {
+	uint8_t num_eventqueue;
+	uint8_t num_eventport;
+	uint8_t eventdev_id;
+};
+
+static struct eventdev_params eventdev_config[RTE_MAX_EVENTDEV_COUNT];
+static uint16_t nb_eventdev_params;
+static uint16_t crypto_adapter_id;
+struct eventdev_info *event_devices;
+
+struct connection_info {
+	uint8_t ethdev_id;
+	uint8_t eventq_id;
+	uint8_t event_prio;
+	uint8_t ethdev_rx_qid;
+	int32_t ethdev_rx_qid_mode;
+	int32_t eventdev_id;
+	int32_t adapter_id;
+};
+struct adapter_config {
+	struct connection_info connections[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_connections;
+};
+
+struct adapter_params {
+	struct adapter_config config[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_rx_adapter;
+};
+static struct adapter_params rx_adapter_config;
+struct link_params link_config;
+enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
 
 struct lcore_rx_queue {
 	uint16_t port_id;
@@ -238,6 +276,71 @@ struct ipsec_traffic {
 };
 
 static inline void
+prepare_crypto_event(struct rte_mbuf *pkt, struct ipsec_traffic *t)
+{
+	uint8_t *nlp;
+	struct ip *ip;
+
+	ip = rte_pktmbuf_mtod(pkt, struct ip *);
+	if (ip->ip_v == IPVERSION) {
+		nlp = (uint8_t *)((char *)pkt->buf_addr + pkt->data_off);
+		nlp = RTE_PTR_ADD(nlp, offsetof(struct ip, ip_p));
+		if (*nlp == IPPROTO_ESP)
+			t->ipsec.pkts[(t->ipsec.num)++] = pkt;
+		else {
+			t->ip4.data[t->ip4.num] = nlp;
+			t->ip4.pkts[(t->ip4.num)++] = pkt;
+		}
+	} else if (ip->ip_v == IP6_VERSION) {
+		nlp = (uint8_t *)((char *)pkt->buf_addr + pkt->data_off);
+		nlp = RTE_PTR_ADD(nlp, offsetof(struct ip6_hdr, ip6_nxt));
+		if (*nlp == IPPROTO_ESP)
+			t->ipsec.pkts[(t->ipsec.num)++] = pkt;
+		else {
+			t->ip6.data[t->ip6.num] = nlp;
+			t->ip6.pkts[(t->ip6.num)++] = pkt;
+		}
+	} else {
+		/* Unknown/Unsupported type, drop the packet */
+		RTE_LOG(ERR, IPSEC, "Unsupported packet type\n");
+		rte_pktmbuf_free(pkt);
+	}
+	/* Check if the packet has been processed inline. For inline protocol
+	 * processed packets, the metadata in the mbuf can be used to identify
+	 * the security processing done on the packet. The metadata will be
+	 * used to retrieve the application registered userdata associated
+	 * with the security session.
+	 */
+
+	if (pkt->ol_flags & PKT_RX_SEC_OFFLOAD) {
+		struct ipsec_sa *sa;
+		struct ipsec_mbuf_metadata *priv;
+		struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+						rte_eth_dev_get_sec_ctx(
+						pkt->port);
+
+		/* Retrieve the userdata registered. Here, the userdata
+		 * registered is the SA pointer.
+		 */
+
+		sa = (struct ipsec_sa *)
+				rte_security_get_userdata(ctx, pkt->udata64);
+
+		if (sa == NULL) {
+			/* userdata could not be retrieved */
+			return;
+		}
+
+		/* Save SA as priv member in mbuf. This will be used in the
+		 * IPsec selector(SP-SA) check.
+		 */
+
+		priv = get_priv(pkt);
+		priv->sa = sa;
+	}
+}
+
+static inline void
 prepare_one_packet(struct rte_mbuf *pkt, struct ipsec_traffic *t)
 {
 	uint8_t *nlp;
@@ -287,6 +390,44 @@ prepare_traffic(struct rte_mbuf **pkts, struct ipsec_traffic *t,
 	/* Process left packets */
 	for (; i < nb_pkts; i++)
 		prepare_one_packet(pkts[i], t);
+}
+
+static inline void
+prepare_event_traffic(struct rte_event ev[], struct ipsec_traffic *ip,
+		struct ipsec_traffic *from_sec,
+		uint16_t nb_ev)
+{
+	int i;
+
+	ip->ipsec.num = 0;
+	ip->ip4.num = 0;
+	ip->ip6.num = 0;
+	from_sec->ipsec.num = 0;
+	from_sec->ip4.num = 0;
+	from_sec->ip6.num = 0;
+
+	for (i = 0; i < (nb_ev - PREFETCH_OFFSET); i++) {
+		if (ev[i + PREFETCH_OFFSET].event_type == RTE_EVENT_TYPE_ETHDEV)
+			rte_prefetch0(rte_pktmbuf_mtod(
+					ev[i + PREFETCH_OFFSET].mbuf,
+					void *));
+		else if (ev[i + PREFETCH_OFFSET].event_type
+					== RTE_EVENT_TYPE_CRYPTODEV)
+			rte_prefetch0(rte_pktmbuf_mtod(
+				ev[i + PREFETCH_OFFSET].crypto_op->sym->m_src,
+				void *));
+		if (ev[i].event_type == RTE_EVENT_TYPE_ETHDEV)
+			prepare_one_packet(ev[i].mbuf, ip);
+		else if (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)
+			prepare_crypto_event(ev[i].crypto_op->sym->m_src, from_sec);
+	}
+	/* Process left packets */
+	for (; i < nb_ev; i++) {
+		if (ev[i].event_type == RTE_EVENT_TYPE_ETHDEV)
+			prepare_one_packet(ev[i].mbuf, ip);
+		else if (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)
+			prepare_crypto_event(ev[i].crypto_op->sym->m_src, from_sec);
+	}
 }
 
 static inline void
@@ -418,6 +559,13 @@ inbound_sp_sa(struct sp_ctx *sp, struct sa_ctx *sa, struct traffic_type *ip,
 	}
 	ip->num = j;
 }
+static inline void
+process_events_inbound(struct ipsec_ctx *ipsec_ctx,
+		struct ipsec_traffic *traffic)
+{
+	ipsec_event_inbound(ipsec_ctx, traffic->ipsec.pkts,
+			traffic->ipsec.num);
+}
 
 static inline void
 process_pkts_inbound(struct ipsec_ctx *ipsec_ctx,
@@ -485,7 +633,26 @@ outbound_sp(struct sp_ctx *sp, struct traffic_type *ip,
 	}
 	ip->num = j;
 }
+static inline void
+process_events_outbound(struct ipsec_ctx *ipsec_ctx,
+		struct ipsec_traffic *traffic)
+{
+	uint16_t i;
 
+	/* Drop any IPsec traffic from protected ports */
+	for (i = 0; i < traffic->ipsec.num; i++)
+		rte_pktmbuf_free(traffic->ipsec.pkts[i]);
+
+	traffic->ipsec.num = 0;
+
+	outbound_sp(ipsec_ctx->sp4_ctx, &traffic->ip4, &traffic->ipsec);
+
+	outbound_sp(ipsec_ctx->sp6_ctx, &traffic->ip6, &traffic->ipsec);
+
+	ipsec_event_outbound(ipsec_ctx, traffic->ipsec.pkts,
+			traffic->ipsec.res, traffic->ipsec.num);
+	// TODO:Add logic for forwarding of bypass packets
+}
 static inline void
 process_pkts_outbound(struct ipsec_ctx *ipsec_ctx,
 		struct ipsec_traffic *traffic)
@@ -506,7 +673,6 @@ process_pkts_outbound(struct ipsec_ctx *ipsec_ctx,
 	nb_pkts_out = ipsec_outbound(ipsec_ctx, traffic->ipsec.pkts,
 			traffic->ipsec.res, traffic->ipsec.num,
 			MAX_PKT_BURST);
-
 	for (i = 0; i < nb_pkts_out; i++) {
 		m = traffic->ipsec.pkts[i];
 		struct ip *ip = rte_pktmbuf_mtod(m, struct ip *);
@@ -646,6 +812,53 @@ route6_pkts(struct rt_ctx *rt_ctx, struct rte_mbuf *pkts[], uint8_t nb_pkts)
 }
 
 static inline void
+route_event_pkts(struct lcore_conf *qconf, struct ipsec_traffic *t)
+{
+	struct ipsec_traffic traffic;
+	int i, idx, ipsec_num;
+	struct rte_mbuf *m;
+
+	traffic.ip4.num = 0;
+	traffic.ip6.num = 0;
+	ipsec_num = t->ipsec.num;
+	inbound_sp_sa(qconf->inbound.sp4_ctx, qconf->inbound.sa_ctx, &t->ip4,
+			0);
+
+	inbound_sp_sa(qconf->inbound.sp6_ctx, qconf->inbound.sa_ctx, &t->ip6,
+		0);
+	for (i = 0; i < ipsec_num; i++) {
+		m = t->ipsec.pkts[i];
+		struct ip *ip = rte_pktmbuf_mtod(m, struct ip *);
+		if (ip->ip_v == IPVERSION) {
+			idx = traffic.ip4.num++;
+			traffic.ip4.pkts[idx] = m;
+		} else {
+			idx = traffic.ip6.num++;
+			traffic.ip6.pkts[idx] = m;
+		}
+	}
+	route4_pkts(qconf->rt4_ctx, t->ip4.pkts, t->ip4.num);
+	route6_pkts(qconf->rt6_ctx, t->ip6.pkts, t->ip6.num);
+	route4_pkts(qconf->rt4_ctx, traffic.ip4.pkts, traffic.ip4.num);
+	route6_pkts(qconf->rt6_ctx, traffic.ip6.pkts, traffic.ip6.num);
+}
+static inline void
+process_event_pkts(struct lcore_conf *qconf, struct rte_event ev[],
+		uint8_t nb_ev)
+{
+	struct ipsec_traffic ip_traffic;
+	struct ipsec_traffic from_sec_traffic;
+
+	prepare_event_traffic(ev, &ip_traffic, &from_sec_traffic, nb_ev);
+	route_event_pkts(qconf, &from_sec_traffic);
+	process_events_inbound(&qconf->inbound, &ip_traffic);
+	ip_traffic.ipsec.num = 0;
+	process_events_outbound(&qconf->outbound, &ip_traffic);
+	route4_pkts(qconf->rt4_ctx, ip_traffic.ip4.pkts, ip_traffic.ip4.num);
+	route6_pkts(qconf->rt6_ctx, ip_traffic.ip6.pkts, ip_traffic.ip6.num);
+}
+
+static inline void
 process_pkts(struct lcore_conf *qconf, struct rte_mbuf **pkts,
 		uint8_t nb_pkts, uint16_t portid)
 {
@@ -664,7 +877,6 @@ process_pkts(struct lcore_conf *qconf, struct rte_mbuf **pkts,
 		else
 			process_pkts_outbound(&qconf->outbound, &traffic);
 	}
-
 	route4_pkts(qconf->rt4_ctx, traffic.ip4.pkts, traffic.ip4.num);
 	route6_pkts(qconf->rt6_ctx, traffic.ip6.pkts, traffic.ip6.num);
 }
@@ -729,6 +941,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	for (i = 0; i < qconf->nb_rx_queue; i++) {
 		portid = rxql[i].port_id;
 		queueid = rxql[i].queue_id;
+
 		RTE_LOG(INFO, IPSEC,
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
 			lcore_id, portid, queueid);
@@ -755,6 +968,90 @@ main_loop(__attribute__((unused)) void *dummy)
 			if (nb_rx > 0)
 				process_pkts(qconf, pkts, nb_rx, portid);
 		}
+	}
+}
+
+/* Main processing loop for event based packet processing. */
+static int32_t
+main_event_loop(__attribute__((unused)) void *dummy)
+{
+	struct rte_event ev[MAX_PKT_BURST];
+	uint32_t lcore_id;
+	uint64_t prev_tsc, diff_tsc, cur_tsc;
+	int32_t i, nb_rx, j;
+	uint16_t portid;
+	uint8_t event_port_id = INVALID_EVENDEV_ID;
+	uint8_t queueid;
+	struct lcore_conf *qconf;
+	int32_t socket_id;
+	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1)
+			/ US_PER_S * BURST_TX_DRAIN_US;
+	struct lcore_rx_queue *rxql;
+
+	prev_tsc = 0;
+	lcore_id = rte_lcore_id();
+	qconf = &lcore_conf[lcore_id];
+	rxql = qconf->rx_queue_list;
+	socket_id = rte_lcore_to_socket_id(lcore_id);
+
+	qconf->rt4_ctx = socket_ctx[socket_id].rt_ip4;
+	qconf->rt6_ctx = socket_ctx[socket_id].rt_ip6;
+	qconf->inbound.sp4_ctx = socket_ctx[socket_id].sp_ip4_in;
+	qconf->inbound.sp6_ctx = socket_ctx[socket_id].sp_ip6_in;
+	qconf->inbound.sa_ctx = socket_ctx[socket_id].sa_in;
+	qconf->inbound.cdev_map = cdev_map_in;
+	qconf->inbound.session_pool = socket_ctx[socket_id].session_pool;
+	qconf->outbound.sp4_ctx = socket_ctx[socket_id].sp_ip4_out;
+	qconf->outbound.sp6_ctx = socket_ctx[socket_id].sp_ip6_out;
+	qconf->outbound.sa_ctx = socket_ctx[socket_id].sa_out;
+	qconf->outbound.cdev_map = cdev_map_out;
+	qconf->outbound.session_pool = socket_ctx[socket_id].session_pool;
+
+	if (qconf->nb_rx_queue == 0) {
+		RTE_LOG(INFO, IPSEC, "lcore %u has nothing to do\n", lcore_id);
+		return 0;
+	}
+
+	RTE_LOG(INFO, IPSEC, "entering main loop on lcore %u\n", lcore_id);
+
+
+	for (i = 0; i < link_config.nb_links; i++) {
+		if (link_config.links[i].lcore_id == lcore_id)
+			event_port_id = link_config.links[i].event_portid;
+	}
+	for (i = 0; i < qconf->nb_rx_queue; i++) {
+		portid = rxql[i].port_id;
+		queueid = rxql[i].queue_id;
+		nb_rx = rte_event_dequeue_burst(eventdev_id, 0, ev,
+				MAX_PKT_BURST, 0);
+		for (j = 0; j < nb_rx; j++) {
+			if (ev[j].event_type == RTE_EVENT_TYPE_ETHDEV)
+				rte_pktmbuf_free(ev[j].mbuf);
+			else if (ev[j].event_type == RTE_EVENT_TYPE_CRYPTODEV)
+				rte_pktmbuf_free(ev[j].crypto_op->sym->m_src);
+		}
+		RTE_LOG(INFO, IPSEC,
+			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
+			lcore_id, portid, queueid);
+	}
+
+	while (1) {
+		cur_tsc = rte_rdtsc();
+
+		/* TX queue buffer drain */
+		diff_tsc = cur_tsc - prev_tsc;
+
+		if (unlikely(diff_tsc > drain_tsc)) {
+			drain_buffers(qconf);
+			prev_tsc = cur_tsc;
+		}
+
+		/* Read events from Event device */
+		nb_rx = rte_event_dequeue_burst(eventdev_id, event_port_id, ev,
+				MAX_PKT_BURST, 0);
+		if (nb_rx)
+			process_event_pkts(qconf, ev, nb_rx);
+
 	}
 }
 
@@ -841,6 +1138,13 @@ static void
 print_usage(const char *prgname)
 {
 	printf("%s [EAL options] -- -p PORTMASK -P -u PORTMASK"
+		" [-e] eventdev config (eventdev, No. of event queues, No. of event ports)"
+		"			[,(eventdev,No. of event queues,No. of event ports)]"
+		" [-a] adapter config (port, queue, queue mode, event queue, event priority,"
+		"		eventdev)[,(port, queue, queue mode, event queue,"
+		"		event priority,eventdev)]"
+		" [-l] port link config (event port, event queue,eventdev,lcore)"
+		"		[,(event port,event queue,eventdev,lcore)]"
 		"  --"OPTION_CONFIG" (port,queue,lcore)[,(port,queue,lcore]"
 		" --single-sa SAIDX -f CONFIG_FILE\n"
 		"  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
@@ -853,7 +1157,15 @@ print_usage(const char *prgname)
 		"bypassing the SP\n"
 		"  --cryptodev_mask MASK: hexadecimal bitmask of the "
 		"crypto devices to configure\n"
-		"  -f CONFIG_FILE: Configuration file path\n",
+		"  -f CONFIG_FILE: Configuration file path\n"
+		"  -e : Event dev configuration\n"
+		"	(Number of event queues,Number of event ports)\n"
+		"  -a : Adapter configuration\n"
+		"	(Ethdev Port ID,Ethdev Rx Queue ID,Ethdev Rx"
+		"	QueueID mode, Event Queue ID,"
+		"	Event Priority,Eventdev ID)\n"
+		"  -l : Event port and Event Queue link configuration\n"
+		"	(Event Port ID,Event Queue ID,Eventdev ID)\n",
 		prgname);
 }
 
@@ -978,6 +1290,327 @@ parse_args_long_options(struct option *lgopts, int32_t option_index)
 	return ret;
 }
 #undef __STRNCMP
+static int
+parse_eventdev_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENTDEV_ID = 0,
+		FLD_EVENT_QUEUE,
+		FLD_EVENT_PORT,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i;
+	unsigned int size;
+
+	/*First set all eventdev_config to default*/
+	for (i = 0; i < RTE_MAX_EVENTDEV_COUNT; i++) {
+		eventdev_config[i].num_eventqueue = 1;
+		eventdev_config[i].num_eventport = RTE_MAX_LCORE;
+	}
+
+	nb_eventdev_params = 0;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (nb_eventdev_params >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				nb_eventdev_params);
+			return -1;
+		}
+
+		eventdev_config[nb_eventdev_params].num_eventqueue =
+					(uint8_t)int_fld[FLD_EVENT_QUEUE];
+		eventdev_config[nb_eventdev_params].num_eventport =
+					(uint8_t)int_fld[FLD_EVENT_PORT];
+		eventdev_config[nb_eventdev_params].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENTDEV_ID];
+		++nb_eventdev_params;
+	}
+
+	return 0;
+}
+
+static int
+parse_adapter_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_ETHDEV_ID = 0,
+		FLD_ETHDEV_QID,
+		FLD_EVENT_QID_MODE,
+		FLD_EVENTQ_ID,
+		FLD_EVENT_PRIO,
+		FLD_EVENT_DEVID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0, j = 0;
+	unsigned int size;
+
+	index = rx_adapter_config.nb_rx_adapter;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		j = rx_adapter_config.config[index].nb_connections;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				rx_adapter_config.nb_rx_adapter);
+			return -1;
+		}
+
+		rx_adapter_config.config[index].connections[j].ethdev_id =
+					(uint8_t)int_fld[FLD_ETHDEV_ID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid =
+					(uint8_t)int_fld[FLD_ETHDEV_QID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid_mode =
+					(uint8_t)int_fld[FLD_EVENT_QID_MODE];
+		rx_adapter_config.config[index].connections[j].eventq_id =
+					(uint8_t)int_fld[FLD_EVENTQ_ID];
+		rx_adapter_config.config[index].connections[j].event_prio =
+					(uint8_t)int_fld[FLD_EVENT_PRIO];
+		rx_adapter_config.config[index].connections[j].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		rx_adapter_config.config[index].nb_connections++;
+	}
+
+	return 0;
+}
+
+static int
+parse_link_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENT_PORTID = 0,
+		FLD_EVENT_QID,
+		FLD_EVENT_DEVID,
+		FLD_LCORE_ID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0;
+	unsigned int size;
+
+	/*First set all adapter_config to default*/
+	memset(&link_config, 0, sizeof(struct link_params));
+	while ((p = strchr(p0, '(')) != NULL) {
+		index = link_config.nb_links;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				link_config.nb_links);
+			return -1;
+		}
+
+		link_config.links[index].event_portid =
+					(uint8_t)int_fld[FLD_EVENT_PORTID];
+		link_config.links[index].eventq_id =
+					(uint8_t)int_fld[FLD_EVENT_QID];
+		link_config.links[index].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		link_config.links[index].lcore_id =
+					(uint8_t)int_fld[FLD_LCORE_ID];
+		lcore_dequeue_mode[link_config.links[index].lcore_id] =
+					EVENTDEV_DEQUEUE;
+		link_config.nb_links++;
+	}
+
+	return 0;
+}
+
+static int
+eventdev_configure(void)
+{
+
+	int ret = -1;
+	uint8_t i, j;
+	void *ports, *queues;
+	struct rte_event_dev_config eventdev_conf = {0};
+	struct rte_event_dev_info eventdev_def_conf = {0};
+	struct rte_event_queue_conf eventq_conf = {0};
+	struct rte_event_port_conf port_conf = {0};
+	struct rte_event_eth_rx_adapter_queue_conf queue_conf = {0};
+
+	/*First allocate space for event device information*/
+	event_devices = rte_zmalloc("event-dev",
+				sizeof(struct eventdev_info) * nb_eventdev_params, 0);
+	if (event_devices == NULL) {
+		printf("Error in allocating memory for event devices\n");
+		return ret;
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++) {
+		/*Now allocate space for event ports request from user*/
+		ports = rte_zmalloc("event-ports",
+				sizeof(uint8_t) * eventdev_config[i].num_eventport, 0);
+		if (ports == NULL) {
+			printf("Error in allocating memory for event ports\n");
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].port = ports;
+
+		/*Now allocate space for event queues request from user*/
+		queues = rte_zmalloc("event-queues",
+				sizeof(uint8_t) * eventdev_config[i].num_eventqueue, 0);
+		if (queues == NULL) {
+			printf("Error in allocating memory for event queues\n");
+			rte_free(event_devices[i].port);
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].queue = queues;
+		event_devices[i].dev_id = eventdev_config[i].eventdev_id;
+
+		/* get default values of eventdev*/
+		memset(&eventdev_def_conf, 0,
+		       sizeof(struct rte_event_dev_info));
+		rte_event_dev_info_get(event_devices[i].dev_id,
+				       &eventdev_def_conf);
+
+		memset(&eventdev_conf, 0, sizeof(struct rte_event_dev_config));
+		eventdev_conf.nb_events_limit = -1;
+		eventdev_conf.nb_event_queues =
+					eventdev_config[i].num_eventqueue;
+		eventdev_conf.nb_event_ports =
+					eventdev_config[i].num_eventport;
+		eventdev_conf.nb_event_queue_flows =
+				eventdev_def_conf.max_event_queue_flows;
+		eventdev_conf.nb_event_port_dequeue_depth =
+				eventdev_def_conf.max_event_port_dequeue_depth;
+		eventdev_conf.nb_event_port_enqueue_depth =
+				eventdev_def_conf.max_event_port_enqueue_depth;
+
+		rte_event_dev_configure(event_devices[i].dev_id,
+					&eventdev_conf);
+
+		memset(&eventq_conf, 0, sizeof(struct rte_event_queue_conf));
+		eventq_conf.nb_atomic_flows = 1;
+		eventq_conf.schedule_type = RTE_SCHED_TYPE_ATOMIC;
+		for (j = 0; j < eventdev_config[i].num_eventqueue; j++) {
+			rte_event_queue_setup(event_devices[i].dev_id, j,
+					      &eventq_conf);
+			event_devices[i].queue[j] = j;
+		}
+
+		for (j = 0; j <  eventdev_config[i].num_eventport; j++) {
+			rte_event_port_setup(event_devices[i].dev_id, j, NULL);
+			event_devices[i].port[j] = j;
+		}
+	}
+
+	for (i = 0; i < rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			rte_event_eth_rx_adapter_create(j,
+					rx_adapter_config.config[i].connections[j].eventdev_id,
+					&port_conf);
+			rx_adapter_config.config[i].connections[j].adapter_id =
+					j;
+		}
+	}
+
+	for (j = 0; j <  link_config.nb_links; j++) {
+		rte_event_port_link(link_config.links[j].eventdev_id,
+				    link_config.links[j].event_portid,
+				    &link_config.links[j].eventq_id, NULL, 1);
+	}
+
+	queue_conf.rx_queue_flags =
+				RTE_EVENT_ETH_RX_ADAPTER_QUEUE_FLOW_ID_VALID;
+
+	for (i = 0; i <  rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			queue_conf.ev.queue_id =
+				rx_adapter_config.config[i].connections[j].eventq_id;
+			queue_conf.ev.priority =
+				rx_adapter_config.config[i].connections[j].event_prio;
+			queue_conf.ev.flow_id =
+				rx_adapter_config.config[i].connections[j].ethdev_id;
+			queue_conf.ev.sched_type =
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid_mode;
+			rte_event_eth_rx_adapter_queue_add(
+				rx_adapter_config.config[i].connections[j].adapter_id,
+				rx_adapter_config.config[i].connections[j].ethdev_id,
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid,
+				&queue_conf);
+		}
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++)
+		rte_event_dev_start(event_devices[i].dev_id);
+
+	return 0;
+}
 
 static int32_t
 parse_args(int32_t argc, char **argv)
@@ -996,7 +1629,7 @@ parse_args(int32_t argc, char **argv)
 
 	argvopt = argv;
 
-	while ((opt = getopt_long(argc, argvopt, "p:Pu:f:j:",
+	while ((opt = getopt_long(argc, argvopt, "p:Pu:f:j:e:a:l:",
 				lgopts, &option_index)) != EOF) {
 
 		switch (opt) {
@@ -1051,6 +1684,36 @@ parse_args(int32_t argc, char **argv)
 				}
 			}
 			printf("Enabled jumbo frames size %u\n", frame_size);
+			break;
+	/*Event device configuration*/
+		case 'e':
+			ret = parse_eventdev_config(optarg);
+			if (ret < 0) {
+				printf("invalid event device configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		/*Rx adapter configuration*/
+		case 'a':
+			ret = parse_adapter_config(optarg);
+			if (ret < 0) {
+				printf("invalid Rx adapter configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			rx_adapter_config.nb_rx_adapter++;
+			break;
+
+		/*Event Queue and Adapter Link configuration*/
+		case 'l':
+			ret = parse_link_config(optarg);
+			if (ret < 0) {
+				printf("invalid Link configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
 			break;
 		case 0:
 			if (parse_args_long_options(lgopts, option_index)) {
@@ -1322,7 +1985,6 @@ cryptodevs_init(void)
 			idx = idx % nb_lcore_params;
 			i++;
 		}
-
 		if (qp == 0)
 			continue;
 
@@ -1356,14 +2018,32 @@ cryptodevs_init(void)
 			rte_panic("Failed to initialize cryptodev %u\n",
 					cdev_id);
 
+		if (nb_eventdev_params) {
+			struct rte_event_port_conf adapter_port_config = {0};
+			rte_event_crypto_adapter_create(crypto_adapter_id, eventdev_id, &adapter_port_config);
+		}
+
 		qp_conf.nb_descriptors = CDEV_QUEUE_DESC;
-		for (qp = 0; qp < dev_conf.nb_queue_pairs; qp++)
+		for (qp = 0; qp < dev_conf.nb_queue_pairs; qp++) {
 			if (rte_cryptodev_queue_pair_setup(cdev_id, qp,
 					&qp_conf, dev_conf.socket_id,
 					socket_ctx[dev_conf.socket_id].session_pool))
 				rte_panic("Failed to setup queue %u for "
 						"cdev_id %u\n",	0, cdev_id);
+				if (nb_eventdev_params) {
+					struct rte_event_crypto_queue_pair_conf queue_conf = {0};
 
+					queue_conf.type = RTE_EVENT_CRYPTO_CONF_TYPE_EVENT;
+					queue_conf.ev.flow_id = cdev_id;
+					queue_conf.ev.sched_type = rx_adapter_config.config[0].connections[0].ethdev_rx_qid_mode;
+					queue_conf.ev.event_type = RTE_EVENT_TYPE_CRYPTODEV;
+					queue_conf.ev.priority = 0;
+					queue_conf.ev.queue_id = qp;
+					rte_event_crypto_adapter_queue_pair_add(crypto_adapter_id, cdev_id, qp, &queue_conf);
+				}
+		}
+		if (nb_eventdev_params)
+			crypto_adapter_id++;
 		if (rte_cryptodev_start(cdev_id))
 			rte_panic("Failed to start cryptodev %u\n",
 					cdev_id);
@@ -1567,6 +2247,14 @@ main(int32_t argc, char **argv)
 		port_init(portid);
 	}
 
+	if (nb_eventdev_params) {
+		eventdev_id = rte_event_dev_get_dev_id("event_dpaa2");
+		ret = eventdev_configure();
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE,
+				"event dev configure: err=%d\n", ret);
+	}
+
 	cryptodevs_init();
 
 	/* start ports */
@@ -1592,7 +2280,11 @@ main(int32_t argc, char **argv)
 	check_all_ports_link_status(nb_ports, enabled_port_mask);
 
 	/* launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+	if (nb_eventdev_params)
+		rte_eal_mp_remote_launch(main_event_loop, NULL, CALL_MASTER);
+	else
+		rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;

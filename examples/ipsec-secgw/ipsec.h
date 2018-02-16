@@ -75,6 +75,34 @@
 
 #define IP6_VERSION (6)
 
+#define RTE_MAX_EVENTDEV_COUNT  RTE_MAX_LCORE
+
+struct eventdev_info {
+	uint8_t dev_id;
+	uint8_t *port;
+	uint8_t *queue;
+};
+
+struct link_info {
+	uint8_t event_portid;
+	uint8_t eventq_id;
+	uint8_t eventdev_id;
+	uint8_t lcore_id;
+};
+struct link_params {
+	struct link_info links[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_links;
+};
+
+enum dequeue_mode {
+	QUEUE_DEQUEUE = 0,
+	EVENTDEV_DEQUEUE,
+};
+
+extern struct link_params link_config;
+extern struct eventdev_info *event_devices;
+extern enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
+
 struct rte_crypto_xform;
 struct ipsec_xform;
 struct rte_mbuf;
@@ -207,6 +235,14 @@ ipsec_inbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
 uint16_t
 ipsec_outbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
 		uint32_t sa_idx[], uint16_t nb_pkts, uint16_t len);
+
+uint16_t
+ipsec_event_inbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint16_t nb_pkts);
+
+uint16_t
+ipsec_event_outbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint32_t sa_idx[], uint16_t nb_pkts);
 
 static inline uint16_t
 ipsec_metadata_size(void)

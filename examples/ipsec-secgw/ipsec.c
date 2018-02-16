@@ -455,3 +455,26 @@ ipsec_outbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
 
 	return ipsec_dequeue(esp_outbound_post, ctx, pkts, len);
 }
+uint16_t
+ipsec_event_inbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint16_t nb_pkts)
+{
+	struct ipsec_sa *sas[nb_pkts];
+
+	inbound_sa_lookup(ctx->sa_ctx, pkts, sas, nb_pkts);
+
+	ipsec_enqueue(esp_inbound, ctx, pkts, sas, nb_pkts);
+	return 0;
+}
+
+uint16_t
+ipsec_event_outbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint32_t sa_idx[], uint16_t nb_pkts)
+{
+	struct ipsec_sa *sas[nb_pkts];
+
+	outbound_sa_lookup(ctx->sa_ctx, sa_idx, sas, nb_pkts);
+
+	ipsec_enqueue(esp_outbound, ctx, pkts, sas, nb_pkts);
+	return 0;
+}
