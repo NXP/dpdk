@@ -23,11 +23,14 @@ LIBABIVER := 1
 # all source are stored in SRC-Y
 SRCS-y += client/cmdif_client_flib.c
 SRCS-y += client/cmdif_client_gpp.c
+SRCS-y += server/cmdif_srv_flib.c
+SRCS-y += server/cmdif_srv_gpp.c
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib
 CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib/client
+CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib/server
 
 LDLIBS += -lrte_eal
 LDLIBS += -lrte_rawdev
