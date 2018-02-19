@@ -64,6 +64,7 @@ The public API headers are grouped by topics:
   [dpaa]               (@ref rte_pmd_dpaa.h),
   [dpaa2]              (@ref rte_dpaa2_mempool.h),
   [dpaa2_cmdif]        (@ref rte_pmd_dpaa2_cmdif.h),
+  [dpaa2_cmdif_client] (@ref fsl_cmdif_client.h),
   [crypto_scheduler]   (@ref rte_cryptodev_scheduler.h)
 
 - **memory**:
