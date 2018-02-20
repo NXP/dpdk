@@ -62,7 +62,7 @@ The CMDIF client (demo) is responsible for the following:
   - Closes the opened CI communication channels.
 
 CMDIF Server (GPP is server):
-`
+
 In the CMDIF server, the GPP is the server and the AIOP is the client.
 Requests are initiated by the AIOP and are sent to the GPP core.
 The GPP responds back to the AIOP with success or error.
@@ -113,7 +113,7 @@ The application has a number of command line options::
 The demo application showcases only a single thread/core use-case, thus supporting the coremask with single core.
 Running the example also requires
   - running dynamic_AIOP_dpl.sh
-  - Loading the cmdif_integ_dbg.elf (provided in AIOPSL - https://bitbucket.sw.nxp.com/projects/DPAA2/repos/aiopsl/browse/demos/images/LS2085A/cmdif_integ_dbg.elf?at=develop) using the aiop_tool which is to be run in background
+  - Loading the cmdif_integ_dbg.elf (provided in AIOPSL - https://github.com/qoriq-open-source/aiopsl/tree/integration/demos/images) using the aiop_tool which is to be run in background
 
 For example,
 
@@ -122,10 +122,11 @@ For example,
     ./dynamic_AIOP_dpl.sh
     export DPRC = <dprc container created for GPP>
     aiop_tool load -g dprc.3 -f cmdif_integ_dbg.elf &
-    ./cmdif_demo -c 0x2"
+    ./cmdif_demo -c 0x2
 
 In this command:
 
+*   dynamic_AIOP_dpl.sh – creates three containers
 *   The -c option enables cores 2
 
 Refer to the *DPDK Getting Started Guide* for general information on running applications and
