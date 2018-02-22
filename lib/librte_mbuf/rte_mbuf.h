@@ -1091,7 +1091,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
  *   - -EACCES: platform mempool is already registered.
  */
 int
-rte_mbuf_register_platform_mempool_ops(const char *ops_name);
+rte_mbuf_set_platform_mempool_ops(const char *ops_name);
 
 /**
  * Get registered platform supported pool ops name for mbuf

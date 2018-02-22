@@ -151,7 +151,7 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 static const char *plat_mbuf_pool_ops_name;
 
 int
-rte_mbuf_register_platform_mempool_ops(const char *ops_name)
+rte_mbuf_set_platform_mempool_ops(const char *ops_name)
 {
 	if (plat_mbuf_pool_ops_name == NULL) {
 		plat_mbuf_pool_ops_name = ops_name;

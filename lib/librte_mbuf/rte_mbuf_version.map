@@ -40,6 +40,6 @@ DPDK_18.02 {
 	global:
 
 	rte_mbuf_platform_mempool_ops;
-	rte_mbuf_register_platform_mempool_ops;
+	rte_mbuf_set_platform_mempool_ops;
 
 } DPDK_16.11;

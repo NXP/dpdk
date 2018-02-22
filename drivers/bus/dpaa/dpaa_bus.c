@@ -431,8 +431,6 @@ rte_dpaa_bus_scan(void)
 		return ret;
 	}
 
-	rte_mbuf_register_platform_mempool_ops(DPAA_MEMPOOL_OPS_NAME);
-
 	/* create the key, supplying a function that'll be invoked
 	 * when a portal affined thread will be deleted.
 	 */
@@ -526,6 +524,12 @@ rte_dpaa_bus_probe(void)
 			break;
 		}
 	}
+
+	/* Register DPAA mempool ops only if any DPAA device has
+	 * been detected.
+	 */
+	if (!TAILQ_EMPTY(&rte_dpaa_bus.device_list))
+		rte_mbuf_set_platform_mempool_ops(DPAA_MEMPOOL_OPS_NAME);
 
 	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
 	if (svr_file) {
