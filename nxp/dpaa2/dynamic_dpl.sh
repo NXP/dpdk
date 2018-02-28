@@ -177,6 +177,13 @@ script help :----->
 					where "Number of priorities" is an
 					integer value.
 					"e.g export DPCI_PRIORITIES=1"
+
+	/**DPDMAI**:-->
+		DPDMAI_COUNT	    = DPDMAI objects count for QDMA device
+					Set the parameter using below command:
+					'export DPDMAI_COUNT=<Num of dpdmai objects>'
+					e.g export DPDMAI_COUNT=2".
+					By default there are 8 dpdmai object.
 EOF
 
 
@@ -373,6 +380,19 @@ get_dpci_parameters() {
 	echo >> dynamic_dpl_logs
 }
 
+#/* Function, to intialize the DPDMAI related parameters
+#*/
+get_dpdmai_parameters() {
+	if [[ -z "$DPDMAI_COUNT" ]]
+	then
+		DPDMAI_COUNT=8
+	fi
+	echo "DPDMAI parameters :-->" >> dynamic_dpl_logs
+	echo -e "\tDPDMAI_COUNT = "$DPDMAI_COUNT >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+}
+
 #/* function, to create the actual MAC address from the base address
 #*/
 create_actual_mac() {
@@ -481,6 +501,7 @@ then
 	get_dpseci_parameters
 	get_dpio_parameters
 	get_dpci_parameters
+	get_dpdmai_parameters
 	RET=$?
 	if [[ $RET == 1 ]]
 	then
@@ -696,6 +717,17 @@ then
 		restool dprc sync
 	done;
 
+	# Create DPDMAI's for qDMA
+	unset DPDMAI
+	for i in $(seq 1 ${DPDMAI_COUNT}); do
+		DPDMAI=$(restool -s dpdmai create --priorities=1,1 --container=$DPRC)
+		echo $DPDMAI "Created" >> dynamic_dpl_logs
+		restool dprc sync
+		TEMP=$(restool dprc assign $DPRC --object=$DPDMAI --child=$DPRC --plugged=1)
+		echo $DPDMAI "moved to plugged state" >> dynamic_dpl_logs
+		restool dprc sync
+	done;
+
 	dmesg -D
 	# Mount HUGETLB Pages first
 	HUGE=$(grep -E '/mnt/\<hugepages\>.*hugetlbfs' /proc/mounts)
@@ -744,6 +776,8 @@ then
 	echo -e " * $count DPIO"
 	count=$(restool dprc show $DPRC | grep -c dpci.*)
 	echo -e " * $count DPCI"
+	count=$(restool dprc show $DPRC | grep -c dpdmai.*)
+	echo -e " * $count DPDMAI"
 	echo
 	echo
 	unset count
