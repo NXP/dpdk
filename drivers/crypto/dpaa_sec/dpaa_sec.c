@@ -2200,16 +2200,20 @@ dpaa_sec_dev_configure(struct rte_cryptodev *dev,
 
 	internals = dev->data->dev_private;
 	sprintf(str, "ctx_pool_%d", dev->data->dev_id);
-	internals->ctx_pool = rte_mempool_create((const char *)str,
-						CTX_POOL_NUM_BUFS,
-						CTX_POOL_BUF_SIZE,
-						CTX_POOL_CACHE_SIZE, 0,
-						NULL, NULL, NULL, NULL,
-						SOCKET_ID_ANY, 0);
 	if (!internals->ctx_pool) {
-	      RTE_LOG(ERR, PMD, "%s create failed\n", str);
-	      return -ENOMEM;
-	}
+		internals->ctx_pool = rte_mempool_create((const char *)str,
+							CTX_POOL_NUM_BUFS,
+							CTX_POOL_BUF_SIZE,
+							CTX_POOL_CACHE_SIZE, 0,
+							NULL, NULL, NULL, NULL,
+							SOCKET_ID_ANY, 0);
+		if (!internals->ctx_pool) {
+			RTE_LOG(ERR, PMD, "%s create failed\n", str);
+			return -ENOMEM;
+		}
+	} else
+		RTE_LOG(INFO, PMD, "mempool already created for dev_id : %d\n",
+								dev->data->dev_id);
 
 	return 0;
 }
