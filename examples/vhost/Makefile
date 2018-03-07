@@ -53,6 +53,7 @@ SRCS-y := main.c virtio_net.c
 CFLAGS += -O2 -D_FILE_OFFSET_BITS=64
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -D_GNU_SOURCE
+CFLAGS += -DNXP_NON_UPSTREAMABLE
 
 include $(RTE_SDK)/mk/rte.extapp.mk
 
