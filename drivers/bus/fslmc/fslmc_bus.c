@@ -33,7 +33,7 @@ uint8_t dpaa2_virt_mode;
 uint32_t
 rte_fslmc_get_device_count(enum rte_dpaa2_dev_type device_type)
 {
-	if (device_type > DPAA2_DEVTYPE_MAX)
+	if (device_type >= DPAA2_DEVTYPE_MAX)
 		return 0;
 	return rte_fslmc_bus.device_count[device_type];
 }
