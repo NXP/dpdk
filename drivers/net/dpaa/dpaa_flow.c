@@ -118,8 +118,10 @@ void dpaa_write_fm_config_to_file(void)
 {
 	size_t bytes_write;
 	FILE *fp = fopen(fm_log, "wb");
-	if (!fp)
+	if (!fp) {
 		DPAA_PMD_ERR("File open failed\n");
+		return;
+	}
 	bytes_write = fwrite(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
 	if (!bytes_write) {
 		DPAA_PMD_WARN("No bytes write\n");
