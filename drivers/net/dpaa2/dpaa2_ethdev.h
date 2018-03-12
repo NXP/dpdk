@@ -51,18 +51,21 @@
 
 /* Threshold for a Tx queue to *Enter* Congestion state.
  */
-#define CONG_ENTER_TX_THRESHOLD   512
+#define CONG_ENTER_TX_THRESHOLD		512
+#define CONG_ENTER_TX_THRESHOLD_1088	256
 
 /* Threshold for a queue to *Exit* Congestion state.
  */
-#define CONG_EXIT_TX_THRESHOLD    480
+#define CONG_EXIT_TX_THRESHOLD		480
+#define CONG_EXIT_TX_THRESHOLD_1088	240
 
 #define CONG_RETRY_COUNT 18000
 
 /* RX queue tail drop threshold
  * currently considering 32 KB packets
  */
-#define CONG_THRESHOLD_RX_Q  (64 * 1024)
+#define CONG_THRESHOLD_RX_Q		(64 * 1024)
+#define CONG_THRESHOLD_RX_Q_1088	(64 * 600)
 #define CONG_RX_OAL	128
 
 /* Size of the input SMMU mapped memory required by MC */
