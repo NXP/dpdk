@@ -71,7 +71,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	/* Allocate DPAA2 dpci handle */
 	dpci_node = rte_malloc(NULL, sizeof(struct dpaa2_dpci_dev), 0);
 	if (!dpci_node) {
-		PMD_INIT_LOG(ERR, "Memory allocation failed for DPCI Device");
+		DPAA2_BUS_ERR("Memory allocation failed for DPCI Device");
 		return -1;
 	}
 
@@ -80,8 +80,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	ret = dpci_open(&dpci_node->dpci,
 			CMD_PRI_LOW, dpci_id, &dpci_node->token);
 	if (ret) {
-		PMD_INIT_LOG(ERR, "Resource alloc failure with err code: %d",
-			     ret);
+		DPAA2_BUS_ERR("Resource alloc failure with err code: %d", ret);
 		rte_free(dpci_node);
 		return -1;
 	}
@@ -90,8 +89,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	ret = dpci_get_attributes(&dpci_node->dpci,
 				  CMD_PRI_LOW, dpci_node->token, &attr);
 	if (ret != 0) {
-		PMD_INIT_LOG(ERR, "Reading device failed with err code: %d",
-			     ret);
+		DPAA2_BUS_ERR("Reading device failed with err code: %d", ret);
 		rte_free(dpci_node);
 		return -1;
 	}
@@ -106,8 +104,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					dpci_node->token,
 					i, &rx_queue_cfg);
 		if (ret) {
-			PMD_INIT_LOG(ERR, "Setting Rx queue failed with err code: %d",
-				     ret);
+			DPAA2_BUS_ERR("Set Rx queue failed with err: %d", ret);
 			rte_free(dpci_node);
 			return -1;
 		}
@@ -118,14 +115,14 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					sizeof(struct queue_storage_info_t),
 					RTE_CACHE_LINE_SIZE);
 		if (!rxq->q_storage) {
-			PMD_INIT_LOG(ERR, "q_storage allocation failed\n");
+			DPAA2_BUS_ERR("q_storage allocation failed\n");
 			rte_free(dpci_node);
 			return -ENOMEM;
 		}
 
 		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
 		if (dpaa2_alloc_dq_storage(rxq->q_storage)) {
-			PMD_INIT_LOG(ERR, "dpaa2_alloc_dq_storage failed\n");
+			DPAA2_BUS_ERR("dpaa2_alloc_dq_storage failed\n");
 			rte_free(dpci_node);
 			return -ENOMEM;
 		}
@@ -135,8 +132,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	ret = dpci_enable(&dpci_node->dpci,
 			  CMD_PRI_LOW, dpci_node->token);
 	if (ret != 0) {
-		PMD_INIT_LOG(ERR, "Enabling device failed with err code: %d",
-			     ret);
+		DPAA2_BUS_ERR("Enabling device failed with err code: %d", ret);
 		rte_free(dpci_node);
 		return -1;
 	}
@@ -148,9 +144,8 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					dpci_node->token, i,
 					&rx_attr);
 		if (ret != 0) {
-			PMD_INIT_LOG(ERR,
-				     "Reading device failed with err code: %d",
-				ret);
+			DPAA2_BUS_ERR("Rx queue fetch failed with err code:"
+				      " %d", ret);
 			rte_free(dpci_node);
 			return -1;
 		}
@@ -161,8 +156,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					dpci_node->token, i,
 					&tx_attr);
 		if (ret != 0) {
-			PMD_INIT_LOG(ERR,
-				     "Reading device failed with err code: %d",
+			DPAA2_BUS_ERR("Reading device failed with err code: %d",
 				ret);
 			rte_free(dpci_node);
 			return -1;
@@ -174,8 +168,6 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	rte_atomic16_init(&dpci_node->in_use);
 
 	TAILQ_INSERT_TAIL(&dpci_dev_list, dpci_node, next);
-
-	RTE_LOG(DEBUG, PMD, "DPAA2: Added [dpci.%d]\n", dpci_id);
 
 	return 0;
 }
