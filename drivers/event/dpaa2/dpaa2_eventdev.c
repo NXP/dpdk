@@ -98,7 +98,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_EVENTDEV_ERR("Failure in affining portal\n");
+			DPAA2_EVENTDEV_ERR("Failure in affining portal");
 			return 0;
 		}
 	}
@@ -148,7 +148,8 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 				if (!loop)
 					return num_tx;
 				frames_to_send = loop;
-				DPAA2_EVENTDEV_ERR("Unable to allocate memory");
+				DPAA2_EVENTDEV_ERR(
+					"Unable to allocate event object");
 				goto send_partial;
 			}
 			rte_memcpy(ev_temp, event, sizeof(struct rte_event));
@@ -193,9 +194,9 @@ RETRY:
 		 * case to avoid the problem.
 		 */
 		if (errno == EINTR) {
-			DPAA2_EVENTDEV_DEBUG("epoll_wait fails\n");
+			DPAA2_EVENTDEV_DEBUG("epoll_wait fails");
 			if (i++ > 10)
-				DPAA2_EVENTDEV_DEBUG("Dequeue burst Failed\n");
+				DPAA2_EVENTDEV_DEBUG("Dequeue burst Failed");
 		goto RETRY;
 		}
 	}
@@ -253,7 +254,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_EVENTDEV_ERR("Failure in affining portal\n");
+			DPAA2_EVENTDEV_ERR("Failure in affining portal");
 			return 0;
 		}
 	}
@@ -289,7 +290,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 			rxq->cb(swp, fd, dq, rxq, &ev[num_pkts]);
 		} else {
 			qbman_swp_dqrr_consume(swp, dq);
-			DPAA2_EVENTDEV_ERR("Null Return VQ received\n");
+			DPAA2_EVENTDEV_ERR("Null Return VQ received");
 			return 0;
 		}
 
@@ -357,7 +358,7 @@ dpaa2_eventdev_configure(const struct rte_eventdev *dev)
 	priv->event_dev_cfg = conf->event_dev_cfg;
 
 	DPAA2_EVENTDEV_DEBUG("Configured eventdev devid=%d",
-		dev->data->dev_id);
+			     dev->data->dev_id);
 	return 0;
 }
 
@@ -523,8 +524,8 @@ dpaa2_eventdev_port_link(struct rte_eventdev *dev, void *port,
 			CMD_PRI_LOW, dpaa2_portal->dpio_dev->token,
 			evq_info->dpcon->dpcon_id, &channel_index);
 		if (ret < 0) {
-			DPAA2_EVENTDEV_ERR("Static dequeue cfg failed with ret: %d\n",
-				    ret);
+			DPAA2_EVENTDEV_ERR(
+				"Static dequeue config failed: err(%d)", ret);
 			goto err;
 		}
 
@@ -608,8 +609,8 @@ dpaa2_eventdev_eth_queue_add_all(const struct rte_eventdev *dev,
 		ret = dpaa2_eth_eventq_attach(eth_dev, i,
 				dpcon_id, queue_conf);
 		if (ret) {
-			DPAA2_EVENTDEV_ERR("dpaa2_eth_eventq_attach failed: ret %d\n",
-				    ret);
+			DPAA2_EVENTDEV_ERR(
+				"Event queue attach failed: err(%d)", ret);
 			goto fail;
 		}
 	}
@@ -641,7 +642,8 @@ dpaa2_eventdev_eth_queue_add(const struct rte_eventdev *dev,
 	ret = dpaa2_eth_eventq_attach(eth_dev, rx_queue_id,
 			dpcon_id, queue_conf);
 	if (ret) {
-		DPAA2_EVENTDEV_ERR("dpaa2_eth_eventq_attach failed: ret: %d\n", ret);
+		DPAA2_EVENTDEV_ERR(
+			"Event queue attach failed: err(%d)", ret);
 		return ret;
 	}
 	return 0;
@@ -660,8 +662,8 @@ dpaa2_eventdev_eth_queue_del_all(const struct rte_eventdev *dev,
 	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
 		ret = dpaa2_eth_eventq_detach(eth_dev, i);
 		if (ret) {
-			DPAA2_EVENTDEV_ERR("dpaa2_eth_eventq_detach failed: ret %d\n",
-				    ret);
+			DPAA2_EVENTDEV_ERR(
+				"Event queue detach failed: err(%d)", ret);
 			return ret;
 		}
 	}
@@ -683,7 +685,8 @@ dpaa2_eventdev_eth_queue_del(const struct rte_eventdev *dev,
 
 	ret = dpaa2_eth_eventq_detach(eth_dev, rx_queue_id);
 	if (ret) {
-		DPAA2_EVENTDEV_ERR("dpaa2_eth_eventq_detach failed: ret: %d\n", ret);
+		DPAA2_EVENTDEV_ERR(
+			"Event queue detach failed: err(%d)", ret);
 		return ret;
 	}
 
@@ -764,7 +767,8 @@ dpaa2_eventdev_setup_dpci(struct dpaa2_dpci_dev *dpci_dev,
 					&rx_queue_cfg);
 		if (ret) {
 			DPAA2_EVENTDEV_ERR(
-				    "set_rx_q failed with err code: %d", ret);
+				"DPCI Rx queue setup failed: err(%d)",
+				ret);
 			return ret;
 		}
 	}
@@ -784,7 +788,7 @@ dpaa2_eventdev_create(const char *name)
 					   sizeof(struct dpaa2_eventdev),
 					   rte_socket_id());
 	if (eventdev == NULL) {
-		DPAA2_EVENTDEV_ERR("Failed to create eventdev vdev %s", name);
+		DPAA2_EVENTDEV_ERR("Failed to create Event device %s", name);
 		goto fail;
 	}
 
@@ -819,7 +823,7 @@ dpaa2_eventdev_create(const char *name)
 		ret = dpaa2_eventdev_setup_dpci(dpci_dev, dpcon_dev);
 		if (ret) {
 			DPAA2_EVENTDEV_ERR(
-				    "dpci setup failed with err code: %d", ret);
+				    "DPCI setup failed: err(%d)", ret);
 			return ret;
 		}
 		priv->max_event_queues++;
@@ -857,3 +861,12 @@ static struct rte_vdev_driver vdev_eventdev_dpaa2_pmd = {
 };
 
 RTE_PMD_REGISTER_VDEV(EVENTDEV_NAME_DPAA2_PMD, vdev_eventdev_dpaa2_pmd);
+
+RTE_INIT(dpaa2_eventdev_init_log);
+static void
+dpaa2_eventdev_init_log(void)
+{
+	dpaa2_logtype_event = rte_log_register("pmd.event.dpaa2");
+	if (dpaa2_logtype_event >= 0)
+		rte_log_set_level(dpaa2_logtype_event, RTE_LOG_NOTICE);
+}
