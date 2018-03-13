@@ -130,11 +130,9 @@ dpaa2_dev_rx_parse_frc(struct rte_mbuf *m, uint16_t frc)
 }
 
 static inline uint32_t __attribute__((hot))
-dpaa2_dev_rx_parse_slow(uint64_t hw_annot_addr)
+dpaa2_dev_rx_parse_slow(struct dpaa2_annot_hdr *annotation)
 {
 	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
-	struct dpaa2_annot_hdr *annotation =
-			(struct dpaa2_annot_hdr *)hw_annot_addr;
 
 	PMD_RX_LOG(DEBUG, "annotation = 0x%lx   ", annotation->word4);
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_ARP_PRESENT)) {
@@ -193,7 +191,7 @@ parse_done:
 }
 
 static inline uint32_t __attribute__((hot))
-dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
+dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
@@ -233,25 +231,24 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, uint64_t hw_annot_addr)
 		break;
 	}
 
-	return dpaa2_dev_rx_parse_slow(hw_annot_addr);
+	return dpaa2_dev_rx_parse_slow(annotation);
 }
 
 static inline struct rte_mbuf *__attribute__((hot))
 eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct qbman_sge *sgt, *sge;
-	dma_addr_t sg_addr;
+	size_t sg_addr, fd_addr;
 	int i = 0;
-	uint64_t fd_addr;
 	struct rte_mbuf *first_seg, *next_seg, *cur_seg, *temp;
 
-	fd_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
 	/* Get Scatter gather table address */
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
 
 	sge = &sgt[i++];
-	sg_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
+	sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
 
 	/* First Scatter gather entry */
 	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
@@ -269,14 +266,14 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 				DPAA2_GET_FD_FRC_PARSE_SUM(fd));
 	else
 		first_seg->packet_type = dpaa2_dev_rx_parse(first_seg,
-			 (uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-			 + DPAA2_FD_PTA_SIZE);
+			(void *)((size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			 + DPAA2_FD_PTA_SIZE));
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 	cur_seg = first_seg;
 	while (!DPAA2_SG_IS_FINAL(sge)) {
 		sge = &sgt[i++];
-		sg_addr = (uint64_t)DPAA2_IOVA_TO_VADDR(
+		sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(
 				DPAA2_GET_FLE_ADDR(sge));
 		next_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
 			rte_dpaa2_bpid_info[DPAA2_GET_FLE_BPID(sge)].meta_data_size);
@@ -325,8 +322,8 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 		dpaa2_dev_rx_parse_frc(mbuf, DPAA2_GET_FD_FRC_PARSE_SUM(fd));
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf,
-			(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-			 + DPAA2_FD_PTA_SIZE);
+			(void *)((size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			 + DPAA2_FD_PTA_SIZE));
 
 	PMD_RX_LOG(DEBUG, "to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%lx, meta = %d  bpid =%d, len=%d\n",
@@ -366,7 +363,7 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	DPAA2_FD_SET_FORMAT(fd, qbman_fd_sg);
 	/*Set Scatter gather table and Scatter gather entries*/
 	sgt = (struct qbman_sge *)(
-			(uint64_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
+			(size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
 			+ DPAA2_GET_FD_OFFSET(fd));
 
 	for (i = 0; i < mbuf->nb_segs; i++) {
@@ -550,8 +547,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 
 	dq_storage = q_storage->active_dqs;
-	rte_prefetch0((void *)((uint64_t)(dq_storage)));
-	rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
+	rte_prefetch0((void *)(size_t)(dq_storage));
+	rte_prefetch0((void *)(size_t)(dq_storage + 1));
 
 	/* Prepare next pull descriptor. This will give space for the
 	* prefething done on DQRR entries
@@ -581,7 +578,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		 */
 		while (!qbman_check_new_result(dq_storage))
 			;
-		rte_prefetch0((void *)((uint64_t)(dq_storage + 2)));
+		rte_prefetch0((void *)((size_t)(dq_storage + 2)));
 		/* Check whether Last Pull command is Expired and
 		 * setting Condition for Loop termination
 		 */
@@ -596,7 +593,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 		next_fd = qbman_result_DQ_fd(dq_storage + 1);
 		/* Prefetch Annotation address for the parse results */
-		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(next_fd)
+		rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
 				+ DPAA2_FD_PTA_SIZE + 16));
 
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
@@ -800,7 +797,7 @@ repeat:
 		set_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index, dq_storage1);
 	}
 
-	rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
+	rte_prefetch0((void *)((size_t)(dq_storage + 1)));
 
 	num_pulled = 0;
 	pending = 1;
@@ -811,7 +808,7 @@ repeat:
 		 */
 		while (!qbman_check_new_result(dq_storage))
 			;
-		rte_prefetch0((void *)((uint64_t)(dq_storage + 2)));
+		rte_prefetch0((void *)((size_t)(dq_storage + 2)));
 		/* Check whether Last Pull command is Expired and
 		 * setting Condition for Loop termination
 		 */
@@ -826,7 +823,7 @@ repeat:
 
 		next_fd = qbman_result_DQ_fd(dq_storage + 1);
 		/* Prefetch Annotation address for the parse results */
-		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(next_fd)
+		rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
 				+ DPAA2_FD_PTA_SIZE + 16));
 
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
@@ -945,7 +942,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			break;
 		}
 
-		rte_prefetch0((void *)((uint64_t)(dq_storage + 1)));
+		rte_prefetch0((void *)((size_t)(dq_storage + 1)));
 		/* Check if the previous issued command is completed. */
 		while (!qbman_check_command_complete(dq_storage))
 			;
@@ -958,7 +955,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			 */
 			while (!qbman_check_new_result(dq_storage))
 				;
-			rte_prefetch0((void *)((uint64_t)(dq_storage + 2)));
+			rte_prefetch0((void *)((size_t)(dq_storage + 2)));
 			/* Check whether Last Pull command is Expired and
 			 * setting Condition for Loop termination
 			 */
@@ -1062,7 +1059,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			}
 			fd_arr[loop].simple.frc = 0;
 			DPAA2_RESET_FD_CTRL((&fd_arr[loop]));
-			DPAA2_SET_FD_FLC((&fd_arr[loop]), NULL);
+			DPAA2_SET_FD_FLC((&fd_arr[loop]), (size_t)NULL);
 			if (likely(RTE_MBUF_DIRECT(*bufs))) {
 				mp = (*bufs)->pool;
 				/* Check the basic scenario and set
