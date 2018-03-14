@@ -54,7 +54,7 @@
 #include <fsl_qbman_debug.h>
 
 /* Per FQ Taildrop config in byte count */
-static uint32_t td_threshold = CONG_THRESHOLD_RX_Q;
+static uint32_t td_threshold;
 
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
@@ -492,6 +492,14 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			cfg.flc.value |= 0x10;
 		else
 			cfg.flc.value |= 0x14;
+
+		/* Bits 4 & 5 of flc value represents data stashing.
+		 * Switch off these bits from flc when data stashing is
+		 * configured to be off.
+		 */
+		if (getenv("DPAA2_DATA_STASHING_OFF"))
+			cfg.flc.value &= 0xFFFFFFFFFFFFFFCF;
+
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);
@@ -581,13 +589,22 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	if (!(priv->flags & DPAA2_TX_CGR_OFF)) {
 		struct dpni_congestion_notification_cfg cong_notif_cfg;
+		uint32_t threshold_entry, threshold_exit;
+
+		if (dpaa2_svr_family == SVR_LS1080A) {
+			threshold_entry = CONG_ENTER_TX_THRESHOLD_1088;
+			threshold_exit = CONG_EXIT_TX_THRESHOLD_1088;
+		} else {
+			threshold_entry = CONG_ENTER_TX_THRESHOLD;
+			threshold_exit = CONG_EXIT_TX_THRESHOLD;
+		}
 
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
-		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
+		cong_notif_cfg.threshold_entry = threshold_entry;
 		/* Notify that the queue is not congested when the data in
 		 * the queue is below this thershold.
 		 */
-		cong_notif_cfg.threshold_exit = CONG_EXIT_TX_THRESHOLD;
+		cong_notif_cfg.threshold_exit = threshold_exit;
 		cong_notif_cfg.message_ctx = 0;
 		cong_notif_cfg.message_iova = (size_t)dpaa2_q->cscn;
 		cong_notif_cfg.dest_cfg.dest_type = DPNI_DEST_NONE;
@@ -1892,6 +1909,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		priv->flags |= DPAA2_TX_CGR_OFF;
 		PMD_INIT_LOG(INFO, "Disable the tx congestion control support");
 	}
+
+	if (dpaa2_svr_family == SVR_LS1080A)
+		td_threshold = CONG_THRESHOLD_RX_Q_1088;
+	else
+		td_threshold = CONG_THRESHOLD_RX_Q;
 
 	/* Tail drop size, td_threshold = 0 means disable it on queue */
 	if (getenv("DPAA2_RX_TAILDROP_SIZE"))

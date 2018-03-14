@@ -239,13 +239,11 @@ get_dpni_parameters() {
 			DPNI_OPTIONS="DPNI_OPT_HAS_KEY_MASKING"
 		fi
 	fi
+	DPNI_ALLOC_PFDR_IN_PEB="0x80000000"
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
 	then
-		if [[ $board_type != "1088" ]]
-		then
-			DPNI_OPTIONS=$DPNI_OPTIONS,0x80000000
-			echo "Using High Performance Buffers"
-		fi
+		DPNI_OPTIONS=$DPNI_OPTIONS,$DPNI_ALLOC_PFDR_IN_PEB
+		echo "Using High Performance Buffers"
 	else
 		echo "Using Normal Performance Buffers"
 	fi
