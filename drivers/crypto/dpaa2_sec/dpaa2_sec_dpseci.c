@@ -1160,6 +1160,7 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_swp *swp;
 	uint16_t num_tx = 0;
+	uint32_t flags[MAX_TX_RING_SLOTS] = {0};
 	/*todo - need to support multiple buffer pools */
 	uint16_t bpid;
 	struct rte_mempool *mb_pool;
@@ -1190,6 +1191,16 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		frames_to_send = (nb_ops >> 3) ? MAX_TX_RING_SLOTS : nb_ops;
 
 		for (loop = 0; loop < frames_to_send; loop++) {
+
+			if ((*ops)->sym->m_src->seqn) {
+				uint8_t dqrr_index = (*ops)->sym->m_src->seqn - 1;
+
+				flags[loop] = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
+				DPAA2_PER_LCORE_DQRR_SIZE--;
+				DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dqrr_index);
+				(*ops)->sym->m_src->seqn = DPAA2_INVALID_MBUF_SEQN;
+			}
+
 			/*Clear the unused FD fields before sending*/
 			memset(&fd_arr[loop], 0, sizeof(struct qbman_fd));
 			mb_pool = (*ops)->sym->m_src->pool;
@@ -1206,7 +1217,7 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		while (loop < frames_to_send) {
 			loop += qbman_swp_enqueue_multiple(swp, &eqdesc,
 							&fd_arr[loop],
-							NULL,
+							&flags[loop],
 							frames_to_send - loop);
 		}
 
@@ -2752,6 +2763,31 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
+static void
+dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
+				 const struct qbman_fd *fd,
+				 const struct qbman_result *dq,
+				 struct dpaa2_queue *rxq,
+				 struct rte_event *ev)
+{
+	uint8_t dqrr_index = qbman_get_dqrr_idx(dq);
+	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
+				(rxq->dev))->driver_id);
+
+	ev->flow_id = rxq->ev.flow_id;
+	ev->sub_event_type = rxq->ev.sub_event_type;
+	ev->event_type = RTE_EVENT_TYPE_CRYPTODEV;
+	ev->op = RTE_EVENT_OP_NEW;
+	ev->sched_type = rxq->ev.sched_type;
+	ev->queue_id = rxq->ev.queue_id;
+	ev->priority = rxq->ev.priority;
+
+	dqrr_index = qbman_get_dqrr_idx(dq);
+	ev->crypto_op->sym->m_src->seqn = dqrr_index + 1;
+	DPAA2_PER_LCORE_DQRR_SIZE++;
+	DPAA2_PER_LCORE_DQRR_HELD |= 1 << dqrr_index;
+	DPAA2_PER_LCORE_DQRR_MBUF(dqrr_index) = ev->crypto_op->sym->m_src;
+}
 
 int
 dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
@@ -2767,6 +2803,8 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 
 	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_PARALLEL)
 		qp->rx_vq.cb = dpaa2_sec_process_parallel_event;
+	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC)
+		qp->rx_vq.cb = dpaa2_sec_process_atomic_event;
 	else
 		return -EINVAL;
 
@@ -2778,7 +2816,10 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 
 	cfg.options |= DPSECI_QUEUE_OPT_USER_CTX;
 	cfg.user_ctx = (uint64_t)(qp);
-
+	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC) {
+		cfg.options |= DPSECI_QUEUE_OPT_ORDER_PRESERVATION;
+		cfg.order_preservation_en = 1;
+	}
 	ret = dpseci_set_rx_queue(dpseci, CMD_PRI_LOW, priv->token,
 				  qp_id, &cfg);
 	if (ret) {
