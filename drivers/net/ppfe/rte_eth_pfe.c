@@ -276,6 +276,7 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	/*TODO update queuenum value, also handle in case XMIT fail*/
 	for (i = 0; i < nb_pkts; i++) {
 		__hif_lib_xmit_pkt(&priv->client, 0 /*queuenum*/,
+			(void *)rte_pktmbuf_iova(tx_pkts[i]),
 			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off ,
 			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
 			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,

@@ -167,9 +167,9 @@ int pfe_hif_lib_init(struct pfe *pfe);
 void pfe_hif_lib_exit(struct pfe *pfe);
 int hif_lib_client_register(struct hif_client_s *client);
 int hif_lib_client_unregister(struct  hif_client_s *client);
-void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno, void
-				*data, unsigned int len, u32 client_ctrl,
-				unsigned int flags, void *client_data);
+void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
+			void *data, void *data1, unsigned int len,
+			u32 client_ctrl, unsigned int flags, void *client_data);
 int hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno, void *data,
 		     unsigned int len, u32 client_ctrl, void *client_data);
 void hif_lib_indicate_client(struct hif_client_s *client, int event, int data);

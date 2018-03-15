@@ -20,7 +20,7 @@ static int pfe_hif_alloc_descr(struct pfe_hif *hif)
 
 	PMD_INIT_FUNC_TRACE();
 
-	addr = rte_malloc(NULL, HIF_RX_DESC_NT * sizeof(struct hif_desc) +
+	addr = rte_zmalloc(NULL, HIF_RX_DESC_NT * sizeof(struct hif_desc) +
 		HIF_TX_DESC_NT * sizeof(struct hif_desc), RTE_CACHE_LINE_SIZE);
 	if (!addr) {
 		PFE_PMD_ERR("Could not allocate buffer descriptors!");
@@ -59,6 +59,7 @@ static void pfe_hif_release_buffers(struct pfe_hif *hif)
 	/*Free Rx buffers */
 	desc = hif->rx_base;
 	for (i = 0; i < hif->rx_ring_size; i++) {
+#if 0
 		if (readl(&desc->data)) {
 			if ((i < hif->shm->rx_buf_pool_cnt) &&
 			    (!hif->shm->rx_buf_pool[i])) {
@@ -68,7 +69,7 @@ static void pfe_hif_release_buffers(struct pfe_hif *hif)
 				PFE_PMD_ERR("buffer pool already full");
 			}
 		}
-
+#endif
 		writel(0, &desc->data);
 		writel(0, &desc->status);
 		writel(0, &desc->ctrl);
@@ -101,12 +102,15 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 
 	for (i = 0; i < hif->rx_ring_size; i++) {
 		/* Initialize Rx buffers from the shared memory */
-		hif->rx_buf_addr[i] = hif->shm->rx_buf_pool[i];
-		hif->rx_buf_len[i] =
-			((struct rte_mbuf *)hif->rx_buf_addr[i])->buf_len;
+		struct rte_mbuf *mbuf = (struct rte_mbuf *)hif->shm->rx_buf_pool[i];
+		hif->rx_buf_vaddr[i] = (void *)((uint64_t)mbuf->buf_addr + mbuf->data_off -
+					PFE_PKT_HEADER_SZ);
+		hif->rx_buf_addr[i] =  (void *)(rte_pktmbuf_iova(mbuf) - PFE_PKT_HEADER_SZ);
+		hif->rx_buf_len[i] =  mbuf->buf_len;
+
 		hif->shm->rx_buf_pool[i] = NULL;
 
-		writel(DDR_PHYS_TO_PFE(pfe_mem_vtop(hif->rx_buf_addr[i])),
+		writel(DDR_PHYS_TO_PFE(hif->rx_buf_addr[i]),
 					&desc->data);
 		writel(0, &desc->status);
 
@@ -307,6 +311,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 	struct __hif_desc local_desc;
 	int flags;
 	unsigned int buf_size = 0;
+	struct rte_mbuf *mbuf = NULL;
 
 	rte_spinlock_lock(&hif->lock);
 
@@ -322,7 +327,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 			break;
 
 		len = BD_BUF_LEN(local_desc.ctrl);
-		pkt_hdr = (struct hif_hdr *)hif->rx_buf_addr[rtc];
+		pkt_hdr = (struct hif_hdr *)hif->rx_buf_vaddr[rtc];
 
 		/* Track last HIF header received */
 		if (!hif->started) {
@@ -370,8 +375,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 		hif_lib_indicate_client(hif->client_id, EVENT_RX_PKT_IND,
 					hif->qno);
 #endif
-		struct rte_mbuf *mbuf =
-			rte_cpu_to_le_64(rte_pktmbuf_alloc(hif->shm->pool));
+		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(hif->shm->pool));
 
 		if (unlikely(!mbuf)) {
 			PFE_PMD_WARN("Buffer allocation failure\n");
@@ -390,17 +394,19 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 
 			break;
 		}
-		free_buf = (void *)mbuf->buf_addr + mbuf->data_off;
+		free_buf = (void *)rte_pktmbuf_iova(mbuf);
 		free_buf = free_buf - PFE_PKT_HEADER_SZ;
 		buf_size = mbuf->buf_len;
 
 pkt_drop:
 		/*Fill free buffer in the descriptor */
 		hif->rx_buf_addr[rtc] = free_buf;
+		hif->rx_buf_vaddr[rtc] = (void *)((uint64_t)mbuf->buf_addr +
+				mbuf->data_off - PFE_PKT_HEADER_SZ);
 		hif->rx_buf_len[rtc] =
 			(pfe_pkt_size < buf_size ? pfe_pkt_size : buf_size);
 
-		writel(DDR_PHYS_TO_PFE(pfe_mem_vtop(free_buf)), &desc->data);
+		writel(DDR_PHYS_TO_PFE(free_buf), &desc->data);
 		/*
 		 * Ensure everything else is written to DDR before
 		 * writing bd->ctrl
@@ -540,7 +546,7 @@ void __hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
 	desc_sw->q_no = q_no;
 	desc_sw->flags = flags;
 
-	writel((u32)DDR_PHYS_TO_PFE(pfe_mem_vtop(data)), &desc->data);
+	writel((u32)DDR_PHYS_TO_PFE(data), &desc->data);
 
 	hif->txtosend = (hif->txtosend + 1) & (hif->tx_ring_size - 1);
 	hif->txavail--;

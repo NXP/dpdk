@@ -35,21 +35,23 @@ struct hif_shm ghif_shm;
 void pfe_hif_shm_clean(struct hif_shm *hif_shm)
 {
 	unsigned int i;
-	struct rte_mbuf *mbuf, *dummy_mbuf;
+//	struct rte_mbuf *mbuf, *dummy_mbuf;
 	void *pkt;
 
-	dummy_mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(hif_shm->pool));
+//	dummy_mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(hif_shm->pool));
 	for (i = 0; i < hif_shm->rx_buf_pool_cnt; i++) {
 		pkt = hif_shm->rx_buf_pool[i];
 		if (pkt) {
+#if 0
 			hif_shm->rx_buf_pool[i] = NULL;
 			pkt += PFE_PKT_HEADER_SZ;
 
 			mbuf = (struct rte_mbuf *) pkt - dummy_mbuf->data_off;
-			rte_pktmbuf_free(mbuf);
+#endif
+			rte_pktmbuf_free((struct rte_mbuf *)pkt);
 		}
 	}
-	rte_pktmbuf_free(dummy_mbuf);
+//	rte_pktmbuf_free(dummy_mbuf);
 }
 
 /* Initialize shared memory used between HIF driver and clients,
@@ -62,7 +64,7 @@ void pfe_hif_shm_clean(struct hif_shm *hif_shm)
 int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool)
 {
 	unsigned int i;
-	void *pkt;
+//	void *pkt;
 	struct rte_mbuf *mbuf;
 
 	memset(hif_shm, 0, sizeof(struct hif_shm));
@@ -70,9 +72,10 @@ int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool)
 
 	for (i = 0; i < hif_shm->rx_buf_pool_cnt; i++) {
 		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(mb_pool));
-		pkt = (void *)((size_t)mbuf->buf_addr + mbuf->data_off);
-		if (pkt)
-			hif_shm->rx_buf_pool[i] = pkt - PFE_PKT_HEADER_SZ;
+//		pkt = (void *)((size_t)mbuf->buf_addr + mbuf->data_off);
+		if (mbuf)
+			hif_shm->rx_buf_pool[i] = mbuf;
+//			hif_shm->rx_buf_pool[i] = pkt - PFE_PKT_HEADER_SZ;
 		else
 			goto err0;
 	}
@@ -377,7 +380,7 @@ static inline void
 pfe_sw_parse_pkt(struct rte_mbuf *mbuf)
 {
 	struct rte_net_hdr_lens hdr_lens;
-	
+
 	mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
 			RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
 			| RTE_PTYPE_L4_MASK);
@@ -478,19 +481,20 @@ static inline void hif_hdr_write(struct hif_hdr *pkt_hdr, unsigned int
 }
 
 /*This function puts the given packet in the specific client queue */
-void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno, void
-				*data, unsigned int len, u32 client_ctrl,
-				unsigned int flags, void *client_data)
+void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
+			void *data, void *data1, unsigned int len,
+			u32 client_ctrl, unsigned int flags, void *client_data)
 {
 	struct hif_client_tx_queue *queue = &client->tx_q[qno];
 	struct tx_queue_desc *desc = queue->base + queue->write_idx;
 
 	/* First buffer */
 	if (flags & HIF_FIRST_BUFFER) {
+		data1 -= sizeof(struct hif_hdr);
 		data -= sizeof(struct hif_hdr);
 		len += sizeof(struct hif_hdr);
 
-		hif_hdr_write(data, client->id, qno, client_ctrl);
+		hif_hdr_write(data1, client->id, qno, client_ctrl);
 	}
 
 	desc->data = client_data;

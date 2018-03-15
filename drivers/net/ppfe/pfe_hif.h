@@ -131,6 +131,7 @@ struct pfe_hif {
 	u32	rx_ring_size;
 	u32	rxtoclean_index;
 	void	*rx_buf_addr[HIF_RX_DESC_NT];
+	void	*rx_buf_vaddr[HIF_RX_DESC_NT];
 	int	rx_buf_len[HIF_RX_DESC_NT];
 	unsigned int qno;
 	unsigned int client_id;
