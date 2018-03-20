@@ -272,13 +272,22 @@ static void pfe_hif_client_unregister(struct pfe_hif *hif, u32 client_id)
 /*
  * client_put_rxpacket-
  */
-static void *client_put_rxpacket(struct hif_rx_queue *queue, void *pkt, u32 len,
+static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue, void *pkt, u32 len,
 				 u32 flags, u32 client_ctrl,
+				 struct rte_mempool *pool,
 				 __rte_unused u32 *rem_len)
 {
 	struct rx_queue_desc *desc = queue->base + queue->write_idx;
+	struct rte_mbuf *mbuf = NULL;
+
 
 	if (readl(&desc->ctrl) & CL_DESC_OWN) {
+		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(pool));
+		if (unlikely(!mbuf)) {
+			PFE_PMD_WARN("Buffer allocation failure\n");
+			return NULL;
+		}
+
 		desc->data = pkt;
 		desc->client_ctrl = client_ctrl;
 		/*
@@ -292,7 +301,7 @@ static void *client_put_rxpacket(struct hif_rx_queue *queue, void *pkt, u32 len,
 
 	}
 
-	return NULL;
+	return mbuf;
 }
 
 /*TODO make this static*/
@@ -366,19 +375,17 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 			hif->qno = 0;
 		}
 
-		free_buf =
+		mbuf =
 		client_put_rxpacket(&hif->client[hif->client_id].rx_q[hif->qno],
 				    (void *)pkt_hdr, len, flags,
-				    hif->client_ctrl, &buf_size);
+				    hif->client_ctrl, hif->shm->pool, &buf_size);
 
 #if 0
 		hif_lib_indicate_client(hif->client_id, EVENT_RX_PKT_IND,
 					hif->qno);
 #endif
-		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(hif->shm->pool));
 
 		if (unlikely(!mbuf)) {
-			PFE_PMD_WARN("Buffer allocation failure\n");
 			/*
 			 * If we want to keep in polling mode to retry later,
 			 * we need to tell napi that we consumed
@@ -425,6 +432,7 @@ pkt_drop:
 			hif->started = 0;
 		}
 	}
+
 
 	hif->rxtoclean_index = rtc;
 	rte_spinlock_unlock(&hif->lock);
@@ -632,6 +640,10 @@ int pfe_hif_init(struct pfe *pfe)
 
 	PMD_INIT_FUNC_TRACE();
 
+#if defined(LS1012A_PFE_RESET_WA)
+	pfe_hif_rx_idle(hif);
+#endif
+
 	err = pfe_hif_alloc_descr(hif);
 	if (err)
 		goto err0;
@@ -695,7 +707,7 @@ static inline void copy_to_lmem(u32 *dst, u32 *src, int len)
 	}
 }
 
-static void send_dummy_pkt_to_hif(void)
+__attribute__ ((optimize(1))) static void send_dummy_pkt_to_hif(void)
 {
 	void *lmem_ptr, *ddr_ptr, *lmem_virt_addr;
 	u64 physaddr;
