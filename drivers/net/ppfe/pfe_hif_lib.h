@@ -36,10 +36,7 @@ struct hif_client_rx_queue {
 	u32	write_idx;
 	u16	queue_id;
 	u16	port_id;
-	void *priv;
-	/*TODO struct hif required to poll, we have to place this
-	at better place as this will be same for whole system,
-	so doesn't make sense to store for each queue*/
+	void   *priv;
 };
 
 struct hif_client_tx_queue {
@@ -54,7 +51,7 @@ struct hif_client_tx_queue {
 	u32	done_tmu_tx_pkts;
 	u16	queue_id;
 	u16	port_id;
-	void *priv; /*TODO remove from here if possible*/
+	void   *priv;
 };
 
 struct hif_client_s {
