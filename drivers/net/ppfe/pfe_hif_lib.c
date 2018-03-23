@@ -570,7 +570,7 @@ int pfe_hif_lib_init(struct pfe *pfe)
 	PMD_INIT_FUNC_TRACE();
 
 	page_mode = 0;
-	pfe_pkt_size = 1024;//PFE_PKT_SIZE;
+	pfe_pkt_size = PFE_PKT_SIZE;
 	pfe_pkt_headroom = PFE_PKT_HEADROOM;
 
 	if (tx_qos)
