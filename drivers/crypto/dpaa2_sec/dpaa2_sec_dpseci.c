@@ -1242,6 +1242,9 @@ sec_simple_fd_to_mbuf(const struct qbman_fd *fd, __rte_unused uint8_t id)
 		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 
+	diff = len - mbuf->pkt_len;
+	mbuf->pkt_len += diff;
+	mbuf->data_len += diff;
 	op = (struct rte_crypto_op *)(size_t)mbuf->buf_iova;
 	mbuf->buf_iova = op->sym->aead.digest.phys_addr;
 	op->sym->aead.digest.phys_addr = 0L;
@@ -1252,9 +1255,6 @@ sec_simple_fd_to_mbuf(const struct qbman_fd *fd, __rte_unused uint8_t id)
 		mbuf->data_off += SEC_FLC_DHR_OUTBOUND;
 	else
 		mbuf->data_off += SEC_FLC_DHR_INBOUND;
-	diff = len - mbuf->pkt_len;
-	mbuf->pkt_len += diff;
-	mbuf->data_len += diff;
 
 	return op;
 }
@@ -2750,8 +2750,12 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 				 struct dpaa2_queue *rxq,
 				 struct rte_event *ev)
 {
-	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
-				(rxq->dev))->driver_id);
+	/* Prefetching mbuf */
+	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
+
+	/* Prefetching ipsec crypto_op stored in priv data of mbuf */
+	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-64));
 
 	ev->flow_id = rxq->ev.flow_id;
 	ev->sub_event_type = rxq->ev.sub_event_type;
@@ -2760,6 +2764,8 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 	ev->sched_type = rxq->ev.sched_type;
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
+	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
+				(rxq->dev))->driver_id);
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
@@ -2770,9 +2776,13 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 				 struct dpaa2_queue *rxq,
 				 struct rte_event *ev)
 {
-	uint8_t dqrr_index = qbman_get_dqrr_idx(dq);
-	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
-				(rxq->dev))->driver_id);
+	uint8_t dqrr_index;
+	/* Prefetching mbuf */
+	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
+
+	/* Prefetching ipsec crypto_op stored in priv data of mbuf */
+	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-64));
 
 	ev->flow_id = rxq->ev.flow_id;
 	ev->sub_event_type = rxq->ev.sub_event_type;
@@ -2782,6 +2792,8 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
+	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
+				(rxq->dev))->driver_id);
 	dqrr_index = qbman_get_dqrr_idx(dq);
 	ev->crypto_op->sym->m_src->seqn = dqrr_index + 1;
 	DPAA2_PER_LCORE_DQRR_SIZE++;
