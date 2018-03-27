@@ -171,7 +171,7 @@ rte_mbuf_platform_mempool_ops(void)
 }
 
 /* Return mbuf pool ops name */
-static const char *
+const char *
 rte_mbuf_best_mempool_ops(void)
 {
 	const char *default_ops = rte_eal_mbuf_default_mempool_ops();

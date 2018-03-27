@@ -1103,6 +1103,21 @@ const char*
 rte_mbuf_platform_mempool_ops(void);
 
 /**
+ * Get the best mempool ops name for pktmbuf.
+ *
+ * This function is used to determine the best options for mempool ops for
+ * pktmbuf allocations. Following are the priority order:
+ * 1. User defined, 2. Platform HW supported, 3. Compile time configured.
+ * This function is also used by the rte_pktmbuf_pool_create to get the best
+ * mempool ops name.
+ *
+ * @return
+ *   returns preferred mbuf pool ops name
+ */
+const char *
+rte_mbuf_best_mempool_ops(void);
+
+/**
  * Get the data room size of mbufs stored in a pktmbuf_pool
  *
  * The data room size is the amount of data that can be stored in a
