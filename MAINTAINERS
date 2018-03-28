@@ -725,6 +725,11 @@ F: doc/guides/rawdevs/dpaa2_cmdif.rst
 F: examples/cmdif/
 F: doc/guides/sample_app_ug/cmdif_demo.rst
 
+DPAA2 QDMA
+M: Nipun Gupta <nipun.gupta@nxp.com>
+F: drivers/raw/dpaa2_qdma/
+
+
 Packet processing
 -----------------
 
