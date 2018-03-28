@@ -374,6 +374,22 @@ Following are some pre-requisites on either platform.
         for DPDK applications.
 
 
+  Layer-2 QDMA based Forwarding 'l2fwd-qdma' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd-qdma' example application:
+
+  $ ./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 0	# HW mode
+
+  OR
+
+  $ ./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 1	# Virtual mode
+
+  In the above commands, the mode has been modified to use 'HW mode' or
+  'virtual mode' for QDMA processing. 'HW mode' is recommended for best
+  performance, but limiting the number of supported QDMA queues.
+
+
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
