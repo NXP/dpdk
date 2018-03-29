@@ -643,7 +643,7 @@ dpaa2_dev_process_parallel_event(struct qbman_swp *swp,
 				 struct dpaa2_queue *rxq,
 				 struct rte_event *ev)
 {
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd) +
 		DPAA2_FD_PTA_SIZE + 16));
 
 	ev->flow_id = rxq->ev.flow_id;
@@ -668,7 +668,7 @@ dpaa2_dev_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 {
 	uint8_t dqrr_index;
 
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd) +
 		DPAA2_FD_PTA_SIZE + 16));
 
 	ev->flow_id = rxq->ev.flow_id;
@@ -976,7 +976,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 			next_fd = qbman_result_DQ_fd(dq_storage + 1);
 			/* Prefetch Annotation address for the parse results */
-			rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(next_fd)
+			rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
 					+ DPAA2_FD_PTA_SIZE + 16));
 
 			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))

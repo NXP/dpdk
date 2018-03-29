@@ -209,7 +209,7 @@ static void dpaa2_eventdev_process_parallel(struct qbman_swp *swp,
 					    struct rte_event *ev)
 {
 	struct rte_event *ev_temp =
-		(struct rte_event *)DPAA2_GET_FD_ADDR(fd);
+		(struct rte_event *)(size_t)DPAA2_GET_FD_ADDR(fd);
 
 	RTE_SET_USED(rxq);
 
@@ -226,7 +226,7 @@ static void dpaa2_eventdev_process_atomic(struct qbman_swp *swp,
 					  struct rte_event *ev)
 {
 	struct rte_event *ev_temp =
-		(struct rte_event *)DPAA2_GET_FD_ADDR(fd);
+		(struct rte_event *)(size_t)DPAA2_GET_FD_ADDR(fd);
 	uint8_t dqrr_index = qbman_get_dqrr_idx(dq);
 
 	RTE_SET_USED(swp);
