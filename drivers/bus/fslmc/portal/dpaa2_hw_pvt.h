@@ -247,7 +247,7 @@ enum qbman_fd_format {
 #define DPAA2_SET_FD_COMPOUND_FMT(fd)	\
 	((fd)->simple.bpid_offset |= (uint32_t)1 << 28)
 #define DPAA2_GET_FD_ADDR(fd)	\
-((size_t)((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
+(((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
 
 #define DPAA2_GET_FD_LEN(fd)	((fd)->simple.len)
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
