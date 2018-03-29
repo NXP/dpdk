@@ -38,7 +38,7 @@ DPDK_16.11 {
 
 DPDK_18.02 {
 	global:
-
+	rte_mbuf_best_mempool_ops;
 	rte_mbuf_platform_mempool_ops;
 	rte_mbuf_set_platform_mempool_ops;
 
