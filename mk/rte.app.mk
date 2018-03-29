@@ -113,6 +113,7 @@ endif
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PCI_BUS)        += -lrte_bus_pci
 _LDLIBS-$(CONFIG_RTE_LIBRTE_VDEV_BUS)       += -lrte_bus_vdev
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA_BUS)       += -lrte_bus_dpaa
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_QDMA) += -lrte_pmd_dpaa2_qdma
 ifeq ($(CONFIG_RTE_EAL_VFIO),y)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS)      += -lrte_bus_fslmc
 endif

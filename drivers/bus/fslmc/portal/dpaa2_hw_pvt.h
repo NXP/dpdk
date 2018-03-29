@@ -238,19 +238,22 @@ enum qbman_fd_format {
 } while (0)
 #define DPAA2_SET_FLE_OFFSET(fle, offset) \
 	((fle)->fin_bpid_offset |= (uint32_t)(offset) << 16)
+#define DPAA2_SET_FLE_LEN(fle, len)    ((fle)->length = len)
 #define DPAA2_SET_FLE_BPID(fle, bpid) ((fle)->fin_bpid_offset |= (size_t)bpid)
 #define DPAA2_GET_FLE_BPID(fle) ((fle)->fin_bpid_offset & 0x000000ff)
 #define DPAA2_SET_FLE_FIN(fle)	((fle)->fin_bpid_offset |= 1 << 31)
 #define DPAA2_SET_FLE_IVP(fle)   (((fle)->fin_bpid_offset |= 0x00004000))
+#define DPAA2_SET_FLE_BMT(fle)   (((fle)->fin_bpid_offset |= 0x00008000))
 #define DPAA2_SET_FD_COMPOUND_FMT(fd)	\
 	((fd)->simple.bpid_offset |= (uint32_t)1 << 28)
 #define DPAA2_GET_FD_ADDR(fd)	\
-((size_t)((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
+(((((uint64_t)((fd)->simple.addr_hi)) << 32) + (fd)->simple.addr_lo))
 
 #define DPAA2_GET_FD_LEN(fd)	((fd)->simple.len)
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
 #define DPAA2_GET_FD_IVP(fd)   (((fd)->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	(((fd)->simple.bpid_offset & 0x0FFF0000) >> 16)
+#define DPAA2_GET_FD_ERR(fd)	((fd)->simple.bpid_offset & 0x000000FF)
 #define DPAA2_GET_FD_FRC(fd)	((fd)->simple.frc)
 #define DPAA2_GET_FD_FLC(fd) \
 	(((uint64_t)((fd)->simple.flc_hi) << 32) + (fd)->simple.flc_lo)
