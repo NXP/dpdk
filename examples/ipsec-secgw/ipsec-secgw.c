@@ -305,39 +305,7 @@ prepare_crypto_event(struct rte_mbuf *pkt, struct ipsec_traffic *t)
 		RTE_LOG(ERR, IPSEC, "Unsupported packet type\n");
 		rte_pktmbuf_free(pkt);
 	}
-	/* Check if the packet has been processed inline. For inline protocol
-	 * processed packets, the metadata in the mbuf can be used to identify
-	 * the security processing done on the packet. The metadata will be
-	 * used to retrieve the application registered userdata associated
-	 * with the security session.
-	 */
 
-	if (pkt->ol_flags & PKT_RX_SEC_OFFLOAD) {
-		struct ipsec_sa *sa;
-		struct ipsec_mbuf_metadata *priv;
-		struct rte_security_ctx *ctx = (struct rte_security_ctx *)
-						rte_eth_dev_get_sec_ctx(
-						pkt->port);
-
-		/* Retrieve the userdata registered. Here, the userdata
-		 * registered is the SA pointer.
-		 */
-
-		sa = (struct ipsec_sa *)
-				rte_security_get_userdata(ctx, pkt->udata64);
-
-		if (sa == NULL) {
-			/* userdata could not be retrieved */
-			return;
-		}
-
-		/* Save SA as priv member in mbuf. This will be used in the
-		 * IPsec selector(SP-SA) check.
-		 */
-
-		priv = get_priv(pkt);
-		priv->sa = sa;
-	}
 }
 
 static inline void
