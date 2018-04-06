@@ -195,8 +195,7 @@ dpaa2_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 			ret = dpni_enable_vlan_filter(dpni, CMD_PRI_LOW,
 						      priv->token, false);
 		if (ret < 0)
-			DPAA2_PMD_INFO("Unable to set vlan filter = %d",
-				ret);
+			DPAA2_PMD_INFO("Unable to set vlan filter = %d", ret);
 	}
 next_mask:
 	if (mask & ETH_VLAN_EXTEND_MASK) {
@@ -513,7 +512,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
 		taildrop.oal = CONG_RX_OAL;
 		DPAA2_PMD_DEBUG("Enabling Early Drop on queue = %d",
-			    rx_queue_id);
+				rx_queue_id);
 		ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
 					DPNI_CP_QUEUE, DPNI_QUEUE_RX,
 					dpaa2_q->tc_index, flow_id, &taildrop);
@@ -654,7 +653,7 @@ dpaa2_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	if (qbman_fq_query_state(swp, dpaa2_q->fqid, &state) == 0) {
 		frame_cnt = qbman_fq_state_frame_count(&state);
 		DPAA2_PMD_DEBUG("RX frame count for q(%d) is %u",
-			rx_queue_id, frame_cnt);
+				rx_queue_id, frame_cnt);
 	}
 	return frame_cnt;
 }
@@ -916,8 +915,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	/* Clean the device first */
 	ret = dpni_reset(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
-		DPAA2_PMD_ERR("Failure cleaning dpni device: "
-			      "err=%d", ret);
+		DPAA2_PMD_ERR("Failure cleaning dpni device: err=%d", ret);
 		return;
 	}
 
@@ -1133,6 +1131,7 @@ dpaa2_dev_set_mac_addr(struct rte_eth_dev *dev,
 		DPAA2_PMD_ERR(
 			"error: Setting the MAC ADDR failed %d", ret);
 }
+
 static
 int dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats)
@@ -1407,10 +1406,9 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 
 	dpaa2_dev_atomic_write_link_status(dev, &link);
 
-	if (link.link_status)
-		DPAA2_PMD_INFO("Port %d Link is Up", dev->data->port_id);
-	else
-		DPAA2_PMD_INFO("Port %d Link is Down", dev->data->port_id);
+	DPAA2_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
+			       link.link_status ? "Up" : "Down");
+
 	return 0;
 }
 
@@ -1439,7 +1437,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	ret = dpni_is_enabled(dpni, CMD_PRI_LOW, priv->token, &en);
 	if (ret) {
 		/* Unable to obtain dpni status; Not continuing */
-		DPAA2_PMD_ERR("Interface Link Up failed (%d)", ret);
+		DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
 		return -EINVAL;
 	}
 
@@ -1447,13 +1445,13 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	if (!en) {
 		ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
 		if (ret) {
-			DPAA2_PMD_ERR("Interface Link Up failed (%d)", ret);
+			DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
 			return -EINVAL;
 		}
 	}
 	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
 	if (ret < 0) {
-		DPAA2_PMD_ERR("error: dpni_get_link_state %d", ret);
+		DPAA2_PMD_ERR("Unable to get link state (%d)", ret);
 		return -1;
 	}
 
@@ -1462,8 +1460,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	dev->data->dev_link.link_status = state.up;
 
 	if (state.up)
-		DPAA2_PMD_INFO("Port %d Link is Up",
-			    dev->data->port_id);
+		DPAA2_PMD_INFO("Port %d Link is Up", dev->data->port_id);
 	else
 		DPAA2_PMD_INFO("Port %d Link is Down", dev->data->port_id);
 	return ret;
@@ -1506,7 +1503,7 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		}
 		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
 		if (ret) {
-			DPAA2_PMD_ERR("dpni_is_enabled failed (%d)", ret);
+			DPAA2_PMD_ERR("dpni enable check failed (%d)", ret);
 			return ret;
 		}
 		if (dpni_enabled)
@@ -1515,11 +1512,11 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	} while (dpni_enabled && --retries);
 
 	if (!retries) {
-		DPAA2_PMD_WARN("Retry count exceeded disabling DPNI");
+		DPAA2_PMD_WARN("Retry count exceeded disabling dpni");
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		DPAA2_PMD_INFO("Port %d Link Down successful",
+		DPAA2_PMD_INFO("Port %d Link DOWN successful",
 			       dev->data->port_id);
 	}
 

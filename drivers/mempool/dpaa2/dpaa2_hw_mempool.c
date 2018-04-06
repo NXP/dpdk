@@ -75,7 +75,7 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	avail_dpbp = dpaa2_alloc_dpbp_dev();
 
 	if (!avail_dpbp) {
-		DPAA2_MEMPOOL_ERR("DPAA2 resources not available");
+		DPAA2_MEMPOOL_ERR("DPAA2 pool not available!");
 		return -ENOENT;
 	}
 
