@@ -554,8 +554,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	rte_prefetch0((void *)(size_t)(dq_storage + 1));
 
 	/* Prepare next pull descriptor. This will give space for the
-	* prefething done on DQRR entries
-	*/
+	 * prefething done on DQRR entries
+	 */
 	q_storage->toggle ^= 1;
 	dq_storage1 = q_storage->dq_storage[q_storage->toggle];
 	qbman_pull_desc_clear(&pulldesc);
@@ -1062,6 +1062,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dqrr_index);
 				(*bufs)->seqn = DPAA2_INVALID_MBUF_SEQN;
 			}
+
 			fd_arr[loop].simple.frc = 0;
 			DPAA2_RESET_FD_CTRL((&fd_arr[loop]));
 			DPAA2_SET_FD_FLC((&fd_arr[loop]), (size_t)NULL);
