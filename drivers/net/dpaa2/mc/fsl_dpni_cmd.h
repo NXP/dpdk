@@ -42,14 +42,16 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				3
+#define DPNI_VER_MINOR				5
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
+#define DPNI_CMD_VERSION_3			3
 #define DPNI_CMD_ID_OFFSET			4
 
 #define DPNI_CMD(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_BASE_VERSION)
 #define DPNI_CMD_V2(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_VERSION_2)
+#define DPNI_CMD_V3(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_VERSION_3)
 
 /* Command IDs */
 #define DPNI_CMDID_OPEN				DPNI_CMD(0x801)
@@ -98,7 +100,7 @@
 #define DPNI_CMDID_REMOVE_VLAN_ID		DPNI_CMD(0x232)
 #define DPNI_CMDID_CLR_VLAN_FILTERS		DPNI_CMD(0x233)
 
-#define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V2(0x235)
+#define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V3(0x235)
 
 #define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V2(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
@@ -109,8 +111,8 @@
 
 #define DPNI_CMDID_GET_PORT_MAC_ADDR		DPNI_CMD(0x263)
 
-#define DPNI_CMDID_GET_BUFFER_LAYOUT		DPNI_CMD(0x264)
-#define DPNI_CMDID_SET_BUFFER_LAYOUT		DPNI_CMD(0x265)
+#define DPNI_CMDID_GET_BUFFER_LAYOUT		DPNI_CMD_V2(0x264)
+#define DPNI_CMDID_SET_BUFFER_LAYOUT		DPNI_CMD_V2(0x265)
 
 #define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD(0x267)
 #define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD(0x268)
@@ -261,6 +263,8 @@ struct dpni_cmd_set_errors_behavior {
 #define DPNI_PASS_PR_SIZE		1
 #define DPNI_PASS_FS_SHIFT		2
 #define DPNI_PASS_FS_SIZE		1
+#define DPNI_PASS_SWO_SHIFT		3
+#define DPNI_PASS_SWO_SIZE		1
 
 struct dpni_cmd_get_buffer_layout {
 	uint8_t qtype;
@@ -448,6 +452,8 @@ struct dpni_cmd_set_tx_priorities {
 #define DPNI_MISS_ACTION_SIZE		4
 #define DPNI_KEEP_HASH_KEY_SHIFT	7
 #define DPNI_KEEP_HASH_KEY_SIZE		1
+#define DPNI_KEEP_ENTRIES_SHIFT		6
+#define DPNI_KEEP_ENTRIES_SIZE		1
 
 struct dpni_cmd_set_rx_tc_dist {
 	uint16_t dist_size;

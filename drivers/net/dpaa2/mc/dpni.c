@@ -697,9 +697,10 @@ int dpni_get_buffer_layout(struct fsl_mc_io *mc_io,
 
 	/* retrieve response parameters */
 	rsp_params = (struct dpni_rsp_get_buffer_layout *)cmd.params;
-	layout->pass_timestamp = dpni_get_field(rsp_params->flags, PASS_TS);
-	layout->pass_parser_result = dpni_get_field(rsp_params->flags, PASS_PR);
-	layout->pass_frame_status = dpni_get_field(rsp_params->flags, PASS_FS);
+	layout->pass_timestamp = (int)dpni_get_field(rsp_params->flags, PASS_TS);
+	layout->pass_parser_result = (int)dpni_get_field(rsp_params->flags, PASS_PR);
+	layout->pass_frame_status = (int)dpni_get_field(rsp_params->flags, PASS_FS);
+	layout->pass_sw_opaque = (int)dpni_get_field(rsp_params->flags, PASS_SWO);
 	layout->private_data_size = le16_to_cpu(rsp_params->private_data_size);
 	layout->data_align = le16_to_cpu(rsp_params->data_align);
 	layout->data_head_room = le16_to_cpu(rsp_params->head_room);
@@ -735,10 +736,11 @@ int dpni_set_buffer_layout(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpni_cmd_set_buffer_layout *)cmd.params;
 	cmd_params->qtype = qtype;
-	cmd_params->options = cpu_to_le16(layout->options);
+	cmd_params->options = cpu_to_le16((uint16_t)layout->options);
 	dpni_set_field(cmd_params->flags, PASS_TS, layout->pass_timestamp);
 	dpni_set_field(cmd_params->flags, PASS_PR, layout->pass_parser_result);
 	dpni_set_field(cmd_params->flags, PASS_FS, layout->pass_frame_status);
+	dpni_set_field(cmd_params->flags, PASS_SWO, layout->pass_sw_opaque);
 	cmd_params->private_data_size = cpu_to_le16(layout->private_data_size);
 	cmd_params->data_align = cpu_to_le16(layout->data_align);
 	cmd_params->head_room = cpu_to_le16(layout->data_head_room);
@@ -1504,6 +1506,9 @@ int dpni_set_rx_tc_dist(struct fsl_mc_io *mc_io,
 	dpni_set_field(cmd_params->keep_hash_key,
 		       KEEP_HASH_KEY,
 		       cfg->fs_cfg.keep_hash_key);
+	dpni_set_field(cmd_params->keep_hash_key,
+		       KEEP_ENTRIES,
+		       cfg->fs_cfg.keep_entries);
 
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);
@@ -1543,8 +1548,41 @@ int dpni_set_tx_confirmation_mode(struct fsl_mc_io *mc_io,
 	cmd_params = (struct dpni_tx_confirmation_mode *)cmd.params;
 	cmd_params->confirmation_mode = mode;
 
+
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpni_get_tx_confirmation_mode() - Get Tx confirmation mode
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @mode:	Tx confirmation mode
+ *
+ * Return:  '0' on Success; Error code otherwise.
+ */
+int dpni_get_tx_confirmation_mode(struct fsl_mc_io *mc_io,
+				  uint32_t cmd_flags,
+				  uint16_t token,
+				  enum dpni_confirmation_mode *mode)
+{
+	struct dpni_tx_confirmation_mode *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_GET_TX_CONFIRMATION_MODE,
+					cmd_flags,
+					token);
+
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	rsp_params = (struct dpni_tx_confirmation_mode *)cmd.params;
+	*mode =  rsp_params->confirmation_mode;
+
+	return 0;
 }
 
 /**
@@ -1797,9 +1835,9 @@ int dpni_get_queue(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @page:	Selects the statistics page to retrieve, see
- *		DPNI_GET_STATISTICS output. Pages are numbered 0 to 2.
+ *		DPNI_GET_STATISTICS output. Pages are numbered 0 to 3.
  * @param:  Custom parameter for some pages used to select
- *		a certain statistic source, for example the TC.
+ * 		a certain statistic source, for example the TC.
  * @stat:	Structure containing the statistics
  *
  * Return:	'0' on Success; Error code otherwise.
