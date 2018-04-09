@@ -298,6 +298,15 @@ int dpci_reset(struct fsl_mc_io *mc_io,
 	return mc_send_command(mc_io, &cmd);
 }
 
+/**
+ * dpci_get_attributes() - Retrieve DPCI attributes.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPCI object
+ * @attr:	Returned object's attributes
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
 int dpci_get_attributes(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
@@ -325,6 +334,19 @@ int dpci_get_attributes(struct fsl_mc_io *mc_io,
 	return 0;
 }
 
+/**
+ * dpci_set_rx_queue() - Set Rx queue configuration
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPCI object
+ * @priority:	Select the queue relative to number of
+ *			priorities configured at DPCI creation; use
+ *			DPCI_ALL_QUEUES to configure all Rx queues
+ *			identically.
+ * @cfg:	Rx queue configuration
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
 int dpci_set_rx_queue(struct fsl_mc_io *mc_io,
 		      uint32_t cmd_flags,
 		      uint16_t token,
@@ -347,6 +369,9 @@ int dpci_set_rx_queue(struct fsl_mc_io *mc_io,
 	dpci_set_field(cmd_params->dest_type,
 		       DEST_TYPE,
 		       cfg->dest_cfg.dest_type);
+	dpci_set_field(cmd_params->dest_type,
+		       ORDER_PRESERVATION,
+		       cfg->order_preservation_en);
 
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);

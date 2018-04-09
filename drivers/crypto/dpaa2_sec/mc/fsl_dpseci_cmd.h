@@ -42,22 +42,25 @@
 
 /* DPSECI Version */
 #define DPSECI_VER_MAJOR		5
-#define DPSECI_VER_MINOR		1
+#define DPSECI_VER_MINOR		3
 
 /* Command versioning */
 #define DPSECI_CMD_BASE_VERSION		1
 #define DPSECI_CMD_BASE_VERSION_V2	2
+#define DPSECI_CMD_BASE_VERSION_V3	3
 #define DPSECI_CMD_ID_OFFSET		4
 
 #define DPSECI_CMD_V1(id) \
 	((id << DPSECI_CMD_ID_OFFSET) | DPSECI_CMD_BASE_VERSION)
 #define DPSECI_CMD_V2(id) \
 	((id << DPSECI_CMD_ID_OFFSET) | DPSECI_CMD_BASE_VERSION_V2)
+#define DPSECI_CMD_V3(id) \
+	((id << DPSECI_CMD_ID_OFFSET) | DPSECI_CMD_BASE_VERSION_V3)
 
 /* Command IDs */
 #define DPSECI_CMDID_CLOSE		DPSECI_CMD_V1(0x800)
 #define DPSECI_CMDID_OPEN		DPSECI_CMD_V1(0x809)
-#define DPSECI_CMDID_CREATE		DPSECI_CMD_V2(0x909)
+#define DPSECI_CMDID_CREATE		DPSECI_CMD_V3(0x909)
 #define DPSECI_CMDID_DESTROY		DPSECI_CMD_V1(0x989)
 #define DPSECI_CMDID_GET_API_VERSION	DPSECI_CMD_V1(0xa09)
 
@@ -70,7 +73,7 @@
 #define DPSECI_CMDID_SET_RX_QUEUE	DPSECI_CMD_V1(0x194)
 #define DPSECI_CMDID_GET_RX_QUEUE	DPSECI_CMD_V1(0x196)
 #define DPSECI_CMDID_GET_TX_QUEUE	DPSECI_CMD_V1(0x197)
-#define DPSECI_CMDID_GET_SEC_ATTR	DPSECI_CMD_V1(0x198)
+#define DPSECI_CMDID_GET_SEC_ATTR	DPSECI_CMD_V2(0x198)
 #define DPSECI_CMDID_GET_SEC_COUNTERS	DPSECI_CMD_V1(0x199)
 
 #define DPSECI_CMDID_SET_CONGESTION_NOTIFICATION	DPSECI_CMD_V1(0x170)
@@ -96,6 +99,8 @@ struct dpseci_cmd_create {
 	uint8_t num_rx_queues;
 	uint8_t pad[6];
 	uint32_t options;
+	uint32_t pad2;
+	uint8_t priorities2[8];
 };
 
 struct dpseci_cmd_destroy {
@@ -185,6 +190,8 @@ struct dpseci_rsp_get_sec_attr {
 	uint8_t arc4_acc_num;
 	uint8_t des_acc_num;
 	uint8_t aes_acc_num;
+	uint8_t ccha_acc_num;
+	uint8_t ptha_acc_num;
 };
 
 struct dpseci_rsp_get_sec_counters {

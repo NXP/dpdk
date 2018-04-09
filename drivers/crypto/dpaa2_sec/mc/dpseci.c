@@ -149,8 +149,10 @@ int dpseci_create(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  dprc_token);
 	cmd_params = (struct dpseci_cmd_create *)cmd.params;
-	for (i = 0; i < DPSECI_PRIO_NUM; i++)
+	for (i = 0; i < 8; i++)
 		cmd_params->priorities[i] = cfg->priorities[i];
+	for (i = 0; i < 8; i++)
+		cmd_params->priorities2[i] = cfg->priorities[8 + i];
 	cmd_params->num_tx_queues = cfg->num_tx_queues;
 	cmd_params->num_rx_queues = cfg->num_rx_queues;
 	cmd_params->options = cfg->options;
@@ -523,6 +525,8 @@ int dpseci_get_sec_attr(struct fsl_mc_io *mc_io,
 	attr->arc4_acc_num = rsp_params->arc4_acc_num;
 	attr->des_acc_num = rsp_params->des_acc_num;
 	attr->aes_acc_num = rsp_params->aes_acc_num;
+	attr->ccha_acc_num = rsp_params->ccha_acc_num;
+	attr->ptha_acc_num = rsp_params->ptha_acc_num;
 
 	return 0;
 }

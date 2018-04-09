@@ -134,6 +134,7 @@ struct dpni_cfg {
 	 *		DPNI_OPT_SHARED_CONGESTION
 	 *		DPNI_OPT_HAS_KEY_MASKING
 	 *		DPNI_OPT_NO_FS
+	 *		DPNI_OPT_SINGLE_SENDER
 	 * @fs_entries: Number of entries in the flow steering table.
 	 *		This table is used to select the ingress queue for
 	 *		ingress traffic, targeting a GPP core or another.
@@ -167,11 +168,13 @@ struct dpni_cfg {
 	 *		is 8.
 	 * @num_tcs: Number of traffic classes (TCs), reserved for the DPNI.
 	 *		TCs can have different priority levels for the purpose
-	 *		of Tx scheduling (see DPNI_SET_TX_SELECTION), different
+	 *		of Tx scheduling (see DPNI_SET_TX_PRIORITIES), different
 	 *		BPs (DPNI_ SET_POOLS), policers. There are dedicated QM
 	 *		queues for traffic classes (including class queues on
 	 *		Tx). Value 0 defaults to one TC. Maximum supported value
-	 *		is 8.
+	 *		is 16. There are maximum 16 TCs for Tx and 8 TCs for Rx.
+	 *		When num_tcs>8 Tx will use this value but Rx will have
+	 *		only 8 traffic classes.
 	 * @qos_entries: Number of entries in the QoS classification table. This
 	 *		table is used to select the TC for ingress traffic. It
 	 *		is either an exact match or a TCAM table, depending on
@@ -329,6 +332,8 @@ int dpni_clear_irq_status(struct fsl_mc_io *mc_io,
  *			variants,
  *			- 0x422 - WRIOP version 1.1.2, used on LS1088 and
  *			variants.
+ *			- 0xC00 - WRIOP version 3.0.0, used on LX2160 and
+ *			variants.
  */
 struct dpni_attr {
 	uint32_t options;
@@ -441,6 +446,10 @@ int dpni_set_errors_behavior(struct fsl_mc_io *mc_io,
  * Select to modify the data-tail-room setting
  */
 #define DPNI_BUF_LAYOUT_OPT_DATA_TAIL_ROOM	0x00000040
+/**
+ * Select to modify the sw-opaque value setting
+ */
+#define DPNI_BUF_LAYOUT_OPT_SW_OPAQUE		0x00000080
 
 /**
  * struct dpni_buffer_layout - Structure representing DPNI buffer layout
@@ -460,6 +469,7 @@ struct dpni_buffer_layout {
 	int pass_timestamp;
 	int pass_parser_result;
 	int pass_frame_status;
+	int pass_sw_opaque;
 	uint16_t private_data_size;
 	uint16_t data_align;
 	uint16_t data_head_room;
@@ -783,11 +793,20 @@ enum dpni_fs_miss_action {
  * struct dpni_fs_tbl_cfg - Flow Steering table configuration
  * @miss_action:	Miss action selection
  * @default_flow_id:	Used when 'miss_action = DPNI_FS_MISS_EXPLICIT_FLOWID'
+ * @keep_hash_key: used only when miss_action is set to DPNI_FS_MISS_HASH. When
+ * 		set to one unclassified frames will be distributed according to previous
+ * 		used hash key. If set to zero hash key will be replaced with the key
+ * 		provided for flow steering.
+ * @keep_entries: if set to one command will not delete the entries that already
+ * 		exist into FS table. Use this option with caution: if the table entries
+ * 		are not compatible with the distribution key the packets will not be
+ * 		classified properly.
  */
 struct dpni_fs_tbl_cfg {
 	enum dpni_fs_miss_action miss_action;
 	uint16_t default_flow_id;
 	char keep_hash_key;
+	uint8_t keep_entries;
 };
 
 /**
