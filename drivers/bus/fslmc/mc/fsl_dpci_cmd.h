@@ -41,7 +41,7 @@
 
 /* DPCI Version */
 #define DPCI_VER_MAJOR			3
-#define DPCI_VER_MINOR			3
+#define DPCI_VER_MINOR			4
 
 #define DPCI_CMD_BASE_VERSION		1
 #define DPCI_CMD_BASE_VERSION_V2	2
@@ -123,6 +123,8 @@ struct dpci_rsp_get_link_state {
 
 #define DPCI_DEST_TYPE_SHIFT	0
 #define DPCI_DEST_TYPE_SIZE	4
+#define DPCI_ORDER_PRESERVATION_SHIFT	4
+#define DPCI_ORDER_PRESERVATION_SIZE	1
 
 struct dpci_cmd_set_rx_queue {
 	uint32_t dest_id;
