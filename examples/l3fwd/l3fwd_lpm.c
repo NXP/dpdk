@@ -59,6 +59,7 @@
 #include "l3fwd.h"
 
 #define INVALID_EVENDEV_ID 0xFF
+#define EVENT_DQ_TIMEOUT_MS 1000
 
 struct ipv4_l3fwd_lpm_route {
 	uint32_t ip;
@@ -275,7 +276,8 @@ lpm_eventdev_main_loop(__attribute__((unused)) void *dummy)
 		 */
 		nb_rx = rte_event_dequeue_burst(event_devices[0].dev_id,
 						event_port_id,
-						ev, dequeue_len, 0);
+						ev, dequeue_len,
+						EVENT_DQ_TIMEOUT_MS);
 		if (nb_rx == 0)
 			continue;
 
