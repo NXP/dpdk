@@ -232,9 +232,9 @@ static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 20,
+					.min = 1,
 					.max = 20,
-					.increment = 0
+					.increment = 1
 				},
 				.iv_size = { 0 }
 			}, }
