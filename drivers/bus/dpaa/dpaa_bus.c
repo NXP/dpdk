@@ -196,7 +196,7 @@ dpaa_create_device_list(void)
 	 * interfaces) that can be created.
 	 */
 
-	if (dpaa_sec_available()) {
+	if (dpaa_sec_available() || getenv("DPAA_SEC_DISABLE")) {
 		DPAA_BUS_LOG(INFO, "DPAA SEC devices are not available");
 		return 0;
 	}
