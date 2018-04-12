@@ -34,7 +34,7 @@ enum {
  * HIF_TX_DESC_NT value should be always greter than 4,
  * Otherwise HIF_TX_POLL_MARK will become zero.
  */
-#define HIF_RX_DESC_NT		512
+#define HIF_RX_DESC_NT		64
 #define HIF_TX_DESC_NT		2048
 
 #define HIF_FIRST_BUFFER	BIT(0)
