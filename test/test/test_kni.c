@@ -484,6 +484,11 @@ test_kni(void)
 	struct rte_eth_dev_info info;
 	struct rte_kni_ops ops;
 
+	if (access("/dev/" KNI_DEVICE, F_OK) == -1) {
+		printf("Can not open /dev/%s\n", KNI_DEVICE);
+		return TEST_SKIPPED;
+	}
+
 	/* Initialize KNI subsytem */
 	rte_kni_init(KNI_TEST_MAX_PORTS);
 
