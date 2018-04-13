@@ -623,7 +623,7 @@ static void *dpaa_get_pktbuf(struct dpaa_bp_info *bp_info)
 
 	ret = bman_acquire(bp_info->bp, &bufs, 1, 0);
 	if (ret <= 0) {
-		DPAA_PMD_WARN("Failed to allocate buffers %d", ret);
+		DPAA_DP_LOG(DEBUG, "Failed to allocate buffers %d", ret);
 		return (void *)buf;
 	}
 
