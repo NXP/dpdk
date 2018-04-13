@@ -81,6 +81,8 @@ pthread_key_t dpaa_portal_key;
 
 unsigned int dpaa_svr_family;
 
+#define FSL_DPAA_BUS_NAME	dpaa_bus
+
 RTE_DEFINE_PER_LCORE(bool, dpaa_io);
 RTE_DEFINE_PER_LCORE(struct dpaa_portal_dqrr, held_bufs);
 
@@ -156,6 +158,26 @@ dpaa_sec_available(void)
 
 static void dpaa_clean_device_list(void);
 
+static struct rte_devargs *
+dpaa_devargs_lookup(struct rte_dpaa_device *dev)
+{
+	struct rte_devargs *devargs;
+	struct rte_bus *pbus;
+	char dev_name[32];
+
+	pbus = rte_bus_find_by_name(RTE_STR(FSL_DPAA_BUS_NAME));
+	TAILQ_FOREACH(devargs, &devargs_list, next) {
+		if (devargs->bus != pbus)
+			continue;
+		devargs->bus->parse(devargs->name, &dev_name);
+		if (strcmp(dev_name, dev->device.name) == 0) {
+			DPAA_BUS_INFO("**Devargs matched %s", dev_name);
+			return devargs;
+		}
+	}
+	return NULL;
+}
+
 static int
 dpaa_create_device_list(void)
 {
@@ -187,8 +209,9 @@ dpaa_create_device_list(void)
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
 		sprintf(dev->name, "fm%d-mac%d", (fman_intf->fman_idx + 1),
 			fman_intf->mac_idx);
-		DPAA_BUS_LOG(DEBUG, "Device added: %s", dev->name);
+		DPAA_BUS_LOG(INFO, "Device added: %s", dev->name);
 		dev->device.name = dev->name;
+		dev->device.devargs = dpaa_devargs_lookup(dev);
 
 		dpaa_add_to_device_list(dev);
 	}
@@ -224,7 +247,9 @@ dpaa_create_device_list(void)
 		 */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
 		sprintf(dev->name, "dpaa-sec%d", i);
-		DPAA_BUS_LOG(DEBUG, "Device added: %s", dev->name);
+		DPAA_BUS_LOG(INFO, "Device added: %s", dev->name);
+		dev->device.name = dev->name;
+		dev->device.devargs = dpaa_devargs_lookup(dev);
 
 		dpaa_add_to_device_list(dev);
 	}
@@ -384,6 +409,51 @@ dpaa_portal_finish(void *arg)
 	RTE_PER_LCORE(dpaa_io) = false;
 }
 
+static int
+rte_dpaa_bus_parse(const char *name, void *out_name)
+{
+	int i, j;
+	int max_fman = 2, max_macs = 16;
+	char *sep = strchr(name, ':');
+
+	if (strncmp(name, RTE_STR(FSL_DPAA_BUS_NAME),
+		strlen(RTE_STR(FSL_DPAA_BUS_NAME)))) {
+		return -EINVAL;
+	}
+
+	if (!sep) {
+		DPAA_BUS_ERR("Incorrect device name observed");
+		return -EINVAL;
+	}
+
+	sep = (char *) (sep + 1);
+
+	for (i = 0; i < max_fman; i++) {
+		for (j = 0; j < max_macs; j++) {
+			char fm_name[16];
+			snprintf(fm_name, 16, "fm%d-mac%d", i, j);
+			if (strcmp(fm_name, sep) == 0) {
+				if (out_name)
+					strcpy(out_name, sep);
+				return 0;
+			}
+		}
+	}
+
+	for (i = 0; i < RTE_LIBRTE_DPAA_MAX_CRYPTODEV; i++) {
+		char sec_name[16];
+
+		snprintf(sec_name, 16, "dpaa-sec%d", i);
+		if (strcmp(sec_name, sep) == 0) {
+			if (out_name)
+				strcpy(out_name, sep);
+			return 0;
+		}
+	}
+
+	return -EINVAL;
+}
+
 #define DPAA_DEV_PATH1 "/sys/devices/platform/soc/soc:fsl,dpaa"
 #define DPAA_DEV_PATH2 "/sys/devices/platform/fsl,dpaa"
 
@@ -408,7 +478,9 @@ rte_dpaa_bus_scan(void)
 	}
 
 	/* Get the interface configurations from device-tree */
-	dpaa_netcfg = netcfg_acquire();
+	if (!dpaa_netcfg)
+		dpaa_netcfg = netcfg_acquire();
+
 	if (!dpaa_netcfg) {
 		DPAA_BUS_LOG(ERR, "netcfg_acquire failed");
 		return -EINVAL;
@@ -495,8 +567,8 @@ rte_dpaa_device_match(struct rte_dpaa_driver *drv,
 	}
 
 	if (drv->drv_type == dev->device_type) {
-		DPAA_BUS_INFO("Device: %s matches for driver: %s",
-			      dev->name, drv->driver.name);
+		DPAA_BUS_LOG(DEBUG, "Device: %s matches for driver: %s",
+			     dev->name, drv->driver.name);
 		ret = 0; /* Found a match */
 	}
 
@@ -511,6 +583,7 @@ rte_dpaa_bus_probe(void)
 	struct rte_dpaa_driver *drv;
 	FILE *svr_file = NULL;
 	unsigned int svr_ver;
+	int probe_all = rte_dpaa_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST;
 
 	BUS_INIT_FUNC_TRACE();
 
@@ -521,12 +594,18 @@ rte_dpaa_bus_probe(void)
 			if (ret)
 				continue;
 
-			if (!drv->probe)
+			if (!drv->probe ||
+			    (dev->device.devargs &&
+			    dev->device.devargs->policy == RTE_DEV_BLACKLISTED))
 				continue;
 
-			ret = drv->probe(drv, dev);
-			if (ret)
-				DPAA_BUS_ERR("Unable to probe.\n");
+			if (probe_all ||
+			    (dev->device.devargs &&
+			    dev->device.devargs->policy == RTE_DEV_WHITELISTED)) {
+				ret = drv->probe(drv, dev);
+				if (ret)
+					DPAA_BUS_ERR("Unable to probe.\n");
+			}
 			break;
 		}
 	}
@@ -583,6 +662,7 @@ struct rte_dpaa_bus rte_dpaa_bus = {
 	.bus = {
 		.scan = rte_dpaa_bus_scan,
 		.probe = rte_dpaa_bus_probe,
+		.parse = rte_dpaa_bus_parse,
 		.find_device = rte_dpaa_find_device,
 		.get_iommu_class = rte_dpaa_get_iommu_class,
 	},
