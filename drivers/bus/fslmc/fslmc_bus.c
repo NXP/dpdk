@@ -49,6 +49,7 @@
 int dpaa2_logtype_bus;
 
 #define VFIO_IOMMU_GROUP_PATH "/sys/kernel/iommu_groups"
+#define FSLMC_BUS_NAME	fslmc
 
 struct rte_fslmc_bus rte_fslmc_bus;
 uint8_t dpaa2_virt_mode;
@@ -117,6 +118,26 @@ insert_in_device_list(struct rte_dpaa2_device *newdev)
 
 	if (!inserted)
 		TAILQ_INSERT_TAIL(&rte_fslmc_bus.device_list, newdev, next);
+}
+
+static struct rte_devargs *
+fslmc_devargs_lookup(struct rte_dpaa2_device *dev)
+{
+	struct rte_devargs *devargs;
+	struct rte_bus *pbus;
+	char dev_name[32];
+
+	pbus = rte_bus_find_by_name(RTE_STR(FSLMC_BUS_NAME));
+	TAILQ_FOREACH(devargs, &devargs_list, next) {
+		if (devargs->bus != pbus)
+			continue;
+		devargs->bus->parse(devargs->name, &dev_name);
+		if (strcmp(dev_name, dev->device.name) == 0) {
+			DPAA2_BUS_INFO("**Devargs matched %s", dev_name);
+			return devargs;
+		}
+	}
+	return NULL;
 }
 
 static void
@@ -210,6 +231,7 @@ scan_one_fslmc_device(char *dev_name)
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
 		goto cleanup;
 	}
+	dev->device.devargs = fslmc_devargs_lookup(dev);
 
 	/* Add device in the fslmc device list */
 	insert_in_device_list(dev);
@@ -225,6 +247,54 @@ cleanup:
 	if (dev)
 		free(dev);
 	return -1;
+}
+
+static int
+rte_fslmc_parse(const char *name, void *addr)
+{
+	uint16_t dev_id;
+	char *t_ptr;
+	char *sep = strchr(name, ':');
+
+	if (strncmp(name, RTE_STR(FSLMC_BUS_NAME),
+		strlen(RTE_STR(FSLMC_BUS_NAME)))) {
+		return -EINVAL;
+	}
+
+	if (!sep) {
+		DPAA2_BUS_ERR("Incorrect device name observed");
+		return -EINVAL;
+	}
+
+	t_ptr = (char *)(sep + 1);
+
+	if (strncmp("dpni", t_ptr, 4) &&
+	    strncmp("dpseci", t_ptr, 6) &&
+	    strncmp("dpcon", t_ptr, 5) &&
+	    strncmp("dpbp", t_ptr, 4) &&
+	    strncmp("dpio", t_ptr, 4) &&
+	    strncmp("dpci", t_ptr, 4) &&
+	    strncmp("dpmcp", t_ptr, 5) &&
+	    strncmp("dpdmai", t_ptr, 6)) {
+		DPAA2_BUS_ERR("Unknown or unsupported device");
+		return -EINVAL;
+	}
+
+	t_ptr = strchr(name, '.');
+	if (!t_ptr) {
+		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
+		return -EINVAL;
+	}
+
+	t_ptr = (char *)(t_ptr + 1);
+	if (sscanf(t_ptr, "%hu", &dev_id) <= 0) {
+		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
+		return -EINVAL;
+	}
+
+	if (addr)
+		strcpy(addr, (char *)(sep + 1));
+	return 0;
 }
 
 static int
@@ -302,6 +372,8 @@ static int
 rte_fslmc_probe(void)
 {
 	int ret = 0;
+	int probe_all;
+
 	struct rte_dpaa2_device *dev;
 	struct rte_dpaa2_driver *drv;
 
@@ -320,6 +392,8 @@ rte_fslmc_probe(void)
 		return 0;
 	}
 
+	probe_all = rte_fslmc_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST;
+
 	TAILQ_FOREACH(dev, &rte_fslmc_bus.device_list, next) {
 		TAILQ_FOREACH(drv, &rte_fslmc_bus.driver_list, next) {
 			ret = rte_fslmc_match(drv, dev);
@@ -329,9 +403,20 @@ rte_fslmc_probe(void)
 			if (!drv->probe)
 				continue;
 
-			ret = drv->probe(drv, dev);
-			if (ret)
-				DPAA2_BUS_ERR("Unable to probe");
+			if (dev->device.devargs &&
+			  dev->device.devargs->policy == RTE_DEV_BLACKLISTED) {
+				DPAA2_BUS_LOG(DEBUG, "%s Blacklisted",
+					      dev->device.name);
+				continue;
+			}
+
+			if (probe_all ||
+			   (dev->device.devargs &&
+			   dev->device.devargs->policy == RTE_DEV_WHITELISTED)) {
+				ret = drv->probe(drv, dev);
+				if (ret)
+					DPAA2_BUS_ERR("Unable to probe.\n");
+			}
 			break;
 		}
 	}
@@ -438,6 +523,7 @@ struct rte_fslmc_bus rte_fslmc_bus = {
 	.bus = {
 		.scan = rte_fslmc_scan,
 		.probe = rte_fslmc_probe,
+		.parse = rte_fslmc_parse,
 		.find_device = rte_fslmc_find_device,
 		.get_iommu_class = rte_dpaa2_get_iommu_class,
 	},
@@ -446,7 +532,7 @@ struct rte_fslmc_bus rte_fslmc_bus = {
 	.device_count = {0},
 };
 
-RTE_REGISTER_BUS(fslmc, rte_fslmc_bus.bus);
+RTE_REGISTER_BUS(FSLMC_BUS_NAME, rte_fslmc_bus.bus);
 
 RTE_INIT(fslmc_init_log);
 static void
