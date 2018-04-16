@@ -1968,7 +1968,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		DPAA2_PMD_INFO("No Prefetch RX Mode enabled");
 	}
-	DPAA2_PMD_INFO("%s: netdev created", eth_dev->data->name);
+	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:
 	dpaa2_dev_uninit(eth_dev);
