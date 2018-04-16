@@ -962,6 +962,8 @@ dpaa2_eventdev_create(const char *name)
 		priv->max_event_queues++;
 	} while (dpcon_dev && dpci_dev);
 
+	RTE_LOG(INFO, PMD, "%s eventdev created\n", name);
+
 	return 0;
 fail:
 	return -EFAULT;

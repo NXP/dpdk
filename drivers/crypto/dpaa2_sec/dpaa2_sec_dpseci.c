@@ -3006,7 +3006,7 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 		goto init_error;
 	}
 
-	DPAA2_SEC_INFO("driver %s: created", cryptodev->data->name);
+	RTE_LOG(INFO, PMD, "%s cryptodev created\n", cryptodev->data->name);
 	return 0;
 
 init_error:

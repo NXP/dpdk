@@ -320,9 +320,6 @@ static int64_t vfio_map_mcp_obj(struct fslmc_vfio_group *group, char *mcp_obj)
 		goto MC_FAILURE;
 	}
 
-	DPAA2_BUS_DEBUG("Region offset = %llx  , region size = %llx",
-			reg_info.offset, reg_info.size);
-
 	v_addr = (size_t)mmap(NULL, reg_info.size,
 		PROT_WRITE | PROT_READ, MAP_SHARED,
 		mc_fd, reg_info.offset);
@@ -482,8 +479,8 @@ fslmc_process_iodevices(struct rte_dpaa2_device *dev)
 		break;
 	}
 
-	DPAA2_BUS_DEBUG("Device (%s) abstracted from VFIO",
-			dev->device.name);
+	DPAA2_BUS_LOG(DEBUG, "Device (%s) abstracted from VFIO",
+		      dev->device.name);
 	return 0;
 }
 
