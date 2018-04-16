@@ -1242,7 +1242,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		if (default_q)
 			fqid = cfg->rx_def;
 		else
-			fqid = DPAA_PCD_FQID_START + dpaa_intf->ifid *
+			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
 				DPAA_PCD_FQID_MULTIPLIER + loop;
 
 		if (dpaa_intf->cgr_rx)
