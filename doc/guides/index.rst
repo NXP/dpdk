@@ -46,6 +46,7 @@ DPDK documentation
    eventdevs/index
    mempool/index
    platform/index
+   rawdevs/index
    contributing/index
    rel_notes/index
    faq/index
