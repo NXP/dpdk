@@ -448,7 +448,7 @@ policy.
 
 <!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
 
-	<policy name="hash_ipsec_src_dst_spi_policy0">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac0">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist0"/>
 			<distributionref name="hash_ipv4_src_dst_dist0"/>
@@ -462,7 +462,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy1">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac1">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist1"/>
 			<distributionref name="hash_ipv4_src_dst_dist1"/>
@@ -476,7 +476,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy2">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac2">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist2"/>
 			<distributionref name="hash_ipv4_src_dst_dist2"/>
@@ -490,7 +490,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy3">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac3">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist3"/>
 			<distributionref name="hash_ipv4_src_dst_dist3"/>
@@ -504,7 +504,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy4">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac4">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist4"/>
 			<distributionref name="hash_ipv4_src_dst_dist4"/>
@@ -518,7 +518,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy5">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac5">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist5"/>
 			<distributionref name="hash_ipv4_src_dst_dist5"/>
@@ -532,7 +532,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy6">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac6">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist6"/>
 			<distributionref name="hash_ipv4_src_dst_dist6"/>
@@ -546,7 +546,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy7">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac7">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist7"/>
 			<distributionref name="hash_ipv4_src_dst_dist7"/>
@@ -561,7 +561,7 @@ policy.
 	</policy>
 
 
-	<policy name="hash_ipsec_src_dst_spi_policy8">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac8">
 		<dist_order>
 			<distributionref name="hash_ipv4_src_dst_dist8"/>
 			<distributionref name="default_dist8"/>
@@ -576,7 +576,7 @@ policy.
 	</policy>
 
 
-	<policy name="hash_ipsec_src_dst_spi_policy9">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac9">
 		<dist_order>
 			<distributionref name="hash_ipv4_src_dst_dist9"/>
 			<distributionref name="default_dist9"/>
@@ -589,7 +589,7 @@ policy.
 			<distributionref name="default_dist9"/>
 		</dist_order>
 	</policy>
-	<policy name="hash_ipsec_src_dst_spi_policy10">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac10">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist10"/>
 			<distributionref name="hash_ipv4_src_dst_dist10"/>
@@ -603,7 +603,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy11">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac11">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist11"/>
 			<distributionref name="hash_ipv4_src_dst_dist11"/>
@@ -617,7 +617,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy12">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac12">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist12"/>
 			<distributionref name="hash_ipv4_src_dst_dist12"/>
@@ -631,7 +631,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy13">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac13">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist13"/>
 			<distributionref name="hash_ipv4_src_dst_dist13"/>
@@ -645,7 +645,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy14">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac14">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist14"/>
 			<distributionref name="hash_ipv4_src_dst_dist14"/>
@@ -659,7 +659,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy15">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac15">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist15"/>
 			<distributionref name="hash_ipv4_src_dst_dist15"/>
@@ -673,7 +673,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy16">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac16">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist16"/>
 			<distributionref name="hash_ipv4_src_dst_dist16"/>
@@ -687,7 +687,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy17">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac17">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist17"/>
 			<distributionref name="hash_ipv4_src_dst_dist17"/>
@@ -701,7 +701,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy18">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac18">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist18"/>
 			<distributionref name="hash_ipv4_src_dst_dist18"/>
@@ -715,7 +715,7 @@ policy.
 		</dist_order>
 	</policy>
 
-	<policy name="hash_ipsec_src_dst_spi_policy19">
+	<policy name="hash_ipsec_src_dst_spi_policy_mac19">
 		<dist_order>
 			<distributionref name="hash_ipsec_src_dst_spi_dist19"/>
 			<distributionref name="hash_ipv4_src_dst_dist19"/>

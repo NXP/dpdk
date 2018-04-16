@@ -43,14 +43,14 @@ policies indicated below.
 <!--
 In DPDK the ports are detected in order specified in the linux DTS file
 So here we need to specify ports in the order they are present in the linux DTS
-Also, the DPDK port 'X' should have policy as hash_ipsec_src_dst_spi_policy'X'
+Also, the DPDK port 'X' should have policy as hash_ipsec_src_dst_spi_policy_mac'X'
 -->
-		<port type="MAC" number="3" policy="hash_ipsec_src_dst_spi_policy0"/>
-		<port type="MAC" number="4" policy="hash_ipsec_src_dst_spi_policy1"/>
-		<port type="MAC" number="5" policy="hash_ipsec_src_dst_spi_policy2"/>
-		<port type="MAC" number="6" policy="hash_ipsec_src_dst_spi_policy3"/>
-		<port type="MAC" number="9" policy="hash_ipsec_src_dst_spi_policy4"/>
-		<port type="MAC" number="10" policy="hash_ipsec_src_dst_spi_policy5"/>
+		<port type="MAC" number="3" policy="hash_ipsec_src_dst_spi_policy_mac3"/>
+		<port type="MAC" number="4" policy="hash_ipsec_src_dst_spi_policy_mac4"/>
+		<port type="MAC" number="5" policy="hash_ipsec_src_dst_spi_policy_mac5"/>
+		<port type="MAC" number="6" policy="hash_ipsec_src_dst_spi_policy_mac6"/>
+		<port type="MAC" number="9" policy="hash_ipsec_src_dst_spi_policy_mac9"/>
+		<port type="MAC" number="10" policy="hash_ipsec_src_dst_spi_policy_mac10"/>
 	</engine>
     </config>
 </cfgdata>
