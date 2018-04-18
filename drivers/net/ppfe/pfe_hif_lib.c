@@ -13,10 +13,6 @@
 #include "pfe_hif.h"
 #include "pfe_hif_lib.h"
 
-unsigned int page_mode;
-unsigned int tx_qos = 1;
-unsigned int pfe_pkt_size;
-unsigned int pfe_pkt_headroom;
 unsigned int emac_txq_cnt;
 
 /*
@@ -35,23 +31,13 @@ struct hif_shm ghif_shm;
 void pfe_hif_shm_clean(struct hif_shm *hif_shm)
 {
 	unsigned int i;
-//	struct rte_mbuf *mbuf, *dummy_mbuf;
 	void *pkt;
 
-//	dummy_mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(hif_shm->pool));
 	for (i = 0; i < hif_shm->rx_buf_pool_cnt; i++) {
 		pkt = hif_shm->rx_buf_pool[i];
-		if (pkt) {
-#if 0
-			hif_shm->rx_buf_pool[i] = NULL;
-			pkt += PFE_PKT_HEADER_SZ;
-
-			mbuf = (struct rte_mbuf *) pkt - dummy_mbuf->data_off;
-#endif
+		if (pkt)
 			rte_pktmbuf_free((struct rte_mbuf *)pkt);
-		}
 	}
-//	rte_pktmbuf_free(dummy_mbuf);
 }
 
 /* Initialize shared memory used between HIF driver and clients,
@@ -64,7 +50,6 @@ void pfe_hif_shm_clean(struct hif_shm *hif_shm)
 int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool)
 {
 	unsigned int i;
-//	void *pkt;
 	struct rte_mbuf *mbuf;
 
 	memset(hif_shm, 0, sizeof(struct hif_shm));
@@ -72,10 +57,8 @@ int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool)
 
 	for (i = 0; i < hif_shm->rx_buf_pool_cnt; i++) {
 		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(mb_pool));
-//		pkt = (void *)((size_t)mbuf->buf_addr + mbuf->data_off);
 		if (mbuf)
 			hif_shm->rx_buf_pool[i] = mbuf;
-//			hif_shm->rx_buf_pool[i] = pkt - PFE_PKT_HEADER_SZ;
 		else
 			goto err0;
 	}
@@ -115,25 +98,34 @@ void hif_lib_indicate_client(struct hif_client_s *client, int event_type, int qn
  */
 static void hif_lib_client_release_rx_buffers(struct hif_client_s *client)
 {
+	struct rte_mempool *pool;
+	struct rte_pktmbuf_pool_private *mb_priv;
 	struct rx_queue_desc *desc;
 	unsigned int qno, ii;
 	void *buf;
 
+	pool = client->pfe->hif.shm->pool;
+	mb_priv = rte_mempool_get_priv(pool);
 	for (qno = 0; qno < client->rx_qn; qno++) {
 		desc = client->rx_q[qno].base;
 
 		for (ii = 0; ii < client->rx_q[qno].size; ii++) {
 			buf = (void *)desc->data;
 			if (buf) {
-				buf -= pfe_pkt_headroom;
-				rte_pktmbuf_free(buf);
+			/*Data pointor to mbuf pointor calculation:
+			 *"Data - User private data - headroom - mbufsize"
+			 *Actual data pointor given to HIF BDs was
+			 *"mbuf->data_offset - PFE_PKT_HEADER_SZ"*/
+				buf = buf + PFE_PKT_HEADER_SZ
+				- sizeof(struct rte_mbuf)
+				- RTE_PKTMBUF_HEADROOM
+				- mb_priv->mbuf_priv_size;
+				rte_pktmbuf_free((struct rte_mbuf *)buf);
 				desc->ctrl = 0;
 			}
-
 			desc++;
 		}
 	}
-
 	rte_free(client->rx_qbase);
 }
 
@@ -175,8 +167,7 @@ static int hif_lib_client_init_rx_buffers(struct hif_client_s *client,
 		desc = queue->base;
 
 		for (ii = 0; ii < queue->size; ii++) {
-			desc->ctrl = CL_DESC_BUF_LEN(pfe_pkt_size) |
-					CL_DESC_OWN;
+			desc->ctrl = CL_DESC_OWN;
 			desc++;
 		}
 	}
@@ -260,7 +251,6 @@ int hif_lib_client_register(struct hif_client_s *client)
 	struct hif_shm *hif_shm;
 	struct hif_client_shm *client_shm;
 	int err, i;
-	/* int loop_cnt = 0; */
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -276,8 +266,8 @@ int hif_lib_client_register(struct hif_client_s *client)
 	}
 
 	rte_spinlock_lock(&client->pfe->hif.lock);
-	if (!(client->pfe) || (client->id >= HIF_CLIENTS_MAX)/* ||
-	    (pfe->hif_client[client->id])*/) {
+	if (!(client->pfe) || (client->id >= HIF_CLIENTS_MAX) ||
+	    (client->pfe->hif_client[client->id])) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -397,7 +387,6 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 		uint16_t nb_pkts)
 {
 	struct rx_queue_desc *desc;
-//	unsigned int *rx_ctrl;
 	struct pfe_eth_priv_s *priv = queue->priv;
 	struct rte_pktmbuf_pool_private *mb_priv;
 	struct rte_mbuf *mbuf;
@@ -413,36 +402,18 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 		}
 
 		mb_priv = rte_mempool_get_priv(pool);
-		/*TODO optimize the code and remove local buf storage pointors*/
 		mbuf = desc->data + PFE_PKT_HEADER_SZ
 			- sizeof(struct rte_mbuf)
 			- RTE_PKTMBUF_HEADROOM
 			- mb_priv->mbuf_priv_size;
 
-		/*TODO whats is the use of these*/
-//		*rx_ctrl = desc->client_ctrl;
-//		*desc_ctrl = desc->ctrl;
 		if (desc->ctrl & CL_DESC_FIRST) {
-			/*TODO when we get size and private data */
-			//u16 size = *rx_ctrl >> HIF_CTRL_RX_OFFSET_OFST;
+			/* TODO size of priv data if present in descriptor */
 			u16 size = 0;
-
 			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl)
 					- PFE_PKT_HEADER_SZ - size;
-			//*ofst = pfe_pkt_headroom + PFE_PKT_HEADER_SZ + size;
-
-			if (size) {
-				PFE_PMD_WARN(
-				"size = %d is there so wrong data point to",
-				size);
-				//*priv_data = desc->data + PFE_PKT_HEADER_SZ;
-			} else {
-				//*priv_data = NULL;
-			}
-
 		} else {
 			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl);
-			//*ofst = pfe_pkt_headroom;
 		}
 		mbuf->data_len = mbuf->pkt_len;
 		stats->ibytes += mbuf->data_len;
@@ -465,7 +436,7 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 		 */
 		rte_wmb();
 
-		desc->ctrl = CL_DESC_BUF_LEN(pfe_pkt_size) | CL_DESC_OWN;
+		desc->ctrl = CL_DESC_OWN;
 		queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
 	}
 	stats->ipackets += i;
@@ -487,7 +458,7 @@ static inline void hif_hdr_write(struct hif_hdr *pkt_hdr, unsigned int
 }
 
 /*This function puts the given packet in the specific client queue */
-void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
+void hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
 			void *data, void *data1, unsigned int len,
 			u32 client_ctrl, unsigned int flags, void *client_data)
 {
@@ -506,7 +477,7 @@ void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
 	desc->data = client_data;
 	desc->ctrl = CL_DESC_OWN | CL_DESC_FLAGS(flags);
 
-	__hif_xmit_pkt(&client->pfe->hif, client->id, qno, data, len, flags);
+	hif_xmit_pkt(&client->pfe->hif, client->id, qno, data, len, flags);
 
 	queue->write_idx = (queue->write_idx + 1) & (queue->size - 1);
 
@@ -526,8 +497,7 @@ void *hif_lib_tx_get_next_complete(struct hif_client_s *client, int qno,
 		return NULL;
 
 	if (queue->nocpy_flag && !queue->done_tmu_tx_pkts) {
-		u32 tmu_tx_pkts = 0; //rte_be_to_cpu_32(pe_dmem_read(TMU0_ID +
-			// client->id, TMU_DM_TX_TRANS, 4));
+		u32 tmu_tx_pkts = 0;
 
 		if (queue->prev_tmu_tx_pkts > tmu_tx_pkts)
 			queue->done_tmu_tx_pkts = UINT_MAX -
@@ -556,35 +526,11 @@ void *hif_lib_tx_get_next_complete(struct hif_client_s *client, int qno,
 	return desc->data;
 }
 
-/*TODO what are credits?*/
-static void hif_lib_tmu_credit_init(__rte_unused struct pfe *pfe)
-{
-}
-
-/* __hif_lib_update_credit
- *
- * @param[in] client	hif client context
- * @param[in] queue	queue number in match with TMU
- */
-void __hif_lib_update_credit(__rte_unused struct hif_client_s *client,
-		__rte_unused unsigned int queue)
-{
-}
-
 int pfe_hif_lib_init(struct pfe *pfe)
 {
 	PMD_INIT_FUNC_TRACE();
 
-	page_mode = 0;
-	pfe_pkt_size = PFE_PKT_SIZE;
-	pfe_pkt_headroom = PFE_PKT_HEADROOM;
-
-	if (tx_qos)
-		emac_txq_cnt = EMAC_TXQ_CNT / 2;
-	else
-		emac_txq_cnt = EMAC_TXQ_CNT;
-
-	hif_lib_tmu_credit_init(pfe);
+	emac_txq_cnt = EMAC_TXQ_CNT;
 	pfe->hif.shm = &ghif_shm;
 
 	return 0;

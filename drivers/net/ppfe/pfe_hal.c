@@ -337,7 +337,7 @@ void gemac_enable_1536_rx(void *base)
  */
 int gemac_set_rx(void *base, int mtu)
 {
-	if (mtu < 68 || mtu > JUMBO_FRAME_SIZE) {
+	if (mtu < HIF_RX_PKT_MIN_SIZE || mtu > JUMBO_FRAME_SIZE) {
 		PFE_PMD_ERR("Invalid or not support MTU size");
 		return -1;
 	}

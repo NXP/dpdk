@@ -15,7 +15,7 @@
 #include "pfe_logs.h"
 #include "pfe_mod.h"
 
-#define PPFE_MAX_MACS 4
+#define PPFE_MAX_MACS 1 /*we can support upto 4 MACs per IF*/
 #define PPFE_VDEV_MAX_PORT 2
 #define PPFE_VDEV_GEM_ID_ARG	("intf")
 
@@ -41,7 +41,6 @@ static int pfe_gemac_init(struct pfe_eth_priv_s *priv)
 	cfg.speed = SPEED_1000M;
 	cfg.duplex = DUPLEX_FULL;
 
-	/*TODO enable them only if required*/
 	gemac_set_config(priv->EMAC_baseaddr, &cfg);
 	gemac_allow_broadcast(priv->EMAC_baseaddr);
 	gemac_enable_1536_rx(priv->EMAC_baseaddr);
@@ -130,7 +129,6 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 	client->priv = priv;
 	client->pfe = priv->pfe;
 	client->port_id = dev->data->port_id;
-	/*TODO currently we are not using event handler*/
 	client->event_handler = pfe_eth_event_handler;
 
 	client->tx_qsize = EMAC_TXQ_DEPTH;
@@ -194,12 +192,14 @@ pfe_eth_info(struct rte_eth_dev *dev,
 
 	dev_info->if_index = internals->id;
 	dev_info->max_mac_addrs = PPFE_MAX_MACS;
-	dev_info->max_rx_pktlen = 9600;
+	dev_info->max_rx_pktlen = JUMBO_FRAME_SIZE;
 	dev_info->max_rx_queues = dev->data->nb_rx_queues;
 	dev_info->max_tx_queues = dev->data->nb_tx_queues;
-	dev_info->min_rx_bufsize = 0;
+	dev_info->min_rx_bufsize = HIF_RX_PKT_MIN_SIZE;
 }
 
+/*Only first mb_pool given on first call of this API will be used
+in whole system, also nb_rx_desc and rx_conf are unused params*/
 static int pfe_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		__rte_unused uint16_t nb_rx_desc,
 		__rte_unused unsigned int socket_id,
@@ -212,8 +212,12 @@ static int pfe_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	pfe = priv->pfe;
 
-	/* only first Pool will be accepted and will be stored in hif*/
-	/*TODO use rx_conf, nb_rx_desc*/
+	if (queue_idx >= EMAC_RXQ_CNT) {
+		PFE_PMD_ERR("Invalid queue idx = %d, Max queues = %d", queue_idx,
+						EMAC_RXQ_CNT);
+		return -1;
+	}
+
 	if (!pfe->hif.setuped) {
 		rc = pfe_hif_shm_init(pfe->hif.shm, mb_pool);
 		if (rc) {
@@ -231,7 +235,6 @@ static int pfe_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		hif_tx_enable();
 		pfe->hif.setuped = 1;
 	}
-	/*TODO add check here*/
 	dev->data->rx_queues[queue_idx] = &priv->client.rx_q[queue_idx];
 	priv->client.rx_q[queue_idx].queue_id = queue_idx;
 
@@ -246,7 +249,12 @@ pfe_tx_queue_setup(struct rte_eth_dev *dev,
 		   __rte_unused const struct rte_eth_txconf *tx_conf)
 {
 	struct pfe_eth_priv_s *priv = dev->data->dev_private;
-	/*TODO add check here*/
+
+	if (queue_idx >= emac_txq_cnt) {
+		PFE_PMD_ERR("Invalid queue idx = %d, Max queues = %d", queue_idx,
+						emac_txq_cnt);
+		return -1;
+	}
 	dev->data->tx_queues[queue_idx] = &priv->client.tx_q[queue_idx];
 	priv->client.tx_q[queue_idx].queue_id = queue_idx;
 	return 0;
@@ -275,15 +283,13 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	struct rte_eth_stats *stats = &priv->stats;
 	int i;
 
-	/*TODO update queuenum value, also handle in case XMIT fail*/
 	for (i = 0; i < nb_pkts; i++) {
-		__hif_lib_xmit_pkt(&priv->client, 0 /*queuenum*/,
+		hif_lib_xmit_pkt(&priv->client, queue->queue_id,
 			(void *)rte_pktmbuf_iova(tx_pkts[i]),
 			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off ,
 			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
 			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
 			tx_pkts[i]);
-		/*TODO is this required for every packet*/
 		stats->obytes += tx_pkts[i]->pkt_len;
 		hif_tx_dma_start();
 	}
@@ -319,10 +325,9 @@ static int pfe_eth_link_update(struct rte_eth_dev *dev,
 	struct rte_eth_link *link = &dev->data->dev_link;
 
 
-	/*TODO update this API*/
 	link->link_speed = 1000;
 
-	link->link_status = 1;//priv->valid;
+	link->link_status = 1;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
 	link->link_autoneg = ETH_LINK_AUTONEG;
 	return 0;
@@ -493,26 +498,8 @@ pfe_eth_exit(struct rte_eth_dev *dev, struct pfe *pfe)
 {
 	PMD_INIT_FUNC_TRACE();
 
-	/*TODO should call the correct API to deallocate the eth_dev*/
-#if 0
-	//	rte_free(eth_dev->data->dev_private);
-	//	rte_free(eth_dev->data);
-#endif
 	rte_eth_dev_release_port(dev);
-
 	pfe->nb_devs--;
-}
-
-/* pfe_eth_fast_tx_timeout_init
- */
-static void pfe_eth_fast_tx_timeout_init(struct pfe_eth_priv_s *priv)
-{
-	unsigned int i;
-
-	for (i = 0; i < emac_txq_cnt; i++) {
-		priv->fast_tx_timeout[i].queuenum = i;
-		priv->fast_tx_timeout[i].base = priv->fast_tx_timeout;
-	}
 }
 
 /* pfe_eth_init_one
@@ -580,8 +567,6 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 
 	rte_spinlock_init(&priv->lock);
 
-	pfe_eth_fast_tx_timeout_init(priv);
-
 	/* Copy the station address into the dev structure, */
 	eth_dev->data->mac_addrs = rte_zmalloc("mac_addr",
 			ETHER_ADDR_LEN * PPFE_MAX_MACS, 0);
@@ -592,7 +577,8 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 		goto err0;
 	}
 	/* copy the primary mac address */
-	/*TODO do it once you get correct MAC, cuurently getting 0*/
+	/*TODO remove it once you get correct MAC from dtb,
+	  currently getting 0*/
 	struct ether_addr addr;
 	addr.addr_bytes[0] = 0x00;
 	addr.addr_bytes[1] = 0x11;
@@ -764,6 +750,8 @@ pmd_pfe_probe(struct rte_vdev_device *vdev)
 	const u32 *prop;
 	const struct device_node *np;
 	const char *name;
+	const uint32_t *addr;
+	uint64_t cbus_addr, ddr_size, cbus_size;
 	int rc = -1, fd = -1, gem_id;
 	unsigned int ii, interface_count = 0;
 	size_t size = 0;
@@ -806,14 +794,35 @@ pmd_pfe_probe(struct rte_vdev_device *vdev)
 		goto err;
 	}
 
-	/*TODO remove hardcoded values*/
-	g_pfe->ddr_phys_baseaddr = 0x83400000;//res.start;
+	addr = of_get_address(np, 0, &cbus_size, NULL);
+	if (!addr) {
+		PFE_PMD_ERR("of_get_address cannot return qman address\n");
+		goto err;
+	}
+	cbus_addr = of_translate_address(np, addr);
+	if (!cbus_addr) {
+		PFE_PMD_ERR("of_translate_address failed\n");
+		goto err;
+	}
+
+	addr = of_get_address(np, 1, &ddr_size, NULL);
+	if (!addr) {
+		PFE_PMD_ERR("of_get_address cannot return qman address\n");
+		goto err;
+	}
+
+	g_pfe->ddr_phys_baseaddr = of_translate_address(np, addr);
+	if (!g_pfe->ddr_phys_baseaddr ) {
+		PFE_PMD_ERR("of_translate_address failed\n");
+		goto err;
+	}
+
 	g_pfe->ddr_baseaddr = pfe_mem_ptov(g_pfe->ddr_phys_baseaddr);
-	g_pfe->ddr_size = 12*1024*1024;//resource_size(&res);
+	g_pfe->ddr_size = ddr_size;
 
 	fd = open("/dev/mem", O_RDWR);
-	g_pfe->cbus_baseaddr = mmap(NULL, 0xc00000, PROT_READ | PROT_WRITE,
-				    MAP_SHARED, fd, 0x04000000);
+	g_pfe->cbus_baseaddr = mmap(NULL, cbus_size, PROT_READ | PROT_WRITE,
+					MAP_SHARED, fd, cbus_addr);
 	if (g_pfe->cbus_baseaddr == MAP_FAILED) {
 		PFE_PMD_ERR("Can not map cbus base");
 		rc = -EINVAL;

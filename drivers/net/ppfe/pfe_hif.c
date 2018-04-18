@@ -6,8 +6,6 @@
 #include "pfe_logs.h"
 #include "pfe_mod.h"
 
-#define HIF_INT_MASK	(HIF_INT | HIF_RXPKT_INT | HIF_TXPKT_INT)
-
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 #define msleep(x) rte_delay_us(1000 * (x))
 #define usleep_range(min, max) msleep(DIV_ROUND_UP(min, 1000))
@@ -51,6 +49,8 @@ static void pfe_hif_release_buffers(struct pfe_hif *hif)
 {
 	struct hif_desc	*desc;
 	uint32_t i = 0;
+	struct rte_mbuf *mbuf;
+	struct rte_pktmbuf_pool_private *mb_priv;
 
 	hif->rx_base = hif->descr_baseaddr_v;
 
@@ -58,18 +58,20 @@ static void pfe_hif_release_buffers(struct pfe_hif *hif)
 
 	/*Free Rx buffers */
 	desc = hif->rx_base;
+	mb_priv = rte_mempool_get_priv(hif->shm->pool);
 	for (i = 0; i < hif->rx_ring_size; i++) {
-#if 0
 		if (readl(&desc->data)) {
 			if ((i < hif->shm->rx_buf_pool_cnt) &&
 			    (!hif->shm->rx_buf_pool[i])) {
-
-				hif->shm->rx_buf_pool[i] = hif->rx_buf_addr[i];
+				mbuf = hif->rx_buf_vaddr[i] + PFE_PKT_HEADER_SZ
+					- sizeof(struct rte_mbuf)
+					- RTE_PKTMBUF_HEADROOM
+					- mb_priv->mbuf_priv_size;
+				hif->shm->rx_buf_pool[i] = mbuf;
 			} else {
 				PFE_PMD_ERR("buffer pool already full");
 			}
 		}
-#endif
 		writel(0, &desc->data);
 		writel(0, &desc->status);
 		writel(0, &desc->ctrl);
@@ -122,7 +124,7 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 
 		writel((BD_CTRL_LIFM
 			| BD_CTRL_DIR | BD_CTRL_DESC_EN
-			| BD_BUF_LEN(pfe_pkt_size)), &desc->ctrl);
+			| BD_BUF_LEN(hif->rx_buf_len[i])), &desc->ctrl);
 
 		/* Chain descriptors */
 		writel((u32)DDR_PHYS_TO_PFE(first_desc_p + i + 1), &desc->next);
@@ -266,16 +268,14 @@ static void pfe_hif_client_unregister(struct pfe_hif *hif, u32 client_id)
 	rte_spinlock_unlock(&hif->tx_lock);
 }
 
-#define page_size 2048
-
-/*TODO update prototype of this function*/
 /*
  * client_put_rxpacket-
  */
-static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue, void *pkt, u32 len,
-				 u32 flags, u32 client_ctrl,
-				 struct rte_mempool *pool,
-				 __rte_unused u32 *rem_len)
+static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue,
+		void *pkt, u32 len,
+		u32 flags, u32 client_ctrl,
+		struct rte_mempool *pool,
+		u32 *rem_len)
 {
 	struct rx_queue_desc *desc = queue->base + queue->write_idx;
 	struct rte_mbuf *mbuf = NULL;
@@ -299,12 +299,12 @@ static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue, void *pk
 		queue->write_idx = (queue->write_idx + 1)
 				    & (queue->size - 1);
 
+		*rem_len = mbuf->buf_len;
 	}
 
 	return mbuf;
 }
 
-/*TODO make this static*/
 /*
  * pfe_hif_rx_process-
  * This function does pfe hif rx queue processing.
@@ -380,11 +380,6 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 				    (void *)pkt_hdr, len, flags,
 				    hif->client_ctrl, hif->shm->pool, &buf_size);
 
-#if 0
-		hif_lib_indicate_client(hif->client_id, EVENT_RX_PKT_IND,
-					hif->qno);
-#endif
-
 		if (unlikely(!mbuf)) {
 			/*
 			 * If we want to keep in polling mode to retry later,
@@ -403,15 +398,13 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 		}
 		free_buf = (void *)rte_pktmbuf_iova(mbuf);
 		free_buf = free_buf - PFE_PKT_HEADER_SZ;
-		buf_size = mbuf->buf_len;
 
 pkt_drop:
 		/*Fill free buffer in the descriptor */
 		hif->rx_buf_addr[rtc] = free_buf;
 		hif->rx_buf_vaddr[rtc] = (void *)((uint64_t)mbuf->buf_addr +
 				mbuf->data_off - PFE_PKT_HEADER_SZ);
-		hif->rx_buf_len[rtc] =
-			(pfe_pkt_size < buf_size ? pfe_pkt_size : buf_size);
+		hif->rx_buf_len[rtc] = buf_size;
 
 		writel(DDR_PHYS_TO_PFE(free_buf), &desc->data);
 		/*
@@ -469,16 +462,14 @@ static int client_ack_txpacket(struct pfe_hif *hif, unsigned int client_id,
 	}
 }
 
-void __hif_tx_done_process(struct pfe *pfe, int count)
+static void __hif_tx_done_process(struct pfe *pfe, int count)
 {
 	struct hif_desc *desc;
 	struct hif_desc_sw *desc_sw;
 	unsigned int ttc, tx_avl;
 	int pkts_done[HIF_CLIENTS_MAX] = {0, 0};
 	struct pfe_hif *hif = &pfe->hif;
-//	struct rte_pktmbuf_pool_private *mb_priv;
 
-//	mb_priv = rte_mempool_get_priv(hif->shm->pool);
 	ttc = hif->txtoclean;
 	tx_avl = hif->txavail;
 
@@ -489,20 +480,6 @@ void __hif_tx_done_process(struct pfe *pfe, int count)
 			break;
 
 		desc_sw = &hif->tx_sw_queue[ttc];
-
-#if 0
-		/*How we get mbuf from data pointor for ipsec,
-			may be we can use private area of data desc, check*/
-		/*TODO optimize the code and remove local bufers storage pointors*/
-		/*TODO update below line or use hif indicate*/
-		struct rte_mbuf *mbuf1=
-			(struct rte_mbuf *) ((char *)pfe_mem_ptov(DDR_PFE_TO_PHYS(desc->data))
-				+ PFE_PKT_HEADER_SZ
-				- sizeof(struct rte_mbuf)
-				- RTE_PKTMBUF_HEADROOM
-				- mb_priv->mbuf_priv_size);
-		rte_pktmbuf_free(mbuf1);
-#endif
 
 		if (desc_sw->client_id > HIF_CLIENTS_MAX)
 			PFE_PMD_ERR("Invalid cl id %d", desc_sw->client_id);
@@ -540,7 +517,7 @@ void pfe_tx_do_cleanup(struct pfe *pfe)
  * __hif_xmit_pkt -
  * This function puts one packet in the HIF Tx queue
  */
-void __hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
+void hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
 			q_no, void *data, u32 len, unsigned int flags)
 {
 	struct hif_desc	*desc;

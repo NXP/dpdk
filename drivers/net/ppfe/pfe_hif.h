@@ -8,27 +8,8 @@
 #include <rte_dev.h>
 #include <rte_ethdev.h>
 
-#define HIF_NAPI_STATS
-
 #define HIF_CLIENT_QUEUES_MAX	16
-#define HIF_RX_POLL_WEIGHT	64
-
-#define HIF_RX_PKT_MIN_SIZE 0x800 /* 2KB */
-#define HIF_RX_PKT_MIN_SIZE_MASK ~(HIF_RX_PKT_MIN_SIZE - 1)
-#define ROUND_MIN_RX_SIZE(_sz) (((_sz) + (HIF_RX_PKT_MIN_SIZE - 1)) \
-				& HIF_RX_PKT_MIN_SIZE_MASK)
-#define PRESENT_OFST_IN_PAGE(_buf) (((unsigned long int)(_buf) & \
-		(PAGE_SIZE - 1)) & HIF_RX_PKT_MIN_SIZE_MASK)
-
-enum {
-	NAPI_SCHED_COUNT = 0,
-	NAPI_POLL_COUNT,
-	NAPI_PACKET_COUNT,
-	NAPI_DESC_COUNT,
-	NAPI_FULL_BUDGET_COUNT,
-	NAPI_CLIENT_FULL_COUNT,
-	NAPI_MAX_COUNT
-};
+#define HIF_RX_PKT_MIN_SIZE RTE_CACHE_LINE_SIZE
 
 /*
  * HIF_TX_DESC_NT value should be always greter than 4,
@@ -122,7 +103,6 @@ struct pfe_hif {
 	/* To store registered clients in hif layer */
 	struct hif_client client[HIF_CLIENTS_MAX];
 	struct hif_shm *shm;
-	int	irq;
 
 	void	*descr_baseaddr_v;
 	unsigned long	descr_baseaddr_p;
@@ -151,23 +131,17 @@ struct pfe_hif {
 	rte_spinlock_t tx_lock;
 /* lock synchronizes hif rx queue processing */
 	rte_spinlock_t lock;
-	struct rte_eth_dev dummy_dev;
 	struct rte_device *dev;
 };
 
-void __hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
+void hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
 			q_no, void *data, u32 len, unsigned int flags);
-int hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int q_no,
-		 void *data, unsigned int len);
-void __hif_tx_done_process(struct pfe *pfe, int count);
 void hif_process_client_req(struct pfe_hif *hif, int req, int data1, int
 				data2);
 int pfe_hif_init(struct pfe *pfe);
 void pfe_hif_exit(struct pfe *pfe);
 void pfe_hif_rx_idle(struct pfe_hif *hif);
-
 int pfe_hif_rx_process(struct pfe_hif *hif, int budget);
-
 int pfe_hif_init_buffers(struct pfe_hif *hif);
 void pfe_tx_do_cleanup(struct pfe *pfe);
 

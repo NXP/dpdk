@@ -136,12 +136,7 @@ struct tx_queue_desc {
  * "ip_header = 64 + 6(hif_header) + 14 (MAC Header)" will be 4byte aligned.
  */
 #define PFE_PKT_HEADER_SZ	sizeof(struct hif_hdr)
-/* must be big enough for headroom, pkt size and skb shared info */
-#define PFE_BUF_SIZE		2048
-#define PFE_PKT_HEADROOM	128
 
-#define SKB_SHARED_INFO_SIZE   (sizeof(struct skb_shared_info))
-#define PFE_PKT_SIZE		2048
 #define MAX_L2_HDR_SIZE		14	/* Not correct for VLAN/PPPoE */
 #define MAX_L3_HDR_SIZE		20	/* Not correct for IPv6 */
 #define MAX_L4_HDR_SIZE		60	/* TCP with maximum options */
@@ -152,37 +147,23 @@ struct tx_queue_desc {
  */
 #define MAX_PFE_PKT_SIZE	16380UL
 
-extern unsigned int pfe_pkt_size;
-extern unsigned int pfe_pkt_headroom;
-extern unsigned int page_mode;
-extern unsigned int lro_mode;
-extern unsigned int tx_qos;
 extern unsigned int emac_txq_cnt;
 
 int pfe_hif_lib_init(struct pfe *pfe);
 void pfe_hif_lib_exit(struct pfe *pfe);
 int hif_lib_client_register(struct hif_client_s *client);
 int hif_lib_client_unregister(struct  hif_client_s *client);
-void __hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
+void hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
 			void *data, void *data1, unsigned int len,
 			u32 client_ctrl, unsigned int flags, void *client_data);
-int hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno, void *data,
-		     unsigned int len, u32 client_ctrl, void *client_data);
 void hif_lib_indicate_client(struct hif_client_s *client, int event, int data);
 int hif_lib_event_handler_start(struct hif_client_s *client, int event, int
 					data);
-int hif_lib_tmu_queue_start(struct hif_client_s *client, int qno);
-int hif_lib_tmu_queue_stop(struct hif_client_s *client, int qno);
 void *hif_lib_tx_get_next_complete(struct hif_client_s *client, int qno,
 				   unsigned int *flags, int count);
 void *hif_lib_receive_pkt(struct hif_client_s *client, int qno, int *len, int
 				*ofst, unsigned int *rx_ctrl,
 				unsigned int *desc_ctrl, void **priv_data);
-void __hif_lib_update_credit(struct hif_client_s *client, unsigned int queue);
-void hif_lib_set_rx_cpu_affinity(struct hif_client_s *client, int cpu_id);
-void hif_lib_set_tx_queue_nocpy(struct hif_client_s *client, int qno, int
-					enable);
-
 int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool);
 void pfe_hif_shm_clean(struct hif_shm *hif_shm);
 
@@ -214,29 +195,5 @@ static inline int hif_lib_tx_pending(struct hif_client_s *client, unsigned int
 
 	return queue->tx_pending;
 }
-
-#define hif_lib_tx_credit_avail(pfe, id, qno) \
-				((pfe)->tmu_credit.tx_credit[id][qno])
-
-#define hif_lib_tx_credit_max(pfe, id, qno) \
-				((pfe)->tmu_credit.tx_credit_max[id][qno])
-
-/*
- * Test comment
- */
-#define hif_lib_tx_credit_use(pfe, id, qno, credit)			\
-	({ typeof(pfe) pfe_ = pfe;					\
-		typeof(id) id_ = id;					\
-		typeof(qno) qno_ = qno_;				\
-		typeof(credit) credit_ = credit;			\
-		do {							\
-			if (tx_qos) {					\
-				(pfe_)->tmu_credit.tx_credit[id_][qno_]\
-					 -= credit_;			\
-				(pfe_)->tmu_credit.tx_packets[id_][qno_]\
-					+= credit_;			\
-			}						\
-		} while (0);						\
-	})
 
 #endif /* _PFE_HIF_LIB_H_ */
