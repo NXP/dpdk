@@ -162,7 +162,7 @@ struct dpaa_sec_qp {
 	int tx_errs;
 };
 
-#define RTE_DPAA_MAX_NB_SEC_QPS 1
+#define RTE_DPAA_MAX_NB_SEC_QPS 8
 #define RTE_DPAA_MAX_RX_QUEUE RTE_DPAA_SEC_PMD_MAX_NB_SESSIONS
 #define DPAA_MAX_DEQUEUE_NUM_FRAMES 63
 
@@ -211,10 +211,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 16,
+					.min = 1,
 					.max = 16,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},
@@ -231,10 +232,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 20,
+					.min = 1,
 					.max = 20,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},
@@ -251,10 +253,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 28,
+					.min = 1,
 					.max = 28,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},
@@ -271,10 +274,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 32,
+					.min = 1,
 					.max = 32,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},
@@ -291,10 +295,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 48,
+					.min = 1,
 					.max = 48,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},
@@ -311,10 +316,11 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.increment = 1
 				},
 				.digest_size = {
-					.min = 64,
+					.min = 1,
 					.max = 64,
-					.increment = 0
+					.increment = 1
 				},
+				.iv_size = { 0 }
 			}, }
 		}, }
 	},

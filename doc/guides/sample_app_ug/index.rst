@@ -81,6 +81,7 @@ Sample Applications User Guides
     ptpclient
     performance_thread
     ipsec_secgw
+    cmdif_demo
 
 **Figures**
 
