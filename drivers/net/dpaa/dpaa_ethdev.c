@@ -585,9 +585,13 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 				     " ret: %d", rxq->fqid, ret);
 		if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
 			rxq->cb.dqrr_ucode_cb = dpaa_ucode_rx_cb;
-		else
+		else if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
+			rxq->cb.dqrr_dpdk_pull_cb = dpaa_rx_cb_no_prefetch;
+		} else {
 			rxq->cb.dqrr_dpdk_pull_cb = dpaa_rx_cb;
-		rxq->cb.dqrr_prepare = dpaa_rx_cb_prepare;
+			rxq->cb.dqrr_prepare = dpaa_rx_cb_prepare;
+		}
+
 		rxq->is_static = true;
 	}
 	dev->data->rx_queues[queue_idx] = rxq;
