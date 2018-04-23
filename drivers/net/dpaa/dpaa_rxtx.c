@@ -406,7 +406,7 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
-
+	/* Prefetch the Parse results and packet data to L1 */
 	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
 
 	mbuf->data_off = offset;
@@ -423,8 +423,9 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	return mbuf;
 }
 
+/* Specific for LS1043 */
 void
-dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
+dpaa_rx_cb_no_prefetch(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 	   void **bufs, int num_bufs)
 {
 	struct rte_mbuf *mbuf;
@@ -436,17 +437,13 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 	uint32_t length;
 	uint8_t format;
 
-	if (dpaa_svr_family != SVR_LS1046A_FAMILY) {
-		bp_info = DPAA_BPID_TO_POOL_INFO(dqrr[0]->fd.bpid);
-		ptr = rte_dpaa_mem_ptov(qm_fd_addr(&dqrr[0]->fd));
-		rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
-		bufs[0] = (struct rte_mbuf *)((char *)ptr -
-				bp_info->meta_data_size);
-	}
+	bp_info = DPAA_BPID_TO_POOL_INFO(dqrr[0]->fd.bpid);
+	ptr = rte_dpaa_mem_ptov(qm_fd_addr(&dqrr[0]->fd));
+	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
+	bufs[0] = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 
 	for (i = 0; i < num_bufs; i++) {
-		if (dpaa_svr_family != SVR_LS1046A_FAMILY &&
-		    i < num_bufs - 1) {
+		if (i < num_bufs - 1) {
 			bp_info = DPAA_BPID_TO_POOL_INFO(dqrr[i + 1]->fd.bpid);
 			ptr = rte_dpaa_mem_ptov(qm_fd_addr(&dqrr[i + 1]->fd));
 			rte_prefetch0((void *)((uint8_t *)ptr +
@@ -455,6 +452,46 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 					bp_info->meta_data_size);
 		}
 
+		fd = &dqrr[i]->fd;
+		dpaa_intf = fq[0]->dpaa_intf;
+
+		format = (fd->opaque & DPAA_FD_FORMAT_MASK) >>
+				DPAA_FD_FORMAT_SHIFT;
+		if (unlikely(format == qm_fd_sg)) {
+			bufs[i] = dpaa_eth_sg_to_mbuf(fd, dpaa_intf->ifid);
+			continue;
+		}
+
+		offset = (fd->opaque & DPAA_FD_OFFSET_MASK) >>
+				DPAA_FD_OFFSET_SHIFT;
+		length = fd->opaque & DPAA_FD_LENGTH_MASK;
+
+		mbuf = bufs[i];
+		mbuf->data_off = offset;
+		mbuf->data_len = length;
+		mbuf->pkt_len = length;
+		mbuf->port = dpaa_intf->ifid;
+
+		mbuf->nb_segs = 1;
+		mbuf->ol_flags = 0;
+		mbuf->next = NULL;
+		rte_mbuf_refcnt_set(mbuf, 1);
+		dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
+	}
+}
+
+void
+dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
+	   void **bufs, int num_bufs)
+{
+	struct rte_mbuf *mbuf;
+	const struct qm_fd *fd;
+	struct dpaa_if *dpaa_intf;
+	uint16_t offset, i;
+	uint32_t length;
+	uint8_t format;
+
+	for (i = 0; i < num_bufs; i++) {
 		fd = &dqrr[i]->fd;
 		dpaa_intf = fq[0]->dpaa_intf;
 
@@ -493,8 +530,7 @@ void dpaa_rx_cb_prepare(struct qm_dqrr_entry *dq, void **bufs)
 	 * So we prefetch the annoation beforehand, so that it is available
 	 * in cache when accessed.
 	 */
-	if (dpaa_svr_family == SVR_LS1046A_FAMILY)
-		rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
+	rte_prefetch0((void *)((uint8_t *)ptr + DEFAULT_RX_ICEOF));
 
 	*bufs = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
 }
