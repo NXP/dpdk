@@ -398,15 +398,19 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 {
 	struct rx_queue_desc *desc;
 //	unsigned int *rx_ctrl;
+	struct pfe_eth_priv_s *priv = queue->priv;
 	struct rte_pktmbuf_pool_private *mb_priv;
 	struct rte_mbuf *mbuf;
+	struct rte_eth_stats *stats = &priv->stats;
 	int i;
 
 	for (i = 0; i < nb_pkts; i++) {
 
 		desc = queue->base + queue->read_idx;
-		if ((desc->ctrl & CL_DESC_OWN))
+		if ((desc->ctrl & CL_DESC_OWN)) {
+			stats->ipackets += i;
 			return i;
+		}
 
 		mb_priv = rte_mempool_get_priv(pool);
 		/*TODO optimize the code and remove local buf storage pointors*/
@@ -441,6 +445,7 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 			//*ofst = pfe_pkt_headroom;
 		}
 		mbuf->data_len = mbuf->pkt_len;
+		stats->ibytes += mbuf->data_len;
 		mbuf->port = queue->port_id;
 		pfe_sw_parse_pkt(mbuf);
 		mbuf->nb_segs = 1;
@@ -463,6 +468,7 @@ int hif_lib_receive_pkt_dpdk(struct hif_client_rx_queue *queue,
 		desc->ctrl = CL_DESC_BUF_LEN(pfe_pkt_size) | CL_DESC_OWN;
 		queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
 	}
+	stats->ipackets += i;
 	return i;
 }
 

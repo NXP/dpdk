@@ -103,6 +103,7 @@ struct  pfe_eth_priv_s {
 	int			low_tmu_q;
 	int			high_tmu_q;
 	struct rte_eth_dev	*ndev;
+	struct rte_eth_stats	stats;
 	int			id;
 	int			promisc;
 	unsigned int		msg_enable;

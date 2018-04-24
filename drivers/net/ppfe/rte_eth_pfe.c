@@ -259,6 +259,7 @@ pfe_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 	struct pfe_eth_priv_s *priv = queue->priv;
 	struct rte_mempool *pool;
 
+	/*TODO can we remove this cleanup from here?*/
 	pfe_tx_do_cleanup(priv->pfe);
 	pfe_hif_rx_process(&priv->pfe->hif, nb_pkts);
 	pool = priv->pfe->hif.shm->pool;
@@ -271,6 +272,7 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 {
 	struct hif_client_tx_queue *queue = tx_queue;
 	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_eth_stats *stats = &priv->stats;
 	int i;
 
 	/*TODO update queuenum value, also handle in case XMIT fail*/
@@ -282,8 +284,11 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
 			tx_pkts[i]);
 		/*TODO is this required for every packet*/
+		stats->obytes += tx_pkts[i]->pkt_len;
 		hif_tx_dma_start();
 	}
+	stats->opackets += nb_pkts;
+	pfe_tx_do_cleanup(priv->pfe);
 
 	return nb_pkts;
 }
@@ -439,13 +444,22 @@ pfe_dev_set_mac_addr(struct rte_eth_dev *dev,
 }
 
 static
-int pfe_stats_get(__rte_unused struct rte_eth_dev *dev,
+int pfe_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats)
 {
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct rte_eth_stats *eth_stats = &priv->stats;
+
 	if (stats == NULL)
 		return -1;
 
 	memset(stats, 0, sizeof(struct rte_eth_stats));
+
+	stats->ipackets = eth_stats->ipackets;
+	stats->ibytes = eth_stats->ibytes;
+	stats->opackets = eth_stats->opackets;
+	stats->obytes = eth_stats->obytes;
+
 	return 0;
 }
 
