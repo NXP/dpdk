@@ -139,6 +139,8 @@ typedef uint32_t	irqreturn_t;
 #define __raw_readb(p)	(*(const volatile unsigned char *)(p))
 #define __raw_readl(p)	(*(const volatile unsigned int *)(p))
 #define __raw_writel(v, p) {*(volatile unsigned int *)(p) = (v); }
+#define writel(v, p) __raw_writel(v, p)
+#define readl(p) __raw_readl(p)
 
 /* to be used as an upper-limit only */
 #define NR_CPUS			64
