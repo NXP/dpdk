@@ -151,6 +151,13 @@ extern unsigned int emac_txq_cnt;
 
 int pfe_hif_lib_init(struct pfe *pfe);
 void pfe_hif_lib_exit(struct pfe *pfe);
+int hif_lib_client_register(struct hif_client_s *client);
+int hif_lib_client_unregister(struct  hif_client_s *client);
+void hif_lib_indicate_client(struct hif_client_s *client, int event, int data);
+int hif_lib_event_handler_start(struct hif_client_s *client, int event, int
+					data);
+void *hif_lib_tx_get_next_complete(struct hif_client_s *client, int qno,
+				   unsigned int *flags, int count);
 int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool);
 void pfe_hif_shm_clean(struct hif_shm *hif_shm);
 

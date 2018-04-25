@@ -136,6 +136,8 @@ struct pfe_hif {
 
 void hif_xmit_pkt(struct pfe_hif *hif, unsigned int client_id, unsigned int
 			q_no, void *data, u32 len, unsigned int flags);
+void hif_process_client_req(struct pfe_hif *hif, int req, int data1, int
+				data2);
 int pfe_hif_init(struct pfe *pfe);
 void pfe_hif_exit(struct pfe *pfe);
 void pfe_hif_rx_idle(struct pfe_hif *hif);
