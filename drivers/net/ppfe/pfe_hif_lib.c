@@ -338,6 +338,195 @@ int hif_lib_client_unregister(struct hif_client_s *client)
 	return 0;
 }
 
+int hif_lib_event_handler_start(struct hif_client_s *client, int event,
+				int qno)
+{
+	struct hif_client_rx_queue *queue = &client->rx_q[qno];
+	struct rx_queue_desc *desc = queue->base + queue->read_idx;
+
+	if (event >= HIF_EVENT_MAX || qno >= HIF_CLIENT_QUEUES_MAX) {
+		PFE_PMD_WARN("Unsupported event : %d  queue number : %d",
+				event, qno);
+		return -1;
+	}
+
+	test_and_clear_bit(qno, &client->queue_mask[event]);
+
+	switch (event) {
+	case EVENT_RX_PKT_IND:
+		if (!(desc->ctrl & CL_DESC_OWN))
+			hif_lib_indicate_client(client,
+						EVENT_RX_PKT_IND, qno);
+		break;
+
+	case EVENT_HIGH_RX_WM:
+	case EVENT_TXDONE_IND:
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static inline void
+pfe_sw_parse_pkt(struct rte_mbuf *mbuf)
+{
+	struct rte_net_hdr_lens hdr_lens;
+
+	mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
+			RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
+			| RTE_PTYPE_L4_MASK);
+	mbuf->l2_len = hdr_lens.l2_len;
+	mbuf->l3_len = hdr_lens.l3_len;
+}
+
+/*
+ * This function gets one packet from the specified client queue
+ * It also refill the rx buffer
+ */
+int hif_lib_receive_pkt(struct hif_client_rx_queue *queue,
+		struct rte_mempool *pool, struct rte_mbuf **rx_pkts,
+		uint16_t nb_pkts)
+{
+	struct rx_queue_desc *desc;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_pktmbuf_pool_private *mb_priv;
+	struct rte_mbuf *mbuf;
+	struct rte_eth_stats *stats = &priv->stats;
+	int i;
+
+	for (i = 0; i < nb_pkts; i++) {
+		desc = queue->base + queue->read_idx;
+		if ((desc->ctrl & CL_DESC_OWN)) {
+			stats->ipackets += i;
+			return i;
+		}
+
+		mb_priv = rte_mempool_get_priv(pool);
+		mbuf = desc->data + PFE_PKT_HEADER_SZ
+			- sizeof(struct rte_mbuf)
+			- RTE_PKTMBUF_HEADROOM
+			- mb_priv->mbuf_priv_size;
+
+		if (desc->ctrl & CL_DESC_FIRST) {
+			/* TODO size of priv data if present in descriptor */
+			u16 size = 0;
+			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl)
+					- PFE_PKT_HEADER_SZ - size;
+		} else {
+			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl);
+		}
+		mbuf->data_len = mbuf->pkt_len;
+		stats->ibytes += mbuf->data_len;
+		mbuf->port = queue->port_id;
+		pfe_sw_parse_pkt(mbuf);
+		mbuf->nb_segs = 1;
+		mbuf->next = NULL;
+
+		rx_pkts[i] = mbuf;
+
+		/*
+		 * Needed so we don't free a buffer/page
+		 * twice on module_exit
+		 */
+		desc->data = NULL;
+
+		/*
+		 * Ensure everything else is written to DDR before
+		 * writing bd->ctrl
+		 */
+		rte_wmb();
+
+		desc->ctrl = CL_DESC_OWN;
+		queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
+	}
+	stats->ipackets += i;
+	return i;
+}
+
+static inline void hif_hdr_write(struct hif_hdr *pkt_hdr, unsigned int
+					client_id, unsigned int qno,
+					u32 client_ctrl)
+{
+	/* Optimize the write since the destinaton may be non-cacheable */
+	if (!((unsigned long)pkt_hdr & 0x3)) {
+		((u32 *)pkt_hdr)[0] = (client_ctrl << 16) | (qno << 8) |
+					client_id;
+	} else {
+		((u16 *)pkt_hdr)[0] = (qno << 8) | (client_id & 0xFF);
+		((u16 *)pkt_hdr)[1] = (client_ctrl & 0xFFFF);
+	}
+}
+
+/*This function puts the given packet in the specific client queue */
+void hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
+			void *data, void *data1, unsigned int len,
+			u32 client_ctrl, unsigned int flags, void *client_data)
+{
+	struct hif_client_tx_queue *queue = &client->tx_q[qno];
+	struct tx_queue_desc *desc = queue->base + queue->write_idx;
+
+	/* First buffer */
+	if (flags & HIF_FIRST_BUFFER) {
+		data1 -= sizeof(struct hif_hdr);
+		data -= sizeof(struct hif_hdr);
+		len += sizeof(struct hif_hdr);
+
+		hif_hdr_write(data1, client->id, qno, client_ctrl);
+	}
+
+	desc->data = client_data;
+	desc->ctrl = CL_DESC_OWN | CL_DESC_FLAGS(flags);
+
+	hif_xmit_pkt(&client->pfe->hif, client->id, qno, data, len, flags);
+
+	queue->write_idx = (queue->write_idx + 1) & (queue->size - 1);
+
+	queue->tx_pending++;
+}
+
+void *hif_lib_tx_get_next_complete(struct hif_client_s *client, int qno,
+				   unsigned int *flags, __rte_unused  int count)
+{
+	struct hif_client_tx_queue *queue = &client->tx_q[qno];
+	struct tx_queue_desc *desc = queue->base + queue->read_idx;
+
+	PFE_DP_LOG(DEBUG, "qno : %d rd_indx: %d pending:%d",
+		   qno, queue->read_idx, queue->tx_pending);
+
+	if (!queue->tx_pending)
+		return NULL;
+
+	if (queue->nocpy_flag && !queue->done_tmu_tx_pkts) {
+		u32 tmu_tx_pkts = 0;
+
+		if (queue->prev_tmu_tx_pkts > tmu_tx_pkts)
+			queue->done_tmu_tx_pkts = UINT_MAX -
+				queue->prev_tmu_tx_pkts + tmu_tx_pkts;
+		else
+			queue->done_tmu_tx_pkts = tmu_tx_pkts -
+						queue->prev_tmu_tx_pkts;
+
+		queue->prev_tmu_tx_pkts  = tmu_tx_pkts;
+
+		if (!queue->done_tmu_tx_pkts)
+			return NULL;
+	}
+
+	if (desc->ctrl & CL_DESC_OWN)
+		return NULL;
+
+	queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
+	queue->tx_pending--;
+
+	*flags = CL_DESC_GET_FLAGS(desc->ctrl);
+
+	if (queue->done_tmu_tx_pkts && (*flags & HIF_LAST_BUFFER))
+		queue->done_tmu_tx_pkts--;
+
+	return desc->data;
+}
+
 int pfe_hif_lib_init(struct pfe *pfe)
 {
 	PMD_INIT_FUNC_TRACE();

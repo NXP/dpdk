@@ -27,6 +27,12 @@ static void
 pfe_dev_set_mac_addr(struct rte_eth_dev *dev, struct ether_addr *addr);
 static void
 pfe_eth_exit(struct rte_eth_dev *dev, struct pfe *pfe);
+static uint16_t
+pfe_dummy_xmit_pkts(__rte_unused void *tx_queue,
+		__rte_unused struct rte_mbuf **tx_pkts,
+		__rte_unused uint16_t nb_pkts);
+static uint16_t
+pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
 
 struct pfe_vdev_init_params {
 	int8_t	gem_id;
@@ -63,6 +69,54 @@ static int pfe_eth_start(struct pfe_eth_priv_s *priv)
 	return 0;
 }
 
+/* pfe_eth_flush_txQ
+ */
+static void pfe_eth_flush_txQ(struct pfe_eth_priv_s *priv, int tx_q_num, int
+				__rte_unused from_tx, __rte_unused int n_desc)
+{
+	struct rte_mbuf *mbuf;
+	unsigned int flags;
+
+	/* Clean HIF and client queue */
+	while ((mbuf = hif_lib_tx_get_next_complete(&priv->client,
+						   tx_q_num, &flags,
+						   HIF_TX_DESC_NT))) {
+		if (mbuf) {
+			if (flags & HIF_DATA_VALID)
+				rte_pktmbuf_free(mbuf);
+		}
+	}
+}
+
+
+/* pfe_eth_flush_tx
+ */
+static void pfe_eth_flush_tx(struct pfe_eth_priv_s *priv)
+{
+	unsigned int ii;
+
+	for (ii = 0; ii < emac_txq_cnt; ii++)
+		pfe_eth_flush_txQ(priv, ii, 0, 0);
+}
+
+/* pfe_eth_event_handler
+ */
+static int pfe_eth_event_handler(void *data, int event, __rte_unused int qno)
+{
+	struct pfe_eth_priv_s *priv = data;
+
+	switch (event) {
+	case EVENT_TXDONE_IND:
+		pfe_eth_flush_tx(priv);
+		hif_lib_event_handler_start(&priv->client, EVENT_TXDONE_IND, 0);
+		break;
+	case EVENT_HIGH_RX_WM:
+	default:
+		break;
+	}
+
+	return 0;
+}
 
 /* pfe_eth_open
  */
@@ -81,6 +135,7 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 	client->priv = priv;
 	client->pfe = priv->pfe;
 	client->port_id = dev->data->port_id;
+	client->event_handler = pfe_eth_event_handler;
 
 	client->tx_qsize = EMAC_TXQ_DEPTH;
 	client->rx_qsize = EMAC_RXQ_DEPTH;
@@ -92,6 +147,7 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 	}
 	pfe_gemac_init(priv);
 	rc = pfe_eth_start(priv);
+	dev->tx_pkt_burst = &pfe_xmit_pkts;
 err0:
 	return rc;
 }
@@ -106,6 +162,7 @@ static void pfe_eth_stop(struct rte_eth_dev *dev/*, int wake*/)
 	gpi_disable(priv->GPI_baseaddr);
 
 	hif_lib_client_unregister(&priv->client);
+	dev->tx_pkt_burst = &pfe_dummy_xmit_pkts;
 }
 
 /* pfe_eth_close
@@ -210,6 +267,53 @@ pfe_tx_queue_setup(struct rte_eth_dev *dev,
 	dev->data->tx_queues[queue_idx] = &priv->client.tx_q[queue_idx];
 	priv->client.tx_q[queue_idx].queue_id = queue_idx;
 	return 0;
+}
+
+static uint16_t
+pfe_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+{
+	struct hif_client_rx_queue *queue = rxq;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_mempool *pool;
+
+	/*TODO can we remove this cleanup from here?*/
+	pfe_tx_do_cleanup(priv->pfe);
+	pfe_hif_rx_process(&priv->pfe->hif, nb_pkts);
+	pool = priv->pfe->hif.shm->pool;
+
+	return hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
+}
+
+static uint16_t
+pfe_dummy_xmit_pkts(__rte_unused void *tx_queue,
+		__rte_unused struct rte_mbuf **tx_pkts,
+		__rte_unused uint16_t nb_pkts)
+{
+	return 0;
+}
+
+static uint16_t
+pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	struct hif_client_tx_queue *queue = tx_queue;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_eth_stats *stats = &priv->stats;
+	int i;
+
+	for (i = 0; i < nb_pkts; i++) {
+		hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+			(void *)rte_pktmbuf_iova(tx_pkts[i]),
+			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off,
+			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
+			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
+			tx_pkts[i]);
+		stats->obytes += tx_pkts[i]->pkt_len;
+		hif_tx_dma_start();
+	}
+	stats->opackets += nb_pkts;
+	pfe_tx_do_cleanup(priv->pfe);
+
+	return nb_pkts;
 }
 
 /* pfe_eth_enet_addr_byte_mac
@@ -355,6 +459,8 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 
 	eth_dev->data->mtu = 1500;
 	eth_dev->dev_ops = &ops;
+	eth_dev->rx_pkt_burst = &pfe_recv_pkts;
+	eth_dev->tx_pkt_burst = &pfe_dummy_xmit_pkts;
 
 	eth_dev->data->nb_rx_queues = 1;
 	eth_dev->data->nb_tx_queues = 1;

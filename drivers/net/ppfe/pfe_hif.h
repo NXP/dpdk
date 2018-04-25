@@ -143,6 +143,7 @@ void pfe_hif_exit(struct pfe *pfe);
 void pfe_hif_rx_idle(struct pfe_hif *hif);
 int pfe_hif_rx_process(struct pfe_hif *hif, int budget);
 int pfe_hif_init_buffers(struct pfe_hif *hif);
+void pfe_tx_do_cleanup(struct pfe *pfe);
 
 static inline void hif_tx_lock(struct pfe_hif *hif)
 {
