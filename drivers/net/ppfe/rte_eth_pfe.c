@@ -250,6 +250,18 @@ static int pfe_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	return 0;
 }
 
+static void
+pfe_rx_queue_release(void *q __rte_unused)
+{
+	PMD_INIT_FUNC_TRACE();
+}
+
+static void
+pfe_tx_queue_release(void *q __rte_unused)
+{
+	PMD_INIT_FUNC_TRACE();
+}
+
 static int
 pfe_tx_queue_setup(struct rte_eth_dev *dev,
 		   uint16_t queue_idx,
@@ -316,6 +328,105 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	return nb_pkts;
 }
 
+static const uint32_t *
+pfe_supported_ptypes_get(struct rte_eth_dev *dev)
+{
+	static const uint32_t ptypes[] = {
+		/*todo -= add more types */
+		RTE_PTYPE_L2_ETHER,
+		RTE_PTYPE_L3_IPV4,
+		RTE_PTYPE_L3_IPV4_EXT,
+		RTE_PTYPE_L3_IPV6,
+		RTE_PTYPE_L3_IPV6_EXT,
+		RTE_PTYPE_L4_TCP,
+		RTE_PTYPE_L4_UDP,
+		RTE_PTYPE_L4_SCTP
+	};
+
+	if (dev->rx_pkt_burst == pfe_recv_pkts)
+		return ptypes;
+	return NULL;
+}
+
+static int pfe_eth_link_update(struct rte_eth_dev *dev,
+				int wait_to_complete __rte_unused)
+{
+	struct rte_eth_link *link = &dev->data->dev_link;
+
+
+	link->link_speed = 1000;
+
+	link->link_status = 1;
+	link->link_duplex = ETH_LINK_FULL_DUPLEX;
+	link->link_autoneg = ETH_LINK_AUTONEG;
+	return 0;
+}
+
+static void
+pfe_promiscuous_enable(struct rte_eth_dev *dev)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	priv->promisc = 1;
+	dev->data->promiscuous = 1;
+	gemac_enable_copy_all(priv->EMAC_baseaddr);
+}
+
+static void
+pfe_promiscuous_disable(struct rte_eth_dev *dev)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	priv->promisc = 0;
+	dev->data->promiscuous = 0;
+	gemac_disable_copy_all(priv->EMAC_baseaddr);
+}
+
+static void
+pfe_allmulticast_enable(struct rte_eth_dev *dev)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct pfe_mac_addr    hash_addr; /* hash register structure */
+
+	/* Set the hash to rx all multicast frames */
+	hash_addr.bottom = 0xFFFFFFFF;
+	hash_addr.top = 0xFFFFFFFF;
+	gemac_set_hash(priv->EMAC_baseaddr, &hash_addr);
+	dev->data->all_multicast = 1;
+}
+
+static void
+pfe_allmulticast_disable(__rte_unused struct rte_eth_dev *dev)
+{
+}
+
+static int pfe_link_down(struct rte_eth_dev *dev)
+{
+	pfe_eth_stop(dev);
+	return 0;
+}
+
+static int pfe_link_up(struct rte_eth_dev *dev)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	pfe_eth_start(priv);
+	return 0;
+}
+
+static int
+pfe_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	int ret;
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	ret = gemac_set_rx(priv->EMAC_baseaddr, mtu);
+	if (!ret)
+		dev->data->mtu = mtu;
+
+	return ret;
+}
+
 /* pfe_eth_enet_addr_byte_mac
  */
 static int pfe_eth_enet_addr_byte_mac(u8 *enet_byte_addr,
@@ -335,6 +446,24 @@ static int pfe_eth_enet_addr_byte_mac(u8 *enet_byte_addr,
 	}
 }
 
+
+static int
+pfe_dev_add_mac_addr(struct rte_eth_dev *dev,
+			     struct ether_addr *addr,
+			     uint32_t index,
+			     __rte_unused uint32_t pool)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct pfe_mac_addr spec_addr;
+
+	pfe_eth_enet_addr_byte_mac(addr->addr_bytes, &spec_addr);
+	gemac_set_laddrN(priv->EMAC_baseaddr,
+			 (struct pfe_mac_addr *)&spec_addr, index);
+	/*TODO first allocate memory to dev->data->mac_addrs during init*/
+	//ether_addr_copy(&addr->addr_bytes, &dev->data->mac_addrs[index]);
+	return 0;
+}
+
 static void
 pfe_dev_set_mac_addr(struct rte_eth_dev *dev,
 		       struct ether_addr *addr)
@@ -348,6 +477,27 @@ pfe_dev_set_mac_addr(struct rte_eth_dev *dev,
 	ether_addr_copy(addr, &dev->data->mac_addrs[0]);
 }
 
+static
+int pfe_stats_get(struct rte_eth_dev *dev,
+			 struct rte_eth_stats *stats)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct rte_eth_stats *eth_stats = &priv->stats;
+
+	if (stats == NULL)
+		return -1;
+
+	memset(stats, 0, sizeof(struct rte_eth_stats));
+
+	stats->ipackets = eth_stats->ipackets;
+	stats->ibytes = eth_stats->ibytes;
+	stats->opackets = eth_stats->opackets;
+	stats->obytes = eth_stats->obytes;
+
+	return 0;
+}
+
+
 static const struct eth_dev_ops ops = {
 	.dev_start = pfe_eth_open,
 	.dev_stop = pfe_eth_stop,
@@ -355,7 +505,21 @@ static const struct eth_dev_ops ops = {
 	.dev_configure = pfe_eth_configure,
 	.dev_infos_get = pfe_eth_info,
 	.rx_queue_setup = pfe_rx_queue_setup,
+	.rx_queue_release  = pfe_rx_queue_release,
 	.tx_queue_setup = pfe_tx_queue_setup,
+	.tx_queue_release  = pfe_tx_queue_release,
+	.dev_supported_ptypes_get = pfe_supported_ptypes_get,
+	.link_update  = pfe_eth_link_update,
+	.promiscuous_enable   = pfe_promiscuous_enable,
+	.promiscuous_disable  = pfe_promiscuous_disable,
+	.allmulticast_enable  = pfe_allmulticast_enable,
+	.allmulticast_disable = pfe_allmulticast_disable,
+	.dev_set_link_down    = pfe_link_down,
+	.dev_set_link_up      = pfe_link_up,
+	.mtu_set              = pfe_mtu_set,
+	.mac_addr_set	      = pfe_dev_set_mac_addr,
+	.mac_addr_add	      = pfe_dev_add_mac_addr,
+	.stats_get            = pfe_stats_get,
 };
 
 /* pfe_eth_exit
