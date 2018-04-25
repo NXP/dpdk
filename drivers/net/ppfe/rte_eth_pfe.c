@@ -32,6 +32,186 @@ struct pfe_vdev_init_params {
 	int8_t	gem_id;
 };
 
+/* pfe_gemac_init
+ */
+static int pfe_gemac_init(struct pfe_eth_priv_s *priv)
+{
+	struct gemac_cfg cfg;
+
+	cfg.speed = SPEED_1000M;
+	cfg.duplex = DUPLEX_FULL;
+
+	gemac_set_config(priv->EMAC_baseaddr, &cfg);
+	gemac_allow_broadcast(priv->EMAC_baseaddr);
+	gemac_enable_1536_rx(priv->EMAC_baseaddr);
+	gemac_enable_rx_jmb(priv->EMAC_baseaddr);
+	gemac_enable_stacked_vlan(priv->EMAC_baseaddr);
+	gemac_enable_pause_rx(priv->EMAC_baseaddr);
+	gemac_set_bus_width(priv->EMAC_baseaddr, 64);
+	gemac_enable_rx_checksum_offload(priv->EMAC_baseaddr);
+
+	return 0;
+}
+
+/* pfe_eth_start
+ */
+static int pfe_eth_start(struct pfe_eth_priv_s *priv)
+{
+	gpi_enable(priv->GPI_baseaddr);
+	gemac_enable(priv->EMAC_baseaddr);
+
+	return 0;
+}
+
+
+/* pfe_eth_open
+ */
+static int pfe_eth_open(struct rte_eth_dev *dev)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct hif_client_s *client;
+	int rc;
+
+	/* Register client driver with HIF */
+	client = &priv->client;
+	memset(client, 0, sizeof(*client));
+	client->id = PFE_CL_GEM0 + priv->id;
+	client->tx_qn = emac_txq_cnt;
+	client->rx_qn = EMAC_RXQ_CNT;
+	client->priv = priv;
+	client->pfe = priv->pfe;
+	client->port_id = dev->data->port_id;
+
+	client->tx_qsize = EMAC_TXQ_DEPTH;
+	client->rx_qsize = EMAC_RXQ_DEPTH;
+
+	rc = hif_lib_client_register(client);
+	if (rc) {
+		PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
+		goto err0;
+	}
+	pfe_gemac_init(priv);
+	rc = pfe_eth_start(priv);
+err0:
+	return rc;
+}
+
+/* pfe_eth_stop
+ */
+static void pfe_eth_stop(struct rte_eth_dev *dev/*, int wake*/)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	gemac_disable(priv->EMAC_baseaddr);
+	gpi_disable(priv->GPI_baseaddr);
+
+	hif_lib_client_unregister(&priv->client);
+}
+
+/* pfe_eth_close
+ *
+ */
+static void pfe_eth_close(struct rte_eth_dev *dev)
+{
+	if (!dev)
+		return;
+
+	if (!g_pfe)
+		return;
+
+	pfe_eth_exit(dev, g_pfe);
+
+	if (g_pfe->nb_devs == 0) {
+		pfe_hif_exit(g_pfe);
+		pfe_hif_lib_exit(g_pfe);
+		rte_free(g_pfe);
+		g_pfe = NULL;
+	}
+}
+
+static int
+pfe_eth_configure(struct rte_eth_dev *dev __rte_unused)
+{
+	return 0;
+}
+
+static void
+pfe_eth_info(struct rte_eth_dev *dev,
+		struct rte_eth_dev_info *dev_info)
+{
+	struct pfe_eth_priv_s *internals = dev->data->dev_private;
+
+	dev_info->if_index = internals->id;
+	dev_info->max_mac_addrs = PPFE_MAX_MACS;
+	dev_info->max_rx_pktlen = JUMBO_FRAME_SIZE;
+	dev_info->max_rx_queues = dev->data->nb_rx_queues;
+	dev_info->max_tx_queues = dev->data->nb_tx_queues;
+	dev_info->min_rx_bufsize = HIF_RX_PKT_MIN_SIZE;
+}
+
+/* Only first mb_pool given on first call of this API will be used
+ * in whole system, also nb_rx_desc and rx_conf are unused params
+ */
+static int pfe_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
+		__rte_unused uint16_t nb_rx_desc,
+		__rte_unused unsigned int socket_id,
+		__rte_unused const struct rte_eth_rxconf *rx_conf,
+		struct rte_mempool *mb_pool)
+{
+	int rc = 0;
+	struct pfe *pfe;
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	pfe = priv->pfe;
+
+	if (queue_idx >= EMAC_RXQ_CNT) {
+		PFE_PMD_ERR("Invalid queue idx = %d, Max queues = %d",
+				queue_idx, EMAC_RXQ_CNT);
+		return -1;
+	}
+
+	if (!pfe->hif.setuped) {
+		rc = pfe_hif_shm_init(pfe->hif.shm, mb_pool);
+		if (rc) {
+			PFE_PMD_ERR("Could not allocate buffer descriptors");
+			return -1;
+		}
+
+		pfe->hif.shm->pool = mb_pool;
+		if (pfe_hif_init_buffers(&pfe->hif)) {
+			PFE_PMD_ERR("Could not initialize buffer descriptors");
+			return -1;
+		}
+		hif_init();
+		hif_rx_enable();
+		hif_tx_enable();
+		pfe->hif.setuped = 1;
+	}
+	dev->data->rx_queues[queue_idx] = &priv->client.rx_q[queue_idx];
+	priv->client.rx_q[queue_idx].queue_id = queue_idx;
+
+	return 0;
+}
+
+static int
+pfe_tx_queue_setup(struct rte_eth_dev *dev,
+		   uint16_t queue_idx,
+		   __rte_unused uint16_t nb_desc,
+		   __rte_unused unsigned int socket_id,
+		   __rte_unused const struct rte_eth_txconf *tx_conf)
+{
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+
+	if (queue_idx >= emac_txq_cnt) {
+		PFE_PMD_ERR("Invalid queue idx = %d, Max queues = %d",
+				queue_idx, emac_txq_cnt);
+		return -1;
+	}
+	dev->data->tx_queues[queue_idx] = &priv->client.tx_q[queue_idx];
+	priv->client.tx_q[queue_idx].queue_id = queue_idx;
+	return 0;
+}
+
 /* pfe_eth_enet_addr_byte_mac
  */
 static int pfe_eth_enet_addr_byte_mac(u8 *enet_byte_addr,
@@ -65,6 +245,13 @@ pfe_dev_set_mac_addr(struct rte_eth_dev *dev,
 }
 
 static const struct eth_dev_ops ops = {
+	.dev_start = pfe_eth_open,
+	.dev_stop = pfe_eth_stop,
+	.dev_close = pfe_eth_close,
+	.dev_configure = pfe_eth_configure,
+	.dev_infos_get = pfe_eth_info,
+	.rx_queue_setup = pfe_rx_queue_setup,
+	.tx_queue_setup = pfe_tx_queue_setup,
 };
 
 /* pfe_eth_exit

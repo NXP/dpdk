@@ -79,6 +79,235 @@ static void pfe_hif_release_buffers(struct pfe_hif *hif)
 }
 
 /*
+ * pfe_hif_init_buffers
+ * This function initializes the HIF Rx/Tx ring descriptors and
+ * initialize Rx queue with buffers.
+ */
+int pfe_hif_init_buffers(struct pfe_hif *hif)
+{
+	struct hif_desc	*desc, *first_desc_p;
+	uint32_t i = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Check enough Rx buffers available in the shared memory */
+	if (hif->shm->rx_buf_pool_cnt < hif->rx_ring_size)
+		return -ENOMEM;
+
+	hif->rx_base = hif->descr_baseaddr_v;
+	memset(hif->rx_base, 0, hif->rx_ring_size * sizeof(struct hif_desc));
+
+	/*Initialize Rx descriptors */
+	desc = hif->rx_base;
+	first_desc_p = (struct hif_desc *)hif->descr_baseaddr_p;
+
+	for (i = 0; i < hif->rx_ring_size; i++) {
+		/* Initialize Rx buffers from the shared memory */
+		struct rte_mbuf *mbuf =
+			(struct rte_mbuf *)hif->shm->rx_buf_pool[i];
+		hif->rx_buf_vaddr[i] =
+			(void *)((uint64_t)mbuf->buf_addr + mbuf->data_off -
+					PFE_PKT_HEADER_SZ);
+		hif->rx_buf_addr[i] =
+			(void *)(rte_pktmbuf_iova(mbuf) - PFE_PKT_HEADER_SZ);
+		hif->rx_buf_len[i] =  mbuf->buf_len;
+
+		hif->shm->rx_buf_pool[i] = NULL;
+
+		writel(DDR_PHYS_TO_PFE(hif->rx_buf_addr[i]),
+					&desc->data);
+		writel(0, &desc->status);
+
+		/*
+		 * Ensure everything else is written to DDR before
+		 * writing bd->ctrl
+		 */
+		rte_wmb();
+
+		writel((BD_CTRL_LIFM
+			| BD_CTRL_DIR | BD_CTRL_DESC_EN
+			| BD_BUF_LEN(hif->rx_buf_len[i])), &desc->ctrl);
+
+		/* Chain descriptors */
+		writel((u32)DDR_PHYS_TO_PFE(first_desc_p + i + 1), &desc->next);
+		desc++;
+	}
+
+	/* Overwrite last descriptor to chain it to first one*/
+	desc--;
+	writel((u32)DDR_PHYS_TO_PFE(first_desc_p), &desc->next);
+
+	hif->rxtoclean_index = 0;
+
+	/*Initialize Rx buffer descriptor ring base address */
+	writel(DDR_PHYS_TO_PFE(hif->descr_baseaddr_p), HIF_RX_BDP_ADDR);
+
+	hif->tx_base = hif->rx_base + hif->rx_ring_size;
+	first_desc_p = (struct hif_desc *)hif->descr_baseaddr_p +
+				hif->rx_ring_size;
+	memset(hif->tx_base, 0, hif->tx_ring_size * sizeof(struct hif_desc));
+
+	/*Initialize tx descriptors */
+	desc = hif->tx_base;
+
+	for (i = 0; i < hif->tx_ring_size; i++) {
+		/* Chain descriptors */
+		writel((u32)DDR_PHYS_TO_PFE(first_desc_p + i + 1), &desc->next);
+		writel(0, &desc->ctrl);
+		desc++;
+	}
+
+	/* Overwrite last descriptor to chain it to first one */
+	desc--;
+	writel((u32)DDR_PHYS_TO_PFE(first_desc_p), &desc->next);
+	hif->txavail = hif->tx_ring_size;
+	hif->txtosend = 0;
+	hif->txtoclean = 0;
+	hif->txtoflush = 0;
+
+	/*Initialize Tx buffer descriptor ring base address */
+	writel((u32)DDR_PHYS_TO_PFE(first_desc_p), HIF_TX_BDP_ADDR);
+
+	return 0;
+}
+
+/*
+ * pfe_hif_client_register
+ *
+ * This function used to register a client driver with the HIF driver.
+ *
+ * Return value:
+ * 0 - on Successful registration
+ */
+static int pfe_hif_client_register(struct pfe_hif *hif, u32 client_id,
+				   struct hif_client_shm *client_shm)
+{
+	struct hif_client *client = &hif->client[client_id];
+	u32 i, cnt;
+	struct rx_queue_desc *rx_qbase;
+	struct tx_queue_desc *tx_qbase;
+	struct hif_rx_queue *rx_queue;
+	struct hif_tx_queue *tx_queue;
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	rte_spinlock_lock(&hif->tx_lock);
+
+	if (test_bit(client_id, &hif->shm->g_client_status[0])) {
+		PFE_PMD_ERR("client %d already registered", client_id);
+		err = -1;
+		goto unlock;
+	}
+
+	memset(client, 0, sizeof(struct hif_client));
+
+	/* Initialize client Rx queues baseaddr, size */
+
+	cnt = CLIENT_CTRL_RX_Q_CNT(client_shm->ctrl);
+	/* Check if client is requesting for more queues than supported */
+	if (cnt > HIF_CLIENT_QUEUES_MAX)
+		cnt = HIF_CLIENT_QUEUES_MAX;
+
+	client->rx_qn = cnt;
+	rx_qbase = (struct rx_queue_desc *)client_shm->rx_qbase;
+	for (i = 0; i < cnt; i++) {
+		rx_queue = &client->rx_q[i];
+		rx_queue->base = rx_qbase + i * client_shm->rx_qsize;
+		rx_queue->size = client_shm->rx_qsize;
+		rx_queue->write_idx = 0;
+	}
+
+	/* Initialize client Tx queues baseaddr, size */
+	cnt = CLIENT_CTRL_TX_Q_CNT(client_shm->ctrl);
+
+	/* Check if client is requesting for more queues than supported */
+	if (cnt > HIF_CLIENT_QUEUES_MAX)
+		cnt = HIF_CLIENT_QUEUES_MAX;
+
+	client->tx_qn = cnt;
+	tx_qbase = (struct tx_queue_desc *)client_shm->tx_qbase;
+	for (i = 0; i < cnt; i++) {
+		tx_queue = &client->tx_q[i];
+		tx_queue->base = tx_qbase + i * client_shm->tx_qsize;
+		tx_queue->size = client_shm->tx_qsize;
+		tx_queue->ack_idx = 0;
+	}
+
+	set_bit(client_id, &hif->shm->g_client_status[0]);
+
+unlock:
+	rte_spinlock_unlock(&hif->tx_lock);
+
+	return err;
+}
+
+/*
+ * pfe_hif_client_unregister
+ *
+ * This function used to unregister a client  from the HIF driver.
+ *
+ */
+static void pfe_hif_client_unregister(struct pfe_hif *hif, u32 client_id)
+{
+	PMD_INIT_FUNC_TRACE();
+
+	/*
+	 * Mark client as no longer available (which prevents further packet
+	 * receive for this client)
+	 */
+	rte_spinlock_lock(&hif->tx_lock);
+
+	if (!test_bit(client_id, &hif->shm->g_client_status[0])) {
+		PFE_PMD_ERR("client %d not registered", client_id);
+
+		rte_spinlock_unlock(&hif->tx_lock);
+		return;
+	}
+
+	clear_bit(client_id, &hif->shm->g_client_status[0]);
+
+	rte_spinlock_unlock(&hif->tx_lock);
+}
+
+void hif_process_client_req(struct pfe_hif *hif, int req,
+			    int data1, __rte_unused int data2)
+{
+	unsigned int client_id = data1;
+
+	if (client_id >= HIF_CLIENTS_MAX) {
+		PFE_PMD_ERR("client id %d out of bounds", client_id);
+		return;
+	}
+
+	switch (req) {
+	case REQUEST_CL_REGISTER:
+			/* Request for register a client */
+			PFE_PMD_INFO("register client_id %d", client_id);
+			pfe_hif_client_register(hif, client_id, (struct
+				hif_client_shm *)&hif->shm->client[client_id]);
+			break;
+
+	case REQUEST_CL_UNREGISTER:
+			PFE_PMD_INFO("unregister client_id %d", client_id);
+
+			/* Request for unregister a client */
+			pfe_hif_client_unregister(hif, client_id);
+
+			break;
+
+	default:
+			PFE_PMD_ERR("unsupported request %d", req);
+			break;
+	}
+
+	/*
+	 * Process client Tx queues
+	 * Currently we don't have checking for tx pending
+	 */
+}
+
+/*
  * pfe_hif_init
  * This function initializes the baseaddresses and irq, etc.
  */
