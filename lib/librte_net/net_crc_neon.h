@@ -49,8 +49,8 @@ struct crc_pmull_ctx {
 	uint64x2_t rk7_rk8;
 };
 
-struct crc_pmull_ctx crc32_eth_pmull __rte_aligned(16);
-struct crc_pmull_ctx crc16_ccitt_pmull __rte_aligned(16);
+static struct crc_pmull_ctx crc32_eth_pmull __rte_aligned(16);
+static struct crc_pmull_ctx crc16_ccitt_pmull __rte_aligned(16);
 
 /**
  * @brief Performs one folding round
