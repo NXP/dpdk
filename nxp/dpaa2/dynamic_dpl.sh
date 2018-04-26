@@ -226,7 +226,12 @@ get_dpni_parameters() {
 	fi
 	if [[ -z "$MAX_TCS" ]]
 	then
-		MAX_TCS=8
+		if [[ $board_type == "2160" ]]
+		then
+			MAX_TCS=16
+		else
+			MAX_TCS=8
+		fi
 	fi
 	if [[ -z "$MAX_QOS" ]]
 	then
@@ -244,6 +249,10 @@ get_dpni_parameters() {
 		if [[ $board_type != "1088" ]]
 		then
 			DPNI_OPTIONS="DPNI_OPT_HAS_KEY_MASKING"
+		fi
+		if [[ $board_type == "2160" ]]
+		then
+			DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_HAS_KEY_MASKING"
 		fi
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
@@ -348,7 +357,7 @@ get_dpio_parameters() {
 	then
 		if [[ $board_type == "2160" ]]
 		then
-			DPIO_COUNT=24
+			DPIO_COUNT=34
 		else
 			DPIO_COUNT=10
 		fi
