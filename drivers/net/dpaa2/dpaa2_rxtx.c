@@ -534,7 +534,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_ETHRX_DPIO->index)) {
 			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(
@@ -570,7 +570,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, pull_size);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage1,
-		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+		(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
 
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
