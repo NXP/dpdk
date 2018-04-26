@@ -149,7 +149,7 @@ dpaa2_cmdif_dequeue_bufs(struct rte_rawdev *dev,
 	qbman_pull_desc_set_fq(&pulldesc, rxq->fqid);
 	qbman_pull_desc_set_numframes(&pulldesc, 1);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-		(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
@@ -188,8 +188,8 @@ dpaa2_cmdif_dequeue_bufs(struct rte_rawdev *dev,
 
 	DPAA2_CMDIF_DEBUG("packet received\n");
 
-	buffers[0]->buf_addr = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd) +
-			DPAA2_GET_FD_OFFSET(fd));
+	buffers[0]->buf_addr = (void *)DPAA2_IOVA_TO_VADDR(
+			DPAA2_GET_FD_ADDR(fd) + DPAA2_GET_FD_OFFSET(fd));
 	cmdif_rcv_cnxt->size = DPAA2_GET_FD_LEN(fd);
 	cmdif_rcv_cnxt->flc = DPAA2_GET_FD_FLC(fd);
 	cmdif_rcv_cnxt->frc = DPAA2_GET_FD_FRC(fd);
