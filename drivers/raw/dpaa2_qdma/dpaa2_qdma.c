@@ -546,7 +546,7 @@ dpdmai_dev_dequeue(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-		(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	qbman_pull_desc_set_numframes(&pulldesc, 1);
 
 	while (1) {
@@ -578,7 +578,7 @@ dpdmai_dev_dequeue(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	 * Fetch metadata from FLE. job and vq_id were set
 	 * in metadata in the enqueue operation.
 	 */
-	fle = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 	io_meta = (struct qdma_io_meta *)(fle) - 1;
 	if (vq_id)
 		*vq_id = io_meta->id;

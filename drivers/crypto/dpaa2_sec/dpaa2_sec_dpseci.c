@@ -147,7 +147,7 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 		return -1;
 	}
 	memset(fle, 0, FLE_SG_MEM_SIZE);
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (size_t)priv);
 
 	op_fle = fle + 1;
@@ -298,7 +298,7 @@ build_authenc_gcm_fd(dpaa2_sec_session *sess,
 		return -1;
 	}
 	memset(fle, 0, FLE_POOL_BUF_SIZE);
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	fle = fle + 1;
 	sge = fle + 2;
@@ -443,7 +443,7 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 		return -1;
 	}
 	memset(fle, 0, FLE_SG_MEM_SIZE);
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
 	op_fle = fle + 1;
@@ -592,7 +592,7 @@ build_authenc_fd(dpaa2_sec_session *sess,
 		return -1;
 	}
 	memset(fle, 0, FLE_POOL_BUF_SIZE);
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	fle = fle + 1;
 	sge = fle + 2;
@@ -722,7 +722,7 @@ static inline int build_auth_sg_fd(
 	}
 	memset(fle, 0, FLE_SG_MEM_SIZE);
 	/* first FLE entry used to store mbuf and session ctxt */
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	op_fle = fle + 1;
 	ip_fle = fle + 2;
@@ -803,7 +803,7 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	 * to get the MBUF Addr from the previous FLE.
 	 * We can have a better approach to use the inline Mbuf
 	 */
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	fle = fle + 1;
 
@@ -895,7 +895,7 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	}
 	memset(fle, 0, FLE_SG_MEM_SIZE);
 	/* first FLE entry used to store mbuf and session ctxt */
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
 	op_fle = fle + 1;
@@ -1019,7 +1019,7 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	 * to get the MBUF Addr from the previous FLE.
 	 * We can have a better approach to use the inline Mbuf
 	 */
-	DPAA2_SET_FLE_ADDR(fle, op);
+	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	fle = fle + 1;
 	sge = fle + 2;
@@ -2750,11 +2750,11 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 				 struct rte_event *ev)
 {
 	/* Prefetching mbuf */
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
 
 	/* Prefetching ipsec crypto_op stored in priv data of mbuf */
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-64));
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-64));
 
 	ev->flow_id = rxq->ev.flow_id;
 	ev->sub_event_type = rxq->ev.sub_event_type;
@@ -2777,11 +2777,11 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 {
 	uint8_t dqrr_index;
 	/* Prefetching mbuf */
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
 
 	/* Prefetching ipsec crypto_op stored in priv data of mbuf */
-	rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd)-64));
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-64));
 
 	ev->flow_id = rxq->ev.flow_id;
 	ev->sub_event_type = rxq->ev.sub_event_type;
@@ -2826,7 +2826,7 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 	cfg.dest_cfg.priority = queue_conf->ev.priority;
 
 	cfg.options |= DPSECI_QUEUE_OPT_USER_CTX;
-	cfg.user_ctx = (uint64_t)(qp);
+	cfg.user_ctx = (size_t)(qp);
 	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC) {
 		cfg.options |= DPSECI_QUEUE_OPT_ORDER_PRESERVATION;
 		cfg.order_preservation_en = 1;

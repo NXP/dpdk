@@ -526,7 +526,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_ETHRX_DPIO->index)) {
 			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(
@@ -562,7 +562,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, DPAA2_DQRR_RING_SIZE);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage1,
-		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+		(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
 
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
@@ -725,7 +725,7 @@ dpaa2_dev_prefetch_rx2(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_ETHRX_DPIO->index)) {
 			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(
@@ -785,7 +785,7 @@ repeat:
 		}
 		qbman_pull_desc_set_fq(&pulldesc1, fqid);
 		qbman_pull_desc_set_storage(&pulldesc1, dq_storage1,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc1)) {
 				DPAA2_PMD_DP_DEBUG(
@@ -878,7 +878,7 @@ repeat:
 	qbman_pull_desc_set_numframes(&pulldesc, q_storage->last_num_pkts);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/* issue a volatile dequeue command for next pull */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
@@ -926,7 +926,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				(dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+				(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 
 		if (next_pull > DPAA2_DQRR_RING_SIZE) {
 			qbman_pull_desc_set_numframes(&pulldesc,
