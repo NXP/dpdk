@@ -26,7 +26,7 @@ RTE_TARGET=
 
 # defaults ## Modify then to tune default values
 
-platform="dpaa dpaa2" # set to "dpaa dpaa2" for both platform as default
+platform="arm64-dpaa arm64-dpaa2" # set to "dpaa dpaa2" for both platform as default
 build="static shared"  # set to "static shared" for 2 builds as default
 debug_flag=0
 jobs=4          # Parallel jobs
@@ -39,27 +39,16 @@ dpaa2_config_list="EXTRA_CFLAGS=-g"
 dpaa2_config_list=${dpaa2_config_list}" EXTRA_CFLAGS+=-O0"
 dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS=-g"
 dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS+=-O0"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_RX=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_DEBUG_TX_FREE=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_INIT=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_DRIVER=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_DPAA2_SEC_DEBUG_RX=y"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV_DEBUG=y"
 dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
+dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
 
 dpaa_config_list="EXTRA_CFLAGS=-g"
 dpaa_config_list=${dpaa_config_list}" EXTRA_CFLAGS+=-O0"
 dpaa_config_list=${dpaa_config_list}" EXTRA_LDFLAGS=-g"
 dpaa_config_list=${dpaa_config_list}" EXTRA_LDFLAGS+=-O0"
-dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=y"
 dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_HWDEBUG=y"
-dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_INIT=y"
-dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_DRIVER=y"
-dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_SEC_DEBUG_RX=y"
 dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
+dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
 
 # Some colors
 
@@ -98,7 +87,7 @@ function usage() {
 	echo "              If provided, toggles all DEBUG* configuration"
 	echo "              parameter to \'y\'. It also adds \'-g\' and \'-O0\' to build"
 	echo
-	echo "           -c Cleanup before build"
+	echo "           -c Don't cleanup before build"
 	echo "              Each platform and build type creates an output folder"
 	echo "              If this is not provided, re-compilation is done"
 	echo "              If provided, build directory is deleted and compilation done."
@@ -107,7 +96,7 @@ function usage() {
 	echo
 	echo "           --dpaa2config"
 	echo "              A comma separated list of configuration items to build with"
-	echo "              For e.g.: --dpaa2config CONFIG_RTE_LIBRTE_DPAA2_DEBUG_INIT=y,CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
+	echo "              For e.g.: --dpaa2config CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
 	echo "              This would be passed to DPAA2 type build"
 	echo
 	echo "           --dpaaconfig"
@@ -142,12 +131,13 @@ function dump_configuration() {
 	print "__OPENSSL_PATH  = ${OPENSSL_PATH}"
 	print "__platform(s)   = $platform"
 	print "__build(s)      = $build"
+	print "__cleanall(s)   = $clean_all"
 	print "__debug         = $debug_flag"
 	print "__Parallel jobs = ${jobs}"
-	if [ "$platform" == "dpaa2" ]; then
+	if [ "$platform" == "arm64-dpaa2" ]; then
 		print "__DPAA2 Config  = $dpaa2_config_list"
 	else
-	if [ "$platform" == "dpaa" ]; then
+	if [ "$platform" == "arm64-dpaa" ]; then
 		print "__DPAA  Config  = $dpaa_config_list"
 	else
 		print "__DPAA Config   = $dpaa_config_list"
@@ -161,16 +151,16 @@ while getopts ":p:b:dcj:-:aso:h" o; do
 	case "${o}" in
 		p)
 			if [ ${OPTARG} == "dpaa" ]; then
-				platform="dpaa"
+				platform="arm64-dpaa"
 			else
 			if [ $OPTARG == "dpaa2" ]; then
-				platform="dpaa2"
+				platform="arm64-dpaa2"
 			else
 			if [ $OPTARG == "all" ]; then
-				platform="dpaa dpaa2"
+				platform="arm64-dpaa arm64-dpaa2"
 			else
 				error "Invalid platform Specified: Using default"
-				platform="dpaa"
+				platform="arm64-dpaa"
 			fi; fi; fi
 			debug "Platform=$platform"
 			;;
@@ -195,8 +185,8 @@ while getopts ":p:b:dcj:-:aso:h" o; do
 			debug_flag=1
 			;;
 		c)
-			# Clean all before building
-			clean_all=1
+			# Don't Clean all before building
+			clean_all=0
 			;;
 		j)
 			# Number of parallel jobs to run
@@ -273,7 +263,7 @@ function build() {
 		if [ ${debug_flag} -eq 1 ]; then
 			OUTPUT_head="build_debug_${i}"
 		fi
-		TARGET="arm64-$i-linuxapp-gcc"
+		TARGET="$i-linuxapp-gcc"
 		for j in ${build}; do
 			# Dump what is being done on screen
 			echo -en "Building: ${BLUE}${i}${NC} platform "
@@ -312,6 +302,31 @@ function build() {
 			print "===================================================="
 		done
 	done
+	CROSS1=${CROSS}
+	unset CROSS
+	TARGET="x86_64-native"
+	OUTPUT=build_x86
+	cmd="make T=${TARGET}-linuxapp-gcc -j ${jobs} O=${OUTPUT} install"
+	cmd="$cmd $kernel_disable $openssl_disable"
+	if [ ${debug_flag} -eq 1 ]; then
+		rm -rf ${OUTPUT}
+		echo -en " and ${BLUE}debugging${NC} enabled"
+		varname="CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
+		cmd="$cmd ${varname}"
+	fi
+	print "===================================================="
+	print "Executing ${cmd}"
+	if [ ${silent} -eq 1 ]; then
+		${cmd} >> $logoutput
+	else
+		${cmd}
+	fi
+	if [ $? -ne 0 ]; then
+		echo -e "Error in ${RED}${OUTPUT}${NC}"
+		exit 1
+	fi
+	print "===================================================="
+	export CROSS=${CROSS1}
 }
 
 build
