@@ -157,6 +157,14 @@ script help :----->
 					integer value.
 					"e.g export DPIO_PRIORITIES=8"
 
+	/**DPMCP**:-->
+		DPMCP_COUNT	    = DPMCP objects count
+					Set the parameter using below command:
+					'export DPMCP_COUNT=<Num of MCportal objects>'
+					where "Number of dpmcp objects" is an
+					integer value.
+					e.g export DPMCP_COUNT=1"
+
 	/**DPBP**:-->
 		DPBP_COUNT	    = DPBP objects count
 					Set the parameter using below command:
@@ -308,6 +316,19 @@ get_dpcon_parameters() {
 	echo "DPCON parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPCON_PRIORITIES	= "$DPCON_PRIORITIES >> dynamic_dpl_logs
 	echo -e "\tDPCON_COUNT		= "$DPCON_COUNT >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+}
+
+#/* Function, to initialize the DPMCP related parameters
+#*/
+get_dpmcp_parameters() {
+	if [[ -z "$DPMCP_COUNT" ]]
+	then
+		DPMCP_COUNT=1
+	fi
+	echo "DPMCP parameters :-->" >> dynamic_dpl_logs
+	echo -e "\tDPMCP_COUNT = "$DPMCP_COUNT >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 }
@@ -669,12 +690,14 @@ then
 	restool dprc sync
 
 	#/* DPMCP objects creation*/
-	DPMCP=$(restool -s dpmcp create --container=$DPRC)
-	echo $DPMCP "Created" >> dynamic_dpl_logs
-	restool dprc sync
-	TEMP=$(restool dprc assign $DPRC --object=$DPMCP --child=$DPRC --plugged=1)
-	echo $DPMCP "moved to plugged state" >> dynamic_dpl_logs
-	restool dprc sync
+	for i in $(seq 1 ${DPMCP_COUNT}); do
+		DPMCP=$(restool -s dpmcp create --container=$DPRC)
+		echo $DPMCP "Created" >> dynamic_dpl_logs
+		restool dprc sync
+		TEMP=$(restool dprc assign $DPRC --object=$DPMCP --child=$DPRC --plugged=1)
+		echo $DPMCP "moved to plugged state" >> dynamic_dpl_logs
+		restool dprc sync
+	done;
 
 	#/* DPBP objects creation*/
 	for i in $(seq 1 ${DPBP_COUNT}); do
@@ -774,6 +797,8 @@ then
 	echo
 	echo -e "Container $DPRC have following resources :=>"
 	echo
+	count=$(restool dprc show $DPRC | grep -c dpmcp.*)
+	echo -e " * $count DPMCP"
 	count=$(restool dprc show $DPRC | grep -c dpbp.*)
 	echo -e " * $count DPBP"
 	count=$(restool dprc show $DPRC | grep -c dpcon.*)
