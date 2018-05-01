@@ -184,9 +184,11 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 	if (!(default_q || fmc_q)) {
 		if (dpaa_fm_config(dev, eth_conf->
 					rx_adv_conf.rss_conf.rss_hf)) {
+			dpaa_write_fm_config_to_file();
 			DPAA_PMD_ERR("FM port configuration: Failed\n");
 			return -1;
 		}
+		dpaa_write_fm_config_to_file();
 	}
 
 	return 0;
@@ -1522,8 +1524,7 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 			if (rte_eth_devices[i].dev_ops == &dpaa_devops) {
 				struct dpaa_if *dpaa_intf =
 					rte_eth_devices[i].data->dev_private;
-
-				if (dpaa_intf->valid)
+				if (dpaa_intf->port_handle)
 					if (dpaa_fm_deconfig(dpaa_intf))
 						DPAA_PMD_WARN("DPAA FM "
 							"deconfig failed\n");
