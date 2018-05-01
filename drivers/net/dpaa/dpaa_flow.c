@@ -585,10 +585,40 @@ static inline int set_port_pcd(struct dpaa_if *dpaa_intf)
 	ret = FM_PORT_Enable(dpaa_intf->port_handle);
 	if (ret != E_OK) {
 		DPAA_PMD_ERR("FM_PORT_Enable: Failed\n");
-		return ret;
+		goto fm_port_delete_pcd;
 	}
 
 	return 0;
+
+fm_port_delete_pcd:
+	/* FM PORT DeletePCD */
+	ret = FM_PORT_DeletePCD(dpaa_intf->port_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PORT_DeletePCD: Failed\n");
+		return ret;
+	}
+	return -1;
+}
+
+/* Unset PCD NerEnv and scheme */
+static inline void unset_pcd_netenv_scheme(struct dpaa_if *dpaa_intf)
+{
+	int ret;
+	ret = FM_PCD_KgSchemeDelete(dpaa_intf->scheme_handle);
+	if (ret != E_OK)
+		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed\n");
+
+	dpaa_intf->scheme_handle = NULL;
+
+	/* FM PCD NetEnvCharacteristicsDelete */
+	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
+	if (ret != E_OK)
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed\n");
+
+	dpaa_intf->netenv_handle = NULL;
+
+	/* Set scheme count to 0 */
+	dpaa_intf->scheme_count = 0;
 }
 
 /* Set PCD NetEnv and Scheme */
@@ -622,7 +652,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf);
 	if (ret) {
 		DPAA_PMD_ERR("Set scheme params: Failed\n");
-		return ret;
+		goto net_env_char_delete;
 	}
 
 	/* FM PCD KgSchemeSet */
@@ -630,13 +660,23 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 					fm_info.pcd_handle, &scheme_params);
 	if (!dpaa_intf->scheme_handle) {
 		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed\n");
-		return -1;
+		goto net_env_char_delete;
 	}
 
 	fm_model.scheme_devid[dpaa_intf->ifid] =
 					GetDeviceId(dpaa_intf->scheme_handle);
 	dpaa_intf->scheme_count++;
 	return 0;
+
+net_env_char_delete:
+	/* FM PCD NetEnvCharacteristicsDelete */
+	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed\n");
+		return ret;
+	}
+	dpaa_intf->netenv_handle = NULL;
+	return -1;
 }
 
 
@@ -688,6 +728,15 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 		if (dpaa_fm_deconfig(dpaa_intf))
 			DPAA_PMD_ERR("DPAA FM deconfig failed\n");
 	}
+
+	if (!dev->data->nb_rx_queues)
+		return 0;
+
+	if (dev->data->nb_rx_queues & (dev->data->nb_rx_queues - 1)) {
+		DPAA_PMD_ERR("No of queues should be power of 2\n");
+		return -1;
+	}
+
 	dpaa_intf->nb_rx_queues = dev->data->nb_rx_queues;
 
 	/* Open FM Port and set it in port info */
@@ -701,19 +750,28 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set);
 	if (ret) {
 		DPAA_PMD_ERR("Set PCD NetEnv and Scheme: Failed\n");
-		return -1;
+		goto unset_fm_port_handle;
 	}
 
 	/* Set Port PCD */
 	ret = set_port_pcd(dpaa_intf);
 	if (ret) {
 		DPAA_PMD_ERR("Set Port PCD: Failed\n");
-		return -1;
+		goto unset_pcd_netenv_scheme;
 	}
 
 	fm_model.dev_count++;
 
 	return 0;
+
+unset_pcd_netenv_scheme:
+	unset_pcd_netenv_scheme(dpaa_intf);
+
+unset_fm_port_handle:
+	/* FM PORT Close */
+	FM_PORT_Close(dpaa_intf->port_handle);
+	dpaa_intf->port_handle = NULL;
+	return -1;
 }
 
 /* De-initialization of FM */
@@ -741,7 +799,7 @@ int dpaa_fm_term(void)
 
 	ret = remove(fm_log);
 	if (ret)
-		DPAA_PMD_ERR("File remove successfully\n");
+		DPAA_PMD_ERR("File remove: Failed\n");
 
 	return 0;
 }
