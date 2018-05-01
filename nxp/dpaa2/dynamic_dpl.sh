@@ -424,6 +424,7 @@ create_actual_mac() {
 rm dynamic_dpl_logs > /dev/null 2>&1
 rm dynamic_results > /dev/null 2>&1
 unset BASE_ADDR
+ROOT_DPRC=dprc.1
 printf "%-21s %-21s %-25s\n" "Interface Name" "Endpoint" "Mac Address" > dynamic_results
 printf "%-21s %-21s %-25s\n" "==============" "========" "==================" >> dynamic_results
 RED='\033[0;31m'
@@ -435,7 +436,7 @@ then
 	restool dprc list >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	#/* Creation of DPRC*/
-	export DPRC=$(restool -s dprc create dprc.1 --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED)
+	export DPRC=$(restool -s dprc create $ROOT_DPRC --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED)
 
 	DPRC_LOC=/sys/bus/fsl-mc/devices/$DPRC
 	echo $DPRC "Created" >> dynamic_dpl_logs
@@ -577,8 +578,8 @@ then
 		if [[ $TYPE == "dpmac" ]]
 		then
 			echo -e "\tDisconnecting the" $OBJ", if already connected" >> dynamic_dpl_logs
-			TEMP=$(restool dprc disconnect dprc.1 --endpoint=$OBJ > /dev/null 2>&1)
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ 2>&1)
+			TEMP=$(restool dprc disconnect $ROOT_DPRC --endpoint=$OBJ > /dev/null 2>&1)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ 2>&1)
 			CHECK=$(echo $TEMP | head -1 | cut -f2 -d ' ');
 			if [[ $CHECK == "error:" ]]
 			then
@@ -596,7 +597,7 @@ then
 					rm script_help
 					[[ "${BASH_SOURCE[0]}" != $0 ]] && return || exit
 				fi
-				restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ
+				restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ
 			fi
 			MAC_ADDR1=
 			echo -e '\t'$OBJ" Linked with "$DPNI >> dynamic_dpl_logs
@@ -613,7 +614,7 @@ then
 		elif [[ $TYPE == "dpni" ]]
 		then
 			echo " printing the dpni ="${!num} >> dynamic_dpl_logs
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=${!num})
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=${!num})
 			echo -e '\t'$DPNI" Linked with "${!num} >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
@@ -622,7 +623,7 @@ then
 			OBJ=${!num}
 		elif [[ ${!num} == "dpni-self" ]]
 		then
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$DPNI)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$DPNI)
 			echo -e '\t'$DPNI" Linked with "$DPNI >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
@@ -631,7 +632,7 @@ then
 			MAC_ADDR1=$MAC_ADDR2
 			unset MAC_ADDR2
 		else
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ)
 			echo -e '\t'$OBJ" Linked with "$DPNI >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
