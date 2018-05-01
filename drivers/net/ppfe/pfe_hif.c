@@ -688,8 +688,12 @@ static inline void copy_to_lmem(u32 *dst, u32 *src, int len)
 		dst++; src++;
 	}
 }
-
-__attribute__ ((optimize(1))) static void send_dummy_pkt_to_hif(void)
+#if defined(RTE_TOOLCHAIN_GCC)
+__attribute__ ((optimize(1)))
+#elif defined(RTE_TOOLCHAIN_CLANG)
+#pragma clang optimize off
+#endif
+static void send_dummy_pkt_to_hif(void)
 {
 	void *lmem_ptr, *ddr_ptr, *lmem_virt_addr;
 	u64 physaddr;
@@ -731,6 +735,9 @@ __attribute__ ((optimize(1))) static void send_dummy_pkt_to_hif(void)
 
 	writel((unsigned long int)lmem_ptr, CLASS_INQ_PKTPTR);
 }
+#if defined(RTE_TOOLCHAIN_CLANG)
+#pragma clang optimize on
+#endif
 
 void pfe_hif_rx_idle(struct pfe_hif *hif)
 {
