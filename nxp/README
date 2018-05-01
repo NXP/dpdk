@@ -1,18 +1,20 @@
 ===============================================================================
 NXP DPDK README 
-(For DPAA and DPAA2 PLATFORM: LS1043, LS1046, LS208x, LS108x, LX2160)
-===============================================================================
+---------------
+Supported Platforms (and their derivatives):
+1. DPAA2 : LS108x, LS208x, LX2160
+2. DPAA  : LS1043, LS1046
 
+===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
 This README provides information about building and executing DPDK based
-applications for DPAA and DPAA2 platforms.
+applications for supported platforms.
 
 NOTE: The NXP DPDK package is configured to generate single binary for both
-      platforms, DPAA and DPAA2. For this, configuration file is available
+      all supported platforms. For this, configuration file is available
       in folder `config/defconfig_arm64-dpaa-linuxapp-gcc`. Further details are
       documented below.
-
 ===============================================================================
 
 Components for Build & Execution Environment
@@ -23,9 +25,8 @@ following components are required:
 
 1. DPDK source code
 2. Cross compiled toolchain for ARM64 platform
-3. (Optional) Linux kernel, for DPAA or DPAA2 platforms, as per board being used
+3. (Optional) NXP provided Linux kernel, as per board being used
 4. (Optional) OpenSSL package for OpenSSL driver with ARMCE support
-4. DPAA or DPAA2 board
 
 Following information can be used to obtain these components:
 
@@ -34,13 +35,16 @@ Following information can be used to obtain these components:
 
     Use following command to get the DPDK code
 
-      $ git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b 17.11-qoriq  (Internal git repository)
-      OR
-      $ git clone https://github.com/qoriq-open-source/dpdk.git -b 17.11-qoriq (External Github Repository)
+    - Internal git repository:
+      $ git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b 17.11-qoriq
+      OR,
+     - External Github Repository:
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/17.11-qoriq
+
 
       $ cd dpdk # Change directory to cloned DPDK source code
 
-    NOTE: Internal git repository is only available from within NXP intranet.
+    NOTE: Internal git repos is only available from within NXP intranet only.
 
     Linux kernel code
     ~~~~~~~~~~~~~~~~~
@@ -48,11 +52,11 @@ Following information can be used to obtain these components:
     Linux Kernel can be obtained either through the NXP SDK for the board or
     via the Github repository below:
 
-      $ git clone https://github.com/qoriq-open-source/linux.git -b linux-4.4
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.4
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.4 has been verified with DPDK. Other kernels may work but they
-    not been tested. Work is still in progress.
+    Linux-4.4, 4,9, 4,14 has been verified with DPDK. Other kernels may work but
+    they have not been tested.
 
     NOTE: By default, the KNI module compilation is enabled in DPDK requiring
           a pre-compiled Linux Kernel. Though, this is optional and can be
@@ -66,9 +70,9 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-6.3` or earlier toolchain from Linaro. e.g.
+    Get the `gcc-7.2` or earlier toolchain from Linaro. e.g.
      
-    # https://releases.linaro.org/components/toolchain/binaries/6.3-2017.05/aarch64-linux-gnu/
+    # https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/
 
     Thereafter, set the environment variable:
 
@@ -137,7 +141,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
         CONFIG_RTE_KNI_KMOD=n
 
-  2. Export CROSS=/opt/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+  2. Export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 
   3. Optional: export OPENSSL_PATH=<path to OpenSSL library>
 
@@ -159,6 +163,14 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
     This command doesn't compile the example applications. See steps below
     for compiling example applications.
+
+    NOTE: If you are compiling with OPENSSL enabled, use following method for
+    compilation:
+
+     $ make install T=arm64-dpaa-linuxapp-gcc -j 4 \
+     CONFIG_RTE_LIBRTE_PMD_OPENSSL=y \
+     EXTRA_CFLAGS+="-Wno-error=deprecated-declarations \
+     -I$OPENSSL_PATH/include -fPIC" EXTRA_LDFLAGS=-L$OPENSSL_PATH/lib/
 
     NOTE: If installation is required in a specific directory, use following:
 
@@ -220,9 +232,14 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
       $ make -C examples/l2fwd-crypto
 
+   NOTE: if you are compiling with OPENSSL enabled, you need to specify the
+   openssl path. e.g.
+      $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include"  \
+        EXTRA_LDFLAGS=-L$OPENSSL_PATH/lib/ -C examples/l2fwd-crypto
+
 ===============================================================================
 
-Running DPDK Applications
+Executing DPDK Applications
 -------------------------
 
 There are some pre-requisites for running DPDK applications on the DPAA or DPAA2
@@ -236,7 +253,7 @@ Following are some pre-requisites on either platform.
   1. Bring up the board with the DPAA2 images with proper DPNI-DPMAC
      configurations in the DPL file.
 
-  2. Get the dpdk applications binaries and dynamic_dpl.sh on the LS2 board.
+  2. Get the dpdk applications binaries and dynamic_dpl.sh on the DPAA2 board.
      It may already be present in rootfs at (/usr/local/dpdk/dpaa2).
 
       NOTE: If `pktgen` application is to be run, please increase the number of
@@ -267,7 +284,7 @@ Following are some pre-requisites on either platform.
   2. Mount the hugepages for DPDK application:
 
     $ mkdir -p /mnt/hugetlbfs # if this folder doesn't already exist
-    $ echo 512 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    $ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
     $ mount -t hugetlbfs nodev /mnt/hugetlbfs/
 
   3. Before running application, a binary `fmc` needs to be executed to
@@ -467,7 +484,7 @@ Following are some pre-requisites on either platform.
 
   $ l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0),(5,2,1,0,0,0),(5,3,1,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
 
-  Running DPDK Applications in Virtual Machine
+  Running DPDK Applications in Virtual Machine (in Virtio mode)
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     Layer-2 Forwarding 'l2fwd' using VHOST application
@@ -573,9 +590,9 @@ of NXP LSDK documentation.
    of queues per port. It important to execute DPDK application is corresponding
    queue configuration based on the `fmc` argument:
 
-    ├── usdpaa_policy_hash_ipv4_1queue.xml - for 1 queue per port
-    ├── usdpaa_policy_hash_ipv4_2queue.xml - for 2 queues per port
-    └── usdpaa_policy_hash_ipv4_4queue.xml - for 4 queues per port
+        usdpaa_policy_hash_ipv4_1queue.xml - for 1 queue per port
+        usdpaa_policy_hash_ipv4_2queue.xml - for 2 queues per port
+        usdpaa_policy_hash_ipv4_4queue.xml - for 4 queues per port
 
 ================================================================================
 
@@ -583,19 +600,19 @@ Layout of Extra files in 'nxp' folder
 =====================================
 
 nxp/
-├── build_dpdk.sh
-├── COPYING
-├── disable_services.sh
-├── dpaa
-│   ├── usdpaa_config_ls1043.xml
-│   ├── usdpaa_config_ls1046.xml
-│   ├── usdpaa_policy_hash_ipv4_1queue.xml
-│   ├── usdpaa_policy_hash_ipv4_2queue.xml
-│   └── usdpaa_policy_hash_ipv4_4queue.xml
-├── dpaa2
-│   ├── destroy_dynamic_dpl.sh
-│   └── dynamic_dpl.sh
-└── README
+        build_dpdk.sh
+        COPYING
+        disable_services.sh
+        dpaa
+                usdpaa_config_ls1043.xml
+                usdpaa_config_ls1046.xml
+                usdpaa_policy_hash_ipv4_1queue.xml
+                usdpaa_policy_hash_ipv4_2queue.xml
+                usdpaa_policy_hash_ipv4_4queue.xml
+        dpaa2
+                destroy_dynamic_dpl.sh
+                dynamic_dpl.sh
+        README
 
 - nxp/build_dpdk.sh
   is a script for compilation of DPDK for various platforms
@@ -626,7 +643,8 @@ Applications validated DPAA/DPAA2 Platforms
  2. l3fwd
  3. l2fwd-crypto
  4. l2fwd-keepalive
- 5. link_status_interrupt (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
+ 5. link_status_interrupt
+       (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
  6. ip_fragmentation
  7. ip_reassembly
  8. ipv4_multicast
