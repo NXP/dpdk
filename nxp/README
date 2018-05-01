@@ -55,7 +55,7 @@ Following information can be used to obtain these components:
       $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.4
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.4, 4,9, 4,14 has been verified with DPDK. Other kernels may work but
+    Linux-4.4, 4.9, 4.14 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
     NOTE: By default, the KNI module compilation is enabled in DPDK requiring
@@ -531,6 +531,11 @@ Following are some pre-requisites on either platform.
        Now pump traffic from the Spirent to the enabled port
 
 ================================================================================
+VM VFIO Direct Assignment
+=========================
+
+Refer to nxp/dpaa2/README_VM_VFIO_DIRECT for further information.
+
 
 Achieving best performance from DPDK Applications
 =================================================
