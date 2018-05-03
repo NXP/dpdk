@@ -47,7 +47,8 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/epoll.h>
-#include<sys/eventfd.h>
+#include <sys/eventfd.h>
+#include <sys/syscall.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
@@ -112,11 +113,12 @@ dpaa2_core_cluster_sdest(int cpu_id)
 	return dpaa2_core_cluster_base + x;
 }
 
+#define COMMAND_LEN	256
+#define STRING_LEN	28
+
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
 static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 {
-#define STRING_LEN	28
-#define COMMAND_LEN	50
 	uint32_t cpu_mask = 1;
 	int ret;
 	size_t len = 0;
@@ -269,6 +271,8 @@ static int
 dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
+	pid_t tid;
+	char command[COMMAND_LEN];
 
 	/* Set the Stashing Destination */
 	if (cpu_id < 0) {
@@ -311,6 +315,30 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		return -1;
 	}
 #endif
+
+	if (getenv("NXP_CHRT_PERF_MODE") && cpu_id != 0) {
+		tid = syscall(SYS_gettid);
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA2_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA2_BUS_DEBUG(" %s command is executed", command);
+
+		/*
+		 * When we use chrt to update the threads priority, sometimes
+		 * core's cpu frequency reduces to half. To avoid this we
+		 * change scaling governor of the core.
+		 */
+		snprintf(command, COMMAND_LEN, "echo \"performance\" >"
+			 " /sys/devices/system/cpu/cpu%d/cpufreq/"
+			 "scaling_governor\n", cpu_id);
+		ret = system(command);
+		if (ret < 0)
+			DPAA2_BUS_WARN("Failed to change scaling_governor");
+		else
+			DPAA2_BUS_DEBUG(" %s command is executed", command);
+	}
 
 	return 0;
 }

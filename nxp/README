@@ -753,6 +753,11 @@ Applications validated DPAA/DPAA2 Platforms
 Environment configuration variables
 ------------------------------------
 
+Common for DPAA1 & DPAA2
+------------------------
+1. NXP_CHRT_PERF_MODE		Internally sets each I/O thread to have chrt priority as 90.
+
+
 DPAA1:
 ------
 1. DPAA_PUSH_QUEUES_NUMBER    - Max number of queues that can be high performance
