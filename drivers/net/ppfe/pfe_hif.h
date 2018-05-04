@@ -91,6 +91,13 @@ struct hif_ipsec_hdr {
 	u16	sa_handle[2];
 } __packed;
 
+struct ppfe_parse {
+	unsigned int packet_type;
+	uint16_t hash;
+	uint16_t parse_incomplete;
+	unsigned long long ol_flags;
+};
+
 /*  HIF_CTRL_TX... defines */
 #define HIF_CTRL_TX_CHECKSUM		BIT(2)
 
@@ -144,6 +151,7 @@ void pfe_hif_rx_idle(struct pfe_hif *hif);
 int pfe_hif_rx_process(struct pfe_hif *hif, int budget);
 int pfe_hif_init_buffers(struct pfe_hif *hif);
 void pfe_tx_do_cleanup(struct pfe *pfe);
+void dump_parseresults(struct ppfe_parse *parse_res);
 
 static inline void hif_tx_lock(struct pfe_hif *hif)
 {
