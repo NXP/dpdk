@@ -4,6 +4,7 @@ NXP DPDK README
 Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX2160
 2. DPAA  : LS1043, LS1046
+3. PPFE  : LS1012
 
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
@@ -11,7 +12,7 @@ controller driver for Layerscape platforms
 This README provides information about building and executing DPDK based
 applications for supported platforms.
 
-NOTE: The NXP DPDK package is configured to generate single binary for both
+NOTE: The NXP DPDK package is configured to generate single binary for
       all supported platforms. For this, configuration file is available
       in folder `config/defconfig_arm64-dpaa-linuxapp-gcc`. Further details are
       documented below.
@@ -25,8 +26,9 @@ following components are required:
 
 1. DPDK source code
 2. Cross compiled toolchain for ARM64 platform
-3. (Optional) NXP provided Linux kernel, as per board being used
+3. Linux kernel, as per board being used
 4. (Optional) OpenSSL package for OpenSSL driver with ARMCE support
+5. (Optional) ARMv8_crypto package for ARMv8 crypto driver
 
 Following information can be used to obtain these components:
 
@@ -66,6 +68,13 @@ Following information can be used to obtain these components:
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
           be available in the rootfs. In this case, requirements for a compiled
           Linux Kernel source would not be required.
+
+    NOTE: For PPFE platform, DPDK has dependancy on pfe.ko module to perform the
+	  necessary intilatization of firmware and ethernet. "pfe.ko" might already
+	  be available in rootfs and loaded automatically on board up. Otherwise, user
+	  must compile the kernel to generate pfe.ko and insmod the module on board
+	  up using below command:
+		insmod pfe.ko us=1
 
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -116,6 +125,27 @@ Following information can be used to obtain these components:
           OpenSSL package would not be required.
 
 
+   Getting ARMv8 crypto: (Cross Compiled Package)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   DPDK applications may use CAAM, Openssl or ARMv8 crypto library to perform
+   IPsec operations on data. It needs to fetch and cross compiled the ARMv8
+   crypto package to link with DPDK applications:
+
+   Clone ARMv8 repository
+
+	$ cd dpdk <dpdk repository>
+	$ git submodule add https://github.com/caviumnetworks/armv8_crypto
+        $ git submodule init
+        $ git submodule update
+
+   Build ARMv8
+
+	$ export CROSS=<path to cross-compile toolchain>
+        $ export RTE_SDK=<path to DPDK source code>
+	$ export ARMV8_CRYPTO_LIB_PATH=${RTE_SDK}/armv8_crypto
+        $ make CC=${CROSS}gcc -C ${ARMV8_CRYPTO_LIB_PATH} CFLAGS="-O3 -Wall -static -I${ARMV8_CRYPTO_LIB_PATH} -I${ARMV8_CRYPTO_LIB_PATH}/asm/include"
+
 ===============================================================================
 
 Building DPDK and Example Applications
@@ -136,7 +166,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
   1. Optional: export KERNEL_PATH=<path to prebuild Linux Kernel>
 
   NOTE: As mentioned above, prebuild Linux Kernel is optional. Dependency
-        for this can be disabled by adding following configuration to
+	for this can be disabled by adding following configuration to
         config/defconfig_arm64-dpaa-linuxapp-gcc file:
 
         CONFIG_RTE_KNI_KMOD=n
@@ -152,7 +182,15 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
         CONFIG_RTE_LIBRTE_PMD_OPENSSL=n
 
-  4. Execute the following command to build DPDK:
+  4. Optional: export ARMV8_CRYPTO_LIB_PATH=${RTE_SDK}/armv8_crypto
+
+  NOTE: ARMv8 Crypto library required only for ARMv8 Cryto PMD. ARMv8 crypto
+	compilation can be enabled by setting following in the
+	config/defconfig_arm64-dpaa-linuxapp-gcc configuration file:
+
+	CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO=y
+
+  5. Execute the following command to build DPDK:
 
     $ make T=arm64-dpaa-linuxapp-gcc -j 4 install
 
@@ -242,10 +280,33 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 Executing DPDK Applications
 -------------------------
 
-There are some pre-requisites for running DPDK applications on the DPAA or DPAA2
-boards.
+There are some pre-requisites for running DPDK applications on the PPFE, DPAA or
+DPAA2 boards.
 
-Following are some pre-requisites on either platform.
+Following are some pre-requisites:
+
+  For PPFE Platform:
+  ~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with PPFE images with proper bootargs:
+	<bootargs>
+
+  2. Mount the hugetlbfs required for DPDK applications:
+	1. mkdir /mnt/hugepages
+	2. mount -t hugetlbfs none /mnt/hugepages
+
+  3. Make sure pfe.ko is loaded in User Space mode using below command:
+	1. cat /sys/module/pfe/parameters/us
+
+	Output of this command should be 1
+
+    NOTE: pfe.ko will be loaded on board bring up automatically. User can check
+	  Whether it is loaded or not using below command:
+		1. lsmod
+
+	  In case, if it is not loaded automatically, below command can be used to
+	  to load:
+		1. insmod /lib/modules/<kernel_version>/kernel/drivers/staging/fsl_ppfe/pfe.ko us=1
 
   For DPAA2 Platform:
   ~~~~~~~~~~~~~~~~~~~
@@ -339,6 +400,11 @@ Following are some pre-requisites on either platform.
 
   NOTE: For all the applications, the value n must be always 1 for all platforms.
 
+  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
+	argument with value "eth_pfe" to enable ethernet device. Maximum supported
+	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
+	values "eth_pfe0" and "eth_pfe1".
+
   'testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 
@@ -366,6 +432,7 @@ Following are some pre-requisites on either platform.
   On the `testpmd` prompt, <tab> key can be used for command completion as well
   as command help.
 
+  NOTE: testpmd is not supported on PPFE platform
 
   Layer-2 Forwarding 'l2fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -377,6 +444,10 @@ Following are some pre-requisites on either platform.
   OR
 
   $ ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+
+  For PPFE platform:
+
+  $ ./l2fwd -c 0x1 -n 1 --vdev 'eth_pfe0' --vdev='eth_pfe1' -- -p 0x3 -q 3
 
   In the above commands, the port mask has been modified to support first and
   first two ports, respectively. Also, the Core mask has been modified to
@@ -406,6 +477,8 @@ Following are some pre-requisites on either platform.
   'virtual mode' for QDMA processing. 'HW mode' is recommended for best
   performance, but limiting the number of supported QDMA queues.
 
+  NOTE: It is only supported for DPAA2 platform
+
 
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -427,6 +500,10 @@ Following are some pre-requisites on either platform.
   For 8 core - 4 Port with 4 queue per port =>
 
   $ ./l3fwd -c 0xFF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
+
+  FOR PPFE platform:
+
+  $ ./l3fwd -c 0x1 --vdev='eth_pfe0' --vdev='eth_pfe1' -n 1 -- -p 0x3 --config="(0,0,0),(1,0,0)" -P
 
   Hereafter, use the packet generator (Spirent, for example) to send traffic
   streams with below configuration of the destination IP address in the frames
@@ -662,6 +739,14 @@ Applications validated DPAA/DPAA2 Platforms
  15. skelton
  16. rxtx_callback
  17. ipsecgw
+
+ Applications Validated PPFE Platform
+ ------------------------------------
+
+ 1. l2fwd
+ 2. l3fwd
+ 3. l2fwd-crypto
+ 4. ipsecgw
 
 ================================================================================
 
