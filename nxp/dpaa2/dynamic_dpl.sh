@@ -6,9 +6,12 @@ cat > script_help << EOF
 script help :----->
 
 	Run this script as
-	". ./dynamic_dpl.sh dpmac.1 dpmac.2 -b ab:cd:ef:gh:ij:kl dpni-dpni dpni-self..."
+	". ./dynamic_dpl.sh -c my.conf dpmac.1 dpmac.2 -b ab:cd:ef:gh:ij:kl dpni-dpni dpni-self..."
 
-	Acceptable arguments are dpni-dpni, dpni-self, dpmac.x and -b
+	Acceptable arguments are dpni-dpni, dpni-self, dpmac.x, -c and -b
+    -c [optional] = Specify conf file for device count, PARENT_DPRC etc.
+		    check vm_dpdk.conf as an example.
+		    If specified this shall be the first argument.
 
     -b [optional] = Specify the MAC base address and must be followed by
 		    a valid MAC base address. If this option is there in
@@ -156,6 +159,14 @@ script help :----->
 					where "Number of priorities" is an
 					integer value.
 					"e.g export DPIO_PRIORITIES=8"
+
+	/**DPMCP**:-->
+		DPMCP_COUNT	    = DPMCP objects count
+					Set the parameter using below command:
+					'export DPMCP_COUNT=<Num of MCportal objects>'
+					where "Number of dpmcp objects" is an
+					integer value.
+					e.g export DPMCP_COUNT=1"
 
 	/**DPBP**:-->
 		DPBP_COUNT	    = DPBP objects count
@@ -312,6 +323,19 @@ get_dpcon_parameters() {
 	echo >> dynamic_dpl_logs
 }
 
+#/* Function, to initialize the DPMCP related parameters
+#*/
+get_dpmcp_parameters() {
+	if [[ -z "$DPMCP_COUNT" ]]
+	then
+		DPMCP_COUNT=1
+	fi
+	echo "DPMCP parameters :-->" >> dynamic_dpl_logs
+	echo -e "\tDPMCP_COUNT = "$DPMCP_COUNT >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+}
+
 #/* Function, to intialize the DPBP related parameters
 #*/
 get_dpbp_parameters() {
@@ -418,12 +442,35 @@ create_actual_mac() {
 	ACTUAL_MAC=$(echo $2 | sed -e 's/..$/'$last_octet'/g')
 }
 
+obj_assign() {
+	restool dprc sync
+	OBJ1=$1
+	if [[ "$NESTED_DPRC" == "0" ]]
+	then
+		TEMP=$(restool dprc assign $DPRC --object=$OBJ1 --child=$DPRC --plugged=1)
+		echo $OBJ "moved to plugged state" >> dynamic_dpl_logs
+	else
+		TEMP=$(restool dprc assign $DPRC --object=$OBJ1 --child=$DPRC --plugged=1)
+		echo "\t" $OBJ1 "assigned to " $ROOT_DPRC "->" $PARENT_DPRC "->" $DPRC >> dynamic_dpl_logs
+	fi
+	restool dprc sync
+}
 
 #/* script's actual starting point
 #*/
 rm dynamic_dpl_logs > /dev/null 2>&1
 rm dynamic_results > /dev/null 2>&1
 unset BASE_ADDR
+ROOT_DPRC=dprc.1
+PARENT_DPRC=${ROOT_DPRC}
+arg=1
+if [[ ${!arg} == "-c" ]]
+then
+	echo -e "Using configuration file $2"
+	source $2
+	shift
+	shift
+fi
 printf "%-21s %-21s %-25s\n" "Interface Name" "Endpoint" "Mac Address" > dynamic_results
 printf "%-21s %-21s %-25s\n" "==============" "========" "==================" >> dynamic_results
 RED='\033[0;31m'
@@ -431,13 +478,40 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 if [[ $1 ]]
 then
+	echo "parent - $PARENT_DPRC"
+	if [[ "$ROOT_DPRC" = "$PARENT_DPRC" ]]
+	then
+		NESTED_DPRC=0
+	else
+		NESTED_DPRC=1
+	fi
+
 	echo "Available DPRCs" >> dynamic_dpl_logs
 	restool dprc list >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	#/* Creation of DPRC*/
-	export DPRC=$(restool -s dprc create dprc.1 --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED)
+	if [[ "$NESTED_DPRC" = "0" ]]
+	then
+		echo "Creating Non nested DPRC"
+		export DPRC=$(restool -s dprc create $ROOT_DPRC --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED,DPRC_CFG_OPT_IRQ_CFG_ALLOWED)
+		if [[ "$NO_BIND_DPRC" = "1" ]]
+		then
+			DPRC_LOC=""
+			DPRC_TO_BIND=""
+		else
+			DPRC_LOC=/sys/bus/fsl-mc/devices/$DPRC
+			DPRC_TO_BIND=$DPRC
+		fi
+	else
+		echo "Creating nested DPRC"
+		export DPRC=$(restool -s dprc create $PARENT_DPRC --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED)
+		DPRC_LOC=/sys/bus/fsl-mc/devices/$PARENT_DPRC
+		DPRC_TO_BIND=$PARENT_DPRC
+	fi
 
-	DPRC_LOC=/sys/bus/fsl-mc/devices/$DPRC
+	echo "NEW DPRCs"
+	restool dprc list
+
 	echo $DPRC "Created" >> dynamic_dpl_logs
 
 	#/*Validating the arguments*/
@@ -577,8 +651,8 @@ then
 		if [[ $TYPE == "dpmac" ]]
 		then
 			echo -e "\tDisconnecting the" $OBJ", if already connected" >> dynamic_dpl_logs
-			TEMP=$(restool dprc disconnect dprc.1 --endpoint=$OBJ > /dev/null 2>&1)
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ 2>&1)
+			TEMP=$(restool dprc disconnect $ROOT_DPRC --endpoint=$OBJ > /dev/null 2>&1)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ 2>&1)
 			CHECK=$(echo $TEMP | head -1 | cut -f2 -d ' ');
 			if [[ $CHECK == "error:" ]]
 			then
@@ -596,7 +670,7 @@ then
 					rm script_help
 					[[ "${BASH_SOURCE[0]}" != $0 ]] && return || exit
 				fi
-				restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ
+				restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ
 			fi
 			MAC_ADDR1=
 			echo -e '\t'$OBJ" Linked with "$DPNI >> dynamic_dpl_logs
@@ -613,7 +687,7 @@ then
 		elif [[ $TYPE == "dpni" ]]
 		then
 			echo " printing the dpni ="${!num} >> dynamic_dpl_logs
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=${!num})
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=${!num})
 			echo -e '\t'$DPNI" Linked with "${!num} >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
@@ -622,7 +696,7 @@ then
 			OBJ=${!num}
 		elif [[ ${!num} == "dpni-self" ]]
 		then
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$DPNI)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$DPNI)
 			echo -e '\t'$DPNI" Linked with "$DPNI >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
@@ -631,7 +705,7 @@ then
 			MAC_ADDR1=$MAC_ADDR2
 			unset MAC_ADDR2
 		else
-			TEMP=$(restool dprc connect dprc.1 --endpoint1=$DPNI --endpoint2=$OBJ)
+			TEMP=$(restool dprc connect $ROOT_DPRC --endpoint1=$DPNI --endpoint2=$OBJ)
 			echo -e '\t'$OBJ" Linked with "$DPNI >> dynamic_dpl_logs
 			restool dprc sync
 			TEMP=$(restool dprc assign $DPRC --object=$DPNI --child=$DPRC --plugged=1)
@@ -668,51 +742,38 @@ then
 	restool dprc sync
 
 	#/* DPMCP objects creation*/
-	DPMCP=$(restool -s dpmcp create --container=$DPRC)
-	echo $DPMCP "Created" >> dynamic_dpl_logs
-	restool dprc sync
-	TEMP=$(restool dprc assign $DPRC --object=$DPMCP --child=$DPRC --plugged=1)
-	echo $DPMCP "moved to plugged state" >> dynamic_dpl_logs
-	restool dprc sync
+	for i in $(seq 1 ${DPMCP_COUNT}); do
+		DPMCP=$(restool -s dpmcp create --container=$DPRC)
+		echo $DPMCP "Created" >> dynamic_dpl_logs
+		obj_assign $DPMCP
+	done;
 
 	#/* DPBP objects creation*/
 	for i in $(seq 1 ${DPBP_COUNT}); do
 		DPBP=$(restool -s dpbp create --container=$DPRC)
 		echo $DPBP "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPBP --child=$DPRC --plugged=1)
-		echo $DPBP "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPBP
 	done;
 
 	#/* DPCON objects creation*/
 	for i in $(seq 1 ${DPCON_COUNT}); do
 		DPCON=$(restool -s dpcon create --num-priorities=$DPCON_PRIORITIES --container=$DPRC)
 		echo $DPCON "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPCON --child=$DPRC --plugged=1)
-		echo $DPCON "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPCON
 	done;
 
 	#/* DPSECI objects creation*/
 	for i in $(seq 1 ${DPSECI_COUNT}); do
 		DPSEC=$(restool -s dpseci create --num-queues=$DPSECI_QUEUES --priorities=$DPSECI_PRIORITIES --options=$DPSECI_OPTIONS --container=$DPRC)
 		echo $DPSEC "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPSEC --child=$DPRC --plugged=1)
-		echo $DPSEC "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPSEC
 	done;
 
 	#/* DPIO objects creation*/
 	for i in $(seq 1 ${DPIO_COUNT}); do
 		DPIO=$(restool -s dpio create --channel-mode=DPIO_LOCAL_CHANNEL --num-priorities=$DPIO_PRIORITIES --container=$DPRC)
 		echo $DPIO "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPIO --child=$DPRC --plugged=1)
-		echo $DPIO "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPIO
 	done;
 
 	# Create DPCI's for software queues
@@ -720,10 +781,7 @@ then
 	for i in $(seq 1 ${DPCI_COUNT}); do
 		DPCI=$(restool -s dpci create --num-priorities=$DPCI_PRIORITIES --container=$DPRC)
 		echo $DPCI "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPCI --child=$DPRC --plugged=1)
-		echo $DPCI "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPCI
 	done;
 
 	# Create DPDMAI's for qDMA
@@ -731,10 +789,7 @@ then
 	for i in $(seq 1 ${DPDMAI_COUNT}); do
 		DPDMAI=$(restool -s dpdmai create --priorities=1,1 --container=$DPRC)
 		echo $DPDMAI "Created" >> dynamic_dpl_logs
-		restool dprc sync
-		TEMP=$(restool dprc assign $DPRC --object=$DPDMAI --child=$DPRC --plugged=1)
-		echo $DPDMAI "moved to plugged state" >> dynamic_dpl_logs
-		restool dprc sync
+		obj_assign $DPDMAI
 	done;
 
 	dmesg -D
@@ -762,9 +817,9 @@ then
 	fi
 	if [ -e $DPRC_LOC ];
 	then
-		echo vfio-fsl-mc > /sys/bus/fsl-mc/devices/$DPRC/driver_override
-		echo -e "\tBind "$DPRC" to VFIO driver" >> dynamic_dpl_logs
-		echo $DPRC > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
+		echo vfio-fsl-mc > $DPRC_LOC/driver_override
+		echo -e "\tBind "$DPRC_TO_BIND" to VFIO driver" >> dynamic_dpl_logs
+		echo $DPRC_TO_BIND > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
 		echo -e "Binding to VFIO driver is done" >> dynamic_dpl_logs
 	fi
 	dmesg -E
@@ -773,6 +828,8 @@ then
 	echo
 	echo -e "Container $DPRC have following resources :=>"
 	echo
+	count=$(restool dprc show $DPRC | grep -c dpmcp.*)
+	echo -e " * $count DPMCP"
 	count=$(restool dprc show $DPRC | grep -c dpbp.*)
 	echo -e " * $count DPBP"
 	count=$(restool dprc show $DPRC | grep -c dpcon.*)
