@@ -91,11 +91,22 @@ Config File Options
 ~~~~~~~~~~~~~~~~~~~
 
 The following options can be modified in the ``config`` file.
-Please note that enabling debugging options may affect system performance.
 
-- ``CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF`` (default ``y``)
+- ``CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF_RAWDEV`` (default ``y``)
 
   Toggle compilation of the ``lrte_pmd_dpaa2_cmdif`` driver.
+
+Enabling logs
+-------------
+
+For enabling logs, use the following EAL parameter:
+
+.. code-block:: console
+
+   ./your_cmdif_application <EAL args> --log-level=pmd.raw.dpaa2.cmdif,<level>
+
+Using ``pmd.raw.dpaa2.cmdif`` as log matching criteria, all Event PMD logs can be
+enabled which are lower than logging ``level``.
 
 Driver Compilation
 ~~~~~~~~~~~~~~~~~~
@@ -124,10 +135,7 @@ Example:
 
 .. code-block:: console
 
-    ./your_cmdif_application --vdev="dpaa2_dpci"
-
-Limitations
------------
+    ./your_cmdif_application <EAL args> --vdev="dpaa2_dpci"
 
 Platform Requirement
 ~~~~~~~~~~~~~~~~~~~~

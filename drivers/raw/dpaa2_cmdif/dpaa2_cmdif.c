@@ -107,7 +107,7 @@ dpaa2_cmdif_enqueue_bufs(struct rte_rawdev *dev,
 			DPAA2_CMDIF_ERR("Transmit failure with err: %d\n", ret);
 	} while (ret == -EBUSY);
 
-	DPAA2_CMDIF_DEBUG("Successfully transmitted a packet\n");
+	DPAA2_CMDIF_DP_DEBUG("Successfully transmitted a packet\n");
 
 	return 0;
 }
@@ -153,46 +153,36 @@ dpaa2_cmdif_dequeue_bufs(struct rte_rawdev *dev,
 
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			DPAA2_CMDIF_ERR("VDQ cmd not issued. QBMAN is busy\n");
+			DPAA2_CMDIF_DP_WARN("VDQ cmd not issued. QBMAN is busy\n");
 			/* Portal was busy, try again */
 			continue;
 		}
 		break;
 	}
 
-	/*
-	 * Loop until the dq_storage is updated with
-	 * new token by QBMAN
-	 */
+	/* Check if previous issued command is completed. */
+	while (!qbman_check_command_complete(dq_storage))
+		;
+	/* Loop until the dq_storage is updated with new token by QBMAN */
 	while (!qbman_result_has_new_result(swp, dq_storage))
 		;
 
-	/*
-	 * Check whether Last Pull command is Expired and
-	 * setting Condition for Loop termination
-	 */
-	if (qbman_result_DQ_is_pull_complete(dq_storage)) {
-		/* Check for valid frame. */
-		status = (uint8_t)qbman_result_DQ_flags(dq_storage);
-		if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
-			DPAA2_CMDIF_DEBUG("No frame is delivered\n");
-			return 0;
-		}
+	/* Check for valid frame. */
+	status = (uint8_t)qbman_result_DQ_flags(dq_storage);
+	if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
+		DPAA2_CMDIF_DP_DEBUG("No frame is delivered\n");
+		return 0;
 	}
 
-	/*
-	 * Can avoid "qbman_result_is_DQ" check as
-	 * we are not expecting Notification on this SW-Portal
-	 */
 	fd = qbman_result_DQ_fd(dq_storage);
 
-	DPAA2_CMDIF_DEBUG("packet received\n");
-
 	buffers[0]->buf_addr = (void *)DPAA2_IOVA_TO_VADDR(
-			DPAA2_GET_FD_ADDR(fd) + DPAA2_GET_FD_OFFSET(fd));
+			DPAA2_GET_FD_ADDR(fd) +	DPAA2_GET_FD_OFFSET(fd));
 	cmdif_rcv_cnxt->size = DPAA2_GET_FD_LEN(fd);
 	cmdif_rcv_cnxt->flc = DPAA2_GET_FD_FLC(fd);
 	cmdif_rcv_cnxt->frc = DPAA2_GET_FD_FRC(fd);
+
+	DPAA2_CMDIF_DP_DEBUG("packet received\n");
 
 	return 1;
 }
@@ -304,7 +294,7 @@ RTE_INIT(dpaa2_cmdif_init_log);
 static void
 dpaa2_cmdif_init_log(void)
 {
-	dpaa2_cmdif_logtype = rte_log_register("dpaa2.cmdif");
+	dpaa2_cmdif_logtype = rte_log_register("pmd.raw.dpaa2.cmdif");
 	if (dpaa2_cmdif_logtype >= 0)
 		rte_log_set_level(dpaa2_cmdif_logtype, RTE_LOG_INFO);
 }
