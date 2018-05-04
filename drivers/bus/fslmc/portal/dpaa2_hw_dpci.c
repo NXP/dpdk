@@ -1,33 +1,7 @@
-/*-
- *   BSD LICENSE
+/* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2017 NXP
  *
- *   Redistribution and use in source and binary forms, with or without
- *   modification, are permitted provided that the following conditions
- *   are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in
- *       the documentation and/or other materials provided with the
- *       distribution.
- *     * Neither the name of Freescale Semiconductor, Inc nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <unistd.h>
@@ -72,7 +46,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	dpci_node = rte_malloc(NULL, sizeof(struct dpaa2_dpci_dev), 0);
 	if (!dpci_node) {
 		DPAA2_BUS_ERR("Memory allocation failed for DPCI Device");
-		return -1;
+		return -ENOMEM;
 	}
 
 	/* Open the dpci object */
@@ -81,8 +55,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 			CMD_PRI_LOW, dpci_id, &dpci_node->token);
 	if (ret) {
 		DPAA2_BUS_ERR("Resource alloc failure with err code: %d", ret);
-		rte_free(dpci_node);
-		return -1;
+		goto err;
 	}
 
 	/* Get the device attributes */
@@ -90,11 +63,9 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 				  CMD_PRI_LOW, dpci_node->token, &attr);
 	if (ret != 0) {
 		DPAA2_BUS_ERR("Reading device failed with err code: %d", ret);
-		rte_free(dpci_node);
-		return -1;
+		goto err;
 	}
 
-	/* Set up the Rx Queue */
 	for (i = 0; i < DPAA2_DPCI_MAX_QUEUES; i++) {
 		struct dpaa2_queue *rxq;
 
@@ -104,9 +75,9 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					dpci_node->token,
 					i, &rx_queue_cfg);
 		if (ret) {
-			DPAA2_BUS_ERR("Set Rx queue failed with err: %d", ret);
-			rte_free(dpci_node);
-			return -1;
+			DPAA2_BUS_ERR("Setting Rx queue failed with err code: %d",
+				      ret);
+			goto err;
 		}
 
 		/* Allocate DQ storage for the DPCI Rx queues */
@@ -116,15 +87,15 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					RTE_CACHE_LINE_SIZE);
 		if (!rxq->q_storage) {
 			DPAA2_BUS_ERR("q_storage allocation failed\n");
-			rte_free(dpci_node);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto err;
 		}
 
 		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
-		if (dpaa2_alloc_dq_storage(rxq->q_storage)) {
+		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
+		if (ret) {
 			DPAA2_BUS_ERR("dpaa2_alloc_dq_storage failed\n");
-			rte_free(dpci_node);
-			return -ENOMEM;
+			goto err;
 		}
 	}
 
@@ -133,8 +104,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 			  CMD_PRI_LOW, dpci_node->token);
 	if (ret != 0) {
 		DPAA2_BUS_ERR("Enabling device failed with err code: %d", ret);
-		rte_free(dpci_node);
-		return -1;
+		goto err;
 	}
 
 	for (i = 0; i < DPAA2_DPCI_MAX_QUEUES; i++) {
@@ -144,10 +114,9 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					dpci_node->token, i,
 					&rx_attr);
 		if (ret != 0) {
-			DPAA2_BUS_ERR("Rx queue fetch failed with err code:"
-				      " %d", ret);
-			rte_free(dpci_node);
-			return -1;
+			DPAA2_BUS_ERR("Rx queue fetch failed with err code: %d",
+				      ret);
+			goto err;
 		}
 		dpci_node->rx_queue[i].fqid = rx_attr.fqid;
 
@@ -157,9 +126,8 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 					&tx_attr);
 		if (ret != 0) {
 			DPAA2_BUS_ERR("Reading device failed with err code: %d",
-				ret);
-			rte_free(dpci_node);
-			return -1;
+				      ret);
+			goto err;
 		}
 		dpci_node->tx_queue[i].fqid = tx_attr.fqid;
 	}
@@ -170,6 +138,19 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	TAILQ_INSERT_TAIL(&dpci_dev_list, dpci_node, next);
 
 	return 0;
+
+err:
+	for (i = 0; i < DPAA2_DPCI_MAX_QUEUES; i++) {
+		struct dpaa2_queue *rxq = &(dpci_node->rx_queue[i]);
+
+		if (rxq->q_storage) {
+			dpaa2_free_dq_storage(rxq->q_storage);
+			rte_free(rxq->q_storage);
+		}
+	}
+	rte_free(dpci_node);
+
+	return ret;
 }
 
 struct dpaa2_dpci_dev *rte_dpaa2_alloc_dpci_dev(void)

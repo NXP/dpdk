@@ -15,10 +15,11 @@ CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/qbman/include
 
 LDLIBS += -lrte_bus_fslmc
-LDLIBS += -lrte_eal
-LDLIBS += -lrte_rawdev
 LDLIBS += -lrte_bus_vdev
+LDLIBS += -lrte_eal
 LDLIBS += -lrte_kvargs
+LDLIBS += -lrte_mempool_dpaa2
+LDLIBS += -lrte_rawdev
 
 EXPORT_MAP := rte_pmd_dpaa2_cmdif_version.map
 
@@ -27,8 +28,8 @@ LIBABIVER := 1
 #
 # all source are stored in SRCS-y
 #
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF) += dpaa2_cmdif.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF_RAWDEV) += dpaa2_cmdif.c
 
-SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF)-include += rte_pmd_dpaa2_cmdif.h
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_CMDIF_RAWDEV)-include += rte_pmd_dpaa2_cmdif.h
 
 include $(RTE_SDK)/mk/rte.lib.mk

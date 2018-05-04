@@ -8,7 +8,7 @@
 /**
  * @file
  *
- * NXP dpaa2 AIOP CMDIF PMD specific functions.
+ * NXP dpaa2 AIOP CMDIF PMD specific structures.
  *
  */
 
