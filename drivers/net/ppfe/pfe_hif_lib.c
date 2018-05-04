@@ -118,9 +118,9 @@ static void hif_lib_client_release_rx_buffers(struct hif_client_s *client)
 			 * "mbuf->data_offset - PFE_PKT_HEADER_SZ"
 			 */
 				buf = buf + PFE_PKT_HEADER_SZ
-				- sizeof(struct rte_mbuf)
-				- RTE_PKTMBUF_HEADROOM
-				- mb_priv->mbuf_priv_size;
+					- sizeof(struct rte_mbuf)
+					- RTE_PKTMBUF_HEADROOM
+					- mb_priv->mbuf_priv_size;
 				rte_pktmbuf_free((struct rte_mbuf *)buf);
 				desc->ctrl = 0;
 			}
@@ -394,6 +394,9 @@ int hif_lib_receive_pkt(struct hif_client_rx_queue *queue,
 	struct rte_mbuf *mbuf;
 	struct rte_eth_stats *stats = &priv->stats;
 	int i;
+#ifndef RTE_LIBRTE_PPFE_SW_PARSE
+	struct ppfe_parse *parse_res;
+#endif
 
 	for (i = 0; i < nb_pkts; i++) {
 		desc = queue->base + queue->read_idx;
@@ -419,7 +422,12 @@ int hif_lib_receive_pkt(struct hif_client_rx_queue *queue,
 		mbuf->data_len = mbuf->pkt_len;
 		stats->ibytes += mbuf->data_len;
 		mbuf->port = queue->port_id;
+#ifdef RTE_LIBRTE_PPFE_SW_PARSE
 		pfe_sw_parse_pkt(mbuf);
+#else
+		parse_res = (struct ppfe_parse *)(desc->data + PFE_HIF_SIZE);
+		mbuf->packet_type = parse_res->packet_type;
+#endif
 		mbuf->nb_segs = 1;
 		mbuf->next = NULL;
 
@@ -468,9 +476,9 @@ void hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
 
 	/* First buffer */
 	if (flags & HIF_FIRST_BUFFER) {
-		data1 -= sizeof(struct hif_hdr);
-		data -= sizeof(struct hif_hdr);
-		len += sizeof(struct hif_hdr);
+		data1 -= PFE_PKT_HEADER_SZ;
+		data -= PFE_PKT_HEADER_SZ;
+		len += PFE_PKT_HEADER_SZ;
 
 		hif_hdr_write(data1, client->id, qno, client_ctrl);
 	}
