@@ -134,8 +134,16 @@ struct tx_queue_desc {
 /* HIF Rx is not working properly for 2-byte aligned buffers and
  * ip_header should be 4byte aligned for better iperformance.
  * "ip_header = 64 + 6(hif_header) + 14 (MAC Header)" will be 4byte aligned.
+ * In case HW parse support:
+ * "ip_header = 64 + 6(hif_header) + 16 (parse) + 14 (MAC Header)" will be
+ * 4byte aligned.
  */
+#ifdef RTE_LIBRTE_PPFE_SW_PARSE
 #define PFE_PKT_HEADER_SZ	sizeof(struct hif_hdr)
+#else
+#define PFE_PKT_HEADER_SZ	sizeof(struct hif_hdr) + sizeof(struct ppfe_parse)
+#define PFE_HIF_SIZE		sizeof(struct hif_hdr)
+#endif
 
 #define MAX_L2_HDR_SIZE		14	/* Not correct for VLAN/PPPoE */
 #define MAX_L3_HDR_SIZE		20	/* Not correct for IPv6 */

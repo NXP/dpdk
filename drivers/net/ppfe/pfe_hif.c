@@ -10,6 +10,38 @@
 #define msleep(x) rte_delay_us(1000 * (x))
 #define usleep_range(min, max) msleep(DIV_ROUND_UP(min, 1000))
 
+void dump_parseresults(struct ppfe_parse *parse_res)
+{
+	unsigned int ptype = parse_res->packet_type;
+
+	PFE_PMD_INFO("\nptype is %x ", ptype);
+
+	if ((ptype & RTE_PTYPE_L2_MASK) == RTE_PTYPE_L2_ETHER)
+		PFE_PMD_INFO("l2 ether\n");
+	if ((ptype & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4)
+		PFE_PMD_INFO("l3 ipv4\n");
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_NONFRAG)
+		PFE_PMD_INFO("l4 nonfrag\n");
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_TCP)
+		PFE_PMD_INFO("TCP\n");
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_UDP)
+		PFE_PMD_INFO("UDP\n");
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_ICMP) {
+		if (RTE_ETH_IS_IPV6_HDR(ptype))
+			PFE_PMD_INFO("\nICMPV6\n");
+		if (RTE_ETH_IS_IPV4_HDR(ptype))
+			PFE_PMD_INFO("ICMP\n");
+	}
+	if ((ptype & RTE_PTYPE_L2_ETHER_VLAN)  == RTE_PTYPE_L2_ETHER_VLAN)
+		PFE_PMD_INFO("\nVLAN");
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_FRAG) {
+		if (RTE_ETH_IS_IPV6_HDR(ptype))
+			PFE_PMD_INFO("\nFRAGV6");
+		if (RTE_ETH_IS_IPV4_HDR(ptype))
+			PFE_PMD_INFO("\nFRAG\n");
+	}
+}
+
 static int pfe_hif_alloc_descr(struct pfe_hif *hif)
 {
 	void *addr;
@@ -105,6 +137,26 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 		/* Initialize Rx buffers from the shared memory */
 		struct rte_mbuf *mbuf =
 			(struct rte_mbuf *)hif->shm->rx_buf_pool[i];
+
+		/* DPDK buffer structure is as follow:
+		 * -------------------------------------------------------
+		 * | mbuf  | priv | sw + hw annotation | headroom | data |
+		 * -------------------------------------------------------
+		 *
+		 * As we are expecting additional information like parse
+		 * results, eth id, queue id from PPFE block along with data.
+		 * so we have to provide additional memory for each packet to
+		 * HIF rx rings so that PPFE block can write its headers.
+		 * so, we are giving the data pointor to HIF rings whose
+		 * calculation is as below:
+		 * mbuf->data_pointor - Required_header_size
+		 *
+		 * We are utilizing the HEADROOM area to receive the PPFE
+		 * block headers. On packet reception, HIF driver will use
+		 * PPFE headers information based on which it will decide
+		 * the clients and fill the parse results.
+		 * after that application can use/overwrite the HEADROOM area.
+		 */
 		hif->rx_buf_vaddr[i] =
 			(void *)((uint64_t)mbuf->buf_addr + mbuf->data_off -
 					PFE_PKT_HEADER_SZ);
