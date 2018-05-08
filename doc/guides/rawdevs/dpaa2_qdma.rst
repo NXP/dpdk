@@ -76,8 +76,8 @@ separately:
 
 Currently supported by DPDK:
 
-- NXP SDK **2.0+**.
-- MC Firmware version **10.0.0** and higher.
+- NXP LSDK **17.12+**.
+- MC Firmware version **10.3.0** and higher.
 - Supported architectures:  **arm64 LE**.
 
 - Follow the DPDK :ref:`Getting Started Guide for Linux <linux_gsg>` to setup the basic DPDK environment.
@@ -95,7 +95,7 @@ Config File Options
 
 The following options can be modified in the ``config`` file.
 
-- ``CONFIG_RTE_LIBRTE_PMD_DPAA2_QDMA`` (default ``y``)
+- ``CONFIG_RTE_LIBRTE_PMD_DPAA2_QDMA_RAWDEV`` (default ``y``)
 
   Toggle compilation of the ``lrte_pmd_dpaa2_qdma`` driver.
 
@@ -106,9 +106,9 @@ For enabling logs, use the following EAL parameter:
 
 .. code-block:: console
 
-   ./your_qdma_application <EAL args> --log-level=pmd.dpaa2.qdma,<level>
+   ./your_qdma_application <EAL args> --log-level=pmd.raw.dpaa2.qdma,<level>
 
-Using ``dpaa2.qdma`` as log matching criteria, all Event PMD logs can be
+Using ``pmd.raw.dpaa2.qdma`` as log matching criteria, all Event PMD logs can be
 enabled which are lower than logging ``level``.
 
 Driver Compilation

@@ -1,13 +1,14 @@
 ..  SPDX-License-Identifier: BSD-3-Clause
     Copyright 2018 NXP
 
-RAW Drivers
-===========
+Rawdev Drivers
+==============
 
-The following are generic drivers for non-standard i.e. raw category.
+The following are a list of raw device PMDs, which can be used from an
+application through rawdev API.
 
 .. toctree::
-    :maxdepth: 3
+    :maxdepth: 2
     :numbered:
 
     dpaa2_cmdif

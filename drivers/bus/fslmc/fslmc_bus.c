@@ -408,17 +408,18 @@ rte_fslmc_probe(void)
 
 			if (dev->device.devargs &&
 			  dev->device.devargs->policy == RTE_DEV_BLACKLISTED) {
-				DPAA2_BUS_LOG(DEBUG, "%s Blacklisted",
+				DPAA2_BUS_LOG(DEBUG, "%s Blacklisted, skipping",
 					      dev->device.name);
 				continue;
 			}
 
 			if (probe_all ||
 			   (dev->device.devargs &&
-			   dev->device.devargs->policy == RTE_DEV_WHITELISTED)) {
+			   dev->device.devargs->policy ==
+			   RTE_DEV_WHITELISTED)) {
 				ret = drv->probe(drv, dev);
 				if (ret)
-					DPAA2_BUS_ERR("Unable to probe.\n");
+					DPAA2_BUS_ERR("Unable to probe");
 			}
 			break;
 		}
