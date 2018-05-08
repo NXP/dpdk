@@ -383,7 +383,7 @@ get_dpio_parameters() {
 		then
 			DPIO_COUNT=34
 		else
-			DPIO_COUNT=10
+			DPIO_COUNT=18
 		fi
 	fi
 	if [[ -z "$DPIO_PRIORITIES" ]]
