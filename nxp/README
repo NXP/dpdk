@@ -753,6 +753,11 @@ Applications validated DPAA/DPAA2 Platforms
 Environment configuration variables
 ------------------------------------
 
+Common for DPAA1 & DPAA2
+------------------------
+1. NXP_CHRT_PERF_MODE		Internally sets each I/O thread to have chrt priority as 90.
+
+
 DPAA1:
 ------
 1. DPAA_PUSH_QUEUES_NUMBER    - Max number of queues that can be high performance
@@ -781,8 +786,6 @@ DPAA2:
 
 8. DPAA2_DATA_STASHING_OFF	Switch off data stashing when this flag is enabled. This gives
 				better performance on LS1088 with number of cores >= 4.
-
-9. DPAA2_CHRT_PERF_MODE		Internally sets each I/O thread to have chrt priority as 90.
 
 ================================================================================
 

@@ -316,7 +316,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	}
 #endif
 
-	if (getenv("DPAA2_CHRT_PERF_MODE") && cpu_id != 0) {
+	if (getenv("NXP_CHRT_PERF_MODE") && cpu_id != 0) {
 		tid = syscall(SYS_gettid);
 		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
 		ret = system(command);
