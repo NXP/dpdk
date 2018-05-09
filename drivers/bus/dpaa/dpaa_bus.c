@@ -276,6 +276,8 @@ dpaa_clean_device_list(void)
 	}
 }
 
+#define COMMAND_LEN	256
+
 int rte_dpaa_portal_init(void *arg)
 {
 	cpu_set_t cpuset;
@@ -283,6 +285,8 @@ int rte_dpaa_portal_init(void *arg)
 	uint32_t cpu = rte_lcore_id();
 	int ret;
 	struct dpaa_portal *dpaa_io_portal;
+	pid_t tid;
+	char command[COMMAND_LEN];
 
 	BUS_INIT_FUNC_TRACE();
 
@@ -337,6 +341,30 @@ int rte_dpaa_portal_init(void *arg)
 	dpaa_io_portal->qman_idx = qman_get_portal_index();
 	dpaa_io_portal->bman_idx = bman_get_portal_index();
 	dpaa_io_portal->tid = syscall(SYS_gettid);
+
+	if (getenv("NXP_CHRT_PERF_MODE") && cpu != 0) {
+		tid = syscall(SYS_gettid);
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA_BUS_DEBUG(" %s command is executed", command);
+
+		/*
+		 * When we use chrt to update the threads priority, sometimes
+		 * core's cpu frequency reduces to half. To avoid this we
+		 * change scaling governor of the core.
+		 */
+		snprintf(command, COMMAND_LEN, "echo \"performance\" >"
+			 " /sys/devices/system/cpu/cpu%d/cpufreq/"
+			 "scaling_governor\n", cpu);
+		ret = system(command);
+		if (ret < 0)
+			DPAA_BUS_WARN("Failed to change scaling_governor");
+		else
+			DPAA_BUS_DEBUG(" %s command is executed", command);
+	}
 
 	ret = pthread_setspecific(dpaa_portal_key, (void *)dpaa_io_portal);
 	if (ret) {
