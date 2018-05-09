@@ -102,6 +102,14 @@
 
 #define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V3(0x235)
 
+#define DPNI_CMDID_SET_QOS_TBL			DPNI_CMD_V2(0x240)
+#define DPNI_CMDID_ADD_QOS_ENT			DPNI_CMD(0x241)
+#define DPNI_CMDID_REMOVE_QOS_ENT		DPNI_CMD(0x242)
+#define DPNI_CMDID_CLR_QOS_TBL			DPNI_CMD(0x243)
+#define DPNI_CMDID_ADD_FS_ENT			DPNI_CMD(0x244)
+#define DPNI_CMDID_REMOVE_FS_ENT		DPNI_CMD(0x245)
+#define DPNI_CMDID_CLR_FS_ENT			DPNI_CMD(0x246)
+
 #define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V2(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
 #define DPNI_CMDID_GET_QUEUE			DPNI_CMD(0x25F)
@@ -122,6 +130,8 @@
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
 #define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD(0x26D)
+#define DPNI_CMDID_SET_RX_FS_DIST		DPNI_CMD(0x273)
+#define DPNI_CMDID_SET_RX_HASH_DIST		DPNI_CMD(0x274)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -517,6 +527,63 @@ struct dpni_cmd_set_queue {
 	uint64_t user_context;
 };
 
+#define DPNI_DISCARD_ON_MISS_SHIFT	0
+#define DPNI_DISCARD_ON_MISS_SIZE	1
+#define DPNI_KEEP_QOS_ENTRIES_SHIFT		1
+#define DPNI_KEEP_QOS_ENTRIES_SIZE		1
+
+struct dpni_cmd_set_qos_table {
+	uint32_t pad;
+	uint8_t default_tc;
+	/* only the LSB */
+	uint8_t discard_on_miss;
+	uint16_t pad1[21];
+	uint64_t key_cfg_iova;
+};
+
+struct dpni_cmd_add_qos_entry {
+	uint16_t pad;
+	uint8_t tc_id;
+	uint8_t key_size;
+	uint16_t index;
+	uint16_t pad2;
+	uint64_t key_iova;
+	uint64_t mask_iova;
+};
+
+struct dpni_cmd_remove_qos_entry {
+	uint8_t pad1[3];
+	uint8_t key_size;
+	uint32_t pad2;
+	uint64_t key_iova;
+	uint64_t mask_iova;
+};
+
+struct dpni_cmd_add_fs_entry {
+	uint16_t options;
+	uint8_t tc_id;
+	uint8_t key_size;
+	uint16_t index;
+	uint16_t flow_id;
+	uint64_t key_iova;
+	uint64_t mask_iova;
+	uint64_t flc;
+};
+
+struct dpni_cmd_remove_fs_entry {
+	uint16_t pad1;
+	uint8_t tc_id;
+	uint8_t key_size;
+	uint32_t pad2;
+	uint64_t key_iova;
+	uint64_t mask_iova;
+};
+
+struct dpni_cmd_clear_fs_entries {
+	uint16_t pad;
+	uint8_t tc_id;
+};
+
 #define DPNI_DROP_ENABLE_SHIFT	0
 #define DPNI_DROP_ENABLE_SIZE	1
 #define DPNI_DROP_UNITS_SHIFT	2
@@ -638,6 +705,27 @@ struct dpni_rsp_get_congestion_notification {
 	uint64_t message_ctx;
 	uint32_t threshold_entry;
 	uint32_t threshold_exit;
+};
+
+#define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_FS_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_fs_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc;
+	uint16_t	miss_flow_id;
+	uint16_t	pad1;
+	uint64_t	key_cfg_iova;
+};
+
+#define DPNI_RX_HASH_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_HASH_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_hash_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc_id;
+	uint32_t	pad;
+	uint64_t	key_cfg_iova;
 };
 
 #pragma pack(pop)
