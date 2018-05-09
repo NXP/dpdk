@@ -216,6 +216,7 @@ scan_one_fslmc_device(char *dev_name)
 	}
 
 	/* Update the device found into the device_count table */
+	dev->dev_type = dev_type;
 	rte_fslmc_bus.device_count[dev->dev_type]++;
 
 	t_ptr = strtok(NULL, ".");
@@ -226,7 +227,6 @@ scan_one_fslmc_device(char *dev_name)
 
 	sscanf(t_ptr, "%hu", &dev->object_id);
 	dev->device.name = strdup(dev_name);
-	dev->dev_type = dev_type;
 	if (!dev->device.name) {
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
 		goto cleanup;
