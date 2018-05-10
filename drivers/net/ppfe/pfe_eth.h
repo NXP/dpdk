@@ -45,7 +45,7 @@ struct ls1012a_pfe_platform_data {
 #define EMAC_TXQ_DEPTH	(HIF_TX_DESC_NT)
 
 #define JUMBO_FRAME_SIZE	10258
-#define EMAC_RXQ_CNT	3
+#define EMAC_RXQ_CNT	1
 #define EMAC_RXQ_DEPTH	HIF_RX_DESC_NT
 
 struct  pfe_eth_priv_s {

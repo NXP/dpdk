@@ -371,7 +371,8 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 
 		/* Check to valid queue number */
 		if (hif->client[hif->client_id].rx_qn <= hif->qno) {
-			PFE_PMD_INFO("packet with invalid queue: %d", hif->qno);
+			PFE_DP_LOG(DEBUG, "packet with invalid queue: %d",
+					hif->qno);
 			hif->qno = 0;
 		}
 
