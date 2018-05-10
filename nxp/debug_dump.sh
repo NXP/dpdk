@@ -36,7 +36,7 @@ function devicetree() {
 
 function system() {
 	print "*************** Boot message"
-#	mycmd "dmesg \| head -100"
+	dmesg | head -100 >> $(logoutput)
 	print "*************** kernel version*******"
 	mycmd "uname -a"
 	print "*************** Bootargs*******"
@@ -70,7 +70,7 @@ function system_adv() {
 	devicetree
 
 	print "*************** History"
-#	history \| tail -100
+	history 100 >> ${logoutput}
 
 	print "*************** systemd *******"
 	mycmd "systemctl status"
@@ -84,9 +84,9 @@ function system_adv() {
 	mycmd "netstat -lnp --ip"
 
 	print "*************** Find the Top 10 Memory Consuming Processes"
-#	mycmd "ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head"
+	ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head >> ${logoutput}
 	print "*************** Find the Top 10 CPU Consuming Processes"
-#	mycmd "ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head"
+	ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head >> ${logoutput}
 
 	print "*************** Display Memory Utilization Slabinfo"
 	mycmd "vmstat -m"
@@ -124,9 +124,19 @@ function dpaa_info() {
 function dpaa2_info() {
 	echo "DPAA2: $@" >> ${logoutput}
 	restool -v >> ${logoutput}
-	mycmd "restool dprc show $DPRC"
 	mycmd "ls-listmac"
 	mycmd "ls-listni"
+	for i in `restool dprc show $DPRC | tr -s "^I" | cut -f1`;
+	do
+		TYPE=$(echo $i | cut -f1 -d '.')
+		echo "$i"
+		if [ "$TYPE" == "dpni" -o "$TYPE" == "dpseci" ]
+		then
+			echo "============================"
+			restool $TYPE info $i >> outfile
+			echo "============================"
+		fi
+	done
 }
 
 function usage() {
