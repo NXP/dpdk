@@ -74,7 +74,7 @@
 
 /* Keep track of whether QMAN and BMAN have been globally initialized */
 static int is_global_init;
-static int fmc_q = 1;	/* Indicates the uses of FMC tool for distribution */
+static int fmc_q;	/* Indicates the use of dynamic fmc for distribution */
 static int default_q;	/* use default queue - FMC is not executed*/
 /* At present we only allow up to 4 push mode queues as default - as each of
  * this queue need dedicated portal and we are short of portals.
@@ -1451,8 +1451,8 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 		if (getenv("DPAA_DEFAULT_Q_ONLY"))
 			default_q = 1;
 
-		if (getenv("DPAA_DYNAMIC_DIST"))
-			fmc_q = 0;
+		if (getenv("DPAA_FMC_MODE"))
+			fmc_q = 1;
 
 		if (!(default_q || fmc_q)) {
 			if (dpaa_fm_init()) {
