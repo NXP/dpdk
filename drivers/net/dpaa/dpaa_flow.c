@@ -65,9 +65,9 @@ struct dpaa_fm_model {
 	t_Handle netenv_devid[DPAA_MAX_NUM_ETH_DEV];
 };
 
-struct dpaa_fm_info fm_info;
-struct dpaa_fm_model fm_model;
-const char *fm_log = "/tmp/fm.bin";
+static struct dpaa_fm_info fm_info;
+static struct dpaa_fm_model fm_model;
+static const char *fm_log = "/tmp/fm.bin";
 
 static void fm_prev_cleanup(void)
 {
