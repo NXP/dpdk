@@ -348,7 +348,15 @@ Following are some pre-requisites:
     $ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
     $ mount -t hugetlbfs nodev /mnt/hugetlbfs/
 
-  3. Before running application, a binary `fmc` needs to be executed to
+  3. By default the system will use the dynamic FMC configurations for queue
+     Management.
+
+     NOTE: NO NEED TO RUN FMC ANYMORE.
+
+     However, if you want to do manual FMAN configuration:
+
+     export DPAA_FMC_DIST=1
+     Then, before running application, a binary `fmc` needs to be executed to
      configure the FMan on DPAA platforms. This requires two configuration files
      which are available in rootfs at (/usr/local/dpdk/dpaa) and
      also available as part of DPDK source code (./nxp/dpaa/).
@@ -373,15 +381,6 @@ Following are some pre-requisites:
            Using configuration not meant for a board can render system unusable
            for DPDK applications.
 
-     NOTE: It is possible to execute DPDK application on DPAA without executing
-           'fmc' binary, in case that is not available on the rootfs.
-
-           Execute the following commands before running the application:
-
-           $  export DPAA_DEFAULT_Q_ONLY=1
-
-           While executing the command, append "--parse-ptype" option at the
-           end of the command.
 
   4. Export the environment variable defining the number of queues configured
      by the 'fmc' binary above through the provided policy hash file.
@@ -661,21 +660,6 @@ of NXP LSDK documentation.
    
    `default_hugepagesz=1024m hugepagesz=1024m hugepages=8`
 
-   DPAA: Use Queue Configurations as per use case
-   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-   DPAA plaform requires that queue configuration be done before any DPDK
-   application is executed. This is done using `fmc` command as explained
-   above.
-
-   There are 3 configuration files available which configure different number
-   of queues per port. It important to execute DPDK application is corresponding
-   queue configuration based on the `fmc` argument:
-
-        usdpaa_policy_hash_ipv4_1queue.xml - for 1 queue per port
-        usdpaa_policy_hash_ipv4_2queue.xml - for 2 queues per port
-        usdpaa_policy_hash_ipv4_4queue.xml - for 4 queues per port
-
 ================================================================================
 
 Layout of Extra files in 'nxp' folder
@@ -694,7 +678,10 @@ nxp/
         dpaa2
                 destroy_dynamic_dpl.sh
                 dynamic_dpl.sh
+                vm_linux.conf
+                vm_dpdk.conf
         README
+        debug_dump.sh
 
 - nxp/build_dpdk.sh
   is a script for compilation of DPDK for various platforms
@@ -715,6 +702,9 @@ nxp/
   folder contains all DPAA2 platform specific extra files. This includes the
   'dynamic_dpl.sh' for creating a container, as well as 'destroy_dynamic_dpl.sh'
   for destroying the creating container.
+
+- debug_dump.sh
+  is a scripts to check the system config. it generate the output in a file.
 
 ================================================================================
 
@@ -763,6 +753,8 @@ DPAA1:
 1. DPAA_PUSH_QUEUES_NUMBER    - Max number of queues that can be high performance
 				or in push mode. note that these queue require additional
 				HW portal resources. 0 means disable push queue mode.
+
+2. DPAA_FMC_MODE              - Queue Distribution using FMC scripts.
 
 DPAA2:
 ------
