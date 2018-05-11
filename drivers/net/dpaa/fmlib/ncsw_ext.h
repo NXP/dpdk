@@ -44,7 +44,7 @@
 #include <stdint.h>
 
 #define PTR_TO_UINT(_ptr)	((uintptr_t)(_ptr))
-#define UINT_TO_PTR(_val)	((void*)(uintptr_t)(_val))
+#define UINT_TO_PTR(_val)	((void *)(uintptr_t)(_val))
 
 /* physAddress_t should be uintptr_t */
 typedef uint64_t physAddress_t;
@@ -52,28 +52,28 @@ typedef uint64_t physAddress_t;
 /**************************************************************************//**
  @Description   Possible RxStore callback responses.
 *//***************************************************************************/
-typedef enum e_RxStoreResponse
-{
-	e_RX_STORE_RESPONSE_PAUSE	/**< Pause invoking callback with received data;
-					in polling mode, start again invoking callback
-					only next time user invokes the receive routine;
-					in interrupt mode, start again invoking callback
-					only next time a receive event triggers an interrupt;
-					in all cases, received data that are pending are not
-					lost, rather, their processing is temporarily deferred;
-					in all cases, received data are processed in the order
-					in which they were received. */
-	, e_RX_STORE_RESPONSE_CONTINUE  /**< Continue invoking callback with received data. */
+typedef enum e_RxStoreResponse {
+	e_RX_STORE_RESPONSE_PAUSE
+		/**< Pause invoking callback with received data;
+		in polling mode, start again invoking callback
+		only next time user invokes the receive routine;
+		in interrupt mode, start again invoking callback
+		only next time a receive event triggers an interrupt;
+		in all cases, received data that are pending are not
+		lost, rather, their processing is temporarily deferred;
+		in all cases, received data are processed in the order
+		in which they were received. */
+	, e_RX_STORE_RESPONSE_CONTINUE
+	/**< Continue invoking callback with received data. */
 } e_RxStoreResponse;
 
 
 /**************************************************************************//**
  @Description   General Handle
 *//***************************************************************************/
-typedef void *	t_Handle;   /**< handle, used as object's descriptor */
+typedef void *t_Handle;   /**< handle, used as object's descriptor */
 
 /* @} */
-
 
 /**************************************************************************//**
  @Function	t_GetBufFunction
@@ -89,7 +89,7 @@ typedef void *	t_Handle;   /**< handle, used as object's descriptor */
  @Return	Pointer to data buffer, NULL if error
  *//***************************************************************************/
 typedef uint8_t * (t_GetBufFunction)(t_Handle   h_BufferPool,
-					t_Handle   *p_BufContextHandle);
+					t_Handle * p_BufContextHandle);
 
 /**************************************************************************//**
  @Function	t_PutBufFunction
@@ -118,7 +118,7 @@ typedef uint32_t (t_PutBufFunction)(t_Handle h_BufferPool,
 
  @Return	Virtual address.
 *//***************************************************************************/
-typedef void * t_PhysToVirt(physAddress_t addr);
+typedef void *t_PhysToVirt(physAddress_t addr);
 
 /**************************************************************************//**
  @Function	t_VirtToPhys
@@ -134,8 +134,7 @@ typedef physAddress_t t_VirtToPhys(void *addr);
 /**************************************************************************//**
  @Description   Buffer Pool Information Structure.
 *//***************************************************************************/
-typedef struct t_BufferPoolInfo
-{
+typedef struct t_BufferPoolInfo {
 	t_Handle		h_BufferPool;   /**< A handle to the buffer pool manager */
 	t_GetBufFunction	*f_GetBuf;	/**< User callback to get a free buffer */
 	t_PutBufFunction	*f_PutBuf;	/**< User callback to return a buffer */
@@ -165,9 +164,9 @@ typedef struct t_BufferPoolInfo
 
  @Retval	e_RX_STORE_RESPONSE_CONTINUE - order the driver to continue Rx
 						operation for all ready data.
- @Retval	e_RX_STORE_RESPONSE_PAUSE	- order the driver to stop Rx operation.
+ @Retval	e_RX_STORE_RESPONSE_PAUSE- order the driver to stop Rx ops.
  *//***************************************************************************/
-typedef e_RxStoreResponse (t_RxStoreFunction)(t_Handle  h_App,
+typedef e_RxStoreResponse(t_RxStoreFunction)(t_Handle  h_App,
 						uint32_t  queueId,
 						uint8_t   *p_Data,
 						t_Handle  h_BufContext,
@@ -175,7 +174,6 @@ typedef e_RxStoreResponse (t_RxStoreFunction)(t_Handle  h_App,
 						uint16_t  status,
 						uint8_t   position,
 						uint32_t  flags);
-
 
 typedef struct t_Device {
 	uintptr_t   id;	/**< the device id */

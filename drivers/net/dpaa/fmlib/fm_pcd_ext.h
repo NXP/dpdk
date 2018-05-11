@@ -63,16 +63,16 @@
 
  @Description   Frame Manager PCD API functions, definitions and enums
 
-		The FM PCD module is responsible for the initialization of all
-		global classifying FM modules. This includes the parser general and
-		common registers, the key generator global and common registers,
-		and the policer global and common registers.
-		In addition, the FM PCD SW module will initialize all required
-		key generator schemes, coarse classification flows, and policer
-		profiles. When an FM module is configured to work with one of these
-		entities, it will register to it using the FM PORT API. The PCD
-		module will manage the PCD resources - i.e. resource management of
-		KeyGen schemes, etc.
+	The FM PCD module is responsible for the initialization of all
+	global classifying FM modules. This includes the parser general and
+	common registers, the key generator global and common registers,
+	and the policer global and common registers.
+	In addition, the FM PCD SW module will initialize all required
+	key generator schemes, coarse classification flows, and policer
+	profiles. When an FM module is configured to work with one of these
+	entities, it will register to it using the FM PORT API. The PCD
+	module will manage the PCD resources - i.e. resource management of
+	KeyGen schemes, etc.
 
  @{
 *//***************************************************************************/
@@ -112,7 +112,6 @@
 #ifdef FM_CAPWAP_SUPPORT
 #error "FM_CAPWAP_SUPPORT not implemented!"
 #endif
-
 
 /**************************************************************************//**
  @Group	lnx_ioctl_FM_PCD_init_grp FM PCD Initialization Unit
@@ -172,7 +171,6 @@ typedef enum ioc_fm_pcd_exceptions {
 
 /** @} */ /* end of lnx_ioctl_FM_PCD_init_grp group */
 
-
 /**************************************************************************//**
  @Group	lnx_ioctl_FM_PCD_Runtime_grp FM PCD Runtime Unit
 
@@ -214,7 +212,6 @@ typedef enum ioc_fm_pcd_exceptions {
 
  @{
 *//***************************************************************************/
-
 
 /**************************************************************************//**
  @Description   structure for FM counters
@@ -271,10 +268,9 @@ typedef struct ioc_fm_pcd_prs_sw_params_t {
  @Description   A structure to set the a KeyGen default value
  *//***************************************************************************/
 typedef struct ioc_fm_pcd_kg_dflt_value_params_t {
-	uint8_t			valueId;		/**< 0,1 - one of 2 global default values */
-	uint32_t			value;		/**< The requested default value */
+	uint8_t		valueId;/**< 0,1 - one of 2 global default values */
+	uint32_t	value;	/**< The requested default value */
 } ioc_fm_pcd_kg_dflt_value_params_t;
-
 
 /**************************************************************************//**
  @Function	FM_PCD_Enable
@@ -431,7 +427,7 @@ TODO: unused IOCTL
 #define IOC_FM_PCD_MAX_NUM_OF_CC_GROUPS		16
 #define IOC_FM_PCD_MAX_NUM_OF_CC_UNITS		4
 #define IOC_FM_PCD_MAX_NUM_OF_KEYS		256
-#define IOC_FM_PCD_MAX_NUM_OF_FLOWS		(4*KILOBYTE)
+#define IOC_FM_PCD_MAX_NUM_OF_FLOWS		(4 * KILOBYTE)
 #define IOC_FM_PCD_MAX_SIZE_OF_KEY		56
 #define IOC_FM_PCD_MAX_NUM_OF_CC_ENTRIES_IN_GRP	16
 #define IOC_FM_PCD_LAST_KEY_INDEX		0xffff
@@ -1070,7 +1066,7 @@ typedef struct ioc_fm_pcd_kg_key_extract_and_hash_params_t {
 	uint32_t				private_dflt0;	/**< Scheme default register 0 */
 	uint32_t				private_dflt1;	/**< Scheme default register 1 */
 	uint8_t				num_of_used_extracts;   /**< defines the valid size of the following array */
-	ioc_fm_pcd_extract_entry_t	extract_array [IOC_FM_PCD_KG_MAX_NUM_OF_EXTRACTS_PER_KEY];
+	ioc_fm_pcd_extract_entry_t	extract_array[IOC_FM_PCD_KG_MAX_NUM_OF_EXTRACTS_PER_KEY];
 								/**< An array of extraction definitions. */
 	uint8_t				num_of_used_dflts;	/**< defines the valid size of the following array */
 	ioc_fm_pcd_kg_extract_dflt_t	dflts[IOC_FM_PCD_KG_NUM_OF_DEFAULT_GROUPS];
@@ -1314,7 +1310,7 @@ typedef struct ioc_fm_pcd_cc_next_cc_params_t {
 		(Must match struct t_FmPcdCcNextFrParams defined in fm_pcd_ext.h)
 *//***************************************************************************/
 typedef struct ioc_fm_pcd_cc_next_fr_params_t {
-	void*	frm_replic_id;		/**< The id of the next frame replicator group */
+	void *frm_replic_id;		/**< The id of the next frame replicator group */
 } ioc_fm_pcd_cc_next_fr_params_t;
 #endif /* DPAA_VERSION >= 11 */
 
@@ -2175,7 +2171,6 @@ typedef struct ioc_fm_pcd_manip_hdr_params_t {
 								completing the manipulation on the frame */
 } ioc_fm_pcd_manip_hdr_params_t;
 
-
 /**************************************************************************//**
  @Description   structure for defining fragmentation manipulation
 *//***************************************************************************/
@@ -2475,7 +2470,6 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 #endif
 #define FM_PCD_IOC_HASH_TABLE_GET_MISS_STAT  _IOWR(FM_IOC_TYPE_BASE, FM_PCD_IOC_NUM(14), ioc_fm_pcd_cc_tbl_get_stats_t)
 
-
 /**************************************************************************//**
  @Function	FM_PCD_NetEnvCharacteristicsSet
 
@@ -2514,7 +2508,7 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 		and later used for match vector, classification plan vectors and coarse classification
 		indexing.
 
- @Param[in,out] ioc_fm_pcd_net_env_params_t   A structure defining the distiction units for this configuration.
+ @Param[in,out] ioc_fm_pcd_net_env_params_t   A structure defining the distinction units for this configuration.
 
  @Return	0 on success; Error code otherwise.
 *//***************************************************************************/
@@ -2561,7 +2555,7 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 
  @Description   Deleting an initialized scheme.
 
- @Param[in]	ioc_fm_obj_t	scheme id as initalized by application at FM_PCD_IOC_KG_SET_SCHEME
+ @Param[in]	ioc_fm_obj_t	scheme id as initialized by application at FM_PCD_IOC_KG_SET_SCHEME
 
  @Return	0 on success; Error code otherwise.
 *//***************************************************************************/
@@ -2777,7 +2771,6 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 #define FM_PCD_IOC_HASH_TABLE_SET_COMPAT _IOWR(FM_IOC_TYPE_BASE, FM_PCD_IOC_NUM(37), ioc_compat_fm_pcd_hash_table_params_t)
 #endif
 #define FM_PCD_IOC_HASH_TABLE_SET _IOWR(FM_IOC_TYPE_BASE, FM_PCD_IOC_NUM(37), ioc_fm_pcd_hash_table_params_t)
-
 
 /**************************************************************************//**
  @Function	FM_PCD_HashTableDelete
@@ -3035,7 +3028,6 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 
 #endif /* FM_CAPWAP_SUPPORT */
 
-
 /**************************************************************************//**
  @Group	FM_grp Frame Manager API
 
@@ -3085,7 +3077,7 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 #define FM_PCD_KG_NUM_OF_DEFAULT_GROUPS		16		/**< Number of default value logical groups */
 
 #define FM_PCD_PRS_NUM_OF_LABELS			32		/**< Maximum number of SW parser labels */
-#define FM_SW_PRS_MAX_IMAGE_SIZE		(FM_PCD_SW_PRS_SIZE /*- FM_PCD_PRS_SW_OFFSET -FM_PCD_PRS_SW_TAIL_SIZE*/-FM_PCD_PRS_SW_PATCHES_SIZE)
+#define FM_SW_PRS_MAX_IMAGE_SIZE		(FM_PCD_SW_PRS_SIZE /*- FM_PCD_PRS_SW_OFFSET -FM_PCD_PRS_SW_TAIL_SIZE*/ - FM_PCD_PRS_SW_PATCHES_SIZE)
 								/**< Maximum size of SW parser code */
 
 #define FM_PCD_MAX_MANIP_INSRT_TEMPLATE_SIZE	128		/**< Maximum size of insertion template for
@@ -3095,7 +3087,6 @@ typedef struct ioc_fm_pcd_cc_tbl_get_stats_t {
 #define FM_PCD_FRM_REPLIC_MAX_NUM_OF_ENTRIES	64		/**< Maximum possible entries for frame replicator group */
 #endif /* (DPAA_VERSION >= 11) */
 /* @} */
-
 
 /**************************************************************************//**
  @Group	FM_PCD_init_grp FM PCD Initialization Unit
@@ -3122,7 +3113,7 @@ typedef void (t_FmPcdExceptionCallback) (t_Handle h_App, ioc_fm_pcd_exceptions e
  @Param[in]	exception	- The exception.
  @Param[in]	index	- id of the relevant source (may be scheme or profile id).
  *//***************************************************************************/
-typedef void (t_FmPcdIdExceptionCallback) ( t_Handle	h_App,
+typedef void (t_FmPcdIdExceptionCallback) (t_Handle	h_App,
 						ioc_fm_pcd_exceptions  exception,
 						uint16_t	index);
 
@@ -3192,7 +3183,6 @@ typedef struct t_FmPcdParams {
 								this parameter is relevant if 'plcrSupport'=TRUE.
 								NOTE: this parameter relevant only when working with multiple partitions. */
 } t_FmPcdParams;
-
 
 /**************************************************************************//**
  @Function	FM_PCD_Config
@@ -3321,11 +3311,10 @@ uint32_t FM_PCD_ConfigPlcrAutoRefreshMode(t_Handle h_FmPcd, bool enable);
  @Cautions	This routine should NOT be called from guest-partition
 		(i.e. guestId != NCSW_MASTER_ID)
 *//***************************************************************************/
-uint32_t FM_PCD_ConfigPrsMaxCycleLimit(t_Handle h_FmPcd,uint16_t value);
+uint32_t FM_PCD_ConfigPrsMaxCycleLimit(t_Handle h_FmPcd, uint16_t value);
 
 /** @} */ /* end of FM_PCD_advanced_cfg_grp group */
 /** @} */ /* end of FM_PCD_init_grp group */
-
 
 /**************************************************************************//**
  @Group	FM_PCD_Runtime_grp FM PCD Runtime Unit
@@ -3369,9 +3358,8 @@ uint32_t FM_PCD_ConfigPrsMaxCycleLimit(t_Handle h_FmPcd,uint16_t value);
  @{
 *//***************************************************************************/
 
-t_Handle FM_PCD_Open( t_FmPcdParams *p_FmPcdParams );
+t_Handle FM_PCD_Open(t_FmPcdParams *p_FmPcdParams);
 void FM_PCD_Close(t_Handle h_FmPcd);
-
 
 /**************************************************************************//**
  @Function	FM_PCD_Enable
@@ -3423,7 +3411,6 @@ uint32_t FM_PCD_GetCounter(t_Handle h_FmPcd, ioc_fm_pcd_counters counter);
 @Function	FM_PCD_PrsLoadSw
 
 @Description	This routine may be called in order to load software parsing code.
-
 
 @Param[in]	h_FmPcd	FM PCD module descriptor.
 @Param[in]	p_SwPrs	A pointer to a structure of software
@@ -3656,7 +3643,6 @@ uint32_t	FM_PCD_HcDumpRegs(t_Handle h_FmPcd);
 #endif /* (defined(DEBUG_ERRORS) && ... */
 
 
-
 /**************************************************************************//**
  KeyGen	FM_PCD_Runtime_build_grp FM PCD Runtime Building Unit
 
@@ -3676,7 +3662,7 @@ uint32_t	FM_PCD_HcDumpRegs(t_Handle h_FmPcd);
 #define FM_PCD_MAX_NUM_OF_CC_GROUPS		16
 #define FM_PCD_MAX_NUM_OF_CC_UNITS		4
 #define FM_PCD_MAX_NUM_OF_KEYS		256
-#define FM_PCD_MAX_NUM_OF_FLOWS		(4*KILOBYTE)
+#define FM_PCD_MAX_NUM_OF_FLOWS		(4 * KILOBYTE)
 #define FM_PCD_MAX_SIZE_OF_KEY		56
 #define FM_PCD_MAX_NUM_OF_CC_ENTRIES_IN_GRP	16
 #define FM_PCD_LAST_KEY_INDEX		0xffff
@@ -3728,7 +3714,6 @@ typedef protocolOpt_t   capwapProtocolOpt_t;	/**< CAPWAP protocol options. */
 							in case where fragment found, the fragment-extension offset
 							may be found at 'shim2' (in parser-result). */
 #endif /* (DPAA_VERSION >= 11) */
-
 
 /* @} */
 
@@ -4032,7 +4017,7 @@ typedef struct ioc_fm_pcd_stats_params_t {
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
 t_Handle FM_PCD_NetEnvCharacteristicsSet(t_Handle,
-					ioc_fm_pcd_net_env_params_t *);
+					 ioc_fm_pcd_net_env_params_t *);
 
 /**************************************************************************//**
  @Function	FM_PCD_NetEnvCharacteristicsDelete
@@ -4067,7 +4052,7 @@ uint32_t FM_PCD_NetEnvCharacteristicsDelete(t_Handle h_NetEnv);
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
 t_Handle FM_PCD_KgSchemeSet(t_Handle h_FmPcd,
-			 ioc_fm_pcd_kg_scheme_params_t *p_SchemeParams);
+			    ioc_fm_pcd_kg_scheme_params_t *p_SchemeParams);
 
 /**************************************************************************//**
  @Function	FM_PCD_KgSchemeDelete
@@ -4127,7 +4112,7 @@ uint32_t  FM_PCD_KgSchemeSetCounter(t_Handle h_Scheme, uint32_t value);
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
 t_Handle FM_PCD_PlcrProfileSet(t_Handle		h_FmPcd,
-				ioc_fm_pcd_plcr_profile_params_t  *p_Profile);
+			       ioc_fm_pcd_plcr_profile_params_t  *p_Profile);
 
 /**************************************************************************//**
  @Function	FM_PCD_PlcrProfileDelete
@@ -4157,7 +4142,7 @@ uint32_t FM_PCD_PlcrProfileDelete(t_Handle h_Profile);
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
 uint32_t FM_PCD_PlcrProfileGetCounter(t_Handle			h_Profile,
-					ioc_fm_pcd_plcr_profile_counters	counter);
+				      ioc_fm_pcd_plcr_profile_counters	counter);
 
 /**************************************************************************//**
  @Function	FM_PCD_PlcrProfileSetCounter
@@ -4174,7 +4159,7 @@ uint32_t FM_PCD_PlcrProfileGetCounter(t_Handle			h_Profile,
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
 uint32_t FM_PCD_PlcrProfileSetCounter(t_Handle		h_Profile,
-					ioc_fm_pcd_plcr_profile_counters counter,
+				      ioc_fm_pcd_plcr_profile_counters counter,
 					uint32_t		value);
 
 /**************************************************************************//**
@@ -4192,8 +4177,8 @@ uint32_t FM_PCD_PlcrProfileSetCounter(t_Handle		h_Profile,
 
  @Cautions	Allowed only following FM_PCD_Init().
 *//***************************************************************************/
-t_Handle FM_PCD_CcRootBuild (t_Handle		h_FmPcd,
-				ioc_fm_pcd_cc_tree_params_t  *p_Params);
+t_Handle FM_PCD_CcRootBuild(t_Handle		h_FmPcd,
+			     ioc_fm_pcd_cc_tree_params_t  *p_Params);
 
 /**************************************************************************//**
  @Function	FM_PCD_CcRootDelete
@@ -4274,7 +4259,7 @@ uint32_t FM_PCD_MatchTableDelete(t_Handle h_CcNode);
 
 *//***************************************************************************/
 uint32_t FM_PCD_MatchTableModifyMissNextEngine(t_Handle		h_CcNode,
-						ioc_fm_pcd_cc_next_engine_params_t *p_FmPcdCcNextEngineParams);
+					       ioc_fm_pcd_cc_next_engine_params_t *p_FmPcdCcNextEngineParams);
 
 /**************************************************************************//**
  @Function	FM_PCD_MatchTableRemoveKey
@@ -4557,7 +4542,7 @@ uint32_t FM_PCD_MatchTableGetKeyStatistics(t_Handle		h_CcNode,
  @Cautions	Allowed only following FM_PCD_MatchTableSet().
 *//***************************************************************************/
 uint32_t FM_PCD_MatchTableGetMissStatistics(t_Handle		h_CcNode,
-					ioc_fm_pcd_cc_key_statistics_t	*p_MissStatistics);
+					    ioc_fm_pcd_cc_key_statistics_t	*p_MissStatistics);
 
 /**************************************************************************//**
  @Function	FM_PCD_MatchTableFindNGetKeyStatistics
@@ -4766,7 +4751,7 @@ uint32_t FM_PCD_HashTableModifyNextEngine(t_Handle		h_HashTbl,
 		from the currently changed table.
 *//***************************************************************************/
 uint32_t FM_PCD_HashTableModifyMissNextEngine(t_Handle		h_HashTbl,
-						ioc_fm_pcd_cc_next_engine_params_t *p_FmPcdCcNextEngineParams);
+					      ioc_fm_pcd_cc_next_engine_params_t *p_FmPcdCcNextEngineParams);
 
 /**************************************************************************//*
  @Function	FM_PCD_HashTableGetMissNextEngine
@@ -4782,7 +4767,7 @@ uint32_t FM_PCD_HashTableModifyMissNextEngine(t_Handle		h_HashTbl,
  @Cautions	Allowed only following FM_PCD_HashTableSet().
 *//***************************************************************************/
 uint32_t FM_PCD_HashTableGetMissNextEngine(t_Handle			h_HashTbl,
-					ioc_fm_pcd_cc_next_engine_params_t	*p_FmPcdCcNextEngineParams);
+					   ioc_fm_pcd_cc_next_engine_params_t	*p_FmPcdCcNextEngineParams);
 
 /**************************************************************************//**
  @Function	FM_PCD_HashTableFindNGetKeyStatistics
@@ -4835,7 +4820,7 @@ uint32_t FM_PCD_HashTableFindNGetKeyStatistics(t_Handle		h_HashTbl,
  @Cautions	Allowed only following FM_PCD_HashTableSet().
 *//***************************************************************************/
 uint32_t FM_PCD_HashTableGetMissStatistics(t_Handle		h_HashTbl,
-					ioc_fm_pcd_cc_key_statistics_t   *p_MissStatistics);
+					   ioc_fm_pcd_cc_key_statistics_t   *p_MissStatistics);
 
 /**************************************************************************//**
  @Function	FM_PCD_ManipNodeSet
@@ -4953,7 +4938,7 @@ uint32_t FM_PCD_FrmReplicAddMember(t_Handle		h_FrmReplicGroup,
  @Cautions	Allowed only following FM_PCD_FrmReplicSetGroup() of this group.
 *//***************************************************************************/
 uint32_t FM_PCD_FrmReplicRemoveMember(t_Handle h_FrmReplicGroup,
-					uint16_t memberIndex);
+				      uint16_t memberIndex);
 #endif /* (DPAA_VERSION >= 11) */
 
 #if ((DPAA_VERSION == 10) && defined(FM_CAPWAP_SUPPORT))
