@@ -60,6 +60,7 @@ struct dpaa_fm_info {
 /*FM model to read and write from file */
 struct dpaa_fm_model {
 	uint32_t dev_count;
+	uint8_t device_order[DPAA_MAX_NUM_ETH_DEV];
 	t_FmPortParams fm_port_params[DPAA_MAX_NUM_ETH_DEV];
 	t_Handle scheme_devid[DPAA_MAX_NUM_ETH_DEV];
 	t_Handle netenv_devid[DPAA_MAX_NUM_ETH_DEV];
@@ -67,11 +68,11 @@ struct dpaa_fm_model {
 
 static struct dpaa_fm_info fm_info;
 static struct dpaa_fm_model fm_model;
-static const char *fm_log = "/tmp/fm.bin";
+static const char *fm_log = "/tmp/fmdpdk.bin";
 
 static void fm_prev_cleanup(void)
 {
-	uint32_t fman_id = 0, i = 0;
+	uint32_t fman_id = 0, i = 0, devid;
 	struct dpaa_if dpaa_intf;
 	t_FmPcdParams fmPcdParams = {0};
 
@@ -88,16 +89,17 @@ static void fm_prev_cleanup(void)
 		return;
 
 	while (i < fm_model.dev_count) {
+		devid = fm_model.device_order[i];
 		/* FM Port Open */
-		fm_model.fm_port_params[i].h_Fm = fm_info.fman_handle;
+		fm_model.fm_port_params[devid].h_Fm = fm_info.fman_handle;
 		dpaa_intf.port_handle =
-				FM_PORT_Open(&fm_model.fm_port_params[i]);
+				FM_PORT_Open(&fm_model.fm_port_params[devid]);
 
-		dpaa_intf.scheme_handle = CreateDevice
-				(fm_info.pcd_handle, fm_model.scheme_devid[i]);
+		dpaa_intf.scheme_handle = CreateDevice(fm_info.pcd_handle,
+						fm_model.scheme_devid[devid]);
 
-		dpaa_intf.netenv_handle = CreateDevice
-				(fm_info.pcd_handle, fm_model.netenv_devid[i]);
+		dpaa_intf.netenv_handle = CreateDevice(fm_info.pcd_handle,
+						fm_model.netenv_devid[devid]);
 
 		i++;
 		if (!dpaa_intf.netenv_handle || !dpaa_intf.scheme_handle ||
@@ -760,6 +762,7 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 		goto unset_pcd_netenv_scheme;
 	}
 
+	fm_model.device_order[fm_model.dev_count] = dpaa_intf->ifid;
 	fm_model.dev_count++;
 
 	return 0;
