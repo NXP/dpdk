@@ -44,9 +44,8 @@
 #include "ncsw_ext.h"
 #include "dpaa_integration.h"
 
-
-#define FM_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE+1)
-#define FMT_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE+3)
+#define FM_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE + 1)
+#define FMT_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE + 3)
 
 /*#define FM_IOCTL_DBG*/
 
@@ -65,7 +64,6 @@
 
 #define NCSW_IOC_TYPE_BASE	0xe0	/**< defines the IOCTL type for all
 						the NCSW Linux module commands */
-
 
 /**************************************************************************//**
  @Group	lnx_usr_FM_grp Frame Manager API
@@ -214,7 +212,6 @@ typedef struct t_FmPrsResult {
 #define FM_FD_RX_STATUS_ERR_NON_FM	0x00400000  /**< non Frame-Manager error */
 /* @} */
 
-
 /**************************************************************************//**
  @Description   FM Exceptions
 *//***************************************************************************/
@@ -273,7 +270,6 @@ typedef enum e_FmDmaCacheOption {
 
 t_Handle FM_Open(uint8_t id);
 void	FM_Close(t_Handle h_Fm);
-
 
 /**************************************************************************//**
  @Description   A structure for defining buffer prefix area content.
@@ -358,9 +354,7 @@ typedef struct t_FmBufPoolDepletion {
 #endif /* (DPAA_VERSION >= 11) */
 } t_FmBufPoolDepletion;
 
-
 /** @} */ /* end of lnx_usr_FM_init_grp group */
-
 
 /**************************************************************************//**
  @Group	lnx_usr_FM_runtime_control_grp FM Runtime Control Unit
@@ -592,7 +586,6 @@ uint32_t FM_CtrlMonStop(t_Handle h_Fm);
 *//***************************************************************************/
 uint32_t FM_CtrlMonGetCounters(t_Handle h_Fm, uint8_t fmCtrlIndex, t_FmCtrlMon *p_Mon);
 
-
 /**************************************************************************//*
  @Function	FM_ForceIntr
 
@@ -606,12 +599,11 @@ uint32_t FM_CtrlMonGetCounters(t_Handle h_Fm, uint8_t fmCtrlIndex, t_FmCtrlMon *
 
  @Cautions	Allowed only following FM_Init().
 *//***************************************************************************/
-uint32_t FM_ForceIntr (t_Handle h_Fm, e_FmExceptions exception);
+uint32_t FM_ForceIntr(t_Handle h_Fm, e_FmExceptions exception);
 
 /** @} */ /* end of lnx_usr_FM_runtime_control_grp group */
 /** @} */ /* end of lnx_usr_FM_lib_grp group */
 /** @} */ /* end of lnx_usr_FM_grp group */
-
 
 /**************************************************************************//**
 @Description   FM Char device ioctls
@@ -638,12 +630,11 @@ uint32_t FM_ForceIntr (t_Handle h_Fm, e_FmExceptions exception);
 #define DEV_FM_MAX_MINORS	(DEV_FM_TX_PORTS_MINOR_BASE + FM_MAX_NUM_OF_TX_PORTS)
 
 #define FM_IOC_NUM(n)	(n)
-#define FM_PCD_IOC_NUM(n)   (n+20)
-#define FM_PORT_IOC_NUM(n)  (n+70)
+#define FM_PCD_IOC_NUM(n)   (n + 20)
+#define FM_PORT_IOC_NUM(n)  (n + 70)
 /* @} */
 
 #define IOC_FM_MAX_NUM_OF_PORTS	64
-
 
 /**************************************************************************//**
  @Description   Enum for defining port types
@@ -657,7 +648,6 @@ typedef enum ioc_fm_port_type {
 	e_IOC_FM_PORT_TYPE_TX_10G,		/**< 10G Tx port */
 	e_IOC_FM_PORT_TYPE_DUMMY
 } ioc_fm_port_type;
-
 
 /**************************************************************************//**
  @Group	lnx_ioctl_FM_lib_grp FM library
@@ -1155,7 +1145,6 @@ typedef struct ioc_fm_ctrl_mon_counters_params_t {
 *//***************************************************************************/
 #define FM_IOC_CTRL_MON_START				_IO(FM_IOC_TYPE_BASE, FM_IOC_NUM(15))
 
-
 /**************************************************************************//**
  @Function	FM_CtrlMonStop
 
@@ -1191,16 +1180,16 @@ typedef struct ioc_fm_ctrl_mon_counters_params_t {
  @Cautions	Allowed only following FM_Init().
 *//***************************************************************************/
 #if defined(CONFIG_COMPAT)
-#define FM_IOC_CTRL_MON_GET_COUNTERS_COMPAT		_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(17), ioc_compat_fm_ctrl_mon_counters_params_t)
+#define FM_IOC_CTRL_MON_GET_COUNTERS_COMPAT	_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(17), ioc_compat_fm_ctrl_mon_counters_params_t)
 #endif
-#define FM_IOC_CTRL_MON_GET_COUNTERS			_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(17), ioc_fm_ctrl_mon_counters_params_t)
+#define FM_IOC_CTRL_MON_GET_COUNTERS		_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(17), ioc_fm_ctrl_mon_counters_params_t)
 
 /** @} */ /* end of lnx_ioctl_FM_runtime_control_grp group */
 /** @} */ /* end of lnx_ioctl_FM_lib_grp group */
 /** @} */ /* end of lnx_ioctl_FM_grp */
 
 #define FMD_API_VERSION_MAJOR 21
-#define FMD_API_VERSION_MINOR 1 
+#define FMD_API_VERSION_MINOR 1
 #define FMD_API_VERSION_RESPIN 0
 
 #endif /* __FM_EXT_H */
