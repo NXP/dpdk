@@ -808,7 +808,7 @@ then
 		echo >> dynamic_dpl_logs
 	fi
 	echo
-	if [ -e /sys/module/vfio_iommu_type1 ];
+	if [[ -e /sys/module/vfio_iommu_type1 ]];
 	then
 	        echo -e "\tAllow unsafe interrupts" >> dynamic_dpl_logs
 	        echo 1 > /sys/module/vfio_iommu_type1/parameters/allow_unsafe_interrupts
@@ -817,7 +817,7 @@ then
 	        echo -e $RED" Can't Run DPAA2 without VFIO support"$NC
 		[[ "${BASH_SOURCE[0]}" != $0 ]] && return || exit
 	fi
-	if [ -e $DPRC_LOC ];
+	if [[ -e $DPRC_LOC ]];
 	then
 		echo vfio-fsl-mc > $DPRC_LOC/driver_override
 		echo -e "\tBind "$DPRC_TO_BIND" to VFIO driver" >> dynamic_dpl_logs
