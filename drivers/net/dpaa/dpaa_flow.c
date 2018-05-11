@@ -77,16 +77,20 @@ static void fm_prev_cleanup(void)
 	t_FmPcdParams fmPcdParams = {0};
 
 	fm_info.fman_handle = FM_Open(fman_id);
-	if (!fm_info.fman_handle)
+	if (!fm_info.fman_handle) {
+		printf("\n%s- unable to open FMAN", __func__);
 		return;
+	}
 
 	fmPcdParams.h_Fm = fm_info.fman_handle;
 	fmPcdParams.prsSupport = true;
 	fmPcdParams.kgSupport = true;
 	/* FM PCD Open */
 	fm_info.pcd_handle = FM_PCD_Open(&fmPcdParams);
-	if (!fm_info.pcd_handle)
+	if (!fm_info.pcd_handle) {
+		printf("\n%s- unable to open PCD", __func__);
 		return;
+	}
 
 	while (i < fm_model.dev_count) {
 		devid = fm_model.device_order[i];
@@ -103,15 +107,15 @@ static void fm_prev_cleanup(void)
 
 		i++;
 		if (!dpaa_intf.netenv_handle || !dpaa_intf.scheme_handle ||
-							!dpaa_intf.port_handle)
+		    !dpaa_intf.port_handle)
 			continue;
 
 		if (dpaa_fm_deconfig(&dpaa_intf))
-			DPAA_PMD_ERR("DPAA FM deconfig failed\n");
+			printf("\nDPAA FM deconfig failed\n");
 	}
 
 	if (dpaa_fm_term())
-		DPAA_PMD_WARN("DPAA FM term failed\n");
+		printf("\nDPAA FM term failed\n");
 
 	memset(&fm_model, 0, sizeof(struct dpaa_fm_model));
 }
@@ -121,12 +125,12 @@ void dpaa_write_fm_config_to_file(void)
 	size_t bytes_write;
 	FILE *fp = fopen(fm_log, "wb");
 	if (!fp) {
-		DPAA_PMD_ERR("File open failed\n");
+		DPAA_PMD_ERR("File open failed");
 		return;
 	}
 	bytes_write = fwrite(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
 	if (!bytes_write) {
-		DPAA_PMD_WARN("No bytes write\n");
+		DPAA_PMD_WARN("No bytes write");
 		fclose(fp);
 		return;
 	}
@@ -141,7 +145,7 @@ static void dpaa_read_fm_config_from_file(void)
 		return;
 	bytes_read = fread(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
 	if (!bytes_read) {
-		DPAA_PMD_WARN("No bytes read\n");
+		DPAA_PMD_WARN("No bytes read");
 		fclose(fp);
 		return;
 	}
@@ -355,7 +359,7 @@ static int set_scheme_params(
 			break;
 
 		default:
-			DPAA_PMD_ERR("Invalid Distinction Unit\n");
+			DPAA_PMD_ERR("Invalid Distinction Unit");
 			return -1;
 		}
 	}
@@ -444,8 +448,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 				break;
 
 			default:
-				DPAA_PMD_ERR("Bad flow distribution"
-					    " option\n");
+				DPAA_PMD_ERR("Bad flow distribution option");
 			}
 		}
 		req_dist_set = req_dist_set >> 1;
@@ -454,92 +457,6 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 
 	/* Dist units is set to dist_idx */
 	dist_units->num_of_distinction_units = dist_idx;
-}
-
-/* De-Configure DPAA FM */
-int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
-{
-	int ret;
-
-	/* FM PORT Disable */
-	ret = FM_PORT_Disable(dpaa_intf->port_handle);
-	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PORT_Disable: Failed\n");
-		return ret;
-	}
-
-	/* FM PORT DeletePCD */
-	ret = FM_PORT_DeletePCD(dpaa_intf->port_handle);
-	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PORT_DeletePCD: Failed\n");
-		return ret;
-	}
-
-	/* FM PCD KgSchemeDelete */
-	ret = FM_PCD_KgSchemeDelete(dpaa_intf->scheme_handle);
-	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed\n");
-		return ret;
-	}
-	dpaa_intf->scheme_handle = NULL;
-
-	/* FM PCD NetEnvCharacteristicsDelete */
-	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
-	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed\n");
-		return ret;
-	}
-	dpaa_intf->netenv_handle = NULL;
-
-	/* FM PORT Close */
-	FM_PORT_Close(dpaa_intf->port_handle);
-	dpaa_intf->port_handle = NULL;
-
-	/* Set scheme count to 0 */
-	dpaa_intf->scheme_count = 0;
-
-	return 0;
-}
-
-int dpaa_fm_init(void)
-{
-	t_Handle fman_handle;
-	t_Handle pcd_handle;
-	t_FmPcdParams fmPcdParams = {0};
-	/* Hard-coded : fman id 0 since one fman is present in LS104x */
-	int fman_id = 0, ret;
-
-	dpaa_read_fm_config_from_file();
-
-	/* FM Open */
-	fman_handle = FM_Open(fman_id);
-	if (!fman_handle) {
-		DPAA_PMD_ERR("FM_Open: Failed\n");
-		return -1;
-	}
-
-	/* FM PCD Open */
-	fmPcdParams.h_Fm = fman_handle;
-	fmPcdParams.prsSupport = true;
-	fmPcdParams.kgSupport = true;
-	pcd_handle = FM_PCD_Open(&fmPcdParams);
-	if (!pcd_handle) {
-		DPAA_PMD_ERR("FM_PCD_Open: Failed\n");
-		return -1;
-	}
-
-	/* FM PCD Enable */
-	ret = FM_PCD_Enable(pcd_handle);
-	if (ret) {
-		DPAA_PMD_ERR("FM_PCD_Enable: Failed\n");
-		return -1;
-	}
-
-	/* Set fman and pcd handle in fm info */
-	fm_info.fman_handle = fman_handle;
-	fm_info.pcd_handle = pcd_handle;
-
-	return 0;
 }
 
 /* Apply PCD configuration on interface */
@@ -572,21 +489,21 @@ static inline int set_port_pcd(struct dpaa_if *dpaa_intf)
 	/* FM PORT Disable */
 	ret = FM_PORT_Disable(dpaa_intf->port_handle);
 	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PORT_Disable: Failed\n");
+		DPAA_PMD_ERR("FM_PORT_Disable: Failed");
 		return ret;
 	}
 
 	/* FM PORT SetPCD */
 	ret = FM_PORT_SetPCD(dpaa_intf->port_handle, &pcd_param);
 	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PORT_SetPCD: Failed\n");
+		DPAA_PMD_ERR("FM_PORT_SetPCD: Failed");
 		return ret;
 	}
 
 	/* FM PORT Enable */
 	ret = FM_PORT_Enable(dpaa_intf->port_handle);
 	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PORT_Enable: Failed\n");
+		DPAA_PMD_ERR("FM_PORT_Enable: Failed");
 		goto fm_port_delete_pcd;
 	}
 
@@ -608,14 +525,14 @@ static inline void unset_pcd_netenv_scheme(struct dpaa_if *dpaa_intf)
 	int ret;
 	ret = FM_PCD_KgSchemeDelete(dpaa_intf->scheme_handle);
 	if (ret != E_OK)
-		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed");
 
 	dpaa_intf->scheme_handle = NULL;
 
 	/* FM PCD NetEnvCharacteristicsDelete */
 	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
 	if (ret != E_OK)
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed");
 
 	dpaa_intf->netenv_handle = NULL;
 
@@ -642,7 +559,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	dpaa_intf->netenv_handle = FM_PCD_NetEnvCharacteristicsSet(
 					fm_info.pcd_handle, &dist_units);
 	if (!dpaa_intf->netenv_handle) {
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsSet: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsSet: Failed");
 		return -1;
 	}
 
@@ -653,15 +570,15 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	/* Set PCD Scheme params */
 	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf);
 	if (ret) {
-		DPAA_PMD_ERR("Set scheme params: Failed\n");
+		DPAA_PMD_ERR("Set scheme params: Failed");
 		goto net_env_char_delete;
 	}
 
 	/* FM PCD KgSchemeSet */
-	dpaa_intf->scheme_handle = FM_PCD_KgSchemeSet(
-					fm_info.pcd_handle, &scheme_params);
+	dpaa_intf->scheme_handle = FM_PCD_KgSchemeSet(fm_info.pcd_handle,
+						      &scheme_params);
 	if (!dpaa_intf->scheme_handle) {
-		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed");
 		goto net_env_char_delete;
 	}
 
@@ -674,7 +591,7 @@ net_env_char_delete:
 	/* FM PCD NetEnvCharacteristicsDelete */
 	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
 	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed");
 		return ret;
 	}
 	dpaa_intf->netenv_handle = NULL;
@@ -689,7 +606,7 @@ static inline int get_port_type(struct fman_if *fif)
 	} else if (fif->mac_type == fman_mac_10g) {
 		return e_FM_PORT_TYPE_RX_10G;
 	} else {
-		DPAA_PMD_ERR("MAC type unsupported\n");
+		DPAA_PMD_ERR("MAC type unsupported");
 		return -1;
 	}
 }
@@ -698,7 +615,9 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf)
 {
 	t_FmPortParams	fm_port_params;
 
-	/* FMAN mac indexes mappings */
+	/* FMAN mac indexes mappings (0 is unused,
+	 * first 8 are for 1G, next for 10G ports
+	 */
 	uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 
 	/* Memset FM port params */
@@ -721,6 +640,51 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf)
 	return 0;
 }
 
+/* De-Configure DPAA FM */
+int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
+{
+	int ret;
+
+	/* FM PORT Disable */
+	ret = FM_PORT_Disable(dpaa_intf->port_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PORT_Disable: Failed");
+		return ret;
+	}
+
+	/* FM PORT DeletePCD */
+	ret = FM_PORT_DeletePCD(dpaa_intf->port_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PORT_DeletePCD: Failed");
+		return ret;
+	}
+
+	/* FM PCD KgSchemeDelete */
+	ret = FM_PCD_KgSchemeDelete(dpaa_intf->scheme_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed");
+		return ret;
+	}
+	dpaa_intf->scheme_handle = NULL;
+
+	/* FM PCD NetEnvCharacteristicsDelete */
+	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
+	if (ret != E_OK) {
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed");
+		return ret;
+	}
+	dpaa_intf->netenv_handle = NULL;
+
+	/* FM PORT Close */
+	FM_PORT_Close(dpaa_intf->port_handle);
+	dpaa_intf->port_handle = NULL;
+
+	/* Set scheme count to 0 */
+	dpaa_intf->scheme_count = 0;
+
+	return 0;
+}
+
 int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
@@ -728,14 +692,14 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 
 	if (dpaa_intf->port_handle) {
 		if (dpaa_fm_deconfig(dpaa_intf))
-			DPAA_PMD_ERR("DPAA FM deconfig failed\n");
+			DPAA_PMD_ERR("DPAA FM deconfig failed");
 	}
 
 	if (!dev->data->nb_rx_queues)
 		return 0;
 
 	if (dev->data->nb_rx_queues & (dev->data->nb_rx_queues - 1)) {
-		DPAA_PMD_ERR("No of queues should be power of 2\n");
+		DPAA_PMD_ERR("No of queues should be power of 2");
 		return -1;
 	}
 
@@ -744,21 +708,21 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	/* Open FM Port and set it in port info */
 	ret = set_fm_port_handle(dpaa_intf);
 	if (ret) {
-		DPAA_PMD_ERR("Set FM Port handle: Failed\n");
+		DPAA_PMD_ERR("Set FM Port handle: Failed");
 		return -1;
 	}
 
 	/* Set PCD netenv and scheme */
 	ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set);
 	if (ret) {
-		DPAA_PMD_ERR("Set PCD NetEnv and Scheme: Failed\n");
+		DPAA_PMD_ERR("Set PCD NetEnv and Scheme: Failed");
 		goto unset_fm_port_handle;
 	}
 
 	/* Set Port PCD */
 	ret = set_port_pcd(dpaa_intf);
 	if (ret) {
-		DPAA_PMD_ERR("Set Port PCD: Failed\n");
+		DPAA_PMD_ERR("Set Port PCD: Failed");
 		goto unset_pcd_netenv_scheme;
 	}
 
@@ -777,32 +741,71 @@ unset_fm_port_handle:
 	return -1;
 }
 
+int dpaa_fm_init(void)
+{
+	t_Handle fman_handle;
+	t_Handle pcd_handle;
+	t_FmPcdParams fmPcdParams = {0};
+	/* Hard-coded : fman id 0 since one fman is present in LS104x */
+	int fman_id = 0, ret;
+
+	dpaa_read_fm_config_from_file();
+
+	/* FM Open */
+	fman_handle = FM_Open(fman_id);
+	if (!fman_handle) {
+		DPAA_PMD_ERR("FM_Open: Failed");
+		return -1;
+	}
+
+	/* FM PCD Open */
+	fmPcdParams.h_Fm = fman_handle;
+	fmPcdParams.prsSupport = true;
+	fmPcdParams.kgSupport = true;
+	pcd_handle = FM_PCD_Open(&fmPcdParams);
+	if (!pcd_handle) {
+		DPAA_PMD_ERR("FM_PCD_Open: Failed");
+		return -1;
+	}
+
+	/* FM PCD Enable */
+	ret = FM_PCD_Enable(pcd_handle);
+	if (ret) {
+		DPAA_PMD_ERR("FM_PCD_Enable: Failed");
+		return -1;
+	}
+
+	/* Set fman and pcd handle in fm info */
+	fm_info.fman_handle = fman_handle;
+	fm_info.pcd_handle = pcd_handle;
+
+	return 0;
+}
+
+
 /* De-initialization of FM */
 int dpaa_fm_term(void)
 {
-	t_Handle fman_handle = NULL;
-	t_Handle pcd_handle = NULL;
 	int ret;
 
-	fman_handle = fm_info.fman_handle;
-	pcd_handle = fm_info.pcd_handle;
-
 	/* FM PCD Disable */
-	ret = FM_PCD_Disable(pcd_handle);
+	ret = FM_PCD_Disable(fm_info.pcd_handle);
 	if (ret) {
-		DPAA_PMD_ERR("FM_PCD_Disable: Failed\n");
+		DPAA_PMD_ERR("FM_PCD_Disable: Failed");
 		return -1;
 	}
 
 	/* FM PCD Close */
-	FM_PCD_Close(pcd_handle);
+	FM_PCD_Close(fm_info.pcd_handle);
+	fm_info.pcd_handle = NULL;
 
 	/* FM Close */
-	FM_Close(fman_handle);
+	FM_Close(fm_info.fman_handle);
+	fm_info.fman_handle = NULL;
 
 	ret = remove(fm_log);
 	if (ret)
-		DPAA_PMD_ERR("File remove: Failed\n");
+		DPAA_PMD_ERR("File remove: Failed");
 
 	return 0;
 }

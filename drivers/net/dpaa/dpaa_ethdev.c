@@ -1538,6 +1538,8 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 		if (is_global_init)
 			if (dpaa_fm_term())
 				DPAA_PMD_WARN("DPAA FM term failed\n");
+
+		DPAA_PMD_INFO("DPAA fman cleaned up");
 	}
 }
 
