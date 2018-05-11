@@ -319,7 +319,7 @@ static int set_scheme_params(
 	scheme_params->scheme_counter.update = 1;
 	scheme_params->scheme_counter.value = 0;
 	scheme_params->next_engine = e_IOC_FM_PCD_DONE;
-	scheme_params->base_fqid = DPAA_PCD_FQID_START + (dpaa_intf->ifid *
+	scheme_params->base_fqid = DPAA_PCD_FQID_START + (dpaa_intf->fif->mac_idx *
 						DPAA_PCD_FQID_MULTIPLIER);
 	scheme_params->net_env_params.net_env_id = dpaa_intf->netenv_handle;
 	scheme_params->net_env_params.num_of_distinction_units =
