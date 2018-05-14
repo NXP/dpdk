@@ -515,7 +515,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	PMD_INIT_FUNC_TRACE();
 
-	DPAA_PMD_INFO("Rx queue setup for queue index: %d", queue_idx);
+	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
+			queue_idx, rxq->fqid);
 
 	if (!dpaa_intf->bp_info || dpaa_intf->bp_info->mp != mp) {
 		struct fman_if_ic_params icp;
@@ -720,7 +721,8 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	PMD_INIT_FUNC_TRACE();
 
-	DPAA_PMD_INFO("Tx queue setup for queue index: %d", queue_idx);
+	DPAA_PMD_INFO("Tx queue setup for queue index: %d fq_id (0x%x)",
+			queue_idx, dpaa_intf->tx_queues[queue_idx].fqid);
 	dev->data->tx_queues[queue_idx] = &dpaa_intf->tx_queues[queue_idx];
 	return 0;
 }
@@ -1048,12 +1050,12 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		DPAA_PMD_ERR("reserve rx fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("reserve rx fqid 0x%x failed with ret: %d",
 			     fqid, ret);
 		return -EINVAL;
 	}
 
-	DPAA_PMD_DEBUG("creating rx fq %p, fqid %d", fq, fqid);
+	DPAA_PMD_DEBUG("creating rx fq %p, fqid 0x%x", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
 		DPAA_PMD_ERR("create rx fqid %d failed with ret: %d",
@@ -1072,7 +1074,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 				      &cgr_opts);
 		if (ret) {
 			DPAA_PMD_WARN(
-				"rx taildrop init fail on rx fqid %d (ret=%d)",
+				"rx taildrop init fail on rx fqid 0x%x(ret=%d)",
 				fqid, ret);
 			goto without_cgr;
 		}
@@ -1083,7 +1085,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 without_cgr:
 	ret = qman_init_fq(fq, flags, &opts);
 	if (ret)
-		DPAA_PMD_ERR("init rx fqid %d failed with ret: %d", fqid, ret);
+		DPAA_PMD_ERR("init rx fqid 0x%x failed with ret:%d", fqid, ret);
 	return ret;
 }
 
@@ -1111,10 +1113,10 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	/* no tx-confirmation */
 	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
-	DPAA_PMD_DEBUG("init tx fq %p, fqid %d", fq, fq->fqid);
+	DPAA_PMD_DEBUG("init tx fq %p, fqid 0x%x", fq, fq->fqid);
 	ret = qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 	if (ret)
-		DPAA_PMD_ERR("init tx fqid %d failed %d", fq->fqid, ret);
+		DPAA_PMD_ERR("init tx fqid 0x%x failed %d", fq->fqid, ret);
 	return ret;
 }
 
