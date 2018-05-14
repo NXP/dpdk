@@ -788,24 +788,29 @@ int dpaa_fm_term(void)
 {
 	int ret;
 
-	/* FM PCD Disable */
-	ret = FM_PCD_Disable(fm_info.pcd_handle);
-	if (ret) {
-		DPAA_PMD_ERR("FM_PCD_Disable: Failed");
-		return -1;
+	if (fm_info.pcd_handle) {
+		/* FM PCD Disable */
+		ret = FM_PCD_Disable(fm_info.pcd_handle);
+		if (ret) {
+			DPAA_PMD_ERR("FM_PCD_Disable: Failed");
+			return -1;
+		}
+
+		/* FM PCD Close */
+		FM_PCD_Close(fm_info.pcd_handle);
+		fm_info.pcd_handle = NULL;
 	}
 
-	/* FM PCD Close */
-	FM_PCD_Close(fm_info.pcd_handle);
-	fm_info.pcd_handle = NULL;
+	if (fm_info.fman_handle) {
+		/* FM Close */
+		FM_Close(fm_info.fman_handle);
+		fm_info.fman_handle = NULL;
+	}
 
-	/* FM Close */
-	FM_Close(fm_info.fman_handle);
-	fm_info.fman_handle = NULL;
-
-	ret = remove(fm_log);
-	if (ret)
-		DPAA_PMD_ERR("File remove: Failed");
-
+	if (access(fm_log, F_OK) != -1) {
+		ret = remove(fm_log);
+		if (ret)
+			DPAA_PMD_ERR("File remove: Failed");
+	}
 	return 0;
 }
