@@ -41,10 +41,12 @@ DPDK_17.11 {
 	netcfg_acquire;
 	netcfg_release;
 	of_find_compatible_node;
+	of_get_address;
 	of_get_next_child;
 	of_get_mac_address;
 	of_get_property;
 	of_init_path;
+	of_translate_address;
 	qm_channel_caam;
 	qman_create_fq;
 	qman_dequeue;
