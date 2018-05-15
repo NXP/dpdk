@@ -542,6 +542,7 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 	struct pfe_eth_priv_s *priv = NULL;
 	struct ls1012a_eth_platform_data *einfo;
 	struct ls1012a_pfe_platform_data *pfe_info;
+	struct ether_addr addr;
 	int err;
 
 	if (id >= pfe->max_intf) {
@@ -607,17 +608,10 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 		err = -ENOMEM;
 		goto err0;
 	}
-	/* copy the primary mac address */
-	/* TODO remove it once you get correct MAC from dtb,
-	 * currently getting 0
-	 */
-	struct ether_addr addr;
-	addr.addr_bytes[0] = 0x00;
-	addr.addr_bytes[1] = 0x11;
-	addr.addr_bytes[2] = 0x22;
-	addr.addr_bytes[3] = 0x33;
-	addr.addr_bytes[4] = 0x44;
-	addr.addr_bytes[5] = id;
+
+	memcpy(addr.addr_bytes, priv->einfo->mac_addr,
+		       ETH_ALEN);
+
 	pfe_dev_set_mac_addr(eth_dev, &addr);
 	ether_addr_copy(&addr, &eth_dev->data->mac_addrs[0]);
 
