@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -i
 
 # tunable parameters
 
@@ -29,7 +29,7 @@ function devicetree() {
 	${cmd} >> ${logoutput}
 	if [ $? -ne 0 ]; then
 		echo -e "Error in dtc"
-		cmd="cat /proc/devicetree/*/*"
+		cmd="cat /proc/device-tree/*/*"
 		${cmd} >> ${logoutput}
 	fi
 }
