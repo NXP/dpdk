@@ -563,8 +563,8 @@ policy.
 
 	<policy name="hash_ipsec_src_dst_spi_policy_mac8">
 		<dist_order>
+			<distributionref name="hash_ipsec_src_dst_spi_dist8"/>
 			<distributionref name="hash_ipv4_src_dst_dist8"/>
-			<distributionref name="default_dist8"/>
 			<distributionref name="default_dist8"/>
 		</dist_order>
 	</policy>
@@ -578,8 +578,8 @@ policy.
 
 	<policy name="hash_ipsec_src_dst_spi_policy_mac9">
 		<dist_order>
+			<distributionref name="hash_ipsec_src_dst_spi_dist9"/>
 			<distributionref name="hash_ipv4_src_dst_dist9"/>
-			<distributionref name="default_dist9"/>
 			<distributionref name="default_dist9"/>
 		</dist_order>
 	</policy>
