@@ -94,6 +94,8 @@ test_blockcipher_one_case(const struct blockcipher_test_case *t,
 			RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD));
 	int dpaa_sec_pmd = rte_cryptodev_driver_id_get(
 			RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD));
+	int caam_jr_pmd = rte_cryptodev_driver_id_get(
+			RTE_STR(CRYPTODEV_NAME_CAAM_JR_PMD));
 	int mrvl_pmd = rte_cryptodev_driver_id_get(
 			RTE_STR(CRYPTODEV_NAME_MRVL_PMD));
 
@@ -119,6 +121,7 @@ test_blockcipher_one_case(const struct blockcipher_test_case *t,
 
 	if (driver_id == dpaa2_sec_pmd ||
 			driver_id == dpaa_sec_pmd ||
+			driver_id == caam_jr_pmd ||
 			driver_id == qat_pmd ||
 			driver_id == openssl_pmd ||
 			driver_id == armv8_pmd ||
@@ -587,6 +590,8 @@ test_blockcipher_all_tests(struct rte_mempool *mbuf_pool,
 			RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD));
 	int dpaa_sec_pmd = rte_cryptodev_driver_id_get(
 			RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD));
+	int caam_jr_pmd = rte_cryptodev_driver_id_get(
+			RTE_STR(CRYPTODEV_NAME_CAAM_JR_PMD));
 	int scheduler_pmd = rte_cryptodev_driver_id_get(
 			RTE_STR(CRYPTODEV_NAME_SCHEDULER_PMD));
 	int armv8_pmd = rte_cryptodev_driver_id_get(
@@ -657,6 +662,8 @@ test_blockcipher_all_tests(struct rte_mempool *mbuf_pool,
 		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC;
 	else if (driver_id == dpaa_sec_pmd)
 		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC;
+	else if (driver_id == caam_jr_pmd)
+		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_CAAM_JR;
 	else if (driver_id == mrvl_pmd)
 		target_pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_MRVL;
 	else
