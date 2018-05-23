@@ -270,6 +270,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t dist_idx;
 	uint32_t vq_id;
+	uint8_t num_rxqueue_per_tc;
 	struct dpaa2_queue *mc_q, *mcq;
 	uint32_t tot_queues;
 	int i;
@@ -277,6 +278,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
 	tot_queues = priv->nb_rx_queues + priv->nb_tx_queues;
 	mc_q = rte_malloc(NULL, sizeof(struct dpaa2_queue) * tot_queues,
 			  RTE_CACHE_LINE_SIZE);
@@ -315,8 +317,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	vq_id = 0;
 	for (dist_idx = 0; dist_idx < priv->nb_rx_queues; dist_idx++) {
 		mcq = (struct dpaa2_queue *)priv->rx_vq[vq_id];
-		mcq->tc_index = DPAA2_DEF_TC;
-		mcq->flow_id = dist_idx;
+		mcq->tc_index = dist_idx / num_rxqueue_per_tc;
+		mcq->flow_id = dist_idx % num_rxqueue_per_tc;
 		vq_id++;
 	}
 
@@ -2216,6 +2218,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	priv->num_rx_tc = attr.num_rx_tcs;
+
 	/* only if the custom CG is enabled */
 	if (attr.options & DPNI_OPT_CUSTOM_CG)
 		priv->max_cgs = attr.num_cgs;
