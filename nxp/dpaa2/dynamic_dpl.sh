@@ -233,7 +233,12 @@ get_dpni_parameters() {
 	echo "Using board type as ${board_type}"
 	if [[ -z "$MAX_QUEUES" ]]
 	then
-		MAX_QUEUES=8
+		if [[ $board_type == "2160" ]]
+		then
+			MAX_QUEUES=16
+		else
+			MAX_QUEUES=8
+		fi
 	fi
 	if [[ -z "$MAX_TCS" ]]
 	then
