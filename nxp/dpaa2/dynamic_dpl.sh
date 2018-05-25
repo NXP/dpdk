@@ -423,7 +423,7 @@ get_dpci_parameters() {
 get_dpdmai_parameters() {
 	if [[ -z "$DPDMAI_COUNT" ]]
 	then
-		DPDMAI_COUNT=8
+		DPDMAI_COUNT=2
 	fi
 	echo "DPDMAI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPDMAI_COUNT = "$DPDMAI_COUNT >> dynamic_dpl_logs
@@ -792,7 +792,7 @@ then
 	# Create DPDMAI's for qDMA
 	unset DPDMAI
 	for i in $(seq 1 ${DPDMAI_COUNT}); do
-		DPDMAI=$(restool -s dpdmai create --priorities=1,1 --container=$DPRC)
+		DPDMAI=$(restool -s dpdmai create --num-queues=8 --priorities=1,1 --container=$DPRC)
 		echo $DPDMAI "Created" >> dynamic_dpl_logs
 		obj_assign $DPDMAI
 	done;
