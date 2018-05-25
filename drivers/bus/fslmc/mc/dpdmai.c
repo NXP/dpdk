@@ -114,6 +114,7 @@ int dpdmai_create(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  dprc_token);
 	cmd_params = (struct dpdmai_cmd_create *)cmd.params;
+	cmd_params->num_queues = cfg->num_queues;
 	cmd_params->priorities[0] = cfg->priorities[0];
 	cmd_params->priorities[1] = cfg->priorities[1];
 
@@ -298,6 +299,7 @@ int dpdmai_get_attributes(struct fsl_mc_io *mc_io,
 	rsp_params = (struct dpdmai_rsp_get_attr *)cmd.params;
 	attr->id = le32_to_cpu(rsp_params->id);
 	attr->num_of_priorities = rsp_params->num_of_priorities;
+	attr->num_of_queues = rsp_params->num_of_queues;
 
 	return 0;
 }
@@ -307,6 +309,8 @@ int dpdmai_get_attributes(struct fsl_mc_io *mc_io,
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPDMAI object
+ * @queue_idx: Rx queue index. Accepted values are form 0 to num_queues
+ *		parameter provided in dpdmai_create
  * @priority:	Select the queue relative to number of
  *		priorities configured at DPDMAI creation; use
  *		DPDMAI_ALL_QUEUES to configure all Rx queues
@@ -318,6 +322,7 @@ int dpdmai_get_attributes(struct fsl_mc_io *mc_io,
 int dpdmai_set_rx_queue(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
+			uint8_t queue_idx,
 			uint8_t priority,
 			const struct dpdmai_rx_queue_cfg *cfg)
 {
@@ -332,6 +337,7 @@ int dpdmai_set_rx_queue(struct fsl_mc_io *mc_io,
 	cmd_params->dest_id = cpu_to_le32(cfg->dest_cfg.dest_id);
 	cmd_params->dest_priority = cfg->dest_cfg.priority;
 	cmd_params->priority = priority;
+	cmd_params->queue_idx = queue_idx;
 	cmd_params->user_ctx = cpu_to_le64(cfg->user_ctx);
 	cmd_params->options = cpu_to_le32(cfg->options);
 	dpdmai_set_field(cmd_params->dest_type,
@@ -347,6 +353,8 @@ int dpdmai_set_rx_queue(struct fsl_mc_io *mc_io,
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPDMAI object
+ * @queue_idx: Rx queue index. Accepted values are form 0 to num_queues
+ *		parameter provided in dpdmai_create
  * @priority:	Select the queue relative to number of
  *		priorities configured at DPDMAI creation
  * @attr:	Returned Rx queue attributes
@@ -356,6 +364,7 @@ int dpdmai_set_rx_queue(struct fsl_mc_io *mc_io,
 int dpdmai_get_rx_queue(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
+			uint8_t queue_idx,
 			uint8_t priority,
 			struct dpdmai_rx_queue_attr *attr)
 {
@@ -370,6 +379,7 @@ int dpdmai_get_rx_queue(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpdmai_cmd_get_queue *)cmd.params;
 	cmd_params->priority = priority;
+	cmd_params->queue_idx = queue_idx;
 
 	/* send command to mc*/
 	err = mc_send_command(mc_io, &cmd);
@@ -393,6 +403,8 @@ int dpdmai_get_rx_queue(struct fsl_mc_io *mc_io,
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPDMAI object
+ * @queue_idx: Tx queue index. Accepted values are form 0 to num_queues
+ *		parameter provided in dpdmai_create
  * @priority:	Select the queue relative to number of
  *		priorities configured at DPDMAI creation
  * @attr:	Returned Tx queue attributes
@@ -402,6 +414,7 @@ int dpdmai_get_rx_queue(struct fsl_mc_io *mc_io,
 int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
+			uint8_t queue_idx,
 			uint8_t priority,
 			struct dpdmai_tx_queue_attr *attr)
 {
@@ -416,6 +429,7 @@ int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpdmai_cmd_get_queue *)cmd.params;
 	cmd_params->priority = priority;
+	cmd_params->queue_idx = queue_idx;
 
 	/* send command to mc*/
 	err = mc_send_command(mc_io, &cmd);
