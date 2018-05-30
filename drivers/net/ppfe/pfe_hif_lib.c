@@ -476,9 +476,9 @@ void hif_lib_xmit_pkt(struct hif_client_s *client, unsigned int qno,
 
 	/* First buffer */
 	if (flags & HIF_FIRST_BUFFER) {
-		data1 -= PFE_PKT_HEADER_SZ;
-		data -= PFE_PKT_HEADER_SZ;
-		len += PFE_PKT_HEADER_SZ;
+		data1 -= PFE_HIF_SIZE;
+		data -= PFE_HIF_SIZE;
+		len += PFE_HIF_SIZE;
 
 		hif_hdr_write(data1, client->id, qno, client_ctrl);
 	}

@@ -731,6 +731,7 @@ struct class_rx_hdr_t {
 #define STATUS_UDP_CHECKSUM_CORRECT     BIT(27)
 #define STATUS_OVERFLOW_ERR             BIT(28) /* GPI error */
 #define MIN_PKT_SIZE			64
+#define DUMMY_PKT_COUNT			128
 
 static inline void copy_to_lmem(u32 *dst, u32 *src, int len)
 {
@@ -794,7 +795,7 @@ static void send_dummy_pkt_to_hif(void)
 
 void pfe_hif_rx_idle(struct pfe_hif *hif)
 {
-	int hif_stop_loop = 10;
+	int hif_stop_loop = DUMMY_PKT_COUNT;
 	u32 rx_status;
 
 	pfe_hif_disable_rx_desc(hif);

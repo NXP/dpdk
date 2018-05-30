@@ -138,12 +138,12 @@ struct tx_queue_desc {
  * "ip_header = 64 + 6(hif_header) + 16 (parse) + 14 (MAC Header)" will be
  * 4byte aligned.
  */
-#ifdef RTE_LIBRTE_PPFE_SW_PARSE
-#define PFE_PKT_HEADER_SZ	sizeof(struct hif_hdr)
-#else
-#define PFE_PKT_HEADER_SZ	(sizeof(struct hif_hdr) + \
-				 sizeof(struct ppfe_parse))
 #define PFE_HIF_SIZE		sizeof(struct hif_hdr)
+
+#ifdef RTE_LIBRTE_PPFE_SW_PARSE
+#define PFE_PKT_HEADER_SZ	PFE_HIF_SIZE
+#else
+#define PFE_PKT_HEADER_SZ	PFE_HIF_SIZE + sizeof(struct ppfe_parse)
 #endif
 
 #define MAX_L2_HDR_SIZE		14	/* Not correct for VLAN/PPPoE */
