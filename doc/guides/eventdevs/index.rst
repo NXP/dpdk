@@ -39,6 +39,5 @@ application trough the eventdev API.
 
     dpaa
     dpaa2
-    dpaa
     sw
     octeontx
