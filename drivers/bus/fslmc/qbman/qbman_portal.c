@@ -529,8 +529,13 @@ int qbman_swp_enqueue_multiple(struct qbman_swp *s,
 
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
+#ifdef DPAA2_LX2_EQCR_WORKAROUND
+		s->eqcr.ci = qbman_cinh_read(&s->sys,
+				QBMAN_CINH_SWP_EQCR_CI) & 0xF;
+#else
 		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
 				QBMAN_CENA_SWP_EQCR_CI) & 0xF;
+#endif
 		diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
 				   eqcr_ci, s->eqcr.ci);
 		s->eqcr.available += diff;
