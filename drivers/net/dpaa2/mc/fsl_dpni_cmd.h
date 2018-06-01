@@ -42,7 +42,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				5
+#define DPNI_VER_MINOR				6
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2

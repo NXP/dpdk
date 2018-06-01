@@ -359,6 +359,13 @@ int dpni_get_attributes(struct fsl_mc_io *mc_io,
  */
 
 /**
+ * Discard error. When set all discarded frames in wriop will be enqueued to
+ * error queue. To be used in dpni_set_errors_behavior() only if error_action
+ * parameter is set to DPNI_ERROR_ACTION_SEND_TO_ERROR_QUEUE.
+ */
+#define DPNI_ERROR_DISC		0x80000000
+
+/**
  * Extract out of frame header error
  */
 #define DPNI_ERROR_EOFHE	0x00020000
@@ -612,6 +619,30 @@ union dpni_statistics {
 		uint64_t ceetm_reject_bytes;
 		uint64_t ceetm_reject_frames;
 	} page_3;
+	/**
+	 * struct page_4 - congestion point drops for seleted TC
+	 * @cgr_reject_frames: number of rejected frames due to congestion point
+	 * @cgr_reject_bytes: number of rejected bytes due to congestion point
+	 */
+	struct {
+		uint64_t cgr_reject_frames;
+		uint64_t cgr_reject_bytes;
+	}page_4;
+	/**
+	 * struct page_5 - policer statistics per TC
+	 * @policer_cnt_red: NUmber of red colored frames
+	 * @policer_cnt_yellow: number of yellow colored frames
+	 * @policer_cnt_green: number of green colored frames
+	 * @policer_cnt_re_red: number of recolored red frames
+	 * @policer_cnt_re_yellow: number of recolored yellow frames
+	 */
+	struct {
+		uint64_t policer_cnt_red;
+		uint64_t policer_cnt_yellow;
+		uint64_t policer_cnt_green;
+		uint64_t policer_cnt_re_red;
+		uint64_t policer_cnt_re_yellow;
+	} page_5;
 	/**
 	 * struct raw - raw statistics structure, used to index counters
 	 */
