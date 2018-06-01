@@ -56,3 +56,6 @@
 # CPU_ASFLAGS =
 
 MACHINE_CFLAGS += -march=armv8-a+crc+crypto
+
+# To avoid TLS corruption issue.
+MACHINE_CFLAGS += -mtls-dialect=trad
