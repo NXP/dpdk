@@ -281,7 +281,11 @@ function build() {
 				cmd="$cmd CONFIG_RTE_BUILD_SHARED_LIB=y"
 			fi
 			if [ ${debug_flag} -eq 1 ]; then
-				varname="${i}_config_list"
+				local replace=""
+				# i contains arm64-dpaa and we need to strip
+				# the 'arm64-' part of it.
+				local subs=${i/arm64-/$replace}
+				varname="${subs}_config_list"
 				cmd="$cmd ${!varname}"
 			fi
 			if [ $clean_all -eq 1 ]; then
