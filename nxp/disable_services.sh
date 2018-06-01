@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018 NXP
 
 ISSUEFILE="/etc/os-release"
 
