@@ -1,6 +1,6 @@
-#/* SPDX-License-Identifier: BSD-3-Clause
-# * Copyright 2018 NXP
-#*/
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018 NXP
+#
 
 include $(RTE_SDK)/mk/rte.vars.mk
 RTE_SDK_DPAA=$(RTE_SDK)/drivers/net/ppfe
