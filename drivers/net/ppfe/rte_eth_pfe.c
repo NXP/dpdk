@@ -139,7 +139,6 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 		PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
 		goto err0;
 	}
-	pfe_gemac_init(priv);
 	rc = pfe_eth_start(priv);
 err0:
 	return rc;
@@ -601,6 +600,7 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 	eth_dev->dev_ops = &ops;
 	eth_dev->rx_pkt_burst = &pfe_recv_pkts;
 	eth_dev->tx_pkt_burst = &pfe_xmit_pkts;
+	pfe_gemac_init(priv);
 
 	eth_dev->data->nb_rx_queues = 1;
 	eth_dev->data->nb_tx_queues = 1;
