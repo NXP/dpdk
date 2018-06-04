@@ -10,7 +10,7 @@
 # RTE_KERNELDIR should be set else we disable KNI_KMOD
 if [ -z "${RTE_KERNELDIR}" ]; then
 	echo "KERNELDIR not set; disabling kernel build";
-	kernel_disable="CONFIG_RTE_KNI_KMOD=n"
+	kernel_disable="CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n"
 else
 	kernel_disable=
 fi
