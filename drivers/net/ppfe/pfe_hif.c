@@ -418,7 +418,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 			PFE_PMD_INFO("packet with invalid client id %d qnum %d",
 				hif->client_id, hif->qno);
 
-			free_buf = pkt_hdr;
+			free_buf = hif->rx_buf_addr[rtc];
 
 			goto pkt_drop;
 		}
@@ -455,13 +455,13 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 		free_buf = (void *)rte_pktmbuf_iova(mbuf);
 		free_buf = free_buf - PFE_PKT_HEADER_SZ;
 
-pkt_drop:
 		/*Fill free buffer in the descriptor */
 		hif->rx_buf_addr[rtc] = free_buf;
 		hif->rx_buf_vaddr[rtc] = (void *)((uint64_t)mbuf->buf_addr +
 				mbuf->data_off - PFE_PKT_HEADER_SZ);
 		hif->rx_buf_len[rtc] = buf_size;
 
+pkt_drop:
 		writel(DDR_PHYS_TO_PFE(free_buf), &desc->data);
 		/*
 		 * Ensure everything else is written to DDR before

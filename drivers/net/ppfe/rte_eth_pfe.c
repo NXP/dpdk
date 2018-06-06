@@ -144,6 +144,7 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 		PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
 		goto err0;
 	}
+	pfe_eth_stop(eth_dev);
 	pfe_gemac_init(priv);
 	rc = pfe_eth_start(priv);
 	dev->tx_pkt_burst = &pfe_xmit_pkts;
