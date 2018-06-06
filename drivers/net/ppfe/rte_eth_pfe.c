@@ -657,8 +657,7 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 
 	eth_dev->data->mtu = 1500;
 	eth_dev->dev_ops = &ops;
-	eth_dev->rx_pkt_burst = &pfe_dummy_recv_pkts;
-	eth_dev->tx_pkt_burst = &pfe_dummy_xmit_pkts;
+	pfe_eth_stop(eth_dev);
 	pfe_gemac_init(priv);
 
 	eth_dev->data->nb_rx_queues = 1;
