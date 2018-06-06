@@ -111,34 +111,132 @@ static int pfe_eth_event_handler(void *data, int event, __rte_unused int qno)
 	return 0;
 }
 
+static uint16_t
+pfe_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+{
+	struct hif_client_rx_queue *queue = rxq;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_mempool *pool;
+
+	/*TODO can we remove this cleanup from here?*/
+	pfe_tx_do_cleanup(priv->pfe);
+	pfe_hif_rx_process(&priv->pfe->hif, nb_pkts);
+	pool = priv->pfe->hif.shm->pool;
+
+	return hif_lib_receive_pkt_dpdk(rxq, pool, rx_pkts, nb_pkts);
+}
+
+static uint16_t
+pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	struct hif_client_tx_queue *queue = tx_queue;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_eth_stats *stats = &priv->stats;
+	int i;
+
+	for (i = 0; i < nb_pkts; i++) {
+		hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+			(void *)rte_pktmbuf_iova(tx_pkts[i]),
+			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off ,
+			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
+			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
+			tx_pkts[i]);
+		stats->obytes += tx_pkts[i]->pkt_len;
+		hif_tx_dma_start();
+	}
+	stats->opackets += nb_pkts;
+	pfe_tx_do_cleanup(priv->pfe);
+
+	return nb_pkts;
+}
+
+static uint16_t
+pfe_dummy_xmit_pkts(__rte_unused void *tx_queue,
+		__rte_unused struct rte_mbuf **tx_pkts,
+		__rte_unused uint16_t nb_pkts)
+{
+	return 0;
+}
+
+static uint16_t
+pfe_dummy_recv_pkts(__rte_unused void *rxq,
+		__rte_unused struct rte_mbuf **rx_pkts,
+		__rte_unused uint16_t nb_pkts)
+{
+	return 0;
+}
+
+
 /* pfe_eth_open
  */
 static int pfe_eth_open(struct rte_eth_dev *dev)
 {
 	struct pfe_eth_priv_s *priv = dev->data->dev_private;
 	struct hif_client_s *client;
+	struct hif_shm *hif_shm;
 	int rc;
 
-	/* Register client driver with HIF */
+
 	client = &priv->client;
-	memset(client, 0, sizeof(*client));
-	client->id = PFE_CL_GEM0 + priv->id;
-	client->tx_qn = emac_txq_cnt;
-	client->rx_qn = EMAC_RXQ_CNT;
-	client->priv = priv;
-	client->pfe = priv->pfe;
-	client->port_id = dev->data->port_id;
-	client->event_handler = pfe_eth_event_handler;
 
-	client->tx_qsize = EMAC_TXQ_DEPTH;
-	client->rx_qsize = EMAC_RXQ_DEPTH;
+	if (client->pfe) {
+		hif_shm = client->pfe->hif.shm;
+		/* TODO please remove the below code of if block, once we add
+		 * the proper cleanup in eth_close */
+		if (!test_bit(PFE_CL_GEM0 + priv->id, &hif_shm->g_client_status[0])) {
+			/* Register client driver with HIF */
+			memset(client, 0, sizeof(*client));
+			client->id = PFE_CL_GEM0 + priv->id;
+			client->tx_qn = emac_txq_cnt;
+			client->rx_qn = EMAC_RXQ_CNT;
+			client->priv = priv;
+			client->pfe = priv->pfe;
+			client->port_id = dev->data->port_id;
+			client->event_handler = pfe_eth_event_handler;
 
-	rc = hif_lib_client_register(client);
-	if (rc) {
-		PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
-		goto err0;
+			client->tx_qsize = EMAC_TXQ_DEPTH;
+			client->rx_qsize = EMAC_RXQ_DEPTH;
+
+			rc = hif_lib_client_register(client);
+			if (rc) {
+				PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
+				goto err0;
+			}
+		} else {
+			/* Freeing the packets if already exists */
+			int ret = 0;
+			struct rte_mbuf *rx_pkts[32];
+			/* TODO multiqueue support */
+			ret = hif_lib_receive_pkt_dpdk(&client->rx_q[0], hif_shm->pool, rx_pkts, 32);
+			while (ret) {
+				for (int i = 0; i < ret; i++)
+					rte_pktmbuf_free(rx_pkts[i]);
+				ret = hif_lib_receive_pkt_dpdk(&client->rx_q[0], hif_shm->pool, rx_pkts, 32);
+			}
+		}
+	} else {
+		/* Register client driver with HIF */
+		memset(client, 0, sizeof(*client));
+		client->id = PFE_CL_GEM0 + priv->id;
+		client->tx_qn = emac_txq_cnt;
+		client->rx_qn = EMAC_RXQ_CNT;
+		client->priv = priv;
+		client->pfe = priv->pfe;
+		client->port_id = dev->data->port_id;
+		client->event_handler = pfe_eth_event_handler;
+
+		client->tx_qsize = EMAC_TXQ_DEPTH;
+		client->rx_qsize = EMAC_RXQ_DEPTH;
+
+		rc = hif_lib_client_register(client);
+		if (rc) {
+			PFE_PMD_ERR("hif_lib_client_register(%d) failed", client->id);
+			goto err0;
+		}
 	}
 	rc = pfe_eth_start(priv);
+	dev->rx_pkt_burst = &pfe_recv_pkts;
+	dev->tx_pkt_burst = &pfe_xmit_pkts;
 err0:
 	return rc;
 }
@@ -152,7 +250,8 @@ static void pfe_eth_stop(struct rte_eth_dev *dev/*, int wake*/)
 	gemac_disable(priv->EMAC_baseaddr);
 	gpi_disable(priv->GPI_baseaddr);
 
-	hif_lib_client_unregister(&priv->client);
+	dev->rx_pkt_burst = &pfe_dummy_recv_pkts;
+	dev->tx_pkt_burst = &pfe_dummy_xmit_pkts;
 }
 
 /* pfe_eth_close
@@ -268,45 +367,6 @@ pfe_tx_queue_setup(struct rte_eth_dev *dev,
 	dev->data->tx_queues[queue_idx] = &priv->client.tx_q[queue_idx];
 	priv->client.tx_q[queue_idx].queue_id = queue_idx;
 	return 0;
-}
-
-static uint16_t
-pfe_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
-{
-	struct hif_client_rx_queue *queue = rxq;
-	struct pfe_eth_priv_s *priv = queue->priv;
-	struct rte_mempool *pool;
-
-	/*TODO can we remove this cleanup from here?*/
-	pfe_tx_do_cleanup(priv->pfe);
-	pfe_hif_rx_process(&priv->pfe->hif, nb_pkts);
-	pool = priv->pfe->hif.shm->pool;
-
-	return hif_lib_receive_pkt_dpdk(rxq, pool, rx_pkts, nb_pkts);
-}
-
-static uint16_t
-pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
-{
-	struct hif_client_tx_queue *queue = tx_queue;
-	struct pfe_eth_priv_s *priv = queue->priv;
-	struct rte_eth_stats *stats = &priv->stats;
-	int i;
-
-	for (i = 0; i < nb_pkts; i++) {
-		hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-			(void *)rte_pktmbuf_iova(tx_pkts[i]),
-			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off ,
-			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
-			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
-			tx_pkts[i]);
-		stats->obytes += tx_pkts[i]->pkt_len;
-		hif_tx_dma_start();
-	}
-	stats->opackets += nb_pkts;
-	pfe_tx_do_cleanup(priv->pfe);
-
-	return nb_pkts;
 }
 
 static const uint32_t *
@@ -597,8 +657,8 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 
 	eth_dev->data->mtu = 1500;
 	eth_dev->dev_ops = &ops;
-	eth_dev->rx_pkt_burst = &pfe_recv_pkts;
-	eth_dev->tx_pkt_burst = &pfe_xmit_pkts;
+	eth_dev->rx_pkt_burst = &pfe_dummy_recv_pkts;
+	eth_dev->tx_pkt_burst = &pfe_dummy_xmit_pkts;
 	pfe_gemac_init(priv);
 
 	eth_dev->data->nb_rx_queues = 1;
