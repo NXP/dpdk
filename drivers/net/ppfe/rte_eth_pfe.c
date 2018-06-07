@@ -2,6 +2,8 @@
  * Copyright 2018 NXP
  */
 
+#include <sys/ioctl.h>
+
 #include <rte_cycles.h>
 #include <rte_devargs.h>
 #include <rte_dev.h>
@@ -419,17 +421,88 @@ pfe_supported_ptypes_get(struct rte_eth_dev *dev)
 	return NULL;
 }
 
+static inline int
+pfe_eth_atomic_read_link_status(struct rte_eth_dev *dev,
+				struct rte_eth_link *link)
+{
+	struct rte_eth_link *dst = link;
+	struct rte_eth_link *src = &dev->data->dev_link;
+
+	if (rte_atomic64_cmpset((uint64_t *)dst, *(uint64_t *)dst,
+				*(uint64_t *)src) == 0)
+		return -1;
+
+	return 0;
+}
+
+static inline int
+pfe_eth_atomic_write_link_status(struct rte_eth_dev *dev,
+				 struct rte_eth_link *link)
+{
+	struct rte_eth_link *dst = &dev->data->dev_link;
+	struct rte_eth_link *src = link;
+
+	if (rte_atomic64_cmpset((uint64_t *)dst, *(uint64_t *)dst,
+				*(uint64_t *)src) == 0)
+		return -1;
+
+	return 0;
+}
+
 static int pfe_eth_link_update(struct rte_eth_dev *dev,
 				int wait_to_complete __rte_unused)
 {
-	struct rte_eth_link *link = &dev->data->dev_link;
+	int ret, ioctl_cmd = 0;
+	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct rte_eth_link link, old;
+	unsigned int lstatus = 1;
 
+	if (dev == NULL) {
+		PFE_PMD_ERR("Invalid device in link_update.\n");
+		return 0;
+	}
 
-	link->link_speed = 1000;
+	memset(&old, 0, sizeof(old));
+	memset(&link, 0, sizeof(struct rte_eth_link));
 
-	link->link_status = 1;
-	link->link_duplex = ETH_LINK_FULL_DUPLEX;
-	link->link_autoneg = ETH_LINK_AUTONEG;
+	pfe_eth_atomic_read_link_status(dev, &old);
+
+	/* Read from PFE CDEV, status of link, if file was successfully
+	 * opened.
+	 */
+	if (priv->link_fd != PFE_CDEV_INVALID_FD) {
+		if (priv->id == 0)
+			ioctl_cmd = PFE_CDEV_ETH0_STATE_GET;
+		if (priv->id == 1)
+			ioctl_cmd = PFE_CDEV_ETH1_STATE_GET;
+
+		ret = ioctl(priv->link_fd, ioctl_cmd, &lstatus);
+		if (ret != 0) {
+			PFE_PMD_ERR("Unable to fetch link status (ioctl)\n");
+			/* use dummy link value */
+			link.link_status = 1;
+		}
+		PFE_PMD_DEBUG("Fetched link state (%d) for dev %d.\n",
+			      lstatus, priv->id);
+
+	}
+
+	if (old.link_status == lstatus) {
+		/* no change in status */
+		PFE_PMD_DEBUG("No change in link status; Not updating.\n");
+		return -1;
+	}
+
+	link.link_status = lstatus;
+	link.link_speed = ETH_LINK_SPEED_1G;
+	link.link_duplex = ETH_LINK_FULL_DUPLEX;
+	link.link_autoneg = ETH_LINK_AUTONEG;
+
+	pfe_eth_atomic_write_link_status(dev, &link);
+
+	PFE_PMD_INFO("Port (%d) link is %s\n", dev->data->port_id,
+		     link.link_status ? "up" : "down");
+
 	return 0;
 }
 
@@ -571,6 +644,39 @@ int pfe_stats_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static int
+pfe_eth_open_cdev(struct pfe_eth_priv_s *priv)
+{
+	int pfe_cdev_fd;
+
+	if (priv == NULL)
+		return -1;
+
+	pfe_cdev_fd = open(PFE_CDEV_PATH, O_RDONLY);
+	if (pfe_cdev_fd < 0) {
+		PFE_PMD_WARN("Unable to open PFE device file (%s).\n",
+			     PFE_CDEV_PATH);
+		PFE_PMD_WARN("Link status update will not be available.\n");
+		priv->link_fd = PFE_CDEV_INVALID_FD;
+		return -1;
+	}
+
+	priv->link_fd = pfe_cdev_fd;
+
+	return 0;
+}
+
+static void
+pfe_eth_close_cdev(struct pfe_eth_priv_s *priv)
+{
+	if (priv == NULL)
+		return;
+
+	if (priv->link_fd != PFE_CDEV_INVALID_FD) {
+		close(priv->link_fd);
+		priv->link_fd = PFE_CDEV_INVALID_FD;
+	}
+}
 
 static const struct eth_dev_ops ops = {
 	.dev_start = pfe_eth_open,
@@ -602,6 +708,9 @@ static void
 pfe_eth_exit(struct rte_eth_dev *dev, struct pfe *pfe)
 {
 	PMD_INIT_FUNC_TRACE();
+
+	/* Close the device file for link status */
+	pfe_eth_close_cdev(dev->data->dev_private);
 
 	rte_eth_dev_release_port(dev);
 	pfe->nb_devs--;
@@ -696,6 +805,12 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 
 	eth_dev->data->nb_rx_queues = 1;
 	eth_dev->data->nb_tx_queues = 1;
+
+	/* For link status, open the PFE CDEV; Error from this function
+	 * is silently ignored; In case of error, the link status will not
+	 * be available.
+	 */
+	pfe_eth_open_cdev(priv);
 
 	return 0;
 err0:

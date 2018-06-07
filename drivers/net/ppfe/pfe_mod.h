@@ -29,4 +29,29 @@ struct pfe {
 	uint8_t max_intf;
 };
 
+/* for link status and IOCTL support using pfe character device
+ * XXX: Should be kept in sync with Kernel module
+ */
+
+/* Extracted from ls1012a_pfe_platform_data, there are 3 interfaces which are
+ * supported by PFE driver. Should be updated if number of eth devices are
+ * changed.
+ */
+#define PFE_CDEV_ETH_COUNT 3
+
+#define PFE_CDEV_PATH		"/dev/pfe_us_cdev"
+#define PFE_CDEV_INVALID_FD	-1
+
+/* used when 'read' call is issued, returning PFE_CDEV_ETH_COUNT number of
+ * pfe_shared_info as array.
+ */
+struct pfe_shared_info {
+	uint32_t phy_id; /* Link phy ID */
+	uint8_t state;  /* Has either 0 or 1 */
+};
+
+/* IOCTL Commands */
+#define PFE_CDEV_ETH0_STATE_GET	0
+#define PFE_CDEV_ETH1_STATE_GET	1
+
 #endif /* _PFE_MOD_H */
