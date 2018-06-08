@@ -345,7 +345,7 @@ int gemac_set_rx(void *base, int mtu)
 		return -1;
 	}
 
-	if (pfe_svr != SVR_LS1012A_REV2 && mtu > 1536) {
+	if (pfe_svr == SVR_LS1012A_REV1 && mtu > 1536) {
 		PFE_PMD_ERR("MTU not supported on Rev1");
 		return -1;
 	}
@@ -361,7 +361,7 @@ int gemac_set_rx(void *base, int mtu)
  */
 void gemac_enable_rx_jmb(void *base)
 {
-	if (pfe_svr != SVR_LS1012A_REV2) {
+	if (pfe_svr == SVR_LS1012A_REV1) {
 		PFE_PMD_ERR("Jumbo not supported on Rev1");
 		return;
 	}
@@ -445,10 +445,10 @@ void gemac_set_config(void *base, struct gemac_cfg *cfg)
 	writel(0x00000004, base + EMAC_TFWR_STR_FWD);
 	writel(0x00000005, base + EMAC_RX_SECTION_FULL);
 
-	if (pfe_svr == SVR_LS1012A_REV2) {
-		writel(0x00003fff, base + EMAC_TRUNC_FL);
-	} else {
+	if (pfe_svr == SVR_LS1012A_REV1) {
 		writel(0x00000600, base + EMAC_TRUNC_FL);
+	} else {
+		writel(0x00003fff, base + EMAC_TRUNC_FL);
 	}
 	writel(0x00000030, base + EMAC_TX_SECTION_EMPTY);
 	writel(0x00000000, base + EMAC_MIB_CTRL_STS_REG);
