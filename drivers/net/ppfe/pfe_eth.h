@@ -11,6 +11,11 @@
 #define ETH_ALEN 6
 #define GEMAC_NO_PHY            BIT(0)
 
+#define PFE_SOC_ID_FILE	"/sys/devices/soc0/soc_id"
+extern unsigned int pfe_svr;
+#define SVR_LS1012A_REV2	0x87040020
+#define SVR_LS1012A_REV1	0x87040010
+
 struct ls1012a_eth_platform_data {
 	/* device specific information */
 	u32 device_flags;

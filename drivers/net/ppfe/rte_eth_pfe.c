@@ -25,6 +25,8 @@ static void *cbus_emac_base[3];
 static void *cbus_gpi_base[3];
 struct pfe *g_pfe;
 
+unsigned int pfe_svr;
+
 static void
 pfe_dev_set_mac_addr(struct rte_eth_dev *dev, struct ether_addr *addr);
 static void
@@ -52,6 +54,27 @@ static int pfe_gemac_init(struct pfe_eth_priv_s *priv)
 	gemac_enable_rx_checksum_offload(priv->EMAC_baseaddr);
 
 	return 0;
+}
+
+static void
+pfe_fw_version_get(void)
+{
+	FILE *svr_file = NULL;
+	unsigned int svr_ver = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	svr_file = fopen(PFE_SOC_ID_FILE, "r");
+	if (!svr_file) {
+		PFE_PMD_ERR("Unable to open SoC device");
+		return; /* Not supported on this infra */
+	}
+	if (fscanf(svr_file, "svr:%x", &svr_ver) > 0)
+		pfe_svr = svr_ver;
+	else
+		PFE_PMD_ERR("Unable to read SoC device");
+
+	fclose(svr_file);
 }
 
 /* pfe_eth_start
@@ -1063,6 +1086,7 @@ pmd_pfe_probe(struct rte_vdev_device *vdev)
 	rc = pfe_hif_init(g_pfe);
 	if (rc < 0)
 		goto err_hif;
+	pfe_fw_version_get();
 eth_init:
 	if (init_params.gem_id < 0)
 		gem_id = g_pfe->nb_devs;

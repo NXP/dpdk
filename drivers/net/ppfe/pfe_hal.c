@@ -330,7 +330,8 @@ void gemac_no_broadcast(void *base)
 void gemac_enable_1536_rx(void *base)
 {
 	/* Set 1536 as Maximum frame length */
-	writel((readl(base + EMAC_RCNTRL_REG) & PFE_MTU_RESET_MASK) | (1536 << 16),
+	writel((readl(base + EMAC_RCNTRL_REG) & PFE_MTU_RESET_MASK)
+			| (1536 << 16),
 			base + EMAC_RCNTRL_REG);
 }
 
@@ -344,7 +345,13 @@ int gemac_set_rx(void *base, int mtu)
 		return -1;
 	}
 
-	writel((readl(base + EMAC_RCNTRL_REG) & PFE_MTU_RESET_MASK) | (mtu << 16),
+	if (pfe_svr != SVR_LS1012A_REV2 && mtu > 1536) {
+		PFE_PMD_ERR("MTU not supported on Rev1");
+		return -1;
+	}
+
+	writel((readl(base + EMAC_RCNTRL_REG) & PFE_MTU_RESET_MASK)
+			| (mtu << 16),
 			base + EMAC_RCNTRL_REG);
 	return 0;
 }
@@ -354,6 +361,11 @@ int gemac_set_rx(void *base, int mtu)
  */
 void gemac_enable_rx_jmb(void *base)
 {
+	if (pfe_svr != SVR_LS1012A_REV2) {
+		PFE_PMD_ERR("Jumbo not supported on Rev1");
+		return;
+	}
+
 	writel((readl(base + EMAC_RCNTRL_REG) & PFE_MTU_RESET_MASK) |
 			(JUMBO_FRAME_SIZE << 16), base + EMAC_RCNTRL_REG);
 }
@@ -432,7 +444,12 @@ void gemac_set_config(void *base, struct gemac_cfg *cfg)
 	/*GEMAC config taken from VLSI */
 	writel(0x00000004, base + EMAC_TFWR_STR_FWD);
 	writel(0x00000005, base + EMAC_RX_SECTION_FULL);
-	writel(0x00003fff, base + EMAC_TRUNC_FL);
+
+	if (pfe_svr == SVR_LS1012A_REV2) {
+		writel(0x00003fff, base + EMAC_TRUNC_FL);
+	} else {
+		writel(0x00000600, base + EMAC_TRUNC_FL);
+	}
 	writel(0x00000030, base + EMAC_TX_SECTION_EMPTY);
 	writel(0x00000000, base + EMAC_MIB_CTRL_STS_REG);
 
