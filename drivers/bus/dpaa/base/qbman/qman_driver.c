@@ -146,6 +146,11 @@ static int fsl_qman_portal_finish(void)
 	return ret;
 }
 
+int qman_thread_fd(void)
+{
+	return qmfd;
+}
+
 int qman_thread_init(void)
 {
 	/* Convert from contiguous/virtual cpu numbering to real cpu when

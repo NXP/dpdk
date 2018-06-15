@@ -73,6 +73,7 @@ DPDK_17.11 {
 DPDK_18.02 {
 	global:
 
+	bman_thread_irq;
 	dpaa_logtype_eventdev;
 	dpaa_svr_family;
 	fman_if_get_sg_enable;
@@ -82,10 +83,13 @@ DPDK_18.02 {
 	qm_channel_pool1;
 	qman_alloc_cgrid_range;
 	qman_alloc_pool_range;
+	qman_clear_irq;
 	qman_create_cgr;
 	qman_dca_index;
 	qman_delete_cgr;
 	qman_enqueue_multi_fq;
+	qman_irqsource_add;
+	qman_irqsource_remove;
 	qman_modify_cgr;
 	qman_oos_fq;
 	qman_portal_dequeue;
@@ -95,6 +99,8 @@ DPDK_18.02 {
 	qman_release_cgrid_range;
 	qman_retire_fq;
 	qman_static_dequeue_add;
+	qman_thread_fd;
+	qman_thread_irq;
 	rte_dpaa_portal_fq_close;
 	rte_dpaa_portal_fq_init;
 
