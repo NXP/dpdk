@@ -186,7 +186,7 @@ void gemac_set_mode(void *base, __rte_unused int mode)
 	val &= ~EMAC_RCNTRL_LOOP;
 
 	/*Enable flow control and MII mode*/
-	val |= (EMAC_RCNTRL_FCE | EMAC_RCNTRL_MII_MODE);
+	val |= (EMAC_RCNTRL_FCE | EMAC_RCNTRL_MII_MODE | EMAC_RCNTRL_CRC_FWD);
 
 	writel(val, base + EMAC_RCNTRL_REG);
 }
