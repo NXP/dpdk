@@ -128,7 +128,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 			qbman_eq_desc_set_no_orp(&eqdesc[loop], 0);
 			qbman_eq_desc_set_response(&eqdesc[loop], 0, 0);
 
-			if (event->mbuf->seqn) {
+			if (event->sched_type == RTE_SCHED_TYPE_ATOMIC && event->mbuf->seqn) {
 				uint8_t dqrr_index = event->mbuf->seqn - 1;
 
 				qbman_eq_desc_set_dca(&eqdesc[loop], 1,
@@ -321,6 +321,9 @@ dpaa2_eventdev_info_get(struct rte_eventdev *dev,
 	dev_info->max_event_priority_levels =
 		DPAA2_EVENT_MAX_EVENT_PRIORITY_LEVELS;
 	dev_info->max_event_ports = rte_fslmc_get_device_count(DPAA2_IO);
+	/* we only support dpio upto number of cores*/
+	if (dev_info->max_event_ports > RTE_MAX_LCORE)
+		dev_info->max_event_ports = RTE_MAX_LCORE;
 	dev_info->max_event_port_dequeue_depth =
 		DPAA2_EVENT_MAX_PORT_DEQUEUE_DEPTH;
 	dev_info->max_event_port_enqueue_depth =
