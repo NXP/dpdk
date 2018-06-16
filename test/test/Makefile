@@ -212,6 +212,7 @@ SRCS-y += test_event_ring.c
 SRCS-y += test_event_eth_rx_adapter.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_SW_EVENTDEV) += test_eventdev_sw.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_OCTEONTX_SSOVF) += test_eventdev_octeontx.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += test_eventdev_dpaa2.c
 endif
 
 ifeq ($(CONFIG_RTE_LIBRTE_RAWDEV),y)
