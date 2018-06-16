@@ -65,6 +65,15 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d);
 void qbman_swp_finish(struct qbman_swp *p);
 
 /**
+ * qbman_swp_invalidate() - Invalidate the cache enabled area of the QBMan
+ * portal. This is required to be called if a portal moved to another core
+ * because the QBMan portal area is non coherent
+ * @p: the qbman_swp object to be invalidated
+ *
+ */
+void qbman_swp_invalidate(struct qbman_swp *p);
+
+/**
  * qbman_swp_get_desc() - Get the descriptor of the given portal object.
  * @p: the given portal object.
  *
@@ -194,7 +203,7 @@ void qbman_swp_interrupt_set_inhibit(struct qbman_swp *p, int inhibit);
 /**
  * struct qbman_result - structure for qbman dequeue response and/or
  * notification.
- * @donot_manipulate_directly: the 16 32bit data to represent the whole
+ * @dont_manipulate_directly: the 16 32bit data to represent the whole
  * possible qbman dequeue result.
  */
 struct qbman_result {
@@ -284,7 +293,7 @@ void qbman_swp_push_set(struct qbman_swp *s, uint8_t channel_idx, int enable);
  */
 struct qbman_pull_desc {
 	union {
-		uint32_t donot_manipulate_directly[16];
+		uint32_t dont_manipulate_directly[16];
 		struct pull {
 			uint8_t verb;
 			uint8_t numf;
@@ -376,6 +385,14 @@ void qbman_pull_desc_set_wq(struct qbman_pull_desc *d, uint32_t wqid,
  */
 void qbman_pull_desc_set_channel(struct qbman_pull_desc *d, uint32_t chid,
 				 enum qbman_pull_type_e dct);
+
+/**
+ * qbman_pull_desc_set_rad() - Decide whether reschedule the fq after dequeue
+ *
+ * @rad: 1 = Reschedule the FQ after dequeue.
+ *	 0 = Allow the FQ to remain active after dequeue.
+ */
+void qbman_pull_desc_set_rad(struct qbman_pull_desc *d, int rad);
 
 /**
  * qbman_swp_pull() - Issue the pull dequeue command
@@ -797,7 +814,7 @@ uint64_t qbman_result_cgcu_icnt(const struct qbman_result *scn);
 /* struct qbman_eq_desc - structure of enqueue descriptor */
 struct qbman_eq_desc {
 	union {
-		uint32_t donot_manipulate_directly[8];
+		uint32_t dont_manipulate_directly[8];
 		struct eq {
 			uint8_t verb;
 			uint8_t dca;
@@ -818,11 +835,11 @@ struct qbman_eq_desc {
 
 /**
  * struct qbman_eq_response - structure of enqueue response
- * @donot_manipulate_directly: the 16 32bit data to represent the whole
+ * @dont_manipulate_directly: the 16 32bit data to represent the whole
  * enqueue response.
  */
 struct qbman_eq_response {
-	uint32_t donot_manipulate_directly[16];
+	uint32_t dont_manipulate_directly[16];
 };
 
 /**
@@ -1020,12 +1037,12 @@ int qbman_swp_enqueue_thresh(struct qbman_swp *s, unsigned int thresh);
 	/*******************/
 /**
  * struct qbman_release_desc - The structure for buffer release descriptor
- * @donot_manipulate_directly: the 32bit data to represent the whole
+ * @dont_manipulate_directly: the 32bit data to represent the whole
  * possible settings of qbman release descriptor.
  */
 struct qbman_release_desc {
 	union {
-		uint32_t donot_manipulate_directly[16];
+		uint32_t dont_manipulate_directly[16];
 		struct br {
 			uint8_t verb;
 			uint8_t reserved;
