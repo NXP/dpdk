@@ -419,10 +419,13 @@ pfe_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
 	int ret;
 	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	uint16_t frame_size = mtu + ETHER_HDR_LEN + ETHER_CRC_LEN;
 
-	ret = gemac_set_rx(priv->EMAC_baseaddr, mtu);
-	if (!ret)
+	/*TODO Support VLAN*/
+	ret = gemac_set_rx(priv->EMAC_baseaddr, frame_size);
+	if (!ret) {
 		dev->data->mtu = mtu;
+	}
 
 	return ret;
 }
