@@ -581,9 +581,11 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
 		}
 		ret = qman_init_fq(rxq, flags, &opts);
-		if (ret)
-			DPAA_PMD_ERR("Channel/Queue association failed. fqid %d"
-				     " ret: %d", rxq->fqid, ret);
+		if (ret) {
+			DPAA_PMD_ERR("Channel/Queue association failed. fqid"
+					" 0x%x ret: %d", rxq->fqid, ret);
+			return ret;
+		}
 		if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
 			rxq->cb.dqrr_ucode_cb = dpaa_ucode_rx_cb;
 		else if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
@@ -664,8 +666,8 @@ int dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 
 	ret = qman_init_fq(rxq, flags, &opts);
 	if (ret) {
-		DPAA_PMD_ERR("Channel/Queue association failed. fqid %d ret:%d",
-			     rxq->fqid, ret);
+		DPAA_PMD_ERR("Channel/Queue association failed. fqid"
+				" 0x%x ret:%d", rxq->fqid, ret);
 		return ret;
 	}
 
@@ -1058,7 +1060,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 	DPAA_PMD_DEBUG("creating rx fq %p, fqid 0x%x", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		DPAA_PMD_ERR("create rx fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("create rx fqid 0x%x failed with ret: %d",
 			fqid, ret);
 		return ret;
 	}
@@ -1075,7 +1077,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 		if (ret) {
 			DPAA_PMD_WARN(
 				"rx taildrop init fail on rx fqid 0x%x(ret=%d)",
-				fqid, ret);
+				fq->fqid, ret);
 			goto without_cgr;
 		}
 		opts.we_mask |= QM_INITFQ_WE_CGID;
