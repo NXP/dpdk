@@ -106,7 +106,8 @@ static void pfe_eth_flush_txQ(struct pfe_eth_priv_s *priv, int tx_q_num, int
 						   tx_q_num, &flags,
 						   HIF_TX_DESC_NT))) {
 		if (mbuf) {
-			if (flags & HIF_DATA_VALID)
+				mbuf->next = NULL;
+				mbuf->nb_segs = 1;
 				rte_pktmbuf_free(mbuf);
 		}
 	}
@@ -151,7 +152,7 @@ pfe_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 
 	/*TODO can we remove this cleanup from here?*/
 	pfe_tx_do_cleanup(priv->pfe);
-	pfe_hif_rx_process(&priv->pfe->hif, nb_pkts);
+	pfe_hif_rx_process(priv->pfe, nb_pkts);
 	pool = priv->pfe->hif.shm->pool;
 
 	return hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
@@ -166,12 +167,40 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	int i;
 
 	for (i = 0; i < nb_pkts; i++) {
-		hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-			(void *)rte_pktmbuf_iova(tx_pkts[i]),
-			tx_pkts[i]->buf_addr + tx_pkts[i]->data_off ,
-			tx_pkts[i]->pkt_len, 0 /*ctrl*/,
-			HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
-			tx_pkts[i]);
+		if (tx_pkts[i]->nb_segs > 1) {
+			struct rte_mbuf *mbuf;
+			int j;
+
+			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+					(void *)rte_pktmbuf_iova(tx_pkts[i]),
+					tx_pkts[i]->buf_addr + tx_pkts[i]->data_off,
+					tx_pkts[i]->data_len, 0x0, HIF_FIRST_BUFFER,
+					tx_pkts[i]);
+
+			mbuf = tx_pkts[i]->next;
+			for (j = 0; j < (tx_pkts[i]->nb_segs - 2); j++) {
+				hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+					(void *)rte_pktmbuf_iova(mbuf),
+					mbuf->buf_addr + mbuf->data_off,
+					mbuf->data_len,
+					0x0, 0x0, mbuf);
+				mbuf = mbuf->next;
+			}
+
+			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+					(void *)rte_pktmbuf_iova(mbuf),
+					mbuf->buf_addr + mbuf->data_off,
+					mbuf->data_len,
+					0x0, HIF_LAST_BUFFER | HIF_DATA_VALID,
+					mbuf);
+		} else {
+			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
+				(void *)rte_pktmbuf_iova(tx_pkts[i]),
+				tx_pkts[i]->buf_addr + tx_pkts[i]->data_off,
+				tx_pkts[i]->pkt_len, 0 /*ctrl*/,
+				HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,
+				tx_pkts[i]);
+		}
 		stats->obytes += tx_pkts[i]->pkt_len;
 		hif_tx_dma_start();
 	}

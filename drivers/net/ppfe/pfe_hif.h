@@ -148,7 +148,7 @@ void hif_process_client_req(struct pfe_hif *hif, int req, int data1, int
 int pfe_hif_init(struct pfe *pfe);
 void pfe_hif_exit(struct pfe *pfe);
 void pfe_hif_rx_idle(struct pfe_hif *hif);
-int pfe_hif_rx_process(struct pfe_hif *hif, int budget);
+int pfe_hif_rx_process(struct pfe *pfe, int budget);
 int pfe_hif_init_buffers(struct pfe_hif *hif);
 void pfe_tx_do_cleanup(struct pfe *pfe);
 void dump_parseresults(struct ppfe_parse *parse_res);
