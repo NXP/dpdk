@@ -162,7 +162,7 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 					PFE_PKT_HEADER_SZ);
 		hif->rx_buf_addr[i] =
 			(void *)(rte_pktmbuf_iova(mbuf) - PFE_PKT_HEADER_SZ);
-		hif->rx_buf_len[i] =  mbuf->buf_len;
+		hif->rx_buf_len[i] =  mbuf->buf_len - RTE_PKTMBUF_HEADROOM;
 
 		hif->shm->rx_buf_pool[i] = NULL;
 
@@ -364,7 +364,7 @@ static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue,
  * This function does pfe hif rx queue processing.
  * Dequeue packet from Rx queue and send it to corresponding client queue
  */
-int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
+int pfe_hif_rx_process(struct pfe *pfe, int budget)
 {
 	struct hif_desc	*desc;
 	struct hif_hdr *pkt_hdr;
@@ -372,9 +372,10 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 	void *free_buf;
 	int rtc, len, rx_processed = 0;
 	struct __hif_desc local_desc;
-	int flags;
+	int flags = 0, wait_for_last = 0, retry = 0;
 	unsigned int buf_size = 0;
 	struct rte_mbuf *mbuf = NULL;
+	struct pfe_hif *hif = &pfe->hif;
 
 	rte_spinlock_lock(&hif->lock);
 
@@ -386,8 +387,12 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 		__memcpy12(&local_desc, desc);
 
 		/* ACK pending Rx interrupt */
-		if (local_desc.ctrl & BD_CTRL_DESC_EN)
-			break;
+		if (local_desc.ctrl & BD_CTRL_DESC_EN) {
+			if (unlikely(wait_for_last))
+				continue;
+			else
+				break;
+		}
 
 		len = BD_BUF_LEN(local_desc.ctrl);
 		pkt_hdr = (struct hif_hdr *)hif->rx_buf_vaddr[rtc];
@@ -408,8 +413,11 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 			flags = 0;
 		}
 
-		if (local_desc.ctrl & BD_CTRL_LIFM)
+		if (local_desc.ctrl & BD_CTRL_LIFM) {
 			flags |= CL_DESC_LAST;
+			wait_for_last = 0;
+		} else
+			wait_for_last = 1;
 
 		/* Check for valid client id and still registered */
 		if (hif->client_id >= HIF_CLIENTS_MAX ||
@@ -430,6 +438,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 			hif->qno = 0;
 		}
 
+retry:
 		mbuf =
 		client_put_rxpacket(&hif->client[hif->client_id].rx_q[hif->qno],
 				    (void *)pkt_hdr, len, flags,
@@ -437,21 +446,21 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 				    &buf_size);
 
 		if (unlikely(!mbuf)) {
-			/*
-			 * If we want to keep in polling mode to retry later,
-			 * we need to tell napi that we consumed
-			 * the full budget or we will hit a livelock scenario.
-			 * The core code keeps this napi instance
-			 * at the head of the list and none of the other
-			 * instances get to run
-			 */
+			if (!retry) {
+				pfe_tx_do_cleanup(pfe);
+				retry = 1;
+				goto retry;
+			}
 			rx_processed = budget;
 
 			if (flags & CL_DESC_FIRST)
 				hif->started = 0;
 
+			PFE_DP_LOG(DEBUG, "No buffers");
 			break;
-		}
+		} else
+			retry = 0;
+
 		free_buf = (void *)rte_pktmbuf_iova(mbuf);
 		free_buf = free_buf - PFE_PKT_HEADER_SZ;
 
@@ -459,7 +468,7 @@ int pfe_hif_rx_process(struct pfe_hif *hif, int budget)
 		hif->rx_buf_addr[rtc] = free_buf;
 		hif->rx_buf_vaddr[rtc] = (void *)((uint64_t)mbuf->buf_addr +
 				mbuf->data_off - PFE_PKT_HEADER_SZ);
-		hif->rx_buf_len[rtc] = buf_size;
+		hif->rx_buf_len[rtc] = buf_size - RTE_PKTMBUF_HEADROOM;
 
 pkt_drop:
 		writel(DDR_PHYS_TO_PFE(free_buf), &desc->data);
