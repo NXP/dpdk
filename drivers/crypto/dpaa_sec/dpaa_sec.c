@@ -2717,6 +2717,12 @@ dpaa_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	return 0;
 }
 
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
+static uint8_t aes_cbc_iv[] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };
+#endif
+
 static int
 dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			   struct rte_security_session_conf *conf,
@@ -2818,13 +2824,20 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 		session->encap_pdb.options =
 			(IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
+#ifndef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 			PDBOPTS_ESP_IVSRC |
+#endif
 			PDBHMO_ESP_ENCAP_DTTL |
 			PDBHMO_ESP_SNR;
 		if (ipsec_xform->options.esn)
 			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->encap_pdb.spi = ipsec_xform->spi;
 
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
+		if (cipher_xform)
+			memcpy(session->encap_pdb.cbc.iv,
+				aes_cbc_iv, cipher_xform->iv.length);
+#endif
 	} else if (ipsec_xform->direction ==
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
 		if (ipsec_xform->tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4)
