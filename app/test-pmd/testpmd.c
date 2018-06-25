@@ -457,7 +457,7 @@ set_default_fwd_lcores_config(void)
 		}
 		if (!rte_lcore_is_enabled(i))
 			continue;
-		if (i == rte_get_master_lcore())
+		if (rte_lcore_count() != 1 && i == rte_get_master_lcore())
 			continue;
 		fwd_lcores_cpuids[nb_lc++] = i;
 	}
@@ -1207,7 +1207,13 @@ launch_packet_forwarding(lcore_function_t *pkt_fwd_on_lcore)
 	}
 	for (i = 0; i < cur_fwd_config.nb_fwd_lcores; i++) {
 		lc_id = fwd_lcores_cpuids[i];
-		if ((interactive == 0) || (lc_id != rte_lcore_id())) {
+		if (rte_lcore_count() == 1) {
+			diag = rte_eal_remote_launch(pkt_fwd_on_lcore,
+						     fwd_lcores[i], CALL_MASTER);
+			if (diag != 0)
+				printf("launch lcore %u failed - diag=%d\n",
+				       lc_id, diag);
+		} else if ((interactive == 0) || (lc_id != rte_lcore_id())) {
 			fwd_lcores[i]->stopped = 0;
 			diag = rte_eal_remote_launch(pkt_fwd_on_lcore,
 						     fwd_lcores[i], lc_id);
