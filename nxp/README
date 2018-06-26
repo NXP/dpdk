@@ -355,7 +355,7 @@ Following are some pre-requisites:
 
      However, if you want to do manual FMAN configuration:
 
-     export DPAA_FMC_DIST=1
+     export DPAA_FMC_MODE=1
      Then, before running application, a binary `fmc` needs to be executed to
      configure the FMan on DPAA platforms. This requires two configuration files
      which are available in rootfs at (/usr/local/dpdk/dpaa) and
@@ -403,6 +403,20 @@ Following are some pre-requisites:
 	argument with value "eth_pfe" to enable ethernet device. Maximum supported
 	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
 	values "eth_pfe0" and "eth_pfe1".
+
+  NOTE: Platforms with CAAM JR support need the kernel support and they need
+	to run following commands to assign job rings to userspace.
+	#Find the address for job ring
+		ls /sys/bus/platform/devices/*.jr
+	#leave one and assign remaining rings to userspace drivers.
+		echo 1720000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1720000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+		echo 1730000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1730000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
+	to use these rings.
 
   'testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
@@ -478,6 +492,30 @@ Following are some pre-requisites:
 
   NOTE: It is only supported for DPAA2 platform
 
+  Layer-2 Crypto Forwarding 'l2fwd-crypto' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd-crypto' example application:
+
+  #cipher mode only
+  $ ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 --chain CIPHER_ONLY --cipher_op ENCRYPT --cipher_algo aes-cbc --cipher_key 00:01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f 
+
+  #auth mode only
+  $ ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 -q 1 --chain HASH_ONLY --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+
+  #cipher-auth mode
+  $ ./l2fwd-crypto -c 0xf -n 1 -- -p 0x1 --chain CIPHER_HASH --cipher_op ENCRYPT --cipher_algo aes-cbc --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+
+  For caam_jr mode:
+	use  --vdev 'crypto_caam_jr1'
+  For openssl mode:
+	use --vdev 'crypto_openssl'
+  For armv8_crypto mode:
+	use --vdev 'crypto_armv8'
+
+  You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
+   export DPAA_SEC_DISABLE=1
+  
 
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
