@@ -59,6 +59,7 @@ struct  pfe_eth_priv_s {
 	struct rte_eth_stats	stats;
 	int			id;
 	int			promisc;
+	int			link_fd;
 
 	spinlock_t		lock; /* protect member variables */
 	void			*EMAC_baseaddr;

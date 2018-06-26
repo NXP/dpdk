@@ -391,62 +391,73 @@ int hif_lib_receive_pkt(struct hif_client_rx_queue *queue,
 	struct rx_queue_desc *desc;
 	struct pfe_eth_priv_s *priv = queue->priv;
 	struct rte_pktmbuf_pool_private *mb_priv;
-	struct rte_mbuf *mbuf;
+	struct rte_mbuf *mbuf, *p_mbuf = NULL, *first_mbuf = NULL;
 	struct rte_eth_stats *stats = &priv->stats;
-	int i;
+	int i, wait_for_last = 0;
 #ifndef RTE_LIBRTE_PPFE_SW_PARSE
 	struct ppfe_parse *parse_res;
 #endif
 
-	for (i = 0; i < nb_pkts; i++) {
-		desc = queue->base + queue->read_idx;
-		if ((desc->ctrl & CL_DESC_OWN)) {
-			stats->ipackets += i;
-			return i;
-		}
+	for (i = 0; i < nb_pkts;) {
+		do {
+			desc = queue->base + queue->read_idx;
+			if ((desc->ctrl & CL_DESC_OWN)) {
+				stats->ipackets += i;
+				return i;
+			}
 
-		mb_priv = rte_mempool_get_priv(pool);
-		mbuf = desc->data + PFE_PKT_HEADER_SZ
-			- sizeof(struct rte_mbuf)
-			- RTE_PKTMBUF_HEADROOM
-			- mb_priv->mbuf_priv_size;
+			mb_priv = rte_mempool_get_priv(pool);
 
-		if (desc->ctrl & CL_DESC_FIRST) {
-			/* TODO size of priv data if present in descriptor */
-			u16 size = 0;
-			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl)
-					- PFE_PKT_HEADER_SZ - size;
-		} else {
-			mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl);
-		}
-		mbuf->data_len = mbuf->pkt_len;
-		stats->ibytes += mbuf->data_len;
-		mbuf->port = queue->port_id;
+			mbuf = desc->data + PFE_PKT_HEADER_SZ
+				- sizeof(struct rte_mbuf)
+				- RTE_PKTMBUF_HEADROOM
+				- mb_priv->mbuf_priv_size;
+			mbuf->next = NULL;
+			if (desc->ctrl & CL_DESC_FIRST) {
+				/* TODO size of priv data if present in descriptor */
+				u16 size = 0;
+				mbuf->pkt_len = CL_DESC_BUF_LEN(desc->ctrl)
+						- PFE_PKT_HEADER_SZ - size;
+				mbuf->data_len = mbuf->pkt_len;
+				mbuf->port = queue->port_id;
 #ifdef RTE_LIBRTE_PPFE_SW_PARSE
-		pfe_sw_parse_pkt(mbuf);
+				pfe_sw_parse_pkt(mbuf);
 #else
-		parse_res = (struct ppfe_parse *)(desc->data + PFE_HIF_SIZE);
-		mbuf->packet_type = parse_res->packet_type;
+				parse_res = (struct ppfe_parse *)(desc->data + PFE_HIF_SIZE);
+				mbuf->packet_type = parse_res->packet_type;
 #endif
-		mbuf->nb_segs = 1;
-		mbuf->next = NULL;
+				mbuf->nb_segs = 1;
+				first_mbuf = mbuf;
+				rx_pkts[i++] = first_mbuf;
+			} else {
+				mbuf->data_len = CL_DESC_BUF_LEN(desc->ctrl);
+				mbuf->data_off = mbuf->data_off - PFE_PKT_HEADER_SZ;
+				first_mbuf->pkt_len += mbuf->data_len;
+				first_mbuf->nb_segs++;
+				p_mbuf->next = mbuf;
+			}
+			stats->ibytes += mbuf->data_len;
+			p_mbuf = mbuf;
 
-		rx_pkts[i] = mbuf;
+			if (desc->ctrl & CL_DESC_LAST)
+				wait_for_last = 0;
+			else
+				wait_for_last = 1;
+			/*
+			 * Needed so we don't free a buffer/page
+			 * twice on module_exit
+			 */
+			desc->data = NULL;
 
-		/*
-		 * Needed so we don't free a buffer/page
-		 * twice on module_exit
-		 */
-		desc->data = NULL;
+			/*
+			 * Ensure everything else is written to DDR before
+			 * writing bd->ctrl
+			 */
+			rte_wmb();
 
-		/*
-		 * Ensure everything else is written to DDR before
-		 * writing bd->ctrl
-		 */
-		rte_wmb();
-
-		desc->ctrl = CL_DESC_OWN;
-		queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
+			desc->ctrl = CL_DESC_OWN;
+			queue->read_idx = (queue->read_idx + 1) & (queue->size - 1);
+		} while (wait_for_last);
 	}
 	stats->ipackets += i;
 	return i;
