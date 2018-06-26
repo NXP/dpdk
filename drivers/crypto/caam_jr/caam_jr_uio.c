@@ -368,6 +368,7 @@ struct uio_job_ring *config_job_ring(void)
 		if (g_uio_job_ring[i].uio_fd == 0) {
 			job_ring = &g_uio_job_ring[i];
 			g_uio_jr_num++;
+			break;
 		}
 	}
 
