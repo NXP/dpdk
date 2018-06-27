@@ -102,7 +102,7 @@ Following information can be used to obtain these components:
 
     Checkout the specific tag to match openssl library in your target rootfs
 
-        $ git checkout OpenSSL_1_0_2l
+        $ git checkout OpenSSL_1_1_0g
 
     Set the following environment variable:
 
@@ -115,10 +115,6 @@ Following information can be used to obtain these components:
         $ make
         $ make install
         $ export OPENSSL_PATH=<OpenSSL library path>
-
-    NOTE: ARMCE is enabled by default thus OpenSSL PATH is needed for building
-          DPDK. Though, this is optional and can be toggled off using DPDK
-          configuration. More details in below section.
 
     NOTE: When building DPDK directly on NXP board, OpenSSL might already be
           available in the rootfs. In which case, separate compilation of
@@ -171,7 +167,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
         CONFIG_RTE_KNI_KMOD=n
 
-  2. Export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+  2. export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 
   3. Optional: export OPENSSL_PATH=<path to OpenSSL library>
 
@@ -272,7 +268,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
    NOTE: if you are compiling with OPENSSL enabled, you need to specify the
    openssl path. e.g.
-      $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include"  \
+      $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include  \
         EXTRA_LDFLAGS=-L$OPENSSL_PATH/lib/ -C examples/l2fwd-crypto
 
 ===============================================================================
@@ -515,7 +511,7 @@ Following are some pre-requisites:
 
   You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
    export DPAA_SEC_DISABLE=1
-  
+   or use the export DPSECI_COUNT=0 for dpaa2 before creating the dprc.
 
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
