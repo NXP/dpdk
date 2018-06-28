@@ -9,6 +9,7 @@
 #include "pfe_mod.h"
 
 #define PFE_MTU_RESET_MASK	0xC000FFFF
+#define MAX_MTU_ON_REV1		1882
 
 void *cbus_base_addr;
 void *ddr_base_addr;
@@ -344,7 +345,7 @@ int gemac_set_rx(void *base, int mtu)
 		return -1;
 	}
 
-	if (pfe_svr == SVR_LS1012A_REV1 && mtu > 1536) {
+	if (pfe_svr == SVR_LS1012A_REV1 && mtu > MAX_MTU_ON_REV1) {
 		PFE_PMD_ERR("MTU not supported on Rev1");
 		return -1;
 	}
@@ -445,7 +446,7 @@ void gemac_set_config(void *base, struct gemac_cfg *cfg)
 	writel(0x00000005, base + EMAC_RX_SECTION_FULL);
 
 	if (pfe_svr == SVR_LS1012A_REV1) {
-		writel(0x00000600, base + EMAC_TRUNC_FL);
+		writel(0x0000075A, base + EMAC_TRUNC_FL);
 	} else {
 		writel(0x00003fff, base + EMAC_TRUNC_FL);
 	}
