@@ -516,7 +516,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
 		if (ret) {
-			DPAA2_PMD_ERR("Failure in affining portal\n");
+			DPAA2_PMD_ERR("Failure in affining portal");
 			return 0;
 		}
 	}
