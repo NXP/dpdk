@@ -45,7 +45,6 @@
 #include <rte_interrupts.h>
 #include <rte_log.h>
 #include <rte_debug.h>
-#include <rte_pci.h>
 #include <rte_atomic.h>
 #include <rte_branch_prediction.h>
 #include <rte_memory.h>
@@ -506,9 +505,7 @@ rte_dpaa_bus_scan(void)
 	}
 
 	/* Get the interface configurations from device-tree */
-	if (!dpaa_netcfg)
-		dpaa_netcfg = netcfg_acquire();
-
+	dpaa_netcfg = netcfg_acquire();
 	if (!dpaa_netcfg) {
 		DPAA_BUS_LOG(ERR, "netcfg_acquire failed");
 		return -EINVAL;
@@ -621,7 +618,8 @@ rte_dpaa_bus_probe(void)
 
 			if (probe_all ||
 			    (dev->device.devargs &&
-			    dev->device.devargs->policy == RTE_DEV_WHITELISTED)) {
+			    dev->device.devargs->policy ==
+			    RTE_DEV_WHITELISTED)) {
 				ret = drv->probe(drv, dev);
 				if (ret)
 					DPAA_BUS_ERR("Unable to probe.\n");

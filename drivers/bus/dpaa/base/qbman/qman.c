@@ -1130,7 +1130,8 @@ unsigned int qman_portal_poll_rx(unsigned int poll_limit,
 		fq = (void *)be32_to_cpu(dq[rx_number]->contextB);
 #endif
 		if (fq->cb.dqrr_prepare)
-			fq->cb.dqrr_prepare(shadow[rx_number], &bufs[rx_number]);
+			fq->cb.dqrr_prepare(shadow[rx_number],
+					    &bufs[rx_number]);
 
 		consume |= (1 << (31 - DQRR_PTR2IDX(shadow[rx_number])));
 		rx_number++;
