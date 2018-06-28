@@ -1037,7 +1037,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
-	u32 flags = 0;
+	u32 flags = QMAN_FQ_FLAG_NO_ENQUEUE;
 	struct qm_mcc_initcgr cgr_opts = {
 		.we_mask = QM_CGR_WE_CS_THRES |
 				QM_CGR_WE_CSTD_EN |
@@ -1050,15 +1050,18 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 
 	PMD_INIT_FUNC_TRACE();
 
-	ret = qman_reserve_fqid(fqid);
-	if (ret) {
-		DPAA_PMD_ERR("reserve rx fqid 0x%x failed with ret: %d",
-			     fqid, ret);
-		return -EINVAL;
+	if (fqid) {
+		ret = qman_reserve_fqid(fqid);
+		if (ret) {
+			DPAA_PMD_ERR("reserve rx fqid 0x%x failed with ret: %d",
+				     fqid, ret);
+			return -EINVAL;
+		}
+	} else {
+		flags |= QMAN_FQ_FLAG_DYNAMIC_FQID;
 	}
 
-	DPAA_PMD_DEBUG("creating rx fq %p, fqid 0x%x", fq, fqid);
-	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
+	ret = qman_create_fq(fqid, flags, fq);
 	if (ret) {
 		DPAA_PMD_ERR("create rx fqid 0x%x failed with ret: %d",
 			fqid, ret);
@@ -1252,9 +1255,11 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		if (default_q)
 			fqid = cfg->rx_def;
-		else
+		else if (fmc_q)
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
 				DPAA_PCD_FQID_MULTIPLIER + loop;
+		else
+			fqid = 0;
 
 		if (dpaa_intf->cgr_rx)
 			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
