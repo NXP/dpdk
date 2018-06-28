@@ -75,6 +75,8 @@ DPDK_18.02 {
 
 	dpaa_logtype_eventdev;
 	dpaa_svr_family;
+	fman_if_get_sg_enable;
+	fman_if_set_sg;
 	per_lcore_dpaa_io;
 	per_lcore_held_bufs;
 	qm_channel_pool1;
