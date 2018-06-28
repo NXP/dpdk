@@ -544,9 +544,9 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		fman_if_set_bp(dpaa_intf->fif, mp->size,
 			       dpaa_intf->bp_info->bpid, bp_size);
 		dpaa_intf->valid = 1;
-		DPAA_PMD_INFO("if =%s - fd_offset = %d offset = %d",
-			    dpaa_intf->name, fd_offset,
-			fman_if_get_fdoff(dpaa_intf->fif));
+		DPAA_PMD_DEBUG("if:%s fd_offset = %d offset = %d",
+				dpaa_intf->name, fd_offset,
+				fman_if_get_fdoff(dpaa_intf->fif));
 	}
 	/* checking if push mode only, no error check for now */
 	if (dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
