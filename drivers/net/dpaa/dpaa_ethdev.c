@@ -582,8 +582,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 		ret = qman_init_fq(rxq, flags, &opts);
 		if (ret) {
-			DPAA_PMD_ERR("Channel/Queue association failed. fqid"
-					" 0x%x ret: %d", rxq->fqid, ret);
+			DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x "
+				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
 			return ret;
 		}
 		if (getenv("DPAA_FMAN_UCODE_SUPPORT"))
@@ -666,8 +666,8 @@ int dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 
 	ret = qman_init_fq(rxq, flags, &opts);
 	if (ret) {
-		DPAA_PMD_ERR("Channel/Queue association failed. fqid"
-				" 0x%x ret:%d", rxq->fqid, ret);
+		DPAA_PMD_ERR("Ev-Channel/Q association failed. fqid 0x%x "
+				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
 		return ret;
 	}
 
@@ -1085,7 +1085,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 		opts.fqd.fq_ctrl |= QM_FQCTRL_CGE;
 	}
 without_cgr:
-	ret = qman_init_fq(fq, flags, &opts);
+	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
 		DPAA_PMD_ERR("init rx fqid 0x%x failed with ret:%d", fqid, ret);
 	return ret;
