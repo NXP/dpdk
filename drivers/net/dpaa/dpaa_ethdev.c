@@ -515,6 +515,13 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (queue_idx >= dev->data->nb_rx_queues) {
+		rte_errno = EOVERFLOW;
+		DPAA_PMD_ERR("%p: queue index out of range (%u >= %u)",
+		      (void *)dev, queue_idx, dev->data->nb_rx_queues);
+		return -rte_errno;
+	}
+
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
@@ -722,6 +729,13 @@ int dpaa_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (queue_idx >= dev->data->nb_tx_queues) {
+		rte_errno = EOVERFLOW;
+		DPAA_PMD_ERR("%p: queue index out of range (%u >= %u)",
+		      (void *)dev, queue_idx, dev->data->nb_tx_queues);
+		return -rte_errno;
+	}
 
 	DPAA_PMD_INFO("Tx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, dpaa_intf->tx_queues[queue_idx].fqid);
