@@ -306,13 +306,18 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->speed_capa = (ETH_LINK_SPEED_1G |
 				ETH_LINK_SPEED_10G);
 	dev_info->rx_offload_capa =
-		(DEV_RX_OFFLOAD_IPV4_CKSUM |
-		DEV_RX_OFFLOAD_UDP_CKSUM   |
-		DEV_RX_OFFLOAD_TCP_CKSUM);
+		(DEV_RX_OFFLOAD_CHECKSUM |
+		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+		DEV_RX_OFFLOAD_VLAN_STRIP  |
+		DEV_RX_OFFLOAD_JUMBO_FRAME);
 	dev_info->tx_offload_capa =
-		(DEV_TX_OFFLOAD_IPV4_CKSUM  |
+		(DEV_TX_OFFLOAD_VLAN_INSERT |
+		DEV_TX_OFFLOAD_IPV4_CKSUM  |
 		DEV_TX_OFFLOAD_UDP_CKSUM   |
-		DEV_TX_OFFLOAD_TCP_CKSUM);
+		DEV_TX_OFFLOAD_TCP_CKSUM   |
+		DEV_TX_OFFLOAD_SCTP_CKSUM  |
+		DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM |
+		DEV_TX_OFFLOAD_MT_LOCKFREE);
 }
 
 static int dpaa_eth_link_update(struct rte_eth_dev *dev,
