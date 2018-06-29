@@ -164,7 +164,7 @@ dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 }
 
 static int
-dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
+dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
@@ -174,11 +174,17 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 	if (dev->data->dev_conf.rxmode.jumbo_frame == 1) {
 		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <=
 		    DPAA_MAX_RX_PKT_LEN) {
+			DPAA_PMD_DEBUG("enabling jumbo");
 			fman_if_set_maxfrm(dpaa_intf->fif,
 				dev->data->dev_conf.rxmode.max_rx_pkt_len);
-			return 0;
+			dev->data->mtu =
+				dev->data->dev_conf.rxmode.max_rx_pkt_len -
+				ETHER_HDR_LEN - ETHER_CRC_LEN - VLAN_TAG_SIZE;
 		} else {
-			return -1;
+			DPAA_PMD_ERR("enabling jumbo err conf max len=%d "
+				"supported is %d",
+				dev->data->dev_conf.rxmode.max_rx_pkt_len,
+				DPAA_MAX_RX_PKT_LEN);
 		}
 	}
 
