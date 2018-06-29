@@ -332,8 +332,6 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	int i = 0;
 	uint8_t fd_offset = fd->offset;
 
-	DPAA_DP_LOG(DEBUG, "Received an SG frame");
-
 	vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	if (!vaddr) {
 		DPAA_PMD_ERR("unable to convert physical address");
@@ -375,6 +373,8 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 		}
 		prev_seg = cur_seg;
 	}
+	DPAA_DP_LOG(DEBUG, "Received an SG frame len =%d, num_sg =%d",
+			first_seg->pkt_len, first_seg->nb_segs);
 
 	dpaa_eth_packet_info(first_seg, vaddr);
 	rte_pktmbuf_free_seg(temp);
@@ -393,13 +393,13 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	uint16_t offset;
 	uint32_t length;
 
-	DPAA_DP_LOG(DEBUG, " FD--->MBUF");
-
 	if (unlikely(format == qm_fd_sg))
 		return dpaa_eth_sg_to_mbuf(fd, ifid);
 
 	offset = (fd->opaque & DPAA_FD_OFFSET_MASK) >> DPAA_FD_OFFSET_SHIFT;
 	length = fd->opaque & DPAA_FD_LENGTH_MASK;
+
+	DPAA_DP_LOG(DEBUG, " FD--->MBUF off %d len = %d", offset, length);
 
 	/* Ignoring case when format != qm_fd_contig */
 	dpaa_display_frame(fd);
