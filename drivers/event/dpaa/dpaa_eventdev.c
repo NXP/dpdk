@@ -47,14 +47,18 @@ static int
 dpaa_event_dequeue_timeout_ticks(struct rte_eventdev *dev, uint64_t ns,
 				 uint64_t *timeout_ticks)
 {
-	uint64_t cycles_per_second;
-
 	EVENTDEV_INIT_FUNC_TRACE();
 
 	RTE_SET_USED(dev);
 
+#ifdef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
+	*timeout_ticks = ns/1000;
+#else
+	uint64_t cycles_per_second;
+
 	cycles_per_second = rte_get_timer_hz();
-	*timeout_ticks = ns * (cycles_per_second / NS_PER_S);
+	*timeout_ticks = (ns * cycles_per_second) / NS_PER_S;
+#endif
 
 	return 0;
 }
@@ -100,6 +104,58 @@ dpaa_event_enqueue(void *port, const struct rte_event *ev)
 	return dpaa_event_enqueue_burst(port, ev, 1);
 }
 
+#ifdef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
+static void drain_4_bytes(int fd, fd_set *fdset)
+{
+	if (FD_ISSET(fd, fdset)) {
+		/* drain 4 bytes */
+		uint32_t junk;
+		ssize_t sjunk = read(qman_thread_fd(), &junk, sizeof(junk));
+		if (sjunk != sizeof(junk))
+			DPAA_EVENTDEV_ERR("UIO irq read error");
+	}
+}
+
+static inline int
+dpaa_event_dequeue_wait(uint64_t timeout_ticks)
+{
+	int fd_qman, nfds;
+	int ret;
+	fd_set readset;
+
+	/* Go into (and back out of) IRQ mode for each select,
+	 * it simplifies exit-path considerations and other
+	 * potential nastiness.
+	 */
+	struct timeval tv = {
+		.tv_sec = timeout_ticks / 1000000,
+		.tv_usec = timeout_ticks % 1000000
+	};
+
+	fd_qman = qman_thread_fd();
+	nfds = fd_qman + 1;
+	FD_ZERO(&readset);
+	FD_SET(fd_qman, &readset);
+
+	qman_irqsource_add(QM_PIRQ_DQRI);
+
+	ret = select(nfds, &readset, NULL, NULL, &tv);
+	if (ret < 0)
+		return ret;
+	/* Calling irqsource_remove() prior to thread_irq()
+	 * means thread_irq() will not process whatever caused
+	 * the interrupts, however it does ensure that, once
+	 * thread_irq() re-enables interrupts, they won't fire
+	 * again immediately.
+	 */
+	qman_irqsource_remove(~0);
+	drain_4_bytes(fd_qman, &readset);
+	qman_thread_irq();
+
+	return ret;
+}
+#endif
+
 static uint16_t
 dpaa_event_dequeue_burst(void *port, struct rte_event ev[],
 			 uint16_t nb_events, uint64_t timeout_ticks)
@@ -107,8 +163,8 @@ dpaa_event_dequeue_burst(void *port, struct rte_event ev[],
 	int ret;
 	u16 ch_id;
 	void *buffers[8];
-	u32 num_frames, i;
-	uint64_t wait_time, cur_ticks, start_ticks;
+	u32 num_frames, i, irq = 0;
+	uint64_t cur_ticks = 0, wait_time_ticks = 0;
 	struct dpaa_port *portal = (struct dpaa_port *)port;
 	struct rte_mbuf *mbuf;
 
@@ -147,20 +203,32 @@ dpaa_event_dequeue_burst(void *port, struct rte_event ev[],
 	}
 	DPAA_PER_LCORE_DQRR_HELD = 0;
 
-	if (portal->timeout == DPAA_EVENT_PORT_DEQUEUE_TIMEOUT_INVALID)
-		wait_time = timeout_ticks;
+	if (timeout_ticks)
+		wait_time_ticks = timeout_ticks;
 	else
-		wait_time = portal->timeout;
+		wait_time_ticks = portal->timeout_us;
 
-	/* Lets dequeue the frames */
-	start_ticks = rte_get_timer_cycles();
-	wait_time += start_ticks;
+#ifndef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
+	wait_time_ticks += rte_get_timer_cycles();
+#endif
 	do {
+		/* Lets dequeue the frames */
 		num_frames = qman_portal_dequeue(ev, nb_events, buffers);
-		if (num_frames != 0)
+		if (irq)
+			irq = 0;
+		if (num_frames)
 			break;
+#ifdef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
+		if (wait_time_ticks) { /* wait for time */
+			if (dpaa_event_dequeue_wait(wait_time_ticks) > 0) {
+				irq = 1;
+				continue;
+			}
+			break; /* no event after waiting */
+		}
+#endif
 		cur_ticks = rte_get_timer_cycles();
-	} while (cur_ticks < wait_time);
+	} while (cur_ticks < wait_time_ticks);
 
 	return num_frames;
 }
@@ -184,7 +252,7 @@ dpaa_event_dev_info_get(struct rte_eventdev *dev,
 	dev_info->max_dequeue_timeout_ns =
 		DPAA_EVENT_MAX_DEQUEUE_TIMEOUT;
 	dev_info->dequeue_timeout_ns =
-		DPAA_EVENT_MIN_DEQUEUE_TIMEOUT;
+		DPAA_EVENT_PORT_DEQUEUE_TIMEOUT_NS;
 	dev_info->max_event_queues =
 		DPAA_EVENT_MAX_QUEUES;
 	dev_info->max_event_queue_flows =
@@ -221,7 +289,7 @@ dpaa_event_dev_configure(const struct rte_eventdev *dev)
 	uint32_t *ch_id;
 
 	EVENTDEV_INIT_FUNC_TRACE();
-	priv->dequeue_timeout_ns = conf->dequeue_timeout_ns;
+
 	priv->nb_events_limit = conf->nb_events_limit;
 	priv->nb_event_queues = conf->nb_event_queues;
 	priv->nb_event_ports = conf->nb_event_ports;
@@ -229,15 +297,6 @@ dpaa_event_dev_configure(const struct rte_eventdev *dev)
 	priv->nb_event_port_dequeue_depth = conf->nb_event_port_dequeue_depth;
 	priv->nb_event_port_enqueue_depth = conf->nb_event_port_enqueue_depth;
 	priv->event_dev_cfg = conf->event_dev_cfg;
-
-	/* Check dequeue timeout method is per dequeue or global */
-	if (priv->event_dev_cfg & RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT) {
-		/*
-		 * Use timeout value as given in dequeue operation.
-		 * So invalidating this timetout value.
-		 */
-		priv->dequeue_timeout_ns = 0;
-	}
 
 	ch_id = rte_malloc("dpaa-channels",
 			  sizeof(uint32_t) * priv->nb_event_queues,
@@ -260,24 +319,34 @@ dpaa_event_dev_configure(const struct rte_eventdev *dev)
 	/* Lets prepare event ports */
 	memset(&priv->ports[0], 0,
 	      sizeof(struct dpaa_port) * priv->nb_event_ports);
+
+	/* Check dequeue timeout method is per dequeue or global */
 	if (priv->event_dev_cfg & RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT) {
-		for (i = 0; i < priv->nb_event_ports; i++) {
-			priv->ports[i].timeout =
-				DPAA_EVENT_PORT_DEQUEUE_TIMEOUT_INVALID;
-		}
-	} else if (priv->dequeue_timeout_ns == 0) {
-		for (i = 0; i < priv->nb_event_ports; i++) {
-			dpaa_event_dequeue_timeout_ticks(NULL,
-				DPAA_EVENT_PORT_DEQUEUE_TIMEOUT_NS,
-				&priv->ports[i].timeout);
-		}
+		/*
+		 * Use timeout value as given in dequeue operation.
+		 * So invalidating this timeout value.
+		 */
+		priv->dequeue_timeout_ns = 0;
+
+	} else if (conf->dequeue_timeout_ns == 0) {
+		priv->dequeue_timeout_ns = DPAA_EVENT_PORT_DEQUEUE_TIMEOUT_NS;
 	} else {
-		for (i = 0; i < priv->nb_event_ports; i++) {
-			dpaa_event_dequeue_timeout_ticks(NULL,
-				priv->dequeue_timeout_ns,
-				&priv->ports[i].timeout);
-		}
+		priv->dequeue_timeout_ns = conf->dequeue_timeout_ns;
 	}
+
+	for (i = 0; i < priv->nb_event_ports; i++) {
+#ifdef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
+		priv->ports[i].timeout_us = priv->dequeue_timeout_ns/1000;
+#else
+		uint64_t cycles_per_second;
+
+		cycles_per_second = rte_get_timer_hz();
+		priv->ports[i].timeout_us =
+			(priv->dequeue_timeout_ns * cycles_per_second)
+				/ NS_PER_S;
+#endif
+	}
+
 	/*
 	 * TODO: Currently portals are affined with threads. Maximum threads
 	 * can be created equals to number of lcore.
