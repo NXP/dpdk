@@ -3,6 +3,8 @@
  */
 
 #include <sys/ioctl.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 
 #include <rte_cycles.h>
 #include <rte_devargs.h>
@@ -141,6 +143,44 @@ static int pfe_eth_event_handler(void *data, int event, __rte_unused int qno)
 	}
 
 	return 0;
+}
+
+static uint16_t
+pfe_recv_pkts_on_intr(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+{
+	struct hif_client_rx_queue *queue = rxq;
+	struct pfe_eth_priv_s *priv = queue->priv;
+	struct rte_mempool *pool;
+	struct epoll_event epoll_ev;
+	uint64_t ticks = 10;
+	int ret, i = 0;
+	int work_done;
+
+	/*TODO can we remove this cleanup from here?*/
+	pfe_tx_do_cleanup(priv->pfe);
+	pfe_hif_rx_process(priv->pfe, nb_pkts);
+	pool = priv->pfe->hif.shm->pool;
+
+	work_done = hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
+	if (work_done == 0) {
+		writel(HIF_INT | HIF_RXPKT_INT, HIF_INT_SRC);
+		writel(readl(HIF_INT_ENABLE) | HIF_RXPKT_INT,
+				HIF_INT_ENABLE);
+
+		ret = epoll_wait(priv->pfe->hif.epoll_fd, &epoll_ev, 1, ticks);
+		if (ret < 1) {
+			if (errno == EINTR) {
+				printf("epoll_wait fails\n");
+				if (i++ > 10)
+					printf("recv fail\n");
+			}
+		}
+		pfe_hif_rx_process(priv->pfe, nb_pkts);
+		pool = priv->pfe->hif.shm->pool;
+		work_done = hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
+	}
+
+	return work_done;
 }
 
 static uint16_t
@@ -297,6 +337,13 @@ static int pfe_eth_open(struct rte_eth_dev *dev)
 	rc = pfe_eth_start(priv);
 	dev->rx_pkt_burst = &pfe_recv_pkts;
 	dev->tx_pkt_burst = &pfe_xmit_pkts;
+	/* If no prefetch is configured. */
+	if (getenv("PPFE_INTR_SUPPORT")) {
+		dev->rx_pkt_burst = &pfe_recv_pkts_on_intr;
+		PFE_PMD_INFO("PPFE INTERRUPT Mode enabled");
+	}
+
+
 err0:
 	return rc;
 }
@@ -445,7 +492,8 @@ pfe_supported_ptypes_get(struct rte_eth_dev *dev)
 		RTE_PTYPE_L4_SCTP
 	};
 
-	if (dev->rx_pkt_burst == pfe_recv_pkts)
+	if (dev->rx_pkt_burst == pfe_recv_pkts ||
+			dev->rx_pkt_burst == pfe_recv_pkts_on_intr)
 		return ptypes;
 	return NULL;
 }

@@ -5,6 +5,9 @@
 #include <arpa/inet.h>
 #include "pfe_logs.h"
 #include "pfe_mod.h"
+#include <sys/ioctl.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 #define msleep(x) rte_delay_us(1000 * (x))
@@ -176,7 +179,7 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 		 */
 		rte_wmb();
 
-		writel((BD_CTRL_LIFM
+		writel((BD_CTRL_PKT_INT_EN | BD_CTRL_LIFM
 			| BD_CTRL_DIR | BD_CTRL_DESC_EN
 			| BD_BUF_LEN(hif->rx_buf_len[i])), &desc->ctrl);
 
@@ -477,7 +480,7 @@ pkt_drop:
 		 * writing bd->ctrl
 		 */
 		rte_wmb();
-		writel((BD_CTRL_LIFM | BD_CTRL_DIR |
+		writel((BD_CTRL_PKT_INT_EN | BD_CTRL_LIFM | BD_CTRL_DIR |
 			BD_CTRL_DESC_EN | BD_BUF_LEN(hif->rx_buf_len[rtc])),
 			&desc->ctrl);
 
@@ -696,7 +699,37 @@ int pfe_hif_init(struct pfe *pfe)
 	rte_spinlock_init(&hif->lock);
 
 	gpi_enable(HGPI_BASE_ADDR);
+	if (getenv("PPFE_INTR_SUPPORT")) {
+		struct epoll_event epoll_ev;
+		int event_fd = -1, epoll_fd, pfe_cdev_fd;
 
+		pfe_cdev_fd = open(PFE_CDEV_PATH, O_RDWR);
+		if (pfe_cdev_fd < 0) {
+			PFE_PMD_WARN("Unable to open PFE device file (%s).\n",
+				     PFE_CDEV_PATH);
+			pfe->cdev_fd = PFE_CDEV_INVALID_FD;
+			return -1;
+		}
+		pfe->cdev_fd = pfe_cdev_fd;
+
+		event_fd = eventfd(0, EFD_NONBLOCK);
+		/* hif interrupt enable */
+		err = ioctl(pfe->cdev_fd, PFE_CDEV_HIF_INTR_EN, &event_fd);
+		if (err) {
+			PFE_PMD_ERR("\nioctl failed for intr enable err: %d\n",
+					errno);
+			goto err0;
+		}
+		epoll_fd = epoll_create(1);
+		epoll_ev.events = EPOLLIN | EPOLLPRI | EPOLLET;
+		epoll_ev.data.fd = event_fd;
+		err = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &epoll_ev);
+		if (err < 0) {
+			PFE_PMD_ERR("epoll_ctl failed with err = %d\n", errno);
+			goto err0;
+		}
+		pfe->hif.epoll_fd = epoll_fd;
+	}
 	return 0;
 err0:
 	return err;

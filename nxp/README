@@ -304,6 +304,10 @@ Following are some pre-requisites:
 	  to load:
 		1. insmod /lib/modules/<kernel_version>/kernel/drivers/staging/fsl_ppfe/pfe.ko us=1
 
+  4. Set enviroment variable PPFE_INTR_SUPPORT to enable interrupt mode. It will
+     free CPU when traffic is low. With this mode there is a slight drop(~5%) in
+     performance as compared to default mode(POLL).
+
   For DPAA2 Platform:
   ~~~~~~~~~~~~~~~~~~~
 
@@ -776,6 +780,10 @@ Applications validated DPAA/DPAA2 Platforms
 
 Environment configuration variables
 ------------------------------------
+
+PPFE:
+-----
+1. PPFE_INTR_SUPPORT		Enable Interrupt mode for I/O. This will free CPU if traffic is low.
 
 Common for DPAA1 & DPAA2
 ------------------------

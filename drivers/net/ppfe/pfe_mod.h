@@ -27,6 +27,7 @@ struct pfe {
 	int mdio_muxval[PHYID_MAX_VAL];
 	uint8_t nb_devs;
 	uint8_t max_intf;
+	int cdev_fd;
 };
 
 /* for link status and IOCTL support using pfe character device
@@ -51,7 +52,7 @@ struct pfe_shared_info {
 };
 
 /* IOCTL Commands */
-#define PFE_CDEV_ETH0_STATE_GET	0
-#define PFE_CDEV_ETH1_STATE_GET	1
-
+#define PFE_CDEV_ETH0_STATE_GET		_IOR('R', 0, int)
+#define PFE_CDEV_ETH1_STATE_GET		_IOR('R', 1, int)
+#define PFE_CDEV_HIF_INTR_EN		_IOWR('R', 2, int)
 #endif /* _PFE_MOD_H */

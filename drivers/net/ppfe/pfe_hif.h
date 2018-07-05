@@ -133,6 +133,7 @@ struct pfe_hif {
 	u32	txavail;
 	u32	txtoflush;
 	struct hif_desc_sw tx_sw_queue[HIF_TX_DESC_NT];
+	int32_t	epoll_fd; /**< File descriptor created for interrupt polling */
 
 /* tx_lock synchronizes hif packet tx as well as pfe_hif structure access */
 	rte_spinlock_t tx_lock;
