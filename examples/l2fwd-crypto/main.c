@@ -717,7 +717,7 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 
 	unsigned lcore_id = rte_lcore_id();
 	uint64_t prev_tsc = 0, diff_tsc, cur_tsc, timer_tsc = 0;
-	unsigned int i, j, nb_rx, len;
+	unsigned int i, j, nb_rx, total_nb_rx = 0, len, idle_iter = 0;
 	uint16_t portid;
 	struct lcore_queue_conf *qconf = &lcore_queue_conf[lcore_id];
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
@@ -864,6 +864,7 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 	while (1) {
 
 		cur_tsc = rte_rdtsc();
+		total_nb_rx = 0;
 
 		/*
 		 * Crypto device/TX burst queue drain
@@ -965,7 +966,23 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 					l2fwd_simple_forward(m, portid,
 							options);
 				}
+				total_nb_rx += nb_rx;
 			} while (nb_rx == MAX_PKT_BURST);
+
+			if (total_nb_rx)
+				idle_iter = 0;
+		}
+
+		/* Yield the CPU for a few microseconds, allowing Core 0
+		 * some breathing space.
+		 */
+#define DPAAX_IDLE_LOOPS 100
+#define DPAAX_IDLE_TIMEOUT 3
+		if (lcore_id == 0 && total_nb_rx == 0) {
+			if (idle_iter > DPAAX_IDLE_LOOPS)
+				usleep(DPAAX_IDLE_TIMEOUT);
+			else
+				idle_iter++;
 		}
 	}
 }
