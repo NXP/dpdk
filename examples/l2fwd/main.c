@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -192,7 +193,7 @@ l2fwd_main_loop(void)
 	int sent;
 	unsigned lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
-	unsigned i, j, portid, nb_rx;
+	unsigned int i, j, portid, nb_rx, total_nb_rx = 0, idle_iter = 0;
 	struct lcore_queue_conf *qconf;
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
 			BURST_TX_DRAIN_US;
@@ -222,6 +223,7 @@ l2fwd_main_loop(void)
 	while (!force_quit) {
 
 		cur_tsc = rte_rdtsc();
+		total_nb_rx = 0;
 
 		/*
 		 * TX burst queue drain
@@ -277,6 +279,22 @@ l2fwd_main_loop(void)
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 				l2fwd_simple_forward(m, portid);
 			}
+
+			total_nb_rx += nb_rx;
+			if (total_nb_rx)
+				idle_iter = 0;
+		}
+
+		/* Yield the CPU for a few microseconds, allowing Core 0
+		 * some breathing space.
+		 */
+#define DPAAX_IDLE_LOOPS 100
+#define DPAAX_IDLE_TIMEOUT 3
+		if (lcore_id == 0 && total_nb_rx == 0) {
+			if (idle_iter > DPAAX_IDLE_LOOPS)
+				usleep(DPAAX_IDLE_TIMEOUT);
+			else
+				idle_iter++;
 		}
 	}
 }

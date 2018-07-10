@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -903,7 +904,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_mbuf *pkts[MAX_PKT_BURST];
 	uint32_t lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc;
-	int32_t i, nb_rx;
+	int32_t i, nb_rx, total_nb_rx = 0, idle_iter = 0;
 	uint16_t portid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
@@ -948,6 +949,7 @@ main_loop(__attribute__((unused)) void *dummy)
 
 	while (1) {
 		cur_tsc = rte_rdtsc();
+		total_nb_rx = 0;
 
 		/* TX queue buffer drain */
 		diff_tsc = cur_tsc - prev_tsc;
@@ -966,16 +968,30 @@ main_loop(__attribute__((unused)) void *dummy)
 			nb_rx = rte_eth_rx_burst(portid, queueid,
 					pkts, MAX_PKT_BURST);
 
-			if (nb_rx > 0)
+			if (nb_rx > 0) {
 				process_pkts(qconf, pkts, nb_rx, portid);
-
-			/* dequeue and process completed crypto-ops */
+				total_nb_rx += nb_rx;
+				idle_iter = 0;
+			}
+				/* dequeue and process completed crypto-ops */
 			if (UNPROTECTED_PORT(portid))
 				drain_inbound_crypto_queues(qconf,
 					&qconf->inbound);
 			else
 				drain_outbound_crypto_queues(qconf,
 					&qconf->outbound);
+		}
+
+		/* Yield the CPU for a few microseconds, allowing Core 0
+		 * some breathing space.
+		 */
+#define DPAAX_IDLE_LOOPS 100
+#define DPAAX_IDLE_TIMEOUT 3
+		if (lcore_id == 0 && total_nb_rx == 0) {
+			if (idle_iter > DPAAX_IDLE_LOOPS)
+				usleep(DPAAX_IDLE_TIMEOUT);
+			else
+				idle_iter++;
 		}
 	}
 }
