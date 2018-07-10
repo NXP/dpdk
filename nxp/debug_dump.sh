@@ -64,6 +64,15 @@ function system() {
 	mycmd "env"
 	print "*************** Kernel config"
 	mycmd "zcat /proc/config.gz"
+
+	print "*************** Performance Settings"
+	local gov_set=`cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor`
+	print "Performance governor set to: ${gov_set}"
+	local max_freq=`cat /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq`
+	local min_freq=`cat /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq`
+	print "Current Max CPU freq is ${max_freq} and Min is ${min_freq}"
+	local rt_us=`cat /proc/sys/kernel/sched_rt_runtime_us`
+	print "Value for Userspace non-RT slice: ${rt_us}"
 }
 
 function system_adv() {
