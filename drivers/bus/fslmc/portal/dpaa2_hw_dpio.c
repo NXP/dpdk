@@ -316,7 +316,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	}
 #endif
 
-	if (getenv("NXP_CHRT_PERF_MODE") && cpu_id != 0) {
+	if (getenv("NXP_CHRT_PERF_MODE")) {
 		tid = syscall(SYS_gettid);
 		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
 		ret = system(command);
@@ -325,19 +325,10 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		else
 			DPAA2_BUS_DEBUG(" %s command is executed", command);
 
-		/*
-		 * When we use chrt to update the threads priority, sometimes
-		 * core's cpu frequency reduces to half. To avoid this we
-		 * change scaling governor of the core.
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
 		 */
-		snprintf(command, COMMAND_LEN, "echo \"performance\" >"
-			 " /sys/devices/system/cpu/cpu%d/cpufreq/"
-			 "scaling_governor\n", cpu_id);
-		ret = system(command);
-		if (ret < 0)
-			DPAA2_BUS_WARN("Failed to change scaling_governor");
-		else
-			DPAA2_BUS_DEBUG(" %s command is executed", command);
 	}
 
 	return 0;
