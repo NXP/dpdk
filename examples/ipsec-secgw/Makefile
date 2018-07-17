@@ -68,4 +68,6 @@ SRCS-y += sa.c
 SRCS-y += rt.c
 SRCS-y += ipsec-secgw.c
 
+LDLIBS += -lrte_eventdev
+
 include $(RTE_SDK)/mk/rte.extapp.mk

@@ -19,4 +19,6 @@ SRCS-y := main.c
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 
+LDLIBS += -lrte_pmd_dpaa2_qdma
+
 include $(RTE_SDK)/mk/rte.extapp.mk
