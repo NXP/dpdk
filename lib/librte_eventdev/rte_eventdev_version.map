@@ -74,6 +74,7 @@ DPDK_17.11 {
 	rte_event_crypto_adapter_free;
 	rte_event_crypto_adapter_queue_add;
 	rte_event_crypto_adapter_queue_del;
+	rte_event_crypto_adapter_queue_pair_add;
 	rte_event_crypto_adapter_start;
 	rte_event_crypto_adapter_stats_get;
 	rte_event_crypto_adapter_stats_reset;
