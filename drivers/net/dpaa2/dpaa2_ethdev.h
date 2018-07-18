@@ -48,6 +48,7 @@
 #define MAX_TCS			DPNI_MAX_TC
 #define MAX_RX_QUEUES		128
 #define MAX_TX_QUEUES		16
+#define MAX_DPNI		8
 
 /*default tc to be used for ,congestion, distribution etc configuration. */
 #define DPAA2_DEF_TC		0
@@ -143,6 +144,10 @@ struct dpaa2_dev_priv {
 		uint64_t qos_extract_param;
 		uint64_t fs_extract_param[MAX_TCS];
 	} extract;
+
+	uint16_t ss_offset;
+	uint64_t ss_iova;
+	uint64_t ss_param_iova;
 };
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
