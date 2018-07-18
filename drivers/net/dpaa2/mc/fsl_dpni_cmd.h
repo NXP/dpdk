@@ -130,6 +130,9 @@
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
 #define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD(0x26D)
+#define DPNI_CMDID_LOAD_SW_SEQUENCE		DPNI_CMD(0x270)
+#define DPNI_CMDID_ENABLE_SW_SEQUENCE		DPNI_CMD(0x271)
+#define DPNI_CMDID_GET_SW_SEQUENCE_LAYOUT	DPNI_CMD(0x272)
 #define DPNI_CMDID_SET_RX_FS_DIST		DPNI_CMD(0x273)
 #define DPNI_CMDID_SET_RX_HASH_DIST		DPNI_CMD(0x274)
 
@@ -726,6 +729,44 @@ struct dpni_cmd_set_rx_hash_dist {
 	uint8_t		tc_id;
 	uint32_t	pad;
 	uint64_t	key_cfg_iova;
+};
+
+struct dpni_load_sw_sequence {
+	uint8_t dest;
+	uint8_t pad0[7];
+	uint16_t ss_offset;
+	uint16_t pad1;
+	uint16_t ss_size;
+	uint16_t pad2;
+	uint64_t ss_iova;
+};
+
+struct dpni_enable_sw_sequence {
+	uint8_t dest;
+	uint8_t pad0[7];
+	uint16_t ss_offset;
+	uint16_t hxs;
+	uint8_t set_start;
+	uint8_t pad1[3];
+	uint8_t param_offset;
+	uint8_t pad2[3];
+	uint8_t param_size;
+	uint8_t pad3[3];
+	uint64_t param_iova;
+};
+
+struct dpni_get_sw_sequence_layout {
+	uint8_t src;
+	uint8_t pad0[7];
+	uint64_t layout_iova;
+};
+
+struct dpni_sw_sequence_layout_entry {
+	uint16_t ss_offset;
+	uint16_t ss_size;
+	uint8_t param_offset;
+	uint8_t param_size;
+	uint16_t pad;
 };
 
 #pragma pack(pop)
