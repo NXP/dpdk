@@ -26,11 +26,19 @@ then
 	echo 950000 > /proc/sys/kernel/sched_rt_runtime_us
 fi
 
-# Restore the governor back to 'ondemand' - which is default for Ubuntu.
-if [ -e "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor" ]
-then
-	echo "ondemand" > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-fi
+# Enable the 'ondemand' mode for the CPU power governors
+# This currently supports 16 cores and breaks out after first non-available
+# core.
+for i in `seq 0 15`
+do
+	if [ -e "/sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor" ]
+	then
+		echo 'ondemand' > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+	else
+		echo "Setting ondemand mode on ${i} cores only."
+		break
+	fi
+done
 
 # Enable the DPDK Performance mode; This script should be 'source'd rather
 # than directly executed for this to take effect.

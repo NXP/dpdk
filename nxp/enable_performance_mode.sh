@@ -20,13 +20,30 @@ then
 fi
 
 # Enable the 'performance' mode for the CPU power governors
-# Following also assumes the default 'policy0' is being used by the system.
-if [ -e "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor" ]
-then
-	echo "performance" > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-else
-	echo "ERROR: Failed to set governor; Not enabling performance mode"
-fi
+# This currently supports 16 cores and breaks out after first non-available
+# core.
+for i in `seq 0 15`
+do
+	if [ -e "/sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor" ]
+	then
+		echo 'performance' > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+	else
+		echo "Setting performance mode on ${i} cores only."
+		break
+	fi
+done
+
+echo "Check that all I/O cores required has 'performance' mode enabled"
+for i in `seq 0 15`
+do
+	if [ -e "/sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor" ]
+	then
+		echo -n "CPU governor mode $i:"
+		cat /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+	else
+		break
+	fi
+done
 
 # Disable some watchdogs so as not to complain in case RT priority process
 # of DPDK application hog the CPU. Ignore errors like non-existent file.
