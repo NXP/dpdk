@@ -150,34 +150,31 @@ pfe_recv_pkts_on_intr(void *rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 {
 	struct hif_client_rx_queue *queue = rxq;
 	struct pfe_eth_priv_s *priv = queue->priv;
-	struct rte_mempool *pool;
 	struct epoll_event epoll_ev;
-	uint64_t ticks = 10;
-	int ret, i = 0;
-	int work_done;
+	uint64_t ticks = 1;  /* 1 msec */
+	int ret;
+	int have_something, work_done;
+
+#define RESET_STATUS (HIF_INT | HIF_RXPKT_INT)
 
 	/*TODO can we remove this cleanup from here?*/
 	pfe_tx_do_cleanup(priv->pfe);
-	pfe_hif_rx_process(priv->pfe, nb_pkts);
-	pool = priv->pfe->hif.shm->pool;
+	have_something = pfe_hif_rx_process(priv->pfe, nb_pkts);
+	work_done = hif_lib_receive_pkt(rxq, priv->pfe->hif.shm->pool,
+			rx_pkts, nb_pkts);
 
-	work_done = hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
-	if (work_done == 0) {
-		writel(HIF_INT | HIF_RXPKT_INT, HIF_INT_SRC);
-		writel(readl(HIF_INT_ENABLE) | HIF_RXPKT_INT,
-				HIF_INT_ENABLE);
-
+	if (!have_something || !work_done) {
+#if 0
+		/* As an alternative try usleep for 100 micro sec*/
+		usleep(100);
+#else
+		writel(RESET_STATUS, HIF_INT_SRC);
+		writel(readl(HIF_INT_ENABLE) | HIF_RXPKT_INT, HIF_INT_ENABLE);
 		ret = epoll_wait(priv->pfe->hif.epoll_fd, &epoll_ev, 1, ticks);
-		if (ret < 1) {
-			if (errno == EINTR) {
-				printf("epoll_wait fails\n");
-				if (i++ > 10)
-					printf("recv fail\n");
-			}
+		if (ret < 0 && errno != EINTR) {
+			PFE_PMD_ERR("epoll_wait fails with %d\n", errno);
 		}
-		pfe_hif_rx_process(priv->pfe, nb_pkts);
-		pool = priv->pfe->hif.shm->pool;
-		work_done = hif_lib_receive_pkt(rxq, pool, rx_pkts, nb_pkts);
+#endif
 	}
 
 	return work_done;
