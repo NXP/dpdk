@@ -94,7 +94,7 @@ Constraints
 
 *  No IPv6 options headers.
 *  No AH mode.
-*  Supported algorithms: AES-CBC, AES-CTR, AES-GCM, HMAC-SHA1 and NULL.
+*  Supported algorithms: AES-CBC, AES-CTR, AES-GCM, 3DES-CBC, HMAC-SHA1 and NULL.
 *  Each SA must be handle by a unique lcore (*1 RX queue per port*).
 *  No chained mbufs.
 
@@ -423,6 +423,7 @@ where each options means:
    * *null*: NULL algorithm
    * *aes-128-cbc*: AES-CBC 128-bit algorithm
    * *aes-128-ctr*: AES-CTR 128-bit algorithm
+   * *3des-cbc*: 3DES-CBC 192-bit algorithm
 
  * Syntax: *cipher_algo <your algorithm>*
 
