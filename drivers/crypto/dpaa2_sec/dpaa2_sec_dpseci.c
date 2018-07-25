@@ -2541,12 +2541,18 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		memset(&encap_pdb, 0, sizeof(struct ipsec_encap_pdb));
 		encap_pdb.options = (IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
+#ifndef RTE_LIBRTE_SECURITY_TEST
 			PDBOPTS_ESP_IVSRC |
+#endif
 			PDBHMO_ESP_ENCAP_DTTL |
 			PDBHMO_ESP_SNR;
 		encap_pdb.spi = ipsec_xform->spi;
 		encap_pdb.ip_hdr_len = sizeof(struct ip);
-
+#ifdef RTE_LIBRTE_SECURITY_TEST
+		if (cipher_xform)
+			memcpy(encap_pdb.cbc.iv,
+				aes_cbc_iv, cipher_xform->iv.length);
+#endif
 		session->dir = DIR_ENC;
 		bufsize = cnstr_shdsc_ipsec_new_encap(priv->flc_desc[0].desc,
 				1, 0, SHR_SERIAL, &encap_pdb,
