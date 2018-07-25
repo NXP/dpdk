@@ -15,17 +15,6 @@ script help :----->
 		    check vm_dpdk.conf as an example.
 		    If specified this shall be the first argument.
 
-    -b [optional] = Specify the MAC base address and must be followed by
-		    a valid MAC base address. If this option is there in
-		    command line then MAC addresses to DPNIs will be given as:
-
-		    Base address = ab:cd:ef:gh:ij:kl
-				 + 00:00:00:00:00:0I
-		                  -------------------
-				   Actual MAC address
-
-		    where I is the index of the argument
-
 	dpni-dpni = This specify that 2 DPNIs object will be created,
 		    which will be connected back to back.
 		    dpni.x <-------connected----->dpni.y
@@ -67,10 +56,11 @@ script help :----->
 		    which will be connected to dpmac.x.
 		    dpmac.x <-------connected----->dpni.y
 
-		    If -b option is not given then MAC address will be as:
-
-		    dpni.y = 00:00:00:00:00:x
-		    where x is the ID of the dpmac.x
+                    '-b' option for dpmac is ignored. dpni.y connected to
+                    dpmac.x is assumed to take hardware assigned (firmware)
+                    MAC address when the DPNI is connected to Linux Container.
+                    In other cases, the application is expected to use the MC
+                    API (DPDK).
 
 	By default, this script will create 16 DPBP, 10 DPIOs, 2 DPCIs, 8 DPCON, 8 DPSEC
 	device and DPNIs depend upon the arguments given during command line.
@@ -538,6 +528,7 @@ then
 			then
 				echo >> dynamic_dpl_logs
 				echo -e '\t'$BASE_ADDR" will be used as MAC's base address" >> dynamic_dpl_logs
+				echo -e '\t'"But, in case of dpmac<->dpni, it would be ignored" >> dynamic_dpl_logs
 				num=`expr $num + 1`
 			else
 				echo >> dynamic_dpl_logs
@@ -605,6 +596,7 @@ then
 	#/* Objects creation*/
 	num=1
 	max=`expr $# + 1`
+	PRINT_ONCE=0
 	while [[ $num != $max ]]
 	do
 		echo >> dynamic_dpl_logs
@@ -645,11 +637,17 @@ then
 			OBJ=${!num}
 			MAC_OCTET1=$(echo $OBJ | head -1 | cut -f2 -d '.');
 		fi
-		if [[ $BASE_ADDR ]]
+		# All except dpmac<->dpni support custom MAC through '-b' option
+		if [[ ( $BASE_ADDR ) && ( $TYPE != "dpmac" ) ]]
 		then
 			create_actual_mac $num $BASE_ADDR
 		else
 			ACTUAL_MAC="00:00:00:00:"$MAC_OCTET2":"$MAC_OCTET1
+			if [[ ( $BASE_ADDR ) && ( $PRINT_ONCE -eq 0 ) ]]
+			then
+				echo "WARN: '-b' option for DPMAC<->DPNI case not valid. Ignored!"
+				PRINT_ONCE=1
+			fi
 		fi
 		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --container=$DPRC)
 		restool dprc sync
@@ -732,7 +730,15 @@ then
 			printf "%-21s %-21s %-25s\n" $OBJ $DPNI $MAC_ADDR1 >> dynamic_results
 		elif [[ $OBJ ]]
 		then
-			printf "%-21s %-21s %-25s\n" $DPNI $OBJ $MAC_ADDR2 >> dynamic_results
+			if [[ $TYPE != "dpmac" ]]
+			then
+				printf "%-21s %-21s %-25s\n" $DPNI $OBJ $MAC_ADDR2 >> dynamic_results
+			else
+				# for dpmac, MAC address is assigned by application
+				message="-Dynamic-"
+				echo -e '\t'$DPNI"<=>"$OBJ ": MAC address dynamically assigned by application" >> dynamic_dpl_logs
+				printf "%-21s %-21s %-25s\n" $DPNI $OBJ $message >> dynamic_results
+			fi
 		else
 			printf "%-21s %-21s %-25s\n" $DPNI "UNCONNECTED" $MAC_ADDR2 >> dynamic_results
 		fi
