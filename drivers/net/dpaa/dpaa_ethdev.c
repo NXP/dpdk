@@ -333,8 +333,15 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_vfs = 0;
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
 	dev_info->flow_type_rss_offloads = DPAA_RSS_OFFLOAD_ALL;
-	dev_info->speed_capa = (ETH_LINK_SPEED_1G |
-				ETH_LINK_SPEED_10G);
+
+	if (dpaa_intf->fif->mac_type == fman_mac_1g)
+		dev_info->speed_capa = ETH_LINK_SPEED_1G;
+	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
+		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_10G);
+	else
+		DPAA_PMD_ERR("invalid link_speed: %s, %d",
+			     dpaa_intf->name, dpaa_intf->fif->mac_type);
+
 	dev_info->rx_offload_capa =
 		(DEV_RX_OFFLOAD_CHECKSUM |
 		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
