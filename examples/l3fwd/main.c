@@ -57,6 +57,10 @@
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
+uint32_t max_pkt_burst = MAX_PKT_BURST;
+uint32_t max_tx_burst = MAX_TX_BURST;
+uint32_t max_rx_burst = MAX_PKT_BURST;
+
 /**< Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
 
@@ -292,6 +296,7 @@ print_usage(const char *prgname)
 		"  -P : Enable promiscuous mode\n"
 		"  -E : Enable exact match\n"
 		"  -L : Enable longest prefix match (default)\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n"
 		"  --config (port,queue,lcore): Rx queue configuration\n"
 		"  --eth-dest=X,MM:MM:MM:MM:MM:MM: Ethernet destination for port X\n"
 		"  --enable-jumbo: Enable jumbo frames\n"
@@ -492,6 +497,7 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"L"   /* enable long prefix match */
 	"E"   /* enable exact match */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -565,6 +571,7 @@ parse_args(int argc, char **argv)
 	uint8_t lcore_params = 0;
 	uint8_t eventq_sched = 0;
 	uint8_t eth_rx_q = 0;
+	unsigned int burst_size;
 	struct l3fwd_event_resources *evt_rsrc = l3fwd_get_eventdev_rsrc();
 
 	argvopt = argv;
@@ -594,6 +601,19 @@ parse_args(int argc, char **argv)
 
 		case 'L':
 			l3fwd_lpm_on = 1;
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size > max_pkt_burst) {
+				printf("invalid burst size\n");
+				print_usage(prgname);
+				return -1;
+			}
+			max_pkt_burst = burst_size;
+			max_rx_burst = max_pkt_burst;
+			max_tx_burst = max_rx_burst/2;
 			break;
 
 		/* long options */
