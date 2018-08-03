@@ -68,6 +68,10 @@
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
+uint32_t max_pkt_burst = MAX_PKT_BURST;
+uint32_t max_tx_burst = MAX_TX_BURST;
+uint32_t max_rx_burst = MAX_PKT_BURST;
+
 /**< Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
 
@@ -374,7 +378,8 @@ print_usage(const char *prgname)
 		"	QueueID mode, Event Queue ID,"
 		"	Event Priority,Eventdev ID)\n"
 		"  -l : Event port and Event Queue link configuration\n"
-		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n",
+		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n\n",
 		prgname);
 }
 
@@ -915,6 +920,7 @@ static const char short_options[] =
 	"e:"  /* Event Device configuration */
 	"a:"  /* Rx Adapter configuration */
 	"l:"  /* Event Queue and Adapter link configuration */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -978,6 +984,7 @@ parse_args(int argc, char **argv)
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
+	unsigned int burst_size;
 
 	argvopt = argv;
 
@@ -1037,6 +1044,19 @@ parse_args(int argc, char **argv)
 				print_usage(prgname);
 				return -1;
 			}
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size > max_pkt_burst) {
+				printf("invalid burst size\n");
+				print_usage(prgname);
+				return -1;
+			}
+			max_pkt_burst = burst_size;
+			max_rx_burst = max_pkt_burst;
+			max_tx_burst = max_rx_burst/2;
 			break;
 
 		/* long options */
