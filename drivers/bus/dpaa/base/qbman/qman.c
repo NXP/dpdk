@@ -2348,7 +2348,8 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 		eq->fqid = fq[sent]->fqid_le;
 		eq->fd.opaque_addr = fd->opaque_addr;
 		eq->fd.addr = cpu_to_be40(fd->addr);
-		eq->fd.status = cpu_to_be32(fd->status);
+		 /* Status is expected to be swapped by the user */
+		eq->fd.status = fd->status;
 		eq->fd.opaque = cpu_to_be32(fd->opaque);
 
 		eq = (void *)((unsigned long)(eq + 1) &

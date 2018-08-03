@@ -120,10 +120,12 @@
 #define DPAA_FD_CMD_FCO			0x80000000
 /**< Frame queue Context Override */
 #define DPAA_FD_CMD_RPD			0x40000000
+#define DPAA_FD_CMD_RPD_BE		0x00000040
 /**< Read Prepended Data */
 #define DPAA_FD_CMD_UPD			0x20000000
 /**< Update Prepended Data */
 #define DPAA_FD_CMD_DTC			0x10000000
+#define DPAA_FD_CMD_DTC_BE		0x00000010
 /**< Do IP/TCP/UDP Checksum */
 #define DPAA_FD_CMD_DCL4C		0x10000000
 /**< Didn't calculate L4 Checksum */
