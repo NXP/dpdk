@@ -55,6 +55,9 @@
  * Try to avoid TX buffering if we have at least MAX_TX_BURST packets to send.
  */
 #define	MAX_TX_BURST	  (MAX_PKT_BURST / 2)
+extern uint32_t max_pkt_burst;
+extern uint32_t max_tx_burst;
+extern uint32_t max_rx_burst;
 
 #define NB_SOCKETS        8
 
@@ -176,8 +179,8 @@ send_single_packet(struct lcore_conf *qconf,
 	len++;
 
 	/* enough pkts to be sent */
-	if (unlikely(len == MAX_PKT_BURST)) {
-		send_burst(qconf, MAX_PKT_BURST, port);
+	if (unlikely(len == max_pkt_burst)) {
+		send_burst(qconf, max_pkt_burst, port);
 		len = 0;
 	}
 

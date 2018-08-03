@@ -811,7 +811,7 @@ em_main_loop(__attribute__((unused)) void *dummy)
 			portid = qconf->rx_queue_list[i].port_id;
 			queueid = qconf->rx_queue_list[i].queue_id;
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
-				MAX_PKT_BURST);
+				max_rx_burst);
 			if (nb_rx == 0)
 				continue;
 

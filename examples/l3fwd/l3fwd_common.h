@@ -218,7 +218,7 @@ send_packetsx4(struct lcore_conf *qconf, uint16_t port, struct rte_mbuf *m[],
 	 * If TX buffer for that queue is empty, and we have enough packets,
 	 * then send them straightway.
 	 */
-	if (num >= MAX_TX_BURST && len == 0) {
+	if (num >= max_tx_burst && len == 0) {
 		n = rte_eth_tx_burst(port, qconf->tx_queue_id[port], m, num);
 		if (unlikely(n < num)) {
 			do {
@@ -233,7 +233,7 @@ send_packetsx4(struct lcore_conf *qconf, uint16_t port, struct rte_mbuf *m[],
 	 */
 
 	n = len + num;
-	n = (n > MAX_PKT_BURST) ? MAX_PKT_BURST - len : num;
+	n = (n > max_pkt_burst) ? max_pkt_burst - len : num;
 
 	j = 0;
 	switch (n % FWDSTEP) {
@@ -259,9 +259,9 @@ send_packetsx4(struct lcore_conf *qconf, uint16_t port, struct rte_mbuf *m[],
 	len += n;
 
 	/* enough pkts to be sent */
-	if (unlikely(len == MAX_PKT_BURST)) {
+	if (unlikely(len == max_pkt_burst)) {
 
-		send_burst(qconf, MAX_PKT_BURST, port);
+		send_burst(qconf, max_pkt_burst, port);
 
 		/* copy rest of the packets into the TX buffer. */
 		len = num - n;
