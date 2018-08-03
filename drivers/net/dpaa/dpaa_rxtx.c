@@ -523,7 +523,7 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 void dpaa_rx_cb_prepare(struct qm_dqrr_entry *dq, void **bufs)
 {
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(dq->fd.bpid);
-	void *ptr = rte_dpaa_mem_ptov(qm_fd_addr(&dq->fd));
+	void *ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(&dq->fd));
 
 	/* In case of LS1046, annotation stashing is disabled due to L2 cache
 	 * being bottleneck in case of multicore scanario for this platform.
