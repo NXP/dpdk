@@ -52,6 +52,7 @@ static int promiscuous_on;
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
+static int max_burst_size = MAX_PKT_BURST;
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -281,7 +282,7 @@ l2fwd_main_loop(void)
 
 			portid = qconf->rx_port_list[i];
 			nb_rx = rte_eth_rx_burst(portid, 0,
-						 pkts_burst, MAX_PKT_BURST);
+						 pkts_burst, max_burst_size);
 
 			if (unlikely(nb_rx == 0))
 				continue;
@@ -318,6 +319,7 @@ l2fwd_usage(const char *prgname)
 	       "      When enabled:\n"
 	       "       - The source MAC address is replaced by the TX port MAC address\n"
 	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
+	       "  -b NUM: burst size for receive packet (default is 32)\n"
 	       "  --portmap: Configure forwarding port pair mapping\n"
 	       "	      Default: alternate port pairs\n\n",
 	       prgname);
@@ -431,6 +433,7 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
@@ -456,7 +459,7 @@ static const struct option lgopts[] = {
 static int
 l2fwd_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs;
+	int opt, ret, timer_secs, burst_size;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -500,6 +503,17 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			timer_period = timer_secs;
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size < 0 || burst_size > max_burst_size) {
+				printf("invalid burst size\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			max_burst_size = burst_size;
 			break;
 
 		/* long options */
