@@ -56,6 +56,10 @@
 uint16_t nb_rxd = RX_DESC_DEFAULT;
 uint16_t nb_txd = TX_DESC_DEFAULT;
 
+uint32_t max_pkt_burst = MAX_PKT_BURST;
+uint32_t max_tx_burst = MAX_TX_BURST;
+uint32_t max_rx_burst = MAX_PKT_BURST;
+
 /**< Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
 
@@ -437,6 +441,7 @@ print_usage(const char *prgname)
 		"  --event-vector-tmo: Max timeout to form vector in nanoseconds if event vectorization is enabled\n"
 		"  -E : Enable exact match, legacy flag please use --lookup=em instead\n"
 		"  -L : Enable longest prefix match, legacy flag please use --lookup=lpm instead\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n"
 		"  --rule_ipv4=FILE: Specify the ipv4 rules entries file.\n"
 		"                    Each rule occupies one line.\n"
 		"                    2 kinds of rules are supported.\n"
@@ -676,6 +681,7 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"L"   /* legacy enable long prefix match */
 	"E"   /* legacy enable exact match */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -777,6 +783,7 @@ parse_args(int argc, char **argv)
 	uint8_t lcore_params = 0;
 	uint8_t eventq_sched = 0;
 	uint8_t eth_rx_q = 0;
+	unsigned int burst_size;
 	struct l3fwd_event_resources *evt_rsrc = l3fwd_get_eventdev_rsrc();
 
 	argvopt = argv;
@@ -814,6 +821,19 @@ parse_args(int argc, char **argv)
 				return -1;
 			}
 			lookup_mode = L3FWD_LOOKUP_LPM;
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size > max_pkt_burst) {
+				printf("invalid burst size\n");
+				print_usage(prgname);
+				return -1;
+			}
+			max_pkt_burst = burst_size;
+			max_rx_burst = max_pkt_burst;
+			max_tx_burst = max_rx_burst/2;
 			break;
 
 		/* long options */
