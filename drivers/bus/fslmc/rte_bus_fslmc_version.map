@@ -81,6 +81,8 @@ DPDK_17.11 {
 	global:
 
 	dpaa2_dpbp_supported;
+	dpaa2_dqrr_size;
+	dpaa2_eqcr_size;
 	rte_dpaa2_dev_type;
 	rte_dpaa2_intr_disable;
 	rte_dpaa2_intr_enable;
