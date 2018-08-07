@@ -397,7 +397,7 @@ l2fwd_usage(const char *prgname)
 		   "      When enabled:\n"
 		   "       - The source MAC address is replaced by the TX port MAC address\n"
 		   "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
-	       "  -m mode: HW or Virutla mode for QDMA\n",
+	       "  -m mode: HW (0) or Virtual (1) mode for QDMA\n",
 	       prgname);
 }
 
@@ -461,9 +461,6 @@ l2fwd_parse_mode(const char *mode)
 	/* parse hexadecimal string */
 	m = strtoul(mode, &end, 16);
 	if ((mode[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
-
-	if (m == 0)
 		return -1;
 
 	return m;
