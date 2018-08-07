@@ -192,85 +192,94 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 }
 
 static void
-l2fwd_qdma_forward(uint16_t vq_id)
+l2fwd_qdma_forward(uint16_t vq_id, int nb_jobs)
 {
-	struct rte_qdma_job *qdma_job;
-	struct rte_mbuf *in_mbuf, *out_mbuf;
+	struct rte_qdma_job *qdma_job[MAX_PKT_BURST];
+	struct rte_mbuf *out_mbuf[MAX_PKT_BURST];
 	struct l2fwd_qdma_job_cnxt *qdma_job_cnxt;
-	struct rte_eth_dev_tx_buffer *buffer;
-	unsigned int dst_port;
-	int sent;
+	unsigned int dst_port = 0;
+	int to_sent = 0, sent, num_rx;
 
-	qdma_job = rte_qdma_vq_dequeue(vq_id);
-	if (!qdma_job)
+	num_rx = rte_qdma_vq_dequeue_multi(vq_id, qdma_job, nb_jobs);
+	if (num_rx <= 0)
 		return;
 
-	qdma_job_cnxt = (struct l2fwd_qdma_job_cnxt *)qdma_job->cnxt;
-	in_mbuf = qdma_job_cnxt->in_mbuf;
-	out_mbuf = qdma_job_cnxt->out_mbuf;
+	for (int i = 0; i < num_rx; i++) {
+		qdma_job_cnxt = (struct l2fwd_qdma_job_cnxt *)qdma_job[i]->cnxt;
+		rte_pktmbuf_free(qdma_job_cnxt->in_mbuf);
 
-	rte_pktmbuf_free(in_mbuf);
+		if (qdma_job[i]->status != 0) {
+			RTE_LOG(ERR, L2FWD, "QDMA operation returned err: %d\n",
+				qdma_job[i]->status);
+			rte_mempool_put(l2fwd_qdma_job_pool, qdma_job[i]);
+			rte_pktmbuf_free(qdma_job_cnxt->out_mbuf);
+			continue;
+		}
 
-	if (qdma_job->status != 0) {
-		RTE_LOG(ERR, L2FWD, "QDMA operation returned err: %d\n",
-			qdma_job->status);
-		rte_pktmbuf_free(out_mbuf);
-		rte_mempool_put(l2fwd_qdma_job_pool, qdma_job);
-		return;
+		out_mbuf[to_sent++] = qdma_job_cnxt->out_mbuf;
+		dst_port = qdma_job_cnxt->dst_port;
+		if (mac_updating)
+			l2fwd_mac_updating(qdma_job_cnxt->out_mbuf, dst_port);
+
+		rte_mempool_put(l2fwd_qdma_job_pool, qdma_job[i]);
 	}
+	if (!to_sent)
+		return;
 
-	dst_port = qdma_job_cnxt->dst_port;
-
-	if (mac_updating)
-		l2fwd_mac_updating(out_mbuf, dst_port);
-
-	buffer = tx_buffer[dst_port];
-	sent = rte_eth_tx_buffer(dst_port, 0, buffer, out_mbuf);
+	sent = rte_eth_tx_burst(dst_port, 0, out_mbuf, to_sent);
 	if (sent)
 		port_statistics[dst_port].tx += sent;
-
-	rte_mempool_put(l2fwd_qdma_job_pool, qdma_job);
 }
 
 static void
-l2fwd_qdma_copy(struct rte_mbuf *m, unsigned portid, uint16_t vq_id)
+l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
+		uint16_t vq_id, uint8_t nb_jobs)
 {
 	struct rte_mbuf *m_new;
 	void *m_data, *m_new_data;
-	struct rte_qdma_job *qdma_job;
+	struct rte_qdma_job *qdma_job[MAX_PKT_BURST], *job;
 	struct l2fwd_qdma_job_cnxt *qdma_job_cnxt;
-	int ret;
+	int i, ret;
 
-	m_new = rte_pktmbuf_alloc(l2fwd_pktmbuf_qdma_pool);
-	m_new->nb_segs = m->nb_segs;
-	m_new->ol_flags = m->ol_flags;
-	m_new->data_off = m->data_off;
-	m_new->data_len = m->data_len;
-	m_new->pkt_len = m->pkt_len;
-	m_new->next = m->next;
-	rte_mbuf_refcnt_set(m_new, 1);
+	for (i = 0; i < nb_jobs; i++) {
+		m_new = rte_pktmbuf_alloc(l2fwd_pktmbuf_qdma_pool);
+		m_new->nb_segs = m[i]->nb_segs;
+		m_new->ol_flags = m[i]->ol_flags;
+		m_new->data_off = m[i]->data_off;
+		m_new->data_len = m[i]->data_len;
+		m_new->pkt_len = m[i]->pkt_len;
+		m_new->next = m[i]->next;
+		rte_mbuf_refcnt_set(m_new, 1);
 
-	m_data = rte_pktmbuf_mtod(m, void *);
-	m_new_data = rte_pktmbuf_mtod(m_new, void *);
+		m_data = rte_pktmbuf_mtod(m[i], void *);
+		m_new_data = rte_pktmbuf_mtod(m_new, void *);
 
-	rte_mempool_get(l2fwd_qdma_job_pool, (void **)&qdma_job);
-	qdma_job_cnxt = (struct l2fwd_qdma_job_cnxt *)(qdma_job + 1);
-	qdma_job_cnxt->in_mbuf = m;
-	qdma_job_cnxt->out_mbuf = m_new;
-	qdma_job_cnxt->dst_port = l2fwd_dst_ports[portid];
+		rte_mempool_get(l2fwd_qdma_job_pool, (void **)&job);
 
-	qdma_job->src = (uint64_t)m_data;
-	qdma_job->dest = (uint64_t)m_new_data;
-	qdma_job->len = m->data_len;
-	qdma_job->cnxt = (uint64_t)qdma_job_cnxt;
+		qdma_job_cnxt = (struct l2fwd_qdma_job_cnxt *)(job + 1);
+		qdma_job_cnxt->in_mbuf = m[i];
+		qdma_job_cnxt->out_mbuf = m_new;
+		qdma_job_cnxt->dst_port = l2fwd_dst_ports[portid];
 
-	ret = rte_qdma_vq_enqueue(vq_id, qdma_job);
+		job->src = (uint64_t)m_data;
+		job->dest = (uint64_t)m_new_data;
+		job->len = m[i]->data_len;
+		job->cnxt = (uint64_t)qdma_job_cnxt;
+
+		qdma_job[i] = job;
+	}
+
+	ret = rte_qdma_vq_enqueue_multi(vq_id, qdma_job, nb_jobs);
 	if (ret <= 0) {
 		RTE_LOG(ERR, L2FWD,
 			"Error in QDMA job submit. Dropping packet\n");
-		rte_pktmbuf_free(m);
-		rte_pktmbuf_free(m_new);
-		rte_mempool_put(l2fwd_qdma_job_pool, qdma_job);
+
+		for (i = 0; i < nb_jobs; i++) {
+			rte_pktmbuf_free(m[i]);
+			rte_pktmbuf_free(
+			((struct l2fwd_qdma_job_cnxt *)job->cnxt)->out_mbuf);
+			rte_mempool_put(l2fwd_qdma_job_pool, qdma_job[i]);
+		}
 	}
 }
 
@@ -279,11 +288,10 @@ static void
 l2fwd_qdma_main_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
-	struct rte_mbuf *m;
 	int sent;
 	unsigned lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
-	unsigned i, j, portid, nb_rx;
+	unsigned int i, portid, nb_rx;
 	struct lcore_queue_conf *qconf;
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
 			BURST_TX_DRAIN_US;
@@ -363,17 +371,15 @@ l2fwd_qdma_main_loop(void)
 		 * Read packet from RX queues
 		 */
 		for (i = 0; i < qconf->n_rx_port; i++) {
-			l2fwd_qdma_forward(vq_id);
+			l2fwd_qdma_forward(vq_id, MAX_PKT_BURST);
 			portid = qconf->rx_port_list[i];
 			nb_rx = rte_eth_rx_burst(portid, 0,
 						 pkts_burst, MAX_PKT_BURST);
 
 			port_statistics[portid].rx += nb_rx;
-
-			for (j = 0; j < nb_rx; j++) {
-				m = pkts_burst[j];
-				l2fwd_qdma_copy(m, portid, vq_id);
-			}
+			if (nb_rx)
+				l2fwd_qdma_copy(pkts_burst,
+						portid, vq_id, nb_rx);
 		}
 	}
 }
