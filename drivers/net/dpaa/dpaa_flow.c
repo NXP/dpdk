@@ -688,6 +688,7 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	int ret;
+	unsigned i = 0;
 
 	if (dpaa_intf->port_handle) {
 		if (dpaa_fm_deconfig(dpaa_intf))
@@ -724,6 +725,10 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 		DPAA_PMD_ERR("Set Port PCD: Failed");
 		goto unset_pcd_netenv_scheme;
 	}
+
+	for (; i < fm_model.dev_count; i++)
+		if (fm_model.device_order[i] == dpaa_intf->ifid)
+			return 0;
 
 	fm_model.device_order[fm_model.dev_count] = dpaa_intf->ifid;
 	fm_model.dev_count++;
