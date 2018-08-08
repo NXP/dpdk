@@ -158,7 +158,7 @@ static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 		 cpu_mask, token);
 	ret = system(command);
 	if (ret < 0)
-		DPAA2_BUS_WARN(
+		DPAA2_BUS_DEBUG(
 			"Failed to affine interrupts on respective core");
 	else
 		DPAA2_BUS_DEBUG(" %s command is executed", command);
