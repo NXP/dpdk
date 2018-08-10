@@ -11039,6 +11039,10 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
+
+		/** PDCP protocol test cases */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_LOOKASIDE_PROTOCOL_all),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
