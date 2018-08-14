@@ -523,7 +523,8 @@ dpaa_event_port_unlink(struct rte_eventdev *dev, void *port,
 		event_queue->event_port = NULL;
 	}
 
-	event_port->num_linked_evq = event_port->num_linked_evq - i;
+	if (event_port->num_linked_evq)
+		event_port->num_linked_evq = event_port->num_linked_evq - i;
 
 	return (int)i;
 }
