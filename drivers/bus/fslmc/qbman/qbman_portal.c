@@ -205,12 +205,14 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 
 	if (!p)
 		return NULL;
+
+	memset(p, 0, sizeof(struct qbman_swp));
+
 	p->desc = *d;
 #ifdef QBMAN_CHECKING
 	p->mc.check = swp_mc_can_start;
 #endif
 	p->mc.valid_bit = QB_VALID_BIT;
-	p->sdq = 0;
 	p->sdq |= qbman_sdqcr_dct_prio_ics << QB_SDQCR_DCT_SHIFT;
 	p->sdq |= qbman_sdqcr_fc_up_to_3 << QB_SDQCR_FC_SHIFT;
 	p->sdq |= QMAN_SDQCR_TOKEN << QB_SDQCR_TOK_SHIFT;
@@ -219,7 +221,6 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 
 	atomic_set(&p->vdq.busy, 1);
 	p->vdq.valid_bit = QB_VALID_BIT;
-	p->dqrr.next_idx = 0;
 	p->dqrr.valid_bit = QB_VALID_BIT;
 	qman_version = p->desc.qman_version;
 	if ((qman_version & 0xFFFF0000) < QMAN_REV_4100) {
