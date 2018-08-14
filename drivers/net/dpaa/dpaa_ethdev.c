@@ -1518,6 +1518,17 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 	}
 
 	if (!is_global_init) {
+		if (getenv("DPAA_DEFAULT_Q_ONLY"))
+			default_q = 1;
+
+		if (getenv("DPAA_FMC_MODE"))
+			fmc_q = 1;
+		else if (access("/tmp/fmc.bin", F_OK) != -1) {
+			RTE_LOG(ERR, PMD,
+				"* FMC configured. Please set DPAA_FMC_MODE\n");
+			return -1;
+		}
+
 		/* One time load of Qman/Bman drivers */
 		ret = qman_global_init();
 		if (ret) {
@@ -1530,17 +1541,6 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 			DPAA_PMD_ERR("BMAN initialization failed: %d",
 				     ret);
 			return ret;
-		}
-
-		if (getenv("DPAA_DEFAULT_Q_ONLY"))
-			default_q = 1;
-
-		if (getenv("DPAA_FMC_MODE"))
-			fmc_q = 1;
-		else if (access("/tmp/fmc.bin", F_OK) != -1) {
-			RTE_LOG(ERR, PMD,
-				"* FMC configured. Please set DPAA_FMC_MODE\n");
-			return -1;
 		}
 
 		if (!(default_q || fmc_q)) {
