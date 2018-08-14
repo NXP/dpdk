@@ -704,7 +704,8 @@ int dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 	struct qm_mcc_initfq opts = {0};
 
 	if (dpaa_push_mode_max_queue)
-		DPAA_PMD_WARN("PUSH mode already enabled for first %d queues.\n"
+		DPAA_PMD_WARN("PUSH mode q and EVENTDEV are not compatible\n"
+			      "PUSH mode already enabled for first %d queues.\n"
 			      "To disable set DPAA_PUSH_QUEUES_NUMBER to 0\n",
 			      dpaa_push_mode_max_queue);
 
@@ -1525,7 +1526,7 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 			fmc_q = 1;
 		else if (access("/tmp/fmc.bin", F_OK) != -1) {
 			RTE_LOG(ERR, PMD,
-				"* FMC configured. Please set DPAA_FMC_MODE\n");
+				"FMC configured. Please set DPAA_FMC_MODE=1\n");
 			return -1;
 		}
 

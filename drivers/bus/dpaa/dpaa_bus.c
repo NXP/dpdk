@@ -315,7 +315,7 @@ int rte_dpaa_portal_init(void *arg)
 		return ret;
 	}
 
-	DPAA_BUS_LOG(DEBUG, "BMAN thread initialized");
+	DPAA_BUS_LOG(DEBUG, "BMAN thread initialized - CPU=%d", cpu);
 
 	/* Initialise qman thread portals */
 	ret = qman_thread_init();
@@ -326,7 +326,7 @@ int rte_dpaa_portal_init(void *arg)
 		return ret;
 	}
 
-	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized");
+	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized - CPU=%d", cpu);
 
 	dpaa_io_portal = rte_malloc(NULL, sizeof(struct dpaa_portal),
 				    RTE_CACHE_LINE_SIZE);
