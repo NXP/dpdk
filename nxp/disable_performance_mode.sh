@@ -1,6 +1,6 @@
 #!/bin/bash
-# spdx-license-identifier: bsd-3-clause
-# copyright 2018 nxp
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018 NXP
 
 # This script should be executed as root user.
 function validate_root_user() {
