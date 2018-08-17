@@ -232,6 +232,54 @@ struct rte_security_macsec_xform {
 };
 
 /**
+ * PDCP Mode of session
+ */
+enum rte_security_pdcp_domain {
+	RTE_SECURITY_PDCP_MODE_CONTROL,	/**< PDCP control plane */
+	RTE_SECURITY_PDCP_MODE_DATA,	/**< PDCP data plane */
+};
+
+/** PDCP Frame direction */
+enum rte_security_pdcp_direction {
+	RTE_SECURITY_PDCP_UPLINK,	/**< Uplink */
+	RTE_SECURITY_PDCP_DOWNLINK,	/**< Downlink */
+};
+
+/**
+ * PDCP Sequence Number Size selectors
+ * @PDCP_SN_SIZE_5: 5bit sequence number
+ * @PDCP_SN_SIZE_7: 7bit sequence number
+ * @PDCP_SN_SIZE_12: 12bit sequence number
+ * @PDCP_SN_SIZE_15: 15bit sequence number
+ */
+enum rte_security_pdcp_sn_size {
+	RTE_SECURITY_PDCP_SN_SIZE_5 = 5,
+	RTE_SECURITY_PDCP_SN_SIZE_7 = 7,
+	RTE_SECURITY_PDCP_SN_SIZE_12 = 12,
+	RTE_SECURITY_PDCP_SN_SIZE_15 = 15
+};
+
+/**
+ * PDCP security association configuration data.
+ *
+ * This structure contains data required to create a PDCP security session.
+ */
+struct rte_security_pdcp_xform {
+	int8_t bearer;	/**< PDCP bearer ID */
+	enum rte_security_pdcp_domain domain;
+		/** < PDCP mode of operation: Control or data */
+	enum rte_security_pdcp_direction pkt_dir;
+		/**< PDCP Frame Direction 0:UL 1:DL*/
+	enum rte_security_pdcp_sn_size sn_size;
+		/**< Sequence number size, 5/7/12/15 */
+	int8_t hfn_ovd; /**< Overwrite HFN per operation.
+			  *   Use override_iv_ptr for overriding
+			  */
+	uint32_t hfn;	/**< Hyper Frame Number */
+	uint32_t hfn_threshold;	/**< HFN Threashold for key renegotiation */
+};
+
+/**
  * Security session action type.
  */
 enum rte_security_session_action_type {
@@ -257,6 +305,8 @@ enum rte_security_session_protocol {
 	/**< IPsec Protocol */
 	RTE_SECURITY_PROTOCOL_MACSEC,
 	/**< MACSec Protocol */
+	RTE_SECURITY_PROTOCOL_PDCP,
+	/**< PDCP Protocol */
 };
 
 /**
@@ -271,6 +321,7 @@ struct rte_security_session_conf {
 	union {
 		struct rte_security_ipsec_xform ipsec;
 		struct rte_security_macsec_xform macsec;
+		struct rte_security_pdcp_xform pdcp;
 	};
 	/**< Configuration parameters for security session */
 	struct rte_crypto_sym_xform *crypto_xform;
@@ -404,6 +455,10 @@ struct rte_security_ipsec_stats {
 
 };
 
+struct rte_security_pdcp_stats {
+	uint64_t reserved;
+};
+
 struct rte_security_stats {
 	enum rte_security_session_protocol protocol;
 	/**< Security protocol to be configured */
@@ -412,6 +467,7 @@ struct rte_security_stats {
 	union {
 		struct rte_security_macsec_stats macsec;
 		struct rte_security_ipsec_stats ipsec;
+		struct rte_security_pdcp_stats pdcp;
 	};
 };
 
@@ -456,6 +512,11 @@ struct rte_security_capability {
 			int dummy;
 		} macsec;
 		/**< MACsec capability */
+		struct {
+			enum rte_security_pdcp_domain domain;
+				/** < PDCP mode of operation: Control or data */
+		} pdcp;
+		/**< PDCP capability */
 	};
 
 	const struct rte_cryptodev_capabilities *crypto_capabilities;
@@ -497,6 +558,9 @@ struct rte_security_capability_idx {
 			enum rte_security_ipsec_sa_mode mode;
 			enum rte_security_ipsec_sa_direction direction;
 		} ipsec;
+		struct {
+			enum rte_security_pdcp_domain domain;
+		} pdcp;
 	};
 };
 

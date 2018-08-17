@@ -39,10 +39,12 @@
 #include <rte_memcpy.h>
 #include <rte_pause.h>
 #include <rte_bus_vdev.h>
+#include <rte_byteorder.h>
 
 #include <rte_crypto.h>
 #include <rte_cryptodev.h>
 #include <rte_cryptodev_pmd.h>
+#include <rte_security.h>
 
 #ifdef RTE_LIBRTE_PMD_CRYPTO_SCHEDULER
 #include <rte_cryptodev_scheduler.h>
@@ -63,6 +65,10 @@
 #include "test_cryptodev_zuc_test_vectors.h"
 #include "test_cryptodev_aead_test_vectors.h"
 #include "test_cryptodev_hmac_test_vectors.h"
+#ifdef RTE_LIBRTE_SECURITY
+#include "test_cryptodev_security_ipsec_test_vectors.h"
+#include "test_cryptodev_security_pdcp_test_vectors.h"
+#endif
 
 static int gbl_driver_id;
 
@@ -83,8 +89,11 @@ struct crypto_unittest_params {
 	struct rte_crypto_sym_xform auth_xform;
 	struct rte_crypto_sym_xform aead_xform;
 
-	struct rte_cryptodev_sym_session *sess;
-
+	union {
+		struct rte_cryptodev_sym_session *sess;
+		struct rte_security_session *sec_session;
+	};
+	enum rte_security_session_action_type type;
 	struct rte_crypto_op *op;
 
 	struct rte_mbuf *obuf, *ibuf;
@@ -517,11 +526,21 @@ ut_teardown(void)
 	struct rte_cryptodev_stats stats;
 
 	/* free crypto session structure */
-	if (ut_params->sess) {
-		rte_cryptodev_sym_session_clear(ts_params->valid_devs[0],
-				ut_params->sess);
-		rte_cryptodev_sym_session_free(ut_params->sess);
-		ut_params->sess = NULL;
+	if (ut_params->type == RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL) {
+		if (ut_params->sec_session) {
+			rte_security_session_destroy(rte_cryptodev_get_sec_ctx
+						(ts_params->valid_devs[0]),
+						ut_params->sec_session);
+			ut_params->sec_session = NULL;
+		}
+	} else {
+		if (ut_params->sess) {
+			rte_cryptodev_sym_session_clear(
+					ts_params->valid_devs[0],
+					ut_params->sess);
+			rte_cryptodev_sym_session_free(ut_params->sess);
+			ut_params->sess = NULL;
+		}
 	}
 
 	/* free crypto operation structure */
@@ -567,7 +586,7 @@ test_device_configure_invalid_dev_id(void)
 	dev_id = ts_params->valid_devs[ts_params->valid_dev_count - 1];
 
 	/* Stop the device in case it's started so it can be configured */
-	rte_cryptodev_stop(ts_params->valid_devs[dev_id]);
+	rte_cryptodev_stop(dev_id);
 
 	TEST_ASSERT_SUCCESS(rte_cryptodev_configure(dev_id, &ts_params->conf),
 			"Failed test for rte_cryptodev_configure: "
@@ -5452,6 +5471,1584 @@ test_authenticated_encryption(const struct aead_test_data *tdata)
 
 }
 
+#ifdef RTE_LIBRTE_SECURITY
+static int
+test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	uint8_t *plaintext;
+
+	/* Generate test mbuf data */
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+	plaintext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf, 64);
+	memcpy(plaintext, ipsec_plaintext_encrypt_64B, 64);
+
+	/* Out of place support */
+	if (oop) {
+		/*
+		 * For out-op-place we need to alloc another mbuf
+		 */
+		ut_params->obuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+		rte_pktmbuf_append(ut_params->obuf, 136);
+	}
+
+	/* Set crypto type as IPSEC */
+	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.next = &ut_params->auth_xform;
+	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
+	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+	ut_params->cipher_xform.cipher.key.data = aes_cbc_key_0;
+	ut_params->cipher_xform.cipher.key.length = CIPHER_KEY_LENGTH_AES_CBC;
+	ut_params->cipher_xform.cipher.iv.length = CIPHER_IV_LENGTH_AES_CBC;
+
+	/* Setup HMAC Parameters */
+	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+	ut_params->auth_xform.next = NULL;
+	ut_params->auth_xform.auth.algo = RTE_CRYPTO_AUTH_SHA1_HMAC;
+	ut_params->auth_xform.auth.op = RTE_CRYPTO_AUTH_OP_GENERATE;
+	ut_params->auth_xform.auth.key.data = hmac_sha1_key_0;
+	ut_params->auth_xform.auth.key.length = HMAC_KEY_LENGTH_SHA1;
+	ut_params->auth_xform.auth.digest_length = DIGEST_BYTE_LENGTH_SHA1;
+
+	struct rte_security_session_conf sess_conf = {
+		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+		{.ipsec = {
+			.spi = DEFAULT_SPI,
+			.salt = 0x0,
+			.options = { 0 },
+			.direction = RTE_SECURITY_IPSEC_SA_DIR_EGRESS,
+			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
+			.mode = RTE_SECURITY_IPSEC_SA_MODE_TUNNEL,
+		} },
+		.crypto_xform = &ut_params->cipher_xform
+	};
+
+	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+				rte_cryptodev_get_sec_ctx(
+				ts_params->valid_devs[0]);
+
+	/* Tunnel mode */
+
+	struct rte_security_ipsec_tunnel_param *tunnel =
+					&sess_conf.ipsec.tunnel;
+
+	tunnel->type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
+	tunnel->ipv4.ttl = IPDEFTTL;
+	tunnel->ipv4.dscp = 0;
+
+	memcpy((uint8_t *)&tunnel->ipv4.src_ip, src_ip, 4);
+
+	memcpy((uint8_t *)&tunnel->ipv4.dst_ip, dst_ip, 4);
+
+	/* Create security session */
+	ut_params->sec_session = rte_security_session_create(ctx,
+				&sess_conf, ts_params->session_mpool);
+
+	/* Generate crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+			"Failed to allocate symmetric crypto operation struct");
+
+	rte_security_attach_session(ut_params->op, ut_params->sec_session);
+
+	/* set crypto operation source mbuf */
+	ut_params->op->sym->m_src = ut_params->ibuf;
+	if (oop)
+		ut_params->op->sym->m_dst = ut_params->obuf;
+
+	/* Process crypto operation */
+	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
+			ut_params->op), "failed to process sym crypto op");
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
+	/* Validate obuf */
+	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
+			uint8_t *);
+	if (oop) {
+		ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
+				uint8_t *);
+	}
+
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
+				ipsec_cipher_text_aes_sha1_64B,
+				136,
+				"ciphertext data not as expected");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	uint8_t *ciphertext;
+
+	/* Generate test mbuf data */
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+	ciphertext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf, 136);
+	memcpy(ciphertext, ipsec_cipher_text_aes_sha1_64B, 136);
+
+	/* Out of place support */
+	if (oop) {
+		/*
+		 * For out-op-place we need to alloc another mbuf
+		 */
+		ut_params->obuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+		rte_pktmbuf_append(ut_params->obuf, 64);
+	}
+
+	/* Set crypto type as IPSEC */
+	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.next = NULL;
+	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
+	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_DECRYPT;
+	ut_params->cipher_xform.cipher.key.data = aes_cbc_key_0;
+	ut_params->cipher_xform.cipher.key.length = CIPHER_KEY_LENGTH_AES_CBC;
+	ut_params->cipher_xform.cipher.iv.length = CIPHER_IV_LENGTH_AES_CBC;
+
+	/* Setup HMAC Parameters */
+	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+	ut_params->auth_xform.next = &ut_params->cipher_xform;
+	ut_params->auth_xform.auth.algo = RTE_CRYPTO_AUTH_SHA1_HMAC;
+	ut_params->auth_xform.auth.op = RTE_CRYPTO_AUTH_OP_VERIFY;
+	ut_params->auth_xform.auth.key.data = hmac_sha1_key_0;
+	ut_params->auth_xform.auth.key.length = HMAC_KEY_LENGTH_SHA1;
+	ut_params->auth_xform.auth.digest_length = DIGEST_BYTE_LENGTH_SHA1;
+
+	struct rte_security_session_conf sess_conf = {
+		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+		{.ipsec = {
+			.spi = DEFAULT_SPI,
+			.salt = 0x0,
+			.options = { 0 },
+			.direction = RTE_SECURITY_IPSEC_SA_DIR_INGRESS,
+			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
+			.mode = RTE_SECURITY_IPSEC_SA_MODE_TUNNEL,
+		} },
+		.crypto_xform = &ut_params->auth_xform
+	};
+
+	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+				rte_cryptodev_get_sec_ctx(
+				ts_params->valid_devs[0]);
+
+	/* Create security session */
+	ut_params->sec_session = rte_security_session_create(ctx,
+				&sess_conf, ts_params->session_mpool);
+
+	/* Generate crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+			"Failed to allocate symmetric crypto operation struct");
+
+	rte_security_attach_session(ut_params->op, ut_params->sec_session);
+
+	/* set crypto operation source mbuf */
+	ut_params->op->sym->m_src = ut_params->ibuf;
+	if (oop)
+		ut_params->op->sym->m_dst = ut_params->obuf;
+
+	/* Process crypto operation */
+	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
+			ut_params->op), "failed to process sym crypto op");
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
+	/* Validate obuf */
+	uint8_t *plaintext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
+			uint8_t *);
+	if (oop) {
+		plaintext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
+				uint8_t *);
+	}
+
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(plaintext,
+				ipsec_plaintext_decrypt_aes_sha1_64B,
+				64,
+				"plaintext data not as expected");
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	uint8_t *plaintext;
+
+	/* Generate test mbuf data */
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+	plaintext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf, 64);
+	memcpy(plaintext, ipsec_plaintext_encrypt_64B, 64);
+
+	/* Out of place support */
+	if (oop) {
+		/*
+		 * For out-op-place we need to alloc another mbuf
+		 */
+		ut_params->obuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+		rte_pktmbuf_append(ut_params->obuf, 136);
+	}
+
+	/* Set crypto type as IPSEC */
+	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.next = NULL;
+	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
+	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+	ut_params->cipher_xform.cipher.key.data = aes_cbc_key_0;
+	ut_params->cipher_xform.cipher.key.length = CIPHER_KEY_LENGTH_AES_CBC;
+	ut_params->cipher_xform.cipher.iv.length = CIPHER_IV_LENGTH_AES_CBC;
+
+	struct rte_security_session_conf sess_conf = {
+		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+		{.ipsec = {
+			.spi = DEFAULT_SPI,
+			.salt = 0x0,
+			.options = { 0 },
+			.direction = RTE_SECURITY_IPSEC_SA_DIR_EGRESS,
+			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
+			.mode = RTE_SECURITY_IPSEC_SA_MODE_TUNNEL,
+		} },
+		.crypto_xform = &ut_params->cipher_xform
+	};
+
+	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+				rte_cryptodev_get_sec_ctx(
+				ts_params->valid_devs[0]);
+
+	/* Tunnel mode */
+
+	struct rte_security_ipsec_tunnel_param *tunnel =
+					&sess_conf.ipsec.tunnel;
+
+	tunnel->type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
+	tunnel->ipv4.ttl = IPDEFTTL;
+	tunnel->ipv4.dscp = 0;
+
+	memcpy((uint8_t *)&tunnel->ipv4.src_ip, src_ip, 4);
+
+	memcpy((uint8_t *)&tunnel->ipv4.dst_ip, dst_ip, 4);
+
+	/* Create security session */
+	ut_params->sec_session = rte_security_session_create(ctx,
+				&sess_conf, ts_params->session_mpool);
+
+	/* Generate crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+			"Failed to allocate symmetric crypto operation struct");
+
+	rte_security_attach_session(ut_params->op, ut_params->sec_session);
+
+	/* set crypto operation source mbuf */
+	ut_params->op->sym->m_src = ut_params->ibuf;
+	if (oop)
+		ut_params->op->sym->m_dst = ut_params->obuf;
+
+	/* Process crypto operation */
+	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
+			ut_params->op), "failed to process sym crypto op");
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
+	/* Validate obuf */
+	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
+			uint8_t *);
+	if (oop) {
+		ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
+				uint8_t *);
+	}
+
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
+				ipsec_cipher_text_aes_64B,
+				124,
+				"ciphertext data not as expected");
+
+	return TEST_SUCCESS;
+}
+
+#define IN_PLACE	0
+#define OUT_OF_PLACE	1
+
+static int
+test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B(void)
+{
+	return test_ipsec_lookaside_protocol_encrypt_aes_sha1(IN_PLACE);
+}
+
+static int
+test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B(void)
+{
+	return test_ipsec_lookaside_protocol_decrypt_aes_sha1(IN_PLACE);
+}
+
+static int
+test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B_oop(void)
+{
+	return test_ipsec_lookaside_protocol_encrypt_aes_sha1(OUT_OF_PLACE);
+}
+
+static int
+test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B_oop(void)
+{
+	return test_ipsec_lookaside_protocol_decrypt_aes_sha1(OUT_OF_PLACE);
+}
+
+static int
+test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B(void)
+{
+	return test_ipsec_lookaside_protocol_encrypt_aes_null(IN_PLACE);
+}
+
+/* Basic algorithm run function for async inplace mode.
+ * Creates a session from input parameters and runs one operation
+ * on input_vec. Checks the output of the crypto operation against
+ * output_vec.
+ */
+static int
+test_pdcp_proto(int i, int oop,
+	enum rte_crypto_cipher_operation opc,
+	enum rte_crypto_auth_operation opa,
+	uint8_t *input_vec,
+	unsigned int input_vec_len,
+	uint8_t *output_vec,
+	unsigned int output_vec_len)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	uint8_t *plaintext;
+
+	/* Generate test mbuf data */
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+
+	/* clear mbuf payload */
+	memset(rte_pktmbuf_mtod(ut_params->ibuf, uint8_t *), 0,
+			rte_pktmbuf_tailroom(ut_params->ibuf));
+
+	plaintext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+						  input_vec_len);
+	memcpy(plaintext, input_vec, input_vec_len);
+
+	/* Out of place support */
+	if (oop) {
+		/*
+		 * For out-op-place we need to alloc another mbuf
+		 */
+		ut_params->obuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+		rte_pktmbuf_append(ut_params->obuf, output_vec_len);
+	}
+
+	/* Set crypto type as IPSEC */
+	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.cipher.algo = pdcp_test_params[i].cipher_alg;
+	ut_params->cipher_xform.cipher.op = opc;
+	ut_params->cipher_xform.cipher.key.data = pdcp_test_crypto_key[i];
+	ut_params->cipher_xform.cipher.key.length =
+					pdcp_test_params[i].cipher_key_len;
+	ut_params->cipher_xform.cipher.iv.length = 0;
+	if (pdcp_test_params[i].auth_alg != RTE_CRYPTO_AUTH_NULL)
+		ut_params->cipher_xform.next = &ut_params->auth_xform;
+	else
+		ut_params->cipher_xform.next = NULL;
+
+	/* Setup HMAC Parameters */
+	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+	ut_params->auth_xform.next = NULL;
+	ut_params->auth_xform.auth.algo = pdcp_test_params[i].auth_alg;
+	ut_params->auth_xform.auth.op = opa;
+	ut_params->auth_xform.auth.key.data = pdcp_test_auth_key[i];
+	ut_params->auth_xform.auth.key.length =
+					pdcp_test_params[i].auth_key_len;
+
+	struct rte_security_session_conf sess_conf = {
+		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
+		{.pdcp = {
+			.bearer = pdcp_test_bearer[i],
+			.domain = pdcp_test_params[i].domain,
+			.pkt_dir = pdcp_test_packet_direction[i],
+			.sn_size = pdcp_test_data_sn_size[i],
+			.hfn_ovd = 0,
+			.hfn = pdcp_test_hfn[i],
+			.hfn_threshold = pdcp_test_hfn_threshold[i],
+		} },
+		.crypto_xform = &ut_params->cipher_xform
+	};
+
+	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+				rte_cryptodev_get_sec_ctx(
+				ts_params->valid_devs[0]);
+
+	/* Create security session */
+	ut_params->sec_session = rte_security_session_create(ctx,
+				&sess_conf, ts_params->session_mpool);
+
+	/* Generate crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+			"Failed to allocate symmetric crypto operation struct");
+
+	rte_security_attach_session(ut_params->op, ut_params->sec_session);
+
+	/* set crypto operation source mbuf */
+	ut_params->op->sym->m_src = ut_params->ibuf;
+	if (oop)
+		ut_params->op->sym->m_dst = ut_params->obuf;
+
+	/* Process crypto operation */
+	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
+			ut_params->op), "failed to process sym crypto op");
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
+	/* Validate obuf */
+	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
+			uint8_t *);
+	if (oop) {
+		ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
+				uint8_t *);
+	}
+
+	if (memcmp(ciphertext, output_vec, output_vec_len)) {
+		printf("\n=============TestCase %d failed: Data Mismatch ", i);
+		rte_hexdump(stdout, "encrypted", ciphertext, output_vec_len);
+		rte_hexdump(stdout, "reference", output_vec, output_vec_len);
+		return TEST_FAILED;
+	}
+
+	return TEST_SUCCESS;
+}
+
+static int
+test_pdcp_proto_cplane_encap(int i)
+{
+	return test_pdcp_proto(i, 0,
+		RTE_CRYPTO_CIPHER_OP_ENCRYPT,
+		RTE_CRYPTO_AUTH_OP_GENERATE,
+		pdcp_test_data_in[i],
+		pdcp_test_data_in_len[i],
+		pdcp_test_data_out[i],
+		pdcp_test_data_in_len[i]+4);
+}
+
+static int
+test_pdcp_proto_uplane_encap(int i)
+{
+	return test_pdcp_proto(i, 0,
+		RTE_CRYPTO_CIPHER_OP_ENCRYPT,
+		RTE_CRYPTO_AUTH_OP_GENERATE,
+		pdcp_test_data_in[i],
+		pdcp_test_data_in_len[i],
+		pdcp_test_data_out[i],
+		pdcp_test_data_in_len[i]);
+
+}
+
+static int
+test_pdcp_proto_cplane_decap(int i)
+{
+	return test_pdcp_proto(i, 0,
+		RTE_CRYPTO_CIPHER_OP_DECRYPT,
+		RTE_CRYPTO_AUTH_OP_VERIFY,
+		pdcp_test_data_out[i],
+		pdcp_test_data_in_len[i] + 4,
+		pdcp_test_data_in[i],
+		pdcp_test_data_in_len[i]);
+
+}
+
+static int
+test_pdcp_proto_uplane_decap(int i)
+{
+	return test_pdcp_proto(i, 0,
+		RTE_CRYPTO_CIPHER_OP_DECRYPT,
+		RTE_CRYPTO_AUTH_OP_VERIFY,
+		pdcp_test_data_out[i],
+		pdcp_test_data_in_len[i],
+		pdcp_test_data_in[i],
+		pdcp_test_data_in_len[i]);
+}
+
+static int cplane_null_null_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_null_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_snow_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_snow_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_aes_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_aes_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_zuc_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_zuc_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_null_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_null_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_snow_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_snow_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_aes_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_aes_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_zuc_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_snow_zuc_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_null_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_null_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_snow_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_snow_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_aes_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_aes_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_zuc_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_aes_zuc_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_null_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_null_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_snow_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_snow_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_aes_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_aes_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_zuc_ul_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_zuc_zuc_dl_encap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_encap(i);
+}
+
+static int cplane_null_null_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_null_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_snow_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_snow_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_aes_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_aes_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_zuc_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_null_zuc_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_NULL_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_null_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_null_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_snow_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_snow_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_aes_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_aes_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_zuc_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_snow_zuc_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_SNOW_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_null_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_null_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_snow_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_snow_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_aes_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_aes_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_zuc_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_aes_zuc_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_AES_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_null_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_null_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_NULL_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_snow_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_snow_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_SNOW_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_aes_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_aes_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_AES_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_zuc_ul_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + UPLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int cplane_zuc_zuc_dl_decap(void)
+{
+	int i = PDCP_CPLANE_OFFSET + CPLANE_ZUC_ENC_OFFSET +
+		CPLANE_ZUC_AUTH_OFFSET + DOWNLINK_OFFSET;
+	return test_pdcp_proto_cplane_decap(i);
+}
+
+static int uplane_null_ul_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_dl_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_ul_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_dl_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_ul_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_dl_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_ul_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_dl_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_ul_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_dl_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_ul_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_snow_dl_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_ul_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_dl_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_ul_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_dl_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_ul_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_aes_dl_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_ul_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_dl_12bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_ul_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_dl_7bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_ul_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_zuc_dl_15bit_encap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_encap(i);
+}
+
+static int uplane_null_ul_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_null_dl_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_null_ul_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_null_dl_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_null_ul_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_null_dl_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + NULL_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_ul_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_dl_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_ul_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_dl_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_ul_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_snow_dl_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + SNOW_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_ul_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_dl_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_ul_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_dl_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_ul_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_aes_dl_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + AES_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_ul_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_dl_12bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + LONG_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_ul_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_dl_7bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + SHORT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_ul_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ UPLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+static int uplane_zuc_dl_15bit_decap(void)
+{
+	int i;
+
+	i = PDCP_UPLANE_OFFSET + ZUC_PROTO_OFFSET + FIFTEEN_BIT_SEQ_NUM_OFFSET
+		+ DOWNLINK_OFFSET;
+	return test_pdcp_proto_uplane_decap(i);
+}
+
+#define TEST_PDCP_COUNT(func) do { \
+	if (func == TEST_SUCCESS)  \
+		i++;		   \
+	else			   \
+		printf("+++++ FAILED:" #func"\n"); \
+	n++;   \
+} while (0)
+
+static int
+test_pdcp_proto_cplane_encap_all(void)
+{
+	int i = 0, n = 0;
+
+	TEST_PDCP_COUNT(cplane_null_null_ul_encap());
+	TEST_PDCP_COUNT(cplane_null_null_dl_encap());
+	TEST_PDCP_COUNT(cplane_null_snow_ul_encap());
+	TEST_PDCP_COUNT(cplane_null_snow_dl_encap());
+	TEST_PDCP_COUNT(cplane_null_aes_ul_encap());
+	TEST_PDCP_COUNT(cplane_null_aes_dl_encap());
+	TEST_PDCP_COUNT(cplane_null_zuc_ul_encap());
+	TEST_PDCP_COUNT(cplane_null_zuc_dl_encap());
+	TEST_PDCP_COUNT(cplane_snow_null_ul_encap());
+	TEST_PDCP_COUNT(cplane_snow_null_dl_encap());
+	TEST_PDCP_COUNT(cplane_snow_snow_ul_encap());
+	TEST_PDCP_COUNT(cplane_snow_snow_dl_encap());
+	TEST_PDCP_COUNT(cplane_snow_aes_ul_encap());
+	TEST_PDCP_COUNT(cplane_snow_aes_dl_encap());
+	TEST_PDCP_COUNT(cplane_snow_zuc_ul_encap());
+	TEST_PDCP_COUNT(cplane_snow_zuc_dl_encap());
+	TEST_PDCP_COUNT(cplane_aes_null_ul_encap());
+	TEST_PDCP_COUNT(cplane_aes_null_dl_encap());
+	TEST_PDCP_COUNT(cplane_aes_snow_ul_encap());
+	TEST_PDCP_COUNT(cplane_aes_snow_dl_encap());
+	TEST_PDCP_COUNT(cplane_aes_aes_ul_encap());
+	TEST_PDCP_COUNT(cplane_aes_aes_dl_encap());
+	TEST_PDCP_COUNT(cplane_aes_zuc_ul_encap());
+	TEST_PDCP_COUNT(cplane_aes_zuc_dl_encap());
+	TEST_PDCP_COUNT(cplane_zuc_null_ul_encap());
+	TEST_PDCP_COUNT(cplane_zuc_null_dl_encap());
+	TEST_PDCP_COUNT(cplane_zuc_snow_ul_encap());
+	TEST_PDCP_COUNT(cplane_zuc_snow_dl_encap());
+	TEST_PDCP_COUNT(cplane_zuc_aes_ul_encap());
+	TEST_PDCP_COUNT(cplane_zuc_aes_dl_encap());
+	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_encap());
+	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_encap());
+	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+
+	return n - i;
+};
+
+static int
+test_pdcp_proto_cplane_decap_all(void)
+{
+	int i = 0, n = 0;
+
+	TEST_PDCP_COUNT(cplane_null_null_ul_decap());
+	TEST_PDCP_COUNT(cplane_null_null_dl_decap());
+	TEST_PDCP_COUNT(cplane_null_snow_ul_decap());
+	TEST_PDCP_COUNT(cplane_null_snow_dl_decap());
+	TEST_PDCP_COUNT(cplane_null_aes_ul_decap());
+	TEST_PDCP_COUNT(cplane_null_aes_dl_decap());
+	TEST_PDCP_COUNT(cplane_null_zuc_ul_decap());
+	TEST_PDCP_COUNT(cplane_null_zuc_dl_decap());
+	TEST_PDCP_COUNT(cplane_snow_null_ul_decap());
+	TEST_PDCP_COUNT(cplane_snow_null_dl_decap());
+	TEST_PDCP_COUNT(cplane_snow_snow_ul_decap());
+	TEST_PDCP_COUNT(cplane_snow_snow_dl_decap());
+	TEST_PDCP_COUNT(cplane_snow_aes_ul_decap());
+	TEST_PDCP_COUNT(cplane_snow_aes_dl_decap());
+	TEST_PDCP_COUNT(cplane_snow_zuc_ul_decap());
+	TEST_PDCP_COUNT(cplane_snow_zuc_dl_decap());
+	TEST_PDCP_COUNT(cplane_aes_null_ul_decap());
+	TEST_PDCP_COUNT(cplane_aes_null_dl_decap());
+	TEST_PDCP_COUNT(cplane_aes_snow_ul_decap());
+	TEST_PDCP_COUNT(cplane_aes_snow_dl_decap());
+	TEST_PDCP_COUNT(cplane_aes_aes_ul_decap());
+	TEST_PDCP_COUNT(cplane_aes_aes_dl_decap());
+	TEST_PDCP_COUNT(cplane_aes_zuc_ul_decap());
+	TEST_PDCP_COUNT(cplane_aes_zuc_dl_decap());
+	TEST_PDCP_COUNT(cplane_zuc_null_ul_decap());
+	TEST_PDCP_COUNT(cplane_zuc_null_dl_decap());
+	TEST_PDCP_COUNT(cplane_zuc_snow_ul_decap());
+	TEST_PDCP_COUNT(cplane_zuc_snow_dl_decap());
+	TEST_PDCP_COUNT(cplane_zuc_aes_ul_decap());
+	TEST_PDCP_COUNT(cplane_zuc_aes_dl_decap());
+	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_decap());
+	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_decap());
+	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+
+	return n - i;
+};
+
+static int
+test_pdcp_proto_uplane_encap_all(void)
+{
+	int i = 0, n = 0;
+
+	TEST_PDCP_COUNT(uplane_null_ul_12bit_encap());
+	TEST_PDCP_COUNT(uplane_null_dl_12bit_encap());
+	TEST_PDCP_COUNT(uplane_null_ul_7bit_encap());
+	TEST_PDCP_COUNT(uplane_null_dl_7bit_encap());
+	TEST_PDCP_COUNT(uplane_null_ul_15bit_encap());
+	TEST_PDCP_COUNT(uplane_null_dl_15bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_ul_12bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_dl_12bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_ul_7bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_dl_7bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_ul_15bit_encap());
+	TEST_PDCP_COUNT(uplane_snow_dl_15bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_ul_12bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_dl_12bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_ul_7bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_dl_7bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_ul_15bit_encap());
+	TEST_PDCP_COUNT(uplane_aes_dl_15bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_12bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_12bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_7bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_encap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_encap());
+	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+
+	return n - i;
+};
+
+static int
+test_pdcp_proto_uplane_decap_all(void)
+{
+	int i = 0, n = 0;
+
+	TEST_PDCP_COUNT(uplane_null_ul_12bit_decap());
+	TEST_PDCP_COUNT(uplane_null_dl_12bit_decap());
+	TEST_PDCP_COUNT(uplane_null_ul_7bit_decap());
+	TEST_PDCP_COUNT(uplane_null_dl_7bit_decap());
+	TEST_PDCP_COUNT(uplane_null_ul_15bit_decap());
+	TEST_PDCP_COUNT(uplane_null_dl_15bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_ul_12bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_dl_12bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_ul_7bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_dl_7bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_ul_15bit_decap());
+	TEST_PDCP_COUNT(uplane_snow_dl_15bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_ul_12bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_dl_12bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_ul_7bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_dl_7bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_ul_15bit_decap());
+	TEST_PDCP_COUNT(uplane_aes_dl_15bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_12bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_12bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_7bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_decap());
+	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_decap());
+	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+
+	return n - i;
+};
+
+static int
+test_PDCP_LOOKASIDE_PROTOCOL_all(void)
+{
+	int ret = 0;
+	ret = test_pdcp_proto_cplane_encap_all();
+	ret |= test_pdcp_proto_cplane_decap_all();
+	ret |= test_pdcp_proto_uplane_encap_all();
+	ret |= test_pdcp_proto_uplane_decap_all();
+	return ret;
+}
+
+#endif
+
 static int
 test_AES_GCM_authenticated_encryption_test_case_1(void)
 {
@@ -8246,9 +9843,6 @@ test_authenticated_encryption_SGL(const struct aead_test_data *tdata,
 	return 0;
 }
 
-#define IN_PLACE	0
-#define OUT_OF_PLACE	1
-
 static int
 test_AES_GCM_auth_encrypt_SGL_out_of_place_400B_400B(void)
 {
@@ -9430,6 +11024,26 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			     test_authonly_dpaa_sec_all),
 
+#ifdef RTE_LIBRTE_SECURITY
+		/** IPSEC Lookaside Protocol Encrypt Decrypt */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B),
+
+		/** IPSEC Lookaside Protocol Encrypt Decrypt Out of place **/
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B_oop),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B_oop),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
+
+		/** PDCP protocol test cases */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_LOOKASIDE_PROTOCOL_all),
+#endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_AES_GCM_authenticated_encryption_test_case_1),
@@ -9535,6 +11149,25 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_authonly_dpaa2_sec_all),
 
+#ifdef RTE_LIBRTE_SECURITY
+		/** IPSEC_Lookaside Protocol Encrypt Decrypt */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B),
+
+		/** IPSEC Lookaside Protocol Encrypt Decrypt Out of place **/
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B_oop),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B_oop),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_LOOKASIDE_PROTOCOL_all),
+#endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_AES_GCM_authenticated_encryption_test_case_1),
