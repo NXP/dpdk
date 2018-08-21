@@ -83,30 +83,56 @@ static uint16_t
 dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 			     uint16_t nb_events)
 {
-	struct rte_eventdev *ev_dev =
-			((struct dpaa2_io_portal_t *)port)->eventdev;
-	struct dpaa2_eventdev *priv = ev_dev->data->dev_private;
+
+	struct dpaa2_port *dpaa2_portal = port;
+	struct dpaa2_dpio_dev *dpio_dev;
 	uint32_t queue_id = ev[0].queue_id;
-	struct dpaa2_eventq *evq_info = &priv->evq_info[queue_id];
+	struct dpaa2_eventq *evq_info;
 	uint32_t fqid;
 	struct qbman_swp *swp;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t loop, frames_to_send;
 	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
 	uint16_t num_tx = 0;
-	int ret;
-
-	RTE_SET_USED(port);
+	int i, ret;
+	uint8_t channel_index;
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		/* Affine current thread context to a qman portal */
 		ret = dpaa2_affine_qbman_swp();
-		if (ret) {
+		if (ret < 0) {
 			DPAA2_EVENTDEV_ERR("Failure in affining portal");
 			return 0;
 		}
 	}
-
+	/* todo - dpaa2_portal shall have dpio_dev - no per thread variable */
+	dpio_dev = DPAA2_PER_LCORE_DPIO;
 	swp = DPAA2_PER_LCORE_PORTAL;
+
+	if (likely(dpaa2_portal->is_port_linked))
+		goto skip_linking;
+
+	/* Create mapping between portal and channel to receive packets */
+	for (i = 0; i < dpaa2_portal->num_linked_evq; i++) {
+		evq_info = &dpaa2_portal->evq_info[i];
+		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
+						      CMD_PRI_LOW,
+						      dpio_dev->token,
+						      evq_info->dpcon->dpcon_id,
+						      &channel_index);
+		if (ret < 0) {
+			DPAA2_EVENTDEV_ERR(
+				"Static dequeue config failed: err(%d)", ret);
+			goto err;
+		}
+
+		qbman_swp_push_set(swp, channel_index, 1);
+		evq_info->dpcon->channel_index = channel_index;
+	}
+	dpaa2_portal->is_port_linked = true;
+
+skip_linking:
+	evq_info = &dpaa2_portal->evq_info[queue_id];
 
 	while (nb_events) {
 		frames_to_send = (nb_events > dpaa2_eqcr_size) ?
@@ -134,8 +160,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 				qbman_eq_desc_set_dca(&eqdesc[loop], 1,
 						      dqrr_index, 0);
 				DPAA2_PER_LCORE_DQRR_SIZE--;
-				DPAA2_PER_LCORE_DQRR_HELD &=
-					~(1 << dqrr_index);
+				DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dqrr_index);
 			}
 
 			memset(&fd_arr[loop], 0, sizeof(struct qbman_fd));
@@ -145,7 +170,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 			 * to avoid copy
 			 */
 			struct rte_event *ev_temp = rte_malloc(NULL,
-				sizeof(struct rte_event), 0);
+						sizeof(struct rte_event), 0);
 
 			if (!ev_temp) {
 				if (!loop)
@@ -172,6 +197,16 @@ send_partial:
 	}
 
 	return num_tx;
+err:
+	for (int n = 0; n < i; n++) {
+		evq_info = &dpaa2_portal->evq_info[n];
+		qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
+		dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
+						dpio_dev->token,
+						evq_info->dpcon->dpcon_id);
+	}
+	return 0;
+
 }
 
 static uint16_t
@@ -571,15 +606,33 @@ dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
 {
 	struct dpaa2_port *dpaa2_portal = port;
 	int i;
+	struct dpaa2_dpio_dev *dpio_dev = NULL;
+	struct dpaa2_eventq *evq_info;
+	struct qbman_swp *swp;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
 	RTE_SET_USED(dev);
+	RTE_SET_USED(queues);
 
 	for (i = 0; i < nb_unlinks; i++) {
-		memset(&dpaa2_portal->evq_info[queues[i]], 0,
-		       sizeof(struct dpaa2_eventq));
-		dpaa2_portal->evq_info[queues[i]].event_port = NULL;
+		evq_info = &dpaa2_portal->evq_info[i];
+		if (!evq_info)
+			continue;
+
+		if (DPAA2_PER_LCORE_DPIO && evq_info->dpcon) {
+			/* todo - dpaa2_portal shall have dpio_dev - no per thread variable */
+			dpio_dev = DPAA2_PER_LCORE_DPIO;
+			swp = DPAA2_PER_LCORE_PORTAL;
+
+			qbman_swp_push_set(swp,
+					evq_info->dpcon->channel_index, 0);
+			dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
+						dpio_dev->token,
+						evq_info->dpcon->dpcon_id);
+		}
+		memset(evq_info, 0, sizeof(struct dpaa2_eventq));
+		dpaa2_portal->evq_info[i].event_port = NULL;
 		if (dpaa2_portal->num_linked_evq)
 			dpaa2_portal->num_linked_evq--;
 	}
