@@ -1804,7 +1804,7 @@ static inline int insert_hfn_ov_op(struct program *p,
 				   enum pdb_type_e pdb_type,
 				   unsigned char era_2_sw_hfn_override)
 {
-	uint32_t imm = 0x80000000;
+	uint32_t imm = PDCP_DPOVRD_HFN_OV_EN;
 	uint16_t hfn_pdb_offset;
 
 	if (rta_sec_era == RTA_SEC_ERA_2 && !era_2_sw_hfn_override)
@@ -1841,7 +1841,10 @@ static inline int insert_hfn_ov_op(struct program *p,
 		SEQSTORE(p, MATH0, 4, 4, 0);
 	}
 
-	JUMP(p, 5, LOCAL_JUMP, ALL_TRUE, MATH_Z);
+	if (rta_sec_era >= RTA_SEC_ERA_8)
+		JUMP(p, 6, LOCAL_JUMP, ALL_TRUE, MATH_Z);
+	else
+		JUMP(p, 5, LOCAL_JUMP, ALL_TRUE, MATH_Z);
 
 	if (rta_sec_era > RTA_SEC_ERA_2)
 		MATHB(p, DPOVRD, LSHIFT, shift, MATH0, 4, IMMED2);
@@ -1850,6 +1853,14 @@ static inline int insert_hfn_ov_op(struct program *p,
 
 	MATHB(p, MATH0, SHLD, MATH0, MATH0, 8, 0);
 	MOVE(p, MATH0, 0, DESCBUF, hfn_pdb_offset, 4, IMMED);
+
+	if (rta_sec_era >= RTA_SEC_ERA_8)
+		/*
+		 * For ERA8, DPOVRD could be handled by the PROTOCOL command
+		 * itself. For now, this is not done. Thus, clear DPOVRD here
+		 * to alleviate any side-effects.
+		 */
+		MATHB(p, DPOVRD, AND, ZERO, DPOVRD, 4, STL);
 
 	return 0;
 }
