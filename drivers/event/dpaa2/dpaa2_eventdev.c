@@ -113,8 +113,11 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 		goto skip_linking;
 
 	/* Create mapping between portal and channel to receive packets */
-	for (i = 0; i < dpaa2_portal->num_linked_evq; i++) {
+	for (i = 0; i < DPAA2_EVENT_MAX_QUEUES; i++) {
 		evq_info = &dpaa2_portal->evq_info[i];
+		if (!evq_info->event_port)
+			continue;
+
 		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
 						      CMD_PRI_LOW,
 						      dpio_dev->token,
@@ -200,6 +203,8 @@ send_partial:
 err:
 	for (int n = 0; n < i; n++) {
 		evq_info = &dpaa2_portal->evq_info[n];
+		if (!evq_info->event_port)
+			continue;
 		qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
 		dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
 						dpio_dev->token,
@@ -294,8 +299,11 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		goto skip_linking;
 
 	/* Create mapping between portal and channel to receive packets */
-	for (i = 0; i < dpaa2_portal->num_linked_evq; i++) {
+	for (i = 0; i < DPAA2_EVENT_MAX_QUEUES; i++) {
 		evq_info = &dpaa2_portal->evq_info[i];
+		if (!evq_info->event_port)
+			continue;
+
 		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
 						      CMD_PRI_LOW,
 						      dpio_dev->token,
@@ -354,6 +362,9 @@ skip_linking:
 err:
 	for (n = 0; n < i; n++) {
 		evq_info = &dpaa2_portal->evq_info[n];
+		if (!evq_info->event_port)
+			continue;
+
 		qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
 		dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
 							dpio_dev->token,
@@ -491,8 +502,7 @@ dpaa2_eventdev_queue_setup(struct rte_eventdev *dev, uint8_t queue_id,
 			   const struct rte_event_queue_conf *queue_conf)
 {
 	struct dpaa2_eventdev *priv = dev->data->dev_private;
-	struct dpaa2_eventq *evq_info =
-		&priv->evq_info[queue_id];
+	struct dpaa2_eventq *evq_info = &priv->evq_info[queue_id];
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
@@ -592,9 +602,9 @@ dpaa2_eventdev_port_link(struct rte_eventdev *dev, void *port,
 
 	for (i = 0; i < nb_links; i++) {
 		evq_info = &priv->evq_info[queues[i]];
-		memcpy(&dpaa2_portal->evq_info[i], evq_info,
+		memcpy(&dpaa2_portal->evq_info[queues[i]], evq_info,
 			   sizeof(struct dpaa2_eventq));
-		dpaa2_portal->evq_info[i].event_port = port;
+		dpaa2_portal->evq_info[queues[i]].event_port = port;
 		dpaa2_portal->num_linked_evq++;
 	}
 
@@ -617,9 +627,7 @@ dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
 	RTE_SET_USED(queues);
 
 	for (i = 0; i < nb_unlinks; i++) {
-		evq_info = &dpaa2_portal->evq_info[i];
-		if (!evq_info)
-			continue;
+		evq_info = &dpaa2_portal->evq_info[queues[i]];
 
 		if (DPAA2_PER_LCORE_DPIO && evq_info->dpcon) {
 			/* todo - dpaa2_portal shall have dpio_dev - no per thread variable */
@@ -633,7 +641,6 @@ dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
 						evq_info->dpcon->dpcon_id);
 		}
 		memset(evq_info, 0, sizeof(struct dpaa2_eventq));
-		dpaa2_portal->evq_info[i].event_port = NULL;
 		if (dpaa2_portal->num_linked_evq)
 			dpaa2_portal->num_linked_evq--;
 	}
