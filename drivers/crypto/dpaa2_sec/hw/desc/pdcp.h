@@ -201,6 +201,7 @@ enum pdcp_sn_size {
 #define PDCP_C_PLANE_PDB_HFN_THR_SHIFT		5
 
 #define PDCP_U_PLANE_PDB_OPT_SHORT_SN		0x2
+#define PDCP_U_PLANE_PDB_OPT_15B_SN		0x4
 #define PDCP_U_PLANE_PDB_SHORT_SN_HFN_SHIFT	7
 #define PDCP_U_PLANE_PDB_LONG_SN_HFN_SHIFT	12
 #define PDCP_U_PLANE_PDB_15BIT_SN_HFN_SHIFT	15
@@ -672,6 +673,13 @@ static inline int pdcp_insert_cplane_enc_only_op(struct program *p,
 	/* Insert Cipher Key */
 	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 	    cipherdata->keylen, INLINE_KEY(cipherdata));
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+				(uint16_t)cipherdata->algtype << 8);
+		return 0;
+	}
+
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
@@ -811,6 +819,19 @@ static inline int pdcp_insert_cplane_snow_aes_op(struct program *p,
 	REFERENCE(seq_out_read);
 	REFERENCE(jump_back_to_sd_cmd);
 	REFERENCE(move_mac_i_to_desc_buf);
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+				cipherdata->keylen, INLINE_KEY(cipherdata));
+		KEY(p, KEY2, authdata->key_enc_flags, authdata->key,
+				authdata->keylen, INLINE_KEY(authdata));
+
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+
+		return 0;
+	}
 
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
@@ -1092,6 +1113,14 @@ static inline int pdcp_insert_cplane_aes_snow_op(struct program *p,
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+
+		return 0;
+	}
+
 	if (dir == OP_TYPE_ENCAP_PROTOCOL)
 		MATHB(p, SEQINSZ, SUB, ONE, VSEQINSZ, 4, 0);
 
@@ -1184,6 +1213,14 @@ static inline int pdcp_insert_cplane_snow_zuc_op(struct program *p,
 	    INLINE_KEY(authdata));
 
 	SET_LABEL(p, keyjump);
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+		return 0;
+	}
+
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
@@ -1261,6 +1298,14 @@ static inline int pdcp_insert_cplane_aes_zuc_op(struct program *p,
 	    cipherdata->keylen, INLINE_KEY(cipherdata));
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+
+		return 0;
+	}
 
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, 7, 1, 0);
@@ -1344,6 +1389,14 @@ static inline int pdcp_insert_cplane_zuc_snow_op(struct program *p,
 	    cipherdata->keylen, INLINE_KEY(cipherdata));
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+
+		return 0;
+	}
 
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, 7, 1, 0);
@@ -1429,6 +1482,18 @@ static inline int pdcp_insert_cplane_zuc_aes_op(struct program *p,
 	if (rta_sec_era < RTA_SEC_ERA_5) {
 		pr_err("Invalid era for selected algorithm\n");
 		return -ENOTSUP;
+	}
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+				cipherdata->keylen, INLINE_KEY(cipherdata));
+		KEY(p, KEY2, authdata->key_enc_flags, authdata->key,
+				authdata->keylen, INLINE_KEY(authdata));
+
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
+			 ((uint16_t)cipherdata->algtype << 8) |
+			 (uint16_t)authdata->algtype);
+		return 0;
 	}
 
 	SEQLOAD(p, MATH0, 7, 1, 0);
@@ -1547,6 +1612,13 @@ static inline int pdcp_insert_uplane_15bit_op(struct program *p,
 	/* Insert Cipher Key */
 	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 	    cipherdata->keylen, INLINE_KEY(cipherdata));
+
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_USER,
+			 (uint16_t)cipherdata->algtype);
+		return 0;
+	}
+
 	SEQLOAD(p, MATH0, 6, 2, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MATHB(p, MATH0, AND, PDCP_U_PLANE_15BIT_SN_MASK, MATH1, 8,
@@ -1706,6 +1778,31 @@ static inline enum pdb_type_e cnstr_pdcp_c_plane_pdb(struct program *p,
 			},
 	};
 
+	if (rta_sec_era >= RTA_SEC_ERA_8) {
+		memset(&pdb, 0x00, sizeof(struct pdcp_pdb));
+
+		/* This is a HW issue. Bit 2 should be set to zero,
+		 * but it does not work this way. Override here.
+		 */
+		pdb.opt_res.rsvd = 0x00000002;
+
+		/* Copy relevant information from user to PDB */
+		pdb.hfn_res = hfn << PDCP_C_PLANE_PDB_HFN_SHIFT;
+		pdb.bearer_dir_res = (uint32_t)
+				((bearer << PDCP_C_PLANE_PDB_BEARER_SHIFT) |
+				 (direction << PDCP_C_PLANE_PDB_DIR_SHIFT));
+		pdb.hfn_thr_res =
+				hfn_threshold << PDCP_C_PLANE_PDB_HFN_THR_SHIFT;
+
+		/* copy PDB in descriptor*/
+		__rta_out32(p, pdb.opt_res.opt);
+		__rta_out32(p, pdb.hfn_res);
+		__rta_out32(p, pdb.bearer_dir_res);
+		__rta_out32(p, pdb.hfn_thr_res);
+
+		return PDCP_PDB_TYPE_FULL_PDB;
+	}
+
 	switch (pdb_mask[cipherdata->algtype][authdata->algtype]) {
 	case PDCP_PDB_TYPE_NO_PDB:
 		break;
@@ -1782,7 +1879,7 @@ static inline int cnstr_pdcp_u_plane_pdb(struct program *p,
 		break;
 
 	case PDCP_SN_SIZE_15:
-		pdb.opt_res.opt &= (uint32_t)(~PDCP_U_PLANE_PDB_OPT_SHORT_SN);
+		pdb.opt_res.opt = (uint32_t)(PDCP_U_PLANE_PDB_OPT_15B_SN);
 		pdb.hfn_res = hfn << PDCP_U_PLANE_PDB_15BIT_SN_HFN_SHIFT;
 		pdb.hfn_thr_res =
 			hfn_threshold<<PDCP_U_PLANE_PDB_15BIT_SN_HFN_THR_SHIFT;
