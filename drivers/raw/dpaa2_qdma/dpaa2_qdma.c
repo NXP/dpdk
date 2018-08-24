@@ -593,7 +593,7 @@ dpdmai_dev_dequeue_multijob(struct dpaa2_dpdmai_dev *dpdmai_dev,
 				DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 		io_meta = (struct qdma_io_meta *)(fle) - 1;
 		if (vq_id)
-			*vq_id = io_meta->id;
+			vq_id[num_pulled] = io_meta->id;
 
 		job[num_pulled] = (struct rte_qdma_job *)(size_t)io_meta->cnxt;
 		job[num_pulled]->status = DPAA2_GET_FD_ERR(fd);
@@ -617,9 +617,7 @@ rte_qdma_vq_dequeue_multi(uint16_t vq_id,
 	struct qdma_hw_queue *qdma_pq = qdma_vq->hw_queue;
 	struct qdma_virt_queue *temp_qdma_vq;
 	struct dpaa2_dpdmai_dev *dpdmai_dev = qdma_pq->dpdmai_dev;
-	int ring_count, ret, i;
-	int dequeue_budget = QDMA_DEQUEUE_BUDGET;
-	uint16_t temp_vq_id;
+	int ring_count, ret = 0, i;
 
 	/* Return error in case of wrong lcore_id */
 	if (rte_lcore_id() != (unsigned int)(qdma_vq->lcore_id)) {
@@ -632,8 +630,8 @@ rte_qdma_vq_dequeue_multi(uint16_t vq_id,
 	if (qdma_vq->num_enqueues == qdma_vq->num_dequeues)
 		return 0;
 
-	return dpdmai_dev_dequeue_multijob(dpdmai_dev,
-		qdma_pq->queue_id, NULL, job, nb_jobs);
+	if (qdma_vq->num_enqueues < (qdma_vq->num_dequeues + nb_jobs))
+		nb_jobs = (qdma_vq->num_enqueues -  qdma_vq->num_dequeues);
 
 	if (qdma_vq->exclusive_hw_queue) {
 		/* In case of exclusive queue directly fetch from HW queue */
@@ -646,6 +644,7 @@ rte_qdma_vq_dequeue_multi(uint16_t vq_id,
 		}
 		qdma_vq->num_dequeues += ret;
 	} else {
+		uint16_t temp_vq_id[RTE_QDMA_BURST_NB_MAX];
 		/*
 		 * Get the QDMA completed jobs from the software ring.
 		 * In case they are not available on the ring poke the HW
@@ -654,18 +653,15 @@ rte_qdma_vq_dequeue_multi(uint16_t vq_id,
 		ring_count = rte_ring_count(qdma_vq->status_ring);
 		if (ring_count < nb_jobs) {
 			/* TODO - How to have right budget */
-			for (i = 0; i < dequeue_budget; i++) {
-				ret = dpdmai_dev_dequeue_multijob(dpdmai_dev,
-					qdma_pq->queue_id, &temp_vq_id, job, 1);
-				if (ret == 0)
-					break;
-				temp_qdma_vq = &qdma_vqs[temp_vq_id];
+			ret = dpdmai_dev_dequeue_multijob(dpdmai_dev,
+					qdma_pq->queue_id,
+					temp_vq_id, job, nb_jobs);
+			for (i = 0; i < ret; i++) {
+				temp_qdma_vq = &qdma_vqs[temp_vq_id[i]];
 				rte_ring_enqueue(temp_qdma_vq->status_ring,
-					(void *)(&job));
+					(void *)(job[i]));
 				ring_count = rte_ring_count(
 					qdma_vq->status_ring);
-				if (ring_count == nb_jobs)
-					break;
 			}
 		}
 
