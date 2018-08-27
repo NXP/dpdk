@@ -5937,7 +5937,7 @@ test_pdcp_proto(int i, int oop,
 	}
 
 	if (memcmp(ciphertext, output_vec, output_vec_len)) {
-		printf("\n=============TestCase %d failed: Data Mismatch ", i);
+		printf("\n=======PDCP TestCase #%d failed: Data Mismatch ", i);
 		rte_hexdump(stdout, "encrypted", ciphertext, output_vec_len);
 		rte_hexdump(stdout, "reference", output_vec, output_vec_len);
 		return TEST_FAILED;
@@ -6885,7 +6885,7 @@ static int uplane_zuc_dl_15bit_decap(void)
 } while (0)
 
 static int
-test_pdcp_proto_cplane_encap_all(void)
+test_PDCP_PROTO_cplane_encap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -6921,13 +6921,14 @@ test_pdcp_proto_cplane_encap_all(void)
 	TEST_PDCP_COUNT(cplane_zuc_aes_dl_encap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_encap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_encap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_cplane_decap_all(void)
+test_PDCP_PROTO_cplane_decap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -6963,13 +6964,14 @@ test_pdcp_proto_cplane_decap_all(void)
 	TEST_PDCP_COUNT(cplane_zuc_aes_dl_decap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_decap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_decap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_uplane_encap_all(void)
+test_PDCP_PROTO_uplane_encap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -6997,13 +6999,14 @@ test_pdcp_proto_uplane_encap_all(void)
 	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_encap());
 	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_encap());
 	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_encap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_uplane_decap_all(void)
+test_PDCP_PROTO_uplane_decap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -7031,21 +7034,11 @@ test_pdcp_proto_uplane_decap_all(void)
 	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_decap());
 	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_decap());
 	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_decap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
-
-static int
-test_PDCP_LOOKASIDE_PROTOCOL_all(void)
-{
-	int ret = 0;
-	ret = test_pdcp_proto_cplane_encap_all();
-	ret |= test_pdcp_proto_cplane_decap_all();
-	ret |= test_pdcp_proto_uplane_encap_all();
-	ret |= test_pdcp_proto_uplane_decap_all();
-	return ret;
-}
 
 #endif
 
@@ -11042,7 +11035,16 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 
 		/** PDCP protocol test cases */
 		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_LOOKASIDE_PROTOCOL_all),
+			test_PDCP_PROTO_cplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_cplane_decap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_decap_all),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
@@ -11166,7 +11168,16 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_LOOKASIDE_PROTOCOL_all),
+			test_PDCP_PROTO_cplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_cplane_decap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_decap_all),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
