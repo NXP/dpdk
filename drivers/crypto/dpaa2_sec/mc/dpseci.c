@@ -155,7 +155,7 @@ int dpseci_create(struct fsl_mc_io *mc_io,
 		cmd_params->priorities2[i] = cfg->priorities[8 + i];
 	cmd_params->num_tx_queues = cfg->num_tx_queues;
 	cmd_params->num_rx_queues = cfg->num_rx_queues;
-	cmd_params->options = cfg->options;
+	cmd_params->options = cpu_to_le32(cfg->options);
 
 	/* send command to mc*/
 	err = mc_send_command(mc_io, &cmd);
@@ -337,7 +337,7 @@ int dpseci_get_attributes(struct fsl_mc_io *mc_io,
 	/* retrieve response parameters */
 	rsp_params = (struct dpseci_rsp_get_attr *)cmd.params;
 	attr->id = le32_to_cpu(rsp_params->id);
-	attr->options = rsp_params->options;
+	attr->options = le32_to_cpu(rsp_params->options);
 	attr->num_tx_queues = rsp_params->num_tx_queues;
 	attr->num_rx_queues = rsp_params->num_rx_queues;
 
@@ -606,6 +606,16 @@ int dpseci_get_api_version(struct fsl_mc_io *mc_io,
 	return 0;
 }
 
+/**
+ * dpseci_set_congestion_notification() - Set congestion group
+ *	notification configuration
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPSECI object
+ * @cfg:	congestion notification configuration
+ *
+ * Return:	'0' on success, error code otherwise
+ */
 int dpseci_set_congestion_notification(
 			struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
@@ -641,6 +651,16 @@ int dpseci_set_congestion_notification(
 	return mc_send_command(mc_io, &cmd);
 }
 
+/**
+ * dpseci_get_congestion_notification() - Get congestion group
+ *	notification configuration
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPSECI object
+ * @cfg:	congestion notification configuration
+ *
+ * Return:	'0' on success, error code otherwise
+ */
 int dpseci_get_congestion_notification(
 				struct fsl_mc_io *mc_io,
 				uint32_t cmd_flags,
