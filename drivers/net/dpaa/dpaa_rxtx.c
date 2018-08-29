@@ -295,7 +295,7 @@ static inline void dpaa_checksum_offload(struct rte_mbuf *mbuf,
 	prs->ip_off[0] = mbuf->l2_len;
 	prs->l4_off = mbuf->l3_len + mbuf->l2_len;
 	/* Enable L3 (and L4, if TCP or UDP) HW checksum*/
-	fd->cmd = DPAA_FD_CMD_RPD_BE | DPAA_FD_CMD_DTC_BE;
+	fd->cmd = DPAA_FD_CMD_RPD | DPAA_FD_CMD_DTC;
 }
 
 static inline void
