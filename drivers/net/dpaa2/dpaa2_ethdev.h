@@ -171,6 +171,8 @@ int dpaa2_eth_eventq_detach(const struct rte_eth_dev *dev,
 
 uint16_t dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 
+uint16_t dpaa2_dev_loopback_rx(void *queue, struct rte_mbuf **bufs,
+				uint16_t nb_pkts);
 uint16_t dpaa2_dev_prefetch_rx2(void *queue, struct rte_mbuf **bufs,
 				uint16_t nb_pkts);
 uint16_t dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs,
