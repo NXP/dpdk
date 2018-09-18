@@ -216,10 +216,10 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 	if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
 		if (data_room_size <= LS1043_MAX_BUF_SIZE)
 			data_room_size = LS1043_MAX_BUF_SIZE - priv_size;
-		else {
-			RTE_LOG(ERR, MBUF, "Buf size not supported\n");
-			return NULL;
-		}
+		else
+			RTE_LOG(ERR, MBUF,
+			"Buf size (%d) > %d is not supported, MAY NOT WORK\n",
+			data_room_size, LS1043_MAX_BUF_SIZE);
 	}
 #endif
 	elt_size = sizeof(struct rte_mbuf) + (unsigned)priv_size +
