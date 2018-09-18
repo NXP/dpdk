@@ -58,10 +58,19 @@
  */
 #define DPAA2_TX_CGR_OFF	0x01
 
+/* Drop packets with parsing error in hw */
+#define DPAA2_PARSE_ERR_DROP	0x02
+
 /* Disable RX tail drop, default is enable */
 #define DPAA2_RX_TAILDROP_OFF	0x04
 /* Tx confirmation enabled */
 #define DPAA2_TX_CONF_ENABLE	0x08
+
+/* Disable prefetch Rx mode to get exact requested packets */
+#define DPAA2_NO_PREFETCH_RX	0x08
+
+/* Driver level loop mode to simply transmit the ingress traffic */
+#define DPAA2_RX_LOOPBACK_MODE	0x10
 
 #define DPAA2_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_L2_PAYLOAD | \
