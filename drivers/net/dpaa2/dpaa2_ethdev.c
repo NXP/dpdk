@@ -797,6 +797,14 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			cfg.flc.value |= 0x10;
 		else
 			cfg.flc.value |= 0x14;
+
+		/* Bits 4 & 5 of flc value represents data stashing.
+		 * Switch off these bits from flc when data stashing is
+		 * configured to be off.
+		 */
+		if (getenv("DPAA2_DATA_STASHING_OFF"))
+			cfg.flc.value &= 0xFFFFFFFFFFFFFFCF;
+
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);
@@ -2599,6 +2607,19 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	dpni_dev->regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
 	eth_dev->process_private = (void *)dpni_dev;
 
+	/* RX no prefetch mode? */
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)
+		|| getenv("DPAA2_NO_PREFETCH_RX")) {
+		priv->flags |= DPAA2_NO_PREFETCH_RX;
+		DPAA2_PMD_INFO("No RX prefetch mode");
+	}
+
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)
+		|| getenv("DPAA2_LOOPBACK")) {
+		priv->flags |= DPAA2_RX_LOOPBACK_MODE;
+		DPAA2_PMD_INFO("Rx loopback mode");
+	}
+
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		/* In case of secondary, only burst and ops API need to be
@@ -2606,10 +2627,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		 */
 		eth_dev->dev_ops = &dpaa2_ethdev_ops;
 		eth_dev->rx_queue_count = dpaa2_dev_rx_queue_count;
-		if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE))
+		if (priv->flags & DPAA2_RX_LOOPBACK_MODE)
 			eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
-		else if (dpaa2_get_devargs(dev->devargs,
-					DRIVER_NO_PREFETCH_MODE))
+		else if (priv->flags & DPAA2_NO_PREFETCH_RX)
 			eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		else
 			eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
@@ -2696,6 +2716,17 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA2_PMD_INFO("Enable error queue");
 	}
 
+	if (getenv("DPAA2_RX_TAILDROP_OFF"))
+		priv->flags |= DPAA2_RX_TAILDROP_OFF;
+
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		DPAA2_PMD_INFO("Drop parse error packets in hw");
+	}
+	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
+		dpaa2_enable_err_queue = 1;
+
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
@@ -2760,10 +2791,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)) {
+	if (priv->flags & DPAA2_RX_LOOPBACK_MODE) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
 		DPAA2_PMD_INFO("Loopback mode");
-	} else if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)) {
+	} else if (priv->flags & DPAA2_NO_PREFETCH_RX) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		DPAA2_PMD_INFO("No Prefetch mode");
 	} else {

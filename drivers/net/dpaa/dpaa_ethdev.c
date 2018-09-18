@@ -1929,6 +1929,18 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	memset(cgrid, 0, sizeof(cgrid));
 	memset(cgrid_tx, 0, sizeof(cgrid_tx));
 
+	/* if DPAA_RX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
+	 * Rx tail drop is disabled.
+	 */
+	if (getenv("DPAA_RX_TAILDROP_THRESHOLD")) {
+		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_THRESHOLD"));
+		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
+			       td_threshold);
+		/* if a very large value is being configured */
+		if (td_threshold > UINT16_MAX)
+			td_threshold = CGR_RX_PERFQ_THRESH;
+	}
+
 	/* if DPAA_TX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Tx tail drop is disabled.
 	 */
