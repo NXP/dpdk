@@ -388,7 +388,8 @@ print_usage(const char *prgname)
 		"	QueueID mode, Event Queue ID,"
 		"	Event Priority,Eventdev ID)\n"
 		"  -l : Event port and Event Queue link configuration\n"
-		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n",
+		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n",
 		prgname);
 }
 
