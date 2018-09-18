@@ -509,6 +509,14 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			cfg.flc.value |= 0x10;
 		else
 			cfg.flc.value |= 0x14;
+
+		/* Bits 4 & 5 of flc value represents data stashing.
+		 * Switch off these bits from flc when data stashing is
+		 * configured to be off.
+		 */
+		if (getenv("DPAA2_DATA_STASHING_OFF"))
+			cfg.flc.value &= 0xFFFFFFFFFFFFFFCF;
+
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);

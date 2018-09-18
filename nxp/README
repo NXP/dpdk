@@ -817,6 +817,10 @@ DPAA2:
 
 7. DPAA2_NO_PREFETCH_RX		Disable prefetch RX mode - better latency and allows different
 				size of pull request in each call.
+
+8. DPAA2_DATA_STASHING_OFF	Switch off data stashing when this flag is enabled. This gives
+				better performance on LS1088 with number of cores >= 4.
+
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
