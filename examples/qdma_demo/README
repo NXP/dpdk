@@ -1,0 +1,164 @@
+qdma_demo Application
+---------------------
+
+1. Description
+  This application demonstrates usage of QDMA driver API in order to do QDMA
+  transfer over PCIE. The setup is as given below:
+
+  PCIe Root (Host) device  <== PCI link ==> PCIe End point device
+
+  qdma_demo runs on PCIE root device and it does data transfer between local
+  memory of PCI host to the memory of End point over PCI link.
+
+  The application has been tested uisng following hardware:
+  - PCIe Root (host) - LX2 RDB
+  - PCIe end point - LX2 RDB
+  - PCIe link - x4 gen2.
+
+2. Assumptions
+  - The end point exposes the targeted memory of test using one of the BARs
+  - Host Enumerates the End point correctly and assigns the addresses to the BAR
+    which is used as target of memory transfer.
+  - Host can read the End point BAR using tool like lspci.
+
+3. Compilation
+
+   Variables & Macros to be set before test:
+   -----------------------------------------
+   - g_packet_size - Size of each transfer in bytes.
+   - g_rbp_testcase - MEM_TO_MEM (Mem to Mem on Host), MEM_TO_PCI (RC Mem to EP MEM)
+   - TEST_PCI_SIZE_LIMIT - Size of test memory to use in EP (Less than equal to BAR)
+   - TEST_PCIBUS_BASE_ADDR - Address of EP BAR in host memory space (checked using lspci)
+
+   compilation command
+   -------------------
+   make -C examples/qdma_demo/
+
+4. Steps of execution
+
+  End Point steps
+  ===============
+  a) Boot LX2 to u-boot prompt only
+
+  Root complex (host)steps
+  ========================
+  a) Boot LX2 to Linux prompt
+  b) run 'lspci -v' to check the address of BAR whose memory is targeted memory for test
+    $ lspci -v
+ 
+    0000:01:00.1 Unassigned class [ffff]: Freescale Semiconductor Inc Device 8d80 (rev 10) (prog-if 01)
+        Subsystem: Device 1862:0001
+        Flags: bus master, fast devsel, latency 0
+        Memory at 9060044000 (32-bit, non-prefetchable) [size=8K]
+        Memory at 9060046000 (32-bit, non-prefetchable) [size=8K]
+        Memory at 9060484000 (64-bit, prefetchable) [size=8K]
+        Memory at 9060486000 (64-bit, prefetchable) [size=8K]
+
+    Take the address of BAR you want to use in test and set it as value of
+    TEST_PCIBUS_BASE_ADDR explained in step 3
+   
+    c) Run qdma_demo application
+
+	$export DPDMAI_COUNT=48
+	$./dynamic_dpl.sh dpmac.3
+	$export DPRC=dprc.2
+	$./qdma_demo -c 0x8001
+
+	EAL: Detected 16 lcore(s)
+	EAL: Probing VFIO support...
+	EAL: VFIO support initialized
+	EAL: PCI device 0001:01:00.0 on NUMA socket -1
+	EAL:   Invalid NUMA socket, default to 0
+	EAL:   probe driver: 8086:10d3 net_e1000_em
+	PMD: dpni.2: netdev created
+	PMD: dpsec-0 cryptodev created
+	PMD: dpsec-1 cryptodev created
+	PMD: dpsec-2 cryptodev created
+	PMD: dpsec-3 cryptodev created
+	PMD: dpsec-4 cryptodev created
+	PMD: dpsec-5 cryptodev created
+	PMD: dpsec-6 cryptodev created
+	PMD: dpsec-7 cryptodev created
+	Rate:79.99998 cpu freq:2000 MHz
+	Spend :2000.000 ms
+	[0] job ptr 0xffff9e67f000
+	[1] job ptr 0xffff9e67e000
+	[2] job ptr 0xffff9e67d000
+	[3] job ptr 0xffff9e67c000
+	[4] job ptr 0xffff9e67b000
+	[5] job ptr 0xffff9e67a000
+	[6] job ptr 0xffff9e679000
+	[7] job ptr 0xffff9e678000
+	[8] job ptr 0xffff9e677000
+	[9] job ptr 0xffff9e676000
+	[10] job ptr 0xffff9e675000
+	[11] job ptr 0xffff9e674000
+	[12] job ptr 0xffff9e673000
+	[13] job ptr 0xffff9e672000
+	[14] job ptr 0xffff9e671000
+	[15] job ptr 0xffff9e670000
+	core id:0 g_vqid[0]:0 g_vqid[16]:1
+	core id:1 g_vqid[1]:2 g_vqid[17]:3
+	core id:2 g_vqid[2]:4 g_vqid[18]:5
+	core id:3 g_vqid[3]:6 g_vqid[19]:7
+	core id:4 g_vqid[4]:8 g_vqid[20]:9
+	core id:5 g_vqid[5]:10 g_vqid[21]:11
+	core id:6 g_vqid[6]:12 g_vqid[22]:13
+	core id:7 g_vqid[7]:14 g_vqid[23]:15
+	core id:8 g_vqid[8]:16 g_vqid[24]:17
+	core id:9 g_vqid[9]:18 g_vqid[25]:19
+	core id:10 g_vqid[10]:20 g_vqid[26]:21
+	core id:11 g_vqid[11]:22 g_vqid[27]:23
+	core id:12 g_vqid[12]:24 g_vqid[28]:25
+	core id:13 g_vqid[13]:26 g_vqid[29]:27
+	core id:14 g_vqid[14]:28 g_vqid[30]:29
+	core id:15 g_vqid[15]:30 g_vqid[31]:31
+	cores:0 packet count:0
+
+	test memory size: 0x2000 packets number:8 packet size: 1024
+	Local mem phy addr: ffff9e683000 addr1: ffff9e680000 g_jobs[0]:0xffff9e67f000
+
+
+	Using long format to test: packet size 1024 Bytes, MEM_TO_PCI
+	coreid: 0 ready, now!
+	coreid: 15 ready, now!
+	Spend :4000.002 ms cnt:3342336 pkt_cnt:0
+		Speed: 6845.101 Mbps 835.584 Kpps
+
+	 pkt cnt: 3342336 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
+		Speed: 6979.323 Mbps 851.968 Kpps
+
+	 pkt cnt: 3407872 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
+		Speed: 6979.323 Mbps 851.968 Kpps
+
+	 pkt cnt: 3407872 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	Spend :3999.999 ms cnt:3473408 pkt_cnt:0
+		Speed: 7113.541 Mbps 868.352 Kpps
+
+	 pkt cnt: 3473408 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
+		Speed: 6979.323 Mbps 851.968 Kpps
+
+	 pkt cnt: 3407872 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	 pkt cnt: 0 0 0 0
+	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
+		Speed: 6979.323 Mbps 851.968 Kpps
+
+	 pkt cnt: 3407872 0 0 0
+
