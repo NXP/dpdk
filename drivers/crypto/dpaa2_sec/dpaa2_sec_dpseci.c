@@ -147,6 +147,13 @@ build_proto_compound_fd(dpaa2_sec_session *sess,
 	DPAA2_SET_FD_LEN(fd, ip_fle->length);
 	DPAA2_SET_FLE_FIN(ip_fle);
 
+	if (sess->ctxt_type == DPAA2_SEC_PDCP && sess->pdcp.hfn_ovd) {
+		/*enable HFN override override */
+		DPAA2_SET_FLE_INTERNAL_JD(ip_fle, sess->pdcp.hfn_ovd);
+		DPAA2_SET_FLE_INTERNAL_JD(op_fle, sess->pdcp.hfn_ovd);
+		DPAA2_SET_FD_INTERNAL_JD(fd, sess->pdcp.hfn_ovd);
+	}
+
 	return 0;
 
 }
