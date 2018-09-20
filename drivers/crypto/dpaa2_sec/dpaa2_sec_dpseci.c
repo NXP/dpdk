@@ -2625,6 +2625,11 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	struct alginfo authdata, cipherdata;
 	int bufsize = -1;
 	struct sec_flow_context *flc;
+#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
+	int swap = true;
+#else
+	int swap = false;
+#endif
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2684,6 +2689,14 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		session->cipher_alg = RTE_CRYPTO_CIPHER_NULL;
 		session->dir = DIR_ENC;
 	}
+
+	session->pdcp.domain = pdcp_xform->domain;
+	session->pdcp.bearer = pdcp_xform->bearer;
+	session->pdcp.pkt_dir = pdcp_xform->pkt_dir;
+	session->pdcp.sn_size = pdcp_xform->sn_size;
+	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovd;
+	session->pdcp.hfn = pdcp_xform->hfn;
+	session->pdcp.hfn_threshold = pdcp_xform->hfn_threshold;
 
 	cipherdata.key = (size_t)session->cipher_key.data;
 	cipherdata.keylen = session->cipher_key.length;
@@ -2762,7 +2775,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 
 		if (session->dir == DIR_ENC)
 			bufsize = cnstr_shdsc_pdcp_c_plane_encap(
-					priv->flc_desc[0].desc, 1, 0,
+					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
@@ -2771,7 +2784,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					0);
 		else if (session->dir == DIR_DEC)
 			bufsize = cnstr_shdsc_pdcp_c_plane_decap(
-					priv->flc_desc[0].desc, 1, 0,
+					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
@@ -2781,7 +2794,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	} else {
 		if (session->dir == DIR_ENC)
 			bufsize = cnstr_shdsc_pdcp_u_plane_encap(
-					priv->flc_desc[0].desc, 1, 0,
+					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->sn_size,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,
@@ -2790,7 +2803,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					&cipherdata, 0);
 		else if (session->dir == DIR_DEC)
 			bufsize = cnstr_shdsc_pdcp_u_plane_decap(
-					priv->flc_desc[0].desc, 1, 0,
+					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->sn_size,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,

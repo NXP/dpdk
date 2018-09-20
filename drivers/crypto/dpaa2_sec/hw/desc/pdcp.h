@@ -41,7 +41,8 @@
  *                        is constant (5 bits) as opposed to PDCP Data Plane
  *                        (7/12/15 bits).
  */
-#define PDCP_C_PLANE_SN_MASK		0x0000001F
+#define PDCP_C_PLANE_SN_MASK		0x1F000000
+#define PDCP_C_PLANE_SN_MASK_BE		0x0000001F
 
 /**
  * PDCP_U_PLANE_15BIT_SN_MASK - This mask is used in the PDCP descriptors for
@@ -50,7 +51,8 @@
  *                              the SN is constant (5 bits) as opposed to PDCP
  *                              Data Plane (7/12/15 bits).
  */
-#define PDCP_U_PLANE_15BIT_SN_MASK	0x00007FFF
+#define PDCP_U_PLANE_15BIT_SN_MASK	0xFF7F0000
+#define PDCP_U_PLANE_15BIT_SN_MASK_BE	0x00007FFF
 
 /**
  * PDCP_BEARER_MASK - This mask is used masking out the bearer for PDCP
@@ -65,7 +67,8 @@
  * The lower 32 bits of the mask are used for masking the direction for AES
  * CMAC IV.
  */
-#define PDCP_BEARER_MASK		0xFFFFFFFF04000000ull
+#define PDCP_BEARER_MASK		0x00000004FFFFFFFFull
+#define PDCP_BEARER_MASK_BE		0xFFFFFFFF04000000ull
 
 /**
  * PDCP_DIR_MASK - This mask is used masking out the direction for PDCP
@@ -80,7 +83,8 @@
  * The upper 32 bits of the mask are used for masking the direction for AES
  * CMAC IV.
  */
-#define PDCP_DIR_MASK			0xF800000000000000ull
+#define PDCP_DIR_MASK			0x00000000000000F8ull
+#define PDCP_DIR_MASK_BE			0xF800000000000000ull
 
 /**
  * PDCP_NULL_INT_MAC_I_VAL - The value of the PDCP PDU MAC-I in case NULL
@@ -242,6 +246,7 @@ enum pdb_type_e {
  * NULL integrity).
  */
 static inline int pdcp_insert_cplane_null_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata __maybe_unused,
 		struct alginfo *authdata __maybe_unused,
 		unsigned dir,
@@ -400,6 +405,7 @@ static inline int insert_copy_frame_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_int_only_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata __maybe_unused,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -426,17 +432,34 @@ static inline int pdcp_insert_cplane_int_only_op(struct program *p,
 			SEQFIFOLOAD(p, SKIP, 4, 0);
 		}
 
-		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1,  8,
-		      IFB | IMMED2);
-		MATHB(p, MATH1, SHLD, MATH1, MATH1,  8, 0);
-		MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
-		MATHB(p, MATH2, AND, PDCP_BEARER_MASK, MATH2, 8,
-		      IMMED2);
-		MOVE(p, DESCBUF, 0x0C, MATH3, 0, 4, WAITCOMP | IMMED);
-		MATHB(p, MATH3, AND, PDCP_DIR_MASK, MATH3, 8,
-		      IMMED2);
-		MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-		MOVE(p, MATH2, 0, CONTEXT2, 0, 0x0C, WAITCOMP | IMMED);
+		if (swap == false) {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1,  8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1,  8, 0);
+
+			MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+
+			MATHB(p, MATH2, AND, PDCP_BEARER_MASK, MATH2, 8,
+			      IMMED2);
+			MOVEB(p, DESCBUF, 0x0C, MATH3, 0, 4, WAITCOMP | IMMED);
+			MATHB(p, MATH3, AND, PDCP_DIR_MASK, MATH3, 8, IMMED2);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVEB(p, MATH2, 0, CONTEXT2, 0, 0x0C, WAITCOMP | IMMED);
+		} else {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1,  8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1,  8, 0);
+
+			MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+			MATHB(p, MATH2, AND, PDCP_BEARER_MASK_BE, MATH2, 8,
+			      IMMED2);
+
+			MOVE(p, DESCBUF, 0x0C, MATH3, 0, 4, WAITCOMP | IMMED);
+			MATHB(p, MATH3, AND, PDCP_DIR_MASK_BE, MATH3, 8,
+			      IMMED2);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVE(p, MATH2, 0, CONTEXT2, 0, 0x0C, WAITCOMP | IMMED);
+		}
 
 		if (dir == OP_TYPE_DECAP_PROTOCOL) {
 			MATHB(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, MATH1, 4,
@@ -526,12 +549,24 @@ static inline int pdcp_insert_cplane_int_only_op(struct program *p,
 			SEQFIFOLOAD(p, SKIP, 4, 0);
 		}
 
-		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
-		      IFB | IMMED2);
-		MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-		MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
-		MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-		MOVE(p, MATH2, 0, IFIFOAB1, 0, 8, IMMED);
+		if (swap == false) {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
+
+			MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVEB(p, MATH2, 0, IFIFOAB1, 0, 8, IMMED);
+		} else {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1, 8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
+
+			MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVE(p, MATH2, 0, IFIFOAB1, 0, 8, IMMED);
+		}
+
 		if (dir == OP_TYPE_DECAP_PROTOCOL) {
 			MATHB(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, MATH1, 4,
 			      IMMED2);
@@ -618,13 +653,24 @@ static inline int pdcp_insert_cplane_int_only_op(struct program *p,
 		SEQLOAD(p, MATH0, 7, 1, 0);
 		JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 		SEQINPTR(p, 0, 1, RTO);
-		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
-		      IFB | IMMED2);
-		MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-		MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
-		MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-		MOVE(p, MATH2, 0, CONTEXT2, 0, 8, IMMED);
+		if (swap == false) {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 
+			MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVEB(p, MATH2, 0, CONTEXT2, 0, 8, IMMED);
+
+		} else {
+			MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1, 8,
+			      IFB | IMMED2);
+			MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
+
+			MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+			MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
+			MOVE(p, MATH2, 0, CONTEXT2, 0, 8, IMMED);
+		}
 		if (dir == OP_TYPE_DECAP_PROTOCOL)
 			MATHB(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, MATH1, 4,
 			      IMMED2);
@@ -665,6 +711,7 @@ static inline int pdcp_insert_cplane_int_only_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_enc_only_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata __maybe_unused,
 		unsigned dir,
@@ -682,7 +729,12 @@ static inline int pdcp_insert_cplane_enc_only_op(struct program *p,
 
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1, 8,
+			IFB | IMMED2);
 	SEQSTORE(p, MATH0, 7, 1, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
@@ -786,6 +838,7 @@ static inline int pdcp_insert_cplane_enc_only_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_acc_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -804,6 +857,7 @@ static inline int pdcp_insert_cplane_acc_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_snow_aes_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -835,7 +889,12 @@ static inline int pdcp_insert_cplane_snow_aes_op(struct program *p,
 
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1, 8,
+			IFB | IMMED2);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
@@ -1103,6 +1162,7 @@ static inline int pdcp_insert_cplane_snow_aes_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_aes_snow_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -1127,15 +1187,30 @@ static inline int pdcp_insert_cplane_aes_snow_op(struct program *p,
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK_BE, MATH1, 8,
+			IFB | IMMED2);
+
 	SEQSTORE(p, MATH0, 7, 1, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH1, 8, 0);
 	MOVE(p, MATH1, 0, CONTEXT1, 16, 8, IMMED);
 	MOVE(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
-	MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2, 4, IMMED2);
-	MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3, 4, IMMED2);
+	if (swap == false) {
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2, 4,
+			IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3, 4,
+			IMMED2);
+	} else {
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK_BE), MATH2,
+			4, IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK_BE), MATH3,
+			4, IMMED2);
+	}
 	MATHB(p, MATH3, SHLD, MATH3, MATH3, 8, 0);
 	MOVE(p, MATH2, 4, OFIFO, 0, 12, IMMED);
 	MOVE(p, OFIFO, 0, CONTEXT2, 4, 12, IMMED);
@@ -1193,6 +1268,7 @@ static inline int pdcp_insert_cplane_aes_snow_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_snow_zuc_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -1224,7 +1300,13 @@ static inline int pdcp_insert_cplane_snow_zuc_op(struct program *p,
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
@@ -1280,6 +1362,7 @@ static inline int pdcp_insert_cplane_snow_zuc_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_aes_zuc_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -1311,7 +1394,12 @@ static inline int pdcp_insert_cplane_aes_zuc_op(struct program *p,
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
@@ -1371,6 +1459,7 @@ static inline int pdcp_insert_cplane_aes_zuc_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_zuc_snow_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -1402,14 +1491,29 @@ static inline int pdcp_insert_cplane_zuc_snow_op(struct program *p,
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH1, 8, 0);
 	MOVE(p, MATH1, 0, CONTEXT1, 0, 8, IMMED);
 	MOVE(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
-	MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2, 4, IMMED2);
-	MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3, 4, IMMED2);
+	if (swap == false) {
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2,
+			4, IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3,
+			4, IMMED2);
+	} else {
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK_BE), MATH2,
+			4, IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK_BE), MATH3,
+			4, IMMED2);
+	}
 	MATHB(p, MATH3, SHLD, MATH3, MATH3, 8, 0);
 	MOVE(p, MATH2, 4, OFIFO, 0, 12, IMMED);
 	MOVE(p, OFIFO, 0, CONTEXT2, 4, 12, IMMED);
@@ -1474,6 +1578,7 @@ static inline int pdcp_insert_cplane_zuc_snow_op(struct program *p,
 }
 
 static inline int pdcp_insert_cplane_zuc_aes_op(struct program *p,
+		bool swap __maybe_unused,
 		struct alginfo *cipherdata,
 		struct alginfo *authdata,
 		unsigned dir,
@@ -1498,7 +1603,13 @@ static inline int pdcp_insert_cplane_zuc_aes_op(struct program *p,
 
 	SEQLOAD(p, MATH0, 7, 1, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8, IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_C_PLANE_SN_MASK, MATH1, 8,
+			IFB | IMMED2);
+
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
@@ -1605,6 +1716,7 @@ static inline int pdcp_insert_cplane_zuc_aes_op(struct program *p,
 }
 
 static inline int pdcp_insert_uplane_15bit_op(struct program *p,
+					      bool swap __maybe_unused,
 					      struct alginfo *cipherdata,
 					      unsigned dir)
 {
@@ -1621,8 +1733,12 @@ static inline int pdcp_insert_uplane_15bit_op(struct program *p,
 
 	SEQLOAD(p, MATH0, 6, 2, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MATHB(p, MATH0, AND, PDCP_U_PLANE_15BIT_SN_MASK, MATH1, 8,
-	      IFB | IMMED2);
+	if (swap == false)
+		MATHB(p, MATH0, AND, PDCP_U_PLANE_15BIT_SN_MASK, MATH1, 8,
+		      IFB | IMMED2);
+	else
+		MATHB(p, MATH0, AND, PDCP_U_PLANE_15BIT_SN_MASK_BE, MATH1, 8,
+		      IFB | IMMED2);
 	SEQSTORE(p, MATH0, 6, 2, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
@@ -1942,7 +2058,7 @@ static inline int cnstr_shdsc_pdcp_c_plane_encap(uint32_t *descbuf,
 {
 	static int
 		(*pdcp_cp_fp[PDCP_CIPHER_TYPE_INVALID][PDCP_AUTH_TYPE_INVALID])
-			(struct program*, struct alginfo *,
+			(struct program*, bool swap, struct alginfo *,
 			 struct alginfo *, unsigned,
 			unsigned char __maybe_unused) = {
 		{	/* NULL */
@@ -2032,6 +2148,7 @@ static inline int cnstr_shdsc_pdcp_c_plane_encap(uint32_t *descbuf,
 		return err;
 
 	err = pdcp_cp_fp[cipherdata->algtype][authdata->algtype](p,
+		swap,
 		cipherdata,
 		authdata,
 		OP_TYPE_ENCAP_PROTOCOL,
@@ -2085,7 +2202,7 @@ static inline int cnstr_shdsc_pdcp_c_plane_decap(uint32_t *descbuf,
 {
 	static int
 		(*pdcp_cp_fp[PDCP_CIPHER_TYPE_INVALID][PDCP_AUTH_TYPE_INVALID])
-			(struct program*, struct alginfo *,
+			(struct program*, bool swap, struct alginfo *,
 			 struct alginfo *, unsigned, unsigned char) = {
 		{	/* NULL */
 			pdcp_insert_cplane_null_op,	/* NULL */
@@ -2174,6 +2291,7 @@ static inline int cnstr_shdsc_pdcp_c_plane_decap(uint32_t *descbuf,
 		return err;
 
 	err = pdcp_cp_fp[cipherdata->algtype][authdata->algtype](p,
+		swap,
 		cipherdata,
 		authdata,
 		OP_TYPE_DECAP_PROTOCOL,
@@ -2294,7 +2412,7 @@ static inline int cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 			break;
 
 		default:
-			err = pdcp_insert_uplane_15bit_op(p, cipherdata,
+			err = pdcp_insert_uplane_15bit_op(p, swap, cipherdata,
 				OP_TYPE_ENCAP_PROTOCOL);
 			if (err)
 				return err;
@@ -2420,7 +2538,7 @@ static inline int cnstr_shdsc_pdcp_u_plane_decap(uint32_t *descbuf,
 			break;
 
 		default:
-			err = pdcp_insert_uplane_15bit_op(p, cipherdata,
+			err = pdcp_insert_uplane_15bit_op(p, swap, cipherdata,
 				OP_TYPE_DECAP_PROTOCOL);
 			if (err)
 				return err;
