@@ -447,7 +447,7 @@ static inline uint16_t dpdmai_dev_set_fd(struct qbman_fd *fd,
 	 */
 	ret = rte_mempool_get(qdma_dev.fle_pool, (void **)(&io_meta));
 	if (ret) {
-		DPAA2_QDMA_DP_WARN("Memory alloc failed for FLE");
+		DPAA2_QDMA_DP_DEBUG("Memory alloc failed for FLE");
 		return ret;
 	}
 
