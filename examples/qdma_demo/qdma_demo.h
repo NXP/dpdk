@@ -45,5 +45,13 @@
 #define LSINIC_QDMA_MAX_VQS			2048
 
 extern struct qdma_virt_queue qdma_vqs[];
-
+struct qdma_test_case {
+	const char *name;
+	const char *help;
+	int id;
+};
+#define TEST_CASE_NAME_SIZE 30
+#define ARG_PCI_ADDR (1 << 0)
+#define ARG_SIZE (1 << 1)
+#define ARG_TEST_ID (1 << 2)
 #endif

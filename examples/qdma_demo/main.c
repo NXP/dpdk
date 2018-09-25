@@ -11,6 +11,8 @@
 #include <pthread.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <getopt.h>
 
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
@@ -61,22 +63,34 @@ char *g_buf1;
 rte_iova_t g_iova;
 rte_iova_t g_iova1;
 
+struct qdma_test_case test_case[] = {
+	{"pci_to_pci", "EP mem to EP mem qdma from host", PCI_TO_PCI},
+	{"mem_to_pci", "Host mem to EP mem qdma from host", MEM_TO_PCI},
+	{"pci_to_mem", "EP me to host mem qdma from host", PCI_TO_MEM},
+	{"mem_to_mem", "Host mem to Host mem qdma, pci_addr not needed",
+		 MEM_TO_MEM},
+};
+int test_case_array_size = ARRAY_SIZE(test_case);
 
+/*Configurable options*/
 int g_frame_format = LONG_FMT;
 int g_userbp = NO_RBP;
-
 int g_rbp_testcase = MEM_TO_PCI;
-struct rte_qdma_job *g_jobs[16];
-
-volatile uint8_t quit_signal;
-
-int32_t total_cores;
+uint32_t g_arg_mask;
+uint64_t g_target_pci_addr = TEST_PCICPU_BASE_ADDR;
 int g_packet_size = 1024;
 int g_packet_num = (54 * 1024);
+
 rte_spinlock_t test_lock;
+struct rte_qdma_job *g_jobs[16];
+volatile uint8_t quit_signal;
+int32_t total_cores;
 
 static int TEST_DMA_INIT_FLAG;
 static int test_dma_init(void);
+static void qdma_demo_usage(void);
+static int qdma_parse_long_arg(char *optarg, struct option *lopt);
+static int qdma_demo_validate_args(void);
 
 int
 test_dma_init(void)
@@ -145,7 +159,7 @@ lcore_hello(__attribute__((unused))
 		RTE_LOG(ERR, PMD, "Fail to open /dev/mem\n");
 		return 0;
 	}
-	start = (TEST_PCICPU_BASE_ADDR) & PAGE_MASK;
+	start = (g_target_pci_addr) & PAGE_MASK;
 	len = TEST_PCI_SIZE_LIMIT & PAGE_MASK;
 	if (len < (size_t) PAGE_SIZE)
 		len = PAGE_SIZE;
@@ -220,7 +234,7 @@ lcore_hello(__attribute__((unused))
 					(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
 				else
 					job->dest =
-					(TEST_PCICPU_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
+					(g_target_pci_addr + (long) (i * TEST_PACKET_SIZE));
 
 			}
 		      else if (g_rbp_testcase == MEM_TO_MEM) {
@@ -239,10 +253,10 @@ lcore_hello(__attribute__((unused))
 			    }
 			  else {
 			      job->dest =
-				(TEST_PCICPU_BASE_ADDR + TEST_PCI_SIZE_LIMIT +
+				(g_target_pci_addr + TEST_PCI_SIZE_LIMIT +
 				 (long) (i * TEST_PACKET_SIZE));
 			      job->src =
-				(TEST_PCICPU_BASE_ADDR +
+				(g_target_pci_addr+
 				 (long) ((i * TEST_PACKET_SIZE)));
 			    }
 			}
@@ -254,7 +268,7 @@ lcore_hello(__attribute__((unused))
 			    }
 			  else {
 			      job->src =
-				(TEST_PCICPU_BASE_ADDR +
+				(g_target_pci_addr+
 				 (long) ((i * TEST_PACKET_SIZE)));
 			    }
 			  job->dest = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
@@ -520,7 +534,127 @@ get_tsc_freq_from_cpuinfo(void)
 	return freq;
 }
 
-extern uint64_t *g_pf0_bar0_virt;
+
+void qdma_demo_usage(void)
+{
+	int i;
+	printf("./qdma_demo [EAL options] -- -option --<args>=<value>\n");
+	printf("options	:\n");
+	printf("	: -c <hex core mask>\n");
+	printf("	: -h print usage\n");
+	printf("Args	:\n");
+	printf("	: --pci_addr <target_pci_addr>\n");
+	printf("	: --packet_size <bytes>\n");
+	printf("	: --test_case <test_case_name>\n");
+	for (i = 0; i < test_case_array_size; i++)
+		printf("		%s - %s\n", test_case[i].name,
+				test_case[i].help);
+}
+
+int qdma_parse_long_arg(char *optarg, struct option *lopt)
+{
+	int ret = 0, i;
+
+	switch (lopt->val) {
+	case ARG_PCI_ADDR:
+		ret = sscanf(optarg, "%lx", &g_target_pci_addr);
+		if (ret == EOF) {
+			printf("Invalid PCI address\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		printf("%s: PCI addr %lx\n", __func__, g_target_pci_addr);
+		break;
+	case ARG_SIZE:
+		ret = sscanf(optarg, "%d", &g_packet_size);
+		if (ret == EOF) {
+			printf("Invalid Packet size\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		printf("%s: Pkt size %d\n", __func__, g_packet_size);
+		break;
+	case ARG_TEST_ID:
+		for (i = 0; i < test_case_array_size; i++) {
+			ret = strncmp(test_case[i].name, optarg,
+				TEST_CASE_NAME_SIZE);
+			if (!ret) {
+				g_rbp_testcase = test_case[i].id;
+				break;
+			}
+		}
+		if (i == test_case_array_size) {
+			printf("Invalid test case\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		printf("%s:test case %s\n", __func__,
+				test_case[i].name);
+		break;
+	default:
+		printf("Unknown Argument\n");
+		ret = -EINVAL;
+		qdma_demo_usage();
+		goto out;
+	}
+
+	g_arg_mask |= lopt->val;
+out:
+	return ret;
+}
+
+static int
+qdma_demo_parse_args(int argc, char **argv)
+{
+	int opt, ret = 0, flg, option_index;
+	struct option lopts[] = {
+	 {"pci_addr", optional_argument, &flg, ARG_PCI_ADDR},
+	 {"packet_size", optional_argument, &flg, ARG_SIZE},
+	 {"test_case", required_argument, &flg, ARG_TEST_ID},
+	 {0, 0, 0, 0},
+	};
+	struct option *lopt_cur;
+
+	while ((opt = getopt_long(argc, argv, "h;",
+				  lopts, &option_index)) != EOF) {
+
+		switch (opt) {
+		case 'h':
+			qdma_demo_usage();
+			ret = 1;
+			break;
+		/* long options */
+		case 0:
+			lopt_cur = &lopts[option_index];
+			ret = qdma_parse_long_arg(optarg, lopt_cur);
+			break;
+		default:
+			qdma_demo_usage();
+			ret = -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
+/*Return 0 if arguments are valid, 1 otherwise */
+int qdma_demo_validate_args(void)
+{
+	int valid = 1;
+
+	if (g_rbp_testcase == MEM_TO_PCI)
+		valid = !!(g_arg_mask & ARG_PCI_ADDR);
+
+	if (!(g_arg_mask & ARG_SIZE)) {
+		printf("Using Default packet size %d bytes\n",
+			g_packet_size);
+	}
+
+	return !valid;
+}
 
 int
 main(int argc, char *argv[])
@@ -544,6 +678,22 @@ main(int argc, char *argv[])
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid EAL arguments\n");
+
+	argc -= ret;
+	argv += ret;
+
+	ret = qdma_demo_parse_args(argc, argv);
+	if (ret) {
+		printf("Arg parsing failed\n");
+		goto out;
+	}
+	ret = qdma_demo_validate_args();
+	if (ret) {
+		printf("Arguments are invalid\n");
+		qdma_demo_usage();
+		goto out;
+	}
+
 	/*cycle correction */
 	lcore_id = rte_lcore_id();
 	if (lcore_id == 0) {
@@ -569,6 +719,9 @@ main(int argc, char *argv[])
 
 	launch_cores(16);
 
-	printf("Main Finished.. bye!\n");
+	printf("qdma_demo Finished.. bye!\n");
+	return 0;
+out:
+	printf("qdma_demo Failed!\n");
 	return 0;
 }
