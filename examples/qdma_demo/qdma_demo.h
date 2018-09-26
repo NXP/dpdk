@@ -44,6 +44,8 @@
 #define LSINIC_QDMA_FLE_POOL_COUNT		 (2 * 8192)
 #define LSINIC_QDMA_MAX_VQS			2048
 
+#define MAX_CORE_COUNT	16
+
 extern struct qdma_virt_queue qdma_vqs[];
 struct qdma_test_case {
 	const char *name;

@@ -70,7 +70,7 @@ struct qdma_test_case test_case[] = {
 	{"mem_to_mem", "Host mem to Host mem qdma, pci_addr not needed",
 		 MEM_TO_MEM},
 };
-int test_case_array_size = ARRAY_SIZE(test_case);
+int test_case_array_size = sizeof(test_case) / sizeof(test_case[0]);
 
 /*Configurable options*/
 int g_frame_format = LONG_FMT;
@@ -85,6 +85,7 @@ rte_spinlock_t test_lock;
 struct rte_qdma_job *g_jobs[16];
 volatile uint8_t quit_signal;
 int32_t total_cores;
+unsigned int core_count, stats_core_id;
 
 static int TEST_DMA_INIT_FLAG;
 static int test_dma_init(void);
@@ -210,8 +211,10 @@ lcore_hello(__attribute__((unused))
 		g_buf1 = rte_malloc("test qdma", TEST_PCI_SIZE_LIMIT, 4096);
 		g_iova = rte_malloc_virt2iova(g_buf);
 		g_iova1 = rte_malloc_virt2iova(g_buf1);
-
-		for (int j = 0; j < 16; j++) {
+		printf("Local bufs, g_buf %p, g_buf1 %p\n", g_buf, g_buf1);
+		for (int j = 0; j < MAX_CORE_COUNT; j++) {
+			if (!rte_lcore_is_enabled(j))
+				continue;
 		  g_jobs[j] = rte_malloc("test qdma",
 					  TEST_PACKETS_NUM *
 					  sizeof (struct rte_qdma_job), 4096);
@@ -226,7 +229,7 @@ lcore_hello(__attribute__((unused))
 			      TEST_PACKET_SIZE);
 		      memset(g_buf1 + (i * TEST_PACKET_SIZE), 0xff,
 			      TEST_PACKET_SIZE);
-
+			printf("Memset done\n");
 			if (g_rbp_testcase == MEM_TO_PCI) {
 				job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
 				if (g_userbp)
@@ -277,7 +280,9 @@ lcore_hello(__attribute__((unused))
 		}
 
 
-		for (int i = 0; i < 16; i++) {
+		for (int i = 0; i < MAX_CORE_COUNT; i++) {
+			if (!rte_lcore_is_enabled(i))
+				continue;
 		  g_vqid[i] = rte_qdma_vq_create(i, 0);
 		  g_vqid[i + 16] = rte_qdma_vq_create(i, 0);
 		  printf("core id:%d g_vqid[%d]:%d g_vqid[%d]:%d\n", i, i,
@@ -317,36 +322,37 @@ lcore_hello(__attribute__((unused))
 
 	rte_atomic32_set(&synchro, 1);
 
-	switch (lcore_id) {
-	case 0:
-	case 1:
-	case 2:
-	case 3:
-	case 4:
-	case 5:
-	case 6:
-	case 7:
-	case 8:
-	case 9:
-	case 10:
-	case 11:
-	case 12:
-	case 13:
-	case 14:
-	while (!quit_signal) {
-	  struct rte_qdma_job *job;
+	if (lcore_id != stats_core_id) {
+		while (!quit_signal) {
+		  struct rte_qdma_job *job;
 
-	  int ret;
+		  int ret;
 
-	  for (int j = 0; j < 256; j++) {
-	      job = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
-	      job->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
+		  for (int j = 0; j < 256; j++) {
+		      job = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
+		      job->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
 
-	      ret = rte_qdma_vq_enqueue(g_vqid[lcore_id], job);
-	      if (ret < 0) {
-		  for (int i = 0; i < 256; i++) {
+		      ret = rte_qdma_vq_enqueue(g_vqid[lcore_id], job);
+		      if (ret < 0) {
+			  for (int i = 0; i < 256; i++) {
+			      struct rte_qdma_job *job1 = 0;
+			      job1 = rte_qdma_vq_dequeue (g_vqid[lcore_id]);
+
+			      if (job1) {
+				  if (!job1->status) {
+				      pkt_cnt++;
+				    }
+				}
+			      else {
+				  break;
+				}
+			    }
+			}
+		    }
+
+		  for (int j = 0; j < 256; j++) {
 		      struct rte_qdma_job *job1 = 0;
-		      job1 = rte_qdma_vq_dequeue (g_vqid[lcore_id]);
+		      job1 = rte_qdma_vq_dequeue(g_vqid[lcore_id]);
 
 		      if (job1) {
 			  if (!job1->status) {
@@ -357,71 +363,51 @@ lcore_hello(__attribute__((unused))
 			  break;
 			}
 		    }
-		}
-	    }
-
-	  for (int j = 0; j < 256; j++) {
-	      struct rte_qdma_job *job1 = 0;
-	      job1 = rte_qdma_vq_dequeue(g_vqid[lcore_id]);
-
-	      if (job1) {
-		  if (!job1->status) {
-		      pkt_cnt++;
+		  if (pkt_cnt > (64 * 1024)) {
+		      rte_atomic32_add(&dequeue_num, (64 * 1024));
+		      rte_atomic32_add(&dequeue_num_percore[lcore_id], (64 * 1024));
+		      pkt_cnt = 0;
 		    }
+
 		}
-	      else {
-		  break;
+		printf("exit core %d\n", lcore_id);
+	} else {
+		while (!quit_signal) {
+		  rte_atomic32_clear(&dequeue_num);
+		  for (int i = 0; i < 16; i++) {
+		      rte_atomic32_clear(&dequeue_num_percore[i]);
+		    }
+		  cycle1 = rte_get_timer_cycles();
+		  rte_delay_ms(4000);
+		  cycle2 = rte_get_timer_cycles();
+		  time_diff = cycle2 - cycle1;
+		  speed =
+		    (float) (rte_atomic32_read(&dequeue_num)) / (float) (nsPerCycle *
+									  time_diff /
+									  (float)
+									  (1000 *
+									   1000 *
+									   1000));
+		  speed = speed * TEST_PACKET_SIZE;
+
+		  printf("Spend :%.3f ms ",
+			  (nsPerCycle * time_diff) / (float) (1000 * 1000));
+		  printf("cnt:%d pkt_cnt:%d\n", dequeue_num.cnt, pkt_cnt);
+		  printf("	Speed: %.3f Mbps %.3f Kpps\n\n",
+			  8 * speed / ((float) (1000 * 1000)),
+			  speed / ((float) (TEST_PACKET_SIZE * 1000)));
+		  for (int i = 0; i < 16; i += 4) {
+		      printf(" pkt cnt: %d %d %d %d\n", dequeue_num_percore[i].cnt,
+			      dequeue_num_percore[i + 1].cnt,
+			      dequeue_num_percore[i + 2].cnt,
+			      dequeue_num_percore[i + 3].cnt);
+		    }
+
+		  cycle1 = cycle2 = 0;
+		  pkt_cnt = 0;
 		}
-	    }
-	  if (pkt_cnt > (64 * 1024)) {
-	      rte_atomic32_add(&dequeue_num, (64 * 1024));
-	      rte_atomic32_add(&dequeue_num_percore[lcore_id], (64 * 1024));
-	      pkt_cnt = 0;
-	    }
+		printf("exit core %d\n", lcore_id);
 
-	}
-	printf("exit core %d\n", lcore_id);
-	break;
-	case 15:
-	while (!quit_signal) {
-	  rte_atomic32_clear(&dequeue_num);
-	  for (int i = 0; i < 16; i++) {
-	      rte_atomic32_clear(&dequeue_num_percore[i]);
-	    }
-	  cycle1 = rte_get_timer_cycles();
-	  rte_delay_ms(4000);
-	  cycle2 = rte_get_timer_cycles();
-	  time_diff = cycle2 - cycle1;
-	  speed =
-	    (float) (rte_atomic32_read(&dequeue_num)) / (float) (nsPerCycle *
-								  time_diff /
-								  (float)
-								  (1000 *
-								   1000 *
-								   1000));
-	  speed = speed * TEST_PACKET_SIZE;
-
-	  printf("Spend :%.3f ms ",
-		  (nsPerCycle * time_diff) / (float) (1000 * 1000));
-	  printf("cnt:%d pkt_cnt:%d\n", dequeue_num.cnt, pkt_cnt);
-	  printf("	Speed: %.3f Mbps %.3f Kpps\n\n",
-		  8 * speed / ((float) (1000 * 1000)),
-		  speed / ((float) (TEST_PACKET_SIZE * 1000)));
-	  for (int i = 0; i < 16; i += 4) {
-	      printf(" pkt cnt: %d %d %d %d\n", dequeue_num_percore[i].cnt,
-		      dequeue_num_percore[i + 1].cnt,
-		      dequeue_num_percore[i + 2].cnt,
-		      dequeue_num_percore[i + 3].cnt);
-	    }
-
-	  cycle1 = cycle2 = 0;
-	  pkt_cnt = 0;
-	}
-	printf("exit core %d\n", lcore_id);
-
-	break;
-	default:
-	return -EINVAL;
 	}
 #endif
 
@@ -443,6 +429,7 @@ launch_cores(unsigned int cores)
 		if (cores == 1)
 			break;
 		cores--;
+
 		rte_eal_remote_launch(lcore_hello, NULL, lcore_id);
 	}
 
@@ -644,6 +631,7 @@ qdma_demo_parse_args(int argc, char **argv)
 int qdma_demo_validate_args(void)
 {
 	int valid = 1;
+	uint32_t lcore_id;
 
 	if (g_rbp_testcase == MEM_TO_PCI)
 		valid = !!(g_arg_mask & ARG_PCI_ADDR);
@@ -653,6 +641,20 @@ int qdma_demo_validate_args(void)
 			g_packet_size);
 	}
 
+	core_count = rte_lcore_count();
+	if (core_count < 2) {
+		printf("Insufficient cores %d, need at least 2\n",
+			core_count);
+		valid = 0;
+		goto out;
+	}
+	RTE_LCORE_FOREACH_SLAVE(lcore_id)
+	{
+		if (lcore_id > stats_core_id)
+			stats_core_id = lcore_id;
+	}
+	printf("%s: Stats core id - %d\n", __func__, stats_core_id);
+out:
 	return !valid;
 }
 
@@ -665,14 +667,7 @@ main(int argc, char *argv[])
 	/* catch ctrl-c so we can print on exit */
 	signal(SIGINT, int_handler);
 
-	g_packet_num = TEST_PCI_SIZE_LIMIT / (TEST_PACKET_SIZE);
 	rte_atomic32_init(&synchro);
-
-
-	if (TEST_PCI_SIZE_LIMIT < (TEST_PACKETS_NUM * TEST_PACKET_SIZE)) {
-		printf("Need to increase host pcie memory space!\n");
-		return 0;
-	}
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -692,6 +687,13 @@ main(int argc, char *argv[])
 		printf("Arguments are invalid\n");
 		qdma_demo_usage();
 		goto out;
+	}
+
+	g_packet_num = TEST_PCI_SIZE_LIMIT / (TEST_PACKET_SIZE);
+	printf("test packet count %d\n", g_packet_num);
+	if (TEST_PCI_SIZE_LIMIT < (TEST_PACKETS_NUM * TEST_PACKET_SIZE)) {
+		printf("Need to increase host pcie memory space!\n");
+		return 0;
 	}
 
 	/*cycle correction */
@@ -717,7 +719,7 @@ main(int argc, char *argv[])
 		      (nsPerCycle * time_diff * rate) / (float) (1000 * 1000));
 	}
 
-	launch_cores(16);
+	launch_cores(core_count);
 
 	printf("qdma_demo Finished.. bye!\n");
 	return 0;
