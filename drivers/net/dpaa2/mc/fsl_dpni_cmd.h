@@ -42,7 +42,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				6
+#define DPNI_VER_MINOR				7
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -56,7 +56,7 @@
 /* Command IDs */
 #define DPNI_CMDID_OPEN				DPNI_CMD(0x801)
 #define DPNI_CMDID_CLOSE			DPNI_CMD(0x800)
-#define DPNI_CMDID_CREATE			DPNI_CMD(0x901)
+#define DPNI_CMDID_CREATE			DPNI_CMD_V2(0x901)
 #define DPNI_CMDID_DESTROY			DPNI_CMD(0x981)
 #define DPNI_CMDID_GET_API_VERSION		DPNI_CMD(0xa01)
 
@@ -161,6 +161,7 @@ struct dpni_cmd_create {
 	uint8_t qos_entries;
 	uint8_t pad3;
 	uint16_t fs_entries;
+	uint8_t num_rx_tcs;
 };
 
 struct dpni_cmd_destroy {
@@ -710,26 +711,6 @@ struct dpni_rsp_get_congestion_notification {
 	uint32_t threshold_exit;
 };
 
-#define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
-#define DPNI_RX_FS_DIST_ENABLE_SIZE		1
-struct dpni_cmd_set_rx_fs_dist {
-	uint16_t	dist_size;
-	uint8_t		enable;
-	uint8_t		tc;
-	uint16_t	miss_flow_id;
-	uint16_t	pad1;
-	uint64_t	key_cfg_iova;
-};
-
-#define DPNI_RX_HASH_DIST_ENABLE_SHIFT	0
-#define DPNI_RX_HASH_DIST_ENABLE_SIZE		1
-struct dpni_cmd_set_rx_hash_dist {
-	uint16_t	dist_size;
-	uint8_t		enable;
-	uint8_t		tc_id;
-	uint32_t	pad;
-	uint64_t	key_cfg_iova;
-};
 
 struct dpni_load_sw_sequence {
 	uint8_t dest;
@@ -769,5 +750,25 @@ struct dpni_sw_sequence_layout_entry {
 	uint16_t pad;
 };
 
+#define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_FS_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_fs_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc;
+	uint16_t	miss_flow_id;
+	uint16_t	pad1;
+	uint64_t	key_cfg_iova;
+};
+
+#define DPNI_RX_HASH_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_HASH_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_hash_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc_id;
+	uint32_t	pad;
+	uint64_t	key_cfg_iova;
+};
 #pragma pack(pop)
 #endif /* _FSL_DPNI_CMD_H */
