@@ -41,6 +41,7 @@
 #define __FSL_DPNI_H
 
 #include <fsl_dpkg.h>
+#include <fsl_dpopr.h>
 
 struct fsl_mc_io;
 
@@ -870,6 +871,15 @@ enum dpni_congestion_unit {
 	DPNI_CONGESTION_UNIT_FRAMES
 };
 
+/**
+ * Enable the Order Restoration support
+ */
+#define DPNI_OPT_HAS_OPR				0x000040
+
+/**
+ * Order Point Records are shared for the entire TC
+ */
+#define DPNI_OPT_OPR_PER_TC				0x000080
 
 /**
  * enum dpni_dest - DPNI destination types
@@ -1449,6 +1459,22 @@ int dpni_get_sw_sequence_layout(struct fsl_mc_io *mc_io,
  */
 void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
 				     const uint8_t *sw_sequence_layout_buf);
+
+int dpni_set_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 uint8_t options,
+		 struct opr_cfg *cfg);
+
+int dpni_get_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 struct opr_cfg *cfg,
+		 struct opr_qry *qry);
 
 /**
  * When used for queue_idx in function dpni_set_rx_dist_default_queue will

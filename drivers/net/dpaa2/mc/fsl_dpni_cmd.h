@@ -130,6 +130,8 @@
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
 #define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD(0x26D)
+#define DPNI_CMDID_SET_OPR			DPNI_CMD(0x26e)
+#define DPNI_CMDID_GET_OPR			DPNI_CMD(0x26f)
 #define DPNI_CMDID_LOAD_SW_SEQUENCE		DPNI_CMD(0x270)
 #define DPNI_CMDID_ENABLE_SW_SEQUENCE		DPNI_CMD(0x271)
 #define DPNI_CMDID_GET_SW_SEQUENCE_LAYOUT	DPNI_CMD(0x272)
@@ -748,6 +750,65 @@ struct dpni_sw_sequence_layout_entry {
 	uint8_t param_offset;
 	uint8_t param_size;
 	uint16_t pad;
+};
+
+struct dpni_cmd_set_opr {
+	uint8_t pad0;
+	uint8_t tc_id;
+	uint8_t index;
+	uint8_t options;
+	uint8_t pad1[7];
+	uint8_t oloe;
+	uint8_t oeane;
+	uint8_t olws;
+	uint8_t oa;
+	uint8_t oprrws;
+};
+
+struct dpni_cmd_get_opr {
+	uint8_t pad;
+	uint8_t tc_id;
+	uint8_t index;
+};
+
+#define DPNI_RIP_SHIFT	0
+#define DPNI_RIP_SIZE		1
+#define DPNI_OPR_ENABLE_SHIFT	1
+#define DPNI_OPR_ENABLE_SIZE	1
+#define DPNI_TSEQ_NLIS_SHIFT	0
+#define DPNI_TSEQ_NLIS_SIZE	1
+#define DPNI_HSEQ_NLIS_SHIFT	0
+#define DPNI_HSEQ_NLIS_SIZE	1
+
+struct dpni_rsp_get_opr {
+	uint64_t pad0;
+	/* from LSB: rip:1 enable:1 */
+	uint8_t flags;
+	uint16_t pad1;
+	uint8_t oloe;
+	uint8_t oeane;
+	uint8_t olws;
+	uint8_t oa;
+	uint8_t oprrws;
+	uint16_t nesn;
+	uint16_t pad8;
+	uint16_t ndsn;
+	uint16_t pad2;
+	uint16_t ea_tseq;
+	/* only the LSB */
+	uint8_t tseq_nlis;
+	uint8_t pad3;
+	uint16_t ea_hseq;
+	/* only the LSB */
+	uint8_t hseq_nlis;
+	uint8_t pad4;
+	uint16_t ea_hptr;
+	uint16_t pad5;
+	uint16_t ea_tptr;
+	uint16_t pad6;
+	uint16_t opr_vid;
+	uint16_t pad7;
+	uint16_t opr_id;
 };
 
 #define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
