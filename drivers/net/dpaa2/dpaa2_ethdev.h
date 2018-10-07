@@ -148,6 +148,7 @@ struct dpaa2_dev_priv {
 	uint16_t ss_offset;
 	uint64_t ss_iova;
 	uint64_t ss_param_iova;
+	uint8_t en_ordered;
 };
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
@@ -187,6 +188,13 @@ void dpaa2_dev_process_atomic_event(struct qbman_swp *swp,
 				    const struct qbman_result *dq,
 				    struct dpaa2_queue *rxq,
 				    struct rte_event *ev);
+void dpaa2_dev_process_ordered_event(struct qbman_swp *swp,
+				     const struct qbman_fd *fd,
+				     const struct qbman_result *dq,
+				     struct dpaa2_queue *rxq,
+				     struct rte_event *ev);
 uint16_t dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
+uint16_t dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
+			      uint16_t nb_pkts);
 uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 #endif /* _DPAA2_ETHDEV_H */
