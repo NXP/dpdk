@@ -116,6 +116,10 @@ DPDK_18.05 {
 	dpdmai_open;
 	dpdmai_set_rx_queue;
 	dpdmai_set_tx_queue;
+	qbman_result_eqresp_fd;
+	qbman_result_eqresp_rc;
+	qbman_result_eqresp_rspid;
+	qbman_result_eqresp_set_rspid;
 	qbman_swp_enqueue_multiple_fd;
 	rte_dpaa2_free_dpci_dev;
 
