@@ -390,7 +390,7 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 			dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
 			if (dpaa2_q->eqresp)
 				rte_free(dpaa2_q->eqresp);
-			if (!dpaa2_q->cscn)
+			if (dpaa2_q->cscn)
 				rte_free(dpaa2_q->cscn);
 		}
 		/*free memory for all queues (RX+TX) */
