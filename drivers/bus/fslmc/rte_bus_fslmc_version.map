@@ -116,6 +116,10 @@ DPDK_18.05 {
 	dpdmai_open;
 	dpdmai_set_rx_queue;
 	dpdmai_set_tx_queue;
+	qbman_eq_desc_set_orp;
+	qbman_eq_desc_set_token;
+	qbman_result_DQ_odpid;
+	qbman_result_DQ_seqnum;
 	qbman_result_eqresp_fd;
 	qbman_result_eqresp_rc;
 	qbman_result_eqresp_rspid;
