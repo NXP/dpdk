@@ -572,6 +572,18 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 				      ret);
 			return -1;
 		}
+	} else { /* Disable tail Drop */
+		struct dpni_taildrop taildrop;
+
+		taildrop.enable = 0;
+		ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
+					DPNI_CP_QUEUE, DPNI_QUEUE_RX,
+					dpaa2_q->tc_index, flow_id, &taildrop);
+		if (ret) {
+			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
+				      ret);
+			return -1;
+		}
 	}
 
 	dev->data->rx_queues[rx_queue_id] = dpaa2_q;

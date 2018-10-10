@@ -803,7 +803,7 @@ DPAA2:
 
 1. DPAA2_TX_CGR_OFF		Disable the TX congestion control - i.e. infinite size of TX queues
 
-2. DPAA2_TX_TAILDROP_SIZE	Modify the taildrop size in byte - default is 64K bytes
+2. DPAA2_RX_TAILDROP_SIZE	Modify the taildrop size in byte - default is 64K bytes. To Disable set it to '0'.
 
 3. DPAA2_PARSE_ERR_DROP		Start dropping the error packets in hardware (parse errors)
 				this is a good offload to have.
