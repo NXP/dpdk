@@ -59,6 +59,7 @@
 
 /* Maximum number of slots available in TX ring */
 #define MAX_TX_RING_SLOTS			32
+#define MAX_EQ_RESP_ENTRIES			(MAX_TX_RING_SLOTS + 1)
 
 /* Maximum number of slots available in RX ring */
 #define DPAA2_EQCR_RING_SIZE		8
@@ -74,6 +75,15 @@
 #define DPAA2_EQCR_SHIFT		3
 /* EQCR shift to get EQCR size for LX2 (2 >> 5) = 32 for LX2 */
 #define DPAA2_LX2_EQCR_SHIFT		5
+
+/* Flag to determine an ordered queue mbuf */
+#define DPAA2_ENQUEUE_FLAG_ORP		(1ULL << 30)
+/* ORP ID shift and mask */
+#define DPAA2_EQCR_OPRID_SHIFT		16
+#define DPAA2_EQCR_OPRID_MASK		0x3FFF0000
+/* Sequence number shift and mask */
+#define DPAA2_EQCR_SEQNUM_SHIFT		0
+#define DPAA2_EQCR_SEQNUM_MASK		0x0000FFFF
 
 #define DPAA2_SWP_CENA_REGION		0
 #define DPAA2_SWP_CINH_REGION		1
@@ -155,8 +165,10 @@ struct dpaa2_queue {
 	void *dev;
 	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
+	uint8_t eqresp_ci;
+	uint8_t eqresp_pi;
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
+	uint8_t tc_index;	/*!< traffic class identifier */
 	uint64_t rx_pkts;
 	uint64_t tx_pkts;
 	uint64_t err_pkts;
@@ -164,6 +176,7 @@ struct dpaa2_queue {
 		struct queue_storage_info_t *q_storage;
 		struct qbman_result *cscn;
 	};
+	struct qbman_result *eqresp;
 	struct rte_event ev;
 	dpaa2_queue_cb_dqrr_t *cb;
 };

@@ -2373,6 +2373,114 @@ void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
 }
 
 /**
+ * dpni_set_opr() - Set Order Restoration configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @tc:		Traffic class, in range 0 to NUM_TCS - 1
+ * @index:	Selects the specific queue out of the set allocated
+ *			for the same TC. Value must be in range 0 to
+ *			NUM_QUEUES - 1
+ * @options:	Configuration mode options
+ *			can be OPR_OPT_CREATE or OPR_OPT_RETIRE
+ * @cfg:	Configuration options for the OPR
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_set_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 uint8_t options,
+		 struct opr_cfg *cfg)
+{
+	struct dpni_cmd_set_opr *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(
+			DPNI_CMDID_SET_OPR,
+			cmd_flags,
+			token);
+	cmd_params = (struct dpni_cmd_set_opr *)cmd.params;
+	cmd_params->tc_id = tc;
+	cmd_params->index = index;
+	cmd_params->options = options;
+	cmd_params->oloe = cfg->oloe;
+	cmd_params->oeane = cfg->oeane;
+	cmd_params->olws = cfg->olws;
+	cmd_params->oa = cfg->oa;
+	cmd_params->oprrws = cfg->oprrws;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpni_get_opr() - Retrieve Order Restoration config and query.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @tc:		Traffic class, in range 0 to NUM_TCS - 1
+ * @index:	Selects the specific queue out of the set allocated
+ *			for the same TC. Value must be in range 0 to
+ *			NUM_QUEUES - 1
+ * @cfg:	Returned OPR configuration
+ * @qry:	Returned OPR query
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_get_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 struct opr_cfg *cfg,
+		 struct opr_qry *qry)
+{
+	struct dpni_rsp_get_opr *rsp_params;
+	struct dpni_cmd_get_opr *cmd_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_GET_OPR,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpni_cmd_get_opr *)cmd.params;
+	cmd_params->index = index;
+	cmd_params->tc_id = tc;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpni_rsp_get_opr *)cmd.params;
+	cfg->oloe = rsp_params->oloe;
+	cfg->oeane = rsp_params->oeane;
+	cfg->olws = rsp_params->olws;
+	cfg->oa = rsp_params->oa;
+	cfg->oprrws = rsp_params->oprrws;
+	qry->rip = dpni_get_field(rsp_params->flags, RIP);
+	qry->enable = dpni_get_field(rsp_params->flags, OPR_ENABLE);
+	qry->nesn = le16_to_cpu(rsp_params->nesn);
+	qry->ndsn = le16_to_cpu(rsp_params->ndsn);
+	qry->ea_tseq = le16_to_cpu(rsp_params->ea_tseq);
+	qry->tseq_nlis = dpni_get_field(rsp_params->tseq_nlis, TSEQ_NLIS);
+	qry->ea_hseq = le16_to_cpu(rsp_params->ea_hseq);
+	qry->hseq_nlis = dpni_get_field(rsp_params->hseq_nlis, HSEQ_NLIS);
+	qry->ea_hptr = le16_to_cpu(rsp_params->ea_hptr);
+	qry->ea_tptr = le16_to_cpu(rsp_params->ea_tptr);
+	qry->opr_vid = le16_to_cpu(rsp_params->opr_vid);
+	qry->opr_id = le16_to_cpu(rsp_params->opr_id);
+
+	return 0;
+}
+
+/**
  * dpni_set_rx_fs_dist() - Set Rx traffic class FS distribution
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
