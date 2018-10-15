@@ -131,12 +131,14 @@ script help :----->
 					'export DPSECI_QUEUES=<Num of Queues>'
 					where "Number of Queues" is an integer
 					value "e.g export DPSECI_QUEUES=8".
+					This shall be used with 
+					DPSEC_PRIORITIES.
 
 		DPSECI_PRIORITIES   = num-queues priorities.
 					Set the parameter using below command:
                                         'export DPSECI_PRIORITIES="Prio-1,Prio-2,..."'
                                         e.g export DPSECI_PRIORITIES="2,2,2,2,2,2,2,2"
-
+					This shall be used with DPSEC_QUEUES.
 	/**DPIO**:-->
 		DPIO_COUNT	    = DPIO objects count
 					Set the parameter using below command:
@@ -354,7 +356,12 @@ get_dpbp_parameters() {
 get_dpseci_parameters() {
 	if [[ -z "$DPSECI_COUNT" ]]
 	then
-		DPSECI_COUNT=8
+		if [[ $board_type == "2160" ]]
+		then
+        		DPSECI_COUNT=16
+		else
+        		DPSECI_COUNT=8
+		fi
 	fi
 	if [[ -z "$DPSECI_QUEUES" ]]
 	then
