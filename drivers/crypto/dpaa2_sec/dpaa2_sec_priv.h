@@ -166,6 +166,19 @@ struct dpaa2_sec_aead_ctxt {
 	uint8_t auth_cipher_text;       /**< Authenticate/cipher ordering */
 };
 
+/*
+ * The structure is to be filled by user for PDCP Protocol
+ */
+struct dpaa2_pdcp_ctxt {
+	enum rte_security_pdcp_domain domain; /*!< Data/Control mode*/
+	int8_t bearer;	/*!< PDCP bearer ID */
+	int8_t pkt_dir;/*!< PDCP Frame Direction 0:UL 1:DL*/
+	int8_t hfn_ovd;/*!< Overwrite HFN per packet*/
+	uint32_t hfn;	/*!< Hyper Frame Number */
+	uint32_t hfn_threshold;	/*!< HFN Threashold for key renegotiation */
+	uint8_t sn_size;	/*!< Sequence number size, 7/12/15 */
+};
+
 typedef struct dpaa2_sec_session_entry {
 	void *ctxt;
 	uint8_t ctxt_type;
@@ -189,15 +202,20 @@ typedef struct dpaa2_sec_session_entry {
 			} auth_key;
 		};
 	};
-	struct {
-		uint16_t length; /**< IV length in bytes */
-		uint16_t offset; /**< IV offset in bytes */
-	} iv;
-	uint16_t digest_length;
-	uint8_t status;
 	union {
-		struct dpaa2_sec_aead_ctxt aead_ctxt;
-	} ext_params;
+		struct {
+			struct {
+				uint16_t length; /**< IV length in bytes */
+				uint16_t offset; /**< IV offset in bytes */
+			} iv;
+			uint16_t digest_length;
+			uint8_t status;
+			union {
+				struct dpaa2_sec_aead_ctxt aead_ctxt;
+			} ext_params;
+		};
+		struct dpaa2_pdcp_ctxt pdcp;
+	};
 } dpaa2_sec_session;
 
 static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
