@@ -26,6 +26,9 @@
 /* Dynamic log type identifier */
 int dpaa2_qdma_logtype;
 
+uint32_t dpaa2_coherent_no_alloc_cache;
+uint32_t dpaa2_coherent_alloc_cache;
+
 /* QDMA device */
 static struct qdma_device qdma_dev;
 
@@ -389,7 +392,7 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 			sdd->read_cmd.rbp = rbp->srbp;
 			sdd->read_cmd.rdtype = DPAA2_RBP_MEM_RW;
 		} else {
-			sdd->read_cmd.rdtype = DPAA2_COHERENT_NO_ALLOCATE_CACHE;
+			sdd->read_cmd.rdtype = dpaa2_coherent_no_alloc_cache;
 		}
 		sdd++;
 		/* destination */
@@ -401,13 +404,13 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 			sdd->write_cmd.rbp = rbp->drbp;
 			sdd->write_cmd.wrttype = DPAA2_RBP_MEM_RW;
 		} else {
-			sdd->write_cmd.wrttype = DPAA2_COHERENT_ALLOCATE_CACHE;
+			sdd->write_cmd.wrttype = dpaa2_coherent_alloc_cache;
 		}
 
 	} else {
-		sdd->read_cmd.rdtype = DPAA2_COHERENT_NO_ALLOCATE_CACHE;
+		sdd->read_cmd.rdtype = dpaa2_coherent_no_alloc_cache;
 		sdd++;
-		sdd->write_cmd.wrttype = DPAA2_COHERENT_ALLOCATE_CACHE;
+		sdd->write_cmd.wrttype = dpaa2_coherent_alloc_cache;
 	}
 	fle++;
 	/* source frame list to source buffer */
@@ -1212,6 +1215,21 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 		DPAA2_QDMA_ERR("Adding H/W queue to list failed");
 		goto init_err;
 	}
+
+	if (!dpaa2_coherent_no_alloc_cache) {
+		if (dpaa2_svr_family == SVR_LX2160A) {
+			dpaa2_coherent_no_alloc_cache =
+				DPAA2_LX2_COHERENT_NO_ALLOCATE_CACHE;
+			dpaa2_coherent_alloc_cache =
+				DPAA2_LX2_COHERENT_ALLOCATE_CACHE;
+		} else {
+			dpaa2_coherent_no_alloc_cache =
+				DPAA2_COHERENT_NO_ALLOCATE_CACHE;
+			dpaa2_coherent_alloc_cache =
+				DPAA2_COHERENT_ALLOCATE_CACHE;
+		}
+	}
+
 	DPAA2_QDMA_DEBUG("Initialized dpdmai object successfully");
 
 	return 0;

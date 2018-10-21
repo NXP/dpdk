@@ -29,20 +29,15 @@ struct qdma_io_meta;
  * Source descriptor command read transaction type for RBP=0:
  * coherent copy of cacheable memory
  */
-#ifdef RTE_LIBRTE_INIC_LX2160
-#define DPAA2_COHERENT_NO_ALLOCATE_CACHE	0x7
-#else
 #define DPAA2_COHERENT_NO_ALLOCATE_CACHE	0xb
-#endif
+#define DPAA2_LX2_COHERENT_NO_ALLOCATE_CACHE	0x7
 /**
  * Destination descriptor command write transaction type for RBP=0:
  * coherent copy of cacheable memory
  */
-#ifdef RTE_LIBRTE_INIC_LX2160
-#define DPAA2_COHERENT_ALLOCATE_CACHE		0xb
-#else
 #define DPAA2_COHERENT_ALLOCATE_CACHE		0x6
-#endif
+#define DPAA2_LX2_COHERENT_ALLOCATE_CACHE	0xb
+
 /** Maximum possible H/W Queues on each core */
 #define MAX_HW_QUEUE_PER_CORE		64
 
