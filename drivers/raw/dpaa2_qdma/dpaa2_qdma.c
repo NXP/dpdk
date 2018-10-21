@@ -433,7 +433,7 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 	DPAA2_SET_FLE_FIN(fle);
 }
 
-static inline uint16_t dpdmai_dev_set_fd(struct qbman_fd *fd,
+static inline int dpdmai_dev_set_fd(struct qbman_fd *fd,
 					struct rte_qdma_job *job,
 					struct rte_qdma_rbp *rbp,
 					uint16_t vq_id)
