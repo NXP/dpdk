@@ -484,8 +484,6 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	int ret;
 	uint32_t num_to_send = 0;
 	uint16_t num_tx = 0;
-	uint16_t num_txed = 0;
-
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -515,8 +513,13 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 		for (loop = 0; loop < num_to_send; loop++) {
 			ret = dpdmai_dev_set_fd(&fd[loop],
 						job[num_tx], rbp, vq_id);
-			if (ret < 0)
+			if (ret < 0) {
+				/* Set nb_jobs to loop, so outer while loop
+				 * breaks out.
+				 */
+				nb_jobs = loop;
 				break;
+			}
 
 			num_tx++;
 		}
@@ -530,11 +533,9 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 						NULL,
 						loop - enqueue_loop);
 		}
-
-		num_txed += num_to_send;
-		nb_jobs -= num_to_send;
+		nb_jobs -= loop;
 	}
-	return num_txed;
+	return num_tx;
 }
 
 int
