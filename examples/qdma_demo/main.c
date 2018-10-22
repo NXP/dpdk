@@ -52,6 +52,8 @@ uint64_t freq;
 static rte_atomic32_t synchro;
 uint64_t start_cycles, end_cycles;
 uint64_t time_diff;
+extern int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr,
+	uint64_t iova, uint64_t size);
 
 #if !TEST_PCIE_32B_WR
 static rte_atomic32_t dequeue_num;
@@ -93,6 +95,9 @@ static void qdma_demo_usage(void);
 static int qdma_parse_long_arg(char *optarg, struct option *lopt);
 static int qdma_demo_validate_args(void);
 
+static void *pci_addr_mmap(void *start, size_t length,
+		int prot, int flags, off_t offset,
+		void **map_addr, int *retfd);
 int
 test_dma_init(void)
 {
@@ -129,13 +134,47 @@ test_dma_init(void)
 
 	return 0;
 }
+void *pci_addr_mmap(void *start, size_t length, int prot,
+		int flags, off_t offset, void **map_addr,
+		int *retfd)
+{
+	off_t newoff = 0;
+	off_t diff = 0;
+	off_t mask = PAGE_MASK;
+	void *p = NULL;
+	int fd = 0;
+
+	fd = open("/dev/mem", O_RDWR|O_SYNC);
+	if (fd == -1) {
+		printf("Error in opening /dev/mem\n");
+		return NULL;
+	}
+
+	newoff = offset & mask;
+	if (newoff != offset)
+		diff = offset - newoff;
+
+	p = mmap(start, length, prot, flags, fd, newoff);
+	if (p == NULL) {
+		printf("%s %lX-%lX ERROR\n", __func__, newoff, offset);
+		return NULL;
+	}
+
+	if (map_addr)
+		*map_addr = (void *)((uint64_t)p + diff);
+
+	if (retfd)
+		*retfd = fd;
+
+	return p;
+}
 
 static int
 lcore_hello(__attribute__((unused))
 	     void *arg)
 {
 	unsigned int lcore_id;
-
+	uint64_t pci_vaddr, pci_phys, len;
 #if !TEST_PCIE_32B_WR
 	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
 	uint64_t cycle1 = 0, cycle2 = 0;
@@ -207,11 +246,29 @@ lcore_hello(__attribute__((unused))
 		} while (!ret);
 	else {
 		test_dma_init();
+		if (g_rbp_testcase != MEM_TO_MEM) {
+			pci_phys = (g_target_pci_addr) & PAGE_MASK;
+			len = TEST_PCI_SIZE_LIMIT & PAGE_MASK;
+			if (len < (size_t) PAGE_SIZE)
+				len = PAGE_SIZE;
+			pci_vaddr = (uint64_t) pci_addr_mmap(NULL, len,
+				PROT_READ | PROT_WRITE, MAP_SHARED,
+				pci_phys, NULL, NULL);
+			if (!pci_vaddr) {
+				printf("Failed to mmap PCI addr %lx\n",
+					pci_phys);
+				return 0;
+			}
+			rte_fslmc_vfio_mem_dmamap(pci_vaddr, pci_phys, len);
+		}
+
 		g_buf = rte_malloc("test qdma", TEST_PCI_SIZE_LIMIT, 4096);
 		g_buf1 = rte_malloc("test qdma", TEST_PCI_SIZE_LIMIT, 4096);
 		g_iova = rte_malloc_virt2iova(g_buf);
 		g_iova1 = rte_malloc_virt2iova(g_buf1);
 		printf("Local bufs, g_buf %p, g_buf1 %p\n", g_buf, g_buf1);
+		printf("Local bufs phys, g_buf %lx, g_buf1 %lx\n",
+			g_iova, g_iova1);
 		for (int j = 0; j < MAX_CORE_COUNT; j++) {
 			if (!rte_lcore_is_enabled(j))
 				continue;
@@ -222,7 +279,7 @@ lcore_hello(__attribute__((unused))
 		  for (int i = 0; i < TEST_PACKETS_NUM; i++) {
 		      struct rte_qdma_job *job = g_jobs[j];
 		      job += i;
-		      job->flags = 3;
+		      job->flags = RTE_QDMA_JOB_DEST_PHY;
 		      job->len = TEST_PACKET_SIZE;
 		      job->cnxt = i;
 		      memset(g_buf + (i * TEST_PACKET_SIZE), (char) i + 1,
@@ -333,7 +390,7 @@ lcore_hello(__attribute__((unused))
 		      job->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
 
 		      ret = rte_qdma_vq_enqueue(g_vqid[lcore_id], job);
-		      if (ret < 0) {
+		      if (ret <= 0) {
 			  for (int i = 0; i < 256; i++) {
 			      struct rte_qdma_job *job1 = 0;
 			      job1 = rte_qdma_vq_dequeue (g_vqid[lcore_id]);
