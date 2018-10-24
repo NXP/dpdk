@@ -140,5 +140,6 @@ DPDK_19.05 {
 	qbman_result_eqresp_rspid;
 	qbman_result_eqresp_set_rspid;
 	qbman_swp_enqueue_multiple_fd;
+	rte_fslmc_vfio_mem_dmamap;
 } DPDK_18.11;
 
