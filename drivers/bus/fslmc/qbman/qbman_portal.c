@@ -728,8 +728,8 @@ static int qbman_swp_enqueue_ring_mode_mem_back(struct qbman_swp *s,
 	full_mask = s->eqcr.pi_mask;
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
-		s->eqcr.ci = qbman_cinh_read(&s->sys,
-				QBMAN_CENA_SWP_EQCR_CI) & full_mask;
+		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
+				QBMAN_CENA_SWP_EQCR_CI_MEMBACK) & full_mask;
 		s->eqcr.available = qm_cyc_diff(s->eqcr.pi_ring_size,
 				eqcr_ci, s->eqcr.ci);
 		if (!s->eqcr.available)
@@ -854,8 +854,8 @@ static int qbman_swp_enqueue_multiple_mem_back(struct qbman_swp *s,
 	full_mask = s->eqcr.pi_mask;
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
-		s->eqcr.ci = qbman_cinh_read(&s->sys,
-				QBMAN_CENA_SWP_EQCR_CI) & full_mask;
+		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
+				QBMAN_CENA_SWP_EQCR_CI_MEMBACK) & full_mask;
 		s->eqcr.available = qm_cyc_diff(s->eqcr.pi_ring_size,
 					eqcr_ci, s->eqcr.ci);
 		if (!s->eqcr.available)
@@ -992,8 +992,8 @@ static int qbman_swp_enqueue_multiple_fd_mem_back(struct qbman_swp *s,
 	full_mask = s->eqcr.pi_mask;
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
-		s->eqcr.ci = qbman_cinh_read(&s->sys,
-				QBMAN_CENA_SWP_EQCR_CI) & full_mask;
+		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
+				QBMAN_CENA_SWP_EQCR_CI_MEMBACK) & full_mask;
 		s->eqcr.available = qm_cyc_diff(s->eqcr.pi_ring_size,
 					eqcr_ci, s->eqcr.ci);
 		if (!s->eqcr.available)
@@ -1124,8 +1124,8 @@ static int qbman_swp_enqueue_multiple_desc_mem_back(struct qbman_swp *s,
 	full_mask = s->eqcr.pi_mask;
 	if (!s->eqcr.available) {
 		eqcr_ci = s->eqcr.ci;
-		s->eqcr.ci = qbman_cinh_read(&s->sys,
-				QBMAN_CENA_SWP_EQCR_CI) & full_mask;
+		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
+				QBMAN_CENA_SWP_EQCR_CI_MEMBACK) & full_mask;
 		s->eqcr.available = qm_cyc_diff(s->eqcr.pi_ring_size,
 					eqcr_ci, s->eqcr.ci);
 		if (!s->eqcr.available)
