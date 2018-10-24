@@ -126,5 +126,6 @@ DPDK_18.05 {
 	qbman_result_eqresp_set_rspid;
 	qbman_swp_enqueue_multiple_fd;
 	rte_dpaa2_free_dpci_dev;
+	rte_fslmc_vfio_mem_dmamap;
 
 } DPDK_18.02;

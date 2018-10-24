@@ -83,6 +83,7 @@ int fslmc_vfio_process_group(void);
 char *fslmc_get_container(void);
 int fslmc_get_container_group(int *gropuid);
 int rte_fslmc_vfio_dmamap(void);
+int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size);
 int fslmc_vfio_setup_device(const char *sysfs_base, const char *dev_addr,
 		int *vfio_dev_fd, struct vfio_device_info *device_info);
 

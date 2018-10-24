@@ -296,6 +296,44 @@ int rte_fslmc_vfio_dmamap(void)
 	return 0;
 }
 
+int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size)
+{
+	int ret;
+	struct fslmc_vfio_group *group;
+	struct vfio_iommu_type1_dma_map dma_map = {
+		.argsz = sizeof(struct vfio_iommu_type1_dma_map),
+		.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
+	};
+
+	if (fslmc_iommu_type == RTE_VFIO_NOIOMMU) {
+		DPAA2_BUS_DEBUG("Running in NOIOMMU mode");
+		return 0;
+	}
+
+	/* SET DMA MAP for IOMMU */
+	group = &vfio_group;
+	if (!group->container) {
+		DPAA2_BUS_ERR("Container is not connected");
+		return -1;
+	}
+
+	dma_map.size = size;
+	dma_map.vaddr = vaddr;
+	dma_map.iova = iova;
+
+	printf("PCIe vfio map 0x%llx:0x%llx, size 0x%llx\n", dma_map.vaddr,
+		dma_map.iova, dma_map.size);
+	ret = ioctl(group->container->fd, VFIO_IOMMU_MAP_DMA,
+		    &dma_map);
+	if (ret) {
+		printf("Unable to map DMA address (errno = %d)\n",
+			errno);
+		return ret;
+	}
+
+	return 0;
+}
+
 int
 fslmc_vfio_setup_device(const char *sysfs_base, const char *dev_addr,
 		int *vfio_dev_fd, struct vfio_device_info *device_info)
