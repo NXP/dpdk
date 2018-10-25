@@ -557,7 +557,7 @@ void qbman_eq_desc_set_orp_nesn(struct qbman_eq_desc *d, uint16_t opr_id,
 }
 
 void qbman_eq_desc_set_response(struct qbman_eq_desc *d,
-				dma_addr_t storage_phys,
+				uint64_t storage_phys,
 				int stash)
 {
 	d->eq.rsp_addr = storage_phys;
@@ -828,10 +828,10 @@ static int qbman_swp_enqueue_multiple_direct(struct qbman_swp *s,
 
 	/* Flush all the cacheline without load/store in between */
 	eqcr_pi = s->eqcr.pi;
-	addr_cena = (uint64_t)s->sys.addr_cena;
+	addr_cena = (size_t)s->sys.addr_cena;
 	for (i = 0; i < num_enqueued; i++) {
-		dcbf((uint64_t *)(addr_cena +
-			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask)));
+		dcbf(addr_cena +
+			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask));
 		eqcr_pi++;
 	}
 	s->eqcr.pi = eqcr_pi & full_mask;
@@ -966,10 +966,10 @@ static int qbman_swp_enqueue_multiple_fd_direct(struct qbman_swp *s,
 
 	/* Flush all the cacheline without load/store in between */
 	eqcr_pi = s->eqcr.pi;
-	addr_cena = (uint64_t)s->sys.addr_cena;
+	addr_cena = (size_t)s->sys.addr_cena;
 	for (i = 0; i < num_enqueued; i++) {
-		dcbf((uint64_t *)(addr_cena +
-			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask)));
+		dcbf(addr_cena +
+			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask));
 		eqcr_pi++;
 	}
 	s->eqcr.pi = eqcr_pi & full_mask;
@@ -1099,10 +1099,10 @@ static int qbman_swp_enqueue_multiple_desc_direct(struct qbman_swp *s,
 
 	/* Flush all the cacheline without load/store in between */
 	eqcr_pi = s->eqcr.pi;
-	addr_cena = (uint64_t)s->sys.addr_cena;
+	addr_cena = (size_t)s->sys.addr_cena;
 	for (i = 0; i < num_enqueued; i++) {
-		dcbf((uint64_t *)(addr_cena +
-			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask)));
+		dcbf(addr_cena +
+			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask));
 		eqcr_pi++;
 	}
 	s->eqcr.pi = eqcr_pi & full_mask;
@@ -1230,7 +1230,7 @@ void qbman_pull_desc_clear(struct qbman_pull_desc *d)
 
 void qbman_pull_desc_set_storage(struct qbman_pull_desc *d,
 				 struct qbman_result *storage,
-				 dma_addr_t storage_phys,
+				 uint64_t storage_phys,
 				 int stash)
 {
 	d->pull.rsp_addr_virt = (size_t)storage;
@@ -1331,7 +1331,7 @@ static int qbman_swp_pull_mem_back(struct qbman_swp *s,
 	}
 
 	d->pull.tok = s->sys.idx + 1;
-	s->vdq.storage = (void *)d->pull.rsp_addr_virt;
+	s->vdq.storage = (void *)(size_t)d->pull.rsp_addr_virt;
 	p = qbman_cena_write_start_wo_shadow(&s->sys, QBMAN_CENA_SWP_VDQCR_MEM);
 	memcpy(&p[1], &cl[1], 12);
 

@@ -89,8 +89,8 @@ dpaa2_configure_flow_eth(struct rte_flow *flow,
 			 struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_eth *spec, *mask;
@@ -248,8 +248,8 @@ dpaa2_configure_flow_vlan(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_vlan *spec, *mask;
@@ -356,8 +356,8 @@ dpaa2_configure_flow_ipv4(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_ipv4 *spec, *mask;
@@ -509,8 +509,8 @@ dpaa2_configure_flow_ipv6(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_ipv6 *spec, *mask;
@@ -642,8 +642,8 @@ dpaa2_configure_flow_icmp(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_icmp *spec, *mask;
@@ -775,8 +775,8 @@ dpaa2_configure_flow_udp(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_udp *spec, *mask;
@@ -924,8 +924,8 @@ dpaa2_configure_flow_tcp(struct rte_flow *flow,
 			 struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_tcp *spec, *mask;
@@ -1074,8 +1074,8 @@ dpaa2_configure_flow_sctp(struct rte_flow *flow,
 			  struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_sctp *spec, *mask;
@@ -1223,8 +1223,8 @@ dpaa2_configure_flow_gre(struct rte_flow *flow,
 			 struct rte_flow_error *error __rte_unused)
 {
 	int index, j = 0;
-	uint64_t key_iova;
-	uint64_t mask_iova;
+	size_t key_iova;
+	size_t mask_iova;
 	int device_configured = 0, entry_found = 0;
 	uint32_t group;
 	const struct rte_flow_item_gre *spec, *mask;
@@ -1346,7 +1346,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 	struct dpni_fs_action_cfg action;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	uint64_t	param;
+	size_t param;
 
 	/* Parse pattern list to get the matching parameters */
 	while (!end_of_list) {
@@ -1445,7 +1445,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			action.flow_id = flow->flow_id;
 			if (is_keycfg_configured & DPAA2_QOS_TABLE_RECONFIGURE) {
 				if (dpkg_prepare_key_cfg(&priv->extract.qos_key_cfg,
-							 (uint8_t *)priv->extract.qos_extract_param) < 0) {
+							 (uint8_t *)(size_t)priv->extract.qos_extract_param) < 0) {
 					DPAA2_PMD_ERR(
 					"Unable to prepare extract parameters");
 					return -1;
@@ -1454,7 +1454,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 				memset(&qos_cfg, 0, sizeof(struct dpni_qos_tbl_cfg));
 				qos_cfg.discard_on_miss = true;
 				qos_cfg.keep_entries = true;
-				qos_cfg.key_cfg_iova = (uint64_t)priv->extract.qos_extract_param;
+				qos_cfg.key_cfg_iova = (size_t)priv->extract.qos_extract_param;
 				ret = dpni_set_qos_table(dpni, CMD_PRI_LOW,
 							 priv->token, &qos_cfg);
 				if (ret < 0) {
@@ -1466,7 +1466,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			}
 			if (is_keycfg_configured & DPAA2_FS_TABLE_RECONFIGURE) {
 				if (dpkg_prepare_key_cfg(&priv->extract.fs_key_cfg[flow->tc_id],
-							 (uint8_t *)priv->extract.fs_extract_param[flow->tc_id]) < 0) {
+						(uint8_t *)(size_t)priv->extract.fs_extract_param[flow->tc_id]) < 0) {
 					DPAA2_PMD_ERR(
 					"Unable to prepare extract parameters");
 					return -1;
@@ -1550,7 +1550,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			}
 
 			/* Allocate DMA'ble memory to write the rules */
-			param = (uint64_t)rte_malloc(NULL, 256, 64);
+			param = (size_t)rte_malloc(NULL, 256, 64);
 			if (!param) {
 				DPAA2_PMD_ERR("Memory allocation failure\n");
 				return -1;
@@ -1566,7 +1566,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			memset(&tc_cfg, 0, sizeof(struct dpni_rx_tc_dist_cfg));
 			tc_cfg.dist_size = rss_conf->num;
 			tc_cfg.dist_mode = DPNI_DIST_MODE_HASH;
-			tc_cfg.key_cfg_iova = (uint64_t)param;
+			tc_cfg.key_cfg_iova = (size_t)param;
 			tc_cfg.fs_cfg.miss_action = DPNI_FS_MISS_DROP;
 
 			ret = dpni_set_rx_tc_dist(dpni, CMD_PRI_LOW,
@@ -1582,7 +1582,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			rte_free((void *)param);
 			if (is_keycfg_configured & DPAA2_FS_TABLE_RECONFIGURE) {
 				if (dpkg_prepare_key_cfg(&priv->extract.qos_key_cfg,
-							 (uint8_t *)priv->extract.qos_extract_param) < 0) {
+					(uint8_t *)(size_t)priv->extract.qos_extract_param) < 0) {
 					DPAA2_PMD_ERR(
 					"Unable to prepare extract parameters");
 					return -1;
@@ -1591,7 +1591,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 					sizeof(struct dpni_qos_tbl_cfg));
 				qos_cfg.discard_on_miss = true;
 				qos_cfg.keep_entries = true;
-				qos_cfg.key_cfg_iova = (uint64_t)priv->extract.qos_extract_param;
+				qos_cfg.key_cfg_iova = (size_t)priv->extract.qos_extract_param;
 				ret = dpni_set_qos_table(dpni, CMD_PRI_LOW,
 							 priv->token, &qos_cfg);
 				if (ret < 0) {
@@ -1814,7 +1814,7 @@ struct rte_flow *dpaa2_flow_create(struct rte_eth_dev *dev,
 				   struct rte_flow_error *error)
 {
 	struct rte_flow *flow = NULL;
-	uint64_t	key_iova = 0, mask_iova = 0;
+	size_t key_iova = 0, mask_iova = 0;
 	int ret;
 
 	flow = rte_malloc(NULL, sizeof(struct rte_flow), RTE_CACHE_LINE_SIZE);
@@ -1823,13 +1823,13 @@ struct rte_flow *dpaa2_flow_create(struct rte_eth_dev *dev,
 		return NULL;
 	}
 	/* Allocate DMA'ble memory to write the rules */
-	key_iova = (uint64_t)rte_malloc(NULL, 256, 64);
+	key_iova = (size_t)rte_malloc(NULL, 256, 64);
 	if (!key_iova) {
 		DPAA2_PMD_ERR(
 			"Memory allocation failure for rule configration\n");
 		goto creation_error;
 	}
-	mask_iova = (uint64_t)rte_malloc(NULL, 256, 64);
+	mask_iova = (size_t)rte_malloc(NULL, 256, 64);
 	if (!mask_iova) {
 		DPAA2_PMD_ERR(
 			"Memory allocation failure for rule configration\n");

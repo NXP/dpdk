@@ -452,7 +452,7 @@ fslmc_vfio_setup_device(const char *sysfs_base, const char *dev_addr,
 
 static int64_t vfio_map_mcp_obj(const char *mcp_obj)
 {
-	int64_t v_addr = (int64_t)MAP_FAILED;
+	intptr_t v_addr = (intptr_t)MAP_FAILED;
 	int32_t ret, mc_fd;
 	struct vfio_group_status status = { .argsz = sizeof(status) };
 
