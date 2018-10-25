@@ -131,14 +131,14 @@ script help :----->
 					'export DPSECI_QUEUES=<Num of Queues>'
 					where "Number of Queues" is an integer
 					value "e.g export DPSECI_QUEUES=8".
-					This shall be used with 
-					DPSEC_PRIORITIES.
+					This shall be used together with
+					DPSEC_PRIORITIES
 
 		DPSECI_PRIORITIES   = num-queues priorities.
 					Set the parameter using below command:
                                         'export DPSECI_PRIORITIES="Prio-1,Prio-2,..."'
                                         e.g export DPSECI_PRIORITIES="2,2,2,2,2,2,2,2"
-					This shall be used with DPSEC_QUEUES.
+					This shall be used together with DPSEC_QUEUES
 	/**DPIO**:-->
 		DPIO_COUNT	    = DPIO objects count
 					Set the parameter using below command:
@@ -365,11 +365,11 @@ get_dpseci_parameters() {
 	fi
 	if [[ -z "$DPSECI_QUEUES" ]]
 	then
-		DPSECI_QUEUES=1
+		DPSECI_QUEUES=2
 	fi
 	if [[ -z "$DPSECI_PRIORITIES" ]]
 	then
-		DPSECI_PRIORITIES="2"
+		DPSECI_PRIORITIES="2,2"
 	fi
 	echo "DPSECI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPSECI_COUNT = "$DPSECI_COUNT >> dynamic_dpl_logs
