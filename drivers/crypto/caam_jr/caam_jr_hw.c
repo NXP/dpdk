@@ -115,7 +115,7 @@ int hw_reset_job_ring(struct sec_job_ring_t *job_ring)
 			caam_jr_dma_vtop(job_ring->input_ring));
 	CAAM_JR_DEBUG(" Set input ring base address to : Virtual: 0x%" PRIx64
 		      ",Physical: 0x%" PRIx64 ", Read from HW: 0x%" PRIx64,
-		      (uintptr_t)job_ring->input_ring,
+		      (uint64_t)(uintptr_t)job_ring->input_ring,
 		      caam_jr_dma_vtop(job_ring->input_ring),
 		      hw_get_inp_queue_base(job_ring));
 
@@ -124,7 +124,7 @@ int hw_reset_job_ring(struct sec_job_ring_t *job_ring)
 			caam_jr_dma_vtop(job_ring->output_ring));
 	CAAM_JR_DEBUG(" Set output ring base address to: Virtual: 0x%" PRIx64
 		      ",Physical: 0x%" PRIx64 ", Read from HW: 0x%" PRIx64,
-		      (uintptr_t)job_ring->output_ring,
+		      (uint64_t)(uintptr_t)job_ring->output_ring,
 		      caam_jr_dma_vtop(job_ring->output_ring),
 		      hw_get_out_queue_base(job_ring));
 	return ret;

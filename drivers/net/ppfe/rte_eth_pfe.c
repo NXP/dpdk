@@ -209,7 +209,7 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			int j;
 
 			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-					(void *)rte_pktmbuf_iova(tx_pkts[i]),
+					(void *)(size_t)rte_pktmbuf_iova(tx_pkts[i]),
 					tx_pkts[i]->buf_addr + tx_pkts[i]->data_off,
 					tx_pkts[i]->data_len, 0x0, HIF_FIRST_BUFFER,
 					tx_pkts[i]);
@@ -217,7 +217,7 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			mbuf = tx_pkts[i]->next;
 			for (j = 0; j < (tx_pkts[i]->nb_segs - 2); j++) {
 				hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-					(void *)rte_pktmbuf_iova(mbuf),
+					(void *)(size_t)rte_pktmbuf_iova(mbuf),
 					mbuf->buf_addr + mbuf->data_off,
 					mbuf->data_len,
 					0x0, 0x0, mbuf);
@@ -225,14 +225,14 @@ pfe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			}
 
 			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-					(void *)rte_pktmbuf_iova(mbuf),
+					(void *)(size_t)rte_pktmbuf_iova(mbuf),
 					mbuf->buf_addr + mbuf->data_off,
 					mbuf->data_len,
 					0x0, HIF_LAST_BUFFER | HIF_DATA_VALID,
 					mbuf);
 		} else {
 			hif_lib_xmit_pkt(&priv->client, queue->queue_id,
-				(void *)rte_pktmbuf_iova(tx_pkts[i]),
+				(void *)(size_t)rte_pktmbuf_iova(tx_pkts[i]),
 				tx_pkts[i]->buf_addr + tx_pkts[i]->data_off,
 				tx_pkts[i]->pkt_len, 0 /*ctrl*/,
 				HIF_FIRST_BUFFER | HIF_LAST_BUFFER | HIF_DATA_VALID,

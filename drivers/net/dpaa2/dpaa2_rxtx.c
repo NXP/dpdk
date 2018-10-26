@@ -131,7 +131,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd)
 	m->hash.rss = fd->simple.flc_hi;
 	m->ol_flags |= PKT_RX_RSS_HASH;
 
-	DPAA2_PMD_DP_DEBUG("HW frc = 0x%x\t packet type =0x%x ol_flags =0x%lx",
+	DPAA2_PMD_DP_DEBUG("HW frc = 0x%x\t packet type =0x%x ol_flags =0x%" PRIx64 "",
 		frc, m->packet_type, m->ol_flags);
 }
 

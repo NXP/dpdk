@@ -161,10 +161,10 @@ int pfe_hif_init_buffers(struct pfe_hif *hif)
 		 * after that application can use/overwrite the HEADROOM area.
 		 */
 		hif->rx_buf_vaddr[i] =
-			(void *)((uint64_t)mbuf->buf_addr + mbuf->data_off -
+			(void *)((size_t)mbuf->buf_addr + mbuf->data_off -
 					PFE_PKT_HEADER_SZ);
 		hif->rx_buf_addr[i] =
-			(void *)(rte_pktmbuf_iova(mbuf) - PFE_PKT_HEADER_SZ);
+			(void *)(size_t)(rte_pktmbuf_iova(mbuf) - PFE_PKT_HEADER_SZ);
 		hif->rx_buf_len[i] =  mbuf->buf_len - RTE_PKTMBUF_HEADROOM;
 
 		hif->shm->rx_buf_pool[i] = NULL;
@@ -464,12 +464,12 @@ retry:
 		} else
 			retry = 0;
 
-		free_buf = (void *)rte_pktmbuf_iova(mbuf);
+		free_buf = (void *)(size_t)rte_pktmbuf_iova(mbuf);
 		free_buf = free_buf - PFE_PKT_HEADER_SZ;
 
 		/*Fill free buffer in the descriptor */
 		hif->rx_buf_addr[rtc] = free_buf;
-		hif->rx_buf_vaddr[rtc] = (void *)((uint64_t)mbuf->buf_addr +
+		hif->rx_buf_vaddr[rtc] = (void *)((size_t)mbuf->buf_addr +
 				mbuf->data_off - PFE_PKT_HEADER_SZ);
 		hif->rx_buf_len[rtc] = buf_size - RTE_PKTMBUF_HEADROOM;
 

@@ -2218,7 +2218,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/*Init fields w.r.t. classficaition*/
 	memset(&priv->extract.qos_key_cfg, 0, sizeof(struct dpkg_profile_cfg));
-	priv->extract.qos_extract_param = (uint64_t)rte_malloc(NULL, 256, 64);
+	priv->extract.qos_extract_param = (size_t)rte_malloc(NULL, 256, 64);
 	if (!priv->extract.qos_extract_param) {
 		DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow "
 			    " classificaiton ", ret);
@@ -2228,7 +2228,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		memset(&priv->extract.fs_key_cfg[i], 0,
 			sizeof(struct dpkg_profile_cfg));
 		priv->extract.fs_extract_param[i] =
-			(uint64_t)rte_malloc(NULL, 256, 64);
+			(size_t)rte_malloc(NULL, 256, 64);
 		if (!priv->extract.fs_extract_param[i]) {
 			DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow classificaiton",
 				     ret);
@@ -2307,11 +2307,11 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 
 	for (i = 0; i < MAX_TCS; i++) {
 		if (priv->extract.fs_extract_param[i])
-			rte_free((void *)priv->extract.fs_extract_param[i]);
+			rte_free((void *)(size_t)priv->extract.fs_extract_param[i]);
 	}
 
 	if (priv->extract.qos_extract_param)
-		rte_free((void *)priv->extract.qos_extract_param);
+		rte_free((void *)(size_t)priv->extract.qos_extract_param);
 
 	eth_dev->dev_ops = NULL;
 	eth_dev->rx_pkt_burst = NULL;
