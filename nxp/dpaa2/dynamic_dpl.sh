@@ -264,7 +264,6 @@ get_dpni_parameters() {
 		then
 			DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_HAS_KEY_MASKING"
 		fi
-		DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR"
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
 	then
