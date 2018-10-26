@@ -153,7 +153,7 @@ static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 		return;
 	}
 
-	cpu_mask = cpu_mask << rte_lcore_id();
+	cpu_mask = cpu_mask << (lcore_config[rte_lcore_id()].core_id);
 	snprintf(command, COMMAND_LEN, "echo %X > /proc/irq/%s/smp_affinity",
 		 cpu_mask, token);
 	ret = system(command);
@@ -211,21 +211,23 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 #endif
 
 static int
-dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
+dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 {
 	int sdest, ret;
 	pid_t tid;
 	char command[COMMAND_LEN];
+	int cpu_id;
 
 	/* Set the Stashing Destination */
-	if (cpu_id < 0) {
-		cpu_id = rte_get_master_lcore();
-		if (cpu_id < 0) {
+	if (lcoreid < 0) {
+		lcoreid = rte_get_master_lcore();
+		if (lcoreid < 0) {
 			DPAA2_BUS_ERR("Getting CPU Index failed");
 			return -1;
 		}
 	}
 
+	cpu_id = lcore_config[lcoreid].core_id;
 	/*
 	 *  In case of running DPDK on the Virtual Machine the Stashing
 	 *  Destination gets set in the H/W w.r.t. the Virtual CPU ID's.
@@ -242,8 +244,8 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	 */
 
 	sdest = dpaa2_core_cluster_sdest(cpu_id);
-	DPAA2_BUS_DEBUG("Portal= %d  CPU= %u SDEST= %d",
-			dpio_dev->index, cpu_id, sdest);
+	DPAA2_BUS_DEBUG("Portal= %d  CPU= %u lcore id =%u SDEST= %d",
+			dpio_dev->index, cpu_id, lcoreid, sdest);
 
 	ret = dpio_set_stashing_destination(dpio_dev->dpio, CMD_PRI_LOW,
 					    dpio_dev->token, sdest);
@@ -277,7 +279,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	return 0;
 }
 
-struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int cpu_id)
+struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int lcoreid)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;
@@ -293,7 +295,7 @@ struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int cpu_id)
 	DPAA2_BUS_DEBUG("New Portal %p (%d) affined thread - %lu",
 			dpio_dev, dpio_dev->index, syscall(SYS_gettid));
 
-	ret = dpaa2_configure_stashing(dpio_dev, cpu_id);
+	ret = dpaa2_configure_stashing(dpio_dev, lcoreid);
 	if (ret)
 		DPAA2_BUS_ERR("dpaa2_configure_stashing failed");
 
