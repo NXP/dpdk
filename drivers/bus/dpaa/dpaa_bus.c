@@ -72,7 +72,7 @@ int dpaa_logtype_mempool;
 int dpaa_logtype_pmd;
 int dpaa_logtype_eventdev;
 
-struct rte_dpaa_bus rte_dpaa_bus;
+static struct rte_dpaa_bus rte_dpaa_bus;
 struct netcfg_info *dpaa_netcfg;
 
 /* define a variable to hold the portal_key, once created.*/
@@ -664,7 +664,7 @@ rte_dpaa_get_iommu_class(void)
 	return RTE_IOVA_PA;
 }
 
-struct rte_dpaa_bus rte_dpaa_bus = {
+static struct rte_dpaa_bus rte_dpaa_bus = {
 	.bus = {
 		.scan = rte_dpaa_bus_scan,
 		.probe = rte_dpaa_bus_probe,
