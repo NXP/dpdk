@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  * Copyright (C) 2014 Freescale Semiconductor, Inc.
+ * Copyright 2017-2018 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -55,7 +56,12 @@ struct qbman_block_desc {
 
 enum qbman_eqcr_mode {
 	qman_eqcr_vb_ring = 2, /* Valid bit, with eqcr in ring mode */
-	qman_eqcr_vb_array, /* Valid bit, with eqcr in array mode */
+	qman_eqcr_vb_array,    /* Valid bit, with eqcr in array mode */
+};
+
+enum qbman_cena_access_mode {
+	qman_cena_fastest_access = 0, /* Use memory backed node if available */
+	qman_cena_direct_access,      /* Use direct access to the CENA region */
 };
 
 /**
@@ -68,6 +74,8 @@ enum qbman_eqcr_mode {
  * @qman_version: the qman version.
  * @eqcr_mode: Select the eqcr mode, currently only valid bit ring mode and
  * valid bit array mode are supported.
+ * @cena_access_mode: Mode used to access the CENA region, direct
+ *                    or memory backed.
  *
  * Descriptor for a QBMan software portal, expressed in terms that make sense to
  * the user context. Ie. on MC, this information is likely to be true-physical,
@@ -84,6 +92,7 @@ struct qbman_swp_desc {
 	int idx;
 	uint32_t qman_version;
 	enum qbman_eqcr_mode eqcr_mode;
+	enum qbman_cena_access_mode cena_access_mode;
 };
 
 /* Driver object for managing a QBMan portal */
