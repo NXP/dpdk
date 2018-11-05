@@ -264,6 +264,7 @@ get_dpni_parameters() {
 		then
 			DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_HAS_KEY_MASKING"
 		fi
+		DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
 	then
@@ -285,7 +286,7 @@ get_dpni_parameters() {
 	fi
 	if [[ -z "$DPSECI_OPTIONS" ]]
 	then
-		DPSECI_OPTIONS=DPSECI_OPT_HAS_CG
+		DPSECI_OPTIONS=DPSECI_OPT_HAS_CG,DPSECI_OPT_HAS_OPR
 	fi
 	echo >> dynamic_dpl_logs
 	echo  "DPNI parameters :-->" >> dynamic_dpl_logs
@@ -359,7 +360,7 @@ get_dpseci_parameters() {
 		then
         		DPSECI_COUNT=16
 		else
-        		DPSECI_COUNT=8
+        		DPSECI_COUNT=4
 		fi
 	fi
 	if [[ -z "$DPSECI_QUEUES" ]]
