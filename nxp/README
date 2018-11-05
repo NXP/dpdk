@@ -823,6 +823,8 @@ DPAA2:
 
 9. DPAA2_LOOPBACK		QBMAN based loopback. send the received fd back without touching
 				the payload.
+
+10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
