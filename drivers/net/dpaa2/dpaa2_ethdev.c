@@ -327,14 +327,6 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 					   sizeof(struct qbman_result), 16);
 		if (!dpaa2_q->cscn)
 			goto fail_tx;
-
-		dpaa2_q->eqresp = rte_zmalloc(NULL, MAX_EQ_RESP_ENTRIES *
-					     sizeof(struct qbman_result),
-					     RTE_CACHE_LINE_SIZE);
-		if (!dpaa2_q->eqresp) {
-			rte_free(dpaa2_q->cscn);
-			goto fail_tx;
-		}
 	}
 
 	vq_id = 0;
@@ -350,7 +342,6 @@ fail_tx:
 	i -= 1;
 	while (i >= 0) {
 		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
-		rte_free(dpaa2_q->eqresp);
 		rte_free(dpaa2_q->cscn);
 		priv->tx_vq[i--] = NULL;
 	}
@@ -388,8 +379,6 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		/* cleanup tx queue cscn */
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
-			if (dpaa2_q->eqresp)
-				rte_free(dpaa2_q->eqresp);
 			if (dpaa2_q->cscn)
 				rte_free(dpaa2_q->cscn);
 		}
@@ -685,6 +674,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			return -ret;
 		}
 	}
+	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
 	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 	return 0;
 }
@@ -854,10 +844,6 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* Change the tx burst function if ordered queues are used */
-	if (priv->en_ordered)
-		dev->tx_pkt_burst = dpaa2_dev_tx_ordered;
-
 	ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
 		DPAA2_PMD_ERR("Failure in enabling dpni %d device: err=%d",
@@ -924,6 +910,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		/* enable dpni_irqs */
 		dpaa2_eth_setup_irqs(dev, 1);
 	}
+
+	/* Change the tx burst function if ordered queues are used */
+	if (priv->en_ordered)
+		dev->tx_pkt_burst = dpaa2_dev_tx_ordered;
 
 	return 0;
 }
@@ -1841,7 +1831,8 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		cfg.destination.hold_active = 1;
 	}
 
-	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED) {
+	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED &&
+			(!eth_priv->en_ordered)) {
 		struct opr_cfg ocfg;
 
 		/* Restoration window size = 256 frames */
@@ -1855,11 +1846,14 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		ocfg.olws = 0;
 		/* ORL resource exhaustaion advance NESN disabled */
 		ocfg.oeane = 0;
-		/* Loose ordering disabled */
-		ocfg.oloe = 0;
-		/* Loose ordering enabled if explicitly set */
-		if (getenv("DPAA2_LOOSE_ORDERING_ENABLE"))
-			ocfg.oloe = 1;
+		/* Loose ordering enabled */
+		ocfg.oloe = 1;
+		eth_priv->en_loose_ordered = 1;
+		/* Strict ordering enabled if explicitly set */
+		if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+			ocfg.oloe = 0;
+			eth_priv->en_loose_ordered = 0;
+		}
 
 		ret = dpni_set_opr(dpni, CMD_PRI_LOW, eth_priv->token,
 				   dpaa2_ethq->tc_index, flow_id,

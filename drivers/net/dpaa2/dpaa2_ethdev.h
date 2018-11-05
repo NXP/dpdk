@@ -149,6 +149,7 @@ struct dpaa2_dev_priv {
 	uint64_t ss_iova;
 	uint64_t ss_param_iova;
 	uint8_t en_ordered;
+	uint8_t en_loose_ordered;
 };
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
@@ -197,4 +198,6 @@ uint16_t dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 uint16_t dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
 			      uint16_t nb_pkts);
 uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
+void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci);
+
 #endif /* _DPAA2_ETHDEV_H */

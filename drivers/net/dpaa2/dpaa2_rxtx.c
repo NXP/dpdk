@@ -1217,41 +1217,16 @@ skip_tx:
 	return num_tx;
 }
 
-static uint32_t
-dpaa2_free_eq_descriptors(struct dpaa2_queue *dpaa2_q)
+void
+dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci)
 {
+	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
 	struct qbman_fd *fd;
-	struct rte_mempool *mp;
-	struct qbman_result *eqresp;
-	void *addr;
+	struct rte_mbuf *m;
 
-	while (dpaa2_q->eqresp_ci != dpaa2_q->eqresp_pi) {
-		eqresp = &dpaa2_q->eqresp[dpaa2_q->eqresp_ci];
-
-		if (!qbman_result_eqresp_rspid(eqresp))
-			break;
-
-		if (qbman_result_eqresp_rc(eqresp)) {
-			fd = qbman_result_eqresp_fd(eqresp);
-			addr = (void *)DPAA2_IOVA_TO_VADDR(
-				DPAA2_GET_FD_ADDR(fd));
-			mp = dpaa2_q->mb_pool;
-			rte_mempool_ops_enqueue_bulk(mp, &addr, 1);
-		}
-		qbman_result_eqresp_set_rspid(eqresp, 0);
-
-		dpaa2_q->eqresp_ci + 1 < MAX_EQ_RESP_ENTRIES ?
-			dpaa2_q->eqresp_ci++ : (dpaa2_q->eqresp_ci = 0);
-	}
-
-	/* Return 1 less entry so that PI and CI are never same in a
-	 * case there all the EQ responses are in use.
-	 */
-	if (dpaa2_q->eqresp_ci > dpaa2_q->eqresp_pi)
-		return dpaa2_q->eqresp_ci - dpaa2_q->eqresp_pi - 1;
-	else
-		return dpaa2_q->eqresp_ci - dpaa2_q->eqresp_pi +
-			MAX_EQ_RESP_ENTRIES - 1;
+	fd = qbman_result_eqresp_fd(&dpio_dev->eqresp[eqresp_ci]);
+	m = eth_fd_to_mbuf(fd);
+	rte_pktmbuf_free(m);
 }
 
 static void
@@ -1261,17 +1236,13 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 {
 	struct rte_eth_dev *dev = dpaa2_q->dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct dpaa2_queue *send_q;
+	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
+	struct eqresp_metadata *eqresp_meta;
 	uint16_t orpid, seqnum;
 	uint8_t dq_idx;
 
-	/* Use only queue 0 for Tx in case of atomic/ordered packets
-	 * as packets can get unordered when being tranmitted out
-	 * from the interface.
-	 */
-	send_q = (struct dpaa2_queue *)priv->tx_vq[0];
-	qbman_eq_desc_set_qd(eqdesc, priv->qdid, send_q->flow_id,
-			     send_q->tc_index);
+	qbman_eq_desc_set_qd(eqdesc, priv->qdid, dpaa2_q->flow_id,
+			     dpaa2_q->tc_index);
 
 	if (m->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
 		orpid = (m->seqn & DPAA2_EQCR_OPRID_MASK) >>
@@ -1279,14 +1250,24 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 		seqnum = (m->seqn & DPAA2_EQCR_SEQNUM_MASK) >>
 			DPAA2_EQCR_SEQNUM_SHIFT;
 
-		qbman_eq_desc_set_orp(eqdesc, 1, orpid, seqnum, 0);
-		qbman_eq_desc_set_response(eqdesc, (uint64_t)
-			DPAA2_VADDR_TO_IOVA(&dpaa2_q->eqresp[
-			dpaa2_q->eqresp_pi]), 1);
-		qbman_eq_desc_set_token(eqdesc, 1);
+		if (!priv->en_loose_ordered) {
+			qbman_eq_desc_set_orp(eqdesc, 1, orpid, seqnum, 0);
+			qbman_eq_desc_set_response(eqdesc, (uint64_t)
+				DPAA2_VADDR_TO_IOVA(&dpio_dev->eqresp[
+				dpio_dev->eqresp_pi]), 1);
+			qbman_eq_desc_set_token(eqdesc, 1);
 
-		dpaa2_q->eqresp_pi + 1 < MAX_EQ_RESP_ENTRIES ?
-			dpaa2_q->eqresp_pi++ : (dpaa2_q->eqresp_pi = 0);
+			eqresp_meta = &dpio_dev->eqresp_meta[
+				dpio_dev->eqresp_pi];
+			eqresp_meta->dpaa2_q = dpaa2_q;
+			eqresp_meta->mp = m->pool;
+
+			dpio_dev->eqresp_pi + 1 < MAX_EQ_RESP_ENTRIES ?
+				dpio_dev->eqresp_pi++ :
+				(dpio_dev->eqresp_pi = 0);
+		} else {
+			qbman_eq_desc_set_orp(eqdesc, 0, orpid, seqnum, 0);
+		}
 	} else {
 		dq_idx = m->seqn - 1;
 		qbman_eq_desc_set_dca(eqdesc, 1, dq_idx, 0);
@@ -1301,19 +1282,20 @@ uint16_t
 dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function to transmit the frames to given device and VQ*/
-	uint32_t loop, retry_count;
-	int32_t ret;
-	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
-	struct rte_mbuf *mi;
-	uint32_t frames_to_send, num_free_eq_desc;
-	struct rte_mempool *mp;
-	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
-	struct qbman_swp *swp;
-	uint16_t num_tx = 0;
-	uint16_t bpid;
 	struct rte_eth_dev *dev = dpaa2_q->dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct dpaa2_queue *order_sendq = (struct dpaa2_queue *)priv->tx_vq[0];
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
+	struct rte_mbuf *mi;
+	struct rte_mempool *mp;
+	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
+	struct qbman_swp *swp;
+	uint32_t frames_to_send, num_free_eq_desc;
+	uint32_t loop, retry_count;
+	int32_t ret;
+	uint16_t num_tx = 0;
+	uint16_t bpid;
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1342,10 +1324,12 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		frames_to_send = (nb_pkts > dpaa2_eqcr_size) ?
 			dpaa2_eqcr_size : nb_pkts;
 
-		if ((*bufs)->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
-			num_free_eq_desc = dpaa2_free_eq_descriptors(dpaa2_q);
-			if (num_free_eq_desc < frames_to_send)
-				frames_to_send = num_free_eq_desc;
+		if (!priv->en_loose_ordered) {
+			if ((*bufs)->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
+				num_free_eq_desc = dpaa2_free_eq_descriptors();
+				if (num_free_eq_desc < frames_to_send)
+					frames_to_send = num_free_eq_desc;
+			}
 		}
 
 		for (loop = 0; loop < frames_to_send; loop++) {
@@ -1353,7 +1337,11 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			qbman_eq_desc_clear(&eqdesc[loop]);
 
 			if ((*bufs)->seqn) {
-				dpaa2_set_enqueue_descriptor(dpaa2_q, (*bufs),
+				/* Use only queue 0 for Tx in case of atomic/
+				 * ordered packets as packets can get unordered
+				 * when being tranmitted out from the interface
+				 */
+				dpaa2_set_enqueue_descriptor(order_sendq, (*bufs),
 							     &eqdesc[loop]);
 			} else {
 				qbman_eq_desc_set_no_orp(&eqdesc[loop],
