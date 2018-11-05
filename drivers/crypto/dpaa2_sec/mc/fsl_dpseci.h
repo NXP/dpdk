@@ -44,6 +44,8 @@
  * Contains initialization APIs and runtime control APIs for DPSECI
  */
 
+#include <fsl_dpopr.h>
+
 struct fsl_mc_io;
 
 /**
@@ -355,6 +357,21 @@ int dpseci_get_api_version(struct fsl_mc_io *mc_io,
 			   uint32_t cmd_flags,
 			   uint16_t *major_ver,
 			   uint16_t *minor_ver);
+
+int dpseci_set_opr(struct fsl_mc_io *mc_io,
+		   uint32_t cmd_flags,
+		   uint16_t token,
+		   uint8_t index,
+		   uint8_t options,
+		   struct opr_cfg *cfg);
+
+int dpseci_get_opr(struct fsl_mc_io *mc_io,
+		   uint32_t cmd_flags,
+		   uint16_t token,
+		   uint8_t index,
+		   struct opr_cfg *cfg,
+		   struct opr_qry *qry);
+
 /**
  * enum dpseci_congestion_unit - DPSECI congestion units
  * @DPSECI_CONGESTION_UNIT_BYTES: bytes units

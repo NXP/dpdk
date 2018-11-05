@@ -1282,11 +1282,12 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		for (loop = 0; loop < frames_to_send; loop++) {
 
 			if ((*ops)->sym->m_src->seqn) {
-				uint8_t dqrr_index = (*ops)->sym->m_src->seqn - 1;
-
-				flags[loop] = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
-				DPAA2_PER_LCORE_DQRR_SIZE--;
-				DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dqrr_index);
+				if ((*ops)->sym->m_src->seqn & QBMAN_ENQUEUE_FLAG_DCA) {
+					DPAA2_PER_LCORE_DQRR_SIZE--;
+					DPAA2_PER_LCORE_DQRR_HELD &= ~(1 <<
+						(*ops)->sym->m_src->seqn & QBMAN_EQCR_DCA_IDXMASK);
+				}
+				flags[loop] = (*ops)->sym->m_src->seqn;
 				(*ops)->sym->m_src->seqn = DPAA2_INVALID_MBUF_SEQN;
 			}
 
@@ -1416,6 +1417,156 @@ sec_fd_to_mbuf(const struct qbman_fd *fd, uint8_t driver_id)
 		rte_free((void *)(fle-1));
 
 	return op;
+}
+
+static void
+dpaa2_sec_free_eqresp_buf(uint16_t eqresp_ci)
+{
+	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
+	struct rte_crypto_op *op;
+	struct qbman_fd *fd;
+
+	fd = qbman_result_eqresp_fd(&dpio_dev->eqresp[eqresp_ci]);
+	op = sec_fd_to_mbuf(fd, 0);
+// TODO: Instead of freeing, enqueue it to the sec tx queue (sec->core)
+//	 after setting an error in FD. But this will have performance impact.
+	rte_pktmbuf_free(op->sym->m_src);
+}
+
+static void
+dpaa2_sec_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
+			     struct rte_mbuf *m,
+			     struct qbman_eq_desc *eqdesc)
+{
+	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
+	struct eqresp_metadata *eqresp_meta;
+	struct rte_cryptodev *dev = dpaa2_q->dev;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	uint16_t orpid, seqnum;
+	uint8_t dq_idx;
+
+	if (m->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
+		orpid = (m->seqn & DPAA2_EQCR_OPRID_MASK) >>
+			DPAA2_EQCR_OPRID_SHIFT;
+		seqnum = (m->seqn & DPAA2_EQCR_SEQNUM_MASK) >>
+			DPAA2_EQCR_SEQNUM_SHIFT;
+
+
+		if (!priv->en_loose_ordered) {
+			qbman_eq_desc_set_orp(eqdesc, 1, orpid, seqnum, 0);
+			qbman_eq_desc_set_response(eqdesc, (uint64_t)
+				DPAA2_VADDR_TO_IOVA(&dpio_dev->eqresp[
+				dpio_dev->eqresp_pi]), 1);
+			qbman_eq_desc_set_token(eqdesc, 1);
+
+			eqresp_meta = &dpio_dev->eqresp_meta[dpio_dev->eqresp_pi];
+			eqresp_meta->dpaa2_q = dpaa2_q;
+			eqresp_meta->mp = m->pool;
+
+			dpio_dev->eqresp_pi + 1 < MAX_EQ_RESP_ENTRIES ?
+				dpio_dev->eqresp_pi++ : (dpio_dev->eqresp_pi = 0);
+		} else {
+			qbman_eq_desc_set_orp(eqdesc, 0, orpid, seqnum, 0);
+		}
+	} else {
+		dq_idx = m->seqn - 1;
+		qbman_eq_desc_set_dca(eqdesc, 1, dq_idx, 0);
+		DPAA2_PER_LCORE_DQRR_SIZE--;
+		DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dq_idx);
+	}
+	m->seqn = DPAA2_INVALID_MBUF_SEQN;
+}
+
+
+static uint16_t
+dpaa2_sec_enqueue_burst_ordered(void *qp, struct rte_crypto_op **ops,
+			uint16_t nb_ops)
+{
+	/* Function to transmit the frames to given device and VQ*/
+	uint32_t loop;
+	int32_t ret;
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
+	uint32_t frames_to_send, num_free_eq_desc;
+	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
+	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
+	struct qbman_swp *swp;
+	uint16_t num_tx = 0;
+	/*todo - need to support multiple buffer pools */
+	uint16_t bpid;
+	struct rte_mempool *mb_pool;
+	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
+	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+
+	if (unlikely(nb_ops == 0))
+		return 0;
+
+	if (ops[0]->sess_type == RTE_CRYPTO_OP_SESSIONLESS) {
+		DPAA2_SEC_ERR("sessionless crypto op not supported");
+		return 0;
+	}
+
+	if (!DPAA2_PER_LCORE_DPIO) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_SEC_ERR("Failure in affining portal");
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	while (nb_ops) {
+		frames_to_send = (nb_ops > dpaa2_eqcr_size) ?
+			dpaa2_eqcr_size : nb_ops;
+
+		if (!priv->en_loose_ordered) {
+			if (((*ops)->sym->m_src->seqn)) {
+				num_free_eq_desc = dpaa2_free_eq_descriptors();
+				if (num_free_eq_desc < frames_to_send)
+					frames_to_send = num_free_eq_desc;
+			}
+		}
+
+		for (loop = 0; loop < frames_to_send; loop++) {
+			/*Prepare enqueue descriptor*/
+			qbman_eq_desc_clear(&eqdesc[loop]);
+			qbman_eq_desc_set_fq(&eqdesc[loop], dpaa2_qp->tx_vq.fqid);
+
+			if ((*ops)->sym->m_src->seqn)
+				dpaa2_sec_set_enqueue_descriptor(
+						&dpaa2_qp->tx_vq,
+						(*ops)->sym->m_src,
+						&eqdesc[loop]);
+			else
+				qbman_eq_desc_set_no_orp(&eqdesc[loop],
+							 DPAA2_EQ_RESP_ERR_FQ);
+
+			/*Clear the unused FD fields before sending*/
+			memset(&fd_arr[loop], 0, sizeof(struct qbman_fd));
+			mb_pool = (*ops)->sym->m_src->pool;
+			bpid = mempool_to_bpid(mb_pool);
+			ret = build_sec_fd(*ops, &fd_arr[loop], bpid);
+			if (ret) {
+				DPAA2_SEC_ERR("error: Improper packet contents"
+					      " for crypto operation");
+				goto skip_tx;
+			}
+			ops++;
+		}
+		loop = 0;
+		while (loop < frames_to_send) {
+			loop += qbman_swp_enqueue_multiple_desc(swp,
+					&eqdesc[loop], &fd_arr[loop],
+					frames_to_send - loop);
+		}
+
+		num_tx += frames_to_send;
+		nb_ops -= frames_to_send;
+	}
+
+skip_tx:
+	dpaa2_qp->tx_vq.tx_pkts += num_tx;
+	dpaa2_qp->tx_vq.err_pkts += nb_ops;
+	return num_tx;
 }
 
 static uint16_t
@@ -2989,6 +3140,10 @@ dpaa2_sec_dev_start(struct rte_cryptodev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	/* Change the tx burst function if ordered queues are used */
+	if (priv->en_ordered)
+		dev->enqueue_burst = dpaa2_sec_enqueue_burst_ordered;
+
 	memset(&attr, 0, sizeof(struct dpseci_attr));
 
 	ret = dpseci_enable(dpseci, CMD_PRI_LOW, priv->token);
@@ -3192,6 +3347,7 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
+
 static void
 dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 				 const struct qbman_fd *fd,
@@ -3218,10 +3374,43 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
 				(rxq->dev))->driver_id);
 	dqrr_index = qbman_get_dqrr_idx(dq);
-	ev->crypto_op->sym->m_src->seqn = dqrr_index + 1;
+	ev->crypto_op->sym->m_src->seqn = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
 	DPAA2_PER_LCORE_DQRR_SIZE++;
 	DPAA2_PER_LCORE_DQRR_HELD |= 1 << dqrr_index;
 	DPAA2_PER_LCORE_DQRR_MBUF(dqrr_index) = ev->crypto_op->sym->m_src;
+}
+
+static void __attribute__((hot))
+dpaa2_sec_process_ordered_event(struct qbman_swp *swp,
+				 const struct qbman_fd *fd,
+				 const struct qbman_result *dq,
+				 struct dpaa2_queue *rxq,
+				 struct rte_event *ev)
+{
+	/* Prefetching mbuf */
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-
+		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
+
+	/* Prefetching ipsec crypto_op stored in priv data of mbuf */
+	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-64));
+
+	ev->flow_id = rxq->ev.flow_id;
+	ev->sub_event_type = rxq->ev.sub_event_type;
+	ev->event_type = RTE_EVENT_TYPE_CRYPTODEV;
+	ev->op = RTE_EVENT_OP_NEW;
+	ev->sched_type = rxq->ev.sched_type;
+	ev->queue_id = rxq->ev.queue_id;
+	ev->priority = rxq->ev.priority;
+	ev->crypto_op = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
+				(rxq->dev))->driver_id);
+
+	ev->crypto_op->sym->m_src->seqn = DPAA2_ENQUEUE_FLAG_ORP;
+	ev->crypto_op->sym->m_src->seqn |= qbman_result_DQ_odpid(dq) <<
+		DPAA2_EQCR_OPRID_SHIFT;
+	ev->crypto_op->sym->m_src->seqn |= qbman_result_DQ_seqnum(dq) <<
+		DPAA2_EQCR_SEQNUM_SHIFT;
+
+	qbman_swp_dqrr_consume(swp, dq);
 }
 
 int
@@ -3240,6 +3429,8 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 		qp->rx_vq.cb = dpaa2_sec_process_parallel_event;
 	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC)
 		qp->rx_vq.cb = dpaa2_sec_process_atomic_event;
+	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED)
+		qp->rx_vq.cb = dpaa2_sec_process_ordered_event;
 	else
 		return -EINVAL;
 
@@ -3255,6 +3446,40 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 		cfg.options |= DPSECI_QUEUE_OPT_ORDER_PRESERVATION;
 		cfg.order_preservation_en = 1;
 	}
+
+	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED) {
+		struct opr_cfg ocfg;
+
+		/* Restoration window size = 256 frames */
+		ocfg.oprrws = 3;
+		/* Restoration window size = 512 frames for LX2 */
+		if (dpaa2_svr_family == SVR_LX2160A)
+			ocfg.oprrws = 4;
+		/* Auto advance NESN window enabled */
+		ocfg.oa = 1;
+		/* Late arrival window size disabled */
+		ocfg.olws = 0;
+		/* ORL resource exhaustaion advance NESN disabled */
+		ocfg.oeane = 0;
+		/* Loose ordering enabled */
+		ocfg.oloe = 1;
+		priv->en_loose_ordered = 1;
+		/* Strict ordering enabled if explicitly set */
+		if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+			ocfg.oloe = 0;
+			priv->en_loose_ordered = 0;
+		}
+
+		ret = dpseci_set_opr(dpseci, CMD_PRI_LOW, priv->token,
+				   qp_id, OPR_OPT_CREATE, &ocfg);
+		if (ret) {
+			RTE_LOG(ERR, PMD, "Error setting opr: ret: %d\n", ret);
+			return ret;
+		}
+		qp->tx_vq.cb_eqresp_free = dpaa2_sec_free_eqresp_buf;
+		priv->en_ordered = 1;
+	}
+
 	ret = dpseci_set_rx_queue(dpseci, CMD_PRI_LOW, priv->token,
 				  qp_id, &cfg);
 	if (ret) {
