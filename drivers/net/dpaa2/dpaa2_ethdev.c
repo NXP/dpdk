@@ -57,6 +57,7 @@
 
 /* Per FQ Taildrop config in byte count */
 static uint32_t td_threshold = CONG_THRESHOLD_RX_Q;
+enum pmd_dpaa2_ts dpaa2_enable_ts;
 
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
@@ -152,6 +153,12 @@ dpaa2_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 		return -1;
 
 	return 0;
+}
+
+void
+rte_pmd_dpaa2_set_timestamp(enum pmd_dpaa2_ts enable)
+{
+	dpaa2_enable_ts = enable;
 }
 
 static int

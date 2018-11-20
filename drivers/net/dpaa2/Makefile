@@ -67,4 +67,6 @@ LDLIBS += -lrte_mempool_dpaa2
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring
 LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs
 
+# install this header file
+SYMLINK-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)-include := rte_pmd_dpaa2.h
 include $(RTE_SDK)/mk/rte.lib.mk

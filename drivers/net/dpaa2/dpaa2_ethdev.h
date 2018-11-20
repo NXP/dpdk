@@ -35,6 +35,7 @@
 #define _DPAA2_ETHDEV_H
 
 #include <rte_event_eth_rx_adapter.h>
+#include <rte_pmd_dpaa2.h>
 
 #include <dpaa2_hw_pvt.h>
 
@@ -116,6 +117,7 @@
 /*Externaly defined*/
 extern const struct rte_flow_ops dpaa2_flow_ops;
 extern enum rte_filter_type dpaa2_filter_type;
+extern enum pmd_dpaa2_ts dpaa2_enable_ts;
 
 struct dpaa2_dev_priv {
 	void *hw;
