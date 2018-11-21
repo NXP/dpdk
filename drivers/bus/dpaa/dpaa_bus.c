@@ -279,7 +279,6 @@ dpaa_clean_device_list(void)
 
 int rte_dpaa_portal_init(void *arg)
 {
-	cpu_set_t cpuset;
 	pthread_t id;
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
@@ -291,18 +290,16 @@ int rte_dpaa_portal_init(void *arg)
 
 	if ((size_t)arg == 1 || lcore == LCORE_ID_ANY)
 		lcore = rte_get_master_lcore();
-	/* if the core id is not supported */
 	else
 		if (lcore >= RTE_MAX_LCORE)
 			return -1;
 
 	cpu = lcore_config[lcore].core_id;
 
-	/* Set CPU affinity for this thread */
-	CPU_ZERO(&cpuset);
-	CPU_SET(cpu, &cpuset);
+	/* Set CPU affinity for this thread.*/
 	id = pthread_self();
-	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t), &cpuset);
+	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t),
+			&lcore_config[lcore].cpuset);
 	if (ret) {
 		DPAA_BUS_LOG(ERR, "pthread_setaffinity_np failed on core :%u"
 			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
