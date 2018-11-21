@@ -30,6 +30,9 @@
  *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -79,6 +82,10 @@ static uint32_t io_space_count;
 
 /* Variable to store DPAA2 platform type */
 uint32_t dpaa2_svr_family;
+
+/* Physical core id for lcores running on dpaa2. */
+/* DPAA2 only support 1 lcore to 1 phy cpu mapping */
+static unsigned int dpaa2_cpu[RTE_MAX_LCORE];
 
 /* Variable to store DPAA2 DQRR size */
 uint8_t dpaa2_dqrr_size;
@@ -153,7 +160,7 @@ static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 		return;
 	}
 
-	cpu_mask = cpu_mask << (lcore_config[rte_lcore_id()].core_id);
+	cpu_mask = cpu_mask << dpaa2_cpu[rte_lcore_id()];
 	snprintf(command, COMMAND_LEN, "echo %X > /proc/irq/%s/smp_affinity",
 		 cpu_mask, token);
 	ret = system(command);
@@ -227,7 +234,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 		}
 	}
 
-	cpu_id = lcore_config[lcoreid].core_id;
+	cpu_id = dpaa2_cpu[lcoreid];
 	/*
 	 *  In case of running DPDK on the Virtual Machine the Stashing
 	 *  Destination gets set in the H/W w.r.t. the Virtual CPU ID's.
@@ -399,6 +406,40 @@ dpaa2_affine_qbman_ethrx_swp(void)
 	}
 }
 
+/*
+ * This checks for not supported lcore mappings as well as get the physical
+ * cpuid for the lcore
+ * dpaa2_cpu shall have only one lcore per cpu i.e. 1@10, 2@10 not supported
+ * cpumap shall have only one cpu per lcore i.e. 1@10-14 not supported.
+ */
+static int
+dpaa2_check_lcore_cpuset(void)
+{
+	unsigned int lcore_id, i, cpumap = 0;
+	int ret = 0;
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++)
+		dpaa2_cpu[lcore_id] = 0xffffffff;
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		for (i = 0; i < RTE_MAX_LCORE; i++) {
+			if (CPU_ISSET(i, &lcore_config[lcore_id].cpuset)) {
+				RTE_LOG(DEBUG, EAL, "lcore id = %u cpu=%u\n",
+					lcore_id, i);
+				if ((dpaa2_cpu[lcore_id] != 0xffffffff) ||
+					((1 << i) & cpumap)) {
+				    DPAA2_BUS_ERR(
+				    "ERR:lcore map to multi-cpu not supported");
+				    ret = -1;
+				}
+				dpaa2_cpu[lcore_id] = i;
+				cpumap |= (1 << i);
+			}
+		}
+	}
+	return ret;
+}
+
 static int
 dpaa2_create_dpio_device(int vdev_fd,
 			 struct vfio_device_info *obj_info,
@@ -408,6 +449,7 @@ dpaa2_create_dpio_device(int vdev_fd,
 	struct vfio_region_info reg_info = { .argsz = sizeof(reg_info)};
 	struct qbman_swp_desc p_des;
 	struct dpio_attr attr;
+	static int check_lcore_cpuset;
 
 	if (obj_info->num_regions < NUM_DPIO_REGIONS) {
 		DPAA2_BUS_ERR("Not sufficient number of DPIO regions");
@@ -426,6 +468,13 @@ dpaa2_create_dpio_device(int vdev_fd,
 	rte_atomic16_init(&dpio_dev->ref_count);
 	/* Using single portal  for all devices */
 	dpio_dev->mc_portal = rte_mcp_ptr_list[MC_PORTAL_INDEX];
+
+	if (!check_lcore_cpuset) {
+		check_lcore_cpuset = 1;
+
+		if (dpaa2_check_lcore_cpuset() < 0)
+			goto err;
+	}
 
 	dpio_dev->dpio = malloc(sizeof(struct fsl_mc_io));
 	if (!dpio_dev->dpio) {
