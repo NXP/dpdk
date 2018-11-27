@@ -290,11 +290,84 @@ struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int lcoreid)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;
+	uint8_t sdest;
+	int cpu_id = dpaa2_cpu[lcoreid];
 
 	/* Get DPIO dev handle from list using index */
 	TAILQ_FOREACH(dpio_dev, &dpio_dev_list, next) {
-		if (dpio_dev && rte_atomic16_test_and_set(&dpio_dev->ref_count))
+	/* Workaround to map Best portal to CPU combination for LX2 */
+	if (dpaa2_svr_family == SVR_LX2160A) {
+
+		sdest = dpaa2_core_cluster_sdest(cpu_id);
+		switch (sdest){
+		case 0:
+			if (dpio_dev->hw_id != 16) {
+				if (dpio_dev->hw_id > 16 )
+					break; /* No Best portal found for SDEST*/
+				else
+					continue;
+			}
 			break;
+		case 1:
+			if (dpio_dev->hw_id != 18 && dpio_dev->hw_id != 24) {
+				if (dpio_dev->hw_id > 24 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 2:
+			if (dpio_dev->hw_id != 20 && dpio_dev->hw_id != 26) {
+				if (dpio_dev->hw_id > 26 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 3:
+			if (dpio_dev->hw_id != 22 && dpio_dev->hw_id != 28) {
+				if (dpio_dev->hw_id > 28 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 4:
+			if (dpio_dev->hw_id != 23 && dpio_dev->hw_id != 29) {
+				if (dpio_dev->hw_id > 29 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 5:
+			if (dpio_dev->hw_id != 21 && dpio_dev->hw_id != 25) {
+				if (dpio_dev->hw_id > 25 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 6:
+			if (dpio_dev->hw_id != 17 && dpio_dev->hw_id != 30) {
+				if (dpio_dev->hw_id > 30 )
+					break;
+				else
+					continue;
+			}
+			break;
+		case 7:
+			if (dpio_dev->hw_id != 19 && dpio_dev->hw_id != 27) {
+				if (dpio_dev->hw_id > 27 )
+					break;
+				else
+					continue;
+			}
+			break;
+		}
+	}
+	if (dpio_dev && rte_atomic16_test_and_set(&dpio_dev->ref_count))
+		break;
 	}
 	if (!dpio_dev)
 		return NULL;
