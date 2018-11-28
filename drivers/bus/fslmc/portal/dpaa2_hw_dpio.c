@@ -408,14 +408,14 @@ dpaa2_affine_qbman_ethrx_swp(void)
 
 /*
  * This checks for not supported lcore mappings as well as get the physical
- * cpuid for the lcore
- * dpaa2_cpu shall have only one lcore per cpu i.e. 1@10, 2@10 not supported
- * cpumap shall have only one cpu per lcore i.e. 1@10-14 not supported.
+ * cpuid for the lcore.
+ * one lcore can only map to 1 cpu i.e. 1@10-14 not supported.
+ * one cpu can be mapped to more than one lcores.
  */
 static int
 dpaa2_check_lcore_cpuset(void)
 {
-	unsigned int lcore_id, i, cpumap = 0;
+	unsigned int lcore_id, i;
 	int ret = 0;
 
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++)
@@ -426,14 +426,13 @@ dpaa2_check_lcore_cpuset(void)
 			if (CPU_ISSET(i, &lcore_config[lcore_id].cpuset)) {
 				RTE_LOG(DEBUG, EAL, "lcore id = %u cpu=%u\n",
 					lcore_id, i);
-				if ((dpaa2_cpu[lcore_id] != 0xffffffff) ||
-					((1 << i) & cpumap)) {
+				if (dpaa2_cpu[lcore_id] != 0xffffffff) {
 				    DPAA2_BUS_ERR(
 				    "ERR:lcore map to multi-cpu not supported");
 				    ret = -1;
+				} else  {
+					dpaa2_cpu[lcore_id] = i;
 				}
-				dpaa2_cpu[lcore_id] = i;
-				cpumap |= (1 << i);
 			}
 		}
 	}
