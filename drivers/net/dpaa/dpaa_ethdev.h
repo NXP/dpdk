@@ -147,7 +147,7 @@ struct dpaa_if {
 	struct rte_eth_fc_conf *fc_conf;
 	void *port_handle;
 	void *netenv_handle;
-	void *scheme_handle;
+	void *scheme_handle[2];
 	uint32_t scheme_count;
 };
 
