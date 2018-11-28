@@ -374,7 +374,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 	int udp_configured = 0, tcp_configured = 0, sctp_configured = 0;
 
 	if (!req_dist_set)
-		dist_units->units[dist_idx++].hdrs[0].hdr = HEADER_TYPE_IPv4;
+		dist_units->units[dist_idx++].hdrs[0].hdr = HEADER_TYPE_ETH;
 
 	while (req_dist_set) {
 		if (req_dist_set % 2 != 0) {
