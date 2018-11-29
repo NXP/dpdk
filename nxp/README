@@ -645,6 +645,100 @@ Following are some pre-requisites:
        Now pump traffic from the Spirent to the enabled port
 
 ================================================================================
+Executing dpdk-pdump/dpdk-procinfo on DPAA2
+===========================================
+
+Both, 'dpdk-pdump' and 'dpdk-procinfo' are examples of secondary applications
+which run along a primary DPDK process. Being different processes, rather than
+thread, they work over the DPDK EAL's Multiprocess infrastructure to communicate
+with the primary process.
+
+
+`dpdk-pdump` for capturing packets
+----------------------------------
+
+DPDK Supports executing secondary processes/applications which can query
+the primary application (the first one) for information. For example, the
+sample application 'dpdk-pdump' allows capturing of packets arriving on
+other interfaces/devices available in DPDK.
+
+Compiling 'dpdk-pdump':
+
+For compiling 'dpdk-pdump', enable 'CONFIG_RTE_LIBRTE_PMD_PCAP=y' and
+'CONFIG_RTE_LIBRTE_PDUMP=y' configuration. Later configuration is to enable
+dumping packets to a PCAP format which can then be used to read using
+applications like Wireshark. PCAP support is optional.
+
+For PCAP support, 'libpcap' library has to be provided to DPDK during
+compilation.
+
+    Step 1: Compile 'libpcap' externally using same toolchain used for
+            compiling DPDK drivers/sample applications.
+
+    Step 2: While compiling DPDK, pass EXTRA_CFLAGS="-I/path/to/headers" and
+            EXTRA_LDFLAGS="-L/path/to/compiled/libraries". Similar to:
+
+    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I./path/libpcap/include" EXTRA_LDFLAGS="-L./path/libpca/lib"
+
+    'dpdk-pdump'` would be available in the <T>/app folder along with 'testpmd'
+    and other inbuilt DPDK apps.
+
+Executing 'dpdk-pdump':
+
+    Note: As of now only testpmd application supports dpdk-pdump;
+
+    Step 1: Execute testpmd using routine commands
+
+    $ testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+
+    Step 2: Get testpmd ready for IO by selecting the mode
+
+    $ testpmd> set fwd io
+    $ testpmd> start
+
+    Step 3: Execute dpdk-pdump on a different terminal:
+
+    $ dpdk-pdump -n 1 -- --pdump "port=0,queue=*,rx-dev=./rx.pcap"
+
+    In the above command, "port=0, ..." parameters convey `dpdk-pdump` app
+    that capture should be done on port 0 (for example, dpni.1) and packets
+    being received on all queues "queue=*". Further, all the captured packets
+    can be dumped to a PCAP file using "rx-dev=<path to pcap file>.
+
+    In the above example, only Rx'd packets are being written to PCAP. For
+    Tx'd packets, use something similar to "port=0,queue=*,tx-dev=./..." where
+    the output PCAP file is different from Rx'd packets. Both, Rx and Tx,
+    options can be simultaneously provided.
+
+    Step 4: Stop 'dpdk-pdump' using Ctrl+C and copy the pcap file for reading
+    through external application like Wireshark
+
+Executing `dpdk-procinfo`:
+
+    'dpdk-procinfo' is an inbuilt application which allows dumping information
+    like memory and statistics of a running (primary) DPDK application. It is
+    available in the app/ folder just like testpmd and dpdk-pdump.
+
+    Note: This can work with any other DPDK application (sample application
+    like l3fwd) unlike the restriction for 'dpdk-pdump'.
+
+    Step 1: Execute any DPDK application using routine commands. For example,
+    testpmd
+
+    $ testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+
+    Step 2: Execute 'dpdk-procinfo' on a separate terminal:
+
+    $ dpdk-procinfo -- -m
+
+    Above command would dump to screen the memory layout of the primary DPDK
+    application. There are other switches also available like '-s' which can
+    dump the statistics.
+
+    Note: 'dpdk-procinfo' in 17.11 has a bug which doesn't allow all its
+    functionality to be used, like stats and xstats.
+
+================================================================================
 VM VFIO Direct Assignment
 =========================
 

@@ -389,10 +389,15 @@ rte_fslmc_probe(void)
 		return 0;
 	}
 
-	ret = fslmc_vfio_process_group();
-	if (ret) {
-		DPAA2_BUS_ERR("Unable to setup devices %d", ret);
-		return 0;
+	/* Only in case of primary the VFIO group and dma-map setup would be
+	 * done.
+	 */
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		ret = fslmc_vfio_process_group();
+		if (ret) {
+			DPAA2_BUS_ERR("Unable to setup devices %d", ret);
+			return 0;
+		}
 	}
 
 	probe_all = rte_fslmc_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST;
