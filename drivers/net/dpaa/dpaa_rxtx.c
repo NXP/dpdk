@@ -119,9 +119,11 @@ static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
 static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 {
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
-	uint64_t prs = *((uintptr_t *)(&annot->parse)) & DPAA_PARSE_MASK;
+	uint64_t prs = *((uintptr_t *)(&annot->parse));
 
-	DPAA_DP_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
+	DPAA_DP_LOG(DEBUG, "Parsing mbuf: %p with prs: 0x%" PRIx64 " ", m, prs);
+
+	prs &= DPAA_PARSE_MASK;
 
 	switch (prs) {
 	case DPAA_PKT_TYPE_IPV4:

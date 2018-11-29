@@ -536,15 +536,49 @@ static inline void unset_pcd_netenv_scheme(struct dpaa_if *dpaa_intf)
 		DPAA_PMD_ERR("FM_PCD_KgSchemeDelete: Failed");
 
 	dpaa_intf->scheme_handle[dpaa_intf->scheme_count] = NULL;
-
-	if(!dpaa_intf->scheme_count) {
-		/* FM PCD NetEnvCharacteristicsDelete */
-		ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
-		if (ret != E_OK)
-			DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed");
-		dpaa_intf->netenv_handle = NULL;
-	}
 }
+
+/* Set PCD NetEnv and Scheme and default scheme */
+static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
+{
+	ioc_fm_pcd_kg_scheme_params_t scheme_params;
+	int idx = dpaa_intf->scheme_count;
+
+	/* Set PCD NetEnvCharacteristics */
+	memset(&scheme_params, 0, sizeof(scheme_params));
+
+	/* Adding 10 to default schemes as the number of interface would be
+	 * lesser than 10 and the relative scheme ids should be unique for
+	 * every scheme.
+	 */
+	scheme_params.scm_id.relative_scheme_id = 10 + dpaa_intf->ifid;
+	scheme_params.use_hash = 0;
+	scheme_params.next_engine = e_IOC_FM_PCD_DONE;
+	scheme_params.net_env_params.num_of_distinction_units = 0;
+	scheme_params.net_env_params.net_env_id = dpaa_intf->netenv_handle;
+	scheme_params.base_fqid = dpaa_intf->rx_queues[0].fqid;
+	scheme_params.key_extract_and_hash_params.
+	 hash_distribution_num_of_fqids = 1;
+	scheme_params.key_extract_and_hash_params.num_of_used_extracts = 0;
+	scheme_params.modify = false;
+	scheme_params.always_direct = false;
+	scheme_params.scheme_counter.update = 1;
+	scheme_params.scheme_counter.value = 0;
+
+	/* FM PCD KgSchemeSet */
+	dpaa_intf->scheme_handle[idx] =
+			FM_PCD_KgSchemeSet(fm_info.pcd_handle, &scheme_params);
+	if (!dpaa_intf->scheme_handle[idx]) {
+		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed");
+		return -1;
+	}
+
+	fm_model.scheme_devid[dpaa_intf->ifid][idx] =
+				GetDeviceId(dpaa_intf->scheme_handle);
+	dpaa_intf->scheme_count++;
+	return 0;
+}
+
 
 /* Set PCD NetEnv and Scheme and default scheme */
 static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
@@ -562,23 +596,13 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	/* Set dist unit header type */
 	set_dist_units(&dist_units, req_dist_set);
 
-	/* FM PCD NetEnvCharacteristicsSet */
-	dpaa_intf->netenv_handle = FM_PCD_NetEnvCharacteristicsSet(
-					fm_info.pcd_handle, &dist_units);
-	if (!dpaa_intf->netenv_handle) {
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsSet: Failed");
-		return -1;
-	}
-
-	fm_model.netenv_devid[dpaa_intf->ifid] =
-				GetDeviceId(dpaa_intf->netenv_handle);
 	scheme_params.scm_id.relative_scheme_id = dpaa_intf->ifid;
 
 	/* Set PCD Scheme params */
 	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf);
 	if (ret) {
 		DPAA_PMD_ERR("Set scheme params: Failed");
-		goto net_env_char_delete;
+		return -1;
 	}
 
 	/* FM PCD KgSchemeSet */
@@ -586,23 +610,13 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 			FM_PCD_KgSchemeSet(fm_info.pcd_handle, &scheme_params);
 	if (!dpaa_intf->scheme_handle[idx]) {
 		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed");
-		goto net_env_char_delete;
+		return -1;
 	}
 
 	fm_model.scheme_devid[dpaa_intf->ifid][idx] =
 				GetDeviceId(dpaa_intf->scheme_handle);
 	dpaa_intf->scheme_count++;
 	return 0;
-
-net_env_char_delete:
-	/* FM PCD NetEnvCharacteristicsDelete */
-	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
-	if (ret != E_OK) {
-		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsDelete: Failed");
-		return ret;
-	}
-	dpaa_intf->netenv_handle = NULL;
-	return -1;
 }
 
 
@@ -618,9 +632,11 @@ static inline int get_port_type(struct fman_if *fif)
 	}
 }
 
-static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf)
+static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
+				     uint64_t req_dist_set)
 {
 	t_FmPortParams	fm_port_params;
+	ioc_fm_pcd_net_env_params_t dist_units;
 
 	/* FMAN mac indexes mappings (0 is unused,
 	 * first 8 are for 1G, next for 10G ports
@@ -643,6 +659,23 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf)
 	}
 
 	fm_model.fm_port_params[dpaa_intf->ifid] = fm_port_params;
+
+	/* Set PCD NetEnvCharacteristics */
+	memset(&dist_units, 0, sizeof(dist_units));
+
+	/* Set dist unit header type */
+	set_dist_units(&dist_units, req_dist_set);
+
+	/* FM PCD NetEnvCharacteristicsSet */
+	dpaa_intf->netenv_handle = FM_PCD_NetEnvCharacteristicsSet(
+					fm_info.pcd_handle, &dist_units);
+	if (!dpaa_intf->netenv_handle) {
+		DPAA_PMD_ERR("FM_PCD_NetEnvCharacteristicsSet: Failed");
+		return -1;
+	}
+
+	fm_model.netenv_devid[dpaa_intf->ifid] =
+				GetDeviceId(dpaa_intf->netenv_handle);
 
 	return 0;
 }
@@ -717,17 +750,25 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	dpaa_intf->nb_rx_queues = dev->data->nb_rx_queues;
 
 	/* Open FM Port and set it in port info */
-	ret = set_fm_port_handle(dpaa_intf);
+	ret = set_fm_port_handle(dpaa_intf, req_dist_set);
 	if (ret) {
 		DPAA_PMD_ERR("Set FM Port handle: Failed");
 		return -1;
 	}
 
 	/* Set PCD netenv and scheme */
-	ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set);
+	if (req_dist_set) {
+		ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set);
+		if (ret) {
+			DPAA_PMD_ERR("Set PCD NetEnv and Scheme dist: Failed");
+			goto unset_fm_port_handle;
+		}
+	}
+	/* Set default netenv and scheme */
+	ret = set_default_scheme(dpaa_intf);
 	if (ret) {
 		DPAA_PMD_ERR("Set PCD NetEnv and Scheme: Failed");
-		goto unset_fm_port_handle;
+		goto unset_pcd_netenv_scheme1;
 	}
 
 	/* Set Port PCD */
@@ -747,6 +788,9 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	return 0;
 
 unset_pcd_netenv_scheme:
+	unset_pcd_netenv_scheme(dpaa_intf);
+
+unset_pcd_netenv_scheme1:
 	unset_pcd_netenv_scheme(dpaa_intf);
 
 unset_fm_port_handle:
