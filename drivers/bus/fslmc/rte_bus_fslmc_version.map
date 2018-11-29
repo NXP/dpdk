@@ -107,6 +107,7 @@ DPDK_18.05 {
 	global:
 
 	dpaa2_affine_qbman_ethrx_swp;
+	dpaa2_free_eq_descriptors;
 	dpdmai_close;
 	dpdmai_disable;
 	dpdmai_enable;

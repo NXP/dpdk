@@ -54,6 +54,8 @@ struct dpaa2_sec_dev_private {
 	/**< Max number of queue pairs supported by device */
 	unsigned int max_nb_sessions;
 	/**< Max number of sessions supported by device */
+	uint8_t en_ordered;
+	uint8_t en_loose_ordered;
 };
 
 struct dpaa2_sec_qp {

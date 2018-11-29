@@ -112,12 +112,23 @@
 
 #define DPAA2_DPCI_MAX_QUEUES 2
 
+struct dpaa2_queue;
+
+struct eqresp_metadata {
+	struct dpaa2_queue *dpaa2_q;
+	struct rte_mempool *mp;
+};
+
 struct dpaa2_dpio_dev {
 	TAILQ_ENTRY(dpaa2_dpio_dev) next;
 		/**< Pointer to Next device instance */
 	uint16_t index; /**< Index of a instance in the list */
 	rte_atomic16_t ref_count;
 		/**< How many thread contexts are sharing this.*/
+	uint16_t eqresp_ci;
+	uint16_t eqresp_pi;
+	struct qbman_result *eqresp;
+	struct eqresp_metadata *eqresp_meta;
 	struct fsl_mc_io *dpio; /** handle to DPIO portal object */
 	uint16_t token;
 	struct qbman_swp *sw_portal; /** SW portal object */
@@ -160,13 +171,13 @@ typedef void (dpaa2_queue_cb_dqrr_t)(struct qbman_swp *swp,
 		struct dpaa2_queue *rxq,
 		struct rte_event *ev);
 
+typedef void (dpaa2_queue_cb_eqresp_free_t)(uint16_t eqresp_ci);
+
 struct dpaa2_queue {
 	struct rte_mempool *mb_pool; /**< mbuf pool to populate RX ring. */
 	void *dev;
 	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */
-	uint8_t eqresp_ci;
-	uint8_t eqresp_pi;
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
 	uint8_t tc_index;	/*!< traffic class identifier */
 	uint64_t rx_pkts;
@@ -176,9 +187,9 @@ struct dpaa2_queue {
 		struct queue_storage_info_t *q_storage;
 		struct qbman_result *cscn;
 	};
-	struct qbman_result *eqresp;
 	struct rte_event ev;
 	dpaa2_queue_cb_dqrr_t *cb;
+	dpaa2_queue_cb_eqresp_free_t *cb_eqresp_free;
 };
 
 struct swp_active_dqs {
