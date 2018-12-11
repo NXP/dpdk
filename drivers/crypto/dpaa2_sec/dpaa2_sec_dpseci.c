@@ -2802,7 +2802,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		if (session->dir == DIR_ENC)
 			bufsize = cnstr_shdsc_pdcp_u_plane_encap(
 					priv->flc_desc[0].desc, 1, swap,
-					pdcp_xform->sn_size,
+					(enum pdcp_sn_size)pdcp_xform->sn_size,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
@@ -2811,7 +2811,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		else if (session->dir == DIR_DEC)
 			bufsize = cnstr_shdsc_pdcp_u_plane_decap(
 					priv->flc_desc[0].desc, 1, swap,
-					pdcp_xform->sn_size,
+					(enum pdcp_sn_size)pdcp_xform->sn_size,
 					pdcp_xform->hfn,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,

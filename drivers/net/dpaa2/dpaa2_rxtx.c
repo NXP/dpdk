@@ -1497,6 +1497,9 @@ dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 #if defined(RTE_TOOLCHAIN_GCC)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+#else
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-qual"
 #endif
 
 /* This function loopbacks all the received packets.*/
@@ -1612,7 +1615,7 @@ dpaa2_dev_loopback_rx(void *queue,
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0))
 				continue;
 		}
-		fd[num_rx] = qbman_result_DQ_fd(dq_storage);
+		fd[num_rx] = (struct qbman_fd *) qbman_result_DQ_fd(dq_storage);
 
 		dq_storage++;
 		num_rx++;
@@ -1649,4 +1652,6 @@ dpaa2_dev_loopback_rx(void *queue,
 }
 #if defined(RTE_TOOLCHAIN_GCC)
 #pragma GCC diagnostic pop
+#else
+#pragma clang diagnostic pop
 #endif
