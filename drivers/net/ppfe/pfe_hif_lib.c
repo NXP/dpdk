@@ -368,6 +368,7 @@ int hif_lib_event_handler_start(struct hif_client_s *client, int event,
 	return 0;
 }
 
+#ifdef RTE_LIBRTE_PPFE_SW_PARSE
 static inline void
 pfe_sw_parse_pkt(struct rte_mbuf *mbuf)
 {
@@ -379,6 +380,7 @@ pfe_sw_parse_pkt(struct rte_mbuf *mbuf)
 	mbuf->l2_len = hdr_lens.l2_len;
 	mbuf->l3_len = hdr_lens.l3_len;
 }
+#endif
 
 /*
  * This function gets one packet from the specified client queue
