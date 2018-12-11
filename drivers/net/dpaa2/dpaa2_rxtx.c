@@ -1117,8 +1117,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
 	qbman_eq_desc_set_no_orp(&eqdesc, DPAA2_EQ_RESP_ERR_FQ);
-	qbman_eq_desc_set_qd(&eqdesc, priv->qdid,
-			     dpaa2_q->flow_id, dpaa2_q->tc_index);
+	qbman_eq_desc_set_fq(&eqdesc, dpaa2_q->fqid);
+
 	/*Clear the unused FD fields before sending*/
 	while (nb_pkts) {
 		/*Check if the queue is congested*/
