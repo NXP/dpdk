@@ -86,12 +86,6 @@ DPDK_17.11 {
 	rte_dpaa2_dev_type;
 	rte_dpaa2_intr_disable;
 	rte_dpaa2_intr_enable;
-
-} DPDK_17.08;
-
-DPDK_18.02 {
-	global:
-
 	dpaa2_svr_family;
 	dpaa2_virt_mode;
 	per_lcore_dpaa2_held_bufs;
@@ -100,12 +94,6 @@ DPDK_18.02 {
 	qbman_swp_dqrr_idx_consume;
 	qbman_swp_prefetch_dqrr_next;
 	rte_fslmc_get_device_count;
-
-} DPDK_17.11;
-
-DPDK_18.05 {
-	global:
-
 	dpaa2_affine_qbman_ethrx_swp;
 	dpaa2_free_eq_descriptors;
 	dpdmai_close;
@@ -129,4 +117,4 @@ DPDK_18.05 {
 	rte_dpaa2_free_dpci_dev;
 	rte_fslmc_vfio_mem_dmamap;
 
-} DPDK_18.02;
+} DPDK_17.08;
