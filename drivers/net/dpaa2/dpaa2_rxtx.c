@@ -1484,8 +1484,8 @@ dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 #if defined(RTE_TOOLCHAIN_GCC)
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
-#else
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#elif defined(RTE_TOOLCHAIN_CLANG)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcast-qual"
 #endif
@@ -1640,6 +1640,6 @@ dpaa2_dev_loopback_rx(void *queue,
 }
 #if defined(RTE_TOOLCHAIN_GCC)
 #pragma GCC diagnostic pop
-#else
+#elif defined(RTE_TOOLCHAIN_CLANG)
 #pragma clang diagnostic pop
 #endif
