@@ -360,7 +360,7 @@ get_dpseci_parameters() {
 		then
         		DPSECI_COUNT=16
 		else
-        		DPSECI_COUNT=4
+			DPSECI_COUNT=8
 		fi
 	fi
 	if [[ -z "$DPSECI_QUEUES" ]]
