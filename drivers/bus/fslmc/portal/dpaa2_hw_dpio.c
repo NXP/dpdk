@@ -549,6 +549,8 @@ dpaa2_create_dpio_device(int vdev_fd,
 	}
 
 	dpio_dev->dpio = malloc(sizeof(struct fsl_mc_io));
+	memset(dpio_dev->dpio, 0, sizeof(struct fsl_mc_io));
+
 	if (!dpio_dev->dpio) {
 		DPAA2_BUS_ERR("Memory allocation failure");
 		goto err;
