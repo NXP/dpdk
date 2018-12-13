@@ -119,7 +119,13 @@ init_port(uint16_t port_num)
 	const struct rte_eth_conf port_conf = {
 		.rxmode = {
 			.mq_mode = ETH_MQ_RX_RSS
-		}
+		},
+		.rx_adv_conf = {
+				.rss_conf = {
+					.rss_key = NULL,
+					.rss_hf = ETH_RSS_IP,
+				},
+			},
 	};
 	const uint16_t rx_rings = 1, tx_rings = num_clients;
 	uint16_t rx_ring_size = RTE_MP_RX_DESC_DEFAULT;
