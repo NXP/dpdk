@@ -129,7 +129,8 @@ dpaa2_core_cluster_sdest(int cpu_id)
 #define STRING_LEN	28
 
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
-static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
+static void
+dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int lcoreid)
 {
 	uint32_t cpu_mask = 1;
 	int ret;
@@ -160,7 +161,7 @@ static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 		return;
 	}
 
-	cpu_mask = cpu_mask << dpaa2_cpu[rte_lcore_id()];
+	cpu_mask = cpu_mask << dpaa2_cpu[lcoreid];
 	snprintf(command, COMMAND_LEN, "echo %X > /proc/irq/%s/smp_affinity",
 		 cpu_mask, token);
 	ret = system(command);
@@ -174,7 +175,7 @@ static void dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id)
 	fclose(file);
 }
 
-static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
+static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 {
 	struct epoll_event epoll_ev;
 	int eventfd, dpio_epoll_fd, ret;
@@ -211,7 +212,7 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 	}
 	dpio_dev->epoll_fd = dpio_epoll_fd;
 
-	dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id);
+	dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, lcoreid);
 
 	return 0;
 }
@@ -262,7 +263,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 	}
 
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
-	if (dpaa2_dpio_intr_init(dpio_dev)) {
+	if (dpaa2_dpio_intr_init(dpio_dev, lcoreid)) {
 		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
 		return -1;
 	}
