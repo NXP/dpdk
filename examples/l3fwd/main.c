@@ -3,6 +3,7 @@
  *
  *   Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
  *   All rights reserved.
+ *   Copyright 2018 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -207,7 +208,7 @@ static struct rte_eth_conf port_conf = {
 	},
 };
 
-static struct rte_mempool * pktmbuf_pool[NB_SOCKETS];
+static struct rte_mempool *pktmbuf_pool[NB_SOCKETS][RTE_MAX_ETHPORTS];
 
 struct l3fwd_lkp_mode {
 	void  (*setup)(int);
@@ -933,14 +934,14 @@ static const struct option lgopts[] = {
  * depending on user input, taking  into account memory for rx and
  * tx hardware rings, cache per lcore and mtable per port per lcore.
  * RTE_MAX is used to ensure that NB_MBUF never goes below a minimum
- * value of 8192
+ * value of 2048
  */
 #define NB_MBUF RTE_MAX(	\
 	(nb_ports*nb_rx_queue*nb_rxd +		\
 	nb_ports*nb_lcores*MAX_PKT_BURST +	\
 	nb_ports*n_tx_queue*nb_txd +		\
 	nb_lcores*MEMPOOL_CACHE_SIZE),		\
-	(unsigned)8192)
+	(unsigned)2048)
 
 /* Parse the argument given in the command line of the application */
 static int
@@ -1160,7 +1161,7 @@ print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 }
 
 static int
-init_mem(unsigned nb_mbuf)
+init_mem(uint16_t portid, unsigned int nb_mbuf)
 {
 	struct lcore_conf *qconf;
 	int socketid;
@@ -1182,22 +1183,24 @@ init_mem(unsigned nb_mbuf)
 				socketid, lcore_id, NB_SOCKETS);
 		}
 
-		if (pktmbuf_pool[socketid] == NULL) {
-			snprintf(s, sizeof(s), "mbuf_pool_%d", socketid);
-			pktmbuf_pool[socketid] =
+		if (pktmbuf_pool[portid][socketid] == NULL) {
+			snprintf(s, sizeof(s), "mb_pool_%d%d", portid, socketid);
+			/* todo - need to reduce the memory per port now */
+			pktmbuf_pool[portid][socketid] =
 				rte_pktmbuf_pool_create(s, nb_mbuf,
 					MEMPOOL_CACHE_SIZE, 0,
 					RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
-			if (pktmbuf_pool[socketid] == NULL)
+			if (pktmbuf_pool[portid][socketid] == NULL)
 				rte_exit(EXIT_FAILURE,
 					"Cannot init mbuf pool on socket %d\n",
 					socketid);
 			else
 				printf("Allocated mbuf pool on socket %d\n",
 					socketid);
-
-			/* Setup either LPM or EM(f.e Hash).  */
-			l3fwd_lkp.setup(socketid);
+			/* todo - this need to be fixed - as portid 0 may not be in use */
+			if (portid == 0)
+				/* Setup either LPM or EM(f.e Hash). */
+				l3fwd_lkp.setup(socketid);
 		}
 		qconf = &lcore_conf[lcore_id];
 		qconf->ipv4_lookup_struct =
@@ -1398,7 +1401,7 @@ main(int argc, char **argv)
 			(struct ether_addr *)(val_eth + portid) + 1);
 
 		/* init memory */
-		ret = init_mem(NB_MBUF);
+		ret = init_mem(portid, NB_MBUF);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "init_mem failed\n");
 
@@ -1461,7 +1464,7 @@ main(int argc, char **argv)
 			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
 					socketid,
 					NULL,
-					pktmbuf_pool[socketid]);
+					pktmbuf_pool[portid][socketid]);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 				"rte_eth_rx_queue_setup: err=%d, port=%d\n",
