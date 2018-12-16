@@ -196,6 +196,8 @@ scan_one_fslmc_device(char *dev_name)
 		dev_type = DPAA2_MPORTAL;
 	else if (!strncmp("dpdmai", t_ptr, 6))
 		dev_type = DPAA2_QDMA;
+	else if (!strncmp("dpdmux", t_ptr, 6))
+		dev_type = DPAA2_MUX;
 	else {
 		dev_type = DPAA2_UNKNOWN;
 		DPAA2_BUS_DEBUG("Unknown device string observed.");
