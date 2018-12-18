@@ -32,6 +32,7 @@
  */
 #include <rte_common.h>
 #include <rte_crypto.h>
+#include <rte_string_fns.h>
 
 #include <cmdline_parse_string.h>
 #include <cmdline_parse_num.h>
@@ -544,7 +545,7 @@ parse_cfg_file(const char *cfg_filename)
 				goto error_exit;
 			}
 
-			strncpy(str + strlen(str), oneline,
+			strlcpy(str + strlen(str), oneline,
 				strlen(oneline));
 
 			continue;
