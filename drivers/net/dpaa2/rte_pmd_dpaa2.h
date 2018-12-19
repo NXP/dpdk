@@ -15,6 +15,8 @@
  *
  */
 
+#include <rte_flow.h>
+
 enum pmd_dpaa2_ts {
 	PMD_DPAA2_DISABLE_TS,
 	PMD_DPAA2_ENABLE_TS
@@ -32,5 +34,27 @@ enum pmd_dpaa2_ts {
  *    Enum to enable/disable timestamp update in mbuf for LX2160 devices.
  */
 void rte_pmd_dpaa2_set_timestamp(enum pmd_dpaa2_ts);
+
+/**
+ * @warning
+ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
+ *
+ * Create a flow rule to demultiplex ethernet traffic to separate network
+ * interfaces.
+ *
+ * @param dpdmux_id
+ *    ID of the DPDMUX MC object.
+ * @param[in] pattern
+ *    Pattern specification.
+ * @param[in] actions
+ *    Associated actions.
+ *
+ * @return
+ *    A valid handle in case of success, NULL otherwise.
+ */
+struct rte_flow *
+rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
+			      struct rte_flow_item *pattern[],
+			      struct rte_flow_action *actions[]);
 
 #endif /* _RTE_PMD_DPAA2_H */
