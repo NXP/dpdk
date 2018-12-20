@@ -190,6 +190,7 @@ struct dpaa2_queue {
 	struct rte_event ev;
 	dpaa2_queue_cb_dqrr_t *cb;
 	dpaa2_queue_cb_eqresp_free_t *cb_eqresp_free;
+	struct dpaa2_bp_info *bp_array;
 };
 
 struct swp_active_dqs {

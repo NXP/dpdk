@@ -56,7 +56,7 @@
 #include "dpaa2_hw_mempool.h"
 #include "dpaa2_hw_mempool_logs.h"
 
-struct dpaa2_bp_info rte_dpaa2_bpid_info[MAX_BPID];
+struct dpaa2_bp_info *rte_dpaa2_bpid_info = NULL;
 static struct dpaa2_bp_list *h_bp_list;
 
 /* Dynamic logging identified for mempool */
@@ -73,6 +73,15 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	int ret;
 
 	avail_dpbp = dpaa2_alloc_dpbp_dev();
+
+	if (rte_dpaa2_bpid_info == NULL) {
+		rte_dpaa2_bpid_info = (struct dpaa2_bp_info *)rte_malloc(NULL,
+				      sizeof(struct dpaa2_bp_info) * MAX_BPID,
+				      RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa2_bpid_info == NULL)
+			return -ENOMEM;
+		memset(rte_dpaa2_bpid_info, 0, sizeof(struct dpaa2_bp_info) * MAX_BPID);
+	}
 
 	if (!avail_dpbp) {
 		DPAA2_MEMPOOL_ERR("DPAA2 pool not available!");
