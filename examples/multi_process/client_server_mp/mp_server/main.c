@@ -2,6 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright(c) 2010-2014 Intel Corporation. All rights reserved.
+ *   Copyright 2018 NXP
  *   All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -253,7 +254,10 @@ process_packets(uint32_t port_num __rte_unused,
 		struct rte_mbuf *pkts[], uint16_t rx_count)
 {
 	uint16_t i;
-	uint8_t client = 0;
+	/* This helps keep the distribuition across clients better, especially
+	 * in case the rx_burst() is continuously returning a single packet
+	 */
+	static uint8_t client = 0;
 
 	for (i = 0; i < rx_count; i++) {
 		enqueue_rx_packet(client, pkts[i]);
