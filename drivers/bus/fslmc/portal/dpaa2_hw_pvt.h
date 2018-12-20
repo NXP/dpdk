@@ -175,7 +175,10 @@ typedef void (dpaa2_queue_cb_eqresp_free_t)(uint16_t eqresp_ci);
 
 struct dpaa2_queue {
 	struct rte_mempool *mb_pool; /**< mbuf pool to populate RX ring. */
-	void *dev;
+	union {
+		struct rte_eth_dev_data *eth_data;
+		void *dev;
+	};
 	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */

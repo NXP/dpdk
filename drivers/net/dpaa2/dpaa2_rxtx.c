@@ -553,7 +553,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	const struct qbman_fd *fd, *next_fd;
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
@@ -656,9 +656,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			bufs[num_rx] = eth_sg_fd_to_mbuf(fd);
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd);
-		bufs[num_rx]->port = dev->data->port_id;
+		bufs[num_rx]->port = eth_data->port_id;
 
-		if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+		if (eth_data->dev_conf.rxmode.hw_vlan_strip)
 			rte_vlan_strip(bufs[num_rx]);
 
 		dq_storage++;
@@ -785,7 +785,7 @@ dpaa2_dev_prefetch_rx2(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	const struct qbman_fd *fd, *next_fd;
 	struct qbman_pull_desc pulldesc, pulldesc1;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
@@ -915,9 +915,9 @@ repeat:
 			bufs[num_rx] = eth_sg_fd_to_mbuf(fd);
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd);
-		bufs[num_rx]->port = dev->data->port_id;
+		bufs[num_rx]->port = eth_data->port_id;
 
-		if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+		if (eth_data->dev_conf.rxmode.hw_vlan_strip)
 			rte_vlan_strip(bufs[num_rx]);
 
 		dq_storage++;
@@ -990,7 +990,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd, *next_fd;
 	struct qbman_pull_desc pulldesc;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1063,9 +1063,9 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				bufs[num_rx] = eth_sg_fd_to_mbuf(fd);
 			else
 				bufs[num_rx] = eth_fd_to_mbuf(fd);
-			bufs[num_rx]->port = dev->data->port_id;
+			bufs[num_rx]->port = eth_data->port_id;
 
-			if (dev->data->dev_conf.rxmode.hw_vlan_strip)
+			if (eth_data->dev_conf.rxmode.hw_vlan_strip)
 				rte_vlan_strip(bufs[num_rx]);
 
 			dq_storage++;
@@ -1098,8 +1098,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_swp *swp;
 	uint16_t num_tx = 0;
 	uint16_t bpid;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	uint32_t flags[MAX_TX_RING_SLOTS] = {0};
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
@@ -1111,7 +1111,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	DPAA2_PMD_DP_DEBUG("===> dev =%p, fqid =%d\n", dev, dpaa2_q->fqid);
+	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n", eth_data, dpaa2_q->fqid);
 
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
@@ -1252,8 +1252,8 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 			     struct rte_mbuf *m,
 			     struct qbman_eq_desc *eqdesc)
 {
-	struct rte_eth_dev *dev = dpaa2_q->dev;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
 	struct eqresp_metadata *eqresp_meta;
 	uint16_t orpid, seqnum;
@@ -1301,8 +1301,8 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function to transmit the frames to given device and VQ*/
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct dpaa2_queue *order_sendq = (struct dpaa2_queue *)priv->tx_vq[0];
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	struct rte_mbuf *mi;
@@ -1324,7 +1324,7 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	DPAA2_PMD_DP_DEBUG("===> dev =%p, fqid =%d\n", dev, dpaa2_q->fqid);
+	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n", eth_data, dpaa2_q->fqid);
 
 	/* This would also handle normal and atomic queues as any type
 	 * of packet can be enqueued when ordered queues are being used.
@@ -1511,8 +1511,8 @@ dpaa2_dev_loopback_rx(void *queue,
 	struct qbman_pull_desc pulldesc;
 	struct qbman_eq_desc eqdesc;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
-	struct rte_eth_dev *dev = dpaa2_q->dev;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct dpaa2_queue *tx_q = priv->tx_vq[0];
 	/* todo - currently we are using 1st TX queue only for loopback*/
 
