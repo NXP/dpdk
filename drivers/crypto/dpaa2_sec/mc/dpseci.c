@@ -39,6 +39,7 @@
  */
 #include <fsl_mc_sys.h>
 #include <fsl_mc_cmd.h>
+#include <fsl_dpopr.h>
 #include <fsl_dpseci.h>
 #include <fsl_dpseci_cmd.h>
 
