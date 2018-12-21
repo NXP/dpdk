@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2017 NXP
+ * Copyright 2016-2019 NXP
  *
  */
 #ifndef _FSL_DPNI_CMD_H
@@ -9,7 +9,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				8
+#define DPNI_VER_MINOR				9
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -23,13 +23,13 @@
 /* Command IDs */
 #define DPNI_CMDID_OPEN				DPNI_CMD(0x801)
 #define DPNI_CMDID_CLOSE			DPNI_CMD(0x800)
-#define DPNI_CMDID_CREATE			DPNI_CMD_V2(0x901)
+#define DPNI_CMDID_CREATE			DPNI_CMD_V3(0x901)
 #define DPNI_CMDID_DESTROY			DPNI_CMD(0x981)
 #define DPNI_CMDID_GET_API_VERSION		DPNI_CMD(0xa01)
 
 #define DPNI_CMDID_ENABLE			DPNI_CMD(0x002)
 #define DPNI_CMDID_DISABLE			DPNI_CMD(0x003)
-#define DPNI_CMDID_GET_ATTR			DPNI_CMD_V2(0x004)
+#define DPNI_CMDID_GET_ATTR			DPNI_CMD_V3(0x004)
 #define DPNI_CMDID_RESET			DPNI_CMD(0x005)
 #define DPNI_CMDID_IS_ENABLED			DPNI_CMD(0x006)
 
@@ -69,10 +69,10 @@
 
 #define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V3(0x235)
 
-#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V2(0x25D)
+#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V3(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
-#define DPNI_CMDID_GET_QUEUE			DPNI_CMD(0x25F)
-#define DPNI_CMDID_SET_QUEUE			DPNI_CMD(0x260)
+#define DPNI_CMDID_GET_QUEUE			DPNI_CMD_V2(0x25F)
+#define DPNI_CMDID_SET_QUEUE			DPNI_CMD_V2(0x260)
 #define DPNI_CMDID_GET_TAILDROP			DPNI_CMD_V2(0x261)
 #define DPNI_CMDID_SET_TAILDROP			DPNI_CMD_V2(0x262)
 
@@ -81,8 +81,8 @@
 #define DPNI_CMDID_GET_BUFFER_LAYOUT		DPNI_CMD_V2(0x264)
 #define DPNI_CMDID_SET_BUFFER_LAYOUT		DPNI_CMD_V2(0x265)
 
-#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD(0x267)
-#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD(0x268)
+#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD_V2(0x267)
+#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD_V2(0x268)
 #define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD_V2(0x269)
 #define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V2(0x26A)
 #define DPNI_CMDID_GET_OFFLOAD			DPNI_CMD(0x26B)
@@ -118,6 +118,8 @@ struct dpni_cmd_create {
 	uint8_t pad3;
 	uint16_t fs_entries;
 	uint8_t num_rx_tcs;
+	uint8_t pad4;
+	uint8_t  num_cgs;
 };
 
 struct dpni_cmd_destroy {
@@ -209,6 +211,7 @@ struct dpni_rsp_get_attr {
 	uint8_t qos_key_size;
 	uint8_t fs_key_size;
 	uint16_t wriop_version;
+	uint8_t num_cgs;
 };
 
 #define DPNI_ERROR_ACTION_SHIFT		0
@@ -302,7 +305,7 @@ struct dpni_rsp_get_tx_data_offset {
 
 struct dpni_cmd_get_statistics {
 	uint8_t page_number;
-	uint8_t param;
+	uint16_t param;
 };
 
 struct dpni_rsp_get_statistics {
@@ -451,6 +454,8 @@ struct dpni_cmd_get_queue {
 
 #define DPNI_DEST_TYPE_SHIFT		0
 #define DPNI_DEST_TYPE_SIZE		4
+#define DPNI_CGID_VALID_SHIFT		5
+#define DPNI_CGID_VALID_SIZE		1
 #define DPNI_STASH_CTRL_SHIFT		6
 #define DPNI_STASH_CTRL_SIZE		1
 #define DPNI_HOLD_ACTIVE_SHIFT		7
@@ -463,7 +468,9 @@ struct dpni_rsp_get_queue {
 	uint32_t dest_id;
 	uint16_t pad1;
 	uint8_t dest_prio;
-	/* From LSB: dest_type:4, pad:2, flc_stash_ctrl:1, hold_active:1 */
+	/* From LSB:
+	 * dest_type:4, pad:1, cgid_valid:1, flc_stash_ctrl:1, hold_active:1
+	 */
 	uint8_t flags;
 	/* response word 2 */
 	uint64_t flc;
@@ -472,6 +479,9 @@ struct dpni_rsp_get_queue {
 	/* response word 4 */
 	uint32_t fqid;
 	uint16_t qdbin;
+	uint16_t pad2;
+	/* response word 5*/
+	uint8_t cgid;
 };
 
 struct dpni_cmd_set_queue {
@@ -490,6 +500,8 @@ struct dpni_cmd_set_queue {
 	uint64_t flc;
 	/* cmd word 3 */
 	uint64_t user_context;
+	/* cmd word 4 */
+	uint8_t cgid;
 };
 
 #define DPNI_DROP_ENABLE_SHIFT	0
@@ -585,7 +597,10 @@ struct dpni_tx_confirmation_mode {
 struct dpni_cmd_set_congestion_notification {
 	uint8_t qtype;
 	uint8_t tc;
-	uint8_t pad[6];
+	uint8_t pad;
+	uint8_t congestion_point;
+	uint8_t cgid;
+	uint8_t pad2[3];
 	uint32_t dest_id;
 	uint16_t notification_mode;
 	uint8_t dest_priority;
@@ -600,6 +615,9 @@ struct dpni_cmd_set_congestion_notification {
 struct dpni_cmd_get_congestion_notification {
 	uint8_t qtype;
 	uint8_t tc;
+	uint8_t pad;
+	uint8_t congestion_point;
+	uint8_t cgid;
 };
 
 struct dpni_rsp_get_congestion_notification {

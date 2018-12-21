@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2017 NXP
+ * Copyright 2016-2019 NXP
  *
  */
 #ifndef __FSL_DPNI_H
@@ -172,6 +172,7 @@ struct dpni_cfg {
 	uint8_t  num_tcs;
 	uint8_t  num_rx_tcs;
 	uint8_t  qos_entries;
+	uint8_t  num_cgs;
 };
 
 int dpni_create(struct fsl_mc_io *mc_io,
@@ -326,6 +327,7 @@ struct dpni_attr {
 	uint8_t  qos_key_size;
 	uint8_t  fs_key_size;
 	uint16_t wriop_version;
+	uint8_t  num_cgs;
 };
 
 int dpni_get_attributes(struct fsl_mc_io *mc_io,
@@ -925,6 +927,25 @@ struct dpni_dest_cfg {
 #define DPNI_CONG_OPT_FLOW_CONTROL	0x00000040
 
 /**
+ * enum dpni_congestion_point - Structure representing congestion point
+ * @DPNI_CP_QUEUE:	Set congestion per queue, identified by QUEUE_TYPE, TC
+ *			and QUEUE_INDEX
+ * @DPNI_CP_GROUP:	Set congestion per queue group. Depending on options
+ *			used to define the DPNI this can be either per
+ *			TC (default) or per interface
+ *			(DPNI_OPT_SHARED_CONGESTION set at DPNI create).
+ *			QUEUE_INDEX is ignored if this type is used.
+ * @DPNI_CP_CONGESTION_GROUP: Set per congestion group id. This will work
+ *		only if the DPNI is created with  DPNI_OPT_CUSTOM_CG option
+ */
+
+enum dpni_congestion_point {
+	DPNI_CP_QUEUE,
+	DPNI_CP_GROUP,
+	DPNI_CP_CONGESTION_GROUP,
+};
+
+/**
  * struct dpni_congestion_notification_cfg - congestion notification
  *		configuration
  * @units: units type
@@ -937,6 +958,8 @@ struct dpni_dest_cfg {
  *	contained in 'options'
  * @dest_cfg: CSCN can be send to either DPIO or DPCON WQ channel
  * @notification_mode: Mask of available options; use 'DPNI_CONG_OPT_<X>' values
+ * @cg_point: Congestion point settings
+ * @cgid: id of the congestion group. The index is relative to dpni.
  */
 
 struct dpni_congestion_notification_cfg {
@@ -947,6 +970,8 @@ struct dpni_congestion_notification_cfg {
 	uint64_t message_iova;
 	struct dpni_dest_cfg dest_cfg;
 	uint16_t notification_mode;
+	enum dpni_congestion_point cg_point;
+	int cgid;
 };
 
 int dpni_set_congestion_notification(struct fsl_mc_io *mc_io,
@@ -955,6 +980,7 @@ int dpni_set_congestion_notification(struct fsl_mc_io *mc_io,
 				     enum dpni_queue_type qtype,
 				     uint8_t tc_id,
 			const struct dpni_congestion_notification_cfg *cfg);
+
 
 int dpni_get_congestion_notification(struct fsl_mc_io *mc_io,
 				     uint32_t cmd_flags,
@@ -1016,6 +1042,7 @@ int dpni_get_congestion_notification(struct fsl_mc_io *mc_io,
  *      FD[OFFSET].
  *      For more details check the Frame Descriptor section in the
  *      hardware documentation.
+ *@cgid :indicate the cgid to set relative to dpni
  */
 struct dpni_queue {
 	struct {
@@ -1029,6 +1056,7 @@ struct dpni_queue {
 		uint64_t value;
 		char stash_control;
 	} flc;
+	int cgid;
 };
 
 /**
@@ -1101,6 +1129,9 @@ int dpni_get_api_version(struct fsl_mc_io *mc_io,
  */
 #define DPNI_QUEUE_OPT_HOLD_ACTIVE	0x00000008
 
+#define DPNI_QUEUE_OPT_SET_CGID				0x00000040
+#define DPNI_QUEUE_OPT_CLEAR_CGID			0x00000080
+
 int dpni_set_queue(struct fsl_mc_io *mc_io,
 		   uint32_t cmd_flags,
 		   uint16_t token,
@@ -1123,27 +1154,13 @@ int dpni_get_statistics(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			uint8_t page,
-			uint8_t param,
+			uint16_t param,
 			union dpni_statistics *stat);
 
 int dpni_reset_statistics(struct fsl_mc_io *mc_io,
 			  uint32_t cmd_flags,
 			  uint16_t token);
 
-/**
- * enum dpni_congestion_point - Structure representing congestion point
- * @DPNI_CP_QUEUE:	Set taildrop per queue, identified by QUEUE_TYPE, TC and
- *				QUEUE_INDEX
- * @DPNI_CP_GROUP:	Set taildrop per queue group. Depending on options used
- *				to define the DPNI this can be either per
- *				TC (default) or per interface
- *				(DPNI_OPT_SHARED_CONGESTION set at DPNI create).
- *				QUEUE_INDEX is ignored if this type is used.
- */
-enum dpni_congestion_point {
-	DPNI_CP_QUEUE,
-	DPNI_CP_GROUP,
-};
 
 /**
  * struct dpni_taildrop - Structure representing the taildrop
