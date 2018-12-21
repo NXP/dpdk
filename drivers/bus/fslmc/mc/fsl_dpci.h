@@ -39,6 +39,8 @@
 #ifndef __FSL_DPCI_H
 #define __FSL_DPCI_H
 
+#include <fsl_dpopr.h>
+
 /* Data Path Communication Interface API
  * Contains initialization APIs and runtime control APIs for DPCI
  */
@@ -257,5 +259,19 @@ int dpci_get_api_version(struct fsl_mc_io *mc_io,
 			 uint32_t cmd_flags,
 			 uint16_t *major_ver,
 			 uint16_t *minor_ver);
+
+int dpci_set_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t index,
+		 uint8_t options,
+		 struct opr_cfg *cfg);
+
+int dpci_get_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t index,
+		 struct opr_cfg *cfg,
+		 struct opr_qry *qry);
 
 #endif /* __FSL_DPCI_H */

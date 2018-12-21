@@ -112,6 +112,15 @@ struct fsl_mc_io;
 #define DPNI_OPT_NO_FS				0x000020
 
 /**
+ * Enable the Order Restoration support
+ */
+#define DPNI_OPT_HAS_OPR				0x000040
+
+/**
+ * Order Point Records are shared for the entire TC
+ */
+#define DPNI_OPT_OPR_PER_TC				0x000080
+/**
  * All Tx traffic classes will use a single sender (ignore num_queueus for tx)
  */
 #define DPNI_OPT_SINGLE_SENDER			0x000100
@@ -872,16 +881,6 @@ enum dpni_congestion_unit {
 };
 
 /**
- * Enable the Order Restoration support
- */
-#define DPNI_OPT_HAS_OPR				0x000040
-
-/**
- * Order Point Records are shared for the entire TC
- */
-#define DPNI_OPT_OPR_PER_TC				0x000080
-
-/**
  * enum dpni_dest - DPNI destination types
  * @DPNI_DEST_NONE: Unassigned destination; The queue is set in parked mode and
  *		does not generate FQDAN notifications; user is expected to
@@ -1333,6 +1332,22 @@ int dpni_get_taildrop(struct fsl_mc_io *mc_io,
 		      uint8_t q_index,
 		      struct dpni_taildrop *taildrop);
 
+int dpni_set_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 uint8_t options,
+		 struct opr_cfg *cfg);
+
+int dpni_get_opr(struct fsl_mc_io *mc_io,
+		 uint32_t cmd_flags,
+		 uint16_t token,
+		 uint8_t tc,
+		 uint8_t index,
+		 struct opr_cfg *cfg,
+		 struct opr_qry *qry);
+
 /**
  * enum dpni_soft_sequence_dest - Enumeration of WRIOP software sequence
  *				destinations
@@ -1459,22 +1474,6 @@ int dpni_get_sw_sequence_layout(struct fsl_mc_io *mc_io,
  */
 void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
 				     const uint8_t *sw_sequence_layout_buf);
-
-int dpni_set_opr(struct fsl_mc_io *mc_io,
-		 uint32_t cmd_flags,
-		 uint16_t token,
-		 uint8_t tc,
-		 uint8_t index,
-		 uint8_t options,
-		 struct opr_cfg *cfg);
-
-int dpni_get_opr(struct fsl_mc_io *mc_io,
-		 uint32_t cmd_flags,
-		 uint16_t token,
-		 uint8_t tc,
-		 uint8_t index,
-		 struct opr_cfg *cfg,
-		 struct opr_qry *qry);
 
 /**
  * When used for queue_idx in function dpni_set_rx_dist_default_queue will
