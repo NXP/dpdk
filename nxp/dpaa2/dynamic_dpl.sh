@@ -71,6 +71,10 @@ script help :----->
 
 	Below "ENVIRONMENT VARIABLES" are exported to get user defined
 	configuration"
+		ENABLE_ORDERED_QUEUE = enable this for ordering queue support
+						Default is disabled.
+						Only 2 DPNIs can be created in this mode.
+						e.g. export ENABLE_ORDERED_QUEUE=1
 	/**DPNI**:-->
 		MAX_QUEUES         = max number of Rx/Tx Queues on DPNI.
 					Set the parameter using below command:
@@ -264,7 +268,10 @@ get_dpni_parameters() {
 		then
 			DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_HAS_KEY_MASKING"
 		fi
-		DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
+		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
+		then
+			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
+		fi
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
 	then
@@ -286,7 +293,11 @@ get_dpni_parameters() {
 	fi
 	if [[ -z "$DPSECI_OPTIONS" ]]
 	then
-		DPSECI_OPTIONS=DPSECI_OPT_HAS_CG,DPSECI_OPT_HAS_OPR
+		DPSECI_OPTIONS="DPSECI_OPT_HAS_CG"
+		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
+		then
+			DPSECI_OPTIONS="$DPSECI_OPTIONS,DPSECI_OPT_HAS_OPR,DPSECI_OPT_OPR_SHARED"
+		fi
 	fi
 	echo >> dynamic_dpl_logs
 	echo  "DPNI parameters :-->" >> dynamic_dpl_logs
@@ -412,6 +423,10 @@ get_dpci_parameters() {
 	if [[ -z "$DPCI_PRIORITIES" ]]
 	then
 		DPCI_PRIORITIES=2
+	fi
+	if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
+	then
+			DPCI_OPTIONS="DPCI_OPT_HAS_OPR,DPCI_OPT_OPR_SHARED"
 	fi
 	echo "DPCI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPCI_PRIORITIES = "$DPCI_PRIORITIES >> dynamic_dpl_logs
@@ -802,7 +817,7 @@ then
 	# Create DPCI's for software queues
 	unset DPCI
 	for i in $(seq 1 ${DPCI_COUNT}); do
-		DPCI=$(restool -s dpci create --num-priorities=$DPCI_PRIORITIES --container=$DPRC)
+		DPCI=$(restool -s dpci create --num-priorities=$DPCI_PRIORITIES --options=$DPCI_OPTIONS --container=$DPRC)
 		echo $DPCI "Created" >> dynamic_dpl_logs
 		obj_assign $DPCI
 	done;
