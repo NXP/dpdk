@@ -42,7 +42,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				7
+#define DPNI_VER_MINOR				9
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -56,13 +56,13 @@
 /* Command IDs */
 #define DPNI_CMDID_OPEN				DPNI_CMD(0x801)
 #define DPNI_CMDID_CLOSE			DPNI_CMD(0x800)
-#define DPNI_CMDID_CREATE			DPNI_CMD_V2(0x901)
+#define DPNI_CMDID_CREATE			DPNI_CMD_V3(0x901)
 #define DPNI_CMDID_DESTROY			DPNI_CMD(0x981)
 #define DPNI_CMDID_GET_API_VERSION		DPNI_CMD(0xa01)
 
 #define DPNI_CMDID_ENABLE			DPNI_CMD(0x002)
 #define DPNI_CMDID_DISABLE			DPNI_CMD(0x003)
-#define DPNI_CMDID_GET_ATTR			DPNI_CMD_V2(0x004)
+#define DPNI_CMDID_GET_ATTR			DPNI_CMD_V3(0x004)
 #define DPNI_CMDID_RESET			DPNI_CMD(0x005)
 #define DPNI_CMDID_IS_ENABLED			DPNI_CMD(0x006)
 
@@ -79,10 +79,10 @@
 #define DPNI_CMDID_GET_QDID			DPNI_CMD(0x210)
 #define DPNI_CMDID_GET_SP_INFO			DPNI_CMD(0x211)
 #define DPNI_CMDID_GET_TX_DATA_OFFSET		DPNI_CMD(0x212)
-#define DPNI_CMDID_GET_LINK_STATE		DPNI_CMD(0x215)
+#define DPNI_CMDID_GET_LINK_STATE		DPNI_CMD_V2(0x215)
 #define DPNI_CMDID_SET_MAX_FRAME_LENGTH		DPNI_CMD(0x216)
 #define DPNI_CMDID_GET_MAX_FRAME_LENGTH		DPNI_CMD(0x217)
-#define DPNI_CMDID_SET_LINK_CFG			DPNI_CMD(0x21A)
+#define DPNI_CMDID_SET_LINK_CFG			DPNI_CMD_V2(0x21A)
 #define DPNI_CMDID_SET_TX_SHAPING		DPNI_CMD_V2(0x21B)
 
 #define DPNI_CMDID_SET_MCAST_PROMISC		DPNI_CMD(0x220)
@@ -110,10 +110,10 @@
 #define DPNI_CMDID_REMOVE_FS_ENT		DPNI_CMD(0x245)
 #define DPNI_CMDID_CLR_FS_ENT			DPNI_CMD(0x246)
 
-#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V2(0x25D)
+#define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V3(0x25D)
 #define DPNI_CMDID_RESET_STATISTICS		DPNI_CMD(0x25E)
-#define DPNI_CMDID_GET_QUEUE			DPNI_CMD(0x25F)
-#define DPNI_CMDID_SET_QUEUE			DPNI_CMD(0x260)
+#define DPNI_CMDID_GET_QUEUE			DPNI_CMD_V2(0x25F)
+#define DPNI_CMDID_SET_QUEUE			DPNI_CMD_V2(0x260)
 #define DPNI_CMDID_GET_TAILDROP			DPNI_CMD_V2(0x261)
 #define DPNI_CMDID_SET_TAILDROP			DPNI_CMD_V2(0x262)
 
@@ -122,8 +122,8 @@
 #define DPNI_CMDID_GET_BUFFER_LAYOUT		DPNI_CMD_V2(0x264)
 #define DPNI_CMDID_SET_BUFFER_LAYOUT		DPNI_CMD_V2(0x265)
 
-#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD(0x267)
-#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD(0x268)
+#define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD_V2(0x267)
+#define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD_V2(0x268)
 #define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD_V2(0x269)
 #define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V2(0x26A)
 #define DPNI_CMDID_GET_OFFLOAD			DPNI_CMD(0x26B)
@@ -164,6 +164,8 @@ struct dpni_cmd_create {
 	uint8_t pad3;
 	uint16_t fs_entries;
 	uint8_t num_rx_tcs;
+	uint8_t pad4;
+	uint8_t  num_cgs;
 };
 
 struct dpni_cmd_destroy {
@@ -255,6 +257,7 @@ struct dpni_rsp_get_attr {
 	uint8_t qos_key_size;
 	uint8_t fs_key_size;
 	uint16_t wriop_version;
+	uint8_t num_cgs;
 };
 
 #define DPNI_ERROR_ACTION_SHIFT		0
@@ -348,7 +351,7 @@ struct dpni_rsp_get_tx_data_offset {
 
 struct dpni_cmd_get_statistics {
 	uint8_t page_number;
-	uint8_t param;
+	uint16_t param;
 };
 
 struct dpni_rsp_get_statistics {
@@ -360,10 +363,13 @@ struct dpni_cmd_set_link_cfg {
 	uint32_t rate;
 	uint32_t pad1;
 	uint64_t options;
+	uint64_t advertising;
 };
 
 #define DPNI_LINK_STATE_SHIFT		0
 #define DPNI_LINK_STATE_SIZE		1
+#define DPNI_STATE_VALID_SHIFT		1
+#define DPNI_STATE_VALID_SIZE		1
 
 struct dpni_rsp_get_link_state {
 	uint32_t pad0;
@@ -373,6 +379,8 @@ struct dpni_rsp_get_link_state {
 	uint32_t rate;
 	uint32_t pad2;
 	uint64_t options;
+	uint64_t supported;
+	uint64_t advertising;
 };
 
 struct dpni_cmd_set_max_frame_length {
@@ -492,6 +500,8 @@ struct dpni_cmd_get_queue {
 
 #define DPNI_DEST_TYPE_SHIFT		0
 #define DPNI_DEST_TYPE_SIZE		4
+#define DPNI_CGID_VALID_SHIFT		5
+#define DPNI_CGID_VALID_SIZE		1
 #define DPNI_STASH_CTRL_SHIFT		6
 #define DPNI_STASH_CTRL_SIZE		1
 #define DPNI_HOLD_ACTIVE_SHIFT		7
@@ -504,7 +514,9 @@ struct dpni_rsp_get_queue {
 	uint32_t dest_id;
 	uint16_t pad1;
 	uint8_t dest_prio;
-	/* From LSB: dest_type:4, pad:2, flc_stash_ctrl:1, hold_active:1 */
+	/* From LSB:
+	 * dest_type:4, pad:1, cgid_valid:1, flc_stash_ctrl:1, hold_active:1
+	 */
 	uint8_t flags;
 	/* response word 2 */
 	uint64_t flc;
@@ -513,6 +525,9 @@ struct dpni_rsp_get_queue {
 	/* response word 4 */
 	uint32_t fqid;
 	uint16_t qdbin;
+	uint16_t pad2;
+	/* response word 5*/
+	uint8_t cgid;
 };
 
 struct dpni_cmd_set_queue {
@@ -531,6 +546,8 @@ struct dpni_cmd_set_queue {
 	uint64_t flc;
 	/* cmd word 3 */
 	uint64_t user_context;
+	/* cmd word 4 */
+	uint8_t cgid;
 };
 
 #define DPNI_DISCARD_ON_MISS_SHIFT	0
@@ -683,7 +700,10 @@ struct dpni_tx_confirmation_mode {
 struct dpni_cmd_set_congestion_notification {
 	uint8_t qtype;
 	uint8_t tc;
-	uint8_t pad[6];
+	uint8_t pad;
+	uint8_t congestion_point;
+	uint8_t cgid;
+	uint8_t pad2[3];
 	uint32_t dest_id;
 	uint16_t notification_mode;
 	uint8_t dest_priority;
@@ -698,6 +718,9 @@ struct dpni_cmd_set_congestion_notification {
 struct dpni_cmd_get_congestion_notification {
 	uint8_t qtype;
 	uint8_t tc;
+	uint8_t pad;
+	uint8_t congestion_point;
+	uint8_t cgid;
 };
 
 struct dpni_rsp_get_congestion_notification {
@@ -711,45 +734,6 @@ struct dpni_rsp_get_congestion_notification {
 	uint64_t message_ctx;
 	uint32_t threshold_entry;
 	uint32_t threshold_exit;
-};
-
-
-struct dpni_load_sw_sequence {
-	uint8_t dest;
-	uint8_t pad0[7];
-	uint16_t ss_offset;
-	uint16_t pad1;
-	uint16_t ss_size;
-	uint16_t pad2;
-	uint64_t ss_iova;
-};
-
-struct dpni_enable_sw_sequence {
-	uint8_t dest;
-	uint8_t pad0[7];
-	uint16_t ss_offset;
-	uint16_t hxs;
-	uint8_t set_start;
-	uint8_t pad1[3];
-	uint8_t param_offset;
-	uint8_t pad2[3];
-	uint8_t param_size;
-	uint8_t pad3[3];
-	uint64_t param_iova;
-};
-
-struct dpni_get_sw_sequence_layout {
-	uint8_t src;
-	uint8_t pad0[7];
-	uint64_t layout_iova;
-};
-
-struct dpni_sw_sequence_layout_entry {
-	uint16_t ss_offset;
-	uint16_t ss_size;
-	uint8_t param_offset;
-	uint8_t param_size;
-	uint16_t pad;
 };
 
 struct dpni_cmd_set_opr {
@@ -809,6 +793,44 @@ struct dpni_rsp_get_opr {
 	uint16_t opr_vid;
 	uint16_t pad7;
 	uint16_t opr_id;
+};
+
+struct dpni_load_sw_sequence {
+	uint8_t dest;
+	uint8_t pad0[7];
+	uint16_t ss_offset;
+	uint16_t pad1;
+	uint16_t ss_size;
+	uint16_t pad2;
+	uint64_t ss_iova;
+};
+
+struct dpni_enable_sw_sequence {
+	uint8_t dest;
+	uint8_t pad0[7];
+	uint16_t ss_offset;
+	uint16_t hxs;
+	uint8_t set_start;
+	uint8_t pad1[3];
+	uint8_t param_offset;
+	uint8_t pad2[3];
+	uint8_t param_size;
+	uint8_t pad3[3];
+	uint64_t param_iova;
+};
+
+struct dpni_get_sw_sequence_layout {
+	uint8_t src;
+	uint8_t pad0[7];
+	uint64_t layout_iova;
+};
+
+struct dpni_sw_sequence_layout_entry {
+	uint16_t ss_offset;
+	uint16_t ss_size;
+	uint8_t param_offset;
+	uint8_t param_size;
+	uint16_t pad;
 };
 
 #define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
