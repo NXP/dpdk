@@ -627,31 +627,31 @@ fslmc_process_iodevices(struct rte_dpaa2_device *dev)
 static int
 fslmc_process_mcp(struct rte_dpaa2_device *dev)
 {
+	int ret;
 	intptr_t v_addr;
-	char *dev_name;
+	char *dev_name = NULL;
 	struct fsl_mc_io dpmng  = {0};
 	struct mc_version mc_ver_info = {0};
 
 	rte_mcp_ptr_list = malloc(sizeof(void *) * 1);
 	if (!rte_mcp_ptr_list) {
 		DPAA2_BUS_ERR("Unable to allocate MC portal memory");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto cleanup;
 	}
 
 	dev_name = strdup(dev->device.name);
 	if (!dev_name) {
 		DPAA2_BUS_ERR("Unable to allocate MC device name memory");
-		free(rte_mcp_ptr_list);
-		rte_mcp_ptr_list = NULL;
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto cleanup;
 	}
 
 	v_addr = vfio_map_mcp_obj(dev->device.name);
 	if (v_addr == (intptr_t)MAP_FAILED) {
 		DPAA2_BUS_ERR("Error mapping region (errno = %d)", errno);
-		free(rte_mcp_ptr_list);
-		rte_mcp_ptr_list = NULL;
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 
 	/* check the MC version compatibility */
@@ -667,7 +667,8 @@ fslmc_process_mcp(struct rte_dpaa2_device *dev)
 
 	if (mc_get_version(&dpmng, CMD_PRI_LOW, &mc_ver_info)) {
 		DPAA2_BUS_ERR("Unable to obtain MC version");
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 
 	if ((mc_ver_info.major != MC_VER_MAJOR) ||
@@ -677,13 +678,24 @@ fslmc_process_mcp(struct rte_dpaa2_device *dev)
 			      MC_VER_MAJOR, MC_VER_MINOR,
 			      mc_ver_info.major, mc_ver_info.minor,
 			      mc_ver_info.revision);
-		free(rte_mcp_ptr_list);
-		rte_mcp_ptr_list = NULL;
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 	rte_mcp_ptr_list[0] = (void *)v_addr;
 
+	free(dev_name);
 	return 0;
+
+cleanup:
+	if (dev_name)
+		free(dev_name);
+
+	if (rte_mcp_ptr_list) {
+		free(rte_mcp_ptr_list);
+		rte_mcp_ptr_list = NULL;
+	}
+
+	return ret;
 }
 
 int
@@ -805,6 +817,14 @@ fslmc_vfio_setup_group(void)
 	ret = fslmc_get_container_group(&groupid);
 	if (ret)
 		return ret;
+
+	/* In case this group was already opened, continue without any
+	 * processing.
+	 */
+	if (vfio_group.groupid == groupid) {
+		DPAA2_BUS_ERR("groupid already exists %d", groupid);
+		return 0;
+	}
 
 	/* Get the actual group fd */
 	ret = vfio_get_group_fd(groupid);

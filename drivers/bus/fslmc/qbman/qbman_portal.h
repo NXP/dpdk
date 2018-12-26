@@ -178,8 +178,10 @@ static inline void *qbman_swp_mc_complete(struct qbman_swp *swp, void *cmd,
 #define qb_cl(d) (&(d)->dont_manipulate_directly[0])
 
 #ifdef RTE_ARCH_ARM64
-	#define clean(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
-	#define invalidate(p) { asm volatile("dc ivac, %0" : : "r"(p) : "memory"); }
+	#define clean(p) \
+			{ asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
+	#define invalidate(p) \
+			{ asm volatile("dc ivac, %0" : : "r"(p) : "memory"); }
 #else
 	#define clean(p)
 	#define invalidate(p)

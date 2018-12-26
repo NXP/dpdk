@@ -284,6 +284,8 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->speed_capa = ETH_LINK_SPEED_1G |
 			ETH_LINK_SPEED_2_5G |
 			ETH_LINK_SPEED_10G;
+
+	dev_info->flow_type_rss_offloads = DPAA2_RSS_OFFLOAD_ALL;
 }
 
 static int
@@ -380,14 +382,12 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		/* cleaning up queue storage */
 		for (i = 0; i < priv->nb_rx_queues; i++) {
 			dpaa2_q = (struct dpaa2_queue *)priv->rx_vq[i];
-			if (dpaa2_q->q_storage)
-				rte_free(dpaa2_q->q_storage);
+			rte_free(dpaa2_q->q_storage);
 		}
 		/* cleanup tx queue cscn */
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
-			if (dpaa2_q->cscn)
-				rte_free(dpaa2_q->cscn);
+			rte_free(dpaa2_q->cscn);
 		}
 		/*free memory for all queues (RX+TX) */
 		rte_free(priv->rx_vq[0]);
@@ -654,7 +654,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q->tc_index = tc_id;
 
 	if (!(priv->flags & DPAA2_TX_CGR_OFF)) {
-		struct dpni_congestion_notification_cfg cong_notif_cfg;
+		struct dpni_congestion_notification_cfg cong_notif_cfg = {};
 
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
 		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
@@ -1551,7 +1551,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	}
 	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
 	if (ret < 0) {
-		DPAA2_PMD_ERR("Unable to get link state (%d)", ret);
+		DPAA2_PMD_DEBUG("Unable to get link state (%d)", ret);
 		return -1;
 	}
 

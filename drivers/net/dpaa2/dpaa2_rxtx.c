@@ -138,10 +138,11 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd)
 			DPAA2_GET_FD_ADDR(fd)) + DPAA2_FD_PTA_SIZE);
 		m->timestamp = annotation->word2;
 		m->ol_flags |= PKT_RX_TIMESTAMP;
-		DPAA2_PMD_DP_DEBUG("pkt timestamp: 0x%lx", m->timestamp);
+		DPAA2_PMD_DP_DEBUG("pkt timestamp: 0x%" PRIx64 "",
+				   m->timestamp);
 	}
 
-	DPAA2_PMD_DP_DEBUG("HW frc = 0x%x\t packet type =0x%x ol_flags =0x%" PRIx64 "",
+	DPAA2_PMD_DP_DEBUG("HW frc = 0x%x\t packet type =0x%x ol_flags =0x%" PRIx64 "\n",
 		frc, m->packet_type, m->ol_flags);
 }
 
@@ -152,7 +153,7 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
 	uint16_t *vlan_tci;
 
-	DPAA2_PMD_DP_DEBUG("(slow parse) annotation(3)=0x%" PRIx64 "\t"
+	DPAA2_PMD_DP_DEBUG("(slow parse)annotation(3)=0x%" PRIx64 "\t"
 			"(4)=0x%" PRIx64 "\t",
 			annotation->word3, annotation->word4);
 
@@ -246,7 +247,7 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 
 	mbuf->ol_flags |= PKT_RX_TIMESTAMP;
 	mbuf->timestamp = annotation->word2;
-	DPAA2_PMD_DP_DEBUG("pkt timestamp: 0x%lx", mbuf->timestamp);
+	DPAA2_PMD_DP_DEBUG("pkt timestamp: 0x%" PRIx64 "", mbuf->timestamp);
 
 	/* Check detailed parsing requirement */
 	if (annotation->word3 & 0x7FFFFC3FFFF)

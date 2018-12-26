@@ -165,45 +165,20 @@ scan_one_fslmc_device(char *dev_name)
 {
 	char *dup_dev_name, *t_ptr;
 	struct rte_dpaa2_device *dev = NULL;
-	enum rte_dpaa2_dev_type dev_type;
 	int ret = -1;
+
+	if (!dev_name)
+		return -1;
+
+	/* Ignore the Container name itself */
+	if (!strncmp("dprc", dev_name, 4))
+		return 0;
 
 	/* Creating a temporary copy to perform cut-parse over string */
 	dup_dev_name = strdup(dev_name);
 	if (!dup_dev_name) {
 		DPAA2_BUS_ERR("Unable to allocate device name memory");
 		return -ENOMEM;
-	}
-
-	/* Parse the device name and ID */
-	t_ptr = strtok(dup_dev_name, ".");
-	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device name observed");
-		goto cleanup;
-	}
-	if (!strncmp("dpni", t_ptr, 4))
-		dev_type = DPAA2_ETH;
-	else if (!strncmp("dpseci", t_ptr, 6))
-		dev_type = DPAA2_CRYPTO;
-	else if (!strncmp("dpcon", t_ptr, 5))
-		dev_type = DPAA2_CON;
-	else if (!strncmp("dpbp", t_ptr, 4))
-		dev_type = DPAA2_BPOOL;
-	else if (!strncmp("dpio", t_ptr, 4))
-		dev_type = DPAA2_IO;
-	else if (!strncmp("dpci", t_ptr, 4))
-		dev_type = DPAA2_CI;
-	else if (!strncmp("dpmcp", t_ptr, 5))
-		dev_type = DPAA2_MPORTAL;
-	else if (!strncmp("dpdmai", t_ptr, 6))
-		dev_type = DPAA2_QDMA;
-	else if (!strncmp("dpdmux", t_ptr, 6))
-		dev_type = DPAA2_MUX;
-	else {
-		dev_type = DPAA2_UNKNOWN;
-		DPAA2_BUS_DEBUG("Unknown device string observed.");
-		ret = 0;
-		goto cleanup;
 	}
 
 	/* For all other devices, we allocate rte_dpaa2_device.
@@ -214,12 +189,43 @@ scan_one_fslmc_device(char *dev_name)
 	dev = calloc(1, sizeof(struct rte_dpaa2_device));
 	if (!dev) {
 		DPAA2_BUS_ERR("Unable to allocate device object");
-		ret =  -ENOMEM;
+		ret = -ENOMEM;
+		goto cleanup;
+	}
+
+	/* Parse the device name and ID */
+	t_ptr = strtok(dup_dev_name, ".");
+	if (!t_ptr) {
+		DPAA2_BUS_ERR("Incorrect device name observed");
+		goto cleanup;
+	}
+
+	if (!strncmp("dpni", t_ptr, 4))
+		dev->dev_type = DPAA2_ETH;
+	else if (!strncmp("dpseci", t_ptr, 6))
+		dev->dev_type = DPAA2_CRYPTO;
+	else if (!strncmp("dpcon", t_ptr, 5))
+		dev->dev_type = DPAA2_CON;
+	else if (!strncmp("dpbp", t_ptr, 4))
+		dev->dev_type = DPAA2_BPOOL;
+	else if (!strncmp("dpio", t_ptr, 4))
+		dev->dev_type = DPAA2_IO;
+	else if (!strncmp("dpci", t_ptr, 4))
+		dev->dev_type = DPAA2_CI;
+	else if (!strncmp("dpmcp", t_ptr, 5))
+		dev->dev_type = DPAA2_MPORTAL;
+	else if (!strncmp("dpdmai", t_ptr, 6))
+		dev->dev_type = DPAA2_QDMA;
+	else if (!strncmp("dpdmux", t_ptr, 6))
+		dev->dev_type = DPAA2_MUX;
+	else {
+		dev->dev_type = DPAA2_UNKNOWN;
+		DPAA2_BUS_DEBUG("Unknown device string observed.");
+		ret = 0;
 		goto cleanup;
 	}
 
 	/* Update the device found into the device_count table */
-	dev->dev_type = dev_type;
 	rte_fslmc_bus.device_count[dev->dev_type]++;
 
 	t_ptr = strtok(NULL, ".");
@@ -244,14 +250,11 @@ scan_one_fslmc_device(char *dev_name)
 		free(dup_dev_name);
 
 	return 0;
-
 cleanup:
-	if (dev)
-		free(dev);
-
 	if (dup_dev_name)
 		free(dup_dev_name);
-
+	if (dev)
+		free(dev);
 	return ret;
 }
 
@@ -277,7 +280,8 @@ rte_fslmc_parse(const char *name, void *addr)
 	    strncmp("dpio", t_ptr, 4) &&
 	    strncmp("dpci", t_ptr, 4) &&
 	    strncmp("dpmcp", t_ptr, 5) &&
-	    strncmp("dpdmai", t_ptr, 6)) {
+	    strncmp("dpdmai", t_ptr, 6) &&
+	    strncmp("dpdmux", t_ptr, 6)) {
 		DPAA2_BUS_ERR("Unknown or unsupported device");
 		goto err_out;
 	}
@@ -516,6 +520,10 @@ rte_dpaa2_get_iommu_class(void)
 
 	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
 		return RTE_IOVA_DC;
+
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+	return RTE_IOVA_PA;
+#endif
 
 	/* check if all devices on the bus support Virtual addressing or not */
 	has_iova_va = fslmc_all_device_support_iova();

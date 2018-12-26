@@ -527,7 +527,7 @@ dpaa2_check_lcore_cpuset(void)
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		for (i = 0; i < RTE_MAX_LCORE; i++) {
 			if (CPU_ISSET(i, &lcore_config[lcore_id].cpuset)) {
-				RTE_LOG(DEBUG, EAL, "lcore id = %u cpu=%u\n",
+				DPAA2_BUS_INFO("Mapping lcore id = %u cpu=%u",
 					lcore_id, i);
 				if (dpaa2_cpu[lcore_id] != 0xffffffff) {
 				    DPAA2_BUS_ERR(
