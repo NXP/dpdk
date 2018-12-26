@@ -91,6 +91,10 @@ struct fsl_mc_io;
  * All Tx traffic classes will use a single sender (ignore num_queueus for tx)
  */
 #define DPNI_OPT_SINGLE_SENDER			0x000100
+/**
+ * Define a custom number of congestion groups
+ */
+#define DPNI_OPT_CUSTOM_CG				0x000200
 
 int dpni_open(struct fsl_mc_io *mc_io,
 	      uint32_t cmd_flags,
