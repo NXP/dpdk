@@ -65,9 +65,9 @@
 #define CONG_RETRY_COUNT 18000
 
 /* RX queue tail drop threshold
- * currently considering 32 KB packets
+ * currently considering 64 KB packets
  */
-#define CONG_THRESHOLD_RX_Q  (64 * 1024)
+#define CONG_THRESHOLD_RX_BYTES_Q  (64 * 1024)
 #define CONG_RX_OAL	128
 
 /* Size of the input SMMU mapped memory required by MC */
@@ -132,15 +132,20 @@ struct dpaa2_dev_priv {
 	uint16_t token;
 	uint8_t nb_tx_queues;
 	uint8_t nb_rx_queues;
+	uint32_t options;
 	void *rx_vq[MAX_RX_QUEUES];
 	void *tx_vq[MAX_TX_QUEUES];
 
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
-	uint32_t options;
 	uint8_t max_mac_filters;
 	uint8_t max_vlan_filters;
 	uint8_t num_rx_tc;
 	uint8_t flags; /*dpaa2 config flags */
+	uint8_t en_ordered;
+	uint8_t en_loose_ordered;
+	uint8_t max_cgs;
+	uint8_t cgid_in_use[MAX_RX_QUEUES];
+
 	struct pattern_s {
 		uint8_t item_count;
 		uint8_t pattern_type[DPKG_MAX_NUM_OF_EXTRACTS];
@@ -153,11 +158,9 @@ struct dpaa2_dev_priv {
 		uint64_t fs_extract_param[MAX_TCS];
 	} extract;
 
-	uint16_t ss_offset;
 	uint64_t ss_iova;
 	uint64_t ss_param_iova;
-	uint8_t en_ordered;
-	uint8_t en_loose_ordered;
+	uint16_t ss_offset;
 };
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
