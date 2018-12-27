@@ -137,6 +137,9 @@
 #define DPNI_CMDID_GET_SW_SEQUENCE_LAYOUT	DPNI_CMD(0x272)
 #define DPNI_CMDID_SET_RX_FS_DIST		DPNI_CMD(0x273)
 #define DPNI_CMDID_SET_RX_HASH_DIST		DPNI_CMD(0x274)
+#define DPNI_CMDID_ADD_CUSTOM_TPID		DPNI_CMD(0x275)
+#define DPNI_CMDID_REMOVE_CUSTOM_TPID		DPNI_CMD(0x276)
+#define DPNI_CMDID_GET_CUSTOM_TPID		DPNI_CMD(0x277)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -853,5 +856,21 @@ struct dpni_cmd_set_rx_hash_dist {
 	uint32_t	pad;
 	uint64_t	key_cfg_iova;
 };
+
+struct dpni_cmd_add_custom_tpid {
+	uint16_t	pad;
+	uint16_t	tpid;
+};
+
+struct dpni_cmd_remove_custom_tpid {
+	uint16_t	pad;
+	uint16_t	tpid;
+};
+
+struct dpni_rsp_get_custom_tpid {
+	uint16_t	tpid1;
+	uint16_t	tpid2;
+};
+
 #pragma pack(pop)
 #endif /* _FSL_DPNI_CMD_H */
