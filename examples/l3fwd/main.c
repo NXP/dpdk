@@ -73,8 +73,8 @@ static enum L3FWD_LOOKUP_MODE lookup_mode;
 static int numa_on = 1; /**< NUMA is enabled by default. */
 static int parse_ptype; /**< Parse packet type using rx callback, and */
 			/**< disabled by default */
-static int per_port_pool; /**< Use separate buffer pools per port; disabled */
-			  /**< by default */
+static int per_port_pool = 1; /**< Use separate buffer pools per port */
+				/**< Set to 0 as default - disabled */
 
 volatile bool force_quit;
 
@@ -398,7 +398,7 @@ print_usage(const char *prgname)
 		" [--hash-entry-num]"
 		" [--ipv6]"
 		" [--parse-ptype]"
-		" [--per-port-pool]"
+		" [--disable-per-port-pool]\n\n"
 		" [--mode]"
 		" [--eventq-sched]"
 		" [--event-vector [--event-vector-size SIZE] [--event-vector-tmo NS]]"
@@ -422,7 +422,7 @@ print_usage(const char *prgname)
 		"  --hash-entry-num: Specify the hash entry number in hexadecimal to be setup\n"
 		"  --ipv6: Set if running ipv6 packets\n"
 		"  --parse-ptype: Set to use software to analyze packet type\n"
-		"  --per-port-pool: Use separate buffer pool per port\n"
+		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
 		"  --mode: Packet transfer mode for I/O, poll or eventdev\n"
 		"          Default mode = poll\n"
 		"  --eventq-sched: Event queue synchronization method\n"
@@ -687,7 +687,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_MAX_PKT_LEN "max-pkt-len"
 #define CMD_LINE_OPT_HASH_ENTRY_NUM "hash-entry-num"
 #define CMD_LINE_OPT_PARSE_PTYPE "parse-ptype"
-#define CMD_LINE_OPT_PER_PORT_POOL "per-port-pool"
+#define CMD_LINE_OPT_PER_PORT_POOL "disable-per-port-pool"
 #define CMD_LINE_OPT_MODE "mode"
 #define CMD_LINE_OPT_EVENTQ_SYNC "eventq-sched"
 #define CMD_LINE_OPT_EVENT_ETH_RX_QUEUES "event-eth-rxqs"
@@ -757,14 +757,14 @@ static const struct option lgopts[] = {
  * depending on user input, taking  into account memory for rx and
  * tx hardware rings, cache per lcore and mtable per port per lcore.
  * RTE_MAX is used to ensure that NB_MBUF never goes below a minimum
- * value of 8192
+ * value of 2048
  */
 #define NB_MBUF(nports) RTE_MAX(	\
 	(nports*nb_rx_queue*nb_rxd +		\
 	nports*nb_lcores*MAX_PKT_BURST +	\
 	nports*n_tx_queue*nb_txd +		\
 	nb_lcores*MEMPOOL_CACHE_SIZE),		\
-	(unsigned)8192)
+	(unsigned int)2048)
 
 /* Parse the argument given in the command line of the application */
 static int
@@ -869,7 +869,7 @@ parse_args(int argc, char **argv)
 
 		case CMD_LINE_OPT_PARSE_PER_PORT_POOL:
 			printf("per port buffer pool is enabled\n");
-			per_port_pool = 1;
+			per_port_pool = 0;
 			break;
 
 		case CMD_LINE_OPT_MODE_NUM:
