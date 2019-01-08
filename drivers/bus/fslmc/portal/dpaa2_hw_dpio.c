@@ -287,36 +287,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 	return 0;
 }
 
-static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int lcoreid)
-{
-	struct dpaa2_dpio_dev *dpio_dev = NULL;
-	int ret;
-
-	/* Get DPIO dev handle from list using index */
-	TAILQ_FOREACH(dpio_dev, &dpio_dev_list, next) {
-	/* Workaround to map Best portal to CPU combination for LX2 */
-	if (dpaa2_svr_family == SVR_LX2160A) {
-		/* First 16 portal are  reserved for TX/Sec */
-		if (dpio_dev->hw_id < 32)
-			continue;
-	}
-	if (dpio_dev && rte_atomic16_test_and_set(&dpio_dev->ref_count))
-		break;
-	}
-	if (!dpio_dev)
-		return NULL;
-
-	DPAA2_BUS_DEBUG("New Portal %p (%d) affined thread - %lu",
-			dpio_dev, dpio_dev->index, syscall(SYS_gettid));
-
-	ret = dpaa2_configure_stashing(dpio_dev, lcoreid);
-	if (ret)
-		DPAA2_BUS_ERR("dpaa2_configure_stashing failed");
-
-	return dpio_dev;
-}
-
-static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
+struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int lcoreid)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int ret;
@@ -331,8 +302,8 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 		sdest = dpaa2_core_cluster_sdest(cpu_id);
 		switch (sdest){
 		case 0:
-			if (dpio_dev->hw_id != 16 && dpio_dev->hw_id != 31) {
-				if (dpio_dev->hw_id > 31)
+			if (dpio_dev->hw_id != 16) {
+				if (dpio_dev->hw_id > 16 )
 					break; /* No Best portal found for SDEST*/
 				else
 					continue;
@@ -340,7 +311,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 1:
 			if (dpio_dev->hw_id != 18 && dpio_dev->hw_id != 24) {
-				if (dpio_dev->hw_id > 24)
+				if (dpio_dev->hw_id > 24 )
 					break;
 				else
 					continue;
@@ -348,7 +319,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 2:
 			if (dpio_dev->hw_id != 20 && dpio_dev->hw_id != 26) {
-				if (dpio_dev->hw_id > 26)
+				if (dpio_dev->hw_id > 26 )
 					break;
 				else
 					continue;
@@ -356,7 +327,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 3:
 			if (dpio_dev->hw_id != 22 && dpio_dev->hw_id != 28) {
-				if (dpio_dev->hw_id > 28)
+				if (dpio_dev->hw_id > 28 )
 					break;
 				else
 					continue;
@@ -364,7 +335,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 4:
 			if (dpio_dev->hw_id != 23 && dpio_dev->hw_id != 29) {
-				if (dpio_dev->hw_id > 29)
+				if (dpio_dev->hw_id > 29 )
 					break;
 				else
 					continue;
@@ -372,7 +343,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 5:
 			if (dpio_dev->hw_id != 21 && dpio_dev->hw_id != 25) {
-				if (dpio_dev->hw_id > 25)
+				if (dpio_dev->hw_id > 25 )
 					break;
 				else
 					continue;
@@ -380,7 +351,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 6:
 			if (dpio_dev->hw_id != 17 && dpio_dev->hw_id != 30) {
-				if (dpio_dev->hw_id > 30)
+				if (dpio_dev->hw_id > 30 )
 					break;
 				else
 					continue;
@@ -388,7 +359,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 			break;
 		case 7:
 			if (dpio_dev->hw_id != 19 && dpio_dev->hw_id != 27) {
-				if (dpio_dev->hw_id > 27)
+				if (dpio_dev->hw_id > 27 )
 					break;
 				else
 					continue;
@@ -411,6 +382,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp_specific(int lcoreid)
 
 	return dpio_dev;
 }
+
 int
 dpaa2_affine_qbman_swp(void)
 {
@@ -446,8 +418,7 @@ dpaa2_affine_qbman_swp(void)
 	}
 
 	/* Populate the dpaa2_io_portal structure */
-	dpaa2_io_portal[lcore_id].dpio_dev =
-		dpaa2_get_qbman_swp_specific(lcore_id);
+	dpaa2_io_portal[lcore_id].dpio_dev = dpaa2_get_qbman_swp(lcore_id);
 
 	if (dpaa2_io_portal[lcore_id].dpio_dev) {
 		RTE_PER_LCORE(_dpaa2_io).dpio_dev
