@@ -211,7 +211,7 @@ vhost_bdev_scsi_inquiry_command(struct vhost_block_dev *bdev,
 			break;
 		case SPC_VPD_UNIT_SERIAL_NUMBER:
 			hlen = 4;
-			strlcpy((char *)vpage->params, bdev->name, 32);
+			strlcpy((char *)vpage->params, bdev->name, 33);
 			vpage->alloc_len = rte_cpu_to_be_16(32);
 			break;
 		case SPC_VPD_DEVICE_IDENTIFICATION:

@@ -546,7 +546,7 @@ parse_cfg_file(const char *cfg_filename)
 			}
 
 			strlcpy(str + strlen(str), oneline,
-				strlen(oneline));
+				strlen(oneline) + 1);
 
 			continue;
 		}

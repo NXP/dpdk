@@ -354,7 +354,7 @@ tm_cfgfile_load_sched_subport(
 					profile = atoi(entries[j].value);
 					strlcpy(name,
 						entries[j].name,
-						sizeof(name));
+						sizeof(name) + 1);
 					n_tokens = rte_strsplit(
 						&name[sizeof("pipe")],
 						strnlen(name, CFG_NAME_LEN),
