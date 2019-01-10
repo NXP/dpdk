@@ -237,27 +237,35 @@ create_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa)
 	return 0;
 }
 
+/*
+ * queue crypto-ops into PMD queue.
+ */
+void
+enqueue_cop_burst(struct cdev_qp *cqp)
+{
+	uint32_t i, len, ret;
+
+	len = cqp->len;
+	ret = rte_cryptodev_enqueue_burst(cqp->id, cqp->qp, cqp->buf, len);
+	if (ret < len) {
+		RTE_LOG_DP(DEBUG, IPSEC, "Cryptodev %u queue %u:"
+			" enqueued %u crypto ops out of %u\n",
+			cqp->id, cqp->qp, ret, len);
+			/* drop packets that we fail to enqueue */
+			for (i = ret; i < len; i++)
+				rte_pktmbuf_free(cqp->buf[i]->sym->m_src);
+	}
+	cqp->in_flight += ret;
+	cqp->len = 0;
+}
+
 static inline void
 enqueue_cop(struct cdev_qp *cqp, struct rte_crypto_op *cop)
 {
-	int32_t ret, i;
-
 	cqp->buf[cqp->len++] = cop;
 
-	if (cqp->len == MAX_PKT_BURST) {
-		ret = rte_cryptodev_enqueue_burst(cqp->id, cqp->qp,
-				cqp->buf, cqp->len);
-		if (ret < cqp->len) {
-			RTE_LOG_DP(DEBUG, IPSEC, "Cryptodev %u queue %u:"
-					" enqueued %u crypto ops out of %u\n",
-					 cqp->id, cqp->qp,
-					 ret, cqp->len);
-			for (i = ret; i < cqp->len; i++)
-				rte_pktmbuf_free(cqp->buf[i]->sym->m_src);
-		}
-		cqp->in_flight += ret;
-		cqp->len = 0;
-	}
+	if (cqp->len == MAX_PKT_BURST)
+		enqueue_cop_burst(cqp);
 }
 
 static inline void
@@ -362,6 +370,33 @@ ipsec_enqueue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 	}
 }
 
+static inline int32_t
+ipsec_inline_dequeue(__rte_unused ipsec_xform_fn xform_func, __rte_unused struct ipsec_ctx *ipsec_ctx,
+	      __rte_unused struct rte_mbuf *pkts[], __rte_unused uint16_t max_pkts)
+{
+	int32_t nb_pkts;//, ret;
+//	struct ipsec_mbuf_metadata *priv;
+//	struct ipsec_sa *sa;
+//	struct rte_mbuf *pkt;
+
+	nb_pkts = 0;
+#if 0
+	while (ipsec_ctx->ol_pkts_cnt > 0 && nb_pkts < max_pkts) {
+		pkt = ipsec_ctx->ol_pkts[--ipsec_ctx->ol_pkts_cnt];
+		rte_prefetch0(pkt);
+		priv = get_priv(pkt);
+		sa = priv->sa;
+		ret = xform_func(pkt, sa, &priv->cop);
+		if (unlikely(ret)) {
+			rte_pktmbuf_free(pkt);
+			continue;
+		}
+		pkts[nb_pkts++] = pkt;
+	}
+#endif
+	return nb_pkts;
+}
+
 static inline int
 ipsec_dequeue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 	      struct rte_mbuf *pkts[], uint16_t max_pkts)
@@ -376,19 +411,6 @@ ipsec_dequeue(ipsec_xform_fn xform_func, struct ipsec_ctx *ipsec_ctx,
 		struct cdev_qp *cqp;
 
 		cqp = &ipsec_ctx->tbl[ipsec_ctx->last_qp];
-
-		while (cqp->ol_pkts_cnt > 0 && nb_pkts < max_pkts) {
-			pkt = cqp->ol_pkts[--cqp->ol_pkts_cnt];
-			rte_prefetch0(pkt);
-			priv = get_priv(pkt);
-			sa = priv->sa;
-			ret = xform_func(pkt, sa, &priv->cop);
-			if (unlikely(ret)) {
-				rte_pktmbuf_free(pkt);
-				continue;
-			}
-			pkts[nb_pkts++] = pkt;
-		}
 
 		if (cqp->in_flight == 0) {
 			ipsec_ctx->last_qp++;
@@ -443,6 +465,13 @@ ipsec_inbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
 
 	ipsec_enqueue(esp_inbound, ctx, pkts, sas, nb_pkts);
 
+	return ipsec_inline_dequeue(esp_inbound_post, ctx, pkts, len);
+}
+
+uint16_t
+ipsec_inbound_cqp_dequeue(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint16_t len)
+{
 	return ipsec_dequeue(esp_inbound_post, ctx, pkts, len);
 }
 
@@ -456,6 +485,13 @@ ipsec_outbound(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
 
 	ipsec_enqueue(esp_outbound, ctx, pkts, sas, nb_pkts);
 
+	return ipsec_inline_dequeue(esp_outbound_post, ctx, pkts, len);
+}
+
+uint16_t
+ipsec_outbound_cqp_dequeue(struct ipsec_ctx *ctx, struct rte_mbuf *pkts[],
+		uint16_t len)
+{
 	return ipsec_dequeue(esp_outbound_post, ctx, pkts, len);
 }
 uint16_t
