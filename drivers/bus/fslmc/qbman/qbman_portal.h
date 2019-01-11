@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014-2016 Freescale Semiconductor, Inc.
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  *
  */
 
@@ -98,7 +98,7 @@ struct qbman_swp {
 		uint32_t pi;
 		uint32_t pi_vb;
 		uint32_t pi_ring_size;
-		uint32_t pi_mask;
+		uint32_t pi_ci_mask;
 		uint32_t ci;
 		int available;
 	} eqcr;
