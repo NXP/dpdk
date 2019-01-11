@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016,2019 NXP
  *
  */
 
@@ -560,6 +560,7 @@ fslmc_process_iodevices(struct rte_dpaa2_device *dev)
 	case DPAA2_IO:
 	case DPAA2_CI:
 	case DPAA2_BPOOL:
+	case DPAA2_MUX:
 		TAILQ_FOREACH(object, &dpaa2_obj_list, next) {
 			if (dev->dev_type == object->dev_type)
 				object->create(dev_fd, &device_info,
@@ -691,6 +692,7 @@ fslmc_vfio_process_group(void)
 		case DPAA2_IO:
 		case DPAA2_CI:
 		case DPAA2_BPOOL:
+		case DPAA2_MUX:
 			/* Call the object creation routine and remove the
 			 * device entry from device list
 			 */
