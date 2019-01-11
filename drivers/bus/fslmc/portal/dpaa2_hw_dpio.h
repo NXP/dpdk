@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -36,8 +36,6 @@ extern uint8_t dpaa2_dqrr_size;
 extern uint8_t dpaa2_eqcr_size;
 
 extern struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
-
-struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(int cpu_id);
 
 /* Affine a DPIO portal to current processing thread */
 int dpaa2_affine_qbman_swp(void);
