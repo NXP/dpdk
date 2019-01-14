@@ -173,6 +173,8 @@ Assuming that following DPRC is created:
 	dpseci.2                        plugged
 	dpseci.1                        plugged
 	dpseci.0                        plugged
+	dpdmai.1                        plugged
+	dpdmai.2                        plugged
 	dpmcp.23                        plugged
 	dpmcp.22                        plugged
 	dpmcp.21                        plugged
@@ -238,6 +240,11 @@ model.
 ./examples/multi_process/symmetric_mp # symmetric model example
 ./examples/multi_process/client_server_mp # asymmetric model example
 
+Some other examples are also provided from NXP which use the available hardware
+support in DPAA2:
+
+./examples/multi_process/symmetric_mp_qdma # symmetric model with QDMA example
+
 Detailed explanation can be seen from DPDK documentation:
 https://doc.dpdk.org/guides/sample_app_ug/multi_process.html
 
@@ -280,18 +287,48 @@ and distributing to Client for Tx (one queue per device)
   5 dpio to it.
 
 ./mp_server -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
-        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b dpmcp.23 -- \
-        -p 0x3 -n 1
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 -n 1
 
  # Running client (secondary) process with 1 Core, 2 ports; assigning 1 dpmcp
    and 5 dpio to it.
 
 ./mp_client -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
         -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
-        -b fslmc:dpmcp.21 -b dpmcp.23 -- -n 0
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -- -n 0
 
 Send I/O to the ports assigned to the processes and observe traffic being
 forwarded.
+
+3) Executing QDMA example application
+
+symmetric_mp_qdma application is similar to symmetric_mp except that the
+mbuf (buffer) transfers between Rx and Tx are done using the NXP DPAA2 QDMA
+(dpdmai) hardware block.
+
+# Running primary process with single Core, 2 ports; assigning 1 dpmcp and 5
+  dpio, 1 dpdmai to it:
+
+Assuming that there are two DPDMAI objects in the DPRC: dpdmai.1 and dpdmai.2,
+the command is very similar to the symmetric_mp example:
+
+./symmetric_mp -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -b fslmc:dpdmai.1 -- -p 0x3 --num-procs=2 --proc-id=0
+
+
+Notice the extra parameter "-b fslmc:dpdmai.1" as compared the symmetric_mp
+command. This extra parameter conveys this process to ignore the dpdmai.1
+block and use dpdmai.2 in Primary.
+
+# Running secondary process with single core (not overlappping with primary),
+  2 ports (same as primary); Assigning 1 dpmcp and 5 dpio, 1 dpdmai to it.
+  (We can ignore the extra dpmcp preserved for 3 process, if any)
+
+./symmetric_mp -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
+        -- -p 0x3 --num-procs=2 --proc-id=1
 
 Extra Notes:
 ------------
@@ -299,5 +336,6 @@ Extra Notes:
 1. l2fwd/l3fwd in their current design are not suited for multiprocess execution
    and hence would not work with substantial modification of segregating the
    queues and Rx/Tx processing.
-2. For exiting the application, the primary should be killed first (Ctrl+C or
-   sending SIGKILL) before any secondary.
+2. For exiting the application, it is advisable to send SIGKILL to all the
+   application. Similar to "killall <application name>". If not, all secondary
+   should be killed first (Ctrl+C or SIGKILL) before the primary process.
