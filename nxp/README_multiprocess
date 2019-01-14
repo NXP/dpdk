@@ -176,7 +176,7 @@ Assuming that following DPRC is created:
 	dpmcp.23                        plugged
 	dpmcp.22                        plugged
 	dpmcp.21                        plugged
-	dpio.17
+	dpio.17                         plugged
 	dpio.16                         plugged
 	dpio.15                         plugged
 	dpio.14                         plugged
@@ -249,8 +249,8 @@ Using the same DPRC shown as sample above.
   dpio to it.
 
 ./symmetric_mp -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
-        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b dpmcp.23 -- \
-        -p 0x3 --num-procs=2 --proc-id=0
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 --num-procs=2 --proc-id=0
 
 In the above, "--num-procs=2" signifies 2 processes in total. --proc-id=0 is the
 identifier for the primary process.
@@ -261,7 +261,7 @@ identifier for the primary process.
 
 ./symmetric_mp -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
         -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
-        -b fslmc:dpmcp.21 -b dpmcp.23 -- -p 0x3 --num-procs=2 --proc-id=1
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -- -p 0x3 --num-procs=2 --proc-id=1
 
 In case more than one instance of application is to be executed, similar
 blacklisting has to be done to distribute resources. Further, '--num-procs' and
