@@ -1260,8 +1260,7 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 	uint16_t orpid, seqnum;
 	uint8_t dq_idx;
 
-	qbman_eq_desc_set_qd(eqdesc, priv->qdid, dpaa2_q->flow_id,
-			     dpaa2_q->tc_index);
+	qbman_eq_desc_set_fq(eqdesc, dpaa2_q->fqid);
 
 	if (m->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
 		orpid = (m->seqn & DPAA2_EQCR_OPRID_MASK) >>
@@ -1365,9 +1364,8 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			} else {
 				qbman_eq_desc_set_no_orp(&eqdesc[loop],
 							 DPAA2_EQ_RESP_ERR_FQ);
-				qbman_eq_desc_set_qd(&eqdesc[loop], priv->qdid,
-						     dpaa2_q->flow_id,
-						     dpaa2_q->tc_index);
+				qbman_eq_desc_set_fq(&eqdesc[loop],
+						     dpaa2_q->fqid);
 			}
 
 			if (likely(RTE_MBUF_DIRECT(*bufs))) {
@@ -1577,8 +1575,7 @@ dpaa2_dev_loopback_rx(void *queue,
 	qbman_eq_desc_clear(&eqdesc);
 	qbman_eq_desc_set_no_orp(&eqdesc, DPAA2_EQ_RESP_ERR_FQ);
 	qbman_eq_desc_set_response(&eqdesc, 0, 0);
-	qbman_eq_desc_set_qd(&eqdesc, priv->qdid,
-			     tx_q->flow_id, tx_q->tc_index);
+	qbman_eq_desc_set_fq(&eqdesc, tx_q->fqid);
 
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
