@@ -1,7 +1,7 @@
-#/*
-# * Copyright 2016-2017 NXP.
-# *
-# */
+#
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2016-2019 NXP.
+#
 
 help() {
 	echo
