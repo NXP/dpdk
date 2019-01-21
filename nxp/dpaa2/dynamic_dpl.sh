@@ -95,6 +95,13 @@ script help :----->
 					integer value. "e.g export MAX_QOS=1"
 					Default is set to 1.
 
+		MAX_CGR             = maximum CGR Entries per DPNI
+					Set the parameter using below command:
+					'export MAX_CGR=<Num of CGR entries>'
+					where "Number of CGR entries" is an
+					integer value. "e.g export MAX_CGR=16"
+					Default is set same as MAX_TCS.
+
 		DPNI_NORMAL_BUF    = Change the mode to use normal buf mode.
 					The default mode is high performance buffer mode.
 					However there are limitation w.r.t total outstanding packets
@@ -247,6 +254,10 @@ get_dpni_parameters() {
 			MAX_TCS=8
 		fi
 	fi
+	if [[ -z "$MAX_CGS" ]]
+	then
+		MAX_CGS=`expr $MAX_QUEUES + 8`
+	fi
 	if [[ -z "$MAX_QOS" ]]
 	then
 		if [[ $board_type == "1088" || $board_type == "2080" || $board_type == "2085" ]]
@@ -260,18 +271,22 @@ get_dpni_parameters() {
 	fi
 	if [[ -z "$DPNI_OPTIONS" ]]
 	then
+		#enable custom cgr to configure per queue cgr based taildrop
+		DPNI_OPTIONS="DPNI_OPT_CUSTOM_CG"
+
 		if [[ $board_type != "1088" ]]
 		then
-			DPNI_OPTIONS="DPNI_OPT_HAS_KEY_MASKING"
+			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_KEY_MASKING"
 		fi
 		if [[ $board_type == "2160" ]]
 		then
-			DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_HAS_KEY_MASKING"
+			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_SINGLE_SENDER"
 		fi
 		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
 		then
 			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
 		fi
+		NEWDPNI_OPTIONS=1
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
 	then
@@ -298,11 +313,13 @@ get_dpni_parameters() {
 		then
 			DPSECI_OPTIONS="$DPSECI_OPTIONS,DPSECI_OPT_HAS_OPR,DPSECI_OPT_OPR_SHARED"
 		fi
+		NEWDPSECI_OPTIONS=1
 	fi
 	echo >> dynamic_dpl_logs
 	echo  "DPNI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tMAX_QUEUES = "$MAX_QUEUES >> dynamic_dpl_logs
 	echo -e "\tMAX_TCS = "$MAX_TCS >> dynamic_dpl_logs
+	echo -e "\tMAX_CGS = "$MAX_CGS >> dynamic_dpl_logs
 	echo -e "\tDPNI_OPTIONS = "$DPNI_OPTIONS >> dynamic_dpl_logs
 	echo -e "\tDPSECI_OPTIONS = "$DPSECI_OPTIONS >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
@@ -637,7 +654,7 @@ then
 			else
 				ACTUAL_MAC="00:00:00:00:02:"$num
 			fi
-			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --container=$DPRC)
+			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 			restool dprc sync
 			restool dpni update $OBJ --mac-addr=$ACTUAL_MAC
 			echo $OBJ "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
@@ -672,7 +689,7 @@ then
 				PRINT_ONCE=1
 			fi
 		fi
-		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --container=$DPRC)
+		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 		restool dprc sync
 		restool dpni update $DPNI --mac-addr=$ACTUAL_MAC
 		echo -e '\t'$DPNI "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
@@ -900,4 +917,16 @@ else
 	echo -e '\t'$RED"Arguments missing"$NC
 	cat script_help
 	rm script_help
+fi
+
+if [[ "$NEWDPSECI_OPTIONS" == 1 ]]
+then
+	unset NEWDPSECI_OPTIONS
+	unset DPSECI_OPTIONS
+fi
+
+if [[ "$NEWDPNI_OPTIONS" == 1 ]]
+then
+	unset NEWDPNI_OPTIONS
+	unset DPNI_OPTIONS
 fi
