@@ -348,15 +348,13 @@ Following are some pre-requisites:
     $ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
     $ mount -t hugetlbfs nodev /mnt/hugetlbfs/
 
-  3. By default the system will use the dynamic FMC configurations for queue
-     Management.
+  3. By default the system will need fmc scripts to be run prior to uses.
+     However the dynamic FMC configurations for queue Management can be done via:
 
-     NOTE: NO NEED TO RUN FMC ANYMORE.
+     export DPAA_FMCLESS_MODE=1
 
-     However, if you want to do manual FMAN configuration:
-
-     export DPAA_FMC_MODE=1
-     Then, before running application, a binary `fmc` needs to be executed to
+     By default, =>
+     Before running application, a binary `fmc` needs to be executed to
      configure the FMan on DPAA platforms. This requires two configuration files
      which are available in rootfs at (/usr/local/dpdk/dpaa) and
      also available as part of DPDK source code (./nxp/dpaa/).
@@ -890,7 +888,7 @@ DPAA1:
 				or in push mode. note that these queue require additional
 				HW portal resources. 0 means disable push queue mode.
 
-2. DPAA_FMC_MODE              - Queue Distribution using FMC scripts.
+2. DPAA_FMCLESS_MODE              - Dynamic Queue Distribution. No need to run FMC scripts.
 
 DPAA2:
 ------
