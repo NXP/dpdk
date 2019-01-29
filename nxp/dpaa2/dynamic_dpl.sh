@@ -272,15 +272,11 @@ get_dpni_parameters() {
 	if [[ -z "$DPNI_OPTIONS" ]]
 	then
 		#enable custom cgr to configure per queue cgr based taildrop
-		DPNI_OPTIONS="DPNI_OPT_CUSTOM_CG"
+		DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_CUSTOM_CG"
 
 		if [[ $board_type != "1088" ]]
 		then
 			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_KEY_MASKING"
-		fi
-		if [[ $board_type == "2160" ]]
-		then
-			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_SINGLE_SENDER"
 		fi
 		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
 		then
