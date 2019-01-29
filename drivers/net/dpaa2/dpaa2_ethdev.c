@@ -1429,11 +1429,17 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *xstats,
 	if (retcode)
 		goto err;
 
-	/* Get Counters from page_4*/
-	retcode = dpni_get_statistics(dpni, CMD_PRI_LOW, priv->token,
-				      4, 0, &value[4]);
-	if (retcode)
-		goto err;
+	for (i = 0; i < priv->max_cgs; i++) {
+		if (!priv->cgid_in_use[i]) {
+			/* Get Counters from page_4*/
+			retcode = dpni_get_statistics(dpni, CMD_PRI_LOW,
+						      priv->token,
+						      4, 0, &value[4]);
+			if (retcode)
+				goto err;
+			break;
+		}
+	}
 
 	for (i = 0; i < num; i++) {
 		xstats[i].id = i;
