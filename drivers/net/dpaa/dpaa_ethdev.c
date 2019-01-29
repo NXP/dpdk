@@ -74,7 +74,7 @@
 
 /* Keep track of whether QMAN and BMAN have been globally initialized */
 static int is_global_init;
-static int fmc_q;	/* Indicates the use of dynamic fmc for distribution */
+static int fmc_q = 1;	/* Indicates the use of static fmc for distribution */
 static int default_q;	/* use default queue - FMC is not executed*/
 /* At present we only allow up to 4 push mode queues as default - as each of
  * this queue need dedicated portal and we are short of portals.
@@ -1529,12 +1529,17 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 		if (getenv("DPAA_DEFAULT_Q_ONLY"))
 			default_q = 1;
 
-		if (getenv("DPAA_FMC_MODE"))
-			fmc_q = 1;
-		else if (access("/tmp/fmc.bin", F_OK) != -1) {
-			RTE_LOG(ERR, PMD,
-				"FMC configured. Please set DPAA_FMC_MODE=1\n");
-			return -1;
+		if (getenv("DPAA_FMCLESS_MODE")) {
+			fmc_q = 0;
+			RTE_LOG(INFO, PMD, "Using FMC less mode\n");
+		} else {
+			if (access("/tmp/fmc.bin", F_OK) == -1) {
+				RTE_LOG(ERR, PMD,
+				"FMC Not configured. Please run fmc tool\n");
+				return -1;
+			}
+			RTE_LOG(INFO, PMD, "Using FMC script mode,"
+			"Make sure to use DPDK supported FMC scripts only.\n");
 		}
 
 		/* One time load of Qman/Bman drivers */
