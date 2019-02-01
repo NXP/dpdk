@@ -73,7 +73,7 @@ static const char *fm_log = "/tmp/fmdpdk.bin";
 static void fm_prev_cleanup(void)
 {
 	uint32_t fman_id = 0, i = 0, devid;
-	struct dpaa_if dpaa_intf;
+	struct dpaa_if dpaa_intf = {0};
 	t_FmPcdParams fmPcdParams = {0};
 	PMD_INIT_FUNC_TRACE();
 
@@ -101,14 +101,20 @@ static void fm_prev_cleanup(void)
 				FM_PORT_Open(&fm_model.fm_port_params[devid]);
 		dpaa_intf.scheme_handle[0] = CreateDevice(fm_info.pcd_handle,
 					fm_model.scheme_devid[devid][0]);
-		dpaa_intf.scheme_handle[1] = CreateDevice(fm_info.pcd_handle,
+		dpaa_intf.scheme_count = 1;
+		if (fm_model.scheme_devid[devid][1]) {
+			dpaa_intf.scheme_handle[1] =
+				CreateDevice(fm_info.pcd_handle,
 					fm_model.scheme_devid[devid][1]);
+			if (dpaa_intf.scheme_handle[1])
+				dpaa_intf.scheme_count++;
+		}
+
 		dpaa_intf.netenv_handle = CreateDevice(fm_info.pcd_handle,
 					fm_model.netenv_devid[devid]);
 		i++;
 		if (!dpaa_intf.netenv_handle ||
 			!dpaa_intf.scheme_handle[0] ||
-			!dpaa_intf.scheme_handle[1] ||
 			!dpaa_intf.port_handle)
 			continue;
 
@@ -594,7 +600,7 @@ static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
 	}
 
 	fm_model.scheme_devid[dpaa_intf->ifid][idx] =
-				GetDeviceId(dpaa_intf->scheme_handle);
+				GetDeviceId(dpaa_intf->scheme_handle[idx]);
 	dpaa_intf->scheme_count++;
 	return 0;
 }
@@ -637,7 +643,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	}
 
 	fm_model.scheme_devid[dpaa_intf->ifid][idx] =
-				GetDeviceId(dpaa_intf->scheme_handle);
+				GetDeviceId(dpaa_intf->scheme_handle[idx]);
 	dpaa_intf->scheme_count++;
 	return 0;
 }
@@ -879,7 +885,7 @@ int dpaa_fm_term(void)
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fm_info.pcd_handle) {
+	if (fm_info.pcd_handle && fm_info.fman_handle) {
 		/* FM PCD Disable */
 		ret = FM_PCD_Disable(fm_info.pcd_handle);
 		if (ret) {
