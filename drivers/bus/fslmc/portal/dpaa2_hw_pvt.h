@@ -177,7 +177,7 @@ struct dpaa2_queue {
 	struct rte_mempool *mb_pool; /**< mbuf pool to populate RX ring. */
 	union {
 		struct rte_eth_dev_data *eth_data;
-		void *dev;
+		struct rte_cryptodev_data *crypto_data;
 	};
 	uint32_t fqid;		/*!< Unique ID of this queue */
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
