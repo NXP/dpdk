@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright 2017-2018 NXP
+ *   Copyright 2017-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -75,6 +75,7 @@ static void fm_prev_cleanup(void)
 	uint32_t fman_id = 0, i = 0, devid;
 	struct dpaa_if dpaa_intf;
 	t_FmPcdParams fmPcdParams = {0};
+	PMD_INIT_FUNC_TRACE();
 
 	fm_info.fman_handle = FM_Open(fman_id);
 	if (!fm_info.fman_handle) {
@@ -125,6 +126,8 @@ void dpaa_write_fm_config_to_file(void)
 {
 	size_t bytes_write;
 	FILE *fp = fopen(fm_log, "wb");
+	PMD_INIT_FUNC_TRACE();
+
 	if (!fp) {
 		DPAA_PMD_ERR("File open failed");
 		return;
@@ -142,8 +145,12 @@ static void dpaa_read_fm_config_from_file(void)
 {
 	size_t bytes_read;
 	FILE *fp = fopen(fm_log, "rb");
+	PMD_INIT_FUNC_TRACE();
+
 	if (!fp)
 		return;
+	DPAA_PMD_INFO("Previous DPDK-FM config instance present, cleaning up.");
+
 	bytes_read = fread(&fm_model, sizeof(struct dpaa_fm_model), 1, fp);
 	if (!bytes_read) {
 		DPAA_PMD_WARN("No bytes read");
@@ -313,6 +320,7 @@ static int set_scheme_params(
 	struct dpaa_if *dpaa_intf)
 {
 	int dist_idx, hdr_idx = 0;
+	PMD_INIT_FUNC_TRACE();
 
 	scheme_params->use_hash = 1;
 	scheme_params->modify = false;
@@ -373,6 +381,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 	uint32_t loop = 0, dist_idx = 0, dist_field = 0;
 	int l2_configured = 0, ipv4_configured = 0, ipv6_configured = 0;
 	int udp_configured = 0, tcp_configured = 0, sctp_configured = 0;
+	PMD_INIT_FUNC_TRACE();
 
 	if (!req_dist_set)
 		dist_units->units[dist_idx++].hdrs[0].hdr = HEADER_TYPE_ETH;
@@ -467,6 +476,9 @@ static inline int set_port_pcd(struct dpaa_if *dpaa_intf)
 	ioc_fm_port_pcd_params_t pcd_param;
 	ioc_fm_port_pcd_prs_params_t prs_param;
 	ioc_fm_port_pcd_kg_params_t  kg_param;
+
+	PMD_INIT_FUNC_TRACE();
+
 	/* PCD support for hash distribution */
 	uint8_t pcd_support = e_FM_PORT_PCD_SUPPORT_PRS_AND_KG;
 
@@ -525,10 +537,15 @@ fm_port_delete_pcd:
 static inline void unset_pcd_netenv_scheme(struct dpaa_if *dpaa_intf)
 {
 	int ret;
+	PMD_INIT_FUNC_TRACE();
 
 	/* reduce scheme count */
 	if(dpaa_intf->scheme_count)
 		dpaa_intf->scheme_count--;
+
+	DPAA_PMD_DEBUG("KG SCHEME DEL %d handle =%p",
+		dpaa_intf->scheme_count,
+		dpaa_intf->scheme_handle[dpaa_intf->scheme_count]);
 
 	ret = FM_PCD_KgSchemeDelete(
 		dpaa_intf->scheme_handle[dpaa_intf->scheme_count]);
@@ -543,6 +560,7 @@ static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
 {
 	ioc_fm_pcd_kg_scheme_params_t scheme_params;
 	int idx = dpaa_intf->scheme_count;
+	PMD_INIT_FUNC_TRACE();
 
 	/* Set PCD NetEnvCharacteristics */
 	memset(&scheme_params, 0, sizeof(scheme_params));
@@ -568,6 +586,8 @@ static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
 	/* FM PCD KgSchemeSet */
 	dpaa_intf->scheme_handle[idx] =
 			FM_PCD_KgSchemeSet(fm_info.pcd_handle, &scheme_params);
+	DPAA_PMD_DEBUG("KG SCHEME SET %d handle =%p",
+		idx, dpaa_intf->scheme_handle[idx]);
 	if (!dpaa_intf->scheme_handle[idx]) {
 		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed");
 		return -1;
@@ -588,6 +608,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	ioc_fm_pcd_net_env_params_t dist_units;
 	ioc_fm_pcd_kg_scheme_params_t scheme_params;
 	int idx = dpaa_intf->scheme_count;
+	PMD_INIT_FUNC_TRACE();
 
 	/* Set PCD NetEnvCharacteristics */
 	memset(&dist_units, 0, sizeof(dist_units));
@@ -608,6 +629,8 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	/* FM PCD KgSchemeSet */
 	dpaa_intf->scheme_handle[idx] =
 			FM_PCD_KgSchemeSet(fm_info.pcd_handle, &scheme_params);
+	DPAA_PMD_DEBUG("KG SCHEME SET %d handle =%p",
+			idx, dpaa_intf->scheme_handle[idx]);
 	if (!dpaa_intf->scheme_handle[idx]) {
 		DPAA_PMD_ERR("FM_PCD_KgSchemeSet: Failed");
 		return -1;
@@ -637,6 +660,7 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 {
 	t_FmPortParams	fm_port_params;
 	ioc_fm_pcd_net_env_params_t dist_units;
+	PMD_INIT_FUNC_TRACE();
 
 	/* FMAN mac indexes mappings (0 is unused,
 	 * first 8 are for 1G, next for 10G ports
@@ -686,6 +710,8 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
 	int ret;
 	unsigned int idx;
 
+	PMD_INIT_FUNC_TRACE();
+
 	/* FM PORT Disable */
 	ret = FM_PORT_Disable(dpaa_intf->port_handle);
 	if (ret != E_OK) {
@@ -701,6 +727,8 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
 	}
 
 	for (idx = 0; idx < dpaa_intf->scheme_count; idx++) {
+		DPAA_PMD_DEBUG("KG SCHEME DEL %d, handle =%p",
+			idx, dpaa_intf->scheme_handle[idx]);
 		/* FM PCD KgSchemeDelete */
 		ret = FM_PCD_KgSchemeDelete(dpaa_intf->scheme_handle[idx]);
 		if (ret != E_OK) {
@@ -733,6 +761,7 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	int ret;
 	unsigned i = 0;
+	PMD_INIT_FUNC_TRACE();
 
 	if (dpaa_intf->port_handle) {
 		if (dpaa_fm_deconfig(dpaa_intf))
@@ -807,6 +836,7 @@ int dpaa_fm_init(void)
 	t_FmPcdParams fmPcdParams = {0};
 	/* Hard-coded : fman id 0 since one fman is present in LS104x */
 	int fman_id = 0, ret;
+	PMD_INIT_FUNC_TRACE();
 
 	dpaa_read_fm_config_from_file();
 
@@ -846,6 +876,8 @@ int dpaa_fm_init(void)
 int dpaa_fm_term(void)
 {
 	int ret;
+
+	PMD_INIT_FUNC_TRACE();
 
 	if (fm_info.pcd_handle) {
 		/* FM PCD Disable */
