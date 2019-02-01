@@ -7,6 +7,7 @@
 
 #include <time.h>
 #include <net/if.h>
+#include <unistd.h>
 
 #include <rte_mbuf.h>
 #include <rte_cryptodev.h>
@@ -1298,7 +1299,7 @@ skip_tx:
 }
 
 static inline struct rte_crypto_op *
-sec_simple_fd_to_mbuf(const struct qbman_fd *fd, __rte_unused uint8_t id)
+sec_simple_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct rte_crypto_op *op;
 	uint16_t len = DPAA2_GET_FD_LEN(fd);
@@ -1327,7 +1328,7 @@ sec_simple_fd_to_mbuf(const struct qbman_fd *fd, __rte_unused uint8_t id)
 }
 
 static inline struct rte_crypto_op *
-sec_fd_to_mbuf(const struct qbman_fd *fd, uint8_t driver_id)
+sec_fd_to_mbuf(const struct qbman_fd *fd)
 {
 	struct qbman_fle *fle;
 	struct rte_crypto_op *op;
@@ -1335,7 +1336,7 @@ sec_fd_to_mbuf(const struct qbman_fd *fd, uint8_t driver_id)
 	struct rte_mbuf *dst, *src;
 
 	if (DPAA2_FD_GET_FORMAT(fd) == qbman_fd_single)
-		return sec_simple_fd_to_mbuf(fd, driver_id);
+		return sec_simple_fd_to_mbuf(fd);
 
 	fle = (struct qbman_fle *)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
@@ -1404,7 +1405,7 @@ dpaa2_sec_free_eqresp_buf(uint16_t eqresp_ci)
 	struct qbman_fd *fd;
 
 	fd = qbman_result_eqresp_fd(&dpio_dev->eqresp[eqresp_ci]);
-	op = sec_fd_to_mbuf(fd, 0);
+	op = sec_fd_to_mbuf(fd);
 // TODO: Instead of freeing, enqueue it to the sec tx queue (sec->core)
 //	 after setting an error in FD. But this will have performance impact.
 	rte_pktmbuf_free(op->sym->m_src);
@@ -1417,8 +1418,7 @@ dpaa2_sec_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 {
 	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
 	struct eqresp_metadata *eqresp_meta;
-	struct rte_cryptodev *dev = dpaa2_q->dev;
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *priv = dpaa2_q->crypto_data->dev_private;
 	uint16_t orpid, seqnum;
 	uint8_t dq_idx;
 
@@ -1471,8 +1471,8 @@ dpaa2_sec_enqueue_burst_ordered(void *qp, struct rte_crypto_op **ops,
 	/*todo - need to support multiple buffer pools */
 	uint16_t bpid;
 	struct rte_mempool *mb_pool;
-	struct rte_cryptodev *dev = dpaa2_qp->tx_vq.dev;
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
+	struct dpaa2_sec_dev_private *priv =
+				dpaa2_qp->tx_vq.crypto_data->dev_private;
 
 	if (unlikely(nb_ops == 0))
 		return 0;
@@ -1552,8 +1552,6 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 {
 	/* Function is responsible to receive frames for a given device and VQ*/
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
-	struct rte_cryptodev *dev =
-			(struct rte_cryptodev *)(dpaa2_qp->rx_vq.dev);
 	struct qbman_result *dq_storage;
 	uint32_t fqid = dpaa2_qp->rx_vq.fqid;
 	int ret, num_rx = 0;
@@ -1623,7 +1621,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		}
 
 		fd = qbman_result_DQ_fd(dq_storage);
-		ops[num_rx] = sec_fd_to_mbuf(fd, dev->driver_id);
+		ops[num_rx] = sec_fd_to_mbuf(fd);
 
 		if (unlikely(fd->simple.frc)) {
 			/* TODO Parse SEC errors */
@@ -1698,8 +1696,8 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 		return -1;
 	}
 
-	qp->rx_vq.dev = dev;
-	qp->tx_vq.dev = dev;
+	qp->rx_vq.crypto_data = dev->data;
+	qp->tx_vq.crypto_data = dev->data;
 	qp->rx_vq.q_storage = rte_malloc("sec dq storage",
 		sizeof(struct queue_storage_info_t),
 		RTE_CACHE_LINE_SIZE);
@@ -3304,8 +3302,7 @@ dpaa2_sec_process_parallel_event(struct qbman_swp *swp,
 	ev->sched_type = rxq->ev.sched_type;
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
-	ev->event_ptr = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
-				(rxq->dev))->driver_id);
+	ev->event_ptr = sec_fd_to_mbuf(fd);
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
@@ -3334,8 +3331,7 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
-	ev->event_ptr = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
-				(rxq->dev))->driver_id);
+	ev->event_ptr = sec_fd_to_mbuf(fd);
 	dqrr_index = qbman_get_dqrr_idx(dq);
 	crypto_op->sym->m_src->seqn = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
 	DPAA2_PER_LCORE_DQRR_SIZE++;
@@ -3366,8 +3362,7 @@ dpaa2_sec_process_ordered_event(struct qbman_swp *swp,
 	ev->sched_type = rxq->ev.sched_type;
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
-	ev->event_ptr = sec_fd_to_mbuf(fd, ((struct rte_cryptodev *)
-				(rxq->dev))->driver_id);
+	ev->event_ptr = sec_fd_to_mbuf(fd);
 
 	crypto_op->sym->m_src->seqn = DPAA2_ENQUEUE_FLAG_ORP;
 	crypto_op->sym->m_src->seqn |= qbman_result_DQ_odpid(dq) <<
@@ -3613,7 +3608,8 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	internals->hw = dpseci;
 	internals->token = token;
 
-	snprintf(str, sizeof(str), "fle_pool_%d", cryptodev->data->dev_id);
+	snprintf(str, sizeof(str), "sec_fle_pool_p%d_%d",
+			getpid(), cryptodev->data->dev_id);
 	internals->fle_pool = rte_mempool_create((const char *)str,
 			FLE_POOL_NUM_BUFS,
 			FLE_POOL_BUF_SIZE,
