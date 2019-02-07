@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018 NXP
+# Copyright 2018-2019 NXP
 
 # tunable parameters
 
@@ -51,6 +51,10 @@ dpaa_config_list=${dpaa_config_list}" EXTRA_LDFLAGS+=-O0"
 dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LIBRTE_DPAA_HWDEBUG=y"
 dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
 dpaa_config_list=${dpaa_config_list}" CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
+
+# List of example applications to build
+examples_to_build="cmdif l2fwd l3fwd ipsec-secgw l2fwd-crypto ip_fragmentation"
+examples_to_build=$examples_to_build + " qdma_demo"
 
 # Some colors
 
@@ -107,6 +111,7 @@ function usage() {
 	echo
 	echo "           -a Build with and without debugging"
 	echo "              Builds are created separately for non-debug and debug, for each platform"
+	echo "              By default, 'all=1'. Set -a for disabling debug build"
 	echo
 	echo "           -s Silent build. Output would be redirected into a randomly generated file"
 	echo
@@ -135,6 +140,7 @@ function dump_configuration() {
 	print "__build(s)      = $build"
 	print "__cleanall(s)   = $clean_all"
 	print "__debug         = $debug_flag"
+	print "__all_build     = $all_build"
 	print "__Parallel jobs = ${jobs}"
 	if [ "$platform" == "arm64-dpaa2" ]; then
 		print "__DPAA2 Config  = $dpaa2_config_list"
@@ -218,7 +224,7 @@ while getopts ":p:b:dcj:-:aso:h" o; do
 				;;
 			esac;;
 		a)
-			all_build=1
+			all_build=0
 			;;
 		s)
 			# Silent
@@ -258,6 +264,105 @@ while getopts ":p:b:dcj:-:aso:h" o; do
 done
 
 dump_configuration
+
+function build_examples() {
+	local TARGET=$1
+	local example_name=$2
+
+	if [ $clean_all -eq 1 ]; then
+		rm -rf examples/*/arm64-*
+		rm -rf examples/*/*/arm64-*
+		rm -rf examples/*/*/*/arm64-*
+	fi
+
+	unset RTE_TARGET
+	export RTE_TARGET=${TARGET}
+
+	# extract the target folder without any "/" and then append "shared" or
+	# "static" to create final folder name. This is because the O= param
+	# of "make -C examples/" doesn't allow "/"
+	local b=`expr index $RTE_TARGET "/"`
+	local prefix=
+	TARGET=${RTE_TARGET:b}
+
+	case "$RTE_TARGET" in
+	*shared*)
+		prefix="shared"
+		;;
+	*static*)
+		prefix="static"
+		;;
+	*)
+		prefix="unknown"
+		;;
+	esac
+
+	TARGET=$prefix"-"$TARGET
+
+	cmd="make -C examples/${example_name} O=${TARGET}"
+	print "Executing ${cmd} for TARGET=${TARGET}"
+	if [ ${silent} -eq 1 ]; then
+		${cmd} >> $logoutput
+	else
+		${cmd}
+	fi
+	if [ $? -ne 0 ]; then
+		echo -e "Error in ${RED} Building Examples ${NC}"
+		return 1
+	fi
+
+	return 0
+}
+
+function build_x86() {
+	# backup the existing CROSS
+	CROSS1=${CROSS}
+	unset CROSS
+
+	local TARGET="x86_64-native"
+	local OUTPUT=build_x86
+
+	cmd="make T=${TARGET}-linuxapp-gcc -j ${jobs} O=${OUTPUT} install"
+	cmd="$cmd $kernel_disable $openssl_disable"
+	if [ ${debug_flag} -eq 1 ]; then
+		rm -rf ${OUTPUT}
+		echo -en " and ${BLUE}debugging${NC} enabled"
+		varname="CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
+		cmd="$cmd ${varname}"
+	fi
+	print "===================================================="
+	print "Executing ${cmd}"
+	if [ ${silent} -eq 1 ]; then
+		${cmd} >> $logoutput
+	else
+		${cmd}
+	fi
+	if [ $? -ne 0 ]; then
+		echo -e "Error in ${RED}${OUTPUT}${NC}"
+		return 1
+	fi
+	print "===================================================="
+
+	# disable compilation of examples for x86. restore, when required, by
+	# deleting this line
+	return 0
+
+	# Build examples
+	for i in $examples_to_build
+	do
+		build_examples ${OUTPUT}/"x86_64-native-linuxapp-gcc" $i
+		if [ $? -ne 0 ]
+		then
+			echo -e "Error in ${RED}${OUTPUT}/${TARGET} $i${NC}"
+			return 1
+		fi
+	done
+
+	# restore CROSS
+	export CROSS=${CROSS1}
+
+	return 0
+}
 
 function build() {
 	for i in ${platform}; do
@@ -306,36 +411,25 @@ function build() {
 				exit 1
 			fi
 			print "===================================================="
+
+			# build examples for this target
+			for i in $examples_to_build
+			do
+				build_examples ${OUTPUT}/${TARGET} $i
+				if [ $? -ne 0 ]
+				then
+					echo -e "Error in ${RED}${OUTPUT}/${TARGET} $i${NC}"
+					return 1
+				fi
+			done
 		done
 	done
-	CROSS1=${CROSS}
-	unset CROSS
-	TARGET="x86_64-native"
-	OUTPUT=build_x86
-	cmd="make T=${TARGET}-linuxapp-gcc -j ${jobs} O=${OUTPUT} install"
-	cmd="$cmd $kernel_disable $openssl_disable"
-	if [ ${debug_flag} -eq 1 ]; then
-		rm -rf ${OUTPUT}
-		echo -en " and ${BLUE}debugging${NC} enabled"
-		varname="CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
-		cmd="$cmd ${varname}"
-	fi
 	print "===================================================="
-	print "Executing ${cmd}"
-	if [ ${silent} -eq 1 ]; then
-		${cmd} >> $logoutput
-	else
-		${cmd}
-	fi
-	if [ $? -ne 0 ]; then
-		echo -e "Error in ${RED}${OUTPUT}${NC}"
-		exit 1
-	fi
-	print "===================================================="
-	export CROSS=${CROSS1}
 }
 
+export RTE_SDK=${RTE_SDK}
 build
+build_x86
 if [ ${all_build} -eq 1 ]; then
 	debug_flag=1
 	build
