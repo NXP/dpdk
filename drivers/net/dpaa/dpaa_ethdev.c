@@ -301,7 +301,8 @@ static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	fman_if_disable_rx(dpaa_intf->fif);
+	if (!dpaa_intf->fif->is_shared_mac)
+		fman_if_disable_rx(dpaa_intf->fif);
 	dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 }
 
@@ -565,6 +566,30 @@ static void dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
 	fman_if_reset_mcast_filter_table(dpaa_intf->fif);
 }
 
+static void dpaa_fman_if_pool_setup(struct dpaa_if *dpaa_intf)
+{
+	struct fman_if_ic_params icp;
+	uint32_t fd_offset;
+	uint32_t bp_size;
+
+	memset(&icp, 0, sizeof(icp));
+	/* set ICEOF for to the default value , which is 0*/
+	icp.iciof = DEFAULT_ICIOF;
+	icp.iceof = DEFAULT_RX_ICEOF;
+	icp.icsz = DEFAULT_ICSZ;
+	fman_if_set_ic_params(dpaa_intf->fif, &icp);
+
+	fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
+	fman_if_set_fdoff(dpaa_intf->fif, fd_offset);
+
+	/* Buffer pool size should be equal to Dataroom Size*/
+	bp_size = rte_pktmbuf_data_room_size(dpaa_intf->bp_info->mp);
+
+	fman_if_set_bp(dpaa_intf->fif,
+		       dpaa_intf->bp_info->mp->size,
+		       dpaa_intf->bp_info->bpid, bp_size);
+}
+
 static
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc,
@@ -619,36 +644,13 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		     buffsz - RTE_PKTMBUF_HEADROOM);
 	}
 
-	if (!dpaa_intf->bp_info || dpaa_intf->bp_info->mp != mp) {
-		struct fman_if_ic_params icp;
-		uint32_t fd_offset;
-		uint32_t bp_size;
+	dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 
-		if (!mp->pool_data) {
-			DPAA_PMD_ERR("Not an offloaded buffer pool!");
-			return -1;
-		}
-		dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+	/* For shared interface, it's done in kernel, skip.*/
+	if (!dpaa_intf->fif->is_shared_mac)
+		dpaa_fman_if_pool_setup(dpaa_intf);
 
-		memset(&icp, 0, sizeof(icp));
-		/* set ICEOF for to the default value , which is 0*/
-		icp.iciof = DEFAULT_ICIOF;
-		icp.iceof = DEFAULT_RX_ICEOF;
-		icp.icsz = DEFAULT_ICSZ;
-		fman_if_set_ic_params(dpaa_intf->fif, &icp);
-
-		fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
-		fman_if_set_fdoff(dpaa_intf->fif, fd_offset);
-
-		/* Buffer pool size should be equal to Dataroom Size*/
-		bp_size = rte_pktmbuf_data_room_size(mp);
-		fman_if_set_bp(dpaa_intf->fif, mp->size,
-			       dpaa_intf->bp_info->bpid, bp_size);
-		dpaa_intf->valid = 1;
-		DPAA_PMD_DEBUG("if:%s fd_offset = %d offset = %d",
-				dpaa_intf->name, fd_offset,
-				fman_if_get_fdoff(dpaa_intf->fif));
-	}
+	dpaa_intf->valid = 1;
 	DPAA_PMD_DEBUG("if:%s sg_on = %d, max_frm =%d", dpaa_intf->name,
 		fman_if_get_sg_enable(dpaa_intf->fif),
 		dev->data->dev_conf.rxmode.max_rx_pkt_len);
@@ -1538,18 +1540,21 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		fman_intf->mac_addr.addr_bytes[4],
 		fman_intf->mac_addr.addr_bytes[5]);
 
-	/* Disable RX mode */
-	fman_if_discard_rx_errors(fman_intf);
-	fman_if_disable_rx(fman_intf);
-	/* Disable promiscuous mode */
-	fman_if_promiscuous_disable(fman_intf);
-	/* Disable multicast */
-	fman_if_reset_mcast_filter_table(fman_intf);
-	/* Reset interface statistics */
-	fman_if_stats_reset(fman_intf);
-	/* Disable SG by default */
-	fman_if_set_sg(fman_intf, 0);
-	fman_if_set_maxfrm(fman_intf, ETHER_MAX_LEN + VLAN_TAG_SIZE);
+	if (!fman_intf->is_shared_mac) {
+		/* Disable RX mode */
+		fman_if_discard_rx_errors(fman_intf);
+		fman_if_disable_rx(fman_intf);
+		/* Disable promiscuous mode */
+		fman_if_promiscuous_disable(fman_intf);
+		/* Disable multicast */
+		fman_if_reset_mcast_filter_table(fman_intf);
+		/* Reset interface statistics */
+		fman_if_stats_reset(fman_intf);
+		/* Disable SG by default */
+		fman_if_set_sg(fman_intf, 0);
+		fman_if_set_maxfrm(fman_intf,
+				   ETHER_MAX_LEN + VLAN_TAG_SIZE);
+	}
 
 	return 0;
 
