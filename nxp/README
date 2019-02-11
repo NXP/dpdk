@@ -888,7 +888,11 @@ DPAA1:
 				or in push mode. note that these queue require additional
 				HW portal resources. 0 means disable push queue mode.
 
-2. DPAA_FMCLESS_MODE              - Dynamic Queue Distribution. No need to run FMC scripts.
+2. DPAA_FMCLESS_MODE          - Dynamic Queue Distribution. No need to run FMC scripts.
+
+3. DPAA_TAILDROP_THRESHOLD    - Size of the taildrop, in packets. Default is 256.
+				If set to 0, this would disable taildrop.
+				(Only applicable for ethernet devices)
 
 DPAA2:
 ------
