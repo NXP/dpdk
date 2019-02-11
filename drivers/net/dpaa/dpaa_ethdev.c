@@ -1362,6 +1362,20 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		return -ENOMEM;
 	}
 
+	memset(cgrid, 0, sizeof(cgrid));
+
+	/* if DPAA_TAILDROP_THRESHOLD is set, use that value; if 0, it means
+	 * Rx tail drop is disabled.
+	 */
+	if (getenv("DPAA_TAILDROP_THRESHOLD")) {
+		td_threshold = atoi(getenv("DPAA_TAILDROP_THRESHOLD"));
+		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
+			       td_threshold);
+		/* TODO Check for an invalid value? like a very large one
+		* because of -1?
+		*/
+	}
+
 	/* If congestion control is enabled globally*/
 	if (td_threshold) {
 		dpaa_intf->cgr_rx = rte_zmalloc(NULL,
