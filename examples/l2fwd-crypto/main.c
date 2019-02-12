@@ -18,6 +18,7 @@
 #include <getopt.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <rte_string_fns.h>
 #include <rte_atomic.h>
@@ -262,6 +263,9 @@ static int64_t timer_period = 10 * TIMER_MILLISECOND * 1000;
 
 /* Process type*/
 static enum rte_proc_type_t proc_type = RTE_PROC_AUTO;
+
+/* Global signal */
+unsigned int signal_received;
 
 /* Print out statistics on packets dropped */
 static void
@@ -900,6 +904,8 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 
 			nb_rx = rte_eth_rx_burst(portid, 0,
 						 pkts_burst, MAX_PKT_BURST);
+			if (unlikely(signal_received))
+				return;
 
 			port_statistics[portid].rx += nb_rx;
 
@@ -2708,6 +2714,14 @@ reserve_key_memory(struct l2fwd_crypto_options *options)
 	options->aad.phys_addr = rte_malloc_virt2iova(options->aad.data);
 }
 
+static void
+raise_signal(int signum)
+{
+	signal_received = 1;
+	printf("Exiting on signal (%d)\n", signum);
+	return;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -2719,6 +2733,9 @@ main(int argc, char **argv)
 	unsigned lcore_id, rx_lcore_id = 0;
 	int ret, enabled_cdevcount, enabled_portcount;
 	uint8_t enabled_cdevs[RTE_CRYPTO_MAX_DEVS] = {0};
+
+	signal(SIGINT, raise_signal);
+	signal(SIGTERM, raise_signal);
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
