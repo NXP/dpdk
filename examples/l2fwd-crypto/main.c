@@ -172,6 +172,8 @@ struct l2fwd_crypto_options {
 	uint64_t cryptodev_mask;
 
 	unsigned int mac_updating;
+	uint64_t mp_emask;
+	uint64_t mp_cmask;
 };
 
 /** l2fwd crypto lcore params */
@@ -257,6 +259,9 @@ struct l2fwd_crypto_statistics crypto_statistics[RTE_CRYPTO_MAX_DEVS];
 
 /* Global signal */
 static volatile bool signal_received;
+
+/* Process type*/
+static enum rte_proc_type_t proc_type = RTE_PROC_AUTO;
 
 /* Print out statistics on packets dropped */
 static void
@@ -1024,7 +1029,11 @@ l2fwd_crypto_usage(const char *prgname)
 		"  --[no-]mac-updating: Enable or disable MAC addresses updating (enabled by default)\n"
 		"      When enabled:\n"
 		"       - The source MAC address is replaced by the TX port MAC address\n"
-		"       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n",
+		"       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
+		"  --mp-emask: mask applicable for multiprocess, defining the ethernet ports\n"
+		"              which would be used by this instance. Default is all ports\n"
+		"  --mp-cmask: mask applicable for multiprocess, defining the crypto ports\n"
+		"              which would be used by this instance. Default is all ports\n",
 	       prgname);
 }
 
@@ -1199,8 +1208,7 @@ parse_aead_op(enum rte_crypto_aead_operation *op, char *optarg)
 	return -1;
 }
 static int
-parse_cryptodev_mask(struct l2fwd_crypto_options *options,
-		const char *q_arg)
+parse_mask(uint64_t *mask, const char *q_arg, const char *type)
 {
 	char *end = NULL;
 	uint64_t pm;
@@ -1210,11 +1218,11 @@ parse_cryptodev_mask(struct l2fwd_crypto_options *options,
 	if ((pm == '\0') || (end == NULL) || (*end != '\0'))
 		pm = 0;
 
-	options->cryptodev_mask = pm;
-	if (options->cryptodev_mask == 0) {
-		printf("invalid cryptodev_mask specified\n");
+	if (pm == 0) {
+		printf("invalid %s mask specified\n", type);
 		return -1;
 	}
+	*mask = pm;
 
 	return 0;
 }
@@ -1380,7 +1388,8 @@ l2fwd_crypto_parse_args_long_options(struct l2fwd_crypto_options *options,
 	}
 
 	else if (strcmp(lgopts[option_index].name, "cryptodev_mask") == 0)
-		return parse_cryptodev_mask(options, optarg);
+		return parse_mask(&options->cryptodev_mask, optarg,
+				"cryptodev_mask");
 
 	else if (strcmp(lgopts[option_index].name, "mac-updating") == 0) {
 		options->mac_updating = 1;
@@ -1391,6 +1400,12 @@ l2fwd_crypto_parse_args_long_options(struct l2fwd_crypto_options *options,
 		options->mac_updating = 0;
 		return 0;
 	}
+
+	else if (strcmp(lgopts[option_index].name, "mp-emask") == 0)
+		return parse_mask(&options->mp_emask, optarg, "mp-emask");
+
+	else if (strcmp(lgopts[option_index].name, "mp-cmask") == 0)
+		return parse_mask(&options->mp_cmask, optarg, "mp-cmask");
 
 	return -1;
 }
@@ -1527,6 +1542,8 @@ l2fwd_crypto_default_options(struct l2fwd_crypto_options *options)
 
 	options->type = CDEV_TYPE_ANY;
 	options->cryptodev_mask = UINT64_MAX;
+	options->mp_emask = UINT64_MAX;
+	options->mp_cmask = UINT64_MAX;
 
 	options->mac_updating = 1;
 }
@@ -1693,6 +1710,9 @@ l2fwd_crypto_parse_args(struct l2fwd_crypto_options *options,
 
 			{ "mac-updating", no_argument, 0, 0},
 			{ "no-mac-updating", no_argument, 0, 0},
+
+			{ "mp-emask", required_argument, 0, 0},
+			{ "mp-cmask", required_argument, 0, 0},
 
 			{ NULL, 0, 0, 0 }
 	};
@@ -2332,18 +2352,17 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 		if (sess_sz > max_sess_sz)
 			max_sess_sz = sess_sz;
 
-		l2fwd_enabled_crypto_mask |= (((uint64_t)1) << cdev_id);
+		if ((options->mp_cmask & (1 << cdev_id)) != 0) {
+			l2fwd_enabled_crypto_mask |= (((uint64_t)1) << cdev_id);
 
-		enabled_cdevs[cdev_id] = 1;
-		enabled_cdev_count++;
+			enabled_cdevs[cdev_id] = 1;
+			enabled_cdev_count++;
+		}
 	}
 
 	for (cdev_id = 0; cdev_id < cdev_count; cdev_id++) {
 		struct rte_cryptodev_qp_conf qp_conf;
 		struct rte_cryptodev_info dev_info;
-
-		if (enabled_cdevs[cdev_id] == 0)
-			continue;
 
 		if (check_cryptodev_mask(options, cdev_id) < 0)
 			continue;
@@ -2375,10 +2394,10 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 				rte_cryptodev_scheduler_workers_get(cdev_id,
 								NULL);
 
-			sessions_needed = enabled_cdev_count * nb_workers;
+			sessions_needed = 2 * cdev_count * nb_workers;
 #endif
 		} else
-			sessions_needed = enabled_cdev_count;
+			sessions_needed = 2 * cdev_count;
 
 		if (session_pool_socket[socket_id].sess_mp == NULL) {
 			char mp_name[RTE_MEMPOOL_NAMESIZE];
@@ -2386,9 +2405,11 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 				"sess_mp_%u", socket_id);
 
 			session_pool_socket[socket_id].sess_mp =
-				rte_cryptodev_sym_session_pool_create(
-					mp_name, sessions_needed, max_sess_sz,
-					0, 0, socket_id);
+				(proc_type == RTE_PROC_SECONDARY) ?
+					rte_mempool_lookup(mp_name) :
+					rte_cryptodev_sym_session_pool_create(
+						mp_name, sessions_needed,
+						max_sess_sz, 0, 0, socket_id);
 			if (session_pool_socket[socket_id].sess_mp == NULL) {
 				printf("Cannot create pool on socket %d\n",
 					socket_id);
@@ -2531,6 +2552,9 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 						cap->sym.auth.digest_size.min;
 		}
 
+		if (proc_type == RTE_PROC_SECONDARY)
+			continue;
+
 		retval = rte_cryptodev_configure(cdev_id, &conf);
 		if (retval < 0) {
 			printf("Failed to configure cryptodev %u", cdev_id);
@@ -2585,6 +2609,9 @@ initialize_ports(struct l2fwd_crypto_options *options)
 		/* Skip ports that are not enabled */
 		if ((options->portmask & (1 << portid)) == 0)
 			continue;
+
+		if (proc_type == RTE_PROC_SECONDARY)
+			goto skip_port_init;
 
 		/* init port */
 		printf("Initializing port %u... ", portid);
@@ -2656,7 +2683,7 @@ initialize_ports(struct l2fwd_crypto_options *options)
 				rte_strerror(-retval), portid);
 			return -1;
 		}
-
+skip_port_init:
 		retval = rte_eth_macaddr_get(portid,
 					     &l2fwd_ports_eth_addr[portid]);
 		if (retval < 0) {
@@ -2680,8 +2707,10 @@ initialize_ports(struct l2fwd_crypto_options *options)
 			last_portid = portid;
 		}
 
-		l2fwd_enabled_port_mask |= (1ULL << portid);
-		enabled_portcount++;
+		if ((options->mp_emask & (1ULL << portid)) != 0) {
+			l2fwd_enabled_port_mask |= (1ULL << portid);
+			enabled_portcount++;
+		}
 	}
 
 	if (enabled_portcount == 1) {
@@ -2763,18 +2792,23 @@ main(int argc, char **argv)
 	printf("MAC updating %s\n",
 			options.mac_updating ? "enabled" : "disabled");
 
+	proc_type = rte_eal_process_type();
 	/* create the mbuf pool */
-	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF, 512,
-			RTE_ALIGN(sizeof(struct rte_crypto_op),
-				RTE_CACHE_LINE_SIZE),
-			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+	l2fwd_pktmbuf_pool = (proc_type == RTE_PROC_SECONDARY) ?
+			rte_mempool_lookup("mbuf_pool") :
+			rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF, 512,
+				RTE_ALIGN(sizeof(struct rte_crypto_op),
+					  RTE_CACHE_LINE_SIZE),
+				RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
 	/* create crypto op pool */
-	l2fwd_crypto_op_pool = rte_crypto_op_pool_create("crypto_op_pool",
-			RTE_CRYPTO_OP_TYPE_SYMMETRIC, NB_MBUF, 128, MAXIMUM_IV_LENGTH,
-			rte_socket_id());
+	l2fwd_crypto_op_pool = (proc_type == RTE_PROC_SECONDARY) ?
+			rte_mempool_lookup("crypto_op_pool") :
+			rte_crypto_op_pool_create("crypto_op_pool",
+				RTE_CRYPTO_OP_TYPE_SYMMETRIC, NB_MBUF, 128,
+				MAXIMUM_IV_LENGTH, rte_socket_id());
 	if (l2fwd_crypto_op_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create crypto op pool\n");
 
@@ -2788,6 +2822,8 @@ main(int argc, char **argv)
 
 		/* skip ports that are not enabled */
 		if ((options.portmask & (1 << portid)) == 0)
+			continue;
+		if ((options.mp_emask & (1 << portid)) == 0)
 			continue;
 
 		if (options.single_lcore && qconf == NULL) {
@@ -2838,6 +2874,8 @@ main(int argc, char **argv)
 			cdev_id++) {
 		/* Crypto op not supported by crypto device */
 		if (!enabled_cdevs[cdev_id])
+			continue;
+		if ((options.mp_cmask & (1 << cdev_id)) == 0)
 			continue;
 
 		if (options.single_lcore && qconf == NULL) {
