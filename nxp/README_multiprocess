@@ -120,6 +120,18 @@ While executing the primary or secondary processes, list of devices to blacklist
 of all devices which are to be configured can be passed. This is list is
 important as overlap would result in incorrect configuration.
 
+0. Disable ASLR - Address Space Layout Randomization [1]
+   This is default setting on various Linux distribution for preventing
+   stack and other malicious address manipulation attacks. This works by
+   randomizing the address-space layout of the ELF.
+   This impact secondary process because the second or further process would
+   attempt to find the same address space as the primary process (hugepage).
+   This should be disabled using:
+
+   echo 0 > /proc/sys/kernel/randomize_va_space
+
+   [1] https://en.wikipedia.org/wiki/Address_space_layout_randomization
+
 1. Create enough fslmc:dpmcp devices
  - While creating the DPRC (./dynamic_dpl.sh script), create as many
    fslmc:dpmcp as the number of process expected to use the DPRC.
