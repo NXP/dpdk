@@ -343,20 +343,16 @@ function build_x86() {
 	fi
 	print "===================================================="
 
-	# disable compilation of examples for x86. restore, when required, by
-	# deleting this line
-	return 0
-
 	# Build examples
-	for i in $examples_to_build
-	do
-		build_examples ${OUTPUT}/"x86_64-native-linuxapp-gcc" $i
-		if [ $? -ne 0 ]
-		then
-			echo -e "Error in ${RED}${OUTPUT}/${TARGET} $i${NC}"
-			return 1
-		fi
-	done
+#	for i in $examples_to_build
+#	do
+#		build_examples ${OUTPUT}/"x86_64-native-linuxapp-gcc" $i
+#		if [ $? -ne 0 ]
+#		then
+#			echo -e "Error in ${RED}${OUTPUT}/${TARGET} $i${NC}"
+#			return 1
+#		fi
+#	done
 
 	# restore CROSS
 	export CROSS=${CROSS1}
