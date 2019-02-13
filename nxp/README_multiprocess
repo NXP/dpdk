@@ -342,6 +342,36 @@ block and use dpdmai.2 in Primary.
         -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
         -- -p 0x3 --num-procs=2 --proc-id=1
 
+4) Executing l2fwd-crypto example application
+
+l2fwd-crypto is a standard DPDK cryto demonstration application, which also
+supports multiprocess model.
+
+Primary difference with usual execution of l2fwd-crypto are the 'mp-emask' and
+'mp-cmask' arguments passed - signifying ethernet ports and crypto ports,
+respectively, which would be used by l2fwd-crypto instance.
+
+Following can be a possible primary application command, using the same DPRC
+as used for examples described above:
+
+./l2fwd-crypto -c 0x3 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 -q 1 --mp-emask 0x1 --mp-cmask 0x1 --chain CIPHER_ONLY \
+	--cipher_algo aes-cbc --cipher_op ENCRYPT \
+	--cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+	--cipher_iv 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+
+Secondary application can be executed like:
+
+./l2fwd-crypto -c 0xc -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
+        -- -p 0x3 -q 1 --mp-emask 0x2 --mp-cmask 0x2 --chain CIPHER_ONLY \
+	--cipher_algo aes-cbc --cipher_op ENCRYPT \
+	--cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+	--cipher_iv 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+
+
 Extra Notes:
 ------------
 
