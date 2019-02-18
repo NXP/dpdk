@@ -21,7 +21,8 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/epoll.h>
-#include<sys/eventfd.h>
+#include <sys/eventfd.h>
+#include <sys/syscall.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev_driver.h>
@@ -95,12 +96,13 @@ dpaa2_core_cluster_sdest(int cpu_id)
 	return dpaa2_core_cluster_base + x;
 }
 
+#define COMMAND_LEN	256
+#define STRING_LEN	28
+
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
 static void
 dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int lcoreid)
 {
-#define STRING_LEN	28
-#define COMMAND_LEN	50
 	uint32_t cpu_mask = 1;
 	int ret;
 	size_t len = 0;
@@ -191,6 +193,8 @@ static int
 dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 {
 	int sdest, ret;
+	pid_t tid;
+	char command[COMMAND_LEN];
 	int cpu_id;
 
 	/* Set the Stashing Destination */
@@ -225,6 +229,21 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int lcoreid)
 		return -1;
 	}
 #endif
+
+	if (getenv("NXP_CHRT_PERF_MODE")) {
+		tid = syscall(SYS_gettid);
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA2_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA2_BUS_DEBUG(" %s command is executed", command);
+
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
+	}
 
 	return 0;
 }
