@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -25,6 +25,8 @@ struct dpaa2_sec_dev_private {
 	uint16_t token; /**< Token required by DPxxx objects */
 	unsigned int max_nb_queue_pairs;
 	/**< Max number of queue pairs supported by device */
+	uint8_t en_ordered;
+	uint8_t en_loose_ordered;
 };
 
 struct dpaa2_sec_qp {
