@@ -124,6 +124,10 @@ struct dpaa_if {
 	struct fman_if *fif;
 	struct dpaa_bp_info *bp_info;
 	struct rte_eth_fc_conf *fc_conf;
+	void *port_handle;
+	void *netenv_handle;
+	void *scheme_handle[2];
+	uint32_t scheme_count;
 };
 
 struct dpaa_if_stats {

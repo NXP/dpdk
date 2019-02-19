@@ -8,6 +8,7 @@ deps += ['mempool_dpaa']
 
 sources = files('dpaa_ethdev.c',
 		'fmlib/fm_lib.c',
+		'dpaa_flow.c',
 		'dpaa_rxtx.c')
 
 allow_experimental_apis = true
