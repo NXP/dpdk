@@ -1,0 +1,248 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2019 NXP
+#
+
+email_exception_list="stable@dpdk.org"
+
+PRINT_TAB='echo -n -e \t'
+
+# get typical copyright header out of the source code
+# support the /* */ and the # format
+get_comment()
+{
+	awk '
+	/^\/\*/ || /^\/\// || /^\#/ || c==1 {print $0; c=1}
+	c==1 && /\*\/$/ {c=0} ' > $1
+}
+
+output()
+{
+	if [[ $1 == [0-9]* ]] ; then
+
+		for (( i=0 ; i<$1 ; i++ )) ; do
+			$PRINT_TAB
+		done
+		echo -e "$2"
+	else
+		echo -e "$1"
+	fi
+}
+
+email_is_freescale()
+{
+	if [[ $1 == *@freescale.com ]] || [[ $1 == *@nxp.com ]]; then
+		return 0
+	fi
+
+	for email in $email_exception_list; do
+		if [[ $1 == $email ]]; then
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+skip_file()
+{
+	local file_name=$(basename $1)
+	case $file_name in
+		TODO ) ;;
+		Makefile )
+			if [[ $2 == f ]] ; then
+				return 1
+			fi
+			;;
+		COPYING* ) ;;
+		*.XML ) ;;
+		*.xml ) ;;
+		*.bin ) ;;
+		*.txt ) ;;
+		# Linux kernel exceptions
+		#Kconfig* ) continue ;;
+		*defconfig ) continue ;;
+		*.map ) continue ;;
+		# U-boot exceptions
+		README* ) continue ;;
+		EULA ) continue ;;
+		* ) return 1 ;;
+	esac
+
+	return 0
+}
+
+check_license()
+{
+	local license_txt=$(cat $1 | tr -s '/[:cntrl:]' ' ' | tr '[A-Z]' '[a-z]')
+
+	if echo "$license_txt" | egrep -sq 'gnu[^[:alpha:]]+general[^[:alpha:]]+public[^[:alpha:]]+license' ; then
+		license="GPL "
+	elif echo "$license_txt" | egrep -sq 'gnu[^[:alpha:]]+public[^[:alpha:]]+license' ; then
+		license="GPL "
+	elif echo "$license_txt" | egrep -sq 'gpl' ; then
+		license="GPL "
+	fi
+
+	if [ "$license" == "GPL " ] ; then
+		if echo "$license_txt" | egrep -sq '((version )|v)|2'; then
+			license="GPLv2 "
+		elif echo "$license_txt" | egrep -sq '((version )|v)|3'; then
+			license="GPLv3 "
+		fi
+	fi
+
+	if echo "$license_txt" | egrep -sq 'gnu[^[:alpha:]]+lesser[^[:alpha:]]+general[^[:alpha:]]+public[^[:alpha:]]+license'; then
+		license="${license}LGPL"
+	elif echo "$license_txt" | egrep -sq '[^[:alpha:]]mit[^[:alpha:]]' ; then
+		license="${license}MIT"
+	elif echo "$license_txt" | egrep -sq 'redistributions of source code' ; then
+		license="${license}BSD"
+	elif echo "$license_txt" | egrep -sq 'bsd-3-clause' ; then
+		license="${license}BSD-3-Clause "
+	fi
+
+	if echo "$license_txt" | egrep -sq "spdx-license-identifier" ; then
+		license="SPDX-License-Identifier: ${license}"
+	fi
+
+	return 0
+
+}
+
+print_license()
+{
+	local license=''
+
+	check_license $1
+
+	if [[ "${license}" == '' ]]; then
+		if [[ $error_no_license -eq 1 ]]; then
+			output 1 "ERROR: no license or unknown license"
+			return 1
+		else
+			output 1 "WARNING: no license or unknown license"
+			return 0
+		fi
+	else
+		output 1 "LICENSE: ${license}"
+		return 0
+	fi
+
+}
+
+check_copyright()
+{
+
+	copyright_fsl=$(cat $1 | sed -n '/Copyright.*Freescale/p' | sed 's/ - /-/' | tr -s '*\t/#' ' ')
+	copyright_nxp=$(cat $1 | sed -n '/Copyright.*NXP/p' | sed 's/ - /-/' | tr -s '*\t/#' ' ')
+	if [ -z "${copyright_nxp}" ] ; then
+		if [ -z "${copyright_fsl}" ] ; then
+			return 1
+		elif ! echo "$copyright_fsl" | egrep -sq "Copyright (\([cC]\) |)((([[:digit:]]{4,})|\
+([[:digit:]]{4,})-([[:digit:]]{4,}))(, |,|))* Freescale Semiconductor" ; then
+			copyright_output=${copyright_fsl}
+			return 2
+		fi
+	elif ! echo "$copyright_nxp" | egrep -sq "Copyright ([[:digit:]]{4,})|\
+([[:digit:]]{4,})-([[:digit:]]{4,}) NXP\/r\/n" ; then
+		copyright_output=${copyright_nxp}
+		return 3
+	fi
+
+	if [ -z "${copyright_fsl}" ] ; then
+		copyright_output="${copyright_nxp}"
+	else
+		copyright_output="${copyright_fsl}\n\t\t${copyright_nxp}"
+	fi
+
+	local copyright_date=$(echo "${copyright_output}" | tr -s '[:cntrl:][:alpha:],*.()\\' ' ' )
+	for i in $copyright_date ; do
+		if echo $i | grep "[[:digit:]]*-[[:digit:]]*" > /dev/null 2>&1 ; then
+			local i1=$(echo "$i" | cut -d- -f1)
+			local i2=$(echo "$i" | cut -d- -f2)
+			if [ $year -ge $i1 ] && [ $year -le $i2 ] ; then
+				return 0
+			fi
+
+		elif [ $i -eq $year ] ; then
+			return 0
+		fi
+	done
+
+	return 4
+}
+
+# arguments are:
+# $1: $tmp_comment_file
+# $2: ${patch_date}
+# $3: ${mod_lines}
+# $4: ${tmp_errwarn_file}
+print_copyright()
+{
+	local year=$2
+	local copyright_output=''
+	local ret=1
+	local err_file=$4
+	if [ "$err_file" == "" ]
+	then
+		# Create a local file which can be deleted later
+		err_file="/tmp/checklegal_errFile_${RANDOM}.tmp"
+	fi
+
+	if [[ $3 -le 30 ]] ; then
+		print_flag="WARNING:"
+		ret=0
+	else
+		print_flag="ERROR:"
+		ret=1
+	fi
+
+	check_copyright $1
+
+	case $? in
+	0 )
+		output 2 "$copyright_output"
+		return 0
+		;;
+	1 )
+		output 1 "WARNING: Freescale/NXP copyright not found."
+		echo "WARNING: Freescale/NXP copyright not found." >> ${err_file}
+		return $ret
+		;;
+	2 )
+		output 1 "ERROR: Freescale/NXP copyright misspelled."
+		output 2 "$copyright_output"
+		echo "ERROR: Freescale/NXP copyright misspelled." >> ${err_file}
+		return 1
+		;;
+	3 )
+		output 1 "ERROR: NXP copyright misspelled."
+		output 2 "$copyright_output"
+		echo "ERROR: NXP copyright misspelled." >> ${err_file}
+		return 1
+		;;
+	4 )
+		output 1 "$print_flag Freescale/NXP copyright date not $year."
+		output 2 "$copyright_output"
+		echo "$print_flag Freescale/NXP copyright date not $year." >> ${err_file}
+		return 0
+		;;
+	* )
+		;;
+	esac
+
+	return 1
+}
+
+check_linux ()
+{
+	local first_line=''
+	if [ -e $1 ] ; then
+		read first_line < $1
+		if echo $first_line | egrep -sq 'Linux kernel release' ; then
+			return 0
+		fi
+	fi
+	return 1
+}
