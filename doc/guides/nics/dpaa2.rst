@@ -503,7 +503,7 @@ for details.
   driver on same port. e.g. ``fslmc:dpni.1,drv_loopback=1``
 
 * Use dev arg option ``drv_no_prefetch=1`` to disable prefetching
-  of the packet pull command which is issued  in the previous cycle.
+  of the packet pull command which is issued in the previous cycle.
   e.g. ``fslmc:dpni.1,drv_no_prefetch=1``
 
 Enabling logs

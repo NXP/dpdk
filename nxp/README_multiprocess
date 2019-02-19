@@ -1,0 +1,383 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2019 NXP
+
+===============================================================================
+NXP DPDK MULTIPROCESS SUPPORT : README
+--------------------------------------
+Supported Platforms (and their derivatives):
+1. DPAA2 : LS108x, LS208x, LX2160
+
+===============================================================================
+NXP DPDK provides a set of data plane libraries and network interface
+controller driver for Layerscape platforms
+This is a supplementary document providing information about multiprocess
+support in DPDK for NXP Platforms.
+
+Terminology:
+* Multiprocess: In DPDK context, this is a deployment model where multiple
+independent processes are executed each of which can functional behave as
+threads of a parent process.
+
+* Parent/Primary Process: The first DPDK process which is run. In the DPDK
+multiprocess model, this process is responsible for configuration of the
+devices and any other common configuration to be used by the Secondary
+Processes (look below). This process can also perform I/O on the devices.
+While executing the process, if '--proc-type=primary' is used as an EAL
+argument, the process is expected to be Primary. In case this is not the first
+DPDK process, then this would result in error.
+
+* Child/Secondary Process: Every next DPDK process which is started with
+'--proc-type=secondary' EAL argument. Another way is to add '--proc-type=auto'
+as EAL argument which automatically selects between Primary or Secondary.
+NOTE: In case another instance of DPDK application is started but it is not
+expected to be part of a Multiprocess model (separate DPDK instance), then
+adequate configuration of Hugepages need to be done. By default, DPDK maps all
+available hugepages which are only available for primary and secondary process.
+
+===============================================================================
+
+Various Multiprocess Models
+---------------------------
+
+Based on the functionality of the processes, the multiprocess model can be
+categorized into two broad spectrum:
+
+1) Symmetric
+        A model where the Primary and Secondary process have similar
+        functionality. For example, where Primary processes is performing
+        I/O over one Eth device, while one or more secondary processes are
+        also performing I/O on separate Eth devices.
+        Or, if each device is equally shared across multiple processes for
+        I/O.
+
+        +----------+    +------------+   +------------+    +------------+
+        | Primary  |    | Secondary1 |   | Secondary2 |... | SecondaryN |
+        +-----XV---+    +------XV----+   +------XV----+    +-----XV-----+
+              ||               ||               ||               ||
+        +-----||---+    +------||----+   +------||----+    +-----||-----+
+        | Device 1 |    | Device 2   |   | Device 3   |... | Device N   |
+        +----------+    +------------+   +------------+    +------------+
+
+Where, { X = Rx and V/> = Tx } signifying I/O (Rx/Tx, both). Another way to
+visualize is where I/O (Rx/Tx) is performed by each process on same device,
+maybe through separate queues:
+
+
+        +----------+    +------------+   +------------+    +------------+
+        | Primary  |    | Secondary1 |   | Secondary2 |... | SecondaryN |
+        +-----XV---+    +------XV----+  +------XV----+    +------XV-----+
+              ||               ||              ||                ||
+              ||  .-------------`              ||                ||
+              ||  ||   .------------------------`                ||
+              ||  ||   ||    .-----------------------------------`
+              ||  ||   ||    ||
+        +-----||--||---||----||--+
+        |         Device 1       |
+        +------------------------+
+
+
+2) Asymmetric
+        A model where the Primary and Secondary process have dis-similar
+        functionality in terms of I/O. For example, Primary process performing
+        Rx on a device, transferring data to a Secondary process through some
+        internal process mechanism (for example, Ring), which in turn does
+        Tx on the same device.
+
+        +----------+    +------------+
+        | Primary  >----X Secondary1 |
+        +-----X-V-V+    +------V-----+
+              | | |            |         +------------+
+              | |  `-----------)---------X Secondary2 |
+              | |              |         +------V-----+
+              | |              |                |
+              | |              |                |           +------------+
+              |  `-------------)----------------)-------...-X SecondaryN |
+              |                |                |           +-----V------+
+              |                |                |                 |
+              |.---------------'                |                 |
+              ||.-------------------------------`                 |
+              |||.------------------------------------------------`
+              ||||
+        +-----||||-+
+        | Device 1 |
+        +----------+
+
+Current implementation of NXP DPDK supports both mode on the Supported
+platforms (listed above). The design of the application drives the model
+being used.
+
+Isolating the Resources
+-----------------------
+
+DPRC or DPAA2 Resource Container contains a number of resources which need to
+be segregated between the Primary and Secondary Process. Initializing all the
+I/O devices (dpni, dpseci, dpdmai, etc) is done by Primary - Secondary process
+is not expected to initialize any I/O device. Only control devices like
+fslmc:dpio, dpmcp need to be initialized by Secondary for its own work.
+
+While executing the primary or secondary processes, list of devices to blacklist
+(those which are not to be configured) need to be passed. Alternatively, a list
+of all devices which are to be configured can be passed. This is list is
+important as overlap would result in incorrect configuration.
+
+0. Disable ASLR - Address Space Layout Randomization [1]
+   This is default setting on various Linux distribution for preventing
+   stack and other malicious address manipulation attacks. This works by
+   randomizing the address-space layout of the ELF.
+   This impact secondary process because the second or further process would
+   attempt to find the same address space as the primary process (hugepage).
+   This should be disabled using:
+
+   echo 0 > /proc/sys/kernel/randomize_va_space
+
+   [1] https://en.wikipedia.org/wiki/Address_space_layout_randomization
+
+1. Create enough fslmc:dpmcp devices
+ - While creating the DPRC (./dynamic_dpl.sh script), create as many
+   fslmc:dpmcp as the number of process expected to use the DPRC.
+
+   $ export fslmc:dpmcp_COUNT=3  # for 1 Primary, 2 Secondary
+   $ ./dynamic_dpl.sh dpmac.1 dpmac.2
+
+2. Create enough fslmc:dpio devices to suffice the total number of cores being
+   used across Primary and Secondary, plus one addition for each process.
+   For example, in case Primary is to be run with 2 cores, and Secondary with
+   2 Cores, total fslmc:dpio required are
+
+   (Total Process = 3) x (3 fslmc:dpio per process) = 9
+
+   Note: By default a large number of fslmc:dpios are created
+
+   $ export fslmc:dpio_COUNT=10  # A larger number to accommodate conf changes
+   $ ./dynamic_dpl.sh dpmac.1 dpmac.2
+
+Assuming that following DPRC is created:
+
+	$ restool dprc show dprc.2
+	dprc.2 contains 58 objects:
+	object          label           plugged-state
+	dpni.3                          plugged
+	dpni.2                          plugged
+	dpni.1                          plugged
+	dpbp.16                         plugged
+	dpbp.15                         plugged
+	dpbp.14                         plugged
+	dpbp.13                         plugged
+	dpbp.12                         plugged
+	dpbp.11                         plugged
+	dpbp.10                         plugged
+	dpbp.9                          plugged
+	dpbp.8                          plugged
+	dpbp.7                          plugged
+	dpbp.6                          plugged
+	dpbp.5                          plugged
+	dpbp.4                          plugged
+	dpbp.3                          plugged
+	dpbp.2                          plugged
+	dpbp.1                          plugged
+	dpci.1                          plugged
+	dpci.0                          plugged
+	dpseci.7                        plugged
+	dpseci.6                        plugged
+	dpseci.5                        plugged
+	dpseci.4                        plugged
+	dpseci.3                        plugged
+	dpseci.2                        plugged
+	dpseci.1                        plugged
+	dpseci.0                        plugged
+	dpdmai.1                        plugged
+	dpdmai.2                        plugged
+	dpmcp.23                        plugged
+	dpmcp.22                        plugged
+	dpmcp.21                        plugged
+	dpio.17                         plugged
+	dpio.16                         plugged
+	dpio.15                         plugged
+	dpio.14                         plugged
+	dpio.13                         plugged
+	dpio.12                         plugged
+	dpio.11                         plugged
+	dpio.10                         plugged
+	dpio.9                          plugged
+	dpio.8                          plugged
+	dpcon.8                         plugged
+	dpcon.7                         plugged
+	dpcon.6                         plugged
+	dpcon.5                         plugged
+	dpcon.4                         plugged
+	dpcon.3                         plugged
+	dpcon.2                         plugged
+	dpcon.1                         plugged
+
+Ignore dpni, dpbp, dpci, dpseci, dpcon - as they are all configured by the
+primary process only. Secondary process is designed to skip them. But,
+fslmc:dpio and dpmcp are important considerations.
+
+3. Start Primary application with EAL arguments for blacklisting:
+
+# Only allowing fslmc:dpio.8, fslmc:dpio.9, fslmc:dpio.10, fslmc:dpmcp.21 in
+  Primary; Blacklisting all others
+
+$ ./primary_process -c 0x3 -b fslmc:dpio.11 -b fslmc:dpio.12 -b fslmc:dpio.13 \
+      -b fslmc:dpio.14 -b fslmc:dpio.15 -b fslmc:dpio.16 -b fslmc:dpio.17 \
+      -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 -- <application arguments>
+
+# Only allowing fslmc:dpio.11, fslmc:dpio.12, fslmc:dpio.13, fslmc:dpmcp.22 in
+  secondary process 1
+
+$ ./secondary_process1 -c 0x3 -b fslmc:dpio.8 -b fslmc:dpio.9 -b fslmc:dpio.10 \
+      -b fslmc:dpio.14 -b fslmc:dpio.15 -b fslmc:dpio.16 -b fslmc:dpio.17 \
+      -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -- <application arguments>
+
+# Only allowing fslmc:dpio.14, fslmc:dpio.15, fslmc:dpio.16, fslmc:dpmcp.23 in
+  secondary process 2; ignoring dpio.17
+
+$ ./secondary_process1 -c 0x3 -b fslmc:dpio.8 -b fslmc:dpio.9 -b fslmc:dpio.10 \
+      -b fslmc:dpio.11 -b fslmc:dpio.12 -b fslmc:dpio.13 -b fslmc:dpio.17 \
+      -b fslmc:dpmcp.21 -b fslmc:dpmcp.22 -- <application arguments>
+
+Note: In the above format <bus>:<device> is the way to provide the device id
+      for blacklisting/whitelisting
+
+Note: Another method would be to whitelist all devices - but, that would require
+      listing even the dpni, dpci, dpseci, dpcon etc. That would increase the
+      length of the argument to unmanageable lengths.
+
+Executing DPDK Example Application
+----------------------------------
+
+DPDK provides 2 sample applications which can be used for I/O using multiprocess
+model.
+
+./examples/multi_process/symmetric_mp # symmetric model example
+./examples/multi_process/client_server_mp # asymmetric model example
+
+Some other examples are also provided from NXP which use the available hardware
+support in DPAA2:
+
+./examples/multi_process/symmetric_mp_qdma # symmetric model with QDMA example
+
+Detailed explanation can be seen from DPDK documentation:
+https://doc.dpdk.org/guides/sample_app_ug/multi_process.html
+
+Using the same DPRC shown as sample above.
+
+1) Executing symmetric_mp with 1 Primary, 1 Secondary:
+
+# Running primary process with single Core, 2 ports; assigning 1 dpmcp and 5
+  dpio to it.
+
+./symmetric_mp -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 --num-procs=2 --proc-id=0
+
+In the above, "--num-procs=2" signifies 2 processes in total. --proc-id=0 is the
+identifier for the primary process.
+
+# Running secondary process with single core (not overlappping with primary),
+  2 ports (same as primary); Assigning 1 dpmcp and 5 dpio to it. (We can ignore
+  the extra dpmcp preserved for 3 process, if any)
+
+./symmetric_mp -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -- -p 0x3 --num-procs=2 --proc-id=1
+
+In case more than one instance of application is to be executed, similar
+blacklisting has to be done to distribute resources. Further, '--num-procs' and
+'--proc-id' too need to be changed.
+
+Send I/O to the ports assigned to the processes and observe traffic being
+reflected back.
+
+2) Executing client_server_mp with 1 Primary, 1 Secondary:
+
+This sample application has two different applications which are executed as
+server and client. Server process is responsible for Rx from interfaces (all)
+and distributing to Client for Tx (one queue per device)
+
+# Running server (primary) process with 1 Core, 2 ports; assigning 1 dpmcp and
+  5 dpio to it.
+
+./mp_server -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 -n 1
+
+ # Running client (secondary) process with 1 Core, 2 ports; assigning 1 dpmcp
+   and 5 dpio to it.
+
+./mp_client -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -- -n 0
+
+Send I/O to the ports assigned to the processes and observe traffic being
+forwarded.
+
+3) Executing QDMA example application
+
+symmetric_mp_qdma application is similar to symmetric_mp except that the
+mbuf (buffer) transfers between Rx and Tx are done using the NXP DPAA2 QDMA
+(dpdmai) hardware block.
+
+# Running primary process with single Core, 2 ports; assigning 1 dpmcp and 5
+  dpio, 1 dpdmai to it:
+
+Assuming that there are two DPDMAI objects in the DPRC: dpdmai.1 and dpdmai.2,
+the command is very similar to the symmetric_mp example:
+
+./symmetric_mp_qdma -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 \
+	-b fslmc:dpio.15 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 \
+	-b fslmc:dpmcp.23 -b fslmc:dpdmai.1 -- -p 0x3 --num-procs=2 --proc-id=0
+
+
+Notice the extra parameter "-b fslmc:dpdmai.1" as compared the symmetric_mp
+command. This extra parameter conveys this process to ignore the dpdmai.1
+block and use dpdmai.2 in Primary.
+
+# Running secondary process with single core (not overlappping with primary),
+  2 ports (same as primary); Assigning 1 dpmcp and 5 dpio, 1 dpdmai to it.
+  (We can ignore the extra dpmcp preserved for 3 process, if any)
+
+./symmetric_mp_qdma -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
+        -- -p 0x3 --num-procs=2 --proc-id=1
+
+4) Executing l2fwd-crypto example application
+
+l2fwd-crypto is a standard DPDK cryto demonstration application, which also
+supports multiprocess model.
+
+Primary difference with usual execution of l2fwd-crypto are the 'mp-emask' and
+'mp-cmask' arguments passed - signifying ethernet ports and crypto ports,
+respectively, which would be used by l2fwd-crypto instance.
+
+Following can be a possible primary application command, using the same DPRC
+as used for examples described above:
+
+./l2fwd-crypto -c 0x3 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
+        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
+        -- -p 0x3 -q 1 --mp-emask 0x1 --mp-cmask 0x1 --chain CIPHER_ONLY \
+	--cipher_algo aes-cbc --cipher_op ENCRYPT \
+	--cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+	--cipher_iv 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+
+Secondary application can be executed like:
+
+./l2fwd-crypto -c 0xc -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+        -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
+        -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
+        -- -p 0x3 -q 1 --mp-emask 0x2 --mp-cmask 0x2 --chain CIPHER_ONLY \
+	--cipher_algo aes-cbc --cipher_op ENCRYPT \
+	--cipher_key 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10 \
+	--cipher_iv 01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10
+
+
+Extra Notes:
+------------
+
+1. l2fwd/l3fwd in their current design are not suited for multiprocess execution
+   and hence would not work with substantial modification of segregating the
+   queues and Rx/Tx processing.
+2. For exiting the application, it is advisable to send SIGKILL to all the
+   application. Similar to "killall <application name>". If not, all secondary
+   should be killed first (Ctrl+C or SIGKILL) before the primary process.

@@ -1,0 +1,65 @@
+NXP DPDK PTP (IEEE1588) README
+============================
+Supported Platforms (and their derivatives):
+1. DPAA2 : LS108x, LS208x, LX2160
+
+The feature is based on the asusmption
+that test application will be single-threaded.
+
+PTP feature can be tested using DPDK ptpclient
+applictaion present in example directory.
+
+Build Procedure
+============================
+Build DPDK
+---------------
+By default IEEE1588 is kept disabled
+To enable, set  'CONFIG_RTE_LIBRTE_IEEE1588=y' in
+config/defconfig_arm64-dpaa2-linuxapp-gcc
+
+Now, follow DPDK build procedure mentioned in nxp/README
+to build DPDK
+
+Build ptpclient application
+----------------------------
+#make -C  examples/ptpclient/ CONFIG_RTE_LIBRTE_PPFE_PMD=n
+ptpclient executable gets generated in
+examples/ptpclient/build/ dir
+
+Test Set-up and pre-requisite
+=============================
+Two machines are required to be connected back-to-back
+	1)Tester Machine to run ptp4l test application
+	2)DUT (Boarrd NXP platform) to run ptp4client test application
+
+ptp4l test application can be directly installed on tester machine
+via apt-install type commands
+or build by downloading linuxptp package
+
+Test Procedure with ptpclient
+============================
+----------------------
+<Tester Machine>
+	Start ptp server on tester machine.
+	This will act as PTP Master
+	eth1 is port on tester machine which is connected to DUT
+	#./ptp4l -i eth1  -m -2
+
+
+<DUT Machine>
+	This will act as PTP Slave
+	Create DPRTC instance and attach DPAA2 port to DPDK
+	#export DPRTC_COUNT=1
+	#source ./dynamic_dpl.sh dpmac.1
+
+	Start ptpclient test application
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock
+	#./ptpclient -l 1 -n 1 -- -p 0x1 -T 0
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock and additionally update system kernel clock
+	#./ptpclient -l 1 -n 1 -- -p 0x1 -T 1
+	To verfiy if System kernel clock is updated, read time before and
+	after execution of above ptpclient command using date command.

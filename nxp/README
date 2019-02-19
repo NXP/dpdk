@@ -1,0 +1,1021 @@
+===============================================================================
+NXP DPDK README
+---------------
+Supported Platforms (and their derivatives):
+1. DPAA2 : LS108x, LS208x, LX2160
+2. DPAA  : LS1043, LS1046
+3. PPFE  : LS1012
+4. ENETC : LS1028
+
+===============================================================================
+NXP DPDK provides a set of data plane libraries and network interface
+controller driver for Layerscape platforms
+This README provides information about building and executing DPDK based
+applications for supported platforms.
+
+NOTE: The NXP DPDK package is configured to generate single binary for
+      all supported platforms. For this, configuration file is available
+      in folder `config/defconfig_arm64-dpaa-linuxapp-gcc`. Further details are
+      documented below.
+===============================================================================
+
+Components for Build & Execution Environment
+--------------------------------------------
+
+To successfully build and execute DPDK based applications,
+following components are required:
+
+1. DPDK source code
+2. Cross compiled toolchain for ARM64 platform
+3. Linux kernel, as per board being used
+4. (Optional) OpenSSL package for OpenSSL driver with ARMCE support
+5. (Optional) ARMv8_crypto package for ARMv8 crypto driver
+
+Following information can be used to obtain these components:
+
+    Fetching the DPDK code
+    ~~~~~~~~~~~~~~~~~~~~~~
+
+    Use following command to get the DPDK code
+
+    - Internal git repository:
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 18.11-qoriq
+      OR,
+     - External Github Repository:
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/18.11-qoriq
+
+
+      $ cd dpdk # Change directory to cloned DPDK source code
+
+    NOTE: Internal git repos is only available from within NXP intranet only.
+
+    Linux kernel code
+    ~~~~~~~~~~~~~~~~~
+
+    Linux Kernel can be obtained either through the NXP SDK for the board or
+    via the Github repository below:
+
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.14
+
+    More than one kernel are available on the above link. Of those, currently
+    Linux-4.4, 4.9, 4.14 has been verified with DPDK. Other kernels may work but
+    they have not been tested.
+
+    NOTE: By default, the KNI module compilation is enabled in DPDK requiring
+          a pre-compiled Linux Kernel. Though, this is optional and can be
+          toggled off using DPDK configuration. More details in section below.
+          KNI module is reuqired for KNI (Kernel Network Interface) app.
+
+    NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
+          be available in the rootfs. In this case, requirements for a compiled
+          Linux Kernel source would not be required.
+
+    NOTE: For PPFE platform, DPDK has dependency on pfe.ko module to perform the
+	  necessary intilatization of firmware and ethernet. "pfe.ko" might already
+	  be available in rootfs and loaded automatically on board up. Otherwise, user
+	  must compile the kernel to generate pfe.ko and insmod the module on board
+	  up using below command:
+		insmod pfe.ko us=1
+
+    Cross compiled toolchain For ARM64
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Get the `gcc-7.2` or earlier toolchain from Linaro. e.g.
+
+    # https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/
+
+    Thereafter, set the environment variable:
+
+    $ export CROSS=<path to uncompressed toolchain archive>/bin/aarch64-linux-gnu-
+
+
+    Getting OpenSSL: (Cross Compiled Package) for ARM CE - crypto support
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    As OpenSSL library is required by DPDK application on LS* board, it needs
+    to be cross compiled before being linked into DPDK compilation process.
+    Follow the steps below to fetch and compile the OpenSSL package:
+
+    Clone openssl repository
+
+        $ git clone git://git.openssl.org/openssl.git
+        $ cd openssl
+
+    Checkout the specific tag to match openssl library in your target rootfs
+
+        $ git checkout OpenSSL_1_1_0g
+
+    Set the following environment variable:
+
+        $ export CROSS_COMPILE=<path to uncompressed toolchain archive>/bin/aarch64-linux-gnu-
+
+    Build and install 64 bit version of openssl
+
+        $ ./Configure linux-aarch64  --prefix=<OpenSSL library path> shared
+        $ make depend
+        $ make
+        $ make install
+        $ export OPENSSL_PATH=<OpenSSL library path>
+
+    NOTE: When building DPDK directly on NXP board, OpenSSL might already be
+          available in the rootfs. In which case, separate compilation of
+          OpenSSL package would not be required.
+
+
+   Getting ARMv8 crypto: (Cross Compiled Package)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   DPDK applications may use CAAM, Openssl or ARMv8 crypto library to perform
+   IPsec operations on data. It needs to fetch and cross compiled the ARMv8
+   crypto package to link with DPDK applications:
+
+   Clone ARMv8 repository
+
+	$ cd dpdk <dpdk repository>
+	$ git submodule add https://github.com/caviumnetworks/armv8_crypto
+        $ git submodule init
+        $ git submodule update
+
+   Build ARMv8
+
+	$ export CROSS=<path to cross-compile toolchain>
+        $ export RTE_SDK=<path to DPDK source code>
+	$ export ARMV8_CRYPTO_LIB_PATH=${RTE_SDK}/armv8_crypto
+        $ make CC=${CROSS}gcc -C ${ARMV8_CRYPTO_LIB_PATH} CFLAGS="-O3 -Wall -static -I${ARMV8_CRYPTO_LIB_PATH} -I${ARMV8_CRYPTO_LIB_PATH}/asm/include"
+
+===============================================================================
+
+Building DPDK and Example Applications
+--------------------------------------
+
+DPDK source code contains all necessary files for building the DPDK libraries
+and the Example applications. Quick start information about build DPDK and the
+example applications is provided below. For detailed information, refer the
+DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
+
+  Building DPDK: Libraries and Test Applications
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands from Linux(Host) shell prompt for generating
+  DPDK libraries, which are required for compiling DPDK examples and
+  applications:
+
+  1. Optional: export RTE_KERNELDIR=<path to prebuild Linux Kernel>
+
+  NOTE: As mentioned above, prebuild Linux Kernel is optional. Dependency
+	for this can be disabled by adding following configuration to
+        config/defconfig_arm64-dpaa-linuxapp-gcc file:
+
+        CONFIG_RTE_KNI_KMOD=n
+
+  2. export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+
+  3. Optional: export OPENSSL_PATH=<path to OpenSSL library>
+
+  NOTE: As mentioned above, OpenSSL is required only for OpenSSL PMD with
+        ARM Crypto Extensions (ARMCE) support. If OpenSSL PMD is not
+        required, it can be configured off by setting following in the
+        config/defconfig_arm64-dpaa-linuxapp-gcc configuration file:
+
+        CONFIG_RTE_LIBRTE_PMD_OPENSSL=n
+
+  4. Optional: export ARMV8_CRYPTO_LIB_PATH=${RTE_SDK}/armv8_crypto
+
+  NOTE: ARMv8 Crypto library required only for ARMv8 Cryto PMD. ARMv8 crypto
+	compilation can be enabled by setting following in the
+	config/defconfig_arm64-dpaa-linuxapp-gcc configuration file:
+
+	CONFIG_RTE_LIBRTE_PMD_ARMV8_CRYPTO=y
+
+  5. Execute the following command to build DPDK:
+
+    $ make T=arm64-dpaa-linuxapp-gcc -j 4 install
+
+    In the above, "-j" specifies number of parallel builds. As output of
+    this command, compiled libraries, binary objects and headers are
+    are placed in a new folder named `arm64-dpaa-linuxapp-gcc` in the
+    current folder (root folder of DPDK source code).
+
+    This command doesn't compile the example applications. See steps below
+    for compiling example applications.
+
+    NOTE: If you are compiling with OPENSSL enabled, use following method for
+    compilation:
+
+     $ make install T=arm64-dpaa-linuxapp-gcc -j 4 \
+     CONFIG_RTE_LIBRTE_PMD_OPENSSL=y \
+     EXTRA_CFLAGS+="-Wno-error=deprecated-declarations \
+     -I$OPENSSL_PATH/include -fPIC" EXTRA_LDFLAGS=-L$OPENSSL_PATH/lib/
+
+    NOTE: If installation is required in a specific directory, use following:
+
+        $ make T=arm64-dpaa-linuxapp-gcc DESTDIR=<Path to install dir> install
+
+    NOTE: By default, Static compilation is done by DPDK build system. To
+          enable shared libraries and applications with shared library support,
+          set the following in the
+          config/defconfig_arm64-dpaa-linuxapp-gcc configuration file:
+
+          CONFIG_RTE_BUILD_SHARED_LIB=y
+
+    NOTE: For all the above cases where changes to configuration file
+          config/defconfig-arm64-dpaa-linuxapp-gcc is required, another
+          alternative it to pass the configurations to `make` command line.
+          For example, for shared build:
+
+          $ make T=arm64-dpaa-linuxapp-gcc -j 4 install CONFIG_RTE_BUILD_SHARED_LIB=y
+
+    NOTE: For PPFE platform, to perform crypto operations using "caam_jr" crypto driver,
+	  use following:
+	  $ make T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=y
+
+  Building DPDK Example Applications
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  The basic testpmd application is compiled by default. It would be available
+  in build/app or install directory (arm64-dpaa-linuxapp-gcc/build/app).
+
+  For building Example applications provided with DPDK source code, following
+  environment variables are required to be set. It is assumed that DPDK code
+  has already been compiled using the steps mentioned above.
+
+  1. Set the Target. This is the "T=" argument provided in the DPDK build
+     process.
+
+      $ export RTE_TARGET=arm64-dpaa-linuxapp-gcc
+
+  2. Set the DPDK working directory path.
+
+      $ export RTE_SDK=<path/to/DPDK/source/code>
+
+    NOTE: It is possible to have multiple target folders in the DPDK source
+          after the build process. This can be done using "T=" argument based
+          configuration being built. This also impacts the compilation of
+          example applications when RTE_TARGET environment variable is set.
+
+  3. Compiling the Example applications:
+
+    a) Build the KNI example. This requires the KNI module to be compiled.
+
+      $ make -C examples/kni
+
+    b) Build the Layer-2 Forwarding (l2fwd) application:
+
+      $ make -C examples/l2fwd
+
+    c) Build the Layer-3 Forwarding (l3fwd) application
+
+      $ make -C examples/l3fwd
+
+    d) Build the Layer-2 Forwarding Crypto application
+
+      $ make -C examples/l2fwd-crypto
+
+  4. Compile unit test application
+
+      $ make -C test/test
+
+   NOTE: if you are compiling with OPENSSL enabled, you need to specify the
+   openssl path. e.g.
+      $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include  \
+        EXTRA_LDFLAGS=-L$OPENSSL_PATH/lib/ -C examples/l2fwd-crypto
+
+===============================================================================
+
+Executing DPDK Applications
+-------------------------
+
+There are some pre-requisites for running DPDK applications on the PPFE, DPAA or
+DPAA2 boards.
+
+Following are some pre-requisites:
+
+  For ENETC Platform:
+  ~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with proper images using below "othbootargs":
+	setenv othbootargs default_hugepagesz=2m hugepagesz=2m hugepages=256 isolcpus=1 iommu.passthrough=1
+
+  2. Mount the hugetlbfs required for DPDK applications:
+	1. mkdir /mnt/hugepages
+	2. mount -t hugetlbfs none /mnt/hugepages
+
+  3. Get ethernet devices in userspace using below commands:
+	1. For QDS board:
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.1/driver_override
+		echo 0000:00:00.1 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.1 > /sys/bus/pci/drivers/vfio-pci/bind
+
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
+
+	2. For RDB board, run below script:
+	       /usr/local/dpdk/enetc/dpdk_configure_1028ardb.sh
+
+
+  For PPFE Platform:
+  ~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with PPFE images with proper bootargs:
+	<bootargs>
+
+  2. Mount the hugetlbfs required for DPDK applications:
+	1. mkdir /mnt/hugepages
+	2. mount -t hugetlbfs none /mnt/hugepages
+
+  3. Make sure pfe.ko is loaded in User Space mode using below command:
+	1. cat /sys/module/pfe/parameters/us
+
+	Output of this command should be 1
+
+    NOTE: pfe.ko will be loaded on board bring up automatically. User can check
+	  Whether it is loaded or not using below command:
+		1. lsmod
+
+	  In case, if it is not loaded automatically, below command can be used to
+	  to load:
+		1. insmod /lib/modules/<kernel_version>/kernel/drivers/staging/fsl_ppfe/pfe.ko us=1
+
+  4. Set enviroment variable PPFE_INTR_SUPPORT to enable interrupt mode. It will
+     free CPU when traffic is low. With this mode there is a slight drop(~5%) in
+     performance as compared to default mode(POLL).
+
+  For DPAA2 Platform:
+  ~~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with the DPAA2 images with proper DPNI-DPMAC
+     configurations in the DPL file.
+
+  2. Get the dpdk applications binaries and dynamic_dpl.sh on the DPAA2 board.
+     It may already be present in rootfs at (/usr/local/dpdk/dpaa2).
+
+      NOTE: If `pktgen` application is to be run, please increase the number of
+            buffer pool available by setting the below environment variable
+            before executing the dynamic_dpl.sh script:
+
+            $ export DPBP_COUNT=16
+
+  3. Run the following on the board:
+
+    a) Change directory to location of Dynamic DPL script. It would ideally be
+       placed in (/usr/local/dpdk/dpaa2). It is also part of the DPDK
+       source code in `nxp` folder.
+
+    b) source ./dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
+
+       NOTE: Above command assumes that 4 ports are being configured for DPDK.
+             Toggle the arguments for a different configuration.
+
+    c) export DPRC=<dprc_container_created_by_dynamic_DPL>
+
+  For DPAA Platform:
+  ~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with the DPAA images with proper kernel/usdpaa
+     configurations in the DTB file.
+
+  2. Mount the hugepages for DPDK application:
+
+    $ mkdir -p /mnt/hugetlbfs # if this folder doesn't already exist
+    $ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    $ mount -t hugetlbfs nodev /mnt/hugetlbfs/
+
+  3. By default the system will need fmc scripts to be run prior to uses.
+     However the dynamic FMC configurations for queue Management can be done via:
+
+     export DPAA_FMCLESS_MODE=1
+
+     By default, =>
+     Before running application, a binary `fmc` needs to be executed to
+     configure the FMan on DPAA platforms. This requires two configuration files
+     which are available in rootfs at (/usr/local/dpdk/dpaa) and
+     also available as part of DPDK source code (./nxp/dpaa/).
+
+     If the files are not available on the rootfs, upload them. Thereafter,
+     execute the following command:
+
+     $ fmc -c usdpaa_config_ls1043.xml -p usdpaa_policy_hash_ipv4_1queue.xml -a
+
+     NOTE: There are multiple files named `usdpaa_policy_hash_ipv4_[*]queue.xml
+           available in the folders mentioned above. The number defined before
+           'queue.xml' is the number of queues which that configuration file
+           configures when the above command is executed.
+
+           One should be careful to use appropriate configuration (policy hash)
+           file for required number of queues. Using a configuration and then
+           not employing the number of queues can lead to packet loss as DPDK
+           is designed to perform RSS over more than 1 queue configuration.
+
+     NOTE: Also, files 'usdpaa_config_ls1043.xml' and 'usdpaa_config_ls1046.xml'
+           are applicable for respective platform as mentioned in the name.
+           Using configuration not meant for a board can render system unusable
+           for DPDK applications.
+
+
+  4. Export the environment variable defining the number of queues configured
+     by the 'fmc' binary above through the provided policy hash file.
+
+     $ export DPAA_NUM_RX_QUEUES=1
+
+
+  NOTE: For all the example applications, a port mask is provided for ports to
+        be used by application for I/O. For DPAA platform, the number is
+        defined by the order of detection which is platform specific. For DPAA2,
+        the numbering is defined by order of arguments provided to dynamic_dpl
+        script.
+        It is important to take care of this mask as wrong values would result
+        in either incorrectly configured I/O or I/O loss.
+        For details of port numbering, refer the LSDK documentation.
+
+  NOTE: For all the applications, the value n must be always 1 for all platforms.
+
+  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
+	argument with value "eth_pfe" to enable ethernet device. Maximum supported
+	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
+	values "eth_pfe0" and "eth_pfe1".
+
+  NOTE: Platforms with CAAM JR support need the kernel support and they need
+	to run following commands to assign job rings to userspace.
+	#Find the address for job ring
+		ls /sys/bus/platform/devices/*.jr
+	#leave one and assign remaining rings to userspace drivers.
+		echo 1720000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1720000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+		echo 1730000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1730000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
+	to use these rings.
+
+  'testpmd' Application
+  ~~~~~~~~~~~~~~~~~~~~~
+
+  'testpmd' is part of standard DPDK build process. The binary is generated in
+  the (./<target>/app/) folder. On a rootfs having DPDK binaries, the binary
+  would be placed in (/usr/local/bin/).
+
+  Execute following commands to run DPDK testpmd
+
+  $./testpmd -c 0xF -n 1 -- -i --portmask=0x3 --nb-cores=2
+
+  Above command uses a port mask of first two ports. On DPAA and DPAA2 platforms
+  this is defined by their respective configuration. See note above.
+
+  This command would start the testpmd application in interactive mode, starting
+  a shell for accepting further commands. For e.g:
+
+  testpmd> show port info all
+
+  Above command can be used to view all the ports which the framework has
+  identified, with their detailed information.
+
+  testpmd> <tab>
+
+  On the `testpmd` prompt, <tab> key can be used for command completion as well
+  as command help.
+
+  NOTE: testpmd is not supported on PPFE platform
+
+  'test' Application
+  ~~~~~~~~~~~~~~~~~~
+
+  Test application can be used to do functional testing of the drivers and libraries.
+  The binary is tested for various algos and protocols in crypto pmds
+
+  Run binary as
+  $./test --log-level=7
+
+  (for DPAA_SEC)
+  RTE>> cryptodev_dpaa_sec_autotest
+
+  or (for DPAA2_SEC)
+  RTE>> cryptodev_dpaa2_sec_autotest
+
+
+  'dpdk-test-crypto-perf' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  'test-crypto-perf' is part of standard DPDK build process. The binary is generated
+  in (./<target>/build/app/test-crypto-perf/) folder.
+  A script 'crypto_perf_test.sh' is added in nxp/ folder to run all supported cases
+  in one go.
+
+  Use the script as (for DPAA_SEC)
+  $./crypto_perf_test.sh dpaa_sec
+  or (for DPAA2_SEC)
+  $./crypto_perf_test.sh dpaa2_sec
+
+  Some default parameters are added in the script which can be modified as per
+  requirement.
+
+
+  Layer-2 Forwarding 'l2fwd' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd' example application:
+
+  $ ./l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
+
+  OR
+
+  $ ./l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+
+  For PPFE platform:
+
+  $ ./l2fwd -c 0x1 -n 1 --vdev 'eth_pfe0' --vdev='eth_pfe1' -- -p 0x3 -q 3
+
+  In the above commands, the port mask has been modified to support first and
+  first two ports, respectively. Also, the Core mask has been modified to
+  execute on Core 0 and (Core 0 + Core 1), respectively.
+
+  NOTE: For best performance, Core 0 should not be used for performing DPDK
+        I/O. This is because large number of system services as well as some
+        hardwired interrupts lines are services by Core 0.
+
+        It is also advisable to use 'isolcpus=<>' when booting Linux Kernel.
+        Value passed to this parameter should be the CPUs planned to be used
+        for DPDK applications.
+
+
+  Layer-2 QDMA based Forwarding 'l2fwd-qdma' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd-qdma' example application:
+
+  $ ./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 0	# HW mode
+
+  OR
+
+  $ ./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 1	# Virtual mode
+
+  In the above commands, the mode has been modified to use 'HW mode' or
+  'virtual mode' for QDMA processing. 'HW mode' is recommended for best
+  performance, but limiting the number of supported QDMA queues.
+
+  NOTE: It is only supported for DPAA2 platform
+
+  Layer-2 Crypto Forwarding 'l2fwd-crypto' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd-crypto' example application:
+
+  #cipher mode only
+  $ ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 --chain CIPHER_ONLY --cipher_op ENCRYPT --cipher_algo aes-cbc --cipher_key 00:01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f
+
+  #auth mode only
+  $ ./l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 -q 1 --chain HASH_ONLY --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+
+  #cipher-auth mode
+  $ ./l2fwd-crypto -c 0xf -n 1 -- -p 0x1 --chain CIPHER_HASH --cipher_op ENCRYPT --cipher_algo aes-cbc --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+
+  For caam_jr mode:
+	use  --vdev 'crypto_caam_jr1'
+  For openssl mode:
+	use --vdev 'crypto_openssl'
+  For armv8_crypto mode:
+	use --vdev 'crypto_armv8'
+
+  You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
+   export DPAA_SEC_DISABLE=1
+   or use the export DPSECI_COUNT=0 for dpaa2 before creating the dprc.
+
+  Layer-3 Forwarding 'l3fwd' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run 'l3fwd' application
+
+  For 1 core - 1 Port, 1 queue per port =>
+
+  $ ./l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)"
+
+  For 4 core - 2 Port, 2 queue per port =>
+
+  $ ./l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
+
+  For 4 core - 2 Port with dest mac =>
+
+  $ ./l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
+
+  For 8 core - 4 Port with 4 queue per port =>
+
+  $ ./l3fwd -c 0xFF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
+
+  FOR PPFE platform:
+
+  $ ./l3fwd -c 0x1 --vdev='eth_pfe0' --vdev='eth_pfe1' -n 1 -- -p 0x3 --config="(0,0,0),(1,0,0)" -P
+
+  Hereafter, use the packet generator (Spirent, for example) to send traffic
+  streams with below configuration of the destination IP address in the frames
+  being sent:
+
+      For traffic to port 1: 1.1.1.0/24
+      For traffic to port 2: 2.1.1.0/24
+      For traffic to port 3: 3.1.1.0/24
+      For traffic to port 4: 4.1.1.0/24
+
+
+  Layer-3 Forwarding 'l3fwd' Application using eventdev
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run 'l3fwd' application with eventdev
+
+  Note:
+    1. For DPAA1 platforms
+
+	-> disable push mode queue, using 'export DPAA_PUSH_QUEUES_NUMBER=0'
+
+	-> virtual device should be "event_dpaa1" i.e. --vdev="event_dpaa1"
+
+    2. For DPAA2 platforms
+
+	-> virtual device should be "event_dpaa2" i.e. --vdev="event_dpaa2"
+
+    3. Only single instance of virtual device(vdev) is allowed.
+
+  -- With parallel queue configuration
+
+  For 1 core, 1 Port, 1 queue per port, 1 eventdev, 1 event queue, 1 event port =>
+
+  $ l3fwd -c 0x08 -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,3)" -e="(0,1,1)" -a="(5,0,2,0,0,0)" -l="(0,0,0,3)" -P
+
+  For 2 core, 1 Port, 2 queue per port, 1 eventdev, 1 event queue, 2 event port =>
+
+  $ l3fwd -c 0x0C -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,2),(5,1,3)" -e="(0,1,2)" -a="(5,0,2,0,0,0),(5,1,2,0,0,0)" -l="(0,0,0,2),(1,0,0,3)" -P
+
+  For 4 core, 1 Port, 4 queue per port, 1 eventdev, 1 event queue, 4 event port =>
+
+  $ l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,2,0,0,0),(5,1,2,0,0,0),(5,2,2,0,0,0),(5,3,2,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
+
+  -- With atomic queue configuration
+
+  For 1 core, 1 Port, 1 queue per port, 1 eventdev, 1 event queue, 1 event port =>
+
+  $ l3fwd -c 0x08 -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,3)" -e="(0,1,1)" -a="(5,0,1,0,0,0)" -l="(0,0,0,3)" -P
+
+  For 2 core, 1 Port, 2 queue per port, 1 eventdev, 1 event queue, 2 event port =>
+
+  $ l3fwd -c 0x0C -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,2),(5,1,3)" -e="(0,1,2)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0)" -l="(0,0,0,2),(1,0,0,3)" -P
+
+  For 4 core, 1 Port, 4 queue per port, 1 eventdev, 1 event queue, 4 event port =>
+
+  $ l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0),(5,2,1,0,0,0),(5,3,1,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
+
+  Running DPDK Applications in Virtual Machine (in Virtio mode)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Layer-2 Forwarding 'l2fwd' using VHOST application
+    ``````````````````````````````````````````````````
+
+    1. Compilation of VHOST example
+
+       $ make -C examples/vhost
+
+    2. Runnnig the VHOST-SWITCH Application:
+
+       Execute the following commands on console to run vhost-switch:
+
+       $ ./vhost-switch -c 3 -n 1 --socket-mem 1024 --huge-dir /mnt/huge -- -p 0x1 --dev-basename sock1 -P
+
+       NOTE: Vhost-switch requires one core extra than number of ports given in
+             the command line.
+
+    3. Running QEMU:
+
+       Execute the following commands to run QEMU:
+
+       * Open a new terimnal and do SSH to the board
+
+       $ # /usr/bin/qemu-system-aarch64 -nographic -object memory-backend-file,id=mem,size=4096M,mem-path=/hugetlbfs,share=on -cpu host -machine type=virt -kernel /boot/Image -enable-kvm -initrd /boot/fsl-image-core-ls2088ardb.ext2.gz -append 'root=/dev/ram0 rw console=ttyAMA0,115200 rootwait earlyprintk ramdisk_size=1000000' -m 4096M -numa node,memdev=mem -serial tcp::4446,server,telnet -chardev socket,id=char1,path=/var/volatile/tmp/sock1 -netdev type=vhost-user,id=hostnet1,chardev=char1 -device virtio-net-pci,disable-modern=false,addr=0x4,netdev=hostnet1,id=net1 -smp 4
+
+    4. Running L2FWD on VM:
+
+       Execute the following commands to run L2FWD on Virtual Machine:
+
+       * Open a new terminal and run the below command:
+
+       $ telnet <board_ip> 4446
+
+       $ /usr/share/tools/dpdk_nic_bind.py -b uio_pci_generic 0000:00:04.0
+
+       Note: Please run "lspci" on console to know the VIRTIO address
+
+       $ mkdir /mnt/hugepages
+       $ mount -t hugetlbfs none /mnt/hugepages
+       $ echo 512 > /proc/sys/vm/nr_hugepages
+       $ /usr/bin/dpdk-example/l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
+
+       Now pump traffic from the Spirent to the enabled port
+
+================================================================================
+Executing dpdk-pdump/dpdk-procinfo on DPAA2
+===========================================
+
+Both, 'dpdk-pdump' and 'dpdk-procinfo' are examples of secondary applications
+which run along a primary DPDK process. Being different processes, rather than
+thread, they work over the DPDK EAL's Multiprocess infrastructure to communicate
+with the primary process.
+
+
+`dpdk-pdump` for capturing packets
+----------------------------------
+
+DPDK Supports executing secondary processes/applications which can query
+the primary application (the first one) for information. For example, the
+sample application 'dpdk-pdump' allows capturing of packets arriving on
+other interfaces/devices available in DPDK.
+
+Compiling 'dpdk-pdump':
+
+For compiling 'dpdk-pdump', enable 'CONFIG_RTE_LIBRTE_PMD_PCAP=y' and
+'CONFIG_RTE_LIBRTE_PDUMP=y' configuration. Later configuration is to enable
+dumping packets to a PCAP format which can then be used to read using
+applications like Wireshark. PCAP support is optional.
+
+For PCAP support, 'libpcap' library has to be provided to DPDK during
+compilation.
+
+    Step 1: Compile 'libpcap' externally using same toolchain used for
+            compiling DPDK drivers/sample applications.
+
+    Step 2: While compiling DPDK, pass EXTRA_CFLAGS="-I/path/to/headers" and
+            EXTRA_LDFLAGS="-L/path/to/compiled/libraries". Similar to:
+
+    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I/path/libpcap/include" EXTRA_LDFLAGS="-L/path/libpca/lib" CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n -j 4
+
+    'dpdk-pdump'` would be available in the <T>/app folder along with 'testpmd'
+    and other inbuilt DPDK apps.
+
+Executing 'dpdk-pdump':
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
+
+    Note: As of now only testpmd application supports dpdk-pdump;
+
+    Step 1: Execute testpmd using routine commands
+
+    $ testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+
+    Step 2: Get testpmd ready for IO by selecting the mode
+
+    $ testpmd> set fwd io
+    $ testpmd> start
+
+    Step 3: Execute dpdk-pdump on a different terminal:
+
+    $ dpdk-pdump -n 1 -- --pdump "port=0,queue=*,rx-dev=./rx.pcap"
+
+    In the above command, "port=0, ..." parameters convey `dpdk-pdump` app
+    that capture should be done on port 0 (for example, dpni.1) and packets
+    being received on all queues "queue=*". Further, all the captured packets
+    can be dumped to a PCAP file using "rx-dev=<path to pcap file>.
+
+    In the above example, only Rx'd packets are being written to PCAP. For
+    Tx'd packets, use something similar to "port=0,queue=*,tx-dev=./..." where
+    the output PCAP file is different from Rx'd packets. Both, Rx and Tx,
+    options can be simultaneously provided.
+
+    Step 4: Stop 'dpdk-pdump' using Ctrl+C and copy the pcap file for reading
+    through external application like Wireshark
+
+Executing `dpdk-procinfo`:
+
+    'dpdk-procinfo' is an inbuilt application which allows dumping information
+    like memory and statistics of a running (primary) DPDK application. It is
+    available in the app/ folder just like testpmd and dpdk-pdump.
+
+    Note: This can work with any other DPDK application (sample application
+    like l3fwd) unlike the restriction for 'dpdk-pdump'.
+
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
+
+    Step 1: Execute any DPDK application using routine commands. For example,
+    testpmd
+
+    $ testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+
+    Step 2: Execute 'dpdk-procinfo' on a separate terminal:
+
+    $ dpdk-procinfo -- -m
+
+    Above command would dump to screen the memory layout of the primary DPDK
+    application. There are other switches also available like '-s' which can
+    dump the statistics.
+
+=========================
+VM VFIO Direct Assignment
+=========================
+
+Refer to nxp/dpaa2/README_VM_VFIO_DIRECT for further information.
+
+=================================================
+Achieving best performance from DPDK Applications
+=================================================
+
+There are multiple configurations points for tuning a DPDK application over
+the supported NXP boards. Some broad points are listed below. For detailed
+information, refer the `Performance Reproducibility Guide` available as part
+of NXP LSDK documentation.
+
+   DPAA/DPAA2: Avoid using Core 0
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   It has been observed that with Ubuntu rootfs (or, for that matter, any other
+   fully featured/function distro), there would be large number of system
+   services which would require/consume CPU cycles.
+
+   By using `isolcpus=<core list>` in Linux bootargs (u-boot),
+   '<core list>` CPUs can be prevented from being used by Linux Kernel for
+   scheduling system services and applications using its scheduling algorithm.
+   For example, `isolcpus=1-7`, only Core 0 would be used by Linux Kernel for
+   scheduling its tasks. Cores 1-7 can then be used by DPDK Applications
+   without interruption from Kernel.
+
+   Also, in the folder (/usr/local/dpdk/), `disable_services.sh` script has
+   been provided for disabling all services on a Ubuntu 16.04 rootfs which are
+   known to impact DPDK performance. (Only for Stock 16.04).
+
+   For DPAA, following Linux bootargs parameter should be used:
+
+   `isolcpus=1-3`
+
+   For DPAA2, following Linux bootargs parameter should be used:
+
+   `isolcpus=1-7`
+
+   DPAA/DPAA2: Hugepage Configuration
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   It is preferrable to use 1G Hugepages for best performance.
+
+   For DPAA1, following Linux bootargs parameter should be used:
+
+   `default_hugepagesz=2m hugepagesz=2m hugepages=448`
+
+   For DPAA2, following Linux bootargs parameter should be used:
+
+   `default_hugepagesz=1024m hugepagesz=1024m hugepages=8`
+
+   One can also modify the hugepages on linux command line. e.g.
+
+    $echo 400 > /proc/sys/vm/nr_hugepages
+
+================================================================================
+
+Layout of Extra files in 'nxp' folder
+=====================================
+
+nxp/
+        build_dpdk.sh
+        COPYING
+        disable_services.sh
+        dpaa
+                usdpaa_config_ls1043.xml
+                usdpaa_config_ls1046.xml
+                usdpaa_policy_hash_ipv4_1queue.xml
+                usdpaa_policy_hash_ipv4_2queue.xml
+                usdpaa_policy_hash_ipv4_4queue.xml
+        dpaa2
+                destroy_dynamic_dpl.sh
+                dynamic_dpl.sh
+                vm_linux.conf
+                vm_dpdk.conf
+        README
+        debug_dump.sh
+
+- nxp/build_dpdk.sh
+  is a script for compilation of DPDK for various platforms
+  and modes (shared, static, debug). This can be executed once CROSS and other
+  environment variables are set. Help can be obtained by executing with '-h'
+  argument.
+
+- nxp/disable_services.sh
+  is a script to disable all services on a Ubuntu 16.04 stock rootfs. These
+  services are known to impact DPDK performance, specially when the Core 0
+  is used for DPDK I/O.
+
+- nxp/dpaa
+  folder contains all DPAA platform specific extra files. This includes the
+  configuration files (XMLs) and Policy files.
+
+- nxp/dpaa2
+  folder contains all DPAA2 platform specific extra files. This includes the
+  'dynamic_dpl.sh' for creating a container, as well as 'destroy_dynamic_dpl.sh'
+  for destroying the creating container.
+
+- debug_dump.sh
+  is a scripts to check the system config. it generate the output in a file.
+
+================================================================================
+
+Applications validated DPAA/DPAA2 Platforms
+-------------------------------------------
+
+ 1. l2fwd
+ 2. l3fwd
+ 3. l2fwd-crypto
+ 4. l2fwd-keepalive
+ 5. link_status_interrupt
+       (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
+ 6. ip_fragmentation
+ 7. ip_reassembly
+ 8. ipv4_multicast
+ 9. kni
+ 10. cmdline
+ 11. timer
+ 12. vhost
+ 13. ethtool
+ 14. l3fwd-acl
+ 15. skelton
+ 16. rxtx_callback
+ 17. ipsecgw
+
+ Applications Validated PPFE Platform
+ ------------------------------------
+
+ 1. l2fwd
+ 2. l3fwd
+ 3. l2fwd-crypto
+ 4. ipsecgw
+
+================================================================================
+
+Environment configuration variables
+------------------------------------
+
+PPFE:
+-----
+1. PPFE_INTR_SUPPORT		Enable Interrupt mode for I/O. This will free CPU if traffic is low.
+
+Common for DPAA1 & DPAA2
+------------------------
+1. NXP_CHRT_PERF_MODE		Internally sets each I/O thread to have chrt priority as 90.
+
+
+DPAA1:
+------
+1. DPAA_PUSH_QUEUES_NUMBER    - Max number of queues that can be high performance
+				or in push mode. note that these queue require additional
+				HW portal resources. 0 means disable push queue mode.
+
+2. DPAA_FMCLESS_MODE          - Dynamic Queue Distribution. No need to run FMC scripts.
+
+3. DPAA_TAILDROP_THRESHOLD    - Size of the taildrop, in packets. Default is 256.
+				If set to 0, this would disable taildrop.
+				(Only applicable for ethernet devices)
+
+DPAA2:
+------
+
+1. DPAA2_TX_CGR_OFF		Disable the TX congestion control - i.e. infinite size of TX queues
+
+2. DPAA2_RX_TAILDROP_SIZE	Modify the taildrop size in byte - default is 64K bytes. To Disable set it to '0'.
+
+3. DPAA2_PARSE_ERR_DROP		Start dropping the error packets in hardware (parse errors)
+				this is a good offload to have.
+
+4. DPAA2_PORTAL_INTR_THRESHOLD	Portal Interrupt threshold w.r.t number of packets for epoll.
+
+5. DPAA2_PORTAL_INTR_TIMEOUT	Portal interrupt timeout w.r.t time for no packet received.
+
+6. DPAA2_HOST_START_CPU		Define the CPU id for the virtual m/c CPU - so that right
+				QMAN HW stashing can be configured.
+
+7. DPAA2_NO_PREFETCH_RX		Disable prefetch RX mode - better latency and allows different
+				size of pull request in each call.
+
+8. DPAA2_DATA_STASHING_OFF	Switch off data stashing when this flag is enabled. This gives
+				better performance on LS1088 with number of cores >= 4.
+
+9. DPAA2_LOOPBACK		QBMAN based loopback. send the received fd back without touching
+				the payload.
+
+10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
+================================================================================
+
+================================================================================
+
+Devargs
+-------
+
+Note: Devargs can only be passed via '-w', -'b' or '--vdev' option
+
+DPAA2:
+-----
+
+1. fslmc:dpni.<x>,drv_loopback=1	Enable low level loopback in the driver
+
+2. fslmc:dpni.<x>,drv_no_prefetch=1	Disable prefetching of packet pull command
+					which is issued  in the previous cycle.
+
+================================================================================
+
+Minimum NXP LSDK version supported: LSDK 1903 (https://lsdk.github.io/)
+DPDK base version used: Release 18.11.1
+More info on DPDK :  www.dpdk.org
+
+NXP contact: hemant.agrawal@nxp.com, dpdk-team@nxp1.onmicrosoft.com
