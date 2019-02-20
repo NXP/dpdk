@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  */
 
 #ifndef __RTE_PMD_DPAA2_QDMA_H__
@@ -13,7 +13,7 @@
  */
 
 /** Maximum qdma burst size */
-#define RTE_QDMA_BURST_NB_MAX 256
+#define RTE_QDMA_BURST_NB_MAX 32
 
 /** Determines the mode of operation */
 enum {
@@ -31,6 +31,12 @@ enum {
 	 * queue for a VQ. Please see 'RTE_QDMA_VQ_EXCLUSIVE_PQ' flag.
 	 */
 	RTE_QDMA_MODE_VIRTUAL
+};
+
+/** Determines the format of FD */
+enum {
+	RTE_QDMA_LONG_FORMAT,
+	RTE_QDMA_ULTRASHORT_FORMAT,
 };
 
 /**
@@ -62,6 +68,8 @@ struct rte_qdma_config {
 	uint16_t max_vqs;
 	/** mode of operation - physical(h/w) or virtual */
 	uint8_t mode;
+	/** FD format */
+	uint8_t format;
 	/**
 	 * User provides this as input to the driver as a size of the FLE pool.
 	 * FLE's (and corresponding source/destination descriptors) are
@@ -143,6 +151,8 @@ struct rte_qdma_job {
 	 * lower 8bits fd error
 	 */
 	uint16_t status;
+	uint16_t vq_id;
+
 };
 
 /**
