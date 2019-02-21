@@ -54,8 +54,16 @@ typedef int (dpdmai_dev_set_fd_t)(struct qbman_fd *fd,
 				  struct rte_qdma_job *job,
 				  struct rte_qdma_rbp *rbp,
 				  uint16_t vq_id);
+
+typedef int (dpdmai_dev_dequeue_multijob_t)(struct dpaa2_dpdmai_dev *dpdmai_dev,
+					    uint16_t rxq_id,
+					    uint16_t *vq_id,
+					    struct rte_qdma_job **job,
+					    uint16_t nb_jobs);
+
 dpdmai_dev_get_job_t *dpdmai_dev_get_job;
 dpdmai_dev_set_fd_t *dpdmai_dev_set_fd;
+dpdmai_dev_dequeue_multijob_t *dpdmai_dev_dequeue_multijob;
 
 static inline int
 qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
@@ -755,14 +763,13 @@ rte_qdma_vq_enqueue(uint16_t vq_id,
 }
 
 /* Function to receive a QDMA job for a given device and queue*/
-
-#ifdef DPAA2_QDMA_DEQUEUE_PREFETCH
 static int
-dpdmai_dev_dequeue_multijob(struct dpaa2_dpdmai_dev *dpdmai_dev,
-			 uint16_t rxq_id,
-			 uint16_t *vq_id,
-			 struct rte_qdma_job **job,
-			 uint16_t nb_jobs)
+dpdmai_dev_dequeue_multijob_prefetch(
+			struct dpaa2_dpdmai_dev *dpdmai_dev,
+			uint16_t rxq_id,
+			uint16_t *vq_id,
+			struct rte_qdma_job **job,
+			uint16_t nb_jobs)
 {
 	struct dpaa2_queue *rxq;
 	struct qbman_result *dq_storage, *dq_storage1 = NULL;
@@ -900,13 +907,13 @@ dpdmai_dev_dequeue_multijob(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	return num_rx;
 }
 
-#else
 static int
-dpdmai_dev_dequeue_multijob(struct dpaa2_dpdmai_dev *dpdmai_dev,
-		   uint16_t rxq_id,
-		   uint16_t *vq_id,
-		   struct rte_qdma_job **job,
-		   uint16_t nb_jobs)
+dpdmai_dev_dequeue_multijob_no_prefetch(
+		struct dpaa2_dpdmai_dev *dpdmai_dev,
+		uint16_t rxq_id,
+		uint16_t *vq_id,
+		struct rte_qdma_job **job,
+		uint16_t nb_jobs)
 {
 	struct dpaa2_queue *rxq;
 	struct qbman_result *dq_storage;
@@ -999,7 +1006,6 @@ dpdmai_dev_dequeue_multijob(struct dpaa2_dpdmai_dev *dpdmai_dev,
 
 	return num_rx;
 }
-#endif /* QDMA_DEQUEUE_PREFETCH */
 
 int
 rte_qdma_vq_dequeue_multi(uint16_t vq_id,
@@ -1354,6 +1360,16 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 	if (ret) {
 		DPAA2_QDMA_ERR("Adding H/W queue to list failed");
 		goto init_err;
+	}
+
+	/* If no prefetch is configured. */
+	if (getenv("DPAA2_NO_QDMA_PREFETCH_RX")) {
+		dpdmai_dev_dequeue_multijob =
+			dpdmai_dev_dequeue_multijob_no_prefetch;
+		DPAA2_QDMA_INFO("No Prefetch RX Mode enabled");
+	} else {
+		dpdmai_dev_dequeue_multijob =
+			dpdmai_dev_dequeue_multijob_prefetch;
 	}
 
 	if (!dpaa2_coherent_no_alloc_cache) {

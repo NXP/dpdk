@@ -5,8 +5,6 @@
 #ifndef __DPAA2_QDMA_H__
 #define __DPAA2_QDMA_H__
 
-#define DPAA2_QDMA_DEQUEUE_PREFETCH
-
 struct qdma_sdd;
 struct rte_qdma_job;
 

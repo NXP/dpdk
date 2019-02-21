@@ -921,6 +921,8 @@ DPAA2:
 				the payload.
 
 10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
+
+11. DPAA2_NO_QDMA_PREFETCH_RX	Enable non-prefetch RX mode in QDMA driver
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
