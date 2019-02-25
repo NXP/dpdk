@@ -18,3 +18,5 @@ sources = files(
         'l3fwd_lpm.c',
         'main.c',
 )
+
+includes += include_directories('../../drivers/net/dpaa2/')
