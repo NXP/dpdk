@@ -46,6 +46,7 @@
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 #include <rte_malloc.h>
+#include <rte_pmd_dpaa2.h>
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
@@ -81,6 +82,16 @@ static int parse_ptype; /**< Parse packet type using rx callback, and */
 			/**< disabled by default */
 static int per_port_pool = 1; /**< Use separate buffer pools per port */
 				/**< Set to 0 as default - disabled */
+static int traffic_split_proto; /**< Split traffic based on this protocol ID */
+/*
+ * This variable defines where the traffic is split in DPDMUX - the logical
+ * interface ID - DPNI number.
+ * All other traffic would be sent to another interface - if multiple
+ * interfaces are available, next interface (dpni) in series to the one
+ * specified in this variable would be used.
+ */
+static int mux_dpni_id = -1; /**< DPMUX DPNI Interface to which split */
+			     /**< traffic is sent */
 
 volatile bool force_quit;
 
@@ -333,7 +344,8 @@ print_usage(const char *prgname)
 		" [--hash-entry-num]"
 		" [--ipv6]"
 		" [--parse-ptype]"
-		" [--disable-per-port-pool]\n\n"
+		" [--disable-per-port-pool]"
+		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_DPNI_ID]\n\n"
 
 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
 		"  -P : Enable promiscuous mode\n"
@@ -349,6 +361,12 @@ print_usage(const char *prgname)
 		"  --ipv6: Set if running ipv6 packets\n"
 		"  --parse-ptype: Set to use software to analyze packet type\n"
 		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
+		"  --traffic-split-proto: PROTOCOL_NUMBER of IPv4 header protocol field\n"
+		"                         based on which DPDMUX can split the traffic\n"
+		"                         to MUX_DPNI_ID\n"
+		"                         It is assumed that first port of DPDMUX configured\n"
+		"                         is default port where all non-matched traffic\n"
+		"                         would be forwarded.\n"
 		"  -e : Event dev configuration\n"
 		"	(Eventdev ID,Number of event queues,Number of event ports)\n"
 		"  -a : Adapter configuration\n"
@@ -689,6 +707,44 @@ parse_link_config(const char *evq_arg)
 }
 
 static int
+parse_traffic_split_info(const char *split_args)
+{
+	int proto_id, dpni_id;
+	char *dup_str;
+	char *dpni, *proto;
+	char delim = ':';
+
+	/* the string would be in format <number>:<number> */
+	dup_str = strdup(split_args);
+	if (!dup_str)
+		return -1;
+	proto = dup_str;
+	dpni = strchr(dup_str, delim);
+	if (dpni) {
+		proto[dpni - proto] = '\0';
+		dpni += 1;
+	} else
+		goto err_ret;
+
+	proto_id = strtod(proto, NULL);
+	if (proto[0] == '\0' || proto_id <= 0 || proto_id > USHRT_MAX)
+		goto err_ret;
+
+	dpni_id = strtod(dpni, NULL);
+	if (dpni[0] == '\0' || dpni_id < 0 || dpni_id > INT_MAX)
+		goto err_ret;
+
+	traffic_split_proto = proto_id;
+	mux_dpni_id = dpni_id;
+	return 0;
+
+err_ret:
+	if (dup_str)
+		free(dup_str);
+	return -1;
+}
+
+static int
 eventdev_configure(void)
 {
 	int ret = -1;
@@ -869,6 +925,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_HASH_ENTRY_NUM "hash-entry-num"
 #define CMD_LINE_OPT_PARSE_PTYPE "parse-ptype"
 #define CMD_LINE_OPT_PER_PORT_POOL "disable-per-port-pool"
+#define CMD_LINE_OPT_TRAFFIC_SPLIT "traffic-split-proto"
 enum {
 	/* long options mapped to a short option */
 
@@ -883,6 +940,7 @@ enum {
 	CMD_LINE_OPT_HASH_ENTRY_NUM_NUM,
 	CMD_LINE_OPT_PARSE_PTYPE_NUM,
 	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
+	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT,
 };
 
 static const struct option lgopts[] = {
@@ -894,6 +952,7 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_HASH_ENTRY_NUM, 1, 0, CMD_LINE_OPT_HASH_ENTRY_NUM_NUM},
 	{CMD_LINE_OPT_PARSE_PTYPE, 0, 0, CMD_LINE_OPT_PARSE_PTYPE_NUM},
 	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0, CMD_LINE_OPT_PARSE_PER_PORT_POOL},
+	{CMD_LINE_OPT_TRAFFIC_SPLIT, 1, 0, CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT},
 	{NULL, 0, 0, 0}
 };
 
@@ -1047,6 +1106,16 @@ parse_args(int argc, char **argv)
 		case CMD_LINE_OPT_PARSE_PER_PORT_POOL:
 			printf("per port buffer pool is enabled\n");
 			per_port_pool = 0;
+			break;
+
+		case CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT:
+			ret = parse_traffic_split_info(optarg);
+			if (ret != 0) {
+				print_usage(prgname);
+				return -1;
+			}
+			printf("Splitting traffic on Protocol:%d, DPNI:%d\n",
+			       traffic_split_proto, mux_dpni_id);
 			break;
 
 		default:
@@ -1247,6 +1316,48 @@ prepare_ptype_parser(uint16_t portid, uint16_t queueid)
 
 	printf("port %d cannot parse packet type, please add --%s\n",
 	       portid, CMD_LINE_OPT_PARSE_PTYPE);
+	return 0;
+}
+
+/* Constraints of this function:
+ * 1. Assumes that only a single rule is being created, which is matching
+ *    IPv4 proto_id field
+ * 2. Mask for this match condition is 0xFF - which would be for exact match
+ *    to user-provided traffic_split_proto
+ * 3. DPDMUX.0 is assumed to the available device.
+ * 4. rte_flow is created, but not used in this call - though, in future that
+ *    can be used/extended if required
+ */
+static int
+configure_split_traffic(void)
+{
+	struct rte_flow *result;
+	struct rte_flow_item pattern[1], *pattern1;
+	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_action_vf vf;
+	struct rte_flow_item_ipv4 flow_item;
+	int dpdmux_id = 0; /* constant: dpdmux.0 */
+	uint8_t mask;
+
+	flow_item.hdr.next_proto_id = traffic_split_proto;
+	mask = 0xFF;
+	vf.id = mux_dpni_id;
+
+	pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[0].spec = &flow_item;
+	pattern[0].mask = &mask;
+
+	actions[0].conf = &vf;
+
+	pattern1 = pattern;
+	actions1 = actions;
+
+	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+					       &actions1);
+	if (!result)
+		/* Unable to create the flow */
+		return -1;
+
 	return 0;
 }
 
@@ -1520,6 +1631,11 @@ main(int argc, char **argv)
 		}
 	}
 
+	if (traffic_split_proto != 0) {
+		ret = configure_split_traffic();
+		if (ret)
+			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
+	}
 
 	check_all_ports_link_status(enabled_port_mask);
 
