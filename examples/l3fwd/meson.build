@@ -21,4 +21,5 @@ sources = files(
 if dpdk_conf.has('RTE_LIB_EVENTDEV')
     deps += 'eventdev'
 endif
+includes += include_directories('../../drivers/net/dpaa2/')
 cflags += no_wvla_cflag
