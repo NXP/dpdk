@@ -676,12 +676,15 @@ compilation.
     Step 2: While compiling DPDK, pass EXTRA_CFLAGS="-I/path/to/headers" and
             EXTRA_LDFLAGS="-L/path/to/compiled/libraries". Similar to:
 
-    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I./path/libpcap/include" EXTRA_LDFLAGS="-L./path/libpca/lib"
+    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I/path/libpcap/include" EXTRA_LDFLAGS="-L/path/libpca/lib" CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n -j 4
 
     'dpdk-pdump'` would be available in the <T>/app folder along with 'testpmd'
     and other inbuilt DPDK apps.
 
 Executing 'dpdk-pdump':
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
 
     Note: As of now only testpmd application supports dpdk-pdump;
 
@@ -921,6 +924,8 @@ DPAA2:
 				the payload.
 
 10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
+
+11. DPAA2_NO_QDMA_PREFETCH_RX	Enable non-prefetch RX mode in QDMA driver
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
