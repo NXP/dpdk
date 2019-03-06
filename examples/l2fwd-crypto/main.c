@@ -2650,8 +2650,14 @@ main(int argc, char **argv)
 	}
 
 	/* Enable Crypto devices */
-	enabled_cdevcount = initialize_cryptodevs(&options, nb_ports,
+	if (options.mp_cmask != UINT64_MAX)
+		enabled_cdevcount = initialize_cryptodevs(&options, nb_ports,
 			enabled_cdevs);
+	else
+		enabled_cdevcount = initialize_cryptodevs(&options,
+							enabled_portcount,
+							enabled_cdevs);
+
 	if (enabled_cdevcount < 0)
 		rte_exit(EXIT_FAILURE, "Failed to initialize crypto devices\n");
 
