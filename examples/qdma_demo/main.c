@@ -286,7 +286,6 @@ lcore_hello(__attribute__((unused))
 			      TEST_PACKET_SIZE);
 		      memset(g_buf1 + (i * TEST_PACKET_SIZE), 0xff,
 			      TEST_PACKET_SIZE);
-			printf("Memset done\n");
 			if (g_rbp_testcase == MEM_TO_PCI) {
 				job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
 				if (g_userbp)
@@ -381,45 +380,27 @@ lcore_hello(__attribute__((unused))
 
 	if (lcore_id != stats_core_id) {
 		while (!quit_signal) {
-		  struct rte_qdma_job *job;
+		  struct rte_qdma_job *job[256], *job1[16];
+		  int ret, j;
 
-		  int ret;
+		  for (j = 0; j < 256; j++) {
+		      job[j] = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
+		      job[j]->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
+		  }
 
-		  for (int j = 0; j < 256; j++) {
-		      job = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
-		      job->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
+		  ret = rte_qdma_vq_enqueue_multi(g_vqid[lcore_id], job, 256);
+		  if (unlikely(ret <= 0))
+		      goto dequeue;
 
-		      ret = rte_qdma_vq_enqueue(g_vqid[lcore_id], job);
-		      if (ret <= 0) {
-			  for (int i = 0; i < 256; i++) {
-			      struct rte_qdma_job *job1 = 0;
-			      job1 = rte_qdma_vq_dequeue (g_vqid[lcore_id]);
-
-			      if (job1) {
-				  if (!job1->status) {
-				      pkt_cnt++;
-				    }
-				}
-			      else {
-				  break;
-				}
-			    }
-			}
-		    }
-
-		  for (int j = 0; j < 256; j++) {
-		      struct rte_qdma_job *job1 = 0;
-		      job1 = rte_qdma_vq_dequeue(g_vqid[lcore_id]);
-
-		      if (job1) {
-			  if (!job1->status) {
+dequeue:
+		  do {
+		      ret = rte_qdma_vq_dequeue_multi(g_vqid[lcore_id], job1, 16);
+		      for (j = 0; j < ret; j++) {
+			  if (!job1[j]->status)
 			      pkt_cnt++;
-			    }
-			}
-		      else {
-			  break;
-			}
-		    }
+		      }
+		  } while (ret);
+
 		  if (pkt_cnt > (64 * 1024)) {
 		      rte_atomic32_add(&dequeue_num, (64 * 1024));
 		      rte_atomic32_add(&dequeue_num_percore[lcore_id], (64 * 1024));
