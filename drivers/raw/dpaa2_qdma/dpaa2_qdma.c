@@ -144,8 +144,6 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 {
 	struct qdma_sdd *sdd;
 
-	DPAA2_QDMA_FUNC_TRACE();
-
 	sdd = (struct qdma_sdd *)((uint8_t *)(fle) +
 		(DPAA2_QDMA_MAX_FLE * sizeof(struct qbman_fle)));
 
@@ -216,7 +214,6 @@ static inline int dpdmai_dev_set_fd_us(struct qbman_fd *fd,
 	struct rte_qdma_job **ppjob;
 	size_t iova;
 	int ret = 0;
-
 
 	if (job->src & QDMA_RBP_UPPER_ADDRESS_MASK)
 		iova = (size_t)job->dest;
@@ -730,8 +727,6 @@ rte_qdma_vq_enqueue_multi(uint16_t vq_id,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = qdma_pq->dpdmai_dev;
 	int ret;
 
-	DPAA2_QDMA_FUNC_TRACE();
-
 	/* Return error in case of wrong lcore_id */
 	if (rte_lcore_id() != qdma_vq->lcore_id) {
 		DPAA2_QDMA_ERR("QDMA enqueue for vqid %d on wrong core",
@@ -782,8 +777,6 @@ dpdmai_dev_dequeue_multijob_prefetch(
 	const struct qbman_fd *fd;
 	uint16_t vqid;
 	int ret, pull_size;
-
-	DPAA2_QDMA_FUNC_TRACE();
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -925,8 +918,6 @@ dpdmai_dev_dequeue_multijob_no_prefetch(
 	const struct qbman_fd *fd;
 	uint16_t vqid;
 	int ret, next_pull = nb_jobs, num_pulled = 0;
-
-	DPAA2_QDMA_FUNC_TRACE();
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1096,8 +1087,6 @@ rte_qdma_vq_stats(uint16_t vq_id,
 		  struct rte_qdma_vq_stats *vq_status)
 {
 	struct qdma_virt_queue *qdma_vq = &qdma_vqs[vq_id];
-
-	DPAA2_QDMA_FUNC_TRACE();
 
 	if (qdma_vq->in_use) {
 		vq_status->exclusive_hw_queue = qdma_vq->exclusive_hw_queue;
