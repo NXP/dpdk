@@ -449,12 +449,16 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (eth_conf->rxmode.jumbo_frame == 1) {
 		if (eth_conf->rxmode.max_rx_pkt_len <= DPAA2_MAX_RX_PKT_LEN) {
 			ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW,
-				priv->token, eth_conf->rxmode.max_rx_pkt_len);
+				priv->token, eth_conf->rxmode.max_rx_pkt_len
+				- ETHER_CRC_LEN);
 			if (ret) {
 				DPAA2_PMD_ERR(
 					"Unable to set mtu. check config");
 				return ret;
 			}
+			dev->data->mtu =
+				dev->data->dev_conf.rxmode.max_rx_pkt_len -
+				ETHER_HDR_LEN - ETHER_CRC_LEN - VLAN_TAG_SIZE;
 		} else {
 			return -1;
 		}
@@ -1232,7 +1236,7 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	 * Maximum Ethernet header length
 	 */
 	ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW, priv->token,
-					frame_size);
+					frame_size - ETHER_CRC_LEN);
 	if (ret) {
 		DPAA2_PMD_ERR("Setting the max frame length failed");
 		return -1;
@@ -2414,6 +2418,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 			return ret;
 		}
 	}
+
+	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
+					ETHER_MAX_LEN - ETHER_CRC_LEN
+					+ VLAN_TAG_SIZE);
+	if (ret) {
+		DPAA2_PMD_ERR("Unable to set mtu. check config");
+		goto init_err;
+	}
+
 	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:
