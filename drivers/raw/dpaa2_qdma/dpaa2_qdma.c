@@ -121,14 +121,14 @@ qdma_populate_fd_ddr(phys_addr_t src, phys_addr_t dest,
 	 * on miss
 	 */
 	fd->simple_ddr.rns = 0;
-	fd->simple_ddr.rdttype = 0xb;
+	fd->simple_ddr.rdttype = dpaa2_coherent_alloc_cache;
 	/**
 	 * dest If RBP=0 {NS,WRTTYPE[3:0]}: 0_0111
 	 * Coherent write of cacheable memory,
 	 * lookup in downstream cache, no allocate on miss
 	 */
 	fd->simple_ddr.wns = 0;
-	fd->simple_ddr.wrttype = 0x7;
+	fd->simple_ddr.wrttype = dpaa2_coherent_no_alloc_cache;
 
 	fd->simple_ddr.daddr_lo = lower_32_bits((uint64_t) (dest));
 	fd->simple_ddr.daddr_hi = upper_32_bits((uint64_t) (dest));
