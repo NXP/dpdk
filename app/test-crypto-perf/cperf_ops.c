@@ -385,7 +385,8 @@ cperf_set_ops_aead(struct rte_crypto_op **ops,
 
 		/* AEAD parameters */
 		sym_op->aead.data.length = options->test_buffer_size;
-		sym_op->aead.data.offset = 0;
+		sym_op->aead.data.offset =
+				RTE_ALIGN_CEIL(test_vector->aad.length, 16);
 
 		sym_op->aead.aad.data = rte_crypto_op_ctod_offset(ops[i],
 					uint8_t *, aad_offset);
@@ -406,6 +407,7 @@ cperf_set_ops_aead(struct rte_crypto_op **ops,
 				buf = sym_op->m_dst;
 			} else {
 				tbuf = sym_op->m_src;
+				tbuf->data_len += sym_op->aead.data.offset;
 				while ((tbuf->next != NULL) &&
 						(offset >= tbuf->data_len)) {
 					offset -= tbuf->data_len;

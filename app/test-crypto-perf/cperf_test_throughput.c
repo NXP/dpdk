@@ -155,7 +155,7 @@ cperf_throughput_test_runner(void *test_ctx)
 		test_burst_size = ctx->options->burst_size_list[0];
 
 	uint16_t iv_offset = sizeof(struct rte_crypto_op) +
-		sizeof(struct rte_crypto_sym_op);
+		sizeof(struct rte_crypto_sym_op) + 2*sizeof(struct rte_crypto_sym_xform);
 
 	while (test_burst_size <= ctx->options->max_burst_size) {
 		uint64_t ops_enqd = 0, ops_enqd_total = 0, ops_enqd_failed = 0;
