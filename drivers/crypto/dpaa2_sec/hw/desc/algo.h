@@ -190,7 +190,7 @@ cnstr_shdsc_blkcipher(uint32_t *descbuf, bool ps, bool swap,
 		PROGRAM_SET_BSWAP(p);
 	if (ps)
 		PROGRAM_SET_36BIT_ADDR(p);
-	SHR_HDR(p, SHR_SERIAL, 1, SC);
+	SHR_HDR(p, SHR_NEVER, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SHRD);
 	/* Insert Key */
@@ -303,7 +303,7 @@ cnstr_shdsc_hmac(uint32_t *descbuf, bool ps, bool swap,
 		PROGRAM_SET_BSWAP(p);
 	if (ps)
 		PROGRAM_SET_36BIT_ADDR(p);
-	SHR_HDR(p, SHR_SERIAL, 1, SC);
+	SHR_HDR(p, SHR_NEVER, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SHRD);
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
@@ -508,7 +508,7 @@ cnstr_shdsc_gcm_encap(uint32_t *descbuf, bool ps, bool swap,
 	if (ps)
 		PROGRAM_SET_36BIT_ADDR(p);
 
-	SHR_HDR(p, SHR_SERIAL, 1, SC);
+	SHR_HDR(p, SHR_NEVER, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SELF | SHRD);
 	/* Insert Key */
@@ -618,7 +618,7 @@ cnstr_shdsc_gcm_decap(uint32_t *descbuf, bool ps, bool swap,
 	if (ps)
 		PROGRAM_SET_36BIT_ADDR(p);
 
-	SHR_HDR(p, SHR_SERIAL, 1, SC);
+	SHR_HDR(p, SHR_NEVER, 1, SC);
 
 	pkeyjmp = JUMP(p, keyjmp, LOCAL_JUMP, ALL_TRUE, SELF | SHRD);
 	/* Insert Key */
