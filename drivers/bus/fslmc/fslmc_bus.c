@@ -257,7 +257,7 @@ rte_fslmc_parse(const char *name, void *addr)
 	    strncmp("dpmcp", name, 5) &&
 	    strncmp("dpdmai", name, 6) &&
 	    strncmp("dpdmux", name, 6)) {
-		DPAA2_BUS_ERR("Unknown or unsupported device (%s)", name);
+		DPAA2_BUS_DEBUG("Unknown or unsupported device (%s)", name);
 		goto err_out;
 	}
 
