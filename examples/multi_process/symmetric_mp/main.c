@@ -102,6 +102,7 @@ static unsigned num_procs = 0;
 
 static uint16_t ports[RTE_MAX_ETHPORTS];
 static unsigned num_ports = 0;
+static unsigned port_mask = 0;
 
 static struct lcore_ports lcore_ports[RTE_MAX_LCORE];
 static struct port_stats pstats[RTE_MAX_ETHPORTS];
@@ -144,7 +145,7 @@ smp_parse_args(int argc, char **argv)
 	int opt, ret;
 	char **argvopt;
 	int option_index;
-	unsigned i, port_mask = 0;
+	unsigned i;
 	char *prgname = argv[0];
 	static struct option lgopts[] = {
 			{PARAM_NUM_PROCS, 1, 0, 0},
@@ -361,7 +362,7 @@ lcore_main(void *arg __rte_unused)
 
 /* Check the link status of all ports in up to 9s, and print them finally */
 static void
-check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
+check_all_ports_link_status(uint16_t port_num, uint32_t mask)
 {
 #define CHECK_INTERVAL 100 /* 100ms */
 #define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
@@ -374,7 +375,7 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
 		all_ports_up = 1;
 		for (portid = 0; portid < port_num; portid++) {
-			if ((port_mask & (1 << portid)) == 0)
+			if ((mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
 			rte_eth_link_get_nowait(portid, &link);
@@ -463,7 +464,7 @@ main(int argc, char **argv)
 	}
 
 	if (proc_type == RTE_PROC_PRIMARY)
-		check_all_ports_link_status((uint8_t)num_ports, (~0x0));
+		check_all_ports_link_status(rte_eth_dev_count(), port_mask);
 
 	assign_ports_to_cores();
 
