@@ -12,11 +12,12 @@
 extern "C" {
 #endif
 
+#include <limits.h>
 #include <dpaa_rbtree.h>
 #include <rte_eventdev.h>
 
 /* FQ lookups (turn this on for 64bit user-space) */
-#if (__WORDSIZE == 64)
+#if (ULONG_MAX == 0xffffffffffffffff)
 #define CONFIG_FSL_QMAN_FQ_LOOKUP
 /* if FQ lookups are supported, this controls the number of initialised,
  * s/w-consumed FQs that can be supported at any one time.
