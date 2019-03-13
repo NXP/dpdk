@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2018 NXP
+ *   Copyright 2017-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -2008,13 +2008,13 @@ dpaa_sec_attach_rxq(struct dpaa_sec_dev_private *qi)
 {
 	unsigned int i;
 
-	for (i = 0; i < qi->max_nb_sessions; i++) {
+	for (i = 0; i < qi->max_nb_sessions * MAX_DPAA_CORES; i++) {
 		if (qi->inq_attach[i] == 0) {
 			qi->inq_attach[i] = 1;
 			return &qi->inq[i];
 		}
 	}
-	DPAA_SEC_WARN("All ses session in use %x", qi->max_nb_sessions);
+	DPAA_SEC_WARN("All session in use %u", qi->max_nb_sessions);
 
 	return NULL;
 }
@@ -2212,7 +2212,6 @@ static void
 dpaa_sec_session_clear(struct rte_cryptodev *dev,
 		struct rte_cryptodev_sym_session *sess)
 {
-	struct dpaa_sec_dev_private *qi = dev->data->dev_private;
 	uint8_t index = dev->driver_id;
 	void *sess_priv = get_session_private_data(sess, index);
 
@@ -2223,9 +2222,7 @@ dpaa_sec_session_clear(struct rte_cryptodev *dev,
 	if (sess_priv) {
 		struct rte_mempool *sess_mp = rte_mempool_from_obj(sess_priv);
 
-		if (s->inq[rte_lcore_id() % MAX_DPAA_CORES])
-			dpaa_sec_detach_rxq(qi,
-				s->inq[rte_lcore_id() % MAX_DPAA_CORES]);
+		dpaa_sec_qp_detach_sess(dev, 0, s);
 		rte_free(s->cipher_key.data);
 		rte_free(s->auth_key.data);
 		memset(s, 0, sizeof(dpaa_sec_session));
