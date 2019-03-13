@@ -598,6 +598,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	int num_rx_bufs, ret;
 	uint32_t vdqcr_flags = 0;
 
+	if (unlikely(rte_dpaa_bpid_info == NULL &&
+				rte_eal_process_type() == RTE_PROC_SECONDARY))
+		rte_dpaa_bpid_info = fq->bp_array;
+
 	if (likely(fq->is_static))
 		return dpaa_eth_queue_portal_rx(fq, bufs, nb_bufs);
 
