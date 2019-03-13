@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -1328,10 +1328,13 @@ sec_simple_fd_to_mbuf(const struct qbman_fd *fd)
 	uint16_t len = DPAA2_GET_FD_LEN(fd);
 	uint16_t diff = 0;
 	dpaa2_sec_session *sess_priv;
+	struct dpaa2_bp_info *bp_info;
+	struct rte_mbuf *mbuf;
 
-	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
-		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
-		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+	bp_info = &rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)];
+	mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
+		DPAA2_MEMPOOL_PTOV(bp_info, DPAA2_GET_FD_ADDR(fd)),
+		bp_info->meta_data_size);
 
 	diff = len - mbuf->pkt_len;
 	mbuf->pkt_len += diff;
