@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2018 NXP
+ * Copyright 2017-2019 NXP
  */
 
 #include <fcntl.h>
@@ -329,7 +329,7 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 
 		shared_desc_len = cnstr_shdsc_blkcipher(
 						cdb->sh_desc, true,
-						swap, &alginfo_c,
+						swap, SHR_NEVER, &alginfo_c,
 						NULL,
 						ses->iv.length,
 						ses->dir);
@@ -347,7 +347,7 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 		alginfo_a.key_type = RTA_DATA_IMM;
 
 		shared_desc_len = cnstr_shdsc_hmac(cdb->sh_desc, true,
-						   swap, &alginfo_a,
+						   swap, SHR_NEVER, &alginfo_a,
 						   !ses->dir,
 						   ses->digest_length);
 	} else if (is_aead(ses)) {
@@ -365,13 +365,13 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 		if (ses->dir == DIR_ENC)
 			shared_desc_len = cnstr_shdsc_gcm_encap(
 					cdb->sh_desc, true, swap,
-					&alginfo,
+					SHR_NEVER, &alginfo,
 					ses->iv.length,
 					ses->digest_length);
 		else
 			shared_desc_len = cnstr_shdsc_gcm_decap(
 					cdb->sh_desc, true, swap,
-					&alginfo,
+					SHR_NEVER, &alginfo,
 					ses->iv.length,
 					ses->digest_length);
 	} else {
@@ -448,7 +448,8 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 			 * overwritten in fd for each packet.
 			 */
 			shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc,
-					true, swap, &alginfo_c, &alginfo_a,
+					true, swap, SHR_SERIAL,
+					&alginfo_c, &alginfo_a,
 					ses->iv.length, 0,
 					ses->digest_length, ses->dir);
 		}

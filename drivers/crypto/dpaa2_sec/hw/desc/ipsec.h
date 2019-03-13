@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2016 NXP
+ * Copyright 2016,2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -1221,7 +1221,7 @@ cnstr_shdsc_ipsec_decap_des_aes_xcbc(uint32_t *descbuf,
 static inline int
 cnstr_shdsc_ipsec_new_encap(uint32_t *descbuf, bool ps,
 			    bool swap,
-					      enum rta_share_type share,
+			    enum rta_share_type share,
 			    struct ipsec_encap_pdb *pdb,
 			    uint8_t *opt_ip_hdr,
 			    struct alginfo *cipherdata,
@@ -1339,7 +1339,7 @@ cnstr_shdsc_ipsec_new_encap(uint32_t *descbuf, bool ps,
 static inline int
 cnstr_shdsc_ipsec_new_decap(uint32_t *descbuf, bool ps,
 			    bool swap,
-					      enum rta_share_type share,
+			    enum rta_share_type share,
 			    struct ipsec_decap_pdb *pdb,
 			    struct alginfo *cipherdata,
 			    struct alginfo *authdata)
@@ -1430,6 +1430,7 @@ cnstr_shdsc_ipsec_new_decap(uint32_t *descbuf, bool ps,
  * @descbuf: pointer to buffer used for descriptor construction
  * @ps: if 36/40bit addressing is desired, this parameter must be true
  * @swap: if true, perform descriptor byte swapping on a 4-byte boundary
+ * @share: sharing type of shared descriptor
  * @cipherdata: pointer to block cipher transform definitions.
  *              Valid algorithm values one of OP_ALG_ALGSEL_* {DES, 3DES, AES}
  *              Valid modes for:
@@ -1494,6 +1495,7 @@ cnstr_shdsc_ipsec_new_decap(uint32_t *descbuf, bool ps,
  */
 static inline int
 cnstr_shdsc_authenc(uint32_t *descbuf, bool ps, bool swap,
+		    enum rta_share_type share,
 		    struct alginfo *cipherdata,
 		    struct alginfo *authdata,
 		    uint16_t ivlen, uint16_t auth_only_len,
@@ -1529,7 +1531,7 @@ cnstr_shdsc_authenc(uint32_t *descbuf, bool ps, bool swap,
 	trunc_len = trunc_len && (trunc_len < authdata->keylen) ?
 			trunc_len : (uint8_t)authdata->keylen;
 
-	SHR_HDR(p, SHR_SERIAL, 1, SC);
+	SHR_HDR(p, share, 1, SC);
 
 	/*
 	 * M0 will contain the value provided by the user when creating
