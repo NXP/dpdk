@@ -375,7 +375,7 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 
 /* Allocator stuff */
 #define kmalloc(sz, t)	rte_malloc(NULL, sz, 0)
-#define vmalloc(sz)	malloc(sz)
+#define vmalloc(sz)	rte_malloc(NULL, sz, 0)
 #define kfree(p)	{ if (p) rte_free(p); }
 static inline void *kzalloc(size_t sz, gfp_t __foo __rte_unused)
 {
