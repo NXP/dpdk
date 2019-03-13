@@ -897,7 +897,7 @@ static int pfe_get_gemac_if_proprties(struct pfe *pfe,
 		unsigned int port, unsigned int if_cnt,
 		struct ls1012a_pfe_platform_data *pdata)
 {
-	const struct device_node *gem = NULL, *phy = NULL;
+	const struct device_node *gem = NULL;
 	size_t size;
 	unsigned int ii = 0, phy_id = 0;
 	const u32 *addr;
@@ -926,22 +926,6 @@ static int pfe_get_gemac_if_proprties(struct pfe *pfe,
 		       ETH_ALEN);
 	}
 
-	addr = of_get_property(gem, "fsl,gemac-bus-id", &size);
-	if (!addr)
-		PFE_PMD_ERR("Invalid gemac-bus-id....");
-	else
-		pdata->ls1012a_eth_pdata[port].bus_id =
-			rte_be_to_cpu_32((unsigned int)*addr);
-
-	addr = of_get_property(gem, "fsl,gemac-phy-id", &size);
-	if (!addr) {
-		PFE_PMD_ERR("Invalid gemac-phy-id....");
-	} else {
-		phy_id = rte_be_to_cpu_32((unsigned int)*addr);
-		pdata->ls1012a_eth_pdata[port].phy_id = phy_id;
-		pdata->ls1012a_mdio_pdata[0].phy_mask &= ~(1 << phy_id);
-	}
-
 	addr = of_get_property(gem, "fsl,mdio-mux-val", &size);
 	if (!addr) {
 		PFE_PMD_ERR("Invalid mdio-mux-val....");
@@ -952,29 +936,6 @@ static int pfe_get_gemac_if_proprties(struct pfe *pfe,
 	if (pdata->ls1012a_eth_pdata[port].phy_id < 32)
 		pfe->mdio_muxval[pdata->ls1012a_eth_pdata[port].phy_id] =
 			 pdata->ls1012a_eth_pdata[port].mdio_muxval;
-
-	addr = of_get_property(gem, "fsl,pfe-phy-if-flags", &size);
-	if (!addr)
-		PFE_PMD_ERR("Invalid pfe-phy-if-flags....");
-	else
-		pdata->ls1012a_eth_pdata[port].phy_flags =
-			rte_be_to_cpu_32((unsigned int)*addr);
-
-	/* If PHY is enabled, read mdio properties */
-	if (pdata->ls1012a_eth_pdata[port].phy_flags & GEMAC_NO_PHY)
-		goto done;
-
-	phy = of_get_next_child(gem, NULL);
-
-	addr = of_get_property(phy, "reg", &size);
-
-	if (!addr)
-		PFE_PMD_ERR("Invalid phy enable flag....");
-	else
-		pdata->ls1012a_mdio_pdata[port].enabled =
-				rte_be_to_cpu_32((unsigned int)*addr);
-
-done:
 
 	return 0;
 
