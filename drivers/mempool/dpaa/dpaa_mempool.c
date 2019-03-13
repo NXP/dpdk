@@ -53,7 +53,7 @@
 
 #include <dpaa_mempool.h>
 
-struct dpaa_bp_info rte_dpaa_bpid_info[DPAA_MAX_BPOOLS];
+struct dpaa_bp_info *rte_dpaa_bpid_info = NULL;
 
 static int
 dpaa_mbuf_create_pool(struct rte_mempool *mp)
@@ -100,6 +100,14 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	if (num_bufs)
 		DPAA_MEMPOOL_WARN("drained %u bufs from BPID %d",
 				  num_bufs, bpid);
+
+	if (rte_dpaa_bpid_info == NULL) {
+		rte_dpaa_bpid_info = (struct dpaa_bp_info *)rte_zmalloc(NULL,
+				sizeof(struct dpaa_bp_info) * DPAA_MAX_BPOOLS,
+				RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa_bpid_info == NULL)
+			return -ENOMEM;
+	}
 
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;

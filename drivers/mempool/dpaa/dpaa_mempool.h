@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright 2017 NXP
+ *   Copyright 2017,2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -82,7 +82,7 @@ DPAA_MEMPOOL_PTOV(struct dpaa_bp_info *bp_info, uint64_t addr)
 #define DPAA_MEMPOOL_TO_BPID(__mp) \
 	(((struct dpaa_bp_info *)__mp->pool_data)->bpid)
 
-extern struct dpaa_bp_info rte_dpaa_bpid_info[DPAA_MAX_BPOOLS];
+extern struct dpaa_bp_info *rte_dpaa_bpid_info;
 
 #define DPAA_BPID_TO_POOL_INFO(__bpid) (&rte_dpaa_bpid_info[__bpid])
 

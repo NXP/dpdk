@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017 NXP
+ *   Copyright 2017,2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -625,6 +625,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
 	int num_rx_bufs, ret;
 	uint32_t vdqcr_flags = 0;
+
+	if (unlikely(rte_dpaa_bpid_info == NULL &&
+				rte_eal_process_type() == RTE_PROC_SECONDARY))
+		rte_dpaa_bpid_info = fq->bp_array;
 
 	if (likely(fq->is_static))
 		return dpaa_eth_queue_portal_rx(fq, bufs, nb_bufs);
