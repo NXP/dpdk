@@ -1138,10 +1138,10 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fqid) {
+	if (fmc_q || default_q) {
 		ret = qman_reserve_fqid(fqid);
 		if (ret) {
-			DPAA_PMD_ERR("reserve rx fqid 0x%x failed with ret: %d",
+			DPAA_PMD_ERR("reserve rx fqid 0x%x failed, ret: %d",
 				     fqid, ret);
 			return -EINVAL;
 		}
@@ -1259,6 +1259,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	struct fman_if *fman_intf;
 	struct fman_if_bpool *bp, *tmp_bp;
 	uint32_t cgrid[DPAA_MAX_NUM_PCD_QUEUES];
+	uint32_t dev_rx_fqids[DPAA_MAX_NUM_PCD_QUEUES];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1350,6 +1351,14 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		dpaa_intf->cgr_rx = NULL;
 	}
 
+	if (!fmc_q && !default_q) {
+		ret = qman_alloc_fqid_range(dev_rx_fqids, num_rx_fqs, num_rx_fqs, 0);
+		if (ret < 0) {
+			DPAA_PMD_ERR("Failed to alloc rx fqid's\n");
+			goto free_rx;
+		}
+	}
+
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		if (default_q)
 			fqid = cfg->rx_def;
@@ -1357,7 +1366,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
 				DPAA_PCD_FQID_MULTIPLIER + loop;
 		else
-			fqid = 0;
+			fqid = dev_rx_fqids[loop];
 
 		if (dpaa_intf->cgr_rx)
 			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
