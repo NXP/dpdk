@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -37,6 +37,9 @@
 #define DPAA2_MAX_BUF_POOLS	8
 
 #define DPAA2_INVALID_MBUF_SEQN	0
+
+/* Buffers are allocated from single mem segment i.e. phys contiguous */
+#define DPAA2_MPOOL_SINGLE_SEGMENT  0x01
 
 struct buf_pool_cfg {
 	void *addr;
@@ -77,10 +80,24 @@ struct dpaa2_bp_list {
 };
 
 struct dpaa2_bp_info {
-	uint32_t meta_data_size;
-	uint32_t bpid;
 	struct dpaa2_bp_list *bp_list;
+	uint32_t meta_data_size;
+	uint16_t bpid;
+	uint16_t flags;
+	int64_t ptov_off;
 };
+
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+static inline void *
+DPAA2_MEMPOOL_PTOV(struct dpaa2_bp_info *_bp_info, uint64_t _addr)
+{
+	if (_bp_info->ptov_off)
+		return ((void *) (size_t)(_addr + _bp_info->ptov_off));
+	return (void *)(DPAA2_IOVA_TO_VADDR(_addr));
+}
+#else
+#define DPAA2_MEMPOOL_PTOV(_bp_info, _addr) (_addr)
+#endif
 
 #define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)(mp)->pool_data)
 #define mempool_to_bpid(mp) ((mempool_to_bpinfo(mp))->bpid)

@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -285,18 +285,20 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 	size_t sg_addr, fd_addr;
 	int i = 0;
 	struct rte_mbuf *first_seg, *next_seg, *cur_seg, *temp;
+	struct dpaa2_bp_info *bp_info;
 
-	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	bp_info = &rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)];
+	fd_addr = (size_t)DPAA2_MEMPOOL_PTOV(bp_info, DPAA2_GET_FD_ADDR(fd));
 
 	/* Get Scatter gather table address */
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
 
 	sge = &sgt[i++];
-	sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
+	sg_addr = (size_t)DPAA2_MEMPOOL_PTOV(bp_info, DPAA2_GET_FLE_ADDR(sge));
 
 	/* First Scatter gather entry */
 	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
-		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+		bp_info->meta_data_size);
 	/* Prepare all the metadata for first segment */
 	first_seg->buf_addr = (uint8_t *)sg_addr;
 	first_seg->ol_flags = 0;
@@ -309,14 +311,14 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 		dpaa2_dev_rx_parse_new(first_seg, fd);
 	else
 		first_seg->packet_type = dpaa2_dev_rx_parse(first_seg,
-			(void *)((size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-			 + DPAA2_FD_PTA_SIZE));
+			(void *)((size_t)DPAA2_MEMPOOL_PTOV(bp_info,
+			DPAA2_GET_FD_ADDR(fd)) + DPAA2_FD_PTA_SIZE));
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 	cur_seg = first_seg;
 	while (!DPAA2_SG_IS_FINAL(sge)) {
 		sge = &sgt[i++];
-		sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(
+		sg_addr = (size_t)DPAA2_MEMPOOL_PTOV(bp_info,
 				DPAA2_GET_FLE_ADDR(sge));
 		next_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
 			rte_dpaa2_bpid_info[DPAA2_GET_FLE_BPID(sge)].meta_data_size);
@@ -340,10 +342,13 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 static inline struct rte_mbuf *__attribute__((hot))
 eth_fd_to_mbuf(const struct qbman_fd *fd)
 {
-	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
-		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
-		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+	struct dpaa2_bp_info *bp_info;
+	struct rte_mbuf *mbuf;
 
+	bp_info = &rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)];
+	mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
+		DPAA2_MEMPOOL_PTOV(bp_info, DPAA2_GET_FD_ADDR(fd)),
+		     bp_info->meta_data_size);
 	/* need to repopulated some of the fields,
 	 * as they may have changed in last transmission
 	 */
@@ -365,8 +370,8 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 		dpaa2_dev_rx_parse_new(mbuf, fd);
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf,
-			(void *)((size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd))
-			 + DPAA2_FD_PTA_SIZE));
+			(void *)((size_t)DPAA2_MEMPOOL_PTOV(bp_info,
+			DPAA2_GET_FD_ADDR(fd)) + DPAA2_FD_PTA_SIZE));
 
 	DPAA2_PMD_DP_DEBUG("to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d\n",
