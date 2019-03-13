@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2019 NXP
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -387,6 +387,20 @@ rte_hw_mbuf_free_bulk(struct rte_mempool *pool,
 		DPAA2_MEMPOOL_ERR("DPAA2 buffer pool not configured");
 		return -ENOENT;
 	}
+
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+	if (unlikely(!bp_info->ptov_off)) {
+		uint64_t phy = rte_mempool_virt2iova(obj_table[0]);
+
+		/* buffers are from single mem segment */
+		if (bp_info->flags & DPAA2_MPOOL_SINGLE_SEGMENT) {
+			bp_info->ptov_off = (size_t)obj_table[0] - phy;
+			rte_dpaa2_bpid_info[bp_info->bpid].ptov_off
+					= bp_info->ptov_off;
+		}
+	}
+#endif
+
 	rte_dpaa2_mbuf_release(pool, obj_table, bp_info->bpid,
 			   bp_info->meta_data_size, n);
 
@@ -421,6 +435,37 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 
 	return num_of_bufs;
 }
+static int
+dpaa2_register_memory_area(const struct rte_mempool *mp,
+			  char *vaddr __rte_unused,
+			  rte_iova_t paddr __rte_unused,
+			  size_t len)
+{
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+	struct dpaa2_bp_info *bp_info;
+	unsigned int total_elt_sz;
+
+	if (!mp || !mp->pool_data) {
+		DPAA2_MEMPOOL_ERR("Invalid mempool provided\n");
+		return 0;
+	}
+
+	bp_info = mempool_to_bpinfo(mp);
+	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
+
+	DPAA2_MEMPOOL_DEBUG("Req size %" PRIx64 " vs Available %u\n",
+			   (uint64_t)len, total_elt_sz * mp->size);
+
+	/* Detect pool area has sufficient space for elements in this memzone */
+	if (len >= total_elt_sz * mp->size)
+		bp_info->flags |= DPAA2_MPOOL_SINGLE_SEGMENT;
+#endif
+	RTE_SET_USED(mp);
+	RTE_SET_USED(len);
+	return 0;
+}
+
+
 
 struct rte_mempool_ops dpaa2_mpool_ops = {
 	.name = DPAA2_MEMPOOL_OPS_NAME,
@@ -429,6 +474,7 @@ struct rte_mempool_ops dpaa2_mpool_ops = {
 	.enqueue = rte_hw_mbuf_free_bulk,
 	.dequeue = rte_dpaa2_mbuf_alloc_bulk,
 	.get_count = rte_hw_mbuf_get_count,
+	.register_memory_area = dpaa2_register_memory_area,
 };
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
