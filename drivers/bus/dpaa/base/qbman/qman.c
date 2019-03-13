@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2017 NXP
+ * Copyright 2017,2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -198,6 +198,11 @@ int qman_setup_fq_lookup_table(size_t num_entries)
 		qman_fq_lookup_table,
 			(unsigned long)qman_fq_lookup_table_size);
 	return 0;
+}
+
+void qman_set_fq_lookup_table(void **fq_table)
+{
+	qman_fq_lookup_table = fq_table;
 }
 
 /* global structure that maintains fq object mapping */
@@ -1498,6 +1503,7 @@ int qman_create_fq(u32 fqid, u32 flags, struct qman_fq *fq)
 		pr_info("Find empty table entry failed\n");
 		return -ENOMEM;
 	}
+	fq->qman_fq_lookup_table = qman_fq_lookup_table;
 #endif
 	if (!(flags & QMAN_FQ_FLAG_AS_IS) || (flags & QMAN_FQ_FLAG_NO_MODIFY))
 		return 0;

@@ -5,6 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2008-2012 Freescale Semiconductor, Inc.
+ * Copyright 2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -1272,6 +1273,7 @@ struct qman_fq {
 
 	struct rb_node node;
 #ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+	void **qman_fq_lookup_table;
 	u32 key;
 #endif
 };
@@ -1345,6 +1347,10 @@ struct qman_cgr {
 /* Flags to qman_modify_cgr() */
 #define QMAN_CGR_FLAG_USE_INIT       0x00000001
 #define QMAN_CGR_MODE_FRAME          0x00000001
+
+#ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+void qman_set_fq_lookup_table(void **table);
+#endif
 
 /**
  * qman_get_portal_index - get portal configuration index
