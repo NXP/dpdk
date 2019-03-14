@@ -85,7 +85,7 @@
 	} while (0)
 
 #if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER)
-void dpaa_display_frame(const struct qm_fd *fd)
+static void dpaa_display_frame(const struct qm_fd *fd)
 {
 	int ii;
 	char *ptr;
@@ -937,10 +937,11 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				DPAA_TX_BURST_SIZE : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
 			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
 					(mbuf->data_off & 0xF) != 0x0)
 				realloc_mbuf = 1;
-
+#endif
 			seqn = mbuf->seqn;
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
 				index = seqn - 1;
