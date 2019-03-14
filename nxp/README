@@ -54,11 +54,11 @@ Following information can be used to obtain these components:
     Linux Kernel can be obtained either through the NXP SDK for the board or
     via the Github repository below:
 
-      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.4
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.14
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.4, 4.9, 4.14 has been verified with DPDK. Other kernels may work but
-    they have not been tested.
+    LSDK specific version of Linux-4.4, 4.9, 4.14 have been verified with DPDK.
+    Other kernels may work but they have not been tested.
 
     NOTE: By default, the KNI module compilation is enabled in DPDK requiring
           a pre-compiled Linux Kernel. Though, this is optional and can be
@@ -159,7 +159,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
   DPDK libraries, which are required for compiling DPDK examples and
   applications:
 
-  1. Optional: export KERNEL_PATH=<path to prebuild Linux Kernel>
+  1. Optional: export RTE_KERNELDIR=<path to prebuild Linux Kernel>
 
   NOTE: As mentioned above, prebuild Linux Kernel is optional. Dependency
 	for this can be disabled by adding following configuration to
@@ -308,6 +308,25 @@ Following are some pre-requisites:
      free CPU when traffic is low. With this mode there is a slight drop(~5%) in
      performance as compared to default mode(POLL).
 
+  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
+	argument with value "eth_pfe" to enable ethernet device. Maximum supported
+	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
+	values "eth_pfe0" and "eth_pfe1".
+
+  NOTE: Platforms with CAAM JR support need the kernel support and they need
+	to run following commands to assign job rings to userspace.
+	#Find the address for job ring
+		ls /sys/bus/platform/devices/*.jr
+	#leave one and assign remaining rings to userspace drivers.
+		echo 1720000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1720000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+		echo 1730000.jr > /sys/bus/platform/drivers/caam_jr/unbind
+		echo 1730000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
+
+	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
+	to use these rings.
+
   For DPAA2 Platform:
   ~~~~~~~~~~~~~~~~~~~
 
@@ -385,7 +404,6 @@ Following are some pre-requisites:
 
      $ export DPAA_NUM_RX_QUEUES=1
 
-
   NOTE: For all the example applications, a port mask is provided for ports to
         be used by application for I/O. For DPAA platform, the number is
         defined by the order of detection which is platform specific. For DPAA2,
@@ -396,25 +414,6 @@ Following are some pre-requisites:
         For details of port numbering, refer the LSDK documentation.
 
   NOTE: For all the applications, the value n must be always 1 for all platforms.
-
-  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
-	argument with value "eth_pfe" to enable ethernet device. Maximum supported
-	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
-	values "eth_pfe0" and "eth_pfe1".
-
-  NOTE: Platforms with CAAM JR support need the kernel support and they need
-	to run following commands to assign job rings to userspace.
-	#Find the address for job ring
-		ls /sys/bus/platform/devices/*.jr
-	#leave one and assign remaining rings to userspace drivers.
-		echo 1720000.jr > /sys/bus/platform/drivers/caam_jr/unbind
-		echo 1720000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
-
-		echo 1730000.jr > /sys/bus/platform/drivers/caam_jr/unbind
-		echo 1730000.jr > /sys/bus/platform/drivers/fsl-jr-uio/bind
-
-	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
-	to use these rings.
 
   'testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
@@ -723,6 +722,10 @@ Executing `dpdk-procinfo`:
     Note: This can work with any other DPDK application (sample application
     like l3fwd) unlike the restriction for 'dpdk-pdump'.
 
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
+
     Step 1: Execute any DPDK application using routine commands. For example,
     testpmd
 
@@ -739,13 +742,13 @@ Executing `dpdk-procinfo`:
     Note: 'dpdk-procinfo' in 17.11 has a bug which doesn't allow all its
     functionality to be used, like stats and xstats.
 
-================================================================================
+=========================
 VM VFIO Direct Assignment
 =========================
 
 Refer to nxp/dpaa2/README_VM_VFIO_DIRECT for further information.
 
-
+=================================================
 Achieving best performance from DPDK Applications
 =================================================
 
@@ -792,6 +795,10 @@ of NXP LSDK documentation.
    For DPAA2, following Linux bootargs parameter should be used:
    
    `default_hugepagesz=1024m hugepagesz=1024m hugepages=8`
+
+   One can also modify the hugepages on linux command line. e.g.
+
+    $echo 400 > /proc/sys/vm/nr_hugepages
 
 ================================================================================
 
@@ -928,7 +935,7 @@ DPAA2:
 11. DPAA2_NO_QDMA_PREFETCH_RX	Enable non-prefetch RX mode in QDMA driver
 ================================================================================
 
-Minimum NXP LSDK version supported: LSDK 1709 (https://lsdk.github.io/)
+Minimum NXP LSDK version supported: LSDK 1806 (https://lsdk.github.io/)
 DPDK base version used: Release 17.11
 More info on DPDK :  www.dpdk.org
 
