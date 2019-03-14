@@ -454,16 +454,16 @@ rte_mempool_populate_iova(struct rte_mempool *mp, char *vaddr,
 	 * offset of buffer is changed after an interval of 8 and value is
 	 * reversed after 64 buffer.
 	 */
-	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
-					mp->flags & MEMPOOL_F_MBUF) {
-		if (idx == LS1043_OFFSET_CHANGE_IDX) {
-			change = -change;
-			idx = 0;
+		if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+						mp->flags & MEMPOOL_F_MBUF) {
+			if (idx == LS1043_OFFSET_CHANGE_IDX) {
+				change = -change;
+				idx = 0;
+			}
+			if (idx % LS1043_MAX_BUF_IN_CACHE == 0)
+				off += change;
+			idx++;
 		}
-		if (idx % LS1043_MAX_BUF_IN_CACHE == 0)
-			off += change;
-		idx++;
-	}
 #endif
 		off += mp->header_size;
 		if (iova == RTE_BAD_IOVA)
@@ -690,7 +690,7 @@ rte_mempool_populate_default(struct rte_mempool *mp)
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
 	if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
 			(mp->flags & MEMPOOL_F_MBUF))
-		mp->size -= LS1043_MAX_BUF_OFFSET;
+		mp->elt_size -= LS1043_MAX_BUF_OFFSET;
 #endif
 	return mp->size;
 

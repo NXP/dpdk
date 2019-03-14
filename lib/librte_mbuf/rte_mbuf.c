@@ -214,6 +214,7 @@ rte_pktmbuf_pool_create(const char *name, unsigned n,
 		set_dpaa_svr_family();
 
 	if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
+		data_room_size += LS1043_MAX_BUF_OFFSET;
 		if (data_room_size <= LS1043_MAX_BUF_SIZE)
 			data_room_size = LS1043_MAX_BUF_SIZE - priv_size;
 		else
