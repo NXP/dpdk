@@ -163,7 +163,7 @@ dpaa_event_dequeue_burst(void *port, struct rte_event ev[],
 	int ret;
 	u16 ch_id;
 	void *buffers[8];
-	u32 num_frames, i, irq = 0;
+	u32 num_frames, i;
 	uint64_t cur_ticks = 0, wait_time_ticks = 0;
 	struct dpaa_port *portal = (struct dpaa_port *)port;
 	struct rte_mbuf *mbuf;
@@ -214,14 +214,11 @@ dpaa_event_dequeue_burst(void *port, struct rte_event ev[],
 	do {
 		/* Lets dequeue the frames */
 		num_frames = qman_portal_dequeue(ev, nb_events, buffers);
-		if (irq)
-			irq = 0;
 		if (num_frames)
 			break;
 #ifdef RTE_LIBRTE_DPAA_EVENT_INTR_MODE
 		if (wait_time_ticks) { /* wait for time */
 			if (dpaa_event_dequeue_wait(wait_time_ticks) > 0) {
-				irq = 1;
 				continue;
 			}
 			break; /* no event after waiting */
