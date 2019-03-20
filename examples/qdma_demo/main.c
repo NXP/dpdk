@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  */
 
 /* System headers */
@@ -272,14 +272,13 @@ lcore_hello(__attribute__((unused))
 		for (int j = 0; j < MAX_CORE_COUNT; j++) {
 			if (!rte_lcore_is_enabled(j))
 				continue;
-		  g_jobs[j] = rte_malloc("test qdma",
+		  g_jobs[j] = rte_zmalloc("test qdma",
 					  TEST_PACKETS_NUM *
 					  sizeof (struct rte_qdma_job), 4096);
 		  printf("[%d] job ptr %p\n", j, g_jobs[j]);
 		  for (int i = 0; i < TEST_PACKETS_NUM; i++) {
 		      struct rte_qdma_job *job = g_jobs[j];
 		      job += i;
-		      job->flags = RTE_QDMA_JOB_DEST_PHY;
 		      job->len = TEST_PACKET_SIZE;
 		      job->cnxt = i;
 		      memset(g_buf + (i * TEST_PACKET_SIZE), (char) i + 1,
@@ -288,13 +287,14 @@ lcore_hello(__attribute__((unused))
 			      TEST_PACKET_SIZE);
 			if (g_rbp_testcase == MEM_TO_PCI) {
 				job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
-				if (g_userbp)
+				if (g_userbp) {
 					job->dest =
 					(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
-				else
+					job->flags = RTE_QDMA_JOB_DEST_PHY;
+				} else {
 					job->dest =
 					(g_target_pci_addr + (long) (i * TEST_PACKET_SIZE));
-
+				}
 			}
 		      else if (g_rbp_testcase == MEM_TO_MEM) {
 			  job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
@@ -309,6 +309,7 @@ lcore_hello(__attribute__((unused))
 			      job->src =
 				(TEST_PCIBUS_BASE_ADDR +
 				 (long) ((i * TEST_PACKET_SIZE)));
+			      job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
 			    }
 			  else {
 			      job->dest =
@@ -324,6 +325,7 @@ lcore_hello(__attribute__((unused))
 			      job->src =
 				(TEST_PCIBUS_BASE_ADDR +
 				 (long) ((i * TEST_PACKET_SIZE)));
+			      job->flags = RTE_QDMA_JOB_SRC_PHY;
 			    }
 			  else {
 			      job->src =
