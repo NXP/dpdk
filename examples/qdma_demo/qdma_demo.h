@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  */
 #ifndef __QDMA_DEMO_H__
 #define __QDMA_DEMO_H__
