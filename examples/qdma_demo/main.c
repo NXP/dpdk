@@ -702,7 +702,6 @@ int
 main(int argc, char *argv[])
 {
 	int ret = 0;
-	unsigned lcore_id;
 
 	/* catch ctrl-c so we can print on exit */
 	signal(SIGINT, int_handler);
@@ -737,27 +736,24 @@ main(int argc, char *argv[])
 	}
 
 	/*cycle correction */
-	lcore_id = rte_lcore_id();
-	if (lcore_id == 0) {
-		uint64_t freq = get_tsc_freq_from_cpuinfo();
+	uint64_t freq = get_tsc_freq_from_cpuinfo();
 
-		float nsPerCycle = (float) 1000 / ((float) freq);
-		start_cycles = rte_get_timer_cycles();
-		rte_delay_ms(1000);
-		end_cycles = rte_get_timer_cycles();
-		time_diff = end_cycles - start_cycles;
-		rate = (float) (1000) / ((nsPerCycle * time_diff) / (1000 * 1000));
-		printf("Rate:%.5f cpu freq:%ld MHz\n", rate, freq);
+	float nsPerCycle = (float) 1000 / ((float) freq);
+	start_cycles = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end_cycles = rte_get_timer_cycles();
+	time_diff = end_cycles - start_cycles;
+	rate = (float) (1000) / ((nsPerCycle * time_diff) / (1000 * 1000));
+	printf("Rate:%.5f cpu freq:%ld MHz\n", rate, freq);
 
 
-		start_cycles = rte_get_timer_cycles ();
-		rte_delay_ms(2000);
-		end_cycles = rte_get_timer_cycles();
-		time_diff = end_cycles - start_cycles;
+	start_cycles = rte_get_timer_cycles ();
+	rte_delay_ms(2000);
+	end_cycles = rte_get_timer_cycles();
+	time_diff = end_cycles - start_cycles;
 
-		printf("Spend :%.3f ms\n",
-		      (nsPerCycle * time_diff * rate) / (float) (1000 * 1000));
-	}
+	printf("Spend :%.3f ms\n",
+	      (nsPerCycle * time_diff * rate) / (float) (1000 * 1000));
 
 	launch_cores(core_count);
 
