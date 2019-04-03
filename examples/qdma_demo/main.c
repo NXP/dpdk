@@ -671,7 +671,6 @@ qdma_demo_parse_args(int argc, char **argv)
 int qdma_demo_validate_args(void)
 {
 	int valid = 1;
-	uint32_t lcore_id;
 
 	if (g_rbp_testcase == MEM_TO_PCI)
 		valid = !!(g_arg_mask & ARG_PCI_ADDR);
@@ -688,11 +687,7 @@ int qdma_demo_validate_args(void)
 		valid = 0;
 		goto out;
 	}
-	RTE_LCORE_FOREACH_SLAVE(lcore_id)
-	{
-		if (lcore_id > stats_core_id)
-			stats_core_id = lcore_id;
-	}
+	stats_core_id = rte_get_master_lcore();
 	printf("%s: Stats core id - %d\n", __func__, stats_core_id);
 out:
 	return !valid;
