@@ -162,7 +162,7 @@ struct rte_qdma_job {
  *   - 0: Success.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_init(void);
 
 /**
@@ -171,7 +171,7 @@ rte_qdma_init(void);
  * @param qdma_attr
  *   QDMA attributes providing total number of hw queues etc.
  */
-void __rte_experimental
+void
 rte_qdma_attr_get(struct rte_qdma_attr *qdma_attr);
 
 /**
@@ -183,7 +183,7 @@ rte_qdma_attr_get(struct rte_qdma_attr *qdma_attr);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_reset(void);
 
 /**
@@ -193,7 +193,7 @@ rte_qdma_reset(void);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_configure(struct rte_qdma_config *qdma_config);
 
 /**
@@ -203,7 +203,7 @@ rte_qdma_configure(struct rte_qdma_config *qdma_config);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_start(void);
 
 /**
@@ -220,7 +220,7 @@ rte_qdma_start(void);
  *   - >= 0: Virtual queue ID.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_vq_create(uint32_t lcore_id, uint32_t flags);
 
 /*create vq for route-by-port*/
@@ -244,7 +244,7 @@ rte_qdma_vq_create_rbp(uint32_t lcore_id, uint32_t flags,
  *   - >=0: Number of jobs successfully submitted
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_vq_enqueue_multi(uint16_t vq_id,
 			  struct rte_qdma_job **job,
 			  uint16_t nb_jobs);
@@ -263,7 +263,7 @@ rte_qdma_vq_enqueue_multi(uint16_t vq_id,
  *   - >=0: Number of jobs successfully submitted
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_vq_enqueue(uint16_t vq_id,
 		    struct rte_qdma_job *job);
 
@@ -282,7 +282,7 @@ rte_qdma_vq_enqueue(uint16_t vq_id,
  *   - >=0: Number of jobs successfully received
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_vq_dequeue_multi(uint16_t vq_id,
 			  struct rte_qdma_job **job,
 			  uint16_t nb_jobs);
@@ -307,7 +307,7 @@ rte_qdma_vq_dequeue(uint16_t vq_id);
  * @param vq_stats
  *   VQ statistics structure which will be filled in by the driver.
  */
-void __rte_experimental
+void
 rte_qdma_vq_stats(uint16_t vq_id,
 		  struct rte_qdma_vq_stats *vq_stats);
 
@@ -323,7 +323,7 @@ rte_qdma_vq_stats(uint16_t vq_id,
  *   - 0: Success.
  *   - <0: Error code.
  */
-int __rte_experimental
+int
 rte_qdma_vq_destroy(uint16_t vq_id);
 
 /**
@@ -339,18 +339,18 @@ rte_qdma_vq_destroy(uint16_t vq_id);
  *   - <0: Error code.
  */
 
-int __rte_experimental
+int
 rte_qdma_vq_destroy_rbp(uint16_t vq_id);
 /**
  * Stop QDMA device.
  */
-void __rte_experimental
+void
 rte_qdma_stop(void);
 
 /**
  * Destroy the QDMA device.
  */
-void __rte_experimental
+void
 rte_qdma_destroy(void);
 
 #endif /* __RTE_PMD_DPAA2_QDMA_H__*/
