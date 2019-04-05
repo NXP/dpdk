@@ -135,10 +135,13 @@ static int
 scan_one_fslmc_device(char *dev_name)
 {
 	char *dup_dev_name, *t_ptr;
-	struct rte_dpaa2_device *dev;
+	struct rte_dpaa2_device *dev = NULL;
+	enum rte_dpaa2_dev_type dev_type;
+	uint16_t object_id;
+	int ret = -1;
 
 	if (!dev_name)
-		return -1;
+		return ret;
 
 	/* Ignore the Container name itself */
 	if (!strncmp("dprc", dev_name, 4))
@@ -150,6 +153,46 @@ scan_one_fslmc_device(char *dev_name)
 		DPAA2_BUS_ERR("Unable to allocate device name memory");
 		return -ENOMEM;
 	}
+
+	/* Parse the device name and ID */
+	t_ptr = strtok(dup_dev_name, ".");
+	if (!t_ptr) {
+		DPAA2_BUS_ERR("Incorrect device name observed");
+		goto cleanup;
+	}
+	if (!strncmp("dpni", t_ptr, 4))
+		dev_type = DPAA2_ETH;
+	else if (!strncmp("dpseci", t_ptr, 6))
+		dev_type = DPAA2_CRYPTO;
+	else if (!strncmp("dpcon", t_ptr, 5))
+		dev_type = DPAA2_CON;
+	else if (!strncmp("dpbp", t_ptr, 4))
+		dev_type = DPAA2_BPOOL;
+	else if (!strncmp("dpio", t_ptr, 4))
+		dev_type = DPAA2_IO;
+	else if (!strncmp("dpci", t_ptr, 4))
+		dev_type = DPAA2_CI;
+	else if (!strncmp("dpmcp", t_ptr, 5))
+		dev_type = DPAA2_MPORTAL;
+	else if (!strncmp("dpdmai", t_ptr, 6))
+		dev_type = DPAA2_QDMA;
+	else if (!strncmp("dpdmux", t_ptr, 6))
+		dev_type = DPAA2_MUX;
+	else {
+		dev_type = DPAA2_UNKNOWN;
+		DPAA2_BUS_DEBUG("Unknown device (%s) observed.", t_ptr);
+		ret = 0;
+		goto cleanup;
+	}
+
+	/* Extract the object ID from device name */
+	t_ptr = strtok(NULL, ".");
+	if (!t_ptr) {
+		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
+		goto cleanup;
+	}
+
+	sscanf(t_ptr, "%hu", &object_id);
 
 	/* For all other devices, we allocate rte_dpaa2_device.
 	 * For those devices where there is no driver, probe would release
@@ -164,50 +207,18 @@ scan_one_fslmc_device(char *dev_name)
 	}
 
 	dev->device.bus = &rte_fslmc_bus.bus;
+	dev->object_id = object_id;
+	dev->dev_type = dev_type;
 
-	/* Parse the device name and ID */
-	t_ptr = strtok(dup_dev_name, ".");
-	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device name observed");
-		goto cleanup;
-	}
-	if (!strncmp("dpni", t_ptr, 4))
-		dev->dev_type = DPAA2_ETH;
-	else if (!strncmp("dpseci", t_ptr, 6))
-		dev->dev_type = DPAA2_CRYPTO;
-	else if (!strncmp("dpcon", t_ptr, 5))
-		dev->dev_type = DPAA2_CON;
-	else if (!strncmp("dpbp", t_ptr, 4))
-		dev->dev_type = DPAA2_BPOOL;
-	else if (!strncmp("dpio", t_ptr, 4))
-		dev->dev_type = DPAA2_IO;
-	else if (!strncmp("dpci", t_ptr, 4))
-		dev->dev_type = DPAA2_CI;
-	else if (!strncmp("dpmcp", t_ptr, 5))
-		dev->dev_type = DPAA2_MPORTAL;
-	else if (!strncmp("dpdmai", t_ptr, 6))
-		dev->dev_type = DPAA2_QDMA;
-	else if (!strncmp("dpdmux", t_ptr, 6))
-		dev->dev_type = DPAA2_MUX;
-	else
-		dev->dev_type = DPAA2_UNKNOWN;
-
-	/* Update the device found into the device_count table */
-	rte_fslmc_bus.device_count[dev->dev_type]++;
-
-	t_ptr = strtok(NULL, ".");
-	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
-		goto cleanup;
-	}
-
-	sscanf(t_ptr, "%hu", &dev->object_id);
 	dev->device.name = strdup(dev_name);
 	if (!dev->device.name) {
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
 		goto cleanup;
 	}
 	dev->device.devargs = fslmc_devargs_lookup(dev);
+
+	/* Update the device found into the device_count table */
+	rte_fslmc_bus.device_count[dev->dev_type]++;
 
 	/* Add device in the fslmc device list */
 	insert_in_device_list(dev);
@@ -217,12 +228,15 @@ scan_one_fslmc_device(char *dev_name)
 		free(dup_dev_name);
 
 	return 0;
+
 cleanup:
-	if (dup_dev_name)
-		free(dup_dev_name);
 	if (dev)
 		free(dev);
-	return -1;
+
+	if (dup_dev_name)
+		free(dup_dev_name);
+
+	return ret;
 }
 
 static int
