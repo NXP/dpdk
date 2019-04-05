@@ -49,7 +49,7 @@
 static struct fslmc_vfio_group vfio_group;
 static struct fslmc_vfio_container vfio_container;
 static int container_device_fd;
-static char *g_container;
+static char *fslmc_container;
 static uint32_t *msi_intr_vaddr;
 void *(*rte_mcp_ptr_list);
 
@@ -71,7 +71,7 @@ fslmc_get_container_group(int *groupid)
 	int ret;
 	char *container;
 
-	if (!g_container) {
+	if (!fslmc_container) {
 		container = getenv("DPRC");
 		if (container == NULL) {
 			DPAA2_BUS_DEBUG("DPAA2: DPRC not available");
@@ -83,8 +83,8 @@ fslmc_get_container_group(int *groupid)
 			return -1;
 		}
 
-		g_container = strdup(container);
-		if (!g_container) {
+		fslmc_container = strdup(container);
+		if (!fslmc_container) {
 			DPAA2_BUS_ERR("Mem alloc failure; Container name");
 			return -ENOMEM;
 		}
@@ -92,14 +92,14 @@ fslmc_get_container_group(int *groupid)
 
 	/* get group number */
 	ret = rte_vfio_get_group_num(SYSFS_FSL_MC_DEVICES,
-				     g_container, groupid);
+				     fslmc_container, groupid);
 	if (ret <= 0) {
-		DPAA2_BUS_ERR("Unable to find %s IOMMU group", g_container);
+		DPAA2_BUS_ERR("Unable to find %s IOMMU group", fslmc_container);
 		return -1;
 	}
 
 	DPAA2_BUS_DEBUG("Container: %s has VFIO iommu group id = %d",
-			g_container, *groupid);
+			fslmc_container, *groupid);
 
 	return 0;
 }
@@ -821,10 +821,10 @@ fslmc_vfio_setup_group(void)
 	}
 
 	/* Get Device information */
-	ret = ioctl(vfio_group.fd, VFIO_GROUP_GET_DEVICE_FD, g_container);
+	ret = ioctl(vfio_group.fd, VFIO_GROUP_GET_DEVICE_FD, fslmc_container);
 	if (ret < 0) {
 		DPAA2_BUS_ERR("Error getting device %s fd from group %d",
-			      g_container, vfio_group.groupid);
+			      fslmc_container, vfio_group.groupid);
 		close(vfio_group.fd);
 		rte_vfio_clear_group(vfio_group.fd);
 		return ret;
