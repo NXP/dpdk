@@ -1,5 +1,6 @@
 /*
  * Copyright 2008-2013 Freescale Semiconductor, Inc.
+ * Copyright 2019 NXP
  *
  * SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  */
@@ -188,7 +189,6 @@ enum pdcp_plane {
  * @PDCP_SN_SIZE_7: 7bit sequence number
  * @PDCP_SN_SIZE_12: 12bit sequence number
  * @PDCP_SN_SIZE_15: 15bit sequence number
- * @PDCP_SN_SIZE_18: 18bit sequence number
  */
 enum pdcp_sn_size {
 	PDCP_SN_SIZE_5 = 5,
