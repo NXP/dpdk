@@ -421,7 +421,7 @@ See :doc:`../platform/dpaa2` for setup information
 
 Currently supported by DPDK:
 
-- NXP SDK **18.11+**.
+- NXP SDK **19.03+**.
 - MC Firmware version **10.14.0** and higher.
 - Supported architectures:  **arm64 LE**.
 
