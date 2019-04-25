@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
+# Copyright 2019-2021 NXP
 
 link_whole_libs = []
 if get_option('default_library') == 'static'
@@ -46,6 +47,8 @@ all_examples = [
 	'vhost_blk', 'vm_power_manager',
 	'vm_power_manager/guest_cli',
 	'vmdq', 'vmdq_dcb',
+	'cmdif',
+
 ]
 
 if get_option('examples') == ''
