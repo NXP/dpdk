@@ -159,7 +159,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
   DPDK libraries, which are required for compiling DPDK examples and
   applications:
 
-  1. Optional: export KERNEL_PATH=<path to prebuild Linux Kernel>
+  1. Optional: export RTE_KERNELDIR=<path to prebuild Linux Kernel>
 
   NOTE: As mentioned above, prebuild Linux Kernel is optional. Dependency
 	for this can be disabled by adding following configuration to
@@ -931,8 +931,8 @@ DPAA2:
 10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
 ================================================================================
 
-Minimum NXP LSDK version supported: LSDK 1812 (https://lsdk.github.io/)
-DPDK base version used: Release 18.11
+Minimum NXP LSDK version supported: LSDK 1903 (https://lsdk.github.io/)
+DPDK base version used: Release 18.11.1
 More info on DPDK :  www.dpdk.org
 
 NXP contact: hemant.agrawal@nxp.com, dpdk-team@nxp1.onmicrosoft.com
