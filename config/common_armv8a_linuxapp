@@ -15,7 +15,7 @@ CONFIG_RTE_FORCE_INTRINSICS=y
 # Maximum available cache line size in arm64 implementations.
 # Setting to maximum available cache line size in generic config
 # to address minimum DMA alignment across all arm64 implementations.
-CONFIG_RTE_CACHE_LINE_SIZE=128
+CONFIG_RTE_CACHE_LINE_SIZE=64
 
 CONFIG_RTE_USE_C11_MEM_MODEL=y
 
