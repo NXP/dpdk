@@ -264,6 +264,8 @@ DPDK_18.11 {
 	rte_eal_get_runtime_dir;
 	rte_eal_hotplug_add;
 	rte_eal_hotplug_remove;
+	rte_mem_virt2memseg;
+	rte_mem_virt2memseg_list;
 	rte_strscpy;
 
 } DPDK_18.08;
@@ -336,8 +338,6 @@ EXPERIMENTAL {
 	rte_mem_event_callback_unregister;
 	rte_mem_iova2virt;
 	rte_mem_set_dma_mask;
-	rte_mem_virt2memseg;
-	rte_mem_virt2memseg_list;
 	rte_memseg_contig_walk;
 	rte_memseg_contig_walk_thread_unsafe;
 	rte_memseg_get_fd;
