@@ -237,7 +237,7 @@ virt2memseg_list(const void *addr)
 	return msl;
 }
 
-__rte_experimental struct rte_memseg_list *
+struct rte_memseg_list *
 rte_mem_virt2memseg_list(const void *addr)
 {
 	return virt2memseg_list(addr);
@@ -293,7 +293,7 @@ rte_mem_iova2virt(rte_iova_t iova)
 	return vi.virt;
 }
 
-__rte_experimental struct rte_memseg *
+struct rte_memseg *
 rte_mem_virt2memseg(const void *addr, const struct rte_memseg_list *msl)
 {
 	return virt2memseg(addr, msl != NULL ? msl :
