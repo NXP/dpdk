@@ -49,9 +49,9 @@ WERROR_FLAGS += -Wcast-align -Wnested-externs -Wcast-qual
 WERROR_FLAGS += -Wformat-nonliteral -Wformat-security
 WERROR_FLAGS += -Wundef -Wwrite-strings -Wdeprecated
 
-ifeq ($(RTE_DEVEL_BUILD),y)
-WERROR_FLAGS += -Werror
-endif
+#ifeq ($(RTE_DEVEL_BUILD),y)
+#WERROR_FLAGS += -Werror
+#endif
 
 # There are many issues reported for strict alignment architectures
 # which are not necessarily fatal. Report as warnings.
