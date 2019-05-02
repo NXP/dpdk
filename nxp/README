@@ -38,7 +38,7 @@ Following information can be used to obtain these components:
     Use following command to get the DPDK code
 
     - Internal git repository:
-      $ git clone ssh://git@sw-stash.freescale.net/gitam/dpdk.git -b 18.11-qoriq
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 18.11-qoriq
       OR,
      - External Github Repository:
       $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/18.11-qoriq
@@ -676,12 +676,15 @@ compilation.
     Step 2: While compiling DPDK, pass EXTRA_CFLAGS="-I/path/to/headers" and
             EXTRA_LDFLAGS="-L/path/to/compiled/libraries". Similar to:
 
-    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I./path/libpcap/include" EXTRA_LDFLAGS="-L./path/libpca/lib"
+    make T=arm64-dpaa2-linuxapp-gcc install EXTRA_CFLAGS="-I/path/libpcap/include" EXTRA_LDFLAGS="-L/path/libpca/lib" CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n -j 4
 
     'dpdk-pdump'` would be available in the <T>/app folder along with 'testpmd'
     and other inbuilt DPDK apps.
 
 Executing 'dpdk-pdump':
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
 
     Note: As of now only testpmd application supports dpdk-pdump;
 
@@ -720,6 +723,10 @@ Executing `dpdk-procinfo`:
     Note: This can work with any other DPDK application (sample application
     like l3fwd) unlike the restriction for 'dpdk-pdump'.
 
+    Pre-condition: disable ASLR:
+
+    $ echo 0 > /proc/sys/kernel/randomize_va_space
+
     Step 1: Execute any DPDK application using routine commands. For example,
     testpmd
 
@@ -733,8 +740,13 @@ Executing `dpdk-procinfo`:
     application. There are other switches also available like '-s' which can
     dump the statistics.
 
-    functionality to be used, like stats and xstats.
+=========================
+VM VFIO Direct Assignment
+=========================
 
+Refer to nxp/dpaa2/README_VM_VFIO_DIRECT for further information.
+
+=================================================
 Achieving best performance from DPDK Applications
 =================================================
 
@@ -781,6 +793,10 @@ of NXP LSDK documentation.
    For DPAA2, following Linux bootargs parameter should be used:
 
    `default_hugepagesz=1024m hugepagesz=1024m hugepages=8`
+
+   One can also modify the hugepages on linux command line. e.g.
+
+    $echo 400 > /proc/sys/vm/nr_hugepages
 
 ================================================================================
 
