@@ -5,6 +5,7 @@ if host_machine.system() != 'linux'
 	build = false
 endif
 deps += ['pmd_dpaa']
-sources = files('dpaa_eventdev.c')
+sources = files('dpaa_eventdev.c', 'rte_pmd_dpaa_event.c')
 
+install_headers('rte_pmd_dpaa_event.h')
 allow_experimental_apis = true

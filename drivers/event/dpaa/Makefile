@@ -33,12 +33,16 @@ LIBABIVER := 1
 
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV) += dpaa_eventdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV) += rte_pmd_dpaa_event.c
 
 LDLIBS += -lrte_bus_dpaa
 LDLIBS += -lrte_mempool_dpaa
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring
-LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs
+LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs -lrte_cryptodev
 LDLIBS += -lrte_eventdev -lrte_pmd_dpaa -lrte_bus_vdev
 LDLIBS += -lrte_common_dpaax
+
+# install this header file
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV)-include := rte_pmd_dpaa_event.h
 
 include $(RTE_SDK)/mk/rte.lib.mk

@@ -76,4 +76,26 @@ struct dpaa_eventdev {
 	uint32_t nb_event_port_enqueue_depth;
 	uint32_t event_dev_cfg;
 };
+
+static inline void
+dpaa_eventq_portal_add(u16 ch_id)
+{
+	uint32_t sdqcr;
+
+	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(ch_id);
+	qman_static_dequeue_add(sdqcr, NULL);
+}
+
+static inline void
+drain_4_bytes(int fd, fd_set *fdset)
+{
+	if (FD_ISSET(fd, fdset)) {
+		/* drain 4 bytes */
+		uint32_t junk;
+		ssize_t sjunk = read(qman_thread_fd(), &junk, sizeof(junk));
+		if (sjunk != sizeof(junk))
+			DPAA_EVENTDEV_ERR("UIO irq read error");
+	}
+}
+
 #endif /* __DPAA_EVENTDEV_H__ */

@@ -2,3 +2,14 @@ DPDK_18.02 {
 
 	local: *;
 };
+
+DPDK_18.11 {
+	global:
+
+	rte_dpaa_event_clear_irq;
+	rte_dpaa_event_crypto_qp_update;
+	rte_dpaa_event_eth_rx_queue_update;
+	rte_dpaa_event_get_epoll_fd;
+	rte_dpaa_event_process_packets;
+
+} DPDK_18.02;

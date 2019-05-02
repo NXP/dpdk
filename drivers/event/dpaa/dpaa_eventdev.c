@@ -76,15 +76,6 @@ dpaa_event_dequeue_timeout_ticks_intr(struct rte_eventdev *dev, uint64_t ns,
 	return 0;
 }
 
-static void
-dpaa_eventq_portal_add(u16 ch_id)
-{
-	uint32_t sdqcr;
-
-	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(ch_id);
-	qman_static_dequeue_add(sdqcr, NULL);
-}
-
 static uint16_t
 dpaa_event_enqueue_burst(void *port, const struct rte_event ev[],
 			 uint16_t nb_events)
@@ -115,17 +106,6 @@ static uint16_t
 dpaa_event_enqueue(void *port, const struct rte_event *ev)
 {
 	return dpaa_event_enqueue_burst(port, ev, 1);
-}
-
-static void drain_4_bytes(int fd, fd_set *fdset)
-{
-	if (FD_ISSET(fd, fdset)) {
-		/* drain 4 bytes */
-		uint32_t junk;
-		ssize_t sjunk = read(qman_thread_fd(), &junk, sizeof(junk));
-		if (sjunk != sizeof(junk))
-			DPAA_EVENTDEV_ERR("UIO irq read error");
-	}
 }
 
 static inline int
