@@ -1288,9 +1288,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		td_threshold = atoi(getenv("DPAA_TAILDROP_THRESHOLD"));
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_threshold);
-		/* TODO Check for an invalid value? like a very large one
-		* because of -1?
-		*/
+		/* if a very large value is being configured */
+		if (td_threshold > UINT16_MAX)
+			td_threshold = CGR_RX_PERFQ_THRESH;
 	}
 
 	/* If congestion control is enabled globally*/
