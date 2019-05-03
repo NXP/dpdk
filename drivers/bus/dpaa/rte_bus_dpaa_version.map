@@ -119,6 +119,12 @@ DPDK_18.11 {
 
 DPDK_19.05 {
 	global:
+
+	of_get_next_child;
+	of_get_mac_address;
+	of_translate_address;
+	of_get_address;
+	of_init_path;
 	qman_set_fq_lookup_table;
 
 	local: *;
