@@ -15,8 +15,8 @@
 #include <rte_malloc.h>
 #include <rte_ring.h>
 #include <rte_mempool.h>
-
 #include <rte_prefetch.h>
+#include <rte_kvargs.h>
 
 #include <mc/fsl_dpdmai.h>
 #include <portal/dpaa2_hw_pvt.h>
@@ -25,6 +25,8 @@
 #include "rte_pmd_dpaa2_qdma.h"
 #include "dpaa2_qdma.h"
 #include "dpaa2_qdma_logs.h"
+
+#define DPAA2_QDMA_NO_PREFETCH "no_prefetch"
 
 /* Dynamic log type identifier */
 int dpaa2_qdma_logtype;
@@ -1250,6 +1252,43 @@ dpaa2_dpdmai_dev_uninit(struct rte_rawdev *rawdev)
 }
 
 static int
+check_devargs_handler(__rte_unused const char *key, const char *value,
+		      __rte_unused void *opaque)
+{
+	if (strcmp(value, "1"))
+		return -1;
+
+	return 0;
+}
+
+static int
+dpaa2_get_devargs(struct rte_devargs *devargs, const char *key)
+{
+	struct rte_kvargs *kvlist;
+
+	if (!devargs)
+		return 0;
+
+	kvlist = rte_kvargs_parse(devargs->args, NULL);
+	if (!kvlist)
+		return 0;
+
+	if (!rte_kvargs_count(kvlist, key)) {
+		rte_kvargs_free(kvlist);
+		return 0;
+	}
+
+	if (rte_kvargs_process(kvlist, key,
+			       check_devargs_handler, NULL) < 0) {
+		rte_kvargs_free(kvlist);
+		return 0;
+	}
+	rte_kvargs_free(kvlist);
+
+	return 1;
+}
+
+static int
 dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
@@ -1351,10 +1390,11 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 		goto init_err;
 	}
 
-	/* If no prefetch is configured. */
-	if (getenv("DPAA2_NO_QDMA_PREFETCH_RX")) {
+	if (dpaa2_get_devargs(rawdev->device->devargs, DPAA2_QDMA_NO_PREFETCH)
+			|| (getenv("DPAA2_NO_QDMA_PREFETCH_RX"))) {
+		/* If no prefetch is configured. */
 		dpdmai_dev_dequeue_multijob =
-			dpdmai_dev_dequeue_multijob_no_prefetch;
+				dpdmai_dev_dequeue_multijob_no_prefetch;
 		DPAA2_QDMA_INFO("No Prefetch RX Mode enabled");
 	} else {
 		dpdmai_dev_dequeue_multijob =
@@ -1440,6 +1480,8 @@ static struct rte_dpaa2_driver rte_dpaa2_qdma_pmd = {
 };
 
 RTE_PMD_REGISTER_DPAA2(dpaa2_qdma, rte_dpaa2_qdma_pmd);
+RTE_PMD_REGISTER_PARAM_STRING(dpaa2_qdma,
+	"no_prefetch=<int> ");
 
 RTE_INIT(dpaa2_qdma_init_log)
 {

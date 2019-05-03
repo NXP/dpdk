@@ -23,6 +23,7 @@ LDLIBS += -lrte_mempool_dpaa2
 LDLIBS += -lrte_rawdev
 LDLIBS += -lrte_ring
 LDLIBS += -lrte_common_dpaax
+LDLIBS += -lrte_kvargs
 
 EXPORT_MAP := rte_pmd_dpaa2_qdma_version.map
 
