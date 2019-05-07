@@ -15,6 +15,7 @@
  */
 
 #include <geul_ipc_api.h>
+#include <gul_host_if.h>
 
 #define GEUL_IPC_RAWDEV_NAME_PREFIX "geul_ipc_dev"
 
@@ -40,6 +41,8 @@ typedef struct geulipc_channel {
 	uint32_t channel_id;	/**< Channel ID */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
+	struct gul_ipc_stats *modem_stats; /**< Stats for modem (HIF) */
+	struct gul_ipc_stats host_stats; /**< Stats for host */
 } geulipc_channel_t;
 
 /* Configuration structure for Geul Device */
