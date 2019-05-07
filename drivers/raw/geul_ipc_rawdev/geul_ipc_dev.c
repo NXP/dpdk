@@ -23,13 +23,11 @@
 #include <rte_lcore.h>
 #include <rte_bus_vdev.h>
 #include <rte_mempool.h>
-
 #include <rte_rawdev.h>
 #include <rte_rawdev_pmd.h>
 
 #include <geul_ipc_dev.h>
-
-#include "rte_pmd_geul_ipc_rawdev.h"
+#include <rte_pmd_geul_ipc_rawdev.h>
 
 /* Dynamic log type identifier */
 int geulipc_pmd_logtype;

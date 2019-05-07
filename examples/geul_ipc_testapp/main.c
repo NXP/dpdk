@@ -146,6 +146,68 @@ get_hugepage_info(struct rte_mempool *mp)
 }
 
 static void
+fill_stats(struct gul_ipc_stats *stats,
+	   uint32_t rcvd,
+	   uint32_t sent,
+	   uint32_t size,
+	   int err)
+{
+	if (!stats) {
+		ipc_debug("Invalid stats call\n");
+		return;
+	}
+
+	switch(err) {
+		case IPC_SUCCESS:
+			/* Increment stats */
+			stats->num_of_msg_recved += rcvd;
+			stats->num_of_msg_sent += sent;
+			stats->total_msg_length += size;
+			break;
+		case IPC_INPUT_INVALID:
+			stats->err_input_invalid++;
+			break;
+		case IPC_CH_INVALID:
+			stats->err_channel_invalid++;
+			break;
+		case IPC_INSTANCE_INVALID:
+			stats->err_instance_invalid++;
+			break;
+		case IPC_MEM_INVALID:
+			stats->err_mem_invalid++;
+			break;
+		case IPC_CH_FULL:
+			stats->err_channel_full++;
+			break;
+		case IPC_CH_EMPTY:
+			stats->err_channel_empty++;
+			break;
+		case IPC_BL_EMPTY:
+			stats->err_buf_list_full++;
+			break;
+		case IPC_BL_FULL:
+			stats->err_buf_list_empty++;
+			break;
+		case IPC_HOST_BUF_ALLOC_FAIL:
+		case IPC_MD_SZ_MISS_MATCH:
+		case IPC_MALLOC_FAIL:
+		case IPC_IOCTL_FAIL:
+		case IPC_MMAP_FAIL:
+		case IPC_NOT_IMPLEMENTED:
+			/* Stats doesn't have space for this */
+			break;
+		default:
+			break;
+	}
+
+	/* Update the global error count in case of any error */
+	if (err)
+		stats->error_count++;
+
+	return;
+}
+
+static void
 fill_buffer(void *buffer, size_t len)
 {
 	uint32_t i, count;
@@ -175,20 +237,20 @@ validate_buffer(void *buffer, size_t len)
 	int *val = NULL;
 
 	/* XXX Endianness is to be taken care of ? */
-
 	val = (int *)buffer;
 	count = len/sizeof(int);
 	/* XXX Whatif len is not word aligned */
-#ifdef GOLIVE
 	for (i = 0; i < count; i++)
 		if (*val != POISON) {
 			ret = 1; /* Failed */
 			break;
 		} else
 			val++;
-#endif
 
-//	ipc_debug("\n>>>>>>>>>\n%s\n",(char *)buffer);
+	ipc_debug("Validate buffer: %d\n", ret);
+#ifndef GOLIVE
+	ret = 0;
+#endif
 	return ret;
 }
 
@@ -282,7 +344,17 @@ static int
 initialize_channels(ipc_t instance __rte_unused)
 {
 	int i, ret = 0;
+	struct gul_hif *hif_start = NULL;
 	geulipc_channel_t *ch = NULL;
+	ipc_userspace_t *ipcu;
+
+	if (!instance) {
+		printf("Invalid instance handle\n");
+		return -1;
+	}
+
+	ipcu = (ipc_userspace_t *)instance;
+	hif_start = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
 
 	memset(channels, 0, sizeof(struct geulipc_channel *) * CHANNELS_MAX);
 	for (i = 0; i < CHANNELS_MAX; i++) {
@@ -292,11 +364,17 @@ initialize_channels(ipc_t instance __rte_unused)
 			goto cleanup;
 		}
 		ch = channels[i];
+		/* Point to the HIF stats */
+		ch->modem_stats = &hif_start->stats.gul_ipc_ch[i];
+		memset(&ch->host_stats, 0, sizeof(struct gul_ipc_stats));
+
+		ipc_debug("Attempting initilaztion (%d)\n", i);
 
 		switch(i) {
 #define MSG_CHANNEL_DEPTH 4
 		case L2_TO_L1_MSG_CH_1:
 			/* 2K Channel */
+			strcpy(ch->name, "L2_TO_L1_MSG_CH_1");
 			ch->depth = MSG_CHANNEL_DEPTH;
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_2K];
@@ -305,6 +383,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			continue;
 		case L2_TO_L1_MSG_CH_2:
 			/* 2K Channel */
+			strcpy(ch->name, "L2_TO_L1_MSG_CH_2");
 			ch->depth = MSG_CHANNEL_DEPTH;
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_2K];
@@ -313,6 +392,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			continue;
 		case L2_TO_L1_MSG_CH_3:
 			/* 16K Channel */
+			strcpy(ch->name, "L2_TO_L1_MSG_CH_3");
 			ch->depth = MSG_CHANNEL_DEPTH;
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_16K];
@@ -321,6 +401,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			continue;
 		case L1_TO_L2_MSG_CH_4:
 			/* 2K Channel */
+			strcpy(ch->name, "L1_TO_L2_MSG_CH_4");
 			ch->depth = MSG_CHANNEL_DEPTH;
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_2K];
@@ -328,6 +409,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			break;
 		case L1_TO_L2_MSG_CH_5:
 			/* 2K Channel */
+			strcpy(ch->name, "L1_TO_L2_MSG_CH_5");
 			ch->depth = MSG_CHANNEL_DEPTH;
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_2K];
@@ -340,6 +422,7 @@ initialize_channels(ipc_t instance __rte_unused)
 		case L1_TO_L2_PRT_CH_1:
 #define PTR_CHANNEL_DEPTH 4
 			/* 128K Channel */
+			strcpy(ch->name, "L1_TO_L2_PRT_CH_1");
 			ch->depth = PTR_CHANNEL_DEPTH;
 			ch->type = IPC_CH_PTR;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_128K];
@@ -347,6 +430,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			break;
 		case L1_TO_L2_PRT_CH_2:
 			/* 128K Channel */
+			strcpy(ch->name, "L1_TO_L2_PRT_CH_2");
 			ch->depth = PTR_CHANNEL_DEPTH;
 			ch->type = IPC_CH_PTR;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_128K];
@@ -361,6 +445,7 @@ initialize_channels(ipc_t instance __rte_unused)
 			goto cleanup;
 		}
 
+		ipc_debug("Calling configure channel for (%d)\n", ch->channel_id);
 		/* Call ipc_configure_channel */
 		ret = ipc_configure_channel(ch->channel_id, ch->depth,
 					    ch->type, ch->mp->elt_size,
@@ -568,13 +653,15 @@ _send(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 
 	fill_buffer(buffer, mp->elt_size);
 
+	ipc_debug("Looping on Sender...\n");
 repeat:
 	ret = ipc_send_msg(channel_id, buffer, mp->elt_size, instance);
 	/* XXX clarify what is IPC_BL_* */
 	if (ret == IPC_CH_FULL && !force_quit) {
 		/* Loop - right now infinitely */
-		if ((jj++ % 30 )== 0) {
+		if ((++jj % 10000 ) == 0) {
 			ipc_debug("#");
+			jj = 0;
 		}
 		//ipc_debug("send_msg returned = %d, repeating\n", ret);
 		goto repeat;
@@ -599,11 +686,13 @@ _recv(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 		return -1;
 	}
 #endif
+	ipc_debug("looping in ipc_recv_msg...\n");
 repeat:
 	ret = ipc_recv_msg(channel_id, buffer, &len, instance);
 	if (ret == IPC_CH_EMPTY && !force_quit) {
-		if ((jj++ % 30 )== 0) {
+		if ((++jj % 10000) == 0) {
 			ipc_debug(".");
+			jj = 0;
 		}
 		goto repeat;
 	} else if (ret) {
@@ -622,9 +711,6 @@ repeat:
 	} else
 		printf("AK->> Invalid length of received buffer."
 		       " recvd:%u, expected:%u\n", len, mp->elt_size);
-	ipc_debug("\n>>>>>>>>>\n%s\n",buffer);
-	ipc_debug("\n %s %d>>>>>>>>>\n%s\n",__func__, __LINE__, (char *)buffer);
-
 out:
 	rte_mempool_put(mp, buffer);
 	return ret;
@@ -634,11 +720,11 @@ static int
 _recv_ptr(struct rte_mempool *mp __rte_unused, uint32_t channel_id,
 	  ipc_t instance)
 {
-	int ret, err;
+	int ret, err, jj = 0;
 	//void *buffer2;
 	ipc_sh_buf_t buffer;
 	uint64_t validate_buf = 0;
-#if GOLIVE
+#ifdef GOLIVE
 	ret = rte_mempool_get(mp, &buffer2);
 	if (ret) {
 		printf("Unable to get pool\n");
@@ -647,16 +733,15 @@ _recv_ptr(struct rte_mempool *mp __rte_unused, uint32_t channel_id,
 #endif
 repeat:
 	err = ipc_recv_ptr(channel_id, (void *)&buffer, instance);
-	validate_buf = buffer.host_virt_h;
-	validate_buf = JOIN_VA32_64_APP(validate_buf, buffer.host_virt_l);
-	ipc_debug("\n\n\n<<<<<<<<<%d %s h=%x l=%x off=%x\n",
-		  __LINE__, __func__, buffer.host_virt_h, buffer.host_virt_l, buffer.mod_phys);
-	ipc_debug("\n\n\n>>>>>>>>>%d %s %lx %s\n",
-		  __LINE__, __func__, validate_buf, (char *)validate_buf);
 	if (err == IPC_CH_EMPTY && !force_quit) {
-		ipc_debug("recv_ptr returned = %d, retrying\n", err);
+		if ((++jj % 10000) == 0) {
+			ipc_debug("*");
+			jj = 0;
+		}
 		goto repeat;
 	} else {
+		validate_buf = buffer.host_virt_h;
+		validate_buf = JOIN_VA32_64_APP(validate_buf, buffer.host_virt_l);
 		if (!validate_buf || err) {
 			printf("Invalid response from recv_ptr. (%d)\n", err);
 			goto out;
@@ -665,8 +750,6 @@ repeat:
 		/* Buffer is valid, and no error */
 		ret = validate_buffer((void *)validate_buf,
 				      buffer.data_size);
-		ipc_debug("\n\n\n>>>>>>>>>%d %s %s\n",
-			  __LINE__, __func__, (char *)validate_buf);
 		ipc_put_buf(channel_id, &buffer, instance);
 		if (ret) {
 			printf("Invalid buffer in recv_ptr (ret=%d)\n", ret);
@@ -678,7 +761,7 @@ repeat:
 
 	err = 0;
 out:
-#if GOLIVE
+#ifdef GOLIVE
 	if (ret == 0 && !force_quit)
 		ipc_put_buf(channel_id, &buffer, instance);
 #endif
@@ -712,24 +795,42 @@ non_rt_sender(void *arg)
 			    instance);
 		if (ret) {
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_1 (%d)\n", ret);
+			/* XXX For performance, writing stats for each run is
+			* bad but, if stats require error collection, it has
+			* to be done per send/recv call*/
+			fill_stats(&channels[L2_TO_L1_MSG_CH_1]->host_stats, 0, 0,
+				   channels[L2_TO_L1_MSG_CH_1]->mp->elt_size,
+				   ret);
 			return ret;
 		}
-#ifdef GOLIVE
+		fill_stats(&channels[L2_TO_L1_MSG_CH_1]->host_stats, 0, 1,
+			   channels[L2_TO_L1_MSG_CH_1]->mp->elt_size,
+			   ret);
+
 		/* For the L2_TO_L1_MSG_CH_2 */
 		ret = _send(channels[L2_TO_L1_MSG_CH_2]->mp,
 			    channels[L2_TO_L1_MSG_CH_2]->channel_id,
 			    instance);
 		if (ret) {
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_2 (%d)\n", ret);
+			fill_stats(&channels[L2_TO_L1_MSG_CH_2]->host_stats, 0, 0,
+				   channels[L2_TO_L1_MSG_CH_2]->mp->elt_size,
+				   ret);
 			return ret;
 		}
-#endif
+		fill_stats(&channels[L2_TO_L1_MSG_CH_2]->host_stats, 0, 1,
+			   channels[L2_TO_L1_MSG_CH_2]->mp->elt_size,
+			   ret);
+
 		if (force_quit)
 			break;
 	}
 
+	ipc_debug("Quiting NON RT Sender thread\n");
+
 	return ret;
 }
+
 static int
 rt_sender(void *arg)
 {
@@ -744,9 +845,7 @@ rt_sender(void *arg)
 		return -1;
 	}
 	instance  = (ipc_t)arg;
-#ifndef GOLIVE
-	return 0;
-#endif
+
 	ipc_debug("sender: Creating rt_sender (lcore_id=%u)\n",
 		  rte_lcore_id());
 
@@ -762,17 +861,26 @@ rt_sender(void *arg)
 	/* XXX Loop on cycle_times */
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L2_TO_L1_MSG_CH_3 */
-#ifdef GOLIVE
-	ret = _send(channels[L2_TO_L1_MSG_CH_3]->mp,
+
+		ret = _send(channels[L2_TO_L1_MSG_CH_3]->mp,
 			    channels[L2_TO_L1_MSG_CH_3]->channel_id,
 			    instance);
-		if (ret)
+		if (ret) {
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_3 (%d)\n", ret);
-#endif
+			fill_stats(&channels[L2_TO_L1_MSG_CH_3]->host_stats, 0, 0,
+				   channels[L2_TO_L1_MSG_CH_3]->mp->elt_size,
+				   ret);
+		}
+
+		fill_stats(&channels[L2_TO_L1_MSG_CH_3]->host_stats, 0, 1,
+			   channels[L2_TO_L1_MSG_CH_3]->mp->elt_size,
+			   ret);
 
 		if (force_quit)
 			break;
 	}
+
+	ipc_debug("Quiting RT Sender thread\n");
 
 	return ret;
 }
@@ -794,47 +902,111 @@ receiver(void *arg __rte_unused)
 	/* XXX Loop on cycle_times */
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L1_TO_L2_MSG_CH_4 */
-#ifdef GOLIVE
+
 		ret = _recv(channels[L1_TO_L2_MSG_CH_4]->mp,
 			    channels[L1_TO_L2_MSG_CH_4]->channel_id,
 			    instance);
 		if (ret) {
 			printf("Unable to recv msg on L1_TO_L2_MSG_CH_4 (%d)\n", ret);
+			fill_stats(&channels[L1_TO_L2_MSG_CH_4]->host_stats, 0, 0,
+				   channels[L1_TO_L2_MSG_CH_4]->mp->elt_size,
+				   ret);
 			return ret;
 		}
+		fill_stats(&channels[L1_TO_L2_MSG_CH_4]->host_stats, 1, 0,
+			   channels[L1_TO_L2_MSG_CH_4]->mp->elt_size,
+			   ret);
+
+#ifdef GOLIVE
 		/* For the L1_TO_L2_MSG_CH_5 */
 		ret = _recv(channels[L1_TO_L2_MSG_CH_5]->mp,
 			    channels[L1_TO_L2_MSG_CH_5]->channel_id,
 			    instance);
 		if (ret) {
 			printf("Unable to recv msg on L1_TO_L2_MSG_CH_5 (%d)\n", ret);
+			fill_stats(&channels[L1_TO_L2_MSG_CH_5]->host_stats, 0, 0,
+				   channels[L1_TO_L2_MSG_CH_5]->mp->elt_size,
+				   ret);
 			return ret;
 		}
-
+		fill_stats(&channels[L1_TO_L2_MSG_CH_5]->host_stats, 1, 0,
+			   channels[L1_TO_L2_MSG_CH_5]->mp->elt_size,
+			   ret);
 #endif
-#ifdef GOLIVE
 		/* For the L1_TO_L2_PRT_CH_1 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_1]->mp,
 				channels[L1_TO_L2_PRT_CH_1]->channel_id,
 				instance);
 		if (ret) {
 			printf("Unable to recv_ptr on L1_TO_L2_MSG_CH_5 (%d)\n", ret);
+			fill_stats(&channels[L1_TO_L2_PRT_CH_1]->host_stats, 0, 0,
+				   channels[L1_TO_L2_PRT_CH_1]->mp->elt_size,
+				   ret);
 			return ret;
 		}
+		fill_stats(&channels[L1_TO_L2_PRT_CH_1]->host_stats, 1, 0,
+			   channels[L1_TO_L2_PRT_CH_1]->mp->elt_size,
+			   ret);
+
+#ifdef GOLIVE
 		/* For the L1_TO_L2_PRT_CH_2 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_2]->mp,
 				channels[L1_TO_L2_PRT_CH_2]->channel_id,
 				instance);
 		if (ret) {
 			printf("Unable to recv msg on L1_TO_L2_PRT_CH_2 (%d)\n", ret);
+			fill_stats(&channels[L1_TO_L2_PRT_CH_2]->host_stats, 0, 0,
+				   channels[L1_TO_L2_PRT_CH_2]->mp->elt_size,
+				   ret);
 			return ret;
 		}
+		fill_stats(&channels[L1_TO_L2_PRT_CH_2]->host_stats, 1, 0,
+				channels[L1_TO_L2_PRT_CH_2]->mp->elt_size,
+				ret);
 #endif
 		if (force_quit)
 			break;
 	}
 
+	ipc_debug("Quiting receiver thread\n");
+
 	return ret;
+}
+
+static void
+_dump_stats_per_channel(struct gul_ipc_stats *stats)
+{
+	printf("recvd = %8u  sent = %8u\n",
+	       stats->num_of_msg_recved,
+	       stats->num_of_msg_sent);
+	printf("total message length = %u\n",
+	       stats->total_msg_length);
+	printf("error: %u\n", stats->error_count);
+	printf("\tinput_invalid: %u\n", stats->err_input_invalid);
+	printf("\tchannel_invalid: %u\n", stats->err_channel_invalid);
+	printf("\tinstance_invalid: %u\n", stats->err_instance_invalid);
+	printf("\tmem_invalid: %u\n", stats->err_mem_invalid);
+	printf("\tchannel_full: %u\n", stats->err_channel_full);
+	printf("\tchannel_empty: %u\n", stats->err_channel_empty);
+	printf("\tbuf_full: %u\n", stats->err_buf_list_full);
+	printf("\tbuf_empty: %u\n", stats->err_buf_list_empty);
+}
+
+static void
+dump_stats(void)
+{
+	int i;
+
+	for (i = 0; i < CHANNELS_MAX; i++) {
+		printf("---- For Channel %s --- \n", channels[i]->name);
+		printf("##### HOST Stats  ######\n");
+		_dump_stats_per_channel(&channels[i]->host_stats);
+		printf("\n");
+		printf("##### MODEM Stats ######\n");
+		_dump_stats_per_channel(channels[i]->modem_stats);
+		printf("-------------------------\n");
+	}
+	return;
 }
 
 static void
@@ -919,6 +1091,8 @@ main(int argc, char **argv)
 	rte_eal_remote_launch(receiver, instance_handle, RECV_CORE);
 
 	rte_eal_mp_wait_lcore();
+
+	dump_stats();
 
 	return 0;
 

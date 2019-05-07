@@ -15,6 +15,7 @@
  */
 
 #include <geul_ipc_api.h>
+#include <gul_host_if.h>
 
 #define GEUL_IPC_RAWDEV_NAME_PREFIX "geul_ipc_dev"
 
@@ -36,10 +37,14 @@ enum geulipc_channel_list {
 #define POISON 0x12345678 /* Fills all bytes of a word */
 
 typedef struct geulipc_channel {
+#define CHANNEL_NAME_LEN 32
+	char name[CHANNEL_NAME_LEN];
 	uint16_t depth;	/**< Depth of the channel, for PTR channel case */
 	uint32_t channel_id;	/**< Channel ID */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
+	struct gul_ipc_stats *modem_stats; /**< Stats for modem (HIF) */
+	struct gul_ipc_stats host_stats; /**< Stats for host */
 } geulipc_channel_t;
 
 /* Configuration structure for Geul Device */
