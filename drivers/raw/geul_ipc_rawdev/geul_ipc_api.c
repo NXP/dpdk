@@ -25,9 +25,10 @@
 #include <geul_ipc_um.h>
 #include <geul_ipc.h>
 #include <gul_host_if.h>
-
+#define PR(...) printf(__VA_ARGS__)
 mem_range_t chvpaddr_arr[IPC_MAX_INSTANCE_COUNT][IPC_MAX_CHANNEL_COUNT];
 #define TBD 0
+#define DONOT_CHECK 0
 #define UNUSED(x) (void)x;
 
 #define MHIF_VADDR(A) \
@@ -49,14 +50,29 @@ mem_range_t chvpaddr_arr[IPC_MAX_INSTANCE_COUNT][IPC_MAX_CHANNEL_COUNT];
 	 		+ ipc_priv->hugepg_start.host_phys \
 			- (unsigned long )(ipc_priv->hugepg_start.host_vaddr)))
 #define MODEM_P2V(A) \
-	((void *) ((unsigned long) (A) \
-	 		- ipc_priv->peb_start.modem_phys \
-			+ (unsigned long )(ipc_priv->hugepg_start.host_vaddr)))
+	((uint64_t) ((unsigned long) (A) \
+			+ (unsigned long )(ipc_priv->peb_start.host_vaddr)))
 
 #define HOST_RANGE_V(x) \
 	(((uint64_t)(x) < (uint64_t)ipc_priv->hugepg_start.host_vaddr || \
 	  (uint64_t)(x) > ((uint64_t)ipc_priv->hugepg_start.host_vaddr \
 	  + ipc_priv->hugepg_start.size)) == 1 ? 1 : 0) 
+
+#define HUGEPG_OFFSET(A) \
+		((uint64_t) ((unsigned long) (A) \
+		- ((uint64_t)ipc_priv->hugepg_start.host_vaddr)))
+
+#define SPLIT_VA32_H(A) ((uint32_t)((uint64_t)(A)>>32))
+
+#define SPLIT_VA32_L(A) ((uint32_t)(uint64_t)(A))
+#define JOIN_VA32_64(H,L) ( (uint64_t)( ((H)<<32) | (L)) )
+static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
+{
+	uint64_t high = 0x0;
+	high = h;
+	return JOIN_VA32_64(high, l);
+}
+
 #if TBD
 static void *get_channel_vaddr(uint32_t channel_id, ipc_userspace_t *ipc_priv);
 static void *__get_channel_vaddr(uint32_t channel_id,
@@ -73,13 +89,6 @@ static int get_channels_info(ipc_userspace_t *ipc, uint32_t instance_id);
 void signal_handler(int signo, siginfo_t *siginfo, void *data);
 
 /*AK signal and PID to be sent kernel */
-#if TBD
-extern int rte_mempool_get (struct rte_mempool *rtemempool, void **obj_p) __attribute__((weak));
-int rte_mempool_get (struct rte_mempool *rtemempool, void **obj_p)
-{
-	return 0;
-}
-#endif
 
 static inline void ipc_fill_errorcode(int *err, int code)
 {
@@ -90,7 +99,7 @@ static inline void ipc_fill_errorcode(int *err, int code)
 static inline int open_devmem(void)
 {
         int dev_mem = open("/dev/mem", O_RDWR);
-        if (dev_mem == -1) {
+        if (dev_mem < 0) {
                 printf("Error: Cannot open /dev/mem \n");
                 return -1;
         }
@@ -99,9 +108,10 @@ static inline int open_devmem(void)
 
 static inline int open_devipc(void)
 {
-        int devipc = open("/dev/gulipc", O_RDWR);
-        if (devipc == -1) {
-                printf("Error: Cannot open /dev/ipc \n");
+        int devipc = open("/dev/gulipcgul0", O_RDWR);
+	printf("Here pass\n");
+        if (devipc  < 0) {
+                printf("Error: Cannot open /dev/ipc_gul_x \n");
                 return -1;
         }
         return devipc;
@@ -123,12 +133,16 @@ int ipc_is_channel_configured(uint32_t channel_id, ipc_t instance)
 {
 	ipc_userspace_t *ipc_priv = instance;
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
+	PR("here %s %d\n \n \n", __func__, __LINE__);
+	return 0;
 
 	/* Validate channel id */
 	if (!ipc_instance || channel_id >= IPC_MAX_CHANNEL_COUNT)
 		return IPC_CH_INVALID;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 	/* Read mask */
 	ipc_bitmask_t mask = ipc_instance->cfgmask[channel_id / bitcount(ipc_bitmask_t)];
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	/* !! to return either 0 or 1 */
 	return !!(mask & (1 << (channel_id % bitcount(mask))));
@@ -203,11 +217,11 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 		return IPC_INPUT_INVALID;
 	
 	ch = &(ipc_instance->ch_list[channel_id]);
-
+#if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv) ||
 			ch->ch_type != IPC_CH_PTR || !ch->bl_initialized)
 		return IPC_CH_INVALID;
-
+#endif
 	md = &(ch->br_bl_desc.md);
 
 	occupied = md->occupied;
@@ -222,9 +236,10 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 	pi = (pi + 1) % ring_size;
 	
 	/* Copy back to ipc_sh_buf_t */
-	ch->br_bl_desc.bd[pi].mod_phys = MODEM_V2P(sh);
-	ch->br_bl_desc.bd[pi].host_virt = (uint64_t)(sh);
-	ch->br_bl_desc.bd[pi].host_phys = HOST_V2P(sh); /* Should be unused */
+	ch->br_bl_desc.bd[pi].mod_phys = HUGEPG_OFFSET(sh);
+	ch->br_bl_desc.bd[pi].host_virt_l = SPLIT_VA32_L(sh);
+	ch->br_bl_desc.bd[pi].host_virt_h = SPLIT_VA32_H(sh);
+	//ch->br_bl_desc.bd[pi].host_phys = HOST_V2P(sh); /* Should be unused */
 	occupied = occupied - 1;
 
 	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n", __func__,
@@ -272,23 +287,30 @@ int ipc_send_msg(uint32_t channel_id,
 	uint32_t occupied, ring_size, pi, ci;
 	ipc_bd_t *bdr, *bd;
 
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 	if (!src || !len)
 		return IPC_INPUT_INVALID;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	if (!ipc_instance || !ipc_instance->initialized)
 		return IPC_INSTANCE_INVALID;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	if (channel_id >= IPC_MAX_CHANNEL_COUNT)
 		return IPC_CH_INVALID;
-
+	PR("here %s %d\n \n \n", __func__, __LINE__);
+#if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv))
 		return IPC_CH_INVALID;
-
+	PR("here %s %d\n \n \n", __func__, __LINE__);
+#endif
 	if (len > md->msg_size)
 		return IPC_INPUT_INVALID;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	occupied = md->occupied;
 	ring_size = md->ring_size;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 
 	ci = md->ci;
@@ -301,18 +323,21 @@ int ipc_send_msg(uint32_t channel_id,
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[pi];
-
+	PR("here %s %d\n \n \n", __func__, __LINE__);
+	bd->host_virt = MODEM_P2V(bd->modem_ptr);
 	memcpy((void *)(bd->host_virt), src, len);
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 	bd->len = len;
 
-	occupied += 1;
 	pi = (pi + 1) % ring_size;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
-	md->occupied = occupied;
 	md->pi = pi;
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n", __func__,
-			pi, ci, occupied, ring_size);
+	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u bd->modem_ptr=%x\r\n", __func__,
+			pi, ci, occupied, ring_size, bd->modem_ptr);
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	return IPC_SUCCESS;
 }
@@ -330,6 +355,7 @@ ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
 	uint32_t occupied, ring_size, pi, ci;
 	ipc_bd_t *bdr, *bd;
 	ipc_sh_buf_t *sh;
+	uint64_t vaddr2;
 
 
 	if (!ipc_instance || !ipc_instance->initialized) {
@@ -343,24 +369,25 @@ ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
 	}	
 
 	ch = &(ipc_instance->ch_list[channel_id]);
-
+#if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv)) {
 		ipc_fill_errorcode(err, IPC_CH_INVALID);
 		return NULL;
 	}	
-
+#endif
 	md = &(ch->br_msg_desc.md);
 
 	occupied = md->occupied;
 
 	ci = md->ci;
 	pi = md->pi; /* Modification from Producer only */
-	if ((pi - ci) == 0) {
+	ring_size = md->ring_size;
+#if 1
+	if (pi == ((ci + 1) % ring_size)) {
 		ipc_fill_errorcode(err, IPC_CH_EMPTY);
 		return NULL;
 	}	
-
-	ring_size = md->ring_size;
+#endif
 
 	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
 			__func__, pi, ci, occupied, ring_size);
@@ -368,17 +395,21 @@ ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
 
-	sh = (void *)(bd->host_virt);
+	PR("%d %s\n\n",__LINE__, __func__);
+	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+	//memcpy(dst, (void *)(bd->host_virt), msg_len);
+	sh = (ipc_sh_buf_t *)(vaddr2);
+	PR("%d %s\n\n",__LINE__, __func__);
 
 	occupied -= 1;
 	ci = (ci + 1) % ring_size;
 
-	md->occupied = occupied;
+	//md->occupied = occupied;
 	md->ci = ci;;
 
 	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u,host_virt: %lx\r\n",
-			__func__, pi, ci, occupied, ring_size, bd->host_virt);
-
+			__func__, pi, ci, occupied, ring_size, vaddr2);
+	PR("%s %d %s\n\n",__func__, __LINE__, (char *)vaddr2);
 	return sh;
 }
 
@@ -390,6 +421,7 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
 	uint32_t occupied, ring_size, pi, ci, msg_len;
+	uint64_t vaddr2 = 0;
 	ipc_bd_t *bdr, *bd;
 
 	if (!dst || !len)
@@ -402,10 +434,10 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 		return IPC_CH_INVALID;
 
 	ch = &(ipc_instance->ch_list[channel_id]);
-
+#if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv))
 		return IPC_CH_INVALID;
-
+#endif
 	md = &(ch->br_msg_desc.md);
 
 	occupied = md->occupied;
@@ -417,7 +449,7 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 	if ((pi - ci) == 0)
 		return IPC_CH_EMPTY;
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
+	pr_debug("--> \n\n%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
 			__func__, pi, ci, occupied, ring_size);
 
 	bdr = ch->br_msg_desc.bd;
@@ -426,15 +458,18 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 	msg_len = bd->len;
 	if (msg_len > md->msg_size)
 		return IPC_INPUT_INVALID;
-
-	memcpy(dst, (void *)(bd->host_virt), msg_len);
+	PR("%d %s\n\n",__LINE__, __func__);
+	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+	//memcpy(dst, (void *)(bd->host_virt), msg_len);
+	memcpy(dst, (void *)(vaddr2), msg_len);
+	PR("%d %s\n\n",__LINE__, __func__);
 	*len = msg_len;
 
-	occupied -= 1;
+//	occupied -= 1;
 	ci = (ci + 1) % ring_size;
 
-	md->occupied = occupied;
-	md->ci = ci;;
+//	md->occupied = occupied;
+	//md->ci = ci;;
 
 	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u, len: %u\r\n",
 			__func__, pi, ci, occupied, ring_size, msg_len);
@@ -451,6 +486,7 @@ int ipc_recv_msg_ptr(uint32_t channel_id, void **dst_buffer,
 	ipc_br_md_t *md;
 	uint32_t occupied, ring_size, pi, ci;
 	ipc_bd_t *bdr, *bd;
+	uint64_t vaddr2;
 
 	if (!dst_buffer || !(*dst_buffer) || !len)
 		return IPC_INPUT_INVALID;
@@ -483,7 +519,10 @@ int ipc_recv_msg_ptr(uint32_t channel_id, void **dst_buffer,
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
 	/* host_phys and virt was done in configure*/
-	*dst_buffer = (void * )bd->host_virt;
+	PR("%d %s\n\n",__LINE__, __func__);
+	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+	//*dst_buffer = (void * )bd->host_virt;
+	*dst_buffer = (void *)vaddr2;
 	*len = bd->len;
 
 	/* ipc_set_consumed_status needed to called by user*/
@@ -575,10 +614,12 @@ ipc_t ipc_host_init(uint32_t instance_id,
 		struct rte_mempool *rtemempool[MAX_MEM_POOL_COUNT],
 		mem_range_t hugepgstart, int *err)
 {
+	PR("Amit:1");
 	ipc_userspace_t *ipc_priv;
 	int ret, dev_ipc, dev_mem;
 	ipc_metadata_t *ipc_md;
 	struct gul_hif *mhif;
+	uint32_t phy_align = 0;
 
 	ipc_priv = malloc(sizeof(ipc_userspace_t));
 	if (ipc_priv == NULL) {
@@ -588,24 +629,27 @@ ipc_t ipc_host_init(uint32_t instance_id,
 	memset(ipc_priv, 0, sizeof(ipc_userspace_t));
 	
 	
-	dev_ipc = open_devipc();
-	if (dev_ipc < 0) {
-		ipc_fill_errorcode(err, IPC_OPEN_FAIL);
-		return NULL;
-	}
 
 	dev_mem = open_devmem();
 	if (dev_mem < 0) {
 		ipc_fill_errorcode(err, IPC_OPEN_FAIL);
 		return NULL;
 	}
+	
+	dev_ipc = open_devipc();
+	if (dev_ipc < 0) {
+		ipc_fill_errorcode(err, IPC_OPEN_FAIL);
+		//return NULL;
+	}
 
 	ipc_priv->instance_id = instance_id;
 	ipc_priv->dev_ipc = dev_ipc;
 	ipc_priv->dev_mem = dev_mem;
+	
+	PR("hugepg input %lx %p %x\n", hugepgstart.host_phys , hugepgstart.host_vaddr, hugepgstart.size);
 
 	ipc_priv->sys_map.hugepg_start.host_phys = hugepgstart.host_phys;
-	ipc_priv->sys_map.hugepg_start.host_phys = hugepgstart.size;
+	ipc_priv->sys_map.hugepg_start.size = hugepgstart.size;
 	/* Send IOCTL to get system map */
 	/* Send IOCTL to put hugepg_start map */
 	ret = ioctl(dev_ipc, IOCTL_GUL_IPC_GET_SYS_MAP, &ipc_priv->sys_map);
@@ -614,32 +658,41 @@ ipc_t ipc_host_init(uint32_t instance_id,
 		return NULL;
 
 	}
-
+	phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
 	ipc_priv->mhif_start.host_vaddr =
 		mmap(0, ipc_priv->sys_map.mhif_start.size, (PROT_READ | \
 			PROT_WRITE), MAP_SHARED, dev_mem, \
-			ipc_priv->sys_map.mhif_start.host_phys);     \
+			(ipc_priv->sys_map.mhif_start.host_phys - phy_align));
 	if (ipc_priv->mhif_start.host_vaddr == MAP_FAILED) {
 		 perror("MAP failed:");
 		ipc_fill_errorcode(err, IPC_MMAP_FAIL);
 		return NULL;
-	}
-	
+	} else
+		ipc_priv->mhif_start.host_vaddr = (void *)
+			((uint64_t)(ipc_priv->mhif_start.host_vaddr) + phy_align);
+
+	phy_align = (ipc_priv->sys_map.peb_start.host_phys % 0x1000);
 	ipc_priv->peb_start.host_vaddr =
 		mmap(0, ipc_priv->sys_map.peb_start.size, (PROT_READ | \
 			PROT_WRITE), MAP_SHARED, dev_mem, \
-			ipc_priv->sys_map.peb_start.host_phys);     \
+			(ipc_priv->sys_map.peb_start.host_phys - phy_align));
 	if (ipc_priv->peb_start.host_vaddr == MAP_FAILED) {
 		perror("MAP failed:");
 		ipc_fill_errorcode(err, IPC_MMAP_FAIL);
 		return NULL;
-	}
+	} else
+		ipc_priv->peb_start.host_vaddr = (void *)
+			((uint64_t)(ipc_priv->peb_start.host_vaddr) + phy_align);
 
 	ipc_priv->hugepg_start.host_phys = hugepgstart.host_phys;
 	ipc_priv->hugepg_start.host_vaddr = hugepgstart.host_vaddr;
 	ipc_priv->hugepg_start.size = ipc_priv->sys_map.hugepg_start.size;
 	ipc_priv->hugepg_start.modem_phys = ipc_priv->sys_map.hugepg_start.modem_phys;
 
+	ipc_priv->mhif_start.host_phys = ipc_priv->sys_map.mhif_start.host_phys;
+	ipc_priv->mhif_start.size = ipc_priv->sys_map.mhif_start.size;
+	ipc_priv->peb_start.host_phys = ipc_priv->sys_map.peb_start.host_phys;
+	ipc_priv->peb_start.size = ipc_priv->sys_map.peb_start.size;
 
 	/*These handle to be used create dpdk pool of 2K 16k and 128k */ 
 	ipc_priv->rtemempool[IPC_HOST_BUF_POOLSZ_2K] = rtemempool[0]; 
@@ -647,8 +700,10 @@ ipc_t ipc_host_init(uint32_t instance_id,
 	ipc_priv->rtemempool[IPC_HOST_BUF_POOLSZ_128K] = rtemempool[2]; 
 	ipc_priv->rtemempool[IPC_HOST_BUF_POOLSZ_SH_BUF] = rtemempool[3]; 
 	ipc_priv->rtemempool[IPC_HOST_BUF_POOLSZ_R2] = rtemempool[4]; 
-	
 
+	PR("peb %lx %p %x\n", ipc_priv->peb_start.host_phys , ipc_priv->peb_start.host_vaddr, ipc_priv->peb_start.size);
+	PR("hugepg %lx %p %x\n", ipc_priv->hugepg_start.host_phys , ipc_priv->hugepg_start.host_vaddr, ipc_priv->hugepg_start.size);
+	PR("mhif %lx %p %x\n", ipc_priv->mhif_start.host_phys , ipc_priv->mhif_start.host_vaddr, ipc_priv->mhif_start.size);
 	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
 	/* offset is from start of PEB */
 	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr + mhif->ipc_regs.ipc_mdata_offset);
@@ -656,7 +711,10 @@ ipc_t ipc_host_init(uint32_t instance_id,
 	if (sizeof(ipc_metadata_t) !=
 			mhif->ipc_regs.ipc_mdata_size) {
 		ipc_fill_errorcode(err, IPC_MD_SZ_MISS_MATCH);
-		return NULL;
+		PR("gul =%lx, mhif->ipc_regs.ipc_mdata_size=%x\n", sizeof(ipc_metadata_t), mhif->ipc_regs.ipc_mdata_size);
+		PR("hif size=%lx, \n", sizeof(struct gul_hif));
+
+		//return NULL;
 	}
 
 	ipc_priv->instance = (ipc_instance_t *)(&ipc_md->instance_list[instance_id]);
@@ -682,6 +740,7 @@ ipc_t ipc_host_init(uint32_t instance_id,
 		ipc_priv->channels[channel_id] = vaddr;
 	}
 #endif
+	PR("finish host init\n");
 	return ipc_priv;
 }
 
@@ -705,6 +764,9 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 
 	}
 #endif
+	PR("%x %p\n", ipc_instance->initialized, ipc_priv->instance);
+	pr_debug("%s: channel: %u, depth: %u, type: %d, msg size: %u\r\n",
+			__func__, channel_id, depth, channel_type, msg_size);
 	if (!ipc_priv->instance || !ipc_instance->initialized)
 		return IPC_INSTANCE_INVALID;
 
@@ -716,9 +778,11 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 
 	ch = &(ipc_instance->ch_list[channel_id]);
 
+	PR("here %s %d\n \n \n", __func__, __LINE__);
+#if DONOT_CHECK	
 	if (ipc_is_channel_configured(channel_id, ipc_priv))
 		return IPC_CH_INVALID;
-
+#endif
 	pr_debug("%s: channel: %u, depth: %u, type: %d, msg size: %u\r\n",
 			__func__, channel_id, depth, channel_type, msg_size);
 
@@ -726,16 +790,20 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 	ch->ch_type = channel_type;
 	if (cbfunc != NULL)
 		ch->event_cb = cbfunc;
-	ch->ch_id = channel_id;
+	ch->ch_id = channel_id; /* May not be required since modem does this */
+	if (ch->bl_initialized == 1) {
+		printf("WARNING: [%s]: Channel already configured\n NOT configuring again\n",__func__);
+		return IPC_SUCCESS;
+	}	
 
 	if (channel_type == IPC_CH_MSG) {
 		ch->br_msg_desc.md.ring_size = depth;
 		ch->br_msg_desc.md.occupied = 0;
-		ch->br_msg_desc.md.pi = 0;
+	//	ch->br_msg_desc.md.pi = 0;
 		ch->br_msg_desc.md.ci = 0;
 		ch->br_msg_desc.md.msg_size = msg_size;
-		ch->br_msg_desc.bd[i].len = 0; /* not sure use of this len */
-
+	//	ch->br_msg_desc.bd[i].len = 0; /* not sure use of this len */
+	PR("%d %s\n \n \n",__LINE__, __func__);
 		for (i = 0; i < depth; i++) {
 			if (msg_size == SIZE_2K) {
 				ret = rte_mempool_get(ipc_priv->rtemempool[IPC_HOST_BUF_POOLSZ_2K], &vaddr);
@@ -746,14 +814,24 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 				if (ret < 0)
 					return IPC_HOST_BUF_ALLOC_FAIL;
 			}
-			ch->br_msg_desc.bd[i].modem_ptr = MODEM_V2P(vaddr);
-			ch->br_msg_desc.bd[i].host_virt = (uint64_t)(vaddr);
+	PR("---> %d %s V1=%p V2=%p i=%d\n \n \n",__LINE__, __func__, vaddr, ipc_priv->hugepg_start.host_vaddr, i);
+			ch->br_msg_desc.bd[i].modem_ptr = HUGEPG_OFFSET(vaddr); /* Only offset now */
+		//	ch->br_msg_desc.bd[i].modem_ptr = 0xdeadbeef;
+		//	ch->br_msg_desc.bd[i].host_phy_l = 0xdeafbee1;
+		//	ch->br_msg_desc.bd[i].host_phy_h = 0xdeafbee2;
+	PR("%d %s vaddr %p\n \n \n",__LINE__, __func__, vaddr);
+			ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
+			ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
+	PR("%d %s\n \n \n",__LINE__, __func__);
 			ch->br_msg_desc.bd[i].len = 0; /* not sure use of this len may be for CRC*/
+	PR("%d %s\n \n \n",__LINE__, __func__);
 		}
 		ch->bl_initialized = 1;
+	PR("%d %s\n \n \n",__LINE__, __func__);
 	}
 
 	if (channel_type == IPC_CH_PTR) {
+	PR("%d %s\n \n \n",__LINE__, __func__);
 		/* do_dpdk_alloc using rtemempool;
 		and fill in ipc_sh_buf_t[];
 		translate using hugepgstart and hugepgtart.modem
@@ -778,9 +856,10 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 			if (ret < 0)
 				return IPC_HOST_BUF_ALLOC_FAIL;
 
-			ch->br_bl_desc.bd[i].mod_phys = MODEM_V2P(vaddr);
-			ch->br_bl_desc.bd[i].host_virt = (uint64_t)(vaddr);
-			ch->br_bl_desc.bd[i].host_phys = HOST_V2P(vaddr); /* Should be unused */
+			ch->br_bl_desc.bd[i].mod_phys = HUGEPG_OFFSET(vaddr);
+			ch->br_bl_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
+			ch->br_bl_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
+			//ch->br_bl_desc.bd[i].host_phys = HOST_V2P(vaddr); /* Should be unused */
 			/* ch->br_bl_desc.bd[i].buf_size should be unused */
 			/* ch->br_bl_desc.bd[i].data_size to be filled by producer */
 			/* ch->br_bl_desc.bd[i].cookie = 0; */ /*unused as of now*/
@@ -790,15 +869,19 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 			if (ret < 0)
 				return IPC_HOST_BUF_ALLOC_FAIL;
 
-			ch->br_msg_desc.bd[i].modem_ptr = MODEM_V2P(vaddr);
-			ch->br_msg_desc.bd[i].host_virt = (uint64_t)(vaddr);
-			ch->br_msg_desc.bd[i].host_phy = HOST_V2P(vaddr); /* Should be used to fetch ipc_sh_buf_t*/
+			ch->br_msg_desc.bd[i].modem_ptr = HUGEPG_OFFSET(vaddr);
+			ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
+			ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
+			/* ch->br_msg_desc.bd[i].host_phy = HOST_V2P(vaddr); DO not access now bus error. Should be used to fetch ipc_sh_buf_t*/
 		}
 		ch->br_bl_desc.md.pi = depth;  /* as depth */
 		ch->bl_initialized = 1;
 	}
 
-	ipc_mark_channel_as_configured(channel_id, ipc_priv->instance);
+	PR("%d %s\n \n \n",__LINE__, __func__);
+	//ipc_mark_channel_as_configured(channel_id, ipc_priv->instance);
+	PR("%d %s\n \n \n",__LINE__, __func__);
+	PR("finish configure\n");
 	return IPC_SUCCESS;
 
 }

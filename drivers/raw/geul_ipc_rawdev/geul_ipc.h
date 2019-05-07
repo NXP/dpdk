@@ -36,7 +36,13 @@ typedef struct ipc_bd_ring_md {
 
 /** IPC buffer descriptor */
 typedef struct ipc_buffer_desc {
-	uint64_t host_virt;	/**< msg's host virtual address */
+	union {
+		uint64_t host_virt;	/**< msg's host virtual address */
+		struct {
+			uint32_t host_virt_l;
+			uint32_t host_virt_h;
+		};
+	};
 	uint64_t host_phy;	/**< msg's host physical address */
 	uint32_t modem_ptr;	/**< msg's modem physical address */
 	uint32_t len;		/**< msg len */

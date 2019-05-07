@@ -221,12 +221,12 @@ struct debug_log_regs {
 #define GUL_LOG_LEVEL_ALL	5
 
 struct gul_QDMA {
-	uint8_t  status;
+	uint32_t status;
 	uint32_t xfer_req;
 	uint32_t success_interrupt;
 	uint32_t error_interrupt;
 	uint32_t no_callback_reg;
-};
+} __attribute__((packed));
 
 struct gul_ipc_stats {
 	/* Tx stats */
@@ -246,7 +246,7 @@ struct gul_ipc_stats {
 	uint32_t ipc_rxdmacallback;
 	uint32_t ipc_rxdmafail;
 	uint32_t ipc_rxcmpl;
-};
+} __attribute__((packed));
 
 struct gul_stats {
 	uint32_t disabled_evt_try_cnt;
@@ -265,25 +265,25 @@ struct gul_stats {
 	struct gul_QDMA gul_QDMA_ch[GUL_QDMA_CHANNELS];
 	uint32_t WDOG_interrupt;
 	struct gul_ipc_stats gul_ipc_ch[NUM_IPC_CHANNELS];
-};
+} __attribute__((packed));
 
 struct hif_ipc_regs {
 	uint32_t ipc_mdata_offset;
 	uint32_t ipc_mdata_size;
-};
+} __attribute__((packed));
 
 struct hif_rfic_regs {
 	uint32_t mdata_offset_reg;
 	uint32_t mdata_size;
 	uint32_t spi_access_disabled;
-};
+} __attribute__((packed));
 
 struct hif_feca_regs {
 	uint64_t axi_slave;
 	uint64_t axi_slave_size;
 	uint64_t apb_slave;
 	uint64_t apb_slave_size;
-};
+} __attribute__((packed));
 
 enum host_mem_region_id {
 	HOST_MEM_SCRATCH_BUF = 0,
@@ -294,8 +294,10 @@ enum host_mem_region_id {
 };
 
 struct host_mem_region {
-	uint64_t mod_phys;
-	uint64_t size;
+	uint32_t mod_phys_l;
+	uint32_t mod_phys_h;
+	uint32_t size_l;
+	uint32_t size_h;
 } __attribute__((packed));
 
 /* XXX:NOTE: Always increment HIF version when you add anything in

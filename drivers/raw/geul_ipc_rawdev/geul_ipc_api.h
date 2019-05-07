@@ -44,6 +44,7 @@ typedef uint64_t addr_t;
 #define SIZE_2K (1024 * 2)
 #define SIZE_16K (1024 * 16)
 #define SIZE_128K (1024 * 128)
+#define JOIN_VA32_64_APP(H,L) ( (uint64_t)( ((H)<<32) | (L)) )
 #else
 typedef uint32_t phys_addr_t;
 typedef uint32_t addr_t;
@@ -104,14 +105,23 @@ typedef struct ipc_sh_buf {
 	uint32_t data_size;	/**< actual size of the data in this buffer */
 	uint32_t cookie;	/**< Useful to free the buf */
 	uint64_t host_phys;	/**< host physcal address of the buffer */
-	uint64_t host_virt;	/**< host virtual address of the buffer */
+//	uint64_t host_virt;	/**< host virtual address of the buffer */
+//	union {
+//		uint64_t host_virt;     /**< host virtual address of bl ring */
+		struct {
+			uint32_t host_virt_l;
+			uint32_t host_virt_h;
+		};
+//	};
 } __attribute__((packed)) ipc_sh_buf_t;
 
 /** IPC memory pool */
-/** Modem only USED */
+/** Modem only USED
+ *  XXX Update to 64 from 32 mod_phys
+ */
 typedef struct ipc_mem_pool {
-	uint32_t mod_phys;	/**< modem address of the buffer */
-	uint32_t modem_cptr;	/**< Points to the start of the freespace in mem pool */
+	uint64_t mod_phys;	/**< modem address of the buffer */
+	uint64_t modem_cptr;	/**< Points to the start of the freespace in mem pool */
 	uint32_t size;	/**< size of the memory pool */
 } __attribute__((packed)) ipc_mem_pool_t;
 

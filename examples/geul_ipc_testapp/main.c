@@ -27,7 +27,7 @@
 #include <geul_ipc_errorcodes.h>
 #include <geul_ipc_um.h>
 #include <gul_host_if.h>
-
+#define UNUSED(x) void(x)
 #define ipc_debug(...) printf(__VA_ARGS__)
 
 #define GEUL_DEVICE_ID "0"
@@ -169,6 +169,7 @@ fill_buffer(void *buffer, size_t len)
 static int
 validate_buffer(void *buffer, size_t len)
 {
+	ipc_debug("\n %s %d>>>>>>>>>\n%s\n",__func__, __LINE__, (char *)buffer);
 	int ret = 0;
 	uint32_t i, count;
 	int *val = NULL;
@@ -178,14 +179,16 @@ validate_buffer(void *buffer, size_t len)
 	val = (int *)buffer;
 	count = len/sizeof(int);
 	/* XXX Whatif len is not word aligned */
-
+#ifdef GOLIVE
 	for (i = 0; i < count; i++)
 		if (*val != POISON) {
 			ret = 1; /* Failed */
 			break;
 		} else
 			val++;
+#endif
 
+	ipc_debug("\n>>>>>>>>>\n%s\n",(char *)buffer);
 	return ret;
 }
 
@@ -276,9 +279,9 @@ cleanup_mempools(void)
 }
 
 static int
-initialize_channels(ipc_t instance)
+initialize_channels(ipc_t instance __rte_unused)
 {
-	int i, ret;
+	int i, ret = 0;
 	geulipc_channel_t *ch = NULL;
 
 	memset(channels, 0, sizeof(struct geulipc_channel *) * CHANNELS_MAX);
@@ -291,7 +294,7 @@ initialize_channels(ipc_t instance)
 		ch = channels[i];
 
 		switch(i) {
-#define MSG_CHANNEL_DEPTH 8
+#define MSG_CHANNEL_DEPTH 4
 		case L2_TO_L1_MSG_CH_1:
 			/* 2K Channel */
 			ch->depth = MSG_CHANNEL_DEPTH;
@@ -329,9 +332,13 @@ initialize_channels(ipc_t instance)
 			ch->type = IPC_CH_MSG;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_2K];
 			ch->channel_id = i;
+#ifdef GOLIVE
 			break;
+#else
+			continue;
+#endif
 		case L1_TO_L2_PRT_CH_1:
-#define PTR_CHANNEL_DEPTH 8
+#define PTR_CHANNEL_DEPTH 4
 			/* 128K Channel */
 			ch->depth = PTR_CHANNEL_DEPTH;
 			ch->type = IPC_CH_PTR;
@@ -344,11 +351,16 @@ initialize_channels(ipc_t instance)
 			ch->type = IPC_CH_PTR;
 			ch->mp = pools[IPC_HOST_BUF_POOLSZ_128K];
 			ch->channel_id = i;
+#ifdef GOLIVE
 			break;
+#else
+			continue;
+#endif
 		default:
 			printf("Invalid channel number/type (%d)\n", i);
 			goto cleanup;
 		}
+
 		/* Call ipc_configure_channel */
 		ret = ipc_configure_channel(ch->channel_id, ch->depth,
 					    ch->type, ch->mp->elt_size,
@@ -359,7 +371,7 @@ initialize_channels(ipc_t instance)
 			goto cleanup;
 		}
 	}
-	return 0;
+	return ret;
 
 cleanup:
 	for (; i > 0; i--) {
@@ -398,6 +410,7 @@ setup_ipc(uint16_t devid)
 	mr.host_phys = hp->paddr;
 	mr.host_vaddr = hp->vaddr;
 	mr.size = hp->len;
+	ipc_debug("%lx %p %x\n", mr.host_phys, mr.host_vaddr, mr.size);
 
 	/* Call IPC host init */
 #if 1
@@ -408,7 +421,7 @@ setup_ipc(uint16_t devid)
 	handle = (ipc_t)&a;
 #endif
 	if (ret != IPC_SUCCESS) {
-		printf("Error from HOST initialization (%d)\n", ret);
+		printf("--->Error from HOST initialization (%d)\n", ret);
 		goto err_out;
 	}
 
@@ -508,9 +521,12 @@ parse_args(int argc, char **argv)
 static int
 is_modem_ready(ipc_t handle __rte_unused)
 {
+	ipc_debug("%d %s\n", __LINE__, __func__);
+	usleep(5000);
+	ipc_debug("\n \n \n");
 	struct gul_hif *hif_start = NULL;
 	ipc_userspace_t *ipcu;
-	int ready = 0;
+	int ready = 1;
 
 	if (!handle) {
 		printf("Invalid handle for modem ready check\n");
@@ -518,14 +534,18 @@ is_modem_ready(ipc_t handle __rte_unused)
 	}
 
 	ipcu = (ipc_userspace_t *)handle;
+	ipc_debug("%d %s %p\n", __LINE__, __func__, handle);
 	hif_start = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	ipc_debug("%d %s %p\n", __LINE__, __func__, hif_start);
 
 	/* Set Host Read bit */
-	SET_HIF_HOST_RDY(hif_start, HIF_MOD_READY_IPC_APP);
+	ipc_debug("%d %s\n", __LINE__, __func__);
+	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
+	ipc_debug("%d %s\n", __LINE__, __func__);
 
 	/* Now wait for modem ready bit */
-	while (1 && !force_quit) {
-		SET_HIF_HOST_RDY(hif_start, HIF_MOD_READY_IPC_APP);
+	while (ready && !force_quit) {
+		ready = !CHK_HIF_MOD_RDY(hif_start, HIF_MOD_READY_IPC_APP);
 	}
 
 	if (force_quit)
@@ -567,14 +587,15 @@ _recv(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 {
 	int ret;
 	uint32_t len;
-	void *buffer;
-
+	//void *buffer;
+	char buffer[10];
+#ifdef GOLIVE
 	ret = rte_mempool_get(mp, &buffer);
 	if (ret) {
 		printf("Unable to get pool\n");
 		return -1;
 	}
-
+#endif
 repeat:
 	ret = ipc_recv_msg(channel_id, buffer, &len, instance);
 	if (ret == IPC_CH_EMPTY && !force_quit) {
@@ -594,8 +615,10 @@ repeat:
 			printf("buffer OK\n");
 		}
 	} else
-		printf("Invalid length of received buffer."
+		printf("AK->> Invalid length of received buffer."
 		       " recvd:%u, expected:%u\n", len, mp->elt_size);
+	ipc_debug("\n>>>>>>>>>\n%s\n",buffer);
+	ipc_debug("\n %s %d>>>>>>>>>\n%s\n",__func__, __LINE__, (char *)buffer);
 
 out:
 	rte_mempool_put(mp, buffer);
@@ -608,21 +631,26 @@ _recv_ptr(struct rte_mempool *mp __rte_unused, uint32_t channel_id,
 {
 	int ret, err;
 	ipc_sh_buf_t *buffer;
+	uint64_t validate_buf = 0;
 
 repeat:
 	buffer = ipc_recv_ptr(channel_id, instance, &err);
+	validate_buf = buffer->host_virt_h;
+	validate_buf = JOIN_VA32_64_APP(validate_buf, buffer->host_virt_l);
+	ipc_debug("\n\n\n>>>>>>>>>%d %s %lx %s\n",__LINE__, __func__, validate_buf, (char *)validate_buf);
 	if (err == IPC_CH_EMPTY && !force_quit) {
 		ipc_debug("recv_ptr returned = %d, retrying\n", err);
 		goto repeat;
 	} else {
-		if (!buffer || err) {
+		if (!validate_buf || err) {
 			printf("Invalid response from recv_ptr. (%d)\n", err);
 			goto out;
 		}
 
 		/* Buffer is valid, and no error */
-		ret = validate_buffer((void *)buffer->host_virt,
+		ret = validate_buffer((void *)validate_buf,
 				      buffer->data_size);
+		ipc_debug("\n\n\n>>>>>>>>>%d %s %s\n",__LINE__, __func__, (char *)validate_buf);
 		if (ret) {
 			printf("Invalid buffer in recv_ptr (ret=%d)\n", ret);
 			/* XXX Increase stats */
@@ -661,6 +689,7 @@ non_rt_sender(void *arg)
 
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L2_TO_L1_MSG_CH_1 */
+#ifdef GOLIVE
 		ret = _send(channels[L2_TO_L1_MSG_CH_1]->mp,
 			    channels[L2_TO_L1_MSG_CH_1]->channel_id,
 			    instance);
@@ -668,7 +697,6 @@ non_rt_sender(void *arg)
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_1 (%d)\n", ret);
 			return ret;
 		}
-
 		/* For the L2_TO_L1_MSG_CH_2 */
 		ret = _send(channels[L2_TO_L1_MSG_CH_2]->mp,
 			    channels[L2_TO_L1_MSG_CH_2]->channel_id,
@@ -677,14 +705,13 @@ non_rt_sender(void *arg)
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_2 (%d)\n", ret);
 			return ret;
 		}
-
+#endif
 		if (force_quit)
 			break;
 	}
 
 	return ret;
 }
-
 static int
 rt_sender(void *arg)
 {
@@ -699,7 +726,9 @@ rt_sender(void *arg)
 		return -1;
 	}
 	instance  = (ipc_t)arg;
-
+#ifndef GOLIVE
+	return 0;
+#endif
 	ipc_debug("sender: Creating rt_sender (lcore_id=%u)\n",
 		  rte_lcore_id());
 
@@ -715,11 +744,13 @@ rt_sender(void *arg)
 	/* XXX Loop on cycle_times */
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L2_TO_L1_MSG_CH_3 */
-		ret = _send(channels[L2_TO_L1_MSG_CH_3]->mp,
+#ifdef GOLIVE
+	ret = _send(channels[L2_TO_L1_MSG_CH_3]->mp,
 			    channels[L2_TO_L1_MSG_CH_3]->channel_id,
 			    instance);
 		if (ret)
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_3 (%d)\n", ret);
+#endif
 
 		if (force_quit)
 			break;
@@ -727,7 +758,6 @@ rt_sender(void *arg)
 
 	return ret;
 }
-
 static int
 receiver(void *arg __rte_unused)
 {
@@ -753,7 +783,7 @@ receiver(void *arg __rte_unused)
 			printf("Unable to recv msg on L1_TO_L2_MSG_CH_4 (%d)\n", ret);
 			return ret;
 		}
-
+#ifdef GOLIVE
 		/* For the L1_TO_L2_MSG_CH_5 */
 		ret = _recv(channels[L1_TO_L2_MSG_CH_5]->mp,
 			    channels[L1_TO_L2_MSG_CH_5]->channel_id,
@@ -763,6 +793,7 @@ receiver(void *arg __rte_unused)
 			return ret;
 		}
 
+#endif
 		/* For the L1_TO_L2_PRT_CH_1 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_1]->mp,
 				channels[L1_TO_L2_PRT_CH_1]->channel_id,
@@ -771,7 +802,7 @@ receiver(void *arg __rte_unused)
 			printf("Unable to recv_ptr on L1_TO_L2_MSG_CH_5 (%d)\n", ret);
 			return ret;
 		}
-
+#ifdef GOLIVE
 		/* For the L1_TO_L2_PRT_CH_2 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_2]->mp,
 				channels[L1_TO_L2_PRT_CH_2]->channel_id,
@@ -780,7 +811,7 @@ receiver(void *arg __rte_unused)
 			printf("Unable to recv msg on L1_TO_L2_PRT_CH_2 (%d)\n", ret);
 			return ret;
 		}
-
+#endif
 		if (force_quit)
 			break;
 	}
