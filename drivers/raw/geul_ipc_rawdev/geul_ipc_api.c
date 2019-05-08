@@ -354,6 +354,7 @@ int ipc_send_msg(uint32_t channel_id,
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
 	uint32_t ring_size, pi, ci, cc, pc;
 	ipc_bd_t *bdr, *bd;
+	uint64_t virt;
 
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 	if (!src || !len)
@@ -393,8 +394,9 @@ int ipc_send_msg(uint32_t channel_id,
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[pi];
 	PR("here %s %d\n \n \n", __func__, __LINE__);
-	bd->host_virt = MODEM_P2V(bd->modem_ptr);
-	memcpy((void *)(bd->host_virt), src, len);
+	//bd->host_virt = MODEM_P2V(bd->modem_ptr);
+	virt = MODEM_P2V(bd->modem_ptr);
+	memcpy((void *)(virt), src, len);
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 	bd->len = len;
 
