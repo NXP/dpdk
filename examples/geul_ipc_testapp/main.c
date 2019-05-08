@@ -169,7 +169,7 @@ fill_buffer(void *buffer, size_t len)
 static int
 validate_buffer(void *buffer, size_t len)
 {
-	ipc_debug("\n %s %d>>>>>>>>>\n%s\n",__func__, __LINE__, (char *)buffer);
+//	ipc_debug("\n %s %d>>>>>>>>>\n%s\n",__func__, __LINE__, (char *)buffer);
 	int ret = 0;
 	uint32_t i, count;
 	int *val = NULL;
@@ -188,7 +188,7 @@ validate_buffer(void *buffer, size_t len)
 			val++;
 #endif
 
-	ipc_debug("\n>>>>>>>>>\n%s\n",(char *)buffer);
+//	ipc_debug("\n>>>>>>>>>\n%s\n",(char *)buffer);
 	return ret;
 }
 
@@ -585,7 +585,7 @@ repeat:
 static int
 _recv(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 {
-	int ret;
+	int ret, jj =0;
 	uint32_t len;
 	//void *buffer;
 	char buffer[10];
@@ -599,7 +599,9 @@ _recv(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 repeat:
 	ret = ipc_recv_msg(channel_id, buffer, &len, instance);
 	if (ret == IPC_CH_EMPTY && !force_quit) {
-		ipc_debug("recv_msg returned = %d, repeating\n", ret);
+		if ((jj++ % 30 )== 0) {
+			ipc_debug(".");
+		}
 		goto repeat;
 	} else if (ret) {
 		printf("Error from ipc_recv_msg %d\n", ret);
@@ -807,6 +809,7 @@ receiver(void *arg __rte_unused)
 		}
 
 #endif
+#ifdef GOLIVE
 		/* For the L1_TO_L2_PRT_CH_1 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_1]->mp,
 				channels[L1_TO_L2_PRT_CH_1]->channel_id,
@@ -815,7 +818,6 @@ receiver(void *arg __rte_unused)
 			printf("Unable to recv_ptr on L1_TO_L2_MSG_CH_5 (%d)\n", ret);
 			return ret;
 		}
-#ifdef GOLIVE
 		/* For the L1_TO_L2_PRT_CH_2 */
 		ret = _recv_ptr(channels[L1_TO_L2_PRT_CH_2]->mp,
 				channels[L1_TO_L2_PRT_CH_2]->channel_id,
