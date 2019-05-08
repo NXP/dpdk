@@ -200,12 +200,14 @@ ipc_sh_buf_t* ipc_get_buf(uint32_t channel_id, ipc_t instance, int *err)
  */
 int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 {
+	pr_debug("here %s %d\n \n \n", __func__, __LINE__);
 	ipc_userspace_t *ipc_priv = instance;
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
 	uint32_t occupied, ring_size, pi, ci;
 	ipc_sh_buf_t *sh = buf_to_free;
+	uint64_t range = 0;
 
 	if (!ipc_instance || !ipc_instance->initialized)
 		return IPC_INSTANCE_INVALID;
@@ -213,7 +215,8 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 	if (channel_id >= IPC_MAX_CHANNEL_COUNT)
 		return IPC_CH_INVALID;
 
-	if (HOST_RANGE_V(sh))
+	range = join_va2_64(sh->host_virt_h, sh->host_virt_l);
+	if (HOST_RANGE_V(range))
 		return IPC_INPUT_INVALID;
 	
 	ch = &(ipc_instance->ch_list[channel_id]);
@@ -234,12 +237,21 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 			pi, ci, occupied, ring_size);
 
 	pi = (pi + 1) % ring_size;
-	
+	pr_debug("%d %s sh->host_virt_h=%x sh->host_virt_l=%x sh->mod_phys=%x\n\n",__LINE__, __func__,
+			sh->host_virt_h, sh->host_virt_l, sh->mod_phys);
+
 	/* Copy back to ipc_sh_buf_t */
+	memcpy((void *)sh, &ch->br_bl_desc.bd[pi], sizeof(ipc_sh_buf_t));
+	pr_debug("%d %s ch->br_bl_desc.bd[pi].mod_phys=%x ch->br_bl_desc.bd[pi].host_virt_l=%x host_virt_h=%x\n\n",__LINE__, __func__,
+			ch->br_bl_desc.bd[pi].mod_phys,
+			ch->br_bl_desc.bd[pi].host_virt_l,
+			ch->br_bl_desc.bd[pi].host_virt_h);
+#if 0 /* REMOVE*/
 	ch->br_bl_desc.bd[pi].mod_phys = HUGEPG_OFFSET(sh);
 	ch->br_bl_desc.bd[pi].host_virt_l = SPLIT_VA32_L(sh);
 	ch->br_bl_desc.bd[pi].host_virt_h = SPLIT_VA32_H(sh);
 	//ch->br_bl_desc.bd[pi].host_phys = HOST_V2P(sh); /* Should be unused */
+#endif
 	occupied = occupied - 1;
 
 	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n", __func__,
@@ -248,7 +260,6 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 	md->occupied = occupied;
 
 	return IPC_SUCCESS;
-
 }
 
 /* AK NOT to implemented */
@@ -333,6 +344,7 @@ int ipc_send_msg(uint32_t channel_id,
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	md->pi = pi;
+	rte_mb();
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u bd->modem_ptr=%x\r\n", __func__,
@@ -346,33 +358,31 @@ int ipc_send_msg(uint32_t channel_id,
  * PTR channel is used to transfer RX TB from modem to host.
  * So this API will only be used by host to receive RX TB.
  */
-ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
+int ipc_recv_ptr(uint32_t channel_id, void *dst, ipc_t instance)
 {
+	PR("here %s %d\n \n \n", __func__, __LINE__);
 	ipc_userspace_t *ipc_priv = instance;
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci;
+	uint32_t occupied, ring_size, pi, ci, msg_len;
 	ipc_bd_t *bdr, *bd;
-	ipc_sh_buf_t *sh;
-	uint64_t vaddr2;
+	ipc_sh_buf_t sh;
+	uint64_t vaddr2 =0x0;
 
 
 	if (!ipc_instance || !ipc_instance->initialized) {
-		ipc_fill_errorcode(err,IPC_INSTANCE_INVALID);
-		return NULL;
+		return IPC_INSTANCE_INVALID;
 	}
 
 	if (channel_id >= IPC_MAX_CHANNEL_COUNT) {
-		ipc_fill_errorcode(err, IPC_CH_INVALID);
-		return NULL;
+		return IPC_CH_INVALID;
 	}	
 
 	ch = &(ipc_instance->ch_list[channel_id]);
 #if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv)) {
-		ipc_fill_errorcode(err, IPC_CH_INVALID);
-		return NULL;
+		return IPC_CH_INVALID;
 	}	
 #endif
 	md = &(ch->br_msg_desc.md);
@@ -382,11 +392,10 @@ ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
 	ci = md->ci;
 	pi = md->pi; /* Modification from Producer only */
 	ring_size = md->ring_size;
-#if 1
+#if 0 /* REMOVE*/
 	if (pi == ((ci + 1) % ring_size)) {
-		ipc_fill_errorcode(err, IPC_CH_EMPTY);
-		return NULL;
-	}	
+		return IPC_CH_EMPTY;
+	}
 #endif
 
 	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
@@ -395,22 +404,31 @@ ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err)
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
 
-	PR("%d %s\n\n",__LINE__, __func__);
+	PR("%d %s bd->host_virt_h=%x bd->host_virt_l=%x offset=%x\n\n",__LINE__, __func__,bd->host_virt_h, bd->host_virt_l, bd->modem_ptr);
 	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
-	//memcpy(dst, (void *)(bd->host_virt), msg_len);
-	sh = (ipc_sh_buf_t *)(vaddr2);
-	PR("%d %s\n\n",__LINE__, __func__);
+#if 1
+	msg_len = bd->len;
+	if (msg_len > md->msg_size || msg_len == 0) {
+		printf("%d %s ERROR size=%x\n\n",__LINE__, __func__, msg_len);
+		//return IPC_CH_INVALID;
+	}
+	memcpy(dst, (void *)vaddr2, sizeof(ipc_sh_buf_t));
+	memcpy((void *)&sh, (void *)vaddr2, sizeof(ipc_sh_buf_t));
+#endif
+	PR("%d %s size=%x\n\n",__LINE__, __func__, msg_len);
+	PR("%d %s sh->host_virt_h=%x sh->host_virt_l=%x sh->mod_phys=%x\n\n",
+	   __LINE__, __func__, sh.host_virt_h, sh.host_virt_l, sh.mod_phys);
 
 	occupied -= 1;
 	ci = (ci + 1) % ring_size;
 
 	//md->occupied = occupied;
-	md->ci = ci;;
+	md->ci = ci;
 
 	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u,host_virt: %lx\r\n",
 			__func__, pi, ci, occupied, ring_size, vaddr2);
-	PR("%s %d %s\n\n",__func__, __LINE__, (char *)vaddr2);
-	return sh;
+	pr_debug("%s %d %s\n\n",__func__, __LINE__, (char *)vaddr2);
+	return IPC_SUCCESS;
 }
 
 int ipc_recv_msg(uint32_t channel_id, void *dst,
@@ -799,7 +817,7 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 	if (channel_type == IPC_CH_MSG) {
 		ch->br_msg_desc.md.ring_size = depth;
 		ch->br_msg_desc.md.occupied = 0;
-	//	ch->br_msg_desc.md.pi = 0;
+		ch->br_msg_desc.md.pi = 0;
 		ch->br_msg_desc.md.ci = 0;
 		ch->br_msg_desc.md.msg_size = msg_size;
 	//	ch->br_msg_desc.bd[i].len = 0; /* not sure use of this len */
@@ -874,7 +892,6 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 			ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
 			/* ch->br_msg_desc.bd[i].host_phy = HOST_V2P(vaddr); DO not access now bus error. Should be used to fetch ipc_sh_buf_t*/
 		}
-		ch->br_bl_desc.md.pi = depth;  /* as depth */
 		ch->bl_initialized = 1;
 	}
 

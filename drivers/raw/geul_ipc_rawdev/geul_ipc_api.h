@@ -317,7 +317,7 @@ int ipc_send_msg(uint32_t channel_id, void *src_buf_addr,
  * IPC_SUCCESS - no error
  * Non zero value - error (check ipc_errorcodes.h)
  ****************************************************************************/
-ipc_sh_buf_t* ipc_recv_ptr(uint32_t channel_id,	ipc_t instance, int *err);
+int ipc_recv_ptr(uint32_t channel_id, void *sh_buf, ipc_t instance);
 
 /***************************************************************************
  * @ipc_recv_msg
