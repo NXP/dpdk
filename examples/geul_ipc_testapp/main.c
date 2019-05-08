@@ -630,14 +630,24 @@ _recv_ptr(struct rte_mempool *mp __rte_unused, uint32_t channel_id,
 	  ipc_t instance)
 {
 	int ret, err;
-	ipc_sh_buf_t *buffer;
+	//void *buffer2;
+	ipc_sh_buf_t buffer;
 	uint64_t validate_buf = 0;
-
+#if GOLIVE
+	ret = rte_mempool_get(mp, &buffer2);
+	if (ret) {
+		printf("Unable to get pool\n");
+		return -1;
+	}
+#endif
 repeat:
-	buffer = ipc_recv_ptr(channel_id, instance, &err);
-	validate_buf = buffer->host_virt_h;
-	validate_buf = JOIN_VA32_64_APP(validate_buf, buffer->host_virt_l);
-	ipc_debug("\n\n\n>>>>>>>>>%d %s %lx %s\n",__LINE__, __func__, validate_buf, (char *)validate_buf);
+	err = ipc_recv_ptr(channel_id, (void *)&buffer, instance);
+	validate_buf = buffer.host_virt_h;
+	validate_buf = JOIN_VA32_64_APP(validate_buf, buffer.host_virt_l);
+	ipc_debug("\n\n\n<<<<<<<<<%d %s h=%x l=%x off=%x\n",
+		  __LINE__, __func__, buffer.host_virt_h, buffer.host_virt_l, buffer.mod_phys);
+	ipc_debug("\n\n\n>>>>>>>>>%d %s %lx %s\n",
+		  __LINE__, __func__, validate_buf, (char *)validate_buf);
 	if (err == IPC_CH_EMPTY && !force_quit) {
 		ipc_debug("recv_ptr returned = %d, retrying\n", err);
 		goto repeat;
@@ -649,8 +659,10 @@ repeat:
 
 		/* Buffer is valid, and no error */
 		ret = validate_buffer((void *)validate_buf,
-				      buffer->data_size);
-		ipc_debug("\n\n\n>>>>>>>>>%d %s %s\n",__LINE__, __func__, (char *)validate_buf);
+				      buffer.data_size);
+		ipc_debug("\n\n\n>>>>>>>>>%d %s %s\n",
+			  __LINE__, __func__, (char *)validate_buf);
+		ipc_put_buf(channel_id, &buffer, instance);
 		if (ret) {
 			printf("Invalid buffer in recv_ptr (ret=%d)\n", ret);
 			/* XXX Increase stats */
@@ -661,9 +673,10 @@ repeat:
 
 	err = 0;
 out:
-	if (buffer && !force_quit)
-		ipc_put_buf(channel_id, buffer, instance);
-
+#if GOLIVE
+	if (ret == 0 && !force_quit)
+		ipc_put_buf(channel_id, &buffer, instance);
+#endif
 	return err;
 }
 /*
