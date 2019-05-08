@@ -50,7 +50,7 @@ typedef uint32_t phys_addr_t;
 typedef uint32_t addr_t;
 #endif
 
-typedef uint64_t ipc_bitmask_t;
+typedef uint32_t ipc_bitmask_t;
 typedef void *ipc_t;
 
 /** ipc callback function for async channels */

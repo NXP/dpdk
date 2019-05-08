@@ -30,7 +30,8 @@ typedef struct ipc_bd_ring_md {
 	uint32_t pi;		/**< Producer index */
 	uint32_t ci;		/**< Consumer index */
 	uint32_t ring_size;	/**< depth (Used to roll-over pi/ci) */
-	uint32_t occupied;	/**<  Number of occupied buffer in this ring (Used to identify whether ring have space) */
+	uint32_t pc;		/**< Produced counter */
+	uint32_t cc;		/**< Consumed counter */
 	uint32_t msg_size;	/**< Size of the each buffer */
 } __attribute__((packed)) ipc_br_md_t;
 

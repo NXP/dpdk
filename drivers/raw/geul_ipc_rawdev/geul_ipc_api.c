@@ -25,12 +25,13 @@
 #include <geul_ipc_um.h>
 #include <geul_ipc.h>
 #include <gul_host_if.h>
-#define PR(...) printf(__VA_ARGS__)
+//#define PR(...) printf(__VA_ARGS__)
+#define PR(...)
+
 mem_range_t chvpaddr_arr[IPC_MAX_INSTANCE_COUNT][IPC_MAX_CHANNEL_COUNT];
 #define TBD 0
 #define DONOT_CHECK 0
 #define UNUSED(x) (void)x;
-
 #define MHIF_VADDR(A) \
 	(void *)((unsigned long)(A) \
 			- (ipc_priv->mhif_start.host_phys) \
@@ -94,6 +95,60 @@ static inline void ipc_fill_errorcode(int *err, int code)
 {
 	if (err)
 		*err = code;
+}
+
+static inline int ipc_is_bd_ring_empty(ipc_br_md_t *md)
+{
+	return ((md->cc == md->pc));
+}
+
+static inline int ipc_is_bd_ring_full(ipc_br_md_t *md)
+{
+	uint32_t cc, pc, ring_size;
+	cc = md->cc;
+	pc = md->pc;
+	ring_size = md->ring_size;
+
+	if (cc > pc)
+		return (((UINT32_MAX - cc) + pc) == ring_size);
+
+	return ((pc - cc) == ring_size);
+}
+
+static inline int ipc_is_bl_full(ipc_br_md_t *md)
+{
+	return (md->cc == md->pc);
+}
+
+static inline int ipc_is_bl_empty(ipc_br_md_t *md)
+{
+	uint32_t cc, pc, ring_size;
+	cc = md->cc;
+	pc = md->pc;
+	ring_size = md->ring_size;
+
+	if (pc > cc)
+		return (((UINT32_MAX - pc) + cc) == ring_size);
+
+	return ((cc - pc) == ring_size);
+}
+
+static inline void ipc_increment_pc(ipc_br_md_t *md)
+{
+	volatile uint32_t pc = md->pc;
+	if (pc == UINT32_MAX)
+		pc = 0;
+	pc++;
+	md->pc = pc;
+}
+
+static inline void ipc_increment_cc(ipc_br_md_t *md)
+{
+	volatile uint32_t cc = md->cc;
+	if (cc == UINT32_MAX)
+		cc = 0;
+	cc++;
+	md->cc = cc;
 }
 
 static inline int open_devmem(void)
@@ -205,7 +260,7 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci;
+	uint32_t ring_size, pi, ci, cc, pc;
 	ipc_sh_buf_t *sh = buf_to_free;
 	uint64_t range = 0;
 
@@ -226,17 +281,23 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 		return IPC_CH_INVALID;
 #endif
 	md = &(ch->br_bl_desc.md);
+	if (ipc_is_bl_full(md))
+		return IPC_BL_FULL;
 
-	occupied = md->occupied;
 	ring_size = md->ring_size;
 
 	pi = md->pi;
+	cc = md->cc;
+	pc = md->pc;
 	ci = md->ci; /* Modification from consumer only */
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n", __func__,
-			pi, ci, occupied, ring_size);
+	/* TO ipc_increment_cc(md);*/
+	pr_debug("%s enter: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
 
 	pi = (pi + 1) % ring_size;
+	md->pi = pi;
+	ipc_increment_pc(md);
 	pr_debug("%d %s sh->host_virt_h=%x sh->host_virt_l=%x sh->mod_phys=%x\n\n",__LINE__, __func__,
 			sh->host_virt_h, sh->host_virt_l, sh->mod_phys);
 
@@ -252,17 +313,13 @@ int ipc_put_buf(uint32_t channel_id, ipc_sh_buf_t *buf_to_free, ipc_t instance)
 	ch->br_bl_desc.bd[pi].host_virt_h = SPLIT_VA32_H(sh);
 	//ch->br_bl_desc.bd[pi].host_phys = HOST_V2P(sh); /* Should be unused */
 #endif
-	occupied = occupied - 1;
 
-	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n", __func__,
-			pi, ci, occupied, ring_size);
-
-	md->occupied = occupied;
+	pr_debug("%s exit: pi: %u, ci: %u, md->pi: %u, pc: %u, ring size: %u\r\n", __func__,
+			pi, ci, md->pi, md->pc, ring_size);
 
 	return IPC_SUCCESS;
 }
 
-/* AK NOT to implemented */
 int ipc_send_ptr(uint32_t channel_id,
 		ipc_sh_buf_t *buf,
 		ipc_t instance)
@@ -295,7 +352,7 @@ int ipc_send_msg(uint32_t channel_id,
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[channel_id]);
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
-	uint32_t occupied, ring_size, pi, ci;
+	uint32_t ring_size, pi, ci, cc, pc;
 	ipc_bd_t *bdr, *bd;
 
 	PR("here %s %d\n \n \n", __func__, __LINE__);
@@ -319,18 +376,19 @@ int ipc_send_msg(uint32_t channel_id,
 		return IPC_INPUT_INVALID;
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
-	occupied = md->occupied;
 	ring_size = md->ring_size;
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 
 	ci = md->ci;
 	pi = md->pi;
-	if ((pi - ci) == ring_size)
+	cc = md->cc;
+	pc = md->pc;
+	if (ipc_is_bd_ring_full(md))
 		return IPC_CH_FULL;
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u, len: %u\r\n",
-			__func__, pi, ci, occupied, ring_size, len);
+	pr_debug("%s enter: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[pi];
@@ -344,11 +402,12 @@ int ipc_send_msg(uint32_t channel_id,
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	md->pi = pi;
+	ipc_increment_pc(md);
 	rte_mb();
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u bd->modem_ptr=%x\r\n", __func__,
-			pi, ci, occupied, ring_size, bd->modem_ptr);
+	pr_debug("%s exit: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, md->pc, cc, ring_size);
 	PR("here %s %d\n \n \n", __func__, __LINE__);
 
 	return IPC_SUCCESS;
@@ -365,7 +424,7 @@ int ipc_recv_ptr(uint32_t channel_id, void *dst, ipc_t instance)
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci, msg_len;
+	uint32_t cc, pc, ring_size, pi, ci, msg_len;
 	ipc_bd_t *bdr, *bd;
 	ipc_sh_buf_t sh;
 	uint64_t vaddr2 =0x0;
@@ -383,23 +442,20 @@ int ipc_recv_ptr(uint32_t channel_id, void *dst, ipc_t instance)
 #if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv)) {
 		return IPC_CH_INVALID;
-	}	
-#endif
-	md = &(ch->br_msg_desc.md);
-
-	occupied = md->occupied;
-
-	ci = md->ci;
-	pi = md->pi; /* Modification from Producer only */
-	ring_size = md->ring_size;
-#if 0 /* REMOVE*/
-	if (pi == ((ci + 1) % ring_size)) {
-		return IPC_CH_EMPTY;
 	}
 #endif
+	md = &(ch->br_msg_desc.md);
+	if (ipc_is_bd_ring_empty(md))
+		return IPC_CH_EMPTY;
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
-			__func__, pi, ci, occupied, ring_size);
+	ci = md->ci;
+	cc = md->cc;
+	pc = md->pc;
+	pi = md->pi; /* Modification from Producer only */
+	ring_size = md->ring_size;
+
+	pr_debug("\n %s enter: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
@@ -419,14 +475,12 @@ int ipc_recv_ptr(uint32_t channel_id, void *dst, ipc_t instance)
 	PR("%d %s sh->host_virt_h=%x sh->host_virt_l=%x sh->mod_phys=%x\n\n",
 	   __LINE__, __func__, sh.host_virt_h, sh.host_virt_l, sh.mod_phys);
 
-	occupied -= 1;
 	ci = (ci + 1) % ring_size;
-
-	//md->occupied = occupied;
 	md->ci = ci;
+	ipc_increment_cc(md);
 
-	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u,host_virt: %lx\r\n",
-			__func__, pi, ci, occupied, ring_size, vaddr2);
+	pr_debug("\n %s exit: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, md->cc, ring_size);
 	pr_debug("%s %d %s\n\n",__func__, __LINE__, (char *)vaddr2);
 	return IPC_SUCCESS;
 }
@@ -438,7 +492,7 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci, msg_len;
+	uint32_t cc, pc, ring_size, pi, ci, msg_len;
 	uint64_t vaddr2 = 0;
 	ipc_bd_t *bdr, *bd;
 
@@ -457,18 +511,17 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 		return IPC_CH_INVALID;
 #endif
 	md = &(ch->br_msg_desc.md);
-
-	occupied = md->occupied;
-	/* Race condition use pi-ci*/
-
-	ci = md->ci;
-	pi = md->pi;
-	ring_size = md->ring_size;
-	if ((pi - ci) == 0)
+	if (ipc_is_bd_ring_empty(md))
 		return IPC_CH_EMPTY;
 
-	pr_debug("--> \n\n%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
-			__func__, pi, ci, occupied, ring_size);
+	pc = md->pc;
+	cc = md->cc;
+	pi = md->pi;
+	ci = md->ci;
+	ring_size = md->ring_size;
+
+	pr_debug("%s enter: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
@@ -483,14 +536,12 @@ int ipc_recv_msg(uint32_t channel_id, void *dst,
 	PR("%d %s\n\n",__LINE__, __func__);
 	*len = msg_len;
 
-//	occupied -= 1;
 	ci = (ci + 1) % ring_size;
+	md->ci = ci;
+	ipc_increment_cc(md);
 
-//	md->occupied = occupied;
-	//md->ci = ci;;
-
-	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u, len: %u\r\n",
-			__func__, pi, ci, occupied, ring_size, msg_len);
+	pr_debug("%s exit: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, md->cc, ring_size);
 
 	return 0;
 }
@@ -502,7 +553,7 @@ int ipc_recv_msg_ptr(uint32_t channel_id, void **dst_buffer,
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci;
+	uint32_t cc, pc, ring_size, pi, ci;
 	ipc_bd_t *bdr, *bd;
 	uint64_t vaddr2;
 
@@ -521,18 +572,18 @@ int ipc_recv_msg_ptr(uint32_t channel_id, void **dst_buffer,
 		return IPC_CH_INVALID;
 
 	md = &(ch->br_msg_desc.md);
+	if (ipc_is_bd_ring_empty(md))
+		return IPC_CH_EMPTY;
 	
 	ci = md->ci;
 	pi = md->pi;
+	cc = md->cc;
+	pc = md->pc;
 	ring_size = md->ring_size;
 
-	occupied = md->occupied;
-	if ((pi - ci) == 0)
-		return IPC_CH_EMPTY;
 
-
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
-			__func__, pi, ci, occupied, ring_size);
+	pr_debug("%s pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
@@ -563,7 +614,7 @@ int ipc_set_consumed_status(uint32_t channel_id, ipc_t instance)
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch;
 	ipc_br_md_t *md;
-	uint32_t occupied, ring_size, pi, ci;
+	uint32_t cc, pc, ring_size, pi, ci;
 
 	if (!ipc_instance || !ipc_instance->initialized)
 		return IPC_INSTANCE_INVALID;
@@ -572,31 +623,29 @@ int ipc_set_consumed_status(uint32_t channel_id, ipc_t instance)
 		return IPC_CH_INVALID;
 
 	ch = &(ipc_instance->ch_list[channel_id]);
-
+#if DONOT_CHECK
 	if (!ipc_is_channel_configured(channel_id, ipc_priv))
 		return IPC_CH_INVALID;
-	
+#endif
 	md = &(ch->br_msg_desc.md);
-
-	occupied = md->occupied;
+	if (ipc_is_bd_ring_empty(md))
+		return IPC_CH_EMPTY;
 
 	ci = md->ci;
 	pi = md->pi;
+	cc = md->cc;
+	pc = md->pc;
 	ring_size = md->ring_size;
-	if ((ci - pi) == 0)
-		return IPC_CH_EMPTY;
 
-	pr_debug("%s enter: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
-			__func__, pi, ci, occupied, ring_size);
+	pr_debug("%s enter: pi: %u, ci: %u cc: %u pc: %u, ring size: %u\r\n",
+			__func__, pi, ci, cc, pc, ring_size);
 
-	occupied -= 1;
 	ci = (ci + 1) % ring_size;
-
-	md->occupied = occupied;
 	md->ci = ci;
+	ipc_increment_cc(md);
 
-	pr_debug("%s exit: pi: %u, ci: %u, occupied: %u, ring size: %u\r\n",
-			__func__, pi, ci, occupied, ring_size);
+	pr_debug("%s exit: pi: %u, ci: %u, cc: %u, ring size: %u\r\n",
+			__func__, pi, ci, md->cc, ring_size);
 
 	return IPC_SUCCESS;
 }
@@ -729,8 +778,9 @@ ipc_t ipc_host_init(uint32_t instance_id,
 	if (sizeof(ipc_metadata_t) !=
 			mhif->ipc_regs.ipc_mdata_size) {
 		ipc_fill_errorcode(err, IPC_MD_SZ_MISS_MATCH);
-		PR("gul =%lx, mhif->ipc_regs.ipc_mdata_size=%x\n", sizeof(ipc_metadata_t), mhif->ipc_regs.ipc_mdata_size);
-		PR("hif size=%lx, \n", sizeof(struct gul_hif));
+		PR("\n ipc_metadata_t =%lx, mhif->ipc_regs.ipc_mdata_size=%x\n", sizeof(ipc_metadata_t), mhif->ipc_regs.ipc_mdata_size);
+		PR("--> mhif->ipc_regs.ipc_mdata_offset= %x\n", mhif->ipc_regs.ipc_mdata_offset);
+		PR("gul_hif size=%lx, \n", sizeof(struct gul_hif));
 
 		//return NULL;
 	}
@@ -816,7 +866,7 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 
 	if (channel_type == IPC_CH_MSG) {
 		ch->br_msg_desc.md.ring_size = depth;
-		ch->br_msg_desc.md.occupied = 0;
+		ch->br_msg_desc.md.cc = 0;
 		ch->br_msg_desc.md.pi = 0;
 		ch->br_msg_desc.md.ci = 0;
 		ch->br_msg_desc.md.msg_size = msg_size;
@@ -856,7 +906,7 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 		*/
 		/* Fill msg */
 		ch->br_msg_desc.md.ring_size = depth;
-		ch->br_msg_desc.md.occupied = 0;
+		ch->br_msg_desc.md.cc = 0;
 		ch->br_msg_desc.md.pi = 0;
 		ch->br_msg_desc.md.ci = 0;
 		ch->br_msg_desc.md.msg_size = sizeof(ipc_sh_buf_t);
@@ -864,7 +914,7 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 
 		/* Fill bl */
 		ch->br_bl_desc.md.ring_size = depth;
-		ch->br_bl_desc.md.occupied = 0;
+		ch->br_bl_desc.md.cc = 0; /* think again*/
 		ch->br_bl_desc.md.pi = 0;
 		ch->br_bl_desc.md.ci = 0;
 		ch->br_bl_desc.md.msg_size = msg_size; /*  128K */
