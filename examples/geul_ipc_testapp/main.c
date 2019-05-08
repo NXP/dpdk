@@ -557,7 +557,7 @@ is_modem_ready(ipc_t handle __rte_unused)
 static int
 _send(struct rte_mempool *mp, uint32_t channel_id, ipc_t instance)
 {
-	int ret;
+	int ret, jj=0;
 	void *buffer;
 
 	ret = rte_mempool_get(mp, &buffer);
@@ -573,7 +573,10 @@ repeat:
 	/* XXX clarify what is IPC_BL_* */
 	if (ret == IPC_CH_FULL && !force_quit) {
 		/* Loop - right now infinitely */
-		ipc_debug("send_msg returned = %d, repeating\n", ret);
+		if ((jj++ % 30 )== 0) {
+			ipc_debug("#");
+		}
+		//ipc_debug("send_msg returned = %d, repeating\n", ret);
 		goto repeat;
 	}
 
@@ -704,7 +707,6 @@ non_rt_sender(void *arg)
 
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L2_TO_L1_MSG_CH_1 */
-#ifdef GOLIVE
 		ret = _send(channels[L2_TO_L1_MSG_CH_1]->mp,
 			    channels[L2_TO_L1_MSG_CH_1]->channel_id,
 			    instance);
@@ -712,6 +714,7 @@ non_rt_sender(void *arg)
 			printf("Unable to send msg on L2_TO_L1_MSG_CH_1 (%d)\n", ret);
 			return ret;
 		}
+#ifdef GOLIVE
 		/* For the L2_TO_L1_MSG_CH_2 */
 		ret = _send(channels[L2_TO_L1_MSG_CH_2]->mp,
 			    channels[L2_TO_L1_MSG_CH_2]->channel_id,
@@ -791,6 +794,7 @@ receiver(void *arg __rte_unused)
 	/* XXX Loop on cycle_times */
 	for (i = 0; i < cycle_times; i++) {
 		/* For the L1_TO_L2_MSG_CH_4 */
+#ifdef GOLIVE
 		ret = _recv(channels[L1_TO_L2_MSG_CH_4]->mp,
 			    channels[L1_TO_L2_MSG_CH_4]->channel_id,
 			    instance);
@@ -798,7 +802,6 @@ receiver(void *arg __rte_unused)
 			printf("Unable to recv msg on L1_TO_L2_MSG_CH_4 (%d)\n", ret);
 			return ret;
 		}
-#ifdef GOLIVE
 		/* For the L1_TO_L2_MSG_CH_5 */
 		ret = _recv(channels[L1_TO_L2_MSG_CH_5]->mp,
 			    channels[L1_TO_L2_MSG_CH_5]->channel_id,
