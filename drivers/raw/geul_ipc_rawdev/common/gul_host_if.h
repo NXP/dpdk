@@ -28,8 +28,10 @@
 
 /*Common Addresses and offsets*/
 #ifdef ABERDEEN
-#define GUL_PCI1_ADDR_BASE	(0x2000000000LL)
+#define GUL_PCI1_ADDR_BASE	(0x2000000000ULL)
 #define GUL_PCI1_ADDR_SIZE	(32 * 1024 * 1024 * 1024) /*32 GB*/
+#define SPLIT_VA32_H(A) ((uint32_t)((uint64_t)(A)>>32))
+#define SPLIT_VA32_L(A) ((uint32_t)((uint64_t)(A)))
 #else
 #define GUL_PCI1_ADDR_BASE	(0x00000000)
 #define GUL_PCI1_ADDR_SIZE	(2 * 1024 * 1024 * 1024) /*2 GB*/
@@ -53,63 +55,64 @@
  * scratch buf.
  * XXX:TBD:Revisit this size after FreeRTOS implementation is available
  */
-#define GUL_EP_DMA_BUF_OFFSET		(0)
-#define GUL_EP_DMA_BUF_PHYS_ADDR	(GUL_PCI1_ADDR_BASE +	\
-					GUL_EP_DMA_BUF_OFFSET)
-#ifdef ABERDEEN
-#define GUL_EP_DMA_BUF_PHYS_SIZE	(0) /*0 KB*/
-#else
-#define GUL_EP_DMA_BUF_PHYS_SIZE	(512 * 1024) /*512 KB*/
-#endif
-#define GUL_EP_TOHOST_MSI_OFFSET	(GUL_EP_DMA_BUF_OFFSET + \
-					GUL_EP_DMA_BUF_PHYS_SIZE)
+#ifndef ABERDEEN
 
-#define GUL_EP_TOHOST_MSI_PHY_ADDR	(GUL_PCI1_ADDR_BASE + GUL_EP_TOHOST_MSI_OFFSET)
+#define GUL_USER_HUGE_PAGE_SIZE (1 * 1024 * 1024 * 1024) /*1GB*/
+#define GUL_SCRATCH_DMA_BUF_MAX_SIZE	(512 * 1024 * 1024) /*512 MB*/
+#define GUL_FECA_AXI_SLAVE_SIZE		(64 * 1024 * 1024) /*64 MB*/
+#define GUL_FECA_APB_SLAVE_SIZE		(64 * 1024) /*64 KB*/
+#define GUL_EP_DMA_BUF_PHYS_SIZE	(64 * 1024) /*64 KB*/
 #define GUL_EP_TO_HOST_MSI_SIZE		(4 * 1024) /*4 KB*/
-#define GUL_SCRATCH_DMA_BUF_OFFSET	(GUL_EP_TOHOST_MSI_OFFSET +\
-					GUL_EP_TO_HOST_MSI_SIZE)
+#else
+#define GUL_USER_HUGE_PAGE_SIZE (1 * 1024 * 1024 * 1024) /*1GB*/
+#define GUL_SCRATCH_DMA_BUF_MAX_SIZE	(512 * 1024 * 1024) /*512 MB*/
+#define GUL_FECA_AXI_SLAVE_SIZE		(64 * 1024 * 1024) /*64 MB*/
+#define GUL_FECA_APB_SLAVE_SIZE		(64 * 1024) /*64 KB*/
+#define GUL_EP_DMA_BUF_PHYS_SIZE	(0) /*0 KB*/
+#define GUL_EP_TO_HOST_MSI_SIZE		(4 * 1024) /*4 KB*/
+#endif
 
+
+/*User space Huge page*/
+#define GUL_USER_HUGE_PAGE_OFFSET	(0)
+
+#define GUL_USER_HUGE_PAGE_ADDR	(GUL_PCI1_ADDR_BASE + GUL_USER_HUGE_PAGE_OFFSET)
+
+/*SCRATCH BUF*/
+#define GUL_SCRATCH_DMA_BUF_OFFSET	(GUL_USER_HUGE_PAGE_OFFSET +\
+			GUL_USER_HUGE_PAGE_SIZE)
 #define GUL_SCRATCH_DMA_BUF_PHYS_ADDR	(GUL_PCI1_ADDR_BASE + \
 			GUL_SCRATCH_DMA_BUF_OFFSET)
 
-/*For AberDEEN Scratch buffer will be used for Modem Linux ITB image load also,
- *max size of Linux image is 512 MB. For Geul/Inverness scratch buffer is used
- *only for L1Trace buffer thus 64 MB is sufficient
- */
-#ifdef ABERDEEN
-#define GUL_SCRATCH_DMA_BUF_MAX_SIZE	(512 * 1024 * 1024) /*512 MB*/
-#else
-#define GUL_SCRATCH_DMA_BUF_MAX_SIZE	(64 * 1024 * 1024) /*64 MB*/
-#endif
-
-/*Host User space Huge page is mapped to Modem address space after scratch buf,
- *MSI, DMA/Firmware buffers
- */
-#define GUL_USER_HUGE_PAGE_OFFSET	(GUL_SCRATCH_DMA_BUF_OFFSET +\
-				GUL_SCRATCH_DMA_BUF_MAX_SIZE)
-
-#define GUL_USER_HUGE_PAGE_ADDR	(GUL_PCI1_ADDR_BASE + GUL_USER_HUGE_PAGE_OFFSET)
-#define GUL_USER_HUGE_PAGE_SIZE (1 * 1024 * 1024 * 1024) /*1GB*/
-
-#ifdef ABERDEEN
-#define GUL_FECA_AXI_SLAVE_OFFSET	(GUL_USER_HUGE_PAGE_OFFSET + \
-					GUL_USER_HUGE_PAGE_SIZE)
+/*FECA PCIe BARs - AXI Slave & APB Slave */
+#define GUL_FECA_AXI_SLAVE_OFFSET	(GUL_SCRATCH_DMA_BUF_OFFSET + \
+					GUL_SCRATCH_DMA_BUF_MAX_SIZE)
 #define GUL_FECA_AXI_SLAVE_ADDR		(GUL_PCI1_ADDR_BASE + \
 					GUL_FECA_AXI_SLAVE_OFFSET)
-#define GUL_FECA_AXI_SLAVE_SIZE		(64 * 1024 * 1024) /*64 MB*/
 #define GUL_FECA_APB_SLAVE_OFFSET	(GUL_FECA_AXI_SLAVE_OFFSET + \
 			GUL_FECA_AXI_SLAVE_SIZE)
 #define GUL_FECA_APB_SLAVE_ADDR		(GUL_PCI1_ADDR_BASE + \
 					GUL_FECA_APB_SLAVE_OFFSET)
-#define GUL_FECA_APB_SLAVE_SIZE		(64 * 1024) /*64 KB*/
-#endif
+
+/*DMA buf*/
+#define GUL_EP_DMA_BUF_OFFSET		(GUL_FECA_APB_SLAVE_OFFSET +\
+				GUL_FECA_APB_SLAVE_SIZE)
+#define GUL_EP_DMA_BUF_PHYS_ADDR	(GUL_PCI1_ADDR_BASE +	\
+					GUL_EP_DMA_BUF_OFFSET)
+
+/*MSI */
+#define GUL_EP_TOHOST_MSI_OFFSET	(GUL_EP_DMA_BUF_OFFSET + \
+					GUL_EP_DMA_BUF_PHYS_SIZE)
+#define GUL_EP_TOHOST_MSI_PHY_ADDR	(GUL_PCI1_ADDR_BASE + GUL_EP_TOHOST_MSI_OFFSET)
+
+
 #define GUL_EP_FREERTOS_LOAD_ADDR	0x1f800000
 #define GUL_EP_BOOT_HDR_OFFSET		0x00000000
 #define GUL_EP_DMA_PHYS_OFFSET(addr) (addr - GUL_EP_DMA_BUF_PHYS_ADDR)
 #define GUL_EP_HIF_OFFSET		0x1C000
 #define GUL_EP_HIF_SIZE			(4 * 1024)
 
-#define GUL_MAX_SCRATCH_BUF_SIZE	(128 * 1024 * 1024)
+#define GUL_MAX_SCRATCH_BUF_SIZE	(2 * 1024 * 1024 * 1024)
 #define GUL_RFIC_SCRATCH_BUF_SIZE	(1024 * 1024)
 #define GUL_MSI_MAX_CNT		8
 #define GUL_QDMA_CHANNELS	14
@@ -173,6 +176,31 @@ enum gul_boot_fsm {
 	GUL_HOST_START_DRIVER_INIT,
 };
 
+#define		PCIE_QDMA_DIS_MASK	0x00000001
+
+struct sgtable {
+	uint32_t len;
+	uint32_t resv;
+	uint32_t src;
+	uint32_t dest;
+};
+
+struct cfword {
+	uint32_t addr;
+	uint32_t data;
+};
+
+struct gul_boot_header {
+	uint32_t			preamble;
+	uint32_t			sgentries;
+	struct sgtable			sgtbl[8];
+	uint32_t			bl_entry;
+	uint32_t			flags;
+	uint32_t			cfword_count;
+	struct  cfword			cfwrd[128];
+	uint32_t			target_boot_done;       // for testing
+} __packed;
+/*
 struct gul_boot_header {
 	uint32_t preamble;
 	uint32_t plugin_size;
@@ -183,7 +211,7 @@ struct gul_boot_header {
 	uint32_t bl_entry;
 	uint32_t reserved;
 } __attribute__ ((packed));
-
+*/
 #define GUL_BOOT_HDR_BYPASS_BOOT_PLUGIN	(1 << 16)
 #define GUL_BOOT_HDR_BYPASS_BOOT_EDMA	(1 << 0)
 
@@ -229,23 +257,18 @@ struct gul_QDMA {
 } __attribute__((packed));
 
 struct gul_ipc_stats {
-	/* Tx stats */
-	uint32_t ipc_txpc;
-	uint32_t ipc_txcc;
-	uint32_t ipc_txdmastart;
-	uint32_t ipc_txdmacallback;
-	uint32_t ipc_txdmafail;
-	uint32_t ipc_txcmpl;
-	uint32_t ipc_txint;
-
-	/* Rx stats */
-	uint32_t ipc_rxpc;
-	uint32_t ipc_rxcc;
-	uint32_t ipc_rxint;
-	uint32_t ipc_rxdmastart;
-	uint32_t ipc_rxdmacallback;
-	uint32_t ipc_rxdmafail;
-	uint32_t ipc_rxcmpl;
+	uint32_t num_of_msg_recved;  /**< Total number of messages received */
+	uint32_t num_of_msg_sent;    /**< Total number of messages/ptr sent */
+	uint32_t total_msg_length;   /**< Total message length */
+	uint32_t error_count;        /**<  Error count */
+	uint32_t err_input_invalid;
+	uint32_t err_channel_invalid;
+	uint32_t err_instance_invalid;
+	uint32_t err_mem_invalid;
+	uint32_t err_channel_full;
+	uint32_t err_channel_empty;
+	uint32_t err_buf_list_full;
+	uint32_t err_buf_list_empty;
 } __attribute__((packed));
 
 struct gul_stats {
@@ -286,8 +309,8 @@ struct hif_feca_regs {
 } __attribute__((packed));
 
 enum host_mem_region_id {
-	HOST_MEM_SCRATCH_BUF = 0,
-	HOST_MEM_HUGE_PAGE_BUF,
+	HOST_MEM_HUGE_PAGE_BUF = 0,
+	HOST_MEM_SCRATCH_BUF,
 	HOST_MEM_FECA_AXI_SLAVE,
 	HOST_MEM_FECA_APB_SLAVE,
 	HOST_MEM_END
