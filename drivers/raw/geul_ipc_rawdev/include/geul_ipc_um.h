@@ -12,7 +12,7 @@
 #include <geul_ipc_types.h>
 #include <geul_ipc.h>
 #define MAX_MEM_POOL_COUNT 8
-#ifdef DEBUG
+#ifndef DEBUG
 #define pr_debug(...) printf(__VA_ARGS__)
 #else
 #define pr_debug

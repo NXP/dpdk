@@ -37,6 +37,8 @@ enum geulipc_channel_list {
 #define POISON 0x12345678 /* Fills all bytes of a word */
 
 typedef struct geulipc_channel {
+#define CHANNEL_NAME_LEN 32
+	char name[CHANNEL_NAME_LEN];
 	uint16_t depth;	/**< Depth of the channel, for PTR channel case */
 	uint32_t channel_id;	/**< Channel ID */
 	enum ipc_ch_type type;  /**< Channel type */
