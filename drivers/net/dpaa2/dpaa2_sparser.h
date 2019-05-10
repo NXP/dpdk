@@ -21,8 +21,8 @@ extern "C" {
 do {								\
 	/* Base offset of parse profile memory in WRIOP */	\
 	(priv)->ss_offset = 0x20;				\
-	(priv)->ss_iova	= (uint64_t)NULL;			\
-	(priv)->ss_param_iova = (uint64_t)NULL;			\
+	(priv)->ss_iova	= (size_t)NULL;			\
+	(priv)->ss_param_iova = (size_t)NULL;			\
 } while (0)
 
 /**************************************************************************/
