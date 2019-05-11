@@ -164,7 +164,6 @@ static inline int open_devmem(void)
 static inline int open_devipc(void)
 {
         int devipc = open("/dev/gulipcgul0", O_RDWR);
-	printf("Here pass\n");
         if (devipc  < 0) {
                 printf("Error: Cannot open /dev/ipc_gul_x \n");
                 return -1;
@@ -189,7 +188,6 @@ int ipc_is_channel_configured(uint32_t channel_id, ipc_t instance)
 	ipc_userspace_t *ipc_priv = instance;
 	ipc_instance_t *ipc_instance = ipc_priv->instance; 
 	PR("here %s %d\n \n \n", __func__, __LINE__);
-	return 0;
 
 	/* Validate channel id */
 	if (!ipc_instance || channel_id >= IPC_MAX_CHANNEL_COUNT)
@@ -385,6 +383,9 @@ int ipc_send_msg(uint32_t channel_id,
 	pi = md->pi;
 	cc = md->cc;
 	pc = md->pc;
+	pr_debug("%s before bd_ring_full: pi: %u, ci: %u, pc: %u, cc: %u, ring size: %u\r\n", __func__,
+			pi, ci, pc, cc, ring_size);
+
 	if (ipc_is_bd_ring_full(md))
 		return IPC_CH_FULL;
 
@@ -849,22 +850,28 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 	ch = &(ipc_instance->ch_list[channel_id]);
 
 	PR("here %s %d\n \n \n", __func__, __LINE__);
-#if DONOT_CHECK	
-	if (ipc_is_channel_configured(channel_id, ipc_priv))
-		return IPC_CH_INVALID;
+#if 1
+	if (ipc_is_channel_configured(channel_id, ipc_priv)) {
+		printf("WARNING: [%s]: Channel already configured\n NOT configuring again\n",__func__);
+		return IPC_SUCCESS;
+	}
 #endif
 	pr_debug("%s: channel: %u, depth: %u, type: %d, msg size: %u\r\n",
 			__func__, channel_id, depth, channel_type, msg_size);
 
 	/* Start init of channel */
 	ch->ch_type = channel_type;
+#if 0
 	if (cbfunc != NULL)
 		ch->event_cb = cbfunc;
+#endif
 	ch->ch_id = channel_id; /* May not be required since modem does this */
+#if 0
 	if (ch->bl_initialized == 1) {
 		printf("WARNING: [%s]: Channel already configured\n NOT configuring again\n",__func__);
 		return IPC_SUCCESS;
-	}	
+	}
+#endif
 
 	if (channel_type == IPC_CH_MSG) {
 		ch->br_msg_desc.md.ring_size = depth;
@@ -948,7 +955,7 @@ int ipc_configure_channel(uint32_t channel_id, uint32_t depth, ipc_ch_type_t cha
 	}
 
 	PR("%d %s\n \n \n",__LINE__, __func__);
-	//ipc_mark_channel_as_configured(channel_id, ipc_priv->instance);
+	ipc_mark_channel_as_configured(channel_id, ipc_priv->instance);
 	PR("%d %s\n \n \n",__LINE__, __func__);
 	PR("finish configure\n");
 	return IPC_SUCCESS;
