@@ -15,7 +15,7 @@
 #ifndef DEBUG
 #define pr_debug(...) printf(__VA_ARGS__)
 #else
-#define pr_debug
+#define pr_debug(...)
 #endif
 
 typedef struct ipc_channel_us_priv {

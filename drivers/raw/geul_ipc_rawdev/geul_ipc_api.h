@@ -105,14 +105,10 @@ typedef struct ipc_sh_buf {
 	uint32_t data_size;	/**< actual size of the data in this buffer */
 	uint32_t cookie;	/**< Useful to free the buf */
 	uint64_t host_phys;	/**< host physcal address of the buffer */
-//	uint64_t host_virt;	/**< host virtual address of the buffer */
-//	union {
-//		uint64_t host_virt;     /**< host virtual address of bl ring */
-		struct {
-			uint32_t host_virt_l;
-			uint32_t host_virt_h;
-		};
-//	};
+
+	uint32_t host_virt_l;
+	uint32_t host_virt_h;
+
 } __attribute__((packed)) ipc_sh_buf_t;
 
 /** IPC memory pool */

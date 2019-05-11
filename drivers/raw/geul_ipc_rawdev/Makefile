@@ -19,7 +19,7 @@ LIB = librte_pmd_geul_ipc_rawdev.a
 
 GEUL_DIR=$(RTE_SDK)/drivers/raw/geul_ipc_rawdev/
 
-CFLAGS += -O3
+CFLAGS += -O0
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(GEUL_DIR)/
 CFLAGS += -I$(GEUL_DIR)/include/

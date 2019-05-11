@@ -65,10 +65,8 @@ typedef struct ipc_bd_ring_buf_list {
 typedef struct ipc_channel {
 	uint32_t ch_id;		/**< Channel id */
 	uint32_t bl_initialized;	/**< Set when buffer list is initialized */
-	ipc_cbfunc_t event_cb;		/**< IPC channel callback for async design */
-#if MODEM || (HOST & !HOST_IS_64BIT)
-	uint32_t pad;	/**< Padding to align 64 bit ptr size on host to 32 bit ptr size of modem */
-#endif
+	uint32_t event_cb_l;		/**< IPC channel callback for async design */
+	uint32_t event_cb_h;		/**< IPC channel callback for async design */
 	ipc_ch_type_t ch_type;
 	ipc_bd_ring_msg_t br_msg_desc;
 	ipc_bd_ring_bl_t br_bl_desc;
