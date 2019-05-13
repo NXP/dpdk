@@ -1,0 +1,337 @@
+===============================================================================
+NXP DPDK README
+---------------
+Supported Platforms (and their derivatives):
+1. DPAA  : LS1046A Aberdeen
+
+===============================================================================
+NXP DPDK provides a set of data plane libraries and network interface
+controller driver for Layerscape platforms
+This README provides information about building and executing DPDK based
+applications for supported platforms.
+
+===============================================================================
+
+Components for Build & Execution Environment
+--------------------------------------------
+
+To successfully build and execute DPDK based applications,
+following components are required:
+
+1. DPDK source code
+2. Cross compiled toolchain for ARM64 platform
+
+Following information can be used to obtain these components:
+
+    Fetching the DPDK code
+    ~~~~~~~~~~~~~~~~~~~~~~
+
+    Use following command to get the DPDK code
+
+    - Internal git repository:
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b GEUL_BSP_0.0.0.1_RC4
+
+      $ cd dpdk # Change directory to cloned DPDK source code
+
+    Cross compiled toolchain For ARM64
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Get the `gcc-7.2` or earlier toolchain from Linaro. e.g.
+
+    # https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/
+
+    Thereafter, set the environment variable:
+
+    $ export CROSS=<path to uncompressed toolchain archive>/bin/aarch64-linux-gnu-
+
+===============================================================================
+
+Building DPDK and Example Applications
+--------------------------------------
+
+DPDK source code contains all necessary files for building the DPDK libraries
+and the Example applications. Quick start information about build DPDK and the
+example applications is provided below. For detailed information, refer the
+DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
+
+  Building DPDK: Libraries and Test Applications
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands from Linux(Host) shell prompt for generating
+  DPDK libraries, which are required for compiling DPDK examples and
+  applications:
+
+        CONFIG_RTE_KNI_KMOD=n
+
+  1. export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+
+    $ make T=arm64-dpaa-linuxapp-gcc O=arm64-dpaa CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n install -j 4
+
+    In the above, "-j" specifies number of parallel builds. As output of
+    this command, compiled libraries, binary objects and headers are
+    are placed in a new folder named `arm64-dpaa` in the
+    current folder (root folder of DPDK source code).
+
+    This command doesn't compile the example applications. See steps below
+    for compiling example applications.
+
+    NOTE: If installation is required in a specific directory, use following:
+
+        $ make T=arm64-dpaa-linuxapp-gcc DESTDIR=<Path to install dir> install
+
+    NOTE: By default, Static compilation is done by DPDK build system. To
+          enable shared libraries and applications with shared library support,
+          set the following in the
+          config/defconfig_arm64-dpaa-linuxapp-gcc configuration file:
+
+          CONFIG_RTE_BUILD_SHARED_LIB=y
+
+    NOTE: For all the above cases where changes to configuration file
+          config/defconfig-arm64-dpaa-linuxapp-gcc is required, another
+          alternative it to pass the configurations to `make` command line.
+          For example, for shared build:
+
+          $ make T=arm64-dpaa-linuxapp-gcc -j 4 install CONFIG_RTE_BUILD_SHARED_LIB=y
+
+  Building GEUL IPC Example Applications
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  For building Example applications provided with DPDK source code, following
+  environment variables are required to be set. It is assumed that DPDK code
+  has already been compiled using the steps mentioned above.
+
+  1. Set the Target. This is the "T=" argument provided in the DPDK build
+     process.
+
+      $ export RTE_TARGET=arm64-dpaa-linuxapp-gcc
+
+  2. Set the DPDK working directory path.
+
+      $ export RTE_SDK=<path/to/DPDK/source/code>
+
+    NOTE: It is possible to have multiple target folders in the DPDK source
+          after the build process. This can be done using "T=" argument based
+          configuration being built. This also impacts the compilation of
+          example applications when RTE_TARGET environment variable is set.
+
+  3. Compiling the Example applications:
+
+      $ make -C examples/geul_ipc_testapp
+
+===============================================================================
+
+Executing GEUL IPC Applications
+-------------------------------
+
+  # Assuming all the other pre-requisites for IPC are completed (For e.g.,
+    Yami Module), do the following:
+
+  $ mkdir -p /mnt/hugetlbfs;mount -t hugetlbfs none /mnt/hugetlbfs
+
+  $ ./geul_ipc_testapp -- -t <number of runs>
+
+  where <number of runs> is an integer counter which specified the number of
+  buffer each channel would attempt to send or receive.
+
+  Following would be a sample output:
+
+  --
+	=-=-=-=-=--=-==-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-
+		Print # : Non-RT Sender is waiting
+		Print . : RT Sender is waiting
+		Print * : Receiver is waiting
+	=-=-=-=-=--=-==-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-
+	--> Starting NON RT Sender (lcore_id=1)
+	--> Starting RT Sender (lcore_id=2)
+	--> Starting Receiver (lcore_id=3)
+	RT Priority set for Send on Core 2
+	---- For Channel L2_TO_L1_MSG_CH_1 ---
+	##### HOST Stats  ######
+	recvd =        0  sent =      100
+	total message length = 204800
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =      100  sent =        0
+	total message length = 204800
+	error: 24205
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 24234
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L2_TO_L1_MSG_CH_2 ---
+	##### HOST Stats  ######
+	recvd =        0  sent =      100
+	total message length = 204800
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =      100  sent =        0
+	total message length = 204800
+	error: 24320
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 24349
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L2_TO_L1_MSG_CH_3 ---
+	##### HOST Stats  ######
+	recvd =        0  sent =      100
+	total message length = 1638400
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =      100  sent =        0
+	total message length = 1638400
+	error: 24435
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 24464
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L1_TO_L2_MSG_CH_4 ---
+	##### HOST Stats  ######
+	recvd =      100  sent =        0
+	total message length = 204800
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =        0  sent =      101
+	total message length = 206848
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L1_TO_L2_MSG_CH_5 ---
+	##### HOST Stats  ######
+	recvd =      100  sent =        0
+	total message length = 204800
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =        0  sent =      101
+	total message length = 206848
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L1_TO_L2_PRT_CH_1 ---
+	##### HOST Stats  ######
+	recvd =      100  sent =        0
+	total message length = 13107200
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+	       mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =        0  sent =      100
+	total message length = 13107200
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+	---- For Channel L1_TO_L2_PRT_CH_2 ---
+	##### HOST Stats  ######
+	recvd =        0  sent =        0
+	total message length = 0
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+
+	##### MODEM Stats ######
+	recvd =        0  sent =        0
+	total message length = 0
+	error: 0
+		input_invalid: 0
+		channel_invalid: 0
+		instance_invalid: 0
+		mem_invalid: 0
+		channel_full: 0
+		channel_empty: 0
+		buf_full: 0
+		buf_empty: 0
+	-------------------------
+--
