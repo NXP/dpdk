@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017 NXP
+ * Copyright 2017,2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -182,8 +182,9 @@ fman_if_init(const struct device_node *dpa_node)
 {
 	const char *rprop, *mprop;
 	uint64_t phys_addr;
-	struct __fman_if *__if;
+	struct __fman_if *__if, *__temp_if;
 	struct fman_if_bpool *bpool;
+	int i;
 
 	const phandle *mac_phandle, *ports_phandle, *pools_phandle;
 	const phandle *tx_channel_id = NULL, *mac_addr, *cell_idx;
@@ -202,6 +203,9 @@ fman_if_init(const struct device_node *dpa_node)
 	int _errno;
 	const char *char_prop;
 	uint32_t na;
+
+	char vf_env[32];
+	int num_vfs = 1;
 
 	if (of_device_is_available(dpa_node) == false)
 		return 0;
@@ -542,7 +546,31 @@ fman_if_init(const struct device_node *dpa_node)
 		    dname, __if->__if.tx_channel_id, __if->__if.fman_idx,
 		    __if->__if.mac_idx);
 
+	__if->__if.vf_idx = 0;
+	__if->__if.num_vfs = 0;
+
+	snprintf(vf_env, 32, "DPAA_NUM_VFS_FMAN_MAC%d", __if->__if.mac_idx);
+	if (getenv(vf_env))
+		num_vfs = atoi(getenv(vf_env));
+
+	if (num_vfs > 1)
+		__if->__if.num_vfs = num_vfs;
+
 	list_add_tail(&__if->__if.node, &__ifs);
+
+	for (i = 1; i < num_vfs; i++) {
+		__temp_if = malloc(sizeof(*__temp_if));
+		if (!__temp_if) {
+			FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*__temp_if));
+			goto err;
+		}
+		memcpy(__temp_if, __if, sizeof(*__temp_if));
+		INIT_LIST_HEAD(&__temp_if->__if.bpool_list);
+		__temp_if->__if.num_vfs = num_vfs;
+		__temp_if->__if.vf_idx = i;
+		list_add_tail(&__temp_if->__if.node, &__ifs);
+	}
+
 	return 0;
 err:
 	if_destructor(__if);

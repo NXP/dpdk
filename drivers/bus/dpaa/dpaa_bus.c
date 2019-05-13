@@ -206,8 +206,12 @@ dpaa_create_device_list(void)
 
 		/* Create device name */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
-		sprintf(dev->name, "fm%d-mac%d", (fman_intf->fman_idx + 1),
-			fman_intf->mac_idx);
+		if (fman_intf->num_vfs < 2)
+			sprintf(dev->name, "fm%d-mac%d", (fman_intf->fman_idx + 1),
+				fman_intf->mac_idx);
+		else
+			sprintf(dev->name, "fm%d-mac%d_vf%d", (fman_intf->fman_idx + 1),
+				fman_intf->mac_idx, fman_intf->vf_idx);
 		DPAA_BUS_LOG(INFO, "%s netdev added", dev->name);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);

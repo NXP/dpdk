@@ -1364,7 +1364,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fqid = cfg->rx_def;
 		else if (fmc_q)
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
-				DPAA_PCD_FQID_MULTIPLIER + loop;
+			       DPAA_PCD_FQID_MULTIPLIER +
+			       fman_intf->vf_idx * DPAA_PCD_VF_MULTIPLIER +
+			       loop;
 		else
 			fqid = dev_rx_fqids[loop];
 
