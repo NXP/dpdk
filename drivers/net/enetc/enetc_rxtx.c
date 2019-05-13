@@ -55,6 +55,7 @@ enetc_xmit_pkts(void *tx_queue,
 
 	i = tx_ring->next_to_use;
 
+	enetc_clean_tx_ring(tx_ring);
 	bds_to_use = enetc_bd_unused(tx_ring);
 	if (bds_to_use < nb_pkts)
 		nb_pkts = bds_to_use;
@@ -79,6 +80,7 @@ enetc_xmit_pkts(void *tx_queue,
 
 	tx_ring->next_to_use = i;
 	enetc_wr_reg(tx_ring->tcir, i);
+
 	return start;
 }
 

@@ -128,7 +128,7 @@ Please note that enabling debugging options may affect system performance.
   By default it is disabled.
   It can be used when the underlying hardware supports the CAAM in BE mode.
   e.g. LS1043A, LS1046A supports CAAM in BE mode.
-  BE mode is enabled by default in defconfig-arm64-dpaa-linuxapp-gcc.
+  BE mode is disabled by default in defconfig-arm64-dpaa-linuxapp-gcc.
 
 Installations
 -------------

@@ -5,6 +5,7 @@ Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX2160
 2. DPAA  : LS1043, LS1046
 3. PPFE  : LS1012
+4. ENETC : LS1028
 
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
@@ -224,6 +225,10 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
           $ make T=arm64-dpaa-linuxapp-gcc -j 4 install CONFIG_RTE_BUILD_SHARED_LIB=y
 
+    NOTE: For PPFE platform, to perform crypto operations using "caam_jr" crypto driver,
+	  use following:
+	  $ make T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=y
+
   Building DPDK Example Applications
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -280,6 +285,40 @@ There are some pre-requisites for running DPDK applications on the PPFE, DPAA or
 DPAA2 boards.
 
 Following are some pre-requisites:
+
+  For ENETC Platform:
+  ~~~~~~~~~~~~~~~~~~
+
+  1. Bring up the board with proper images using below "othbootargs":
+	setenv othbootargs default_hugepagesz=2m hugepagesz=2m hugepages=256 isolcpus=1 iommu.passthrough=1
+
+  2. Mount the hugetlbfs required for DPDK applications:
+	1. mkdir /mnt/hugepages
+	2. mount -t hugetlbfs none /mnt/hugepages
+
+  3. Get ethernet devices in userspace using below commands:
+	1. For QDS board:
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.1/driver_override
+		echo 0000:00:00.1 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.1 > /sys/bus/pci/drivers/vfio-pci/bind
+
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
+
+	2. For RDB board:
+		ip link add name switch type bridge; ip link set switch up
+		ip link set swp0 master switch && ip link set swp0 up
+		ip link set swp4 master switch && ip link set swp4 up
+		echo 1 > /proc/sys/net/ipv4/ip_forward
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
+
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.6/driver_override
+		echo 0000:00:00.6 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.6 > /sys/bus/pci/drivers/vfio-pci/bind
+
 
   For PPFE Platform:
   ~~~~~~~~~~~~~~~~~~
