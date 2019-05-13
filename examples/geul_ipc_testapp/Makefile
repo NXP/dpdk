@@ -52,7 +52,7 @@ CFLAGS += -I$(SRCDIR)
 CFLAGS += -I$(RTE_SDK)/drivers/raw/geul_ipc_rawdev/include
 CFLAGS += -I$(RTE_SDK)/drivers/raw/geul_ipc_rawdev/common
 CFLAGS += -I$(RTE_SDK)/drivers/raw/geul_ipc_rawdev/uapi
-CFLAGS += -O3
+CFLAGS += -O0
 CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk

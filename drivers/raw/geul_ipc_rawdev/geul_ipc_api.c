@@ -30,7 +30,7 @@
 
 mem_range_t chvpaddr_arr[IPC_MAX_INSTANCE_COUNT][IPC_MAX_CHANNEL_COUNT];
 #define TBD 0
-#define DONOT_CHECK 0
+#define DONOT_CHECK 1
 #define UNUSED(x) (void)x;
 #define MHIF_VADDR(A) \
 	(void *)((unsigned long)(A) \
