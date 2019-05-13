@@ -70,6 +70,7 @@
 #define GUL_FECA_APB_SLAVE_SIZE		(64 * 1024) /*64 KB*/
 #define GUL_EP_DMA_BUF_PHYS_SIZE	(0) /*0 KB*/
 #define GUL_EP_TO_HOST_MSI_SIZE		(4 * 1024) /*4 KB*/
+#define GUL_MAX_IMAGE_SIZE              0x6400000
 #endif
 
 
@@ -83,6 +84,13 @@
 			GUL_USER_HUGE_PAGE_SIZE)
 #define GUL_SCRATCH_DMA_BUF_PHYS_ADDR	(GUL_PCI1_ADDR_BASE + \
 			GUL_SCRATCH_DMA_BUF_OFFSET)
+
+#ifdef ABERDEEN
+#define GUL_FIRMWARE_IMAGE_OFFSET	(GUL_SCRATCH_DMA_BUF_PHYS_ADDR - \
+					GUL_PCI1_ADDR_BASE)
+#define GUL_AIOP_IMAGE_OFFSET		(GUL_FIRMWARE_IMAGE_OFFSET + \
+					GUL_MAX_IMAGE_SIZE)
+#endif
 
 /*FECA PCIe BARs - AXI Slave & APB Slave */
 #define GUL_FECA_AXI_SLAVE_OFFSET	(GUL_SCRATCH_DMA_BUF_OFFSET + \
@@ -166,8 +174,8 @@ struct gul_msg_unit {
 } __attribute__ ((packed));
 
 /*Scratch register for Host <> GUL Boot hand shake*/
-#define GUL_BOOT_HSHAKE_HIF_REG		10
-#define GUL_BOOT_HSHAKE_HIF_SIZ_REG	11
+#define GUL_BOOT_HSHAKE_HIF_REG		9
+#define GUL_BOOT_HSHAKE_HIF_SIZ_REG	10
 
 enum gul_boot_fsm {
 	NONE = 0,
@@ -301,12 +309,7 @@ struct hif_rfic_regs {
 	uint32_t spi_access_disabled;
 } __attribute__((packed));
 
-struct hif_feca_regs {
-	uint64_t axi_slave;
-	uint64_t axi_slave_size;
-	uint64_t apb_slave;
-	uint64_t apb_slave_size;
-} __attribute__((packed));
+
 
 enum host_mem_region_id {
 	HOST_MEM_HUGE_PAGE_BUF = 0,
@@ -344,7 +347,7 @@ struct gul_hif {
 	struct gul_stats stats;
 	struct hif_ipc_regs ipc_regs;
 	struct hif_rfic_regs rfic_regs;
-	struct hif_feca_regs feca_regs;
+
 } __attribute__((packed));
 
 
@@ -366,6 +369,7 @@ struct gul_hif {
 #define HIF_HOST_READY_RFIC		(1 << 11)
 #define HIF_HOST_READY_IPC_LIB		(1 << 12)
 #define HIF_HOST_READY_IPC_APP		(1 << 13)
+#define HIF_HOST_READY_FECA		(1 << 14)
 
 /*For Modem Define these macros using endianness conversion to LE*/
 
@@ -376,6 +380,7 @@ struct gul_hif {
 #define HIF_MOD_READY_AIOP_ATUS		(1 << 0)
 #define HIF_MOD_READY_IPC_LIB		(1 << 5)
 #define HIF_MOD_READY_IPC_APP		(1 << 6)
+#define HIF_MOD_READY_FECA		(1 << 6)
 
 /* Set IRQ_REAL_MSI_BIT to enable dedicated MSI interrupt line ,
  * and virtual irq line can be used by setting the TEST or LAST
