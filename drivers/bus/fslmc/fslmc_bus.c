@@ -136,9 +136,10 @@ scan_one_fslmc_device(char *dev_name)
 {
 	char *dup_dev_name, *t_ptr;
 	struct rte_dpaa2_device *dev = NULL;
+	int ret = -1;
 
 	if (!dev_name)
-		return -1;
+		return ret;
 
 	/* Ignore the Container name itself */
 	if (!strncmp("dprc", dev_name, 4))
@@ -168,7 +169,8 @@ scan_one_fslmc_device(char *dev_name)
 	/* Parse the device name and ID */
 	t_ptr = strtok(dup_dev_name, ".");
 	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device name observed");
+		DPAA2_BUS_ERR("Invalid device found: (%s)", dup_dev_name);
+		ret = -EINVAL;
 		goto cleanup;
 	}
 	if (!strncmp("dpni", t_ptr, 4))
@@ -194,7 +196,8 @@ scan_one_fslmc_device(char *dev_name)
 
 	t_ptr = strtok(NULL, ".");
 	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device string observed (null)");
+		DPAA2_BUS_ERR("Skipping invalid device (%s)", dup_dev_name);
+		ret = 0;
 		goto cleanup;
 	}
 
@@ -202,6 +205,7 @@ scan_one_fslmc_device(char *dev_name)
 	dev->device.name = strdup(dev_name);
 	if (!dev->device.name) {
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
+		ret = -ENOMEM;
 		goto cleanup;
 	}
 	dev->device.devargs = fslmc_devargs_lookup(dev);
@@ -222,7 +226,7 @@ cleanup:
 		free(dup_dev_name);
 	if (dev)
 		free(dev);
-	return -1;
+	return ret;
 }
 
 static int
@@ -316,7 +320,7 @@ scan_fail_cleanup:
 	/* Remove all devices in the list */
 	cleanup_fslmc_device_list();
 scan_fail:
-	DPAA2_BUS_DEBUG("FSLMC Bus Not Available. Skipping");
+	DPAA2_BUS_DEBUG("FSLMC Bus Not Available. Skipping (%d)", ret);
 	/* Irrespective of failure, scan only return success */
 	return 0;
 }
