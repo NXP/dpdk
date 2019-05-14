@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -23,6 +23,7 @@
 #include <rte_dev.h>
 #include "rte_dpaa2_mempool.h"
 
+#include "fslmc_vfio.h"
 #include <fslmc_logs.h>
 #include <mc/fsl_dpbp.h>
 #include <portal/dpaa2_hw_pvt.h>
@@ -32,7 +33,7 @@
 
 #include <dpaax_iova_table.h>
 
-struct dpaa2_bp_info rte_dpaa2_bpid_info[MAX_BPID];
+struct dpaa2_bp_info *rte_dpaa2_bpid_info;
 static struct dpaa2_bp_list *h_bp_list;
 
 /* Dynamic logging identified for mempool */
@@ -49,6 +50,16 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	int ret;
 
 	avail_dpbp = dpaa2_alloc_dpbp_dev();
+
+	if (rte_dpaa2_bpid_info == NULL) {
+		rte_dpaa2_bpid_info = (struct dpaa2_bp_info *)rte_malloc(NULL,
+				      sizeof(struct dpaa2_bp_info) * MAX_BPID,
+				      RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa2_bpid_info == NULL)
+			return -ENOMEM;
+		memset(rte_dpaa2_bpid_info, 0,
+		       sizeof(struct dpaa2_bp_info) * MAX_BPID);
+	}
 
 	if (!avail_dpbp) {
 		DPAA2_MEMPOOL_ERR("DPAA2 pool not available!");
@@ -209,7 +220,7 @@ rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 		bufs[i] = (uint64_t)rte_mempool_virt2iova(obj_table[i])
 				+ meta_data_size;
 #else
-		bufs[i] = (uint64_t)obj_table[i] + meta_data_size;
+		bufs[i] = (size_t)obj_table[i] + meta_data_size;
 #endif
 	}
 
@@ -228,7 +239,7 @@ aligned:
 				  rte_mempool_virt2iova(obj_table[n + i])
 				  + meta_data_size;
 #else
-			bufs[i] = (uint64_t)obj_table[n + i] + meta_data_size;
+			bufs[i] = (size_t)obj_table[n + i] + meta_data_size;
 #endif
 		}
 
@@ -265,8 +276,7 @@ rte_dpaa2_mbuf_from_buf_addr(struct rte_mempool *mp, void *buf_addr)
 		return NULL;
 	}
 
-	return (struct rte_mbuf *)((uint8_t *)buf_addr -
-			bp_info->meta_data_size);
+	return (struct rte_mbuf *)((size_t)buf_addr - bp_info->meta_data_size);
 }
 
 int
@@ -316,8 +326,8 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 		 * in pool, qbman_swp_acquire returns 0
 		 */
 		if (ret <= 0) {
-			DPAA2_MEMPOOL_ERR("Buffer acquire failed with"
-					  " err code: %d", ret);
+			DPAA2_MEMPOOL_DP_DEBUG(
+				"Buffer acquire failed with err code: %d", ret);
 			/* The API expect the exact number of requested bufs */
 			/* Releasing all buffers allocated */
 			rte_dpaa2_mbuf_release(pool, obj_table, bpid,
@@ -395,6 +405,18 @@ dpaa2_populate(struct rte_mempool *mp, unsigned int max_objs,
 	      void *vaddr, rte_iova_t paddr, size_t len,
 	      rte_mempool_populate_obj_cb_t *obj_cb, void *obj_cb_arg)
 {
+	struct rte_memseg_list *msl;
+	/* The memsegment list exists incase the memory is not external.
+	 * So, DMA-Map is required only when memory is provided by user,
+	 * i.e. External.
+	 */
+	msl = rte_mem_virt2memseg_list(vaddr);
+
+	if (!msl) {
+		DPAA2_MEMPOOL_DEBUG("Memsegment is External.\n");
+		rte_fslmc_vfio_mem_dmamap((uint64_t)vaddr,
+				(uint64_t)paddr, (uint64_t)len);
+	}
 	/* Insert entry into the PA->VA Table */
 	dpaax_iova_table_update(paddr, vaddr, len);
 

@@ -41,6 +41,12 @@
 #include <rte_udp.h>
 #include <rte_string_fns.h>
 #include <rte_cpuflags.h>
+#include <rte_eventdev.h>
+#include <rte_event_eth_rx_adapter.h>
+#include <rte_string_fns.h>
+#include <rte_spinlock.h>
+#include <rte_malloc.h>
+#include <rte_pmd_dpaa2.h>
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
@@ -62,6 +68,10 @@
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
+uint32_t max_pkt_burst = MAX_PKT_BURST;
+uint32_t max_tx_burst = MAX_TX_BURST;
+uint32_t max_rx_burst = MAX_PKT_BURST;
+
 /**< Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
 
@@ -69,11 +79,23 @@ static int promiscuous_on;
 static int l3fwd_lpm_on;
 static int l3fwd_em_on;
 
+/* Global variables. */
+
 static int numa_on = 1; /**< NUMA is enabled by default. */
 static int parse_ptype; /**< Parse packet type using rx callback, and */
 			/**< disabled by default */
-
-/* Global variables. */
+static int per_port_pool = 1; /**< Use separate buffer pools per port */
+				/**< Set to 0 as default - disabled */
+static int traffic_split_proto; /**< Split traffic based on this protocol ID */
+/*
+ * This variable defines where the traffic is split in DPDMUX - the logical
+ * interface ID - DPNI number.
+ * All other traffic would be sent to another interface - if multiple
+ * interfaces are available, next interface (dpni) in series to the one
+ * specified in this variable would be used.
+ */
+static int mux_dpni_id = -1; /**< DPMUX DPNI Interface to which split */
+			     /**< traffic is sent */
 
 volatile bool force_quit;
 
@@ -85,6 +107,38 @@ xmm_t val_eth[RTE_MAX_ETHPORTS];
 
 /* mask of enabled ports */
 uint32_t enabled_port_mask;
+
+struct eventdev_params {
+	uint8_t num_eventqueue;
+	uint8_t num_eventport;
+	uint8_t eventdev_id;
+};
+
+static struct eventdev_params eventdev_config[RTE_MAX_EVENTDEV_COUNT];
+static uint16_t nb_eventdev_params;
+struct eventdev_info *event_devices;
+
+struct connection_info {
+	uint8_t ethdev_id;
+	uint8_t eventq_id;
+	uint8_t event_prio;
+	uint8_t ethdev_rx_qid;
+	int32_t ethdev_rx_qid_mode;
+	int32_t eventdev_id;
+	int32_t adapter_id;
+};
+struct adapter_config {
+	struct connection_info connections[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_connections;
+};
+
+struct adapter_params {
+	struct adapter_config config[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_rx_adapter;
+};
+static struct adapter_params rx_adapter_config;
+struct link_params link_config;
+enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
 
 /* Used only in exact match mode. */
 int ipv6; /**< ipv6 is false by default. */
@@ -133,7 +187,8 @@ static struct rte_eth_conf port_conf = {
 	},
 };
 
-static struct rte_mempool * pktmbuf_pool[NB_SOCKETS];
+static struct rte_mempool *pktmbuf_pool[RTE_MAX_ETHPORTS][NB_SOCKETS];
+static uint8_t lkp_per_socket[NB_SOCKETS];
 
 struct l3fwd_lkp_mode {
 	void  (*setup)(int);
@@ -279,13 +334,22 @@ print_usage(const char *prgname)
 		" [-P]"
 		" [-E]"
 		" [-L]"
+		" [-e] eventdev config (eventdev, No. of event queues, No. of event ports)"
+		"  [,(eventdev,No. of event queues,No. of event ports)]"
+		" [-a] adapter config (port, queue, queue mode, event queue, event priority,"
+		"  eventdev)[,(port, queue, queue mode, event queue,"
+		"  event priority,eventdev)]"
+		" [-l] port link config (event port, event queue,eventdev,lcore)"
+		"  [,(event port,event queue,eventdev,lcore)]"
 		" --config (port,queue,lcore)[,(port,queue,lcore)]"
 		" [--eth-dest=X,MM:MM:MM:MM:MM:MM]"
 		" [--enable-jumbo [--max-pkt-len PKTLEN]]"
 		" [--no-numa]"
 		" [--hash-entry-num]"
 		" [--ipv6]"
-		" [--parse-ptype]\n\n"
+		" [--parse-ptype]"
+		" [--disable-per-port-pool]"
+		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_DPNI_ID]\n\n"
 
 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
 		"  -P : Enable promiscuous mode\n"
@@ -299,7 +363,23 @@ print_usage(const char *prgname)
 		"  --no-numa: Disable numa awareness\n"
 		"  --hash-entry-num: Specify the hash entry number in hexadecimal to be setup\n"
 		"  --ipv6: Set if running ipv6 packets\n"
-		"  --parse-ptype: Set to use software to analyze packet type\n\n",
+		"  --parse-ptype: Set to use software to analyze packet type\n"
+		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
+		"  --traffic-split-proto: PROTOCOL_NUMBER of IPv4 header protocol field\n"
+		"                         based on which DPDMUX can split the traffic\n"
+		"                         to MUX_DPNI_ID\n"
+		"                         It is assumed that first port of DPDMUX configured\n"
+		"                         is default port where all non-matched traffic\n"
+		"                         would be forwarded.\n"
+		"  -e : Event dev configuration\n"
+		"	(Eventdev ID,Number of event queues,Number of event ports)\n"
+		"  -a : Adapter configuration\n"
+		"	(Ethdev Port ID,Ethdev Rx Queue ID,Ethdev Rx"
+		"	QueueID mode, Event Queue ID,"
+		"	Event Priority,Eventdev ID)\n"
+		"  -l : Event port and Event Queue link configuration\n"
+		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n\n",
 		prgname);
 }
 
@@ -435,6 +515,400 @@ parse_eth_dest(const char *optarg)
 	*(uint64_t *)(val_eth + portid) = dest_eth_addr[portid];
 }
 
+static int
+parse_eventdev_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENTDEV_ID = 0,
+		FLD_EVENT_QUEUE,
+		FLD_EVENT_PORT,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i;
+	unsigned int size;
+
+	/*First set all eventdev_config to default*/
+	for (i = 0; i < RTE_MAX_EVENTDEV_COUNT; i++) {
+		eventdev_config[i].num_eventqueue = 1;
+		eventdev_config[i].num_eventport = RTE_MAX_LCORE;
+	}
+
+	nb_eventdev_params = 0;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (nb_eventdev_params >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				nb_eventdev_params);
+			return -1;
+		}
+
+		eventdev_config[nb_eventdev_params].num_eventqueue =
+					(uint8_t)int_fld[FLD_EVENT_QUEUE];
+		eventdev_config[nb_eventdev_params].num_eventport =
+					(uint8_t)int_fld[FLD_EVENT_PORT];
+		eventdev_config[nb_eventdev_params].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENTDEV_ID];
+		++nb_eventdev_params;
+	}
+
+	return 0;
+}
+
+static int
+parse_adapter_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_ETHDEV_ID = 0,
+		FLD_ETHDEV_QID,
+		FLD_EVENT_QID_MODE,
+		FLD_EVENTQ_ID,
+		FLD_EVENT_PRIO,
+		FLD_EVENT_DEVID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0, j = 0;
+	unsigned int size;
+
+	index = rx_adapter_config.nb_rx_adapter;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		j = rx_adapter_config.config[index].nb_connections;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				rx_adapter_config.nb_rx_adapter);
+			return -1;
+		}
+
+		rx_adapter_config.config[index].connections[j].ethdev_id =
+					(uint8_t)int_fld[FLD_ETHDEV_ID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid =
+					(uint8_t)int_fld[FLD_ETHDEV_QID];
+		rx_adapter_config.config[index].connections[j].ethdev_rx_qid_mode =
+					(uint8_t)int_fld[FLD_EVENT_QID_MODE];
+		rx_adapter_config.config[index].connections[j].eventq_id =
+					(uint8_t)int_fld[FLD_EVENTQ_ID];
+		rx_adapter_config.config[index].connections[j].event_prio =
+					(uint8_t)int_fld[FLD_EVENT_PRIO];
+		rx_adapter_config.config[index].connections[j].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		rx_adapter_config.config[index].nb_connections++;
+	}
+
+	return 0;
+}
+
+static int
+parse_link_config(const char *evq_arg)
+{
+	char s[256];
+	const char *p, *p0 = evq_arg;
+	char *end;
+	enum fieldnames {
+		FLD_EVENT_PORTID = 0,
+		FLD_EVENT_QID,
+		FLD_EVENT_DEVID,
+		FLD_LCORE_ID,
+		FLD_COUNT
+	};
+	unsigned long int_fld[FLD_COUNT];
+	char *str_fld[FLD_COUNT];
+	int i, index = 0;
+	unsigned int size;
+
+	/*First set all adapter_config to default*/
+	memset(&link_config, 0, sizeof(struct link_params));
+	while ((p = strchr(p0, '(')) != NULL) {
+		index = link_config.nb_links;
+		++p;
+		if ((p0 = strchr(p, ')')) == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, FLD_COUNT, ',') !=
+								FLD_COUNT)
+			return -1;
+
+		for (i = 0; i < FLD_COUNT; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+
+		if (index >= RTE_MAX_EVENTDEV_COUNT) {
+			printf("exceeded max number of eventdev params: %hu\n",
+				link_config.nb_links);
+			return -1;
+		}
+
+		link_config.links[index].event_portid =
+					(uint8_t)int_fld[FLD_EVENT_PORTID];
+		link_config.links[index].eventq_id =
+					(uint8_t)int_fld[FLD_EVENT_QID];
+		link_config.links[index].eventdev_id =
+					(uint8_t)int_fld[FLD_EVENT_DEVID];
+		link_config.links[index].lcore_id =
+					(uint8_t)int_fld[FLD_LCORE_ID];
+		lcore_dequeue_mode[link_config.links[index].lcore_id] =
+					EVENTDEV_DEQUEUE;
+		link_config.nb_links++;
+	}
+
+	return 0;
+}
+
+static int
+parse_traffic_split_info(const char *split_args)
+{
+	int proto_id, dpni_id;
+	char *dup_str;
+	char *dpni, *proto;
+	char delim = ':';
+
+	/* the string would be in format <number>:<number> */
+	dup_str = strdup(split_args);
+	if (!dup_str)
+		return -1;
+	proto = dup_str;
+	dpni = strchr(dup_str, delim);
+	if (dpni) {
+		proto[dpni - proto] = '\0';
+		dpni += 1;
+	} else
+		goto err_ret;
+
+	proto_id = strtod(proto, NULL);
+	if (proto[0] == '\0' || proto_id <= 0 || proto_id > USHRT_MAX)
+		goto err_ret;
+
+	dpni_id = strtod(dpni, NULL);
+	if (dpni[0] == '\0' || dpni_id < 0 || dpni_id > INT_MAX)
+		goto err_ret;
+
+	traffic_split_proto = proto_id;
+	mux_dpni_id = dpni_id;
+	return 0;
+
+err_ret:
+	if (dup_str)
+		free(dup_str);
+	return -1;
+}
+
+static int
+eventdev_configure(void)
+{
+	int ret = -1;
+	uint8_t i, j;
+	void *ports, *queues;
+	struct rte_event_dev_config eventdev_conf = {0};
+	struct rte_event_dev_info eventdev_def_conf = {0};
+	struct rte_event_queue_conf eventq_conf = {0};
+	struct rte_event_port_conf port_conf = {0};
+	struct rte_event_eth_rx_adapter_queue_conf queue_conf = {0};
+
+	/*First allocate space for event device information*/
+	event_devices = rte_zmalloc("event-dev",
+				sizeof(struct eventdev_info) * nb_eventdev_params, 0);
+	if (event_devices == NULL) {
+		printf("Error in allocating memory for event devices\n");
+		return ret;
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++) {
+		/*Now allocate space for event ports request from user*/
+		ports = rte_zmalloc("event-ports",
+				sizeof(uint8_t) * eventdev_config[i].num_eventport, 0);
+		if (ports == NULL) {
+			printf("Error in allocating memory for event ports\n");
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].port = ports;
+
+		/*Now allocate space for event queues request from user*/
+		queues = rte_zmalloc("event-queues",
+				sizeof(uint8_t) * eventdev_config[i].num_eventqueue, 0);
+		if (queues == NULL) {
+			printf("Error in allocating memory for event queues\n");
+			rte_free(event_devices[i].port);
+			rte_free(event_devices);
+			return ret;
+		}
+
+		event_devices[i].queue = queues;
+		event_devices[i].dev_id = eventdev_config[i].eventdev_id;
+
+		/* get default values of eventdev*/
+		memset(&eventdev_def_conf, 0,
+		       sizeof(struct rte_event_dev_info));
+		ret = rte_event_dev_info_get(event_devices[i].dev_id,
+				       &eventdev_def_conf);
+		if (ret < 0) {
+			printf("Error in getting event device info, devid: %d\n",
+				event_devices[i].dev_id);
+			return ret;
+		}
+
+		memset(&eventdev_conf, 0, sizeof(struct rte_event_dev_config));
+		eventdev_conf.nb_events_limit = -1;
+		eventdev_conf.nb_event_queues =
+					eventdev_config[i].num_eventqueue;
+		eventdev_conf.nb_event_ports =
+					eventdev_config[i].num_eventport;
+		eventdev_conf.nb_event_queue_flows =
+				eventdev_def_conf.max_event_queue_flows;
+		eventdev_conf.nb_event_port_dequeue_depth =
+				eventdev_def_conf.max_event_port_dequeue_depth;
+		eventdev_conf.nb_event_port_enqueue_depth =
+				eventdev_def_conf.max_event_port_enqueue_depth;
+
+		ret = rte_event_dev_configure(event_devices[i].dev_id,
+					&eventdev_conf);
+		if (ret < 0) {
+			printf("Error in configuring event device\n");
+			return ret;
+		}
+
+		memset(&eventq_conf, 0, sizeof(struct rte_event_queue_conf));
+		eventq_conf.nb_atomic_flows = 1;
+		eventq_conf.schedule_type = RTE_SCHED_TYPE_ATOMIC;
+		for (j = 0; j < eventdev_config[i].num_eventqueue; j++) {
+			ret = rte_event_queue_setup(event_devices[i].dev_id, j,
+					      &eventq_conf);
+			if (ret < 0) {
+				printf("Error in event queue setup\n");
+				return ret;
+			}
+			event_devices[i].queue[j] = j;
+		}
+
+		for (j = 0; j <  eventdev_config[i].num_eventport; j++) {
+			ret = rte_event_port_setup(event_devices[i].dev_id, j, NULL);
+			if (ret < 0) {
+				printf("Error in event port setup\n");
+				return ret;
+			}
+			event_devices[i].port[j] = j;
+		}
+	}
+
+	for (i = 0; i < rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			ret = rte_event_eth_rx_adapter_create(j,
+					rx_adapter_config.config[i].connections[j].eventdev_id,
+					&port_conf);
+			if (ret < 0) {
+				printf("Error in event eth adapter creation\n");
+				return ret;
+			}
+			rx_adapter_config.config[i].connections[j].adapter_id =
+					j;
+		}
+	}
+
+	for (j = 0; j <  link_config.nb_links; j++) {
+		ret = rte_event_port_link(link_config.links[j].eventdev_id,
+				    link_config.links[j].event_portid,
+				    &link_config.links[j].eventq_id, NULL, 1);
+		if (ret < 0) {
+			printf("Error in event port linking\n");
+			return ret;
+		}
+	}
+
+	queue_conf.rx_queue_flags =
+				RTE_EVENT_ETH_RX_ADAPTER_QUEUE_FLOW_ID_VALID;
+
+	for (i = 0; i <  rx_adapter_config.nb_rx_adapter; i++) {
+		for (j = 0; j < rx_adapter_config.config[i].nb_connections; j++) {
+			queue_conf.ev.queue_id =
+				rx_adapter_config.config[i].connections[j].eventq_id;
+			queue_conf.ev.priority =
+				rx_adapter_config.config[i].connections[j].event_prio;
+			queue_conf.ev.flow_id =
+				rx_adapter_config.config[i].connections[j].ethdev_id;
+			queue_conf.ev.sched_type =
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid_mode;
+			ret = rte_event_eth_rx_adapter_queue_add(
+				rx_adapter_config.config[i].connections[j].adapter_id,
+				rx_adapter_config.config[i].connections[j].ethdev_id,
+				rx_adapter_config.config[i].connections[j].ethdev_rx_qid,
+				&queue_conf);
+			if (ret < 0) {
+				printf("Error in adding eth queue in event adapter\n");
+				return ret;
+			}
+		}
+	}
+
+	for (i = 0; i < nb_eventdev_params; i++) {
+		ret = rte_event_dev_start(event_devices[i].dev_id);
+		if (ret < 0) {
+			printf("Error in starting event device, devid: %d\n",
+				event_devices[i].dev_id);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 #define MAX_JUMBO_PKT_LEN  9600
 #define MEMPOOL_CACHE_SIZE 256
 
@@ -443,6 +917,10 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"L"   /* enable long prefix match */
 	"E"   /* enable exact match */
+	"e:"  /* Event Device configuration */
+	"a:"  /* Rx Adapter configuration */
+	"l:"  /* Event Queue and Adapter link configuration */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -452,6 +930,8 @@ static const char short_options[] =
 #define CMD_LINE_OPT_ENABLE_JUMBO "enable-jumbo"
 #define CMD_LINE_OPT_HASH_ENTRY_NUM "hash-entry-num"
 #define CMD_LINE_OPT_PARSE_PTYPE "parse-ptype"
+#define CMD_LINE_OPT_PER_PORT_POOL "disable-per-port-pool"
+#define CMD_LINE_OPT_TRAFFIC_SPLIT "traffic-split-proto"
 enum {
 	/* long options mapped to a short option */
 
@@ -465,6 +945,8 @@ enum {
 	CMD_LINE_OPT_ENABLE_JUMBO_NUM,
 	CMD_LINE_OPT_HASH_ENTRY_NUM_NUM,
 	CMD_LINE_OPT_PARSE_PTYPE_NUM,
+	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
+	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT,
 };
 
 static const struct option lgopts[] = {
@@ -475,6 +957,8 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_ENABLE_JUMBO, 0, 0, CMD_LINE_OPT_ENABLE_JUMBO_NUM},
 	{CMD_LINE_OPT_HASH_ENTRY_NUM, 1, 0, CMD_LINE_OPT_HASH_ENTRY_NUM_NUM},
 	{CMD_LINE_OPT_PARSE_PTYPE, 0, 0, CMD_LINE_OPT_PARSE_PTYPE_NUM},
+	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0, CMD_LINE_OPT_PARSE_PER_PORT_POOL},
+	{CMD_LINE_OPT_TRAFFIC_SPLIT, 1, 0, CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT},
 	{NULL, 0, 0, 0}
 };
 
@@ -483,14 +967,14 @@ static const struct option lgopts[] = {
  * depending on user input, taking  into account memory for rx and
  * tx hardware rings, cache per lcore and mtable per port per lcore.
  * RTE_MAX is used to ensure that NB_MBUF never goes below a minimum
- * value of 8192
+ * value of 2048
  */
-#define NB_MBUF RTE_MAX(	\
-	(nb_ports*nb_rx_queue*nb_rxd +		\
-	nb_ports*nb_lcores*MAX_PKT_BURST +	\
-	nb_ports*n_tx_queue*nb_txd +		\
+#define NB_MBUF(nports) RTE_MAX(	\
+	(nports*nb_rx_queue*nb_rxd +		\
+	nports*nb_lcores*MAX_PKT_BURST +	\
+	nports*n_tx_queue*nb_txd +		\
 	nb_lcores*MEMPOOL_CACHE_SIZE),		\
-	(unsigned)8192)
+	(unsigned int)2048)
 
 /* Parse the argument given in the command line of the application */
 static int
@@ -500,6 +984,7 @@ parse_args(int argc, char **argv)
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
+	unsigned int burst_size;
 
 	argvopt = argv;
 
@@ -528,6 +1013,50 @@ parse_args(int argc, char **argv)
 
 		case 'L':
 			l3fwd_lpm_on = 1;
+			break;
+
+		/*Event device configuration*/
+		case 'e':
+			ret = parse_eventdev_config(optarg);
+			if (ret < 0) {
+				printf("invalid event device configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		/*Rx adapter configuration*/
+		case 'a':
+			ret = parse_adapter_config(optarg);
+			if (ret < 0) {
+				printf("invalid Rx adapter configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			rx_adapter_config.nb_rx_adapter++;
+			break;
+
+		/*Event Queue and Adapter Link configuration*/
+		case 'l':
+			ret = parse_link_config(optarg);
+			if (ret < 0) {
+				printf("invalid Link configuration\n");
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size > max_pkt_burst) {
+				printf("invalid burst size\n");
+				print_usage(prgname);
+				return -1;
+			}
+			max_pkt_burst = burst_size;
+			max_rx_burst = max_pkt_burst;
+			max_tx_burst = max_rx_burst/2;
 			break;
 
 		/* long options */
@@ -594,6 +1123,21 @@ parse_args(int argc, char **argv)
 			parse_ptype = 1;
 			break;
 
+		case CMD_LINE_OPT_PARSE_PER_PORT_POOL:
+			printf("per port buffer pool is enabled\n");
+			per_port_pool = 0;
+			break;
+
+		case CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT:
+			ret = parse_traffic_split_info(optarg);
+			if (ret != 0) {
+				print_usage(prgname);
+				return -1;
+			}
+			printf("Splitting traffic on Protocol:%d, DPNI:%d\n",
+			       traffic_split_proto, mux_dpni_id);
+			break;
+
 		default:
 			print_usage(prgname);
 			return -1;
@@ -642,7 +1186,7 @@ print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 }
 
 static int
-init_mem(unsigned nb_mbuf)
+init_mem(uint16_t portid, unsigned int nb_mbuf)
 {
 	struct lcore_conf *qconf;
 	int socketid;
@@ -664,13 +1208,14 @@ init_mem(unsigned nb_mbuf)
 				socketid, lcore_id, NB_SOCKETS);
 		}
 
-		if (pktmbuf_pool[socketid] == NULL) {
-			snprintf(s, sizeof(s), "mbuf_pool_%d", socketid);
-			pktmbuf_pool[socketid] =
+		if (pktmbuf_pool[portid][socketid] == NULL) {
+			snprintf(s, sizeof(s), "mbuf_pool_%d:%d",
+				 portid, socketid);
+			pktmbuf_pool[portid][socketid] =
 				rte_pktmbuf_pool_create(s, nb_mbuf,
 					MEMPOOL_CACHE_SIZE, 0,
 					RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
-			if (pktmbuf_pool[socketid] == NULL)
+			if (pktmbuf_pool[portid][socketid] == NULL)
 				rte_exit(EXIT_FAILURE,
 					"Cannot init mbuf pool on socket %d\n",
 					socketid);
@@ -678,8 +1223,13 @@ init_mem(unsigned nb_mbuf)
 				printf("Allocated mbuf pool on socket %d\n",
 					socketid);
 
-			/* Setup either LPM or EM(f.e Hash).  */
-			l3fwd_lkp.setup(socketid);
+			/* Setup either LPM or EM(f.e Hash). But, only once per
+			 * available socket.
+			 */
+			if (!lkp_per_socket[socketid]) {
+				l3fwd_lkp.setup(socketid);
+				lkp_per_socket[socketid] = 1;
+			}
 		}
 		qconf = &lcore_conf[lcore_id];
 		qconf->ipv4_lookup_struct =
@@ -778,6 +1328,48 @@ prepare_ptype_parser(uint16_t portid, uint16_t queueid)
 
 	printf("port %d cannot parse packet type, please add --%s\n",
 	       portid, CMD_LINE_OPT_PARSE_PTYPE);
+	return 0;
+}
+
+/* Constraints of this function:
+ * 1. Assumes that only a single rule is being created, which is matching
+ *    IPv4 proto_id field
+ * 2. Mask for this match condition is 0xFF - which would be for exact match
+ *    to user-provided traffic_split_proto
+ * 3. DPDMUX.0 is assumed to the available device.
+ * 4. rte_flow is created, but not used in this call - though, in future that
+ *    can be used/extended if required
+ */
+static int
+configure_split_traffic(void)
+{
+	struct rte_flow *result;
+	struct rte_flow_item pattern[1], *pattern1;
+	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_action_vf vf;
+	struct rte_flow_item_ipv4 flow_item;
+	int dpdmux_id = 0; /* constant: dpdmux.0 */
+	uint8_t mask;
+
+	flow_item.hdr.next_proto_id = traffic_split_proto;
+	mask = 0xFF;
+	vf.id = mux_dpni_id;
+
+	pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[0].spec = &flow_item;
+	pattern[0].mask = &mask;
+
+	actions[0].conf = &vf;
+
+	pattern1 = pattern;
+	actions1 = actions;
+
+	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+					       &actions1);
+	if (!result)
+		/* Unable to create the flow */
+		return -1;
+
 	return 0;
 }
 
@@ -899,7 +1491,14 @@ main(int argc, char **argv)
 			(struct ether_addr *)(val_eth + portid) + 1);
 
 		/* init memory */
-		ret = init_mem(NB_MBUF);
+		if (!per_port_pool) {
+			/* portid = 0; this is *not* signifying the first port,
+			 * rather, it signifies that portid is ignored.
+			 */
+			ret = init_mem(0, NB_MBUF(nb_ports));
+		} else {
+			ret = init_mem(portid, NB_MBUF(1));
+		}
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "init_mem failed\n");
 
@@ -966,10 +1565,16 @@ main(int argc, char **argv)
 			rte_eth_dev_info_get(portid, &dev_info);
 			rxq_conf = dev_info.default_rxconf;
 			rxq_conf.offloads = conf->rxmode.offloads;
-			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
-					socketid,
-					&rxq_conf,
-					pktmbuf_pool[socketid]);
+			if (!per_port_pool)
+				ret = rte_eth_rx_queue_setup(portid, queueid,
+						nb_rxd, socketid,
+						&rxq_conf,
+						pktmbuf_pool[0][socketid]);
+			else
+				ret = rte_eth_rx_queue_setup(portid, queueid,
+						nb_rxd, socketid,
+						&rxq_conf,
+						pktmbuf_pool[portid][socketid]);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 				"rte_eth_rx_queue_setup: err=%d, port=%d\n",
@@ -978,6 +1583,13 @@ main(int argc, char **argv)
 	}
 
 	printf("\n");
+
+	if (nb_eventdev_params) {
+		ret = eventdev_configure();
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE,
+				"event dev configure: err=%d\n", ret);
+	}
 
 	/* start ports */
 	RTE_ETH_FOREACH_DEV(portid) {
@@ -1015,6 +1627,11 @@ main(int argc, char **argv)
 		}
 	}
 
+	if (traffic_split_proto != 0) {
+		ret = configure_split_traffic();
+		if (ret)
+			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
+	}
 
 	check_all_ports_link_status(enabled_port_mask);
 

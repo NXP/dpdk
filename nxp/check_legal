@@ -1,0 +1,187 @@
+#!/bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2019 NXP
+#
+# version: beta 0.1
+# change log:
+#
+
+source $(dirname $0)/check_legal_function
+
+GITSHOW="git show"
+GITLOG="git log"
+GITPARSE="git rev-parse --verify"
+GITLIST="git rev-list --no-merges --reverse"
+check_non_freescale=f
+ignore_makefile=t
+
+USAGE="Usage: `basename $0` [<options>] <since>
+       `basename $0` [<options>] <since>..
+       `basename $0` [<options>] <since>..<until>
+
+OPTIONS:
+	--check-non-freescale
+		Check the license of files changed by the commit even if
+		the commit author is not from Freescale/NXP.
+	--ignore-makefile
+		Don't check the license of Makefile."
+
+usage()
+{
+	echo "$USAGE"
+	exit 1
+}
+
+# check input parameters
+while test $# != 0
+do
+	case "$1" in
+	--check-non-freescale)
+		check_non_freescale=t ;;
+	--ignore-makefile)
+		ignore_makefile=t ;;
+	--)
+		shift; break ;;
+	-h)
+		usage;;
+	-*)
+		echo "unknown option $1"; exit 1 ;;
+	*)
+		break ;;
+	esac
+	shift
+done
+
+if test $# != 1; then
+	usage
+fi
+
+tmp_save_file="/tmp/checklegal-$(whoami)-${RANDOM}${RANDOM}${RANDOM}${RANDOM}.tmp"
+touch $tmp_save_file
+chmod 777 $tmp_save_file
+
+tmp_checkfile_file="/tmp/checklegal-$(whoami)-${RANDOM}${RANDOM}${RANDOM}${RANDOM}.tmp"
+touch $tmp_checkfile_file
+chmod 777 $tmp_checkfile_file
+
+tmp_comment_file="/tmp/checklegal-$(whoami)-${RANDOM}${RANDOM}${RANDOM}${RANDOM}.tmp"
+
+tmp_errwarn_file="/tmp/checklegal-$(whoami)-ErrWarn-${RANDOM}${RANDOM}${RANDOM}${RANDOM}.tmp"
+touch ${tmp_errwarn_file}
+echo :> ${tmp_errwarn_file}
+
+${GITLIST} ${1} > $tmp_checkfile_file
+if [[ $? -ne 0 ]]; then
+	exit 1
+fi
+
+commit_index=0
+commit_ignored=0
+
+if [[ $ignore_makefile == f ]] ; then
+readme_file=$(dirname $0)/../../README
+# test if the current directory is linux source
+	if check_linux $readme_file ; then
+		ignore_makefile=t
+	fi
+fi
+
+exec 0<"$tmp_checkfile_file"
+while read CURRENT_OBJ ; do
+
+	output "================================================================================"
+
+	if [ -n "$url_head" ] ; then
+		output  "URL:       ${url_head}${CURRENT_OBJ}"
+	fi
+
+	COMMIT_INFO=$(${GITLOG} ${CURRENT_OBJ} -n 1 --date=short --pretty=format:"commit:    %H%ncommitter: %cn <%ce>%n\
+parent:    %P%nSubject:   %s%nAuthor:    %an <%ae>%nDate:      %ad%n")
+	output "$COMMIT_INFO"
+
+	patch_date=$(echo "$COMMIT_INFO" | grep "Date:" | tr -s ':-' ' ' | cut -d' ' -f2)
+
+	COMMIT_BODY=$(${GITLOG} ${CURRENT_OBJ} -n 1 --date=short --pretty=format:"%b")
+
+	IS_FREESCALE=0
+	email_address=$(${GITLOG} ${CURRENT_OBJ} -n 1 --date=short --pretty=format:"%ae")
+	if email_is_freescale $email_address ; then
+		IS_FREESCALE=1
+	else
+		if [[ $check_non_freescale == f ]] ; then
+			let "commit_ignored += 1"
+			output
+			output "Author not from Freescale/NXP, ignore checking."
+			continue
+		fi
+	fi
+
+	# check legal of files added or modified
+	output "Files:"
+	${GITLOG} -n 1 --numstat --pretty="format:%H" --diff-filter=AM ${CURRENT_OBJ} | grep "	" |\
+	while read line; do
+		output 1 "------------------------------------------------------------------------"
+		[ -e $tmp_comment_file ] && rm -f $tmp_comment_file
+		touch $tmp_comment_file
+		chmod 777 $tmp_comment_file
+
+		mod_added=$(echo "$line" | cut -f1)
+		mod_deleted=$(echo "$line" | cut -f2)
+		file=$(echo "$line" | cut -f3)
+		let "mod_lines = mod_added + mod_deleted"
+
+		output 1 "$file:    +$mod_added lines, -$mod_deleted lines"
+
+		if skip_file $file $ignore_makefile; then
+			continue
+		fi
+
+		${GITSHOW} ${CURRENT_OBJ}:${file} | \
+		get_comment $tmp_comment_file
+
+		print_license $tmp_comment_file
+
+		if [[ $IS_FREESCALE -eq 1 ]] ; then
+			print_copyright $tmp_comment_file ${patch_date} ${mod_lines} ${tmp_errwarn_file}
+			if [ $? != 0 -a $mod_lines -lt 30 ] ; then
+				echo $patch_date $file $mod_lines  >> $tmp_save_file
+				result=$(awk ' $1 == year && $2 == fname { count += $3 }
+				END {
+					print count
+				}
+				' year=$patch_date fname=$file $tmp_save_file )
+#				if [[ $result -ge 30 ]] ; then
+#					output 1 "ERROR: Accumulated changes more than 30 lines."
+#				fi
+
+			fi
+		fi
+
+	done
+
+	echo
+	echo "$COMMIT_BODY" | grep "Signed-off-by:"
+
+	let "commit_index += 1"
+
+done
+
+# Check the number of errors and warnings; if more than zero, return a non-zero
+warns=`cat ${tmp_errwarn_file} | grep "WARNING" | wc -l`
+errs=`cat ${tmp_errwarn_file} | grep "ERROR" | wc -l`
+
+output "================================================================================\n"
+output "Total: $commit_index    Checked: $(($commit_index-$commit_ignored))    Ignored: $commit_ignored\n"
+output "\tWarnings: $warns        Errors: $errs\n"
+
+[ -e $tmp_comment_file ] && rm -f $tmp_comment_file
+rm -f $tmp_save_file
+rm -f $tmp_checkfile_file
+rm -f $tmp_errwarn_file
+
+if [ $warns -gt 0 -o $errs -gt 0 ]
+then
+	exit 1
+fi
+
+exit 0

@@ -47,9 +47,11 @@ DPDK_17.11 {
 DPDK_18.05 {
 	global:
 
+	dpaa_svr_family;
 	rte_mempool_contig_blocks_check_cookies;
 	rte_mempool_op_calc_mem_size_default;
 	rte_mempool_op_populate_default;
+	set_dpaa_svr_family;
 
 } DPDK_17.11;
 

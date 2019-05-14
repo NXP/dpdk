@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
+ * Copyright 2019 NXP
  */
 
 #include <stdbool.h>
@@ -71,6 +72,21 @@ static unsigned get_gcd(unsigned a, unsigned b)
 
 	return a;
 }
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+unsigned int dpaa_svr_family;
+void set_dpaa_svr_family(void)
+{
+	FILE *svr_file = NULL;
+
+	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	if (svr_file) {
+		if (fscanf(svr_file, "svr:%x", &dpaa_svr_family) > 0)
+			dpaa_svr_family &= SVR_MASK;
+		fclose(svr_file);
+	}
+}
+#endif
 
 /*
  * Depending on memory configuration, objects addresses are spread

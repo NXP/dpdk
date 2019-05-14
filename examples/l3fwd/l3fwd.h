@@ -15,6 +15,8 @@
 #define NO_HASH_MULTI_LOOKUP 1
 #endif
 
+#define RTE_MAX_EVENTDEV_COUNT	RTE_MAX_LCORE
+
 #define MAX_PKT_BURST     32
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 
@@ -24,6 +26,9 @@
  * Try to avoid TX buffering if we have at least MAX_TX_BURST packets to send.
  */
 #define	MAX_TX_BURST	  (MAX_PKT_BURST / 2)
+extern uint32_t max_pkt_burst;
+extern uint32_t max_tx_burst;
+extern uint32_t max_rx_burst;
 
 #define NB_SOCKETS        8
 
@@ -86,6 +91,32 @@ extern xmm_t val_eth[RTE_MAX_ETHPORTS];
 
 extern struct lcore_conf lcore_conf[RTE_MAX_LCORE];
 
+struct eventdev_info {
+	uint8_t dev_id;
+	uint8_t *port;
+	uint8_t *queue;
+};
+
+struct link_info {
+	uint8_t event_portid;
+	uint8_t eventq_id;
+	uint8_t eventdev_id;
+	uint8_t lcore_id;
+};
+struct link_params {
+	struct link_info links[RTE_MAX_EVENTDEV_COUNT];
+	uint8_t nb_links;
+};
+
+enum dequeue_mode {
+	QUEUE_DEQUEUE = 0,
+	EVENTDEV_DEQUEUE,
+};
+
+extern struct link_params link_config;
+extern struct eventdev_info *event_devices;
+extern enum dequeue_mode lcore_dequeue_mode[RTE_MAX_LCORE];
+
 /* Send burst of packets on an output interface */
 static inline int
 send_burst(struct lcore_conf *qconf, uint16_t n, uint16_t port)
@@ -119,8 +150,8 @@ send_single_packet(struct lcore_conf *qconf,
 	len++;
 
 	/* enough pkts to be sent */
-	if (unlikely(len == MAX_PKT_BURST)) {
-		send_burst(qconf, MAX_PKT_BURST, port);
+	if (unlikely(len == max_pkt_burst)) {
+		send_burst(qconf, max_pkt_burst, port);
 		len = 0;
 	}
 
@@ -194,7 +225,13 @@ int
 em_main_loop(__attribute__((unused)) void *dummy);
 
 int
+em_eventdev_main_loop(__attribute__((unused)) void *dummy);
+
+int
 lpm_main_loop(__attribute__((unused)) void *dummy);
+
+int
+lpm_eventdev_main_loop(__attribute__((unused)) void *dummy);
 
 /* Return ipv4/ipv6 fwd lookup struct for LPM or EM. */
 void *

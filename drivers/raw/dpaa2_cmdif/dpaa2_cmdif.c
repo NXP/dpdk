@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  */
 
 #include <stdio.h>
@@ -67,8 +67,6 @@ dpaa2_cmdif_enqueue_bufs(struct rte_rawdev *dev,
 	struct qbman_swp *swp;
 	int ret;
 
-	DPAA2_CMDIF_FUNC_TRACE();
-
 	RTE_SET_USED(count);
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
@@ -127,8 +125,6 @@ dpaa2_cmdif_dequeue_bufs(struct rte_rawdev *dev,
 	struct qbman_pull_desc pulldesc;
 	uint8_t status;
 	int ret;
-
-	DPAA2_CMDIF_FUNC_TRACE();
 
 	RTE_SET_USED(count);
 
@@ -211,7 +207,6 @@ dpaa2_cmdif_create(const char *name,
 
 	rawdev->dev_ops = &dpaa2_cmdif_ops;
 	rawdev->device = &vdev->device;
-	rawdev->driver_name = vdev->device.driver->name;
 
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
@@ -274,6 +269,8 @@ dpaa2_cmdif_remove(struct rte_vdev_device *vdev)
 	int ret;
 
 	name = rte_vdev_device_name(vdev);
+	if (name == NULL)
+		return -1;
 
 	DPAA2_CMDIF_INFO("Closing %s on NUMA node %d", name, rte_socket_id());
 
