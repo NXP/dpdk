@@ -588,6 +588,22 @@ dpaa_rx_cb_atomic(void *event,
 	return qman_cb_dqrr_defer;
 }
 
+enum qman_cb_dqrr_result
+dpaa_rx_process_event_app_cb(void *event __rte_unused,
+		  struct qman_portal *qm __always_unused,
+		  struct qman_fq *fq,
+		  const struct qm_dqrr_entry *dqrr,
+		  void **bufs __rte_unused)
+{
+	u32 ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
+	struct rte_mbuf *mbuf;
+
+	mbuf = dpaa_eth_fd_to_mbuf(&dqrr->fd, ifid);
+	fq->app_cb((void *)mbuf, fq->app_cntx);
+
+	return qman_cb_dqrr_consume;
+}
+
 uint16_t dpaa_eth_queue_rx(void *q,
 			   struct rte_mbuf **bufs,
 			   uint16_t nb_bufs)

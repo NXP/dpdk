@@ -708,6 +708,22 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 }
 
 int
+dpaa_eth_eventq_update(const struct rte_eth_dev *dev,
+		int eth_rx_queue_id,
+		struct rte_dpaa_dev_qconf_update_t *conf)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[eth_rx_queue_id];
+
+	rxq->app_cb = conf->process_packet_cb;
+	rxq->app_cntx = conf->cntx;
+
+	rxq->cb.dqrr_dpdk_cb = dpaa_rx_process_event_app_cb;
+
+	return 0;
+}
+
+int
 dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 		int eth_rx_queue_id,
 		u16 ch_id,

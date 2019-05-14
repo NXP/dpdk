@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <rte_ethdev_driver.h>
 #include <rte_event_eth_rx_adapter.h>
+#include <rte_pmd_dpaa_event.h>
 
 #include <fsl_usd.h>
 #include <fsl_qman.h>
@@ -177,6 +178,11 @@ dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 		const struct rte_event_eth_rx_adapter_queue_conf *queue_conf);
 
 int
+dpaa_eth_eventq_update(const struct rte_eth_dev *dev,
+		int eth_rx_queue_id,
+		struct rte_dpaa_dev_qconf_update_t *conf);
+
+int
 dpaa_eth_eventq_detach(const struct rte_eth_dev *dev,
 			   int eth_rx_queue_id);
 
@@ -193,4 +199,10 @@ dpaa_rx_cb_atomic(void *event,
 		  const struct qm_dqrr_entry *dqrr,
 		  void **bufs);
 
+enum qman_cb_dqrr_result
+dpaa_rx_process_event_app_cb(void *event,
+		  struct qman_portal *qm __always_unused,
+		  struct qman_fq *fq,
+		  const struct qm_dqrr_entry *dqrr,
+		  void **bufs);
 #endif

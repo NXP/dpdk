@@ -17,13 +17,12 @@
 int
 rte_dpaa_event_eth_rx_queue_update(uint8_t id __rte_unused,
 		uint16_t eth_dev_id,
-		int32_t rx_queue_id __rte_unused,
-		struct rte_dpaa_dev_qconf_update_t *conf __rte_unused)
+		int32_t rx_queue_id,
+		struct rte_dpaa_dev_qconf_update_t *conf)
 {
 	struct rte_eth_dev *dev = &rte_eth_devices[eth_dev_id];
 
-	RTE_SET_USED(dev);
-	return 0/*dpaa_eth_eventq_update(dev, rx_queue_id, conf)*/;
+	return dpaa_eth_eventq_update(dev, rx_queue_id, conf);
 }
 
 int
