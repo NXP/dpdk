@@ -452,7 +452,7 @@ main(int argc, char **argv)
 	}
 
 	if (proc_type == RTE_PROC_PRIMARY)
-		check_all_ports_link_status(rte_eth_dev_count(), port_mask);
+		check_all_ports_link_status(rte_eth_dev_count_avail(), port_mask);
 
 	assign_ports_to_cores();
 
