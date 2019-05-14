@@ -8,5 +8,6 @@ DPDK_18.11 {
 
 	dpaa_sec_eventq_attach;
 	dpaa_sec_eventq_detach;
+	dpaa_sec_eventq_update;
 
 } DPDK_17.11;

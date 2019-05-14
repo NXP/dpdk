@@ -29,13 +29,12 @@ rte_dpaa_event_eth_rx_queue_update(uint8_t id __rte_unused,
 int
 rte_dpaa_event_crypto_qp_update(uint8_t id __rte_unused,
 		uint8_t cdev_id,
-		int32_t qp_id __rte_unused,
-		struct rte_dpaa_dev_qconf_update_t *conf __rte_unused)
+		int32_t qp_id,
+		struct rte_dpaa_dev_qconf_update_t *conf)
 {
 	struct rte_cryptodev *dev = rte_cryptodev_pmd_get_dev(cdev_id);
 
-	RTE_SET_USED(dev);
-	return 0/*dpaa_sec_eventq_update(dev, qp_id, conf)*/;
+	return dpaa_sec_eventq_update(dev, qp_id, conf);
 }
 
 int

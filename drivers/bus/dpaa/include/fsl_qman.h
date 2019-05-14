@@ -1210,9 +1210,21 @@ struct qman_fq_cb {
 	qman_cb_mr fqs;		/* frame-queue state changes*/
 };
 
+/**
+ * Callback function to be registered for processing received packets.
+ * The callback has to be registered for each queue.
+ * outbuf need to be typecasted as per queue type.
+ * Currently only eth and crypto are supported.
+ *   ethernet queues = 'struct rte_mbuf *'
+ *   crypto queues = 'struct rte_crypto_op *'
+ */
+typedef void (*process_packet_cb_t)(void *outbuf, void *cntx);
+
 struct qman_fq {
 	/* Caller of qman_create_fq() provides these demux callbacks */
 	struct qman_fq_cb cb;
+	process_packet_cb_t app_cb;
+	void *app_cntx;
 
 	u32 fqid_le;
 	u16 ch_id;

@@ -25,7 +25,6 @@
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 
-//#include <qman.h>
 #include <fsl_usd.h>
 #include <fsl_qman.h>
 #include <of.h>
@@ -2564,12 +2563,6 @@ dpaa_sec_process_parallel_event(void *event,
 			struct qman_portal *qm __always_unused,
 			struct qman_fq *outq,
 			const struct qm_dqrr_entry *dqrr,
-			void **bufs);
-enum qman_cb_dqrr_result
-dpaa_sec_process_parallel_event(void *event,
-			struct qman_portal *qm __always_unused,
-			struct qman_fq *outq,
-			const struct qm_dqrr_entry *dqrr,
 			void **bufs)
 {
 	const struct qm_fd *fd;
@@ -2620,11 +2613,55 @@ dpaa_sec_process_parallel_event(void *event,
 }
 
 enum qman_cb_dqrr_result
-dpaa_sec_process_atomic_event(void *event,
+dpaa_sec_process_event_app_cb(void *event __rte_unused,
 			struct qman_portal *qm __rte_unused,
 			struct qman_fq *outq,
 			const struct qm_dqrr_entry *dqrr,
-			void **bufs);
+			void **bufs __rte_unused)
+{
+	const struct qm_fd *fd;
+	struct dpaa_sec_job *job;
+	struct dpaa_sec_op_ctx *ctx;
+
+	fd = &dqrr->fd;
+
+	/* sg is embedded in an op ctx,
+	 * sg[0] is for output
+	 * sg[1] for input
+	 */
+	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+
+	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
+	ctx->fd_status = fd->status;
+	if (ctx->op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
+		struct qm_sg_entry *sg_out;
+		uint32_t len;
+
+		sg_out = &job->sg[0];
+		hw_sg_to_cpu(sg_out);
+		len = sg_out->length;
+		ctx->op->sym->m_src->pkt_len = len;
+		ctx->op->sym->m_src->data_len = len;
+	}
+	/**
+	 * FIXME: with the current value of HFN, SEC is returning warning
+	 * "Descriptor completed normally, but 3GPP HFN matches or exceeds
+	 * the Threshold", So bypassing this error assuming a good application
+	 * with proper hfn values, this error will not come.
+	 */
+	if (!ctx->fd_status || ctx->fd_status == 0x400000f1) {
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+	} else {
+		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+	}
+	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
+
+	outq->app_cb((void *)ctx->op, outq->app_cntx);
+
+	return qman_cb_dqrr_consume;
+}
+
 enum qman_cb_dqrr_result
 dpaa_sec_process_atomic_event(void *event,
 			struct qman_portal *qm __rte_unused,
@@ -2674,7 +2711,7 @@ dpaa_sec_process_atomic_event(void *event,
 	ev->priority = outq->ev.priority;
 
 	/* Save active dqrr entries */
-	index = ((uintptr_t)dqrr >> 6) & (16/*QM_DQRR_SIZE*/ - 1);//DQRR_PTR2IDX(dqrr);
+	index = ((uintptr_t)dqrr >> 6) & (16/*QM_DQRR_SIZE*/ - 1);/*DQRR_PTR2IDX(dqrr);*/
 	DPAA_PER_LCORE_DQRR_SIZE++;
 	DPAA_PER_LCORE_DQRR_HELD |= 1 << index;
 	DPAA_PER_LCORE_DQRR_MBUF(index) = ctx->op->sym->m_src;
@@ -2685,6 +2722,20 @@ dpaa_sec_process_atomic_event(void *event,
 	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
 
 	return qman_cb_dqrr_defer;
+}
+
+int
+dpaa_sec_eventq_update(const struct rte_cryptodev *dev,
+		int qp_id,
+		struct rte_dpaa_dev_qconf_update_t *conf)
+{
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+
+	qp->outq.app_cb = conf->process_packet_cb;
+	qp->outq.app_cntx = conf->cntx;
+	qp->outq.cb.dqrr_dpdk_cb = dpaa_sec_process_event_app_cb;
+
+	return 0;
 }
 
 int
@@ -2743,6 +2794,8 @@ dpaa_sec_eventq_detach(const struct rte_cryptodev *dev,
 		       QM_INITFQ_WE_CONTEXTA | QM_INITFQ_WE_CONTEXTB;
 	qp->outq.cb.dqrr = dqrr_out_fq_cb_rx;
 	qp->outq.cb.ern  = ern_sec_fq_handler;
+	qp->outq.app_cb  = NULL;
+	qp->outq.app_cntx  = NULL;
 	ret = qman_init_fq(&qp->outq, 0, &opts);
 	if (ret)
 		RTE_LOG(ERR, PMD, "Error in qman_init_fq: ret: %d\n", ret);
