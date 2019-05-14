@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018 NXP
+ *   Copyright 2016,2018-2019 NXP
  *
  */
 
@@ -33,7 +33,7 @@ uint8_t dpaa2_virt_mode;
 uint32_t
 rte_fslmc_get_device_count(enum rte_dpaa2_dev_type device_type)
 {
-	if (device_type > DPAA2_DEVTYPE_MAX)
+	if (device_type >= DPAA2_DEVTYPE_MAX)
 		return 0;
 	return rte_fslmc_bus.device_count[device_type];
 }
@@ -135,10 +135,11 @@ static int
 scan_one_fslmc_device(char *dev_name)
 {
 	char *dup_dev_name, *t_ptr;
-	struct rte_dpaa2_device *dev;
+	struct rte_dpaa2_device *dev = NULL;
+	int ret = -1;
 
 	if (!dev_name)
-		return -1;
+		return ret;
 
 	/* Ignore the Container name itself */
 	if (!strncmp("dprc", dev_name, 4))
@@ -168,7 +169,8 @@ scan_one_fslmc_device(char *dev_name)
 	/* Parse the device name and ID */
 	t_ptr = strtok(dup_dev_name, ".");
 	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device name observed");
+		DPAA2_BUS_ERR("Invalid device found: (%s)", dup_dev_name);
+		ret = -EINVAL;
 		goto cleanup;
 	}
 	if (!strncmp("dpni", t_ptr, 4))
@@ -187,15 +189,15 @@ scan_one_fslmc_device(char *dev_name)
 		dev->dev_type = DPAA2_MPORTAL;
 	else if (!strncmp("dpdmai", t_ptr, 6))
 		dev->dev_type = DPAA2_QDMA;
+	else if (!strncmp("dpdmux", t_ptr, 6))
+		dev->dev_type = DPAA2_MUX;
 	else
 		dev->dev_type = DPAA2_UNKNOWN;
 
-	/* Update the device found into the device_count table */
-	rte_fslmc_bus.device_count[dev->dev_type]++;
-
 	t_ptr = strtok(NULL, ".");
 	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
+		DPAA2_BUS_ERR("Skipping invalid device (%s)", dup_dev_name);
+		ret = 0;
 		goto cleanup;
 	}
 
@@ -203,9 +205,13 @@ scan_one_fslmc_device(char *dev_name)
 	dev->device.name = strdup(dev_name);
 	if (!dev->device.name) {
 		DPAA2_BUS_ERR("Unable to clone device name. Out of memory");
+		ret = -ENOMEM;
 		goto cleanup;
 	}
 	dev->device.devargs = fslmc_devargs_lookup(dev);
+
+	/* Update the device found into the device_count table */
+	rte_fslmc_bus.device_count[dev->dev_type]++;
 
 	/* Add device in the fslmc device list */
 	insert_in_device_list(dev);
@@ -220,55 +226,42 @@ cleanup:
 		free(dup_dev_name);
 	if (dev)
 		free(dev);
-	return -1;
+	return ret;
 }
 
 static int
 rte_fslmc_parse(const char *name, void *addr)
 {
 	uint16_t dev_id;
-	char *t_ptr = NULL, *dname = NULL;
+	char *t_ptr;
 
 	/* 'name' is expected to contain name of device, for example, dpio.1,
 	 * dpni.2, etc.
 	 */
-
-	dname = strdup(name);
-	if (!dname)
-		return -EINVAL;
-	t_ptr = dname;
-
-	if (strncmp("dpni", t_ptr, 4) &&
-	    strncmp("dpseci", t_ptr, 6) &&
-	    strncmp("dpcon", t_ptr, 5) &&
-	    strncmp("dpbp", t_ptr, 4) &&
-	    strncmp("dpio", t_ptr, 4) &&
-	    strncmp("dpci", t_ptr, 4) &&
-	    strncmp("dpmcp", t_ptr, 5) &&
-	    strncmp("dpdmai", t_ptr, 6)) {
-		DPAA2_BUS_ERR("Unknown or unsupported device");
+	if (strncmp("dpni", name, 4) &&
+	    strncmp("dpseci", name, 6) &&
+	    strncmp("dpcon", name, 5) &&
+	    strncmp("dpbp", name, 4) &&
+	    strncmp("dpio", name, 4) &&
+	    strncmp("dpci", name, 4) &&
+	    strncmp("dpmcp", name, 5) &&
+	    strncmp("dpdmai", name, 6) &&
+	    strncmp("dpdmux", name, 6)) {
+		DPAA2_BUS_DEBUG("Unknown or unsupported device (%s)", name);
 		goto err_out;
 	}
 
 	t_ptr = strchr(name, '.');
-	if (!t_ptr) {
-		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
+	if (!t_ptr || sscanf(t_ptr + 1, "%hu", &dev_id) != 1) {
+		DPAA2_BUS_ERR("Missing device id in device name (%s)", name);
 		goto err_out;
 	}
-
-	t_ptr = (char *)(t_ptr + 1);
-	if (sscanf(t_ptr, "%hu", &dev_id) <= 0) {
-		DPAA2_BUS_ERR("Incorrect device string observed (%s)", t_ptr);
-		goto err_out;
-	}
-	free(dname);
 
 	if (addr)
 		strcpy(addr, name);
 
 	return 0;
 err_out:
-	free(dname);
 	return -EINVAL;
 }
 
@@ -294,8 +287,7 @@ rte_fslmc_scan(void)
 		goto scan_fail;
 
 	/* Scan devices on the group */
-	snprintf(fslmc_dirpath, sizeof(fslmc_dirpath), "%s/%d/devices",
-			VFIO_IOMMU_GROUP_PATH, groupid);
+	sprintf(fslmc_dirpath, "%s/%s", SYSFS_FSL_MC_DEVICES, fslmc_container);
 	dir = opendir(fslmc_dirpath);
 	if (!dir) {
 		DPAA2_BUS_ERR("Unable to open VFIO group directory");
@@ -303,7 +295,7 @@ rte_fslmc_scan(void)
 	}
 
 	while ((entry = readdir(dir)) != NULL) {
-		if (entry->d_name[0] == '.' || entry->d_type != DT_LNK)
+		if (entry->d_name[0] == '.' || entry->d_type != DT_DIR)
 			continue;
 
 		ret = scan_one_fslmc_device(entry->d_name);
@@ -328,7 +320,7 @@ scan_fail_cleanup:
 	/* Remove all devices in the list */
 	cleanup_fslmc_device_list();
 scan_fail:
-	DPAA2_BUS_DEBUG("FSLMC Bus Not Available. Skipping");
+	DPAA2_BUS_DEBUG("FSLMC Bus Not Available. Skipping (%d)", ret);
 	/* Irrespective of failure, scan only return success */
 	return 0;
 }

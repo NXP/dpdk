@@ -598,6 +598,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	int num_rx_bufs, ret;
 	uint32_t vdqcr_flags = 0;
 
+	if (unlikely(rte_dpaa_bpid_info == NULL &&
+				rte_eal_process_type() == RTE_PROC_SECONDARY))
+		rte_dpaa_bpid_info = fq->bp_array;
+
 	if (likely(fq->is_static))
 		return dpaa_eth_queue_portal_rx(fq, bufs, nb_bufs);
 
@@ -887,7 +891,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	struct qm_fd fd_arr[DPAA_TX_BURST_SIZE];
 	uint32_t frames_to_send, loop, sent = 0;
 	uint16_t state;
-	int ret;
+	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 
 	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
@@ -905,6 +909,15 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				DPAA_TX_BURST_SIZE : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+			/* In case the data offset is not multiple of 16,
+			 * FMAN can stall because of an errata. So reallocate
+			 * the buffer in such case.
+			 */
+			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
+					(mbuf->data_off & 0xF) != 0x0)
+				realloc_mbuf = 1;
+#endif
 			seqn = mbuf->seqn;
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
 				index = seqn - 1;
@@ -924,6 +937,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				if (likely(mp->ops_index ==
 						bp_info->dpaa_ops_index &&
 					mbuf->nb_segs == 1 &&
+					realloc_mbuf == 0 &&
 					rte_mbuf_refcnt_read(mbuf) == 1)) {
 					DPAA_MBUF_TO_CONTIG_FD(mbuf,
 						&fd_arr[loop], bp_info->bpid);
@@ -939,7 +953,8 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			}
 
 			bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
-			if (likely(mp->ops_index == bp_info->dpaa_ops_index)) {
+			if (likely(mp->ops_index == bp_info->dpaa_ops_index &&
+					realloc_mbuf == 0)) {
 				state = tx_on_dpaa_pool(mbuf, bp_info,
 							&fd_arr[loop]);
 				if (unlikely(state)) {
@@ -952,6 +967,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 					goto send_pkts;
 				}
 			} else {
+				realloc_mbuf = 0;
 				state = tx_on_external_pool(q, mbuf,
 							    &fd_arr[loop]);
 				if (unlikely(state)) {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017 NXP
+ *   Copyright 2017-2019 NXP
  *
  */
 #ifndef __RTE_DPAA_BUS_H__
@@ -54,6 +54,7 @@ struct rte_dpaa_bus {
 	struct rte_dpaa_device_list device_list;
 	struct rte_dpaa_driver_list driver_list;
 	int device_count;
+	int detected;
 };
 
 struct dpaa_device_id {

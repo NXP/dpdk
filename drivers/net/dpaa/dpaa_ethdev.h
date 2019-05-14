@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2014-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017 NXP
+ *   Copyright 2017-2019 NXP
  *
  */
 #ifndef __DPAA_ETHDEV_H__
@@ -18,6 +18,7 @@
 #include <of.h>
 #include <netcfg.h>
 
+#define MAX_DPAA_CORES			4
 #define DPAA_MBUF_HW_ANNOTATION		64
 #define DPAA_FD_PTA_SIZE		64
 
@@ -79,10 +80,14 @@
 #define DPAA_DEBUG_FQ_TX_ERROR   1
 
 #define DPAA_RSS_OFFLOAD_ALL ( \
-	ETH_RSS_IP | \
-	ETH_RSS_UDP | \
-	ETH_RSS_TCP | \
-	ETH_RSS_SCTP)
+	ETH_RSS_FRAG_IPV4 | \
+	ETH_RSS_NONFRAG_IPV4_TCP | \
+	ETH_RSS_NONFRAG_IPV4_UDP | \
+	ETH_RSS_NONFRAG_IPV4_SCTP | \
+	ETH_RSS_FRAG_IPV6 | \
+	ETH_RSS_NONFRAG_IPV6_TCP | \
+	ETH_RSS_NONFRAG_IPV6_UDP | \
+	ETH_RSS_NONFRAG_IPV6_SCTP)
 
 #define DPAA_TX_CKSUM_OFFLOAD_MASK (             \
 		PKT_TX_IP_CKSUM |                \
@@ -119,6 +124,10 @@ struct dpaa_if {
 	struct fman_if *fif;
 	struct dpaa_bp_info *bp_info;
 	struct rte_eth_fc_conf *fc_conf;
+	void *port_handle;
+	void *netenv_handle;
+	void *scheme_handle[2];
+	uint32_t scheme_count;
 };
 
 struct dpaa_if_stats {

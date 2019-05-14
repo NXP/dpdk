@@ -167,6 +167,11 @@ int qman_setup_fq_lookup_table(size_t num_entries)
 	return 0;
 }
 
+void qman_set_fq_lookup_table(void **fq_table)
+{
+	qman_fq_lookup_table = fq_table;
+}
+
 /* global structure that maintains fq object mapping */
 static DEFINE_SPINLOCK(fq_hash_table_lock);
 
@@ -1408,6 +1413,7 @@ int qman_create_fq(u32 fqid, u32 flags, struct qman_fq *fq)
 		pr_info("Find empty table entry failed\n");
 		return -ENOMEM;
 	}
+	fq->qman_fq_lookup_table = qman_fq_lookup_table;
 #endif
 	if (!(flags & QMAN_FQ_FLAG_AS_IS) || (flags & QMAN_FQ_FLAG_NO_MODIFY))
 		return 0;

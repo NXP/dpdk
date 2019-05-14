@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2016 Freescale Semiconductor, Inc.
-# Copyright 2017 NXP
+# Copyright 2017,2019 NXP
 
 #include "defconfig_arm64-armv8a-linuxapp-gcc"
 
@@ -10,6 +10,17 @@ CONFIG_RTE_ARCH_ARM_TUNE="cortex-a72"
 CONFIG_RTE_LIBRTE_VHOST_NUMA=n
 CONFIG_RTE_EAL_NUMA_AWARE_HUGEPAGES=n
 
+# Disable IGB_UIO compilation
+CONFIG_RTE_EAL_IGB_UIO=n
+
+# DPAA device errata
+# Due to A010022 hardware errata on LS1043, buf size is kept 4K (including
+# metadata). This size is completely divisible by our L1 cache size (32K)
+# which leads to cache collisions of buffer metadata(mbuf) and performance drop.
+# To minimize these cache collisions, offset of buffer is changed after an
+# interval of 8 and value is reversed after 64 buffer.
+CONFIG_RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022=y
+
 #
 # Compile Environment Abstraction Layer
 #
@@ -18,9 +29,39 @@ CONFIG_RTE_MAX_NUMA_NODES=1
 CONFIG_RTE_CACHE_LINE_SIZE=64
 CONFIG_RTE_PKTMBUF_HEADROOM=128
 
+# Disable PHYS addressing for DPAA2
+# required for common binary build
+CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=n
+
 # NXP DPAA Bus
 CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=n
 CONFIG_RTE_LIBRTE_DPAA_HWDEBUG=n
 
 # NXP CAAM_JR driver
-CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=y
+CONFIG_RTE_LIBRTE_PMD_CAAM_JR=y
+CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=n
+CONFIG_RTE_LIBRTE_PMD_CAAM_JR_DEBUG=n
+
+# Disable unnecessary drivers to reduce size
+CONFIG_RTE_LIBRTE_AVP_PMD=n
+CONFIG_RTE_LIBRTE_ENA_PMD=n
+CONFIG_RTE_LIBRTE_FM10K_PMD=n
+CONFIG_RTE_LIBRTE_MLX4_PMD=n
+CONFIG_RTE_LIBRTE_MLX5_PMD=n
+CONFIG_RTE_LIBRTE_BNX2X_PMD=n
+CONFIG_RTE_LIBRTE_CXGBE_PMD=n
+CONFIG_RTE_LIBRTE_ENIC_PMD=n
+CONFIG_RTE_LIBRTE_NFP_PMD=n
+CONFIG_RTE_LIBRTE_MRVL_PMD=n
+CONFIG_RTE_LIBRTE_BNXT_PMD=n
+CONFIG_RTE_LIBRTE_SFC_EFX_PMD=n
+CONFIG_RTE_LIBRTE_PMD_SOFTNIC=n
+CONFIG_RTE_LIBRTE_PMD_SZEDATA2=n
+CONFIG_RTE_LIBRTE_THUNDERX_NICVF_PMD=n
+CONFIG_RTE_LIBRTE_LIO_PMD=n
+CONFIG_RTE_LIBRTE_OCTEONTX_PMD=n
+CONFIG_RTE_LIBRTE_VMXNET3_PMD=n
+CONFIG_RTE_LIBRTE_QEDE_PMD=n
+CONFIG_RTE_LIBRTE_ARK_PMD=n
+CONFIG_RTE_LIBRTE_PMD_OCTEONTX_SSOVF=n
+CONFIG_RTE_LIBRTE_OCTEONTX_MEMPOOL=n

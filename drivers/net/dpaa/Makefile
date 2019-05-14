@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2017 NXP
+# Copyright 2017-2019 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -15,6 +15,7 @@ CFLAGS += -O3 $(WERROR_FLAGS)
 CFLAGS += -Wno-pointer-arith
 CFLAGS += -I$(RTE_SDK_DPAA)/
 CFLAGS += -I$(RTE_SDK_DPAA)/include
+CFLAGS += -I$(RTE_SDK_DPAA)/fmlib
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include/
 CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/base/qbman
@@ -31,7 +32,9 @@ LIBABIVER := 1
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 
 # Interfaces with DPDK
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += fmlib/fm_lib.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_flow.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
 
 LDLIBS += -lrte_bus_dpaa

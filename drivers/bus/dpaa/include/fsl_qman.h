@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2008-2012 Freescale Semiconductor, Inc.
+ * Copyright 2019 NXP
  *
  */
 
@@ -1224,6 +1225,7 @@ struct qman_fq {
 	struct rte_event ev;
 	/* affined portal in case of static queue */
 	struct qman_portal *qp;
+	struct dpaa_bp_info *bp_array;
 
 	volatile unsigned long flags;
 
@@ -1233,6 +1235,7 @@ struct qman_fq {
 
 	struct rb_node node;
 #ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+	void **qman_fq_lookup_table;
 	u32 key;
 #endif
 };
@@ -1306,6 +1309,10 @@ struct qman_cgr {
 /* Flags to qman_modify_cgr() */
 #define QMAN_CGR_FLAG_USE_INIT       0x00000001
 #define QMAN_CGR_MODE_FRAME          0x00000001
+
+#ifdef CONFIG_FSL_QMAN_FQ_LOOKUP
+void qman_set_fq_lookup_table(void **table);
+#endif
 
 /**
  * qman_get_portal_index - get portal configuration index

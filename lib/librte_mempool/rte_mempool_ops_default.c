@@ -2,6 +2,7 @@
  * Copyright(c) 2016 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
  * Copyright(c) 2018 Solarflare Communications Inc.
+ * Copyright 2019 NXP
  */
 
 #include <rte_mempool.h>
@@ -14,6 +15,14 @@ rte_mempool_op_calc_mem_size_default(const struct rte_mempool *mp,
 	size_t total_elt_sz;
 	size_t obj_per_page, pg_num, pg_sz;
 	size_t mem_size;
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	/* Reserve more memory as we need to align buffers to 4K boundary.
+	 * This change does not change the number of objects allocated.
+	 */
+	if (mp->flags & MEMPOOL_F_1043_MBUF)
+		obj_num += LS1043_MAX_MEMZONES;
+#endif
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 	if (total_elt_sz == 0) {
@@ -54,10 +63,36 @@ rte_mempool_op_populate_default(struct rte_mempool *mp, unsigned int max_objs,
 	size_t off;
 	unsigned int i;
 	void *obj;
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	int idx = 0, change = LS1043_OFFSET_CHANGE_IDX;
+#endif
 
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
 	for (off = 0, i = 0; off + total_elt_sz <= len && i < max_objs; i++) {
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	/* Due to A010022 hardware errata on LS1043, buf size is kept 4K
+	 * (including metadata). This size is completely divisible by our L1
+	 * cache size (32K) which leads to cache collisions of buffer metadata
+	 * (mbuf) and performance drop. To minimize these cache collisions,
+	 * offset of buffer is changed after an interval of 8 and value is
+	 * reversed after 64 buffer.
+	 */
+		if (mp->flags & MEMPOOL_F_1043_MBUF) {
+			if (off == 0)
+				off = ((uintptr_t)vaddr % total_elt_sz) ?
+					total_elt_sz - ((uintptr_t)vaddr %
+					total_elt_sz) : 0;
+
+			if (idx == LS1043_OFFSET_CHANGE_IDX) {
+				change = -change;
+				idx = 0;
+			}
+			if (idx % LS1043_MAX_BUF_IN_CACHE == 0)
+				off += change;
+			idx++;
+		}
+#endif
 		off += mp->header_size;
 		obj = (char *)vaddr + off;
 		obj_cb(mp, obj_cb_arg, obj,

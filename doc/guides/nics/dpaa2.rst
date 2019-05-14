@@ -421,8 +421,8 @@ See :doc:`../platform/dpaa2` for setup information
 
 Currently supported by DPDK:
 
-- NXP SDK **18.09+**.
-- MC Firmware version **10.10.0** and higher.
+- NXP LSDK **19.03+**.
+- MC Firmware version **10.14.0** and higher.
 - Supported architectures:  **arm64 LE**.
 
 - Follow the DPDK :ref:`Getting Started Guide for Linux <linux_gsg>` to setup the basic DPDK environment.
@@ -499,6 +499,11 @@ for details.
       Done
       testpmd>
 
+
+* Use dev arg option ``drv_loopback=1`` to loopback packets at
+  driver level. Any packet received will be reflected back by the
+  driver on same port. e.g. ``fslmc:dpni.1,drv_loopback=1``
+
 Enabling logs
 -------------
 
@@ -552,4 +557,3 @@ Other Limitations
 
 - RSS hash key cannot be modified.
 - RSS RETA cannot be configured.
-- Secondary process packet I/O is not supported.

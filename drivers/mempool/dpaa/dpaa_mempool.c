@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017 NXP
+ *   Copyright 2017,2019 NXP
  *
  */
 
@@ -35,7 +35,7 @@
 struct dpaa_memseg_list rte_dpaa_memsegs
 	= TAILQ_HEAD_INITIALIZER(rte_dpaa_memsegs);
 
-struct dpaa_bp_info rte_dpaa_bpid_info[DPAA_MAX_BPOOLS];
+struct dpaa_bp_info *rte_dpaa_bpid_info = NULL;
 
 static int
 dpaa_mbuf_create_pool(struct rte_mempool *mp)
@@ -51,6 +51,15 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 
 	MEMPOOL_INIT_FUNC_TRACE();
 
+	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+		ret = rte_dpaa_portal_init((void *)0);
+		if (ret) {
+			DPAA_MEMPOOL_ERR(
+				"rte_dpaa_portal_init failed with ret: %d",
+				 ret);
+			return -1;
+		}
+	}
 	bp = bman_new_pool(&params);
 	if (!bp) {
 		DPAA_MEMPOOL_ERR("bman_new_pool() failed");
@@ -73,6 +82,14 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	if (num_bufs)
 		DPAA_MEMPOOL_WARN("drained %u bufs from BPID %d",
 				  num_bufs, bpid);
+
+	if (rte_dpaa_bpid_info == NULL) {
+		rte_dpaa_bpid_info = (struct dpaa_bp_info *)rte_zmalloc(NULL,
+				sizeof(struct dpaa_bp_info) * DPAA_MAX_BPOOLS,
+				RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa_bpid_info == NULL)
+			return -ENOMEM;
+	}
 
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;

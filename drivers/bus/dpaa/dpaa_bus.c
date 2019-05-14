@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017 NXP
+ *   Copyright 2017-2019 NXP
  *
  */
 /* System headers */
@@ -196,7 +196,7 @@ dpaa_create_device_list(void)
 	 * interfaces) that can be created.
 	 */
 
-	if (dpaa_sec_available()) {
+	if (dpaa_sec_available() || getenv("DPAA_SEC_DISABLE")) {
 		DPAA_BUS_LOG(INFO, "DPAA SEC devices are not available");
 		return 0;
 	}
@@ -248,12 +248,16 @@ dpaa_clean_device_list(void)
 	}
 }
 
+#define COMMAND_LEN	256
+
 int rte_dpaa_portal_init(void *arg)
 {
 	pthread_t id;
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
 	struct dpaa_portal *dpaa_io_portal;
+	pid_t tid;
+	char command[COMMAND_LEN];
 
 	BUS_INIT_FUNC_TRACE();
 
@@ -310,6 +314,21 @@ int rte_dpaa_portal_init(void *arg)
 	dpaa_io_portal->qman_idx = qman_get_portal_index();
 	dpaa_io_portal->bman_idx = bman_get_portal_index();
 	dpaa_io_portal->tid = syscall(SYS_gettid);
+
+	if (getenv("NXP_CHRT_PERF_MODE")) {
+		tid = syscall(SYS_gettid);
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA_BUS_DEBUG(" %s command is executed", command);
+
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
+	}
 
 	ret = pthread_setspecific(dpaa_portal_key, (void *)dpaa_io_portal);
 	if (ret) {
@@ -442,40 +461,8 @@ rte_dpaa_bus_scan(void)
 		RTE_LOG(DEBUG, EAL, "DPAA Bus not present. Skipping.\n");
 		return 0;
 	}
-
-	/* Load the device-tree driver */
-	ret = of_init();
-	if (ret) {
-		DPAA_BUS_LOG(ERR, "of_init failed with ret: %d", ret);
-		return -1;
-	}
-
-	/* Get the interface configurations from device-tree */
-	dpaa_netcfg = netcfg_acquire();
-	if (!dpaa_netcfg) {
-		DPAA_BUS_LOG(ERR, "netcfg_acquire failed");
-		return -EINVAL;
-	}
-
-	RTE_LOG(NOTICE, EAL, "DPAA Bus Detected\n");
-
-	if (!dpaa_netcfg->num_ethports) {
-		DPAA_BUS_LOG(INFO, "no network interfaces available");
-		/* This is not an error */
-		return 0;
-	}
-
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	dump_netcfg(dpaa_netcfg);
-#endif
-
-	DPAA_BUS_LOG(DEBUG, "Number of ethernet devices = %d",
-		     dpaa_netcfg->num_ethports);
-	ret = dpaa_create_device_list();
-	if (ret) {
-		DPAA_BUS_LOG(ERR, "Unable to create device list. (%d)", ret);
-		return ret;
-	}
+	/* detected DPAA devices */
+	rte_dpaa_bus.detected = 1;
 
 	/* create the key, supplying a function that'll be invoked
 	 * when a portal affined thread will be deleted.
@@ -534,6 +521,47 @@ rte_dpaa_device_match(struct rte_dpaa_driver *drv,
 }
 
 static int
+rte_dpaa_bus_dev_build(void)
+{
+	int ret;
+
+	/* Load the device-tree driver */
+	ret = of_init();
+	if (ret) {
+		DPAA_BUS_LOG(ERR, "of_init failed with ret: %d", ret);
+		return -1;
+	}
+
+	/* Get the interface configurations from device-tree */
+	dpaa_netcfg = netcfg_acquire();
+	if (!dpaa_netcfg) {
+		DPAA_BUS_LOG(ERR, "netcfg_acquire failed");
+		return -EINVAL;
+	}
+
+	RTE_LOG(NOTICE, EAL, "DPAA Bus Detected\n");
+
+	if (!dpaa_netcfg->num_ethports) {
+		DPAA_BUS_LOG(INFO, "no network interfaces available");
+		/* This is not an error */
+		return 0;
+	}
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	dump_netcfg(dpaa_netcfg);
+#endif
+
+	DPAA_BUS_LOG(DEBUG, "Number of ethernet devices = %d",
+		     dpaa_netcfg->num_ethports);
+	ret = dpaa_create_device_list();
+	if (ret) {
+		DPAA_BUS_LOG(ERR, "Unable to create device list. (%d)", ret);
+		return ret;
+	}
+	return 0;
+}
+
+static int
 rte_dpaa_bus_probe(void)
 {
 	int ret = -1;
@@ -544,6 +572,12 @@ rte_dpaa_bus_probe(void)
 	int probe_all = rte_dpaa_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST;
 
 	/* If DPAA bus is not present nothing needs to be done */
+	if (!rte_dpaa_bus.detected)
+		return 0;
+
+	rte_dpaa_bus_dev_build();
+
+	/* If no device present on DPAA bus nothing needs to be done */
 	if (TAILQ_EMPTY(&rte_dpaa_bus.device_list))
 		return 0;
 

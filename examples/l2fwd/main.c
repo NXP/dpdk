@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -50,6 +51,7 @@ static int mac_updating = 1;
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
+static int max_burst_size = MAX_PKT_BURST;
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -191,7 +193,7 @@ l2fwd_main_loop(void)
 	int sent;
 	unsigned lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
-	unsigned i, j, portid, nb_rx;
+	unsigned int i, j, portid, nb_rx, total_nb_rx = 0, idle_iter = 0;
 	struct lcore_queue_conf *qconf;
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
 			BURST_TX_DRAIN_US;
@@ -221,6 +223,7 @@ l2fwd_main_loop(void)
 	while (!force_quit) {
 
 		cur_tsc = rte_rdtsc();
+		total_nb_rx = 0;
 
 		/*
 		 * TX burst queue drain
@@ -267,7 +270,7 @@ l2fwd_main_loop(void)
 
 			portid = qconf->rx_port_list[i];
 			nb_rx = rte_eth_rx_burst(portid, 0,
-						 pkts_burst, MAX_PKT_BURST);
+						 pkts_burst, max_burst_size);
 
 			port_statistics[portid].rx += nb_rx;
 
@@ -276,6 +279,22 @@ l2fwd_main_loop(void)
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 				l2fwd_simple_forward(m, portid);
 			}
+
+			total_nb_rx += nb_rx;
+			if (total_nb_rx)
+				idle_iter = 0;
+		}
+
+		/* Yield the CPU for a few microseconds, allowing Core 0
+		 * some breathing space.
+		 */
+#define DPAAX_IDLE_LOOPS 100
+#define DPAAX_IDLE_TIMEOUT 3
+		if (lcore_id == 0 && total_nb_rx == 0) {
+			if (idle_iter > DPAAX_IDLE_LOOPS)
+				usleep(DPAAX_IDLE_TIMEOUT);
+			else
+				idle_iter++;
 		}
 	}
 }
@@ -298,7 +317,8 @@ l2fwd_usage(const char *prgname)
 		   "  --[no-]mac-updating: Enable or disable MAC addresses updating (enabled by default)\n"
 		   "      When enabled:\n"
 		   "       - The source MAC address is replaced by the TX port MAC address\n"
-		   "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n",
+		   "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
+		"  -b NUM: burst size for receive packet (default is 32)\n",
 	       prgname);
 }
 
@@ -357,6 +377,7 @@ static const char short_options[] =
 	"p:"  /* portmask */
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
+	"b:"  /* burst size */
 	;
 
 #define CMD_LINE_OPT_MAC_UPDATING "mac-updating"
@@ -380,7 +401,7 @@ static const struct option lgopts[] = {
 static int
 l2fwd_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs;
+	int opt, ret, timer_secs, burst_size;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -420,6 +441,17 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			timer_period = timer_secs;
+			break;
+
+		/* max_burst_size */
+		case 'b':
+			burst_size = (unsigned int)atoi(optarg);
+			if (burst_size < 0 || burst_size > max_burst_size) {
+				printf("invalid burst size\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			max_burst_size = burst_size;
 			break;
 
 		/* long options */
