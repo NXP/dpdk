@@ -261,6 +261,8 @@ struct rte_security_pdcp_xform {
 	uint32_t hfn;
 	/** HFN Threshold for key renegotiation */
 	uint32_t hfn_threshold;
+	/** Enable per packet HFN override */
+	uint32_t hfn_ovrd;
 };
 
 /**

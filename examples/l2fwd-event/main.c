@@ -779,6 +779,7 @@ l2fwd_crypto_default_options(struct l2fwd_crypto_options *options)
 	options->pdcp_xform.sn_size = 5;
 	options->pdcp_xform.hfn = 0x0;
 	options->pdcp_xform.hfn_threshold = 0x010fa558;
+	options->pdcp_xform.hfn_ovrd = 1;
 
 	/* Cipher Data */
 	options->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;

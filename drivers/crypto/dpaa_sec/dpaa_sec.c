@@ -1766,6 +1766,17 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			if (auth_only_len)
 				fd->cmd = 0x80000000 | auth_only_len;
 
+			/* In case of PDCP, per packet HFN is stored in
+			 * mbuf priv after sym_op. Refer l2fwd-event app
+			 * for details of setting it.
+			 */
+			if (is_proto_pdcp(ses) && ses->pdcp.hfn_ovd) {
+				fd->cmd = 0x80000000 |
+					*((uint32_t *)(op->sym + 1));
+				DPAA_SEC_DP_DEBUG("Per packet HFN: %x\n",
+					*((uint32_t *)(op->sym + 1)));
+			}
+
 		}
 send_pkts:
 		loop = 0;
@@ -2393,11 +2404,9 @@ dpaa_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	session->pdcp.bearer = pdcp_xform->bearer;
 	session->pdcp.pkt_dir = pdcp_xform->pkt_dir;
 	session->pdcp.sn_size = pdcp_xform->sn_size;
-#ifdef ENABLE_HFN_OVERRIDE
-	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovd;
-#endif
 	session->pdcp.hfn = pdcp_xform->hfn;
 	session->pdcp.hfn_threshold = pdcp_xform->hfn_threshold;
+	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovrd;
 
 	session->ctx_pool = dev_priv->ctx_pool;
 	rte_spinlock_lock(&dev_priv->lock);
