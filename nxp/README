@@ -310,14 +310,13 @@ Following are some pre-requisites:
 		ip link add name switch type bridge; ip link set switch up
 		ip link set swp0 master switch && ip link set swp0 up
 		ip link set swp4 master switch && ip link set swp4 up
-		echo 1 > /proc/sys/net/ipv4/ip_forward
 		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
 		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
 		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
 
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.6/driver_override
-		echo 0000:00:00.6 > /sys/bus/pci/drivers/fsl_enetc/unbind
-		echo 0000:00:00.6 > /sys/bus/pci/drivers/vfio-pci/bind
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.2/driver_override
+		echo 0000:00:00.2 > /sys/bus/pci/drivers/fsl_enetc/unbind
+		echo 0000:00:00.2 > /sys/bus/pci/drivers/vfio-pci/bind
 
 
   For PPFE Platform:
