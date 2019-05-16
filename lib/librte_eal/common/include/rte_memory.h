@@ -162,7 +162,7 @@ rte_mem_iova2virt(rte_iova_t iova);
  * @return
  *   Memseg pointer on success, or NULL on error.
  */
-__rte_experimental struct rte_memseg *
+struct rte_memseg *
 rte_mem_virt2memseg(const void *virt, const struct rte_memseg_list *msl);
 
 /**
@@ -173,7 +173,7 @@ rte_mem_virt2memseg(const void *virt, const struct rte_memseg_list *msl);
  * @return
  *   Memseg list to which this virtual address belongs to.
  */
-__rte_experimental struct rte_memseg_list *
+struct rte_memseg_list *
 rte_mem_virt2memseg_list(const void *virt);
 
 /**
