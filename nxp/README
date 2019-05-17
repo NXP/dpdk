@@ -904,6 +904,13 @@ DPAA1:
 				If set to 0, this would disable taildrop.
 				(Only applicable for ethernet devices)
 
+4. DPAA_NUM_VFS_FMAN_MAC<mac_idx> - Number of Virtual Interfaces. These are physically same
+				interfaces, with exactly same ethernet properties like promiscuous,
+				mtu, buffers etc; but have different queues and are seen as separate
+				interfaces. For. e.g. if we use 'export DPAA_NUM_VFS_FMAN_MAC10=2',
+				there will be two interfaces seen naming fm1-mac10_vf0 & fm1-mac10_vf1.
+				Packets received on these VF's would be governed by the FMC XML files.
+
 DPAA2:
 ------
 

@@ -350,6 +350,10 @@ struct fman_if {
 	struct ether_addr mac_addr;
 	/* The Qman channel to schedule Tx FQs to */
 	u16 tx_channel_id;
+	/* Number of Virtual Functions */
+	uint32_t num_vfs;
+	/* Index of this Virtual Function */
+	uint32_t vf_idx;
 	/* The hard-coded FQIDs for this interface. Note: this doesn't cover
 	 * the PCD nor the "Rx default" FQIDs, which are configured via FMC
 	 * and its XML-based configuration.

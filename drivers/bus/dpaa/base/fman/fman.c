@@ -5,7 +5,7 @@
  *   BSD LICENSE
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017 NXP
+ * Copyright 2017,2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -182,8 +182,9 @@ fman_if_init(const struct device_node *dpa_node)
 {
 	const char *rprop, *mprop;
 	uint64_t phys_addr;
-	struct __fman_if *__if;
+	struct __fman_if *__if, *__temp_if;
 	struct fman_if_bpool *bpool;
+	int i;
 
 	const phandle *mac_phandle, *ports_phandle, *pools_phandle;
 	const phandle *tx_channel_id = NULL, *mac_addr, *cell_idx;
@@ -203,6 +204,9 @@ fman_if_init(const struct device_node *dpa_node)
 	const char *char_prop;
 	uint32_t na;
 
+	char vf_env[32];
+	int num_vfs = 1;
+
 	if (of_device_is_available(dpa_node) == false)
 		return 0;
 
@@ -210,7 +214,7 @@ fman_if_init(const struct device_node *dpa_node)
 	mprop = "fsl,fman-mac";
 
 	/* Allocate an object for this network interface */
-	__if = malloc(sizeof(*__if));
+	__if = rte_malloc(NULL, sizeof(*__if), RTE_CACHE_LINE_SIZE);
 	if (!__if) {
 		FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*__if));
 		goto err;
@@ -466,7 +470,7 @@ fman_if_init(const struct device_node *dpa_node)
 		uint64_t bpool_host[6] = {0};
 		const char *pname;
 		/* Allocate an object for the pool */
-		bpool = malloc(sizeof(*bpool));
+		bpool = rte_malloc(NULL, sizeof(*bpool), RTE_CACHE_LINE_SIZE);
 		if (!bpool) {
 			FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*bpool));
 			goto err;
@@ -476,7 +480,7 @@ fman_if_init(const struct device_node *dpa_node)
 		if (!pool_node) {
 			FMAN_ERR(-ENXIO, "%s: bad fsl,bman-buffer-pools\n",
 				 dname);
-			free(bpool);
+			rte_free(bpool);
 			goto err;
 		}
 		pname = pool_node->full_name;
@@ -484,7 +488,7 @@ fman_if_init(const struct device_node *dpa_node)
 		prop = of_get_property(pool_node, "fsl,bpid", &proplen);
 		if (!prop) {
 			FMAN_ERR(-EINVAL, "%s: no fsl,bpid\n", pname);
-			free(bpool);
+			rte_free(bpool);
 			goto err;
 		}
 		assert(proplen == sizeof(*prop));
@@ -542,7 +546,31 @@ fman_if_init(const struct device_node *dpa_node)
 		    dname, __if->__if.tx_channel_id, __if->__if.fman_idx,
 		    __if->__if.mac_idx);
 
+	__if->__if.vf_idx = 0;
+	__if->__if.num_vfs = 0;
+
+	snprintf(vf_env, 32, "DPAA_NUM_VFS_FMAN_MAC%d", __if->__if.mac_idx);
+	if (getenv(vf_env))
+		num_vfs = atoi(getenv(vf_env));
+
+	if (num_vfs > 1)
+		__if->__if.num_vfs = num_vfs;
+
 	list_add_tail(&__if->__if.node, &__ifs);
+
+	for (i = 1; i < num_vfs; i++) {
+		__temp_if = malloc(sizeof(*__temp_if));
+		if (!__temp_if) {
+			FMAN_ERR(-ENOMEM, "malloc(%zu)\n", sizeof(*__temp_if));
+			goto err;
+		}
+		memcpy(__temp_if, __if, sizeof(*__temp_if));
+		INIT_LIST_HEAD(&__temp_if->__if.bpool_list);
+		__temp_if->__if.num_vfs = num_vfs;
+		__temp_if->__if.vf_idx = i;
+		list_add_tail(&__temp_if->__if.node, &__ifs);
+	}
+
 	return 0;
 err:
 	if_destructor(__if);
@@ -607,7 +635,7 @@ fman_finish(void)
 				-errno, strerror(errno));
 		printf("Tearing down %s\n", __if->node_path);
 		list_del(&__if->__if.node);
-		free(__if);
+		rte_free(__if);
 	}
 
 	close(fman_ccsr_map_fd);

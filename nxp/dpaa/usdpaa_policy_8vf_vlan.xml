@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   BSD LICENSE
+
+ Copyright 2010-2011 Freescale Semiconductor, Inc. All rights reserved.
+ Copyright 2017-2019 NXP
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+     * Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+     * Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+     * Neither the name of Freescale Semiconductor nor the
+       names of its contributors may be used to endorse or promote products
+       derived from this software without specific prior written permission.
+
+   GPL LICENSE SUMMARY
+
+ ALTERNATIVELY, this software may be distributed under the terms of the
+ GNU General Public License ("GPL") as published by the Free Software
+ Foundation, either version 2 of that License or (at your option) any
+ later version.
+
+ THIS SOFTWARE IS PROVIDED BY COPYRIGHT HOLDERS AND CONTRIBUTORS ``AS IS''
+ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+ LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+-->
+
+<!--
+This fmc policy file establishes separate policies for network interfaces.  It includes
+entries for all 1 G and 10 G interfaces on two FMan instances.	A given policy file need
+not used them all.  The entries names end with an integer, 0 - 15.  The intended usage is
+to associate them with FMan MACs as follows.
+
+  fm0 dtsec0  - 0
+      dtsec1  - 1
+      dtsec2  - 2
+      dtsec3  - 3
+      dtsec4  - 4
+      dtsec5  - 5
+       tgec0  - 6
+       tgec1  - 7
+       tgec2  - 16
+       tgec3  - 17
+  fm1 dtsec0  - 8
+      dtsec1  - 9
+      dtsec2  - 10
+      dtsec3  - 11
+      dtsec4  - 12
+      dtsec5  - 13
+       tgec0  - 14
+       tgec1  - 15
+       tgec2  - 18
+       tgec3  - 19
+
+Likely, no single config file will use all of the policies in this file.
+
+The policies form a key using only the IPv4 source and destination IP address and SPI
+field of ESP header. The key is then used to hash to "count" FQs.  The base (i.e. first)
+FQID is different for each policy.
+
+If frame is non-ESP, the policies form a key using only the IPv4 source and destination
+IP address fields. The key is then used to hash to "count" FQs.  The base (i.e. first)
+FQID is different for each policy.
+
+Non-IPv4 packets are sent to the default FQ, the ID of which is distinct for each
+policy.
+-->
+
+<netpcd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="xmlProject/pcd.xsd" name="example"
+	description="Bridging configuration">
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxx Distributions xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx    -->
+
+	<classification name="vlan_cust_classif" >
+		<key>
+			<nonheader source="key" action="exact_match" offset="0" size="2"/>
+		</key>
+		<entry>
+			<data>0x0010</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe00"/>
+		</entry>
+                <entry>
+			<data>0x0011</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe10"/>
+		</entry>
+                <entry>
+			<data>0x0012</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe20"/>
+		</entry>
+                <entry>
+			<data>0x0013</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe30"/>
+		</entry>
+                <entry>
+			<data>0x0014</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe40"/>
+		</entry>
+                <entry>
+			<data>0x0015</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe50"/>
+		</entry>
+                <entry>
+			<data>0x0016</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe60"/>
+		</entry>
+                <entry>
+			<data>0x0017</data>
+                        <mask>0x0FFF</mask>
+			<queue base="0xe70"/>
+		</entry>
+			<queue base="0xe00"/>
+	</classification>
+
+	<distribution name="vlan_dist">
+		<protocols>
+			<protocolref name="vlan"/>
+		</protocols>
+		<key>
+			<fieldref name="vlan.tci"/>
+		</key>
+		<action type="classification" name="vlan_cust_classif" />
+	</distribution>
+
+	<distribution name="default_dist10">
+		<queue count="1" base="0xe00"/>
+	</distribution>
+
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+
+	<policy name="vf_vxlan_tci_spi_policy_mac10">
+		<dist_order>
+			<distributionref name="vlan_dist"/>
+			<distributionref name="default_dist10"/>
+		</dist_order>
+	</policy>
+
+
+
+</netpcd>

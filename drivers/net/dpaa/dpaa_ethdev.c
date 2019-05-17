@@ -1364,7 +1364,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fqid = cfg->rx_def;
 		else if (fmc_q)
 			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
-				DPAA_PCD_FQID_MULTIPLIER + loop;
+			       DPAA_PCD_FQID_MULTIPLIER +
+			       fman_intf->vf_idx * DPAA_PCD_VF_MULTIPLIER +
+			       loop;
 		else
 			fqid = dev_rx_fqids[loop];
 
@@ -1415,7 +1417,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* reset bpool list, initialize bpool dynamically */
 	list_for_each_entry_safe(bp, tmp_bp, &cfg->fman_if->bpool_list, node) {
 		list_del(&bp->node);
-		free(bp);
+		rte_free(bp);
 	}
 
 	/* Populate ethdev structure */

@@ -147,7 +147,7 @@ netcfg_acquire(void)
 	size = sizeof(*netcfg) +
 		(num_ports * sizeof(struct fm_eth_port_cfg));
 
-	netcfg = calloc(1, size);
+	netcfg = rte_calloc(NULL, 1, size, 0);
 	if (unlikely(netcfg == NULL)) {
 		DPAA_BUS_LOG(ERR, "Unable to allocat mem for netcfg");
 		goto error;
@@ -173,10 +173,8 @@ netcfg_acquire(void)
 	return netcfg;
 
 error:
-	if (netcfg) {
-		free(netcfg);
-		netcfg = NULL;
-	}
+	rte_free(netcfg);
+	netcfg = NULL;
 
 	return NULL;
 }
@@ -184,7 +182,7 @@ error:
 void
 netcfg_release(struct netcfg_info *cfg_ptr)
 {
-	free(cfg_ptr);
+	rte_free(cfg_ptr);
 	/* Close socket for shared interfaces */
 	if (skfd >= 0) {
 		close(skfd);
