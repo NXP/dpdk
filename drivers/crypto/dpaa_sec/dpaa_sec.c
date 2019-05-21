@@ -2266,6 +2266,9 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			PDBHMO_ESP_ENCAP_DTTL |
 			PDBHMO_ESP_SNR;
 
+		if (ipsec_xform->options.esn)
+			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
+
 		session->encap_pdb.spi = ipsec_xform->spi;
 		session->encap_pdb.ip_hdr_len = sizeof(struct ip);
 #ifdef RTE_LIBRTE_SECURITY_TEST
@@ -2278,6 +2281,8 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
 		memset(&session->decap_pdb, 0, sizeof(struct ipsec_decap_pdb));
 		session->decap_pdb.options = sizeof(struct ip) << 16;
+		if (ipsec_xform->options.esn)
+			session->decap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->dir = DIR_DEC;
 	} else
 		goto out;
