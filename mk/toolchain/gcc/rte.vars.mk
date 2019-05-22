@@ -48,6 +48,7 @@ WERROR_FLAGS += -Wmissing-declarations -Wold-style-definition -Wpointer-arith
 WERROR_FLAGS += -Wcast-align -Wnested-externs -Wcast-qual
 WERROR_FLAGS += -Wformat-nonliteral -Wformat-security
 WERROR_FLAGS += -Wundef -Wwrite-strings -Wdeprecated
+WERROR_FLAGS += -Wno-error=pedantic
 
 ifeq ($(RTE_DEVEL_BUILD),y)
 WERROR_FLAGS += -Werror
