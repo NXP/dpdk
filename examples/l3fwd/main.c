@@ -89,13 +89,13 @@ static int per_port_pool = 1; /**< Use separate buffer pools per port */
 static int traffic_split_proto; /**< Split traffic based on this protocol ID */
 /*
  * This variable defines where the traffic is split in DPDMUX - the logical
- * interface ID - DPNI number.
+ * interface ID - which is connected to a DPNI. e.g. 2 for dpdmux.0.2
  * All other traffic would be sent to another interface - if multiple
  * interfaces are available, next interface (dpni) in series to the one
  * specified in this variable would be used.
  */
-static int mux_dpni_id = -1; /**< DPMUX DPNI Interface to which split */
-			     /**< traffic is sent */
+static int mux_connection_id = -1; /**< DPMUX ID connected to DPNI Interface to
+					which split traffic is sent */
 
 volatile bool force_quit;
 
@@ -349,7 +349,7 @@ print_usage(const char *prgname)
 		" [--ipv6]"
 		" [--parse-ptype]"
 		" [--disable-per-port-pool]"
-		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_DPNI_ID]\n\n"
+		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_CONN_ID]\n\n"
 
 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
 		"  -P : Enable promiscuous mode\n"
@@ -367,7 +367,7 @@ print_usage(const char *prgname)
 		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
 		"  --traffic-split-proto: PROTOCOL_NUMBER of IPv4 header protocol field\n"
 		"                         based on which DPDMUX can split the traffic\n"
-		"                         to MUX_DPNI_ID\n"
+		"                         to MUX_CONN_ID\n"
 		"                         It is assumed that first port of DPDMUX configured\n"
 		"                         is default port where all non-matched traffic\n"
 		"                         would be forwarded.\n"
@@ -740,7 +740,7 @@ parse_traffic_split_info(const char *split_args)
 		goto err_ret;
 
 	traffic_split_proto = proto_id;
-	mux_dpni_id = dpni_id;
+	mux_connection_id = dpni_id;
 	return 0;
 
 err_ret:
@@ -1134,8 +1134,8 @@ parse_args(int argc, char **argv)
 				print_usage(prgname);
 				return -1;
 			}
-			printf("Splitting traffic on Protocol:%d, DPNI:%d\n",
-			       traffic_split_proto, mux_dpni_id);
+			printf("Splitting traffic on Protocol:%d,DPDMUX.0.%d\n",
+			       traffic_split_proto, mux_connection_id);
 			break;
 
 		default:
@@ -1361,7 +1361,7 @@ configure_split_traffic(void)
 
 	flow_item.hdr.next_proto_id = traffic_split_proto;
 	mask = 0xFF;
-	vf.id = mux_dpni_id;
+	vf.id = mux_connection_id;
 
 	pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
 	pattern[0].spec = &flow_item;
