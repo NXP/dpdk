@@ -40,7 +40,9 @@
 #include "test_cryptodev_aead_test_vectors.h"
 #include "test_cryptodev_hmac_test_vectors.h"
 #ifdef RTE_LIBRTE_SECURITY
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 #include "test_cryptodev_security_ipsec_test_vectors.h"
+#endif
 #include "test_cryptodev_security_pdcp_test_vectors.h"
 #endif
 
@@ -5733,7 +5735,11 @@ test_authenticated_encryption(const struct aead_test_data *tdata)
 
 }
 
+#define IN_PLACE	0
+#define OUT_OF_PLACE	1
+
 #ifdef RTE_LIBRTE_SECURITY
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 static int
 test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 {
@@ -6161,9 +6167,6 @@ on_err:
 	return ret;
 }
 
-#define IN_PLACE	0
-#define OUT_OF_PLACE	1
-
 static int
 test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B(void)
 {
@@ -6193,7 +6196,7 @@ test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B(void)
 {
 	return test_ipsec_lookaside_protocol_encrypt_aes_null(IN_PLACE);
 }
-
+#endif
 /* Basic algorithm run function for async inplace mode.
  * Creates a session from input parameters and runs one operation
  * on input_vec. Checks the output of the crypto operation against
@@ -11686,6 +11689,7 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 			     test_authonly_dpaa_sec_all),
 
 #ifdef RTE_LIBRTE_SECURITY
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		/** IPSEC Lookaside Protocol Encrypt Decrypt */
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B),
@@ -11700,7 +11704,7 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
-
+#endif
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_PDCP_PROTO_cplane_encap_all),
 
@@ -11819,6 +11823,7 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 			test_authonly_dpaa2_sec_all),
 
 #ifdef RTE_LIBRTE_SECURITY
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		/** IPSEC_Lookaside Protocol Encrypt Decrypt */
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B),
@@ -11833,6 +11838,7 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
+#endif
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_PDCP_PROTO_cplane_encap_all),
 

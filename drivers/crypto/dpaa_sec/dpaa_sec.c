@@ -2140,7 +2140,7 @@ dpaa_sec_sym_session_clear(struct rte_cryptodev *dev,
 	}
 }
 
-#ifdef RTE_LIBRTE_SECURITY_TEST
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 static uint8_t aes_cbc_iv[] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };
@@ -2260,7 +2260,7 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 		session->encap_pdb.options =
 			(IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
-#ifndef RTE_LIBRTE_SECURITY_TEST
+#ifndef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 			PDBOPTS_ESP_IVSRC |
 #endif
 			PDBHMO_ESP_ENCAP_DTTL |
@@ -2271,7 +2271,7 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 
 		session->encap_pdb.spi = ipsec_xform->spi;
 		session->encap_pdb.ip_hdr_len = sizeof(struct ip);
-#ifdef RTE_LIBRTE_SECURITY_TEST
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform)
 			memcpy(session->encap_pdb.cbc.iv,
 				aes_cbc_iv, cipher_xform->iv.length);
