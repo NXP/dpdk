@@ -414,8 +414,8 @@ dpaa2_populate(struct rte_mempool *mp, unsigned int max_objs,
 
 	if (!msl) {
 		DPAA2_MEMPOOL_DEBUG("Memsegment is External.\n");
-		rte_fslmc_vfio_mem_dmamap((uint64_t)vaddr,
-				(uint64_t)paddr, (uint64_t)len);
+		rte_fslmc_vfio_mem_dmamap((size_t)vaddr,
+				(size_t)paddr, (size_t)len);
 	}
 	/* Insert entry into the PA->VA Table */
 	dpaax_iova_table_update(paddr, vaddr, len);

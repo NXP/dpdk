@@ -416,12 +416,16 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (rx_offloads & DEV_RX_OFFLOAD_JUMBO_FRAME) {
 		if (eth_conf->rxmode.max_rx_pkt_len <= DPAA2_MAX_RX_PKT_LEN) {
 			ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW,
-				priv->token, eth_conf->rxmode.max_rx_pkt_len);
+				priv->token, eth_conf->rxmode.max_rx_pkt_len
+				- ETHER_CRC_LEN);
 			if (ret) {
 				DPAA2_PMD_ERR(
 					"Unable to set mtu. check config");
 				return ret;
 			}
+			dev->data->mtu =
+				dev->data->dev_conf.rxmode.max_rx_pkt_len -
+				ETHER_HDR_LEN - ETHER_CRC_LEN - VLAN_TAG_SIZE;
 		} else {
 			return -1;
 		}
@@ -978,7 +982,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
-	err_cfg.errors |= DPNI_ERROR_PHE;
+
+	/* if packet with parse error are not to be dropped */
+	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+		err_cfg.errors |= DPNI_ERROR_PHE;
 
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	err_cfg.set_frame_annotation = true;
@@ -1211,7 +1218,7 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	 * Maximum Ethernet header length
 	 */
 	ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW, priv->token,
-					frame_size);
+					frame_size - ETHER_CRC_LEN);
 	if (ret) {
 		DPAA2_PMD_ERR("Setting the max frame length failed");
 		return -1;
@@ -2298,6 +2305,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->max_vlan_filters = attr.vlan_filter_entries;
 	priv->flags = 0;
 
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		DPAA2_PMD_INFO("Drop parse error packets in hw");
+	}
+
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
@@ -2403,6 +2416,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 			return ret;
 		}
 	}
+
+	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
+					ETHER_MAX_LEN - ETHER_CRC_LEN
+					+ VLAN_TAG_SIZE);
+	if (ret) {
+		DPAA2_PMD_ERR("Unable to set mtu. check config");
+		goto init_err;
+	}
+
 	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:
