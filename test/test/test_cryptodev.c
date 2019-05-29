@@ -5740,6 +5740,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *plaintext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -5811,11 +5812,23 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
 
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "Failed to allocate session");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
+
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
+	if (!ut_params->op) {
+		printf("TestCase %s()line %d failed %s: ",
+			__func__, __LINE__,
 			"Failed to allocate symmetric crypto operation struct");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -5825,11 +5838,21 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+			"failed to process sym crypto op");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s()-line %d failed %s: ",
+			__func__, __LINE__, "crypto op processing failed");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -5838,13 +5861,27 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 		ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
 				uint8_t *);
 	}
+	if (memcmp(ciphertext, ipsec_cipher_text_aes_sha1_64B, 136)) {
+		printf("\n=======TestCase #%s failed: ciphertext mismatch",
+			__func__);
+		ret = TEST_FAILED;
+	}
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
-				ipsec_cipher_text_aes_sha1_64B,
-				136,
-				"ciphertext data not as expected");
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
 
-	return TEST_SUCCESS;
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -5853,6 +5890,7 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *ciphertext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -5910,12 +5948,23 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "Failed to allocate session");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
+	if (!ut_params->op) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
 			"Failed to allocate symmetric crypto operation struct");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -5925,11 +5974,21 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+			"failed to process sym crypto op");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__,  __LINE__, "crypto op processing failed");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *plaintext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -5938,13 +5997,28 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 		plaintext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
 				uint8_t *);
 	}
+	if (memcmp(plaintext, ipsec_plaintext_decrypt_aes_sha1_64B, 64)) {
+		printf("\n=======TestCase #%s failed: plaintext mismatch",
+			__func__);
+		ret = TEST_FAILED;
+	}
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(plaintext,
-				ipsec_plaintext_decrypt_aes_sha1_64B,
-				64,
-				"plaintext data not as expected");
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
 
-	return TEST_SUCCESS;
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
+
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -5953,6 +6027,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *plaintext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -6014,12 +6089,23 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__,  __LINE__, "Failed to allocate session");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
+	if (!ut_params->op) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
 			"Failed to allocate symmetric crypto operation struct");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -6029,11 +6115,21 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+			"failed to process sym crypto op");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "crypto op processing failed");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -6042,13 +6138,27 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 		ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_dst,
 				uint8_t *);
 	}
+	if (memcmp(ciphertext, ipsec_cipher_text_aes_64B, 124)) {
+		printf("\n=======TestCase #%s failed: ciphertext mismatch",
+			__func__);
+		ret = TEST_FAILED;
+	}
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
-				ipsec_cipher_text_aes_64B,
-				124,
-				"ciphertext data not as expected");
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
 
-	return TEST_SUCCESS;
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 #define IN_PLACE	0
@@ -6221,7 +6331,7 @@ test_pdcp_proto(int i, int oop,
 	}
 
 	if (memcmp(ciphertext, output_vec, output_vec_len)) {
-		printf("\n=============TestCase %d failed: Data Mismatch ", i);
+		printf("\n=======PDCP TestCase #%d failed: Data Mismatch ", i);
 		rte_hexdump(stdout, "encrypted", ciphertext, output_vec_len);
 		rte_hexdump(stdout, "reference", output_vec, output_vec_len);
 		ret = TEST_FAILED;
@@ -6230,13 +6340,18 @@ test_pdcp_proto(int i, int oop,
 
 on_err:
 	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
 
 	if (ut_params->sec_session)
 		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
 
 	rte_pktmbuf_free(ut_params->ibuf);
-	if (oop)
+	ut_params->ibuf = NULL;
+	if (oop) {
 		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
 
 	return ret;
 }
@@ -7180,7 +7295,7 @@ static int uplane_zuc_dl_15bit_decap(void)
 } while (0)
 
 static int
-test_pdcp_proto_cplane_encap_all(void)
+test_PDCP_PROTO_cplane_encap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -7216,13 +7331,14 @@ test_pdcp_proto_cplane_encap_all(void)
 	TEST_PDCP_COUNT(cplane_zuc_aes_dl_encap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_encap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_encap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_cplane_decap_all(void)
+test_PDCP_PROTO_cplane_decap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -7258,13 +7374,14 @@ test_pdcp_proto_cplane_decap_all(void)
 	TEST_PDCP_COUNT(cplane_zuc_aes_dl_decap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_ul_decap());
 	TEST_PDCP_COUNT(cplane_zuc_zuc_dl_decap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_uplane_encap_all(void)
+test_PDCP_PROTO_uplane_encap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -7292,13 +7409,14 @@ test_pdcp_proto_uplane_encap_all(void)
 	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_encap());
 	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_encap());
 	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_encap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
 
 static int
-test_pdcp_proto_uplane_decap_all(void)
+test_PDCP_PROTO_uplane_decap_all(void)
 {
 	int i = 0, n = 0;
 
@@ -7326,21 +7444,11 @@ test_pdcp_proto_uplane_decap_all(void)
 	TEST_PDCP_COUNT(uplane_zuc_dl_7bit_decap());
 	TEST_PDCP_COUNT(uplane_zuc_ul_15bit_decap());
 	TEST_PDCP_COUNT(uplane_zuc_dl_15bit_decap());
-	printf("\n########### %s - %d passed out of %d\n", __func__, i, n);
+	if (n - i)
+		printf("## %s: %d passed out of %d\n", __func__, i, n);
 
 	return n - i;
 };
-
-static int
-test_PDCP_LOOKASIDE_PROTOCOL_all(void)
-{
-	int ret = 0;
-	ret = test_pdcp_proto_cplane_encap_all();
-	ret |= test_pdcp_proto_cplane_decap_all();
-	ret |= test_pdcp_proto_uplane_encap_all();
-	ret |= test_pdcp_proto_uplane_decap_all();
-	return ret;
-}
 
 #endif
 
@@ -11594,7 +11702,16 @@ static struct unit_test_suite cryptodev_dpaa_sec_testsuite  = {
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_LOOKASIDE_PROTOCOL_all),
+			test_PDCP_PROTO_cplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_cplane_decap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_decap_all),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
@@ -11716,6 +11833,17 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_cplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_cplane_decap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_encap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_uplane_decap_all),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,

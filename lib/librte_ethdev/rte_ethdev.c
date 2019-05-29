@@ -252,14 +252,13 @@ rte_eth_iterator_init(struct rte_dev_iterator *iter, const char *devargs_str)
 	}
 
 	/* Convert bus args to new syntax for use with new API dev_iterate. */
-	if (strcmp(iter->bus->name, "vdev") == 0) {
-		bus_param_key = "name";
-	} else if (strcmp(iter->bus->name, "pci") == 0) {
+	if (strcmp(iter->bus->name, "pci") == 0) {
 		bus_param_key = "addr";
 	} else {
-		ret = -ENOTSUP;
-		goto error;
+		/* For all buses, including vdev, "name=" prefix is used */
+		bus_param_key = "name";
 	}
+
 	str_size = strlen(bus_param_key) + strlen(devargs.name) + 2;
 	bus_str = malloc(str_size);
 	if (bus_str == NULL) {
