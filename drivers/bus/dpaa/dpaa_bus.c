@@ -585,7 +585,7 @@ rte_dpaa_bus_probe(void)
 	FILE *svr_file = NULL;
 	unsigned int svr_ver;
 	int probe_all = rte_dpaa_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST;
-	static int process_once = 0;
+	static int process_once;
 
 	/* If DPAA bus is not present nothing needs to be done */
 	if (!rte_dpaa_bus.detected)
