@@ -927,4 +927,3 @@ void qbman_wqchan_attr_get_chanid(struct qbman_attr *attr, uint16_t *chanid)
 	uint32_t *p = ATTR32(attr);
 	*chanid = (uint16_t)qb_attr_code_decode(&code_wqchan_chanid, p);
 }
-

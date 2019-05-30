@@ -36,10 +36,6 @@ LIB = librte_mempool.a
 
 CFLAGS += $(WERROR_FLAGS) -I$(SRCDIR) -O3
 
-ifeq ($(CONFIG_RTE_LIBRTE_DPAA2_PMD),y)
-CFLAGS += -I$(RTE_SDK)/lib/librte_mbuf
-CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
-endif
 EXPORT_MAP := rte_mempool_version.map
 
 LIBABIVER := 1

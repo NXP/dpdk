@@ -36,3 +36,8 @@ fi
 #export PATH=${CROSS_PATH}:$PATH
 echo "Setup for DPDK DPAA2-QorIQ compilation";
 echo "CROSS is configured:" $CROSS
+
+
+# Refresh submodules
+git submodule init
+git submodule update

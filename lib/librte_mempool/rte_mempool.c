@@ -60,9 +60,6 @@
 
 #include "rte_mempool.h"
 
-#ifdef RTE_LIBRTE_DPAA2_PMD
-#include "eal_vfio_fsl_mc.h"
-#endif
 
 TAILQ_HEAD(rte_mempool_list, rte_tailq_entry);
 
@@ -320,13 +317,6 @@ rte_mempool_calc_obj_size(uint32_t elt_size, uint32_t flags,
 
 	/* this is the size of an object, including header and trailer */
 	sz->total_size = sz->header_size + sz->elt_size + sz->trailer_size;
-#ifdef RTE_LIBRTE_DPAA2_PMD /*todo - dpaa1 ?*/
-	if (flags & MEMPOOL_F_HW_PKT_POOL)
-		sz->total_size += DPAA2_ALIGN_ROUNDUP(
-			DPAA2_MBUF_HW_ANNOTATION +
-			DPAA2_FD_PTA_SIZE +
-			RTE_PKTMBUF_HEADROOM, DPAA2_PACKET_LAYOUT_ALIGN);
-#endif
 
 	return sz->total_size;
 }

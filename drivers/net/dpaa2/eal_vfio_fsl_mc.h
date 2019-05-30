@@ -46,32 +46,35 @@
 
 #define DPAA2_MBUF_HW_ANNOTATION	64
 #define DPAA2_FD_PTA_SIZE		64
-#define DPAA2_PACKET_LAYOUT_ALIGN	256
 
-#define DPAA2_ALIGN_ROUNDUP(x, align) ((align) * (((x) + align - 1) / (align)))
-#define DPAA2_ALIGN_ROUNDUP_PTR(x, align)\
-	((void *)DPAA2_ALIGN_ROUNDUP((uintptr_t)(x), (uintptr_t)(align)))
+#if (DPAA2_MBUF_HW_ANNOTATION + DPAA2_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
+#error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
+#endif
 
-typedef struct vfio_device {
+/* we will re-use the HEADROOM for annotation in RX */
+#define DPAA2_HW_BUF_RESERVE	0
+#define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
+
+typedef struct fsl_vfio_device {
 	int fd; /* fsl_mc root container device ?? */
 	int index; /*index of child object */
-	struct vfio_device *child; /* Child object */
-} vfio_device;
+	struct fsl_vfio_device *child; /* Child object */
+} fsl_vfio_device;
 
-typedef struct vfio_group {
+typedef struct fsl_vfio_group {
 	int fd; /* /dev/vfio/"groupid" */
 	int groupid;
-	struct vfio_container *container;
+	struct fsl_vfio_container *container;
 	int object_index;
-	struct vfio_device *vfio_device;
-} vfio_group;
+	struct fsl_vfio_device *vfio_device;
+} fsl_vfio_group;
 
-typedef struct vfio_container {
+typedef struct fsl_vfio_container {
 	int fd; /* /dev/vfio/vfio */
 	int used;
 	int index; /* index in group list */
-	struct vfio_group *group_list[VFIO_MAX_GRP];
-} vfio_container;
+	struct fsl_vfio_group *group_list[VFIO_MAX_GRP];
+} fsl_vfio_container;
 
 int vfio_dmamap_mem_region(
 	uint64_t vaddr,
@@ -80,9 +83,10 @@ int vfio_dmamap_mem_region(
 
 /* initialize the NXP/FSL dpaa2 accelerators */
 int rte_eal_dpaa2_init(void);
+int rte_eal_dpaa2_dmamap(void);
 
-int dpaa2_create_dpio_device(struct vfio_device *vdev,
-			struct vfio_device_info *obj_info,
+int dpaa2_create_dpio_device(struct fsl_vfio_device *vdev,
+			     struct vfio_device_info *obj_info,
 			int object_id);
 
 int dpaa2_create_dpbp_device(int dpbp_id);
@@ -92,4 +96,3 @@ int dpaa2_affine_qbman_swp(void);
 int dpaa2_affine_qbman_swp_sec(void);
 
 #endif
-

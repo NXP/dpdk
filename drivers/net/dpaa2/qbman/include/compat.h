@@ -67,7 +67,10 @@
 #define likely(x)	__builtin_expect(!!(x), 1)
 #define unlikely(x)	__builtin_expect(!!(x), 0)
 #define ____cacheline_aligned __attribute__((aligned(L1_CACHE_BYTES)))
-#define container_of(p, t, f) (t *)((void *)p - offsetof(t, f))
+#undef container_of
+#define container_of(ptr, type, member) ({ \
+		typeof(((type *)0)->member)(*__mptr) = (ptr); \
+		(type *)((char *)__mptr - offsetof(type, member)); })
 #define __stringify_1(x) #x
 #define __stringify(x)	__stringify_1(x)
 #define panic(x) \

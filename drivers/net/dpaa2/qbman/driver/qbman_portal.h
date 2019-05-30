@@ -26,15 +26,13 @@
 #include "qbman_private.h"
 #include <drivers/fsl_qbman_portal.h>
 
-uint32_t qman_version;
 /* All QBMan command and result structures use this "valid bit" encoding */
 #define QB_VALID_BIT ((uint32_t)0x80)
 
 /* Management command result codes */
 #define QBMAN_MC_RSLT_OK      0xf0
 
-/* TBD: as of QBMan 4.1, DQRR will be 8 rather than 4! */
-#define QBMAN_DQRR_SIZE 4
+/* QBMan DQRR size is set at runtime in qbman_portal.c */
 
 #define QBMAN_EQCR_SIZE 8
 
@@ -51,7 +49,7 @@ static inline u8 qm_cyc_diff(u8 ringsize, u8 first, u8 last)
 /* --------------------- */
 
 struct qbman_swp {
-	const struct qbman_swp_desc *desc;
+	struct qbman_swp_desc desc;
 	/* The qbman_sys (ie. arch/OS-specific) support code can put anything it
 	 * needs in here. */
 	struct qbman_swp_sys sys;

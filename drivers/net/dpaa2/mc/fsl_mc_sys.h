@@ -60,7 +60,10 @@ struct fsl_mc_io {
 
 #define cpu_to_le64(x) __cpu_to_le64(x)
 #ifndef dmb
-#define dmb()           __asm__ __volatile__ ("" : : : "memory")
+#define dmb()          do {\
+	 __asm__ __volatile__ ("" : : : "memory");\
+} while (0)
+
 #endif
 #define __iormb()       dmb()
 #define __iowmb()       dmb()

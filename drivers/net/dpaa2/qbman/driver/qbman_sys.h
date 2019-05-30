@@ -364,10 +364,10 @@ static inline void qbman_swp_sys_finish(struct qbman_swp_sys *s)
 static inline void *qbman_cena_write_start_wo_shadow_fast(struct qbman_swp_sys *s,
 							  uint32_t offset)
 {
-  #ifdef QBMAN_CENA_TRACE
-  pr_info("qbman_cena_write_start(%p:%d:0x%03x)\n",
-	  s->addr_cena, s->idx, offset);
-  #endif
-  BUG_ON(offset & 63);
-  return (s->addr_cena + offset);
+#ifdef QBMAN_CENA_TRACE
+	pr_info("qbman_cena_write_start(%p:%d:0x%03x)\n",
+		s->addr_cena, s->idx, offset);
+#endif
+	BUG_ON(offset & 63);
+	return (s->addr_cena + offset);
 }

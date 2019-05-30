@@ -40,6 +40,7 @@
 #include <fsl_mc_sys.h>
 #include <eal_vfio.h>
 #include <eal_vfio_fsl_mc.h>
+#include <rte_mempool.h>
 
 typedef uint64_t  dma_addr_t;
 
@@ -60,6 +61,12 @@ typedef uint64_t  dma_addr_t;
 #ifndef ETH_VLAN_HLEN
 #define ETH_VLAN_HLEN   4 /** < Vlan Header Length */
 #endif
+
+/* tx fd send batching */
+#define QBMAN_MULTI_TX
+
+/*Maximum number of slots available in TX ring*/
+#define MAX_TX_RING_SLOTS	8
 
 #define NUM_MAX_RECV_FRAMES	16
 
@@ -94,17 +101,43 @@ struct dpaa2_dpio_dev {
 struct queue_storage_info_t {
 	struct qbman_result *dq_storage[NUM_DQS_PER_QUEUE];
 	struct qbman_result *active_dqs;
+	int active_dpio_id;
 	int toggle;
+};
+
+struct dpaa2_queue {
+	void *dev;
+	int32_t eventfd;	/*!< Event Fd of this queue */
+	uint32_t fqid;	/*!< Unique ID of this queue */
+	uint8_t tc_index;	/*!< traffic class identifier */
+	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
+	uint64_t rx_pkts;
+	uint64_t tx_pkts;
+	uint64_t err_pkts;
+	union {
+		struct queue_storage_info_t *q_storage;
+		struct qbman_result *cscn;
+	};
 };
 
 struct thread_io_info_t {
 	struct dpaa2_dpio_dev *dpio_dev;
 	struct dpaa2_dpio_dev *sec_dpio_dev;
-	struct qbman_result *global_active_dqs;
 };
+
+struct swp_active_dqs {
+	struct qbman_result *global_active_dqs;
+	uint64_t reserved[7];
+};
+
+#define NUM_MAX_SWP 64
+
+/* Active dq list for pre-fetch support */
+extern struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
 
 /*! Global per thread DPIO portal */
 extern __thread struct thread_io_info_t thread_io_info;
+
 /*! Global MCP list */
 extern void *(*mcp_ptr_list);
 
@@ -237,13 +270,13 @@ struct dpaa2_bp_list {
 	struct buf_pool buf_pool;
 };
 
-struct bp_info {
+struct dpaa2_bp_info {
 	uint32_t meta_data_size;
 	uint32_t bpid;
 	struct dpaa2_bp_list *bp_list;
 };
 
-#define mempool_to_bpinfo(mp) ((struct bp_info *)mp->hw_pool_priv)
+#define mempool_to_bpinfo(mp) ((struct dpaa2_bp_info *)mp->hw_pool_priv)
 #define mempool_to_bpid(mp) ((mempool_to_bpinfo(mp))->bpid)
 
 extern struct dpaa2_bp_list *h_bp_list;
@@ -317,4 +350,35 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type)
 #endif
 
+int
+dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage);
+
+void
+dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage);
+
+static inline
+int check_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	if (global_active_dqs_list[dpio_dev_index].global_active_dqs != NULL)
+		return 1;
+	return 0;
+}
+
+static inline
+void clear_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
+}
+
+static inline
+struct qbman_result *get_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
+}
+
+static inline
+void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
+}
 #endif

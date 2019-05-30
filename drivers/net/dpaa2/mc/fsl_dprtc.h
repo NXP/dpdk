@@ -49,11 +49,11 @@ struct fsl_mc_io;
  */
 
 /**
- * Interrupt event mask indicating alarm event had occured
+ * Interrupt event mask indicating alarm event had occurred
  */
 #define DPRTC_EVENT_ALARM			0x40000000
 /**
- * Interrupt event mask indicating periodic pulse event had occured
+ * Interrupt event mask indicating periodic pulse event had occurred
  */
 #define DPRTC_EVENT_PPS				0x08000000
 

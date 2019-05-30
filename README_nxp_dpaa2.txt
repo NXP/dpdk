@@ -236,7 +236,7 @@ Building and Use PKTGEN with DPDK
 export KERNEL_PATH=<To a compiled KERNEL; In this case, ls2085 Yocto compiled kernel>
 source <DPDK Source DIR>/standalone_dpaa2 
 export RTE_SDK=<DPDK Source DIR>
-make
+make -j8 EXTRA_CFLAGS="-std=gnu99"
 
 Note: you may need pcap library installed in your toolchain (compiled for ARM64)
 

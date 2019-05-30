@@ -51,7 +51,9 @@ CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/qbman/include/drivers
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/driver/
+CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
+CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/
 CFLAGS += -I$(RTE_SDK)/lib/librte_ether
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/linuxapp/eal
 
@@ -62,36 +64,23 @@ LIBABIVER := 1
 # all source are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += \
-	mc/dprc.c \
-	mc/dprtc.o \
-	mc/dpaiop.c \
-	mc/dpdbg.o \
-	mc/dpdcei.c \
-	mc/dpdmai.c \
-	mc/dpmac.c \
-	mc/dpmcp.c \
 	mc/dpbp.c \
 	mc/dpio.c \
 	mc/dpni.c \
-	mc/dpsw.c \
-	mc/dpci.c \
-	mc/dpcon.c \
 	mc/dpseci.c \
-	mc/dpmng.c \
-	mc/dpdmux.c \
 	mc/mc_sys.c
-	
+
 #
 # all source are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += \
-	qbman/driver/qbman_portal.c \
-	qbman/driver/qbman_debug.c
+	qbman/driver/qbman_portal.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpni.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpio.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += rte_eth_dpbp.c
-	
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += eal_vfio_fsl_mc.c
+
 #
 # Export include files
 #

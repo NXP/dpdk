@@ -76,6 +76,7 @@ struct qb_attr_code code_generic_rslt = QB_CODE(0, 8, 8);
 struct qb_attr_code code_sdqcr_dct = QB_CODE(0, 24, 2);
 struct qb_attr_code code_sdqcr_fc = QB_CODE(0, 29, 1);
 struct qb_attr_code code_sdqcr_tok = QB_CODE(0, 16, 8);
+static struct qb_attr_code code_eq_dca_idx;
 #define CODE_SDQCR_DQSRC(n) QB_CODE(0, n, 1)
 enum qbman_sdqcr_dct {
 	qbman_sdqcr_dct_null = 0,
@@ -90,6 +91,14 @@ enum qbman_sdqcr_fc {
 };
 
 struct qb_attr_code code_sdqcr_dqsrc = QB_CODE(0, 0, 16);
+
+/* We need to keep track of which SWP triggered a pull command
+   so keep an array of portal IDs and use the token field to
+   be able to find the proper portal */
+#define MAX_QBMAN_PORTALS  35
+static struct qbman_swp * portal_idx_map[MAX_QBMAN_PORTALS];
+
+uint32_t qman_version;
 
 /*********************************/
 /* Portal constructor/destructor */
@@ -116,7 +125,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 
 	if (!p)
 		return NULL;
-	p->desc = d;
+	p->desc = *d;
 #ifdef QBMAN_CHECKING
 	p->mc.check = swp_mc_can_start;
 #endif
@@ -129,13 +138,17 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 	p->vdq.valid_bit = QB_VALID_BIT;
 	p->dqrr.next_idx = 0;
 	p->dqrr.valid_bit = QB_VALID_BIT;
-	qman_version = p->desc->qman_version;
+	qman_version = p->desc.qman_version;
 	if ((qman_version & 0xFFFF0000) < QMAN_REV_4100) {
 		p->dqrr.dqrr_size = 4;
 		p->dqrr.reset_bug = 1;
+		/* Set size of DQRR to 4, encoded in 2 bits */
+		code_eq_dca_idx = (struct qb_attr_code)QB_CODE(0, 8, 2);
 	} else {
 		p->dqrr.dqrr_size = 8;
 		p->dqrr.reset_bug = 0;
+		/* Set size of DQRR to 8, encoded in 3 bits */
+		code_eq_dca_idx = (struct qb_attr_code)QB_CODE(0, 8, 3);
 	}
 
 	ret = qbman_swp_sys_init(&p->sys, d, p->dqrr.dqrr_size);
@@ -156,6 +169,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 	p->eqcr.available = QBMAN_EQCR_SIZE - qm_cyc_diff(QBMAN_EQCR_SIZE,
 						p->eqcr.ci, p->eqcr.pi);
 
+	portal_idx_map[p->desc.idx] = p;
 	return p;
 }
 
@@ -165,12 +179,13 @@ void qbman_swp_finish(struct qbman_swp *p)
 	BUG_ON(p->mc.check != swp_mc_can_start);
 #endif
 	qbman_swp_sys_finish(&p->sys);
+	portal_idx_map[p->desc.idx] = NULL;
 	kfree(p);
 }
 
 const struct qbman_swp_desc *qbman_swp_get_desc(struct qbman_swp *p)
 {
-	return p->desc;
+	return &p->desc;
 }
 
 /**************/
@@ -286,7 +301,7 @@ static struct qb_attr_code code_eq_cmd = QB_CODE(0, 0, 2);
 static struct qb_attr_code code_eq_eqdi = QB_CODE(0, 3, 1);
 static struct qb_attr_code code_eq_dca_en = QB_CODE(0, 15, 1);
 static struct qb_attr_code code_eq_dca_pk = QB_CODE(0, 14, 1);
-static struct qb_attr_code code_eq_dca_idx = QB_CODE(0, 8, 2);
+/* Can't set code_eq_dca_idx width. Need qman version. Read at runtime */
 static struct qb_attr_code code_eq_orp_en = QB_CODE(0, 2, 1);
 static struct qb_attr_code code_eq_orp_is_nesn = QB_CODE(0, 31, 1);
 static struct qb_attr_code code_eq_orp_nlis = QB_CODE(0, 30, 1);
@@ -500,26 +515,24 @@ int qbman_swp_fill_ring(struct qbman_swp *s,
 		diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
 				   eqcr_ci, s->eqcr.ci);
 		s->eqcr.available += diff;
-		if (!diff) {
-			   return -EBUSY;
-		}
+		if (!diff)
+			return -EBUSY;
 	}
 	p = qbman_cena_write_start_wo_shadow(&s->sys,
 					     QBMAN_CENA_SWP_EQCR((s->eqcr.pi/* +burst_index */) & 7));
 	/* word_copy(&p[1], &cl[1], 7); */
-	memcpy(&p[1], &cl[1], 7);
+	memcpy(&p[1], &cl[1], 7 * 4);
 	/* word_copy(&p[8], fd, sizeof(*fd) >> 2); */
 	memcpy(&p[8], fd, sizeof(struct qbman_fd));
 
 	/* lwsync(); */
-
 	p[0] = cl[0] | s->eqcr.pi_vb;
 
 	s->eqcr.pi++;
 	s->eqcr.pi &= 0xF;
 	s->eqcr.available--;
 	if (!(s->eqcr.pi & 7))
-		 s->eqcr.pi_vb ^= QB_VALID_BIT;
+		s->eqcr.pi_vb ^= QB_VALID_BIT;
 
 	return 0;
 }
@@ -680,7 +693,9 @@ int qbman_swp_pull(struct qbman_swp *s, struct qbman_pull_desc *d)
 		return -EBUSY;
 	}
 	s->vdq.storage = *(void **)&cl[4];
-	qb_attr_code_encode(&code_pull_token, cl, 1);
+	/* We use portal index +1 as token so that 0 still indicates
+	   that the result isn't valid yet. */
+	qb_attr_code_encode(&code_pull_token, cl, s->desc.idx + 1);
 	p = qbman_cena_write_start_wo_shadow(&s->sys, QBMAN_CENA_SWP_VDQCR);
 	word_copy(&p[1], &cl[1], 3);
 	/* Set the verb byte, have to substitute in the valid-bit */
@@ -778,7 +793,7 @@ const struct qbman_result *qbman_swp_dqrr_next(struct qbman_swp *s)
 	/* There's something there. Move "next_idx" attention to the next ring
 	 * entry (and prefetch it) before returning what we found. */
 	s->dqrr.next_idx++;
-	if (s->dqrr.next_idx == QBMAN_DQRR_SIZE) {
+	if (s->dqrr.next_idx == s->dqrr.dqrr_size) {
 		s->dqrr.next_idx = 0;
 		s->dqrr.valid_bit ^= QB_VALID_BIT;
 	}
@@ -824,8 +839,12 @@ int qbman_result_has_new_result(__attribute__((unused)) struct qbman_swp *s,
 	uint32_t token;
 
 	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
-	if (token != 1)
+	if (token == 0)
 		return 0;
+	/* Entry is valid - overwrite token back to 0 so
+	   a) If this memory is reused tokesn will be 0
+	   b) If someone calls "has_new_result()" again on this entry it
+   	      will not appear to be new */
 	qb_attr_code_encode(&code_dqrr_tok_detect, &p[1], 0);
 
 	/* Only now do we convert from hardware to host endianness. Also, as we
@@ -854,14 +873,17 @@ int qbman_check_command_complete(struct qbman_swp *s,
 	uint32_t token;
 
 	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
-	if (token != 1)
-	  return 0;
+	if (token == 0)
+		return 0;
+	/* TODO: Remove qbman_swp from paramters and make it a local
+	   once we've tested the reserve portal map change */
+	s = portal_idx_map[token - 1];
 	/*When token is set it indicates that  VDQ command has been fetched by qbman and
 	 *is working on it. It is safe for software to issue another VDQ command, so
 	 *incrementing the busy variable.*/
 	if (s->vdq.storage == dq) {
-	  s->vdq.storage = NULL;
-	  atomic_inc(&s->vdq.busy);
+		s->vdq.storage = NULL;
+		atomic_inc(&s->vdq.busy);
 	}
 	return 1;
 }
@@ -1364,79 +1386,79 @@ int qbman_swp_send_multiple(struct qbman_swp *s,
 			    const struct qbman_fd *fd,
 			    int frames_to_send)
 {
-  uint32_t *p;
-  const uint32_t *cl = qb_cl(d);
-  uint32_t eqcr_ci;
-  uint8_t diff;
-  int sent = 0;
-  int i;
-  int initial_pi = s->eqcr.pi;
-  uint64_t start_pointer;
+	uint32_t *p;
+	const uint32_t *cl = qb_cl(d);
+	uint32_t eqcr_ci;
+	uint8_t diff;
+	int sent = 0;
+	int i;
+	int initial_pi = s->eqcr.pi;
+	uint64_t start_pointer;
 
-  /* we are trying to send frames_to_send  if we have enough space in the ring */
-  while (frames_to_send--)
-    {
-      if (!s->eqcr.available) {
-	eqcr_ci = s->eqcr.ci;
-	s->eqcr.ci = qbman_cena_read_reg(&s->sys,
-					 QBMAN_CENA_SWP_EQCR_CI) & 0xF;
-	diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
-			   eqcr_ci, s->eqcr.ci);
-	s->eqcr.available += diff;
-	if (!diff)
-	  {
-	    goto done;
-	  }
-      }
+	if (!s->eqcr.available) {
+		eqcr_ci = s->eqcr.ci;
+		s->eqcr.ci = qbman_cena_read_reg(&s->sys,
+				 QBMAN_CENA_SWP_EQCR_CI) & 0xF;
+		diff = qm_cyc_diff(QBMAN_EQCR_SIZE,
+				   eqcr_ci, s->eqcr.ci);
+		if (!diff)
+			goto done;
+		s->eqcr.available += diff;
+	}
 
-      p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-						QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
-      /* Write command (except of first byte) and FD */
-      memcpy(&p[1], &cl[1], 7);
-      memcpy(&p[8], &fd[sent], sizeof(struct qbman_fd));
+	/* we are trying to send frames_to_send  if we have enough space in the ring */
+	while (s->eqcr.available && frames_to_send--) {
+		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
+							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+		/* Write command (except of first byte) and FD */
+		memcpy(&p[1], &cl[1], 7 * 4);
+		memcpy(&p[8], &fd[sent], sizeof(struct qbman_fd));
 
-      initial_pi++;
-      initial_pi &= 0xF;
-      s->eqcr.available--;
-      sent++;
-    }
+		initial_pi++;
+		initial_pi &= 0xF;
+		s->eqcr.available--;
+		sent++;
+	}
 
- done:
-  initial_pi =  s->eqcr.pi;
-  lwsync();
+done:
+	initial_pi =  s->eqcr.pi;
+	lwsync();
 
-  /* in order for flushes to complete faster */
-  /*For that we use a following trick: we record all lines in 32 bit word */
+	/* in order for flushes to complete faster */
+	/*For that we use a following trick: we record all lines in 32 bit word */
 
-  initial_pi =  s->eqcr.pi;
-  for (i = 0; i < sent; i++)
-    {
-      p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
-						QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
+	initial_pi =  s->eqcr.pi;
+	for (i = 0; i < sent; i++) {
+		p = qbman_cena_write_start_wo_shadow_fast(&s->sys,
+							  QBMAN_CENA_SWP_EQCR((initial_pi) & 7));
 
-      p[0] = cl[0] | s->eqcr.pi_vb;
-      initial_pi++;
-      initial_pi &= 0xF;
+		p[0] = cl[0] | s->eqcr.pi_vb;
+		initial_pi++;
+		initial_pi &= 0xF;
 
-      if (!(initial_pi & 7))
-	s->eqcr.pi_vb ^= QB_VALID_BIT;
-    }
+		if (!(initial_pi & 7))
+			s->eqcr.pi_vb ^= QB_VALID_BIT;
+	}
 
-  initial_pi = s->eqcr.pi;
+	initial_pi = s->eqcr.pi;
 
-  /* We need  to flush all the lines but without load/store operations between them */
+	/* We need  to flush all the lines but without load/store operations between them */
   /* We assign start_pointer  before we start loop so that in loop we do not read it from memory */
-  start_pointer = (uint64_t)s->sys.addr_cena;
-  for (i = 0; i < sent; i++)
-    {
-      p = (uint32_t *)(start_pointer + QBMAN_CENA_SWP_EQCR(initial_pi & 7));
-      dcbf((uint64_t)p);
-      initial_pi++;
-      initial_pi &= 0xF;
-    }
+	start_pointer = (uint64_t)s->sys.addr_cena;
+	for (i = 0; i < sent; i++) {
+		p = (uint32_t *)(start_pointer + QBMAN_CENA_SWP_EQCR(initial_pi & 7));
+		dcbf((uint64_t)p);
+		initial_pi++;
+		initial_pi &= 0xF;
+	}
 
-  /* Update producer index for the next call */
-  s->eqcr.pi = initial_pi;
+	/* Update producer index for the next call */
+	s->eqcr.pi = initial_pi;
 
-  return sent;
+	return sent;
+}
+
+int qbman_get_version(void)
+{
+	return qman_version;
 }

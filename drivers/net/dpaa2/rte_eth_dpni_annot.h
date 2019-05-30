@@ -65,38 +65,45 @@ struct dpaa2_fas {
 } __packed;
 
 /**
- * Internal Packet annotation header
+ * HW Packet Annotation  Register structures
  */
-struct pkt_annotation {
+struct dpaa2_annot_hdr {
 	/**<	word1: Frame Annotation Status (8 bytes)*/
 	uint64_t word1;
+
 	/**<	word2: Time Stamp (8 bytes)*/
 	uint64_t word2;
+
 	/**<	word3: Next Hdr + FAF Extension + FAF (2 + 2 + 4 bytes)*/
 	uint64_t word3;
+
 	/**<	word4: Frame Annotation Flags-FAF (8 bytes) */
 	uint64_t word4;
+
 	/**<	word5:
 		ShimOffset_1 + ShimOffset_2 + IPPIDOffset + EthOffset +
 		LLC+SNAPOffset + VLANTCIOffset_1 + VLANTCIOffset_n +
 		LastETypeOffset (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
 	*/
 	uint64_t word5;
+
 	/**<	word6:
 		PPPoEOffset + MPLSOffset_1 + MPLSOffset_n + ARPorIPOffset_1
 		+ IPOffset_norMInEncapO + GREOffset + L4Offset +
 		GTPorESPorIPSecOffset(1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 bytes)
 	*/
 	uint64_t word6;
+
 	/**<	word7:
 		RoutingHdrOfset1 + RoutingHdrOfset2 + NxtHdrOffset + IPv6FragOffset +
 		GrossRunningSum + RunningSum(1 + 1 + 1 + 1 + 2 + 2 bytes)
 	*/
 	uint64_t word7;
+
 	/**<	word8:
 		ParseErrorcode + Soft Parsing Context (1 + 7 bytes)
 	*/
-	uint64_t word8;	/**< Layer 4 length */
+	uint64_t word8;
 };
 
 /**
@@ -106,11 +113,11 @@ struct pkt_annotation {
 /** General Macro to define a particular bit position*/
 #define BIT_POS(x)			((uint64_t)1 << ((x)))
 /** Set a bit in the variable */
-#define BIT_SET_AT_POS(var, pos)	(var |= pos)
+#define BIT_SET_AT_POS(var, pos)	(var |= (pos))
 /** Reset the bit in the variable */
 #define BIT_RESET_AT_POS(var, pos)	(var &= ~(pos))
 /** Check the bit is set in the variable */
-#define BIT_ISSET_AT_POS(var, pos)	((var & pos) ? 1 : 0)
+#define BIT_ISSET_AT_POS(var, pos)	((var & (pos)) ? 1 : 0)
 /**
  * Macrso to define bit position in word3
  */
