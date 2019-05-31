@@ -1367,20 +1367,18 @@ configure_split_traffic(void)
 	struct rte_flow_action_vf vf;
 	int dpdmux_id = 0; /* constant: dpdmux.0 */
 	uint16_t mask = 0xffff;
+	struct rte_flow_item_ipv4 flow_item;
+	struct rte_flow_item_eth eitem;
 
 	vf.id = mux_connection_id;
 
 	if (traffic_split_proto) {
-		struct rte_flow_item_ipv4 flow_item;
-
 		flow_item.hdr.next_proto_id = traffic_split_proto;
 		mask = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
 		pattern[0].spec = &flow_item;
 		pattern[0].mask = &mask;
 	} else {
-		struct rte_flow_item_eth eitem;
-
 		eitem.type = traffic_split_ethtype;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
 		pattern[0].spec = &eitem;
