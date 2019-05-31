@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017 NXP.
+ * Copyright 2017,2019 NXP
  * Copyright(c) 2017 Intel Corporation.
  */
 
@@ -261,6 +261,8 @@ struct rte_security_pdcp_xform {
 	uint32_t hfn;
 	/** HFN Threshold for key renegotiation */
 	uint32_t hfn_threshold;
+	/** Enable per packet HFN override */
+	uint32_t hfn_ovrd;
 };
 
 /**

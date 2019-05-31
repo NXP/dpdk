@@ -124,14 +124,16 @@ build_proto_compound_fd(dpaa2_sec_session *sess,
 	DPAA2_SET_FD_LEN(fd, ip_fle->length);
 	DPAA2_SET_FLE_FIN(ip_fle);
 
-#ifdef ENABLE_HFN_OVERRIDE
+	/* In case of PDCP, per packet HFN is stored in
+	 * mbuf priv after sym_op.
+	 */
 	if (sess->ctxt_type == DPAA2_SEC_PDCP && sess->pdcp.hfn_ovd) {
+		uint32_t hfn_ovd = *((uint8_t *)op + sess->pdcp.hfn_ovd_offset);
 		/*enable HFN override override */
-		DPAA2_SET_FLE_INTERNAL_JD(ip_fle, sess->pdcp.hfn_ovd);
-		DPAA2_SET_FLE_INTERNAL_JD(op_fle, sess->pdcp.hfn_ovd);
-		DPAA2_SET_FD_INTERNAL_JD(fd, sess->pdcp.hfn_ovd);
+		DPAA2_SET_FLE_INTERNAL_JD(ip_fle, hfn_ovd);
+		DPAA2_SET_FLE_INTERNAL_JD(op_fle, hfn_ovd);
+		DPAA2_SET_FD_INTERNAL_JD(fd, hfn_ovd);
 	}
-#endif
 
 	return 0;
 
@@ -2545,7 +2547,7 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	return 0;
 }
 
-#ifdef RTE_LIBRTE_SECURITY_TEST
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 static uint8_t aes_cbc_iv[] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };
@@ -2636,7 +2638,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		memset(&encap_pdb, 0, sizeof(struct ipsec_encap_pdb));
 		encap_pdb.options = (IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
-#ifndef RTE_LIBRTE_SECURITY_TEST
+#ifndef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 			PDBOPTS_ESP_IVSRC |
 #endif
 			PDBHMO_ESP_ENCAP_DTTL |
@@ -2645,7 +2647,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			encap_pdb.options |= PDBOPTS_ESP_ESN;
 		encap_pdb.spi = ipsec_xform->spi;
 		encap_pdb.ip_hdr_len = sizeof(struct ip);
-#ifdef RTE_LIBRTE_SECURITY_TEST
+#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform)
 			memcpy(encap_pdb.cbc.iv,
 				aes_cbc_iv, cipher_xform->iv.length);
@@ -2715,6 +2717,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	struct ctxt_priv *priv;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
+	struct alginfo *p_authdata = NULL;
 	int bufsize = -1;
 	struct sec_flow_context *flc;
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
@@ -2787,11 +2790,11 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	session->pdcp.bearer = pdcp_xform->bearer;
 	session->pdcp.pkt_dir = pdcp_xform->pkt_dir;
 	session->pdcp.sn_size = pdcp_xform->sn_size;
-#ifdef ENABLE_HFN_OVERRIDE
-	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovd;
-#endif
 	session->pdcp.hfn = pdcp_xform->hfn;
 	session->pdcp.hfn_threshold = pdcp_xform->hfn_threshold;
+	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovrd;
+	/* hfv ovd offset location is stored in iv.offset value*/
+	session->pdcp.hfn_ovd_offset = cipher_xform->iv.offset;
 
 	cipherdata.key = (size_t)session->cipher_key.data;
 	cipherdata.keylen = session->cipher_key.length;
@@ -2817,38 +2820,32 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		goto out;
 	}
 
-	/* Auth is only applicable for control mode operation. */
-	if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_CONTROL) {
-		if (pdcp_xform->sn_size != RTE_SECURITY_PDCP_SN_SIZE_5) {
-			DPAA2_SEC_ERR(
-				"PDCP Seq Num size should be 5 bits for cmode");
-			goto out;
+	if (auth_xform) {
+		session->auth_key.data = rte_zmalloc(NULL,
+						     auth_xform->key.length,
+						     RTE_CACHE_LINE_SIZE);
+		if (!session->auth_key.data &&
+		    auth_xform->key.length > 0) {
+			DPAA2_SEC_ERR("No Memory for auth key");
+			rte_free(session->cipher_key.data);
+			rte_free(priv);
+			return -ENOMEM;
 		}
-		if (auth_xform) {
-			session->auth_key.data = rte_zmalloc(NULL,
-							auth_xform->key.length,
-							RTE_CACHE_LINE_SIZE);
-			if (session->auth_key.data == NULL &&
-					auth_xform->key.length > 0) {
-				DPAA2_SEC_ERR("No Memory for auth key");
-				rte_free(session->cipher_key.data);
-				rte_free(priv);
-				return -ENOMEM;
-			}
-			session->auth_key.length = auth_xform->key.length;
-			memcpy(session->auth_key.data, auth_xform->key.data,
-					auth_xform->key.length);
-			session->auth_alg = auth_xform->algo;
-		} else {
-			session->auth_key.data = NULL;
-			session->auth_key.length = 0;
-			session->auth_alg = RTE_CRYPTO_AUTH_NULL;
-		}
-		authdata.key = (size_t)session->auth_key.data;
-		authdata.keylen = session->auth_key.length;
-		authdata.key_enc_flags = 0;
-		authdata.key_type = RTA_DATA_IMM;
+		session->auth_key.length = auth_xform->key.length;
+		memcpy(session->auth_key.data, auth_xform->key.data,
+		       auth_xform->key.length);
+		session->auth_alg = auth_xform->algo;
+	} else {
+		session->auth_key.data = NULL;
+		session->auth_key.length = 0;
+		session->auth_alg = 0;
+	}
+	authdata.key = (size_t)session->auth_key.data;
+	authdata.keylen = session->auth_key.length;
+	authdata.key_enc_flags = 0;
+	authdata.key_type = RTA_DATA_IMM;
 
+	if (session->auth_alg) {
 		switch (session->auth_alg) {
 		case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
 			authdata.algtype = PDCP_AUTH_TYPE_SNOW;
@@ -2868,10 +2865,18 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 			goto out;
 		}
 
+		p_authdata = &authdata;
+	} else if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_CONTROL) {
+		DPAA2_SEC_ERR("Crypto: Integrity must for c-plane");
+		goto out;
+	}
+
+	if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_CONTROL) {
 		if (session->dir == DIR_ENC)
 			bufsize = cnstr_shdsc_pdcp_c_plane_encap(
 					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->hfn,
+					pdcp_xform->sn_size,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
@@ -2881,6 +2886,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 			bufsize = cnstr_shdsc_pdcp_c_plane_decap(
 					priv->flc_desc[0].desc, 1, swap,
 					pdcp_xform->hfn,
+					pdcp_xform->sn_size,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
@@ -2895,7 +2901,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, 0);
+					&cipherdata, p_authdata, 0);
 		else if (session->dir == DIR_DEC)
 			bufsize = cnstr_shdsc_pdcp_u_plane_decap(
 					priv->flc_desc[0].desc, 1, swap,
@@ -2904,7 +2910,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, 0);
+					&cipherdata, p_authdata, 0);
 	}
 
 	if (bufsize < 0) {
