@@ -817,6 +817,7 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 	if (data == NULL)
 		return -ENOMEM;
 
+	/* TODO: below code to be replaced by rte_eth_dev_create */
 	/* reserve an ethdev entry */
 	eth_dev = rte_eth_vdev_allocate(vdev, sizeof(*priv));
 	if (eth_dev == NULL) {
@@ -890,6 +891,7 @@ static int pfe_eth_init(struct rte_vdev_device *vdev, struct pfe *pfe, int id)
 	 * be available.
 	 */
 	pfe_eth_open_cdev(priv);
+	rte_eth_dev_probing_finish(eth_dev);
 
 	return 0;
 err0:
