@@ -47,11 +47,11 @@ done
 
 # Disable some watchdogs so as not to complain in case RT priority process
 # of DPDK application hog the CPU. Ignore errors like non-existent file.
-echo 0 > /proc/sys/kernel/hung_task_timeout_secs
-echo 0 > /proc/sys/kernel/nmi_watchdog
-echo 0 > /proc/sys/kernel/hung_task_check_count
-echo 0 > /proc/sys/kernel/hung_task_warnings
-echo 0 > /proc/sys/kernel/soft_watchdog
+(echo 0 > /proc/sys/kernel/hung_task_timeout_secs) 2> /dev/null
+(echo 0 > /proc/sys/kernel/nmi_watchdog) 2> /dev/null
+(echo 0 > /proc/sys/kernel/hung_task_check_count) 2> /dev/null
+(echo 0 > /proc/sys/kernel/hung_task_warnings) 2> /dev/null
+(echo 0 > /proc/sys/kernel/soft_watchdog) 2> /dev/null
 
 # Finally, reduce timeslice for non-RT processes. This directly impacts the
 # Core 0 (non-isolated cores). Once this is set, a RT application which

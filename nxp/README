@@ -969,6 +969,23 @@ DPAA2:
 10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
 ================================================================================
 
+================================================================================
+
+Devargs
+-------
+
+Note: Devargs can only be passed via '-w', -'b' or '--vdev' option
+
+DPAA2:
+-----
+
+1. fslmc:dpni.<x>,drv_loopback=1	Enable low level loopback in the driver
+
+2. fslmc:dpni.<x>,drv_no_prefetch=1	Disable prefetching of packet pull command
+					which is issued  in the previous cycle.
+
+================================================================================
+
 Minimum NXP LSDK version supported: LSDK 1903 (https://lsdk.github.io/)
 DPDK base version used: Release 18.11.1
 More info on DPDK :  www.dpdk.org

@@ -87,6 +87,8 @@ static int parse_ptype; /**< Parse packet type using rx callback, and */
 static int per_port_pool = 1; /**< Use separate buffer pools per port */
 				/**< Set to 0 as default - disabled */
 static int traffic_split_proto; /**< Split traffic based on this protocol ID */
+static int traffic_split_ethtype; /**< Split traffic based on eth type */
+
 /*
  * This variable defines where the traffic is split in DPDMUX - the logical
  * interface ID - which is connected to a DPNI. e.g. 2 for dpdmux.0.2 
@@ -366,6 +368,7 @@ print_usage(const char *prgname)
 		"  --parse-ptype: Set to use software to analyze packet type\n"
 		"  --disable-per-port-pool: Disable separate buffer pool per port\n"
 		"  --traffic-split-proto: PROTOCOL_NUMBER of IPv4 header protocol field\n"
+		"                         Or ETHER TYPE\n"
 		"                         based on which DPDMUX can split the traffic\n"
 		"                         to MUX_CONN_ID\n"
 		"                         It is assumed that first port of DPDMUX configured\n"
@@ -714,7 +717,7 @@ parse_link_config(const char *evq_arg)
 static int
 parse_traffic_split_info(const char *split_args)
 {
-	int proto_id, dpni_id;
+	int key, dpni_id;
 	char *dup_str;
 	char *dpni, *proto;
 	char delim = ':';
@@ -731,15 +734,21 @@ parse_traffic_split_info(const char *split_args)
 	} else
 		goto err_ret;
 
-	proto_id = strtod(proto, NULL);
-	if (proto[0] == '\0' || proto_id <= 0 || proto_id > USHRT_MAX)
+	key = strtod(proto, NULL);
+	if (proto[0] == '\0' || key <= 0 || key > USHRT_MAX)
 		goto err_ret;
 
 	dpni_id = strtod(dpni, NULL);
 	if (dpni[0] == '\0' || dpni_id < 0 || dpni_id > INT_MAX)
 		goto err_ret;
 
-	traffic_split_proto = proto_id;
+	/* if key is < 0xff - consider it tobe IP protocol
+	 * else it is ether type
+	 */
+	if (key > 0xff)
+		traffic_split_ethtype = key;
+	else
+		traffic_split_proto = key;
 	mux_connection_id = dpni_id;
 	return 0;
 
@@ -1134,8 +1143,9 @@ parse_args(int argc, char **argv)
 				print_usage(prgname);
 				return -1;
 			}
-			printf("Splitting traffic on Protocol:%d,DPDMUX.0.%d\n",
-			       traffic_split_proto, mux_connection_id);
+			printf("Splitting traffic on Proto:%d or ethtype = %d,"
+				"DPDMUX.0.%d\n", traffic_split_proto,
+				traffic_split_ethtype, mux_connection_id);
 			break;
 
 		default:
@@ -1333,7 +1343,7 @@ prepare_ptype_parser(uint16_t portid, uint16_t queueid)
 
 /* Constraints of this function:
  * 1. Assumes that only a single rule is being created, which is matching
- *    IPv4 proto_id field
+ *    IPv4 proto_id field or ethertype.
  * 2. Mask for this match condition is 0xFF - which would be for exact match
  *    to user-provided traffic_split_proto
  * 3. DPDMUX.0 is assumed to the available device.
@@ -1347,17 +1357,25 @@ configure_split_traffic(void)
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
-	struct rte_flow_item_ipv4 flow_item;
 	int dpdmux_id = 0; /* constant: dpdmux.0 */
-	uint8_t mask;
+	uint16_t mask = 0xffff;
+	struct rte_flow_item_ipv4 flow_item;
+	struct rte_flow_item_eth eitem;
 
-	flow_item.hdr.next_proto_id = traffic_split_proto;
-	mask = 0xFF;
 	vf.id = mux_connection_id;
 
-	pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
-	pattern[0].spec = &flow_item;
-	pattern[0].mask = &mask;
+	if (traffic_split_proto) {
+		flow_item.hdr.next_proto_id = traffic_split_proto;
+		mask = 0xff;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
+		pattern[0].spec = &flow_item;
+		pattern[0].mask = &mask;
+	} else {
+		eitem.type = traffic_split_ethtype;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+		pattern[0].spec = &eitem;
+		pattern[0].mask = &mask;
+	}
 
 	actions[0].conf = &vf;
 
@@ -1627,7 +1645,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (traffic_split_proto != 0) {
+	if (traffic_split_proto || traffic_split_ethtype) {
 		ret = configure_split_traffic();
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
