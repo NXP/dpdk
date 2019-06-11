@@ -346,7 +346,7 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 #define kfree(p)	{ if (p) rte_free(p); }
 static inline void *kzalloc(size_t sz, gfp_t __foo __rte_unused)
 {
-	void *ptr = malloc(sz);
+	void *ptr = rte_malloc(NULL, sz, 0);
 
 	if (ptr)
 		memset(ptr, 0, sz);
