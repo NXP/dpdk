@@ -778,7 +778,8 @@ pdcp_insert_cplane_enc_only_op(struct program *p,
 	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 	    cipherdata->keylen, INLINE_KEY(cipherdata));
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		if (sn_size == PDCP_SN_SIZE_5)
 			PROTOCOL(p, dir, OP_PCLID_LTE_PDCP_CTRL_MIXED,
 				 (uint16_t)cipherdata->algtype << 8);
@@ -964,7 +965,8 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 	REFERENCE(jump_back_to_sd_cmd);
 	REFERENCE(move_mac_i_to_desc_buf);
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 				cipherdata->keylen, INLINE_KEY(cipherdata));
 		KEY(p, KEY2, authdata->key_enc_flags, authdata->key,
@@ -1288,7 +1290,8 @@ pdcp_insert_cplane_aes_snow_op(struct program *p,
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
 
 		if (sn_size == PDCP_SN_SIZE_5)
@@ -1432,7 +1435,8 @@ pdcp_insert_cplane_snow_zuc_op(struct program *p,
 
 	SET_LABEL(p, keyjump);
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
 
 		if (sn_size == PDCP_SN_SIZE_5)
@@ -1550,7 +1554,8 @@ pdcp_insert_cplane_aes_zuc_op(struct program *p,
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
 
 		if (sn_size == PDCP_SN_SIZE_5)
@@ -1673,7 +1678,8 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
 	    INLINE_KEY(authdata));
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
 
 		if (sn_size == PDCP_SN_SIZE_5)
@@ -1808,7 +1814,8 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		return -ENOTSUP;
 	}
 
-	if (rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) {
+	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
+		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
 
 		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
