@@ -1913,32 +1913,60 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	/* Set IV parameters */
 	session->iv.offset = xform->cipher.iv.offset;
 	session->iv.length = xform->cipher.iv.length;
+	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
+				DIR_ENC : DIR_DEC;
 
 	switch (xform->cipher.algo) {
 	case RTE_CRYPTO_CIPHER_AES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CBC;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CTR;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CTR;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+		cipherdata.algtype = OP_ALG_ALGSEL_SNOW_F8;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
+		bufsize = cnstr_shdsc_snow_f8(priv->flc_desc[0].desc, 1, 0,
+					      &cipherdata,
+					      session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_KASUMI_F8:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
+	case RTE_CRYPTO_CIPHER_AES_F8:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_XTS:
-	case RTE_CRYPTO_CIPHER_AES_F8:
 	case RTE_CRYPTO_CIPHER_ARC4:
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
-	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_NULL:
 		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
 			xform->cipher.algo);
@@ -1948,12 +1976,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 			xform->cipher.algo);
 		goto error_out;
 	}
-	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
-				DIR_ENC : DIR_DEC;
 
-	bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0, SHR_NEVER,
-					&cipherdata, NULL, session->iv.length,
-					session->dir);
 	if (bufsize < 0) {
 		DPAA2_SEC_ERR("Crypto: Descriptor build failed");
 		goto error_out;
@@ -2016,40 +2039,75 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	authdata.key_type = RTA_DATA_IMM;
 
 	session->digest_length = xform->auth.digest_length;
+	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
+				DIR_ENC : DIR_DEC;
 
 	switch (xform->auth.algo) {
 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA1;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA1_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_MD5_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_MD5;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_MD5_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA256;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA256_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA384;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA384_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA512;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA512_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA224;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA224_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
-	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
+		authdata.algtype = OP_ALG_ALGSEL_SNOW_F9;
+		authdata.algmode = OP_ALG_AAI_F9;
+		session->auth_alg = RTE_CRYPTO_AUTH_SNOW3G_UIA2;
+		bufsize = cnstr_shdsc_snow_f9(priv->flc_desc[DESC_INITFINAL].desc,
+					      1, 0, &authdata,
+					      !session->dir,
+					      session->digest_length);
+		break;
+	case RTE_CRYPTO_AUTH_KASUMI_F9:
+	case RTE_CRYPTO_AUTH_ZUC_EIA3:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
 	case RTE_CRYPTO_AUTH_SHA256:
@@ -2058,10 +2116,9 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_SHA384:
 	case RTE_CRYPTO_AUTH_MD5:
 	case RTE_CRYPTO_AUTH_AES_GMAC:
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
+	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
-	case RTE_CRYPTO_AUTH_ZUC_EIA3:
 		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %un",
 			      xform->auth.algo);
 		goto error_out;
@@ -2070,12 +2127,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 			      xform->auth.algo);
 		goto error_out;
 	}
-	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
-				DIR_ENC : DIR_DEC;
 
-	bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
-				   1, 0, SHR_NEVER, &authdata, !session->dir,
-				   session->digest_length);
 	if (bufsize < 0) {
 		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
 		goto error_out;
