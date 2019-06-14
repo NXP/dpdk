@@ -23,6 +23,18 @@
 #define PPFE_VDEV_MAX_PORT 2
 #define PPFE_VDEV_GEM_ID_ARG	("intf")
 
+/* Supported Rx offloads */
+static uint64_t dev_rx_offloads_sup =
+		DEV_RX_OFFLOAD_IPV4_CKSUM |
+		DEV_RX_OFFLOAD_UDP_CKSUM |
+		DEV_RX_OFFLOAD_TCP_CKSUM;
+
+/* Supported Tx offloads */
+static uint64_t dev_tx_offloads_sup =
+		DEV_TX_OFFLOAD_IPV4_CKSUM |
+		DEV_TX_OFFLOAD_UDP_CKSUM |
+		DEV_TX_OFFLOAD_TCP_CKSUM;
+
 static void *cbus_emac_base[3];
 static void *cbus_gpi_base[3];
 struct pfe *g_pfe;
@@ -397,6 +409,8 @@ pfe_eth_info(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = dev->data->nb_rx_queues;
 	dev_info->max_tx_queues = dev->data->nb_tx_queues;
 	dev_info->min_rx_bufsize = HIF_RX_PKT_MIN_SIZE;
+	dev_info->rx_offload_capa = dev_rx_offloads_sup;
+	dev_info->tx_offload_capa = dev_tx_offloads_sup;
 }
 
 /* Only first mb_pool given on first call of this API will be used
