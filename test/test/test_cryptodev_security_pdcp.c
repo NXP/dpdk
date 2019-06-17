@@ -24,34 +24,6 @@
 #include "test.h"
 #include "test_cryptodev_security_pdcp_test_func.h"
 
-#define PDCP_CPLANE_OFFSET		0
-#define PDCP_CPLANE_LONG_SN_OFFSET	32
-#define PDCP_UPLANE_OFFSET		64
-#define LONG_SEQ_NUM_OFFSET		0
-#define SHORT_SEQ_NUM_OFFSET		2
-#define FIFTEEN_BIT_SEQ_NUM_OFFSET	4
-#define EIGHTEEN_BIT_SEQ_NUM_OFFSET	6
-#define UPLINK				0
-#define DOWNLINK			1
-/* key length(in bytes) for F8 */
-#define F8_KEY_LEN			16
-
-#define PDCP_UPLANE_12BIT_OFFSET	(PDCP_UPLANE_OFFSET + 32)
-#define PDCP_UPLANE_18BIT_OFFSET	(PDCP_UPLANE_12BIT_OFFSET + 32)
-
-enum enc_alg_off {
-	NULL_ENC = 0,
-	SNOW_ENC = 8,
-	AES_ENC = 16,
-	ZUC_ENC = 24
-};
-enum auth_alg_off {
-	NULL_AUTH = 0,
-	SNOW_AUTH = 2,
-	AES_AUTH = 4,
-	ZUC_AUTH = 6
-};
-
 static int cplane_encap(uint32_t sn_size, uint8_t dir,
 			enum enc_alg_off enc_alg_off,
 			enum auth_alg_off auth_alg_off)
