@@ -259,6 +259,7 @@ static inline int is_auth_cipher(dpaa_sec_session *ses)
 {
 	return ((ses->cipher_alg != RTE_CRYPTO_CIPHER_NULL) &&
 		(ses->auth_alg != RTE_CRYPTO_AUTH_NULL) &&
+		(ses->proto_alg != RTE_SECURITY_PROTOCOL_PDCP) &&
 		(ses->proto_alg != RTE_SECURITY_PROTOCOL_IPSEC));
 }
 
@@ -1635,6 +1636,99 @@ build_proto(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	return cf;
 }
 
+static inline struct dpaa_sec_job *
+build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
+{
+	struct rte_crypto_sym_op *sym = op->sym;
+	struct dpaa_sec_job *cf;
+	struct dpaa_sec_op_ctx *ctx;
+	struct qm_sg_entry *sg, *out_sg, *in_sg;
+	struct rte_mbuf *mbuf;
+	uint8_t req_segs;
+	uint32_t in_len = 0, out_len = 0;
+
+	if (sym->m_dst) {
+		mbuf = sym->m_dst;
+	} else {
+		mbuf = sym->m_src;
+	}
+	req_segs = mbuf->nb_segs + sym->m_src->nb_segs + 2;
+	if (req_segs > MAX_SG_ENTRIES) {
+		DPAA_SEC_DP_ERR("Proto: Max sec segs supported is %d",
+				MAX_SG_ENTRIES);
+		return NULL;
+	}
+
+	ctx = dpaa_sec_alloc_ctx(ses);
+	if (!ctx)
+		return NULL;
+	cf = &ctx->job;
+	ctx->op = op;
+	/* output */
+	out_sg = &cf->sg[0];
+	out_sg->extension = 1;
+	qm_sg_entry_set64(out_sg, dpaa_mem_vtop(&cf->sg[2]));
+
+	/* 1st seg */
+	sg = &cf->sg[2];
+	qm_sg_entry_set64(sg, rte_pktmbuf_mtophys(mbuf));
+	sg->offset = 0;
+
+	/* Successive segs */
+	while (mbuf->next) {
+		sg->length = mbuf->data_len;
+		out_len += sg->length;
+		mbuf = mbuf->next;
+		cpu_to_hw_sg(sg);
+		sg++;
+		qm_sg_entry_set64(sg, rte_pktmbuf_mtophys(mbuf));
+		sg->offset = 0;
+	}
+	sg->length = mbuf->buf_len - mbuf->data_off;
+	out_len += sg->length;
+	sg->final = 1;
+	cpu_to_hw_sg(sg);
+
+	out_sg->length = out_len;
+	cpu_to_hw_sg(out_sg);
+
+	/* input */
+	mbuf = sym->m_src;
+	in_sg = &cf->sg[1];
+	in_sg->extension = 1;
+	in_sg->final = 1;
+	in_len = mbuf->data_len;
+
+	sg++;
+	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(sg));
+
+	/* 1st seg */
+	qm_sg_entry_set64(sg, rte_pktmbuf_mtophys(mbuf));
+	sg->length = mbuf->data_len;
+	sg->offset = 0;
+
+	/* Successive segs */
+	mbuf = mbuf->next;
+	while (mbuf) {
+		cpu_to_hw_sg(sg);
+		sg++;
+		qm_sg_entry_set64(sg, rte_pktmbuf_mtophys(mbuf));
+		sg->length = mbuf->data_len;
+		sg->offset = 0;
+		in_len += sg->length;
+		mbuf = mbuf->next;
+	}
+	sg->final = 1;
+	cpu_to_hw_sg(sg);
+
+	in_sg->length = in_len;
+	cpu_to_hw_sg(in_sg);
+
+	sym->m_src->packet_type &= ~RTE_PTYPE_L4_MASK;
+
+	return cf;
+}
+
 static uint16_t
 dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 		       uint16_t nb_ops)
@@ -1694,7 +1788,9 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 
 			auth_only_len = op->sym->auth.data.length -
 						op->sym->cipher.data.length;
-			if (rte_pktmbuf_is_contiguous(op->sym->m_src)) {
+			if (rte_pktmbuf_is_contiguous(op->sym->m_src) &&
+				  ((op->sym->m_dst == NULL) ||
+				   rte_pktmbuf_is_contiguous(op->sym->m_dst))) {
 				if (is_proto_ipsec(ses)) {
 					cf = build_proto(op, ses);
 				} else if (is_proto_pdcp(ses)) {
@@ -1724,6 +1820,8 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 					auth_only_len = ses->auth_only_len;
 				} else if (is_auth_cipher(ses)) {
 					cf = build_cipher_auth_sg(op, ses);
+				} else if (is_proto_pdcp(ses) || is_proto_ipsec(ses)) {
+					cf = build_proto_sg(op, ses);
 				} else {
 					DPAA_SEC_DP_ERR("not supported ops");
 					frames_to_send = loop;
