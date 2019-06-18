@@ -11172,6 +11172,15 @@ static struct unit_test_suite cryptodev_dpaa2_sec_testsuite  = {
 
 		TEST_CASE_ST(ut_setup, ut_teardown,
 			test_PDCP_PROTO_uplane_decap_all),
+
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_SGL_in_place_32B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_SGL_oop_32B_128B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_SGL_oop_32B_40B),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_PDCP_PROTO_SGL_oop_128B_32B),
 #endif
 		/** AES GCM Authenticated Encryption */
 		TEST_CASE_ST(ut_setup, ut_teardown,
