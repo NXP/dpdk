@@ -37,6 +37,8 @@ extern int dpaa2_logtype_sec;
 	DPAA2_SEC_DP_LOG(INFO, fmt, ## args)
 #define DPAA2_SEC_DP_WARN(fmt, args...) \
 	DPAA2_SEC_DP_LOG(WARNING, fmt, ## args)
+#define DPAA2_SEC_DP_ERR(fmt, args...) \
+		DPAA2_SEC_DP_LOG(ERR, fmt, ## args)
 
 
 #endif /* _DPAA2_SEC_LOGS_H_ */
