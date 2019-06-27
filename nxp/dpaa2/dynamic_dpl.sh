@@ -200,6 +200,12 @@ script help :----->
 					'export DPDMAI_COUNT=<Num of dpdmai objects>'
 					e.g export DPDMAI_COUNT=2".
 					By default there are 8 dpdmai object.
+
+	/**DPRTC**:-->
+		DPRTC_COUNT	    = DPRTC objects count for PTP (timesync)
+					Only single instance of DPRTC supported
+					'export DPRTC_COUNT=1'
+					default value is 0.
 EOF
 
 
@@ -461,6 +467,19 @@ get_dpdmai_parameters() {
 	echo >> dynamic_dpl_logs
 }
 
+#/* Function, to initialize the DPRTC related parameters
+#*/
+get_dprtc_parameters() {
+	if [[ -z "$DPRTC_COUNT" ]]
+	then
+		DPRTC_COUNT=0
+	fi
+	echo "DPRTC parameters :-->" >> dynamic_dpl_logs
+	echo -e "\tDPRTC_COUNT = "$DPRTC_COUNT >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+	echo >> dynamic_dpl_logs
+}
+
 #/* function, to create the actual MAC address from the base address
 #*/
 create_actual_mac() {
@@ -621,6 +640,7 @@ then
 	get_dpio_parameters
 	get_dpci_parameters
 	get_dpdmai_parameters
+	get_dprtc_parameters
 	RET=$?
 	if [[ $RET == 1 ]]
 	then
@@ -843,6 +863,14 @@ then
 		obj_assign $DPDMAI
 	done;
 
+	# Create DPRTC's for timesync
+	unset DPRTC
+	for i in $(seq 1 ${DPRTC_COUNT}); do
+		DPRTC=$(restool -s dprtc create --container=$DPRC)
+		echo $DPRTC "Created" >> dynamic_dpl_logs
+		obj_assign $DPRTC
+	done;
+
 	dmesg -D
 	# Mount HUGETLB Pages first
 	HUGE=$(grep -E '/mnt/\<hugepages\>.*hugetlbfs' /proc/mounts)
@@ -895,6 +923,8 @@ then
 	echo -e " * $count DPCI"
 	count=$(restool dprc show $DPRC | grep -c dpdmai.*)
 	echo -e " * $count DPDMAI"
+	count=$(restool dprc show $DPRC | grep -c dprtc.*)
+	echo -e " * $count DPRTC"
 	echo
 	echo
 	unset count

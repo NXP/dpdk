@@ -133,6 +133,11 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 			"(4)=0x%" PRIx64 "\t",
 			annotation->word3, annotation->word4);
 
+#if defined(RTE_LIBRTE_IEEE1588)
+	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP))
+		mbuf->ol_flags |= PKT_RX_IEEE1588_PTP;
+#endif
+
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT)) {
 		vlan_tci = rte_pktmbuf_mtod_offset(mbuf, uint16_t *,
 			(VLAN_TCI_OFFSET_1(annotation->word5) >> 16));
@@ -513,6 +518,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+#endif
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
@@ -617,6 +625,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd);
 		bufs[num_rx]->port = eth_data->port_id;
+#if defined(RTE_LIBRTE_IEEE1588)
+		priv->rx_timestamp = bufs[num_rx]->timestamp;
+#endif
 
 		if (eth_data->dev_conf.rxmode.offloads &
 				DEV_RX_OFFLOAD_VLAN_STRIP)
@@ -847,6 +858,11 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 	struct qbman_release_desc releasedesc;
 	uint32_t bpid;
 	uint64_t buf;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+	struct dpaa2_annot_hdr *annotation;
+#endif
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -927,6 +943,12 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 			dq_storage++;
 			num_tx_conf++;
 			num_pulled++;
+#if defined(RTE_LIBRTE_IEEE1588)
+			annotation = (struct dpaa2_annot_hdr *)((size_t)
+				DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
+				DPAA2_FD_PTA_SIZE);
+			priv->tx_timestamp = annotation->word2;
+#endif
 		} while (pending);
 
 	/* Last VDQ provided all packets and more packets are requested */
@@ -994,6 +1016,11 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			eth_data, dpaa2_q->fqid);
 
 #ifdef RTE_LIBRTE_IEEE1588
+	/* IEEE1588 driver need pointer to tx confirmation queue
+	 * corresponding to last packet transmitted for reading
+	 * the timestamp
+	 */
+	priv->next_tx_conf_queue = dpaa2_q->tx_conf_queue;
 	dpaa2_dev_tx_conf(dpaa2_q->tx_conf_queue);
 #endif
 
