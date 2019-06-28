@@ -132,6 +132,15 @@ struct dpaa2_dev_priv {
 	uint32_t options;
 };
 
+struct swp_active_dqs {
+	struct qbman_result *global_active_dqs;
+	uint64_t reserved[7];
+};
+
+#define NUM_MAX_SWP 64
+
+struct swp_active_dqs global_active_dqs_list[NUM_MAX_SWP];
+
 static struct rte_pci_id pci_id_dpaa2_map[] = {
 	{RTE_PCI_DEVICE(FSL_VENDOR_ID, FSL_MC_DPNI_DEVID)},
 };
@@ -456,6 +465,28 @@ eth_dpaa2_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	return num_rx;
 }
 
+inline int check_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	if(global_active_dqs_list[dpio_dev_index].global_active_dqs!=NULL)
+		return 1;
+	return 0;
+}
+
+inline void clear_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = NULL;
+}
+
+inline struct qbman_result* get_swp_active_dqs(uint16_t dpio_dev_index)
+{
+	return global_active_dqs_list[dpio_dev_index].global_active_dqs;
+}
+
+inline void set_swp_active_dqs(uint16_t dpio_dev_index, struct qbman_result *dqs)
+{
+	global_active_dqs_list[dpio_dev_index].global_active_dqs = dqs;
+}
+
 static uint16_t
 eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
@@ -479,7 +510,6 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 	}
 	swp = thread_io_info.dpio_dev->sw_portal;
-
 	if (!q_storage->active_dqs) {
 		q_storage->toggle = 0;
 		dq_storage = q_storage->dq_storage[q_storage->toggle];
@@ -488,9 +518,10 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 					    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
-		if (thread_io_info.global_active_dqs) {
-			while (!qbman_check_command_complete(swp, thread_io_info.global_active_dqs))
+		if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
+			while (!qbman_check_command_complete(swp, get_swp_active_dqs(thread_io_info.dpio_dev->index)))
 				;
+			clear_swp_active_dqs(thread_io_info.dpio_dev->index);
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
@@ -502,12 +533,14 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			break;
 		}
 		q_storage->active_dqs = dq_storage;
-		thread_io_info.global_active_dqs = dq_storage;
+		q_storage->active_dpio_id = thread_io_info.dpio_dev->index;
+		set_swp_active_dqs(thread_io_info.dpio_dev->index, dq_storage);
 	}
-	if (thread_io_info.global_active_dqs)
-		while (!qbman_check_command_complete(swp, thread_io_info.global_active_dqs))
-		;
 	dq_storage = q_storage->active_dqs;
+	while (!qbman_check_command_complete(swp, dq_storage))
+		;
+	if(dq_storage == get_swp_active_dqs(q_storage->active_dpio_id))
+		clear_swp_active_dqs(q_storage->active_dpio_id);
 	while (!is_last) {
 		/* Loop until the dq_storage is updated with
 		 * new token by QBMAN */
@@ -539,14 +572,18 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		/* rte_prefetch0((void *)((uint64_t)DPAA2_GET_FD_ADDR(fd[num_rx]) + DPAA2_GET_FD_OFFSET(fd[num_rx]))); */
 		dq_storage++;
 		num_rx++;
-
+		
 	} /* End of Packet Rx loop */
 
 	for (i = 0; i < num_rx; i++) {
 		bufs[i] = eth_fd_to_mbuf(fd[i]);
 		bufs[i]->port = dev->data->port_id;
 	}
-
+	if (check_swp_active_dqs(thread_io_info.dpio_dev->index)) {
+		while (!qbman_check_command_complete(swp, get_swp_active_dqs(thread_io_info.dpio_dev->index)))
+			;
+		clear_swp_active_dqs(thread_io_info.dpio_dev->index);
+	}
 	q_storage->toggle ^= 1;
 	dq_storage = q_storage->dq_storage[q_storage->toggle];
 	qbman_pull_desc_clear(&pulldesc);
@@ -555,7 +592,6 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
 				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 	/*Issue a volatile dequeue command. */
-
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
 			PMD_DRV_LOG(WARNING, "VDQ command is not issued."
@@ -565,7 +601,8 @@ eth_dpaa2_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		break;
 	}
 	q_storage->active_dqs = dq_storage;
-	thread_io_info.global_active_dqs = dq_storage;
+	q_storage->active_dpio_id = thread_io_info.dpio_dev->index;
+	set_swp_active_dqs(thread_io_info.dpio_dev->index, dq_storage);
 
 	dpaa2_q->rx_pkts += num_rx;
 

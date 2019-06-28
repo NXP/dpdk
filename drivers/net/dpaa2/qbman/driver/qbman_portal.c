@@ -92,6 +92,12 @@ enum qbman_sdqcr_fc {
 
 struct qb_attr_code code_sdqcr_dqsrc = QB_CODE(0, 0, 16);
 
+/* We need to keep track of which SWP triggered a pull command
+   so keep an array of portal IDs and use the token field to
+   be able to find the proper portal */
+#define MAX_QBMAN_PORTALS  35
+static struct qbman_swp * portal_idx_map[MAX_QBMAN_PORTALS];
+
 /*********************************/
 /* Portal constructor/destructor */
 /*********************************/
@@ -117,7 +123,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 
 	if (!p)
 		return NULL;
-	p->desc = d;
+	p->desc = *d;
 #ifdef QBMAN_CHECKING
 	p->mc.check = swp_mc_can_start;
 #endif
@@ -130,7 +136,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 	p->vdq.valid_bit = QB_VALID_BIT;
 	p->dqrr.next_idx = 0;
 	p->dqrr.valid_bit = QB_VALID_BIT;
-	qman_version = p->desc->qman_version;
+	qman_version = p->desc.qman_version;
 	if ((qman_version & 0xFFFF0000) < QMAN_REV_4100) {
 		p->dqrr.dqrr_size = 4;
 		p->dqrr.reset_bug = 1;
@@ -161,6 +167,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 	p->eqcr.available = QBMAN_EQCR_SIZE - qm_cyc_diff(QBMAN_EQCR_SIZE,
 						p->eqcr.ci, p->eqcr.pi);
 
+	portal_idx_map[p->desc.idx] = p;
 	return p;
 }
 
@@ -170,12 +177,13 @@ void qbman_swp_finish(struct qbman_swp *p)
 	BUG_ON(p->mc.check != swp_mc_can_start);
 #endif
 	qbman_swp_sys_finish(&p->sys);
+	portal_idx_map[p->desc.idx] = NULL;
 	kfree(p);
 }
 
 const struct qbman_swp_desc *qbman_swp_get_desc(struct qbman_swp *p)
 {
-	return p->desc;
+	return &p->desc;
 }
 
 /**************/
@@ -684,7 +692,9 @@ int qbman_swp_pull(struct qbman_swp *s, struct qbman_pull_desc *d)
 		return -EBUSY;
 	}
 	s->vdq.storage = *(void **)&cl[4];
-	qb_attr_code_encode(&code_pull_token, cl, 1);
+	/* We use portal index +1 as token so that 0 still indicates
+	   that the result isn't valid yet. */
+	qb_attr_code_encode(&code_pull_token, cl, s->desc.idx + 1);
 	p = qbman_cena_write_start_wo_shadow(&s->sys, QBMAN_CENA_SWP_VDQCR);
 	word_copy(&p[1], &cl[1], 3);
 	/* Set the verb byte, have to substitute in the valid-bit */
@@ -828,8 +838,12 @@ int qbman_result_has_new_result(__attribute__((unused)) struct qbman_swp *s,
 	uint32_t token;
 
 	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
-	if (token != 1)
+	if (token == 0)
 		return 0;
+	/* Entry is valid - overwrite token back to 0 so
+	   a) If this memory is reused tokesn will be 0
+	   b) If someone calls "has_new_result()" again on this entry it
+   	      will not appear to be new */
 	qb_attr_code_encode(&code_dqrr_tok_detect, &p[1], 0);
 
 	/* Only now do we convert from hardware to host endianness. Also, as we
@@ -858,8 +872,11 @@ int qbman_check_command_complete(struct qbman_swp *s,
 	uint32_t token;
 
 	token = qb_attr_code_decode(&code_dqrr_tok_detect, &p[1]);
-	if (token != 1)
+	if (token == 0)
 		return 0;
+	/* TODO: Remove qbman_swp from paramters and make it a local
+	   once we've tested the reserve portal map change */
+	s = portal_idx_map[token - 1];
 	/*When token is set it indicates that  VDQ command has been fetched by qbman and
 	 *is working on it. It is safe for software to issue another VDQ command, so
 	 *incrementing the busy variable.*/
