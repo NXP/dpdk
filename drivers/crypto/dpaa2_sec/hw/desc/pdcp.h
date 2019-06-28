@@ -50,7 +50,7 @@
  *                              extracting the sequence number (SN) from the
  *                              PDCP User Plane header.
  */
-#define PDCP_12BIT_SN_MASK		0xFFF00000
+#define PDCP_12BIT_SN_MASK		0xFF0F0000
 #define PDCP_12BIT_SN_MASK_BE		0x00000FFF
 
 /**
