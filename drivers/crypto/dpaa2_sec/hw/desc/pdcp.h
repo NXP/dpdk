@@ -50,7 +50,7 @@
  *                              extracting the sequence number (SN) from the
  *                              PDCP User Plane header.
  */
-#define PDCP_12BIT_SN_MASK		0xFFF00000
+#define PDCP_12BIT_SN_MASK		0xFF0F0000
 #define PDCP_12BIT_SN_MASK_BE		0x00000FFF
 
 /**
@@ -829,12 +829,12 @@ pdcp_insert_cplane_enc_only_op(struct program *p,
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 	SEQSTORE(p, MATH0, offset, length, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
 
 	switch (cipherdata->algtype) {
 	case PDCP_CIPHER_TYPE_SNOW:
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, WAITCOMP | IMMED);
 
 		if (rta_sec_era > RTA_SEC_ERA_2) {
 			MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
@@ -858,7 +858,7 @@ pdcp_insert_cplane_enc_only_op(struct program *p,
 		break;
 
 	case PDCP_CIPHER_TYPE_AES:
-		MOVE(p, MATH2, 0, CONTEXT1, 0x10, 0x10, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0x10, 0x10, WAITCOMP | IMMED);
 
 		if (rta_sec_era > RTA_SEC_ERA_2) {
 			MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
@@ -889,8 +889,8 @@ pdcp_insert_cplane_enc_only_op(struct program *p,
 			return -ENOTSUP;
 		}
 
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 0x08, IMMED);
-		MOVE(p, MATH2, 0, CONTEXT1, 0x08, 0x08, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 0x08, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0x08, 0x08, WAITCOMP | IMMED);
 		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
 		if (dir == OP_TYPE_ENCAP_PROTOCOL)
 			MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4,
@@ -2016,7 +2016,7 @@ pdcp_insert_uplane_no_int_op(struct program *p,
 		SEQSTORE(p, MATH0, 5, 3, 0);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
 
 	MATHB(p, SEQINSZ, SUB, MATH3, VSEQINSZ, 4, 0);
@@ -2027,7 +2027,7 @@ pdcp_insert_uplane_no_int_op(struct program *p,
 	op = dir == OP_TYPE_ENCAP_PROTOCOL ? DIR_ENC : DIR_DEC;
 	switch (cipherdata->algtype) {
 	case PDCP_CIPHER_TYPE_SNOW:
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, WAITCOMP | IMMED);
 		ALG_OPERATION(p, OP_ALG_ALGSEL_SNOW_F8,
 			      OP_ALG_AAI_F8,
 			      OP_ALG_AS_INITFINAL,
@@ -2036,7 +2036,7 @@ pdcp_insert_uplane_no_int_op(struct program *p,
 		break;
 
 	case PDCP_CIPHER_TYPE_AES:
-		MOVE(p, MATH2, 0, CONTEXT1, 0x10, 0x10, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0x10, 0x10, WAITCOMP | IMMED);
 		ALG_OPERATION(p, OP_ALG_ALGSEL_AES,
 			      OP_ALG_AAI_CTR,
 			      OP_ALG_AS_INITFINAL,
@@ -2049,8 +2049,8 @@ pdcp_insert_uplane_no_int_op(struct program *p,
 			pr_err("Invalid era for selected algorithm\n");
 			return -ENOTSUP;
 		}
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 0x08, IMMED);
-		MOVE(p, MATH2, 0, CONTEXT1, 0x08, 0x08, WAITCOMP | IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 0x08, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0x08, 0x08, WAITCOMP | IMMED);
 
 		ALG_OPERATION(p, OP_ALG_ALGSEL_ZUCE,
 			      OP_ALG_AAI_F8,
