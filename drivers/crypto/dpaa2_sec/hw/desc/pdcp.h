@@ -1030,7 +1030,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 		if (rta_sec_era > RTA_SEC_ERA_2 ||
 		    (rta_sec_era == RTA_SEC_ERA_2 &&
 				   era_2_sw_hfn_ovrd == 0)) {
-			SEQINPTR(p, 0, 1, RTO);
+			SEQINPTR(p, 0, length, RTO);
 		} else {
 			SEQINPTR(p, 0, 5, RTO);
 			SEQFIFOLOAD(p, SKIP, 4, 0);
@@ -1121,7 +1121,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 			MATHB(p, SEQINSZ, ADD, ONE, SEQINSZ, 4, 0);
 		}
 
-		MATHB(p, SEQINSZ, SUB, ONE, VSEQINSZ, 4, 0);
+		MATHB(p, SEQINSZ, SUB, length, VSEQINSZ, 4, IMMED2);
 		ALG_OPERATION(p, OP_ALG_ALGSEL_SNOW_F8,
 			      OP_ALG_AAI_F8,
 			      OP_ALG_AS_INITFINAL,
@@ -1132,7 +1132,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 		if (rta_sec_era > RTA_SEC_ERA_2 ||
 		    (rta_sec_era == RTA_SEC_ERA_2 &&
 				   era_2_sw_hfn_ovrd == 0))
-			SEQFIFOLOAD(p, SKIP, 1, 0);
+			SEQFIFOLOAD(p, SKIP, length, 0);
 
 		SEQFIFOLOAD(p, MSG1, 0, VLF);
 		MOVE(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
@@ -1149,7 +1149,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 		else
 			MATHB(p, SEQINSZ, SUB, MATH3, VSEQINSZ, 4, 0);
 
-		MATHB(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
+		MATHI(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
 /*
  * TODO: To be changed when proper support is added in RTA (can't load a
  * command that is also written by RTA (or patch it for that matter).
@@ -1239,7 +1239,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 			      DIR_DEC);
 
 		/* Read the # of bytes written in the output buffer + 1 (HDR) */
-		MATHB(p, VSEQOUTSZ, ADD, ONE, VSEQINSZ, 4, 0);
+		MATHI(p, VSEQOUTSZ, ADD, length, VSEQINSZ, 4, IMMED2);
 
 		if (rta_sec_era <= RTA_SEC_ERA_3)
 			MOVE(p, MATH3, 0, IFIFOAB1, 0, 8, IMMED);
@@ -1342,11 +1342,11 @@ pdcp_insert_cplane_aes_snow_op(struct program *p,
 	}
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL)
-		MATHB(p, SEQINSZ, SUB, ONE, VSEQINSZ, 4, 0);
+		MATHB(p, SEQINSZ, SUB, length, VSEQINSZ, 4, IMMED2);
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
+	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	SEQSTORE(p, MATH0, offset, length, 0);
@@ -1487,7 +1487,7 @@ pdcp_insert_cplane_snow_zuc_op(struct program *p,
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
+	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
@@ -1608,7 +1608,7 @@ pdcp_insert_cplane_aes_zuc_op(struct program *p,
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
+	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
@@ -1731,7 +1731,7 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, 7, IFIFOAB2, 0, 1, IMMED);
+	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
@@ -1880,7 +1880,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		KEY(p, KEY1, authdata->key_enc_flags, authdata->key,
 		    authdata->keylen, INLINE_KEY(authdata));
 		MOVE(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
-		MOVE(p, MATH0, 7, IFIFOAB1, 0, 1, IMMED);
+		MOVE(p, MATH0, offset, IFIFOAB1, 0, length, IMMED);
 
 		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
 		MATHB(p, VSEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1913,7 +1913,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 			      DIR_ENC);
 		SEQFIFOSTORE(p, MSG, 0, 0, VLF);
 
-		SEQFIFOLOAD(p, SKIP, 1, 0);
+		SEQFIFOLOAD(p, SKIP, length, 0);
 
 		SEQFIFOLOAD(p, MSG1, 0, VLF);
 		MOVE(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
@@ -2082,6 +2082,8 @@ insert_hfn_ov_op(struct program *p,
 {
 	uint32_t imm = PDCP_DPOVRD_HFN_OV_EN;
 	uint16_t hfn_pdb_offset;
+	LABEL(keyjump);
+	REFERENCE(pkeyjump);
 
 	if (rta_sec_era == RTA_SEC_ERA_2 && !era_2_sw_hfn_ovrd)
 		return 0;
@@ -2117,13 +2119,10 @@ insert_hfn_ov_op(struct program *p,
 		SEQSTORE(p, MATH0, 4, 4, 0);
 	}
 
-	if (rta_sec_era >= RTA_SEC_ERA_8)
-		JUMP(p, 6, LOCAL_JUMP, ALL_TRUE, MATH_Z);
-	else
-		JUMP(p, 5, LOCAL_JUMP, ALL_TRUE, MATH_Z);
+	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, MATH_Z);
 
 	if (rta_sec_era > RTA_SEC_ERA_2)
-		MATHB(p, DPOVRD, LSHIFT, shift, MATH0, 4, IMMED2);
+		MATHI(p, DPOVRD, LSHIFT, shift, MATH0, 4, IMMED2);
 	else
 		MATHB(p, MATH0, LSHIFT, shift, MATH0, 4, IMMED2);
 
@@ -2138,6 +2137,8 @@ insert_hfn_ov_op(struct program *p,
 		 */
 		MATHB(p, DPOVRD, AND, ZERO, DPOVRD, 4, STL);
 
+	SET_LABEL(p, keyjump);
+	PATCH_JUMP(p, pkeyjump, keyjump);
 	return 0;
 }
 
@@ -2273,14 +2274,45 @@ cnstr_pdcp_c_plane_pdb(struct program *p,
 /*
  * PDCP UPlane PDB creation function
  */
-static inline int
+static inline enum pdb_type_e
 cnstr_pdcp_u_plane_pdb(struct program *p,
 		       enum pdcp_sn_size sn_size,
 		       uint32_t hfn, unsigned short bearer,
 		       unsigned short direction,
-		       uint32_t hfn_threshold)
+		       uint32_t hfn_threshold,
+		       struct alginfo *cipherdata,
+		       struct alginfo *authdata)
 {
 	struct pdcp_pdb pdb;
+	enum pdb_type_e pdb_type = PDCP_PDB_TYPE_FULL_PDB;
+	enum pdb_type_e
+		pdb_mask[PDCP_CIPHER_TYPE_INVALID][PDCP_AUTH_TYPE_INVALID] = {
+			{	/* NULL */
+				PDCP_PDB_TYPE_NO_PDB,		/* NULL */
+				PDCP_PDB_TYPE_FULL_PDB,		/* SNOW f9 */
+				PDCP_PDB_TYPE_FULL_PDB,		/* AES CMAC */
+				PDCP_PDB_TYPE_FULL_PDB		/* ZUC-I */
+			},
+			{	/* SNOW f8 */
+				PDCP_PDB_TYPE_FULL_PDB,		/* NULL */
+				PDCP_PDB_TYPE_FULL_PDB,		/* SNOW f9 */
+				PDCP_PDB_TYPE_REDUCED_PDB,	/* AES CMAC */
+				PDCP_PDB_TYPE_REDUCED_PDB	/* ZUC-I */
+			},
+			{	/* AES CTR */
+				PDCP_PDB_TYPE_FULL_PDB,		/* NULL */
+				PDCP_PDB_TYPE_REDUCED_PDB,	/* SNOW f9 */
+				PDCP_PDB_TYPE_FULL_PDB,		/* AES CMAC */
+				PDCP_PDB_TYPE_REDUCED_PDB	/* ZUC-I */
+			},
+			{	/* ZUC-E */
+				PDCP_PDB_TYPE_FULL_PDB,		/* NULL */
+				PDCP_PDB_TYPE_REDUCED_PDB,	/* SNOW f9 */
+				PDCP_PDB_TYPE_REDUCED_PDB,	/* AES CMAC */
+				PDCP_PDB_TYPE_FULL_PDB		/* ZUC-I */
+			},
+	};
+
 	/* Read options from user */
 	/* Depending on sequence number length, the HFN and HFN threshold
 	 * have different lengths.
@@ -2314,6 +2346,12 @@ cnstr_pdcp_u_plane_pdb(struct program *p,
 		pdb.hfn_res = hfn << PDCP_U_PLANE_PDB_18BIT_SN_HFN_SHIFT;
 		pdb.hfn_thr_res =
 			hfn_threshold<<PDCP_U_PLANE_PDB_18BIT_SN_HFN_THR_SHIFT;
+
+		if (rta_sec_era <= RTA_SEC_ERA_8) {
+			if (cipherdata && authdata)
+				pdb_type = pdb_mask[cipherdata->algtype]
+						   [authdata->algtype];
+		}
 		break;
 
 	default:
@@ -2325,13 +2363,29 @@ cnstr_pdcp_u_plane_pdb(struct program *p,
 				((bearer << PDCP_U_PLANE_PDB_BEARER_SHIFT) |
 				 (direction << PDCP_U_PLANE_PDB_DIR_SHIFT));
 
-	/* copy PDB in descriptor*/
-	__rta_out32(p, pdb.opt_res.opt);
-	__rta_out32(p, pdb.hfn_res);
-	__rta_out32(p, pdb.bearer_dir_res);
-	__rta_out32(p, pdb.hfn_thr_res);
+	switch (pdb_type) {
+	case PDCP_PDB_TYPE_NO_PDB:
+		break;
 
-	return 0;
+	case PDCP_PDB_TYPE_REDUCED_PDB:
+		__rta_out32(p, pdb.hfn_res);
+		__rta_out32(p, pdb.bearer_dir_res);
+		break;
+
+	case PDCP_PDB_TYPE_FULL_PDB:
+		/* copy PDB in descriptor*/
+		__rta_out32(p, pdb.opt_res.opt);
+		__rta_out32(p, pdb.hfn_res);
+		__rta_out32(p, pdb.bearer_dir_res);
+		__rta_out32(p, pdb.hfn_thr_res);
+
+		break;
+
+	default:
+		return PDCP_PDB_TYPE_INVALID;
+	}
+
+	return pdb_type;
 }
 /**
  * cnstr_shdsc_pdcp_c_plane_encap - Function for creating a PDCP Control Plane
@@ -2738,6 +2792,7 @@ cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 	struct program prg;
 	struct program *p = &prg;
 	int err;
+	enum pdb_type_e pdb_type;
 	static enum rta_share_type
 		desc_share[PDCP_CIPHER_TYPE_INVALID][PDCP_AUTH_TYPE_INVALID] = {
 		{	/* NULL */
@@ -2787,15 +2842,16 @@ cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 		SHR_HDR(p, desc_share[cipherdata->algtype][authdata->algtype], 0, 0);
 	else
 		SHR_HDR(p, SHR_ALWAYS, 0, 0);
-	if (cnstr_pdcp_u_plane_pdb(p, sn_size, hfn, bearer, direction,
-				   hfn_threshold)) {
+	pdb_type = cnstr_pdcp_u_plane_pdb(p, sn_size, hfn,
+					  bearer, direction, hfn_threshold,
+					  cipherdata, authdata);
+	if (pdb_type == PDCP_PDB_TYPE_INVALID) {
 		pr_err("Error creating PDCP UPlane PDB\n");
 		return -EINVAL;
 	}
 	SET_LABEL(p, pdb_end);
 
-	err = insert_hfn_ov_op(p, sn_size, PDCP_PDB_TYPE_FULL_PDB,
-			       era_2_sw_hfn_ovrd);
+	err = insert_hfn_ov_op(p, sn_size, pdb_type, era_2_sw_hfn_ovrd);
 	if (err)
 		return err;
 
@@ -2822,6 +2878,12 @@ cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 					return err;
 				break;
 			}
+
+			if (pdb_type != PDCP_PDB_TYPE_FULL_PDB) {
+				pr_err("PDB type must be FULL for PROTO desc\n");
+				return -EINVAL;
+			}
+
 			/* Insert auth key if requested */
 			if (authdata && authdata->algtype) {
 				KEY(p, KEY2, authdata->key_enc_flags,
@@ -2933,6 +2995,7 @@ cnstr_shdsc_pdcp_u_plane_decap(uint32_t *descbuf,
 	struct program prg;
 	struct program *p = &prg;
 	int err;
+	enum pdb_type_e pdb_type;
 	static enum rta_share_type
 		desc_share[PDCP_CIPHER_TYPE_INVALID][PDCP_AUTH_TYPE_INVALID] = {
 		{	/* NULL */
@@ -2983,15 +3046,16 @@ cnstr_shdsc_pdcp_u_plane_decap(uint32_t *descbuf,
 	else
 		SHR_HDR(p, SHR_ALWAYS, 0, 0);
 
-	if (cnstr_pdcp_u_plane_pdb(p, sn_size, hfn, bearer, direction,
-				   hfn_threshold)) {
+	pdb_type = cnstr_pdcp_u_plane_pdb(p, sn_size, hfn, bearer,
+					  direction, hfn_threshold,
+					  cipherdata, authdata);
+	if (pdb_type == PDCP_PDB_TYPE_INVALID) {
 		pr_err("Error creating PDCP UPlane PDB\n");
 		return -EINVAL;
 	}
 	SET_LABEL(p, pdb_end);
 
-	err = insert_hfn_ov_op(p, sn_size, PDCP_PDB_TYPE_FULL_PDB,
-			       era_2_sw_hfn_ovrd);
+	err = insert_hfn_ov_op(p, sn_size, pdb_type, era_2_sw_hfn_ovrd);
 	if (err)
 		return err;
 
@@ -3008,6 +3072,11 @@ cnstr_shdsc_pdcp_u_plane_decap(uint32_t *descbuf,
 		case PDCP_CIPHER_TYPE_AES:
 		case PDCP_CIPHER_TYPE_SNOW:
 		case PDCP_CIPHER_TYPE_NULL:
+			if (pdb_type != PDCP_PDB_TYPE_FULL_PDB) {
+				pr_err("PDB type must be FULL for PROTO desc\n");
+				return -EINVAL;
+			}
+
 			/* Insert auth key if requested */
 			if (authdata && authdata->algtype)
 				KEY(p, KEY2, authdata->key_enc_flags,
