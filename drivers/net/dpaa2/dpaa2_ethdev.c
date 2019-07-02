@@ -2388,6 +2388,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->max_mac_filters = attr.mac_filter_entries;
 	priv->max_vlan_filters = attr.vlan_filter_entries;
 	priv->flags = 0;
+#if defined(RTE_LIBRTE_IEEE1588)
+	priv->tx_conf_en = 1;
+#else
+	priv->tx_conf_en = 0;
+#endif
+
 
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
@@ -2585,7 +2591,6 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_eth_dev *eth_dev;
-	struct dpaa2_dev_priv *priv;
 	int diag;
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
@@ -2622,13 +2627,6 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;
 	}
-
-	priv = eth_dev->data->dev_private;
-#if defined(RTE_LIBRTE_IEEE1588)
-	priv->tx_conf_en = 1;
-#else
-	priv->tx_conf_en = 0;
-#endif
 
 	rte_eth_dev_release_port(eth_dev);
 	return diag;
