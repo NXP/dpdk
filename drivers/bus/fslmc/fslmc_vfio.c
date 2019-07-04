@@ -921,6 +921,14 @@ fslmc_vfio_setup_group(void)
 	if (ret)
 		return ret;
 
+	/* In case this group was already opened, continue without any
+	 * processing.
+	 */
+	if (vfio_group.groupid == groupid) {
+		DPAA2_BUS_ERR("groupid already exists %d", groupid);
+		return 0;
+	}
+
 	/* Get the actual group fd */
 	ret = rte_vfio_get_group_fd(groupid);
 	if (ret < 0)
