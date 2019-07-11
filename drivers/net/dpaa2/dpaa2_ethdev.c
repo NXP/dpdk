@@ -117,7 +117,7 @@ dpaa2_vlan_filter_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on)
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -144,7 +144,7 @@ static int
 dpaa2_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -182,7 +182,7 @@ dpaa2_vlan_tpid_set(struct rte_eth_dev *dev,
 		      uint16_t tpid)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 	int ret = -ENOTSUP;
 
 	PMD_INIT_FUNC_TRACE();
@@ -220,8 +220,7 @@ dpaa2_fw_version_get(struct rte_eth_dev *dev,
 		     size_t fw_size)
 {
 	int ret;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 	struct mc_soc_version mc_plat_info = {0};
 	struct mc_version mc_ver_info = {0};
 
@@ -427,7 +426,7 @@ static int
 dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
 	uint64_t rx_offloads = eth_conf->rxmode.offloads;
 	uint64_t tx_offloads = eth_conf->txmode.offloads;
@@ -562,7 +561,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			 struct rte_mempool *mb_pool)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpaa2_queue *dpaa2_q;
 	struct dpni_queue cfg;
 	uint8_t options = 0;
@@ -718,7 +717,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		priv->tx_vq[tx_queue_id];
 	struct dpaa2_queue *dpaa2_tx_conf_q = (struct dpaa2_queue *)
 		priv->tx_conf_vq[tx_queue_id];
-	struct fsl_mc_io *dpni = priv->hw;
+	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpni_queue tx_conf_cfg;
 	struct dpni_queue tx_flow_cfg;
 	uint8_t options = 0, flow_id;
@@ -844,7 +843,7 @@ dpaa2_dev_rx_queue_release(void *q __rte_unused)
 {
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)q;
 	struct dpaa2_dev_priv *priv = dpaa2_q->eth_data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->eth_dev->process_private;
 	uint8_t options = 0;
 	int ret;
 	struct dpni_queue cfg = {};
@@ -941,7 +940,7 @@ dpaa2_interrupt_handler(void *param)
 {
 	struct rte_eth_dev *dev = param;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int ret;
 	int irq_index = DPNI_IRQ_INDEX;
 	unsigned int status = 0, clear = 0;
@@ -980,7 +979,7 @@ dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
 {
 	int err = 0;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int irq_index = DPNI_IRQ_INDEX;
 	unsigned int mask = DPNI_IRQ_EVENT_LINK_CHANGED;
 
@@ -1010,7 +1009,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_dev_data *data = dev->data;
 	struct dpaa2_dev_priv *priv = data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpni_queue cfg;
 	struct dpni_error_cfg	err_cfg;
 	uint16_t qdid;
@@ -1106,7 +1105,7 @@ static void
 dpaa2_dev_stop(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int ret;
 	struct rte_eth_link link;
 	struct rte_intr_handle *intr_handle = dev->intr_handle;
@@ -1146,7 +1145,7 @@ static void
 dpaa2_dev_close(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int ret;
 	struct rte_eth_link link;
 
@@ -1171,7 +1170,7 @@ dpaa2_dev_promiscuous_enable(
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1195,7 +1194,7 @@ dpaa2_dev_promiscuous_disable(
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1223,7 +1222,7 @@ dpaa2_dev_allmulticast_enable(
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1242,7 +1241,7 @@ dpaa2_dev_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1265,7 +1264,7 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	uint32_t frame_size = mtu + ETHER_HDR_LEN + ETHER_CRC_LEN
 				+ VLAN_TAG_SIZE;
 
@@ -1310,7 +1309,7 @@ dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1333,7 +1332,7 @@ dpaa2_dev_remove_mac_addr(struct rte_eth_dev *dev,
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct rte_eth_dev_data *data = dev->data;
 	struct ether_addr *macaddr;
 
@@ -1359,7 +1358,7 @@ dpaa2_dev_set_mac_addr(struct rte_eth_dev *dev,
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1383,7 +1382,7 @@ int dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int32_t  retcode;
 	uint8_t page0 = 0, page1 = 1, page2 = 2;
 	union dpni_statistics value;
@@ -1463,7 +1462,7 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *xstats,
 		     unsigned int n)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int32_t  retcode;
 	union dpni_statistics value[5] = {};
 	unsigned int i = 0, num = RTE_DIM(dpaa2_xstats_strings);
@@ -1543,7 +1542,7 @@ dpaa2_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 
 	if (!ids) {
 		struct dpaa2_dev_priv *priv = dev->data->dev_private;
-		struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+		struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 		int32_t  retcode;
 		union dpni_statistics value[5] = {};
 
@@ -1625,7 +1624,7 @@ static void
 dpaa2_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	int32_t  retcode;
 	int i;
 	struct dpaa2_queue *dpaa2_q;
@@ -1668,7 +1667,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct rte_eth_link link;
 	struct dpni_link_state state = {0};
 
@@ -1716,7 +1715,7 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	struct dpni_link_state state = {0};
 
 	priv = dev->data->dev_private;
-	dpni = (struct fsl_mc_io *)priv->hw;
+	dpni = (struct fsl_mc_io *)dev->process_private;
 
 	if (dpni == NULL) {
 		DPAA2_PMD_ERR("dpni is NULL");
@@ -1772,7 +1771,7 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	priv = dev->data->dev_private;
-	dpni = (struct fsl_mc_io *)priv->hw;
+	dpni = (struct fsl_mc_io *)dev->process_private;
 
 	if (dpni == NULL) {
 		DPAA2_PMD_ERR("Device has not yet been configured");
@@ -1826,7 +1825,7 @@ dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	PMD_INIT_FUNC_TRACE();
 
 	priv = dev->data->dev_private;
-	dpni = (struct fsl_mc_io *)priv->hw;
+	dpni = (struct fsl_mc_io *)dev->process_private;
 
 	if (dpni == NULL || fc_conf == NULL) {
 		DPAA2_PMD_ERR("device not configured");
@@ -1882,7 +1881,7 @@ dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	PMD_INIT_FUNC_TRACE();
 
 	priv = dev->data->dev_private;
-	dpni = (struct fsl_mc_io *)priv->hw;
+	dpni = (struct fsl_mc_io *)dev->process_private;
 
 	if (dpni == NULL) {
 		DPAA2_PMD_ERR("dpni is NULL");
@@ -2002,7 +2001,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
 {
 	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)eth_priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[eth_rx_queue_id];
 	uint8_t flow_id = dpaa2_ethq->flow_id;
 	struct dpni_queue cfg;
@@ -2083,7 +2082,7 @@ int dpaa2_eth_eventq_detach(const struct rte_eth_dev *dev,
 		int eth_rx_queue_id)
 {
 	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)eth_priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[eth_rx_queue_id];
 	uint8_t flow_id = dpaa2_ethq->flow_id;
 	struct dpni_queue cfg;
@@ -2309,6 +2308,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
+	if (!dpni_dev) {
+		DPAA2_PMD_ERR("Memory allocation failed for dpni device");
+		return -1;
+	}
+	dpni_dev->regs = rte_mcp_ptr_list[0];
+	eth_dev->process_private = (void *)dpni_dev;
+
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		/* In case of secondary, only burst and ops API need to be
@@ -2328,14 +2335,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
 
 	hw_id = dpaa2_dev->object_id;
-
-	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
-	if (!dpni_dev) {
-		DPAA2_PMD_ERR("Memory allocation failed for dpni device");
-		return -1;
-	}
-
-	dpni_dev->regs = rte_mcp_ptr_list[0];
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
 		DPAA2_PMD_ERR(
@@ -2541,7 +2540,7 @@ static int
 dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)eth_dev->process_private;
 	int i, ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -2568,6 +2567,7 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 
 	/* Free the allocated memory for ethernet private data and dpni*/
 	priv->hw = NULL;
+	eth_dev->process_private = NULL;
 	rte_free(dpni);
 
 	for (i = 0; i < MAX_TCS; i++) {
@@ -2591,26 +2591,31 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_eth_dev *eth_dev;
+	struct dpaa2_dev_priv *dev_priv;
 	int diag;
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
 		eth_dev = rte_eth_dev_allocate(dpaa2_dev->device.name);
 		if (!eth_dev)
 			return -ENODEV;
-		eth_dev->data->dev_private = rte_zmalloc(
-						"ethdev private structure",
-						sizeof(struct dpaa2_dev_priv),
-						RTE_CACHE_LINE_SIZE);
-		if (eth_dev->data->dev_private == NULL) {
+		dev_priv = rte_zmalloc("ethdev private structure",
+				       sizeof(struct dpaa2_dev_priv),
+				       RTE_CACHE_LINE_SIZE);
+		if (dev_priv == NULL) {
 			DPAA2_PMD_CRIT(
 				"Unable to allocate memory for private data");
 			rte_eth_dev_release_port(eth_dev);
 			return -ENOMEM;
 		}
+		eth_dev->data->dev_private = (void *)dev_priv;
+		/* Store a pointer to eth_dev in dev_private */
+		dev_priv->eth_dev = eth_dev;
 	} else {
 		eth_dev = rte_eth_dev_attach_secondary(dpaa2_dev->device.name);
-		if (!eth_dev)
+		if (!eth_dev) {
+			DPAA2_PMD_DEBUG("returning enodev");
 			return -ENODEV;
+		}
 	}
 
 	eth_dev->device = &dpaa2_dev->device;

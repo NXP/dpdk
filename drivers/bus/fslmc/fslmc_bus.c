@@ -236,8 +236,9 @@ rte_fslmc_parse(const char *name, void *addr)
 {
 	uint16_t dev_id;
 	char *t_ptr;
-	char *sep = NULL;
+	const char *sep;
 	uint8_t sep_exists = 0;
+	int ret = -1;
 
 	DPAA2_BUS_DEBUG("Parsing dev=(%s)", name);
 
@@ -267,10 +268,11 @@ rte_fslmc_parse(const char *name, void *addr)
 		} else {
 			DPAA2_BUS_DEBUG("Invalid device for matching (%s).",
 					name);
+			ret = -EINVAL;
 			goto err_out;
 		}
 	} else
-		sep = strdup(name);
+		sep = name;
 
 jump_out:
 	/* Validate device name */
@@ -284,23 +286,23 @@ jump_out:
 	    strncmp("dpdmai", sep, 6) &&
 	    strncmp("dpdmux", sep, 6)) {
 		DPAA2_BUS_DEBUG("Unknown or unsupported device (%s)", sep);
+		ret = -EINVAL;
 		goto err_out;
 	}
 
 	t_ptr = strchr(sep, '.');
 	if (!t_ptr || sscanf(t_ptr + 1, "%hu", &dev_id) != 1) {
 		DPAA2_BUS_ERR("Missing device id in device name (%s)", sep);
+		ret = -EINVAL;
 		goto err_out;
 	}
 
 	if (addr)
 		strcpy(addr, sep);
 
-	return 0;
+	ret = 0;
 err_out:
-	if (sep)
-		free(sep);
-	return -EINVAL;
+	return ret;
 }
 
 static int
@@ -394,12 +396,14 @@ rte_fslmc_probe(void)
 	/* Map existing segments as well as, in case of hotpluggable memory,
 	 * install callback handler.
 	 */
-	ret = rte_fslmc_vfio_dmamap();
-	if (ret) {
-		DPAA2_BUS_ERR("Unable to DMA map existing VAs: (%d)", ret);
-		/* Not continuing ahead */
-		DPAA2_BUS_ERR("FSLMC VFIO Mapping failed");
-		return 0;
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		ret = rte_fslmc_vfio_dmamap();
+		if (ret) {
+			DPAA2_BUS_ERR("Unable to DMA map existing VAs: (%d)", ret);
+			/* Not continuing ahead */
+			DPAA2_BUS_ERR("FSLMC VFIO Mapping failed");
+			return 0;
+		}
 	}
 
 	ret = fslmc_vfio_process_group();
@@ -420,8 +424,11 @@ rte_fslmc_probe(void)
 	 *
 	 * Error is ignored as relevant logs are handled within dpaax and
 	 * handling for unavailable dpaax table too is transparent to caller.
+	 *
+	 * And, the IOVA table is only applicable in case of PA mode.
 	 */
-	dpaax_iova_table_populate();
+	if (rte_eal_iova_mode() == RTE_IOVA_PA)
+		dpaax_iova_table_populate();
 
 	TAILQ_FOREACH(dev, &rte_fslmc_bus.device_list, next) {
 		TAILQ_FOREACH(drv, &rte_fslmc_bus.driver_list, next) {
@@ -518,7 +525,8 @@ rte_fslmc_driver_unregister(struct rte_dpaa2_driver *driver)
 	/* Cleanup the PA->VA Translation table; From whereever this function
 	 * is called from.
 	 */
-	dpaax_iova_table_depopulate();
+	if (rte_eal_iova_mode() == RTE_IOVA_PA)
+		dpaax_iova_table_depopulate();
 
 	TAILQ_REMOVE(&fslmc_bus->driver_list, driver, next);
 	/* Update Bus references */
