@@ -985,19 +985,19 @@ pdcp_insert_uplane_snow_snow_op(struct program *p,
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	SEQSTORE(p, MATH0, offset, length, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH1, 8, 0);
-	MOVE(p, MATH1, 0, CONTEXT1, 0, 8, IMMED);
-	MOVE(p, MATH1, 0, CONTEXT2, 0, 4, WAITCOMP | IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT1, 0, 8, IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT2, 0, 4, WAITCOMP | IMMED);
 	if (swap == false) {
-		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK),
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_BEARER_MASK),
 		      MATH2, 4, IMMED2);
-		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK),
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_DIR_MASK),
 		      MATH3, 4, IMMED2);
 	} else {
 		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK_BE),
@@ -1006,7 +1006,8 @@ pdcp_insert_uplane_snow_snow_op(struct program *p,
 		      MATH3, 4, IMMED2);
 	}
 	MATHB(p, MATH3, SHLD, MATH3, MATH3, 8, 0);
-	MOVE(p, MATH2, 4, OFIFO, 0, 12, IMMED);
+
+	MOVEB(p, MATH2, 4, OFIFO, 0, 12, IMMED);
 	MOVE(p, OFIFO, 0, CONTEXT2, 4, 12, IMMED);
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
 		MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1124,15 +1125,15 @@ pdcp_insert_uplane_zuc_zuc_op(struct program *p,
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
 
-	MOVE(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 8, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-	MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
 
-	MOVE(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL)
 		MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1167,13 +1168,13 @@ pdcp_insert_uplane_zuc_zuc_op(struct program *p,
 		MOVE(p, CONTEXT2, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
 	} else {
 		/* Save ICV */
-		MOVE(p, OFIFO, 0, MATH0, 0, 4, IMMED);
+		MOVEB(p, OFIFO, 0, MATH0, 0, 4, IMMED);
 
 		LOAD(p, NFIFOENTRY_STYPE_ALTSOURCE |
 		     NFIFOENTRY_DEST_CLASS2 |
 		     NFIFOENTRY_DTYPE_ICV |
 		     NFIFOENTRY_LC2 | 4, NFIFO_SZL, 0, 4, IMMED);
-		MOVE(p, MATH0, 0, ALTSOURCE, 0, 4, WAITCOMP | IMMED);
+		MOVEB(p, MATH0, 0, ALTSOURCE, 0, 4, WAITCOMP | IMMED);
 	}
 
 	/* Reset ZUCA mode and done interrupt */
@@ -1228,15 +1229,15 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 8, MATH2, 0, 0x08, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 8, MATH2, 0, 0x08, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
 	SEQSTORE(p, MATH0, offset, length, 0);
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
 		KEY(p, KEY1, authdata->key_enc_flags, authdata->key,
 		    authdata->keylen, INLINE_KEY(authdata));
-		MOVE(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
-		MOVE(p, MATH0, offset, IFIFOAB1, 0, length, IMMED);
+		MOVEB(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
+		MOVEB(p, MATH0, offset, IFIFOAB1, 0, length, IMMED);
 
 		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
 		MATHB(p, VSEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1247,7 +1248,7 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 			      ICV_CHECK_DISABLE,
 			      DIR_DEC);
 		SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1 | FLUSH1);
-		MOVE(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
+		MOVEB(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
 
 		LOAD(p, CLRW_RESET_CLS1_CHA |
 		     CLRW_CLR_C1KEY |
@@ -1260,7 +1261,7 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 		    cipherdata->keylen, INLINE_KEY(cipherdata));
 
-		MOVE(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
 		SEQINPTR(p, 0, PDCP_NULL_MAX_FRAME_LEN, RTO);
 
 		ALG_OPERATION(p, OP_ALG_ALGSEL_AES,
@@ -1274,10 +1275,10 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 		SEQFIFOLOAD(p, SKIP, length, 0);
 
 		SEQFIFOLOAD(p, MSG1, 0, VLF);
-		MOVE(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
+		MOVEB(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
 	} else {
-		MOVE(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
-		MOVE(p, MATH2, 0, CONTEXT2, 0, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT2, 0, 8, IMMED);
 
 		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
 		MATHB(p, SEQINSZ, SUB, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1294,7 +1295,7 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 		SEQFIFOSTORE(p, MSG, 0, 0, VLF | CONT);
 		SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1 | FLUSH1);
 
-		MOVE(p, OFIFO, 0, MATH3, 0, 4, IMMED);
+		MOVEB(p, OFIFO, 0, MATH3, 0, 4, IMMED);
 
 		LOAD(p, CLRW_RESET_CLS1_CHA |
 		     CLRW_CLR_C1KEY |
@@ -1326,7 +1327,7 @@ pdcp_insert_uplane_aes_aes_op(struct program *p,
 		     NFIFOENTRY_DTYPE_ICV |
 		     NFIFOENTRY_LC1 |
 		     NFIFOENTRY_FC1 | 4, NFIFO_SZL, 0, 4, IMMED);
-		MOVE(p, MATH3, 0, ALTSOURCE, 0, 4, IMMED);
+		MOVEB(p, MATH3, 0, ALTSOURCE, 0, 4, IMMED);
 	}
 
 	return 0;
@@ -1426,7 +1427,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
 	SEQSTORE(p, MATH0, offset, length, 0);
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
@@ -1440,7 +1441,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 		}
 		KEY(p, KEY1, authdata->key_enc_flags, authdata->key,
 		    authdata->keylen, INLINE_KEY(authdata));
-		MOVE(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
+		MOVEB(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
 
 		if (rta_sec_era > RTA_SEC_ERA_2) {
 			MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
@@ -1493,7 +1494,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 			      ICV_CHECK_DISABLE,
 			      DIR_DEC);
 		SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1 | FLUSH1);
-		MOVE(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
+		MOVEB(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
 		if (rta_sec_era <= RTA_SEC_ERA_3)
 			LOAD(p, CLRW_CLR_C1KEY |
 			     CLRW_CLR_C1CTX |
@@ -1516,7 +1517,7 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 		    cipherdata->keylen, INLINE_KEY(cipherdata));
 		SET_LABEL(p, local_offset);
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
 		SEQINPTR(p, 0, 0, RTO);
 
 		if (rta_sec_era == RTA_SEC_ERA_2 && era_2_sw_hfn_ovrd) {
@@ -1538,11 +1539,11 @@ pdcp_insert_cplane_snow_aes_op(struct program *p,
 			SEQFIFOLOAD(p, SKIP, length, 0);
 
 		SEQFIFOLOAD(p, MSG1, 0, VLF);
-		MOVE(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
+		MOVEB(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
 		PATCH_MOVE(p, seqin_ptr_read, local_offset);
 		PATCH_MOVE(p, seqin_ptr_write, local_offset);
 	} else {
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
 
 		if (rta_sec_era >= RTA_SEC_ERA_5)
 			MOVE(p, CONTEXT1, 0, CONTEXT2, 0, 8, IMMED);
@@ -1749,20 +1750,20 @@ pdcp_insert_cplane_aes_snow_op(struct program *p,
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	SEQSTORE(p, MATH0, offset, length, 0);
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH1, 8, 0);
-	MOVE(p, MATH1, 0, CONTEXT1, 16, 8, IMMED);
-	MOVE(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT1, 16, 8, IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
 	if (swap == false) {
-		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2, 4,
-			IMMED2);
-		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3, 4,
-			IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_BEARER_MASK), MATH2, 4,
+		      IMMED2);
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_DIR_MASK), MATH3, 4,
+		      IMMED2);
 	} else {
 		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK_BE), MATH2,
 			4, IMMED2);
@@ -1770,7 +1771,7 @@ pdcp_insert_cplane_aes_snow_op(struct program *p,
 			4, IMMED2);
 	}
 	MATHB(p, MATH3, SHLD, MATH3, MATH3, 8, 0);
-	MOVE(p, MATH2, 4, OFIFO, 0, 12, IMMED);
+	MOVEB(p, MATH2, 4, OFIFO, 0, 12, IMMED);
 	MOVE(p, OFIFO, 0, CONTEXT2, 4, 12, IMMED);
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
 		MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -1890,14 +1891,14 @@ pdcp_insert_cplane_snow_zuc_op(struct program *p,
 
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-	MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
-	MOVE(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL)
 		MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -2011,14 +2012,14 @@ pdcp_insert_cplane_aes_zuc_op(struct program *p,
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
-	MOVE(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
-	MOVE(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT1, 16, 8, IMMED);
+	MOVEB(p, MATH2, 0, CONTEXT2, 0, 8, WAITCOMP | IMMED);
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL)
 		MATHB(p, SEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -2134,19 +2135,19 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
-	MOVE(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
+	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 8, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH1, 8, 0);
-	MOVE(p, MATH1, 0, CONTEXT1, 0, 8, IMMED);
-	MOVE(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT1, 0, 8, IMMED);
+	MOVEB(p, MATH1, 0, CONTEXT2, 0, 4, IMMED);
 	if (swap == false) {
-		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK), MATH2,
-			4, IMMED2);
-		MATHB(p, MATH1, AND, upper_32_bits(PDCP_DIR_MASK), MATH3,
-			4, IMMED2);
+		MATHB(p, MATH1, AND, upper_32_bits(PDCP_BEARER_MASK), MATH2,
+		      4, IMMED2);
+		MATHB(p, MATH1, AND, lower_32_bits(PDCP_DIR_MASK), MATH3,
+		      4, IMMED2);
 	} else {
 		MATHB(p, MATH1, AND, lower_32_bits(PDCP_BEARER_MASK_BE), MATH2,
 			4, IMMED2);
@@ -2154,7 +2155,7 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 			4, IMMED2);
 	}
 	MATHB(p, MATH3, SHLD, MATH3, MATH3, 8, 0);
-	MOVE(p, MATH2, 4, OFIFO, 0, 12, IMMED);
+	MOVEB(p, MATH2, 4, OFIFO, 0, 12, IMMED);
 	MOVE(p, OFIFO, 0, CONTEXT2, 4, 12, IMMED);
 
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
@@ -2203,13 +2204,13 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 			LOAD(p, 0, DCTRL, 0, LDLEN_RST_CHA_OFIFO_PTR, IMMED);
 
 		/* Put ICV to M0 before sending it to C2 for comparison. */
-		MOVE(p, OFIFO, 0, MATH0, 0, 4, WAITCOMP | IMMED);
+		MOVEB(p, OFIFO, 0, MATH0, 0, 4, WAITCOMP | IMMED);
 
 		LOAD(p, NFIFOENTRY_STYPE_ALTSOURCE |
 		     NFIFOENTRY_DEST_CLASS2 |
 		     NFIFOENTRY_DTYPE_ICV |
 		     NFIFOENTRY_LC2 | 4, NFIFO_SZL, 0, 4, IMMED);
-		MOVE(p, MATH0, 0, ALTSOURCE, 0, 4, IMMED);
+		MOVEB(p, MATH0, 0, ALTSOURCE, 0, 4, IMMED);
 	}
 
 	PATCH_JUMP(p, pkeyjump, keyjump);
@@ -2276,14 +2277,14 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 	MATHB(p, MATH0, AND, sn_mask, MATH1, 8, IFB | IMMED2);
 
 	MATHB(p, MATH1, SHLD, MATH1, MATH1, 8, 0);
-	MOVE(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
+	MOVEB(p, DESCBUF, 4, MATH2, 0, 0x08, WAITCOMP | IMMED);
 	MATHB(p, MATH1, OR, MATH2, MATH2, 8, 0);
 	SEQSTORE(p, MATH0, offset, length, 0);
 	if (dir == OP_TYPE_ENCAP_PROTOCOL) {
 		KEY(p, KEY1, authdata->key_enc_flags, authdata->key,
 		    authdata->keylen, INLINE_KEY(authdata));
-		MOVE(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
-		MOVE(p, MATH0, offset, IFIFOAB1, 0, length, IMMED);
+		MOVEB(p, MATH2, 0, IFIFOAB1, 0, 0x08, IMMED);
+		MOVEB(p, MATH0, offset, IFIFOAB1, 0, length, IMMED);
 
 		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
 		MATHB(p, VSEQINSZ, ADD, PDCP_MAC_I_LEN, VSEQOUTSZ, 4, IMMED2);
@@ -2294,7 +2295,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 			      ICV_CHECK_DISABLE,
 			      DIR_DEC);
 		SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1 | FLUSH1);
-		MOVE(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
+		MOVEB(p, CONTEXT1, 0, MATH3, 0, 4, WAITCOMP | IMMED);
 		LOAD(p, CLRW_RESET_CLS1_CHA |
 		     CLRW_CLR_C1KEY |
 		     CLRW_CLR_C1CTX |
@@ -2306,7 +2307,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
 		    cipherdata->keylen, INLINE_KEY(cipherdata));
 
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
 		SEQINPTR(p, 0, PDCP_NULL_MAX_FRAME_LEN, RTO);
 
 		ALG_OPERATION(p, OP_ALG_ALGSEL_ZUCE,
@@ -2319,9 +2320,9 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		SEQFIFOLOAD(p, SKIP, length, 0);
 
 		SEQFIFOLOAD(p, MSG1, 0, VLF);
-		MOVE(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
+		MOVEB(p, MATH3, 0, IFIFOAB1, 0, 4, LAST1 | FLUSH1 | IMMED);
 	} else {
-		MOVE(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
+		MOVEB(p, MATH2, 0, CONTEXT1, 0, 8, IMMED);
 
 		MOVE(p, CONTEXT1, 0, CONTEXT2, 0, 8, IMMED);
 
@@ -2342,7 +2343,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		SEQFIFOSTORE(p, MSG, 0, 0, VLF | CONT);
 		SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1 | FLUSH1);
 
-		MOVE(p, OFIFO, 0, MATH3, 0, 4, IMMED);
+		MOVEB(p, OFIFO, 0, MATH3, 0, 4, IMMED);
 
 		LOAD(p, CLRW_RESET_CLS1_CHA |
 		     CLRW_CLR_C1KEY |
@@ -2374,7 +2375,7 @@ pdcp_insert_cplane_zuc_aes_op(struct program *p,
 		     NFIFOENTRY_DTYPE_ICV |
 		     NFIFOENTRY_LC1 |
 		     NFIFOENTRY_FC1 | 4, NFIFO_SZL, 0, 4, IMMED);
-		MOVE(p, MATH3, 0, ALTSOURCE, 0, 4, IMMED);
+		MOVEB(p, MATH3, 0, ALTSOURCE, 0, 4, IMMED);
 	}
 
 	return 0;
