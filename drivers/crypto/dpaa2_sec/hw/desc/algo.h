@@ -18,6 +18,100 @@
  */
 
 /**
+ * cnstr_shdsc_zuce - ZUC Enc (EEA2) as a shared descriptor
+ * @descbuf: pointer to descriptor-under-construction buffer
+ * @ps: if 36/40bit addressing is desired, this parameter must be true
+ * @swap: must be true when core endianness doesn't match SEC endianness
+ * @cipherdata: pointer to block cipher transform definitions
+ * @dir: Cipher direction (DIR_ENC/DIR_DEC)
+ *
+ * Return: size of descriptor written in words or negative number on error
+ */
+static inline int
+cnstr_shdsc_zuce(uint32_t *descbuf, bool ps, bool swap,
+		    struct alginfo *cipherdata, uint8_t dir)
+{
+	struct program prg;
+	struct program *p = &prg;
+
+	PROGRAM_CNTXT_INIT(p, descbuf, 0);
+	if (swap)
+		PROGRAM_SET_BSWAP(p);
+
+	if (ps)
+		PROGRAM_SET_36BIT_ADDR(p);
+	SHR_HDR(p, SHR_ALWAYS, 1, 0);
+
+	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+	    cipherdata->keylen, INLINE_KEY(cipherdata));
+
+	SEQLOAD(p, CONTEXT1, 0, 16, 0);
+
+	MATHB(p, SEQINSZ, SUB, MATH2, VSEQINSZ, 4, 0);
+	MATHB(p, SEQINSZ, SUB, MATH2, VSEQOUTSZ, 4, 0);
+	ALG_OPERATION(p, OP_ALG_ALGSEL_ZUCE, OP_ALG_AAI_F8,
+		      OP_ALG_AS_INITFINAL, 0, dir);
+	SEQFIFOLOAD(p, MSG1, 0, VLF | LAST1);
+	SEQFIFOSTORE(p, MSG, 0, 0, VLF);
+
+	return PROGRAM_FINALIZE(p);
+}
+
+/**
+ * cnstr_shdsc_zuca - ZUC Auth (EIA2) as a shared descriptor
+ * @descbuf: pointer to descriptor-under-construction buffer
+ * @ps: if 36/40bit addressing is desired, this parameter must be true
+ * @swap: must be true when core endianness doesn't match SEC endianness
+ * @authdata: pointer to authentication transform definitions
+ * @chk_icv: check or generate ICV value
+ * @authlen: size of digest
+ *
+ * Return: size of descriptor written in words or negative number on error
+ */
+static inline int
+cnstr_shdsc_zuca(uint32_t *descbuf, bool ps, bool swap,
+		    struct alginfo *authdata, uint8_t chk_icv,
+		    uint32_t authlen)
+{
+	struct program prg;
+	struct program *p = &prg;
+	int dir = chk_icv ? DIR_DEC : DIR_ENC;
+
+	PROGRAM_CNTXT_INIT(p, descbuf, 0);
+	if (swap)
+		PROGRAM_SET_BSWAP(p);
+
+	if (ps)
+		PROGRAM_SET_36BIT_ADDR(p);
+
+	SHR_HDR(p, SHR_ALWAYS, 1, 0);
+
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key,
+	    authdata->keylen, INLINE_KEY(authdata));
+
+	SEQLOAD(p, CONTEXT2, 0, 12, 0);
+
+	if (chk_icv == ICV_CHECK_ENABLE)
+		MATHB(p, SEQINSZ, SUB, authlen, VSEQINSZ, 4, IMMED2);
+	else
+		MATHB(p, SEQINSZ, SUB, ZERO, VSEQINSZ, 4, 0);
+
+	ALG_OPERATION(p, OP_ALG_ALGSEL_ZUCA, OP_ALG_AAI_F9,
+		      OP_ALG_AS_INITFINAL, chk_icv, dir);
+
+	SEQFIFOLOAD(p, MSG2, 0, VLF | CLASS2 | LAST2);
+
+	if (chk_icv == ICV_CHECK_ENABLE)
+		SEQFIFOLOAD(p, ICV2, authlen, LAST2);
+	else
+		/* Save lower half of MAC out into a 32-bit sequence */
+		SEQSTORE(p, CONTEXT2, 0, authlen, 0);
+
+	return PROGRAM_FINALIZE(p);
+}
+
+
+/**
  * cnstr_shdsc_snow_f8 - SNOW/f8 (UEA2) as a shared descriptor
  * @descbuf: pointer to descriptor-under-construction buffer
  * @ps: if 36/40bit addressing is desired, this parameter must be true
