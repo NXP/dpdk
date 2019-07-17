@@ -1032,6 +1032,9 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 		if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2) {
 			iv_ptr = conv_to_snow_f9_iv(iv_ptr);
 			sge->length = 12;
+		} else if (sess->auth_alg == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+			iv_ptr = conv_to_zuc_eia_iv(iv_ptr);
+			sge->length = 8;
 		} else {
 			sge->length = sess->iv.length;
 		}
@@ -2163,6 +2166,16 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 					      session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
+		authdata.algtype = OP_ALG_ALGSEL_ZUCA;
+		authdata.algmode = OP_ALG_AAI_F9;
+		session->auth_alg = RTE_CRYPTO_AUTH_ZUC_EIA3;
+		session->iv.offset = xform->auth.iv.offset;
+		session->iv.length = xform->auth.iv.length;
+		bufsize = cnstr_shdsc_zuca(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, &authdata,
+					   !session->dir,
+					   session->digest_length);
+		break;
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
