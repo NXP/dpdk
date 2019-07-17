@@ -2008,8 +2008,14 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 					      &cipherdata,
 					      session->dir);
 		break;
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
+		cipherdata.algtype = OP_ALG_ALGSEL_ZUCE;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_ZUC_EEA3;
+		bufsize = cnstr_shdsc_zuce(priv->flc_desc[0].desc, 1, 0,
+					      &cipherdata,
+					      session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 	case RTE_CRYPTO_CIPHER_AES_F8:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
@@ -2156,8 +2162,8 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 					      !session->dir,
 					      session->digest_length);
 		break;
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
+	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
 	case RTE_CRYPTO_AUTH_SHA256:
@@ -2468,6 +2474,7 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
 		break;
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_NULL:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
@@ -2762,6 +2769,7 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		cipherdata->algtype = OP_PCL_IPSEC_NULL;
 		break;
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
