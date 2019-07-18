@@ -177,40 +177,40 @@ get_resources() {
         if [[ -z $KDPNI1 ]]
         then
 		ls-addni -n | tee linux_iflog
-		NI1=`grep -o "interface: ni\w*" linux_iflog | sed -e 's/interface: //g'`
+		NI1=`grep -o "interface: eth\w*" linux_iflog | sed -e 's/interface: //g'`
 		export KDPNI1=`grep -o "object:dpni.\w*" linux_iflog | sed -e 's/object://g'`
 	fi
 
         if [[ -z $KDPNI2 ]]
         then
 		ls-addni -n | tee linux_iflog
-		export NI2=`grep -o "interface: ni\w*" linux_iflog | sed -e 's/interface: //g'`
+		export NI2=`grep -o "interface: eth\w*" linux_iflog | sed -e 's/interface: //g'`
 		export KDPNI2=`grep -o "object:dpni.\w*" linux_iflog | sed -e 's/object://g'`
 	fi
 
         if [[ -z $KDPNI3 ]]
         then
 		ls-addni -n | tee linux_iflog
-		export NI3=`grep -o "interface: ni\w*" linux_iflog | sed -e 's/interface: //g'`
+		export NI3=`grep -o "interface: eth\w*" linux_iflog | sed -e 's/interface: //g'`
 		export KDPNI3=`grep -o "object:dpni.\w*" linux_iflog | sed -e 's/object://g'`
 	fi
 
         if [[ -z $KDPNI4 ]]
         then
 		ls-addni -n | tee linux_iflog
-		export NI4=`grep -o "interface: ni\w*" linux_iflog | sed -e 's/interface: //g'`
+		export NI4=`grep -o "interface: eth\w*" linux_iflog | sed -e 's/interface: //g'`
 		export KDPNI4=`grep -o "object:dpni.\w*" linux_iflog | sed -e 's/object://g'`
 	fi
 	rm linux_iflog
 
 	#/* creating the container "FDPRC" with 4 DPNIs connected to kernel DPNIs
 	# */
-	DPCON_COUNT=3
-	DPSEC_COUNT=4
-	DPDMAI_COUNT=0
-	DPBP_COUNT=4
-	DPIO_COUNT=4
-	DPCI_COUNT=2
+#	DPCON_COUNT=3
+#	DPSEC_COUNT=4
+#	DPDMAI_COUNT=0
+#	DPBP_COUNT=4
+#	DPIO_COUNT=4
+#	DPCI_COUNT=2
 	source ${DPDK_EXTRAS_PATH}/dynamic_dpl.sh $KDPNI1 $KDPNI2 $KDPNI3 $KDPNI4 -b 00:00:00:00:05:00
 	FDPRC=$DPRC
 	FDPNI0=$DPNI1
@@ -569,7 +569,7 @@ run_dpdk() {
 
 	#/* DPDK TESTPMD App
 	# */
-	#run_command PKT_TESTPMD "./testpmd -c 3 -n 1 -- -i --nb-cores=1 --nb-ports=4 --total-num-mbufs=1025 --forward-mode=txonly --disable-hw-vlan --port-topology=chained --no-flush-rx -a"
+	#run_command PKT_TESTPMD "./testpmd -c 3 -n 1 -- -i --nb-cores=1 --nb-ports=4 --total-num-mbufs=1025 --forward-mode=txonly --port-topology=chained --no-flush-rx -a"
 
 }
 
