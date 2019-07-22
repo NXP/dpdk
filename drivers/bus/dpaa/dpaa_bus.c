@@ -252,7 +252,6 @@ dpaa_clean_device_list(void)
 
 int rte_dpaa_portal_init(void *arg)
 {
-	pthread_t id;
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
 	struct dpaa_portal *dpaa_io_portal;
@@ -268,16 +267,6 @@ int rte_dpaa_portal_init(void *arg)
 			return -1;
 
 	cpu = lcore_config[lcore].core_id;
-
-	/* Set CPU affinity for this thread.*/
-	id = pthread_self();
-	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t),
-			&lcore_config[lcore].cpuset);
-	if (ret) {
-		DPAA_BUS_LOG(ERR, "pthread_setaffinity_np failed on core :%u"
-			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
-		return ret;
-	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
