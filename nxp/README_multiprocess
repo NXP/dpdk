@@ -324,9 +324,9 @@ mbuf (buffer) transfers between Rx and Tx are done using the NXP DPAA2 QDMA
 Assuming that there are two DPDMAI objects in the DPRC: dpdmai.1 and dpdmai.2,
 the command is very similar to the symmetric_mp example:
 
-./symmetric_mp -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 -b fslmc:dpio.15 \
-        -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 -b fslmc:dpmcp.23 \
-        -b fslmc:dpdmai.1 -- -p 0x3 --num-procs=2 --proc-id=0
+./symmetric_mp_qdma -c 0x1 -n 1 -b fslmc:dpio.13 -b fslmc:dpio.14 \
+	-b fslmc:dpio.15 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpmcp.22 \
+	-b fslmc:dpmcp.23 -b fslmc:dpdmai.1 -- -p 0x3 --num-procs=2 --proc-id=0
 
 
 Notice the extra parameter "-b fslmc:dpdmai.1" as compared the symmetric_mp
@@ -337,7 +337,7 @@ block and use dpdmai.2 in Primary.
   2 ports (same as primary); Assigning 1 dpmcp and 5 dpio, 1 dpdmai to it.
   (We can ignore the extra dpmcp preserved for 3 process, if any)
 
-./symmetric_mp -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
+./symmetric_mp_qdma -c 0x2 -n 1 --proc-type=secondary -b fslmc:dpio.8 \
         -b fslmc:dpio.9 -b fslmc:dpio.10 -b fslmc:dpio.11 -b fslmc:dpio.12 \
         -b fslmc:dpmcp.21 -b fslmc:dpmcp.23 -b fslmc:dpdmai.2 \
         -- -p 0x3 --num-procs=2 --proc-id=1
