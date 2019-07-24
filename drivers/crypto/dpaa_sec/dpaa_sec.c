@@ -188,12 +188,18 @@ dqrr_out_fq_cb_rx(struct qman_portal *qm __always_unused,
 	if (ctx->op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 		struct qm_sg_entry *sg_out;
 		uint32_t len;
+		struct rte_mbuf *mbuf = (ctx->op->sym->m_dst == NULL) ?
+				ctx->op->sym->m_src : ctx->op->sym->m_dst;
 
 		sg_out = &job->sg[0];
 		hw_sg_to_cpu(sg_out);
 		len = sg_out->length;
-		ctx->op->sym->m_src->pkt_len = len;
-		ctx->op->sym->m_src->data_len = len;
+		mbuf->pkt_len = len;
+		while (mbuf->next != NULL) {
+			len -= mbuf->data_len;
+			mbuf = mbuf->next;
+		}
+		mbuf->data_len = len;
 	}
 	dpaa_sec_ops[dpaa_sec_op_nb++] = ctx->op;
 	dpaa_sec_op_ending(ctx);
@@ -802,12 +808,18 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 		if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 			struct qm_sg_entry *sg_out;
 			uint32_t len;
+			struct rte_mbuf *mbuf = (op->sym->m_dst == NULL) ?
+						op->sym->m_src : op->sym->m_dst;
 
 			sg_out = &job->sg[0];
 			hw_sg_to_cpu(sg_out);
 			len = sg_out->length;
-			op->sym->m_src->pkt_len = len;
-			op->sym->m_src->data_len = len;
+			mbuf->pkt_len = len;
+			while (mbuf->next != NULL) {
+				len -= mbuf->data_len;
+				mbuf = mbuf->next;
+			}
+			mbuf->data_len = len;
 		}
 		if (!ctx->fd_status) {
 			op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
