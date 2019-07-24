@@ -1061,6 +1061,40 @@ dpaa_dev_rss_hash_conf_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static int dpaa_dev_queue_intr_enable(struct rte_eth_dev *dev,
+				      uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	return qman_fq_portal_irqsource_add(rxq->qp, QM_PIRQ_DQRI);
+}
+
+static int dpaa_dev_queue_intr_disable(struct rte_eth_dev *dev,
+				       uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+	uint32_t temp;
+	ssize_t temp1;
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	qman_fq_portal_irqsource_remove(rxq->qp, ~0);
+
+	temp1 = read(rxq->q_fd, &temp, sizeof(temp));
+	if (temp1 != sizeof(temp))
+		DPAA_EVENTDEV_ERR("irq read error");
+
+	qman_fq_portal_thread_irq(rxq->qp);
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa_devops = {
 	.dev_configure		  = dpaa_eth_dev_configure,
 	.dev_start		  = dpaa_eth_dev_start,
@@ -1100,6 +1134,9 @@ static struct eth_dev_ops dpaa_devops = {
 	.fw_version_get		  = dpaa_fw_version_get,
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get        = dpaa_dev_rss_hash_conf_get,
+
+	.rx_queue_intr_enable	  = dpaa_dev_queue_intr_enable,
+	.rx_queue_intr_disable	  = dpaa_dev_queue_intr_disable,
 };
 
 static bool
