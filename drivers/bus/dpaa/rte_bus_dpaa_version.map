@@ -121,6 +121,7 @@ DPDK_18.11 {
 DPDK_19.05 {
 	global:
 
+	fsl_qman_fq_portal_create;
 	of_get_next_child;
 	of_get_mac_address;
 	of_translate_address;
