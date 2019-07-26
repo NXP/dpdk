@@ -110,8 +110,9 @@ struct dpaa2_dev_priv {
 	uint32_t options;
 	void *rx_vq[MAX_RX_QUEUES];
 	void *tx_vq[MAX_TX_QUEUES];
-
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
+	void *tx_conf_vq[MAX_TX_QUEUES];
+	uint8_t tx_conf_en;
 	uint8_t max_mac_filters;
 	uint8_t max_vlan_filters;
 	uint8_t num_rx_tc;
@@ -136,6 +137,18 @@ struct dpaa2_dev_priv {
 	uint16_t ss_offset;
 	uint64_t ss_iova;
 	uint64_t ss_param_iova;
+#if defined(RTE_LIBRTE_IEEE1588)
+	/*stores timestamp of last received packet on dev*/
+	uint64_t rx_timestamp;
+	/*stores timestamp of last received tx confirmation packet on dev*/
+	uint64_t tx_timestamp;
+	/* stores pointer to next tx_conf queue that should be processed,
+	 * it corresponds to last packet transmitted
+	 */
+	struct dpaa2_queue *next_tx_conf_queue;
+#endif
+
+	struct rte_eth_dev *eth_dev; /**< Pointer back to holding ethdev */
 
 	LIST_HEAD(, rte_flow) flows; /**< Configured flow rule handles. */
 };
@@ -187,5 +200,18 @@ uint16_t dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
 uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
+uint16_t dpaa2_dev_tx_conf(void *queue)  __attribute__((unused));
 
+#if defined(RTE_LIBRTE_IEEE1588)
+int dpaa2_timesync_read_time(struct rte_eth_dev *dev,
+					struct timespec *timestamp);
+int dpaa2_timesync_write_time(struct rte_eth_dev *dev,
+					const struct timespec *timestamp);
+int dpaa2_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta);
+int dpaa2_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
+						struct timespec *timestamp,
+						uint32_t flags __rte_unused);
+int dpaa2_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
+					  struct timespec *timestamp);
+#endif
 #endif /* _DPAA2_ETHDEV_H */

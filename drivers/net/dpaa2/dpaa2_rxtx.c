@@ -29,6 +29,8 @@ static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 			struct dpaa2_annot_hdr *annotation);
 
+static void enable_tx_tstamp(struct qbman_fd *fd) __attribute__((unused));
+
 #define DPAA2_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid)  do { \
 	DPAA2_SET_FD_ADDR(_fd, DPAA2_MBUF_VADDR_TO_IOVA(_mbuf)); \
 	DPAA2_SET_FD_LEN(_fd, _mbuf->data_len); \
@@ -130,6 +132,11 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 	DPAA2_PMD_DP_DEBUG("(slow parse)annotation(3)=0x%" PRIx64 "\t"
 			"(4)=0x%" PRIx64 "\t",
 			annotation->word3, annotation->word4);
+
+#if defined(RTE_LIBRTE_IEEE1588)
+	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP))
+		mbuf->ol_flags |= PKT_RX_IEEE1588_PTP;
+#endif
 
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT)) {
 		vlan_tci = rte_pktmbuf_mtod_offset(mbuf, uint16_t *,
@@ -511,6 +518,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+#endif
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
@@ -615,6 +625,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd);
 		bufs[num_rx]->port = eth_data->port_id;
+#if defined(RTE_LIBRTE_IEEE1588)
+		priv->rx_timestamp = bufs[num_rx]->timestamp;
+#endif
 
 		if (eth_data->dev_conf.rxmode.offloads &
 				DEV_RX_OFFLOAD_VLAN_STRIP)
@@ -831,6 +844,143 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	return num_rx;
 }
 
+uint16_t dpaa2_dev_tx_conf(void *queue)
+{
+	/* Function receive frames for a given device and VQ */
+	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct qbman_result *dq_storage;
+	uint32_t fqid = dpaa2_q->fqid;
+	int ret, num_tx_conf = 0, num_pulled;
+	uint8_t pending, status;
+	struct qbman_swp *swp;
+	const struct qbman_fd *fd, *next_fd;
+	struct qbman_pull_desc pulldesc;
+	struct qbman_release_desc releasedesc;
+	uint32_t bpid;
+	uint64_t buf;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+	struct dpaa2_annot_hdr *annotation;
+#endif
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_PMD_ERR("Failure in affining portal\n");
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	do {
+		dq_storage = dpaa2_q->q_storage->dq_storage[0];
+		qbman_pull_desc_clear(&pulldesc);
+		qbman_pull_desc_set_fq(&pulldesc, fqid);
+		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
+				(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+
+		qbman_pull_desc_set_numframes(&pulldesc, dpaa2_dqrr_size);
+
+		while (1) {
+			if (qbman_swp_pull(swp, &pulldesc)) {
+				DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
+						   "QBMAN is busy\n");
+				/* Portal was busy, try again */
+				continue;
+			}
+			break;
+		}
+
+		rte_prefetch0((void *)((size_t)(dq_storage + 1)));
+		/* Check if the previous issued command is completed. */
+		while (!qbman_check_command_complete(dq_storage))
+			;
+
+		num_pulled = 0;
+		pending = 1;
+		do {
+			/* Loop until the dq_storage is updated with
+			 * new token by QBMAN
+			 */
+			while (!qbman_check_new_result(dq_storage))
+				;
+			rte_prefetch0((void *)((size_t)(dq_storage + 2)));
+			/* Check whether Last Pull command is Expired and
+			 * setting Condition for Loop termination
+			 */
+			if (qbman_result_DQ_is_pull_complete(dq_storage)) {
+				pending = 0;
+				/* Check for valid frame. */
+				status = qbman_result_DQ_flags(dq_storage);
+				if (unlikely((status &
+					QBMAN_DQ_STAT_VALIDFRAME) == 0))
+					continue;
+			}
+			fd = qbman_result_DQ_fd(dq_storage);
+
+			next_fd = qbman_result_DQ_fd(dq_storage + 1);
+			/* Prefetch Annotation address for the parse results */
+			rte_prefetch0((void *)(size_t)
+				(DPAA2_GET_FD_ADDR(next_fd) +
+				 DPAA2_FD_PTA_SIZE + 16));
+
+			bpid = DPAA2_GET_FD_BPID(fd);
+
+			/* Create a release descriptor required for releasing
+			 * buffers into QBMAN
+			 */
+			qbman_release_desc_clear(&releasedesc);
+			qbman_release_desc_set_bpid(&releasedesc, bpid);
+
+			buf = DPAA2_GET_FD_ADDR(fd);
+			/* feed them to bman */
+			do {
+				ret = qbman_swp_release(swp, &releasedesc,
+							&buf, 1);
+			} while (ret == -EBUSY);
+
+			dq_storage++;
+			num_tx_conf++;
+			num_pulled++;
+#if defined(RTE_LIBRTE_IEEE1588)
+			annotation = (struct dpaa2_annot_hdr *)((size_t)
+				DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
+				DPAA2_FD_PTA_SIZE);
+			priv->tx_timestamp = annotation->word2;
+#endif
+		} while (pending);
+
+	/* Last VDQ provided all packets and more packets are requested */
+	} while (num_pulled == dpaa2_dqrr_size);
+
+	dpaa2_q->rx_pkts += num_tx_conf;
+
+	return num_tx_conf;
+}
+
+/* Configure the egress frame annotation for timestamp update */
+static void enable_tx_tstamp(struct qbman_fd *fd)
+{
+	struct dpaa2_faead *fd_faead;
+
+	/* Set frame annotation status field as valid */
+	(fd)->simple.frc |= DPAA2_FD_FRC_FASV;
+
+	/* Set frame annotation egress action descriptor as valid */
+	(fd)->simple.frc |= DPAA2_FD_FRC_FAEADV;
+
+	/* Set Annotation Length as 128B */
+	(fd)->simple.ctrl |= DPAA2_FD_CTRL_ASAL;
+
+	/* enable update of confirmation frame annotation */
+	fd_faead = (struct dpaa2_faead *)((size_t)
+			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
+			DPAA2_FD_PTA_SIZE + DPAA2_FD_HW_ANNOT_FAEAD_OFFSET);
+	fd_faead->ctrl = DPAA2_ANNOT_FAEAD_A2V | DPAA2_ANNOT_FAEAD_UPDV |
+				DPAA2_ANNOT_FAEAD_UPD;
+}
+
 /*
  * Callback to handle sending packets through WRIOP based interface
  */
@@ -864,6 +1014,15 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
 			eth_data, dpaa2_q->fqid);
+
+#ifdef RTE_LIBRTE_IEEE1588
+	/* IEEE1588 driver need pointer to tx confirmation queue
+	 * corresponding to last packet transmitted for reading
+	 * the timestamp
+	 */
+	priv->next_tx_conf_queue = dpaa2_q->tx_conf_queue;
+	dpaa2_dev_tx_conf(dpaa2_q->tx_conf_queue);
+#endif
 
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
@@ -915,6 +1074,9 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					DPAA2_MBUF_TO_CONTIG_FD((*bufs),
 					&fd_arr[loop], mempool_to_bpid(mp));
 					bufs++;
+#ifdef RTE_LIBRTE_IEEE1588
+					enable_tx_tstamp(&fd_arr[loop]);
+#endif
 					continue;
 				}
 			} else {
@@ -963,6 +1125,9 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 						       &fd_arr[loop], bpid);
 				}
 			}
+#ifdef RTE_LIBRTE_IEEE1588
+			enable_tx_tstamp(&fd_arr[loop]);
+#endif
 			bufs++;
 		}
 		loop = 0;

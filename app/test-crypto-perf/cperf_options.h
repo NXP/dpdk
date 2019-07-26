@@ -7,6 +7,7 @@
 
 #include <rte_crypto.h>
 #include <rte_cryptodev.h>
+#include <rte_security.h>
 
 #define CPERF_PTEST_TYPE	("ptest")
 #define CPERF_SILENT		("silent")
@@ -43,6 +44,8 @@
 #define CPERF_AEAD_AAD_SZ	("aead-aad-sz")
 
 #define CPERF_DIGEST_SZ		("digest-sz")
+#define CPERF_PDCP_SN_SZ	("pdcp-sn-sz")
+#define CPERF_PDCP_DOMAIN	("pdcp-domain")
 
 #define CPERF_CSV		("csv-friendly")
 
@@ -66,7 +69,8 @@ enum cperf_op_type {
 	CPERF_AUTH_ONLY,
 	CPERF_CIPHER_THEN_AUTH,
 	CPERF_AUTH_THEN_CIPHER,
-	CPERF_AEAD
+	CPERF_AEAD,
+	CPERF_PDCP
 };
 
 extern const char *cperf_op_type_strs[];
@@ -109,6 +113,9 @@ struct cperf_options {
 	uint16_t aead_aad_sz;
 
 	uint16_t digest_sz;
+
+	uint16_t pdcp_sn_sz;
+	enum rte_security_pdcp_domain pdcp_domain;
 
 	char device_type[RTE_CRYPTODEV_NAME_MAX_LEN];
 	enum cperf_op_type op_type;

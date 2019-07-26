@@ -18,6 +18,11 @@ sources = files('base/dpaa2_hw_dpni.c',
 		'mc/dpdmux.c',
 		'mc/dpni.c')
 
+if dpdk_conf.has('RTE_LIBRTE_IEEE1588')
+	sources += files(dpaa2_ptp.c)
+	sources += files(mc/dprtc.c)
+endif
+
 includes += include_directories('base', 'mc')
 
 # depends on fslmc bus which uses experimental API

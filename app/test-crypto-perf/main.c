@@ -34,7 +34,8 @@ const char *cperf_op_type_strs[] = {
 	[CPERF_AUTH_ONLY] = "auth-only",
 	[CPERF_CIPHER_THEN_AUTH] = "cipher-then-auth",
 	[CPERF_AUTH_THEN_CIPHER] = "auth-then-cipher",
-	[CPERF_AEAD] = "aead"
+	[CPERF_AEAD] = "aead",
+	[CPERF_PDCP] = "pdcp"
 };
 
 const struct cperf_test cperf_testmap[] = {
@@ -622,9 +623,12 @@ main(int argc, char **argv)
 
 			if (i == total_nb_qps)
 				break;
-			rte_eal_wait_lcore(lcore_id);
+			ret |= rte_eal_wait_lcore(lcore_id);
 			i++;
 		}
+
+		if (ret != EXIT_SUCCESS)
+			goto err;
 	} else {
 
 		/* Get next size from range or list */
@@ -649,9 +653,12 @@ main(int argc, char **argv)
 
 				if (i == total_nb_qps)
 					break;
-				rte_eal_wait_lcore(lcore_id);
+				ret |= rte_eal_wait_lcore(lcore_id);
 				i++;
 			}
+
+			if (ret != EXIT_SUCCESS)
+				goto err;
 
 			/* Get next size from range or list */
 			if (opts.inc_buffer_size != 0)
