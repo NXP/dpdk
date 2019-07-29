@@ -1,8 +1,7 @@
-/*
+/* SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  * Copyright 2008-2013 Freescale Semiconductor, Inc.
  * Copyright 2019 NXP
  *
- * SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  */
 
 #ifndef __DESC_PDCP_H__
