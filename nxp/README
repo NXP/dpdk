@@ -271,6 +271,10 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
       $ make -C examples/l2fwd-crypto
 
+  4. Compile unit test application
+
+      $ make -C test/test
+
    NOTE: if you are compiling with OPENSSL enabled, you need to specify the
    openssl path. e.g.
       $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include  \
@@ -482,6 +486,39 @@ Following are some pre-requisites:
   as command help.
 
   NOTE: testpmd is not supported on PPFE platform
+
+  'test' Application
+  ~~~~~~~~~~~~~~~~~~
+
+  Test application can be used to do functional testing of the drivers and libraries.
+  The binary is tested for various algos and protocols in crypto pmds
+
+  Run binary as
+  $./test --log-level=7
+
+  (for DPAA_SEC)
+  RTE>> cryptodev_dpaa_sec_autotest
+
+  or (for DPAA2_SEC)
+  RTE>> cryptodev_dpaa2_sec_autotest
+
+
+  'dpdk-test-crypto-perf' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  'test-crypto-perf' is part of standard DPDK build process. The binary is generated
+  in (./<target>/build/app/test-crypto-perf/) folder.
+  A script 'crypto_perf_test.sh' is added in nxp/ folder to run all supported cases
+  in one go.
+
+  Use the script as (for DPAA_SEC)
+  $./crypto_perf_test.sh dpaa_sec
+  or (for DPAA2_SEC)
+  $./crypto_perf_test.sh dpaa2_sec
+
+  Some default parameters are added in the script which can be modified as per
+  requirement.
+
 
   Layer-2 Forwarding 'l2fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
