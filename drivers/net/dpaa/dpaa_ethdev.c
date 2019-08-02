@@ -642,7 +642,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		fman_if_get_sg_enable(dpaa_intf->fif),
 		dev->data->dev_conf.rxmode.max_rx_pkt_len);
 	/* checking if push mode only, no error check for now */
-	if (dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
+	if (!rxq->is_static &&
+	    (dpaa_push_mode_max_queue > dpaa_push_queue_idx)) {
 		struct qman_portal *qp;
 		int q_fd;
 
