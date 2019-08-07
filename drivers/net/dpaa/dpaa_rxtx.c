@@ -877,7 +877,7 @@ reallocate_mbuf(struct qman_fq *txq, struct rte_mbuf *mbuf)
 			offset2 = 0;
 			temp_mbuf = temp_mbuf->next;
 			new_mbufs[i]->next = new_mbufs[i + 1];
-			if (!new_mbufs[i + 1])
+			if (new_mbufs[i + 1])
 				new_mbufs[0]->nb_segs++;
 			i++;
 		}
