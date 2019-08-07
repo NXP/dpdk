@@ -19,5 +19,6 @@ SRCS-$(CONFIG_RTE_LIBRTE_ENETC_PMD) += enetc_rxtx.c
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool
 LDLIBS += -lrte_ethdev
 LDLIBS += -lrte_bus_pci
+LDLIBS += -lrte_common_dpaax
 
 include $(RTE_SDK)/mk/rte.lib.mk
