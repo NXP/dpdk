@@ -94,6 +94,10 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;
 	rte_dpaa_bpid_info[bpid].size = mp->elt_size;
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+		rte_dpaa_bpid_info[bpid].size -= LS1043_MAX_BUF_OFFSET;
+#endif
 	rte_dpaa_bpid_info[bpid].bp = bp;
 	rte_dpaa_bpid_info[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
