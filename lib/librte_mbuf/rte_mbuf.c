@@ -153,6 +153,11 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	mbp_priv.mbuf_data_room_size = data_room_size;
 	mbp_priv.mbuf_priv_size = priv_size;
 
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+		mbp_priv.mbuf_data_room_size -= LS1043_MAX_BUF_OFFSET;
+#endif
+
 	mp = rte_mempool_create_empty(name, n, elt_size, cache_size,
 		 sizeof(struct rte_pktmbuf_pool_private), socket_id, 0);
 	if (mp == NULL)
@@ -183,6 +188,11 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	}
 
 	rte_mempool_obj_iter(mp, rte_pktmbuf_init, NULL);
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+		mp->elt_size -= LS1043_MAX_BUF_OFFSET;
+#endif
 
 	return mp;
 }
