@@ -18,6 +18,7 @@
 #include <rte_security_driver.h>
 #include <rte_cycles.h>
 #include <rte_dev.h>
+#include <rte_ip.h>
 #include <rte_kvargs.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
@@ -188,12 +189,18 @@ dqrr_out_fq_cb_rx(struct qman_portal *qm __always_unused,
 	if (ctx->op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 		struct qm_sg_entry *sg_out;
 		uint32_t len;
+		struct rte_mbuf *mbuf = (ctx->op->sym->m_dst == NULL) ?
+				ctx->op->sym->m_src : ctx->op->sym->m_dst;
 
 		sg_out = &job->sg[0];
 		hw_sg_to_cpu(sg_out);
 		len = sg_out->length;
-		ctx->op->sym->m_src->pkt_len = len;
-		ctx->op->sym->m_src->data_len = len;
+		mbuf->pkt_len = len;
+		while (mbuf->next != NULL) {
+			len -= mbuf->data_len;
+			mbuf = mbuf->next;
+		}
+		mbuf->data_len = len;
 	}
 	dpaa_sec_ops[dpaa_sec_op_nb++] = ctx->op;
 	dpaa_sec_op_ending(ctx);
@@ -802,12 +809,18 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 		if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 			struct qm_sg_entry *sg_out;
 			uint32_t len;
+			struct rte_mbuf *mbuf = (op->sym->m_dst == NULL) ?
+						op->sym->m_src : op->sym->m_dst;
 
 			sg_out = &job->sg[0];
 			hw_sg_to_cpu(sg_out);
 			len = sg_out->length;
-			op->sym->m_src->pkt_len = len;
-			op->sym->m_src->data_len = len;
+			mbuf->pkt_len = len;
+			while (mbuf->next != NULL) {
+				len -= mbuf->data_len;
+				mbuf = mbuf->next;
+			}
+			mbuf->data_len = len;
 		}
 		if (!ctx->fd_status) {
 			op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
@@ -2346,26 +2359,58 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 	}
 
 	if (ipsec_xform->direction == RTE_SECURITY_IPSEC_SA_DIR_EGRESS) {
-		memset(&session->encap_pdb, 0, sizeof(struct ipsec_encap_pdb) +
+		if (ipsec_xform->tunnel.type ==
+				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
+			memset(&session->encap_pdb, 0,
+				sizeof(struct ipsec_encap_pdb) +
 				sizeof(session->ip4_hdr));
-		session->ip4_hdr.ip_v = IPVERSION;
-		session->ip4_hdr.ip_hl = 5;
-		session->ip4_hdr.ip_len = rte_cpu_to_be_16(
+			session->ip4_hdr.ip_v = IPVERSION;
+			session->ip4_hdr.ip_hl = 5;
+			session->ip4_hdr.ip_len = rte_cpu_to_be_16(
 						sizeof(session->ip4_hdr));
-		session->ip4_hdr.ip_tos = ipsec_xform->tunnel.ipv4.dscp;
-		session->ip4_hdr.ip_id = 0;
-		session->ip4_hdr.ip_off = 0;
-		session->ip4_hdr.ip_ttl = ipsec_xform->tunnel.ipv4.ttl;
-		session->ip4_hdr.ip_p = (ipsec_xform->proto ==
-				RTE_SECURITY_IPSEC_SA_PROTO_ESP) ? IPPROTO_ESP
-				: IPPROTO_AH;
-		session->ip4_hdr.ip_sum = 0;
-		session->ip4_hdr.ip_src = ipsec_xform->tunnel.ipv4.src_ip;
-		session->ip4_hdr.ip_dst = ipsec_xform->tunnel.ipv4.dst_ip;
-		session->ip4_hdr.ip_sum = calc_chksum((uint16_t *)
+			session->ip4_hdr.ip_tos = ipsec_xform->tunnel.ipv4.dscp;
+			session->ip4_hdr.ip_id = 0;
+			session->ip4_hdr.ip_off = 0;
+			session->ip4_hdr.ip_ttl = ipsec_xform->tunnel.ipv4.ttl;
+			session->ip4_hdr.ip_p = (ipsec_xform->proto ==
+					RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
+					IPPROTO_ESP : IPPROTO_AH;
+			session->ip4_hdr.ip_sum = 0;
+			session->ip4_hdr.ip_src =
+					ipsec_xform->tunnel.ipv4.src_ip;
+			session->ip4_hdr.ip_dst =
+					ipsec_xform->tunnel.ipv4.dst_ip;
+			session->ip4_hdr.ip_sum = calc_chksum((uint16_t *)
 						(void *)&session->ip4_hdr,
 						sizeof(struct ip));
-
+			session->encap_pdb.ip_hdr_len = sizeof(struct ip);
+		} else if (ipsec_xform->tunnel.type ==
+				RTE_SECURITY_IPSEC_TUNNEL_IPV6) {
+			memset(&session->encap_pdb, 0,
+				sizeof(struct ipsec_encap_pdb) +
+				sizeof(session->ip6_hdr));
+			session->ip6_hdr.vtc_flow = rte_cpu_to_be_32(
+				DPAA_IPv6_DEFAULT_VTC_FLOW |
+				((ipsec_xform->tunnel.ipv6.dscp <<
+					IPV6_HDR_TC_SHIFT) &
+					IPV6_HDR_TC_MASK) |
+				((ipsec_xform->tunnel.ipv6.flabel <<
+					IPV6_HDR_FL_SHIFT) &
+					IPV6_HDR_FL_MASK));
+			/* Payload length will be updated by HW */
+			session->ip6_hdr.payload_len = 0;
+			session->ip6_hdr.hop_limits =
+					ipsec_xform->tunnel.ipv6.hlimit;
+			session->ip6_hdr.proto = (ipsec_xform->proto ==
+					RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
+					IPPROTO_ESP : IPPROTO_AH;
+			memcpy(&session->ip6_hdr.src_addr,
+					&ipsec_xform->tunnel.ipv6.src_addr, 16);
+			memcpy(&session->ip6_hdr.dst_addr,
+					&ipsec_xform->tunnel.ipv6.dst_addr, 16);
+			session->encap_pdb.ip_hdr_len =
+						sizeof(struct ipv6_hdr);
+		}
 		session->encap_pdb.options =
 			(IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
@@ -2379,7 +2424,6 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
 
 		session->encap_pdb.spi = ipsec_xform->spi;
-		session->encap_pdb.ip_hdr_len = sizeof(struct ip);
 #ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform)
 			memcpy(session->encap_pdb.cbc.iv,
@@ -2389,7 +2433,11 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 	} else if (ipsec_xform->direction ==
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
 		memset(&session->decap_pdb, 0, sizeof(struct ipsec_decap_pdb));
-		session->decap_pdb.options = sizeof(struct ip) << 16;
+		if (ipsec_xform->tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4)
+			session->decap_pdb.options = sizeof(struct ip) << 16;
+		else
+			session->decap_pdb.options =
+					sizeof(struct ipv6_hdr) << 16;
 		if (ipsec_xform->options.esn)
 			session->decap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->dir = DIR_DEC;

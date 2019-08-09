@@ -642,7 +642,11 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		fman_if_get_sg_enable(dpaa_intf->fif),
 		dev->data->dev_conf.rxmode.max_rx_pkt_len);
 	/* checking if push mode only, no error check for now */
-	if (dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
+	if (!rxq->is_static &&
+	    (dpaa_push_mode_max_queue > dpaa_push_queue_idx)) {
+		struct qman_portal *qp;
+		int q_fd;
+
 		dpaa_push_queue_idx++;
 		opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
 		opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK |
@@ -686,6 +690,37 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 
 		rxq->is_static = true;
+
+		/* Allocate qman specific portals */
+		qp = fsl_qman_fq_portal_create(&q_fd);
+		if (!qp) {
+			DPAA_PMD_ERR("Unable to alloc fq portal");
+			return -1;
+		}
+		rxq->qp = qp;
+
+		/* Set up the device interrupt handler */
+		if (!dev->intr_handle) {
+			struct rte_dpaa_device *dpaa_dev;
+			struct rte_device *rdev = dev->device;
+
+			dpaa_dev = container_of(rdev, struct rte_dpaa_device,
+						device);
+			dev->intr_handle = &dpaa_dev->intr_handle;
+			dev->intr_handle->intr_vec = rte_zmalloc(NULL,
+					dpaa_push_mode_max_queue, 0);
+			if (!dev->intr_handle->intr_vec) {
+				DPAA_PMD_ERR("intr_vec alloc failed");
+				return -ENOMEM;
+			}
+			dev->intr_handle->nb_efd = dpaa_push_mode_max_queue;
+			dev->intr_handle->max_intr = dpaa_push_mode_max_queue;
+		}
+
+		dev->intr_handle->type = RTE_INTR_HANDLE_EXT;
+		dev->intr_handle->intr_vec[queue_idx] = queue_idx + 1;
+		dev->intr_handle->efds[queue_idx] = q_fd;
+		rxq->q_fd = q_fd;
 	}
 	rxq->bp_array = rte_dpaa_bpid_info;
 	dev->data->rx_queues[queue_idx] = rxq;
@@ -1027,6 +1062,40 @@ dpaa_dev_rss_hash_conf_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static int dpaa_dev_queue_intr_enable(struct rte_eth_dev *dev,
+				      uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	return qman_fq_portal_irqsource_add(rxq->qp, QM_PIRQ_DQRI);
+}
+
+static int dpaa_dev_queue_intr_disable(struct rte_eth_dev *dev,
+				       uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+	uint32_t temp;
+	ssize_t temp1;
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	qman_fq_portal_irqsource_remove(rxq->qp, ~0);
+
+	temp1 = read(rxq->q_fd, &temp, sizeof(temp));
+	if (temp1 != sizeof(temp))
+		DPAA_EVENTDEV_ERR("irq read error");
+
+	qman_fq_portal_thread_irq(rxq->qp);
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa_devops = {
 	.dev_configure		  = dpaa_eth_dev_configure,
 	.dev_start		  = dpaa_eth_dev_start,
@@ -1066,6 +1135,9 @@ static struct eth_dev_ops dpaa_devops = {
 	.fw_version_get		  = dpaa_fw_version_get,
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get        = dpaa_dev_rss_hash_conf_get,
+
+	.rx_queue_intr_enable	  = dpaa_dev_queue_intr_enable,
+	.rx_queue_intr_disable	  = dpaa_dev_queue_intr_disable,
 };
 
 static bool
@@ -1552,6 +1624,16 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
 	struct rte_eth_dev *eth_dev;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if ((DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE) >
+		RTE_PKTMBUF_HEADROOM) {
+		DPAA_PMD_ERR(
+		"RTE_PKTMBUF_HEADROOM(%d) shall be > DPAA Annotation req(%d)",
+		RTE_PKTMBUF_HEADROOM,
+		DPAA_MBUF_HW_ANNOTATION + DPAA_FD_PTA_SIZE);
+
+		return -1;
+	}
 
 	/* In case of secondary process, the device is already configured
 	 * and no further action is required, except portal initialization

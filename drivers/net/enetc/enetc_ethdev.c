@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <rte_ethdev_pci.h>
 #include <rte_random.h>
+#include <dpaax_iova_table.h>
 
 #include "enetc_logs.h"
 #include "enetc.h"
@@ -879,6 +880,7 @@ enetc_dev_init(struct rte_eth_dev *eth_dev)
 		      ENETC_SET_MAXFRM(ETHER_MAX_LEN));
 	eth_dev->data->mtu = ETHER_MAX_LEN - ETHER_HDR_LEN - ETHER_CRC_LEN;
 
+	dpaax_iova_table_populate();
 	ENETC_PMD_DEBUG("port_id %d vendorID=0x%x deviceID=0x%x",
 			eth_dev->data->port_id, pci_dev->id.vendor_id,
 			pci_dev->id.device_id);

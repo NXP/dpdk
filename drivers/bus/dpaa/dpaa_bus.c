@@ -252,7 +252,6 @@ dpaa_clean_device_list(void)
 
 int rte_dpaa_portal_init(void *arg)
 {
-	pthread_t id;
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
 	struct dpaa_portal *dpaa_io_portal;
@@ -268,16 +267,6 @@ int rte_dpaa_portal_init(void *arg)
 			return -1;
 
 	cpu = lcore_config[lcore].core_id;
-
-	/* Set CPU affinity for this thread.*/
-	id = pthread_self();
-	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t),
-			&lcore_config[lcore].cpuset);
-	if (ret) {
-		DPAA_BUS_LOG(ERR, "pthread_setaffinity_np failed on core :%u"
-			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
-		return ret;
-	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
@@ -351,7 +340,6 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 {
 	/* Affine above created portal with channel*/
 	u32 sdqcr;
-	struct qman_portal *qp;
 	int ret;
 
 	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
@@ -363,21 +351,21 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 	}
 
 	/* Initialise qman specific portals */
-	qp = fsl_qman_portal_create();
-	if (!qp) {
-		DPAA_BUS_LOG(ERR, "Unable to alloc fq portal");
+	ret = fsl_qman_fq_portal_init(fq->qp);
+	if (ret) {
+		DPAA_BUS_LOG(ERR, "Unable to init fq portal");
 		return -1;
 	}
-	fq->qp = qp;
+
 	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(fq->ch_id);
-	qman_static_dequeue_add(sdqcr, qp);
+	qman_static_dequeue_add(sdqcr, fq->qp);
 
 	return 0;
 }
 
 int rte_dpaa_portal_fq_close(struct qman_fq *fq)
 {
-	return fsl_qman_portal_destroy(fq->qp);
+	return fsl_qman_fq_portal_destroy(fq->qp);
 }
 
 void
@@ -716,7 +704,7 @@ dpaa_bus_dev_iterate(const void *start, const char *str,
 
 	/* Expectation is that device would be name=device_name */
 	if (strncmp(str, "name=", 5) != 0) {
-		DPAA_BUS_ERR("Invalid device string (%s)\n", str);
+		DPAA_BUS_DEBUG("Invalid device string (%s)\n", str);
 		return NULL;
 	}
 

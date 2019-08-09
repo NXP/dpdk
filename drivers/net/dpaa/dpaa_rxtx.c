@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019 NXP
+ *   Copyright 2017 NXP
  *
  */
 
@@ -516,12 +516,13 @@ dpaa_eth_queue_portal_rx(struct qman_fq *fq,
 {
 	int ret;
 
-	if (unlikely(fq->qp == NULL)) {
+	if (unlikely(!fq->qp_initialized)) {
 		ret = rte_dpaa_portal_fq_init((void *)0, fq);
 		if (ret) {
 			DPAA_PMD_ERR("Failure in affining portal %d", ret);
 			return 0;
 		}
+		fq->qp_initialized = 1;
 	}
 
 	return qman_portal_poll_rx(nb_bufs, (void **)bufs, fq->qp);
@@ -877,7 +878,7 @@ reallocate_mbuf(struct qman_fq *txq, struct rte_mbuf *mbuf)
 			offset2 = 0;
 			temp_mbuf = temp_mbuf->next;
 			new_mbufs[i]->next = new_mbufs[i + 1];
-			if (!new_mbufs[i + 1])
+			if (new_mbufs[i + 1])
 				new_mbufs[0]->nb_segs++;
 			i++;
 		}
@@ -926,24 +927,8 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			 * the buffer in such case.
 			 */
 			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
-					(mbuf->data_off & 0xF) != 0x0) {
-				/* It is being assumed that only first seg need
-				 * to be aligned, the remaining seg (for SG
-				 * buffer), will be at 16 bytes aligned
-				 * addresses.
-				 */
-				uint64_t off = DEFAULT_TX_ICEOF + sizeof(
-					struct dpaa_eth_parse_results_t);
-				if ((rte_mbuf_refcnt_read(mbuf) == 1) &&
-				    mbuf->data_off > off) {
-					memmove((void *)((char *)mbuf->buf_addr
-						+ off),	rte_pktmbuf_mtod(mbuf,
-						char *), mbuf->data_len);
-						mbuf->data_off = off;
-				} else {
-					realloc_mbuf = 1;
-				}
-			}
+					(mbuf->data_off & 0xFF) != 0x0)
+				realloc_mbuf = 1;
 #endif
 			seqn = mbuf->seqn;
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {

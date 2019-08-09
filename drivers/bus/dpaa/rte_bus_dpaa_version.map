@@ -121,11 +121,15 @@ DPDK_18.11 {
 DPDK_19.05 {
 	global:
 
+	fsl_qman_fq_portal_create;
 	of_get_next_child;
 	of_get_mac_address;
 	of_translate_address;
 	of_get_address;
 	of_init_path;
+	qman_fq_portal_irqsource_add;
+	qman_fq_portal_irqsource_remove;
+	qman_fq_portal_thread_irq;
 	qman_set_fq_lookup_table;
 
 	local: *;

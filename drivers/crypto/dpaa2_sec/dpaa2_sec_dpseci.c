@@ -9,6 +9,7 @@
 #include <net/if.h>
 #include <unistd.h>
 
+#include <rte_ip.h>
 #include <rte_mbuf.h>
 #include <rte_cryptodev.h>
 #include <rte_malloc.h>
@@ -1493,9 +1494,14 @@ sec_fd_to_mbuf(const struct qbman_fd *fd)
 	if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 		dpaa2_sec_session *sess = (dpaa2_sec_session *)
 			get_sec_session_private_data(op->sym->sec_session);
-		if (sess->ctxt_type == DPAA2_SEC_IPSEC) {
+		if (sess->ctxt_type == DPAA2_SEC_IPSEC ||
+				sess->ctxt_type == DPAA2_SEC_PDCP) {
 			uint16_t len = DPAA2_GET_FD_LEN(fd);
 			dst->pkt_len = len;
+			while (dst->next != NULL) {
+				len -= dst->data_len;
+				dst = dst->next;
+			}
 			dst->data_len = len;
 		}
 	}
@@ -2439,6 +2445,7 @@ dpaa2_sec_set_session_parameters(struct rte_cryptodev *dev,
 			    struct rte_crypto_sym_xform *xform,	void *sess)
 {
 	dpaa2_sec_session *session = sess;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2454,37 +2461,37 @@ dpaa2_sec_set_session_parameters(struct rte_cryptodev *dev,
 	/* Cipher Only */
 	if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER && xform->next == NULL) {
 		session->ctxt_type = DPAA2_SEC_CIPHER;
-		dpaa2_sec_cipher_init(dev, xform, session);
+		ret = dpaa2_sec_cipher_init(dev, xform, session);
 
 	/* Authentication Only */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
 		   xform->next == NULL) {
 		session->ctxt_type = DPAA2_SEC_AUTH;
-		dpaa2_sec_auth_init(dev, xform, session);
+		ret = dpaa2_sec_auth_init(dev, xform, session);
 
 	/* Cipher then Authenticate */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_CIPHER &&
 		   xform->next->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
 		session->ext_params.aead_ctxt.auth_cipher_text = true;
-		dpaa2_sec_aead_chain_init(dev, xform, session);
+		ret = dpaa2_sec_aead_chain_init(dev, xform, session);
 
 	/* Authenticate then Cipher */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AUTH &&
 		   xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER) {
 		session->ext_params.aead_ctxt.auth_cipher_text = false;
-		dpaa2_sec_aead_chain_init(dev, xform, session);
+		ret = dpaa2_sec_aead_chain_init(dev, xform, session);
 
 	/* AEAD operation for AES-GCM kind of Algorithms */
 	} else if (xform->type == RTE_CRYPTO_SYM_XFORM_AEAD &&
 		   xform->next == NULL) {
-		dpaa2_sec_aead_init(dev, xform, session);
+		ret = dpaa2_sec_aead_init(dev, xform, session);
 
 	} else {
 		DPAA2_SEC_ERR("Invalid crypto type");
 		return -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -2738,23 +2745,9 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 
 	session->ctxt_type = DPAA2_SEC_IPSEC;
 	if (ipsec_xform->direction == RTE_SECURITY_IPSEC_SA_DIR_EGRESS) {
-		struct ip ip4_hdr;
+		uint8_t *hdr = NULL;
 
 		flc->dhr = SEC_FLC_DHR_OUTBOUND;
-		ip4_hdr.ip_v = IPVERSION;
-		ip4_hdr.ip_hl = 5;
-		ip4_hdr.ip_len = rte_cpu_to_be_16(sizeof(ip4_hdr));
-		ip4_hdr.ip_tos = ipsec_xform->tunnel.ipv4.dscp;
-		ip4_hdr.ip_id = 0;
-		ip4_hdr.ip_off = 0;
-		ip4_hdr.ip_ttl = ipsec_xform->tunnel.ipv4.ttl;
-		ip4_hdr.ip_p = IPPROTO_ESP;
-		ip4_hdr.ip_sum = 0;
-		ip4_hdr.ip_src = ipsec_xform->tunnel.ipv4.src_ip;
-		ip4_hdr.ip_dst = ipsec_xform->tunnel.ipv4.dst_ip;
-		ip4_hdr.ip_sum = calc_chksum((uint16_t *)(void *)&ip4_hdr,
-			sizeof(struct ip));
-
 		/* For Sec Proto only one descriptor is required. */
 		memset(&encap_pdb, 0, sizeof(struct ipsec_encap_pdb));
 		encap_pdb.options = (IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
@@ -2767,22 +2760,69 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		if (ipsec_xform->options.esn)
 			encap_pdb.options |= PDBOPTS_ESP_ESN;
 		encap_pdb.spi = ipsec_xform->spi;
-		encap_pdb.ip_hdr_len = sizeof(struct ip);
 #ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform)
 			memcpy(encap_pdb.cbc.iv,
 				aes_cbc_iv, cipher_xform->iv.length);
 #endif
 		session->dir = DIR_ENC;
+
+		if (ipsec_xform->tunnel.type ==
+				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
+			struct ip ip4_hdr;
+
+			encap_pdb.ip_hdr_len = sizeof(struct ip);
+			ip4_hdr.ip_v = IPVERSION;
+			ip4_hdr.ip_hl = 5;
+			ip4_hdr.ip_len = rte_cpu_to_be_16(sizeof(ip4_hdr));
+			ip4_hdr.ip_tos = ipsec_xform->tunnel.ipv4.dscp;
+			ip4_hdr.ip_id = 0;
+			ip4_hdr.ip_off = 0;
+			ip4_hdr.ip_ttl = ipsec_xform->tunnel.ipv4.ttl;
+			ip4_hdr.ip_p = IPPROTO_ESP;
+			ip4_hdr.ip_sum = 0;
+			ip4_hdr.ip_src = ipsec_xform->tunnel.ipv4.src_ip;
+			ip4_hdr.ip_dst = ipsec_xform->tunnel.ipv4.dst_ip;
+			ip4_hdr.ip_sum = calc_chksum((uint16_t *)(void *)
+					&ip4_hdr, sizeof(struct ip));
+			hdr = (uint8_t *)&ip4_hdr;
+		} else if (ipsec_xform->tunnel.type ==
+				RTE_SECURITY_IPSEC_TUNNEL_IPV6) {
+			struct ipv6_hdr ip6_hdr;
+
+			ip6_hdr.vtc_flow = rte_cpu_to_be_32(
+				DPAA2_IPv6_DEFAULT_VTC_FLOW |
+				((ipsec_xform->tunnel.ipv6.dscp <<
+					IPV6_HDR_TC_SHIFT) &
+					IPV6_HDR_TC_MASK) |
+				((ipsec_xform->tunnel.ipv6.flabel <<
+					IPV6_HDR_FL_SHIFT) &
+					IPV6_HDR_FL_MASK));
+			/* Payload length will be updated by HW */
+			ip6_hdr.payload_len = 0;
+			ip6_hdr.hop_limits =
+					ipsec_xform->tunnel.ipv6.hlimit;
+			ip6_hdr.proto = (ipsec_xform->proto ==
+					RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
+					IPPROTO_ESP : IPPROTO_AH;
+			memcpy(&ip6_hdr.src_addr,
+				&ipsec_xform->tunnel.ipv6.src_addr, 16);
+			memcpy(&ip6_hdr.dst_addr,
+				&ipsec_xform->tunnel.ipv6.dst_addr, 16);
+			encap_pdb.ip_hdr_len = sizeof(struct ipv6_hdr);
+			hdr = (uint8_t *)&ip6_hdr;
+		}
 		bufsize = cnstr_shdsc_ipsec_new_encap(priv->flc_desc[0].desc,
 				1, 0, SHR_SERIAL, &encap_pdb,
-				(uint8_t *)&ip4_hdr,
-				&cipherdata, &authdata);
+				hdr, &cipherdata, &authdata);
 	} else if (ipsec_xform->direction ==
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
 		flc->dhr = SEC_FLC_DHR_INBOUND;
 		memset(&decap_pdb, 0, sizeof(struct ipsec_decap_pdb));
-		decap_pdb.options = sizeof(struct ip) << 16;
+		decap_pdb.options = (ipsec_xform->tunnel.type ==
+				RTE_SECURITY_IPSEC_TUNNEL_IPV4) ?
+				sizeof(struct ip) << 16 :
+				sizeof(struct ipv6_hdr) << 16;
 		if (ipsec_xform->options.esn)
 			decap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->dir = DIR_DEC;
