@@ -7,7 +7,7 @@
 #ifndef __DESC_PDCP_H__
 #define __DESC_PDCP_H__
 
-#include "hw/rta.h"
+#include "rta.h"
 #include "common.h"
 
 /**
