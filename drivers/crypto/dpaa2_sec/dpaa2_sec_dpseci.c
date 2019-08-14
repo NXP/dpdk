@@ -2746,6 +2746,8 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 	session->ctxt_type = DPAA2_SEC_IPSEC;
 	if (ipsec_xform->direction == RTE_SECURITY_IPSEC_SA_DIR_EGRESS) {
 		uint8_t *hdr = NULL;
+		struct ip ip4_hdr;
+		struct ipv6_hdr ip6_hdr;
 
 		flc->dhr = SEC_FLC_DHR_OUTBOUND;
 		/* For Sec Proto only one descriptor is required. */
@@ -2769,8 +2771,6 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 
 		if (ipsec_xform->tunnel.type ==
 				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
-			struct ip ip4_hdr;
-
 			encap_pdb.ip_hdr_len = sizeof(struct ip);
 			ip4_hdr.ip_v = IPVERSION;
 			ip4_hdr.ip_hl = 5;
@@ -2788,8 +2788,6 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			hdr = (uint8_t *)&ip4_hdr;
 		} else if (ipsec_xform->tunnel.type ==
 				RTE_SECURITY_IPSEC_TUNNEL_IPV6) {
-			struct ipv6_hdr ip6_hdr;
-
 			ip6_hdr.vtc_flow = rte_cpu_to_be_32(
 				DPAA2_IPv6_DEFAULT_VTC_FLOW |
 				((ipsec_xform->tunnel.ipv6.dscp <<
