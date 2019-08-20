@@ -206,6 +206,14 @@ script help :----->
 					Only single instance of DPRTC supported
 					'export DPRTC_COUNT=1'
 					default value is 0.
+
+	/**DPRC**:-->
+		ENABLE_PL_BIT	    = DPRC PL BIT Enabled for RBP QDMA
+					INIC RBP use case need PL bit to be
+					enabeld.
+					'export ENABLE_PL_BIT=1'
+					default value is 0.
+
 EOF
 
 
@@ -543,11 +551,20 @@ then
 	echo "Available DPRCs" >> dynamic_dpl_logs
 	restool dprc list >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
+	#/*Option to enable PL bit for INIC RBP case*/
+        DPRC_OPTIONS="DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED"
+	#/*Option to enable PL bit for INIC RBP case*/
+	if [[ "$ENABLE_PL_BIT" == "1" ]]
+	then
+		echo "Creating DPRC with PL Bit enabled for RBP usages"
+		DPRC_OPTIONS="$DPRC_OPTIONS,DPRC_CFG_OPT_PL_ALLOWED"
+	fi
+
 	#/* Creation of DPRC*/
 	if [[ "$NESTED_DPRC" = "0" ]]
 	then
 		echo "Creating Non nested DPRC"
-		export DPRC=$(restool -s dprc create $ROOT_DPRC --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED,DPRC_CFG_OPT_IRQ_CFG_ALLOWED)
+		export DPRC=$(restool -s dprc create $ROOT_DPRC --label="DPDK Container" --options=$DPRC_OPTIONS,DPRC_CFG_OPT_IRQ_CFG_ALLOWED)
 		if [[ "$NO_BIND_DPRC" = "1" ]]
 		then
 			DPRC_LOC=""
@@ -558,7 +575,7 @@ then
 		fi
 	else
 		echo "Creating nested DPRC"
-		export DPRC=$(restool -s dprc create $PARENT_DPRC --label="DPDK Container" --options=DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED)
+		export DPRC=$(restool -s dprc create $PARENT_DPRC --label="DPDK Container" --options=$DPRC_OPTIONS)
 		DPRC_LOC=/sys/bus/fsl-mc/devices/$PARENT_DPRC
 		DPRC_TO_BIND=$PARENT_DPRC
 	fi
