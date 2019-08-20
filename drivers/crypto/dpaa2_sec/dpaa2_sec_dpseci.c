@@ -958,10 +958,25 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	struct qbman_fle *fle, *sge;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
+	int data_len, data_offset;
 	uint8_t *old_digest;
 	int retval;
 
 	PMD_INIT_FUNC_TRACE();
+
+	data_len = sym_op->auth.data.length;
+	data_offset = sym_op->auth.data.offset;
+
+	if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2 ||
+	    sess->auth_alg == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+		if ((data_len & 7) || (data_offset & 7)) {
+			DPAA2_SEC_ERR("AUTH: len/offset must be full bytes");
+			return -1;
+		}
+
+		data_len = data_len >> 3;
+		data_offset = data_offset >> 3;
+	}
 
 	retval = rte_mempool_get(priv->fle_pool, (void **)(&fle));
 	if (retval) {
@@ -978,64 +993,72 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 	fle = fle + 1;
+	sge = fle + 2;
 
 	if (likely(bpid < MAX_BPID)) {
 		DPAA2_SET_FD_BPID(fd, bpid);
 		DPAA2_SET_FLE_BPID(fle, bpid);
 		DPAA2_SET_FLE_BPID(fle + 1, bpid);
+		DPAA2_SET_FLE_BPID(sge, bpid);
+		DPAA2_SET_FLE_BPID(sge + 1, bpid);
 	} else {
 		DPAA2_SET_FD_IVP(fd);
 		DPAA2_SET_FLE_IVP(fle);
 		DPAA2_SET_FLE_IVP((fle + 1));
+		DPAA2_SET_FLE_IVP(sge);
+		DPAA2_SET_FLE_IVP((sge + 1));
 	}
+
 	flc = &priv->flc_desc[DESC_INITFINAL].flc;
 	DPAA2_SET_FD_FLC(fd, DPAA2_VADDR_TO_IOVA(flc));
+	DPAA2_SET_FD_ADDR(fd, DPAA2_VADDR_TO_IOVA(fle));
+	DPAA2_SET_FD_COMPOUND_FMT(fd);
 
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sym_op->auth.digest.data));
 	fle->length = sess->digest_length;
-
-	DPAA2_SET_FD_ADDR(fd, DPAA2_VADDR_TO_IOVA(fle));
-	DPAA2_SET_FD_COMPOUND_FMT(fd);
 	fle++;
 
-	if (sess->dir == DIR_ENC) {
-		DPAA2_SET_FLE_ADDR(fle,
-				   DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
-		DPAA2_SET_FLE_OFFSET(fle, sym_op->auth.data.offset +
-				     sym_op->m_src->data_off);
-		DPAA2_SET_FD_LEN(fd, sym_op->auth.data.length);
-		fle->length = sym_op->auth.data.length;
-	} else {
-		sge = fle + 2;
-		DPAA2_SET_FLE_SG_EXT(fle);
-		DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
+	/* Setting input FLE */
+	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
+	DPAA2_SET_FLE_SG_EXT(fle);
+	fle->length = data_len;
 
-		if (likely(bpid < MAX_BPID)) {
-			DPAA2_SET_FLE_BPID(sge, bpid);
-			DPAA2_SET_FLE_BPID(sge + 1, bpid);
+	if (sess->iv.length) {
+		uint8_t *iv_ptr;
+
+		iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
+						   sess->iv.offset);
+
+		if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2) {
+			iv_ptr = conv_to_snow_f9_iv(iv_ptr);
+			sge->length = 12;
 		} else {
-			DPAA2_SET_FLE_IVP(sge);
-			DPAA2_SET_FLE_IVP((sge + 1));
+			sge->length = sess->iv.length;
 		}
-		DPAA2_SET_FLE_ADDR(sge,
-				   DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
-		DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset +
-				     sym_op->m_src->data_off);
 
-		DPAA2_SET_FD_LEN(fd, sym_op->auth.data.length +
-				 sess->digest_length);
-		sge->length = sym_op->auth.data.length;
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(iv_ptr));
+		fle->length = fle->length + sge->length;
+		sge++;
+	}
+
+	/* Setting data to authenticate */
+	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
+	DPAA2_SET_FLE_OFFSET(sge, data_offset + sym_op->m_src->data_off);
+	sge->length = data_len;
+
+	if (sess->dir == DIR_DEC) {
 		sge++;
 		old_digest = (uint8_t *)(sge + 1);
 		rte_memcpy(old_digest, sym_op->auth.digest.data,
 			   sess->digest_length);
 		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(old_digest));
 		sge->length = sess->digest_length;
-		fle->length = sym_op->auth.data.length +
-				sess->digest_length;
-		DPAA2_SET_FLE_FIN(sge);
+		fle->length = fle->length + sess->digest_length;
 	}
+
+	DPAA2_SET_FLE_FIN(sge);
 	DPAA2_SET_FLE_FIN(fle);
+	DPAA2_SET_FD_LEN(fd, fle->length);
 
 	return 0;
 }
@@ -1046,6 +1069,7 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
 	struct qbman_fle *ip_fle, *op_fle, *sge, *fle;
+	int data_len, data_offset;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
 	struct rte_mbuf *mbuf;
@@ -1053,6 +1077,20 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 			sess->iv.offset);
 
 	PMD_INIT_FUNC_TRACE();
+
+	data_len = sym_op->cipher.data.length;
+	data_offset = sym_op->cipher.data.offset;
+
+	if (sess->cipher_alg == RTE_CRYPTO_CIPHER_SNOW3G_UEA2 ||
+		sess->cipher_alg == RTE_CRYPTO_CIPHER_ZUC_EEA3) {
+		if ((data_len & 7) || (data_offset & 7)) {
+			DPAA2_SEC_ERR("CIPHER: len/offset must be full bytes");
+			return -1;
+		}
+
+		data_len = data_len >> 3;
+		data_offset = data_offset >> 3;
+	}
 
 	if (sym_op->m_dst)
 		mbuf = sym_op->m_dst;
@@ -1079,20 +1117,20 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SEC_DP_DEBUG(
 		"CIPHER SG: cipher_off: 0x%x/length %d, ivlen=%d"
 		" data_off: 0x%x\n",
-		sym_op->cipher.data.offset,
-		sym_op->cipher.data.length,
+		data_offset,
+		data_len,
 		sess->iv.length,
 		sym_op->m_src->data_off);
 
 	/* o/p fle */
 	DPAA2_SET_FLE_ADDR(op_fle, DPAA2_VADDR_TO_IOVA(sge));
-	op_fle->length = sym_op->cipher.data.length;
+	op_fle->length = data_len;
 	DPAA2_SET_FLE_SG_EXT(op_fle);
 
 	/* o/p 1st seg */
 	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset + mbuf->data_off);
-	sge->length = mbuf->data_len - sym_op->cipher.data.offset;
+	DPAA2_SET_FLE_OFFSET(sge, data_offset + mbuf->data_off);
+	sge->length = mbuf->data_len - data_offset;
 
 	mbuf = mbuf->next;
 	/* o/p segs */
@@ -1114,7 +1152,7 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	mbuf = sym_op->m_src;
 	sge++;
 	DPAA2_SET_FLE_ADDR(ip_fle, DPAA2_VADDR_TO_IOVA(sge));
-	ip_fle->length = sess->iv.length + sym_op->cipher.data.length;
+	ip_fle->length = sess->iv.length + data_len;
 	DPAA2_SET_FLE_SG_EXT(ip_fle);
 
 	/* i/p IV */
@@ -1126,9 +1164,8 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 
 	/* i/p 1st seg */
 	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset +
-			     mbuf->data_off);
-	sge->length = mbuf->data_len - sym_op->cipher.data.offset;
+	DPAA2_SET_FLE_OFFSET(sge, data_offset + mbuf->data_off);
+	sge->length = mbuf->data_len - data_offset;
 
 	mbuf = mbuf->next;
 	/* i/p segs */
@@ -1165,7 +1202,7 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 {
 	struct rte_crypto_sym_op *sym_op = op->sym;
 	struct qbman_fle *fle, *sge;
-	int retval;
+	int retval, data_len, data_offset;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
@@ -1173,6 +1210,20 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	struct rte_mbuf *dst;
 
 	PMD_INIT_FUNC_TRACE();
+
+	data_len = sym_op->cipher.data.length;
+	data_offset = sym_op->cipher.data.offset;
+
+	if (sess->cipher_alg == RTE_CRYPTO_CIPHER_SNOW3G_UEA2 ||
+		sess->cipher_alg == RTE_CRYPTO_CIPHER_ZUC_EEA3) {
+		if ((data_len & 7) || (data_offset & 7)) {
+			DPAA2_SEC_ERR("CIPHER: len/offset must be full bytes");
+			return -1;
+		}
+
+		data_len = data_len >> 3;
+		data_offset = data_offset >> 3;
+	}
 
 	if (sym_op->m_dst)
 		dst = sym_op->m_dst;
@@ -1212,24 +1263,22 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 
 	flc = &priv->flc_desc[0].flc;
 	DPAA2_SET_FD_ADDR(fd, DPAA2_VADDR_TO_IOVA(fle));
-	DPAA2_SET_FD_LEN(fd, sym_op->cipher.data.length +
-			 sess->iv.length);
+	DPAA2_SET_FD_LEN(fd, data_len + sess->iv.length);
 	DPAA2_SET_FD_COMPOUND_FMT(fd);
 	DPAA2_SET_FD_FLC(fd, DPAA2_VADDR_TO_IOVA(flc));
 
 	DPAA2_SEC_DP_DEBUG(
 		"CIPHER: cipher_off: 0x%x/length %d, ivlen=%d,"
 		" data_off: 0x%x\n",
-		sym_op->cipher.data.offset,
-		sym_op->cipher.data.length,
+		data_offset,
+		data_len,
 		sess->iv.length,
 		sym_op->m_src->data_off);
 
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_MBUF_VADDR_TO_IOVA(dst));
-	DPAA2_SET_FLE_OFFSET(fle, sym_op->cipher.data.offset +
-			     dst->data_off);
+	DPAA2_SET_FLE_OFFSET(fle, data_offset + dst->data_off);
 
-	fle->length = sym_op->cipher.data.length + sess->iv.length;
+	fle->length = data_len + sess->iv.length;
 
 	DPAA2_SEC_DP_DEBUG(
 		"CIPHER: 1 - flc = %p, fle = %p FLEaddr = %x-%x, length %d\n",
@@ -1239,7 +1288,7 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	fle++;
 
 	DPAA2_SET_FLE_ADDR(fle, DPAA2_VADDR_TO_IOVA(sge));
-	fle->length = sym_op->cipher.data.length + sess->iv.length;
+	fle->length = data_len + sess->iv.length;
 
 	DPAA2_SET_FLE_SG_EXT(fle);
 
@@ -1248,10 +1297,9 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 
 	sge++;
 	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(sym_op->m_src));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset +
-			     sym_op->m_src->data_off);
+	DPAA2_SET_FLE_OFFSET(sge, data_offset + sym_op->m_src->data_off);
 
-	sge->length = sym_op->cipher.data.length;
+	sge->length = data_len;
 	DPAA2_SET_FLE_FIN(sge);
 	DPAA2_SET_FLE_FIN(fle);
 
@@ -1913,32 +1961,66 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	/* Set IV parameters */
 	session->iv.offset = xform->cipher.iv.offset;
 	session->iv.length = xform->cipher.iv.length;
+	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
+				DIR_ENC : DIR_DEC;
 
 	switch (xform->cipher.algo) {
 	case RTE_CRYPTO_CIPHER_AES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CBC;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CBC:
 		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CTR;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
 		break;
 	case RTE_CRYPTO_CIPHER_3DES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
+		cipherdata.algmode = OP_ALG_AAI_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CTR;
+		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
+						SHR_NEVER, &cipherdata, NULL,
+						session->iv.length,
+						session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+		cipherdata.algtype = OP_ALG_ALGSEL_SNOW_F8;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
+		bufsize = cnstr_shdsc_snow_f8(priv->flc_desc[0].desc, 1, 0,
+					      &cipherdata,
+					      session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
+		cipherdata.algtype = OP_ALG_ALGSEL_ZUCE;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_ZUC_EEA3;
+		bufsize = cnstr_shdsc_zuce(priv->flc_desc[0].desc, 1, 0,
+					      &cipherdata,
+					      session->dir);
+		break;
+	case RTE_CRYPTO_CIPHER_KASUMI_F8:
+	case RTE_CRYPTO_CIPHER_AES_F8:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_XTS:
-	case RTE_CRYPTO_CIPHER_AES_F8:
 	case RTE_CRYPTO_CIPHER_ARC4:
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
-	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_NULL:
 		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
 			xform->cipher.algo);
@@ -1948,12 +2030,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 			xform->cipher.algo);
 		goto error_out;
 	}
-	session->dir = (xform->cipher.op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) ?
-				DIR_ENC : DIR_DEC;
 
-	bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0, SHR_NEVER,
-					&cipherdata, NULL, session->iv.length,
-					session->dir);
 	if (bufsize < 0) {
 		DPAA2_SEC_ERR("Crypto: Descriptor build failed");
 		goto error_out;
@@ -2016,40 +2093,77 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	authdata.key_type = RTA_DATA_IMM;
 
 	session->digest_length = xform->auth.digest_length;
+	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
+				DIR_ENC : DIR_DEC;
 
 	switch (xform->auth.algo) {
 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA1;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA1_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_MD5_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_MD5;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_MD5_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA256;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA256_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA384;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA384_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA512;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA512_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
 		authdata.algtype = OP_ALG_ALGSEL_SHA224;
 		authdata.algmode = OP_ALG_AAI_HMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA224_HMAC;
+		bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, SHR_NEVER, &authdata,
+					   !session->dir,
+					   session->digest_length);
 		break;
-	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
+		authdata.algtype = OP_ALG_ALGSEL_SNOW_F9;
+		authdata.algmode = OP_ALG_AAI_F9;
+		session->auth_alg = RTE_CRYPTO_AUTH_SNOW3G_UIA2;
+		session->iv.offset = xform->auth.iv.offset;
+		session->iv.length = xform->auth.iv.length;
+		bufsize = cnstr_shdsc_snow_f9(priv->flc_desc[DESC_INITFINAL].desc,
+					      1, 0, &authdata,
+					      !session->dir,
+					      session->digest_length);
+		break;
+	case RTE_CRYPTO_AUTH_ZUC_EIA3:
+	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
 	case RTE_CRYPTO_AUTH_SHA256:
@@ -2058,10 +2172,9 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_SHA384:
 	case RTE_CRYPTO_AUTH_MD5:
 	case RTE_CRYPTO_AUTH_AES_GMAC:
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
+	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
-	case RTE_CRYPTO_AUTH_ZUC_EIA3:
 		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %un",
 			      xform->auth.algo);
 		goto error_out;
@@ -2070,12 +2183,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 			      xform->auth.algo);
 		goto error_out;
 	}
-	session->dir = (xform->auth.op == RTE_CRYPTO_AUTH_OP_GENERATE) ?
-				DIR_ENC : DIR_DEC;
 
-	bufsize = cnstr_shdsc_hmac(priv->flc_desc[DESC_INITFINAL].desc,
-				   1, 0, SHR_NEVER, &authdata, !session->dir,
-				   session->digest_length);
 	if (bufsize < 0) {
 		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
 		goto error_out;
@@ -2366,6 +2474,7 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
 		break;
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_NULL:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
@@ -2660,6 +2769,7 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		cipherdata->algtype = OP_PCL_IPSEC_NULL;
 		break;
 	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
+	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
 	case RTE_CRYPTO_CIPHER_3DES_ECB:
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
