@@ -59,7 +59,9 @@ static uint64_t dev_rx_offloads_nodis =
 		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM;
 
 /* Supported Tx offloads */
-static uint64_t dev_tx_offloads_sup;
+static uint64_t dev_tx_offloads_sup =
+		DEV_TX_OFFLOAD_MT_LOCKFREE |
+		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
 /* Tx offloads which cannot be disabled */
 static uint64_t dev_tx_offloads_nodis =
@@ -68,9 +70,7 @@ static uint64_t dev_tx_offloads_nodis =
 		DEV_TX_OFFLOAD_TCP_CKSUM |
 		DEV_TX_OFFLOAD_SCTP_CKSUM |
 		DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM |
-		DEV_TX_OFFLOAD_MULTI_SEGS |
-		DEV_TX_OFFLOAD_MT_LOCKFREE |
-		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+		DEV_TX_OFFLOAD_MULTI_SEGS;
 
 /* Keep track of whether QMAN and BMAN have been globally initialized */
 static int is_global_init;
@@ -197,20 +197,20 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* Rx offloads validation */
+	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA_PMD_WARN(
-		"Rx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			rx_offloads, dev_rx_offloads_nodis);
+		DPAA_PMD_INFO(
+		"Some of Rx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		rx_offloads, dev_rx_offloads_nodis);
 	}
 
-	/* Tx offloads validation */
+	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA_PMD_WARN(
-		"Tx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			tx_offloads, dev_tx_offloads_nodis);
+		DPAA_PMD_INFO(
+		"Some of Tx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		tx_offloads, dev_tx_offloads_nodis);
 	}
 
 	if (rx_offloads & DEV_RX_OFFLOAD_JUMBO_FRAME) {
@@ -349,7 +349,7 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	PMD_INIT_FUNC_TRACE();
+	DPAA_PMD_DEBUG(": %s", dpaa_intf->name);
 
 	dev_info->max_rx_queues = dpaa_intf->nb_rx_queues;
 	dev_info->max_tx_queues = dpaa_intf->nb_tx_queues;
@@ -1223,8 +1223,6 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 		}
 	};
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (fmc_q || default_q) {
 		ret = qman_reserve_fqid(fqid);
 		if (ret) {
@@ -1275,8 +1273,6 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
-
-	PMD_INIT_FUNC_TRACE();
 
 	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
 			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);

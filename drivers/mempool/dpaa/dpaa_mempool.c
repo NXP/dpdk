@@ -94,6 +94,10 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;
 	rte_dpaa_bpid_info[bpid].size = mp->elt_size;
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+		rte_dpaa_bpid_info[bpid].size -= LS1043_MAX_BUF_OFFSET;
+#endif
 	rte_dpaa_bpid_info[bpid].bp = bp;
 	rte_dpaa_bpid_info[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
@@ -296,8 +300,6 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	struct dpaa_bp_info *bp_info;
 	unsigned int total_elt_sz;
 
-	MEMPOOL_INIT_FUNC_TRACE();
-
 	if (!mp || !mp->pool_data) {
 		DPAA_MEMPOOL_ERR("Invalid mempool provided\n");
 		return 0;
@@ -309,7 +311,7 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
-	DPAA_MEMPOOL_DEBUG("Req size %" PRIx64 " vs Available %u\n",
+	DPAA_MEMPOOL_DPDEBUG("Req size %" PRIx64 " vs Available %u\n",
 			   (uint64_t)len, total_elt_sz * mp->size);
 
 	/* Detect pool area has sufficient space for elements in this memzone */

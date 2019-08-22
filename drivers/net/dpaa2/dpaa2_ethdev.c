@@ -34,13 +34,14 @@
 
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
-		DEV_RX_OFFLOAD_VLAN_STRIP |
-		DEV_RX_OFFLOAD_IPV4_CKSUM |
-		DEV_RX_OFFLOAD_UDP_CKSUM |
-		DEV_RX_OFFLOAD_TCP_CKSUM |
+		DEV_RX_OFFLOAD_CHECKSUM |
+		DEV_RX_OFFLOAD_SCTP_CKSUM |
 		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+		DEV_RX_OFFLOAD_OUTER_UDP_CKSUM |
+		DEV_RX_OFFLOAD_VLAN_STRIP |
 		DEV_RX_OFFLOAD_VLAN_FILTER |
-		DEV_RX_OFFLOAD_JUMBO_FRAME;
+		DEV_RX_OFFLOAD_JUMBO_FRAME |
+		DEV_RX_OFFLOAD_TIMESTAMP;
 
 /* Rx offloads which cannot be disabled */
 static uint64_t dev_rx_offloads_nodis =
@@ -53,13 +54,13 @@ static uint64_t dev_tx_offloads_sup =
 		DEV_TX_OFFLOAD_UDP_CKSUM |
 		DEV_TX_OFFLOAD_TCP_CKSUM |
 		DEV_TX_OFFLOAD_SCTP_CKSUM |
-		DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM;
+		DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM |
+		DEV_TX_OFFLOAD_MT_LOCKFREE |
+		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
 /* Tx offloads which cannot be disabled */
 static uint64_t dev_tx_offloads_nodis =
-		DEV_TX_OFFLOAD_MULTI_SEGS |
-		DEV_TX_OFFLOAD_MT_LOCKFREE |
-		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+		DEV_TX_OFFLOAD_MULTI_SEGS;
 
 /* enable timestamp in mbuf */
 enum pmd_dpaa2_ts dpaa2_enable_ts;
@@ -438,20 +439,20 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* Rx offloads validation */
+	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA2_PMD_WARN(
-		"Rx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			rx_offloads, dev_rx_offloads_nodis);
+		DPAA2_PMD_INFO(
+		"Some of Rx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		rx_offloads, dev_rx_offloads_nodis);
 	}
 
-	/* Tx offloads validation */
+	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA2_PMD_WARN(
-		"Tx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			tx_offloads, dev_tx_offloads_nodis);
+		DPAA2_PMD_INFO(
+		"Some of Tx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		tx_offloads, dev_tx_offloads_nodis);
 	}
 
 	if (rx_offloads & DEV_RX_OFFLOAD_JUMBO_FRAME) {
@@ -486,7 +487,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		rx_l3_csum_offload = true;
 
 	if ((rx_offloads & DEV_RX_OFFLOAD_UDP_CKSUM) ||
-		(rx_offloads & DEV_RX_OFFLOAD_TCP_CKSUM))
+		(rx_offloads & DEV_RX_OFFLOAD_TCP_CKSUM) ||
+		(rx_offloads & DEV_RX_OFFLOAD_SCTP_CKSUM))
 		rx_l4_csum_offload = true;
 
 	ret = dpni_set_offload(dpni, CMD_PRI_LOW, priv->token,
@@ -502,6 +504,9 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		DPAA2_PMD_ERR("Error to get RX l4 csum:Error = %d", ret);
 		return ret;
 	}
+
+	if (rx_offloads & DEV_RX_OFFLOAD_TIMESTAMP)
+		dpaa2_enable_ts = true;
 
 	if (tx_offloads & DEV_TX_OFFLOAD_IPV4_CKSUM)
 		tx_l3_csum_offload = true;
