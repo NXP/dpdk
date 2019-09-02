@@ -1662,20 +1662,6 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
 			"Make sure to use DPDK supported FMC scripts only.\n");
 		}
 
-		/* One time load of Qman/Bman drivers */
-		ret = qman_global_init();
-		if (ret) {
-			DPAA_PMD_ERR("QMAN initialization failed: %d",
-				     ret);
-			return ret;
-		}
-		ret = bman_global_init();
-		if (ret) {
-			DPAA_PMD_ERR("BMAN initialization failed: %d",
-				     ret);
-			return ret;
-		}
-
 		if (!(default_q || fmc_q)) {
 			if (dpaa_fm_init()) {
 				DPAA_PMD_ERR("FM init failed\n");
