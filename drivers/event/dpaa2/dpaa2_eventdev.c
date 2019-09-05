@@ -484,7 +484,7 @@ dpaa2_eventdev_queue_setup(struct rte_eventdev *dev, uint8_t queue_id,
 	case RTE_SCHED_TYPE_ORDERED:
 		break;
 	default:
-		DPAA2_EVENTDEV_ERR("Schedule type not supported.");
+		DPAA2_EVENTDEV_ERR("Schedule type is not supported.");
 		return -1;
 	}
 	evq_info->event_queue_cfg = queue_conf->event_queue_cfg;
@@ -951,6 +951,7 @@ static struct rte_eventdev_ops dpaa2_eventdev_ops = {
 	.port_unlink      = dpaa2_eventdev_port_unlink,
 	.timeout_ticks    = dpaa2_eventdev_timeout_ticks,
 	.dump             = dpaa2_eventdev_dump,
+	.dev_selftest     = test_eventdev_dpaa2,
 	.eth_rx_adapter_caps_get = dpaa2_eventdev_eth_caps_get,
 	.eth_rx_adapter_queue_add = dpaa2_eventdev_eth_queue_add,
 	.eth_rx_adapter_queue_del = dpaa2_eventdev_eth_queue_del,
