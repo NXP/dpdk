@@ -291,7 +291,8 @@ test_sessionless_with_op_forward_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
+	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
 
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID),
@@ -311,7 +312,8 @@ test_session_with_op_forward_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
+	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
 
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID
@@ -437,7 +439,7 @@ test_sessionless_with_op_new_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) ||
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
 	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
 
@@ -459,7 +461,7 @@ test_session_with_op_new_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) ||
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
 	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
 
