@@ -4,7 +4,7 @@
 if host_machine.system() != 'linux'
 	build = false
 endif
-
+deps += ['common_dpaax']
 sources = files('enetc_ethdev.c',
 		'enetc_rxtx.c')
 
