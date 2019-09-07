@@ -880,10 +880,25 @@ static inline int build_auth_sg_fd(
 	struct qbman_fle *fle, *sge, *ip_fle, *op_fle;
 	struct sec_flow_context *flc;
 	struct ctxt_priv *priv = sess->ctxt;
+	int data_len, data_offset;
 	uint8_t *old_digest;
 	struct rte_mbuf *mbuf;
 
 	PMD_INIT_FUNC_TRACE();
+
+	data_len = sym_op->auth.data.length;
+	data_offset = sym_op->auth.data.offset;
+
+	if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2 ||
+	    sess->auth_alg == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+		if ((data_len & 7) || (data_offset & 7)) {
+			DPAA2_SEC_ERR("AUTH: len/offset must be full bytes");
+			return -1;
+		}
+
+		data_len = data_len >> 3;
+		data_offset = data_offset >> 3;
+	}
 
 	mbuf = sym_op->m_src;
 	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
@@ -914,25 +929,51 @@ static inline int build_auth_sg_fd(
 	/* i/p fle */
 	DPAA2_SET_FLE_SG_EXT(ip_fle);
 	DPAA2_SET_FLE_ADDR(ip_fle, DPAA2_VADDR_TO_IOVA(sge));
+	ip_fle->length = data_len;
+
+	if (sess->iv.length) {
+		uint8_t *iv_ptr;
+
+		iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
+						   sess->iv.offset);
+
+		if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2) {
+			iv_ptr = conv_to_snow_f9_iv(iv_ptr);
+			sge->length = 12;
+		} else if (sess->auth_alg == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+			iv_ptr = conv_to_zuc_eia_iv(iv_ptr);
+			sge->length = 8;
+		} else {
+			sge->length = sess->iv.length;
+		}
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(iv_ptr));
+		ip_fle->length += sge->length;
+		sge++;
+	}
 	/* i/p 1st seg */
 	DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset + mbuf->data_off);
-	sge->length = mbuf->data_len - sym_op->auth.data.offset;
+	DPAA2_SET_FLE_OFFSET(sge, data_offset + mbuf->data_off);
 
-	/* i/p segs */
-	mbuf = mbuf->next;
-	while (mbuf) {
-		sge++;
-		DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
-		DPAA2_SET_FLE_OFFSET(sge, mbuf->data_off);
-		sge->length = mbuf->data_len;
-		mbuf = mbuf->next;
-	}
-	if (sess->dir == DIR_ENC) {
-		/* Digest calculation case */
-		sge->length -= sess->digest_length;
-		ip_fle->length = sym_op->auth.data.length;
+	if (data_len <= (mbuf->data_len - data_offset)) {
+		sge->length = data_len;
+		data_len = 0;
 	} else {
+		sge->length = mbuf->data_len - data_offset;
+
+		/* remaining i/p segs */
+		while ((data_len = data_len - sge->length) &&
+		       (mbuf = mbuf->next)) {
+			sge++;
+			DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(mbuf));
+			DPAA2_SET_FLE_OFFSET(sge, mbuf->data_off);
+			if (data_len > mbuf->data_len)
+				sge->length = mbuf->data_len;
+			else
+				sge->length = data_len;
+		}
+	}
+
+	if (sess->dir == DIR_DEC) {
 		/* Digest verification case */
 		sge++;
 		old_digest = (uint8_t *)(sge + 1);
@@ -940,8 +981,7 @@ static inline int build_auth_sg_fd(
 			   sess->digest_length);
 		DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(old_digest));
 		sge->length = sess->digest_length;
-		ip_fle->length = sym_op->auth.data.length +
-				sess->digest_length;
+		ip_fle->length += sess->digest_length;
 	}
 	DPAA2_SET_FLE_FIN(sge);
 	DPAA2_SET_FLE_FIN(ip_fle);
@@ -1032,6 +1072,9 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 		if (sess->auth_alg == RTE_CRYPTO_AUTH_SNOW3G_UIA2) {
 			iv_ptr = conv_to_snow_f9_iv(iv_ptr);
 			sge->length = 12;
+		} else if (sess->auth_alg == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+			iv_ptr = conv_to_zuc_eia_iv(iv_ptr);
+			sge->length = 8;
 		} else {
 			sge->length = sess->iv.length;
 		}
@@ -2163,6 +2206,16 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 					      session->digest_length);
 		break;
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
+		authdata.algtype = OP_ALG_ALGSEL_ZUCA;
+		authdata.algmode = OP_ALG_AAI_F9;
+		session->auth_alg = RTE_CRYPTO_AUTH_ZUC_EIA3;
+		session->iv.offset = xform->auth.iv.offset;
+		session->iv.length = xform->auth.iv.length;
+		bufsize = cnstr_shdsc_zuca(priv->flc_desc[DESC_INITFINAL].desc,
+					   1, 0, &authdata,
+					   !session->dir,
+					   session->digest_length);
+		break;
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
