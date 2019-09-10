@@ -59,31 +59,6 @@ seqn_list_init(void)
 	seqn_list_index = 0;
 }
 
-static inline int
-seqn_list_update(int val)
-{
-	if (seqn_list_index >= NUM_PACKETS)
-		return -1;
-
-	seqn_list[seqn_list_index++] = val;
-	rte_smp_wmb();
-	return 0;
-}
-
-static inline int
-seqn_list_check(int limit)
-{
-	int i;
-
-	for (i = 0; i < limit; i++) {
-		if (seqn_list[i] != i) {
-			dpaa2_evdev_dbg("Seqn mismatch %d %d", seqn_list[i], i);
-			return -1;
-		}
-	}
-	return 0;
-}
-
 struct test_core_param {
 	rte_atomic32_t *total_events;
 	uint64_t dequeue_tmo_ticks;
@@ -241,18 +216,6 @@ static inline int
 eventdev_setup(void)
 {
 	return _eventdev_setup(TEST_EVENTDEV_SETUP_DEFAULT);
-}
-
-static inline int
-eventdev_setup_priority(void)
-{
-	return _eventdev_setup(TEST_EVENTDEV_SETUP_PRIORITY);
-}
-
-static inline int
-eventdev_setup_dequeue_timeout(void)
-{
-	return _eventdev_setup(TEST_EVENTDEV_SETUP_DEQUEUE_TIMEOUT);
 }
 
 static inline void
