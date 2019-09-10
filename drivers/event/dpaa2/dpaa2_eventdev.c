@@ -63,7 +63,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 	struct dpaa2_dpio_dev *dpio_dev;
 	uint32_t queue_id = ev[0].queue_id;
 	struct dpaa2_eventq *evq_info;
-	uint32_t fqid;
+	uint32_t fqid, retry_count;
 	struct qbman_swp *swp;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t loop, frames_to_send;
@@ -166,13 +166,25 @@ skip_linking:
 		}
 send_partial:
 		loop = 0;
+		retry_count = 0;
 		while (loop < frames_to_send) {
-			loop += qbman_swp_enqueue_multiple_desc(swp,
+			ret = qbman_swp_enqueue_multiple_desc(swp,
 					&eqdesc[loop], &fd_arr[loop],
 					frames_to_send - loop);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT) {
+					num_tx += loop;
+					nb_events -= loop;
+					return num_tx + loop;
+				}
+			} else {
+				loop += ret;
+				retry_count = 0;
+			}
 		}
-		num_tx += frames_to_send;
-		nb_events -= frames_to_send;
+		num_tx += loop;
+		nb_events -= loop;
 	}
 
 	return num_tx;
