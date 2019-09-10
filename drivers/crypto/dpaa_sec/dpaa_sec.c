@@ -101,7 +101,7 @@ dpaa_mem_vtop(void *vaddr)
 
 	ms = rte_mem_virt2memseg(vaddr, NULL);
 	if (ms) {
-		dpaax_iova_table_update(ms->iova, (void *)ms->addr_64, ms->len);
+		dpaax_iova_table_update(ms->iova, ms->addr, ms->len);
 		return ms->iova + RTE_PTR_DIFF(vaddr, ms->addr);
 	}
 	return (size_t)NULL;

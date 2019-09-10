@@ -339,7 +339,8 @@ static struct rte_mbuf *client_put_rxpacket(struct hif_rx_queue *queue,
 
 
 	if (readl(&desc->ctrl) & CL_DESC_OWN) {
-		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(pool));
+		mbuf = (struct rte_mbuf *)
+			rte_cpu_to_le_64((uintptr_t)rte_pktmbuf_alloc(pool));
 		if (unlikely(!mbuf)) {
 			PFE_PMD_WARN("Buffer allocation failure\n");
 			return NULL;
