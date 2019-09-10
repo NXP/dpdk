@@ -13,6 +13,7 @@ LIB = librte_pmd_dpaa2_sec.a
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -Wno-enum-conversion
 
 ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 ifeq ($(shell test $(GCC_VERSION) -gt 70 && echo 1), 1)
