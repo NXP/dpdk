@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2017 NXP
+# Copyright 2017,2019 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -25,10 +25,8 @@ LDLIBS += -lrte_common_dpaax
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
 
-ifeq ($(CONFIG_RTE_LIBRTE_SECURITY),y)
 LDLIBS += -lrte_pmd_dpaa2_sec
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec
-endif
 
 # versioning export map
 EXPORT_MAP := rte_pmd_dpaa2_event_version.map
@@ -43,5 +41,6 @@ CFLAGS += -DALLOW_EXPERIMENTAL_API
 #
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_hw_dpcon.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_eventdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_eventdev_selftest.c
 
 include $(RTE_SDK)/mk/rte.lib.mk

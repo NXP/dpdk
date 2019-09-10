@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- *
- *   Copyright 2017 NXP
- *
+ * Copyright 2017,2019 NXP
  */
 
 #include <assert.h>
@@ -35,9 +33,7 @@
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
 #include <dpaa2_ethdev.h>
-#ifdef RTE_LIBRTE_SECURITY
 #include <dpaa2_sec_event.h>
-#endif
 #include "dpaa2_eventdev.h"
 #include "dpaa2_eventdev_logs.h"
 #include <portal/dpaa2_hw_pvt.h>
@@ -500,7 +496,7 @@ dpaa2_eventdev_queue_setup(struct rte_eventdev *dev, uint8_t queue_id,
 	case RTE_SCHED_TYPE_ORDERED:
 		break;
 	default:
-		DPAA2_EVENTDEV_ERR("Schedule type not supported.");
+		DPAA2_EVENTDEV_ERR("Schedule type is not supported.");
 		return -1;
 	}
 	evq_info->event_queue_cfg = queue_conf->event_queue_cfg;
@@ -808,7 +804,6 @@ dpaa2_eventdev_eth_stop(const struct rte_eventdev *dev,
 	return 0;
 }
 
-#ifdef RTE_LIBRTE_SECURITY
 static int
 dpaa2_eventdev_crypto_caps_get(const struct rte_eventdev *dev,
 			    const struct rte_cryptodev *cdev,
@@ -951,7 +946,6 @@ dpaa2_eventdev_crypto_stop(const struct rte_eventdev *dev,
 
 	return 0;
 }
-#endif
 
 static struct rte_eventdev_ops dpaa2_eventdev_ops = {
 	.dev_infos_get    = dpaa2_eventdev_info_get,
@@ -969,18 +963,17 @@ static struct rte_eventdev_ops dpaa2_eventdev_ops = {
 	.port_unlink      = dpaa2_eventdev_port_unlink,
 	.timeout_ticks    = dpaa2_eventdev_timeout_ticks,
 	.dump             = dpaa2_eventdev_dump,
+	.dev_selftest     = test_eventdev_dpaa2,
 	.eth_rx_adapter_caps_get = dpaa2_eventdev_eth_caps_get,
 	.eth_rx_adapter_queue_add = dpaa2_eventdev_eth_queue_add,
 	.eth_rx_adapter_queue_del = dpaa2_eventdev_eth_queue_del,
 	.eth_rx_adapter_start = dpaa2_eventdev_eth_start,
 	.eth_rx_adapter_stop = dpaa2_eventdev_eth_stop,
-#ifdef RTE_LIBRTE_SECURITY
 	.crypto_adapter_caps_get	= dpaa2_eventdev_crypto_caps_get,
 	.crypto_adapter_queue_pair_add	= dpaa2_eventdev_crypto_queue_add,
 	.crypto_adapter_queue_pair_del	= dpaa2_eventdev_crypto_queue_del,
 	.crypto_adapter_start		= dpaa2_eventdev_crypto_start,
 	.crypto_adapter_stop		= dpaa2_eventdev_crypto_stop,
-#endif
 };
 
 static int
@@ -1080,6 +1073,39 @@ fail:
 }
 
 static int
+dpaa2_eventdev_destroy(const char *name)
+{
+	struct rte_eventdev *eventdev;
+	struct dpaa2_eventdev *priv;
+	int i;
+
+	eventdev = rte_event_pmd_get_named_dev(name);
+	if (eventdev == NULL) {
+		RTE_EDEV_LOG_ERR("eventdev with name %s not allocated", name);
+		return -1;
+	}
+
+	/* For secondary processes, the primary has done all the work */
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
+	priv = eventdev->data->dev_private;
+	for (i = 0; i < priv->max_event_queues; i++) {
+		if (priv->evq_info[i].dpcon)
+			rte_dpaa2_free_dpcon_dev(priv->evq_info[i].dpcon);
+
+		if (priv->evq_info[i].dpci)
+			rte_dpaa2_free_dpci_dev(priv->evq_info[i].dpci);
+
+	}
+	priv->max_event_queues = 0;
+
+	RTE_LOG(INFO, PMD, "%s eventdev cleaned\n", name);
+	return 0;
+}
+
+
+static int
 dpaa2_eventdev_probe(struct rte_vdev_device *vdev)
 {
 	const char *name;
@@ -1096,6 +1122,8 @@ dpaa2_eventdev_remove(struct rte_vdev_device *vdev)
 
 	name = rte_vdev_device_name(vdev);
 	DPAA2_EVENTDEV_INFO("Closing %s", name);
+
+	dpaa2_eventdev_destroy(name);
 
 	return rte_event_pmd_vdev_uninit(name);
 }
