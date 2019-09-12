@@ -55,7 +55,7 @@ typedef uint64_t	dma_addr_t;
 #define FLE_POOL_NUM_BUFS	32000
 #define FLE_POOL_BUF_SIZE	256
 #define FLE_POOL_CACHE_SIZE	512
-#define FLE_SG_MEM_SIZE		2048
+#define FLE_SG_MEM_SIZE(num)	(FLE_POOL_BUF_SIZE + ((num) * 32))
 #define SEC_FLC_DHR_OUTBOUND	-114
 #define SEC_FLC_DHR_INBOUND	0
 
@@ -83,13 +83,14 @@ build_proto_compound_sg_fd(dpaa2_sec_session *sess,
 		mbuf = sym_op->m_src;
 
 	/* first FLE entry used to store mbuf and session ctxt */
-	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
+	fle = (struct qbman_fle *)rte_malloc(NULL,
+			FLE_SG_MEM_SIZE(mbuf->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_DP_ERR("Proto:SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE);
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
@@ -312,13 +313,14 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 		mbuf = sym_op->m_src;
 
 	/* first FLE entry used to store mbuf and session ctxt */
-	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
+	fle = (struct qbman_fle *)rte_malloc(NULL,
+			FLE_SG_MEM_SIZE(mbuf->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_ERR("GCM SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE);
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (size_t)priv);
 
@@ -608,13 +610,14 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 		mbuf = sym_op->m_src;
 
 	/* first FLE entry used to store mbuf and session ctxt */
-	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
+	fle = (struct qbman_fle *)rte_malloc(NULL,
+			FLE_SG_MEM_SIZE(mbuf->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_ERR("AUTHENC SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE);
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
@@ -901,13 +904,14 @@ static inline int build_auth_sg_fd(
 	}
 
 	mbuf = sym_op->m_src;
-	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
+	fle = (struct qbman_fle *)rte_malloc(NULL,
+			FLE_SG_MEM_SIZE(mbuf->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_ERR("AUTH SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE);
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
 	/* first FLE entry used to store mbuf and session ctxt */
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
@@ -1140,13 +1144,14 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	else
 		mbuf = sym_op->m_src;
 
-	fle = (struct qbman_fle *)rte_malloc(NULL, FLE_SG_MEM_SIZE,
+	fle = (struct qbman_fle *)rte_malloc(NULL,
+			FLE_SG_MEM_SIZE(mbuf->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (!fle) {
 		DPAA2_SEC_ERR("CIPHER SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE);
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
 	/* first FLE entry used to store mbuf and session ctxt */
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
@@ -1437,7 +1442,7 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	uint32_t loop;
 	int32_t ret;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
-	uint32_t frames_to_send;
+	uint32_t frames_to_send, retry_count;
 	struct qbman_eq_desc eqdesc;
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_swp *swp;
@@ -1496,16 +1501,29 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			}
 			ops++;
 		}
+
 		loop = 0;
+		retry_count = 0;
 		while (loop < frames_to_send) {
-			loop += qbman_swp_enqueue_multiple(swp, &eqdesc,
-							&fd_arr[loop],
-							&flags[loop],
-							frames_to_send - loop);
+			ret = qbman_swp_enqueue_multiple(swp, &eqdesc,
+							 &fd_arr[loop],
+							 &flags[loop],
+							 frames_to_send - loop);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT) {
+					num_tx += loop;
+					nb_ops -= loop;
+					goto skip_tx;
+				}
+			} else {
+				loop += ret;
+				retry_count = 0;
+			}
 		}
 
-		num_tx += frames_to_send;
-		nb_ops -= frames_to_send;
+		num_tx += loop;
+		nb_ops -= loop;
 	}
 skip_tx:
 	dpaa2_qp->tx_vq.tx_pkts += num_tx;
@@ -1683,7 +1701,7 @@ dpaa2_sec_enqueue_burst_ordered(void *qp, struct rte_crypto_op **ops,
 	uint32_t loop;
 	int32_t ret;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
-	uint32_t frames_to_send, num_free_eq_desc;
+	uint32_t frames_to_send, num_free_eq_desc, retry_count;
 	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
 	struct dpaa2_sec_qp *dpaa2_qp = (struct dpaa2_sec_qp *)qp;
 	struct qbman_swp *swp;
@@ -1749,15 +1767,28 @@ dpaa2_sec_enqueue_burst_ordered(void *qp, struct rte_crypto_op **ops,
 			}
 			ops++;
 		}
+
 		loop = 0;
+		retry_count = 0;
 		while (loop < frames_to_send) {
-			loop += qbman_swp_enqueue_multiple_desc(swp,
+			ret = qbman_swp_enqueue_multiple_desc(swp,
 					&eqdesc[loop], &fd_arr[loop],
 					frames_to_send - loop);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT) {
+					num_tx += loop;
+					nb_ops -= loop;
+					goto skip_tx;
+				}
+			} else {
+				loop += ret;
+				retry_count = 0;
+			}
 		}
 
-		num_tx += frames_to_send;
-		nb_ops -= frames_to_send;
+		num_tx += loop;
+		nb_ops -= loop;
 	}
 
 skip_tx:

@@ -38,7 +38,9 @@
 
 #include <rte_dpaa_bus.h>
 #include <dpaa_sec.h>
+#include <dpaa_sec_event.h>
 #include <dpaa_sec_log.h>
+#include <dpaax_iova_table.h>
 
 enum rta_sec_era rta_sec_era;
 
@@ -61,16 +63,13 @@ dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
 	}
-
-	/* report op status to sym->op and then free the ctx memeory  */
-	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
 }
 
 static inline struct dpaa_sec_op_ctx *
-dpaa_sec_alloc_ctx(dpaa_sec_session *ses)
+dpaa_sec_alloc_ctx(dpaa_sec_session *ses, int sg_count)
 {
 	struct dpaa_sec_op_ctx *ctx;
-	int retval;
+	int i, retval;
 
 	retval = rte_mempool_get(ses->ctx_pool, (void **)(&ctx));
 	if (!ctx || retval) {
@@ -83,14 +82,11 @@ dpaa_sec_alloc_ctx(dpaa_sec_session *ses)
 	 * to clear all the SG entries. dpaa_sec_alloc_ctx() is called for
 	 * each packet, memset is costlier than dcbz_64().
 	 */
-	dcbz_64(&ctx->job.sg[SG_CACHELINE_0]);
-	dcbz_64(&ctx->job.sg[SG_CACHELINE_1]);
-	dcbz_64(&ctx->job.sg[SG_CACHELINE_2]);
-	dcbz_64(&ctx->job.sg[SG_CACHELINE_3]);
+	for (i = 0; i < sg_count && i < MAX_JOB_SG_ENTRIES; i += 4)
+		dcbz_64(&ctx->job.sg[i]);
 
 	ctx->ctx_pool = ses->ctx_pool;
-	ctx->vtop_offset = (size_t) ctx
-				- rte_mempool_virt2iova(ctx);
+	ctx->vtop_offset = (size_t) ctx - rte_mempool_virt2iova(ctx);
 
 	return ctx;
 }
@@ -101,8 +97,10 @@ dpaa_mem_vtop(void *vaddr)
 	const struct rte_memseg *ms;
 
 	ms = rte_mem_virt2memseg(vaddr, NULL);
-	if (ms)
+	if (ms) {
+		dpaax_iova_table_update(ms->iova, ms->addr, ms->len);
 		return ms->iova + RTE_PTR_DIFF(vaddr, ms->addr);
+	}
 	return (size_t)NULL;
 }
 
@@ -855,12 +853,12 @@ build_auth_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	else
 		extra_segs = 2;
 
-	if ((mbuf->nb_segs + extra_segs) > MAX_SG_ENTRIES) {
+	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Auth: Max sec segs supported is %d",
 				MAX_SG_ENTRIES);
 		return NULL;
 	}
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, mbuf->nb_segs + extra_segs);
 	if (!ctx)
 		return NULL;
 
@@ -938,7 +936,7 @@ build_auth_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	rte_iova_t start_addr;
 	uint8_t *old_digest;
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, 4);
 	if (!ctx)
 		return NULL;
 
@@ -1008,13 +1006,13 @@ build_cipher_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		req_segs = mbuf->nb_segs * 2 + 3;
 	}
 
-	if (req_segs > MAX_SG_ENTRIES) {
+	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Cipher: Max sec segs supported is %d",
 				MAX_SG_ENTRIES);
 		return NULL;
 	}
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
 
@@ -1094,7 +1092,7 @@ build_cipher_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			ses->iv.offset);
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, 4);
 	if (!ctx)
 		return NULL;
 
@@ -1161,13 +1159,13 @@ build_cipher_auth_gcm_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	if (ses->auth_only_len)
 		req_segs++;
 
-	if (req_segs > MAX_SG_ENTRIES) {
+	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("AEAD: Max sec segs supported is %d",
 				MAX_SG_ENTRIES);
 		return NULL;
 	}
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
 
@@ -1296,7 +1294,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	else
 		dst_start_addr = src_start_addr;
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, 7);
 	if (!ctx)
 		return NULL;
 
@@ -1409,13 +1407,13 @@ build_cipher_auth_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		req_segs = mbuf->nb_segs * 2 + 4;
 	}
 
-	if (req_segs > MAX_SG_ENTRIES) {
+	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Cipher-Auth: Max sec segs supported is %d",
 				MAX_SG_ENTRIES);
 		return NULL;
 	}
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
 
@@ -1533,7 +1531,7 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	else
 		dst_start_addr = src_start_addr;
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, 7);
 	if (!ctx)
 		return NULL;
 
@@ -1619,7 +1617,7 @@ build_proto(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	struct qm_sg_entry *sg;
 	phys_addr_t src_start_addr, dst_start_addr;
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, 2);
 	if (!ctx)
 		return NULL;
 	cf = &ctx->job;
@@ -1666,13 +1664,13 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		mbuf = sym->m_src;
 	}
 	req_segs = mbuf->nb_segs + sym->m_src->nb_segs + 2;
-	if (req_segs > MAX_SG_ENTRIES) {
+	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Proto: Max sec segs supported is %d",
 				MAX_SG_ENTRIES);
 		return NULL;
 	}
 
-	ctx = dpaa_sec_alloc_ctx(ses);
+	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
 	cf = &ctx->job;
@@ -1755,7 +1753,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	struct rte_crypto_op *op;
 	struct dpaa_sec_job *cf;
 	dpaa_sec_session *ses;
-	uint32_t auth_only_len;
+	uint32_t auth_only_len, index, flags[DPAA_SEC_BURST] = {0};
 	struct qman_fq *inq[DPAA_SEC_BURST];
 
 	while (nb_ops) {
@@ -1763,6 +1761,18 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 				DPAA_SEC_BURST : nb_ops;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			op = *(ops++);
+			if (op->sym->m_src->seqn != 0) {
+				index = op->sym->m_src->seqn - 1;
+				if (DPAA_PER_LCORE_DQRR_HELD & (1 << index)) {
+					flags[loop] = ((index & 0x0f) << 8);
+					   /*QM_EQCR_DCA_IDXMASK*/
+					flags[loop] |= QMAN_ENQUEUE_FLAG_DCA;
+					DPAA_PER_LCORE_DQRR_SIZE--;
+					DPAA_PER_LCORE_DQRR_HELD &=
+								~(1 << index);
+				}
+			}
+
 			switch (op->sess_type) {
 			case RTE_CRYPTO_OP_WITH_SESSION:
 				ses = (dpaa_sec_session *)
@@ -1881,7 +1891,7 @@ send_pkts:
 		loop = 0;
 		while (loop < frames_to_send) {
 			loop += qman_enqueue_multi_fq(&inq[loop], &fds[loop],
-					frames_to_send - loop);
+					&flags[loop], frames_to_send - loop);
 		}
 		nb_ops -= frames_to_send;
 		num_tx += frames_to_send;
@@ -2704,6 +2714,186 @@ dpaa_sec_dev_infos_get(struct rte_cryptodev *dev,
 		info->sym.max_nb_sessions = internals->max_nb_sessions;
 		info->driver_id = cryptodev_driver_id;
 	}
+}
+
+static enum qman_cb_dqrr_result
+dpaa_sec_process_parallel_event(void *event,
+			struct qman_portal *qm __always_unused,
+			struct qman_fq *outq,
+			const struct qm_dqrr_entry *dqrr,
+			void **bufs)
+{
+	const struct qm_fd *fd;
+	struct dpaa_sec_job *job;
+	struct dpaa_sec_op_ctx *ctx;
+	struct rte_event *ev = (struct rte_event *)event;
+
+	fd = &dqrr->fd;
+
+	/* sg is embedded in an op ctx,
+	 * sg[0] is for output
+	 * sg[1] for input
+	 */
+	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+
+	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
+	ctx->fd_status = fd->status;
+	if (ctx->op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
+		struct qm_sg_entry *sg_out;
+		uint32_t len;
+
+		sg_out = &job->sg[0];
+		hw_sg_to_cpu(sg_out);
+		len = sg_out->length;
+		ctx->op->sym->m_src->pkt_len = len;
+		ctx->op->sym->m_src->data_len = len;
+	}
+	if (!ctx->fd_status) {
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+	} else {
+		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+	}
+	ev->event_ptr = (void *)ctx->op;
+
+	ev->flow_id = outq->ev.flow_id;
+	ev->sub_event_type = outq->ev.sub_event_type;
+	ev->event_type = RTE_EVENT_TYPE_CRYPTODEV;
+	ev->op = RTE_EVENT_OP_NEW;
+	ev->sched_type = outq->ev.sched_type;
+	ev->queue_id = outq->ev.queue_id;
+	ev->priority = outq->ev.priority;
+	*bufs = (void *)ctx->op;
+
+	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
+
+	return qman_cb_dqrr_consume;
+}
+
+static enum qman_cb_dqrr_result
+dpaa_sec_process_atomic_event(void *event,
+			struct qman_portal *qm __rte_unused,
+			struct qman_fq *outq,
+			const struct qm_dqrr_entry *dqrr,
+			void **bufs)
+{
+	u8 index;
+	const struct qm_fd *fd;
+	struct dpaa_sec_job *job;
+	struct dpaa_sec_op_ctx *ctx;
+	struct rte_event *ev = (struct rte_event *)event;
+
+	fd = &dqrr->fd;
+
+	/* sg is embedded in an op ctx,
+	 * sg[0] is for output
+	 * sg[1] for input
+	 */
+	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+
+	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
+	ctx->fd_status = fd->status;
+	if (ctx->op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
+		struct qm_sg_entry *sg_out;
+		uint32_t len;
+
+		sg_out = &job->sg[0];
+		hw_sg_to_cpu(sg_out);
+		len = sg_out->length;
+		ctx->op->sym->m_src->pkt_len = len;
+		ctx->op->sym->m_src->data_len = len;
+	}
+	if (!ctx->fd_status) {
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+	} else {
+		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
+		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+	}
+	ev->event_ptr = (void *)ctx->op;
+	ev->flow_id = outq->ev.flow_id;
+	ev->sub_event_type = outq->ev.sub_event_type;
+	ev->event_type = RTE_EVENT_TYPE_CRYPTODEV;
+	ev->op = RTE_EVENT_OP_NEW;
+	ev->sched_type = outq->ev.sched_type;
+	ev->queue_id = outq->ev.queue_id;
+	ev->priority = outq->ev.priority;
+
+	/* Save active dqrr entries DQRR_PTR2IDX(dqrr);*/
+	index = ((uintptr_t)dqrr >> 6) & (16/*QM_DQRR_SIZE*/ - 1);
+	DPAA_PER_LCORE_DQRR_SIZE++;
+	DPAA_PER_LCORE_DQRR_HELD |= 1 << index;
+	DPAA_PER_LCORE_DQRR_MBUF(index) = ctx->op->sym->m_src;
+	ev->impl_opaque = index + 1;
+	ctx->op->sym->m_src->seqn = (uint32_t)index + 1;
+	*bufs = (void *)ctx->op;
+
+	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
+
+	return qman_cb_dqrr_defer;
+}
+
+int
+dpaa_sec_eventq_attach(const struct rte_cryptodev *dev,
+		int qp_id,
+		uint16_t ch_id,
+		const struct rte_event *event)
+{
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+	struct qm_mcc_initfq opts = {0};
+
+	int ret;
+
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
+		       QM_INITFQ_WE_CONTEXTA | QM_INITFQ_WE_CONTEXTB;
+	opts.fqd.dest.channel = ch_id;
+
+	switch (event->sched_type) {
+	case RTE_SCHED_TYPE_ATOMIC:
+		opts.fqd.fq_ctrl |= QM_FQCTRL_HOLDACTIVE;
+		/* Reset FQCTRL_AVOIDBLOCK bit as it is unnecessary
+		 * configuration with HOLD_ACTIVE setting
+		 */
+		opts.fqd.fq_ctrl &= (~QM_FQCTRL_AVOIDBLOCK);
+		qp->outq.cb.dqrr_dpdk_cb = dpaa_sec_process_atomic_event;
+		break;
+	case RTE_SCHED_TYPE_ORDERED:
+		DPAA_SEC_ERR("Ordered queue schedule type is not supported\n");
+		return -1;
+	default:
+		opts.fqd.fq_ctrl |= QM_FQCTRL_AVOIDBLOCK;
+		qp->outq.cb.dqrr_dpdk_cb = dpaa_sec_process_parallel_event;
+		break;
+	}
+
+	ret = qman_init_fq(&qp->outq, QMAN_INITFQ_FLAG_SCHED, &opts);
+	if (unlikely(ret)) {
+		DPAA_SEC_ERR("unable to init caam source fq!");
+		return ret;
+	}
+
+	memcpy(&qp->outq.ev, event, sizeof(struct rte_event));
+
+	return 0;
+}
+
+int
+dpaa_sec_eventq_detach(const struct rte_cryptodev *dev,
+			int qp_id)
+{
+	struct qm_mcc_initfq opts = {0};
+	int ret;
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
+		       QM_INITFQ_WE_CONTEXTA | QM_INITFQ_WE_CONTEXTB;
+	qp->outq.cb.dqrr = dqrr_out_fq_cb_rx;
+	qp->outq.cb.ern  = ern_sec_fq_handler;
+	ret = qman_init_fq(&qp->outq, 0, &opts);
+	if (ret)
+		RTE_LOG(ERR, PMD, "Error in qman_init_fq: ret: %d\n", ret);
+	qp->outq.cb.dqrr = NULL;
+
+	return ret;
 }
 
 static struct rte_cryptodev_ops crypto_ops = {

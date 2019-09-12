@@ -56,7 +56,8 @@ int pfe_hif_shm_init(struct hif_shm *hif_shm, struct rte_mempool *mb_pool)
 	hif_shm->rx_buf_pool_cnt = HIF_RX_DESC_NT;
 
 	for (i = 0; i < hif_shm->rx_buf_pool_cnt; i++) {
-		mbuf = rte_cpu_to_le_64(rte_pktmbuf_alloc(mb_pool));
+		mbuf = (struct rte_mbuf *)
+			rte_cpu_to_le_64((uintptr_t)rte_pktmbuf_alloc(mb_pool));
 		if (mbuf)
 			hif_shm->rx_buf_pool[i] = mbuf;
 		else

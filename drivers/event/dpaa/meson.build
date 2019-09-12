@@ -4,7 +4,8 @@
 if host_machine.system() != 'linux'
 	build = false
 endif
-deps += ['pmd_dpaa']
+deps += ['pmd_dpaa', 'pmd_dpaa_sec']
 sources = files('dpaa_eventdev.c')
 
 allow_experimental_apis = true
+includes += include_directories('../../crypto/dpaa_sec/')
