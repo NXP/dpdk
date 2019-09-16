@@ -1980,7 +1980,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 {
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo cipherdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -2096,9 +2096,11 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
 
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x", i, priv->flc_desc[0].desc[i]);
-
+#endif
 	return 0;
 
 error_out:
@@ -2114,7 +2116,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 {
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -2258,10 +2260,12 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x",
 				i, priv->flc_desc[DESC_INITFINAL].desc[i]);
-
+#endif
 
 	return 0;
 
@@ -2279,7 +2283,7 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo aeaddata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_aead_xform *aead_xform = &xform->aead;
@@ -2377,10 +2381,12 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x\n",
 			    i, priv->flc_desc[0].desc[i]);
-
+#endif
 	return 0;
 
 error_out:
@@ -2398,7 +2404,7 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_cipher_xform *cipher_xform;
@@ -2603,9 +2609,12 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x",
 			    i, priv->flc_desc[0].desc[i]);
+#endif
 
 	return 0;
 
