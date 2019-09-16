@@ -1834,7 +1834,9 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 					goto send_pkts;
 				}
 			} else {
-				if (is_auth_only(ses)) {
+				if (is_proto_pdcp(ses) || is_proto_ipsec(ses)) {
+					cf = build_proto_sg(op, ses);
+				} else if (is_auth_only(ses)) {
 					cf = build_auth_only_sg(op, ses);
 				} else if (is_cipher_only(ses)) {
 					cf = build_cipher_only_sg(op, ses);
@@ -1843,8 +1845,6 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 					auth_only_len = ses->auth_only_len;
 				} else if (is_auth_cipher(ses)) {
 					cf = build_cipher_auth_sg(op, ses);
-				} else if (is_proto_pdcp(ses) || is_proto_ipsec(ses)) {
-					cf = build_proto_sg(op, ses);
 				} else {
 					DPAA_SEC_DP_ERR("not supported ops");
 					frames_to_send = loop;
