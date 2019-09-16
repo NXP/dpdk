@@ -305,8 +305,6 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (sym_op->m_dst)
 		mbuf = sym_op->m_dst;
 	else
@@ -452,8 +450,6 @@ build_authenc_gcm_fd(dpaa2_sec_session *sess,
 	struct rte_mbuf *dst;
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
-
-	PMD_INIT_FUNC_TRACE();
 
 	if (sym_op->m_dst)
 		dst = sym_op->m_dst;
@@ -602,8 +598,6 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (sym_op->m_dst)
 		mbuf = sym_op->m_dst;
 	else
@@ -748,8 +742,6 @@ build_authenc_fd(dpaa2_sec_session *sess,
 			sess->iv.offset);
 	struct rte_mbuf *dst;
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (sym_op->m_dst)
 		dst = sym_op->m_dst;
 	else
@@ -887,8 +879,6 @@ static inline int build_auth_sg_fd(
 	uint8_t *old_digest;
 	struct rte_mbuf *mbuf;
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->auth.data.length;
 	data_offset = sym_op->auth.data.offset;
 
@@ -1006,8 +996,6 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	uint8_t *old_digest;
 	int retval;
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->auth.data.length;
 	data_offset = sym_op->auth.data.offset;
 
@@ -1122,8 +1110,6 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	struct rte_mbuf *mbuf;
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
-
-	PMD_INIT_FUNC_TRACE();
 
 	data_len = sym_op->cipher.data.length;
 	data_offset = sym_op->cipher.data.offset;
@@ -1258,8 +1244,6 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 			sess->iv.offset);
 	struct rte_mbuf *dst;
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->cipher.data.length;
 	data_offset = sym_op->cipher.data.offset;
 
@@ -1370,8 +1354,6 @@ build_sec_fd(struct rte_crypto_op *op,
 {
 	int ret = -1;
 	dpaa2_sec_session *sess;
-
-	PMD_INIT_FUNC_TRACE();
 
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = (dpaa2_sec_session *)get_sym_session_private_data(
