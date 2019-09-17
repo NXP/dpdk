@@ -1466,6 +1466,16 @@ main(int argc, char **argv)
 			nb_rx_queue, (unsigned)n_tx_queue );
 
 		rte_eth_dev_info_get(portid, &dev_info);
+
+		/* Enable Receive side SCATTER, if supported by NIC,
+		 * when jumbo packet is enabled.
+		 */
+		if (local_port_conf.rxmode.offloads &
+				DEV_RX_OFFLOAD_JUMBO_FRAME)
+			if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER)
+				local_port_conf.rxmode.offloads |=
+						DEV_RX_OFFLOAD_SCATTER;
+
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
