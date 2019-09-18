@@ -892,6 +892,11 @@ main(int argc, char **argv)
 		    dev_info.max_rx_pktlen,
 		    local_port_conf.rxmode.max_rx_pkt_len);
 
+		/* Enable Receive side SCATTER, if supported by NIC */
+		if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER)
+			local_port_conf.rxmode.offloads |=
+					DEV_RX_OFFLOAD_SCATTER;
+
 		/* get the lcore_id for this port */
 		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
 		       qconf->n_rx_queue == (unsigned)rx_queue_per_lcore) {

@@ -84,13 +84,13 @@ build_proto_compound_sg_fd(dpaa2_sec_session *sess,
 
 	/* first FLE entry used to store mbuf and session ctxt */
 	fle = (struct qbman_fle *)rte_malloc(NULL,
-			FLE_SG_MEM_SIZE(mbuf->nb_segs),
+			FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_DP_ERR("Proto:SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
@@ -305,8 +305,6 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (sym_op->m_dst)
 		mbuf = sym_op->m_dst;
 	else
@@ -314,13 +312,13 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 
 	/* first FLE entry used to store mbuf and session ctxt */
 	fle = (struct qbman_fle *)rte_malloc(NULL,
-			FLE_SG_MEM_SIZE(mbuf->nb_segs),
+			FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_ERR("GCM SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (size_t)priv);
 
@@ -452,8 +450,6 @@ build_authenc_gcm_fd(dpaa2_sec_session *sess,
 	struct rte_mbuf *dst;
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
-
-	PMD_INIT_FUNC_TRACE();
 
 	if (sym_op->m_dst)
 		dst = sym_op->m_dst;
@@ -602,8 +598,6 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (sym_op->m_dst)
 		mbuf = sym_op->m_dst;
 	else
@@ -611,13 +605,13 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 
 	/* first FLE entry used to store mbuf and session ctxt */
 	fle = (struct qbman_fle *)rte_malloc(NULL,
-			FLE_SG_MEM_SIZE(mbuf->nb_segs),
+			FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (unlikely(!fle)) {
 		DPAA2_SEC_ERR("AUTHENC SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs));
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
 
@@ -747,8 +741,6 @@ build_authenc_fd(dpaa2_sec_session *sess,
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 	struct rte_mbuf *dst;
-
-	PMD_INIT_FUNC_TRACE();
 
 	if (sym_op->m_dst)
 		dst = sym_op->m_dst;
@@ -887,8 +879,6 @@ static inline int build_auth_sg_fd(
 	uint8_t *old_digest;
 	struct rte_mbuf *mbuf;
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->auth.data.length;
 	data_offset = sym_op->auth.data.offset;
 
@@ -1006,8 +996,6 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	uint8_t *old_digest;
 	int retval;
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->auth.data.length;
 	data_offset = sym_op->auth.data.offset;
 
@@ -1123,8 +1111,6 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 
-	PMD_INIT_FUNC_TRACE();
-
 	data_len = sym_op->cipher.data.length;
 	data_offset = sym_op->cipher.data.offset;
 
@@ -1144,14 +1130,15 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	else
 		mbuf = sym_op->m_src;
 
+	/* first FLE entry used to store mbuf and session ctxt */
 	fle = (struct qbman_fle *)rte_malloc(NULL,
-			FLE_SG_MEM_SIZE(mbuf->nb_segs),
+			FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs),
 			RTE_CACHE_LINE_SIZE);
 	if (!fle) {
 		DPAA2_SEC_ERR("CIPHER SG: Memory alloc failed for SGE");
 		return -1;
 	}
-	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs));
+	memset(fle, 0, FLE_SG_MEM_SIZE(mbuf->nb_segs + sym_op->m_src->nb_segs));
 	/* first FLE entry used to store mbuf and session ctxt */
 	DPAA2_SET_FLE_ADDR(fle, (size_t)op);
 	DPAA2_FLE_SAVE_CTXT(fle, (ptrdiff_t)priv);
@@ -1256,8 +1243,6 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			sess->iv.offset);
 	struct rte_mbuf *dst;
-
-	PMD_INIT_FUNC_TRACE();
 
 	data_len = sym_op->cipher.data.length;
 	data_offset = sym_op->cipher.data.offset;
@@ -1369,8 +1354,6 @@ build_sec_fd(struct rte_crypto_op *op,
 {
 	int ret = -1;
 	dpaa2_sec_session *sess;
-
-	PMD_INIT_FUNC_TRACE();
 
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = (dpaa2_sec_session *)get_sym_session_private_data(
@@ -1997,7 +1980,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 {
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo cipherdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -2113,9 +2096,11 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
 
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x", i, priv->flc_desc[0].desc[i]);
-
+#endif
 	return 0;
 
 error_out:
@@ -2131,7 +2116,7 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 {
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 
@@ -2275,10 +2260,12 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x",
 				i, priv->flc_desc[DESC_INITFINAL].desc[i]);
-
+#endif
 
 	return 0;
 
@@ -2296,7 +2283,7 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo aeaddata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_aead_xform *aead_xform = &xform->aead;
@@ -2394,10 +2381,12 @@ dpaa2_sec_aead_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x\n",
 			    i, priv->flc_desc[0].desc[i]);
-
+#endif
 	return 0;
 
 error_out:
@@ -2415,7 +2404,7 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 	struct dpaa2_sec_aead_ctxt *ctxt = &session->ext_params.aead_ctxt;
 	struct dpaa2_sec_dev_private *dev_priv = dev->data->dev_private;
 	struct alginfo authdata, cipherdata;
-	int bufsize, i;
+	int bufsize;
 	struct ctxt_priv *priv;
 	struct sec_flow_context *flc;
 	struct rte_crypto_cipher_xform *cipher_xform;
@@ -2620,9 +2609,12 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 
 	flc->word1_sdl = (uint8_t)bufsize;
 	session->ctxt = priv;
+#ifdef CAAM_DESC_DEBUG
+	int i;
 	for (i = 0; i < bufsize; i++)
 		DPAA2_SEC_DEBUG("DESC[%d]:0x%x",
 			    i, priv->flc_desc[0].desc[i]);
+#endif
 
 	return 0;
 
