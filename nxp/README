@@ -310,17 +310,8 @@ Following are some pre-requisites:
 		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
 		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
 
-	2. For RDB board:
-		ip link add name switch type bridge; ip link set switch up
-		ip link set swp0 master switch && ip link set swp0 up
-		ip link set swp4 master switch && ip link set swp4 up
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
-		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
-		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
-
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.2/driver_override
-		echo 0000:00:00.2 > /sys/bus/pci/drivers/fsl_enetc/unbind
-		echo 0000:00:00.2 > /sys/bus/pci/drivers/vfio-pci/bind
+	2. For RDB board, run below script:
+	       /usr/local/dpdk/enetc/dpdk_configure_1028ardb.sh
 
 
   For PPFE Platform:
