@@ -31,6 +31,7 @@
 
 #define DRIVER_LOOPBACK_MODE "drv_loopback"
 #define DRIVER_NO_PREFETCH_MODE "drv_no_prefetch"
+#define DRIVER_TX_CONF "drv_tx_conf"
 
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
@@ -2463,6 +2464,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	printf("DPDK IEEE1588 is enabled\n");
 	priv->flags |= DPAA2_TX_CONF_ENABLE;
 #endif
+	/* Used with ``fslmc:dpni.1,drv_tx_conf=1`` */
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_TX_CONF)) {
+		priv->flags |= DPAA2_TX_CONF_ENABLE;
+		DPAA2_PMD_INFO("TX_CONF Enabled");
+	}
 
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
@@ -2753,7 +2759,8 @@ static struct rte_dpaa2_driver rte_dpaa2_pmd = {
 RTE_PMD_REGISTER_DPAA2(net_dpaa2, rte_dpaa2_pmd);
 RTE_PMD_REGISTER_PARAM_STRING(net_dpaa2,
 		DRIVER_LOOPBACK_MODE "=<int> "
-		DRIVER_NO_PREFETCH_MODE "=<int>");
+		DRIVER_NO_PREFETCH_MODE "=<int>"
+		DRIVER_TX_CONF "=<int>");
 RTE_INIT(dpaa2_pmd_init_log)
 {
 	dpaa2_logtype_pmd = rte_log_register("pmd.net.dpaa2");
