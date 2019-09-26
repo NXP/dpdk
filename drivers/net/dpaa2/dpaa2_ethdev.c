@@ -309,7 +309,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
-	if (priv->tx_conf_en)
+	if (priv->flags & DPAA2_TX_CONF_ENABLE)
 		tot_queues = priv->nb_rx_queues + 2 * priv->nb_tx_queues;
 	else
 		tot_queues = priv->nb_rx_queues + priv->nb_tx_queues;
@@ -347,7 +347,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail_tx;
 	}
 
-	if (priv->tx_conf_en) {
+	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
 		/*Setup tx confirmation queues*/
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			mc_q->eth_data = dev->data;
@@ -429,7 +429,7 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 			dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
 			rte_free(dpaa2_q->cscn);
 		}
-		if (priv->tx_conf_en) {
+		if (priv->flags & DPAA2_TX_CONF_ENABLE) {
 			/* cleanup tx conf queue storage */
 			for (i = 0; i < priv->nb_tx_queues; i++) {
 				dpaa2_q = (struct dpaa2_queue *)
@@ -781,7 +781,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	if (tx_queue_id == 0) {
 		/*Set tx-conf and error configuration*/
-		if (priv->tx_conf_en)
+		if (priv->flags & DPAA2_TX_CONF_ENABLE)
 			ret = dpni_set_tx_confirmation_mode(dpni, CMD_PRI_LOW,
 							    priv->token,
 							    DPNI_CONF_AFFINE);
@@ -840,7 +840,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
 	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 
-	if (priv->tx_conf_en) {
+	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
 		dpaa2_q->tx_conf_queue = dpaa2_tx_conf_q;
 		options = options | DPNI_QUEUE_OPT_USER_CTX;
 		tx_conf_cfg.user_context = (size_t)(dpaa2_q);
@@ -2461,9 +2461,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->flags = 0;
 #if defined(RTE_LIBRTE_IEEE1588)
 	printf("DPDK IEEE1588 is enabled\n");
-	priv->tx_conf_en = 1;
-#else
-	priv->tx_conf_en = 0;
+	priv->flags |= DPAA2_TX_CONF_ENABLE;
 #endif
 
 	/* Packets with parse error to be dropped in hw */
@@ -2503,7 +2501,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... tx buffer layout ... */
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	if (priv->tx_conf_en) {
+	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
 		layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
 				 DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
 		layout.pass_timestamp = true;
@@ -2520,13 +2518,11 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... tx-conf and error buffer layout ... */
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	if (priv->tx_conf_en) {
-		layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				 DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
+	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+		layout.options = DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
 		layout.pass_timestamp = true;
-	} else {
-		layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
 	}
+	layout.options |= DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
 	layout.pass_frame_status = 1;
 	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
 				     DPNI_QUEUE_TX_CONFIRM, &layout);
@@ -2707,7 +2703,6 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		eth_dev->data->dev_private = (void *)dev_priv;
 		/* Store a pointer to eth_dev in dev_private */
 		dev_priv->eth_dev = eth_dev;
-		dev_priv->tx_conf_en = 0;
 	} else {
 		eth_dev = rte_eth_dev_attach_secondary(dpaa2_dev->device.name);
 		if (!eth_dev) {
