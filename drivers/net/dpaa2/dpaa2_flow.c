@@ -3578,6 +3578,7 @@ int dpaa2_flow_destroy(struct rte_eth_dev *dev,
 			"Error in entry addition in QoS table(%d)", ret);
 			goto error;
 		}
+		priv->qos_index[flow->qos_index] = 0;
 		break;
 	default:
 		DPAA2_PMD_ERR(
@@ -3587,6 +3588,10 @@ int dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	}
 
 	LIST_REMOVE(flow, next);
+	rte_free((void *)(size_t)flow->qos_rule.key_iova);
+	rte_free((void *)(size_t)flow->qos_rule.mask_iova);
+	rte_free((void *)(size_t)flow->fs_rule.key_iova);
+	rte_free((void *)(size_t)flow->fs_rule.mask_iova);
 	/* Now free the flow */
 	rte_free(flow);
 
