@@ -2876,6 +2876,8 @@ dpaa_sec_eventq_detach(const struct rte_cryptodev *dev,
 		       QM_INITFQ_WE_CONTEXTA | QM_INITFQ_WE_CONTEXTB;
 	qp->outq.cb.dqrr = dqrr_out_fq_cb_rx;
 	qp->outq.cb.ern  = ern_sec_fq_handler;
+	qman_retire_fq(&qp->outq, NULL);
+	qman_oos_fq(&qp->outq);
 	ret = qman_init_fq(&qp->outq, 0, &opts);
 	if (ret)
 		RTE_LOG(ERR, PMD, "Error in qman_init_fq: ret: %d\n", ret);
