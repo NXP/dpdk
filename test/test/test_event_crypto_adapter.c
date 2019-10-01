@@ -674,12 +674,11 @@ test_crypto_adapter_free(void)
 static int
 test_crypto_adapter_create(void)
 {
-	struct rte_event_port_conf conf = {
-		.dequeue_depth = 8,
-		.enqueue_depth = 8,
-		.new_event_threshold = 1200,
-	};
 	int ret;
+	struct rte_event_port_conf conf;
+
+	ret = rte_event_port_default_conf_get(TEST_CDEV_ID, 0, &conf);
+	TEST_ASSERT_SUCCESS(ret, "Failed to get port0 info");
 
 	/* Create adapter with default port creation callback */
 	ret = rte_event_crypto_adapter_create(TEST_ADAPTER_ID,
@@ -718,14 +717,12 @@ test_crypto_adapter_qp_add_del(void)
 static int
 configure_event_crypto_adapter(enum rte_event_crypto_adapter_mode mode)
 {
-	struct rte_event_port_conf conf = {
-		.dequeue_depth = 8,
-		.enqueue_depth = 8,
-		.new_event_threshold = 1200,
-	};
-
 	uint32_t cap;
 	int ret;
+	struct rte_event_port_conf conf;
+
+	ret = rte_event_port_default_conf_get(TEST_CDEV_ID, 0, &conf);
+	TEST_ASSERT_SUCCESS(ret, "Failed to get port0 info");
 
 	/* Create adapter with default port creation callback */
 	ret = rte_event_crypto_adapter_create(TEST_ADAPTER_ID,
@@ -763,15 +760,15 @@ test_crypto_adapter_stop(void)
 		rte_service_runstate_set(adapter_service_id, 0);
 		rte_service_lcore_stop(slcore_id);
 		rte_service_lcore_del(slcore_id);
-		rte_event_crypto_adapter_stop(TEST_ADAPTER_ID);
 	}
+	rte_event_crypto_adapter_stop(TEST_ADAPTER_ID);
 
 	if (rte_event_dev_service_id_get(evdev, &evdev_service_id) == 0) {
 		rte_service_runstate_set(evdev_service_id, 0);
 		rte_service_lcore_stop(slcore_id);
 		rte_service_lcore_del(slcore_id);
-		rte_event_dev_stop(evdev);
 	}
+	rte_event_dev_stop(evdev);
 }
 
 static int
