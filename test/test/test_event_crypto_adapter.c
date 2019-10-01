@@ -789,15 +789,33 @@ test_crypto_adapter_stop(void)
 	rte_event_dev_stop(evdev);
 }
 
+static void
+test_crypto_adapter_clear(void)
+{
+	uint8_t qid;
+	test_crypto_adapter_stop();
+
+	if (crypto_adapter_setup_done) {
+		qid = TEST_CRYPTO_EV_QUEUE_ID;
+		rte_event_port_unlink(evdev, params.crypto_event_port_id,
+					&qid, 1);
+		rte_event_crypto_adapter_queue_pair_del(TEST_ADAPTER_ID,
+						TEST_CDEV_ID, TEST_CDEV_QP_ID);
+		rte_event_crypto_adapter_free(TEST_ADAPTER_ID);
+		crypto_adapter_setup_done = 0;
+	}
+}
+
 static int
-test_crypto_adapter_conf(enum rte_event_crypto_adapter_mode mode)
+test_crypto_adapter_conf(void)
 {
 	uint32_t evdev_service_id;
 	uint8_t qid;
 	int ret;
 
 	if (!crypto_adapter_setup_done) {
-		ret = configure_event_crypto_adapter(mode);
+		ret = configure_event_crypto_adapter(
+			RTE_EVENT_CRYPTO_ADAPTER_OP_FORWARD);
 		if (!ret) {
 			qid = TEST_CRYPTO_EV_QUEUE_ID;
 			ret = rte_event_port_link(evdev,
@@ -834,23 +852,56 @@ test_crypto_adapter_conf(enum rte_event_crypto_adapter_mode mode)
 }
 
 static int
+test_crypto_adapter_conf_new(void)
+{
+	uint32_t evdev_service_id;
+	int ret;
+
+	if (!crypto_adapter_setup_done) {
+		ret = configure_event_crypto_adapter(
+			RTE_EVENT_CRYPTO_ADAPTER_OP_NEW);
+		TEST_ASSERT_SUCCESS(ret, "Failed to config crypto adapter");
+		crypto_adapter_setup_done = 1;
+	}
+
+	/* retrieve service ids */
+	if (rte_event_dev_service_id_get(evdev, &evdev_service_id) == 0) {
+		/* add a service core and start it */
+		TEST_ASSERT_SUCCESS(rte_service_lcore_add(slcore_id),
+					"Failed to add service core");
+		TEST_ASSERT_SUCCESS(rte_service_lcore_start(slcore_id),
+					"Failed to start service core");
+
+		/* map services to it */
+		TEST_ASSERT_SUCCESS(rte_service_map_lcore_set(evdev_service_id,
+				slcore_id, 1), "Failed to map evdev service");
+
+		/* set services to running */
+		TEST_ASSERT_SUCCESS(rte_service_runstate_set(evdev_service_id,
+					1), "Failed to start evdev service");
+	}
+
+	/* start the eventdev */
+	TEST_ASSERT_SUCCESS(rte_event_dev_start(evdev),
+				"Failed to start event device");
+
+	return TEST_SUCCESS;
+}
+
+static int
 test_crypto_adapter_conf_op_forward_mode(void)
 {
-	enum rte_event_crypto_adapter_mode mode;
-
-	mode = RTE_EVENT_CRYPTO_ADAPTER_OP_FORWARD;
-	test_crypto_adapter_conf(mode);
-
+	TEST_ASSERT_SUCCESS(test_crypto_adapter_conf(),
+				"Failed to config crypto adapter");
 	return TEST_SUCCESS;
 }
 
 static int
 test_crypto_adapter_conf_op_new_mode(void)
 {
-	enum rte_event_crypto_adapter_mode mode;
+	TEST_ASSERT_SUCCESS(test_crypto_adapter_conf_new(),
+				"Failed to config crypto adapter");
 
-	mode = RTE_EVENT_CRYPTO_ADAPTER_OP_NEW;
-	test_crypto_adapter_conf(mode);
 	return TEST_SUCCESS;
 }
 
@@ -938,7 +989,7 @@ static struct unit_test_suite functional_testsuite = {
 				test_session_with_op_forward_mode),
 
 		TEST_CASE_ST(test_crypto_adapter_conf_op_forward_mode,
-				test_crypto_adapter_stop,
+				test_crypto_adapter_clear,
 				test_sessionless_with_op_forward_mode),
 
 		TEST_CASE_ST(test_crypto_adapter_conf_op_new_mode,
@@ -946,7 +997,7 @@ static struct unit_test_suite functional_testsuite = {
 				test_session_with_op_new_mode),
 
 		TEST_CASE_ST(test_crypto_adapter_conf_op_new_mode,
-				test_crypto_adapter_stop,
+				test_crypto_adapter_clear,
 				test_sessionless_with_op_new_mode),
 
 		TEST_CASES_END() /**< NULL terminate unit test array */
