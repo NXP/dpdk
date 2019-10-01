@@ -349,6 +349,12 @@ send_op_recv_ev(struct rte_crypto_op *op)
 		rte_pause();
 
 	recv_op = ev.event_ptr;
+
+	/* In case of Atomic/Ordered Queue, call dequeue one more time
+	 * to release, if there is any atomic context to be freed
+	 */
+	rte_event_dequeue_burst(evdev, TEST_APP_PORT_ID, &ev, NUM, 0);
+
 #if PKT_TRACE
 	struct rte_mbuf *m = recv_op->sym->m_src;
 	rte_pktmbuf_dump(stdout, m, rte_pktmbuf_pkt_len(m));
