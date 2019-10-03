@@ -626,6 +626,8 @@ static inline int get_port_type(struct fman_if *fif)
 {
 	if (fif->mac_type == fman_mac_1g) {
 		return e_FM_PORT_TYPE_RX;
+	} else if (fif->mac_type == fman_mac_2_5g) {
+		return e_FM_PORT_TYPE_RX_2_5G;
 	} else if (fif->mac_type == fman_mac_10g) {
 		return e_FM_PORT_TYPE_RX_10G;
 	} else {
