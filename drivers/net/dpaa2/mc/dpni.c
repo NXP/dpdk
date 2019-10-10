@@ -1563,38 +1563,6 @@ int dpni_set_tx_confirmation_mode(struct fsl_mc_io *mc_io,
 }
 
 /**
- * dpni_get_tx_confirmation_mode() - Get Tx confirmation mode
- * @mc_io:	Pointer to MC portal's I/O object
- * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
- * @token:	Token of DPNI object
- * @mode:	Tx confirmation mode
- *
- * Return:  '0' on Success; Error code otherwise.
- */
-int dpni_get_tx_confirmation_mode(struct fsl_mc_io *mc_io,
-				  uint32_t cmd_flags,
-				  uint16_t token,
-				  enum dpni_confirmation_mode *mode)
-{
-	struct dpni_tx_confirmation_mode *rsp_params;
-	struct mc_command cmd = { 0 };
-	int err;
-
-	cmd.header = mc_encode_cmd_header(DPNI_CMDID_GET_TX_CONFIRMATION_MODE,
-					cmd_flags,
-					token);
-
-	err = mc_send_command(mc_io, &cmd);
-	if (err)
-		return err;
-
-	rsp_params = (struct dpni_tx_confirmation_mode *)cmd.params;
-	*mode =  rsp_params->confirmation_mode;
-
-	return 0;
-}
-
-/**
  * dpni_set_qos_table() - Set QoS mapping table
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
@@ -1863,9 +1831,10 @@ int dpni_set_congestion_notification(struct fsl_mc_io *mc_io,
 	struct mc_command cmd = { 0 };
 
 	/* prepare command */
-	cmd.header = mc_encode_cmd_header(DPNI_CMDID_SET_CONGESTION_NOTIFICATION,
-					  cmd_flags,
-					  token);
+	cmd.header = mc_encode_cmd_header(
+					DPNI_CMDID_SET_CONGESTION_NOTIFICATION,
+					cmd_flags,
+					token);
 	cmd_params = (struct dpni_cmd_set_congestion_notification *)cmd.params;
 	cmd_params->qtype = qtype;
 	cmd_params->tc = tc_id;
@@ -1914,9 +1883,10 @@ int dpni_get_congestion_notification(struct fsl_mc_io *mc_io,
 	int err;
 
 	/* prepare command */
-	cmd.header = mc_encode_cmd_header(DPNI_CMDID_GET_CONGESTION_NOTIFICATION,
-					  cmd_flags,
-					  token);
+	cmd.header = mc_encode_cmd_header(
+					DPNI_CMDID_GET_CONGESTION_NOTIFICATION,
+					cmd_flags,
+					token);
 	cmd_params = (struct dpni_cmd_get_congestion_notification *)cmd.params;
 	cmd_params->qtype = qtype;
 	cmd_params->tc = tc_id;

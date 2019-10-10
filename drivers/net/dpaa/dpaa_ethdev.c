@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
+
 #include <rte_string_fns.h>
 #include <rte_byteorder.h>
 #include <rte_common.h>
@@ -200,7 +201,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
 		DPAA_PMD_INFO(
-		"Some of Rx offloads enabled by default - requested 0x%" PRIx64
+		"Some of rx offloads enabled by default - requested 0x%" PRIx64
 		" fixed are 0x%" PRIx64,
 		rx_offloads, dev_rx_offloads_nodis);
 	}
@@ -208,7 +209,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
 		DPAA_PMD_INFO(
-		"Some of Tx offloads enabled by default - requested 0x%" PRIx64
+		"Some of tx offloads enabled by default - requested 0x%" PRIx64
 		" fixed are 0x%" PRIx64,
 		tx_offloads, dev_tx_offloads_nodis);
 	}
@@ -647,7 +648,7 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		dev->data->dev_conf.rxmode.max_rx_pkt_len);
 	/* checking if push mode only, no error check for now */
 	if (!rxq->is_static &&
-	    (dpaa_push_mode_max_queue > dpaa_push_queue_idx)) {
+	    dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
 		struct qman_portal *qp;
 		int q_fd;
 
@@ -1230,7 +1231,7 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 	if (fmc_q || default_q) {
 		ret = qman_reserve_fqid(fqid);
 		if (ret) {
-			DPAA_PMD_ERR("reserve rx fqid 0x%x failed, ret: %d",
+			DPAA_PMD_ERR("reserve rx fqid 0x%x failed with ret: %d",
 				     fqid, ret);
 			return -EINVAL;
 		}
@@ -1403,8 +1404,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA_PMD_ERR("Failed to alloc mem for RX queues\n");
 		return -ENOMEM;
 	}
-
-	memset(cgrid, 0, sizeof(cgrid));
 
 	/* if DPAA_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Rx tail drop is disabled.

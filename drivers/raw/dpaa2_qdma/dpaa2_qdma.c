@@ -3,8 +3,6 @@
  */
 
 #include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <rte_eal.h>
 #include <rte_fslmc.h>
@@ -540,7 +538,8 @@ rte_qdma_configure(struct rte_qdma_config *qdma_config)
 	/* Allocate FLE pool; just append PID so that in case of
 	 * multiprocess, the pool's don't collide.
 	 */
-	snprintf(fle_pool_name, sizeof(fle_pool_name), "qdma_fle_pool%u", getpid());
+	snprintf(fle_pool_name, sizeof(fle_pool_name), "qdma_fle_pool%u",
+		 getpid());
 	qdma_dev.fle_pool = rte_mempool_create(fle_pool_name,
 			qdma_config->fle_pool_count, QDMA_FLE_POOL_SIZE,
 			QDMA_FLE_CACHE_SIZE(qdma_config->fle_pool_count), 0,

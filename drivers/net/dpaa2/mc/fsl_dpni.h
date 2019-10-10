@@ -691,7 +691,7 @@ struct dpni_link_state {
 	uint32_t rate;
 	uint64_t options;
 	int up;
-	int     state_valid;
+	int state_valid;
 	uint64_t supported;
 	uint64_t advertising;
 };
@@ -884,7 +884,6 @@ enum dpni_congestion_unit {
 	DPNI_CONGESTION_UNIT_FRAMES
 };
 
-
 /**
  * enum dpni_dest - DPNI destination types
  * @DPNI_DEST_NONE: Unassigned destination; The queue is set in parked mode and
@@ -1012,7 +1011,6 @@ int dpni_set_congestion_notification(struct fsl_mc_io *mc_io,
 				     enum dpni_queue_type qtype,
 				     uint8_t tc_id,
 			const struct dpni_congestion_notification_cfg *cfg);
-
 
 int dpni_get_congestion_notification(struct fsl_mc_io *mc_io,
 				     uint32_t cmd_flags,
@@ -1311,7 +1309,6 @@ int dpni_get_statistics(struct fsl_mc_io *mc_io,
 int dpni_reset_statistics(struct fsl_mc_io *mc_io,
 			  uint32_t cmd_flags,
 			  uint16_t token);
-
 
 /**
  * struct dpni_taildrop - Structure representing the taildrop

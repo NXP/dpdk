@@ -220,7 +220,7 @@ rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 		bufs[i] = (uint64_t)rte_mempool_virt2iova(obj_table[i])
 				+ meta_data_size;
 #else
-		bufs[i] = (size_t)obj_table[i] + meta_data_size;
+		bufs[i] = (uint64_t)obj_table[i] + meta_data_size;
 #endif
 	}
 
@@ -243,7 +243,7 @@ aligned:
 				  rte_mempool_virt2iova(obj_table[n + i])
 				  + meta_data_size;
 #else
-			bufs[i] = (size_t)obj_table[n + i] + meta_data_size;
+			bufs[i] = (uint64_t)obj_table[n + i] + meta_data_size;
 #endif
 		}
 
@@ -283,7 +283,8 @@ rte_dpaa2_mbuf_from_buf_addr(struct rte_mempool *mp, void *buf_addr)
 		return NULL;
 	}
 
-	return (struct rte_mbuf *)((size_t)buf_addr - bp_info->meta_data_size);
+	return (struct rte_mbuf *)((uint8_t *)buf_addr -
+			bp_info->meta_data_size);
 }
 
 int

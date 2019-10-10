@@ -157,20 +157,20 @@ do {								\
 #define fa_print_sb()						\
 do {								\
 	if (rte_cpu_to_be_32(*pdw) & frm_attr->fld_mask)	\
-	DPAA2_PMD_DP_DEBUG("t %s : Yes", frm_attr->fld_name);	\
+		DPAA2_PMD_DP_DEBUG("t %s : Yes", frm_attr->fld_name);	\
 } while (0)
 
 #define fa_print_sb_ext()					\
 do {								\
 	if (rte_cpu_to_be_16(*pw) & frm_attr_ext->fld_mask)	\
-	DPAA2_PMD_DP_DEBUG("\t %s : Yes",			\
+		DPAA2_PMD_DP_DEBUG("\t %s : Yes",			\
 			  frm_attr_ext->fld_name);		\
 } while (0)
 
 #define fa_print_mb_ext()					\
 do {								\
 	if (rte_cpu_to_be_16(*pw) & frm_attr_ext->fld_mask)	\
-	DPAA2_PMD_DP_DEBUG("\t %s : 0x%02x",			\
+		DPAA2_PMD_DP_DEBUG("\t %s : 0x%02x",			\
 			  frm_attr_ext->fld_name,		\
 			  rte_cpu_to_be_16(*pw) & frm_attr_ext->fld_mask);\
 } while (0)

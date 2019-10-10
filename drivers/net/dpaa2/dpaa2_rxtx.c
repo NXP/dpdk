@@ -545,7 +545,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_ETHRX_DPIO->index)) {
 			while (!qbman_check_command_complete(
 			       get_swp_active_dqs(
@@ -581,7 +581,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	qbman_pull_desc_set_numframes(&pulldesc, pull_size);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage1,
-		(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
 
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
@@ -818,7 +818,8 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 			next_fd = qbman_result_DQ_fd(dq_storage + 1);
 			/* Prefetch Annotation address for the parse results */
-			rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
+			rte_prefetch0(
+				(void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
 					+ DPAA2_FD_PTA_SIZE + 16));
 
 			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
@@ -1271,7 +1272,8 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n", eth_data, dpaa2_q->fqid);
+	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
+			   eth_data, dpaa2_q->fqid);
 
 	/* This would also handle normal and atomic queues as any type
 	 * of packet can be enqueued when ordered queues are being used.
@@ -1306,7 +1308,8 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				 * ordered packets as packets can get unordered
 				 * when being tranmitted out from the interface
 				 */
-				dpaa2_set_enqueue_descriptor(order_sendq, (*bufs),
+				dpaa2_set_enqueue_descriptor(order_sendq,
+							     (*bufs),
 							     &eqdesc[loop]);
 			} else {
 				qbman_eq_desc_set_no_orp(&eqdesc[loop],
@@ -1326,9 +1329,9 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				    rte_mbuf_refcnt_read((*bufs)) == 1)) {
 					if (unlikely((*bufs)->ol_flags
 						& PKT_TX_VLAN_PKT)) {
-						ret = rte_vlan_insert(bufs);
-						if (ret)
-							goto send_n_return;
+					  ret = rte_vlan_insert(bufs);
+					  if (ret)
+						goto send_n_return;
 					}
 					DPAA2_MBUF_TO_CONTIG_FD((*bufs),
 						&fd_arr[loop],
@@ -1574,7 +1577,7 @@ dpaa2_dev_loopback_rx(void *queue,
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0))
 				continue;
 		}
-		fd[num_rx] = (struct qbman_fd *) qbman_result_DQ_fd(dq_storage);
+		fd[num_rx] = (struct qbman_fd *)qbman_result_DQ_fd(dq_storage);
 
 		dq_storage++;
 		num_rx++;

@@ -135,7 +135,7 @@ struct dpni_cmd_create {
 	uint16_t fs_entries;
 	uint8_t num_rx_tcs;
 	uint8_t pad4;
-	uint8_t  num_cgs;
+	uint8_t num_cgs;
 };
 
 struct dpni_cmd_destroy {

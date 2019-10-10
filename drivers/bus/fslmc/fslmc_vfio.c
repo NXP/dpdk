@@ -46,10 +46,10 @@
 static struct fslmc_vfio_group vfio_group;
 static struct fslmc_vfio_container vfio_container;
 static int container_device_fd;
+char *fslmc_container;
 static int fslmc_iommu_type;
 static uint32_t *msi_intr_vaddr;
 void *(*rte_mcp_ptr_list);
-char *fslmc_container;
 
 static struct rte_dpaa2_object_list dpaa2_obj_list =
 	TAILQ_HEAD_INITIALIZER(dpaa2_obj_list);
@@ -62,7 +62,6 @@ rte_fslmc_object_register(struct rte_dpaa2_object *object)
 
 	TAILQ_INSERT_TAIL(&dpaa2_obj_list, object, next);
 }
-
 
 int
 fslmc_get_container_group(int *groupid)
@@ -356,7 +355,8 @@ fslmc_dmamap_seg(const struct rte_memseg_list *msl __rte_unused,
 	return ret;
 }
 
-int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size)
+int
+rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size)
 {
 	int ret;
 	struct fslmc_vfio_group *group;
@@ -506,8 +506,10 @@ fslmc_vfio_setup_device(const char *sysfs_base, const char *dev_addr,
 		 * set an IOMMU type for container
 		 *
 		 */
-		if (ioctl(vfio_container_fd, VFIO_CHECK_EXTENSION, fslmc_iommu_type)) {
-			ret = ioctl(vfio_container_fd, VFIO_SET_IOMMU, fslmc_iommu_type);
+		if (ioctl(vfio_container_fd, VFIO_CHECK_EXTENSION,
+			  fslmc_iommu_type)) {
+			ret = ioctl(vfio_container_fd, VFIO_SET_IOMMU,
+				    fslmc_iommu_type);
 			if (ret) {
 				DPAA2_BUS_ERR("Failed to setup VFIO iommu");
 				close(vfio_group_fd);

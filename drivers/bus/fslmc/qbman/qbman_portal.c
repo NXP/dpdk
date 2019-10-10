@@ -572,7 +572,7 @@ void qbman_eq_desc_set_orp_nesn(struct qbman_eq_desc *d, uint16_t opr_id,
 }
 
 void qbman_eq_desc_set_response(struct qbman_eq_desc *d,
-				uint64_t storage_phys,
+				dma_addr_t storage_phys,
 				int stash)
 {
 	d->eq.rsp_addr = storage_phys;
@@ -885,8 +885,8 @@ static int qbman_swp_enqueue_multiple_direct(struct qbman_swp *s,
 	eqcr_pi = s->eqcr.pi;
 	addr_cena = (size_t)s->sys.addr_cena;
 	for (i = 0; i < num_enqueued; i++) {
-		dcbf(addr_cena +
-			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask));
+		dcbf((uintptr_t)(addr_cena +
+			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask)));
 		eqcr_pi++;
 	}
 	s->eqcr.pi = eqcr_pi & full_mask;
@@ -1289,8 +1289,8 @@ static int qbman_swp_enqueue_multiple_desc_direct(struct qbman_swp *s,
 	eqcr_pi = s->eqcr.pi;
 	addr_cena = (size_t)s->sys.addr_cena;
 	for (i = 0; i < num_enqueued; i++) {
-		dcbf(addr_cena +
-			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask));
+		dcbf((uintptr_t)(addr_cena +
+			QBMAN_CENA_SWP_EQCR(eqcr_pi & half_mask)));
 		eqcr_pi++;
 	}
 	s->eqcr.pi = eqcr_pi & full_mask;
@@ -1483,7 +1483,7 @@ void qbman_pull_desc_clear(struct qbman_pull_desc *d)
 
 void qbman_pull_desc_set_storage(struct qbman_pull_desc *d,
 				 struct qbman_result *storage,
-				 uint64_t storage_phys,
+				 dma_addr_t storage_phys,
 				 int stash)
 {
 	d->pull.rsp_addr_virt = (size_t)storage;

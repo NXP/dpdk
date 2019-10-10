@@ -442,7 +442,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
 		DPAA2_PMD_INFO(
-		"Some of Rx offloads enabled by default - requested 0x%" PRIx64
+		"Some of rx offloads enabled by default - requested 0x%" PRIx64
 		" fixed are 0x%" PRIx64,
 		rx_offloads, dev_rx_offloads_nodis);
 	}
@@ -450,7 +450,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
 		DPAA2_PMD_INFO(
-		"Some of Tx offloads enabled by default - requested 0x%" PRIx64
+		"Some of tx offloads enabled by default - requested 0x%" PRIx64
 		" fixed are 0x%" PRIx64,
 		tx_offloads, dev_tx_offloads_nodis);
 	}
@@ -685,7 +685,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			return -1;
 		}
 	} else { /* Disable tail Drop */
-		struct dpni_taildrop taildrop = {};
+		struct dpni_taildrop taildrop = {0};
 		DPAA2_PMD_INFO("Tail drop is disabled on queue");
 
 		taildrop.enable = 0;
@@ -783,7 +783,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q->fqid = qid.fqid;
 
 	if (!(priv->flags & DPAA2_TX_CGR_OFF)) {
-		struct dpni_congestion_notification_cfg cong_notif_cfg = {};
+		struct dpni_congestion_notification_cfg cong_notif_cfg = {0};
 
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
 		cong_notif_cfg.threshold_entry = CONG_ENTER_TX_THRESHOLD;
@@ -848,11 +848,13 @@ dpaa2_dev_rx_queue_release(void *q __rte_unused)
 {
 	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)q;
 	struct dpaa2_dev_priv *priv = dpaa2_q->eth_data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->eth_dev->process_private;
+	struct fsl_mc_io *dpni =
+		(struct fsl_mc_io *)priv->eth_dev->process_private;
 	uint8_t options = 0;
 	int ret;
-	struct dpni_queue cfg = {};
+	struct dpni_queue cfg;
 
+	memset(&cfg, 0, sizeof(struct dpni_queue));
 	PMD_INIT_FUNC_TRACE();
 	if (dpaa2_q->cgid != 0xff) {
 		options = DPNI_QUEUE_OPT_CLEAR_CGID;
@@ -1547,7 +1549,8 @@ dpaa2_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 
 	if (!ids) {
 		struct dpaa2_dev_priv *priv = dev->data->dev_private;
-		struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
+		struct fsl_mc_io *dpni =
+			(struct fsl_mc_io *)dev->process_private;
 		int32_t  retcode;
 		union dpni_statistics value[5] = {};
 
@@ -1630,7 +1633,7 @@ dpaa2_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	int32_t  retcode;
+	int retcode;
 	int i;
 	struct dpaa2_queue *dpaa2_q;
 
@@ -2034,7 +2037,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 	}
 
 	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED &&
-			(!eth_priv->en_ordered)) {
+			!eth_priv->en_ordered) {
 		struct opr_cfg ocfg;
 
 		/* Restoration window size = 256 frames */
@@ -2329,7 +2332,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		eth_dev->dev_ops = &dpaa2_ethdev_ops;
 		if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE))
 			eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
-		else if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE))
+		else if (dpaa2_get_devargs(dev->devargs,
+					DRIVER_NO_PREFETCH_MODE))
 			eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		else
 			eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
@@ -2366,7 +2370,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	priv->num_rx_tc = attr.num_rx_tcs;
-
 	/* only if the custom CG is enabled */
 	if (attr.options & DPNI_OPT_CUSTOM_CG)
 		priv->max_cgs = attr.num_cgs;
@@ -2502,6 +2505,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		}
 	}
 
+	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
+					ETHER_MAX_LEN - ETHER_CRC_LEN
+					+ VLAN_TAG_SIZE);
+	if (ret) {
+		DPAA2_PMD_ERR("Unable to set mtu. check config");
+		goto init_err;
+	}
+
 	/*TODO To enable soft parser support DPAA2 driver needs to integrate
 	 * with external entity to receive byte code for software sequence
 	 * and same will be offload to the H/W using MC interface.
@@ -2525,15 +2536,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 			return ret;
 		}
 	}
-
-	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
-					ETHER_MAX_LEN - ETHER_CRC_LEN
-					+ VLAN_TAG_SIZE);
-	if (ret) {
-		DPAA2_PMD_ERR("Unable to set mtu. check config");
-		goto init_err;
-	}
-
 	RTE_LOG(INFO, PMD, "%s: netdev created\n", eth_dev->data->name);
 	return 0;
 init_err:
@@ -2625,6 +2627,7 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		eth_dev->data->dev_private = (void *)dev_priv;
 		/* Store a pointer to eth_dev in dev_private */
 		dev_priv->eth_dev = eth_dev;
+		dev_priv->tx_conf_en = 0;
 	} else {
 		eth_dev = rte_eth_dev_attach_secondary(dpaa2_dev->device.name);
 		if (!eth_dev) {
