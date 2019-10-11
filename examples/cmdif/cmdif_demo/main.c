@@ -224,22 +224,21 @@ cmdif_client_test(void)
 	}
 
 	/* Now read all the responses of the async commands */
-	for (i = 0; i < CMDIF_CLIENT_ASYNC_NUM; i++) {
-		t = 0;
-		while (async_count != (i + 1) && (t < CMDIF_DEMO_NUM_TRIES)) {
-			usleep(CMDIF_DEMO_ASYNC_WAIT);
-			ret = cmdif_resp_read(&cidesc[CMDIF_DEV_INDEX0],
-					(i & 1));
-			if (ret)
-				RTE_LOG(ERR, USER1,
-					"FAILED cmdif_resp_read %d\n", i);
-			t++;
-		}
-		if (async_count != (i + 1)) {
-			RTE_LOG(ERR, USER1, "FAILED: asynchronous command\n");
-			break;
-		}
+	t = 0;
+	while (async_count != CMDIF_CLIENT_ASYNC_NUM &&
+		       (t < CMDIF_CLIENT_ASYNC_NUM * CMDIF_DEMO_NUM_TRIES)) {
+		usleep(CMDIF_DEMO_ASYNC_WAIT);
+		/* Use priority as (t & 1) to alternate between high and
+		 * low priorities
+		 */
+		ret = cmdif_resp_read(&cidesc[CMDIF_DEV_INDEX0], (t & 1));
+		if (ret)
+			RTE_LOG(ERR, USER1,
+				"FAILED cmdif_resp_read %d\n", i);
+		t++;
 	}
+	if (async_count != CMDIF_CLIENT_ASYNC_NUM)
+		RTE_LOG(ERR, USER1, "FAILED: asynchronous command\n");
 
 	if (async_count == CMDIF_CLIENT_ASYNC_NUM)
 		RTE_LOG(INFO, USER1,
