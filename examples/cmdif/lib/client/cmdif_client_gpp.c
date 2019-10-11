@@ -60,7 +60,7 @@ cmdif_open(struct cmdif_desc *cidesc,
 
 	err = rte_rawdev_enqueue_buffers((uint16_t)(dpci_devid),
 		&send_buf, 1, &cmdif_send_cnxt);
-	if (err) {
+	if (err <= 0) {
 		RTE_LOG(ERR, CMDIF, "enqueue of buffer failed\n");
 		return err;
 	}
@@ -113,7 +113,7 @@ cmdif_close(struct cmdif_desc *cidesc)
 
 	err = rte_rawdev_enqueue_buffers((uint16_t)(dpci_devid),
 		&send_buf, 1, &cmdif_send_cnxt);
-	if (err) {
+	if (err <= 0) {
 		RTE_LOG(ERR, CMDIF, "enqueue of buffer failed\n");
 		return err;
 	}
@@ -170,7 +170,7 @@ cmdif_send(struct cmdif_desc *cidesc,
 
 	err = rte_rawdev_enqueue_buffers((uint16_t)(dpci_devid),
 		&send_buf, 1, &cmdif_send_cnxt);
-	if (err) {
+	if (err <= 0) {
 		RTE_LOG(ERR, CMDIF, "enqueue of buffer failed\n");
 		return err;
 	}

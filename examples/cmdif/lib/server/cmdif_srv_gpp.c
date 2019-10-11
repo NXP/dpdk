@@ -140,11 +140,13 @@ cmdif_srv_cb(int pr, void *send_dev)
 
 		err = rte_rawdev_enqueue_buffers((uint16_t)(dpci_devid),
 			&send_buf, 1, &cmdif_send_cnxt);
-		if (err)
+		if (err <= 0) {
 			RTE_LOG(ERR, CMDIF, "enqueue of buffer failed\n");
+			return err;
+		}
 	}
 
-	return err;
+	return 0;
 }
 
 int
