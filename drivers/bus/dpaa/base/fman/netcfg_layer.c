@@ -42,9 +42,11 @@ dump_netcfg(struct netcfg_info *cfg_ptr)
 		struct fm_eth_port_cfg *p_cfg = &cfg_ptr->port_cfg[i];
 		struct fman_if *__if = p_cfg->fman_if;
 
+
 		printf("\n+ Fman %d, MAC %d (%s);\n",
 		       __if->fman_idx, __if->mac_idx,
-		       (__if->mac_type == fman_mac_1g) ? "1G" : "10G");
+		       (__if->mac_type == fman_mac_1g) ? "1G" :
+		       (__if->mac_type == fman_mac_2_5g) ? "2.5G" : "10G");
 
 		printf("\tmac_addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
 		       (&__if->mac_addr)->addr_bytes[0],
