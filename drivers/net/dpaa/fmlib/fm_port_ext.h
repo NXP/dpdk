@@ -838,64 +838,6 @@ typedef struct ioc_fm_port_mac_statistics_t {
 #define FM_PORT_IOC_GET_MAC_STATISTICS	_IOR(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(41), ioc_fm_port_mac_statistics_t)
 
 /**************************************************************************//**
- @Function	FM_PORT_ConfigBufferPrefixContent
-
- @Description   Defines the structure, size and content of the application buffer.
-		The prefix will
-		In Tx ports, if 'passPrsResult', the application
-		should set a value to their offsets in the prefix of
-		the FM will save the first 'privDataSize', than,
-		depending on 'passPrsResult' and 'passTimeStamp', copy parse result
-		and timeStamp, and the packet itself(in this order), to the
-		application buffer, and to offset.
-
-		Calling this routine changes the buffer margins definitions
-		in the internal driver data base from its default
-		configuration: Data size:  [DEFAULT_FM_SP_bufferPrefixContent_privDataSize]
-				Pass Parser result: [DEFAULT_FM_SP_bufferPrefixContent_passPrsResult].
-				Pass timestamp: [DEFAULT_FM_SP_bufferPrefixContent_passTimeStamp].
-
-		May be used for all ports
-
- @Param[in]	ioc_fm_buffer_prefix_content_t  A structure holding the required parameters.
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_PORT_Config() and before FM_PORT_Init().
-*//***************************************************************************/
-#define FM_PORT_IOC_CONFIG_BUFFER_PREFIX_CONTENT _IOW(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(39), ioc_fm_buffer_prefix_content_t)
-
-#if (DPAA_VERSION >= 11)
-typedef struct ioc_fm_port_vsp_alloc_params_t {
-	uint8_t	num_of_profiles;	/**< Number of Virtual Storage Profiles */
-	uint8_t	dflt_relative_id;	/**< The default Virtual-Storage-Profile-id dedicated to Rx/OP port
-				The same default Virtual-Storage-Profile-id will be for coupled Tx port
-				if relevant function called for Rx port */
-	void	*p_fm_tx_port;		/**< Handle to coupled Tx Port; not relevant for OP port. */
-} ioc_fm_port_vsp_alloc_params_t;
-
-/**************************************************************************//**
- @Function	FM_PORT_VSPAlloc
-
- @Description   This routine allocated VSPs per port and forces the port to work
-		in VSP mode. Note that the port is initialized by default with the
-		physical-storage-profile only.
-
- @Param[in]	h_FmPort	A handle to a FM Port module.
- @Param[in]	p_Params	A structure of parameters for allocation VSP's per port
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_PORT_Init(), and before FM_PORT_SetPCD()
-		and also before FM_PORT_Enable() (i.e. the port should be disabled).
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_PORT_IOC_VSP_ALLOC_COMPAT _IOW(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(38), ioc_compat_fm_port_vsp_alloc_params_t)
-#endif
-#define FM_PORT_IOC_VSP_ALLOC _IOW(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(38), ioc_fm_port_vsp_alloc_params_t)
-#endif /* (DPAA_VERSION >= 11) */
-
-/**************************************************************************//**
  @Function	FM_PORT_GetBmiCounters
 
  @Description   Read port's BMI stat counters and place them into
@@ -3213,25 +3155,6 @@ uint32_t FM_PORT_PcdPlcrAllocProfiles(t_Handle h_FmPort, uint16_t numOfProfiles)
 		and before FM_PORT_SetPCD().
 *//***************************************************************************/
 uint32_t FM_PORT_PcdPlcrFreeProfiles(t_Handle h_FmPort);
-
-#if (DPAA_VERSION >= 11)
-/**************************************************************************//**
- @Function	FM_PORT_VSPAlloc
-
- @Description   This routine allocated VSPs per port and forces the port to work
-		in VSP mode. Note that the port is initialized by default with the
-		physical - storage - profile only.
-
- @Param[in]	h_FmPort	A handle to a FM Port module.
- @Param[in]	p_Params	A structure of parameters for allocation VSP's per port
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_PORT_Init(), and before FM_PORT_SetPCD()
-		and also before FM_PORT_Enable(); i.e. the port should be disabled.
-*//***************************************************************************/
-uint32_t FM_PORT_VSPAlloc(t_Handle h_FmPort, ioc_fm_port_vsp_alloc_params_t *p_Params);
-#endif /* (DPAA_VERSION >= 11) */
 
 /**************************************************************************//**
  @Function	FM_PORT_PcdKgModifyInitialScheme

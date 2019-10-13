@@ -31,6 +31,7 @@ CFLAGS += -DALLOW_EXPERIMENTAL_API
 
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += fmlib/fm_lib.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += fmlib/fm_vsp.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_flow.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
