@@ -18,24 +18,11 @@
 #include "fm_port_ext.h"
 #include <rte_dpaa_logs.h>
 
-#define MODULE_FM		0x00010000
-#define __ERR_MODULE__	MODULE_FM
-
 #define DEV_TO_ID(p) \
 	do { \
 	t_Device *p_Dev = (t_Device *)p; \
 	p = UINT_TO_PTR(p_Dev->id); \
 	} while (0)
-
-/* #define FM_LIB_DBG */
-
-#if defined(FM_LIB_DBG)
-	#define _fml_dbg(format, arg...) \
-	printf("fmlib [%s:%u] - " format, \
-		__func__, __LINE__, ##arg)
-#else
-	#define _fml_dbg(arg...)
-#endif
 
 /* Major and minor are in sync with FMD, respin is for fmlib identification */
 #define FM_LIB_VERSION_MAJOR	21
@@ -469,7 +456,7 @@ uint32_t FM_PORT_SetPCD(t_Handle h_FmPort, ioc_fm_port_pcd_params_t *params)
 
 	/* correct pcd structures according to what support was set */
 	if (params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC ||
-	    params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC_AND_PLCR ||
+		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC_AND_PLCR ||
 		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_CC) {
 		if (params->p_cc_params && params->p_cc_params->cc_tree_id)
 			DEV_TO_ID(params->p_cc_params->cc_tree_id);
@@ -478,7 +465,7 @@ uint32_t FM_PORT_SetPCD(t_Handle h_FmPort, ioc_fm_port_pcd_params_t *params)
 	}
 
 	if (params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG ||
-	    params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC ||
+		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC ||
 		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC_AND_PLCR ||
 		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_PLCR){
 		if (params->p_kg_params) {
@@ -498,11 +485,10 @@ uint32_t FM_PORT_SetPCD(t_Handle h_FmPort, ioc_fm_port_pcd_params_t *params)
 	}
 
 	if (params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PLCR_ONLY ||
-	    params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_PLCR ||
-	params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC_AND_PLCR ||
-	params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_PLCR){
-		if (params->p_plcr_params)
-		{
+		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_PLCR ||
+		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_CC_AND_PLCR ||
+		params->pcd_support == e_IOC_FM_PORT_PCD_SUPPORT_PRS_AND_KG_AND_PLCR) {
+		if (params->p_plcr_params) {
 			if (params->p_plcr_params->plcr_profile_id)
 				DEV_TO_ID(params->p_plcr_params->plcr_profile_id);
 			else

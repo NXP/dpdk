@@ -12,6 +12,19 @@
 #define FM_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE + 1)
 #define FMT_IOC_TYPE_BASE	(NCSW_IOC_TYPE_BASE + 3)
 
+#define MODULE_FM		0x00010000
+#define __ERR_MODULE__	MODULE_FM
+
+/* #define FM_LIB_DBG */
+
+#if defined(FM_LIB_DBG)
+	#define _fml_dbg(format, arg...) \
+	printf("fmlib [%s:%u] - " format, \
+		__func__, __LINE__, ##arg)
+#else
+	#define _fml_dbg(arg...)
+#endif
+
 /*#define FM_IOCTL_DBG*/
 
 #if defined(FM_IOCTL_DBG)
@@ -756,116 +769,6 @@ typedef union ioc_fm_api_version_t {
 	uint32_t ver;
 } ioc_fm_api_version_t;
 
-#if (DPAA_VERSION >= 11)
-/**************************************************************************//**
- @Description   A structure of information about each of the external
-		buffer pools used by a port or storage-profile.
-		(must be identical to t_FmExtPoolParams defined in fm_ext.h)
-*//***************************************************************************/
-typedef struct ioc_fm_ext_pool_params {
-	uint8_t		id;	/**< External buffer pool id */
-	uint16_t		size;   /**< External buffer pool buffer size */
-} ioc_fm_ext_pool_params;
-
-/**************************************************************************//**
- @Description   A structure for informing the driver about the external
-		buffer pools allocated in the BM and used by a port or a
-		storage-profile.
-		(must be identical to t_FmExtPools defined in fm_ext.h)
-*//***************************************************************************/
-typedef struct ioc_fm_ext_pools {
-	uint8_t		num_of_pools_used;	/**< Number of pools use by this port */
-	ioc_fm_ext_pool_params  ext_buf_pool[FM_PORT_MAX_NUM_OF_EXT_POOLS];
-						/**< Parameters for each port */
-} ioc_fm_ext_pools;
-
-typedef struct ioc_fm_vsp_params_t {
-	void		*p_fm;		/**< A handle to the FM object this VSP related to */
-	ioc_fm_ext_pools	ext_buf_pools;	/**< Which external buffer pools are used
-						(up to FM_PORT_MAX_NUM_OF_EXT_POOLS), and their sizes.
-						parameter associated with Rx / OP port */
-	uint16_t		liodn_offset;	/**< VSP's LIODN offset */
-	struct {
-	ioc_fm_port_type port_type;	/**< Port type */
-	uint8_t	port_id;		/**< Port Id - relative to type */
-	} port_params;
-	uint8_t		relative_profile_id;  /**< VSP Id - relative to VSP's range
-						defined in relevant FM object */
-	void		*id;		/**< return value */
-} ioc_fm_vsp_params_t;
-#endif /* (DPAA_VERSION >= 11) */
-
-/**************************************************************************//**
- @Description   A structure for defining BM pool depletion criteria
-*//***************************************************************************/
-typedef struct ioc_fm_buf_pool_depletion_t {
-	bool	pools_grp_mode_enable;		/**< select mode in which pause frames will be sent after
-							a number of pools (all together!) are depleted */
-	uint8_t	num_of_pools;			/**< the number of depleted pools that will invoke
-							pause frames transmission. */
-	bool	pools_to_consider[BM_MAX_NUM_OF_POOLS];
-							/**< For each pool, TRUE if it should be considered for
-							depletion (Note - this pool must be used by this port!). */
-	bool	single_pool_mode_enable;		/**< select mode in which pause frames will be sent after
-							a single-pool is depleted; */
-	bool	pools_to_consider_for_single_mode[BM_MAX_NUM_OF_POOLS];
-							/**< For each pool, TRUE if it should be considered for
-							depletion (Note - this pool must be used by this port!) */
-#if (DPAA_VERSION >= 11)
-	bool	pfc_priorities_en[FM_MAX_NUM_OF_PFC_PRIORITIES];
-							/**< This field is used by the MAC as the Priority Enable Vector in the PFC frame
-							which is transmitted */
-#endif /* (DPAA_VERSION >= 11) */
-} ioc_fm_buf_pool_depletion_t;
-
-#if (DPAA_VERSION >= 11)
-typedef struct ioc_fm_buf_pool_depletion_params_t {
-	void	*p_fm_vsp;
-	ioc_fm_buf_pool_depletion_t fm_buf_pool_depletion;
-} ioc_fm_buf_pool_depletion_params_t;
-#endif /* (DPAA_VERSION >= 11) */
-
-typedef struct ioc_fm_buffer_prefix_content_t {
-	uint16_t	priv_data_size;	/**< Number of bytes to be left at the beginning
-					of the external buffer; Note that the private-area will
-					start from the base of the buffer address. */
-	bool	pass_prs_result;	/**< TRUE to pass the parse result to/from the FM;
-					User may use FM_PORT_GetBufferPrsResult() in order to
-					get the parser-result from a buffer. */
-	bool	pass_time_stamp;	/**< TRUE to pass the timeStamp to/from the FM
-					User may use FM_PORT_GetBufferTimeStamp() in order to
-					get the parser-result from a buffer. */
-	bool	pass_hash_result;	/**< TRUE to pass the KG hash result to/from the FM
-					User may use FM_PORT_GetBufferHashResult() in order to
-					get the parser-result from a buffer. */
-	bool	pass_all_other_pcd_info; /**< Add all other Internal-Context information:
-					AD, hash-result, key, etc. */
-	uint16_t	data_align;	/**< 0 to use driver's default alignment [64],
-					other value for selecting a data alignment (must be a power of 2);
-					if write optimization is used, must be >= 16. */
-	uint8_t	manip_extra_space;	/**< Maximum extra size needed (insertion-size minus removal-size);
-					Note that this field impacts the size of the buffer-prefix
-					(i.e. it pushes the data offset);
-					This field is irrelevant if DPAA_VERSION==10 */
-} ioc_fm_buffer_prefix_content_t;
-
-typedef struct ioc_fm_buffer_prefix_content_params_t {
-	void	*p_fm_vsp;
-	ioc_fm_buffer_prefix_content_t fm_buffer_prefix_content;
-} ioc_fm_buffer_prefix_content_params_t;
-
-#if (DPAA_VERSION >= 11)
-typedef struct ioc_fm_vsp_config_no_sg_params_t {
-	void	*p_fm_vsp;
-	bool	no_sg;
-} ioc_fm_vsp_config_no_sg_params_t;
-
-typedef struct ioc_fm_vsp_prs_result_params_t {
-	void	*p_fm_vsp;
-	void	*p_data;
-} ioc_fm_vsp_prs_result_params_t;
-#endif
-
 typedef struct fm_ctrl_mon_t {
 	uint8_t	percent_cnt[2];
 } fm_ctrl_mon_t;
@@ -955,149 +858,6 @@ typedef struct ioc_fm_ctrl_mon_counters_params_t {
  @Return	Version's value.
 *//***************************************************************************/
 #define FM_IOC_GET_API_VERSION				_IOR(FM_IOC_TYPE_BASE, FM_IOC_NUM(7), ioc_fm_api_version_t)
-
-#if (DPAA_VERSION >= 11)
-/**************************************************************************//**
- @Function	FM_VSP_Config
-
- @Description   Creates descriptor for the FM VSP module.
-
-		The routine returns a handle (descriptor) to the FM VSP object.
-		This descriptor must be passed as first parameter to all other
-		FM VSP function calls.
-
-		No actual initialization or configuration of FM hardware is
-		done by this routine.
-
-@Param[in]	p_FmVspParams   Pointer to data structure of parameters
-
- @Retval	Handle to FM VSP object, or NULL for Failure.
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_CONFIG_COMPAT				_IOWR(FM_IOC_TYPE_BASE, FM_IOC_NUM(8), ioc_compat_fm_vsp_params_t)
-#endif
-#define FM_IOC_VSP_CONFIG					_IOWR(FM_IOC_TYPE_BASE, FM_IOC_NUM(8), ioc_fm_vsp_params_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_Init
-
- @Description   Initializes the FM VSP module
-
- @Param[in]	h_FmVsp - FM VSP module descriptor
-
- @Return	E_OK on success; Error code otherwise.
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_INIT_COMPAT				_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(9), ioc_compat_fm_obj_t)
-#endif
-#define FM_IOC_VSP_INIT					_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(9), ioc_fm_obj_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_Free
-
- @Description   Frees all resources that were assigned to FM VSP module.
-
-		Calling this routine invalidates the descriptor.
-
- @Param[in]	h_FmVsp - FM VSP module descriptor
-
- @Return	E_OK on success; Error code otherwise.
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_FREE_COMPAT				_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(10), ioc_compat_fm_obj_t)
-#endif
-#define FM_IOC_VSP_FREE					_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(10), ioc_fm_obj_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_ConfigPoolDepletion
-
- @Description   Calling this routine enables pause frame generation depending on the
-		depletion status of BM pools. It also defines the conditions to activate
-		this functionality. By default, this functionality is disabled.
-
- @Param[in]	ioc_fm_buf_pool_depletion_params_t	A structure holding the required parameters.
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_VSP_Config() and before FM_VSP_Init().
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_CONFIG_POOL_DEPLETION_COMPAT		_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(11), ioc_compat_fm_buf_pool_depletion_params_t)
-#endif
-#define FM_IOC_VSP_CONFIG_POOL_DEPLETION			_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(11), ioc_fm_buf_pool_depletion_params_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_ConfigBufferPrefixContent
-
- @Description   Defines the structure, size and content of the application buffer.
-
-		The prefix will
-		In VSPs defined for Tx ports, if 'passPrsResult', the application
-		should set a value to their offsets in the prefix of
-		the FM will save the first 'privDataSize', than,
-		depending on 'passPrsResult' and 'passTimeStamp', copy parse result
-		and timeStamp, and the packet itself (in this order), to the
-		application buffer, and to offset.
-
-		Calling this routine changes the buffer margins definitions
-		in the internal driver data base from its default
-		configuration: Data size:  [DEFAULT_FM_SP_bufferPrefixContent_privDataSize]
-				Pass Parser result: [DEFAULT_FM_SP_bufferPrefixContent_passPrsResult].
-				Pass timestamp: [DEFAULT_FM_SP_bufferPrefixContent_passTimeStamp].
-
- @Param[in]	ioc_fm_buffer_prefix_content_params_t   A structure holding the required parameters.
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_VSP_Config() and before FM_VSP_Init().
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_CONFIG_BUFFER_PREFIX_CONTENT_COMPAT	_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(12), ioc_compat_fm_buffer_prefix_content_params_t)
-#endif
-#define FM_IOC_VSP_CONFIG_BUFFER_PREFIX_CONTENT		_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(12), ioc_fm_buffer_prefix_content_params_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_ConfigNoScatherGather
-
- @Description   Calling this routine changes the possibility to receive S/G frame
-		in the internal driver data base
-		from its default configuration: optimize = [DEFAULT_FM_SP_noScatherGather]
-
- @Param[in]	ioc_fm_vsp_config_no_sg_params_t	A structure holding the required parameters.
-
- @Return	E_OK on success; Error code otherwise.
-
- @Cautions	Allowed only following FM_VSP_Config() and before FM_VSP_Init().
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_CONFIG_NO_SG_COMPAT			_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(13), ioc_compat_fm_vsp_config_no_sg_params_t)
-#endif
-#define FM_IOC_VSP_CONFIG_NO_SG				_IOW(FM_IOC_TYPE_BASE, FM_IOC_NUM(13), ioc_fm_vsp_config_no_sg_params_t)
-
-/**************************************************************************//**
- @Function	FM_VSP_GetBufferPrsResult
-
- @Description   Returns the pointer to the parse result in the data buffer.
-		In Rx ports this is relevant after reception, if parse
-		result is configured to be part of the data passed to the
-		application. For non Rx ports it may be used to get the pointer
-		of the area in the buffer where parse result should be
-		initialized - if so configured.
-		See FM_VSP_ConfigBufferPrefixContent for data buffer prefix
-		configuration.
-
- @Param[in]	ioc_fm_vsp_prs_result_params_t  A structure holding the required parameters.
-
- @Return	Parse result pointer on success, NULL if parse result was not
-		configured for this port.
-
- @Cautions	Allowed only following FM_VSP_Init().
-*//***************************************************************************/
-#if defined(CONFIG_COMPAT)
-#define FM_IOC_VSP_GET_BUFFER_PRS_RESULT_COMPAT		_IOWR(FM_IOC_TYPE_BASE, FM_IOC_NUM(14), ioc_compat_fm_vsp_prs_result_params_t)
-#endif
-#define FM_IOC_VSP_GET_BUFFER_PRS_RESULT		_IOWR(FM_IOC_TYPE_BASE, FM_IOC_NUM(14), ioc_fm_vsp_prs_result_params_t)
-#endif /* (DPAA_VERSION >= 11) */
 
 /**************************************************************************//**
  @Function	FM_CtrlMonStart
