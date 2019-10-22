@@ -15,7 +15,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_bus_vdev.h>
-#include <of.h>
+#include <dpaa_of.h>
 #include "pfe_logs.h"
 #include "pfe_mod.h"
 

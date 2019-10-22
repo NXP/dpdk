@@ -8,6 +8,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 LIB = librte_pmd_enetc.a
 
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaax
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 EXPORT_MAP := rte_pmd_enetc_version.map
