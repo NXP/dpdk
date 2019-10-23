@@ -15,7 +15,9 @@
 #include <rte_cryptodev_pmd.h>
 #include <rte_crypto.h>
 #include <rte_cryptodev.h>
+#ifdef RTE_LIBRTE_SECURITY
 #include <rte_security_driver.h>
+#endif
 #include <rte_cycles.h>
 #include <rte_dev.h>
 #include <rte_ip.h>
@@ -253,6 +255,7 @@ static inline int is_decode(dpaa_sec_session *ses)
 	return ses->dir == DIR_DEC;
 }
 
+#ifdef RTE_LIBRTE_SECURITY
 static int
 dpaa_sec_prep_pdcp_cdb(dpaa_sec_session *ses)
 {
@@ -356,7 +359,6 @@ dpaa_sec_prep_pdcp_cdb(dpaa_sec_session *ses)
 					ses->pdcp.hfn_threshold,
 					&cipherdata, p_authdata, 0);
 	}
-
 	return shared_desc_len;
 }
 
@@ -433,7 +435,7 @@ dpaa_sec_prep_ipsec_cdb(dpaa_sec_session *ses)
 	}
 	return shared_desc_len;
 }
-
+#endif
 /* prepare command block of the session */
 static int
 dpaa_sec_prep_cdb(dpaa_sec_session *ses)
@@ -451,12 +453,14 @@ dpaa_sec_prep_cdb(dpaa_sec_session *ses)
 	memset(cdb, 0, sizeof(struct sec_cdb));
 
 	switch (ses->ctxt) {
+#ifdef RTE_LIBRTE_SECURITY
 	case DPAA_SEC_IPSEC:
 		shared_desc_len = dpaa_sec_prep_ipsec_cdb(ses);
 		break;
 	case DPAA_SEC_PDCP:
 		shared_desc_len = dpaa_sec_prep_pdcp_cdb(ses);
 		break;
+#endif
 	case DPAA_SEC_CIPHER:
 		alginfo_c.key = (size_t)ses->cipher_key.data;
 		alginfo_c.keylen = ses->cipher_key.length;
@@ -1581,6 +1585,7 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	return cf;
 }
 
+#ifdef RTE_LIBRTE_SECURITY
 static inline struct dpaa_sec_job *
 build_proto(struct rte_crypto_op *op, dpaa_sec_session *ses)
 {
@@ -1712,6 +1717,7 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	return cf;
 }
+#endif
 
 static uint16_t
 dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
@@ -1754,11 +1760,13 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 							op->sym->session,
 							cryptodev_driver_id);
 				break;
+#ifdef RTE_LIBRTE_SECURITY
 			case RTE_CRYPTO_OP_SECURITY_SESSION:
 				ses = (dpaa_sec_session *)
 					get_sec_session_private_data(
 							op->sym->sec_session);
 				break;
+#endif
 			default:
 				DPAA_SEC_DP_ERR(
 					"sessionless crypto op not supported");
@@ -1791,10 +1799,12 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 				  ((op->sym->m_dst == NULL) ||
 				   rte_pktmbuf_is_contiguous(op->sym->m_dst))) {
 				switch (ses->ctxt) {
+#ifdef RTE_LIBRTE_SECURITY
 				case DPAA_SEC_PDCP:
 				case DPAA_SEC_IPSEC:
 					cf = build_proto(op, ses);
 					break;
+#endif
 				case DPAA_SEC_AUTH:
 					cf = build_auth_only(op, ses);
 					break;
@@ -1823,10 +1833,12 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 				}
 			} else {
 				switch (ses->ctxt) {
+#ifdef RTE_LIBRTE_SECURITY
 				case DPAA_SEC_PDCP:
 				case DPAA_SEC_IPSEC:
 					cf = build_proto_sg(op, ses);
 					break;
+#endif
 				case DPAA_SEC_AUTH:
 					cf = build_auth_only_sg(op, ses);
 					break;
@@ -1877,6 +1889,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 				fd->cmd |= ((auth_tail_len << 16) | auth_hdr_len);
 			}
 
+#ifdef RTE_LIBRTE_SECURITY
 			/* In case of PDCP, per packet HFN is stored in
 			 * mbuf priv after sym_op.
 			 */
@@ -1889,7 +1902,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 					ses->pdcp.hfn_ovd_offset)),
 					ses->pdcp.hfn_ovd);
 			}
-
+#endif
 		}
 send_pkts:
 		loop = 0;
@@ -2491,6 +2504,7 @@ static uint8_t aes_cbc_iv[] = {
 	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };
 #endif
 
+#ifdef RTE_LIBRTE_SECURITY
 static int
 dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			   struct rte_security_session_conf *conf,
@@ -2923,7 +2937,7 @@ dpaa_sec_security_session_destroy(void *dev __rte_unused,
 	}
 	return 0;
 }
-
+#endif
 static int
 dpaa_sec_dev_configure(struct rte_cryptodev *dev __rte_unused,
 		       struct rte_cryptodev_config *config __rte_unused)
@@ -3169,6 +3183,7 @@ static struct rte_cryptodev_ops crypto_ops = {
 	.sym_session_clear        = dpaa_sec_sym_session_clear
 };
 
+#ifdef RTE_LIBRTE_SECURITY
 static const struct rte_security_capability *
 dpaa_sec_capabilities_get(void *device __rte_unused)
 {
@@ -3183,7 +3198,7 @@ static const struct rte_security_ops dpaa_sec_security_ops = {
 	.set_pkt_metadata = NULL,
 	.capabilities_get = dpaa_sec_capabilities_get
 };
-
+#endif
 static int
 dpaa_sec_uninit(struct rte_cryptodev *dev)
 {
@@ -3207,7 +3222,9 @@ static int
 dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 {
 	struct dpaa_sec_dev_private *internals;
+#ifdef RTE_LIBRTE_SECURITY
 	struct rte_security_ctx *security_instance;
+#endif
 	struct dpaa_sec_qp *qp;
 	uint32_t i, flags;
 	int ret;
@@ -3242,7 +3259,7 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 		DPAA_SEC_WARN("Device already init by primary process");
 		return 0;
 	}
-
+#ifdef RTE_LIBRTE_SECURITY
 	/* Initialize security_ctx only for primary process*/
 	security_instance = rte_malloc("rte_security_instances_ops",
 				sizeof(struct rte_security_ctx), 0);
@@ -3252,7 +3269,7 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 	security_instance->ops = &dpaa_sec_security_ops;
 	security_instance->sess_cnt = 0;
 	cryptodev->security_ctx = security_instance;
-
+#endif
 	rte_spinlock_init(&internals->lock);
 	for (i = 0; i < internals->max_nb_queue_pairs; i++) {
 		/* init qman fq for queue pair */

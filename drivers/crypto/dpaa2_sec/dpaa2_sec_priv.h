@@ -8,7 +8,9 @@
 #ifndef _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 #define _RTE_DPAA2_SEC_PMD_PRIVATE_H_
 
+#ifdef RTE_LIBRTE_SECURITY
 #include <rte_security_driver.h>
+#endif
 
 #define CRYPTODEV_NAME_DPAA2_SEC_PMD	crypto_dpaa2_sec
 /**< NXP DPAA2 - SEC PMD device name */
@@ -141,6 +143,7 @@ struct dpaa2_sec_aead_ctxt {
 	uint8_t auth_cipher_text;       /**< Authenticate/cipher ordering */
 };
 
+#ifdef RTE_LIBRTE_SECURITY
 /*
  * The structure is to be filled by user for PDCP Protocol
  */
@@ -155,7 +158,7 @@ struct dpaa2_pdcp_ctxt {
 	uint32_t hfn;	/*!< Hyper Frame Number */
 	uint32_t hfn_threshold;	/*!< HFN Threashold for key renegotiation */
 };
-
+#endif
 typedef struct dpaa2_sec_session_entry {
 	void *ctxt;
 	uint8_t ctxt_type;
@@ -191,7 +194,9 @@ typedef struct dpaa2_sec_session_entry {
 				struct dpaa2_sec_aead_ctxt aead_ctxt;
 			} ext_params;
 		};
+#ifdef RTE_LIBRTE_SECURITY
 		struct dpaa2_pdcp_ctxt pdcp;
+#endif
 	};
 } dpaa2_sec_session;
 
@@ -505,6 +510,8 @@ static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 	RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
 };
 
+#ifdef RTE_LIBRTE_SECURITY
+
 static const struct rte_cryptodev_capabilities dpaa2_pdcp_capabilities[] = {
 	{	/* SNOW 3G (UIA2) */
 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
@@ -706,7 +713,7 @@ static const struct rte_security_capability dpaa2_sec_security_cap[] = {
 		.action = RTE_SECURITY_ACTION_TYPE_NONE
 	}
 };
-
+#endif
 /**
  * Checksum
  *
