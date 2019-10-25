@@ -706,6 +706,7 @@ static const struct rte_security_capability dpaa_sec_security_cap[] = {
 		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
 		.pdcp = {
 			.domain = RTE_SECURITY_PDCP_MODE_DATA,
+			.capa_flags = 0
 		},
 		.crypto_capabilities = dpaa_pdcp_capabilities
 	},
@@ -714,6 +715,7 @@ static const struct rte_security_capability dpaa_sec_security_cap[] = {
 		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
 		.pdcp = {
 			.domain = RTE_SECURITY_PDCP_MODE_CONTROL,
+			.capa_flags = 0
 		},
 		.crypto_capabilities = dpaa_pdcp_capabilities
 	},
