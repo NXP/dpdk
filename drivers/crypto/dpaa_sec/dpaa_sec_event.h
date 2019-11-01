@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2019 NXP
+ *
  */
 
 #ifndef _DPAA_SEC_EVENT_H_

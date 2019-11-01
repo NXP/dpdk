@@ -13,7 +13,6 @@ LIB = librte_pmd_dpaa2_sec.a
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
-CFLAGS += -Wno-enum-conversion
 
 ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 ifeq ($(shell test $(GCC_VERSION) -gt 70 && echo 1), 1)
@@ -21,8 +20,8 @@ CFLAGS += -Wno-implicit-fallthrough
 endif
 endif
 
-CFLAGS += -I$(RTE_SDK)/drivers/common/dpaax/caamflib
 CFLAGS += -I$(RTE_SDK)/drivers/common/dpaax
+CFLAGS += -I$(RTE_SDK)/drivers/common/dpaax/caamflib
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa2_sec/mc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/

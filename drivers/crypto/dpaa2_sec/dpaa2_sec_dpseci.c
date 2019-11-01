@@ -3058,6 +3058,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			encap_pdb.ip_hdr_len = sizeof(struct ipv6_hdr);
 			hdr = (uint8_t *)&ip6_hdr;
 		}
+
 		bufsize = cnstr_shdsc_ipsec_new_encap(priv->flc_desc[0].desc,
 				1, 0, SHR_SERIAL, &encap_pdb,
 				hdr, &cipherdata, &authdata);

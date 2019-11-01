@@ -1638,11 +1638,11 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	uint8_t req_segs;
 	uint32_t in_len = 0, out_len = 0;
 
-	if (sym->m_dst) {
+	if (sym->m_dst)
 		mbuf = sym->m_dst;
-	} else {
+	else
 		mbuf = sym->m_src;
-	}
+
 	req_segs = mbuf->nb_segs + sym->m_src->nb_segs + 2;
 	if (mbuf->nb_segs > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Proto: Max sec segs supported is %d",
@@ -1746,8 +1746,8 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			if (op->sym->m_src->seqn != 0) {
 				index = op->sym->m_src->seqn - 1;
 				if (DPAA_PER_LCORE_DQRR_HELD & (1 << index)) {
+					/* QM_EQCR_DCA_IDXMASK = 0x0f */
 					flags[loop] = ((index & 0x0f) << 8);
-					   /*QM_EQCR_DCA_IDXMASK*/
 					flags[loop] |= QMAN_ENQUEUE_FLAG_DCA;
 					DPAA_PER_LCORE_DQRR_SIZE--;
 					DPAA_PER_LCORE_DQRR_HELD &=
@@ -1896,7 +1896,8 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			 */
 			if (auth_hdr_len || auth_tail_len) {
 				fd->cmd = 0x80000000;
-				fd->cmd |= ((auth_tail_len << 16) | auth_hdr_len);
+				fd->cmd |=
+					((auth_tail_len << 16) | auth_hdr_len);
 			}
 
 #ifdef RTE_LIBRTE_SECURITY
@@ -2310,7 +2311,7 @@ dpaa_sec_attach_rxq(struct dpaa_sec_dev_private *qi)
 			return &qi->inq[i];
 		}
 	}
-	DPAA_SEC_WARN("All session in use %x", qi->max_nb_sessions);
+	DPAA_SEC_WARN("All session in use %u", qi->max_nb_sessions);
 
 	return NULL;
 }
@@ -2823,10 +2824,8 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 #endif
 			PDBHMO_ESP_ENCAP_DTTL |
 			PDBHMO_ESP_SNR;
-
 		if (ipsec_xform->options.esn)
 			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
-
 		session->encap_pdb.spi = ipsec_xform->spi;
 #ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform)
@@ -3220,7 +3219,7 @@ dpaa_sec_process_atomic_event(void *event,
 	ev->queue_id = outq->ev.queue_id;
 	ev->priority = outq->ev.priority;
 
-	/* Save active dqrr entries DQRR_PTR2IDX(dqrr);*/
+	/* Save active dqrr entries */
 	index = ((uintptr_t)dqrr >> 6) & (16/*QM_DQRR_SIZE*/ - 1);
 	DPAA_PER_LCORE_DQRR_SIZE++;
 	DPAA_PER_LCORE_DQRR_HELD |= 1 << index;

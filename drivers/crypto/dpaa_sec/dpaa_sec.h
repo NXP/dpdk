@@ -110,7 +110,8 @@ struct sec_pdcp_ctxt {
 	int8_t hfn_ovd;/*!< Overwrite HFN per packet*/
 	uint8_t sn_size;	/*!< Sequence number size, 5/7/12/15/18 */
 	uint32_t hfn_ovd_offset;/*!< offset from rte_crypto_op at which
-				    per packet hfn is stored */
+				 * per packet hfn is stored
+				 */
 	uint32_t hfn;	/*!< Hyper Frame Number */
 	uint32_t hfn_threshold;	/*!< HFN Threashold for key renegotiation */
 };

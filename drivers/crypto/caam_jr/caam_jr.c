@@ -29,7 +29,7 @@
 #include <desc/algo.h>
 #include <dpaa_of.h>
 #ifdef RTE_LIBRTE_PMD_CAAM_JR_DEBUG
-#define CAAM_JR_DBG	1
+#define CAAM_JR_DBG    1
 #else
 #define CAAM_JR_DBG	0
 #endif
@@ -71,7 +71,7 @@ caam_jr_vtop_ctx(struct caam_jr_op_ctx *ctx, void *vaddr)
 static inline void
 caam_jr_op_ending(struct caam_jr_op_ctx *ctx)
 {
-	/* report op status to sym->op and then free the ctx memeory  */
+	/* report op status to sym->op and then free the ctx memory  */
 	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
 }
 
@@ -782,7 +782,7 @@ build_auth_only_sg(struct rte_crypto_op *op, struct caam_jr_session *ses)
 		sg->len = cpu_to_caam32(ses->digest_length);
 		length += ses->digest_length;
 	} else {
-		length -= ses->digest_length;
+		sg->len -= ses->digest_length;
 	}
 
 	/* last element*/
