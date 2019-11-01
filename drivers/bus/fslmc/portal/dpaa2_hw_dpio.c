@@ -321,11 +321,12 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 
 static void dpaa2_put_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 {
+	if (dpio_dev) {
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
-	dpaa2_dpio_intr_deinit(dpio_dev);
+		dpaa2_dpio_intr_deinit(dpio_dev);
 #endif
-	if (dpio_dev)
 		rte_atomic16_clear(&dpio_dev->ref_count);
+	}
 }
 
 int
