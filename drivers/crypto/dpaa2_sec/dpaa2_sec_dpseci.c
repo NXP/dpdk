@@ -2989,6 +2989,10 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 
 		/* copy algo specific data to PDB */
 		switch (cipherdata.algtype) {
+		case OP_PCL_IPSEC_AES_CTR:
+			encap_pdb.ctr.ctr_initial = 0x00000001;
+			encap_pdb.ctr.ctr_nonce = ipsec_xform->salt;
+			break;
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
@@ -3013,7 +3017,6 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 				aes_cbc_iv, cipher_xform->iv.length);
 #endif
 		session->dir = DIR_ENC;
-
 		if (ipsec_xform->tunnel.type ==
 				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
 			encap_pdb.ip_hdr_len = sizeof(struct ip);
@@ -3067,6 +3070,10 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		memset(&decap_pdb, 0, sizeof(struct ipsec_decap_pdb));
 		/* copy algo specific data to PDB */
 		switch (cipherdata.algtype) {
+		case OP_PCL_IPSEC_AES_CTR:
+			decap_pdb.ctr.ctr_initial = 0x00000001;
+			decap_pdb.ctr.ctr_nonce = ipsec_xform->salt;
+			break;
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
@@ -3081,6 +3088,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 				sizeof(struct ipv6_hdr) << 16;
 		if (ipsec_xform->options.esn)
 			decap_pdb.options |= PDBOPTS_ESP_ESN;
+
 		session->dir = DIR_DEC;
 		bufsize = cnstr_shdsc_ipsec_new_decap(priv->flc_desc[0].desc,
 				1, 0, SHR_SERIAL,
