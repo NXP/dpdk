@@ -316,6 +316,12 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 		return NULL;
 	}
 
+	ret = pthread_setspecific(dpaa2_portal_key, (void *)dpio_dev);
+	if (ret) {
+		DPAA2_BUS_ERR("pthread_setspecific failed with ret: %d", ret);
+		return NULL;
+	}
+
 	return dpio_dev;
 }
 
@@ -373,12 +379,14 @@ dpaa2_affine_qbman_ethrx_swp(void)
 	return 0;
 }
 
-static void __attribute__((destructor(102))) dpaa2_portal_finish(void *arg)
+static void dpaa2_portal_finish(void *arg)
 {
 	RTE_SET_USED(arg);
 
 	dpaa2_put_qbman_swp(RTE_PER_LCORE(_dpaa2_io).dpio_dev);
 	dpaa2_put_qbman_swp(RTE_PER_LCORE(_dpaa2_io).ethrx_dpio_dev);
+
+	pthread_setspecific(dpaa2_portal_key, NULL);
 }
 
 /*
