@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -1068,7 +1068,10 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	/*checksum errors, send them to normal path and set it in annotation */
 	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
-	err_cfg.errors |= DPNI_ERROR_PHE;
+
+	/* if packet with parse error are not to be dropped */
+	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+		err_cfg.errors |= DPNI_ERROR_PHE;
 
 	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	err_cfg.set_frame_annotation = true;
@@ -2416,6 +2419,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 #else
 	priv->tx_conf_en = 0;
 #endif
+
+	/* Packets with parse error to be dropped in hw */
+	if (getenv("DPAA2_PARSE_ERR_DROP")) {
+		priv->flags |= DPAA2_PARSE_ERR_DROP;
+		DPAA2_PMD_INFO("Drop parse error packets in hw");
+	}
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
