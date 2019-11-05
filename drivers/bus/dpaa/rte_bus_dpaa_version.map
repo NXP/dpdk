@@ -50,6 +50,7 @@ DPDK_20.0 {
 	qm_channel_caam;
 	qm_channel_pool1;
 	qman_alloc_cgrid_range;
+	qman_alloc_fqid_range;
 	qman_alloc_pool_range;
 	qman_clear_irq;
 	qman_create_cgr;
