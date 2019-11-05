@@ -922,6 +922,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				DPAA_TX_BURST_SIZE : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
 			/* In case the data offset is not multiple of 16,
 			 * FMAN can stall because of an errata. So reallocate
 			 * the buffer in such case.
@@ -929,6 +930,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
 					(mbuf->data_off & 0x7F) != 0x0)
 				realloc_mbuf = 1;
+#endif
 			seqn = mbuf->seqn;
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
 				index = seqn - 1;
