@@ -2839,12 +2839,19 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 
 		encap_pdb.options = (IPVERSION << PDBNH_ESP_ENCAP_SHIFT) |
 			PDBOPTS_ESP_OIHI_PDB_INL |
+#ifndef RTE_LIBRTE_SECURITY_TEST
 			PDBOPTS_ESP_IVSRC |
+#endif
 			PDBHMO_ESP_ENCAP_DTTL |
 			PDBHMO_ESP_SNR;
 		if (ipsec_xform->options.esn)
 			encap_pdb.options |= PDBOPTS_ESP_ESN;
 		encap_pdb.spi = ipsec_xform->spi;
+#ifdef RTE_LIBRTE_SECURITY_TEST
+		if (cipher_xform)
+			memcpy(encap_pdb.cbc.iv,
+				aes_cbc_iv, cipher_xform->iv.length);
+#endif
 		session->dir = DIR_ENC;
 		if (ipsec_xform->tunnel.type ==
 				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
