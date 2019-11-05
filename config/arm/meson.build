@@ -332,7 +332,11 @@ soc_dpaa = {
         ['RTE_MACHINE', '"dpaa"'],
         ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
         ['RTE_MAX_LCORE', 16],
-        ['RTE_MAX_NUMA_NODES', 1]
+        ['RTE_MAX_NUMA_NODES', 1],
+	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
+	['CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE', false],
+	['CONFIG_RTE_LIBRTE_IEEE1588', false],
+	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1]
     ],
     'numa': false
 }

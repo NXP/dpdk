@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright 2014 6WIND S.A.
+ * Copyright 2019 NXP
  */
 
 #include <string.h>
@@ -232,16 +233,50 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 		rte_errno = EINVAL;
 		return NULL;
 	}
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+/* LS1043_MAX_BUF_SIZE indicates max buffer size supported for LS1043 soc.
+ * This piece of code calculates 'data_room_size' such that the complete
+ * buffer segment (mempool metadata + mbuf metadata + priv area + headroom +
+ * data area) equals 4K. This is done so that no buffer crosses 4K boundary.
+ * An Errata solution for LS1043.
+ */
+	/* Set the dpaa_svr_family the first thing if not already set */
+	if (!dpaa_svr_family_1)
+		set_dpaa_svr_family();
+
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY) {
+		data_room_size += LS1043_MAX_BUF_OFFSET;
+		if (data_room_size <= LS1043_MAX_BUF_SIZE)
+			data_room_size = LS1043_MAX_BUF_SIZE - priv_size;
+		else
+			RTE_LOG(ERR, MBUF,
+			"Buf size (%d) > %d is not supported, MAY NOT WORK\n",
+			data_room_size, LS1043_MAX_BUF_SIZE);
+	}
+#endif
+
 	elt_size = sizeof(struct rte_mbuf) + (unsigned)priv_size +
 		(unsigned)data_room_size;
 	memset(&mbp_priv, 0, sizeof(mbp_priv));
 	mbp_priv.mbuf_data_room_size = data_room_size;
 	mbp_priv.mbuf_priv_size = priv_size;
 
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
+		mbp_priv.mbuf_data_room_size -= LS1043_MAX_BUF_OFFSET;
+#endif
+
 	mp = rte_mempool_create_empty(name, n, elt_size, cache_size,
 		 sizeof(struct rte_pktmbuf_pool_private), socket_id, 0);
 	if (mp == NULL)
 		return NULL;
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	/* Set flag in mbuf, so errata related decisions can be taken later */
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
+		mp->flags |= MEMPOOL_F_1043_MBUF;
+#endif
 
 	if (mp_ops_name == NULL)
 		mp_ops_name = rte_mbuf_best_mempool_ops();
@@ -262,6 +297,11 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	}
 
 	rte_mempool_obj_iter(mp, rte_pktmbuf_init, NULL);
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
+		mp->elt_size -= LS1043_MAX_BUF_OFFSET;
+#endif
 
 	return mp;
 }

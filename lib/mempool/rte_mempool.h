@@ -2,6 +2,7 @@
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
  * Copyright(c) 2022 SmartShare Systems
+ * Copyright 2022 NXP
  */
 
 #ifndef _RTE_MEMPOOL_H_
@@ -300,6 +301,20 @@ struct rte_mempool {
 #define MEMPOOL_F_NO_IOVA_CONTIG	RTE_MEMPOOL_F_NO_IOVA_CONTIG
 /** Internal: no object from the pool can be used for device IO (DMA). */
 #define RTE_MEMPOOL_F_NON_IO		0x0040
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+#define MEMPOOL_F_1043_MBUF     0x0100 /**< 1043 Mbuf Pool */
+#define SVR_LS1043A_FAMILY	0x87920000
+#define SVR_MASK		0xffff0000
+#define LS1043_MAX_BUF_SIZE	3904
+#define LS1043_MAX_MEMZONES	512
+#define LS1043_OFFSET_CHANGE_IDX 64
+#define LS1043_MAX_BUF_IN_CACHE         8
+#define LS1043_MAX_BUF_OFFSET   (LS1043_OFFSET_CHANGE_IDX * \
+		LS1043_MAX_BUF_IN_CACHE)
+extern unsigned int dpaa_svr_family_1;
+void set_dpaa_svr_family(void);
+#endif
 
 /**
  * This macro lists all the mempool flags an application may request.

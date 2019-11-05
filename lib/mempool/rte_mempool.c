@@ -2,6 +2,7 @@
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
  * Copyright(c) 2022 SmartShare Systems
+ * Copyright 2022 NXP
  */
 
 #include <stdbool.h>
@@ -113,6 +114,21 @@ static unsigned int
 arch_mem_object_align(unsigned int obj_size)
 {
 	return obj_size;
+}
+#endif
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+unsigned int dpaa_svr_family_1;
+void set_dpaa_svr_family(void)
+{
+	FILE *svr_file = NULL;
+
+	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	if (svr_file) {
+		if (fscanf(svr_file, "svr:%x", &dpaa_svr_family_1) > 0)
+			dpaa_svr_family_1 &= SVR_MASK;
+		fclose(svr_file);
+	}
 }
 #endif
 
