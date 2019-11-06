@@ -2035,7 +2035,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CBC;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
-						SHR_NEVER, &cipherdata, NULL,
+						SHR_NEVER, &cipherdata,
 						session->iv.length,
 						session->dir);
 		break;
@@ -2044,7 +2044,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
-						SHR_NEVER, &cipherdata, NULL,
+						SHR_NEVER, &cipherdata,
 						session->iv.length,
 						session->dir);
 		break;
@@ -2053,7 +2053,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CTR;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
-						SHR_NEVER, &cipherdata, NULL,
+						SHR_NEVER, &cipherdata,
 						session->iv.length,
 						session->dir);
 		break;
@@ -2062,7 +2062,7 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CTR;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CTR;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
-						SHR_NEVER, &cipherdata, NULL,
+						SHR_NEVER, &cipherdata,
 						session->iv.length,
 						session->dir);
 		break;
