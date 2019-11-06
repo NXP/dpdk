@@ -362,11 +362,13 @@ static int dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
 	dev_info->flow_type_rss_offloads = DPAA_RSS_OFFLOAD_ALL;
 
-	if (dpaa_intf->fif->mac_type == fman_mac_1g) {
+	if (dpaa_intf->fif->mac_type == fman_mac_1g)
 		dev_info->speed_capa = ETH_LINK_SPEED_1G;
-	} else if (dpaa_intf->fif->mac_type == fman_mac_10g) {
-		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_10G);
-	} else {
+	else if (dpaa_intf->fif->mac_type == fman_mac_2_5g)
+		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_2_5G);
+	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
+		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_2_5G | ETH_LINK_SPEED_10G);
+	else {
 		DPAA_PMD_ERR("invalid link_speed: %s, %d",
 			     dpaa_intf->name, dpaa_intf->fif->mac_type);
 		return -EINVAL;
@@ -392,6 +394,8 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 
 	if (dpaa_intf->fif->mac_type == fman_mac_1g)
 		link->link_speed = ETH_SPEED_NUM_1G;
+	else if (dpaa_intf->fif->mac_type == fman_mac_2_5g)
+		link->link_speed = ETH_SPEED_NUM_2_5G;
 	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
 		link->link_speed = ETH_SPEED_NUM_10G;
 	else
@@ -1425,9 +1429,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		td_threshold = atoi(getenv("DPAA_TAILDROP_THRESHOLD"));
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_threshold);
-		/* TODO Check for an invalid value? like a very large one
-		* because of -1?
-		*/
+		/* if a very large value is being configured */
+		if (td_threshold > UINT16_MAX)
+			td_threshold = CGR_RX_PERFQ_THRESH;
 	}
 
 	/* If congestion control is enabled globally*/

@@ -71,6 +71,7 @@ TAILQ_HEAD(rte_fman_if_list, __fman_if);
 enum fman_mac_type {
 	fman_offline = 0,
 	fman_mac_1g,
+	fman_mac_2_5g,
 	fman_mac_10g,
 };
 
