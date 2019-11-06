@@ -115,7 +115,7 @@ qdma_populate_fd_ddr(phys_addr_t src, phys_addr_t dest,
 	/**
 	 * src If RBP=0 {NS,RDTTYPE[3:0]}: 0_1011
 	 * Coherent copy of cacheable memory,
-	 * lookup in downstream cache, no allocate
+	* lookup in downstream cache, no allocate
 	 * on miss
 	 */
 	fd->simple_ddr.rns = 0;
@@ -1397,8 +1397,8 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 		goto init_err;
 	}
 
-	if (dpaa2_get_devargs(rawdev->device->devargs,
-		DPAA2_QDMA_NO_PREFETCH)) {
+	if (dpaa2_get_devargs(rawdev->device->devargs, DPAA2_QDMA_NO_PREFETCH)
+			|| (getenv("DPAA2_NO_QDMA_PREFETCH_RX"))) {
 		/* If no prefetch is configured. */
 		dpdmai_dev_dequeue_multijob =
 				dpdmai_dev_dequeue_multijob_no_prefetch;
