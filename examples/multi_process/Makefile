@@ -14,5 +14,6 @@ DIRS-$(CONFIG_RTE_EXEC_ENV_LINUX) += client_server_mp
 DIRS-$(CONFIG_RTE_EXEC_ENV_LINUX) += simple_mp
 DIRS-$(CONFIG_RTE_EXEC_ENV_LINUX) += symmetric_mp
 DIRS-$(CONFIG_RTE_EXEC_ENV_LINUX) += hotplug_mp
+DIRS-$(CONFIG_RTE_EXEC_ENV_LINUX) += symmetric_mp_qdma
 
 include $(RTE_SDK)/mk/rte.extsubdir.mk
