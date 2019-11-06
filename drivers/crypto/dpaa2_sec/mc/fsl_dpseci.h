@@ -11,6 +11,8 @@
  * Contains initialization APIs and runtime control APIs for DPSECI
  */
 
+#include <fsl_dpopr.h>
+
 struct fsl_mc_io;
 
 /**
@@ -40,6 +42,16 @@ int dpseci_close(struct fsl_mc_io *mc_io,
  * Enable the Congestion Group support
  */
 #define DPSECI_OPT_HAS_CG				0x000020
+
+/**
+ * Enable the Order Restoration support
+ */
+#define DPSECI_OPT_HAS_OPR				0x000040
+
+/**
+ * Order Point Records are shared for the entire DPSECI
+ */
+#define DPSECI_OPT_OPR_SHARED				0x000080
 
 /**
  * struct dpseci_cfg - Structure representing DPSECI configuration
