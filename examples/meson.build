@@ -47,6 +47,7 @@ all_examples = [
 	'vhost_blk', 'vm_power_manager',
 	'vm_power_manager/guest_cli',
 	'vmdq', 'vmdq_dcb',
+	'multi_process/symmetric_mp_qdma',
 	'qdma_demo', 'l2fwd-qdma',
 	'cmdif',
 ]
