@@ -190,6 +190,13 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return -1;
 
 	rte_eth_dev_info_get(port, &dev_info);
+	if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP) {
+		port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
+	} else {
+		printf("Timestamp is not supported on device\n");
+		return -1;
+	}
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
