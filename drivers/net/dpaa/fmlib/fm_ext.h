@@ -61,11 +61,15 @@
 typedef enum e_FmPortType {
 	e_FM_PORT_TYPE_OH_OFFLINE_PARSING = 0,  /**< Offline parsing port */
 	e_FM_PORT_TYPE_RX,			/**< 1G Rx port */
-	e_FM_PORT_TYPE_RX_2_5G,			/**< 2.5G Rx port */
 	e_FM_PORT_TYPE_RX_10G,		/**< 10G Rx port */
 	e_FM_PORT_TYPE_TX,			/**< 1G Tx port */
-	e_FM_PORT_TYPE_TX_2_5G,			/**< 2.5G Tx port */
 	e_FM_PORT_TYPE_TX_10G,		/**< 10G Tx port */
+/*TODO: This needs to be in sync with kernel.
+ * 2.5G port type is not part of LSDK kernel.
+ * So keep them at the end.
+ */
+	e_FM_PORT_TYPE_RX_2_5G,			/**< 2.5G Rx port */
+	e_FM_PORT_TYPE_TX_2_5G,			/**< 2.5G Tx port */
 	e_FM_PORT_TYPE_DUMMY
 } e_FmPortType;
 
