@@ -1235,9 +1235,8 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 				     fqid, ret);
 			return -EINVAL;
 		}
-	} else {
-		flags |= QMAN_FQ_FLAG_DYNAMIC_FQID;
 	}
+
 	DPAA_PMD_DEBUG("creating rx fq %p, fqid 0x%x", fq, fqid);
 	ret = qman_create_fq(fqid, flags, fq);
 	if (ret) {
