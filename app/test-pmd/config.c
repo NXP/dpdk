@@ -1958,8 +1958,6 @@ rss_fwd_config_setup(void)
 	streamid_t  sm_id;
 
 	nb_q = nb_rxq;
-	if (nb_q > nb_txq)
-		nb_q = nb_txq;
 	cur_fwd_config.nb_fwd_lcores = (lcoreid_t) nb_fwd_lcores;
 	cur_fwd_config.nb_fwd_ports = nb_fwd_ports;
 	cur_fwd_config.nb_fwd_streams =
@@ -1982,7 +1980,7 @@ rss_fwd_config_setup(void)
 		fs->rx_port = fwd_ports_ids[rxp];
 		fs->rx_queue = rxq;
 		fs->tx_port = fwd_ports_ids[txp];
-		fs->tx_queue = rxq;
+		fs->tx_queue = (rxq % nb_txq);
 		fs->peer_addr = fs->tx_port;
 		fs->retry_enabled = retry_enabled;
 		rxp++;
@@ -2201,7 +2199,7 @@ fwd_config_setup(void)
 	}
 #endif
 
-	if ((nb_rxq > 1) && (nb_txq > 1)){
+	if ((nb_rxq > 1) && (nb_txq > 1)) {
 		if (dcb_config)
 			dcb_fwd_config_setup();
 		else
