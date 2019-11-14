@@ -10,5 +10,9 @@ int dpaa_fm_term(void);
 int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set);
 int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf);
 void dpaa_write_fm_config_to_file(void);
+int dpaa_port_vsp_init(struct dpaa_if *dpaa_intf, bool fmc_mode);
+int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
+	bool fmc_mode, uint8_t vsp_id, uint32_t bpid);
+int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf);
 
 #endif
