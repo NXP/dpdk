@@ -650,6 +650,17 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	if (!dpaa_intf->fif->is_shared_mac)
 		dpaa_fman_if_pool_setup(dpaa_intf);
 
+	if (dpaa_intf->fif->num_profiles) {
+		uint8_t vsp_id = DPAA_DEFAULT_RXQ_VSP_ID;
+
+		ret = dpaa_port_vsp_update(dpaa_intf, 1, vsp_id,
+					   dpaa_intf->bp_info->bpid);
+		if (ret) {
+			DPAA_PMD_ERR("dpaa_port_vsp_update failed");
+			return ret;
+		}
+	}
+
 	dpaa_intf->valid = 1;
 	DPAA_PMD_DEBUG("if:%s sg_on = %d, max_frm =%d", dpaa_intf->name,
 		fman_if_get_sg_enable(dpaa_intf->fif),
@@ -1556,6 +1567,12 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 				   ETHER_MAX_LEN + VLAN_TAG_SIZE);
 	}
 
+	ret = dpaa_port_vsp_init(dpaa_intf, fmc_q);
+	if (ret) {
+		DPAA_PMD_ERR("dpaa_port_vsp_init faied");
+		return ret;
+	}
+
 	return 0;
 
 free_tx:
@@ -1770,8 +1787,11 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 					rte_eth_devices[i].data->dev_private;
 				if (dpaa_intf->port_handle)
 					if (dpaa_fm_deconfig(dpaa_intf))
-						DPAA_PMD_WARN("DPAA FM "
-							"deconfig failed\n");
+						DPAA_PMD_WARN("DPAA FM deconfig failed\n");
+				if (dpaa_intf->fif->num_profiles) {
+					if (dpaa_port_vsp_cleanup(dpaa_intf))
+						DPAA_PMD_WARN("DPAA FM vsp cleanup failed\n");
+				}
 			}
 		}
 		if (is_global_init)

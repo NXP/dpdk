@@ -105,6 +105,10 @@
 #define DPAA_FD_CMD_CFQ			0x00ffffff
 /**< Confirmation Frame Queue */
 
+#define DPAA_VSP_PROFILE_MAX_NUM	8
+
+#define DPAA_DEFAULT_RXQ_VSP_ID		1
+
 /* Each network interface is represented by one of these */
 struct dpaa_if {
 	int valid;
@@ -124,6 +128,10 @@ struct dpaa_if {
 	void *netenv_handle;
 	void *scheme_handle[2];
 	uint32_t scheme_count;
+
+	void *vsp_handle[DPAA_VSP_PROFILE_MAX_NUM];
+	uint32_t vsp_bpid[DPAA_VSP_PROFILE_MAX_NUM];
+	uint8_t vsp_base;
 };
 
 struct dpaa_if_stats {
