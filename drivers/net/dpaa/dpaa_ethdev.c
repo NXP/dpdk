@@ -591,6 +591,12 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
+	if (dpaa_intf->bp_info && dpaa_intf->bp_info->bp &&
+	    dpaa_intf->bp_info->mp != mp) {
+		DPAA_PMD_WARN("Multiple pools on same interface not supported");
+		return -EINVAL;
+	}
+
 	/* Max packet can fit in single buffer */
 	if (dev->data->dev_conf.rxmode.max_rx_pkt_len <= buffsz) {
 		;
