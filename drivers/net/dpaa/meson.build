@@ -10,7 +10,8 @@ sources = files('dpaa_ethdev.c',
 		'fmlib/fm_lib.c',
 		'fmlib/fm_vsp.c',
 		'dpaa_flow.c',
-		'dpaa_rxtx.c')
+		'dpaa_rxtx.c',
+		'dpaa_fmc.c')
 
 allow_experimental_apis = true
 

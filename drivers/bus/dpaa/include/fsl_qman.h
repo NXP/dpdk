@@ -1230,6 +1230,7 @@ struct qman_fq {
 	/* affined portal in case of static queue */
 	struct qman_portal *qp;
 	struct dpaa_bp_info *bp_array;
+	int8_t vsp_id;
 
 	volatile unsigned long flags;
 
