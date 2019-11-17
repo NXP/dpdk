@@ -58,10 +58,10 @@
 #endif
 
 /* PCD frame queues */
-#define DPAA_PCD_FQID_START		0x400
-#define DPAA_PCD_FQID_MULTIPLIER	0x100
 #define DPAA_DEFAULT_NUM_PCD_QUEUES	1
-#define DPAA_MAX_NUM_PCD_QUEUES		4
+#define DPAA_VSP_PROFILE_MAX_NUM	8
+#define DPAA_MAX_NUM_PCD_QUEUES	DPAA_VSP_PROFILE_MAX_NUM
+/*Same as VSP profile number*/
 
 #define DPAA_IF_TX_PRIORITY		3
 #define DPAA_IF_RX_PRIORITY		0
@@ -102,9 +102,9 @@
 #define DPAA_FD_CMD_CFQ			0x00ffffff
 /**< Confirmation Frame Queue */
 
-#define DPAA_VSP_PROFILE_MAX_NUM	8
-
 #define DPAA_DEFAULT_RXQ_VSP_ID		1
+
+#define FMC_FILE "/tmp/fmc.bin"
 
 /* Each network interface is represented by one of these */
 struct dpaa_if {
@@ -128,7 +128,6 @@ struct dpaa_if {
 
 	void *vsp_handle[DPAA_VSP_PROFILE_MAX_NUM];
 	uint32_t vsp_bpid[DPAA_VSP_PROFILE_MAX_NUM];
-	uint8_t vsp_base;
 };
 
 struct dpaa_if_stats {

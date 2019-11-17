@@ -35,6 +35,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += fmlib/fm_vsp.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_flow.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_rxtx.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_PMD) += dpaa_fmc.c
 
 LDLIBS += -lrte_bus_dpaa
 LDLIBS += -lrte_mempool_dpaa

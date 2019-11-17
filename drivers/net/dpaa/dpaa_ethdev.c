@@ -605,6 +605,28 @@ static void dpaa_fman_if_pool_setup(struct dpaa_if *dpaa_intf)
 		       dpaa_intf->bp_info->bpid, bp_size);
 }
 
+static inline int dpaa_eth_rx_queue_bp_check(
+	struct dpaa_if *dpaa_intf, int8_t vsp_id, uint32_t bpid)
+{
+	if (dpaa_intf->fif->num_profiles) {
+		if (vsp_id < 0)
+			vsp_id = dpaa_intf->fif->base_profile_id;
+	} else {
+		if (vsp_id < 0)
+			vsp_id = 0;
+	}
+
+	if (dpaa_intf->vsp_bpid[vsp_id] &&
+		bpid != dpaa_intf->vsp_bpid[vsp_id]) {
+		DPAA_PMD_ERR(
+			"Various MPs are assigned to RXQs with same VSP");
+
+		return -1;
+	}
+
+	return 0;
+}
+
 static
 int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc,
@@ -631,10 +653,18 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
-	if (dpaa_intf->bp_info && dpaa_intf->bp_info->bp &&
-	    dpaa_intf->bp_info->mp != mp) {
-		DPAA_PMD_WARN("Multiple pools on same interface not supported");
-		return -EINVAL;
+	if (!dpaa_intf->fif->num_profiles) {
+		if (dpaa_intf->bp_info && dpaa_intf->bp_info->bp &&
+			dpaa_intf->bp_info->mp != mp) {
+			DPAA_PMD_WARN(
+				"Multiple pools on same interface not supported");
+			return -EINVAL;
+		}
+	} else {
+		if (dpaa_eth_rx_queue_bp_check(dpaa_intf, rxq->vsp_id,
+			DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid)) {
+			return -EINVAL;
+		}
 	}
 
 	/* Max packet can fit in single buffer */
@@ -666,14 +696,30 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		dpaa_fman_if_pool_setup(dpaa_intf);
 
 	if (dpaa_intf->fif->num_profiles) {
-		uint8_t vsp_id = DPAA_DEFAULT_RXQ_VSP_ID;
+		int8_t vsp_id = rxq->vsp_id;
 
-		ret = dpaa_port_vsp_update(dpaa_intf, 1, vsp_id,
-					   dpaa_intf->bp_info->bpid);
-		if (ret) {
-			DPAA_PMD_ERR("dpaa_port_vsp_update failed");
-			return ret;
+		if (vsp_id >= 0) {
+			ret = dpaa_port_vsp_update(dpaa_intf, fmc_q, vsp_id,
+					DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid);
+			if (ret) {
+				DPAA_PMD_ERR("dpaa_port_vsp_update failed");
+				return ret;
+			}
+		} else {
+			DPAA_PMD_INFO("Base profile is associated to"
+				" RXQ fqid:%d\r\n", rxq->fqid);
+			if (dpaa_intf->fif->is_shared_mac) {
+				DPAA_PMD_ERR(
+					"Fatal: Base profile is associated to"
+					" shared interface on DPDK.");
+				return -EINVAL;
+			}
+			dpaa_intf->vsp_bpid[dpaa_intf->fif->base_profile_id] =
+				DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid;
 		}
+	} else {
+		dpaa_intf->vsp_bpid[0] =
+			DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid;
 	}
 
 	dpaa_intf->valid = 1;
@@ -1381,6 +1427,8 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	struct fman_if_bpool *bp, *tmp_bp;
 	uint32_t cgrid[DPAA_MAX_NUM_PCD_QUEUES];
 	uint32_t dev_rx_fqids[DPAA_MAX_NUM_PCD_QUEUES];
+	int8_t dev_vspids[DPAA_MAX_NUM_PCD_QUEUES];
+	int8_t vsp_id = -1;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1411,31 +1459,49 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->ifid = dev_id;
 	dpaa_intf->cfg = cfg;
 
+	memset((char *)dev_rx_fqids, 0,
+		sizeof(uint32_t) * DPAA_MAX_NUM_PCD_QUEUES);
+
+	memset(dev_vspids, -1, DPAA_MAX_NUM_PCD_QUEUES);
+
 	/* Initialize Rx FQ's */
 	if (default_q) {
 		num_rx_fqs = DPAA_DEFAULT_NUM_PCD_QUEUES;
 	} else if (fmc_q) {
-		if (getenv("DPAA_NUM_RX_QUEUES"))
-			num_rx_fqs = atoi(getenv("DPAA_NUM_RX_QUEUES"));
-		else
-			num_rx_fqs = 1;
+		num_rx_fqs = dpaa_port_fmc_init(dpaa_intf, dev_rx_fqids,
+					dev_vspids,
+					DPAA_MAX_NUM_PCD_QUEUES);
+		if (num_rx_fqs < 0) {
+			DPAA_PMD_ERR("%s FMC initializes failed!",
+				dpaa_intf->name);
+			goto free_rx;
+		}
+		if (!num_rx_fqs) {
+			DPAA_PMD_WARN("%s is not configured by FMC.",
+				dpaa_intf->name);
+		}
 	} else {
-		num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
+		/* FMCLESS mode, load balance to multiple cores.*/
+		num_rx_fqs = rte_lcore_count();
 	}
 
 	/* Each device can not have more than DPAA_MAX_NUM_PCD_QUEUES RX
 	 * queues.
 	 */
-	if (num_rx_fqs <= 0 || num_rx_fqs > DPAA_MAX_NUM_PCD_QUEUES) {
+	if (num_rx_fqs < 0 || num_rx_fqs > DPAA_MAX_NUM_PCD_QUEUES) {
 		DPAA_PMD_ERR("Invalid number of RX queues\n");
 		return -EINVAL;
 	}
 
-	dpaa_intf->rx_queues = rte_zmalloc(NULL,
-		sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
-	if (!dpaa_intf->rx_queues) {
-		DPAA_PMD_ERR("Failed to alloc mem for RX queues\n");
-		return -ENOMEM;
+	if (num_rx_fqs > 0) {
+		dpaa_intf->rx_queues = rte_zmalloc(NULL,
+			sizeof(struct qman_fq) * num_rx_fqs, MAX_CACHELINE);
+		if (!dpaa_intf->rx_queues) {
+			DPAA_PMD_ERR("Failed to alloc mem for RX queues\n");
+			return -ENOMEM;
+		}
+	} else {
+		dpaa_intf->rx_queues = NULL;
 	}
 
 	memset(cgrid, 0, sizeof(cgrid));
@@ -1453,7 +1519,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	/* If congestion control is enabled globally*/
-	if (td_threshold) {
+	if (num_rx_fqs > 0 && td_threshold) {
 		dpaa_intf->cgr_rx = rte_zmalloc(NULL,
 			sizeof(struct qman_cgr) * num_rx_fqs, MAX_CACHELINE);
 		if (!dpaa_intf->cgr_rx) {
@@ -1484,11 +1550,10 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	for (loop = 0; loop < num_rx_fqs; loop++) {
 		if (default_q)
 			fqid = cfg->rx_def;
-		else if (fmc_q)
-			fqid = DPAA_PCD_FQID_START + dpaa_intf->fif->mac_idx *
-				DPAA_PCD_FQID_MULTIPLIER + loop;
 		else
 			fqid = dev_rx_fqids[loop];
+
+		vsp_id = dev_vspids[loop];
 
 		if (dpaa_intf->cgr_rx)
 			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
@@ -1498,6 +1563,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fqid);
 		if (ret)
 			goto free_rx;
+		dpaa_intf->rx_queues[loop].vsp_id = vsp_id;
 		dpaa_intf->rx_queues[loop].dpaa_intf = dpaa_intf;
 	}
 	dpaa_intf->nb_rx_queues = num_rx_fqs;
@@ -1582,12 +1648,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		fman_if_set_sg(fman_intf, 0);
 		fman_if_set_maxfrm(fman_intf,
 				   RTE_ETHER_MAX_LEN + VLAN_TAG_SIZE);
-	}
-
-	ret = dpaa_port_vsp_init(dpaa_intf, fmc_q);
-	if (ret) {
-		DPAA_PMD_ERR("dpaa_port_vsp_init faied");
-		return ret;
 	}
 
 	return 0;
@@ -1700,13 +1760,13 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
 			fmc_q = 0;
 			RTE_LOG(INFO, PMD, "Using FMC less mode\n");
 		} else {
-			if (access("/tmp/fmc.bin", F_OK) == -1) {
+			if (access(FMC_FILE, F_OK) == -1) {
 				RTE_LOG(ERR, PMD,
 				"FMC Not configured. Please run fmc tool\n");
 				return -1;
 			}
 			RTE_LOG(INFO, PMD, "Using FMC script mode,"
-			"Make sure to use DPDK supported FMC scripts only.\n");
+			"RXQs will be setup according to FMC configuration\n");
 		}
 
 		if (!(default_q || fmc_q)) {

@@ -17,7 +17,8 @@
 #define DPAA_MAX_NUM_ETH_DEV	8
 
 #define SCH_EXT_ARR(scheme_params, hdr_idx) \
-	scheme_params->key_extract_and_hash_params.extract_array[hdr_idx]
+	scheme_params->param.key_extract_and_hash_params\
+		.extract_array[hdr_idx]
 
 #define SCH_EXT_HDR(scheme_params, hdr_idx) \
 	SCH_EXT_ARR(scheme_params, hdr_idx).extract_params.extract_by_hdr
@@ -303,35 +304,36 @@ static int set_scheme_params(
 	PMD_INIT_FUNC_TRACE();
 
 	if (dpaa_intf->fif->num_profiles) {
-		scheme_params->override_storage_profile = true;
-		scheme_params->storage_profile.direct = true;
-		scheme_params->storage_profile.profile_select
+		scheme_params->param.override_storage_profile = true;
+		scheme_params->param.storage_profile.direct = true;
+		scheme_params->param.storage_profile.profile_select
 			.direct_relative_profileId = DPAA_DEFAULT_RXQ_VSP_ID;
 	}
 
-	scheme_params->use_hash = 1;
-	scheme_params->modify = false;
-	scheme_params->always_direct = false;
-	scheme_params->scheme_counter.update = 1;
-	scheme_params->scheme_counter.value = 0;
-	scheme_params->next_engine = e_IOC_FM_PCD_DONE;
-	scheme_params->base_fqid = dpaa_intf->rx_queues[0].fqid;
-	scheme_params->net_env_params.net_env_id =
+	scheme_params->param.use_hash = 1;
+	scheme_params->param.modify = false;
+	scheme_params->param.always_direct = false;
+	scheme_params->param.scheme_counter.update = 1;
+	scheme_params->param.scheme_counter.value = 0;
+	scheme_params->param.next_engine = e_IOC_FM_PCD_DONE;
+	scheme_params->param.base_fqid = dpaa_intf->rx_queues[0].fqid;
+	scheme_params->param.net_env_params.net_env_id =
 		dpaa_intf->netenv_handle;
-	scheme_params->net_env_params.num_of_distinction_units =
-		dist_units->num_of_distinction_units;
+	scheme_params->param.net_env_params.num_of_distinction_units =
+		dist_units->param.num_of_distinction_units;
 
-	scheme_params->key_extract_and_hash_params
+	scheme_params->param.key_extract_and_hash_params
 		.hash_distribution_num_of_fqids =
 		dpaa_intf->nb_rx_queues;
-	scheme_params->key_extract_and_hash_params
+	scheme_params->param.key_extract_and_hash_params
 		.num_of_used_extracts =
-		2 * dist_units->num_of_distinction_units;
+		2 * dist_units->param.num_of_distinction_units;
 
-	for (dist_idx = 0; dist_idx < dist_units->num_of_distinction_units;
-	     dist_idx++) {
+	for (dist_idx = 0; dist_idx <
+		dist_units->param.num_of_distinction_units;
+		dist_idx++) {
 
-		switch (dist_units->units[dist_idx].hdrs[0].hdr) {
+		switch (dist_units->param.units[dist_idx].hdrs[0].hdr) {
 		case HEADER_TYPE_ETH:
 			hdr_idx = set_hashParams_eth(scheme_params, hdr_idx);
 			break;
@@ -374,7 +376,8 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 	PMD_INIT_FUNC_TRACE();
 
 	if (!req_dist_set)
-		dist_units->units[dist_idx++].hdrs[0].hdr = HEADER_TYPE_ETH;
+		dist_units->param.units[dist_idx++].hdrs[0].hdr =
+			HEADER_TYPE_ETH;
 
 	while (req_dist_set) {
 		if (req_dist_set % 2 != 0) {
@@ -386,7 +389,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 					break;
 				l2_configured = 1;
 
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 								HEADER_TYPE_ETH;
 				break;
 
@@ -397,7 +400,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 				if (ipv4_configured)
 					break;
 				ipv4_configured = 1;
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 							HEADER_TYPE_IPv4;
 				break;
 
@@ -409,7 +412,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 				if (ipv6_configured)
 					break;
 				ipv6_configured = 1;
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 							HEADER_TYPE_IPv6;
 				break;
 
@@ -420,7 +423,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 				if (tcp_configured)
 					break;
 				tcp_configured = 1;
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 							HEADER_TYPE_TCP;
 				break;
 
@@ -431,7 +434,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 				if (udp_configured)
 					break;
 				udp_configured = 1;
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 							HEADER_TYPE_UDP;
 				break;
 
@@ -442,7 +445,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 					break;
 				sctp_configured = 1;
 
-				dist_units->units[dist_idx++].hdrs[0].hdr =
+				dist_units->param.units[dist_idx++].hdrs[0].hdr =
 							HEADER_TYPE_SCTP;
 				break;
 
@@ -455,7 +458,7 @@ static void set_dist_units(ioc_fm_pcd_net_env_params_t *dist_units,
 	}
 
 	/* Dist units is set to dist_idx */
-	dist_units->num_of_distinction_units = dist_idx;
+	dist_units->param.num_of_distinction_units = dist_idx;
 }
 
 /* Apply PCD configuration on interface */
@@ -559,19 +562,22 @@ static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
 	 * lesser than 10 and the relative scheme ids should be unique for
 	 * every scheme.
 	 */
-	scheme_params.scm_id.relative_scheme_id = 10 + dpaa_intf->ifid;
-	scheme_params.use_hash = 0;
-	scheme_params.next_engine = e_IOC_FM_PCD_DONE;
-	scheme_params.net_env_params.num_of_distinction_units = 0;
-	scheme_params.net_env_params.net_env_id = dpaa_intf->netenv_handle;
-	scheme_params.base_fqid = dpaa_intf->rx_queues[0].fqid;
-	scheme_params.key_extract_and_hash_params.
-	 hash_distribution_num_of_fqids = 1;
-	scheme_params.key_extract_and_hash_params.num_of_used_extracts = 0;
-	scheme_params.modify = false;
-	scheme_params.always_direct = false;
-	scheme_params.scheme_counter.update = 1;
-	scheme_params.scheme_counter.value = 0;
+	scheme_params.param.scm_id.relative_scheme_id =
+		10 + dpaa_intf->ifid;
+	scheme_params.param.use_hash = 0;
+	scheme_params.param.next_engine = e_IOC_FM_PCD_DONE;
+	scheme_params.param.net_env_params.num_of_distinction_units = 0;
+	scheme_params.param.net_env_params.net_env_id =
+		dpaa_intf->netenv_handle;
+	scheme_params.param.base_fqid = dpaa_intf->rx_queues[0].fqid;
+	scheme_params.param.key_extract_and_hash_params
+		.hash_distribution_num_of_fqids = 1;
+	scheme_params.param.key_extract_and_hash_params
+		.num_of_used_extracts = 0;
+	scheme_params.param.modify = false;
+	scheme_params.param.always_direct = false;
+	scheme_params.param.scheme_counter.update = 1;
+	scheme_params.param.scheme_counter.value = 0;
 
 	/* FM PCD KgSchemeSet */
 	dpaa_intf->scheme_handle[idx] =
@@ -607,7 +613,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	/* Set dist unit header type */
 	set_dist_units(&dist_units, req_dist_set);
 
-	scheme_params.scm_id.relative_scheme_id = dpaa_intf->ifid;
+	scheme_params.param.scm_id.relative_scheme_id = dpaa_intf->ifid;
 
 	/* Set PCD Scheme params */
 	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf);
@@ -925,16 +931,25 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 		dpaa_intf->vsp_bpid[vsp_id] = 0;
 		return 0;
 	}
+
+	if (vsp_id >= DPAA_VSP_PROFILE_MAX_NUM) {
+		DPAA_PMD_ERR("VSP ID %d exceeds MAX number %d",
+			vsp_id, DPAA_VSP_PROFILE_MAX_NUM);
+		return -1;
+	}
+
 	memset(&vsp_params, 0, sizeof(vsp_params));
 	vsp_params.h_Fm = fman_handle;
 	vsp_params.relativeProfileId = vsp_id;
 	vsp_params.portParams.portId = idx;
 	if (fmif->mac_type == fman_mac_1g) {
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX;
+	} else if (fmif->mac_type == fman_mac_2_5g) {
+		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX_2_5G;
 	} else if (fmif->mac_type == fman_mac_10g) {
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX_10G;
 	} else {
-		DPAA_PMD_ERR("VSP other than 1G and 10G ports not support");
+		DPAA_PMD_ERR("Mac type %d error", fmif->mac_type);
 		return -1;
 	}
 	vsp_params.extBufPools.numOfPoolsUsed = 1;
@@ -1017,28 +1032,6 @@ int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
 	dpaa_intf->vsp_bpid[vsp_id] = bpid;
 
 	return dpaa_port_vsp_configure(dpaa_intf, vsp_id, fman_handle);
-}
-
-int dpaa_port_vsp_init(struct dpaa_if *dpaa_intf, bool fmc_mode)
-{
-	struct fman_if *fmif = dpaa_intf->fif;
-	t_Handle fman_handle;
-
-	if (!fmif->num_profiles)
-		return 0;
-
-	if (fmc_mode) {
-		fman_handle = FM_Open(0);
-	} else {
-		fman_handle = fm_info.fman_handle;
-	}
-
-	if (!fman_handle)
-		return -1;
-
-	assert(fmif->num_profiles <= DPAA_VSP_PROFILE_MAX_NUM);
-
-	return 0;
 }
 
 int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf)

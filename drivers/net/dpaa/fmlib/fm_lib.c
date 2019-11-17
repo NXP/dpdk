@@ -254,21 +254,21 @@ t_Handle FM_PCD_KgSchemeSet(t_Handle h_FmPcd, ioc_fm_pcd_kg_scheme_params_t *par
 
 	params->id = NULL;
 
-	if (params->modify) {
-		if (params->scm_id.scheme_id)
-			DEV_TO_ID(params->scm_id.scheme_id);
+	if (params->param.modify) {
+		if (params->param.scm_id.scheme_id)
+			DEV_TO_ID(params->param.scm_id.scheme_id);
 		else
 			return NULL;
 	}
 
 	/* correct h_NetEnv param from scheme */
-	if (params->net_env_params.net_env_id)
-		DEV_TO_ID(params->net_env_params.net_env_id);
+	if (params->param.net_env_params.net_env_id)
+		DEV_TO_ID(params->param.net_env_params.net_env_id);
 
 	/* correct next engine params handlers: cc*/
-	if (params->next_engine == e_IOC_FM_PCD_CC &&
-	    params->kg_next_engine_params.cc.tree_id)
-		DEV_TO_ID(params->kg_next_engine_params.cc.tree_id);
+	if (params->param.next_engine == e_IOC_FM_PCD_CC &&
+	    params->param.kg_next_engine_params.cc.tree_id)
+		DEV_TO_ID(params->param.kg_next_engine_params.cc.tree_id);
 
 	ret = ioctl(p_PcdDev->fd, FM_PCD_IOC_KG_SCHEME_SET, params);
 	if (ret) {
@@ -284,7 +284,7 @@ t_Handle FM_PCD_KgSchemeSet(t_Handle h_FmPcd, ioc_fm_pcd_kg_scheme_params_t *par
 	memset(p_Dev, 0, sizeof(t_Device));
 	p_Dev->h_UserPriv = (t_Handle)p_PcdDev;
 	/* increase owners only if a new scheme is created */
-	if (params->modify == false)
+	if (params->param.modify == false)
 		p_PcdDev->owners++;
 	p_Dev->id = PTR_TO_UINT(params->id);
 
