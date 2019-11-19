@@ -43,6 +43,7 @@
 
 static volatile bool force_quit;
 
+static int qdma_dev_id;
 /* MAC updating enabled by default */
 static int mac_updating = 1;
 
@@ -194,8 +195,11 @@ l2fwd_qdma_forward(uint16_t vq_id, int nb_jobs)
 	struct l2fwd_qdma_job_cnxt *qdma_job_cnxt;
 	unsigned int dst_port = 0;
 	int to_sent = 0, sent, num_rx;
+	struct rte_qdma_enqdeq context;
 
-	num_rx = rte_qdma_vq_dequeue_multi(vq_id, qdma_job, nb_jobs);
+	context.vq_id = vq_id;
+	context.job = qdma_job;
+	num_rx = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, nb_jobs, &context);
 	if (num_rx <= 0)
 		return;
 
@@ -234,6 +238,7 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 	void *m_data, *m_new_data;
 	struct rte_qdma_job *qdma_job[MAX_PKT_BURST], *job;
 	struct l2fwd_qdma_job_cnxt *qdma_job_cnxt;
+	struct rte_qdma_enqdeq e_context;
 	int i, ret;
 
 	for (i = 0; i < nb_jobs; i++) {
@@ -264,7 +269,9 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		qdma_job[i] = job;
 	}
 
-	ret = rte_qdma_vq_enqueue_multi(vq_id, qdma_job, nb_jobs);
+	e_context.vq_id = vq_id;
+	e_context.job = qdma_job;
+	ret = rte_qdma_enqueue_buffers(qdma_dev_id, NULL, nb_jobs, &e_context);
 	if (ret <= 0) {
 		RTE_LOG(ERR, L2FWD,
 			"Error in QDMA job submit. Dropping packet\n");
@@ -293,6 +300,7 @@ l2fwd_qdma_main_loop(void)
 			BURST_TX_DRAIN_US;
 	struct rte_eth_dev_tx_buffer *buffer;
 	int vq_id;
+	struct rte_qdma_queue_config q_config;
 
 	prev_tsc = 0;
 	timer_tsc = 0;
@@ -315,7 +323,11 @@ l2fwd_qdma_main_loop(void)
 
 	}
 
-	vq_id = rte_qdma_vq_create(lcore_id, 0);
+	q_config.lcore_id = lcore_id;
+	q_config.flags = 0;
+	q_config.rbp = NULL;
+
+	vq_id = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 	if (vq_id < 0) {
 		RTE_LOG(ERR, L2FWD, "QDMA VQ creation failed\n");
 		return;
@@ -649,6 +661,7 @@ main(int argc, char **argv)
 	unsigned lcore_id, rx_lcore_id;
 	unsigned nb_ports_in_mask = 0;
 	struct rte_qdma_config qdma_config;
+	struct rte_qdma_info dev_conf;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -863,20 +876,22 @@ main(int argc, char **argv)
 
 	check_all_ports_link_status(l2fwd_enabled_port_mask);
 
+	ret = rte_qdma_reset(qdma_dev_id);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "QDMA reset failed\n");
+
 	qdma_config.max_hw_queues_per_core = L2FWD_QDMA_MAX_HW_QUEUES_PER_CORE;
 	qdma_config.mode = qdma_mode;
 	qdma_config.fle_pool_count = L2FWD_QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = L2FWD_QDMA_MAX_VQS;
 
-	ret = rte_qdma_init();
-	if (ret)
-		rte_exit(EXIT_FAILURE, "QDMA initialization failed\n");
+	dev_conf.dev_private = (void *)&qdma_config;
 
-	ret = rte_qdma_configure(&qdma_config);
+	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
 	if (ret)
 		rte_exit(EXIT_FAILURE, "QDMA configuration failed\n");
 
-	ret = rte_qdma_start();
+	ret = rte_qdma_start(qdma_dev_id);
 	if (ret)
 		rte_exit(EXIT_FAILURE, "QDMA start failed\n");
 
