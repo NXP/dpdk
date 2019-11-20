@@ -45,6 +45,17 @@ static struct dpaa_fm_info fm_info;
 static struct dpaa_fm_model fm_model;
 static const char *fm_log = "/tmp/fmdpdk.bin";
 
+static inline uint8_t fm_default_vsp_id(struct dpaa_if *dpaa_intf)
+{
+	/* Avoid being same as base profile which could be used
+	 * for kernel interface of shared mac.
+	 */
+	if (dpaa_intf->fif->base_profile_id)
+		return 0;
+	else
+		return DPAA_DEFAULT_RXQ_VSP_ID;
+}
+
 static void fm_prev_cleanup(void)
 {
 	uint32_t fman_id = 0, i = 0, devid;
@@ -307,7 +318,7 @@ static int set_scheme_params(
 		scheme_params->param.override_storage_profile = true;
 		scheme_params->param.storage_profile.direct = true;
 		scheme_params->param.storage_profile.profile_select
-			.direct_relative_profileId = DPAA_DEFAULT_RXQ_VSP_ID;
+			.direct_relative_profileId = fm_default_vsp_id(dpaa_intf);
 	}
 
 	scheme_params->param.use_hash = 1;
@@ -789,6 +800,13 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	if (ret) {
 		DPAA_PMD_ERR("Set FM Port handle: Failed");
 		return -1;
+	}
+
+	if (dpaa_intf->fif->num_profiles) {
+		for (i = 0; i < dpaa_intf->nb_rx_queues; i++)
+			dpaa_intf->rx_queues[i].vsp_id = fm_default_vsp_id(dpaa_intf);
+
+		i = 0;
 	}
 
 	/* Set PCD netenv and scheme */
