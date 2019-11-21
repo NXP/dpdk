@@ -84,4 +84,9 @@ endif
 
 DIRS-y += eventdev_pipeline
 
+DIRS-y += cmdif
+DIRS-y += l2fwd-event
+DIRS-y += l2fwd-qdma
+DIRS-y += qdma_demo
+
 include $(RTE_SDK)/mk/rte.extsubdir.mk
