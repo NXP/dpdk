@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
+ * Copyright 2019 NXP
  */
 
 #ifndef _RTE_MEMPOOL_H_
@@ -267,6 +268,20 @@ struct rte_mempool {
 #define MEMPOOL_F_POOL_CREATED   0x0010 /**< Internal: pool is created. */
 #define MEMPOOL_F_NO_IOVA_CONTIG 0x0020 /**< Don't need IOVA contiguous objs. */
 #define MEMPOOL_F_NO_PHYS_CONTIG MEMPOOL_F_NO_IOVA_CONTIG /* deprecated */
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+#define MEMPOOL_F_1043_MBUF     0x0100 /**< 1043 Mbuf Pool */
+#define SVR_LS1043A_FAMILY	0x87920000
+#define SVR_MASK		0xffff0000
+#define LS1043_MAX_BUF_SIZE	3904
+#define LS1043_MAX_MEMZONES	512
+#define LS1043_OFFSET_CHANGE_IDX 64
+#define LS1043_MAX_BUF_IN_CACHE         8
+#define LS1043_MAX_BUF_OFFSET   (LS1043_OFFSET_CHANGE_IDX * \
+		LS1043_MAX_BUF_IN_CACHE)
+extern unsigned int dpaa_svr_family;
+void set_dpaa_svr_family(void);
+#endif
 
 /**
  * @internal When debug is enabled, store some statistics.
