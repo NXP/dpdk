@@ -46,7 +46,6 @@
 
 #define MAX_CORE_COUNT	16
 
-extern struct qdma_virt_queue qdma_vqs[];
 struct qdma_test_case {
 	const char *name;
 	const char *help;

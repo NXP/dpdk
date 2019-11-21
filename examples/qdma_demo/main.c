@@ -25,11 +25,6 @@
 
 #include <rte_interrupts.h>
 #include <rte_pmd_dpaa2_qdma.h>
-#include <fsl_qbman_base.h>
-#include <mc/fsl_mc_sys.h>
-#include <mc/fsl_dpdmai.h>
-#include <dpaa2_hw_pvt.h>
-#include <dpaa2_qdma.h>
 #include <stdint.h>
 #include <sys/queue.h>
 #include <rte_launch.h>
