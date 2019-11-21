@@ -84,11 +84,11 @@ check_error_and_exit()
 
 perform_hugepage_mount()
 {
-	HUGE=$(grep -E '/mnt/\<hugepages\>.*hugetlbfs' /proc/mounts)
+	HUGE=$(grep -E '/dev/\<hugepages\>.*hugetlbfs' /proc/mounts)
 	if [[ -z $HUGE ]]
 	then
-		mkdir /mnt/hugepages
-		mount -t hugetlbfs none /mnt/hugepages
+		mkdir -p /dev/hugepages
+		mount -t hugetlbfs hugetlbfs /dev/hugepages
 	else
 		echo
 		echo

@@ -64,7 +64,7 @@ Below are the steps to run fm-mac10 in shared mode with l2fwd receiving UDP and 
 1. fmc -x
 2. ifconfig fm1-mac10 <valid IP address>
    # At this point all the traffic which is sent on the interface (via spirent/network) will be received by the kernel.
-3. mount -t hugetlbfs none /mnt/hugepages
+3. mount -t hugetlbfs hugetlbfs /dev/hugepages
 4. echo 512 > /proc/sys/vm/nr_hugepages
 5. fmc -c usdpaa_config_ls1046_shared_10g.xml -p usdpaa_policy_classif_udp_ipsec_1queue.xml -a
    # Once FMC is run kernel will not receive UDP or ESP traffic.

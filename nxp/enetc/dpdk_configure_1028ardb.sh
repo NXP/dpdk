@@ -49,8 +49,8 @@ $EXEC_SWNS ifconfig $enetc3 down
 $EXEC_SWNS bridge link show
 
 # Mount hugetlbfs
-mkdir -p /mnt/hugepages
-mount -t hugetlbfs none /mnt/hugepages
+mkdir -p /dev/hugepages
+mount -t hugetlbfs hugetlbfs /dev/hugepages
 echo 256 > /proc/sys/vm/nr_hugepages
 
 # Bind enetc devices to vfio

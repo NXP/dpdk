@@ -297,8 +297,8 @@ Following are some pre-requisites:
 	setenv othbootargs default_hugepagesz=2m hugepagesz=2m hugepages=256 isolcpus=1 iommu.passthrough=1
 
   2. Mount the hugetlbfs required for DPDK applications:
-	1. mkdir /mnt/hugepages
-	2. mount -t hugetlbfs none /mnt/hugepages
+	1. mkdir -p /dev/hugepages
+	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
 
   3. Get ethernet devices in userspace using below commands:
 	1. For QDS board:
@@ -321,8 +321,8 @@ Following are some pre-requisites:
 	<bootargs>
 
   2. Mount the hugetlbfs required for DPDK applications:
-	1. mkdir /mnt/hugepages
-	2. mount -t hugetlbfs none /mnt/hugepages
+	1. mkdir -p /dev/hugepages
+	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
 
   3. Make sure pfe.ko is loaded in User Space mode using below command:
 	1. cat /sys/module/pfe/parameters/us
@@ -377,9 +377,9 @@ Following are some pre-requisites:
 
   2. Mount the hugepages for DPDK application:
 
-    $ mkdir -p /mnt/hugetlbfs # if this folder doesn't already exist
+    $ mkdir -p /dev/hugetlbfs # if this folder doesn't already exist
     $ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-    $ mount -t hugetlbfs nodev /mnt/hugetlbfs/
+    $ mount -t hugetlbfs hugetlbfs /dev/hugetlbfs/
 
   3. By default the system will need fmc scripts to be run prior to uses.
      However the dynamic FMC configurations for queue Management can be done via:
@@ -661,52 +661,6 @@ Following are some pre-requisites:
   For 4 core, 1 Port, 4 queue per port, 1 eventdev, 1 event queue, 4 event port =>
 
   $ l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0),(5,2,1,0,0,0),(5,3,1,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
-
-  Running DPDK Applications in Virtual Machine (in Virtio mode)
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    Layer-2 Forwarding 'l2fwd' using VHOST application
-    ``````````````````````````````````````````````````
-
-    1. Compilation of VHOST example
-
-       $ make -C examples/vhost
-
-    2. Runnnig the VHOST-SWITCH Application:
-
-       Execute the following commands on console to run vhost-switch:
-
-       $ ./vhost-switch -c 3 -n 1 --socket-mem 1024 --huge-dir /mnt/huge -- -p 0x1 --dev-basename sock1 -P
-
-       NOTE: Vhost-switch requires one core extra than number of ports given in
-             the command line.
-
-    3. Running QEMU:
-
-       Execute the following commands to run QEMU:
-
-       * Open a new terimnal and do SSH to the board
-
-       $ # /usr/bin/qemu-system-aarch64 -nographic -object memory-backend-file,id=mem,size=4096M,mem-path=/hugetlbfs,share=on -cpu host -machine type=virt -kernel /boot/Image -enable-kvm -initrd /boot/fsl-image-core-ls2088ardb.ext2.gz -append 'root=/dev/ram0 rw console=ttyAMA0,115200 rootwait earlyprintk ramdisk_size=1000000' -m 4096M -numa node,memdev=mem -serial tcp::4446,server,telnet -chardev socket,id=char1,path=/var/volatile/tmp/sock1 -netdev type=vhost-user,id=hostnet1,chardev=char1 -device virtio-net-pci,disable-modern=false,addr=0x4,netdev=hostnet1,id=net1 -smp 4
-
-    4. Running L2FWD on VM:
-
-       Execute the following commands to run L2FWD on Virtual Machine:
-
-       * Open a new terminal and run the below command:
-
-       $ telnet <board_ip> 4446
-
-       $ /usr/share/tools/dpdk_nic_bind.py -b uio_pci_generic 0000:00:04.0
-
-       Note: Please run "lspci" on console to know the VIRTIO address
-
-       $ mkdir /mnt/hugepages
-       $ mount -t hugetlbfs none /mnt/hugepages
-       $ echo 512 > /proc/sys/vm/nr_hugepages
-       $ /usr/bin/dpdk-example/l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
-
-       Now pump traffic from the Spirent to the enabled port
 
 ================================================================================
 Executing dpdk-pdump/dpdk-procinfo on DPAA2
