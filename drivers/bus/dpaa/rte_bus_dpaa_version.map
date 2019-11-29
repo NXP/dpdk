@@ -126,6 +126,8 @@ DPDK_19.05 {
 	qman_fq_portal_irqsource_remove;
 	qman_fq_portal_thread_irq;
 	qman_set_fq_lookup_table;
+	qman_ern_poll_free;
+	qman_ern_register_cb;
 
 	local: *;
 } DPDK_18.11;
