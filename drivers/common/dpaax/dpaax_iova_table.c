@@ -92,7 +92,7 @@ read_memory_node(unsigned int *count)
 	if (fd < 0) {
 		DPAAX_DEBUG("Unable to open the device-tree node: (%s)(fd=%d)",
 			    MEM_NODE_PATH_GLOB, fd);
-		goto cleanup;
+		goto err;
 	}
 
 	/* Stat to get the file size */
@@ -149,6 +149,7 @@ read_memory_node(unsigned int *count)
 
 cleanup:
 	close(fd);
+err:
 	globfree(&result);
 out:
 	return nodes;
