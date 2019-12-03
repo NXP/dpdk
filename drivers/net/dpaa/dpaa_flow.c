@@ -834,6 +834,7 @@ int dpaa_fm_init(void)
 	fmPcdParams.kgSupport = true;
 	pcd_handle = FM_PCD_Open(&fmPcdParams);
 	if (!pcd_handle) {
+		FM_Close(fman_handle);
 		DPAA_PMD_ERR("FM_PCD_Open: Failed");
 		return -1;
 	}
@@ -841,6 +842,8 @@ int dpaa_fm_init(void)
 	/* FM PCD Enable */
 	ret = FM_PCD_Enable(pcd_handle);
 	if (ret) {
+		FM_Close(fman_handle);
+		FM_PCD_Close(pcd_handle);
 		DPAA_PMD_ERR("FM_PCD_Enable: Failed");
 		return -1;
 	}
