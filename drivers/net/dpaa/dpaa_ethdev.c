@@ -763,8 +763,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 		ret = qman_init_fq(rxq, flags, &opts);
 		if (ret) {
-			DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x "
-				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
+			DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x ret:%d(%s)",
+					rxq->fqid, ret, strerror(-ret));
 			return ret;
 		}
 		if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
@@ -879,8 +879,8 @@ dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 
 	ret = qman_init_fq(rxq, flags, &opts);
 	if (ret) {
-		DPAA_PMD_ERR("Ev-Channel/Q association failed. fqid 0x%x "
-				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
+		DPAA_PMD_ERR("Ev-Channel/Q association failed. fqid 0x%x ret:%d(%s)",
+				rxq->fqid, ret, strerror(-ret));
 		return ret;
 	}
 
