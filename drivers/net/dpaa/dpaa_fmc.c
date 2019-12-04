@@ -223,8 +223,7 @@ static int dpaa_port_fmc_port_parse(
 		dpaa_intf->fif->mac_type != fman_offline)
 		return -1;
 
-	if ((int)mac_idx[dpaa_intf->fif->mac_idx]
-		!= pport->number)
+	if (mac_idx[dpaa_intf->fif->mac_idx] != pport->number)
 		return -1;
 
 	return current_port;
