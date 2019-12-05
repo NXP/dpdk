@@ -439,7 +439,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int rx_l4_csum_offload = false;
 	int tx_l3_csum_offload = false;
 	int tx_l4_csum_offload = false;
-	int ret;
+	int ret, tc_index;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -479,12 +479,16 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	}
 
 	if (eth_conf->rxmode.mq_mode == ETH_MQ_RX_RSS) {
-		ret = dpaa2_setup_flow_dist(dev,
-				eth_conf->rx_adv_conf.rss_conf.rss_hf);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to set flow distribution."
-				      "Check queue config");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_dist(dev,
+					eth_conf->rx_adv_conf.rss_conf.rss_hf,
+					tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR(
+					"Unable to set flow distribution on tc%d."
+					"Check queue config", tc_index);
+				return ret;
+			}
 		}
 	}
 
@@ -749,11 +753,11 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	flow_id = 0;
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
-			     tc_id, flow_id, options, &tx_flow_cfg);
+			tc_id, flow_id, options, &tx_flow_cfg);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in setting the tx flow: "
-			      "tc_id=%d, flow=%d err=%d",
-			      tc_id, flow_id, ret);
+			"tc_id=%d, flow=%d err=%d",
+			tc_id, flow_id, ret);
 			return -1;
 	}
 
@@ -1981,22 +1985,31 @@ dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 			  struct rte_eth_rss_conf *rss_conf)
 {
 	struct rte_eth_dev_data *data = dev->data;
+	struct dpaa2_dev_priv *priv = data->dev_private;
 	struct rte_eth_conf *eth_conf = &data->dev_conf;
-	int ret;
+	int ret, tc_index;
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (rss_conf->rss_hf) {
-		ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to set flow dist");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf,
+				tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("Unable to set flow dist on tc%d",
+					tc_index);
+				return ret;
+			}
 		}
 	} else {
-		ret = dpaa2_remove_flow_dist(dev, 0);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to remove flow dist");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_remove_flow_dist(dev, tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR(
+					"Unable to remove flow dist on tc%d",
+					tc_index);
+				return ret;
+			}
 		}
 	}
 	eth_conf->rx_adv_conf.rss_conf.rss_hf = rss_conf->rss_hf;
@@ -2389,6 +2402,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	priv->num_rx_tc = attr.num_rx_tcs;
+	priv->qos_entries = attr.qos_entries;
+	priv->fs_entries = attr.fs_entries;
+	priv->dist_queues = attr.num_queues;
+
 	/* only if the custom CG is enabled */
 	if (attr.options & DPNI_OPT_CUSTOM_CG)
 		priv->max_cgs = attr.num_cgs;
@@ -2504,23 +2521,41 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 
 	/*Init fields w.r.t. classficaition*/
-	memset(&priv->extract.qos_key_cfg, 0, sizeof(struct dpkg_profile_cfg));
+	memset(&priv->extract.qos_key_extract, 0,
+		sizeof(struct dpaa2_key_extract));
 	priv->extract.qos_extract_param = (size_t)rte_malloc(NULL, 256, 64);
 	if (!priv->extract.qos_extract_param) {
 		DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow "
 			    " classificaiton ", ret);
 		goto init_err;
 	}
+	priv->extract.qos_key_extract.key_info.ipv4_src_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv4_dst_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv6_src_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv6_dst_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+
 	for (i = 0; i < MAX_TCS; i++) {
-		memset(&priv->extract.fs_key_cfg[i], 0,
-			sizeof(struct dpkg_profile_cfg));
-		priv->extract.fs_extract_param[i] =
+		memset(&priv->extract.tc_key_extract[i], 0,
+			sizeof(struct dpaa2_key_extract));
+		priv->extract.tc_extract_param[i] =
 			(size_t)rte_malloc(NULL, 256, 64);
-		if (!priv->extract.fs_extract_param[i]) {
+		if (!priv->extract.tc_extract_param[i]) {
 			DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow classificaiton",
 				     ret);
 			goto init_err;
 		}
+		priv->extract.tc_key_extract[i].key_info.ipv4_src_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv4_dst_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv6_src_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv6_dst_offset =
+			IP_ADDRESS_OFFSET_INVALID;
 	}
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
@@ -2595,10 +2630,8 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 	eth_dev->process_private = NULL;
 	rte_free(dpni);
 
-	for (i = 0; i < MAX_TCS; i++) {
-		if (priv->extract.fs_extract_param[i])
-			rte_free((void *)(size_t)priv->extract.fs_extract_param[i]);
-	}
+	for (i = 0; i < MAX_TCS; i++)
+		rte_free((void *)(size_t)priv->extract.tc_extract_param[i]);
 
 	if (priv->extract.qos_extract_param)
 		rte_free((void *)(size_t)priv->extract.qos_extract_param);
