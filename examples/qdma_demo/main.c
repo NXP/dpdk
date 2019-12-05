@@ -259,11 +259,7 @@ lcore_hello(__attribute__((unused))
 
 		g_buf = rte_malloc("test qdma", TEST_PCI_SIZE_LIMIT, 4096);
 		g_buf1 = rte_malloc("test qdma", TEST_PCI_SIZE_LIMIT, 4096);
-		g_iova = rte_malloc_virt2iova(g_buf);
-		g_iova1 = rte_malloc_virt2iova(g_buf1);
 		printf("Local bufs, g_buf %p, g_buf1 %p\n", g_buf, g_buf1);
-		printf("Local bufs phys, g_buf %lx, g_buf1 %lx\n",
-			g_iova, g_iova1);
 		for (int j = 0; j < MAX_CORE_COUNT; j++) {
 			if (!rte_lcore_is_enabled(j))
 				continue;
@@ -281,7 +277,7 @@ lcore_hello(__attribute__((unused))
 		      memset(g_buf1 + (i * TEST_PACKET_SIZE), 0xff,
 			      TEST_PACKET_SIZE);
 			if (g_rbp_testcase == MEM_TO_PCI) {
-				job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
+				job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
 				if (g_userbp) {
 					job->dest =
 					(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
@@ -292,9 +288,9 @@ lcore_hello(__attribute__((unused))
 				}
 			}
 		      else if (g_rbp_testcase == MEM_TO_MEM) {
-			  job->src = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
+			  job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
 			  job->dest =
-			    ((long) g_iova1 + (long) (i * TEST_PACKET_SIZE));
+			    ((long) g_buf1 + (long) (i * TEST_PACKET_SIZE));
 			}
 		      else if (g_rbp_testcase == PCI_TO_PCI) {
 			  if (g_userbp) {
@@ -327,7 +323,7 @@ lcore_hello(__attribute__((unused))
 				(g_target_pci_addr+
 				 (long) ((i * TEST_PACKET_SIZE)));
 			    }
-			  job->dest = ((long) g_iova + (long) (i * TEST_PACKET_SIZE));
+			  job->dest = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
 			}
 		    }
 		}
