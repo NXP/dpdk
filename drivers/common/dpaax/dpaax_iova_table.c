@@ -92,7 +92,7 @@ read_memory_node(unsigned int *count)
 	if (fd < 0) {
 		DPAAX_DEBUG("Unable to open the device-tree node: (%s)(fd=%d)",
 			    MEM_NODE_PATH_GLOB, fd);
-		goto cleanup;
+		goto err;
 	}
 
 	/* Stat to get the file size */
@@ -142,13 +142,14 @@ read_memory_node(unsigned int *count)
 	}
 
 	DPAAX_DEBUG("Device-tree memory node data:");
-	do {
+	while (j--) {
 		DPAAX_DEBUG("    %08" PRIx64 " %08zu",
 			    nodes[j].addr, nodes[j].len);
-	} while (--j);
+	}
 
 cleanup:
 	close(fd);
+err:
 	globfree(&result);
 out:
 	return nodes;
