@@ -566,8 +566,7 @@ dpaa2_eventdev_port_release(void *port)
 	if (portal->is_port_linked)
 		DPAA2_EVENTDEV_WARN("Event port must be unlinked before release");
 
-	if (portal)
-		rte_free(portal);
+	rte_free(portal);
 
 	portal = NULL;
 }
