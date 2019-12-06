@@ -385,6 +385,10 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 					dev_tx_offloads_nodis;
 	dev_info->default_rxportconf.burst_size = DPAA_DEF_RX_BURST_SIZE;
 	dev_info->default_txportconf.burst_size = DPAA_DEF_TX_BURST_SIZE;
+	dev_info->default_rxportconf.nb_queues = 1;
+	dev_info->default_txportconf.nb_queues = 1;
+	dev_info->default_txportconf.ring_size = CGR_TX_CGR_THRESH;
+	dev_info->default_rxportconf.ring_size = CGR_RX_PERFQ_THRESH;
 }
 
 static int dpaa_eth_link_update(struct rte_eth_dev *dev,
