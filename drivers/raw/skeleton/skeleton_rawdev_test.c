@@ -379,8 +379,10 @@ test_rawdev_enqdeq(void)
 	ret = rte_rawdev_dequeue_buffers(test_dev_id,
 					(struct rte_rawdev_buf **)&deq_buffers,
 					count, &queue_id);
-	RTE_TEST_ASSERT_EQUAL((unsigned int)ret, count,
-			      "Unable to dequeue buffers");
+	if ((unsigned int)ret != count) {
+		free(deq_buffers);
+		RTE_TEST_ASSERT(0, "Unable to dequeue buffers");
+	}
 
 	if (deq_buffers)
 		free(deq_buffers);
