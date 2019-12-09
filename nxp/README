@@ -914,7 +914,11 @@ DPAA1:
 ------
 1. DPAA_FMCLESS_MODE          - Dynamic Queue Distribution. No need to run FMC scripts.
 
-2. DPAA_TAILDROP_THRESHOLD    - Size of the taildrop, in packets. Default is 256.
+2. DPAA_RX_TAILDROP_THRESHOLD - Size of the Rx queue taildrop, in packets. Default is 256.
+				If set to 0, this would disable taildrop.
+				(Only applicable for ethernet devices)
+
+3. DPAA_TX_TAILDROP_THRESHOLD - Size of the Tx queue taildrop, in packets. Default is 0.
 				If set to 0, this would disable taildrop.
 				(Only applicable for ethernet devices)
 
