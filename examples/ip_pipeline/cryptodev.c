@@ -99,17 +99,6 @@ cryptodev_create(const char *name, struct cryptodev_params *params)
 	if (status < 0)
 		return NULL;
 
-	queue_conf.nb_descriptors = params->queue_size;
-	for (i = 0; i < params->n_queues; i++) {
-		status = rte_cryptodev_queue_pair_setup(dev_id, i,
-				&queue_conf, socket_id);
-		if (status < 0)
-			return NULL;
-	}
-
-	if (rte_cryptodev_start(dev_id) < 0)
-		return NULL;
-
 	cryptodev = calloc(1, sizeof(struct cryptodev));
 	if (cryptodev == NULL) {
 		rte_cryptodev_stop(dev_id);
@@ -148,6 +137,19 @@ cryptodev_create(const char *name, struct cryptodev_params *params)
 		goto error_exit;
 
 	TAILQ_INSERT_TAIL(&cryptodev_list, cryptodev, node);
+
+	queue_conf.nb_descriptors = params->queue_size;
+	queue_conf.mp_session = cryptodev->mp_create;
+	queue_conf.mp_session_private = cryptodev->mp_init;
+	for (i = 0; i < params->n_queues; i++) {
+		status = rte_cryptodev_queue_pair_setup(dev_id, i,
+				&queue_conf, socket_id);
+		if (status < 0)
+			goto error_exit;
+	}
+
+	if (rte_cryptodev_start(dev_id) < 0)
+		goto error_exit;
 
 	return cryptodev;
 
