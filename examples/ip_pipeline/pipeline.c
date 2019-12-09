@@ -94,7 +94,7 @@ pipeline_create(const char *name, struct pipeline_params *params)
 
 	msgq_req = rte_ring_create(msgq_name,
 		PIPELINE_MSGQ_SIZE,
-		params->cpu_id,
+		rte_lcore_to_socket_id(params->cpu_id),
 		RING_F_SP_ENQ | RING_F_SC_DEQ);
 	if (msgq_req == NULL)
 		return NULL;
@@ -103,7 +103,7 @@ pipeline_create(const char *name, struct pipeline_params *params)
 
 	msgq_rsp = rte_ring_create(msgq_name,
 		PIPELINE_MSGQ_SIZE,
-		params->cpu_id,
+		rte_lcore_to_socket_id(params->cpu_id),
 		RING_F_SP_ENQ | RING_F_SC_DEQ);
 	if (msgq_rsp == NULL) {
 		rte_ring_free(msgq_req);
@@ -111,7 +111,7 @@ pipeline_create(const char *name, struct pipeline_params *params)
 	}
 
 	pp.name = name;
-	pp.socket_id = (int) params->cpu_id;
+	pp.socket_id = (int) rte_lcore_to_socket_id(params->cpu_id);
 	pp.offset_port_id = params->offset_port_id;
 
 	p = rte_pipeline_create(&pp);
@@ -332,7 +332,7 @@ pipeline_port_in_create(const char *pipeline_name,
 
 	if (ap) {
 		action = rte_port_in_action_create(ap->ap,
-			pipeline->cpu_id);
+			rte_lcore_to_socket_id(pipeline->cpu_id));
 		if (action == NULL)
 			return -1;
 
@@ -1002,7 +1002,7 @@ pipeline_table_create(const char *pipeline_name,
 
 	if (ap) {
 		action = rte_table_action_create(ap->ap,
-			pipeline->cpu_id);
+			rte_lcore_to_socket_id(pipeline->cpu_id));
 		if (action == NULL)
 			return -1;
 
