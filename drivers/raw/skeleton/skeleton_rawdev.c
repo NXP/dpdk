@@ -561,14 +561,13 @@ skeleton_rawdev_create(const char *name,
 		       struct rte_vdev_device *vdev,
 		       int socket_id)
 {
-	int ret = 0, i;
+	int ret, i;
 	struct rte_rawdev *rawdev = NULL;
 	struct skeleton_rawdev *skeldev = NULL;
 
 	if (!name) {
 		SKELETON_PMD_ERR("Invalid name of the device!");
-		ret = -EINVAL;
-		goto cleanup;
+		return -EINVAL;
 	}
 
 	/* Allocate device structure */
@@ -576,8 +575,7 @@ skeleton_rawdev_create(const char *name,
 					 socket_id);
 	if (rawdev == NULL) {
 		SKELETON_PMD_ERR("Unable to allocate rawdevice");
-		ret = -EINVAL;
-		goto cleanup;
+		return -EINVAL;
 	}
 
 	ret = rawdev->dev_id; /* return the rawdev id of new device */
@@ -609,12 +607,6 @@ skeleton_rawdev_create(const char *name,
 	/* Clear all allocated queue buffers */
 	for (i = 0; i < SKELETON_MAX_QUEUES; i++)
 		clear_queue_bufs(i);
-
-	return ret;
-
-cleanup:
-	if (rawdev)
-		rte_rawdev_pmd_release(rawdev);
 
 	return ret;
 }
