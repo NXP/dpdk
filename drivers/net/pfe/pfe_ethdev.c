@@ -1121,11 +1121,12 @@ eth_init:
 		name, gem_id, init_params.gem_id);
 
 	rc = pfe_eth_init(vdev, g_pfe, gem_id);
-	if (rc < 0)
+	if (rc < 0) {
+		if (g_pfe->nb_devs)
+			return rc;
 		goto err_eth;
-	else
-		g_pfe->nb_devs++;
-
+	}
+	g_pfe->nb_devs++;
 	return 0;
 
 err_eth:
