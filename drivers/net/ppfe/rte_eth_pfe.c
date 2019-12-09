@@ -567,8 +567,7 @@ static int pfe_eth_link_update(struct rte_eth_dev *dev,
 		ret = ioctl(priv->link_fd, ioctl_cmd, &lstatus);
 		if (ret != 0) {
 			PFE_PMD_ERR("Unable to fetch link status (ioctl)\n");
-			/* use dummy link value */
-			link.link_status = 1;
+			return -1;
 		}
 		PFE_PMD_DEBUG("Fetched link state (%d) for dev %d.\n",
 			      lstatus, priv->id);
