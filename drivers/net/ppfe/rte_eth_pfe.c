@@ -541,7 +541,7 @@ static int pfe_eth_link_update(struct rte_eth_dev *dev,
 				int wait_to_complete __rte_unused)
 {
 	int ret, ioctl_cmd = 0;
-	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct pfe_eth_priv_s *priv;
 	struct rte_eth_link link, old;
 	unsigned int lstatus = 1;
 
@@ -549,7 +549,7 @@ static int pfe_eth_link_update(struct rte_eth_dev *dev,
 		PFE_PMD_ERR("Invalid device in link_update.\n");
 		return 0;
 	}
-
+	priv = dev->data->dev_private;
 	memset(&old, 0, sizeof(old));
 	memset(&link, 0, sizeof(struct rte_eth_link));
 
