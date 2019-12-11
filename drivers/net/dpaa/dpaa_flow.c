@@ -755,7 +755,7 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
 	}
 	dpaa_intf->netenv_handle = NULL;
 
-	if (dpaa_intf->fif->is_shared_mac) {
+	if (dpaa_intf->fif && dpaa_intf->fif->is_shared_mac) {
 		ret = FM_PORT_Enable(dpaa_intf->port_handle);
 		if (ret != E_OK) {
 			DPAA_PMD_ERR("shared mac re-enable failed");
