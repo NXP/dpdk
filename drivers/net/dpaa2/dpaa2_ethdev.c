@@ -2372,16 +2372,28 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	dpni_dev->regs = rte_mcp_ptr_list[0];
 	eth_dev->process_private = (void *)dpni_dev;
 
+	/* RX no prefetch mode? */
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)
+		|| getenv("DPAA2_NO_PREFETCH_RX")) {
+		priv->flags |= DPAA2_NO_PREFETCH_RX;
+		DPAA2_PMD_INFO("No RX prefetch mode");
+	}
+
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)
+		|| getenv("DPAA2_LOOPBACK")) {
+		priv->flags |= DPAA2_RX_LOOPBACK_MODE;
+		DPAA2_PMD_INFO("Rx loopback mode");
+	}
+
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		/* In case of secondary, only burst and ops API need to be
 		 * plugged.
 		 */
 		eth_dev->dev_ops = &dpaa2_ethdev_ops;
-		if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE))
+		if (priv->flags & DPAA2_RX_LOOPBACK_MODE)
 			eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
-		else if (dpaa2_get_devargs(dev->devargs,
-					DRIVER_NO_PREFETCH_MODE))
+		else if (priv->flags & DPAA2_NO_PREFETCH_RX)
 			eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		else
 			eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
@@ -2525,10 +2537,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)) {
+	if (priv->flags & DPAA2_RX_LOOPBACK_MODE) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
 		DPAA2_PMD_INFO("Loopback mode");
-	} else if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)) {
+	} else if (priv->flags & DPAA2_NO_PREFETCH_RX) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		DPAA2_PMD_INFO("No Prefetch mode");
 	} else {
