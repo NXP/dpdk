@@ -101,7 +101,7 @@ WERROR_FLAGS += -Wno-format-truncation
 endif
 
 # disable packed member unalign warnings
-WERROR_FLAGS += -Wno-address-of-packed-member
+#WERROR_FLAGS += -Wno-address-of-packed-member
 
 export CC AS AR LD OBJCOPY OBJDUMP STRIP READELF
 export TOOLCHAIN_CFLAGS TOOLCHAIN_LDFLAGS TOOLCHAIN_ASFLAGS
