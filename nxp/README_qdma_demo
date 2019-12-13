@@ -1,9 +1,85 @@
-qdma_demo Application
----------------------
+QDMA
+----
 
-1. Description
-  This application demonstrates usage of QDMA driver API in order to do QDMA
-  transfer over PCIE. The setup is as given below:
+Introduction:
+The qDMA controller transfers blocks of data between one source and one or
+more destinations. The blocks of data transferred can be represented in
+memory as contiguous or non-contiguous using scatter/gather table(s). Channel
+virtualization is supported through enqueuing of DMA jobs to, or dequeuing
+DMA jobs from, different work queues.
+
+The qDMA supports channel virtualization by allowing DMA jobs to be enqueued
+into different command queues. Core can initiate a DMA transaction by
+preparing a command descriptor (CD) for each DMA job and enqueuing this job
+through a command queue.  The qDMA prefetches DMA jobs from command queues.
+
+It then schedules and dispatches to internal DMA hardware engines, which
+generate read and write requests. Both qDMA source data and destination data
+can be either contiguous or non-contiguous using one or more scatter/gather
+tables.
+
+DPDK based QDMA driver
+----------------------
+
+The DPAA2 QDMA is an implementation of the rawdev API in DPDK, that provide
+means to initiate a DMA transaction from CPU. The initiated DMA is performed
+without CPU being involved in the actual DMA transaction. This is achieved via
+using the DPDMAI device exposed by MC on DPAA2 devices .
+
+More info is available at:
+https://doc.dpdk.org/guides/rawdevs/dpaa2_qdma.html
+
+DPDK based QDMA APIs are available at:
+https://doc.dpdk.org/api/rte__pmd__dpaa2__qdma_8h.html
+or at: https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk/tree
+/drivers/raw/dpaa2_qdma/rte_pmd_dpaa2_qdma.h?h=integration
+
+There are two sample applications in NXP SDK to demonstrate the usages of QDMA
+APIs.
+1. l2fwd-qdma - Packet forwarding + copy of packet from mem-to-mem using QDMA
+2. qdma-demo - simple app to transfer and test memory copy between mem and pci
+in various options using QDMA.
+
+=====================================
+Precondition to run any dpdk based APP
+
+=> create the MC objects for network and DMA in MC
+
+export DPDMAI_COUNT=48
+source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
+or
+source /usr/bin/dpdk-example/extras/dpaa2/dynamic_dpl.sh dpmac.5
+export DPRC=dprc.2
+
+------------------------------------------------------
+l2fwd–qdma - Layer 2 Forwarding Application using QDMA
+------------------------------------------------------
+
+Sample application to show forwarding between multiple ports based on the
+
+Application can be build using:
+     #make -C examples/l2fwd-qdma
+
+Layer 2 information (switching) using QDMA.
+
+./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 1
+In the above command: -c refers to the core mask for cores to be assigned to
+DPDK;
+-p is the port mask for ports to be used by application;
+-q defines the number of queues to serve on each port.
+-m mode specifies HW (-m is 0) or Virtual (-m is 1) mode for QDMA queues.
+
+Apart from -m parameter other parameters are similar to DPDK
+l2fwd application -refer L2 Forwarding Sample
+
+------------------------------------------------------
+qdma_demo - APP to test memory transfer over PCI
+-----------------------------------------------------
+This application demonstrates usage of QDMA driver API in order to do QDMA
+transfer over PCIE. This can be used to test FPGA PCIe memory area read/write
+throughput bandwidth, the current DPDK QDMA demo is ready for it.
+
+The setup is as given below:
 
   PCIe Root (Host) device  <== PCI link ==> PCIe End point device
 
@@ -12,8 +88,7 @@ qdma_demo Application
 
   The application has been tested uisng following hardware:
   - PCIe Root (host) - LX2 RDB
-  - PCIe end point - LX2 RDB
-  - PCIe link - x4 gen2.
+  - PCIe end point - LX2 RDB (or Any other PCI based EP)
 
 2. Assumptions
   - The end point exposes the targeted memory of test using one of the BARs
@@ -31,26 +106,38 @@ qdma_demo Application
 
   End Point steps
   ===============
-  a) Boot LX2 to u-boot prompt only
+  a) If LX2-EP PCI card, boot it to u-boot prompt only
+  b) For standard PCI NIc card - nothing needs to be done.
 
-  Root complex (host)steps
+  HOST - LX2 Root complex steps
   ========================
   a) Boot LX2 to Linux prompt
   b) run 'lspci -v' to check the address of BAR whose memory is targeted memory for test
     $ lspci -v
 
-    0000:01:00.1 Unassigned class [ffff]: Freescale Semiconductor Inc Device 8d80 (rev 10) (prog-if 01)
-        Subsystem: Device 1862:0001
-        Flags: bus master, fast devsel, latency 0
-        Memory at 9060044000 (32-bit, non-prefetchable) [size=8K]
-        Memory at 9060046000 (32-bit, non-prefetchable) [size=8K]
-        Memory at 9060484000 (64-bit, prefetchable) [size=8K]
-        Memory at 9060486000 (64-bit, prefetchable) [size=8K]
+        0000:01:00.0 Ethernet controller: Intel Corporation 82574L Gigabit Network
+        Connection
+
+        Subsystem: Intel Corporation Gigabit CT Desktop Adapter
+        Flags: bus master, fast devsel, latency 0, IRQ 106
+        Memory at 30460c0000 (32-bit, non-prefetchable) [size=128K]
+        Memory at 3046000000 (32-bit, non-prefetchable) [size=512K]
+        I/O ports at 1000 [disabled] [size=32]
+        Memory at 30460e0000 (32-bit, non-prefetchable) [size=16K]
+        Expansion ROM at 3046080000 [disabled] [size=256K]
+        Kernel driver in use: e1000e
 
     Take the address of BAR you want to use in test and set it as value of
     "--pci_addr" command line argument to qdma_demo application
 
-    c) Run qdma_demo application
+  c) Assign PCI device to userspace
+        - load the UIO module, if not loaded already
+              #modprobe uio_pci_generic
+        - assign the device to userspace
+              #/usr/local/share/dpdk/usertools/dpdk-devbind.py
+              --bind=uio_pci_generic 0000:01:00.1
+
+  d)Run qdma_demo application
 
 	NOTE: At least 2 cores are required to run the test, one core is used for
         printing results/stats, other cores for running test.
@@ -61,148 +148,61 @@ qdma_demo Application
     Case #1: mem to mem
 	$./qdma_demo  -c 0x81 -- --packet_size=512 --test_case=mem_to_mem
 
-	EAL: Detected 8 lcore(s)
-	EAL: Detected 1 NUMA nodes
-	EAL: Multi-process socket /var/run/dpdk/rte/mp_socket
-	EAL: Probing VFIO support...
-	EAL: VFIO support initialized
-	EAL: PCI device 0000:01:00.0 on NUMA socket -1
-	EAL:   Invalid NUMA socket, default to 0
-	EAL:   probe driver: 8086:10d3 net_e1000_em
-	PMD: dpni.1: netdev created
-	PMD: dpni.2: netdev created
-	qdma_parse_long_arg: Pkt size 512
-	qdma_parse_long_arg:test case mem_to_mem
-	qdma_demo_validate_args: Stats core id - 0
-	test packet count 16
-	Rate:71.99985 cpu freq:1800 MHz
-	Spend :2000.000 ms
-	Local bufs, g_buf 0x103809000, g_buf1 0x103806000
-		Local bufs phys, g_buf 103809000, g_buf1 103806000
-	[0] job ptr 0x103805000
-	[7] job ptr 0x103804000
-	core id:0 g_vqid[0]:0 g_vqid[16]:1
-	core id:7 g_vqid[7]:2 g_vqid[23]:3
-	cores:0 packet count:0
 
-test memory size: 0x2000 packets number:16 packet size: 512
-Local mem phy addr: 103809000 addr1: 103806000 g_jobs[0]:0x103805000
+    Case #2: mem to pci (using a Gen2-x1 - 1G PCI NIC)
 
+	$./qdma_demo -c 0x81 -- --pci_addr=0x3046000000 --packet_size=512 --test_case=mem_to_pci
+                EAL: Detected 8 lcore(s)
+                EAL: Detected 1 NUMA nodes
+                EAL: Multi-process socket /var/run/dpdk/rte/mp_socket
+                fslmc: Skipping invalid device (power)
+                EAL: 256 hugepages of size 2097152 reserved, but no mounted hugetlbfs found
+                for that size
 
-Using long format to test: packet size 512 Bytes, MEM_TO_MEM
-coreid: 0 ready, now!
-coreid: 7 ready, now!
-Spend :4000.007 ms cnt:25690112 pkt_cnt:0
-        Speed: 26306.631 Mbps 6422.518 Kpps
+                EAL: Probing VFIO support...
+                EAL: VFIO support initialized
+                EAL: PCI device 0000:01:00.0 on NUMA socket -1
+                EAL:   Invalid NUMA socket, default to 0
+                EAL:   probe driver: 8086:10d3 net_e1000_em
+                PMD: dpni.1: netdev created
+                PMD: dpni.2: netdev created
+                qdma_parse_long_arg: PCI addr 3046000000
+                qdma_parse_long_arg: Pkt size 512
+                qdma_parse_long_arg:test case mem_to_pci
+                qdma_demo_validate_args: Stats core id - 0
+                test packet count 16
+                Rate:71.99982 cpu freq:1800 MHz
+                Spend :2000.000 ms
+                Local bufs, g_buf 0x17a80b000, g_buf1 0x17a808000
+                [0] job ptr 0x17a807000
+                [7] job ptr 0x17a806000
+                core id:0 g_vqid[0]:0 g_vqid[16]:1
+                core id:7 g_vqid[7]:2 g_vqid[23]:3
+                cores:0 packet count:0
 
- pkt cnt: 0 0 0 0
- pkt cnt: 0 0 0 25690112
- pkt cnt: 0 0 0 0
- pkt cnt: 0 0 0 0
-Spend :4000.000 ms cnt:25821184 pkt_cnt:0
-        Speed: 26440.896 Mbps 6455.297 Kpps
+                test memory size: 0x2000 packets number:16 packet size: 512
+                Local mem phy addr: 0 addr1: 0 g_jobs[0]:0x17a807000
 
 
-    Case #2: mem to pci
+                Using long format to test: packet size 512 Bytes, MEM_TO_PCI
+                Master coreid: 0 ready, now!
+                Processing coreid: 7 ready, now!
+
+                =>Time Spend :4000.005 ms rcvd cnt:1310720 pkt_cnt:0
+                Rate: 1342.176 Mbps OR 327.680 Kpps
+                processed on core 7 pkt cnt: 1310720
+
+                =>Time Spend :4000.000 ms rcvd cnt:1376256 pkt_cnt:0
+                Rate: 1409.286 Mbps OR 344.064 Kpps
+                processed on core 7 pkt cnt: 1376256
 
 
-	$./qdma_demo -c 0x8001 -- --pci_addr=0x9060000000 --packet_size=512 --test_case=mem_to_pci
+ Note:
 
-	EAL: Detected 16 lcore(s)
-	EAL: Probing VFIO support...
-	EAL: VFIO support initialized
-	EAL: PCI device 0001:01:00.0 on NUMA socket -1
-	EAL:   Invalid NUMA socket, default to 0
-	EAL:   probe driver: 8086:10d3 net_e1000_em
-	PMD: dpni.2: netdev created
-	PMD: dpsec-0 cryptodev created
-	PMD: dpsec-1 cryptodev created
-	PMD: dpsec-2 cryptodev created
-	PMD: dpsec-3 cryptodev created
-	PMD: dpsec-4 cryptodev created
-	PMD: dpsec-5 cryptodev created
-	PMD: dpsec-6 cryptodev created
-	PMD: dpsec-7 cryptodev created
-	Rate:79.99998 cpu freq:2000 MHz
-	Spend :2000.000 ms
-	[0] job ptr 0xffff9e67f000
-	[1] job ptr 0xffff9e67e000
-	[2] job ptr 0xffff9e67d000
-	[3] job ptr 0xffff9e67c000
-	[4] job ptr 0xffff9e67b000
-	[5] job ptr 0xffff9e67a000
-	[6] job ptr 0xffff9e679000
-	[7] job ptr 0xffff9e678000
-	[8] job ptr 0xffff9e677000
-	[9] job ptr 0xffff9e676000
-	[10] job ptr 0xffff9e675000
-	[11] job ptr 0xffff9e674000
-	[12] job ptr 0xffff9e673000
-	[13] job ptr 0xffff9e672000
-	[14] job ptr 0xffff9e671000
-	[15] job ptr 0xffff9e670000
-	core id:0 g_vqid[0]:0 g_vqid[16]:1
-	core id:1 g_vqid[1]:2 g_vqid[17]:3
-	core id:2 g_vqid[2]:4 g_vqid[18]:5
-	core id:3 g_vqid[3]:6 g_vqid[19]:7
-	core id:4 g_vqid[4]:8 g_vqid[20]:9
-	core id:5 g_vqid[5]:10 g_vqid[21]:11
-	core id:6 g_vqid[6]:12 g_vqid[22]:13
-	core id:7 g_vqid[7]:14 g_vqid[23]:15
-	core id:8 g_vqid[8]:16 g_vqid[24]:17
-	core id:9 g_vqid[9]:18 g_vqid[25]:19
-	core id:10 g_vqid[10]:20 g_vqid[26]:21
-	core id:11 g_vqid[11]:22 g_vqid[27]:23
-	core id:12 g_vqid[12]:24 g_vqid[28]:25
-	core id:13 g_vqid[13]:26 g_vqid[29]:27
-	core id:14 g_vqid[14]:28 g_vqid[30]:29
-	core id:15 g_vqid[15]:30 g_vqid[31]:31
-	cores:0 packet count:0
+1. The current QDMA demo code read/write only 4KB area, that yield best
+bandwidth number. To test read/write big memory size, you can optionally pass
+--pci_size (size in byte)
 
-	test memory size: 0x2000 packets number:8 packet size: 1024
-	Local mem phy addr: ffff9e683000 addr1: ffff9e680000 g_jobs[0]:0xffff9e67f000
+e.g for 2MB PCI use:  --pci_size=2147483648
 
-
-	Using long format to test: packet size 1024 Bytes, MEM_TO_PCI
-	coreid: 0 ready, now!
-	coreid: 15 ready, now!
-	Spend :4000.002 ms cnt:3342336 pkt_cnt:0
-		Speed: 6845.101 Mbps 835.584 Kpps
-
-	 pkt cnt: 3342336 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
-		Speed: 6979.323 Mbps 851.968 Kpps
-
-	 pkt cnt: 3407872 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
-		Speed: 6979.323 Mbps 851.968 Kpps
-
-	 pkt cnt: 3407872 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	Spend :3999.999 ms cnt:3473408 pkt_cnt:0
-		Speed: 7113.541 Mbps 868.352 Kpps
-
-	 pkt cnt: 3473408 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
-		Speed: 6979.323 Mbps 851.968 Kpps
-
-	 pkt cnt: 3407872 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	 pkt cnt: 0 0 0 0
-	Spend :3999.999 ms cnt:3407872 pkt_cnt:0
-		Speed: 6979.323 Mbps 851.968 Kpps
-
-	 pkt cnt: 3407872 0 0 0
-
+add "--latency_test" for testing latency
