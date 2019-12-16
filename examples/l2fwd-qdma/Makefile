@@ -6,7 +6,7 @@ $(error "Please define RTE_SDK environment variable")
 endif
 
 # Default target, can be overridden by command line or environment
-RTE_TARGET ?= x86_64-native-linuxapp-gcc
+RTE_TARGET ?= arm64-dpaa-native-linuxapp-gcc
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
@@ -16,7 +16,9 @@ APP = l2fwd-qdma
 # all source are stored in SRCS-y
 SRCS-y := main.c
 
-CFLAGS += -O3
+CFLAGS += -O3 -g
 CFLAGS += $(WERROR_FLAGS)
+
+LDLIBS += -L$(subst qdma_demo,lib,$(RTE_OUTPUT))/lib
 
 include $(RTE_SDK)/mk/rte.extapp.mk

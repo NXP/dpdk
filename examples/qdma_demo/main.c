@@ -19,9 +19,6 @@
 #include <rte_malloc.h>
 #include <rte_memory.h>
 #include <rte_memzone.h>
-#include <rte_dpaa2_mempool.h>
-#include <rte_bus_vdev.h>
-#include <rte_rawdev.h>
 
 #include <rte_interrupts.h>
 #include <rte_pmd_dpaa2_qdma.h>
