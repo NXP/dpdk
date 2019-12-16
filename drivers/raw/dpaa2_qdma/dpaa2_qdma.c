@@ -667,7 +667,9 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
@@ -789,7 +791,9 @@ dpdmai_dev_dequeue_multijob_prefetch(
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
@@ -930,7 +934,9 @@ dpdmai_dev_dequeue_multijob_no_prefetch(
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
