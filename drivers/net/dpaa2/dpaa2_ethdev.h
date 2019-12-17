@@ -24,6 +24,8 @@
 #define MAX_TX_QUEUES		16
 #define MAX_DPNI		8
 
+#define DPAA2_RX_DEFAULT_NBDESC 512
+
 /*default tc to be used for ,congestion, distribution etc configuration. */
 #define DPAA2_DEF_TC		0
 
@@ -56,6 +58,12 @@
 
 /* Disable RX tail drop, default is enable */
 #define DPAA2_RX_TAILDROP_OFF	0x04
+
+/* Disable prefetch Rx mode to get exact requested packets */
+#define DPAA2_NO_PREFETCH_RX	0x08
+
+/* Driver level loop mode to simply transmit the ingress traffic */
+#define DPAA2_RX_LOOPBACK_MODE	0x10
 
 #define DPAA2_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_L2_PAYLOAD | \
