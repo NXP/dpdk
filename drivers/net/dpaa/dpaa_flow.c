@@ -45,12 +45,12 @@ static struct dpaa_fm_info fm_info;
 static struct dpaa_fm_model fm_model;
 static const char *fm_log = "/tmp/fmdpdk.bin";
 
-static inline uint8_t fm_default_vsp_id(struct dpaa_if *dpaa_intf)
+static inline uint8_t fm_default_vsp_id(struct fman_if *fif)
 {
 	/* Avoid being same as base profile which could be used
 	 * for kernel interface of shared mac.
 	 */
-	if (dpaa_intf->fif->base_profile_id)
+	if (fif->base_profile_id)
 		return 0;
 	else
 		return DPAA_DEFAULT_RXQ_VSP_ID;
@@ -104,7 +104,7 @@ static void fm_prev_cleanup(void)
 			!dpaa_intf.port_handle)
 			continue;
 
-		if (dpaa_fm_deconfig(&dpaa_intf))
+		if (dpaa_fm_deconfig(&dpaa_intf, NULL))
 			printf("\nDPAA FM deconfig failed\n");
 	}
 
@@ -309,16 +309,17 @@ static inline int set_hashParams_sctp(
 static int set_scheme_params(
 	ioc_fm_pcd_kg_scheme_params_t *scheme_params,
 	ioc_fm_pcd_net_env_params_t *dist_units,
-	struct dpaa_if *dpaa_intf)
+	struct dpaa_if *dpaa_intf,
+	struct fman_if *fif)
 {
 	int dist_idx, hdr_idx = 0;
 	PMD_INIT_FUNC_TRACE();
 
-	if (dpaa_intf->fif->num_profiles) {
+	if (fif->num_profiles) {
 		scheme_params->param.override_storage_profile = true;
 		scheme_params->param.storage_profile.direct = true;
 		scheme_params->param.storage_profile.profile_select
-			.direct_relative_profileId = fm_default_vsp_id(dpaa_intf);
+			.direct_relative_profileId = fm_default_vsp_id(fif);
 	}
 
 	scheme_params->param.use_hash = 1;
@@ -609,7 +610,8 @@ static inline int set_default_scheme(struct dpaa_if *dpaa_intf)
 
 /* Set PCD NetEnv and Scheme and default scheme */
 static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
-					uint64_t req_dist_set)
+					uint64_t req_dist_set,
+					struct fman_if *fif)
 {
 	int ret = -1;
 	ioc_fm_pcd_net_env_params_t dist_units;
@@ -627,7 +629,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 	scheme_params.param.scm_id.relative_scheme_id = dpaa_intf->ifid;
 
 	/* Set PCD Scheme params */
-	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf);
+	ret = set_scheme_params(&scheme_params, &dist_units, dpaa_intf, fif);
 	if (ret) {
 		DPAA_PMD_ERR("Set scheme params: Failed");
 		return -1;
@@ -665,7 +667,8 @@ static inline int get_port_type(struct fman_if *fif)
 }
 
 static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
-				     uint64_t req_dist_set)
+				     uint64_t req_dist_set,
+				     struct fman_if *fif)
 {
 	t_FmPortParams	fm_port_params;
 	ioc_fm_pcd_net_env_params_t dist_units;
@@ -681,8 +684,8 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 
 	/* Set FM port params */
 	fm_port_params.h_Fm = fm_info.fman_handle;
-	fm_port_params.portType = get_port_type(dpaa_intf->fif);
-	fm_port_params.portId = mac_idx[dpaa_intf->fif->mac_idx];
+	fm_port_params.portType = get_port_type(fif);
+	fm_port_params.portId = mac_idx[fif->mac_idx];
 
 	/* FM PORT Open */
 	dpaa_intf->port_handle = FM_PORT_Open(&fm_port_params);
@@ -714,7 +717,7 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 }
 
 /* De-Configure DPAA FM */
-int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
+int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf, struct fman_if *fif)
 {
 	int ret;
 	unsigned int idx;
@@ -755,7 +758,7 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
 	}
 	dpaa_intf->netenv_handle = NULL;
 
-	if (dpaa_intf->fif && dpaa_intf->fif->is_shared_mac) {
+	if (fif && fif->is_shared_mac) {
 		ret = FM_PORT_Enable(dpaa_intf->port_handle);
 		if (ret != E_OK) {
 			DPAA_PMD_ERR("shared mac re-enable failed");
@@ -776,12 +779,13 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf)
 int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct fman_if *fif = dev->process_private;
 	int ret;
 	unsigned i = 0;
 	PMD_INIT_FUNC_TRACE();
 
 	if (dpaa_intf->port_handle) {
-		if (dpaa_fm_deconfig(dpaa_intf))
+		if (dpaa_fm_deconfig(dpaa_intf, fif))
 			DPAA_PMD_ERR("DPAA FM deconfig failed");
 	}
 
@@ -796,29 +800,30 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	dpaa_intf->nb_rx_queues = dev->data->nb_rx_queues;
 
 	/* Open FM Port and set it in port info */
-	ret = set_fm_port_handle(dpaa_intf, req_dist_set);
+	ret = set_fm_port_handle(dpaa_intf, req_dist_set, fif);
 	if (ret) {
 		DPAA_PMD_ERR("Set FM Port handle: Failed");
 		return -1;
 	}
 
-	if (dpaa_intf->fif->num_profiles) {
+	if (fif->num_profiles) {
 		for (i = 0; i < dpaa_intf->nb_rx_queues; i++)
-			dpaa_intf->rx_queues[i].vsp_id = fm_default_vsp_id(dpaa_intf);
+			dpaa_intf->rx_queues[i].vsp_id =
+				fm_default_vsp_id(fif);
 
 		i = 0;
 	}
 
 	/* Set PCD netenv and scheme */
 	if (req_dist_set) {
-		ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set);
+		ret = set_pcd_netenv_scheme(dpaa_intf, req_dist_set, fif);
 		if (ret) {
 			DPAA_PMD_ERR("Set PCD NetEnv and Scheme dist: Failed");
 			goto unset_fm_port_handle;
 		}
 	}
 	/* Set default netenv and scheme */
-	if (!dpaa_intf->fif->is_shared_mac) {
+	if (!fif->is_shared_mac) {
 		ret = set_default_scheme(dpaa_intf);
 		if (ret) {
 			DPAA_PMD_ERR("Set PCD NetEnv and Scheme: Failed");
@@ -936,16 +941,16 @@ int dpaa_fm_term(void)
 }
 
 static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
-		uint8_t vsp_id, t_Handle fman_handle)
+		uint8_t vsp_id, t_Handle fman_handle,
+		struct fman_if *fif)
 {
-	struct fman_if *fmif = dpaa_intf->fif;
 	t_FmVspParams vsp_params;
 	t_FmBufferPrefixContent buf_prefix_cont;
 	uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
-	uint8_t idx = mac_idx[fmif->mac_idx];
+	uint8_t idx = mac_idx[fif->mac_idx];
 	int ret;
 
-	if (vsp_id == fmif->base_profile_id && fmif->is_shared_mac) {
+	if (vsp_id == fif->base_profile_id && fif->is_shared_mac) {
 		/* For shared interface, VSP of base
 		 * profile is default pool located in kernel.
 		 */
@@ -963,14 +968,14 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 	vsp_params.h_Fm = fman_handle;
 	vsp_params.relativeProfileId = vsp_id;
 	vsp_params.portParams.portId = idx;
-	if (fmif->mac_type == fman_mac_1g) {
+	if (fif->mac_type == fman_mac_1g) {
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX;
-	} else if (fmif->mac_type == fman_mac_2_5g) {
+	} else if (fif->mac_type == fman_mac_2_5g) {
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX_2_5G;
-	} else if (fmif->mac_type == fman_mac_10g) {
+	} else if (fif->mac_type == fman_mac_10g) {
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX_10G;
 	} else {
-		DPAA_PMD_ERR("Mac type %d error", fmif->mac_type);
+		DPAA_PMD_ERR("Mac type %d error", fif->mac_type);
 		return -1;
 	}
 	vsp_params.extBufPools.numOfPoolsUsed = 1;
@@ -1017,16 +1022,16 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 }
 
 int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
-		bool fmc_mode, uint8_t vsp_id, uint32_t bpid)
+		bool fmc_mode, uint8_t vsp_id, uint32_t bpid,
+		struct fman_if *fif)
 {
 	int ret = 0;
-	struct fman_if *fmif = dpaa_intf->fif;
 	t_Handle fman_handle;
 
-	if (!fmif->num_profiles)
+	if (!fif->num_profiles)
 		return 0;
 
-	if (vsp_id >= fmif->num_profiles)
+	if (vsp_id >= fif->num_profiles)
 		return 0;
 
 	if (dpaa_intf->vsp_bpid[vsp_id] == bpid)
@@ -1052,14 +1057,14 @@ int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
 
 	dpaa_intf->vsp_bpid[vsp_id] = bpid;
 
-	return dpaa_port_vsp_configure(dpaa_intf, vsp_id, fman_handle);
+	return dpaa_port_vsp_configure(dpaa_intf, vsp_id, fman_handle, fif);
 }
 
-int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf)
+int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf, struct fman_if *fif)
 {
 	int idx, ret;
 
-	for (idx = 0; idx < (uint8_t)dpaa_intf->fif->num_profiles; idx++) {
+	for (idx = 0; idx < (uint8_t)fif->num_profiles; idx++) {
 		if (dpaa_intf->vsp_handle[idx]) {
 			ret = FM_VSP_Free(dpaa_intf->vsp_handle[idx]);
 			if (ret != E_OK) {
