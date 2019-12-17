@@ -3746,7 +3746,7 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 				 struct rte_event *ev)
 {
 	uint8_t dqrr_index;
-	struct rte_crypto_op *crypto_op = (struct rte_crypto_op *)ev->event_ptr;
+	struct rte_crypto_op *crypto_op;
 	/* Prefetching mbuf */
 	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
@@ -3764,7 +3764,8 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 
 	ev->event_ptr = sec_fd_to_mbuf(fd);
 	dqrr_index = qbman_get_dqrr_idx(dq);
-	crypto_op->sym->m_src->seqn = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
+	crypto_op = ev->event_ptr;
+	crypto_op->sym->m_src->seqn = dqrr_index + 1;
 	DPAA2_PER_LCORE_DQRR_SIZE++;
 	DPAA2_PER_LCORE_DQRR_HELD |= 1 << dqrr_index;
 	DPAA2_PER_LCORE_DQRR_MBUF(dqrr_index) = crypto_op->sym->m_src;
