@@ -196,7 +196,7 @@ struct fmc_model_t {
 		(FMC_SCHEMES_NUM + FMC_CC_NODES_NUM)];
 };
 
-struct fmc_model_t g_fmc_model;
+struct fmc_model_t *g_fmc_model;
 
 static int dpaa_port_fmc_port_parse(
 	struct fman_if *fif,
@@ -392,21 +392,37 @@ int dpaa_port_fmc_init(struct fman_if *fif,
 {
 	int current_port = -1, ret;
 	uint16_t rxq_idx = 0;
-	size_t bytes_read;
-	struct fmc_model_t *fmc_model = &g_fmc_model;
-	FILE *fp = fopen(FMC_FILE, "rb");
+	const struct fmc_model_t *fmc_model;
 	uint32_t i;
 
-	if (!fp)
-		return -1;
+	if (!g_fmc_model) {
+		size_t bytes_read;
+		FILE *fp = fopen(FMC_FILE, "rb");
 
-	bytes_read = fread(fmc_model, sizeof(struct fmc_model_t), 1, fp);
-	if (!bytes_read) {
-		DPAA_PMD_WARN("No bytes read");
+		if (!fp) {
+			DPAA_PMD_ERR("%s not exists", FMC_FILE);
+			return -1;
+		}
+
+		g_fmc_model = rte_malloc(NULL, sizeof(struct fmc_model_t), 64);
+		if (!g_fmc_model) {
+			DPAA_PMD_ERR("FMC memory alloc failed");
+			fclose(fp);
+			return -1;
+		}
+
+		bytes_read = fread(g_fmc_model, sizeof(struct fmc_model_t), 1, fp);
+		if (!bytes_read) {
+			DPAA_PMD_ERR("No bytes read");
+			fclose(fp);
+			rte_free(g_fmc_model);
+			g_fmc_model = NULL;
+			return -1;
+		}
 		fclose(fp);
-		return -1;
 	}
-	fclose(fp);
+
+	fmc_model = g_fmc_model;
 
 	if (fmc_model->format_version != FMC_OUTPUT_FORMAT_VER)
 		return -1;
