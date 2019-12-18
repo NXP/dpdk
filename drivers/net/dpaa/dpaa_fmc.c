@@ -207,22 +207,6 @@ static int dpaa_port_fmc_port_parse(
 	const fmc_port *pport = &fmc_model->port[current_port];
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 
-	if (pport->type == e_FM_PORT_TYPE_RX &&
-		fif->mac_type != fman_mac_1g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_2_5G &&
-		fif->mac_type != fman_mac_2_5g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_10G &&
-		fif->mac_type != fman_mac_10g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_OH_OFFLINE_PARSING &&
-		fif->mac_type != fman_offline)
-		return -1;
-
 	if (mac_idx[fif->mac_idx] != pport->number)
 		return -1;
 
