@@ -76,3 +76,22 @@ then
 else
 	export NXP_CHRT_PERF_MODE=1
 fi
+
+# Change the ksoftirqd priority to the maximum priority because of the memory leak
+# issue on DPAA1 - DPDK-1912. Changing the priority of ksoftirqd gives chance to kernel
+# to free the memory.
+if [ -e /sys/firmware/devicetree/base/compatible ]
+then
+	board_type=`grep -ao '1046\|1043' /sys/firmware/devicetree/base/compatible | head -1`
+else
+	echo "Not able to parse /sys/firmware/devicetree/base/compatible"
+fi
+if [[ $board_type == "1046" || $board_type == "1043" ]]
+then
+	echo "Increasing priority of ksoftirqd on all cores"
+	process_id=`/bin/ps -eLlf | grep "ksoftirqd" | grep -v "grep" | awk '{print $4}' | xargs`
+	for i in $process_id;
+	do
+	        chrt -p 99 $i
+	done
+fi
