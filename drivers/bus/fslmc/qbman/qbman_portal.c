@@ -78,7 +78,7 @@ qbman_swp_enqueue_ring_mode_direct(struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd);
 static int
-qbman_swp_enqueue_ring_mode_cinh_direct(struct qbman_swp *s,
+qbman_swp_enqueue_ring_mode_cinh_read_direct(struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd);
 static int
@@ -93,7 +93,7 @@ qbman_swp_enqueue_multiple_direct(struct qbman_swp *s,
 		uint32_t *flags,
 		int num_frames);
 static int
-qbman_swp_enqueue_multiple_cinh_direct(struct qbman_swp *s,
+qbman_swp_enqueue_multiple_cinh_read_direct(struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd,
 		uint32_t *flags,
@@ -112,7 +112,7 @@ qbman_swp_enqueue_multiple_fd_direct(struct qbman_swp *s,
 		uint32_t *flags,
 		int num_frames);
 static int
-qbman_swp_enqueue_multiple_fd_cinh_direct(struct qbman_swp *s,
+qbman_swp_enqueue_multiple_fd_cinh_read_direct(struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		struct qbman_fd **fd,
 		uint32_t *flags,
@@ -130,7 +130,7 @@ qbman_swp_enqueue_multiple_desc_direct(struct qbman_swp *s,
 		const struct qbman_fd *fd,
 		int num_frames);
 static int
-qbman_swp_enqueue_multiple_desc_cinh_direct(struct qbman_swp *s,
+qbman_swp_enqueue_multiple_desc_cinh_read_direct(struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd,
 		int num_frames);
@@ -281,15 +281,15 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 			&& (d->cena_access_mode == qman_cena_fastest_access)) {
 		p->eqcr.pi_ring_size = 32;
 		qbman_swp_enqueue_array_mode_ptr =
-				qbman_swp_enqueue_array_mode_mem_back;
+			qbman_swp_enqueue_array_mode_mem_back;
 		qbman_swp_enqueue_ring_mode_ptr =
-				qbman_swp_enqueue_ring_mode_mem_back;
+			qbman_swp_enqueue_ring_mode_mem_back;
 		qbman_swp_enqueue_multiple_ptr =
-				qbman_swp_enqueue_multiple_mem_back;
+			qbman_swp_enqueue_multiple_mem_back;
 		qbman_swp_enqueue_multiple_fd_ptr =
-				qbman_swp_enqueue_multiple_fd_mem_back;
+			qbman_swp_enqueue_multiple_fd_mem_back;
 		qbman_swp_enqueue_multiple_desc_ptr =
-				qbman_swp_enqueue_multiple_desc_mem_back;
+			qbman_swp_enqueue_multiple_desc_mem_back;
 		qbman_swp_pull_ptr = qbman_swp_pull_mem_back;
 		qbman_swp_dqrr_next_ptr = qbman_swp_dqrr_next_mem_back;
 		qbman_swp_release_ptr = qbman_swp_release_mem_back;
@@ -297,13 +297,13 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 
 	if (dpaa2_svr_family == SVR_LS1080A) {
 		qbman_swp_enqueue_ring_mode_ptr =
-				qbman_swp_enqueue_ring_mode_cinh_direct;
+			qbman_swp_enqueue_ring_mode_cinh_read_direct;
 		qbman_swp_enqueue_multiple_ptr =
-				qbman_swp_enqueue_multiple_cinh_direct;
+			qbman_swp_enqueue_multiple_cinh_read_direct;
 		qbman_swp_enqueue_multiple_fd_ptr =
-				qbman_swp_enqueue_multiple_fd_cinh_direct;
+			qbman_swp_enqueue_multiple_fd_cinh_read_direct;
 		qbman_swp_enqueue_multiple_desc_ptr =
-				qbman_swp_enqueue_multiple_desc_cinh_direct;
+			qbman_swp_enqueue_multiple_desc_cinh_read_direct;
 	}
 
 	for (mask_size = p->eqcr.pi_ring_size; mask_size > 0; mask_size >>= 1)
@@ -733,7 +733,7 @@ static int qbman_swp_enqueue_ring_mode_direct(struct qbman_swp *s,
 	return 0;
 }
 
-static int qbman_swp_enqueue_ring_mode_cinh_direct(
+static int qbman_swp_enqueue_ring_mode_cinh_read_direct(
 		struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd)
@@ -896,7 +896,7 @@ static int qbman_swp_enqueue_multiple_direct(struct qbman_swp *s,
 	return num_enqueued;
 }
 
-static int qbman_swp_enqueue_multiple_cinh_direct(
+static int qbman_swp_enqueue_multiple_cinh_read_direct(
 		struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd,
@@ -1097,7 +1097,7 @@ static int qbman_swp_enqueue_multiple_fd_direct(struct qbman_swp *s,
 	return num_enqueued;
 }
 
-static int qbman_swp_enqueue_multiple_fd_cinh_direct(
+static int qbman_swp_enqueue_multiple_fd_cinh_read_direct(
 		struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		struct qbman_fd **fd,
@@ -1300,7 +1300,7 @@ static int qbman_swp_enqueue_multiple_desc_direct(struct qbman_swp *s,
 	return num_enqueued;
 }
 
-static int qbman_swp_enqueue_multiple_desc_cinh_direct(
+static int qbman_swp_enqueue_multiple_desc_cinh_read_direct(
 		struct qbman_swp *s,
 		const struct qbman_eq_desc *d,
 		const struct qbman_fd *fd,
