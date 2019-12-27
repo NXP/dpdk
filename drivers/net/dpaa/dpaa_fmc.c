@@ -196,7 +196,7 @@ struct fmc_model_t {
 		(FMC_SCHEMES_NUM + FMC_CC_NODES_NUM)];
 };
 
-struct fmc_model_t g_fmc_model;
+struct fmc_model_t *g_fmc_model;
 
 static int dpaa_port_fmc_port_parse(
 	struct fman_if *fif,
@@ -206,22 +206,6 @@ static int dpaa_port_fmc_port_parse(
 	int current_port = fmc_model->apply_order[apply_idx].index;
 	const fmc_port *pport = &fmc_model->port[current_port];
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
-
-	if (pport->type == e_FM_PORT_TYPE_RX &&
-		fif->mac_type != fman_mac_1g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_2_5G &&
-		fif->mac_type != fman_mac_2_5g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_10G &&
-		fif->mac_type != fman_mac_10g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_OH_OFFLINE_PARSING &&
-		fif->mac_type != fman_offline)
-		return -1;
 
 	if (mac_idx[fif->mac_idx] != pport->number)
 		return -1;
@@ -408,21 +392,37 @@ int dpaa_port_fmc_init(struct fman_if *fif,
 {
 	int current_port = -1, ret;
 	uint16_t rxq_idx = 0;
-	size_t bytes_read;
-	struct fmc_model_t *fmc_model = &g_fmc_model;
-	FILE *fp = fopen(FMC_FILE, "rb");
+	const struct fmc_model_t *fmc_model;
 	uint32_t i;
 
-	if (!fp)
-		return -1;
+	if (!g_fmc_model) {
+		size_t bytes_read;
+		FILE *fp = fopen(FMC_FILE, "rb");
 
-	bytes_read = fread(fmc_model, sizeof(struct fmc_model_t), 1, fp);
-	if (!bytes_read) {
-		DPAA_PMD_WARN("No bytes read");
+		if (!fp) {
+			DPAA_PMD_ERR("%s not exists", FMC_FILE);
+			return -1;
+		}
+
+		g_fmc_model = rte_malloc(NULL, sizeof(struct fmc_model_t), 64);
+		if (!g_fmc_model) {
+			DPAA_PMD_ERR("FMC memory alloc failed");
+			fclose(fp);
+			return -1;
+		}
+
+		bytes_read = fread(g_fmc_model, sizeof(struct fmc_model_t), 1, fp);
+		if (!bytes_read) {
+			DPAA_PMD_ERR("No bytes read");
+			fclose(fp);
+			rte_free(g_fmc_model);
+			g_fmc_model = NULL;
+			return -1;
+		}
 		fclose(fp);
-		return -1;
 	}
-	fclose(fp);
+
+	fmc_model = g_fmc_model;
 
 	if (fmc_model->format_version != FMC_OUTPUT_FORMAT_VER)
 		return -1;
