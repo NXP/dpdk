@@ -58,7 +58,7 @@ mempool_create(const char *name, struct mempool_params *params)
 		params->cache_size,
 		0,
 		params->buffer_size - sizeof(struct rte_mbuf),
-		params->cpu_id);
+		rte_lcore_to_socket_id(params->cpu_id));
 
 	if (m == NULL)
 		return NULL;
