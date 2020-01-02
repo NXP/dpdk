@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright 2019 NXP
  */
 
 #include "compat.h"
