@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include <arpa/inet.h>
@@ -191,7 +191,7 @@ gemac_set_mode(void *base, __rte_unused int mode)
 	val &= ~EMAC_RCNTRL_LOOP;
 
 	/*Enable flow control and MII mode*/
-	val |= (EMAC_RCNTRL_FCE | EMAC_RCNTRL_MII_MODE | EMAC_RCNTRL_CRC_FWD);
+	val |= (EMAC_RCNTRL_FCE | EMAC_RCNTRL_MII_MODE);
 
 	writel(val, base + EMAC_RCNTRL_REG);
 }
