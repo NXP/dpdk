@@ -196,10 +196,10 @@ struct fmc_model_t {
 		(FMC_SCHEMES_NUM + FMC_CC_NODES_NUM)];
 };
 
-struct fmc_model_t g_fmc_model;
+struct fmc_model_t *g_fmc_model;
 
 static int dpaa_port_fmc_port_parse(
-	struct dpaa_if *dpaa_intf,
+	struct fman_if *fif,
 	const struct fmc_model_t *fmc_model,
 	int apply_idx)
 {
@@ -207,31 +207,14 @@ static int dpaa_port_fmc_port_parse(
 	const fmc_port *pport = &fmc_model->port[current_port];
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 
-	if (pport->type == e_FM_PORT_TYPE_RX &&
-		dpaa_intf->fif->mac_type != fman_mac_1g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_2_5G &&
-		dpaa_intf->fif->mac_type != fman_mac_2_5g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_RX_10G &&
-		dpaa_intf->fif->mac_type != fman_mac_10g)
-		return -1;
-
-	if (pport->type == e_FM_PORT_TYPE_OH_OFFLINE_PARSING &&
-		dpaa_intf->fif->mac_type != fman_offline)
-		return -1;
-
-	if ((int)mac_idx[dpaa_intf->fif->mac_idx]
-		!= pport->number)
+	if (mac_idx[fif->mac_idx] != pport->number)
 		return -1;
 
 	return current_port;
 }
 
 static int dpaa_port_fmc_scheme_parse(
-	struct dpaa_if *dpaa_intf,
+	struct fman_if *fif,
 	const struct fmc_model_t *fmc_model,
 	int apply_idx,
 	uint16_t *rxq_idx, int max_nb_rxq,
@@ -241,9 +224,9 @@ static int dpaa_port_fmc_scheme_parse(
 	uint32_t i;
 
 	if (!fmc_model->scheme[scheme_idx].override_storage_profile &&
-		dpaa_intf->fif->is_shared_mac) {
+		fif->is_shared_mac) {
 		DPAA_PMD_WARN("No VSP is assigned to sheme %d for sharemac %d!",
-			scheme_idx, dpaa_intf->fif->mac_idx);
+			scheme_idx, fif->mac_idx);
 		DPAA_PMD_WARN("Risk to receive pkts from skb pool to CRASH!");
 	}
 
@@ -254,13 +237,13 @@ static int dpaa_port_fmc_scheme_parse(
 			uint32_t fqid = fmc_model->scheme[scheme_idx].base_fqid + i;
 			int k, found = 0;
 
-			if (fqid == dpaa_intf->fif->fqid_rx_def) {
-				if (dpaa_intf->fif->is_shared_mac &&
+			if (fqid == fif->fqid_rx_def) {
+				if (fif->is_shared_mac &&
 					fmc_model->scheme[scheme_idx].override_storage_profile &&
 					fmc_model->scheme[scheme_idx].storage_profile.direct &&
 					fmc_model->scheme[scheme_idx].storage_profile
 					.profile_select.direct_relative_profileId !=
-					dpaa_intf->fif->base_profile_id) {
+					fif->base_profile_id) {
 					DPAA_PMD_ERR(
 						"Default RXQ must be associated"
 						" with default VSP on sharemac!");
@@ -270,7 +253,7 @@ static int dpaa_port_fmc_scheme_parse(
 				continue;
 			}
 
-			if (dpaa_intf->fif->is_shared_mac &&
+			if (fif->is_shared_mac &&
 				!fmc_model->scheme[scheme_idx].override_storage_profile) {
 				DPAA_PMD_ERR(
 					"RXQ to DPDK must be associated"
@@ -278,12 +261,12 @@ static int dpaa_port_fmc_scheme_parse(
 				return -1;
 			}
 
-			if (dpaa_intf->fif->is_shared_mac &&
+			if (fif->is_shared_mac &&
 				fmc_model->scheme[scheme_idx].override_storage_profile &&
 				fmc_model->scheme[scheme_idx].storage_profile.direct &&
 				fmc_model->scheme[scheme_idx].storage_profile
 				.profile_select.direct_relative_profileId ==
-				dpaa_intf->fif->base_profile_id) {
+				fif->base_profile_id) {
 				DPAA_PMD_ERR(
 					"RXQ can't be associated"
 					" with default VSP on sharemac!");
@@ -329,7 +312,7 @@ static int dpaa_port_fmc_scheme_parse(
 }
 
 static int dpaa_port_fmc_ccnode_parse(
-	struct dpaa_if *dpaa_intf,
+	struct fman_if *fif,
 	const struct fmc_model_t *fmc_model,
 	int apply_idx,
 	uint16_t *rxq_idx, int max_nb_rxq,
@@ -388,8 +371,8 @@ static int dpaa_port_fmc_ccnode_parse(
 				.params.enqueue_params
 				.new_relative_storage_profile_id;
 
-		if (vspids[(*rxq_idx)] ==	dpaa_intf->fif->base_profile_id &&
-			dpaa_intf->fif->is_shared_mac) {
+		if (vspids[(*rxq_idx)] == fif->base_profile_id &&
+		    fif->is_shared_mac) {
 			DPAA_PMD_ERR(
 				"VSP %d can NOT be used on DPDK.",
 				vspids[(*rxq_idx)]);
@@ -404,26 +387,42 @@ static int dpaa_port_fmc_ccnode_parse(
 	return 0;
 }
 
-int dpaa_port_fmc_init(struct dpaa_if *dpaa_intf,
-		uint32_t *fqids, int8_t *vspids, int max_nb_rxq)
+int dpaa_port_fmc_init(struct fman_if *fif,
+		       uint32_t *fqids, int8_t *vspids, int max_nb_rxq)
 {
 	int current_port = -1, ret;
 	uint16_t rxq_idx = 0;
-	size_t bytes_read;
-	struct fmc_model_t *fmc_model = &g_fmc_model;
-	FILE *fp = fopen(FMC_FILE, "rb");
+	const struct fmc_model_t *fmc_model;
 	uint32_t i;
 
-	if (!fp)
-		return -1;
+	if (!g_fmc_model) {
+		size_t bytes_read;
+		FILE *fp = fopen(FMC_FILE, "rb");
 
-	bytes_read = fread(fmc_model, sizeof(struct fmc_model_t), 1, fp);
-	if (!bytes_read) {
-		DPAA_PMD_WARN("No bytes read");
+		if (!fp) {
+			DPAA_PMD_ERR("%s not exists", FMC_FILE);
+			return -1;
+		}
+
+		g_fmc_model = rte_malloc(NULL, sizeof(struct fmc_model_t), 64);
+		if (!g_fmc_model) {
+			DPAA_PMD_ERR("FMC memory alloc failed");
+			fclose(fp);
+			return -1;
+		}
+
+		bytes_read = fread(g_fmc_model, sizeof(struct fmc_model_t), 1, fp);
+		if (!bytes_read) {
+			DPAA_PMD_ERR("No bytes read");
+			fclose(fp);
+			rte_free(g_fmc_model);
+			g_fmc_model = NULL;
+			return -1;
+		}
 		fclose(fp);
-		return -1;
 	}
-	fclose(fp);
+
+	fmc_model = g_fmc_model;
 
 	if (fmc_model->format_version != FMC_OUTPUT_FORMAT_VER)
 		return -1;
@@ -436,7 +435,7 @@ int dpaa_port_fmc_init(struct dpaa_if *dpaa_intf,
 			break;
 		case FMCPortStart:
 			current_port = dpaa_port_fmc_port_parse(
-				dpaa_intf, fmc_model, i);
+				fif, fmc_model, i);
 			break;
 		case FMCPortEnd:
 			break;
@@ -445,7 +444,7 @@ int dpaa_port_fmc_init(struct dpaa_if *dpaa_intf,
 				break;
 
 			ret = dpaa_port_fmc_scheme_parse(
-				dpaa_intf, fmc_model,
+				fif, fmc_model,
 				i, &rxq_idx, max_nb_rxq, fqids, vspids);
 			if (ret)
 				return ret;
@@ -455,7 +454,7 @@ int dpaa_port_fmc_init(struct dpaa_if *dpaa_intf,
 			if (current_port < 0)
 				break;
 
-			ret = dpaa_port_fmc_ccnode_parse(dpaa_intf, fmc_model,
+			ret = dpaa_port_fmc_ccnode_parse(fif, fmc_model,
 				i, &rxq_idx, max_nb_rxq, fqids, vspids);
 			if (ret)
 				return ret;

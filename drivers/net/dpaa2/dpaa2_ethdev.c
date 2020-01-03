@@ -275,6 +275,22 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
 	dev_info->flow_type_rss_offloads = DPAA2_RSS_OFFLOAD_ALL;
 
+	dev_info->default_rxportconf.burst_size = dpaa2_dqrr_size;
+	/* same is rx size for best perf */
+	dev_info->default_txportconf.burst_size = dpaa2_dqrr_size;
+
+	dev_info->default_rxportconf.nb_queues = 1;
+	dev_info->default_txportconf.nb_queues = 1;
+	dev_info->default_txportconf.ring_size = CONG_ENTER_TX_THRESHOLD;
+	dev_info->default_rxportconf.ring_size = DPAA2_RX_DEFAULT_NBDESC;
+
+	if (dpaa2_svr_family == SVR_LX2160A) {
+		dev_info->speed_capa |= ETH_LINK_SPEED_25G |
+				ETH_LINK_SPEED_40G |
+				ETH_LINK_SPEED_50G |
+				ETH_LINK_SPEED_100G;
+	}
+
 	return 0;
 }
 
@@ -439,7 +455,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int rx_l4_csum_offload = false;
 	int tx_l3_csum_offload = false;
 	int tx_l4_csum_offload = false;
-	int ret;
+	int ret, tc_index;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -479,12 +495,16 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	}
 
 	if (eth_conf->rxmode.mq_mode == ETH_MQ_RX_RSS) {
-		ret = dpaa2_setup_flow_dist(dev,
-				eth_conf->rx_adv_conf.rss_conf.rss_hf);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to set flow distribution."
-				      "Check queue config");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_dist(dev,
+					eth_conf->rx_adv_conf.rss_conf.rss_hf,
+					tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR(
+					"Unable to set flow distribution on tc%d."
+					"Check queue config", tc_index);
+				return ret;
+			}
 		}
 	}
 
@@ -670,7 +690,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 						DPNI_CP_CONGESTION_GROUP,
 						DPNI_QUEUE_RX,
 						dpaa2_q->tc_index,
-						flow_id, &taildrop);
+						dpaa2_q->cgid, &taildrop);
 		} else {
 			/*enabling per rx queue congestion control */
 			taildrop.threshold = CONG_THRESHOLD_RX_BYTES_Q;
@@ -697,7 +717,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
 					DPNI_CP_CONGESTION_GROUP, DPNI_QUEUE_RX,
 					dpaa2_q->tc_index,
-					flow_id, &taildrop);
+					dpaa2_q->cgid, &taildrop);
 		} else {
 			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
 					DPNI_CP_QUEUE, DPNI_QUEUE_RX,
@@ -749,11 +769,11 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	flow_id = 0;
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
-			     tc_id, flow_id, options, &tx_flow_cfg);
+			tc_id, flow_id, options, &tx_flow_cfg);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in setting the tx flow: "
-			      "tc_id=%d, flow=%d err=%d",
-			      tc_id, flow_id, ret);
+			"tc_id=%d, flow=%d err=%d",
+			tc_id, flow_id, ret);
 			return -1;
 	}
 
@@ -897,7 +917,9 @@ dpaa2_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_PMD_ERR("Failure in affining portal");
+			DPAA2_PMD_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return -EINVAL;
 		}
 	}
@@ -1981,22 +2003,31 @@ dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 			  struct rte_eth_rss_conf *rss_conf)
 {
 	struct rte_eth_dev_data *data = dev->data;
+	struct dpaa2_dev_priv *priv = data->dev_private;
 	struct rte_eth_conf *eth_conf = &data->dev_conf;
-	int ret;
+	int ret, tc_index;
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (rss_conf->rss_hf) {
-		ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to set flow dist");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf,
+				tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("Unable to set flow dist on tc%d",
+					tc_index);
+				return ret;
+			}
 		}
 	} else {
-		ret = dpaa2_remove_flow_dist(dev, 0);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to remove flow dist");
-			return ret;
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_remove_flow_dist(dev, tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR(
+					"Unable to remove flow dist on tc%d",
+					tc_index);
+				return ret;
+			}
 		}
 	}
 	eth_conf->rx_adv_conf.rss_conf.rss_hf = rss_conf->rss_hf;
@@ -2343,16 +2374,28 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	dpni_dev->regs = rte_mcp_ptr_list[0];
 	eth_dev->process_private = (void *)dpni_dev;
 
+	/* RX no prefetch mode? */
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)
+		|| getenv("DPAA2_NO_PREFETCH_RX")) {
+		priv->flags |= DPAA2_NO_PREFETCH_RX;
+		DPAA2_PMD_INFO("No RX prefetch mode");
+	}
+
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)
+		|| getenv("DPAA2_LOOPBACK")) {
+		priv->flags |= DPAA2_RX_LOOPBACK_MODE;
+		DPAA2_PMD_INFO("Rx loopback mode");
+	}
+
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		/* In case of secondary, only burst and ops API need to be
 		 * plugged.
 		 */
 		eth_dev->dev_ops = &dpaa2_ethdev_ops;
-		if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE))
+		if (priv->flags & DPAA2_RX_LOOPBACK_MODE)
 			eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
-		else if (dpaa2_get_devargs(dev->devargs,
-					DRIVER_NO_PREFETCH_MODE))
+		else if (priv->flags & DPAA2_NO_PREFETCH_RX)
 			eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		else
 			eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
@@ -2389,6 +2432,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 
 	priv->num_rx_tc = attr.num_rx_tcs;
+	priv->qos_entries = attr.qos_entries;
+	priv->fs_entries = attr.fs_entries;
+	priv->dist_queues = attr.num_queues;
+
 	/* only if the custom CG is enabled */
 	if (attr.options & DPNI_OPT_CUSTOM_CG)
 		priv->max_cgs = attr.num_cgs;
@@ -2492,10 +2539,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	eth_dev->dev_ops = &dpaa2_ethdev_ops;
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)) {
+	if (priv->flags & DPAA2_RX_LOOPBACK_MODE) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_loopback_rx;
 		DPAA2_PMD_INFO("Loopback mode");
-	} else if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)) {
+	} else if (priv->flags & DPAA2_NO_PREFETCH_RX) {
 		eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		DPAA2_PMD_INFO("No Prefetch mode");
 	} else {
@@ -2504,23 +2551,41 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 
 	/*Init fields w.r.t. classficaition*/
-	memset(&priv->extract.qos_key_cfg, 0, sizeof(struct dpkg_profile_cfg));
+	memset(&priv->extract.qos_key_extract, 0,
+		sizeof(struct dpaa2_key_extract));
 	priv->extract.qos_extract_param = (size_t)rte_malloc(NULL, 256, 64);
 	if (!priv->extract.qos_extract_param) {
 		DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow "
 			    " classificaiton ", ret);
 		goto init_err;
 	}
+	priv->extract.qos_key_extract.key_info.ipv4_src_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv4_dst_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv6_src_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+	priv->extract.qos_key_extract.key_info.ipv6_dst_offset =
+		IP_ADDRESS_OFFSET_INVALID;
+
 	for (i = 0; i < MAX_TCS; i++) {
-		memset(&priv->extract.fs_key_cfg[i], 0,
-			sizeof(struct dpkg_profile_cfg));
-		priv->extract.fs_extract_param[i] =
+		memset(&priv->extract.tc_key_extract[i], 0,
+			sizeof(struct dpaa2_key_extract));
+		priv->extract.tc_extract_param[i] =
 			(size_t)rte_malloc(NULL, 256, 64);
-		if (!priv->extract.fs_extract_param[i]) {
+		if (!priv->extract.tc_extract_param[i]) {
 			DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow classificaiton",
 				     ret);
 			goto init_err;
 		}
+		priv->extract.tc_key_extract[i].key_info.ipv4_src_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv4_dst_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv6_src_offset =
+			IP_ADDRESS_OFFSET_INVALID;
+		priv->extract.tc_key_extract[i].key_info.ipv6_dst_offset =
+			IP_ADDRESS_OFFSET_INVALID;
 	}
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
@@ -2595,10 +2660,8 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 	eth_dev->process_private = NULL;
 	rte_free(dpni);
 
-	for (i = 0; i < MAX_TCS; i++) {
-		if (priv->extract.fs_extract_param[i])
-			rte_free((void *)(size_t)priv->extract.fs_extract_param[i]);
-	}
+	for (i = 0; i < MAX_TCS; i++)
+		rte_free((void *)(size_t)priv->extract.tc_extract_param[i]);
 
 	if (priv->extract.qos_extract_param)
 		rte_free((void *)(size_t)priv->extract.qos_extract_param);

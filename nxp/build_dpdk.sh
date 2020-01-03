@@ -4,8 +4,18 @@
 
 # tunable parameters
 
-# CROSS should be set by user, else default compiler would be picked up
-[ -z "$CROSS" ] && echo "CROSS is not set; using default";
+LOCAL_ARCH=$(arch)
+echo "Build Platform is $LOCAL_ARCH";
+if [ $LOCAL_ARCH != aarch64 ]; then
+	# CROSS should be set by user, else exit
+	if [ -z "$CROSS" ]; then echo "CROSS is not set; set it first";
+	 exit 1;
+	fi
+else
+	# CROSS should be set by user, else default compiler would be picked up
+	if [ -z "$CROSS" ]; then echo "CROSS is not set; using default";
+	fi
+fi
 
 # RTE_KERNELDIR should be set else we disable KNI_KMOD
 if [ -z "${RTE_KERNELDIR}" ]; then
@@ -28,7 +38,7 @@ RTE_TARGET=
 
 # defaults ## Modify then to tune default values
 
-platform="arm64-dpaa arm64-dpaa2" # set to "dpaa dpaa2" for both platform as default
+platform="arm64-dpaa" # set to "dpaa" for both platform as default
 build="static shared"  # set to "static shared" for 2 builds as default
 debug_flag=0
 jobs=4          # Parallel jobs
@@ -36,13 +46,6 @@ silent=0	# If output is dumped to screen
 logoutput=      # File to dump output to, if -s is provided
 clean_all=1	# Clean all before starting build
 all_build=1     # Whether to build debug and non debug by default
-
-dpaa2_config_list="EXTRA_CFLAGS=-g"
-dpaa2_config_list=${dpaa2_config_list}" EXTRA_CFLAGS+=-O0"
-dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS=-g"
-dpaa2_config_list=${dpaa2_config_list}" EXTRA_LDFLAGS+=-O0"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LOG_LEVEL=RTE_LOG_DEBUG"
-dpaa2_config_list=${dpaa2_config_list}" CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_DEBUG"
 
 dpaa_config_list="EXTRA_CFLAGS=-g"
 dpaa_config_list=${dpaa_config_list}" EXTRA_CFLAGS+=-O0"
@@ -79,11 +82,8 @@ function print() {
 }
 
 function usage() {
-	echo "Usage: $0 [-p <platform>] [-s <build type>] [-d] [-c] [-j <jobs>] [--dpaa2config <comma separated list of configs>]"
+	echo "Usage: $0 [-s <build type>] [-d] [-c] [-j <jobs>]"
 	echo "          [--dpaaconfig <comma separated list of configs> [-s] [-a] [-h] [-o <output file>]"
-	echo "           -p <platform>"
-	echo "              Optional: dpaa|dpaa2|all"
-	echo "              Default: dpaa"
 	echo
 	echo "           -b <build type>"
 	echo "              Optional: shared|static|all"
@@ -100,14 +100,10 @@ function usage() {
 	echo
 	echo "           -j Number of parallel jobs"
 	echo
-	echo "           --dpaa2config"
-	echo "              A comma separated list of configuration items to build with"
-	echo "              For e.g.: --dpaa2config CONFIG_RTE_LIBRTE_DPAA2_DEBUG_DRIVER=y"
-	echo "              This would be passed to DPAA2 type build"
-	echo
 	echo "           --dpaaconfig"
-	echo "              Similar to --dpaa2config above, a list of DPAA specific"
-	echo "              configuration items to pass to build"
+	echo "              A comma separated list of configuration items to build with"
+	echo "              For e.g.: --dpaaconfig CONFIG_RTE_LIBRTE_DPAA_DEBUG_DRIVER=y"
+	echo "              This would be passed to DPAA type build"
 	echo
 	echo "           -a Build with and without debugging"
 	echo "              Builds are created separately for non-debug and debug, for each platform"
@@ -142,15 +138,7 @@ function dump_configuration() {
 	print "__debug         = $debug_flag"
 	print "__all_build     = $all_build"
 	print "__Parallel jobs = ${jobs}"
-	if [ "$platform" == "arm64-dpaa2" ]; then
-		print "__DPAA2 Config  = $dpaa2_config_list"
-	else
-	if [ "$platform" == "arm64-dpaa" ]; then
-		print "__DPAA  Config  = $dpaa_config_list"
-	else
-		print "__DPAA Config   = $dpaa_config_list"
-		print "__DPAA2 Config  = $dpaa2_config_list"
-	fi; fi;
+	print "__DPAA  Config  = $dpaa_config_list"
 	print "${NC}"
 	print "==========================================="
 }
@@ -158,19 +146,6 @@ function dump_configuration() {
 while getopts ":p:b:dcj:-:aso:h" o; do
 	case "${o}" in
 		p)
-			if [ ${OPTARG} == "dpaa" ]; then
-				platform="arm64-dpaa"
-			else
-			if [ $OPTARG == "dpaa2" ]; then
-				platform="arm64-dpaa2"
-			else
-			if [ $OPTARG == "all" ]; then
-				platform="arm64-dpaa arm64-dpaa2"
-			else
-				error "Invalid platform Specified: Using default"
-				platform="arm64-dpaa"
-			fi; fi; fi
-			debug "Platform=$platform"
 			;;
 		b)
 			# shared or static build
@@ -206,12 +181,6 @@ while getopts ":p:b:dcj:-:aso:h" o; do
 		-)
 			# Long options for config options for each platform
 			case "${OPTARG}" in
-			dpaa2config)
-				val="${!OPTIND}"; OPTIND=$(( $OPTIND + 1 ))
-				temp="$val"
-				dpaa2_config_list=`echo ${temp} | sed -r 's/,/ /g'`
-				debug "dpaa2 config = ${dpaa2_config_list}"
-				;;
 			dpaaconfig)
 				val="${!OPTIND}"; OPTIND=$(( $OPTIND + 1 ))
 				temp="$val"

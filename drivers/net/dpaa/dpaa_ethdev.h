@@ -42,6 +42,7 @@
 
 /* RX queue tail drop threshold (CGR Based) in frame count */
 #define CGR_RX_PERFQ_THRESH 256
+#define CGR_TX_CGR_THRESH 512
 
 /*max mac filter for memac(8) including primary mac addr*/
 #define DPAA_MAX_MAC_FILTER (MEMAC_NUM_OF_PADDRS + 1)
@@ -114,11 +115,11 @@ struct dpaa_if {
 	struct qman_fq *rx_queues;
 	struct qman_cgr *cgr_rx;
 	struct qman_fq *tx_queues;
+	struct qman_cgr *cgr_tx;
 	struct qman_fq debug_queues[2];
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
-	struct fman_if *fif;
 	struct dpaa_bp_info *bp_info;
 	struct rte_eth_fc_conf *fc_conf;
 	void *port_handle;
@@ -192,5 +193,4 @@ dpaa_rx_cb_atomic(void *event,
 		  struct qman_fq *fq,
 		  const struct qm_dqrr_entry *dqrr,
 		  void **bufs);
-
 #endif

@@ -15,7 +15,7 @@ Build DPDK
 ---------------
 By default IEEE1588 is kept disabled
 To enable, set  'CONFIG_RTE_LIBRTE_IEEE1588=y' in
-config/defconfig_arm64-dpaa2-linuxapp-gcc
+config/defconfig_arm64-dpaa-linuxapp-gcc
 
 Now, follow DPDK build procedure mentioned in nxp/README
 to build DPDK

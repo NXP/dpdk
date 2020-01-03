@@ -55,4 +55,6 @@ struct qdma_test_case {
 #define ARG_PCI_ADDR (1 << 0)
 #define ARG_SIZE (1 << 1)
 #define ARG_TEST_ID (1 << 2)
+#define ARG_LATENCY (1 << 3)
+#define ARG_PCI_SIZE (1 << 4)
 #endif

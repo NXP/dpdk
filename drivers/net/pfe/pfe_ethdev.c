@@ -421,8 +421,11 @@ pfe_eth_close(struct rte_eth_dev *dev)
 }
 
 static int
-pfe_eth_configure(struct rte_eth_dev *dev __rte_unused)
+pfe_eth_configure(struct rte_eth_dev *dev)
 {
+	if (dev->data->dev_conf.rxmode.offloads & DEV_RX_OFFLOAD_KEEP_CRC)
+		PFE_PMD_ERR("PMD does not support KEEP_CRC offload");
+
 	return 0;
 }
 
@@ -580,7 +583,7 @@ static int
 pfe_eth_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 {
 	int ret, ioctl_cmd = 0;
-	struct pfe_eth_priv_s *priv = dev->data->dev_private;
+	struct pfe_eth_priv_s *priv;
 	struct rte_eth_link link, old;
 	unsigned int lstatus = 1;
 
@@ -588,7 +591,7 @@ pfe_eth_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 		PFE_PMD_ERR("Invalid device in link_update.\n");
 		return 0;
 	}
-
+	priv = dev->data->dev_private;
 	memset(&old, 0, sizeof(old));
 	memset(&link, 0, sizeof(struct rte_eth_link));
 
@@ -606,8 +609,7 @@ pfe_eth_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 		ret = ioctl(priv->link_fd, ioctl_cmd, &lstatus);
 		if (ret != 0) {
 			PFE_PMD_ERR("Unable to fetch link status (ioctl)\n");
-			/* use dummy link value */
-			link.link_status = 1;
+			return -1;
 		}
 		PFE_PMD_DEBUG("Fetched link state (%d) for dev %d.\n",
 			      lstatus, priv->id);
@@ -1122,11 +1124,12 @@ eth_init:
 		name, gem_id, init_params.gem_id);
 
 	rc = pfe_eth_init(vdev, g_pfe, gem_id);
-	if (rc < 0)
+	if (rc < 0) {
+		if (g_pfe->nb_devs)
+			return rc;
 		goto err_eth;
-	else
-		g_pfe->nb_devs++;
-
+	}
+	g_pfe->nb_devs++;
 	return 0;
 
 err_eth:

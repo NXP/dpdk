@@ -587,7 +587,7 @@ cperf_create_session(struct rte_mempool *sess_mp,
 
 		/* Create security session */
 		return (void *)rte_security_session_create(ctx,
-					&sess_conf, sess_mp);
+					&sess_conf, priv_mp);
 	}
 #endif
 	sess = rte_cryptodev_sym_session_create(sess_mp);

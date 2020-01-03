@@ -44,6 +44,12 @@ extern uint32_t dpaa2_svr_family;
 struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d);
 
 /**
+ * qbman_swp_update() - Update portal cacheability attributes.
+ * @p: the given qbman swp portal
+ */
+int qbman_swp_update(struct qbman_swp *p, int stash_off);
+
+/**
  * qbman_swp_finish() - Create and destroy a functional object representing
  * the given QBMan portal descriptor.
  * @p: the qbman_swp object to be destroyed.

@@ -1843,17 +1843,13 @@ pdcp_insert_cplane_snow_zuc_op(struct program *p,
 		return -ENOTSUP;
 	}
 
-	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
-	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
-	    cipherdata->keylen, INLINE_KEY(cipherdata));
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
-	    INLINE_KEY(authdata));
-
-	SET_LABEL(p, keyjump);
-
 	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
 		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
+		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+		    cipherdata->keylen, INLINE_KEY(cipherdata));
+		KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+		    INLINE_KEY(authdata));
 
 		if (sn_size == PDCP_SN_SIZE_5)
 			pclid = OP_PCLID_LTE_PDCP_CTRL_MIXED;
@@ -1887,6 +1883,13 @@ pdcp_insert_cplane_snow_zuc_op(struct program *p,
 
 	}
 
+	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
+	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+	    cipherdata->keylen, INLINE_KEY(cipherdata));
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+	    INLINE_KEY(authdata));
+
+	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
@@ -1964,15 +1967,13 @@ pdcp_insert_cplane_aes_zuc_op(struct program *p,
 		return -ENOTSUP;
 	}
 
-	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
-	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
-	    cipherdata->keylen, INLINE_KEY(cipherdata));
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
-	    INLINE_KEY(authdata));
-
 	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
 		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
+		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+		    cipherdata->keylen, INLINE_KEY(cipherdata));
+		KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+		    INLINE_KEY(authdata));
 
 		if (sn_size == PDCP_SN_SIZE_5)
 			pclid = OP_PCLID_LTE_PDCP_CTRL_MIXED;
@@ -2006,8 +2007,14 @@ pdcp_insert_cplane_aes_zuc_op(struct program *p,
 		return -ENOTSUP;
 
 	}
+	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
+	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+	    cipherdata->keylen, INLINE_KEY(cipherdata));
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+	    INLINE_KEY(authdata));
 
 	SET_LABEL(p, keyjump);
+
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);
 	MOVEB(p, MATH0, offset, IFIFOAB2, 0, length, IMMED);
@@ -2088,15 +2095,13 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 		return -ENOTSUP;
 	}
 
-	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
-	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
-	    cipherdata->keylen, INLINE_KEY(cipherdata));
-	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
-	    INLINE_KEY(authdata));
-
 	if ((rta_sec_era >= RTA_SEC_ERA_8 && sn_size != PDCP_SN_SIZE_18) ||
 		(rta_sec_era == RTA_SEC_ERA_10)) {
 		int pclid;
+		KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+		    cipherdata->keylen, INLINE_KEY(cipherdata));
+		KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+		    INLINE_KEY(authdata));
 
 		if (sn_size == PDCP_SN_SIZE_5)
 			pclid = OP_PCLID_LTE_PDCP_CTRL_MIXED;
@@ -2130,6 +2135,12 @@ pdcp_insert_cplane_zuc_snow_op(struct program *p,
 		return -ENOTSUP;
 
 	}
+	pkeyjump = JUMP(p, keyjump, LOCAL_JUMP, ALL_TRUE, SHRD | SELF | BOTH);
+	KEY(p, KEY1, cipherdata->key_enc_flags, cipherdata->key,
+	    cipherdata->keylen, INLINE_KEY(cipherdata));
+	KEY(p, KEY2, authdata->key_enc_flags, authdata->key, authdata->keylen,
+	    INLINE_KEY(authdata));
+
 	SET_LABEL(p, keyjump);
 	SEQLOAD(p, MATH0, offset, length, 0);
 	JUMP(p, 1, LOCAL_JUMP, ALL_TRUE, CALM);

@@ -77,7 +77,7 @@ fill_session_pool_socket(int32_t socket_id, uint32_t session_priv_size,
 			"priv_sess_mp_%u", socket_id);
 
 		sess_mp = rte_mempool_create(mp_name,
-					nb_sessions,
+					2 * nb_sessions,
 					session_priv_size,
 					0, 0, NULL, NULL, NULL,
 					NULL, socket_id,

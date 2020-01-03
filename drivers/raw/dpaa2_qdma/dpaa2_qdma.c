@@ -455,9 +455,10 @@ rte_qdma_reset(void)
 	/* In case there are pending jobs on any VQ, return -EBUSY */
 	for (i = 0; i < qdma_dev.max_vqs; i++) {
 		if (qdma_vqs[i].in_use && (qdma_vqs[i].num_enqueues !=
-		    qdma_vqs[i].num_dequeues))
+		    qdma_vqs[i].num_dequeues)) {
 			DPAA2_QDMA_ERR("Jobs are still pending on VQ: %d", i);
 			return -EBUSY;
+		}
 	}
 
 	/* Reset HW queues */
@@ -666,7 +667,9 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
@@ -788,7 +791,9 @@ dpdmai_dev_dequeue_multijob_prefetch(
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
@@ -929,7 +934,9 @@ dpdmai_dev_dequeue_multijob_no_prefetch(
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR("Failure in affining portal");
+			DPAA2_QDMA_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return 0;
 		}
 	}
