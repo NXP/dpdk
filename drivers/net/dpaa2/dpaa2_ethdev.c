@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2019 NXP
+ *   Copyright 2016-2020 NXP
  *
  */
 
@@ -2462,6 +2462,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->max_vlan_filters = attr.vlan_filter_entries;
 	priv->flags = 0;
 #if defined(RTE_LIBRTE_IEEE1588)
+	printf("DPDK IEEE1588 is enabled\n");
 	priv->tx_conf_en = 1;
 #else
 	priv->tx_conf_en = 0;

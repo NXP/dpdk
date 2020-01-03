@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2016 Freescale Semiconductor, Inc.
-# Copyright 2017-2019 NXP
+# Copyright 2017-2020 NXP
 
 #include "defconfig_arm64-armv8a-linux-gcc"
 
@@ -48,6 +48,9 @@ CONFIG_RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022=y
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR=y
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=y
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR_DEBUG=n
+
+# Enable IEEE1588
+CONFIG_RTE_LIBRTE_IEEE1588=n
 
 # Disable unnecessary drivers to reduce size
 CONFIG_RTE_LIBRTE_AVP_PMD=n
