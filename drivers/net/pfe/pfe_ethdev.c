@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include <sys/ioctl.h>
@@ -396,7 +396,6 @@ pfe_eth_exit(struct rte_eth_dev *dev, struct pfe *pfe)
 	/* Close the device file for link status */
 	pfe_eth_close_cdev(dev->data->dev_private);
 
-	rte_free(dev->data->mac_addrs);
 	rte_eth_dev_release_port(dev);
 	pfe->nb_devs--;
 }
