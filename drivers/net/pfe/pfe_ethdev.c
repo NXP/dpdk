@@ -421,8 +421,11 @@ pfe_eth_close(struct rte_eth_dev *dev)
 }
 
 static int
-pfe_eth_configure(struct rte_eth_dev *dev __rte_unused)
+pfe_eth_configure(struct rte_eth_dev *dev)
 {
+	if (dev->data->dev_conf.rxmode.offloads & DEV_RX_OFFLOAD_KEEP_CRC)
+		PFE_PMD_ERR("PMD does not support KEEP_CRC offload");
+
 	return 0;
 }
 
