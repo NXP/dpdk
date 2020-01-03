@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include "pfe_logs.h"
@@ -9,6 +9,8 @@
 #include <sys/eventfd.h>
 #include <arpa/inet.h>
 
+#define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
+#define msleep(x) rte_delay_us(1000 * (x))
 static int
 pfe_hif_alloc_descr(struct pfe_hif *hif)
 {
@@ -767,7 +769,7 @@ pfe_hif_rx_idle(struct pfe_hif *hif)
 		if (rx_status & BDP_CSR_RX_DMA_ACTV)
 			send_dummy_pkt_to_hif();
 
-		sleep(1);
+		msleep(DIV_ROUND_UP(100, 1000));
 	} while (--hif_stop_loop);
 
 	if (readl(HIF_RX_STATUS) & BDP_CSR_RX_DMA_ACTV)
