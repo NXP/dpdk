@@ -2,6 +2,7 @@
  *
  * Copyright 2010-2011 Freescale Semiconductor, Inc.
  * All rights reserved.
+ * Copyright 2020 NXP
  *
  */
 
@@ -73,5 +74,21 @@ struct dpaa_ioctl_irq_map {
 
 int process_portal_irq_map(int fd,  struct dpaa_ioctl_irq_map *irq);
 int process_portal_irq_unmap(int fd);
+
+struct usdpaa_ioctl_link_status {
+	char            if_name[IF_NAME_MAX_LEN];
+	uint32_t        efd;
+};
+
+int rte_dpaa_intr_enable(char *if_name, int efd);
+int rte_dpaa_intr_disable(char *if_name);
+
+struct usdpaa_ioctl_link_status_args {
+	/* network device node name */
+	char    if_name[IF_NAME_MAX_LEN];
+	int     link_status;
+};
+
+int rte_dpaa_get_link_status(char *if_name);
 
 #endif	/*  __PROCESS_H */
