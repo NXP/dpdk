@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2019 NXP
+ *   Copyright 2017-2020 NXP
  *
  */
 /* System headers */
@@ -46,6 +46,7 @@
 #include <fsl_qman.h>
 #include <fsl_bman.h>
 #include <fsl_fman.h>
+#include <process.h>
 
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
@@ -132,6 +133,9 @@ static struct rte_dpaa_driver rte_dpaa_pmd;
 
 static int
 dpaa_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info);
+
+static int dpaa_eth_link_update(struct rte_eth_dev *dev,
+				int wait_to_complete __rte_unused);
 
 static inline void
 dpaa_poll_queue_default_config(struct qm_mcc_initfq *opts)
@@ -281,14 +285,50 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev)
 	return NULL;
 }
 
+static void dpaa_interrupt_handler(void *param)
+{
+	struct rte_eth_dev *dev = param;
+	struct rte_device *rdev = dev->device;
+	struct rte_dpaa_device *dpaa_dev;
+	struct rte_intr_handle *intr_handle;
+	uint64_t buf;
+	int bytes_read;
+
+	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
+	intr_handle = &dpaa_dev->intr_handle;
+
+	bytes_read = read(intr_handle->fd, &buf, sizeof(uint64_t));
+	if (bytes_read < 0)
+		DPAA_PMD_ERR("Error reading eventfd\n");
+	dpaa_eth_link_update(dev, 0);
+	_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
+}
+
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct rte_device *rdev = dev->device;
+	struct rte_dpaa_device *dpaa_dev;
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+	struct rte_intr_handle *intr_handle;
+
+	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
+	intr_handle = &dpaa_dev->intr_handle;
+	__fif = container_of(fif, struct __fman_if, __if);
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (!(default_q || fmc_q))
 		dpaa_write_fm_config_to_file();
+
+	/* if the interrupts were configured on this devices*/
+	if (intr_handle && intr_handle->fd &&
+	    dev->data->dev_conf.intr_conf.lsc != 0)
+		rte_intr_callback_register(intr_handle, dpaa_interrupt_handler,
+					   (void *)dev);
+
+	rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
 
 	/* Change tx callback to the real one */
 	if (dpaa_intf->cgr_tx)
@@ -304,6 +344,22 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 {
 	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+	struct rte_device *rdev = dev->device;
+	struct rte_dpaa_device *dpaa_dev;
+	struct rte_intr_handle *intr_handle;
+
+	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
+	intr_handle = &dpaa_dev->intr_handle;
+	__fif = container_of(fif, struct __fman_if, __if);
+
+	rte_dpaa_intr_disable(__fif->node_name);
+
+	if (intr_handle && intr_handle->fd &&
+	    dev->data->dev_conf.intr_conf.lsc != 0)
+		rte_intr_callback_unregister(intr_handle,
+					     dpaa_interrupt_handler,
+					     (void *)dev);
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -401,6 +457,8 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_link *link = &dev->data->dev_link;
 	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif = container_of(fif, struct __fman_if, __if);
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -414,9 +472,18 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 		DPAA_PMD_ERR("invalid link_speed: %s, %d",
 			     dpaa_intf->name, fif->mac_type);
 
-	link->link_status = dpaa_intf->valid;
+	ret = rte_dpaa_get_link_status(__fif->node_name);
+	if (ret < 0) {
+		DPAA_PMD_DEBUG("error: rte_dpaa_get_link_status %d", ret);
+		return ret;
+	}
+
+	link->link_status = ret;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
 	link->link_autoneg = ETH_LINK_AUTONEG;
+
+	DPAA_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
+		      link->link_status ? "Up" : "Down");
 	return 0;
 }
 
@@ -1821,7 +1888,7 @@ dpaa_dev_uninit(struct rte_eth_dev *dev)
 }
 
 static int
-rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
+rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 	       struct rte_dpaa_device *dpaa_dev)
 {
 	int diag;
@@ -1929,6 +1996,9 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
 
 	qman_ern_register_cb(dpaa_free_mbuf);
 
+	if (dpaa_drv->drv_flags & RTE_DPAA_DRV_INTR_LSC)
+		eth_dev->data->dev_flags |= RTE_ETH_DEV_INTR_LSC;
+
 	/* Invoke PMD device initialization function */
 	diag = dpaa_dev_init(eth_dev);
 	if (diag == 0) {
@@ -1992,6 +2062,7 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 }
 
 static struct rte_dpaa_driver rte_dpaa_pmd = {
+	.drv_flags = RTE_DPAA_DRV_INTR_LSC,
 	.drv_type = FSL_DPAA_ETH,
 	.probe = rte_dpaa_probe,
 	.remove = rte_dpaa_remove,
