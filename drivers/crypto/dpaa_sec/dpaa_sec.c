@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- * Copyright 2017-2019 NXP
+ * Copyright 2017-2020 NXP
  */
 
 #include <fcntl.h>
@@ -93,31 +93,6 @@ dpaa_sec_alloc_ctx(dpaa_sec_session *ses, int sg_count)
 	return ctx;
 }
 
-static inline rte_iova_t
-dpaa_mem_vtop(void *vaddr)
-{
-	const struct rte_memseg *ms;
-
-	ms = rte_mem_virt2memseg(vaddr, NULL);
-	if (ms) {
-		dpaax_iova_table_update(ms->iova, ms->addr, ms->len);
-		return ms->iova + RTE_PTR_DIFF(vaddr, ms->addr);
-	}
-	return (size_t)NULL;
-}
-
-static inline void *
-dpaa_mem_ptov(rte_iova_t paddr)
-{
-	void *va;
-
-	va = (void *)dpaax_iova_table_get_va(paddr);
-	if (likely(va))
-		return va;
-
-	return rte_mem_iova2virt(paddr);
-}
-
 static void
 ern_sec_fq_handler(struct qman_portal *qm __rte_unused,
 		   struct qman_fq *fq,
@@ -182,7 +157,7 @@ dqrr_out_fq_cb_rx(struct qman_portal *qm __always_unused,
 	 * sg[0] is for output
 	 * sg[1] for input
 	 */
-	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+	job = rte_dpaa_mem_ptov(qm_fd_addr_get64(fd));
 
 	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
 	ctx->fd_status = fd->status;
@@ -303,12 +278,12 @@ dpaa_sec_prep_pdcp_cdb(dpaa_sec_session *ses)
 
 	if (!(cdb->sh_desc[2] & 1) && cipherdata.keylen) {
 		cipherdata.key =
-			(size_t)dpaa_mem_vtop((void *)(size_t)cipherdata.key);
+			(size_t)rte_dpaa_mem_vtop((void *)(size_t)cipherdata.key);
 		cipherdata.key_type = RTA_DATA_PTR;
 	}
 	if (!(cdb->sh_desc[2] & (1 << 1)) &&  authdata.keylen) {
 		authdata.key =
-			(size_t)dpaa_mem_vtop((void *)(size_t)authdata.key);
+			(size_t)rte_dpaa_mem_vtop((void *)(size_t)authdata.key);
 		authdata.key_type = RTA_DATA_PTR;
 	}
 
@@ -404,14 +379,14 @@ dpaa_sec_prep_ipsec_cdb(dpaa_sec_session *ses)
 	if (cdb->sh_desc[2] & 1)
 		cipherdata.key_type = RTA_DATA_IMM;
 	else {
-		cipherdata.key = (size_t)dpaa_mem_vtop(
+		cipherdata.key = (size_t)rte_dpaa_mem_vtop(
 					(void *)(size_t)cipherdata.key);
 		cipherdata.key_type = RTA_DATA_PTR;
 	}
 	if (cdb->sh_desc[2] & (1<<1))
 		authdata.key_type = RTA_DATA_IMM;
 	else {
-		authdata.key = (size_t)dpaa_mem_vtop(
+		authdata.key = (size_t)rte_dpaa_mem_vtop(
 					(void *)(size_t)authdata.key);
 		authdata.key_type = RTA_DATA_PTR;
 	}
@@ -590,14 +565,14 @@ dpaa_sec_prep_cdb(dpaa_sec_session *ses)
 		if (cdb->sh_desc[2] & 1)
 			alginfo_c.key_type = RTA_DATA_IMM;
 		else {
-			alginfo_c.key = (size_t)dpaa_mem_vtop(
+			alginfo_c.key = (size_t)rte_dpaa_mem_vtop(
 						(void *)(size_t)alginfo_c.key);
 			alginfo_c.key_type = RTA_DATA_PTR;
 		}
 		if (cdb->sh_desc[2] & (1<<1))
 			alginfo_a.key_type = RTA_DATA_IMM;
 		else {
-			alginfo_a.key = (size_t)dpaa_mem_vtop(
+			alginfo_a.key = (size_t)rte_dpaa_mem_vtop(
 						(void *)(size_t)alginfo_a.key);
 			alginfo_a.key_type = RTA_DATA_PTR;
 		}
@@ -673,7 +648,7 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 		 * sg[0] is for output
 		 * sg[1] for input
 		 */
-		job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+		job = rte_dpaa_mem_ptov(qm_fd_addr_get64(fd));
 
 		ctx = container_of(job, struct dpaa_sec_op_ctx, job);
 		ctx->fd_status = fd->status;
@@ -767,7 +742,7 @@ build_auth_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	in_sg->extension = 1;
 	in_sg->final = 1;
 	in_sg->length = data_len;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(&cf->sg[2]));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(&cf->sg[2]));
 
 	/* 1st seg */
 	sg = in_sg + 1;
@@ -787,7 +762,7 @@ build_auth_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		} else {
 			sg->length = ses->iv.length;
 		}
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(iv_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(iv_ptr));
 		in_sg->length += sg->length;
 		cpu_to_hw_sg(sg);
 		sg++;
@@ -820,7 +795,7 @@ build_auth_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg++;
 		rte_memcpy(old_digest, sym->auth.digest.data,
 				ses->digest_length);
-		start_addr = dpaa_mem_vtop(old_digest);
+		start_addr = rte_dpaa_mem_vtop(old_digest);
 		qm_sg_entry_set64(sg, start_addr);
 		sg->length = ses->digest_length;
 		in_sg->length += ses->digest_length;
@@ -887,7 +862,7 @@ build_auth_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	in_sg->extension = 1;
 	in_sg->final = 1;
 	in_sg->length = data_len;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(&cf->sg[2]));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(&cf->sg[2]));
 	sg = &cf->sg[2];
 
 	if (ses->iv.length) {
@@ -905,7 +880,7 @@ build_auth_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		} else {
 			sg->length = ses->iv.length;
 		}
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(iv_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(iv_ptr));
 		in_sg->length += sg->length;
 		cpu_to_hw_sg(sg);
 		sg++;
@@ -922,7 +897,7 @@ build_auth_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		rte_memcpy(old_digest, sym->auth.digest.data,
 				ses->digest_length);
 		/* let's check digest by hw */
-		start_addr = dpaa_mem_vtop(old_digest);
+		start_addr = rte_dpaa_mem_vtop(old_digest);
 		sg++;
 		qm_sg_entry_set64(sg, start_addr);
 		sg->length = ses->digest_length;
@@ -986,7 +961,7 @@ build_cipher_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	out_sg = &cf->sg[0];
 	out_sg->extension = 1;
 	out_sg->length = data_len;
-	qm_sg_entry_set64(out_sg, dpaa_mem_vtop(&cf->sg[2]));
+	qm_sg_entry_set64(out_sg, rte_dpaa_mem_vtop(&cf->sg[2]));
 	cpu_to_hw_sg(out_sg);
 
 	/* 1st seg */
@@ -1015,11 +990,11 @@ build_cipher_only_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	in_sg->length = data_len + ses->iv.length;
 
 	sg++;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(sg));
 	cpu_to_hw_sg(in_sg);
 
 	/* IV */
-	qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+	qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 	sg->length = ses->iv.length;
 	cpu_to_hw_sg(sg);
 
@@ -1097,11 +1072,11 @@ build_cipher_only(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	sg->extension = 1;
 	sg->final = 1;
 	sg->length = data_len + ses->iv.length;
-	qm_sg_entry_set64(sg, dpaa_mem_vtop(&cf->sg[2]));
+	qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(&cf->sg[2]));
 	cpu_to_hw_sg(sg);
 
 	sg = &cf->sg[2];
-	qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+	qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 	sg->length = ses->iv.length;
 	cpu_to_hw_sg(sg);
 
@@ -1162,7 +1137,7 @@ build_cipher_auth_gcm_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* output sg entries */
 	sg = &cf->sg[2];
-	qm_sg_entry_set64(out_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(out_sg, rte_dpaa_mem_vtop(sg));
 	cpu_to_hw_sg(out_sg);
 
 	/* 1st seg */
@@ -1205,18 +1180,18 @@ build_cipher_auth_gcm_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* input sg entries */
 	sg++;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(sg));
 	cpu_to_hw_sg(in_sg);
 
 	/* 1st seg IV */
-	qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+	qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 	sg->length = ses->iv.length;
 	cpu_to_hw_sg(sg);
 
 	/* 2nd seg auth only */
 	if (ses->auth_only_len) {
 		sg++;
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(sym->aead.aad.data));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(sym->aead.aad.data));
 		sg->length = ses->auth_only_len;
 		cpu_to_hw_sg(sg);
 	}
@@ -1242,7 +1217,7 @@ build_cipher_auth_gcm_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg++;
 		memcpy(ctx->digest, sym->aead.digest.data,
 			ses->digest_length);
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(ctx->digest));
 		sg->length = ses->digest_length;
 	}
 	sg->final = 1;
@@ -1280,9 +1255,9 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	/* input */
 	rte_prefetch0(cf->sg);
 	sg = &cf->sg[2];
-	qm_sg_entry_set64(&cf->sg[1], dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(&cf->sg[1], rte_dpaa_mem_vtop(sg));
 	if (is_encode(ses)) {
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 		sg->length = ses->iv.length;
 		length += sg->length;
 		cpu_to_hw_sg(sg);
@@ -1290,7 +1265,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg++;
 		if (ses->auth_only_len) {
 			qm_sg_entry_set64(sg,
-					  dpaa_mem_vtop(sym->aead.aad.data));
+					  rte_dpaa_mem_vtop(sym->aead.aad.data));
 			sg->length = ses->auth_only_len;
 			length += sg->length;
 			cpu_to_hw_sg(sg);
@@ -1302,7 +1277,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg->final = 1;
 		cpu_to_hw_sg(sg);
 	} else {
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 		sg->length = ses->iv.length;
 		length += sg->length;
 		cpu_to_hw_sg(sg);
@@ -1310,7 +1285,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg++;
 		if (ses->auth_only_len) {
 			qm_sg_entry_set64(sg,
-					  dpaa_mem_vtop(sym->aead.aad.data));
+					  rte_dpaa_mem_vtop(sym->aead.aad.data));
 			sg->length = ses->auth_only_len;
 			length += sg->length;
 			cpu_to_hw_sg(sg);
@@ -1325,7 +1300,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		       ses->digest_length);
 		sg++;
 
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(ctx->digest));
 		sg->length = ses->digest_length;
 		length += sg->length;
 		sg->final = 1;
@@ -1339,7 +1314,7 @@ build_cipher_auth_gcm(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* output */
 	sg++;
-	qm_sg_entry_set64(&cf->sg[0], dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(&cf->sg[0], rte_dpaa_mem_vtop(sg));
 	qm_sg_entry_set64(sg,
 		dst_start_addr + sym->aead.data.offset);
 	sg->length = sym->aead.data.length;
@@ -1408,7 +1383,7 @@ build_cipher_auth_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* output sg entries */
 	sg = &cf->sg[2];
-	qm_sg_entry_set64(out_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(out_sg, rte_dpaa_mem_vtop(sg));
 	cpu_to_hw_sg(out_sg);
 
 	/* 1st seg */
@@ -1450,11 +1425,11 @@ build_cipher_auth_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* input sg entries */
 	sg++;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(sg));
 	cpu_to_hw_sg(in_sg);
 
 	/* 1st seg IV */
-	qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+	qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 	sg->length = ses->iv.length;
 	cpu_to_hw_sg(sg);
 
@@ -1480,7 +1455,7 @@ build_cipher_auth_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg++;
 		memcpy(ctx->digest, sym->auth.digest.data,
 			ses->digest_length);
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(ctx->digest));
 		sg->length = ses->digest_length;
 	}
 	sg->final = 1;
@@ -1517,9 +1492,9 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	/* input */
 	rte_prefetch0(cf->sg);
 	sg = &cf->sg[2];
-	qm_sg_entry_set64(&cf->sg[1], dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(&cf->sg[1], rte_dpaa_mem_vtop(sg));
 	if (is_encode(ses)) {
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 		sg->length = ses->iv.length;
 		length += sg->length;
 		cpu_to_hw_sg(sg);
@@ -1531,7 +1506,7 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		sg->final = 1;
 		cpu_to_hw_sg(sg);
 	} else {
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(IV_ptr));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(IV_ptr));
 		sg->length = ses->iv.length;
 		length += sg->length;
 		cpu_to_hw_sg(sg);
@@ -1547,7 +1522,7 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 		       ses->digest_length);
 		sg++;
 
-		qm_sg_entry_set64(sg, dpaa_mem_vtop(ctx->digest));
+		qm_sg_entry_set64(sg, rte_dpaa_mem_vtop(ctx->digest));
 		sg->length = ses->digest_length;
 		length += sg->length;
 		sg->final = 1;
@@ -1561,7 +1536,7 @@ build_cipher_auth(struct rte_crypto_op *op, dpaa_sec_session *ses)
 
 	/* output */
 	sg++;
-	qm_sg_entry_set64(&cf->sg[0], dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(&cf->sg[0], rte_dpaa_mem_vtop(sg));
 	qm_sg_entry_set64(sg, dst_start_addr + sym->cipher.data.offset);
 	sg->length = sym->cipher.data.length;
 	length = sg->length;
@@ -1655,7 +1630,7 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	/* output */
 	out_sg = &cf->sg[0];
 	out_sg->extension = 1;
-	qm_sg_entry_set64(out_sg, dpaa_mem_vtop(&cf->sg[2]));
+	qm_sg_entry_set64(out_sg, rte_dpaa_mem_vtop(&cf->sg[2]));
 
 	/* 1st seg */
 	sg = &cf->sg[2];
@@ -1688,7 +1663,7 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	in_len = mbuf->data_len;
 
 	sg++;
-	qm_sg_entry_set64(in_sg, dpaa_mem_vtop(sg));
+	qm_sg_entry_set64(in_sg, rte_dpaa_mem_vtop(sg));
 
 	/* 1st seg */
 	qm_sg_entry_set64(sg, rte_pktmbuf_mtophys(mbuf));
@@ -1883,7 +1858,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			inq[loop] = ses->inq[rte_lcore_id() % MAX_DPAA_CORES];
 			fd->opaque_addr = 0;
 			fd->cmd = 0;
-			qm_fd_addr_set64(fd, dpaa_mem_vtop(cf->sg));
+			qm_fd_addr_set64(fd, rte_dpaa_mem_vtop(cf->sg));
 			fd->_format1 = qm_fd_compound;
 			fd->length29 = 2 * sizeof(struct qm_sg_entry);
 
@@ -2321,7 +2296,7 @@ dpaa_sec_detach_rxq(struct dpaa_sec_dev_private *qi, struct qman_fq *fq)
 	for (i = 0; i < RTE_DPAA_MAX_RX_QUEUE; i++) {
 		if (&qi->inq[i] == fq) {
 			if (qman_retire_fq(fq, NULL) != 0)
-				DPAA_SEC_WARN("Queue is not retired\n");
+				DPAA_SEC_DEBUG("Queue is not retired\n");
 			qman_oos_fq(fq);
 			qi->inq_attach[i] = 0;
 			return 0;
@@ -2349,7 +2324,7 @@ dpaa_sec_attach_sess_q(struct dpaa_sec_qp *qp, dpaa_sec_session *sess)
 		}
 	}
 	ret = dpaa_sec_init_rx(sess->inq[rte_lcore_id() % MAX_DPAA_CORES],
-			       dpaa_mem_vtop(&sess->cdb),
+			       rte_dpaa_mem_vtop(&sess->cdb),
 			       qman_fq_fqid(&qp->outq));
 	if (ret)
 		DPAA_SEC_ERR("Unable to init sec queue");
@@ -3142,7 +3117,7 @@ dpaa_sec_process_parallel_event(void *event,
 	 * sg[0] is for output
 	 * sg[1] for input
 	 */
-	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+	job = rte_dpaa_mem_ptov(qm_fd_addr_get64(fd));
 
 	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
 	ctx->fd_status = fd->status;
@@ -3197,7 +3172,7 @@ dpaa_sec_process_atomic_event(void *event,
 	 * sg[0] is for output
 	 * sg[1] for input
 	 */
-	job = dpaa_mem_ptov(qm_fd_addr_get64(fd));
+	job = rte_dpaa_mem_ptov(qm_fd_addr_get64(fd));
 
 	ctx = container_of(job, struct dpaa_sec_op_ctx, job);
 	ctx->fd_status = fd->status;
