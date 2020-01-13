@@ -90,6 +90,9 @@ DPDK_20.0 {
 	qman_volatile_dequeue;
 	rte_dpaa_driver_register;
 	rte_dpaa_driver_unregister;
+	rte_dpaa_get_link_status;
+	rte_dpaa_intr_disable;
+	rte_dpaa_intr_enable;
 	rte_dpaa_mem_ptov;
 	rte_dpaa_portal_fq_close;
 	rte_dpaa_portal_fq_init;
