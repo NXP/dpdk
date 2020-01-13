@@ -59,7 +59,9 @@ done
 
 if [ -e "/proc/sys/kernel/sched_rt_runtime_us" ]
 then
-	echo -1 > /proc/sys/kernel/sched_rt_runtime_us
+	# Reserve 0.4% CPU when core 0 is used for tasks running in non-rt priority
+	# This does not impact any CPU reservation when core 0 is not used
+	echo 996000 > /proc/sys/kernel/sched_rt_runtime_us
 	echo "WARN: Hereafter, don't execute RT tasks on Core 0"
 else
 	echo "Unable to reduce non-RT timeslice; Performance will be reduced"
