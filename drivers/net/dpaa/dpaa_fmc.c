@@ -206,8 +206,10 @@ static int dpaa_port_fmc_port_parse(
 	int current_port = fmc_model->apply_order[apply_idx].index;
 	const fmc_port *pport = &fmc_model->port[current_port];
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
+	const uint8_t mac_type[] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2};
 
-	if (mac_idx[fif->mac_idx] != pport->number)
+	if (mac_idx[fif->mac_idx] != pport->number ||
+		mac_type[fif->mac_idx] != pport->type)
 		return -1;
 
 	return current_port;
