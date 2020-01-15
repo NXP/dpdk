@@ -60,6 +60,7 @@ DPDK_17.11 {
 	rte_dpaa_intr_enable;
 	rte_dpaa_mem_ptov;
 	rte_dpaa_portal_init;
+	rte_dpaa_update_link_status;
 
 	local: *;
 };
