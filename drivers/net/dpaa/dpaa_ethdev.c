@@ -474,8 +474,13 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 
 	ret = rte_dpaa_get_link_status(__fif->node_name);
 	if (ret < 0) {
-		DPAA_PMD_DEBUG("error: rte_dpaa_get_link_status %d", ret);
-		return ret;
+		if (ret == -EINVAL) {
+			DPAA_PMD_DEBUG("Using default link status-No Support");
+			ret = 1;
+		} else {
+			DPAA_PMD_ERR("rte_dpaa_get_link_status %d", ret);
+			return ret;
+		}
 	}
 
 	link->link_status = ret;
