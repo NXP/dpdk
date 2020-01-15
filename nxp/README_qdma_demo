@@ -52,7 +52,7 @@ source /usr/bin/dpdk-example/extras/dpaa2/dynamic_dpl.sh dpmac.5
 export DPRC=dprc.2
 
 ------------------------------------------------------
-l2fwd–qdma - Layer 2 Forwarding Application using QDMA
+l2fwd-qdma - Layer 2 Forwarding Application using QDMA
 ------------------------------------------------------
 
 Sample application to show forwarding between multiple ports based on the
@@ -205,4 +205,12 @@ bandwidth number. To test read/write big memory size, you can optionally pass
 
 e.g for 2MB PCI use:  --pci_size=2147483648
 
+LATENCY_TEST
+------------
 add "--latency_test" for testing latency
+
+MEMCOPY
+-------
+
+One can use --memcpy option to use core instead of qdma engine for comparision reasons.
+
