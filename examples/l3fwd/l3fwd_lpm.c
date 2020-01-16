@@ -15,7 +15,6 @@
 #include <stdbool.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 
 #include <rte_debug.h>
 #include <rte_ether.h>
@@ -285,7 +284,7 @@ lpm_main_loop(__attribute__((unused)) void *dummy)
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	unsigned lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc;
-	int i, nb_rx, total_nb_rx = 0, idle_iter = 0;
+	int i, nb_rx;
 	uint16_t portid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
@@ -319,7 +318,6 @@ lpm_main_loop(__attribute__((unused)) void *dummy)
 	while (!force_quit) {
 
 		cur_tsc = rte_rdtsc();
-		total_nb_rx = 0;
 
 		/*
 		 * TX burst queue drain
@@ -359,21 +357,6 @@ lpm_main_loop(__attribute__((unused)) void *dummy)
 			l3fwd_lpm_no_opt_send_packets(nb_rx, pkts_burst,
 							portid, qconf);
 #endif /* X86 */
-			total_nb_rx += nb_rx;
-			/* At least one queue has packets */
-			idle_iter = 0;
-		}
-
-		/* Yield the CPU for a few microseconds, allowing Core 0
-		 * some breathing space.
-		 */
-#define DPAAX_IDLE_LOOPS 100
-#define DPAAX_IDLE_TIMEOUT 5
-		if (lcore_id == 0 && total_nb_rx == 0) {
-			if (idle_iter > DPAAX_IDLE_LOOPS)
-				usleep(DPAAX_IDLE_TIMEOUT);
-			else
-				idle_iter++;
 		}
 	}
 

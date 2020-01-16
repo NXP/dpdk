@@ -317,7 +317,7 @@ int rte_dpaa_intr_enable(char *if_name, int efd)
 
 	ret = ioctl(fd, DPAA_IOCTL_ENABLE_LINK_STATUS_INTERRUPT, &args);
 	if (ret) {
-		perror("Failed to enable interrupt\n");
+		printf("Failed to enable interrupt: Not Supported\n");
 		return ret;
 	}
 
@@ -333,7 +333,7 @@ int rte_dpaa_intr_disable(char *if_name)
 
 	ret = ioctl(fd, DPAA_IOCTL_DISABLE_LINK_STATUS_INTERRUPT, &if_name);
 	if (ret) {
-		perror("Failed to disable interrupt\n");
+		printf("Failed to disable interrupt: Not Supported\n");
 		return ret;
 	}
 
@@ -356,8 +356,8 @@ int rte_dpaa_get_link_status(char *if_name)
 
 	ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS, &args);
 	if (ret) {
-		perror("Failed to get link status\n");
-		return ret;
+		printf("Failed to get link status: Not Supported\n");
+		return -errno;
 	}
 
 	return args.link_status;
