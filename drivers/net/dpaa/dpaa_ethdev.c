@@ -326,12 +326,8 @@ static void dpaa_interrupt_handler(void *param)
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct fman_if *fif = dev->process_private;
-	struct __fman_if *__fif;
 
 	PMD_INIT_FUNC_TRACE();
-
-	__fif = container_of(fif, struct __fman_if, __if);
 
 	if (!(default_q || fmc_q))
 		dpaa_write_fm_config_to_file();
@@ -350,13 +346,8 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 {
 	struct fman_if *fif = dev->process_private;
-	struct __fman_if *__fif;
 
 	PMD_INIT_FUNC_TRACE();
-
-	__fif = container_of(fif, struct __fman_if, __if);
-
-	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
 
 	if (!fif->is_shared_mac)
 		fman_if_disable_rx(fif);
@@ -1061,17 +1052,27 @@ dpaa_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 
 static int dpaa_link_down(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa_eth_dev_stop(dev);
+	__fif = container_of(fif, struct __fman_if, __if);
+
+	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
 	return 0;
 }
 
 static int dpaa_link_up(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa_eth_dev_start(dev);
+	__fif = container_of(fif, struct __fman_if, __if);
+
+	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
 	return 0;
 }
 
