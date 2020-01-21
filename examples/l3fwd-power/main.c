@@ -1336,7 +1336,7 @@ start_rx:
 				 */
 				rte_delay_us(lcore_idle_hint);
 			else {
-				/* suspend until rx interrupt trigges */
+				/* suspend until rx interrupt triggers */
 				if (intr_en) {
 					turn_on_intr(qconf);
 					sleep_until_rx_interrupt(
