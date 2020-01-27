@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2019 NXP
+# Copyright 2018-2020 NXP
 
 cat > script_help << EOF
 
@@ -467,7 +467,7 @@ get_dpci_parameters() {
 get_dpdmai_parameters() {
 	if [[ -z "$DPDMAI_COUNT" ]]
 	then
-		DPDMAI_COUNT=2
+		DPDMAI_COUNT=8
 	fi
 	echo "DPDMAI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPDMAI_COUNT = "$DPDMAI_COUNT >> dynamic_dpl_logs
