@@ -3,9 +3,11 @@
  */
 #include <rte_bitmap.h>
 #include <rte_ethdev.h>
+#include <rte_cryptodev.h>
 #include <rte_eventdev.h>
 #include <rte_event_eth_rx_adapter.h>
 #include <rte_event_eth_tx_adapter.h>
+#include <rte_event_crypto_adapter.h>
 #include <rte_malloc.h>
 #include <stdbool.h>
 
@@ -530,6 +532,106 @@ eh_set_default_conf_tx_adapter(struct eventmode_conf *em_conf)
 }
 
 static int
+eh_set_default_conf_crypto_adapter(struct eventmode_conf *em_conf)
+{
+	struct crypto_adapter_connection_info *conn;
+	struct eventdev_params *eventdev_config;
+	struct crypto_adapter_conf *adapter;
+	bool internal_port = true;
+	bool single_ev_queue = false;
+	int nb_eventqueue;
+	uint32_t caps = 0;
+	int eventdev_id;
+	int nb_cryptodev;
+	int adapter_id;
+	int conn_id;
+	int i;
+
+	/* Create one adapter with crypto queues mapped to event queue(s) */
+
+	if (em_conf->nb_eventdev == 0) {
+		EH_LOG_ERR("No event devs registered");
+		return -EINVAL;
+	}
+
+	/* Get the number of crypto devs */
+	nb_cryptodev = rte_cryptodev_count();
+
+	/* Use the first event dev */
+	eventdev_config = &(em_conf->eventdev_config[0]);
+
+	/* Get eventdev ID */
+	eventdev_id = eventdev_config->eventdev_id;
+	adapter_id = 0;
+
+	/* Get adapter conf */
+	adapter = &(em_conf->crypto_adapter[adapter_id]);
+
+	/* Set adapter conf */
+	adapter->eventdev_id = eventdev_id;
+	adapter->adapter_id = adapter_id;
+
+	/*
+	 * If event device does not have internal ports for passing
+	 * packets then reserved one queue for Tx path
+	 */
+	nb_eventqueue = eventdev_config->all_internal_ports ?
+			eventdev_config->nb_eventqueue :
+			eventdev_config->nb_eventqueue - 1;
+
+	/*
+	 * Map all queues of cryptodev to an event queue. If there
+	 * are more event queues than cryptodevs then create 1:1 mapping.
+	 * Otherwise map all cryptodevs to a single event queue.
+	 */
+	if (nb_cryptodev > nb_eventqueue)
+		single_ev_queue = true;
+
+	for (i = 0; i < nb_cryptodev; i++) {
+
+		/* Use only the ports enabled */
+		if ((em_conf->cryptodev_mask & (1 << i)) == 0)
+			continue;
+
+		/* Get the connection id */
+		conn_id = adapter->nb_connections;
+
+		/* Get the connection */
+		conn = &(adapter->conn[conn_id]);
+
+		/* Set mapping between cryptodevs & event queues*/
+		conn->cdev_id = i;
+		conn->eventq_id = single_ev_queue ? 0 : i;
+
+		/* Add all crypto queues to event queue */
+		conn->cdev_qpid = -1;
+
+		/* Get Crypto adapter capabilities */
+		rte_event_crypto_adapter_caps_get(eventdev_id, i, &caps);
+		if (!((caps & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW)
+			|| (caps & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD)))
+			internal_port = false;
+
+		/* Update no of connections */
+		adapter->nb_connections++;
+
+	}
+
+	if (internal_port) {
+		/* Rx core is not required */
+		adapter->rx_core_id = -1;
+	} else {
+		/* Rx core is required */
+		adapter->rx_core_id = eh_get_next_eth_core(em_conf);
+	}
+
+	/* We have setup one adapter */
+	em_conf->nb_crypto_adapter = 1;
+
+	return 0;
+}
+
+static int
 eh_validate_conf(struct eventmode_conf *em_conf)
 {
 	int ret;
@@ -573,6 +675,16 @@ eh_validate_conf(struct eventmode_conf *em_conf)
 	 */
 	if (em_conf->nb_tx_adapter == 0) {
 		ret = eh_set_default_conf_tx_adapter(em_conf);
+		if (ret != 0)
+			return ret;
+	}
+
+	/*
+	 * Check if Crypto adapters are specified. Else generate a default
+	 * config with one crypto adapter.
+	 */
+	if (em_conf->nb_crypto_adapter == 0) {
+		ret = eh_set_default_conf_crypto_adapter(em_conf);
 		if (ret != 0)
 			return ret;
 	}
@@ -1296,6 +1408,92 @@ eh_initialize_tx_adapter(struct eventmode_conf *em_conf)
 	return 0;
 }
 
+static int
+eh_crypto_adapter_configure(struct eventmode_conf *em_conf,
+		struct crypto_adapter_conf *adapter)
+{
+	struct rte_event_dev_info evdev_default_conf = {0};
+	struct rte_event_port_conf port_conf = {0};
+	struct crypto_adapter_connection_info *conn;
+	uint8_t eventdev_id;
+	int ret, j;
+
+	/* Get event dev ID */
+	eventdev_id = adapter->eventdev_id;
+
+	/* Get default configuration of event dev */
+	ret = rte_event_dev_info_get(eventdev_id, &evdev_default_conf);
+	if (ret < 0) {
+		EH_LOG_ERR("Failed to get event dev info %d", ret);
+		return ret;
+	}
+
+	/* Setup port conf */
+	port_conf.new_event_threshold =
+			evdev_default_conf.max_num_events;
+	port_conf.dequeue_depth =
+			evdev_default_conf.max_event_port_dequeue_depth;
+	port_conf.enqueue_depth =
+			evdev_default_conf.max_event_port_enqueue_depth;
+
+	/* Create adapter */
+	ret = rte_event_crypto_adapter_create(adapter->adapter_id,
+			adapter->eventdev_id, &port_conf,
+			RTE_EVENT_CRYPTO_ADAPTER_OP_NEW);
+	if (ret < 0) {
+		EH_LOG_ERR("Failed to create crypto adapter %d", ret);
+		return ret;
+	}
+
+	/* Setup various connections in the adapter */
+	for (j = 0; j < adapter->nb_connections; j++) {
+		struct rte_event ev = {0};
+#define DEFAULT_EV_FLOWID	0
+#define DEFAULT_EV_PRIORITY	0
+
+		/* Get connection */
+		conn = &(adapter->conn[j]);
+		ev.flow_id = DEFAULT_EV_FLOWID;
+		ev.sched_type = em_conf->ext_params.sched_type;
+		ev.event_type = RTE_EVENT_TYPE_CRYPTODEV;
+		ev.priority = DEFAULT_EV_PRIORITY;
+		ev.queue_id = conn->eventq_id;
+
+		/* Add queue to the adapter */
+		ret = rte_event_crypto_adapter_queue_pair_add(
+				adapter->adapter_id,
+				conn->cdev_id,
+				conn->cdev_qpid,
+				&ev);
+		if (ret < 0) {
+			EH_LOG_ERR("Failed to add crypto queue to adapter %d",
+				   ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+
+static int
+eh_initialize_crypto_adapter(struct eventmode_conf *em_conf)
+{
+	struct crypto_adapter_conf *adapter;
+	int i, ret;
+
+	/* Configure Crypto adapters */
+	for (i = 0; i < em_conf->nb_crypto_adapter; i++) {
+		adapter = &(em_conf->crypto_adapter[i]);
+		ret = eh_crypto_adapter_configure(em_conf, adapter);
+		if (ret < 0) {
+			EH_LOG_ERR("Failed to configure Crypto adapter %d", ret);
+			return ret;
+		}
+	}
+	return 0;
+}
+
 static void
 eh_display_operating_mode(struct eventmode_conf *em_conf)
 {
@@ -1620,7 +1818,7 @@ int32_t
 eh_devs_init(struct eh_conf *conf)
 {
 	struct eventmode_conf *em_conf;
-	uint16_t port_id;
+	uint16_t port_id, cdev_id;
 	int ret;
 
 	if (conf == NULL) {
@@ -1641,6 +1839,7 @@ eh_devs_init(struct eh_conf *conf)
 
 	/* Eventmode conf would need eth portmask */
 	em_conf->eth_portmask = conf->eth_portmask;
+	em_conf->cryptodev_mask = conf->cryptodev_mask;
 
 	/* Validate the requested config */
 	ret = eh_validate_conf(em_conf);
@@ -1667,6 +1866,15 @@ eh_devs_init(struct eh_conf *conf)
 		}
 	}
 
+	/* Stop crypto devices before setting up adapter */
+	for (cdev_id = 0; cdev_id < rte_cryptodev_count(); cdev_id++) {
+		/* Use only the cryptodevs enabled */
+		if ((conf->cryptodev_mask & (1 << cdev_id)) == 0)
+			continue;
+
+		rte_cryptodev_stop(cdev_id);
+	}
+
 	/* Setup eventdev */
 	ret = eh_initialize_eventdev(em_conf);
 	if (ret < 0) {
@@ -1688,6 +1896,13 @@ eh_devs_init(struct eh_conf *conf)
 		return ret;
 	}
 
+	/* Setup Crypto adapter */
+	ret = eh_initialize_crypto_adapter(em_conf);
+	if (ret < 0) {
+		EH_LOG_ERR("Failed to initialize crypto adapter %d", ret);
+		return ret;
+	}
+
 	/* Start eth devices after setting up adapter */
 	RTE_ETH_FOREACH_DEV(port_id) {
 
@@ -1699,6 +1914,19 @@ eh_devs_init(struct eh_conf *conf)
 		if (ret < 0) {
 			EH_LOG_ERR("Failed to start eth dev %d, %d",
 				   port_id, ret);
+			return ret;
+		}
+	}
+	for (cdev_id = 0; cdev_id < rte_cryptodev_count(); cdev_id++) {
+
+		/* Use only the cryptodevs enabled */
+		if ((conf->cryptodev_mask & (1 << cdev_id)) == 0)
+			continue;
+
+		ret = rte_cryptodev_start(cdev_id);
+		if (ret < 0) {
+			EH_LOG_ERR("Failed to start crypto dev %d, %d",
+				   cdev_id, ret);
 			return ret;
 		}
 	}
