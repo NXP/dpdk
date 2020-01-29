@@ -140,6 +140,23 @@ struct tx_adapter_conf {
 	uint8_t tx_ev_queue;
 };
 
+/* Crypto adapter connection info */
+struct crypto_adapter_connection_info {
+	uint8_t cdev_id;
+	uint8_t eventq_id;
+	int32_t cdev_qpid;
+};
+
+/* Crypto adapter conf */
+struct crypto_adapter_conf {
+	int32_t eventdev_id;
+	int32_t adapter_id;
+	uint32_t rx_core_id;
+	uint8_t nb_connections;
+	struct crypto_adapter_connection_info
+			conn[EVENT_MODE_MAX_CONNECTIONS_PER_ADAPTER];
+};
+
 /* Eventmode conf data */
 struct eventmode_conf {
 	int nb_eventdev;
@@ -154,6 +171,10 @@ struct eventmode_conf {
 		/**< No of Tx adapters */
 	struct tx_adapter_conf tx_adapter[EVENT_MODE_MAX_TX_ADAPTERS];
 		/** Tx adapter conf */
+	uint8_t nb_crypto_adapter;
+		/**< No of Crypto adapters */
+	struct crypto_adapter_conf crypto_adapter[RTE_EVENT_MAX_DEVS];
+		/** Crypto adapter conf */
 	uint8_t nb_link;
 		/**< No of links */
 	struct eh_event_link_info
@@ -163,6 +184,8 @@ struct eventmode_conf {
 		/**< Core mask of cores to be used for software Rx and Tx */
 	uint32_t eth_portmask;
 		/**< Mask of the eth ports to be used */
+	uint32_t cryptodev_mask;
+		/**< Mask of the cryptodevs to be used */
 	union {
 		RTE_STD_C11
 		struct {
@@ -200,6 +223,11 @@ struct eh_conf {
 	uint32_t eth_portmask;
 		/**<
 		 * Mask of the eth ports to be used. This portmask would be
+		 * checked while initializing devices using helper routines.
+		 */
+	uint32_t cryptodev_mask;
+		/**<
+		 * Mask of the cryptodevs to be used. This mask would be
 		 * checked while initializing devices using helper routines.
 		 */
 	void *mode_params;

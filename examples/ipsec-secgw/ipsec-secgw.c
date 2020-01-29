@@ -3038,6 +3038,7 @@ main(int32_t argc, char **argv)
 	 * helper sub-system.
 	 */
 	eh_conf->eth_portmask = enabled_port_mask;
+	eh_conf->cryptodev_mask = enabled_cryptodev_mask;
 
 	/* Initialize eventmode components */
 	ret = eh_devs_init(eh_conf);
