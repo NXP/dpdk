@@ -1157,12 +1157,6 @@ eh_find_worker(uint32_t lcore_id, struct eh_conf *conf,
 	else
 		curr_conf.cap.tx_internal_port = EH_TX_TYPE_NO_INTERNAL_PORT;
 
-	/* Check for burst mode */
-	if (eh_dev_has_burst_mode(eventdev_id))
-		curr_conf.cap.burst = EH_RX_TYPE_BURST;
-	else
-		curr_conf.cap.burst = EH_RX_TYPE_NON_BURST;
-
 	curr_conf.cap.ipsec_mode = conf->ipsec_mode;
 
 	/* Parse the passed list and see if we have matching capabilities */
