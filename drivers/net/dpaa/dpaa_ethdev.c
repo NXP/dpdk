@@ -137,6 +137,8 @@ dpaa_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info);
 static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 				int wait_to_complete __rte_unused);
 
+static void dpaa_interrupt_handler(void *param);
+
 static inline void
 dpaa_poll_queue_default_config(struct qm_mcc_initfq *opts)
 {
@@ -201,8 +203,17 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
 	uint64_t rx_offloads = eth_conf->rxmode.offloads;
 	uint64_t tx_offloads = eth_conf->txmode.offloads;
+	struct rte_device *rdev = dev->device;
+	struct rte_dpaa_device *dpaa_dev;
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+	struct rte_intr_handle *intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
+
+	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
+	intr_handle = &dpaa_dev->intr_handle;
+	__fif = container_of(fif, struct __fman_if, __if);
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
@@ -257,6 +268,14 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 		dpaa_write_fm_config_to_file();
 	}
 
+	/* if the interrupts were configured on this devices*/
+	if (intr_handle && intr_handle->fd &&
+	    dev->data->dev_conf.intr_conf.lsc != 0)
+		rte_intr_callback_register(intr_handle, dpaa_interrupt_handler,
+					   (void *)dev);
+
+	rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
+
 	return 0;
 }
 
@@ -307,28 +326,11 @@ static void dpaa_interrupt_handler(void *param)
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct rte_device *rdev = dev->device;
-	struct rte_dpaa_device *dpaa_dev;
-	struct fman_if *fif = dev->process_private;
-	struct __fman_if *__fif;
-	struct rte_intr_handle *intr_handle;
-
-	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
-	intr_handle = &dpaa_dev->intr_handle;
-	__fif = container_of(fif, struct __fman_if, __if);
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (!(default_q || fmc_q))
 		dpaa_write_fm_config_to_file();
-
-	/* if the interrupts were configured on this devices*/
-	if (intr_handle && intr_handle->fd &&
-	    dev->data->dev_conf.intr_conf.lsc != 0)
-		rte_intr_callback_register(intr_handle, dpaa_interrupt_handler,
-					   (void *)dev);
-
-	rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
 
 	/* Change tx callback to the real one */
 	if (dpaa_intf->cgr_tx)
@@ -344,22 +346,6 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 {
 	struct fman_if *fif = dev->process_private;
-	struct __fman_if *__fif;
-	struct rte_device *rdev = dev->device;
-	struct rte_dpaa_device *dpaa_dev;
-	struct rte_intr_handle *intr_handle;
-
-	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
-	intr_handle = &dpaa_dev->intr_handle;
-	__fif = container_of(fif, struct __fman_if, __if);
-
-	rte_dpaa_intr_disable(__fif->node_name);
-
-	if (intr_handle && intr_handle->fd &&
-	    dev->data->dev_conf.intr_conf.lsc != 0)
-		rte_intr_callback_unregister(intr_handle,
-					     dpaa_interrupt_handler,
-					     (void *)dev);
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -370,9 +356,27 @@ static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 
 static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+	struct rte_device *rdev = dev->device;
+	struct rte_dpaa_device *dpaa_dev;
+	struct rte_intr_handle *intr_handle;
+
 	PMD_INIT_FUNC_TRACE();
 
+	dpaa_dev = container_of(rdev, struct rte_dpaa_device, device);
+	intr_handle = &dpaa_dev->intr_handle;
+	__fif = container_of(fif, struct __fman_if, __if);
+
 	dpaa_eth_dev_stop(dev);
+
+	rte_dpaa_intr_disable(__fif->node_name);
+
+	if (intr_handle && intr_handle->fd &&
+	    dev->data->dev_conf.intr_conf.lsc != 0)
+		rte_intr_callback_unregister(intr_handle,
+					     dpaa_interrupt_handler,
+					     (void *)dev);
 }
 
 static int
@@ -1048,17 +1052,27 @@ dpaa_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 
 static int dpaa_link_down(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa_eth_dev_stop(dev);
+	__fif = container_of(fif, struct __fman_if, __if);
+
+	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
 	return 0;
 }
 
 static int dpaa_link_up(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+	struct __fman_if *__fif;
+
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa_eth_dev_start(dev);
+	__fif = container_of(fif, struct __fman_if, __if);
+
+	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
 	return 0;
 }
 

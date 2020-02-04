@@ -89,6 +89,15 @@ struct usdpaa_ioctl_link_status_args {
 	int     link_status;
 };
 
+struct usdpaa_ioctl_update_link_status_args {
+	/* network device node name */
+	char    if_name[IF_NAME_MAX_LEN];
+	/* link status(ETH_LINK_UP/DOWN) */
+	int     link_status;
+};
+
 int rte_dpaa_get_link_status(char *if_name);
+
+int rte_dpaa_update_link_status(char *if_name, int link_status);
 
 #endif	/*  __PROCESS_H */
