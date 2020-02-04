@@ -342,6 +342,11 @@ New Features
     ``--iova-mode=pa`` option can be used, IOVA_DC bus iommu scheme can also
     result in IOVA as PA.
 
+* **Added synchronous Crypto burst API.**
+
+  A new API is introduced in crypto library to handle synchronous cryptographic
+  operations allowing to achieve performance gain for cryptodevs which use
+  CPU based acceleration, such as Intel AES-NI.
 
 Removed Items
 -------------
