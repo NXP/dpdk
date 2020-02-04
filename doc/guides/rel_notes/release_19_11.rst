@@ -347,7 +347,8 @@ New Features
   A new API is introduced in crypto library to handle synchronous cryptographic
   operations allowing to achieve performance gain for cryptodevs which use
   CPU based acceleration, such as Intel AES-NI. An implementation for aesni_gcm
-  cryptodev is provided.
+  cryptodev is provided. The IPsec example application and ipsec library itself
+  were changed to allow utilization of this new feature.
 
 Removed Items
 -------------
