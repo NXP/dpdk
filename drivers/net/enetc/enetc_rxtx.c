@@ -22,6 +22,7 @@ enetc_clean_tx_ring(struct enetc_bdr *tx_ring)
 	int tx_frm_cnt = 0;
 	struct enetc_swbd *tx_swbd, *tx_swbd_base;
 	int i, hwci, bd_count;
+	struct rte_mbuf *m[ENETC_RXBD_BUNDLE];
 
 	/* we don't need barriers here, we just want a relatively current value
 	 * from HW.
@@ -44,7 +45,15 @@ enetc_clean_tx_ring(struct enetc_bdr *tx_ring)
 	 * meantime.
 	 */
 	while (i != hwci) {
-		rte_pktmbuf_free(tx_swbd->buffer_addr);
+		/* It seems calling rte_pktmbuf_free is wasting a lot of cycles,
+		 * make a list and call _free when it's done.
+		 */
+		if (tx_frm_cnt == ENETC_RXBD_BUNDLE) {
+			rte_pktmbuf_free_bulk(m, tx_frm_cnt);
+			tx_frm_cnt = 0;
+		}
+
+		m[tx_frm_cnt] = tx_swbd->buffer_addr;
 		tx_swbd->buffer_addr = NULL;
 
 		i++;
@@ -57,8 +66,12 @@ enetc_clean_tx_ring(struct enetc_bdr *tx_ring)
 		tx_frm_cnt++;
 	}
 
+	if (tx_frm_cnt)
+		rte_pktmbuf_free_bulk(m, tx_frm_cnt);
+
 	tx_ring->next_to_clean = i;
-	return tx_frm_cnt;
+
+	return 0;
 }
 
 uint16_t
