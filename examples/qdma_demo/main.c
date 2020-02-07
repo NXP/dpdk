@@ -165,36 +165,22 @@ void *pci_addr_mmap(void *start, size_t length, int prot,
 	return p;
 }
 
+#if TEST_PCIE_32B_WR
 static int
-lcore_qdma_process_loop(__attribute__((unused)) void *arg)
+lcore_qdma_pcie32b_loop(__attribute__((unused)) void *arg)
 {
 	unsigned int lcore_id;
-	uint64_t pci_vaddr, pci_phys, len;
-#if !TEST_PCIE_32B_WR
-	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
-	uint64_t cycle1 = 0, cycle2 = 0;
-	float speed;
-	int pkt_cnt = 0;
-	int poll_miss = 0;
-#endif
-	int32_t ret = 0, i, j;
-
+	size_t len;
+	int32_t ret = 0;
 	float time_us = 0.0;
-	float time_us_min = 9999999.0;
-	float time_us_max = 0.0;
-	double time_us_toal = 0.0;
 	int time_count = 0;
-	int pkt_enquened = 0;
-
-	lcore_id = rte_lcore_id();
-
-#if TEST_PCIE_32B_WR
 	int fd;
 	void *tmp;
 	uint64_t start;
-	size_t len;
 	volatile uint64_t value = 0x1234567890abcdef;
 	volatile uint32_t value32 = 0x12345678;
+
+	lcore_id = rte_lcore_id();
 
 	total_cores++;
 
@@ -242,7 +228,100 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		}
 	}
 	close(fd);
-#else
+
+	return 0;
+}
+
+/* launch all the per-lcore test, and display the result */
+static int
+launch_pcie32b_cores(unsigned int cores)
+{
+	unsigned int lcore_id;
+	int ret;
+	unsigned int cores_save = cores;
+
+	rte_atomic32_set(&synchro, 0);
+
+	RTE_LCORE_FOREACH_SLAVE(lcore_id)
+	{
+		if (cores == 1)
+			break;
+		cores--;
+		rte_eal_remote_launch(lcore_qdma_pcie32b_loop, NULL, lcore_id);
+	}
+
+	/* start synchro and launch test on master */
+	ret = lcore_qdma_pcie32b_loop(NULL);
+	cores = cores_save;
+	RTE_LCORE_FOREACH_SLAVE(lcore_id)
+	{
+		if (cores == 1)
+			break;
+		cores--;
+
+		if (rte_eal_wait_lcore(lcore_id) < 0)
+			ret = -1;
+	}
+
+	if (ret < 0) {
+		printf("per-lcore test returned -1\n");
+		return -1;
+	}
+
+	float nsPerCycle = (float)(1000 * rate) / ((float)freq);
+	float speed;
+
+	end_cycles = rte_get_timer_cycles();
+	time_diff = end_cycles - start_cycles;
+
+	speed =
+	(float)(total_cores * TEST_PCIE_READ_TIMES) / (float)(nsPerCycle *
+							    time_diff /
+							    (float)(1000 *
+								     1000 *
+								     1000));
+	if (TEST_PCIE_READ)
+		printf("TEST PCIE Read - ");
+	else
+		printf("TEST PCIE Write- ");
+	if (TEST_PCIE_32B)
+		printf("%d cores Spend : %.3f ms speed: %.3f M%ldbytes-ps %.3f Mbps\n",
+	    total_cores,
+	    (float)(nsPerCycle * time_diff) / (float)(1000 * 1000),
+	    speed / ((float)(1000 * 1000)), sizeof(uint32_t),
+	    (speed * 32) / ((float)(1000 * 1000)));
+	else
+		printf("%d cores Spend : %.3f ms speed: %.3f M%ldbytes-ps %.3f Mbps\n",
+	    total_cores,
+	    (float)(nsPerCycle * time_diff) / (float)(1000 * 1000),
+	    speed / ((float)(1000 * 1000)), sizeof(uint64_t),
+	    (speed * 64) / ((float)(1000 * 1000)));
+
+	return 0;
+}
+#endif
+
+static int
+lcore_qdma_process_loop(__attribute__((unused)) void *arg)
+{
+	unsigned int lcore_id;
+	uint64_t pci_vaddr, pci_phys, len;
+	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
+	uint64_t cycle1 = 0, cycle2 = 0;
+	float speed;
+	int pkt_cnt = 0;
+	int poll_miss = 0;
+	int32_t ret = 0, i, j;
+
+	float time_us = 0.0;
+	float time_us_min = 9999999.0;
+	float time_us_max = 0.0;
+	double time_us_toal = 0.0;
+	int time_count = 0;
+	int pkt_enquened = 0;
+
+	lcore_id = rte_lcore_id();
+
 	/* wait synchro for slaves */
 	if (lcore_id != rte_get_master_lcore()) {
 		do {
@@ -532,7 +611,6 @@ skip_print:
 		printf("exit core %d\n", rte_lcore_id());
 
 	}
-#endif
 
 	return 0;
 }
@@ -557,7 +635,6 @@ launch_cores(unsigned int cores)
 
 	/* start synchro and launch test on master */
 	ret = lcore_qdma_process_loop(NULL);
-
 	cores = cores_save;
 	RTE_LCORE_FOREACH_SLAVE(lcore_id)
 	{
@@ -573,38 +650,6 @@ launch_cores(unsigned int cores)
 		printf ("per-lcore test returned -1\n");
 		return -1;
 	}
-
-#if TEST_PCIE_32B_WR
-	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
-	float speed;
-
-	end_cycles = rte_get_timer_cycles();
-	time_diff = end_cycles - start_cycles;
-
-	speed =
-	(float) (total_cores * TEST_PCIE_READ_TIMES) / (float) (nsPerCycle *
-							    time_diff /
-							    (float) (1000 *
-								     1000 *
-								     1000));
-	if (TEST_PCIE_READ)
-		printf("TEST PCIE Read - ");
-	else
-		printf("TEST PCIE Write- ");
-	if (TEST_PCIE_32B)
-		printf("%d cores Spend : %.3f ms speed: %.3f M%ldbytes-ps %.3f Mbps\n",
-	    total_cores,
-	    (float) (nsPerCycle * time_diff) / (float) (1000 * 1000),
-	    speed / ((float) (1000 * 1000)), sizeof (uint32_t),
-	    (speed * 32) / ((float) (1000 * 1000)));
-	else
-		printf("%d cores Spend : %.3f ms speed: %.3f M%ldbytes-ps %.3f Mbps\n",
-	    total_cores,
-	    (float) (nsPerCycle * time_diff) / (float) (1000 * 1000),
-	    speed / ((float) (1000 * 1000)), sizeof (uint64_t),
-	    (speed * 64) / ((float) (1000 * 1000)));
-
-#endif
 
 	return 0;
 }
@@ -862,7 +907,11 @@ main(int argc, char *argv[])
 	printf("Spend :%.3f ms\n",
 	      (nsPerCycle * time_diff * rate) / (float) (1000 * 1000));
 
+#if TEST_PCIE_32B_WR
+	launch_pcie32b_cores(core_count);
+#else
 	launch_cores(core_count);
+#endif
 
 	printf("qdma_demo Finished.. bye!\n");
 	return 0;
