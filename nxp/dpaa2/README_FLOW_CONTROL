@@ -42,6 +42,19 @@ Note: Please first read nxp/README.
   #Check the packet go to the expected queue(RXQ2) by stop command.
      testpmd> stop
 
+  #Check RAW flows (restart testpmd)
+     ./testpmd  --lcores='0,1,2,3,4@0' --master-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=8 --txq=8
+  #Create RAW flows
+     testpmd> flow create 0 group 0 priority 1 ingress pattern raw relative is 0 search is 0 offset is 0 limit is 0 pattern_hex spec 00000000000000000000000000000000000000000000000000000a0a0a0a pattern_hex mask 0000000000000000000000000000000000000000000000000000ffffffff / end actions queue index 4 / end
+     testpmd> flow create 0 group 0 priority 0 ingress pattern raw relative is 0 search is 0 offset is 0 limit is 0 pattern_hex spec 0000000000000000000000008100000000000000000000000000000000000a0a0a0a pattern_hex mask 000000000000000000000000FFFF00000000000000000000000000000000ffffffff / end actions queue index 4 / end
+     testpmd> start
+  #Create spirent traffic flow with ETH header and IP header having IP src as 10.10.10.10.
+  #Also create another spirent traffic flow with ETH header, VLAN header and IP header with same IP src as 10.10.10.10.
+  #Send the packets from both the flows.
+  #Check both flows should be received on expected queue(RXQ4)
+     testpmd> stop
+
+
 2.Flow control on multiple TCs
   #Create dpni with 8 TCs
       export FS_ENTRIES=8
