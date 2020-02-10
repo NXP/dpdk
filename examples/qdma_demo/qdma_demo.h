@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 #ifndef __QDMA_DEMO_H__
 #define __QDMA_DEMO_H__
@@ -33,7 +33,7 @@
 
 #define TEST_DEQUEU_CNT 6
 #define TEST_PACKETS_NUM (g_packet_num)
-#define TEST_M_SIZE (1024)
+#define TEST_M_SIZE (4096)
 #define TEST_PCI_SIZE_LIMIT (8*TEST_M_SIZE)
 #define TEST_PCIBUS_BASE_ADDR (0x9060044000)
 #define TEST_PCICPU_BASE_ADDR (0x0 + TEST_PCIBUS_BASE_ADDR)
@@ -57,4 +57,6 @@ struct qdma_test_case {
 #define ARG_TEST_ID (1 << 2)
 #define ARG_LATENCY (1 << 3)
 #define ARG_PCI_SIZE (1 << 4)
+#define ARG_MEMCPY (1 << 5)
+
 #endif
