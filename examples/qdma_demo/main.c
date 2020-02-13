@@ -301,6 +301,40 @@ launch_pcie32b_cores(unsigned int cores)
 }
 #endif
 
+static void calculate_latency(unsigned int lcore_id,
+	uint64_t cycle1, int time_count,
+	int pkt_cnt, int pkt_enqueued,
+	int poll_miss)
+{
+	uint64_t cycle2 = 0;
+	uint64_t my_time_diff;
+
+	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
+	float time_us = 0.0;
+	float time_us_min = 9999999.0;
+	float time_us_max = 0.0;
+	double time_us_toal = 0.0;
+
+	cycle2 = rte_get_timer_cycles();
+	my_time_diff = cycle2 - cycle1;
+	time_us = nsPerCycle *	my_time_diff / 1000;
+
+	if (time_us < time_us_min)
+		time_us_min = time_us;
+	if (time_us > time_us_max)
+		time_us_max = time_us;
+	time_us_toal += time_us;
+
+	printf("cpu=%d pkt_cnt:%d [%d], pkt_size %d,"
+		"time used (%.1f)us [min %.1f, max %.1f"
+		", mean %.1f] poll_miss:%d\n",
+		lcore_id, pkt_cnt, pkt_enqueued,
+		TEST_PACKET_SIZE, time_us,
+		time_us_min, time_us_max,
+		time_us_toal/time_count, poll_miss);
+	rte_delay_ms(1000);
+}
+
 static int
 lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 {
@@ -313,10 +347,6 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 	int poll_miss = 0;
 	int32_t ret = 0, i, j;
 
-	float time_us = 0.0;
-	float time_us_min = 9999999.0;
-	float time_us_max = 0.0;
-	double time_us_toal = 0.0;
 	int time_count = 0;
 	int pkt_enquened = 0;
 
@@ -492,26 +522,10 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 					job[j]->len);
 				pkt_cnt++;
 				if (g_latency && (pkt_cnt >= TEST_PACKETS_NUM)) {
-					cycle2 = rte_get_timer_cycles();
-					time_diff = cycle2 - cycle1;
-					time_us = nsPerCycle *  time_diff / 1000;
-
-					if (time_us < time_us_min)
-						time_us_min = time_us;
-					if (time_us > time_us_max)
-						time_us_max = time_us;
-					time_us_toal += time_us;
-					time_count++;
-
-				     printf("cpu=%d pkt_cnt:%d[%d],pkt_size %d,"
-				     "time used (%.1f)us [min %.1f, max %.1f"
-				     ", mean %.1f] poll_miss:%d\n",
-				     lcore_id, pkt_cnt, pkt_enquened,
-				     TEST_PACKET_SIZE, time_us,
-				     time_us_min, time_us_max,
-				     time_us_toal/time_count, poll_miss);
-
-					rte_delay_ms(1000);
+					calculate_latency(lcore_id, cycle1,
+						time_count++,
+						pkt_cnt,
+						pkt_enquened, poll_miss);
 					pkt_cnt = 0;
 					pkt_enquened = 0;
 					cycle1 = rte_get_timer_cycles();
@@ -534,26 +548,10 @@ dequeue:
 			if (!job1[j]->status)
 				pkt_cnt++;
 			if (g_latency && (pkt_cnt >= TEST_PACKETS_NUM)) {
-				cycle2 = rte_get_timer_cycles();
-				time_diff = cycle2 - cycle1;
-				time_us = nsPerCycle *  time_diff / 1000;
-
-				if (time_us < time_us_min)
-					time_us_min = time_us;
-				if (time_us > time_us_max)
-					time_us_max = time_us;
-				time_us_toal += time_us;
-				time_count++;
-
-
-				printf("cpu=%d pkt_cnt:%d [%d], pkt_size %d,"
-					"time used (%.1f)us [min %.1f, max %.1f"
-					", mean %.1f] poll_miss:%d\n",
-					lcore_id, pkt_cnt, pkt_enquened,
-					TEST_PACKET_SIZE, time_us,
-					time_us_min, time_us_max,
-					time_us_toal/time_count, poll_miss);
-				rte_delay_ms(1000);
+					calculate_latency(lcore_id, cycle1,
+						time_count++,
+						pkt_cnt,
+						pkt_enquened, poll_miss);
 				pkt_cnt = 0;
 				pkt_enquened = 0;
 				cycle1 = rte_get_timer_cycles();
