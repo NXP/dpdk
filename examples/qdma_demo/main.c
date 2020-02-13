@@ -339,13 +339,10 @@ static int
 lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 {
 	unsigned int lcore_id;
-	uint64_t pci_vaddr, pci_phys, len;
-	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
-	uint64_t cycle1 = 0, cycle2 = 0;
-	float speed;
+	uint64_t cycle1 = 0;
 	int pkt_cnt = 0;
 	int poll_miss = 0;
-	int32_t ret = 0, i, j;
+	int32_t ret = 0;
 
 	int time_count = 0;
 	int pkt_enquened = 0;
@@ -353,156 +350,18 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 	lcore_id = rte_lcore_id();
 
 	/* wait synchro for slaves */
-	if (lcore_id != rte_get_master_lcore()) {
-		do {
-			ret = rte_atomic32_read(&synchro);
-		} while (!ret);
-		printf("Processing coreid: %d ready, now!\n", lcore_id);
-	} else {
-		if (!g_memcpy)
-			test_dma_init();
-		/* Memory map the PCI addresses */
-		if (g_rbp_testcase != MEM_TO_MEM) {
-			pci_phys = (g_target_pci_addr) & PAGE_MASK;
-			len = g_pci_size & PAGE_MASK;
-			if (len < (size_t) PAGE_SIZE)
-				len = PAGE_SIZE;
-			pci_vaddr = (uint64_t) pci_addr_mmap(NULL, len,
-				PROT_READ | PROT_WRITE, MAP_SHARED,
-				pci_phys, NULL, NULL);
-			if (!pci_vaddr) {
-				printf("Failed to mmap PCI addr %lx\n",
-					pci_phys);
-				return 0;
-			}
-			g_target_pci_vaddr = pci_vaddr;
-			/* configure pci virtual address in SMMU via VFIO */
-			rte_fslmc_vfio_mem_dmamap(pci_vaddr,
-						  g_target_pci_vaddr, len);
-			g_buf = rte_malloc("test qdma", g_pci_size, 4096);
-			g_buf1 = rte_malloc("test qdma", g_pci_size, 4096);
-			printf("Local bufs, g_buf %p, g_buf1 %p\n",
-				g_buf, g_buf1);
-		}
+	do {
+		ret = rte_atomic32_read(&synchro);
+	} while (!ret);
+	printf("Processing coreid: %d ready, now!\n", lcore_id);
 
-		/* setup QDMA queues */
-		for (i = 0; (!g_memcpy) && i < MAX_CORE_COUNT; i++) {
-			if (!rte_lcore_is_enabled(i))
-				continue;
-			g_vqid[i] = rte_qdma_vq_create(i, 0);
-			printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
-		}
+	cycle1 = rte_get_timer_cycles();
+	while (!quit_signal) {
+		struct rte_qdma_job *job[256], *job1[16];
+		int ret, j;
+		int job_num = 256;
 
-		/* Adavance prepare the jobs for the test */
-		for (j = 0; j < MAX_CORE_COUNT; j++) {
-		  if (!rte_lcore_is_enabled(j))
-			continue;
-
-		if (g_rbp_testcase == MEM_TO_MEM) {
-		  g_buf = rte_malloc("test qdma",
-			  TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
-		  g_buf1 = rte_malloc("test qdma",
-			  TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
-		  printf("Local bufs, g_buf %p, g_buf1 %p\n",
-			  g_buf, g_buf1);
-		}
-
-		  g_jobs[j] = rte_zmalloc("test qdma",
-					  TEST_PACKETS_NUM *
-					  sizeof(struct rte_qdma_job), 4096);
-		  printf("[%d] job ptr %p\n", j, g_jobs[j]);
-
-		  /* Prepare the QDMA jobs in advance */
-		  for (i = 0; i < TEST_PACKETS_NUM; i++) {
-		      struct rte_qdma_job *job = g_jobs[j];
-		      job += i;
-		      job->len = TEST_PACKET_SIZE;
-		      job->cnxt = i;
-		      memset(g_buf + (i * TEST_PACKET_SIZE), (char) i + 1,
-			      TEST_PACKET_SIZE);
-		      memset(g_buf1 + (i * TEST_PACKET_SIZE), 0xff,
-			      TEST_PACKET_SIZE);
-			if (g_rbp_testcase == MEM_TO_PCI) {
-			  job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
-			  if (g_userbp) {
-				job->dest =
-				(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
-					job->flags = RTE_QDMA_JOB_DEST_PHY;
-			  } else {
-				job->dest =
-				(g_target_pci_vaddr + (long) (i * TEST_PACKET_SIZE));
-			  }
-			} else if (g_rbp_testcase == MEM_TO_MEM) {
-			  job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
-			  job->dest =
-			    ((long) g_buf1 + (long) (i * TEST_PACKET_SIZE));
-			} else if (g_rbp_testcase == PCI_TO_PCI) {
-			  if (g_userbp) {
-			      job->dest = (TEST_PCIBUS_BASE_ADDR + g_pci_size +
-				 (long) (i * TEST_PACKET_SIZE));
-			      job->src = (TEST_PCIBUS_BASE_ADDR +
-				 (long) ((i * TEST_PACKET_SIZE)));
-			      job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
-			  } else {
-			      job->dest = (g_target_pci_vaddr + g_pci_size +
-				 (long) (i * TEST_PACKET_SIZE));
-			      job->src = (g_target_pci_vaddr +
-				 (long) ((i * TEST_PACKET_SIZE)));
-			  }
-			} else if (g_rbp_testcase == PCI_TO_MEM) {
-			  if (g_userbp) {
-			      job->src = (TEST_PCIBUS_BASE_ADDR +
-				 (long) ((i * TEST_PACKET_SIZE)));
-			      job->flags = RTE_QDMA_JOB_SRC_PHY;
-			    }
-			  else {
-			      job->src = (g_target_pci_vaddr +
-					(long) ((i * TEST_PACKET_SIZE)));
-			    }
-			  job->dest = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
-			}
-		    }
-		}
-		printf("test memory size: 0x%lx packets number:%d packet size: %d\n",
-		      g_pci_size, TEST_PACKETS_NUM, TEST_PACKET_SIZE);
-		printf("Local mem phy addr: %lx addr1: %lx g_jobs[0]:%p\n",
-		      g_iova, g_iova1, g_jobs[0]);
-
-		if (g_frame_format == ULTRA_SHORT_FMT)
-			printf("\n\nUsing ultra short format to test: packet size %d Bytes, ", TEST_PACKET_SIZE);
-		else
-			printf("\n\nUsing long format to test: packet size %d Bytes, ", TEST_PACKET_SIZE);
-
-		switch (g_rbp_testcase) {
-		case PCI_TO_MEM:
-			printf("PCI_TO_MEM\n");
-			break;
-		case MEM_TO_PCI:
-			printf("MEM_TO_PCI\n");
-			break;
-		case MEM_TO_MEM:
-			printf("MEM_TO_MEM\n");
-			break;
-		case PCI_TO_PCI:
-			printf("PCI_TO_PCI\n");
-			break;
-		default:
-			printf("unknown test case!\n");
-		}
-		printf("Master coreid: %d ready, now!\n", lcore_id);
-	}
-
-	rte_atomic32_set(&synchro, 1);
-
-	if (lcore_id != stats_core_id) {
-
-		cycle1 = rte_get_timer_cycles();
-		while (!quit_signal) {
-		  struct rte_qdma_job *job[256], *job1[16];
-		  int ret, j;
-		  int job_num = 256;
-
-		  if (g_latency) {
+		if (g_latency) {
 			if (pkt_enquened >= TEST_PACKETS_NUM) {
 				poll_miss++;
 				goto dequeue;
@@ -511,12 +370,12 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				job_num = TEST_PACKETS_NUM - pkt_enquened;
 			if (job_num < 0)
 				job_num = 256;
-		  }
+		}
 
 		for (j = 0; j < job_num; j++) {
-		      job[j] = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
-		      job[j]->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
-		      if (g_memcpy) {
+			job[j] = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
+			job[j]->cnxt = ((pkt_cnt + j) % TEST_PACKETS_NUM);
+			if (g_memcpy) {
 				rte_memcpy((void *)job[j]->dest,
 					(void *)job[j]->src,
 					job[j]->len);
@@ -531,87 +390,239 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 					cycle1 = rte_get_timer_cycles();
 				}
 			}
-		  }
-		  if (g_memcpy)
+		}
+		if (g_memcpy)
 			goto my_memcopy;
 
-		    /* Submit QDMA Jobs for processing */
-		    ret = rte_qdma_vq_enqueue_multi(g_vqid[lcore_id], job, job_num);
-		    if (unlikely(ret <= 0))
-		      goto dequeue;
-		    pkt_enquened += ret;
+		/* Submit QDMA Jobs for processing */
+		ret = rte_qdma_vq_enqueue_multi(g_vqid[lcore_id], job, job_num);
+		if (unlikely(ret <= 0))
+			goto dequeue;
+		pkt_enquened += ret;
 dequeue:
-		    /* Check for QDMA Job completion status */
-		    do {
-		      ret = rte_qdma_vq_dequeue_multi(g_vqid[lcore_id], job1, 16);
-		      for (j = 0; j < ret; j++) {
-			if (!job1[j]->status)
-				pkt_cnt++;
-			if (g_latency && (pkt_cnt >= TEST_PACKETS_NUM)) {
+		/* Check for QDMA Job completion status */
+		do {
+			ret = rte_qdma_vq_dequeue_multi(g_vqid[lcore_id], job1, 16);
+			for (j = 0; j < ret; j++) {
+				if (!job1[j]->status)
+					pkt_cnt++;
+				if (g_latency && (pkt_cnt >= TEST_PACKETS_NUM)) {
 					calculate_latency(lcore_id, cycle1,
 						time_count++,
 						pkt_cnt,
 						pkt_enquened, poll_miss);
-				pkt_cnt = 0;
-				pkt_enquened = 0;
-				cycle1 = rte_get_timer_cycles();
+					pkt_cnt = 0;
+					pkt_enquened = 0;
+					cycle1 = rte_get_timer_cycles();
+				}
 			}
-		      }
-		    } while (ret);
+		} while (ret);
 my_memcopy:
-		  if (pkt_cnt > (64 * 1024)) {
+		if (pkt_cnt > (64 * 1024)) {
 			rte_atomic32_add(&dequeue_num, (64 * 1024));
 			rte_atomic32_add(&dequeue_num_percore[lcore_id],
 				(64 * 1024));
 			pkt_cnt = 0;
 			poll_miss = 0;
-		  }
 		}
-		printf("exit core %d\n", lcore_id);
-	} else {
-		while (!quit_signal) {
-		  rte_atomic32_clear(&dequeue_num);
-		RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-		      rte_atomic32_clear(&dequeue_num_percore[lcore_id]);
-		    }
-		  cycle1 = rte_get_timer_cycles();
-		  rte_delay_ms(4000);
-		if (g_latency)
-			goto skip_print;
-
-		  cycle2 = rte_get_timer_cycles();
-		  time_diff = cycle2 - cycle1;
-		  speed =
-		    (float) (rte_atomic32_read(&dequeue_num)) / (float) (nsPerCycle *
-									  time_diff /
-									  (float)
-									  (1000 *
-									   1000 *
-									   1000));
-		  speed = speed * TEST_PACKET_SIZE;
-
-		  printf("\n=>Time Spend :%.3f ms ",
-			  (nsPerCycle * time_diff) / (float) (1000 * 1000));
-		  printf("rcvd cnt:%d pkt_cnt:%d\n", dequeue_num.cnt, pkt_cnt);
-		  printf("Rate: %.3f Mbps OR %.3f Kpps\n",
-			  8 * speed / ((float) (1000 * 1000)),
-			  speed / ((float) (TEST_PACKET_SIZE * 1000)));
-
-		RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-			printf("processed on core %d pkt cnt: %d\n",
-				lcore_id, dequeue_num_percore[lcore_id].cnt);
-		}
-
-skip_print:
-		  cycle1 = cycle2 = 0;
-		  pkt_cnt = 0;
-		}
-		printf("exit core %d\n", rte_lcore_id());
-
 	}
+	printf("exit core %d\n", lcore_id);
 
 	return 0;
 }
+
+static int
+lcore_qdma_control_loop(__attribute__((unused)) void *arg)
+{
+	unsigned int lcore_id;
+	uint64_t pci_vaddr, pci_phys, len;
+	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
+	uint64_t cycle1 = 0, cycle2 = 0;
+	float speed;
+	int32_t i, j;
+
+	lcore_id = rte_lcore_id();
+
+	/* wait synchro for slaves */
+	if (!g_memcpy)
+		test_dma_init();
+	/* Memory map the PCI addresses */
+	if (g_rbp_testcase != MEM_TO_MEM) {
+		pci_phys = (g_target_pci_addr) & PAGE_MASK;
+		len = g_pci_size & PAGE_MASK;
+		if (len < (size_t) PAGE_SIZE)
+			len = PAGE_SIZE;
+		pci_vaddr = (uint64_t) pci_addr_mmap(NULL, len,
+			PROT_READ | PROT_WRITE, MAP_SHARED,
+			pci_phys, NULL, NULL);
+		if (!pci_vaddr) {
+			printf("Failed to mmap PCI addr %lx\n",
+				pci_phys);
+			return 0;
+		}
+		g_target_pci_vaddr = pci_vaddr;
+		/* configure pci virtual address in SMMU via VFIO */
+		rte_fslmc_vfio_mem_dmamap(pci_vaddr,
+					  g_target_pci_vaddr, len);
+		g_buf = rte_malloc("test qdma", g_pci_size, 4096);
+		g_buf1 = rte_malloc("test qdma", g_pci_size, 4096);
+		printf("Local bufs, g_buf %p, g_buf1 %p\n",
+			g_buf, g_buf1);
+	}
+
+	/* setup QDMA queues */
+	for (i = 0; (!g_memcpy) && i < MAX_CORE_COUNT; i++) {
+		if (!rte_lcore_is_enabled(i))
+			continue;
+		g_vqid[i] = rte_qdma_vq_create(i, 0);
+		printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
+	}
+
+	/* Adavance prepare the jobs for the test */
+	for (j = 0; j < MAX_CORE_COUNT; j++) {
+		if (!rte_lcore_is_enabled(j))
+			continue;
+
+		if (g_rbp_testcase == MEM_TO_MEM) {
+			g_buf = rte_malloc("test qdma",
+				TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
+			g_buf1 = rte_malloc("test qdma",
+				TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
+			printf("Local bufs, g_buf %p, g_buf1 %p\n",
+				g_buf, g_buf1);
+		}
+
+		g_jobs[j] = rte_zmalloc("test qdma",
+					  TEST_PACKETS_NUM *
+					  sizeof(struct rte_qdma_job), 4096);
+		printf("[%d] job ptr %p\n", j, g_jobs[j]);
+
+	/* Prepare the QDMA jobs in advance */
+	for (i = 0; i < TEST_PACKETS_NUM; i++) {
+		struct rte_qdma_job *job = g_jobs[j];
+
+		job += i;
+		job->len = TEST_PACKET_SIZE;
+		job->cnxt = i;
+		memset(g_buf + (i * TEST_PACKET_SIZE), (char) i + 1,
+			TEST_PACKET_SIZE);
+		memset(g_buf1 + (i * TEST_PACKET_SIZE), 0xff,
+			TEST_PACKET_SIZE);
+
+		if (g_rbp_testcase == MEM_TO_PCI) {
+			job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
+			if (g_userbp) {
+				job->dest =
+				(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
+				job->flags = RTE_QDMA_JOB_DEST_PHY;
+			} else {
+				job->dest =
+				(g_target_pci_vaddr + (long) (i * TEST_PACKET_SIZE));
+			}
+		} else if (g_rbp_testcase == MEM_TO_MEM) {
+			job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
+			job->dest =
+				((long) g_buf1 + (long) (i * TEST_PACKET_SIZE));
+		} else if (g_rbp_testcase == PCI_TO_PCI) {
+			if (g_userbp) {
+				job->dest = (TEST_PCIBUS_BASE_ADDR +
+					g_pci_size +
+					(long) (i * TEST_PACKET_SIZE));
+				job->src = (TEST_PCIBUS_BASE_ADDR +
+					(long) ((i * TEST_PACKET_SIZE)));
+				job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
+			} else {
+				job->dest = (g_target_pci_vaddr + g_pci_size +
+					(long) (i * TEST_PACKET_SIZE));
+				job->src = (g_target_pci_vaddr +
+					(long) ((i * TEST_PACKET_SIZE)));
+			}
+		} else if (g_rbp_testcase == PCI_TO_MEM) {
+			if (g_userbp) {
+				job->src = (TEST_PCIBUS_BASE_ADDR +
+					(long) ((i * TEST_PACKET_SIZE)));
+				job->flags = RTE_QDMA_JOB_SRC_PHY;
+			} else {
+				job->src = (g_target_pci_vaddr +
+					(long) ((i * TEST_PACKET_SIZE)));
+			}
+			job->dest = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
+		}
+	}
+	}
+	printf("test memory size: 0x%lx packets number:%d packet size: %d\n",
+	      g_pci_size, TEST_PACKETS_NUM, TEST_PACKET_SIZE);
+	printf("Local mem phy addr: %lx addr1: %lx g_jobs[0]:%p\n",
+	      g_iova, g_iova1, g_jobs[0]);
+
+	if (g_frame_format == ULTRA_SHORT_FMT)
+		printf("\n\nUsing ultra short format to test: packet size %d Bytes, ",
+			TEST_PACKET_SIZE);
+	else
+		printf("\n\nUsing long format to test: packet size %d Bytes, ",
+			TEST_PACKET_SIZE);
+
+	switch (g_rbp_testcase) {
+	case PCI_TO_MEM:
+		printf("PCI_TO_MEM\n");
+		break;
+	case MEM_TO_PCI:
+		printf("MEM_TO_PCI\n");
+		break;
+	case MEM_TO_MEM:
+		printf("MEM_TO_MEM\n");
+		break;
+	case PCI_TO_PCI:
+		printf("PCI_TO_PCI\n");
+		break;
+	default:
+		printf("unknown test case!\n");
+	}
+	printf("Master coreid: %d ready, now!\n", lcore_id);
+
+	rte_atomic32_set(&synchro, 1);
+
+	while (!quit_signal) {
+
+		rte_atomic32_clear(&dequeue_num);
+		RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+			rte_atomic32_clear(&dequeue_num_percore[lcore_id]);
+		}
+		cycle1 = rte_get_timer_cycles();
+		rte_delay_ms(4000);
+
+		if (g_latency)
+			goto skip_print;
+
+		cycle2 = rte_get_timer_cycles();
+		time_diff = cycle2 - cycle1;
+		speed =
+			(float) (rte_atomic32_read(&dequeue_num))
+				/ (float) (nsPerCycle * time_diff /
+				(float) (1000 * 1000 * 1000));
+		speed = speed * TEST_PACKET_SIZE;
+
+		printf("\n=>Time Spend :%.3f ms ",
+			(nsPerCycle * time_diff) / (float) (1000 * 1000));
+
+		printf("rcvd cnt:%d\n", dequeue_num.cnt);
+		printf("Rate: %.3f Mbps OR %.3f Kpps\n",
+				8 * speed / ((float) (1000 * 1000)),
+				speed / ((float) (TEST_PACKET_SIZE * 1000)));
+
+		RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+			printf("processed on core %d pkt cnt: %d\n",
+			lcore_id, dequeue_num_percore[lcore_id].cnt);
+		}
+
+skip_print:
+		cycle1 = cycle2 = 0;
+	}
+	printf("exit core %d\n", rte_lcore_id());
+
+	return 0;
+}
+
 
 /* launch all the per-lcore test, and display the result */
 static int
@@ -632,7 +643,7 @@ launch_cores(unsigned int cores)
 	}
 
 	/* start synchro and launch test on master */
-	ret = lcore_qdma_process_loop(NULL);
+	ret = lcore_qdma_control_loop(NULL);
 	cores = cores_save;
 	RTE_LCORE_FOREACH_SLAVE(lcore_id)
 	{
