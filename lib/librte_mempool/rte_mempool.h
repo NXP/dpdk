@@ -1668,7 +1668,7 @@ rte_mempool_in_use_count(const struct rte_mempool *mp);
 static inline int
 rte_mempool_full(const struct rte_mempool *mp)
 {
-	return !!(rte_mempool_avail_count(mp) == mp->size);
+	return rte_mempool_avail_count(mp) == mp->size;
 }
 
 /**
@@ -1687,7 +1687,7 @@ rte_mempool_full(const struct rte_mempool *mp)
 static inline int
 rte_mempool_empty(const struct rte_mempool *mp)
 {
-	return !!(rte_mempool_avail_count(mp) == 0);
+	return rte_mempool_avail_count(mp) == 0;
 }
 
 /**
