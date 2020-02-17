@@ -1,5 +1,5 @@
 #   SPDX-License-Identifier:        BSD-3-Clause
-#   Copyright 2017 NXP
+#   Copyright 2017,2020 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -21,8 +21,6 @@ CFLAGS += -I$(RTE_SDK)/drivers/bus/dpaa/include/
 CFLAGS += -I$(RTE_SDK)/drivers/mempool/dpaa
 CFLAGS += -I$(RTE_SDK)/drivers/common/dpaax
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
-
-LDLIBS += -lrte_pmd_dpaa_sec
 CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec
 
 EXPORT_MAP := rte_pmd_dpaa_event_version.map
@@ -34,6 +32,7 @@ LDLIBS += -lrte_bus_dpaa
 LDLIBS += -lrte_mempool_dpaa
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring
 LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs
+LDLIBS += -lrte_pmd_dpaa_sec
 LDLIBS += -lrte_eventdev -lrte_pmd_dpaa -lrte_bus_vdev
 LDLIBS += -lrte_common_dpaax
 
