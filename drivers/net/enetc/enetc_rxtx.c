@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include <stdbool.h>
@@ -20,27 +20,45 @@ static int
 enetc_clean_tx_ring(struct enetc_bdr *tx_ring)
 {
 	int tx_frm_cnt = 0;
-	struct enetc_swbd *tx_swbd;
-	int i;
+	struct enetc_swbd *tx_swbd, *tx_swbd_base;
+	int i, hwci, bd_count;
 
+	/* we don't need barriers here, we just want a relatively current value
+	 * from HW.
+	 */
+	hwci = (int)(rte_read32_relaxed(tx_ring->tcisr) &
+		     ENETC_TBCISR_IDX_MASK);
+
+	tx_swbd_base = tx_ring->q_swbd;
+	bd_count = tx_ring->bd_count;
 	i = tx_ring->next_to_clean;
-	tx_swbd = &tx_ring->q_swbd[i];
-	while ((int)(enetc_rd_reg(tx_ring->tcisr) &
-	       ENETC_TBCISR_IDX_MASK) != i) {
+	tx_swbd = &tx_swbd_base[i];
+
+	/* we're only reading the CI index once here, which means HW may update
+	 * it while we're doing clean-up.  We could read the register in a loop
+	 * but for now I assume it's OK to leave a few Tx frames for next call.
+	 * The issue with reading the register in a loop is that we're stalling
+	 * here trying to catch up with HW which keeps sending traffic as long
+	 * as it has traffic to send, so in effect we could be waiting here for
+	 * the Tx ring to be drained by HW, instead of us doing Rx in that
+	 * meantime.
+	 */
+	while (i != hwci) {
 		rte_pktmbuf_free(tx_swbd->buffer_addr);
 		tx_swbd->buffer_addr = NULL;
-		tx_swbd++;
+
 		i++;
-		if (unlikely(i == tx_ring->bd_count)) {
+		tx_swbd++;
+		if (unlikely(i == bd_count)) {
 			i = 0;
-			tx_swbd = &tx_ring->q_swbd[0];
+			tx_swbd = tx_swbd_base;
 		}
 
 		tx_frm_cnt++;
 	}
 
 	tx_ring->next_to_clean = i;
-	return tx_frm_cnt++;
+	return tx_frm_cnt;
 }
 
 uint16_t
@@ -61,7 +79,6 @@ enetc_xmit_pkts(void *tx_queue,
 
 	start = 0;
 	while (nb_pkts--) {
-		enetc_clean_tx_ring(tx_ring);
 		tx_ring->q_swbd[i].buffer_addr = tx_pkts[start];
 		txbd = ENETC_TXBD(*tx_ring, i);
 		tx_swbd = &tx_ring->q_swbd[i];
@@ -76,6 +93,14 @@ enetc_xmit_pkts(void *tx_queue,
 		if (unlikely(i == tx_ring->bd_count))
 			i = 0;
 	}
+
+	/* we're only cleaning up the Tx ring here, on the assumption that
+	 * software is slower than hardware and hardware completed sending
+	 * older frames out by now.
+	 * We're also cleaning up the ring before kicking off Tx for the new
+	 * batch to minimize chances of contention on the Tx ring
+	 */
+	enetc_clean_tx_ring(tx_ring);
 
 	tx_ring->next_to_use = i;
 	enetc_wr_reg(tx_ring->tcir, i);
