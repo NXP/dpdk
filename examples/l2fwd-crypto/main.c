@@ -2749,7 +2749,8 @@ main(int argc, char **argv)
 	l2fwd_pktmbuf_pool = (proc_type == RTE_PROC_SECONDARY) ?
 			rte_mempool_lookup("mbuf_pool") :
 			rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF, 512,
-				sizeof(struct rte_crypto_op),
+				RTE_ALIGN(sizeof(struct rte_crypto_op),
+					  RTE_CACHE_LINE_SIZE),
 				RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
