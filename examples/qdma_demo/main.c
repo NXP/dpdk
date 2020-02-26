@@ -406,8 +406,14 @@ dequeue:
 			de_context.job = job1;
 			ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, 16, &de_context);
 			for (j = 0; j < ret; j++) {
-				if (!job1[j]->status)
-					pkt_cnt++;
+				if (job1[j]->status) {
+					printf("Error(%x) occurred for a job\n",
+						job1[j]->status);
+					rte_exit(EXIT_FAILURE,
+						 "Job Processing Error\n");
+				}
+				pkt_cnt++;
+
 				if (g_latency && (pkt_cnt >= TEST_PACKETS_NUM)) {
 					calculate_latency(lcore_id, cycle1,
 						time_count++,
