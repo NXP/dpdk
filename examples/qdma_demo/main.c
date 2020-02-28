@@ -37,6 +37,7 @@
 #include <fcntl.h>
 #include "qdma_demo.h"
 
+static int qdma_dev_id;
 /* Determines H/W or virtual mode */
 uint8_t qdma_mode = RTE_QDMA_MODE_HW;
 float rate;
@@ -98,6 +99,7 @@ int
 test_dma_init(void)
 {
 	struct rte_qdma_config qdma_config;
+	struct rte_qdma_info dev_conf;
 	int ret;
 
 	if (TEST_DMA_INIT_FLAG)
@@ -108,19 +110,14 @@ test_dma_init(void)
 	qdma_config.fle_pool_count = LSINIC_QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
 
-	ret = rte_qdma_init();
-	if (ret) {
-		RTE_LOG(ERR, PMD, "Failed to initialize dma\n");
-		return -EINVAL;
-	}
-
-	ret = rte_qdma_configure(&qdma_config);
+	dev_conf.dev_private = (void *)&qdma_config;
+	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
 	if (ret) {
 		RTE_LOG(ERR, PMD, "Failed to configure DMA\n");
 		return -EINVAL;
 	}
 
-	ret = rte_qdma_start();
+	ret = rte_qdma_start(qdma_dev_id);
 	if (ret) {
 		RTE_LOG(ERR, PMD, "Failed to start DMA\n");
 		return -EINVAL;
@@ -358,6 +355,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 	cycle1 = rte_get_timer_cycles();
 	while (!quit_signal) {
 		struct rte_qdma_job *job[256], *job1[16];
+		struct rte_qdma_enqdeq e_context, de_context;
 		int ret, j;
 		int job_num = 256;
 
@@ -394,15 +392,19 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		if (g_memcpy)
 			goto my_memcopy;
 
+		e_context.vq_id = g_vqid[lcore_id];
+		e_context.job = job;
 		/* Submit QDMA Jobs for processing */
-		ret = rte_qdma_vq_enqueue_multi(g_vqid[lcore_id], job, job_num);
+		ret = rte_qdma_enqueue_buffers(qdma_dev_id, NULL, job_num, &e_context);
 		if (unlikely(ret <= 0))
 			goto dequeue;
 		pkt_enquened += ret;
 dequeue:
 		/* Check for QDMA Job completion status */
 		do {
-			ret = rte_qdma_vq_dequeue_multi(g_vqid[lcore_id], job1, 16);
+			de_context.vq_id = g_vqid[lcore_id];
+			de_context.job = job1;
+			ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, 16, &de_context);
 			for (j = 0; j < ret; j++) {
 				if (!job1[j]->status)
 					pkt_cnt++;
@@ -435,6 +437,7 @@ static int
 lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 {
 	unsigned int lcore_id;
+	struct rte_qdma_queue_config q_config;
 	uint64_t pci_vaddr, pci_phys, len;
 	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
 	uint64_t cycle1 = 0, cycle2 = 0;
@@ -474,7 +477,11 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 	for (i = 0; (!g_memcpy) && i < MAX_CORE_COUNT; i++) {
 		if (!rte_lcore_is_enabled(i))
 			continue;
-		g_vqid[i] = rte_qdma_vq_create(i, 0);
+
+		q_config.lcore_id = i;
+		q_config.flags = 0;
+		q_config.rbp = NULL;
+		g_vqid[i] = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 		printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
 	}
 
@@ -510,7 +517,10 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 			TEST_PACKET_SIZE);
 
 		if (g_rbp_testcase == MEM_TO_PCI) {
-			job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
+			if (g_memcpy)
+				job->src = ((long)g_buf + (long) (i * TEST_PACKET_SIZE));
+			else
+				job->src = ((long)rte_malloc_virt2iova((const void *) g_buf) + (long) (i * TEST_PACKET_SIZE));
 			if (g_userbp) {
 				job->dest =
 				(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
@@ -520,9 +530,17 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 				(g_target_pci_vaddr + (long) (i * TEST_PACKET_SIZE));
 			}
 		} else if (g_rbp_testcase == MEM_TO_MEM) {
-			job->src = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
-			job->dest =
-				((long) g_buf1 + (long) (i * TEST_PACKET_SIZE));
+			if (g_memcpy) {
+				job->src = ((long)g_buf + (long) (i * TEST_PACKET_SIZE));
+				job->dest =
+					((long)g_buf1 + (long) (i * TEST_PACKET_SIZE));
+			} else {
+				job->src = ((long)rte_malloc_virt2iova((const void *) g_buf) +
+					   (long) (i * TEST_PACKET_SIZE));
+				job->dest =
+					((long) rte_malloc_virt2iova((const void *)g_buf1) +
+					(long) (i * TEST_PACKET_SIZE));
+			}
 		} else if (g_rbp_testcase == PCI_TO_PCI) {
 			if (g_userbp) {
 				job->dest = (TEST_PCIBUS_BASE_ADDR +
@@ -546,7 +564,10 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 				job->src = (g_target_pci_vaddr +
 					(long) ((i * TEST_PACKET_SIZE)));
 			}
-			job->dest = ((long) g_buf + (long) (i * TEST_PACKET_SIZE));
+			if (g_memcpy)
+				job->dest = ((long)g_buf + (long) (i * TEST_PACKET_SIZE));
+			else
+				job->dest = ((long)rte_malloc_virt2iova((const void *) g_buf) + (long) (i * TEST_PACKET_SIZE));
 		}
 	}
 	}
