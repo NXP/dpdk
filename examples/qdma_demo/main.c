@@ -109,6 +109,8 @@ test_dma_init(void)
 	qdma_config.mode = RTE_QDMA_MODE_HW;
 	qdma_config.fle_pool_count = LSINIC_QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
+	if (g_frame_format == RTE_QDMA_ULTRASHORT_FORMAT)
+		qdma_config.format = RTE_QDMA_ULTRASHORT_FORMAT;
 
 	dev_conf.dev_private = (void *)&qdma_config;
 	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
@@ -186,10 +188,8 @@ lcore_qdma_pcie32b_loop(__attribute__((unused)) void *arg)
 		RTE_LOG(ERR, PMD, "Fail to open /dev/mem\n");
 		return 0;
 	}
-	start = (g_target_pci_addr) & PAGE_MASK;
-	len = g_pci_size & PAGE_MASK;
-	if (len < (size_t) PAGE_SIZE)
-		len = PAGE_SIZE;
+	start = g_target_pci_addr;
+	len = g_pci_size;
 	tmp = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, start);
 	printf("PCI addr %lx, virt %p\n", start, tmp);
 	if (lcore_id != rte_get_master_lcore())
@@ -457,10 +457,8 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 		test_dma_init();
 	/* Memory map the PCI addresses */
 	if (g_rbp_testcase != MEM_TO_MEM) {
-		pci_phys = (g_target_pci_addr) & PAGE_MASK;
-		len = g_pci_size & PAGE_MASK;
-		if (len < (size_t) PAGE_SIZE)
-			len = PAGE_SIZE;
+		pci_phys = g_target_pci_addr;
+		len = g_pci_size;
 		pci_vaddr = (uint64_t) pci_addr_mmap(NULL, len,
 			PROT_READ | PROT_WRITE, MAP_SHARED,
 			pci_phys, NULL, NULL);
@@ -914,6 +912,12 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
+	if ((g_target_pci_addr % PAGE_SIZE) != 0 ||
+	    (g_pci_size % PAGE_SIZE) != 0) {
+		printf("PCI addr or len not multiple of page size\n");
+		return 0;
+	}
+
 	if (g_rbp_testcase != MEM_TO_MEM) {
 		g_packet_num = g_pci_size / (TEST_PACKET_SIZE);
 		printf("test packet count %d\n", g_packet_num);
@@ -933,7 +937,6 @@ main(int argc, char *argv[])
 	time_diff = end_cycles - start_cycles;
 	rate = (float) (1000) / ((nsPerCycle * time_diff) / (1000 * 1000));
 	printf("Rate:%.5f cpu freq:%ld MHz\n", rate, freq);
-
 
 	start_cycles = rte_get_timer_cycles ();
 	rte_delay_ms(2000);
