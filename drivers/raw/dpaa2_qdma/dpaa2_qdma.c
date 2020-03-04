@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include <string.h>
@@ -685,7 +685,7 @@ dpdmai_dev_enqueue_multi(struct dpaa2_dpdmai_dev *dpdmai_dev,
 	qbman_eq_desc_set_no_orp(&eqdesc, 0);
 	qbman_eq_desc_set_response(&eqdesc, 0, 0);
 
-	memset(fd, 0, RTE_QDMA_BURST_NB_MAX * sizeof(struct qbman_fd));
+	memset(fd, 0, nb_jobs * sizeof(struct qbman_fd));
 
 	while (nb_jobs > 0) {
 		uint32_t loop;
