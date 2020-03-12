@@ -1580,7 +1580,9 @@ ecpri_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
 	eth_hdr->ether_type = 0xFFFF;
 	iq = (ecpri_iq_data_t *)(mask_pattern + sizeof(struct rte_ether_hdr) +
 		sizeof(ecpri_header_t));
-	iq->sub_seq_id = nb_rx_queue - 1;
+	/* eCPRI pc or rtc_id - max distribution size */
+	iq->pc_rtc_id = rte_cpu_to_be_16(nb_rx_queue - 1);
+
 	mask.offset = 0;
 	mask.pattern = mask_pattern;
 	mask.length = sizeof(struct rte_ether_hdr) + sizeof(ecpri_header_t) +
@@ -1607,7 +1609,7 @@ ecpri_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
 		iq = (ecpri_iq_data_t *)(spec_pattern +
 			sizeof(struct rte_ether_hdr) +
 			sizeof(ecpri_header_t));
-		iq->sub_seq_id = i;
+		iq->pc_rtc_id = rte_cpu_to_be_16(i);
 		dest_queue->index = i;
 		attr.priority = i;
 		flow = rte_flow_create(portid, &attr, pattern1,
