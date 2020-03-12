@@ -184,6 +184,7 @@ lpm_main_loop(__rte_unused void *dummy)
 	struct lcore_conf *qconf;
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
 		US_PER_S * BURST_TX_DRAIN_US;
+	uint8_t en_print = 0;
 
 	prev_tsc = 0;
 
@@ -205,6 +206,9 @@ lpm_main_loop(__rte_unused void *dummy)
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
 			lcore_id, portid, queueid);
 	}
+
+	if (getenv("ENABLE_RXQ_PRINT"))
+		en_print = 1;
 
 	while (!force_quit) {
 
@@ -239,6 +243,10 @@ lpm_main_loop(__rte_unused void *dummy)
 				max_rx_burst);
 			if (nb_rx == 0)
 				continue;
+
+			if (en_print)
+				printf("Packets received on portid: %d queueid: %d\n",
+					portid, queueid);
 
 #if defined RTE_ARCH_X86 || defined __ARM_NEON \
 			 || defined RTE_ARCH_PPC_64
