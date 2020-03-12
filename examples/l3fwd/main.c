@@ -52,6 +52,7 @@
 #include <cmdline_parse_etheraddr.h>
 
 #include "l3fwd.h"
+#include "ecpri_proto.h"
 
 /*
  * Configurable number of RX/TX ring descriptors
@@ -88,6 +89,7 @@ static int per_port_pool = 1; /**< Use separate buffer pools per port */
 				/**< Set to 0 as default - disabled */
 static int traffic_split_proto; /**< Split traffic based on this protocol ID */
 static int traffic_split_ethtype; /**< Split traffic based on eth type */
+uint8_t enable_flow;
 
 enum traffic_split_type_t {
 	TRAFFIC_SPLIT_NONE,
@@ -398,7 +400,8 @@ print_usage(const char *prgname)
 		"	Event Priority,Eventdev ID)\n"
 		"  -l : Event port and Event Queue link configuration\n"
 		"	(Event Port ID,Event Queue ID,Eventdev ID,lcore)\n"
-		"  -b NUM: burst size for receive packet (default is 32)\n\n",
+		"  -b NUM: burst size for receive packet (default is 32)\n"
+		"  --enable-flow=1: Enable flow classification on ecpri(sub_seq_id)\n\n",
 		prgname);
 }
 
@@ -1004,6 +1007,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_PER_PORT_POOL "disable-per-port-pool"
 #define CMD_LINE_OPT_TRAFFIC_SPLIT "traffic-split-proto"
 #define CMD_LINE_OPT_TRAFFIC_SPLIT_CONFIG "traffic-split-config"
+#define CMD_LINE_OPT_ENABLE_FLOW "enable-flow"
 enum {
 	/* long options mapped to a short option */
 
@@ -1020,6 +1024,7 @@ enum {
 	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
 	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT,
 	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG,
+	CMD_LINE_OPT_ENABLE_FLOW_CTL,
 };
 
 static const struct option lgopts[] = {
@@ -1034,6 +1039,7 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_TRAFFIC_SPLIT, 1, 0, CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT},
 	{CMD_LINE_OPT_TRAFFIC_SPLIT_CONFIG, 1, 0,
 		CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG},
+	{CMD_LINE_OPT_ENABLE_FLOW, 1, 0, CMD_LINE_OPT_ENABLE_FLOW_CTL},
 	{NULL, 0, 0, 0}
 };
 
@@ -1223,6 +1229,10 @@ parse_args(int argc, char **argv)
 			printf("Splitting traffic on type:%d with val: %d on DPDMUX.x.%d\n",
 				traffic_split_type, traffic_split_val,
 				mux_connection_id);
+			break;
+
+		case CMD_LINE_OPT_ENABLE_FLOW_CTL:
+			enable_flow = (unsigned int)atoi(optarg);
 			break;
 
 		default:
@@ -1526,6 +1536,82 @@ configure_split_traffic_config(void)
 	return 0;
 }
 
+static void
+ecpri_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
+{
+	struct rte_flow_attr attr = {0};
+	struct rte_flow_item pattern[2] = {0}, *pattern1;
+	struct rte_flow_action actions[2] = {0}, *actions1;
+	struct rte_flow_error error;
+	struct rte_flow *flow;
+	struct rte_flow_item_raw spec = {0}, mask = {0};
+	struct rte_flow_action_queue *dest_queue;
+	uint8_t *spec_pattern, *mask_pattern;
+	struct ether_hdr *eth_hdr;
+	ecpri_iq_data_t *iq;
+	int i;
+
+	/* Set attribute */
+	attr.group = 0;
+	attr.ingress = 1;
+	attr.egress = 0;
+	attr.transfer = 0;
+
+	/* Set spec (pattern) */
+	spec_pattern = rte_zmalloc(NULL, 128, 0);
+	eth_hdr = (struct ether_hdr *)spec_pattern;
+	eth_hdr->ether_type = rte_cpu_to_be_16(ETHERTYPE_ECPRI);
+	spec.offset = 0;
+	spec.pattern = spec_pattern;
+	spec.length = sizeof(struct ether_hdr) + sizeof(ecpri_header_t) +
+		sizeof(ecpri_iq_data_t);
+
+	/* Set mask (pattern) */
+	mask_pattern = rte_zmalloc(NULL, 128, 0);
+	eth_hdr = (struct ether_hdr *)mask_pattern;
+	eth_hdr->ether_type = 0xFFFF;
+	iq = (ecpri_iq_data_t *)(mask_pattern + sizeof(struct ether_hdr) +
+		sizeof(ecpri_header_t));
+	/* eCPRI pc or rtc_id - max distribution size */
+	iq->pc_rtc_id = rte_cpu_to_be_16(nb_rx_queue - 1);
+
+	mask.offset = 0;
+	mask.pattern = mask_pattern;
+	mask.length = sizeof(struct ether_hdr) + sizeof(ecpri_header_t) +
+		sizeof(ecpri_iq_data_t);
+
+	/* Set pattern */
+	pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
+	pattern[0].spec = (void *)&spec;
+	pattern[0].mask = (void *)&mask;
+	pattern[0].last = NULL;
+	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+	/* Set action */
+	dest_queue = rte_zmalloc(NULL,
+		sizeof(struct rte_flow_action_queue), 0);
+	actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+	actions[0].conf = dest_queue;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+	pattern1 = pattern;
+	actions1 = actions;
+
+	for (i = 0; i < nb_rx_queue; i++) {
+		iq = (ecpri_iq_data_t *)(spec_pattern +
+			sizeof(struct ether_hdr) +
+			sizeof(ecpri_header_t));
+		iq->pc_rtc_id = rte_cpu_to_be_16(i);
+		dest_queue->index = i;
+		attr.priority = i;
+		flow = rte_flow_create(portid, &attr, pattern1,
+			actions1, &error);
+		if (!flow)
+			rte_exit(EXIT_FAILURE,
+				 "Cannot create flow on port=%d\n", portid);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1652,6 +1738,15 @@ main(int argc, char **argv)
 		 */
 		ether_addr_copy(&ports_eth_addr[portid],
 			(struct ether_addr *)(val_eth + portid) + 1);
+
+		if (enable_flow) {
+			if ((nb_rx_queue % 2) != 0)
+				rte_exit(EXIT_FAILURE,
+					 "Flow enabled, but RX queues not even for port=%d\n",
+					 portid);
+			else if	(nb_rx_queue != 1)
+				ecpri_port_flow_configure(portid, nb_rx_queue);
+		}
 
 		/* init memory */
 		if (!per_port_pool) {
