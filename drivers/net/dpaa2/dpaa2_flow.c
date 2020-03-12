@@ -2865,7 +2865,8 @@ dpaa2_configure_flow_raw(struct rte_flow *flow,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item_raw *spec = pattern->spec;
 	const struct rte_flow_item_raw *mask = pattern->mask;
-	static int max_length;
+	int prev_key_size =
+		priv->extract.qos_key_extract.key_info.key_total_size;
 	int local_cfg = 0, ret;
 	uint32_t group;
 
@@ -2891,7 +2892,7 @@ dpaa2_configure_flow_raw(struct rte_flow *flow,
 	flow->tc_id = group;
 	flow->tc_index = attr->priority;
 
-	if (max_length < spec->length) {
+	if (prev_key_size < spec->length) {
 		ret = dpaa2_flow_extract_add_raw(&priv->extract.qos_key_extract,
 						 spec->length);
 		if (ret) {
@@ -2907,7 +2908,6 @@ dpaa2_configure_flow_raw(struct rte_flow *flow,
 			return -1;
 		}
 		local_cfg |= DPAA2_FS_TABLE_RECONFIGURE;
-		max_length = spec->length;
 	}
 
 	ret = dpaa2_flow_rule_data_set_raw(&flow->qos_rule, spec->pattern,
