@@ -467,7 +467,7 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 				pci_phys);
 			return 0;
 		}
-		g_target_pci_vaddr = pci_vaddr;
+		g_target_pci_vaddr = pci_phys;
 		/* configure pci virtual address in SMMU via VFIO */
 		rte_fslmc_vfio_mem_dmamap(pci_vaddr,
 					  g_target_pci_vaddr, len);
