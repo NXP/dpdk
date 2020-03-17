@@ -112,11 +112,19 @@ Mandatory arguments:
 Process of testing:
 	* ipsec-secgw:
 		---- ping with bi-destination 192.168.101.1<->192.168.1.1
+		---- ping with bi-destination 192.168.102.1<->192.168.2.1
+		...
+		...
+		---- ping with bi-destination 192.168.116.1<->192.168.16.1
 
 Example:
 run_command PKT_IPSEC_SECGW "./ipsec-secgw -c 0xf  --file-prefix=p1 --socket-mem=1024  -- -p 0x3 -P -u 0x2 --config="(0,0,0),(1,0,1)" -f ep0_64X64.cfg"  "./ipsec-secgw -c 0xf0 --file-prefix=p2 --socket-mem=1024 -- -p 0x3 -P -u 0x2  --config="(0,0,4),(1,0,5)"  -f ep1_64X64.cfg"
 
 All these commands should be added only in run_dpdk function.
+
+Note:
+* For interoperability test, ipsec_secgw application should be compiled by openssl.
+* Any combination with cipher_algo null and auth_algo null is not supported.
 "
 }
 
@@ -219,6 +227,31 @@ print_result() {
 		partial=`expr $partial + 1`
 	fi
 }
+
+#/* Function to ping packets from interfaces */
+ping_pkt() {
+echo -e "ping_pkts :-------updated ip's are: 192.168.$y.1 192.168.$x.1"
+sleep 5
+if [ $x -le 116 -o $y -le 16 ]
+then
+for pkt_size in $pkt_list
+        do
+                ping 192.168.$y.1 -i 0.001 -c $ping_packets -s $pkt_size | tee log              # initially $y = 1 and $x = 101
+                RESULT=`grep -o "\w*\.\w*%\|\w*%" log`
+                print_result "$RESULT"
+                sleep 5
+                append_newline 3
+
+                ip netns exec sanity_port2 ping 192.168.$x.1 -i 0.001 -c $ping_packets -s $pkt_size | tee log
+                sleep 5
+                RESULT=`grep -o "\w*\.\w*%\|\w*%" log`
+                print_result "$RESULT"
+                sleep 5
+        done
+reconfigure_ethif
+fi
+}
+
 #/* Function to run the DPDK IPSEC-GW  test cases*/
 
 run_ipsec_secgw() {
@@ -243,18 +276,7 @@ then
 	sleep 10
 	append_newline 3
 
-	for pkt_size in $pkt_list
-	do
-		ping 192.168.1.1 -i 0.001 -c $ping_packets -s $pkt_size | tee log
-		RESULT=`grep -o "\w*\.\w*%\|\w*%" log`
-		print_result "$RESULT"
-		sleep 5
-		append_newline 3
-
-		ip netns exec sanity_port2 ping 192.168.101.1 -i 0.001 -c $ping_packets -s $pkt_size | tee log
-		RESULT=`grep -o "\w*\.\w*%\|\w*%" log`
-		print_result "$RESULT"
-	done
+	ping_pkt
 
 	killall ipsec-secgw
 	sleep 10
@@ -283,6 +305,9 @@ case $1 in
 	PKT_IPSEC_SECGW_PROTO )
 		run_ipsec_secgw $1 "$2" "$3"
 		;;
+	IPSEC_INTEROPERABILITY )
+                run_ipsec_secgw $1 "$2" "$3 $crypto_dev_mask"
+                ;;
 	*)
 		echo "Invalid test case $1"
 esac
@@ -295,6 +320,7 @@ run_dpdk() {
 	# */
 	run_command PKT_IPSEC_SECGW   './ipsec-secgw -c 0xf --file-prefix=p1 --socket-mem=1024 -- -p 0x3 -P -u 0x2 --config="(0,0,0),(1,0,1)" -f /usr/local/dpdk/ipsec/ep0_64X64.cfg'  './ipsec-secgw -c 0xf0 --file-prefix=p2 --socket-mem=1024 -- -p 0x3 -P -u 0x2 --config="(0,0,4),(1,0,5)" -f /usr/local/dpdk/ipsec/ep1_64X64.cfg'
 	run_command PKT_IPSEC_SECGW_PROTO   './ipsec-secgw -c 0xf --file-prefix=p1 --socket-mem=1024 -- -p 0x3 -P -u 0x2 --config="(0,0,0),(1,0,1)" -f /usr/local/dpdk/ipsec/ep0_64X64_proto.cfg'  './ipsec-secgw -c 0xf0 --file-prefix=p2 --socket-mem=1024 -- -p 0x3 -P -u 0x2 --config="(0,0,4),(1,0,5)" -f /usr/local/dpdk/ipsec/ep1_64X64_proto.cfg'
+	run_command IPSEC_INTEROPERABILITY './ipsec-secgw -c 0xf --file-prefix=p1 --socket-mem=1024 --log-level=dpaa,8 --log-level=user,8 --log-level=8 -- -p 0x3 -P -u 0x2 --config="(0,0,0),(1,0,1)" -f /usr/local/dpdk/ipsec/ep0_multi.cfg' './ipsec-secgw -c 0xf --file-prefix=p2 --socket-mem=1024 --vdev "crypto_openssl0" --log-level=dpaa,8 --log-level=user,8 --log-level=8 -- -p 0x3 -P -u 0x2 --config="(0,0,1),(1,0,1)" -f /usr/local/dpdk/ipsec/ep1_multi_nonproto.cfg --cryptodev_mask'
 }
 
 #/* configuring the interfaces*/
@@ -319,6 +345,31 @@ configure_ethif() {
 	echo
 }
 
+reconfigure_ethif() {
+        echo -e "\nreconfigure_ethif"
+        ((++y))
+        ((++x))
+
+        if [ $x -le 116 -o $y -le 16 ]
+        then
+        ifconfig $NI1 192.168.$x.1
+        ifconfig $NI1 hw ether 00:16:3e:7e:94:9a
+        ip route add 192.168.$y.0/24 via 192.168.$x.2
+        arp -s 192.168.$x.2 00:00:00:00:00:10
+
+        ip netns exec sanity_port2 ifconfig $NI2 192.168.$y.1
+        ip netns exec sanity_port2 ifconfig $NI2 hw ether 00:16:3e:7e:94:9a
+        ip netns exec sanity_port2 ip route add 192.168.$x.0/24 via 192.168.$y.2
+        ip netns exec sanity_port2 arp -s 192.168.$y.2 00:00:00:00:00:20
+        cd ${DPDK_EXAMPLE_PATH}
+        echo
+        echo
+        echo
+
+        ping_pkt
+        fi
+}
+
 unconfigure_ethif() {
 
 	ip netns del sanity_port2
@@ -337,9 +388,14 @@ main() {
 		echo "############################################## TEST CASES ###############################################" >> sanity_tested_apps
 		echo >> sanity_tested_apps
 	fi
+	if [[ $board_type == "2160" ]]
+        then
+                crypto_dev_mask=0x10000
+        elif [[ $board_type == "2088" ]]
+        then
+                crypto_dev_mask=0x100
+        fi
 	run_dpdk
-
-
 	unconfigure_ethif
 
 	if [ ! -v ALL_TEST ]
@@ -498,6 +554,8 @@ source ${DPDK_EXTRAS_PATH}/destroy_dynamic_dpl.sh $SDPRC
 get_resources
 fi
 configure_ethif
+x=101
+y=1
 main
 
 set +m
