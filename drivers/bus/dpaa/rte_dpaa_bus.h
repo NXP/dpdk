@@ -33,6 +33,9 @@
 /** Device driver supports link state interrupt */
 #define RTE_DPAA_DRV_INTR_LSC  0x0008
 
+/** Number of supported QDMA devices */
+#define RTE_DPAA_QDMA_DEVICES  1
+
 #define RTE_DEV_TO_DPAA_CONST(ptr) \
 	container_of(ptr, const struct rte_dpaa_device, device)
 
@@ -53,6 +56,7 @@ extern struct netcfg_info *dpaa_netcfg;
 enum rte_dpaa_type {
 	FSL_DPAA_ETH = 1,
 	FSL_DPAA_CRYPTO,
+	FSL_DPAA_QDMA,
 };
 
 struct rte_dpaa_bus {
@@ -75,6 +79,7 @@ struct rte_dpaa_device {
 	union {
 		struct rte_eth_dev *eth_dev;
 		struct rte_cryptodev *crypto_dev;
+		struct rte_rawdev *rawdev;
 	};
 	struct rte_dpaa_driver *driver;
 	struct dpaa_device_id id;

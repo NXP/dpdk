@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #include <stdio.h>
@@ -251,8 +251,8 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		m_new->next = m[i]->next;
 		rte_mbuf_refcnt_set(m_new, 1);
 
-		m_data = rte_pktmbuf_mtod(m[i], void *);
-		m_new_data = rte_pktmbuf_mtod(m_new, void *);
+		m_data = (void *)rte_pktmbuf_iova(m[i]);
+		m_new_data = (void *)rte_pktmbuf_iova(m_new);
 
 		rte_mempool_get(l2fwd_qdma_job_pool, (void **)&job);
 

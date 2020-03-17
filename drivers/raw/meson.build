@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018 NXP
+# Copyright 2018-2020 NXP
 
-drivers = ['dpaa2_cmdif', 'dpaa2_qdma',
+drivers = ['dpaa2_cmdif', 'dpaa2_qdma', 'dpaa_qdma',
 	'ifpga', 'ioat', 'ntb',
 	'octeontx2_dma',
 	'skeleton']
