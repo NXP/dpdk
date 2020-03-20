@@ -316,10 +316,8 @@ int rte_dpaa_intr_enable(char *if_name, int efd)
 	strcpy(args.if_name, if_name);
 
 	ret = ioctl(fd, DPAA_IOCTL_ENABLE_LINK_STATUS_INTERRUPT, &args);
-	if (ret) {
-		printf("Failed to enable interrupt: Not Supported\n");
-		return ret;
-	}
+	if (ret)
+		return errno;
 
 	return 0;
 }
@@ -333,7 +331,10 @@ int rte_dpaa_intr_disable(char *if_name)
 
 	ret = ioctl(fd, DPAA_IOCTL_DISABLE_LINK_STATUS_INTERRUPT, &if_name);
 	if (ret) {
-		printf("Failed to disable interrupt: Not Supported\n");
+		if (errno == EINVAL)
+			printf("Failed to disable interrupt: Not Supported\n");
+		else
+			printf("Failed to disable interrupt\n");
 		return ret;
 	}
 
@@ -356,8 +357,11 @@ int rte_dpaa_get_link_status(char *if_name)
 
 	ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS, &args);
 	if (ret) {
-		printf("Failed to get link status: Not Supported\n");
-		return -errno;
+		if (errno == EINVAL)
+			printf("Failed to get link status: Not Supported\n");
+		else
+			printf("Failed to get link status\n");
+		return ret;
 	}
 
 	return args.link_status;
@@ -383,7 +387,7 @@ int rte_dpaa_update_link_status(char *if_name, int link_status)
 		if (errno == EINVAL)
 			printf("Failed to set link status: Not Supported\n");
 		else
-			perror("Failed to set link status");
+			printf("Failed to set link status");
 		return ret;
 	}
 

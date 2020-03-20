@@ -208,6 +208,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	struct fman_if *fif = dev->process_private;
 	struct __fman_if *__fif;
 	struct rte_intr_handle *intr_handle;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -269,13 +270,27 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	}
 
 	/* if the interrupts were configured on this devices*/
-	if (intr_handle && intr_handle->fd &&
-	    dev->data->dev_conf.intr_conf.lsc != 0)
-		rte_intr_callback_register(intr_handle, dpaa_interrupt_handler,
+	if (intr_handle && intr_handle->fd) {
+		if (dev->data->dev_conf.intr_conf.lsc != 0)
+			rte_intr_callback_register(intr_handle,
+					   dpaa_interrupt_handler,
 					   (void *)dev);
 
-	rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
-
+		ret = rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
+		if (ret) {
+			if (dev->data->dev_conf.intr_conf.lsc != 0) {
+				rte_intr_callback_unregister(intr_handle,
+							     dpaa_interrupt_handler,
+							     (void *)dev);
+				if (ret == EINVAL)
+					printf("Failed to enable interrupt: Not Supported\n");
+				else
+					printf("Failed to enable interrupt\n");
+			}
+			dev->data->dev_conf.intr_conf.lsc = 0;
+			dev->data->dev_flags &= ~RTE_ETH_DEV_INTR_LSC;
+		}
+	}
 	return 0;
 }
 
@@ -370,13 +385,13 @@ static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	dpaa_eth_dev_stop(dev);
 
-	rte_dpaa_intr_disable(__fif->node_name);
-
 	if (intr_handle && intr_handle->fd &&
-	    dev->data->dev_conf.intr_conf.lsc != 0)
+	    dev->data->dev_conf.intr_conf.lsc != 0) {
+		rte_dpaa_intr_disable(__fif->node_name);
 		rte_intr_callback_unregister(intr_handle,
 					     dpaa_interrupt_handler,
 					     (void *)dev);
+	}
 }
 
 static int
@@ -476,18 +491,15 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 		DPAA_PMD_ERR("invalid link_speed: %s, %d",
 			     dpaa_intf->name, fif->mac_type);
 
-	ret = rte_dpaa_get_link_status(__fif->node_name);
-	if (ret < 0) {
-		if (ret == -EINVAL) {
-			DPAA_PMD_DEBUG("Using default link status-No Support");
-			ret = 1;
-		} else {
-			DPAA_PMD_ERR("rte_dpaa_get_link_status %d", ret);
+	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC) {
+		ret = rte_dpaa_get_link_status(__fif->node_name);
+		if (ret < 0)
 			return ret;
-		}
+		link->link_status = ret;
+	} else {
+		link->link_status = dpaa_intf->valid;
 	}
 
-	link->link_status = ret;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
 	link->link_autoneg = ETH_LINK_AUTONEG;
 
@@ -1059,7 +1071,10 @@ static int dpaa_link_down(struct rte_eth_dev *dev)
 
 	__fif = container_of(fif, struct __fman_if, __if);
 
-	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
+	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC)
+		rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
+	else
+		dpaa_eth_dev_stop(dev);
 	return 0;
 }
 
@@ -1072,7 +1087,10 @@ static int dpaa_link_up(struct rte_eth_dev *dev)
 
 	__fif = container_of(fif, struct __fman_if, __if);
 
-	rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
+	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC)
+		rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
+	else
+		dpaa_eth_dev_start(dev);
 	return 0;
 }
 
