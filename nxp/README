@@ -271,10 +271,6 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 
       $ make -C examples/l2fwd-crypto
 
-  4. Compile unit test application
-
-      $ make -C test/test
-
    NOTE: if you are compiling with OPENSSL enabled, you need to specify the
    openssl path. e.g.
       $ make  CONFIG_RTE_LIBRTE_PMD_OPENSSL=y  -I$OPENSSL_PATH/include  \
@@ -482,7 +478,8 @@ Following are some pre-requisites:
   ~~~~~~~~~~~~~~~~~~
 
   Test application can be used to do functional testing of the drivers and libraries.
-  The binary is tested for various algos and protocols in crypto pmds
+  The binary is tested for various algos and protocols in crypto pmds. 'test' binary
+  is generated at arm64-dpaa-linuxapp-gcc/app/test while compiling DPDK.
 
   Run binary as
   $./test --log-level=7
@@ -493,6 +490,12 @@ Following are some pre-requisites:
   or (for DPAA2_SEC)
   RTE>> cryptodev_dpaa2_sec_autotest
 
+  Run the 'autotest.py' script as
+  $ python app/test/autotest.py ./test arm64-dpaa-linuxapp-gcc
+
+  NOTE: For 'autotest.py' script, all the dependent 'app/test/*.py' scripts and
+	'python-pexpect' package is required on the board.
+	$ sudo apt-get install python-pexpect
 
   'dpdk-test-crypto-perf' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
