@@ -237,6 +237,283 @@ static const struct rte_bbdev_ops pmd_ops = {
 	.start = la12xx_start
 };
 
+/* To handle glibc memcpy unaligned access issue, we need
+ * our own wrapper layer to handle corner cases. We use memcpy
+ * for size aligned bytes and do left opver byets copy manually.
+ */
+static inline void ipc_memcpy(void *dst, void *src, uint32_t len)
+{
+	uint32_t extra_b;
+
+	extra_b = (len & 0x7);
+	/* Adjust the length to multiple of 8 byte
+	 * and copy extra bytes to avoid BUS error
+	 */
+	if (extra_b)
+		len += (0x8 - extra_b);
+
+	memcpy(dst, src, len);
+}
+
+static inline int is_bd_ring_full(ipc_br_md_t *md)
+{
+	uint32_t ci = md->ci;
+	uint32_t pi = md->pi;
+
+	if (pi == ci) {
+		uint32_t ci_flag = md->ci_flag;
+		uint32_t pi_flag = md->pi_flag;
+
+		if (pi_flag != ci_flag)
+			return 1; /* Ring is Full */
+	}
+	return 0;
+}
+
+#define MODEM_P2V(A) \
+	((uint64_t) ((unsigned long) (A) \
+			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+
+static int
+enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *src, uint32_t len)
+{
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	uint32_t q_id = q_priv->q_id, pi;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_br_md_t *md = &(ch->br_msg_desc.md);
+	ipc_bd_t *bdr, *bd;
+	uint64_t virt;
+
+	if (len > md->msg_size) {
+		h_stats->ipc_ch_stats[q_id].err_input_invalid++;
+		return IPC_INPUT_INVALID;
+	}
+
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+
+	if (is_bd_ring_full(md)) {
+		h_stats->ipc_ch_stats[q_id].err_channel_full++;
+		return IPC_CH_FULL;
+	}
+
+	pi = md->pi;
+	bdr = ch->br_msg_desc.bd;
+	bd = &bdr[pi];
+
+	virt = MODEM_P2V(bd->modem_ptr);
+	ipc_memcpy((void *)(virt), src, len);
+	bd->len = len;
+	/* Move Producer Index forward */
+	pi++;
+	/* Wait for Data Copy and pi_flag update to complete
+	 * before updating pi
+	 */
+	rte_mb();
+	/* Flip the PI flag, if wrapping */
+	if (md->ring_size == pi) {
+		md->pi = 0;
+		md->pi_flag = md->pi_flag ? 0 : 1;
+	} else
+		md->pi = pi;
+
+	h_stats->ipc_ch_stats[q_id].num_of_msg_sent++;
+	h_stats->ipc_ch_stats[q_id].total_msg_length += len;
+
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+
+	return 0;
+}
+
+/* Enqueue decode burst */
+static uint16_t
+enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
+{
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_ipc_dequeue_op bbdev_ipc_op;
+	uint32_t len = sizeof(struct bbdev_ipc_dequeue_op);
+	int nb_enqueued, ret;
+	void *src;
+
+	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
+		bbdev_ipc_op.op_type = BBDEV_IPC_DEC_OP_TYPE;
+		bbdev_ipc_op.l2_cntx_l =
+		       lower_32_bits((uint64_t)ops[nb_enqueued]);
+		bbdev_ipc_op.l2_cntx_h =
+		       upper_32_bits((uint64_t)ops[nb_enqueued]);
+		/* TODO: Copy other fields and have separate API for it */
+		src = &bbdev_ipc_op;
+		ret = enqueue_single_op(q_priv, src, len);
+		if (ret)
+			break;
+	}
+
+	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	q_data->queue_stats.enqueued_count += nb_enqueued;
+
+	return nb_enqueued;
+}
+
+/* Enqueue encode burst */
+static uint16_t
+enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
+{
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_ipc_dequeue_op bbdev_ipc_op;
+	uint32_t len = sizeof(struct bbdev_ipc_dequeue_op);
+	int nb_enqueued, ret;
+	void *src;
+
+	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
+		bbdev_ipc_op.op_type = BBDEV_IPC_ENC_OP_TYPE;
+		bbdev_ipc_op.l2_cntx_l =
+		       lower_32_bits((uint64_t)ops[nb_enqueued]);
+		bbdev_ipc_op.l2_cntx_h =
+		       upper_32_bits((uint64_t)ops[nb_enqueued]);
+		/* TODO: Copy other fields and have separate API for it */
+		src = &bbdev_ipc_op;
+		ret = enqueue_single_op(q_priv, src, len);
+		if (ret)
+			break;
+	}
+
+	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	q_data->queue_stats.enqueued_count += nb_enqueued;
+
+	return nb_enqueued;
+}
+
+#define JOIN_VA32_64(H, L) ((uint64_t)(((H) << 32) | (L)))
+static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
+{
+	uint64_t high = 0x0;
+
+	high = h;
+	return JOIN_VA32_64(high, l);
+}
+
+static inline int is_bd_ring_empty(ipc_br_md_t *md)
+{
+	uint32_t ci = md->ci;
+	uint32_t pi = md->pi;
+
+	if (ci == pi) {
+		uint32_t ci_flag = md->ci_flag;
+		uint32_t pi_flag = md->pi_flag;
+
+		if (ci_flag == pi_flag)
+			return 1; /* No more Buffer */
+	}
+	return 0;
+}
+
+/* Dequeue encode burst */
+static int
+dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
+{
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	uint32_t q_id = q_priv->q_id + HOST_RX_QUEUEID_OFFSET;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_br_md_t *md;
+	uint32_t ci, msg_len;
+	uint64_t vaddr2 = 0;
+	ipc_bd_t *bdr, *bd;
+
+	md = &(ch->br_msg_desc.md);
+	if (is_bd_ring_empty(md)) {
+		h_stats->ipc_ch_stats[q_id].err_channel_empty++;
+		return IPC_CH_EMPTY;
+	}
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+
+	ci = md->ci;
+	bdr = ch->br_msg_desc.bd;
+	bd = &bdr[ci];
+	/* Move Consumer Index forward */
+	ci++;
+	/* Flip the CI flag, if wrapping */
+	if (md->ring_size == ci) {
+		ci = 0;
+		md->ci_flag = md->ci_flag ? 0 : 1;
+	}
+	md->ci = ci;
+
+	msg_len = bd->len;
+	if (msg_len > md->msg_size) {
+		h_stats->ipc_ch_stats[q_id].err_input_invalid++;
+		return IPC_INPUT_INVALID;
+	}
+	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+	ipc_memcpy(dst, (void *)(vaddr2), msg_len);
+
+	h_stats->ipc_ch_stats[q_id].num_of_msg_recved++;
+	h_stats->ipc_ch_stats[q_id].total_msg_length += msg_len;
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"exit: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+
+	return 0;
+}
+
+/* Dequeue decode burst */
+static uint16_t
+dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
+{
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
+	int nb_dequeued, ret;
+
+	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
+		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (ret)
+			break;
+		ops[nb_dequeued] = (struct rte_bbdev_dec_op *)(((uint64_t)
+			bbdev_ipc_op.l2_cntx_h << 32) |
+			bbdev_ipc_op.l2_cntx_l);
+		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+	}
+
+	q_data->queue_stats.dequeued_count += nb_dequeued;
+
+	return nb_dequeued;
+}
+
+/* Dequeue encode burst */
+static uint16_t
+dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
+{
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
+	int nb_dequeued, ret;
+
+	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
+		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (ret)
+			break;
+		ops[nb_dequeued] = (struct rte_bbdev_enc_op *)(((uint64_t)
+			bbdev_ipc_op.l2_cntx_h << 32) |
+			bbdev_ipc_op.l2_cntx_l);
+		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+	}
+
+	q_data->queue_stats.dequeued_count += nb_dequeued;
+
+	return nb_dequeued;
+}
+
 static struct hugepage_info *
 get_hugepage_info(void)
 {
@@ -480,6 +757,17 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 	bbdev->device = &vdev->device;
 	bbdev->data->socket_id = 0;
 	bbdev->intr_handle = NULL;
+
+	/* register rx/tx burst functions for data path */
+	bbdev->dequeue_enc_ops = dequeue_enc_ops;
+	bbdev->dequeue_dec_ops = dequeue_dec_ops;
+	bbdev->enqueue_enc_ops = enqueue_enc_ops;
+	bbdev->enqueue_dec_ops = enqueue_dec_ops;
+
+	bbdev->dequeue_ldpc_enc_ops = dequeue_enc_ops;
+	bbdev->dequeue_ldpc_dec_ops = dequeue_dec_ops;
+	bbdev->enqueue_ldpc_enc_ops = enqueue_enc_ops;
+	bbdev->enqueue_ldpc_dec_ops = enqueue_dec_ops;
 
 	return 0;
 }
