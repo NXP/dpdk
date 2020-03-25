@@ -12,5 +12,9 @@ DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_TURBO_SW) += turbo_sw
 DEPDIRS-turbo_sw = $(core-libs)
 DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC) += fpga_lte_fec
 DEPDIRS-fpga_lte_fec = $(core-libs)
+ifneq ($(LA12XX_COMMON_HDR_DIR),)
+DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += la12xx
+DEPDIRS-bbdev_la12xx = $(core-libs)
+endif
 
 include $(RTE_SDK)/mk/rte.subdir.mk
