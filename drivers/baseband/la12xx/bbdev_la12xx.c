@@ -33,7 +33,208 @@ int bbdev_la12xx_logtype_pmd;
 struct gul_ipc_stats *h_stats;
 struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
 
+/* Get device info */
+static void
+la12xx_info_get(struct rte_bbdev *dev,
+		struct rte_bbdev_driver_info *dev_info)
+{
+	/* TODO: Add LDPC capability */
+	static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
+		RTE_BBDEV_END_OF_CAPABILITIES_LIST(),
+	};
+	static struct rte_bbdev_queue_conf default_queue_conf = {
+		.queue_size = MAX_CHANNEL_DEPTH,
+	};
+
+	PMD_INIT_FUNC_TRACE();
+
+	dev_info->driver_name = RTE_STR(DRIVER_NAME);
+	dev_info->max_num_queues = LS12XX_MAX_QUEUES;
+	dev_info->queue_size_lim = MAX_CHANNEL_DEPTH;
+	dev_info->hardware_accelerated = true;
+	dev_info->max_dl_queue_priority = 0;
+	dev_info->max_ul_queue_priority = 0;
+	dev_info->default_queue_conf = default_queue_conf;
+	dev_info->capabilities = bbdev_capabilities;
+	dev_info->cpu_flag_reqs = NULL;
+	dev_info->min_alignment = 0;
+
+	BBDEV_LA12XX_PMD_DEBUG("got device info from %u", dev->data->dev_id);
+}
+
+/* Release queue */
+static int
+la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
+{
+	RTE_SET_USED(dev);
+	RTE_SET_USED(q_id);
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* TODO: Implement */
+
+	return 0;
+}
+
+static int
+is_channel_configured(uint32_t channel_id, ipc_t instance)
+{
+	ipc_userspace_t *ipc_priv = instance;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Read mask */
+	ipc_bitmask_t mask = ipc_instance->cfgmask[channel_id /
+				bitcount(ipc_bitmask_t)];
+
+	/* !! to return either 0 or 1 */
+	return !!(mask & (1 << (channel_id % bitcount(mask))));
+}
+
+static void
+mark_channel_as_configured(uint32_t channel_id,
+			       ipc_instance_t *instance)
+{
+	/* Read mask */
+	ipc_bitmask_t mask = instance->cfgmask[channel_id /
+				bitcount(ipc_bitmask_t)];
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Set channel specific bit */
+	mask |= 1 << (channel_id % bitcount(mask));
+
+	/* Write mask */
+	instance->cfgmask[channel_id / bitcount(ipc_bitmask_t)] = mask;
+}
+
+#define HUGEPG_OFFSET(A) \
+		((uint64_t) ((unsigned long) (A) \
+		- ((uint64_t)ipc_priv->hugepg_start.host_vaddr)))
+
+static int ipc_queue_configure(uint32_t channel_id,
+		ipc_t instance, const struct rte_bbdev_queue_conf *conf)
+{
+	ipc_userspace_t *ipc_priv = (ipc_userspace_t *)instance;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	ipc_ch_t *ch;
+	void *vaddr;
+	uint32_t i = 0;
+	uint32_t msg_size = sizeof(struct bbdev_ipc_enqueue_op);
+
+	PMD_INIT_FUNC_TRACE();
+
+	RTE_SET_USED(conf);
+
+	BBDEV_LA12XX_PMD_DEBUG("%x %p", ipc_instance->initialized,
+		ipc_priv->instance);
+	ch = &(ipc_instance->ch_list[channel_id]);
+
+	if (is_channel_configured(channel_id, ipc_priv)) {
+		BBDEV_LA12XX_PMD_WARN(
+			"Channel already configured. NOT configuring again");
+		return IPC_SUCCESS;
+	}
+
+	BBDEV_LA12XX_PMD_DEBUG("channel: %u, depth: %u, msg size: %u",
+		channel_id, MAX_CHANNEL_DEPTH, msg_size);
+
+	/* Start init of channel */
+	/* TODO: Use conf->queue_size instead of MAX_CHANNEL_DEPTH */
+	ch->br_msg_desc.md.ring_size = MAX_CHANNEL_DEPTH;
+	ch->br_msg_desc.md.ci_flag = 0;
+	ch->br_msg_desc.md.pi_flag = 0;
+	ch->br_msg_desc.md.pi = 0;
+	ch->br_msg_desc.md.ci = 0;
+	ch->br_msg_desc.md.msg_size = msg_size;
+	for (i = 0; i < MAX_CHANNEL_DEPTH; i++) {
+		vaddr = rte_malloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
+		if (!vaddr) {
+			h_stats->ipc_ch_stats[channel_id].err_host_buf_alloc_fail++;
+			return IPC_HOST_BUF_ALLOC_FAIL;
+		}
+		/* Only offset now */
+		ch->br_msg_desc.bd[i].modem_ptr = HUGEPG_OFFSET(vaddr);
+		ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
+		ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
+		/* Not sure use of this len may be for CRC*/
+		ch->br_msg_desc.bd[i].len = 0;
+	}
+	ch->bl_initialized = 1;
+
+	mark_channel_as_configured(channel_id, ipc_priv->instance);
+	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
+	return IPC_SUCCESS;
+
+}
+
+/* Setup a queue */
+static int
+la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
+		const struct rte_bbdev_queue_conf *queue_conf)
+{
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipcu = priv->ipc_priv;
+	struct rte_bbdev_queue_data *q_data;
+	struct bbdev_la12xx_q_priv *q_priv;
+	int ret = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Move to setup_queues callback */
+	q_data = &dev->data->queues[q_id];
+	q_data->queue_private = rte_zmalloc(NULL,
+		sizeof(struct bbdev_la12xx_q_priv), 0);
+	if (!q_data->queue_private) {
+		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for qpriv");
+		return -ENOMEM;
+	}
+	q_priv = q_data->queue_private;
+	q_priv->q_id = q_id;
+	q_priv->bbdev_priv = dev->data->dev_private;
+
+	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_id);
+
+	/* Call ipc_configure_channel */
+	ret = ipc_queue_configure((q_id + HOST_RX_QUEUEID_OFFSET),
+				  ipcu, queue_conf);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR("Unable to setup queue (%d) (err=%d)",
+		       q_id, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
+la12xx_start(struct rte_bbdev *dev)
+{
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipcu = priv->ipc_priv;
+	int ready = 1;
+	struct gul_hif *hif_start;
+
+	PMD_INIT_FUNC_TRACE();
+
+	hif_start = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+
+	/* Set Host Read bit */
+	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
+
+	/* Now wait for modem ready bit */
+	while (ready)
+		ready = !CHK_HIF_MOD_RDY(hif_start, HIF_MOD_READY_IPC_APP);
+
+	return 0;
+}
+
 static const struct rte_bbdev_ops pmd_ops = {
+	.info_get = la12xx_info_get,
+	.queue_setup = la12xx_queue_setup,
+	.queue_release = la12xx_queue_release,
+	.start = la12xx_start
 };
 
 static struct hugepage_info *

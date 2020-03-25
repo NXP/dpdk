@@ -16,4 +16,14 @@ struct hugepage_info {
 	size_t len;
 };
 
+struct bbdev_la12xx_q_priv {
+	struct bbdev_la12xx_private *bbdev_priv;
+	uint8_t en_napi; /* 0: napi disabled, 1: napi enabled */
+	uint16_t depth;	/**< Depth of the channel, for PTR channel case */
+	uint32_t q_id;	/**< Channel ID */
+	int32_t eventfd;	/**< Event FD value */
+	enum ipc_ch_type type;  /**< Channel type */
+	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
+};
+
 #endif
