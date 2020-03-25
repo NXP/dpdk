@@ -440,8 +440,8 @@ echo "Result path is $DPDK_SANITY_RESULT"
 
 set -m
 ping_packets=320
-pkt_list="100 1000 2000 3000 4000 5000"
-max_pkt_size=6000
+pkt_list="100 2000 4000 6000 8000 9000"
+max_pkt_size=9000
 min_pkt_size=100
 step=500
 if [ ! -v ALL_TEST ]
