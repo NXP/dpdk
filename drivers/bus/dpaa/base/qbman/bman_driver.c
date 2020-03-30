@@ -80,7 +80,7 @@ static int fsl_bman_portal_init(uint32_t idx, int is_shared)
 	for (loop = 0; loop < CPU_SETSIZE; loop++)
 		if (CPU_ISSET(loop, &cpuset)) {
 			if (pcfg.cpu != -1) {
-				pr_err("Thread is not affine to 1 cpu");
+				pr_err("Thread is not affine to 1 cpu -%x", pcfg.cpu);
 				return -EINVAL;
 			}
 			pcfg.cpu = loop;

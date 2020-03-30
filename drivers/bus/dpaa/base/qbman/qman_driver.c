@@ -81,7 +81,7 @@ static int fsl_qman_portal_init(uint32_t index, int is_shared)
 	for (loop = 0; loop < CPU_SETSIZE; loop++)
 		if (CPU_ISSET(loop, &cpuset)) {
 			if (qpcfg.cpu != -1) {
-				pr_err("Thread is not affine to 1 cpu\n");
+				pr_err("Portal Init: Thread is not affine to 1 cpu %x\n", qpcfg.cpu);
 				return -EINVAL;
 			}
 			qpcfg.cpu = loop;
@@ -206,7 +206,7 @@ struct qman_portal *fsl_qman_portal_create(void)
 	for (loop = 0; loop < CPU_SETSIZE; loop++)
 		if (CPU_ISSET(loop, &cpuset)) {
 			if (q_pcfg->cpu != -1) {
-				pr_err("Thread is not affine to 1 cpu\n");
+				pr_err("Create: Thread is not affine to 1 cpu-%x\n", q_pcfg->cpu);
 				kfree(q_pcfg);
 				return NULL;
 			}
