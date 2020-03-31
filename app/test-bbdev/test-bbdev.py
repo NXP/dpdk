@@ -51,7 +51,8 @@ parser.add_argument("-v", "--test-vector",
 parser.add_argument("-n", "--num-ops",
                     type=int,
                     help="Number of operations to process on device.",
-                    default=32)
+#                    default=32)
+                    default=4)
 parser.add_argument("-b", "--burst-size",
                     nargs="+",
                     type=int,
