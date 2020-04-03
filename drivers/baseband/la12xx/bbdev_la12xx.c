@@ -27,6 +27,9 @@
 
 #define DRIVER_NAME baseband_la12xx
 
+/* SG table final entry */
+#define QDMA_SGT_F	0x80000000
+
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
 
@@ -290,7 +293,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
 	char *data_ptr;
-	uint32_t l1_pcie_addr;
+	uint32_t l1_pcie_addr, sg_count;
 	NxpQdmaCLT_t *clt;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
@@ -318,8 +321,29 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
 	/* Filling QDMA descriptor */
-	if (mbuf->nb_segs == 1) {
-		clt = &bbdev_ipc_op->qdma_desc.NxpClt;
+	clt = &bbdev_ipc_op->qdma_desc.NxpClt;
+
+	sg_count = mbuf->nb_segs;
+	if(sg_count > 1) {
+		ScatterGatherTableFormat_t *sg =  bbdev_ipc_op->qdma_desc.sgSrcTableHead;
+
+		/* TODO add a check maximum SGs QDMA can support */
+		/* TODO Need to update below fields to support mixed traffic
+		 * clt->sCmdListTable.LowAddrBase = (uint32_t)(uintptr_t)sg;
+		 * clt->sCmdListTable.Cfg1 = 0x20000000; (QDMA_CLT_SG)
+		 */
+		clt->sCmdListTable.DataLen = mbuf->pkt_len;
+		while (sg_count--) {
+			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + rte_pktmbuf_mtod(mbuf, char *) - huge_start_addr;
+			sg->LowAddrBase = l1_pcie_addr;
+			sg->DataLen = mbuf->data_len;
+			sg->Cfg = 0;
+			mbuf = mbuf->next;
+			sg++;
+		};
+		sg--;
+		sg->Cfg = QDMA_SGT_F;
+	} else {
 		data_ptr =  rte_pktmbuf_mtod(mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
 		clt->sCmdListTable.LowAddrBase = l1_pcie_addr;
