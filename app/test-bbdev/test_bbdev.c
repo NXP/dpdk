@@ -702,7 +702,7 @@ test_bbdev_stats(void)
 	/* Tests after dequeue operation */
 	rte_bbdev_dequeue_enc_ops(dev_id, queue_id, enc_proc_ops, num_ops);
 	/* Wait for some time before going for dequeue */
-	usleep(10);
+	usleep(1000);
 	rte_bbdev_dequeue_dec_ops(dev_id, queue_id, dec_proc_ops, num_ops);
 
 	TEST_ASSERT_SUCCESS(rte_bbdev_stats_get(dev_id, &stats),
