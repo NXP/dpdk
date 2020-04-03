@@ -44,16 +44,20 @@
 #define POISON 0x12
 
 /* OPS pool related counts */
-#define OPS_POOL_NUM_BUFS	1024
+#define OPS_POOL_NUM_BUFS	64
 #define OPS_POOL_CACHE_SIZE	0
 
 /* MBUF pool related counts */
-#define MBUF_POOL_NUM_BUFS	(2 * OPS_POOL_NUM_BUFS)
+#define MBUF_MAX_SEGS		256
+#define MBUF_POOL_NUM_BUFS	(2 * MBUF_MAX_SEGS * OPS_POOL_NUM_BUFS)
 #define MBUF_POOL_ELEM_SIZE	(RTE_PKTMBUF_HEADROOM + 1024)
 #define MBUF_POOL_CACHE_SIZE	0
 
 /* Cycle Times. Default = 1000 */
 int cycle_times = 1000;
+
+/* Number of segments */
+int nb_mbuf_segs = 1;
 
 /* Driven by ipc_memelem_size, creating mempools which would be passed
  * as it it to the host_init call
@@ -68,9 +72,9 @@ static void
 create_ops_pools(void)
 {
 	struct rte_bbdev_enc_op *ops[OPS_POOL_NUM_BUFS];
-	struct rte_mbuf *mbufs[2];
+	struct rte_mbuf *mbufs[2 * MBUF_MAX_SEGS];
+	int i, j, ret, data_size;
 	char *data;
-	int i, ret, data_size;
 
 	/* Create ops pool */
 	bbdev_enc_ops_pool = rte_mempool_create("enc_ops_pool",
@@ -82,8 +86,9 @@ create_ops_pools(void)
 
 	/* Create a mbuf pool */
 	bbdev_mbuf_pool = rte_pktmbuf_pool_create("mbuf_pool",
-		MBUF_POOL_NUM_BUFS, MBUF_POOL_CACHE_SIZE, 0,
-		MBUF_POOL_ELEM_SIZE, rte_socket_id());
+		(2 * nb_mbuf_segs * OPS_POOL_NUM_BUFS),
+		MBUF_POOL_CACHE_SIZE, 0, MBUF_POOL_ELEM_SIZE,
+		rte_socket_id());
 	if (bbdev_mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
@@ -95,7 +100,8 @@ create_ops_pools(void)
 			"Cannot get ops element in %s\n", __func__);
 
 	for (i = 0; i < OPS_POOL_NUM_BUFS; i++) {
-		ret = rte_pktmbuf_alloc_bulk(bbdev_mbuf_pool, mbufs, 2);
+		ret = rte_pktmbuf_alloc_bulk(bbdev_mbuf_pool, mbufs,
+					     (2 * nb_mbuf_segs));
 		if (ret)
 			rte_exit(EXIT_FAILURE,
 				"Cannot get mbuf element in %s\n", __func__);
@@ -104,10 +110,30 @@ create_ops_pools(void)
 		data = rte_pktmbuf_append(mbufs[0], data_size);
 		memset(data, POISON, data_size);
 
+		for (j = 1; j <= nb_mbuf_segs - 1; j++) {
+			/* Set the value */
+			data_size = MBUF_POOL_ELEM_SIZE - RTE_PKTMBUF_HEADROOM;
+			data = rte_pktmbuf_append(mbufs[j], data_size);
+			memset(data, POISON, data_size);
+
+			/* Create input buffer chain */
+			ret = rte_pktmbuf_chain(mbufs[0], mbufs[j]);
+			if (ret)
+				rte_exit(EXIT_FAILURE,
+					"Cannot chain mbuf\n");
+
+			/* Create output buffer chain */
+			ret = rte_pktmbuf_chain(mbufs[nb_mbuf_segs],
+						mbufs[nb_mbuf_segs + j]);
+			if (ret)
+				rte_exit(EXIT_FAILURE,
+					"Cannot chain mbuf\n");
+		}
+
 		ops[i]->ldpc_enc.input.data = mbufs[0];
 		ops[i]->ldpc_enc.input.length = MBUF_POOL_ELEM_SIZE;
 		ops[i]->ldpc_enc.input.offset = 0;
-		ops[i]->ldpc_enc.output.data = mbufs[1];
+		ops[i]->ldpc_enc.output.data = mbufs[nb_mbuf_segs];
 	}
 
 	rte_mempool_put_bulk(bbdev_enc_ops_pool, (void **)ops,
@@ -130,7 +156,7 @@ parse_args(int argc, char **argv)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "t:h")) != -1) {
+	while ((opt = getopt(argc, argv, "t:m:h")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -152,6 +178,25 @@ parse_args(int argc, char **argv)
 			}
 			RTE_LOG(DEBUG, BBDEV_LA12XX,
 				"Argument: Parsed TIMES = %d\n", cycle_times);
+			break;
+		case 'm':
+			if (!optarg) {
+				RTE_LOG(ERR, BBDEV_LA12XX,
+					"Arg parse error: Invalid mbuf segs\n");
+				return -1;
+			}
+			nb_mbuf_segs = atoi(optarg);
+			if ((nb_mbuf_segs < 0) || (nb_mbuf_segs > MBUF_MAX_SEGS)) {
+				RTE_LOG(ERR, BBDEV_LA12XX,
+					"Arg parse error: Invalid value for nb_mbuf_segs: (%d)\n",
+					nb_mbuf_segs);
+				RTE_LOG(ERR, BBDEV_LA12XX,
+					"Assuming default = 1\n");
+				nb_mbuf_segs = 1;
+			}
+			RTE_LOG(DEBUG, BBDEV_LA12XX,
+				"Argument: Parsed mbuf segs = %d\n",
+				nb_mbuf_segs);
 			break;
 		default:
 			usage(argv[0]);
