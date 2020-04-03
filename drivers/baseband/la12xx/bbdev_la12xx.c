@@ -309,6 +309,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	       lower_32_bits((uint64_t)bbdev_op);
 	bbdev_ipc_op->l2_cntx_h =
 	       upper_32_bits((uint64_t)bbdev_op);
+	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
 	/* Move Producer Index forward */
