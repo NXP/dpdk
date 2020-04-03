@@ -34,9 +34,6 @@
 
 #define RTE_LOGTYPE_BBDEV_LA12XX RTE_LOGTYPE_USER1
 
-#define SEND_CORE	1
-#define RECV_CORE	2
-
 #define LA12XX_DEVICE_ID	0
 #define LA12XX_DEVICE_NAME	"baseband_la12xx"
 #define LA12XX_MAX_QUEUES	2
@@ -345,15 +342,16 @@ int
 main(int argc, char **argv)
 {
 	struct rte_bbdev_queue_conf qconf = {0};
-	int ret, i;
+	int ret, i, lcore_id;
+	int sender_init = 0, receiver_init = 0;
 
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_panic("[%s] Cannot init EAL\n", argv[0]);
 
 	RTE_LOG(INFO, BBDEV_LA12XX, "Version Info : %s\n", rte_version());
-	if (rte_lcore_count() < 4)
-		rte_panic("[%s] Cannot Run. Need minimium of 4 Cores\n",
+	if (rte_lcore_count() < 3)
+		rte_panic("[%s] Cannot Run. Need minimium of 3 Cores\n",
 			  argv[0]);
 	argc -= ret;
 	argv += ret;
@@ -405,8 +403,16 @@ main(int argc, char **argv)
 	printf(" \tPrint * : Receiver is starting\n");
 	printf("=-=-=-=-=--=-==-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-\n");
 
-	rte_eal_remote_launch(sender, NULL, SEND_CORE);
-	rte_eal_remote_launch(receiver, NULL, RECV_CORE);
+	/* send messages to cores */
+	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+		if (!sender_init) {
+			rte_eal_remote_launch(sender, NULL, lcore_id);
+			sender_init = 1;
+		} else if (!receiver_init) {
+			rte_eal_remote_launch(receiver, NULL, lcore_id);
+			receiver_init = 1;
+		}
+	}
 
 	rte_eal_mp_wait_lcore();
 
