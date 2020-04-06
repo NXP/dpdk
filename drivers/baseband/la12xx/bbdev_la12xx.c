@@ -287,6 +287,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
 	ipc_bd_t *bdr, *bd;
 	uint64_t virt;
+	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
+	char *data_ptr;
+	uint32_t l1_pcie_addr;
+	NxpQdmaCLT_t *clt;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
@@ -312,6 +317,15 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
+	/* Filling QDMA descriptor */
+	if (mbuf->nb_segs == 1) {
+		clt = &bbdev_ipc_op->qdma_desc.NxpClt;
+		data_ptr =  rte_pktmbuf_mtod(mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+		clt->sCmdListTable.LowAddrBase = l1_pcie_addr;
+		clt->sCmdListTable.DataLen = mbuf->pkt_len;
+		clt->sCmdListTable.Cfg1 = 0; /* Single buffer configuration */
+	}
 	/* Move Producer Index forward */
 	pi++;
 	/* Wait for Data Copy and pi_flag update to complete
