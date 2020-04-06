@@ -537,6 +537,10 @@ setup_bbdev(struct rte_bbdev *dev)
 	uint32_t phy_align = 0;
 	int ret, instance_id = 0;
 	struct gul_hif *hif_start = NULL;
+	/* TODO: Default mode to be changed to FECA once FECA
+	 * processing is available
+	 */
+	uint32_t mode = BBDEV_IPC_LOOPBACK;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -676,6 +680,22 @@ setup_bbdev(struct rte_bbdev *dev)
 
 	ipc_priv->instance = (ipc_instance_t *)
 		(&ipc_md->instance_list[instance_id]);
+
+	if (getenv("BBDEV_IPC_MODE")) {
+		mode = atoi(getenv("BBDEV_IPC_MODE"));
+		BBDEV_LA12XX_PMD_DEBUG("BBDEV mode env configured: %u",
+			       mode);
+		/* if a very large value is being configured */
+		if (mode >= BBDEV_IPC_MAX_MODES) {
+			BBDEV_LA12XX_PMD_ERR("Wrong BBDEV mode: %u",
+				       mode);
+			goto err;
+		}
+	}
+
+	ipc_md->instance_list[instance_id].bbdev_ipc_mode =
+		rte_cpu_to_be_32(mode);
+
 	BBDEV_LA12XX_PMD_DEBUG("finish host init");
 
 	priv->ipc_priv = ipc_priv;
