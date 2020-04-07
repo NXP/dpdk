@@ -89,6 +89,17 @@ static int per_port_pool = 1; /**< Use separate buffer pools per port */
 static int traffic_split_proto; /**< Split traffic based on this protocol ID */
 static int traffic_split_ethtype; /**< Split traffic based on eth type */
 
+enum traffic_split_type_t {
+	TRAFFIC_SPLIT_NONE,
+	TRAFFIC_SPLIT_ETHTYPE,
+	TRAFFIC_SPLIT_PROTO,
+	TRAFFIC_SPLIT_UDP_DST_PORT,
+	TRAFFIC_SPLIT_MAX_NUM,
+};
+
+static uint32_t traffic_split_val; /**< Split traffic based on this value */
+static uint8_t traffic_split_type; /**< Split traffic based on type */
+
 /*
  * This variable defines where the traffic is split in DPDMUX - the logical
  * interface ID - which is connected to a DPNI. e.g. 2 for dpdmux.0.2
@@ -96,7 +107,7 @@ static int traffic_split_ethtype; /**< Split traffic based on eth type */
  * interfaces are available, next interface (dpni) in series to the one
  * specified in this variable would be used.
  */
-static int mux_connection_id = -1; /**< DPMUX ID connected to DPNI Interface to
+static uint8_t mux_connection_id; /**< DPMUX ID connected to DPNI Interface to
 					which split traffic is sent */
 
 volatile bool force_quit;
@@ -351,7 +362,8 @@ print_usage(const char *prgname)
 		" [--ipv6]"
 		" [--parse-ptype]"
 		" [--disable-per-port-pool]"
-		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_CONN_ID]\n\n"
+		" [--traffic-split-proto PROTOCOL_NUMBER:MUX_CONN_ID]"
+		" [--traffic-split-config (type,val,mux_conn_id)\n\n"
 
 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
 		"  -P : Enable promiscuous mode\n"
@@ -374,6 +386,10 @@ print_usage(const char *prgname)
 		"                         It is assumed that first port of DPDMUX configured\n"
 		"                         is default port where all non-matched traffic\n"
 		"                         would be forwarded.\n"
+		"  --traffic-split-config: (type,val,mux_conn_id):"
+		"                          'type' -  1:ETHTYPE, 2:IP_PROTO, 3:UDP_DST_PORT\n"
+		"                          having value as 'val' based on which DPDMUX \n"
+		"                          can split the traffic to mux_conn_id\n"
 		"  -e : Event dev configuration\n"
 		"	(Eventdev ID,Number of event queues,Number of event ports)\n"
 		"  -a : Adapter configuration\n"
@@ -759,6 +775,52 @@ err_ret:
 }
 
 static int
+parse_traffic_split_config(const char *q_arg)
+{
+	char s[256];
+	const char *p, *p0 = q_arg;
+	char *end;
+	enum fieldnames {
+		FLD_SPLIT_TYPE = 0,
+		FLD_SPLIT_VAL,
+		FLD_MUX_CONN_ID,
+		_NUM_FLD
+	};
+	unsigned long int_fld[_NUM_FLD];
+	char *str_fld[_NUM_FLD];
+	int i;
+	unsigned int size;
+
+	p = strchr(p0, '(');
+	++p;
+	p0 = strchr(p, ')');
+	if (p0 == NULL)
+		return -1;
+
+	size = p0 - p;
+	if (size >= sizeof(s))
+		return -1;
+
+	snprintf(s, sizeof(s), "%.*s", size, p);
+	if (rte_strsplit(s, sizeof(s), str_fld, _NUM_FLD, ',') != _NUM_FLD)
+		return -1;
+	for (i = 0; i < _NUM_FLD; i++) {
+		errno = 0;
+		int_fld[i] = strtoul(str_fld[i], &end, 0);
+		if (errno != 0 || end == str_fld[i])
+			return -1;
+	}
+
+	traffic_split_type = (uint8_t)int_fld[FLD_SPLIT_TYPE];
+	if (traffic_split_type > TRAFFIC_SPLIT_MAX_NUM)
+		return -1;
+	traffic_split_val = int_fld[FLD_SPLIT_VAL];
+	mux_connection_id = (uint8_t)int_fld[FLD_MUX_CONN_ID];
+
+	return 0;
+}
+
+static int
 eventdev_configure(void)
 {
 	int ret = -1;
@@ -941,6 +1003,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_PARSE_PTYPE "parse-ptype"
 #define CMD_LINE_OPT_PER_PORT_POOL "disable-per-port-pool"
 #define CMD_LINE_OPT_TRAFFIC_SPLIT "traffic-split-proto"
+#define CMD_LINE_OPT_TRAFFIC_SPLIT_CONFIG "traffic-split-config"
 enum {
 	/* long options mapped to a short option */
 
@@ -956,6 +1019,7 @@ enum {
 	CMD_LINE_OPT_PARSE_PTYPE_NUM,
 	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
 	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT,
+	CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG,
 };
 
 static const struct option lgopts[] = {
@@ -968,6 +1032,8 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_PARSE_PTYPE, 0, 0, CMD_LINE_OPT_PARSE_PTYPE_NUM},
 	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0, CMD_LINE_OPT_PARSE_PER_PORT_POOL},
 	{CMD_LINE_OPT_TRAFFIC_SPLIT, 1, 0, CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT},
+	{CMD_LINE_OPT_TRAFFIC_SPLIT_CONFIG, 1, 0,
+		CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG},
 	{NULL, 0, 0, 0}
 };
 
@@ -1146,6 +1212,17 @@ parse_args(int argc, char **argv)
 			printf("Splitting traffic on Proto:%d or ethtype = %d,"
 				"DPDMUX.0.%d\n", traffic_split_proto,
 				traffic_split_ethtype, mux_connection_id);
+			break;
+
+		case CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG:
+			ret = parse_traffic_split_config(optarg);
+			if (ret != 0) {
+				print_usage(prgname);
+				return -1;
+			}
+			printf("Splitting traffic on type:%d with val: %d on DPDMUX.x.%d\n",
+				traffic_split_type, traffic_split_val,
+				mux_connection_id);
 			break;
 
 		default:
@@ -1383,6 +1460,64 @@ configure_split_traffic(void)
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
 		pattern[0].spec = &eitem;
 		pattern[0].mask = &mask;
+	}
+
+	actions[0].conf = &vf;
+
+	pattern1 = pattern;
+	actions1 = actions;
+
+	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+					       &actions1);
+	if (!result)
+		/* Unable to create the flow */
+		return -1;
+
+	return 0;
+}
+
+static int
+configure_split_traffic_config(void)
+{
+	struct rte_flow *result;
+	struct rte_flow_item pattern[1], *pattern1;
+	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_action_vf vf;
+	int dpdmux_id = 0; /* constant: dpdmux.0 */
+	uint16_t mask;
+	struct rte_flow_item_udp udp_item;
+	struct rte_flow_item_ipv4 ip_item;
+	struct rte_flow_item_eth eth_item;
+
+	vf.id = mux_connection_id;
+
+	switch (traffic_split_type) {
+	case TRAFFIC_SPLIT_NONE:
+		return 0;
+	case TRAFFIC_SPLIT_ETHTYPE:
+		eth_item.type = traffic_split_val;
+		mask = 0xffff;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+		pattern[0].spec = &eth_item;
+		pattern[0].mask = &mask;
+		break;
+	case TRAFFIC_SPLIT_PROTO:
+		ip_item.hdr.next_proto_id = traffic_split_val;
+		mask = 0xff;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
+		pattern[0].spec = &ip_item;
+		pattern[0].mask = &mask;
+		break;
+	case TRAFFIC_SPLIT_UDP_DST_PORT:
+		udp_item.hdr.dst_port = traffic_split_val;
+		mask = 0xffff;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_UDP;
+		pattern[0].spec = &udp_item;
+		pattern[0].mask = &mask;
+		break;
+	default:
+		printf("invalid traffic_split_type\n");
+		return -1;
 	}
 
 	actions[0].conf = &vf;
@@ -1677,7 +1812,11 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (traffic_split_proto || traffic_split_ethtype) {
+	if (traffic_split_type) {
+		ret = configure_split_traffic_config();
+		if (ret)
+			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
+	} else if (traffic_split_proto || traffic_split_ethtype) {
 		ret = configure_split_traffic();
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
