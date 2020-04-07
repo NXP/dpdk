@@ -67,7 +67,7 @@ struct ip_addr {
 	} ip;
 };
 
-#define MAX_KEY_SIZE		32
+#define MAX_KEY_SIZE		36
 
 /*
  * application wide SA parameters
