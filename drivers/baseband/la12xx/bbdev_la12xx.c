@@ -325,7 +325,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 
 	sg_count = mbuf->nb_segs;
 	if(sg_count > 1) {
-		ScatterGatherTableFormat_t *sg =  bbdev_ipc_op->qdma_desc.sgSrcTableHead;
+		ScatterGatherTableFormat_t *sg =  bbdev_ipc_op->sgSrcTableHead;
 
 		/* TODO add a check maximum SGs QDMA can support */
 		/* TODO Need to update below fields to support mixed traffic
