@@ -273,56 +273,15 @@ static inline int is_bd_ring_full(ipc_br_md_t *md)
 	return 0;
 }
 
-#define MODEM_P2V(A) \
-	((uint64_t) ((unsigned long) (A) \
-			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
-
-static int
-enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
-		  void *bbdev_op, uint32_t op_type)
+static void
+fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+	       char *huge_start_addr)
 {
-	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
-	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-	struct bbdev_ipc_dequeue_op *bbdev_ipc_op;
-	uint32_t q_id = q_priv->q_id, pi;
-	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	ipc_br_md_t *md = &(ch->br_msg_desc.md);
-	ipc_bd_t *bdr, *bd;
-	uint64_t virt;
-	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
-	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr, sg_count;
 	NxpQdmaCLT_t *clt;
 
-	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
-
-	if (is_bd_ring_full(md)) {
-		h_stats->ipc_ch_stats[q_id].err_channel_full++;
-		return IPC_CH_FULL;
-	}
-
-	pi = md->pi;
-	bdr = ch->br_msg_desc.bd;
-	bd = &bdr[pi];
-
-	virt = MODEM_P2V(bd->modem_ptr);
-	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
-	/* TODO: Copy other fields and have separate API for it */
-	bbdev_ipc_op->op_type = op_type;
-	bbdev_ipc_op->l2_cntx_l =
-	       lower_32_bits((uint64_t)bbdev_op);
-	bbdev_ipc_op->l2_cntx_h =
-	       upper_32_bits((uint64_t)bbdev_op);
-	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
-	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
-
-	/* Filling QDMA descriptor */
 	clt = &bbdev_ipc_op->qdma_desc.NxpClt;
-
 	sg_count = mbuf->nb_segs;
 	if(sg_count > 1) {
 		ScatterGatherTableFormat_t *sg =  bbdev_ipc_op->sgSrcTableHead;
@@ -350,6 +309,54 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		clt->sCmdListTable.DataLen = mbuf->pkt_len;
 		clt->sCmdListTable.Cfg1 = 0; /* Single buffer configuration */
 	}
+}
+
+#define MODEM_P2V(A) \
+	((uint64_t) ((unsigned long) (A) \
+			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+
+static int
+enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
+		  void *bbdev_op, uint32_t op_type)
+{
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	struct bbdev_ipc_dequeue_op *bbdev_ipc_op;
+	uint32_t q_id = q_priv->q_id, pi;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_br_md_t *md = &(ch->br_msg_desc.md);
+	ipc_bd_t *bdr, *bd;
+	uint64_t virt;
+	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
+
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+
+	if (is_bd_ring_full(md)) {
+		h_stats->ipc_ch_stats[q_id].err_channel_full++;
+		return IPC_CH_FULL;
+	}
+
+	pi = md->pi;
+	bdr = ch->br_msg_desc.bd;
+	bd = &bdr[pi];
+
+	virt = MODEM_P2V(bd->modem_ptr);
+	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
+	/* TODO: Copy other fields and have separate API for it */
+	bbdev_ipc_op->op_type = op_type;
+	bbdev_ipc_op->l2_cntx_l =
+	       lower_32_bits((uint64_t)bbdev_op);
+	bbdev_ipc_op->l2_cntx_h =
+	       upper_32_bits((uint64_t)bbdev_op);
+	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
+	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
+
+	if (mbuf)
+		fill_qdma_desc(mbuf, bbdev_ipc_op, huge_start_addr);
 	/* Move Producer Index forward */
 	pi++;
 	/* Wait for Data Copy and pi_flag update to complete
