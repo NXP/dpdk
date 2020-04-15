@@ -349,7 +349,8 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 			break;
 	}
 
-	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	if (ret != IPC_CH_FULL)
+		q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
 
 	return nb_enqueued;
@@ -370,7 +371,8 @@ enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 			break;
 	}
 
-	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	if (ret != IPC_CH_FULL)
+		q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
 
 	return nb_enqueued;
@@ -471,6 +473,8 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
 	}
 
+	if (ret != IPC_CH_EMPTY)
+		q_data->queue_stats.dequeue_err_count += nb_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
@@ -495,6 +499,8 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
 	}
 
+	if (ret != IPC_CH_EMPTY)
+		q_data->queue_stats.dequeue_err_count += nb_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
