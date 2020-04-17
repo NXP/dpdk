@@ -27,6 +27,15 @@
 
 #define GET_SOCKET(socket_id) (((socket_id) == SOCKET_ID_ANY) ? 0 : (socket_id))
 
+/* None device Macros */
+struct rte_mempool *bbdev_mbuf_pool;
+/* MBUF pool related counts */
+#define MBUF_MAX_SEGS           256
+#define MBUF_POOL_ELEM_SIZE     (RTE_PKTMBUF_HEADROOM + 1024)
+#define MBUF_POOL_CACHE_SIZE    0
+#define NB_MBUF_SEGS 1
+#define POISON 0x12
+
 #define MAX_QUEUES RTE_MAX_LCORE
 #define TEST_REPETITIONS 1000
 
@@ -431,8 +440,68 @@ create_mempools(struct active_device *ad, int socket_id,
 	ad->ops_mempool = mp;
 
 	/* Do not create inputs and outputs mbufs for BaseBand Null Device */
-	if (org_op_type == RTE_BBDEV_OP_NONE)
+	if (org_op_type == RTE_BBDEV_OP_NONE) {
+		int ret, data_size;
+		unsigned int i, j;
+		char *data;
+		struct rte_bbdev_enc_op **ops;
+		struct rte_mbuf *mbufs[2 * MBUF_MAX_SEGS];
+
+		ops = rte_malloc(NULL, sizeof(struct rte_bbdev_enc_op *) *  ops_pool_size,
+				RTE_CACHE_LINE_SIZE);
+		/* Create a mbuf pool */
+		bbdev_mbuf_pool = rte_pktmbuf_pool_create("mbuf_pool",
+				(2 * NB_MBUF_SEGS * ops_pool_size),
+				MBUF_POOL_CACHE_SIZE, 0, MBUF_POOL_ELEM_SIZE,
+				socket_id);
+		if (bbdev_mbuf_pool == NULL)
+			rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
+
+		/* Now fill the ops */
+		ret = rte_mempool_get_bulk(mp, (void **)ops, ops_pool_size);
+		if (ret)
+			rte_exit(EXIT_FAILURE,
+				"Cannot get ops element in %s\n", __func__);
+
+		for (i = 0; i < ops_pool_size; i++) {
+			ret = rte_pktmbuf_alloc_bulk(bbdev_mbuf_pool, mbufs,
+						     (2 * NB_MBUF_SEGS));
+			if (ret)
+				rte_exit(EXIT_FAILURE,
+					"Cannot get mbuf element in %s\n", __func__);
+
+			data_size = MBUF_POOL_ELEM_SIZE - RTE_PKTMBUF_HEADROOM;
+			data = rte_pktmbuf_append(mbufs[0], data_size);
+			memset(data, POISON, data_size);
+
+			for (j = 1; j <= NB_MBUF_SEGS - 1; j++) {
+				/* Set the value */
+				data_size = MBUF_POOL_ELEM_SIZE - RTE_PKTMBUF_HEADROOM;
+				data = rte_pktmbuf_append(mbufs[j], data_size);
+				memset(data, POISON, data_size);
+				/* Create input buffer chain */
+				ret = rte_pktmbuf_chain(mbufs[0], mbufs[j]);
+				if (ret)
+					rte_exit(EXIT_FAILURE,
+						"Cannot chain mbuf\n");
+
+				/* Create output buffer chain */
+				ret = rte_pktmbuf_chain(mbufs[NB_MBUF_SEGS],
+							mbufs[NB_MBUF_SEGS + j]);
+				if (ret)
+					rte_exit(EXIT_FAILURE,
+						"Cannot chain mbuf\n");
+			}
+
+			ops[i]->ldpc_enc.input.data = mbufs[0];
+			ops[i]->ldpc_enc.input.length = MBUF_POOL_ELEM_SIZE;
+			ops[i]->ldpc_enc.input.offset = 0;
+			ops[i]->ldpc_enc.output.data = mbufs[NB_MBUF_SEGS];
+		}
+		rte_mempool_put_bulk(mp, (void **)ops, ops_pool_size);
+		rte_free(ops);
 		return TEST_SUCCESS;
+	}
 
 	/* Inputs */
 	mbuf_pool_size = optimal_mempool_size(ops_pool_size * in->nb_segments);
@@ -1662,6 +1731,7 @@ run_test_case_on_device(test_case_function *test_case_func, uint8_t dev_id,
 
 	/* Free active device resources and return */
 	free_buffers(ad, op_params);
+	rte_mempool_free(bbdev_mbuf_pool);
 	return t_ret;
 
 fail:
