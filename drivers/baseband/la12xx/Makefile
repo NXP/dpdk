@@ -3,8 +3,8 @@
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
-ifeq ($(LA12XX_COMMON_HDR_DIR),)
-$(error "Please define LA12XX_COMMON_HDR_DIR environment variable \
+ifeq ($(COMMON_HEADERS_DIR),)
+$(error "Please define COMMON_HEADERS_DIR environment variable \
 	to include LA12xx common header files")
 endif
 #
@@ -15,7 +15,7 @@ LIB = librte_pmd_bbdev_la12xx.a
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += -O0
 CFLAGS += $(WERROR_FLAGS)
-CFLAGS += -I$(LA12XX_COMMON_HDR_DIR)/
+CFLAGS += -I$(COMMON_HEADERS_DIR)/
 CFLAGS += -DDEBUG
 CFLAGS += -DHOST=1 -DMODEM=0
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring -lrte_kvargs
@@ -32,7 +32,7 @@ LIBABIVER := 1
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx.c
 
 # create symbolic links for geul common headers required by application
-COMMON_HDRS := $(shell find $(LA12XX_COMMON_HDR_DIR) -name '*.h')
+COMMON_HDRS := $(shell find $(COMMON_HEADERS_DIR) -name '*.h')
 SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX)-include += $(COMMON_HDRS)
 
 include $(RTE_SDK)/mk/rte.lib.mk
