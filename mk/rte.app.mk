@@ -236,7 +236,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_NETVSC_PMD)     += -lrte_pmd_netvsc
 ifeq ($(CONFIG_RTE_LIBRTE_BBDEV),y)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_NULL)     += -lrte_pmd_bbdev_null
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC) += -lrte_pmd_bbdev_fpga_lte_fec
-ifneq ($(LA12XX_COMMON_HDR_DIR),)
+ifneq ($(COMMON_HEADERS_DIR),)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX)      += -lrte_pmd_bbdev_la12xx
 endif
 
