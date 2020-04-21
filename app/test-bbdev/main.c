@@ -29,6 +29,8 @@ static struct test_params {
 	unsigned int num_ops;
 	unsigned int burst_sz;
 	unsigned int num_lcores;
+	unsigned int num_seg;
+	unsigned int buf_size;
 	char test_vector_filename[PATH_MAX];
 	bool init_device;
 } test_params;
@@ -140,6 +142,18 @@ get_num_lcores(void)
 	return test_params.num_lcores;
 }
 
+unsigned int
+get_num_seg(void)
+{
+	return test_params.num_seg;
+}
+
+unsigned int
+get_buf_size(void)
+{
+	return test_params.buf_size;
+}
+
 bool
 get_init_device(void)
 {
@@ -153,6 +167,8 @@ print_usage(const char *prog_name)
 
 	printf("***Usage: %s [EAL params] [-- [-n/--num-ops NUM_OPS]\n"
 			"\t[-b/--burst-size BURST_SIZE]\n"
+			"\t[-s/--buf-size BUFFER_SIZE]\n"
+			"\t[-m/--num-segs NUM_SEGS]\n"
 			"\t[-v/--test-vector VECTOR_FILE]\n"
 			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]]\n",
 			prog_name);
@@ -180,12 +196,14 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "test-cases", 1, 0, 'c' },
 		{ "test-vector", 1, 0, 'v' },
 		{ "lcores", 1, 0, 'l' },
+		{ "buf-size", 1, 0, 's' },
+		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
 
-	while ((opt = getopt_long(argc, argv, "hin:b:c:v:l:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hin:b:c:v:l:s:m:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -245,6 +263,19 @@ parse_args(int argc, char **argv, struct test_params *tp)
 					"Num of lcores mustn't be greater than %u",
 					RTE_MAX_LCORE);
 			break;
+		case 's':
+			TEST_ASSERT(strlen(optarg) > 0,
+					"Buffer size is not provided");
+			tp->buf_size = RTE_PKTMBUF_HEADROOM + strtol(optarg, NULL, 10);
+			break;
+		case 'm':
+			TEST_ASSERT(strlen(optarg) > 0,
+					"Num of segments is not provided");
+			tp->num_seg = strtol(optarg, NULL, 10);
+			TEST_ASSERT(tp->num_seg < MBUF_MAX_SEGS,
+					"Num of segments mustn't be greater than %u",
+					MBUF_MAX_SEGS);
+			break;
 		case 'i':
 			/* indicate fpga fec config required */
 			tp->init_device = true;
@@ -274,6 +305,18 @@ parse_args(int argc, char **argv, struct test_params *tp)
 			"WARNING: Num of lcores was not provided or was set 0. Set to value from RTE config (%u)\n",
 			rte_lcore_count());
 		tp->num_lcores = rte_lcore_count();
+	}
+	if (tp->buf_size == 0) {
+		printf(
+			"WARNING: Buffer size was not provided or was set 0. Set to default (%u)\n",
+			MBUF_POOL_ELEM_SIZE);
+		tp->buf_size = MBUF_POOL_ELEM_SIZE;
+	}
+	if (tp->num_seg == 0) {
+		printf(
+			"WARNING: Number of segments was not provided or was set 0. Set to default (%u)\n",
+			DEFAULT_MBUF_SEGS);
+		tp->num_seg = DEFAULT_MBUF_SEGS;
 	}
 
 	TEST_ASSERT(tp->burst_sz <= tp->num_ops,

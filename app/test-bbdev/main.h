@@ -19,7 +19,9 @@
 #define MAX_BURST 512U
 #define DEFAULT_BURST 32U
 #define DEFAULT_OPS 64U
-
+#define MBUF_MAX_SEGS 256
+#define MBUF_POOL_ELEM_SIZE     (RTE_PKTMBUF_HEADROOM + 1024)
+#define DEFAULT_MBUF_SEGS 1
 
 #define TEST_ASSERT(cond, msg, ...) do {  \
 		if (!(cond)) {  \
@@ -117,6 +119,10 @@ unsigned int get_num_ops(void);
 unsigned int get_burst_sz(void);
 
 unsigned int get_num_lcores(void);
+
+unsigned int get_num_seg(void);
+
+unsigned int get_buf_size(void);
 
 bool get_init_device(void);
 
