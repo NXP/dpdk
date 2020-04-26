@@ -207,19 +207,14 @@ static int
 _send(uint32_t q_id)
 {
 	struct rte_bbdev_enc_op *send_op;
-	int ret, jj = 0;
+	int ret;
 
 	rte_mempool_get(bbdev_enc_ops_pool, (void **)&send_op);
 
 	/* TODO: To be expanded to decode ops also */
-	do {
-		ret = rte_bbdev_enqueue_enc_ops(LA12XX_DEVICE_ID,
-						q_id, &send_op, 1);
-		if ((++jj % 100000) == 0) {
-			printf("#");
-			fflush(stdout);
-		}
-	} while (ret == 0);
+	ret = rte_bbdev_enqueue_enc_ops(LA12XX_DEVICE_ID, q_id, &send_op, 1);
+	if (ret == 0)
+		return -1;
 
 	return 0;
 }
