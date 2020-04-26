@@ -30,6 +30,9 @@
 /* SG table final entry */
 #define QDMA_SGT_F	0x80000000
 
+/* TX retry count */
+#define BBDEV_LA12XX_TX_RETRY_COUNT 10000
+
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
 
@@ -327,7 +330,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
 	ipc_bd_t *bdr, *bd;
-	uint64_t virt;
+	uint64_t virt, retry_count = 0;
 	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
 
@@ -335,7 +338,13 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
 		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
 
-	if (is_bd_ring_full(md)) {
+	while (is_bd_ring_full(md) &&
+			(retry_count < BBDEV_LA12XX_TX_RETRY_COUNT))
+		retry_count++;
+
+	if (retry_count == BBDEV_LA12XX_TX_RETRY_COUNT) {
+		BBDEV_LA12XX_PMD_DP_DEBUG(
+				"bd ring full for queue id: %d", q_id);
 		h_stats->ipc_ch_stats[q_id].err_channel_full++;
 		return IPC_CH_FULL;
 	}
@@ -395,8 +404,7 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 			break;
 	}
 
-	if (ret != IPC_CH_FULL)
-		q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
 
 	return nb_enqueued;
@@ -417,8 +425,7 @@ enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 			break;
 	}
 
-	if (ret != IPC_CH_FULL)
-		q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
+	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
 
 	return nb_enqueued;
