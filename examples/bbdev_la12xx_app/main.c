@@ -111,7 +111,7 @@ create_ops_pools(void)
 			/* Set the value */
 			data_size = MBUF_POOL_ELEM_SIZE - RTE_PKTMBUF_HEADROOM;
 			data = rte_pktmbuf_append(mbufs[j], data_size);
-			memset(data, POISON, data_size);
+			memset(data, j, data_size);
 
 			/* Create input buffer chain */
 			ret = rte_pktmbuf_chain(mbufs[0], mbufs[j]);
