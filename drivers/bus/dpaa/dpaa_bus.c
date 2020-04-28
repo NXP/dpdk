@@ -58,8 +58,7 @@ unsigned int dpaa_svr_family;
 
 #define FSL_DPAA_BUS_NAME	dpaa_bus
 
-RTE_DEFINE_PER_LCORE(bool, dpaa_io);
-RTE_DEFINE_PER_LCORE(struct dpaa_portal_dqrr, held_bufs);
+RTE_DEFINE_PER_LCORE(struct dpaa_portal *, dpaa_io);
 
 static int
 compare_dpaa_devices(struct rte_dpaa_device *dev1,
@@ -277,7 +276,6 @@ int rte_dpaa_portal_init(void *arg)
 {
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
-	struct dpaa_portal *dpaa_io_portal;
 	pid_t tid;
 	char command[COMMAND_LEN];
 
@@ -314,18 +312,18 @@ int rte_dpaa_portal_init(void *arg)
 	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized - CPU=%d lcore=%d",
 		     cpu, lcore);
 
-	dpaa_io_portal = rte_malloc(NULL, sizeof(struct dpaa_portal),
+	DPAA_PER_LCORE_PORTAL = rte_malloc(NULL, sizeof(struct dpaa_portal),
 				    RTE_CACHE_LINE_SIZE);
-	if (!dpaa_io_portal) {
+	if (!DPAA_PER_LCORE_PORTAL) {
 		DPAA_BUS_LOG(ERR, "Unable to allocate memory");
 		bman_thread_finish();
 		qman_thread_finish();
 		return -ENOMEM;
 	}
 
-	dpaa_io_portal->qman_idx = qman_get_portal_index();
-	dpaa_io_portal->bman_idx = bman_get_portal_index();
-	dpaa_io_portal->tid = syscall(SYS_gettid);
+	DPAA_PER_LCORE_PORTAL->qman_idx = qman_get_portal_index();
+	DPAA_PER_LCORE_PORTAL->bman_idx = bman_get_portal_index();
+	DPAA_PER_LCORE_PORTAL->tid = syscall(SYS_gettid);
 
 	if (getenv("NXP_CHRT_PERF_MODE")) {
 		tid = syscall(SYS_gettid);
@@ -342,7 +340,8 @@ int rte_dpaa_portal_init(void *arg)
 		 */
 	}
 
-	ret = pthread_setspecific(dpaa_portal_key, (void *)dpaa_io_portal);
+	ret = pthread_setspecific(dpaa_portal_key,
+				  (void *)DPAA_PER_LCORE_PORTAL);
 	if (ret) {
 		DPAA_BUS_LOG(ERR, "pthread_setspecific failed on core %u"
 			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
@@ -350,8 +349,6 @@ int rte_dpaa_portal_init(void *arg)
 
 		return ret;
 	}
-
-	RTE_PER_LCORE(dpaa_io) = true;
 
 	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized");
 
@@ -365,7 +362,7 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 	u32 sdqcr;
 	int ret;
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init(arg);
 		if (ret < 0) {
 			DPAA_BUS_LOG(ERR, "portal initialization failure");
@@ -408,8 +405,7 @@ dpaa_portal_finish(void *arg)
 
 	rte_free(dpaa_io_portal);
 	dpaa_io_portal = NULL;
-
-	RTE_PER_LCORE(dpaa_io) = false;
+	DPAA_PER_LCORE_PORTAL = NULL;
 }
 
 static int

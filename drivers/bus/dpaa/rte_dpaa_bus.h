@@ -41,8 +41,6 @@
 
 extern unsigned int dpaa_svr_family;
 
-extern RTE_DEFINE_PER_LCORE(bool, dpaa_io);
-
 struct rte_dpaa_device;
 struct rte_dpaa_driver;
 
@@ -102,11 +100,37 @@ struct rte_dpaa_driver {
 	rte_dpaa_remove_t remove;
 };
 
+/* Create storage for dqrr entries per lcore */
+#define DPAA_PORTAL_DEQUEUE_DEPTH	16
+struct dpaa_portal_dqrr {
+	void *mbuf[DPAA_PORTAL_DEQUEUE_DEPTH];
+	uint64_t dqrr_held;
+	uint8_t dqrr_size;
+};
+
 struct dpaa_portal {
 	uint32_t bman_idx; /**< BMAN Portal ID*/
 	uint32_t qman_idx; /**< QMAN Portal ID*/
+	struct dpaa_portal_dqrr dpaa_held_bufs;
+	struct rte_crypto_op **dpaa_sec_ops;
+	int dpaa_sec_op_nb;
 	uint64_t tid;/**< Parent Thread id for this portal */
 };
+
+RTE_DECLARE_PER_LCORE(struct dpaa_portal *, dpaa_io);
+
+#define DPAA_PER_LCORE_PORTAL \
+	RTE_PER_LCORE(dpaa_io)
+#define DPAA_PER_LCORE_DQRR_SIZE \
+	RTE_PER_LCORE(dpaa_io)->dpaa_held_bufs.dqrr_size
+#define DPAA_PER_LCORE_DQRR_HELD \
+	RTE_PER_LCORE(dpaa_io)->dpaa_held_bufs.dqrr_held
+#define DPAA_PER_LCORE_DQRR_MBUF(i) \
+	RTE_PER_LCORE(dpaa_io)->dpaa_held_bufs.mbuf[i]
+#define DPAA_PER_LCORE_RTE_CRYPTO_OP \
+	RTE_PER_LCORE(dpaa_io)->dpaa_sec_ops
+#define DPAA_PER_LCORE_DPAA_SEC_OP_NB \
+	RTE_PER_LCORE(dpaa_io)->dpaa_sec_op_nb
 
 /* Various structures representing contiguous memory maps */
 struct dpaa_memseg {
@@ -206,20 +230,6 @@ RTE_INIT(dpaainitfn_ ##nm) \
 	rte_dpaa_driver_register(&dpaa_drv); \
 } \
 RTE_PMD_EXPORT_NAME(nm, __COUNTER__)
-
-/* Create storage for dqrr entries per lcore */
-#define DPAA_PORTAL_DEQUEUE_DEPTH	16
-struct dpaa_portal_dqrr {
-	void *mbuf[DPAA_PORTAL_DEQUEUE_DEPTH];
-	uint64_t dqrr_held;
-	uint8_t dqrr_size;
-};
-
-RTE_DECLARE_PER_LCORE(struct dpaa_portal_dqrr, held_bufs);
-
-#define DPAA_PER_LCORE_DQRR_SIZE       RTE_PER_LCORE(held_bufs).dqrr_size
-#define DPAA_PER_LCORE_DQRR_HELD       RTE_PER_LCORE(held_bufs).dqrr_held
-#define DPAA_PER_LCORE_DQRR_MBUF(i)    RTE_PER_LCORE(held_bufs).mbuf[i]
 
 #ifdef __cplusplus
 }

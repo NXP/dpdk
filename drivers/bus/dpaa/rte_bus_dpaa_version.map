@@ -46,7 +46,6 @@ DPDK_20.0 {
 	netcfg_acquire;
 	netcfg_release;
 	per_lcore_dpaa_io;
-	per_lcore_held_bufs;
 	qm_channel_caam;
 	qm_channel_pool1;
 	qman_alloc_cgrid_range;
