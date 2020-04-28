@@ -14,6 +14,7 @@
 #include <rte_malloc.h>
 #include <rte_ring.h>
 #include <rte_kvargs.h>
+#include <rte_hexdump.h>
 
 #include <rte_bbdev.h>
 #include <rte_bbdev_pmd.h>
@@ -24,6 +25,7 @@
 
 #include "bbdev_la12xx.h"
 #include "bbdev_la12xx_pmd_logs.h"
+#include "bbdev_la12xx_feca_param.h"
 
 #define DRIVER_NAME baseband_la12xx
 
@@ -39,19 +41,31 @@ int bbdev_la12xx_logtype_pmd;
 struct gul_ipc_stats *h_stats;
 struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
 
+static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
+	{
+		.type   = RTE_BBDEV_OP_LDPC_ENC,
+		.cap.ldpc_enc = {
+			.capability_flags =
+					RTE_BBDEV_LDPC_CRC_24A_ATTACH |
+					RTE_BBDEV_LDPC_CRC_24B_ATTACH,
+			.num_buffers_src =
+					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
+			.num_buffers_dst =
+					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
+		}
+	},
+	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
+};
+
+static struct rte_bbdev_queue_conf default_queue_conf = {
+	.queue_size = MAX_CHANNEL_DEPTH,
+};
+
 /* Get device info */
 static void
 la12xx_info_get(struct rte_bbdev *dev,
 		struct rte_bbdev_driver_info *dev_info)
 {
-	/* TODO: Add LDPC capability */
-	static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
-		RTE_BBDEV_END_OF_CAPABILITIES_LIST(),
-	};
-	static struct rte_bbdev_queue_conf default_queue_conf = {
-		.queue_size = MAX_CHANNEL_DEPTH,
-	};
-
 	PMD_INIT_FUNC_TRACE();
 
 	dev_info->driver_name = RTE_STR(DRIVER_NAME);
@@ -63,7 +77,7 @@ la12xx_info_get(struct rte_bbdev *dev,
 	dev_info->default_queue_conf = default_queue_conf;
 	dev_info->capabilities = bbdev_capabilities;
 	dev_info->cpu_flag_reqs = NULL;
-	dev_info->min_alignment = 0;
+	dev_info->min_alignment = 64;
 
 	BBDEV_LA12XX_PMD_DEBUG("got device info from %u", dev->data->dev_id);
 }
@@ -314,6 +328,111 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	}
 }
 
+static void
+fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+	       void *bbdev_op,
+	       uint32_t op_type)
+{
+	struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
+	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
+	int16_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
+	int16_t e[200] = {0};
+	int16_t codeblock_mask[8];
+	se_command_t se_cmd, *se_command;
+
+	int16_t TBS_VALID, set_index, base_graph2, lifting_index, mod_order;
+	int16_t tb_24_bit_crc, num_code_blocks, num_input_bytes, e_floor_thresh;
+	int16_t num_output_bits_floor, num_output_bits_ceiling, SE_SC_X1_INIT;
+	int16_t SE_SC_X2_INIT, SE_CIRC_BUF;
+	int16_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
+
+	RTE_SET_USED(op_type);
+
+	/* TODO: Update 'e' param appropriately */
+	e[0] = bbdev_enc_op->ldpc_enc.tb_params.ea;
+	memset(codeblock_mask, 0xFF, (8 * sizeof(int16_t)));
+
+	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
+			e, ldpc_enc->rv_index, A, 0,
+			0, 0, 1, ldpc_enc->n_cb, codeblock_mask, &TBS_VALID,
+			&set_index, &base_graph2, &lifting_index, &mod_order,
+			&tb_24_bit_crc,	&num_code_blocks, &num_input_bytes,
+			&e_floor_thresh, &num_output_bits_floor,
+			&num_output_bits_ceiling, &SE_SC_X1_INIT,
+			&SE_SC_X2_INIT,	int_start_ofst_floor,
+			int_start_ofst_ceiling, &SE_CIRC_BUF);
+
+	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_SE_CHAIN);
+	bbdev_ipc_op->feca_job.t_blk_id = 0;
+
+	se_command = &bbdev_ipc_op->feca_job.command_chain_t.se_command_ch_obj;
+
+	/* TODO: Currently setting all fields for clarity.
+	 * Remove unrequried fields
+	 */
+	se_cmd.se_cfg1.raw_se_cfg1 = 0;
+	se_cmd.se_cfg1.out_pad_bytes = 0;
+	se_cmd.se_cfg1.num_code_blocks = num_code_blocks;
+	se_cmd.se_cfg1.tb_24_bit_crc = tb_24_bit_crc;
+	se_cmd.se_cfg1.complete_trig_en = 1;
+	se_cmd.se_cfg1.mod_order = mod_order;
+	se_cmd.se_cfg1.control_data_mux = 0;
+	se_cmd.se_cfg1.lifting_size = lifting_index;
+	se_cmd.se_cfg1.base_graph2 = base_graph2;
+	se_cmd.se_cfg1.set_index = set_index;
+	se_command->se_cfg1.raw_se_cfg1 =
+		rte_cpu_to_be_32(se_cmd.se_cfg1.raw_se_cfg1);
+
+	se_cmd.se_sizes1.raw_se_sizes1 = 0;
+	se_cmd.se_sizes1.num_input_bytes = num_input_bytes;
+	se_cmd.se_sizes1.e_floor_thresh = e_floor_thresh;
+	se_command->se_sizes1.raw_se_sizes1 =
+		rte_cpu_to_be_32(se_cmd.se_sizes1.raw_se_sizes1);
+
+	se_command->se_circ_buf = rte_cpu_to_be_32(SE_CIRC_BUF);
+	se_command->se_floor_num_output_bits =
+		rte_cpu_to_be_32(num_output_bits_floor);
+	se_command->se_ceiling_num_output_bits =
+		rte_cpu_to_be_32(num_output_bits_ceiling);
+	se_command->se_sc_x1_init = rte_cpu_to_be_32(SE_SC_X1_INIT);
+	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
+
+	se_command->se_axi_in_addr_low = 0;
+	se_command->se_axi_in_addr_high = 0;
+	se_command->se_axi_in_num_bytes = 0;
+
+	memset(se_command->se_cb_mask, 0xFF, (8 * sizeof(uint32_t)));
+
+	se_command->se_di_start_ofst_floor[0] =
+		rte_cpu_to_be_32((int_start_ofst_floor[1] << 16) |
+		int_start_ofst_floor[0]);
+	se_command->se_di_start_ofst_floor[1] =
+		rte_cpu_to_be_32((int_start_ofst_floor[3] << 16) |
+		int_start_ofst_floor[2]);
+	se_command->se_di_start_ofst_floor[2] =
+		rte_cpu_to_be_32((int_start_ofst_floor[5] << 16) |
+		int_start_ofst_floor[4]);
+	se_command->se_di_start_ofst_floor[3] =
+		rte_cpu_to_be_32((int_start_ofst_floor[7] << 16) |
+		int_start_ofst_floor[6]);
+	se_command->se_di_start_ofst_ceiling[0] =
+		rte_cpu_to_be_32((int_start_ofst_ceiling[1] << 16) |
+		int_start_ofst_ceiling[0]);
+	se_command->se_di_start_ofst_ceiling[1] =
+		rte_cpu_to_be_32((int_start_ofst_ceiling[3] << 16) |
+		int_start_ofst_ceiling[2]);
+	se_command->se_di_start_ofst_ceiling[2] =
+		rte_cpu_to_be_32((int_start_ofst_ceiling[5] << 16) |
+		int_start_ofst_ceiling[4]);
+	se_command->se_di_start_ofst_ceiling[3] =
+		rte_cpu_to_be_32((int_start_ofst_ceiling[7] << 16) |
+		int_start_ofst_ceiling[6]);
+
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+	rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
+#endif
+}
+
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
 			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
@@ -331,8 +450,16 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
 	ipc_bd_t *bdr, *bd;
 	uint64_t virt, retry_count = 0;
-	char *huge_start_addr = (char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
-	struct rte_mbuf *mbuf = ((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct rte_mbuf *in_mbuf =
+		((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
+	struct rte_mbuf *out_mbuf =
+		((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.output.data;
+	char *data_ptr;
+	uint32_t l1_pcie_addr;
+
+	RTE_SET_USED(op_type);
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
@@ -356,7 +483,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	virt = MODEM_P2V(bd->modem_ptr);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
 	/* TODO: Copy other fields and have separate API for it */
-	bbdev_ipc_op->op_type = op_type;
 	bbdev_ipc_op->l2_cntx_l =
 	       lower_32_bits((uint64_t)bbdev_op);
 	bbdev_ipc_op->l2_cntx_h =
@@ -364,8 +490,21 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
-	if (mbuf)
-		fill_qdma_desc(mbuf, bbdev_ipc_op, huge_start_addr);
+	if (in_mbuf) {
+		fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
+		fill_feca_desc(bbdev_ipc_op, bbdev_op, op_type);
+
+		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+				data_ptr - huge_start_addr;
+		bbdev_ipc_op->out_addr = l1_pcie_addr;
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(((
+				struct rte_bbdev_enc_op *)
+				(bbdev_op))->ldpc_enc.tb_params.ea / 8);
+		rte_pktmbuf_append(out_mbuf, ((struct rte_bbdev_enc_op *)
+				(bbdev_op))->ldpc_enc.tb_params.ea/8);
+	}
+
 	/* Move Producer Index forward */
 	pi++;
 	/* Wait for Data Copy and pi_flag update to complete
@@ -749,6 +888,8 @@ setup_bbdev(struct rte_bbdev *dev)
 				       mode);
 			goto err;
 		}
+	} else {
+		mode = BBDEV_IPC_FECA_PROCESSING;
 	}
 
 	ipc_md->instance_list[instance_id].bbdev_ipc_mode =
