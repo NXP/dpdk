@@ -39,10 +39,10 @@ Following information can be used to obtain these components:
     Use following command to get the DPDK code
 
     - Internal git repository:
-      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 18.11-qoriq
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 19.11-qoriq
       OR,
      - External Github Repository:
-      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/18.11-qoriq
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/19.11-qoriq
 
 
       $ cd dpdk # Change directory to cloned DPDK source code
@@ -55,10 +55,10 @@ Following information can be used to obtain these components:
     Linux Kernel can be obtained either through the NXP SDK for the board or
     via the Github repository below:
 
-      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.14
+      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-4.19
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.4, 4.9, 4.14 has been verified with DPDK. Other kernels may work but
+    Linux-4.14, 4.19, 5.4 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
     NOTE: By default, the KNI module compilation is enabled in DPDK requiring
@@ -80,9 +80,9 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-7.2` or earlier toolchain from Linaro. e.g.
+    Get the `gcc-7.5` or earlier toolchain from Linaro. e.g.
 
-    # https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/
+    # https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/
 
     Thereafter, set the environment variable:
 
@@ -167,8 +167,9 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
         config/defconfig_arm64-dpaa-linuxapp-gcc file:
 
         CONFIG_RTE_KNI_KMOD=n
+	CONFIG_RTE_EAL_IGB_UIO=n
 
-  2. export CROSS=/opt/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+  2. export CROSS=/opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 
   3. Optional: export OPENSSL_PATH=<path to OpenSSL library>
 
@@ -190,6 +191,10 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
   5. Execute the following command to build DPDK:
 
     $ make T=arm64-dpaa-linuxapp-gcc -j 4 install
+
+	or,
+     make install T=arm64-dpaa-linuxapp-gcc -j 8 CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n
+	(if you don't have kernel sources)
 
     In the above, "-j" specifies number of parallel builds. As output of
     this command, compiled libraries, binary objects and headers are
@@ -266,6 +271,7 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
     c) Build the Layer-3 Forwarding (l3fwd) application
 
       $ make -C examples/l3fwd
+	e.g. the output will be available in examples/l3fwd/build/l3fwd
 
     d) Build the Layer-2 Forwarding Crypto application
 
@@ -281,8 +287,8 @@ DPDK online manuals at http://dpdk.org/doc/guides/linux_gsg/index.html.
 Executing DPDK Applications
 -------------------------
 
-There are some pre-requisites for running DPDK applications on the PPFE, DPAA or
-DPAA2 boards.
+There are some pre-requisites for running DPDK applications on the PPFE, DPAA,
+DPAA2 or ENETC boards.
 
 Following are some pre-requisites:
 
