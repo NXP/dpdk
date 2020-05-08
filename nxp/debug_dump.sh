@@ -135,6 +135,7 @@ function dpaa_info() {
 function dpaa2_info() {
 	echo "DPAA2: $@" >> ${logoutput}
 	restool -v >> ${logoutput}
+	restool -m >> ${logoutput}
 	mycmd "ls-listmac"
 	mycmd "ls-listni"
 	for i in `restool dprc show $DPRC | tr -s "^I" | cut -f1`;
