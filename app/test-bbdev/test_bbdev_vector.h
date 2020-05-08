@@ -35,6 +35,7 @@ enum {
 	TEST_BBDEV_VF_CODE_BLOCK_MODE = (1ULL << 23),
 	TEST_BBDEV_VF_OP_FLAGS = (1ULL << 24),
 	TEST_BBDEV_VF_EXPECTED_STATUS = (1ULL << 25),
+	TEST_BBDEV_VF_NETWORK_ORDER = (1ULL << 26),
 };
 
 enum op_data_type {
@@ -60,6 +61,7 @@ struct test_bbdev_vector {
 	enum rte_bbdev_op_type op_type;
 	int expected_status;
 	int mask;
+	int network_order;
 	union {
 		struct rte_bbdev_op_turbo_dec turbo_dec;
 		struct rte_bbdev_op_turbo_enc turbo_enc;

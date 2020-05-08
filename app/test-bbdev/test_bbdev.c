@@ -16,6 +16,7 @@
 #include <rte_bbdev_pmd.h>
 
 #include "main.h"
+#include "test_bbdev_vector.h"
 
 struct bbdev_testsuite_params {
 	struct rte_bbdev_queue_conf qconf;
@@ -25,10 +26,28 @@ static struct bbdev_testsuite_params testsuite_params;
 
 static uint8_t bbdev_dev_id;
 
+static struct test_bbdev_vector test_vector;
+
+static int
+read_test_vector(void)
+{
+	int ret;
+
+	memset(&test_vector, 0, sizeof(test_vector));
+	printf("Test vector file = %s\n", get_vector_filename());
+	ret = test_bbdev_vector_read(get_vector_filename(), &test_vector);
+	TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
+			get_vector_filename());
+
+	return TEST_SUCCESS;
+}
+
 static int
 testsuite_setup(void)
 {
 	uint8_t nb_devs;
+
+	TEST_ASSERT_SUCCESS(read_test_vector(), "Test suite setup failed\n");
 
 	nb_devs = rte_bbdev_count();
 	TEST_ASSERT(nb_devs != 0, "No devices found");
@@ -644,6 +663,10 @@ test_bbdev_stats(void)
 	struct bbdev_testsuite_params *ts_params = &testsuite_params;
 	int i;
 
+	/* Stats test is not supported for LDPC */
+	if (test_vector.op_type != RTE_BBDEV_OP_NONE)
+		return TEST_SUCCESS;
+
 	TEST_ASSERT_SUCCESS(rte_bbdev_queue_stop(dev_id, queue_id),
 			"Failed to stop queue %u on device %u ", queue_id,
 			dev_id);
@@ -702,7 +725,7 @@ test_bbdev_stats(void)
 	/* Tests after dequeue operation */
 	rte_bbdev_dequeue_enc_ops(dev_id, queue_id, enc_proc_ops, num_ops);
 	/* Wait for some time before going for dequeue */
-	usleep(1000);
+	sleep(1);
 	rte_bbdev_dequeue_dec_ops(dev_id, queue_id, dec_proc_ops, num_ops);
 
 	TEST_ASSERT_SUCCESS(rte_bbdev_stats_get(dev_id, &stats),
@@ -857,6 +880,10 @@ test_bbdev_callback(void)
 	uint8_t invalid_dev_id = RTE_BBDEV_MAX_DEVS;
 	enum rte_bbdev_event_type invalid_event_type = RTE_BBDEV_EVENT_MAX;
 	uint8_t dev_id;
+
+	/* Stats test is not supported for LDPC */
+	if (test_vector.op_type != RTE_BBDEV_OP_NONE)
+		return TEST_SUCCESS;
 
 	dev1 = rte_bbdev_allocate(name);
 	TEST_ASSERT(dev1 != NULL, "Failed to initialize bbdev driver");

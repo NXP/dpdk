@@ -4,7 +4,7 @@
 
 deps += ['bbdev', 'bus_vdev', 'ring']
 allow_experimental_apis = true
-sources = files('bbdev_la12xx.c')
+sources = files('bbdev_la12xx.c', 'bbdev_la12xx_feca_param.c')
 cflags += ['-DHOST=1',
            '-DMODEM=0']
 cmd = run_command('sh', '-c', 'echo $LA12XX_COMMON_HDR_DIR')

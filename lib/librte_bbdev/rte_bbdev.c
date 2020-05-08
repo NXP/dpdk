@@ -465,9 +465,7 @@ rte_bbdev_queue_configure(uint16_t dev_id, uint16_t queue_id,
 
 	/* Check configuration is valid */
 	if (conf != NULL) {
-		if ((conf->op_type == RTE_BBDEV_OP_NONE) &&
-				(dev_info.capabilities[0].type ==
-				RTE_BBDEV_OP_NONE)) {
+		if (conf->op_type == RTE_BBDEV_OP_NONE) {
 			ret = 1;
 		} else {
 			for (p = dev_info.capabilities;
