@@ -7,7 +7,7 @@ allow_experimental_apis = true
 sources = files('bbdev_la12xx.c', 'bbdev_la12xx_feca_param.c')
 cflags += ['-DHOST=1',
            '-DMODEM=0']
-cmd = run_command('sh', '-c', 'echo $LA12XX_COMMON_HDR_DIR')
-LA12XX_COMMON_HDR_DIR = cmd.stdout().strip()
-message('LA12XX_COMMON_HDR_DIR=' + LA12XX_COMMON_HDR_DIR)
-includes += [include_directories(LA12XX_COMMON_HDR_DIR)]
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+message('COMMON_HEADERS_DIR=' + COMMON_HEADERS_DIR)
+includes += [include_directories(COMMON_HEADERS_DIR)]
