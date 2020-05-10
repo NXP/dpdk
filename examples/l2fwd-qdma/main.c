@@ -324,7 +324,9 @@ l2fwd_qdma_main_loop(void)
 	}
 
 	q_config.lcore_id = lcore_id;
-	q_config.flags = 0;
+	q_config.flags = RTE_QDMA_VQ_FD_LONG_FORMAT;
+	if (qdma_mode == RTE_QDMA_MODE_HW)
+		q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	q_config.rbp = NULL;
 
 	vq_id = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
@@ -881,7 +883,6 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "QDMA reset failed\n");
 
 	qdma_config.max_hw_queues_per_core = L2FWD_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.mode = qdma_mode;
 	qdma_config.fle_pool_count = L2FWD_QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = L2FWD_QDMA_MAX_VQS;
 
