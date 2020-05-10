@@ -119,11 +119,12 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
 #define L2FWD_QDMA_MAX_HW_QUEUES_PER_CORE	1
-#define L2FWD_QDMA_FLE_POOL_COUNT		8192
+#define L2FWD_QDMA_FLE_POOL_QUEUE_COUNT		2048
 #define L2FWD_QDMA_MAX_VQS			128
 
 /* Determines H/W or virtual mode */
 uint8_t qdma_mode = RTE_QDMA_MODE_HW;
+uint8_t qdma_sg;
 
 /* Print out statistics on packets dropped */
 static void
@@ -190,8 +191,8 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned int dest_portid)
 static void
 l2fwd_qdma_forward(uint16_t vq_id, int nb_jobs)
 {
-	struct rte_qdma_job *qdma_job[MAX_PKT_BURST];
-	struct rte_mbuf *out_mbuf[MAX_PKT_BURST];
+	struct rte_qdma_job *qdma_job[RTE_QDMA_BURST_NB_MAX];
+	struct rte_mbuf *out_mbuf[RTE_QDMA_BURST_NB_MAX];
 	struct l2fwd_qdma_job_cnxt *qdma_job_cnxt;
 	unsigned int dst_port = 0;
 	int to_sent = 0, sent, num_rx;
@@ -199,7 +200,12 @@ l2fwd_qdma_forward(uint16_t vq_id, int nb_jobs)
 
 	context.vq_id = vq_id;
 	context.job = qdma_job;
-	num_rx = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, nb_jobs, &context);
+	if (qdma_sg)
+		num_rx = rte_qdma_dequeue_buffers(qdma_dev_id, NULL,
+					RTE_QDMA_BURST_NB_MAX, &context);
+	else
+		num_rx = rte_qdma_dequeue_buffers(qdma_dev_id, NULL,
+					nb_jobs, &context);
 	if (num_rx <= 0)
 		return;
 
@@ -265,6 +271,7 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		job->dest = (uint64_t)m_new_data;
 		job->len = m[i]->data_len;
 		job->cnxt = (uint64_t)qdma_job_cnxt;
+		job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
 
 		qdma_job[i] = job;
 	}
@@ -327,6 +334,8 @@ l2fwd_qdma_main_loop(void)
 	q_config.flags = RTE_QDMA_VQ_FD_LONG_FORMAT;
 	if (qdma_mode == RTE_QDMA_MODE_HW)
 		q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
+	if (qdma_sg)
+		q_config.flags |= RTE_QDMA_VQ_FD_SG_FORMAT;
 	q_config.rbp = NULL;
 
 	vq_id = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
@@ -406,7 +415,7 @@ l2fwd_launch_one_lcore(__attribute__((unused)) void *dummy)
 static void
 l2fwd_usage(const char *prgname)
 {
-	printf("%s [EAL options] -- -p PORTMASK [-q NQ] [-m qdma_mode]\n"
+	printf("%s [EAL options] -- -p PORTMASK [-q NQ] [-m qdma_mode] [-s qdma_sg]\n"
 	"  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
 	"  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
 	"  -T PERIOD: statistics will be refreshed each PERIOD seconds"
@@ -416,7 +425,8 @@ l2fwd_usage(const char *prgname)
 	"   When enabled:\n"
 	"     - The source MAC address is replaced by the TX port MAC address\n"
 	"     - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
-	"  -m mode: HW (0) or Virtual (1) mode for QDMA\n",
+	"  -m mode: HW (0) or Virtual (1) mode for QDMA\n"
+	"  -s scatter gather: 0 to disable(default) and 1 for enable\n",
 	prgname);
 }
 
@@ -490,6 +500,7 @@ static const char short_options[] =
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
 	"m:"  /* mode - virtual or hw */
+	"s:"  /* scatter gather */
 	;
 
 #define CMD_LINE_OPT_MAC_UPDATING "mac-updating"
@@ -513,7 +524,7 @@ static const struct option lgopts[] = {
 static int
 l2fwd_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs, mode;
+	int opt, ret, timer_secs, mode, sg;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -564,6 +575,17 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			qdma_mode = mode;
+			break;
+
+		/* scatter gather */
+		case 's':
+			sg = l2fwd_parse_mode(optarg);
+			if (sg < 0) {
+				printf("invalid mode\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			qdma_sg = sg;
 			break;
 		/* long options */
 		case 0:
@@ -883,7 +905,7 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "QDMA reset failed\n");
 
 	qdma_config.max_hw_queues_per_core = L2FWD_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.fle_pool_count = L2FWD_QDMA_FLE_POOL_COUNT;
+	qdma_config.fle_queue_pool_cnt = L2FWD_QDMA_FLE_POOL_QUEUE_COUNT;
 	qdma_config.max_vqs = L2FWD_QDMA_MAX_VQS;
 
 	dev_conf.dev_private = (void *)&qdma_config;
