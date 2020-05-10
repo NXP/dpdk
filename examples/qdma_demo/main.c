@@ -68,7 +68,7 @@ struct qdma_test_case test_case[] = {
 int test_case_array_size = sizeof(test_case) / sizeof(test_case[0]);
 
 /*Configurable options*/
-int g_frame_format = LONG_FMT;
+int g_frame_format = RTE_QDMA_LONG_FORMAT;
 int g_userbp = NO_RBP;
 int g_rbp_testcase = MEM_TO_PCI;
 uint32_t g_arg_mask;
@@ -106,11 +106,8 @@ test_dma_init(void)
 		return 0;
 	/* Configure QDMA to use HW resource - no virtual queues */
 	qdma_config.max_hw_queues_per_core = LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.mode = RTE_QDMA_MODE_HW;
 	qdma_config.fle_pool_count = LSINIC_QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
-	if (g_frame_format == RTE_QDMA_ULTRASHORT_FORMAT)
-		qdma_config.format = RTE_QDMA_ULTRASHORT_FORMAT;
 
 	dev_conf.dev_private = (void *)&qdma_config;
 	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
@@ -484,6 +481,10 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 
 		q_config.lcore_id = i;
 		q_config.flags = 0;
+		if (qdma_mode == RTE_QDMA_MODE_HW)
+			q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
+		if (g_frame_format == RTE_QDMA_LONG_FORMAT)
+			q_config.flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
 		q_config.rbp = NULL;
 		g_vqid[i] = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 		printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
