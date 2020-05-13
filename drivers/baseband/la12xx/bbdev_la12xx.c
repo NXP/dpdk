@@ -335,16 +335,18 @@ fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 {
 	struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
-	int16_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
-	int16_t e[200] = {0};
-	int16_t codeblock_mask[8];
+	uint32_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
+	uint32_t e[200] = {0};
+	uint32_t codeblock_mask[8];
 	se_command_t se_cmd, *se_command;
 
-	int16_t TBS_VALID, set_index, base_graph2, lifting_index, mod_order;
-	int16_t tb_24_bit_crc, num_code_blocks, num_input_bytes, e_floor_thresh;
-	int16_t num_output_bits_floor, num_output_bits_ceiling, SE_SC_X1_INIT;
-	int16_t SE_SC_X2_INIT, SE_CIRC_BUF;
-	int16_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
+	int16_t TBS_VALID;
+	uint32_t set_index, base_graph2, lifting_index, mod_order;
+	uint32_t tb_24_bit_crc, num_code_blocks;
+	uint32_t num_input_bytes, e_floor_thresh;
+	uint32_t num_output_bits_floor, num_output_bits_ceiling;
+	uint32_t SE_SC_X1_INIT, SE_SC_X2_INIT, SE_CIRC_BUF;
+	uint32_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
 
 	RTE_SET_USED(op_type);
 
@@ -353,8 +355,9 @@ fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	memset(codeblock_mask, 0xFF, (8 * sizeof(int16_t)));
 
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
-			e, ldpc_enc->rv_index, A, 0,
-			0, 0, 1, ldpc_enc->n_cb, codeblock_mask, &TBS_VALID,
+			e, ldpc_enc->rv_index, A, ldpc_enc->q, ldpc_enc->n_id,
+			ldpc_enc->n_rnti, !ldpc_enc->en_scramble,
+			ldpc_enc->n_cb, codeblock_mask, &TBS_VALID,
 			&set_index, &base_graph2, &lifting_index, &mod_order,
 			&tb_24_bit_crc,	&num_code_blocks, &num_input_bytes,
 			&e_floor_thresh, &num_output_bits_floor,

@@ -10,19 +10,19 @@
 #include "bbdev_la12xx_feca_param.h"
 
 static void
-calc_int_start_ofst(int16_t Q_m,
-		    int16_t rv_id,
-		    int16_t N_cb,
-		    int16_t BGnumber,
-		    int16_t K,
-		    int16_t K_dash,
-		    int16_t Zc,
-		    int16_t e_div_qm,
-		    int16_t *ncb_eff,
-		    int16_t *int_start_ofst)
+calc_int_start_ofst(uint32_t Q_m,
+		    uint32_t rv_id,
+		    uint32_t N_cb,
+		    uint32_t BGnumber,
+		    uint32_t K,
+		    uint32_t K_dash,
+		    uint32_t Zc,
+		    uint32_t e_div_qm,
+		    uint32_t *ncb_eff,
+		    uint32_t *int_start_ofst)
 {
-	int16_t i, k0 = 0, num_filler_bits;
-	int16_t filler_end, filler_start, k0_eff;
+	uint32_t i, k0 = 0, num_filler_bits;
+	uint32_t filler_end, filler_start, k0_eff;
 
 	num_filler_bits = K - K_dash;
 	if (rv_id == 0)
@@ -55,14 +55,14 @@ calc_int_start_ofst(int16_t Q_m,
 }
 
 static void
-offset_x1_x2(int16_t c_init,
-	     int16_t offset,
-	     int16_t *X1,
-	     int16_t *X2)
+offset_x1_x2(uint32_t c_init,
+	     uint32_t offset,
+	     uint32_t *X1,
+	     uint32_t *X2)
 {
-	int16_t n;
-	static int16_t x1[100000];
-	static int16_t x2[100000];
+	uint32_t n;
+	static uint32_t x1[100000];
+	static uint32_t x2[100000];
 
 	for (n = 0; n < 31; n++) {
 		x1[n] = 0;
@@ -84,30 +84,30 @@ offset_x1_x2(int16_t c_init,
 }
 
 static void
-LDPC_evaluate_parameters(int16_t A,
-			 int16_t base_graph2_input,
-			 int16_t *codeblock_mask,
-			 int16_t *BGnumber,
-			 int16_t *B,
-			 int16_t *i_LS,
-			 int16_t *Zc,
-			 int16_t *N,
-			 int16_t *K,
-			 int16_t *K_dash,
-			 int16_t *C,
-			 int16_t *C_prime,
+LDPC_evaluate_parameters(uint32_t A,
+			 uint32_t base_graph2_input,
+			 uint32_t *codeblock_mask,
+			 uint32_t *BGnumber,
+			 uint32_t *B,
+			 uint32_t *i_LS,
+			 uint32_t *Zc,
+			 uint32_t *N,
+			 uint32_t *K,
+			 uint32_t *K_dash,
+			 uint32_t *C,
+			 uint32_t *C_prime,
 			 int16_t *TBS_VALID)
 {
-	static int16_t Z[51] = {2, 4, 8, 16, 32, 64, 128, 256, 3, 6, 12, 24,
+	static uint32_t Z[51] = {2, 4, 8, 16, 32, 64, 128, 256, 3, 6, 12, 24,
 				48, 96, 192, 384, 5, 10, 20, 40, 80, 160, 320,
 				7, 14, 28, 56, 112, 224, 9, 18, 36, 72, 144,
 				288, 11, 22, 44, 88, 176, 352, 13, 26, 52, 104,
 				208, 15, 30, 60, 120, 240};
-	static int16_t i_LS_vec[51] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+	static uint32_t i_LS_vec[51] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
 				       1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3,
 				       3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5,
 				       5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7};
-	int16_t i, K_cb, K_b;
+	uint32_t i, K_cb, K_b;
 
 	/* find BGnumber */
 	if (base_graph2_input == 1)
@@ -177,38 +177,39 @@ LDPC_evaluate_parameters(int16_t A,
 }
 
 void
-la12xx_sch_encode_param_convert(int16_t base_graph2_input,
-				int16_t Q_m,
-				int16_t *e,
-				int16_t rv_id,
-				int16_t A,
-				int16_t q,
-				int16_t n_ID,
-				int16_t n_RNTI,
-				int16_t scrambler_bypass,
-				int16_t N_cb,
-				int16_t *codeblock_mask,
+la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
+				uint32_t Q_m,
+				uint32_t *e,
+				uint32_t rv_id,
+				uint32_t A,
+				uint32_t q,
+				uint32_t n_ID,
+				uint32_t n_RNTI,
+				uint32_t scrambler_bypass,
+				uint32_t N_cb,
+				uint32_t *codeblock_mask,
 				int16_t *TBS_VALID,
 				// HW parameters
-				int16_t *set_index,
-				int16_t *base_graph2,
-				int16_t *lifting_index,
-				int16_t *mod_order,
-				int16_t *tb_24_bit_crc,
-				int16_t *num_code_blocks,
-				int16_t *num_input_bytes,
-				int16_t *e_floor_thresh,
-				int16_t *num_output_bits_floor,
-				int16_t *num_output_bits_ceiling,
-				int16_t *SE_SC_X1_INIT,
-				int16_t *SE_SC_X2_INIT,
-				int16_t *int_start_ofst_floor,
-				int16_t *int_start_ofst_ceiling,
-				int16_t *SE_CIRC_BUF)
+				uint32_t *set_index,
+				uint32_t *base_graph2,
+				uint32_t *lifting_index,
+				uint32_t *mod_order,
+				uint32_t *tb_24_bit_crc,
+				uint32_t *num_code_blocks,
+				uint32_t *num_input_bytes,
+				uint32_t *e_floor_thresh,
+				uint32_t *num_output_bits_floor,
+				uint32_t *num_output_bits_ceiling,
+				uint32_t *SE_SC_X1_INIT,
+				uint32_t *SE_SC_X2_INIT,
+				uint32_t *int_start_ofst_floor,
+				uint32_t *int_start_ofst_ceiling,
+				uint32_t *SE_CIRC_BUF)
 {
-	int16_t B, i_LS, Zc, BGnumber, K_dash, i, K, N, C_prime;
-	int16_t C, E_sum = 0, cb_counter = 0;
-	int16_t e_div_qm_floor, e_div_qm_ceiling;
+	uint32_t B, i_LS, Zc, BGnumber, K_dash, i, K, N, C_prime;
+	uint32_t C, cb_counter = 0;
+	uint32_t e_div_qm_floor, e_div_qm_ceiling;
+	uint32_t E_sum = 0;
 
 	/* evaluate parameters */
 	LDPC_evaluate_parameters(A, base_graph2_input, codeblock_mask,
@@ -274,7 +275,8 @@ la12xx_sch_encode_param_convert(int16_t base_graph2_input,
 			*SE_SC_X1_INIT = 0;
 			*SE_SC_X2_INIT = 0;
 		} else {
-			offset_x1_x2((n_RNTI << 15) + (q << 14) + n_ID, 1600,
+			offset_x1_x2(((uint32_t)n_RNTI << 15) +
+				     ((uint32_t)q << 14) + n_ID, 1600,
 				     SE_SC_X1_INIT, SE_SC_X2_INIT);
 		}
 
@@ -315,46 +317,46 @@ la12xx_sch_encode_param_convert(int16_t base_graph2_input,
 }
 
 void
-la12xx_sch_decode_param_convert(int16_t *harq_buffer,
-				int16_t base_graph2_input,
-				int16_t Q_m,
-				int16_t *e,
-				int16_t rv_id,
-				int16_t A,
-				int16_t q,
-				int16_t n_ID,
-				int16_t n_RNTI,
-				int16_t scrambler_bypass,
-				int16_t N_cb,
-				int16_t remove_tb_crc,
-				int16_t harq_en,
-				int16_t *size_harq_buffer,
-				int16_t *C,
-				int16_t *codeblock_mask,
+la12xx_sch_decode_param_convert(uint32_t *harq_buffer,
+				uint32_t base_graph2_input,
+				uint32_t Q_m,
+				uint32_t *e,
+				uint32_t rv_id,
+				uint32_t A,
+				uint32_t q,
+				uint32_t n_ID,
+				uint32_t n_RNTI,
+				uint32_t scrambler_bypass,
+				uint32_t N_cb,
+				uint32_t remove_tb_crc,
+				uint32_t harq_en,
+				uint32_t *size_harq_buffer,
+				uint32_t *C,
+				uint32_t *codeblock_mask,
 				int16_t *TBS_VALID,
 				// HW parameters
-				int16_t *set_index,
-				int16_t *base_graph2,
-				int16_t *lifting_index,
-				int16_t *mod_order,
-				int16_t *tb_24_bit_crc,
-				int16_t *one_code_block,
-				int16_t *e_floor_thresh,
-				int16_t *num_output_bytes,
-				int16_t *bits_per_cb,
-				int16_t *num_filler_bits,
-				int16_t *SD_SC_X1_INIT,
-				int16_t *SD_SC_X2_INIT,
-				int16_t *e_div_qm_floor,
-				int16_t *e_div_qm_ceiling,
-				int16_t *di_start_ofst_floor,
-				int16_t *di_start_ofst_ceiling,
-				int16_t *SD_CIRC_BUF,
-				int16_t *axi_data_num_bytes)
+				uint32_t *set_index,
+				uint32_t *base_graph2,
+				uint32_t *lifting_index,
+				uint32_t *mod_order,
+				uint32_t *tb_24_bit_crc,
+				uint32_t *one_code_block,
+				uint32_t *e_floor_thresh,
+				uint32_t *num_output_bytes,
+				uint32_t *bits_per_cb,
+				uint32_t *num_filler_bits,
+				uint32_t *SD_SC_X1_INIT,
+				uint32_t *SD_SC_X2_INIT,
+				uint32_t *e_div_qm_floor,
+				uint32_t *e_div_qm_ceiling,
+				uint32_t *di_start_ofst_floor,
+				uint32_t *di_start_ofst_ceiling,
+				uint32_t *SD_CIRC_BUF,
+				uint32_t *axi_data_num_bytes)
 {
-	int16_t B, i_LS, Zc, BGnumber, K_dash, i, K, N;
-	int16_t C_prime, cb_counter = 0;
-	int16_t offset_harq_buffer;
+	uint32_t B, i_LS, Zc, BGnumber, K_dash, i, K, N;
+	uint32_t C_prime, cb_counter = 0;
+	uint32_t offset_harq_buffer;
 
 	RTE_SET_USED(harq_buffer);
 	RTE_SET_USED(harq_en);
@@ -417,7 +419,8 @@ la12xx_sch_decode_param_convert(int16_t *harq_buffer,
 		*SD_SC_X1_INIT = 0;
 		*SD_SC_X2_INIT = 0;
 	} else {
-		offset_x1_x2((n_RNTI << 15) + (q << 14) + n_ID, 1600,
+		offset_x1_x2(((uint32_t)n_RNTI << 15) +
+			     ((uint32_t)q << 14) + n_ID, 1600,
 			     SD_SC_X1_INIT, SD_SC_X2_INIT);
 	}
 
@@ -429,7 +432,7 @@ la12xx_sch_decode_param_convert(int16_t *harq_buffer,
 			}
 			if (cb_counter == C_prime-1)
 				*e_div_qm_ceiling = e[i]/Q_m;
-			if (e[i] == *e_div_qm_floor * Q_m)
+			if (e[i] == ((uint32_t)(*e_div_qm_floor) * Q_m))
 				*e_floor_thresh = *e_floor_thresh + 1;
 			cb_counter++;
 
