@@ -437,10 +437,8 @@ signal_exit_now(int sigtype)
 	int ret;
 
 	if (sigtype == SIGINT) {
-		if (app_mode == APP_MODE_EMPTY_POLL ||
-				app_mode == APP_MODE_TELEMETRY)
-			quit_signal = true;
 
+		quit_signal = true;
 
 		for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 			if (rte_lcore_is_enabled(lcore_id) == 0)
@@ -1206,7 +1204,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	else
 		RTE_LOG(INFO, L3FWD_POWER, "RX interrupt won't enable.\n");
 
-	while (1) {
+	while (!is_done()) {
 		stats[lcore_id].nb_iteration_looped++;
 
 		cur_tsc = rte_rdtsc();
