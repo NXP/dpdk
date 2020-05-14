@@ -336,22 +336,24 @@ fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	uint32_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
-	uint32_t e[200] = {0};
-	uint32_t codeblock_mask[8];
-	se_command_t se_cmd, *se_command;
-
-	int16_t TBS_VALID;
+	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS];
+	uint32_t codeblock_mask[8], i;
 	uint32_t set_index, base_graph2, lifting_index, mod_order;
 	uint32_t tb_24_bit_crc, num_code_blocks;
 	uint32_t num_input_bytes, e_floor_thresh;
 	uint32_t num_output_bits_floor, num_output_bits_ceiling;
 	uint32_t SE_SC_X1_INIT, SE_SC_X2_INIT, SE_CIRC_BUF;
 	uint32_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
+	se_command_t se_cmd, *se_command;
+	int16_t TBS_VALID;
 
 	RTE_SET_USED(op_type);
 
-	/* TODO: Update 'e' param appropriately */
-	e[0] = bbdev_enc_op->ldpc_enc.tb_params.ea;
+	for (i = 0; i < ldpc_enc->tb_params.cab; i++)
+		e[i] = ldpc_enc->tb_params.ea;
+	for (; i < ldpc_enc->tb_params.c; i++)
+		e[i] = ldpc_enc->tb_params.eb;
+
 	memset(codeblock_mask, 0xFF, (8 * sizeof(int16_t)));
 
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
@@ -494,6 +496,15 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
 	if (in_mbuf) {
+		struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
+		struct rte_bbdev_op_ldpc_enc *ldpc_enc =
+			&bbdev_enc_op->ldpc_enc;
+		uint32_t total_out_bits;
+
+		total_out_bits = (ldpc_enc->tb_params.cab *
+			ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
+			ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
+
 		fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
 		fill_feca_desc(bbdev_ipc_op, bbdev_op, op_type);
 
@@ -501,11 +512,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
 		bbdev_ipc_op->out_addr = l1_pcie_addr;
-		bbdev_ipc_op->out_len = rte_cpu_to_be_32(((
-				struct rte_bbdev_enc_op *)
-				(bbdev_op))->ldpc_enc.tb_params.ea / 8);
-		rte_pktmbuf_append(out_mbuf, ((struct rte_bbdev_enc_op *)
-				(bbdev_op))->ldpc_enc.tb_params.ea/8);
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(total_out_bits/8);
+		rte_pktmbuf_append(out_mbuf, total_out_bits/8);
 	}
 
 	/* Move Producer Index forward */
