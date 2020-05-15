@@ -9,6 +9,8 @@ endif
 deps += ['bus_fslmc']
 sources = files('dpaa2_hw_mempool.c')
 
+install_headers('rte_dpaa2_mempool.h')
+
 # depends on fslmc bus which uses experimental API
 allow_experimental_apis = true
 install_headers('rte_dpaa2_mempool.h')
