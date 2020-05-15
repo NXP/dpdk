@@ -1649,7 +1649,7 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 
 	/* Open DPDMAI device */
 	dpdmai_dev->dpdmai_id = dpdmai_id;
-	dpdmai_dev->dpdmai.regs = rte_mcp_ptr_list[MC_PORTAL_INDEX];
+	dpdmai_dev->dpdmai.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
 	dpdmai_dev->qdma_dev = &q_dev;
 	ret = dpdmai_open(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
 			  dpdmai_dev->dpdmai_id, &dpdmai_dev->token);

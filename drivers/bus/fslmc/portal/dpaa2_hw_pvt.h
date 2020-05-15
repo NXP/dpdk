@@ -209,9 +209,6 @@ struct dpaa2_dpcon_dev {
 	uint8_t channel_index;
 };
 
-/*! Global MCP list */
-extern void *(*rte_mcp_ptr_list);
-
 /* Refer to Table 7-3 in SEC BG */
 #define QBMAN_FLE_WORD4_FMT_SBF 0x0    /* Single buffer frame */
 #define QBMAN_FLE_WORD4_FMT_SGE 0x2 /* Scatter gather frame */
@@ -464,5 +461,8 @@ int dpaa2_dpbp_supported(void);
 
 struct dpaa2_dpci_dev *rte_dpaa2_alloc_dpci_dev(void);
 void rte_dpaa2_free_dpci_dev(struct dpaa2_dpci_dev *dpci);
+
+/* Global MCP pointer */
+void *dpaa2_get_mcp_ptr(int portal_idx);
 
 #endif
