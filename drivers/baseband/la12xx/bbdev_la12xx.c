@@ -225,6 +225,21 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 		return ret;
 	}
 
+	/* TODO: SG enable/disable per queue is not supported.
+	 * currently, driver is enabling the SG for all queues.
+	 */
+	if (queue_conf->sg) {
+		struct gul_hif *mhif;
+		ipc_metadata_t *ipc_md;
+		int instance_id = 0;
+
+		mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+		/* offset is from start of PEB */
+		ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+			mhif->ipc_regs.ipc_mdata_offset);
+		ipc_md->instance_list[instance_id].sg_support = 1;
+	}
+
 	return 0;
 }
 
@@ -329,9 +344,11 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 }
 
 static void
-fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+fill_feca_desc(struct rte_mbuf *mbuf,
+	       struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	       void *bbdev_op,
-	       uint32_t op_type)
+	       uint32_t op_type,
+	       char *huge_start_addr)
 {
 	struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
@@ -346,6 +363,8 @@ fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	uint32_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
 	se_command_t se_cmd, *se_command;
 	int16_t TBS_VALID;
+	char *data_ptr;
+	uint32_t l1_pcie_addr;
 
 	RTE_SET_USED(op_type);
 
@@ -402,9 +421,11 @@ fill_feca_desc(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	se_command->se_sc_x1_init = rte_cpu_to_be_32(SE_SC_X1_INIT);
 	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
 
-	se_command->se_axi_in_addr_low = 0;
+	data_ptr =  rte_pktmbuf_mtod(mbuf, char *);
+	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	se_command->se_axi_in_addr_high = 0;
-	se_command->se_axi_in_num_bytes = 0;
+	se_command->se_axi_in_num_bytes = rte_cpu_to_be_32(mbuf->pkt_len);
 
 	memset(se_command->se_cb_mask, 0xFF, (8 * sizeof(uint32_t)));
 
@@ -506,7 +527,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
 
 		fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
-		fill_feca_desc(bbdev_ipc_op, bbdev_op, op_type);
+		fill_feca_desc(in_mbuf, bbdev_ipc_op, bbdev_op, op_type, huge_start_addr);
 
 		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +

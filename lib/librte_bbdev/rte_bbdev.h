@@ -141,6 +141,7 @@ struct rte_bbdev_queue_conf {
 	uint8_t priority;  /**< Queue priority */
 	bool deferred_start; /**< Do not start queue when device is started. */
 	enum rte_bbdev_op_type op_type; /**< Operation type */
+	bool sg; /**< Scatter Gather support */
 };
 
 /**
