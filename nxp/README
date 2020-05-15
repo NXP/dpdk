@@ -798,6 +798,72 @@ Executing `dpdk-procinfo`:
     application. There are other switches also available like '-s' which can
     dump the statistics.
 
+===============================================================================
+
+Building Pktgen Application
+======================================
+
+Pktgen is a packet generator powered by DPDK. It requires DPDK environment for
+compilation and DPDK compliant infrastructurefor execution. DPAA and DPAA2 DPDK
+PMD (Poll Mode Drivers) can be used by Pktgen for building a packet generator
+using the DPAA infrastructure.
+
+
+Prerequisites for cross compiling pktgen
+--------------------------------------
+
+For compiling pktgen, libpcap and liblua library is required. They need to be
+build as cross compiled targets.
+
+Add the Cross compiler path to $PATH:
+	$ export PATH=`echo $PATH`:<Path to uncompressed toolchain>/bin
+Refer to Section "Cross compiled toolchain For ARM64"
+
+1. Compiling libpcap:
+	$ wget https://www.tcpdump.org/release/libpcap-1.9.1.tar.gz
+	$ tar -xzvf libpcap-1.9.1.tar.gz
+	$ cd libpcap-1.9.1/
+	$ ./configure --host=aarch64-linux-gnu --with-pcap=linux
+	$ make
+
+2. Compiling lreadline(Required for liblua compilation):
+	$ wget https://git.savannah.gnu.org/cgit/readline.git/snapshot/readline-8.0.tar.gz
+	$ tar -xzvf readline-8.0.tar.gz
+	$ cd readline-8.0/
+	$ ./configure --host=aarch64-linux-gnu
+	$ make
+
+3. Compiling lncurses(Required for liblua compilation):
+	$ wget https://invisible-island.net/datafiles/release/ncurses.tar.gz
+	$ tar -xzvf ncurses.tar.gz
+	$ cd ncurses-6.2/
+	$ ./configure --host=aarch64-linux-gnu
+	$ make
+
+4. Compiling liblua:
+	$ wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
+	$ tar -xzvf lua-5.3.5.tar.gz
+	$ cd lua-5.3.5/
+	$ make CC=aarch64-linux-gnu-gcc LDFLAGS="-L/<path to>/readline-8.0 -L/<path to>/ncurses-6.2/lib" MYLIBS=-lncurses linux
+
+
+Steps to cross compile pktgen
+--------------------------------------
+
+These steps assumes that compiled DPDK binaries are available in DPDK build
+directory. Refer the section "Components for Build & Execution Environment"
+for compilation steps of DPDK.
+
+	$ export RTE_SDK=<path to compiled DPDK source code containing build folder>
+	$ export RTE_TARGET=arm64-dpaa-linuxapp-gcc
+	$ git clone http://dpdk.org/git/apps/pktgen-dpdk
+	$ cd pktgen-dpdk/
+	$ make LUA_PKG_LDFLAGS="-L/<path to>/libpcap-1.9.1 -L/<path to>/lua-5.3.5/src"
+
+Pktgen app location: pktgen-dpdk/app/arm64-dpaa-linuxapp-gcc/pktgen
+Pktgen Pktgen.lua location: pktgen-dpdk/Pktgen.lua
+
+
 =========================
 VM VFIO Direct Assignment
 =========================
