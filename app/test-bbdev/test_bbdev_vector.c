@@ -737,6 +737,22 @@ parse_ldpc_encoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
 		vector->network_order = (uint8_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "en_scramble")) {
+		vector->mask |= TEST_BBDEV_VF_EN_SCRAMBLE;
+		ldpc_enc->en_scramble = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "q")) {
+		vector->mask |= TEST_BBDEV_VF_Q;
+		ldpc_enc->q = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_id")) {
+		vector->mask |= TEST_BBDEV_VF_N_ID;
+		ldpc_enc->n_id = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_rnti")) {
+		vector->mask |= TEST_BBDEV_VF_N_RNTI;
+		ldpc_enc->n_rnti = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else {
 		printf("Not valid ldpc enc key: '%s'\n", key_token);
 		return -1;

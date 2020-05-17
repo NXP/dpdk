@@ -660,6 +660,22 @@ struct rte_bbdev_op_ldpc_enc {
 	 *  [3GPP TS38.212 section 5.2.2]
 	 */
 	uint16_t n_filler;
+	/** Enable scrambling. When en_scramble = 1, scrambling
+	 * would be performed.
+	 */
+	uint8_t en_scramble;
+	/** parameter for c_init in scrambler, q = 0 or 1
+	 * for downlink, q = 0 for uplink.
+	 */
+	uint8_t q;
+	/** parameter for c_init in scrambler,
+	 * n_id={0, ..., 1023}
+	 */
+	uint16_t n_id;
+	/** parameter for c_init in scrambler,
+	 * n_rnti={0, ..., 65535}
+	 */
+	uint16_t n_rnti;
 	/** [0 - TB : 1 - CB] */
 	uint8_t code_block_mode;
 	union {

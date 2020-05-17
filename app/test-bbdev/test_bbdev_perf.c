@@ -1255,6 +1255,10 @@ copy_reference_ldpc_enc_op(struct rte_bbdev_enc_op **ops, unsigned int n,
 		ops[i]->ldpc_enc.n_cb = ldpc_enc->n_cb;
 		ops[i]->ldpc_enc.rv_index = ldpc_enc->rv_index;
 		ops[i]->ldpc_enc.op_flags = ldpc_enc->op_flags;
+		ops[i]->ldpc_enc.en_scramble = ldpc_enc->en_scramble;
+		ops[i]->ldpc_enc.q = ldpc_enc->q;
+		ops[i]->ldpc_enc.n_id = ldpc_enc->n_id;
+		ops[i]->ldpc_enc.n_rnti = ldpc_enc->n_rnti;
 		ops[i]->ldpc_enc.code_block_mode = ldpc_enc->code_block_mode;
 		ops[i]->ldpc_enc.output = outputs[start_idx + i];
 		ops[i]->ldpc_enc.input = inputs[start_idx + i];
