@@ -317,8 +317,7 @@ la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
 }
 
 void
-la12xx_sch_decode_param_convert(uint32_t *harq_buffer,
-				uint32_t base_graph2_input,
+la12xx_sch_decode_param_convert(uint32_t base_graph2_input,
 				uint32_t Q_m,
 				uint32_t *e,
 				uint32_t rv_id,
@@ -358,7 +357,6 @@ la12xx_sch_decode_param_convert(uint32_t *harq_buffer,
 	uint32_t C_prime, cb_counter = 0;
 	uint32_t offset_harq_buffer;
 
-	RTE_SET_USED(harq_buffer);
 	RTE_SET_USED(harq_en);
 
 	// evaluate parameters

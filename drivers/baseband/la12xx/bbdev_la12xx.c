@@ -54,6 +54,17 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 		}
 	},
+	{
+		.type   = RTE_BBDEV_OP_LDPC_DEC,
+		.cap.ldpc_dec = {
+			.capability_flags =
+					RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP,
+			.num_buffers_src =
+					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
+			.num_buffers_hard_out =
+					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
+		}
+	},
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
 
@@ -344,13 +355,11 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 }
 
 static void
-fill_feca_desc(struct rte_mbuf *mbuf,
-	       struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
-	       void *bbdev_op,
-	       uint32_t op_type,
-	       char *huge_start_addr)
+fill_feca_desc_enc(struct rte_mbuf *mbuf,
+		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+		   struct rte_bbdev_enc_op *bbdev_enc_op,
+		   char *huge_start_addr)
 {
-	struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	uint32_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS];
@@ -365,8 +374,6 @@ fill_feca_desc(struct rte_mbuf *mbuf,
 	int16_t TBS_VALID;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
-
-	RTE_SET_USED(op_type);
 
 	for (i = 0; i < ldpc_enc->tb_params.cab; i++)
 		e[i] = ldpc_enc->tb_params.ea;
@@ -459,6 +466,145 @@ fill_feca_desc(struct rte_mbuf *mbuf,
 #endif
 }
 
+static void
+fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+	       struct rte_bbdev_dec_op *bbdev_dec_op)
+{
+	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
+	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
+	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS];
+	uint32_t remove_tb_crc, harq_en = 0, size_harq_buffer;
+	uint32_t C, codeblock_mask[8] = {0}, i;
+	uint32_t set_index, base_graph2, lifting_index, mod_order;
+	uint32_t tb_24_bit_crc, one_code_block;
+	uint32_t num_output_bytes, e_floor_thresh, bits_per_cb;
+	uint32_t num_filler_bits, e_div_qm_floor, e_div_qm_ceiling;
+	uint32_t SD_SC_X1_INIT, SD_SC_X2_INIT, SD_CIRC_BUF;
+	uint32_t di_start_ofst_floor[8], di_start_ofst_ceiling[8];
+	uint32_t axi_data_num_bytes;
+	sd_command_t sd_cmd, *sd_command;
+	int16_t TBS_VALID;
+
+	for (i = 0; i < ldpc_dec->tb_params.cab; i++)
+		e[i] = ldpc_dec->tb_params.ea;
+	for (; i < ldpc_dec->tb_params.c; i++)
+		e[i] = ldpc_dec->tb_params.eb;
+
+	/* Set the codeblock mask */
+	for (i = 0; i < ldpc_dec->tb_params.c; i++) {
+		uint8_t byte, bit;
+		/* Set the bit in codeblock */
+		byte = i / 8;
+		bit = i % 8;
+		codeblock_mask[byte] |= (1 << bit);
+	}
+
+	remove_tb_crc = !!(ldpc_dec->op_flags & RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP);
+
+	la12xx_sch_decode_param_convert(ldpc_dec->basegraph, ldpc_dec->q_m,
+			e, ldpc_dec->rv_index, A, ldpc_dec->q, ldpc_dec->n_id,
+			ldpc_dec->n_rnti, !ldpc_dec->en_scramble,
+			ldpc_dec->n_cb, remove_tb_crc, harq_en,
+			&size_harq_buffer, &C, codeblock_mask, &TBS_VALID,
+			&set_index, &base_graph2, &lifting_index, &mod_order,
+			&tb_24_bit_crc,	&one_code_block, &e_floor_thresh,
+			&num_output_bytes, &bits_per_cb, &num_filler_bits,
+			&SD_SC_X1_INIT, &SD_SC_X2_INIT, &e_div_qm_floor,
+			&e_div_qm_ceiling, di_start_ofst_floor,
+			di_start_ofst_ceiling, &SD_CIRC_BUF,
+			&axi_data_num_bytes);
+
+	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_SD_CHAIN);
+	bbdev_ipc_op->feca_job.t_blk_id = 0;
+
+	sd_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj;
+
+	/* TODO: Currently setting all fields for clarity.
+	 * Remove unrequried fields
+	 */
+	sd_cmd.sd_cfg1.raw_sd_cfg1 = 0;
+	sd_cmd.sd_cfg1.max_num_iterations = ldpc_dec->iter_max;
+	sd_cmd.sd_cfg1.min_num_iterations = 1;
+	sd_cmd.sd_cfg1.remove_tb_crc = remove_tb_crc;
+	sd_cmd.sd_cfg1.tb_24_bit_crc = tb_24_bit_crc;
+	sd_cmd.sd_cfg1.data_control_mux = 0;
+	sd_cmd.sd_cfg1.one_code_block = one_code_block;
+	sd_cmd.sd_cfg1.lifting_index = lifting_index;
+	sd_cmd.sd_cfg1.base_graph2 = base_graph2;
+	sd_cmd.sd_cfg1.set_index = set_index;
+	sd_command->sd_cfg1.raw_sd_cfg1 =
+		rte_cpu_to_be_32(sd_cmd.sd_cfg1.raw_sd_cfg1);
+
+	sd_cmd.sd_cfg2.raw_sd_cfg2 = 0;
+	sd_cmd.sd_cfg2.send_msi = 0;
+	sd_cmd.sd_cfg2.complete_trig_en = 1;
+	sd_cmd.sd_cfg2.harq_en = harq_en;
+	sd_cmd.sd_cfg2.mod_order = mod_order;
+	sd_command->sd_cfg2.raw_sd_cfg2 =
+		rte_cpu_to_be_32(sd_cmd.sd_cfg2.raw_sd_cfg2);
+
+	sd_cmd.sd_sizes1.raw_sd_sizes1 = 0;
+	sd_cmd.sd_sizes1.num_output_bytes = num_output_bytes;
+	sd_cmd.sd_sizes1.e_floor_thresh = e_floor_thresh;
+	sd_command->sd_sizes1.raw_sd_sizes1 =
+		rte_cpu_to_be_32(sd_cmd.sd_sizes1.raw_sd_sizes1);
+
+	sd_cmd.sd_sizes2.raw_sd_sizes2 = 0;
+	sd_cmd.sd_sizes2.num_filler_bits = num_filler_bits;
+	sd_cmd.sd_sizes2.bits_per_cb = bits_per_cb;
+	sd_command->sd_sizes2.raw_sd_sizes2 =
+		rte_cpu_to_be_32(sd_cmd.sd_sizes2.raw_sd_sizes2);
+
+	sd_command->sd_circ_buf = rte_cpu_to_be_32(SD_CIRC_BUF);
+	sd_command->sd_floor_num_input_bytes =
+		rte_cpu_to_be_32(e_div_qm_floor);
+	sd_command->sd_ceiling_num_input_bytes =
+		rte_cpu_to_be_32(e_div_qm_ceiling);
+	sd_command->sd_hram_base = 0;
+	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
+	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
+
+	sd_command->sd_axi_data_addr_low =
+		rte_cpu_to_be_32(bbdev_ipc_op->out_addr);
+	sd_command->sd_axi_data_addr_high = 0;
+	sd_command->sd_axi_data_num_bytes =
+		rte_cpu_to_be_32(bbdev_dec_op->ldpc_dec.hard_output.length);
+	sd_command->sd_axi_stat_addr_low = 0;
+	sd_command->sd_axi_stat_addr_high = 0;
+
+	for (i = 0; i < 8; i++)
+		sd_command->sd_cb_mask[i] = rte_cpu_to_be_32(codeblock_mask[i]);
+
+	sd_command->sd_di_start_ofst_floor[0] =
+		rte_cpu_to_be_32((di_start_ofst_floor[1] << 16) |
+		di_start_ofst_floor[0]);
+	sd_command->sd_di_start_ofst_floor[1] =
+		rte_cpu_to_be_32((di_start_ofst_floor[3] << 16) |
+		di_start_ofst_floor[2]);
+	sd_command->sd_di_start_ofst_floor[2] =
+		rte_cpu_to_be_32((di_start_ofst_floor[5] << 16) |
+		di_start_ofst_floor[4]);
+	sd_command->sd_di_start_ofst_floor[3] =
+		rte_cpu_to_be_32((di_start_ofst_floor[7] << 16) |
+		di_start_ofst_floor[6]);
+	sd_command->sd_di_start_ofst_ceiling[0] =
+		rte_cpu_to_be_32((di_start_ofst_ceiling[1] << 16) |
+		di_start_ofst_ceiling[0]);
+	sd_command->sd_di_start_ofst_ceiling[1] =
+		rte_cpu_to_be_32((di_start_ofst_ceiling[3] << 16) |
+		di_start_ofst_ceiling[2]);
+	sd_command->sd_di_start_ofst_ceiling[2] =
+		rte_cpu_to_be_32((di_start_ofst_ceiling[5] << 16) |
+		di_start_ofst_ceiling[4]);
+	sd_command->sd_di_start_ofst_ceiling[3] =
+		rte_cpu_to_be_32((di_start_ofst_ceiling[7] << 16) |
+		di_start_ofst_ceiling[6]);
+
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+	rte_hexdump(stdout, "SD COMMAND", sd_command, sizeof(sd_command_t));
+#endif
+}
+
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
 			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
@@ -478,12 +624,10 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	uint64_t virt, retry_count = 0;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
-	struct rte_mbuf *in_mbuf =
-		((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.input.data;
-	struct rte_mbuf *out_mbuf =
-		((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc.output.data;
+	struct rte_mbuf *in_mbuf, *out_mbuf;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
+	uint32_t total_out_bits;
 
 	RTE_SET_USED(op_type);
 
@@ -508,7 +652,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 
 	virt = MODEM_P2V(bd->modem_ptr);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
-	/* TODO: Copy other fields and have separate API for it */
 	bbdev_ipc_op->l2_cntx_l =
 	       lower_32_bits((uint64_t)bbdev_op);
 	bbdev_ipc_op->l2_cntx_h =
@@ -516,25 +659,66 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
 	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
 
+	if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
+		in_mbuf = ((struct rte_bbdev_enc_op *)
+			bbdev_op)->ldpc_enc.input.data;
+		out_mbuf = ((struct rte_bbdev_enc_op *)
+			bbdev_op)->ldpc_enc.output.data;
+	} else {
+		in_mbuf = ((struct rte_bbdev_dec_op *)
+			bbdev_op)->ldpc_dec.input.data;
+		out_mbuf = ((struct rte_bbdev_dec_op *)
+			bbdev_op)->ldpc_dec.hard_output.data;
+	}
+
 	if (in_mbuf) {
-		struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
-		struct rte_bbdev_op_ldpc_enc *ldpc_enc =
-			&bbdev_enc_op->ldpc_enc;
-		uint32_t total_out_bits;
-
-		total_out_bits = (ldpc_enc->tb_params.cab *
-			ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
-			ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
-
 		fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
-		fill_feca_desc(in_mbuf, bbdev_ipc_op, bbdev_op, op_type, huge_start_addr);
 
 		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
 		bbdev_ipc_op->out_addr = l1_pcie_addr;
-		bbdev_ipc_op->out_len = rte_cpu_to_be_32(total_out_bits/8);
-		rte_pktmbuf_append(out_mbuf, total_out_bits/8);
+		if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
+			struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
+			struct rte_bbdev_op_ldpc_enc *ldpc_enc =
+						&bbdev_enc_op->ldpc_enc;
+
+			total_out_bits = (ldpc_enc->tb_params.cab *
+				ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
+				ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
+
+			ldpc_enc->output.length = total_out_bits/8;
+
+			fill_feca_desc_enc(in_mbuf, bbdev_ipc_op, bbdev_op,
+					   huge_start_addr);
+			bbdev_ipc_op->out_len =
+				rte_cpu_to_be_32(ldpc_enc->output.length);
+			rte_pktmbuf_append(out_mbuf, ldpc_enc->output.length);
+		} else {
+			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
+			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
+						&bbdev_dec_op->ldpc_dec;
+
+			/* Calculate A */
+			/* TODO - update param convert API to take bbdev op as
+			 * input so that we do not need to calculate A.
+			 * Currently only basegraph = 1 is supported.
+			 */
+			if (ldpc_dec->tb_params.c == 1)
+				total_out_bits = ((10 * ldpc_dec->z_c) -
+						ldpc_dec->n_filler) - 16;
+			else
+				total_out_bits = ((10 * ldpc_dec->z_c) -
+						ldpc_dec->n_filler) -
+						((ldpc_dec->tb_params.c+1) * 24);
+			ldpc_dec->hard_output.length = total_out_bits/8;
+
+			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
+			bbdev_ipc_op->out_len =
+				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
+			rte_pktmbuf_append(out_mbuf,
+					   ldpc_dec->hard_output.length);
+		}
 	}
 
 	/* Move Producer Index forward */

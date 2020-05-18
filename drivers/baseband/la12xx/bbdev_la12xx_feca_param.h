@@ -75,8 +75,6 @@ la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
 /**
  * Convert BBDEV parameters for shared encode to FECA parameters
  *
- * @param harq_buffer
- *   HARQ buffer (input/output)
  * @param base_graph2_input
  *   If base_graph2_input = 0 --> means base graph 1 is used.
  *   base_graph2_input = 1 --> means base graph 2 is used (input)
@@ -121,8 +119,7 @@ la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
  *
  */
 void
-la12xx_sch_decode_param_convert(uint32_t *harq_buffer,
-				uint32_t base_graph2_input,
+la12xx_sch_decode_param_convert(uint32_t base_graph2_input,
 				uint32_t Q_m,
 				uint32_t *e,
 				uint32_t rv_id,
