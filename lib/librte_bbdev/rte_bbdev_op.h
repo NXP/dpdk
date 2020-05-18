@@ -181,7 +181,9 @@ enum rte_bbdev_op_ldpcdec_flag_bitmasks {
 	/** Set if a device supports LLR (i.e. two's complement number)
 	 *  to data conversion internally.
 	 */
-	RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD = (1ULL << 18)
+	RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD = (1ULL << 18),
+	/** Set if a device supports scrambling */
+	RTE_BBDEV_LDPC_ENC_SCRAMBLING_OFFLOAD = (1ULL << 19)
 };
 
 /** Flags for LDPC encoder operation and capability structure */
@@ -201,7 +203,9 @@ enum rte_bbdev_op_ldpcenc_flag_bitmasks {
 	/** Set if a device supports scatter-gather functionality. */
 	RTE_BBDEV_LDPC_ENC_SCATTER_GATHER = (1ULL << 6),
 	/** Set if a device supports concatenation of non byte aligned output */
-	RTE_BBDEV_LDPC_ENC_CONCATENATION = (1ULL << 7)
+	RTE_BBDEV_LDPC_ENC_CONCATENATION = (1ULL << 7),
+	/** Set if a device supports scrambling */
+	RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD = (1ULL << 8)
 };
 
 /** Data input and output buffer for BBDEV operations */
