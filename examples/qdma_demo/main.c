@@ -337,6 +337,8 @@ static void calculate_latency(unsigned int lcore_id,
 	rte_delay_ms(1000);
 }
 
+#define MAX_SG_JOB_NB_IN_QDMA 512
+
 static int
 lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 {
@@ -348,6 +350,8 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 
 	int time_count = 0;
 	int pkt_enquened = 0;
+	int in_dma = 0;
+	int burst_nb = g_scatter_gather ? 32 : RTE_QDMA_BURST_NB_MAX;
 
 	lcore_id = rte_lcore_id();
 
@@ -363,7 +367,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		struct rte_qdma_job *job1[RTE_QDMA_BURST_NB_MAX];
 		struct rte_qdma_enqdeq e_context, de_context;
 		int ret, j;
-		int job_num = RTE_QDMA_BURST_NB_MAX;
+		int job_num = burst_nb;
 
 		if (g_latency) {
 			if (pkt_enquened >= TEST_PACKETS_NUM) {
@@ -374,8 +378,11 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				(TEST_PACKETS_NUM - RTE_QDMA_BURST_NB_MAX))
 				job_num = TEST_PACKETS_NUM - pkt_enquened;
 			if (job_num < 0)
-				job_num = RTE_QDMA_BURST_NB_MAX;
+				job_num = burst_nb;
 		}
+
+		if (in_dma > MAX_SG_JOB_NB_IN_QDMA && g_scatter_gather)
+			goto dequeue;
 
 		for (j = 0; j < job_num; j++) {
 			job[j] = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
@@ -406,6 +413,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		if (unlikely(ret <= 0))
 			goto dequeue;
 		pkt_enquened += ret;
+		in_dma += ret;
 dequeue:
 		/* Check for QDMA Job completion status */
 		do {
@@ -413,6 +421,7 @@ dequeue:
 			de_context.job = job1;
 			ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL,
 					RTE_QDMA_BURST_NB_MAX, &de_context);
+			in_dma -= ret;
 			for (j = 0; j < ret; j++) {
 				if (job1[j]->status) {
 					printf("Error(%x) occurred for a job\n",
