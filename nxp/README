@@ -819,12 +819,30 @@ Add the Cross compiler path to $PATH:
 	$ export PATH=`echo $PATH`:<Path to uncompressed toolchain>/bin
 Refer to Section "Cross compiled toolchain For ARM64"
 
+Install these two packages, flex and bison.
+	$ sudo apt install flex
+	$ sudo apt install bison
+
 1. Compiling libpcap:
 	$ wget https://www.tcpdump.org/release/libpcap-1.9.1.tar.gz
 	$ tar -xzvf libpcap-1.9.1.tar.gz
 	$ cd libpcap-1.9.1/
 	$ ./configure --host=aarch64-linux-gnu --with-pcap=linux
 	$ make
+
+   We will also need some changes in libpcap-1.9.1/pcap/bpf.h file, so that
+   pktgen can be compiled using its library. These changes can be done after
+   compiling the libpcap library.
+
+   Add these lines in the code(lines with + in front of them are new lines):
+
++	#ifndef BPF_STMT
+	#define BPF_STMT(code, k) { (u_short)(code), 0, 0, k }
++	#endif
++	#ifndef BPF_JUMP
+	#define BPF_JUMP(code, k, jt, jf) { (u_short)(code), jt, jf, k }
++	#endif
+
 
 2. Compiling lreadline(Required for liblua compilation):
 	$ wget https://git.savannah.gnu.org/cgit/readline.git/snapshot/readline-8.0.tar.gz
@@ -844,7 +862,7 @@ Refer to Section "Cross compiled toolchain For ARM64"
 	$ wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
 	$ tar -xzvf lua-5.3.5.tar.gz
 	$ cd lua-5.3.5/
-	$ make CC=aarch64-linux-gnu-gcc LDFLAGS="-L/<path to>/readline-8.0 -L/<path to>/ncurses-6.2/lib" MYLIBS=-lncurses linux
+	$ make CC=aarch64-linux-gnu-gcc CFLAGS="-I/<path to>/readline-8.0" LDFLAGS="-L/<path to>/readline-8.0 -L/<path to>/ncurses-6.2/lib" MYLIBS=-lncurses linux
 
 
 Steps to cross compile pktgen
@@ -858,7 +876,7 @@ for compilation steps of DPDK.
 	$ export RTE_TARGET=arm64-dpaa-linuxapp-gcc
 	$ git clone http://dpdk.org/git/apps/pktgen-dpdk
 	$ cd pktgen-dpdk/
-	$ make LUA_PKG_LDFLAGS="-L/<path to>/libpcap-1.9.1 -L/<path to>/lua-5.3.5/src"
+	$ make LUA_PKG_CFLAGS="-I/<path to>/libpcap-1.9.1 -I/<path to>/lua-5.3.5/src" LUA_PKG_LDFLAGS="-L/<path to>/libpcap-1.9.1 -L/<path to>/lua-5.3.5/src"
 
 Pktgen app location: pktgen-dpdk/app/arm64-dpaa-linuxapp-gcc/pktgen
 Pktgen Pktgen.lua location: pktgen-dpdk/Pktgen.lua
