@@ -47,7 +47,8 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 		.cap.ldpc_enc = {
 			.capability_flags =
 					RTE_BBDEV_LDPC_CRC_24A_ATTACH |
-					RTE_BBDEV_LDPC_CRC_24B_ATTACH,
+					RTE_BBDEV_LDPC_CRC_24B_ATTACH |
+					RTE_BBDEV_LDPC_ENC_SCRAMBLING_OFFLOAD,
 			.num_buffers_src =
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 			.num_buffers_dst =
@@ -59,7 +60,8 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 		.cap.ldpc_dec = {
 			.capability_flags =
 					RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP |
-					RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD,
+					RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD |
+					RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD,
 			.num_buffers_src =
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 			.num_buffers_hard_out =
