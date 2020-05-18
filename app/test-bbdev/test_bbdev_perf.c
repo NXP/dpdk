@@ -1212,6 +1212,10 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		ops[i]->ldpc_dec.iter_max = ldpc_dec->iter_max;
 		ops[i]->ldpc_dec.rv_index = ldpc_dec->rv_index;
 		ops[i]->ldpc_dec.op_flags = ldpc_dec->op_flags;
+		ops[i]->ldpc_dec.en_scramble = ldpc_dec->en_scramble;
+		ops[i]->ldpc_dec.q = ldpc_dec->q;
+		ops[i]->ldpc_dec.n_id = ldpc_dec->n_id;
+		ops[i]->ldpc_dec.n_rnti = ldpc_dec->n_rnti;
 		ops[i]->ldpc_dec.code_block_mode = ldpc_dec->code_block_mode;
 
 		ops[i]->ldpc_dec.hard_output = hard_outputs[start_idx + i];
