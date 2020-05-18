@@ -177,7 +177,11 @@ enum rte_bbdev_op_ldpcdec_flag_bitmasks {
 	/** Set if a device supports loop-back access to
 	 *  HARQ internal memory. Intended for troubleshooting.
 	 */
-	RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_LOOPBACK = (1ULL << 17)
+	RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_LOOPBACK = (1ULL << 17),
+	/** Set if a device supports LLR (i.e. two's complement number)
+	 *  to data conversion internally.
+	 */
+	RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD = (1ULL << 18)
 };
 
 /** Flags for LDPC encoder operation and capability structure */
