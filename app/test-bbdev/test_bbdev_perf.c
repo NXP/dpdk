@@ -1045,7 +1045,9 @@ fill_queue_buffers(struct test_op_params *op_params,
 		limit_input_llr_val_range(*queue_ops[DATA_INPUT], n,
 			capabilities->cap.turbo_dec.max_llr_modulus);
 
-	if (test_vector.op_type == RTE_BBDEV_OP_LDPC_DEC) {
+	if (test_vector.op_type == RTE_BBDEV_OP_LDPC_DEC &&
+	    !(capabilities->cap.ldpc_dec.capability_flags &
+	    RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD)) {
 		ldpc_input_llr_scaling(*queue_ops[DATA_INPUT], n,
 			capabilities->cap.ldpc_dec.llr_size,
 			capabilities->cap.ldpc_dec.llr_decimals);
