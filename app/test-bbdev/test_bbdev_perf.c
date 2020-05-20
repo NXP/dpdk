@@ -2259,6 +2259,12 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+
+		if (test_vector.op_type != RTE_BBDEV_OP_NONE) {
+			ret = validate_ldpc_dec_op(ops_deq, num_ops, ref_op,
+					tp->op_params->vector_mask);
+			TEST_ASSERT_SUCCESS(ret, "Validation failed!");
+		}
 	}
 
 	tp->iter_count = 0;
@@ -2266,12 +2272,6 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 	for (i = 0; i < num_ops; ++i) {
 		tp->iter_count = RTE_MAX(ops_enq[i]->ldpc_dec.iter_count,
 				tp->iter_count);
-	}
-
-	if (test_vector.op_type != RTE_BBDEV_OP_NONE) {
-		ret = validate_ldpc_dec_op(ops_deq, num_ops, ref_op,
-				tp->op_params->vector_mask);
-		TEST_ASSERT_SUCCESS(ret, "Validation failed!");
 	}
 
 	rte_bbdev_dec_op_free_bulk(ops_enq, num_ops);
