@@ -2784,7 +2784,8 @@ latency_test_ldpc_dec(struct rte_mempool *mempool,
 		if (test_vector.op_type != RTE_BBDEV_OP_NONE) {
 			for (j = 0; j < burst_sz; ++j) {
 				mbuf_reset(ops_enq[j]->ldpc_dec.hard_output.data);
-				mbuf_reset(ops_enq[j]->ldpc_dec.soft_output.data);
+				if (ops_enq[j]->ldpc_dec.soft_output.data)
+					mbuf_reset(ops_enq[j]->ldpc_dec.soft_output.data);
 			}
 		}
 
