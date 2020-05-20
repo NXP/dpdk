@@ -50,7 +50,9 @@ enum {
  */
 #define RTE_QDMA_VQ_EXCLUSIVE_PQ	(1ULL)
 
-#define RTE_QDMA_VQ_FD_LONG_FORMAT     (1ULL << 1)
+#define RTE_QDMA_VQ_FD_LONG_FORMAT		(1ULL << 1)
+
+#define RTE_QDMA_VQ_FD_SG_FORMAT		(1ULL << 2)
 
 /** States if the source addresses is physical. */
 #define RTE_QDMA_JOB_SRC_PHY		(1ULL)
