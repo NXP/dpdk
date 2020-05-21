@@ -73,6 +73,7 @@ ut_setup(void)
 	ts_params->qconf.priority = 0;
 	ts_params->qconf.socket = SOCKET_ID_ANY;
 	ts_params->qconf.deferred_start = 1;
+	ts_params->qconf.sg = false;
 
 	num_queues = 1;
 	TEST_ASSERT_SUCCESS(rte_bbdev_setup_queues(bbdev_dev_id, num_queues,

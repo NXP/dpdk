@@ -376,7 +376,7 @@ optimal_mempool_size(unsigned int val)
 static struct rte_mempool *
 create_mbuf_pool(struct op_data_entries *entries, uint8_t dev_id,
 		int socket_id, unsigned int mbuf_pool_size,
-		const char *op_type_str)
+		const char *op_type_str, unsigned int mbuf_size)
 {
 	unsigned int i;
 	uint32_t max_seg_sz = 0;
@@ -391,7 +391,7 @@ create_mbuf_pool(struct op_data_entries *entries, uint8_t dev_id,
 			dev_id);
 	return rte_pktmbuf_pool_create(pool_name, mbuf_pool_size, 0, 0,
 			RTE_MAX(max_seg_sz + RTE_PKTMBUF_HEADROOM,
-			(unsigned int)RTE_MBUF_DEFAULT_BUF_SIZE), socket_id);
+			(unsigned int)mbuf_size), socket_id);
 }
 
 static int
@@ -399,7 +399,7 @@ create_mempools(struct active_device *ad, int socket_id,
 		enum rte_bbdev_op_type org_op_type, uint16_t num_ops)
 {
 	struct rte_mempool *mp;
-	unsigned int ops_pool_size, mbuf_pool_size = 0;
+	unsigned int ops_pool_size, mbuf_pool_size = 0, mbuf_size;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
 	const char *op_type_str;
 	enum rte_bbdev_op_type op_type = org_op_type;
@@ -440,15 +440,15 @@ create_mempools(struct active_device *ad, int socket_id,
 			socket_id);
 	ad->ops_mempool = mp;
 
+	mbuf_size = get_buf_size();
 	/* Do not create inputs and outputs mbufs for BaseBand Null Device */
 	if (org_op_type == RTE_BBDEV_OP_NONE) {
 		int ret, data_size;
-		unsigned int i, j, mbuf_size, nb_seg;
+		unsigned int i, j, nb_seg;
 		char *data;
 		struct rte_bbdev_enc_op **ops;
 		struct rte_mbuf *mbufs[2 * MBUF_MAX_SEGS];
 
-		mbuf_size = get_buf_size();
 		nb_seg = get_num_seg();
 
 		printf("mbuf size =%d and seg = %d\n", mbuf_size, nb_seg);
@@ -505,7 +505,7 @@ create_mempools(struct active_device *ad, int socket_id,
 
 	/* Inputs */
 	mbuf_pool_size = optimal_mempool_size(ops_pool_size * in->nb_segments);
-	mp = create_mbuf_pool(in, ad->dev_id, socket_id, mbuf_pool_size, "in");
+	mp = create_mbuf_pool(in, ad->dev_id, socket_id, mbuf_pool_size, "in", mbuf_size);
 	TEST_ASSERT_NOT_NULL(mp,
 			"ERROR Failed to create %u items input pktmbuf pool for dev %u on socket %u.",
 			mbuf_pool_size,
@@ -517,7 +517,7 @@ create_mempools(struct active_device *ad, int socket_id,
 	mbuf_pool_size = optimal_mempool_size(ops_pool_size *
 			hard_out->nb_segments);
 	mp = create_mbuf_pool(hard_out, ad->dev_id, socket_id, mbuf_pool_size,
-			"hard_out");
+			"hard_out", mbuf_size);
 	TEST_ASSERT_NOT_NULL(mp,
 			"ERROR Failed to create %u items hard output pktmbuf pool for dev %u on socket %u.",
 			mbuf_pool_size,
@@ -532,7 +532,7 @@ create_mempools(struct active_device *ad, int socket_id,
 				soft_out->nb_segments);
 		mp = create_mbuf_pool(soft_out, ad->dev_id, socket_id,
 				mbuf_pool_size,
-				"soft_out");
+				"soft_out", mbuf_size);
 		TEST_ASSERT_NOT_NULL(mp,
 				"ERROR Failed to create %uB soft output pktmbuf pool for dev %u on socket %u.",
 				mbuf_pool_size,
@@ -547,7 +547,7 @@ create_mempools(struct active_device *ad, int socket_id,
 				harq_in->nb_segments);
 		mp = create_mbuf_pool(harq_in, ad->dev_id, socket_id,
 				mbuf_pool_size,
-				"harq_in");
+				"harq_in", mbuf_size);
 		TEST_ASSERT_NOT_NULL(mp,
 				"ERROR Failed to create %uB harq input pktmbuf pool for dev %u on socket %u.",
 				mbuf_pool_size,
@@ -562,7 +562,7 @@ create_mempools(struct active_device *ad, int socket_id,
 				harq_out->nb_segments);
 		mp = create_mbuf_pool(harq_out, ad->dev_id, socket_id,
 				mbuf_pool_size,
-				"harq_out");
+				"harq_out", mbuf_size);
 		TEST_ASSERT_NOT_NULL(mp,
 				"ERROR Failed to create %uB harq output pktmbuf pool for dev %u on socket %u.",
 				mbuf_pool_size,
@@ -659,6 +659,7 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	qconf.priority = 0;
 	qconf.deferred_start = 0;
 	qconf.op_type = op_type;
+	qconf.sg = false;
 
 	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
 		ret = rte_bbdev_queue_configure(dev_id, queue_id, &qconf);
