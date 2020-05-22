@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2019 NXP
+# Copyright 2020 NXP
 
 # script 'update_split_port_mac_addr.sh' extract the MAC address from the dpmac
 # and assign to kernel(eth0) and DPDK interface(dpni)
