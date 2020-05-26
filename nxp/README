@@ -358,6 +358,12 @@ Following are some pre-requisites:
 
             $ export DPBP_COUNT=16
 
+      NOTE: If the application uses ordered queue, please enable the ordered queue
+            by setting below environment variable before executing the dynamic_dpl.sh
+            script:
+
+            $ export ENABLE_ORDERED_QUEUE=1
+
   3. Run the following on the board:
 
     a) Change directory to location of Dynamic DPL script. It would ideally be
