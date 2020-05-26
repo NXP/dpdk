@@ -119,7 +119,7 @@ port_init(uint16_t port, struct rte_mempool *mp)
 {
 	static const struct rte_eth_conf port_conf_default = {
 		.rxmode = {
-			.mq_mode = ETH_MQ_RX_NONE,
+			.mq_mode = ETH_MQ_RX_RSS,
 		},
 	};
 
