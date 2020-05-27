@@ -94,10 +94,10 @@ struct rte_dpaa_driver {
 	TAILQ_ENTRY(rte_dpaa_driver) next;
 	struct rte_driver driver;
 	struct rte_dpaa_bus *dpaa_bus;
-	uint32_t drv_flags;                 /**< Flags for controlling device.*/
 	enum rte_dpaa_type drv_type;
 	rte_dpaa_probe_t probe;
 	rte_dpaa_remove_t remove;
+	uint32_t drv_flags;                 /**< Flags for controlling device.*/
 };
 
 /* Create storage for dqrr entries per lcore */

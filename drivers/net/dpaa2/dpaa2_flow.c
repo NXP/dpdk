@@ -1,5 +1,5 @@
-/* * SPDX-License-Identifier: BSD-3-Clause
- *   Copyright 2018-2020 NXP
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 2018-2020 NXP
  */
 
 #include <sys/queue.h>
@@ -276,7 +276,6 @@ static inline void dpaa2_flow_fs_table_extracts_log(
 		if ((idx + 1) < priv->extract.tc_key_extract[tc_id]
 			.dpkg.num_extracts)
 			printf(" / ");
-
 	}
 	printf("\r\n");
 }
@@ -1241,7 +1240,8 @@ dpaa2_configure_flow_vlan(struct rte_flow *flow,
 
 		proto.type = RTE_FLOW_ITEM_TYPE_ETH;
 		proto.eth_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN);
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("vLan discrimination rule set failed");
 			return -1;
@@ -1427,11 +1427,13 @@ dpaa2_configure_flow_generic_ip(
 	if (pattern->type == RTE_FLOW_ITEM_TYPE_IPV4) {
 		spec_ipv4 = (const struct rte_flow_item_ipv4 *)pattern->spec;
 		mask_ipv4 = (const struct rte_flow_item_ipv4 *)
-		 (pattern->mask ? pattern->mask : &dpaa2_flow_item_ipv4_mask);
+			(pattern->mask ? pattern->mask :
+					&dpaa2_flow_item_ipv4_mask);
 	} else {
 		spec_ipv6 = (const struct rte_flow_item_ipv6 *)pattern->spec;
 		mask_ipv6 = (const struct rte_flow_item_ipv6 *)
-		 (pattern->mask ? pattern->mask : &dpaa2_flow_item_ipv6_mask);
+			(pattern->mask ? pattern->mask :
+					&dpaa2_flow_item_ipv6_mask);
 	}
 
 	/* Get traffic class index and flow id to be configured */
@@ -1809,7 +1811,8 @@ dpaa2_configure_flow_icmp(struct rte_flow *flow,
 
 		proto.type = DPAA2_FLOW_ITEM_TYPE_GENERIC_IP;
 		proto.ip_proto = IPPROTO_ICMP;
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("ICMP discrimination rule set failed");
 			return -1;
@@ -2043,7 +2046,8 @@ dpaa2_configure_flow_udp(struct rte_flow *flow,
 
 		proto.type = DPAA2_FLOW_ITEM_TYPE_GENERIC_IP;
 		proto.ip_proto = IPPROTO_UDP;
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("UDP discrimination rule set failed");
 			return -1;
@@ -2067,7 +2071,8 @@ dpaa2_configure_flow_udp(struct rte_flow *flow,
 				&priv->extract.qos_key_extract.dpkg,
 				NET_PROT_UDP, NH_FLD_UDP_PORT_SRC);
 		if (index < 0) {
-			ret = dpaa2_flow_extract_add(&priv->extract.qos_key_extract,
+			ret = dpaa2_flow_extract_add(
+					&priv->extract.qos_key_extract,
 				NET_PROT_UDP,
 				NH_FLD_UDP_PORT_SRC,
 				NH_FLD_UDP_PORT_SIZE);
@@ -2280,7 +2285,8 @@ dpaa2_configure_flow_tcp(struct rte_flow *flow,
 
 		proto.type = DPAA2_FLOW_ITEM_TYPE_GENERIC_IP;
 		proto.ip_proto = IPPROTO_TCP;
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("TCP discrimination rule set failed");
 			return -1;
@@ -2469,7 +2475,8 @@ dpaa2_configure_flow_sctp(struct rte_flow *flow,
 	spec    = (const struct rte_flow_item_sctp *)pattern->spec;
 	last    = (const struct rte_flow_item_sctp *)pattern->last;
 	mask    = (const struct rte_flow_item_sctp *)
-			(pattern->mask ? pattern->mask : &dpaa2_flow_item_sctp_mask);
+			(pattern->mask ? pattern->mask :
+				&dpaa2_flow_item_sctp_mask);
 
 	/* Get traffic class index and flow id to be configured */
 	flow->tc_id = group;
@@ -2519,7 +2526,8 @@ dpaa2_configure_flow_sctp(struct rte_flow *flow,
 
 		proto.type = DPAA2_FLOW_ITEM_TYPE_GENERIC_IP;
 		proto.ip_proto = IPPROTO_SCTP;
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("SCTP discrimination rule set failed");
 			return -1;
@@ -2758,7 +2766,8 @@ dpaa2_configure_flow_gre(struct rte_flow *flow,
 
 		proto.type = DPAA2_FLOW_ITEM_TYPE_GENERIC_IP;
 		proto.ip_proto = IPPROTO_GRE;
-		ret = dpaa2_flow_proto_discrimination_rule(priv, flow, proto, group);
+		ret = dpaa2_flow_proto_discrimination_rule(priv, flow,
+							proto, group);
 		if (ret) {
 			DPAA2_PMD_ERR("GRE discrimination rule set failed");
 			return -1;
@@ -2901,8 +2910,9 @@ dpaa2_configure_flow_raw(struct rte_flow *flow,
 		}
 		local_cfg |= DPAA2_QOS_TABLE_RECONFIGURE;
 
-		ret = dpaa2_flow_extract_add_raw(&priv->extract.tc_key_extract[group],
-						 spec->length);
+		ret = dpaa2_flow_extract_add_raw(
+					&priv->extract.tc_key_extract[group],
+					spec->length);
 		if (ret) {
 			DPAA2_PMD_ERR("FS Extract RAW add failed.");
 			return -1;
@@ -2963,16 +2973,24 @@ dpaa2_flow_entry_update(
 
 		if (curr->ipaddr_rule.ipaddr_type ==
 			FLOW_IPV4_ADDR) {
-			qos_ipsrc_offset = qos_key_extract->key_info.ipv4_src_offset;
-			qos_ipdst_offset = qos_key_extract->key_info.ipv4_dst_offset;
-			fs_ipsrc_offset = tc_key_extract->key_info.ipv4_src_offset;
-			fs_ipdst_offset = tc_key_extract->key_info.ipv4_dst_offset;
+			qos_ipsrc_offset =
+				qos_key_extract->key_info.ipv4_src_offset;
+			qos_ipdst_offset =
+				qos_key_extract->key_info.ipv4_dst_offset;
+			fs_ipsrc_offset =
+				tc_key_extract->key_info.ipv4_src_offset;
+			fs_ipdst_offset =
+				tc_key_extract->key_info.ipv4_dst_offset;
 			size = NH_FLD_IPV4_ADDR_SIZE;
 		} else {
-			qos_ipsrc_offset = qos_key_extract->key_info.ipv6_src_offset;
-			qos_ipdst_offset = qos_key_extract->key_info.ipv6_dst_offset;
-			fs_ipsrc_offset = tc_key_extract->key_info.ipv6_src_offset;
-			fs_ipdst_offset = tc_key_extract->key_info.ipv6_dst_offset;
+			qos_ipsrc_offset =
+				qos_key_extract->key_info.ipv6_src_offset;
+			qos_ipdst_offset =
+				qos_key_extract->key_info.ipv6_dst_offset;
+			fs_ipsrc_offset =
+				tc_key_extract->key_info.ipv6_src_offset;
+			fs_ipdst_offset =
+				tc_key_extract->key_info.ipv6_dst_offset;
 			size = NH_FLD_IPV6_ADDR_SIZE;
 		}
 
@@ -3081,9 +3099,8 @@ dpaa2_flow_entry_update(
 				size);
 		}
 
-		if (extend >= 0) {
+		if (extend >= 0)
 			curr->qos_real_key_size += extend;
-		}
 
 		curr->qos_rule.key_size = FIXED_ENTRY_SIZE;
 
@@ -3334,7 +3351,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 		switch (pattern[i].type) {
 		case RTE_FLOW_ITEM_TYPE_ETH:
 			ret = dpaa2_configure_flow_eth(flow,
-					dev,	attr,	&pattern[i], actions, error,
+					dev, attr, &pattern[i], actions, error,
 					&is_keycfg_configured);
 			if (ret) {
 				DPAA2_PMD_ERR("ETH flow configuration failed!");
@@ -3343,7 +3360,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			break;
 		case RTE_FLOW_ITEM_TYPE_VLAN:
 			ret = dpaa2_configure_flow_vlan(flow,
-					dev,	attr,	&pattern[i], actions, error,
+					dev, attr, &pattern[i], actions, error,
 					&is_keycfg_configured);
 			if (ret) {
 				DPAA2_PMD_ERR("vLan flow configuration failed!");
@@ -3353,7 +3370,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 		case RTE_FLOW_ITEM_TYPE_IPV4:
 		case RTE_FLOW_ITEM_TYPE_IPV6:
 			ret = dpaa2_configure_flow_generic_ip(flow,
-					dev, attr,	&pattern[i], actions, error,
+					dev, attr, &pattern[i], actions, error,
 					&is_keycfg_configured);
 			if (ret) {
 				DPAA2_PMD_ERR("IP flow configuration failed!");
@@ -3431,7 +3448,8 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 	while (!end_of_list) {
 		switch (actions[j].type) {
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
-			dest_queue = (const struct rte_flow_action_queue *)(actions[j].conf);
+			dest_queue =
+				(const struct rte_flow_action_queue *)(actions[j].conf);
 			rxq = priv->rx_vq[dest_queue->index];
 			flow->action = RTE_FLOW_ACTION_TYPE_QUEUE;
 			memset(&action, 0, sizeof(struct dpni_fs_action_cfg));
@@ -3441,15 +3459,16 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 			if (is_keycfg_configured & DPAA2_FS_TABLE_RECONFIGURE) {
 				dpaa2_flow_fs_table_extracts_log(priv, flow->tc_id);
 				if (dpkg_prepare_key_cfg(
-						&priv->extract.tc_key_extract[flow->tc_id].dpkg,
-						(uint8_t *)(size_t)priv->extract
-						.tc_extract_param[flow->tc_id]) < 0) {
+				&priv->extract.tc_key_extract[flow->tc_id].dpkg,
+				(uint8_t *)(size_t)priv->extract
+				.tc_extract_param[flow->tc_id]) < 0) {
 					DPAA2_PMD_ERR(
 					"Unable to prepare extract parameters");
 					return -1;
 				}
 
-				memset(&tc_cfg, 0, sizeof(struct dpni_rx_dist_cfg));
+				memset(&tc_cfg, 0,
+					sizeof(struct dpni_rx_dist_cfg));
 				tc_cfg.dist_size = priv->nb_rx_queues / priv->num_rx_tc;
 				tc_cfg.key_cfg_iova =
 					(uint64_t)priv->extract.tc_extract_param[flow->tc_id];
@@ -3499,7 +3518,7 @@ dpaa2_generic_flow_set(struct rte_flow *flow,
 						priv->token, &qos_cfg);
 					if (ret < 0) {
 						DPAA2_PMD_ERR(
-							"RSS QoS table can not be configured(%d)\n",
+						"RSS QoS table can not be configured(%d)\n",
 							ret);
 						return -1;
 					}

@@ -622,13 +622,13 @@ rte_dpaa_bus_probe(void)
 			/* One time load of Qman/Bman drivers */
 			ret = qman_global_init();
 			if (ret) {
-				DPAA_PMD_ERR("QMAN initialization failed: %d",
+				DPAA_BUS_ERR("QMAN initialization failed: %d",
 					     ret);
 				return ret;
 			}
 			ret = bman_global_init();
 			if (ret) {
-				DPAA_PMD_ERR("BMAN initialization failed: %d",
+				DPAA_BUS_ERR("BMAN initialization failed: %d",
 					     ret);
 				return ret;
 			}
@@ -651,7 +651,7 @@ rte_dpaa_bus_probe(void)
 		if (dev->device_type == FSL_DPAA_ETH) {
 			ret = rte_dpaa_setup_intr(&dev->intr_handle);
 			if (ret)
-				DPAA_PMD_ERR("Error setting up interrupt.\n");
+				DPAA_BUS_ERR("Error setting up interrupt.\n");
 		}
 	}
 

@@ -145,8 +145,10 @@ struct fmc_model_t {
 					[FM_PCD_MAX_SIZE_OF_KEY];
 	unsigned char ccmask[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS]
 						[FM_PCD_MAX_SIZE_OF_KEY];
-	unsigned int ccentry_action_index[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
-	enum ioc_fm_pcd_engine ccentry_action_type[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
+	unsigned int
+		ccentry_action_index[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
+	enum ioc_fm_pcd_engine
+		ccentry_action_type[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	unsigned char ccentry_frag[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	unsigned int ccentry_manip[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	unsigned int ccmiss_action_index[FMC_CC_NODES_NUM];
@@ -161,11 +163,14 @@ struct fmc_model_t {
 	struct fm_pcd_hash_table_params_t htnode[FMC_CC_NODES_NUM];
 
 	unsigned int htentry_count[FMC_CC_NODES_NUM];
-	struct ioc_fm_pcd_cc_key_params_t htentry[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
+	struct ioc_fm_pcd_cc_key_params_t
+		htentry[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	uint8_t htkeydata[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS]
 					[FM_PCD_MAX_SIZE_OF_KEY];
-	unsigned int htentry_action_index[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
-	enum ioc_fm_pcd_engine htentry_action_type[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
+	unsigned int
+		htentry_action_index[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
+	enum ioc_fm_pcd_engine
+		htentry_action_type[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	unsigned char htentry_frag[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 	unsigned int htentry_manip[FMC_CC_NODES_NUM][FM_PCD_MAX_NUM_OF_KEYS];
 
@@ -179,7 +184,8 @@ struct fmc_model_t {
 	t_Handle replicator_handle[FMC_REPLICATORS_NUM];
 	t_Handle replicator_devId[FMC_REPLICATORS_NUM];
 	struct fm_pcd_frm_replic_group_params_t replicator[FMC_REPLICATORS_NUM];
-	unsigned int repentry_action_index[FMC_REPLICATORS_NUM][FM_PCD_MAX_NUM_OF_REPS];
+	unsigned int
+	 repentry_action_index[FMC_REPLICATORS_NUM][FM_PCD_MAX_NUM_OF_REPS];
 	unsigned char repentry_frag[FMC_REPLICATORS_NUM][FM_PCD_MAX_NUM_OF_REPS];
 	unsigned int repentry_manip[FMC_REPLICATORS_NUM][FM_PCD_MAX_NUM_OF_REPS];
 
@@ -241,14 +247,14 @@ static int dpaa_port_fmc_scheme_parse(
 
 			if (fqid == fif->fqid_rx_def) {
 				if (fif->is_shared_mac &&
-					fmc_model->scheme[scheme_idx].override_storage_profile &&
-					fmc_model->scheme[scheme_idx].storage_profile.direct &&
-					fmc_model->scheme[scheme_idx].storage_profile
-					.profile_select.direct_relative_profileId !=
-					fif->base_profile_id) {
+				fmc_model->scheme[scheme_idx].override_storage_profile &&
+				fmc_model->scheme[scheme_idx].storage_profile.direct &&
+				fmc_model->scheme[scheme_idx].storage_profile
+				.profile_select.direct_relative_profileId !=
+				fif->base_profile_id) {
 					DPAA_PMD_ERR(
-						"Default RXQ must be associated"
-						" with default VSP on sharemac!");
+					"Default RXQ must be associated"
+					" with default VSP on sharemac!");
 
 					return -1;
 				}
@@ -256,7 +262,7 @@ static int dpaa_port_fmc_scheme_parse(
 			}
 
 			if (fif->is_shared_mac &&
-				!fmc_model->scheme[scheme_idx].override_storage_profile) {
+			!fmc_model->scheme[scheme_idx].override_storage_profile) {
 				DPAA_PMD_ERR(
 					"RXQ to DPDK must be associated"
 					" with VSP on sharemac!");
@@ -264,11 +270,11 @@ static int dpaa_port_fmc_scheme_parse(
 			}
 
 			if (fif->is_shared_mac &&
-				fmc_model->scheme[scheme_idx].override_storage_profile &&
-				fmc_model->scheme[scheme_idx].storage_profile.direct &&
-				fmc_model->scheme[scheme_idx].storage_profile
-				.profile_select.direct_relative_profileId ==
-				fif->base_profile_id) {
+			fmc_model->scheme[scheme_idx].override_storage_profile &&
+			fmc_model->scheme[scheme_idx].storage_profile.direct &&
+			fmc_model->scheme[scheme_idx].storage_profile
+			.profile_select.direct_relative_profileId ==
+			fif->base_profile_id) {
 				DPAA_PMD_ERR(
 					"RXQ can't be associated"
 					" with default VSP on sharemac!");
@@ -379,7 +385,7 @@ static int dpaa_port_fmc_ccnode_parse(
 				"VSP %d can NOT be used on DPDK.",
 				vspids[(*rxq_idx)]);
 			DPAA_PMD_ERR(
-				"It is associated to skb pool of shared interface.");
+			"It is associated to skb pool of shared interface.");
 
 				return -1;
 		}
@@ -413,7 +419,8 @@ int dpaa_port_fmc_init(struct fman_if *fif,
 			return -1;
 		}
 
-		bytes_read = fread(g_fmc_model, sizeof(struct fmc_model_t), 1, fp);
+		bytes_read = fread(g_fmc_model,
+					sizeof(struct fmc_model_t), 1, fp);
 		if (!bytes_read) {
 			DPAA_PMD_ERR("No bytes read");
 			fclose(fp);

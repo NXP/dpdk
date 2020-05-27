@@ -1784,7 +1784,7 @@ int qman_enqueue_multi(struct qman_fq *fq, const struct qm_fd *fd, u32 *flags,
 		       int frames_to_send);
 
 /**
- * qman_ern_poll_free - Polling on MR and calling a callback funtion to free
+ * qman_ern_poll_free - Polling on MR and calling a callback function to free
  * mbufs when SW ERNs received.
  */
 void qman_ern_poll_free(void);

@@ -545,7 +545,8 @@ dpaa2_create_dpio_device(int vdev_fd,
 		/* create the key, supplying a function that'll be invoked
 		 * when a portal affined thread will be deleted.
 		 */
-		ret = pthread_key_create(&dpaa2_portal_key, dpaa2_portal_finish);
+		ret = pthread_key_create(&dpaa2_portal_key,
+					 dpaa2_portal_finish);
 		if (ret) {
 			DPAA2_BUS_DEBUG("Unable to create pthread key (%d)",
 					ret);

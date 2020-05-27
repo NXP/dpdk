@@ -344,7 +344,6 @@ static int set_scheme_params(
 	for (dist_idx = 0; dist_idx <
 		dist_units->param.num_of_distinction_units;
 		dist_idx++) {
-
 		switch (dist_units->param.units[dist_idx].hdrs[0].hdr) {
 		case HEADER_TYPE_ETH:
 			hdr_idx = set_hashParams_eth(scheme_params, hdr_idx);
@@ -654,16 +653,15 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 
 static inline int get_port_type(struct fman_if *fif)
 {
-	if (fif->mac_type == fman_mac_1g) {
+	if (fif->mac_type == fman_mac_1g)
 		return e_FM_PORT_TYPE_RX;
-	} else if (fif->mac_type == fman_mac_2_5g) {
+	else if (fif->mac_type == fman_mac_2_5g)
 		return e_FM_PORT_TYPE_RX_2_5G;
-	} else if (fif->mac_type == fman_mac_10g) {
+	else if (fif->mac_type == fman_mac_10g)
 		return e_FM_PORT_TYPE_RX_10G;
-	} else {
-		DPAA_PMD_ERR("MAC type unsupported");
-		return -1;
-	}
+
+	DPAA_PMD_ERR("MAC type unsupported");
+	return -1;
 }
 
 static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
@@ -717,7 +715,8 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 }
 
 /* De-Configure DPAA FM */
-int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf, struct fman_if *fif)
+int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf,
+			struct fman_if *fif __rte_unused)
 {
 	int ret;
 	unsigned int idx;
@@ -748,7 +747,6 @@ int dpaa_fm_deconfig(struct dpaa_if *dpaa_intf, struct fman_if *fif)
 			return ret;
 		}
 		dpaa_intf->scheme_handle[idx] = NULL;
-
 	}
 	/* FM PCD NetEnvCharacteristicsDelete */
 	ret = FM_PCD_NetEnvCharacteristicsDelete(dpaa_intf->netenv_handle);
@@ -781,7 +779,7 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct fman_if *fif = dev->process_private;
 	int ret;
-	unsigned i = 0;
+	unsigned int i = 0;
 	PMD_INIT_FUNC_TRACE();
 
 	if (dpaa_intf->port_handle) {
@@ -1049,11 +1047,10 @@ int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
 		dpaa_intf->vsp_handle[vsp_id] = 0;
 	}
 
-	if (fmc_mode) {
+	if (fmc_mode)
 		fman_handle = FM_Open(0);
-	} else {
+	else
 		fman_handle = fm_info.fman_handle;
-	}
 
 	dpaa_intf->vsp_bpid[vsp_id] = bpid;
 

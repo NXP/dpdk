@@ -423,18 +423,20 @@ dpaa_free_mbuf(const struct qm_fd *fd)
 		sgt = vaddr + fd_offset;
 		sg_temp = &sgt[i++];
 		hw_sg_to_cpu(sg_temp);
-		temp = (struct rte_mbuf *)((char *)vaddr - bp_info->meta_data_size);
-		sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_sg_entry_get64(sg_temp));
+		temp = (struct rte_mbuf *)
+			((char *)vaddr - bp_info->meta_data_size);
+		sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
+						qm_sg_entry_get64(sg_temp));
 
 		first_seg = (struct rte_mbuf *)((char *)sg_vaddr -
-							bp_info->meta_data_size);
+						bp_info->meta_data_size);
 		first_seg->nb_segs = 1;
 		prev_seg = first_seg;
 		while (i < DPAA_SGT_MAX_ENTRIES) {
 			sg_temp = &sgt[i++];
 			hw_sg_to_cpu(sg_temp);
 			sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
-						     qm_sg_entry_get64(sg_temp));
+						qm_sg_entry_get64(sg_temp));
 			cur_seg = (struct rte_mbuf *)((char *)sg_vaddr -
 						      bp_info->meta_data_size);
 			first_seg->nb_segs += 1;

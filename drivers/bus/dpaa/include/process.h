@@ -80,8 +80,9 @@ struct usdpaa_ioctl_link_status {
 	uint32_t        efd;
 };
 
-int rte_dpaa_intr_enable(char *if_name, int efd);
-int rte_dpaa_intr_disable(char *if_name);
+int dpaa_intr_enable(char *if_name, int efd);
+
+int dpaa_intr_disable(char *if_name);
 
 struct usdpaa_ioctl_link_status_args {
 	/* network device node name */
@@ -96,8 +97,8 @@ struct usdpaa_ioctl_update_link_status_args {
 	int     link_status;
 };
 
-int rte_dpaa_get_link_status(char *if_name);
+int dpaa_get_link_status(char *if_name);
 
-int rte_dpaa_update_link_status(char *if_name, int link_status);
+int dpaa_update_link_status(char *if_name, int link_status);
 
 #endif	/*  __PROCESS_H */

@@ -276,12 +276,12 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 					   dpaa_interrupt_handler,
 					   (void *)dev);
 
-		ret = rte_dpaa_intr_enable(__fif->node_name, intr_handle->fd);
+		ret = dpaa_intr_enable(__fif->node_name, intr_handle->fd);
 		if (ret) {
 			if (dev->data->dev_conf.intr_conf.lsc != 0) {
 				rte_intr_callback_unregister(intr_handle,
-							     dpaa_interrupt_handler,
-							     (void *)dev);
+					dpaa_interrupt_handler,
+					(void *)dev);
 				if (ret == EINVAL)
 					printf("Failed to enable interrupt: Not Supported\n");
 				else
@@ -387,7 +387,7 @@ static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	if (intr_handle && intr_handle->fd &&
 	    dev->data->dev_conf.intr_conf.lsc != 0) {
-		rte_dpaa_intr_disable(__fif->node_name);
+		dpaa_intr_disable(__fif->node_name);
 		rte_intr_callback_unregister(intr_handle,
 					     dpaa_interrupt_handler,
 					     (void *)dev);
@@ -447,9 +447,12 @@ static int dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	if (fif->mac_type == fman_mac_1g) {
 		dev_info->speed_capa = ETH_LINK_SPEED_1G;
 	} else if (fif->mac_type == fman_mac_2_5g) {
-		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_2_5G);
+		dev_info->speed_capa = ETH_LINK_SPEED_1G
+					| ETH_LINK_SPEED_2_5G;
 	} else if (fif->mac_type == fman_mac_10g) {
-		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_2_5G | ETH_LINK_SPEED_10G);
+		dev_info->speed_capa = ETH_LINK_SPEED_1G
+					| ETH_LINK_SPEED_2_5G
+					| ETH_LINK_SPEED_10G;
 	} else {
 		DPAA_PMD_ERR("invalid link_speed: %s, %d",
 			     dpaa_intf->name, fif->mac_type);
@@ -492,7 +495,7 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 			     dpaa_intf->name, fif->mac_type);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC) {
-		ret = rte_dpaa_get_link_status(__fif->node_name);
+		ret = dpaa_get_link_status(__fif->node_name);
 		if (ret < 0)
 			return ret;
 		link->link_status = ret;
@@ -853,8 +856,8 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 		ret = qman_init_fq(rxq, flags, &opts);
 		if (ret) {
-			DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x ret:%d(%s)",
-					rxq->fqid, ret, strerror(-ret));
+			DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x "
+				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
 			return ret;
 		}
 		if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
@@ -969,8 +972,8 @@ dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 
 	ret = qman_init_fq(rxq, flags, &opts);
 	if (ret) {
-		DPAA_PMD_ERR("Ev-Channel/Q association failed. fqid 0x%x ret:%d(%s)",
-				rxq->fqid, ret, strerror(-ret));
+		DPAA_PMD_ERR("Ev-Channel/Q association failed. fqid 0x%x "
+				"ret:%d(%s)", rxq->fqid, ret, strerror(ret));
 		return ret;
 	}
 
@@ -1056,8 +1059,8 @@ dpaa_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	PMD_INIT_FUNC_TRACE();
 
 	if (qman_query_fq_frm_cnt(rxq, &frm_cnt) == 0) {
-		RTE_LOG(DEBUG, PMD, "RX frame count for q(%d) is %u\n",
-			rx_queue_id, frm_cnt);
+		DPAA_PMD_DEBUG("RX frame count for q(%d) is %u",
+			       rx_queue_id, frm_cnt);
 	}
 	return frm_cnt;
 }
@@ -1072,7 +1075,7 @@ static int dpaa_link_down(struct rte_eth_dev *dev)
 	__fif = container_of(fif, struct __fman_if, __if);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC)
-		rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
+		dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
 	else
 		dpaa_eth_dev_stop(dev);
 	return 0;
@@ -1088,7 +1091,7 @@ static int dpaa_link_up(struct rte_eth_dev *dev)
 	__fif = container_of(fif, struct __fman_if, __if);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC)
-		rte_dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
+		dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
 	else
 		dpaa_eth_dev_start(dev);
 	return 0;
@@ -1189,8 +1192,7 @@ dpaa_dev_add_mac_addr(struct rte_eth_dev *dev,
 				   addr->addr_bytes, index);
 
 	if (ret)
-		RTE_LOG(ERR, PMD, "error: Adding the MAC ADDR failed:"
-			" err = %d", ret);
+		DPAA_PMD_ERR("Adding the MAC ADDR failed: err = %d", ret);
 	return 0;
 }
 
@@ -1213,7 +1215,7 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 
 	ret = fman_if_add_mac_addr(dev->process_private, addr->addr_bytes, 0);
 	if (ret)
-		RTE_LOG(ERR, PMD, "error: Setting the MAC ADDR failed %d", ret);
+		DPAA_PMD_ERR("Setting the MAC ADDR failed %d", ret);
 
 	return ret;
 }
@@ -1280,7 +1282,7 @@ static int dpaa_dev_queue_intr_disable(struct rte_eth_dev *dev,
 
 	temp1 = read(rxq->q_fd, &temp, sizeof(temp));
 	if (temp1 != sizeof(temp))
-		DPAA_EVENTDEV_ERR("irq read error");
+		DPAA_PMD_ERR("irq read error");
 
 	qman_fq_portal_thread_irq(rxq->qp);
 
@@ -1748,7 +1750,8 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* If congestion control is enabled globally*/
 	if (td_tx_threshold) {
 		dpaa_intf->cgr_tx = rte_zmalloc(NULL,
-			sizeof(struct qman_cgr) * MAX_DPAA_CORES, MAX_CACHELINE);
+			sizeof(struct qman_cgr) * MAX_DPAA_CORES,
+			MAX_CACHELINE);
 		if (!dpaa_intf->cgr_tx) {
 			DPAA_PMD_ERR("Failed to alloc mem for cgr_tx\n");
 			ret = -ENOMEM;
@@ -2069,7 +2072,7 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 		return;
 
 	if (!(default_q || fmc_q)) {
-		unsigned i;
+		unsigned int i;
 
 		for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
 			if (rte_eth_devices[i].dev_ops == &dpaa_devops) {
@@ -2089,7 +2092,7 @@ static void __attribute__((destructor(102))) dpaa_finish(void)
 			}
 		}
 		if (is_global_init)
-		if (dpaa_fm_term())
+			if (dpaa_fm_term())
 				DPAA_PMD_WARN("DPAA FM term failed\n");
 
 		is_global_init = 0;

@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright 2020 NXP
  */
+#ifndef _FSL_QBMAN_DEBUG_H
+#define _FSL_QBMAN_DEBUG_H
+
 
 struct qbman_swp;
 
@@ -28,3 +32,4 @@ int qbman_fq_query_state(struct qbman_swp *s, uint32_t fqid,
 			 struct qbman_fq_query_np_rslt *r);
 uint32_t qbman_fq_state_frame_count(const struct qbman_fq_query_np_rslt *r);
 uint32_t qbman_fq_state_byte_count(const struct qbman_fq_query_np_rslt *r);
+#endif /* !_FSL_QBMAN_DEBUG_H */

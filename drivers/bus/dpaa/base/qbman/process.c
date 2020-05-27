@@ -303,7 +303,7 @@ int bman_free_raw_portal(struct dpaa_raw_portal *portal)
 #define DPAA_IOCTL_DISABLE_LINK_STATUS_INTERRUPT \
 	_IOW(DPAA_IOCTL_MAGIC, 0x0F, char*)
 
-int rte_dpaa_intr_enable(char *if_name, int efd)
+int dpaa_intr_enable(char *if_name, int efd)
 {
 	struct usdpaa_ioctl_link_status args;
 
@@ -322,7 +322,7 @@ int rte_dpaa_intr_enable(char *if_name, int efd)
 	return 0;
 }
 
-int rte_dpaa_intr_disable(char *if_name)
+int dpaa_intr_disable(char *if_name)
 {
 	int ret = check_fd();
 
@@ -344,7 +344,7 @@ int rte_dpaa_intr_disable(char *if_name)
 #define DPAA_IOCTL_GET_LINK_STATUS \
 	_IOWR(DPAA_IOCTL_MAGIC, 0x10, struct usdpaa_ioctl_link_status_args)
 
-int rte_dpaa_get_link_status(char *if_name)
+int dpaa_get_link_status(char *if_name)
 {
 	int ret = check_fd();
 	struct usdpaa_ioctl_link_status_args args;
@@ -370,7 +370,7 @@ int rte_dpaa_get_link_status(char *if_name)
 #define DPAA_IOCTL_UPDATE_LINK_STATUS \
 	_IOW(DPAA_IOCTL_MAGIC, 0x11, struct usdpaa_ioctl_update_link_status_args)
 
-int rte_dpaa_update_link_status(char *if_name, int link_status)
+int dpaa_update_link_status(char *if_name, int link_status)
 {
 	struct usdpaa_ioctl_update_link_status_args args;
 	int ret;
