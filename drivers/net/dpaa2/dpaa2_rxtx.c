@@ -364,13 +364,13 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 
 static int __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
-		  struct qbman_fd *fd, uint16_t bpid)
+		  struct qbman_fd *fd, struct rte_mempool *mp, uint16_t bpid)
 {
 	struct rte_mbuf *cur_seg = mbuf, *prev_seg, *mi, *temp;
 	struct qbman_sge *sgt, *sge = NULL;
 	int i;
 
-	temp = rte_pktmbuf_alloc(mbuf->pool);
+	temp = rte_pktmbuf_alloc(mp);
 	if (temp == NULL) {
 		DPAA2_PMD_DP_DEBUG("No memory to allocate S/G table\n");
 		return -ENOMEM;
@@ -1139,7 +1139,8 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				bpid = mempool_to_bpid(mp);
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					if (eth_mbuf_to_sg_fd(*bufs,
-							&fd_arr[loop], bpid))
+							&fd_arr[loop],
+							mp, bpid))
 						goto send_n_return;
 				} else {
 					eth_mbuf_to_fd(*bufs,
@@ -1396,6 +1397,7 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					if (eth_mbuf_to_sg_fd(*bufs,
 							      &fd_arr[loop],
+							      mp,
 							      bpid))
 						goto send_n_return;
 				} else {
