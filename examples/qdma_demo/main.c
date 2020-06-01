@@ -48,6 +48,13 @@ uint64_t time_diff;
 extern int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr,
 	uint64_t iova, uint64_t size);
 
+#ifndef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+extern uint32_t dpaa2_svr_family;
+#ifndef SVR_LX2160A
+#define SVR_LX2160A    0x87360000
+#endif
+#endif
+
 #if !TEST_PCIE_32B_WR
 static rte_atomic32_t dequeue_num;
 static rte_atomic32_t dequeue_num_percore[16];
@@ -68,7 +75,7 @@ struct qdma_test_case test_case[] = {
 int test_case_array_size = sizeof(test_case) / sizeof(test_case[0]);
 
 /*Configurable options*/
-int g_frame_format = LONG_FMT;
+int g_frame_format = RTE_QDMA_LONG_FORMAT;
 int g_userbp = NO_RBP;
 int g_rbp_testcase = MEM_TO_PCI;
 uint32_t g_arg_mask;
@@ -79,6 +86,7 @@ uint64_t g_pci_size = TEST_PCI_SIZE_LIMIT;
 int g_packet_num = (54 * 1024);
 int g_latency;
 int g_memcpy;
+int g_scatter_gather;
 
 rte_spinlock_t test_lock;
 struct rte_qdma_job *g_jobs[MAX_CORE_COUNT];
@@ -106,11 +114,8 @@ test_dma_init(void)
 		return 0;
 	/* Configure QDMA to use HW resource - no virtual queues */
 	qdma_config.max_hw_queues_per_core = LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.mode = RTE_QDMA_MODE_HW;
-	qdma_config.fle_pool_count = LSINIC_QDMA_FLE_POOL_COUNT;
+	qdma_config.fle_queue_pool_cnt = LSINIC_QDMA_FLE_POOL_QUEUE_COUNT;
 	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
-	if (g_frame_format == RTE_QDMA_ULTRASHORT_FORMAT)
-		qdma_config.format = RTE_QDMA_ULTRASHORT_FORMAT;
 
 	dev_conf.dev_private = (void *)&qdma_config;
 	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
@@ -332,6 +337,8 @@ static void calculate_latency(unsigned int lcore_id,
 	rte_delay_ms(1000);
 }
 
+#define MAX_SG_JOB_NB_IN_QDMA 512
+
 static int
 lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 {
@@ -343,6 +350,8 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 
 	int time_count = 0;
 	int pkt_enquened = 0;
+	int in_dma = 0;
+	int burst_nb = g_scatter_gather ? 32 : RTE_QDMA_BURST_NB_MAX;
 
 	lcore_id = rte_lcore_id();
 
@@ -354,21 +363,26 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 
 	cycle1 = rte_get_timer_cycles();
 	while (!quit_signal) {
-		struct rte_qdma_job *job[256], *job1[16];
+		struct rte_qdma_job *job[RTE_QDMA_BURST_NB_MAX];
+		struct rte_qdma_job *job1[RTE_QDMA_BURST_NB_MAX];
 		struct rte_qdma_enqdeq e_context, de_context;
 		int ret, j;
-		int job_num = 256;
+		int job_num = burst_nb;
 
 		if (g_latency) {
 			if (pkt_enquened >= TEST_PACKETS_NUM) {
 				poll_miss++;
 				goto dequeue;
 			}
-			if (pkt_enquened >= (TEST_PACKETS_NUM - 256))
+			if (pkt_enquened >=
+				(TEST_PACKETS_NUM - RTE_QDMA_BURST_NB_MAX))
 				job_num = TEST_PACKETS_NUM - pkt_enquened;
 			if (job_num < 0)
-				job_num = 256;
+				job_num = burst_nb;
 		}
+
+		if (in_dma > MAX_SG_JOB_NB_IN_QDMA && g_scatter_gather)
+			goto dequeue;
 
 		for (j = 0; j < job_num; j++) {
 			job[j] = &g_jobs[lcore_id][(pkt_cnt + j) % TEST_PACKETS_NUM];
@@ -399,12 +413,15 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		if (unlikely(ret <= 0))
 			goto dequeue;
 		pkt_enquened += ret;
+		in_dma += ret;
 dequeue:
 		/* Check for QDMA Job completion status */
 		do {
 			de_context.vq_id = g_vqid[lcore_id];
 			de_context.job = job1;
-			ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, 16, &de_context);
+			ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL,
+					RTE_QDMA_BURST_NB_MAX, &de_context);
+			in_dma -= ret;
 			for (j = 0; j < ret; j++) {
 				if (job1[j]->status) {
 					printf("Error(%x) occurred for a job\n",
@@ -484,9 +501,17 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 
 		q_config.lcore_id = i;
 		q_config.flags = 0;
+		if (qdma_mode == RTE_QDMA_MODE_HW)
+			q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
+		if (g_frame_format == RTE_QDMA_LONG_FORMAT)
+			q_config.flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
+		if (g_scatter_gather)
+			q_config.flags |= RTE_QDMA_VQ_FD_SG_FORMAT;
 		q_config.rbp = NULL;
 		g_vqid[i] = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 		printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
+		if (g_vqid[i] < 0)
+			return g_vqid[i];
 	}
 
 	/* Adavance prepare the jobs for the test */
@@ -544,6 +569,8 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 				job->dest =
 					((long) rte_malloc_virt2iova((const void *)g_buf1) +
 					(long) (i * TEST_PACKET_SIZE));
+				job->flags = RTE_QDMA_JOB_SRC_PHY |
+							RTE_QDMA_JOB_DEST_PHY;
 			}
 		} else if (g_rbp_testcase == PCI_TO_PCI) {
 			if (g_userbp) {
@@ -669,6 +696,8 @@ launch_cores(unsigned int cores)
 
 	/* start synchro and launch test on master */
 	ret = lcore_qdma_control_loop(NULL);
+	if (ret < 0)
+		return ret;
 	cores = cores_save;
 	RTE_LCORE_FOREACH_SLAVE(lcore_id)
 	{
@@ -739,6 +768,7 @@ void qdma_demo_usage(void)
 	printf("	: --pci_size <bytes>\n");
 	printf("	: --latency_test\n");
 	printf("	: --memcpy\n");
+	printf("	: --scatter_gather\n");
 }
 
 int qdma_parse_long_arg(char *optarg, struct option *lopt)
@@ -798,7 +828,28 @@ int qdma_parse_long_arg(char *optarg, struct option *lopt)
 		printf("%s: PCI size %lu\n", __func__, g_pci_size);
 		break;
 	case ARG_MEMCPY:
+		if (g_scatter_gather) {
+			printf("memcpy conflicts with scatter gather\n");
+			ret = -EINVAL;
+			goto out;
+		}
 		g_memcpy = 1;
+		break;
+	case ARG_SCATTER_GATHER:
+#ifndef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+		if (dpaa2_svr_family == SVR_LX2160A) {
+			printf("qDMA demo is NOT supported on LX with IOVA on\n");
+			ret = -EINVAL;
+			goto out;
+		}
+#endif
+		if (g_memcpy) {
+			printf("scatter gather conflicts with memcpy\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		g_frame_format = RTE_QDMA_LONG_FORMAT;
+		g_scatter_gather = 1;
 		break;
 	default:
 		printf("Unknown Argument\n");
@@ -823,6 +874,7 @@ qdma_demo_parse_args(int argc, char **argv)
 	 {"latency_test", optional_argument, &flg, ARG_LATENCY},
 	 {"pci_size", optional_argument, &flg, ARG_PCI_SIZE},
 	 {"memcpy", optional_argument, &flg, ARG_MEMCPY},
+	 {"scatter_gather", optional_argument, &flg, ARG_SCATTER_GATHER},
 	 {0, 0, 0, 0},
 	};
 	struct option *lopt_cur;
@@ -947,11 +999,12 @@ main(int argc, char *argv[])
 	      (nsPerCycle * time_diff * rate) / (float) (1000 * 1000));
 
 #if TEST_PCIE_32B_WR
-	launch_pcie32b_cores(core_count);
+	ret = launch_pcie32b_cores(core_count);
 #else
-	launch_cores(core_count);
+	ret = launch_cores(core_count);
 #endif
-
+	if (ret < 0)
+		goto out;
 	printf("qdma_demo Finished.. bye!\n");
 	return 0;
 out:

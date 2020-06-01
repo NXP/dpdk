@@ -45,6 +45,7 @@ Precondition to run any dpdk based APP
 
 => create the MC objects for network and DMA in MC
 
+# use DPDMAI count as 16 or higher e.g.
 export DPDMAI_COUNT=48
 source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
 or
@@ -67,7 +68,8 @@ In the above command: -c refers to the core mask for cores to be assigned to
 DPDK;
 -p is the port mask for ports to be used by application;
 -q defines the number of queues to serve on each port.
--m mode specifies HW (-m is 0) or Virtual (-m is 1) mode for QDMA queues.
+-m mode specifies HW (-m is 0) or Virtuial (-m is 1) mode for QDMA queues.
+--scatter enable Scatter Gather Mode (use CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y)
 
 Apart from -m parameter other parameters are similar to DPDK
 l2fwd application -refer L2 Forwarding Sample
@@ -100,6 +102,8 @@ The setup is as given below:
 
    compilation command
    -------------------
+   Note: if you are using Scatter Gather support, better to build DPDK with
+	  CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y
    make -C examples/qdma_demo/
 
 4. Steps of execution
@@ -213,3 +217,9 @@ MEMCOPY
 -------
 
 One can use --memcpy option to use core instead of qdma engine for comparision reasons.
+
+SCATTER GATHER
+--------------
+
+One can use --scatter option to use Scatter Gather buffers instead of normal single buffer.
+It is perferable to build dpdk with CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y

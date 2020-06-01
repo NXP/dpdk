@@ -41,7 +41,7 @@
 #define TEST_LOCAL_MEM_SIZE_PERCORE (TEST_PACKET_SIZE * TEST_PACKETS_NUM)
 
 #define LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE	2
-#define LSINIC_QDMA_FLE_POOL_COUNT		 (2 * 8192)
+#define LSINIC_QDMA_FLE_POOL_QUEUE_COUNT	2048
 #define LSINIC_QDMA_MAX_VQS			2048
 
 #define MAX_CORE_COUNT	16
@@ -58,5 +58,6 @@ struct qdma_test_case {
 #define ARG_LATENCY (1 << 3)
 #define ARG_PCI_SIZE (1 << 4)
 #define ARG_MEMCPY (1 << 5)
+#define ARG_SCATTER_GATHER (1 << 6)
 
 #endif
