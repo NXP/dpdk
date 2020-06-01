@@ -1094,6 +1094,7 @@ DPAA2:
 2. fslmc:dpni.<x>,drv_no_prefetch=1	Disable prefetching of packet pull command
 					which is issued  in the previous cycle.
 
+3. fslmc.dpni.<x>,drv_tx_conf=1		Enable Tx confirmation mode for a given interface
 ================================================================================
 
 Minimum NXP LSDK version supported: LSDK 1909 (https://lsdk.github.io/)

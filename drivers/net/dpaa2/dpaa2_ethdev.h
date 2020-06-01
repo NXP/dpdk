@@ -52,12 +52,12 @@
  * default is disable
  */
 #define DPAA2_TX_CGR_OFF	0x01
-
 /* Drop packets with parsing error in hw */
 #define DPAA2_PARSE_ERR_DROP	0x02
-
 /* Disable RX tail drop, default is enable */
 #define DPAA2_RX_TAILDROP_OFF	0x04
+/* Tx confirmation enabled */
+#define DPAA2_TX_CONF_ENABLE	0x08
 
 /* Disable prefetch Rx mode to get exact requested packets */
 #define DPAA2_NO_PREFETCH_RX	0x08
@@ -100,7 +100,7 @@
 #define DPAA2_PKT_TYPE_VLAN_2		0x0260
 
 /* enable timestamp in mbuf*/
-extern enum pmd_dpaa2_ts dpaa2_enable_ts;
+extern bool dpaa2_enable_ts[];
 
 #define DPAA2_QOS_TABLE_RECONFIGURE	1
 #define DPAA2_FS_TABLE_RECONFIGURE	2
@@ -151,7 +151,6 @@ struct dpaa2_dev_priv {
 	void *tx_vq[MAX_TX_QUEUES];
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
 	void *tx_conf_vq[MAX_TX_QUEUES];
-	uint8_t tx_conf_en;
 	uint8_t max_mac_filters;
 	uint8_t max_vlan_filters;
 	uint8_t num_rx_tc;
