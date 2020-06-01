@@ -108,7 +108,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd)
 	m->hash.rss = fd->simple.flc_hi;
 	m->ol_flags |= PKT_RX_RSS_HASH;
 
-	if (dpaa2_enable_ts == PMD_DPAA2_ENABLE_TS) {
+	if (dpaa2_enable_ts) {
 		annotation = (struct dpaa2_annot_hdr *)
 			((size_t)DPAA2_IOVA_TO_VADDR(
 			DPAA2_GET_FD_ADDR(fd)) + DPAA2_FD_PTA_SIZE);
