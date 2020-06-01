@@ -18,6 +18,7 @@
 
 #include <rte_bbdev.h>
 #include <rte_bbdev_pmd.h>
+#include <rte_pmd_bbdev_la12xx.h>
 
 #include <geul_bbdev_ipc.h>
 #include <geul_ipc_um.h>
@@ -915,6 +916,28 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
+}
+
+uint16_t
+rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
+		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+{
+	RTE_SET_USED(dev_id);
+	RTE_SET_USED(queue_id);
+	RTE_SET_USED(ops);
+	RTE_SET_USED(num_ops);
+	return 0;
+}
+
+uint16_t
+rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
+		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+{
+	RTE_SET_USED(dev_id);
+	RTE_SET_USED(queue_id);
+	RTE_SET_USED(ops);
+	RTE_SET_USED(num_ops);
+	return 0;
 }
 
 static struct hugepage_info *

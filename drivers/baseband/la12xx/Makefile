@@ -35,5 +35,6 @@ SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx_feca_param.c
 # create symbolic links for geul common headers required by application
 COMMON_HDRS := $(shell find $(COMMON_HEADERS_DIR) -name '*.h')
 SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX)-include += $(COMMON_HDRS)
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX)-include += rte_pmd_bbdev_la12xx.h
 
 include $(RTE_SDK)/mk/rte.lib.mk
