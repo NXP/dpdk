@@ -198,12 +198,10 @@ struct dpaa2_dpci_dev {
 /*! Global MCP list */
 extern void *(*rte_mcp_ptr_list);
 
-/* Refer to Table 7-3 in SEC BG */
 struct qbman_fle {
 	uint32_t addr_lo;
 	uint32_t addr_hi;
 	uint32_t length;
-	/* FMT must be 00, MSB is final bit  */
 	uint32_t fin_bpid_offset;
 	uint32_t frc;
 	uint32_t reserved[3]; /* Not used currently */
@@ -302,6 +300,11 @@ enum qbman_fd_format {
 		(fd)->simple.bpid_offset |= (uint32_t)format << 28;	\
 } while (0)
 #define DPAA2_FD_GET_FORMAT(fd)	(((fd)->simple.bpid_offset >> 28) & 0x3)
+
+#define DPAA2_SG_SET_FORMAT(sg, format)	do {				\
+		(sg)->fin_bpid_offset &= 0xCFFFFFFF;			\
+		(sg)->fin_bpid_offset |= (uint32_t)format << 28;	\
+} while (0)
 
 #define DPAA2_SG_SET_FINAL(sg, fin)	do {				\
 		(sg)->fin_bpid_offset &= 0x7FFFFFFF;			\
