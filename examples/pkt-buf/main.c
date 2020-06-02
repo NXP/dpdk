@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -43,26 +44,33 @@
 #include <rte_udp.h>
 #include <rte_string_fns.h>
 #include <rte_flow.h>
-#include <rte_pmd_dpaa2.h>
 
 #define DPAA_PMD_RECORD_CORE_CYCLES
 static volatile bool force_quit;
 
-
 #define RTE_LOGTYPE_PKT RTE_LOGTYPE_USER1
 
 #define PKTS_NB_MBUF   8192
+#define PKTS_NB_MBUF_THREAD   4096
 
 #define PKTS_MAX_PKT_BURST 32
-int max_burst_size = PKTS_MAX_PKT_BURST;
+int max_burst_size = 16;//PKTS_MAX_PKT_BURST;
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define PKTS_MEMPOOL_CACHE_SIZE 512
 
+#if 0
+#define my_debug(fmt, args...)	printf(fmt, ##args)
+#else
+#define my_debug(fmt, args...) {}
+#endif
+
 /*Cache based buffer pool */
 static int g_cache_size = PKTS_MEMPOOL_CACHE_SIZE;
-static int g_delayed_free = PKTS_MEMPOOL_CACHE_SIZE/2;
+static int g_free_mode; /* 0 default, 1 for Private area, 2 for delayed free*/
+static int g_scatter = 1;
+static int g_priv_size = RTE_PKTMBUF_HEADROOM;
 
-uint16_t tx_pkt_length = 1500; /**< TXONLY packet length. */
+uint16_t tx_pkt_len = 1500; /**< TXONLY packet length. */
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -102,6 +110,7 @@ static struct rte_eth_conf port_conf = {
 };
 
 struct rte_mempool *pkt_pktmbuf_pool;
+struct rte_mempool *pkt_pktmbuf_direct_pool;
 
 /* Per-port statistics struct */
 struct pkt_port_statistics {
@@ -176,7 +185,7 @@ static struct ether_hdr pkt_eth_hdr[RTE_MAX_ETHPORTS]; /**< Ethernet header for 
 static struct ether_addr dest_eth_addr[RTE_MAX_ETHPORTS];
 
 static inline void
-copy_buf_to_pkt(void* buf, unsigned len, struct rte_mbuf *pkt, unsigned offset)
+copy_buf_to_pkt(void *buf, unsigned int len, struct rte_mbuf *pkt, unsigned int offset)
 {
 	if (offset + len <= pkt->data_len) {
 		rte_memcpy(rte_pktmbuf_mtod_offset(pkt, char *, offset),
@@ -186,18 +195,18 @@ copy_buf_to_pkt(void* buf, unsigned len, struct rte_mbuf *pkt, unsigned offset)
 }
 
 static void
-setup_port_eth_header(int port_id, struct ether_hdr *eth_hdr)
+build_port_eth_header(int port_id, struct ether_hdr *eth_hdr)
 {
 
 	/* Initialize Ethernet header. */
-	ether_addr_copy(&dest_eth_addr[port_id],&eth_hdr->d_addr);
+	ether_addr_copy(&dest_eth_addr[port_id], &eth_hdr->d_addr);
 	eth_hdr->d_addr.addr_bytes[0] = port_id + 20;
 	ether_addr_copy(&pkt_ports_eth_addr[port_id], &eth_hdr->s_addr);
 	eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 }
 
 static void
-setup_pkt_udp_ip_headers(
+build_pkt_udp_ip_headers(
 		struct ipv4_hdr *ip_hdr,
 		struct udp_hdr *udp_hdr,
 		uint16_t pkt_data_len)
@@ -232,7 +241,7 @@ setup_pkt_udp_ip_headers(
 	/*
 	 * Compute IP header checksum.
 	 */
-	ptr16 = (unaligned_uint16_t*) ip_hdr;
+	ptr16 = (unaligned_uint16_t *) ip_hdr;
 	ip_cksum = 0;
 	ip_cksum += ptr16[0]; ip_cksum += ptr16[1];
 	ip_cksum += ptr16[2]; ip_cksum += ptr16[3];
@@ -258,42 +267,292 @@ tx_only_prepare(void)
 {
 	uint16_t pkt_data_len;
 
-	pkt_data_len = (uint16_t) (tx_pkt_length - (sizeof(struct ether_hdr) +
+	pkt_data_len = (uint16_t) (tx_pkt_len - (sizeof(struct ether_hdr) +
 						    sizeof(struct ipv4_hdr) +
 						    sizeof(struct udp_hdr)));
-	setup_pkt_udp_ip_headers(&pkt_ip_hdr, &pkt_udp_hdr, pkt_data_len);
+	build_pkt_udp_ip_headers(&pkt_ip_hdr, &pkt_udp_hdr, pkt_data_len);
 }
 
-#define HOLD_MAX_BUF 512
 struct buf_bkp {
-	struct rte_mbuf *buf[HOLD_MAX_BUF];
-	uint16_t count;
-	uint16_t toggle;
+	struct rte_mbuf *buf[PKTS_NB_MBUF];
+	uint16_t fill_idx;
+	uint16_t free_count;
+	uint16_t free_idx;
 };
 __thread struct buf_bkp held_mbufs;
 
 static inline void
-__hold_mbuf(struct rte_mbuf *_mbuf)
+__hold_mbuf(struct buf_bkp* bkps, struct rte_mbuf *_mbuf)
 {
-	int i;
+	bkps->buf[bkps->fill_idx++] = _mbuf;
+	// increase the ref count - so that HW does not free it
+	rte_mbuf_refcnt_set(_mbuf, 2);
+	bkps->free_count++;
+	if (bkps->fill_idx == PKTS_NB_MBUF_THREAD)
+		bkps->fill_idx = 0;
+}
 
-	held_mbufs.buf[held_mbufs.count++] = _mbuf;
-	if (held_mbufs.count > g_delayed_free - 1) {
-		held_mbufs.count = 0;
-		held_mbufs.toggle = 1;
-		for (i = 0; i < g_delayed_free / 2; i++) {
-			rte_pktmbuf_free(held_mbufs.buf[i]);
-			held_mbufs.buf[i] = NULL;
-		}
+static inline struct rte_mbuf *__get_mbuf(struct buf_bkp* bkps)
+{
+	struct rte_mbuf *pkt;
+
+	if (!bkps->free_count)
+		return NULL;
+
+	pkt = bkps->buf[bkps->free_idx++];
+	rte_pktmbuf_reset(pkt);
+	bkps->free_count--;
+	if (bkps->free_idx == PKTS_NB_MBUF_THREAD)
+		bkps->free_idx = 0;
+
+}
+
+static inline int
+__get_bulk_mbuf(struct buf_bkp* bkps, struct rte_mbuf **mbufs, unsigned int count)
+{
+	unsigned int i;
+
+	if (bkps->free_count < count) {
+		printf("no free held buffer\n");
+		return -1;
 	}
-	if (held_mbufs.count > ((g_delayed_free / 2) - 1) &&
-			held_mbufs.toggle == 1) {
-		held_mbufs.toggle = 0;
-		for (i = g_delayed_free / 2; i < g_delayed_free; i++) {
-			rte_pktmbuf_free(held_mbufs.buf[i]);
-			held_mbufs.buf[i] = NULL;
-		}
+	for (i = 0; i < count; i++, mbufs++) {
+		*mbufs = bkps->buf[bkps->free_idx++];
+		rte_pktmbuf_reset(*mbufs);
+		bkps->free_count--;
+		if (bkps->free_idx == PKTS_NB_MBUF_THREAD)
+			bkps->free_idx = 0;
 	}
+	return 0;
+}
+
+/*
+ * Transmit a burst of multi-segments packets with local priv buffers
+ */
+static void
+pkt_add_sg_n_forward_priv(struct rte_mbuf *pkts_burst[PKTS_MAX_PKT_BURST],
+			const uint16_t nb_rx_pkts, int port_id)
+{
+	
+	struct rte_mbuf *pkt, *org_pkt;
+	uint16_t nb_pkt, nb_tx;
+#ifdef DPAA_PMD_RECORD_CORE_CYCLES
+	static uint64_t core_cycles[64][2];
+	static int count;
+	int i;
+	uint64_t start_tsc;
+	uint64_t end_tsc;
+	uint64_t *priv;
+	uint64_t addr;
+
+	start_tsc = rte_rdtsc();
+#endif
+
+	for (nb_pkt = 0; nb_pkt < nb_rx_pkts; nb_pkt++) {
+		/* get current forwarded buffer */
+		org_pkt = pkts_burst[nb_pkt];
+
+		/* IMP: get the direct buffer pointer from priv area or the owne buffer */
+		/* get the priv area */
+		priv = (uint64_t *)rte_mbuf_to_priv(org_pkt);
+		addr = *priv;
+		pkt = (struct rte_mbuf *)addr;
+		my_debug("\n %d owner = 0x%lx - 0x%lx buf =0x%lx",
+			nb_pkt, (uint64_t)pkt1, (uint64_t)priv, addr);
+		if (!pkt)
+			rte_exit(EXIT_FAILURE,
+			"Cannot get mbuf embedded in %s\n", __func__);
+		rte_pktmbuf_reset(pkt);
+
+		/*IMP:
+		By default all buffers have RTE_PKTMBUF_HEADROOM (128) bytes.
+		Reserving another 128 byte in headroom.
+		In case of SG, the HW needs 16 bytes per segment for SG table.
+		If the space is not availble, it will allocate a new buffer to
+		make the SG table.
+		e.g 10 segments needs 16*10 = 160 bytes headroom*/
+		rte_pktmbuf_adj(pkt, RTE_PKTMBUF_HEADROOM);
+
+		pkt->data_len = tx_pkt_len/2;
+		pkt->pkt_len = pkt->data_len;
+		copy_buf_to_pkt(&pkt_eth_hdr[port_id],
+				sizeof(struct ether_hdr), pkt, 0);
+		copy_buf_to_pkt(&pkt_ip_hdr, sizeof(pkt_ip_hdr), pkt,
+		       sizeof(struct ether_hdr));
+		copy_buf_to_pkt(&pkt_udp_hdr, sizeof(pkt_udp_hdr), pkt,
+		       sizeof(struct ether_hdr) +
+		       sizeof(struct ipv4_hdr));
+		pkt->ol_flags = 0;
+		pkt->l2_len = sizeof(struct ether_hdr);
+		pkt->l3_len = sizeof(struct ipv4_hdr);
+		/* set the reference count to 2, so that HW don't free it */
+		rte_mbuf_refcnt_set(pkt, 2);
+
+		/* attach the forwarded buffer to the allocated direct buffer */
+		org_pkt->data_len = tx_pkt_len/2;
+		pkt->pkt_len += org_pkt->data_len;
+		pkt->next = org_pkt;
+		org_pkt->next = NULL;
+		/* the owner normal buffer can be free by the hardware */
+		rte_mbuf_refcnt_set(org_pkt, 1);
+
+		pkt->nb_segs = 2;
+
+		nb_tx = rte_eth_tx_burst(port_id, 0, &pkt, 1);
+		if (nb_tx < 1)
+			rte_pktmbuf_free(pkt);
+	}
+
+#ifdef DPAA_PMD_RECORD_CORE_CYCLES
+	end_tsc = rte_rdtsc();
+	core_cycles[count][1] = (end_tsc - start_tsc);
+	count++;
+	if (count == 64) {
+		uint64_t trans_avg = 0;
+		uint64_t trans_max = 0;
+
+		for (i = 0; i < count; i++) {
+			printf("Port-%d, %d-Tx Cycles = %lu\n",
+				port_id, i,
+				core_cycles[i][1]);
+			trans_avg += core_cycles[i][1];
+			if (trans_max < core_cycles[i][1])
+				trans_max = core_cycles[i][1];
+		}
+
+		printf("####Profile Clock @ %lu Hz "
+			" Trans Avg = %lu (Max %lu)\n",
+			rte_get_tsc_hz(),
+			trans_avg/64, trans_max);
+		count = 0;
+	}
+#endif
+}
+
+/*
+ * Transmit a burst of multi-segments packets.
+ */
+static void
+pkt_add_sg_n_forward(struct rte_mbuf *pkts_burst[PKTS_MAX_PKT_BURST],
+			const uint16_t nb_rx_pkts, int port_id)
+{
+	
+	struct rte_mbuf *pkts_directs[PKTS_MAX_PKT_BURST];
+	struct rte_mbuf *pkt, *orig_pkt;
+	uint16_t nb_pkt, nb_tx;
+	int ret = 0;
+#ifdef DPAA_PMD_RECORD_CORE_CYCLES
+	static uint64_t core_cycles[64][2];
+	static int count;
+	int i;
+	uint64_t start_tsc;
+	uint64_t alloc_tsc;
+	uint64_t end_tsc;
+
+	start_tsc = rte_rdtsc();
+#endif
+	if (g_free_mode == 2)
+		ret = __get_bulk_mbuf(&held_mbufs, pkts_directs, nb_rx_pkts);
+	else
+		ret = rte_pktmbuf_alloc_bulk(pkt_pktmbuf_direct_pool, pkts_directs,
+			     nb_rx_pkts);
+	if (ret)
+		rte_exit(EXIT_FAILURE,
+			"Cannot get mbuf segments in %s\n", __func__);
+
+#ifdef DPAA_PMD_RECORD_CORE_CYCLES
+	alloc_tsc = rte_rdtsc();
+#endif
+
+	for (nb_pkt = 0; nb_pkt < nb_rx_pkts; nb_pkt++) {
+		/* the new direct buffer */
+		pkt = pkts_directs[nb_pkt];
+
+		rte_pktmbuf_reset_headroom(pkt);
+
+		/*IMP:
+		By default all buffers have RTE_PKTMBUF_HEADROOM (128) bytes.
+		Reserving another 128 byte in headroom.
+		In case of SG, the HW needs 16 bytes per segment for SG table.
+		If the space is not availble, it will allocate a new buffer to
+		make the SG table.
+		e.g 10 segments needs 16*10 = 160 bytes headroom*/
+		rte_pktmbuf_adj(pkt, RTE_PKTMBUF_HEADROOM);
+
+		pkt->data_len = tx_pkt_len/2;
+		pkt->pkt_len = pkt->data_len;
+		copy_buf_to_pkt(&pkt_eth_hdr[port_id],
+				sizeof(struct ether_hdr), pkt, 0);
+		copy_buf_to_pkt(&pkt_ip_hdr, sizeof(pkt_ip_hdr), pkt,
+		       sizeof(struct ether_hdr));
+		copy_buf_to_pkt(&pkt_udp_hdr, sizeof(pkt_udp_hdr), pkt,
+		       sizeof(struct ether_hdr) +
+		       sizeof(struct ipv4_hdr));
+		pkt->ol_flags = 0;
+		pkt->l2_len = sizeof(struct ether_hdr);
+		pkt->l3_len = sizeof(struct ipv4_hdr);
+		rte_mbuf_refcnt_set(pkt, 1);
+
+		/* attach the forwarded buffer to the allocated direct buffer */
+		orig_pkt = pkts_burst[nb_pkt];
+		rte_pktmbuf_reset_headroom(orig_pkt);
+		orig_pkt->data_len = tx_pkt_len/2;
+		rte_mbuf_refcnt_set(orig_pkt, 1);
+		pkt->pkt_len += orig_pkt->data_len;
+		pkt->next = orig_pkt;
+		orig_pkt->next = NULL;
+		pkt->nb_segs = 2;
+		/* store the sent direct buffer */
+		if (g_free_mode == 2)
+			__hold_mbuf(&held_mbufs, pkt);
+
+	}
+	nb_tx = rte_eth_tx_burst(port_id, 0, pkts_burst, nb_pkt);
+
+	if (unlikely(nb_tx < nb_pkt)) {
+		printf("port %d tx_queue %d - drop "
+			       "(nb_pkt:%u - nb_tx:%u)=%u packets\n",
+			       port_id, 0,
+			       (unsigned int) nb_pkt, (unsigned int) nb_tx,
+			       (unsigned int) (nb_pkt - nb_tx));
+		do {
+			if (g_free_mode != 2)
+				rte_pktmbuf_free(pkts_burst[nb_tx]);
+		} while (++nb_tx < nb_pkt);
+	}
+
+#ifdef DPAA_PMD_RECORD_CORE_CYCLES
+	end_tsc = rte_rdtsc();
+	core_cycles[count][0] = (alloc_tsc - start_tsc);
+	core_cycles[count][1] = (end_tsc - alloc_tsc);
+	count++;
+	if (count == 64) {
+		uint64_t alloc_avg = 0;
+		uint64_t trans_avg = 0;
+		uint64_t alloc_max = 0;
+		uint64_t trans_max = 0;
+
+		for (i = 0; i < count; i++) {
+			printf("Port-%d, %d-Alloc Cycles = %lu, Tx Cycles = %lu\n",
+				port_id, i,
+				core_cycles[i][0],
+				core_cycles[i][1]);
+			alloc_avg += core_cycles[i][0];
+			if (alloc_max < core_cycles[i][0])
+				alloc_max = core_cycles[i][0];
+			trans_avg += core_cycles[i][1];
+			if (trans_max < core_cycles[i][1])
+				trans_max = core_cycles[i][1];
+		}
+
+		printf("####Profile Clock @ %lu Hz Alloc Avg = %lu (Max %lu)"
+			" Trans Avg = %lu (Max %lu)\n",
+			rte_get_tsc_hz(),
+			alloc_avg/64, alloc_max,
+			trans_avg/64, trans_max);
+		count = 0;
+	}
+#endif
 }
 
 /*
@@ -306,7 +565,7 @@ pkt_create_n_send(int port_id)
 
 	struct rte_mbuf *pkt;
 	uint16_t nb_pkt, nb_tx;
-	int ret;
+	int ret = 0;
 #ifdef DPAA_PMD_RECORD_CORE_CYCLES
 	static uint64_t core_cycles[64][2];
 	static int count;
@@ -317,9 +576,11 @@ pkt_create_n_send(int port_id)
 
 	start_tsc = rte_rdtsc();
 #endif
-	ret = rte_pktmbuf_alloc_bulk(pkt_pktmbuf_pool, pkts_burst,
+	if (g_free_mode == 2)
+		ret = __get_bulk_mbuf(&held_mbufs, pkts_burst, PKTS_MAX_PKT_BURST);
+	else
+		ret = rte_pktmbuf_alloc_bulk(pkt_pktmbuf_pool, pkts_burst,
 			     PKTS_MAX_PKT_BURST);
-	
 	if (ret)
 		rte_exit(EXIT_FAILURE,
 			"Cannot get mbuf element in %s\n", __func__);
@@ -330,15 +591,18 @@ pkt_create_n_send(int port_id)
 
 	for (nb_pkt = 0; nb_pkt < PKTS_MAX_PKT_BURST; nb_pkt++) {
 		pkt = pkts_burst[nb_pkt];
-		/*
-		 * Using raw alloc is good to improve performance,
-		 * but some consumers may use the headroom and so
-		 * decrement data_off. We need to make sure it is
-		 * reset to default value.
-		 */
 		rte_pktmbuf_reset_headroom(pkt);
-		pkt->data_len = tx_pkt_length;
-		pkt->pkt_len = pkt->data_len;
+		/*IMP:
+		By default all buffers have RTE_PKTMBUF_HEADROOM (128) bytes.
+		Reserving another 128 byte in headroom.
+		In case of SG, the HW needs 16 bytes per segment for SG table.
+		If the space is not availble, it will allocate a new buffer to
+		make the SG table.
+		e.g 10 segments needs 16*10 = 160 bytes headroom*/
+		rte_pktmbuf_adj(pkt, RTE_PKTMBUF_HEADROOM);
+
+		pkt->data_len = tx_pkt_len;
+
 		copy_buf_to_pkt(&pkt_eth_hdr[port_id],
 				sizeof(struct ether_hdr), pkt, 0);
 		copy_buf_to_pkt(&pkt_ip_hdr, sizeof(pkt_ip_hdr), pkt,
@@ -346,6 +610,9 @@ pkt_create_n_send(int port_id)
 		copy_buf_to_pkt(&pkt_udp_hdr, sizeof(pkt_udp_hdr), pkt,
 		       sizeof(struct ether_hdr) +
 		       sizeof(struct ipv4_hdr));
+		pkt->ol_flags = 0;
+		pkt->l2_len = sizeof(struct ether_hdr);
+		pkt->l3_len = sizeof(struct ipv4_hdr);
 
 		/*
 		 * Complete first mbuf of packet and append it to the
@@ -353,11 +620,8 @@ pkt_create_n_send(int port_id)
 		 */
 		pkt->nb_segs = 0;
 		pkt->pkt_len = pkt->data_len;
-		pkt->ol_flags = 0;
-		pkt->l2_len = sizeof(struct ether_hdr);
-		pkt->l3_len = sizeof(struct ipv4_hdr);
-		if (g_delayed_free)
-			__hold_mbuf(pkt);
+		if (g_free_mode == 2)
+			__hold_mbuf(&held_mbufs, pkt);
 	}
 	nb_tx = rte_eth_tx_burst(port_id, 0, pkts_burst, nb_pkt);
 
@@ -365,26 +629,27 @@ pkt_create_n_send(int port_id)
 		printf("port %d tx_queue %d - drop "
 			       "(nb_pkt:%u - nb_tx:%u)=%u packets\n",
 			       port_id, 0,
-			       (unsigned) nb_pkt, (unsigned) nb_tx,
-			       (unsigned) (nb_pkt - nb_tx));
+			       (unsigned int) nb_pkt, (unsigned int) nb_tx,
+			       (unsigned int) (nb_pkt - nb_tx));
 		do {
-			rte_pktmbuf_free(pkts_burst[nb_tx]);
+			if (g_free_mode != 2)
+				rte_pktmbuf_free(pkts_burst[nb_tx]);
 		} while (++nb_tx < nb_pkt);
 	}
 
 #ifdef DPAA_PMD_RECORD_CORE_CYCLES
 	end_tsc = rte_rdtsc();
 	core_cycles[count][0] = (alloc_tsc - start_tsc);
-	core_cycles[count][1] = (end_tsc - alloc_tsc);	
+	core_cycles[count][1] = (end_tsc - alloc_tsc);
 	count++;
 	if (count == 64) {
 		uint64_t alloc_avg = 0;
-		uint64_t trans_avg = 0;	
+		uint64_t trans_avg = 0;
 		uint64_t alloc_max = 0;
-		uint64_t trans_max = 0;	
+		uint64_t trans_max = 0;
 
 		for (i = 0; i < count; i++) {
-			printf ("Port-%d, %d-Alloc Cycles = %lu, Tx Cycles = %lu\n",
+			printf("Port-%d, %d-Alloc Cycles = %lu, Tx Cycles = %lu\n",
 				port_id, i,
 				core_cycles[i][0],
 				core_cycles[i][1]);
@@ -410,10 +675,12 @@ pkt_create_n_send(int port_id)
 static void
 pkt_main_loop(void)
 {
+	struct rte_mbuf *pkts_burst[PKTS_MAX_PKT_BURST];
+	struct rte_mbuf *m;
 	int sent;
 	unsigned int lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
-	unsigned int i, portid;
+	unsigned int i, portid, nb_rx, total_nb_rx = 0, idle_iter = 0;
 	struct lcore_queue_conf *qconf;
 	const uint64_t drain_tsc =
 			(rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
@@ -431,6 +698,14 @@ pkt_main_loop(void)
 		return;
 	}
 
+	/* populate the hold buffers to that we have buffer ready */
+	if (g_free_mode == 2) {
+		for (i = 0; i < PKTS_NB_MBUF_THREAD; i++) {
+			m = rte_pktmbuf_alloc(pkt_pktmbuf_direct_pool);
+			__hold_mbuf(&held_mbufs, m);
+		}
+	}
+
 	RTE_LOG(INFO, PKT, "entering main loop on lcore %u\n", lcore_id);
 
 	for (i = 0; i < qconf->n_rx_port; i++) {
@@ -442,6 +717,7 @@ pkt_main_loop(void)
 	while (!force_quit) {
 
 		cur_tsc = rte_rdtsc();
+		total_nb_rx = 0;
 
 		/*
 		 * TX burst queue drain
@@ -481,13 +757,44 @@ pkt_main_loop(void)
 
 			prev_tsc = cur_tsc;
 		}
-
 		/*
 		 * Read packet from RX queues
 		 */
 		for (i = 0; i < qconf->n_rx_port; i++) {
+
 			portid = qconf->rx_port_list[i];
-			pkt_create_n_send(portid);
+
+			if (!g_scatter) {
+				pkt_create_n_send(portid);
+				continue;
+			}
+			nb_rx = rte_eth_rx_burst(portid, 0,
+						 pkts_burst, max_burst_size);
+
+			port_statistics[portid].rx += nb_rx;
+
+			if (!nb_rx)
+				continue;
+
+			if (g_free_mode == 1)
+				pkt_add_sg_n_forward_priv(pkts_burst, nb_rx, portid);
+			else
+				pkt_add_sg_n_forward(pkts_burst, nb_rx, portid);
+			total_nb_rx += nb_rx;
+			if (total_nb_rx)
+				idle_iter = 0;
+		}
+
+		/* Yield the CPU for a few microseconds, allowing Core 0
+		 * some breathing space.
+		 */
+#define DPAAX_IDLE_LOOPS 100
+#define DPAAX_IDLE_TIMEOUT 3
+		if (lcore_id == 0 && total_nb_rx == 0) {
+			if (idle_iter > DPAAX_IDLE_LOOPS)
+				usleep(DPAAX_IDLE_TIMEOUT);
+			else
+				idle_iter++;
 		}
 	}
 }
@@ -508,8 +815,9 @@ pkt_usage(const char *prgname)
 	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
 	       "  -T PERIOD: statistics will be refreshed each PERIOD seconds (0 to disable, 10 default, 86400 maximum)\n"
 	       "  -b NUM: burst size for receive packet (default is 32)\n"
-	       "  -S NUM: Cache Size (default is 512)\n"
-	       "  -D NUM: delayed mbuf free. Size shall be less than Cache Size\n",
+	       "  -C NUM: Cache Size (default is 512)\n"
+	       "  -S NUM: Scatter Gather support (default is enabled)\n"
+	       "  -F NUM: free mode 0 default, 1 for Private area, 2 for delayed free \n",
 	       prgname);
 }
 
@@ -569,8 +877,9 @@ static const char short_options[] =
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
 	"b:"  /* burst size */
-	"D:"  /* Delayed free size by app */
-	"S:"  /* Cache Size */
+	"F:"  /* Free mode 0 default, 1 for Private area, 2 for delayed free */
+	"C:"  /* Cache Size */
+	"S:"  /* Scatter Enabled */
 	;
 
 
@@ -590,7 +899,7 @@ static const struct option lgopts[] = {
 static int
 pkt_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs, burst_size, cache_size, hold_size;
+	int opt, ret, timer_secs, burst_size, cache_size, free_mode, scat;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -643,24 +952,24 @@ pkt_parse_args(int argc, char **argv)
 			max_burst_size = burst_size;
 			break;
 		/*mempool_cache_size */
-		case 'S':
+		case 'C':
 			cache_size = (unsigned int)atoi(optarg);
 			if (cache_size < 0 || cache_size > (PKTS_NB_MBUF/2)) {
 				printf("invalid burst size\n");
 				pkt_usage(prgname);
 				return -1;
 			}
-			g_cache_size= cache_size;
+			g_cache_size = cache_size;
 			break;
-		/*Delayed TX Free */
-		case 'D':
-			hold_size = (unsigned int)atoi(optarg);
-			if (hold_size < 0 || hold_size > g_cache_size) {
-				printf("invalid hold size\n");
-				pkt_usage(prgname);
-				return -1;
-			}
-			g_delayed_free = hold_size;
+		/*TX Free mode*/
+		case 'F':
+			free_mode = (unsigned int)atoi(optarg);
+			g_free_mode = free_mode;
+			break;
+		/*Scatter support */
+		case 'S':
+			scat = (unsigned int)atoi(optarg);
+			g_scatter = scat;
 			break;
 
 		/* long options */
@@ -741,6 +1050,30 @@ check_all_ports_link_status(uint32_t port_mask)
 }
 
 static void
+mempool_obj_init_alloc(struct rte_mempool *mp __rte_unused,
+		 void *opaque_arg,
+		 void *obj,
+		 __attribute__((unused)) unsigned int i)
+{
+	struct rte_mempool *pkt_pool = (struct rte_mempool *)opaque_arg;
+	struct rte_mbuf *m = (struct rte_mbuf *) obj;
+	struct rte_mbuf *pkt;
+	uint64_t *priv;
+
+	/* allocating one buffer from pkt_pool */
+	pkt = rte_pktmbuf_alloc(pkt_pool);
+
+	/* get the priv area */
+	priv = rte_mbuf_to_priv(m);
+
+	/* set the buffer pointer to priv area */
+	*priv = (uint64_t)pkt;
+
+	my_debug("\n %d -owner 0x%lx  priv 0x%lx buf =0x%lx/pkt =0x%lx",
+		i, (uint64_t)m, (uint64_t)priv, *priv,  (uint64_t)pkt);
+}
+
+static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
@@ -758,8 +1091,8 @@ main(int argc, char **argv)
 	uint16_t nb_ports;
 	uint16_t nb_ports_available = 0;
 	uint16_t portid, last_port;
-	unsigned lcore_id, rx_lcore_id;
-	unsigned nb_ports_in_mask = 0;
+	unsigned int lcore_id, rx_lcore_id;
+	unsigned int nb_ports_in_mask = 0;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -782,11 +1115,27 @@ main(int argc, char **argv)
 
 	/* create the mbuf pool */
 	pkt_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", PKTS_NB_MBUF,
-		g_cache_size, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+		g_cache_size, g_priv_size, RTE_MBUF_DEFAULT_BUF_SIZE,
 		rte_socket_id());
 	if (pkt_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
+	/* create the mbuf segment pool */
+	/* Imp -it is better to allocate some extra buffers in this pool
+	   so that if driver need to allocate SGT buffer, it can use
+	   those additional buffers */
+	pkt_pktmbuf_direct_pool = rte_pktmbuf_pool_create("mbuf_direct_pool",
+		PKTS_NB_MBUF + PKTS_NB_MBUF/2,
+		g_cache_size, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+		rte_socket_id());
+	if (pkt_pktmbuf_direct_pool == NULL)
+		rte_exit(EXIT_FAILURE, "Cannot init mbuf segment pool\n");
+
+	if (g_free_mode == 1) {
+		/* assign buffer to original pkt buffer private area */
+		rte_mempool_obj_iter(pkt_pktmbuf_pool, mempool_obj_init_alloc,
+			(void *)pkt_pktmbuf_direct_pool);
+	}
 
 	nb_ports = rte_eth_dev_count_avail();
 	if (nb_ports == 0)
@@ -888,7 +1237,7 @@ main(int argc, char **argv)
 
 		rte_eth_macaddr_get(portid, &pkt_ports_eth_addr[portid]);
 
-		setup_port_eth_header(portid,&pkt_eth_hdr[portid]);
+		build_port_eth_header(portid, &pkt_eth_hdr[portid]);
 
 		/* init one RX queue */
 		fflush(stdout);
@@ -952,10 +1301,6 @@ main(int argc, char **argv)
 
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
-
-		/* set delayed free for each port */
-		if (g_delayed_free)
-			rte_pmd_dpaax_set_delayed_txfree(portid, 1);
 	}
 
 	if (!nb_ports_available) {
