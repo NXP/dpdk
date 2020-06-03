@@ -342,7 +342,7 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		while (sg_count--) {
 			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + rte_pktmbuf_mtod(mbuf, char *) - huge_start_addr;
 			sg->LowAddrBase = l1_pcie_addr;
-			sg->DataLen = mbuf->data_len;
+			sg->DataLen = mbuf->pkt_len;
 			sg->Cfg = 0;
 			mbuf = mbuf->next;
 			sg++;
@@ -384,7 +384,7 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 	for (; i < ldpc_enc->tb_params.c; i++)
 		e[i] = ldpc_enc->tb_params.eb;
 
-	memset(codeblock_mask, 0xFF, (8 * sizeof(int16_t)));
+	memset(codeblock_mask, 0xFF, (8 * sizeof(uint32_t)));
 
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
 			e, ldpc_enc->rv_index, A, ldpc_enc->q, ldpc_enc->n_id,
@@ -697,7 +697,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 					   huge_start_addr);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_enc->output.length);
-			rte_pktmbuf_append(out_mbuf, ldpc_enc->output.length);
+			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
+					ldpc_enc->output.length);
 		} else {
 			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
 			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
@@ -720,7 +721,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
-			rte_pktmbuf_append(out_mbuf,
+			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
 					   ldpc_dec->hard_output.length);
 		}
 	}
