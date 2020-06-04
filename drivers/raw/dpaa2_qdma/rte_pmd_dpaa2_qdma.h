@@ -17,6 +17,8 @@
 /** Maximum qdma burst size */
 #define RTE_QDMA_BURST_NB_MAX 256
 
+#define RTE_QDMA_SG_ENTRY_NB_MAX 64
+
 /** Determines the mode of operation */
 enum {
 	/**

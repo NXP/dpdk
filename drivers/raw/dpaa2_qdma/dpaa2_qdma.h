@@ -11,7 +11,7 @@ struct rte_qdma_job;
 #define DPAA2_QDMA_MAX_FLE 3
 #define DPAA2_QDMA_MAX_SDD 2
 
-#define DPAA2_QDMA_MAX_SG_NB 64
+#define DPAA2_QDMA_MAX_SG_NB RTE_QDMA_SG_ENTRY_NB_MAX
 
 #define DPAA2_DPDMAI_MAX_QUEUES	8
 
