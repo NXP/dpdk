@@ -81,20 +81,11 @@ pipeline_queue_worker_single_stage_burst_tx(void *arg)
 
 		for (i = 0; i < nb_rx; i++) {
 			rte_prefetch0(ev[i + 1].mbuf);
-			if (ev[i].sched_type == RTE_SCHED_TYPE_ATOMIC) {
 				pipeline_event_tx(dev, port, &ev[i]);
 				ev[i].op = RTE_EVENT_OP_RELEASE;
 				w->processed_pkts++;
-			} else {
-				ev[i].queue_id++;
-				pipeline_fwd_event(&ev[i],
-						RTE_SCHED_TYPE_ATOMIC);
 			}
 		}
-
-		pipeline_event_enqueue_burst(dev, port, ev, nb_rx);
-	}
-
 	return 0;
 }
 
