@@ -1610,11 +1610,11 @@ calc_ldpc_enc_TB_size(struct rte_bbdev_enc_op *op)
 	uint32_t c, r, tb_size = 0;
 	uint16_t sys_cols = (op->ldpc_enc.basegraph == 1) ? 22 : 10;
 
-	if (op->turbo_enc.code_block_mode) {
+	if (op->ldpc_enc.code_block_mode) {
 		tb_size = sys_cols * op->ldpc_enc.z_c - op->ldpc_enc.n_filler;
 	} else {
-		c = op->turbo_enc.tb_params.c;
-		r = op->turbo_enc.tb_params.r;
+		c = op->ldpc_enc.tb_params.c;
+		r = op->ldpc_enc.tb_params.r;
 		for (i = 0; i < c-r; i++)
 			tb_size += sys_cols * op->ldpc_enc.z_c
 					- op->ldpc_enc.n_filler;
