@@ -9,30 +9,29 @@
 
 /* DPDMUX Version */
 #define DPDMUX_VER_MAJOR		6
-#define DPDMUX_VER_MINOR		3
+#define DPDMUX_VER_MINOR		6
 
 #define DPDMUX_CMD_BASE_VERSION		1
 #define DPDMUX_CMD_VERSION_2		2
 #define DPDMUX_CMD_ID_OFFSET		4
 
-#define DPDMUX_CMD(id)	(((id) << DPDMUX_CMD_ID_OFFSET) |\
+#define DPDMUX_CMD(id)	((id << DPDMUX_CMD_ID_OFFSET) |\
 				DPDMUX_CMD_BASE_VERSION)
-#define DPDMUX_CMD_V2(id) (((id) << DPDMUX_CMD_ID_OFFSET) | \
+#define DPDMUX_CMD_V2(id)	(((id) << DPDMUX_CMD_ID_OFFSET) |\
 				DPDMUX_CMD_VERSION_2)
 
 /* Command IDs */
 #define DPDMUX_CMDID_CLOSE			DPDMUX_CMD(0x800)
 #define DPDMUX_CMDID_OPEN			DPDMUX_CMD(0x806)
-#define DPDMUX_CMDID_CREATE			DPDMUX_CMD(0x906)
+#define DPDMUX_CMDID_CREATE			DPDMUX_CMD_V2(0x906)
 #define DPDMUX_CMDID_DESTROY			DPDMUX_CMD(0x986)
 #define DPDMUX_CMDID_GET_API_VERSION		DPDMUX_CMD(0xa06)
 
 #define DPDMUX_CMDID_ENABLE			DPDMUX_CMD(0x002)
 #define DPDMUX_CMDID_DISABLE			DPDMUX_CMD(0x003)
-#define DPDMUX_CMDID_GET_ATTR			DPDMUX_CMD(0x004)
+#define DPDMUX_CMDID_GET_ATTR			DPDMUX_CMD_V2(0x004)
 #define DPDMUX_CMDID_RESET			DPDMUX_CMD(0x005)
 #define DPDMUX_CMDID_IS_ENABLED			DPDMUX_CMD(0x006)
-
 #define DPDMUX_CMDID_SET_MAX_FRAME_LENGTH	DPDMUX_CMD(0x0a1)
 
 #define DPDMUX_CMDID_UL_RESET_COUNTERS		DPDMUX_CMD(0x0a3)
@@ -49,11 +48,14 @@
 #define DPDMUX_CMDID_IF_GET_LINK_STATE		DPDMUX_CMD_V2(0x0b4)
 
 #define DPDMUX_CMDID_SET_CUSTOM_KEY		DPDMUX_CMD(0x0b5)
-#define DPDMUX_CMDID_ADD_CUSTOM_CLS_ENTRY	DPDMUX_CMD(0x0b6)
+#define DPDMUX_CMDID_ADD_CUSTOM_CLS_ENTRY	DPDMUX_CMD_V2(0x0b6)
 #define DPDMUX_CMDID_REMOVE_CUSTOM_CLS_ENTRY	DPDMUX_CMD(0x0b7)
 
 #define DPDMUX_CMDID_IF_SET_DEFAULT		DPDMUX_CMD(0x0b8)
 #define DPDMUX_CMDID_IF_GET_DEFAULT		DPDMUX_CMD(0x0b9)
+
+#define DPDMUX_CMDID_SET_RESETABLE		DPDMUX_CMD(0x0ba)
+#define DPDMUX_CMDID_GET_RESETABLE		DPDMUX_CMD(0x0bb)
 
 #define DPDMUX_MASK(field)        \
 	GENMASK(DPDMUX_##field##_SHIFT + DPDMUX_##field##_SIZE - 1, \
@@ -72,7 +74,8 @@ struct dpdmux_cmd_create {
 	uint8_t method;
 	uint8_t manip;
 	uint16_t num_ifs;
-	uint32_t pad;
+	uint16_t default_if;
+	uint16_t pad;
 
 	uint16_t adv_max_dmat_entries;
 	uint16_t adv_max_mc_groups;
@@ -100,7 +103,7 @@ struct dpdmux_rsp_get_attr {
 	uint8_t manip;
 	uint16_t num_ifs;
 	uint16_t mem_size;
-	uint16_t pad;
+	uint16_t default_if;
 
 	uint64_t pad1;
 
@@ -204,7 +207,7 @@ struct dpdmux_set_custom_key {
 struct dpdmux_cmd_add_custom_cls_entry {
 	uint8_t pad[3];
 	uint8_t key_size;
-	uint16_t pad1;
+	uint16_t entry_index;
 	uint16_t dest_if;
 	uint64_t key_iova;
 	uint64_t mask_iova;
@@ -216,6 +219,17 @@ struct dpdmux_cmd_remove_custom_cls_entry {
 	uint32_t pad1;
 	uint64_t key_iova;
 	uint64_t mask_iova;
+};
+
+#define DPDMUX_SKIP_RESET_FLAGS_SHIFT    0
+#define DPDMUX_SKIP_RESET_FLAGS_SIZE     3
+
+struct dpdmux_cmd_set_skip_reset_flags {
+	uint8_t skip_reset_flags;
+};
+
+struct dpdmux_rsp_get_skip_reset_flags {
+	uint8_t skip_reset_flags;
 };
 #pragma pack(pop)
 #endif /* _FSL_DPDMUX_CMD_H */
