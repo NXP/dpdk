@@ -79,6 +79,8 @@ enum dpdmux_method {
  * @method: Defines the operation method for the DPDMUX address table
  * @manip: Required manipulation operation
  * @num_ifs: Number of interfaces (excluding the uplink interface)
+ * @default_if: Default interface number (different from uplink,
+	maximum value num_ifs)
  * @adv: Advanced parameters; default is all zeros;
  *	use this structure to change default settings
  * @adv.options: DPDMUX options - combination of 'DPDMUX_OPT_<X>' flags.
@@ -94,6 +96,7 @@ struct dpdmux_cfg {
 	enum dpdmux_method method;
 	enum dpdmux_manip manip;
 	uint16_t num_ifs;
+	uint16_t default_if;
 	struct {
 		uint64_t options;
 		uint16_t max_dmat_entries;
@@ -131,6 +134,29 @@ int dpdmux_reset(struct fsl_mc_io *mc_io,
 		 uint16_t token);
 
 /**
+ *Setting 1 DPDMUX_RESET will not reset default interface
+ */
+#define DPDMUX_SKIP_DEFAULT_INTERFACE	0x01
+/**
+ *Setting 1 DPDMUX_RESET will not reset unicast rules
+ */
+#define DPDMUX_SKIP_UNICAST_RULES	0x02
+/**
+ *Setting 1 DPDMUX_RESET will not reset multicast rules
+ */
+#define DPDMUX_SKIP_MULTICAST_RULES	0x04
+
+int dpdmux_set_resetable(struct fsl_mc_io *mc_io,
+				  uint32_t cmd_flags,
+				  uint16_t token,
+				  uint8_t skip_reset_flags);
+
+int dpdmux_get_resetable(struct fsl_mc_io *mc_io,
+				  uint32_t cmd_flags,
+				  uint16_t token,
+				  uint8_t *skip_reset_flags);
+
+/**
  * struct dpdmux_attr - Structure representing DPDMUX attributes
  * @id: DPDMUX object ID
  * @options: Configuration options (bitmap)
@@ -138,6 +164,8 @@ int dpdmux_reset(struct fsl_mc_io *mc_io,
  * @manip: DPDMUX manipulation type
  * @num_ifs: Number of interfaces (excluding the uplink interface)
  * @mem_size: DPDMUX frame storage memory size
+ * @default_if: Default interface number (different from uplink,
+	maximum value num_ifs)
  */
 struct dpdmux_attr {
 	int id;
@@ -146,6 +174,7 @@ struct dpdmux_attr {
 	enum dpdmux_manip manip;
 	uint16_t num_ifs;
 	uint16_t mem_size;
+	uint16_t default_if;
 };
 
 int dpdmux_get_attributes(struct fsl_mc_io *mc_io,
@@ -367,15 +396,23 @@ int dpdmux_set_custom_key(struct fsl_mc_io *mc_io,
  * struct dpdmux_rule_cfg - Custom classification rule.
  *
  * @key_iova: DMA address of buffer storing the look-up value
- * @mask_iova: DMA address of the mask used for TCAM classification
+ * @mask_iova: DMA address of the mask used for TCAM classification. This
+ *  parameter is used only if dpdmux was created using option
+ *  DPDMUX_OPT_CLS_MASK_SUPPORT.
  * @key_size: size, in bytes, of the look-up value. This must match the size
  *	of the look-up key defined using dpdmux_set_custom_key, otherwise the
  *	entry will never be hit
+ * @entry_index: rule index into the table. This parameter is used only when
+ *  dpdmux object was created using option DPDMUX_OPT_CLS_MASK_SUPPORT. In
+ *  this case the rule is masking and the current frame may be a hit for
+ *  multiple rules. This parameter determines the order in wich the rules
+ *  will be checked (smaller entry_index first).
  */
 struct dpdmux_rule_cfg {
 	uint64_t key_iova;
 	uint64_t mask_iova;
 	uint8_t key_size;
+	uint16_t entry_index;
 };
 
 /**
