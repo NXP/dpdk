@@ -496,10 +496,10 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 
 	/* Set the codeblock mask */
 	for (i = 0; i < ldpc_dec->tb_params.c; i++) {
-		uint8_t byte, bit;
+		uint32_t byte, bit;
 		/* Set the bit in codeblock */
-		byte = i / 8;
-		bit = i % 8;
+		byte = i / 32;
+		bit = i % 32;
 		codeblock_mask[byte] |= (1 << bit);
 	}
 
@@ -632,6 +632,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	uint32_t total_out_bits;
+	uint16_t sys_cols;
 
 	RTE_SET_USED(op_type);
 
@@ -704,19 +705,17 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
 						&bbdev_dec_op->ldpc_dec;
 
-			/* Calculate A */
-			/* TODO - update param convert API to take bbdev op as
-			 * input so that we do not need to calculate A.
-			 * Currently only basegraph = 1 is supported.
-			 */
-			if (ldpc_dec->tb_params.c == 1)
-				total_out_bits = ((10 * ldpc_dec->z_c) -
+			sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
+			if (ldpc_dec->tb_params.c == 1) {
+				total_out_bits = ((sys_cols * ldpc_dec->z_c) -
 						ldpc_dec->n_filler) - 16;
-			else
-				total_out_bits = ((10 * ldpc_dec->z_c) -
-						ldpc_dec->n_filler) -
-						((ldpc_dec->tb_params.c+1) * 24);
-			ldpc_dec->hard_output.length = total_out_bits/8;
+				ldpc_dec->hard_output.length = (total_out_bits / 8);
+			} else {
+				total_out_bits = (((sys_cols * ldpc_dec->z_c) -
+						ldpc_dec->n_filler - 24) *
+						ldpc_dec->tb_params.c);
+				ldpc_dec->hard_output.length = (total_out_bits / 8) - 3;
+			}
 
 			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
 			bbdev_ipc_op->out_len =
