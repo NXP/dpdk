@@ -7,6 +7,8 @@
 
 #define BBDEV_IPC_ENC_OP_TYPE	1
 #define BBDEV_IPC_DEC_OP_TYPE	2
+#define BBDEV_IPC_CE_OP_TYPE	3
+#define BBDEV_IPC_CD_OP_TYPE	4
 
 /* private data structure */
 struct bbdev_la12xx_private {

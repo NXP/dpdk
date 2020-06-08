@@ -5,6 +5,7 @@
 #ifndef TEST_BBDEV_VECTOR_H_
 #define TEST_BBDEV_VECTOR_H_
 
+#include <rte_pmd_bbdev_la12xx.h>
 #include <rte_bbdev_op.h>
 
 /* Flags which are set when specific parameter is define in vector file */
@@ -71,6 +72,7 @@ struct test_bbdev_vector {
 		struct rte_bbdev_op_turbo_enc turbo_enc;
 		struct rte_bbdev_op_ldpc_dec ldpc_dec;
 		struct rte_bbdev_op_ldpc_enc ldpc_enc;
+		struct rte_pmd_la12xx_op polar_op;
 	};
 	/* Additional storage for op data entries */
 	struct op_data_entries entries[DATA_NUM_TYPES];

@@ -10,7 +10,13 @@
 #include <geul_feca.h>
 
 /** Structure specifying a single operation for la12xx */
-struct rte_la122x_bbdev_op {
+struct rte_pmd_la12xx_op {
+	/** Status of operation that was performed */
+	int status;
+	/** Mempool which op instance is in */
+	struct rte_mempool *mempool;
+	/** Opaque pointer for user data */
+	void *opaque_data;
 	/** Parameters for FECA job */
 	feca_job_t feca_obj;
 	/** The input buffer */
@@ -18,6 +24,41 @@ struct rte_la122x_bbdev_op {
 	/** The output buffer */
 	struct rte_bbdev_op_data output;
 };
+
+#define RTE_PMD_LA12xx_SET_POLAR_DEC(p) \
+	(p)->feca_obj.job_type =  rte_cpu_to_be_32(FECA_CD_CHAIN);
+#define RTE_PMD_LA12xx_pd_n(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pd_n
+#define	RTE_PMD_LA12xx_rm_mode(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.rm_mode
+#define RTE_PMD_LA12xx_pc_en(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pc_en
+#define RTE_PMD_LA12xx_crc_type(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.crc_type
+#define RTE_PMD_LA12xx_input_deint_bypass(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.input_deint_bypass
+#define RTE_PMD_LA12xx_output_deint_bypass(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.output_deint_bypass
+#define RTE_PMD_LA12xx_K(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
+#define RTE_PMD_LA12xx_E(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.E
+#define RTE_PMD_LA12xx_crc_rnti(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.crc_rnti
+#define RTE_PMD_LA12xx_pc_index0(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index0
+#define RTE_PMD_LA12xx_pc_index1(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index1
+#define RTE_PMD_LA12xx_pc_index2(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index2
+#define RTE_PMD_LA12xx_CD_FZ_LUT(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_fz_lut
+	
+#define RTE_PMD_LA12xx_POLAR_OP_DESC(p) \
+	(p)->feca_obj
+void
+rte_pmd_la12xx_op_init(struct rte_mempool *mempool, __rte_unused void *arg, void *element,
+		__rte_unused unsigned int n);
 
 /**
  * Enqueue a burst of operations for encode or decode to a queue of the device.
@@ -42,7 +83,7 @@ struct rte_la122x_bbdev_op {
  */
 uint16_t
 rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
-		struct rte_la122x_bbdev_op **ops, uint16_t num_ops);
+		struct rte_pmd_la12xx_op **ops, uint16_t num_ops);
 
 /**
  * Dequeue a burst of processed encode/decode operations from a queue of
@@ -68,6 +109,6 @@ rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
  */
 uint16_t
 rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
-		struct rte_la122x_bbdev_op **ops, uint16_t num_ops);
+		struct rte_pmd_la12xx_op **ops, uint16_t num_ops);
 
 #endif

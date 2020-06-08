@@ -70,6 +70,9 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 		}
 	},
+	{
+		.type   = RTE_BBDEV_OP_POLAR_DEC,
+	},
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
 
@@ -670,11 +673,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			bbdev_op)->ldpc_enc.input.data;
 		out_mbuf = ((struct rte_bbdev_enc_op *)
 			bbdev_op)->ldpc_enc.output.data;
-	} else {
+	} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
 		in_mbuf = ((struct rte_bbdev_dec_op *)
 			bbdev_op)->ldpc_dec.input.data;
 		out_mbuf = ((struct rte_bbdev_dec_op *)
 			bbdev_op)->ldpc_dec.hard_output.data;
+	} else {
+		in_mbuf = ((struct rte_pmd_la12xx_op *)bbdev_op)->input.data;
+		out_mbuf = ((struct rte_pmd_la12xx_op *)bbdev_op)->output.data;
 	}
 
 	if (in_mbuf) {
@@ -701,7 +707,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 				rte_cpu_to_be_32(ldpc_enc->output.length);
 			rte_bbuf_append(out_mbuf,
 					ldpc_enc->output.length);
-		} else {
+		} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
 			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
 			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
 						&bbdev_dec_op->ldpc_dec;
@@ -723,6 +729,32 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
 			rte_bbuf_append(out_mbuf,
 					   ldpc_dec->hard_output.length);
+		} else {
+			struct rte_pmd_la12xx_op *rte_pmd_op = (struct rte_pmd_la12xx_op *)bbdev_op;
+			cd_command_t *l_cd_cmd = &rte_pmd_op->feca_obj.command_chain_t.cd_command_ch_obj;
+			cd_command_t *cd_cmd = &bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
+			unsigned int i;	
+
+			rte_pmd_op->output.length = l_cd_cmd->cd_cfg1.K/8;
+			bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
+			bbdev_ipc_op->feca_job.job_type = rte_pmd_op->feca_obj.job_type; 
+			l_cd_cmd->cd_cfg1.complete_trig_en = 1;
+			/* Set complete trigger */
+			cd_cmd->cd_cfg1.raw_cd_cfg1 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
+			cd_cmd->cd_cfg2.raw_cd_cfg2 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+			cd_cmd->cd_pe_indices.raw_cd_pe_indices = rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
+			cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(bbdev_ipc_op->out_addr);
+			cd_cmd->cd_axi_data_addr_high = 0;
+
+			for (i = 0; i< 32; i++)
+				cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
+
+			/* memcpy(&cd_cmd->cd_fz_lut[0], &l_cd_cmd->cd_fz_lut[0], 4 * 32); */
+			 
+			bbdev_ipc_op->out_len = 
+				rte_cpu_to_be_32(rte_pmd_op->output.length);
+			rte_bbuf_append(out_mbuf,
+					   rte_pmd_op->output.length);
 		}
 	}
 
@@ -921,24 +953,72 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 
 uint16_t
 rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
-		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+		struct rte_pmd_la12xx_op **ops, uint16_t num_ops)
 {
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	int nb_enqueued, ret;
+
+	for (nb_enqueued = 0; nb_enqueued < num_ops; nb_enqueued++) {
+		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
+					BBDEV_IPC_CD_OP_TYPE);
+		if (ret)
+			break;
+	}
+
+	q_data->queue_stats.enqueue_err_count += num_ops - nb_enqueued;
+	q_data->queue_stats.enqueued_count += nb_enqueued;
+	
 	RTE_SET_USED(dev_id);
 	RTE_SET_USED(queue_id);
 	RTE_SET_USED(ops);
 	RTE_SET_USED(num_ops);
-	return 0;
+
+	return nb_enqueued;
 }
 
 uint16_t
 rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
-		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+		struct rte_pmd_la12xx_op **ops, uint16_t num_ops)
 {
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
+	int nb_dequeued, ret;
+
+	for (nb_dequeued = 0; nb_dequeued < num_ops; nb_dequeued++) {
+		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (ret)
+			break;
+		ops[nb_dequeued] = (struct rte_pmd_la12xx_op *)(((uint64_t)
+			bbdev_ipc_op.l2_cntx_h << 32) |
+			bbdev_ipc_op.l2_cntx_l);
+		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+	}
+
+	if (ret != IPC_CH_EMPTY)
+		q_data->queue_stats.dequeue_err_count += num_ops - nb_dequeued;
+	q_data->queue_stats.dequeued_count += nb_dequeued;
+	
 	RTE_SET_USED(dev_id);
 	RTE_SET_USED(queue_id);
 	RTE_SET_USED(ops);
 	RTE_SET_USED(num_ops);
-	return 0;
+
+	return nb_dequeued;
+}
+
+
+void
+rte_pmd_la12xx_op_init(struct rte_mempool *mempool, __rte_unused void *arg, void *element,
+		__rte_unused unsigned int n)
+{
+	struct rte_pmd_la12xx_op *op = element;
+
+	memset(op, 0, mempool->elt_size);
+	op->mempool = mempool;
 }
 
 static struct hugepage_info *
