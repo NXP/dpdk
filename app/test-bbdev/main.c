@@ -13,6 +13,7 @@
 #include <rte_string_fns.h>
 #include <rte_cycles.h>
 #include <rte_lcore.h>
+#include <rte_bbuf.h>
 
 #include "main.h"
 
@@ -266,15 +267,15 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		case 's':
 			TEST_ASSERT(strlen(optarg) > 0,
 					"Buffer size is not provided");
-			tp->buf_size = RTE_PKTMBUF_HEADROOM + strtol(optarg, NULL, 10);
+			tp->buf_size = RTE_BBUF_HEADROOM + strtol(optarg, NULL, 10);
 			break;
 		case 'm':
 			TEST_ASSERT(strlen(optarg) > 0,
 					"Num of segments is not provided");
 			tp->num_seg = strtol(optarg, NULL, 10);
-			TEST_ASSERT(tp->num_seg < MBUF_MAX_SEGS,
+			TEST_ASSERT(tp->num_seg < BBUF_MAX_SEGS,
 					"Num of segments mustn't be greater than %u",
-					MBUF_MAX_SEGS);
+					BBUF_MAX_SEGS);
 			break;
 		case 'i':
 			/* indicate fpga fec config required */
@@ -309,14 +310,14 @@ parse_args(int argc, char **argv, struct test_params *tp)
 	if (tp->buf_size == 0) {
 		printf(
 			"WARNING: Buffer size was not provided or was set 0. Set to default (%u)\n",
-			MBUF_POOL_ELEM_SIZE);
-		tp->buf_size = MBUF_POOL_ELEM_SIZE;
+			BBUF_POOL_ELEM_SIZE);
+		tp->buf_size = BBUF_POOL_ELEM_SIZE;
 	}
 	if (tp->num_seg == 0) {
 		printf(
 			"WARNING: Number of segments was not provided or was set 0. Set to default (%u)\n",
-			DEFAULT_MBUF_SEGS);
-		tp->num_seg = DEFAULT_MBUF_SEGS;
+			DEFAULT_BBUF_SEGS);
+		tp->num_seg = DEFAULT_BBUF_SEGS;
 	}
 
 	TEST_ASSERT(tp->burst_sz <= tp->num_ops,

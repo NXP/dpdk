@@ -19,9 +19,9 @@
 #define MAX_BURST 512U
 #define DEFAULT_BURST 32U
 #define DEFAULT_OPS 64U
-#define MBUF_MAX_SEGS 256
-#define MBUF_POOL_ELEM_SIZE     (RTE_PKTMBUF_HEADROOM + 1024)
-#define DEFAULT_MBUF_SEGS 1
+#define BBUF_MAX_SEGS 256
+#define BBUF_POOL_ELEM_SIZE     (RTE_BBUF_HEADROOM + 1024)
+#define DEFAULT_BBUF_SEGS 1
 
 #define TEST_ASSERT(cond, msg, ...) do {  \
 		if (!(cond)) {  \
