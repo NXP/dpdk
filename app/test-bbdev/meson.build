@@ -10,3 +10,6 @@ deps += ['bbdev', 'bus_vdev']
 if dpdk_conf.has('RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC')
 	deps += ['pmd_bbdev_fpga_lte_fec']
 endif
+if dpdk_conf.has('RTE_LIBRTE_PMD_BBDEV_LA12XX')
+	deps += ['pmd_bbdev_la12xx']
+endif
