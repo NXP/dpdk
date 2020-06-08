@@ -1,3 +1,8 @@
 DPDK_19.11 {
 	local: *;
+
+	rte_pmd_la12xx_dequeue_ops;
+	rte_pmd_la12xx_enqueue_ops;
+	rte_pmd_la12xx_pktmbuf_append;
+	rte_pmd_la12xx_pktmbuf_pool_create;
 };

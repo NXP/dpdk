@@ -18,6 +18,7 @@
 
 #include <rte_bbdev.h>
 #include <rte_bbdev_pmd.h>
+#include <rte_pmd_bbdev_la12xx.h>
 
 #include <geul_bbdev_ipc.h>
 #include <geul_ipc_um.h>
@@ -341,7 +342,7 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		while (sg_count--) {
 			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + rte_pktmbuf_mtod(mbuf, char *) - huge_start_addr;
 			sg->LowAddrBase = l1_pcie_addr;
-			sg->DataLen = mbuf->data_len;
+			sg->DataLen = mbuf->pkt_len;
 			sg->Cfg = 0;
 			mbuf = mbuf->next;
 			sg++;
@@ -383,7 +384,7 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 	for (; i < ldpc_enc->tb_params.c; i++)
 		e[i] = ldpc_enc->tb_params.eb;
 
-	memset(codeblock_mask, 0xFF, (8 * sizeof(int16_t)));
+	memset(codeblock_mask, 0xFF, (8 * sizeof(uint32_t)));
 
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
 			e, ldpc_enc->rv_index, A, ldpc_enc->q, ldpc_enc->n_id,
@@ -495,10 +496,10 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 
 	/* Set the codeblock mask */
 	for (i = 0; i < ldpc_dec->tb_params.c; i++) {
-		uint8_t byte, bit;
+		uint32_t byte, bit;
 		/* Set the bit in codeblock */
-		byte = i / 8;
-		bit = i % 8;
+		byte = i / 32;
+		bit = i % 32;
 		codeblock_mask[byte] |= (1 << bit);
 	}
 
@@ -631,6 +632,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	uint32_t total_out_bits;
+	uint16_t sys_cols;
 
 	RTE_SET_USED(op_type);
 
@@ -696,30 +698,29 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 					   huge_start_addr);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_enc->output.length);
-			rte_pktmbuf_append(out_mbuf, ldpc_enc->output.length);
+			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
+					ldpc_enc->output.length);
 		} else {
 			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
 			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
 						&bbdev_dec_op->ldpc_dec;
 
-			/* Calculate A */
-			/* TODO - update param convert API to take bbdev op as
-			 * input so that we do not need to calculate A.
-			 * Currently only basegraph = 1 is supported.
-			 */
-			if (ldpc_dec->tb_params.c == 1)
-				total_out_bits = ((10 * ldpc_dec->z_c) -
+			sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
+			if (ldpc_dec->tb_params.c == 1) {
+				total_out_bits = ((sys_cols * ldpc_dec->z_c) -
 						ldpc_dec->n_filler) - 16;
-			else
-				total_out_bits = ((10 * ldpc_dec->z_c) -
-						ldpc_dec->n_filler) -
-						((ldpc_dec->tb_params.c+1) * 24);
-			ldpc_dec->hard_output.length = total_out_bits/8;
+				ldpc_dec->hard_output.length = (total_out_bits / 8);
+			} else {
+				total_out_bits = (((sys_cols * ldpc_dec->z_c) -
+						ldpc_dec->n_filler - 24) *
+						ldpc_dec->tb_params.c);
+				ldpc_dec->hard_output.length = (total_out_bits / 8) - 3;
+			}
 
 			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
-			rte_pktmbuf_append(out_mbuf,
+			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
 					   ldpc_dec->hard_output.length);
 		}
 	}
@@ -915,6 +916,28 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
+}
+
+uint16_t
+rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
+		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+{
+	RTE_SET_USED(dev_id);
+	RTE_SET_USED(queue_id);
+	RTE_SET_USED(ops);
+	RTE_SET_USED(num_ops);
+	return 0;
+}
+
+uint16_t
+rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
+		struct rte_la122x_bbdev_op **ops, uint16_t num_ops)
+{
+	RTE_SET_USED(dev_id);
+	RTE_SET_USED(queue_id);
+	RTE_SET_USED(ops);
+	RTE_SET_USED(num_ops);
+	return 0;
 }
 
 static struct hugepage_info *

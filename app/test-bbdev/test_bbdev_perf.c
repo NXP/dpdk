@@ -17,6 +17,7 @@
 #include <rte_random.h>
 #include <rte_hexdump.h>
 #include <rte_interrupts.h>
+#include <rte_pmd_bbdev_la12xx.h>
 
 #ifdef RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC
 #include <fpga_lte_fec.h>
@@ -152,8 +153,8 @@ mbuf_reset(struct rte_mbuf *m)
 	m->pkt_len = 0;
 
 	do {
-		data = rte_pktmbuf_mtod(m, uint8_t *);
-		memset(data, 0, m->data_len);
+		data = rte_pmd_la12xx_pktmbuf_mtod(m, uint8_t *);
+		memset(data, 0, m->pkt_len);
 		m->data_len = 0;
 		m = m->next;
 	} while (m != NULL);
@@ -389,7 +390,7 @@ create_mbuf_pool(struct op_data_entries *entries, uint8_t dev_id,
 
 	snprintf(pool_name, sizeof(pool_name), "%s_pool_%u", op_type_str,
 			dev_id);
-	return rte_pktmbuf_pool_create(pool_name, mbuf_pool_size, 0, 0,
+	return rte_pmd_la12xx_pktmbuf_pool_create(pool_name, mbuf_pool_size, 0, 0,
 			RTE_MAX(max_seg_sz + RTE_PKTMBUF_HEADROOM,
 			(unsigned int)mbuf_size), socket_id);
 }
@@ -417,10 +418,7 @@ create_mempools(struct active_device *ad, int socket_id,
 	/* allocate ops mempool */
 	ops_pool_size = optimal_mempool_size(RTE_MAX(
 			/* Ops used plus 1 reference op */
-			RTE_MAX((unsigned int)(ad->nb_queues * num_ops + 1),
-			/* Minimal cache size plus 1 reference op */
-			(unsigned int)(1.5 * rte_lcore_count() *
-					OPS_CACHE_SIZE + 1)),
+			(unsigned int)(ad->nb_queues * num_ops + 1),
 			OPS_POOL_SIZE_MIN));
 
 	if (org_op_type == RTE_BBDEV_OP_NONE)
@@ -457,7 +455,7 @@ create_mempools(struct active_device *ad, int socket_id,
 		TEST_ASSERT_NOT_NULL(ops,
 				     "cannot allocate memory to hold buffers");
 		/* Create a mbuf pool */
-		bbdev_mbuf_pool = rte_pktmbuf_pool_create("mbuf_pool",
+		bbdev_mbuf_pool = rte_pmd_la12xx_pktmbuf_pool_create("mbuf_pool",
 				(2 * nb_seg * ops_pool_size),
 				MBUF_POOL_CACHE_SIZE, 0, mbuf_size,
 				socket_id);
@@ -470,25 +468,25 @@ create_mempools(struct active_device *ad, int socket_id,
 		TEST_ASSERT_SUCCESS(ret, "Cannot get ops element from pool %d", ret);
 
 		for (i = 0; i < ops_pool_size; i++) {
-			ret = rte_pktmbuf_alloc_bulk(bbdev_mbuf_pool, mbufs,
+			ret = rte_pmd_la12xx_pktmbuf_alloc_bulk(bbdev_mbuf_pool, mbufs,
 						     (2 * nb_seg));
 			TEST_ASSERT_SUCCESS(ret, "Cannot get mbuf element from pool");
 
 			data_size = mbuf_size - RTE_PKTMBUF_HEADROOM;
-			data = rte_pktmbuf_append(mbufs[0], data_size);
+			data = rte_pmd_la12xx_pktmbuf_append(mbufs[0], data_size);
 			memset(data, POISON, data_size);
 
 			for (j = 1; j <= nb_seg - 1; j++) {
 				/* Set the value */
 				data_size = mbuf_size - RTE_PKTMBUF_HEADROOM;
-				data = rte_pktmbuf_append(mbufs[j], data_size);
+				data = rte_pmd_la12xx_pktmbuf_append(mbufs[j], data_size);
 				memset(data, j, data_size);
 				/* Create input buffer chain */
-				ret = rte_pktmbuf_chain(mbufs[0], mbufs[j]);
+				ret = rte_pmd_la12xx_pktmbuf_chain(mbufs[0], mbufs[j]);
 				TEST_ASSERT_SUCCESS(ret, "Cannot chain mbuf");
 
 				/* Create output buffer chain */
-				ret = rte_pktmbuf_chain(mbufs[nb_seg],
+				ret = rte_pmd_la12xx_pktmbuf_chain(mbufs[nb_seg],
 							mbufs[nb_seg + j]);
 				TEST_ASSERT_SUCCESS(ret, "Cannot chain mbuf");
 			}
@@ -838,14 +836,14 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 	for (i = 0; i < n; ++i) {
 		char *data;
 		struct op_data_buf *seg = &ref_entries->segments[0];
-		struct rte_mbuf *m_head = rte_pktmbuf_alloc(mbuf_pool);
+		struct rte_mbuf *m_head = rte_pmd_la12xx_pktmbuf_alloc(mbuf_pool);
 		TEST_ASSERT_NOT_NULL(m_head,
 				"Not enough mbufs in %d data type mbuf pool (needed %u, available %u)",
 				op_type, n * ref_entries->nb_segments,
 				mbuf_pool->size);
 
 		TEST_ASSERT_SUCCESS(((seg->length + RTE_PKTMBUF_HEADROOM) >
-				(uint32_t)UINT16_MAX),
+				(uint32_t)UINT32_MAX),
 				"Given data is bigger than allowed mbuf segment size");
 
 		bufs[i].data = m_head;
@@ -853,7 +851,7 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 		bufs[i].length = 0;
 
 		if ((op_type == DATA_INPUT) || (op_type == DATA_HARQ_INPUT)) {
-			data = rte_pktmbuf_append(m_head, seg->length);
+			data = rte_pmd_la12xx_pktmbuf_append(m_head, seg->length);
 			TEST_ASSERT_NOT_NULL(data,
 					"Couldn't append %u bytes to mbuf from %d data type mbuf pool",
 					seg->length, op_type);
@@ -866,7 +864,7 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 
 			for (j = 1; j < ref_entries->nb_segments; ++j) {
 				struct rte_mbuf *m_tail =
-						rte_pktmbuf_alloc(mbuf_pool);
+						rte_pmd_la12xx_pktmbuf_alloc(mbuf_pool);
 				TEST_ASSERT_NOT_NULL(m_tail,
 						"Not enough mbufs in %d data type mbuf pool (needed %u, available %u)",
 						op_type,
@@ -874,7 +872,7 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 						mbuf_pool->size);
 				seg += 1;
 
-				data = rte_pktmbuf_append(m_tail, seg->length);
+				data = rte_pmd_la12xx_pktmbuf_append(m_tail, seg->length);
 				TEST_ASSERT_NOT_NULL(data,
 						"Couldn't append %u bytes to mbuf from %d data type mbuf pool",
 						seg->length, op_type);
@@ -886,7 +884,7 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 				rte_memcpy(data, seg->addr, seg->length);
 				bufs[i].length += seg->length;
 
-				ret = rte_pktmbuf_chain(m_head, m_tail);
+				ret = rte_pmd_la12xx_pktmbuf_chain(m_head, m_tail);
 				TEST_ASSERT_SUCCESS(ret,
 						"Couldn't chain mbufs from %d data type mbuf pool",
 						op_type);
@@ -896,14 +894,14 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 			/* allocate chained-mbuf for output buffer */
 			for (j = 1; j < ref_entries->nb_segments; ++j) {
 				struct rte_mbuf *m_tail =
-						rte_pktmbuf_alloc(mbuf_pool);
+						rte_pmd_la12xx_pktmbuf_alloc(mbuf_pool);
 				TEST_ASSERT_NOT_NULL(m_tail,
 						"Not enough mbufs in %d data type mbuf pool (needed %u, available %u)",
 						op_type,
 						n * ref_entries->nb_segments,
 						mbuf_pool->size);
 
-				ret = rte_pktmbuf_chain(m_head, m_tail);
+				ret = rte_pmd_la12xx_pktmbuf_chain(m_head, m_tail);
 				TEST_ASSERT_SUCCESS(ret,
 						"Couldn't chain mbufs from %d data type mbuf pool",
 						op_type);
@@ -944,9 +942,9 @@ limit_input_llr_val_range(struct rte_bbdev_op_data *input_ops,
 	for (i = 0; i < n; ++i) {
 		struct rte_mbuf *m = input_ops[i].data;
 		while (m != NULL) {
-			int8_t *llr = rte_pktmbuf_mtod_offset(m, int8_t *,
+			int8_t *llr = rte_pmd_la12xx_pktmbuf_mtod_offset(m, int8_t *,
 					input_ops[i].offset);
-			for (byte_idx = 0; byte_idx < rte_pktmbuf_data_len(m);
+			for (byte_idx = 0; byte_idx < rte_pmd_la12xx_pktmbuf_data_len(m);
 					++byte_idx)
 				llr[byte_idx] = round((double)max_llr_modulus *
 						llr[byte_idx] / INT8_MAX);
@@ -972,9 +970,9 @@ ldpc_input_llr_scaling(struct rte_bbdev_op_data *input_ops,
 	for (i = 0; i < n; ++i) {
 		struct rte_mbuf *m = input_ops[i].data;
 		while (m != NULL) {
-			int8_t *llr = rte_pktmbuf_mtod_offset(m, int8_t *,
+			int8_t *llr = rte_pmd_la12xx_pktmbuf_mtod_offset(m, int8_t *,
 					input_ops[i].offset);
-			for (byte_idx = 0; byte_idx < rte_pktmbuf_data_len(m);
+			for (byte_idx = 0; byte_idx < rte_pmd_la12xx_pktmbuf_data_len(m);
 					++byte_idx) {
 
 				llr_tmp = llr[byte_idx];
@@ -1319,21 +1317,21 @@ validate_op_chain(struct rte_bbdev_op_data *op,
 	for (i = 0; i < nb_dst_segments; ++i) {
 		/* Apply offset to the first mbuf segment */
 		uint16_t offset = (i == 0) ? op->offset : 0;
-		uint16_t data_len = rte_pktmbuf_data_len(m) - offset;
+		uint32_t data_len = rte_pmd_la12xx_pktmbuf_data_len(m) - offset;
 		total_data_size += orig_op->segments[i].length;
 
 		TEST_ASSERT(orig_op->segments[i].length == data_len,
 				"Length of segment differ in original (%u) and filled (%u) op",
 				orig_op->segments[i].length, data_len);
 		TEST_ASSERT_BUFFERS_ARE_EQUAL(orig_op->segments[i].addr,
-				rte_pktmbuf_mtod_offset(m, uint32_t *, offset),
+				rte_pmd_la12xx_pktmbuf_mtod_offset(m, uint32_t *, offset),
 				data_len,
 				"Output buffers (CB=%u) are not equal", i);
 		m = m->next;
 	}
 
 	/* Validate total mbuf pkt length */
-	uint32_t pkt_len = rte_pktmbuf_pkt_len(op->data) - op->offset;
+	uint32_t pkt_len = rte_pmd_la12xx_pktmbuf_pkt_len(op->data) - op->offset;
 	TEST_ASSERT(total_data_size == pkt_len,
 			"Length of data differ in original (%u) and filled (%u) op",
 			total_data_size, pkt_len);
@@ -1612,11 +1610,11 @@ calc_ldpc_enc_TB_size(struct rte_bbdev_enc_op *op)
 	uint32_t c, r, tb_size = 0;
 	uint16_t sys_cols = (op->ldpc_enc.basegraph == 1) ? 22 : 10;
 
-	if (op->turbo_enc.code_block_mode) {
+	if (op->ldpc_enc.code_block_mode) {
 		tb_size = sys_cols * op->ldpc_enc.z_c - op->ldpc_enc.n_filler;
 	} else {
-		c = op->turbo_enc.tb_params.c;
-		r = op->turbo_enc.tb_params.r;
+		c = op->ldpc_enc.tb_params.c;
+		r = op->ldpc_enc.tb_params.r;
 		for (i = 0; i < c-r; i++)
 			tb_size += sys_cols * op->ldpc_enc.z_c
 					- op->ldpc_enc.n_filler;
@@ -1951,7 +1949,7 @@ throughput_intr_lcore_dec(void *arg)
 
 	for (j = 0; j < TEST_REPETITIONS; ++j) {
 		for (i = 0; i < num_to_process; ++i)
-			rte_pktmbuf_reset(ops[i]->turbo_dec.hard_output.data);
+			rte_pmd_la12xx_pktmbuf_reset(ops[i]->turbo_dec.hard_output.data);
 
 		tp->start_time = rte_rdtsc_precise();
 		for (enqueued = 0; enqueued < num_to_process;) {
@@ -2040,7 +2038,7 @@ throughput_intr_lcore_enc(void *arg)
 
 	for (j = 0; j < TEST_REPETITIONS; ++j) {
 		for (i = 0; i < num_to_process; ++i)
-			rte_pktmbuf_reset(ops[i]->turbo_enc.output.data);
+			rte_pmd_la12xx_pktmbuf_reset(ops[i]->turbo_enc.output.data);
 
 		tp->start_time = rte_rdtsc_precise();
 		for (enqueued = 0; enqueued < num_to_process;) {

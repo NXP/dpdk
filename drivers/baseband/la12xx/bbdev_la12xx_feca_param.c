@@ -85,9 +85,8 @@ offset_x1_x2(uint32_t c_init,
 
 static void
 LDPC_evaluate_parameters(uint32_t A,
-			 uint32_t base_graph2_input,
+			 uint32_t BGnumber,
 			 uint32_t *codeblock_mask,
-			 uint32_t *BGnumber,
 			 uint32_t *B,
 			 uint32_t *i_LS,
 			 uint32_t *Zc,
@@ -109,12 +108,6 @@ LDPC_evaluate_parameters(uint32_t A,
 				       5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7};
 	uint32_t i, K_cb, K_b;
 
-	/* find BGnumber */
-	if (base_graph2_input == 1)
-		*BGnumber = 2;
-	else
-		*BGnumber = 1;
-
 	/* find B */
 	if (A > 3824)   // CRC 24-bits type A
 		*B = A + 24;
@@ -122,10 +115,10 @@ LDPC_evaluate_parameters(uint32_t A,
 		*B = A + 16;
 
 	/* find K_b, K_cb */
-	if (*BGnumber == 1) {
+	if (BGnumber == 1) {
 		K_cb = 8448;
 		K_b = 22;
-	} else if (*BGnumber == 2) {
+	} else if (BGnumber == 2) {
 		K_cb = 3840;
 		if (*B > 640)
 			K_b = 10;
@@ -157,7 +150,7 @@ LDPC_evaluate_parameters(uint32_t A,
 	}
 
 	/* calculate K, N */
-	if (*BGnumber == 1) {
+	if (BGnumber == 1) {
 		*K = 22 * (*Zc);
 		*N = 66 * (*Zc);
 	} else {
@@ -177,7 +170,7 @@ LDPC_evaluate_parameters(uint32_t A,
 }
 
 void
-la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
+la12xx_sch_encode_param_convert(uint32_t BGnumber,
 				uint32_t Q_m,
 				uint32_t *e,
 				uint32_t rv_id,
@@ -206,14 +199,14 @@ la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
 				uint32_t *int_start_ofst_ceiling,
 				uint32_t *SE_CIRC_BUF)
 {
-	uint32_t B, i_LS, Zc, BGnumber, K_dash, i, K, N, C_prime;
+	uint32_t B, i_LS, Zc, K_dash, i, K, N, C_prime;
 	uint32_t C, cb_counter = 0;
 	uint32_t e_div_qm_floor, e_div_qm_ceiling;
 	uint32_t E_sum = 0;
 
 	/* evaluate parameters */
-	LDPC_evaluate_parameters(A, base_graph2_input, codeblock_mask,
-				 &BGnumber, &B, &i_LS, &Zc, &N, &K, &K_dash,
+	LDPC_evaluate_parameters(A, BGnumber, codeblock_mask,
+				 &B, &i_LS, &Zc, &N, &K, &K_dash,
 				 &C, &C_prime, TBS_VALID);
 
 	for (i = 0; i < C; i++)
@@ -317,7 +310,7 @@ la12xx_sch_encode_param_convert(uint32_t base_graph2_input,
 }
 
 void
-la12xx_sch_decode_param_convert(uint32_t base_graph2_input,
+la12xx_sch_decode_param_convert(uint32_t BGnumber,
 				uint32_t Q_m,
 				uint32_t *e,
 				uint32_t rv_id,
@@ -353,15 +346,15 @@ la12xx_sch_decode_param_convert(uint32_t base_graph2_input,
 				uint32_t *SD_CIRC_BUF,
 				uint32_t *axi_data_num_bytes)
 {
-	uint32_t B, i_LS, Zc, BGnumber, K_dash, i, K, N;
+	uint32_t B, i_LS, Zc, K_dash, i, K, N;
 	uint32_t C_prime, cb_counter = 0;
 	uint32_t offset_harq_buffer;
 
 	RTE_SET_USED(harq_en);
 
 	// evaluate parameters
-	LDPC_evaluate_parameters(A, base_graph2_input, codeblock_mask,
-				 &BGnumber, &B, &i_LS, &Zc, &N, &K, &K_dash,
+	LDPC_evaluate_parameters(A, BGnumber, codeblock_mask,
+				 &B, &i_LS, &Zc, &N, &K, &K_dash,
 				 C, &C_prime, TBS_VALID);
 
 	*set_index = i_LS;

@@ -12,8 +12,10 @@ DIRS-$(CONFIG_RTE_LIBRTE_CMDLINE) += test-cmdline
 DIRS-$(CONFIG_RTE_LIBRTE_PIPELINE) += test-pipeline
 DIRS-$(CONFIG_RTE_LIBRTE_IPSEC) += test-sad
 
+ifneq ($(COMMON_HEADERS_DIR),)
 ifeq ($(CONFIG_RTE_LIBRTE_BBDEV),y)
 DIRS-$(CONFIG_RTE_TEST_BBDEV) += test-bbdev
+endif
 endif
 
 ifeq ($(CONFIG_RTE_LIBRTE_COMPRESSDEV),y)
