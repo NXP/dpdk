@@ -19,6 +19,7 @@ SRCS-y += rte_bbdev.c
 SYMLINK-y-include += rte_bbdev_op.h
 SYMLINK-y-include += rte_bbdev.h
 SYMLINK-y-include += rte_bbdev_pmd.h
+SYMLINK-y-include += rte_bbuf.h
 
 # versioning export map
 EXPORT_MAP := rte_bbdev_version.map

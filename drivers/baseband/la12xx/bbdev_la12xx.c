@@ -17,6 +17,7 @@
 #include <rte_hexdump.h>
 
 #include <rte_bbdev.h>
+#include <rte_bbuf.h>
 #include <rte_bbdev_pmd.h>
 #include <rte_pmd_bbdev_la12xx.h>
 
@@ -698,7 +699,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 					   huge_start_addr);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_enc->output.length);
-			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
+			rte_bbuf_append(out_mbuf,
 					ldpc_enc->output.length);
 		} else {
 			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
@@ -720,7 +721,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
-			rte_pmd_la12xx_pktmbuf_append(out_mbuf,
+			rte_bbuf_append(out_mbuf,
 					   ldpc_dec->hard_output.length);
 		}
 	}

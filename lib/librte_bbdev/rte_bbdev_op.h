@@ -210,36 +210,45 @@ enum rte_bbdev_op_ldpcenc_flag_bitmasks {
 
 /** Data input and output buffer for BBDEV operations */
 struct rte_bbdev_op_data {
-	/** The mbuf data structure representing the data for BBDEV operation.
-	 *
-	 * This mbuf pointer can point to one Code Block (CB) data buffer or
-	 * multiple CBs contiguously located next to each other.
-	 * A Transport Block (TB) represents a whole piece of data that is
-	 * divided into one or more CBs. Maximum number of CBs can be contained
-	 * in one TB is defined by RTE_BBDEV_(TURBO/LDPC)_MAX_CODE_BLOCKS.
-	 *
-	 * An mbuf data structure cannot represent more than one TB. The
-	 * smallest piece of data that can be contained in one mbuf is one CB.
-	 * An mbuf can include one contiguous CB, subset of contiguous CBs that
-	 * are belonging to one TB, or all contiguous CBs that are belonging to
-	 * one TB.
-	 *
-	 * If a BBDEV PMD supports the extended capability "Scatter-Gather",
-	 * then it is capable of collecting (gathering) non-contiguous
-	 * (scattered) data from multiple locations in the memory.
-	 * This capability is reported by the capability flags:
-	 * - RTE_BBDEV_(TURBO/LDPC)_ENC_SCATTER_GATHER and
-	 * - RTE_BBDEV_(TURBO/LDPC)_DEC_SCATTER_GATHER.
-	 * Only if a BBDEV PMD supports this feature, chained mbuf data
-	 * structures are accepted. A chained mbuf can represent one
-	 * non-contiguous CB or multiple non-contiguous CBs.
-	 * If BBDEV PMD does not support this feature, it will assume inbound
-	 * mbuf data contains one segment.
-	 *
-	 * The output mbuf data though is always one segment, even if the input
-	 * was a chained mbuf.
-	 */
-	struct rte_mbuf *data;
+	union {
+		/** The mbuf data structure representing the data for BBDEV operation.
+		 *
+		 * This mbuf pointer can point to one Code Block (CB) data buffer or
+		 * multiple CBs contiguously located next to each other.
+		 * A Transport Block (TB) represents a whole piece of data that is
+		 * divided into one or more CBs. Maximum number of CBs can be contained
+		 * in one TB is defined by RTE_BBDEV_(TURBO/LDPC)_MAX_CODE_BLOCKS.
+		 *
+		 * An mbuf data structure cannot represent more than one TB. The
+		 * smallest piece of data that can be contained in one mbuf is one CB.
+		 * An mbuf can include one contiguous CB, subset of contiguous CBs that
+		 * are belonging to one TB, or all contiguous CBs that are belonging to
+		 * one TB.
+		 *
+		 * If a BBDEV PMD supports the extended capability "Scatter-Gather",
+		 * then it is capable of collecting (gathering) non-contiguous
+		 * (scattered) data from multiple locations in the memory.
+		 * This capability is reported by the capability flags:
+		 * - RTE_BBDEV_(TURBO/LDPC)_ENC_SCATTER_GATHER and
+		 * - RTE_BBDEV_(TURBO/LDPC)_DEC_SCATTER_GATHER.
+		 * Only if a BBDEV PMD supports this feature, chained mbuf data
+		 * structures are accepted. A chained mbuf can represent one
+		 * non-contiguous CB or multiple non-contiguous CBs.
+		 * If BBDEV PMD does not support this feature, it will assume inbound
+		 * mbuf data contains one segment.
+		 *
+		 * The output mbuf data though is always one segment, even if the input
+		 * was a chained mbuf.
+		 */
+		struct rte_mbuf *data;
+
+		/** bbuf representing the data for BBDEV operation.
+		 * This is a non scatter-gather buffer which uses length and offset
+		 * parameters from rte_bbdev_op_data structure to evaluate the
+		 * length of the buffer and offset of the starting data respectively.
+		 */
+		void *bdata;
+	};
 	/** The starting point of the BBDEV (encode/decode) operation,
 	 * in bytes.
 	 *
