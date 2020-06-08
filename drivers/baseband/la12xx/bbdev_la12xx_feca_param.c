@@ -118,7 +118,7 @@ LDPC_evaluate_parameters(uint32_t A,
 	if (BGnumber == 1) {
 		K_cb = 8448;
 		K_b = 22;
-	} else if (BGnumber == 2) {
+	} else {
 		K_cb = 3840;
 		if (*B > 640)
 			K_b = 10;
