@@ -687,9 +687,20 @@ perf_ethdev_setup(struct evt_test *test, struct evt_options *opt)
 		return -ENODEV;
 	}
 
+	t->internal_port = 1;
 	RTE_ETH_FOREACH_DEV(i) {
 		struct rte_eth_dev_info dev_info;
 		struct rte_eth_conf local_port_conf = port_conf;
+		uint32_t caps = 0;
+
+		ret = rte_event_eth_tx_adapter_caps_get(opt->dev_id, i, &caps);
+		if (ret != 0) {
+			evt_err("failed to get event tx adapter[%d] caps", i);
+			return ret;
+		}
+
+		if (!(caps & RTE_EVENT_ETH_TX_ADAPTER_CAP_INTERNAL_PORT))
+			t->internal_port = 0;
 
 		ret = rte_eth_dev_info_get(i, &dev_info);
 		if (ret != 0) {

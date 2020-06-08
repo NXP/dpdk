@@ -48,6 +48,7 @@ struct test_perf {
 	int done;
 	uint64_t outstand_pkts;
 	uint8_t nb_workers;
+	uint8_t internal_port;
 	enum evt_test_result result;
 	uint32_t nb_flows;
 	uint64_t nb_pkts;
