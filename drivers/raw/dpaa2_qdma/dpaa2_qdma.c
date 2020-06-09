@@ -208,7 +208,7 @@ static inline int dpdmai_dev_set_fd_us(
 				0 : 1;
 
 	for (loop = 0; loop < nb_jobs; loop++) {
-		if (job[loop]->src & QDMA_RBP_UPPER_ADDRESS_MASK)
+		if (job[loop]->src & QDMA_PCIE_BASE_ADDRESS_MASK)
 			iova = (size_t)job[loop]->dest;
 		else
 			iova = (size_t)job[loop]->src;
@@ -483,7 +483,7 @@ static inline uint16_t dpdmai_dev_get_job_us(
 	size_t iova;
 	struct rte_qdma_job **ppjob;
 
-	if (fd->simple_pci.saddr_hi & (QDMA_RBP_UPPER_ADDRESS_MASK >> 32))
+	if (fd->simple_pci.saddr_hi & (QDMA_PCIE_BASE_ADDRESS_MASK >> 32))
 		iova = (size_t)(((uint64_t)fd->simple_pci.daddr_hi) << 32
 				| (uint64_t)fd->simple_pci.daddr_lo);
 	else

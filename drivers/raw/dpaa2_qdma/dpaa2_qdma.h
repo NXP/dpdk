@@ -73,7 +73,7 @@ struct rte_qdma_job;
 /** Maximum possible H/W Queues on each core */
 #define MAX_HW_QUEUE_PER_CORE		64
 
-#define QDMA_RBP_UPPER_ADDRESS_MASK (0xfff0000000000)
+#define QDMA_PCIE_BASE_ADDRESS_MASK (0xfff8000000000)
 /**
  * Represents a QDMA device.
  * A single QDMA device exists which is combination of multiple DPDMAI rawdev's.
