@@ -10,6 +10,7 @@
 #define	__PROCESS_H
 
 #include <compat.h>
+#include <rte_ethdev.h>
 
 /* The process device underlies process-wide user/kernel interactions, such as
  * mapping dma_mem memory and providing accompanying ioctl()s. (This isn't used
@@ -88,6 +89,10 @@ struct usdpaa_ioctl_link_status_args {
 	/* network device node name */
 	char    if_name[IF_NAME_MAX_LEN];
 	int     link_status;
+	int     link_speed;
+	int     link_duplex;
+	int     link_autoneg;
+
 };
 
 struct usdpaa_ioctl_update_link_status_args {
@@ -97,7 +102,7 @@ struct usdpaa_ioctl_update_link_status_args {
 	int     link_status;
 };
 
-int dpaa_get_link_status(char *if_name);
+int dpaa_get_link_status(char *if_name, struct rte_eth_link *link);
 
 int dpaa_update_link_status(char *if_name, int link_status);
 

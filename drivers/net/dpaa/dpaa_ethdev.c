@@ -495,16 +495,14 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 			     dpaa_intf->name, fif->mac_type);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC) {
-		ret = dpaa_get_link_status(__fif->node_name);
-		if (ret < 0)
+		ret = dpaa_get_link_status(__fif->node_name, link);
+		if (ret)
 			return ret;
-		link->link_status = ret;
 	} else {
 		link->link_status = dpaa_intf->valid;
+		link->link_duplex = ETH_LINK_FULL_DUPLEX;
+		link->link_autoneg = ETH_LINK_AUTONEG;
 	}
-
-	link->link_duplex = ETH_LINK_FULL_DUPLEX;
-	link->link_autoneg = ETH_LINK_AUTONEG;
 
 	DPAA_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
 		      link->link_status ? "Up" : "Down");

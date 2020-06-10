@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <rte_ethdev.h>
 
 #include "process.h"
 
@@ -344,7 +345,7 @@ int dpaa_intr_disable(char *if_name)
 #define DPAA_IOCTL_GET_LINK_STATUS \
 	_IOWR(DPAA_IOCTL_MAGIC, 0x10, struct usdpaa_ioctl_link_status_args)
 
-int dpaa_get_link_status(char *if_name)
+int dpaa_get_link_status(char *if_name, struct rte_eth_link *link)
 {
 	int ret = check_fd();
 	struct usdpaa_ioctl_link_status_args args;
@@ -353,7 +354,6 @@ int dpaa_get_link_status(char *if_name)
 		return ret;
 
 	strcpy(args.if_name, if_name);
-	args.link_status = 0;
 
 	ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS, &args);
 	if (ret) {
@@ -364,7 +364,12 @@ int dpaa_get_link_status(char *if_name)
 		return ret;
 	}
 
-	return args.link_status;
+	link->link_status = args.link_status;
+	link->link_speed = args.link_speed;
+	link->link_duplex = args.link_duplex;
+	link->link_autoneg = args.link_autoneg;
+
+	return 0;
 }
 
 #define DPAA_IOCTL_UPDATE_LINK_STATUS \
