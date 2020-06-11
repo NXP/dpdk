@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018,2020 NXP
  */
 
 #ifndef _FSL_DPDMAI_CMD_H
@@ -107,5 +107,9 @@ struct dpdmai_rsp_get_tx_queue {
 	uint32_t fqid;
 };
 
+struct dpdmai_rsp_get_api_version {
+	uint16_t major;
+	uint16_t minor;
+};
 #pragma pack(pop)
 #endif /* _FSL_DPDMAI_CMD_H */

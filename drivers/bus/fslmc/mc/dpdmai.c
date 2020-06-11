@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018,2020 NXP
  */
 
 #include <fsl_mc_sys.h>
@@ -438,6 +438,39 @@ int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 	/* retrieve response parameters */
 	rsp_params = (struct dpdmai_rsp_get_tx_queue *)cmd.params;
 	attr->fqid = le32_to_cpu(rsp_params->fqid);
+
+	return 0;
+}
+
+/**
+ * dpdmai_get_api_version() - Get Data Path DMA API version
+ * @mc_io:  Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @major_ver:	Major version of data path dma API
+ * @minor_ver:	Minor version of data path dma API
+ *
+ * Return:  '0' on Success; Error code otherwise.
+ */
+int dpdmai_get_api_version(struct fsl_mc_io *mc_io,
+			   uint32_t cmd_flags,
+			   uint16_t *major_ver,
+			   uint16_t *minor_ver)
+{
+	struct dpdmai_rsp_get_api_version *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_API_VERSION,
+					cmd_flags,
+					0);
+
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	rsp_params = (struct dpdmai_rsp_get_api_version *)cmd.params;
+	*major_ver = le16_to_cpu(rsp_params->major);
+	*minor_ver = le16_to_cpu(rsp_params->minor);
 
 	return 0;
 }

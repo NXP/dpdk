@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018,2020 NXP
  */
 
 #ifndef __FSL_DPDMAI_H
@@ -190,5 +190,10 @@ int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 			uint8_t queue_idx,
 			uint8_t priority,
 			struct dpdmai_tx_queue_attr *attr);
+
+int dpdmai_get_api_version(struct fsl_mc_io *mc_io,
+			   uint32_t cmd_flags,
+			   uint16_t *major_ver,
+			   uint16_t *minor_ver);
 
 #endif /* __FSL_DPDMAI_H */
