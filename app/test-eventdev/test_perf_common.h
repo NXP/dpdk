@@ -13,6 +13,7 @@
 #include <rte_ethdev.h>
 #include <rte_eventdev.h>
 #include <rte_event_eth_rx_adapter.h>
+#include <rte_event_eth_tx_adapter.h>
 #include <rte_event_timer_adapter.h>
 #include <rte_lcore.h>
 #include <rte_malloc.h>
@@ -22,6 +23,9 @@
 #include "evt_common.h"
 #include "evt_options.h"
 #include "evt_test.h"
+
+#define TEST_PERF_EVENT_TX_ENQ		0x1
+#define TEST_PERF_EVENT_TX_DIRECT	0X2
 
 struct test_perf;
 
