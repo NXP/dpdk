@@ -88,9 +88,13 @@ int dpaa_intr_disable(char *if_name);
 struct usdpaa_ioctl_link_status_args {
 	/* network device node name */
 	char    if_name[IF_NAME_MAX_LEN];
+	/* link status(ETH_LINK_UP/DOWN) */
 	int     link_status;
+	/* link speed (ETH_SPEED_NUM_)*/
 	int     link_speed;
+	/* link duplex (ETH_LINK_[HALF/FULL]_DUPLEX)*/
 	int     link_duplex;
+	/* link autoneg (ETH_LINK_AUTONEG/FIXED)*/
 	int     link_autoneg;
 
 };
@@ -102,8 +106,18 @@ struct usdpaa_ioctl_update_link_status_args {
 	int     link_status;
 };
 
-int dpaa_get_link_status(char *if_name, struct rte_eth_link *link);
+struct usdpaa_ioctl_update_link_speed {
+	/* network device node name*/
+	char    if_name[IF_NAME_MAX_LEN];
+	/* link speed (ETH_SPEED_NUM_)*/
+	int     link_speed;
+	/* link duplex (ETH_LINK_[HALF/FULL]_DUPLEX)*/
+	int     link_duplex;
+};
 
+int dpaa_get_link_status(char *if_name, struct rte_eth_link *link);
 int dpaa_update_link_status(char *if_name, int link_status);
+int dpaa_update_link_speed(char *if_name, int speed, int duplex);
+int dpaa_restart_link_autoneg(char *if_name);
 
 #endif	/*  __PROCESS_H */

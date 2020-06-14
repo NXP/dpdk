@@ -398,3 +398,53 @@ int dpaa_update_link_status(char *if_name, int link_status)
 
 	return 0;
 }
+
+#define DPAA_IOCTL_UPDATE_LINK_SPEED \
+	_IOW(DPAA_IOCTL_MAGIC, 0x12, struct usdpaa_ioctl_update_link_speed)
+
+int dpaa_update_link_speed(char *if_name, int link_speed, int link_duplex)
+{
+	struct usdpaa_ioctl_update_link_speed args;
+	int ret;
+
+	ret = check_fd();
+	if (ret)
+		return ret;
+
+	strcpy(args.if_name, if_name);
+	args.link_speed = link_speed;
+	args.link_duplex = link_duplex;
+
+	ret = ioctl(fd, DPAA_IOCTL_UPDATE_LINK_SPEED, &args);
+	if (ret) {
+		if (errno == EINVAL)
+			printf("Failed to set link speed: Not Supported\n");
+		else
+			printf("Failed to set link speed\n");
+		return ret;
+	}
+
+	return ret;
+}
+
+#define DPAA_IOCTL_RESTART_LINK_AUTONEG \
+	_IOW(DPAA_IOCTL_MAGIC, 0x13, char *)
+
+int dpaa_restart_link_autoneg(char *if_name)
+{
+	int ret = check_fd();
+
+	if (ret)
+		return ret;
+
+	ret = ioctl(fd, DPAA_IOCTL_RESTART_LINK_AUTONEG, &if_name);
+	if (ret) {
+		if (errno == EINVAL)
+			printf("Failed to restart autoneg: Not Supported\n");
+		else
+			printf("Failed to restart autoneg\n");
+		return ret;
+	}
+
+	return ret;
+}

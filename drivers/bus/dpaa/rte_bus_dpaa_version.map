@@ -15,7 +15,9 @@ DPDK_20.0 {
 	dpaa_logtype_mempool;
 	dpaa_logtype_pmd;
 	dpaa_netcfg;
+	dpaa_restart_link_autoneg;
 	dpaa_svr_family;
+	dpaa_update_link_speed;
 	dpaa_update_link_status;
 	fman_ccsr_map_fd;
 	fman_dealloc_bufs_mask_hi;
