@@ -569,8 +569,8 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 
-	sd_command->sd_axi_data_addr_low =
-		rte_cpu_to_be_32(bbdev_ipc_op->out_addr);
+	/* out_addr has already been swapped in the calling function */
+	sd_command->sd_axi_data_addr_low = bbdev_ipc_op->out_addr;
 	sd_command->sd_axi_data_addr_high = 0;
 	sd_command->sd_axi_data_num_bytes =
 		rte_cpu_to_be_32(bbdev_dec_op->ldpc_dec.hard_output.length);
@@ -683,7 +683,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
-		bbdev_ipc_op->out_addr = l1_pcie_addr;
+		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 		if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
 			struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 			struct rte_bbdev_op_ldpc_enc *ldpc_enc =

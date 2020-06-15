@@ -13,7 +13,7 @@ LIB = librte_pmd_bbdev_la12xx.a
 
 # build flags
 CFLAGS += -DALLOW_EXPERIMENTAL_API
-CFLAGS += -O0
+CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(COMMON_HEADERS_DIR)/
 CFLAGS += -DDEBUG
