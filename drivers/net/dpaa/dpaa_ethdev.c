@@ -506,12 +506,24 @@ static int dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->flow_type_rss_offloads = DPAA_RSS_OFFLOAD_ALL;
 
 	if (fif->mac_type == fman_mac_1g) {
-		dev_info->speed_capa = ETH_LINK_SPEED_1G;
+		dev_info->speed_capa = ETH_LINK_SPEED_10M_HD
+					| ETH_LINK_SPEED_10M
+					| ETH_LINK_SPEED_100M_HD
+					| ETH_LINK_SPEED_100M
+					| ETH_LINK_SPEED_1G;
 	} else if (fif->mac_type == fman_mac_2_5g) {
-		dev_info->speed_capa = ETH_LINK_SPEED_1G
+		dev_info->speed_capa = ETH_LINK_SPEED_10M_HD
+					| ETH_LINK_SPEED_10M
+					| ETH_LINK_SPEED_100M_HD
+					| ETH_LINK_SPEED_100M
+					| ETH_LINK_SPEED_1G
 					| ETH_LINK_SPEED_2_5G;
 	} else if (fif->mac_type == fman_mac_10g) {
-		dev_info->speed_capa = ETH_LINK_SPEED_1G
+		dev_info->speed_capa = ETH_LINK_SPEED_10M_HD
+					| ETH_LINK_SPEED_10M
+					| ETH_LINK_SPEED_100M_HD
+					| ETH_LINK_SPEED_100M
+					| ETH_LINK_SPEED_1G
 					| ETH_LINK_SPEED_2_5G
 					| ETH_LINK_SPEED_10G;
 	} else {
