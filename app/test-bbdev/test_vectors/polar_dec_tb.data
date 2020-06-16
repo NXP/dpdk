@@ -48,7 +48,7 @@ pc_index1 =
 pc_index2 =
 0
 
-CD_FZ_LUT =
+FZ_LUT =
 0xffffffff, 0xffffffff
 
 expected_status =

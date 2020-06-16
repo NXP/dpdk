@@ -73,6 +73,9 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	{
 		.type   = RTE_BBDEV_OP_POLAR_DEC,
 	},
+	{
+		.type   = RTE_BBDEV_OP_POLAR_ENC,
+	},
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
 
@@ -613,13 +616,61 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 #endif
 }
 
+static void
+fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+	       struct rte_pmd_la12xx_op *rte_pmd_op,  char *huge_start_addr)
+{
+	char *data_ptr;
+	uint32_t l1_pcie_addr, i;
+
+	if (rte_pmd_op->feca_obj.job_type ==  FECA_CE_CHAIN) { 
+		ce_command_t *l_ce_cmd = &rte_pmd_op->feca_obj.command_chain_t.ce_command_ch_obj;
+		ce_command_t *ce_cmd = &bbdev_ipc_op->feca_job.command_chain_t.ce_command_ch_obj;
+
+		rte_pmd_op->output.length = (l_ce_cmd->ce_cfg2.E + 7)/8 + l_ce_cmd->ce_cfg3.out_pad_bytes;
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
+		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_CE_CHAIN); 
+		/* Set complete trigger */
+		l_ce_cmd->ce_cfg1.complete_trig_en = 1;
+		ce_cmd->ce_cfg1.raw_ce_cfg1 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg1.raw_ce_cfg1);
+		ce_cmd->ce_cfg2.raw_ce_cfg2 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg2.raw_ce_cfg2);
+		ce_cmd->ce_cfg3.raw_ce_cfg3 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg3.raw_ce_cfg3);
+		ce_cmd->ce_pe_indices.raw_ce_pe_indices = rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
+		data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+		ce_cmd->ce_axi_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
+		ce_cmd->ce_axi_addr_high = 0;
+
+		for (i = 0; i< 32; i++)
+			ce_cmd->ce_fz_lut[i] =  rte_cpu_to_be_32(l_ce_cmd->ce_fz_lut[i]);
+	} else {
+		cd_command_t *l_cd_cmd = &rte_pmd_op->feca_obj.command_chain_t.cd_command_ch_obj;
+		cd_command_t *cd_cmd = &bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
+
+		rte_pmd_op->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
+		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_CD_CHAIN); 
+		l_cd_cmd->cd_cfg1.complete_trig_en = 1;
+		/* Set complete trigger */
+		cd_cmd->cd_cfg1.raw_cd_cfg1 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
+		cd_cmd->cd_cfg2.raw_cd_cfg2 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+		cd_cmd->cd_pe_indices.raw_cd_pe_indices = rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
+		cd_cmd->cd_axi_data_addr_low = bbdev_ipc_op->out_addr;
+		cd_cmd->cd_axi_data_addr_high = 0;
+
+		for (i = 0; i< 32; i++)
+			cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
+
+	}	
+}
+
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
-			+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
 
-static int
+	static int
 enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
-		  void *bbdev_op, uint32_t op_type)
+		void *bbdev_op, uint32_t op_type)
 {
 	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
@@ -730,31 +781,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			rte_bbuf_append(out_mbuf,
 					   ldpc_dec->hard_output.length);
 		} else {
+			/* Polar encode/decode processing */ 
 			struct rte_pmd_la12xx_op *rte_pmd_op = (struct rte_pmd_la12xx_op *)bbdev_op;
-			cd_command_t *l_cd_cmd = &rte_pmd_op->feca_obj.command_chain_t.cd_command_ch_obj;
-			cd_command_t *cd_cmd = &bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
-			unsigned int i;	
 
-			rte_pmd_op->output.length = l_cd_cmd->cd_cfg1.K/8;
-			bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
-			bbdev_ipc_op->feca_job.job_type = rte_pmd_op->feca_obj.job_type; 
-			l_cd_cmd->cd_cfg1.complete_trig_en = 1;
-			/* Set complete trigger */
-			cd_cmd->cd_cfg1.raw_cd_cfg1 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
-			cd_cmd->cd_cfg2.raw_cd_cfg2 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
-			cd_cmd->cd_pe_indices.raw_cd_pe_indices = rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
-			cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(bbdev_ipc_op->out_addr);
-			cd_cmd->cd_axi_data_addr_high = 0;
-
-			for (i = 0; i< 32; i++)
-				cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
-
-			/* memcpy(&cd_cmd->cd_fz_lut[0], &l_cd_cmd->cd_fz_lut[0], 4 * 32); */
-			 
+			fill_feca_desc_polar_op(in_mbuf, bbdev_ipc_op, rte_pmd_op, huge_start_addr);
 			bbdev_ipc_op->out_len = 
 				rte_cpu_to_be_32(rte_pmd_op->output.length);
 			rte_bbuf_append(out_mbuf,
-					   rte_pmd_op->output.length);
+					rte_pmd_op->output.length);
 		}
 	}
 
@@ -775,14 +809,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	h_stats->ipc_ch_stats[q_id].total_msg_length += bd->len;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+			"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+			md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
 
 	return 0;
 }
 
 /* Enqueue decode burst */
-static uint16_t
+	static uint16_t
 enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
 {
@@ -791,7 +825,7 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 
 	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
 		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-					BBDEV_IPC_DEC_OP_TYPE);
+				BBDEV_IPC_DEC_OP_TYPE);
 		if (ret)
 			break;
 	}
@@ -803,7 +837,7 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 }
 
 /* Enqueue encode burst */
-static uint16_t
+	static uint16_t
 enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
 {
@@ -812,7 +846,7 @@ enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 
 	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
 		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-					BBDEV_IPC_ENC_OP_TYPE);
+				BBDEV_IPC_ENC_OP_TYPE);
 		if (ret)
 			break;
 	}
@@ -962,7 +996,7 @@ rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
 
 	for (nb_enqueued = 0; nb_enqueued < num_ops; nb_enqueued++) {
 		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-					BBDEV_IPC_CD_OP_TYPE);
+					BBDEV_IPC_POLAR_OP_TYPE);
 		if (ret)
 			break;
 	}
