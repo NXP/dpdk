@@ -1123,6 +1123,8 @@ rte_bbdev_op_type_str(enum rte_bbdev_op_type op_type)
 		"RTE_BBDEV_OP_TURBO_ENC",
 		"RTE_BBDEV_OP_LDPC_DEC",
 		"RTE_BBDEV_OP_LDPC_ENC",
+		"RTE_BBDEV_OP_POLAR_DEC",
+		"RTE_BBDEV_OP_POLAR_ENC",
 	};
 
 	if (op_type < RTE_BBDEV_OP_TYPE_COUNT)
