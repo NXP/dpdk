@@ -8,6 +8,7 @@ DPDK_20.0 {
 	bman_query_free_buffers;
 	bman_release;
 	bman_thread_irq;
+	dpaa_get_ioctl_version_number;
 	dpaa_get_link_status;
 	dpaa_intr_disable;
 	dpaa_intr_enable;

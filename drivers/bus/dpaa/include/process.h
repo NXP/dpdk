@@ -85,6 +85,13 @@ int dpaa_intr_enable(char *if_name, int efd);
 
 int dpaa_intr_disable(char *if_name);
 
+struct usdpaa_ioctl_link_status_args_old {
+	/* network device node name */
+	char    if_name[IF_NAME_MAX_LEN];
+	/* link status(ETH_LINK_UP/DOWN) */
+	int     link_status;
+};
+
 struct usdpaa_ioctl_link_status_args {
 	/* network device node name */
 	char    if_name[IF_NAME_MAX_LEN];
@@ -119,5 +126,6 @@ int dpaa_get_link_status(char *if_name, struct rte_eth_link *link);
 int dpaa_update_link_status(char *if_name, int link_status);
 int dpaa_update_link_speed(char *if_name, int speed, int duplex);
 int dpaa_restart_link_autoneg(char *if_name);
+int dpaa_get_ioctl_version_number(void);
 
 #endif	/*  __PROCESS_H */

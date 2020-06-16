@@ -342,32 +342,76 @@ int dpaa_intr_disable(char *if_name)
 	return 0;
 }
 
-#define DPAA_IOCTL_GET_LINK_STATUS \
-	_IOWR(DPAA_IOCTL_MAGIC, 0x10, struct usdpaa_ioctl_link_status_args)
+#define DPAA_IOCTL_GET_IOCTL_VERSION \
+	_IOR(DPAA_IOCTL_MAGIC, 0x14, int)
 
-int dpaa_get_link_status(char *if_name, struct rte_eth_link *link)
+int dpaa_get_ioctl_version_number(void)
 {
-	int ret = check_fd();
-	struct usdpaa_ioctl_link_status_args args;
+	int version_num, ret = check_fd();
 
 	if (ret)
 		return ret;
 
-	strcpy(args.if_name, if_name);
-
-	ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS, &args);
+	ret = ioctl(fd, DPAA_IOCTL_GET_IOCTL_VERSION, &version_num);
 	if (ret) {
-		if (errno == EINVAL)
-			printf("Failed to get link status: Not Supported\n");
-		else
-			printf("Failed to get link status\n");
-		return ret;
+		if (errno == EINVAL) {
+			version_num = 1;
+		} else {
+			printf("Failed to get ioctl version number\n");
+			version_num = -1;
+		}
 	}
 
-	link->link_status = args.link_status;
-	link->link_speed = args.link_speed;
-	link->link_duplex = args.link_duplex;
-	link->link_autoneg = args.link_autoneg;
+	return version_num;
+}
+
+#define DPAA_IOCTL_GET_LINK_STATUS \
+	_IOWR(DPAA_IOCTL_MAGIC, 0x10, struct usdpaa_ioctl_link_status_args)
+
+#define DPAA_IOCTL_GET_LINK_STATUS_OLD \
+	_IOWR(DPAA_IOCTL_MAGIC, 0x10, struct usdpaa_ioctl_link_status_args_old)
+
+
+int dpaa_get_link_status(char *if_name, struct rte_eth_link *link)
+{
+	int ioctl_version, ret = check_fd();
+
+	if (ret)
+		return ret;
+
+	ioctl_version = dpaa_get_ioctl_version_number();
+
+	if (ioctl_version == 2) {
+		struct usdpaa_ioctl_link_status_args args;
+
+		strcpy(args.if_name, if_name);
+
+		ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS, &args);
+		if (ret) {
+			printf("Failed to get link status\n");
+			return ret;
+		}
+
+		link->link_status = args.link_status;
+		link->link_speed = args.link_speed;
+		link->link_duplex = args.link_duplex;
+		link->link_autoneg = args.link_autoneg;
+	} else {
+		struct usdpaa_ioctl_link_status_args_old args;
+
+		strcpy(args.if_name, if_name);
+
+		ret = ioctl(fd, DPAA_IOCTL_GET_LINK_STATUS_OLD, &args);
+		if (ret) {
+			if (errno == EINVAL)
+				printf("Failed to get link status: Not Supported\n");
+			else
+				printf("Failed to get link status\n");
+			return ret;
+		}
+
+		link->link_status = args.link_status;
+	}
 
 	return 0;
 }

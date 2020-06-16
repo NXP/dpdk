@@ -553,19 +553,12 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	struct rte_eth_link *link = &dev->data->dev_link;
 	struct fman_if *fif = dev->process_private;
 	struct __fman_if *__fif = container_of(fif, struct __fman_if, __if);
-	int ret;
+	int ret, ioctl_version;
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fif->mac_type == fman_mac_1g)
-		link->link_speed = ETH_SPEED_NUM_1G;
-	else if (fif->mac_type == fman_mac_2_5g)
-		link->link_speed = ETH_SPEED_NUM_2_5G;
-	else if (fif->mac_type == fman_mac_10g)
-		link->link_speed = ETH_SPEED_NUM_10G;
-	else
-		DPAA_PMD_ERR("invalid link_speed: %s, %d",
-			     dpaa_intf->name, fif->mac_type);
+	ioctl_version = dpaa_get_ioctl_version_number();
+
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC) {
 		ret = dpaa_get_link_status(__fif->node_name, link);
@@ -573,8 +566,21 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 			return ret;
 	} else {
 		link->link_status = dpaa_intf->valid;
+	}
+
+	if (ioctl_version < 2) {
 		link->link_duplex = ETH_LINK_FULL_DUPLEX;
 		link->link_autoneg = ETH_LINK_AUTONEG;
+
+		if (fif->mac_type == fman_mac_1g)
+			link->link_speed = ETH_SPEED_NUM_1G;
+		else if (fif->mac_type == fman_mac_2_5g)
+			link->link_speed = ETH_SPEED_NUM_2_5G;
+		else if (fif->mac_type == fman_mac_10g)
+			link->link_speed = ETH_SPEED_NUM_10G;
+		else
+			DPAA_PMD_ERR("invalid link_speed: %s, %d",
+				     dpaa_intf->name, fif->mac_type);
 	}
 
 	DPAA_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
