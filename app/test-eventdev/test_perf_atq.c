@@ -70,10 +70,12 @@ perf_atq_worker(void *arg, const int enable_fwd_latency)
 }
 
 static int
-perf_atq_worker_burst(void *arg, const int enable_fwd_latency)
+perf_atq_worker_burst(void *arg, const int enable_fwd_latency,
+					const uint32_t flags)
 {
 	PERF_WORKER_INIT;
 	uint16_t i;
+	uint16_t nb_tx;
 	/* +1 to avoid prefetch out of array check */
 	struct rte_event ev[BURST_SIZE + 1];
 
@@ -110,13 +112,21 @@ perf_atq_worker_burst(void *arg, const int enable_fwd_latency)
 						nb_stages);
 			}
 		}
+		if (flags == TEST_PERF_EVENT_TX_DIRECT) {
+			nb_tx = rte_event_eth_tx_adapter_enqueue(dev, port,
+						ev, nb_rx, 0);
+			while (nb_tx < nb_rx && !t->done)
+				nb_tx += rte_event_eth_tx_adapter_enqueue(dev,
+						port, ev + nb_tx,
+						nb_rx - nb_tx, 0);
+		} else {
+			uint16_t enq;
 
-		uint16_t enq;
-
-		enq = rte_event_enqueue_burst(dev, port, ev, nb_rx);
-		while (enq < nb_rx) {
-			enq += rte_event_enqueue_burst(dev, port,
+			enq = rte_event_enqueue_burst(dev, port, ev, nb_rx);
+			while (enq < nb_rx) {
+				enq += rte_event_enqueue_burst(dev, port,
 							ev + enq, nb_rx - enq);
+			}
 		}
 	}
 	return 0;
@@ -127,20 +137,29 @@ worker_wrapper(void *arg)
 {
 	struct worker_data *w  = arg;
 	struct evt_options *opt = w->t->opt;
-
+	const bool internal_port = w->t->internal_port;
 	const bool burst = evt_has_burst_mode(w->dev_id);
 	const int fwd_latency = opt->fwd_latency;
+	uint32_t flags;
 
 	/* allow compiler to optimize */
 	if (!burst && !fwd_latency)
 		return perf_atq_worker(arg, 0);
 	else if (!burst && fwd_latency)
 		return perf_atq_worker(arg, 1);
-	else if (burst && !fwd_latency)
-		return perf_atq_worker_burst(arg, 0);
-	else if (burst && fwd_latency)
-		return perf_atq_worker_burst(arg, 1);
-
+	else if (burst && !fwd_latency && internal_port) {
+		flags = TEST_PERF_EVENT_TX_DIRECT;
+		return perf_atq_worker_burst(arg, 0, flags);
+	} else if (burst && !fwd_latency && !internal_port) {
+		flags = TEST_PERF_EVENT_TX_ENQ;
+		return perf_atq_worker_burst(arg, 1, flags);
+	} else if (burst && fwd_latency && internal_port) {
+		flags = TEST_PERF_EVENT_TX_DIRECT;
+		return perf_atq_worker_burst(arg, 0, flags);
+	} else if (burst && fwd_latency && !internal_port) {
+		flags = TEST_PERF_EVENT_TX_ENQ;
+		return perf_atq_worker_burst(arg, 1, flags);
+	}
 	rte_panic("invalid worker\n");
 }
 

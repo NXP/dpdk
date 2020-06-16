@@ -81,20 +81,11 @@ pipeline_queue_worker_single_stage_burst_tx(void *arg)
 
 		for (i = 0; i < nb_rx; i++) {
 			rte_prefetch0(ev[i + 1].mbuf);
-			if (ev[i].sched_type == RTE_SCHED_TYPE_ATOMIC) {
 				pipeline_event_tx(dev, port, &ev[i]);
 				ev[i].op = RTE_EVENT_OP_RELEASE;
 				w->processed_pkts++;
-			} else {
-				ev[i].queue_id++;
-				pipeline_fwd_event(&ev[i],
-						RTE_SCHED_TYPE_ATOMIC);
 			}
 		}
-
-		pipeline_event_enqueue_burst(dev, port, ev, nb_rx);
-	}
-
 	return 0;
 }
 
@@ -334,6 +325,9 @@ pipeline_queue_eventdev_setup(struct evt_test *test, struct evt_options *opt)
 	memset(queue_arr, 0, sizeof(uint8_t) * RTE_EVENT_MAX_QUEUES_PER_DEV);
 
 	rte_event_dev_info_get(opt->dev_id, &info);
+	if (nb_queues > info.max_event_queues)
+		nb_queues = nb_stages;
+
 	ret = evt_configure_eventdev(opt, nb_queues, nb_ports);
 	if (ret) {
 		evt_err("failed to configure eventdev %d", opt->dev_id);
