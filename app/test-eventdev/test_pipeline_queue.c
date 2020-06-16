@@ -325,6 +325,9 @@ pipeline_queue_eventdev_setup(struct evt_test *test, struct evt_options *opt)
 	memset(queue_arr, 0, sizeof(uint8_t) * RTE_EVENT_MAX_QUEUES_PER_DEV);
 
 	rte_event_dev_info_get(opt->dev_id, &info);
+	if (nb_queues > info.max_event_queues)
+		nb_queues = nb_stages;
+
 	ret = evt_configure_eventdev(opt, nb_queues, nb_ports);
 	if (ret) {
 		evt_err("failed to configure eventdev %d", opt->dev_id);
