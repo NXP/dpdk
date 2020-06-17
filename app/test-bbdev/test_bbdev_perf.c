@@ -360,7 +360,8 @@ check_dev_cap(const struct rte_bbdev_info *dev_info)
 			}
 
 			return TEST_SUCCESS;
-		} else if (op_cap->type == RTE_BBDEV_OP_POLAR_DEC) {
+		} else if ((op_cap->type == RTE_BBDEV_OP_POLAR_DEC) || 
+					(op_cap->type == RTE_BBDEV_OP_POLAR_ENC)) {
 			return TEST_SUCCESS;
 		}
 	}
@@ -1899,7 +1900,8 @@ dequeue_event_callback(uint16_t dev_id,
 				&tp->dec_ops[
 					rte_atomic16_read(&tp->nb_dequeued)],
 				burst_sz);
-	else if (test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC)
+	else if ((test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC) || 
+				(test_vector.op_type == RTE_BBDEV_OP_POLAR_ENC))
 		deq = rte_pmd_la12xx_dequeue_ops(dev_id, queue_id, 
 					&tp->polar_ops[rte_atomic16_read(&tp->nb_dequeued)], 
 					burst_sz);
@@ -1951,7 +1953,8 @@ dequeue_event_callback(uint16_t dev_id,
 		ret = validate_ldpc_dec_op(tp->dec_ops, num_ops, ref_op,
 				tp->op_params->vector_mask);
 		rte_bbdev_dec_op_free_bulk(tp->dec_ops, deq);
-	} else if (test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC) {
+	} else if ((test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC) || 
+			(test_vector.op_type == RTE_BBDEV_OP_POLAR_ENC)) {
 		struct rte_pmd_la12xx_op *ref_op = tp->op_params->ref_polar_op;
 		ret = validate_polar_op(tp->polar_ops, num_ops, ref_op);
 		rte_mempool_put_bulk(tp->polar_ops[0]->mempool, (void **)tp->dec_ops, deq);
@@ -2831,7 +2834,8 @@ throughput_test(struct active_device *ad,
 			throughput_function = throughput_intr_lcore_enc;
 		else if (test_vector.op_type == RTE_BBDEV_OP_LDPC_ENC)
 			throughput_function = throughput_intr_lcore_enc;
-		else if (test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC)
+		else if ((test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC) ||
+					(test_vector.op_type == RTE_BBDEV_OP_POLAR_ENC))
 			throughput_function = throughput_intr_lcore_polar;
 		else
 			throughput_function = throughput_intr_lcore_enc;
@@ -2853,7 +2857,8 @@ throughput_test(struct active_device *ad,
 			throughput_function = throughput_pmd_lcore_enc;
 		else if (test_vector.op_type == RTE_BBDEV_OP_LDPC_ENC)
 			throughput_function = throughput_pmd_lcore_ldpc_enc;
-		else if (test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC)
+		else if ( (test_vector.op_type == RTE_BBDEV_OP_POLAR_DEC) || 
+				(test_vector.op_type == RTE_BBDEV_OP_POLAR_ENC))
 			throughput_function = throughput_pmd_lcore_polar;
 		else
 			throughput_function = throughput_pmd_lcore_enc;
@@ -3368,7 +3373,8 @@ latency_test(struct active_device *ad,
 				op_params->ref_dec_op, op_params->vector_mask,
 				ad->dev_id, queue_id, num_to_process,
 				burst_sz, &total_time, &min_time, &max_time);
-	else if (op_type == RTE_BBDEV_OP_POLAR_DEC)
+	else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) || 
+				(op_type == RTE_BBDEV_OP_POLAR_ENC))
 		iter = latency_test_ldpc_polar(op_params->mp, bufs,
 				op_params->ref_polar_op, op_params->vector_mask,
 				ad->dev_id, queue_id, num_to_process,
@@ -3886,7 +3892,7 @@ offload_cost_test(struct active_device *ad,
 		iter = offload_latency_test_ldpc_dec(op_params->mp, bufs,
 			op_params->ref_dec_op, ad->dev_id, queue_id,
 			num_to_process, burst_sz, &time_st);
-	else if (op_type == RTE_BBDEV_OP_POLAR_DEC)
+	else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) || (op_type == RTE_BBDEV_OP_POLAR_ENC))
 		iter = offload_latency_test_polar(op_params->mp, bufs,
 				op_params->ref_polar_op, ad->dev_id, queue_id,
 				num_to_process, burst_sz, &time_st);

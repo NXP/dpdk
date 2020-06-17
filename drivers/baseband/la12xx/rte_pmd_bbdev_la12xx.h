@@ -26,33 +26,70 @@ struct rte_pmd_la12xx_op {
 };
 
 #define RTE_PMD_LA12xx_SET_POLAR_DEC(p) \
-	(p)->feca_obj.job_type =  rte_cpu_to_be_32(FECA_CD_CHAIN);
-#define RTE_PMD_LA12xx_pd_n(p) \
+	(p)->feca_obj.job_type =  FECA_CD_CHAIN;
+#define RTE_PMD_LA12xx_SET_POLAR_ENC(p) \
+	(p)->feca_obj.job_type =  FECA_CE_CHAIN;
+
+#define RTE_PMD_LA12xx_PD_pd_n(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pd_n
-#define	RTE_PMD_LA12xx_rm_mode(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.rm_mode
-#define RTE_PMD_LA12xx_pc_en(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pc_en
-#define RTE_PMD_LA12xx_crc_type(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.crc_type
-#define RTE_PMD_LA12xx_input_deint_bypass(p) \
+#define RTE_PMD_LA12xx_PD_input_deint_bypass(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.input_deint_bypass
-#define RTE_PMD_LA12xx_output_deint_bypass(p) \
+#define RTE_PMD_LA12xx_PD_output_deint_bypass(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.output_deint_bypass
-#define RTE_PMD_LA12xx_K(p) \
+#define	RTE_PMD_LA12xx_PD_rm_mode(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.rm_mode
+#define RTE_PMD_LA12xx_PD_pc_en(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pc_en
+#define RTE_PMD_LA12xx_PD_crc_type(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.crc_type
+#define RTE_PMD_LA12xx_PD_K(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
-#define RTE_PMD_LA12xx_E(p) \
+#define RTE_PMD_LA12xx_PD_E(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.E
-#define RTE_PMD_LA12xx_crc_rnti(p) \
+#define RTE_PMD_LA12xx_PD_crc_rnti(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.crc_rnti
-#define RTE_PMD_LA12xx_pc_index0(p) \
+#define RTE_PMD_LA12xx_PD_pc_index0(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index0
-#define RTE_PMD_LA12xx_pc_index1(p) \
+#define RTE_PMD_LA12xx_PD_pc_index1(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index1
-#define RTE_PMD_LA12xx_pc_index2(p) \
+#define RTE_PMD_LA12xx_PD_pc_index2(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index2
-#define RTE_PMD_LA12xx_CD_FZ_LUT(p) \
+#define RTE_PMD_LA12xx_PD_FZ_LUT(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_fz_lut
+
+#define RTE_PMD_LA12xx_PE_pe_n(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pe_n
+#define RTE_PMD_LA12xx_PE_input_int_bypass(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.input_int_bypass
+#define RTE_PMD_LA12xx_PE_output_int_bypass(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.output_int_bypass
+#define	RTE_PMD_LA12xx_PE_rm_mode(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.rm_mode
+#define RTE_PMD_LA12xx_PE_pc_en(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pc_en
+#define RTE_PMD_LA12xx_PE_crc_type(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.crc_type
+#define RTE_PMD_LA12xx_PE_dst_sel(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.dst_sel
+#define RTE_PMD_LA12xx_PE_K(p) \
+	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
+#define RTE_PMD_LA12xx_PE_E(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.E
+#define RTE_PMD_LA12xx_PE_crc_rnti(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.crc_rnti
+#define RTE_PMD_LA12xx_PE_out_pad_bytes(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.out_pad_bytes
+#define RTE_PMD_LA12xx_PE_block_concat_en(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.block_concat_en
+#define RTE_PMD_LA12xx_PE_pc_index0(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index0
+#define RTE_PMD_LA12xx_PE_pc_index1(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index1
+#define RTE_PMD_LA12xx_PE_pc_index2(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index2
+#define RTE_PMD_LA12xx_PE_FZ_LUT(p) \
+	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_fz_lut
+
 	
 #define RTE_PMD_LA12xx_POLAR_OP_DESC(p) \
 	(p)->feca_obj

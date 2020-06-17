@@ -321,6 +321,8 @@ op_turbo_type_strtol(char *token, enum rte_bbdev_op_type *op_type)
 		*op_type = RTE_BBDEV_OP_NONE;
 	else if (!strcmp(token, "RTE_BBDEV_OP_POLAR_DEC"))
 		*op_type = RTE_BBDEV_OP_POLAR_DEC;
+	else if (!strcmp(token, "RTE_BBDEV_OP_POLAR_ENC"))
+		*op_type = RTE_BBDEV_OP_POLAR_ENC;
 	else {
 		printf("Not valid turbo op_type: '%s'\n", token);
 		return -1;
@@ -921,59 +923,166 @@ parse_polar_decoder_params(const char *key_token, char *token,
 	
 	} else if (!strcmp(key_token, "pd_n")) {
 		vector->mask |= TEST_BBDEV_VF_C;
-		RTE_PMD_LA12xx_pd_n(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_pd_n(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "rm_mode")) {
 		vector->mask |= TEST_BBDEV_VF_C;
-		RTE_PMD_LA12xx_rm_mode(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_rm_mode(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pc_en")) {
 		vector->mask |= TEST_BBDEV_VF_C;
-		RTE_PMD_LA12xx_pc_en(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_pc_en(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "crc_type")) {
 		vector->mask |= TEST_BBDEV_VF_C;
-		RTE_PMD_LA12xx_crc_type(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_crc_type(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "ip_deint_bypass")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_input_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_input_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "op_deint_bypass")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_output_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_output_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "K")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_K(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_K(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "E")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_E(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_E(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "crc_rtni")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_crc_rnti(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_crc_rnti(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pc_index0")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_pc_index0(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_pc_index0(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pc_index1")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_pc_index1(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_pc_index1(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pc_index2")) {
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		RTE_PMD_LA12xx_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		RTE_PMD_LA12xx_PD_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
-	} else if (!strcmp(key_token, "CD_FZ_LUT")) {
+	} else if (!strcmp(key_token, "FZ_LUT")) {
 		uint32_t data_length;
 		uint32_t *data = NULL;
 		vector->mask |= TEST_BBDEV_VF_CAB;
 		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
 		if (data) {
-			memcpy((RTE_PMD_LA12xx_CD_FZ_LUT(polar_dec)), data, data_length);
+			memcpy((RTE_PMD_LA12xx_PD_FZ_LUT(polar_dec)), data, data_length);
+			rte_free(data);
+		}	
+	} else if (!strcmp(key_token, "expected_status")) {
+		vector->mask |= TEST_BBDEV_VF_EXPECTED_STATUS;
+		ret = parse_expected_status(token, &status, vector->op_type);
+		if (!ret)
+			vector->expected_status = status;
+	} else {
+		printf("Not valid ldpc dec key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return 0;
+}
+
+/* parses polar encoder parameters and assigns to global variable */
+static int
+parse_polar_encoder_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0, status = 0;
+	char *err = NULL;
+
+	struct rte_pmd_la12xx_op *polar_enc = &vector->polar_op;
+
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+	
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	
+	} else if (!strcmp(key_token, "pe_n")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_pe_n(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "rm_mode")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_rm_mode(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_en")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_pc_en(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_type")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_crc_type(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "ip_int_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_input_int_bypass(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "op_int_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_output_int_bypass(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "dst_sel")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_dst_sel(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "K")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_K(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "E")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_E(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_rtni")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_crc_rnti(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "block_concat_en")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_block_concat_en(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "out_pad_bytes")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_out_pad_bytes(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index0")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index0(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index1")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index1(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index2")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index2(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "FZ_LUT")) {
+		uint32_t data_length;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
+		if (data) {
+			memcpy((RTE_PMD_LA12xx_PE_FZ_LUT(polar_enc)), data, data_length);
 			rte_free(data);
 		}	
 	} else if (!strcmp(key_token, "expected_status")) {
@@ -1047,6 +1156,9 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_DEC) {
 		if (parse_polar_decoder_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
+		if (parse_polar_encoder_params(key_token, token, vector) == -1)
 			return -1;
 	}
 
@@ -1364,6 +1476,32 @@ check_polar_decoder(struct test_bbdev_vector *vector)
 	return 0;
 }
 
+/* checks polar encoder parameters */
+static int
+check_polar_encoder(struct test_bbdev_vector *vector)
+{	
+	unsigned int i;	
+	struct rte_pmd_la12xx_op *polar_enc = &vector->polar_op;
+
+	RTE_PMD_LA12xx_SET_POLAR_ENC(polar_enc);
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_HARD_OUTPUT].nb_segments; i++)
+		if (vector->entries[DATA_HARD_OUTPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
 /* checks encoder parameters */
 static int
 check_encoder(struct test_bbdev_vector *vector)
@@ -1524,6 +1662,9 @@ bbdev_check_vector(struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_DEC) {
 		if (check_polar_decoder(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
+		if (check_polar_encoder(vector) == -1)
 			return -1;
 	} else if (vector->op_type != RTE_BBDEV_OP_NONE) {
 		printf("Vector was not filled\n");
