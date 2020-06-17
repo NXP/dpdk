@@ -1637,6 +1637,9 @@ cmd_config_speed_all_parsed(void *parsed_result,
 			&link_speed) < 0)
 		return;
 
+	if (strcmp(res->value1, "auto"))
+		link_speed |= ETH_LINK_SPEED_FIXED;
+
 	RTE_ETH_FOREACH_DEV(pid) {
 		ports[pid].dev_conf.link_speeds = link_speed;
 	}
@@ -1710,6 +1713,9 @@ cmd_config_speed_specific_parsed(void *parsed_result,
 	if (parse_and_check_speed_duplex(res->value1, res->value2,
 			&link_speed) < 0)
 		return;
+
+	if (strcmp(res->value1, "auto"))
+		link_speed |= ETH_LINK_SPEED_FIXED;
 
 	ports[res->id].dev_conf.link_speeds = link_speed;
 
