@@ -8,6 +8,7 @@
 #include <rte_mbuf.h>
 #include <rte_mbuf_pool_ops.h>
 #include <rte_errno.h>
+#include <rte_hexdump.h>
 
 /** Alignment constraint of bbuf private area. */
 #define RTE_BBUF_PRIV_ALIGN 8
@@ -20,6 +21,8 @@
 #define rte_bbuf_mtod_offset rte_pktmbuf_mtod_offset
 #define rte_bbuf_data_len rte_pktmbuf_pkt_len
 #define rte_bbuf_reset rte_pktmbuf_reset
+#define rte_bbuf_free rte_pktmbuf_free
+#define rte_bbuf_free_bulk rte_pktmbuf_free_bulk
 
 /**
  * Append len bytes to an bbuf.
@@ -189,6 +192,49 @@ static inline int rte_bbuf_chain(
 	 *     avoiding compiler warnings on gcc 8.1 at least */
 	head->nb_segs = (uint16_t)(head->nb_segs + tail->nb_segs);
 	return 0;
+}
+
+/**
+ * Dump an bbuf structure to a file.
+ *
+ * Dump all fields for the given bbuf and all its associated
+ * segments (in the case of a chained buffer).
+ *
+ * @param f
+ *   A pointer to a file for output
+ * @param b
+ *   The bbuf.
+ * @param dump_len
+ *   If dump_len != 0, also dump the "dump_len" first data bytes of
+ *   the packet.
+ */
+static inline void
+rte_bbuf_dump(FILE *f, const struct rte_bbuf *b, unsigned int dump_len)
+{
+	unsigned int len;
+	unsigned int nb_segs;
+
+	__rte_mbuf_sanity_check(b, 1);
+
+	fprintf(f, "dump bbuf at %p, iova=%"PRIx64", buf_len=%u\n",
+		b, (uint64_t)b->buf_iova, (unsigned int)b->buf_len);
+	fprintf(f, "  pkt_len=%"PRIu32", ol_flags=%"PRIx64", nb_segs=%u, in_port=%u\n",
+		b->pkt_len, b->ol_flags,
+		(unsigned int)b->nb_segs, (unsigned int)b->port);
+	nb_segs = b->nb_segs;
+
+	while (b && nb_segs != 0) {
+		fprintf(f, "  segment at %p, data=%p, pkt_len=%u\n",
+			b, rte_pktmbuf_mtod(b, void *), (unsigned int)b->pkt_len);
+		len = dump_len;
+		if (len > b->pkt_len)
+			len = b->pkt_len;
+		if (len != 0)
+			rte_hexdump(f, NULL, rte_pktmbuf_mtod(b, void *), len);
+		dump_len -= len;
+		b = b->next;
+		nb_segs--;
+	}
 }
 
 #endif
