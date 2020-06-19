@@ -33,6 +33,7 @@ static struct test_params {
 	unsigned int num_seg;
 	unsigned int buf_size;
 	char test_vector_filename[PATH_MAX];
+	unsigned int vector_count;
 	bool init_device;
 } test_params;
 
@@ -126,6 +127,12 @@ get_vector_filename(void)
 }
 
 unsigned int
+get_vector_count(void)
+{
+	return test_params.vector_count;
+}
+
+unsigned int
 get_num_ops(void)
 {
 	return test_params.num_ops;
@@ -171,6 +178,7 @@ print_usage(const char *prog_name)
 			"\t[-s/--buf-size BUFFER_SIZE]\n"
 			"\t[-m/--num-segs NUM_SEGS]\n"
 			"\t[-v/--test-vector VECTOR_FILE]\n"
+			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
 			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]]\n",
 			prog_name);
 
@@ -196,6 +204,7 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "burst-size", 1, 0, 'b' },
 		{ "test-cases", 1, 0, 'c' },
 		{ "test-vector", 1, 0, 'v' },
+		{ "vector-count", 1, 0, 'f' },
 		{ "lcores", 1, 0, 'l' },
 		{ "buf-size", 1, 0, 's' },
 		{ "num-segs", 1, 0, 'm' },
@@ -204,7 +213,7 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ NULL,  0, 0, 0 }
 	};
 
-	while ((opt = getopt_long(argc, argv, "hin:b:c:v:l:s:m:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hin:b:c:v:f:l:s:m:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -244,11 +253,23 @@ parse_args(int argc, char **argv, struct test_params *tp)
 				++num_tests;
 			}
 			break;
+		case 'f':
+			TEST_ASSERT(test_vector_present == false,
+					"Test vector provided more than once");
+			test_vector_present = true;
+			tp->vector_count = strtol(optarg, NULL, 10);
+			snprintf(tp->test_vector_filename,
+					sizeof(tp->test_vector_filename),
+					"%s", "no-file");
+			TEST_ASSERT(tp->vector_count <= MAX_VECTORS,
+					"Num of vectors mustn't be greater than %u",
+					MAX_VECTORS);
+			break;
 		case 'v':
 			TEST_ASSERT(test_vector_present == false,
 					"Test vector provided more than once");
 			test_vector_present = true;
-
+			tp->vector_count = 1;
 			TEST_ASSERT(strlen(optarg) > 0,
 					"Config file name is null");
 

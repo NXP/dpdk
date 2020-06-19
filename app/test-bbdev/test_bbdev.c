@@ -34,10 +34,20 @@ read_test_vector(void)
 	int ret;
 
 	memset(&test_vector, 0, sizeof(test_vector));
-	printf("Test vector file = %s\n", get_vector_filename());
-	ret = test_bbdev_vector_read(get_vector_filename(), &test_vector);
-	TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
-			get_vector_filename());
+	if (!strcmp(get_vector_filename(), "no-file")) {
+		char vector[22] = "./test_vector_0.data";
+
+		printf("Test vector file = %s\n", vector);
+		ret = test_bbdev_vector_read(vector, &test_vector);
+		TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
+				vector);
+	} else {
+		printf("Test vector file = %s\n", get_vector_filename());
+		ret = test_bbdev_vector_read(get_vector_filename(),
+					     &test_vector);
+		TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
+				get_vector_filename());
+	}
 
 	return TEST_SUCCESS;
 }

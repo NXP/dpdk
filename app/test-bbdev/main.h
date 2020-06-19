@@ -20,6 +20,7 @@
 #define DEFAULT_BURST 32U
 #define DEFAULT_OPS 64U
 #define BBUF_MAX_SEGS 256
+#define MAX_VECTORS 64
 #define BBUF_POOL_ELEM_SIZE     (RTE_BBUF_HEADROOM + 1024)
 #define DEFAULT_BBUF_SEGS 1
 
@@ -111,6 +112,8 @@ void add_test_command(struct test_command *t);
 	{ \
 		add_test_command(&test_struct_##name); \
 	}
+
+unsigned int get_vector_count(void);
 
 const char *get_vector_filename(void);
 
