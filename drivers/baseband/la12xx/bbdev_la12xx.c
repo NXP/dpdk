@@ -473,6 +473,8 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 		int_start_ofst_ceiling[6]);
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+	rte_bbuf_dump(stdout, bbdev_enc_op->ldpc_enc.input.data,
+		bbdev_enc_op->ldpc_enc.input.data->data_len);
 	rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
 #endif
 }
@@ -612,6 +614,8 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		di_start_ofst_ceiling[6]);
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+	rte_bbuf_dump(stdout, bbdev_dec_op->ldpc_dec.input.data,
+		bbdev_dec_op->ldpc_dec.input.data->data_len);
 	rte_hexdump(stdout, "SD COMMAND", sd_command, sizeof(sd_command_t));
 #endif
 }
@@ -643,6 +647,12 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 
 		for (i = 0; i< 32; i++)
 			ce_cmd->ce_fz_lut[i] =  rte_cpu_to_be_32(l_ce_cmd->ce_fz_lut[i]);
+
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+		rte_bbuf_dump(stdout, rte_pmd_op->input.data,
+			rte_pmd_op->input.data->data_len);
+		rte_hexdump(stdout, "CE COMMAND", ce_cmd, sizeof(ce_command_t));
+#endif
 	} else {
 		cd_command_t *l_cd_cmd = &rte_pmd_op->feca_obj.command_chain_t.cd_command_ch_obj;
 		cd_command_t *cd_cmd = &bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
@@ -661,6 +671,11 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 		for (i = 0; i< 32; i++)
 			cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
 
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+		rte_bbuf_dump(stdout, rte_pmd_op->input.data,
+			rte_pmd_op->input.data->data_len);
+		rte_hexdump(stdout, "CD COMMAND", cd_cmd, sizeof(cd_command_t));
+#endif
 	}	
 }
 
@@ -950,6 +965,10 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 			bbdev_ipc_op.l2_cntx_h << 32) |
 			bbdev_ipc_op.l2_cntx_l);
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_dec.hard_output.data,
+			ops[nb_dequeued]->ldpc_dec.hard_output.data->data_len);
+#endif
 	}
 
 	if (ret != IPC_CH_EMPTY)
@@ -976,6 +995,10 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 			bbdev_ipc_op.l2_cntx_h << 32) |
 			bbdev_ipc_op.l2_cntx_l);
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_enc.output.data,
+			ops[nb_dequeued]->ldpc_enc.output.data->data_len);
+#endif
 	}
 
 	if (ret != IPC_CH_EMPTY)
@@ -1004,11 +1027,6 @@ rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
 	q_data->queue_stats.enqueue_err_count += num_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
 	
-	RTE_SET_USED(dev_id);
-	RTE_SET_USED(queue_id);
-	RTE_SET_USED(ops);
-	RTE_SET_USED(num_ops);
-
 	return nb_enqueued;
 }
 
@@ -1030,17 +1048,16 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 			bbdev_ipc_op.l2_cntx_h << 32) |
 			bbdev_ipc_op.l2_cntx_l);
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+#ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
+		rte_bbuf_dump(stdout, ops[nb_dequeued]->output.data,
+			ops[nb_dequeued]->output.data->data_len);
+#endif
 	}
 
 	if (ret != IPC_CH_EMPTY)
 		q_data->queue_stats.dequeue_err_count += num_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 	
-	RTE_SET_USED(dev_id);
-	RTE_SET_USED(queue_id);
-	RTE_SET_USED(ops);
-	RTE_SET_USED(num_ops);
-
 	return nb_dequeued;
 }
 
