@@ -765,7 +765,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 				ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
 				ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
 
-			ldpc_enc->output.length = total_out_bits/8;
+			ldpc_enc->output.length = (total_out_bits + 7)/8;
 
 			fill_feca_desc_enc(in_mbuf, bbdev_ipc_op, bbdev_op,
 					   huge_start_addr);
@@ -781,7 +781,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
 			if (ldpc_dec->tb_params.c == 1) {
 				total_out_bits = ((sys_cols * ldpc_dec->z_c) -
-						ldpc_dec->n_filler) - 16;
+						ldpc_dec->n_filler);
+				/* 5G-NR protocol uses 16 bit CRC when output packet
+				 * size <= 3824 (bits). Otherwise 24 bit CRC is used.
+				 * Adjust the output bits accordingly */
+				if (total_out_bits - 16 <= 3824)
+					total_out_bits -= 16;
+				else
+					total_out_bits -= 24;
 				ldpc_dec->hard_output.length = (total_out_bits / 8);
 			} else {
 				total_out_bits = (((sys_cols * ldpc_dec->z_c) -
