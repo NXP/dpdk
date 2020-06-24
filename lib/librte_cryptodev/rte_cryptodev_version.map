@@ -61,6 +61,7 @@ DPDK_20.0 {
 EXPERIMENTAL {
 	global:
 
+	rte_cryptodev_get_qp_status;
 	rte_cryptodev_asym_capability_get;
 	rte_cryptodev_asym_get_header_session_size;
 	rte_cryptodev_asym_get_private_session_size;
