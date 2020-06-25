@@ -961,8 +961,11 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
 {
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
-	int nb_dequeued, ret;
+	struct rte_bbdev_dec_op *l_op;
+	int nb_dequeued, ret, tb_crc, cb_cnt;
 
 	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
 		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
@@ -971,11 +974,27 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		ops[nb_dequeued] = (struct rte_bbdev_dec_op *)(((uint64_t)
 			bbdev_ipc_op.l2_cntx_h << 32) |
 			bbdev_ipc_op.l2_cntx_l);
-		ops[nb_dequeued]->status = bbdev_ipc_op.status;
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_dec.hard_output.data,
 			ops[nb_dequeued]->ldpc_dec.hard_output.data->data_len);
 #endif
+
+		l_op = ops[nb_dequeued];
+		l_op->status = bbdev_ipc_op.status;
+
+		tb_crc = 0;
+		if (l_op->ldpc_dec.code_block_mode)
+			cb_cnt = 1;
+		else {
+			cb_cnt = l_op->ldpc_dec.tb_params.c;
+			tb_crc = l_op->ldpc_dec.tb_params.c;
+		}
+
+		/* Copy code block crc status bits + TB status bit */
+		ipc_memcpy(l_op->crc_stat, (void *)MODEM_P2V(bbdev_ipc_op.crc_stat_addr), (cb_cnt >> 3) + 1);
+		if (tb_crc &&  !(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0xf))))
+			l_op->status |= RTE_BBDEV_CRC_ERROR;
+
 	}
 
 	if (ret != IPC_CH_EMPTY)

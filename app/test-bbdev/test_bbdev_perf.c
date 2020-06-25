@@ -1383,6 +1383,16 @@ static int
 check_dec_status_and_ordering(struct rte_bbdev_dec_op *op,
 		unsigned int order_idx, const int expected_status)
 {
+	if (op->status & RTE_BBDEV_CRC_ERROR) {
+		int i;
+		int cb_cnt = op->ldpc_dec.code_block_mode ? 1:op->ldpc_dec.tb_params.c;
+		printf("TB CRC validation failed \n");
+		for (i = 0; i < cb_cnt; i++) {
+			if (!(op->crc_stat[i>>3] &  (1 << (i & 0x7)))) 
+				printf("==>CRC validation failed for code block : %d\n", i);
+		}
+	}
+		
 	TEST_ASSERT(op->status == expected_status,
 			"op_status (%d) != expected_status (%d)",
 			op->status, expected_status);

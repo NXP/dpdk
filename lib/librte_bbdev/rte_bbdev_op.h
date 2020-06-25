@@ -817,6 +817,8 @@ struct rte_bbdev_dec_op {
 	struct rte_mempool *mempool;
 	/** Opaque pointer for user data */
 	void *opaque_data;
+	/** CRC Status from device. Each bit represents the status of corresponding CB **/
+	unsigned char crc_stat[40];
 	union {
 		/** Contains turbo decoder specific parameters */
 		struct rte_bbdev_op_turbo_dec turbo_dec;
