@@ -1108,7 +1108,7 @@ static int
 parse_entry(char *entry, struct test_bbdev_vector *vector)
 {
 	int ret = 0;
-	char *token, *key_token;
+	char *token, *key_token, *err = NULL;
 	enum rte_bbdev_op_type op_type = RTE_BBDEV_OP_NONE;
 
 	if (entry == NULL) {
@@ -1139,6 +1139,11 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 		printf("First key_token (%s) does not specify op_type\n",
 				key_token);
 		return -1;
+	}
+
+	if (!strcmp(key_token, "coremask")) {
+		vector->core_mask = (uint16_t) strtoul(token, &err, 0);
+		return ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	}
 
 	/* compare keys */
@@ -1648,6 +1653,10 @@ check_ldpc_encoder(struct test_bbdev_vector *vector)
 static int
 bbdev_check_vector(struct test_bbdev_vector *vector)
 {
+	if (vector->core_mask == 0) {
+		printf("WARNING: coremask is not given, so assigning the default core mask 0xffff\n");
+		vector->core_mask = 0xffff;
+	}
 	if (vector->op_type == RTE_BBDEV_OP_TURBO_DEC) {
 		if (check_decoder(vector) == -1)
 			return -1;
