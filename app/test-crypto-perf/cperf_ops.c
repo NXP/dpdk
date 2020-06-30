@@ -27,7 +27,7 @@ cperf_set_ops_security(struct rte_crypto_op **ops,
 
 		uint32_t *per_pkt_hfn = rte_crypto_op_ctod_offset(ops[i],
 					uint32_t *, iv_offset);
-		*per_pkt_hfn = 0x1;
+		*per_pkt_hfn = options->pdcp_ses_hfn_en ? 0 : PDCP_DEFAULT_HFN;
 
 		ops[i]->status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
 		rte_security_attach_session(ops[i], sec_sess);
@@ -579,9 +579,10 @@ cperf_create_session(struct rte_mempool *sess_mp,
 				.domain = options->pdcp_domain,
 				.pkt_dir = 0,
 				.sn_size = options->pdcp_sn_sz,
-				.hfn = 0x0,
+				.hfn = options->pdcp_ses_hfn_en ?
+					PDCP_DEFAULT_HFN : 0,
 				.hfn_threshold = 0x70C0A,
-				.hfn_ovrd = 1,
+				.hfn_ovrd = !(options->pdcp_ses_hfn_en),
 			} },
 			.crypto_xform = &cipher_xform
 		};
