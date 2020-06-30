@@ -8023,7 +8023,8 @@ test_pdcp_proto(int i, int oop,
 	ut_params->cipher_xform.cipher.key.data = pdcp_test_crypto_key[i];
 	ut_params->cipher_xform.cipher.key.length =
 					pdcp_test_params[i].cipher_key_len;
-	ut_params->cipher_xform.cipher.iv.length = 4;
+	ut_params->cipher_xform.cipher.iv.length =
+				pdcp_test_packet_direction[i] ? 4 : 0;
 	ut_params->cipher_xform.cipher.iv.offset = IV_OFFSET;
 
 	/* Setup HMAC Parameters if ICV header is required */
@@ -8049,12 +8050,18 @@ test_pdcp_proto(int i, int oop,
 			.domain = pdcp_test_params[i].domain,
 			.pkt_dir = pdcp_test_packet_direction[i],
 			.sn_size = pdcp_test_data_sn_size[i],
-			.hfn = 0, /**
-				   * hfn can be set as pdcp_test_hfn[i]
-				   * if hfn_ovrd is not set
-				   */
+			.hfn = pdcp_test_packet_direction[i] ?
+				0 : pdcp_test_hfn[i],
+				/**
+				  * hfn can be set as pdcp_test_hfn[i]
+				  * if hfn_ovrd is not set. Here, PDCP
+				  * packet direction is just used to
+				  * run half of the cases with session
+				  * HFN and other half with per packet
+				  * HFN.
+				  */
 			.hfn_threshold = pdcp_test_hfn_threshold[i],
-			.hfn_ovrd = 1,
+			.hfn_ovrd = pdcp_test_packet_direction[i] ? 1 : 0,
 		} },
 		.crypto_xform = &ut_params->cipher_xform
 	};
@@ -8087,7 +8094,7 @@ test_pdcp_proto(int i, int oop,
 
 	uint32_t *per_pkt_hfn = rte_crypto_op_ctod_offset(ut_params->op,
 					uint32_t *, IV_OFFSET);
-	*per_pkt_hfn = pdcp_test_hfn[i];
+	*per_pkt_hfn = pdcp_test_packet_direction[i] ? pdcp_test_hfn[i] : 0;
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
