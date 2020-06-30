@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2019 NXP
+# Copyright 2018-2020 NXP
 
 #usages are:
 #./crypto_perf_test.sh dpaa2_sec
@@ -240,120 +240,38 @@ if [ $aead -ne 0 ]; then
 	mycmd ${cmd}
 fi
 
+pdcp_cipher=(null aes-ctr snow3g-uea2 zuc-eea3)
+pdcp_auth=(null aes-cmac snow3g-uia2 zuc-eia3)
+
 #pdcp cases
 if [ $pdcp -ne 0 ]; then
-	#pdcp algos
-	echo "**********pdcp: aes-ctr - null" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo aes-ctr --cipher-op encrypt --auth-algo null --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
+	for i in 0 1
+	do
+		if [ $i -ne 0 ]; then
+			hfn_param=--pdcp-ses-hfn-en
+		else
+			hfn_param=
+		fi
 
-	echo "**********pdcp: snow3g-uea2 - null" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo snow3g-uea2 --cipher-op encrypt --auth-algo null --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
+		for j in 0 1 2 3
+		do
+			for k in 0 1 2 3
+			do
+				echo "***pdcp $hfn_param : ${pdcp_cipher[$j]}- ${pdcp_auth[$k]}" | tee ${logoutput}
+				cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
+				--optype pdcp --cipher-algo ${pdcp_cipher[$j]} --cipher-op encrypt \
+				--auth-algo ${pdcp_auth[$k]} \
+				--auth-op generate  --auth-key-sz 16 \
+				--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn \
+				--pdcp-domain $pdcp_domain $hfn_param \
+				--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
+				echo "$cmd"
+				mycmd ${cmd}
+			done
+		done
 
-	echo "**********pdcp: zuc-eea3 - null" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo zuc-eea3 --cipher-op encrypt --auth-algo null --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
 
-	echo "**********pdcp: null - null" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo null --cipher-op encrypt --auth-algo null --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: null - aes-cmac" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo null --cipher-op encrypt --auth-algo aes-cmac --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: null - snow3g-uia2" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo null --cipher-op encrypt --auth-algo snow3g-uia2 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: null - zuc-eia3" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo null --cipher-op encrypt --auth-algo zuc-eia3 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: aes-ctr - snow3g-uia2" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo aes-ctr --cipher-op encrypt --auth-algo snow3g-uia2 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: snow3g-uea2 - aes-cmac" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo snow3g-uea2 --cipher-op encrypt --auth-algo aes-cmac --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: zuc-eea3 - snow3g-uia2" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo zuc-eea3 --cipher-op encrypt --auth-algo snow3g-uia2 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: snow3g-uea2 - zuc-eia3" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo snow3g-uea2 --cipher-op encrypt --auth-algo zuc-eia3 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: zuc-eea3 - aes-cmac" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo zuc-eea3 --cipher-op encrypt --auth-algo aes-cmac --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: aes-ctr - zuc-eia3" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo aes-ctr --cipher-op encrypt --auth-algo zuc-eia3 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: aes-ctr - aes-cmac" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo aes-ctr --cipher-op encrypt --auth-algo aes-cmac --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: snow3g-uea2 - snow3g-uia2" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo snow3g-uea2 --cipher-op encrypt --auth-algo snow3g-uia2 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
-
-	echo "**********pdcp: zuc-eea3 - zuc-eia3" | tee ${logoutput}
-	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
-	--optype pdcp --cipher-algo zuc-eea3 --cipher-op encrypt --auth-algo zuc-eia3 --auth-op generate  --auth-key-sz 16 \
-	--ptest $test_type --total-ops $ops_num --pdcp-sn-sz $pdcp_sn --pdcp-domain $pdcp_domain\
-	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
-	mycmd ${cmd}
+	done
 fi
 
 echo -e "===========================================" | tee ${logoutput}
