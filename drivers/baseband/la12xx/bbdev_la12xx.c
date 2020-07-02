@@ -983,7 +983,8 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		l_op->status = bbdev_ipc_op.status;
 
 		tb_crc = 0;
-		if (l_op->ldpc_dec.code_block_mode)
+		if (l_op->ldpc_dec.code_block_mode ||
+		    (l_op->ldpc_dec.tb_params.c == 1))
 			cb_cnt = 1;
 		else {
 			cb_cnt = l_op->ldpc_dec.tb_params.c;
@@ -992,7 +993,7 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 
 		/* Copy code block crc status bits + TB status bit */
 		ipc_memcpy(l_op->crc_stat, (void *)MODEM_P2V(bbdev_ipc_op.crc_stat_addr), (cb_cnt >> 3) + 1);
-		if (tb_crc &&  !(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0xf))))
+		if (tb_crc &&  !(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0x7))))
 			l_op->status |= RTE_BBDEV_CRC_ERROR;
 
 	}
