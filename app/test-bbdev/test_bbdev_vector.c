@@ -970,7 +970,7 @@ parse_polar_decoder_params(const char *key_token, char *token,
 		RTE_PMD_LA12xx_PD_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "FZ_LUT")) {
-		uint32_t data_length;
+		uint32_t data_length = 0;
 		uint32_t *data = NULL;
 		vector->mask |= TEST_BBDEV_VF_CAB;
 		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
@@ -1077,7 +1077,7 @@ parse_polar_encoder_params(const char *key_token, char *token,
 		RTE_PMD_LA12xx_PE_pc_index2(polar_enc) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "FZ_LUT")) {
-		uint32_t data_length;
+		uint32_t data_length = 0;
 		uint32_t *data = NULL;
 		vector->mask |= TEST_BBDEV_VF_CAB;
 		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
