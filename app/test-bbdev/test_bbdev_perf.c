@@ -639,6 +639,8 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	struct rte_bbdev_queue_conf qconf;
 	struct active_device *ad = &active_devs[nb_active_devs];
 	unsigned int nb_queues;
+	uint32_t lcore_id = -1;
+	uint32_t vector_count;
 
 /* Configure fpga lte fec with PF & VF values
  * if '-i' flag is set and using fpga device
@@ -715,12 +717,24 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	qconf.deferred_start = 0;
 	qconf.sg = false;
 
+	vector_count = get_vector_count();
+	if (vector_count > nb_queues) {
+		printf("ERROR: Number of vectors more than queues/cores\n");
+		return TEST_FAILED;
+	}
+
+
 	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
-		for (v = 0; v < get_vector_count(); v++) {
+		for (v = 0; v < vector_count; v++) {
 			/* Currently assuming one queue is on one core.
 			 * Below code to be updated when multi queues per
 			 * core be supported
 			 */
+			if ((&vector[v])->core_mask == 0) {
+				lcore_id = rte_get_next_lcore(lcore_id, 0, 0);
+				(&vector[v])->core_mask = (1 << lcore_id);
+			}
+
 			if ((&vector[v])->core_mask & (1 << queue_id))
 				break;
 		}

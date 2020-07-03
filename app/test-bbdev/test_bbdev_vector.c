@@ -1653,10 +1653,6 @@ check_ldpc_encoder(struct test_bbdev_vector *vector)
 static int
 bbdev_check_vector(struct test_bbdev_vector *vector)
 {
-	if (vector->core_mask == 0) {
-		printf("WARNING: coremask is not given, so assigning the default core mask 0xffff\n");
-		vector->core_mask = 0xffff;
-	}
 	if (vector->op_type == RTE_BBDEV_OP_TURBO_DEC) {
 		if (check_decoder(vector) == -1)
 			return -1;
