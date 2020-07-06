@@ -342,6 +342,10 @@ The following are the application command-line options:
 
         Set PDCP domain to specify Control/user plane.
 
+* ``--pdcp-ses-hfn-en``
+
+        Enable fixed session based HFN instead of per packet HFN.
+
 Test Vector File
 ~~~~~~~~~~~~~~~~
 
