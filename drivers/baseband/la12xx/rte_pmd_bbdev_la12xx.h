@@ -26,9 +26,13 @@ struct rte_pmd_la12xx_op {
 };
 
 #define RTE_PMD_LA12xx_SET_POLAR_DEC(p) \
-	(p)->feca_obj.job_type =  FECA_CD_CHAIN;
+	(p)->feca_obj.job_type =  FECA_JOB_CD;
+#define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX(p) \
+	(p)->feca_obj.job_type =  FECA_JOB_CD_DCM_ACK;
 #define RTE_PMD_LA12xx_SET_POLAR_ENC(p) \
-	(p)->feca_obj.job_type =  FECA_CE_CHAIN;
+	(p)->feca_obj.job_type =  FECA_JOB_CE;
+#define RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(p) \
+	((p)->feca_obj.job_type ==  FECA_JOB_CD_DCM_ACK)
 
 #define RTE_PMD_LA12xx_PD_pd_n(p) \
 	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pd_n
