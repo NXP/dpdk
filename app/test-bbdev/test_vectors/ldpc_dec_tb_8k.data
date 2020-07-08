@@ -323,7 +323,7 @@ eb =
 8448
 
 iter_max=
-32
+8
 
 expected_iter_count=
 2
