@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2016 NXP
+ * Copyright 2016,2020 NXP
  */
 
 #ifndef _RTE_BUS_H_
@@ -66,6 +66,18 @@ typedef int (*rte_bus_scan_t)(void);
  *	!0 for any error while probing
  */
 typedef int (*rte_bus_probe_t)(void);
+
+/**
+ * Implementation specific close function which is responsible for closing
+ * devices on that bus.
+ *
+ * This is called while iterating over each registered bus.
+ *
+ * @return
+ *     0 for successful close
+ *     !0 for any error while closing
+ */
+typedef int (*rte_bus_close_t)(void);
 
 /**
  * Device iterator to find a device on a bus.
@@ -254,6 +266,7 @@ struct rte_bus {
 	const char *name;            /**< Name of the bus */
 	rte_bus_scan_t scan;         /**< Scan for devices attached to bus */
 	rte_bus_probe_t probe;       /**< Probe devices on bus */
+	rte_bus_close_t close;       /**< Close devices on bus */
 	rte_bus_find_device_t find_device; /**< Find a device on the bus */
 	rte_bus_plug_t plug;         /**< Probe single device for drivers */
 	rte_bus_unplug_t unplug;     /**< Remove single device from driver */
@@ -306,6 +319,16 @@ int rte_bus_scan(void);
  *	!0 otherwise
  */
 int rte_bus_probe(void);
+
+/**
+ * For each device on the buses, call the device specific close.
+ *
+ * @return
+ *      0 for successful close
+ *     !0 otherwise
+ */
+__rte_experimental
+int rte_bus_close(void);
 
 /**
  * Dump information of all the buses registered with EAL.
