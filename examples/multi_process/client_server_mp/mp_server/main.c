@@ -278,11 +278,13 @@ signal_handler(int signal)
 {
 	uint16_t port_id;
 
-	if (signal == SIGINT)
+	if (signal == SIGINT) {
 		RTE_ETH_FOREACH_DEV(port_id) {
 			rte_eth_dev_stop(port_id);
 			rte_eth_dev_close(port_id);
 		}
+		rte_bus_close();
+	}
 	exit(0);
 }
 
