@@ -7,6 +7,7 @@ DPDK_22 {
 	per_lcore__lcore_id;
 	per_lcore__rte_errno;
 	per_lcore__thread_id;
+	rte_bus_close;
 	rte_bus_dump;
 	rte_bus_find;
 	rte_bus_find_by_device;
@@ -420,6 +421,9 @@ EXPERIMENTAL {
 	rte_intr_instance_free;
 	rte_intr_type_get;
 	rte_intr_type_set;
+
+	#added in 22.02
+	rte_bus_close;
 };
 
 INTERNAL {
