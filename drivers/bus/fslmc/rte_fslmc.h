@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2019 NXP
+ *   Copyright 2016,2019-2020 NXP
  *
  */
 
@@ -102,6 +102,8 @@ typedef int (*rte_dpaa2_obj_create_t)(int vdev_fd,
 				      struct vfio_device_info *obj_info,
 				      int object_id);
 
+typedef void (*rte_dpaa2_obj_close_t)(int object_id);
+
 /**
  * A structure describing a DPAA2 object.
  */
@@ -110,6 +112,7 @@ struct rte_dpaa2_object {
 	const char *name;                   /**< Name of Object. */
 	enum rte_dpaa2_dev_type dev_type;   /**< Type of device */
 	rte_dpaa2_obj_create_t create;
+	rte_dpaa2_obj_close_t close;
 };
 
 /**

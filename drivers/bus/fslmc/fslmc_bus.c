@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2019 NXP
+ *   Copyright 2016,2018-2020 NXP
  *
  */
 
@@ -370,6 +370,18 @@ rte_fslmc_match(struct rte_dpaa2_driver *dpaa2_drv,
 }
 
 static int
+rte_fslmc_close(void)
+{
+	int ret = 0;
+
+	ret = fslmc_vfio_close_group();
+	if (ret)
+		DPAA2_BUS_ERR("Unable to close devices %d", ret);
+
+	return 0;
+}
+
+static int
 rte_fslmc_probe(void)
 {
 	int ret = 0;
@@ -653,6 +665,7 @@ struct rte_fslmc_bus rte_fslmc_bus = {
 	.bus = {
 		.scan = rte_fslmc_scan,
 		.probe = rte_fslmc_probe,
+		.close = rte_fslmc_close,
 		.parse = rte_fslmc_parse,
 		.find_device = rte_fslmc_find_device,
 		.get_iommu_class = rte_dpaa2_get_iommu_class,
