@@ -7,6 +7,7 @@ DPDK_23 {
 	per_lcore__lcore_id;
 	per_lcore__rte_errno;
 	per_lcore__thread_id;
+	rte_bus_close;
 	rte_bus_dump;
 	rte_bus_find;
 	rte_bus_find_by_device;
@@ -432,6 +433,7 @@ EXPERIMENTAL {
 	rte_thread_set_priority;
 
 	# added in 22.11
+	rte_bus_close;
 	rte_thread_attr_get_affinity;
 	rte_thread_attr_init;
 	rte_thread_attr_set_affinity;

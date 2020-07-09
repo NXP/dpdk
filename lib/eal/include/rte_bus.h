@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2016 NXP
+ * Copyright 2016,2020 NXP
  */
 
 #ifndef _RTE_BUS_H_
@@ -114,6 +114,16 @@ struct rte_bus *rte_bus_find_by_device(const struct rte_device *dev);
  */
 struct rte_bus *rte_bus_find_by_name(const char *busname);
 
+
+/**
+ * For each device on the buses, call the device specific close.
+ *
+ * @return
+ *      0 for successful close
+ *     !0 otherwise
+ */
+__rte_experimental
+int rte_bus_close(void);
 
 /**
  * Get the common iommu class of devices bound on to buses available in the

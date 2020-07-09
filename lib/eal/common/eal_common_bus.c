@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2016 NXP
+ * Copyright 2016,2020 NXP
  */
 
 #include <stdio.h>
@@ -57,6 +57,38 @@ rte_bus_scan(void)
 		if (ret)
 			RTE_LOG(ERR, EAL, "Scan for (%s) bus failed.\n",
 				rte_bus_name(bus));
+	}
+
+	return 0;
+}
+
+int
+rte_bus_close(void)
+{
+	int ret;
+	struct rte_bus *bus, *vbus = NULL;
+
+	TAILQ_FOREACH(bus, &rte_bus_list, next) {
+		if (!strcmp(bus->name, "vdev")) {
+			vbus = bus;
+			continue;
+		}
+
+		if (bus->close) {
+			ret = bus->close();
+			if (ret)
+				RTE_LOG(ERR, EAL, "Bus (%s) close failed.\n",
+					bus->name);
+		}
+	}
+
+	if (vbus) {
+		if (vbus->close) {
+			ret = vbus->close();
+			if (ret)
+				RTE_LOG(ERR, EAL, "Bus (%s) close failed.\n",
+					vbus->name);
+		}
 	}
 
 	return 0;
