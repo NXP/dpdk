@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <string.h>
+#include <signal.h>
 
 #include <rte_common.h>
 #include <rte_malloc.h>
@@ -30,6 +31,7 @@
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 #include <rte_string_fns.h>
+#include <rte_bus.h>
 
 #include "common.h"
 
@@ -195,6 +197,14 @@ handle_packet(struct rte_mbuf *buf)
 
 }
 
+static void
+signal_handler(int signal)
+{
+	if (signal == SIGINT)
+		rte_bus_close();
+	exit(0);
+}
+
 /*
  * Application main function - loops through
  * receiving and processing packets. Never returns
@@ -215,6 +225,8 @@ main(int argc, char *argv[])
 		return -1;
 	argc -= retval;
 	argv += retval;
+
+	signal(SIGINT, signal_handler);
 
 	if (parse_app_args(argc, argv) < 0)
 		rte_exit(EXIT_FAILURE, "Invalid command-line arguments\n");
