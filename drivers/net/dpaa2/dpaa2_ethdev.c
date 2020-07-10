@@ -995,6 +995,13 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			nb_rx_desc);
 	}
 
+	/* Rx deferred start is not supported */
+	if (rx_conf->rx_deferred_start) {
+		DPAA2_PMD_ERR("%p:Rx deferred start not supported",
+				(void *)dev);
+		return -EINVAL;
+	}
+
 	if (!priv->bp_list || priv->bp_list->mp != mb_pool) {
 		if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 			ret = rte_dpaa2_bpid_info_init(mb_pool);
@@ -1156,6 +1163,13 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	dpaa2_q->nb_desc = UINT16_MAX;
 	dpaa2_q->offloads = tx_conf->offloads;
+
+	/* Tx deferred start is not supported */
+	if (tx_conf->tx_deferred_start) {
+		DPAA2_PMD_ERR("%p:Tx deferred start not supported",
+				(void *)dev);
+		return -EINVAL;
+	}
 
 	/* Return if queue already configured */
 	if (dpaa2_q->flow_id != DPAA2_INVALID_FLOW_ID) {
