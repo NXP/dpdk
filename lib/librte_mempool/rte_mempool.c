@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
- * Copyright 2019 NXP
+ * Copyright 2019-2020 NXP
  */
 
 #include <stdbool.h>
@@ -1186,6 +1186,7 @@ rte_mempool_dump(FILE *f, struct rte_mempool *mp)
 	unsigned lcore_id;
 #endif
 	struct rte_mempool_memhdr *memhdr;
+	struct rte_mempool_ops *ops;
 	unsigned common_count;
 	unsigned cache_count;
 	size_t mem_len = 0;
@@ -1207,6 +1208,10 @@ rte_mempool_dump(FILE *f, struct rte_mempool *mp)
 	       mp->header_size + mp->elt_size + mp->trailer_size);
 
 	fprintf(f, "  private_data_size=%"PRIu32"\n", mp->private_data_size);
+
+	fprintf(f, "  ops_index=%d\n", mp->ops_index);
+	ops = rte_mempool_get_ops(mp->ops_index);
+	fprintf(f, "  ops_name: <%s>\n", ops ? ops->name : "NA");
 
 	STAILQ_FOREACH(memhdr, &mp->mem_list, next)
 		mem_len += memhdr->len;
