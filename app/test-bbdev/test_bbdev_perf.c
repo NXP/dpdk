@@ -63,6 +63,12 @@ static struct test_bbdev_vector test_vector[MAX_VECTORS];
 /* Switch between PMD and Interrupt for throughput TC */
 static bool intr_enabled;
 
+/* Sync for SD-CD demux case. Currenlty there is a limitation that
+ * we need to submit SD job and gets its output, before sending the
+ * CD command. This variable is to syncronize the same.
+ */
+rte_atomic16_t sd_cd_demux_sync_var;
+
 /* Represents tested active devices */
 static struct active_device {
 	const char *driver_name;
@@ -2578,6 +2584,8 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 				ops_enq[j]->ldpc_dec.harq_combined_output.bdata);
 		}
 
+		if (ref_op->ldpc_dec.sd_cd_demux)
+			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 1);
 		start_time = rte_rdtsc_precise();
 
 		for (enq = 0, deq = 0; enq < num_ops;) {
@@ -2600,6 +2608,8 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+		if (ref_op->ldpc_dec.sd_cd_demux)
+			rte_atomic16_set(&sd_cd_demux_sync_var, 1);
 
 		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_ldpc_dec_op(ops_deq, num_ops, ref_op,
@@ -2860,6 +2870,8 @@ throughput_pmd_lcore_polar(void *arg)
 			for (j = 0; j < num_ops; ++j)
 				bbuf_reset(ops_enq[j]->output.bdata);
 
+		if (RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(ref_op))
+			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 0);
 		start_time = rte_rdtsc_precise();
 
 		for (enq = 0, deq = 0; enq < num_ops;) {
@@ -2882,6 +2894,8 @@ throughput_pmd_lcore_polar(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+		if (RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(ref_op))
+			rte_atomic16_set(&sd_cd_demux_sync_var, 0);
 
 		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_polar_op(ops_deq, num_ops, ref_op,
@@ -3547,6 +3561,12 @@ latency_test(struct active_device *ad,
 	uint64_t total_time, min_time, max_time;
 	const char *op_type_str;
 
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
+	    vector->ldpc_dec.sd_cd_demux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
+	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SD CD DEMUX not supported for latency test");
+
 	total_time = max_time = 0;
 	min_time = UINT64_MAX;
 
@@ -4080,6 +4100,12 @@ offload_cost_test(struct active_device *ad,
 	const char *op_type_str;
 	struct test_time_stats time_st;
 
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
+	    vector->ldpc_dec.sd_cd_demux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
+	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SD CD DEMUX not supported for offload latency test");
+
 	memset(&time_st, 0, sizeof(struct test_time_stats));
 	time_st.enq_sw_min_time = UINT64_MAX;
 	time_st.enq_acc_min_time = UINT64_MAX;
@@ -4245,6 +4271,12 @@ offload_latency_empty_q_test(struct active_device *ad,
 	const uint16_t queue_id = ad->queue_ids[0];
 	struct rte_bbdev_info info;
 	const char *op_type_str;
+
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
+	    vector->ldpc_dec.sd_cd_demux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
+	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SD CD DEMUX not supported for offload latency enpty queue test");
 
 	deq_total_time = deq_max_time = 0;
 	deq_min_time = UINT64_MAX;
