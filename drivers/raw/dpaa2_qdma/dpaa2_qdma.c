@@ -59,6 +59,12 @@ qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
 	fd->simple_pci.ser = ser;
 
 	fd->simple_pci.sportid = rbp->sportid;	/*pcie 3 */
+
+	fd->simple_pci.svfid = rbp->svfid;
+	fd->simple_pci.spfid = rbp->spfid;
+	fd->simple_pci.dvfid = rbp->dvfid;
+	fd->simple_pci.dpfid = rbp->dpfid;
+
 	fd->simple_pci.srbp = rbp->srbp;
 	if (rbp->srbp)
 		fd->simple_pci.rdttype = 0;
@@ -207,8 +213,15 @@ static inline int dpdmai_dev_set_fd_us(
 	int ser = (qdma_vq->flags & RTE_QDMA_VQ_NO_RESPONSE) ?
 				0 : 1;
 
+	/* TO DO: EP PCIe2PCIe.*/
+	RTE_ASSERT(!(rbp->srbp && rbp->drbp));
+
 	for (loop = 0; loop < nb_jobs; loop++) {
-		if (job[loop]->src & QDMA_PCIE_BASE_ADDRESS_MASK)
+		if (rbp->drbp)
+			iova = (size_t)job[loop]->src;
+		else if (rbp->srbp)
+			iova = (size_t)job[loop]->dest;
+		else if (job[loop]->src & QDMA_PCIE_BASE_ADDRESS_MASK)
 			iova = (size_t)job[loop]->dest;
 		else
 			iova = (size_t)job[loop]->src;
@@ -483,7 +496,13 @@ static inline uint16_t dpdmai_dev_get_job_us(
 	size_t iova;
 	struct rte_qdma_job **ppjob;
 
-	if (fd->simple_pci.saddr_hi & (QDMA_PCIE_BASE_ADDRESS_MASK >> 32))
+	if (fd->simple_pci.srbp)
+		iova = (size_t)(((uint64_t)fd->simple_pci.daddr_hi) << 32
+				| (uint64_t)fd->simple_pci.daddr_lo);
+	else if (fd->simple_pci.drbp)
+		iova = (size_t)(((uint64_t)fd->simple_pci.saddr_hi) << 32
+				| (uint64_t)fd->simple_pci.saddr_lo);
+	else if (fd->simple_pci.saddr_hi & (QDMA_PCIE_BASE_ADDRESS_MASK >> 32))
 		iova = (size_t)(((uint64_t)fd->simple_pci.daddr_hi) << 32
 				| (uint64_t)fd->simple_pci.daddr_lo);
 	else
