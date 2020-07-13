@@ -1321,6 +1321,7 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		ops[i]->ldpc_dec.rv_index = ldpc_dec->rv_index;
 		ops[i]->ldpc_dec.op_flags = ldpc_dec->op_flags;
 		ops[i]->ldpc_dec.en_scramble = ldpc_dec->en_scramble;
+		ops[i]->ldpc_dec.sd_cd_demux = ldpc_dec->sd_cd_demux;
 		ops[i]->ldpc_dec.q = ldpc_dec->q;
 		ops[i]->ldpc_dec.n_id = ldpc_dec->n_id;
 		ops[i]->ldpc_dec.n_rnti = ldpc_dec->n_rnti;
@@ -1337,6 +1338,11 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		if (harq_outputs != NULL)
 			ops[i]->ldpc_dec.harq_combined_output =
 				harq_outputs[start_idx + i];
+		if (ops[i]->ldpc_dec.sd_cd_demux) {
+			ops[i]->ldpc_dec.sd_llrs_per_re = ldpc_dec->sd_llrs_per_re;
+			rte_memcpy(&ops[i]->ldpc_dec.demux[0].sd_n_re_ack_re,
+				&ldpc_dec->demux[0].sd_n_re_ack_re, 70 * 4);
+		}
 	}
 }
 
@@ -1389,7 +1395,8 @@ copy_reference_polar_op(struct rte_pmd_la12xx_op **ops, unsigned int n,
 	for (i = 0; i < n; ++i) {
 		ops[i]->feca_obj = ref_op->feca_obj;
 		ops[i]->output = outputs[start_idx + i];
-		ops[i]->input = inputs[start_idx + i];
+		if (inputs)
+			ops[i]->input = inputs[start_idx + i];
 	}
 }
 

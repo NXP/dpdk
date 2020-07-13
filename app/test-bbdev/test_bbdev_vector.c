@@ -54,8 +54,8 @@ starts_with(const char *str, const char *pre)
 
 /* tokenization test values separated by a comma */
 static int
-parse_values(struct test_bbdev_vector *vector,
-	     char *tokens, uint32_t **data, uint32_t *data_length)
+parse_values(char *tokens, uint32_t **data, uint32_t *data_length,
+	     int network_order)
 {
 	uint32_t n_tokens = 0;
 	uint32_t data_size = 32;
@@ -96,7 +96,7 @@ parse_values(struct test_bbdev_vector *vector,
 		}
 
 		*data_length = *data_length + (strlen(tok) - strlen("0x"))/2;
-		if (vector->network_order) {
+		if (network_order) {
 			/* TODO: Check if 3 byte length is also required */
 			if ((strlen(tok) - strlen("0x"))/2 == 4)
 				values[n_tokens] = rte_cpu_to_be_32(values[n_tokens]);
@@ -426,7 +426,8 @@ parse_data_entry(const char *key_token, char *token,
 	/* Clear new op data struct */
 	memset(op_data + *nb_ops, 0, sizeof(struct op_data_buf));
 
-	ret = parse_values(vector, token, &data, &data_length);
+	ret = parse_values(token, &data, &data_length,
+			vector->network_order);
 	if (!ret) {
 		op_data[*nb_ops].addr = data;
 		op_data[*nb_ops].length = data_length;
@@ -888,6 +889,23 @@ parse_ldpc_decoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_N_RNTI;
 		ldpc_dec->n_rnti = (uint16_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "sd_cd_demux")) {
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
+		ldpc_dec->sd_cd_demux = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "sd_llrs_per_re")) {
+		vector->mask |= TEST_BBDEV_VF_SD_LLRS_PER_RE;
+		ldpc_dec->sd_llrs_per_re = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "sd_cd_demux_params")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX_PARAMS;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_dec->demux[0].sd_n_re_ack_re, data, data_length);
+			rte_free(data);
+		}
 	} else {
 		printf("Not valid ldpc dec key: '%s'\n", key_token);
 		return -1;
@@ -911,6 +929,9 @@ parse_polar_decoder_params(const char *key_token, char *token,
 
 	struct rte_pmd_la12xx_op *polar_dec = &vector->polar_op;
 
+	if ((vector->mask & TEST_BBDEV_VF_SD_CD_DEMUX) == 0)
+		RTE_PMD_LA12xx_SET_POLAR_DEC(polar_dec);
+
 	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_INPUT,
@@ -920,7 +941,10 @@ parse_polar_decoder_params(const char *key_token, char *token,
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_HARD_OUTPUT,
 				"output");
-	
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pd_n")) {
 		vector->mask |= TEST_BBDEV_VF_C;
 		RTE_PMD_LA12xx_PD_pd_n(polar_dec) = (uint32_t) strtoul(token, &err, 0);
@@ -969,11 +993,16 @@ parse_polar_decoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_CAB;
 		RTE_PMD_LA12xx_PD_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "sd_cd_demux")) {
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
+		if ((uint8_t) strtoul(token, &err, 0) == 1)
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX(polar_dec);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "FZ_LUT")) {
 		uint32_t data_length = 0;
 		uint32_t *data = NULL;
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
 		if (data) {
 			memcpy((RTE_PMD_LA12xx_PD_FZ_LUT(polar_dec)), data, data_length);
 			rte_free(data);
@@ -1015,7 +1044,10 @@ parse_polar_encoder_params(const char *key_token, char *token,
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_HARD_OUTPUT,
 				"output");
-	
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "pe_n")) {
 		vector->mask |= TEST_BBDEV_VF_C;
 		RTE_PMD_LA12xx_PE_pe_n(polar_enc) = (uint32_t) strtoul(token, &err, 0);
@@ -1080,7 +1112,7 @@ parse_polar_encoder_params(const char *key_token, char *token,
 		uint32_t data_length = 0;
 		uint32_t *data = NULL;
 		vector->mask |= TEST_BBDEV_VF_CAB;
-		ret = parse_values(vector, token, (uint32_t **)&data, &data_length);
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
 		if (data) {
 			memcpy((RTE_PMD_LA12xx_PE_FZ_LUT(polar_enc)), data, data_length);
 			rte_free(data);
@@ -1460,11 +1492,9 @@ static int
 check_polar_decoder(struct test_bbdev_vector *vector)
 {	
 	unsigned int i;	
-	struct rte_pmd_la12xx_op *polar_dec = &vector->polar_op;
 
-	RTE_PMD_LA12xx_SET_POLAR_DEC(polar_dec);
-
-	if (vector->entries[DATA_INPUT].nb_segments == 0)
+	if (vector->entries[DATA_INPUT].nb_segments == 0 &&
+	    ((vector->mask & TEST_BBDEV_VF_SD_CD_DEMUX) == 0))
 		return -1;
 
 	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)

@@ -41,6 +41,9 @@ enum {
 	TEST_BBDEV_VF_Q = (1ULL << 28),
 	TEST_BBDEV_VF_N_ID = (1ULL << 29),
 	TEST_BBDEV_VF_N_RNTI = (1ULL << 30),
+	TEST_BBDEV_VF_SD_CD_DEMUX = (1ULL << 31),
+	TEST_BBDEV_VF_SD_LLRS_PER_RE = (1ULL << 32),
+	TEST_BBDEV_VF_SD_CD_DEMUX_PARAMS = (1ULL << 33),
 };
 
 enum op_data_type {
