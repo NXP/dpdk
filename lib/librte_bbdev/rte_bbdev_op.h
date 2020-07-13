@@ -47,6 +47,9 @@ extern "C" {
 /* LDPC:  Maximum number of Code Blocks in Transport Block.*/
 #define RTE_BBDEV_LDPC_MAX_CODE_BLOCKS (256)
 
+/* Maximum number of symbols in a slot for 5G */
+#define RTE_BBDEV_5G_MAX_SYMBOLS 14
+
 /** Flags for turbo decoder operation and capability structure */
 enum rte_bbdev_op_td_flag_bitmasks {
 	/** If sub block de-interleaving is to be performed. */
@@ -520,6 +523,53 @@ struct rte_bbdev_op_ldpc_dec {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_dec_ldpc_tb_params tb_params;
 	};
+	/* [1- SD-CD demux specific op]. Data and Control Multiplexing as
+	 * specified in TS 38.212 Section 6.2.7
+	 */
+	uint8_t sd_cd_demux;
+	/* Bit [5-0]: The number of LLRs per resource element.
+	 * This value must be >= 1 and <= 32.
+	 * Bit [8]: Puncturing indicator for ACK.
+	 * Rest all bits reserved.
+	 */
+	uint32_t sd_llrs_per_re;
+	struct {
+		/* Bit [13-0]: Number of resource elements available for DL-SCH
+		 * or DCI mapping for a symbol.
+		 * Bit [29-16]: Number of ACK resource elements to be mapped
+		 * in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_re_ack_re;
+		/* Bit [13-0]: Number of CSI1 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Bit [29-16]: Number of CSI2 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_csi1_re_n_csi2_re;
+		/* Bit [13-0]: Number of DL-SCH resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_dlsch_re_d_ack;
+		/* Bit [13-0]: “skip offset” for CSI1 resource elements in
+		 * a symbol.
+		 * Bit [29-16]: “skip offset” for CSI2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_d_csi1_d_csi2;
+		/* Bit [13-0]: Number of ACK2 resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_d_ack2_ack2_re;
+	} demux[RTE_BBDEV_5G_MAX_SYMBOLS];
 };
 
 /** Turbo encode code block parameters */
@@ -717,6 +767,57 @@ struct rte_bbdev_op_ldpc_enc {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_enc_ldpc_tb_params tb_params;
 	};
+	/* [1- SE-CE mux specific op]. Data and Control Multiplexing as
+	 * specified in TS 38.212 Section 6.2.7
+	 */
+	uint8_t se_ce_mux;
+	/* Output size of the encoded data after muxing */
+	uint64_t se_ce_mux_output_size;
+	/* SE-CE mux related parameters */
+	/* Bit [5-0]: The number of bits per resource element.
+	 * This value must be >= 1 and <= 32.
+	 * Bit [8]: Puncturing indicator for ACK.
+	 * Rest all bits reserved.
+	 */
+	uint32_t se_bits_per_re;
+	struct {
+		/* Bit [13-0]: Number of resource elements available for UL-SCH
+		 * or UCI mapping for a symbol.
+		 * Bit [29-16]: Number of ACK resource elements to be mapped
+		 * in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_re_ack_re;
+		/* Bit [13-0]: Number of CSI1 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Bit [29-16]: Number of CSI2 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_csi1_re_n_csi2_re;
+		/* Bit [13-0]: Number of UL-SCH resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_ulsch_re_d_ack;
+		/* Bit [13-0]: “skip offset” for CSI1 resource elements in
+		 * a symbol.
+		 * Bit [29-16]: “skip offset” for CSI2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_d_csi1_d_csi2;
+		/* Bit [13-0]: Number of ACK2 resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_d_ack2_ack2_re;
+	} mux[RTE_BBDEV_5G_MAX_SYMBOLS];
+
 };
 
 /** List of the capabilities for the Turbo Decoder */
