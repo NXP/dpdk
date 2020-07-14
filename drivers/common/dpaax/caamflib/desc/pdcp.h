@@ -3274,7 +3274,7 @@ cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 			SHR_ALWAYS,	/* NULL */
 			SHR_WAIT,	/* SNOW f9 */
 			SHR_WAIT,	/* AES CMAC */
-			SHR_ALWAYS	/* ZUC-I */
+			SHR_WAIT	/* ZUC-I */
 		},
 	};
 	LABEL(pdb_end);
@@ -3477,7 +3477,7 @@ cnstr_shdsc_pdcp_u_plane_decap(uint32_t *descbuf,
 			SHR_ALWAYS,	/* NULL */
 			SHR_WAIT,	/* SNOW f9 */
 			SHR_WAIT,	/* AES CMAC */
-			SHR_ALWAYS	/* ZUC-I */
+			SHR_WAIT	/* ZUC-I */
 		},
 	};
 
