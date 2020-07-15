@@ -382,6 +382,7 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 	uint32_t SE_SC_X1_INIT, SE_SC_X2_INIT, SE_CIRC_BUF;
 	uint32_t int_start_ofst_floor[8], int_start_ofst_ceiling[8];
 	se_command_t se_cmd, *se_command;
+	se_dcm_command_t *se_dcm_command;
 	int16_t TBS_VALID;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
@@ -418,7 +419,7 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 	se_cmd.se_cfg1.tb_24_bit_crc = tb_24_bit_crc;
 	se_cmd.se_cfg1.complete_trig_en = 1;
 	se_cmd.se_cfg1.mod_order = mod_order;
-	se_cmd.se_cfg1.control_data_mux = 0;
+	se_cmd.se_cfg1.control_data_mux = ldpc_enc->se_ce_mux;
 	se_cmd.se_cfg1.lifting_size = lifting_index;
 	se_cmd.se_cfg1.base_graph2 = base_graph2;
 	se_cmd.se_cfg1.set_index = set_index;
@@ -472,10 +473,32 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 		rte_cpu_to_be_32((int_start_ofst_ceiling[7] << 16) |
 		int_start_ofst_ceiling[6]);
 
+	if (ldpc_enc->se_ce_mux) {
+		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE_DCM);
+		se_dcm_command = &bbdev_ipc_op->feca_job.command_chain_t.se_dcm_command_ch_obj;
+
+		se_dcm_command->se_bits_per_re = rte_cpu_to_be_32(ldpc_enc->se_bits_per_re);
+		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
+			se_dcm_command->mux[i].se_n_re_ack_re =
+				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_re_ack_re);
+			se_dcm_command->mux[i].se_n_csi1_re_n_csi2_re =
+				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_csi1_re_n_csi2_re);
+			se_dcm_command->mux[i].se_n_ulsch_re_d_ack =
+				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_ulsch_re_d_ack);
+			se_dcm_command->mux[i].se_d_csi1_d_csi2 =
+				rte_cpu_to_be_32(ldpc_enc->mux[i].se_d_csi1_d_csi2);
+			se_dcm_command->mux[i].se_d_ack2_ack2_re =
+				rte_cpu_to_be_32(ldpc_enc->mux[i].se_d_ack2_ack2_re);
+		}
+	}
+
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 	rte_bbuf_dump(stdout, bbdev_enc_op->ldpc_enc.input.data,
-		bbdev_enc_op->ldpc_enc.input.data->data_len);
-	rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
+		bbdev_enc_op->ldpc_enc.input.data->pkt_len);
+	if (ldpc_enc->se_ce_mux)
+		rte_hexdump(stdout, "SE DCM COMMAND", se_dcm_command, sizeof(se_dcm_command_t));
+	else
+		rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
 #endif
 }
 
@@ -619,7 +642,7 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		sd_dcm_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
 
 		sd_dcm_command->sd_llrs_per_re = rte_cpu_to_be_32(ldpc_dec->sd_llrs_per_re);
-		for (i = 0; i < 14; i++) {
+		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			sd_dcm_command->demux[i].sd_n_re_ack_re =
 				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_n_re_ack_re);
 			sd_dcm_command->demux[i].sd_n_csi1_re_n_csi2_re =
@@ -650,13 +673,14 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 	char *data_ptr;
 	uint32_t l1_pcie_addr, i;
 
-	if (rte_pmd_op->feca_obj.job_type ==  FECA_JOB_CE) {
+	if (rte_pmd_op->feca_obj.job_type ==  FECA_JOB_CE ||
+	    rte_pmd_op->feca_obj.job_type == FECA_JOB_CE_DCM) {
 		ce_command_t *l_ce_cmd = &rte_pmd_op->feca_obj.command_chain_t.ce_command_ch_obj;
 		ce_command_t *ce_cmd = &bbdev_ipc_op->feca_job.command_chain_t.ce_command_ch_obj;
 
 		rte_pmd_op->output.length = (l_ce_cmd->ce_cfg2.E + 7)/8 + l_ce_cmd->ce_cfg3.out_pad_bytes;
 		bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
-		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_CE);
+		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(rte_pmd_op->feca_obj.job_type);
 		/* Set complete trigger */
 		l_ce_cmd->ce_cfg1.complete_trig_en = 1;
 		ce_cmd->ce_cfg1.raw_ce_cfg1 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg1.raw_ce_cfg1);
@@ -673,7 +697,7 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		rte_bbuf_dump(stdout, rte_pmd_op->input.data,
-			rte_pmd_op->input.data->data_len);
+			rte_pmd_op->input.data->pkt_len);
 		rte_hexdump(stdout, "CE COMMAND", ce_cmd, sizeof(ce_command_t));
 #endif
 	} else {
@@ -695,8 +719,9 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 			cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		rte_bbuf_dump(stdout, rte_pmd_op->input.data,
-			rte_pmd_op->input.data->data_len);
+		if (rte_pmd_op->input.data)
+			rte_bbuf_dump(stdout, rte_pmd_op->input.data,
+				rte_pmd_op->input.data->data_len);
 		rte_hexdump(stdout, "CD COMMAND", cd_cmd, sizeof(cd_command_t));
 #endif
 	}	
@@ -776,10 +801,13 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		if (in_mbuf)
 			fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
 
-		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+		if (out_mbuf) {
+			data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
+			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
-		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+			bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+		}
+
 		if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
 			struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
 			struct rte_bbdev_op_ldpc_enc *ldpc_enc =
@@ -789,7 +817,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 				ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
 				ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
 
-			ldpc_enc->output.length = (total_out_bits + 7)/8;
+
+			if (ldpc_enc->se_ce_mux)
+				ldpc_enc->output.length = ldpc_enc->se_ce_mux_output_size;
+			else
+				ldpc_enc->output.length = (total_out_bits + 7)/8;
 
 			fill_feca_desc_enc(in_mbuf, bbdev_ipc_op, bbdev_op,
 					   huge_start_addr);
@@ -831,10 +863,13 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			struct rte_pmd_la12xx_op *rte_pmd_op = (struct rte_pmd_la12xx_op *)bbdev_op;
 
 			fill_feca_desc_polar_op(in_mbuf, bbdev_ipc_op, rte_pmd_op, huge_start_addr);
-			bbdev_ipc_op->out_len = 
-				rte_cpu_to_be_32(rte_pmd_op->output.length);
-			rte_bbuf_append(out_mbuf,
+
+			if (out_mbuf) {
+				bbdev_ipc_op->out_len =
+					rte_cpu_to_be_32(rte_pmd_op->output.length);
+				rte_bbuf_append(out_mbuf,
 					rte_pmd_op->output.length);
+			}
 		}
 	}
 
