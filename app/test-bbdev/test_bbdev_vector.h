@@ -44,6 +44,9 @@ enum {
 	TEST_BBDEV_VF_SD_CD_DEMUX = (1ULL << 31),
 	TEST_BBDEV_VF_SD_LLRS_PER_RE = (1ULL << 32),
 	TEST_BBDEV_VF_SD_CD_DEMUX_PARAMS = (1ULL << 33),
+	TEST_BBDEV_VF_SE_CE_MUX = (1ULL << 34),
+	TEST_BBDEV_VF_SE_BITS_PER_RE = (1ULL << 35),
+	TEST_BBDEV_VF_SE_CE_MUX_PARAMS = (1ULL << 36),
 };
 
 enum op_data_type {
@@ -68,7 +71,7 @@ struct op_data_entries {
 struct test_bbdev_vector {
 	enum rte_bbdev_op_type op_type;
 	int expected_status;
-	int mask;
+	uint64_t mask;
 	int network_order;
 	union {
 		struct rte_bbdev_op_turbo_dec turbo_dec;

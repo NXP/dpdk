@@ -673,11 +673,13 @@ parse_ldpc_encoder_params(const char *key_token, char *token,
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_INPUT,
 				op_data_prefixes[DATA_INPUT]);
-	else if (starts_with(key_token, "output"))
+	else if (starts_with(key_token, "output")) {
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_HARD_OUTPUT,
 				"output");
-	else if (!strcmp(key_token, "e")) {
+		ldpc_enc->se_ce_mux_output_size =
+			vector->entries[DATA_HARD_OUTPUT].segments[0].length;
+	} else if (!strcmp(key_token, "e")) {
 		vector->mask |= TEST_BBDEV_VF_E;
 		ldpc_enc->cb_params.e = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
@@ -759,6 +761,23 @@ parse_ldpc_encoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_N_RNTI;
 		ldpc_enc->n_rnti = (uint16_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "se_ce_mux")) {
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX;
+		ldpc_enc->se_ce_mux = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "se_bits_per_re")) {
+		vector->mask |= TEST_BBDEV_VF_SE_BITS_PER_RE;
+		ldpc_enc->se_bits_per_re = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "se_ce_mux_params")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX_PARAMS;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_enc->mux[0].se_n_re_ack_re, data, data_length);
+			rte_free(data);
+		}
 	} else {
 		printf("Not valid ldpc enc key: '%s'\n", key_token);
 		return -1;
@@ -1035,6 +1054,9 @@ parse_polar_encoder_params(const char *key_token, char *token,
 
 	struct rte_pmd_la12xx_op *polar_enc = &vector->polar_op;
 
+	if ((vector->mask & TEST_BBDEV_VF_SE_CE_MUX) == 0)
+		RTE_PMD_LA12xx_SET_POLAR_ENC(polar_enc);
+
 	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_INPUT,
@@ -1117,6 +1139,11 @@ parse_polar_encoder_params(const char *key_token, char *token,
 			memcpy((RTE_PMD_LA12xx_PE_FZ_LUT(polar_enc)), data, data_length);
 			rte_free(data);
 		}	
+	} else if (!strcmp(key_token, "se_ce_mux")) {
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX;
+		if ((uint8_t) strtoul(token, &err, 0) == 1)
+			RTE_PMD_LA12xx_SET_POLAR_ENC_MUX(polar_enc);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "expected_status")) {
 		vector->mask |= TEST_BBDEV_VF_EXPECTED_STATUS;
 		ret = parse_expected_status(token, &status, vector->op_type);
@@ -1516,9 +1543,6 @@ static int
 check_polar_encoder(struct test_bbdev_vector *vector)
 {	
 	unsigned int i;	
-	struct rte_pmd_la12xx_op *polar_enc = &vector->polar_op;
-
-	RTE_PMD_LA12xx_SET_POLAR_ENC(polar_enc);
 
 	if (vector->entries[DATA_INPUT].nb_segments == 0)
 		return -1;
@@ -1527,7 +1551,8 @@ check_polar_encoder(struct test_bbdev_vector *vector)
 		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
 			return -1;
 
-	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0)
+	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0 &&
+	    ((vector->mask & TEST_BBDEV_VF_SE_CE_MUX) == 0))
 		return -1;
 
 	for (i = 0; i < vector->entries[DATA_HARD_OUTPUT].nb_segments; i++)

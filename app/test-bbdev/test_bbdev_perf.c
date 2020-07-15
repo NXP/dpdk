@@ -104,7 +104,7 @@ struct test_op_params {
 	uint16_t burst_sz;
 	uint16_t num_to_process;
 	uint16_t num_lcores;
-	int vector_mask;
+	uint64_t vector_mask;
 	struct test_bbdev_vector *vector;
 	rte_atomic16_t sync;
 	struct test_buffers q_bufs[RTE_MAX_NUMA_NODES][MAX_QUEUES];
@@ -1381,12 +1381,18 @@ copy_reference_ldpc_enc_op(struct rte_bbdev_enc_op **ops, unsigned int n,
 		ops[i]->ldpc_enc.rv_index = ldpc_enc->rv_index;
 		ops[i]->ldpc_enc.op_flags = ldpc_enc->op_flags;
 		ops[i]->ldpc_enc.en_scramble = ldpc_enc->en_scramble;
+		ops[i]->ldpc_enc.se_ce_mux = ldpc_enc->se_ce_mux;
 		ops[i]->ldpc_enc.q = ldpc_enc->q;
 		ops[i]->ldpc_enc.n_id = ldpc_enc->n_id;
 		ops[i]->ldpc_enc.n_rnti = ldpc_enc->n_rnti;
 		ops[i]->ldpc_enc.code_block_mode = ldpc_enc->code_block_mode;
 		ops[i]->ldpc_enc.output = outputs[start_idx + i];
 		ops[i]->ldpc_enc.input = inputs[start_idx + i];
+		if (ops[i]->ldpc_enc.se_ce_mux) {
+			ops[i]->ldpc_enc.se_bits_per_re = ldpc_enc->se_bits_per_re;
+			rte_memcpy(&ops[i]->ldpc_enc.mux[0].se_n_re_ack_re,
+				&ldpc_enc->mux[0].se_n_re_ack_re, 70 * 4);
+		}
 	}
 }
 
@@ -1400,7 +1406,8 @@ copy_reference_polar_op(struct rte_pmd_la12xx_op **ops, unsigned int n,
 	unsigned int i;
 	for (i = 0; i < n; ++i) {
 		ops[i]->feca_obj = ref_op->feca_obj;
-		ops[i]->output = outputs[start_idx + i];
+		if (outputs)
+			ops[i]->output = outputs[start_idx + i];
 		if (inputs)
 			ops[i]->input = inputs[start_idx + i];
 	}
@@ -1833,7 +1840,7 @@ calc_ldpc_enc_TB_size(struct rte_bbdev_enc_op *op)
 static int
 init_test_op_params(struct test_op_params *op_params,
 		enum rte_bbdev_op_type op_type, const int expected_status,
-		const int vector_mask, struct rte_mempool *ops_mp,
+		const uint64_t vector_mask, struct rte_mempool *ops_mp,
 		uint16_t burst_sz, uint16_t num_to_process, uint16_t num_lcores)
 {
 	int ret = 0;
@@ -2866,12 +2873,14 @@ throughput_pmd_lcore_polar(void *arg)
 		ops_enq[j]->opaque_data = (void *)(uintptr_t)j;
 
 	for (i = 0; i < TEST_REPETITIONS; ++i) {
-		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE)
+		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE &&
+		    ops_enq[0]->output.bdata)
 			for (j = 0; j < num_ops; ++j)
 				bbuf_reset(ops_enq[j]->output.bdata);
 
-		if (RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(ref_op))
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
 			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 0);
+
 		start_time = rte_rdtsc_precise();
 
 		for (enq = 0, deq = 0; enq < num_ops;) {
@@ -2894,27 +2903,33 @@ throughput_pmd_lcore_polar(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
-		if (RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(ref_op))
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
 			rte_atomic16_set(&sd_cd_demux_sync_var, 0);
 
-		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
-			ret = validate_polar_op(ops_deq, num_ops, ref_op,
-						tp->op_params->vector);
-			TEST_ASSERT_SUCCESS(ret, "Validation failed!");
+		if (ops_enq[0]->output.bdata) {
+			if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
+				ret = validate_polar_op(ops_deq, num_ops, ref_op,
+							tp->op_params->vector);
+				TEST_ASSERT_SUCCESS(ret, "Validation failed!");
+			}
 		}
 	}
 
+	if (ops_enq[0]->output.bdata) {
+		/* FIXME : Need to calculate data length for throughput */
+		double tb_len_bits = rte_bbuf_pkt_len(ops_enq[0]->output.bdata) -
+						ops_enq[0]->output.offset;
+
+		tp->ops_per_sec = ((double)num_ops * TEST_REPETITIONS) /
+				((double)total_time / (double)rte_get_tsc_hz());
+		tp->mbps = (((double)(num_ops * TEST_REPETITIONS * tb_len_bits))
+				/ 1000000.0) / ((double)total_time /
+				(double)rte_get_tsc_hz());
+	} else {
+		tp->mbps = 0;
+	}
+
 	rte_mempool_put_bulk(tp->op_params->mp, (void **)ops_enq, num_ops);
-
-	/* FIXME : Need to calculate data length for throughput */
-	double tb_len_bits = rte_bbuf_pkt_len(ops_enq[0]->output.bdata) - 
-					ops_enq[0]->output.offset;
-
-	tp->ops_per_sec = ((double)num_ops * TEST_REPETITIONS) /
-			((double)total_time / (double)rte_get_tsc_hz());
-	tp->mbps = (((double)(num_ops * TEST_REPETITIONS * tb_len_bits))
-			/ 1000000.0) / ((double)total_time /
-			(double)rte_get_tsc_hz());
 
 	return TEST_SUCCESS;
 }
@@ -3564,8 +3579,14 @@ latency_test(struct active_device *ad,
 	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
 	    vector->ldpc_dec.sd_cd_demux) ||
 	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
-	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
+	    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(&vector->polar_op)))
 		TEST_ASSERT(0, "SD CD DEMUX not supported for latency test");
+
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_ENC) &&
+	    vector->ldpc_enc.se_ce_mux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_ENC) &&
+	    RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SE CE MUX not supported for latency test");
 
 	total_time = max_time = 0;
 	min_time = UINT64_MAX;
@@ -4103,8 +4124,14 @@ offload_cost_test(struct active_device *ad,
 	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
 	    vector->ldpc_dec.sd_cd_demux) ||
 	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
-	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
+	    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(&vector->polar_op)))
 		TEST_ASSERT(0, "SD CD DEMUX not supported for offload latency test");
+
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_ENC) &&
+	    vector->ldpc_enc.se_ce_mux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_ENC) &&
+	    RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SE CE MUX not supported for offload latency test");
 
 	memset(&time_st, 0, sizeof(struct test_time_stats));
 	time_st.enq_sw_min_time = UINT64_MAX;
@@ -4275,8 +4302,14 @@ offload_latency_empty_q_test(struct active_device *ad,
 	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
 	    vector->ldpc_dec.sd_cd_demux) ||
 	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
-	    RTE_PMD_LA12xx_GET_POLAR_DEC_DEMUX(&vector->polar_op)))
-		TEST_ASSERT(0, "SD CD DEMUX not supported for offload latency enpty queue test");
+	    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SD CD DEMUX not supported for offload latency empty queue test");
+
+	if (((vector->op_type == RTE_BBDEV_OP_LDPC_ENC) &&
+	    vector->ldpc_enc.se_ce_mux) ||
+	    ((vector->op_type == RTE_BBDEV_OP_POLAR_ENC) &&
+	    RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(&vector->polar_op)))
+		TEST_ASSERT(0, "SE CE MUX not supported for offload latency empty queue test");
 
 	deq_total_time = deq_max_time = 0;
 	deq_min_time = UINT64_MAX;
