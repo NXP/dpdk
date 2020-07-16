@@ -68,6 +68,7 @@ static bool intr_enabled;
  * CD command. This variable is to syncronize the same.
  */
 rte_atomic16_t sd_cd_demux_sync_var;
+rte_atomic16_t se_ce_mux_sync_var;
 
 /* Represents tested active devices */
 static struct active_device {
@@ -1388,6 +1389,7 @@ copy_reference_ldpc_enc_op(struct rte_bbdev_enc_op **ops, unsigned int n,
 		ops[i]->ldpc_enc.code_block_mode = ldpc_enc->code_block_mode;
 		ops[i]->ldpc_enc.output = outputs[start_idx + i];
 		ops[i]->ldpc_enc.input = inputs[start_idx + i];
+		ops[i]->ldpc_enc.se_ce_mux_output_size = ldpc_enc->se_ce_mux_output_size;
 		if (ops[i]->ldpc_enc.se_ce_mux) {
 			ops[i]->ldpc_enc.se_bits_per_re = ldpc_enc->se_bits_per_re;
 			rte_memcpy(&ops[i]->ldpc_enc.mux[0].se_n_re_ack_re,
@@ -2787,6 +2789,9 @@ throughput_pmd_lcore_ldpc_enc(void *arg)
 			for (j = 0; j < num_ops; ++j)
 				bbuf_reset(ops_enq[j]->turbo_enc.output.bdata);
 
+		if (ref_op->ldpc_enc.se_ce_mux)
+			while(rte_atomic16_read(&se_ce_mux_sync_var) == 0);
+
 		start_time = rte_rdtsc_precise();
 
 		for (enq = 0, deq = 0; enq < num_ops;) {
@@ -2809,6 +2814,8 @@ throughput_pmd_lcore_ldpc_enc(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+		if (ref_op->ldpc_enc.se_ce_mux)
+			rte_atomic16_set(&se_ce_mux_sync_var, 0);
 
 		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_ldpc_enc_op(ops_deq, num_ops, ref_op,
@@ -2880,6 +2887,8 @@ throughput_pmd_lcore_polar(void *arg)
 
 		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
 			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 0);
+		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
+			while(rte_atomic16_read(&se_ce_mux_sync_var) == 1);
 
 		start_time = rte_rdtsc_precise();
 
@@ -2903,8 +2912,11 @@ throughput_pmd_lcore_polar(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+
 		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
 			rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
+			rte_atomic16_set(&se_ce_mux_sync_var, 1);
 
 		if (ops_enq[0]->output.bdata) {
 			if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
