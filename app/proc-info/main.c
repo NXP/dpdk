@@ -654,6 +654,25 @@ metrics_display(int port_id)
 	rte_free(names);
 }
 
+/* This could be replaced by an ethdev hook in future */
+static int
+eth_tx_queue_available(uint16_t port_id, uint16_t queue_id, uint16_t n)
+{
+	uint16_t offset;
+	int count = 0;
+
+	for (offset = 0; offset < n; offset++) {
+		int status;
+
+		status = rte_eth_tx_descriptor_status(port_id, queue_id, offset);
+		if (status < 0)
+			return status;
+		if (status == RTE_ETH_TX_DESC_DONE)
+			++count;
+	}
+	return count;
+}
+
 static void
 show_port(void)
 {
@@ -667,7 +686,6 @@ show_port(void)
 		uint16_t mtu = 0;
 		struct rte_eth_link link;
 		struct rte_eth_dev_info dev_info;
-		struct rte_eth_rxq_info queue_info;
 		struct rte_eth_rss_conf rss_conf;
 		struct rte_eth_fc_conf fc_conf;
 		struct rte_ether_addr mac;
@@ -739,6 +757,7 @@ show_port(void)
 		ret = rte_eth_macaddr_get(i, &mac);
 		if (ret == 0) {
 			char ebuf[RTE_ETHER_ADDR_FMT_SIZE];
+
 			rte_ether_format_addr(ebuf, sizeof(ebuf), &mac);
 			printf("\t  -- mac %s\n", ebuf);
 		}
@@ -758,23 +777,58 @@ show_port(void)
 		if (ret == 0)
 			printf("\t  -- mtu (%d)\n", mtu);
 
-		printf("  - queue\n");
 		for (j = 0; j < dev_info.nb_rx_queues; j++) {
+			struct rte_eth_rxq_info queue_info;
+			int count;
+
 			ret = rte_eth_rx_queue_info_get(i, j, &queue_info);
-			if (ret == 0) {
-				printf("\t  -- queue %d rx scatter %d"
-						" descriptors %d"
-						" offloads 0x%"PRIx64
-						" mempool socket %d\n",
-						j,
-						queue_info.scattered_rx,
-						queue_info.nb_desc,
-						queue_info.conf.offloads,
-						queue_info.mp->socket_id);
-				printf("\t  -- mempool name: %s\n",
+			if (ret != 0)
+				break;
+
+			if (j == 0)
+				printf("  - rx queue\n");
+
+			printf("\t  -- %d descriptors ", j);
+			count = rte_eth_rx_queue_count(i, j);
+			if (count >= 0)
+				printf("%d/", count);
+			printf("%d", queue_info.nb_desc);
+
+			if (queue_info.scattered_rx)
+				printf(" scattered_rx");
+
+			printf(" offloads %#"PRIx64" socket %d\n",
+			       queue_info.conf.offloads,
+			       queue_info.mp->socket_id);
+			printf("\t  -- mempool name: %s\n",
 					(queue_info.mp == NULL) ?
 					"NULL" : queue_info.mp->name);
-			}
+
+		}
+
+		for (j = 0; j < dev_info.nb_tx_queues; j++) {
+			struct rte_eth_txq_info queue_info;
+			int count;
+
+			ret = rte_eth_tx_queue_info_get(i, j, &queue_info);
+			if (ret != 0)
+				break;
+
+			if (j == 0)
+				printf("  - tx queue\n");
+
+			printf("\t  -- %d descriptors ", j);
+
+			count = eth_tx_queue_available(i, j, queue_info.nb_desc);
+			if (count >= 0)
+				printf("%d/", count);
+			printf("%d", queue_info.nb_desc);
+
+			if (queue_info.conf.tx_deferred_start)
+				printf(" deferred_start");
+
+			printf(" offloads %#"PRIx64"\n",
+			       queue_info.conf.offloads);
 		}
 
 		ret = rte_eth_dev_rss_hash_conf_get(i, &rss_conf);
