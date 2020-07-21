@@ -660,8 +660,7 @@ show_port(void)
 	uint16_t i = 0;
 	int ret = 0, j, k;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - Port PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - Port PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
 	RTE_ETH_FOREACH_DEV(i) {
@@ -673,7 +672,7 @@ show_port(void)
 
 		memset(&rss_conf, 0, sizeof(rss_conf));
 
-		snprintf(bdr_str, MAX_STRING_LEN, " Port (%u)", i);
+		snprintf(bdr_str, MAX_STRING_LEN, " Port %u ", i);
 		STATS_BDR_STR(5, bdr_str);
 		printf("  - generic config\n");
 
@@ -754,8 +753,6 @@ show_port(void)
 		}
 #endif
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -841,8 +838,7 @@ show_tm(void)
 	unsigned int j, k;
 	uint16_t i = 0;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - TM PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - TM PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
 	RTE_ETH_FOREACH_DEV(i) {
@@ -1038,8 +1034,6 @@ show_tm(void)
 				stats.leaf.n_bytes_dropped[RTE_COLOR_RED]);
 		}
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -1085,8 +1079,7 @@ show_crypto(void)
 {
 	uint8_t crypto_dev_count = rte_cryptodev_count(), i;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - CRYPTO PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - CRYPTO PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
 	for (i = 0; i < crypto_dev_count; i++) {
@@ -1121,15 +1114,12 @@ show_crypto(void)
 				stats.dequeue_err_count);
 		}
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 static void
 show_ring(char *name)
 {
-	snprintf(bdr_str, MAX_STRING_LEN, " show - RING %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - RING ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
@@ -1160,7 +1150,6 @@ show_ring(char *name)
 	}
 
 	rte_ring_list_dump(stdout);
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -1168,8 +1157,7 @@ show_mempool(char *name)
 {
 	uint64_t flags = 0;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - MEMPOOL %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - MEMPOOL ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
@@ -1206,13 +1194,11 @@ show_mempool(char *name)
 				rte_mempool_avail_count(ptr),
 				rte_mempool_in_use_count(ptr));
 
-			STATS_BDR_STR(50, "");
 			return;
 		}
 	}
 
 	rte_mempool_list_dump(stdout);
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -1230,8 +1216,7 @@ mempool_itr_obj(struct rte_mempool *mp, void *opaque,
 static void
 iter_mempool(char *name)
 {
-	snprintf(bdr_str, MAX_STRING_LEN, " iter - MEMPOOL %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " iter - MEMPOOL ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
@@ -1241,12 +1226,9 @@ iter_mempool(char *name)
 			uint32_t ret = rte_mempool_obj_iter(ptr,
 					mempool_itr_obj, NULL);
 			printf("\n  - iterated %u objects\n", ret);
-			STATS_BDR_STR(50, "");
 			return;
 		}
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 int
@@ -1346,9 +1328,6 @@ main(int argc, char **argv)
 	ret = rte_eal_cleanup();
 	if (ret)
 		printf("Error from rte_eal_cleanup(), %d\n", ret);
-
-	strlcpy(bdr_str, " ", MAX_STRING_LEN);
-	STATS_BDR_STR(50, bdr_str);
 
 	return 0;
 }
