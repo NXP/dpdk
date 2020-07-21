@@ -1222,7 +1222,10 @@ show_mempool(char *name)
 	if (name != NULL) {
 		struct rte_mempool *ptr = rte_mempool_lookup(name);
 		if (ptr != NULL) {
+			struct rte_mempool_ops *ops;
+
 			flags = ptr->flags;
+			ops = rte_mempool_get_ops(ptr->ops_index);
 			printf("  - Name: %s on socket %d\n"
 				"  - flags:\n"
 				"\t  -- No spread (%c)\n"
@@ -1252,6 +1255,8 @@ show_mempool(char *name)
 			printf("  - Count: avail (%u), in use (%u)\n",
 				rte_mempool_avail_count(ptr),
 				rte_mempool_in_use_count(ptr));
+			printf("  - ops_index %d ops_name %s\n",
+				ptr->ops_index, ops ? ops->name : "NA");
 
 			return;
 		}
