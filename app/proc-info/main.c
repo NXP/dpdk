@@ -669,6 +669,8 @@ show_port(void)
 		struct rte_eth_dev_info dev_info;
 		struct rte_eth_rxq_info queue_info;
 		struct rte_eth_rss_conf rss_conf;
+		struct rte_eth_fc_conf fc_conf;
+		struct rte_ether_addr mac;
 
 		memset(&rss_conf, 0, sizeof(rss_conf));
 
@@ -676,31 +678,85 @@ show_port(void)
 		STATS_BDR_STR(5, bdr_str);
 		printf("  - generic config\n");
 
-		printf("\t  -- Socket %d\n", rte_eth_dev_socket_id(i));
+		ret = rte_eth_dev_info_get(i, &dev_info);
+		if (ret != 0) {
+			printf("Error during getting device info: %s\n",
+				strerror(-ret));
+			return;
+		}
+
+		printf("\t  -- driver %s device %s socket %d\n",
+		       dev_info.driver_name, dev_info.device->name,
+		       rte_eth_dev_socket_id(i));
+
 		ret = rte_eth_link_get(i, &link);
 		if (ret < 0) {
 			printf("Link get failed (port %u): %s\n",
 			       i, rte_strerror(-ret));
 		} else {
-			printf("\t  -- link speed %d duplex %d,"
-					" auto neg %d status %d\n",
-					link.link_speed,
-					link.link_duplex,
-					link.link_autoneg,
-					link.link_status);
+			uint32_t speed = link.link_speed;
+			char suffix = 'M';
+			const char *duplex, *autoneg, *status;
+
+			if (speed > 1000) {
+				suffix = 'G';
+				speed /= 1000;
+			}
+
+			if (link.link_duplex == ETH_LINK_FULL_DUPLEX)
+				duplex = "full";
+			else
+				duplex = "half";
+
+			if (link.link_autoneg == ETH_LINK_AUTONEG)
+				autoneg = "auto neg";
+			else
+				autoneg = "fixed";
+
+			if (link.link_status == ETH_LINK_UP)
+				status = "up";
+			else
+				status = "down";
+
+			printf("\t  -- link speed %u%cbps (%s), duplex %s, %s\n",
+			       speed, suffix, autoneg, duplex, status);
 		}
-		printf("\t  -- promiscuous (%d)\n",
-				rte_eth_promiscuous_get(i));
+
+		ret = rte_eth_dev_flow_ctrl_get(i, &fc_conf);
+		if (ret == 0 && fc_conf.mode != RTE_FC_NONE)  {
+			printf("\t  -- flow control mode %s%s high %u low %u pause %u%s%s\n",
+			       fc_conf.mode == RTE_FC_RX_PAUSE ? "rx " :
+			       fc_conf.mode == RTE_FC_TX_PAUSE ? "tx " :
+			       fc_conf.mode == RTE_FC_FULL ? "full" : "???",
+			       fc_conf.autoneg ? " auto" : "",
+			       fc_conf.high_water,
+			       fc_conf.low_water,
+			       fc_conf.pause_time,
+			       fc_conf.send_xon ? " xon" : "",
+			       fc_conf.mac_ctrl_frame_fwd ? " mac_ctrl" : "");
+		}
+
+		ret = rte_eth_macaddr_get(i, &mac);
+		if (ret == 0) {
+			char ebuf[RTE_ETHER_ADDR_FMT_SIZE];
+			rte_ether_format_addr(ebuf, sizeof(ebuf), &mac);
+			printf("\t  -- mac %s\n", ebuf);
+		}
+
+
+		ret = rte_eth_promiscuous_get(i);
+		if (ret >= 0)
+			printf("\t  -- promiscuous mode %s\n",
+			       ret > 0 ? "enabled" : "disabled");
+
+		ret = rte_eth_allmulticast_get(i);
+		if (ret >= 0)
+			printf("\t  -- all multicast mode %s\n",
+			       ret > 0 ? "enabled" : "disabled");
+
 		ret = rte_eth_dev_get_mtu(i, &mtu);
 		if (ret == 0)
 			printf("\t  -- mtu (%d)\n", mtu);
-
-		ret = rte_eth_dev_info_get(i, &dev_info);
-		if (ret != 0) {
-			printf("Error during getting device (port %u) info: %s\n",
-				i, strerror(-ret));
-			return;
-		}
 
 		printf("  - queue\n");
 		for (j = 0; j < dev_info.nb_rx_queues; j++) {
@@ -715,6 +771,9 @@ show_port(void)
 						queue_info.nb_desc,
 						queue_info.conf.offloads,
 						queue_info.mp->socket_id);
+				printf("\t  -- mempool name: %s\n",
+					(queue_info.mp == NULL) ?
+					"NULL" : queue_info.mp->name);
 			}
 		}
 
