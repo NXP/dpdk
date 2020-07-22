@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <dirent.h>
 
 #include <rte_common.h>
 #include <rte_bus_vdev.h>
@@ -1181,6 +1182,40 @@ get_hugepage_info(void)
 	return hp_info;
 }
 
+static int open_ipc_dev(void)
+{
+	char dev_initials[] = "gulipcgul", dev_path[PATH_MAX];
+	struct dirent *entry;
+	int dev_ipc = 0;
+	DIR *dir;
+
+	dir = opendir("/dev/");
+	if (!dir) {
+		BBDEV_LA12XX_PMD_ERR("Unable to open /dev/");
+		return -1;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (!strncmp(dev_initials, entry->d_name,
+		    sizeof(dev_initials) - 1))
+			break;
+	}
+
+	if (!entry) {
+		BBDEV_LA12XX_PMD_ERR("Error: No gulipcgul device");
+		return -1;
+	}
+
+	sprintf(dev_path, "/dev/%s", entry->d_name);
+	dev_ipc = open(dev_path, O_RDWR);
+	if (dev_ipc  < 0) {
+		BBDEV_LA12XX_PMD_ERR("Error: Cannot open %s", dev_path);
+		return -errno;
+	}
+
+	return dev_ipc;
+}
+
 static int
 setup_bbdev(struct rte_bbdev *dev)
 {
@@ -1237,10 +1272,9 @@ setup_bbdev(struct rte_bbdev *dev)
 		goto err;
 	}
 
-	dev_ipc = open("/dev/gulipcgul0", O_RDWR);
-	if (dev_ipc  < 0) {
-		BBDEV_LA12XX_PMD_ERR("Error: Cannot open /dev/ipc_gul_x");
-		ret = -errno;
+	dev_ipc = open_ipc_dev();
+	if (dev_ipc < 0) {
+		BBDEV_LA12XX_PMD_ERR("Error: open_ipc_dev failed");
 		goto err;
 	}
 
