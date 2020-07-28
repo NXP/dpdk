@@ -1603,7 +1603,9 @@ ecpri_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
 			sizeof(ecpri_header_t));
 		iq->pc_rtc_id = rte_cpu_to_be_16(i);
 		dest_queue->index = i;
-		attr.priority = i;
+		/* RXQ0~RXQ7 are in TC0,  RXQ8-RXQ15 are in TC1 and so on*/
+		attr.group = i/8;
+		attr.priority = i%8;
 		flow = rte_flow_create(portid, &attr, pattern1,
 			actions1, &error);
 		if (!flow)
