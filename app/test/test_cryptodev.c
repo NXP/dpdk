@@ -2704,13 +2704,15 @@ create_wireless_algo_cipher_auth_session(uint8_t dev_id,
 	/* Create Crypto session*/
 	ut_params->sess = rte_cryptodev_sym_session_create(
 			ts_params->session_mpool);
+	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
 
 	status = rte_cryptodev_sym_session_init(dev_id, ut_params->sess,
 			&ut_params->cipher_xform,
 			ts_params->session_priv_mpool);
+	if (status == -ENOTSUP)
+		return status;
 
 	TEST_ASSERT_EQUAL(status, 0, "session init failed");
-	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
 	return 0;
 }
 
@@ -2830,6 +2832,7 @@ create_wireless_algo_auth_cipher_session(uint8_t dev_id,
 	/* Create Crypto session*/
 	ut_params->sess = rte_cryptodev_sym_session_create(
 			ts_params->session_mpool);
+	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
 
 	if (cipher_op == RTE_CRYPTO_CIPHER_OP_DECRYPT) {
 		ut_params->auth_xform.next = NULL;
@@ -2843,8 +2846,10 @@ create_wireless_algo_auth_cipher_session(uint8_t dev_id,
 				&ut_params->auth_xform,
 				ts_params->session_priv_mpool);
 
+	if (status == -ENOTSUP)
+		return status;
+
 	TEST_ASSERT_EQUAL(status, 0, "session init failed");
-	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
 
 	return 0;
 }
@@ -2988,6 +2993,11 @@ create_wireless_algo_cipher_hash_operation(const uint8_t *auth_tag,
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 
+	enum rte_crypto_cipher_algorithm cipher_algo =
+			ut_params->cipher_xform.cipher.algo;
+	enum rte_crypto_auth_algorithm auth_algo =
+			ut_params->auth_xform.auth.algo;
+
 	/* Generate Crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
@@ -3008,8 +3018,22 @@ create_wireless_algo_cipher_hash_operation(const uint8_t *auth_tag,
 	TEST_ASSERT_NOT_NULL(sym_op->auth.digest.data,
 			"no room to append auth tag");
 	ut_params->digest = sym_op->auth.digest.data;
-	sym_op->auth.digest.phys_addr = rte_pktmbuf_iova_offset(
-			ut_params->ibuf, data_pad_len);
+
+	if (rte_pktmbuf_is_contiguous(ut_params->ibuf)) {
+		sym_op->auth.digest.phys_addr = rte_pktmbuf_iova_offset(
+				ut_params->ibuf, data_pad_len);
+	} else {
+		struct rte_mbuf *m = ut_params->ibuf;
+		unsigned int offset = data_pad_len;
+
+		while (offset > m->data_len && m->next != NULL) {
+			offset -= m->data_len;
+			m = m->next;
+		}
+		sym_op->auth.digest.phys_addr = rte_pktmbuf_iova_offset(
+			m, offset);
+	}
+
 	if (op == RTE_CRYPTO_AUTH_OP_GENERATE)
 		memset(sym_op->auth.digest.data, 0, auth_tag_len);
 	else
@@ -3026,10 +3050,25 @@ create_wireless_algo_cipher_hash_operation(const uint8_t *auth_tag,
 	iv_ptr += cipher_iv_len;
 	rte_memcpy(iv_ptr, auth_iv, auth_iv_len);
 
-	sym_op->cipher.data.length = cipher_len;
-	sym_op->cipher.data.offset = cipher_offset;
-	sym_op->auth.data.length = auth_len;
-	sym_op->auth.data.offset = auth_offset;
+	if (cipher_algo == RTE_CRYPTO_CIPHER_SNOW3G_UEA2 ||
+		cipher_algo == RTE_CRYPTO_CIPHER_KASUMI_F8 ||
+		cipher_algo == RTE_CRYPTO_CIPHER_ZUC_EEA3) {
+		sym_op->cipher.data.length = cipher_len;
+		sym_op->cipher.data.offset = cipher_offset;
+	} else {
+		sym_op->cipher.data.length = cipher_len >> 3;
+		sym_op->cipher.data.offset = cipher_offset >> 3;
+	}
+
+	if (auth_algo == RTE_CRYPTO_AUTH_SNOW3G_UIA2 ||
+		auth_algo == RTE_CRYPTO_AUTH_KASUMI_F9 ||
+		auth_algo == RTE_CRYPTO_AUTH_ZUC_EIA3) {
+		sym_op->auth.data.length = auth_len;
+		sym_op->auth.data.offset = auth_offset;
+	} else {
+		sym_op->auth.data.length = auth_len >> 3;
+		sym_op->auth.data.offset = auth_offset >> 3;
+	}
 
 	return 0;
 }
@@ -6949,8 +6988,9 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 	unsigned int ciphertext_len;
 
 	struct rte_cryptodev_info dev_info;
+	struct rte_crypto_op *op;
 
-	/* Check if device supports particular algorithms */
+	/* Check if device supports particular algorithms separately */
 	if (test_mixed_check_if_unsupported(tdata))
 		return -ENOTSUP;
 
@@ -6966,18 +7006,26 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 	}
 
 	/* Create the session */
-	retval = create_wireless_algo_auth_cipher_session(
-			ts_params->valid_devs[0],
-			(verify ? RTE_CRYPTO_CIPHER_OP_DECRYPT
-					: RTE_CRYPTO_CIPHER_OP_ENCRYPT),
-			(verify ? RTE_CRYPTO_AUTH_OP_VERIFY
-					: RTE_CRYPTO_AUTH_OP_GENERATE),
-			tdata->auth_algo,
-			tdata->cipher_algo,
-			tdata->auth_key.data, tdata->auth_key.len,
-			tdata->auth_iv.len, tdata->digest_enc.len,
-			tdata->cipher_iv.len);
-
+	if (verify)
+		retval = create_wireless_algo_cipher_auth_session(
+				ts_params->valid_devs[0],
+				RTE_CRYPTO_CIPHER_OP_DECRYPT,
+				RTE_CRYPTO_AUTH_OP_VERIFY,
+				tdata->auth_algo,
+				tdata->cipher_algo,
+				tdata->auth_key.data, tdata->auth_key.len,
+				tdata->auth_iv.len, tdata->digest_enc.len,
+				tdata->cipher_iv.len);
+	else
+		retval = create_wireless_algo_auth_cipher_session(
+				ts_params->valid_devs[0],
+				RTE_CRYPTO_CIPHER_OP_ENCRYPT,
+				RTE_CRYPTO_AUTH_OP_GENERATE,
+				tdata->auth_algo,
+				tdata->cipher_algo,
+				tdata->auth_key.data, tdata->auth_key.len,
+				tdata->auth_iv.len, tdata->digest_enc.len,
+				tdata->cipher_iv.len);
 	if (retval < 0)
 		return retval;
 
@@ -7020,7 +7068,7 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 			tdata->cipher_iv.data, tdata->cipher_iv.len,
 			tdata->auth_iv.data, tdata->auth_iv.len,
 			(tdata->digest_enc.offset == 0 ?
-			(verify ? ciphertext_pad_len : plaintext_pad_len)
+				plaintext_pad_len
 				: tdata->digest_enc.offset),
 			tdata->validCipherLen.len_bits,
 			tdata->cipher.offset_bits,
@@ -7031,8 +7079,18 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	op = process_crypto_request(ts_params->valid_devs[0],
 			ut_params->op);
+
+	/* Check if the op failed because the device doesn't */
+	/* support this particular combination of algorithms */
+	if (op == NULL && ut_params->op->status ==
+			RTE_CRYPTO_OP_STATUS_INVALID_SESSION) {
+		printf("Device doesn't support this mixed combination. "
+				"Test Skipped.\n");
+		return -ENOTSUP;
+	}
+	ut_params->op = op;
 
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 
@@ -7048,12 +7106,10 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 					(tdata->cipher.offset_bits >> 3);
 
 		debug_hexdump(stdout, "plaintext:", plaintext,
-				(tdata->plaintext.len_bits >> 3) -
-				tdata->digest_enc.len);
+				tdata->plaintext.len_bits >> 3);
 		debug_hexdump(stdout, "plaintext expected:",
 				tdata->plaintext.data,
-				(tdata->plaintext.len_bits >> 3) -
-				tdata->digest_enc.len);
+				tdata->plaintext.len_bits >> 3);
 	} else {
 		if (ut_params->obuf)
 			ciphertext = rte_pktmbuf_mtod(ut_params->obuf,
@@ -7098,6 +7154,10 @@ test_mixed_auth_cipher(const struct mixed_cipher_auth_test_data *tdata,
 				DIGEST_BYTE_LENGTH_SNOW3G_UIA2,
 				"Generated auth tag not as expected");
 	}
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
 	return 0;
 }
 
@@ -7121,6 +7181,7 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 	uint8_t digest_buffer[10000];
 
 	struct rte_cryptodev_info dev_info;
+	struct rte_crypto_op *op;
 
 	/* Check if device supports particular algorithms */
 	if (test_mixed_check_if_unsupported(tdata))
@@ -7149,18 +7210,26 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 	}
 
 	/* Create the session */
-	retval = create_wireless_algo_auth_cipher_session(
-			ts_params->valid_devs[0],
-			(verify ? RTE_CRYPTO_CIPHER_OP_DECRYPT
-					: RTE_CRYPTO_CIPHER_OP_ENCRYPT),
-			(verify ? RTE_CRYPTO_AUTH_OP_VERIFY
-					: RTE_CRYPTO_AUTH_OP_GENERATE),
-			tdata->auth_algo,
-			tdata->cipher_algo,
-			tdata->auth_key.data, tdata->auth_key.len,
-			tdata->auth_iv.len, tdata->digest_enc.len,
-			tdata->cipher_iv.len);
-
+	if (verify)
+		retval = create_wireless_algo_cipher_auth_session(
+				ts_params->valid_devs[0],
+				RTE_CRYPTO_CIPHER_OP_DECRYPT,
+				RTE_CRYPTO_AUTH_OP_VERIFY,
+				tdata->auth_algo,
+				tdata->cipher_algo,
+				tdata->auth_key.data, tdata->auth_key.len,
+				tdata->auth_iv.len, tdata->digest_enc.len,
+				tdata->cipher_iv.len);
+	else
+		retval = create_wireless_algo_auth_cipher_session(
+				ts_params->valid_devs[0],
+				RTE_CRYPTO_CIPHER_OP_ENCRYPT,
+				RTE_CRYPTO_AUTH_OP_GENERATE,
+				tdata->auth_algo,
+				tdata->cipher_algo,
+				tdata->auth_key.data, tdata->auth_key.len,
+				tdata->auth_iv.len, tdata->digest_enc.len,
+				tdata->cipher_iv.len);
 	if (retval < 0)
 		return retval;
 
@@ -7170,7 +7239,7 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 	plaintext_pad_len = RTE_ALIGN_CEIL(plaintext_len, 16);
 
 	ut_params->ibuf = create_segmented_mbuf(ts_params->mbuf_pool,
-			plaintext_pad_len, 15, 0);
+			ciphertext_pad_len, 15, 0);
 	TEST_ASSERT_NOT_NULL(ut_params->ibuf,
 			"Failed to allocate input buffer in mempool");
 
@@ -7204,7 +7273,7 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 			tdata->cipher_iv.data, tdata->cipher_iv.len,
 			tdata->auth_iv.data, tdata->auth_iv.len,
 			(tdata->digest_enc.offset == 0 ?
-			(verify ? ciphertext_pad_len : plaintext_pad_len)
+				plaintext_pad_len
 				: tdata->digest_enc.offset),
 			tdata->validCipherLen.len_bits,
 			tdata->cipher.offset_bits,
@@ -7215,8 +7284,19 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	op = process_crypto_request(ts_params->valid_devs[0],
 			ut_params->op);
+
+	/* Check if the op failed because the device doesn't */
+	/* support this particular combination of algorithms */
+	if (op == NULL && ut_params->op->status ==
+			RTE_CRYPTO_OP_STATUS_INVALID_SESSION) {
+		printf("Device doesn't support this mixed combination. "
+				"Test Skipped.\n");
+		return -ENOTSUP;
+	}
+
+	ut_params->op = op;
 
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 
@@ -7290,6 +7370,10 @@ test_mixed_auth_cipher_sgl(const struct mixed_cipher_auth_test_data *tdata,
 				tdata->digest_enc.len,
 				"Generated auth tag not as expected");
 	}
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
 	return 0;
 }
 
@@ -7349,6 +7433,176 @@ test_verify_aes_cmac_aes_ctr_digest_enc_test_case_1_oop_sgl(void)
 {
 	return test_mixed_auth_cipher_sgl(
 		&auth_aes_cmac_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 1);
+}
+
+/** MIXED AUTH + CIPHER */
+
+static int
+test_auth_zuc_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_snow_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_zuc_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_snow_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_aes_cmac_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_snow_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_aes_cmac_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_snow_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_zuc_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_zuc_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_snow_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_snow_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_snow_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_zuc_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_snow_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_zuc_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_aes_cmac_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_zuc_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_aes_cmac_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_zuc_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_null_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_snow_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_null_cipher_snow_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_snow_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_null_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_zuc_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_null_cipher_zuc_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_zuc_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_snow_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_null_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_snow_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_snow_cipher_null_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_zuc_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_null_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_zuc_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_zuc_cipher_null_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_null_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_null_cipher_aes_ctr_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_null_cipher_aes_ctr_test_case_1, OUT_OF_PLACE, 1);
+}
+
+static int
+test_auth_aes_cmac_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_null_test_case_1, OUT_OF_PLACE, 0);
+}
+
+static int
+test_verify_auth_aes_cmac_cipher_null_test_case_1(void)
+{
+	return test_mixed_auth_cipher(
+		&auth_aes_cmac_cipher_null_test_case_1, OUT_OF_PLACE, 1);
 }
 
 static int
@@ -12660,6 +12914,68 @@ static struct unit_test_suite cryptodev_qat_testsuite  = {
 		       test_verify_aes_cmac_aes_ctr_digest_enc_test_case_1_sgl),
 		TEST_CASE_ST(ut_setup, ut_teardown,
 		   test_verify_aes_cmac_aes_ctr_digest_enc_test_case_1_oop_sgl),
+
+		/** AUTH ZUC + CIPHER SNOW3G */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_zuc_cipher_snow_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_zuc_cipher_snow_test_case_1),
+		/** AUTH AES CMAC + CIPHER SNOW3G */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_aes_cmac_cipher_snow_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_aes_cmac_cipher_snow_test_case_1),
+		/** AUTH ZUC + CIPHER AES CTR */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_zuc_cipher_aes_ctr_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_zuc_cipher_aes_ctr_test_case_1),
+		/** AUTH SNOW3G + CIPHER AES CTR */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_snow_cipher_aes_ctr_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_snow_cipher_aes_ctr_test_case_1),
+		/** AUTH SNOW3G + CIPHER ZUC */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_snow_cipher_zuc_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_snow_cipher_zuc_test_case_1),
+		/** AUTH AES CMAC + CIPHER ZUC */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_aes_cmac_cipher_zuc_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_aes_cmac_cipher_zuc_test_case_1),
+
+		/** AUTH NULL + CIPHER SNOW3G */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_null_cipher_snow_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_null_cipher_snow_test_case_1),
+		/** AUTH NULL + CIPHER ZUC */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_null_cipher_zuc_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_null_cipher_zuc_test_case_1),
+		/** AUTH SNOW3G + CIPHER NULL */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_snow_cipher_null_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_snow_cipher_null_test_case_1),
+		/** AUTH ZUC + CIPHER NULL */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_zuc_cipher_null_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_zuc_cipher_null_test_case_1),
+		/** AUTH NULL + CIPHER AES CTR */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_null_cipher_aes_ctr_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_null_cipher_aes_ctr_test_case_1),
+		/** AUTH AES CMAC + CIPHER NULL */
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_auth_aes_cmac_cipher_null_test_case_1),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			test_verify_auth_aes_cmac_cipher_null_test_case_1),
 
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
