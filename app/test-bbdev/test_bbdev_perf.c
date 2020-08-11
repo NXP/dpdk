@@ -119,7 +119,7 @@ struct thread_params {
 	uint64_t start_time;
 	double ops_per_sec;
 	double mbps;
-	uint8_t iter_count;
+	uint64_t iter_count;
 	rte_atomic16_t nb_dequeued;
 	rte_atomic16_t processing_status;
 	rte_atomic16_t burst_sz;
@@ -127,6 +127,9 @@ struct thread_params {
 	struct rte_bbdev_dec_op *dec_ops[MAX_BURST];
 	struct rte_bbdev_enc_op *enc_ops[MAX_BURST];
 	struct rte_pmd_la12xx_op *polar_ops[MAX_BURST];
+	uint64_t *total_time;
+	uint64_t *min_time;
+	uint64_t *max_time;
 };
 
 #ifdef RTE_BBDEV_OFFLOAD_COST
@@ -2572,8 +2575,6 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 			RTE_BBDEV_LDPC_ITERATION_STOP_ENABLE))
 		ref_op->ldpc_dec.op_flags -=
 				RTE_BBDEV_LDPC_ITERATION_STOP_ENABLE;
-	ref_op->ldpc_dec.iter_max = 6;
-	ref_op->ldpc_dec.iter_count = ref_op->ldpc_dec.iter_max;
 
 	if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE)
 		copy_reference_ldpc_dec_op(ops_enq, num_ops, 0, bufs->inputs,
@@ -2961,7 +2962,7 @@ print_throughput(struct thread_params *t_params, unsigned int used_cores)
 		if (op_type == RTE_BBDEV_OP_TURBO_DEC ||
 		    op_type == RTE_BBDEV_OP_LDPC_DEC) {
 			printf(
-				"Op Type: %s Throughput for core (%u): %.8lg Ops/s, %.8lg Mbps @ max %u iterations\n",
+				"Op Type: %s Throughput for core (%u): %.8lg Ops/s, %.8lg Mbps @ max %lu iterations\n",
 				op_type_str,
 				t_params[iter].lcore_id,
 				t_params[iter].ops_per_sec,
@@ -2999,25 +3000,25 @@ throughput_test(struct active_device *ad,
 {
 	int ret = 0;
 	unsigned int lcore_id, used_cores = 0;
+	unsigned int master_lcore_id;
 	struct thread_params *t_params, *tp;
 	struct rte_bbdev_info info;
-	lcore_function_t *throughput_function;
+	lcore_function_t *throughput_function[RTE_MAX_LCORE];
 	uint16_t num_lcores;
 	enum rte_bbdev_op_type op_type;
 
 	rte_bbdev_info_get(ad->dev_id, &info);
 
+	/* Set number of lcores */
+	num_lcores = get_vector_count();
+	master_lcore_id = rte_lcore_id();
+
 	printf("+ ------------------------------------------------------- +\n");
 	printf("== test: throughput\ndev: %s, nb_queues: %u, burst size: %u, num ops: %u, num_lcores: %u, itr mode: %s, GHz: %lg\n",
-			info.dev_name, ad->nb_queues, op_params->burst_sz,
-			op_params->num_to_process, op_params->num_lcores,
+			info.dev_name, ad->nb_queues, op_params[master_lcore_id].burst_sz,
+			op_params[master_lcore_id].num_to_process, num_lcores,
 			intr_enabled ? "Interrupt mode" : "PMD mode",
 			(double)rte_get_tsc_hz() / 1000000000.0);
-
-	/* Set number of lcores */
-	num_lcores = (ad->nb_queues < (op_params->num_lcores))
-			? ad->nb_queues
-			: op_params->num_lcores;
 
 	/* Allocate memory for thread parameters structure */
 	t_params = rte_zmalloc(NULL, num_lcores * sizeof(struct thread_params),
@@ -3026,15 +3027,8 @@ throughput_test(struct active_device *ad,
 			RTE_ALIGN(sizeof(struct thread_params) * num_lcores,
 				RTE_CACHE_LINE_SIZE));
 
-	/* Master core is set at first entry */
-	t_params[0].dev_id = ad->dev_id;
-	t_params[0].lcore_id = rte_lcore_id();
-	t_params[0].op_params = &op_params[0];
-	t_params[0].queue_id = ad->queue_ids[used_cores++];
-	t_params[0].iter_count = 0;
-
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-		if (used_cores >= num_lcores)
+	RTE_LCORE_FOREACH(lcore_id) {
+		if (used_cores > num_lcores)
 			break;
 
 		t_params[used_cores].dev_id = ad->dev_id;
@@ -3046,19 +3040,24 @@ throughput_test(struct active_device *ad,
 		op_type = op_params[lcore_id].vector->op_type;
 		if (intr_enabled) {
 			if (op_type == RTE_BBDEV_OP_TURBO_DEC)
-				throughput_function = throughput_intr_lcore_dec;
+				throughput_function[used_cores] =
+					throughput_intr_lcore_dec;
 			else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
-				throughput_function = throughput_intr_lcore_dec;
+				throughput_function[used_cores] =
+					throughput_intr_lcore_dec;
 			else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
-				throughput_function = throughput_intr_lcore_enc;
+				throughput_function[used_cores] =
+					throughput_intr_lcore_enc;
 			else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
-				throughput_function = throughput_intr_lcore_enc;
+				throughput_function[used_cores] =
+					throughput_intr_lcore_enc;
 			else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
 				(op_type == RTE_BBDEV_OP_POLAR_ENC))
-				throughput_function =
+				throughput_function[used_cores] =
 					throughput_intr_lcore_polar;
 			else
-				throughput_function = throughput_intr_lcore_enc;
+				throughput_function[used_cores] =
+					throughput_intr_lcore_enc;
 
 			/* Dequeue interrupt callback registration */
 			ret = rte_bbdev_callback_register(ad->dev_id,
@@ -3071,73 +3070,39 @@ throughput_test(struct active_device *ad,
 			}
 		} else {
 			if (op_type == RTE_BBDEV_OP_TURBO_DEC)
-				throughput_function = throughput_pmd_lcore_dec;
+				throughput_function[used_cores] =
+					throughput_pmd_lcore_dec;
 			else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
-				throughput_function =
+				throughput_function[used_cores] =
 					throughput_pmd_lcore_ldpc_dec;
 			else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
-				throughput_function = throughput_pmd_lcore_enc;
+				throughput_function[used_cores] =
+					throughput_pmd_lcore_enc;
 			else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
-				throughput_function =
+				throughput_function[used_cores] =
 					throughput_pmd_lcore_ldpc_enc;
 			else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
 				(op_type == RTE_BBDEV_OP_POLAR_ENC))
-				throughput_function =
+				throughput_function[used_cores] =
 					throughput_pmd_lcore_polar;
 			else
-				throughput_function = throughput_pmd_lcore_enc;
+				throughput_function[used_cores] =
+					throughput_pmd_lcore_enc;
 		}
 
 		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_WAIT);
 
-		rte_eal_remote_launch(throughput_function,
-			&t_params[used_cores++], lcore_id);
-	}
-
-	op_type = op_params[0].vector->op_type;
-	if (intr_enabled) {
-		if (op_type == RTE_BBDEV_OP_TURBO_DEC)
-			throughput_function = throughput_intr_lcore_dec;
-		else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
-			throughput_function = throughput_intr_lcore_dec;
-		else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
-			throughput_function = throughput_intr_lcore_enc;
-		else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
-			throughput_function = throughput_intr_lcore_enc;
-		else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
-			(op_type == RTE_BBDEV_OP_POLAR_ENC))
-			throughput_function = throughput_intr_lcore_polar;
-		else
-			throughput_function = throughput_intr_lcore_enc;
-
-		/* Dequeue interrupt callback registration */
-		ret = rte_bbdev_callback_register(ad->dev_id,
-				RTE_BBDEV_EVENT_DEQUEUE, dequeue_event_callback,
-				&t_params[0]);
-		if (ret < 0) {
-			rte_free(t_params);
-			return ret;
+		if (used_cores != 0) {
+			rte_eal_remote_launch(throughput_function[used_cores],
+				&t_params[used_cores], lcore_id);
 		}
-	} else {
-		if (op_type == RTE_BBDEV_OP_TURBO_DEC)
-			throughput_function = throughput_pmd_lcore_dec;
-		else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
-			throughput_function = throughput_pmd_lcore_ldpc_dec;
-		else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
-			throughput_function = throughput_pmd_lcore_enc;
-		else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
-			throughput_function = throughput_pmd_lcore_ldpc_enc;
-		else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
-			(op_type == RTE_BBDEV_OP_POLAR_ENC))
-			throughput_function = throughput_pmd_lcore_polar;
-		else
-			throughput_function = throughput_pmd_lcore_enc;
+		used_cores++;
 	}
 
 	RTE_LCORE_FOREACH(lcore_id) {
 		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_START);
 	}
-	ret = throughput_function(&t_params[0]);
+	ret = throughput_function[0](&t_params[0]);
 
 	/* Master core is always used */
 	for (used_cores = 1; used_cores < num_lcores; used_cores++)
@@ -3196,17 +3161,33 @@ throughput_test(struct active_device *ad,
 }
 
 static int
-latency_test_dec(struct rte_mempool *mempool,
-		struct test_buffers *bufs, struct rte_bbdev_dec_op *ref_op,
-		int vector_mask, uint16_t dev_id, uint16_t queue_id,
-		const uint16_t num_to_process, uint16_t burst_sz,
-		uint64_t *total_time, uint64_t *min_time, uint64_t *max_time,
-		struct test_bbdev_vector *vector)
+latency_test_dec(void *arg)
 {
+	struct thread_params *tp = arg;
+	struct rte_bbdev_dec_op *ref_op = tp->op_params->ref_dec_op;
+	struct test_bbdev_vector *vector = tp->op_params->vector;
+	struct rte_mempool *mempool = tp->op_params->mp;
+	int vector_mask = tp->op_params->vector_mask;
+	struct test_buffers *bufs = NULL;
+	struct rte_bbdev_info info;
+	uint16_t dev_id = tp->dev_id;
+	uint16_t queue_id = tp->queue_id;
+	uint16_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = 1;
+	uint64_t *total_time = tp->total_time;
+	uint64_t *min_time = tp->min_time;
+	uint64_t *max_time = tp->max_time;
+
 	int ret = TEST_SUCCESS;
 	uint16_t i, j, dequeued;
 	struct rte_bbdev_dec_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
+
+	rte_bbdev_info_get(tp->dev_id, &info);
+	bufs = &tp->op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
+
+	while (rte_atomic16_read(&tp->op_params->sync) == SYNC_WAIT)
+		rte_pause();
 
 	ret = rte_bbdev_dec_op_alloc_bulk(mempool, ops_enq, burst_sz);
 	TEST_ASSERT_SUCCESS(ret,
@@ -3262,21 +3243,37 @@ latency_test_dec(struct rte_mempool *mempool,
 	}
 	rte_bbdev_dec_op_free_bulk(ops_enq, burst_sz);
 
-	return i;
+	return TEST_SUCCESS;
 }
 
 static int
-latency_test_ldpc_dec(struct rte_mempool *mempool,
-		struct test_buffers *bufs, struct rte_bbdev_dec_op *ref_op,
-		int vector_mask, uint16_t dev_id, uint16_t queue_id,
-		const uint16_t num_to_process, uint16_t burst_sz,
-		uint64_t *total_time, uint64_t *min_time, uint64_t *max_time,
-		struct test_bbdev_vector *vector)
+latency_test_ldpc_dec(void *arg)
 {
+	struct thread_params *tp = arg;
+	struct rte_bbdev_dec_op *ref_op = tp->op_params->ref_dec_op;
+	struct test_bbdev_vector *vector = tp->op_params->vector;
+	struct rte_mempool *mempool = tp->op_params->mp;
+	int vector_mask = tp->op_params->vector_mask;
+	struct test_buffers *bufs = NULL;
+	struct rte_bbdev_info info;
+	uint16_t dev_id = tp->dev_id;
+	uint16_t queue_id = tp->queue_id;
+	uint16_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = 1;
+	uint64_t *total_time = tp->total_time;
+	uint64_t *min_time = tp->min_time;
+	uint64_t *max_time = tp->max_time;
+
 	int ret = TEST_SUCCESS;
 	uint16_t i, j, dequeued;
 	struct rte_bbdev_dec_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
+
+	rte_bbdev_info_get(tp->dev_id, &info);
+	bufs = &tp->op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
+
+	while (rte_atomic16_read(&tp->op_params->sync) == SYNC_WAIT)
+		rte_pause();
 
 	ret = rte_bbdev_dec_op_alloc_bulk(mempool, ops_enq, burst_sz);
 	TEST_ASSERT_SUCCESS(ret,
@@ -3342,21 +3339,36 @@ latency_test_ldpc_dec(struct rte_mempool *mempool,
 	}
 	rte_bbdev_dec_op_free_bulk(ops_enq, burst_sz);
 
-	return i;
+	return TEST_SUCCESS;
 }
 
 static int
-latency_test_ldpc_polar(struct rte_mempool *mempool,
-		struct test_buffers *bufs, struct rte_pmd_la12xx_op *ref_op,
-		__rte_unused int vector_mask, uint16_t dev_id, uint16_t queue_id,
-		const uint16_t num_to_process, uint16_t burst_sz,
-		uint64_t *total_time, uint64_t *min_time, uint64_t *max_time,
-		struct test_bbdev_vector *vector)
+latency_test_ldpc_polar(void *arg)
 {
+	struct thread_params *tp = arg;
+	struct rte_pmd_la12xx_op *ref_op = tp->op_params->ref_polar_op;
+	struct test_bbdev_vector *vector = tp->op_params->vector;
+	struct rte_mempool *mempool = tp->op_params->mp;
+	struct test_buffers *bufs = NULL;
+	struct rte_bbdev_info info;
+	uint16_t dev_id = tp->dev_id;
+	uint16_t queue_id = tp->queue_id;
+	uint16_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = 1;
+	uint64_t *total_time = tp->total_time;
+	uint64_t *min_time = tp->min_time;
+	uint64_t *max_time = tp->max_time;
+
 	int ret = TEST_SUCCESS;
 	uint16_t i, j, dequeued;
 	struct rte_pmd_la12xx_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
+
+	rte_bbdev_info_get(tp->dev_id, &info);
+	bufs = &tp->op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
+
+	while (rte_atomic16_read(&tp->op_params->sync) == SYNC_WAIT)
+		rte_pause();
 
 	ret = rte_mempool_get_bulk(mempool, (void **)ops_enq, burst_sz);
 	TEST_ASSERT_SUCCESS(ret,
@@ -3417,21 +3429,36 @@ latency_test_ldpc_polar(struct rte_mempool *mempool,
 	}
 	rte_mempool_put_bulk(mempool, (void **)ops_enq, burst_sz);
 
-	return i;
+	return TEST_SUCCESS;
 }
 
 static int
-latency_test_enc(struct rte_mempool *mempool,
-		struct test_buffers *bufs, struct rte_bbdev_enc_op *ref_op,
-		uint16_t dev_id, uint16_t queue_id,
-		const uint16_t num_to_process, uint16_t burst_sz,
-		uint64_t *total_time, uint64_t *min_time, uint64_t *max_time,
-		struct test_bbdev_vector *vector)
+latency_test_enc(void *arg)
 {
+	struct thread_params *tp = arg;
+	struct rte_bbdev_enc_op *ref_op = tp->op_params->ref_enc_op;
+	struct test_bbdev_vector *vector = tp->op_params->vector;
+	struct rte_mempool *mempool = tp->op_params->mp;
+	struct test_buffers *bufs = NULL;
+	struct rte_bbdev_info info;
+	uint16_t dev_id = tp->dev_id;
+	uint16_t queue_id = tp->queue_id;
+	uint16_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = 1;
+	uint64_t *total_time = tp->total_time;
+	uint64_t *min_time = tp->min_time;
+	uint64_t *max_time = tp->max_time;
+
 	int ret = TEST_SUCCESS;
 	uint16_t i, j, dequeued;
 	struct rte_bbdev_enc_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
+
+	rte_bbdev_info_get(tp->dev_id, &info);
+	bufs = &tp->op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
+
+	while (rte_atomic16_read(&tp->op_params->sync) == SYNC_WAIT)
+		rte_pause();
 
 	ret = rte_bbdev_enc_op_alloc_bulk(mempool, ops_enq, burst_sz);
 	TEST_ASSERT_SUCCESS(ret,
@@ -3486,24 +3513,38 @@ latency_test_enc(struct rte_mempool *mempool,
 	}
 	rte_bbdev_enc_op_free_bulk(ops_enq, burst_sz);
 
-	return i;
+	return TEST_SUCCESS;
 }
 
 static int
-latency_test_ldpc_enc(struct rte_mempool *mempool,
-		struct test_buffers *bufs, struct rte_bbdev_enc_op *ref_op,
-		uint16_t dev_id, uint16_t queue_id,
-		const uint16_t num_to_process, uint16_t burst_sz,
-		uint64_t *total_time, uint64_t *min_time, uint64_t *max_time,
-		struct test_bbdev_vector *vector)
+latency_test_ldpc_enc(void *arg)
 {
+	struct thread_params *tp = arg;
+	struct rte_bbdev_enc_op *ref_op = tp->op_params->ref_enc_op;
+	struct test_bbdev_vector *vector = tp->op_params->vector;
+	struct rte_mempool *mempool = tp->op_params->mp;
+	struct test_buffers *bufs = NULL;
+	struct rte_bbdev_info info;
+	uint16_t dev_id = tp->dev_id;
+	uint16_t queue_id = tp->queue_id;
+	uint16_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = 1;
+	uint64_t *total_time = tp->total_time;
+	uint64_t *min_time = tp->min_time;
+	uint64_t *max_time = tp->max_time;
+
 	int ret = TEST_SUCCESS;
 	uint16_t i, j, dequeued;
 	struct rte_bbdev_enc_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
-	ret = rte_bbdev_enc_op_alloc_bulk(mempool, ops_enq, burst_sz);
+	rte_bbdev_info_get(tp->dev_id, &info);
+	bufs = &tp->op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
 
+	while (rte_atomic16_read(&tp->op_params->sync) == SYNC_WAIT)
+		rte_pause();
+
+	ret = rte_bbdev_enc_op_alloc_bulk(mempool, ops_enq, burst_sz);
 	TEST_ASSERT_SUCCESS(ret,
 			"rte_bbdev_enc_op_alloc_bulk() failed");
 	if (vector->op_type != RTE_BBDEV_OP_NONE)
@@ -3569,106 +3610,131 @@ latency_test_ldpc_enc(struct rte_mempool *mempool,
 	}
 	rte_bbdev_enc_op_free_bulk(ops_enq, burst_sz);
 
-	return i;
+	return TEST_SUCCESS;
 }
 
 static int
 latency_test(struct active_device *ad,
 		struct test_op_params *op_params)
 {
-	int iter;
-	struct test_bbdev_vector *vector = op_params->vector;
+	int iter, ret;
 	uint16_t burst_sz = 1;
-	const uint16_t num_to_process = op_params->num_to_process *
-					TEST_REPETITIONS;
-	const enum rte_bbdev_op_type op_type = vector->op_type;
-	const uint16_t queue_id = ad->queue_ids[0];
-	struct test_buffers *bufs = NULL;
+	uint16_t num_to_process;
+	enum rte_bbdev_op_type op_type;
+	struct thread_params *t_params;
 	struct rte_bbdev_info info;
-	uint64_t total_time, min_time, max_time;
+	lcore_function_t *latency_function[RTE_MAX_LCORE];
+	uint64_t total_time[RTE_MAX_LCORE];
+	uint64_t min_time[RTE_MAX_LCORE];
+	uint64_t max_time[RTE_MAX_LCORE];
 	const char *op_type_str;
-
-	if (((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) &&
-	    vector->ldpc_dec.sd_cd_demux) ||
-	    ((vector->op_type == RTE_BBDEV_OP_POLAR_DEC) &&
-	    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(&vector->polar_op)))
-		TEST_ASSERT(0, "SD CD DEMUX not supported for latency test");
-
-	if (((vector->op_type == RTE_BBDEV_OP_LDPC_ENC) &&
-	    vector->ldpc_enc.se_ce_mux) ||
-	    ((vector->op_type == RTE_BBDEV_OP_POLAR_ENC) &&
-	    RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(&vector->polar_op)))
-		TEST_ASSERT(0, "SE CE MUX not supported for latency test");
-
-	total_time = max_time = 0;
-	min_time = UINT64_MAX;
+	unsigned int lcore_id, used_cores = 0;
+	unsigned int master_lcore_id;
+	uint16_t num_lcores;
 
 	rte_bbdev_info_get(ad->dev_id, &info);
-	bufs = &op_params->q_bufs[GET_SOCKET(info.socket_id)][queue_id];
 
-	op_type_str = rte_bbdev_op_type_str(op_type);
-	TEST_ASSERT_NOT_NULL(op_type_str, "Invalid op type: %u", op_type);
+	/* Set number of lcores */
+	num_lcores = get_vector_count();
+	master_lcore_id = rte_lcore_id();
 
 	printf("+ ------------------------------------------------------- +\n");
-	printf("== test: validation/latency\ndev: %s, burst size: %u, num ops: %u, op type: %s\n",
-			info.dev_name, burst_sz, num_to_process, op_type_str);
+	printf("== test: latency\ndev: %s, burst size: %u, num ops: %u, num_lcores: %u:\n",
+		info.dev_name, burst_sz, op_params[master_lcore_id].num_to_process,
+		num_lcores);
 
-	if (op_type == RTE_BBDEV_OP_TURBO_DEC)
-		iter = latency_test_dec(op_params->mp, bufs,
-				op_params->ref_dec_op, op_params->vector_mask,
-				ad->dev_id, queue_id, num_to_process,
-				burst_sz, &total_time, &min_time, &max_time,
-				vector);
-	else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
-		iter = latency_test_enc(op_params->mp, bufs,
-				op_params->ref_enc_op, ad->dev_id, queue_id,
-				num_to_process, burst_sz, &total_time,
-				&min_time, &max_time,
-				vector);
-	else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
-		iter = latency_test_ldpc_enc(op_params->mp, bufs,
-				op_params->ref_enc_op, ad->dev_id, queue_id,
-				num_to_process, burst_sz, &total_time,
-				&min_time, &max_time,
-				vector);
-	else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
-		iter = latency_test_ldpc_dec(op_params->mp, bufs,
-				op_params->ref_dec_op, op_params->vector_mask,
-				ad->dev_id, queue_id, num_to_process,
-				burst_sz, &total_time, &min_time, &max_time,
-				vector);
-	else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) || 
-				(op_type == RTE_BBDEV_OP_POLAR_ENC))
-		iter = latency_test_ldpc_polar(op_params->mp, bufs,
-				op_params->ref_polar_op, op_params->vector_mask,
-				ad->dev_id, queue_id, num_to_process,
-				burst_sz, &total_time, &min_time, &max_time,
-				vector);
-	else
-		iter = latency_test_enc(op_params->mp, bufs,
-					op_params->ref_enc_op,
-					ad->dev_id, queue_id,
-					num_to_process, burst_sz, &total_time,
-					&min_time, &max_time,
-					vector);
+	/* Allocate memory for thread parameters structure */
+	t_params = rte_zmalloc(NULL, num_lcores * sizeof(struct thread_params),
+			RTE_CACHE_LINE_SIZE);
+	TEST_ASSERT_NOT_NULL(t_params, "Failed to alloc %zuB for t_params",
+			RTE_ALIGN(sizeof(struct thread_params) * num_lcores,
+				RTE_CACHE_LINE_SIZE));
 
-	if (iter <= 0)
-		return TEST_FAILED;
+	RTE_LCORE_FOREACH(lcore_id) {
+		if (used_cores > num_lcores)
+			break;
 
-	printf("Operation latency:\n"
-			"\tavg: %lg cycles, %lg us\n"
-			"\tmin: %lg cycles, %lg us\n"
-			"\tmax: %lg cycles, %lg us\n",
-			(double)total_time / (double)iter,
-			(double)(total_time * 1000000) / (double)iter /
-			(double)rte_get_tsc_hz(), (double)min_time,
-			(double)(min_time * 1000000) / (double)rte_get_tsc_hz(),
-			(double)max_time, (double)(max_time * 1000000) /
-			(double)rte_get_tsc_hz());
+		num_to_process = op_params[lcore_id].num_to_process *
+					TEST_REPETITIONS;
+
+		t_params[used_cores].dev_id = ad->dev_id;
+		t_params[used_cores].lcore_id = lcore_id;
+		t_params[used_cores].op_params = &op_params[lcore_id];
+		t_params[used_cores].queue_id = ad->queue_ids[used_cores];
+		t_params[used_cores].iter_count = num_to_process;
+		t_params[used_cores].total_time = &total_time[used_cores];
+		t_params[used_cores].min_time = &min_time[used_cores];
+		t_params[used_cores].max_time = &max_time[used_cores];
+
+		total_time[used_cores] = max_time[used_cores] = 0;
+		min_time[used_cores] = UINT64_MAX;
+
+		op_type = op_params[lcore_id].vector->op_type;
+		op_type_str = rte_bbdev_op_type_str(op_type);
+		TEST_ASSERT_NOT_NULL(op_type_str, "Invalid op type: %u", op_type);
+
+		if (op_type == RTE_BBDEV_OP_TURBO_DEC)
+			latency_function[used_cores] = latency_test_dec;
+		else if (op_type == RTE_BBDEV_OP_TURBO_ENC)
+			latency_function[used_cores] = latency_test_enc;
+		else if (op_type == RTE_BBDEV_OP_LDPC_ENC)
+			latency_function[used_cores] = latency_test_ldpc_enc;
+		else if (op_type == RTE_BBDEV_OP_LDPC_DEC)
+			latency_function[used_cores] = latency_test_ldpc_dec;
+		else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
+					(op_type == RTE_BBDEV_OP_POLAR_ENC))
+			latency_function[used_cores] = latency_test_ldpc_polar;
+		else
+			latency_function[used_cores] = latency_test_enc;
+
+		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_WAIT);
+
+		if (used_cores != 0) {
+			rte_eal_remote_launch(latency_function[used_cores],
+				&t_params[used_cores], lcore_id);
+		}
+		used_cores++;
+	}
+
+	RTE_LCORE_FOREACH(lcore_id) {
+		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_START);
+	}
+	ret = latency_function[0](&t_params[0]);
+
+	/* Master core is always used */
+	for (used_cores = 1; used_cores < num_lcores; used_cores++)
+		ret |= rte_eal_wait_lcore(t_params[used_cores].lcore_id);
+
+	/* Return if test failed */
+	if (ret) {
+		rte_free(t_params);
+		return ret;
+	}
+
+	used_cores = 0;
+	RTE_LCORE_FOREACH(lcore_id) {
+		if (used_cores > num_lcores)
+			break;
+
+		iter = t_params[used_cores].iter_count;
+		printf("[core %d] Operation latency:\n"
+				"\tavg: %lg cycles, %lg us\n"
+				"\tmin: %lg cycles, %lg us\n"
+				"\tmax: %lg cycles, %lg us\n",
+				lcore_id,
+				(double)total_time[used_cores] / (double)iter,
+				(double)(total_time[used_cores] * 1000000) / (double)iter /
+				(double)rte_get_tsc_hz(), (double)min_time[used_cores],
+				(double)(min_time[used_cores] * 1000000) / (double)rte_get_tsc_hz(),
+				(double)max_time[used_cores], (double)(max_time[used_cores] * 1000000) /
+				(double)rte_get_tsc_hz());
+		used_cores++;
+	}
 
 	return TEST_SUCCESS;
 }
 
+#if 0
 #ifdef RTE_BBDEV_OFFLOAD_COST
 static int
 get_bbdev_queue_stats(uint16_t dev_id, uint16_t queue_id,
@@ -4361,6 +4427,7 @@ offload_latency_empty_q_test(struct active_device *ad,
 	return TEST_SUCCESS;
 #endif
 }
+#endif
 
 static int
 throughput_tc(void)
@@ -4368,6 +4435,7 @@ throughput_tc(void)
 	return run_test_case(throughput_test);
 }
 
+#if 0
 static int
 offload_cost_tc(void)
 {
@@ -4379,6 +4447,7 @@ offload_latency_empty_q_tc(void)
 {
 	return run_test_case(offload_latency_empty_q_test);
 }
+#endif
 
 static int
 latency_tc(void)
@@ -4402,6 +4471,7 @@ static struct unit_test_suite bbdev_throughput_testsuite = {
 	}
 };
 
+#if 0
 static struct unit_test_suite bbdev_validation_testsuite = {
 	.suite_name = "BBdev Validation Tests",
 	.setup = testsuite_setup,
@@ -4411,6 +4481,7 @@ static struct unit_test_suite bbdev_validation_testsuite = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
+#endif
 
 static struct unit_test_suite bbdev_latency_testsuite = {
 	.suite_name = "BBdev Latency Tests",
@@ -4422,6 +4493,7 @@ static struct unit_test_suite bbdev_latency_testsuite = {
 	}
 };
 
+#if 0
 static struct unit_test_suite bbdev_offload_cost_testsuite = {
 	.suite_name = "BBdev Offload Cost Tests",
 	.setup = testsuite_setup,
@@ -4432,6 +4504,7 @@ static struct unit_test_suite bbdev_offload_cost_testsuite = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
+#endif
 
 static struct unit_test_suite bbdev_interrupt_testsuite = {
 	.suite_name = "BBdev Interrupt Tests",
@@ -4444,7 +4517,11 @@ static struct unit_test_suite bbdev_interrupt_testsuite = {
 };
 
 REGISTER_TEST_COMMAND(throughput, bbdev_throughput_testsuite);
+#if 0
 REGISTER_TEST_COMMAND(validation, bbdev_validation_testsuite);
+#endif
 REGISTER_TEST_COMMAND(latency, bbdev_latency_testsuite);
+#if 0
 REGISTER_TEST_COMMAND(offload, bbdev_offload_cost_testsuite);
+#endif
 REGISTER_TEST_COMMAND(interrupt, bbdev_interrupt_testsuite);

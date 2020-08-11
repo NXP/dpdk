@@ -16,7 +16,10 @@ CFLAGS += $(WERROR_FLAGS)
 # all sources are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_TEST_BBDEV) += main.c
-SRCS-$(CONFIG_RTE_TEST_BBDEV) += test_bbdev.c
+# Disabling test_bbdev.c as it does only basic tests using RTE_BBDEV_OP_NONE,
+# and then this queues are reconfigured for EMC/DEC ops. Reconfiguration
+# of queues is not currently supported by the LA12xx driver
+#SRCS-$(CONFIG_RTE_TEST_BBDEV) += test_bbdev.c
 SRCS-$(CONFIG_RTE_TEST_BBDEV) += test_bbdev_perf.c
 SRCS-$(CONFIG_RTE_TEST_BBDEV) += test_bbdev_vector.c
 
