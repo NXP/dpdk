@@ -804,6 +804,10 @@ Executing `dpdk-procinfo`:
     application. There are other switches also available like '-s' which can
     dump the statistics.
 
+    Note: dpdk-procinfo will work without providing blocklist only if there is
+    single primary process running (no other secondary). If you are using multi
+    process application, you will need to provide blacklist to dpdk-procinfo.
+
 ===============================================================================
 
 Building Pktgen Application
