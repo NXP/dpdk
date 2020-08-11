@@ -35,11 +35,18 @@
 /* SG table final entry */
 #define QDMA_SGT_F	0x80000000
 
+#define LA12XX_MAX_CORES	4
+
 /* TX retry count */
 #define BBDEV_LA12XX_TX_RETRY_COUNT 10000
 
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
+
+uint32_t ldpc_enc_feca_blk_id;
+uint32_t ldpc_dec_feca_blk_id;
+uint32_t polar_enc_feca_blk_id;
+uint32_t polar_dec_feca_blk_id;
 
 struct gul_ipc_stats *h_stats;
 struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
@@ -92,7 +99,7 @@ la12xx_info_get(struct rte_bbdev *dev,
 	PMD_INIT_FUNC_TRACE();
 
 	dev_info->driver_name = RTE_STR(DRIVER_NAME);
-	dev_info->max_num_queues = LS12XX_MAX_QUEUES;
+	dev_info->max_num_queues = LA12XX_MAX_QUEUES;
 	dev_info->queue_size_lim = MAX_CHANNEL_DEPTH;
 	dev_info->hardware_accelerated = true;
 	dev_info->max_dl_queue_priority = 0;
@@ -119,39 +126,6 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	return 0;
 }
 
-static int
-is_channel_configured(uint32_t channel_id, ipc_t instance)
-{
-	ipc_userspace_t *ipc_priv = instance;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-
-	PMD_INIT_FUNC_TRACE();
-
-	/* Read mask */
-	ipc_bitmask_t mask = ipc_instance->cfgmask[channel_id /
-				bitcount(ipc_bitmask_t)];
-
-	/* !! to return either 0 or 1 */
-	return !!(mask & (1 << (channel_id % bitcount(mask))));
-}
-
-static void
-mark_channel_as_configured(uint32_t channel_id,
-			       ipc_instance_t *instance)
-{
-	/* Read mask */
-	ipc_bitmask_t mask = instance->cfgmask[channel_id /
-				bitcount(ipc_bitmask_t)];
-
-	PMD_INIT_FUNC_TRACE();
-
-	/* Set channel specific bit */
-	mask |= 1 << (channel_id % bitcount(mask));
-
-	/* Write mask */
-	instance->cfgmask[channel_id / bitcount(ipc_bitmask_t)] = mask;
-}
-
 #define HUGEPG_OFFSET(A) \
 		((uint64_t) ((unsigned long) (A) \
 		- ((uint64_t)ipc_priv->hugepg_start.host_vaddr)))
@@ -173,12 +147,6 @@ static int ipc_queue_configure(uint32_t channel_id,
 	BBDEV_LA12XX_PMD_DEBUG("%x %p", ipc_instance->initialized,
 		ipc_priv->instance);
 	ch = &(ipc_instance->ch_list[channel_id]);
-
-	if (is_channel_configured(channel_id, ipc_priv)) {
-		BBDEV_LA12XX_PMD_WARN(
-			"Channel already configured. NOT configuring again");
-		return IPC_SUCCESS;
-	}
 
 	BBDEV_LA12XX_PMD_DEBUG("channel: %u, depth: %u, msg size: %u",
 		channel_id, MAX_CHANNEL_DEPTH, msg_size);
@@ -206,7 +174,6 @@ static int ipc_queue_configure(uint32_t channel_id,
 	}
 	ch->bl_initialized = 1;
 
-	mark_channel_as_configured(channel_id, ipc_priv->instance);
 	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
 	return IPC_SUCCESS;
 
@@ -221,6 +188,10 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	ipc_userspace_t *ipcu = priv->ipc_priv;
 	struct rte_bbdev_queue_data *q_data;
 	struct bbdev_la12xx_q_priv *q_priv;
+	struct gul_hif *mhif;
+	ipc_metadata_t *ipc_md;
+	ipc_ch_t *ch;
+	int instance_id = 0;
 	int ret = 0;
 
 	PMD_INIT_FUNC_TRACE();
@@ -237,6 +208,20 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->q_id = q_id;
 	q_priv->bbdev_priv = dev->data->dev_private;
 
+	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	/* offset is from start of PEB */
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+		mhif->ipc_regs.ipc_mdata_offset);
+	ch = &ipc_md->instance_list[instance_id].ch_list[q_id];
+
+	if (q_id < priv->num_valid_queues) {
+		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
+		BBDEV_LA12XX_PMD_WARN(
+			"Queue [%d] already configured, not configuring again",
+			q_id);
+		return 0;
+	}
+
 	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_id);
 
 	/* Call ipc_configure_channel */
@@ -248,19 +233,102 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 		return ret;
 	}
 
+	/* Set queue properties for LA12xx device */
+	switch (queue_conf->op_type) {
+	case RTE_BBDEV_OP_LDPC_ENC:
+		if (ldpc_enc_feca_blk_id >= MAX_LDPC_ENC_FECA_BLOCKS) {
+			BBDEV_LA12XX_PMD_ERR(
+				"ldpc_enc_feca_blk_id reached max value");
+			return -1;
+		}
+		ch->la12xx_core_id = rte_cpu_to_be_32(0);
+		ch->feca_blk_id = rte_cpu_to_be_32(ldpc_enc_feca_blk_id++);
+		break;
+	case RTE_BBDEV_OP_LDPC_DEC:
+		if (ldpc_dec_feca_blk_id >= MAX_LDPC_DEC_FECA_BLOCKS) {
+			BBDEV_LA12XX_PMD_ERR(
+				"ldpc_dec_feca_blk_id reached max value");
+			return -1;
+		}
+		ch->la12xx_core_id = rte_cpu_to_be_32(1);
+		ch->feca_blk_id = rte_cpu_to_be_32(ldpc_dec_feca_blk_id++);
+		break;
+	case RTE_BBDEV_OP_POLAR_ENC:
+		if (polar_enc_feca_blk_id >= MAX_POLAR_ENC_FECA_BLOCKS) {
+			BBDEV_LA12XX_PMD_ERR(
+				"polar_enc_feca_blk_id reached max value");
+			return -1;
+		}
+		ch->la12xx_core_id = rte_cpu_to_be_32(2);
+		ch->feca_blk_id = rte_cpu_to_be_32(polar_enc_feca_blk_id++);
+		break;
+	case RTE_BBDEV_OP_POLAR_DEC:
+		if (polar_dec_feca_blk_id >= MAX_POLAR_DEC_FECA_BLOCKS) {
+			BBDEV_LA12XX_PMD_ERR(
+				"polar_dec_feca_blk_id reached max value");
+			return -1;
+		}
+		ch->la12xx_core_id = rte_cpu_to_be_32(3);
+		ch->feca_blk_id = rte_cpu_to_be_32(polar_dec_feca_blk_id++);
+		break;
+	default:
+		BBDEV_LA12XX_PMD_ERR("Not supported op type\n");
+		return -1;
+	}
+	ch->op_type = rte_cpu_to_be_32(queue_conf->op_type);
+	ch->depth = rte_cpu_to_be_32(queue_conf->queue_size);
+
+	/* Store queue config here */
+	priv->num_valid_queues++;
+	priv->queue_config[q_id].op_type = queue_conf->op_type;
+	priv->queue_config[q_id].feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
+	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
+
 	/* TODO: SG enable/disable per queue is not supported.
 	 * currently, driver is enabling the SG for all queues.
 	 */
-	if (queue_conf->sg) {
-		struct gul_hif *mhif;
-		ipc_metadata_t *ipc_md;
-		int instance_id = 0;
-
-		mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
-		/* offset is from start of PEB */
-		ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
-			mhif->ipc_regs.ipc_mdata_offset);
+	if (queue_conf->sg)
 		ipc_md->instance_list[instance_id].sg_support = 1;
+
+	return 0;
+}
+
+uint16_t
+rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
+		uint16_t core_ids[], uint16_t num_queues)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipcu = priv->ipc_priv;
+	struct gul_hif *mhif;
+	ipc_metadata_t *ipc_md;
+	ipc_ch_t *ch;
+	int queue_id, core_id;
+	int i, instance_id = 0;
+
+	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+		mhif->ipc_regs.ipc_mdata_offset);
+
+	for (i = 0; i < num_queues; i++) {
+		queue_id = queue_ids[i];
+		core_id = core_ids[i];
+
+		if (queue_id >= dev->data->num_queues) {
+			BBDEV_LA12XX_PMD_ERR(
+				"Invalid queue ID %d", queue_id);
+			return -1;
+		}
+
+		if (core_id >= GUL_EP_CORE_MAX) {
+			BBDEV_LA12XX_PMD_ERR(
+				"Invalid core ID %d for queue %d",
+				core_id, queue_id);
+			return -1;
+		}
+
+		ch = &ipc_md->instance_list[instance_id].ch_list[queue_id];
+		ch->la12xx_core_id = rte_cpu_to_be_32(core_id);
 	}
 
 	return 0;
@@ -271,7 +339,7 @@ la12xx_start(struct rte_bbdev *dev)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipcu = priv->ipc_priv;
-	int ready = 1;
+	int ready = 0;
 	struct gul_hif *hif_start;
 
 	PMD_INIT_FUNC_TRACE();
@@ -282,8 +350,8 @@ la12xx_start(struct rte_bbdev *dev)
 	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
 
 	/* Now wait for modem ready bit */
-	while (ready)
-		ready = !CHK_HIF_MOD_RDY(hif_start, HIF_MOD_READY_IPC_APP);
+	while (!ready)
+		ready = CHK_HIF_MOD_RDY(hif_start, HIF_MOD_READY_IPC_APP);
 
 	return 0;
 }
@@ -367,7 +435,8 @@ fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 }
 
 static void
-fill_feca_desc_enc(struct rte_mbuf *mbuf,
+fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
+		   struct rte_mbuf *mbuf,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_enc_op *bbdev_enc_op,
 		   char *huge_start_addr)
@@ -407,7 +476,7 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 			int_start_ofst_ceiling, &SE_CIRC_BUF);
 
 	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE);
-	bbdev_ipc_op->feca_job.t_blk_id = 0;
+	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
 
 	se_command = &bbdev_ipc_op->feca_job.command_chain_t.se_command_ch_obj;
 
@@ -504,8 +573,9 @@ fill_feca_desc_enc(struct rte_mbuf *mbuf,
 }
 
 static void
-fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
-	       struct rte_bbdev_dec_op *bbdev_dec_op)
+fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
+		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+		   struct rte_bbdev_dec_op *bbdev_dec_op)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
 	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
@@ -553,7 +623,7 @@ fill_feca_desc_dec(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			&axi_data_num_bytes);
 
 	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD);
-	bbdev_ipc_op->feca_job.t_blk_id = 0;
+	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
 
 	sd_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj;
 
@@ -824,7 +894,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			else
 				ldpc_enc->output.length = (total_out_bits + 7)/8;
 
-			fill_feca_desc_enc(in_mbuf, bbdev_ipc_op, bbdev_op,
+			fill_feca_desc_enc(q_priv, in_mbuf, bbdev_ipc_op, bbdev_op,
 					   huge_start_addr);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_enc->output.length);
@@ -854,7 +924,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 				ldpc_dec->hard_output.length = (total_out_bits / 8) - 3;
 			}
 
-			fill_feca_desc_dec(bbdev_ipc_op, bbdev_op);
+			fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_op);
 			bbdev_ipc_op->out_len =
 				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
 			rte_bbuf_append(out_mbuf,

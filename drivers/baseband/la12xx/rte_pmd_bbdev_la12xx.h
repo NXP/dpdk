@@ -156,4 +156,23 @@ uint16_t
 rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 		struct rte_pmd_la12xx_op **ops, uint16_t num_ops);
 
+/**
+ * Assign a particular processing core on LA12xx for a particular queue.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_ids
+ *   Queue ID's
+ * @param core_ids
+ *   Core ID's corresponding to the queues
+ * @param num_ops
+ *   Number of Queues.
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+uint16_t
+rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
+		uint16_t core_ids[], uint16_t num_queues);
+
 #endif

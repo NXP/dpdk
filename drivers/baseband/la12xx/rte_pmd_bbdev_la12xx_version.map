@@ -4,6 +4,7 @@ DPDK_19.11 {
 	rte_pmd_la12xx_dequeue_ops;
 	rte_pmd_la12xx_enqueue_ops;
 	rte_pmd_la12xx_op_init;
+	rte_pmd_la12xx_queue_core_config;
 
 	local: *;
 };
