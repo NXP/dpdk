@@ -637,6 +637,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (rx_offloads & DEV_RX_OFFLOAD_VLAN_FILTER)
 		dpaa2_vlan_offload_set(dev, ETH_VLAN_FILTER_MASK);
 
+	dpaa2_tm_init(dev);
+
 	return 0;
 }
 
@@ -1265,6 +1267,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	dpaa2_tm_deinit(dev);
 	dpaa2_flow_clean(dev);
 
 	/* Clean the device first */
@@ -2324,6 +2327,14 @@ dpaa2_txq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	qinfo->conf.tx_deferred_start = 0;
 }
 
+static int
+dpaa2_tm_ops_get(struct rte_eth_dev *dev __rte_unused, void *ops)
+{
+	*(const void **)ops = &dpaa2_tm_ops;
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_configure	  = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,
@@ -2367,6 +2378,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.filter_ctrl          = dpaa2_dev_flow_ctrl,
 	.rxq_info_get	      = dpaa2_rxq_info_get,
 	.txq_info_get	      = dpaa2_txq_info_get,
+	.tm_ops_get	      = dpaa2_tm_ops_get,
 #if defined(RTE_LIBRTE_IEEE1588)
 	.timesync_enable      = dpaa2_timesync_enable,
 	.timesync_disable     = dpaa2_timesync_disable,
