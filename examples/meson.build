@@ -45,6 +45,10 @@ all_examples = [
 	'vhost_blk', 'vm_power_manager',
 	'vm_power_manager/guest_cli',
 	'vmdq', 'vmdq_dcb',
+	'multi_process/symmetric_mp_qdma',
+	'qdma_demo', 'l2fwd-qdma',
+	'cmdif',
+
 ]
 # install all example code on install - irrespective of whether the example in
 # question is to be built as part of this build or not.
