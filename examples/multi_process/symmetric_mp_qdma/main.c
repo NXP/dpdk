@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
- * Copyright 2019 NXP
+ * Copyright 2019-2020 NXP
  */
 
 /*
@@ -52,7 +52,6 @@
 
 #define NB_MBUFS 64*1024 /* use 64k mbufs */
 #define MBUF_CACHE_SIZE 256
-#define PKT_BURST 32
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 512
 
@@ -95,6 +94,7 @@ static unsigned num_procs = 0;
 static uint16_t ports[RTE_MAX_ETHPORTS];
 static unsigned num_ports = 0;
 static unsigned port_mask = 0;
+static int qdma_dev_id;
 
 static struct lcore_ports lcore_ports[RTE_MAX_LCORE];
 static struct port_stats pstats[RTE_MAX_ETHPORTS];
@@ -347,13 +347,17 @@ assign_ports_to_cores(void)
 static void
 qdma_forward(uint16_t vq_id, int nb_jobs)
 {
-	struct rte_qdma_job *qdma_job[PKT_BURST];
-	struct rte_mbuf *out_mbuf[PKT_BURST];
+	struct rte_qdma_job *qdma_job[RTE_QDMA_BURST_NB_MAX];
+	struct rte_mbuf *out_mbuf[RTE_QDMA_BURST_NB_MAX];
 	struct qdma_job_cnxt *qdma_job_cnxt;
 	unsigned int dst_port = 0;
 	int to_sent = 0, sent, num_rx;
+	struct rte_qdma_enqdeq context;
 
-	num_rx = rte_qdma_vq_dequeue_multi(vq_id, qdma_job, nb_jobs);
+	context.vq_id = vq_id;
+	context.job = qdma_job;
+	num_rx = rte_qdma_dequeue_buffers(qdma_dev_id, NULL, nb_jobs, &context);
+
 	if (num_rx <= 0)
 		return;
 
@@ -388,9 +392,10 @@ qdma_copy(struct rte_mbuf **m, unsigned int portid,
 {
 	struct rte_mbuf *m_new;
 	void *m_data, *m_new_data;
-	struct rte_qdma_job *qdma_job[PKT_BURST], *job;
+	struct rte_qdma_job *qdma_job[RTE_QDMA_BURST_NB_MAX], *job;
 	struct qdma_job_cnxt *qdma_job_cnxt;
 	int i, ret;
+	struct rte_qdma_enqdeq context;
 
 	for (i = 0; i < nb_jobs; i++) {
 		m_new = rte_pktmbuf_alloc(qdma_obj_pool);
@@ -402,8 +407,8 @@ qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		m_new->next = m[i]->next;
 		rte_mbuf_refcnt_set(m_new, 1);
 
-		m_data = rte_pktmbuf_mtod(m[i], void *);
-		m_new_data = rte_pktmbuf_mtod(m_new, void *);
+		m_data = (void *)rte_pktmbuf_iova(m[i]);
+		m_new_data = (void *)rte_pktmbuf_iova(m_new);
 
 		rte_mempool_get(qdma_job_pool, (void **)&job);
 
@@ -416,11 +421,14 @@ qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		job->dest = (uint64_t)m_new_data;
 		job->len = m[i]->data_len;
 		job->cnxt = (uint64_t)qdma_job_cnxt;
+		job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
 
 		qdma_job[i] = job;
 	}
 
-	ret = rte_qdma_vq_enqueue_multi(vq_id, qdma_job, nb_jobs);
+	context.vq_id = vq_id;
+	context.job = qdma_job;
+	ret = rte_qdma_enqueue_buffers(qdma_dev_id, NULL, nb_jobs, &context);
 	if (ret <= 0) {
 		printf("Error in QDMA job submit. Dropping packet\n");
 
@@ -438,6 +446,7 @@ qdma_init(void) {
 	int ret;
 	enum rte_proc_type_t proc_type;
 	struct rte_qdma_config qdma_config;
+	struct rte_qdma_info dev_conf;
 
 	proc_type = rte_eal_process_type();
 	if (proc_type == RTE_PROC_PRIMARY) {
@@ -458,6 +467,10 @@ qdma_init(void) {
 			printf("Cannot init QDMA job pool\n");
 			goto cleanup;
 		}
+
+		ret = rte_qdma_reset(qdma_dev_id);
+		if (ret)
+			rte_exit(EXIT_FAILURE, "QDMA reset failed\n");
 	} else {
 		qdma_obj_pool = rte_mempool_lookup(QDMA_OBJ_POOL_NAME);
 		if (qdma_obj_pool == NULL) {
@@ -474,23 +487,17 @@ qdma_init(void) {
 
 	memset(&qdma_config, 0, sizeof(struct rte_qdma_config));
 	qdma_config.max_hw_queues_per_core = QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.mode = qdma_mode;
-	qdma_config.fle_pool_count = QDMA_FLE_POOL_COUNT;
+	qdma_config.fle_queue_pool_cnt = QDMA_FLE_POOL_COUNT;
 	qdma_config.max_vqs = QDMA_MAX_VQS;
 
-	ret = rte_qdma_init();
-	if (ret) {
-		printf("QDMA intialization failed\n");
-		return -1;
-	}
-
-	ret = rte_qdma_configure(&qdma_config);
+	dev_conf.dev_private = (void *)&qdma_config;
+	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
 	if (ret) {
 		printf("QDMA configuration failed\n");
 		return -1;
 	}
 
-	ret = rte_qdma_start();
+	ret = rte_qdma_start(qdma_dev_id);
 	if (ret) {
 		printf("QDMA start failed\n");
 		return -1;
@@ -513,9 +520,9 @@ cleanup:
 static void
 qdma_deinit(void)
 {
-	rte_qdma_stop();
+	rte_rawdev_stop(qdma_dev_id);
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
-		rte_qdma_destroy();
+		rte_rawdev_close(qdma_dev_id);
 }
 
 /* Main function used by the processing threads.
@@ -533,13 +540,20 @@ lcore_main(void *arg __rte_unused)
 	char msgbuf[256];
 	int msgbufpos = 0;
 	int vq_id;
+	struct rte_qdma_queue_config q_config;
 
 	if (start_port == end_port){
 		printf("Lcore %u has nothing to do\n", id);
 		return 0;
 	}
 
-	vq_id = rte_qdma_vq_create(id, 0);
+	q_config.lcore_id = id;
+	q_config.flags = RTE_QDMA_VQ_FD_LONG_FORMAT;
+	if (qdma_mode == RTE_QDMA_MODE_HW)
+		q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
+	q_config.rbp = NULL;
+
+	vq_id = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 	if (vq_id < 0) {
 		printf("QDMA VQ creation failed\n");
 		return 0;
@@ -562,16 +576,16 @@ lcore_main(void *arg __rte_unused)
 	 */
 
 	for (;;) {
-		struct rte_mbuf *buf[PKT_BURST];
+		struct rte_mbuf *buf[RTE_QDMA_BURST_NB_MAX];
 
 		for (p = start_port; p < end_port; p++) {
 			const uint8_t src = ports[p];
 			const uint8_t dst = ports[p ^ 1]; /* 0 <-> 1, 2 <-> 3 etc */
 
 			/* Dequeue and forward any completed jobs */
-			qdma_forward(vq_id, PKT_BURST);
+			qdma_forward(vq_id, RTE_QDMA_BURST_NB_MAX);
 
-			const uint16_t rx_c = rte_eth_rx_burst(src, q_id, buf, PKT_BURST);
+			const uint16_t rx_c = rte_eth_rx_burst(src, q_id, buf, RTE_QDMA_BURST_NB_MAX);
 			if (unlikely(signal_received)) {
 				qdma_deinit();
 				exit(0);
