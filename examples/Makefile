@@ -88,4 +88,8 @@ DIRS-y += cmdif
 DIRS-y += l2fwd-qdma
 DIRS-y += qdma_demo
 
+ifneq ($(COMMON_HEADERS_DIR),)
+DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx_app
+endif
+
 include $(RTE_SDK)/mk/rte.extsubdir.mk

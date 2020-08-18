@@ -50,6 +50,12 @@ all_examples = [
 	'cmdif',
 
 ]
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+if COMMON_HEADERS_DIR != ''
+all_examples += ['bbdev_la12xx_app']
+endif
+
 # install all example code on install - irrespective of whether the example in
 # question is to be built as part of this build or not.
 foreach ex:all_examples

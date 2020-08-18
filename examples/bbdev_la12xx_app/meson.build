@@ -6,6 +6,11 @@
 # To build this example as a standalone application with an already-installed
 # DPDK instance, use 'make'
 
+deps += ['bbdev', 'pmd_bbdev_la12xx']
+
+cflags += '-DHOST=1'
+cflags += '-DMODEM=0'
+allow_experimental_apis = true
 sources = files(
 	'main.c'
 )
