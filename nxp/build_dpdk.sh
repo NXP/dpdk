@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2019 NXP
+# Copyright 2018-2020 NXP
 
 # tunable parameters
 
@@ -342,6 +342,10 @@ function build() {
 			echo -en "${BLUE}${j}${NC} mode"
 			if [ ${debug_flag} -eq 1 ]; then
 				echo -en " and ${BLUE}debugging${NC} enabled"
+				#debug build only for static mode.
+				if [ "$j" == "shared" ]; then
+					return 0
+				fi
 			fi
 			echo -e "${NC}."
 
@@ -364,7 +368,7 @@ function build() {
 				rm -rf ${OUTPUT}
 			fi
 
-			print "===================================================="
+			print "================================================"
 			print "Executing ${cmd}"
 			if [ ${silent} -eq 1 ]; then
 				${cmd} >> $logoutput
@@ -375,18 +379,20 @@ function build() {
 				echo -e "Error in ${RED}${OUTPUT}${NC}"
 				exit 1
 			fi
-			print "===================================================="
+			print "================================================"
 
-			# build examples for this target
-			for i in $examples_to_build
-			do
-				build_examples ${OUTPUT}/${TARGET} $i
+			#no need to build examples for debug build
+			if [ ${debug_flag} -ne 1 ]; then
+				# build examples for this target
+				unset RTE_TARGET
+				export RTE_TARGET=${OUTPUT}/${TARGET}
+				make -C examples O=${OUTPUT}/${TARGET}
 				if [ $? -ne 0 ]
 				then
-					echo -e "Error in ${RED}${OUTPUT}/${TARGET} $i${NC}"
+					echo -e "Error in ${RED}/${TARGET} ${NC}"
 					return 1
 				fi
-			done
+			fi
 		done
 	done
 	print "===================================================="
