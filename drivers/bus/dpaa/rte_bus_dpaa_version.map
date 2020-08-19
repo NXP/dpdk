@@ -36,8 +36,10 @@ DPDK_20.0 {
 	fman_if_loopback_enable;
 	fman_if_promiscuous_disable;
 	fman_if_promiscuous_enable;
+	fman_if_receive_rx_errors;
 	fman_if_reset_mcast_filter_table;
 	fman_if_set_bp;
+	fman_if_set_err_fqid;
 	fman_if_set_fc_quanta;
 	fman_if_set_fc_threshold;
 	fman_if_set_fdoff;
