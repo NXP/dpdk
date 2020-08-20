@@ -11,3 +11,4 @@ includes += include_directories('../shared')
 sources = files(
 	'client.c'
 )
+allow_experimental_apis = true

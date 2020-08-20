@@ -1351,6 +1351,8 @@ start_rx:
 			stats[lcore_id].sleep_time += lcore_idle_hint;
 		}
 	}
+
+	return 0;
 }
 
 static int

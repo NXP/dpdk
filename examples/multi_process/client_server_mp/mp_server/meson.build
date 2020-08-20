@@ -11,3 +11,4 @@ includes += include_directories('../shared')
 sources = files(
 	'args.c', 'init.c', 'main.c'
 )
+allow_experimental_apis = true
