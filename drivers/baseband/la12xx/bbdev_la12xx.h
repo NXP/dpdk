@@ -9,10 +9,10 @@
 #define BBDEV_IPC_DEC_OP_TYPE	2
 #define BBDEV_IPC_POLAR_OP_TYPE	3
 
-#define MAX_LDPC_ENC_FECA_BLOCKS	8
-#define MAX_LDPC_DEC_FECA_BLOCKS	8
-#define MAX_POLAR_ENC_FECA_BLOCKS	1
-#define MAX_POLAR_DEC_FECA_BLOCKS	1
+#define MAX_LDPC_ENC_FECA_QUEUES	4
+#define MAX_LDPC_DEC_FECA_QUEUES	4
+#define MAX_POLAR_ENC_FECA_QUEUES	4
+#define MAX_POLAR_DEC_FECA_QUEUES	4
 
 struct queue_config_t {
 	uint32_t op_type;		/* Type of the BBDEV operation supported on this queue */

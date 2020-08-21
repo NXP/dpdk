@@ -43,10 +43,13 @@
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
 
-uint32_t ldpc_enc_feca_blk_id;
-uint32_t ldpc_dec_feca_blk_id;
-uint32_t polar_enc_feca_blk_id;
-uint32_t polar_dec_feca_blk_id;
+uint32_t num_ldpc_enc_queues;
+uint32_t num_ldpc_dec_queues;
+uint32_t num_polar_enc_queues;
+uint32_t num_polar_dec_queues;
+
+int la12xx_polar_enc_core = -1;
+int la12xx_polar_dec_core = -1;
 
 struct gul_ipc_stats *h_stats;
 struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
@@ -236,40 +239,42 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	/* Set queue properties for LA12xx device */
 	switch (queue_conf->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
-		if (ldpc_enc_feca_blk_id >= MAX_LDPC_ENC_FECA_BLOCKS) {
+		if (num_ldpc_enc_queues >= MAX_LDPC_ENC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
-				"ldpc_enc_feca_blk_id reached max value");
+				"num_ldpc_enc_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id = rte_cpu_to_be_32(0);
-		ch->feca_blk_id = rte_cpu_to_be_32(ldpc_enc_feca_blk_id++);
+		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_enc_queues++);
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
-		if (ldpc_dec_feca_blk_id >= MAX_LDPC_DEC_FECA_BLOCKS) {
+		if (num_ldpc_dec_queues >= MAX_LDPC_DEC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
-				"ldpc_dec_feca_blk_id reached max value");
+				"num_ldpc_dec_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id = rte_cpu_to_be_32(1);
-		ch->feca_blk_id = rte_cpu_to_be_32(ldpc_dec_feca_blk_id++);
+		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_dec_queues++);
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
-		if (polar_enc_feca_blk_id >= MAX_POLAR_ENC_FECA_BLOCKS) {
+		if (num_polar_enc_queues >= MAX_POLAR_ENC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
-				"polar_enc_feca_blk_id reached max value");
+				"num_polar_enc_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id = rte_cpu_to_be_32(2);
-		ch->feca_blk_id = rte_cpu_to_be_32(polar_enc_feca_blk_id++);
+		ch->feca_blk_id = rte_cpu_to_be_32(0);
+		num_polar_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
-		if (polar_dec_feca_blk_id >= MAX_POLAR_DEC_FECA_BLOCKS) {
+		if (num_polar_dec_queues >= MAX_POLAR_DEC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
-				"polar_dec_feca_blk_id reached max value");
+				"num_polar_dec_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id = rte_cpu_to_be_32(3);
-		ch->feca_blk_id = rte_cpu_to_be_32(polar_dec_feca_blk_id++);
+		ch->feca_blk_id = rte_cpu_to_be_32(0);
+		num_polar_dec_queues++;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Not supported op type\n");
@@ -283,12 +288,6 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	priv->queue_config[q_id].op_type = queue_conf->op_type;
 	priv->queue_config[q_id].feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
-
-	/* TODO: SG enable/disable per queue is not supported.
-	 * currently, driver is enabling the SG for all queues.
-	 */
-	if (queue_conf->sg)
-		ipc_md->instance_list[instance_id].sg_support = 1;
 
 	return 0;
 }
@@ -305,6 +304,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 	ipc_ch_t *ch;
 	int queue_id, core_id;
 	int i, instance_id = 0;
+	uint32_t op_type;
 
 	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
 	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
@@ -328,6 +328,26 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		}
 
 		ch = &ipc_md->instance_list[instance_id].ch_list[queue_id];
+		op_type = rte_be_to_cpu_32(ch->op_type);
+
+		if (op_type == RTE_BBDEV_OP_POLAR_ENC) {
+			if (la12xx_polar_enc_core == -1)
+				la12xx_polar_enc_core = core_id;
+			else if (la12xx_polar_enc_core != core_id) {
+				BBDEV_LA12XX_PMD_ERR(
+					"All polar encode queue not configuerd on same LA12xx e200 core");
+			}
+		}
+
+		if (op_type == RTE_BBDEV_OP_POLAR_DEC) {
+			if (la12xx_polar_dec_core == -1)
+				la12xx_polar_dec_core = core_id;
+			else if (la12xx_polar_dec_core != core_id) {
+				BBDEV_LA12XX_PMD_ERR(
+					"All polar decode queues not configuerd on same LA12xx e200 core");
+			}
+		}
+
 		ch->la12xx_core_id = rte_cpu_to_be_32(core_id);
 	}
 
@@ -394,44 +414,6 @@ static inline int is_bd_ring_full(ipc_br_md_t *md)
 			return 1; /* Ring is Full */
 	}
 	return 0;
-}
-
-static void
-fill_qdma_desc(struct rte_mbuf *mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
-	       char *huge_start_addr)
-{
-	char *data_ptr;
-	uint32_t l1_pcie_addr, sg_count;
-	NxpQdmaCLT_t *clt;
-
-	clt = &bbdev_ipc_op->qdma_desc.NxpClt;
-	sg_count = mbuf->nb_segs;
-	if(sg_count > 1) {
-		ScatterGatherTableFormat_t *sg =  bbdev_ipc_op->sgSrcTableHead;
-
-		/* TODO add a check maximum SGs QDMA can support */
-		/* TODO Need to update below fields to support mixed traffic
-		 * clt->sCmdListTable.LowAddrBase = (uint32_t)(uintptr_t)sg;
-		 * clt->sCmdListTable.Cfg1 = 0x20000000; (QDMA_CLT_SG)
-		 */
-		clt->sCmdListTable.DataLen = mbuf->pkt_len;
-		while (sg_count--) {
-			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + rte_pktmbuf_mtod(mbuf, char *) - huge_start_addr;
-			sg->LowAddrBase = l1_pcie_addr;
-			sg->DataLen = mbuf->pkt_len;
-			sg->Cfg = 0;
-			mbuf = mbuf->next;
-			sg++;
-		};
-		sg--;
-		sg->Cfg = QDMA_SGT_F;
-	} else {
-		data_ptr =  rte_pktmbuf_mtod(mbuf, char *);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
-		clt->sCmdListTable.LowAddrBase = l1_pcie_addr;
-		clt->sCmdListTable.DataLen = mbuf->pkt_len;
-		clt->sCmdListTable.Cfg1 = 0; /* Single buffer configuration */
-	}
 }
 
 static void
@@ -869,8 +851,12 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	}
 
 	if (in_mbuf || out_mbuf) {
-		if (in_mbuf)
-			fill_qdma_desc(in_mbuf, bbdev_ipc_op, huge_start_addr);
+		if (in_mbuf) {
+			data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
+			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+			bbdev_ipc_op->in_addr = l1_pcie_addr;
+			bbdev_ipc_op->in_len = in_mbuf->pkt_len;
+		}
 
 		if (out_mbuf) {
 			data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
