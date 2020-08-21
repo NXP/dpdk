@@ -3067,7 +3067,8 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		}
 
 		bufsize = cnstr_shdsc_ipsec_new_encap(priv->flc_desc[0].desc,
-				1, 0, SHR_SERIAL, &encap_pdb,
+				1, 0, (rta_sec_era >= RTA_SEC_ERA_10) ?
+				SHR_WAIT : SHR_SERIAL, &encap_pdb,
 				hdr, &cipherdata, &authdata);
 	} else if (ipsec_xform->direction ==
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
@@ -3100,6 +3101,10 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			uint32_t win_sz;
 			win_sz = rte_align32pow2(ipsec_xform->replay_win_sz);
 
+			if (rta_sec_era < RTA_SEC_ERA_10 && win_sz > 128) {
+				DPAA2_SEC_INFO("Max Anti replay Win sz = 128");
+				win_sz = 128;
+			}
 			switch (win_sz) {
 			case 1:
 			case 2:
@@ -3112,13 +3117,24 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			case 64:
 				decap_pdb.options |= PDBOPTS_ESP_ARS64;
 				break;
+			case 256:
+				decap_pdb.options |= PDBOPTS_ESP_ARS256;
+				break;
+			case 512:
+				decap_pdb.options |= PDBOPTS_ESP_ARS512;
+				break;
+			case 1024:
+				decap_pdb.options |= PDBOPTS_ESP_ARS1024;
+				break;
+			case 128:
 			default:
 				decap_pdb.options |= PDBOPTS_ESP_ARS128;
 			}
 		}
 		session->dir = DIR_DEC;
 		bufsize = cnstr_shdsc_ipsec_new_decap(priv->flc_desc[0].desc,
-				1, 0, SHR_SERIAL,
+				1, 0, (rta_sec_era >= RTA_SEC_ERA_10) ?
+				SHR_WAIT : SHR_SERIAL,
 				&decap_pdb, &cipherdata, &authdata);
 	} else
 		goto out;
