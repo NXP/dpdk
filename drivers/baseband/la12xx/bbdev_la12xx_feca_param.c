@@ -61,8 +61,8 @@ offset_x1_x2(uint32_t c_init,
 	     uint32_t *X2)
 {
 	uint32_t n;
-	static uint32_t x1[100000];
-	static uint32_t x2[100000];
+	uint32_t x1[100000];
+	uint32_t x2[100000];
 
 	for (n = 0; n < 31; n++) {
 		x1[n] = 0;
