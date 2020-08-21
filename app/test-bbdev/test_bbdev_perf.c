@@ -725,7 +725,6 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	qconf.queue_size = info->drv.default_queue_conf.queue_size;
 	qconf.priority = 0;
 	qconf.deferred_start = 0;
-	qconf.sg = false;
 
 	vector_count = get_vector_count();
 	if (vector_count > nb_queues) {
@@ -865,6 +864,7 @@ testsuite_setup(void)
 	return TEST_SUCCESS;
 }
 
+#if 0
 static int
 interrupt_testsuite_setup(void)
 {
@@ -889,6 +889,7 @@ interrupt_testsuite_setup(void)
 
 	return TEST_SUCCESS;
 }
+#endif
 
 static void
 testsuite_teardown(void)
@@ -4455,11 +4456,13 @@ latency_tc(void)
 	return run_test_case(latency_test);
 }
 
+#if 0
 static int
 interrupt_tc(void)
 {
 	return run_test_case(throughput_test);
 }
+#endif
 
 static struct unit_test_suite bbdev_throughput_testsuite = {
 	.suite_name = "BBdev Throughput Tests",
@@ -4504,7 +4507,6 @@ static struct unit_test_suite bbdev_offload_cost_testsuite = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
-#endif
 
 static struct unit_test_suite bbdev_interrupt_testsuite = {
 	.suite_name = "BBdev Interrupt Tests",
@@ -4515,6 +4517,7 @@ static struct unit_test_suite bbdev_interrupt_testsuite = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
+#endif
 
 REGISTER_TEST_COMMAND(throughput, bbdev_throughput_testsuite);
 #if 0
@@ -4523,5 +4526,5 @@ REGISTER_TEST_COMMAND(validation, bbdev_validation_testsuite);
 REGISTER_TEST_COMMAND(latency, bbdev_latency_testsuite);
 #if 0
 REGISTER_TEST_COMMAND(offload, bbdev_offload_cost_testsuite);
-#endif
 REGISTER_TEST_COMMAND(interrupt, bbdev_interrupt_testsuite);
+#endif
