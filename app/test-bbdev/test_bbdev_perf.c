@@ -3392,7 +3392,8 @@ latency_test_ldpc_polar(void *arg)
 		for (j = 0; j < burst_sz; ++j)
 			ops_enq[j]->opaque_data = (void *)(uintptr_t)j;
 
-		if (vector->op_type != RTE_BBDEV_OP_NONE) {
+		if (vector->op_type != RTE_BBDEV_OP_NONE &&
+			    ops_enq[0]->output.bdata) {
 			for (j = 0; j < burst_sz; ++j) {
 				bbuf_reset(ops_enq[j]->output.bdata);
 			}
@@ -3420,7 +3421,8 @@ latency_test_ldpc_polar(void *arg)
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
 
-		if (vector->op_type != RTE_BBDEV_OP_NONE) {
+		if (vector->op_type != RTE_BBDEV_OP_NONE &&
+				ops_enq[0]->output.bdata) {
 			ret = validate_polar_op(ops_deq, burst_sz, ref_op,
 						vector);
 			TEST_ASSERT_SUCCESS(ret, "Validation failed!");
