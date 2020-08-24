@@ -3308,6 +3308,9 @@ latency_test_ldpc_dec(void *arg)
 			}
 		}
 
+		if (ref_op->ldpc_dec.sd_cd_demux)
+			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 1);
+
 		start_time = rte_rdtsc_precise();
 
 		enq = rte_bbdev_enqueue_ldpc_dec_ops(dev_id, queue_id,
@@ -3329,6 +3332,9 @@ latency_test_ldpc_dec(void *arg)
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
+
+		if (ref_op->ldpc_dec.sd_cd_demux)
+			rte_atomic16_set(&sd_cd_demux_sync_var, 1);
 
 		if (vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_ldpc_dec_op(ops_deq, burst_sz, ref_op,
@@ -3399,6 +3405,11 @@ latency_test_ldpc_polar(void *arg)
 			}
 		}
 
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
+			while(rte_atomic16_read(&sd_cd_demux_sync_var) == 0);
+		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
+			while(rte_atomic16_read(&se_ce_mux_sync_var) == 1);
+
 		start_time = rte_rdtsc_precise();
 
 		enq = rte_pmd_la12xx_enqueue_ops(dev_id, queue_id,
@@ -3420,6 +3431,11 @@ latency_test_ldpc_polar(void *arg)
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
+
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
+			rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
+			rte_atomic16_set(&se_ce_mux_sync_var, 1);
 
 		if (vector->op_type != RTE_BBDEV_OP_NONE &&
 				ops_enq[0]->output.bdata) {
@@ -3572,6 +3588,9 @@ latency_test_ldpc_enc(void *arg)
 			for (j = 0; j < burst_sz; ++j)
 				bbuf_reset(ops_enq[j]->ldpc_enc.output.bdata);
 
+		if (ref_op->ldpc_enc.se_ce_mux)
+			while(rte_atomic16_read(&se_ce_mux_sync_var) == 0);
+
 		start_time = rte_rdtsc_precise();
 
 		/*
@@ -3597,6 +3616,9 @@ latency_test_ldpc_enc(void *arg)
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
+
+		if (ref_op->ldpc_enc.se_ce_mux)
+			rte_atomic16_set(&se_ce_mux_sync_var, 0);
 
 		if (vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_enc_op(ops_deq, burst_sz, ref_op,
