@@ -850,7 +850,8 @@ static const struct blockcipher_test_case des_cipheronly_test_cases[] = {
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_QAT |
 			BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_OPENSSL |
-			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM
+			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "DES-CBC Decryption",
@@ -859,7 +860,8 @@ static const struct blockcipher_test_case des_cipheronly_test_cases[] = {
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_QAT |
 			BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_OPENSSL |
-			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM
+			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 
 };

@@ -2056,19 +2056,19 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 						session->iv.length,
 						session->dir);
 		break;
-	case RTE_CRYPTO_CIPHER_AES_CTR:
-		cipherdata.algtype = OP_ALG_ALGSEL_AES;
-		cipherdata.algmode = OP_ALG_AAI_CTR;
-		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
+	case RTE_CRYPTO_CIPHER_DES_CBC:
+		cipherdata.algtype = OP_ALG_ALGSEL_DES;
+		cipherdata.algmode = OP_ALG_AAI_CBC;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_DES_CBC;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
 						SHR_NEVER, &cipherdata,
 						session->iv.length,
 						session->dir);
 		break;
-	case RTE_CRYPTO_CIPHER_3DES_CTR:
-		cipherdata.algtype = OP_ALG_ALGSEL_3DES;
+	case RTE_CRYPTO_CIPHER_AES_CTR:
+		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CTR;
-		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CTR;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
 		bufsize = cnstr_shdsc_blkcipher(priv->flc_desc[0].desc, 1, 0,
 						SHR_NEVER, &cipherdata,
 						session->iv.length,
@@ -2096,6 +2096,10 @@ dpaa2_sec_cipher_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_CIPHER_ARC4:
 	case RTE_CRYPTO_CIPHER_NULL:
 		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
+			xform->cipher.algo);
+		goto error_out;
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
+		DPAA2_SEC_ERR("Crypto: HW Unsupported Cipher alg %u",
 			xform->cipher.algo);
 		goto error_out;
 	default:
@@ -2557,6 +2561,11 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 		cipherdata.algmode = OP_ALG_AAI_CBC;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_3DES_CBC;
 		break;
+	case RTE_CRYPTO_CIPHER_DES_CBC:
+		cipherdata.algtype = OP_ALG_ALGSEL_DES;
+		cipherdata.algmode = OP_ALG_AAI_CBC;
+		session->cipher_alg = RTE_CRYPTO_CIPHER_DES_CBC;
+		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 		cipherdata.algtype = OP_ALG_ALGSEL_AES;
 		cipherdata.algmode = OP_ALG_AAI_CTR;
@@ -2569,6 +2578,10 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_CIPHER_AES_ECB:
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
+			      cipher_xform->algo);
+		goto error_out;
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
+		DPAA2_SEC_ERR("Crypto: HW Unsupported Cipher alg %u",
 			      cipher_xform->algo);
 		goto error_out;
 	default:
@@ -2892,6 +2905,10 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		cipherdata->algtype = OP_PCL_IPSEC_3DES;
 		cipherdata->algmode = OP_ALG_AAI_CBC;
 		break;
+	case RTE_CRYPTO_CIPHER_DES_CBC:
+		cipherdata->algtype = OP_PCL_IPSEC_DES;
+		cipherdata->algmode = OP_ALG_AAI_CBC;
+		break;
 	case RTE_CRYPTO_CIPHER_AES_CTR:
 		cipherdata->algtype = OP_PCL_IPSEC_AES_CTR;
 		cipherdata->algmode = OP_ALG_AAI_CTR;
@@ -2906,6 +2923,10 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	case RTE_CRYPTO_CIPHER_KASUMI_F8:
 		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
 			      session->cipher_alg);
+		return -1;
+	case RTE_CRYPTO_CIPHER_3DES_CTR:
+		DPAA2_SEC_ERR("Crypto: HW Unsupported Cipher alg %u",
+		      cipher_xform->algo);
 		return -1;
 	default:
 		DPAA2_SEC_ERR("Crypto: Undefined Cipher specified %u",
@@ -3020,9 +3041,19 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			encap_pdb.options |= PDBOPTS_ESP_ESN;
 		encap_pdb.spi = ipsec_xform->spi;
 #ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
-		if (cipher_xform)
-			memcpy(encap_pdb.cbc.iv,
-				aes_cbc_iv, cipher_xform->iv.length);
+		if (cipher_xform) {
+			switch (cipher_xform->algo) {
+			/* DES/TDES SEC fetch IV from PDB.iv[8-15] */
+			case RTE_CRYPTO_CIPHER_3DES_CBC:
+			case RTE_CRYPTO_CIPHER_DES_CBC:
+				memcpy(encap_pdb.cbc.iv + 8,
+					aes_cbc_iv, cipher_xform->iv.length);
+				break;
+			default:
+				memcpy(encap_pdb.cbc.iv,
+					aes_cbc_iv, cipher_xform->iv.length);
+			}
+		}
 #endif
 		session->dir = DIR_ENC;
 		if (ipsec_xform->tunnel.type ==
