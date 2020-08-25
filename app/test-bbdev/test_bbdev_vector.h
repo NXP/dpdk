@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020 NXP
  */
 
 #ifndef TEST_BBDEV_VECTOR_H_
