@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020 NXP
  */
 
 #ifdef RTE_EXEC_ENV_FREEBSD
