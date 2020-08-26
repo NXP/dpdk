@@ -550,8 +550,8 @@ static const struct rte_cryptodev_capabilities dpaa2_sec_capabilities[] = {
 				},
 				.digest_size = {
 					.min = 12,
-					.max = 12,
-					.increment = 0
+					.max = 16,
+					.increment = 4
 				},
 				.iv_size = { 0 }
 			}, }
