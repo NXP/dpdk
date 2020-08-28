@@ -8252,14 +8252,18 @@ test_authenticated_encryption(const struct aead_test_data *tdata)
  * on input_vec. Checks the output of the crypto operation against
  * output_vec.
  */
-static int
-test_pdcp_proto(int i, int oop,
-	enum rte_crypto_cipher_operation opc,
-	enum rte_crypto_auth_operation opa,
-	uint8_t *input_vec,
-	unsigned int input_vec_len,
-	uint8_t *output_vec,
-	unsigned int output_vec_len)
+static int test_pdcp_proto(int i, int oop, enum rte_crypto_cipher_operation opc,
+			   enum rte_crypto_auth_operation opa,
+			   const uint8_t *input_vec, unsigned int input_vec_len,
+			   const uint8_t *output_vec,
+			   unsigned int output_vec_len,
+			   enum rte_crypto_cipher_algorithm cipher_alg,
+			   const uint8_t *cipher_key, uint32_t cipher_key_len,
+			   enum rte_crypto_auth_algorithm auth_alg,
+			   const uint8_t *auth_key, uint32_t auth_key_len,
+			   uint8_t bearer, enum rte_security_pdcp_domain domain,
+			   uint8_t packet_direction, uint8_t sn_size,
+			   uint32_t hfn, uint32_t hfn_threshold, uint8_t sdap)
 {
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
@@ -8291,24 +8295,22 @@ test_pdcp_proto(int i, int oop,
 
 	/* Setup Cipher Parameters */
 	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
-	ut_params->cipher_xform.cipher.algo = pdcp_test_params[i].cipher_alg;
+	ut_params->cipher_xform.cipher.algo = cipher_alg;
 	ut_params->cipher_xform.cipher.op = opc;
-	ut_params->cipher_xform.cipher.key.data = pdcp_test_crypto_key[i];
-	ut_params->cipher_xform.cipher.key.length =
-					pdcp_test_params[i].cipher_key_len;
+	ut_params->cipher_xform.cipher.key.data = cipher_key;
+	ut_params->cipher_xform.cipher.key.length = cipher_key_len;
 	ut_params->cipher_xform.cipher.iv.length =
-				pdcp_test_packet_direction[i] ? 4 : 0;
+				packet_direction ? 4 : 0;
 	ut_params->cipher_xform.cipher.iv.offset = IV_OFFSET;
 
 	/* Setup HMAC Parameters if ICV header is required */
-	if (pdcp_test_params[i].auth_alg != 0) {
+	if (auth_alg != 0) {
 		ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
 		ut_params->auth_xform.next = NULL;
-		ut_params->auth_xform.auth.algo = pdcp_test_params[i].auth_alg;
+		ut_params->auth_xform.auth.algo = auth_alg;
 		ut_params->auth_xform.auth.op = opa;
-		ut_params->auth_xform.auth.key.data = pdcp_test_auth_key[i];
-		ut_params->auth_xform.auth.key.length =
-					pdcp_test_params[i].auth_key_len;
+		ut_params->auth_xform.auth.key.data = auth_key;
+		ut_params->auth_xform.auth.key.length = auth_key_len;
 
 		ut_params->cipher_xform.next = &ut_params->auth_xform;
 	} else {
@@ -8319,12 +8321,12 @@ test_pdcp_proto(int i, int oop,
 		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
 		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
 		{.pdcp = {
-			.bearer = pdcp_test_bearer[i],
-			.domain = pdcp_test_params[i].domain,
-			.pkt_dir = pdcp_test_packet_direction[i],
-			.sn_size = pdcp_test_data_sn_size[i],
-			.hfn = pdcp_test_packet_direction[i] ?
-				0 : pdcp_test_hfn[i],
+			.bearer = bearer,
+			.domain = domain,
+			.pkt_dir = packet_direction,
+			.sn_size = sn_size,
+			.hfn = packet_direction ?
+				0 : hfn,
 				/**
 				  * hfn can be set as pdcp_test_hfn[i]
 				  * if hfn_ovrd is not set. Here, PDCP
@@ -8333,8 +8335,9 @@ test_pdcp_proto(int i, int oop,
 				  * HFN and other half with per packet
 				  * HFN.
 				  */
-			.hfn_threshold = pdcp_test_hfn_threshold[i],
-			.hfn_ovrd = pdcp_test_packet_direction[i] ? 1 : 0,
+			.hfn_threshold = hfn_threshold,
+			.hfn_ovrd = packet_direction ? 1 : 0,
+			.sdap_enabled = sdap,
 		} },
 		.crypto_xform = &ut_params->cipher_xform
 	};
@@ -8367,7 +8370,7 @@ test_pdcp_proto(int i, int oop,
 
 	uint32_t *per_pkt_hfn = rte_crypto_op_ctod_offset(ut_params->op,
 					uint32_t *, IV_OFFSET);
-	*per_pkt_hfn = pdcp_test_packet_direction[i] ? pdcp_test_hfn[i] : 0;
+	*per_pkt_hfn = packet_direction ? hfn : 0;
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -8701,74 +8704,97 @@ on_err:
 int
 test_pdcp_proto_cplane_encap(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_ENCRYPT,
-		RTE_CRYPTO_AUTH_OP_GENERATE,
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i],
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i]+4);
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_ENCRYPT, RTE_CRYPTO_AUTH_OP_GENERATE,
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i] + 4,
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 int
 test_pdcp_proto_uplane_encap(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_ENCRYPT,
-		RTE_CRYPTO_AUTH_OP_GENERATE,
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i],
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i]);
-
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_ENCRYPT, RTE_CRYPTO_AUTH_OP_GENERATE,
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i],
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 int
 test_pdcp_proto_uplane_encap_with_int(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_ENCRYPT,
-		RTE_CRYPTO_AUTH_OP_GENERATE,
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i],
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i] + 4);
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_ENCRYPT, RTE_CRYPTO_AUTH_OP_GENERATE,
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i] + 4,
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 int
 test_pdcp_proto_cplane_decap(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_DECRYPT,
-		RTE_CRYPTO_AUTH_OP_VERIFY,
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i] + 4,
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i]);
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_DECRYPT, RTE_CRYPTO_AUTH_OP_VERIFY,
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i] + 4,
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 int
 test_pdcp_proto_uplane_decap(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_DECRYPT,
-		RTE_CRYPTO_AUTH_OP_VERIFY,
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i],
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i]);
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_DECRYPT, RTE_CRYPTO_AUTH_OP_VERIFY,
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i],
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 int
 test_pdcp_proto_uplane_decap_with_int(int i)
 {
-	return test_pdcp_proto(i, 0,
-		RTE_CRYPTO_CIPHER_OP_DECRYPT,
-		RTE_CRYPTO_AUTH_OP_VERIFY,
-		pdcp_test_data_out[i],
-		pdcp_test_data_in_len[i] + 4,
-		pdcp_test_data_in[i],
-		pdcp_test_data_in_len[i]);
+	return test_pdcp_proto(
+		i, 0, RTE_CRYPTO_CIPHER_OP_DECRYPT, RTE_CRYPTO_AUTH_OP_VERIFY,
+		pdcp_test_data_out[i], pdcp_test_data_in_len[i] + 4,
+		pdcp_test_data_in[i], pdcp_test_data_in_len[i],
+		pdcp_test_params[i].cipher_alg, pdcp_test_crypto_key[i],
+		pdcp_test_params[i].cipher_key_len,
+		pdcp_test_params[i].auth_alg, pdcp_test_auth_key[i],
+		pdcp_test_params[i].auth_key_len, pdcp_test_bearer[i],
+		pdcp_test_params[i].domain, pdcp_test_packet_direction[i],
+		pdcp_test_data_sn_size[i], pdcp_test_hfn[i],
+		pdcp_test_hfn_threshold[i], SDAP_DISABLED);
 }
 
 static int
