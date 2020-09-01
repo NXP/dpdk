@@ -1,5 +1,5 @@
 ..  SPDX-License-Identifier: BSD-3-Clause
-    Copyright 2017 NXP
+    Copyright 2017,2020 NXP
 
 
 
@@ -585,6 +585,23 @@ PDCP related configuration parameters are defined in ``rte_security_pdcp_xform``
         uint32_t hfn;
         /** HFN Threshold for key renegotiation */
         uint32_t hfn_threshold;
+        /** HFN can be given as a per packet value also.
+         * As we do not have IV in case of PDCP, and HFN is
+         * used to generate IV. IV field can be used to get the
+         * per packet HFN while enq/deq.
+         * If hfn_ovrd field is set, user is expected to set the
+         * per packet HFN in place of IV. PMDs will extract the HFN
+         * and perform operations accordingly.
+         */
+         uint8_t hfn_ovrd;
+         /** In case of 5G NR, a new protocol(SDAP) header may be set
+          * inside PDCP payload which should be authenticated but not
+          * encrypted. Hence, driver should be notified if SDAP is
+          * enabled or not, so that SDAP header is not encrypted.
+          */
+         uint8_t sdap_enabled;
+         /** Reserved for future */
+         uint16_t reserved;
     };
 
 
