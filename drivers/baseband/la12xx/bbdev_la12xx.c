@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <dirent.h>
+#include <math.h>
 
 #include <rte_common.h>
 #include <rte_bus_vdev.h>
@@ -51,6 +52,8 @@ uint32_t num_polar_dec_queues;
 int la12xx_polar_enc_core = -1;
 int la12xx_polar_dec_core = -1;
 
+uint32_t per_queue_hram_size;
+
 struct gul_ipc_stats *h_stats;
 struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
 
@@ -74,7 +77,9 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 			.capability_flags =
 					RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP |
 					RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD |
-					RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD,
+					RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD |
+					RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE |
+					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE,
 			.num_buffers_src =
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 			.num_buffers_hard_out =
@@ -289,6 +294,8 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	priv->queue_config[q_id].feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
 
+	per_queue_hram_size = FECA_HRAM_SIZE / num_ldpc_dec_queues;
+
 	return 0;
 }
 
@@ -416,7 +423,7 @@ static inline int is_bd_ring_full(ipc_br_md_t *md)
 	return 0;
 }
 
-static void
+static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct rte_mbuf *mbuf,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
@@ -456,6 +463,11 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 			&num_output_bits_ceiling, &SE_SC_X1_INIT,
 			&SE_SC_X2_INIT,	int_start_ofst_floor,
 			int_start_ofst_ceiling, &SE_CIRC_BUF);
+
+	if (TBS_VALID == 0) {
+		BBDEV_LA12XX_PMD_ERR("Invalid input for SE");
+		return -1;
+	}
 
 	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE);
 	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
@@ -552,9 +564,11 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	else
 		rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
 #endif
+
+	return 0;
 }
 
-static void
+static int
 fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_dec_op *bbdev_dec_op)
@@ -591,18 +605,25 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	remove_tb_crc = !!(ldpc_dec->op_flags & RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP);
 
+	if (ldpc_dec->rv_index != 0 && ldpc_dec->harq_combined_input.bdata)
+		harq_en = 1;
+
 	la12xx_sch_decode_param_convert(ldpc_dec->basegraph, ldpc_dec->q_m,
 			e, ldpc_dec->rv_index, A, ldpc_dec->q, ldpc_dec->n_id,
 			ldpc_dec->n_rnti, !ldpc_dec->en_scramble,
-			ldpc_dec->n_cb, remove_tb_crc, harq_en,
-			&size_harq_buffer, &C, codeblock_mask, &TBS_VALID,
-			&set_index, &base_graph2, &lifting_index, &mod_order,
-			&tb_24_bit_crc,	&one_code_block, &e_floor_thresh,
-			&num_output_bytes, &bits_per_cb, &num_filler_bits,
-			&SD_SC_X1_INIT, &SD_SC_X2_INIT, &e_div_qm_floor,
-			&e_div_qm_ceiling, di_start_ofst_floor,
-			di_start_ofst_ceiling, &SD_CIRC_BUF,
-			&axi_data_num_bytes);
+			ldpc_dec->n_cb, remove_tb_crc, &size_harq_buffer, &C,
+			codeblock_mask, &TBS_VALID, &set_index, &base_graph2,
+			&lifting_index, &mod_order, &tb_24_bit_crc,
+			&one_code_block, &e_floor_thresh, &num_output_bytes,
+			&bits_per_cb, &num_filler_bits, &SD_SC_X1_INIT,
+			&SD_SC_X2_INIT, &e_div_qm_floor, &e_div_qm_ceiling,
+			di_start_ofst_floor, di_start_ofst_ceiling,
+			&SD_CIRC_BUF, &axi_data_num_bytes);
+
+	if (TBS_VALID == 0) {
+		BBDEV_LA12XX_PMD_ERR("Invalid input for SD");
+		return -1;
+	}
 
 	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD);
 	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
@@ -650,7 +671,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		rte_cpu_to_be_32(e_div_qm_floor);
 	sd_command->sd_ceiling_num_input_bytes =
 		rte_cpu_to_be_32(e_div_qm_ceiling);
-	sd_command->sd_hram_base = 0;
+	sd_command->sd_hram_base =
+		rte_cpu_to_be_32(q_priv->q_id * per_queue_hram_size);
 	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 
@@ -717,6 +739,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	else
 		rte_hexdump(stdout, "SD COMMAND", sd_command, sizeof(sd_command_t));
 #endif
+
+	return 0;
 }
 
 static void
@@ -800,10 +824,12 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_mbuf *in_mbuf, *out_mbuf;
+	struct rte_mbuf *harq_in_mbuf, *harq_out_mbuf;
 	char *data_ptr;
-	uint32_t l1_pcie_addr;
+	uint32_t l1_pcie_addr, sd_circ_buf;
 	uint32_t total_out_bits;
 	uint16_t sys_cols;
+	int ret;
 
 	RTE_SET_USED(op_type);
 
@@ -850,83 +876,142 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		out_mbuf = ((struct rte_pmd_la12xx_op *)bbdev_op)->output.data;
 	}
 
-	if (in_mbuf || out_mbuf) {
-		if (in_mbuf) {
-			data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
-			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
-			bbdev_ipc_op->in_addr = l1_pcie_addr;
-			bbdev_ipc_op->in_len = in_mbuf->pkt_len;
+	if (in_mbuf) {
+		data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			       data_ptr - huge_start_addr;
+		bbdev_ipc_op->in_addr = l1_pcie_addr;
+		bbdev_ipc_op->in_len = in_mbuf->pkt_len;
+	}
+
+	if (out_mbuf) {
+		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			data_ptr - huge_start_addr;
+		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+	}
+
+	if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
+		struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
+		struct rte_bbdev_op_ldpc_enc *ldpc_enc =
+					&bbdev_enc_op->ldpc_enc;
+
+		total_out_bits = (ldpc_enc->tb_params.cab *
+			ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
+			ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
+
+
+		if (ldpc_enc->se_ce_mux)
+			ldpc_enc->output.length =
+					ldpc_enc->se_ce_mux_output_size;
+		else
+			ldpc_enc->output.length = (total_out_bits + 7)/8;
+
+		ret = fill_feca_desc_enc(q_priv, in_mbuf, bbdev_ipc_op,
+					 bbdev_op, huge_start_addr);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"fill_feca_desc_enc failed, ret: %d", ret);
+			return ret;
+		}
+		bbdev_ipc_op->out_len =
+			rte_cpu_to_be_32(ldpc_enc->output.length);
+		rte_bbuf_append(out_mbuf,
+				ldpc_enc->output.length);
+	} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
+		struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
+		struct rte_bbdev_op_ldpc_dec *ldpc_dec =
+					&bbdev_dec_op->ldpc_dec;
+
+		sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
+		if (ldpc_dec->tb_params.c == 1) {
+			total_out_bits = ((sys_cols * ldpc_dec->z_c) -
+					ldpc_dec->n_filler);
+			/* 5G-NR protocol uses 16 bit CRC when output packet
+			 * size <= 3824 (bits). Otherwise 24 bit CRC is used.
+			 * Adjust the output bits accordingly
+			 */
+			if (total_out_bits - 16 <= 3824)
+				total_out_bits -= 16;
+			else
+				total_out_bits -= 24;
+			ldpc_dec->hard_output.length = (total_out_bits / 8);
+		} else {
+			total_out_bits = (((sys_cols * ldpc_dec->z_c) -
+					ldpc_dec->n_filler - 24) *
+					ldpc_dec->tb_params.c);
+			ldpc_dec->hard_output.length =
+					(total_out_bits / 8) - 3;
 		}
 
-		if (out_mbuf) {
-			data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
+		ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_op);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"fill_feca_desc_dec failed, ret: %d", ret);
+			return ret;
+		}
+
+		bbdev_ipc_op->harq_en = 0;
+		/* Set information for HARQ */
+		harq_in_mbuf = ((struct rte_bbdev_dec_op *)
+			bbdev_op)->ldpc_dec.harq_combined_input.data;
+		harq_out_mbuf = ((struct rte_bbdev_dec_op *)
+			bbdev_op)->ldpc_dec.harq_combined_output.data;
+
+		/* Set up HARQ related information */
+		bbdev_ipc_op->harq_in_addr = 0;
+		bbdev_ipc_op->harq_out_addr = 0;
+		if (harq_in_mbuf) {
+			data_ptr =  rte_pktmbuf_mtod(harq_in_mbuf, char *);
 			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
-			bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+			bbdev_ipc_op->harq_in_addr = l1_pcie_addr;
+			bbdev_ipc_op->harq_in_len = harq_in_mbuf->pkt_len;
+			bbdev_ipc_op->harq_en = 1;
 		}
 
-		if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
-			struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
-			struct rte_bbdev_op_ldpc_enc *ldpc_enc =
-						&bbdev_enc_op->ldpc_enc;
+		if (harq_out_mbuf) {
+			sd_circ_buf = rte_be_to_cpu_32(bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+			data_ptr =  rte_pktmbuf_mtod(harq_out_mbuf, char *);
+			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+				data_ptr - huge_start_addr;
+			bbdev_ipc_op->harq_out_addr = l1_pcie_addr;
+			bbdev_ipc_op->harq_out_len = ldpc_dec->tb_params.c *
+				(128 * (uint32_t)ceil((double)sd_circ_buf/128));
 
-			total_out_bits = (ldpc_enc->tb_params.cab *
-				ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
-				ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
-
-
-			if (ldpc_enc->se_ce_mux)
-				ldpc_enc->output.length = ldpc_enc->se_ce_mux_output_size;
-			else
-				ldpc_enc->output.length = (total_out_bits + 7)/8;
-
-			fill_feca_desc_enc(q_priv, in_mbuf, bbdev_ipc_op, bbdev_op,
-					   huge_start_addr);
-			bbdev_ipc_op->out_len =
-				rte_cpu_to_be_32(ldpc_enc->output.length);
-			rte_bbuf_append(out_mbuf,
-					ldpc_enc->output.length);
-		} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
-			struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
-			struct rte_bbdev_op_ldpc_dec *ldpc_dec =
-						&bbdev_dec_op->ldpc_dec;
-
-			sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
-			if (ldpc_dec->tb_params.c == 1) {
-				total_out_bits = ((sys_cols * ldpc_dec->z_c) -
-						ldpc_dec->n_filler);
-				/* 5G-NR protocol uses 16 bit CRC when output packet
-				 * size <= 3824 (bits). Otherwise 24 bit CRC is used.
-				 * Adjust the output bits accordingly */
-				if (total_out_bits - 16 <= 3824)
-					total_out_bits -= 16;
-				else
-					total_out_bits -= 24;
-				ldpc_dec->hard_output.length = (total_out_bits / 8);
-			} else {
-				total_out_bits = (((sys_cols * ldpc_dec->z_c) -
-						ldpc_dec->n_filler - 24) *
-						ldpc_dec->tb_params.c);
-				ldpc_dec->hard_output.length = (total_out_bits / 8) - 3;
+			if (bbdev_ipc_op->harq_out_len > per_queue_hram_size) {
+				BBDEV_LA12XX_PMD_ERR(
+					"harq len required (%d) is more than allocated (%d)",
+					bbdev_ipc_op->harq_out_len,
+					per_queue_hram_size);
+				return -1;
 			}
 
-			fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_op);
+			rte_bbuf_append(harq_out_mbuf,
+					bbdev_ipc_op->harq_out_len);
+			bbdev_ipc_op->harq_en = 1;
+		}
+
+		bbdev_ipc_op->num_code_blocks =
+			rte_cpu_to_be_32(ldpc_dec->tb_params.c);
+
+		bbdev_ipc_op->out_len =
+			rte_cpu_to_be_32(ldpc_dec->hard_output.length);
+		rte_bbuf_append(out_mbuf,
+				   ldpc_dec->hard_output.length);
+	} else {
+		/* Polar encode/decode processing */
+		struct rte_pmd_la12xx_op *rte_pmd_op =
+				(struct rte_pmd_la12xx_op *)bbdev_op;
+
+		fill_feca_desc_polar_op(in_mbuf, bbdev_ipc_op, rte_pmd_op,
+					huge_start_addr);
+
+		if (out_mbuf) {
 			bbdev_ipc_op->out_len =
-				rte_cpu_to_be_32(ldpc_dec->hard_output.length);
+				rte_cpu_to_be_32(rte_pmd_op->output.length);
 			rte_bbuf_append(out_mbuf,
-					   ldpc_dec->hard_output.length);
-		} else {
-			/* Polar encode/decode processing */ 
-			struct rte_pmd_la12xx_op *rte_pmd_op = (struct rte_pmd_la12xx_op *)bbdev_op;
-
-			fill_feca_desc_polar_op(in_mbuf, bbdev_ipc_op, rte_pmd_op, huge_start_addr);
-
-			if (out_mbuf) {
-				bbdev_ipc_op->out_len =
-					rte_cpu_to_be_32(rte_pmd_op->output.length);
-				rte_bbuf_append(out_mbuf,
-					rte_pmd_op->output.length);
-			}
+				rte_pmd_op->output.length);
 		}
 	}
 
@@ -975,7 +1060,7 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 }
 
 /* Enqueue encode burst */
-	static uint16_t
+static uint16_t
 enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
 {
@@ -1100,17 +1185,18 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 
 		tb_crc = 0;
 		if (l_op->ldpc_dec.code_block_mode ||
-		    (l_op->ldpc_dec.tb_params.c == 1))
+		    (l_op->ldpc_dec.tb_params.c == 1)) {
 			cb_cnt = 1;
-		else {
+			tb_crc = 0;
+		} else {
 			cb_cnt = l_op->ldpc_dec.tb_params.c;
 			tb_crc = l_op->ldpc_dec.tb_params.c;
 		}
 
 		/* Copy code block crc status bits + TB status bit */
 		ipc_memcpy(l_op->crc_stat, (void *)MODEM_P2V(bbdev_ipc_op.crc_stat_addr), (cb_cnt >> 3) + 1);
-		if (tb_crc &&  !(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0x7))))
-			l_op->status |= RTE_BBDEV_CRC_ERROR;
+		if (!(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0x7))))
+			l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
 
 	}
 

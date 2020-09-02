@@ -321,7 +321,6 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 				uint32_t scrambler_bypass,
 				uint32_t N_cb,
 				uint32_t remove_tb_crc,
-				uint32_t harq_en,
 				uint32_t *size_harq_buffer,
 				uint32_t *C,
 				uint32_t *codeblock_mask,
@@ -349,8 +348,6 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 	uint32_t B, i_LS, Zc, K_dash, i, K, N;
 	uint32_t C_prime, cb_counter = 0;
 	uint32_t offset_harq_buffer;
-
-	RTE_SET_USED(harq_en);
 
 	// evaluate parameters
 	LDPC_evaluate_parameters(A, BGnumber, codeblock_mask,

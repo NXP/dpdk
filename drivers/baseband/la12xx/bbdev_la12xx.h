@@ -14,6 +14,8 @@
 #define MAX_POLAR_ENC_FECA_QUEUES	4
 #define MAX_POLAR_DEC_FECA_QUEUES	4
 
+#define FECA_HRAM_SIZE		6291456		/* 6 MB */
+
 struct queue_config_t {
 	uint32_t op_type;		/* Type of the BBDEV operation supported on this queue */
 	uint32_t feca_blk_id;		/* FECA block ID for processing */
