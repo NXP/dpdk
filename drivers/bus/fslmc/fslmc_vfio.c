@@ -903,7 +903,7 @@ fslmc_vfio_process_group(void)
 			dpio_count++;
 			if (dev->device.devargs &&
 			    dev->device.devargs->policy == RTE_DEV_BLACKLISTED)
-				is_dpmcp_in_blocklist = true;
+				is_dpio_in_blocklist = true;
 		}
 	}
 
