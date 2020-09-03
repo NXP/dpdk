@@ -414,7 +414,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_OPENSSL |
 			    BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "MD5 Digest Verify",
@@ -423,7 +424,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_OPENSSL |
 			    BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-MD5 Digest",
@@ -467,7 +469,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA1 Digest Verify",
@@ -481,7 +484,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA1 Digest",
@@ -549,7 +553,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA224 Digest Verify",
@@ -563,7 +568,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA224 Digest",
@@ -607,7 +613,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			    BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA256 Digest Verify",
@@ -621,7 +628,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA256 Digest",
@@ -637,7 +645,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			BLOCKCIPHER_TEST_TARGET_PMD_CCP |
 			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
 			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA256 Digest Verify",
@@ -653,7 +662,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			BLOCKCIPHER_TEST_TARGET_PMD_CCP |
 			BLOCKCIPHER_TEST_TARGET_PMD_MVSAM |
 			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA384 Digest",
@@ -667,7 +677,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA384 Digest Verify",
@@ -681,7 +692,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA384 Digest",
@@ -726,7 +738,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 #if IMB_VERSION_NUM >= IMB_VERSION(0, 52, 0)
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "SHA512 Digest Verify",
@@ -740,7 +753,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 			    BLOCKCIPHER_TEST_TARGET_PMD_MB |
 #endif
 			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX |
-			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2
+			    BLOCKCIPHER_TEST_TARGET_PMD_OCTEONTX2 |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 	{
 		.test_descr = "HMAC-SHA512 Digest",
