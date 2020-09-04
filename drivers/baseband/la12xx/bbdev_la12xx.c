@@ -157,17 +157,16 @@ static int ipc_queue_configure(uint32_t channel_id,
 	ch = &(ipc_instance->ch_list[channel_id]);
 
 	BBDEV_LA12XX_PMD_DEBUG("channel: %u, depth: %u, msg size: %u",
-		channel_id, MAX_CHANNEL_DEPTH, msg_size);
+		channel_id, conf->queue_size, msg_size);
 
 	/* Start init of channel */
-	/* TODO: Use conf->queue_size instead of MAX_CHANNEL_DEPTH */
-	ch->br_msg_desc.md.ring_size = MAX_CHANNEL_DEPTH;
+	ch->br_msg_desc.md.ring_size = conf->queue_size;
 	ch->br_msg_desc.md.ci_flag = 0;
 	ch->br_msg_desc.md.pi_flag = 0;
 	ch->br_msg_desc.md.pi = 0;
 	ch->br_msg_desc.md.ci = 0;
 	ch->br_msg_desc.md.msg_size = msg_size;
-	for (i = 0; i < MAX_CHANNEL_DEPTH; i++) {
+	for (i = 0; i < conf->queue_size; i++) {
 		vaddr = rte_malloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
 		if (!vaddr) {
 			h_stats->ipc_ch_stats[channel_id].err_host_buf_alloc_fail++;
