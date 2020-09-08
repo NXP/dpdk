@@ -368,7 +368,7 @@ get_dpcon_parameters() {
 get_dpmcp_parameters() {
 	if [[ -z "$DPMCP_COUNT" ]]
 	then
-		DPMCP_COUNT=1
+		DPMCP_COUNT=3
 	fi
 	echo "DPMCP parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPMCP_COUNT = "$DPMCP_COUNT >> dynamic_dpl_logs
