@@ -222,6 +222,7 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	ch = &ipc_md->instance_list[instance_id].ch_list[q_id];
 
 	if (q_id < priv->num_valid_queues) {
+		q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
 		BBDEV_LA12XX_PMD_WARN(
 			"Queue [%d] already configured, not configuring again",
@@ -289,8 +290,7 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 
 	/* Store queue config here */
 	priv->num_valid_queues++;
-	priv->queue_config[q_id].op_type = queue_conf->op_type;
-	priv->queue_config[q_id].feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
+	q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
 
 	per_queue_hram_size = FECA_HRAM_SIZE / num_ldpc_dec_queues;
@@ -671,7 +671,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_ceiling_num_input_bytes =
 		rte_cpu_to_be_32(e_div_qm_ceiling);
 	sd_command->sd_hram_base =
-		rte_cpu_to_be_32(q_priv->q_id * per_queue_hram_size);
+		rte_cpu_to_be_32(q_priv->feca_blk_id * per_queue_hram_size);
 	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 

@@ -16,16 +16,10 @@
 
 #define FECA_HRAM_SIZE		6291456		/* 6 MB */
 
-struct queue_config_t {
-	uint32_t op_type;		/* Type of the BBDEV operation supported on this queue */
-	uint32_t feca_blk_id;		/* FECA block ID for processing */
-};
-
 /* private data structure */
 struct bbdev_la12xx_private {
 	ipc_userspace_t *ipc_priv;
 	int num_valid_queues;
-	struct queue_config_t queue_config[LA12XX_MAX_QUEUES];
 };
 
 struct hugepage_info {
@@ -37,6 +31,7 @@ struct hugepage_info {
 struct bbdev_la12xx_q_priv {
 	struct bbdev_la12xx_private *bbdev_priv;
 	uint32_t q_id;	/**< Channel ID */
+	uint32_t feca_blk_id;	/** FECA block ID for processing */
 	uint32_t feca_blk_id_be32; /**< FECA Block ID for this queue */
 	uint8_t en_napi; /* 0: napi disabled, 1: napi enabled */
 	uint16_t depth;	/**< Depth of the channel, for PTR channel case */
