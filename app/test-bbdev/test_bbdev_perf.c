@@ -71,6 +71,9 @@ static bool intr_enabled;
 rte_atomic16_t sd_cd_demux_sync_var;
 rte_atomic16_t se_ce_mux_sync_var;
 
+/* Flag in case llr input scaling is required */
+int scale_llr_input;
+
 /* Represents tested active devices */
 static struct active_device {
 	const char *driver_name;
@@ -1159,9 +1162,11 @@ fill_queue_buffers(struct test_op_params *op_params,
 		limit_input_llr_val_range(*queue_ops[DATA_INPUT], n,
 			capabilities->cap.turbo_dec.max_llr_modulus);
 
-	if (vector->op_type == RTE_BBDEV_OP_LDPC_DEC &&
-	    !(capabilities->cap.ldpc_dec.capability_flags &
-	    RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD)) {
+	if (!(capabilities->cap.ldpc_dec.capability_flags &
+	    RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD))
+		scale_llr_input = 1;
+
+	if ((vector->op_type == RTE_BBDEV_OP_LDPC_DEC) && scale_llr_input) {
 		ldpc_input_llr_scaling(*queue_ops[DATA_INPUT], n,
 			capabilities->cap.ldpc_dec.llr_size,
 			capabilities->cap.ldpc_dec.llr_decimals);
@@ -1424,16 +1429,6 @@ static int
 check_dec_status_and_ordering(struct rte_bbdev_dec_op *op,
 		unsigned int order_idx, const int expected_status)
 {
-	if (op->status & RTE_BBDEV_CRC_ERROR) {
-		int i;
-		int cb_cnt = op->ldpc_dec.code_block_mode ? 1:op->ldpc_dec.tb_params.c;
-		printf("TB CRC validation failed \n");
-		for (i = 0; i < cb_cnt; i++) {
-			if (!(op->crc_stat[i>>3] &  (1 << (i & 0x7)))) 
-				printf("==>CRC validation failed for code block : %d\n", i);
-		}
-	}
-		
 	TEST_ASSERT(op->status == expected_status,
 			"op_status (%d) != expected_status (%d)",
 			op->status, expected_status);
@@ -1603,7 +1598,8 @@ validate_ldpc_dec_op(struct rte_bbdev_dec_op **ops, const uint16_t n,
 					i);
 		if (ref_op->ldpc_dec.op_flags &
 				RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) {
-			ldpc_input_llr_scaling(harq_output, 1, 8, 0);
+			if (scale_llr_input)
+				ldpc_input_llr_scaling(harq_output, 1, 8, 0);
 			TEST_ASSERT_SUCCESS(validate_op_chain(harq_output,
 					harq_data_orig),
 					"HARQ output buffers (CB=%u) are not equal",
@@ -3306,6 +3302,8 @@ latency_test_ldpc_dec(void *arg)
 				bbuf_reset(ops_enq[j]->ldpc_dec.hard_output.bdata);
 				if (ops_enq[j]->ldpc_dec.soft_output.bdata)
 					bbuf_reset(ops_enq[j]->ldpc_dec.soft_output.bdata);
+				if (ops_enq[j]->ldpc_dec.harq_combined_output.bdata)
+					bbuf_reset(ops_enq[j]->ldpc_dec.harq_combined_output.bdata);
 			}
 		}
 
