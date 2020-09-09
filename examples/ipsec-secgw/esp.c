@@ -61,7 +61,8 @@ esp_inbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 	sym_cop = get_sym_cop(cop);
 	sym_cop->m_src = m;
 
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		sym_cop->aead.data.offset =
 			ip_hdr_len + sizeof(struct rte_esp_hdr) + sa->iv_len;
 		sym_cop->aead.data.length = payload_len;
@@ -333,7 +334,8 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 
 	/* set iv */
 	uint64_t *iv = (uint64_t *)(esp + 1);
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM  ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		*iv = rte_cpu_to_be_64(sa->seq);
 	} else {
 		switch (sa->cipher_algo) {
@@ -371,7 +373,8 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 	sym_cop = get_sym_cop(cop);
 	sym_cop->m_src = m;
 
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		uint8_t *aad;
 
 		sym_cop->aead.data.offset = ip_hdr_len +

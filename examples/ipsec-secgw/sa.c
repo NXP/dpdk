@@ -240,6 +240,15 @@ const struct supported_aead_algo aead_algos[] = {
 		.key_len = 36,
 		.digest_len = 16,
 		.aad_len = 8,
+	},
+	{
+		.keyword = "aes-gmac",
+		.algo = RTE_CRYPTO_AEAD_AES_GMAC,
+		.iv_len = 8,
+		.block_size = 4,
+		.key_len = 20,
+		.digest_len = 16,
+		.aad_len = 8,
 	}
 };
 
@@ -1298,7 +1307,8 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 
 		if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
 			sa->aead_algo == RTE_CRYPTO_AEAD_AES_CCM ||
-			sa->aead_algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305) {
+			sa->aead_algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305 ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 
 			if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_CCM)
 				iv_length = 11;
