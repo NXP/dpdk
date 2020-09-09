@@ -119,6 +119,13 @@ const struct supported_cipher_algo cipher_algos[] = {
 		.iv_len = 8,
 		.block_size = 8,
 		.key_len = 24
+	},
+	{
+		.keyword = "des-cbc",
+		.algo = RTE_CRYPTO_CIPHER_DES_CBC,
+		.iv_len = 8,
+		.block_size = 8,
+		.key_len = 8
 	}
 };
 
@@ -232,7 +239,17 @@ const struct supported_aead_algo aead_algos[] = {
 		.key_len = 36,
 		.digest_len = 16,
 		.aad_len = 8,
+	},
+	{
+		.keyword = "aes-gmac",
+		.algo = RTE_CRYPTO_AEAD_AES_GMAC,
+		.iv_len = 8,
+		.block_size = 4,
+		.key_len = 20,
+		.digest_len = 16,
+		.aad_len = 8,
 	}
+
 };
 
 #define SA_INIT_NB	128
@@ -1274,7 +1291,8 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 
 		if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
 			sa->aead_algo == RTE_CRYPTO_AEAD_AES_CCM ||
-			sa->aead_algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305) {
+			sa->aead_algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305 ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 
 			if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_CCM)
 				iv_length = 11;
@@ -1301,6 +1319,7 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 		} else {
 			switch (sa->cipher_algo) {
 			case RTE_CRYPTO_CIPHER_NULL:
+			case RTE_CRYPTO_CIPHER_DES_CBC:
 			case RTE_CRYPTO_CIPHER_3DES_CBC:
 			case RTE_CRYPTO_CIPHER_AES_CBC:
 			case RTE_CRYPTO_CIPHER_AES_CTR:
