@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2025 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -2967,6 +2967,13 @@ dpaa2_sec_ipsec_aead_init(struct rte_crypto_aead_xform *aead_xform,
 		aeaddata->algmode = OP_ALG_AAI_CCM;
 		session->aead_alg = RTE_CRYPTO_AEAD_AES_CCM;
 		break;
+	case RTE_CRYPTO_AEAD_AES_GMAC:
+		/**
+		 * AES-GMAC is an AEAD algo with NULL encryption and GMAC
+		 * authentication.
+		 */
+		aeaddata->algtype = OP_PCL_IPSEC_AES_NULL_WITH_GMAC;
+		break;
 	default:
 		DPAA2_SEC_ERR("Crypto: Undefined AEAD specified %u",
 			      aead_xform->algo);
@@ -3038,6 +3045,10 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		authdata->algtype = OP_PCL_IPSEC_HMAC_MD5_96;
 		authdata->algmode = OP_ALG_AAI_HMAC;
 		break;
+	case RTE_CRYPTO_AUTH_AES_GMAC:
+		DPAA2_SEC_ERR(
+			"AES_GMAC is supported as AEAD algo for IPSEC proto only");
+		return -ENOTSUP;
 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
 		authdata->algmode = OP_ALG_AAI_HMAC;
 		if (session->digest_length == 6)
@@ -3209,6 +3220,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
+		case OP_PCL_IPSEC_AES_NULL_WITH_GMAC:
 			memcpy(encap_pdb.gcm.salt,
 				(uint8_t *)&(ipsec_xform->salt), 4);
 			break;
@@ -3349,6 +3361,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
+		case OP_PCL_IPSEC_AES_NULL_WITH_GMAC:
 			memcpy(decap_pdb.gcm.salt,
 				(uint8_t *)&(ipsec_xform->salt), 4);
 			break;
