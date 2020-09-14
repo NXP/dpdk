@@ -69,10 +69,7 @@ warning:
 	@echo "Building DPDK with 'make' will be deprecated in a future release"
 	@echo "================================================================"
 	@echo
-	@test "$(MAKE_PAUSE)" = n || ( \
-	echo "This deprecation warning can be passed by adding MAKE_PAUSE=n"; \
-	echo "to 'make' command line or as an exported environment variable."; \
-	echo "Press enter to continue..."; read junk)
+	@sleep 3
 
 .PHONY: config defconfig showconfigs showversion showversionum
 config: warning
