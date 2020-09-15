@@ -61,7 +61,8 @@ esp_inbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 	sym_cop = get_sym_cop(cop);
 	sym_cop->m_src = m;
 
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		sym_cop->aead.data.offset =
 			ip_hdr_len + sizeof(struct rte_esp_hdr) + sa->iv_len;
 		sym_cop->aead.data.length = payload_len;
@@ -100,6 +101,7 @@ esp_inbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 
 		switch (sa->cipher_algo) {
 		case RTE_CRYPTO_CIPHER_NULL:
+		case RTE_CRYPTO_CIPHER_DES_CBC:
 		case RTE_CRYPTO_CIPHER_3DES_CBC:
 		case RTE_CRYPTO_CIPHER_AES_CBC:
 			/* Copy IV at the end of crypto operation */
@@ -121,6 +123,7 @@ esp_inbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 		case RTE_CRYPTO_AUTH_NULL:
 		case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		case RTE_CRYPTO_AUTH_SHA256_HMAC:
+		case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 			sym_cop->auth.data.offset = ip_hdr_len;
 			sym_cop->auth.data.length = sizeof(struct rte_esp_hdr) +
 				sa->iv_len + payload_len;
@@ -331,11 +334,13 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 
 	/* set iv */
 	uint64_t *iv = (uint64_t *)(esp + 1);
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		*iv = rte_cpu_to_be_64(sa->seq);
 	} else {
 		switch (sa->cipher_algo) {
 		case RTE_CRYPTO_CIPHER_NULL:
+		case RTE_CRYPTO_CIPHER_DES_CBC:
 		case RTE_CRYPTO_CIPHER_3DES_CBC:
 		case RTE_CRYPTO_CIPHER_AES_CBC:
 			memset(iv, 0, sa->iv_len);
@@ -368,7 +373,8 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 	sym_cop = get_sym_cop(cop);
 	sym_cop->m_src = m;
 
-	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM) {
+	if (sa->aead_algo == RTE_CRYPTO_AEAD_AES_GCM ||
+			sa->aead_algo == RTE_CRYPTO_AEAD_AES_GMAC) {
 		uint8_t *aad;
 
 		sym_cop->aead.data.offset = ip_hdr_len +
@@ -399,6 +405,7 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 	} else {
 		switch (sa->cipher_algo) {
 		case RTE_CRYPTO_CIPHER_NULL:
+		case RTE_CRYPTO_CIPHER_DES_CBC:
 		case RTE_CRYPTO_CIPHER_3DES_CBC:
 		case RTE_CRYPTO_CIPHER_AES_CBC:
 			sym_cop->cipher.data.offset = ip_hdr_len +
@@ -431,6 +438,7 @@ esp_outbound(struct rte_mbuf *m, struct ipsec_sa *sa,
 		case RTE_CRYPTO_AUTH_NULL:
 		case RTE_CRYPTO_AUTH_SHA1_HMAC:
 		case RTE_CRYPTO_AUTH_SHA256_HMAC:
+		case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 			sym_cop->auth.data.offset = ip_hdr_len;
 			sym_cop->auth.data.length = sizeof(struct rte_esp_hdr) +
 				sa->iv_len + pad_payload_len;

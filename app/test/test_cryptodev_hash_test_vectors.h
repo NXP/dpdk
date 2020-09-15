@@ -357,6 +357,37 @@ cmac_test_vector = {
 	}
 };
 
+static const uint8_t aes_xcbc_mac_plain_text[32] = {
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+			0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+			0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+			0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f
+};
+
+static const struct blockcipher_test_data
+aes_xcbc_mac_test_vector = {
+	.auth_algo = RTE_CRYPTO_AUTH_AES_XCBC_MAC,
+	.ciphertext = {
+		.data = (uint8_t *)&aes_xcbc_mac_plain_text,
+		.len = 32
+	},
+	.auth_key = {
+		.data = {
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+			0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+		},
+		.len = 16
+	},
+	.digest = {
+		.data = {
+			0xf5, 0x4f, 0x0e, 0xc8, 0xd2, 0xb9, 0xf3, 0xd3,
+			0x68, 0x07, 0x73, 0x4b, 0xd5, 0x28, 0x3f, 0xd4
+		},
+		.len = 16,
+		.truncated_len = 16
+	}
+};
+
 static const struct blockcipher_test_data
 null_auth_test_vector = {
 	.auth_algo = RTE_CRYPTO_AUTH_NULL,
@@ -843,6 +874,18 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_VERIFY,
 		.feature_mask = BLOCKCIPHER_TEST_FEATURE_OOP,
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_QAT
+	},
+	{
+		.test_descr = "AES-XCBC-MAC Digest 16B",
+		.test_data = &aes_xcbc_mac_test_vector,
+		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_GEN,
+		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+	},
+	{
+		.test_descr = "AES-XCBC-MAC Digest Verify 16B",
+		.test_data = &aes_xcbc_mac_test_vector,
+		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_VERIFY,
+		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
 	},
 
 };

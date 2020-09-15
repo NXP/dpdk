@@ -351,6 +351,8 @@ enum rte_crypto_aead_algorithm {
 	/**< AES algorithm in CCM mode. */
 	RTE_CRYPTO_AEAD_AES_GCM,
 	/**< AES algorithm in GCM mode. */
+	RTE_CRYPTO_AEAD_AES_GMAC,
+	/**< AES algorithm in GMAC mode. */
 	RTE_CRYPTO_AEAD_LIST_END
 };
 

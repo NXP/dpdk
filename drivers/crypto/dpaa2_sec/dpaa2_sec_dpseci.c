@@ -2312,8 +2312,20 @@ dpaa2_sec_auth_init(struct rte_cryptodev *dev,
 					   !session->dir,
 					   session->digest_length);
 		break;
-	case RTE_CRYPTO_AUTH_AES_GMAC:
 	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
+		authdata.algtype = OP_ALG_ALGSEL_AES;
+		authdata.algmode = OP_ALG_AAI_XCBC_MAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_AES_XCBC_MAC;
+		bufsize = cnstr_shdsc_aes_xcbc_mac(
+					priv->flc_desc[DESC_INITFINAL].desc,
+					1, 0, SHR_NEVER, &authdata,
+					!session->dir,
+					session->digest_length);
+		break;
+	case RTE_CRYPTO_AUTH_AES_GMAC:
+		DPAA2_SEC_ERR(
+			"AES_GMAC is supported as AEAD algo for IPSEC proto only");
+		return -ENOTSUP;
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
@@ -2584,6 +2596,14 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 		session->auth_alg = RTE_CRYPTO_AUTH_SHA512_HMAC;
 		break;
 	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
+		authdata.algtype = OP_ALG_ALGSEL_AES;
+		authdata.algmode = OP_ALG_AAI_XCBC_MAC;
+		session->auth_alg = RTE_CRYPTO_AUTH_AES_XCBC_MAC;
+		break;
+	case RTE_CRYPTO_AUTH_AES_GMAC:
+		DPAA2_SEC_ERR(
+			"AES_GMAC is supported as AEAD algo for IPSEC proto only");
+		return -ENOTSUP;
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
 	case RTE_CRYPTO_AUTH_NULL:
 	case RTE_CRYPTO_AUTH_SHA1:
@@ -2592,7 +2612,6 @@ dpaa2_sec_aead_chain_init(struct rte_cryptodev *dev,
 	case RTE_CRYPTO_AUTH_SHA224:
 	case RTE_CRYPTO_AUTH_SHA384:
 	case RTE_CRYPTO_AUTH_MD5:
-	case RTE_CRYPTO_AUTH_AES_GMAC:
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
@@ -2845,6 +2864,13 @@ dpaa2_sec_ipsec_aead_init(struct rte_crypto_aead_xform *aead_xform,
 		aeaddata->algmode = OP_ALG_AAI_CCM;
 		session->aead_alg = RTE_CRYPTO_AEAD_AES_CCM;
 		break;
+	case RTE_CRYPTO_AEAD_AES_GMAC:
+		/**
+		 * AES-GMAC is an AEAD algo with NULL encryption and GMAC
+		 * authentication.
+		 */
+		aeaddata->algtype = OP_PCL_IPSEC_AES_NULL_WITH_GMAC;
+		break;
 	default:
 		DPAA2_SEC_ERR("Crypto: Undefined AEAD specified %u",
 			      aead_xform->algo);
@@ -2932,14 +2958,21 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		authdata->algtype = OP_PCL_IPSEC_HMAC_SHA2_512_256;
 		authdata->algmode = OP_ALG_AAI_HMAC;
 		break;
+	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
+		authdata->algtype = OP_PCL_IPSEC_AES_XCBC_MAC_96;
+		authdata->algmode = OP_ALG_AAI_XCBC_MAC;
+		break;
 	case RTE_CRYPTO_AUTH_AES_CMAC:
 		authdata->algtype = OP_PCL_IPSEC_AES_CMAC_96;
 		break;
 	case RTE_CRYPTO_AUTH_NULL:
 		authdata->algtype = OP_PCL_IPSEC_HMAC_NULL;
 		break;
+	case RTE_CRYPTO_AUTH_AES_GMAC:
+		DPAA2_SEC_ERR(
+			"AES_GMAC is supported as AEAD algo for IPSEC proto only");
+		return -ENOTSUP;
 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
-	case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
 	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
 	case RTE_CRYPTO_AUTH_SHA1:
 	case RTE_CRYPTO_AUTH_SHA256:
@@ -2947,7 +2980,6 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	case RTE_CRYPTO_AUTH_SHA224:
 	case RTE_CRYPTO_AUTH_SHA384:
 	case RTE_CRYPTO_AUTH_MD5:
-	case RTE_CRYPTO_AUTH_AES_GMAC:
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
 	case RTE_CRYPTO_AUTH_ZUC_EIA3:
@@ -3093,6 +3125,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
+		case OP_PCL_IPSEC_AES_NULL_WITH_GMAC:
 			memcpy(encap_pdb.gcm.salt,
 				(uint8_t *)&(ipsec_xform->salt), 4);
 			break;
@@ -3185,6 +3218,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		case OP_PCL_IPSEC_AES_GCM8:
 		case OP_PCL_IPSEC_AES_GCM12:
 		case OP_PCL_IPSEC_AES_GCM16:
+		case OP_PCL_IPSEC_AES_NULL_WITH_GMAC:
 			memcpy(decap_pdb.gcm.salt,
 				(uint8_t *)&(ipsec_xform->salt), 4);
 			break;
