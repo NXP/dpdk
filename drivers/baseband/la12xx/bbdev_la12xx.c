@@ -950,17 +950,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			return ret;
 		}
 
-		bbdev_ipc_op->harq_en = 0;
-		/* Set information for HARQ */
-		harq_in_mbuf = ((struct rte_bbdev_dec_op *)
-			bbdev_op)->ldpc_dec.harq_combined_input.data;
-		harq_out_mbuf = ((struct rte_bbdev_dec_op *)
-			bbdev_op)->ldpc_dec.harq_combined_output.data;
-
 		/* Set up HARQ related information */
-		bbdev_ipc_op->harq_in_addr = 0;
-		bbdev_ipc_op->harq_out_addr = 0;
-		if (harq_in_mbuf) {
+		harq_in_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_input.data;
+		if ((bbdev_dec_op->ldpc_dec.op_flags &
+		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
+		    harq_in_mbuf) {
 			data_ptr =  rte_pktmbuf_mtod(harq_in_mbuf, char *);
 			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
@@ -969,8 +963,12 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 			bbdev_ipc_op->harq_en = 1;
 		}
 
-		if (harq_out_mbuf) {
-			sd_circ_buf = rte_be_to_cpu_32(bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+		harq_out_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_output.data;
+		if ((bbdev_dec_op->ldpc_dec.op_flags &
+		    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
+		    harq_out_mbuf) {
+			sd_circ_buf = rte_be_to_cpu_32(
+				bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
 			data_ptr =  rte_pktmbuf_mtod(harq_out_mbuf, char *);
 			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
