@@ -75,15 +75,15 @@ static unsigned get_gcd(unsigned a, unsigned b)
 }
 
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
-unsigned int dpaa_svr_family;
+unsigned int dpaa_svr_family_1;
 void set_dpaa_svr_family(void)
 {
 	FILE *svr_file = NULL;
 
 	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
 	if (svr_file) {
-		if (fscanf(svr_file, "svr:%x", &dpaa_svr_family) > 0)
-			dpaa_svr_family &= SVR_MASK;
+		if (fscanf(svr_file, "svr:%x", &dpaa_svr_family_1) > 0)
+			dpaa_svr_family_1 &= SVR_MASK;
 		fclose(svr_file);
 	}
 }

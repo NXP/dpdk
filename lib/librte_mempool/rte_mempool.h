@@ -279,7 +279,7 @@ struct rte_mempool {
 #define LS1043_MAX_BUF_IN_CACHE         8
 #define LS1043_MAX_BUF_OFFSET   (LS1043_OFFSET_CHANGE_IDX * \
 		LS1043_MAX_BUF_IN_CACHE)
-extern unsigned int dpaa_svr_family;
+extern unsigned int dpaa_svr_family_1;
 void set_dpaa_svr_family(void);
 #endif
 

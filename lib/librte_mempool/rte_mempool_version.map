@@ -27,7 +27,7 @@ DPDK_20.0 {
 	rte_mempool_register_ops;
 	rte_mempool_set_ops_byname;
 	rte_mempool_walk;
-	dpaa_svr_family;
+	dpaa_svr_family_1;
 	set_dpaa_svr_family;
 
 	local: *;

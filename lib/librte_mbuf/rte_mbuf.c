@@ -135,10 +135,10 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
  * An Errata solution for LS1043.
  */
 	/* Set the dpaa_svr_family the first thing if not already set */
-	if (!dpaa_svr_family)
+	if (!dpaa_svr_family_1)
 		set_dpaa_svr_family();
 
-	if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY) {
 		data_room_size += LS1043_MAX_BUF_OFFSET;
 		if (data_room_size <= LS1043_MAX_BUF_SIZE)
 			data_room_size = LS1043_MAX_BUF_SIZE - priv_size;
@@ -156,7 +156,7 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	mbp_priv.mbuf_priv_size = priv_size;
 
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
-	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
 		mbp_priv.mbuf_data_room_size -= LS1043_MAX_BUF_OFFSET;
 #endif
 
@@ -167,7 +167,7 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
 	/* Set flag in mbuf, so errata related decisions can be taken later */
-	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
 		mp->flags |= MEMPOOL_F_1043_MBUF;
 #endif
 
@@ -192,7 +192,7 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	rte_mempool_obj_iter(mp, rte_pktmbuf_init, NULL);
 
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
-	if (dpaa_svr_family == SVR_LS1043A_FAMILY)
+	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
 		mp->elt_size -= LS1043_MAX_BUF_OFFSET;
 #endif
 
