@@ -13,7 +13,7 @@ kni_sources = files(
 custom_target('rte_kni',
 	input: kni_sources,
 	output: 'rte_kni.ko',
-	command: ['make', '-j4', '-C', kernel_dir,
+	command: ['make', '-j4', '-C', kernel_dir + '/build',
 		'M=' + meson.current_build_dir(),
 		'src=' + meson.current_source_dir(),
 		'MODULE_CFLAGS=-include ' + meson.source_root() + '/config/rte_config.h' +
