@@ -94,6 +94,9 @@ static inline int pdcp_sdap_get_sn_parameters(enum pdcp_sn_size sn_size,
 		break;
 	default:
 		pr_err("Invalid sn_size for %s\n", __func__);
+		*offset = 0;
+		*length = 0;
+		*sn_mask = 0;
 		return -ENOTSUP;
 	}
 
