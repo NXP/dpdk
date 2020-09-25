@@ -3078,9 +3078,11 @@ vlan_extend_set(portid_t port_id, int on)
 	}
 
 	diag = rte_eth_dev_set_vlan_offload(port_id, vlan_offload);
-	if (diag < 0)
+	if (diag < 0) {
 		printf("rx_vlan_extend_set(port_pi=%d, on=%d) failed "
 	       "diag=%d\n", port_id, on, diag);
+		return;
+	}
 	ports[port_id].dev_conf.rxmode.offloads = port_rx_offloads;
 }
 
@@ -3105,9 +3107,11 @@ rx_vlan_strip_set(portid_t port_id, int on)
 	}
 
 	diag = rte_eth_dev_set_vlan_offload(port_id, vlan_offload);
-	if (diag < 0)
+	if (diag < 0) {
 		printf("rx_vlan_strip_set(port_pi=%d, on=%d) failed "
 	       "diag=%d\n", port_id, on, diag);
+		return;
+	}
 	ports[port_id].dev_conf.rxmode.offloads = port_rx_offloads;
 }
 
@@ -3146,9 +3150,11 @@ rx_vlan_filter_set(portid_t port_id, int on)
 	}
 
 	diag = rte_eth_dev_set_vlan_offload(port_id, vlan_offload);
-	if (diag < 0)
+	if (diag < 0) {
 		printf("rx_vlan_filter_set(port_pi=%d, on=%d) failed "
 	       "diag=%d\n", port_id, on, diag);
+		return;
+	}
 	ports[port_id].dev_conf.rxmode.offloads = port_rx_offloads;
 }
 
@@ -3173,9 +3179,11 @@ rx_vlan_qinq_strip_set(portid_t port_id, int on)
 	}
 
 	diag = rte_eth_dev_set_vlan_offload(port_id, vlan_offload);
-	if (diag < 0)
+	if (diag < 0) {
 		printf("%s(port_pi=%d, on=%d) failed "
 	       "diag=%d\n", __func__, port_id, on, diag);
+		return;
+	}
 	ports[port_id].dev_conf.rxmode.offloads = port_rx_offloads;
 }
 
