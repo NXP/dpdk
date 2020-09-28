@@ -1311,7 +1311,7 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		struct rte_bbdev_op_data *harq_outputs,
 		struct rte_bbdev_dec_op *ref_op)
 {
-	unsigned int i;
+	unsigned int i, j;
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &ref_op->ldpc_dec;
 
 	for (i = 0; i < n; ++i) {
@@ -1344,6 +1344,7 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		ops[i]->ldpc_dec.n_id = ldpc_dec->n_id;
 		ops[i]->ldpc_dec.n_rnti = ldpc_dec->n_rnti;
 		ops[i]->ldpc_dec.code_block_mode = ldpc_dec->code_block_mode;
+		ops[i]->ldpc_dec.non_compact_harq = ldpc_dec->non_compact_harq;
 
 		ops[i]->ldpc_dec.hard_output = hard_outputs[start_idx + i];
 		ops[i]->ldpc_dec.input = inputs[start_idx + i];
@@ -1361,6 +1362,9 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 			rte_memcpy(&ops[i]->ldpc_dec.demux[0].sd_n_re_ack_re,
 				&ldpc_dec->demux[0].sd_n_re_ack_re, 70 * 4);
 		}
+		for (j = 0; j < RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32; j++)
+			ops[i]->ldpc_dec.codeblock_mask[j] =
+				ldpc_dec->codeblock_mask[j];
 	}
 }
 

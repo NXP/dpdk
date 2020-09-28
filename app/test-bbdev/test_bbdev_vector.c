@@ -909,6 +909,19 @@ parse_ldpc_decoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_N_RNTI;
 		ldpc_dec->n_rnti = (uint16_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "non_compact_harq")) {
+		vector->mask |= TEST_BBDEV_VF_SD_NON_COMPACT_HARQ;
+		ldpc_dec->non_compact_harq = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "codeblock_mask")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SD_COMPACT_HARQ_CB_MASK;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_dec->codeblock_mask[0], data, data_length);
+			rte_free(data);
+		}
 	} else if (!strcmp(key_token, "sd_cd_demux")) {
 		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
 		ldpc_dec->sd_cd_demux = (uint8_t) strtoul(token, &err, 0);
