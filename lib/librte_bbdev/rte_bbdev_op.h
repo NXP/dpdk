@@ -524,6 +524,18 @@ struct rte_bbdev_op_ldpc_dec {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_dec_ldpc_tb_params tb_params;
 	};
+	/* Use non-compact HARQ mode.
+	 * NOTE: This should be same for all retransmissions. */
+	uint8_t non_compact_harq;
+	/* CodeBlock mask.
+	 * Valid for retransmission when compact HARQ is used.
+	 * Each bit represents if that code block is enabled.
+	 */
+	uint32_t codeblock_mask[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32];
+	/* Maximum number of CB's HARQ context to be copied.
+	 * This is only valid for compact HARQ mode.
+	 */
+	uint8_t max_num_harq_contexts;
 	/* [1- SD-CD demux specific op]. Data and Control Multiplexing as
 	 * specified in TS 38.212 Section 6.2.7
 	 */
