@@ -867,6 +867,9 @@ n_rnti =
 code_block_mode =
 0
 
+non_compact_harq =
+1
+
 op_flags =
 RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP, RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE
 
