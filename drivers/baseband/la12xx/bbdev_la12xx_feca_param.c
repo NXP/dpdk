@@ -12,6 +12,7 @@
 static void
 calc_int_start_ofst(uint32_t Q_m,
 		    uint32_t rv_id,
+		    uint32_t harq_en,
 		    uint32_t N_cb,
 		    uint32_t BGnumber,
 		    uint32_t K,
@@ -25,7 +26,9 @@ calc_int_start_ofst(uint32_t Q_m,
 	uint32_t filler_end, filler_start, k0_eff;
 
 	num_filler_bits = K - K_dash;
-	if (rv_id == 0)
+	if (harq_en == 0)
+		k0 = 0;
+	else if (rv_id == 0)
 		k0 = 0;
 	else if (rv_id == 1)
 		k0 = (BGnumber == 1) ?  ((17*N_cb)/(66*Zc))*Zc :
@@ -275,10 +278,10 @@ la12xx_sch_encode_param_convert(uint32_t BGnumber,
 
 		e_div_qm_floor = *num_output_bits_floor / Q_m;
 		e_div_qm_ceiling = *num_output_bits_ceiling / Q_m;
-		calc_int_start_ofst(Q_m, rv_id, N_cb, BGnumber, K, K_dash, Zc,
+		calc_int_start_ofst(Q_m, rv_id, 0, N_cb, BGnumber, K, K_dash, Zc,
 				    e_div_qm_floor, SE_CIRC_BUF,
 				    int_start_ofst_floor);
-		calc_int_start_ofst(Q_m, rv_id, N_cb, BGnumber, K, K_dash, Zc,
+		calc_int_start_ofst(Q_m, rv_id, 0, N_cb, BGnumber, K, K_dash, Zc,
 				    e_div_qm_ceiling, SE_CIRC_BUF,
 				    int_start_ofst_ceiling);
 
@@ -321,6 +324,7 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 				uint32_t scrambler_bypass,
 				uint32_t N_cb,
 				uint32_t remove_tb_crc,
+				uint32_t harq_en,
 				uint32_t *size_harq_buffer,
 				uint32_t *C,
 				uint32_t *codeblock_mask,
@@ -427,9 +431,9 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 		}
 	}
 
-	calc_int_start_ofst(Q_m, rv_id, N_cb, BGnumber, K, K_dash, Zc,
+	calc_int_start_ofst(Q_m, rv_id, harq_en, N_cb, BGnumber, K, K_dash, Zc,
 			    *e_div_qm_floor, SD_CIRC_BUF, di_start_ofst_floor);
-	calc_int_start_ofst(Q_m, rv_id, N_cb, BGnumber, K, K_dash, Zc,
+	calc_int_start_ofst(Q_m, rv_id, harq_en, N_cb, BGnumber, K, K_dash, Zc,
 			    *e_div_qm_ceiling, SD_CIRC_BUF,
 			    di_start_ofst_ceiling);
 
