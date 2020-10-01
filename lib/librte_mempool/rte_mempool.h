@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation.
  * Copyright(c) 2016 6WIND S.A.
- * Copyright 2019 NXP
+ * Copyright 2019-2020 NXP
  */
 
 #ifndef _RTE_MEMPOOL_H_
