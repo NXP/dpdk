@@ -1443,7 +1443,7 @@ dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 	if (ret)
 		DPAA2_PMD_ERR(
 			"error: Adding the MAC ADDR failed: err = %d", ret);
-	return 0;
+	return ret;
 }
 
 static void
