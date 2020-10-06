@@ -133,6 +133,7 @@ DPAAX-y += $(CONFIG_RTE_LIBRTE_FSLMC_BUS)
 DPAAX-y += $(CONFIG_RTE_LIBRTE_ENETC_PMD)
 DPAAX-y += $(CONFIG_RTE_LIBRTE_PMD_CAAM_JR)
 DPAAX-y += $(CONFIG_RTE_LIBRTE_PFE_PMD)
+DPAAX-y += $(CONFIG_RTE_LIBRTE_ENETFEC_PMD)
 ifeq ($(findstring y,$(DPAAX-y)),y)
  _LDLIBS-y += -lrte_common_dpaax
 endif
@@ -175,6 +176,7 @@ endif
 _LDLIBS-$(CONFIG_RTE_LIBRTE_E1000_PMD)      += -lrte_pmd_e1000
 _LDLIBS-$(CONFIG_RTE_LIBRTE_ENA_PMD)        += -lrte_pmd_ena
 _LDLIBS-$(CONFIG_RTE_LIBRTE_ENETC_PMD)      += -lrte_pmd_enetc
+_LDLIBS-$(CONFIG_RTE_LIBRTE_ENETFEC_PMD)    += -lrte_pmd_enetfec
 _LDLIBS-$(CONFIG_RTE_LIBRTE_ENIC_PMD)       += -lrte_pmd_enic
 _LDLIBS-$(CONFIG_RTE_LIBRTE_FM10K_PMD)      += -lrte_pmd_fm10k
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_FAILSAFE)   += -lrte_pmd_failsafe
