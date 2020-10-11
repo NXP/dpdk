@@ -79,4 +79,13 @@ EXPERIMENTAL {
 	rte_cryptodev_sym_session_set_user_data;
 	rte_crypto_asym_op_strings;
 	rte_crypto_asym_xform_strings;
+
+	rte_cryptodev_configure_raw_dp_ctx;
+	rte_cryptodev_get_raw_dp_ctx_size;
+	rte_cryptodev_raw_dequeue;
+	rte_cryptodev_raw_dequeue_burst;
+	rte_cryptodev_raw_dequeue_done;
+	rte_cryptodev_raw_enqueue;
+	rte_cryptodev_raw_enqueue_burst;
+	rte_cryptodev_raw_enqueue_done;
 };
