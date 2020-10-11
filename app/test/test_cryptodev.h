@@ -70,6 +70,13 @@
 #define CRYPTODEV_NAME_CAAM_JR_PMD	crypto_caam_jr
 #define CRYPTODEV_NAME_NITROX_PMD	crypto_nitrox_sym
 
+enum cryptodev_api_test_type {
+	CRYPTODEV_API_TEST = 0,
+	CRYPTODEV_RAW_API_TEST
+};
+
+extern enum cryptodev_api_test_type global_api_test_type;
+
 /**
  * Write (spread) data from buffer to mbuf data
  *
@@ -207,5 +214,10 @@ fail:
 		rte_pktmbuf_free(mbuf);
 	return NULL;
 }
+
+void
+process_sym_raw_dp_op(uint8_t dev_id, uint16_t qp_id,
+		struct rte_crypto_op *op, uint8_t is_cipher, uint8_t is_auth,
+		uint8_t len_in_bits, uint8_t cipher_iv_len);
 
 #endif /* TEST_CRYPTODEV_H_ */
