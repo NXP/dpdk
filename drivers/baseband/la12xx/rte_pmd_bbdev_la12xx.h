@@ -175,4 +175,43 @@ uint16_t
 rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		uint16_t core_ids[], uint16_t num_queues);
 
+/**
+ * Check if LA12XX is active.
+ * If LA12xx device has crashed/hung and needs reset/reboot, bbdev application
+ * can call  * 'rte_pmd_la12xx_reset_restore_cfg' to reboot and re-configure
+ * LA12xx device.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   1 - Device is Active, 0 - Device Needs Reset, < 0 - Error
+ */
+int
+rte_pmd_la12xx_is_active(uint16_t dev_id);
+
+/**
+ * Reset (reboot to default state) LA12xx device.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+int
+rte_pmd_la12xx_reset(uint16_t dev_id);
+
+/**
+ * Reset (reboot) LA12xx device and restore the configuration.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+int
+rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id);
+
 #endif

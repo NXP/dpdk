@@ -5,6 +5,8 @@
 #ifndef _BBDEV_LA12XX_PMD_LOGS_H_
 #define _BBDEV_LA12XX_PMD_LOGS_H_
 
+extern int bbdev_la12xx_logtype_pmd;
+
 /* TODO: As DEBUG is defined in some commpn header, we need to undef it
  * here. This needs to be removed from here once fixed.
  */

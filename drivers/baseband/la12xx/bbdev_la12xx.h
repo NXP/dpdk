@@ -20,6 +20,7 @@
 struct bbdev_la12xx_private {
 	ipc_userspace_t *ipc_priv;
 	int num_valid_queues;
+	struct wdog *wdog;
 };
 
 struct hugepage_info {
@@ -34,8 +35,10 @@ struct bbdev_la12xx_q_priv {
 	uint32_t feca_blk_id;	/** FECA block ID for processing */
 	uint32_t feca_blk_id_be32; /**< FECA Block ID for this queue */
 	uint8_t en_napi; /* 0: napi disabled, 1: napi enabled */
-	uint16_t depth;	/**< Depth of the channel, for PTR channel case */
+	uint16_t queue_size;	/**< Queue depth */
 	int32_t eventfd;	/**< Event FD value */
+	enum rte_bbdev_op_type op_type; /**< Operation type */
+	uint32_t la12xx_core_id;	/* LA12xx core ID on which this will be scheduled */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
 };

@@ -30,6 +30,7 @@
 #include "bbdev_la12xx.h"
 #include "bbdev_la12xx_pmd_logs.h"
 #include "bbdev_la12xx_feca_param.h"
+#include "bbdev_la12xx_wdog.h"
 
 #define DRIVER_NAME baseband_la12xx
 
@@ -40,6 +41,8 @@
 
 /* TX retry count */
 #define BBDEV_LA12XX_TX_RETRY_COUNT 10000
+
+#define GUL_WDOG_SCHED_PRIORITY 98
 
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
@@ -214,6 +217,26 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv = q_data->queue_private;
 	q_priv->q_id = q_id;
 	q_priv->bbdev_priv = dev->data->dev_private;
+	q_priv->queue_size = queue_conf->queue_size;
+	q_priv->op_type = queue_conf->op_type;
+
+	switch (queue_conf->op_type) {
+	case RTE_BBDEV_OP_LDPC_ENC:
+		q_priv->la12xx_core_id = 0;
+		break;
+	case RTE_BBDEV_OP_LDPC_DEC:
+		q_priv->la12xx_core_id = 1;
+		break;
+	case RTE_BBDEV_OP_POLAR_ENC:
+		q_priv->la12xx_core_id = 2;
+		break;
+	case RTE_BBDEV_OP_POLAR_DEC:
+		q_priv->la12xx_core_id = 3;
+		break;
+	default:
+		BBDEV_LA12XX_PMD_ERR("Unsupported op type\n");
+		return -1;
+	}
 
 	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
 	/* offset is from start of PEB */
@@ -305,6 +328,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipcu = priv->ipc_priv;
+	struct bbdev_la12xx_q_priv *q_priv;
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
 	ipc_ch_t *ch;
@@ -317,6 +341,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		mhif->ipc_regs.ipc_mdata_offset);
 
 	for (i = 0; i < num_queues; i++) {
+		q_priv = dev->data->queues[i].queue_private;
 		queue_id = queue_ids[i];
 		core_id = core_ids[i];
 
@@ -355,6 +380,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		}
 
 		ch->la12xx_core_id = rte_cpu_to_be_32(core_id);
+		q_priv->la12xx_core_id = core_id;
 	}
 
 	return 0;
@@ -1341,13 +1367,82 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 
 
 void
-rte_pmd_la12xx_op_init(struct rte_mempool *mempool, __rte_unused void *arg, void *element,
+rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
+		__rte_unused void *arg, void *element,
 		__rte_unused unsigned int n)
 {
 	struct rte_pmd_la12xx_op *op = element;
 
 	memset(op, 0, mempool->elt_size);
 	op->mempool = mempool;
+}
+
+int
+rte_pmd_la12xx_is_active(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	struct wdog *wdog = priv->wdog;
+	int ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (!wdog) {
+		wdog = rte_malloc(NULL,
+			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
+
+		/* Register Modem & Watchdog */
+		ret = libwdog_register(wdog, 0);
+		if (ret < 0) {
+			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
+			return ret;
+		}
+		priv->wdog = wdog;
+	}
+
+	/* check if modem not in ready state */
+	ret = libwdog_get_modem_status(wdog);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("libwdog_get_modem_status failed");
+		return ret;
+	}
+
+	if (wdog->wdog_modem_status == WDOG_MODEM_NOT_READY)
+		return 0;
+
+	return 1;
+}
+
+int
+rte_pmd_la12xx_reset(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	struct wdog *wdog = priv->wdog;
+	int ret = 0;
+
+	printf("BBDEV LA12xx: Resetting device...\n");
+
+	if (!wdog) {
+		wdog = rte_malloc(NULL,
+			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
+
+		/* Register Modem & Watchdog */
+		ret = libwdog_register(wdog, 0);
+		if (ret < 0) {
+			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
+			return ret;
+		}
+		priv->wdog = wdog;
+	}
+
+	ret = libwdog_reinit_modem(wdog, 300);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("modem reinit failed");
+		return ret;
+	}
+
+	return 0;
 }
 
 static struct hugepage_info *
@@ -1408,10 +1503,10 @@ static int open_ipc_dev(void)
 }
 
 static int
-setup_bbdev(struct rte_bbdev *dev)
+setup_la12xx_dev(struct rte_bbdev *dev)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipc_priv = NULL;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct hugepage_info *hp = NULL;
 	ipc_channel_us_t *ipc_priv_ch = NULL;
 	int dev_ipc = 0, dev_mem = 0, i;
@@ -1423,40 +1518,58 @@ setup_bbdev(struct rte_bbdev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* TODO - get a better way */
-	/* Get the hugepage info against it */
-	hp = get_hugepage_info();
-	if (!hp) {
-		BBDEV_LA12XX_PMD_ERR("Unable to get hugepage info");
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	BBDEV_LA12XX_PMD_DEBUG("%lx %p %lx", hp->paddr, hp->vaddr, hp->len);
-
-	ipc_priv = rte_zmalloc(0, sizeof(ipc_userspace_t), 0);
-	if (ipc_priv == NULL) {
-		BBDEV_LA12XX_PMD_ERR(
-			"Unable to allocate memory for ipc priv");
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	for (i = 0; i < IPC_MAX_CHANNEL_COUNT; i++) {
-		ipc_priv_ch = rte_zmalloc(0, sizeof(ipc_channel_us_t), 0);
-		if (ipc_priv_ch == NULL) {
-			BBDEV_LA12XX_PMD_ERR(
-				"Unable to allocate memory for channels");
+	if (!ipc_priv) {
+		/* TODO - get a better way */
+		/* Get the hugepage info against it */
+		hp = get_hugepage_info();
+		if (!hp) {
+			BBDEV_LA12XX_PMD_ERR("Unable to get hugepage info");
 			ret = -ENOMEM;
+			goto err;
 		}
-		ipc_priv->channels[i] = ipc_priv_ch;
-	}
 
-	dev_mem = open("/dev/mem", O_RDWR);
-	if (dev_mem < 0) {
-		BBDEV_LA12XX_PMD_ERR("Error: Cannot open /dev/mem");
-		ret = -errno;
-		goto err;
+		BBDEV_LA12XX_PMD_DEBUG("%lx %p %lx",
+				hp->paddr, hp->vaddr, hp->len);
+
+		ipc_priv = rte_zmalloc(0, sizeof(ipc_userspace_t), 0);
+		if (ipc_priv == NULL) {
+			BBDEV_LA12XX_PMD_ERR(
+				"Unable to allocate memory for ipc priv");
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		for (i = 0; i < IPC_MAX_CHANNEL_COUNT; i++) {
+			ipc_priv_ch = rte_zmalloc(0,
+				sizeof(ipc_channel_us_t), 0);
+			if (ipc_priv_ch == NULL) {
+				BBDEV_LA12XX_PMD_ERR(
+					"Unable to allocate memory for channels");
+				ret = -ENOMEM;
+			}
+			ipc_priv->channels[i] = ipc_priv_ch;
+		}
+
+		dev_mem = open("/dev/mem", O_RDWR);
+		if (dev_mem < 0) {
+			BBDEV_LA12XX_PMD_ERR("Error: Cannot open /dev/mem");
+			ret = -errno;
+			goto err;
+		}
+
+		/* TODO - Get instance id from vdev */
+		ipc_priv->instance_id = instance_id;
+		ipc_priv->dev_mem = dev_mem;
+
+		BBDEV_LA12XX_PMD_DEBUG("hugepg input %lx %p %lx",
+			hp->paddr, hp->vaddr, hp->len);
+
+		ipc_priv->sys_map.hugepg_start.host_phys = hp->paddr;
+		ipc_priv->sys_map.hugepg_start.size = hp->len;
+
+		ipc_priv->hugepg_start.host_phys = hp->paddr;
+		ipc_priv->hugepg_start.host_vaddr = hp->vaddr;
+		ipc_priv->hugepg_start.size = hp->len;
 	}
 
 	dev_ipc = open_ipc_dev();
@@ -1464,19 +1577,12 @@ setup_bbdev(struct rte_bbdev *dev)
 		BBDEV_LA12XX_PMD_ERR("Error: open_ipc_dev failed");
 		goto err;
 	}
-
-	/* TODO - Get instance id from vdev */
-	ipc_priv->instance_id = instance_id;
 	ipc_priv->dev_ipc = dev_ipc;
-	ipc_priv->dev_mem = dev_mem;
-	BBDEV_LA12XX_PMD_DEBUG("hugepg input %lx %p %lx",
-		hp->paddr, hp->vaddr, hp->len);
 
-	ipc_priv->sys_map.hugepg_start.host_phys = hp->paddr;
-	ipc_priv->sys_map.hugepg_start.size = hp->len;
 	/* Send IOCTL to get system map */
 	/* Send IOCTL to put hugepg_start map */
-	ret = ioctl(dev_ipc, IOCTL_GUL_IPC_GET_SYS_MAP, &ipc_priv->sys_map);
+	ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_GET_SYS_MAP,
+		    &ipc_priv->sys_map);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"IOCTL_GUL_IPC_GET_SYS_MAP ioctl failed");
@@ -1486,7 +1592,7 @@ setup_bbdev(struct rte_bbdev *dev)
 	phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
 	ipc_priv->mhif_start.host_vaddr =
 		mmap(0, ipc_priv->sys_map.mhif_start.size + phy_align,
-		     (PROT_READ | PROT_WRITE), MAP_SHARED, dev_mem,
+		     (PROT_READ | PROT_WRITE), MAP_SHARED, ipc_priv->dev_mem,
 		     (ipc_priv->sys_map.mhif_start.host_phys - phy_align));
 	if (ipc_priv->mhif_start.host_vaddr == MAP_FAILED) {
 		BBDEV_LA12XX_PMD_ERR("MAP failed:");
@@ -1500,7 +1606,7 @@ setup_bbdev(struct rte_bbdev *dev)
 	phy_align = (ipc_priv->sys_map.peb_start.host_phys % 0x1000);
 	ipc_priv->peb_start.host_vaddr =
 		mmap(0, ipc_priv->sys_map.peb_start.size + phy_align,
-		     (PROT_READ | PROT_WRITE), MAP_SHARED, dev_mem,
+		     (PROT_READ | PROT_WRITE), MAP_SHARED, ipc_priv->dev_mem,
 		     (ipc_priv->sys_map.peb_start.host_phys - phy_align));
 	if (ipc_priv->peb_start.host_vaddr == MAP_FAILED) {
 		BBDEV_LA12XX_PMD_ERR("MAP failed:");
@@ -1511,9 +1617,6 @@ setup_bbdev(struct rte_bbdev *dev)
 	ipc_priv->peb_start.host_vaddr = (void *)((uint64_t)
 		(ipc_priv->peb_start.host_vaddr) + phy_align);
 
-	ipc_priv->hugepg_start.host_phys = hp->paddr;
-	ipc_priv->hugepg_start.host_vaddr = hp->vaddr;
-	ipc_priv->hugepg_start.size = ipc_priv->sys_map.hugepg_start.size;
 	ipc_priv->hugepg_start.modem_phys =
 		ipc_priv->sys_map.hugepg_start.modem_phys;
 
@@ -1594,6 +1697,72 @@ err:
 	return ret;
 }
 
+int
+rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	struct rte_bbdev_queue_conf queue_conf = {0};
+	struct bbdev_la12xx_q_priv *q_priv;
+	uint16_t queue_ids[LA12XX_MAX_QUEUES];
+	uint16_t core_ids[LA12XX_MAX_QUEUES];
+	int num_queues, ret, i;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Reset the device */
+	rte_pmd_la12xx_reset(dev_id);
+
+	/* Setup the device */
+	setup_la12xx_dev(dev);
+
+	/* Reset Global variables */
+	num_ldpc_enc_queues = 0;
+	num_ldpc_dec_queues = 0;
+	num_polar_enc_queues = 0;
+	num_polar_dec_queues = 0;
+	per_queue_hram_size = 0;
+	la12xx_polar_enc_core = -1;
+	la12xx_polar_dec_core = -1;
+	priv->num_valid_queues = 0;
+
+	/* Re-configure the queues */
+	num_queues = dev->data->num_queues;
+	for (i = 0; i < num_queues; i++) {
+		q_priv = dev->data->queues[i].queue_private;
+		queue_conf.op_type = q_priv->op_type;
+		queue_conf.queue_size = q_priv->queue_size;
+
+		ret = la12xx_queue_setup(dev, i, &queue_conf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"setup failed for queue id: %d", i);
+			return ret;
+		}
+
+		/* Also prepare for LA12xx queue core config */
+		queue_ids[i] = i;
+		core_ids[i] = q_priv->la12xx_core_id;
+	}
+
+	/* Update queue core config */
+	ret = rte_pmd_la12xx_queue_core_config(dev_id,
+			queue_ids, core_ids, num_queues);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR("la12xx queue core config failed");
+		return ret;
+	}
+
+	/* Start the device */
+	ret = la12xx_start(dev);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR("device start failed");
+		return ret;
+	}
+
+	return 0;
+}
+
 /* Create device */
 static int
 la12xx_bbdev_create(struct rte_vdev_device *vdev)
@@ -1616,7 +1785,7 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 		return -ENOMEM;
 	}
 
-	ret = setup_bbdev(bbdev);
+	ret = setup_la12xx_dev(bbdev);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR("IPC Setup failed");
 		rte_free(bbdev->data->dev_private);

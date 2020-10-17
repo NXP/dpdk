@@ -30,6 +30,7 @@ LIBABIVER := 1
 
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx_wdog.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx_feca_param.c
 
 # create symbolic links for geul common headers required by application

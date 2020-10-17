@@ -5,7 +5,7 @@
 deps += ['bbdev', 'bus_vdev', 'ring']
 allow_experimental_apis = true
 
-sources = files('bbdev_la12xx.c', 'bbdev_la12xx_feca_param.c')
+sources = files('bbdev_la12xx.c', 'bbdev_la12xx_feca_param.c', 'bbdev_la12xx_wdog.c')
 
 cflags += ['-DHOST=1',
            '-DMODEM=0']
