@@ -35,6 +35,7 @@ static struct test_params {
 	char test_vector_filename[PATH_MAX];
 	unsigned int vector_count;
 	bool init_device;
+	bool reset_reconfig;
 } test_params;
 
 static struct test_commands_list commands_list =
@@ -168,6 +169,12 @@ get_init_device(void)
 	return test_params.init_device;
 }
 
+bool
+get_reset_reconfig(void)
+{
+	return test_params.reset_reconfig;
+}
+
 static void
 print_usage(const char *prog_name)
 {
@@ -179,7 +186,8 @@ print_usage(const char *prog_name)
 			"\t[-m/--num-segs NUM_SEGS]\n"
 			"\t[-v/--test-vector VECTOR_FILE]\n"
 			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
-			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]]\n",
+			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]\n"
+			"\t[-r/--reset-reconfig]]\n",
 			prog_name);
 
 	printf("Available testcases: ");
@@ -209,11 +217,12 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "buf-size", 1, 0, 's' },
 		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
+		{ "reset-reconfig", 0, 0, 'r' },
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
 
-	while ((opt = getopt_long(argc, argv, "hin:b:c:v:f:l:s:m:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hirn:b:c:v:f:l:s:m:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -302,6 +311,9 @@ parse_args(int argc, char **argv, struct test_params *tp)
 			/* indicate fpga fec config required */
 			tp->init_device = true;
 			break;
+		case 'r':
+			tp->reset_reconfig = true;
+			return 0;
 		case 'h':
 			print_usage(argv[0]);
 			return 0;

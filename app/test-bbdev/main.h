@@ -129,4 +129,6 @@ unsigned int get_buf_size(void);
 
 bool get_init_device(void);
 
+bool get_reset_reconfig(void);
+
 #endif
