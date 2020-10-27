@@ -164,8 +164,6 @@ static int ipc_queue_configure(uint32_t channel_id,
 
 	/* Start init of channel */
 	ch->br_msg_desc.md.ring_size = conf->queue_size;
-	ch->br_msg_desc.md.ci_flag = 0;
-	ch->br_msg_desc.md.pi_flag = 0;
 	ch->br_msg_desc.md.pi = 0;
 	ch->br_msg_desc.md.ci = 0;
 	ch->br_msg_desc.md.msg_size = msg_size;
@@ -433,15 +431,11 @@ static inline void ipc_memcpy(void *dst, void *src, uint32_t len)
 	memcpy(dst, src, len);
 }
 
-static inline int is_bd_ring_full(ipc_br_md_t *md)
+static inline int
+is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
+		uint32_t pi, uint32_t pi_flag)
 {
-	uint32_t ci = md->ci;
-	uint32_t pi = md->pi;
-
 	if (pi == ci) {
-		uint32_t ci_flag = md->ci_flag;
-		uint32_t pi_flag = md->pi_flag;
-
 		if (pi_flag != ci_flag)
 			return 1; /* Ring is Full */
 	}
@@ -840,7 +834,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	struct bbdev_ipc_dequeue_op *bbdev_ipc_op;
-	uint32_t q_id = q_priv->q_id, pi;
+	uint32_t q_id = q_priv->q_id;
+	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
 	ipc_bd_t *bdr, *bd;
@@ -858,11 +853,16 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 
 	RTE_SET_USED(op_type);
 
+	ci = IPC_GET_CI_INDEX(md->ci);
+	ci_flag = IPC_GET_CI_FLAG(md->ci);
+	pi = IPC_GET_PI_INDEX(md->pi);
+	pi_flag = IPC_GET_PI_FLAG(md->pi);
+
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+		pi, ci, pi_flag, ci_flag, md->ring_size);
 
-	while (is_bd_ring_full(md) &&
+	while (is_bd_ring_full(ci, ci_flag, pi, pi_flag) &&
 			(retry_count < BBDEV_LA12XX_TX_RETRY_COUNT))
 		retry_count++;
 
@@ -873,7 +873,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 		return IPC_CH_FULL;
 	}
 
-	pi = md->pi;
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[pi];
 
@@ -1074,23 +1073,27 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 
 	/* Move Producer Index forward */
 	pi++;
-	/* Wait for Data Copy and pi_flag update to complete
-	 * before updating pi
-	 */
-	rte_mb();
 	/* Flip the PI flag, if wrapping */
-	if (md->ring_size == pi) {
-		md->pi = 0;
-		md->pi_flag = md->pi_flag ? 0 : 1;
-	} else
-		md->pi = pi;
+	if (unlikely(md->ring_size == pi)) {
+		pi = 0;
+		pi_flag = pi_flag ? 0 : 1;
+	}
+
+	if (pi_flag)
+		IPC_SET_PI_FLAG(pi);
+	else
+		IPC_RESET_PI_FLAG(pi);
+	/* Wait for Data Copy & pi_flag update to complete before updating pi */
+	rte_mb();
+	/* now update pi */
+	md->pi = pi;
 
 	h_stats->ipc_ch_stats[q_id].num_of_msg_sent++;
 	h_stats->ipc_ch_stats[q_id].total_msg_length += bd->len;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 			"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-			md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+			pi, ci, pi_flag, ci_flag, md->ring_size);
 
 	return 0;
 }
@@ -1146,15 +1149,11 @@ static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
 	return JOIN_VA32_64(high, l);
 }
 
-static inline int is_bd_ring_empty(ipc_br_md_t *md)
+static inline int
+is_bd_ring_empty(uint32_t ci, uint32_t ci_flag,
+		 uint32_t pi, uint32_t pi_flag)
 {
-	uint32_t ci = md->ci;
-	uint32_t pi = md->pi;
-
 	if (ci == pi) {
-		uint32_t ci_flag = md->ci_flag;
-		uint32_t pi_flag = md->pi_flag;
-
 		if (ci_flag == pi_flag)
 			return 1; /* No more Buffer */
 	}
@@ -1170,21 +1169,24 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 	uint32_t q_id = q_priv->q_id + HOST_RX_QUEUEID_OFFSET;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	uint32_t ci, ci_flag, pi, pi_flag, msg_len;
 	ipc_br_md_t *md;
-	uint32_t ci, msg_len;
 	uint64_t vaddr2 = 0;
 	ipc_bd_t *bdr, *bd;
 
 	md = &(ch->br_msg_desc.md);
-	if (is_bd_ring_empty(md)) {
+	ci = IPC_GET_CI_INDEX(md->ci);
+	ci_flag = IPC_GET_CI_FLAG(md->ci);
+	pi = IPC_GET_PI_INDEX(md->pi);
+	pi_flag = IPC_GET_PI_FLAG(md->pi);
+	if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag)) {
 		h_stats->ipc_ch_stats[q_id].err_channel_empty++;
 		return IPC_CH_EMPTY;
 	}
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+		pi, ci, pi_flag, ci_flag, md->ring_size);
 
-	ci = md->ci;
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
 	/* Move Consumer Index forward */
@@ -1192,10 +1194,14 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 	/* Flip the CI flag, if wrapping */
 	if (md->ring_size == ci) {
 		ci = 0;
-		md->ci_flag = md->ci_flag ? 0 : 1;
+		ci_flag = ci_flag ? 0 : 1;
 	}
-	md->ci = ci;
+	if (ci_flag)
+		IPC_SET_CI_FLAG(ci);
+	else
+		IPC_RESET_CI_FLAG(ci);
 
+	md->ci = ci;
 	msg_len = bd->len;
 	if (msg_len > md->msg_size) {
 		h_stats->ipc_ch_stats[q_id].err_input_invalid++;
@@ -1208,7 +1214,7 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 	h_stats->ipc_ch_stats[q_id].total_msg_length += msg_len;
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"exit: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		md->pi, md->ci, md->pi_flag, md->ci_flag, md->ring_size);
+		pi, ci, pi_flag, ci_flag, md->ring_size);
 
 	return 0;
 }
