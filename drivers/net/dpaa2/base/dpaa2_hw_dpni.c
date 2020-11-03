@@ -197,6 +197,7 @@ dpaa2_distset_to_dpkg_profile_cfg(
 	uint32_t loop = 0, i = 0, dist_field = 0;
 	int l2_configured = 0, l3_configured = 0;
 	int l4_configured = 0, sctp_configured = 0;
+	int mpls_configured = 0;
 
 	memset(kg_cfg, 0, sizeof(struct dpkg_profile_cfg));
 	while (req_dist_set) {
@@ -219,6 +220,43 @@ dpaa2_distset_to_dpkg_profile_cfg(
 					DPKG_FULL_FIELD;
 				i++;
 			break;
+
+			case ETH_RSS_MPLS:
+
+				if (mpls_configured)
+					break;
+				mpls_configured = 1;
+
+				kg_cfg->extracts[i].extract.from_hdr.prot =
+					NET_PROT_MPLS;
+				kg_cfg->extracts[i].extract.from_hdr.field =
+					NH_FLD_MPLS_MPLSL_1;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].extract.from_hdr.type =
+					DPKG_FULL_FIELD;
+				i++;
+
+				kg_cfg->extracts[i].extract.from_hdr.prot =
+					NET_PROT_MPLS;
+				kg_cfg->extracts[i].extract.from_hdr.field =
+					NH_FLD_MPLS_MPLSL_2;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].extract.from_hdr.type =
+					DPKG_FULL_FIELD;
+				i++;
+
+				kg_cfg->extracts[i].extract.from_hdr.prot =
+					NET_PROT_MPLS;
+				kg_cfg->extracts[i].extract.from_hdr.field =
+					NH_FLD_MPLS_MPLSL_N;
+				kg_cfg->extracts[i].type =
+					DPKG_EXTRACT_FROM_HDR;
+				kg_cfg->extracts[i].extract.from_hdr.type =
+					DPKG_FULL_FIELD;
+				i++;
+				break;
 
 			case ETH_RSS_IPV4:
 			case ETH_RSS_FRAG_IPV4:
