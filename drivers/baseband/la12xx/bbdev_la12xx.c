@@ -44,6 +44,12 @@
 
 #define GUL_WDOG_SCHED_PRIORITY 98
 
+#define BBDEV_LA12XX_LDPC_ENC_CORE	0
+#define BBDEV_LA12XX_LDPC_DEC_CORE	1
+#define BBDEV_LA12XX_POLAR_ENC_CORE	2
+#define BBDEV_LA12XX_POLAR_DEC_CORE	3
+#define BBDEV_LA12XX_RAW_CORE		3
+
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
 
@@ -51,14 +57,12 @@ uint32_t num_ldpc_enc_queues;
 uint32_t num_ldpc_dec_queues;
 uint32_t num_polar_enc_queues;
 uint32_t num_polar_dec_queues;
+uint32_t num_raw_queues;
 
 int la12xx_polar_enc_core = -1;
 int la12xx_polar_dec_core = -1;
 
 uint32_t per_queue_hram_size;
-
-struct gul_ipc_stats *h_stats;
-struct gul_stats *stats; /**< Stats for Host & modem (HIF) */
 
 static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	{
@@ -94,6 +98,9 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	},
 	{
 		.type   = RTE_BBDEV_OP_POLAR_ENC,
+	},
+	{
+		.type   = RTE_BBDEV_OP_LA12XX_RAW,
 	},
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
@@ -169,10 +176,8 @@ static int ipc_queue_configure(uint32_t channel_id,
 	ch->br_msg_desc.md.msg_size = msg_size;
 	for (i = 0; i < conf->queue_size; i++) {
 		vaddr = rte_malloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
-		if (!vaddr) {
-			h_stats->ipc_ch_stats[channel_id].err_host_buf_alloc_fail++;
+		if (!vaddr)
 			return IPC_HOST_BUF_ALLOC_FAIL;
-		}
 		/* Only offset now */
 		ch->br_msg_desc.bd[i].modem_ptr = HUGEPG_OFFSET(vaddr);
 		ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
@@ -218,18 +223,21 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->queue_size = queue_conf->queue_size;
 	q_priv->op_type = queue_conf->op_type;
 
-	switch (queue_conf->op_type) {
+	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
-		q_priv->la12xx_core_id = 0;
+		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_ENC_CORE;
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
-		q_priv->la12xx_core_id = 1;
+		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_DEC_CORE;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
-		q_priv->la12xx_core_id = 2;
+		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_ENC_CORE;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
-		q_priv->la12xx_core_id = 3;
+		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
+		break;
+	case RTE_BBDEV_OP_LA12XX_RAW:
+		q_priv->la12xx_core_id = BBDEV_LA12XX_RAW_CORE;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Unsupported op type\n");
@@ -263,14 +271,15 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	}
 
 	/* Set queue properties for LA12xx device */
-	switch (queue_conf->op_type) {
+	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
 		if (num_ldpc_enc_queues >= MAX_LDPC_ENC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_ldpc_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id = rte_cpu_to_be_32(0);
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_ENC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_enc_queues++);
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
@@ -279,7 +288,8 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 				"num_ldpc_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id = rte_cpu_to_be_32(1);
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_DEC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_dec_queues++);
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
@@ -288,7 +298,8 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 				"num_polar_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id = rte_cpu_to_be_32(2);
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_ENC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(0);
 		num_polar_enc_queues++;
 		break;
@@ -298,15 +309,25 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 				"num_polar_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id = rte_cpu_to_be_32(3);
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_DEC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(0);
 		num_polar_dec_queues++;
+		break;
+	case RTE_BBDEV_OP_LA12XX_RAW:
+		if (num_raw_queues >= MAX_RAW_QUEUES) {
+			BBDEV_LA12XX_PMD_ERR(
+				"num_raw_queues reached max value");
+			return -1;
+		}
+		ch->la12xx_core_id = rte_cpu_to_be_32(BBDEV_LA12XX_RAW_CORE);
+		num_raw_queues++;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Not supported op type\n");
 		return -1;
 	}
-	ch->op_type = rte_cpu_to_be_32(queue_conf->op_type);
+	ch->op_type = rte_cpu_to_be_32(q_priv->op_type);
 	ch->depth = rte_cpu_to_be_32(queue_conf->queue_size);
 
 	/* Store queue config here */
@@ -444,12 +465,13 @@ is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
 
 static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
-		   struct rte_mbuf *mbuf,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_enc_op *bbdev_enc_op,
-		   char *huge_start_addr)
+		   struct rte_mbuf *in_mbuf)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	uint32_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS];
 	uint32_t codeblock_mask[8], i;
@@ -493,11 +515,7 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 
 	se_command = &bbdev_ipc_op->feca_job.command_chain_t.se_command_ch_obj;
 
-	/* TODO: Currently setting all fields for clarity.
-	 * Remove unrequried fields
-	 */
 	se_cmd.se_cfg1.raw_se_cfg1 = 0;
-	se_cmd.se_cfg1.out_pad_bytes = 0;
 	se_cmd.se_cfg1.num_code_blocks = num_code_blocks;
 	se_cmd.se_cfg1.tb_24_bit_crc = tb_24_bit_crc;
 	se_cmd.se_cfg1.complete_trig_en = 1;
@@ -523,11 +541,11 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	se_command->se_sc_x1_init = rte_cpu_to_be_32(SE_SC_X1_INIT);
 	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
 
-	data_ptr =  rte_pktmbuf_mtod(mbuf, char *);
-	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+	data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
+	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+		data_ptr - huge_start_addr;
 	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
-	se_command->se_axi_in_addr_high = 0;
-	se_command->se_axi_in_num_bytes = rte_cpu_to_be_32(mbuf->pkt_len);
+	se_command->se_axi_in_num_bytes = rte_cpu_to_be_32(in_mbuf->pkt_len);
 
 	memset(se_command->se_cb_mask, 0xFF, (8 * sizeof(uint32_t)));
 
@@ -558,9 +576,11 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 
 	if (ldpc_enc->se_ce_mux) {
 		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE_DCM);
-		se_dcm_command = &bbdev_ipc_op->feca_job.command_chain_t.se_dcm_command_ch_obj;
+		se_dcm_command =
+			&bbdev_ipc_op->feca_job.command_chain_t.se_dcm_command_ch_obj;
+		se_dcm_command->se_bits_per_re =
+			rte_cpu_to_be_32(ldpc_enc->se_bits_per_re);
 
-		se_dcm_command->se_bits_per_re = rte_cpu_to_be_32(ldpc_enc->se_bits_per_re);
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			se_dcm_command->mux[i].se_n_re_ack_re =
 				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_re_ack_re);
@@ -579,9 +599,11 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	rte_bbuf_dump(stdout, bbdev_enc_op->ldpc_enc.input.data,
 		bbdev_enc_op->ldpc_enc.input.data->pkt_len);
 	if (ldpc_enc->se_ce_mux)
-		rte_hexdump(stdout, "SE DCM COMMAND", se_dcm_command, sizeof(se_dcm_command_t));
+		rte_hexdump(stdout, "SE DCM COMMAND", se_dcm_command,
+			    sizeof(se_dcm_command_t));
 	else
-		rte_hexdump(stdout, "SE COMMAND", se_command, sizeof(se_command_t));
+		rte_hexdump(stdout, "SE COMMAND", se_command,
+			    sizeof(se_command_t));
 #endif
 
 	return 0;
@@ -590,9 +612,12 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 static int
 fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
-		   struct rte_bbdev_dec_op *bbdev_dec_op)
+		   struct rte_bbdev_dec_op *bbdev_dec_op,
+		   struct rte_mbuf *out_mbuf)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS], remove_tb_crc;
 	uint32_t harq_en = 0, compact_harq = 1, size_harq_buffer, C, i;
@@ -605,6 +630,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	uint32_t axi_data_num_bytes;
 	sd_command_t sd_cmd, *sd_command;
 	sd_dcm_command_t *sd_dcm_command;
+	char *data_ptr;
+	uint32_t l1_pcie_addr;
 	int16_t TBS_VALID;
 
 	for (i = 0; i < ldpc_dec->tb_params.cab; i++)
@@ -646,10 +673,6 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	sd_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj;
 
-	/* TODO: Currently setting all fields for clarity.
-	 * Remove unrequried fields
-	 */
-	sd_cmd.sd_cfg1.raw_sd_cfg1 = 0;
 	sd_cmd.sd_cfg1.max_num_iterations = ldpc_dec->iter_max;
 	sd_cmd.sd_cfg1.min_num_iterations = 1;
 	sd_cmd.sd_cfg1.remove_tb_crc = remove_tb_crc;
@@ -662,8 +685,6 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_cfg1.raw_sd_cfg1 =
 		rte_cpu_to_be_32(sd_cmd.sd_cfg1.raw_sd_cfg1);
 
-	sd_cmd.sd_cfg2.raw_sd_cfg2 = 0;
-	sd_cmd.sd_cfg2.send_msi = 0;
 	sd_cmd.sd_cfg2.complete_trig_en = 1;
 	sd_cmd.sd_cfg2.harq_en = harq_en;
 	sd_cmd.sd_cfg2.compact_harq = compact_harq;
@@ -671,13 +692,11 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_cfg2.raw_sd_cfg2 =
 		rte_cpu_to_be_32(sd_cmd.sd_cfg2.raw_sd_cfg2);
 
-	sd_cmd.sd_sizes1.raw_sd_sizes1 = 0;
 	sd_cmd.sd_sizes1.num_output_bytes = num_output_bytes;
 	sd_cmd.sd_sizes1.e_floor_thresh = e_floor_thresh;
 	sd_command->sd_sizes1.raw_sd_sizes1 =
 		rte_cpu_to_be_32(sd_cmd.sd_sizes1.raw_sd_sizes1);
 
-	sd_cmd.sd_sizes2.raw_sd_sizes2 = 0;
 	sd_cmd.sd_sizes2.num_filler_bits = num_filler_bits;
 	sd_cmd.sd_sizes2.bits_per_cb = bits_per_cb;
 	sd_command->sd_sizes2.raw_sd_sizes2 =
@@ -694,12 +713,12 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 
 	/* out_addr has already been swapped in the calling function */
-	sd_command->sd_axi_data_addr_low = bbdev_ipc_op->out_addr;
-	sd_command->sd_axi_data_addr_high = 0;
+	data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
+	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+		data_ptr - huge_start_addr;
+	sd_command->sd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	sd_command->sd_axi_data_num_bytes =
 		rte_cpu_to_be_32(bbdev_dec_op->ldpc_dec.hard_output.length);
-	sd_command->sd_axi_stat_addr_low = 0;
-	sd_command->sd_axi_stat_addr_high = 0;
 
 	for (i = 0; i < 8; i++)
 		sd_command->sd_cb_mask[i] =
@@ -732,9 +751,11 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	if (ldpc_dec->sd_cd_demux) {
 		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD_DCM);
-		sd_dcm_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
+		sd_dcm_command =
+			&bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
+		sd_dcm_command->sd_llrs_per_re =
+			rte_cpu_to_be_32(ldpc_dec->sd_llrs_per_re);
 
-		sd_dcm_command->sd_llrs_per_re = rte_cpu_to_be_32(ldpc_dec->sd_llrs_per_re);
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			sd_dcm_command->demux[i].sd_n_re_ack_re =
 				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_n_re_ack_re);
@@ -753,70 +774,91 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	rte_bbuf_dump(stdout, bbdev_dec_op->ldpc_dec.input.data,
 		bbdev_dec_op->ldpc_dec.input.data->data_len);
 	if (ldpc_dec->sd_cd_demux)
-		rte_hexdump(stdout, "SD DCM COMMAND", sd_dcm_command, sizeof(sd_dcm_command_t));
+		rte_hexdump(stdout, "SD DCM COMMAND", sd_dcm_command,
+			    sizeof(sd_dcm_command_t));
 	else
-		rte_hexdump(stdout, "SD COMMAND", sd_command, sizeof(sd_command_t));
+		rte_hexdump(stdout, "SD COMMAND", sd_command,
+			    sizeof(sd_command_t));
 #endif
 
 	return 0;
 }
 
 static void
-fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
-	       struct rte_pmd_la12xx_op *rte_pmd_op,  char *huge_start_addr)
+fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+			struct rte_pmd_la12xx_polar_params *polar_params,
+			struct bbdev_la12xx_q_priv *q_priv,
+			struct rte_mbuf *in_mbuf,
+			struct rte_mbuf *out_mbuf)
 {
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	char *data_ptr;
 	uint32_t l1_pcie_addr, i;
 
-	if (rte_pmd_op->feca_obj.job_type ==  FECA_JOB_CE ||
-	    rte_pmd_op->feca_obj.job_type == FECA_JOB_CE_DCM) {
-		ce_command_t *l_ce_cmd = &rte_pmd_op->feca_obj.command_chain_t.ce_command_ch_obj;
-		ce_command_t *ce_cmd = &bbdev_ipc_op->feca_job.command_chain_t.ce_command_ch_obj;
+	bbdev_ipc_op->feca_job.job_type =
+		rte_cpu_to_be_32(polar_params->feca_obj.job_type);
+	if (polar_params->feca_obj.job_type ==  FECA_JOB_CE ||
+	    polar_params->feca_obj.job_type == FECA_JOB_CE_DCM) {
+		ce_command_t *l_ce_cmd =
+			&polar_params->feca_obj.command_chain_t.ce_command_ch_obj;
+		ce_command_t *ce_cmd =
+			&bbdev_ipc_op->feca_job.command_chain_t.ce_command_ch_obj;
 
-		rte_pmd_op->output.length = (l_ce_cmd->ce_cfg2.E + 7)/8 + l_ce_cmd->ce_cfg3.out_pad_bytes;
-		bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
-		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(rte_pmd_op->feca_obj.job_type);
+		polar_params->output.length = (l_ce_cmd->ce_cfg2.E + 7)/8 +
+				l_ce_cmd->ce_cfg3.out_pad_bytes;
 		/* Set complete trigger */
 		l_ce_cmd->ce_cfg1.complete_trig_en = 1;
-		ce_cmd->ce_cfg1.raw_ce_cfg1 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg1.raw_ce_cfg1);
-		ce_cmd->ce_cfg2.raw_ce_cfg2 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg2.raw_ce_cfg2);
-		ce_cmd->ce_cfg3.raw_ce_cfg3 = rte_cpu_to_be_32(l_ce_cmd->ce_cfg3.raw_ce_cfg3);
-		ce_cmd->ce_pe_indices.raw_ce_pe_indices = rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
-		data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR + data_ptr - huge_start_addr;
+		ce_cmd->ce_cfg1.raw_ce_cfg1 =
+			rte_cpu_to_be_32(l_ce_cmd->ce_cfg1.raw_ce_cfg1);
+		ce_cmd->ce_cfg2.raw_ce_cfg2 =
+			rte_cpu_to_be_32(l_ce_cmd->ce_cfg2.raw_ce_cfg2);
+		ce_cmd->ce_cfg3.raw_ce_cfg3 =
+			rte_cpu_to_be_32(l_ce_cmd->ce_cfg3.raw_ce_cfg3);
+		ce_cmd->ce_pe_indices.raw_ce_pe_indices =
+			rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
+		data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			data_ptr - huge_start_addr;
 		ce_cmd->ce_axi_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
-		ce_cmd->ce_axi_addr_high = 0;
 
 		for (i = 0; i< 32; i++)
-			ce_cmd->ce_fz_lut[i] =  rte_cpu_to_be_32(l_ce_cmd->ce_fz_lut[i]);
+			ce_cmd->ce_fz_lut[i] =
+				rte_cpu_to_be_32(l_ce_cmd->ce_fz_lut[i]);
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		rte_bbuf_dump(stdout, rte_pmd_op->input.data,
-			rte_pmd_op->input.data->pkt_len);
+		rte_bbuf_dump(stdout, polar_params->input.data,
+			polar_params->input.data->pkt_len);
 		rte_hexdump(stdout, "CE COMMAND", ce_cmd, sizeof(ce_command_t));
 #endif
 	} else {
-		cd_command_t *l_cd_cmd = &rte_pmd_op->feca_obj.command_chain_t.cd_command_ch_obj;
-		cd_command_t *cd_cmd = &bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
+		cd_command_t *l_cd_cmd =
+			&polar_params->feca_obj.command_chain_t.cd_command_ch_obj;
+		cd_command_t *cd_cmd =
+			&bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
 
-		rte_pmd_op->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;
-		bbdev_ipc_op->out_len = rte_cpu_to_be_32(rte_pmd_op->output.length);
-		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(rte_pmd_op->feca_obj.job_type);
+		polar_params->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;
 		l_cd_cmd->cd_cfg1.complete_trig_en = 1;
 		/* Set complete trigger */
-		cd_cmd->cd_cfg1.raw_cd_cfg1 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
-		cd_cmd->cd_cfg2.raw_cd_cfg2 = rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
-		cd_cmd->cd_pe_indices.raw_cd_pe_indices = rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
-		cd_cmd->cd_axi_data_addr_low = bbdev_ipc_op->out_addr;
-		cd_cmd->cd_axi_data_addr_high = 0;
+		cd_cmd->cd_cfg1.raw_cd_cfg1 =
+			rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
+		cd_cmd->cd_cfg2.raw_cd_cfg2 =
+			rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+		cd_cmd->cd_pe_indices.raw_cd_pe_indices =
+			rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
+		data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			data_ptr - huge_start_addr;
+		cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 
 		for (i = 0; i< 32; i++)
-			cd_cmd->cd_fz_lut[i] =  rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
+			cd_cmd->cd_fz_lut[i] =
+				rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		if (rte_pmd_op->input.data)
-			rte_bbuf_dump(stdout, rte_pmd_op->input.data,
-				rte_pmd_op->input.data->data_len);
+		if (polar_params->input.data)
+			rte_bbuf_dump(stdout, polar_params->input.data,
+				polar_params->input.data->data_len);
 		rte_hexdump(stdout, "CD COMMAND", cd_cmd, sizeof(cd_command_t));
 #endif
 	}	
@@ -826,14 +868,202 @@ fill_feca_desc_polar_op(struct rte_mbuf *in_mbuf, struct bbdev_ipc_dequeue_op *b
 	((uint64_t) ((unsigned long) (A) \
 		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
 
+static inline int
+prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
+		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+		    struct bbdev_la12xx_q_priv *q_priv,
+		    struct rte_mbuf *in_mbuf,
+		    struct rte_mbuf *out_mbuf)
+{
+	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
+	uint32_t total_out_bits;
+	int ret;
+
+	total_out_bits = (ldpc_enc->tb_params.cab *
+		ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
+		ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
+
+	if (ldpc_enc->se_ce_mux)
+		ldpc_enc->output.length = ldpc_enc->se_ce_mux_output_size;
+	else
+		ldpc_enc->output.length = (total_out_bits + 7)/8;
+
+	ret = fill_feca_desc_enc(q_priv, bbdev_ipc_op, bbdev_enc_op, in_mbuf);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR(
+			"fill_feca_desc_enc failed, ret: %d", ret);
+		return ret;
+	}
+	rte_bbuf_append(out_mbuf, ldpc_enc->output.length);
+
+	return 0;
+}
+
+static inline int
+prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
+		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+		    struct bbdev_la12xx_q_priv *q_priv,
+		    struct rte_mbuf *out_mbuf)
+{
+	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
+	struct rte_mbuf *harq_in_mbuf, *harq_out_mbuf;
+	uint32_t *codeblock_mask, i, total_out_bits, sd_circ_buf, l1_pcie_addr;
+	uint32_t byte, bit, num_code_blocks = 0, harq_out_len_per_cb;
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	char *data_ptr;
+	uint16_t sys_cols;
+	int ret;
+
+	sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
+	if (ldpc_dec->tb_params.c == 1) {
+		total_out_bits = ((sys_cols * ldpc_dec->z_c) -
+				ldpc_dec->n_filler);
+		/* 5G-NR protocol uses 16 bit CRC when output packet
+		 * size <= 3824 (bits). Otherwise 24 bit CRC is used.
+		 * Adjust the output bits accordingly
+		 */
+		if (total_out_bits - 16 <= 3824)
+			total_out_bits -= 16;
+		else
+			total_out_bits -= 24;
+		ldpc_dec->hard_output.length = (total_out_bits / 8);
+	} else {
+		total_out_bits = (((sys_cols * ldpc_dec->z_c) -
+				ldpc_dec->n_filler - 24) *
+				ldpc_dec->tb_params.c);
+		ldpc_dec->hard_output.length = (total_out_bits / 8) - 3;
+	}
+
+	codeblock_mask = ldpc_dec->codeblock_mask;
+	if (!ldpc_dec->non_compact_harq && (ldpc_dec->op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE)) {
+		/* Get the total number of enabled code blocks */
+		for (i = 0; i < ldpc_dec->tb_params.c; i++) {
+			byte = i / 32;
+			bit = i % 32;
+			if (codeblock_mask[byte] & (1 << bit))
+				num_code_blocks++;
+		}
+	} else {
+		/* Set the codeblock mask */
+		for (i = 0; i < ldpc_dec->tb_params.c; i++) {
+			/* Set the bit in codeblock */
+			byte = i / 32;
+			bit = i % 32;
+			codeblock_mask[byte] |= (1 << bit);
+		}
+		num_code_blocks = ldpc_dec->tb_params.c;
+	}
+
+	bbdev_ipc_op->num_code_blocks = rte_cpu_to_be_32(num_code_blocks);
+
+	ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_dec_op, out_mbuf);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR("fill_feca_desc_dec failed, ret: %d", ret);
+		return ret;
+	}
+
+	/* Set up HARQ related information */
+	harq_in_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_input.data;
+	if ((bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
+	    harq_in_mbuf) {
+		data_ptr = rte_pktmbuf_mtod(harq_in_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			data_ptr - huge_start_addr;
+		bbdev_ipc_op->harq_in_addr = l1_pcie_addr;
+		bbdev_ipc_op->harq_in_len = harq_in_mbuf->pkt_len;
+	}
+
+	harq_out_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_output.data;
+	if ((bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
+	    harq_out_mbuf) {
+		sd_circ_buf = rte_be_to_cpu_32(
+			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+		data_ptr = rte_pktmbuf_mtod(harq_out_mbuf, char *);
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			data_ptr - huge_start_addr;
+		bbdev_ipc_op->harq_out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+		harq_out_len_per_cb =
+			(128 * (uint32_t)ceil((double)sd_circ_buf/128));
+
+		if (harq_out_len_per_cb * ldpc_dec->tb_params.c >
+		    per_queue_hram_size) {
+			BBDEV_LA12XX_PMD_ERR(
+				"harq len required (%d) is more than allocated (%d)",
+				harq_out_len_per_cb * ldpc_dec->tb_params.c,
+				per_queue_hram_size);
+			return -1;
+		}
+
+		bbdev_ipc_op->harq_out_len_per_cb =
+			rte_cpu_to_be_32(harq_out_len_per_cb);
+	}
+
+	/* In case of retransmission, mbuf already have been filled in
+	 * the previous transmission. So skip appending data in mbuf.
+	 */
+	if ((rte_bbuf_data_len(out_mbuf)) == 0 || (ldpc_dec->rv_index == 0))
+		rte_bbuf_append(out_mbuf, ldpc_dec->hard_output.length);
+
+	if (ldpc_dec->max_num_harq_contexts)
+		bbdev_ipc_op->max_num_harq_contexts =
+			rte_cpu_to_be_32(ldpc_dec->max_num_harq_contexts);
+
+	return 0;
+}
+
+static inline int
+prepare_polar_op(struct rte_pmd_la12xx_polar_params *polar_params,
+		 struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+		 struct bbdev_la12xx_q_priv *q_priv,
+		 struct rte_mbuf *in_mbuf,
+		 struct rte_mbuf *out_mbuf)
+{
+	fill_feca_desc_polar_op(bbdev_ipc_op, polar_params, q_priv,
+				in_mbuf, out_mbuf);
+
+	if (out_mbuf)
+		rte_bbuf_append(out_mbuf, polar_params->output.length);
+
+	return 0;
+}
+
+static inline int
+prepare_raw_op(struct rte_pmd_la12xx_raw_params *raw_params,
+	       struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
+	       struct bbdev_la12xx_q_priv *q_priv,
+	       struct rte_mbuf *out_mbuf)
+{
+	char *huge_start_addr =
+		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	uint32_t l1_pcie_addr;
+
+	if (raw_params->metadata) {
+		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
+			(char *)raw_params->metadata - huge_start_addr;
+		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+	}
+
+	if (out_mbuf)
+		rte_bbuf_append(out_mbuf, raw_params->output.length);
+
+	return 0;
+}
+
 static int
-enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
-		void *bbdev_op, uint32_t op_type)
+enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 {
 	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	struct bbdev_ipc_dequeue_op *bbdev_ipc_op;
+	struct rte_bbdev_op_ldpc_enc *ldpc_enc;
+	struct rte_bbdev_op_ldpc_dec *ldpc_dec;
+	struct rte_pmd_la12xx_polar_params *polar_params;
+	struct rte_pmd_la12xx_raw_params *raw_params;
 	uint32_t q_id = q_priv->q_id;
 	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
@@ -843,15 +1073,9 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_mbuf *in_mbuf, *out_mbuf;
-	struct rte_mbuf *harq_in_mbuf, *harq_out_mbuf;
 	char *data_ptr;
-	uint32_t l1_pcie_addr, sd_circ_buf;
-	uint32_t total_out_bits;
-	uint32_t harq_out_len_per_cb;
-	uint16_t sys_cols;
+	uint32_t l1_pcie_addr;
 	int ret;
-
-	RTE_SET_USED(op_type);
 
 	ci = IPC_GET_CI_INDEX(md->ci);
 	ci_flag = IPC_GET_CI_FLAG(md->ci);
@@ -869,7 +1093,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	if (retry_count == BBDEV_LA12XX_TX_RETRY_COUNT) {
 		BBDEV_LA12XX_PMD_DP_DEBUG(
 				"bd ring full for queue id: %d", q_id);
-		h_stats->ipc_ch_stats[q_id].err_channel_full++;
 		return IPC_CH_FULL;
 	}
 
@@ -878,30 +1101,75 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 
 	virt = MODEM_P2V(bd->modem_ptr);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
-	bbdev_ipc_op->l2_cntx_l =
-	       lower_32_bits((uint64_t)bbdev_op);
-	bbdev_ipc_op->l2_cntx_h =
-	       upper_32_bits((uint64_t)bbdev_op);
-	bbdev_ipc_op->queue_id = rte_cpu_to_be_16(q_id);
-	bd->len = sizeof(struct bbdev_ipc_dequeue_op);
+	q_priv->bbdev_op[pi] = bbdev_op;
 
-	if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
-		in_mbuf = ((struct rte_bbdev_enc_op *)
-			bbdev_op)->ldpc_enc.input.data;
-		out_mbuf = ((struct rte_bbdev_enc_op *)
-			bbdev_op)->ldpc_enc.output.data;
-	} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
-		in_mbuf = ((struct rte_bbdev_dec_op *)
-			bbdev_op)->ldpc_dec.input.data;
-		out_mbuf = ((struct rte_bbdev_dec_op *)
-			bbdev_op)->ldpc_dec.hard_output.data;
-	} else {
-		in_mbuf = ((struct rte_pmd_la12xx_op *)bbdev_op)->input.data;
-		out_mbuf = ((struct rte_pmd_la12xx_op *)bbdev_op)->output.data;
+	switch (q_priv->op_type) {
+	case RTE_BBDEV_OP_LDPC_ENC:
+		ldpc_enc = &(((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc);
+		in_mbuf = ldpc_enc->input.data;
+		out_mbuf = ldpc_enc->output.data;
+
+		ret = prepare_ldpc_enc_op(bbdev_op, bbdev_ipc_op, q_priv,
+					  in_mbuf, out_mbuf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"process_ldpc_enc_op failed, ret: %d", ret);
+			return ret;
+		}
+		break;
+
+	case RTE_BBDEV_OP_LDPC_DEC:
+		ldpc_dec = &(((struct rte_bbdev_dec_op *)bbdev_op)->ldpc_dec);
+		in_mbuf = ldpc_dec->input.data;
+		out_mbuf = ldpc_dec->hard_output.data;
+
+		ret = prepare_ldpc_dec_op(bbdev_op, bbdev_ipc_op,
+					  q_priv, out_mbuf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"process_ldpc_dec_op failed, ret: %d", ret);
+			return ret;
+		}
+		break;
+
+	case RTE_BBDEV_OP_POLAR_ENC:
+	case RTE_BBDEV_OP_POLAR_DEC:
+		polar_params = &(((struct rte_pmd_la12xx_op *)
+				bbdev_op)->polar_params);
+		in_mbuf = polar_params->input.data;
+		out_mbuf = polar_params->output.data;
+
+		ret = prepare_polar_op(polar_params, bbdev_ipc_op,
+				       q_priv, in_mbuf, out_mbuf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"process_polar_op failed, ret: %d", ret);
+			return ret;
+		}
+		break;
+
+	case RTE_BBDEV_OP_LA12XX_RAW:
+		raw_params = &(((struct rte_pmd_la12xx_op *)
+			bbdev_op)->raw_params);
+		in_mbuf = raw_params->input.data;
+		out_mbuf = raw_params->output.data;
+
+		ret = prepare_raw_op(raw_params, bbdev_ipc_op,
+				     q_priv, out_mbuf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"process_raw_op failed, ret: %d", ret);
+			return ret;
+		}
+		break;
+
+	default:
+		BBDEV_LA12XX_PMD_ERR("unsupported bbdev_ipc op type");
+		return -1;
 	}
 
 	if (in_mbuf) {
-		data_ptr =  rte_pktmbuf_mtod(in_mbuf, char *);
+		data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			       data_ptr - huge_start_addr;
 		bbdev_ipc_op->in_addr = l1_pcie_addr;
@@ -909,166 +1177,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	}
 
 	if (out_mbuf) {
-		data_ptr =  rte_pktmbuf_mtod(out_mbuf, char *);
+		data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			data_ptr - huge_start_addr;
+				data_ptr - huge_start_addr;
 		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
-	}
-
-	if (op_type == BBDEV_IPC_ENC_OP_TYPE) {
-		struct rte_bbdev_enc_op *bbdev_enc_op = bbdev_op;
-		struct rte_bbdev_op_ldpc_enc *ldpc_enc =
-					&bbdev_enc_op->ldpc_enc;
-
-		total_out_bits = (ldpc_enc->tb_params.cab *
-			ldpc_enc->tb_params.ea) + (ldpc_enc->tb_params.c -
-			ldpc_enc->tb_params.cab) * ldpc_enc->tb_params.eb;
-
-
-		if (ldpc_enc->se_ce_mux)
-			ldpc_enc->output.length =
-					ldpc_enc->se_ce_mux_output_size;
-		else
-			ldpc_enc->output.length = (total_out_bits + 7)/8;
-
-		ret = fill_feca_desc_enc(q_priv, in_mbuf, bbdev_ipc_op,
-					 bbdev_op, huge_start_addr);
-		if (ret) {
-			BBDEV_LA12XX_PMD_ERR(
-				"fill_feca_desc_enc failed, ret: %d", ret);
-			return ret;
-		}
-		bbdev_ipc_op->out_len =
-			rte_cpu_to_be_32(ldpc_enc->output.length);
-		rte_bbuf_append(out_mbuf,
-				ldpc_enc->output.length);
-	} else if (op_type == BBDEV_IPC_DEC_OP_TYPE) {
-		struct rte_bbdev_dec_op *bbdev_dec_op = bbdev_op;
-		struct rte_bbdev_op_ldpc_dec *ldpc_dec =
-					&bbdev_dec_op->ldpc_dec;
-		uint32_t byte, bit, num_code_blocks = 0;
-		uint32_t *codeblock_mask, i;
-
-		sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
-		if (ldpc_dec->tb_params.c == 1) {
-			total_out_bits = ((sys_cols * ldpc_dec->z_c) -
-					ldpc_dec->n_filler);
-			/* 5G-NR protocol uses 16 bit CRC when output packet
-			 * size <= 3824 (bits). Otherwise 24 bit CRC is used.
-			 * Adjust the output bits accordingly
-			 */
-			if (total_out_bits - 16 <= 3824)
-				total_out_bits -= 16;
-			else
-				total_out_bits -= 24;
-			ldpc_dec->hard_output.length = (total_out_bits / 8);
-		} else {
-			total_out_bits = (((sys_cols * ldpc_dec->z_c) -
-					ldpc_dec->n_filler - 24) *
-					ldpc_dec->tb_params.c);
-			ldpc_dec->hard_output.length =
-					(total_out_bits / 8) - 3;
-		}
-
-		codeblock_mask = ldpc_dec->codeblock_mask;
-		if (!ldpc_dec->non_compact_harq && (ldpc_dec->op_flags &
-		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE)) {
-			/* Get the total number of enabled code blocks */
-			for (i = 0; i < ldpc_dec->tb_params.c; i++) {
-				byte = i / 32;
-				bit = i % 32;
-				if (codeblock_mask[byte] & (1 << bit))
-					num_code_blocks++;
-			}
-		} else {
-			/* Set the codeblock mask */
-			for (i = 0; i < ldpc_dec->tb_params.c; i++) {
-				/* Set the bit in codeblock */
-				byte = i / 32;
-				bit = i % 32;
-				codeblock_mask[byte] |= (1 << bit);
-			}
-			num_code_blocks = ldpc_dec->tb_params.c;
-		}
-
-		bbdev_ipc_op->num_code_blocks =
-			rte_cpu_to_be_32(num_code_blocks);
-
-		ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_op);
-		if (ret) {
-			BBDEV_LA12XX_PMD_ERR(
-				"fill_feca_desc_dec failed, ret: %d", ret);
-			return ret;
-		}
-
-		/* Set up HARQ related information */
-		harq_in_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_input.data;
-		if ((bbdev_dec_op->ldpc_dec.op_flags &
-		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
-		    harq_in_mbuf) {
-			data_ptr =  rte_pktmbuf_mtod(harq_in_mbuf, char *);
-			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-				data_ptr - huge_start_addr;
-			bbdev_ipc_op->harq_in_addr = l1_pcie_addr;
-			bbdev_ipc_op->harq_in_len = harq_in_mbuf->pkt_len;
-		}
-
-		harq_out_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_output.data;
-		if ((bbdev_dec_op->ldpc_dec.op_flags &
-		    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
-		    harq_out_mbuf) {
-			sd_circ_buf = rte_be_to_cpu_32(
-				bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
-			data_ptr =  rte_pktmbuf_mtod(harq_out_mbuf, char *);
-			l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-				data_ptr - huge_start_addr;
-			bbdev_ipc_op->harq_out_addr =
-				rte_cpu_to_be_32(l1_pcie_addr);
-			harq_out_len_per_cb =
-				(128 * (uint32_t)ceil((double)sd_circ_buf/128));
-
-			if (harq_out_len_per_cb * ldpc_dec->tb_params.c >
-			    per_queue_hram_size) {
-				BBDEV_LA12XX_PMD_ERR(
-					"harq len required (%d) is more than allocated (%d)",
-					harq_out_len_per_cb *
-					ldpc_dec->tb_params.c,
-					per_queue_hram_size);
-				return -1;
-			}
-
-			bbdev_ipc_op->harq_out_len_per_cb =
-				rte_cpu_to_be_32(harq_out_len_per_cb);
-		}
-
-		bbdev_ipc_op->out_len =
-			rte_cpu_to_be_32(ldpc_dec->hard_output.length);
-
-		/* In case of retransmission, mbuf already have been filled in
-		 * the previous transmission. So skip appending data in mbuf.
-		 */
-		if ((rte_bbuf_data_len(out_mbuf)) == 0 ||
-		    (ldpc_dec->rv_index == 0))
-			rte_bbuf_append(out_mbuf,
-					ldpc_dec->hard_output.length);
-
-		if (ldpc_dec->max_num_harq_contexts)
-			bbdev_ipc_op->max_num_harq_contexts =
-				rte_cpu_to_be_32(ldpc_dec->max_num_harq_contexts);
-	} else {
-		/* Polar encode/decode processing */
-		struct rte_pmd_la12xx_op *rte_pmd_op =
-				(struct rte_pmd_la12xx_op *)bbdev_op;
-
-		fill_feca_desc_polar_op(in_mbuf, bbdev_ipc_op, rte_pmd_op,
-					huge_start_addr);
-
-		if (out_mbuf) {
-			bbdev_ipc_op->out_len =
-				rte_cpu_to_be_32(rte_pmd_op->output.length);
-			rte_bbuf_append(out_mbuf,
-				rte_pmd_op->output.length);
-		}
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(out_mbuf->pkt_len);
 	}
 
 	/* Move Producer Index forward */
@@ -1088,9 +1201,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 	/* now update pi */
 	md->pi = pi;
 
-	h_stats->ipc_ch_stats[q_id].num_of_msg_sent++;
-	h_stats->ipc_ch_stats[q_id].total_msg_length += bd->len;
-
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 			"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
 			pi, ci, pi_flag, ci_flag, md->ring_size);
@@ -1099,7 +1209,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv,
 }
 
 /* Enqueue decode burst */
-	static uint16_t
+static uint16_t
 enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
 {
@@ -1107,8 +1217,7 @@ enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
 	int nb_enqueued, ret;
 
 	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
-		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-				BBDEV_IPC_DEC_OP_TYPE);
+		ret = enqueue_single_op(q_priv, ops[nb_enqueued]);
 		if (ret)
 			break;
 	}
@@ -1128,8 +1237,7 @@ enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
 	int nb_enqueued, ret;
 
 	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
-		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-				BBDEV_IPC_ENC_OP_TYPE);
+		ret = enqueue_single_op(q_priv, ops[nb_enqueued]);
 		if (ret)
 			break;
 	}
@@ -1161,7 +1269,7 @@ is_bd_ring_empty(uint32_t ci, uint32_t ci_flag,
 }
 
 /* Dequeue encode burst */
-static int
+static void *
 dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 {
 	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
@@ -1169,23 +1277,25 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 	uint32_t q_id = q_priv->q_id + HOST_RX_QUEUEID_OFFSET;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	uint32_t ci, ci_flag, pi, pi_flag, msg_len;
+	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_br_md_t *md;
 	uint64_t vaddr2 = 0;
 	ipc_bd_t *bdr, *bd;
+	void *op;
 
 	md = &(ch->br_msg_desc.md);
 	ci = IPC_GET_CI_INDEX(md->ci);
 	ci_flag = IPC_GET_CI_FLAG(md->ci);
 	pi = IPC_GET_PI_INDEX(md->pi);
 	pi_flag = IPC_GET_PI_FLAG(md->pi);
-	if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag)) {
-		h_stats->ipc_ch_stats[q_id].err_channel_empty++;
-		return IPC_CH_EMPTY;
-	}
+	if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag))
+		return NULL;
+
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
 		pi, ci, pi_flag, ci_flag, md->ring_size);
+
+	op = q_priv->bbdev_op[ci];
 
 	bdr = ch->br_msg_desc.bd;
 	bd = &bdr[ci];
@@ -1200,23 +1310,18 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-
 	md->ci = ci;
-	msg_len = bd->len;
-	if (msg_len > md->msg_size) {
-		h_stats->ipc_ch_stats[q_id].err_input_invalid++;
-		return IPC_INPUT_INVALID;
-	}
-	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
-	ipc_memcpy(dst, (void *)(vaddr2), msg_len);
 
-	h_stats->ipc_ch_stats[q_id].num_of_msg_recved++;
-	h_stats->ipc_ch_stats[q_id].total_msg_length += msg_len;
+	if (dst) {
+		vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+		ipc_memcpy(dst, (void *)(vaddr2), sizeof(struct bbdev_ipc_enqueue_op));
+	}
+
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"exit: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
 		pi, ci, pi_flag, ci_flag, md->ring_size);
 
-	return 0;
+	return op;
 }
 
 /* Dequeue decode burst */
@@ -1230,16 +1335,13 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
 	struct rte_bbdev_dec_op *l_op;
 	struct rte_mbuf *harq_out_mbuf;
-	int nb_dequeued, ret, tb_crc, cb_cnt;
+	int nb_dequeued, tb_crc, cb_cnt;
 	uint32_t harq_out_len;
 
 	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
-		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
-		if (ret)
+		ops[nb_dequeued] = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (!ops[nb_dequeued])
 			break;
-		ops[nb_dequeued] = (struct rte_bbdev_dec_op *)(((uint64_t)
-			bbdev_ipc_op.l2_cntx_h << 32) |
-			bbdev_ipc_op.l2_cntx_l);
 
 		l_op = ops[nb_dequeued];
 		l_op->status = bbdev_ipc_op.status;
@@ -1267,7 +1369,9 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		}
 
 		/* Copy code block crc status bits + TB status bit */
-		ipc_memcpy(l_op->crc_stat, (void *)MODEM_P2V(bbdev_ipc_op.crc_stat_addr), (cb_cnt >> 3) + 1);
+		ipc_memcpy(l_op->crc_stat,
+			   (void *)MODEM_P2V(bbdev_ipc_op.crc_stat_addr),
+			   (cb_cnt >> 3) + 1);
 		if (!(l_op->ldpc_dec.op_flags &
 		    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
 		    !(l_op->ldpc_dec.op_flags &
@@ -1276,13 +1380,11 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 			l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_dec.hard_output.data,
+		rte_bbuf_dump(stdout,
+			ops[nb_dequeued]->ldpc_dec.hard_output.data,
 			ops[nb_dequeued]->ldpc_dec.hard_output.data->data_len);
 #endif
 	}
-
-	if (ret != IPC_CH_EMPTY)
-		q_data->queue_stats.dequeue_err_count += nb_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
@@ -1295,24 +1397,18 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 {
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
-	int nb_dequeued, ret;
+	int nb_dequeued;
 
 	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
-		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
-		if (ret)
+		ops[nb_dequeued] = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (!ops[nb_dequeued])
 			break;
-		ops[nb_dequeued] = (struct rte_bbdev_enc_op *)(((uint64_t)
-			bbdev_ipc_op.l2_cntx_h << 32) |
-			bbdev_ipc_op.l2_cntx_l);
 		ops[nb_dequeued]->status = bbdev_ipc_op.status;
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_enc.output.data,
 			ops[nb_dequeued]->ldpc_enc.output.data->data_len);
 #endif
 	}
-
-	if (ret != IPC_CH_EMPTY)
-		q_data->queue_stats.dequeue_err_count += nb_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 
 	return nb_dequeued;
@@ -1328,15 +1424,14 @@ rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
 	int nb_enqueued, ret;
 
 	for (nb_enqueued = 0; nb_enqueued < num_ops; nb_enqueued++) {
-		ret = enqueue_single_op(q_priv, ops[nb_enqueued],
-					BBDEV_IPC_POLAR_OP_TYPE);
+		ret = enqueue_single_op(q_priv, ops[nb_enqueued]);
 		if (ret)
 			break;
 	}
 
 	q_data->queue_stats.enqueue_err_count += num_ops - nb_enqueued;
 	q_data->queue_stats.enqueued_count += nb_enqueued;
-	
+
 	return nb_enqueued;
 }
 
@@ -1347,25 +1442,26 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
-	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
-	int nb_dequeued, ret;
+	struct bbdev_ipc_enqueue_op bbdev_ipc_op, *p_bbdev_ipc_op;
+	int nb_dequeued;
+
+	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_RAW)
+		p_bbdev_ipc_op = NULL;
+	else
+		p_bbdev_ipc_op = &bbdev_ipc_op;
 
 	for (nb_dequeued = 0; nb_dequeued < num_ops; nb_dequeued++) {
-		ret = dequeue_single_op(q_priv, &bbdev_ipc_op);
-		if (ret)
+		ops[nb_dequeued] = dequeue_single_op(q_priv, p_bbdev_ipc_op);
+		if (!ops[nb_dequeued])
 			break;
-		ops[nb_dequeued] = (struct rte_pmd_la12xx_op *)(((uint64_t)
-			bbdev_ipc_op.l2_cntx_h << 32) |
-			bbdev_ipc_op.l2_cntx_l);
-		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+		if (q_priv->op_type != RTE_BBDEV_OP_LA12XX_RAW)
+			ops[nb_dequeued]->status = bbdev_ipc_op.status;
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		rte_bbuf_dump(stdout, ops[nb_dequeued]->output.data,
-			ops[nb_dequeued]->output.data->data_len);
+		rte_bbuf_dump(stdout,
+			ops[nb_dequeued]->polar_params.output.data,
+			ops[nb_dequeued]->polar_params.output.data->pkt_len);
 #endif
 	}
-
-	if (ret != IPC_CH_EMPTY)
-		q_data->queue_stats.dequeue_err_count += num_ops - nb_dequeued;
 	q_data->queue_stats.dequeued_count += nb_dequeued;
 	
 	return nb_dequeued;
@@ -1380,7 +1476,7 @@ rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
 	struct rte_pmd_la12xx_op *op = element;
 
 	memset(op, 0, mempool->elt_size);
-	op->mempool = mempool;
+	op->polar_params.mempool = mempool;
 }
 
 int
@@ -1520,7 +1616,6 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	struct gul_hif *mhif;
 	uint32_t phy_align = 0;
 	int ret, instance_id = 0;
-	struct gul_hif *hif_start = NULL;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1645,15 +1740,12 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 			ipc_priv->mhif_start.host_vaddr,
 			ipc_priv->mhif_start.size);
 	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
-	/* initiatlize Host instance stats */
-	h_stats = &(mhif->stats.h_ipc_stats);
 
 	/* offset is from start of PEB */
 	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
 			mhif->ipc_regs.ipc_mdata_offset);
 
 	if (sizeof(ipc_metadata_t) != mhif->ipc_regs.ipc_mdata_size) {
-		h_stats->err_md_sz_mismatch++;
 		BBDEV_LA12XX_PMD_ERR(
 			"\n ipc_metadata_t =%lx, mhif->ipc_regs.ipc_mdata_size=%x",
 			sizeof(ipc_metadata_t), mhif->ipc_regs.ipc_mdata_size);
@@ -1671,11 +1763,6 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	BBDEV_LA12XX_PMD_DEBUG("finish host init");
 
 	priv->ipc_priv = ipc_priv;
-
-	hif_start = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
-
-	/* Point to the HIF stats */
-	stats = &(hif_start->stats);
 
 	return 0;
 

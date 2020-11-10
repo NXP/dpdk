@@ -6,17 +6,12 @@
 #define _PMD_LA12XX_H_
 
 #include <rte_bbdev.h>
-
 #include <geul_feca.h>
 
-/** Structure specifying a single operation for la12xx */
-struct rte_pmd_la12xx_op {
-	/** Status of operation that was performed */
-	int status;
+/** Structure specifying a polar operation for la12xx */
+struct rte_pmd_la12xx_polar_params {
 	/** Mempool which op instance is in */
 	struct rte_mempool *mempool;
-	/** Opaque pointer for user data */
-	void *opaque_data;
 	/** Parameters for FECA job */
 	feca_job_t feca_obj;
 	/** The input buffer */
@@ -25,84 +20,111 @@ struct rte_pmd_la12xx_op {
 	struct rte_bbdev_op_data output;
 };
 
+/** Structure specifying a raw operation for la12xx */
+struct rte_pmd_la12xx_raw_params {
+	/** The input buffer */
+	struct rte_bbdev_op_data input;
+	/** The output buffer */
+	struct rte_bbdev_op_data output;
+	/** Associated metadata */
+	void *metadata;
+};
+
+/** Structure specifying a single operation for la12xx */
+struct rte_pmd_la12xx_op {
+	/** operation type */
+	enum rte_bbdev_op_type op_type;
+	/** Status of operation that was performed */
+	int status;
+	/** Opaque pointer for user data */
+	void *opaque_data;
+	union {
+		/** Polar op */
+		struct rte_pmd_la12xx_polar_params polar_params;
+		/** RAW op */
+		struct rte_pmd_la12xx_raw_params raw_params;
+	};
+};
+
 #define RTE_PMD_LA12xx_SET_POLAR_DEC(p) \
-	(p)->feca_obj.job_type =  FECA_JOB_CD;
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD;
 #define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX(p) \
-	(p)->feca_obj.job_type =  FECA_JOB_CD_DCM_ACK;
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD_DCM_ACK;
 #define RTE_PMD_LA12xx_SET_POLAR_ENC(p) \
-	(p)->feca_obj.job_type =  FECA_JOB_CE;
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CE;
 #define RTE_PMD_LA12xx_SET_POLAR_ENC_MUX(p) \
-	(p)->feca_obj.job_type =  FECA_JOB_CE_DCM;
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CE_DCM;
 #define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(p) \
-	((p)->feca_obj.job_type == FECA_JOB_CD_DCM_ACK)
+	((p)->polar_params.feca_obj.job_type == FECA_JOB_CD_DCM_ACK)
 #define RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(p) \
-	((p)->feca_obj.job_type == FECA_JOB_CE_DCM)
+	((p)->polar_params.feca_obj.job_type == FECA_JOB_CE_DCM)
 
 #define RTE_PMD_LA12xx_PD_pd_n(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pd_n
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pd_n
 #define RTE_PMD_LA12xx_PD_input_deint_bypass(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.input_deint_bypass
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.input_deint_bypass
 #define RTE_PMD_LA12xx_PD_output_deint_bypass(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.output_deint_bypass
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.output_deint_bypass
 #define	RTE_PMD_LA12xx_PD_rm_mode(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.rm_mode
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.rm_mode
 #define RTE_PMD_LA12xx_PD_pc_en(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pc_en
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.pc_en
 #define RTE_PMD_LA12xx_PD_crc_type(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.crc_type
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.crc_type
 #define RTE_PMD_LA12xx_PD_K(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
 #define RTE_PMD_LA12xx_PD_E(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.E
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.E
 #define RTE_PMD_LA12xx_PD_crc_rnti(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.crc_rnti
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg2.crc_rnti
 #define RTE_PMD_LA12xx_PD_pc_index0(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index0
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index0
 #define RTE_PMD_LA12xx_PD_pc_index1(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index1
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index1
 #define RTE_PMD_LA12xx_PD_pc_index2(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index2
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index2
 #define RTE_PMD_LA12xx_PD_FZ_LUT(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_fz_lut
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_fz_lut
 
 #define RTE_PMD_LA12xx_PE_pe_n(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pe_n
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pe_n
 #define RTE_PMD_LA12xx_PE_input_int_bypass(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.input_int_bypass
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.input_int_bypass
 #define RTE_PMD_LA12xx_PE_output_int_bypass(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.output_int_bypass
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.output_int_bypass
 #define	RTE_PMD_LA12xx_PE_rm_mode(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.rm_mode
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.rm_mode
 #define RTE_PMD_LA12xx_PE_pc_en(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pc_en
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pc_en
 #define RTE_PMD_LA12xx_PE_crc_type(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.crc_type
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.crc_type
 #define RTE_PMD_LA12xx_PE_dst_sel(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.dst_sel
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.dst_sel
 #define RTE_PMD_LA12xx_PE_K(p) \
-	(p)->feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
+	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_cfg1.K
 #define RTE_PMD_LA12xx_PE_E(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.E
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.E
 #define RTE_PMD_LA12xx_PE_crc_rnti(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.crc_rnti
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg2.crc_rnti
 #define RTE_PMD_LA12xx_PE_out_pad_bytes(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.out_pad_bytes
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.out_pad_bytes
 #define RTE_PMD_LA12xx_PE_block_concat_en(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.block_concat_en
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg3.block_concat_en
 #define RTE_PMD_LA12xx_PE_pc_index0(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index0
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index0
 #define RTE_PMD_LA12xx_PE_pc_index1(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index1
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index1
 #define RTE_PMD_LA12xx_PE_pc_index2(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index2
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_pe_indices.pc_index2
 #define RTE_PMD_LA12xx_PE_FZ_LUT(p) \
-	(p)->feca_obj.command_chain_t.ce_command_ch_obj.ce_fz_lut
+	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_fz_lut
 
 	
 #define RTE_PMD_LA12xx_POLAR_OP_DESC(p) \
-	(p)->feca_obj
+	(p)->polar_params.feca_obj
 void
-rte_pmd_la12xx_op_init(struct rte_mempool *mempool, __rte_unused void *arg, void *element,
+rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
+		__rte_unused void *arg, void *element,
 		__rte_unused unsigned int n);
 
 /**
