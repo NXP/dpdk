@@ -405,6 +405,47 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 	return 0;
 }
 
+uint16_t
+rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
+				    uint32_t input_circ_size)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipcu = priv->ipc_priv;
+	struct bbdev_la12xx_q_priv *q_priv;
+	struct gul_hif *mhif;
+	ipc_metadata_t *ipc_md;
+	ipc_ch_t *ch;
+	int instance_id = 0;
+	uint32_t op_type;
+
+	if (queue_id >= dev->data->num_queues) {
+		BBDEV_LA12XX_PMD_ERR(
+			"Invalid queue ID %d", queue_id);
+		return -1;
+	}
+
+	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+		mhif->ipc_regs.ipc_mdata_offset);
+
+	q_priv = dev->data->queues[queue_id].queue_private;
+	op_type = q_priv->op_type;
+
+	if (op_type != RTE_BBDEV_OP_LDPC_ENC &&
+			op_type != RTE_BBDEV_OP_LDPC_DEC) {
+		BBDEV_LA12XX_PMD_ERR(
+			"input circ buffer size configuration only supported for LDPC");
+		return -1;
+	}
+
+	ch = &ipc_md->instance_list[instance_id].ch_list[queue_id];
+	ch->feca_input_circ_size = rte_cpu_to_be_32(input_circ_size);
+	q_priv->feca_input_circ_size = input_circ_size;
+
+	return 0;
+}
+
 static int
 la12xx_start(struct rte_bbdev *dev)
 {

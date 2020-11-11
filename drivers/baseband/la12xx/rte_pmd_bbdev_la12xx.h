@@ -198,6 +198,24 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		uint16_t core_ids[], uint16_t num_queues);
 
 /**
+ * Assign a particular processing core on LA12xx for a particular queue.
+ * This is only supported for LDPC channels.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_id
+ *   Queue ID
+ * @param input_circ_size
+ *   Input circular buffer size for FECA
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+uint16_t
+rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
+				    uint32_t input_circ_size);
+
+/**
  * Check if LA12XX is active.
  * If LA12xx device has crashed/hung and needs reset/reboot, bbdev application
  * can call  * 'rte_pmd_la12xx_reset_restore_cfg' to reboot and re-configure
