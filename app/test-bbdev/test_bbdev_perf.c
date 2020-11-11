@@ -1496,20 +1496,21 @@ validate_op_chain(struct rte_bbdev_op_data *op,
 	uint8_t nb_dst_segments = orig_op->nb_segments;
 	uint32_t total_data_size = 0;
 
-	TEST_ASSERT(nb_dst_segments == b->nb_segs,
+	TEST_ASSERT(nb_dst_segments == op->is_direct_mem ? 1 : b->nb_segs,
 			"Number of segments differ in original (%u) and filled (%u) op",
-			nb_dst_segments, b->nb_segs);
+			nb_dst_segments, op->is_direct_mem ? 1 : b->nb_segs);
 
 	/* Validate each bbuf segment length */
 	for (i = 0; i < nb_dst_segments; ++i) {
 		/* Apply offset to the first bbuf segment */
 		uint16_t offset = (i == 0) ? op->offset : 0;
-		uint32_t data_len = rte_bbuf_data_len(b) - offset;
+		uint32_t data_len = op->is_direct_mem ? op->length : rte_bbuf_data_len(b) - offset;
 		total_data_size += orig_op->segments[i].length;
 		TEST_ASSERT(orig_op->segments[i].length == data_len,
 				"Length of segment differ in original (%u) and filled (%u) op",
 				orig_op->segments[i].length, data_len);
 		TEST_ASSERT_BUFFERS_ARE_EQUAL(orig_op->segments[i].addr,
+				op->is_direct_mem ? op->mem :
 				rte_bbuf_mtod_offset(b, uint32_t *, offset),
 				data_len,
 				"Output buffers (CB=%u) are not equal", i);
@@ -1517,7 +1518,7 @@ validate_op_chain(struct rte_bbdev_op_data *op,
 	}
 
 	/* Validate total bbuf pkt length */
-	uint32_t pkt_len = rte_bbuf_pkt_len(op->bdata) - op->offset;
+	uint32_t pkt_len = op->is_direct_mem ? op->length : rte_bbuf_pkt_len(op->bdata) - op->offset;
 	TEST_ASSERT(total_data_size == pkt_len,
 			"Length of data differ in original (%u) and filled (%u) op",
 			total_data_size, pkt_len);
@@ -2621,6 +2622,7 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 	for (i = 0; i < TEST_REPETITIONS; ++i) {
 		for (j = 0; j < num_ops; ++j) {
 			bbuf_reset(ops_enq[j]->ldpc_dec.hard_output.bdata);
+			ops_enq[j]->ldpc_dec.hard_output.length = 0;
 			if (check_bit(ref_op->ldpc_dec.op_flags,
 					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE))
 				bbuf_reset(
@@ -3427,13 +3429,68 @@ latency_test_ldpc_dec(void *arg)
 		for (j = 0; j < burst_sz; ++j)
 			ops_enq[j]->opaque_data = (void *)(uintptr_t)j;
 
+		if (vector->op_type != RTE_BBDEV_OP_NONE && i == 0) {
+			for (j = 0; j < burst_sz; ++j) {
+				/* Use data pointer for this test */
+
+				/* Input buffer */
+				ops_enq[j]->ldpc_dec.input.is_direct_mem = 1;
+				ops_enq[j]->ldpc_dec.input.mem =
+					rte_bbuf_mtod((struct rte_bbuf *)ops_enq[j]->ldpc_dec.input.bdata,
+						      char *);
+
+				/* Hard Output buffer */
+				ops_enq[j]->ldpc_dec.hard_output.is_direct_mem = 1;
+				ops_enq[j]->ldpc_dec.hard_output.mem =
+					rte_bbuf_mtod((struct rte_bbuf *)ops_enq[j]->ldpc_dec.hard_output.bdata,
+						      char *);
+				ops_enq[j]->ldpc_dec.hard_output.length = 0;
+
+				/* Soft Output buffer */
+				if (ops_enq[j]->ldpc_dec.soft_output.bdata) {
+					ops_enq[j]->ldpc_dec.soft_output.is_direct_mem = 1;
+					ops_enq[j]->ldpc_dec.soft_output.mem =
+						rte_bbuf_mtod((struct rte_bbuf *)ops_enq[j]->ldpc_dec.soft_output.bdata,
+							      char *);
+					ops_enq[j]->ldpc_dec.soft_output.length = 0;
+				}
+
+				/* HARQ input buffer */
+				if (ops_enq[j]->ldpc_dec.harq_combined_input.bdata) {
+					ops_enq[j]->ldpc_dec.harq_combined_input.is_direct_mem = 1;
+					ops_enq[j]->ldpc_dec.harq_combined_input.mem =
+						rte_bbuf_mtod((struct rte_bbuf *)ops_enq[j]->ldpc_dec.harq_combined_input.bdata,
+							      char *);
+				}
+
+				/* HARQ output buffer */
+				if (ops_enq[j]->ldpc_dec.harq_combined_output.bdata) {
+					ops_enq[j]->ldpc_dec.harq_combined_output.is_direct_mem = 1;
+					ops_enq[j]->ldpc_dec.harq_combined_output.mem =
+						rte_bbuf_mtod((struct rte_bbuf *)ops_enq[j]->ldpc_dec.harq_combined_output.bdata,
+							      char *);
+					ops_enq[j]->ldpc_dec.harq_combined_output.length = 0;
+				}
+			}
+		}
+
 		if (vector->op_type != RTE_BBDEV_OP_NONE) {
 			for (j = 0; j < burst_sz; ++j) {
-				bbuf_reset(ops_enq[j]->ldpc_dec.hard_output.bdata);
-				if (ops_enq[j]->ldpc_dec.soft_output.bdata)
-					bbuf_reset(ops_enq[j]->ldpc_dec.soft_output.bdata);
-				if (ops_enq[j]->ldpc_dec.harq_combined_output.bdata)
-					bbuf_reset(ops_enq[j]->ldpc_dec.harq_combined_output.bdata);
+				memset(ops_enq[j]->ldpc_dec.hard_output.mem, 0,
+				       ops_enq[j]->ldpc_dec.hard_output.length);
+				ops_enq[j]->ldpc_dec.hard_output.length = 0;
+
+				if (ops_enq[j]->ldpc_dec.soft_output.bdata) {
+					memset(ops_enq[j]->ldpc_dec.soft_output.mem, 0,
+					       ops_enq[j]->ldpc_dec.soft_output.length);
+					ops_enq[j]->ldpc_dec.soft_output.length = 0;
+				}
+
+				if (ops_enq[j]->ldpc_dec.harq_combined_output.bdata) {
+					memset(ops_enq[j]->ldpc_dec.harq_combined_output.mem, 0,
+					       ops_enq[j]->ldpc_dec.harq_combined_output.length);
+					ops_enq[j]->ldpc_dec.harq_combined_output.length = 0;
+				}
 			}
 		}
 

@@ -214,6 +214,11 @@ enum rte_bbdev_op_ldpcenc_flag_bitmasks {
 
 /** Data input and output buffer for BBDEV operations */
 struct rte_bbdev_op_data {
+	/** If set, this indicates that the memory pointer provided in
+	 * data/bdata/mem is a mempory pointer which is a contiguous memory
+	 * having the data (and is not a mbuf or a bbuf)
+	 */
+	uint32_t is_direct_mem;
 	union {
 		/** The mbuf data structure representing the data for BBDEV operation.
 		 *
@@ -252,6 +257,13 @@ struct rte_bbdev_op_data {
 		 * length of the buffer and offset of the starting data respectively.
 		 */
 		void *bdata;
+
+		/** memory pointer representing the data for BBDEV operation.
+		 * This is a contiguous memory which uses length and offset
+		 * parameters from rte_bbdev_op_data structure to evaluate the
+		 * length of the buffer and offset of the starting data respectively.
+		 */
+		void *mem;
 	};
 	/** The starting point of the BBDEV (encode/decode) operation,
 	 * in bytes.

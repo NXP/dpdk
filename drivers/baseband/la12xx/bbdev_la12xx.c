@@ -50,6 +50,15 @@
 #define BBDEV_LA12XX_POLAR_DEC_CORE	3
 #define BBDEV_LA12XX_RAW_CORE		3
 
+static inline char *
+get_data_ptr(struct rte_bbdev_op_data *op_data)
+{
+	if (op_data->is_direct_mem)
+	       return op_data->mem;
+
+	return rte_bbuf_mtod((struct rte_bbuf *)op_data->bdata, char *);
+}
+
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
 
@@ -510,7 +519,7 @@ static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_enc_op *bbdev_enc_op,
-		   struct rte_mbuf *in_mbuf)
+		   struct rte_bbdev_op_data *in_op_data)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	char *huge_start_addr =
@@ -584,11 +593,12 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	se_command->se_sc_x1_init = rte_cpu_to_be_32(SE_SC_X1_INIT);
 	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
 
-	data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
+	data_ptr = get_data_ptr(in_op_data);//rte_bbuf_mtod((struct rte_bbuf *)in_op_data->bdata, char *);
 	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 		data_ptr - huge_start_addr;
 	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
-	se_command->se_axi_in_num_bytes = rte_cpu_to_be_32(in_mbuf->pkt_len);
+	se_command->se_axi_in_num_bytes =
+		rte_cpu_to_be_32(in_op_data->length);
 
 	memset(se_command->se_cb_mask, 0xFF, (8 * sizeof(uint32_t)));
 
@@ -656,7 +666,7 @@ static int
 fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_dec_op *bbdev_dec_op,
-		   struct rte_mbuf *out_mbuf)
+		   struct rte_bbdev_op_data *out_op_data)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
 	char *huge_start_addr =
@@ -756,12 +766,12 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 
 	/* out_addr has already been swapped in the calling function */
-	data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
+	data_ptr = get_data_ptr(out_op_data);//rte_bbuf_mtod((struct rte_bbuf *)out_op_data->bdata, char *);
 	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 		data_ptr - huge_start_addr;
 	sd_command->sd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	sd_command->sd_axi_data_num_bytes =
-		rte_cpu_to_be_32(bbdev_dec_op->ldpc_dec.hard_output.length);
+		rte_cpu_to_be_32(out_op_data->length);
 
 	for (i = 0; i < 8; i++)
 		sd_command->sd_cb_mask[i] =
@@ -831,8 +841,8 @@ static void
 fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			struct rte_pmd_la12xx_polar_params *polar_params,
 			struct bbdev_la12xx_q_priv *q_priv,
-			struct rte_mbuf *in_mbuf,
-			struct rte_mbuf *out_mbuf)
+			struct rte_bbdev_op_data *in_op_data,
+			struct rte_bbdev_op_data *out_op_data)
 {
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
@@ -860,7 +870,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			rte_cpu_to_be_32(l_ce_cmd->ce_cfg3.raw_ce_cfg3);
 		ce_cmd->ce_pe_indices.raw_ce_pe_indices =
 			rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
-		data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
+		data_ptr = get_data_ptr(in_op_data);//rte_bbuf_mtod((struct rte_bbuf *)in_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			data_ptr - huge_start_addr;
 		ce_cmd->ce_axi_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
@@ -889,7 +899,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
 		cd_cmd->cd_pe_indices.raw_cd_pe_indices =
 			rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
-		data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
+		data_ptr = get_data_ptr(out_op_data);//rte_bbuf_mtod((struct rte_bbuf *)out_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			data_ptr - huge_start_addr;
 		cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
@@ -916,8 +926,8 @@ static inline int
 prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
 		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		    struct bbdev_la12xx_q_priv *q_priv,
-		    struct rte_mbuf *in_mbuf,
-		    struct rte_mbuf *out_mbuf)
+		    struct rte_bbdev_op_data *in_op_data,
+		    struct rte_bbdev_op_data *out_op_data)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	uint32_t total_out_bits;
@@ -932,13 +942,15 @@ prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
 	else
 		ldpc_enc->output.length = (total_out_bits + 7)/8;
 
-	ret = fill_feca_desc_enc(q_priv, bbdev_ipc_op, bbdev_enc_op, in_mbuf);
+	ret = fill_feca_desc_enc(q_priv, bbdev_ipc_op,
+				 bbdev_enc_op, in_op_data);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"fill_feca_desc_enc failed, ret: %d", ret);
 		return ret;
 	}
-	rte_bbuf_append(out_mbuf, ldpc_enc->output.length);
+	rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
+			ldpc_enc->output.length);
 
 	return 0;
 }
@@ -947,10 +959,11 @@ static inline int
 prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		    struct bbdev_la12xx_q_priv *q_priv,
-		    struct rte_mbuf *out_mbuf)
+		    struct rte_bbdev_op_data *out_op_data)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
-	struct rte_mbuf *harq_in_mbuf, *harq_out_mbuf;
+	struct rte_bbdev_op_data *harq_in_op_data, *harq_out_op_data;
+	uint32_t out_op_data_orig_len = ldpc_dec->hard_output.length;
 	uint32_t *codeblock_mask, i, total_out_bits, sd_circ_buf, l1_pcie_addr;
 	uint32_t byte, bit, num_code_blocks = 0, harq_out_len_per_cb;
 	char *huge_start_addr =
@@ -1002,31 +1015,32 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 
 	bbdev_ipc_op->num_code_blocks = rte_cpu_to_be_32(num_code_blocks);
 
-	ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op, bbdev_dec_op, out_mbuf);
+	ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op,
+				 bbdev_dec_op, out_op_data);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR("fill_feca_desc_dec failed, ret: %d", ret);
 		return ret;
 	}
 
 	/* Set up HARQ related information */
-	harq_in_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_input.data;
+	harq_in_op_data = &bbdev_dec_op->ldpc_dec.harq_combined_input;
 	if ((bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
-	    harq_in_mbuf) {
-		data_ptr = rte_pktmbuf_mtod(harq_in_mbuf, char *);
+	    harq_in_op_data->bdata) {
+		data_ptr = get_data_ptr(harq_in_op_data);//rte_bbuf_mtod((struct rte_bbuf *)harq_in_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			data_ptr - huge_start_addr;
 		bbdev_ipc_op->harq_in_addr = l1_pcie_addr;
-		bbdev_ipc_op->harq_in_len = harq_in_mbuf->pkt_len;
+		bbdev_ipc_op->harq_in_len = harq_in_op_data->length;
 	}
 
-	harq_out_mbuf = bbdev_dec_op->ldpc_dec.harq_combined_output.data;
+	harq_out_op_data = &bbdev_dec_op->ldpc_dec.harq_combined_output;
 	if ((bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
-	    harq_out_mbuf) {
+	    harq_out_op_data->bdata) {
 		sd_circ_buf = rte_be_to_cpu_32(
 			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
-		data_ptr = rte_pktmbuf_mtod(harq_out_mbuf, char *);
+		data_ptr = get_data_ptr(harq_out_op_data);//rte_bbuf_mtod((struct rte_bbuf *)harq_out_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			data_ptr - huge_start_addr;
 		bbdev_ipc_op->harq_out_addr = rte_cpu_to_be_32(l1_pcie_addr);
@@ -1049,8 +1063,9 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	/* In case of retransmission, mbuf already have been filled in
 	 * the previous transmission. So skip appending data in mbuf.
 	 */
-	if ((rte_bbuf_data_len(out_mbuf)) == 0 || (ldpc_dec->rv_index == 0))
-		rte_bbuf_append(out_mbuf, ldpc_dec->hard_output.length);
+	if ((out_op_data_orig_len == 0) || (ldpc_dec->rv_index == 0))
+		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
+				ldpc_dec->hard_output.length);
 
 	if (ldpc_dec->max_num_harq_contexts)
 		bbdev_ipc_op->max_num_harq_contexts =
@@ -1063,14 +1078,15 @@ static inline int
 prepare_polar_op(struct rte_pmd_la12xx_polar_params *polar_params,
 		 struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		 struct bbdev_la12xx_q_priv *q_priv,
-		 struct rte_mbuf *in_mbuf,
-		 struct rte_mbuf *out_mbuf)
+		 struct rte_bbdev_op_data *in_op_data,
+		 struct rte_bbdev_op_data *out_op_data)
 {
 	fill_feca_desc_polar_op(bbdev_ipc_op, polar_params, q_priv,
-				in_mbuf, out_mbuf);
+				in_op_data, out_op_data);
 
-	if (out_mbuf)
-		rte_bbuf_append(out_mbuf, polar_params->output.length);
+	if (out_op_data->bdata)
+		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
+				polar_params->output.length);
 
 	return 0;
 }
@@ -1079,7 +1095,7 @@ static inline int
 prepare_raw_op(struct rte_pmd_la12xx_raw_params *raw_params,
 	       struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	       struct bbdev_la12xx_q_priv *q_priv,
-	       struct rte_mbuf *out_mbuf)
+	       struct rte_bbdev_op_data *out_op_data)
 {
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
@@ -1091,8 +1107,9 @@ prepare_raw_op(struct rte_pmd_la12xx_raw_params *raw_params,
 		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 	}
 
-	if (out_mbuf)
-		rte_bbuf_append(out_mbuf, raw_params->output.length);
+	if (out_op_data->bdata)
+		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
+				raw_params->output.length);
 
 	return 0;
 }
@@ -1116,7 +1133,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	uint64_t virt, retry_count = 0;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
-	struct rte_mbuf *in_mbuf, *out_mbuf;
+	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	int ret;
@@ -1150,11 +1167,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
 		ldpc_enc = &(((struct rte_bbdev_enc_op *)bbdev_op)->ldpc_enc);
-		in_mbuf = ldpc_enc->input.data;
-		out_mbuf = ldpc_enc->output.data;
+		in_op_data = &ldpc_enc->input;
+		out_op_data = &ldpc_enc->output;
 
 		ret = prepare_ldpc_enc_op(bbdev_op, bbdev_ipc_op, q_priv,
-					  in_mbuf, out_mbuf);
+					  in_op_data, out_op_data);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_ldpc_enc_op failed, ret: %d", ret);
@@ -1164,11 +1181,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 
 	case RTE_BBDEV_OP_LDPC_DEC:
 		ldpc_dec = &(((struct rte_bbdev_dec_op *)bbdev_op)->ldpc_dec);
-		in_mbuf = ldpc_dec->input.data;
-		out_mbuf = ldpc_dec->hard_output.data;
+		in_op_data = &ldpc_dec->input;
+		out_op_data = &ldpc_dec->hard_output;
 
 		ret = prepare_ldpc_dec_op(bbdev_op, bbdev_ipc_op,
-					  q_priv, out_mbuf);
+					  q_priv, out_op_data);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_ldpc_dec_op failed, ret: %d", ret);
@@ -1180,11 +1197,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	case RTE_BBDEV_OP_POLAR_DEC:
 		polar_params = &(((struct rte_pmd_la12xx_op *)
 				bbdev_op)->polar_params);
-		in_mbuf = polar_params->input.data;
-		out_mbuf = polar_params->output.data;
+		in_op_data = &polar_params->input;
+		out_op_data = &polar_params->output;
 
 		ret = prepare_polar_op(polar_params, bbdev_ipc_op,
-				       q_priv, in_mbuf, out_mbuf);
+				       q_priv, in_op_data, out_op_data);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_polar_op failed, ret: %d", ret);
@@ -1195,11 +1212,11 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	case RTE_BBDEV_OP_LA12XX_RAW:
 		raw_params = &(((struct rte_pmd_la12xx_op *)
 			bbdev_op)->raw_params);
-		in_mbuf = raw_params->input.data;
-		out_mbuf = raw_params->output.data;
+		in_op_data = &raw_params->input;
+		out_op_data = &raw_params->output;
 
 		ret = prepare_raw_op(raw_params, bbdev_ipc_op,
-				     q_priv, out_mbuf);
+				     q_priv, out_op_data);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_raw_op failed, ret: %d", ret);
@@ -1212,20 +1229,20 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		return -1;
 	}
 
-	if (in_mbuf) {
-		data_ptr = rte_pktmbuf_mtod(in_mbuf, char *);
+	if (in_op_data->bdata) {
+		data_ptr = get_data_ptr(in_op_data);//rte_bbuf_mtod((struct rte_bbuf *)in_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			       data_ptr - huge_start_addr;
 		bbdev_ipc_op->in_addr = l1_pcie_addr;
-		bbdev_ipc_op->in_len = in_mbuf->pkt_len;
+		bbdev_ipc_op->in_len = in_op_data->length;
 	}
 
-	if (out_mbuf) {
-		data_ptr = rte_pktmbuf_mtod(out_mbuf, char *);
+	if (out_op_data->bdata) {
+		data_ptr = get_data_ptr(out_op_data);//rte_bbuf_mtod((struct rte_bbuf *)out_op_data->bdata, char *);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 				data_ptr - huge_start_addr;
 		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
-		bbdev_ipc_op->out_len = rte_cpu_to_be_32(out_mbuf->pkt_len);
+		bbdev_ipc_op->out_len = rte_cpu_to_be_32(out_op_data->length);
 	}
 
 	/* Move Producer Index forward */
@@ -1378,7 +1395,7 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
 	struct rte_bbdev_dec_op *l_op;
-	struct rte_mbuf *harq_out_mbuf;
+	struct rte_bbdev_op_data *harq_out_op_data;
 	int nb_dequeued, tb_crc, cb_cnt;
 	uint32_t harq_out_len;
 
@@ -1390,15 +1407,16 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		l_op = ops[nb_dequeued];
 		l_op->status = bbdev_ipc_op.status;
 
-		harq_out_mbuf = l_op->ldpc_dec.harq_combined_output.data;
+		harq_out_op_data = &l_op->ldpc_dec.harq_combined_output;
 		if ((l_op->ldpc_dec.op_flags &
 		    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
-		    harq_out_mbuf) {
+		    harq_out_op_data->bdata) {
 			harq_out_len =
 				rte_be_to_cpu_32(bbdev_ipc_op.harq_out_len);
 			l_op->ldpc_dec.harq_combined_output.length =
 				harq_out_len;
-			rte_bbuf_append(harq_out_mbuf, harq_out_len);
+			rte_bbuf_append((struct rte_bbuf *)harq_out_op_data->bdata,
+					harq_out_len);
 			l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
 		}
 
