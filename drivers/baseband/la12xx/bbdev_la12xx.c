@@ -504,6 +504,8 @@ is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
 	return 0;
 }
 
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
 static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
@@ -904,6 +906,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 #endif
 	}	
 }
+#pragma GCC pop_options
 
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
