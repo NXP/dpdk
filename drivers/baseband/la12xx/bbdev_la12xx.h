@@ -8,11 +8,13 @@
 #define BBDEV_IPC_ENC_OP_TYPE	1
 #define BBDEV_IPC_DEC_OP_TYPE	2
 #define BBDEV_IPC_POLAR_OP_TYPE	3
+#define BBDEV_IPC_RAW_OP_TYPE	4
 
 #define MAX_LDPC_ENC_FECA_QUEUES	4
 #define MAX_LDPC_DEC_FECA_QUEUES	4
 #define MAX_POLAR_ENC_FECA_QUEUES	4
 #define MAX_POLAR_DEC_FECA_QUEUES	4
+#define MAX_RAW_QUEUES			4
 
 #define FECA_HRAM_SIZE		6291456		/* 6 MB */
 
@@ -39,8 +41,10 @@ struct bbdev_la12xx_q_priv {
 	int32_t eventfd;	/**< Event FD value */
 	enum rte_bbdev_op_type op_type; /**< Operation type */
 	uint32_t la12xx_core_id;	/* LA12xx core ID on which this will be scheduled */
+	uint32_t feca_input_circ_size;	/* FECA transport block input circular buffer size */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
+	void *bbdev_op[MAX_CHANNEL_DEPTH]; /** Stores bbdev op for each index */
 };
 
 #define lower_32_bits(x) ((uint32_t)(x))

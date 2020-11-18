@@ -81,7 +81,7 @@ struct test_bbdev_vector {
 		struct rte_bbdev_op_turbo_enc turbo_enc;
 		struct rte_bbdev_op_ldpc_dec ldpc_dec;
 		struct rte_bbdev_op_ldpc_enc ldpc_enc;
-		struct rte_pmd_la12xx_op polar_op;
+		struct rte_pmd_la12xx_op la12xx_op;
 	};
 	uint16_t core_mask;
 	/* Additional storage for op data entries */
