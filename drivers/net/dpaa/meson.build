@@ -8,6 +8,7 @@ endif
 deps += ['mempool_dpaa']
 
 sources = files('dpaa_ethdev.c',
+		'dpaa_oldev.c',
 		'fmlib/fm_lib.c',
 		'fmlib/fm_vsp.c',
 		'dpaa_flow.c',

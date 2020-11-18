@@ -190,6 +190,31 @@ dpaa_create_device_list(void)
 
 	rte_dpaa_bus.device_count = i;
 
+	/* Creating OL Device */
+	if (getenv("OLDEV_ENABLED")) {
+		dev = calloc(1, sizeof(struct rte_dpaa_device));
+		if (!dev) {
+			DPAA_BUS_LOG(ERR, "Failed to allocate OL devices");
+			ret = -1;
+			goto cleanup;
+		}
+
+		dev->device_type = FSL_DPAA_OL;
+		dev->id.ol_id = 0;
+		dev->id.dev_id = rte_dpaa_bus.device_count;
+
+		/* Create device name */
+		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
+		sprintf(dev->name, "oldev%d", (dev->id.ol_id + 1));
+		DPAA_BUS_LOG(INFO, "%s oldev added", dev->name);
+		dev->device.name = dev->name;
+		dev->device.devargs = dpaa_devargs_lookup(dev);
+
+		dpaa_add_to_device_list(dev);
+		rte_dpaa_bus.device_count++;
+	}
+
+
 	/* Unlike case of ETH, RTE_LIBRTE_DPAA_MAX_CRYPTODEV SEC devices are
 	 * constantly created only if "sec" property is found in the device
 	 * tree. Logically there is no limit for number of devices (QI
@@ -677,8 +702,9 @@ rte_dpaa_bus_probe(void)
 			    RTE_DEV_WHITELISTED)) {
 				ret = drv->probe(drv, dev);
 				if (ret) {
-					DPAA_BUS_ERR("unable to probe:%s",
-						     dev->name);
+					if (!getenv("OLDEV_ENABLED"))
+						DPAA_BUS_ERR("unable to probe:%s",
+							     dev->name);
 				} else {
 					dev->driver = drv;
 					dev->device.driver = &drv->driver;

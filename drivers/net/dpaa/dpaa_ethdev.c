@@ -2202,8 +2202,8 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 			RTE_LOG(INFO, PMD, "Using FMC less mode\n");
 		} else {
 			if (access(FMC_FILE, F_OK) == -1) {
-				RTE_LOG(ERR, PMD,
-				"FMC Not configured. Please run fmc tool\n");
+				if (!getenv("OLDEV_ENABLED"))
+					RTE_LOG(ERR, PMD, "FMC Not configured. Please run fmc tool\n");
 				return -1;
 			}
 			RTE_LOG(INFO, PMD, "Using FMC script mode,"
