@@ -92,7 +92,7 @@ uint32_t g_burst = RTE_QDMA_BURST_NB_MAX;
 uint64_t g_target_pci_vaddr;
 int g_packet_size = 1024;
 uint64_t g_pci_size = TEST_PCI_SIZE_LIMIT;
-int g_packet_num = (54 * 1024);
+int g_packet_num = (1 * 1024);
 int g_latency;
 int g_memcpy;
 int g_scatter_gather;
@@ -470,7 +470,10 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 	float nsPerCycle = (float) (1000 * rate) / ((float) freq);
 	uint64_t cycle1 = 0, cycle2 = 0;
 	float speed;
-	int32_t i, j;
+	int32_t i;
+	unsigned int j;
+	const struct rte_memzone *mz0, *mz1;
+	char src_name[16], dst_name[16];
 
 	lcore_id = rte_lcore_id();
 
@@ -493,12 +496,26 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 		/* configure pci virtual address in SMMU via VFIO */
 		rte_fslmc_vfio_mem_dmamap(pci_vaddr,
 					  g_target_pci_vaddr, len);
-		g_buf = rte_malloc("test qdma", g_pci_size, 4096);
-		g_buf1 = rte_malloc("test qdma", g_pci_size, 4096);
+		snprintf(src_name, 16, "src_n-%d", 1);
+		snprintf(dst_name, 16, "dst_n-%d", 1);
+		mz0 = rte_memzone_reserve_aligned(src_name, g_pci_size, 0,
+				RTE_MEMZONE_IOVA_CONTIG, 4096);
+		if (!mz0) {
+			printf("Memzone %s reserve failed\n", src_name);
+			return -1;
+		}
+		g_buf = mz0->addr;
+		mz1 = rte_memzone_reserve_aligned(dst_name, g_pci_size, 0,
+				RTE_MEMZONE_IOVA_CONTIG, 4096);
+		if (!mz1) {
+			printf("Memzone %s reserve failed\n", dst_name);
+			return -1;
+		}
+		g_buf1 = mz1->addr;
 		printf("Local bufs, g_buf %p, g_buf1 %p\n",
 			g_buf, g_buf1);
-		g_iova = rte_malloc_virt2iova((const void *) g_buf);
-		g_iova1 = rte_malloc_virt2iova((const void *) g_buf1);
+		g_iova = mz0->iova;
+		g_iova1 = mz1->iova;
 	}
 
 	/* setup QDMA queues */
@@ -523,18 +540,32 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 
 	/* Adavance prepare the jobs for the test */
 	for (j = 0; j < MAX_CORE_COUNT; j++) {
-		if (!rte_lcore_is_enabled(j))
+		if (!rte_lcore_is_enabled(j) || j == rte_get_master_lcore())
 			continue;
 
 		if (g_rbp_testcase == MEM_TO_MEM) {
-			g_buf = rte_malloc("test qdma",
-				TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
-			g_buf1 = rte_malloc("test qdma",
-				TEST_PACKETS_NUM*TEST_PACKET_SIZE, 4096);
+			snprintf(src_name, 16, "src_p-%d", j+1);
+			snprintf(dst_name, 16, "dst_p-%d", j+1);
+			mz0 = rte_memzone_reserve_aligned(src_name,
+					TEST_PACKETS_NUM*TEST_PACKET_SIZE, 0,
+					RTE_MEMZONE_IOVA_CONTIG, 4096);
+			if (!mz0) {
+				printf("Memzone %s reserve failed\n", src_name);
+				return -1;
+			}
+			g_buf = mz0->addr;
+			mz1 = rte_memzone_reserve_aligned(dst_name,
+					TEST_PACKETS_NUM*TEST_PACKET_SIZE, 0,
+					RTE_MEMZONE_IOVA_CONTIG, 4096);
+			if (!mz1) {
+				printf("Memzone %s reserve failed\n", dst_name);
+				return -1;
+			}
+			g_buf1 = mz1->addr;
 			printf("Local bufs, g_buf %p, g_buf1 %p\n",
 				g_buf, g_buf1);
-			g_iova = rte_malloc_virt2iova((const void *) g_buf);
-			g_iova1 = rte_malloc_virt2iova((const void *) g_buf1);
+			g_iova = mz0->iova;
+			g_iova1 = mz1->iova;
 		}
 
 		g_jobs[j] = rte_zmalloc("test qdma",
