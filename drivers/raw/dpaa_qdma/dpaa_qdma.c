@@ -20,12 +20,6 @@
 /* Dynamic log type identifier */
 int dpaa_qdma_logtype;
 
-static inline u64
-qdma_ccdf_addr_get64(const struct fsl_qdma_format *ccdf)
-{
-	return rte_le_to_cpu_64(ccdf->data) & 0xffffffffffLLU;
-}
-
 static inline void
 qdma_desc_addr_set64(struct fsl_qdma_format *ccdf, u64 addr)
 {
@@ -73,11 +67,6 @@ static inline void qdma_csgf_set_f(struct fsl_qdma_format *csgf, int len)
 	csgf->cfg = rte_cpu_to_le_32(QDMA_SG_FIN | (len & QDMA_SG_LEN_MASK));
 }
 
-static inline void qdma_csgf_set_e(struct fsl_qdma_format *csgf, int len)
-{
-	csgf->cfg = rte_cpu_to_le_32(QDMA_SG_EXT | (len & QDMA_SG_LEN_MASK));
-}
-
 static inline int ilog2(int x)
 {
 	int log = 0;
@@ -103,12 +92,12 @@ static void qdma_writel(u32 val, void *addr)
 
 static u32 qdma_readl_be(void *addr)
 {
-       return QDMA_IN_BE(addr);
+	return QDMA_IN_BE(addr);
 }
 
 static void qdma_writel_be(u32 val, void *addr)
 {
-       QDMA_OUT_BE(addr, val);
+	QDMA_OUT_BE(addr, val);
 }
 
 static void *dma_pool_alloc(int size, int aligned, dma_addr_t *phy_addr)
