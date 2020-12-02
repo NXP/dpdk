@@ -149,7 +149,8 @@ static void dma_pool_free(dma_addr_t *addr)
 	uint16_t i;
 
 	for (i = 0 ; i < qdma_mz_count; i++) {
-		if (addr == (dma_addr_t *)qdma_mz_mapping[i]->iova) {
+		if (addr == (dma_addr_t *)
+			(uintptr_t)qdma_mz_mapping[i]->iova) {
 			rte_memzone_free(qdma_mz_mapping[i]);
 			return;
 		}
@@ -180,8 +181,9 @@ static void fsl_qdma_free_chan_resources(struct fsl_qdma_chan *fsl_chan)
 		dma_pool_free(comp_temp->virt_addr);
 		dma_pool_free(comp_temp->desc_virt_addr);
 #else
-		dma_pool_free((dma_addr_t *)comp_temp->bus_addr);
-		dma_pool_free((dma_addr_t *)comp_temp->desc_bus_addr);
+		dma_pool_free((dma_addr_t *)(uintptr_t)comp_temp->bus_addr);
+		dma_pool_free((dma_addr_t *)
+				(uintptr_t)comp_temp->desc_bus_addr);
 #endif
 		rte_free(comp_temp);
 	}
@@ -193,8 +195,9 @@ static void fsl_qdma_free_chan_resources(struct fsl_qdma_chan *fsl_chan)
 		dma_pool_free(comp_temp->virt_addr);
 		dma_pool_free(comp_temp->desc_virt_addr);
 #else
-		dma_pool_free((dma_addr_t *)comp_temp->bus_addr);
-		dma_pool_free((dma_addr_t *)comp_temp->desc_bus_addr);
+		dma_pool_free((dma_addr_t *)(uintptr_t)comp_temp->bus_addr);
+		dma_pool_free((dma_addr_t *)
+				(uintptr_t)comp_temp->desc_bus_addr);
 #endif
 		rte_free(comp_temp);
 	}
@@ -892,7 +895,7 @@ dpaa_qdma_init(struct rte_rawdev *rawdev)
 
 	close(ccsr_qdma_fd);
 	if (fsl_qdma->ctrl_base == MAP_FAILED) {
-		DPAA_QDMA_ERR("Can not map CCSR base qdma: Phys: 0x%lx "
+		DPAA_QDMA_ERR("Can not map CCSR base qdma: Phys: %08" PRIx64
 		       "size %d\n", phys_addr, regs_size);
 		goto err;
 	}

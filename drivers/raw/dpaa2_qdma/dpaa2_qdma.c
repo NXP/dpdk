@@ -125,7 +125,7 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 	uint64_t sdd_iova;
 
 	sdd = (struct qdma_sdd *)
-			((uint64_t)fle - QDMA_FLE_FLE_OFFSET +
+			((uintptr_t)fle - QDMA_FLE_FLE_OFFSET +
 			QDMA_FLE_SDD_OFFSET);
 	sdd_iova = fle_iova - QDMA_FLE_FLE_OFFSET + QDMA_FLE_SDD_OFFSET;
 
@@ -314,13 +314,14 @@ static inline int dpdmai_dev_set_multi_fd_lf_no_rsp(
 #endif
 
 		ppjob = (struct rte_qdma_job **)
-				((uint64_t)elem + QDMA_FLE_SINGLE_JOB_OFFSET);
+			((uintptr_t)elem +
+			 QDMA_FLE_SINGLE_JOB_OFFSET);
 		*ppjob = job[i];
 
 		job[i]->vq_id = qdma_vq->vq_id;
 
 		fle = (struct qbman_fle *)
-				((uint64_t)elem + QDMA_FLE_FLE_OFFSET);
+			((uintptr_t)elem + QDMA_FLE_FLE_OFFSET);
 		fle_iova = elem_iova + QDMA_FLE_FLE_OFFSET;
 
 		DPAA2_SET_FD_ADDR(&fd[i], fle_iova);
@@ -365,13 +366,14 @@ static inline int dpdmai_dev_set_multi_fd_lf(
 #endif
 
 		ppjob = (struct rte_qdma_job **)
-				((uint64_t)elem[i] + QDMA_FLE_SINGLE_JOB_OFFSET);
+			((uintptr_t)elem[i] +
+			 QDMA_FLE_SINGLE_JOB_OFFSET);
 		*ppjob = job[i];
 
 		job[i]->vq_id = qdma_vq->vq_id;
 
 		fle = (struct qbman_fle *)
-				((uint64_t)elem[i] + QDMA_FLE_FLE_OFFSET);
+			((uintptr_t)elem[i] + QDMA_FLE_FLE_OFFSET);
 		fle_iova = elem_iova + QDMA_FLE_FLE_OFFSET;
 
 		DPAA2_SET_FD_ADDR(&fd[i], fle_iova);
@@ -426,16 +428,17 @@ static inline int dpdmai_dev_set_sg_fd_lf(
 
 	/* Set the metadata */
 	/* Save job context. */
-	*((uint16_t *)((uint64_t)elem + QDMA_FLE_JOB_NB_OFFSET)) = nb_jobs;
+	*((uint16_t *)
+	((uintptr_t)elem + QDMA_FLE_JOB_NB_OFFSET)) = nb_jobs;
 	ppjob = (struct rte_qdma_job **)
-			((uint64_t)elem + QDMA_FLE_SG_JOBS_OFFSET);
+		((uintptr_t)elem + QDMA_FLE_SG_JOBS_OFFSET);
 	for (i = 0; i < nb_jobs; i++)
 		ppjob[i] = job[i];
 
 	ppjob[0]->vq_id = qdma_vq->vq_id;
 
 	fle = (struct qbman_fle *)
-			((uint64_t)elem + QDMA_FLE_FLE_OFFSET);
+		((uintptr_t)elem + QDMA_FLE_FLE_OFFSET);
 	fle_iova = elem_iova + QDMA_FLE_FLE_OFFSET;
 
 	DPAA2_SET_FD_ADDR(fd, fle_iova);
@@ -446,7 +449,7 @@ static inline int dpdmai_dev_set_sg_fd_lf(
 	/* Populate FLE */
 	if (likely(nb_jobs > 1)) {
 		src_sge = (struct qdma_sg_entry *)
-				((uint64_t)elem + QDMA_FLE_SG_ENTRY_OFFSET);
+			((uintptr_t)elem + QDMA_FLE_SG_ENTRY_OFFSET);
 		dst_sge = src_sge + DPAA2_QDMA_MAX_SG_NB;
 		src = elem_iova + QDMA_FLE_SG_ENTRY_OFFSET;
 		dst = src +
@@ -515,8 +518,8 @@ static inline uint16_t dpdmai_dev_get_single_job_lf(
 			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 
 	*nb_jobs = 1;
-	ppjob = (struct rte_qdma_job **)((uint64_t)fle -
-				QDMA_FLE_FLE_OFFSET + QDMA_FLE_SINGLE_JOB_OFFSET);
+	ppjob = (struct rte_qdma_job **)((uintptr_t)fle -
+			QDMA_FLE_FLE_OFFSET + QDMA_FLE_SINGLE_JOB_OFFSET);
 
 	status = (DPAA2_GET_FD_ERR(fd) << 8) | (DPAA2_GET_FD_FRC(fd) & 0xFF);
 
@@ -525,7 +528,8 @@ static inline uint16_t dpdmai_dev_get_single_job_lf(
 
 	/* Free FLE to the pool */
 	rte_mempool_put(qdma_vq->fle_pool,
-				(void *)((uint64_t)fle - QDMA_FLE_FLE_OFFSET));
+			(void *)
+			((uintptr_t)fle - QDMA_FLE_FLE_OFFSET));
 
 	return (*job)->vq_id;
 }
@@ -546,10 +550,9 @@ static inline uint16_t dpdmai_dev_get_sg_job_lf(
 	 */
 	fle = (struct qbman_fle *)
 			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
-
-	*nb_jobs = *((uint16_t *)((uint64_t)fle -
+	*nb_jobs = *((uint16_t *)((uintptr_t)fle -
 				QDMA_FLE_FLE_OFFSET + QDMA_FLE_JOB_NB_OFFSET));
-	ppjob = (struct rte_qdma_job **)((uint64_t)fle -
+	ppjob = (struct rte_qdma_job **)((uintptr_t)fle -
 				QDMA_FLE_FLE_OFFSET + QDMA_FLE_SG_JOBS_OFFSET);
 	status = (DPAA2_GET_FD_ERR(fd) << 8) | (DPAA2_GET_FD_FRC(fd) & 0xFF);
 
@@ -560,7 +563,8 @@ static inline uint16_t dpdmai_dev_get_sg_job_lf(
 
 	/* Free FLE to the pool */
 	rte_mempool_put(qdma_vq->fle_pool,
-				(void *)((uint64_t)fle - QDMA_FLE_FLE_OFFSET));
+			(void *)
+			((uintptr_t)fle - QDMA_FLE_FLE_OFFSET));
 
 	return job[0]->vq_id;
 }
