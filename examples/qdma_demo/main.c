@@ -810,6 +810,7 @@ void qdma_demo_usage(void)
 	printf("	: --memcpy\n");
 	printf("	: --scatter_gather\n");
 	printf("	: --burst\n");
+	printf("	: --packet_num (valid only for mem_to_mem)\n");
 }
 
 int qdma_parse_long_arg(char *optarg, struct option *lopt)
@@ -905,6 +906,16 @@ int qdma_parse_long_arg(char *optarg, struct option *lopt)
 
 		printf("%s: burst size %u\n", __func__, g_burst);
 		break;
+	case ARG_NUM:
+		ret = sscanf(optarg, "%d", &g_packet_num);
+		if (ret == EOF) {
+			printf("Invalid Packet number\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		printf("%s: Pkt num %d\n", __func__, g_packet_num);
+		break;
 	default:
 		printf("Unknown Argument\n");
 		ret = -EINVAL;
@@ -930,6 +941,7 @@ qdma_demo_parse_args(int argc, char **argv)
 	 {"memcpy", optional_argument, &flg, ARG_MEMCPY},
 	 {"scatter_gather", optional_argument, &flg, ARG_SCATTER_GATHER},
 	 {"burst", optional_argument, &flg, ARG_BURST},
+	 {"packet_num", optional_argument, &flg, ARG_NUM},
 	 {0, 0, 0, 0},
 	};
 	struct option *lopt_cur;
@@ -961,8 +973,16 @@ int qdma_demo_validate_args(void)
 {
 	int valid = 1;
 
-	if (g_rbp_testcase != MEM_TO_MEM)
+	if (g_rbp_testcase != MEM_TO_MEM) {
 		valid = !!(g_arg_mask & ARG_PCI_ADDR);
+	} else {
+		/* Total buffers should be more than 3 * burst */
+		if (g_packet_num < (int)(3 * g_burst)) {
+			printf("Not sufficient buffers = %d\n", g_packet_num);
+			valid = 0;
+			goto out;
+		}
+	}
 
 	if ((g_rbp_testcase != MEM_TO_MEM)
 		&& (g_memcpy)) {
