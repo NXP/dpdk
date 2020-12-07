@@ -1126,6 +1126,7 @@ rte_bbdev_op_type_str(enum rte_bbdev_op_type op_type)
 		"RTE_BBDEV_OP_POLAR_DEC",
 		"RTE_BBDEV_OP_POLAR_ENC",
 		"RTE_BBDEV_OP_LA12XX_RAW",
+		"RTE_BBDEV_OP_LA12XX_VSPA",
 	};
 
 	if (op_type < RTE_BBDEV_OP_TYPE_COUNT)

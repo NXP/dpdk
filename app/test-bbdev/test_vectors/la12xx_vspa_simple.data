@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2020 NXP
+
+op_type =
+RTE_BBDEV_OP_LA12XX_VSPA
+
+input0 =
+0xc3cf63e3
+
+output0 =
+0xcfb84c54, 0x02cf2e0d, 0x5abf1520, 0xce291a10,
+0x00000009, 0x00000000, 0x00000000, 0x00000000

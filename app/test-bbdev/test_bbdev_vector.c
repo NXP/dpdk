@@ -326,6 +326,8 @@ op_turbo_type_strtol(char *token, enum rte_bbdev_op_type *op_type)
 		*op_type = RTE_BBDEV_OP_POLAR_ENC;
 	else if (!strcmp(token, "RTE_BBDEV_OP_LA12XX_RAW"))
 		*op_type = RTE_BBDEV_OP_LA12XX_RAW;
+	else if (!strcmp(token, "RTE_BBDEV_OP_LA12XX_VSPA"))
+		*op_type = RTE_BBDEV_OP_LA12XX_VSPA;
 	else {
 		printf("Not valid turbo op_type: '%s'\n", token);
 		return -1;
@@ -1207,6 +1209,35 @@ parse_la12xx_raw_op_params(const char *key_token, char *token,
 	return 0;
 }
 
+/* parses polar encoder parameters and assigns to global variable */
+static int
+parse_la12xx_vspa_op_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0;
+
+	vector->la12xx_op.op_type = RTE_BBDEV_OP_LA12XX_VSPA;
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	} else {
+		printf("Not valid none op key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return 0;
+}
+
 /* checks the type of key and assigns data */
 static int
 parse_entry(char *entry, struct test_bbdev_vector *vector)
@@ -1271,6 +1302,9 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_RAW) {
 		if (parse_la12xx_raw_op_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
+		if (parse_la12xx_vspa_op_params(key_token, token, vector) == -1)
 			return -1;
 	}
 
@@ -1578,6 +1612,22 @@ check_la12xx_raw(struct test_bbdev_vector *vector)
 	return 0;
 }
 
+/* checks polar encoder parameters */
+static int
+check_la12xx_vspa(struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
 /* checks polar decoder parameters */
 static int
 check_polar_decoder(struct test_bbdev_vector *vector)
@@ -1792,6 +1842,9 @@ bbdev_check_vector(struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_RAW) {
 		if (check_la12xx_raw(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
+		if (check_la12xx_vspa(vector) == -1)
 			return -1;
 	} else if (vector->op_type != RTE_BBDEV_OP_NONE) {
 		printf("Vector was not filled\n");

@@ -30,6 +30,16 @@ struct rte_pmd_la12xx_raw_params {
 	void *metadata;
 };
 
+/** Structure specifying a VSPA operation for la12xx */
+struct rte_pmd_la12xx_vspa_params {
+	/** The input buffer */
+	struct rte_bbdev_op_data input;
+	/** The output buffer */
+	struct rte_bbdev_op_data output;
+	/** Associated metadata */
+	void *metadata;
+};
+
 /** Structure specifying a single operation for la12xx */
 struct rte_pmd_la12xx_op {
 	/** operation type */
@@ -43,6 +53,8 @@ struct rte_pmd_la12xx_op {
 		struct rte_pmd_la12xx_polar_params polar_params;
 		/** RAW op */
 		struct rte_pmd_la12xx_raw_params raw_params;
+		/** VSPA op */
+		struct rte_pmd_la12xx_vspa_params vspa_params;
 	};
 };
 

@@ -909,6 +909,7 @@ enum rte_bbdev_op_type {
 	RTE_BBDEV_OP_POLAR_DEC,  /**< Polar decode */
 	RTE_BBDEV_OP_POLAR_ENC,  /**< Polar encode */
 	RTE_BBDEV_OP_LA12XX_RAW, /**< LA12xx RAW operation */
+	RTE_BBDEV_OP_LA12XX_VSPA, /**< LA12xx VSPA operation */
 	RTE_BBDEV_OP_TYPE_COUNT,  /**< Count of different op types */
 };
 
