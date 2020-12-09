@@ -106,6 +106,7 @@ struct enetfec_private {
 	bool		rgmii_rxc_delay;
 	int		link;
 	void		*hw_baseaddr;
+	void		*dma_baseaddr_r[ENET_MAX_Q];
 	uint64_t	cbus_size;
 	int		hw_ts_rx_en;
 	int		hw_ts_tx_en;

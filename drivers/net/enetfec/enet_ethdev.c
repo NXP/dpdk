@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2020 NXP
  */
-
+#include <stdio.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
@@ -22,7 +25,7 @@
 #define ENETFEC_NAME_PMD	net_enetfec
 #define ENET_VDEV_GEM_ID_ARG	"intf"
 #define ENET_CDEV_INVALID_FD	-1
-
+#define DEVICE_FILE    "/dev/fec_dev"
 #define BD_SIZE 32
 
 #define BIT(nr)			(1 << (nr))
@@ -124,7 +127,6 @@ enetfec_tx_queue_setup(struct rte_eth_dev *dev,
 
 		rte_write16(rte_cpu_to_le_16(0), &bdp->bd_sc);
 		rte_write32(rte_cpu_to_le_32(0), &bdp->bd_bufaddr);
-		dccivac(bdp);
 		bdp = enet_get_nextdesc(bdp, &txq->bd);
 	}
 
@@ -132,13 +134,37 @@ enetfec_tx_queue_setup(struct rte_eth_dev *dev,
 	bdp = enet_get_prevdesc(bdp, &txq->bd);
 	rte_write16((rte_cpu_to_le_16(TX_BD_WRAP) | rte_read16(&bdp->bd_sc)),
 			&bdp->bd_sc);
-	dccivac(bdp);
 	dev->data->tx_queues[queue_idx] = fep->tx_queues[queue_idx];
 	return 0;
 
 err_alloc:
 	enet_free_buffers(dev);
 	return -ENOMEM;
+}
+
+static void *
+create_mmap(uint64_t dbaseaddr_p, size_t len)
+{
+	int fd;
+	void *v_addr;
+
+	/* open the char device */
+	printf("Opening File:%s\n", DEVICE_FILE);
+	fd = open(DEVICE_FILE, O_RDWR);
+	if (fd < 0) {
+		perror("Open Failed");
+		exit(1);
+	}
+
+	v_addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED,
+			fd, dbaseaddr_p);
+	if (v_addr == MAP_FAILED)
+		ENET_PMD_ERR("Failed %s\n", __func__);
+
+	printf("Closing File\n");
+	close(fd);
+
+	return v_addr;
 }
 
 static int
@@ -172,7 +198,6 @@ enetfec_rx_queue_setup(struct rte_eth_dev *dev,
 
 		rxq->rx_mbuf[i] = mbuf;
 		rte_write16(rte_cpu_to_le_16(RX_BD_EMPTY), &bdp->bd_sc);
-		dccivac(bdp);
 
 		bdp = enet_get_nextdesc(bdp, &rxq->bd);
 	}
@@ -181,7 +206,6 @@ enetfec_rx_queue_setup(struct rte_eth_dev *dev,
 	bdp = enet_get_prevdesc(bdp, &rxq->bd);
 	rte_write16((rte_cpu_to_le_16(RX_BD_WRAP) | rte_read16(&bdp->bd_sc)),
 			&bdp->bd_sc);
-	dccivac(bdp);
 	dev->data->rx_queues[queue_idx] = fep->rx_queues[queue_idx];
 	return 0;
 
@@ -315,7 +339,6 @@ static void enet_bd_init(struct rte_eth_dev *dev)
 					&bdp->bd_sc);
 			else
 				rte_write16(rte_cpu_to_le_16(0), &bdp->bd_sc);
-			dccivac(bdp);
 			bdp = enet_get_nextdesc(bdp, &rxq->bd);
 		}
 
@@ -340,7 +363,6 @@ static void enet_bd_init(struct rte_eth_dev *dev)
 				txq->tx_mbuf[i] = NULL;
 			}
 			rte_write32(rte_cpu_to_le_32(0), &bdp->bd_bufaddr);
-			dccivac(bdp);
 			bdp = enet_get_nextdesc(bdp, &txq->bd);
 		}
 
@@ -348,7 +370,6 @@ static void enet_bd_init(struct rte_eth_dev *dev)
 		bdp = enet_get_prevdesc(bdp, &txq->bd);
 		rte_write16((rte_cpu_to_le_16(TX_BD_WRAP) |
 			     rte_read16(&bdp->bd_sc)), &bdp->bd_sc);
-		dccivac(bdp);
 		txq->dirty_tx = bdp;
 	}
 }
@@ -365,16 +386,16 @@ static void enet_active_rxring(struct rte_eth_dev *dev)
 static void enet_enable_ring(struct rte_eth_dev *dev)
 {
 	struct enetfec_private *fep = dev->data->dev_private;
-	struct enetfec_priv_tx_q *txq;
-	struct enetfec_priv_rx_q *rxq;
+//	struct enetfec_priv_tx_q *txq;
+//	struct enetfec_priv_rx_q *rxq;
 	unsigned int i;
 
 	for (i = 0; i < fep->max_rx_queues; i++) {
-		rxq = fep->rx_queues[i];
-		rte_write32(rxq->bd.descr_baseaddr_p,
-				fep->hw_baseaddr + ENET_RD_START(i));
-		rte_write32(PKT_MAX_BUF_SIZE,
-				fep->hw_baseaddr + ENET_MRB_SIZE(i));
+//		rxq = fep->rx_queues[i];
+//		rte_write32(rxq->bd.descr_baseaddr_p,
+//				fep->hw_baseaddr + ENET_RD_START(i));
+//		rte_write32(PKT_MAX_BUF_SIZE,
+//				fep->hw_baseaddr + ENET_MRB_SIZE(i));
 
 		/* enable DMA1/2 */
 		if (i)
@@ -383,9 +404,9 @@ static void enet_enable_ring(struct rte_eth_dev *dev)
 	}
 
 	for (i = 0; i < fep->max_tx_queues; i++) {
-		txq = fep->tx_queues[i];
-		rte_write32(txq->bd.descr_baseaddr_p,
-				fep->hw_baseaddr + ENET_TD_START(i));
+//		txq = fep->tx_queues[i];
+//		rte_write32(txq->bd.descr_baseaddr_p,
+//				fep->hw_baseaddr + ENET_TD_START(i));
 
 		/* enable DMA1/2 */
 		if (i)
@@ -665,7 +686,7 @@ enetfec_eth_init(struct rte_eth_dev *dev)
 {
 	struct enetfec_private *fep = dev->data->dev_private;
 	struct bufdesc *bd_base;
-	int bd_size;
+//	int bd_size;
 	unsigned int i, ret;
 	unsigned int dsize = fep->bufdesc_ex ? sizeof(struct bufdesc_ex) :
 			sizeof(struct bufdesc);
@@ -673,23 +694,31 @@ enetfec_eth_init(struct rte_eth_dev *dev)
 	uint64_t dbaseaddr_p;
 	struct rte_eth_conf *eth_conf = &fep->dev->data->dev_conf;
 	uint64_t rx_offloads = eth_conf->rxmode.offloads;
+
 	fep->full_duplex = FULL_DUPLEX;
 	/* fep->phy_interface = PHY_INTERFACE_MODE_RGMII; */
 
 	ret = enet_alloc_queue(dev);
 	if (ret)
 		return ret;
+/*
+ *	bd_size = (fep->total_tx_ring_size + fep->total_rx_ring_size) * dsize;
+ *
+ *	// Allocate memory for buffer descriptors.
+ *	bd_base = rte_zmalloc(NULL, bd_size, RTE_CACHE_LINE_SIZE);
+ *	if (!bd_base) {
+ *		ret = -ENOMEM;
+ *		goto free_queue_mem;
+ *	}
+ *
+ *	dbaseaddr_p = enetfec_mem_vtop((uintptr_t)bd_base);
+ */
+	dbaseaddr_p = rte_read32(fep->hw_baseaddr + ENET_RD_START(0));
 
-	bd_size = (fep->total_tx_ring_size + fep->total_rx_ring_size) * dsize;
-
-	/* Allocate memory for buffer descriptors. */
-	bd_base = rte_zmalloc(NULL, bd_size, RTE_CACHE_LINE_SIZE);
-	if (!bd_base) {
-		ret = -ENOMEM;
-		goto free_queue_mem;
-	}
-
-	dbaseaddr_p = enetfec_mem_vtop((uintptr_t)bd_base);
+	fep->dma_baseaddr_r[0] = create_mmap(dbaseaddr_p, (size_t)98304);
+	if (fep->dma_baseaddr_r[0] == MAP_FAILED)
+		ENET_PMD_ERR("mmap failed\n");
+	bd_base = (struct bufdesc *)fep->dma_baseaddr_r[0];
 
 	/* Set receive and transmit descriptor base. */
 	for (i = 0; i < 3; i++) {
@@ -738,7 +767,7 @@ enetfec_eth_init(struct rte_eth_dev *dev)
 	rte_eth_dev_probing_finish(dev);
 	return 0;
 
-free_queue_mem:
+//free_queue_mem:
 	enet_free_queue(dev);
 	return ret;
 }

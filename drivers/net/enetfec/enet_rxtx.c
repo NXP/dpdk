@@ -58,28 +58,29 @@ enet_dump_rx(struct enetfec_priv_rx_q *rxq)
 }
 
 int
-enet_new_rxbdp(struct enetfec_private *fep,
+enet_new_rxbdp(__rte_unused struct enetfec_private *fep,
 			struct bufdesc *bdp,
 			struct rte_mbuf *mbuf)
 {
-	int off, i;
-	void *data;
-	uint16_t tail;
-	unsigned short buflen;
-
-	off = ((unsigned long)rte_pktmbuf_mtod(mbuf, unsigned long))
-			& fep->rx_align;
-	if (off) {
-		data = rte_pktmbuf_mtod(mbuf, void *);
-		tail = rte_pktmbuf_tailroom(mbuf);
-		data += (fep->rx_align + 1 - off);
-		tail += (fep->rx_align + 1 - off);
-	}
-
-	buflen = rte_pktmbuf_pkt_len(mbuf);
-	for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
-		dcbf(rte_pktmbuf_mtod(mbuf, void *) + i);
-
+/*
+ *	int off, i;
+ *	void *data;
+ *	uint16_t tail;
+ *	unsigned short buflen;
+ *
+ *	off = ((unsigned long)rte_pktmbuf_mtod(mbuf, unsigned long))
+ *			& fep->rx_align;
+ *	if (off) {
+ *		data = rte_pktmbuf_mtod(mbuf, void *);
+ *		tail = rte_pktmbuf_tailroom(mbuf);
+ *		data += (fep->rx_align + 1 - off);
+ *		tail += (fep->rx_align + 1 - off);
+ *	}
+ *
+ *	buflen = rte_pktmbuf_pkt_len(mbuf);
+ *	for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
+ *		dcbf(rte_pktmbuf_mtod(mbuf, void *) + i);
+ */
 	rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
 		    &bdp->bd_bufaddr);
 	return 0;
@@ -111,7 +112,6 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 	pool = rxq->pool;
 	bdp = rxq->bd.cur;
 
-	dccivac(bdp);
 	/* Process the incoming packet */
 	status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 	while (!(status & RX_BD_EMPTY)) {
@@ -229,13 +229,12 @@ rx_processing_done:
 			rte_write32(0, &ebdp->bd_prot);
 			rte_write32(0, &ebdp->bd_bdu);
 		}
-		dcbf(bdp);
+
 		/* Make sure the updates to rest of the descriptor are
 		 * performed before transferring ownership.
 		 */
 		rte_wmb();
 		rte_write16(rte_cpu_to_le_16(status), &bdp->bd_sc);
-		dccivac(bdp);
 
 		/* Update BD pointer to next entry */
 		bdp = enet_get_nextdesc(bdp, &rxq->bd);
@@ -244,7 +243,6 @@ rx_processing_done:
 		 * incoming frames.
 		 */
 		rte_write32(0, rxq->bd.active_reg_desc);
-		dccivac(bdp);
 		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 	}
 	rxq->bd.cur = bdp;
@@ -310,7 +308,6 @@ enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
 		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
 			    &bdp->bd_bufaddr);
 		rte_write16(rte_cpu_to_le_16(buflen), &bdp->bd_datlen);
-		dcbf(&bdp->bd_bufaddr);
 		if (txq->fep->bufdesc_ex) {
 			struct bufdesc_ex *ebdp = (struct bufdesc_ex *)bdp;
 
@@ -326,14 +323,12 @@ enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
 		/* Save mbuf pointer */
 		txq->tx_mbuf[index] = mbuf;
 
-		dcbf(bdp);
 		/* Make sure the updates to rest of the descriptor are performed
 		 * before transferring ownership.
 		 */
 		rte_wmb();
 		status |= (TX_BD_READY | TX_BD_TC);
 		rte_write16(rte_cpu_to_le_16(status), &bdp->bd_sc);
-		dcbf(bdp);
 		/* If this was the last BD in the ring, start at the
 		 * beginning again.
 		 */
@@ -369,10 +364,8 @@ enet_tx_queue_cleanup(struct enetfec_priv_tx_q *txq)
 
 	while (bdp != READ_ONCE(txq->bd.cur)) {
 		/* Order the load of bd.cur and bd_sc */
-		dccivac(bdp);
 		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 		while (timeout > 0 && (status & TX_BD_READY)) {
-			dccivac(bdp);
 			timeout--;
 			status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 		}
