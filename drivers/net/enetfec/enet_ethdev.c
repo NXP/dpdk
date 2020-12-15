@@ -119,6 +119,10 @@ enetfec_tx_queue_setup(struct rte_eth_dev *dev,
 	txq = fep->tx_queues[queue_idx];
 	txq->fep = fep;
 	bdp = txq->bd.base;
+
+	if (nb_desc > TX_BD_RING_SIZE)
+		nb_desc = TX_BD_RING_SIZE;
+
 	for (i = 0; i < nb_desc; i++) {
 		txq->tx_bounce[i] = rte_malloc(NULL, ENET_TX_FR_SIZE,
 					RTE_CACHE_LINE_SIZE);
@@ -184,6 +188,9 @@ enetfec_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->pool = mb_pool;
 	rxq->fep = fep;
 	bdp = rxq->bd.base;
+
+	if (nb_rx_desc > RX_BD_RING_SIZE)
+		nb_rx_desc = RX_BD_RING_SIZE;
 
 	for (i = 0; i < nb_rx_desc; i++) {
 		/* Initialize Rx buffers from the shared memory */
