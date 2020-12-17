@@ -53,6 +53,8 @@
 #define ENET_ENET_OPD_V		0xFFF0
 #define ENET_MDIO_PM_TIMEOUT	100 /* ms */
 
+/* Extended buffer descriptor */
+#define ENETFEC_EXTENDED_BD	0
 int enetfec_logtype_pmd;
 
 /* Supported Rx offloads */
@@ -693,11 +695,11 @@ enetfec_eth_init(struct rte_eth_dev *dev)
 	struct enetfec_private *fep = dev->data->dev_private;
 	struct bufdesc *bd_base;
 //	int bd_size;
-	unsigned int i, ret;
+	unsigned int i, j, ret;
 	unsigned int dsize = fep->bufdesc_ex ? sizeof(struct bufdesc_ex) :
 			sizeof(struct bufdesc);
 	unsigned int dsize_log2 = fls64(dsize);
-	uint64_t dbaseaddr_p;
+	uint64_t dbaseaddr_p_r, dbaseaddr_p_t;
 	struct rte_eth_conf *eth_conf = &fep->dev->data->dev_conf;
 	uint64_t rx_offloads = eth_conf->rxmode.offloads;
 
@@ -719,24 +721,35 @@ enetfec_eth_init(struct rte_eth_dev *dev)
  *
  *	dbaseaddr_p = enetfec_mem_vtop((uintptr_t)bd_base);
  */
-	dbaseaddr_p = rte_read32(fep->hw_baseaddr + ENET_RD_START(0));
+	for (j = 0; j < 3; j++) {
+		dbaseaddr_p_r = rte_read32(fep->hw_baseaddr + ENET_RD_START(0));
 
-	fep->dma_baseaddr_r[0] = create_mmap(dbaseaddr_p, (size_t)98304);
-	if (fep->dma_baseaddr_r[0] == MAP_FAILED)
-		ENET_PMD_ERR("mmap failed\n");
-	bd_base = (struct bufdesc *)fep->dma_baseaddr_r[0];
+		fep->dma_baseaddr_r[j] = create_mmap(dbaseaddr_p_r,
+					(size_t)49152);
+		if (fep->dma_baseaddr_r[0] == MAP_FAILED)
+			ENET_PMD_ERR("mmap failed\n");
+	}
+
+	for (j = 0; j < 3; j++) {
+		dbaseaddr_p_t = rte_read32(fep->hw_baseaddr + ENET_TD_START(j));
+		fep->dma_baseaddr_t[j] = create_mmap(dbaseaddr_p_t,
+					(size_t)49152);/*98304*/
+		if (fep->dma_baseaddr_t[j] == MAP_FAILED)
+			ENET_PMD_ERR("mmap failed\n");
+	}
 
 	/* Set receive and transmit descriptor base. */
 	for (i = 0; i < 3; i++) {
 		struct enetfec_priv_rx_q *rxq = fep->rx_queues[i];
 		unsigned int size = dsize * rxq->bd.ring_size;
+		bd_base = (struct bufdesc *)fep->dma_baseaddr_r[i];
 		rxq->bd.que_id = i;
 		rxq->bd.base = bd_base;
 		rxq->bd.cur = bd_base;
 		rxq->bd.d_size = dsize;
-		rxq->bd.descr_baseaddr_p = dbaseaddr_p;
+		rxq->bd.descr_baseaddr_p = dbaseaddr_p_r;
 		rxq->bd.d_size_log2 = dsize_log2;
-		dbaseaddr_p += size;
+		dbaseaddr_p_r += size;
 		rxq->bd.active_reg_desc =
 				fep->hw_baseaddr + offset_des_active_rxq[i];
 		bd_base = (struct bufdesc *)(((void *)bd_base) + size);
@@ -746,13 +759,14 @@ enetfec_eth_init(struct rte_eth_dev *dev)
 	for (i = 0; i < 3; i++) {
 		struct enetfec_priv_tx_q *txq = fep->tx_queues[i];
 		unsigned int size = dsize * txq->bd.ring_size;
+		bd_base = (struct bufdesc *)fep->dma_baseaddr_t[i];
 		txq->bd.que_id = i;
 		txq->bd.base = bd_base;
 		txq->bd.cur = bd_base;
 		txq->bd.d_size = dsize;
-		txq->bd.descr_baseaddr_p = dbaseaddr_p;
+		txq->bd.descr_baseaddr_p = dbaseaddr_p_t;
 		txq->bd.d_size_log2 = dsize_log2;
-		dbaseaddr_p += size;
+		dbaseaddr_p_t += size;
 		txq->bd.active_reg_desc =
 				fep->hw_baseaddr + offset_des_active_txq[i];
 		bd_base = (struct bufdesc *)(((void *)bd_base) + size);
@@ -865,7 +879,7 @@ pmd_enetfec_probe(struct rte_vdev_device *vdev)
 
 	enetfec_set_mac_address(dev, &macaddr);
 
-	fep->bufdesc_ex = 1;
+	fep->bufdesc_ex = ENETFEC_EXTENDED_BD;
 	rc = enetfec_eth_init(dev);
 	if (rc)
 		goto failed_init;
