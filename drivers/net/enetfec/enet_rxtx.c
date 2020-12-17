@@ -10,8 +10,12 @@
 #include "enet_pmd_logs.h"
 
 #define ENETFEC_LOOPBACK	0
+#define ENETFEC_DUMP		0
+#define CODE_TO_REMOVE		0
+
 static volatile bool lb_quit;
 
+#if ENETFEC_DUMP
 static void
 enet_dump(struct enetfec_priv_tx_q *txq)
 {
@@ -60,6 +64,17 @@ enet_dump_rx(struct enetfec_priv_rx_q *rxq)
 		index++;
 	} while (bdp != rxq->bd.base);
 }
+
+static int enet_get_free_txdesc_num(struct enetfec_priv_tx_q *txq)
+{
+	int entries;
+
+	entries = (((const char *)txq->dirty_tx -
+			(const char *)txq->bd.cur) >> txq->bd.d_size_log2) - 1;
+
+	return entries >= 0 ? entries : entries + txq->bd.ring_size;
+}
+#endif
 
 int
 enet_new_rxbdp(__rte_unused struct enetfec_private *fep,
@@ -291,7 +306,6 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 	int pkt_received = 0, index = 0;
 	void *data, *mbuf_data;
 	uint16_t vlan_tag;
-	char *appended;
 	struct  bufdesc_ex *ebdp = NULL;
 	bool    vlan_packet_rcvd = false;
 	struct enetfec_priv_rx_q *rxq  = (struct enetfec_priv_rx_q *)rxq1;
@@ -322,7 +336,7 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 			stats->ierrors++;
 			if (status & RX_BD_OV) {
 				/* FIFO overrun */
-				enet_dump_rx(rxq);
+//				enet_dump_rx(rxq);
 				ENET_PMD_ERR("rx_fifo_error\n");
 				goto rx_processing_done;
 			}
@@ -354,17 +368,15 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 		data = rte_pktmbuf_mtod(mbuf, uint8_t *);
 		mbuf_data = data;
 		rte_prefetch0(data);
-		appended =
-			rte_pktmbuf_append((struct rte_mbuf *)mbuf,
-					pkt_len - 4);
-		if (appended == NULL)
-			break;
+		rte_pktmbuf_append((struct rte_mbuf *)mbuf,
+				pkt_len - 4);
 
 		if (rxq->fep->quirks & QUIRK_RACC)
 			data = rte_pktmbuf_adj(mbuf, 2);
 
 		rx_pkts[pkt_received] = mbuf;
 		pkt_received++;
+
 		/* Extract the enhanced buffer descriptor */
 		ebdp = NULL;
 		if (rxq->fep->bufdesc_ex)
@@ -402,6 +414,7 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 			mbuf->vlan_tci = vlan_tag;
 			mbuf->ol_flags |= PKT_RX_VLAN_STRIPPED | PKT_RX_VLAN;
 		}
+
 		rxq->rx_mbuf[index] = new_mbuf;
 		enet_new_rxbdp(rxq->fep, bdp, new_mbuf);
 rx_processing_done:
@@ -440,30 +453,33 @@ rx_processing_done:
 	return pkt_received;
 }
 
-static int enet_get_free_txdesc_num(struct enetfec_priv_tx_q *txq)
+uint16_t
+enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 {
-	int entries;
-
-	entries = (((const char *)txq->dirty_tx -
-			(const char *)txq->bd.cur) >> txq->bd.d_size_log2) - 1;
-
-	return entries >= 0 ? entries : entries + txq->bd.ring_size;
-}
-
-static int
-enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
-			struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
-{
+	struct enetfec_priv_tx_q *txq  =
+			(struct enetfec_priv_tx_q *)tx_queue;
 	struct bufdesc *bdp, *last_bdp;
 	struct rte_mbuf *mbuf;
 	unsigned short status;
 	unsigned short buflen;
 	unsigned int index, estatus = 0;
 	unsigned int i;
-	unsigned int entries_free;
-	int pkts_queued = 0;
+//	unsigned int entries_free;
+	u8 *data;
 
 	for (i = 0; i < nb_pkts; i++) {
+		bdp = txq->bd.cur;
+		/* First clean the ring */
+		index = enet_get_bd_index(bdp, &txq->bd);
+		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
+		if (status & TX_BD_READY)
+			printf("\n----> TX BD status ERROR %x, index=%d\n",
+				status, index);
+		if (txq->tx_mbuf[index]) {
+			rte_pktmbuf_free(txq->tx_mbuf[index]);
+			txq->tx_mbuf[index] = NULL;
+		}
+#if ENETFEC_DUMP
 		entries_free = enet_get_free_txdesc_num(txq);
 		if (tx_pkts[i]->nb_segs > entries_free) {
 			enet_dump(txq);
@@ -471,34 +487,29 @@ enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
 			ENET_PMD_DEBUG("entries not enough");
 			continue;
 		}
-
+#endif
 		mbuf = *(tx_pkts);
 		tx_pkts++;
-		pkts_queued++;
 
 		/* Fill in a Tx ring entry */
-		bdp = txq->bd.cur;
 		last_bdp = bdp;
-		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 		status &= ~TX_BD_STATS;
 
 		/* Set buffer length and buffer pointer */
 		buflen = rte_pktmbuf_pkt_len(mbuf);
 
-		index = enet_get_bd_index(bdp, &txq->bd);
-
 		if (mbuf->nb_segs > 1)
 			ENET_PMD_DEBUG("SG not supported");
-//			return -1;
 		else
 			status |= (TX_BD_LAST);
-
+		data = rte_pktmbuf_mtod(mbuf, void *);
 		for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
-			dcbf(rte_pktmbuf_mtod(mbuf, void *) + i);
+			dcbf(data + i);
 
 		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
 			    &bdp->bd_bufaddr);
 		rte_write16(rte_cpu_to_le_16(buflen), &bdp->bd_datlen);
+
 		if (txq->fep->bufdesc_ex) {
 			struct bufdesc_ex *ebdp = (struct bufdesc_ex *)bdp;
 
@@ -517,9 +528,13 @@ enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
 		/* Make sure the updates to rest of the descriptor are performed
 		 * before transferring ownership.
 		 */
-		rte_wmb();
 		status |= (TX_BD_READY | TX_BD_TC);
+		rte_wmb();
 		rte_write16(rte_cpu_to_le_16(status), &bdp->bd_sc);
+
+		/* Trigger transmission start */
+		rte_write32(0, txq->bd.active_reg_desc);
+
 		/* If this was the last BD in the ring, start at the
 		 * beginning again.
 		 */
@@ -528,15 +543,11 @@ enet_txq_submit_mbuf(struct enetfec_priv_tx_q *txq,
 		/* Make sure the update to bdp and tx_skbuff are performed
 		 * before txq->bd.cur.
 		 */
-		rte_wmb();
 		txq->bd.cur = bdp;
-
-		/* Trigger transmission start */
-		rte_write32(0, txq->bd.active_reg_desc);
 	}
-	return pkts_queued;
+	return nb_pkts;
 }
-
+#if CODE_TO_REMOVE
 static int
 enet_tx_queue_cleanup(struct enetfec_priv_tx_q *txq)
 {
@@ -622,3 +633,4 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			pkts_cleaned, pkts_queued);
 	return pkts_cleaned;
 }
+#endif
