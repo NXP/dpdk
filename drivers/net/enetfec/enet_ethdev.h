@@ -107,6 +107,7 @@ struct enetfec_private {
 	int		link;
 	void		*hw_baseaddr;
 	void		*dma_baseaddr_r[ENET_MAX_Q];
+	void		*dma_baseaddr_t[ENET_MAX_Q];
 	uint64_t	cbus_size;
 	int		hw_ts_rx_en;
 	int		hw_ts_tx_en;
