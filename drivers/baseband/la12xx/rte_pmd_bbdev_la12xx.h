@@ -6,6 +6,8 @@
 #define _PMD_LA12XX_H_
 
 #include <rte_bbdev.h>
+#include <rte_bbuf.h>
+
 #include <geul_feca.h>
 
 /** Structure specifying a polar operation for la12xx */
@@ -265,5 +267,40 @@ rte_pmd_la12xx_reset(uint16_t dev_id);
  */
 int
 rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id);
+
+/**
+ * Adjust the bbuf and provides updated start address to write the buffer
+ * onto for LDPC Encode (Shared Encode).
+ * NOTE: There should be 4096 bytes additionally available in the bbuf in the
+ * in tailroom.
+ *
+ * @param bbuf
+ *   The packet bbuf.
+ * @param num_bytes
+ *   Number of bytes which will be written into the buffer.
+ *
+ * @return
+ *   0 - Success, otherwise Failure (in case enough tailroom is not available)
+ */
+int
+rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes);
+
+/**
+ * Adjust the address and provides updated start address to write the buffer
+ * onto for LDPC Encode (Shared Encode).
+ * NOTE: There should be 4096 bytes available before the start add (addr)
+ * provided as length adjusted would return an address in range
+ * of (addr - 4096) to addr.
+ *
+ * @param addr
+ *   Start address of the buffer for which address adjustment is required.
+ * @param num_bytes
+ *   Number of bytes which will be written into the buffer.
+ *
+ * @return
+ *   Adjusted start address to write the buffer.
+ */
+void *
+rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
 
 #endif

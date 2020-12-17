@@ -23,6 +23,7 @@
 #define rte_bbuf_reset rte_pktmbuf_reset
 #define rte_bbuf_free rte_pktmbuf_free
 #define rte_bbuf_free_bulk rte_pktmbuf_free_bulk
+#define rte_bbuf_tailroom rte_pktmbuf_tailroom
 
 /**
  * Append len bytes to an bbuf.

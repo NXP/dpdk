@@ -501,6 +501,12 @@ create_mempools(struct active_device *ad, int socket_id,
 
 
 	bbuf_size = get_buf_size();
+	if (org_op_type == RTE_BBDEV_OP_LDPC_ENC)
+		/* Add buffer into the bbuf_size required by
+		 * rte_pmd_la12xx_ldpc_enc_adj_bbuf() API
+		 */
+		bbuf_size += 4096;
+
 	/* Do not create inputs and outputs bbufs for BaseBand Null Device */
 	if (org_op_type == RTE_BBDEV_OP_NONE) {
 		int ret, data_size;
@@ -942,6 +948,7 @@ ut_teardown(void)
 static int
 init_op_data_objs(struct rte_bbdev_op_data *bufs,
 		struct op_data_entries *ref_entries,
+		enum rte_bbdev_op_type bbdev_op_type,
 		struct rte_mempool *bbuf_pool, const uint16_t n,
 		enum op_data_type op_type, uint16_t min_alignment)
 {
@@ -964,6 +971,20 @@ init_op_data_objs(struct rte_bbdev_op_data *bufs,
 		bufs[i].bdata = b_head;
 		bufs[i].offset = 0;
 		bufs[i].length = 0;
+
+		if (op_type == DATA_INPUT &&
+		    bbdev_op_type == RTE_BBDEV_OP_LDPC_ENC) {
+			/* Adjust the bbuf as a W.A. for FECA FDMA hang
+			 * in some cases for LDPC Encode (SE). The W.A.
+			 * adjust the starting address on the basis of
+			 * previous start address and input buffer
+			 * length.
+			 */
+			ret = rte_pmd_la12xx_ldpc_enc_adj_bbuf(b_head,
+				seg->length);
+			TEST_ASSERT_SUCCESS(ret,
+					"rte_pmd_la12xx_ldpc_enc_adj_bbuf API failed");
+		}
 
 		if ((op_type == DATA_INPUT) || (op_type == DATA_HARQ_INPUT)) {
 			data = rte_bbuf_append(b_head, seg->length);
@@ -1150,7 +1171,8 @@ fill_queue_buffers(struct test_op_params *op_params,
 				"Couldn't allocate memory for rte_bbdev_op_data structs");
 
 		ret = init_op_data_objs(*queue_ops[type], ref_entries,
-				bbuf_pools[type], n, type, min_alignment);
+				vector->op_type, bbuf_pools[type], n,
+				type, min_alignment);
 		TEST_ASSERT_SUCCESS(ret,
 				"Couldn't init rte_bbdev_op_data structs");
 	}

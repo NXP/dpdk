@@ -686,6 +686,7 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	data_ptr = get_data_ptr(in_op_data);
 	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 		data_ptr - huge_start_addr;
+
 	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	se_command->se_axi_in_num_bytes =
 		rte_cpu_to_be_32(in_op_data->length);
@@ -1812,7 +1813,7 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 	struct wdog *wdog = priv->wdog;
 	int ret = 0;
 
-	printf("BBDEV LA12xx: Resetting device...\n");
+	BBDEV_LA12XX_PMD_INFO("BBDEV LA12xx: Resetting device...\n");
 
 	if (!wdog) {
 		wdog = rte_malloc(NULL,
@@ -1834,6 +1835,67 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 	}
 
 	return 0;
+}
+
+int
+rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes)
+{
+	uint64_t start_addr, final_start_addr;
+	uint64_t adjust_offset;
+
+	start_addr = rte_bbuf_mtod(bbuf, uint64_t);
+
+	final_start_addr = (uint64_t)rte_pmd_la12xx_ldpc_enc_adj_addr((void *)
+		(start_addr + 4096), num_bytes);
+	adjust_offset = final_start_addr - start_addr;
+
+	/* Check if bbuf have enough tailroom to adjust the offset */
+	if (rte_bbuf_tailroom(bbuf) < adjust_offset)
+		return -ENOMEM;
+
+	bbuf->data_off = bbuf->data_off + adjust_offset;
+	return 0;
+}
+
+void *
+rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes)
+{
+	uint64_t end_addr, start_addr;
+
+	/* This W.A. and address adjustments have been provided by Hardware
+	 * team on basis of validation in their environment. This is to adjust
+	 * the starting address due to errata present in FECA in Shared Encode.
+	 * (DPDM Ticket: TKT0549436)
+	 */
+	start_addr = (uint64_t)addr;
+	end_addr = start_addr + num_bytes;
+
+	if ((num_bytes >= 4096) &&  (((start_addr & 0x1ff) >= 1) &&
+	    ((start_addr & 0x1ff) <= 32))) {
+		end_addr = (end_addr & 0xfffffffff01f) + 64;
+		start_addr = end_addr - num_bytes;
+		if (((start_addr & 0x1ff) >= 1) && ((start_addr & 0x1ff) <= 32))
+			start_addr += 32;
+	} else if ((num_bytes & 0xfff) <= (4096 - (start_addr & 0xfff))) {
+		if (((num_bytes & 0xfff) > 32) && ((num_bytes & 0x1ff) >= 1) &&
+		    ((num_bytes & 0x1ff) <= 32)) {
+			end_addr = (end_addr & 0xfffffffff01f) + 64;
+			start_addr = end_addr - num_bytes;
+			if (((start_addr & 0x1ff) >= 1) &&
+			    ((start_addr & 0x1ff) <= 32))
+				start_addr += 32;
+		}
+	} else {
+		if (((end_addr & 0x1ff) >= 1) && ((end_addr & 0x1ff) <= 32)) {
+			end_addr = ((end_addr & 0xfffffffff01f) + 64);
+			start_addr = end_addr - num_bytes;
+			if (((start_addr & 0x1ff) >= 1) &&
+			    ((start_addr & 0x1ff) <= 32))
+				start_addr += 32;
+		}
+	}
+
+	return (void *)start_addr;
 }
 
 static struct hugepage_info *
