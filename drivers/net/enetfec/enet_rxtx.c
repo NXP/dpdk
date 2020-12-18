@@ -458,23 +458,31 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 {
 	struct enetfec_priv_tx_q *txq  =
 			(struct enetfec_priv_tx_q *)tx_queue;
+	struct rte_eth_stats *stats = &txq->fep->stats;
 	struct bufdesc *bdp, *last_bdp;
 	struct rte_mbuf *mbuf;
 	unsigned short status;
 	unsigned short buflen;
 	unsigned int index, estatus = 0;
-	unsigned int i;
-//	unsigned int entries_free;
+	unsigned int i, pkt_transmitted = 0;
+	unsigned int entries_free;
 	u8 *data;
+	int tx_st = 1;
 
-	for (i = 0; i < nb_pkts; i++) {
+	while (tx_st) {
+		if (pkt_transmitted >= nb_pkts) {
+			tx_st = 0;
+			break;
+		}
 		bdp = txq->bd.cur;
 		/* First clean the ring */
 		index = enet_get_bd_index(bdp, &txq->bd);
 		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
-		if (status & TX_BD_READY)
-			printf("\n----> TX BD status ERROR %x, index=%d\n",
-				status, index);
+
+		if (status & TX_BD_READY) {
+			stats->ierrors++;
+			break;
+		}
 		if (txq->tx_mbuf[index]) {
 			rte_pktmbuf_free(txq->tx_mbuf[index]);
 			txq->tx_mbuf[index] = NULL;
@@ -498,10 +506,11 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		/* Set buffer length and buffer pointer */
 		buflen = rte_pktmbuf_pkt_len(mbuf);
 
-		if (mbuf->nb_segs > 1)
+		if (mbuf->nb_segs > 1) {
 			ENET_PMD_DEBUG("SG not supported");
-		else
-			status |= (TX_BD_LAST);
+			return -1;
+		}
+		status |= (TX_BD_LAST);
 		data = rte_pktmbuf_mtod(mbuf, void *);
 		for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
 			dcbf(data + i);
@@ -534,6 +543,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 
 		/* Trigger transmission start */
 		rte_write32(0, txq->bd.active_reg_desc);
+		pkt_transmitted++;
 
 		/* If this was the last BD in the ring, start at the
 		 * beginning again.
