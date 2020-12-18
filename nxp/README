@@ -349,13 +349,24 @@ Following are some pre-requisites:
 
   3. Get ethernet devices in userspace using below commands:
 	1. For QDS board:
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.1/driver_override
-		echo 0000:00:00.1 > /sys/bus/pci/drivers/fsl_enetc/unbind
-		echo 0000:00:00.1 > /sys/bus/pci/drivers/vfio-pci/bind
+		echo 1 > /sys/bus/pci/devices/0000\:00\:00.1/sriov_numvfs
+		echo 1 > /sys/bus/pci/devices/0000\:00\:00.0/sriov_numvfs
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:01.2/driver_override
+		echo 0000:00:01.2 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+		echo 0000:00:01.2 > /sys/bus/pci/drivers/vfio-pci/bind
 
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:00.0/driver_override
-		echo 0000:00:00.0 > /sys/bus/pci/drivers/fsl_enetc/unbind
-		echo 0000:00:00.0 > /sys/bus/pci/drivers/vfio-pci/bind
+		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:01.0/driver_override
+		echo 0000:00:01.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+		echo 0000:00:01.0 > /sys/bus/pci/drivers/vfio-pci/bind
+
+		ifconfig eno0 up
+		ifconfig eno1 up
+
+		Note: On QDS, There are some features limitation as VFs instead
+		      of PFs to be used for IO. Below are those limitations:
+
+		* Promiscuous and multicast cannot be enabled on VFs.
+		* Port level hardware stats are not available.
 
 	2. For RDB board, run below script:
 	       /usr/local/dpdk/enetc/dpdk_configure_1028ardb.sh
@@ -501,6 +512,9 @@ Following are some pre-requisites:
 
 	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
 	to use these rings.
+
+	#On ls1028a, User must specify "--iova-mode=pa" in application command
+	 to use caam_jr driver.
 
   'testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
