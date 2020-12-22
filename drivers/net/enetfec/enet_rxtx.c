@@ -11,7 +11,6 @@
 
 #define ENETFEC_LOOPBACK	0
 #define ENETFEC_DUMP		0
-#define CODE_TO_REMOVE		0
 
 static volatile bool lb_quit;
 
@@ -64,46 +63,7 @@ enet_dump_rx(struct enetfec_priv_rx_q *rxq)
 		index++;
 	} while (bdp != rxq->bd.base);
 }
-
-static int enet_get_free_txdesc_num(struct enetfec_priv_tx_q *txq)
-{
-	int entries;
-
-	entries = (((const char *)txq->dirty_tx -
-			(const char *)txq->bd.cur) >> txq->bd.d_size_log2) - 1;
-
-	return entries >= 0 ? entries : entries + txq->bd.ring_size;
-}
 #endif
-
-int
-enet_new_rxbdp(__rte_unused struct enetfec_private *fep,
-			struct bufdesc *bdp,
-			struct rte_mbuf *mbuf)
-{
-/*
- *	int off, i;
- *	void *data;
- *	uint16_t tail;
- *	unsigned short buflen;
- *
- *	off = ((unsigned long)rte_pktmbuf_mtod(mbuf, unsigned long))
- *			& fep->rx_align;
- *	if (off) {
- *		data = rte_pktmbuf_mtod(mbuf, void *);
- *		tail = rte_pktmbuf_tailroom(mbuf);
- *		data += (fep->rx_align + 1 - off);
- *		tail += (fep->rx_align + 1 - off);
- *	}
- *
- *	buflen = rte_pktmbuf_pkt_len(mbuf);
- *	for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
- *		dcbf(rte_pktmbuf_mtod(mbuf, void *) + i);
- */
-	rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
-		    &bdp->bd_bufaddr);
-	return 0;
-}
 
 #if ENETFEC_LOOPBACK
 static void fec_signal_handler(int signum)
@@ -167,9 +127,10 @@ chk_again:
 				if (status & RX_BD_LAST)
 					ENET_PMD_ERR("rcv is not +last\n");
 			}
-			if (status & RX_BD_CR) {     /* CRC Error */
+			/* CRC Error */
+			if (status & RX_BD_CR)
 				ENET_PMD_ERR("rx_crc_errors\n");
-			}
+
 			/* Report late collisions as a frame error. */
 			if (status & (RX_BD_NO | RX_BD_TR))
 				ENET_PMD_ERR("rx_frame_error\n");
@@ -196,7 +157,8 @@ chk_again:
 
 		/* Replace Buffer in BD */
 		rxq->rx_mbuf[index_r] = new_mbuf;
-		enet_new_rxbdp(rxq->fep, rx_bdp, new_mbuf);
+		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(new_mbuf)),
+				&rx_bdp->bd_bufaddr);
 
 rx_processing_done:
 		/* when rx_processing_done clear the status flags
@@ -206,16 +168,6 @@ rx_processing_done:
 
 		/* Mark the buffer empty */
 		status |= RX_BD_EMPTY;
-
-		/*
-		 * if (rxq->fep->bufdesc_ex) {
-		 *	struct bufdesc_ex *ebdp = (struct bufdesc_ex *)rx_bdp;
-		 *	rte_write32(rte_cpu_to_le_32(RX_BD_INT),
-		 *		&ebdp->bd_esc);
-		 *	rte_write32(0, &ebdp->bd_prot);
-		 *	rte_write32(0, &ebdp->bd_bdu);
-		 * }
-		 */
 
 		/* Make sure the updates to rest of the descriptor are
 		 * performed before transferring ownership.
@@ -231,20 +183,19 @@ rx_processing_done:
 		 */
 		rte_write32(0, rxq->bd.active_reg_desc);
 
-		/* TX begins: FIXME process single packet */
-		/* First clean the ring */
+		/* TX begins: First clean the ring then process packet */
 		index_t = enet_get_bd_index(tx_bdp, &txq->bd);
 		status = rte_le_to_cpu_16(rte_read16(&tx_bdp->bd_sc));
 		if (status & TX_BD_READY)
-			printf("\n----> TX BD status ERROR %x, index_t=%d\n",
-				status, index_t);
+			stats->oerrors++;
+			break;
 		if (txq->tx_mbuf[index_t]) {
 			rte_pktmbuf_free(txq->tx_mbuf[index_t]);
 			txq->tx_mbuf[index_t] = NULL;
 		}
 
 		if (mbuf == NULL)
-			continue; // Nothing to Transmit
+			continue;
 
 		/* Fill in a Tx ring entry */
 		status &= ~TX_BD_STATS;
@@ -259,17 +210,7 @@ rx_processing_done:
 		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
 			&tx_bdp->bd_bufaddr);
 		rte_write16(rte_cpu_to_le_16(pkt_len), &tx_bdp->bd_datlen);
-		/*
-		 * if (txq->fep->bufdesc_ex) {
-		 *	struct bufdesc_ex *ebdp = (struct bufdesc_ex *)tx_bdp;
-		 *	unsigned int estatus = 0;
-		 * if (mbuf->ol_flags == PKT_RX_IP_CKSUM_GOOD)
-		 *	estatus |= TX_BD_PINS | TX_BD_IINS;
-		 * rte_write32(0, &ebdp->bd_bdu);
-		 * rte_write32(rte_cpu_to_le_32(estatus),
-		 *		&ebdp->bd_esc);
-		 * }
-		 */
+
 		/* Make sure the updates to rest of the descriptor are performed
 		 * before transferring ownership.
 		 */
@@ -336,7 +277,7 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 			stats->ierrors++;
 			if (status & RX_BD_OV) {
 				/* FIFO overrun */
-//				enet_dump_rx(rxq);
+				/* enet_dump_rx(rxq); */
 				ENET_PMD_ERR("rx_fifo_error\n");
 				goto rx_processing_done;
 			}
@@ -416,7 +357,8 @@ enetfec_recv_pkts(void *rxq1, __rte_unused struct rte_mbuf **rx_pkts,
 		}
 
 		rxq->rx_mbuf[index] = new_mbuf;
-		enet_new_rxbdp(rxq->fep, bdp, new_mbuf);
+		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(new_mbuf)),
+				&bdp->bd_bufaddr);
 rx_processing_done:
 		/* when rx_processing_done clear the status flags
 		 * for this buffer
@@ -465,7 +407,6 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	unsigned short buflen;
 	unsigned int index, estatus = 0;
 	unsigned int i, pkt_transmitted = 0;
-	/*unsigned int entries_free;*/
 	u8 *data;
 	int tx_st = 1;
 
@@ -487,15 +428,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			rte_pktmbuf_free(txq->tx_mbuf[index]);
 			txq->tx_mbuf[index] = NULL;
 		}
-#if ENETFEC_DUMP
-		entries_free = enet_get_free_txdesc_num(txq);
-		if (tx_pkts[i]->nb_segs > entries_free) {
-			enet_dump(txq);
-			rte_pktmbuf_free(tx_pkts[i]);
-			ENET_PMD_DEBUG("entries not enough");
-			continue;
-		}
-#endif
+
 		mbuf = *(tx_pkts);
 		tx_pkts++;
 
@@ -559,90 +492,3 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	}
 	return nb_pkts;
 }
-#if CODE_TO_REMOVE
-static int
-enet_tx_queue_cleanup(struct enetfec_priv_tx_q *txq)
-{
-	struct enetfec_private *fep = txq->fep;
-	struct rte_eth_stats *stats = &fep->stats;
-	struct bufdesc *bdp;
-	unsigned short status;
-	struct rte_mbuf *mbuf;
-	int timeout = 1000;
-	int	index = 0;
-	int pkts_cleaned = 0;
-	bdp = txq->dirty_tx;
-
-	/* get next bdp of dirty_tx */
-	bdp = enet_get_nextdesc(bdp, &txq->bd);
-
-	while (bdp != READ_ONCE(txq->bd.cur)) {
-		/* Order the load of bd.cur and bd_sc */
-		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
-		while (timeout > 0 && (status & TX_BD_READY)) {
-			timeout--;
-			status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
-		}
-		if (status & TX_BD_READY) {
-			ENET_PMD_INFO("\nstatus: %x\n", status);
-			break;
-		}
-
-		index = enet_get_bd_index(bdp, &txq->bd);
-
-		mbuf = txq->tx_mbuf[index];
-		pkts_cleaned++;
-		txq->tx_mbuf[index] = NULL;
-		rte_write32(rte_cpu_to_le_32(0), &bdp->bd_bufaddr);
-		if (!mbuf)
-			goto mbuf_done;
-
-		/* Check for errors. */
-		if (status & (TX_BD_HB | TX_BD_LC |
-				   TX_BD_RL | TX_BD_UN |
-				   TX_BD_CSL)) {
-			stats->oerrors++;
-		} else {
-			stats->opackets++;
-			stats->obytes += mbuf->pkt_len;
-		}
-		/* Free the buffer associated with this last transmit */
-		rte_pktmbuf_free(mbuf);
-mbuf_done:
-		/* Make sure the update to bdp and tx_skbuff are performed
-		 * before dirty_tx
-		 */
-		rte_wmb();
-		txq->dirty_tx = bdp;
-
-		/* Update pointer to next buffer descriptor to be transmitted */
-		bdp = enet_get_nextdesc(bdp, &txq->bd);
-	}
-
-	/* ERR006358: Keep the transmitter going */
-	if (bdp != txq->bd.cur &&
-	    readl(txq->bd.active_reg_desc) == 0)
-		writel(0, txq->bd.active_reg_desc);
-
-	return pkts_cleaned;
-}
-
-uint16_t
-enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
-{
-	int i, pkts_queued = 0, pkts_cleaned = 0;
-	struct enetfec_priv_tx_q *txq  =
-			(struct enetfec_priv_tx_q *)tx_queue;
-
-	for (i = 0; i < nb_pkts; i++) {
-		/* FIXME This for loop should be removed */
-		pkts_queued += enet_txq_submit_mbuf(txq, tx_pkts, 1);
-		pkts_cleaned += enet_tx_queue_cleanup(txq);
-	}
-
-	if (pkts_cleaned != pkts_queued)
-		ENET_PMD_DEBUG("\npkts_cleaned: %d, pkts_queued: %d\n",
-			pkts_cleaned, pkts_queued);
-	return pkts_cleaned;
-}
-#endif

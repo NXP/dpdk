@@ -13,6 +13,7 @@
  */
 #define ENET_MAX_Q	3
 
+#define BD_LEN			49152
 #define ENET_TX_FR_SIZE		2048
 #define TX_BD_RING_SIZE		512	/* It should be power of 2 */
 #define RX_BD_RING_SIZE		512
