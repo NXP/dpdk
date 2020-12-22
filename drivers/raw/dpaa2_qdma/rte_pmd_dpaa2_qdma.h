@@ -177,13 +177,13 @@ struct rte_qdma_queue_config {
 #define rte_qdma_info rte_rawdev_info
 #define rte_qdma_start(id) rte_rawdev_start(id)
 #define rte_qdma_reset(id) rte_rawdev_reset(id)
-#define rte_qdma_configure(id, cf) rte_rawdev_configure(id, cf)
+#define rte_qdma_configure(id, cf) rte_rawdev_configure(id, cf, 0)
 #define rte_qdma_dequeue_buffers(id, buf, num, ctxt) \
 	rte_rawdev_dequeue_buffers(id, buf, num, ctxt)
 #define rte_qdma_enqueue_buffers(id, buf, num, ctxt) \
 	rte_rawdev_enqueue_buffers(id, buf, num, ctxt)
 #define rte_qdma_queue_setup(id, qid, cfg) \
-	rte_rawdev_queue_setup(id, qid, cfg)
+	rte_rawdev_queue_setup(id, qid, cfg, 0)
 
 /*TODO introduce per queue stats API in rawdew */
 /**
