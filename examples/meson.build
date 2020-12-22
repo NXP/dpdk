@@ -47,8 +47,8 @@ all_examples = [
 	'vhost_blk', 'vm_power_manager',
 	'vm_power_manager/guest_cli',
 	'vmdq', 'vmdq_dcb',
+	'qdma_demo',
 	'cmdif',
-
 ]
 
 if get_option('examples') == ''
