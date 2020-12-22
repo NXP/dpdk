@@ -465,7 +465,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	unsigned short buflen;
 	unsigned int index, estatus = 0;
 	unsigned int i, pkt_transmitted = 0;
-	unsigned int entries_free;
+	/*unsigned int entries_free;*/
 	u8 *data;
 	int tx_st = 1;
 
@@ -480,7 +480,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
 
 		if (status & TX_BD_READY) {
-			stats->ierrors++;
+			stats->oerrors++;
 			break;
 		}
 		if (txq->tx_mbuf[index]) {
@@ -505,6 +505,8 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 
 		/* Set buffer length and buffer pointer */
 		buflen = rte_pktmbuf_pkt_len(mbuf);
+		stats->opackets++;
+		stats->obytes += buflen;
 
 		if (mbuf->nb_segs > 1) {
 			ENET_PMD_DEBUG("SG not supported");
