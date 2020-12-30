@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef TEST_BBDEV_VECTOR_H_
@@ -56,6 +56,7 @@ enum op_data_type {
 	DATA_INPUT = 0,
 	DATA_SOFT_OUTPUT,
 	DATA_HARD_OUTPUT,
+	DATA_INTERM_OUTPUT,
 	DATA_HARQ_INPUT,
 	DATA_HARQ_OUTPUT,
 	DATA_NUM_TYPES,

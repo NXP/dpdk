@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifdef RTE_EXEC_ENV_FREEBSD
@@ -20,6 +20,7 @@ const char *op_data_prefixes[] = {
 	"input",
 	"soft_output",
 	"hard_output",
+	"interm_output",
 	"harq_input",
 	"harq_output",
 };
@@ -207,6 +208,12 @@ op_ldpc_decoder_flag_strtoul(char *token, uint32_t *op_flag_value)
 	else if (!strcmp(token,
 			"RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_OUT_ENABLE"))
 		*op_flag_value = RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_OUT_ENABLE;
+	else if (!strcmp(token,
+			"RTE_BBDEV_LDPC_COMPACT_HARQ"))
+		*op_flag_value = RTE_BBDEV_LDPC_COMPACT_HARQ;
+	else if (!strcmp(token,
+			"RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ"))
+		*op_flag_value = RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ;
 	else {
 		printf("The given value is not a LDPC decoder flag\n");
 		return -1;
@@ -912,10 +919,6 @@ parse_ldpc_decoder_params(const char *key_token, char *token,
 	} else if (!strcmp(key_token, "n_rnti")) {
 		vector->mask |= TEST_BBDEV_VF_N_RNTI;
 		ldpc_dec->n_rnti = (uint16_t) strtoul(token, &err, 0);
-		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
-	} else if (!strcmp(key_token, "non_compact_harq")) {
-		vector->mask |= TEST_BBDEV_VF_SD_NON_COMPACT_HARQ;
-		ldpc_dec->non_compact_harq = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (starts_with(key_token, "codeblock_mask")) {
 		uint32_t data_length = 0;

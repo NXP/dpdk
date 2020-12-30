@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020 NXP
+# Copyright 2020-2021 NXP
 
 # @file: ldpc_dec_tb_harq_2_1.data
 #        Test case 2 for HARQ with re-transmission (i.e. with HARQ input)
@@ -13272,9 +13272,6 @@ en_scramble =
 
 code_block_mode =
 0
-
-non_compact_harq =
-1
 
 op_flags =
 RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP, RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE

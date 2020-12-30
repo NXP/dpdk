@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef _RTE_BBDEV_OP_H_
@@ -187,7 +187,15 @@ enum rte_bbdev_op_ldpcdec_flag_bitmasks {
 	 */
 	RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD = (1ULL << 18),
 	/** Set if a device supports scrambling */
-	RTE_BBDEV_LDPC_ENC_SCRAMBLING_OFFLOAD = (1ULL << 19)
+	RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD = (1ULL << 19),
+	/** Set if a device supports compact HARQ
+	 * NOTE: This should be same for all retransmissions.
+	 */
+	RTE_BBDEV_LDPC_COMPACT_HARQ = (1ULL << 20),
+	/** Set if a device supports intermediate compact HARQ
+	 * NOTE: This should be same for all retransmissions.
+	 */
+	RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ = (1ULL << 21)
 };
 
 /** Flags for LDPC encoder operation and capability structure */
@@ -209,7 +217,7 @@ enum rte_bbdev_op_ldpcenc_flag_bitmasks {
 	/** Set if a device supports concatenation of non byte aligned output */
 	RTE_BBDEV_LDPC_ENC_CONCATENATION = (1ULL << 7),
 	/** Set if a device supports scrambling */
-	RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD = (1ULL << 8)
+	RTE_BBDEV_LDPC_ENC_SCRAMBLING_OFFLOAD = (1ULL << 8)
 };
 
 /** Data input and output buffer for BBDEV operations */
@@ -472,6 +480,8 @@ struct rte_bbdev_op_ldpc_dec {
 	struct rte_bbdev_op_data hard_output;
 	/** The soft LLR output LLR stream buffer - optional */
 	struct rte_bbdev_op_data soft_output;
+	/** Intermediate output of stream buffer - optional */
+	struct rte_bbdev_op_data interm_output;
 	/** The HARQ combined LLR stream input buffer - optional */
 	struct rte_bbdev_op_data harq_combined_input;
 	/** The HARQ combined LLR stream output buffer - optional */
@@ -536,9 +546,6 @@ struct rte_bbdev_op_ldpc_dec {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_dec_ldpc_tb_params tb_params;
 	};
-	/* Use non-compact HARQ mode.
-	 * NOTE: This should be same for all retransmissions. */
-	uint8_t non_compact_harq;
 	/* CodeBlock mask.
 	 * Valid for retransmission when compact HARQ is used.
 	 * Each bit represents if that code block is enabled.

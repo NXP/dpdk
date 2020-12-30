@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #include <string.h>
@@ -98,7 +98,9 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 					RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD |
 					RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD |
 					RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE |
-					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE,
+					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE |
+					RTE_BBDEV_LDPC_COMPACT_HARQ |
+					RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ,
 			.num_buffers_src =
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 			.num_buffers_hard_out =
@@ -764,14 +766,14 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS], remove_tb_crc;
-	uint32_t harq_en = 0, compact_harq = 1, size_harq_buffer, C, i;
+	uint32_t harq_en = 0, compact_harq = 0, size_harq_buffer, C, i;
 	uint32_t set_index, base_graph2, lifting_index, mod_order;
 	uint32_t tb_24_bit_crc, one_code_block;
 	uint32_t num_output_bytes, e_floor_thresh, bits_per_cb;
 	uint32_t num_filler_bits, e_div_qm_floor, e_div_qm_ceiling;
 	uint32_t SD_SC_X1_INIT, SD_SC_X2_INIT, SD_CIRC_BUF;
 	uint32_t di_start_ofst_floor[8], di_start_ofst_ceiling[8];
-	uint32_t axi_data_num_bytes;
+	uint32_t axi_data_num_bytes, bbdev_ipc_op_flags = 0;
 	sd_command_t sd_cmd, *sd_command;
 	sd_dcm_command_t *sd_dcm_command;
 	char *data_ptr;
@@ -786,8 +788,14 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	remove_tb_crc =
 		!!(ldpc_dec->op_flags & RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP);
 
-	if (ldpc_dec->non_compact_harq)
-		compact_harq = 0;
+	if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_COMPACT_HARQ) {
+		bbdev_ipc_op_flags = BBDEV_LDPC_COMPACT_HARQ;
+		compact_harq = 1;
+	} else if (ldpc_dec->op_flags &
+			RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ) {
+		bbdev_ipc_op_flags |= BBDEV_LDPC_INTERM_COMPACT_HARQ;
+	}
+	bbdev_ipc_op->op_flags = rte_cpu_to_be_32(bbdev_ipc_op_flags);
 
 	if ((bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
@@ -1056,16 +1064,18 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
 	struct rte_bbdev_op_data *harq_in_op_data, *harq_out_op_data;
+	struct rte_bbdev_op_data *hard_out_op_data = &ldpc_dec->hard_output;
 	uint32_t out_op_data_orig_len = ldpc_dec->hard_output.length;
+	uint32_t interm_op_data_orig_len = ldpc_dec->interm_output.length;
 	uint32_t *codeblock_mask, i, total_out_bits, sd_circ_buf, l1_pcie_addr;
-	uint32_t byte, bit, num_code_blocks = 0, harq_out_len_per_cb;
+	uint32_t byte, bit, num_code_blocks = 0, harq_len_per_cb;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	char *data_ptr;
 	uint16_t sys_cols;
 	int ret;
 
-	sys_cols =  (ldpc_dec->basegraph == 1) ? 22 : 10;
+	sys_cols = (ldpc_dec->basegraph == 1) ? 22 : 10;
 	if (ldpc_dec->tb_params.c == 1) {
 		total_out_bits = ((sys_cols * ldpc_dec->z_c) -
 				ldpc_dec->n_filler);
@@ -1086,8 +1096,8 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	}
 
 	codeblock_mask = ldpc_dec->codeblock_mask;
-	if (!ldpc_dec->non_compact_harq && (ldpc_dec->op_flags &
-	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE)) {
+	if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
+	    ldpc_dec->op_flags & RTE_BBDEV_LDPC_COMPACT_HARQ) {
 		/* Get the total number of enabled code blocks */
 		for (i = 0; i < ldpc_dec->tb_params.c; i++) {
 			byte = i / 32;
@@ -1096,12 +1106,25 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 				num_code_blocks++;
 		}
 	} else {
-		/* Set the codeblock mask */
+		if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
+		    ldpc_dec->op_flags & RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ) {
+			for (i = 0; i < RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32;
+			     i++)
+				/* Do not swap as we read byte by byte on LA12xx */
+				bbdev_ipc_op->harq_mask[i] = codeblock_mask[i];
+		}
+
+		/* Set all the codeblock mask */
 		for (i = 0; i < ldpc_dec->tb_params.c; i++) {
 			/* Set the bit in codeblock */
 			byte = i / 32;
 			bit = i % 32;
 			codeblock_mask[byte] |= (1 << bit);
+			if (!(ldpc_dec->op_flags &
+			    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
+			    ldpc_dec->op_flags &
+			    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ)
+				bbdev_ipc_op->harq_mask[byte] |= (1 << bit);
 		}
 		num_code_blocks = ldpc_dec->tb_params.c;
 	}
@@ -1127,39 +1150,53 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		bbdev_ipc_op->harq_in_len = harq_in_op_data->length;
 	}
 
-	harq_out_op_data = &bbdev_dec_op->ldpc_dec.harq_combined_output;
-	if ((bbdev_dec_op->ldpc_dec.op_flags &
-	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
-	    harq_out_op_data->bdata) {
-		sd_circ_buf = rte_be_to_cpu_32(
-			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+	if (bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) {
+		harq_out_op_data = &bbdev_dec_op->ldpc_dec.harq_combined_output;
 		data_ptr = get_data_ptr(harq_out_op_data);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			data_ptr - huge_start_addr;
 		bbdev_ipc_op->harq_out_addr = rte_cpu_to_be_32(l1_pcie_addr);
-		harq_out_len_per_cb =
+	}
+
+	if (bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE ||
+	    (bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
+	    bbdev_dec_op->ldpc_dec.op_flags &
+	    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ)) {
+		sd_circ_buf = rte_be_to_cpu_32(
+			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+		harq_len_per_cb =
 			(128 * (uint32_t)ceil((double)sd_circ_buf/128));
 
-		if (harq_out_len_per_cb * ldpc_dec->tb_params.c >
+		if (harq_len_per_cb * ldpc_dec->tb_params.c >
 		    per_queue_hram_size) {
 			BBDEV_LA12XX_PMD_ERR(
 				"harq len required (%d) is more than allocated (%d)",
-				harq_out_len_per_cb * ldpc_dec->tb_params.c,
+				harq_len_per_cb * ldpc_dec->tb_params.c,
 				per_queue_hram_size);
 			return -1;
 		}
 
-		bbdev_ipc_op->harq_out_len_per_cb =
-			rte_cpu_to_be_32(harq_out_len_per_cb);
+		bbdev_ipc_op->harq_len_per_cb =
+			rte_cpu_to_be_32(harq_len_per_cb);
 	}
 
 	/* In case of retransmission, bbuf already have been filled in
 	 * the previous transmission. So skip appending data in bbuf.
 	 */
 	if (((out_op_data_orig_len == 0) || (ldpc_dec->rv_index == 0)) &&
-			!out_op_data->is_direct_mem)
+			!hard_out_op_data->is_direct_mem)
+		rte_bbuf_append((struct rte_bbuf *)hard_out_op_data->bdata,
+				hard_out_op_data->length);
+
+	if ((&ldpc_dec->interm_output == out_op_data) &&
+	    (interm_op_data_orig_len == 0)) {
 		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
-				ldpc_dec->hard_output.length);
+				hard_out_op_data->length);
+		out_op_data->length = hard_out_op_data->length;
+	}
 
 	if (ldpc_dec->max_num_harq_contexts)
 		bbdev_ipc_op->max_num_harq_contexts =
@@ -1276,7 +1313,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	case RTE_BBDEV_OP_LDPC_DEC:
 		ldpc_dec = &(((struct rte_bbdev_dec_op *)bbdev_op)->ldpc_dec);
 		in_op_data = &ldpc_dec->input;
-		out_op_data = &ldpc_dec->hard_output;
+
+		if ((ldpc_dec->op_flags &
+		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
+		    (ldpc_dec->op_flags &
+		    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ))
+			out_op_data = &ldpc_dec->interm_output;
+		else
+			out_op_data = &ldpc_dec->hard_output;
 
 		ret = prepare_ldpc_dec_op(bbdev_op, bbdev_ipc_op,
 					  q_priv, out_op_data);
