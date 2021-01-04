@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef __ENET_ETHDEV_H__
@@ -15,8 +15,8 @@
 
 #define BD_LEN			49152
 #define ENET_TX_FR_SIZE		2048
-#define TX_BD_RING_SIZE		512	/* It should be power of 2 */
-#define RX_BD_RING_SIZE		512
+#define MAX_TX_BD_RING_SIZE		512	/* It should be power of 2 */
+#define MAX_RX_BD_RING_SIZE		512
 
 /* full duplex or half duplex */
 #define HALF_DUPLEX             0x00
@@ -60,8 +60,7 @@ struct bufdesc_prop {
 
 struct enetfec_priv_tx_q {
 	struct bufdesc_prop	bd;
-	unsigned char		*tx_bounce[TX_BD_RING_SIZE];
-	struct rte_mbuf		*tx_mbuf[TX_BD_RING_SIZE];
+	struct rte_mbuf		*tx_mbuf[MAX_TX_BD_RING_SIZE];
 	struct bufdesc		*dirty_tx;
 	struct rte_mempool	*pool;
 	struct enetfec_private	*fep;
@@ -69,7 +68,7 @@ struct enetfec_priv_tx_q {
 
 struct enetfec_priv_rx_q {
 	struct bufdesc_prop	bd;
-	struct rte_mbuf		*rx_mbuf[RX_BD_RING_SIZE];
+	struct rte_mbuf		*rx_mbuf[MAX_RX_BD_RING_SIZE];
 	struct rte_mempool	*pool;
 	struct enetfec_private	*fep;
 };
