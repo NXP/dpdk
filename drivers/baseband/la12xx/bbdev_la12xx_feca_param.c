@@ -12,7 +12,7 @@
 static void
 calc_int_start_ofst(uint32_t Q_m,
 		    uint32_t rv_id,
-		    uint32_t harq_en,
+		    uint32_t use_def_k0,
 		    uint32_t N_cb,
 		    uint32_t BGnumber,
 		    uint32_t K,
@@ -26,7 +26,7 @@ calc_int_start_ofst(uint32_t Q_m,
 	uint32_t filler_end, filler_start, k0_eff;
 
 	num_filler_bits = K - K_dash;
-	if (harq_en == 0)
+	if (use_def_k0 == 1)
 		k0 = 0;
 	else if (rv_id == 0)
 		k0 = 0;
@@ -431,9 +431,9 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 		}
 	}
 
-	calc_int_start_ofst(Q_m, rv_id, harq_en, N_cb, BGnumber, K, K_dash, Zc,
+	calc_int_start_ofst(Q_m, rv_id, !harq_en, N_cb, BGnumber, K, K_dash, Zc,
 			    *e_div_qm_floor, SD_CIRC_BUF, di_start_ofst_floor);
-	calc_int_start_ofst(Q_m, rv_id, harq_en, N_cb, BGnumber, K, K_dash, Zc,
+	calc_int_start_ofst(Q_m, rv_id, !harq_en, N_cb, BGnumber, K, K_dash, Zc,
 			    *e_div_qm_ceiling, SD_CIRC_BUF,
 			    di_start_ofst_ceiling);
 
