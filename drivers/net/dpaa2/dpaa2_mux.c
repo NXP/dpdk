@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #include <sys/queue.h>
@@ -229,6 +229,76 @@ creation_error:
 	rte_free((void *)key_cfg_iova);
 	rte_free((void *)flow);
 	return NULL;
+}
+
+/* dump the status of the dpaa2_mux counters on the console */
+void
+rte_pmd_dpaa2_mux_dump_counter(FILE *f, uint32_t dpdmux_id)
+{
+	struct dpaa2_dpdmux_dev *dpdmux;
+	uint64_t counter;
+	int ret;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return;
+	}
+
+	fprintf(f, "dpdmux.%d\n", dpdmux_id);
+
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_FRAME, &counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_FRAME %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_BYTE, &counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_BYTE %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_FLTR_FRAME,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_FLTR_FRAME %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_FRAME_DISCARD,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_FRAME_DISCARD %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_MCAST_FRAME,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_MCAST_FRAME %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_MCAST_BYTE,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_MCAST_BYTE %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_BCAST_FRAME,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_BCAST_FRAME %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_ING_BCAST_BYTES,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_ING_BCAST_BYTES %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_EGR_FRAME, &counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_EGR_FRAME %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_EGR_BYTE, &counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_EGR_BYTE %" PRIu64 "\n", counter);
+	ret = dpdmux_if_get_counter(&dpdmux->dpdmux, CMD_PRI_LOW,
+		dpdmux->token, dpdmux_id, DPDMUX_CNT_EGR_FRAME_DISCARD,
+		&counter);
+	if (!ret)
+		fprintf(f, "DPDMUX_CNT_EGR_FRAME_DISCARD %" PRIu64 "\n", counter);
 }
 
 static int

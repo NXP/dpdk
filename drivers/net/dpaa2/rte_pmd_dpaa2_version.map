@@ -10,6 +10,7 @@ DPDK_20.0 {
 EXPERIMENTAL {
 	global:
 
+	rte_pmd_dpaa2_mux_dump_counter;
 	rte_pmd_dpaa2_mux_flow_create;
 	rte_pmd_dpaa2_set_custom_hash;
 	rte_pmd_dpaa2_set_timestamp;

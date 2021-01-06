@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #ifndef _RTE_PMD_DPAA2_H
@@ -39,6 +39,23 @@ struct rte_flow *
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			      struct rte_flow_item *pattern[],
 			      struct rte_flow_action *actions[]);
+
+/**
+ * @warning
+ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
+ *
+ * Dump demultiplex ethernet traffic counters
+ *
+ * @param f
+ *    output stream
+ * @param dpdmux_id
+ *    ID of the DPDMUX MC object.
+ *
+ */
+
+__rte_experimental
+void
+rte_pmd_dpaa2_mux_dump_counter(FILE *f, uint32_t dpdmux_id);
 
 /**
  * @warning
