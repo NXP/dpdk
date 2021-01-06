@@ -2,11 +2,11 @@
 NXP DPDK README
 ---------------
 Supported Platforms (and their derivatives):
-1. DPAA2 : LS108x, LS208x, LX2160
+1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
 3. PPFE  : LS1012
 4. ENETC : LS1028
-
+5. FEC   : i.MX 8M Mini
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -163,7 +163,7 @@ Pre requisite: Install pkg-config-aarch64-linux-gnu package on your machine
 Execute the following commands for cross compilation of dpdk libraries and
 application:
 
-  1. export CROSS_PATH=<path to toolchain>/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/
+  1. export CROSS_PATH=<path to toolchain>/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/
 
   2. export PATH=$PATH:$CROSS_PATH
 
@@ -388,6 +388,11 @@ Following are some pre-requisites:
      free CPU when traffic is low. With this mode there is a slight drop(~5%) in
      performance as compared to default mode(POLL).
 
+  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
+	argument with value "eth_pfe" to enable ethernet device. Maximum supported
+	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
+	values "eth_pfe0" and "eth_pfe1".
+
   For DPAA2 Platform:
   ~~~~~~~~~~~~~~~~~~~
 
@@ -481,12 +486,25 @@ Following are some pre-requisites:
         in either incorrectly configured I/O or I/O loss.
         For details of port numbering, refer the LSDK documentation.
 
-  NOTE: For all the applications, the value n must be always 1 for all platforms.
+  For i.mx 8M (FEC) Platform:
+  ~~~~~~~~~~~~~~~~~~
 
-  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
-	argument with value "eth_pfe" to enable ethernet device. Maximum supported
-	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
-	values "eth_pfe0" and "eth_pfe1".
+  1. Bring up the imx-8mm-evk-rev board with modified kernel and proper bootargs:
+	<bootargs>
+	Enable User space mode of the kernel driver by adding “fec.us=1 isolcpus=1-3”
+	in kernel command line(bootargs).
+  2. Mount the hugetlbfs required for DPDK applications:
+	1. mkdir -p /dev/hugepages
+	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
+
+  3. Manually allocate hugepages
+	e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+
+  NOTE: For i.mx 8M platform, For all the applications, user must provide the "--vdev"
+	argument with value "net_enetfec" to enable ethernet device. Maximum supported
+	ethernet is currently 1 only.
+
+  NOTE: For all the applications, the value n must be always 1 for all platforms.
 
   NOTE: Platforms with CAAM JR support need the kernel support and they need
 	to run following commands to assign job rings to userspace.
@@ -530,6 +548,9 @@ Following are some pre-requisites:
   as command help.
 
   NOTE: testpmd is not supported on PPFE platform
+
+  On i.mx 8m platform
+  ./testpmd -c 0x6 -n 1 --vdev 'net_enetfec' -- -i --portmask=0x1 --nb-cores=1 --forward-mode=io
 
   'test' Application
   ~~~~~~~~~~~~~~~~~~
@@ -929,13 +950,13 @@ for compilation steps of DPDK.
 
 	$ export RTE_SDK=<path to compiled DPDK source code containing build folder>
 	$ export RTE_TARGET=arm64-dpaa-linuxapp-gcc
-	$ git clone http://dpdk.org/git/apps/pktgen-dpdk
+	$ git clone -b pktgen-19.12.0 http://dpdk.org/git/apps/pktgen-dpdk
 	$ cd pktgen-dpdk/
 	$ make LUA_PKG_CFLAGS="-I/<path to>/libpcap-1.9.1 -I/<path to>/lua-5.3.5/src" LUA_PKG_LDFLAGS="-L/<path to>/libpcap-1.9.1 -L/<path to>/lua-5.3.5/src"
 
 Pktgen app location: pktgen-dpdk/app/arm64-dpaa-linuxapp-gcc/pktgen
 Pktgen Pktgen.lua location: pktgen-dpdk/Pktgen.lua
-
+Pktgen Tag being used: pktgen-19.12.0
 
 =========================
 VM VFIO Direct Assignment
