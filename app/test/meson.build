@@ -369,13 +369,13 @@ cflags += ['-DALLOW_INTERNAL_API']
 
 test_dep_objs = []
 if dpdk_conf.has('RTE_LIBRTE_COMPRESSDEV')
-	compress_test_dep = dependency('zlib', required: false)
-	if compress_test_dep.found()
-		test_dep_objs += compress_test_dep
-		test_sources += 'test_compressdev.c'
-		test_deps += 'compressdev'
-		fast_tests += [['compressdev_autotest', false]]
-	endif
+#	compress_test_dep = dependency('zlib', required: false)
+#	if compress_test_dep.found()
+#		test_dep_objs += compress_test_dep
+#		test_sources += 'test_compressdev.c'
+#		test_deps += 'compressdev'
+#		fast_tests += [['compressdev_autotest', false]]
+#	endif
 endif
 
 if dpdk_conf.has('RTE_LIBRTE_PMD_CRYPTO_SCHEDULER')
