@@ -652,6 +652,7 @@ then
 		[[ "${BASH_SOURCE[0]}" != $0 ]] && return || exit
 	fi
 
+	get_dpmcp_parameters
 	get_dpbp_parameters
 	get_dpseci_parameters
 	get_dpio_parameters
