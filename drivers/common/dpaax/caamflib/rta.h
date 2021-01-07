@@ -485,6 +485,9 @@ rta_get_sec_era(void)
 #define ALG_OPERATION(program, cipher_alg, aai, algo_state, icv_check, enc) \
 	rta_operation(program, cipher_alg, aai, algo_state, icv_check, enc)
 
+#define ALG_OPERATION_NP(program, cipher_alg, aai, algo_state, icv_check, enc) \
+	rta_operation2(program, cipher_alg, aai, algo_state, icv_check, enc)
+
 /**
  * PROTOCOL - Configures PROTOCOL OPERATION command
  * @program: pointer to struct program
