@@ -84,7 +84,7 @@ static struct active_device {
 	struct rte_mempool *ops_mempool[RTE_BBDEV_OP_TYPE_COUNT];
 	struct rte_mempool *in_bbuf_pool;
 	struct rte_mempool *hard_out_bbuf_pool;
-	struct rte_mempool *interm_out_bbuf_pool;
+	struct rte_mempool *partial_out_bbuf_pool;
 	struct rte_mempool *soft_out_bbuf_pool;
 	struct rte_mempool *harq_in_bbuf_pool;
 	struct rte_mempool *harq_out_bbuf_pool;
@@ -96,7 +96,7 @@ static uint8_t nb_active_devs;
 struct test_buffers {
 	struct rte_bbdev_op_data *inputs;
 	struct rte_bbdev_op_data *hard_outputs;
-	struct rte_bbdev_op_data *interm_outputs;
+	struct rte_bbdev_op_data *partial_outputs;
 	struct rte_bbdev_op_data *soft_outputs;
 	struct rte_bbdev_op_data *harq_inputs;
 	struct rte_bbdev_op_data *harq_outputs;
@@ -602,13 +602,13 @@ create_mempools(struct active_device *ad, int socket_id,
 
 		mp = create_bbuf_pool(soft_out_maxl, ad->dev_id, socket_id,
 				bbuf_pool_size,
-				"interm_out", bbuf_size);
+				"partial_out", bbuf_size);
 		TEST_ASSERT_NOT_NULL(mp,
-				"ERROR Failed to create %uB intermediate output bbuf pool for dev %u on socket %u.",
+				"ERROR Failed to create %uB partial output bbuf pool for dev %u on socket %u.",
 				bbuf_pool_size,
 				ad->dev_id,
 				socket_id);
-		ad->interm_out_bbuf_pool = mp;
+		ad->partial_out_bbuf_pool = mp;
 	}
 
 	/* Soft outputs */
@@ -1143,7 +1143,7 @@ ldpc_input_llr_scaling(struct rte_bbdev_op_data *input_ops,
 static int
 fill_queue_buffers(struct test_op_params *op_params,
 		struct rte_mempool *in_mp, struct rte_mempool *hard_out_mp,
-		struct rte_mempool *interm_out_mp,
+		struct rte_mempool *partial_out_mp,
 		struct rte_mempool *soft_out_mp,
 		struct rte_mempool *harq_in_mp, struct rte_mempool *harq_out_mp,
 		uint16_t queue_id,
@@ -1159,7 +1159,7 @@ fill_queue_buffers(struct test_op_params *op_params,
 		in_mp,
 		soft_out_mp,
 		hard_out_mp,
-		interm_out_mp,
+		partial_out_mp,
 		harq_in_mp,
 		harq_out_mp,
 	};
@@ -1168,17 +1168,17 @@ fill_queue_buffers(struct test_op_params *op_params,
 		&op_params->q_bufs[socket_id][queue_id].inputs,
 		&op_params->q_bufs[socket_id][queue_id].soft_outputs,
 		&op_params->q_bufs[socket_id][queue_id].hard_outputs,
-		&op_params->q_bufs[socket_id][queue_id].interm_outputs,
+		&op_params->q_bufs[socket_id][queue_id].partial_outputs,
 		&op_params->q_bufs[socket_id][queue_id].harq_inputs,
 		&op_params->q_bufs[socket_id][queue_id].harq_outputs,
 	};
 
-	if (interm_out_mp) {
-		vector->entries[DATA_INTERM_OUTPUT].segments[0].addr =
+	if (partial_out_mp) {
+		vector->entries[DATA_PARTIAL_OUTPUT].segments[0].addr =
 			vector->entries[DATA_HARD_OUTPUT].segments[0].addr;
-		vector->entries[DATA_INTERM_OUTPUT].segments[0].length =
+		vector->entries[DATA_PARTIAL_OUTPUT].segments[0].length =
 			vector->entries[DATA_HARD_OUTPUT].segments[0].length;
-		vector->entries[DATA_INTERM_OUTPUT].nb_segments =
+		vector->entries[DATA_PARTIAL_OUTPUT].nb_segments =
 			vector->entries[DATA_HARD_OUTPUT].nb_segments;
 	}
 
@@ -1234,7 +1234,7 @@ free_buffers(struct active_device *ad, struct test_op_params *op_params)
 
 	rte_mempool_free(ad->in_bbuf_pool);
 	rte_mempool_free(ad->hard_out_bbuf_pool);
-	rte_mempool_free(ad->interm_out_bbuf_pool);
+	rte_mempool_free(ad->partial_out_bbuf_pool);
 	rte_mempool_free(ad->soft_out_bbuf_pool);
 	rte_mempool_free(ad->harq_in_bbuf_pool);
 	rte_mempool_free(ad->harq_out_bbuf_pool);
@@ -1243,7 +1243,7 @@ free_buffers(struct active_device *ad, struct test_op_params *op_params)
 		for (j = 0; j < RTE_MAX_NUMA_NODES; ++j) {
 			rte_free(op_params->q_bufs[j][i].inputs);
 			rte_free(op_params->q_bufs[j][i].hard_outputs);
-			rte_free(op_params->q_bufs[j][i].interm_outputs);
+			rte_free(op_params->q_bufs[j][i].partial_outputs);
 			rte_free(op_params->q_bufs[j][i].soft_outputs);
 			rte_free(op_params->q_bufs[j][i].harq_inputs);
 			rte_free(op_params->q_bufs[j][i].harq_outputs);
@@ -1351,7 +1351,7 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		unsigned int start_idx,
 		struct rte_bbdev_op_data *inputs,
 		struct rte_bbdev_op_data *hard_outputs,
-		struct rte_bbdev_op_data *interm_outputs,
+		struct rte_bbdev_op_data *partial_outputs,
 		struct rte_bbdev_op_data *soft_outputs,
 		struct rte_bbdev_op_data *harq_inputs,
 		struct rte_bbdev_op_data *harq_outputs,
@@ -1392,9 +1392,9 @@ copy_reference_ldpc_dec_op(struct rte_bbdev_dec_op **ops, unsigned int n,
 		ops[i]->ldpc_dec.code_block_mode = ldpc_dec->code_block_mode;
 
 		ops[i]->ldpc_dec.hard_output = hard_outputs[start_idx + i];
-		if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ)
-			ops[i]->ldpc_dec.interm_output =
-				interm_outputs[start_idx + i];
+		if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ)
+			ops[i]->ldpc_dec.partial_output =
+				partial_outputs[start_idx + i];
 		ops[i]->ldpc_dec.input = inputs[start_idx + i];
 		if (soft_outputs != NULL)
 			ops[i]->ldpc_dec.soft_output =
@@ -2092,7 +2092,7 @@ run_test_case_on_device(test_case_function *test_case_func, uint8_t dev_id,
 			f_ret = fill_queue_buffers(&op_params[lcore_id],
 					ad->in_bbuf_pool,
 					ad->hard_out_bbuf_pool,
-					ad->interm_out_bbuf_pool,
+					ad->partial_out_bbuf_pool,
 					ad->soft_out_bbuf_pool,
 					ad->harq_in_bbuf_pool,
 					ad->harq_out_bbuf_pool,
@@ -2151,18 +2151,18 @@ static void
 update_orig_ldpc_dec_out_data(struct rte_bbdev_dec_op **ops, const uint16_t n)
 {
 	struct rte_bbdev_dec_op *op;
-	struct rte_bbdev_op_data *hard_output, *interm_output;
+	struct rte_bbdev_op_data *hard_output, *partial_output;
 	int op_index, i, num_cbs, cb_size;
 	int bit_index, byte_index;
 	int start_index = -1, end_index = -1;
 	uint8_t *cb_mask, *crc_mask;
-	uint8_t *hard_data, *interm_data;
+	uint8_t *hard_data, *partial_data;
 	uint64_t len_to_copy, addr_off;
 
 	for (op_index = 0; op_index < n; op_index++) {
 		op = ops[op_index];
 		hard_output = &op->ldpc_dec.hard_output;
-		interm_output = &op->ldpc_dec.interm_output;
+		partial_output = &op->ldpc_dec.partial_output;
 
 		num_cbs = op->ldpc_dec.tb_params.c;
 		cb_size = (hard_output->length + 3)/num_cbs;	// Add 3 for CRC
@@ -2173,9 +2173,9 @@ update_orig_ldpc_dec_out_data(struct rte_bbdev_dec_op **ops, const uint16_t n)
 		hard_data = hard_output->is_direct_mem ? hard_output->mem :
 			rte_bbuf_mtod((struct rte_bbuf *)(hard_output->bdata),
 				      uint8_t *);
-		interm_data = interm_output->is_direct_mem ?
-			interm_output->mem :
-			rte_bbuf_mtod((struct rte_bbuf *)(interm_output->bdata),
+		partial_data = partial_output->is_direct_mem ?
+			partial_output->mem :
+			rte_bbuf_mtod((struct rte_bbuf *)(partial_output->bdata),
 				      uint8_t *);
 
 		byte_index = 0;
@@ -2195,7 +2195,7 @@ update_orig_ldpc_dec_out_data(struct rte_bbdev_dec_op **ops, const uint16_t n)
 				addr_off = start_index * cb_size;
 				len_to_copy = (end_index - start_index + 1) *
 					cb_size;
-				memcpy(hard_data + addr_off, interm_data +
+				memcpy(hard_data + addr_off, partial_data +
 				       addr_off, len_to_copy);
 				start_index = -1;
 			}
@@ -2759,7 +2759,7 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 
 	if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE)
 		copy_reference_ldpc_dec_op(ops_enq, num_ops, 0, bufs->inputs,
-				bufs->hard_outputs, bufs->interm_outputs,
+				bufs->hard_outputs, bufs->partial_outputs,
 				bufs->soft_outputs, bufs->harq_inputs,
 				bufs->harq_outputs, ref_op);
 
@@ -2800,13 +2800,13 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 					queue_id, &ops_deq[deq], enq - deq);
 		}
 
-		/* In case of intermediate compact HARQ, update original
-		 * data with intermediate output.
+		/* In case of partial compact HARQ, update original
+		 * data with partial output.
 		 */
 		if ((ref_op->ldpc_dec.op_flags &
 		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 		    (ref_op->ldpc_dec.op_flags &
-		    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ))
+		    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ))
 			update_orig_ldpc_dec_out_data(ops_deq, num_ops);
 
 		total_time += rte_rdtsc_precise() - start_time;
@@ -3663,7 +3663,7 @@ latency_test_ldpc_dec(void *arg)
 		copy_reference_ldpc_dec_op(ops_enq, burst_sz, 0,
 				bufs->inputs,
 				bufs->hard_outputs,
-				bufs->interm_outputs,
+				bufs->partial_outputs,
 				bufs->soft_outputs,
 				bufs->harq_inputs,
 				bufs->harq_outputs,
@@ -3762,13 +3762,13 @@ latency_test_ldpc_dec(void *arg)
 			deq += rte_bbdev_dequeue_ldpc_dec_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
 			if (deq > 0) {
-				/* In case of intermediate compact HARQ, update
-				 *  original data with intermediate output.
+				/* In case of partial compact HARQ, update
+				 *  original data with partial output.
 				 */
 				if ((ref_op->ldpc_dec.op_flags &
 				    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 				    (ref_op->ldpc_dec.op_flags &
-				    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ))
+				    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ))
 					update_orig_ldpc_dec_out_data(
 						&ops_deq[deq - 1], deq);
 

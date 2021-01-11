@@ -100,7 +100,7 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 					RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE |
 					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE |
 					RTE_BBDEV_LDPC_COMPACT_HARQ |
-					RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ,
+					RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ,
 			.num_buffers_src =
 					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
 			.num_buffers_hard_out =
@@ -792,8 +792,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		bbdev_ipc_op_flags = BBDEV_LDPC_COMPACT_HARQ;
 		compact_harq = 1;
 	} else if (ldpc_dec->op_flags &
-			RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ) {
-		bbdev_ipc_op_flags |= BBDEV_LDPC_INTERM_COMPACT_HARQ;
+			RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ) {
+		bbdev_ipc_op_flags |= BBDEV_LDPC_PARTIAL_COMPACT_HARQ;
 	}
 	bbdev_ipc_op->op_flags = rte_cpu_to_be_32(bbdev_ipc_op_flags);
 
@@ -1066,7 +1066,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	struct rte_bbdev_op_data *harq_in_op_data, *harq_out_op_data;
 	struct rte_bbdev_op_data *hard_out_op_data = &ldpc_dec->hard_output;
 	uint32_t out_op_data_orig_len = ldpc_dec->hard_output.length;
-	uint32_t interm_op_data_orig_len = ldpc_dec->interm_output.length;
+	uint32_t partial_op_data_orig_len = ldpc_dec->partial_output.length;
 	uint32_t *codeblock_mask, i, total_out_bits, sd_circ_buf, l1_pcie_addr;
 	uint32_t byte, bit, num_code_blocks = 0, harq_len_per_cb;
 	char *huge_start_addr =
@@ -1107,7 +1107,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		}
 	} else {
 		if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
-		    ldpc_dec->op_flags & RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ) {
+		    ldpc_dec->op_flags & RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ) {
 			for (i = 0; i < RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32;
 			     i++)
 				/* Do not swap as we read byte by byte on LA12xx */
@@ -1123,7 +1123,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 			if (!(ldpc_dec->op_flags &
 			    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 			    ldpc_dec->op_flags &
-			    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ)
+			    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ)
 				bbdev_ipc_op->harq_mask[byte] |= (1 << bit);
 		}
 		num_code_blocks = ldpc_dec->tb_params.c;
@@ -1164,7 +1164,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	    (bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
 	    bbdev_dec_op->ldpc_dec.op_flags &
-	    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ)) {
+	    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ)) {
 		sd_circ_buf = rte_be_to_cpu_32(
 			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
 		harq_len_per_cb =
@@ -1191,8 +1191,8 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		rte_bbuf_append((struct rte_bbuf *)hard_out_op_data->bdata,
 				hard_out_op_data->length);
 
-	if ((&ldpc_dec->interm_output == out_op_data) &&
-	    (interm_op_data_orig_len == 0)) {
+	if ((&ldpc_dec->partial_output == out_op_data) &&
+	    (partial_op_data_orig_len == 0)) {
 		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
 				hard_out_op_data->length);
 		out_op_data->length = hard_out_op_data->length;
@@ -1317,8 +1317,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		if ((ldpc_dec->op_flags &
 		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 		    (ldpc_dec->op_flags &
-		    RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ))
-			out_op_data = &ldpc_dec->interm_output;
+		    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ))
+			out_op_data = &ldpc_dec->partial_output;
 		else
 			out_op_data = &ldpc_dec->hard_output;
 

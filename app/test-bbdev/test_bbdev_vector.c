@@ -20,7 +20,7 @@ const char *op_data_prefixes[] = {
 	"input",
 	"soft_output",
 	"hard_output",
-	"interm_output",
+	"partial_output",
 	"harq_input",
 	"harq_output",
 };
@@ -212,8 +212,8 @@ op_ldpc_decoder_flag_strtoul(char *token, uint32_t *op_flag_value)
 			"RTE_BBDEV_LDPC_COMPACT_HARQ"))
 		*op_flag_value = RTE_BBDEV_LDPC_COMPACT_HARQ;
 	else if (!strcmp(token,
-			"RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ"))
-		*op_flag_value = RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ;
+			"RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ"))
+		*op_flag_value = RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ;
 	else {
 		printf("The given value is not a LDPC decoder flag\n");
 		return -1;

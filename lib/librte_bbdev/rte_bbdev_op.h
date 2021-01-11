@@ -192,10 +192,10 @@ enum rte_bbdev_op_ldpcdec_flag_bitmasks {
 	 * NOTE: This should be same for all retransmissions.
 	 */
 	RTE_BBDEV_LDPC_COMPACT_HARQ = (1ULL << 20),
-	/** Set if a device supports intermediate compact HARQ
+	/** Set if a device supports partial compact HARQ
 	 * NOTE: This should be same for all retransmissions.
 	 */
-	RTE_BBDEV_LDPC_INTERM_COMPACT_HARQ = (1ULL << 21)
+	RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ = (1ULL << 21)
 };
 
 /** Flags for LDPC encoder operation and capability structure */
@@ -481,7 +481,7 @@ struct rte_bbdev_op_ldpc_dec {
 	/** The soft LLR output LLR stream buffer - optional */
 	struct rte_bbdev_op_data soft_output;
 	/** Intermediate output of stream buffer - optional */
-	struct rte_bbdev_op_data interm_output;
+	struct rte_bbdev_op_data partial_output;
 	/** The HARQ combined LLR stream input buffer - optional */
 	struct rte_bbdev_op_data harq_combined_input;
 	/** The HARQ combined LLR stream output buffer - optional */
