@@ -155,7 +155,8 @@ rte_eal_tailqs_init(void)
 		/* second part of register job for "early" tailqs, see
 		 * rte_eal_tailq_register and EAL_REGISTER_TAILQ */
 		rte_eal_tailq_update(t);
-		if (t->head == NULL) {
+		if (t->head == NULL &&
+			rte_eal_process_type() == RTE_PROC_PRIMARY) {
 			RTE_LOG(ERR, EAL,
 				"Cannot initialize tailq: %s\n", t->name);
 			/* TAILQ_REMOVE not needed, error is already fatal */
