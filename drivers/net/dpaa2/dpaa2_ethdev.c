@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2020 NXP
+ *   Copyright 2016-2021 NXP
  *
  */
 
@@ -2619,6 +2619,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		priv->flags |= DPAA2_PARSE_ERR_DROP;
 		DPAA2_PMD_INFO("Drop parse error packets in hw");
 	}
+
+	if (getenv("DPAA2_RX_TAILDROP_OFF"))
+		priv->flags |= DPAA2_RX_TAILDROP_OFF;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
