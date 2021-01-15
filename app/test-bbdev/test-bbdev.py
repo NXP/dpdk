@@ -11,22 +11,23 @@ import shlex
 
 from threading import Timer
 
-def kill(process):
-    print("ERROR: Test app timed out")
-    process.kill()
-
-dpdk_path = "../.."
-dpdk_target = "build"
+#def kill(process):
+#    print "ERROR: Test app timed out"
+#    process.kill()
+#
+#    dpdk_path = "../.."
+#	 dpdk_target = "build"
 
 parser = argparse.ArgumentParser(
                     description='BBdev Unit Test Application',
                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-p", "--testapp-path",
                     help="specifies path to the bbdev test app",
-                    default=dpdk_path + "/" + dpdk_target + "/app/dpdk-test-bbdev")
+#                    default=dpdk_path + "/" + dpdk_target + "/app/testbbdev")
+                    default="/root/testbbdev")
 parser.add_argument("-e", "--eal-params",
                     help="EAL arguments which are passed to the test app",
-                    default="--vdev=baseband_null0")
+                    default="--vdev=bbdev_la12xx")
 parser.add_argument("-t", "--timeout",
                     type=int,
                     help="Timeout in seconds",
@@ -37,21 +38,25 @@ parser.add_argument("-c", "--test-cases",
 parser.add_argument("-v", "--test-vector",
                     nargs="+",
                     help="Specifies paths to the test vector files.",
-                    default=[dpdk_path +
-                    "/app/test-bbdev/test_vectors/bbdev_null.data"])
+#                    default=[dpdk_path +
+#                    "/app/test-bbdev/test_vectors/bbdev_null.data"])
+                    default=["/root/bbdev_null.data"])
 parser.add_argument("-n", "--num-ops",
                     type=int,
                     help="Number of operations to process on device.",
-                    default=32)
+#                    default=32)
+                    default=4)
 parser.add_argument("-b", "--burst-size",
                     nargs="+",
                     type=int,
                     help="Operations enqueue/dequeue burst size.",
-                    default=[32])
+#                    default=[32])
+                    default=[4])
 parser.add_argument("-l", "--num-lcores",
                     type=int,
                     help="Number of lcores to run.",
-                    default=16)
+#                    default=16)
+                    default=2)
 parser.add_argument("-i", "--init-device",
                     action='store_true',
                     help="Initialise PF device with default values.")

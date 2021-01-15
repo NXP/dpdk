@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020-2021 NXP
  */
 
 #include <getopt.h>
@@ -13,6 +14,7 @@
 #include <rte_string_fns.h>
 #include <rte_cycles.h>
 #include <rte_lcore.h>
+#include <rte_bbuf.h>
 
 #include "main.h"
 
@@ -31,8 +33,12 @@ static struct test_params {
 	unsigned int num_lcores;
 	double snr;
 	unsigned int iter_max;
+	unsigned int num_seg;
+	unsigned int buf_size;
 	char test_vector_filename[PATH_MAX];
+	unsigned int vector_count;
 	bool init_device;
+	bool reset_reconfig;
 } test_params;
 
 static struct test_commands_list commands_list =
@@ -125,6 +131,12 @@ get_vector_filename(void)
 }
 
 unsigned int
+get_vector_count(void)
+{
+	return test_params.vector_count;
+}
+
+unsigned int
 get_num_ops(void)
 {
 	return test_params.num_ops;
@@ -142,10 +154,16 @@ get_num_lcores(void)
 	return test_params.num_lcores;
 }
 
-double
-get_snr(void)
+unsigned int
+get_num_seg(void)
 {
-	return test_params.snr;
+	return test_params.num_seg;
+}
+
+unsigned int
+get_buf_size(void)
+{
+	return test_params.buf_size;
 }
 
 unsigned int
@@ -160,6 +178,12 @@ get_init_device(void)
 	return test_params.init_device;
 }
 
+bool
+get_reset_reconfig(void)
+{
+	return test_params.reset_reconfig;
+}
+
 static void
 print_usage(const char *prog_name)
 {
@@ -167,8 +191,12 @@ print_usage(const char *prog_name)
 
 	printf("***Usage: %s [EAL params] [-- [-n/--num-ops NUM_OPS]\n"
 			"\t[-b/--burst-size BURST_SIZE]\n"
+			"\t[-s/--buf-size BUFFER_SIZE]\n"
+			"\t[-m/--num-segs NUM_SEGS]\n"
 			"\t[-v/--test-vector VECTOR_FILE]\n"
-			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]]\n",
+			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
+			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]\n"
+			"\t[-r/--reset-reconfig]]\n",
 			prog_name);
 
 	printf("Available testcases: ");
@@ -193,16 +221,18 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "burst-size", 1, 0, 'b' },
 		{ "test-cases", 1, 0, 'c' },
 		{ "test-vector", 1, 0, 'v' },
+		{ "vector-count", 1, 0, 'f' },
 		{ "lcores", 1, 0, 'l' },
-		{ "snr", 1, 0, 's' },
-		{ "iter_max", 6, 0, 't' },
+		{ "buf-size", 1, 0, 's' },
+		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
+		{ "reset-reconfig", 0, 0, 'r' },
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
 	tp->iter_max = DEFAULT_ITER;
 
-	while ((opt = getopt_long(argc, argv, "hin:b:c:v:l:s:t:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hirn:b:c:v:f:l:s:m:t:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -242,22 +272,29 @@ parse_args(int argc, char **argv, struct test_params *tp)
 				++num_tests;
 			}
 			break;
+		case 'f':
+			TEST_ASSERT(test_vector_present == false,
+					"Test vector provided more than once");
+			test_vector_present = true;
+			tp->vector_count = strtol(optarg, NULL, 10);
+			snprintf(tp->test_vector_filename,
+					sizeof(tp->test_vector_filename),
+					"%s", "no-file");
+			TEST_ASSERT(tp->vector_count <= MAX_VECTORS,
+					"Num of vectors mustn't be greater than %u",
+					MAX_VECTORS);
+			break;
 		case 'v':
 			TEST_ASSERT(test_vector_present == false,
 					"Test vector provided more than once");
 			test_vector_present = true;
-
+			tp->vector_count = 1;
 			TEST_ASSERT(strlen(optarg) > 0,
 					"Config file name is null");
 
 			snprintf(tp->test_vector_filename,
 					sizeof(tp->test_vector_filename),
 					"%s", optarg);
-			break;
-		case 's':
-			TEST_ASSERT(strlen(optarg) > 0,
-					"SNR is not provided");
-			tp->snr = strtod(optarg, NULL);
 			break;
 		case 't':
 			TEST_ASSERT(strlen(optarg) > 0,
@@ -272,10 +309,26 @@ parse_args(int argc, char **argv, struct test_params *tp)
 					"Num of lcores mustn't be greater than %u",
 					RTE_MAX_LCORE);
 			break;
+		case 's':
+			TEST_ASSERT(strlen(optarg) > 0,
+					"Buffer size is not provided");
+			tp->buf_size = RTE_BBUF_HEADROOM + strtol(optarg, NULL, 10);
+			break;
+		case 'm':
+			TEST_ASSERT(strlen(optarg) > 0,
+					"Num of segments is not provided");
+			tp->num_seg = strtol(optarg, NULL, 10);
+			TEST_ASSERT(tp->num_seg < BBUF_MAX_SEGS,
+					"Num of segments mustn't be greater than %u",
+					BBUF_MAX_SEGS);
+			break;
 		case 'i':
 			/* indicate fpga fec config required */
 			tp->init_device = true;
 			break;
+		case 'r':
+			tp->reset_reconfig = true;
+			return 0;
 		case 'h':
 			print_usage(argv[0]);
 			return 0;
@@ -301,6 +354,18 @@ parse_args(int argc, char **argv, struct test_params *tp)
 			"WARNING: Num of lcores was not provided or was set 0. Set to value from RTE config (%u)\n",
 			rte_lcore_count());
 		tp->num_lcores = rte_lcore_count();
+	}
+	if (tp->buf_size == 0) {
+		printf(
+			"WARNING: Buffer size was not provided or was set 0. Set to default (%u)\n",
+			BBUF_POOL_ELEM_SIZE);
+		tp->buf_size = BBUF_POOL_ELEM_SIZE;
+	}
+	if (tp->num_seg == 0) {
+		printf(
+			"WARNING: Number of segments was not provided or was set 0. Set to default (%u)\n",
+			DEFAULT_BBUF_SEGS);
+		tp->num_seg = DEFAULT_BBUF_SEGS;
 	}
 
 	TEST_ASSERT(tp->burst_sz <= tp->num_ops,

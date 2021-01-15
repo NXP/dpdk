@@ -16,9 +16,7 @@
 #include <rte_bbdev_pmd.h>
 
 #include "main.h"
-
-
-#define BBDEV_NAME_NULL          ("bbdev_null")
+#include "test_bbdev_vector.h"
 
 struct bbdev_testsuite_params {
 	struct rte_bbdev_queue_conf qconf;
@@ -26,25 +24,46 @@ struct bbdev_testsuite_params {
 
 static struct bbdev_testsuite_params testsuite_params;
 
-static uint8_t null_dev_id;
+static uint8_t bbdev_dev_id;
+
+static struct test_bbdev_vector test_vector;
+
+static int
+read_test_vector(void)
+{
+	int ret;
+
+	memset(&test_vector, 0, sizeof(test_vector));
+	if (!strcmp(get_vector_filename(), "no-file")) {
+		char vector[22] = "./test_vector_0.data";
+
+		printf("Test vector file = %s\n", vector);
+		ret = test_bbdev_vector_read(vector, &test_vector);
+		TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
+				vector);
+	} else {
+		printf("Test vector file = %s\n", get_vector_filename());
+		ret = test_bbdev_vector_read(get_vector_filename(),
+					     &test_vector);
+		TEST_ASSERT_SUCCESS(ret, "Failed to parse file %s\n",
+				get_vector_filename());
+	}
+
+	return TEST_SUCCESS;
+}
 
 static int
 testsuite_setup(void)
 {
 	uint8_t nb_devs;
-	int ret;
-	char buf[RTE_BBDEV_NAME_MAX_LEN];
 
-	/* Create test device */
-	snprintf(buf, sizeof(buf), "%s_unittest", BBDEV_NAME_NULL);
-	ret = rte_vdev_init(buf, NULL);
-	TEST_ASSERT(ret == 0, "Failed to create instance of pmd: %s", buf);
+	TEST_ASSERT_SUCCESS(read_test_vector(), "Test suite setup failed\n");
 
 	nb_devs = rte_bbdev_count();
 	TEST_ASSERT(nb_devs != 0, "No devices found");
 
 	/* Most recently created device is our device */
-	null_dev_id = nb_devs - 1;
+	bbdev_dev_id = nb_devs - 1;
 
 	return TEST_SUCCESS;
 }
@@ -52,10 +71,6 @@ testsuite_setup(void)
 static void
 testsuite_teardown(void)
 {
-	char buf[RTE_BBDEV_NAME_MAX_LEN];
-
-	snprintf(buf, sizeof(buf), "%s_unittest", BBDEV_NAME_NULL);
-	rte_vdev_uninit(buf);
 }
 
 static int
@@ -68,14 +83,15 @@ ut_setup(void)
 	ts_params->qconf.priority = 0;
 	ts_params->qconf.socket = SOCKET_ID_ANY;
 	ts_params->qconf.deferred_start = 1;
+	ts_params->qconf.sg = false;
 
 	num_queues = 1;
-	TEST_ASSERT_SUCCESS(rte_bbdev_setup_queues(null_dev_id, num_queues,
+	TEST_ASSERT_SUCCESS(rte_bbdev_setup_queues(bbdev_dev_id, num_queues,
 			SOCKET_ID_ANY), "Failed to setup queues for bbdev %u",
 			0);
 
 	/* Start the device */
-	TEST_ASSERT_SUCCESS(rte_bbdev_start(null_dev_id),
+	TEST_ASSERT_SUCCESS(rte_bbdev_start(bbdev_dev_id),
 			"Failed to start bbdev %u", 0);
 
 	return TEST_SUCCESS;
@@ -84,7 +100,7 @@ ut_setup(void)
 static void
 ut_teardown(void)
 {
-	rte_bbdev_close(null_dev_id);
+	rte_bbdev_close(bbdev_dev_id);
 }
 
 static int
@@ -122,10 +138,10 @@ test_bbdev_configure_invalid_num_queues(void)
 			"Need at least %d devices for test", 1);
 
 	/* valid num_queues values */
-	num_queues = 8;
+	num_queues = 2;
 
 	/* valid dev_id values */
-	dev_id = null_dev_id;
+	dev_id = bbdev_dev_id;
 
 	/* Stop the device in case it's started so it can be configured */
 	rte_bbdev_stop(dev_id);
@@ -174,7 +190,7 @@ test_bbdev_configure_stop_device(void)
 	int return_value;
 
 	/* valid dev_id values */
-	dev_id = null_dev_id;
+	dev_id = bbdev_dev_id;
 
 	/* Stop the device so it can be configured */
 	rte_bbdev_stop(dev_id);
@@ -261,7 +277,7 @@ test_bbdev_configure_stop_queue(void)
 	int return_value;
 
 	/* Valid dev_id values */
-	dev_id = null_dev_id;
+	dev_id = bbdev_dev_id;
 
 	/* Valid queue_id values */
 	queue_id = 0;
@@ -392,7 +408,7 @@ test_bbdev_configure_invalid_queue_configure(void)
 	uint16_t queue_id;
 
 	/* Valid dev_id values */
-	dev_id = null_dev_id;
+	dev_id = bbdev_dev_id;
 
 	/* Valid queue_id values */
 	queue_id = 0;
@@ -423,13 +439,7 @@ test_bbdev_configure_invalid_queue_configure(void)
 	queue_id = 0;
 	TEST_ASSERT_SUCCESS(rte_bbdev_queue_configure(dev_id, queue_id, NULL),
 			"Failed test for rte_bbdev_queue_configure: "
-			"NULL qconf structure ");
-
-	ts_params->qconf.socket = RTE_MAX_NUMA_NODES;
-	TEST_ASSERT_FAIL(rte_bbdev_queue_configure(dev_id, queue_id,
-			&ts_params->qconf),
-			"Failed test for rte_bbdev_queue_configure: "
-			"invalid socket number ");
+			"LA12XX qconf structure ");
 
 	ts_params->qconf.socket = SOCKET_ID_ANY;
 	TEST_ASSERT_SUCCESS(rte_bbdev_queue_configure(dev_id, queue_id,
@@ -469,7 +479,7 @@ test_bbdev_op_pool(void)
 	TEST_ASSERT(rte_bbdev_op_pool_create(NULL,
 			RTE_BBDEV_OP_TURBO_DEC, size, cache_size, 0) == NULL,
 			"Failed test for rte_bbdev_op_pool_create: "
-			"NULL name parameter");
+			"LA12XX name parameter");
 
 	TEST_ASSERT((mp = rte_bbdev_op_pool_create(pool_dec,
 			RTE_BBDEV_OP_TURBO_DEC, size, cache_size, 0)) != NULL,
@@ -649,15 +659,22 @@ test_bbdev_count(void)
 static int
 test_bbdev_stats(void)
 {
-	uint8_t dev_id = null_dev_id;
+	uint8_t dev_id = bbdev_dev_id;
 	uint16_t queue_id = 0;
 	struct rte_bbdev_dec_op *dec_ops[4096] = { 0 };
 	struct rte_bbdev_dec_op *dec_proc_ops[4096] = { 0 };
 	struct rte_bbdev_enc_op *enc_ops[4096] = { 0 };
 	struct rte_bbdev_enc_op *enc_proc_ops[4096] = { 0 };
-	uint16_t num_ops = 236;
+	/* TODO: Check if we can support more at a time */
+	uint16_t num_ops = 2;
+	/* Have num_ops as 2, as we are enquing num_ops * 2 */
 	struct rte_bbdev_stats stats;
 	struct bbdev_testsuite_params *ts_params = &testsuite_params;
+	int i;
+
+	/* Stats test is not supported for LDPC */
+	if (test_vector.op_type != RTE_BBDEV_OP_NONE)
+		return TEST_SUCCESS;
 
 	TEST_ASSERT_SUCCESS(rte_bbdev_queue_stop(dev_id, queue_id),
 			"Failed to stop queue %u on device %u ", queue_id,
@@ -680,6 +697,13 @@ test_bbdev_stats(void)
 	TEST_ASSERT_SUCCESS(rte_bbdev_queue_start(dev_id, queue_id),
 			"Failed to start queue %u on device %u ", queue_id,
 			dev_id);
+
+	for (i = 0; i < num_ops; i++) {
+		enc_ops[i] = rte_malloc(NULL,
+			sizeof(struct rte_bbdev_enc_op), 0);
+		dec_ops[i] = rte_malloc(NULL,
+			sizeof(struct rte_bbdev_dec_op), 0);
+	}
 
 	/* Tests after enqueue operation */
 	rte_bbdev_enqueue_enc_ops(dev_id, queue_id, enc_ops, num_ops);
@@ -709,6 +733,8 @@ test_bbdev_stats(void)
 
 	/* Tests after dequeue operation */
 	rte_bbdev_dequeue_enc_ops(dev_id, queue_id, enc_proc_ops, num_ops);
+	/* Wait for some time before going for dequeue */
+	sleep(1);
 	rte_bbdev_dequeue_dec_ops(dev_id, queue_id, dec_proc_ops, num_ops);
 
 	TEST_ASSERT_SUCCESS(rte_bbdev_stats_get(dev_id, &stats),
@@ -863,6 +889,10 @@ test_bbdev_callback(void)
 	uint8_t invalid_dev_id = RTE_BBDEV_MAX_DEVS;
 	enum rte_bbdev_event_type invalid_event_type = RTE_BBDEV_EVENT_MAX;
 	uint8_t dev_id;
+
+	/* Stats test is not supported for LDPC */
+	if (test_vector.op_type != RTE_BBDEV_OP_NONE)
+		return TEST_SUCCESS;
 
 	dev1 = rte_bbdev_allocate(name);
 	TEST_ASSERT(dev1 != NULL, "Failed to initialize bbdev driver");
@@ -1086,7 +1116,7 @@ static int
 test_bbdev_invalid_driver(void)
 {
 	struct rte_bbdev dev1, *dev2;
-	uint8_t dev_id = null_dev_id;
+	uint8_t dev_id = bbdev_dev_id;
 	uint16_t queue_id = 0;
 	struct rte_bbdev_stats stats;
 	struct bbdev_testsuite_params *ts_params = &testsuite_params;
@@ -1318,8 +1348,8 @@ test_bbdev_get_named_dev(void)
 	return TEST_SUCCESS;
 }
 
-static struct unit_test_suite bbdev_null_testsuite = {
-	.suite_name = "BBDEV NULL Unit Test Suite",
+static struct unit_test_suite bbdev_testsuite = {
+	.suite_name = "BBDEV Unit Test Suite",
 	.setup = testsuite_setup,
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
@@ -1368,4 +1398,4 @@ static struct unit_test_suite bbdev_null_testsuite = {
 	}
 };
 
-REGISTER_TEST_COMMAND(unittest, bbdev_null_testsuite);
+REGISTER_TEST_COMMAND(unittest, bbdev_testsuite);
