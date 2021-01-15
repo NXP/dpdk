@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef _RTE_BBDEV_OP_H_
@@ -50,6 +51,9 @@ extern "C" {
 #define RTE_BBDEV_TURBO_MAX_CODE_BLOCKS (64)
 /* LDPC:  Maximum number of Code Blocks in Transport Block.*/
 #define RTE_BBDEV_LDPC_MAX_CODE_BLOCKS (256)
+
+/* Maximum number of symbols in a slot for 5G */
+#define RTE_BBDEV_5G_MAX_SYMBOLS 14
 
 /** Flags for turbo decoder operation and capability structure */
 enum rte_bbdev_op_td_flag_bitmasks {
@@ -186,7 +190,17 @@ enum rte_bbdev_op_ldpcdec_flag_bitmasks {
 	 *  for HARQ memory. If not set, it is assumed the filler bits are not
 	 *  in HARQ memory and handled directly by the LDPC decoder.
 	 */
-	RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_FILLERS = (1ULL << 18)
+	RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_FILLERS = (1ULL << 18),
+	/** Set if a device supports scrambling */
+	RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD = (1ULL << 19),
+	/** Set if a device supports compact HARQ
+	 * NOTE: This should be same for all retransmissions.
+	 */
+	RTE_BBDEV_LDPC_COMPACT_HARQ = (1ULL << 20),
+	/** Set if a device supports partial compact HARQ
+	 * NOTE: This should be same for all retransmissions.
+	 */
+	RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ = (1ULL << 21)
 };
 
 /** Flags for LDPC encoder operation and capability structure */
@@ -206,41 +220,64 @@ enum rte_bbdev_op_ldpcenc_flag_bitmasks {
 	/** Set if a device supports scatter-gather functionality. */
 	RTE_BBDEV_LDPC_ENC_SCATTER_GATHER = (1ULL << 6),
 	/** Set if a device supports concatenation of non byte aligned output */
-	RTE_BBDEV_LDPC_ENC_CONCATENATION = (1ULL << 7)
+	RTE_BBDEV_LDPC_ENC_CONCATENATION = (1ULL << 7),
+	/** Set if a device supports scrambling */
+	RTE_BBDEV_LDPC_ENC_SCRAMBLING_OFFLOAD = (1ULL << 8)
 };
 
 /** Data input and output buffer for BBDEV operations */
 struct rte_bbdev_op_data {
-	/** The mbuf data structure representing the data for BBDEV operation.
-	 *
-	 * This mbuf pointer can point to one Code Block (CB) data buffer or
-	 * multiple CBs contiguously located next to each other.
-	 * A Transport Block (TB) represents a whole piece of data that is
-	 * divided into one or more CBs. Maximum number of CBs can be contained
-	 * in one TB is defined by RTE_BBDEV_(TURBO/LDPC)_MAX_CODE_BLOCKS.
-	 *
-	 * An mbuf data structure cannot represent more than one TB. The
-	 * smallest piece of data that can be contained in one mbuf is one CB.
-	 * An mbuf can include one contiguous CB, subset of contiguous CBs that
-	 * are belonging to one TB, or all contiguous CBs that are belonging to
-	 * one TB.
-	 *
-	 * If a BBDEV PMD supports the extended capability "Scatter-Gather",
-	 * then it is capable of collecting (gathering) non-contiguous
-	 * (scattered) data from multiple locations in the memory.
-	 * This capability is reported by the capability flags:
-	 * - RTE_BBDEV_(TURBO/LDPC)_ENC_SCATTER_GATHER and
-	 * - RTE_BBDEV_(TURBO/LDPC)_DEC_SCATTER_GATHER.
-	 * Only if a BBDEV PMD supports this feature, chained mbuf data
-	 * structures are accepted. A chained mbuf can represent one
-	 * non-contiguous CB or multiple non-contiguous CBs.
-	 * If BBDEV PMD does not support this feature, it will assume inbound
-	 * mbuf data contains one segment.
-	 *
-	 * The output mbuf data though is always one segment, even if the input
-	 * was a chained mbuf.
+	/** If set, this indicates that the memory pointer provided in
+	 * data/bdata/mem is a mempory pointer which is a contiguous memory
+	 * having the data (and is not a mbuf or a bbuf)
 	 */
-	struct rte_mbuf *data;
+	uint32_t is_direct_mem;
+	union {
+		/** The mbuf data structure representing the data for BBDEV operation.
+		 *
+		 * This mbuf pointer can point to one Code Block (CB) data buffer or
+		 * multiple CBs contiguously located next to each other.
+		 * A Transport Block (TB) represents a whole piece of data that is
+		 * divided into one or more CBs. Maximum number of CBs can be contained
+		 * in one TB is defined by RTE_BBDEV_(TURBO/LDPC)_MAX_CODE_BLOCKS.
+		 *
+		 * An mbuf data structure cannot represent more than one TB. The
+		 * smallest piece of data that can be contained in one mbuf is one CB.
+		 * An mbuf can include one contiguous CB, subset of contiguous CBs that
+		 * are belonging to one TB, or all contiguous CBs that are belonging to
+		 * one TB.
+		 *
+		 * If a BBDEV PMD supports the extended capability "Scatter-Gather",
+		 * then it is capable of collecting (gathering) non-contiguous
+		 * (scattered) data from multiple locations in the memory.
+		 * This capability is reported by the capability flags:
+		 * - RTE_BBDEV_(TURBO/LDPC)_ENC_SCATTER_GATHER and
+		 * - RTE_BBDEV_(TURBO/LDPC)_DEC_SCATTER_GATHER.
+		 * Only if a BBDEV PMD supports this feature, chained mbuf data
+		 * structures are accepted. A chained mbuf can represent one
+		 * non-contiguous CB or multiple non-contiguous CBs.
+		 * If BBDEV PMD does not support this feature, it will assume inbound
+		 * mbuf data contains one segment.
+		 *
+		 * The output mbuf data though is always one segment, even if the input
+		 * was a chained mbuf.
+		 */
+		struct rte_mbuf *data;
+
+		/** bbuf representing the data for BBDEV operation.
+		 * This is a non scatter-gather buffer which uses length and offset
+		 * parameters from rte_bbdev_op_data structure to evaluate the
+		 * length of the buffer and offset of the starting data respectively.
+		 */
+		void *bdata;
+
+		/** memory pointer representing the data for BBDEV operation.
+		 * This is a contiguous memory which uses length and offset
+		 * parameters from rte_bbdev_op_data structure to evaluate the
+		 * length of the buffer and offset of the starting data respectively.
+		 */
+		void *mem;
+	};
 	/** The starting point of the BBDEV (encode/decode) operation,
 	 * in bytes.
 	 *
@@ -448,6 +485,8 @@ struct rte_bbdev_op_ldpc_dec {
 	struct rte_bbdev_op_data hard_output;
 	/** The soft LLR output LLR stream buffer - optional */
 	struct rte_bbdev_op_data soft_output;
+	/** Intermediate output of stream buffer - optional */
+	struct rte_bbdev_op_data partial_output;
 	/** The HARQ combined LLR stream input buffer - optional */
 	struct rte_bbdev_op_data harq_combined_input;
 	/** The HARQ combined LLR stream output buffer - optional */
@@ -488,6 +527,22 @@ struct rte_bbdev_op_ldpc_dec {
 	 *  [3GPP TS38.212 section 5.2.2]
 	 */
 	uint16_t n_filler;
+	/** Enable scrambling. When en_scramble = 1, scrambling
+	 * would be performed.
+	 */
+	uint8_t en_scramble;
+	/** parameter for c_init in scrambler, q = 0 or 1
+	 * for downlink, q = 0 for uplink.
+	 */
+	uint8_t q;
+	/** parameter for c_init in scrambler,
+	 * n_id={0, ..., 1023}
+	 */
+	uint16_t n_id;
+	/** parameter for c_init in scrambler,
+	 * n_rnti={0, ..., 65535}
+	 */
+	uint16_t n_rnti;
 	/** [0 - TB : 1 - CB] */
 	uint8_t code_block_mode;
 	union {
@@ -496,6 +551,62 @@ struct rte_bbdev_op_ldpc_dec {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_dec_ldpc_tb_params tb_params;
 	};
+	/* CodeBlock mask.
+	 * Valid for retransmission when compact HARQ is used.
+	 * Each bit represents if that code block is enabled.
+	 */
+	uint32_t codeblock_mask[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32];
+	/* Maximum number of CB's HARQ context to be copied.
+	 * This is only valid for compact HARQ mode.
+	 */
+	uint8_t max_num_harq_contexts;
+	/* [1- SD-CD demux specific op]. Data and Control Multiplexing as
+	 * specified in TS 38.212 Section 6.2.7
+	 */
+	uint8_t sd_cd_demux;
+	/* Bit [5-0]: The number of LLRs per resource element.
+	 * This value must be >= 1 and <= 32.
+	 * Bit [8]: Puncturing indicator for ACK.
+	 * Rest all bits reserved.
+	 */
+	uint32_t sd_llrs_per_re;
+	struct {
+		/* Bit [13-0]: Number of resource elements available for DL-SCH
+		 * or DCI mapping for a symbol.
+		 * Bit [29-16]: Number of ACK resource elements to be mapped
+		 * in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_re_ack_re;
+		/* Bit [13-0]: Number of CSI1 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Bit [29-16]: Number of CSI2 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_csi1_re_n_csi2_re;
+		/* Bit [13-0]: Number of DL-SCH resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_n_dlsch_re_d_ack;
+		/* Bit [13-0]: “skip offset” for CSI1 resource elements in
+		 * a symbol.
+		 * Bit [29-16]: “skip offset” for CSI2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_d_csi1_d_csi2;
+		/* Bit [13-0]: Number of ACK2 resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t sd_d_ack2_ack2_re;
+	} demux[RTE_BBDEV_5G_MAX_SYMBOLS];
 };
 
 /** Turbo encode code block parameters */
@@ -669,6 +780,22 @@ struct rte_bbdev_op_ldpc_enc {
 	 *  [3GPP TS38.212 section 5.2.2]
 	 */
 	uint16_t n_filler;
+	/** Enable scrambling. When en_scramble = 1, scrambling
+	 * would be performed.
+	 */
+	uint8_t en_scramble;
+	/** parameter for c_init in scrambler, q = 0 or 1
+	 * for downlink, q = 0 for uplink.
+	 */
+	uint8_t q;
+	/** parameter for c_init in scrambler,
+	 * n_id={0, ..., 1023}
+	 */
+	uint16_t n_id;
+	/** parameter for c_init in scrambler,
+	 * n_rnti={0, ..., 65535}
+	 */
+	uint16_t n_rnti;
 	/** [0 - TB : 1 - CB] */
 	uint8_t code_block_mode;
 	union {
@@ -677,6 +804,57 @@ struct rte_bbdev_op_ldpc_enc {
 		/** Struct which stores Transport Block specific parameters */
 		struct rte_bbdev_op_enc_ldpc_tb_params tb_params;
 	};
+	/* [1- SE-CE mux specific op]. Data and Control Multiplexing as
+	 * specified in TS 38.212 Section 6.2.7
+	 */
+	uint8_t se_ce_mux;
+	/* Output size of the encoded data after muxing */
+	uint64_t se_ce_mux_output_size;
+	/* SE-CE mux related parameters */
+	/* Bit [5-0]: The number of bits per resource element.
+	 * This value must be >= 1 and <= 32.
+	 * Bit [8]: Puncturing indicator for ACK.
+	 * Rest all bits reserved.
+	 */
+	uint32_t se_bits_per_re;
+	struct {
+		/* Bit [13-0]: Number of resource elements available for UL-SCH
+		 * or UCI mapping for a symbol.
+		 * Bit [29-16]: Number of ACK resource elements to be mapped
+		 * in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_re_ack_re;
+		/* Bit [13-0]: Number of CSI1 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Bit [29-16]: Number of CSI2 (channel state information)
+		 * resource elements to be mapped in a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_csi1_re_n_csi2_re;
+		/* Bit [13-0]: Number of UL-SCH resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_n_ulsch_re_d_ack;
+		/* Bit [13-0]: “skip offset” for CSI1 resource elements in
+		 * a symbol.
+		 * Bit [29-16]: “skip offset” for CSI2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_d_csi1_d_csi2;
+		/* Bit [13-0]: Number of ACK2 resource elements to be mapped
+		 * in a symbol.
+		 * Bit [29-16]: “skip offset” for ACK2 resource elements in
+		 * a symbol.
+		 * Rest all bits reserved.
+		 */
+		uint32_t se_d_ack2_ack2_re;
+	} mux[RTE_BBDEV_5G_MAX_SYMBOLS];
+
 };
 
 /** List of the capabilities for the Turbo Decoder */
@@ -738,6 +916,10 @@ enum rte_bbdev_op_type {
 	RTE_BBDEV_OP_TURBO_ENC,  /**< Turbo encode */
 	RTE_BBDEV_OP_LDPC_DEC,  /**< LDPC decode */
 	RTE_BBDEV_OP_LDPC_ENC,  /**< LDPC encode */
+	RTE_BBDEV_OP_POLAR_DEC,  /**< Polar decode */
+	RTE_BBDEV_OP_POLAR_ENC,  /**< Polar encode */
+	RTE_BBDEV_OP_LA12XX_RAW, /**< LA12xx RAW operation */
+	RTE_BBDEV_OP_LA12XX_VSPA, /**< LA12xx VSPA operation */
 	RTE_BBDEV_OP_TYPE_COUNT,  /**< Count of different op types */
 };
 
@@ -773,6 +955,8 @@ struct rte_bbdev_dec_op {
 	struct rte_mempool *mempool;
 	/** Opaque pointer for user data */
 	void *opaque_data;
+	/** CRC Status from device. Each bit represents the status of corresponding CB **/
+	unsigned char crc_stat[40];
 	union {
 		/** Contains turbo decoder specific parameters */
 		struct rte_bbdev_op_turbo_dec turbo_dec;
