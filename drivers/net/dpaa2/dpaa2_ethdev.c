@@ -69,6 +69,9 @@ static uint64_t dev_tx_offloads_nodis =
 /* enable timestamp in mbuf */
 bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
 
+/* Enable error queue */
+bool dpaa2_enable_err_queue;
+
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint8_t page_id; /* dpni statistics page id */
@@ -398,6 +401,25 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail;
 	}
 
+	if (dpaa2_enable_err_queue) {
+		priv->rx_err_vq = rte_zmalloc("dpni_rx_err",
+			sizeof(struct dpaa2_queue), 0);
+
+		dpaa2_q = (struct dpaa2_queue *)priv->rx_err_vq;
+		dpaa2_q->q_storage = rte_malloc("err_dq_storage",
+					sizeof(struct queue_storage_info_t) *
+					RTE_MAX_LCORE,
+					RTE_CACHE_LINE_SIZE);
+		if (!dpaa2_q->q_storage)
+			goto fail;
+
+		memset(dpaa2_q->q_storage, 0,
+		       sizeof(struct queue_storage_info_t));
+		for (i = 0; i < RTE_MAX_LCORE; i++)
+			if (dpaa2_alloc_dq_storage(&dpaa2_q->q_storage[i]))
+				goto fail;
+	}
+
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->eth_data = dev->data;
 		mc_q->flow_id = 0xffff;
@@ -465,6 +487,14 @@ fail:
 		rte_free(dpaa2_q->q_storage);
 		priv->rx_vq[i--] = NULL;
 	}
+
+	if (dpaa2_enable_err_queue) {
+		dpaa2_q = (struct dpaa2_queue *)priv->rx_err_vq;
+		if (dpaa2_q->q_storage)
+			dpaa2_free_dq_storage(dpaa2_q->q_storage);
+		rte_free(dpaa2_q->q_storage);
+	}
+
 	rte_free(mc_q);
 	return -1;
 }
@@ -1170,14 +1200,33 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_q->fqid = qid.fqid;
 	}
 
-	/*checksum errors, send them to normal path and set it in annotation */
-	err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
+	if (dpaa2_enable_err_queue) {
+		ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
+				     DPNI_QUEUE_RX_ERR, 0, 0, &cfg, &qid);
+		if (ret) {
+			DPAA2_PMD_ERR(
+				"Error getting rx err flow information: err=%d",
+				ret);
+			return ret;
+		}
+		dpaa2_q = (struct dpaa2_queue *)priv->rx_err_vq;
+		dpaa2_q->fqid = qid.fqid;
+		dpaa2_q->eth_data = dev->data;
 
-	/* if packet with parse error are not to be dropped */
-	if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
-		err_cfg.errors |= DPNI_ERROR_PHE;
+		err_cfg.errors =  DPNI_ERROR_DISC;
+		err_cfg.error_action = DPNI_ERROR_ACTION_SEND_TO_ERROR_QUEUE;
+	} else {
+		/* checksum errors, send them to normal path
+		 * and set it in annotation
+		 */
+		err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
-	err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
+		/* if packet with parse error are not to be dropped */
+		if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
+			err_cfg.errors |= DPNI_ERROR_PHE;
+
+		err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
+	}
 	err_cfg.set_frame_annotation = true;
 
 	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW,
@@ -2622,6 +2671,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_RX_TAILDROP_OFF"))
 		priv->flags |= DPAA2_RX_TAILDROP_OFF;
+
+	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
+		dpaa2_enable_err_queue = 1;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
