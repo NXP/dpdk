@@ -929,7 +929,7 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 * been released by BMAN.
 			 */
 			rte_mbuf_refcnt_update(mi, 1);
-			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
+			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
 		}
 		rte_pktmbuf_free(mbuf);
 	}
