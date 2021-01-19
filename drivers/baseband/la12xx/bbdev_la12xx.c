@@ -1235,12 +1235,11 @@ prepare_raw_op(struct rte_pmd_la12xx_raw_params *raw_params,
 	if (raw_params->metadata) {
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			(char *)raw_params->metadata - huge_start_addr;
-		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
+		bbdev_ipc_op->shared_metadata = rte_cpu_to_be_32(l1_pcie_addr);
 	}
 
-	if (!out_op_data->is_direct_mem && out_op_data->bdata)
-		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
-				raw_params->output.length);
+	if (!out_op_data)
+		bbdev_ipc_op->out_addr = 0;
 
 	return 0;
 }
@@ -1371,8 +1370,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		data_ptr = get_data_ptr(in_op_data);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			       data_ptr - huge_start_addr;
-		bbdev_ipc_op->in_addr = l1_pcie_addr;
-		bbdev_ipc_op->in_len = in_op_data->length;
+		bbdev_ipc_op->in_addr = rte_cpu_to_be_32(l1_pcie_addr);
+		bbdev_ipc_op->in_len = rte_cpu_to_be_32(in_op_data->length);
 	}
 
 	if (out_op_data->bdata) {
@@ -1596,10 +1595,8 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 		IPC_RESET_CI_FLAG(ci);
 	md->ci = ci;
 
-	if (dst) {
-		vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
-		ipc_memcpy(dst, (void *)(vaddr2), sizeof(struct bbdev_ipc_enqueue_op));
-	}
+	vaddr2 = join_va2_64(bd->host_virt_h, bd->host_virt_l);
+	ipc_memcpy(dst, (void *)(vaddr2), sizeof(struct bbdev_ipc_enqueue_op));
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 		"exit: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
@@ -1635,7 +1632,7 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) &&
 		    harq_out_op_data->bdata) {
 			harq_out_len =
-				rte_be_to_cpu_32(bbdev_ipc_op.harq_out_len);
+				rte_be_to_cpu_32(bbdev_ipc_op.out_len);
 			l_op->ldpc_dec.harq_combined_output.length =
 				harq_out_len;
 			if (!harq_out_op_data->is_direct_mem)
@@ -1735,6 +1732,24 @@ dequeue_vspa_op(struct bbdev_la12xx_q_priv *q_priv)
 	return (void *)bbdev_la12xx_op;
 }
 
+static void
+process_deq_raw_op(struct rte_pmd_la12xx_op *op,
+		   struct bbdev_ipc_enqueue_op *bbdev_ipc_op)
+{
+	struct rte_bbdev_op_data *out_op_data;
+
+	out_op_data = &op->raw_params.output;
+
+	if (out_op_data->bdata) {
+		op->raw_params.output.length =
+			rte_be_to_cpu_32(bbdev_ipc_op->out_len);
+
+		if (!out_op_data->is_direct_mem)
+			rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
+				op->raw_params.output.length);
+	}
+}
+
 uint16_t
 rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
 		struct rte_pmd_la12xx_op **ops, uint16_t num_ops)
@@ -1769,10 +1784,7 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op, *p_bbdev_ipc_op;
 	int nb_dequeued;
 
-	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_RAW)
-		p_bbdev_ipc_op = NULL;
-	else
-		p_bbdev_ipc_op = &bbdev_ipc_op;
+	p_bbdev_ipc_op = &bbdev_ipc_op;
 
 	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
 		for (nb_dequeued = 0; nb_dequeued < num_ops; nb_dequeued++) {
@@ -1789,6 +1801,8 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 				break;
 			if (q_priv->op_type != RTE_BBDEV_OP_LA12XX_RAW)
 				ops[nb_dequeued]->status = bbdev_ipc_op.status;
+			else
+				process_deq_raw_op(ops[nb_dequeued], &bbdev_ipc_op);
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 			rte_bbuf_dump(stdout,
 				ops[nb_dequeued]->polar_params.output.data,

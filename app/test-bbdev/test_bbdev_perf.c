@@ -1746,6 +1746,25 @@ validate_polar_op(struct rte_pmd_la12xx_op **ops, const uint16_t n,
 }
 
 static int
+validate_raw_op(struct rte_pmd_la12xx_op **ops, const uint16_t n,
+		struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+	struct op_data_entries *hard_data_orig =
+			&vector->entries[DATA_HARD_OUTPUT];
+
+	for (i = 0; i < n; ++i) {
+		TEST_ASSERT_SUCCESS(validate_op_chain(
+				&ops[i]->raw_params.output,
+				hard_data_orig),
+				"Output buffers (CB=%u) are not equal",
+				i);
+	}
+
+	return TEST_SUCCESS;
+}
+
+static int
 validate_ldpc_enc_op(struct rte_bbdev_enc_op **ops, const uint16_t n,
 		struct rte_bbdev_enc_op *ref_op,
 		struct test_bbdev_vector *vector)
@@ -3208,16 +3227,21 @@ throughput_pmd_lcore_la12xx_raw(void *arg)
 		}
 
 		total_time += rte_rdtsc_precise() - start_time;
+
+		if (ops_enq[0]->raw_params.output.bdata) {
+			ret = validate_raw_op(ops_deq, num_ops,	tp->op_params->vector);
+			TEST_ASSERT_SUCCESS(ret, "Validation failed!");
+		}
 	}
 
 	tp->ops_per_sec = ((double)num_ops * TEST_REPETITIONS) /
 			((double)total_time / (double)rte_get_tsc_hz());
 
-	if (ops_enq[0]->polar_params.output.bdata) {
+	if (ops_enq[0]->raw_params.output.bdata) {
 		/* FIXME : Need to calculate data length for throughput */
 		double tb_len_bits =
-			rte_bbuf_pkt_len(ops_enq[0]->polar_params.output.bdata) -
-					 ops_enq[0]->polar_params.output.offset;
+			rte_bbuf_pkt_len(ops_enq[0]->raw_params.output.bdata) -
+					 ops_enq[0]->raw_params.output.offset;
 
 		tp->mbps = (((double)(num_ops * TEST_REPETITIONS * tb_len_bits))
 				/ 1000000.0) / ((double)total_time /
@@ -3973,6 +3997,11 @@ latency_test_la12xx_raw(void *arg)
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
+
+		if (ops_enq[0]->raw_params.output.bdata) {
+			ret = validate_raw_op(ops_deq, burst_sz, vector);
+			TEST_ASSERT_SUCCESS(ret, "Validation failed!");
+		}
 
 		dequeued += deq;
 	}

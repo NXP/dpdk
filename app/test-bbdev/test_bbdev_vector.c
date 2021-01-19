@@ -1189,6 +1189,7 @@ parse_la12xx_raw_op_params(const char *key_token, char *token,
 		struct test_bbdev_vector *vector)
 {
 	int ret = 0;
+	char *err = NULL;
 
 	vector->la12xx_op.op_type = RTE_BBDEV_OP_LA12XX_RAW;
 	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
@@ -1199,6 +1200,10 @@ parse_la12xx_raw_op_params(const char *key_token, char *token,
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_HARD_OUTPUT,
 				"output");
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else {
 		printf("Not valid none op key: '%s'\n", key_token);
 		return -1;
@@ -1238,7 +1243,7 @@ parse_la12xx_vspa_op_params(const char *key_token, char *token,
 		return -1;
 	}
 
-	return 0;
+	return ret;
 }
 
 /* checks the type of key and assigns data */
