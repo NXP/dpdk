@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2020 NXP
+ *   Copyright 2016,2020-2021 NXP
  *
  */
 
@@ -968,6 +968,15 @@ static const struct rte_security_capability dpaa2_sec_security_cap[] = {
 		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
 		.pdcp = {
 			.domain = RTE_SECURITY_PDCP_MODE_CONTROL,
+			.capa_flags = 0
+		},
+		.crypto_capabilities = dpaa2_pdcp_capabilities
+	},
+	{ /* PDCP Lookaside Protocol offload Short MAC */
+		.action = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+		.protocol = RTE_SECURITY_PROTOCOL_PDCP,
+		.pdcp = {
+			.domain = RTE_SECURITY_PDCP_MODE_SHORT_MAC,
 			.capa_flags = 0
 		},
 		.crypto_capabilities = dpaa2_pdcp_capabilities
