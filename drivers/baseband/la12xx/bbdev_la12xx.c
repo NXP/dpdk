@@ -34,6 +34,8 @@
 #include "bbdev_la12xx_wdog.h"
 
 #define DRIVER_NAME baseband_la12xx
+#define LA12XX_VDEV_MODEM_ID_ARG	"modem"
+#define LA12XX_MAX_MODEM 4
 
 /* SG table final entry */
 #define QDMA_SGT_F	0x80000000
@@ -64,17 +66,6 @@ get_data_ptr(struct rte_bbdev_op_data *op_data)
 
 /* la12xx BBDev logging ID */
 int bbdev_la12xx_logtype_pmd;
-
-uint32_t num_ldpc_enc_queues;
-uint32_t num_ldpc_dec_queues;
-uint32_t num_polar_enc_queues;
-uint32_t num_polar_dec_queues;
-uint32_t num_raw_queues;
-
-int la12xx_polar_enc_core = -1;
-int la12xx_polar_dec_core = -1;
-
-uint32_t per_queue_hram_size;
 
 static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	{
@@ -270,27 +261,27 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	/* Set queue properties for LA12xx device */
 	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
-		if (num_ldpc_enc_queues >= MAX_LDPC_ENC_FECA_QUEUES) {
+		if (priv->num_ldpc_enc_queues >= MAX_LDPC_ENC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_ldpc_enc_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_ENC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_enc_queues++);
+		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_enc_queues++);
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
-		if (num_ldpc_dec_queues >= MAX_LDPC_DEC_FECA_QUEUES) {
+		if (priv->num_ldpc_dec_queues >= MAX_LDPC_DEC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_ldpc_dec_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_DEC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(num_ldpc_dec_queues++);
+		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_dec_queues++);
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
-		if (num_polar_enc_queues >= MAX_POLAR_ENC_FECA_QUEUES) {
+		if (priv->num_polar_enc_queues >= MAX_POLAR_ENC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_polar_enc_queues reached max value");
 			return -1;
@@ -298,10 +289,10 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_ENC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(0);
-		num_polar_enc_queues++;
+		priv->num_polar_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
-		if (num_polar_dec_queues >= MAX_POLAR_DEC_FECA_QUEUES) {
+		if (priv->num_polar_dec_queues >= MAX_POLAR_DEC_FECA_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_polar_dec_queues reached max value");
 			return -1;
@@ -309,16 +300,16 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_DEC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(0);
-		num_polar_dec_queues++;
+		priv->num_polar_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_LA12XX_RAW:
-		if (num_raw_queues >= MAX_RAW_QUEUES) {
+		if (priv->num_raw_queues >= MAX_RAW_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_raw_queues reached max value");
 			return -1;
 		}
 		ch->la12xx_core_id = rte_cpu_to_be_32(BBDEV_LA12XX_RAW_CORE);
-		num_raw_queues++;
+		priv->num_raw_queues++;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Not supported op type\n");
@@ -331,7 +322,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
 
-	per_queue_hram_size = FECA_HRAM_SIZE / num_ldpc_dec_queues;
+	priv->per_queue_hram_size = FECA_HRAM_SIZE / priv->num_ldpc_dec_queues;
 
 	return 0;
 }
@@ -482,18 +473,18 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		op_type = rte_be_to_cpu_32(ch->op_type);
 
 		if (op_type == RTE_BBDEV_OP_POLAR_ENC) {
-			if (la12xx_polar_enc_core == -1)
-				la12xx_polar_enc_core = core_id;
-			else if (la12xx_polar_enc_core != core_id) {
+			if (priv->la12xx_polar_enc_core == -1)
+				priv->la12xx_polar_enc_core = core_id;
+			else if (priv->la12xx_polar_enc_core != core_id) {
 				BBDEV_LA12XX_PMD_ERR(
 					"All polar encode queue not configuerd on same LA12xx e200 core");
 			}
 		}
 
 		if (op_type == RTE_BBDEV_OP_POLAR_DEC) {
-			if (la12xx_polar_dec_core == -1)
-				la12xx_polar_dec_core = core_id;
-			else if (la12xx_polar_dec_core != core_id) {
+			if (priv->la12xx_polar_dec_core == -1)
+				priv->la12xx_polar_dec_core = core_id;
+			else if (priv->la12xx_polar_dec_core != core_id) {
 				BBDEV_LA12XX_PMD_ERR(
 					"All polar decode queues not configuerd on same LA12xx e200 core");
 			}
@@ -860,7 +851,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_command->sd_ceiling_num_input_bytes =
 		rte_cpu_to_be_32(e_div_qm_ceiling);
 	sd_command->sd_hram_base =
-		rte_cpu_to_be_32(q_priv->feca_blk_id * per_queue_hram_size);
+		rte_cpu_to_be_32(q_priv->feca_blk_id * q_priv->bbdev_priv->per_queue_hram_size);
 	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
 	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
 
@@ -1062,6 +1053,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		    struct bbdev_la12xx_q_priv *q_priv,
 		    struct rte_bbdev_op_data *out_op_data)
 {
+	struct bbdev_la12xx_private *bbdev_priv = q_priv->bbdev_priv;
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
 	struct rte_bbdev_op_data *harq_in_op_data, *harq_out_op_data;
 	struct rte_bbdev_op_data *hard_out_op_data = &ldpc_dec->hard_output;
@@ -1171,11 +1163,11 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 			(128 * (uint32_t)ceil((double)sd_circ_buf/128));
 
 		if (harq_len_per_cb * ldpc_dec->tb_params.c >
-		    per_queue_hram_size) {
+		    bbdev_priv->per_queue_hram_size) {
 			BBDEV_LA12XX_PMD_ERR(
 				"harq len required (%d) is more than allocated (%d)",
 				harq_len_per_cb * ldpc_dec->tb_params.c,
-				per_queue_hram_size);
+				bbdev_priv->per_queue_hram_size);
 			return -1;
 		}
 
@@ -1842,7 +1834,7 @@ rte_pmd_la12xx_is_active(uint16_t dev_id)
 			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
 
 		/* Register Modem & Watchdog */
-		ret = libwdog_register(wdog, 0);
+		ret = libwdog_register(wdog, priv->modem_id);
 		if (ret < 0) {
 			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
 			return ret;
@@ -1878,7 +1870,7 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
 
 		/* Register Modem & Watchdog */
-		ret = libwdog_register(wdog, 0);
+		ret = libwdog_register(wdog, priv->modem_id);
 		if (ret < 0) {
 			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
 			return ret;
@@ -1979,9 +1971,9 @@ get_hugepage_info(void)
 	return hp_info;
 }
 
-static int open_ipc_dev(void)
+static int open_ipc_dev(int modem_id)
 {
-	char dev_initials[] = "gulipcgul", dev_path[PATH_MAX];
+	char dev_initials[16], dev_path[PATH_MAX];
 	struct dirent *entry;
 	int dev_ipc = 0;
 	DIR *dir;
@@ -1992,6 +1984,8 @@ static int open_ipc_dev(void)
 		return -1;
 	}
 
+	sprintf(dev_initials, "gulipcgul%d", modem_id);
+
 	while ((entry = readdir(dir)) != NULL) {
 		if (!strncmp(dev_initials, entry->d_name,
 		    sizeof(dev_initials) - 1))
@@ -1999,7 +1993,7 @@ static int open_ipc_dev(void)
 	}
 
 	if (!entry) {
-		BBDEV_LA12XX_PMD_ERR("Error: No gulipcgul device");
+		BBDEV_LA12XX_PMD_ERR("Error: No gulipcgul%d device", modem_id);
 		return -1;
 	}
 
@@ -2024,7 +2018,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_metadata_t *ipc_md;
 	struct gul_hif *mhif;
 	uint32_t phy_align = 0;
-	int ret, instance_id = 0;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2067,8 +2061,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 			goto err;
 		}
 
-		/* TODO - Get instance id from vdev */
-		ipc_priv->instance_id = instance_id;
+		ipc_priv->instance_id = 0;
 		ipc_priv->dev_mem = dev_mem;
 
 		BBDEV_LA12XX_PMD_DEBUG("hugepg input %lx %p %lx",
@@ -2082,7 +2075,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 		ipc_priv->hugepg_start.size = hp->len;
 	}
 
-	dev_ipc = open_ipc_dev();
+	dev_ipc = open_ipc_dev(priv->modem_id);
 	if (dev_ipc < 0) {
 		BBDEV_LA12XX_PMD_ERR("Error: open_ipc_dev failed");
 		goto err;
@@ -2181,7 +2174,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	}
 
 	ipc_priv->instance = (ipc_instance_t *)
-		(&ipc_md->instance_list[instance_id]);
+		(&ipc_md->instance_list[ipc_priv->instance_id]);
 
 	BBDEV_LA12XX_PMD_DEBUG("finish host init");
 
@@ -2233,13 +2226,13 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 	setup_la12xx_dev(dev);
 
 	/* Reset Global variables */
-	num_ldpc_enc_queues = 0;
-	num_ldpc_dec_queues = 0;
-	num_polar_enc_queues = 0;
-	num_polar_dec_queues = 0;
-	per_queue_hram_size = 0;
-	la12xx_polar_enc_core = -1;
-	la12xx_polar_dec_core = -1;
+	priv->num_ldpc_enc_queues = 0;
+	priv->num_ldpc_dec_queues = 0;
+	priv->num_polar_enc_queues = 0;
+	priv->num_polar_dec_queues = 0;
+	priv->per_queue_hram_size = 0;
+	priv->la12xx_polar_enc_core = -1;
+	priv->la12xx_polar_dec_core = -1;
 	priv->num_valid_queues = 0;
 
 	/* Re-configure the queues */
@@ -2279,13 +2272,71 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 	return 0;
 }
 
+struct la12xx_vdev_init_params {
+	int8_t modem_id;
+};
+
+/* Parse integer from integer argument */
+static int
+parse_integer_arg(const char *key __rte_unused,
+		const char *value, void *extra_args)
+{
+	int i;
+	char *end;
+	errno = 0;
+
+	i = strtol(value, &end, 10);
+	if (*end != 0 || errno != 0 || i < 0 || i > LA12XX_MAX_MODEM) {
+		BBDEV_LA12XX_PMD_ERR("Supported Port IDS are 0 to %d",
+			LA12XX_MAX_MODEM -1);
+		return -EINVAL;
+	}
+
+	*((uint32_t *)extra_args) = i;
+
+	return 0;
+}
+
+static int
+la12xx_parse_vdev_init_params(struct la12xx_vdev_init_params *params,
+			   struct rte_vdev_device *dev)
+{
+	struct rte_kvargs *kvlist = NULL;
+	int ret = 0;
+
+	static const char * const la12xx_vdev_valid_params[] = {
+		LA12XX_VDEV_MODEM_ID_ARG,
+		NULL
+	};
+
+	const char *input_args = rte_vdev_device_args(dev);
+
+	if (!input_args)
+		return -1;
+
+	kvlist = rte_kvargs_parse(input_args, la12xx_vdev_valid_params);
+	if (kvlist == NULL)
+		return -1;
+
+	ret = rte_kvargs_process(kvlist,
+				LA12XX_VDEV_MODEM_ID_ARG,
+				&parse_integer_arg,
+				&params->modem_id);
+	rte_kvargs_free(kvlist);
+	return ret;
+}
+
 /* Create device */
 static int
 la12xx_bbdev_create(struct rte_vdev_device *vdev)
 {
 	struct rte_bbdev *bbdev;
 	const char *name = rte_vdev_device_name(vdev);
+	struct bbdev_la12xx_private *priv;
 	int ret;
+	struct la12xx_vdev_init_params init_params = {
+		.modem_id = -1,
+	};
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2301,9 +2352,33 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 		return -ENOMEM;
 	}
 
+	ret = la12xx_parse_vdev_init_params(&init_params, vdev);
+	if (ret < 0)
+		return -EINVAL;
+
+	priv = bbdev->data->dev_private;
+	/* if modem id is not configured */
+	if (priv->modem_id == -1)
+		priv->modem_id = bbdev->data->dev_id;
+
+	BBDEV_LA12XX_PMD_INFO("Initializing bbdev for:%s  modem-id=%d",
+		name, init_params.modem_id);
+
+	/* Reset Global variables */
+	priv->num_ldpc_enc_queues = 0;
+	priv->num_ldpc_dec_queues = 0;
+	priv->num_polar_enc_queues = 0;
+	priv->num_polar_dec_queues = 0;
+	priv->per_queue_hram_size = 0;
+	priv->la12xx_polar_enc_core = -1;
+	priv->la12xx_polar_dec_core = -1;
+	priv->num_valid_queues = 0;
+
+	BBDEV_LA12XX_PMD_INFO("Setting Up %s: DevId=%d, ModemId=%d",
+				name, bbdev->data->dev_id, priv->modem_id);
 	ret = setup_la12xx_dev(bbdev);
 	if (ret) {
-		BBDEV_LA12XX_PMD_ERR("IPC Setup failed");
+		BBDEV_LA12XX_PMD_ERR("IPC Setup failed for %s", name);
 		rte_free(bbdev->data->dev_private);
 		return ret;
 	}
@@ -2377,6 +2452,7 @@ static struct rte_vdev_driver bbdev_la12xx_pmd_drv = {
 
 RTE_PMD_REGISTER_VDEV(DRIVER_NAME, bbdev_la12xx_pmd_drv);
 RTE_PMD_REGISTER_ALIAS(DRIVER_NAME, bbdev_la12xx);
+RTE_PMD_REGISTER_PARAM_STRING(DRIVER_NAME, LA12XX_VDEV_MODEM_ID_ARG "=<int> ");
 
 RTE_INIT(la12xx_bbdev_init_log)
 {

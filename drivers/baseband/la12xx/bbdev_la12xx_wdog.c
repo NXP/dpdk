@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #include <stdio.h>
@@ -16,8 +16,7 @@
 #include "bbdev_la12xx_wdog.h"
 #include "bbdev_la12xx_pmd_logs.h"
 
-#define GUL_WDOG_DEVNAME_PREFIX "gulwdog"
-#define GUL_WDOG_DEV0_NAME       "dev0"
+#define GUL_WDOG_DEVNAME_PREFIX "gulwdogdev"
 
 static inline int open_devwdog(int modem_id)
 {
@@ -25,8 +24,8 @@ static inline int open_devwdog(int modem_id)
 	int devwdog;
 
 	if (modem_id == 0)
-		sprintf(wdog_dev_name, "/dev/%s%s", GUL_WDOG_DEVNAME_PREFIX,
-				GUL_WDOG_DEV0_NAME);
+		sprintf(wdog_dev_name, "/dev/%s%d", GUL_WDOG_DEVNAME_PREFIX,
+				modem_id);
 	BBDEV_LA12XX_PMD_INFO("%s:Trying to open device : %s",
 			      __func__, wdog_dev_name);
 	devwdog = open(wdog_dev_name, O_RDWR);
