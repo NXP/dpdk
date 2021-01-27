@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef __BBDEV_LA12XX_H__
@@ -25,7 +25,19 @@
 /* private data structure */
 struct bbdev_la12xx_private {
 	ipc_userspace_t *ipc_priv;
+	uint32_t per_queue_hram_size;
+
 	uint32_t num_valid_queues;
+	uint8_t num_ldpc_enc_queues;
+	uint8_t num_ldpc_dec_queues;
+	uint8_t num_polar_enc_queues;
+	uint8_t num_polar_dec_queues;
+	uint8_t num_raw_queues;
+
+	int8_t la12xx_polar_enc_core;
+	int8_t la12xx_polar_dec_core;
+	int8_t modem_id;
+
 	struct wdog *wdog;
 	/* Private memory for queues */
 	struct bbdev_la12xx_q_priv *queues_priv[32];
