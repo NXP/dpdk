@@ -1064,7 +1064,8 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	char *data_ptr;
-	uint16_t sys_cols;
+	uint16_t sys_cols, valid_bytes, bits_to_set;
+	uint32_t mask = 0;
 	int ret;
 
 	sys_cols = (ldpc_dec->basegraph == 1) ? 22 : 10;
@@ -1088,6 +1089,18 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	}
 
 	codeblock_mask = ldpc_dec->codeblock_mask;
+
+	/* Set all the codeblocks after ldpc_dec->tb_params.c to 0 */
+	valid_bytes = (ldpc_dec->tb_params.c + 31) / 32;
+	bits_to_set = (ldpc_dec->tb_params.c % 32) ?
+		(ldpc_dec->tb_params.c % 32) : 0;
+
+	for (i = 0; i < bits_to_set; i++)
+		mask |= (1 << i);
+	codeblock_mask[valid_bytes - 1] &= mask;
+	for (i = valid_bytes; i < RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32; i++)
+		codeblock_mask[i] = 0;
+
 	if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
 	    ldpc_dec->op_flags & RTE_BBDEV_LDPC_COMPACT_HARQ) {
 		/* Get the total number of enabled code blocks */
