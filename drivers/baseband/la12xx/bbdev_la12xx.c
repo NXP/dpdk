@@ -1370,8 +1370,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		data_ptr = get_data_ptr(in_op_data);
 		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
 			       data_ptr - huge_start_addr;
-		bbdev_ipc_op->in_addr = rte_cpu_to_be_32(l1_pcie_addr);
-		bbdev_ipc_op->in_len = rte_cpu_to_be_32(in_op_data->length);
+		bbdev_ipc_op->in_addr = l1_pcie_addr;
+		bbdev_ipc_op->in_len = in_op_data->length;
 	}
 
 	if (out_op_data->bdata) {
@@ -1908,8 +1908,11 @@ rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes)
 	adjust_offset = final_start_addr - start_addr;
 
 	/* Check if bbuf have enough tailroom to adjust the offset */
-	if (rte_bbuf_tailroom(bbuf) < adjust_offset)
+	if (rte_bbuf_tailroom(bbuf) < adjust_offset) {
+		BBDEV_LA12XX_PMD_ERR("tailroom less than adjust length - tailroom: %d, adjust_offset: %ld\n",
+				rte_bbuf_tailroom(bbuf), adjust_offset);
 		return -ENOMEM;
+	}
 
 	bbuf->data_off = bbuf->data_off + adjust_offset;
 	return 0;
