@@ -19,6 +19,7 @@ CFLAGS += -DALLOW_EXPERIMENTAL_API
 # Interfaces with DPDK
 SRCS-$(CONFIG_RTE_LIBRTE_ENETFEC_PMD) += enet_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_ENETFEC_PMD) += enet_rxtx.c
+SRCS-$(CONFIG_RTE_LIBRTE_ENETFEC_PMD) += enet_uio.c
 
 LDLIBS += -lrte_bus_vdev
 LDLIBS += -lrte_common_dpaax
