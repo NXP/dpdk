@@ -41,7 +41,7 @@ int libwdog_register(struct wdog *wdog_t, int modem_id)
 {
 	int32_t ret = MODEM_WDOG_OK;
 
-	wdog_t->wdogid = modem_id;
+	wdog_t->wdogid = 0;
 	/* Register Watchdog */
 	wdog_t->dev_wdog_handle = open_devwdog(modem_id);
 	if (wdog_t->dev_wdog_handle < 0) {
