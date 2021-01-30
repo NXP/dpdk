@@ -2357,6 +2357,7 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 		return -EINVAL;
 
 	priv = bbdev->data->dev_private;
+	priv->modem_id = init_params.modem_id;
 	/* if modem id is not configured */
 	if (priv->modem_id == -1)
 		priv->modem_id = bbdev->data->dev_id;
