@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- *
- *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2020 NXP
+ * Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
+ * Copyright 2016-2021 NXP
  *
  */
 #include <unistd.h>
@@ -21,7 +20,8 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/epoll.h>
-#include<sys/eventfd.h>
+#include <sys/eventfd.h>
+#include <sys/syscall.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev_driver.h>
@@ -240,6 +240,8 @@ static int
 dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
+	pid_t tid;
+	char command[COMMAND_LEN];
 
 	/* Set the STASH Destination depending on Current CPU ID.
 	 * Valid values of SDEST are 4,5,6,7. Where,
@@ -261,6 +263,21 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		return -1;
 	}
 #endif
+
+	if (getenv("NXP_CHRT_PERF_MODE")) {
+		tid = syscall(SYS_gettid);
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA2_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA2_BUS_DEBUG(" %s command is executed", command);
+
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
+	}
 
 	return 0;
 }
