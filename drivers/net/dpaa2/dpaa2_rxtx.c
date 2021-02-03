@@ -440,6 +440,9 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				}
 			}
 			cur_seg = cur_seg->next;
+		} else if (RTE_MBUF_HAS_EXTBUF(cur_seg)) {
+			DPAA2_SET_FLE_IVP(sge);
+			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
@@ -479,11 +482,14 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
 		DPAA2_GET_FD_BPID(fd), DPAA2_GET_FD_LEN(fd));
+
 	if (RTE_MBUF_DIRECT(mbuf)) {
 		if (rte_mbuf_refcnt_read(mbuf) > 1) {
 			DPAA2_SET_FD_IVP(fd);
 			rte_mbuf_refcnt_update(mbuf, -1);
 		}
+	} else if (RTE_MBUF_HAS_EXTBUF(mbuf)) {
+		DPAA2_SET_FD_IVP(fd);
 	} else {
 		struct rte_mbuf *mi;
 
@@ -1235,7 +1241,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			}
 
 			if (unlikely(RTE_MBUF_HAS_EXTBUF(*bufs))) {
-				rte_mbuf_refcnt_update(*bufs, 1);
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					if (eth_mbuf_to_sg_fd(*bufs,
 							      &fd_arr[loop],
