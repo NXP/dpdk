@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #include <stdio.h>
@@ -18,28 +18,112 @@
  * This ASK Device provides IOCTL calls to driver for communicating fqid's,
  * buffer pool id's and channel id's with kernel.
  */
-#define ASK_PATH            "/dev/cdx_ctrl"
-#define CDX_IOC_MAGIC 'c'
-
+#define ASK_PATH		"/dev/cdx_ctrl"
+#define CDX_IOC_MAGIC		0xbe
+#define CLASSIF_INFO_FILENAME	"classif_info.input"
 
 static int fd = -1;
 static pthread_mutex_t fd_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct ask_ctrl_offline_channel {
 	uint32_t channel_id;
+	uint32_t ctx_a_hi_val;	/* Setting required flags(B0,A2) while creating
+				 * frame queue.
+				 */
+	uint32_t ctx_a_lo_val;	/* EBD and VSP enable bits */
+	uint32_t ctx_b_val;	/* VSP ID */
 };
 
-struct ask_ctrl_set_dpdk_info {
-	uint32_t dpdk_tx_fq_id;	/* DPDK transmits GTP packets using FQ ID */
-	uint32_t dpdk_rx_fq_id;	/* DPDK receives packets from FMAN */
-	uint16_t gtp_udp_port;	/* DPDK app listens on this GTP port */
-	uint8_t  dpdk_bp_id;	/* DPDK buffer pool id */
+struct ask_ctrl_dpdk_fq_info_s {
+	uint32_t tx_fq_id;		/* DPDK transmits GTP packets using FQ
+					 * ID
+					 */
+	uint32_t rx_fq_id;		/* DPDK receives packets from FMAN */
+	uint16_t buff_size;		/* Size of each buffer in DPDPK buffer
+					 * pool
+					 */
+	uint8_t  bp_id;			/* DPDK buffer pool id */
+
+	/* below fields are taken from structure t_FmBufferPrefixContent, These
+	 * fields are required for VSP creation on DPDK buffer pool ID. These
+	 * fields should be set based on expected parameters from FMAN
+	 */
+
+	uint16_t privDataSize;		/* Number of bytes to be left at the
+					 * beginning of the external buffer;
+					 * Note that the private-area will start
+					 * from the base of the buffer address.
+					 */
+	bool passPrsResult;		/* TRUE to pass the parse result to/from
+					 * the FM; User may use
+					 * FM_PORT_GetBufferPrsResult() in order
+					 * to get the parser-result from a
+					 * buffer.
+					 */
+	bool passTimeStamp;		/* < TRUE to pass the timeStamp to/from
+					 * the FM User may use
+					 * FM_PORT_GetBufferTimeStamp() in order
+					 * to get the parser-result from a
+					 * buffer.
+					 */
+	bool passHashResult;		/* TRUE to pass the KG hash result
+					 * to/from the FM User may use
+					 * FM_PORT_GetBufferHashResult() in
+					 * order to get the parser-result from a
+					 * buffer.
+					 */
+	bool passAllOtherPCDInfo;	/* Add all other Internal-Context
+					 * information: AD, hash-result, key,
+					 * etc.
+					 */
+	uint16_t dataAlign;		/* 0 to use driver's default alignment
+					 * [DEFAULT_FM_SP_bufferPrefixContent_dataAlign],
+					 * other value for selecting a data
+					 * alignment (must be a power of 2); if
+					 * write optimization is used, must be
+					 * >= 16.
+					 */
+	uint8_t manipExtraSpace;	/* Maximum extra size needed (insertion-
+					 * size minus removal-size); Note that
+					 * this field impacts the size of the
+					 * buffer-prefix (i.e. it pushes the
+					 * data offset); This field is
+					 * irrelevant if DPAA_VERSION==10
+					 */
+};
+
+#define DPA_ISC_IPV4_ADDR_TYPE  0x04
+#define DPA_ISC_IPV6_ADDR_TYPE  0x06
+#define MAX_NUM_IP_ADDRS 5
+
+struct ip_addr_s {
+	uint8_t		ip_addr_type;
+	uint32_t	ip_addr[4];
+};
+
+struct dpdk_uplink_cls_info_s {
+	struct		ip_addr_s addrs[MAX_NUM_IP_ADDRS];
+	uint16_t	gtp_udp_port;	/* DPDK app listens on this GTP port */
+	uint16_t	mtu;		/* Expected MTU size of Rx packets */
+	uint8_t		gtp_proto_id;	/* DPDK app listens on UDP protocol */
+	uint8_t		num_addresses;
+	uint8_t		sec_enabled;	/* It is mainly for testing without
+					 * IPSec
+					 */
+	uint32_t	bh_port_id;	/* Backhaul port id value when
+					 * sec_enabled is 0
+					 */
 };
 
 #define ASK_CTRL_GET_OFFLINE_CHANNEL_INFO \
 	_IOWR(CDX_IOC_MAGIC, 8, struct ask_ctrl_offline_channel)
 #define ASK_CTRL_SET_DPDK_INFO \
-	_IOWR(CDX_IOC_MAGIC, 9, struct ask_ctrl_set_dpdk_info)
+	_IOWR(CDX_IOC_MAGIC, 9, struct ask_ctrl_dpdk_fq_info_s)
+#define ASK_CTRL_SET_CLASSIF_INFO \
+	_IOWR(CDX_IOC_MAGIC, 10, struct dpdk_uplink_cls_info_s)
+#define ASK_CTRL_RESET_CLASSIF_INFO \
+	_IOWR(CDX_IOC_MAGIC, 11, struct dpdk_uplink_cls_info_s)
+
 
 static int check_fd(void)
 {
@@ -57,53 +141,90 @@ static int check_fd(void)
 	return (fd >= 0) ? 0 : -ENODEV;
 }
 
-static uint32_t ask_get_channel_id(void)
+static uint32_t ask_get_channel_info(struct ask_ctrl_offline_channel *ch_info)
 {
-	return 0;
-
-	struct ask_ctrl_offline_channel ch_info;
 	int ret = check_fd();
-
 	if (ret)
 		return ret;
 
-	ret = ioctl(fd, ASK_CTRL_GET_OFFLINE_CHANNEL_INFO, &ch_info);
-	if (ret) {
-		perror("ioctl(ASK_CTRL_GET_OFFLINE_CHANNEL_INFO)");
-		return ret;
+	ret = ioctl(fd, ASK_CTRL_GET_OFFLINE_CHANNEL_INFO, ch_info);
+	if (!ret) {
+		DPAA_PMD_DEBUG("Get channel info successful\n");
+		DPAA_PMD_DEBUG("Channel id: %x\n", ch_info->channel_id);
+		DPAA_PMD_DEBUG("ctx_a_hi_val: %x\n", ch_info->ctx_a_hi_val);
+		DPAA_PMD_DEBUG("ctx_a_lo_val: %x\n", ch_info->ctx_a_lo_val);
+		DPAA_PMD_DEBUG("ctx_b_val: %x\n", ch_info->ctx_b_val);
 	}
-	return ch_info.channel_id;
+
+	return ret;
 }
 
-static int ask_set_dpdk_info(uint32_t tx_fqid, uint32_t rx_fqid,
-			     uint16_t gtp_udp_port, uint8_t bpid)
+static int ask_set_fq_info(struct ask_ctrl_dpdk_fq_info_s *fq_info)
 {
-	return 0;
-
-	struct ask_ctrl_set_dpdk_info dpdk_info;
 	int ret = check_fd();
-
 	if (ret)
 		return ret;
 
-	dpdk_info.dpdk_tx_fq_id = tx_fqid;
-	dpdk_info.dpdk_rx_fq_id = rx_fqid;
-	dpdk_info.gtp_udp_port = gtp_udp_port;
-	dpdk_info.dpdk_bp_id = bpid;
-
-	ret = ioctl(fd, ASK_CTRL_SET_DPDK_INFO, &dpdk_info);
-	if (ret) {
-		perror("ioctl(ASK_CTRL_SET_DPDK_INFO)");
-		return ret;
+	ret = ioctl(fd, ASK_CTRL_SET_DPDK_INFO, fq_info);
+	if (!ret) {
+		DPAA_PMD_DEBUG("Set fq info successful\n");
+		DPAA_PMD_DEBUG("Tx fqid: %x\n", fq_info->tx_fq_id);
+		DPAA_PMD_DEBUG("Rx fqid: %x\n", fq_info->rx_fq_id);
+		DPAA_PMD_DEBUG("buff_size: %x\n", fq_info->buff_size);
+		DPAA_PMD_DEBUG("bp_id: %x\n", fq_info->bp_id);
 	}
 
-	return 0;
+	return ret;
+}
+
+static int ask_set_classif_info(struct dpdk_uplink_cls_info_s *classif_info)
+{
+	int ret = check_fd();
+	if (ret)
+		return ret;
+
+	ret = ioctl(fd, ASK_CTRL_SET_CLASSIF_INFO, classif_info);
+	if (!ret) {
+		DPAA_PMD_DEBUG("Set classification info successful\n");
+		DPAA_PMD_DEBUG("UDP dest port: %d\n",
+			       classif_info->gtp_udp_port);
+		DPAA_PMD_DEBUG("MTU: %d\n",
+			       classif_info->mtu);
+		DPAA_PMD_DEBUG("Protocol ID: %d\n",
+			       classif_info->gtp_proto_id);
+		DPAA_PMD_DEBUG("No of IP address: %d\n",
+			       classif_info->num_addresses);
+		DPAA_PMD_DEBUG("SEC enabled: %d\n",
+			       classif_info->sec_enabled);
+		DPAA_PMD_DEBUG("Backhaul port ID: %d\n",
+			       classif_info->bh_port_id);
+	}
+
+	return ret;
+}
+
+static int ask_clear_classif_info(struct dpdk_uplink_cls_info_s classif_info)
+{
+	int ret = check_fd();
+	if (ret)
+		return ret;
+
+	ret = ioctl(fd, ASK_CTRL_RESET_CLASSIF_INFO, &classif_info);
+	if (ret) {
+		DPAA_PMD_ERR("Clear classification info failed with ret value: %d\n",
+			     ret);
+	} else {
+		DPAA_PMD_DEBUG("Clear classification info successful\n");
+	}
+
+	return ret;
 }
 
 static int
 dpaa_ol_dev_configure(__rte_unused struct rte_eth_dev *dev)
 {
-	printf("OL Port Configuring....\n");
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -127,26 +248,117 @@ static int dpaa_ol_dev_info(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static void
+parse_entry(char *line, struct dpdk_uplink_cls_info_s *classif_info)
+{
+	char delim[1] = " ";
+	char *token;
+	int ip_addr_count = 0;
+
+	token = strtok(line, delim);
+
+	if (!strcmp(token, "IPV4")) {
+		for (int i = 0; i < 5; i++) {
+			token = strtok(NULL, delim);
+			if (!token) {
+				classif_info->num_addresses = ip_addr_count;
+				return;
+			}
+			ip_addr_count++;
+			classif_info->addrs[i].ip_addr_type = 4;
+			classif_info->addrs[i].ip_addr[0] =
+					ntohl(inet_addr(token));
+		}
+	}
+
+	if (!strcmp(token, "DEST_PORT")) {
+		token = strtok(NULL, delim);
+		classif_info->gtp_udp_port = (uint16_t)atoi(token);
+		return;
+	}
+
+	if (!strcmp(token, "MTU")) {
+		token = strtok(NULL, delim);
+		classif_info->mtu = (uint16_t)atoi(token);
+		return;
+	}
+
+	if (!strcmp(token, "PROTOCOL_ID")) {
+		token = strtok(NULL, delim);
+		classif_info->gtp_proto_id = (uint8_t)atoi(token);
+		return;
+	}
+
+	if (!strcmp(token, "BH_PORT_ID")) {
+		token = strtok(NULL, delim);
+		classif_info->bh_port_id = (uint32_t)atoi(token);
+		return;
+	}
+
+	if (!strcmp(token, "SEC_ENABLED")) {
+		token = strtok(NULL, delim);
+		classif_info->sec_enabled = (uint8_t)atoi(token);
+		return;
+	}
+}
+
 static int dpaa_ol_dev_start(struct rte_eth_dev *dev)
 {
-	PMD_INIT_FUNC_TRACE();
+	struct dpdk_uplink_cls_info_s classif_info;
+	int ret;
+	size_t len = 0;
+	FILE *fp = NULL;
+	char *line = NULL;
 
-	printf("Starting device...\n");
+	PMD_INIT_FUNC_TRACE();
 
 	dev->tx_pkt_burst = dpaa_eth_queue_tx;
 
-	return 0;
+	fp = fopen(CLASSIF_INFO_FILENAME, "r");
+	if (fp == NULL) {
+		DPAA_PMD_ERR("File %s does not exist\n", CLASSIF_INFO_FILENAME);
+		return -1;
+	}
+
+	while (getline(&line, &len, fp) != -1) {
+		if (line[0] == '#' || line[0] == '/' || line[0] == '\n' ||
+		    line[0] == '\r')
+			continue;
+
+		parse_entry(line, &classif_info);
+	}
+
+	ret = ask_set_classif_info(&classif_info);
+	if (ret)
+		DPAA_PMD_ERR("Set classification info failed with ret: %d",
+			     ret);
+
+	return ret;
 }
 
 static void dpaa_ol_dev_stop(struct rte_eth_dev *dev)
 {
+	struct dpdk_uplink_cls_info_s classif_info;
+	int ret;
+
 	PMD_INIT_FUNC_TRACE();
 
 	dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
+
+	memset(&classif_info, 0, sizeof(classif_info));
+
+	ret = ask_clear_classif_info(classif_info);
+	if (ret)
+		DPAA_PMD_ERR("Clear classification info failed with ret: %d",
+			     ret);
+
+	return;
 }
 
 static void dpaa_ol_dev_close(__rte_unused struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return;
 }
 
@@ -174,12 +386,6 @@ int dpaa_ol_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
-	struct qman_fq *txq = &dpaa_intf->tx_queues[queue_idx];
-	struct qm_mcc_initfq opts = {0};
-	u32 flags = 0;
-	struct qman_portal *qp;
-	int q_fd, ret;
-	uint32_t bp_id;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -193,49 +399,13 @@ int dpaa_ol_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 	dpaa_intf->valid = 1;
 
-	/*Create a channel and associate given queue with the channel*/
-	qman_alloc_pool_range((u32 *)&rxq->ch_id, 1, 1, 0);
-	opts.we_mask = opts.we_mask | QM_INITFQ_WE_DESTWQ;
-	opts.fqd.dest.channel = rxq->ch_id;
-	opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
-	flags = QMAN_INITFQ_FLAG_SCHED;
-
-	ret = qman_init_fq(rxq, flags, &opts);
-	if (ret) {
-		DPAA_PMD_ERR("Channel/Q association failed. fqid 0x%x "
-			     "ret:%d(%s)", rxq->fqid, ret, strerror(ret));
-		return ret;
-	}
-
-	rxq->cb.dqrr_dpdk_pull_cb = dpaa_rx_cb;
-	rxq->cb.dqrr_prepare = dpaa_rx_cb_prepare;
-
-	rxq->is_static = true;
-
-	qp = fsl_qman_fq_portal_create(&q_fd);
-	if (!qp) {
-		DPAA_PMD_ERR("Unable to alloc fq portal");
-		return -1;
-	}
-	rxq->qp = qp;
-	rxq->q_fd = q_fd;
-
 	rxq->bp_array = rte_dpaa_bpid_info;
 	dev->data->rx_queues[queue_idx] = rxq;
-
-	if (dpaa_intf->bp_info == NULL || txq == NULL)
-		return 0;
-
-	bp_id = dpaa_intf->bp_info->bpid;
-	ret = ask_set_dpdk_info(txq->fqid, rxq->fqid, 0, bp_id);
-	if (ret < 0) {
-		DPAA_PMD_ERR("set dpdk info failed with ret: %d", ret);
-		return ret;
-	}
 
 	return 0;
 }
 
+/* This API has dependency on RX queue setup */
 static
 int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			   uint16_t nb_desc __rte_unused,
@@ -244,8 +414,8 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct qman_fq *txq = &dpaa_intf->tx_queues[queue_idx];
-	struct qman_fq *rxq = &dpaa_intf->tx_queues[queue_idx];
-	uint32_t bp_id;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
+	struct ask_ctrl_dpdk_fq_info_s fq_info;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -255,10 +425,30 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	if (dpaa_intf->bp_info == NULL || rxq == NULL)
 		return 0;
 
-	bp_id = dpaa_intf->bp_info->bpid;
-	ret = ask_set_dpdk_info(txq->fqid, rxq->fqid, 0, bp_id);
-	if (ret < 0) {
-		DPAA_PMD_ERR("set dpdk info failed with ret: %d", ret);
+	fq_info.tx_fq_id = txq->fqid;
+	fq_info.rx_fq_id = rxq->fqid;
+	fq_info.buff_size = dpaa_intf->bp_info->size;
+	fq_info.bp_id = dpaa_intf->bp_info->bpid;
+
+#define PRIVATE_DATA_SIZE 80
+#define DATA_ALIGNMENT 64
+#define MAX_EXTRA_SIZE 96
+#define PARSE_RESULT_REQUIRED true
+#define TIME_STAMP_REQUIRED true
+#define HASH_RESULT_REQUIRED false
+#define PCD_INFO_REQUIRED false
+
+	fq_info.privDataSize = PRIVATE_DATA_SIZE;
+	fq_info.passPrsResult = PARSE_RESULT_REQUIRED;
+	fq_info.passTimeStamp = TIME_STAMP_REQUIRED;
+	fq_info.passHashResult = HASH_RESULT_REQUIRED;
+	fq_info.passAllOtherPCDInfo = PCD_INFO_REQUIRED;
+	fq_info.dataAlign = DATA_ALIGNMENT;
+	fq_info.manipExtraSpace = MAX_EXTRA_SIZE;
+
+	ret = ask_set_fq_info(&fq_info);
+	if (ret) {
+		DPAA_PMD_ERR("Set FQ info failed with ret: %d", ret);
 		return ret;
 	}
 
@@ -271,6 +461,8 @@ static int dpaa_ol_link_update(struct rte_eth_dev *dev,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_link *link = &dev->data->dev_link;
 
+	PMD_INIT_FUNC_TRACE();
+
 	link->link_status = dpaa_intf->valid;
 	link->link_speed = ETH_SPEED_NUM_1G;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
@@ -281,6 +473,8 @@ static int dpaa_ol_link_update(struct rte_eth_dev *dev,
 
 static int dpaa_ol_promiscuous_enable(__rte_unused struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -289,6 +483,14 @@ static int dpaa_ol_rx_queue_init(struct qman_fq *fq, uint32_t fqid)
 	int ret;
 	struct qm_mcc_initfq opts = {0};
 	u32 flags = QMAN_FQ_FLAG_DYNAMIC_FQID | QMAN_FQ_FLAG_NO_ENQUEUE;
+
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
+		ret = rte_dpaa_portal_init(NULL);
+		if (ret < 0) {
+			DPAA_PMD_ERR("portal initialization failure");
+			return ret;
+		}
+	}
 
 	ret = qman_create_fq(fqid, flags, fq);
 	if (ret) {
@@ -311,29 +513,36 @@ static int dpaa_ol_tx_queue_init(struct qman_fq *fq, uint32_t fqid)
 	int ret;
 	struct qm_mcc_initfq opts = {0};
 	u32 flags = QMAN_FQ_FLAG_DYNAMIC_FQID | QMAN_FQ_FLAG_TO_DCPORTAL;
+	struct ask_ctrl_offline_channel ch_info;
 
+	memset(&ch_info, 0, sizeof(ch_info));
+
+	ret = ask_get_channel_info(&ch_info);
+	if (ret) {
+		DPAA_PMD_ERR("Get channel info failed with ret: %d", ret);
+		return ret;
+	}
 	ret = qman_create_fq(fqid, flags, fq);
 	if (ret) {
-		DPAA_PMD_ERR("create tx fq failed with ret: %d", ret);
+		DPAA_PMD_ERR("Create tx fq failed with ret: %d", ret);
 		return ret;
 	}
 
 	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL |
 		       QM_INITFQ_WE_CONTEXTB | QM_INITFQ_WE_CONTEXTA;
 
-	ret = ask_get_channel_id();
-	if (ret < 0) {
-		DPAA_PMD_ERR("get channel id failed with ret: %d", ret);
-		return ret;
-	}
-	opts.fqd.dest.channel = ret;
+	opts.fqd.dest.channel = ch_info.channel_id;
 
-	opts.fqd.dest.wq = DPAA_IF_TX_PRIORITY;
+#define DPA_ISC_WQ_ID 2
+	opts.fqd.dest.wq = DPA_ISC_WQ_ID;
 	opts.fqd.fq_ctrl = QM_FQCTRL_PREFERINCACHE;
-	opts.fqd.context_b = 0;
-	/* no tx-confirmation */
-	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
-	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
+	opts.fqd.context_b = ch_info.ctx_b_val;
+	opts.fqd.context_a.hi = ch_info.ctx_a_hi_val;
+	opts.fqd.context_a.lo = ch_info.ctx_a_lo_val;
+
+	opts.fqid = fq->fqid;
+	fq->ch_id = ch_info.channel_id;
+	opts.count = 1;
 
 	ret = qman_init_fq(fq, QMAN_INITFQ_FLAG_SCHED, &opts);
 	if (ret)
@@ -449,7 +658,6 @@ static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
 	ret = dpaa_oldev_init(eth_dev);
 	if (ret == 0) {
 		rte_eth_dev_probing_finish(eth_dev);
-		printf("OL Device Probed\n");
 		return 0;
 	}
 
@@ -459,7 +667,6 @@ static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
 
 static int rte_dpaa_remove(__rte_unused struct rte_dpaa_device *dpaa_dev)
 {
-	printf("OL Device Removed\n");
 	return 0;
 }
 
