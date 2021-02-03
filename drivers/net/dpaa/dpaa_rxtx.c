@@ -862,7 +862,11 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 			}
 			cur_seg = cur_seg->next;
-		} else {
+        }else if(RTE_MBUF_HAS_EXTBUF(cur_seg)) {
+				sg_temp->bpid = 0xff;
+			    cur_seg = cur_seg->next;
+        }
+        else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
 			if (rte_mbuf_refcnt_read(mi) > 1) {
@@ -911,7 +915,10 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 */
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
 		}
-	} else {
+    }else if(RTE_MBUF_HAS_EXTBUF(mbuf)) {
+        DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
+    }
+    else {
 		/* This is data-containing core mbuf: 'mi' */
 		mi = rte_mbuf_from_indirect(mbuf);
 		if (rte_mbuf_refcnt_read(mi) > 1) {
@@ -1116,7 +1123,6 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			}
 
 			if (unlikely(RTE_MBUF_HAS_EXTBUF(mbuf))) {
-				rte_mbuf_refcnt_update(mbuf, 1);
 				bp_info = NULL;
 				goto indirect_buf;
 			}
