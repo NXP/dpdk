@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  *
  */
 #ifndef _FSL_DPDMUX_CMD_H
@@ -9,21 +9,27 @@
 
 /* DPDMUX Version */
 #define DPDMUX_VER_MAJOR		6
-#define DPDMUX_VER_MINOR		6
+#define DPDMUX_VER_MINOR		9
 
 #define DPDMUX_CMD_BASE_VERSION		1
 #define DPDMUX_CMD_VERSION_2		2
+#define DPDMUX_CMD_VERSION_3		3
+#define DPDMUX_CMD_VERSION_4		4
 #define DPDMUX_CMD_ID_OFFSET		4
 
 #define DPDMUX_CMD(id)	((id << DPDMUX_CMD_ID_OFFSET) |\
 				DPDMUX_CMD_BASE_VERSION)
 #define DPDMUX_CMD_V2(id)	(((id) << DPDMUX_CMD_ID_OFFSET) |\
 				DPDMUX_CMD_VERSION_2)
+#define DPDMUX_CMD_V3(id)	(((id) << DPDMUX_CMD_ID_OFFSET) |\
+				DPDMUX_CMD_VERSION_3)
+#define DPDMUX_CMD_V4(id)	(((id) << DPDMUX_CMD_ID_OFFSET) |\
+				DPDMUX_CMD_VERSION_4)
 
 /* Command IDs */
 #define DPDMUX_CMDID_CLOSE			DPDMUX_CMD(0x800)
 #define DPDMUX_CMDID_OPEN			DPDMUX_CMD(0x806)
-#define DPDMUX_CMDID_CREATE			DPDMUX_CMD_V2(0x906)
+#define DPDMUX_CMDID_CREATE			DPDMUX_CMD_V4(0x906)
 #define DPDMUX_CMDID_DESTROY			DPDMUX_CMD(0x986)
 #define DPDMUX_CMDID_GET_API_VERSION		DPDMUX_CMD(0xa06)
 
@@ -56,6 +62,7 @@
 
 #define DPDMUX_CMDID_SET_RESETABLE		DPDMUX_CMD(0x0ba)
 #define DPDMUX_CMDID_GET_RESETABLE		DPDMUX_CMD(0x0bb)
+#define DPDMUX_CMDID_SET_ERRORS_BEHAVIOR	DPDMUX_CMD(0x0bf)
 
 #define DPDMUX_MASK(field)        \
 	GENMASK(DPDMUX_##field##_SHIFT + DPDMUX_##field##_SIZE - 1, \
@@ -80,7 +87,7 @@ struct dpdmux_cmd_create {
 	uint16_t adv_max_dmat_entries;
 	uint16_t adv_max_mc_groups;
 	uint16_t adv_max_vlan_ids;
-	uint16_t pad1;
+	uint16_t mem_size;
 
 	uint64_t options;
 };
@@ -231,5 +238,15 @@ struct dpdmux_cmd_set_skip_reset_flags {
 struct dpdmux_rsp_get_skip_reset_flags {
 	uint8_t skip_reset_flags;
 };
+
+#define DPDMUX_ERROR_ACTION_SHIFT		0
+#define DPDMUX_ERROR_ACTION_SIZE		4
+
+struct dpdmux_cmd_set_errors_behavior {
+	uint32_t errors;
+	uint16_t flags;
+	uint16_t if_id;
+};
+
 #pragma pack(pop)
 #endif /* _FSL_DPDMUX_CMD_H */

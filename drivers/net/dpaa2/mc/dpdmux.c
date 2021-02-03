@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  *
  */
 #include <fsl_mc_sys.h>
@@ -128,6 +128,7 @@ int dpdmux_create(struct fsl_mc_io *mc_io,
 			cpu_to_le16(cfg->adv.max_dmat_entries);
 	cmd_params->adv_max_mc_groups = cpu_to_le16(cfg->adv.max_mc_groups);
 	cmd_params->adv_max_vlan_ids = cpu_to_le16(cfg->adv.max_vlan_ids);
+	cmd_params->mem_size = cpu_to_le16(cfg->adv.mem_size);
 	cmd_params->options = cpu_to_le64(cfg->adv.options);
 
 	/* send command to mc*/
@@ -1010,4 +1011,41 @@ int dpdmux_get_api_version(struct fsl_mc_io *mc_io,
 	*minor_ver = le16_to_cpu(rsp_params->minor);
 
 	return 0;
+}
+
+/**
+ * dpdmux_if_set_errors_behavior() - Set errors behavior
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPSW object
+ * @if_id:  Interface Identifier
+ * @cfg:	Errors configuration
+ *
+ * Provides a set of frame errors that will be rejected or accepted by the
+ * dpdmux interface. The frame with this errors will no longer be dropped by
+ * the dpdmux interface. When frame has parsing error the distribution to
+ * expected interface may fail. If the frame must be distributed using the
+ * information from a header that was not parsed due errors the frame may
+ * be discarded or end up on a default interface because needed data was not
+ * parsed properly.
+ * This function may be called numerous times with different error masks
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_if_set_errors_behavior(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
+		uint16_t token, uint16_t if_id, struct dpdmux_error_cfg *cfg)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_set_errors_behavior *cmd_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_SET_ERRORS_BEHAVIOR,
+					cmd_flags,
+					token);
+	cmd_params = (struct dpdmux_cmd_set_errors_behavior *)cmd.params;
+	cmd_params->errors = cpu_to_le32(cfg->errors);
+	dpdmux_set_field(cmd_params->flags, ERROR_ACTION, cfg->error_action);
+	cmd_params->if_id = cpu_to_le16(if_id);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
 }
