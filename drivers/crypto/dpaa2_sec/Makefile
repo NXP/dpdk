@@ -35,6 +35,7 @@ EXPORT_MAP := rte_pmd_dpaa2_sec_version.map
 
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_dpseci.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += dpaa2_sec_raw_dp.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC) += mc/dpseci.c
 
 LDLIBS += -lrte_bus_fslmc

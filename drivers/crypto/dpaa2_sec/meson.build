@@ -8,6 +8,7 @@ endif
 
 deps += ['security', 'mempool_dpaa2']
 sources = files('dpaa2_sec_dpseci.c',
+		'dpaa2_sec_raw_dp.c',
 		'mc/dpseci.c')
 
 allow_experimental_apis = true
