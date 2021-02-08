@@ -340,7 +340,7 @@ The following are the application command-line options:
 
 * ``--pdcp-domain <control/user>``
 
-        Set PDCP domain to specify Control/user plane.
+        Set PDCP domain to specify short_mac/control/user plane.
 
 * ``--pdcp-ses-hfn-en``
 
