@@ -23,9 +23,7 @@ static inline int open_devwdog(int modem_id)
 	char wdog_dev_name[50];
 	int devwdog;
 
-	if (modem_id == 0)
-		sprintf(wdog_dev_name, "/dev/%s%d", GUL_WDOG_DEVNAME_PREFIX,
-				modem_id);
+	sprintf(wdog_dev_name, "/dev/%s%d", GUL_WDOG_DEVNAME_PREFIX, modem_id);
 	BBDEV_LA12XX_PMD_INFO("%s:Trying to open device : %s",
 			      __func__, wdog_dev_name);
 	devwdog = open(wdog_dev_name, O_RDWR);

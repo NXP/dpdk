@@ -1869,38 +1869,6 @@ rte_pmd_la12xx_is_active(uint16_t dev_id)
 }
 
 int
-rte_pmd_la12xx_reset(uint16_t dev_id)
-{
-	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
-	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	struct wdog *wdog = priv->wdog;
-	int ret = 0;
-
-	BBDEV_LA12XX_PMD_INFO("BBDEV LA12xx: Resetting device...\n");
-
-	if (!wdog) {
-		wdog = rte_malloc(NULL,
-			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
-
-		/* Register Modem & Watchdog */
-		ret = libwdog_register(wdog, priv->modem_id);
-		if (ret < 0) {
-			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
-			return ret;
-		}
-		priv->wdog = wdog;
-	}
-
-	ret = libwdog_reinit_modem(wdog, 300);
-	if (ret < 0) {
-		BBDEV_LA12XX_PMD_ERR("modem reinit failed");
-		return ret;
-	}
-
-	return 0;
-}
-
-int
 rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes)
 {
 	uint64_t start_addr, final_start_addr;
@@ -2089,6 +2057,8 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 		ipc_priv->hugepg_start.host_phys = hp->paddr;
 		ipc_priv->hugepg_start.host_vaddr = hp->vaddr;
 		ipc_priv->hugepg_start.size = hp->len;
+
+		rte_free(hp);
 	}
 
 	dev_ipc = open_ipc_dev(priv->modem_id);
@@ -2223,20 +2193,33 @@ err:
 }
 
 int
-rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
+rte_pmd_la12xx_reset(uint16_t dev_id)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	struct rte_bbdev_queue_conf queue_conf = {0};
-	struct bbdev_la12xx_q_priv *q_priv;
-	uint16_t queue_ids[LA12XX_MAX_QUEUES];
-	uint16_t core_ids[LA12XX_MAX_QUEUES];
-	int num_queues, ret, i;
+	struct wdog *wdog = priv->wdog;
+	int ret = 0;
 
-	PMD_INIT_FUNC_TRACE();
+	BBDEV_LA12XX_PMD_INFO("BBDEV LA12xx: Resetting device...\n");
 
-	/* Reset the device */
-	rte_pmd_la12xx_reset(dev_id);
+	if (!wdog) {
+		wdog = rte_malloc(NULL,
+			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
+
+		/* Register Modem & Watchdog */
+		ret = libwdog_register(wdog, priv->modem_id);
+		if (ret < 0) {
+			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
+			return ret;
+		}
+		priv->wdog = wdog;
+	}
+
+	ret = libwdog_reinit_modem(wdog, 300);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("modem reinit failed");
+		return ret;
+	}
 
 	/* Setup the device */
 	setup_la12xx_dev(dev);
@@ -2250,6 +2233,24 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 	priv->la12xx_polar_enc_core = -1;
 	priv->la12xx_polar_dec_core = -1;
 	priv->num_valid_queues = 0;
+
+	return 0;
+}
+
+int
+rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_conf queue_conf = {0};
+	struct bbdev_la12xx_q_priv *q_priv;
+	uint16_t queue_ids[LA12XX_MAX_QUEUES];
+	uint16_t core_ids[LA12XX_MAX_QUEUES];
+	int num_queues, ret, i;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Reset the device */
+	rte_pmd_la12xx_reset(dev_id);
 
 	/* Re-configure the queues */
 	num_queues = dev->data->num_queues;
