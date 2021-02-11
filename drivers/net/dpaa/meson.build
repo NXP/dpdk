@@ -21,4 +21,4 @@ endif
 
 allow_experimental_apis = true
 
-install_headers('rte_pmd_dpaa.h')
+install_headers('rte_pmd_dpaa.h', 'rte_pmd_dpaa_oldev.h')

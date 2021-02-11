@@ -46,5 +46,6 @@ LDLIBS += -lrte_common_dpaax
 
 # install this header file
 SYMLINK-$(CONFIG_RTE_LIBRTE_DPAA_PMD)-include := rte_pmd_dpaa.h
+SYMLINK-$(CONFIG_RTE_LIBRTE_DPAA_PMD)-include += rte_pmd_dpaa_oldev.h
 
 include $(RTE_SDK)/mk/rte.lib.mk
