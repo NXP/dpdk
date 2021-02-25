@@ -75,10 +75,13 @@ struct bbdev_la12xx_q_priv {
 	uint32_t feca_input_circ_size;	/* FECA transport block input circular buffer size */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
-	void *bbdev_op[MAX_CHANNEL_DEPTH]; /** Stores bbdev op for each index */
+	void *bbdev_op[MAX_CHANNEL_DEPTH]; /**< Stores bbdev op for each index */
+	void *msg_ch_vaddr[MAX_CHANNEL_DEPTH]; /**< Stores msg channel addr for modem->host */
 	struct vspa_desc *vspa_ring;	/**< Shared ring between Host and VSPA */
 	int vspa_desc_wr_index;	/**< Write desc index for VSPA */
 	int vspa_desc_rd_index;	/**< Write desc index for VSPA */
+	uint32_t host_pi;	/**< Producer_Index for HOST->MODEM */
+	uint32_t host_ci;	/**< Consumer Index for MODEM->HOST */
 };
 
 #define lower_32_bits(x) ((uint32_t)(x))
