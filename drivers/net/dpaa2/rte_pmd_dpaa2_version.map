@@ -1,6 +1,7 @@
 DPDK_20.0 {
 	global:
 
+	dpaa2_dev_tx_multi_txq_ordered;
 	dpaa2_eth_eventq_attach;
 	dpaa2_eth_eventq_detach;
 
