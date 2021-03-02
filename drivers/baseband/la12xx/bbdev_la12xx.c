@@ -156,6 +156,10 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 		((uint64_t) ((unsigned long) (A) \
 		- ((uint64_t)ipc_priv->hugepg_start.host_vaddr)))
 
+#define MODEM_P2V(A) \
+	((uint64_t) ((unsigned long) (A) \
+		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+
 #define JOIN_VA32_64(H, L) ((uint64_t)(((H) << 32) | (L)))
 static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
 {
@@ -165,6 +169,8 @@ static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
 	return JOIN_VA32_64(high, l);
 }
 
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
 static int ipc_queue_configure(uint32_t channel_id,
 		ipc_t instance, struct bbdev_la12xx_q_priv *q_priv)
 {
@@ -185,7 +191,7 @@ static int ipc_queue_configure(uint32_t channel_id,
 		channel_id, q_priv->queue_size, msg_size);
 
 	/* Start init of channel */
-	ch->br_msg_desc.md.ring_size = q_priv->queue_size;
+	ch->br_msg_desc.md.ring_size = rte_cpu_to_be_32(q_priv->queue_size);
 	ch->br_msg_desc.md.pi = 0;
 	ch->br_msg_desc.md.ci = 0;
 	ch->br_msg_desc.md.msg_size = msg_size;
@@ -194,13 +200,16 @@ static int ipc_queue_configure(uint32_t channel_id,
 		if (!vaddr)
 			return IPC_HOST_BUF_ALLOC_FAIL;
 		/* Only offset now */
-		ch->br_msg_desc.bd[i].modem_ptr = HUGEPG_OFFSET(vaddr);
+		ch->br_msg_desc.bd[i].modem_ptr =
+			rte_cpu_to_be_32(HUGEPG_OFFSET(vaddr));
 		ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
 		ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
 		q_priv->msg_ch_vaddr[i] = vaddr;
 		/* Not sure use of this len may be for CRC*/
 		ch->br_msg_desc.bd[i].len = 0;
 	}
+	ch->host_ipc_params =
+		rte_cpu_to_be_32(HUGEPG_OFFSET(q_priv->host_params));
 	ch->bl_initialized = 1;
 
 	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
@@ -212,7 +221,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		struct bbdev_la12xx_q_priv *q_priv)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipcu = priv->ipc_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
 	ipc_ch_t *ch;
@@ -242,26 +251,32 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		return -1;
 	}
 
-	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
 	/* offset is from start of PEB */
-	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
 		mhif->ipc_regs.ipc_mdata_offset);
 	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
 
 	if (q_priv->q_id < priv->num_valid_queues) {
-		ipc_br_md_t *md = &(ch->br_msg_desc.md);
+		ipc_br_md_t *md, *host_md;
+		ipc_ch_t *host_rx_ch;
+
+		host_rx_ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id +
+				HOST_RX_QUEUEID_OFFSET];
+		md = &(ch->br_msg_desc.md);
+		host_md = &(host_rx_ch->br_msg_desc.md);
 
 		q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
-		q_priv->host_pi = md->pi;
-		q_priv->host_ci = md->ci;
+		q_priv->host_pi = rte_be_to_cpu_32(host_md->pi);
+		q_priv->host_ci = rte_be_to_cpu_32(md->ci);
+		q_priv->host_params = (host_ipc_params_t *)
+			(rte_be_to_cpu_32(ch->host_ipc_params) +
+			((uint64_t)ipc_priv->hugepg_start.host_vaddr));
 
 		for (i = 0; i < q_priv->queue_size; i++) {
-			ipc_ch_t *host_rx_ch;
 			uint32_t h, l;
 
-			host_rx_ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id +
-					HOST_RX_QUEUEID_OFFSET];
 			h = host_rx_ch->br_msg_desc.bd[i].host_virt_h;
 			l = host_rx_ch->br_msg_desc.bd[i].host_virt_l;
 			q_priv->msg_ch_vaddr[i] = (void *)join_va2_64(h, l);
@@ -275,9 +290,14 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 
 	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_priv->q_id);
 
+	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
+			RTE_CACHE_LINE_SIZE);
+	ch->host_ipc_params =
+		rte_cpu_to_be_32(HUGEPG_OFFSET(q_priv->host_params));
+
 	/* Call ipc_configure_channel */
 	ret = ipc_queue_configure((q_priv->q_id + HOST_RX_QUEUEID_OFFSET),
-				  ipcu, q_priv);
+				  ipc_priv, q_priv);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR("Unable to setup queue (%d) (err=%d)",
 		       q_priv->q_id, ret);
@@ -358,7 +378,7 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 		struct bbdev_la12xx_q_priv *q_priv)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipcu = priv->ipc_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct rte_bbdev_queue_data *q_data;
 	void *lsb_addr, *msb_addr;
 	char *huge_start_addr;
@@ -381,9 +401,9 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 		return 0;
 	}
 
-	lsb_addr = (void *)((uint64_t)ipcu->modem_ccsrbar.host_vaddr +
+	lsb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
 		VSPA_ADDRESS(0) + VSPA_LSB_OFFSET);
-	msb_addr = (void *)((uint64_t)ipcu->modem_ccsrbar.host_vaddr +
+	msb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
 		VSPA_ADDRESS(0) + VSPA_MSB_OFFSET);
 
 	/* Allocate memory for BD ring */
@@ -464,7 +484,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipcu = priv->ipc_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct bbdev_la12xx_q_priv *q_priv;
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
@@ -473,8 +493,8 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 	int i, instance_id = 0;
 	uint32_t op_type;
 
-	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
-	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
 		mhif->ipc_regs.ipc_mdata_offset);
 
 	for (i = 0; i < num_queues; i++) {
@@ -529,7 +549,7 @@ rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipcu = priv->ipc_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct bbdev_la12xx_q_priv *q_priv;
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
@@ -543,8 +563,8 @@ rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
 		return -1;
 	}
 
-	mhif = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
-	ipc_md = (ipc_metadata_t *)((uint64_t)ipcu->peb_start.host_vaddr +
+	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
 		mhif->ipc_regs.ipc_mdata_offset);
 
 	q_priv = dev->data->queues[queue_id].queue_private;
@@ -568,13 +588,13 @@ static int
 la12xx_start(struct rte_bbdev *dev)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	ipc_userspace_t *ipcu = priv->ipc_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	int ready = 0;
 	struct gul_hif *hif_start;
 
 	PMD_INIT_FUNC_TRACE();
 
-	hif_start = (struct gul_hif *)ipcu->mhif_start.host_vaddr;
+	hif_start = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
 
 	/* Set Host Read bit */
 	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
@@ -593,37 +613,6 @@ static const struct rte_bbdev_ops pmd_ops = {
 	.start = la12xx_start
 };
 
-/* To handle glibc memcpy unaligned access issue, we need
- * our own wrapper layer to handle corner cases. We use memcpy
- * for size aligned bytes and do left opver byets copy manually.
- */
-static inline void ipc_memcpy(void *dst, void *src, uint32_t len)
-{
-	uint32_t extra_b;
-
-	extra_b = (len & 0x7);
-	/* Adjust the length to multiple of 8 byte
-	 * and copy extra bytes to avoid BUS error
-	 */
-	if (extra_b)
-		len += (0x8 - extra_b);
-
-	memcpy(dst, src, len);
-}
-
-static inline int
-is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
-		uint32_t pi, uint32_t pi_flag)
-{
-	if (pi == ci) {
-		if (pi_flag != ci_flag)
-			return 1; /* Ring is Full */
-	}
-	return 0;
-}
-
-#pragma GCC push_options
-#pragma GCC optimize ("O1")
 static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
@@ -1034,9 +1023,35 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 }
 #pragma GCC pop_options
 
-#define MODEM_P2V(A) \
-	((uint64_t) ((unsigned long) (A) \
-		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+/* To handle glibc memcpy unaligned access issue, we need
+ * our own wrapper layer to handle corner cases. We use memcpy
+ * for size aligned bytes and do left opver byets copy manually.
+ */
+static inline void ipc_memcpy(void *dst, void *src, uint32_t len)
+{
+	uint32_t extra_b;
+
+	extra_b = (len & 0x7);
+	/* Adjust the length to multiple of 8 byte
+	 * and copy extra bytes to avoid BUS error
+	 */
+	if (extra_b)
+		len += (0x8 - extra_b);
+
+	memcpy(dst, src, len);
+}
+
+static inline int
+is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
+		uint32_t pi, uint32_t pi_flag)
+{
+	if (pi == ci) {
+		if (pi_flag != ci_flag)
+			return 1; /* Ring is Full */
+	}
+	return 0;
+}
+
 
 static inline int
 prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
@@ -1290,7 +1305,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->br_msg_desc.md);
-	ipc_bd_t *bdr, *bd;
 	uint64_t virt;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
@@ -1300,9 +1314,10 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	int ret;
 	uint32_t temp_ci;
 
-	temp_ci = md->ci;
+	temp_ci = q_priv->host_params->ci;
 	ci = IPC_GET_CI_INDEX(temp_ci);
 	ci_flag = IPC_GET_CI_FLAG(temp_ci);
+
 	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
 	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
 
@@ -1316,10 +1331,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		return IPC_CH_FULL;
 	}
 
-	bdr = ch->br_msg_desc.bd;
-	bd = &bdr[pi];
-
-	virt = MODEM_P2V(bd->modem_ptr);
+	virt = MODEM_P2V(q_priv->host_params->modem_ptr[pi]);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
 	q_priv->bbdev_op[pi] = bbdev_op;
 
@@ -1426,7 +1438,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	/* Wait for Data Copy & pi_flag update to complete before updating pi */
 	rte_mb();
 	/* now update pi */
-	md->pi = pi;
+	md->pi = rte_cpu_to_be_32(pi);
 	q_priv->host_pi = pi;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
@@ -1590,7 +1602,7 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
 	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
 
-	temp_pi = md->pi;
+	temp_pi = q_priv->host_params->pi;
 	pi = IPC_GET_PI_INDEX(temp_pi);
 	pi_flag = IPC_GET_PI_FLAG(temp_pi);
 
@@ -1603,7 +1615,7 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 
 	op = q_priv->bbdev_op[ci];
 
-	ipc_memcpy(dst, q_priv->msg_ch_vaddr[ci],
+	rte_memcpy(dst, q_priv->msg_ch_vaddr[ci],
 		sizeof(struct bbdev_ipc_enqueue_op));
 
 	/* Move Consumer Index forward */
@@ -1617,7 +1629,7 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-	md->ci = ci;
+	md->ci = rte_cpu_to_be_32(ci);
 	q_priv->host_ci = ci;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
