@@ -11,8 +11,6 @@
 
 #include <rte_common.h>
 #include <rte_malloc.h>
-#include <rte_crypto.h>
-#include <rte_security.h>
 #include "enet_pmd_logs.h"
 #include "enet_uio.h"
 
