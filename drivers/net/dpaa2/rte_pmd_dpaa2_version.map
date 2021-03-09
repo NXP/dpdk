@@ -16,4 +16,5 @@ EXPERIMENTAL {
 	rte_pmd_dpaa2_mux_rx_frame_len;
 	rte_pmd_dpaa2_set_custom_hash;
 	rte_pmd_dpaa2_set_timestamp;
+	rte_pmd_dpaa2_get_tlu_hash;
 };
