@@ -28,7 +28,6 @@
 #include <geul_ipc_um.h>
 #include <gul_host_if.h>
 #include <geul_ipc.h>
-#include <geul_ipc_errorcodes.h>
 
 #include "bbdev_la12xx.h"
 #include "bbdev_la12xx_pmd_logs.h"
@@ -39,11 +38,9 @@
 
 /*  Initialisation params structure that can be used by LA12xx BBDEV driver */
 struct bbdev_la12xx_params {
-	uint8_t queues_num; /*< LA12xx BBDEV queues number */
 	int8_t modem_id; /*< LA12xx modem instance id */
 };
 
-#define BBDEV_LA12XX_MAX_NB_QUEUES_ARG  "max_nb_queues"
 #define BBDEV_LA12XX_VDEV_MODEM_ID_ARG	"modem"
 #define LA12XX_MAX_MODEM 4
 
@@ -66,7 +63,6 @@ struct bbdev_la12xx_params {
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
 static const char * const bbdev_la12xx_valid_params[] = {
-	BBDEV_LA12XX_MAX_NB_QUEUES_ARG,
 	BBDEV_LA12XX_VDEV_MODEM_ID_ARG,
 };
 
@@ -199,26 +195,27 @@ static int ipc_queue_configure(uint32_t channel_id,
 		channel_id, q_priv->queue_size, msg_size);
 
 	/* Start init of channel */
-	ch->br_msg_desc.md.ring_size = rte_cpu_to_be_32(q_priv->queue_size);
-	ch->br_msg_desc.md.pi = 0;
-	ch->br_msg_desc.md.ci = 0;
-	ch->br_msg_desc.md.msg_size = msg_size;
+	ch->md.ring_size = rte_cpu_to_be_32(q_priv->queue_size);
+	ch->md.pi = 0;
+	ch->md.ci = 0;
+	ch->md.msg_size = msg_size;
 	for (i = 0; i < q_priv->queue_size; i++) {
 		vaddr = rte_malloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
 		if (!vaddr)
 			return IPC_HOST_BUF_ALLOC_FAIL;
 		/* Only offset now */
-		ch->br_msg_desc.bd[i].modem_ptr =
+		ch->bd_h[i].modem_ptr =
 			rte_cpu_to_be_32(HUGEPG_OFFSET(vaddr));
-		ch->br_msg_desc.bd[i].host_virt_l = lower_32_bits(vaddr);
-		ch->br_msg_desc.bd[i].host_virt_h = upper_32_bits(vaddr);
+		ch->bd_h[i].host_virt_l = lower_32_bits(vaddr);
+		ch->bd_h[i].host_virt_h = upper_32_bits(vaddr);
 		q_priv->msg_ch_vaddr[i] = vaddr;
 		/* Not sure use of this len may be for CRC*/
-		ch->br_msg_desc.bd[i].len = 0;
+		ch->bd_h[i].len = 0;
 	}
+	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
+			RTE_CACHE_LINE_SIZE);
 	ch->host_ipc_params =
 		rte_cpu_to_be_32(HUGEPG_OFFSET(q_priv->host_params));
-	ch->bl_initialized = 1;
 
 	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
 	return IPC_SUCCESS;
@@ -266,17 +263,11 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
 
 	if (q_priv->q_id < priv->num_valid_queues) {
-		ipc_br_md_t *md, *host_md;
-		ipc_ch_t *host_rx_ch;
-
-		host_rx_ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id +
-				HOST_RX_QUEUEID_OFFSET];
-		md = &(ch->br_msg_desc.md);
-		host_md = &(host_rx_ch->br_msg_desc.md);
+		ipc_br_md_t *md = &(ch->md);
 
 		q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
 		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
-		q_priv->host_pi = rte_be_to_cpu_32(host_md->pi);
+		q_priv->host_pi = rte_be_to_cpu_32(md->pi);
 		q_priv->host_ci = rte_be_to_cpu_32(md->ci);
 		q_priv->host_params = (host_ipc_params_t *)
 			(rte_be_to_cpu_32(ch->host_ipc_params) +
@@ -285,8 +276,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		for (i = 0; i < q_priv->queue_size; i++) {
 			uint32_t h, l;
 
-			h = host_rx_ch->br_msg_desc.bd[i].host_virt_h;
-			l = host_rx_ch->br_msg_desc.bd[i].host_virt_l;
+			h = ch->bd_h[i].host_virt_h;
+			l = ch->bd_h[i].host_virt_l;
 			q_priv->msg_ch_vaddr[i] = (void *)join_32_bits(h, l);
 		}
 
@@ -298,14 +289,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 
 	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_priv->q_id);
 
-	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
-			RTE_CACHE_LINE_SIZE);
-	ch->host_ipc_params =
-		rte_cpu_to_be_32(HUGEPG_OFFSET(q_priv->host_params));
-
 	/* Call ipc_configure_channel */
-	ret = ipc_queue_configure((q_priv->q_id + HOST_RX_QUEUEID_OFFSET),
-				  ipc_priv, q_priv);
+	ret = ipc_queue_configure(q_priv->q_id, ipc_priv, q_priv);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR("Unable to setup queue (%d) (err=%d)",
 		       q_priv->q_id, ret);
@@ -1312,7 +1297,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	uint32_t q_id = q_priv->q_id;
 	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	ipc_br_md_t *md = &(ch->br_msg_desc.md);
+	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
@@ -1320,11 +1305,9 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	int ret;
-	uint32_t temp_ci;
 
-	temp_ci = q_priv->host_params->ci;
-	ci = IPC_GET_CI_INDEX(temp_ci);
-	ci_flag = IPC_GET_CI_FLAG(temp_ci);
+	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
 
 	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
 	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
@@ -1339,7 +1322,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		return IPC_CH_FULL;
 	}
 
-	virt = MODEM_P2V(q_priv->host_params->modem_ptr[pi]);
+	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[pi]);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
 	q_priv->bbdev_op[pi] = bbdev_op;
 
@@ -1443,11 +1426,12 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		IPC_SET_PI_FLAG(pi);
 	else
 		IPC_RESET_PI_FLAG(pi);
+	q_priv->host_pi = pi;
+
 	/* Wait for Data Copy & pi_flag update to complete before updating pi */
 	rte_mb();
 	/* now update pi */
 	md->pi = rte_cpu_to_be_32(pi);
-	q_priv->host_pi = pi;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
 			"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
@@ -1605,18 +1589,17 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	uint32_t q_id = q_priv->q_id;
 	uint32_t ci, ci_flag, pi, pi_flag;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	ipc_br_md_t *md = &(ch->br_msg_desc.md);
+	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
 	char *huge_start_addr =
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
-	uint32_t temp_ci;
 
-	temp_ci = q_priv->host_params->ci;
-	ci = IPC_GET_CI_INDEX(temp_ci);
-	ci_flag = IPC_GET_CI_FLAG(temp_ci);
+	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+
 	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
 	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
 
@@ -1631,7 +1614,7 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 		return IPC_CH_FULL;
 	}
 
-	virt = MODEM_P2V(q_priv->host_params->modem_ptr[pi]);
+	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[pi]);
 	raw_op = (struct bbdev_ipc_raw_op_t *)virt;
 	q_priv->bbdev_op[pi] = bbdev_op;
 
@@ -1683,34 +1666,25 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 }
 
 /* Dequeue raw operation */
-static struct rte_bbdev_raw_op
-*dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
+static struct rte_bbdev_raw_op *
+dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 {
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
-	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
-	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	uint32_t q_id = q_priv->q_id + HOST_RX_QUEUEID_OFFSET;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	uint32_t ci, ci_flag, pi, pi_flag;
-	ipc_br_md_t *md;
-	struct bbdev_ipc_enqueue_op eop;
-	uint32_t temp_pi;
 	struct rte_bbdev_raw_op *op;
+	struct bbdev_ipc_enqueue_op eop;
+	uint32_t ci, ci_flag;
+	uint32_t temp_ci;
 
-	md = &(ch->br_msg_desc.md);
-	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
-	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
-	temp_pi = q_priv->host_params->pi;
-	pi = IPC_GET_PI_INDEX(temp_pi);
-	pi_flag = IPC_GET_PI_FLAG(temp_pi);
-
-	if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag))
+	temp_ci = q_priv->host_params->ci;
+	if (temp_ci == q_priv->host_ci)
 		return NULL;
 
+	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		pi, ci, pi_flag, ci_flag, q_priv->queue_size);
+		"ci: %u, ci_flag: %u, ring size: %u",
+		ci, ci_flag, q_priv->queue_size);
 
 	op = q_priv->bbdev_op[ci];
 
@@ -1731,8 +1705,11 @@ static struct rte_bbdev_raw_op
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-	md->ci = rte_cpu_to_be_32(ci);
 	q_priv->host_ci = ci;
+
+	BBDEV_LA12XX_PMD_DP_DEBUG(
+		"exit: ci: %u, ci_flag: %u, ring size: %u",
+		ci, ci_flag, q_priv->queue_size);
 
 	return op;
 }
@@ -1741,30 +1718,20 @@ static struct rte_bbdev_raw_op
 static void *
 dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 {
-	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
-	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	uint32_t q_id = q_priv->q_id + HOST_RX_QUEUEID_OFFSET;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	uint32_t ci, ci_flag, pi, pi_flag;
-	ipc_br_md_t *md;
 	void *op;
-	uint32_t temp_pi;
+	uint32_t ci, ci_flag;
+	uint32_t temp_ci;
 
-	md = &(ch->br_msg_desc.md);
+	temp_ci = q_priv->host_params->ci;
+	if (temp_ci == q_priv->host_ci)
+		return NULL;
+
 	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
 	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
 
-	temp_pi = q_priv->host_params->pi;
-	pi = IPC_GET_PI_INDEX(temp_pi);
-	pi_flag = IPC_GET_PI_FLAG(temp_pi);
-
-	if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag))
-		return NULL;
-
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		pi, ci, pi_flag, ci_flag, q_priv->queue_size);
+		"ci: %u, ci_flag: %u, ring size: %u",
+		ci, ci_flag, q_priv->queue_size);
 
 	op = q_priv->bbdev_op[ci];
 
@@ -1782,12 +1749,11 @@ dequeue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *dst)
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-	md->ci = rte_cpu_to_be_32(ci);
 	q_priv->host_ci = ci;
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"exit: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
-		pi, ci, pi_flag, ci_flag, q_priv->queue_size);
+		"exit: ci: %u, ci_flag: %u, ring size: %u",
+		ci, ci_flag, q_priv->queue_size);
 
 	return op;
 }
@@ -2527,11 +2493,6 @@ parse_bbdev_la12xx_params(struct bbdev_la12xx_params *params,
 		if (kvlist == NULL)
 			return -EFAULT;
 
-		ret = rte_kvargs_process(kvlist, bbdev_la12xx_valid_params[0],
-					&parse_u16_arg, &params->queues_num);
-		if (ret < 0)
-			goto exit;
-
 		ret = rte_kvargs_process(kvlist,
 					bbdev_la12xx_valid_params[0],
 					&parse_integer_arg,
@@ -2683,7 +2644,6 @@ static struct rte_vdev_driver bbdev_la12xx_pmd_drv = {
 RTE_PMD_REGISTER_ALIAS(DRIVER_NAME, bbdev_la12xx);
 RTE_PMD_REGISTER_VDEV(DRIVER_NAME, bbdev_la12xx_pmd_drv);
 RTE_PMD_REGISTER_PARAM_STRING(DRIVER_NAME,
-	BBDEV_LA12XX_MAX_NB_QUEUES_ARG"=<int>"
 	BBDEV_LA12XX_VDEV_MODEM_ID_ARG "=<int> ");
 RTE_INIT(la12xx_bbdev_init_log)
 {

@@ -74,7 +74,6 @@ struct bbdev_la12xx_q_priv {
 	uint32_t la12xx_core_id;
 		/* LA12xx core ID on which this will be scheduled */
 	uint32_t feca_input_circ_size;	/* FECA transport block input circular buffer size */
-	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
 	void *bbdev_op[MAX_CHANNEL_DEPTH];
 			/**< Stores bbdev op for each index */
