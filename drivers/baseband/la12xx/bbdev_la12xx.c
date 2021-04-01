@@ -36,7 +36,15 @@
 #include "bbdev_la12xx_wdog.h"
 
 #define DRIVER_NAME baseband_la12xx
-#define LA12XX_VDEV_MODEM_ID_ARG	"modem"
+
+/*  Initialisation params structure that can be used by LA12xx BBDEV driver */
+struct bbdev_la12xx_params {
+	uint8_t queues_num; /*< LA12xx BBDEV queues number */
+	int8_t modem_id; /*< LA12xx modem instance id */
+};
+
+#define BBDEV_LA12XX_MAX_NB_QUEUES_ARG  "max_nb_queues"
+#define BBDEV_LA12XX_VDEV_MODEM_ID_ARG	"modem"
 #define LA12XX_MAX_MODEM 4
 
 /* SG table final entry */
@@ -57,6 +65,11 @@
 
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
+static const char * const bbdev_la12xx_valid_params[] = {
+	BBDEV_LA12XX_MAX_NB_QUEUES_ARG,
+	BBDEV_LA12XX_VDEV_MODEM_ID_ARG,
+};
+
 static inline char *
 get_data_ptr(struct rte_bbdev_op_data *op_data)
 {
@@ -67,7 +80,7 @@ get_data_ptr(struct rte_bbdev_op_data *op_data)
 }
 
 /* la12xx BBDev logging ID */
-int bbdev_la12xx_logtype_pmd;
+int bbdev_la12xx_logtype;
 
 static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	{
@@ -87,6 +100,8 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 		.type   = RTE_BBDEV_OP_LDPC_DEC,
 		.cap.ldpc_dec = {
 			.capability_flags =
+					RTE_BBDEV_LDPC_CRC_TYPE_24A_CHECK |
+					RTE_BBDEV_LDPC_CRC_TYPE_24B_CHECK |
 					RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP |
 					RTE_BBDEV_LDPC_DEC_LLR_CONV_OFFLOAD |
 					RTE_BBDEV_LDPC_DEC_SCRAMBLING_OFFLOAD |
@@ -162,15 +177,6 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	((uint64_t) ((unsigned long) (A) \
 		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
 
-#define JOIN_VA32_64(H, L) ((uint64_t)(((H) << 32) | (L)))
-static inline uint64_t join_va2_64(uint32_t h, uint32_t l)
-{
-	uint64_t high = 0x0;
-
-	high = h;
-	return JOIN_VA32_64(high, l);
-}
-
 #pragma GCC push_options
 #pragma GCC optimize ("O1")
 static int ipc_queue_configure(uint32_t channel_id,
@@ -204,8 +210,8 @@ static int ipc_queue_configure(uint32_t channel_id,
 		/* Only offset now */
 		ch->br_msg_desc.bd[i].modem_ptr =
 			rte_cpu_to_be_32(HUGEPG_OFFSET(vaddr));
-		ch->br_msg_desc.bd[i].host_virt_l = SPLIT_VA32_L(vaddr);
-		ch->br_msg_desc.bd[i].host_virt_h = SPLIT_VA32_H(vaddr);
+		ch->br_msg_desc.bd[i].host_virt_l = lower_32_bits(vaddr);
+		ch->br_msg_desc.bd[i].host_virt_h = upper_32_bits(vaddr);
 		q_priv->msg_ch_vaddr[i] = vaddr;
 		/* Not sure use of this len may be for CRC*/
 		ch->br_msg_desc.bd[i].len = 0;
@@ -281,7 +287,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 
 			h = host_rx_ch->br_msg_desc.bd[i].host_virt_h;
 			l = host_rx_ch->br_msg_desc.bd[i].host_virt_l;
-			q_priv->msg_ch_vaddr[i] = (void *)join_va2_64(h, l);
+			q_priv->msg_ch_vaddr[i] = (void *)join_32_bits(h, l);
 		}
 
 		BBDEV_LA12XX_PMD_WARN(
@@ -1861,21 +1867,21 @@ dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
 {
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
 	struct bbdev_ipc_enqueue_op bbdev_ipc_op;
-	int nb_dequeued;
+	int nb_enqueued;
 
-	for (nb_dequeued = 0; nb_dequeued < nb_ops; nb_dequeued++) {
-		ops[nb_dequeued] = dequeue_single_op(q_priv, &bbdev_ipc_op);
-		if (!ops[nb_dequeued])
+	for (nb_enqueued = 0; nb_enqueued < nb_ops; nb_enqueued++) {
+		ops[nb_enqueued] = dequeue_single_op(q_priv, &bbdev_ipc_op);
+		if (!ops[nb_enqueued])
 			break;
-		ops[nb_dequeued]->status = bbdev_ipc_op.status;
+		ops[nb_enqueued]->status = bbdev_ipc_op.status;
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
-		rte_bbuf_dump(stdout, ops[nb_dequeued]->ldpc_enc.output.data,
-			ops[nb_dequeued]->ldpc_enc.output.data->data_len);
+		rte_bbuf_dump(stdout, ops[nb_enqueued]->ldpc_enc.output.data,
+			ops[nb_enqueued]->ldpc_enc.output.data->data_len);
 #endif
 	}
-	q_data->queue_stats.dequeued_count += nb_dequeued;
+	q_data->queue_stats.enqueued_count += nb_enqueued;
 
-	return nb_dequeued;
+	return nb_enqueued;
 }
 
 static void *
@@ -1891,7 +1897,7 @@ dequeue_vspa_op(struct bbdev_la12xx_q_priv *q_priv)
 		return NULL;
 
 	bbdev_la12xx_op = (struct rte_pmd_la12xx_op *)
-		join_va2_64(desc->host_cnxt_hi, desc->host_cnxt_lo);
+		join_32_bits(desc->host_cnxt_hi, desc->host_cnxt_lo);
 	vspa_params = &bbdev_la12xx_op->vspa_params;
 
 	out_op_data = &vspa_params->output;
@@ -2116,7 +2122,7 @@ get_hugepage_info(void)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* TODO - Use a better way */
+	/* TODO - find a better way */
 	hp_info = rte_malloc(NULL, sizeof(struct hugepage_info), 0);
 	if (!hp_info) {
 		BBDEV_LA12XX_PMD_ERR("Unable to allocate on local heap");
@@ -2465,9 +2471,23 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 	return 0;
 }
 
-struct la12xx_vdev_init_params {
-	int8_t modem_id;
-};
+static inline int
+parse_u16_arg(const char *key, const char *value, void *extra_args)
+{
+	uint16_t *u16 = extra_args;
+
+	unsigned int long result;
+	if ((value == NULL) || (extra_args == NULL))
+		return -EINVAL;
+	errno = 0;
+	result = strtoul(value, NULL, 0);
+	if ((result >= (1 << 16)) || (errno != 0)) {
+		BBDEV_LA12XX_PMD_ERR("Invalid value %lu for %s", result, key);
+		return -ERANGE;
+	}
+	*u16 = (uint16_t)result;
+	return 0;
+}
 
 /* Parse integer from integer argument */
 static int
@@ -2476,12 +2496,13 @@ parse_integer_arg(const char *key __rte_unused,
 {
 	int i;
 	char *end;
+
 	errno = 0;
 
 	i = strtol(value, &end, 10);
 	if (*end != 0 || errno != 0 || i < 0 || i > LA12XX_MAX_MODEM) {
 		BBDEV_LA12XX_PMD_ERR("Supported Port IDS are 0 to %d",
-			LA12XX_MAX_MODEM -1);
+			LA12XX_MAX_MODEM - 1);
 		return -EINVAL;
 	}
 
@@ -2490,46 +2511,56 @@ parse_integer_arg(const char *key __rte_unused,
 	return 0;
 }
 
+/* Parse parameters used to create device */
 static int
-la12xx_parse_vdev_init_params(struct la12xx_vdev_init_params *params,
-			   struct rte_vdev_device *dev)
+parse_bbdev_la12xx_params(struct bbdev_la12xx_params *params,
+		const char *input_args)
 {
 	struct rte_kvargs *kvlist = NULL;
 	int ret = 0;
 
-	static const char * const la12xx_vdev_valid_params[] = {
-		LA12XX_VDEV_MODEM_ID_ARG,
-		NULL
-	};
+	if (params == NULL)
+		return -EINVAL;
+	if (input_args) {
+		kvlist = rte_kvargs_parse(input_args,
+				bbdev_la12xx_valid_params);
+		if (kvlist == NULL)
+			return -EFAULT;
 
-	const char *input_args = rte_vdev_device_args(dev);
+		ret = rte_kvargs_process(kvlist, bbdev_la12xx_valid_params[0],
+					&parse_u16_arg, &params->queues_num);
+		if (ret < 0)
+			goto exit;
 
-	if (!input_args)
-		return -1;
+		ret = rte_kvargs_process(kvlist,
+					bbdev_la12xx_valid_params[0],
+					&parse_integer_arg,
+					&params->modem_id);
+		if (ret < 0)
+			goto exit;
 
-	kvlist = rte_kvargs_parse(input_args, la12xx_vdev_valid_params);
-	if (kvlist == NULL)
-		return -1;
+		if (params->modem_id >= LA12XX_MAX_MODEM) {
+			BBDEV_LA12XX_PMD_ERR("Invalid modem id, must be < %u",
+					LA12XX_MAX_MODEM);
+			goto exit;
+		}
+	}
 
-	ret = rte_kvargs_process(kvlist,
-				LA12XX_VDEV_MODEM_ID_ARG,
-				&parse_integer_arg,
-				&params->modem_id);
-	rte_kvargs_free(kvlist);
+exit:
+	if (kvlist)
+		rte_kvargs_free(kvlist);
 	return ret;
 }
 
 /* Create device */
 static int
-la12xx_bbdev_create(struct rte_vdev_device *vdev)
+la12xx_bbdev_create(struct rte_vdev_device *vdev,
+		struct bbdev_la12xx_params *init_params)
 {
 	struct rte_bbdev *bbdev;
 	const char *name = rte_vdev_device_name(vdev);
 	struct bbdev_la12xx_private *priv;
 	int ret;
-	struct la12xx_vdev_init_params init_params = {
-		.modem_id = -1,
-	};
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2545,18 +2576,14 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 		return -ENOMEM;
 	}
 
-	ret = la12xx_parse_vdev_init_params(&init_params, vdev);
-	if (ret < 0)
-		return -EINVAL;
-
 	priv = bbdev->data->dev_private;
-	priv->modem_id = init_params.modem_id;
+	priv->modem_id = init_params->modem_id;
 	/* if modem id is not configured */
 	if (priv->modem_id == -1)
 		priv->modem_id = bbdev->data->dev_id;
 
 	BBDEV_LA12XX_PMD_INFO("Initializing bbdev for:%s  modem-id=%d",
-		name, init_params.modem_id);
+		name, init_params->modem_id);
 
 	/* Reset Global variables */
 	priv->num_ldpc_enc_queues = 0;
@@ -2576,7 +2603,6 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 		rte_free(bbdev->data->dev_private);
 		return ret;
 	}
-
 	bbdev->dev_ops = &pmd_ops;
 	bbdev->device = &vdev->device;
 	bbdev->data->socket_id = 0;
@@ -2603,7 +2629,11 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev)
 static int
 la12xx_bbdev_probe(struct rte_vdev_device *vdev)
 {
+	struct bbdev_la12xx_params init_params = {
+		-1,
+	};
 	const char *name;
+	const char *input_args;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2614,7 +2644,10 @@ la12xx_bbdev_probe(struct rte_vdev_device *vdev)
 	if (name == NULL)
 		return -EINVAL;
 
-	return la12xx_bbdev_create(vdev);
+	input_args = rte_vdev_device_args(vdev);
+	parse_bbdev_la12xx_params(&init_params, input_args);
+
+	return la12xx_bbdev_create(vdev, &init_params);
 }
 
 /* Uninitialise device */
@@ -2647,13 +2680,14 @@ static struct rte_vdev_driver bbdev_la12xx_pmd_drv = {
 	.remove = la12xx_bbdev_remove
 };
 
-RTE_PMD_REGISTER_VDEV(DRIVER_NAME, bbdev_la12xx_pmd_drv);
 RTE_PMD_REGISTER_ALIAS(DRIVER_NAME, bbdev_la12xx);
-RTE_PMD_REGISTER_PARAM_STRING(DRIVER_NAME, LA12XX_VDEV_MODEM_ID_ARG "=<int> ");
-
+RTE_PMD_REGISTER_VDEV(DRIVER_NAME, bbdev_la12xx_pmd_drv);
+RTE_PMD_REGISTER_PARAM_STRING(DRIVER_NAME,
+	BBDEV_LA12XX_MAX_NB_QUEUES_ARG"=<int>"
+	BBDEV_LA12XX_VDEV_MODEM_ID_ARG "=<int> ");
 RTE_INIT(la12xx_bbdev_init_log)
 {
-	bbdev_la12xx_logtype_pmd = rte_log_register("pmd.bb.la12xx");
-	if (bbdev_la12xx_logtype_pmd >= 0)
-		rte_log_set_level(bbdev_la12xx_logtype_pmd, RTE_LOG_NOTICE);
+	bbdev_la12xx_logtype = rte_log_register("pmd.bb.la12xx");
+	if (bbdev_la12xx_logtype >= 0)
+		rte_log_set_level(bbdev_la12xx_logtype, RTE_LOG_NOTICE);
 }

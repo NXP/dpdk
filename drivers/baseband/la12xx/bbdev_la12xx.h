@@ -71,12 +71,15 @@ struct bbdev_la12xx_q_priv {
 	uint16_t queue_size;	/**< Queue depth */
 	int32_t eventfd;	/**< Event FD value */
 	enum rte_bbdev_op_type op_type; /**< Operation type */
-	uint32_t la12xx_core_id;	/* LA12xx core ID on which this will be scheduled */
+	uint32_t la12xx_core_id;
+		/* LA12xx core ID on which this will be scheduled */
 	uint32_t feca_input_circ_size;	/* FECA transport block input circular buffer size */
 	enum ipc_ch_type type;  /**< Channel type */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
-	void *bbdev_op[MAX_CHANNEL_DEPTH]; /**< Stores bbdev op for each index */
-	void *msg_ch_vaddr[MAX_CHANNEL_DEPTH]; /**< Stores msg channel addr for modem->host */
+	void *bbdev_op[MAX_CHANNEL_DEPTH];
+			/**< Stores bbdev op for each index */
+	void *msg_ch_vaddr[MAX_CHANNEL_DEPTH];
+			/**< Stores msg channel addr for modem->host */
 	struct vspa_desc *vspa_ring;	/**< Shared ring between Host and VSPA */
 	int vspa_desc_wr_index;	/**< Write desc index for VSPA */
 	int vspa_desc_rd_index;	/**< Write desc index for VSPA */
@@ -85,7 +88,8 @@ struct bbdev_la12xx_q_priv {
 	host_ipc_params_t *host_params; /**< Host parameters */
 };
 
-#define lower_32_bits(x) ((uint32_t)(x))
-#define upper_32_bits(x) ((uint32_t)(((x) >> 16) >> 16))
-
+#define lower_32_bits(x) ((uint32_t)((uint64_t)x))
+#define upper_32_bits(x) ((uint32_t)(((uint64_t)(x) >> 16) >> 16))
+#define join_32_bits(upper, lower) \
+	((uint64_t)(((uint64_t)(upper) << 32) | (uint32_t)(lower)))
 #endif
