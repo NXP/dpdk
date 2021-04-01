@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 2021 NXP
+ */
+
 #include "enet_ethdev.h"
 
 /* Prefix path to sysfs directory where UIO device attributes are exported.
