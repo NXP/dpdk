@@ -387,6 +387,15 @@ struct rte_bbdev_queue_data {
 };
 
 /** @internal Enqueue encode operations for processing on queue of a device. */
+typedef uint16_t (*rte_bbdev_enqueue_raw_op_t)(
+		struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_raw_op *op);
+
+/** @internal Enqueue decode operations for processing on queue of a device. */
+typedef struct rte_bbdev_raw_op *(*rte_bbdev_dequeue_raw_op_t)(
+		struct rte_bbdev_queue_data *q_data);
+
+/** @internal Enqueue encode operations for processing on queue of a device. */
 typedef uint16_t (*rte_bbdev_enqueue_enc_ops_t)(
 		struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_enc_op **ops,
@@ -441,6 +450,10 @@ TAILQ_HEAD(rte_bbdev_cb_list, rte_bbdev_callback);
  * these fields, but should only write to the *_ops fields.
  */
 struct __rte_cache_aligned rte_bbdev {
+	/** Enqueue raw op function */
+	rte_bbdev_enqueue_raw_op_t enqueue_raw_op;
+	/** Dequeue raw op function */
+	rte_bbdev_dequeue_raw_op_t dequeue_raw_op;
 	/** Enqueue encode function */
 	rte_bbdev_enqueue_enc_ops_t enqueue_enc_ops;
 	/** Enqueue decode function */
@@ -468,6 +481,33 @@ struct __rte_cache_aligned rte_bbdev {
 
 /** @internal array of all devices */
 extern struct rte_bbdev rte_bbdev_devices[];
+
+/**
+ * Enqueue a RAW operation to a queue of the device.
+ * If confirmation is required then the memory for the ‘op’ structure should
+ * be allocated from heap/mempool and should be freed only after confirmation.
+ * Otherwise, it shall be on stack or if on heap, should be freed after enqueue
+ * operation.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_id
+ *   The index of the queue.
+ * @param op
+ *   Pointer containing operation to be enqueued.
+ *
+ * @return
+ *    Status of the enqueue operation.
+ */
+__rte_experimental
+static inline uint16_t
+rte_bbdev_enqueue_raw_op(uint16_t dev_id, uint16_t queue_id,
+		struct rte_bbdev_raw_op *op)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	return dev->enqueue_raw_op(q_data, op);
+}
 
 /**
  * Enqueue a burst of processed encode operations to a queue of the device.
@@ -593,6 +633,29 @@ rte_bbdev_enqueue_ldpc_dec_ops(uint16_t dev_id, uint16_t queue_id,
 	return dev->enqueue_ldpc_dec_ops(q_data, ops, num_ops);
 }
 
+/**
+ * Dequeue a raw operation.
+ * For HOST->MODEM queues, this would provide RAW op which had
+ * ‘conf_enabled’ configured at queue initialization.
+ * For MODEM->HOST queues, this would provide RAW op which are sent from MODEM.
+ * ‘op’ memory would be internally allocated
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_id
+ *   The index of the queue.
+ *
+ * @return
+ *   Pointer containing dequeued operation.
+ */
+__rte_experimental
+static inline struct rte_bbdev_raw_op *
+rte_bbdev_dequeue_raw_op(uint16_t dev_id, uint16_t queue_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	return dev->dequeue_raw_op(q_data);
+}
 
 /**
  * Dequeue a burst of processed encode operations from a queue of the device.
