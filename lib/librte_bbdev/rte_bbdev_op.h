@@ -928,6 +928,23 @@ enum {
 	RTE_BBDEV_SYNDROME_ERROR
 };
 
+/** Structure specifying a single raw operation */
+struct rte_bbdev_raw_op {
+	/** RAW operation flags. BBDEV_RAW_OP_IN_VALID / BBDEV_RAW_OP_OUT_VALID
+	 */
+	uint32_t raw_op_flags;
+	/** Status of the operation */
+	uint32_t status;
+	/** Opaque pointer for user data in case of confirmation. Invalid for
+	 *  dequeue operation for MODEM -> HOST communication.
+	 */
+	void *opaque_data;
+	/** Input data */
+	struct rte_bbdev_op_data input;
+	/** Output data */
+	struct rte_bbdev_op_data output;
+};
+
 /** Structure specifying a single encode operation */
 struct rte_bbdev_enc_op {
 	/** Status of operation that was performed */
