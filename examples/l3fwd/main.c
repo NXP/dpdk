@@ -1215,7 +1215,7 @@ parse_args(int argc, char **argv)
 				print_usage(prgname);
 				return -1;
 			}
-			printf("Splitting traffic on Proto:%d or ethtype = %d,"
+			printf("Splitting traffic on Proto:%d or ethtype= 0x%x,"
 				"DPDMUX.0.%d\n", traffic_split_proto,
 				traffic_split_ethtype, mux_connection_id);
 			break;
@@ -1411,7 +1411,7 @@ signal_handler(int signum)
 		printf("\n\nSignal %d received, preparing to exit...\n",
 				signum);
 		force_quit = true;
-		if (traffic_split_proto || traffic_split_type) {
+		if (traffic_split_proto || traffic_split_type || traffic_split_ethtype) {
 			/* for upto 3 interfaces */
 			rte_pmd_dpaa2_mux_dump_counter(stdout, 0, 3);
 		}
