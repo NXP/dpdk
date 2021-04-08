@@ -786,7 +786,7 @@ static void cmd_help_long_parsed(void *parsed_result,
 			"receive buffers available.\n\n"
 
 			"port config all rss (all|default|ip|tcp|udp|sctp|"
-			"ether|port|vxlan|geneve|nvgre|vxlan-gpe|none|<flowtype_id>)\n"
+			"ether|port|vxlan|geneve|nvgre|vxlan-gpe|mpls|none|<flowtype_id>)\n"
 			"    Set the RSS mode.\n\n"
 
 			"port config port-id rss reta (hash,queue)[,(hash,queue)]\n"
@@ -2291,6 +2291,8 @@ cmd_config_rss_parsed(void *parsed_result,
 		rss_conf.rss_hf = ETH_RSS_L4_SRC_ONLY;
 	else if (!strcmp(res->value, "l4-dst-only"))
 		rss_conf.rss_hf = ETH_RSS_L4_DST_ONLY;
+	else if (!strcmp(res->value, "mpls"))
+		rss_conf.rss_hf = ETH_RSS_MPLS;
 	else if (!strcmp(res->value, "none"))
 		rss_conf.rss_hf = 0;
 	else if (!strcmp(res->value, "default"))
@@ -2349,7 +2351,8 @@ cmdline_parse_inst_t cmd_config_rss = {
 	.f = cmd_config_rss_parsed,
 	.data = NULL,
 	.help_str = "port config all rss "
-		"all|default|ip|tcp|udp|sctp|ether|port|vxlan|geneve|nvgre|vxlan-gpe|none|<flowtype_id>",
+		"all|default|ip|tcp|udp|sctp|ether|port|vxlan|geneve|"
+		"nvgre|vxlan-gpe|mpls|none|<flowtype_id>",
 	.tokens = {
 		(void *)&cmd_config_rss_port,
 		(void *)&cmd_config_rss_keyword,
