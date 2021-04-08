@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2020 NXP
+ *   Copyright 2016-2021 NXP
  *
  */
 
@@ -194,7 +194,8 @@ dpaa2_distset_to_dpkg_profile_cfg(
 		uint64_t req_dist_set,
 		struct dpkg_profile_cfg *kg_cfg)
 {
-	uint32_t loop = 0, i = 0, dist_field = 0;
+	uint32_t loop = 0, i = 0;
+	uint64_t dist_field = 0;
 	int l2_configured = 0, l3_configured = 0;
 	int l4_configured = 0, sctp_configured = 0;
 	int mpls_configured = 0;
@@ -202,7 +203,7 @@ dpaa2_distset_to_dpkg_profile_cfg(
 	memset(kg_cfg, 0, sizeof(struct dpkg_profile_cfg));
 	while (req_dist_set) {
 		if (req_dist_set % 2 != 0) {
-			dist_field = 1U << loop;
+			dist_field = 1ULL << loop;
 			switch (dist_field) {
 			case ETH_RSS_L2_PAYLOAD:
 
@@ -364,7 +365,7 @@ dpaa2_distset_to_dpkg_profile_cfg(
 
 			default:
 				DPAA2_PMD_WARN(
-					     "Unsupported flow dist option %x",
+				      "unsupported flow dist option 0x%" PRIx64,
 					     dist_field);
 				return -EINVAL;
 			}
