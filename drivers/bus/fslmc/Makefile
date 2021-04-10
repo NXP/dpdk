@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2016 NXP
+# Copyright 2016,2021 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -37,6 +37,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += \
 	mc/mc_sys.c \
 	mc/dpcon.c \
 	mc/dpci.c \
+	mc/dprc.c \
 	mc/dpdmai.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS) += portal/dpaa2_hw_dpio.c
