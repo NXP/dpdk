@@ -84,7 +84,7 @@ static const struct {
 const struct rss_type_info rss_type_table[] = {
 	{ "all", ETH_RSS_IP | ETH_RSS_TCP |
 			ETH_RSS_UDP | ETH_RSS_SCTP |
-			ETH_RSS_L2_PAYLOAD },
+			ETH_RSS_L2_PAYLOAD | ETH_RSS_MPLS },
 	{ "none", 0 },
 	{ "ipv4", ETH_RSS_IPV4 },
 	{ "ipv4-frag", ETH_RSS_FRAG_IPV4 },
@@ -115,6 +115,7 @@ const struct rss_type_info rss_type_table[] = {
 	{ "l3-dst-only", ETH_RSS_L3_DST_ONLY },
 	{ "l4-src-only", ETH_RSS_L4_SRC_ONLY },
 	{ "l4-dst-only", ETH_RSS_L4_DST_ONLY },
+	{ "mpls", ETH_RSS_MPLS },
 	{ NULL, 0 },
 };
 
