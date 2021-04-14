@@ -331,8 +331,8 @@ op_turbo_type_strtol(char *token, enum rte_bbdev_op_type *op_type)
 		*op_type = RTE_BBDEV_OP_POLAR_DEC;
 	else if (!strcmp(token, "RTE_BBDEV_OP_POLAR_ENC"))
 		*op_type = RTE_BBDEV_OP_POLAR_ENC;
-	else if (!strcmp(token, "RTE_BBDEV_OP_LA12XX_RAW"))
-		*op_type = RTE_BBDEV_OP_LA12XX_RAW;
+	else if (!strcmp(token, "RTE_BBDEV_OP_RAW"))
+		*op_type = RTE_BBDEV_OP_RAW;
 	else if (!strcmp(token, "RTE_BBDEV_OP_LA12XX_VSPA"))
 		*op_type = RTE_BBDEV_OP_LA12XX_VSPA;
 	else {
@@ -1191,7 +1191,7 @@ parse_la12xx_raw_op_params(const char *key_token, char *token,
 	int ret = 0;
 	char *err = NULL;
 
-	vector->la12xx_op.op_type = RTE_BBDEV_OP_LA12XX_RAW;
+	vector->la12xx_op.op_type = RTE_BBDEV_OP_RAW;
 	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_INPUT,
@@ -1308,7 +1308,7 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
 		if (parse_polar_encoder_params(key_token, token, vector) == -1)
 			return -1;
-	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_RAW) {
+	} else if (vector->op_type == RTE_BBDEV_OP_RAW) {
 		if (parse_la12xx_raw_op_params(key_token, token, vector) == -1)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
@@ -1848,7 +1848,7 @@ bbdev_check_vector(struct test_bbdev_vector *vector)
 	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
 		if (check_polar_encoder(vector) == -1)
 			return -1;
-	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_RAW) {
+	} else if (vector->op_type == RTE_BBDEV_OP_RAW) {
 		if (check_la12xx_raw(vector) == -1)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {

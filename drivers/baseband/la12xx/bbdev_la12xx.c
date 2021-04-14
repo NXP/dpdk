@@ -118,7 +118,7 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 		.type   = RTE_BBDEV_OP_POLAR_ENC,
 	},
 	{
-		.type   = RTE_BBDEV_OP_LA12XX_RAW,
+		.type   = RTE_BBDEV_OP_RAW,
 	},
 	{
 		.type   = RTE_BBDEV_OP_LA12XX_VSPA,
@@ -248,7 +248,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	case RTE_BBDEV_OP_POLAR_DEC:
 		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
 		break;
-	case RTE_BBDEV_OP_LA12XX_RAW:
+	case RTE_BBDEV_OP_RAW:
 		q_priv->la12xx_core_id = BBDEV_LA12XX_RAW_CORE;
 		break;
 	default:
@@ -341,7 +341,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		ch->feca_blk_id = rte_cpu_to_be_32(0);
 		priv->num_polar_dec_queues++;
 		break;
-	case RTE_BBDEV_OP_LA12XX_RAW:
+	case RTE_BBDEV_OP_RAW:
 		if (priv->num_raw_queues >= MAX_RAW_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_raw_queues reached max value");
@@ -1378,7 +1378,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		}
 		break;
 
-	case RTE_BBDEV_OP_LA12XX_RAW:
+	case RTE_BBDEV_OP_RAW:
 		raw_params = &(((struct rte_pmd_la12xx_op *)
 			bbdev_op)->raw_params);
 		in_op_data = &raw_params->input;
@@ -1952,7 +1952,7 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 				dequeue_single_op(q_priv, p_bbdev_ipc_op);
 			if (!ops[nb_dequeued])
 				break;
-			if (q_priv->op_type != RTE_BBDEV_OP_LA12XX_RAW)
+			if (q_priv->op_type != RTE_BBDEV_OP_RAW)
 				ops[nb_dequeued]->status = bbdev_ipc_op.status;
 			else
 				process_deq_raw_op(ops[nb_dequeued], &bbdev_ipc_op);

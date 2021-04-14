@@ -2096,7 +2096,7 @@ run_test_case_on_device(test_case_function *test_case_func, uint8_t dev_id,
 		} else if (op_type == RTE_BBDEV_OP_LDPC_DEC) {
 			create_reference_ldpc_dec_op(
 			(&op_params[lcore_id])->ref_dec_op, &test_vector[v]);
-		} else if (op_type == RTE_BBDEV_OP_LA12XX_RAW) {
+		} else if (op_type == RTE_BBDEV_OP_RAW) {
 			create_reference_la12xx_raw_op(
 			(&op_params[lcore_id])->ref_la12xx_op, &test_vector[v]);
 		} else if (op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
@@ -3484,7 +3484,7 @@ throughput_test(struct active_device *ad,
 				(op_type == RTE_BBDEV_OP_POLAR_ENC))
 				throughput_function[used_cores] =
 					throughput_pmd_lcore_polar;
-			else if (op_type == RTE_BBDEV_OP_LA12XX_RAW)
+			else if (op_type == RTE_BBDEV_OP_RAW)
 				throughput_function[used_cores] =
 					throughput_pmd_lcore_la12xx_raw;
 			else if (op_type == RTE_BBDEV_OP_LA12XX_VSPA)
@@ -3698,6 +3698,8 @@ latency_test_ldpc_dec(void *arg)
 		bool first_time = true;
 		last_time = 0;
 
+		printf("shared i: %d\n", i);
+
 		if (unlikely(num_to_process - dequeued < burst_sz))
 			burst_sz = num_to_process - dequeued;
 
@@ -3865,6 +3867,8 @@ latency_test_ldpc_polar(void *arg)
 		uint16_t enq = 0, deq = 0;
 		bool first_time = true;
 		last_time = 0;
+
+		printf("polar i: %d\n", i);
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
 			burst_sz = num_to_process - dequeued;
@@ -4350,7 +4354,7 @@ latency_test(struct active_device *ad,
 		else if ((op_type == RTE_BBDEV_OP_POLAR_DEC) ||
 					(op_type == RTE_BBDEV_OP_POLAR_ENC))
 			latency_function[used_cores] = latency_test_ldpc_polar;
-		else if (op_type == RTE_BBDEV_OP_LA12XX_RAW)
+		else if (op_type == RTE_BBDEV_OP_RAW)
 			latency_function[used_cores] = latency_test_la12xx_raw;
 		else if (op_type == RTE_BBDEV_OP_LA12XX_VSPA)
 			latency_function[used_cores] = latency_test_la12xx_vspa;
