@@ -59,6 +59,7 @@ CONFIG_RTE_LIBRTE_IEEE1588=n
 # Compile PMD for NXP bbdev device
 #
 CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX=y
+CONFIG_RTE_LIBRTE_PMD_BBDEV_LA93XX=y
 
 # Disable unnecessary drivers to reduce size
 CONFIG_RTE_LIBRTE_AVP_PMD=n

@@ -16,5 +16,7 @@ ifneq ($(COMMON_HEADERS_DIR),)
 DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += la12xx
 DEPDIRS-bbdev_la12xx = $(core-libs)
 endif
+DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA93XX) += la93xx
+DEPDIRS-bbdev_la93xx = $(core-libs)
 
 include $(RTE_SDK)/mk/rte.subdir.mk

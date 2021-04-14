@@ -237,6 +237,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC) += -lrte_pmd_bbdev_fpga_lte_
 ifneq ($(COMMON_HEADERS_DIR),)
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX)      += -lrte_pmd_bbdev_la12xx
 endif
+_LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA93XX)      += -lrte_pmd_bbdev_la93xx
 
 # TURBO SOFTWARE PMD is dependent on the FLEXRAN library
 _LDLIBS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_TURBO_SW) += -lrte_pmd_bbdev_turbo_sw
