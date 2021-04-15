@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #include <stdio.h>
@@ -27,8 +27,6 @@
 #include <rte_version.h>
 #include <rte_bbdev.h>
 
-#include <geul_ipc_api.h>
-#include <geul_ipc_errorcodes.h>
 #include <geul_ipc_um.h>
 #include <gul_host_if.h>
 
