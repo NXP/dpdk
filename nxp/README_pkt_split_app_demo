@@ -197,8 +197,11 @@ Classification entries in data.input file:
 
      Note: IPv6 address format must be: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
 
-  2. DEST_PORT <UDP destination port number>
-     e.g.: "DEST_PORT 2152"
+  2. DEST_PORT <Space separated list of destination port number>
+     e.g.: "DEST_PORT 2152 2123"
+
+	Maximum 2 port numbers can be used. Use 2152 and 2123 for
+	GTP-U and GTP-C traffic.
 
   3. PROTOCOL_ID <IP protocol number>
      e.g.: "PROTOCOL_ID 17"
