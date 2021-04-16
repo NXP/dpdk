@@ -11,6 +11,7 @@ RTE_TARGET ?= $(notdir $(abspath $(dir $(firstword $(wildcard $(RTE_SDK)/*/.conf
 include $(RTE_SDK)/mk/rte.vars.mk
 
 DIRS-$(CONFIG_RTE_LIBRTE_BBDEV) += bbdev_app
+DIRS-$(CONFIG_RTE_LIBRTE_BBDEV) += bbdev_raw_app
 DIRS-$(CONFIG_RTE_LIBRTE_PMD_BOND) += bond
 DIRS-y += cmdline
 ifeq ($(CONFIG_RTE_LIBRTE_POWER),y)
@@ -87,9 +88,5 @@ DIRS-y += eventdev_pipeline
 DIRS-y += cmdif
 DIRS-y += l2fwd-qdma
 DIRS-y += qdma_demo
-
-ifneq ($(COMMON_HEADERS_DIR),)
-DIRS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la12xx_app
-endif
 
 include $(RTE_SDK)/mk/rte.extsubdir.mk
