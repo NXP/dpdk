@@ -10,7 +10,7 @@ execinfo = cc.find_library('execinfo', required: false)
 
 # list of all example apps. Keep 1-3 per line, in alphabetical order.
 all_examples = [
-	'bbdev_app', 'bond',
+	'bbdev_app', 'bbdev_raw_app' , 'bond',
 	'cmdline',
 	'distributor', 'ethtool',
 	'eventdev_pipeline',
@@ -50,11 +50,6 @@ all_examples = [
 	'cmdif',
 
 ]
-cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
-COMMON_HEADERS_DIR = cmd.stdout().strip()
-if COMMON_HEADERS_DIR != ''
-all_examples += ['bbdev_la12xx_app']
-endif
 
 # install all example code on install - irrespective of whether the example in
 # question is to be built as part of this build or not.

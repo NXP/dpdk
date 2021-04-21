@@ -374,7 +374,7 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 {
 	struct bbdev_la93xx_q_priv *q_priv = q_data->queue_private;
 	struct rte_bbdev_raw_op *op;
-	struct bbdev_ipc_enqueue_op eop;
+	struct bbdev_ipc_raw_op_t *shared_op;
 	uint32_t ci, ci_flag;
 	uint32_t temp_ci;
 
@@ -390,12 +390,9 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 		ci, ci_flag, q_priv->queue_size);
 
 	op = q_priv->bbdev_op[ci];
-
-	rte_memcpy(&eop, q_priv->msg_ch_vaddr[ci],
-		sizeof(struct bbdev_ipc_enqueue_op));
-
-	op->status = eop.status;
-	op->output.length = eop.out_len;
+	shared_op = (struct bbdev_ipc_raw_op_t *)(q_priv->msg_ch_vaddr[ci]);
+	op->status = shared_op->status;
+	op->output.length = shared_op->out_len;
 
 	/* Move Consumer Index forward */
 	ci++;
