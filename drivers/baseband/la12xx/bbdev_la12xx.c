@@ -183,7 +183,7 @@ static int ipc_queue_configure(uint32_t channel_id,
 	ipc_ch_t *ch;
 	void *vaddr;
 	uint32_t i = 0;
-	uint32_t msg_size = sizeof(struct bbdev_ipc_enqueue_op);
+	uint32_t msg_size = sizeof(struct bbdev_ipc_raw_op_t);
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -429,7 +429,10 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	struct rte_bbdev_queue_data *q_data;
 	struct bbdev_la12xx_q_priv *q_priv;
-	int ret;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	int i, ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -446,6 +449,14 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->bbdev_priv = dev->data->dev_private;
 	q_priv->queue_size = queue_conf->queue_size;
 	q_priv->op_type = queue_conf->op_type;
+
+	ch->is_host_to_modem = queue_conf->raw_queue_conf.direction;
+
+	if (!ch->is_host_to_modem) {
+		for (i = 0; i < MAX_CHANNEL_DEPTH; i++)
+			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
+					sizeof(struct rte_bbdev_raw_op), 0);
+	}
 
 	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
 		ret = la12xx_vspa_queue_setup(dev, q_priv);
@@ -1670,48 +1681,139 @@ static struct rte_bbdev_raw_op *
 dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 {
 	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	struct bbdev_ipc_raw_op_t *dequeue_op;
 	struct rte_bbdev_raw_op *op;
-	struct bbdev_ipc_enqueue_op eop;
-	uint32_t ci, ci_flag;
+	uint32_t ci, ci_flag, pi, pi_flag;
 	uint32_t temp_ci;
+	int is_host_to_modem = q_data->conf.raw_queue_conf.direction;
 
-	temp_ci = q_priv->host_params->ci;
-	if (temp_ci == q_priv->host_ci)
-		return NULL;
+	if (is_host_to_modem) {
+		temp_ci = q_priv->host_params->ci;
+		if (temp_ci == q_priv->host_ci)
+			return NULL;
 
-	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
-	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+		ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+
+		BBDEV_LA12XX_PMD_DP_DEBUG(
+			"ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+		op = q_priv->bbdev_op[ci];
+
+		dequeue_op = q_priv->msg_ch_vaddr[ci];
+
+		op->status = rte_cpu_to_be_32(dequeue_op->status);
+		op->output.length = rte_cpu_to_be_32(dequeue_op->out_len);
+
+		/* Move Consumer Index forward */
+		ci++;
+		/* Flip the CI flag, if wrapping */
+		if (q_priv->queue_size == ci) {
+			ci = 0;
+			ci_flag = ci_flag ? 0 : 1;
+		}
+		if (ci_flag)
+			IPC_SET_CI_FLAG(ci);
+		else
+			IPC_RESET_CI_FLAG(ci);
+		q_priv->host_ci = ci;
+
+		BBDEV_LA12XX_PMD_DP_DEBUG(
+			"exit: ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+	} else {
+		ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
+		pi = IPC_GET_PI_INDEX(q_priv->host_params->pi);
+		pi_flag = IPC_GET_PI_FLAG(q_priv->host_params->pi);
+
+		if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag))
+			return NULL;
+
+		BBDEV_LA12XX_PMD_DP_DEBUG(
+			"ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+		dequeue_op =
+			(struct bbdev_ipc_raw_op_t *)q_priv->msg_ch_vaddr[ci];
+
+		op = q_priv->bbdev_op[ci];
+
+		op->input.length = rte_be_to_cpu_32(dequeue_op->in_len);
+		op->output.length = rte_be_to_cpu_32(dequeue_op->out_len);
+		op->input.mem =
+			(void *)MODEM_P2V(rte_be_to_cpu_32(
+					dequeue_op->in_addr));
+		op->output.mem =
+			(void *)MODEM_P2V(rte_be_to_cpu_32(
+					dequeue_op->out_addr));
+
+		BBDEV_LA12XX_PMD_DP_DEBUG(
+			"exit: ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+	}
+
+	return op;
+}
+
+/* Consume raw operation */
+static uint16_t
+consume_raw_op(struct rte_bbdev_queue_data *q_data,
+	       struct rte_bbdev_raw_op *bbdev_op)
+{
+	struct bbdev_la12xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_la12xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	struct bbdev_ipc_raw_op_t *raw_op;
+	uint32_t q_id = q_priv->q_id;
+	uint32_t ci, ci_flag, pi, pi_flag;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_br_md_t *md = &(ch->md);
+	uint64_t virt;
+
+	pi = IPC_GET_PI_INDEX(q_priv->host_params->pi);
+	pi_flag = IPC_GET_PI_FLAG(q_priv->host_params->pi);
+	ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+	ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"ci: %u, ci_flag: %u, ring size: %u",
-		ci, ci_flag, q_priv->queue_size);
+		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u,"
+		"ring size: %u",
+	pi, ci, pi_flag, ci_flag, q_priv->queue_size);
 
-	op = q_priv->bbdev_op[ci];
+	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[ci]);
+	raw_op = (struct bbdev_ipc_raw_op_t *)virt;
+	raw_op->status = rte_cpu_to_be_32(bbdev_op->status);
+	raw_op->out_len = rte_cpu_to_be_32(bbdev_op->output.length);
 
-	rte_memcpy(&eop, q_priv->msg_ch_vaddr[ci],
-		sizeof(struct bbdev_ipc_enqueue_op));
-
-	op->status = rte_cpu_to_be_32(eop.status);
-	op->output.length = rte_cpu_to_be_32(eop.out_len);
-
-	/* Move Consumer Index forward */
+	/* Move Producer Index forward */
 	ci++;
-	/* Flip the CI flag, if wrapping */
-	if (q_priv->queue_size == ci) {
+	/* Flip the PI flag, if wrapping */
+	if (unlikely(q_priv->queue_size == ci)) {
 		ci = 0;
 		ci_flag = ci_flag ? 0 : 1;
 	}
+
 	if (ci_flag)
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-	q_priv->host_ci = ci;
+	q_priv->host_params->ci = ci;
+	/* Wait for Data Copy & ci_flag update to complete before updating ci */
+	rte_mb();
+	/* now update ci */
+	md->ci = rte_cpu_to_be_32(ci);
 
 	BBDEV_LA12XX_PMD_DP_DEBUG(
-		"exit: ci: %u, ci_flag: %u, ring size: %u",
-		ci, ci_flag, q_priv->queue_size);
+		"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		pi, ci, pi_flag, ci_flag, q_priv->queue_size);
 
-	return op;
+	return IPC_SUCCESS;
 }
 
 /* Dequeue encode burst */
@@ -2571,6 +2673,7 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 
 	bbdev->enqueue_raw_op = enqueue_raw_op;
 	bbdev->dequeue_raw_op = dequeue_raw_op;
+	bbdev->consume_raw_op = consume_raw_op;
 
 	/* register rx/tx burst functions for data path */
 	bbdev->dequeue_enc_ops = dequeue_enc_ops;

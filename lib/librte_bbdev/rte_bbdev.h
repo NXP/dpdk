@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2021 NXP
  */
 
 #ifndef _RTE_BBDEV_H_
@@ -135,6 +136,35 @@ __rte_experimental
 int
 rte_bbdev_intr_enable(uint16_t dev_id);
 
+#define RTE_BBDEV_DIR_MODEM_TO_HOST 0
+#define RTE_BBDEV_DIR_HOST_TO_MODEM 1
+
+/** RAW queue specific configuration structure */
+struct rte_bbdev_raw_queue_conf {
+	/**
+	 * Direction of operation RTE_BBDEV_DIR_HOST_TO_MODEM or
+	 * RTE_BBDEV_DIR_MODEM_TO_HOST
+	 */
+	bool direction;
+	/**
+	 * Size of internal pool associated with each BD element of the queue.
+	 * Number of objects would be equal to the ‘queue_size’ (see below).
+	 * This should be ‘0’ if no internal memory pool is required.
+	 */
+	uint32_t pool_len;
+	/**
+	 * Enable confirmation on this queue to free any used memory after job
+	 * is completed. Confirmation would be provided by dequeue on the same
+	 * queue. Note: if only memory of internally associated pool is used;
+	 * this shall not be used. Invalid for dequeue operation for
+	 * MODEM -> HOST comm.
+	 */
+	uint32_t conf_enable;
+	/* Core ID of the MODEM device on which this queue shall be scheduled */
+	uint32_t modem_core_id;
+};
+
+
 /** Device queue configuration structure */
 struct rte_bbdev_queue_conf {
 	int socket;  /**< NUMA socket used for memory allocation */
@@ -142,6 +172,11 @@ struct rte_bbdev_queue_conf {
 	uint8_t priority;  /**< Queue priority */
 	bool deferred_start; /**< Do not start queue when device is started. */
 	enum rte_bbdev_op_type op_type; /**< Operation type */
+	/**
+	 * RAW queue configuration. Only applicable when 'op_type’ is
+	 * ‘RTE_BBDEV_OP_LA12XX_RAW’
+	 */
+	struct rte_bbdev_raw_queue_conf raw_queue_conf;
 };
 
 /**
@@ -386,14 +421,22 @@ struct rte_bbdev_queue_data {
 	bool started;  /**< Queue state */
 };
 
-/** @internal Enqueue encode operations for processing on queue of a device. */
+/** @internal Enqueue raw operation for processing on queue of a device. */
 typedef uint16_t (*rte_bbdev_enqueue_raw_op_t)(
 		struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_raw_op *op);
 
-/** @internal Enqueue decode operations for processing on queue of a device. */
+/** @internal Dequeue raw operation from a queue of a device. */
 typedef struct rte_bbdev_raw_op *(*rte_bbdev_dequeue_raw_op_t)(
 		struct rte_bbdev_queue_data *q_data);
+
+/**
+ * @internal Consume raw operation and enqueue for processing on queue of a
+ * device.
+ */
+typedef uint16_t (*rte_bbdev_consume_raw_op_t)(
+		struct rte_bbdev_queue_data *q_data,
+		struct rte_bbdev_raw_op *op);
 
 /** @internal Enqueue encode operations for processing on queue of a device. */
 typedef uint16_t (*rte_bbdev_enqueue_enc_ops_t)(
@@ -454,6 +497,8 @@ struct __rte_cache_aligned rte_bbdev {
 	rte_bbdev_enqueue_raw_op_t enqueue_raw_op;
 	/** Dequeue raw op function */
 	rte_bbdev_dequeue_raw_op_t dequeue_raw_op;
+	/** Consume raw op function */
+	rte_bbdev_consume_raw_op_t consume_raw_op;
 	/** Enqueue encode function */
 	rte_bbdev_enqueue_enc_ops_t enqueue_enc_ops;
 	/** Enqueue decode function */
@@ -507,6 +552,19 @@ rte_bbdev_enqueue_raw_op(uint16_t dev_id, uint16_t queue_id,
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
 	return dev->enqueue_raw_op(q_data, op);
+}
+
+/**
+ * Consume raw operations. Valid for MODEM->HOST queues only. This will mark
+ * internal BD rings as free and do internal cleanups.
+ */
+static inline uint16_t
+rte_bbdev_consume_raw_op(uint16_t dev_id, uint16_t queue_id,
+		struct rte_bbdev_raw_op *op)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	return dev->consume_raw_op(q_data, op);
 }
 
 /**
