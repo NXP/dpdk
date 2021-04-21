@@ -23,10 +23,10 @@ main(int argc, char **argv)
 	struct rte_bbdev_info info;
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
-	struct rte_mempool *mp;
-	uint32_t nb_queues = 1, queue_id, i, j;
+	struct rte_mempool *mp = NULL;
+	uint32_t nb_queues = 2, queue_id, i, j;
 	uint32_t dev_id = 0, pkt_len = PACKET_LEN;
-	uint32_t *input, *output, output_val;
+	uint32_t *input, *output, output_val, input_length;
 	int ret;
 
 	/* init EAL */
@@ -58,6 +58,13 @@ main(int argc, char **argv)
 	qconf.op_type = RTE_BBDEV_OP_RAW;
 
 	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
+		if (queue_id % 2 == 0)
+			qconf.raw_queue_conf.direction =
+					RTE_BBDEV_DIR_HOST_TO_MODEM;
+		else
+			qconf.raw_queue_conf.direction =
+					RTE_BBDEV_DIR_MODEM_TO_HOST;
+
 		ret = rte_bbdev_queue_configure(dev_id, queue_id, &qconf);
 		if (ret != 0) {
 			printf("Failure allocating queue (id=%u) on dev%u\n",
@@ -65,15 +72,24 @@ main(int argc, char **argv)
 			return ret;
 		}
 
-		/* TODO create only for Host->Modem queues once
-		 * Modem -> Host is supported */
-		snprintf(pool_name, sizeof(pool_name), "pool_%u_%u",
-			dev_id, queue_id);
+		/* For Host->Modem queue */
+		if (queue_id % 2 == 0) {
+			snprintf(pool_name, sizeof(pool_name), "pool_%u_%u",
+				 dev_id, queue_id);
 
-		mp = rte_mempool_create(pool_name, OPS_POOL_SIZE,
-			sizeof(struct rte_bbdev_raw_op),
-			OPS_CACHE_SIZE,	0, NULL, NULL, NULL, NULL,
-			info.socket_id, 0);
+
+			mp = rte_mempool_create(pool_name, OPS_POOL_SIZE,
+						sizeof(struct rte_bbdev_raw_op),
+						OPS_CACHE_SIZE,	0, NULL, NULL,
+						NULL, NULL, info.socket_id, 0);
+
+			ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
+			if (ret < 0) {
+				printf("rte_mempool_get_bulk failed (%d)\n",
+						ret);
+				return ret;
+			}
+		}
 
 	}
 
@@ -83,60 +99,96 @@ main(int argc, char **argv)
 		return ret;
 	}
 
-	ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
-	if (ret < 0) {
-		printf("rte_mempool_get_bulk failed (%d)\n", ret);
-		return ret;
-	}
+	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
+		if (queue_id % 2 == 0) { /**< Host->Modem queue */
+			/* Input buffer */
+			raw_ops_enq[0]->input.is_direct_mem = 1;
+			raw_ops_enq[0]->input.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+			raw_ops_enq[0]->input.length = pkt_len;
 
-	/* Input buffer */
-	raw_ops_enq[0]->input.is_direct_mem = 1;
-	raw_ops_enq[0]->input.mem =
-		rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-	raw_ops_enq[0]->input.length = pkt_len;
+			/* Hard Output buffer */
+			raw_ops_enq[0]->output.is_direct_mem = 1;
+			raw_ops_enq[0]->output.mem =
+				rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+			raw_ops_enq[0]->output.length = 0;
 
-	/* Hard Output buffer */
-	raw_ops_enq[0]->output.is_direct_mem = 1;
-	raw_ops_enq[0]->output.mem =
-		rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-	raw_ops_enq[0]->output.length = 0;
+			input = raw_ops_enq[0]->input.mem;
+			output = raw_ops_enq[0]->output.mem;
+			output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
 
-	input = raw_ops_enq[0]->input.mem;
-	output = raw_ops_enq[0]->output.mem;
-	output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
-	queue_id = 0;
+			for (i = 0, i = 0; i < TEST_REPETITIONS; ++i) {
 
-	for (i = 0, i = 0; i < TEST_REPETITIONS; ++i) {
+				for (j = 0; j < pkt_len/8; j++)
+					input[j] = TEST_BUFFER_INPUT_VAL;
 
-		for (j = 0; j < pkt_len/8; j++)
-			input[j] = TEST_BUFFER_INPUT_VAL;
+				/* Enqueue */
+				ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
+							       raw_ops_enq[0]);
+				if (ret < 0) {
+					printf("rte_bbdev_enqueue_raw_op failed (%d)\n",
+						ret);
+					return ret;
+				}
 
-		/* Enqueue */
-		ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
-					       raw_ops_enq[0]);
-		if (ret < 0) {
-			printf("rte_bbdev_enqueue_raw_op failed (%d)\n", ret);
-			return ret;
+				/* Dequeue */
+				do {
+					raw_ops_deq =
+						rte_bbdev_dequeue_raw_op(dev_id,
+								queue_id);
+				} while (!raw_ops_deq);
+
+				for (j = 0; j < pkt_len/8; j++) {
+					if (output[j] != output_val)
+						printf("output %x does not match expected output %x",
+							output[j], output_val);
+				}
+			}
+
+			rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+
+			printf("\nValidated %d operations for HOST->MODEM\n",
+				TEST_REPETITIONS);
+
+
+			printf("HOST->MODEM test Passed\n");
+
+		} else { /**< Modem->Host queue */
+
+			for (i = 0; i < TEST_REPETITIONS; ++i) {
+				do {
+					raw_ops_deq =
+						rte_bbdev_dequeue_raw_op(dev_id,
+								queue_id);
+				} while (!raw_ops_deq);
+
+				if (raw_ops_deq->output.mem) {
+					input = (uint32_t *)
+							raw_ops_deq->input.mem;
+					output = (uint32_t *)
+							raw_ops_deq->output.mem;
+					input_length =
+						raw_ops_deq->input.length /
+							sizeof(uint32_t);
+					for (j = 0; j < input_length; j++)
+						output[j] = input[j];
+					raw_ops_deq->output.length =
+						input_length * sizeof(uint32_t);
+				}
+
+				ret = rte_bbdev_consume_raw_op(dev_id, queue_id,
+						raw_ops_deq);
+				if (ret < 0) {
+					printf("rte_bbdev_consume_raw_op failed (%d)\n",
+						ret);
+					return ret;
+				}
+			}
+
+			printf("MODEM->HOST test completed. Check Geul console logs for results.\n");
 		}
 
-		/* Dequeue */
-		do {
-			raw_ops_deq = rte_bbdev_dequeue_raw_op(dev_id,
-					queue_id);
-		} while (!raw_ops_deq);
-
-		for (j = 0; j < pkt_len/8; j++) {
-			if (output[j] != output_val)
-				printf("output %x does not match expected output %x",
-					output[j], output_val);
-		}
 	}
-
-	printf("\nValidated %d operations for HOST->MODEM\n", TEST_REPETITIONS);
-
-	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
-
-	printf("Test Passed\n");
 
 	return 0;
 }
