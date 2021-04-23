@@ -138,10 +138,13 @@ main(int argc, char **argv)
 								queue_id);
 				} while (!raw_ops_deq);
 
-				for (j = 0; j < pkt_len/8; j++) {
-					if (output[j] != output_val)
-						printf("output %x does not match expected output %x",
-							output[j], output_val);
+				if (raw_ops_enq[0]->output.mem != 0) {
+					for (j = 0; j < pkt_len/8; j++) {
+						if (output[j] != output_val)
+							printf("output %x does not match expected output %x",
+								output[j],
+								output_val);
+					}
 				}
 			}
 
