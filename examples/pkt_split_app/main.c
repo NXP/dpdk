@@ -340,8 +340,12 @@ l2fwd_simple_forward(struct rte_mbuf *m,
 	}
 
 	sent = rte_eth_tx_burst(dst_port, 0, &m, 1);
-	if (sent)
+	if (sent > 0) {
 		port_statistics[dst_port].tx += sent;
+	} else {
+		port_statistics[dst_port].dropped += 1;
+		rte_pktmbuf_free(m);
+	}
 }
 
 static inline void
