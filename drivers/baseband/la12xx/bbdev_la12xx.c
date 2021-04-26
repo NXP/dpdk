@@ -1888,12 +1888,14 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		    harq_out_op_data->bdata) {
 			harq_out_len =
 				rte_be_to_cpu_32(bbdev_ipc_op.out_len);
-			l_op->ldpc_dec.harq_combined_output.length =
-				harq_out_len;
-			if (!harq_out_op_data->is_direct_mem)
-				rte_bbuf_append((struct rte_bbuf *)harq_out_op_data->bdata,
-						harq_out_len);
-			l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
+			if (harq_out_len) {
+				l_op->ldpc_dec.harq_combined_output.length =
+					harq_out_len;
+				if (!harq_out_op_data->is_direct_mem)
+					rte_bbuf_append((struct rte_bbuf *)harq_out_op_data->bdata,
+							harq_out_len);
+				l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
+			}
 		}
 
 		tb_crc = 0;
