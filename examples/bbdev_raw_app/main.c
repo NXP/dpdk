@@ -65,6 +65,8 @@ main(int argc, char **argv)
 			qconf.raw_queue_conf.direction =
 					RTE_BBDEV_DIR_MODEM_TO_HOST;
 
+		qconf.raw_queue_conf.conf_enable = 1;
+
 		ret = rte_bbdev_queue_configure(dev_id, queue_id, &qconf);
 		if (ret != 0) {
 			printf("Failure allocating queue (id=%u) on dev%u\n",
