@@ -119,7 +119,8 @@ main(int argc, char **argv)
 			output = raw_ops_enq[0]->output.mem;
 			output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
 
-			for (i = 0, i = 0; i < TEST_REPETITIONS; ++i) {
+			i = 0;
+			while (i < TEST_REPETITIONS) {
 
 				for (j = 0; j < pkt_len/8; j++)
 					input[j] = TEST_BUFFER_INPUT_VAL;
@@ -127,11 +128,10 @@ main(int argc, char **argv)
 				/* Enqueue */
 				ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
 							       raw_ops_enq[0]);
-				if (ret < 0) {
-					printf("rte_bbdev_enqueue_raw_op failed (%d)\n",
-						ret);
-					return ret;
-				}
+				if (ret < 0)
+					continue;
+
+				i++;
 
 				/* Dequeue */
 				do {
