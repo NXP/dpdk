@@ -442,7 +442,7 @@ static int dpaa_ol_link_update(struct rte_eth_dev *dev,
 	PMD_INIT_FUNC_TRACE();
 
 	link->link_status = dpaa_intf->valid;
-	link->link_speed = ETH_SPEED_NUM_1G;
+	link->link_speed = ETH_SPEED_NUM_NONE;
 	link->link_duplex = ETH_LINK_FULL_DUPLEX;
 	link->link_autoneg = ETH_LINK_AUTONEG;
 
