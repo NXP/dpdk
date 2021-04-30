@@ -422,7 +422,7 @@ struct rte_bbdev_queue_data {
 };
 
 /** @internal Enqueue raw operation for processing on queue of a device. */
-typedef uint16_t (*rte_bbdev_enqueue_raw_op_t)(
+typedef int (*rte_bbdev_enqueue_raw_op_t)(
 		struct rte_bbdev_queue_data *q_data,
 		struct rte_bbdev_raw_op *op);
 
@@ -545,7 +545,7 @@ extern struct rte_bbdev rte_bbdev_devices[];
  *    Status of the enqueue operation.
  */
 __rte_experimental
-static inline uint16_t
+static inline int
 rte_bbdev_enqueue_raw_op(uint16_t dev_id, uint16_t queue_id,
 		struct rte_bbdev_raw_op *op)
 {

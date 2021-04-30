@@ -281,7 +281,7 @@ is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
 }
 
 /* Enqueue raw operation */
-static uint16_t
+static int
 enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	       struct rte_bbdev_raw_op *bbdev_op)
 {

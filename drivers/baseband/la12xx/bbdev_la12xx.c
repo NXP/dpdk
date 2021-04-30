@@ -58,7 +58,7 @@ struct bbdev_la12xx_params {
 #define BBDEV_LA12XX_LDPC_DEC_CORE	1
 #define BBDEV_LA12XX_POLAR_ENC_CORE	2
 #define BBDEV_LA12XX_POLAR_DEC_CORE	3
-#define BBDEV_LA12XX_RAW_CORE		3
+#define BBDEV_LA12XX_RAW_CORE		0
 
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
@@ -450,7 +450,10 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->queue_size = queue_conf->queue_size;
 	q_priv->op_type = queue_conf->op_type;
 
-	ch->is_host_to_modem = queue_conf->raw_queue_conf.direction;
+	ch->is_host_to_modem =
+		rte_cpu_to_be_32(queue_conf->raw_queue_conf.direction);
+	ch->conf_enable =
+		rte_cpu_to_be_32(queue_conf->raw_queue_conf.conf_enable);
 
 	if (!ch->is_host_to_modem) {
 		for (i = 0; i < MAX_CHANNEL_DEPTH; i++)
@@ -1588,7 +1591,7 @@ is_bd_ring_empty(uint32_t ci, uint32_t ci_flag,
 }
 
 /* Enqueue raw operation */
-static uint16_t
+static int
 enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	       struct rte_bbdev_raw_op *bbdev_op)
 {
@@ -1607,9 +1610,26 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
+	int conf_enable = q_data->conf.raw_queue_conf.conf_enable;
 
-	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
-	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+	/**
+	 * In case of confirmation mode, local consumer index is incremented
+	 * after receiving the output data(dequeue). Hence, before enqueuing the
+	 * raw operation, we need to compare this local consumer index and
+	 * producer index to check if bd ring is full.
+	 * But, in case of non confirmation mode, since we will not receive the
+	 * output data(dequeue function will not be called), local consumer
+	 * index will not be updated. Hence, to check if bd ring is full, we
+	 * will rely on the shared consumer index, which will be incrememnted by
+	 * other side after consuming the packet.
+	 */
+	if (conf_enable) {
+		ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+	} else {
+		ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
+	}
 
 	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
 	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
@@ -1622,7 +1642,7 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	if (is_bd_ring_full(ci, ci_flag, pi, pi_flag)) {
 		BBDEV_LA12XX_PMD_DP_DEBUG(
 			"bd ring full for queue id: %d", q_id);
-		return IPC_CH_FULL;
+		return -EBUSY;
 	}
 
 	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[pi]);
