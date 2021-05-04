@@ -6566,6 +6566,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *plaintext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -6636,12 +6637,23 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "Failed to allocate session\n");
+			ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
-			"Failed to allocate symmetric crypto operation struct");
+	if (!ut_params->op) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+		"Failed to allocate symmetric crypto operation struct\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -6651,11 +6663,21 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s()-line %d failed %s: ",
+				__func__, __LINE__,
+			"failed to process sym crypto op\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s()- line %d failed %s: ",
+			__func__, __LINE__, "crypto op processing failed\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -6665,12 +6687,31 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 				uint8_t *);
 	}
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
-				ipsec_cipher_text_aes_sha1_64B,
-				136,
-				"ciphertext data not as expected");
+	if (memcmp(ciphertext, ipsec_cipher_text_aes_sha1_64B, 136)) {
+		printf("\n=======cipher data mismatch. test failed:\n");
+		rte_hexdump(stdout, "encrypted", ciphertext, 136);
+		rte_hexdump(stdout, "reference",
+				ipsec_cipher_text_aes_sha1_64B, 136);
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	return TEST_SUCCESS;
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
+
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
+
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -6679,6 +6720,7 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *ciphertext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -6739,12 +6781,23 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "Failed to allocate session\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
-			"Failed to allocate symmetric crypto operation struct");
+	if (!ut_params->op) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+		"Failed to allocate symmetric crypto operation struct\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -6754,11 +6807,21 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s()-line %d failed %s: ",
+			__func__, __LINE__,
+			"failed to process sym crypto op\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s()- line %d failed %s: ",
+		__func__, __LINE__, "crypto op processing failed\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *plaintext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -6768,12 +6831,31 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 				uint8_t *);
 	}
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(plaintext,
-				ipsec_plaintext_decrypt_aes_sha1_64B,
-				64,
-				"plaintext data not as expected");
+	if (memcmp(plaintext, ipsec_plaintext_decrypt_aes_sha1_64B, 64)) {
+		printf("\n=======data mismatch. test failed:\n");
+		rte_hexdump(stdout, "decrypted", plaintext, 64);
+		rte_hexdump(stdout, "reference",
+				ipsec_plaintext_decrypt_aes_sha1_64B, 64);
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	return TEST_SUCCESS;
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
+
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
+
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -6782,6 +6864,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	struct crypto_unittest_params *ut_params = &unittest_params;
 	uint8_t *plaintext;
+	int ret = TEST_SUCCESS;
 
 	/* Generate test mbuf data */
 	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
@@ -6843,12 +6926,23 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
 				&sess_conf, ts_params->session_mpool);
+	if (!ut_params->sec_session) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__, "Failed to allocate session\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Generate crypto op data structure */
 	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
-	TEST_ASSERT_NOT_NULL(ut_params->op,
-			"Failed to allocate symmetric crypto operation struct");
+	if (!ut_params->op) {
+		printf("TestCase %s() line %d failed %s: ",
+			__func__, __LINE__,
+		"Failed to allocate symmetric crypto operation struct\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	rte_security_attach_session(ut_params->op, ut_params->sec_session);
 
@@ -6858,11 +6952,21 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	TEST_ASSERT_NOT_NULL(process_crypto_request(ts_params->valid_devs[0],
-			ut_params->op), "failed to process sym crypto op");
+	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
+		== NULL) {
+		printf("TestCase %s()-line %d failed %s: ",
+			__func__, __LINE__,
+			"failed to process sym crypto op\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
-			"crypto op processing failed");
+	if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		printf("TestCase %s()- line %d failed %s: ",
+			__func__, __LINE__, "crypto op processing failed\n");
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
 	/* Validate obuf */
 	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
@@ -6872,12 +6976,31 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 				uint8_t *);
 	}
 
-	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
-				ipsec_cipher_text_aes_64B,
-				124,
-				"ciphertext data not as expected");
+	if (memcmp(ciphertext, ipsec_cipher_text_aes_64B, 124)) {
+		printf("\n=======cipher data mismatch. test failed:\n");
+		rte_hexdump(stdout, "encrypted", ciphertext, 124);
+		rte_hexdump(stdout, "reference",
+				ipsec_cipher_text_aes_64B, 124);
+		ret = TEST_FAILED;
+		goto on_err;
+	}
 
-	return TEST_SUCCESS;
+on_err:
+	rte_crypto_op_free(ut_params->op);
+	ut_params->op = NULL;
+
+	if (ut_params->sec_session)
+		rte_security_session_destroy(ctx, ut_params->sec_session);
+	ut_params->sec_session = NULL;
+
+	rte_pktmbuf_free(ut_params->ibuf);
+	ut_params->ibuf = NULL;
+	if (oop) {
+		rte_pktmbuf_free(ut_params->obuf);
+		ut_params->obuf = NULL;
+	}
+
+	return ret;
 }
 
 static int
