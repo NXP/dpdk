@@ -184,11 +184,15 @@ application:
 
            meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dprefix=<location to install DPDK>
 
+     NOTE: To build the KNI example. This requires the KNI module to be compiled.
+
+      $ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Denable_kmods=true -Dkernel_dir=<absolute path to the kernel sources> -Dexamples=kni
+
   5. ninja -C arm64-build install
 
 All binaries will be there in arm64-build folder and a “dpdk-“ prefix will be
 added in the name of app binary. Example applications can be found in
-arm64-build/examples directory.
+arm64-build/examples directory. Kernel modules can be found in ls arm64-build/kernel/linux
 
 Building DPDK and Example Applications using make(To be deprecated)
 -------------------------------------------------------------
