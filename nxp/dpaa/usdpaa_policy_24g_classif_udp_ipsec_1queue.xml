@@ -2,7 +2,7 @@
 <!--
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright 2019,2021 NXP
+  Copyright 2019 NXP
 -->
 
 <netpcd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -49,7 +49,7 @@
 
 	<distribution name="default_mac3_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x86"/>
+		<queue count="1" base="0x55"/>
 	</distribution>
 
 	<classification name="dpdk_mac4_classif" masks="yes">
@@ -82,7 +82,7 @@
 
 	<distribution name="default_mac4_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x87"/>
+		<queue count="1" base="0x57"/>
 	</distribution>
 
 	<classification name="dpdk_mac5_classif" masks="yes">
@@ -115,7 +115,7 @@
 
 	<distribution name="default_mac5_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x88"/>
+		<queue count="1" base="0x59"/>
 	</distribution>
 
 	<classification name="dpdk_mac6_classif" masks="yes">
@@ -148,7 +148,7 @@
 
 	<distribution name="default_mac6_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x89"/>
+		<queue count="1" base="0x5b"/>
 	</distribution>
 
 	<classification name="dpdk_mac9_classif" masks="yes">
@@ -181,7 +181,7 @@
 
 	<distribution name="default_mac9_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x8a"/>
+		<queue count="1" base="0x5d"/>
 	</distribution>
 
 	<classification name="dpdk_mac10_classif" masks="yes">
@@ -214,7 +214,7 @@
 
 	<distribution name="default_mac10_dist">
 		<vsp name="shared_mac_pool" />
-		<queue count="1" base="0x8b"/>
+		<queue count="1" base="0x5f"/>
 	</distribution>
 
 <!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
