@@ -5,6 +5,8 @@
 #ifndef LA93XX_BBDEV_IPC_H_
 #define LA93XX_BBDEV_IPC_H_
 
+#include "la93xx_ipc.h"
+
 /**
  * @file        bbdev_ipc.h
  * @brief       BBDEV_IPC related APIs.
@@ -12,9 +14,8 @@
  * @{
  */
 
-#define LA93XX_MAX_QUEUES 2
-#define MAX_CHANNEL_DEPTH 16
-#define MAX_MSG_SIZE (1024 * 2)
+#define LA93XX_MAX_QUEUES IPC_MAX_CHANNEL_COUNT
+#define MAX_CHANNEL_DEPTH IPC_MAX_DEPTH
 
 /** Structure specifying enqueue operation (enqueue at LA1224) */
 struct bbdev_ipc_enqueue_op {

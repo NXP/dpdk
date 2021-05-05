@@ -7,7 +7,7 @@
 
 #include "la93xx_ipc.h"
 
-#define MAX_RAW_QUEUES		1
+#define MAX_RAW_QUEUES		IPC_MAX_CHANNEL_COUNT
 
 /* private data structure */
 struct bbdev_la93xx_private {

@@ -189,13 +189,20 @@ la93xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->queue_size = queue_conf->queue_size;
 	q_priv->op_type = queue_conf->op_type;
 
-	PMD_INIT_FUNC_TRACE();
-
 	mhif = (struct la9310_hif *)ipc_priv->mhif_start.host_vaddr;
 	/* offset is from start of PEB */
 	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->tcml_start.host_vaddr +
 		mhif->ipc_regs.ipc_mdata_offset);
 	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
+
+	ch->is_host_to_modem = queue_conf->raw_queue_conf.direction;
+	ch->conf_enable = queue_conf->raw_queue_conf.conf_enable;
+
+	if (!ch->is_host_to_modem) {
+		for (i = 0; i < MAX_CHANNEL_DEPTH; i++)
+			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
+					sizeof(struct rte_bbdev_raw_op), 0);
+	}
 
 	if (q_priv->q_id < priv->num_valid_queues) {
 		ipc_br_md_t *md = &(ch->md);
@@ -280,6 +287,17 @@ is_bd_ring_full(uint32_t ci, uint32_t ci_flag,
 	return 0;
 }
 
+static inline int
+is_bd_ring_empty(uint32_t ci, uint32_t ci_flag,
+		 uint32_t pi, uint32_t pi_flag)
+{
+	if (ci == pi) {
+		if (ci_flag == pi_flag)
+			return 1; /* No more Buffer */
+	}
+	return 0;
+}
+
 /* Enqueue raw operation */
 static int
 enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
@@ -300,9 +318,26 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
+	int conf_enable = q_data->conf.raw_queue_conf.conf_enable;
 
-	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
-	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+	/**
+	 * In case of confirmation mode, local consumer index is incremented
+	 * after receiving the output data(dequeue). Hence, before enqueuing the
+	 * raw operation, we need to compare this local consumer index and
+	 * producer index to check if bd ring is full.
+	 * But, in case of non confirmation mode, since we will not receive the
+	 * output data(dequeue function will not be called), local consumer
+	 * index will not be updated. Hence, to check if bd ring is full, we
+	 * will rely on the shared consumer index, which will be incrememnted by
+	 * other side after consuming the packet.
+	 */
+	if (conf_enable) {
+		ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+	} else {
+		ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
+	}
 
 	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
 	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
@@ -314,7 +349,7 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	if (is_bd_ring_full(ci, ci_flag, pi, pi_flag)) {
 		BBDEV_LA93XX_PMD_DP_DEBUG(
 			"bd ring full for queue id: %d", q_id);
-		return IPC_CH_FULL;
+		return -EBUSY;
 	}
 
 	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[pi]);
@@ -373,45 +408,133 @@ static struct rte_bbdev_raw_op *
 dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 {
 	struct bbdev_la93xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_la93xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	struct bbdev_ipc_raw_op_t *dequeue_op;
 	struct rte_bbdev_raw_op *op;
-	struct bbdev_ipc_raw_op_t *shared_op;
-	uint32_t ci, ci_flag;
+	uint32_t ci, ci_flag, pi, pi_flag;
 	uint32_t temp_ci;
+	int is_host_to_modem = q_data->conf.raw_queue_conf.direction;
 
-	temp_ci = q_priv->host_params->ci;
-	if (temp_ci == q_priv->host_ci)
-		return NULL;
+	if (is_host_to_modem) {
+		temp_ci = q_priv->host_params->ci;
+		if (temp_ci == q_priv->host_ci)
+			return NULL;
 
-	ci = IPC_GET_CI_INDEX(q_priv->host_ci);
-	ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+		ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+
+		BBDEV_LA93XX_PMD_DP_DEBUG(
+			"ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+		op = q_priv->bbdev_op[ci];
+
+		dequeue_op = q_priv->msg_ch_vaddr[ci];
+
+		op->status = dequeue_op->status;
+		op->output.length = dequeue_op->out_len;
+
+		/* Move Consumer Index forward */
+		ci++;
+		/* Flip the CI flag, if wrapping */
+		if (q_priv->queue_size == ci) {
+			ci = 0;
+			ci_flag = ci_flag ? 0 : 1;
+		}
+		if (ci_flag)
+			IPC_SET_CI_FLAG(ci);
+		else
+			IPC_RESET_CI_FLAG(ci);
+		q_priv->host_ci = ci;
+
+		BBDEV_LA93XX_PMD_DP_DEBUG(
+			"exit: ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+	} else {
+		ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
+		pi = IPC_GET_PI_INDEX(q_priv->host_params->pi);
+		pi_flag = IPC_GET_PI_FLAG(q_priv->host_params->pi);
+
+		if (is_bd_ring_empty(ci, ci_flag, pi, pi_flag))
+			return NULL;
+
+		BBDEV_LA93XX_PMD_DP_DEBUG(
+			"ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+
+		dequeue_op = q_priv->msg_ch_vaddr[ci];
+
+		op = q_priv->bbdev_op[ci];
+
+		op->input.length = dequeue_op->in_len;
+		op->output.length = dequeue_op->out_len;
+		op->input.mem = (void *)MODEM_P2V(dequeue_op->in_addr);
+		op->output.mem = (void *)MODEM_P2V(dequeue_op->out_addr);
+
+		BBDEV_LA93XX_PMD_DP_DEBUG(
+			"exit: ci: %u, ci_flag: %u, ring size: %u",
+			ci, ci_flag, q_priv->queue_size);
+	}
+
+	return op;
+}
+
+/* Consume raw operation */
+static uint16_t
+consume_raw_op(struct rte_bbdev_queue_data *q_data,
+	       struct rte_bbdev_raw_op *bbdev_op)
+{
+	struct bbdev_la93xx_q_priv *q_priv = q_data->queue_private;
+	struct bbdev_la93xx_private *priv = q_priv->bbdev_priv;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	struct bbdev_ipc_raw_op_t *raw_op;
+	uint32_t q_id = q_priv->q_id;
+	uint32_t ci, ci_flag, pi, pi_flag;
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_br_md_t *md = &(ch->md);
+	uint64_t virt;
+
+	pi = IPC_GET_PI_INDEX(q_priv->host_params->pi);
+	pi_flag = IPC_GET_PI_FLAG(q_priv->host_params->pi);
+	ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+	ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
 
 	BBDEV_LA93XX_PMD_DP_DEBUG(
-		"ci: %u, ci_flag: %u, ring size: %u",
-		ci, ci_flag, q_priv->queue_size);
+		"before bd_ring_full: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+	pi, ci, pi_flag, ci_flag, q_priv->queue_size);
 
-	op = q_priv->bbdev_op[ci];
-	shared_op = (struct bbdev_ipc_raw_op_t *)(q_priv->msg_ch_vaddr[ci]);
-	op->status = shared_op->status;
-	op->output.length = shared_op->out_len;
+	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[ci]);
+	raw_op = (struct bbdev_ipc_raw_op_t *)virt;
+	raw_op->status = bbdev_op->status;
+	raw_op->out_len = bbdev_op->output.length;
 
-	/* Move Consumer Index forward */
+	/* Move Producer Index forward */
 	ci++;
-	/* Flip the CI flag, if wrapping */
-	if (q_priv->queue_size == ci) {
+	/* Flip the PI flag, if wrapping */
+	if (unlikely(q_priv->queue_size == ci)) {
 		ci = 0;
 		ci_flag = ci_flag ? 0 : 1;
 	}
+
 	if (ci_flag)
 		IPC_SET_CI_FLAG(ci);
 	else
 		IPC_RESET_CI_FLAG(ci);
-	q_priv->host_ci = ci;
+	q_priv->host_params->ci = ci;
+	/* Wait for Data Copy & ci_flag update to complete before updating ci */
+	rte_mb();
+	/* now update ci */
+	md->ci = ci;
 
 	BBDEV_LA93XX_PMD_DP_DEBUG(
-		"exit: ci: %u, ci_flag: %u, ring size: %u",
-		ci, ci_flag, q_priv->queue_size);
+		"enter: pi: %u, ci: %u, pi_flag: %u, ci_flag: %u, ring size: %u",
+		pi, ci, pi_flag, ci_flag, q_priv->queue_size);
 
-	return op;
+	return IPC_SUCCESS;
 }
 
 static const struct rte_bbdev_ops pmd_ops = {
@@ -818,6 +941,7 @@ la93xx_bbdev_create(struct rte_vdev_device *vdev,
 
 	bbdev->enqueue_raw_op = enqueue_raw_op;
 	bbdev->dequeue_raw_op = dequeue_raw_op;
+	bbdev->consume_raw_op = consume_raw_op;
 
 	return 0;
 }

@@ -15,10 +15,10 @@ typedef void *ipc_t;
 #define IPC_MAX_INSTANCE_COUNT	(1)
 
 /** No. of max channel per instance */
-#define IPC_MAX_CHANNEL_COUNT	(2)
+#define IPC_MAX_CHANNEL_COUNT	(4)
 
 /** Channel Depth */
-#define IPC_MAX_DEPTH	(16)
+#define IPC_MAX_DEPTH	(4)
 
 /* IPC PI/CI index & flag manipulation helpers */
 #define IPC_PI_CI_FLAG_MASK	0x80000000 /*  (1<<31) */
@@ -104,6 +104,8 @@ typedef struct ipc_channel {
 	uint32_t op_type;		/**< Type of the BBDEV operation supported on this channel */
 	uint32_t depth;			/**< Channel depth */
 	uint32_t host_ipc_params;	/**< Address for host IPC parameters */
+	uint32_t is_host_to_modem;	/**< Direction of operation */
+	uint32_t conf_enable;		/**< Confirmation mode enabled/disabled */
 } __attribute__((packed)) ipc_ch_t;
 
 typedef struct ipc_instance {
