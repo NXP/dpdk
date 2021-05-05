@@ -2204,6 +2204,17 @@ rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes)
 	return (void *)start_addr;
 }
 
+void
+rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	ipc_instance_t *ipc_instance = ipc_priv->instance;
+
+	ipc_instance->feca_sd_single_qdma = rte_cpu_to_be_32(1);
+}
+
 static struct hugepage_info *
 get_hugepage_info(void)
 {
