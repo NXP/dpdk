@@ -779,6 +779,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS], remove_tb_crc;
+	uint32_t codeblock_mask[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32] = {0};
 	uint32_t harq_en = 0, compact_harq = 0, size_harq_buffer, C, i;
 	uint32_t set_index, base_graph2, lifting_index, mod_order;
 	uint32_t tb_24_bit_crc, one_code_block;
@@ -787,6 +788,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	uint32_t SD_SC_X1_INIT, SD_SC_X2_INIT, SD_CIRC_BUF;
 	uint32_t di_start_ofst_floor[8], di_start_ofst_ceiling[8];
 	uint32_t axi_data_num_bytes, bbdev_ipc_op_flags = 0;
+	uint32_t byte, bit, valid_bytes;
 	sd_command_t sd_cmd, *sd_command;
 	sd_dcm_command_t *sd_dcm_command;
 	char *data_ptr;
@@ -815,11 +817,26 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	    ldpc_dec->harq_combined_input.bdata)
 		harq_en = 1;
 
+	if (ldpc_dec->op_flags & RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
+	    ldpc_dec->op_flags & RTE_BBDEV_LDPC_COMPACT_HARQ) {
+		valid_bytes = (ldpc_dec->tb_params.c + 31) / 32;
+		for (i = 0; i < valid_bytes; i++)
+			codeblock_mask[i] = ldpc_dec->codeblock_mask[i];
+	} else {
+		/* Set all the codeblock mask */
+		for (i = 0; i < ldpc_dec->tb_params.c; i++) {
+			/* Set the bit in codeblock */
+			byte = i / 32;
+			bit = i % 32;
+			codeblock_mask[byte] |= (1 << bit);
+		}
+	}
+
 	la12xx_sch_decode_param_convert(ldpc_dec->basegraph, ldpc_dec->q_m,
 			e, ldpc_dec->rv_index, A, ldpc_dec->q, ldpc_dec->n_id,
 			ldpc_dec->n_rnti, !ldpc_dec->en_scramble,
 			ldpc_dec->n_cb, remove_tb_crc, harq_en,
-			&size_harq_buffer, &C, ldpc_dec->codeblock_mask,
+			&size_harq_buffer, &C, codeblock_mask,
 			&TBS_VALID, &set_index, &base_graph2, &lifting_index,
 			&mod_order, &tb_24_bit_crc, &one_code_block,
 			&e_floor_thresh, &num_output_bytes, &bits_per_cb,
@@ -887,7 +904,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	for (i = 0; i < 8; i++)
 		sd_command->sd_cb_mask[i] =
-			rte_cpu_to_be_32(ldpc_dec->codeblock_mask[i]);
+			rte_cpu_to_be_32(codeblock_mask[i]);
 
 	sd_command->sd_di_start_ofst_floor[0] =
 		rte_cpu_to_be_32((di_start_ofst_floor[1] << 16) |
@@ -1172,7 +1189,8 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 			/* Set the bit in codeblock */
 			byte = i / 32;
 			bit = i % 32;
-			codeblock_mask[byte] |= (1 << bit);
+			/* In case of normal HARQ (not compact or partial compact),
+			 * set all the harq bits */
 			if (!(ldpc_dec->op_flags &
 			    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 			    ldpc_dec->op_flags &
