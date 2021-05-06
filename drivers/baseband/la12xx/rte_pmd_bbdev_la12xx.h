@@ -303,4 +303,21 @@ rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes);
 void *
 rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
 
+/**
+ * This options enable use of single QDMA for FECA SD input.
+ * By default Multi-QDMA is used, but can be configured to use
+ * single QDMA for enhanced performance. Using single QDMA can
+ * cause problem in some scenarios where FECA becomes slow in
+ * processing and QDMA overwrites previous unread data (like in
+ * some of DEMUX cases). So single QDMA for SD input should be
+ * used cautiously and only when all the scenarios are verified
+ * to be passed.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ */
+void
+rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
+
 #endif

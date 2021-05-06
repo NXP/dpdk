@@ -789,6 +789,9 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 			dev_id);
 	ad->nb_queues = queue_id;
 
+	if (getenv("LA12XX_ENABLE_FECA_SD_SINGLE_QDMA"))
+		rte_pmd_la12xx_ldpc_dec_single_input_dma(dev_id);
+
 	return TEST_SUCCESS;
 }
 
