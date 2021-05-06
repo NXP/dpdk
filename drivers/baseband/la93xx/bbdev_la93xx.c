@@ -26,8 +26,7 @@
 #include "bbdev_la93xx.h"
 #include "bbdev_la93xx_pmd_logs.h"
 
-#include "la93xx_host_if.h"
-#include "la93xx_ipc.h"
+#include "la9310_host_if.h"
 #include "la93xx_bbdev_ipc.h"
 
 #define DRIVER_NAME baseband_la93xx
@@ -66,7 +65,7 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 };
 
 static struct rte_bbdev_queue_conf default_queue_conf = {
-	.queue_size = MAX_CHANNEL_DEPTH,
+	.queue_size = IPC_MAX_DEPTH,
 };
 
 /* Get device info */
@@ -77,8 +76,8 @@ la93xx_info_get(struct rte_bbdev *dev,
 	PMD_INIT_FUNC_TRACE();
 
 	dev_info->driver_name = RTE_STR(DRIVER_NAME);
-	dev_info->max_num_queues = LA93XX_MAX_QUEUES;
-	dev_info->queue_size_lim = MAX_CHANNEL_DEPTH;
+	dev_info->max_num_queues = IPC_MAX_CHANNEL_COUNT;
+	dev_info->queue_size_lim = IPC_MAX_DEPTH;
 	dev_info->hardware_accelerated = true;
 	dev_info->max_dl_queue_priority = 0;
 	dev_info->max_ul_queue_priority = 0;
@@ -199,7 +198,7 @@ la93xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	ch->conf_enable = queue_conf->raw_queue_conf.conf_enable;
 
 	if (!ch->is_host_to_modem) {
-		for (i = 0; i < MAX_CHANNEL_DEPTH; i++)
+		for (i = 0; i < IPC_MAX_DEPTH; i++)
 			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
 					sizeof(struct rte_bbdev_raw_op), 0);
 	}
@@ -264,7 +263,7 @@ la93xx_start(struct rte_bbdev *dev)
 	hif_start = (struct la9310_hif *)ipc_priv->mhif_start.host_vaddr;
 
 	/* Set Host Read bit */
-	SET_HIF_HOST_RDY(hif_start, LA9310_HIF_HOST_READY_IPC_APP);
+	SET_HIF_HOST_RDY(hif_start, LA9310_HIF_STATUS_IPC_APP_READY);
 
 	/* Now wait for modem ready bit */
 	/* TODO: remove sleep */
@@ -684,11 +683,11 @@ setup_la93xx_dev(struct rte_bbdev *dev)
 	ipc_priv->dev_ipc = dev_ipc;
 
 	/* Send IOCTL to get system map and put hugepg_start map */
-	ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_GET_SYS_MAP,
+	ret = ioctl(ipc_priv->dev_ipc, IOCTL_LA93XX_IPC_GET_SYS_MAP,
 		    &ipc_priv->sys_map);
 	if (ret) {
 		BBDEV_LA93XX_PMD_ERR(
-			"IOCTL_GUL_IPC_GET_SYS_MAP ioctl failed");
+			"IOCTL_LA93XX_IPC_GET_SYS_MAP ioctl failed");
 		goto err;
 	}
 

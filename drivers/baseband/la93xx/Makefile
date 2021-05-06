@@ -22,6 +22,10 @@ EXPORT_MAP := rte_pmd_bbdev_la93xx_version.map
 LIBABIVER := 1
 
 # library source files
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA12XX) += bbdev_la93xx.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA93XX) += bbdev_la93xx.c
+
+# create symbolic links for LA93xx common headers required by application
+COMMON_HDRS := $(shell find $(LA9310_COMMON_HEADERS) -name '*.h')
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_BBDEV_LA93XX)-include += $(COMMON_HDRS)
 
 include $(RTE_SDK)/mk/rte.lib.mk
