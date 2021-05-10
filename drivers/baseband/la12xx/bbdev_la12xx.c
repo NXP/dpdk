@@ -651,6 +651,9 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 
 	memset(codeblock_mask, 0xFF, (8 * sizeof(uint32_t)));
 
+	memset(int_start_ofst_floor, 0, (8 * sizeof(uint32_t)));
+	memset(int_start_ofst_ceiling, 0, (8 * sizeof(uint32_t)));
+
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
 			e, ldpc_enc->rv_index, A, ldpc_enc->q, ldpc_enc->n_id,
 			ldpc_enc->n_rnti, !ldpc_enc->en_scramble,
