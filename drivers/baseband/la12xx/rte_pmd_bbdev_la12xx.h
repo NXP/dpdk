@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2021 NXP
  */
 
 #ifndef _PMD_LA12XX_H_
