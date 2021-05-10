@@ -651,6 +651,9 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 
 	memset(codeblock_mask, 0xFF, (8 * sizeof(uint32_t)));
 
+	memset(int_start_ofst_floor, 0, (8 * sizeof(uint32_t)));
+	memset(int_start_ofst_ceiling, 0, (8 * sizeof(uint32_t)));
+
 	la12xx_sch_encode_param_convert(ldpc_enc->basegraph, ldpc_enc->q_m,
 			e, ldpc_enc->rv_index, A, ldpc_enc->q, ldpc_enc->n_id,
 			ldpc_enc->n_rnti, !ldpc_enc->en_scramble,
@@ -2303,7 +2306,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_metadata_t *ipc_md;
 	struct gul_hif *mhif;
 	uint32_t phy_align = 0;
-	int ret;
+	int ret = -1;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2365,6 +2368,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	dev_ipc = open_ipc_dev(priv->modem_id);
 	if (dev_ipc < 0) {
 		BBDEV_LA12XX_PMD_ERR("Error: open_ipc_dev failed");
+		ret = dev_ipc;
 		goto err;
 	}
 	ipc_priv->dev_ipc = dev_ipc;

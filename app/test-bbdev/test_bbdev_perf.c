@@ -3869,8 +3869,6 @@ latency_test_ldpc_polar(void *arg)
 		bool first_time = true;
 		last_time = 0;
 
-		printf("polar i: %d\n", i);
-
 		if (unlikely(num_to_process - dequeued < burst_sz))
 			burst_sz = num_to_process - dequeued;
 
