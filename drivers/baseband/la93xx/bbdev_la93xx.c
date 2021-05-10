@@ -494,7 +494,7 @@ setup_la93xx_dev(struct rte_bbdev *dev)
 	ipc_metadata_t *ipc_md;
 	struct la9310_hif *mhif;
 	uint32_t phy_align = 0;
-	int ret;
+	int ret = -1;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -556,6 +556,7 @@ setup_la93xx_dev(struct rte_bbdev *dev)
 	dev_ipc = open_ipc_dev(priv->modem_id);
 	if (dev_ipc < 0) {
 		BBDEV_LA93XX_PMD_ERR("Error: open_ipc_dev failed");
+		ret = dev_ipc;
 		goto err;
 	}
 	ipc_priv->dev_ipc = dev_ipc;
