@@ -72,9 +72,7 @@ static int get_pci_domain_nr(struct wdog *wdog_t)
 	/* get pci slot (domain_nr) */
 	ret = ioctl(wdog_t->dev_wdog_handle,
 			IOCTL_GUL_MODEM_WDOG_GET_DOMAIN, wdog_t);
-	if (ret < 0)
-		goto err;
-err:
+
 	return ret;
 }
 
