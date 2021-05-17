@@ -581,7 +581,7 @@ static int open_ipc_dev(int modem_id)
 		return -1;
 	}
 
-	sprintf(dev_initials, "la9310ipcwlan_mon%d", modem_id);
+	sprintf(dev_initials, "la9310ipcnlm%d", modem_id);
 
 	while ((entry = readdir(dir)) != NULL) {
 		if (!strncmp(dev_initials, entry->d_name,
