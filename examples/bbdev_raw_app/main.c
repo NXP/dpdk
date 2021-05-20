@@ -17,15 +17,19 @@
 #define PACKET_LEN 64
 #define TEST_BUFFER_INPUT_VAL 0x01020304
 
+#define NB_QUEUES	8
+
+uint32_t dev_id;
+struct rte_mempool *mp[NB_QUEUES];
+
 static void
-host_to_modem_test(struct rte_mempool *mp, uint32_t dev_id, int queue_id,
-		   int conf_mode)
+host_to_modem_test(int queue_id, int conf_mode)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
 	int ret;
 	uint32_t *input, *output, output_val, pkt_len = PACKET_LEN, i, j;
 
-	ret = rte_mempool_get_bulk(mp,
+	ret = rte_mempool_get_bulk(mp[queue_id],
 				   (void **)raw_ops_enq, 1);
 	if (ret < 0) {
 		printf("rte_mempool_get_bulk failed (%d)\n",
@@ -92,7 +96,7 @@ host_to_modem_test(struct rte_mempool *mp, uint32_t dev_id, int queue_id,
 		}
 	}
 
-	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+	rte_mempool_put_bulk(mp[queue_id], (void **)raw_ops_enq[0], 1);
 	if (conf_mode) {
 		printf("\n============================================================================================\n");
 		printf("Validated %d operations for HOST->MODEM\n",
@@ -107,7 +111,7 @@ host_to_modem_test(struct rte_mempool *mp, uint32_t dev_id, int queue_id,
 }
 
 static void
-modem_to_host_test(uint32_t dev_id, int queue_id, int conf_mode)
+modem_to_host_test(int queue_id, int conf_mode)
 {
 	struct rte_bbdev_raw_op *raw_ops_deq = NULL;
 	int ret;
@@ -157,8 +161,7 @@ modem_to_host_test(uint32_t dev_id, int queue_id, int conf_mode)
 }
 
 static void
-round_trip_latency_test(struct rte_mempool *mp, uint32_t dev_id,
-			int h2m_queue_id, int m2h_queue_id)
+round_trip_latency_test(int h2m_queue_id, int m2h_queue_id)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
 	int ret;
@@ -166,7 +169,7 @@ round_trip_latency_test(struct rte_mempool *mp, uint32_t dev_id,
 	uint64_t start_time, end_time;
 	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
 
-	ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
+	ret = rte_mempool_get_bulk(mp[h2m_queue_id], (void **)raw_ops_enq, 1);
 	if (ret < 0) {
 		printf("rte_mempool_get_bulk failed (%d)\n", ret);
 		printf("\n============================================================================================\n");
@@ -243,15 +246,14 @@ round_trip_latency_test(struct rte_mempool *mp, uint32_t dev_id,
 			(double)(max_time * 1000000) /
 				(double)rte_get_tsc_hz());
 
-	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+	rte_mempool_put_bulk(mp[h2m_queue_id], (void **)raw_ops_enq[0], 1);
 
 	printf("Round trip latency test successful with %d test cases\n", i);
 	printf("============================================================================================\n");
 }
 
 static void
-host_to_modem_latency_test(struct rte_mempool *mp, uint32_t dev_id,
-			   int queue_id)
+host_to_modem_latency_test(int queue_id)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
 	int ret;
@@ -259,7 +261,7 @@ host_to_modem_latency_test(struct rte_mempool *mp, uint32_t dev_id,
 	uint64_t start_time, end_time;
 	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
 
-	ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
+	ret = rte_mempool_get_bulk(mp[queue_id], (void **)raw_ops_enq, 1);
 	if (ret < 0) {
 		printf("rte_mempool_get_bulk failed (%d)\n", ret);
 		printf("\n============================================================================================\n");
@@ -326,10 +328,40 @@ host_to_modem_latency_test(struct rte_mempool *mp, uint32_t dev_id,
 			(double)(max_time * 1000000) /
 				(double)rte_get_tsc_hz());
 
-	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+	rte_mempool_put_bulk(mp[queue_id], (void **)raw_ops_enq[0], 1);
 
 	printf("HOST->MODEM latency test successful with %d test cases\n", i);
 	printf("============================================================================================\n");
+}
+
+static void execute_raw_testcases(void)
+{
+	uint32_t h2m_queue_id, m2h_queue_id;
+	unsigned int lcore_id;
+
+	lcore_id = rte_lcore_id();
+	h2m_queue_id = lcore_id * 2;
+	m2h_queue_id = lcore_id * 2 + 1;
+
+	if (lcore_id == 0) {
+		host_to_modem_test(h2m_queue_id, 1);
+		modem_to_host_test(m2h_queue_id, 1);
+	} else if (lcore_id == 1) {
+		host_to_modem_test(h2m_queue_id, 0);
+		modem_to_host_test(m2h_queue_id, 0);
+	} else if (lcore_id == 2) {
+		round_trip_latency_test(h2m_queue_id, m2h_queue_id);
+	} else if (lcore_id == 3) {
+		host_to_modem_latency_test(h2m_queue_id);
+		modem_to_host_test(m2h_queue_id, 1);
+	}
+}
+
+static int
+bbdev_raw_app_launch_one_lcore(__attribute__((unused)) void *dummy)
+{
+	execute_raw_testcases();
+	return 0;
 }
 
 int
@@ -338,9 +370,9 @@ main(int argc, char **argv)
 	struct rte_bbdev_queue_conf qconf;
 	struct rte_bbdev_info info;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
-	uint32_t nb_queues = 8, queue_id, dev_id = 0;
-	struct rte_mempool *mp[nb_queues];
+	uint32_t queue_id;
 	int ret;
+	unsigned int lcore_id;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -356,10 +388,10 @@ main(int argc, char **argv)
 	rte_bbdev_info_get(0, &info);
 
 	/* setup device */
-	ret = rte_bbdev_setup_queues(dev_id, nb_queues, info.socket_id);
+	ret = rte_bbdev_setup_queues(dev_id, NB_QUEUES, info.socket_id);
 	if (ret < 0) {
 		printf("rte_bbdev_setup_queues(%u, %u, %d) ret %i\n",
-				dev_id, nb_queues, info.socket_id, ret);
+				dev_id, NB_QUEUES, info.socket_id, ret);
 		return ret;
 	}
 
@@ -370,7 +402,7 @@ main(int argc, char **argv)
 	qconf.deferred_start = 0;
 	qconf.op_type = RTE_BBDEV_OP_RAW;
 
-	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
+	for (queue_id = 0; queue_id < NB_QUEUES; ++queue_id) {
 		if (queue_id % 2 == 0)
 			qconf.raw_queue_conf.direction =
 					RTE_BBDEV_DIR_HOST_TO_MODEM;
@@ -415,21 +447,14 @@ main(int argc, char **argv)
 		return ret;
 	}
 
-	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
-		if (queue_id == 0)		/**< Host->Modem conf queue*/
-			host_to_modem_test(mp[queue_id], dev_id, queue_id, 1);
-		else if (queue_id == 1 || queue_id == 7)	/**< Modem->Host conf queue*/
-			modem_to_host_test(dev_id, queue_id, 1);
-		else if (queue_id == 2)		/**< Host->Modem non conf queue*/
-			host_to_modem_test(mp[queue_id], dev_id, queue_id, 0);
-		else if (queue_id == 3)		/**< Modem->Host non conf queue*/
-			modem_to_host_test(dev_id, queue_id, 0);
-		else if (queue_id == 4)		/**< Host->Modem conf queue latency*/
-			round_trip_latency_test(mp[queue_id], dev_id, queue_id,
-						queue_id + 1);
-		else if (queue_id == 6)
-			host_to_modem_latency_test(mp[queue_id], dev_id,
-						   queue_id);
+	/* launch per-lcore init on every lcore */
+	rte_eal_mp_remote_launch(bbdev_raw_app_launch_one_lcore, NULL,
+				 CALL_MASTER);
+	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+		if (rte_eal_wait_lcore(lcore_id) < 0) {
+			ret = -1;
+			break;
+		}
 	}
 
 	return 0;
