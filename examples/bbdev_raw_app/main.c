@@ -17,20 +17,330 @@
 #define PACKET_LEN 64
 #define TEST_BUFFER_INPUT_VAL 0x01020304
 
+static void
+host_to_modem_test(struct rte_mempool *mp, uint32_t dev_id, int queue_id,
+		   int conf_mode)
+{
+	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
+	int ret;
+	uint32_t *input, *output, output_val, pkt_len = PACKET_LEN, i, j;
+
+	ret = rte_mempool_get_bulk(mp,
+				   (void **)raw_ops_enq, 1);
+	if (ret < 0) {
+		printf("rte_mempool_get_bulk failed (%d)\n",
+				ret);
+		printf("\n============================================================================================\n");
+		if (conf_mode)
+			printf("HOST->MODEM test failed for confirmation mode.\n");
+		else
+			printf("HOST->MODEM test failed for non confirmation mode.\n");
+		printf("============================================================================================\n");
+		return;
+	}
+
+	/* Input buffer */
+	raw_ops_enq[0]->input.is_direct_mem = 1;
+	raw_ops_enq[0]->input.mem =
+		rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->input.length = pkt_len;
+
+	/* Hard Output buffer */
+	raw_ops_enq[0]->output.is_direct_mem = 1;
+	raw_ops_enq[0]->output.mem =
+		rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->output.length = 0;
+
+	input = raw_ops_enq[0]->input.mem;
+	output = raw_ops_enq[0]->output.mem;
+	output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
+
+	for (j = 0; j < pkt_len/8; j++)
+		input[j] = TEST_BUFFER_INPUT_VAL;
+
+	i = 0;
+	while (i < TEST_REPETITIONS) {
+
+		/* Enqueue */
+		ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
+					       raw_ops_enq[0]);
+		if (ret < 0)
+			continue;
+
+		i++;
+
+		if (conf_mode) {
+			/* Dequeue */
+			do {
+				raw_ops_deq = rte_bbdev_dequeue_raw_op(dev_id,
+								queue_id);
+			} while (!raw_ops_deq);
+
+			if (raw_ops_enq[0]->output.mem != 0) {
+				for (j = 0; j < pkt_len/8; j++) {
+					if (output[j] != output_val) {
+						printf("output %x does not match expected output %x",
+							output[j],
+							output_val);
+						printf("\n============================================================================================\n");
+						printf("HOST->MODEM test failed for confirmation mode.\n");
+						printf("============================================================================================\n");
+						return;
+					}
+				}
+			}
+		}
+	}
+
+	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+	if (conf_mode) {
+		printf("\n============================================================================================\n");
+		printf("Validated %d operations for HOST->MODEM\n",
+			TEST_REPETITIONS);
+		printf("HOST->MODEM test successful for confirmation mode.\n");
+		printf("============================================================================================\n");
+	} else {
+		printf("\n============================================================================================\n");
+		printf("HOST->MODEM test completed for non confirmation mode. Check Geul console logs for results.\n");
+		printf("============================================================================================\n");
+	}
+}
+
+static void
+modem_to_host_test(uint32_t dev_id, int queue_id, int conf_mode)
+{
+	struct rte_bbdev_raw_op *raw_ops_deq = NULL;
+	int ret;
+	uint32_t *input, *output, input_length, i, j;
+
+	for (i = 0; i < TEST_REPETITIONS; ++i) {
+		do {
+			raw_ops_deq = rte_bbdev_dequeue_raw_op(dev_id,
+							queue_id);
+		} while (!raw_ops_deq);
+
+		if (raw_ops_deq->output.mem) {
+			input = (uint32_t *)raw_ops_deq->input.mem;
+			output = (uint32_t *)raw_ops_deq->output.mem;
+			input_length = raw_ops_deq->input.length /
+							sizeof(uint32_t);
+			for (j = 0; j < input_length; j++)
+				output[j] = input[j];
+			raw_ops_deq->output.length = input_length *
+							sizeof(uint32_t);
+		}
+
+		ret = rte_bbdev_consume_raw_op(dev_id, queue_id, raw_ops_deq);
+		if (ret < 0) {
+			printf("rte_bbdev_consume_raw_op failed (%d)\n", ret);
+			printf("\n============================================================================================\n");
+			if (conf_mode)
+				printf("MODEM->HOST test failed for confirmation mode.\n");
+			else
+				printf("MODEM->HOST test failed for non confirmation mode.\n");
+			printf("============================================================================================\n");
+			return;
+		}
+	}
+
+	if (conf_mode) {
+		printf("\n============================================================================================\n");
+		printf("MODEM->HOST test completed for confirmation mode. Check Geul console logs for results.\n");
+		printf("============================================================================================\n");
+	} else {
+		printf("\n============================================================================================\n");
+		printf("Received %d operations for MODEM->HOST\n",
+			TEST_REPETITIONS);
+		printf("MODEM->HOST test successful for non confirmation mode.\n");
+		printf("============================================================================================\n");
+	}
+}
+
+static void
+round_trip_latency_test(struct rte_mempool *mp, uint32_t dev_id,
+			int h2m_queue_id, int m2h_queue_id)
+{
+	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
+	int ret;
+	uint32_t *input, pkt_len = PACKET_LEN, i, j;
+	uint64_t start_time, end_time;
+	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
+
+	ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
+	if (ret < 0) {
+		printf("rte_mempool_get_bulk failed (%d)\n", ret);
+		printf("\n============================================================================================\n");
+		printf("Round trip latency test failed.\n");
+		printf("============================================================================================\n");
+		return;
+	}
+
+	/* Input buffer */
+	raw_ops_enq[0]->input.is_direct_mem = 1;
+	raw_ops_enq[0]->input.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->input.length = pkt_len;
+
+	/* Hard Output buffer */
+	raw_ops_enq[0]->output.is_direct_mem = 1;
+	raw_ops_enq[0]->output.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->output.length = 0;
+
+	input = raw_ops_enq[0]->input.mem;
+
+	for (j = 0; j < pkt_len/8; j++)
+		input[j] = TEST_BUFFER_INPUT_VAL;
+
+	i = 0;
+	while (i < TEST_REPETITIONS) {
+
+		start_time = rte_rdtsc_precise();
+		/* Enqueue */
+		ret = rte_bbdev_enqueue_raw_op(dev_id, h2m_queue_id,
+					       raw_ops_enq[0]);
+		if (ret < 0)
+			continue;
+
+		i++;
+
+		/* Dequeue */
+		do {
+			raw_ops_deq = rte_bbdev_dequeue_raw_op(dev_id,
+							m2h_queue_id);
+		} while (!raw_ops_deq);
+
+		ret = rte_bbdev_consume_raw_op(dev_id, m2h_queue_id,
+					raw_ops_deq);
+		if (ret < 0) {
+			printf("rte_bbdev_consume_raw_op failed (%d)\n", ret);
+			printf("\n============================================================================================\n");
+			printf("Round trip latency test failed.\n");
+			printf("============================================================================================\n");
+			return;
+		}
+
+		end_time = rte_rdtsc_precise() - start_time;
+		min_time = RTE_MIN(min_time, end_time);
+		max_time = RTE_MAX(max_time, end_time);
+		total_time += end_time;
+	}
+
+	printf("\n============================================================================================\n");
+	printf("Round trip operation latency:\n");
+
+	printf("\tavg: %lg cycles, %lg us\n",
+			(double)total_time / (double)TEST_REPETITIONS,
+			(double)(total_time * 1000000) /
+				(double)TEST_REPETITIONS /
+				(double)rte_get_tsc_hz());
+
+	printf("\tmin: %lg cycles, %lg us\n", (double)min_time,
+			(double)(min_time * 1000000) /
+				(double)rte_get_tsc_hz());
+
+	printf("\tmax: %lg cycles, %lg us\n", (double)max_time,
+			(double)(max_time * 1000000) /
+				(double)rte_get_tsc_hz());
+
+	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+
+	printf("Round trip latency test successful with %d test cases\n", i);
+	printf("============================================================================================\n");
+}
+
+static void
+host_to_modem_latency_test(struct rte_mempool *mp, uint32_t dev_id,
+			   int queue_id)
+{
+	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
+	int ret;
+	uint32_t *input, pkt_len = PACKET_LEN, i, j;
+	uint64_t start_time, end_time;
+	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
+
+	ret = rte_mempool_get_bulk(mp, (void **)raw_ops_enq, 1);
+	if (ret < 0) {
+		printf("rte_mempool_get_bulk failed (%d)\n", ret);
+		printf("\n============================================================================================\n");
+		printf("HOST->MODEM latency test failed.\n");
+		printf("============================================================================================\n");
+		return;
+	}
+
+	/* Input buffer */
+	raw_ops_enq[0]->input.is_direct_mem = 1;
+	raw_ops_enq[0]->input.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->input.length = pkt_len;
+
+	/* Hard Output buffer */
+	raw_ops_enq[0]->output.is_direct_mem = 1;
+	raw_ops_enq[0]->output.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	raw_ops_enq[0]->output.length = 0;
+
+	input = raw_ops_enq[0]->input.mem;
+
+	for (j = 0; j < pkt_len/8; j++)
+		input[j] = TEST_BUFFER_INPUT_VAL;
+
+	i = 0;
+	while (i < TEST_REPETITIONS) {
+
+		start_time = rte_rdtsc_precise();
+		/* Enqueue */
+		ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
+					       raw_ops_enq[0]);
+		if (ret < 0)
+			continue;
+
+		i++;
+
+		/* Dequeue */
+		do {
+			raw_ops_deq = rte_bbdev_dequeue_raw_op(dev_id,
+							queue_id);
+		} while (!raw_ops_deq);
+
+		end_time = rte_rdtsc_precise() - start_time;
+		min_time = RTE_MIN(min_time, end_time);
+		max_time = RTE_MAX(max_time, end_time);
+		total_time += end_time;
+	}
+
+	printf("\n============================================================================================\n");
+	printf("HOST->MODEM operation latency:\n");
+
+	printf("\tavg: %lg cycles, %lg us\n",
+			(double)total_time / (double)TEST_REPETITIONS,
+			(double)(total_time * 1000000) /
+				(double)TEST_REPETITIONS /
+				(double)rte_get_tsc_hz());
+
+	printf("\tmin: %lg cycles, %lg us\n", (double)min_time,
+			(double)(min_time * 1000000) /
+				(double)rte_get_tsc_hz());
+
+	printf("\tmax: %lg cycles, %lg us\n", (double)max_time,
+			(double)(max_time * 1000000) /
+				(double)rte_get_tsc_hz());
+
+	rte_mempool_put_bulk(mp, (void **)raw_ops_enq[0], 1);
+
+	printf("HOST->MODEM latency test successful with %d test cases\n", i);
+	printf("============================================================================================\n");
+}
+
 int
 main(int argc, char **argv)
 {
 	struct rte_bbdev_queue_conf qconf;
 	struct rte_bbdev_info info;
-	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
-	uint32_t nb_queues = 4, queue_id, i, j;
+	uint32_t nb_queues = 8, queue_id, dev_id = 0;
 	struct rte_mempool *mp[nb_queues];
-	uint32_t dev_id = 0, pkt_len = PACKET_LEN;
-	uint32_t *input, *output, output_val, input_length;
 	int ret;
-	uint64_t start_time, end_time;
-	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -68,10 +378,12 @@ main(int argc, char **argv)
 			qconf.raw_queue_conf.direction =
 					RTE_BBDEV_DIR_MODEM_TO_HOST;
 
-		if (queue_id < 2)
+		if (queue_id < 2 || queue_id > 5)
 			qconf.raw_queue_conf.conf_enable = 1;
 		else
 			qconf.raw_queue_conf.conf_enable = 0;
+
+		qconf.raw_queue_conf.modem_core_id = queue_id / 2;
 
 		ret = rte_bbdev_queue_configure(dev_id, queue_id, &qconf);
 		if (ret != 0) {
@@ -104,195 +416,20 @@ main(int argc, char **argv)
 	}
 
 	for (queue_id = 0; queue_id < nb_queues; ++queue_id) {
-		if (queue_id == 0) { /**< Host->Modem queue */
-			ret = rte_mempool_get_bulk(mp[queue_id],
-						   (void **)raw_ops_enq, 1);
-			if (ret < 0) {
-				printf("rte_mempool_get_bulk failed (%d)\n",
-						ret);
-				return ret;
-			}
-
-			/* Input buffer */
-			raw_ops_enq[0]->input.is_direct_mem = 1;
-			raw_ops_enq[0]->input.mem =
-				rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-			raw_ops_enq[0]->input.length = pkt_len;
-
-			/* Hard Output buffer */
-			raw_ops_enq[0]->output.is_direct_mem = 1;
-			raw_ops_enq[0]->output.mem =
-				rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-			raw_ops_enq[0]->output.length = 0;
-
-			input = raw_ops_enq[0]->input.mem;
-			output = raw_ops_enq[0]->output.mem;
-			output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
-
-			for (j = 0; j < pkt_len/8; j++)
-				input[j] = TEST_BUFFER_INPUT_VAL;
-
-			i = 0;
-			while (i < TEST_REPETITIONS) {
-
-				/* Enqueue */
-				ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
-							       raw_ops_enq[0]);
-				if (ret < 0)
-					continue;
-
-				i++;
-
-				/* Dequeue */
-				do {
-					raw_ops_deq =
-						rte_bbdev_dequeue_raw_op(dev_id,
-								queue_id);
-				} while (!raw_ops_deq);
-
-				if (raw_ops_enq[0]->output.mem != 0) {
-					for (j = 0; j < pkt_len/8; j++) {
-						if (output[j] != output_val)
-							printf("output %x does not match expected output %x",
-								output[j],
-								output_val);
-					}
-				}
-			}
-
-			rte_mempool_put_bulk(mp[queue_id],
-					     (void **)raw_ops_enq[0], 1);
-			printf("\n==================================================================================\n");
-			printf("Validated %d operations for HOST->MODEM\n",
-				TEST_REPETITIONS);
-
-
-			printf("HOST->MODEM test Passed\n");
-			printf("==================================================================================\n");
-
-		} else if (queue_id == 1) { /**< Modem->Host queue */
-
-			for (i = 0; i < TEST_REPETITIONS; ++i) {
-				do {
-					raw_ops_deq =
-						rte_bbdev_dequeue_raw_op(dev_id,
-								queue_id);
-				} while (!raw_ops_deq);
-
-				if (raw_ops_deq->output.mem) {
-					input = (uint32_t *)
-							raw_ops_deq->input.mem;
-					output = (uint32_t *)
-							raw_ops_deq->output.mem;
-					input_length =
-						raw_ops_deq->input.length /
-							sizeof(uint32_t);
-					for (j = 0; j < input_length; j++)
-						output[j] = input[j];
-					raw_ops_deq->output.length =
-						input_length * sizeof(uint32_t);
-				}
-
-				ret = rte_bbdev_consume_raw_op(dev_id, queue_id,
-						raw_ops_deq);
-				if (ret < 0) {
-					printf("rte_bbdev_consume_raw_op failed (%d)\n",
-						ret);
-					return ret;
-				}
-			}
-
-			printf("\n==================================================================================\n");
-			printf("MODEM->HOST test completed. Check Geul console logs for results.\n");
-			printf("==================================================================================\n");
-
-		} else if (queue_id == 2) { /**< Host->Modem queue latency*/
-			ret = rte_mempool_get_bulk(mp[queue_id],
-						   (void **)raw_ops_enq, 1);
-			if (ret < 0) {
-				printf("rte_mempool_get_bulk failed (%d)\n",
-						ret);
-				return ret;
-			}
-
-			/* Input buffer */
-			raw_ops_enq[0]->input.is_direct_mem = 1;
-			raw_ops_enq[0]->input.mem =
-				rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-			raw_ops_enq[0]->input.length = pkt_len;
-
-			/* Hard Output buffer */
-			raw_ops_enq[0]->output.is_direct_mem = 1;
-			raw_ops_enq[0]->output.mem =
-				rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-			raw_ops_enq[0]->output.length = 0;
-
-			input = raw_ops_enq[0]->input.mem;
-			output = raw_ops_enq[0]->output.mem;
-			output_val = rte_bswap32(TEST_BUFFER_INPUT_VAL);
-
-			for (j = 0; j < pkt_len/8; j++)
-				input[j] = TEST_BUFFER_INPUT_VAL;
-
-			i = 0;
-			while (i < TEST_REPETITIONS) {
-
-				start_time = rte_rdtsc_precise();
-				/* Enqueue */
-				ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
-							       raw_ops_enq[0]);
-				if (ret < 0)
-					continue;
-
-				i++;
-
-				/* Dequeue */
-				do {
-					raw_ops_deq =
-						rte_bbdev_dequeue_raw_op(dev_id,
-								queue_id + 1);
-				} while (!raw_ops_deq);
-
-				ret = rte_bbdev_consume_raw_op(dev_id,
-						queue_id + 1, raw_ops_deq);
-				if (ret < 0) {
-					printf("rte_bbdev_consume_raw_op failed (%d)\n",
-						ret);
-					return ret;
-				}
-
-				end_time = rte_rdtsc_precise() - start_time;
-				min_time = RTE_MIN(min_time, end_time);
-				max_time = RTE_MAX(max_time, end_time);
-				total_time += end_time;
-			}
-
-			printf("\n==================================================================================\n");
-			printf("Operation latency:\n");
-
-			printf("\tavg: %lg cycles, %lg us\n",
-					(double)total_time /
-						(double)TEST_REPETITIONS,
-					(double)(total_time * 1000000) /
-						(double)TEST_REPETITIONS /
-						(double)rte_get_tsc_hz());
-
-			printf("\tmin: %lg cycles, %lg us\n", (double)min_time,
-					(double)(min_time * 1000000) /
-						(double)rte_get_tsc_hz());
-
-			printf("\tmax: %lg cycles, %lg us\n", (double)max_time,
-					(double)(max_time * 1000000) /
-						(double)rte_get_tsc_hz());
-
-			rte_mempool_put_bulk(mp[queue_id],
-					     (void **)raw_ops_enq[0], 1);
-
-			printf("Latency test successful with %d test cases\n",
-			       i);
-			printf("==================================================================================\n");
-		}
-
+		if (queue_id == 0)		/**< Host->Modem conf queue*/
+			host_to_modem_test(mp[queue_id], dev_id, queue_id, 1);
+		else if (queue_id == 1 || queue_id == 7)	/**< Modem->Host conf queue*/
+			modem_to_host_test(dev_id, queue_id, 1);
+		else if (queue_id == 2)		/**< Host->Modem non conf queue*/
+			host_to_modem_test(mp[queue_id], dev_id, queue_id, 0);
+		else if (queue_id == 3)		/**< Modem->Host non conf queue*/
+			modem_to_host_test(dev_id, queue_id, 0);
+		else if (queue_id == 4)		/**< Host->Modem conf queue latency*/
+			round_trip_latency_test(mp[queue_id], dev_id, queue_id,
+						queue_id + 1);
+		else if (queue_id == 6)
+			host_to_modem_latency_test(mp[queue_id], dev_id,
+						   queue_id);
 	}
 
 	return 0;
