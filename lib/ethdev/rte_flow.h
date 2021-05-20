@@ -660,6 +660,20 @@ enum rte_flow_item_type {
 	 * See struct rte_flow_item_ppp.
 	 */
 	RTE_FLOW_ITEM_TYPE_PPP,
+
+	/**
+	 * Configure flow for GTP and IP fragmented UDP
+	 * packets.
+	 */
+
+	RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP,
+
+	/**
+	 * Configure flow for IP fragmented proto
+	 * packets.
+	 */
+
+	RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO,
 };
 
 /**
