@@ -3607,8 +3607,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, &authdata,
-					0);
+					&cipherdata, &authdata);
 		else if (session->dir == DIR_DEC)
 			bufsize = cnstr_shdsc_pdcp_c_plane_decap(
 					priv->flc_desc[0].desc, 1, swap,
@@ -3617,8 +3616,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, &authdata,
-					0);
+					&cipherdata, &authdata);
 
 	} else if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_SHORT_MAC) {
 		bufsize = cnstr_shdsc_pdcp_short_mac(priv->flc_desc[0].desc,
@@ -3633,7 +3631,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, p_authdata, 0);
+					&cipherdata, p_authdata);
 			else
 				bufsize = cnstr_shdsc_pdcp_u_plane_encap(
 					priv->flc_desc[0].desc, 1, swap,
@@ -3642,7 +3640,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, p_authdata, 0);
+					&cipherdata, p_authdata);
 		} else if (session->dir == DIR_DEC) {
 			if (pdcp_xform->sdap_enabled)
 				bufsize = cnstr_shdsc_pdcp_sdap_u_plane_decap(
@@ -3652,7 +3650,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, p_authdata, 0);
+					&cipherdata, p_authdata);
 			else
 				bufsize = cnstr_shdsc_pdcp_u_plane_decap(
 					priv->flc_desc[0].desc, 1, swap,
@@ -3661,7 +3659,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 					pdcp_xform->bearer,
 					pdcp_xform->pkt_dir,
 					pdcp_xform->hfn_threshold,
-					&cipherdata, p_authdata, 0);
+					&cipherdata, p_authdata);
 		}
 	}
 
