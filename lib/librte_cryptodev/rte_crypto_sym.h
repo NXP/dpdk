@@ -934,6 +934,7 @@ rte_crypto_mbuf_to_vec(const struct rte_mbuf *mb, uint32_t ofs, uint32_t len,
 			/* whole requested data is completed */
 			vec[i].len = left;
 			left = 0;
+			i++;
 			break;
 		}
 
@@ -944,7 +945,7 @@ rte_crypto_mbuf_to_vec(const struct rte_mbuf *mb, uint32_t ofs, uint32_t len,
 	}
 
 	RTE_ASSERT(left == 0);
-	return i + 1;
+	return i;
 }
 
 
