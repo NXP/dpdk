@@ -29,6 +29,7 @@ EXPORT_MAP := rte_pmd_dpaa_sec_version.map
 
 # library source files
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_SEC) += dpaa_sec_raw_dp.c
 
 # library dependencies
 
