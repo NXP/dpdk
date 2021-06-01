@@ -17,4 +17,5 @@ EXPERIMENTAL {
 	rte_pmd_dpaa2_mux_flow_create;
 	rte_pmd_dpaa2_set_custom_hash;
 	rte_pmd_dpaa2_set_timestamp;
+	rte_pmd_dpaa2_thread_init;
 } DPDK_17.11;
