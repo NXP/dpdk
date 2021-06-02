@@ -37,7 +37,7 @@ struct bbdev_la93xx_params {
 };
 
 #define BBDEV_LA93XX_VDEV_MODEM_ID_ARG	"modem"
-#define LA93XX_MAX_MODEM 4
+#define LA93XX_MAX_MODEM	1
 
 #define LA93XX_MAX_CORES	1
 
@@ -60,6 +60,12 @@ int bbdev_la93xx_logtype;
 static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	{
 		.type   = RTE_BBDEV_OP_RAW,
+		.cap.raw = {
+			.capability_flags =
+					RTE_BBDEV_RAW_CAP_INTERNAL_MEM,
+			.max_internal_buffer_size =
+					IPC_MAX_INTERNAL_BUFFER_SIZE,
+		}
 	},
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
@@ -113,15 +119,17 @@ la93xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 
 #pragma GCC push_options
 #pragma GCC optimize("O1")
-static int ipc_queue_configure(uint32_t channel_id,
+static int ipc_queue_configure(struct rte_bbdev *dev, uint32_t channel_id,
 		ipc_t instance, struct bbdev_la93xx_q_priv *q_priv)
 {
+	struct bbdev_la93xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipc_priv = (ipc_userspace_t *)instance;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
+	uint32_t msg_size = sizeof(struct bbdev_ipc_raw_op_t);
 	ipc_ch_t *ch;
 	void *vaddr;
 	uint32_t i = 0;
-	uint32_t msg_size = sizeof(struct bbdev_ipc_raw_op_t);
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -148,6 +156,15 @@ static int ipc_queue_configure(uint32_t channel_id,
 		q_priv->msg_ch_vaddr[i] = vaddr;
 		/* Not sure use of this len may be for CRC*/
 		ch->bd_h[i].len = 0;
+
+		if (ch->is_host_to_modem) {
+			ret = rte_mempool_get(priv->mp,
+				(void **)(&q_priv->internal_bufs[i]));
+			if (ret != 0) {
+				BBDEV_LA93XX_PMD_ERR("mempool object allocation failed");
+				return ret;
+			}
+		}
 	}
 	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
 			RTE_CACHE_LINE_SIZE);
@@ -229,7 +246,7 @@ la93xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	BBDEV_LA93XX_PMD_DEBUG("setting up queue %d", q_priv->q_id);
 
 	/* Call ipc_configure_channel */
-	ret = ipc_queue_configure(q_priv->q_id, ipc_priv, q_priv);
+	ret = ipc_queue_configure(dev, q_priv->q_id, ipc_priv, q_priv);
 	if (ret) {
 		BBDEV_LA93XX_PMD_ERR("Unable to setup queue (%d) (err=%d)",
 		       q_priv->q_id, ret);
@@ -295,6 +312,38 @@ is_bd_ring_empty(uint32_t ci, uint32_t ci_flag,
 			return 1; /* No more Buffer */
 	}
 	return 0;
+}
+
+/* Get next raw buffer */
+static void *
+get_next_raw_buf(struct rte_bbdev_queue_data *q_data,
+		uint32_t *length)
+{
+	struct bbdev_la93xx_q_priv *q_priv = q_data->queue_private;
+	int conf_enable = q_data->conf.raw_queue_conf.conf_enable;
+	uint32_t ci, ci_flag, pi, pi_flag;
+
+	if (conf_enable) {
+		ci = IPC_GET_CI_INDEX(q_priv->host_ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_ci);
+	} else {
+		ci = IPC_GET_CI_INDEX(q_priv->host_params->ci);
+		ci_flag = IPC_GET_CI_FLAG(q_priv->host_params->ci);
+	}
+
+	pi = IPC_GET_PI_INDEX(q_priv->host_pi);
+	pi_flag = IPC_GET_PI_FLAG(q_priv->host_pi);
+
+	if (is_bd_ring_full(ci, ci_flag, pi, pi_flag)) {
+		BBDEV_LA93XX_PMD_DP_DEBUG(
+			"bd ring full for queue id: %d", q_priv->q_id);
+		return NULL;
+	}
+
+	if (length)
+		*length = IPC_MAX_INTERNAL_BUFFER_SIZE;
+
+	return q_priv->internal_bufs[pi];
 }
 
 /* Enqueue raw operation */
@@ -546,10 +595,13 @@ static const struct rte_bbdev_ops pmd_ops = {
 #pragma GCC pop_options
 
 static struct hugepage_info *
-get_hugepage_info(void)
+get_hugepage_info(struct rte_bbdev *dev)
 {
+	struct bbdev_la93xx_private *priv = dev->data->dev_private;
 	struct hugepage_info *hp_info;
 	struct rte_memseg *mseg;
+	void *mem;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -560,10 +612,28 @@ get_hugepage_info(void)
 		return NULL;
 	}
 
-	mseg = rte_mem_virt2memseg(hp_info, NULL);
+	priv->mp = rte_mempool_create("bbdev_la93xx_pool",
+			IPC_MAX_DEPTH * IPC_MAX_CHANNEL_COUNT/2,
+			LA93XX_MAX_INTERNAL_BUFFER_SIZE,
+			0, 0, NULL, NULL, NULL, NULL,
+			SOCKET_ID_ANY, 0);
+	if (!priv->mp) {
+		BBDEV_LA93XX_PMD_ERR("mempool creation failed");
+		return NULL;
+	}
+
+	ret = rte_mempool_get(priv->mp, (void **)(&mem));
+	if (ret != 0) {
+		BBDEV_LA93XX_PMD_ERR("mempool object allocation failed");
+		return NULL;
+	}
+
+	mseg = rte_mem_virt2memseg(mem, NULL);
 	hp_info->vaddr = mseg->addr;
 	hp_info->paddr = rte_mem_virt2phy(mseg->addr);
 	hp_info->len = mseg->len;
+
+	rte_mempool_put(priv->mp, mem);
 
 	return hp_info;
 }
@@ -626,7 +696,7 @@ setup_la93xx_dev(struct rte_bbdev *dev)
 	if (!ipc_priv) {
 		/* TODO - get a better way */
 		/* Get the hugepage info against it */
-		hp = get_hugepage_info();
+		hp = get_hugepage_info(dev);
 		if (!hp) {
 			BBDEV_LA93XX_PMD_ERR("Unable to get hugepage info");
 			ret = -ENOMEM;
@@ -942,6 +1012,7 @@ la93xx_bbdev_create(struct rte_vdev_device *vdev,
 	bbdev->data->socket_id = 0;
 	bbdev->intr_handle = NULL;
 
+	bbdev->get_next_raw_buf = get_next_raw_buf;
 	bbdev->enqueue_raw_op = enqueue_raw_op;
 	bbdev->dequeue_raw_op = dequeue_raw_op;
 	bbdev->consume_raw_op = consume_raw_op;

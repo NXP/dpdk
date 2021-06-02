@@ -36,12 +36,14 @@ int run_selected_tests;
 int run_conf_mode_validation_test, run_non_conf_mode_validation_test;
 int run_round_trip_latency_test, run_unidirectional_mode_latency_test;
 
+int use_internal_buf, internal_buf_size;
+
 static void
 host_to_modem_test(int queue_id, int conf_mode)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
+	uint32_t *input, *output, pkt_len = PACKET_LEN, i, j, len;
 	int ret;
-	uint32_t *input, *output, pkt_len = PACKET_LEN, i, j;
 
 	ret = rte_mempool_get_bulk(mp[queue_id],
 				   (void **)raw_ops_enq, 1);
@@ -59,17 +61,16 @@ host_to_modem_test(int queue_id, int conf_mode)
 
 	/* Input buffer */
 	raw_ops_enq[0]->input.is_direct_mem = 1;
-	raw_ops_enq[0]->input.mem =
-		rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
+	if (!use_internal_buf)
+		raw_ops_enq[0]->input.mem =
+			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
 	raw_ops_enq[0]->input.length = pkt_len;
 
 	/* Hard Output buffer */
 	raw_ops_enq[0]->output.is_direct_mem = 1;
-	if (conf_mode)
+	if (conf_mode && !use_internal_buf)
 		raw_ops_enq[0]->output.mem =
 			rte_zmalloc(NULL, pkt_len, RTE_CACHE_LINE_SIZE);
-	else
-		raw_ops_enq[0]->output.mem = 0;
 	raw_ops_enq[0]->output.length = 0;
 
 	input = raw_ops_enq[0]->input.mem;
@@ -77,6 +78,23 @@ host_to_modem_test(int queue_id, int conf_mode)
 
 	i = 0;
 	while (i < TEST_REPETITIONS) {
+		/* For LA93xx device use internal buffer */
+		if (use_internal_buf) {
+			raw_ops_enq[0]->input.mem =
+				rte_bbdev_get_next_internal_buf(dev_id,
+					queue_id, &len);
+			if (!raw_ops_enq[0]->input.mem)
+				continue;
+			raw_ops_enq[0]->input.length = internal_buf_size/2;
+
+			if (conf_mode)
+				raw_ops_enq[0]->output.mem =
+					(void *)((uint64_t)raw_ops_enq[0]->input.mem +
+					internal_buf_size/2);
+
+			input = raw_ops_enq[0]->input.mem;
+			output = raw_ops_enq[0]->output.mem;
+		}
 
 		for (j = 0; j < pkt_len/8; j++) {
 			input[j] = TEST_BUFFER_INPUT_VAL;
@@ -99,7 +117,7 @@ host_to_modem_test(int queue_id, int conf_mode)
 								queue_id);
 			} while (!raw_ops_deq);
 
-			if (raw_ops_enq[0]->output.mem != 0) {
+			if (raw_ops_enq[0]->output.mem != NULL) {
 				for (j = 0; j < pkt_len/8; j++) {
 					if (output[j] != input[j]) {
 						printf("output %x does not match expected output %x",
@@ -193,10 +211,10 @@ static void
 round_trip_latency_test(int h2m_queue_id, int m2h_queue_id)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
-	int ret;
-	uint32_t pkt_len = PACKET_LEN, i;
+	uint32_t pkt_len = PACKET_LEN, i, len;
 	uint64_t start_time, end_time;
 	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
+	int ret;
 
 	ret = rte_mempool_get_bulk(mp[h2m_queue_id], (void **)raw_ops_enq, 1);
 	if (ret < 0) {
@@ -223,6 +241,20 @@ round_trip_latency_test(int h2m_queue_id, int m2h_queue_id)
 	while (i < TEST_REPETITIONS) {
 
 		start_time = rte_rdtsc_precise();
+		/* For LA93xx device use internal buffer */
+		if (use_internal_buf) {
+			raw_ops_enq[0]->input.mem =
+				rte_bbdev_get_next_internal_buf(dev_id,
+					h2m_queue_id, &len);
+			if (!raw_ops_enq[0]->input.mem)
+				continue;
+			raw_ops_enq[0]->input.length = internal_buf_size/2;
+
+			raw_ops_enq[0]->output.mem =
+				(void *)((uint64_t)raw_ops_enq[0]->input.mem +
+				internal_buf_size/2);
+		}
+
 		/* Enqueue */
 		ret = rte_bbdev_enqueue_raw_op(dev_id, h2m_queue_id,
 					       raw_ops_enq[0]);
@@ -280,10 +312,10 @@ static void
 host_to_modem_latency_test(int queue_id)
 {
 	struct rte_bbdev_raw_op *raw_ops_enq[1] = {NULL}, *raw_ops_deq = NULL;
-	int ret;
-	uint32_t pkt_len = PACKET_LEN, i;
+	uint32_t pkt_len = PACKET_LEN, i, len;
 	uint64_t start_time, end_time;
 	uint64_t min_time = UINT64_MAX, max_time = 0, total_time = 0;
+	int ret;
 
 	ret = rte_mempool_get_bulk(mp[queue_id], (void **)raw_ops_enq, 1);
 	if (ret < 0) {
@@ -310,6 +342,20 @@ host_to_modem_latency_test(int queue_id)
 	while (i < TEST_REPETITIONS) {
 
 		start_time = rte_rdtsc_precise();
+		/* For LA93xx device use internal buffer */
+		if (use_internal_buf) {
+			raw_ops_enq[0]->input.mem =
+				rte_bbdev_get_next_internal_buf(dev_id,
+					queue_id, &len);
+			if (!raw_ops_enq[0]->input.mem)
+				continue;
+			raw_ops_enq[0]->input.length = internal_buf_size/2;
+
+			raw_ops_enq[0]->output.mem =
+				(void *)((uint64_t)raw_ops_enq[0]->input.mem +
+				internal_buf_size/2);
+		}
+
 		/* Enqueue */
 		ret = rte_bbdev_enqueue_raw_op(dev_id, queue_id,
 					       raw_ops_enq[0]);
@@ -513,13 +559,14 @@ main(int argc, char **argv)
 	struct rte_bbdev_info info;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
 	uint32_t queue_id, nb_queues = MAX_QUEUES;
-	int ret;
+	int ret, i;
 	unsigned int lcore_id;
 	int conf_validation_qconfig_done = 0;
 	int non_conf_validation_qconfig_done = 0;
 	int round_trip_latency_qconfig_done = 0;
 	int unidirectional_latency_qconfig_done = 0;
 	unsigned int nb_lcores = 0;
+	const struct rte_bbdev_op_cap *op_cap;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -558,13 +605,29 @@ main(int argc, char **argv)
 	if (nb_lcores < nb_queues / 2) {
 		rte_exit(EXIT_FAILURE, "Not enough cores\n");
 	}
+
 	/* Check if BBDEV device is present or not */
 	if (!rte_bbdev_count()) {
 		printf("No BBDEV device detected\n");
 		return -ENODEV;
 	}
 
-	rte_bbdev_info_get(0, &info);
+	ret = rte_bbdev_info_get(0, &info);
+	if (ret < 0) {
+		printf("rte_bbdev_info_get failed, ret: %d\n", ret);
+		return ret;
+	}
+
+	op_cap = info.drv.capabilities;
+	for (i = 0; op_cap->type != RTE_BBDEV_OP_NONE; ++i, ++op_cap) {
+		if (op_cap->type == RTE_BBDEV_OP_RAW &&
+		    op_cap->cap.raw.capability_flags &
+		    RTE_BBDEV_RAW_CAP_INTERNAL_MEM) {
+			use_internal_buf = 1;
+			internal_buf_size =
+				op_cap->cap.raw.max_internal_buffer_size;
+		}
+	}
 
 	/* setup device */
 	ret = rte_bbdev_setup_queues(dev_id, nb_queues, info.socket_id);

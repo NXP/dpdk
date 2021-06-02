@@ -34,7 +34,7 @@ struct bbdev_la12xx_private {
 
 	struct wdog *wdog;
 	/* Private memory for queues */
-	struct bbdev_la12xx_q_priv *queues_priv[32];
+	struct bbdev_la12xx_q_priv *queues_priv[IPC_MAX_CHANNEL_COUNT];
 };
 
 struct hugepage_info {

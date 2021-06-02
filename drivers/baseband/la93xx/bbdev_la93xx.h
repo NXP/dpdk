@@ -38,8 +38,9 @@ struct bbdev_la93xx_private {
 	ipc_userspace_t *ipc_priv;
 	uint32_t num_valid_queues;
 	int8_t modem_id;
+	struct rte_mempool *mp;
 	/* Private memory for queues */
-	struct bbdev_la93xx_q_priv *queues_priv[32];
+	struct bbdev_la93xx_q_priv *queues_priv[IPC_MAX_CHANNEL_COUNT];
 };
 
 struct hugepage_info {
@@ -60,6 +61,8 @@ struct bbdev_la93xx_q_priv {
 			/**< Stores bbdev op for each index */
 	void *msg_ch_vaddr[IPC_MAX_DEPTH];
 			/**< Stores msg channel addr for modem->host */
+	void *internal_bufs[IPC_MAX_DEPTH];
+			/**< Internal buffers for host->modem */
 	uint32_t host_pi;	/**< Producer_Index for HOST->MODEM */
 	uint32_t host_ci;	/**< Consumer Index for MODEM->HOST */
 	host_ipc_params_t *host_params; /**< Host parameters */
