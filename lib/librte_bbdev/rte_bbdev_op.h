@@ -906,6 +906,20 @@ struct rte_bbdev_op_cap_ldpc_enc {
 	uint16_t num_buffers_dst;
 };
 
+/** Flags for RAW operation and capability structure */
+enum rte_bbdev_op_raw_flag_bitmasks {
+	/** Internal buffer memory is supported. */
+	RTE_BBDEV_RAW_CAP_INTERNAL_MEM = (1ULL << 0)
+};
+
+/** List of the capabilities for the LDPC Encoder */
+struct rte_bbdev_op_cap_raw {
+	/** Flags from rte_bbdev_op_raw_flag_bitmasks */
+	uint32_t capability_flags;
+	/** Num input code block buffers */
+	uint16_t max_internal_buffer_size;
+};
+
 /** Different operation types supported by the device */
 enum rte_bbdev_op_type {
 	RTE_BBDEV_OP_NONE,  /**< Dummy operation that does nothing */
@@ -987,6 +1001,7 @@ struct rte_bbdev_op_cap {
 		struct rte_bbdev_op_cap_turbo_enc turbo_enc;
 		struct rte_bbdev_op_cap_ldpc_dec ldpc_dec;
 		struct rte_bbdev_op_cap_ldpc_enc ldpc_enc;
+		struct rte_bbdev_op_cap_raw raw;
 	} cap;  /**< Operation-type specific capabilities */
 };
 

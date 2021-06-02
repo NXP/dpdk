@@ -421,6 +421,11 @@ struct rte_bbdev_queue_data {
 	bool started;  /**< Queue state */
 };
 
+/** @internal Get next raw internal buffer. */
+typedef void *(*rte_bbdev_get_next_raw_buf_t)(
+		struct rte_bbdev_queue_data *q_data,
+		uint32_t *length);
+
 /** @internal Enqueue raw operation for processing on queue of a device. */
 typedef int (*rte_bbdev_enqueue_raw_op_t)(
 		struct rte_bbdev_queue_data *q_data,
@@ -493,6 +498,8 @@ TAILQ_HEAD(rte_bbdev_cb_list, rte_bbdev_callback);
  * these fields, but should only write to the *_ops fields.
  */
 struct __rte_cache_aligned rte_bbdev {
+	/** Get next raw internal buffer */
+	rte_bbdev_get_next_raw_buf_t get_next_raw_buf;
 	/** Enqueue raw op function */
 	rte_bbdev_enqueue_raw_op_t enqueue_raw_op;
 	/** Dequeue raw op function */
@@ -527,9 +534,36 @@ struct __rte_cache_aligned rte_bbdev {
 /** @internal array of all devices */
 extern struct rte_bbdev rte_bbdev_devices[];
 
+/** Get the buffer pointer from internal pool.
+ *  This API would return buffer associated with next enqueue operation.
+ *  Note: Each enqueue operation has only one associated internal buffer.
+ *  This memory shall be passed in the 'mem' pointer in rte_bbdev_op_data.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_id
+ *   The index of the queue.
+ * @param length
+ *   returns max length of the memory in case 'length' is specified.
+ *
+ * @return
+ *    Memory address of internal buffer.
+ *    NULL - in case memory for next enqueue operation is not free
+ *    and still in use.
+ */
+__rte_experimental
+static inline void *
+rte_bbdev_get_next_internal_buf(uint16_t dev_id, uint16_t queue_id,
+		uint32_t *length)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_data *q_data = &dev->data->queues[queue_id];
+	return dev->get_next_raw_buf(q_data, length);
+}
+
 /**
  * Enqueue a RAW operation to a queue of the device.
- * If confirmation is required then the memory for the ‘op’ structure should
+ * If confirmation is required then the memory for the 'op' structure should
  * be allocated from heap/mempool and should be freed only after confirmation.
  * Otherwise, it shall be on stack or if on heap, should be freed after enqueue
  * operation.
@@ -557,6 +591,16 @@ rte_bbdev_enqueue_raw_op(uint16_t dev_id, uint16_t queue_id,
 /**
  * Consume raw operations. Valid for MODEM->HOST queues only. This will mark
  * internal BD rings as free and do internal cleanups.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ * @param queue_id
+ *   The index of the queue.
+ * @param op
+ *   Pointer containing operation to be enqueued.
+ *
+ * @return
+ *    Status of the consume operation.
  */
 static inline uint16_t
 rte_bbdev_consume_raw_op(uint16_t dev_id, uint16_t queue_id,
@@ -694,9 +738,9 @@ rte_bbdev_enqueue_ldpc_dec_ops(uint16_t dev_id, uint16_t queue_id,
 /**
  * Dequeue a raw operation.
  * For HOST->MODEM queues, this would provide RAW op which had
- * ‘conf_enabled’ configured at queue initialization.
+ * 'conf_enabled' configured at queue initialization.
  * For MODEM->HOST queues, this would provide RAW op which are sent from MODEM.
- * ‘op’ memory would be internally allocated
+ * 'op' memory would be internally allocated
  *
  * @param dev_id
  *   The identifier of the device.
