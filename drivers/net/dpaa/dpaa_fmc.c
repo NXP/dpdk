@@ -245,7 +245,10 @@ static int dpaa_port_fmc_scheme_parse(
 			uint32_t fqid = fmc_model->scheme[scheme_idx].base_fqid + i;
 			int k, found = 0;
 
-			if (fqid == fif->fqid_rx_def) {
+			if (fqid == fif->fqid_rx_def ||
+			    (fqid >= fif->fqid_rx_pcd &&
+					fqid < (fif->fqid_rx_pcd +
+						fif->fqid_rx_pcd_count))) {
 				if (fif->is_shared_mac &&
 				fmc_model->scheme[scheme_idx].override_storage_profile &&
 				fmc_model->scheme[scheme_idx].storage_profile.direct &&
