@@ -7,7 +7,7 @@ if not is_linux
 endif
 
 deps += ['bus_dpaa', 'mempool_dpaa', 'security']
-sources = files('dpaa_sec.c')
+sources = files('dpaa_sec.c', 'dpaa_sec_raw_dp.c')
 
 allow_experimental_apis = true
 
