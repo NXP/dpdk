@@ -735,6 +735,7 @@ process_sym_raw_dp_op(uint8_t dev_id, uint16_t qp_id,
 	}
 
 	op->status = (count == MAX_RAW_DEQUEUE_COUNT + 1 || ret_op != op ||
+			ret_op->status == RTE_CRYPTO_OP_STATUS_ERROR ||
 			n_success < 1) ? RTE_CRYPTO_OP_STATUS_ERROR :
 					RTE_CRYPTO_OP_STATUS_SUCCESS;
 
@@ -4545,6 +4546,16 @@ test_snow3g_encryption_oop(const struct snow3g_test_data *tdata)
 	int retval;
 	unsigned plaintext_pad_len;
 	unsigned plaintext_len;
+	struct rte_cryptodev_info dev_info;
+
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+	uint64_t feat_flags = dev_info.feature_flags;
+
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device doesn't support RAW data-path APIs.\n");
+		return -ENOTSUP;
+	}
 
 	/* Verify the capabilities */
 	struct rte_cryptodev_sym_capability_idx cap_idx;
@@ -4552,9 +4563,6 @@ test_snow3g_encryption_oop(const struct snow3g_test_data *tdata)
 	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
 	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
 			&cap_idx) == NULL)
-		return -ENOTSUP;
-
-	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
 		return -ENOTSUP;
 
 	/* Create SNOW 3G session */
@@ -4597,7 +4605,11 @@ test_snow3g_encryption_oop(const struct snow3g_test_data *tdata)
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
+		process_sym_raw_dp_op(ts_params->valid_devs[0], 0,
+			ut_params->op, 1, 0, 1, tdata->cipher_iv.len);
+	else
+		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 						ut_params->op);
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 
@@ -4640,9 +4652,6 @@ test_snow3g_encryption_oop_sgl(const struct snow3g_test_data *tdata)
 			&cap_idx) == NULL)
 		return -ENOTSUP;
 
-	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
-		return -ENOTSUP;
-
 	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
 
 	uint64_t feat_flags = dev_info.feature_flags;
@@ -4651,6 +4660,12 @@ test_snow3g_encryption_oop_sgl(const struct snow3g_test_data *tdata)
 		printf("Device doesn't support out-of-place scatter-gather "
 				"in both input and output mbufs. "
 				"Test Skipped.\n");
+		return -ENOTSUP;
+	}
+
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device doesn't support RAW data-path APIs.\n");
 		return -ENOTSUP;
 	}
 
@@ -4688,7 +4703,11 @@ test_snow3g_encryption_oop_sgl(const struct snow3g_test_data *tdata)
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
+		process_sym_raw_dp_op(ts_params->valid_devs[0], 0,
+			ut_params->op, 1, 0, 1, tdata->cipher_iv.len);
+	else
+		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 						ut_params->op);
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 
@@ -4743,6 +4762,16 @@ test_snow3g_encryption_offset_oop(const struct snow3g_test_data *tdata)
 	uint32_t plaintext_pad_len;
 	uint8_t extra_offset = 4;
 	uint8_t *expected_ciphertext_shifted;
+	struct rte_cryptodev_info dev_info;
+
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+	uint64_t feat_flags = dev_info.feature_flags;
+
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device doesn't support RAW data-path APIs.\n");
+		return -ENOTSUP;
+	}
 
 	/* QAT PMD supports byte-aligned data only */
 	if (gbl_driver_id == rte_cryptodev_driver_id_get(
@@ -4755,9 +4784,6 @@ test_snow3g_encryption_offset_oop(const struct snow3g_test_data *tdata)
 	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
 	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
 			&cap_idx) == NULL)
-		return -ENOTSUP;
-
-	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
 		return -ENOTSUP;
 
 	/* Create SNOW 3G session */
@@ -4807,7 +4833,11 @@ test_snow3g_encryption_offset_oop(const struct snow3g_test_data *tdata)
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
+		process_sym_raw_dp_op(ts_params->valid_devs[0], 0,
+			ut_params->op, 1, 0, 1, tdata->cipher_iv.len);
+	else
+		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 						ut_params->op);
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 
@@ -4935,16 +4965,22 @@ static int test_snow3g_decryption_oop(const struct snow3g_test_data *tdata)
 	uint8_t *plaintext, *ciphertext;
 	unsigned ciphertext_pad_len;
 	unsigned ciphertext_len;
+	struct rte_cryptodev_info dev_info;
 
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+	uint64_t feat_flags = dev_info.feature_flags;
+
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device doesn't support RAW data-path APIs.\n");
+		return -ENOTSUP;
+	}
 	/* Verify the capabilities */
 	struct rte_cryptodev_sym_capability_idx cap_idx;
 	cap_idx.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
 	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
 	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
 			&cap_idx) == NULL)
-		return -ENOTSUP;
-
-	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
 		return -ENOTSUP;
 
 	/* Create SNOW 3G session */
@@ -4990,7 +5026,11 @@ static int test_snow3g_decryption_oop(const struct snow3g_test_data *tdata)
 	if (retval < 0)
 		return retval;
 
-	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+	if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
+		process_sym_raw_dp_op(ts_params->valid_devs[0], 0,
+			ut_params->op, 1, 0, 1, tdata->cipher_iv.len);
+	else
+		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 						ut_params->op);
 	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
 	ut_params->obuf = ut_params->op->sym->m_dst;
@@ -13016,9 +13056,12 @@ test_authentication_verify_fail_when_data_corruption(
 		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 			ut_params->op);
 
-	TEST_ASSERT_NULL(ut_params->op, "authentication not failed");
+	if (ut_params->op == NULL)
+		return 0;
+	else if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS)
+		return 0;
 
-	return 0;
+	return -1;
 }
 
 static int
@@ -13176,9 +13219,12 @@ test_authenticated_decryption_fail_when_corruption(
 		ut_params->op = process_crypto_request(ts_params->valid_devs[0],
 			ut_params->op);
 
-	TEST_ASSERT_NULL(ut_params->op, "authentication not failed");
+	if (ut_params->op == NULL)
+		return 0;
+	else if (ut_params->op->status != RTE_CRYPTO_OP_STATUS_SUCCESS)
+		return 0;
 
-	return 0;
+	return -1;
 }
 
 static int
@@ -14692,178 +14738,6 @@ static struct unit_test_suite cryptodev_qat_testsuite  = {
 			test_verify_auth_aes_cmac_cipher_null_test_case_1),
 
 		TEST_CASES_END() /**< NULL terminate unit test array */
-	}
-};
-
-
-static struct unit_test_suite dpaa2_raw_cryptodev_testsuite  = {
-	.suite_name = "DPAA2 Raw Crypto Unit Test Suite",
-	.setup = testsuite_setup,
-	.teardown = testsuite_teardown,
-	.unit_test_cases = {
-		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_cipheronly_dpaa2_sec_all),
-		TEST_CASE_ST(ut_setup, ut_teardown, test_authonly_dpaa2_sec_all),
-		TEST_CASE_ST(ut_setup, ut_teardown, test_AES_chain_dpaa2_sec_all),
-#ifdef RTE_LIBRTE_SECURITY
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_cplane_encap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_cplane_decap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_uplane_encap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_uplane_decap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_SDAP_PROTO_encap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_SDAP_PROTO_decap_all),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_short_mac),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_SGL_in_place_32B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_SGL_oop_32B_128B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_SGL_oop_32B_40B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_PDCP_PROTO_SGL_oop_128B_32B),
-
-#ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
-		/** IPSEC_Lookaside Protocol Encrypt Decrypt */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B),
-
-		/** IPSEC Lookaside Protocol Encrypt Decrypt Out of place **/
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_sha1_64B_oop),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_IPSEC_LOOKASIDE_PROTOCOL_decrypt_aes_sha1_64B_oop),
-
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_IPSEC_LOOKASIDE_PROTOCOL_encrypt_aes_64B),
-#endif
-#endif
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encrypt_SGL_in_place_1500B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encrypt_SGL_out_of_place_400B_400B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encrypt_SGL_out_of_place_1500B_2000B),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encrypt_SGL_out_of_place_400B_1seg),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_7),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_test_case_8),
-
-		/** AES GCM Authenticated Decryption */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_7),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_test_case_8),
-
-		/** AES GCM Authenticated Encryption 192 bits key */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_192_7),
-
-		/** AES GCM Authenticated Decryption 192 bits key */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_192_7),
-
-		/** AES GCM Authenticated Encryption 256 bits key */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_encryption_test_case_256_7),
-
-		/** AES GCM Authenticated Decryption 256 bits key */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_2),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_3),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_4),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_5),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_6),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_auth_decryption_test_case_256_7),
-
-		/** Out of place tests */
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_encryption_oop_test_case_1),
-		TEST_CASE_ST(ut_setup, ut_teardown,
-			test_AES_GCM_authenticated_decryption_oop_test_case_1),
-		TEST_CASES_END()
 	}
 };
 
@@ -17161,7 +17035,7 @@ test_cryptodev_dpaa2_sec_raw_api(void)
 	}
 
 	global_api_test_type = CRYPTODEV_RAW_API_TEST;
-	ret = unit_test_suite_runner(&dpaa2_raw_cryptodev_testsuite);
+	ret = unit_test_suite_runner(&cryptodev_dpaa2_sec_testsuite);
 	global_api_test_type = CRYPTODEV_API_TEST;
 
 	return ret;
