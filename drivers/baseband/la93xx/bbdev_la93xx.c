@@ -614,7 +614,7 @@ get_hugepage_info(struct rte_bbdev *dev)
 
 	priv->mp = rte_mempool_create("bbdev_la93xx_pool",
 			IPC_MAX_DEPTH * IPC_MAX_CHANNEL_COUNT/2,
-			LA93XX_MAX_INTERNAL_BUFFER_SIZE,
+			IPC_MAX_INTERNAL_BUFFER_SIZE,
 			0, 0, NULL, NULL, NULL, NULL,
 			SOCKET_ID_ANY, 0);
 	if (!priv->mp) {
