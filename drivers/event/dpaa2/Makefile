@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2017,2019 NXP
+# Copyright 2017,2019,2021 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -37,8 +37,8 @@ CFLAGS += -DALLOW_EXPERIMENTAL_API
 #
 # all source are stored in SRCS-y
 #
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_hw_dpcon.c
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_eventdev.c
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA2_EVENTDEV) += dpaa2_eventdev_selftest.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_EVENTDEV_PMD) += dpaa2_hw_dpcon.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_EVENTDEV_PMD) += dpaa2_eventdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_EVENTDEV_PMD) += dpaa2_eventdev_selftest.c
 
 include $(RTE_SDK)/mk/rte.lib.mk

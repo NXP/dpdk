@@ -49,7 +49,7 @@ Config File Options
 The following options can be modified in the ``config`` file.
 Please note that enabling debugging options may affect system performance.
 
-- ``CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV`` (default ``y``)
+- ``CONFIG_RTE_LIBRTE_DPAA_EVENTDEV_PMD`` (default ``y``)
 
   Toggle compilation of the ``librte_pmd_dpaa_event`` driver.
 
