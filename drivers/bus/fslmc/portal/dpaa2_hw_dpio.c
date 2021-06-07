@@ -220,8 +220,6 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	}
 	dpio_dev->epoll_fd = dpio_epoll_fd;
 
-	dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
-
 	return 0;
 }
 
@@ -280,15 +278,19 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		tid = rte_gettid();
 		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
 		ret = system(command);
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
 		if (ret < 0)
 			DPAA2_BUS_WARN("Failed to change thread priority");
 		else
 			DPAA2_BUS_DEBUG(" %s command is executed", command);
 
-		/* Above would only work when the CPU governors are configured
-		 * for performance mode; It is assumed that this is taken
-		 * care of by the application.
-		 */
+#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
+		dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id,
+							  cpu_id);
+#endif
 	}
 
 	return 0;
