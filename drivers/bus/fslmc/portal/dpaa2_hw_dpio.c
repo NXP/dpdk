@@ -183,7 +183,7 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 	fclose(file);
 }
 
-static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
+static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 {
 	struct epoll_event epoll_ev;
 	int eventfd, dpio_epoll_fd, ret;
@@ -229,7 +229,7 @@ static void dpaa2_dpio_intr_deinit(struct dpaa2_dpio_dev *dpio_dev)
 
 	ret = rte_dpaa2_intr_disable(&dpio_dev->intr_handle, 0);
 	if (ret)
-		DPAA2_BUS_ERR("DPIO interrupt disable failed");
+		DPAA2_BUS_DEBUG("DPIO interrupt disable failed");
 
 	close(dpio_dev->epoll_fd);
 }
@@ -268,7 +268,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 	}
 
 #ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
-	if (dpaa2_dpio_intr_init(dpio_dev, cpu_id)) {
+	if (dpaa2_dpio_intr_init(dpio_dev)) {
 		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
 		return -1;
 	}
