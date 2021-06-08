@@ -116,6 +116,7 @@ int dpdmai_create(struct fsl_mc_io *mc_io,
 	cmd_params->num_queues = cfg->num_queues;
 	cmd_params->priorities[0] = cfg->priorities[0];
 	cmd_params->priorities[1] = cfg->priorities[1];
+	cmd_params->options = cpu_to_le32(cfg->adv.options);
 
 	/* send command to mc*/
 	err = mc_send_command(mc_io, &cmd);
@@ -267,6 +268,238 @@ int dpdmai_reset(struct fsl_mc_io *mc_io,
 }
 
 /**
+ * dpdmai_get_irq_enable() - Get overall interrupt state
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @en:		Returned Interrupt state - enable = 1, disable = 0
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_get_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t *en)
+{
+	struct dpdmai_cmd_get_irq_enable *cmd_params;
+	struct dpdmai_rsp_get_irq_enable *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_IRQ_ENABLE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_get_irq_enable *)cmd.params;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmai_rsp_get_irq_enable *)cmd.params;
+	*en = rsp_params->enable_state;
+
+	return 0;
+}
+
+/**
+ * dpdmai_set_irq_enable() - Set overall interrupt state.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @en:		Interrupt state - enable = 1, disable = 0
+ *
+ * Allows GPP software to control when interrupts are generated.
+ * Each interrupt can have up to 32 causes.  The enable/disable control's the
+ * overall interrupt state. if the interrupt is disabled no causes will cause
+ * an interrupt
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_set_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t en)
+{
+	struct dpdmai_cmd_set_irq_enable *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_SET_IRQ_ENABLE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_set_irq_enable *)cmd.params;
+	cmd_params->enable_state = en;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmai_get_irq_mask() - Get interrupt mask.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @mask:	Returned event mask to trigger interrupt
+ *
+ * Every interrupt can have up to 32 causes and the interrupt model supports
+ * masking/unmasking each cause independently
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_get_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t *mask)
+{
+	struct dpdmai_cmd_get_irq_mask *cmd_params;
+	struct dpdmai_rsp_get_irq_mask *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_IRQ_MASK,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_get_irq_mask *)cmd.params;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmai_rsp_get_irq_mask *)cmd.params;
+	*mask = le32_to_cpu(rsp_params->mask);
+
+	return 0;
+}
+
+/**
+ * dpdmai_set_irq_mask() - Set interrupt mask.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @mask:	Event mask to trigger interrupt;
+ *		each bit:
+ *			0 = ignore event
+ *			1 = consider event for asserting IRQ
+ *
+ * Every interrupt can have up to 32 causes and the interrupt model supports
+ * masking/unmasking each cause independently
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_set_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t mask)
+{
+	struct dpdmai_cmd_set_irq_mask *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_SET_IRQ_MASK,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_set_irq_mask *)cmd.params;
+	cmd_params->mask = cpu_to_le32(mask);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmai_get_irq_status() - Get the current status of any pending interrupts
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @status:	Returned interrupts status - one bit per cause:
+ *			0 = no interrupt pending
+ *			1 = interrupt pending
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_get_irq_status(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint32_t *status)
+{
+	struct dpdmai_cmd_get_irq_status *cmd_params;
+	struct dpdmai_rsp_get_irq_status *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_IRQ_STATUS,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_get_irq_status *)cmd.params;
+	cmd_params->status = cpu_to_le32(*status);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmai_rsp_get_irq_status *)cmd.params;
+	*status = le32_to_cpu(rsp_params->status);
+
+	return 0;
+}
+
+/**
+ * dpdmai_clear_irq_status() - Clear a pending interrupt's status
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @irq_index:	The interrupt index to configure
+ * @status:	Bits to clear (W1C) - one bit per cause:
+ *			0 = don't change
+ *			1 = clear status bit
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_clear_irq_status(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t irq_index,
+			    uint32_t status)
+{
+	struct dpdmai_cmd_clear_irq_status *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_CLEAR_IRQ_STATUS,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_clear_irq_status *)cmd.params;
+	cmd_params->status = cpu_to_le32(status);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
  * dpdmai_get_attributes() - Retrieve DPDMAI attributes.
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
@@ -299,6 +532,7 @@ int dpdmai_get_attributes(struct fsl_mc_io *mc_io,
 	attr->id = le32_to_cpu(rsp_params->id);
 	attr->num_of_priorities = rsp_params->num_of_priorities;
 	attr->num_of_queues = rsp_params->num_of_queues;
+	attr->options = le32_to_cpu(rsp_params->options);
 
 	return 0;
 }
@@ -438,6 +672,172 @@ int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 	/* retrieve response parameters */
 	rsp_params = (struct dpdmai_rsp_get_tx_queue *)cmd.params;
 	attr->fqid = le32_to_cpu(rsp_params->fqid);
+
+	return 0;
+}
+
+/**
+ * dpdmai_set_rx_congestion_notification() - Set Rx congestion notification configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @priority:	Select the queue priority relative to number of
+ *		priorities configured at DPDMAI creation
+ * @cfg: congestion notification configuration
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_set_rx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg)
+{
+	struct dpdmai_cmd_set_cgn *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_SET_RX_CONGESTION_NOTIFICATION,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_set_cgn *)cmd.params;
+	cmd_params->priority = priority;
+	dpdmai_set_field(cmd_params->units, CG_UNITS, cfg->units);
+	cmd_params->notification_mode = cpu_to_le16(cfg->notification_mode);
+	cmd_params->threshold_entry = cpu_to_le32(cfg->threshold_entry);
+	cmd_params->threshold_exit = cpu_to_le32(cfg->threshold_exit);
+	cmd_params->message_ctx = cpu_to_le64(cfg->message_ctx);
+	cmd_params->message_iova = cpu_to_le64(cfg->message_iova);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmai_set_tx_congestion_notification() - Set Tx congestion notification configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @priority:	Select the queue priority relative to number of
+ *		priorities configured at DPDMAI creation
+ * @cfg: congestion notification configuration
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_set_tx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg)
+{
+	struct dpdmai_cmd_set_cgn *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_SET_TX_CONGESTION_NOTIFICATION,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_set_cgn *)cmd.params;
+	cmd_params->priority = priority;
+	dpdmai_set_field(cmd_params->units, CG_UNITS, cfg->units);
+	cmd_params->notification_mode = cpu_to_le16(cfg->notification_mode);
+	cmd_params->threshold_entry = cpu_to_le32(cfg->threshold_entry);
+	cmd_params->threshold_exit = cpu_to_le32(cfg->threshold_exit);
+	cmd_params->message_ctx = cpu_to_le64(cfg->message_ctx);
+	cmd_params->message_iova = cpu_to_le64(cfg->message_iova);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmai_get_rx_congestion_notification() - Get Rx congestion notification configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @priority:	Specify the desired queue priority relative to number of
+ *		priorities configured at DPDMAI creation
+ * @cfg: pointer to receive congestion notification configuration
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_get_rx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg)
+{
+	struct dpdmai_cmd_get_cgn *cmd_params;
+	struct dpdmai_rsp_get_cgn *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_RX_CONGESTION_NOTIFICATION,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_get_cgn *)cmd.params;
+	cmd_params->priority = priority;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmai_rsp_get_cgn *)cmd.params;
+	cfg->units = dpdmai_get_field(rsp_params->units, CG_UNITS);
+	cfg->notification_mode = le16_to_cpu(rsp_params->notification_mode);
+	cfg->threshold_entry = le32_to_cpu(rsp_params->threshold_entry);
+	cfg->threshold_exit = le32_to_cpu(rsp_params->threshold_exit);
+	cfg->message_ctx = le64_to_cpu(rsp_params->message_ctx);
+	cfg->message_iova = le64_to_cpu(rsp_params->message_iova);
+
+	return 0;
+}
+
+/**
+ * dpdmai_get_tx_congestion_notification() - Get Tx congestion notification configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMAI object
+ * @priority:	Specify the desired queue priority relative to number of
+ *		priorities configured at DPDMAI creation
+ * @cfg: pointer to receive congestion notification configuration
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmai_get_tx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg)
+{
+	struct dpdmai_cmd_get_cgn *cmd_params;
+	struct dpdmai_rsp_get_cgn *rsp_params;
+	struct mc_command cmd = { 0 };
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMAI_CMDID_GET_TX_CONGESTION_NOTIFICATION,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmai_cmd_get_cgn *)cmd.params;
+	cmd_params->priority = priority;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmai_rsp_get_cgn *)cmd.params;
+	cfg->units = dpdmai_get_field(rsp_params->units, CG_UNITS);
+	cfg->notification_mode = le16_to_cpu(rsp_params->notification_mode);
+	cfg->threshold_entry = le32_to_cpu(rsp_params->threshold_entry);
+	cfg->threshold_exit = le32_to_cpu(rsp_params->threshold_exit);
+	cfg->message_ctx = le64_to_cpu(rsp_params->message_ctx);
+	cfg->message_iova = le64_to_cpu(rsp_params->message_iova);
 
 	return 0;
 }

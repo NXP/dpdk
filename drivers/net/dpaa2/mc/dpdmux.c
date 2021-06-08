@@ -362,6 +362,238 @@ int dpdmux_get_resetable(struct fsl_mc_io *mc_io,
 }
 
 /**
+ * dpdmux_set_irq_enable() - Set overall interrupt state.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @en:		Interrupt state - enable = 1, disable = 0
+ *
+ * Allows GPP software to control when interrupts are generated.
+ * Each interrupt can have up to 32 causes.  The enable/disable control's the
+ * overall interrupt state. if the interrupt is disabled no causes will cause
+ * an interrupt.
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_set_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t en)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_set_irq_enable *cmd_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_SET_IRQ_ENABLE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_set_irq_enable *)cmd.params;
+	cmd_params->enable = en;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmux_get_irq_enable() - Get overall interrupt state.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @en:		Returned interrupt state - enable = 1, disable = 0
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_get_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t *en)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_get_irq_enable *cmd_params;
+	struct dpdmux_rsp_get_irq_enable *rsp_params;
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_GET_IRQ_ENABLE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_get_irq_enable *)cmd.params;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmux_rsp_get_irq_enable *)cmd.params;
+	*en = rsp_params->enable;
+
+	return 0;
+}
+
+/**
+ * dpdmux_set_irq_mask() - Set interrupt mask.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @mask:	event mask to trigger interrupt;
+ *		each bit:
+ *			0 = ignore event
+ *			1 = consider event for asserting IRQ
+ *
+ * Every interrupt can have up to 32 causes and the interrupt model supports
+ * masking/unmasking each cause independently
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_set_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t mask)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_set_irq_mask *cmd_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_SET_IRQ_MASK,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_set_irq_mask *)cmd.params;
+	cmd_params->mask = cpu_to_le32(mask);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmux_get_irq_mask() - Get interrupt mask.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @mask:	Returned event mask to trigger interrupt
+ *
+ * Every interrupt can have up to 32 causes and the interrupt model supports
+ * masking/unmasking each cause independently
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_get_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t *mask)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_get_irq_mask *cmd_params;
+	struct dpdmux_rsp_get_irq_mask *rsp_params;
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_GET_IRQ_MASK,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_get_irq_mask *)cmd.params;
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmux_rsp_get_irq_mask *)cmd.params;
+	*mask = le32_to_cpu(rsp_params->mask);
+
+	return 0;
+}
+
+/**
+ * dpdmux_get_irq_status() - Get the current status of any pending interrupts.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @status:	Returned interrupts status - one bit per cause:
+ *			0 = no interrupt pending
+ *			1 = interrupt pending
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_get_irq_status(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint32_t *status)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_get_irq_status *cmd_params;
+	struct dpdmux_rsp_get_irq_status *rsp_params;
+	int err;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_GET_IRQ_STATUS,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_get_irq_status *)cmd.params;
+	cmd_params->status = cpu_to_le32(*status);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmux_rsp_get_irq_status *)cmd.params;
+	*status = le32_to_cpu(rsp_params->status);
+
+	return 0;
+}
+
+/**
+ * dpdmux_clear_irq_status() - Clear a pending interrupt's status
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @irq_index:	The interrupt index to configure
+ * @status:	bits to clear (W1C) - one bit per cause:
+ *			0 = don't change
+ *			1 = clear status bit
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_clear_irq_status(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t irq_index,
+			    uint32_t status)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_clear_irq_status *cmd_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_CLEAR_IRQ_STATUS,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_clear_irq_status *)cmd.params;
+	cmd_params->status = cpu_to_le32(status);
+	cmd_params->irq_index = irq_index;
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
  * dpdmux_get_attributes() - Retrieve DPDMUX attributes
  * @mc_io:	Pointer to MC portal's I/O object
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
@@ -470,6 +702,11 @@ int dpdmux_if_disable(struct fsl_mc_io *mc_io,
  * will be updated with the minimum value of the mfls of the connected
  * dpnis and the actual value of dmux mfl.
  *
+ * If dpdmux object is created using DPDMUX_OPT_AUTO_MAX_FRAME_LEN and maximum
+ * frame length is changed for a dpni connected to dpdmux interface the change
+ * is propagated thru dpdmux interfaces and will overwrite the value set using
+ * this API.
+ *
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpdmux_set_max_frame_length(struct fsl_mc_io *mc_io,
@@ -489,6 +726,48 @@ int dpdmux_set_max_frame_length(struct fsl_mc_io *mc_io,
 
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpdmux_get_max_frame_length() - Return the maximum frame length for DPDMUX interface
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:		Token of DPDMUX object
+ * @if_id:		Interface id
+ * @max_frame_length:	maximum frame length
+ *
+ * When dpdmux object is in VEPA mode this function will ignore if_id parameter and will
+ * return maximum frame length for uplink interface (if_id==0).
+ *
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpdmux_get_max_frame_length(struct fsl_mc_io *mc_io,
+				uint32_t cmd_flags,
+				uint16_t token,
+				uint16_t if_id,
+				uint16_t *max_frame_length)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_get_max_frame_len *cmd_params;
+	struct dpdmux_rsp_get_max_frame_len *rsp_params;
+	int err = 0;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_GET_MAX_FRAME_LENGTH,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpdmux_cmd_get_max_frame_len *)cmd.params;
+	cmd_params->if_id = cpu_to_le16(if_id);
+
+	err = mc_send_command(mc_io, &cmd);
+	if( err )
+		return err;
+
+	rsp_params = (struct dpdmux_rsp_get_max_frame_len *)cmd.params;
+	*max_frame_length = le16_to_cpu(rsp_params->max_len);
+
+	/* send command to mc*/
+	return err;
 }
 
 /**
@@ -1012,6 +1291,127 @@ int dpdmux_get_api_version(struct fsl_mc_io *mc_io,
 
 	return 0;
 }
+
+/**
+ * dpdmux_if_set_taildrop() - enable taildrop for egress interface queues.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @if_id:	Interface Identifier
+ * @cfg: Taildrop configuration
+ */
+int dpdmux_if_set_taildrop(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint16_t if_id, struct dpdmux_taildrop_cfg *cfg)
+{
+	struct mc_command cmd = { 0 };
+	struct dpdmux_cmd_set_taildrop *cmd_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_IF_SET_TAILDROP,
+			cmd_flags,
+			token);
+	cmd_params = (struct dpdmux_cmd_set_taildrop *)cmd.params;
+	cmd_params->if_id		= cpu_to_le16(if_id);
+	cmd_params->units		= cfg->units;
+	cmd_params->threshold	= cpu_to_le32(cfg->threshold);
+	dpdmux_set_field(cmd_params->oal_en, ENABLE, (!!cfg->enable));
+
+	return mc_send_command(mc_io, &cmd);;
+}
+
+/**
+ * dpdmux_if_get_taildrop() - get current taildrop configuration.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPDMUX object
+ * @if_id:	Interface Identifier
+ * @cfg: Taildrop configuration
+ */
+int dpdmux_if_get_taildrop(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint16_t if_id, struct dpdmux_taildrop_cfg *cfg)
+{
+	struct mc_command cmd = {0};
+	struct dpdmux_cmd_get_taildrop *cmd_params;
+	struct dpdmux_rsp_get_taildrop *rsp_params;
+	int err = 0;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_IF_GET_TAILDROP,
+			cmd_flags,
+			token);
+	cmd_params = (struct dpdmux_cmd_get_taildrop *)cmd.params;
+	cmd_params->if_id	= cpu_to_le16(if_id);
+
+	err = mc_send_command(mc_io, &cmd);
+	if( err )
+		return err;
+
+	/* retrieve response parameters */
+	rsp_params = (struct dpdmux_rsp_get_taildrop *)cmd.params;
+	cfg->threshold = le32_to_cpu(rsp_params->threshold);
+	cfg->units = rsp_params->units;
+	cfg->enable = dpdmux_get_field(rsp_params->oal_en, ENABLE);
+
+	return err;
+}
+
+/**
+ * dpdmux_dump_table() - Dump the content of table_type table into memory.
+ * @mc_io: Pointer to MC portal's I/O object
+ * @cmd_flags: Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token: Token of DPSW object
+ * @table_type: The type of the table to dump
+ * 	- DPDMUX_DMAT_TABLE
+ *	- DPDMUX_MISS_TABLE
+ *	- DPDMUX_PRUNE_TABLE
+ * @table_index: The index of the table to dump in case of more than one table
+ * 	if table_type == DPDMUX_DMAT_TABLE
+ * 		- DPDMUX_HMAP_UNICAST
+ * 		- DPDMUX_HMAP_MULTICAST
+ * 	else 0
+ * @iova_addr: The snapshot will be stored in this variable as an header of struct dump_table_header
+ *             followed by an array of struct dump_table_entry
+ * @iova_size: Memory size allocated for iova_addr
+ * @num_entries: Number of entries written in iova_addr
+ *
+ * Return: Completion status. '0' on Success; Error code otherwise.
+ *
+ * The memory allocated at iova_addr must be zeroed before command execution.
+ * If the table content exceeds the memory size provided the dump will be truncated.
+ */
+int dpdmux_dump_table(struct fsl_mc_io *mc_io,
+			 uint32_t cmd_flags,
+			 uint16_t token,
+			 uint16_t table_type,
+			 uint16_t table_index,
+			 uint64_t iova_addr,
+			 uint32_t iova_size,
+			 uint16_t *num_entries)
+{
+	struct mc_command cmd = { 0 };
+	int err;
+	struct dpdmux_cmd_dump_table *cmd_params;
+	struct dpdmux_rsp_dump_table *rsp_params;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPDMUX_CMDID_DUMP_TABLE, cmd_flags, token);
+	cmd_params = (struct dpdmux_cmd_dump_table *)cmd.params;
+	cmd_params->table_type = cpu_to_le16(table_type);
+	cmd_params->table_index = cpu_to_le16(table_index);
+	cmd_params->iova_addr = cpu_to_le64(iova_addr);
+	cmd_params->iova_size = cpu_to_le32(iova_size);
+
+	/* send command to mc*/
+	err = mc_send_command(mc_io, &cmd);
+	if (err)
+		return err;
+
+	rsp_params = (struct dpdmux_rsp_dump_table *)cmd.params;
+	*num_entries = le16_to_cpu(rsp_params->num_entries);
+
+	return 0;
+}
+
 
 /**
  * dpdmux_if_set_errors_behavior() - Set errors behavior
