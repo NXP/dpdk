@@ -967,12 +967,14 @@ struct dpni_tx_schedule_cfg {
 /**
  * struct dpni_tx_priorities_cfg - Structure representing transmission
  *					priorities for DPNI TCs
+ * @channel_idx: channel to perform the configuration
  * @tc_sched:	An array of traffic-classes
  * @prio_group_A: Priority of group A
  * @prio_group_B: Priority of group B
  * @separate_groups: Treat A and B groups as separate
  */
 struct dpni_tx_priorities_cfg {
+	uint8_t channel_idx;
 	struct dpni_tx_schedule_cfg tc_sched[DPNI_MAX_TC];
 	uint32_t prio_group_A;
 	uint32_t prio_group_B;
@@ -1204,14 +1206,14 @@ int dpni_set_early_drop(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			enum dpni_queue_type qtype,
-			uint8_t tc_id,
+			uint16_t param,
 			uint64_t early_drop_iova);
 
 int dpni_get_early_drop(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			enum dpni_queue_type qtype,
-			uint8_t tc_id,
+			uint16_t param,
 			uint64_t early_drop_iova);
 
 /**
@@ -1692,7 +1694,7 @@ int dpni_set_taildrop(struct fsl_mc_io *mc_io,
 		      uint16_t token,
 		      enum dpni_congestion_point cg_point,
 		      enum dpni_queue_type q_type,
-		      uint8_t tc,
+		      uint16_t param,
 		      uint8_t q_index,
 		      struct dpni_taildrop *taildrop);
 

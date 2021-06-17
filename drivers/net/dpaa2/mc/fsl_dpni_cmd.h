@@ -8,8 +8,8 @@
 #define _FSL_DPNI_CMD_H
 
 /* DPNI Version */
-#define DPNI_VER_MAJOR				7
-#define DPNI_VER_MINOR				17
+#define DPNI_VER_MAJOR				8
+#define DPNI_VER_MINOR				0
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -85,7 +85,7 @@
 #define DPNI_CMDID_REMOVE_FS_ENT		DPNI_CMD(0x245)
 #define DPNI_CMDID_CLR_FS_ENT			DPNI_CMD(0x246)
 
-#define DPNI_CMDID_SET_TX_PRIORITIES		DPNI_CMD_V2(0x250)
+#define DPNI_CMDID_SET_TX_PRIORITIES		DPNI_CMD_V3(0x250)
 #define DPNI_CMDID_GET_RX_TC_POLICING		DPNI_CMD(0x251)
 
 #define DPNI_CMDID_GET_STATISTICS		DPNI_CMD_V4(0x25D)
@@ -93,7 +93,7 @@
 #define DPNI_CMDID_GET_QUEUE			DPNI_CMD_V3(0x25F)
 #define DPNI_CMDID_SET_QUEUE			DPNI_CMD_V3(0x260)
 #define DPNI_CMDID_GET_TAILDROP			DPNI_CMD_V2(0x261)
-#define DPNI_CMDID_SET_TAILDROP			DPNI_CMD_V2(0x262)
+#define DPNI_CMDID_SET_TAILDROP			DPNI_CMD_V3(0x262)
 
 #define DPNI_CMDID_GET_PORT_MAC_ADDR		DPNI_CMD(0x263)
 
@@ -102,8 +102,8 @@
 
 #define DPNI_CMDID_SET_CONGESTION_NOTIFICATION	DPNI_CMD_V3(0x267)
 #define DPNI_CMDID_GET_CONGESTION_NOTIFICATION	DPNI_CMD_V3(0x268)
-#define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD_V2(0x269)
-#define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V2(0x26A)
+#define DPNI_CMDID_SET_EARLY_DROP		DPNI_CMD_V3(0x269)
+#define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V3(0x26A)
 #define DPNI_CMDID_GET_OFFLOAD			DPNI_CMD(0x26B)
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD(0x26C)
 #define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
@@ -482,7 +482,8 @@ struct dpni_cmd_set_tx_priorities {
 	uint16_t flags;
 	uint8_t prio_group_A;
 	uint8_t prio_group_B;
-	uint32_t pad0;
+	uint8_t channel_idx;
+	uint8_t pad0[3];
 	uint8_t modes[4];
 	uint32_t pad1;
 	uint64_t pad2;
@@ -701,7 +702,8 @@ struct dpni_early_drop {
 struct dpni_cmd_early_drop {
 	uint8_t qtype;
 	uint8_t tc;
-	uint8_t pad[6];
+	uint8_t channel_id;
+	uint8_t pad[5];
 	uint64_t early_drop_iova;
 };
 
@@ -741,7 +743,8 @@ struct dpni_cmd_set_taildrop {
 	uint8_t qtype;
 	uint8_t tc;
 	uint8_t index;
-	uint32_t pad0;
+	uint8_t channel_id;
+	uint8_t pad0[3];
 	/* cmd word 1 */
 	/* from LSB: enable:1 oal_lo:7 */
 	uint8_t enable_oal_lo;

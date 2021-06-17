@@ -1682,6 +1682,8 @@ int dpni_set_tx_priorities(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  token);
 	cmd_params = (struct dpni_cmd_set_tx_priorities *)cmd.params;
+	cmd_params->channel_idx =
+			cfg->channel_idx;
 	dpni_set_field(cmd_params->flags,
 				SEPARATE_GRP,
 				cfg->separate_groups);
@@ -2224,7 +2226,11 @@ void dpni_extract_early_drop(struct dpni_early_drop_cfg *cfg,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @qtype:	Type of queue - only Rx and Tx types are supported
- * @tc_id:	Traffic class selection (0-7)
+ * @param:	Traffic class and channel ID.
+ * 			MSB - channel id; used only for DPNI_QUEUE_TX and DPNI_QUEUE_TX_CONFIRM, ignored for the rest
+ * 			LSB - traffic class
+ * 			Use macro DPNI_BUILD_PARAM() to build correct value.
+ * 			If dpni uses a single channel (uses only channel zero) the parameter can receive traffic class directly.
  * @early_drop_iova:  I/O virtual address of 256 bytes DMA-able memory filled
  *	with the early-drop configuration by calling dpni_prepare_early_drop()
  *
@@ -2237,7 +2243,7 @@ int dpni_set_early_drop(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			enum dpni_queue_type qtype,
-			uint8_t tc_id,
+			uint16_t param,
 			uint64_t early_drop_iova)
 {
 	struct dpni_cmd_early_drop *cmd_params;
@@ -2249,7 +2255,8 @@ int dpni_set_early_drop(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpni_cmd_early_drop *)cmd.params;
 	cmd_params->qtype = qtype;
-	cmd_params->tc = tc_id;
+	cmd_params->tc = (uint8_t)(param & 0xff);
+	cmd_params->channel_id = (uint8_t)((param >> 8) & 0xff);
 	cmd_params->early_drop_iova = cpu_to_le64(early_drop_iova);
 
 	/* send command to mc*/
@@ -2262,7 +2269,11 @@ int dpni_set_early_drop(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @qtype:	Type of queue - only Rx and Tx types are supported
- * @tc_id:	Traffic class selection (0-7)
+ * @param:	Traffic class and channel ID.
+ * 			MSB - channel id; used only for DPNI_QUEUE_TX and DPNI_QUEUE_TX_CONFIRM, ignored for the rest
+ * 			LSB - traffic class
+ * 			Use macro DPNI_BUILD_PARAM() to build correct value.
+ * 			If dpni uses a single channel (uses only channel zero) the parameter can receive traffic class directly.
  * @early_drop_iova:  I/O virtual address of 256 bytes DMA-able memory
  *
  * warning: After calling this function, call dpni_extract_early_drop() to
@@ -2274,7 +2285,7 @@ int dpni_get_early_drop(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
 			uint16_t token,
 			enum dpni_queue_type qtype,
-			uint8_t tc_id,
+			uint16_t param,
 			uint64_t early_drop_iova)
 {
 	struct dpni_cmd_early_drop *cmd_params;
@@ -2286,7 +2297,8 @@ int dpni_get_early_drop(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpni_cmd_early_drop *)cmd.params;
 	cmd_params->qtype = qtype;
-	cmd_params->tc = tc_id;
+	cmd_params->tc = (uint8_t)(param & 0xff);
+	cmd_params->channel_id = (uint8_t)((param >> 8) & 0xff);
 	cmd_params->early_drop_iova = cpu_to_le64(early_drop_iova);
 
 	/* send command to mc*/
@@ -2656,7 +2668,7 @@ int dpni_set_taildrop(struct fsl_mc_io *mc_io,
 		      uint16_t token,
 		      enum dpni_congestion_point cg_point,
 		      enum dpni_queue_type qtype,
-		      uint8_t tc,
+		      uint16_t param,
 		      uint8_t index,
 		      struct dpni_taildrop *taildrop)
 {
@@ -2670,7 +2682,8 @@ int dpni_set_taildrop(struct fsl_mc_io *mc_io,
 	cmd_params = (struct dpni_cmd_set_taildrop *)cmd.params;
 	cmd_params->congestion_point = cg_point;
 	cmd_params->qtype = qtype;
-	cmd_params->tc = tc;
+	cmd_params->tc = (uint8_t)(param & 0xff);
+	cmd_params->channel_id = (uint8_t)((param >> 8) & 0xff);
 	cmd_params->index = index;
 	cmd_params->units = taildrop->units;
 	cmd_params->threshold = cpu_to_le32(taildrop->threshold);
