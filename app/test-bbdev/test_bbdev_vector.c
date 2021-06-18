@@ -1035,8 +1035,14 @@ parse_polar_decoder_params(const char *key_token, char *token,
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "sd_cd_demux")) {
 		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
-		if ((uint8_t) strtoul(token, &err, 0) == 1)
-			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX(polar_dec);
+		ret = (uint8_t) strtoul(token, &err, 0);
+		if (ret == 1) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_ACK(polar_dec);
+		} else if (ret == 2) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI1(polar_dec);
+		} else if (ret == 3) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI2(polar_dec);
+		}
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
 	} else if (!strcmp(key_token, "FZ_LUT")) {
 		uint32_t data_length = 0;

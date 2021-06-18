@@ -3507,6 +3507,9 @@ throughput_test(struct active_device *ad,
 		used_cores++;
 	}
 
+	rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+	rte_atomic16_set(&se_ce_mux_sync_var, 0);
+
 	RTE_LCORE_FOREACH(lcore_id) {
 		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_START);
 	}

@@ -62,14 +62,26 @@ struct rte_pmd_la12xx_op {
 
 #define RTE_PMD_LA12xx_SET_POLAR_DEC(p) \
 	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD;
-#define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX(p) \
+#define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_ACK(p) \
 	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD_DCM_ACK;
+#define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI1(p) \
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD_DCM_CS1;
+#define RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI2(p) \
+	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CD_DCM_CS2;
 #define RTE_PMD_LA12xx_SET_POLAR_ENC(p) \
 	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CE;
 #define RTE_PMD_LA12xx_SET_POLAR_ENC_MUX(p) \
 	(p)->polar_params.feca_obj.job_type =  FECA_JOB_CE_DCM;
-#define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(p) \
+#define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(p) \
 	((p)->polar_params.feca_obj.job_type == FECA_JOB_CD_DCM_ACK)
+#define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(p) \
+	((p)->polar_params.feca_obj.job_type == FECA_JOB_CD_DCM_CS1)
+#define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI2(p) \
+	((p)->polar_params.feca_obj.job_type == FECA_JOB_CD_DCM_CS2)
+#define RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(p) \
+	((RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(p)) || \
+	(RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(p)) || \
+	(RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI2(p)))
 #define RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(p) \
 	((p)->polar_params.feca_obj.job_type == FECA_JOB_CE_DCM)
 
