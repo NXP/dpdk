@@ -1000,6 +1000,9 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 	buf_prefix_cont.passTimeStamp = true;
 	buf_prefix_cont.passHashResult = false;
 	buf_prefix_cont.passAllOtherPCDInfo = false;
+	buf_prefix_cont.manipExtraSpace =
+		RTE_PKTMBUF_HEADROOM - DPAA_MBUF_HW_ANNOTATION;
+
 	ret = FM_VSP_ConfigBufferPrefixContent(dpaa_intf->vsp_handle[vsp_id],
 					       &buf_prefix_cont);
 	if (ret != E_OK) {
