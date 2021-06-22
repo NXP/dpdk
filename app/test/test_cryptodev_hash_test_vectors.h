@@ -833,7 +833,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_GEN,
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_QAT |
-			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 	{
 		.test_descr = "CMAC Digest Verify 12B",
@@ -841,7 +842,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_VERIFY,
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_QAT |
-			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 	{
 		.test_descr = "CMAC Digest 16B",
@@ -849,7 +851,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_GEN,
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_QAT |
-			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 	{
 		.test_descr = "CMAC Digest Verify 16B",
@@ -857,7 +860,8 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_VERIFY,
 		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_MB |
 			BLOCKCIPHER_TEST_TARGET_PMD_QAT |
-			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 	{
 		.test_descr = "NULL algo - auth generate",
