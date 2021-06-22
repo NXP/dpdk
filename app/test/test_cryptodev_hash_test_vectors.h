@@ -891,13 +891,15 @@ static const struct blockcipher_test_case hash_test_cases[] = {
 		.test_descr = "AES-XCBC-MAC Digest 16B",
 		.test_data = &aes_xcbc_mac_test_vector,
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_GEN,
-		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 	{
 		.test_descr = "AES-XCBC-MAC Digest Verify 16B",
 		.test_data = &aes_xcbc_mac_test_vector,
 		.op_mask = BLOCKCIPHER_TEST_OP_AUTH_VERIFY,
-		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC
+		.pmd_mask = BLOCKCIPHER_TEST_TARGET_PMD_DPAA2_SEC |
+			BLOCKCIPHER_TEST_TARGET_PMD_DPAA_SEC
 	},
 
 };
