@@ -249,6 +249,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
 		break;
 	case RTE_BBDEV_OP_RAW:
+		q_priv->la12xx_core_id = BBDEV_LA12XX_RAW_CORE;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Unsupported op type\n");
@@ -346,6 +347,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_raw_queues reached max value");
 			return -1;
 		}
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(BBDEV_LA12XX_RAW_CORE);
 		priv->num_raw_queues++;
 		break;
 	default:
