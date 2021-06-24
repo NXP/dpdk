@@ -100,10 +100,14 @@ parse_values(char *tokens, uint32_t **data, uint32_t *data_length,
 		*data_length = *data_length + (strlen(tok) - strlen("0x"))/2;
 		if (network_order) {
 			/* TODO: Check if 3 byte length is also required */
-			if ((strlen(tok) - strlen("0x"))/2 == 4)
+			if ((strlen(tok) - strlen("0x"))/2 == 4) {
 				values[n_tokens] = rte_cpu_to_be_32(values[n_tokens]);
-			else if ((strlen(tok) - strlen("0x"))/2 == 2)
+			} else if ((strlen(tok) - strlen("0x"))/2 == 3) {
+				values[n_tokens] <<= 8;
+				values[n_tokens] = rte_cpu_to_be_32(values[n_tokens]);
+			} else if ((strlen(tok) - strlen("0x"))/2 == 2) {
 				values[n_tokens] = rte_cpu_to_be_16(values[n_tokens]);
+			}
 		}
 
 		tok = strtok(NULL, VALUE_DELIMITER);

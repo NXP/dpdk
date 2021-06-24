@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2021 NXP
+
+op_type =
+RTE_BBDEV_OP_POLAR_DEC
+
+network_order =
+1
+
+output0 =
+0x2ed25074, 0xfcbab35d, 0xd45367cd, 0x8c4c8000, 0x00
+
+pd_n =
+10
+
+rm_mode =
+0
+
+pc_en =
+0
+
+crc_type =
+2
+
+ip_deint_bypass =
+0
+
+op_deint_bypass =
+1
+
+K =
+131
+
+E =
+1200
+
+crc_rtni =
+0
+
+pc_index0 =
+1
+
+pc_index1 =
+0
+
+pc_index2 =
+416
+
+FZ_LUT =
+0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x80000000,
+0xfc808000, 0x00000000, 0x00000000, 0x00000000, 0x80000000,
+0x00000000, 0x80000000, 0x80000000, 0xfee8e000, 0x00000000,
+0xc0000000, 0xe8000000, 0xffe8e880, 0xe8808000, 0xfffef880,
+0xfffefec0, 0xfffffffe
+
+#CSI1
+sd_cd_demux =
+2
+
+expected_status =
+OK
