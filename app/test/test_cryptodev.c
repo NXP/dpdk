@@ -6700,7 +6700,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_sha1(uint8_t oop)
 
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
-				&sess_conf, ts_params->session_mpool);
+				&sess_conf, ts_params->session_priv_mpool);
 	if (!ut_params->sec_session) {
 		printf("TestCase %s() line %d failed %s: ",
 			__func__, __LINE__, "Failed to allocate session\n");
@@ -6862,7 +6862,7 @@ test_ipsec_lookaside_protocol_decrypt_aes_sha1(uint8_t oop)
 
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
-				&sess_conf, ts_params->session_mpool);
+				&sess_conf, ts_params->session_priv_mpool);
 	if (!ut_params->sec_session) {
 		printf("TestCase %s() line %d failed %s: ",
 			__func__, __LINE__, "Failed to allocate session\n");
@@ -7027,7 +7027,7 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 
 	/* Create security session */
 	ut_params->sec_session = rte_security_session_create(ctx,
-				&sess_conf, ts_params->session_mpool);
+				&sess_conf, ts_params->session_priv_mpool);
 	if (!ut_params->sec_session) {
 		printf("TestCase %s() line %d failed %s: ",
 			__func__, __LINE__, "Failed to allocate session\n");
