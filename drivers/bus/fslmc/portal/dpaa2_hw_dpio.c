@@ -136,7 +136,7 @@ dpaa2_core_cluster_sdest(int cpu_id)
 #define COMMAND_LEN	256
 #define STRING_LEN	28
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
+#ifdef RTE_LIBRTE_DPAA2_EVENTDEV_PMD
 static void
 dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 {
@@ -267,7 +267,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		return -1;
 	}
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
+#ifdef RTE_LIBRTE_DPAA2_EVENTDEV_PMD
 	if (dpaa2_dpio_intr_init(dpio_dev)) {
 		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
 		return -1;
@@ -287,7 +287,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		else
 			DPAA2_BUS_DEBUG(" %s command is executed", command);
 
-#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
+#ifdef RTE_LIBRTE_DPAA2_EVENTDEV_PMD
 		dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id,
 							  cpu_id);
 #endif
@@ -299,7 +299,7 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 static void dpaa2_put_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 {
 	if (dpio_dev) {
-#ifdef RTE_LIBRTE_PMD_DPAA2_EVENTDEV
+#ifdef RTE_LIBRTE_DPAA2_EVENTDEV_PMD
 		dpaa2_dpio_intr_deinit(dpio_dev);
 #endif
 		rte_atomic16_clear(&dpio_dev->ref_count);

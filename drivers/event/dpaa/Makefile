@@ -1,5 +1,5 @@
 #   SPDX-License-Identifier:        BSD-3-Clause
-#   Copyright 2017,2020 NXP
+#   Copyright 2017,2020-2021 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -26,7 +26,7 @@ CFLAGS += -I$(RTE_SDK)/drivers/crypto/dpaa_sec
 EXPORT_MAP := rte_pmd_dpaa_event_version.map
 
 # Interfaces with DPDK
-SRCS-$(CONFIG_RTE_LIBRTE_PMD_DPAA_EVENTDEV) += dpaa_eventdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA_EVENTDEV_PMD) += dpaa_eventdev.c
 
 LDLIBS += -lrte_bus_dpaa
 LDLIBS += -lrte_mempool_dpaa
