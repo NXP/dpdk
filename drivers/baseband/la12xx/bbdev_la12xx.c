@@ -249,7 +249,6 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
 		break;
 	case RTE_BBDEV_OP_RAW:
-		q_priv->la12xx_core_id = BBDEV_LA12XX_RAW_CORE;
 		break;
 	default:
 		BBDEV_LA12XX_PMD_ERR("Unsupported op type\n");
@@ -347,8 +346,6 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_raw_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(BBDEV_LA12XX_RAW_CORE);
 		priv->num_raw_queues++;
 		break;
 	default:
@@ -450,6 +447,11 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	q_priv->bbdev_priv = dev->data->dev_private;
 	q_priv->queue_size = queue_conf->queue_size;
 	q_priv->op_type = queue_conf->op_type;
+	if (queue_conf->raw_queue_conf.modem_core_id >= LA12XX_MAX_CORES) {
+		BBDEV_LA12XX_PMD_ERR("Invalid modem core id: %d",
+				queue_conf->raw_queue_conf.modem_core_id);
+		return -ENOMEM;
+	}
 	q_priv->la12xx_core_id = queue_conf->raw_queue_conf.modem_core_id;
 
 	ch->is_host_to_modem =

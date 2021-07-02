@@ -747,6 +747,8 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	qconf.queue_size = info->drv.default_queue_conf.queue_size;
 	qconf.priority = 0;
 	qconf.deferred_start = 0;
+	qconf.raw_queue_conf.conf_enable = 1;
+	qconf.raw_queue_conf.modem_core_id = 0;
 
 	vector_count = get_vector_count();
 	if (vector_count > nb_queues) {
