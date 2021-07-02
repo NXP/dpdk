@@ -1075,9 +1075,8 @@ static inline void ipc_memcpy(void *dst, void *src, uint32_t len)
 static inline int
 is_bd_ring_full(uint32_t ci, uint32_t pi, uint32_t ring_size)
 {
-	if (((pi + 1) == ci) ||
-		((pi == (ring_size - 1)) && (ci == 0)))
-			return 1; /* Ring is Full */
+	if (((pi + 1) % ring_size) == ci)
+		return 1; /* Ring is Full */
 
 	return 0;
 }
