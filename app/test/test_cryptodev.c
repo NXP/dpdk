@@ -6967,8 +6967,6 @@ test_ipsec_lookaside_protocol_encrypt_aes_null(uint8_t oop)
 	feat_flags = dev_info.feature_flags;
 	/* Out of place support */
 	if (oop) {
-		if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
-			return -ENOTSUP;
 		/*
 		 * For out-op-place we need to alloc another mbuf
 		 */
@@ -9393,21 +9391,18 @@ static int test_pdcp_proto(int i, int oop, enum rte_crypto_cipher_operation opc,
 						  input_vec_len);
 	memcpy(plaintext, input_vec, input_vec_len);
 
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device does not support RAW data-path APIs.\n");
+		return -ENOTSUP;
+	}
 	/* Out of place support */
 	if (oop) {
-		if (global_api_test_type == CRYPTODEV_RAW_API_TEST)
-			return -ENOTSUP;
 		/*
 		 * For out-op-place we need to alloc another mbuf
 		 */
 		ut_params->obuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
 		rte_pktmbuf_append(ut_params->obuf, output_vec_len);
-	} else {
-		if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
-				(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
-			printf("Device does not support RAW data-path APIs.\n");
-			return -ENOTSUP;
-		}
 	}
 
 	/* Set crypto type as IPSEC */
@@ -9574,10 +9569,21 @@ test_pdcp_proto_SGL(int i, int oop,
 	int to_trn_tbl[16];
 	int segs = 1;
 	unsigned int trn_data = 0;
+	struct rte_cryptodev_info dev_info;
+	uint64_t feat_flags;
 	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
 				rte_cryptodev_get_sec_ctx(
 				ts_params->valid_devs[0]);
+	struct rte_mbuf *temp_mbuf;
 
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+	feat_flags = dev_info.feature_flags;
+
+	if ((global_api_test_type == CRYPTODEV_RAW_API_TEST) &&
+			(!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device does not support RAW data-path APIs.\n");
+		return -ENOTSUP;
+        }
 	/* Verify the capabilities */
 	struct rte_security_capability_idx sec_cap_idx;
 
@@ -9761,8 +9767,20 @@ test_pdcp_proto_SGL(int i, int oop,
 		ut_params->op->sym->m_dst = ut_params->obuf;
 
 	/* Process crypto operation */
-	if (process_crypto_request(ts_params->valid_devs[0], ut_params->op)
-		== NULL) {
+	temp_mbuf = ut_params->op->sym->m_src;
+	if (global_api_test_type == CRYPTODEV_RAW_API_TEST) {
+		/* filling lengths */
+		while (temp_mbuf) {
+			ut_params->op->sym->cipher.data.length += temp_mbuf->pkt_len;
+			ut_params->op->sym->auth.data.length += temp_mbuf->pkt_len;
+			temp_mbuf = temp_mbuf->next;
+		}
+		process_sym_raw_dp_op(ts_params->valid_devs[0], 0,
+			ut_params->op, 1, 1, 0, 0);
+        } else {
+		ut_params->op = process_crypto_request(ts_params->valid_devs[0], ut_params->op);
+	}
+	if (ut_params->op == NULL) {
 		printf("TestCase %s()-%d line %d failed %s: ",
 			__func__, i, __LINE__,
 			"failed to process sym crypto op");
