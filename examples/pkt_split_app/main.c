@@ -1012,6 +1012,7 @@ subnet_parse:
 		return 0;
 	}
 
+	int i = 0;
 	while (getline(&line, &len, fp) != -1) {
 		char *end_str;
 
@@ -1025,7 +1026,7 @@ subnet_parse:
 			char *end_token;
 			char *subnet_token;
 
-			for (int i = 0; i <= MAX_NUM_SUBNETS; i++) {
+			for (; i <= MAX_NUM_SUBNETS; i++) {
 				token = strtok_r(NULL, " \n", &end_str);
 				if (!token || i > 3) {
 					lgw_info->num_subnets = i;
@@ -1053,7 +1054,7 @@ subnet_parse:
 			char *end_token;
 			char *subnet_token;
 
-			for (int i = 0; i <= MAX_NUM_SUBNETS; i++) {
+			for (; i <= MAX_NUM_SUBNETS; i++) {
 				token = strtok_r(NULL, " \n", &end_str);
 				if (!token || i > 3) {
 					lgw_info->num_subnets = i;
