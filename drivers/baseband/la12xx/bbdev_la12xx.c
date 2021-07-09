@@ -24,6 +24,7 @@
 #include <rte_bbdev_pmd.h>
 #include <rte_pmd_bbdev_la12xx.h>
 
+#include <gul_pci_def.h>
 #include <geul_bbdev_ipc.h>
 #include <geul_ipc_um.h>
 #include <gul_host_if.h>
@@ -2313,13 +2314,27 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_priv->dev_ipc = dev_ipc;
 
 	/* Send IOCTL to get system map */
-	/* Send IOCTL to put hugepg_start map */
 	ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_GET_SYS_MAP,
 		    &ipc_priv->sys_map);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"IOCTL_GUL_IPC_GET_SYS_MAP ioctl failed");
 		goto err;
+	}
+
+	/*
+	 *  Backward compatibility. Huge page mapping done with CCSR mapping,
+	 *  skip below code.
+	 */
+	if (!ipc_priv->sys_map.hugepg_start.modem_phys) {
+		/* Send IOCTL to put hugepg_start map */
+		ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_GET_PCI_MAP,
+			    &ipc_priv->sys_map.hugepg_start);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"IOCTL_GUL_IPC_GET_PCI_MAP ioctl failed");
+			goto err;
+		}
 	}
 
 	phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
