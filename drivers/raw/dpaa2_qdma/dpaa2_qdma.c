@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #include <string.h>
@@ -62,8 +62,10 @@ qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
 
 	fd->simple_pci.svfid = rbp->svfid;
 	fd->simple_pci.spfid = rbp->spfid;
+	fd->simple_pci.svfa = rbp->svfa;
 	fd->simple_pci.dvfid = rbp->dvfid;
 	fd->simple_pci.dpfid = rbp->dpfid;
+	fd->simple_pci.dvfa = rbp->dvfa;
 
 	fd->simple_pci.srbp = rbp->srbp;
 	if (rbp->srbp)
@@ -145,6 +147,7 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 		sdd->read_cmd.portid = rbp->sportid;
 		sdd->rbpcmd_simple.pfid = rbp->spfid;
 		sdd->rbpcmd_simple.vfid = rbp->svfid;
+		sdd->rbpcmd_simple.vfa = rbp->svfa;
 
 		if (rbp->srbp) {
 			sdd->read_cmd.rbp = rbp->srbp;
@@ -157,6 +160,7 @@ dpaa2_qdma_populate_fle(struct qbman_fle *fle,
 		sdd->write_cmd.portid = rbp->dportid;
 		sdd->rbpcmd_simple.pfid = rbp->dpfid;
 		sdd->rbpcmd_simple.vfid = rbp->dvfid;
+		sdd->rbpcmd_simple.vfa = rbp->dvfa;
 
 		if (rbp->drbp) {
 			sdd->write_cmd.rbp = rbp->drbp;
@@ -1330,7 +1334,8 @@ dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
 			QDMA_FLE_CACHE_SIZE(qdma_dev->fle_queue_pool_cnt), 0,
 			NULL, NULL, NULL, NULL, SOCKET_ID_ANY, 0);
 	if (!qdma_dev->vqs[i].fle_pool) {
-		DPAA2_QDMA_ERR("qdma_fle_pool create failed");
+		DPAA2_QDMA_ERR("qdma_fle_pool %s create for failed",
+			pool_name);
 		rte_spinlock_unlock(&qdma_dev->lock);
 		return -ENOMEM;
 	}

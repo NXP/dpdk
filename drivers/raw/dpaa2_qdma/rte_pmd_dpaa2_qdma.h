@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #ifndef __RTE_PMD_DPAA2_QDMA_H__
@@ -102,6 +102,7 @@ struct rte_qdma_rbp {
 	uint32_t dportid:4;
 	uint32_t dpfid:2;
 	uint32_t dvfid:6;
+	uint32_t dvfa:1;
 	/*using route by port for destination */
 	uint32_t drbp:1;
 	/**
@@ -116,9 +117,10 @@ struct rte_qdma_rbp {
 	uint32_t sportid:4;
 	uint32_t spfid:2;
 	uint32_t svfid:6;
+	uint32_t svfa:1;
 	/* using route by port for source */
 	uint32_t srbp:1;
-	uint32_t rsv:4;
+	uint32_t rsv:2;
 };
 
 /** Provides QDMA device statistics */
