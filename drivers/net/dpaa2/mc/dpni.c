@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2020 NXP
+ * Copyright 2016-2021 NXP
  *
  */
 #include <fsl_mc_sys.h>
@@ -891,7 +891,7 @@ int dpni_get_qdid_ex(struct fsl_mc_io *mc_io,
 		return err;
 
 	/* retrieve response parameters */
-	rsp_params = (struct dpni_rsp_get_qdid *)cmd.params;
+	rsp_params = (struct dpni_rsp_get_qdid_ex *)cmd.params;
 	for( i = 0 ; i < DPNI_MAX_CHANNELS ; i++ ) {
 		qdid[i] = le16_to_cpu(rsp_params->qdid[i]);
 	}
@@ -1092,6 +1092,7 @@ int dpni_get_link_state(struct fsl_mc_io *mc_io,
  * 						bit0: Committed and excess rates are coupled
  * 						bit1: 1 modify LNI shaper, 0 modify channel shaper
  * 						bit8-15: Tx channel to be shaped. Used only if bit1 is set to zero
+ * 						bits16-26: OAL (Overhead accounting length 11bit value). Used only when bit1 is set.
  *
  * Return:	'0' on Success; Error code otherwise.
  */
@@ -1106,6 +1107,7 @@ int dpni_set_tx_shaping(struct fsl_mc_io *mc_io,
 	struct mc_command cmd = { 0 };
 	int coupled, lni_shaper;
 	uint8_t channel_id;
+	uint16_t oal;
 
 	/* prepare command */
 	cmd.header = mc_encode_cmd_header(DPNI_CMDID_SET_TX_SHAPING,
@@ -1125,6 +1127,9 @@ int dpni_set_tx_shaping(struct fsl_mc_io *mc_io,
 
 	channel_id = (param >> 8) & 0xff;
 	cmd_params->channel_id = channel_id;
+
+	oal = (param >> 16) & 0x7FF;
+	cmd_params->oal = cpu_to_le16(oal);
 
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);
@@ -3336,4 +3341,34 @@ int dpni_dump_table(struct fsl_mc_io *mc_io,
 	*num_entries = le16_to_cpu(rsp_params->num_entries);
 
 	return 0;
+}
+
+/* Sets up a Soft Parser Profile on this DPNI
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @sp_profile: Soft Parser Profile name (must a valid name for a defined profile)
+ * 			Maximum allowed length for this string is 8 characters long
+ * 			If this parameter is empty string (all zeros)
+ * 			then the Default SP Profile is set on this dpni
+ * @type: one of the SP Profile types defined above: Ingress or Egress (or both using bitwise OR)
+ */
+int dpni_set_sp_profile(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+		uint8_t sp_profile[], uint8_t type)
+{
+	struct dpni_cmd_set_sp_profile *cmd_params;
+	struct mc_command cmd = { 0 };
+	int i;
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_SET_SP_PROFILE,
+			cmd_flags, token);
+
+	cmd_params = (struct dpni_cmd_set_sp_profile *)cmd.params;
+	for (i = 0; i < MAX_SP_PROFILE_ID_SIZE && sp_profile[i]; i++)
+		cmd_params->sp_profile[i] = sp_profile[i];
+	cmd_params->type = type;
+
+	/* send command to MC */
+	return mc_send_command(mc_io, &cmd);
 }

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2020 NXP
+ * Copyright 2016-2021 NXP
  *
  */
 #ifndef __FSL_DPNI_H
@@ -820,13 +820,20 @@ struct dpni_tx_shaping_cfg {
 
 /**
  * Build the parameter for dpni_set_tx_shaping() call
+ * @oal:			Overhead accounting length. 11bit value added to the size of
+ * 					each frame. Used only for LNI shaping. If set to zero, will use default
+ * 					value of 24. Ignored if shaping_lni is set to zero.
  * @shaping_lni:	1 for LNI shaping (configure whole throughput of the dpni object)
  * 					0 for channel shaping (configure shaping for individual channels)
  * 					Set to one only if dpni is connected to a dpmac object.
  * @channel_id: 	Channel to be configured. Ignored shaping_lni is set to 1
  * @coupled:		Committed and excess rates are coupled
  */
-#define DPNI_TX_SHAPING_PARAM(shaping_lni, channel_id, coupled)	( ((uint32_t)((channel_id) & 0xff) << 8) | ((uint32_t)(!!shaping_lni) << 1) | ((uint32_t)!!coupled) )
+#define DPNI_TX_SHAPING_PARAM(oal, shaping_lni, channel_id, coupled)	( \
+		((uint32_t)(((oal) & 0x7ff) << 16)) | \
+		((uint32_t)((channel_id) & 0xff) << 8) | \
+		((uint32_t)(!!shaping_lni) << 1) | \
+		((uint32_t)!!coupled) )
 
 int dpni_set_tx_shaping(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
@@ -1966,5 +1973,17 @@ int dpni_dump_table(struct fsl_mc_io *mc_io,
 			 uint64_t iova_addr,
 			 uint32_t iova_size,
 			 uint16_t *num_entries);
+
+/**
+ * Set SP Profile on Ingress DPNI
+ */
+#define DPNI_SET_SP_PROFILE_INGRESS 0x1
+/**
+ * Set SP Profile on Egress DPNI
+ */
+#define DPNI_SET_SP_PROFILE_EGRESS 	0x2
+
+int dpni_set_sp_profile(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+		uint8_t sp_profile[], uint8_t type);
 
 #endif /* __FSL_DPNI_H */

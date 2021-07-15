@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
- * Copyright 2019 NXP
+ * Copyright 2019-2021 NXP
  */
 #include <fsl_mc_sys.h>
 #ifndef _FSL_DPRTC_CMD_H

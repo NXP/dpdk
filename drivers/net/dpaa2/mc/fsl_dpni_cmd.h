@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2020 NXP
+ * Copyright 2016-2021 NXP
  *
  */
 #ifndef _FSL_DPNI_CMD_H
@@ -124,7 +124,8 @@
 #define DPNI_CMDID_SET_PORT_CFG			DPNI_CMD(0x27B)
 #define DPNI_CMDID_GET_PORT_CFG			DPNI_CMD(0x27C)
 #define DPNI_CMDID_DUMP_TABLE           DPNI_CMD(0x27D)
-#define DPNI_CMDID_GET_QDID_EX			DPNI_CMD(0x27E)
+#define DPNI_CMDID_SET_SP_PROFILE		DPNI_CMD(0x27E)
+#define DPNI_CMDID_GET_QDID_EX			DPNI_CMD(0x27F)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -392,6 +393,7 @@ struct dpni_cmd_set_tx_shaping {
 	/* from LSB: coupled:1, lni_shaper: 1*/
 	uint8_t options;
 	uint8_t channel_id;
+	uint16_t oal;
 };
 
 struct dpni_cmd_set_max_frame_length {
@@ -995,6 +997,14 @@ struct dump_table_entry {
 	uint16_t result[3];
 	uint8_t reserved[21];
 };
+
+#define MAX_SP_PROFILE_ID_SIZE	8
+
+struct dpni_cmd_set_sp_profile {
+	uint8_t sp_profile[MAX_SP_PROFILE_ID_SIZE];
+	uint8_t type;
+};
+
 
 #pragma pack(pop)
 #endif /* _FSL_DPNI_CMD_H */
