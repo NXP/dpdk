@@ -131,4 +131,6 @@ bool get_init_device(void);
 
 bool get_reset_reconfig(void);
 
+bool get_multi_hugepages(void);
+
 #endif

@@ -166,9 +166,97 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	return 0;
 }
 
-#define HUGEPG_OFFSET(A) \
-		((uint64_t) ((unsigned long) (A) \
-		- ((uint64_t)ipc_priv->hugepg_start.host_vaddr)))
+static inline uint32_t
+map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
+{
+	ipc_pci_map_query_t pci_map_query;
+	struct rte_memseg *mseg;
+	uint32_t size;
+	int ret;
+
+	BBDEV_LA12XX_PMD_INFO(
+		"Creating hugepage mapping for second hugepage");
+
+	ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_QUERY_PCI_MAP,
+		    &pci_map_query);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR(
+			"IOCTL_GUL_IPC_QUERY_PCI_MAP ioctl failed");
+		return 0;
+	}
+
+	if (!pci_map_query.mem_avail) {
+		BBDEV_LA12XX_PMD_ERR(
+			"No memory available for mapping");
+		return 0;
+	}
+
+	mseg = rte_mem_virt2memseg(addr, NULL);
+
+	size = RTE_MIN(pci_map_query.mem_avail, mseg->len);
+
+	/* Map last portion of the hugepage memory as in DPDK memory
+	 * allocation from hugepage starts from the end.
+	 */
+	ipc_priv->sys_map.hugepg_start.host_phys =
+			rte_mem_virt2phy(mseg->addr) + mseg->len - size;
+	ipc_priv->sys_map.hugepg_start.size = size;
+
+	ret = ioctl(ipc_priv->dev_ipc, IOCTL_GUL_IPC_GET_PCI_MAP,
+		    &ipc_priv->sys_map.hugepg_start);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR(
+			"IOCTL_GUL_IPC_GET_PCI_MAP ioctl failed");
+		return 0;
+	}
+
+	ipc_priv->hugepg_start[1].host_phys =
+			ipc_priv->sys_map.hugepg_start.host_phys;
+	ipc_priv->hugepg_start[1].host_vaddr =
+			(void *)((uint64_t)(mseg->addr) + mseg->len - size);
+	ipc_priv->hugepg_start[1].modem_phys =
+			ipc_priv->sys_map.hugepg_start.modem_phys;
+	ipc_priv->hugepg_start[1].size =
+			ipc_priv->sys_map.hugepg_start.size;
+
+	return size;
+}
+
+
+static inline uint32_t
+get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
+{
+	uint64_t addr_diff;
+	uint32_t mapped_size;
+
+	addr_diff = ((uint64_t) (addr) -
+		((uint64_t)ipc_priv->hugepg_start[0].host_vaddr));
+
+	if (addr_diff < ipc_priv->hugepg_start[0].size)
+		return (uint32_t)(ipc_priv->hugepg_start[0].modem_phys +
+				  addr_diff);
+
+	/* Create mapping for second hugepage if not created */
+	if (!ipc_priv->hugepg_start[1].host_vaddr) {
+		mapped_size = map_second_hugepage_addr(ipc_priv, addr);
+		if (mapped_size == 0) {
+			BBDEV_LA12XX_PMD_ERR(
+				"Mapping of hugepage address failed");
+			return 0;
+		}
+	}
+
+	addr_diff = ((uint64_t) (addr) -
+		((uint64_t)ipc_priv->hugepg_start[1].host_vaddr));
+
+	if (addr_diff < ipc_priv->hugepg_start[1].size) {
+		return (uint32_t)(ipc_priv->hugepg_start[1].modem_phys +
+				  addr_diff);
+	} else {
+		BBDEV_LA12XX_PMD_ERR("Address not mapped over PCI");
+		return 0;
+	}
+}
 
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
@@ -206,7 +294,7 @@ static int ipc_queue_configure(uint32_t channel_id,
 			return IPC_HOST_BUF_ALLOC_FAIL;
 		/* Only offset now */
 		ch->bd_h[i].modem_ptr =
-			rte_cpu_to_be_32(HUGEPG_OFFSET(vaddr));
+			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, vaddr));
 		ch->bd_h[i].host_virt_l = lower_32_bits(vaddr);
 		ch->bd_h[i].host_virt_h = upper_32_bits(vaddr);
 		q_priv->msg_ch_vaddr[i] = vaddr;
@@ -216,7 +304,8 @@ static int ipc_queue_configure(uint32_t channel_id,
 	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
 			RTE_CACHE_LINE_SIZE);
 	ch->host_ipc_params =
-		rte_cpu_to_be_32(HUGEPG_OFFSET(q_priv->host_params));
+		rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv,
+				 q_priv->host_params));
 
 	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
 	return IPC_SUCCESS;
@@ -271,7 +360,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->host_ci = rte_be_to_cpu_32(md->ci);
 		q_priv->host_params = (host_ipc_params_t *)
 			(rte_be_to_cpu_32(ch->host_ipc_params) +
-			((uint64_t)ipc_priv->hugepg_start.host_vaddr));
+			((uint64_t)ipc_priv->hugepg_start[0].host_vaddr));
 
 		for (i = 0; i < q_priv->queue_size; i++) {
 			uint32_t h, l;
@@ -373,7 +462,6 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct rte_bbdev_queue_data *q_data;
 	void *lsb_addr, *msb_addr;
-	char *huge_start_addr;
 	uint32_t l1_pcie_addr;
 
 	PMD_INIT_FUNC_TRACE();
@@ -408,10 +496,7 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 	priv->queues_priv[q_priv->q_id] = q_priv;
 
 	/* send address and queue size to VSPA */
-	huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
-	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-		(char *)q_priv->vspa_ring - huge_start_addr;
+	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, q_priv->vspa_ring);
 
 	rte_write32(q_priv->queue_size, msb_addr);
 	rte_mb();
@@ -634,8 +719,7 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct rte_bbdev_op_data *in_op_data)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	uint32_t A = bbdev_enc_op->ldpc_enc.input.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS];
 	uint32_t codeblock_mask[8], i;
@@ -709,8 +793,7 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
 
 	data_ptr = get_data_ptr(in_op_data);
-	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-		data_ptr - huge_start_addr;
+	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 
 	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	se_command->se_axi_in_num_bytes =
@@ -785,8 +868,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		   struct rte_bbdev_op_data *out_op_data)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	uint32_t A = bbdev_dec_op->ldpc_dec.hard_output.length * 8;
 	uint32_t e[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS], remove_tb_crc;
 	uint32_t codeblock_mask[RTE_BBDEV_LDPC_MAX_CODE_BLOCKS/32] = {0};
@@ -906,8 +988,7 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	/* out_addr has already been swapped in the calling function */
 	data_ptr = get_data_ptr(out_op_data);
-	l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-		data_ptr - huge_start_addr;
+	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 	sd_command->sd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 	sd_command->sd_axi_data_num_bytes =
 		rte_cpu_to_be_32(out_op_data->length);
@@ -983,8 +1064,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			struct rte_bbdev_op_data *in_op_data,
 			struct rte_bbdev_op_data *out_op_data)
 {
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	char *data_ptr;
 	uint32_t l1_pcie_addr, i;
 
@@ -1010,8 +1090,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		ce_cmd->ce_pe_indices.raw_ce_pe_indices =
 			rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
 		data_ptr = get_data_ptr(in_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		ce_cmd->ce_axi_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 
 		for (i = 0; i< 32; i++)
@@ -1039,8 +1118,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		cd_cmd->cd_pe_indices.raw_cd_pe_indices =
 			rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
 		data_ptr = get_data_ptr(out_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
 
 		for (i = 0; i< 32; i++)
@@ -1133,8 +1211,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	uint32_t partial_op_data_orig_len = ldpc_dec->partial_output.length;
 	uint32_t *codeblock_mask, i, total_out_bits, sd_circ_buf, l1_pcie_addr;
 	uint32_t byte, bit, num_code_blocks = 0, harq_len_per_cb;
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct ipc_priv_t *ipc_priv = bbdev_priv->ipc_priv;
 	char *data_ptr;
 	uint16_t sys_cols, valid_bytes, bits_to_set;
 	uint32_t mask = 0;
@@ -1222,8 +1299,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 	    harq_in_op_data->bdata) {
 		data_ptr = get_data_ptr(harq_in_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		bbdev_ipc_op->harq_in_addr = l1_pcie_addr;
 		bbdev_ipc_op->harq_in_len = harq_in_op_data->length;
 	}
@@ -1232,8 +1308,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	    RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE) {
 		harq_out_op_data = &bbdev_dec_op->ldpc_dec.harq_combined_output;
 		data_ptr = get_data_ptr(harq_out_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		bbdev_ipc_op->harq_out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 	}
 
@@ -1306,13 +1381,12 @@ prepare_raw_op(struct rte_pmd_la12xx_raw_params *raw_params,
 	       struct bbdev_la12xx_q_priv *q_priv,
 	       struct rte_bbdev_op_data *out_op_data)
 {
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
+	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	uint32_t l1_pcie_addr;
 
 	if (raw_params->metadata) {
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			(char *)raw_params->metadata - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv,
+					raw_params->metadata);
 		bbdev_ipc_op->shared_metadata = rte_cpu_to_be_32(l1_pcie_addr);
 	}
 
@@ -1338,8 +1412,6 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
@@ -1436,16 +1508,14 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 
 	if (in_op_data->bdata) {
 		data_ptr = get_data_ptr(in_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			       data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		bbdev_ipc_op->in_addr = l1_pcie_addr;
 		bbdev_ipc_op->in_len = in_op_data->length;
 	}
 
 	if (out_op_data->bdata) {
 		data_ptr = get_data_ptr(out_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-				data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 		bbdev_ipc_op->out_len = rte_cpu_to_be_32(out_op_data->length);
 	}
@@ -1519,7 +1589,6 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	struct vspa_desc *desc, *prev_desc;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
-	char *huge_start_addr;
 	void *lsb_addr;
 	int prev_desc_index;
 
@@ -1529,8 +1598,6 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	if (desc->host_flag == 1)
 		return -1;
 
-	huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	vspa_params = &(((struct rte_pmd_la12xx_op *)
 		bbdev_op)->vspa_params);
 
@@ -1538,8 +1605,7 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	in_op_data = &vspa_params->input;
 	if (in_op_data->bdata) {
 		data_ptr = get_data_ptr(in_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			       data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		desc->in_addr = l1_pcie_addr;
 		desc->in_len = in_op_data->length;
 	}
@@ -1548,15 +1614,14 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	out_op_data = &vspa_params->output;
 	if (out_op_data->bdata) {
 		data_ptr = get_data_ptr(out_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			       data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		desc->in_addr = l1_pcie_addr;
 	}
 
 	/* Set meta data */
 	if (vspa_params->metadata) {
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			(char *)vspa_params->metadata - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv,
+					vspa_params->metadata);
 		desc->meta_addr = rte_cpu_to_be_32(l1_pcie_addr);
 	}
 
@@ -1617,8 +1682,6 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
-	char *huge_start_addr =
-		(char *)q_priv->bbdev_priv->ipc_priv->hugepg_start.host_vaddr;
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
@@ -1664,16 +1727,14 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 
 	if (in_op_data->bdata) {
 		data_ptr = get_data_ptr(in_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			       data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		raw_op->in_addr = rte_cpu_to_be_32(l1_pcie_addr);
 		raw_op->in_len = rte_cpu_to_be_32(in_op_data->length);
 	}
 
 	if (out_op_data->bdata) {
 		data_ptr = get_data_ptr(out_op_data);
-		l1_pcie_addr = (uint32_t)GUL_USER_HUGE_PAGE_ADDR +
-			       data_ptr - huge_start_addr;
+		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		raw_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 		raw_op->out_len = rte_cpu_to_be_32(out_op_data->length);
 	}
@@ -2176,6 +2237,16 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id)
 	ipc_instance->feca_sd_single_qdma = rte_cpu_to_be_32(1);
 }
 
+uint32_t
+rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+
+	return map_second_hugepage_addr(ipc_priv, addr);
+}
+
 static struct hugepage_info *
 get_hugepage_info(void)
 {
@@ -2298,9 +2369,9 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 		ipc_priv->sys_map.hugepg_start.host_phys = hp->paddr;
 		ipc_priv->sys_map.hugepg_start.size = hp->len;
 
-		ipc_priv->hugepg_start.host_phys = hp->paddr;
-		ipc_priv->hugepg_start.host_vaddr = hp->vaddr;
-		ipc_priv->hugepg_start.size = hp->len;
+		ipc_priv->hugepg_start[0].host_phys = hp->paddr;
+		ipc_priv->hugepg_start[0].host_vaddr = hp->vaddr;
+		ipc_priv->hugepg_start[0].size = hp->len;
 
 		rte_free(hp);
 	}
@@ -2336,6 +2407,9 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 			goto err;
 		}
 	}
+	/* Update Modem physical address */
+	ipc_priv->hugepg_start[0].modem_phys =
+		ipc_priv->sys_map.hugepg_start.modem_phys;
 
 	phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
 	ipc_priv->mhif_start.host_vaddr =
@@ -2379,8 +2453,11 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_priv->modem_ccsrbar.host_vaddr = (void *)((uint64_t)
 		(ipc_priv->modem_ccsrbar.host_vaddr) + phy_align);
 
-	ipc_priv->hugepg_start.modem_phys =
+	ipc_priv->hugepg_start[0].modem_phys =
 		ipc_priv->sys_map.hugepg_start.modem_phys;
+
+	printf("ipc_priv->sys_map.hugepg_start.modem_phys: %x\n",
+		ipc_priv->sys_map.hugepg_start.modem_phys);
 
 	ipc_priv->mhif_start.host_phys =
 		ipc_priv->sys_map.mhif_start.host_phys;
@@ -2392,10 +2469,10 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 			ipc_priv->peb_start.host_phys,
 			ipc_priv->peb_start.host_vaddr,
 			ipc_priv->peb_start.size);
-	BBDEV_LA12XX_PMD_INFO("hugepg %lx %p %x",
-			ipc_priv->hugepg_start.host_phys,
-			ipc_priv->hugepg_start.host_vaddr,
-			ipc_priv->hugepg_start.size);
+	printf("hugepg %lx %p %x\n",
+			ipc_priv->hugepg_start[0].host_phys,
+			ipc_priv->hugepg_start[0].host_vaddr,
+			ipc_priv->hugepg_start[0].size);
 	BBDEV_LA12XX_PMD_INFO("mhif %lx %p %x",
 			ipc_priv->mhif_start.host_phys,
 			ipc_priv->mhif_start.host_vaddr,
