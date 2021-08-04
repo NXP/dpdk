@@ -332,4 +332,27 @@ rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
 void
 rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
 
+/**
+ * This API can be used to map the address of the second hugepage.
+ * With DPDK APIs the allocation of the memory for ring, mempools,
+ * mbuf/bbuf pools or malloc start from the end of the allocated
+ * hugepage. Thus this API maps the memory starting from the end
+ * and returns the size of the address which is mapped of that
+ * hugepage memory. For instance if only 512 MB of memory can be
+ * mapped to the modem and the addr provided is for a 1 GB hugepage,
+ * the last 512 MB of the hugepage memory would be mapped.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @param addr
+ *   Any address from the second hugepage.
+ *
+ * @return
+ *   size of the mapping created from second hugepage.
+ *
+ */
+uint32_t
+rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
+
 #endif

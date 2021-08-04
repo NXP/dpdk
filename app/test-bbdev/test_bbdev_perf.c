@@ -443,6 +443,18 @@ create_mempools(struct active_device *ad, int socket_id,
 		harq_in_maxl = 0, harq_out_maxl = 0, in_seg = 0,
 		hard_out_seg = 0, soft_out_seg = 0,
 		harq_in_seg = 0, harq_out_seg = 0;
+	static int init_once;
+
+	if (!init_once && get_multi_hugepages()) {
+		/* Allocate 1G of memory so that memory from second
+		 * hugepage is also consumed
+		 */
+		void *dummy = rte_malloc(NULL, 1000 * 1024 * 1024, 0);
+		if (!dummy)
+			printf("dummy allocation failed\n");
+		RTE_SET_USED(dummy);
+		init_once = 1;
+	}
 
 	/* Finding the maximum length and segments from all vectors */
 	for (v = 0; v < get_vector_count(); v++) {

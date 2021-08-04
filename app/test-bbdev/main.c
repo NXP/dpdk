@@ -36,6 +36,7 @@ static struct test_params {
 	unsigned int vector_count;
 	bool init_device;
 	bool reset_reconfig;
+	bool multi_hugepages;
 } test_params;
 
 static struct test_commands_list commands_list =
@@ -175,6 +176,12 @@ get_reset_reconfig(void)
 	return test_params.reset_reconfig;
 }
 
+bool
+get_multi_hugepages(void)
+{
+	return test_params.multi_hugepages;
+}
+
 static void
 print_usage(const char *prog_name)
 {
@@ -187,7 +194,8 @@ print_usage(const char *prog_name)
 			"\t[-v/--test-vector VECTOR_FILE]\n"
 			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
 			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]\n"
-			"\t[-r/--reset-reconfig]]\n",
+			"\t[-r/--reset-reconfig]]\n"
+			"\t[-u/--multi-hugepages]]\n",
 			prog_name);
 
 	printf("Available testcases: ");
@@ -218,11 +226,12 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
 		{ "reset-reconfig", 0, 0, 'r' },
+		{ "multi-hugepages", 0, 0, 'u' },
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
 
-	while ((opt = getopt_long(argc, argv, "hirn:b:c:v:f:l:s:m:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hirun:b:c:v:f:l:s:m:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -313,6 +322,9 @@ parse_args(int argc, char **argv, struct test_params *tp)
 			break;
 		case 'r':
 			tp->reset_reconfig = true;
+			return 0;
+		case 'u':
+			tp->multi_hugepages = true;
 			return 0;
 		case 'h':
 			print_usage(argv[0]);
