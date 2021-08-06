@@ -1816,7 +1816,7 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 	printf("\n****************************************\n"
 		"session params:\n\tContext type:\t%d\n\tDirection:\t%s\n"
 		"\tCipher alg:\t%d\n\tAuth alg:\t%d\n\tAead alg:\t%d\n"
-		"\tCipher key len:\t%ld\n", sess->ctxt_type,
+		"\tCipher key len:\t%zd\n", sess->ctxt_type,
 		(sess->dir == DIR_ENC) ? "DIR_ENC" : "DIR_DEC",
 		sess->cipher_alg, sess->auth_alg, sess->aead_alg,
 		sess->cipher_key.length);
@@ -1824,7 +1824,7 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 				sess->cipher_key.length);
 		rte_hexdump(stdout, "auth key", sess->auth_key.data,
 				sess->auth_key.length);
-	printf("\tAuth key len:\t%ld\n\tIV len:\t\t%d\n\tIV offset:\t%d\n"
+	printf("\tAuth key len:\t%zd\n\tIV len:\t\t%d\n\tIV offset:\t%d\n"
 		"\tdigest length:\t%d\n\tstatus:\t\t%d\n\taead auth only"
 		" len:\t%d\n\taead cipher text:\t%d\n",
 		sess->auth_key.length, sess->iv.length, sess->iv.offset,
@@ -1851,11 +1851,11 @@ mbuf_dump:
 	sym_op = op->sym;
 	if (sym_op->m_src) {
 		printf("Source mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_src, 64);
+		rte_pktmbuf_dump(stdout, sym_op->m_src, sym_op->m_src->data_len);
 	}
 	if (sym_op->m_dst) {
 		printf("Destination mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_dst, 64);
+		rte_pktmbuf_dump(stdout, sym_op->m_dst, sym_op->m_dst->data_len);
 	}
 
 	printf("Session address = %p\ncipher offset: %d, length: %d\n"
