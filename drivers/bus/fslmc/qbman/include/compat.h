@@ -84,7 +84,7 @@ do { \
 #define __raw_readl(p)	(*(const volatile unsigned int *)(p))
 #define __raw_writel(v, p) {*(volatile unsigned int *)(p) = (v); }
 
-#define dma_wmb()		rte_smp_mb()
+#define dma_wmb()		rte_cio_wmb()
 
 #define atomic_t                rte_atomic32_t
 #define atomic_read(v)          rte_atomic32_read(v)
