@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2017,2020 NXP
+ * Copyright 2016-2021 NXP
  *
  */
 #ifndef __FSL_DPIO_H
@@ -109,6 +109,51 @@ int dpio_remove_static_dequeue_channel(struct fsl_mc_io *mc_io,
 				       uint32_t cmd_flags,
 				       uint16_t token,
 				       int dpcon_id);
+
+/**
+ * DPIO IRQ Index and Events
+ */
+
+/**
+ * Irq software-portal index
+ */
+#define DPIO_IRQ_SWP_INDEX				0
+
+int dpio_set_irq_enable(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint8_t en);
+
+int dpio_get_irq_enable(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint8_t *en);
+
+int dpio_set_irq_mask(struct fsl_mc_io *mc_io,
+		      uint32_t cmd_flags,
+		      uint16_t token,
+		      uint8_t irq_index,
+		      uint32_t mask);
+
+int dpio_get_irq_mask(struct fsl_mc_io *mc_io,
+		      uint32_t cmd_flags,
+		      uint16_t token,
+		      uint8_t irq_index,
+		      uint32_t *mask);
+
+int dpio_get_irq_status(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t *status);
+
+int dpio_clear_irq_status(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint32_t status);
 
 /**
  * struct dpio_attr - Structure representing DPIO attributes

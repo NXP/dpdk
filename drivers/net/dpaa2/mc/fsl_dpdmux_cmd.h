@@ -35,10 +35,19 @@
 
 #define DPDMUX_CMDID_ENABLE			DPDMUX_CMD(0x002)
 #define DPDMUX_CMDID_DISABLE			DPDMUX_CMD(0x003)
-#define DPDMUX_CMDID_GET_ATTR			DPDMUX_CMD_V2(0x004)
+#define DPDMUX_CMDID_GET_ATTR			DPDMUX_CMD_V3(0x004)
 #define DPDMUX_CMDID_RESET			DPDMUX_CMD(0x005)
 #define DPDMUX_CMDID_IS_ENABLED			DPDMUX_CMD(0x006)
+
+#define DPDMUX_CMDID_SET_IRQ_ENABLE		DPDMUX_CMD(0x012)
+#define DPDMUX_CMDID_GET_IRQ_ENABLE		DPDMUX_CMD(0x013)
+#define DPDMUX_CMDID_SET_IRQ_MASK		DPDMUX_CMD(0x014)
+#define DPDMUX_CMDID_GET_IRQ_MASK		DPDMUX_CMD(0x015)
+#define DPDMUX_CMDID_GET_IRQ_STATUS		DPDMUX_CMD(0x016)
+#define DPDMUX_CMDID_CLEAR_IRQ_STATUS		DPDMUX_CMD(0x017)
+
 #define DPDMUX_CMDID_SET_MAX_FRAME_LENGTH	DPDMUX_CMD(0x0a1)
+#define DPDMUX_CMDID_GET_MAX_FRAME_LENGTH	DPDMUX_CMD(0x0a2)
 
 #define DPDMUX_CMDID_UL_RESET_COUNTERS		DPDMUX_CMD(0x0a3)
 
@@ -62,6 +71,12 @@
 
 #define DPDMUX_CMDID_SET_RESETABLE		DPDMUX_CMD(0x0ba)
 #define DPDMUX_CMDID_GET_RESETABLE		DPDMUX_CMD(0x0bb)
+
+#define DPDMUX_CMDID_IF_SET_TAILDROP		DPDMUX_CMD(0x0bc)
+#define DPDMUX_CMDID_IF_GET_TAILDROP		DPDMUX_CMD(0x0bd)
+
+#define DPDMUX_CMDID_DUMP_TABLE           DPDMUX_CMD(0x0be)
+
 #define DPDMUX_CMDID_SET_ERRORS_BEHAVIOR	DPDMUX_CMD(0x0bf)
 
 #define DPDMUX_MASK(field)        \
@@ -105,6 +120,49 @@ struct dpdmux_rsp_is_enabled {
 	uint8_t en;
 };
 
+struct dpdmux_cmd_set_irq_enable {
+	uint8_t enable;
+	uint8_t pad[3];
+	uint8_t irq_index;
+};
+
+struct dpdmux_cmd_get_irq_enable {
+	uint32_t pad;
+	uint8_t irq_index;
+};
+
+struct dpdmux_rsp_get_irq_enable {
+	uint8_t enable;
+};
+
+struct dpdmux_cmd_set_irq_mask {
+	uint32_t mask;
+	uint8_t irq_index;
+};
+
+struct dpdmux_cmd_get_irq_mask {
+	uint32_t pad;
+	uint8_t irq_index;
+};
+
+struct dpdmux_rsp_get_irq_mask {
+	uint32_t mask;
+};
+
+struct dpdmux_cmd_get_irq_status {
+	uint32_t status;
+	uint8_t irq_index;
+};
+
+struct dpdmux_rsp_get_irq_status {
+	uint32_t status;
+};
+
+struct dpdmux_cmd_clear_irq_status {
+	uint32_t status;
+	uint8_t irq_index;
+};
+
 struct dpdmux_rsp_get_attr {
 	uint8_t method;
 	uint8_t manip;
@@ -118,10 +176,21 @@ struct dpdmux_rsp_get_attr {
 	uint32_t pad2;
 
 	uint64_t options;
+	uint16_t max_dmat_entries;
+	uint16_t max_mc_groups;
+	uint16_t max_vlan_ids;
 };
 
 struct dpdmux_cmd_set_max_frame_length {
 	uint16_t max_frame_length;
+};
+
+struct dpdmux_cmd_get_max_frame_len {
+	uint16_t if_id;
+};
+
+struct dpdmux_rsp_get_max_frame_len {
+	uint16_t max_len;
 };
 
 #define DPDMUX_ACCEPTED_FRAMES_TYPE_SHIFT	0
@@ -237,6 +306,61 @@ struct dpdmux_cmd_set_skip_reset_flags {
 
 struct dpdmux_rsp_get_skip_reset_flags {
 	uint8_t skip_reset_flags;
+};
+
+struct dpdmux_cmd_set_taildrop {
+	uint32_t	pad1;
+	uint16_t	if_id;
+	uint16_t	pad2;
+	uint16_t	oal_en;
+	uint8_t		units;
+	uint8_t		pad3;
+	uint32_t	threshold;
+};
+
+struct dpdmux_cmd_get_taildrop {
+	uint32_t	pad1;
+	uint16_t	if_id;
+};
+
+struct dpdmux_rsp_get_taildrop {
+	uint16_t	pad1;
+	uint16_t	pad2;
+	uint16_t	if_id;
+	uint16_t	pad3;
+	uint16_t	oal_en;
+	uint8_t		units;
+	uint8_t		pad4;
+	uint32_t	threshold;
+};
+
+struct dpdmux_cmd_dump_table {
+	uint16_t table_type;
+	uint16_t table_index;
+	uint32_t pad0;
+	uint64_t iova_addr;
+	uint32_t iova_size;
+};
+
+struct dpdmux_rsp_dump_table {
+	uint16_t num_entries;
+};
+
+struct dpdmux_dump_table_header {
+	uint16_t table_type;
+	uint16_t table_num_entries;
+	uint16_t table_max_entries;
+	uint8_t default_action;
+	uint8_t match_type;
+	uint8_t reserved[24];
+};
+
+struct dpdmux_dump_table_entry {
+	uint8_t key[DPDMUX_MAX_KEY_SIZE];
+	uint8_t mask[DPDMUX_MAX_KEY_SIZE];
+	uint8_t key_action;
+	uint16_t result[3];
+	uint8_t reserved[21];
 };
 
 #define DPDMUX_ERROR_ACTION_SHIFT		0

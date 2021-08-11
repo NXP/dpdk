@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018,2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #ifndef __FSL_DPDMAI_H
@@ -32,15 +32,29 @@ int dpdmai_close(struct fsl_mc_io *mc_io,
 		 uint32_t cmd_flags,
 		 uint16_t token);
 
+/* DPDMAI options */
+
+/**
+ * Enable individual Congestion Groups usage per each priority queue
+ * If this option is not enabled then only one CG is used for all priority queues
+ * If this option is enabled then a separate specific CG is used for each individual priority queue.
+ * In this case the priority queue must be specified via congestion notification API
+ */
+#define DPDMAI_OPT_CG_PER_PRIORITY		0x00000001
+
 /**
  * struct dpdmai_cfg - Structure representing DPDMAI configuration
  * @priorities: Priorities for the DMA hardware processing; valid priorities are
  *	configured with values 1-8; the entry following last valid entry
  *	should be configured with 0
+ *	@options: dpdmai options
  */
 struct dpdmai_cfg {
 	uint8_t num_queues;
 	uint8_t priorities[DPDMAI_PRIO_NUM];
+	struct {
+		uint32_t options;
+	} adv;
 };
 
 int dpdmai_create(struct fsl_mc_io *mc_io,
@@ -71,15 +85,53 @@ int dpdmai_reset(struct fsl_mc_io *mc_io,
 		 uint32_t cmd_flags,
 		 uint16_t token);
 
+int dpdmai_set_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t en);
+
+int dpdmai_get_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t *en);
+
+int dpdmai_set_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t mask);
+
+int dpdmai_get_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t *mask);
+
+int dpdmai_get_irq_status(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint32_t *status);
+
+int dpdmai_clear_irq_status(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t irq_index,
+			    uint32_t status);
+
 /**
  * struct dpdmai_attr - Structure representing DPDMAI attributes
  * @id: DPDMAI object ID
  * @num_of_priorities: number of priorities
+ * @options: dpdmai options
  */
 struct dpdmai_attr {
 	int id;
 	uint8_t num_of_priorities;
 	uint8_t num_of_queues;
+	uint32_t options;
 };
 
 int dpdmai_get_attributes(struct fsl_mc_io *mc_io,
@@ -190,6 +242,78 @@ int dpdmai_get_tx_queue(struct fsl_mc_io *mc_io,
 			uint8_t queue_idx,
 			uint8_t priority,
 			struct dpdmai_tx_queue_attr *attr);
+
+/**
+ * enum dpdmai_congestion_unit - DPDMAI congestion unit types
+ * @DPDMAI_CONGESTION_UNIT_BYTES: Use bytes as congestion units
+ * @DPDMAI_CONGESTION_UNIT_FRAMES: Use frames as congestion units
+ */
+enum dpdmai_congestion_unit {
+	DPDMAI_CONGESTION_UNIT_BYTES = 0,
+	DPDMAI_CONGESTION_UNIT_FRAMES
+};
+
+/**
+ * CSCN message is written to message_iova once entering a
+ * congestion state (see 'threshold_entry')
+ */
+#define DPDMAI_CGN_MODE_WRITE_MEM_ON_ENTER	0x00000001
+/**
+ * CSCN message is written to message_iova once exiting a
+ * congestion state (see 'threshold_exit')
+ */
+#define DPDMAI_CGN_MODE_WRITE_MEM_ON_EXIT	0x00000002
+/**
+ * CSCN write will attempt to allocate into a cache (coherent write);
+ * valid only if 'DPDMAI_CGN_MODE_WRITE_MEM_<X>' is selected
+ */
+#define DPDMAI_CGN_MODE_COHERENT_WRITE		0x00000004
+
+/**
+ * struct dpdmai_congestion_notification_cfg - congestion notification
+ *		configuration
+ * @units: units type
+ * @notification_mode: Mask of available options; use 'DPDMAI_CGN_MODE_<X>'
+ *		values
+ * @threshold_entry: above this threshold we enter a congestion state.
+ *		set it to '0' to disable it
+ * @threshold_exit: below this threshold we exit the congestion state.
+ * @message_ctx: The context that will be part of the CSCN message
+ * @message_iova: I/O virtual address (must be in DMA-able memory),
+ *		must be 16B aligned;
+ */
+struct dpdmai_congestion_notification_cfg {
+	enum dpdmai_congestion_unit units;
+	uint16_t notification_mode;
+	uint32_t threshold_entry;
+	uint32_t threshold_exit;
+	uint64_t message_ctx;
+	uint64_t message_iova;
+};
+
+int dpdmai_set_rx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg);
+
+int dpdmai_set_tx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg);
+
+int dpdmai_get_rx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg);
+
+int dpdmai_get_tx_congestion_notification(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t priority,
+			struct dpdmai_congestion_notification_cfg *cfg);
 
 int dpdmai_get_api_version(struct fsl_mc_io *mc_io,
 			   uint32_t cmd_flags,

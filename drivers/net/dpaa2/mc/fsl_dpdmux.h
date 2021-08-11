@@ -165,6 +165,42 @@ int dpdmux_get_resetable(struct fsl_mc_io *mc_io,
 				  uint16_t token,
 				  uint8_t *skip_reset_flags);
 
+int dpdmux_set_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t en);
+
+int dpdmux_get_irq_enable(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint8_t *en);
+
+int dpdmux_set_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t mask);
+
+int dpdmux_get_irq_mask(struct fsl_mc_io *mc_io,
+			uint32_t cmd_flags,
+			uint16_t token,
+			uint8_t irq_index,
+			uint32_t *mask);
+
+int dpdmux_get_irq_status(struct fsl_mc_io *mc_io,
+			  uint32_t cmd_flags,
+			  uint16_t token,
+			  uint8_t irq_index,
+			  uint32_t *status);
+
+int dpdmux_clear_irq_status(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t irq_index,
+			    uint32_t status);
+
 /**
  * struct dpdmux_attr - Structure representing DPDMUX attributes
  * @id: DPDMUX object ID
@@ -184,6 +220,9 @@ struct dpdmux_attr {
 	uint16_t num_ifs;
 	uint16_t mem_size;
 	uint16_t default_if;
+	uint16_t max_dmat_entries;
+	uint16_t max_mc_groups;
+	uint16_t max_vlan_ids;
 };
 
 int dpdmux_get_attributes(struct fsl_mc_io *mc_io,
@@ -195,6 +234,12 @@ int dpdmux_set_max_frame_length(struct fsl_mc_io *mc_io,
 				uint32_t cmd_flags,
 				uint16_t token,
 				uint16_t max_frame_length);
+
+int dpdmux_get_max_frame_length(struct fsl_mc_io *mc_io,
+				uint32_t cmd_flags,
+				uint16_t token,
+				uint16_t if_id,
+				uint16_t *max_frame_length);
 
 /**
  * enum dpdmux_counter_type - Counter types
@@ -455,10 +500,50 @@ int dpdmux_get_api_version(struct fsl_mc_io *mc_io,
 			   uint16_t *major_ver,
 			   uint16_t *minor_ver);
 
+enum dpdmux_congestion_unit {
+	DPDMUX_TAIDLROP_DROP_UNIT_BYTE = 0,
+	DPDMUX_TAILDROP_DROP_UNIT_FRAMES,
+	DPDMUX_TAILDROP_DROP_UNIT_BUFFERS
+};
+
 /**
- * Discard bit. This bit must be used together with other bits in
- * DPDMUX_ERROR_ACTION_CONTINUE to disable discarding of frames containing
- * errors
+ * struct dpdmux_taildrop_cfg - interface taildrop configuration
+ * @enable - enable (1 ) or disable (0) taildrop
+ * @units - taildrop units
+ * @threshold - taildtop threshold
+ */
+struct dpdmux_taildrop_cfg {
+	char enable;
+	enum dpdmux_congestion_unit units;
+	uint32_t threshold;
+};
+
+int dpdmux_if_set_taildrop(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint16_t if_id, struct dpdmux_taildrop_cfg *cfg);
+
+int dpdmux_if_get_taildrop(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint16_t if_id, struct dpdmux_taildrop_cfg *cfg);
+
+#define DPDMUX_MAX_KEY_SIZE 56
+
+enum dpdmux_table_type {
+	DPDMUX_DMAT_TABLE = 1,
+	DPDMUX_MISS_TABLE = 2,
+	DPDMUX_PRUNE_TABLE = 3,
+};
+
+int dpdmux_dump_table(struct fsl_mc_io *mc_io,
+			 uint32_t cmd_flags,
+			 uint16_t token,
+			 uint16_t table_type,
+			 uint16_t table_index,
+			 uint64_t iova_addr,
+			 uint32_t iova_size,
+			 uint16_t *num_entries);
+
+/**
+ * Discard bit. This bit must be used together with other bits in DPDMUX_ERROR_ACTION_CONTINUE
+ * to disable discarding of frames containing errors
  */
 #define DPDMUX_ERROR_DISC		0x80000000
 /**
