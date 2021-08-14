@@ -264,126 +264,53 @@ get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
 
 #pragma GCC push_options
 #pragma GCC optimize ("O1")
-static int ipc_queue_configure(uint32_t channel_id,
-		ipc_t instance, struct bbdev_la12xx_q_priv *q_priv)
-{
-	ipc_userspace_t *ipc_priv = (ipc_userspace_t *)instance;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-	ipc_ch_t *ch;
-	void *vaddr;
-	uint32_t i = 0;
-	uint32_t msg_size = sizeof(struct bbdev_ipc_raw_op_t);
-
-	PMD_INIT_FUNC_TRACE();
-
-	BBDEV_LA12XX_PMD_DEBUG("%x %p", ipc_instance->initialized,
-		ipc_priv->instance);
-	ch = &(ipc_instance->ch_list[channel_id]);
-
-	BBDEV_LA12XX_PMD_DEBUG("channel: %u, depth: %u, msg size: %u",
-		channel_id, q_priv->queue_size, msg_size);
-
-	/* Start init of channel */
-	ch->md.ring_size = rte_cpu_to_be_32(q_priv->queue_size);
-	ch->md.pi = 0;
-	ch->md.ci = 0;
-	ch->md.msg_size = msg_size;
-	for (i = 0; i < q_priv->queue_size; i++) {
-		vaddr = rte_malloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
-		if (!vaddr)
-			return IPC_HOST_BUF_ALLOC_FAIL;
-		/* Only offset now */
-		ch->bd_h[i].modem_ptr =
-			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, vaddr));
-		ch->bd_h[i].host_virt_l = lower_32_bits(vaddr);
-		ch->bd_h[i].host_virt_h = upper_32_bits(vaddr);
-		q_priv->msg_ch_vaddr[i] = vaddr;
-		/* Not sure use of this len may be for CRC*/
-		ch->bd_h[i].len = 0;
-	}
-	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
-			RTE_CACHE_LINE_SIZE);
-	ch->host_ipc_params =
-		rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv,
-				 q_priv->host_params));
-
-	BBDEV_LA12XX_PMD_DEBUG("Channel configured");
-	return IPC_SUCCESS;
-}
 
 static int
 la12xx_e200_queue_setup(struct rte_bbdev *dev,
-		struct bbdev_la12xx_q_priv *q_priv)
+		struct bbdev_la12xx_q_priv *q_priv,
+		const struct rte_bbdev_queue_conf *queue_conf)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	uint32_t msg_size = sizeof(struct bbdev_ipc_raw_op_t);
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
 	ipc_ch_t *ch;
 	int instance_id = 0, i;
-	int ret;
+	void *vaddr;
 
 	PMD_INIT_FUNC_TRACE();
 
-	switch (q_priv->op_type) {
-	case RTE_BBDEV_OP_LDPC_ENC:
-		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_ENC_CORE;
-		break;
-	case RTE_BBDEV_OP_LDPC_DEC:
-		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_DEC_CORE;
-		break;
-	case RTE_BBDEV_OP_POLAR_ENC:
-		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_ENC_CORE;
-		break;
-	case RTE_BBDEV_OP_POLAR_DEC:
-		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
-		break;
-	case RTE_BBDEV_OP_RAW:
-		break;
-	default:
-		BBDEV_LA12XX_PMD_ERR("Unsupported op type\n");
-		return -1;
-	}
-
-	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
-	/* offset is from start of PEB */
-	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
-		mhif->ipc_regs.ipc_mdata_offset);
-	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
+	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_priv->q_id);
 
 	if (q_priv->q_id < priv->num_valid_queues) {
-		ipc_br_md_t *md = &(ch->md);
-
-		q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
-		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
-		q_priv->host_pi = rte_be_to_cpu_32(md->pi);
-		q_priv->host_ci = rte_be_to_cpu_32(md->ci);
-		q_priv->host_params = (host_ipc_params_t *)
-			(rte_be_to_cpu_32(ch->host_ipc_params) +
-			((uint64_t)ipc_priv->hugepg_start[0].host_vaddr));
-
-		for (i = 0; i < q_priv->queue_size; i++) {
-			uint32_t h, l;
-
-			h = ch->bd_h[i].host_virt_h;
-			l = ch->bd_h[i].host_virt_l;
-			q_priv->msg_ch_vaddr[i] = (void *)join_32_bits(h, l);
-		}
+		q_priv->host_pi = 0;
+		q_priv->host_ci = 0;
+		q_priv->host_params->pi = 0;
+		q_priv->host_params->ci = 0;
 
 		BBDEV_LA12XX_PMD_WARN(
 			"Queue [%d] already configured, not configuring again",
 			q_priv->q_id);
-		return 0;
+
+		goto config_modem_queue;
 	}
 
-	BBDEV_LA12XX_PMD_DEBUG("setting up queue %d", q_priv->q_id);
+	for (i = 0; i < q_priv->queue_size; i++) {
+		vaddr = rte_zmalloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
+		if (!vaddr) {
+			BBDEV_LA12XX_PMD_ERR(
+				"Memory allocation failed for vaddr");
+			return -ENOMEM;
+		}
+		q_priv->msg_ch_vaddr[i] = vaddr;
+	}
 
-	/* Call ipc_configure_channel */
-	ret = ipc_queue_configure(q_priv->q_id, ipc_priv, q_priv);
-	if (ret) {
-		BBDEV_LA12XX_PMD_ERR("Unable to setup queue (%d) (err=%d)",
-		       q_priv->q_id, ret);
-		return ret;
+	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
+			RTE_CACHE_LINE_SIZE);
+	if (!q_priv->host_params) {
+		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for host_params");
+		return -ENOMEM;
 	}
 
 	/* Set queue properties for LA12xx device */
@@ -394,9 +321,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_ldpc_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_ENC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_enc_queues++);
+		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_ENC_CORE;
+		q_priv->feca_blk_id = priv->num_ldpc_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
 		if (priv->num_ldpc_dec_queues >= MAX_LDPC_DEC_FECA_QUEUES) {
@@ -404,9 +330,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_ldpc_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(BBDEV_LA12XX_LDPC_DEC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_dec_queues++);
+		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_DEC_CORE;
+		q_priv->feca_blk_id = priv->num_ldpc_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
 		if (priv->num_polar_enc_queues >= MAX_POLAR_ENC_FECA_QUEUES) {
@@ -414,9 +339,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_polar_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_ENC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(0);
+		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_ENC_CORE;
+		q_priv->feca_blk_id = 0;
 		priv->num_polar_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
@@ -425,31 +349,94 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_polar_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(BBDEV_LA12XX_POLAR_DEC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(0);
+		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
+		q_priv->feca_blk_id = 0;
 		priv->num_polar_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_RAW:
+		if (queue_conf->raw_queue_conf.modem_core_id >=
+				LA12XX_MAX_CORES) {
+			BBDEV_LA12XX_PMD_ERR("Invalid modem core id: %d",
+				queue_conf->raw_queue_conf.modem_core_id);
+			return -1;
+		}
+
 		if (priv->num_raw_queues >= MAX_RAW_QUEUES) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_raw_queues reached max value");
 			return -1;
 		}
+
+		q_priv->la12xx_core_id =
+			queue_conf->raw_queue_conf.modem_core_id;
+		q_priv->is_host_to_modem =
+			queue_conf->raw_queue_conf.direction;
+		q_priv->conf_enable =
+			queue_conf->raw_queue_conf.conf_enable;
+
 		priv->num_raw_queues++;
 		break;
 	default:
-		BBDEV_LA12XX_PMD_ERR("Not supported op type\n");
+		BBDEV_LA12XX_PMD_ERR("Unsupported op type: %d\n",
+			q_priv->op_type);
 		return -1;
 	}
-	ch->op_type = rte_cpu_to_be_32(q_priv->op_type);
-	ch->depth = rte_cpu_to_be_32(q_priv->queue_size);
 
-	/* Store queue config here */
-	q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
-	q_priv->feca_blk_id_be32 = ch->feca_blk_id;
+	if (!q_priv->is_host_to_modem) {
+		for (i = 0; i < MAX_CHANNEL_DEPTH; i++) {
+			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
+					sizeof(struct rte_bbdev_raw_op), 0);
+			if (!q_priv->bbdev_op[i]) {
+				BBDEV_LA12XX_PMD_ERR(
+					"Memory allocation failed for bbdev_op[%d]", i);
+				return -ENOMEM;
+			}
+		}
+	}
+
+	q_priv->feca_blk_id_be32 = rte_cpu_to_be_32(q_priv->feca_blk_id);
 
 	priv->per_queue_hram_size = FECA_HRAM_SIZE / priv->num_ldpc_dec_queues;
+
+config_modem_queue:
+	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
+	/* offset is from start of PEB */
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
+		mhif->ipc_regs.ipc_mdata_offset);
+	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
+
+	/* Start init of channel */
+	ch->md.ring_size = rte_cpu_to_be_32(q_priv->queue_size);
+	ch->depth = rte_cpu_to_be_32(q_priv->queue_size);
+	ch->md.pi = 0;
+	ch->md.ci = 0;
+	ch->md.msg_size = msg_size;
+	for (i = 0; i < q_priv->queue_size; i++) {
+		/* Only offset now */
+		ch->bd_h[i].modem_ptr =
+			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, q_priv->msg_ch_vaddr[i]));
+		ch->bd_h[i].host_virt_l =
+			lower_32_bits(q_priv->msg_ch_vaddr[i]);
+		ch->bd_h[i].host_virt_h =
+			upper_32_bits(q_priv->msg_ch_vaddr[i]);
+		/* Not sure use of this len may be for CRC*/
+		ch->bd_h[i].len = 0;
+	}
+
+	ch->host_ipc_params =
+		rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, q_priv->host_params));
+	ch->la12xx_core_id =
+		rte_cpu_to_be_32(q_priv->la12xx_core_id);
+	ch->feca_blk_id = rte_cpu_to_be_32(q_priv->feca_blk_id);
+
+	if (q_priv->op_type == RTE_BBDEV_OP_RAW) {
+		ch->is_host_to_modem =
+			rte_cpu_to_be_32(q_priv->is_host_to_modem);
+		ch->conf_enable =
+			rte_cpu_to_be_32(q_priv->conf_enable);
+	}
+
+	BBDEV_LA12XX_PMD_DEBUG("e200 Queue (%d) configured", q_priv->q_id);
 
 	return 0;
 }
@@ -460,43 +447,38 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	struct rte_bbdev_queue_data *q_data;
 	void *lsb_addr, *msb_addr;
 	uint32_t l1_pcie_addr;
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (q_priv->q_id < priv->num_valid_queues) {
-		/* Free previously allocated q_priv */
-		rte_free(q_priv);
-
-		/* Reassign q_priv */
-		q_priv = priv->queues_priv[q_priv->q_id];
-		q_data = &dev->data->queues[q_priv->q_id];
-		q_data->queue_private = q_priv;
 		BBDEV_LA12XX_PMD_WARN(
 			"Queue [%d] already configured, not configuring again",
 			q_priv->q_id);
-
-		return 0;
+	} else {
+		/* Allocate memory for BD ring */
+		q_priv->vspa_ring = rte_zmalloc(NULL, sizeof(struct vspa_desc) *
+				q_priv->queue_size, RTE_CACHE_LINE_SIZE);
+		if (!q_priv->vspa_ring) {
+			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for vspa_ring");
+			return -ENOMEM;
+		}
+		priv->queues_priv[q_priv->q_id] = q_priv;
 	}
+
+	/* send address and queue size to VSPA */
+	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, q_priv->vspa_ring);
+
+	q_priv->vspa_ring->host_flag = 0;
+	q_priv->vspa_ring->vspa_flag = 0;
+	q_priv->vspa_desc_wr_index = 0;
+	q_priv->vspa_desc_rd_index = 0;
 
 	lsb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
 		VSPA_ADDRESS(0) + VSPA_LSB_OFFSET);
 	msb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
 		VSPA_ADDRESS(0) + VSPA_MSB_OFFSET);
-
-	/* Allocate memory for BD ring */
-	q_priv->vspa_ring = rte_zmalloc(NULL, sizeof(struct vspa_desc) *
-			q_priv->queue_size, RTE_CACHE_LINE_SIZE);
-	if (!q_priv->vspa_ring) {
-		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for vspa_ring");
-		return -ENOMEM;
-	}
-	priv->queues_priv[q_priv->q_id] = q_priv;
-
-	/* send address and queue size to VSPA */
-	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, q_priv->vspa_ring);
 
 	rte_write32(q_priv->queue_size, msb_addr);
 	rte_mb();
@@ -511,47 +493,45 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 		const struct rte_bbdev_queue_conf *queue_conf)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct rte_bbdev_queue_data *q_data;
 	struct bbdev_la12xx_q_priv *q_priv;
-	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	ipc_instance_t *ipc_instance = ipc_priv->instance;
-	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
-	int i, ret;
+	int new_queue = 0, ret;
+	struct gul_hif *mhif;
+	ipc_metadata_t *ipc_md;
+	int instance_id = 0;
+	ipc_ch_t *ch;
 
 	PMD_INIT_FUNC_TRACE();
 
 	/* Move to setup_queues callback */
 	q_data = &dev->data->queues[q_id];
-	q_data->queue_private = rte_zmalloc(NULL,
-		sizeof(struct bbdev_la12xx_q_priv), 0);
-	if (!q_data->queue_private) {
-		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for qpriv");
-		return -ENOMEM;
-	}
 	q_priv = q_data->queue_private;
-	q_priv->q_id = q_id;
-	q_priv->bbdev_priv = dev->data->dev_private;
-	q_priv->queue_size = queue_conf->queue_size;
-	q_priv->op_type = queue_conf->op_type;
-	if (queue_conf->raw_queue_conf.modem_core_id >= LA12XX_MAX_CORES) {
-		BBDEV_LA12XX_PMD_ERR("Invalid modem core id: %d",
-				queue_conf->raw_queue_conf.modem_core_id);
-		return -ENOMEM;
-	}
-	q_priv->la12xx_core_id = queue_conf->raw_queue_conf.modem_core_id;
 
-	ch->is_host_to_modem =
-		rte_cpu_to_be_32(queue_conf->raw_queue_conf.direction);
-	ch->conf_enable =
-		rte_cpu_to_be_32(queue_conf->raw_queue_conf.conf_enable);
-	ch->la12xx_core_id =
-		rte_cpu_to_be_32(queue_conf->raw_queue_conf.modem_core_id);
+	/* If queue already configured, skip allocation */
+	if (!q_priv) {
+		q_priv = rte_zmalloc(NULL,
+			sizeof(struct bbdev_la12xx_q_priv), 0);
+		if (!q_priv) {
+			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for qpriv");
+			return -ENOMEM;
+		}
 
-	if (!ch->is_host_to_modem) {
-		for (i = 0; i < MAX_CHANNEL_DEPTH; i++)
-			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
-					sizeof(struct rte_bbdev_raw_op), 0);
+		q_data->queue_private = q_priv;
+		q_priv->q_id = q_id;
+		q_priv->bbdev_priv = dev->data->dev_private;
+		q_priv->queue_size = queue_conf->queue_size;
+		q_priv->op_type = queue_conf->op_type;
+
+		new_queue = 1;
 	}
+
+	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
+	/* offset is from start of PEB */
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
+		mhif->ipc_regs.ipc_mdata_offset);
+	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
+	ch->op_type = rte_cpu_to_be_32(q_priv->op_type);
 
 	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
 		ret = la12xx_vspa_queue_setup(dev, q_priv);
@@ -562,7 +542,7 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 			return ret;
 		}
 	} else {
-		ret = la12xx_e200_queue_setup(dev, q_priv);
+		ret = la12xx_e200_queue_setup(dev, q_priv, queue_conf);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"la12xx_e200_queue_setup failed for qid: %d",
@@ -571,8 +551,9 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 		}
 	}
 
-	/* Store queue config here */
-	priv->num_valid_queues++;
+	/* Increment valid queue for newly allocated queue */
+	if (new_queue)
+		priv->num_valid_queues++;
 
 	return 0;
 }
@@ -607,15 +588,18 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 			return -1;
 		}
 
+		ch = &ipc_md->instance_list[instance_id].ch_list[queue_id];
+		op_type = rte_be_to_cpu_32(ch->op_type);
+
+		if (op_type == RTE_BBDEV_OP_LA12XX_VSPA)
+			continue;
+
 		if (core_id >= GUL_EP_CORE_MAX) {
 			BBDEV_LA12XX_PMD_ERR(
 				"Invalid core ID %d for queue %d",
 				core_id, queue_id);
 			return -1;
 		}
-
-		ch = &ipc_md->instance_list[instance_id].ch_list[queue_id];
-		op_type = rte_be_to_cpu_32(ch->op_type);
 
 		if (op_type == RTE_BBDEV_OP_POLAR_ENC) {
 			if (priv->la12xx_polar_enc_core == -1)
@@ -2553,22 +2537,16 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 
 	ret = libwdog_reinit_modem(wdog, 300);
 	if (ret < 0) {
-		BBDEV_LA12XX_PMD_ERR("modem reinit failed");
+		BBDEV_LA12XX_PMD_ERR("libwdog_reinit_modem failed");
 		return ret;
 	}
 
 	/* Setup the device */
-	setup_la12xx_dev(dev);
-
-	/* Reset Global variables */
-	priv->num_ldpc_enc_queues = 0;
-	priv->num_ldpc_dec_queues = 0;
-	priv->num_polar_enc_queues = 0;
-	priv->num_polar_dec_queues = 0;
-	priv->per_queue_hram_size = 0;
-	priv->la12xx_polar_enc_core = -1;
-	priv->la12xx_polar_dec_core = -1;
-	priv->num_valid_queues = 0;
+	ret = setup_la12xx_dev(dev);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("setup_la12xx_dev failed");
+		return ret;
+	}
 
 	return 0;
 }

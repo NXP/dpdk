@@ -37,7 +37,10 @@ struct rte_mempool *bbdev_bbuf_pool;
 #define POISON 0x12
 
 #define MAX_QUEUES RTE_MAX_LCORE
-#define TEST_REPETITIONS 10000
+/* Keeping repetition as odd number so that
+ * reset is properly verified.
+ */
+#define TEST_REPETITIONS 10009
 
 #ifdef RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC
 #define FPGA_PF_DRIVER_NAME ("intel_fpga_lte_fec_pf")
@@ -5187,9 +5190,17 @@ interrupt_tc(void)
 static struct unit_test_suite bbdev_throughput_testsuite = {
 	.suite_name = "BBdev Throughput Tests",
 	.setup = testsuite_setup,
-	.teardown = testsuite_teardown,
 	.unit_test_cases = {
 		TEST_CASE_ST(ut_setup, ut_teardown, throughput_tc),
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
+static struct unit_test_suite bbdev_latency_testsuite = {
+	.suite_name = "BBdev Latency Tests",
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, latency_tc),
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -5204,19 +5215,7 @@ static struct unit_test_suite bbdev_validation_testsuite = {
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
-#endif
 
-static struct unit_test_suite bbdev_latency_testsuite = {
-	.suite_name = "BBdev Latency Tests",
-	.setup = testsuite_setup,
-	.teardown = testsuite_teardown,
-	.unit_test_cases = {
-		TEST_CASE_ST(ut_setup, ut_teardown, latency_tc),
-		TEST_CASES_END() /**< NULL terminate unit test array */
-	}
-};
-
-#if 0
 static struct unit_test_suite bbdev_offload_cost_testsuite = {
 	.suite_name = "BBdev Offload Cost Tests",
 	.setup = testsuite_setup,
@@ -5240,11 +5239,9 @@ static struct unit_test_suite bbdev_interrupt_testsuite = {
 #endif
 
 REGISTER_TEST_COMMAND(throughput, bbdev_throughput_testsuite);
-#if 0
-REGISTER_TEST_COMMAND(validation, bbdev_validation_testsuite);
-#endif
 REGISTER_TEST_COMMAND(latency, bbdev_latency_testsuite);
 #if 0
+REGISTER_TEST_COMMAND(validation, bbdev_validation_testsuite);
 REGISTER_TEST_COMMAND(offload, bbdev_offload_cost_testsuite);
 REGISTER_TEST_COMMAND(interrupt, bbdev_interrupt_testsuite);
 #endif

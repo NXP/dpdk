@@ -79,6 +79,8 @@ struct bbdev_la12xx_q_priv {
 	uint32_t host_pi;	/**< Producer_Index for HOST->MODEM */
 	uint32_t host_ci;	/**< Consumer Index for MODEM->HOST */
 	host_ipc_params_t *host_params; /**< Host parameters */
+	uint32_t is_host_to_modem;	/**< Direction of operation */
+	uint32_t conf_enable;		/**< Confirmation mode enabled/disabled */
 };
 
 #define lower_32_bits(x) ((uint32_t)((uint64_t)x))
