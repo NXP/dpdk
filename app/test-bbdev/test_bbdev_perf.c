@@ -3618,14 +3618,14 @@ latency_test_dec(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_bbdev_dec_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -3647,7 +3647,6 @@ latency_test_dec(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 		last_time = 0;
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -3669,11 +3668,9 @@ latency_test_dec(void *arg)
 		do {
 			deq += rte_bbdev_dequeue_dec_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time = rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time = rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -3704,14 +3701,14 @@ latency_test_ldpc_dec(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_bbdev_dec_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -3736,7 +3733,6 @@ latency_test_ldpc_dec(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 		last_time = 0;
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -3840,12 +3836,9 @@ latency_test_ldpc_dec(void *arg)
 						&ops_deq[deq - 1], deq);
 
 			}
-
-			if (likely(first_time && (deq > 0))) {
-				last_time = rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time = rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -3879,14 +3872,14 @@ latency_test_ldpc_polar(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_pmd_la12xx_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -3907,7 +3900,6 @@ latency_test_ldpc_polar(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 		last_time = 0;
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -3949,11 +3941,9 @@ latency_test_ldpc_polar(void *arg)
 		do {
 			deq += rte_pmd_la12xx_dequeue_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time = rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time = rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -3988,14 +3978,14 @@ latency_test_la12xx_raw(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_pmd_la12xx_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -4014,7 +4004,6 @@ latency_test_la12xx_raw(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 
 		last_time = 0;
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -4040,11 +4029,9 @@ latency_test_la12xx_raw(void *arg)
 		do {
 			deq += rte_pmd_la12xx_dequeue_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time = rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time = rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -4072,14 +4059,14 @@ latency_test_la12xx_vspa(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_pmd_la12xx_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -4098,7 +4085,6 @@ latency_test_la12xx_vspa(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 
 		last_time = 0;
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -4124,11 +4110,9 @@ latency_test_la12xx_vspa(void *arg)
 		do {
 			deq += rte_pmd_la12xx_dequeue_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time = rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time = rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -4152,14 +4136,14 @@ latency_test_enc(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint64_t num_to_process = tp->iter_count;
+	uint16_t burst_sz = tp->op_params->burst_sz;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_bbdev_enc_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -4180,7 +4164,6 @@ latency_test_enc(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 		last_time = 0;
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -4202,11 +4185,9 @@ latency_test_enc(void *arg)
 		do {
 			deq += rte_bbdev_dequeue_enc_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time += rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time += rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -4236,14 +4217,14 @@ latency_test_ldpc_enc(void *arg)
 	struct rte_bbdev_info info;
 	uint16_t dev_id = tp->dev_id;
 	uint16_t queue_id = tp->queue_id;
-	uint16_t num_to_process = tp->iter_count;
-	uint16_t burst_sz = 1;
+	uint16_t burst_sz = tp->op_params->burst_sz;
+	uint64_t num_to_process = tp->iter_count;
 	uint64_t *total_time = tp->total_time;
 	uint64_t *min_time = tp->min_time;
 	uint64_t *max_time = tp->max_time;
 
 	int ret = TEST_SUCCESS;
-	uint16_t i, j, dequeued;
+	uint64_t i, j, dequeued;
 	struct rte_bbdev_enc_op *ops_enq[MAX_BURST], *ops_deq[MAX_BURST];
 	uint64_t start_time = 0, last_time = 0;
 
@@ -4264,7 +4245,6 @@ latency_test_ldpc_enc(void *arg)
 
 	for (i = 0, dequeued = 0; dequeued < num_to_process; ++i) {
 		uint16_t enq = 0, deq = 0;
-		bool first_time = true;
 		last_time = 0;
 
 		if (unlikely(num_to_process - dequeued < burst_sz))
@@ -4285,10 +4265,6 @@ latency_test_ldpc_enc(void *arg)
 
 		start_time = rte_rdtsc_precise();
 
-		/*
-		 * printf("Latency Debug %d\n",
-		 * ops_enq[0]->ldpc_enc.cb_params.z_c); REMOVEME
-		 */
 		enq = rte_bbdev_enqueue_ldpc_enc_ops(dev_id, queue_id,
 				&ops_enq[enq], burst_sz);
 		TEST_ASSERT(enq == burst_sz,
@@ -4299,11 +4275,9 @@ latency_test_ldpc_enc(void *arg)
 		do {
 			deq += rte_bbdev_dequeue_ldpc_enc_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (likely(first_time && (deq > 0))) {
-				last_time += rte_rdtsc_precise() - start_time;
-				first_time = false;
-			}
 		} while (unlikely(burst_sz != deq));
+
+		last_time += rte_rdtsc_precise() - start_time;
 
 		*max_time = RTE_MAX(*max_time, last_time);
 		*min_time = RTE_MIN(*min_time, last_time);
@@ -4335,8 +4309,8 @@ latency_test(struct active_device *ad,
 		struct test_op_params *op_params)
 {
 	int iter, ret;
-	uint16_t burst_sz = 1;
-	uint16_t num_to_process;
+	uint16_t burst_sz = op_params->burst_sz;
+	uint64_t num_to_process;
 	enum rte_bbdev_op_type op_type;
 	struct thread_params *t_params;
 	struct rte_bbdev_info info;
@@ -4440,12 +4414,16 @@ latency_test(struct active_device *ad,
 		if (used_cores > num_lcores)
 			break;
 
-		iter = t_params[used_cores].iter_count;
-		printf("[core %d] Operation latency:\n"
-				"\tavg: %lg cycles, %lg us\n"
-				"\tmin: %lg cycles, %lg us\n"
-				"\tmax: %lg cycles, %lg us\n",
-				lcore_id,
+		iter = t_params[used_cores].iter_count/burst_sz;
+		printf("[core %d] Operation latency with burst_sz <%d>:\n"
+				"\tavg per packet: %lg cycles, %lg us\n"
+				"\tavg per burst: %lg cycles, %lg us\n"
+				"\tmin for burst: %lg cycles, %lg us\n"
+				"\tmax for burst: %lg cycles, %lg us\n",
+				lcore_id, burst_sz,
+				(double)total_time[used_cores] / (double)iter / burst_sz,
+				(double)(total_time[used_cores] * 1000000) / (double)iter /
+				(double)rte_get_tsc_hz() / burst_sz,
 				(double)total_time[used_cores] / (double)iter,
 				(double)(total_time[used_cores] * 1000000) / (double)iter /
 				(double)rte_get_tsc_hz(), (double)min_time[used_cores],
