@@ -1,12 +1,13 @@
 <!--
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright 2019 NXP
+  Copyright 2019-2021 NXP
 -->
 
 <!--
-This fmc configuration file sets the 6x1G and 1x10G on LS1043 to use the
-policies indicated below.
+This fmc configuration file sets the 4x1G and 1x10G (mac9) on LS10436 to use the
+policies indicated below as normal DPDK ports.
+The 1x10G (mac10) will be shared with kernel.
 -->
 
 

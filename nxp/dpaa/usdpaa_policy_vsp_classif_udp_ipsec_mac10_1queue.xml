@@ -2,7 +2,9 @@
 <!--
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright 2019 NXP
+  Copyright 2019-2021 NXP
+
+  Example to split the traffic on ipsec esp or ip-udp with hash on ip src, dst addr and SPI(ESP only)
 -->
 
 <netpcd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

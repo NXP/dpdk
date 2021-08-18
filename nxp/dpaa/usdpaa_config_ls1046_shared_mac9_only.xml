@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+ Copyright 2021 NXP
+-->
+
+<cfgdata>
+	<config>
+		<engine name="fm0">
+			<port type="MAC" number="9" policy="fm_policy_9"/>
+		</engine>
+	</config>
+</cfgdata>
