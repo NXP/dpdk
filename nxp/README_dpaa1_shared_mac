@@ -6,7 +6,7 @@ The purpose of this write-up is to show the steps for running the DPDK applicati
 
 For Building the applications and basic steps please refer to nxp/README file.
 
-1) Single Shared MAC port (fm-mac10) Demo:
+1) Single Shared MAC port (fm1-mac10) Demo:
 
 ==========================
 Changes in the  Kernel dts
@@ -50,8 +50,15 @@ This README showcases fm1-mac10 of LS1046 as an example.
 NOTE: Here 0x5f is the default Rx queue (see fsl,qman-frame-queues-rx property) which is requried to be configured in the fmc policy file as the default rule.
 
 Once the board is up with the Linux DTB having shared MAC, user should be able to see 'fm1-mac10' as an interface in ifconfig.
+NOTE: Change to ethernet@8 for fm1-mac9 and also use the fman0_rxt0-extd-args with cell-index as 0.
 
 NOTE: For fm1-mac9 - Change to ethernet@8 and also use the fman0_rxt0-extd-args with cell-index as 0.
+
+Following dts examples are available as samples:
+1. fsl-ls1046a-rdb-usdpaa-shared.dts - all ports are in shared mode with kernel.
+2. fsl-ls1046a-rdb-usdpaa-shared-mac10.dts - only mac10  is in shared mode with kernel. Other ports are assigned to dpdk only. (i.e. userspace)
+3. fsl-ls1046a-rdb-shared-mac9-only.dts - all ports are assigned to linux kernel. Only mac9 is shared with dpdk/userspace.
+
 
 Sample policy files have been added to support UDP and ESP traffic classified to user-space and rest all traffic to kernel.
 See: usdpaa_policy_vsp_24g_classif_udp_ipsec_1queue.xml and usdpaa_config_ls1046_shared_mac10.xml
@@ -89,7 +96,7 @@ Below are the steps to run fm-mac10 in shared mode with l2fwd receiving UDP and 
    # At this point all the traffic which is sent on the interface (via spirent/network) will be received by the kernel.
 3. mount -t hugetlbfs hugetlbfs /dev/hugepages
 4. echo 512 > /proc/sys/vm/nr_hugepages
-5. fmc -c usdpaa_config_ls1046_shared_10g.xml -p usdpaa_policy_classif_udp_ipsec_1queue.xml -a
+5. fmc -c usdpaa_config_ls1046_shared_10g.xml -p usdpaa_policy_vsp_24g_classif_udp_ipsec_1queue.xml -a
    # Once FMC is run kernel will not receive UDP or ESP traffic.
 6. l2fwd -c 1 -n 1 -- -p 0x20
    # Now DPDK will handle UDP or ESP traffic, and kernel will handle rest of the traffic
@@ -116,18 +123,22 @@ Below are the steps to run fm1-mac3, fm1-mac4, fm1-mac5, fm1-mac6, fm1-mac9, fm1
    # At this point all the traffic which is sent on the interfaces (via spirent/network) will be received by the kernel.
 3. mount -t hugetlbfs none /mnt/hugepages
 4. echo 512 > /proc/sys/vm/nr_hugepages
-5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_24g_classif_udp_ipsec_1queue.xml -a
+5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_vsp_24g_classif_udp_ipsec_1queue.xml -a
    # Once FMC is run kernel will not receive UDP or ESP traffic.
-6. export P0_DIST='(0,0,0)'
+6a. export P0_DIST='(0,0,0)'
    export P1_DIST='(1,0,0)'
    export P2_DIST='(2,0,0)'
    export P3_DIST='(3,0,0)'
    export P4_DIST='(4,0,0)'
    export P5_DIST='(5,0,0)'
    l3fwd -v -c 0x1 -n 1 --no-pci -- -p 0x3f -P --config="$P0_DIST,$P1_DIST,$P2_DIST,$P3_DIST,$P4_DIST,$P5_DIST"
+    # Now DPDK will handle UDP or ESP traffic, and kernel will handle rest of the traffic
 
-3) NOTES:
+6b. Run testpmd:
+    testpmd -c 0xF -n 1 -- -i --portmask=0x3 --nb-cores=2
 
-1. If required after exitting the DPDK application run 'fmc -x' to remove the FMC configuration for DPDK, so that all traffic can again go to kernel.
+NOTES:
+
+1. If required after exiting the DPDK application run 'fmc -x' to remove the FMC configuration for DPDK, so that all traffic can again go to kernel.
 
 2. For DPDK to work, kernel shared interface must be up. Also, shared MAC is only supported in FMC mode.
