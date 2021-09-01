@@ -1092,7 +1092,15 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		cd_command_t *cd_cmd =
 			&bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
 
-		polar_params->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;
+		if (l_cd_cmd->cd_cfg1.pd_n)
+			polar_params->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;
+		else
+			/* For Short Block (UCI < 11), FECA does not perform
+			 * Read Muller decoding, and output is from the
+			 * de-ratematcher.
+			 */
+			polar_params->output.length = l_cd_cmd->cd_cfg1.K;
+
 		l_cd_cmd->cd_cfg1.complete_trig_en = 1;
 		/* Set complete trigger */
 		cd_cmd->cd_cfg1.raw_cd_cfg1 =
