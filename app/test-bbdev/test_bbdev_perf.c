@@ -73,6 +73,9 @@ static bool intr_enabled;
  */
 rte_atomic16_t sd_cd_demux_sync_var;
 rte_atomic16_t se_ce_mux_sync_var;
+int ack_sync_var;
+int csi1_sync_var;
+int csi2_sync_var;
 int num_polar_decode_tests;
 
 /* Flag in case llr input scaling is required */
@@ -384,6 +387,12 @@ check_dev_cap(const struct rte_bbdev_info *dev_info,
 			return TEST_SUCCESS;
 		} else if (op_cap->type == RTE_BBDEV_OP_POLAR_DEC) {
 			num_polar_decode_tests++;
+			if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(&vector->la12xx_op))
+				ack_sync_var = num_polar_decode_tests;
+			if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(&vector->la12xx_op))
+				csi1_sync_var = num_polar_decode_tests;
+			if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI2(&vector->la12xx_op))
+				csi2_sync_var = num_polar_decode_tests;
 			return TEST_SUCCESS;
 		} else if (op_cap->type == RTE_BBDEV_OP_POLAR_ENC) {
 			return TEST_SUCCESS;
@@ -2857,8 +2866,7 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 
 		total_time += rte_rdtsc_precise() - start_time;
 		if (ref_op->ldpc_dec.sd_cd_demux)
-			rte_atomic16_set(&sd_cd_demux_sync_var,
-					 num_polar_decode_tests);
+			rte_atomic16_inc(&sd_cd_demux_sync_var);
 
 		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_ldpc_dec_op(ops_deq, num_ops, ref_op,
@@ -3127,13 +3135,17 @@ throughput_pmd_lcore_polar(void *arg)
 			for (j = 0; j < num_ops; ++j)
 				bbuf_reset(ops_enq[j]->polar_params.output.bdata);
 
-		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(ref_op) ||
-		    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(ref_op)) {
-			while (rte_atomic16_read(&sd_cd_demux_sync_var) != 1)
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(ref_op)) {
+			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
+			       ack_sync_var)
+				;
+		} else if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(ref_op)) {
+			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
+			       csi1_sync_var)
 				;
 		} else if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI2(ref_op)) {
 			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
-			       num_polar_decode_tests)
+			       csi2_sync_var)
 				;
 		} else if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op)) {
 			while (rte_atomic16_read(&se_ce_mux_sync_var) == 1)
@@ -3163,8 +3175,14 @@ throughput_pmd_lcore_polar(void *arg)
 
 		total_time += rte_rdtsc_precise() - start_time;
 
-		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
-			rte_atomic16_dec(&sd_cd_demux_sync_var);
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op)) {
+			if (rte_atomic16_read(&sd_cd_demux_sync_var) ==
+			    num_polar_decode_tests)
+				rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+			else
+				rte_atomic16_inc(&sd_cd_demux_sync_var);
+		}
+
 		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
 			rte_atomic16_set(&se_ce_mux_sync_var, 1);
 
@@ -3845,8 +3863,7 @@ latency_test_ldpc_dec(void *arg)
 		*total_time += last_time;
 
 		if (ref_op->ldpc_dec.sd_cd_demux)
-			rte_atomic16_set(&sd_cd_demux_sync_var,
-					 num_polar_decode_tests);
+			rte_atomic16_inc(&sd_cd_demux_sync_var);
 
 		if (vector->op_type != RTE_BBDEV_OP_NONE) {
 			ret = validate_ldpc_dec_op(ops_deq, burst_sz, ref_op,
@@ -3916,13 +3933,17 @@ latency_test_ldpc_polar(void *arg)
 			}
 		}
 
-		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(ref_op) ||
-		    RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(ref_op)) {
-			while (rte_atomic16_read(&sd_cd_demux_sync_var) != 1)
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_ACK(ref_op)) {
+			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
+			       ack_sync_var)
+				;
+		} else if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI1(ref_op)) {
+			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
+			       csi1_sync_var)
 				;
 		} else if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX_CSI2(ref_op)) {
 			while (rte_atomic16_read(&sd_cd_demux_sync_var) !=
-			       num_polar_decode_tests)
+			       csi2_sync_var)
 				;
 		} else if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op)) {
 			while (rte_atomic16_read(&se_ce_mux_sync_var) == 1)
@@ -3949,8 +3970,14 @@ latency_test_ldpc_polar(void *arg)
 		*min_time = RTE_MIN(*min_time, last_time);
 		*total_time += last_time;
 
-		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op))
-			rte_atomic16_dec(&sd_cd_demux_sync_var);
+		if (RTE_PMD_LA12xx_IS_POLAR_DEC_DEMUX(ref_op)) {
+			if (rte_atomic16_read(&sd_cd_demux_sync_var) ==
+			    num_polar_decode_tests)
+				rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+			else
+				rte_atomic16_inc(&sd_cd_demux_sync_var);
+		}
+
 		if (RTE_PMD_LA12xx_IS_POLAR_ENC_MUX(ref_op))
 			rte_atomic16_set(&se_ce_mux_sync_var, 1);
 
@@ -4393,6 +4420,9 @@ latency_test(struct active_device *ad,
 		}
 		used_cores++;
 	}
+
+	rte_atomic16_set(&sd_cd_demux_sync_var, 0);
+	rte_atomic16_set(&se_ce_mux_sync_var, 0);
 
 	RTE_LCORE_FOREACH(lcore_id) {
 		rte_atomic16_set(&(&op_params[lcore_id])->sync, SYNC_START);
