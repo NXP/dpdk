@@ -2868,7 +2868,8 @@ throughput_pmd_lcore_ldpc_dec(void *arg)
 		if (ref_op->ldpc_dec.sd_cd_demux)
 			rte_atomic16_inc(&sd_cd_demux_sync_var);
 
-		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE) {
+		if (tp->op_params->vector->op_type != RTE_BBDEV_OP_NONE &&
+		    tp->op_params->vector->ldpc_dec.tb_params.c != 0) {
 			ret = validate_ldpc_dec_op(ops_deq, num_ops, ref_op,
 					tp->op_params->vector_mask,
 					tp->op_params->vector);
@@ -3865,7 +3866,8 @@ latency_test_ldpc_dec(void *arg)
 		if (ref_op->ldpc_dec.sd_cd_demux)
 			rte_atomic16_inc(&sd_cd_demux_sync_var);
 
-		if (vector->op_type != RTE_BBDEV_OP_NONE) {
+		if (vector->op_type != RTE_BBDEV_OP_NONE &&
+		    vector->ldpc_dec.tb_params.c != 0) {
 			ret = validate_ldpc_dec_op(ops_deq, burst_sz, ref_op,
 					vector_mask, vector);
 			TEST_ASSERT_SUCCESS(ret, "Validation failed!");

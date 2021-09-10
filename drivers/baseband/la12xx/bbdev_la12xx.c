@@ -63,6 +63,9 @@ struct bbdev_la12xx_params {
 
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
+#define SD_MAX_REQ_BYTES		0xFFC0
+#define SD_LLRS_PER_RE_MASK		0x0000FFFF
+
 static const char * const bbdev_la12xx_valid_params[] = {
 	BBDEV_LA12XX_VDEV_MODEM_ID_ARG,
 };
@@ -1011,7 +1014,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		sd_dcm_command =
 			&bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
 		sd_dcm_command->sd_llrs_per_re =
-			rte_cpu_to_be_32(ldpc_dec->sd_llrs_per_re);
+			rte_cpu_to_be_32((SD_MAX_REQ_BYTES << 16) |
+				(SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re));
 
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			sd_dcm_command->demux[i].sd_n_re_ack_re =
@@ -1210,7 +1214,10 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	int ret;
 
 	sys_cols = (ldpc_dec->basegraph == 1) ? 22 : 10;
-	if (ldpc_dec->tb_params.c == 1) {
+	if (ldpc_dec->tb_params.c == 0) {
+		ldpc_dec->hard_output.length = 0;
+		goto fill_feca_desc;
+	} else if (ldpc_dec->tb_params.c == 1) {
 		total_out_bits = ((sys_cols * ldpc_dec->z_c) -
 				ldpc_dec->n_filler);
 		/* 5G-NR protocol uses 16 bit CRC when output packet
@@ -1278,6 +1285,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 
 	bbdev_ipc_op->num_code_blocks = rte_cpu_to_be_32(num_code_blocks);
 
+fill_feca_desc:
 	ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op,
 				 bbdev_dec_op, out_op_data);
 	if (ret) {
@@ -1915,6 +1923,13 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 
 		l_op = ops[nb_dequeued];
 		l_op->status = bbdev_ipc_op.status;
+
+		/* In case of no SD data, which can be the case with
+		 * demux scenario, where ACK/CSI are demuxed, simply
+		 * continue.
+		 */
+		if (!bbdev_ipc_op.out_len)
+			continue;
 
 		harq_out_op_data = &l_op->ldpc_dec.harq_combined_output;
 		if ((l_op->ldpc_dec.op_flags &
