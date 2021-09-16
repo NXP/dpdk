@@ -21,6 +21,7 @@ sources = files(
         'portal/dpaa2_hw_dpbp.c',
         'portal/dpaa2_hw_dpci.c',
         'portal/dpaa2_hw_dpio.c',
+	'portal/dpaa2_hw_dprc.c',
         'qbman/qbman_portal.c',
         'qbman/qbman_debug.c',
 )

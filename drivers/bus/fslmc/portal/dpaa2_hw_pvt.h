@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2020 NXP
+ *   Copyright 2016-2021 NXP
  *
  */
 
@@ -186,6 +186,18 @@ struct swp_active_dqs {
 #define NUM_MAX_SWP 64
 
 extern struct swp_active_dqs rte_global_active_dqs_list[NUM_MAX_SWP];
+
+/**
+ * A structure describing a DPAA2 container.
+ */
+struct dpaa2_dprc_dev {
+	TAILQ_ENTRY(dpaa2_dprc_dev) next;
+		/**< Pointer to Next device instance */
+	const char *name;
+	struct fsl_mc_io dprc;  /** handle to DPRC portal object */
+	uint16_t token;
+	uint32_t dprc_id; /*HW ID for DPRC object */
+};
 
 struct dpaa2_dpci_dev {
 	TAILQ_ENTRY(dpaa2_dpci_dev) next;
