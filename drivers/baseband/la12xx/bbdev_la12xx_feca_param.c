@@ -416,6 +416,7 @@ la12xx_sch_decode_param_convert(uint32_t BGnumber,
 			     SD_SC_X1_INIT, SD_SC_X2_INIT);
 	}
 
+	*e_div_qm_floor = 0;
 	for (i = 0; i < *C; i++) {
 		if ((codeblock_mask[i/32] >> (i % 32)) & 1) {
 			if (cb_counter == 0) {
