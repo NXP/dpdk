@@ -176,6 +176,7 @@ struct dpaa2_queue {
 	uint16_t nb_desc;
 	uint16_t resv;
 	uint64_t offloads;
+	uint64_t lpbk_cntx;
 } __rte_cache_aligned;
 
 struct swp_active_dqs {
