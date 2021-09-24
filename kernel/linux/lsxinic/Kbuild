@@ -1,0 +1,2 @@
+ccflags-y := $(MODULE_CFLAGS)
+obj-m := lsinic_kmod.o lsinic_kcompt.o lsinic_ethtool.o print_buffer.o
