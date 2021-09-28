@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2021 NXP
+
+===============================================================================
+NXP DPDK PCIe Endpoint README
+
+1) DPDK build:
+i)  Endpoint build:
+      export CROSS=aarch64-linux-gnu-
+      export RTE_SDK=/Your/DPDK/path
+      export RTE_TARGET=arm64-dpaa-linuxapp-gcc
+      make install T=arm64-dpaa-linuxapp-gcc EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+    Target image:
+      Endpoint example image: "example/port-fwd/build/port-fwd".
+ii) Root Complex build:
+    X86_64:
+      make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y -j 8
+    NXP ARM:
+      export RTE_KERNELDIR=/Your/linux/kernel/path
+      make T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LSXINIC_RC_KMOD=y install
+    Target images:
+      Root Complex kernel driver: "lsinic.ko".
+      Root Complex DPDK UIO driver: "igb_uio.ko".
+      Root Complex DPDK image: "example/port-fwd/build/port-fwd".
+
+2) Basic Test Setup:
+
+             +---port-fwd---+
+             |(Kernel ipfwd)|
+             |              |
+             |              |
+        +----------+    +----------+
+        | RC PF0   |    |  RC PF1  |
+        +-----|----+    +-----|----+
+    ----------|----PCIe-BUS---|----------
+        +-----|----+    +-----|----+
+        | EP PF0   |    | EP PF1   |
+        +----------+    +----------+
+              |               |
+              |               |
+              | +-----------+ |
+               -| port-fwd  |-
+              | +-----------+ |
+              |               |
+        +-----|----+    +-----|---+
+        | DPNIx    |    | DPNIy   |
+        +----------+    +---------+
+
+i) Start Endpoint:
+   export ENABLE_PL_BIT=1
+   export DPRC=dprc.2
+   export DPDMAI_COUNT=32
+   source ./dynamic_dpl.sh dpmac.5 dpmac.6
+   export PORT0_FWD=1  #forward traffic from dpmac5 to PF0
+   export PORT1_FWD=0  #forward traffic from PF0 to dpmac5
+   export PORT0_FWD=2  #forward traffic from dpmac6 to PF1
+   export PORT1_FWD=3  #forward traffic from PF1 to dpmac6
+
+   Optional settings:
+   export LSINIC_QDMA_SG_ENABLE=1 #qDMA SG format used for burst transaction
+   export LSINIC_TXQ_QDMA_NO_RESPONSE=1 #qDMA of TXQ used to update BD from EP to RC and no qDMA dq operation.
+   export LSINIC_RXQ_QDMA_NO_RESPONSE=1 #RC appends one byte after payload to notify EP qDMA complete.
+
+   ./port_fwd -c "core mask" -n 1 -- -p 0xf --config="$P0_DIST,$P1_DIST,$P2_DIST,$P3_DIST"
+
+ii) Start Root Complex:
+   For kernel driver:
+     insmod lsinic.ko
+   For DPDK:
+     insmod igb_uio.ko
+     echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
+     export PORT0_FWD=1 #forward traffic from PF0 to PF1
+     export PORT1_FWD=0 #forward traffic from PF1 to PF0
+
+     ./port_fwd -c "core mask" -n 1 -- -p 0x3 --config="$P0_DIST,$P1_DIST"
+
+3) Small packets across PCIe performance improvment on Endpoint:
+   #Merge burst small packets to large packet.
+   export LSINIC_MERGE_PACKETS=1
+
+   #Configure DPAA2 port as recycle port to merge small packets for PCIEx_PFy or PCIEx_PFy_VFz.
+   #This DPAA2 port may be one dpni self or one single lan serdes port.
+   export LSXINIC_PCIEx_PFy_HW_MERGE=portid
+   export LSXINIC_PCIEx_PFy_VFz_HW_MERGE=portid
+
+   #Configure DPAA2 port as recycle port to split packet merged with small packets from PCIe host.
+   #This DPAA2 recycle port will redirect traffic to DPAA2 MAC according to rule applied.
+   export LSXINIC_PCIEx_PFy_HW_SPLIT=portid
+   export LSXINIC_PCIEx_PFy_VFz_HW_SPLIT=portid
+
+   #Direct traffic from PCIE EP PMD port to DPAA2 port in egress direction.
+   export LSXINIC_PCIEx_PFy_EGRESS=portid
+   export LSXINIC_PCIEx_PFy_VFz_EGRESS=portid
+
+   #Application handles DPAA2 recycle port.
+   export LSXINIC_APP_HANDLE_RECYCLE_DEV=1
+
+4) Multiple EP processes to handle fast path(host DPDK) and slow path(host kernel) respectively.
+
+             +---port-fwd---+                  +-kernel-loopback--+
+             |              |                  |                  |
+             |              |                  |                  |
+             |              |                  |                  |
+        +----------+    +----------+      +-------+           +----------+
+        | RC PF0   |    |RC PF0VF0 |      |RC PF1 |           |RC PF1VF0 |
+        +-----|----+    +-----|----+      +----|--+           +---|------+
+    ----------|----PCIe-BUS---|---------------------------------------------
+        +-----|----+    +-----|----+     +-----|--+           +---|------+
+        | EP PF0   |    |EP PF0VF0 |     | EP PF1 |           |EP PF1VF0 |
+        +----------+    +----------+     +--------+           +----------+
+              |               |                |                  |
+              |               |                |                  |
+              | +-----------+ |                | +-------------+  |
+               -| port-fwd1 |-                  -| port-fwd2   |-
+              | +-----------+ |                | +-------------+  |
+              |               |                |                  |
+        +-----|----+    +-----|---+       +----|---+          +---|----+
+        | DPNIa    |    | DPNIb   |       | DPNIc  |          | DPNId  |
+        +----------+    +---------+       +--------+          +--------+
+
+First EP process:
+   export ENABLE_PL_BIT=1
+   export DPDMAI_COUNT=10
+   export DPIO_COUNT=10
+   export DPRC=dprc.2
+   export PORT0_FWD=2
+   export PORT1_FWD=3
+   export PORT2_FWD=0
+   export PORT3_FWD=1
+
+   export LSINIC_PF0_VF=1
+   export LSINIC_PF1=0
+
+   source ./dynamic_dpl.sh dpmac.3 dpmac.4
+   ./port_fwd -c "core mask" -n 1 -- -p 0xf --config="$P0_DIST,$P1_DIST,$P2_DIST,$P3_DIST"
+
+Second EP process
+   export ENABLE_PL_BIT=1
+   export DPDMAI_COUNT=10
+   export DPIO_COUNT=10
+   export DPRC=dprc.3
+   export PORT0_FWD=2
+   export PORT1_FWD=3
+   export PORT2_FWD=0
+   export PORT3_FWD=1
+
+   export LSINIC_PF1_VF=1
+   export LSINIC_PF0=0
+
+   export FILE_PREFIX=rte1
+   export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
+
+   source ./dynamic_dpl.sh dpmac.5 dpmac.6
+   ./port_fwd -c "core mask" -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST,$P1_DIST,$P2_DIST,$P3_DIST"
+
+
+RC DPDK for PF0 and PF0VF0
+    echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
+    echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+    echo 1 > /sys/bus/pci/rescan
+    insmod igb_uio.ko
+    echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
+    echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/max_vfs
+    export PORT0_FWD=1
+    export PORT1_FWD=0
+
+    ./port_fwd -c "core mask" -n 1 -- -p 0x3 --config="$P0_DIST,$P1_DIST"
+
+RC kernel module for PF1 and PF1VF0
+    insmod lsinic.ko max_vfs=1 lsinic_loopback=1
