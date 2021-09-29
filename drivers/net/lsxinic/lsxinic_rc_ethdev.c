@@ -170,7 +170,8 @@ static void *lxsnic_rc_debug_status(void *arg)
 	while (1) {
 		sleep(DEBUG_STATUS_INTERVAL);
 
-		print_port_status(eth_dev, NULL, DEBUG_STATUS_INTERVAL, 0);
+		print_port_status(eth_dev, NULL, DEBUG_STATUS_INTERVAL,
+			0, 0);
 		printf("\r\n\r\n");
 	}
 

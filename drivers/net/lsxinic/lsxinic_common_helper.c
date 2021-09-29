@@ -16,6 +16,10 @@
 #include "lsxinic_ep_ethdev.h"
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_ethtool.h"
+
+#include "lsxinic_vio_common.h"
+#include "lsxinic_vio_rxtx.h"
+
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_ethdev.h>
@@ -269,8 +273,53 @@ print_queue_status(void *queue,
 	}
 }
 
+static void
+print_ep_virtio_queue_status(void *queue,
+	unsigned long long *packets,
+	unsigned long long *errors,
+	unsigned long long *drops,
+	unsigned long long *fulls,
+	unsigned long long *bytes_fcs,
+	double *bytes_diff, uint64_t *core_mask)
+{
+	struct lsxvio_queue *q = queue;
+	if (!q)
+		return;
+
+	printf("\t%sq%d: ",
+		q->type == LSXVIO_QUEUE_RX ? "rx" : "tx",
+		q->reg_idx);
+
+	printf("\t\tpackets=%lld errors=%lld "
+		"drop_pkts=%lld\n"
+		"\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+		(unsigned long long)q->packets,
+		(unsigned long long)q->errors,
+		(unsigned long long)q->drop_packet_num,
+		(unsigned long long)q->ring_full,
+		(unsigned long long)q->loop_total,
+		(unsigned long long)q->loop_avail);
+
+	printf("\tEP dmaq=%d next_dma_idx=%d"
+			"\t\tnew_desc=%d in_dma=%ld\n",
+			q->dma_vq, q->next_dma_idx,
+			q->new_desc,
+			q->pkts_eq - q->pkts_dq);
+	(*packets) += q->packets;
+	(*errors) += q->errors;
+	(*drops) += q->drop_packet_num;
+	(*fulls) += q->ring_full;
+	(*bytes_fcs) += q->bytes_fcs;
+	(*bytes_diff) += q->bytes_overhead - q->bytes_overhead_old;
+	q->bytes_overhead_old = q->bytes_overhead;
+
+	if (core_mask)
+		(*core_mask) |= (((uint64_t)1) << q->core_id);
+}
+
 void print_port_status(struct rte_eth_dev *eth_dev,
-	uint64_t *core_mask, uint32_t debug_interval, int is_ep)
+	uint64_t *core_mask, uint32_t debug_interval, int is_ep,
+	int is_vio_ep)
 {
 	int i;
 	void *queue;
@@ -284,23 +333,35 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	unsigned long long missed;
 	int ret = 0;
 
-	if (is_ep)
+	if (is_ep && !is_vio_ep)
 		ret = lsinic_ep_rx_drop_count(eth_dev, &missed);
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
-		print_queue_status(queue, &opackets, &oerrors,
-			&odrops, &oring_full, &obytes_fcs, &obytes_diff,
-			NULL, is_ep);
+		if (is_ep && is_vio_ep) {
+			print_ep_virtio_queue_status(queue, &opackets, &oerrors,
+				&odrops, &oring_full, &obytes_fcs, &obytes_diff,
+				NULL);
+		} else {
+			print_queue_status(queue, &opackets, &oerrors,
+				&odrops, &oring_full, &obytes_fcs, &obytes_diff,
+				NULL, is_ep);
+		}
 	}
 
 	if (core_mask)
 		*core_mask = 0;
 	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
 		queue = eth_dev->data->rx_queues[i];
-		print_queue_status(queue, &ipackets, &ierrors,
-			&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
-			core_mask, is_ep);
+		if (is_ep && is_vio_ep) {
+			print_ep_virtio_queue_status(queue, &ipackets, &ierrors,
+				&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
+				core_mask);
+		} else {
+			print_queue_status(queue, &ipackets, &ierrors,
+				&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
+				core_mask, is_ep);
+		}
 	}
 
 	printf("\tTotal txq:\ttotal_pkts=%lld tx_pkts=%lld "
@@ -312,7 +373,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	printf("TX performance: %fGbps, fcs bits: %lld\r\n",
 		obytes_diff * 8 /
 		(debug_interval * G_SIZE), obytes_fcs * 8);
-	if (!ret && is_ep)
+	if (!ret && is_ep && !is_vio_ep)
 		idrops = missed;
 	printf("\tTotal rxq:\trx-pkts=%lld drop_pkts=%lld "
 		"ring_full=%lld\n",

@@ -163,7 +163,7 @@ static void lsinic_print_ep_status(void)
 
 		print_port_status(eth_dev, &core_mask,
 			(DEBUG_PRINT_INTERVAL + 1) *
-			LSINIC_CMD_POLLING_INTERVAL, 1);
+			LSINIC_CMD_POLLING_INTERVAL, 1, 0);
 
 		printf("\r\n\r\n");
 		dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
