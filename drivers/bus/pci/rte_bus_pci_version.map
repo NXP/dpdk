@@ -13,6 +13,8 @@ DPDK_20.0 {
 	rte_pci_unmap_device;
 	rte_pci_unregister;
 	rte_pci_write_config;
+	rte_pci_register;
+	rte_pci_get_sysfs_path;
 
 	local: *;
 };
