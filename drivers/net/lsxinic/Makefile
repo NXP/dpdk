@@ -52,12 +52,18 @@ SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_rxtx.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_ethtool.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_pf.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
+
 LDLIBS += -lrte_bus_fslmc
 LDLIBS += -lrte_mempool_dpaa2
 LDLIBS += -lrte_pmd_dpaa2
 LDLIBS += -lrte_rawdev
 LDLIBS += -lrte_bus_lsx_pciep
 LDLIBS += -lrte_common_dpaax
+
+LDLIBS += -lrte_bus_pci
 
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring
 LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs -lrte_hash

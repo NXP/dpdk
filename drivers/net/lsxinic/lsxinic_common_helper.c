@@ -20,6 +20,10 @@
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_ethdev.h>
 
+#include "lsxinic_rc_rxtx.h"
+#include "lsxinic_rc_ethdev.h"
+#include "lsxinic_rc_hw.h"
+
 #define ETH_ADDR_LEN 6
 
 /* Print data buffer in hex and ascii form to the terminal.
@@ -173,60 +177,100 @@ lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
 	return -1;
 }
 
-void print_queue_status(void *queue,
+static void
+print_queue_status(void *queue,
 	unsigned long long *packets,
 	unsigned long long *errors,
 	unsigned long long *drops,
 	unsigned long long *fulls,
 	unsigned long long *bytes_fcs,
-	double *bytes_diff, uint64_t *core_mask)
+	double *bytes_diff, uint64_t *core_mask,
+	int is_ep)
 {
-	struct lsinic_queue *q = queue;
+	struct lsinic_queue *epq = queue;
+	struct lxsnic_ring *rcq = queue;
 
-	if (!q)
+	if (!queue)
 		return;
 
-	printf("\t%sq%d: ",
-		q->type == LSINIC_QUEUE_RX ? "rx" : "tx",
-		q->reg_idx);
+	if (is_ep) {
+		printf("\t%sq%d: ",
+			epq->type == LSINIC_QUEUE_RX ? "rx" : "tx",
+			epq->reg_idx);
 
-	printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
-		q->status,
-		q->next_avail_idx,
-		q->next_used_idx,
-		q->ep_reg->pir,
-		q->ep_reg->cir);
+		printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
+			epq->status,
+			epq->next_avail_idx,
+			epq->next_used_idx,
+			epq->ep_reg->pir,
+			epq->ep_reg->cir);
 
-	printf("\t\tpackets=%lld errors=%lld "
-		"drop_pkts=%lld\n"
-		"\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
-		(unsigned long long)q->packets,
-		(unsigned long long)q->errors,
-		(unsigned long long)q->drop_packet_num,
-		(unsigned long long)q->ring_full,
-		(unsigned long long)q->loop_total,
-		(unsigned long long)q->loop_avail);
+		printf("\t\tpackets=%lld errors=%lld "
+			"drop_pkts=%lld\n"
+			"\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+			(unsigned long long)epq->packets,
+			(unsigned long long)epq->errors,
+			(unsigned long long)epq->drop_packet_num,
+			(unsigned long long)epq->ring_full,
+			(unsigned long long)epq->loop_total,
+			(unsigned long long)epq->loop_avail);
 
-	printf("\tEP dmaq=%d next_dma_idx=%d"
+		printf("\tEP dmaq=%d next_dma_idx=%d"
 			"\t\tnew_desc=%d in_dma=%ld in_dpni=%ld\n",
-			q->dma_vq, q->next_dma_idx,
-			q->new_desc,
-			q->pkts_eq - q->pkts_dq, (long)q->recycle_pending);
+			epq->dma_vq, epq->next_dma_idx,
+			epq->new_desc,
+			epq->pkts_eq - epq->pkts_dq,
+			(long)epq->recycle_pending);
 
-	(*packets) += q->packets;
-	(*errors) += q->errors;
-	(*drops) += q->drop_packet_num;
-	(*fulls) += q->ring_full;
-	(*bytes_fcs) += q->bytes_fcs;
-	(*bytes_diff) += q->bytes_overhead - q->bytes_overhead_old;
-	q->bytes_overhead_old = q->bytes_overhead;
+		(*packets) += epq->packets;
+		(*errors) += epq->errors;
+		(*drops) += epq->drop_packet_num;
+		(*fulls) += epq->ring_full;
+		(*bytes_fcs) += epq->bytes_fcs;
+		(*bytes_diff) += epq->bytes_overhead -
+			epq->bytes_overhead_old;
+		epq->bytes_overhead_old = epq->bytes_overhead;
 
-	if (core_mask)
-		(*core_mask) |= (((uint64_t)1) << q->core_id);
+		if (core_mask)
+			(*core_mask) |= (((uint64_t)1) << epq->core_id);
+	} else {
+		printf("\t%sq%d: ",
+			rcq->type == LSINIC_QUEUE_RX ? "rx" : "tx",
+			rcq->queue_index);
+
+		printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
+			rcq->status,
+			rcq->last_avail_idx,
+			rcq->last_used_idx,
+			rcq->rc_reg->pir,
+			rcq->rc_reg->cir);
+
+		printf("\t\tpackets=%lld errors=%lld "
+			"drop_pkts=%lld\n"
+			"\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+			(unsigned long long)rcq->packets,
+			(unsigned long long)rcq->errors,
+			(unsigned long long)rcq->drop_packet_num,
+			(unsigned long long)rcq->ring_full,
+			(unsigned long long)rcq->loop_total,
+			(unsigned long long)rcq->loop_avail);
+
+			(*packets) += rcq->packets;
+			(*errors) += rcq->errors;
+			(*drops) += rcq->drop_packet_num;
+			(*fulls) += rcq->ring_full;
+			(*bytes_fcs) += rcq->bytes_fcs;
+			(*bytes_diff) += rcq->bytes_overhead -
+				rcq->bytes_overhead_old;
+			rcq->bytes_overhead_old = rcq->bytes_overhead;
+
+			if (core_mask)
+				(*core_mask) |= (((uint64_t)1) << rcq->core_id);
+	}
 }
 
 void print_port_status(struct rte_eth_dev *eth_dev,
-	uint64_t *core_mask, uint32_t debug_interval)
+	uint64_t *core_mask, uint32_t debug_interval, int is_ep)
 {
 	int i;
 	void *queue;
@@ -238,15 +282,16 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	double obytes_diff = 0;
 	unsigned long long ibytes_fcs = 0, obytes_fcs = 0;
 	unsigned long long missed;
-	int ret;
+	int ret = 0;
 
-	ret = lsinic_ep_rx_drop_count(eth_dev, &missed);
+	if (is_ep)
+		ret = lsinic_ep_rx_drop_count(eth_dev, &missed);
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
 		print_queue_status(queue, &opackets, &oerrors,
 			&odrops, &oring_full, &obytes_fcs, &obytes_diff,
-			NULL);
+			NULL, is_ep);
 	}
 
 	if (core_mask)
@@ -255,7 +300,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 		queue = eth_dev->data->rx_queues[i];
 		print_queue_status(queue, &ipackets, &ierrors,
 			&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
-			core_mask);
+			core_mask, is_ep);
 	}
 
 	printf("\tTotal txq:\ttotal_pkts=%lld tx_pkts=%lld "
@@ -267,7 +312,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	printf("TX performance: %fGbps, fcs bits: %lld\r\n",
 		obytes_diff * 8 /
 		(debug_interval * G_SIZE), obytes_fcs * 8);
-	if (!ret)
+	if (!ret && is_ep)
 		idrops = missed;
 	printf("\tTotal rxq:\trx-pkts=%lld drop_pkts=%lld "
 		"ring_full=%lld\n",
