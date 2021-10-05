@@ -2254,6 +2254,64 @@ rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr)
 	return map_second_hugepage_addr(ipc_priv, addr);
 }
 
+static inline int
+bbdev_soft_reset(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct rte_bbdev_queue_conf queue_conf = {0};
+	struct bbdev_la12xx_q_priv *q_priv;
+	int num_queues, ret, i;
+
+	PMD_INIT_FUNC_TRACE();
+
+	/* Re-configure the queues */
+	num_queues = dev->data->num_queues;
+	for (i = 0; i < num_queues; i++) {
+		q_priv = dev->data->queues[i].queue_private;
+
+		/* Do not reconfigure VSPA queues here */
+		if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_VSPA)
+			continue;
+
+		queue_conf.op_type = q_priv->op_type;
+		queue_conf.queue_size = q_priv->queue_size;
+
+		ret = la12xx_queue_setup(dev, i, &queue_conf);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR(
+				"setup failed for queue id: %d", i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+int
+rte_pmd_la12xx_feca_reset(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	int ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	ipc_priv->instance->feca_soft_reset = rte_cpu_to_be_32(1);
+
+	/* Now wait for modem to reset he FECA */
+	while (ipc_priv->instance->feca_soft_reset)
+		;
+
+	ret = bbdev_soft_reset(dev_id);
+	if (ret) {
+		BBDEV_LA12XX_PMD_ERR("bbdev soft reset failed");
+		return ret;
+	}
+
+	return 0;
+}
+
 static struct hugepage_info *
 get_hugepage_info(void)
 {
@@ -2578,41 +2636,16 @@ int
 rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
-	struct rte_bbdev_queue_conf queue_conf = {0};
-	struct bbdev_la12xx_q_priv *q_priv;
-	uint16_t queue_ids[LA12XX_MAX_QUEUES];
-	uint16_t core_ids[LA12XX_MAX_QUEUES];
-	int num_queues, ret, i;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
 	/* Reset the device */
 	rte_pmd_la12xx_reset(dev_id);
 
-	/* Re-configure the queues */
-	num_queues = dev->data->num_queues;
-	for (i = 0; i < num_queues; i++) {
-		q_priv = dev->data->queues[i].queue_private;
-		queue_conf.op_type = q_priv->op_type;
-		queue_conf.queue_size = q_priv->queue_size;
-
-		ret = la12xx_queue_setup(dev, i, &queue_conf);
-		if (ret) {
-			BBDEV_LA12XX_PMD_ERR(
-				"setup failed for queue id: %d", i);
-			return ret;
-		}
-
-		/* Also prepare for LA12xx queue core config */
-		queue_ids[i] = i;
-		core_ids[i] = q_priv->la12xx_core_id;
-	}
-
-	/* Update queue core config */
-	ret = rte_pmd_la12xx_queue_core_config(dev_id,
-			queue_ids, core_ids, num_queues);
+	ret = bbdev_soft_reset(dev_id);
 	if (ret) {
-		BBDEV_LA12XX_PMD_ERR("la12xx queue core config failed");
+		BBDEV_LA12XX_PMD_ERR("bbdev soft reset failed");
 		return ret;
 	}
 
