@@ -34,8 +34,8 @@ static struct test_params {
 	unsigned int buf_size;
 	char test_vector_filename[PATH_MAX];
 	unsigned int vector_count;
+	unsigned int reset;
 	bool init_device;
-	bool reset_reconfig;
 	bool multi_hugepages;
 } test_params;
 
@@ -170,10 +170,10 @@ get_init_device(void)
 	return test_params.init_device;
 }
 
-bool
-get_reset_reconfig(void)
+unsigned int
+get_reset_param(void)
 {
-	return test_params.reset_reconfig;
+	return test_params.reset;
 }
 
 bool
@@ -194,7 +194,7 @@ print_usage(const char *prog_name)
 			"\t[-v/--test-vector VECTOR_FILE]\n"
 			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
 			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]\n"
-			"\t[-r/--reset-reconfig]]\n"
+			"\t[-r/--reset 1(reset_reconfig)/2(feca_reset)]]\n"
 			"\t[-u/--multi-hugepages]]\n",
 			prog_name);
 
@@ -225,13 +225,13 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "buf-size", 1, 0, 's' },
 		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
-		{ "reset-reconfig", 0, 0, 'r' },
+		{ "reset", 0, 0, 'r' },
 		{ "multi-hugepages", 0, 0, 'u' },
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
 
-	while ((opt = getopt_long(argc, argv, "hirun:b:c:v:f:l:s:m:", lgopts,
+	while ((opt = getopt_long(argc, argv, "hiun:b:c:v:f:l:s:m:r:", lgopts,
 			&option_index)) != EOF)
 		switch (opt) {
 		case 'n':
@@ -321,7 +321,15 @@ parse_args(int argc, char **argv, struct test_params *tp)
 			tp->init_device = true;
 			break;
 		case 'r':
-			tp->reset_reconfig = true;
+			TEST_ASSERT(strlen(optarg) > 0,
+					"Reset option not provided");
+			tp->reset = strtol(optarg, NULL, 10);
+			if (tp->reset != RESTORE_RESET_CFG &&
+			    tp->reset != FECA_RESET) {
+				printf("tp->reset value (%d) incorrect",
+					tp->reset);
+				return -1;
+			}
 			return 0;
 		case 'u':
 			tp->multi_hugepages = true;

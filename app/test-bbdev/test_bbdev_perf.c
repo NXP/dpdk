@@ -4370,8 +4370,10 @@ latency_test(struct active_device *ad,
 			RTE_ALIGN(sizeof(struct thread_params) * num_lcores,
 				RTE_CACHE_LINE_SIZE));
 
-	if (get_reset_reconfig())
+	if (get_reset_param() == RESTORE_RESET_CFG)
 		rte_pmd_la12xx_reset_restore_cfg(ad->dev_id);
+	else if (get_reset_param() == FECA_RESET)
+		rte_pmd_la12xx_feca_reset(ad->dev_id);
 
 	RTE_LCORE_FOREACH(lcore_id) {
 		if (used_cores > num_lcores)
