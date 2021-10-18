@@ -24,6 +24,9 @@
 #define BBUF_POOL_ELEM_SIZE     (RTE_BBUF_HEADROOM + 1024)
 #define DEFAULT_BBUF_SEGS 1
 
+#define RESTORE_RESET_CFG	1
+#define FECA_RESET		2
+
 #define TEST_ASSERT(cond, msg, ...) do {  \
 		if (!(cond)) {  \
 			printf("TestCase %s() line %d failed: " \
@@ -129,7 +132,7 @@ unsigned int get_buf_size(void);
 
 bool get_init_device(void);
 
-bool get_reset_reconfig(void);
+unsigned int get_reset_param(void);
 
 bool get_multi_hugepages(void);
 

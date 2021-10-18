@@ -327,7 +327,6 @@ rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
  *
  * @param dev_id
  *   The identifier of the device.
- *
  */
 void
 rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
@@ -350,9 +349,23 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
  *
  * @return
  *   size of the mapping created from second hugepage.
- *
  */
 uint32_t
 rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
+
+/**
+ * This options reset FECA and bbdev queues to state which was after
+ * BBDEV configuration i.e. before calling of rte_bbdev_start() API.
+ * Application needs to stop any BBDEV processing on all cores before
+ * calling this FECA reset API.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+int
+rte_pmd_la12xx_feca_reset(uint16_t dev_id);
 
 #endif
