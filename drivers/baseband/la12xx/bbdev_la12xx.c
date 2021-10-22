@@ -1928,7 +1928,7 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		 * demux scenario, where ACK/CSI are demuxed, simply
 		 * continue.
 		 */
-		if (!bbdev_ipc_op.out_len)
+		if (!ops[nb_dequeued]->ldpc_dec.hard_output.length)
 			continue;
 
 		harq_out_op_data = &l_op->ldpc_dec.harq_combined_output;
