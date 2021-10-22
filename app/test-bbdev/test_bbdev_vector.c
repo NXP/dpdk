@@ -1037,6 +1037,9 @@ parse_polar_decoder_params(const char *key_token, char *token,
 		vector->mask |= TEST_BBDEV_VF_CAB;
 		RTE_PMD_LA12xx_PD_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "dequeue_polar_deq_llrs")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_DEQUEUE_LLRS(polar_dec) = 1;
 	} else if (!strcmp(key_token, "sd_cd_demux")) {
 		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
 		ret = (uint8_t) strtoul(token, &err, 0);
