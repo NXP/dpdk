@@ -3843,19 +3843,16 @@ latency_test_ldpc_dec(void *arg)
 		do {
 			deq += rte_bbdev_dequeue_ldpc_dec_ops(dev_id, queue_id,
 					&ops_deq[deq], burst_sz - deq);
-			if (deq > 0) {
-				/* In case of partial compact HARQ, update
-				 *  original data with partial output.
-				 */
-				if ((ref_op->ldpc_dec.op_flags &
-				    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
-				    (ref_op->ldpc_dec.op_flags &
-				    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ))
-					update_orig_ldpc_dec_out_data(
-						&ops_deq[deq - 1], deq);
-
-			}
 		} while (unlikely(burst_sz != deq));
+
+		/* In case of partial compact HARQ, update original
+		 * data with partial output.
+		 */
+		if ((ref_op->ldpc_dec.op_flags &
+		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
+		    (ref_op->ldpc_dec.op_flags &
+		    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ))
+			update_orig_ldpc_dec_out_data(ops_deq, burst_sz);
 
 		last_time = rte_rdtsc_precise() - start_time;
 
