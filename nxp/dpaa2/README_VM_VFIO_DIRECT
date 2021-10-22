@@ -6,8 +6,8 @@ Note: Please first read nxp/README.
 
 1.Preparations
   - The default dpdk binaries in SDK are built with dynamic IOVA selection.
-  - if you are building with "arm64-dpaa2-linuxapp-gcc", Compile the DPDK
-    code using CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y
+  - Compile the DPDK code enabling RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y in EXTRA_CFLAGS.
+    e.g. command: make install T=arm64-dpaa-linux-gcc EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
 
 2.Run the dynamic DPL with sample parent config file.
 
