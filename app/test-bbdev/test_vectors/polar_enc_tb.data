@@ -60,7 +60,7 @@ pc_index2 =
 114
 
 FZ_LUT =
-0x00000000, 0x000000e8, 0x000080e8, 0x80e8fcff
+0x00000000, 0xe8000000, 0xe8800000, 0xfffce880
 
 expected_status =
 OK
