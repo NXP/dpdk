@@ -1,0 +1,24 @@
+DPDK_20.0 {
+	global:
+
+	lsx_pciep_pf_available;
+	lsx_pciep_vf_number;
+	lsx_pciep_sim;
+	lsx_pciep_virtio;
+	lsx_pciep_get_type;
+	lsx_pciep_first_dev;
+	lsx_pciep_set_ob_win;
+	lsx_pciep_msix_init;
+	lsx_pciep_msix_get_vaddr;
+	lsx_pciep_msix_get_cmd;
+	lsx_pciep_msix_cmd_send;
+	lsx_pciep_ctl_dev_set;
+	lsx_pciep_set_ib_win;
+	lsx_pciep_sim_dev_map_inbound;
+	lsx_pciep_ctl_rbp_enable;
+	lsx_pciep_ctl_get_device_id;
+	rte_lsx_pciep_driver_register;
+	rte_lsx_pciep_driver_unregister;
+
+	local: *;
+};

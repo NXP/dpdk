@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #ifndef __DPAA2_QDMA_H__
@@ -11,7 +11,7 @@ struct rte_qdma_job;
 #define DPAA2_QDMA_MAX_FLE 3
 #define DPAA2_QDMA_MAX_SDD 2
 
-#define DPAA2_QDMA_MAX_SG_NB 64
+#define DPAA2_QDMA_MAX_SG_NB RTE_QDMA_SG_ENTRY_NB_MAX
 
 #define DPAA2_DPDMAI_MAX_QUEUES	8
 
@@ -73,7 +73,7 @@ struct rte_qdma_job;
 /** Maximum possible H/W Queues on each core */
 #define MAX_HW_QUEUE_PER_CORE		64
 
-#define QDMA_RBP_UPPER_ADDRESS_MASK (0xfff0000000000)
+#define QDMA_PCIE_BASE_ADDRESS_MASK (0xfff8000000000)
 /**
  * Represents a QDMA device.
  * A single QDMA device exists which is combination of multiple DPDMAI rawdev's.

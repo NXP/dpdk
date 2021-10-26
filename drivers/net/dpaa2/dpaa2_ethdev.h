@@ -11,6 +11,7 @@
 #include <rte_event_eth_rx_adapter.h>
 #include <rte_pmd_dpaa2.h>
 
+#include <rte_fslmc.h>
 #include <dpaa2_hw_pvt.h>
 #include "dpaa2_tm.h"
 
@@ -66,6 +67,18 @@
 
 /* Driver level loop mode to simply transmit the ingress traffic */
 #define DPAA2_RX_LOOPBACK_MODE	0x10
+
+/* HW loopback the egress traffic to self ingress*/
+#define DPAA2_TX_MAC_LOOPBACK_MODE 0x20
+
+#define DPAA2_TX_SERDES_LOOPBACK_MODE 0x40
+
+#define DPAA2_TX_DPNI_LOOPBACK_MODE 0x80
+
+#define DPAA2_TX_LOOPBACK_MODE \
+	(DPAA2_TX_MAC_LOOPBACK_MODE | \
+	DPAA2_TX_SERDES_LOOPBACK_MODE | \
+	DPAA2_TX_DPNI_LOOPBACK_MODE)
 
 #define DPAA2_RSS_OFFLOAD_ALL ( \
 	ETH_RSS_L2_PAYLOAD | \
@@ -188,6 +201,7 @@ struct dpaa2_dev_priv {
 	struct dpaa2_queue *next_tx_conf_queue;
 
 	struct rte_eth_dev *eth_dev; /**< Pointer back to holding ethdev */
+	rte_spinlock_t lpbk_qp_lock;
 
 	uint8_t channel_inuse;
 	LIST_HEAD(, rte_flow) flows; /**< Configured flow rule handles. */
@@ -246,6 +260,7 @@ uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *queue)  __attribute__((unused));
+int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);
 int dpaa2_timesync_disable(struct rte_eth_dev *dev);
@@ -259,4 +274,15 @@ int dpaa2_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
 						uint32_t flags __rte_unused);
 int dpaa2_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
 					  struct timespec *timestamp);
+
+int
+dpaa2_dev_recycle_config(struct rte_eth_dev *eth_dev);
+int
+dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev);
+int
+dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
+	uint16_t idx, eth_rx_burst_t rx_lpbk, uint64_t cntx,
+	struct dpaa2_queue **txq,
+	struct dpaa2_queue **rxq);
+
 #endif /* _DPAA2_ETHDEV_H */

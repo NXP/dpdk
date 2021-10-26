@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
-# Copyright 2016-2019 NXP
+# Copyright 2016-2019,2021 NXP
 #
 
 include $(RTE_SDK)/mk/rte.vars.mk
@@ -34,6 +34,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_flow.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_mux.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_sparser.c
+SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += dpaa2_recycle.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += mc/dpni.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += mc/dpkg.c
 SRCS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD) += mc/dpdmux.c

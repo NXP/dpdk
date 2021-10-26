@@ -4,6 +4,8 @@ DPDK_20.0 {
 	dpaa2_dev_tx_multi_txq_ordered;
 	dpaa2_eth_eventq_attach;
 	dpaa2_eth_eventq_detach;
+	dpaa2_dev_is_dpaa2;
+	dpaa2_dev_recycle_qp_setup;
 
 	local: *;
 };

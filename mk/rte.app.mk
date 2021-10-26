@@ -148,6 +148,8 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_FSLMC_BUS)      += -lrte_bus_fslmc
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_PMD)      += -lrte_pmd_dpaa2
 _LDLIBS-$(CONFIG_RTE_LIBRTE_DPAA2_MEMPOOL)  += -lrte_mempool_dpaa2
 endif
+_LDLIBS-$(CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS) += -lrte_bus_lsx_pciep
+_LDLIBS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += -lrte_pmd_lsxinic
 
 ifeq ($(CONFIG_RTE_BUILD_SHARED_LIB),n)
 # plugins (link only if static libraries)
