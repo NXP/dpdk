@@ -6,6 +6,7 @@
 #define _LSXINIC_EP_RXTX_H_
 
 #include <rte_pmd_dpaa2_qdma.h>
+#include "lsxinic_common_reg.h"
 #include "lsxinic_common.h"
 
 #define RTE_PMD_USE_PREFETCH
@@ -183,10 +184,11 @@ struct lsinic_queue {
 	struct lsinic_sw_bd *sw_bd[MCACHE_NUM];
 
 	enum lsinix_split_type split_type;
-	void *dpni_txq;
-	void *dpni_rxq;
+	void *recycle_txq;
+	void *recycle_rxq;
 	uint16_t dpni_merge_max;
-	struct qbman_fd *fd_arr;
+	struct qbman_fd *recycle_fd;
+	uint16_t split_cnt[MCACHE_NUM];
 
 	int64_t recycle_pending;
 
@@ -225,6 +227,110 @@ struct lsinic_dpni_mg_dsc {
 #define LSINIC_SHARED_MBUF    (1ULL << 63)
 /* Flagged in dma job*/
 #define LSINIC_QDMA_JOB_USING_FLAG (1ULL << 31)
+
+static inline void
+lsinic_sw_bd_reset(struct lsinic_queue *q)
+{
+	q->sw_bd_pool_cnt = 0;
+}
+
+static inline void
+lsinic_sw_bd_push(struct lsinic_queue *q,
+	void **elems, int elem_count)
+{
+	RTE_ASSERT((q->sw_bd_pool_cnt + elem_count) <=
+				q->sw_bd_pool_size);
+	memcpy(&q->sw_bd_pool[q->sw_bd_pool_cnt],
+		&elems[0], elem_count * sizeof(void *));
+	q->sw_bd_pool_cnt += elem_count;
+}
+
+static inline void
+lsinic_sw_bd_push_array(struct lsinic_queue *q,
+	struct lsinic_sw_bd *elems, int elem_count)
+{
+	int i;
+
+	RTE_ASSERT((q->sw_bd_pool_cnt + elem_count) <=
+				q->sw_bd_pool_size);
+	for (i = 0; i < elem_count; i++)
+		q->sw_bd_pool[q->sw_bd_pool_cnt + i] = (void *)&elems[i];
+	q->sw_bd_pool_cnt += elem_count;
+}
+
+static inline void
+lsinic_sw_bd_pop(struct lsinic_queue *q,
+	void **elems, int elem_count)
+{
+	RTE_ASSERT((q->sw_bd_pool_cnt - elem_count) >= 0);
+	memcpy(&elems[0],
+		&q->sw_bd_pool[q->sw_bd_pool_cnt - elem_count],
+		elem_count * sizeof(void *));
+	q->sw_bd_pool_cnt -= elem_count;
+}
+
+static inline uint32_t
+lsinic_get_pending(uint32_t tail, uint32_t head, uint32_t count)
+{
+	if (head != tail)
+		return (head > tail) ?
+			head - tail : (head + count - tail);
+	return 0;
+}
+
+static __rte_always_inline void
+lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
+	uint16_t used_idx)
+{
+#ifdef LSINIC_BD_CTX_IDX_USED
+	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
+		(const uint8_t *)&queue->ep_bd_desc[used_idx]);
+#else
+	/* Update sw_ctx and desc only. total 16B size.
+	 * Don't update pkt_addr, otherwise mem barrier is required.
+	 */
+	if (queue->ep_bd_desc[used_idx].bd_status & RING_BD_ADDR_CHECK) {
+		queue->rc_bd_desc[used_idx].pkt_addr =
+			queue->ep_bd_desc[used_idx].pkt_addr;
+		rte_wmb();
+	}
+	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx].sw_ctx,
+		(const uint8_t *)&queue->ep_bd_desc[used_idx].sw_ctx);
+	if (queue->ep_bd_desc[used_idx].bd_status & RING_BD_ADDR_CHECK) {
+		queue->ep_bd_desc[used_idx].len_cmd =
+			queue->rc_bd_desc[used_idx].len_cmd;
+		rte_rmb();
+	}
+#endif
+}
+
+static __rte_always_inline void
+lsinic_bd_read_rc_bd_desc(struct lsinic_queue *queue,
+	uint16_t used_idx,
+	struct lsinic_bd_desc *bd_desc)
+{
+	rte_memcpy(bd_desc, &queue->rc_bd_desc[used_idx],
+			sizeof(struct lsinic_bd_desc));
+}
+
+static __rte_always_inline void
+lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
+	uint16_t used_idx, struct lsinic_bd_desc *bd)
+{
+	rte_memcpy(&queue->ep_bd_desc[used_idx], bd,
+		sizeof(struct lsinic_bd_desc));
+#ifdef LSINIC_BD_CTX_IDX_USED
+	queue->ep_bd_desc[used_idx].bd_status &=
+		~((uint32_t)RING_BD_STATUS_MASK);
+	queue->ep_bd_desc[used_idx].bd_status |=
+		RING_BD_ADDR_CHECK;
+	queue->ep_bd_desc[used_idx].bd_status |=
+		RING_BD_HW_COMPLETE;
+#else
+	queue->ep_bd_desc[used_idx].bd_status =
+		RING_BD_HW_COMPLETE | RING_BD_ADDR_CHECK;
+#endif
+}
 
 void lsinic_rx_queue_release_mbufs(struct lsinic_rx_queue *rxq);
 void lsinic_rx_queue_release(struct lsinic_rx_queue *rxq);

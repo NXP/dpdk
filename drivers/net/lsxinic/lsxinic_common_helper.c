@@ -157,7 +157,7 @@ static int
 lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
 	unsigned long long *dev_imissed)
 {
-	struct dpaa2_queue *dpni_txq;
+	struct dpaa2_queue *recycle_txq;
 	struct rte_eth_dev_data *dpaa2_data;
 	struct dpaa2_dev_priv *dpaa2_priv;
 	struct rte_eth_dev *dpaa2_dev;
@@ -167,8 +167,8 @@ lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
 	rxq = eth_dev->data->rx_queues[0];
 
 	if (rxq->split_type == LSINIC_HW_SPLIT) {
-		dpni_txq = rxq->dpni_txq;
-		dpaa2_data = dpni_txq->eth_data;
+		recycle_txq = rxq->recycle_txq;
+		dpaa2_data = recycle_txq->eth_data;
 		dpaa2_priv = dpaa2_data->dev_private;
 		dpaa2_dev = dpaa2_priv->eth_dev;
 

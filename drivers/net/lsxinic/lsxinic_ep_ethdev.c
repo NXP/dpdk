@@ -495,9 +495,13 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 
 	adapter->merge_tx_max = LSINIC_MAX_JUMBO_FRAME_SIZE;
 
-	penv = getenv("LSXINIC_APP_HANDLE_RECYCLE_DEV");
+	penv = getenv("LSXINIC_PMD_RCV_MERGE_RECYCLE_DEV");
 	if (penv)
-		adapter->ep_cap |= LSINIC_EP_CAP_APP_HANDLE_RECYCLE_DEV;
+		adapter->ep_cap |= LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX;
+
+	penv = getenv("LSXINIC_PMD_RCV_SPLIT_RECYCLE_DEV");
+	if (penv)
+		adapter->ep_cap |= LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX;
 
 	/** Direct MAC egress. */
 	if (lsinic_dev->is_vf) {
@@ -623,6 +627,9 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (!((adapter->ep_cap & LSINIC_EP_CAP_HW_SPLIT_PKTS) ||
 		(adapter->ep_cap & LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS)))
 		adapter->ep_cap |= LSINIC_EP_CAP_SW_SPLIT_PKTS;
+
+	if (adapter->ep_cap & LSINIC_EP_CAP_HW_DIRECT_EGRESS)
+		adapter->ep_cap &= ~LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX;
 }
 
 static void
@@ -1016,7 +1023,8 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 		thread_init_flag = 1;
 	}
 
-	if (!(adapter->ep_cap & LSINIC_EP_CAP_APP_HANDLE_RECYCLE_DEV)) {
+	if (adapter->ep_cap & LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX ||
+		adapter->ep_cap & LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX) {
 		struct rte_eth_dev *recycle_eth_dev;
 
 		if (eth_dev->data->nb_tx_queues !=
@@ -1028,7 +1036,8 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 				eth_dev->data->nb_rx_queues);
 			return -ENOTSUP;
 		}
-		if (adapter->merge_dev) {
+		if (adapter->merge_dev &&
+			(adapter->ep_cap & LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX)) {
 			recycle_eth_dev = adapter->merge_dev->eth_dev;
 			err = lsinic_dev_recycle_start(recycle_eth_dev,
 					eth_dev->data->nb_tx_queues,
@@ -1044,7 +1053,7 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 			}
 		}
 		if (adapter->split_dev &&
-			!(adapter->ep_cap & LSINIC_EP_CAP_HW_DIRECT_EGRESS)) {
+			(adapter->ep_cap & LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX)) {
 			recycle_eth_dev = adapter->split_dev->eth_dev;
 			err = lsinic_dev_recycle_start(recycle_eth_dev,
 					eth_dev->data->nb_tx_queues,
