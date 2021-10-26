@@ -9,9 +9,11 @@ i)  Endpoint build:
       export CROSS=aarch64-linux-gnu-
       export RTE_SDK=/Your/DPDK/path
       export RTE_TARGET=arm64-dpaa-linuxapp-gcc
-      make install T=arm64-dpaa-linuxapp-gcc EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+      make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+      cd examples/port_fwd
+      make CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y
     Target image:
-      Endpoint example image: "example/port-fwd/build/port-fwd".
+      Endpoint example image: "example/port-fwd/build/port_fwd".
 ii) Root Complex build:
     X86_64:
       make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y -j 8
@@ -91,9 +93,6 @@ ii) Start Root Complex:
    #Direct traffic from PCIE EP PMD port to DPAA2 port in egress direction.
    export LSXINIC_PCIEx_PFy_EGRESS=portid
    export LSXINIC_PCIEx_PFy_VFz_EGRESS=portid
-
-   #Application handles DPAA2 recycle port.
-   export LSXINIC_APP_HANDLE_RECYCLE_DEV=1
 
 4) Multiple EP processes to handle fast path(host DPDK) and slow path(host kernel) respectively.
 
