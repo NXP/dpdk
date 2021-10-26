@@ -675,6 +675,20 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 
 			return ret;
 		}
+	} else {
+		/** User may disable loopback mode by calling
+		 * "dev_configure" with lpbk_mode cleared.
+		 * No matter the port was configured recycle or not,
+		 * recycle de-configure is called here.
+		 * If port is not recycled, the de-configure will return directly.
+		 */
+		ret = dpaa2_dev_recycle_deconfig(dev);
+		if (ret) {
+			DPAA2_PMD_ERR("Error to de-configure recycle port %s.",
+				dev->data->name);
+
+			return ret;
+		}
 	}
 
 	dpaa2_tm_init(dev);

@@ -694,6 +694,9 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 	struct dpni_port_cfg port_cfg;
 	int ret = 0;
 
+	if (!(priv->flags & DPAA2_TX_LOOPBACK_MODE))
+		return 0;
+
 	if (priv->flags & DPAA2_TX_SERDES_LOOPBACK_MODE) {
 		if (dpaa2_svr_family == SVR_LS2088A) {
 			ret = ls_serdes_eth_lpbk(dpaa2_dev->ep_object_id, 0);
@@ -740,13 +743,14 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 
 int
 dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
-	uint16_t idx, eth_rx_burst_t rx_lpbk,
-	uint64_t cntx,
+	uint16_t qidx, uint64_t cntx,
+	eth_rx_burst_t tx_lpbk, eth_tx_burst_t rx_lpbk,
 	struct dpaa2_queue **txq,
 	struct dpaa2_queue **rxq)
 {
 	struct rte_eth_dev *dev;
 	struct rte_eth_dev_data *data;
+	struct dpaa2_queue *txq_tmp;
 	struct dpaa2_queue *rxq_tmp;
 	struct dpaa2_dev_priv *priv;
 
@@ -754,32 +758,33 @@ dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	data = dev->data;
 	priv = data->dev_private;
 
-	if (!data->dev_conf.lpbk_mode &&
-		rx_lpbk) {
+	if (!(priv->flags & DPAA2_TX_LOOPBACK_MODE) &&
+		(tx_lpbk || rx_lpbk)) {
 		DPAA2_PMD_ERR("%s is NOT recycle device!", data->name);
 
 		return -EINVAL;
 	}
 
-	if (idx >= data->nb_rx_queues || idx >= data->nb_tx_queues)
+	if (qidx >= data->nb_rx_queues || qidx >= data->nb_tx_queues)
 		return -EINVAL;
 
 	rte_spinlock_lock(&priv->lpbk_qp_lock);
 
+	if (tx_lpbk)
+		dev->tx_pkt_burst = tx_lpbk;
+
 	if (rx_lpbk)
 		dev->rx_pkt_burst = rx_lpbk;
 
-	if (txq)
-		*txq = data->tx_queues[idx];
-
-	rxq_tmp = data->rx_queues[idx];
+	txq_tmp = data->tx_queues[qidx];
+	txq_tmp->lpbk_cntx = cntx;
+	rxq_tmp = data->rx_queues[qidx];
 	rxq_tmp->lpbk_cntx = cntx;
-	if (rxq) {
-		if (rx_lpbk)
-			*rxq = rxq_tmp;
-		else
-			*rxq = NULL;
-	}
+
+	if (txq)
+		*txq = txq_tmp;
+	if (rxq)
+		*rxq = rxq_tmp;
 
 	rte_spinlock_unlock(&priv->lpbk_qp_lock);
 
