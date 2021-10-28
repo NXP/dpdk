@@ -1508,6 +1508,8 @@ copy_reference_polar_op(struct rte_pmd_la12xx_op **ops, unsigned int n,
 			ops[i]->polar_params.output = outputs[start_idx + i];
 		if (inputs)
 			ops[i]->polar_params.input = inputs[start_idx + i];
+		ops[i]->polar_params.dequeue_polar_deq_llrs =
+			ref_op->polar_params.dequeue_polar_deq_llrs;
 	}
 }
 
@@ -1898,6 +1900,8 @@ create_reference_polar_op(struct rte_pmd_la12xx_op *op,
 	for (i = 0; i < entry->nb_segments; ++i)
 		op->polar_params.input.length +=
 				entry->segments[i].length;
+	op->polar_params.dequeue_polar_deq_llrs =
+		vector->la12xx_op.polar_params.dequeue_polar_deq_llrs;
 	op->status = vector->expected_status;
 }
 

@@ -1055,6 +1055,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	char *data_ptr;
 	uint32_t l1_pcie_addr, i;
+	uint32_t bbdev_ipc_op_flags;
 
 	bbdev_ipc_op->feca_job.job_type =
 		rte_cpu_to_be_32(polar_params->feca_obj.job_type);
@@ -1095,6 +1096,20 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			&polar_params->feca_obj.command_chain_t.cd_command_ch_obj;
 		cd_command_t *cd_cmd =
 			&bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
+
+		if (polar_params->dequeue_polar_deq_llrs &&
+				((polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_ACK) ||
+				 (polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_CS1) ||
+				 (polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_CS2))) {
+
+			cd_cmd->cd_cfg2.raw_cd_cfg2 =
+				rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+			polar_params->output.length = l_cd_cmd->cd_cfg2.E;
+			bbdev_ipc_op_flags = BBDEV_POLAR_DEQUEUE_LLRS;
+			bbdev_ipc_op->op_flags = rte_cpu_to_be_32(bbdev_ipc_op_flags);
+
+			return;
+		}
 
 		if (l_cd_cmd->cd_cfg1.pd_n)
 			polar_params->output.length = (l_cd_cmd->cd_cfg1.K + 7)/8;

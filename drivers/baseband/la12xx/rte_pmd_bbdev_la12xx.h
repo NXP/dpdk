@@ -20,6 +20,12 @@ struct rte_pmd_la12xx_polar_params {
 	struct rte_bbdev_op_data input;
 	/** The output buffer */
 	struct rte_bbdev_op_data output;
+	/** In case of SD-CD demux, this can be used to get
+	 *  the LLRs for CD after the demuxing. These LLRs
+	 *  can be used to further process CD in software.
+	 *  This is only used when sd_cd_demux is used.
+	 */
+	bool dequeue_polar_deq_llrs;
 };
 
 /** Structure specifying a raw operation for la12xx */
@@ -111,6 +117,8 @@ struct rte_pmd_la12xx_op {
 	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_pe_indices.pc_index2
 #define RTE_PMD_LA12xx_PD_FZ_LUT(p) \
 	(p)->polar_params.feca_obj.command_chain_t.cd_command_ch_obj.cd_fz_lut
+#define RTE_PMD_LA12xx_PD_DEQUEUE_LLRS(p) \
+	((p)->polar_params.dequeue_polar_deq_llrs)
 
 #define RTE_PMD_LA12xx_PE_pe_n(p) \
 	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_cfg1.pe_n
