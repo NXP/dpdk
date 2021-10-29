@@ -104,6 +104,9 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 	case PCIDEV_COMMAND_INIT:
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
+	case PCIDEV_COMMAND_SET_MTU:
+		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
+		break;
 	default:
 		break;
 	}
@@ -326,6 +329,8 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 {
 	struct lxsnic_adapter *adapter =
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
+	struct lsinic_eth_reg *eth_reg =
+		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lxsnic_ring *rx_ring;
 
 	LSXINIC_PMD_DBG("config rx_queue");
@@ -354,6 +359,17 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		queue_idx,
 		nb_desc,
 		adapter->rx_ring_bd_count);
+
+	if ((uint16_t)adapter->max_data_room >
+		((uint16_t)rte_pktmbuf_data_room_size(mp) -
+		RTE_PKTMBUF_HEADROOM)) {
+		adapter->max_data_room =
+			rte_pktmbuf_data_room_size(mp) -
+			RTE_PKTMBUF_HEADROOM;
+		LSINIC_WRITE_REG(&eth_reg->max_data_room,
+			adapter->max_data_room);
+		lxsnic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU);
+	}
 
 	rx_ring->queue_index = queue_idx;
 	rx_ring->port = dev->data->port_id;
@@ -1143,7 +1159,7 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 		adapter->cap |= LSINIC_CAP_XFER_RX_BD_UPDATE;
 
 	adapter->merge_threshold = LSINIC_READ_REG(&eth_reg->merge_threshold);
-	adapter->tx_max = LSINIC_READ_REG(&eth_reg->rc_tx_max);
+	adapter->max_data_room = LSINIC_READ_REG(&eth_reg->max_data_room);
 
 	set_bit(__LXSNIC_DOWN, &adapter->state);
 

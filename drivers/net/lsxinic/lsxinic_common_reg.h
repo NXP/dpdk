@@ -24,6 +24,8 @@ enum LSINIC_QEUE_TYPE {
 #define LSX_PCIEP_REG_BAR_IDX (0)
 #define LSX_PCIEP_RING_BAR_IDX (2)
 
+#define LSINIC_RC_TX_DATA_ROOM_OVERHEAD 128
+
 /* lsinic_bd_desc descriptor for iNIC */
 /* len_cmd field bit definitions */
 /* For CB buffer, length excludes CB header.*/

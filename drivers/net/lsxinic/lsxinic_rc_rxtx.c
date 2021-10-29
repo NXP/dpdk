@@ -236,7 +236,7 @@ lxsnic_try_to_merge(struct lxsnic_ring *txq,
 	struct rte_mbuf *tx_pkt;
 	char *dst_buf, *data = NULL;
 	struct lsinic_mg_header *mg_header;
-	uint32_t tx_max;
+	uint32_t max_data_room;
 
 	if (!(txq->adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
 		return 0;
@@ -283,10 +283,10 @@ lxsnic_try_to_merge(struct lxsnic_ring *txq,
 	overhead = 0;
 	fcs = 0;
 
+	max_data_room = txq->adapter->max_data_room;
+	max_data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
 	if (txq->adapter->cap & LSINIC_CAP_XFER_COMPLETE)
-		tx_max = txq->adapter->tx_max - 1;
-	else
-		tx_max = txq->adapter->tx_max;
+		max_data_room--;
 
 	for (mg_num = 0; mg_num < nb_pkts; mg_num++) {
 		if (mg_num == LSINIC_MERGE_MAX_NUM)
@@ -304,7 +304,7 @@ lxsnic_try_to_merge(struct lxsnic_ring *txq,
 			break;
 
 		if ((mg_len + ALIGN(tx_pkt->pkt_len, LSINIC_MG_ALIGN_SIZE)) >=
-			tx_max)
+			max_data_room)
 			break;
 
 		mg_len += ALIGN(tx_pkt->pkt_len, LSINIC_MG_ALIGN_SIZE);
@@ -473,7 +473,7 @@ lxsnic_fetch_merge_rx_buffer(struct lxsnic_ring *rx_queue,
 {
 	char *data = NULL;
 	char *data_base;
-	int total_size = 0;
+	uint32_t total_size = 0;
 	uint16_t pkt_len = 0, align_off;
 	int idx = 0, offset = 0;
 	struct rte_mbuf *mbuf;
@@ -504,7 +504,7 @@ lxsnic_fetch_merge_rx_buffer(struct lxsnic_ring *rx_queue,
 
 	total_size = LSINIC_READ_REG(&rx_desc->len_cmd);
 	total_size &= LSINIC_BD_LEN_MASK;
-	if (total_size  > LSINIC_MAX_JUMBO_FRAME_SIZE) {
+	if (total_size  > rx_queue->adapter->max_data_room) {
 		LSXINIC_PMD_ERR("packet(%d) is too bigger!\n",
 			total_size);
 		return 0;
@@ -638,8 +638,7 @@ lxsnic_fetch_rx_buffer(struct lxsnic_ring *rx_queue,
 	rte_lxsnic_prefetch(mbuf);
 
 	rx_packet_len = LSINIC_READ_REG(&rx_desc->len_cmd) & LSINIC_BD_LEN_MASK;
-	if (rx_packet_len  >
-		(RTE_MBUF_DEFAULT_DATAROOM - RTE_PKTMBUF_HEADROOM)) {
+	if (rx_packet_len  > rx_queue->adapter->max_data_room) {
 		LSXINIC_PMD_ERR("recv pkt len %d, too big!",
 			rx_packet_len);
 

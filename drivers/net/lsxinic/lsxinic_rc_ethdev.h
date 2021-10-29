@@ -344,7 +344,7 @@ struct lxsnic_adapter {
 	uint32_t cap;
 	int dmapci_dbg;
 	uint32_t merge_threshold;
-	uint32_t tx_max;
+	uint32_t max_data_room;
 };
 
 enum lxsnic_state_t {
