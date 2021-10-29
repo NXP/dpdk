@@ -7,8 +7,15 @@
 #define LSXINIC_PMD_LOG(level, fmt, args...) \
 	RTE_LOG(level, PMD, "lsxinic:" fmt "\n", ##args)
 
+#undef LSXINIC_PMD_DBG_ENABLE
+
+#ifdef LSXINIC_PMD_DBG_ENABLE
 #define LSXINIC_PMD_DBG(fmt, args...) \
 	LSXINIC_PMD_LOG(DEBUG, fmt, ## args)
+#else
+#define LSXINIC_PMD_DBG(fmt, args...) \
+	do { } while (0)
+#endif
 #define LSXINIC_PMD_INFO(fmt, args...) \
 	LSXINIC_PMD_LOG(INFO, fmt, ## args)
 #define LSXINIC_PMD_ERR(fmt, args...) \

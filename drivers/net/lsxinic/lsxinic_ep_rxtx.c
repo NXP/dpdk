@@ -2800,13 +2800,15 @@ lsinic_cpu_merge_xmit(struct lsinic_queue *txq,
 	 * nb_used better be less than or equal to txq->tx_rs_thresh
 	 */
 	if (unlikely(!lsinic_tx_bd_available(txq, bd_idx))) {
+#ifdef LSXINIC_PMD_DBG_ENABLE
 		struct lsinic_bd_desc *ep_txd = LSINIC_EP_BD_DESC(txq, bd_idx);
 
-		txq->ring_full++;
-		txq->drop_packet_num += nb_pkts;
 		LSXINIC_PMD_DBG("%s, Status of TX bd[%d]:%d on cpu(%d)",
 			__func__, bd_idx, ep_txd->bd_status,
 			rte_lcore_id());
+#endif
+		txq->ring_full++;
+		txq->drop_packet_num += nb_pkts;
 		ret = 0;
 		goto xmit_quit;
 	}
