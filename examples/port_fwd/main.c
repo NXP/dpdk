@@ -773,7 +773,7 @@ print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 }
 
 static int
-init_mem(uint16_t portid, unsigned int nb_mbuf)
+init_mem(uint16_t portid, unsigned int nb_mbuf, uint16_t buf_size)
 {
 	int socketid;
 	unsigned int lcore_id;
@@ -806,7 +806,7 @@ init_mem(uint16_t portid, unsigned int nb_mbuf)
 					rte_pktmbuf_pool_create_by_ops(s,
 						nb_mbuf,
 						MEMPOOL_CACHE_SIZE, 0,
-						RTE_MBUF_DEFAULT_BUF_SIZE,
+						buf_size,
 						socketid,
 						RTE_MBUF_DEFAULT_MEMPOOL_OPS);
 			} else {
@@ -815,7 +815,7 @@ init_mem(uint16_t portid, unsigned int nb_mbuf)
 					rte_pktmbuf_pool_create(s,
 						nb_mbuf,
 						MEMPOOL_CACHE_SIZE, 0,
-						RTE_MBUF_DEFAULT_BUF_SIZE,
+						buf_size,
 						socketid);
 			}
 		}
@@ -829,7 +829,7 @@ init_mem(uint16_t portid, unsigned int nb_mbuf)
 					rte_pktmbuf_pool_create_by_ops(s,
 						nb_mbuf,
 						MEMPOOL_CACHE_SIZE, 0,
-						RTE_MBUF_DEFAULT_BUF_SIZE,
+						buf_size,
 						socketid,
 						RTE_MBUF_DEFAULT_MEMPOOL_OPS);
 			} else {
@@ -839,7 +839,7 @@ init_mem(uint16_t portid, unsigned int nb_mbuf)
 					rte_pktmbuf_pool_create(s,
 						nb_mbuf,
 						MEMPOOL_CACHE_SIZE, 0,
-						RTE_MBUF_DEFAULT_BUF_SIZE,
+						buf_size,
 						socketid);
 			}
 			if (pktmbuf_pool[portid][socketid] == NULL)
@@ -1065,6 +1065,8 @@ main(int argc, char **argv)
 	uint32_t total_tx_queues = 0, total_rx_queues = 0;
 	uint32_t nb_mbuf;
 	struct rte_eth_conf local_port_conf[RTE_MAX_ETHPORTS];
+	uint16_t data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
+	char *penv;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1096,6 +1098,16 @@ main(int argc, char **argv)
 
 	nb_lcores = rte_lcore_count();
 
+	penv = getenv("PORT_FWD_DATA_ROOM_SIZE");
+	if (penv) {
+		data_room_size = atoi(penv);
+		if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
+			data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
+		else
+			data_room_size = RTE_ALIGN(data_room_size, 1024);
+	}
+	port_conf.rxmode.max_rx_pkt_len = data_room_size;
+
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0)
 			continue;
@@ -1112,7 +1124,8 @@ main(int argc, char **argv)
 		nb_mbuf += nb_ports * nb_lcores * MAX_PKT_BURST +
 			nb_lcores * MEMPOOL_CACHE_SIZE;
 		nb_mbuf = RTE_MAX(nb_mbuf, (unsigned int)2048);
-		ret = init_mem(0, nb_mbuf);
+		ret = init_mem(0, nb_mbuf,
+			data_room_size + RTE_PKTMBUF_HEADROOM);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE,
 				"global mem pool(count=%d) init failed\n",
@@ -1189,7 +1202,8 @@ main(int argc, char **argv)
 
 		/* init memory */
 		if (per_port_pool) {
-			ret = init_mem(portid, nb_mbuf);
+			ret = init_mem(portid, nb_mbuf,
+				data_room_size + RTE_PKTMBUF_HEADROOM);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 					"init_mem (count=%d) failed for port=%d\n",
