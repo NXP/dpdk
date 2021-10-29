@@ -354,6 +354,7 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 	uint32_t vf_macaddrl;
 	uint32_t vf_vlan;
 	uint32_t mtu;
+	uint32_t max_data_room;
 	uint32_t merge_threshold;
 	union {
 		uint32_t ep_rx_max;
