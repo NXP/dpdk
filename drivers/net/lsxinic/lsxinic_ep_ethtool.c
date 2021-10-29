@@ -34,18 +34,16 @@ static int lsinic_if_link_up(struct rte_eth_dev *dev)
 	struct lsinic_adapter *adapter = dev->data->dev_private;
 
 	if (adapter->rc_state != LSINIC_DEV_INITED) {
-		RTE_LOG(INFO, PMD, "Please first send init command\n");
+		LSXINIC_PMD_INFO("Please first send init command");
 		return PCIDEV_RESULT_FAILED;
 	}
 
 	if (adapter->is_vf)
-		RTE_LOG(INFO, PMD,
-			"lsinic-adapter pcie%d:pf%d:vf%d link up\n",
+		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link up",
 			adapter->pcie_idx, adapter->pf_idx,
 			adapter->vf_idx);
 	else
-		RTE_LOG(INFO, PMD,
-			"lsinic-adapter pcie%d:pf%d link up\n",
+		LSXINIC_PMD_INFO("pcie%d:pf%d link up",
 			adapter->pcie_idx, adapter->pf_idx);
 	adapter->rc_state = LSINIC_DEV_UP;
 	lsinic_dev_rx_enable_start(dev);
@@ -59,12 +57,10 @@ static int lsinic_if_link_down(struct rte_eth_dev *dev)
 	struct lsinic_adapter *adapter = dev->data->dev_private;
 
 	if (adapter->is_vf) {
-		RTE_LOG(INFO, PMD,
-			"lsinic-adapter pice%d:pf%d:vf%d link down\n",
+		LSXINIC_PMD_INFO("pice%d:pf%d:vf%d link down",
 			adapter->pcie_idx, adapter->pf_idx, adapter->vf_idx);
 	} else {
-		RTE_LOG(INFO, PMD,
-			"lsinic-adapter pice%d:pf%d link down\n",
+		LSXINIC_PMD_INFO("pice%d:pf%d link down",
 			adapter->pcie_idx, adapter->pf_idx);
 	}
 	adapter->rc_state = LSINIC_DEV_DOWN;
@@ -105,14 +101,19 @@ static int lsinic_set_mac(struct rte_eth_dev *dev)
 	for (i = 0; i < 4; i++)
 		mac_addr[i + 2] = (uint8_t)(mac_low >> ((3 - i) * 8));
 
-	printf("port:%d,mac_addr=%02x:%02x:%02x:%02x:%02x:%02x\n",
-		dev->data->port_id,
-		mac_addr[0],
-		mac_addr[1],
-		mac_addr[2],
-		mac_addr[3],
-		mac_addr[4],
-		mac_addr[5]);
+	if (!adapter->is_vf)
+		LSXINIC_PMD_INFO("pcie%d:pf%d"
+			" mac addr=%02x:%02x:%02x:%02x:%02x:%02x",
+			adapter->pcie_idx, adapter->pf_idx,
+			mac_addr[0], mac_addr[1], mac_addr[2],
+			mac_addr[3], mac_addr[4], mac_addr[5]);
+	else
+		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d"
+			" mac addr=%02x:%02x:%02x:%02x:%02x:%02x",
+			adapter->pcie_idx, adapter->pf_idx,
+			adapter->vf_idx,
+			mac_addr[0], mac_addr[1], mac_addr[2],
+			mac_addr[3], mac_addr[4], mac_addr[5]);
 
 	return PCIDEV_RESULT_SUCCEED;
 }
@@ -124,9 +125,15 @@ static int lsinic_set_mtu(struct rte_eth_dev *dev)
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 
-	mtu = LSINIC_READ_REG(&eth_reg->mtu);
+	mtu = LSINIC_READ_REG(&eth_reg->max_data_room);
 
-	printf("port:%d---mtu=%d---\n", dev->data->port_id, mtu);
+	if (!adapter->is_vf)
+		LSXINIC_PMD_INFO("pcie%d:pf%d align mtu(%d) with RC",
+			adapter->pcie_idx, adapter->pf_idx, mtu);
+	else
+		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d align mtu(%d) with RC",
+			adapter->pcie_idx, adapter->pf_idx, adapter->vf_idx, mtu);
+	adapter->data_room_size = mtu;
 
 	return PCIDEV_RESULT_SUCCEED;
 }

@@ -136,8 +136,7 @@ struct lsinic_adapter {
 	uint32_t ep_cap;
 
 	uint32_t merge_threshold;
-	uint32_t merge_tx_max;
-	uint32_t rx_max;
+	uint32_t data_room_size;
 };
 
 #define LSINIC_DEV_PRIVATE_TO_ADAPTER(data)\

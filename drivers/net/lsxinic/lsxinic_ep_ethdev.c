@@ -452,8 +452,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	struct lsinic_adapter *adapter = eth_dev->data->dev_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
-	adapter->merge_tx_max = 0;
-
 	adapter->ep_cap = 0;
 
 	/* NO TX DMA RSP and write BD to RC by DMA as well.*/
@@ -492,8 +490,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
 		return;
-
-	adapter->merge_tx_max = LSINIC_MAX_JUMBO_FRAME_SIZE;
 
 	penv = getenv("LSXINIC_PMD_RCV_MERGE_RECYCLE_DEV");
 	if (penv)
@@ -600,11 +596,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 			LSINIC_MERGE_DEFAULT_THRESHOLD;
 	}
 
-	if (adapter->merge_dev) {
-		adapter->merge_tx_max = LSINIC_HW_MERGE_SG_POS -
-			RTE_PKTMBUF_HEADROOM;
-	}
-
 	if (!(adapter->ep_cap & LSINIC_EP_CAP_HW_SPLIT_PKTS)) {
 		if (lsinic_dev->is_vf) {
 			sprintf(env_name,
@@ -670,18 +661,6 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 	LSINIC_WRITE_REG(&reg->cap, adapter->cap);
 
 	LSINIC_WRITE_REG(&reg->merge_threshold, adapter->merge_threshold);
-
-	adapter->rx_max = LSINIC_MAX_JUMBO_FRAME_SIZE;
-	LSINIC_WRITE_REG(&reg->ep_rx_max, adapter->rx_max);
-	if (adapter->merge_tx_max)
-		LSINIC_WRITE_REG(&reg->mtu, adapter->merge_tx_max);
-	else
-		LSINIC_WRITE_REG(&reg->mtu, LSINIC_MAX_JUMBO_FRAME_SIZE);
-
-	LSXINIC_PMD_INFO("%s Max payload: RC->EP:%d, EP->RC:%d",
-		adapter->lsinic_dev->eth_dev->data->name,
-		reg->ep_rx_max,
-		reg->mtu);
 
 	lsinic_child_mac_init(adapter);  /* initialize mac addr */
 

@@ -186,7 +186,6 @@ struct lsinic_queue {
 	enum lsinix_split_type split_type;
 	void *recycle_txq;
 	void *recycle_rxq;
-	uint16_t dpni_merge_max;
 	struct qbman_fd *recycle_fd;
 	uint16_t split_cnt[MCACHE_NUM];
 
@@ -208,9 +207,6 @@ struct lsinic_dpni_mg_dsc {
 	struct lsinic_mg_header mg_header;
 };
 
-#define LSINIC_HW_MERGE_SG_POS \
-	(RTE_MBUF_DEFAULT_DATAROOM - \
-	(sizeof(struct qbman_sge) * LSINIC_MERGE_MAX_NUM))
 #define LSINIC_ALIGN_DMA_CALC_OFFSET(addr)   ((addr) & (64 - 1))
 
 #define  lsinic_rx_queue lsinic_queue

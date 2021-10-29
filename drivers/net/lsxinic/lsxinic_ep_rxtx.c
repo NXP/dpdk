@@ -1453,19 +1453,24 @@ lsinic_dpaa2_rx_lpbk(void *queue,
 
 	return 0;
 }
+
+#define LSINIC_DPAA2_SG_MAX_OFFSET \
+	(4096 - \
+	(sizeof(struct qbman_sge) * LSINIC_MERGE_MAX_NUM))
+
 static uint16_t
 lsinic_dpaa2_merge_sg(struct rte_mbuf **tx_pkts,
 	uint16_t nb_pkts,
 	struct qbman_fd *fd_gather,
 	struct lsinic_dpni_mg_dsc *mg_dsc,
-	uint16_t merge_max)
+	uint16_t data_room)
 {
 	uint16_t seg_len, align_off, sg_num = 0;
 	uint16_t i, total_len = 0;
 	struct lsinic_mg_header *mg_header;
 	struct rte_mempool *mp = tx_pkts[0]->pool;
 
-	uint16_t bpid;
+	uint16_t bpid, sg_offset, merge_max;
 	struct qbman_sge *sgt, *sge = NULL;
 	struct rte_mbuf *direct_mbuf = NULL;
 	struct rte_mbuf *attach_mbuf = NULL;
@@ -1503,24 +1508,28 @@ lsinic_dpaa2_merge_sg(struct rte_mbuf **tx_pkts,
 	}
 
 	mg_header = &mg_dsc->mg_header;
+	sg_offset = RTE_PKTMBUF_HEADROOM + data_room -
+		(sizeof(struct qbman_sge) * LSINIC_MERGE_MAX_NUM);
+	if (sg_offset > LSINIC_DPAA2_SG_MAX_OFFSET)
+		sg_offset = LSINIC_DPAA2_SG_MAX_OFFSET;
+	merge_max = sg_offset - RTE_PKTMBUF_HEADROOM;
 
 	bpid = mempool_to_bpid(mp);
 	DPAA2_SET_FD_ADDR(fd_gather, fd_iova);
 	DPAA2_SET_ONLY_FD_BPID(fd_gather, bpid);
 	if (attach_mbuf)
 		DPAA2_SET_FD_IVP(fd_gather);
-	/* Expand 64B to make room to store txq before SG table.*/
-	DPAA2_SET_FD_OFFSET(fd_gather, LSINIC_HW_MERGE_SG_POS);
+
+	DPAA2_SET_FD_OFFSET(fd_gather, sg_offset);
 	DPAA2_FD_SET_FORMAT(fd_gather, qbman_fd_sg);
 	DPAA2_RESET_FD_FRC(fd_gather);
 	DPAA2_RESET_FD_CTRL(fd_gather);
 	/*Set Scatter gather table and Scatter gather entries*/
-	sgt = (struct qbman_sge *)(fd_va + LSINIC_HW_MERGE_SG_POS);
+	sgt = (struct qbman_sge *)(fd_va + sg_offset);
 
 	for (i = 0; i < nb_pkts; i++) {
 		seg_len = ALIGN(tx_pkts[i]->pkt_len, LSINIC_MG_ALIGN_SIZE);
-		if ((tmp_mbuf->data_off + total_len + seg_len) >=
-			(uint16_t)LSINIC_HW_MERGE_SG_POS)
+		if ((tmp_mbuf->data_off + total_len + seg_len) >= sg_offset)
 			break;
 		if (total_len + seg_len >= merge_max)
 			break;
@@ -1649,7 +1658,7 @@ lsinic_dpaa2_merge_tx_lpbk(void *queue,
 		mg_dsc = &lsinic_q->mg_dsc[lsinic_q->mg_dsc_tail];
 		ret = lsinic_dpaa2_merge_sg(&mg_pkts[tx_num],
 				nb_pkts, &fd_gather[fd_num], mg_dsc,
-				lsinic_q->dpni_merge_max);
+				lsinic_q->adapter->data_room_size);
 		if (ret > 0) {
 			lsinic_q->mg_dsc_tail = (lsinic_q->mg_dsc_tail + 1) & (lsinic_q->nb_desc - 1);
 			fd_num++;
@@ -1765,7 +1774,6 @@ lsinic_hw_offload_queue_setup(struct lsinic_queue *q)
 	struct dpaa2_queue *dpaa2_txq = NULL;
 	struct dpaa2_queue *dpaa2_rxq = NULL;
 	struct rte_dpaa2_device *dpaa2_dev = NULL;
-	struct rte_eth_dev_data *data;
 	int ret = -1;
 	eth_rx_burst_t rx_lpbk = NULL;
 	eth_tx_burst_t tx_lpbk = NULL;
@@ -1802,12 +1810,6 @@ lsinic_hw_offload_queue_setup(struct lsinic_queue *q)
 				q->recycle_rxq = dpaa2_rxq;
 			else
 				q->recycle_rxq = NULL;
-			if (q->type == LSINIC_QUEUE_TX &&
-				dpaa2_txq) {
-				data = dpaa2_dev->eth_dev->data;
-				q->dpni_merge_max =
-					data->mtu + RTE_ETHER_HDR_LEN;
-			}
 		}
 	}
 
@@ -2608,7 +2610,7 @@ lsinic_try_to_merge(struct lsinic_queue *txq,
 		tx_pkt = tx_pkts[mg_num];
 		mg_len += ALIGN(tx_pkt->pkt_len, LSINIC_MG_ALIGN_SIZE);
 		/* todo calculate sg mbuf */
-		if (mg_len > txq->adapter->merge_tx_max)
+		if (mg_len > txq->adapter->data_room_size)
 			break;
 		if (mg_num == LSINIC_MERGE_MAX_NUM)
 			break;
@@ -3419,7 +3421,7 @@ lsinic_recv_bd(struct lsinic_queue *rx_queue)
 
 		len_cmd = rxdp->len_cmd;
 		size = len_cmd & LSINIC_BD_LEN_MASK;
-		if (size > RTE_MBUF_DEFAULT_DATAROOM) {
+		if (size > rx_queue->adapter->data_room_size) {
 			LSXINIC_PMD_ERR("port%d rxq%d BD%d len_cmd:0x%08x",
 				rxq->port_id, rxq->queue_id, bd_idx, len_cmd);
 			rxq->errors++;
@@ -3648,16 +3650,14 @@ lsinic_fetch_merge_rx_buffer(struct lsinic_queue *rx_queue,
 {
 	char *data = NULL;
 	char *data_base = NULL;
-	int total_size = 0;
-	uint16_t pkt_len = 0, align_off;
-	int idx = 0, offset = 0;
+	uint16_t pkt_len, align_off, idx, offset, total_size;
 	struct lsinic_mg_header *mg_header;
 
 	rte_lsinic_prefetch(mbuf);
 
 	total_size = LSINIC_READ_REG(&rx_desc->len_cmd);
 	total_size &= LSINIC_BD_LEN_MASK;
-	if (total_size  > (int)LSINIC_MAX_JUMBO_FRAME_SIZE) {
+	if (total_size  > rx_queue->adapter->data_room_size) {
 		LSXINIC_PMD_ERR("packet(%d) is too bigger!",
 			total_size);
 		return 0;
@@ -3667,7 +3667,7 @@ lsinic_fetch_merge_rx_buffer(struct lsinic_queue *rx_queue,
 
 	mg_header = (struct lsinic_mg_header *)data_base;
 	pkt_len = lsinic_mg_entry_len(mg_header->len_cmd[0]);
-	if ((int)(pkt_len + sizeof(struct lsinic_mg_header)) > total_size)
+	if ((pkt_len + sizeof(struct lsinic_mg_header)) > total_size)
 		return 0;
 
 	mbuf->data_off +=
@@ -4153,6 +4153,8 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct lsinic_queue *rxq;
 	int qdma_dev_id;
 	uint32_t i;
+	struct lsinic_eth_reg *reg =
+		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 
 	qdma_dev_id = lsinic_dma_init();
 	if (qdma_dev_id < 0)
@@ -4169,6 +4171,10 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			nb_desc, LSINIC_QUEUE_RX);
 	if (!rxq)
 		return -ENOMEM;
+
+	adapter->data_room_size =
+		rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
+	LSINIC_WRITE_REG(&reg->max_data_room, adapter->data_room_size);
 
 	rxq->dma_id = qdma_dev_id;
 	rxq->mb_pool = mp;
