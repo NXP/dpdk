@@ -156,6 +156,7 @@ struct lsinic_ring {
 
 	u16 count; /* amount of bd descriptors. MUST be a power of 2! */
 	unsigned int size; /* bd desc length in bytes */
+	unsigned int data_room; /* Max payload size in bytes */
 
 	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP memory */
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC(local) memory */
@@ -194,7 +195,7 @@ struct lsinic_ring {
 
 static inline unsigned int lsinic_rx_bufsz(struct lsinic_ring *ring)
 {
-	return LSINIC_MAX_JUMBO_FRAME_SIZE;
+	return ring->data_room;
 }
 
 static inline unsigned int lsinic_rx_pg_order(struct lsinic_ring *ring)

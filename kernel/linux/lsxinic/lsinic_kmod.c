@@ -638,14 +638,14 @@ static int lxsnic_rx_bd_init_skb(struct lsinic_ring *rx_queue,
 	rc_rx_desc = LSINIC_RC_BD_DESC(rx_queue, idx);
 	ep_rx_desc = LSINIC_EP_BD_DESC(rx_queue, idx);
 	skb = netdev_alloc_skb_ip_align(rx_queue->netdev,
-			LSINIC_MAX_JUMBO_FRAME_SIZE);
+			rx_queue->data_room);
 	if (unlikely(!skb)) {
 		rx_queue->rx_stats.alloc_rx_buff_failed++;
 		return -ENOMEM;
 	}
 	rx_buffer = &rx_queue->rx_buffer_info[idx];
 	rx_buffer->skb = skb;
-	rx_buffer->len = LSINIC_MAX_JUMBO_FRAME_SIZE;
+	rx_buffer->len = rx_queue->data_room;
 	rx_buffer->page_offset = 0;
 	rx_buffer->dma = dma_map_single(rx_queue->dev, skb->data,
 					rx_buffer->len, DMA_FROM_DEVICE);
@@ -1132,6 +1132,13 @@ static int lsinic_sw_init(struct lsinic_adapter *adapter)
 {
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	u32 max_data_room = LSINIC_READ_REG(&eth_reg->max_data_room);
+
+	if (max_data_room > PAGE_SIZE) {
+		printk_init("max_data_room(%d) > PAGE_SIZE(%d)\n",
+			max_data_room, (u32)PAGE_SIZE);
+		return -EINVAL;
+	}
 
 	adapter->max_q_vectors = MAX_Q_VECTORS;
 
@@ -1231,6 +1238,8 @@ int lsinic_setup_tx_resources(struct lsinic_adapter *adapter, int i)
 		goto err;
 
 	tx_ring->adapter = adapter;
+	tx_ring->data_room = PAGE_SIZE;
+	tx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
 	tx_ring->ep_bd_desc = adapter->bd_desc_base +
 			i * tx_ring->count * sizeof(struct lsinic_bd_desc);
 
@@ -1316,6 +1325,8 @@ int lsinic_setup_rx_resources(struct lsinic_adapter *adapter, int i)
 		goto err;
 
 	rx_ring->adapter = adapter;
+	rx_ring->data_room = PAGE_SIZE;
+	rx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
 	rx_ring->ep_bd_desc = adapter->bd_desc_base + LSINIC_RX_BD_OFFSET
 			+ i * rx_ring->count * sizeof(struct lsinic_bd_desc);
 	rx_ring->rx_used_idx = 0;
@@ -1504,9 +1515,9 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	prefetch(skb->data);
 
 	total_size = lsinic_desc_len(rx_desc);
-	if (total_size > LSINIC_MAX_JUMBO_FRAME_SIZE) {
+	if (total_size > rx_ring->data_room) {
 		pr_info("total_size(%d) > max size(%d)\n",
-			total_size, LSINIC_MAX_JUMBO_FRAME_SIZE);
+			total_size, rx_ring->data_room);
 		return 0;
 	}
 
@@ -1771,7 +1782,7 @@ static inline int lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
 
 	if (rx_buffer->dma)
 		dma_unmap_single(rx_queue->dev, rx_buffer->dma,
-			LSINIC_MAX_JUMBO_FRAME_SIZE,
+			rx_queue->data_room,
 			DMA_FROM_DEVICE);
 	rx_buffer->dma = dma;
 
@@ -1820,12 +1831,12 @@ static int lsinic_tx_self_test_skb_alloc(struct lsinic_ring *tx_ring)
 	tx_ring->self_test_skb = vmalloc(sizeof(void *) * alloc_count);
 	for (i = 0; i < alloc_count; i++) {
 		new_skb = netdev_alloc_skb_ip_align(tx_ring->netdev,
-					LSINIC_MAX_JUMBO_FRAME_SIZE);
+					tx_ring->data_room);
 		if (unlikely(new_skb == NULL))
 			break;
 
 		new_dma = dma_map_single(tx_ring->dev, new_skb->data,
-					LSINIC_MAX_JUMBO_FRAME_SIZE,
+					tx_ring->data_room,
 					DMA_FROM_DEVICE);
 		if (dma_mapping_error(tx_ring->dev, new_dma)) {
 			dev_err(tx_ring->dev, "Self test TX DMA map failed\n");
@@ -2038,12 +2049,12 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 #endif
 
 		new_skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
-				LSINIC_MAX_JUMBO_FRAME_SIZE);
+				rx_ring->data_room);
 		if (unlikely(new_skb == NULL))
 			break;
 
 		new_dma = dma_map_single(rx_ring->dev, new_skb->data,
-					LSINIC_MAX_JUMBO_FRAME_SIZE,
+					rx_ring->data_room,
 					DMA_FROM_DEVICE);
 		if (dma_mapping_error(rx_ring->dev, new_dma)) {
 			dev_err(rx_ring->dev, "Rx DMA map failed\n");
@@ -2063,7 +2074,7 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 				rx_desc->len_cmd = LSINIC_BD_CMD_EOP;
 				lsinic_is_non_eop(rx_ring, rx_desc, NULL);
 				dma_unmap_single(rx_ring->dev, new_dma,
-					LSINIC_MAX_JUMBO_FRAME_SIZE,
+					rx_ring->data_room,
 					DMA_FROM_DEVICE);
 				dev_kfree_skb_any(new_skb);
 				continue;
@@ -2102,7 +2113,7 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 		/* exit if we failed to retrieve a buffer */
 		if (!skb) {
 			dma_unmap_single(rx_ring->dev, new_dma,
-					LSINIC_MAX_JUMBO_FRAME_SIZE,
+					rx_ring->data_room,
 					DMA_FROM_DEVICE);
 			dev_kfree_skb_any(new_skb);
 			break;
@@ -2926,12 +2937,12 @@ static int lsinic_change_mtu(struct net_device *dev, int new_mtu)
 	int max_frame = new_mtu + ETH_HLEN + ETH_FCS_LEN;
 
 	/* MTU < 68 is an error and causes problems on some kernels */
-	if ((new_mtu < 68) || (max_frame > LSINIC_MAX_JUMBO_FRAME_SIZE))
+	if ((new_mtu < 68) || (max_frame > LSINIC_READ_REG(&eth_reg->max_data_room)))
 		return -EINVAL;
 
 	e_info(probe, "changing MTU from %d to %d\n", netdev->mtu, new_mtu);
 
-	LSINIC_WRITE_REG(&eth_reg->mtu, new_mtu);
+	LSINIC_WRITE_REG(&eth_reg->max_data_room, new_mtu);
 	if (lsinic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU))
 		return -EAGAIN;
 
