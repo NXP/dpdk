@@ -74,13 +74,6 @@ struct lsinic_mg_header {
 		LSINIC_MG_ALIGN_OFFSET_SHIFT) | \
 		(((uint16_t)(pkt_len)) & LSINIC_MG_PKT_LEN_MASK))
 
-#ifndef RTE_MBUF_DEFAULT_DATAROOM
-#define RTE_MBUF_DEFAULT_DATAROOM 2048
-#endif
-
-#define LSINIC_MAX_JUMBO_FRAME_SIZE \
-	(RTE_MBUF_DEFAULT_DATAROOM - RTE_PKTMBUF_HEADROOM)
-
 enum lsinic_xfer_complete_flag {
 	LSINIC_XFER_COMPLETE_INIT_FLAG = 0,
 	LSINIC_XFER_COMPLETE_DONE_FLAG = 1
@@ -355,13 +348,8 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 	uint32_t vf_macaddrh;
 	uint32_t vf_macaddrl;
 	uint32_t vf_vlan;
-	uint32_t mtu;
 	uint32_t max_data_room;
 	uint32_t merge_threshold;
-	union {
-		uint32_t ep_rx_max;
-		uint32_t rc_tx_max;
-	};
 } __packed;
 
 #define LSINIC_REG_BAR_MAX_SIZE \
