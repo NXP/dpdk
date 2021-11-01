@@ -1195,10 +1195,12 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		if (rc_reg_addr) {
 			adapter->rc_ring_phy_base = rc_reg_addr;
 			if (lsx_pciep_sim()) {
-				adapter->rc_ring_virt_base =
+				uint64_t vir_addr =
 					(uint64_t)DPAA2_IOVA_TO_VADDR(rc_reg_addr);
-				lsinic_dev->ob_orig_bus_base = rc_reg_addr;
-				lsinic_dev->ob_map_bus_base = rc_reg_addr;
+				uint64_t vir_offset = vir_addr - rc_reg_addr;
+
+				adapter->rc_ring_virt_base = vir_addr;
+				lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
 			} else {
 				if (cfg->rbp_enable) {
 					adapter->rc_ring_virt_base =

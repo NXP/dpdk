@@ -1528,7 +1528,8 @@ lxsnic_proc_secondary_eth_dev_allocate(const char *name)
 				RTE_MAX_ETHPORTS,
 				rte_socket_id(), 0);
 		if (!mz) {
-			LSXINIC_PMD_ERR("LSINIC RC device data alloc failed");
+			LSXINIC_PMD_ERR("RC device data mz(%s) alloc failed",
+				memzone_name);
 			rte_spinlock_unlock(&lxsnic_proc_2nd_dev_alloc_lock);
 			return NULL;
 		}
