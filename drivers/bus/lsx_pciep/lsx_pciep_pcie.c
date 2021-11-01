@@ -201,7 +201,7 @@ lsx_pciep_set_type(void)
 		return -1;
 	}
 	if (fscanf(svr_file, "svr:%x", &svr_ver) < 0) {
-		LSX_PCIEP_BUS_ERR("PCIe EP unable to read SoC device\n");
+		LSX_PCIEP_BUS_ERR("PCIe EP unable to read SoC device");
 		return -1;
 	}
 
@@ -248,7 +248,7 @@ lsx_pciep_node2ctl(const struct device_node *pcie_node)
 	addr = of_get_address(pcie_node, LSX_PCIE_DT_REG_ADDR_IDX,
 			&len, NULL);
 	if (!addr) {
-		LSX_PCIEP_BUS_ERR("PCIe EP %s of_get_address failed\n",
+		LSX_PCIEP_BUS_ERR("PCIe EP %s of_get_address failed",
 			pcie_node->full_name);
 
 		return NULL;
@@ -256,7 +256,7 @@ lsx_pciep_node2ctl(const struct device_node *pcie_node)
 
 	phys_addr = of_translate_address(pcie_node, addr);
 	if (!phys_addr) {
-		LSX_PCIEP_BUS_ERR("PCIe EP %s of_translate_address failed\n",
+		LSX_PCIEP_BUS_ERR("PCIe EP %s of_translate_address failed",
 			pcie_node->full_name);
 
 		return NULL;
@@ -280,7 +280,7 @@ lsx_pciep_node2ctl(const struct device_node *pcie_node)
 
 	ctldev->reg = lsx_pciep_map_region(ctldev->phy, ctldev->size);
 	if (!ctldev->reg) {
-		LSX_PCIEP_BUS_ERR("PCIe EP mmap ERROR\n");
+		LSX_PCIEP_BUS_ERR("PCIe EP mmap ERROR");
 
 		return NULL;
 	}
@@ -301,7 +301,7 @@ lsx_pciep_node_out_base(struct lsx_pciep_ctl_dev *ctldev,
 	addr = of_get_address(pcie_node, LSX_PCIE_DT_OB_ADDR_IDX,
 			&len, NULL);
 	if (!addr) {
-		LSX_PCIEP_BUS_ERR("%s of_get_address failed\n",
+		LSX_PCIEP_BUS_ERR("%s of_get_address failed",
 			pcie_node->full_name);
 
 		return -ENODEV;
@@ -309,7 +309,7 @@ lsx_pciep_node_out_base(struct lsx_pciep_ctl_dev *ctldev,
 
 	phys_addr = of_translate_address(pcie_node, addr);
 	if (!phys_addr) {
-		LSX_PCIEP_BUS_ERR("%s of_translate_address failed\n",
+		LSX_PCIEP_BUS_ERR("%s of_translate_address failed",
 			pcie_node->full_name);
 
 		return -ENODEV;
@@ -320,7 +320,7 @@ lsx_pciep_node_out_base(struct lsx_pciep_ctl_dev *ctldev,
 	ctldev->out_vaddr =
 		(uint64_t)lsx_pciep_map_region(ctldev->out_base, CFG_32G_SIZE);
 	if (ctldev->out_vaddr == 0) {
-		LSX_PCIEP_BUS_ERR("failed to map outbound space\n");
+		LSX_PCIEP_BUS_ERR("failed to map outbound space");
 
 		return -ENOMEM;
 	}
@@ -407,7 +407,7 @@ static int lsx_pciep_ctl_ob_win_scheme(struct lsx_pciep_ctl_dev *ctldev)
 	ctldev->out_size_per_fun =
 		ctldev->out_size / ctldev->function_num;
 	if (ctldev->out_size_per_fun < ctldev->out_win_size) {
-		LSX_PCIEP_BUS_ERR("Too many functions(%d) to share outbound space.\n",
+		LSX_PCIEP_BUS_ERR("Too many functions(%d)",
 			ctldev->function_num);
 
 		return -ENODEV;
@@ -481,7 +481,7 @@ lsx_pciep_find_all(void)
 
 	ret = of_init();
 	if (ret) {
-		LSX_PCIEP_BUS_ERR("of_init failed\n");
+		LSX_PCIEP_BUS_ERR("of_init failed");
 
 		return -ENODEV;
 	}
@@ -631,15 +631,14 @@ lsx_pciep_ctl_init_inbound(struct lsx_pciep_ctl_dev *ctldev,
 				mz_size, 0, RTE_MEMZONE_IOVA_CONTIG,
 				mz_size);
 		if (!mz || !mz->iova || !mz->addr) {
-			LSX_PCIEP_BUS_ERR("Unable to allocate DMA memory "
-				"of size %zu bytes, idx:%d\n",
-				bar_size,
-				ctldev->index);
+			LSX_PCIEP_BUS_ERR("Reserve memory(%zuB) failed",
+				bar_size);
 
 			return -ENOMEM;
 		}
-		LSX_PCIEP_BUS_INFO("%s len(%d) iova(0x%lx ~ 0x%lx) reserved for inbound window.",
-			mz_name, (int)mz_size, mz->iova, mz->iova + mz_size);
+		LSX_PCIEP_BUS_INFO("%s len(%d) iova(0x%lx~0x%lx) %s",
+			mz_name, (int)mz_size, mz->iova, mz->iova + mz_size,
+			"reserved for inbound window");
 		if (!is_vf)
 			inbound_info->pf_mz[pf][bar_num] = mz;
 		else
@@ -718,17 +717,38 @@ static int lsx_pciep_sim_rm_dir(const char *dir)
 	DIR *dirp;
 	struct dirent *dp;
 	struct stat dir_stat;
+	int ret;
 
-	if (access(dir, F_OK) != 0)
-		return 0;
+	ret = access(dir, F_OK);
+	if (ret) {
+		/** Force remove this file
+		 */
+		ret = remove(dir);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("line(%d) remove(%s) = %d failed",
+				__LINE__, dir, ret);
+		}
+		return ret;
+	}
 
-	if (stat(dir, &dir_stat) < 0) {
-		perror("get directory stat error");
-		return -1;
+	ret = stat(dir, &dir_stat);
+	if (ret < 0) {
+		/** Force remove this file
+		 */
+		ret = remove(dir);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("line(%d) remove(%s) = %d failed",
+				__LINE__, dir, ret);
+		}
+		return ret;
 	}
 
 	if (S_ISREG(dir_stat.st_mode)) {
-		remove(dir);
+		ret = remove(dir);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("line(%d) remove(%s) = %d failed",
+				__LINE__, dir, ret);
+		}
 	} else if (S_ISDIR(dir_stat.st_mode)) {
 		dirp = opendir(dir);
 		while ((dp = readdir(dirp)) != NULL) {
@@ -742,9 +762,14 @@ static int lsx_pciep_sim_rm_dir(const char *dir)
 		}
 		closedir(dirp);
 
-		rmdir(dir);
+		ret = rmdir(dir);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("line(%d) rmdir(%s) = %d failed",
+				__LINE__, dir, ret);
+		}
 	} else {
-		perror("unknown file type!");
+		LSX_PCIEP_BUS_ERR("unknown file(%s) type!",
+				dir);
 	}
 
 	return 0;
@@ -769,7 +794,7 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 		return 0;
 
 	if (ep_dev->is_vf) {
-		LSX_PCIEP_BUS_ERR("PCIe EP simulator does not support VF.");
+		LSX_PCIEP_BUS_ERR("PCIe EP simulator does not support VF");
 
 		return -ENODEV;
 	}
@@ -797,7 +822,7 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	if (!access(dir_name, F_OK)) {
 		status = lsx_pciep_sim_rm_dir(dir_name);
 		if (status < 0) {
-			LSX_PCIEP_BUS_ERR("Remove dir %s failed\r\n", dir_name);
+			LSX_PCIEP_BUS_ERR("Remove dir %s failed", dir_name);
 
 			return -ENODEV;
 		}
@@ -805,7 +830,7 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 
 	status = mkdir(dir_name, 0777);
 	if (status < 0) {
-		LSX_PCIEP_BUS_ERR("Create dir %s failed\r\n", dir_name);
+		LSX_PCIEP_BUS_ERR("Create dir %s failed", dir_name);
 		return -ENODEV;
 	}
 
@@ -813,13 +838,13 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "0x%04x\n", vendor_id);
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 
 		return -ENODEV;
 	}
 	ret = write(fd, buf, 7);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 
 		return -ENODEV;
@@ -830,12 +855,12 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "0x%04x\n", device_id);
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, 7);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
@@ -845,12 +870,12 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "0x%04x\n", vendor_id);
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, 7);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
@@ -860,12 +885,12 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "0x%04x\n", device_id);
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, 7);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
@@ -875,12 +900,12 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "0x%04x\n", class_id);
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, 7);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
@@ -891,12 +916,12 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	sprintf(buf, "%s", "igb_uio\n");
 	fd = open(file_link_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, sizeof("igb_uio\n"));
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
@@ -904,7 +929,7 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	snprintf(file_name, sizeof(file_name), "%s/driver", dir_name);
 	ret = symlink(file_link_name, file_name);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Symlink file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Symlink file %s failed", file_name);
 		return -ENODEV;
 	}
 
@@ -944,18 +969,18 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
-		LSX_PCIEP_BUS_ERR("Open file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
 	ret = write(fd, buf, idx);
 	if (ret < 0) {
-		LSX_PCIEP_BUS_ERR("Write file %s failed\r\n", file_name);
+		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
 		return -ENODEV;
 	}
 	close(fd);
 
-	printf("ep PEX%d:pf%d bar info:\r\n%s\r\n",
+	LSX_PCIEP_BUS_INFO("PEX%d:pf%d bar info:\r\n%s",
 		ep_dev->pcie_id, ep_dev->pf, buf);
 
 	return 0;
@@ -1250,6 +1275,19 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 		return lsx_pciep_set_ob_win_rbp(ep_dev, pci_addr, size);
 	else
 		return lsx_pciep_set_ob_win_norbp(ep_dev);
+}
+
+void
+lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
+		uint64_t vir_offset)
+{
+	if (!lsx_pciep_sim())
+		return;
+
+	ep_dev->ob_orig_bus_base = 0;
+	ep_dev->ob_map_bus_base = 0;
+	ep_dev->ob_phy_base = 0;
+	ep_dev->ob_virt_base = ep_dev->ob_phy_base + vir_offset;
 }
 
 void

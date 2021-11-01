@@ -170,6 +170,8 @@ struct rte_lsx_pciep_device *lsx_pciep_first_dev(void);
 
 uint64_t lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 			uint64_t pci_addr, uint64_t size);
+void lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
+		uint64_t vir_offset);
 
 void lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev);
 uint64_t lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
