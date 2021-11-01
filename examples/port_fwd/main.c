@@ -383,7 +383,7 @@ main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	unsigned int lcore_id;
-	int i, nb_rx, j, pkt_len;
+	int i, nb_rx, j;
 	uint16_t idx;
 	uint16_t nb_tx;
 	uint16_t portid;
@@ -394,6 +394,9 @@ main_loop(__attribute__((unused)) void *dummy)
 	char *penv = getenv("PORT_FWD_LOOPBACK_PORT");
 	int loopback_port = -1;
 	int pktgen_len = 64, rx_only = 0;
+	uint64_t bytes_overhead[MAX_PKT_BURST];
+	uint64_t bytes_fcs[MAX_PKT_BURST];
+	uint64_t bytes[MAX_PKT_BURST];
 
 	if (penv)
 		loopback_port = atoi(penv);
@@ -466,15 +469,18 @@ main_loop(__attribute__((unused)) void *dummy)
 				for (j = 0; j < nb_rx; j++) {
 					qconf->rx_statistic[portid].bytes +=
 						pkts_burst[j]->pkt_len;
+					bytes[j] = pkts_burst[j]->pkt_len;
 					qconf->rx_statistic[portid].bytes_fcs +=
 						pkts_burst[j]->pkt_len + PKTGEN_ETH_FCS_SIZE;
+					bytes_fcs[j] = pkts_burst[j]->pkt_len +
+						PKTGEN_ETH_FCS_SIZE;
 					qconf->rx_statistic[portid].bytes_overhead +=
 						pkts_burst[j]->pkt_len + PKTGEN_ETH_OVERHEAD_SIZE;
+					bytes_overhead[j] = pkts_burst[j]->pkt_len +
+						PKTGEN_ETH_OVERHEAD_SIZE;
 				}
 				qconf->rx_statistic[portid].packets += nb_rx;
 			}
-
-			pkt_len = pkts_burst[0]->pkt_len;
 
 			/* Send burst of TX packets, to second port of pair. */
 			nb_tx = rte_eth_tx_burst(dstportid,
@@ -484,11 +490,11 @@ main_loop(__attribute__((unused)) void *dummy)
 			if (nb_tx > 0) {
 				for (j = 0; j < nb_tx; j++) {
 					qconf->tx_statistic[dstportid].bytes +=
-						pkt_len;
+						bytes[j];
 					qconf->tx_statistic[dstportid].bytes_fcs +=
-						pkt_len + PKTGEN_ETH_FCS_SIZE;
+						bytes_fcs[j];
 					qconf->tx_statistic[dstportid].bytes_overhead +=
-						pkt_len + PKTGEN_ETH_OVERHEAD_SIZE;
+						bytes_overhead[j];
 				}
 				qconf->tx_statistic[dstportid].packets += nb_tx;
 			}
@@ -844,8 +850,8 @@ init_mem(uint16_t portid, unsigned int nb_mbuf, uint16_t buf_size)
 			}
 			if (pktmbuf_pool[portid][socketid] == NULL)
 				rte_exit(EXIT_FAILURE,
-					"Cannot init mbuf pool on socket %d\n",
-					socketid);
+					"Cannot init mbuf pool(%s) on socket %d\n",
+					s, socketid);
 			else
 				printf("mbuf pool[%d](count=%d) created on socket %d\n",
 					portid, nb_mbuf, socketid);
