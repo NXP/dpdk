@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018,2021 NXP
  */
 
 #ifndef __RTE_DPAA2_MEMPOOL_H__
@@ -45,6 +45,21 @@ rte_dpaa2_mbuf_pool_bpid(struct rte_mempool *mp);
  */
 struct rte_mbuf *
 rte_dpaa2_mbuf_from_buf_addr(struct rte_mempool *mp, void *buf_addr);
+
+/**
+ * Initialize the rte_dpaa2_bpid_info
+ * In generial, it is called in the secondary process and
+ * mp has been created in the primary process.
+ *
+ * @param mp
+ *   memory pool
+ *
+ * @return
+ *  - 0 on success.
+ *  - (<0) on failure.
+ */
+__rte_internal
+int rte_dpaa2_bpid_info_init(struct rte_mempool *mp);
 
 #ifdef __cplusplus
 }

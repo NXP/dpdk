@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2019 NXP
+ *   Copyright 2016-2021 NXP
  *
  */
 
@@ -261,6 +261,29 @@ aligned:
 		}
 		n += DPAA2_MBUF_MAX_ACQ_REL;
 	}
+}
+
+int rte_dpaa2_bpid_info_init(struct rte_mempool *mp)
+{
+	struct dpaa2_bp_info *bp_info = mempool_to_bpinfo(mp);
+	uint32_t bpid = bp_info->bpid;
+
+	if (!rte_dpaa2_bpid_info) {
+		rte_dpaa2_bpid_info = (struct dpaa2_bp_info *)rte_malloc(NULL,
+				      sizeof(struct dpaa2_bp_info) * MAX_BPID,
+				      RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa2_bpid_info == NULL)
+			return -ENOMEM;
+		memset(rte_dpaa2_bpid_info, 0,
+		       sizeof(struct dpaa2_bp_info) * MAX_BPID);
+	}
+
+	rte_dpaa2_bpid_info[bpid].meta_data_size = sizeof(struct rte_mbuf)
+				+ rte_pktmbuf_priv_size(mp);
+	rte_dpaa2_bpid_info[bpid].bp_list = bp_info->bp_list;
+	rte_dpaa2_bpid_info[bpid].bpid = bpid;
+
+	return 0;
 }
 
 uint16_t
