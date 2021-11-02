@@ -5,6 +5,7 @@ DPDK_20.0 {
 	rte_dpaa2_mbuf_alloc_bulk;
 	rte_dpaa2_mbuf_from_buf_addr;
 	rte_dpaa2_mbuf_pool_bpid;
+	rte_dpaa2_bpid_info_init;
 
 	local: *;
 };
