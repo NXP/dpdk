@@ -26,6 +26,8 @@ struct mbuf_table {
 struct lcore_rx_queue {
 	uint16_t port_id;
 	uint8_t queue_id;
+	void *send_q;
+	void *recv_q;
 } __rte_cache_aligned;
 
 struct lcore_statistic {

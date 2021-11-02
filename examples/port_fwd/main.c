@@ -73,13 +73,21 @@ uint32_t max_pkt_burst = MAX_PKT_BURST;
 uint32_t max_tx_burst = MAX_TX_BURST;
 uint32_t max_rx_burst = MAX_PKT_BURST;
 
-static int s_proc_2nd_standalone;
 static int s_pktgen_tool;
 static struct rte_mempool *pktmbuf_tx_pool;
 
-/* Global variables. */
+enum port_fwd_proc_type {
+	proc_primary = 0,
+	proc_attach_secondary = 1,
+	proc_standalone_secondary = 2,
+};
+static uint8_t s_proc_type = proc_primary;
+static uint8_t s_ring_fwd;
 
-static int per_port_pool;
+#define SEC_2_PRI "SEC_2_PRI_p%d_q%d"
+#define PRI_2_SEC "PRI_2_SEC_p%d_q%d"
+
+/* Global variables. */
 
 static volatile bool force_quit;
 
@@ -106,7 +114,7 @@ static struct lcore_params lcore_params_array_default[] = {
 	{3, 1, 3},
 };
 
-static struct lcore_params *lcore_params = lcore_params_array_default;
+static struct lcore_params *s_lcore_params = lcore_params_array_default;
 static uint16_t nb_lcore_params = sizeof(lcore_params_array_default) /
 				sizeof(lcore_params_array_default[0]);
 
@@ -128,7 +136,10 @@ static struct lcore_conf s_lcore_conf[RTE_MAX_LCORE];
 
 static int fwd_dst_port[RTE_MAX_ETHPORTS];
 
-static struct rte_mempool *pktmbuf_pool[RTE_MAX_ETHPORTS][NB_SOCKETS];
+static struct rte_mempool *pktmbuf_pool;
+
+#define RTE_MAX_QUEUES 128
+static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
 
 struct loop_mode {
 	int (*parse_fwd_dst)(int portid);
@@ -142,7 +153,7 @@ static int parse_port_fwd_dst(int portid)
 	char env_name[64];
 
 	if (s_pktgen_tool)
-		return 1;
+		return 0;
 
 	fwd_dst_port[portid] = -1;
 	sprintf(env_name, "PORT%d_FWD", portid);
@@ -153,13 +164,13 @@ static int parse_port_fwd_dst(int portid)
 	if (fwd_dst_port[portid] < 0) {
 		printf("error: destination of port %d fwd not set\n",
 			portid);
-		return 0;
+		return -1;
 	}
 
 	printf("port forwarding from port %d to port %d\r\n",
 		portid, fwd_dst_port[portid]);
 
-	return 1;
+	return 0;
 }
 
 static __thread struct rte_mbuf *loopback_pkts[512 * MAX_PKT_BURST];
@@ -397,6 +408,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint64_t bytes_overhead[MAX_PKT_BURST];
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
+	struct rte_ring *tx_ring, *rx_ring;
 
 	if (penv)
 		loopback_port = atoi(penv);
@@ -434,12 +446,75 @@ main_loop(__attribute__((unused)) void *dummy)
 
 	while (!force_quit) {
 		if (unlikely(s_pktgen_tool)) {
-			pktgen_rxtx(qconf, pktmbuf_tx_pool,
+			pktgen_rxtx(qconf, pktmbuf_pool,
 				pktgen_len -
 				PKTGEN_ETH_FCS_SIZE, rx_only);
 			continue;
 		}
 
+		if (!s_ring_fwd)
+			goto port_forwarding;
+
+		for (i = 0; i < qconf->n_rx_queue; ++i) {
+			portid = qconf->rx_queue_list[i].port_id;
+			queueid = qconf->rx_queue_list[i].queue_id;
+
+			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
+				MAX_PKT_BURST);
+			for (j = 0; j < nb_rx; j++) {
+				qconf->rx_statistic[portid].bytes +=
+					pkts_burst[j]->pkt_len;
+				bytes[j] = pkts_burst[j]->pkt_len;
+				qconf->rx_statistic[portid].bytes_fcs +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_FCS_SIZE;
+				bytes_fcs[j] = pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_FCS_SIZE;
+				qconf->rx_statistic[portid].bytes_overhead +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_OVERHEAD_SIZE;
+				bytes_overhead[j] = pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_OVERHEAD_SIZE;
+			}
+			qconf->rx_statistic[portid].packets += nb_rx;
+			if (nb_rx > 0) {
+				tx_ring = qconf->rx_queue_list[i].send_q;
+				nb_tx = rte_ring_enqueue_burst(tx_ring,
+						(void * const *)pkts_burst,
+						nb_rx, NULL);
+				for (idx = nb_tx; idx < nb_rx; idx++)
+					rte_pktmbuf_free(pkts_burst[idx]);
+			}
+
+			rx_ring = qconf->rx_queue_list[i].recv_q;
+			nb_rx = rte_ring_dequeue_burst(rx_ring,
+				(void **)pkts_burst,
+				MAX_PKT_BURST, NULL);
+			if (nb_rx == 0)
+				continue;
+
+			nb_tx = rte_eth_tx_burst(portid,
+					qconf->tx_queue_id[portid],
+					pkts_burst, nb_rx);
+			for (j = 0; j < nb_tx; j++) {
+				qconf->tx_statistic[portid].bytes +=
+					bytes[j];
+				qconf->tx_statistic[portid].bytes_fcs +=
+					bytes_fcs[j];
+				qconf->tx_statistic[portid].bytes_overhead +=
+					bytes_overhead[j];
+			}
+			qconf->tx_statistic[portid].packets += nb_tx;
+
+			/* Free any unsent packets. */
+			if (unlikely(nb_tx < nb_rx)) {
+				for (idx = nb_tx; idx < nb_rx; idx++)
+					rte_pktmbuf_free(pkts_burst[idx]);
+			}
+		}
+		continue;
+
+port_forwarding:
 		/* Read packet from RX queues
 		 */
 		for (i = 0; i < qconf->n_rx_queue; ++i) {
@@ -465,39 +540,35 @@ main_loop(__attribute__((unused)) void *dummy)
 				continue;
 			}
 
-			if (nb_rx > 0) {
-				for (j = 0; j < nb_rx; j++) {
-					qconf->rx_statistic[portid].bytes +=
-						pkts_burst[j]->pkt_len;
-					bytes[j] = pkts_burst[j]->pkt_len;
-					qconf->rx_statistic[portid].bytes_fcs +=
-						pkts_burst[j]->pkt_len + PKTGEN_ETH_FCS_SIZE;
-					bytes_fcs[j] = pkts_burst[j]->pkt_len +
-						PKTGEN_ETH_FCS_SIZE;
-					qconf->rx_statistic[portid].bytes_overhead +=
-						pkts_burst[j]->pkt_len + PKTGEN_ETH_OVERHEAD_SIZE;
-					bytes_overhead[j] = pkts_burst[j]->pkt_len +
-						PKTGEN_ETH_OVERHEAD_SIZE;
-				}
-				qconf->rx_statistic[portid].packets += nb_rx;
+			for (j = 0; j < nb_rx; j++) {
+				qconf->rx_statistic[portid].bytes +=
+					pkts_burst[j]->pkt_len;
+				bytes[j] = pkts_burst[j]->pkt_len;
+				qconf->rx_statistic[portid].bytes_fcs +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_FCS_SIZE;
+				bytes_fcs[j] = pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_FCS_SIZE;
+				qconf->rx_statistic[portid].bytes_overhead +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_OVERHEAD_SIZE;
+				bytes_overhead[j] = pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_OVERHEAD_SIZE;
 			}
+			qconf->rx_statistic[portid].packets += nb_rx;
 
-			/* Send burst of TX packets, to second port of pair. */
 			nb_tx = rte_eth_tx_burst(dstportid,
 					qconf->tx_queue_id[dstportid],
 					pkts_burst, nb_rx);
-
-			if (nb_tx > 0) {
-				for (j = 0; j < nb_tx; j++) {
-					qconf->tx_statistic[dstportid].bytes +=
-						bytes[j];
-					qconf->tx_statistic[dstportid].bytes_fcs +=
-						bytes_fcs[j];
-					qconf->tx_statistic[dstportid].bytes_overhead +=
-						bytes_overhead[j];
-				}
-				qconf->tx_statistic[dstportid].packets += nb_tx;
+			for (j = 0; j < nb_tx; j++) {
+				qconf->tx_statistic[dstportid].bytes +=
+					bytes[j];
+				qconf->tx_statistic[dstportid].bytes_fcs +=
+					bytes_fcs[j];
+				qconf->tx_statistic[dstportid].bytes_overhead +=
+					bytes_overhead[j];
 			}
+			qconf->tx_statistic[dstportid].packets += nb_tx;
 
 			/* Free any unsent packets. */
 			if (unlikely(nb_tx < nb_rx)) {
@@ -525,12 +596,12 @@ check_lcore_params(void)
 	uint16_t i;
 
 	for (i = 0; i < nb_lcore_params; ++i) {
-		queue = lcore_params[i].queue_id;
+		queue = s_lcore_params[i].queue_id;
 		if (queue >= MAX_RX_QUEUE_PER_PORT) {
 			printf("invalid queue number: %hhu\n", queue);
 			return -1;
 		}
-		lcore = lcore_params[i].lcore_id;
+		lcore = s_lcore_params[i].lcore_id;
 		if (!rte_lcore_is_enabled(lcore)) {
 			printf("error: lcore %hhu is not enabled\n", lcore);
 			return -1;
@@ -546,7 +617,7 @@ check_port_config(void)
 	uint16_t i;
 
 	for (i = 0; i < nb_lcore_params; ++i) {
-		portid = lcore_params[i].port_id;
+		portid = s_lcore_params[i].port_id;
 		if ((enabled_port_mask & (1 << portid)) == 0) {
 			printf("port %u is not enabled in port mask\n", portid);
 			return -1;
@@ -566,17 +637,134 @@ get_port_n_rx_queues(const uint16_t port)
 	uint16_t i;
 
 	for (i = 0; i < nb_lcore_params; ++i) {
-		if (lcore_params[i].port_id == port) {
-			if (lcore_params[i].queue_id == queue+1)
-				queue = lcore_params[i].queue_id;
+		if (s_lcore_params[i].port_id == port) {
+			if (s_lcore_params[i].queue_id == queue+1)
+				queue = s_lcore_params[i].queue_id;
 			else
 				rte_exit(EXIT_FAILURE,
 					"queue ids of the port %d must be"
 					" in sequence and must start with 0\n",
-					lcore_params[i].port_id);
+					s_lcore_params[i].port_id);
 		}
 	}
 	return (uint8_t)(++queue);
+}
+
+static int
+port_fwd_port_queue_mapping(uint16_t port_id, uint16_t queue_id,
+	uint16_t *port_idx, uint16_t *queue_idx)
+{
+	int i, j;
+	uint16_t pidx = 0, qidx = 0;
+
+	if (port_id >= RTE_MAX_ETHPORTS ||
+		queue_id >= RTE_MAX_QUEUES)
+		return -1;
+
+	if (s_pq_map[port_id][queue_id]) {
+		for (i = 0; i <= port_id; i++) {
+			for (j = 0; j <= queue_id; j++) {
+				if (s_pq_map[i][j]) {
+					pidx++;
+					break;
+				}
+			}
+		}
+		for (j = 0; j <= queue_id; j++) {
+			if (s_pq_map[port_id][j])
+				qidx++;
+		}
+		if (port_idx)
+			*port_idx = pidx;
+		if (queue_idx)
+			*queue_idx = qidx;
+
+		return 0;
+	}
+
+	return -1;
+}
+
+static int
+init_lcore_rxq_ring(struct lcore_rx_queue *rx_queue)
+{
+	char send_name[64];
+	char recv_name[64];
+	struct rte_ring *send_q, *recv_q;
+	int err;
+	uint16_t port_idx, queue_idx;
+
+	if (s_proc_type == proc_standalone_secondary)
+		return -1;
+
+	err = port_fwd_port_queue_mapping(rx_queue->port_id,
+		rx_queue->queue_id, &port_idx, &queue_idx);
+	if (err) {
+		rte_exit(0, "port(%d)-queue(%d) mapping failed\n",
+			rx_queue->port_id, rx_queue->queue_id);
+
+		return err;
+	}
+
+	if (s_proc_type == proc_primary) {
+		snprintf(send_name, sizeof(send_name), PRI_2_SEC,
+			port_idx, queue_idx);
+		send_q = rte_ring_create(send_name, 512, 0, 0);
+		snprintf(recv_name, sizeof(recv_name), SEC_2_PRI,
+			port_idx, queue_idx);
+		recv_q = rte_ring_create(recv_name, 512, 0, 0);
+		rx_queue->send_q = send_q;
+		rx_queue->recv_q = recv_q;
+		if (!send_q) {
+			printf("send_q(%s) created failed\n",
+				send_name);
+			goto clear_proxy_q;
+		}
+		if (!recv_q) {
+			printf("recv_q(%s) created failed\n",
+				recv_name);
+			goto clear_proxy_q;
+		}
+		printf("send_q(%s):%p, recv_q(%s):%p created\r\n",
+				send_name, send_q, recv_name, recv_q);
+	} else if (s_proc_type == proc_attach_secondary) {
+		snprintf(recv_name, sizeof(recv_name), PRI_2_SEC,
+			port_idx, queue_idx);
+		recv_q = rte_ring_lookup(recv_name);
+		snprintf(send_name, sizeof(send_name), SEC_2_PRI,
+			port_idx, queue_idx);
+		send_q = rte_ring_lookup(send_name);
+		rx_queue->send_q = send_q;
+		rx_queue->recv_q = recv_q;
+		if (!send_q) {
+			printf("send_q(%s) lookup failed\n",
+				send_name);
+			goto clear_proxy_q;
+		}
+		if (!recv_q) {
+			printf("recv_q(%s) lookup failed\n",
+				recv_name);
+			goto clear_proxy_q;
+		}
+		printf("send_q(%s):%p, recv_q(%s):%p detected\r\n",
+			send_name, send_q, recv_name, recv_q);
+	}
+
+	return 0;
+
+clear_proxy_q:
+	if (rx_queue->send_q)
+		rte_ring_free(rx_queue->send_q);
+	if (rx_queue->recv_q)
+		rte_ring_free(rx_queue->recv_q);
+
+	if (s_proc_type == proc_primary)
+		rte_exit(0, "port(%d)queue(%d) ring create failed\n",
+			port_idx, queue_idx);
+	else
+		rte_exit(0, "port(%d)queue(%d) ring lookup failed\n",
+			port_idx, queue_idx);
+	return -1;
 }
 
 static int
@@ -586,7 +774,7 @@ init_lcore_rx_queues(void)
 	uint8_t lcore;
 
 	for (i = 0; i < nb_lcore_params; ++i) {
-		lcore = lcore_params[i].lcore_id;
+		lcore = s_lcore_params[i].lcore_id;
 		nb_rx_queue = s_lcore_conf[lcore].n_rx_queue;
 		if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
 			printf("error: too many queues (%u) for lcore: %u\n",
@@ -595,11 +783,12 @@ init_lcore_rx_queues(void)
 		}
 
 		s_lcore_conf[lcore].rx_queue_list[nb_rx_queue].port_id =
-				lcore_params[i].port_id;
+				s_lcore_params[i].port_id;
 		s_lcore_conf[lcore].rx_queue_list[nb_rx_queue].queue_id =
-				lcore_params[i].queue_id;
+				s_lcore_params[i].queue_id;
 		s_lcore_conf[lcore].n_rx_queue++;
 	}
+
 	return 0;
 }
 
@@ -634,7 +823,7 @@ parse_config(const char *q_arg)
 	};
 	unsigned long int_fld[_NUM_FLD];
 	char *str_fld[_NUM_FLD];
-	int i;
+	int i, port_id, queue_id;
 	unsigned int size;
 
 	nb_lcore_params = 0;
@@ -671,10 +860,13 @@ parse_config(const char *q_arg)
 			(uint8_t)int_fld[FLD_QUEUE];
 		lcore_params_array[nb_lcore_params].lcore_id =
 			(uint8_t)int_fld[FLD_LCORE];
+		port_id = (uint8_t)int_fld[FLD_PORT];
+		queue_id = (uint8_t)int_fld[FLD_QUEUE];
+		s_pq_map[port_id][queue_id] = 1;
 		++nb_lcore_params;
 		p = strchr(p0, '(');
 	}
-	lcore_params = lcore_params_array;
+	s_lcore_params = lcore_params_array;
 	return 0;
 }
 
@@ -695,12 +887,10 @@ enum {
 	 */
 	CMD_LINE_OPT_MIN_NUM = 256,
 	CMD_LINE_OPT_CONFIG_NUM,
-	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
 };
 
 static const struct option lgopts[] = {
 	{CMD_LINE_OPT_CONFIG, 1, 0, CMD_LINE_OPT_CONFIG_NUM},
-	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0, CMD_LINE_OPT_PARSE_PER_PORT_POOL},
 	{NULL, 0, 0, 0}
 };
 
@@ -751,11 +941,6 @@ parse_args(int argc, char **argv)
 			}
 			break;
 
-		case CMD_LINE_OPT_PARSE_PER_PORT_POOL:
-			printf("per port buffer pool is disabled\n");
-			per_port_pool = 1;
-			break;
-
 		default:
 			return -1;
 		}
@@ -779,85 +964,68 @@ print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 }
 
 static int
-init_mem(uint16_t portid, unsigned int nb_mbuf, uint16_t buf_size)
+init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 {
-	int socketid;
-	unsigned int lcore_id;
 	char s[64];
-	char *penv = getenv("PORT_FWD_PROC_SECONDARY_STANDALONE");
+	char s_tx[64];
+	char s_2nd[64];
+	char s_tx_2nd[64];
 
-	if (penv)
-		s_proc_2nd_standalone = atoi(penv);
-	penv = getenv("PORT_FWD_PKTGEN_TOOL");
-	if (penv)
-		s_pktgen_tool = atoi(penv);
+	snprintf(s, sizeof(s), "port_fwd_mbuf_pool");
+	snprintf(s_tx, sizeof(s_tx), "port_fwd_mbuf_tx_pool");
+	snprintf(s_2nd, sizeof(s_2nd), "port_fwd_2nd_mbuf_pool");
+	snprintf(s_tx_2nd, sizeof(s_tx_2nd), "port_fwd_2nd_mbuf_tx_pool");
 
-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-		if (rte_lcore_is_enabled(lcore_id) == 0)
-			continue;
+	if (s_proc_type == proc_attach_secondary) {
+		pktmbuf_pool = rte_mempool_lookup(s);
+		if (!pktmbuf_pool) {
+			rte_exit(EXIT_FAILURE, "Lookup mbuf pool(%s) failed\n",
+				s);
+		}
+		return 0;
+	}
 
-		socketid = rte_lcore_to_socket_id(lcore_id);
-
-		if (socketid >= NB_SOCKETS) {
+	if (s_pktgen_tool) {
+		if (s_proc_type == proc_standalone_secondary) {
+			pktmbuf_tx_pool =
+				rte_pktmbuf_pool_create_by_ops(s_tx_2nd,
+					nb_mbuf,
+					MEMPOOL_CACHE_SIZE, 0,
+					buf_size, 0,
+					RTE_MBUF_DEFAULT_MEMPOOL_OPS);
+		} else {
+			pktmbuf_tx_pool =
+				rte_pktmbuf_pool_create(s_tx,
+					nb_mbuf,
+					MEMPOOL_CACHE_SIZE, 0,
+					buf_size, 0);
+		}
+		if (!pktmbuf_tx_pool) {
 			rte_exit(EXIT_FAILURE,
-				"Socket %d of lcore %u is out of range %d\n",
-				socketid, lcore_id, NB_SOCKETS);
-		}
-
-		if (s_pktgen_tool && (!pktmbuf_tx_pool)) {
-			if (rte_eal_process_type() == RTE_PROC_SECONDARY &&
-				s_proc_2nd_standalone) {
-				snprintf(s, sizeof(s), "mbuf_tx_pool_2nd");
-				pktmbuf_tx_pool =
-					rte_pktmbuf_pool_create_by_ops(s,
-						nb_mbuf,
-						MEMPOOL_CACHE_SIZE, 0,
-						buf_size,
-						socketid,
-						RTE_MBUF_DEFAULT_MEMPOOL_OPS);
-			} else {
-				snprintf(s, sizeof(s), "mbuf_tx_pool");
-				pktmbuf_tx_pool =
-					rte_pktmbuf_pool_create(s,
-						nb_mbuf,
-						MEMPOOL_CACHE_SIZE, 0,
-						buf_size,
-						socketid);
-			}
-		}
-
-		if (pktmbuf_pool[portid][socketid] == NULL) {
-			if (rte_eal_process_type() == RTE_PROC_SECONDARY &&
-				s_proc_2nd_standalone) {
-				snprintf(s, sizeof(s), "mbuf_pool_2nd_%d:%d",
-					portid, socketid);
-				pktmbuf_pool[portid][socketid] =
-					rte_pktmbuf_pool_create_by_ops(s,
-						nb_mbuf,
-						MEMPOOL_CACHE_SIZE, 0,
-						buf_size,
-						socketid,
-						RTE_MBUF_DEFAULT_MEMPOOL_OPS);
-			} else {
-				snprintf(s, sizeof(s), "mbuf_pool_%d:%d",
-					portid, socketid);
-				pktmbuf_pool[portid][socketid] =
-					rte_pktmbuf_pool_create(s,
-						nb_mbuf,
-						MEMPOOL_CACHE_SIZE, 0,
-						buf_size,
-						socketid);
-			}
-			if (pktmbuf_pool[portid][socketid] == NULL)
-				rte_exit(EXIT_FAILURE,
-					"Cannot init mbuf pool(%s) on socket %d\n",
-					s, socketid);
-			else
-				printf("mbuf pool[%d](count=%d) created on socket %d\n",
-					portid, nb_mbuf, socketid);
-
+				"Create TX mbuf pool(%s) failed\n",
+				s_tx);
 		}
 	}
+
+	if (s_proc_type == proc_standalone_secondary) {
+		pktmbuf_pool =
+			rte_pktmbuf_pool_create_by_ops(s_2nd,
+				nb_mbuf,
+				MEMPOOL_CACHE_SIZE, 0,
+				buf_size, 0,
+				RTE_MBUF_DEFAULT_MEMPOOL_OPS);
+	} else {
+		pktmbuf_pool =
+			rte_pktmbuf_pool_create(s,
+				nb_mbuf,
+				MEMPOOL_CACHE_SIZE, 0,
+				buf_size, 0);
+	}
+	if (!pktmbuf_pool)
+		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
+	else
+		printf("mbuf pool(count=%d) created\n", nb_mbuf);
+
 	return 0;
 }
 
@@ -1073,6 +1241,7 @@ main(int argc, char **argv)
 	struct rte_eth_conf local_port_conf[RTE_MAX_ETHPORTS];
 	uint16_t data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
 	char *penv;
+	struct lcore_rx_queue *rx_queue;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1092,6 +1261,24 @@ main(int argc, char **argv)
 
 	if (check_lcore_params() < 0)
 		rte_exit(EXIT_FAILURE, "check_lcore_params failed\n");
+
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		penv = getenv("PORT_FWD_SECONDARY_STANDALONE");
+		if (penv)
+			s_proc_type = proc_standalone_secondary;
+		else
+			s_proc_type = proc_attach_secondary;
+	}
+
+	penv = getenv("PORT_FWD_RING_FWD");
+	if (penv)
+		s_ring_fwd = 1;
+
+	if (s_proc_type != proc_attach_secondary) {
+		penv = getenv("PORT_FWD_PKTGEN_TOOL");
+		if (penv)
+			s_pktgen_tool = atoi(penv);
+	}
 
 	ret = init_lcore_rx_queues();
 	if (ret < 0)
@@ -1124,24 +1311,16 @@ main(int argc, char **argv)
 		total_tx_queues += nb_tx_queue[portid];
 	}
 
-	if (!per_port_pool) {
-		nb_mbuf = nb_ports *
-			(total_rx_queues * nb_rxd + total_tx_queues * nb_txd);
-		nb_mbuf += nb_ports * nb_lcores * MAX_PKT_BURST +
-			nb_lcores * MEMPOOL_CACHE_SIZE;
-		nb_mbuf = RTE_MAX(nb_mbuf, (unsigned int)2048);
-		ret = init_mem(0, nb_mbuf,
-			data_room_size + RTE_PKTMBUF_HEADROOM);
-		if (ret < 0)
-			rte_exit(EXIT_FAILURE,
-				"global mem pool(count=%d) init failed\n",
-				nb_mbuf);
-	} else {
-		nb_mbuf = total_rx_queues * nb_rxd + total_tx_queues * nb_txd;
-		nb_mbuf += nb_lcores * MAX_PKT_BURST +
-			nb_lcores * MEMPOOL_CACHE_SIZE;
-		nb_mbuf = RTE_MAX(nb_mbuf, (unsigned int)2048);
-	}
+	nb_mbuf = nb_ports *
+		(total_rx_queues * nb_rxd + total_tx_queues * nb_txd);
+	nb_mbuf += nb_ports * nb_lcores * MAX_PKT_BURST +
+		nb_lcores * MEMPOOL_CACHE_SIZE;
+	nb_mbuf = nb_mbuf > 2048 ? nb_mbuf : 2048;
+	ret = init_mem(nb_mbuf, data_room_size + RTE_PKTMBUF_HEADROOM);
+	if (ret < 0)
+		rte_exit(EXIT_FAILURE,
+			"global mem pool(count=%d) init failed\n",
+			nb_mbuf);
 
 	/* initialize all ports */
 	RTE_ETH_FOREACH_DEV(portid) {
@@ -1205,21 +1384,12 @@ main(int argc, char **argv)
 
 		print_ethaddr(" Address:", &ports_eth_addr[portid]);
 		printf("\r\n");
-
-		/* init memory */
-		if (per_port_pool) {
-			ret = init_mem(portid, nb_mbuf,
-				data_room_size + RTE_PKTMBUF_HEADROOM);
-			if (ret < 0)
-				rte_exit(EXIT_FAILURE,
-					"init_mem (count=%d) failed for port=%d\n",
-					nb_mbuf, portid);
-		}
 	}
 
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		if (rte_lcore_is_enabled(lcore_id) == 0)
 			continue;
+
 		qconf = &s_lcore_conf[lcore_id];
 		printf("\nInitializing rxq/txq pairs on lcore %u ... ", lcore_id);
 		fflush(stdout);
@@ -1243,16 +1413,10 @@ main(int argc, char **argv)
 
 			rxq_conf = dev_info.default_rxconf;
 			rxq_conf.offloads = port_conf.rxmode.offloads;
-			if (!per_port_pool)
-				ret = rte_eth_rx_queue_setup(portid, queueid,
-						nb_rxd, socketid,
-						&rxq_conf,
-						pktmbuf_pool[0][socketid]);
-			else
-				ret = rte_eth_rx_queue_setup(portid, queueid,
-						nb_rxd, socketid,
-						&rxq_conf,
-						pktmbuf_pool[portid][socketid]);
+			ret = rte_eth_rx_queue_setup(portid, queueid,
+					nb_rxd, socketid,
+					&rxq_conf,
+					pktmbuf_pool);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 				"rte_eth_rx_queue_setup: err=%d, port=%d\n",
@@ -1302,9 +1466,16 @@ main(int argc, char **argv)
 		qconf = &s_lcore_conf[lcore_id];
 		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
 			portid = qconf->rx_queue_list[queue].port_id;
-			if (parse_dst_port(portid) == 0)
-				rte_exit(EXIT_FAILURE,
-					"parse dst port failed\n");
+			rx_queue = &qconf->rx_queue_list[queue];
+			portid = rx_queue->port_id;
+			if (s_ring_fwd) {
+				init_lcore_rxq_ring(rx_queue);
+			} else {
+				if (parse_dst_port(portid)) {
+					rte_exit(0, "port%d fwd not set\n",
+						portid);
+				}
+			}
 		}
 	}
 
