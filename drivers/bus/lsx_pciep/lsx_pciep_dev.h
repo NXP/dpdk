@@ -36,7 +36,7 @@ struct lsx_pciep_inbound_bar {
 	uint64_t size;
 };
 
-struct lsx_pciep_norbp_fun_out_info {
+struct lsx_pciep_ob_win {
 	int pf;
 	int is_vf;
 	int vf;
@@ -60,10 +60,13 @@ LSX_PCIEP_RBP_OB_WIN_START(int pf, int is_vf, int vf)
 		return (((pf) << 6) * LSX_PCIEP_RBP_OB_WIN_NB);
 }
 
-enum lsx_share_ob {
-	LSX_PCIEP_OB_PER_FUN,
-	LSX_PCIEP_OB_PRIMARY_SHARE,
-	LSX_PCIEP_OB_SECONDARY_SHARE
+/** Provide outbound space shared policy
+ * for multiple functions of each PCIe controller.
+ *  Note, this policy only works for none RBP mode.
+ */
+enum lsx_ob_policy {
+	LSX_PCIEP_OB_FUN_IDX,
+	LSX_PCIEP_OB_SHARE
 };
 
 enum sriov_fun_idx {
@@ -72,7 +75,7 @@ enum sriov_fun_idx {
 	SRIOV_FUN_MAX
 };
 
-struct lsx_pciep_inbound_info {
+struct lsx_pciep_ib_mem {
 	const struct rte_memzone
 		*pf_mz[PF_MAX_NB][LSX_PCIEP_INBOUND_BAR_NUM];
 	/* All the VFs of PF share one mz.*/
@@ -85,37 +88,36 @@ struct lsx_pciep_inbound_info {
 		vf_ib_bar[PF_MAX_NB][PCIE_MAX_VF_NUM][LSX_PCIEP_INBOUND_BAR_NUM];
 };
 
-
 /**
- * A structure describing a PCIe controller.
+ * Structure describing HW information of PCIe controller.
+ * This structure is global information shared between multiple
+ * processes.
  */
-struct lsx_pciep_ctl_dev {
-	uint8_t			index;
-	uint8_t			init;
-	int				ep_enable;
-	int				sim;
+struct lsx_pciep_ctl_hw {
+	uint8_t	index;
+	uint8_t	init;
+	int sim;
+	int rbp;
+	int ep_enable;
+	int vio_enable[PF_MAX_NB];
 	uint16_t function_num;
 	int pf_enable[PF_MAX_NB];
-	int vf_num[PF_MAX_NB];
+	int vf_enable[PF_MAX_NB][PCIE_MAX_VF_NUM];
 	uint16_t vendor_id[PF_MAX_NB];
 	uint16_t device_id[PF_MAX_NB];
 	uint16_t class_id[PF_MAX_NB];
 
-	enum PEX_TYPE		type;
+	enum PEX_TYPE type;
 
-	uint32_t		size;
-	uint64_t		phy;
-	void			*reg;
-	uint8_t			*dbi;
+	uint32_t dbi_size;
+	uint64_t dbi_phy;
 
-	uint64_t		out_vaddr;
-	uint64_t		out_base;
-	uint64_t		dma_out_base;
+	uint64_t out_base;
+	uint64_t dma_out_base;
 
-	int			rbp;
-	enum lsx_share_ob share_ob;
-	int			share_ob_complete;
-	int			clear_ib;
+	enum lsx_ob_policy ob_policy;
+	int share_ob_complete;
+	int clear_ib;
 
 	uint64_t out_offset;
 	uint64_t out_size;
@@ -124,27 +126,30 @@ struct lsx_pciep_ctl_dev {
 	uint32_t out_win_start;
 	uint32_t out_win_per_fun;
 
-	struct lsx_pciep_ops *ops;
-	struct lsx_pciep_inbound_info *inbound_info;
-	struct lsx_pciep_norbp_fun_out_info *ob_per_fun;
+	struct lsx_pciep_ib_mem ib_mem;
+	struct lsx_pciep_ob_win ob_win[PF_MAX_NB * (PCIE_MAX_VF_NUM + 1)];
 };
+
+/**
+ * Structure describing local process information of PCIe controller.
+ */
+struct lsx_pciep_ctl_dev {
+	struct lsx_pciep_ctl_hw *ctl_hw;
+	uint8_t *dbi_vir;
+	uint8_t *out_vir;
+	struct lsx_pciep_ops *ops;
+};
+
 
 int lsx_pciep_ctl_idx_validated(uint8_t pcie_idx);
 struct lsx_pciep_ctl_dev *lsx_pciep_ctl_get_dev(uint8_t pcie_idx);
 
-int lsx_pciep_init(void);
+int lsx_pciep_primary_init(void);
 int lsx_pciep_uninit(void);
-void lsx_pciep_ctl_set_sriov_num(uint8_t pcie_idx,
-			uint32_t pf0, uint32_t pf1,
-			uint32_t pf0_vf_num, uint32_t pf1_vf_num);
-void lsx_pciep_ctl_set_all_devs(uint32_t pf0,
-			uint32_t pf1, uint32_t pf0_vf_num,
-			uint32_t pf1_vf_num, int rbp,
-			enum lsx_share_ob share_ob);
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 
-int lsx_pciep_id_filtered(int id);
 int lsx_pciep_sim_dev_add(void);
 void *lsx_pciep_map_region(uint64_t addr, size_t len);
+int lsx_pciep_share_info_init(void);
 
 #endif

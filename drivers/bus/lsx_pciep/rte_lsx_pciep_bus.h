@@ -109,7 +109,7 @@ struct rte_lsx_pciep_device {
 	/* MSI/MSIx window setting */
 	uint64_t msix_bus_base;
 	uint64_t msix_phy_base;
-	uint64_t msix_virt_base;
+	uint8_t *msix_virt_base;
 	uint64_t msix_win_size;
 	int msix_win_init_flag;
 
@@ -163,26 +163,40 @@ struct rte_lsx_pciep_bus {
 
 int lsx_pciep_pf_available(enum lsx_pcie_pf_idx idx);
 int lsx_pciep_vf_number(enum lsx_pcie_pf_idx idx);
+enum PEX_TYPE
+lsx_pciep_type_get(uint8_t pciep_idx);
+int
+lsx_pciep_hw_rbp_get(uint8_t pciep_idx);
+int
+lsx_pciep_hw_sim_get(uint8_t pciep_idx);
+int
+lsx_pciep_hw_vio_get(uint8_t pciep_idx,
+	uint8_t pf_idx);
+
+int lsx_pciep_ctl_rbp_enable(uint8_t pcie_idx);
 int lsx_pciep_sim(void);
 int lsx_pciep_virtio(void);
 enum PEX_TYPE lsx_pciep_get_type(void);
 struct rte_lsx_pciep_device *lsx_pciep_first_dev(void);
 
-uint64_t lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
-			uint64_t pci_addr, uint64_t size);
-void lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
-		uint64_t vir_offset);
+uint64_t
+lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size);
+void
+lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t vir_offset);
 
-void lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev);
-uint64_t lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
-			uint32_t vector);
-uint32_t lsx_pciep_msix_get_cmd(struct rte_lsx_pciep_device *ep_dev,
-			 uint32_t vector);
+void
+lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev);
+uint64_t
+lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
+	uint32_t vector);
+uint32_t
+lsx_pciep_msix_get_cmd(struct rte_lsx_pciep_device *ep_dev,
+	uint32_t vector);
 void lsx_pciep_msix_cmd_send(uint64_t addr, uint32_t cmd);
 
-int lsx_pciep_ctl_rbp_enable(uint8_t pcie_idx);
-
-uint32_t
+uint16_t
 lsx_pciep_ctl_get_device_id(uint8_t pcie_idx,
 	enum lsx_pcie_pf_idx pf_idx);
 

@@ -83,27 +83,27 @@ pcie_dw_disable_ob_win(struct lsx_pciep_ctl_dev *ctldev, int idx)
 
 	if (idx >= 0) {
 		rte_write32(PCIE_ATU_REGION_OUTBOUND | idx,
-				    ctldev->dbi + PCIE_ATU_VIEWPORT);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_BASE);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_BASE);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_LIMIT);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_TARGET);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+				    ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_BASE);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_BASE);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LIMIT);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 		rte_write32(PCIE_ATU_TYPE_MEM,
-			ctldev->dbi + PCIE_ATU_CR1);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_CR2);
+			ctldev->dbi_vir + PCIE_ATU_CR1);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_CR2);
 	} else {
 		for (loop = 0; loop < PCIE_DW_OB_WINS_NUM; loop++) {
 			rte_write32(PCIE_ATU_REGION_OUTBOUND | loop,
-				    ctldev->dbi + PCIE_ATU_VIEWPORT);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_BASE);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_BASE);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_LIMIT);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_TARGET);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+				    ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_BASE);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_BASE);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LIMIT);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 			rte_write32(PCIE_ATU_TYPE_MEM,
-				ctldev->dbi + PCIE_ATU_CR1);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_CR2);
+				ctldev->dbi_vir + PCIE_ATU_CR1);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_CR2);
 		}
 	}
 }
@@ -116,25 +116,25 @@ pcie_dw_set_ob_win(struct lsx_pciep_ctl_dev *ctldev, int idx,
 		   uint64_t size)
 {
 	rte_write32(PCIE_ATU_REGION_OUTBOUND | idx,
-		    ctldev->dbi + PCIE_ATU_VIEWPORT);
+		    ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
 
 	rte_write32(lower_32_bits(cpu_addr),
-		    ctldev->dbi +  PCIE_ATU_LOWER_BASE);
+		    ctldev->dbi_vir +  PCIE_ATU_LOWER_BASE);
 	rte_write32(upper_32_bits(cpu_addr),
-		    ctldev->dbi + PCIE_ATU_UPPER_BASE);
+		    ctldev->dbi_vir + PCIE_ATU_UPPER_BASE);
 
 	rte_write32(lower_32_bits(cpu_addr + size - 1),
-		    ctldev->dbi + PCIE_ATU_LIMIT);
+		    ctldev->dbi_vir + PCIE_ATU_LIMIT);
 
 	rte_write32(lower_32_bits(pci_addr),
-		    ctldev->dbi + PCIE_ATU_LOWER_TARGET);
+		    ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
 	rte_write32(upper_32_bits(pci_addr),
-		    ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+		    ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 
 	rte_write32(PCIE_ATU_TYPE_MEM | PCIE_ATU_FUNC_NUM(pf, is_vf, vf),
-		    ctldev->dbi + PCIE_ATU_CR1);
+		    ctldev->dbi_vir + PCIE_ATU_CR1);
 
-	rte_write32(PCIE_ATU_ENABLE, ctldev->dbi + PCIE_ATU_CR2);
+	rte_write32(PCIE_ATU_ENABLE, ctldev->dbi_vir + PCIE_ATU_CR2);
 }
 
 static void pcie_dw_set_ib_size(uint8_t *bar_base, int bar,
@@ -181,10 +181,10 @@ pcie_dw_set_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx,
 	uint32_t ctrl1, ctrl2;
 
 	if (resize) {
-		uint8_t *bar_base = ctldev->dbi +
+		uint8_t *bar_base = ctldev->dbi_vir +
 			(0x1000 + 0x8000 * (pf));
 
-		rte_write32(0, ctldev->dbi + PCIE_MISC_CONTROL_1_OFF);
+		rte_write32(0, ctldev->dbi_vir + PCIE_MISC_CONTROL_1_OFF);
 		pcie_dw_set_ib_size(bar_base, bar, size, is_vf);
 	}
 
@@ -199,13 +199,15 @@ pcie_dw_set_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx,
 		ctrl2 |= PCIE_VFBAR_MATCH_MODE_EN;
 
 	rte_write32(PCIE_ATU_REGION_INBOUND | idx,
-		    ctldev->dbi + PCIE_ATU_VIEWPORT);
+		ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
 
-	rte_write32(lower_32_bits(phys), ctldev->dbi + PCIE_ATU_LOWER_TARGET);
-	rte_write32(upper_32_bits(phys), ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+	rte_write32(lower_32_bits(phys),
+		ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
+	rte_write32(upper_32_bits(phys),
+		ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 
-	rte_write32(ctrl1, ctldev->dbi + PCIE_ATU_CR1);
-	rte_write32(ctrl2, ctldev->dbi + PCIE_ATU_CR2);
+	rte_write32(ctrl1, ctldev->dbi_vir + PCIE_ATU_CR1);
+	rte_write32(ctrl2, ctldev->dbi_vir + PCIE_ATU_CR2);
 }
 
 static void
@@ -215,21 +217,21 @@ pcie_dw_disable_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx)
 
 	if (idx >= 0) {
 		rte_write32(PCIE_ATU_REGION_INBOUND | idx,
-				    ctldev->dbi + PCIE_ATU_VIEWPORT);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_TARGET);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+				    ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 		rte_write32(PCIE_ATU_TYPE_MEM,
-			ctldev->dbi + PCIE_ATU_CR1);
-		rte_write32(0, ctldev->dbi + PCIE_ATU_CR2);
+			ctldev->dbi_vir + PCIE_ATU_CR1);
+		rte_write32(0, ctldev->dbi_vir + PCIE_ATU_CR2);
 	} else {
 		for (loop = 0; loop < PCIE_DW_IB_WINS_NUM; loop++) {
 			rte_write32(PCIE_ATU_REGION_INBOUND | loop,
-				    ctldev->dbi + PCIE_ATU_VIEWPORT);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_LOWER_TARGET);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_UPPER_TARGET);
+				    ctldev->dbi_vir + PCIE_ATU_VIEWPORT);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_LOWER_TARGET);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_UPPER_TARGET);
 			rte_write32(PCIE_ATU_TYPE_MEM,
-				ctldev->dbi + PCIE_ATU_CR1);
-			rte_write32(0, ctldev->dbi + PCIE_ATU_CR2);
+				ctldev->dbi_vir + PCIE_ATU_CR1);
+			rte_write32(0, ctldev->dbi_vir + PCIE_ATU_CR2);
 		}
 	}
 }
@@ -240,8 +242,10 @@ pcie_dw_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 {
 	uint64_t msg_addr, msg_data, dbi_offset;
 	int vector;
-	uint8_t *dbi;
+	uint8_t *dbi, *out_vir = ctldev->out_vir;
 	uint32_t win_idx;
+	uint64_t out_base = ctldev->ctl_hw->out_base;
+	uint64_t out_win_size = ctldev->ctl_hw->out_win_size;
 
 	if (ep_dev->mmsi_flag == LSX_PCIEP_DONT_INT)
 		return;
@@ -251,12 +255,12 @@ pcie_dw_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 
 	/* Multiple MSI */
 	/* Read different function */
-	if (ctldev->type == PEX_LX2160_REV2)
+	if (ctldev->ctl_hw->type == PEX_LX2160_REV2)
 		dbi_offset = PCIE_PF1_LX2_DBI_OFF;
 	else
 		dbi_offset = PCIE_PF1_LS2_DBI_OFF;
 
-	dbi = ctldev->dbi + ep_dev->pf * dbi_offset;
+	dbi = ctldev->dbi_vir + ep_dev->pf * dbi_offset;
 
 	msg_addr = rte_read32(dbi + PCIE_MSI_MSG_HADDR_OFF);
 	msg_addr = ((msg_addr) << 32) |
@@ -275,16 +279,16 @@ pcie_dw_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 		ep_dev->msix_data[vector] = msg_data + vector;
 	}
 
-	if (ctldev->rbp) {
+	if (ctldev->ctl_hw->rbp) {
 		win_idx = LSX_PCIEP_RBP_OB_WIN_START(ep_dev->pf,
 					ep_dev->is_vf, ep_dev->vf);
 		win_idx += LSX_PCIEP_RBP_OB_MSIX;
 		ep_dev->msix_phy_base =
-			ctldev->out_base + win_idx * ctldev->out_win_size;
+			out_base + win_idx * out_win_size;
 		ep_dev->msix_virt_base =
-			ctldev->out_vaddr + win_idx * ctldev->out_win_size;
+			out_vir + win_idx * out_win_size;
 		ep_dev->msix_bus_base = ep_dev->msix_addr[0];
-		ep_dev->msix_win_size = ctldev->out_win_size;
+		ep_dev->msix_win_size = out_win_size;
 		ep_dev->msix_win_init_flag = 1;
 		pcie_dw_set_ob_win(ctldev, win_idx, ep_dev->pf,
 				ep_dev->is_vf, ep_dev->vf,
@@ -302,7 +306,7 @@ pcie_dw_msix_get_vaddr(struct lsx_pciep_ctl_dev *ctldev,
 	uint64_t offset;
 
 	if (ep_dev->mmsi_flag == LSX_PCIEP_MSIX_INT)
-		return (uint64_t)(ctldev->dbi + MSIX_DOORBELL_REG);
+		return (uint64_t)(ctldev->dbi_vir + MSIX_DOORBELL_REG);
 
 
 	/* Multiple MSI */
@@ -310,7 +314,7 @@ pcie_dw_msix_get_vaddr(struct lsx_pciep_ctl_dev *ctldev,
 	if (offset > ep_dev->msix_win_size)
 		return 0;
 
-	return ep_dev->msix_virt_base + offset;
+	return (uint64_t)ep_dev->msix_virt_base + offset;
 }
 
 static uint32_t
@@ -339,27 +343,27 @@ pcie_dw_msix_get_cmd(struct lsx_pciep_ctl_dev *ctldev __rte_unused,
 static void
 pcie_dw_reinit(struct lsx_pciep_ctl_dev *ctldev, uint8_t pf_mask)
 {
-	rte_write16(1, ctldev->dbi + PCIE_DBI_RO_WR_EN);
+	rte_write16(1, ctldev->dbi_vir + PCIE_DBI_RO_WR_EN);
 
 	if (pf_mask & (1 << PF0_IDX)) {
-		rte_write16(ctldev->vendor_id[PF0_IDX],
-			ctldev->dbi + PCI_VENDOR_ID);
-		rte_write16(ctldev->device_id[PF0_IDX],
-			ctldev->dbi + PCI_DEVICE_ID);
-		rte_write16(ctldev->class_id[PF0_IDX],
-			ctldev->dbi + PCI_CLASS_DEVICE);
+		rte_write16(ctldev->ctl_hw->vendor_id[PF0_IDX],
+			ctldev->dbi_vir + PCI_VENDOR_ID);
+		rte_write16(ctldev->ctl_hw->device_id[PF0_IDX],
+			ctldev->dbi_vir + PCI_DEVICE_ID);
+		rte_write16(ctldev->ctl_hw->class_id[PF0_IDX],
+			ctldev->dbi_vir + PCI_CLASS_DEVICE);
 	}
 
 	if (pf_mask & (1 << PF1_IDX)) {
-		rte_write16(ctldev->vendor_id[PF1_IDX],
-			ctldev->dbi + PCIE_CFG_OFFSET + PCI_VENDOR_ID);
-		rte_write16(ctldev->device_id[PF1_IDX],
-			ctldev->dbi + PCIE_CFG_OFFSET + PCI_DEVICE_ID);
-		rte_write16(ctldev->class_id[PF1_IDX],
-			ctldev->dbi + PCIE_CFG_OFFSET + PCI_CLASS_DEVICE);
+		rte_write16(ctldev->ctl_hw->vendor_id[PF1_IDX],
+			ctldev->dbi_vir + PCIE_CFG_OFFSET + PCI_VENDOR_ID);
+		rte_write16(ctldev->ctl_hw->device_id[PF1_IDX],
+			ctldev->dbi_vir + PCIE_CFG_OFFSET + PCI_DEVICE_ID);
+		rte_write16(ctldev->ctl_hw->class_id[PF1_IDX],
+			ctldev->dbi_vir + PCIE_CFG_OFFSET + PCI_CLASS_DEVICE);
 	}
 
-	rte_write16(0, ctldev->dbi + PCIE_DBI_RO_WR_EN);
+	rte_write16(0, ctldev->dbi_vir + PCIE_DBI_RO_WR_EN);
 }
 
 static struct lsx_pciep_ops pcie_dw_ops = {

@@ -57,11 +57,6 @@ static uint32_t s_pf1_vfnum;
 static int s_ep_sim;
 static int s_ep_virtio;
 
-static int s_pcie_black_list_num;
-static int s_pcie_black_list[LSX_MAX_PCIE_NB];
-static int s_pcie_sim_list_num;
-static int s_pcie_sim_list[LSX_MAX_PCIE_NB];
-
 int lsx_pciep_pf_available(enum lsx_pcie_pf_idx idx)
 {
 	if (idx == PF0_IDX)
@@ -163,15 +158,16 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 	struct rte_lsx_pciep_device *ep_dev;
 	struct lsx_pciep_ctl_dev *ctl_dev;
 	uint32_t i;
+	int ret = 0;
 
 	ctl_dev = lsx_pciep_ctl_get_dev(pcie_idx);
 	if (!ctl_dev)
 		return -ENODEV;
 
-	if (!ctl_dev->ep_enable)
+	if (!ctl_dev->ctl_hw->ep_enable)
 		return -ENODEV;
 
-	if (s_pf0_enable) {
+	if (ctl_dev->ctl_hw->pf_enable[PF0_IDX]) {
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
 			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
@@ -185,23 +181,24 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 		ep_dev->pf = PF0_IDX;
 		ep_dev->is_vf = 0;
 
-		if (lsx_pciep_virtio())
+		if (lsx_pciep_hw_vio_get(pcie_idx, PF0_IDX))
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf0",
-				ctl_dev->index);
+				ctl_dev->ctl_hw->index);
 		else
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf0",
-				ctl_dev->index);
+				ctl_dev->ctl_hw->index);
 
-		ep_dev->pcie_id = ctl_dev->index;
+		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
 
 		ep_dev->device.name = ep_dev->name;
 
 		lsx_pciep_insert_device_list(ep_dev);
+		ret++;
 	}
 
-	if (s_pf1_enable) {
+	if (ctl_dev->ctl_hw->pf_enable[PF1_IDX]) {
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
 			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
@@ -215,97 +212,96 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 		ep_dev->pf = PF1_IDX;
 		ep_dev->is_vf = 0;
 
-		if (lsx_pciep_virtio())
+		if (lsx_pciep_hw_vio_get(pcie_idx, PF1_IDX))
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 					LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf1",
-					ctl_dev->index);
+					ctl_dev->ctl_hw->index);
 		else
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 					LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf1",
-					ctl_dev->index);
+					ctl_dev->ctl_hw->index);
 
-		ep_dev->pcie_id = ctl_dev->index;
+		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
 
 		ep_dev->device.name = ep_dev->name;
 
 		lsx_pciep_insert_device_list(ep_dev);
+		ret++;
 	}
 
-	if (s_pf0_enable) {
-		for (i = 0; i < s_pf0_vfnum; i++) {
-			ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
-			if (!ep_dev) {
-				LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
-					__func__, __LINE__);
+	for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
+		if (!ctl_dev->ctl_hw->vf_enable[PF0_IDX][i])
+			continue;
+		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
+		if (!ep_dev) {
+			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
+				__func__, __LINE__);
 
-				return -ENOMEM;
-			}
-
-			memset(ep_dev, 0, sizeof(struct rte_lsx_pciep_device));
-
-			ep_dev->pf = PF0_IDX;
-			ep_dev->is_vf = 1;
-			ep_dev->vf = i;
-
-			if (lsx_pciep_virtio())
-				snprintf(ep_dev->name,
-					RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_VIRT_NAME_PREFIX
-					"_%d_pf0_vf%d",
-					ctl_dev->index, i);
-			else
-				snprintf(ep_dev->name,
-					RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_NXP_NAME_PREFIX
-					"_%d_pf0_vf%d",
-					ctl_dev->index, i);
-
-			ep_dev->pcie_id = ctl_dev->index;
-
-			ep_dev->device.name = ep_dev->name;
-
-			lsx_pciep_insert_device_list(ep_dev);
+			return -ENOMEM;
 		}
+
+		memset(ep_dev, 0, sizeof(struct rte_lsx_pciep_device));
+
+		ep_dev->pf = PF0_IDX;
+		ep_dev->is_vf = 1;
+		ep_dev->vf = i;
+		if (lsx_pciep_hw_vio_get(pcie_idx, PF0_IDX))
+			snprintf(ep_dev->name,
+				RTE_DEV_NAME_MAX_LEN,
+				LSX_PCIEP_VIRT_NAME_PREFIX
+				"_%d_pf0_vf%d",
+				ctl_dev->ctl_hw->index, i);
+		else
+			snprintf(ep_dev->name,
+				RTE_DEV_NAME_MAX_LEN,
+				LSX_PCIEP_NXP_NAME_PREFIX
+				"_%d_pf0_vf%d",
+				ctl_dev->ctl_hw->index, i);
+
+		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->device.name = ep_dev->name;
+
+		lsx_pciep_insert_device_list(ep_dev);
+		ret++;
 	}
 
-	if (s_pf1_enable) {
-		for (i = 0; i < s_pf1_vfnum; i++) {
-			ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
-			if (!ep_dev) {
-				LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
-					__func__, __LINE__);
+	for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
+		if (!ctl_dev->ctl_hw->vf_enable[PF1_IDX][i])
+			continue;
+		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
+		if (!ep_dev) {
+			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
+				__func__, __LINE__);
 
-				return -ENOMEM;
-			}
-
-			memset(ep_dev, 0, sizeof(struct rte_lsx_pciep_device));
-
-			ep_dev->pf = PF1_IDX;
-			ep_dev->is_vf = 1;
-			ep_dev->vf = i;
-
-			if (lsx_pciep_virtio())
-				snprintf(ep_dev->name,
-					RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_VIRT_NAME_PREFIX
-					"_%d_pf1_vf%d",
-					ctl_dev->index, i);
-			else
-				snprintf(ep_dev->name,
-					RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_NXP_NAME_PREFIX
-					"_%d_pf1_vf%d",
-					ctl_dev->index, i);
-
-			ep_dev->pcie_id = ctl_dev->index;
-
-			ep_dev->device.name = ep_dev->name;
-
-			lsx_pciep_insert_device_list(ep_dev);
+			return -ENOMEM;
 		}
+
+		memset(ep_dev, 0, sizeof(struct rte_lsx_pciep_device));
+
+		ep_dev->pf = PF1_IDX;
+		ep_dev->is_vf = 1;
+		ep_dev->vf = i;
+		if (lsx_pciep_hw_vio_get(pcie_idx, PF1_IDX))
+			snprintf(ep_dev->name,
+				RTE_DEV_NAME_MAX_LEN,
+				LSX_PCIEP_VIRT_NAME_PREFIX
+				"_%d_pf1_vf%d",
+				ctl_dev->ctl_hw->index, i);
+		else
+			snprintf(ep_dev->name,
+				RTE_DEV_NAME_MAX_LEN,
+				LSX_PCIEP_NXP_NAME_PREFIX
+				"_%d_pf1_vf%d",
+				ctl_dev->ctl_hw->index, i);
+
+		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->device.name = ep_dev->name;
+
+		lsx_pciep_insert_device_list(ep_dev);
+		ret++;
 	}
 
-	return 0;
+	return ret;
 }
 
 void *lsx_pciep_map_region(uint64_t addr, size_t len)
@@ -338,145 +334,15 @@ void *lsx_pciep_map_region(uint64_t addr, size_t len)
 }
 
 static int
-lsx_pciep_parse_env_variable(void)
-{
-	char *penv = NULL;
-	int rbp_enable = LSX_PCIEP_QDMA_RBP_SUPPORT;
-	enum lsx_share_ob share_ob = LSX_PCIEP_OB_PER_FUN;
-	int arg_num, i, j;
-	char *args[32];
-
-	penv = getenv("LSINIC_PF0");
-	if (penv)
-		s_pf0_enable = atoi(penv);
-
-	penv = getenv("LSINIC_PF1");
-	if (penv)
-		s_pf1_enable = atoi(penv);
-
-	penv = getenv("LSINIC_PF0_VF");
-	if (penv)
-		s_pf0_vfnum = atoi(penv);
-	if (s_pf0_vfnum > PCIE_MAX_VF_NUM)
-		s_pf0_vfnum = PCIE_MAX_VF_NUM;
-
-	penv = getenv("LSINIC_PF1_VF");
-	if (penv)
-		s_pf1_vfnum = atoi(penv);
-	if (s_pf1_vfnum > PCIE_MAX_VF_NUM)
-		s_pf1_vfnum = PCIE_MAX_VF_NUM;
-
-	penv = getenv("LSINIC_EP_SIM");
-	if (penv)
-		s_ep_sim = atoi(penv);
-
-	penv = getenv("LSINIC_EP_VIRTIO");
-	if (penv)
-		s_ep_virtio = atoi(penv);
-
-	LSX_PCIEP_BUS_INFO("pf0_en:%d pf1_en:%d pf0_vfnum:%d pf1_vfnum:%d",
-		s_pf0_enable, s_pf1_enable, s_pf0_vfnum, s_pf1_vfnum);
-
-	penv = getenv("LSINIC_RBP_DISABLE");
-	if ((penv && atoi(penv) > 0) || s_ep_sim)
-		rbp_enable = 0;
-
-	penv = getenv("LSINIC_PRIMARY_SHARE_OUTBOUND");
-	if (penv && atoi(penv) > 0 && !rbp_enable)
-		share_ob = LSX_PCIEP_OB_PRIMARY_SHARE;
-
-	penv = getenv("LSINIC_SECONDARY_SHARE_OUTBOUND");
-	if (penv && atoi(penv) > 0 && !rbp_enable)
-		share_ob = LSX_PCIEP_OB_SECONDARY_SHARE;
-
-	penv = getenv("LSINIC_PCIE_BLACK_LIST");
-	if (penv) {
-		arg_num = rte_strsplit(penv, strlen(penv), args, 32, ',');
-		if (arg_num > 0) {
-			for (i = 0; i < arg_num; i++)
-				s_pcie_black_list[i] = atoi(args[i]);
-			s_pcie_black_list_num = arg_num;
-		}
-		if (s_ep_sim && s_pcie_black_list_num) {
-			int filtered;
-
-			for (j = 0; j < LSX_MAX_PCIE_NB; j++) {
-				filtered = 0;
-				for (i = 0; i < s_pcie_black_list_num; i++) {
-					if (j == s_pcie_black_list[i]) {
-						filtered = 1;
-						break;
-					}
-				}
-				if (!filtered) {
-					s_pcie_sim_list[s_pcie_sim_list_num] = j;
-					s_pcie_sim_list_num++;
-				}
-			}
-		}
-	}
-
-	lsx_pciep_ctl_set_all_devs(s_pf0_enable,
-		s_pf1_enable, s_pf0_vfnum, s_pf1_vfnum,
-		rbp_enable, share_ob);
-
-	return 0;
-}
-
-int lsx_pciep_id_filtered(int id)
-{
-	int i;
-
-	if (!s_pcie_black_list_num)
-		return false;
-	for (i = 0; i < s_pcie_black_list_num; i++) {
-		if (id == s_pcie_black_list[i])
-			return true;
-	}
-	return false;
-}
-
-int lsx_pciep_sim_dev_add(void)
-{
-	struct lsx_pciep_ctl_dev *ctldev;
-	int i;
-
-	if (!s_pcie_sim_list_num) {
-		ctldev = lsx_pciep_ctl_get_dev(LSX_PCIE_SIM_IDX);
-		RTE_ASSERT(ctldev);
-		ctldev->ep_enable = 1;
-		ctldev->sim = 1;
-		ctldev->index = LSX_PCIE_SIM_IDX;
-		LSX_PCIEP_BUS_INFO("iNIC Simulator PCIe(%d) EP added.",
-			ctldev->index);
-
-		return 1;
-	}
-
-	for (i = 0; i < s_pcie_sim_list_num; i++) {
-		ctldev = lsx_pciep_ctl_get_dev(s_pcie_sim_list[i]);
-		RTE_ASSERT(ctldev);
-		ctldev->ep_enable = 1;
-		ctldev->sim = 1;
-		ctldev->index = s_pcie_sim_list[i];
-		LSX_PCIEP_BUS_INFO("iNIC Simulator PCIe(%d) EP added.",
-			ctldev->index);
-	}
-
-	return s_pcie_sim_list_num;
-}
-
-static int
 lsx_pciep_scan(void)
 {
 	uint8_t pcie_idx = 0;
 	int ret;
 
-	ret = lsx_pciep_parse_env_variable();
-	if (ret)
-		return ret;
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY)
+		return 0;
 
-	ret = lsx_pciep_init();
+	ret = lsx_pciep_primary_init();
 	if (ret)
 		return ret;
 
@@ -525,12 +391,29 @@ lsx_pciep_first_dev(void)
 			TAILQ_FIRST(&lsx_pciep_bus.device_list);
 }
 
+#define ATTACH_DEV_FORMAT(pci_id, dev_nb) \
+	"Secondary process attached %d devices of PCIe%d", \
+	(int)dev_nb, \
+	(int)pci_id
+
 static int
 lsx_pciep_probe(void)
 {
-	int ret = 0;
+	int ret = 0, i, added;
 	struct rte_lsx_pciep_device *dev;
 	struct rte_lsx_pciep_driver *drv;
+
+	ret = lsx_pciep_share_info_init();
+	if (ret)
+		return ret;
+
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+			added = lsx_pciep_create_dev(i);
+			if (added > 0)
+				LSX_PCIEP_BUS_INFO(ATTACH_DEV_FORMAT(i, added));
+		}
+	}
 
 	if (TAILQ_EMPTY(&lsx_pciep_bus.device_list))
 		return 0;

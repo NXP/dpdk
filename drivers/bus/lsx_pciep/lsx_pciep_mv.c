@@ -148,11 +148,11 @@ ccsr_set_page(struct lsx_pciep_ctl_dev *ctldev, uint8_t pg_idx)
 {
 	uint32_t val;
 
-	val = rte_read32(ctldev->dbi + PAB_CTRL);
+	val = rte_read32(ctldev->dbi_vir + PAB_CTRL);
 	val &= ~(PAB_CTRL_PAGE_SEL_MASK << PAB_CTRL_PAGE_SEL_SHIFT);
 	val |= (pg_idx & PAB_CTRL_PAGE_SEL_MASK) << PAB_CTRL_PAGE_SEL_SHIFT;
 
-	rte_write32(val, ctldev->dbi + PAB_CTRL);
+	rte_write32(val, ctldev->dbi_vir + PAB_CTRL);
 }
 
 static inline uint32_t
@@ -160,11 +160,11 @@ ccsr_readl(struct lsx_pciep_ctl_dev *ctldev, uint32_t offset)
 {
 	if (offset < INDIRECT_ADDR_BNDRY) {
 		ccsr_set_page(ctldev, 0);
-		return rte_read32(ctldev->dbi + offset);
+		return rte_read32(ctldev->dbi_vir + offset);
 	}
 
 	ccsr_set_page(ctldev, OFFSET_TO_PAGE_IDX(offset));
-	return rte_read32(ctldev->dbi + OFFSET_TO_PAGE_ADDR(offset));
+	return rte_read32(ctldev->dbi_vir + OFFSET_TO_PAGE_ADDR(offset));
 }
 
 static inline void
@@ -172,10 +172,11 @@ ccsr_writel(struct lsx_pciep_ctl_dev *ctldev, uint32_t offset, uint32_t value)
 {
 	if (offset < INDIRECT_ADDR_BNDRY) {
 		ccsr_set_page(ctldev, 0);
-		rte_write32(value, ctldev->dbi + offset);
+		rte_write32(value, ctldev->dbi_vir + offset);
 	} else {
 		ccsr_set_page(ctldev, OFFSET_TO_PAGE_IDX(offset));
-		rte_write32(value, ctldev->dbi + OFFSET_TO_PAGE_ADDR(offset));
+		rte_write32(value, ctldev->dbi_vir +
+			OFFSET_TO_PAGE_ADDR(offset));
 	}
 }
 
@@ -263,6 +264,9 @@ pcie_mv_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 	uint32_t msg_data = 0;
 	uint64_t msg_addr = 0;
 	uint32_t addr_h, addr_l;
+	uint64_t out_base = ctldev->ctl_hw->out_base;
+	uint64_t out_win_size = ctldev->ctl_hw->out_win_size;
+	uint8_t *out_vir = ctldev->out_vir;
 
 	if (ep_dev->mmsi_flag == LSX_PCIEP_DONT_INT)
 		return;
@@ -324,16 +328,16 @@ pcie_mv_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 		ccsr_writel(ctldev, PAB_CTRL, val);
 	}
 
-	if (ctldev->rbp) {
+	if (ctldev->ctl_hw->rbp) {
 		win_idx = LSX_PCIEP_RBP_OB_WIN_START(ep_dev->pf,
 					ep_dev->is_vf, ep_dev->vf);
 		win_idx += LSX_PCIEP_RBP_OB_MSIX;
 		ep_dev->msix_phy_base =
-			ctldev->out_base + win_idx * ctldev->out_win_size;
+			out_base + win_idx * out_win_size;
 		ep_dev->msix_virt_base =
-			ctldev->out_vaddr + win_idx * ctldev->out_win_size;
+			out_vir + win_idx * out_win_size;
 		ep_dev->msix_bus_base = ep_dev->msix_addr[0];
-		ep_dev->msix_win_size = ctldev->out_win_size;
+		ep_dev->msix_win_size = out_win_size;
 		ep_dev->msix_win_init_flag = 1;
 		pcie_mv_set_ob_win(ctldev, win_idx, pf, is_vf, vf,
 				ep_dev->msix_phy_base,
@@ -359,7 +363,7 @@ pcie_mv_msix_get_vaddr(struct lsx_pciep_ctl_dev *ctldev __rte_unused,
 	if (offset > ep_dev->msix_win_size)
 		return 0;
 
-	return ep_dev->msix_virt_base + offset;
+	return (uint64_t)ep_dev->msix_virt_base + offset;
 }
 
 static uint32_t
