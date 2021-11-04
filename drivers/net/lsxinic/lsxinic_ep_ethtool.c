@@ -21,7 +21,7 @@
 
 static int lsinic_if_init(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	adapter->rc_state = LSINIC_DEV_INITED;
 	lsinic_reset_config_fromrc(adapter);
@@ -31,7 +31,7 @@ static int lsinic_if_init(struct rte_eth_dev *dev)
 
 static int lsinic_if_link_up(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	if (adapter->rc_state != LSINIC_DEV_INITED) {
 		LSXINIC_PMD_INFO("Please first send init command");
@@ -54,7 +54,7 @@ static int lsinic_if_link_up(struct rte_eth_dev *dev)
 
 static int lsinic_if_link_down(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	if (adapter->is_vf) {
 		LSXINIC_PMD_INFO("pice%d:pf%d:vf%d link down",
@@ -72,7 +72,7 @@ static int lsinic_if_link_down(struct rte_eth_dev *dev)
 
 static int lsinic_if_remove(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	if (adapter->rc_state == LSINIC_DEV_UP)
 		lsinic_if_link_down(dev);
@@ -84,7 +84,7 @@ static int lsinic_if_remove(struct rte_eth_dev *dev)
 
 static int lsinic_set_mac(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
@@ -121,7 +121,7 @@ static int lsinic_set_mac(struct rte_eth_dev *dev)
 static int lsinic_set_mtu(struct rte_eth_dev *dev)
 {
 	int mtu;
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 
@@ -158,7 +158,7 @@ static void lsinic_print_ep_status(void)
 
 	while (dev) {
 		eth_dev = dev->eth_dev;
-		adapter = eth_dev->data->dev_private;
+		adapter = eth_dev->process_private;
 
 		if (adapter->ep_state != LSINIC_DEV_UP)
 			continue;
@@ -194,7 +194,14 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 		first_dev = lsx_pciep_first_dev();
 		dev = first_dev;
 		while (dev) {
-			adapter = dev->eth_dev->data->dev_private;
+			adapter = dev->eth_dev->process_private;
+			if (!adapter->hw_addr) {
+				dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
+				if (dev == first_dev)
+					dev = NULL;
+				continue;
+			}
 			reg = LSINIC_REG_OFFSET(adapter->hw_addr,
 					LSINIC_DEV_REG_OFFSET);
 

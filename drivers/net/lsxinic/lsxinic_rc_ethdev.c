@@ -1258,7 +1258,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		hw->device_id,
 		hw->vendor_id);
 
-	hw->hw_addr = (void *)pci_dev->mem_resource[LSX_PCIEP_REG_BAR_IDX].addr;
+	hw->hw_addr = pci_dev->mem_resource[LSX_PCIEP_REG_BAR_IDX].addr;
 	if (!hw->hw_addr) {
 		LSXINIC_PMD_ERR("hw_addr map failed");
 		error = -ENOMEM;
@@ -1290,7 +1290,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		pci_dev->mem_resource[LSX_PCIEP_RING_BAR_IDX].phys_addr;
 	/* ep_ring pci bar addr get */
 	adapter->ep_ring_virt_base =
-		(void *)pci_dev->mem_resource[LSX_PCIEP_RING_BAR_IDX].addr;
+		pci_dev->mem_resource[LSX_PCIEP_RING_BAR_IDX].addr;
 	if (!adapter->ep_ring_phy_base) {
 		LSXINIC_PMD_ERR("eb_ring_phy_base if err");
 		return -ENOMEM;
@@ -1325,7 +1325,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		error = -ENODEV;
 		goto free_adapter;
 	}
-	adapter->rc_ring_virt_base = (uint8_t *)rc_ring_mem->addr;
+	adapter->rc_ring_virt_base = rc_ring_mem->addr;
 	adapter->rc_ring_phy_base = rc_ring_mem->iova;
 
 	if (!adapter->rc_ring_virt_base) {

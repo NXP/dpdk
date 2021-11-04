@@ -65,7 +65,7 @@ struct lsxvio_adapter {
 	dma_addr_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
 
-	uint64_t rc_ring_virt_base;  /* RC ring shadow base */
+	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
 	uint64_t rc_ring_win_size;
 
@@ -77,7 +77,7 @@ struct lsxvio_adapter {
 	int vf_idx;
 	int is_vf;
 	uint64_t ob_base;
-	uint64_t ob_virt_base;
+	uint8_t *ob_virt_base;
 	struct rte_lsx_pciep_device *lsx_dev;
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
 	uint8_t port_mac_addr[RTE_ETHER_ADDR_LEN];

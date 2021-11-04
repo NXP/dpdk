@@ -116,7 +116,7 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 0;
 	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	int pcie_id = q->adapter->lsx_dev->pcie_id;
-	enum PEX_TYPE pex_type = lsx_pciep_get_type();
+	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
 
 	penv = getenv("LSINIC_QDMA_SG_ENABLE");
@@ -135,7 +135,8 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 		vq_flags |= RTE_QDMA_VQ_FD_LONG_FORMAT |
 					RTE_QDMA_VQ_FD_SG_FORMAT;
 
-	if (pex_type == PEX_LS208X || lsx_pciep_sim())
+	if (pex_type == PEX_LS208X ||
+		lsx_pciep_hw_sim_get(pcie_id))
 		vq_flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
 
 	if (q->dma_vq >= 0) {
@@ -983,7 +984,7 @@ lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 	if (!q->new_desc)
 		return;
 
-	if (!lsx_pciep_sim()) {
+	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
 		if (q->new_desc_thresh &&
 			(q->new_desc >= q->new_desc_thresh ||
 			(lsxvio_timeout(q)))) {

@@ -143,7 +143,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
 	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
 		eth_dev->data->dev_private;
-	uint32_t device_id;
+	uint16_t device_id;
 	enum lsx_pcie_pf_idx pf_idx = lsx_dev->pf;
 
 	adapter->lsx_dev = lsx_dev;
@@ -161,7 +161,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 	adapter->ring_base =
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
 	adapter->ob_base = lsx_dev->ob_phy_base;
-	adapter->ob_virt_base = lsx_dev->ob_virt_base;
+	adapter->ob_virt_base = (uint8_t *)lsx_dev->ob_virt_base;
 	adapter->pf_idx = lsx_dev->pf;
 	adapter->is_vf = lsx_dev->is_vf;
 	if (lsx_dev->is_vf)
@@ -269,7 +269,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	struct rte_eth_dev *eth_dev = NULL;
 	struct lsxvio_adapter *adapter = NULL;
 	uint16_t device_id, class_id;
-	int ret;
+	int ret, rbp;
 	char env_name[128];
 
 	device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_NETWORK;
@@ -333,7 +333,8 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->tx_pkt_burst = &lsxvio_xmit_pkts;
 
 	lsxvio_init_bar_addr(lsx_dev);
-	if (lsx_pciep_sim() && !lsx_dev->is_vf) {
+	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
+		!lsx_dev->is_vf) {
 		lsx_pciep_sim_dev_map_inbound(lsx_dev);
 	}
 	lsxvio_netdev_reg_init(adapter);
@@ -342,7 +343,8 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	if (adapter->qdma_dev_id < 0)
 		return -ENODEV;
 
-	if (lsx_pciep_ctl_rbp_enable(lsx_dev->pcie_id))
+	rbp = lsx_pciep_hw_rbp_get(lsx_dev->pcie_id);
+	if (rbp)
 		adapter->rbp_enable = 1;
 	else
 		adapter->rbp_enable = 0;

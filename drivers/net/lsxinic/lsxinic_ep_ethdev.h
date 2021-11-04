@@ -106,7 +106,7 @@ struct lsinic_adapter {
 	dma_addr_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
 
-	uint64_t rc_ring_virt_base;  /* RC ring shadow base */
+	void *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
 
 	dma_addr_t rx_pcidma_dbg;
@@ -118,7 +118,6 @@ struct lsinic_adapter {
 	int is_vf;
 	struct rte_lsx_pciep_device *lsinic_dev;
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
-	uint8_t port_mac_addr[RTE_ETHER_ADDR_LEN];
 	uint8_t res[2];
 
 	struct lsinic_queue *txqs;

@@ -115,7 +115,7 @@ struct lsinic_queue {
 	int32_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
-	uint64_t ob_virt_base;
+	uint8_t *ob_virt_base;
 
 	struct lsinic_pci_dma_test dma_test;
 

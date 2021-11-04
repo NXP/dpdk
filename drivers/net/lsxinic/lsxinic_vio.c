@@ -30,15 +30,16 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 	struct lsxvio_queue_cfg *queue;
 	struct lsxvio_queue *vq;
-	uint64_t virt, desc_addr;
+	uint64_t desc_addr;
 	int i, size;
+	uint8_t *virt;
 
 	/* Get common config from bar.
 	 * Currently vdpa driver use MSI-X interrupts.
 	 */
 	dev->mmsi_flag = LSX_PCIEP_MSIX_INT;
 	/* Init msix before start queues. */
-	if (!lsx_pciep_sim()) {
+	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		lsx_pciep_msix_init(dev);
 
 		adapter->msix_config = common->msix_config;
@@ -78,10 +79,11 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			((uint64_t)(queue->queue_desc_hi) << 32));
 		size = RTE_MAX(CFG_1M_SIZE,
 			vring_size(LSXVIO_MAX_RING_DESC, RTE_CACHE_LINE_SIZE));
-		if (!lsx_pciep_sim())
-			virt = lsx_pciep_set_ob_win(dev, desc_addr, size);
+		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx))
+			virt = (void *)lsx_pciep_set_ob_win(dev,
+				desc_addr, size);
 		else
-			virt = (uint64_t)DPAA2_IOVA_TO_VADDR(desc_addr);
+			virt = DPAA2_IOVA_TO_VADDR(desc_addr);
 		vq->desc = (struct vring_desc *)virt;
 		vq->avail = (struct vring_avail *)(virt - desc_addr +
 				(queue->queue_avail_lo
@@ -107,7 +109,7 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->shadow_used_split);
 
 		if (queue->queue_msix_vector != VIRTIO_MSI_NO_VECTOR &&
-			!lsx_pciep_sim()) {
+			!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 			vq->msix_irq = queue->queue_msix_vector;
 			vq->msix_vaddr = lsx_pciep_msix_get_vaddr(dev,
 				vq->msix_irq);

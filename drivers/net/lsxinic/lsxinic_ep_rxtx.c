@@ -215,12 +215,16 @@ static int
 lsinic_queue_dma_create(struct lsinic_queue *q)
 {
 	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 0;
-	int pcie_id = q->adapter->lsinic_dev->pcie_id;
+	int pcie_id = q->adapter->pcie_idx;
+	int pf_id = q->adapter->pf_idx;
+	int is_vf = q->adapter->is_vf;
+	int vf_id = q->adapter->vf_idx;
 	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	struct lsinic_dev_reg *cfg =
 		LSINIC_REG_OFFSET(q->adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
-	enum PEX_TYPE pex_type = lsx_pciep_get_type();
+	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
+	int sim = lsx_pciep_hw_sim_get(pcie_id);
 
 	q->wdma_bd_start = -1;
 
@@ -261,7 +265,7 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 	}
 
 	/* Avoid memory address conflicting with PCIe base in short format.*/
-	if (pex_type == PEX_LS208X || lsx_pciep_sim())
+	if (pex_type == PEX_LS208X || sim)
 		vq_flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
 
 	if (q->dma_vq >= 0) {
@@ -288,9 +292,9 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 		if (q->type == LSINIC_QUEUE_RX) {
 			q->rbp.srbp = 1;
 			q->rbp.sportid = pcie_id;
-			q->rbp.spfid = q->adapter->pf_idx;
-			if (q->adapter->is_vf) {
-				q->rbp.svfid = q->adapter->vf_idx;
+			q->rbp.spfid = pf_id;
+			if (is_vf) {
+				q->rbp.svfid = vf_id;
 				q->rbp.svfa = 1;
 			} else {
 				q->rbp.svfa = 0;
@@ -299,9 +303,9 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 		} else {
 			q->rbp.drbp = 1;
 			q->rbp.dportid = pcie_id;
-			q->rbp.dpfid = q->adapter->pf_idx;
-			if (q->adapter->is_vf) {
-				q->rbp.dvfid = q->adapter->vf_idx;
+			q->rbp.dpfid = pf_id;
+			if (is_vf) {
+				q->rbp.dvfid = vf_id;
 				q->rbp.dvfa = 1;
 			} else {
 				q->rbp.dvfa = 0;
@@ -327,16 +331,13 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 		char qdma_pool_name[32];
 
 		/* Only used for qdma no response.*/
-		if (q->adapter->is_vf) {
+		if (is_vf) {
 			sprintf(qdma_pool_name, "pool_%d:pf%d_vf%d_%d_%d",
-				q->adapter->pcie_idx,
-				q->adapter->pf_idx,
-				q->adapter->vf_idx,
+				pcie_id, pf_id, vf_id,
 				q->type, q->queue_id);
 		} else {
 			sprintf(qdma_pool_name, "pool_%d:pf%d_%d_%d",
-				q->adapter->pcie_idx,
-				q->adapter->pf_idx,
+				pcie_id, pf_id,
 				q->type, q->queue_id);
 		}
 		q->qdma_pool = rte_mempool_create(qdma_pool_name,
@@ -2028,7 +2029,7 @@ lsinic_queue_start(struct lsinic_queue *q)
 			(LSINIC_READ_REG(&ring_reg->icr) >>
 			LSINIC_INT_VECTOR_SHIFT);
 		q->msix_irq = msix_vector;
-		if (!lsx_pciep_sim()) {
+		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 			q->msix_cmd =
 				lsx_pciep_msix_get_cmd(q->adapter->lsinic_dev,
 					msix_vector);
@@ -2046,7 +2047,7 @@ lsinic_queue_start(struct lsinic_queue *q)
 	if (rc_bus_addr) {
 		ob_offset = rc_bus_addr - adapter->lsinic_dev->ob_map_bus_base;
 		q->rc_bd_desc = (struct lsinic_bd_desc *)
-			((char *)lsinic_dev->ob_virt_base + ob_offset);
+			(lsinic_dev->ob_virt_base + ob_offset);
 	} else {
 		q->rc_bd_desc = q->ep_bd_desc;
 	}
@@ -2297,7 +2298,7 @@ lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	else
 		q->ob_base = adapter->lsinic_dev->ob_phy_base;
 
-	q->ob_virt_base = adapter->lsinic_dev->ob_virt_base;
+	q->ob_virt_base = (uint8_t *)adapter->lsinic_dev->ob_virt_base;
 	q->nb_desc = nb_desc;
 	q->new_desc_thresh = tx_rs_thresh;
 	q->queue_id = queue_idx;
@@ -2376,7 +2377,7 @@ lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 	if (!q->new_desc)
 		return;
 
-	if (!lsx_pciep_sim()) {
+	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
 		if (q->new_desc_thresh && (q->new_desc >= q->new_desc_thresh ||
 			(lsinic_timeout(q)))) {
 			/* MSI */
@@ -4063,7 +4064,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			 unsigned int socket_id,
 			 const struct rte_eth_txconf *tx_conf __rte_unused)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_bdr_reg *bdr_reg =
 		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
 			LSINIC_RING_REG_OFFSET);
@@ -4144,7 +4145,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	const struct rte_eth_rxconf *rx_conf,
 	struct rte_mempool *mp)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_bdr_reg *bdr_reg =
 		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
 			LSINIC_RING_REG_OFFSET);

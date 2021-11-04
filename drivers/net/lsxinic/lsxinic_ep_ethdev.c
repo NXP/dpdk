@@ -102,8 +102,6 @@ lsinic_dev_stats_get(struct rte_eth_dev *dev,
 	struct rte_eth_stats *stats);
 static int
 lsinic_dev_stats_reset(struct rte_eth_dev *dev);
-static int
-is_valid_ether_addr(uint8_t *addr);
 
 static const struct rte_eth_desc_lim rx_desc_lim = {
 	.nb_max = LSINIC_BD_ENTRY_COUNT,
@@ -116,14 +114,6 @@ static const struct rte_eth_desc_lim tx_desc_lim = {
 	.nb_min = LSINIC_BD_ENTRY_COUNT,
 	.nb_align = 8,
 };
-
-static int
-is_valid_ether_addr(uint8_t *addr)
-{
-	const char zaddr[6] = { 0, };
-
-	return !(addr[0] & 1) && memcmp(addr, zaddr, 6);
-}
 
 static struct eth_dev_ops lsinic_eth_dev_ops = {
 	.dev_configure        = lsinic_dev_configure,
@@ -239,12 +229,24 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 {
 	struct rte_eth_dev *eth_dev = lsinic_dev->eth_dev;
 	struct lsinic_adapter *adapter = (struct lsinic_adapter *)
-		eth_dev->data->dev_private;
+		eth_dev->process_private;
+	int sim, rbp;
 
-	if (!lsx_pciep_ctl_rbp_enable(adapter->lsinic_dev->pcie_id)) {
+	adapter->pf_idx = lsinic_dev->pf;
+	adapter->is_vf = lsinic_dev->is_vf;
+	if (lsinic_dev->is_vf)
+		adapter->vf_idx = lsinic_dev->vf;
+	adapter->pcie_idx = lsinic_dev->pcie_id;
+
+	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
+	if (adapter->is_vf)
+		rbp = lsx_pciep_hw_rbp_get(adapter->pcie_idx);
+	else
+		rbp = lsx_pciep_hw_rbp_get(adapter->pcie_idx);
+
+	if (!rbp && !sim) {
 		/* OB setting does NOT depend on RC for NORBP.*/
-		if (!lsx_pciep_sim())
-			lsx_pciep_set_ob_win(lsinic_dev, 0, 0);
+		lsx_pciep_set_ob_win(lsinic_dev, 0, 0);
 	}
 
 	lsx_pciep_set_ib_win(lsinic_dev,
@@ -253,18 +255,13 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	lsx_pciep_set_ib_win(lsinic_dev,
 		LSX_PCIEP_RING_BAR_IDX,
 		LSINIC_RING_BAR_MAX_SIZE);
-	if (lsx_pciep_sim() && !lsinic_dev->is_vf)
+	if (sim && !lsinic_dev->is_vf)
 		lsx_pciep_sim_dev_map_inbound(lsinic_dev);
 
 	adapter->hw_addr =
-		(void *)lsinic_dev->virt_addr[LSX_PCIEP_REG_BAR_IDX];
+		lsinic_dev->virt_addr[LSX_PCIEP_REG_BAR_IDX];
 	adapter->ep_ring_virt_base =
-		(void *)lsinic_dev->virt_addr[LSX_PCIEP_RING_BAR_IDX];
-	adapter->pf_idx = lsinic_dev->pf;
-	adapter->is_vf = lsinic_dev->is_vf;
-	if (lsinic_dev->is_vf)
-		adapter->vf_idx = lsinic_dev->vf;
-	adapter->pcie_idx = lsinic_dev->pcie_id;
+		lsinic_dev->virt_addr[LSX_PCIEP_RING_BAR_IDX];
 	adapter->bd_desc_base =
 		(uint8_t *)adapter->ep_ring_virt_base +
 		LSINIC_RING_BD_OFFSET;
@@ -277,7 +274,7 @@ lsinic_uninit_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 {
 	struct rte_eth_dev *eth_dev = lsinic_dev->eth_dev;
 	struct lsinic_adapter *adapter = (struct lsinic_adapter *)
-		eth_dev->data->dev_private;
+		eth_dev->process_private;
 
 	adapter->hw_addr = NULL;
 	adapter->bd_desc_base = NULL;
@@ -288,29 +285,6 @@ lsinic_uninit_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	adapter->pcie_idx = 0;
 
 	return 0;
-}
-
-static void
-lsinic_child_mac_init(struct lsinic_adapter *adapter)
-{
-	int pf_idx = adapter->pf_idx;
-	int vf_idx = adapter->vf_idx;
-	int is_vf = adapter->is_vf;
-
-	/* 00:e0:0c:fm_idx-mac_idx:mac_type-PF index: VF index */
-	adapter->mac_addr[0] = 0x00;
-	adapter->mac_addr[1] = 0xe0;
-	adapter->mac_addr[2] = 0x0c;
-	adapter->mac_addr[3] = pf_idx + 1;
-	adapter->mac_addr[4] = is_vf;
-	adapter->mac_addr[5] = vf_idx;
-
-	adapter->port_mac_addr[0] = 0x00;
-	adapter->port_mac_addr[1] = 0x00;
-	adapter->port_mac_addr[2] = 0x00;
-	adapter->port_mac_addr[3] = pf_idx + 1;
-	adapter->port_mac_addr[4] = is_vf;
-	adapter->port_mac_addr[5] = vf_idx;
 }
 
 static inline unsigned long ilog2(unsigned long n)
@@ -345,6 +319,7 @@ lsinic_dev_config_init(struct lsinic_adapter *adapter)
 {
 	struct lsinic_dev_reg *cfg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
+	int rbp;
 
 	cfg->rev = INIC_VERSION;
 	cfg->rx_ring_max_num = LSINIC_RING_MAX_COUNT;
@@ -359,7 +334,9 @@ lsinic_dev_config_init(struct lsinic_adapter *adapter)
 	cfg->pf_idx = adapter->pf_idx;
 	cfg->vf_num = PCIE_MAX_VF_NUM;
 
-	if (lsx_pciep_ctl_rbp_enable(adapter->lsinic_dev->pcie_id)) {
+	rbp = lsx_pciep_hw_rbp_get(adapter->pcie_idx);
+
+	if (rbp) {
 		cfg->obwin_size = ilog2(adapter->lsinic_dev->rbp_win_size);
 		cfg->rbp_enable = 1;
 	} else {
@@ -449,7 +426,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 {
 	char env_name[128];
 	char *penv;
-	struct lsinic_adapter *adapter = eth_dev->data->dev_private;
+	struct lsinic_adapter *adapter = eth_dev->process_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	adapter->ep_cap = 0;
@@ -631,6 +608,7 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 	uint32_t macaddrh = 0;
 	struct lsinic_eth_reg *reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	struct rte_eth_dev *eth_dev = adapter->lsinic_dev->eth_dev;
 
 	inic_memset(reg, 0, sizeof(*reg));
 
@@ -662,7 +640,9 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 
 	LSINIC_WRITE_REG(&reg->merge_threshold, adapter->merge_threshold);
 
-	lsinic_child_mac_init(adapter);  /* initialize mac addr */
+	memcpy(adapter->mac_addr,
+		eth_dev->data->mac_addrs->addr_bytes,
+		RTE_ETHER_ADDR_LEN);
 
 	/* write mac */
 	for (i = 0; i < 4; i++)
@@ -674,6 +654,23 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 
 	LSINIC_WRITE_REG(&reg->macaddrh, macaddrh);
 	LSINIC_WRITE_REG(&reg->macaddrl, macaddrl);
+}
+
+static void
+lsinic_mac_init(struct rte_ether_addr *mac_addrs,
+	struct rte_lsx_pciep_device *lsinic_dev)
+{
+	int pf_idx = lsinic_dev->pf;
+	int vf_idx = lsinic_dev->vf;
+	int is_vf = lsinic_dev->is_vf;
+
+	/* 00:e0:0c:fm_idx-mac_idx:mac_type-PF index: VF index */
+	mac_addrs->addr_bytes[0] = 0x00;
+	mac_addrs->addr_bytes[1] = 0xe0;
+	mac_addrs->addr_bytes[2] = 0x0c;
+	mac_addrs->addr_bytes[3] = pf_idx + 1;
+	mac_addrs->addr_bytes[4] = is_vf;
+	mac_addrs->addr_bytes[5] = vf_idx;
 }
 
 /* rte_lsinic_probe:
@@ -690,11 +687,6 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 {
 	struct rte_eth_dev *eth_dev = NULL;
 	struct lsinic_adapter *adapter = NULL;
-	int err;
-	enum PEX_TYPE pex_type = lsx_pciep_get_type();
-	uint16_t vendor_id, device_id, class_id;
-	char *penv;
-	char env_name[128];
 
 	if (LSINIC_RING_BD_OFFSET <
 		(LSINIC_RING_REG_OFFSET +
@@ -729,6 +721,86 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 			(int)sizeof(struct lsinic_rcs_reg));
 	}
 
+	if (lsinic_dev->init_flag) {
+		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
+			lsinic_dev->pf, lsinic_dev->vf);
+		return 0;
+	}
+
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		eth_dev = rte_eth_dev_allocate(lsinic_dev->device.name);
+		if (!eth_dev) {
+			LSXINIC_PMD_ERR("Cannot allocate eth_dev");
+			return -ENODEV;
+		}
+	} else {
+		eth_dev = rte_eth_dev_attach_secondary(lsinic_dev->device.name);
+		if (!eth_dev) {
+			LSXINIC_PMD_ERR("Cannot attach eth_dev");
+			return -ENODEV;
+		}
+	}
+
+	adapter = rte_zmalloc("ethdev process private adapter",
+				sizeof(struct lsinic_adapter),
+				RTE_CACHE_LINE_SIZE);
+	if (!adapter) {
+		LSXINIC_PMD_ERR("Cannot allocate memzone for private data");
+		rte_eth_dev_release_port(eth_dev);
+		return -ENOMEM;
+	}
+	eth_dev->process_private = adapter;
+
+	adapter->merge_dev = NULL;
+	adapter->split_dev = NULL;
+	rte_spinlock_init(&adapter->merge_dev_cfg_lock);
+	rte_spinlock_init(&adapter->split_dev_cfg_lock);
+	adapter->merge_dev_cfg_done = 0;
+	adapter->split_dev_cfg_done = 0;
+	adapter->lsinic_dev = lsinic_dev;
+
+	eth_dev->device = &lsinic_dev->device;
+	eth_dev->device->driver = &lsinic_drv->driver;
+	lsinic_dev->driver = lsinic_drv;
+	lsinic_dev->eth_dev = eth_dev;
+	lsinic_dev->chk_eth_status = lsinic_dev_chk_eth_status;
+	eth_dev->data->rx_mbuf_alloc_failed = 0;
+
+	eth_dev->dev_ops = &lsinic_eth_dev_ops;
+	eth_dev->rx_pkt_burst = &lsinic_recv_pkts;
+	eth_dev->tx_pkt_burst = &lsinic_xmit_pkts;
+
+	/* Allocate memory for storing MAC addresses */
+	if (!eth_dev->data->mac_addrs) {
+		eth_dev->data->mac_addrs =
+			rte_zmalloc("lsinic", RTE_ETHER_ADDR_LEN, 0);
+		if (!eth_dev->data->mac_addrs) {
+			LSXINIC_PMD_ERR("Failed to allocate MAC address");
+			return -ENOMEM;
+		}
+
+		lsinic_mac_init(eth_dev->data->mac_addrs, lsinic_dev);
+	}
+	lsinic_dev->init_flag = 1;
+
+	rte_eth_dev_probing_finish(eth_dev);
+	return 0;
+}
+
+static int
+lsinic_dev_configure(struct rte_eth_dev *eth_dev)
+{
+	struct lsinic_adapter *adapter =
+		eth_dev->process_private;
+	struct rte_lsx_pciep_device *lsinic_dev =
+		adapter->lsinic_dev;
+	uint16_t vendor_id, device_id, class_id;
+	enum PEX_TYPE pex_type =
+		lsx_pciep_type_get(lsinic_dev->pcie_id);
+	char env_name[128];
+	char *penv;
+	int err;
+
 	vendor_id = NXP_PCI_VENDOR_ID;
 	class_id = NXP_PCI_CLASS_ID;
 	if (pex_type == PEX_LX2160_REV1 || pex_type == PEX_LX2160_REV2)
@@ -756,56 +828,6 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 			class_id = strtol(penv, 0, 16);
 	}
 
-	if (lsinic_dev->init_flag) {
-		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
-			lsinic_dev->pf, lsinic_dev->vf);
-		return 0;
-	}
-
-	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
-		eth_dev = rte_eth_dev_allocate(lsinic_dev->device.name);
-		if (!eth_dev) {
-			LSXINIC_PMD_ERR("Cannot allocate eth_dev");
-			return -ENODEV;
-		}
-		LSXINIC_PMD_INFO("Create eth_dev %s",
-			lsinic_dev->device.name);
-
-		adapter = rte_zmalloc("ethdev private netdev_adapter",
-					sizeof(struct lsinic_adapter),
-					RTE_CACHE_LINE_SIZE);
-		if (adapter == NULL) {
-			LSXINIC_PMD_ERR("Cannot allocate memzone for private data");
-			rte_eth_dev_release_port(eth_dev);
-			return -ENOMEM;
-		}
-		eth_dev->data->dev_private = adapter;
-	} else {
-		eth_dev = rte_eth_dev_attach_secondary(lsinic_dev->device.name);
-		if (!eth_dev)
-			return -ENODEV;
-
-		adapter = eth_dev->data->dev_private;
-	}
-
-	adapter->merge_dev = NULL;
-	adapter->split_dev = NULL;
-	rte_spinlock_init(&adapter->merge_dev_cfg_lock);
-	rte_spinlock_init(&adapter->split_dev_cfg_lock);
-	adapter->merge_dev_cfg_done = 0;
-	adapter->split_dev_cfg_done = 0;
-	adapter->lsinic_dev = lsinic_dev;
-
-	eth_dev->device = &lsinic_dev->device;
-	eth_dev->device->driver = &lsinic_drv->driver;
-	lsinic_dev->driver = lsinic_drv;
-	lsinic_dev->eth_dev = eth_dev;
-	lsinic_dev->chk_eth_status = lsinic_dev_chk_eth_status;
-	eth_dev->data->rx_mbuf_alloc_failed = 0;
-
-	eth_dev->dev_ops = &lsinic_eth_dev_ops;
-	eth_dev->rx_pkt_burst = &lsinic_recv_pkts;
-	eth_dev->tx_pkt_burst = &lsinic_xmit_pkts;
 	if (!lsinic_dev->is_vf) {
 		err = lsx_pciep_ctl_dev_set(vendor_id,
 				device_id, class_id,
@@ -832,35 +854,8 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 		LSXINIC_PMD_ERR("lsinic_sw_init failed");
 		return -ENODEV;
 	}
-
-	if (!is_valid_ether_addr(adapter->mac_addr)) {
-		LSXINIC_PMD_ERR("Invalid MAC address");
-		return -EINVAL;
-	}
-
-	/* Allocate memory for storing MAC addresses */
-	eth_dev->data->mac_addrs =
-		rte_zmalloc("lsinic", RTE_ETHER_ADDR_LEN, 0);
-	if (!eth_dev->data->mac_addrs) {
-		LSXINIC_PMD_ERR("Failed to allocate MAC address");
-		return -ENOMEM;
-	}
-	/* Copy the permanent MAC address */
-	rte_ether_addr_copy((struct rte_ether_addr *)adapter->port_mac_addr,
-		&eth_dev->data->mac_addrs[0]);
-
 	lsinic_set_init_flag(adapter);
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
-	lsinic_dev->init_flag = 1;
-	rte_eth_dev_probing_finish(eth_dev);
-	return 0;
-}
-
-static int
-lsinic_dev_configure(struct rte_eth_dev *dev __rte_unused)
-{
-	LSXINIC_PMD_DBG("\nConfigured Physical Function port id: %d",
-		dev->data->port_id);
 
 	return 0;
 }
@@ -973,7 +968,7 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 	int err;
 	pthread_t thread;
 	static uint32_t thread_init_flag;
-	struct lsinic_adapter *adapter = eth_dev->data->dev_private;
+	struct lsinic_adapter *adapter = eth_dev->process_private;
 
 	/* stop adapter */
 	adapter->adapter_stopped = false;
@@ -1059,7 +1054,7 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 static void
 lsinic_dev_stop(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	/* disable the netdev receive */
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
@@ -1079,7 +1074,7 @@ lsinic_dev_stop(struct rte_eth_dev *dev)
 static void
 lsinic_dev_close(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	lsinic_dev_stop(dev);
 	adapter->adapter_stopped = true;
@@ -1142,6 +1137,48 @@ rte_lsinic_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static void
+lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
+	uint64_t rc_reg_addr)
+{
+	int sim;
+	void *vir_addr;
+	uint64_t vir_offset;
+	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	struct lsinic_dev_reg *cfg =
+		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
+	int ring_total_size;
+
+	ring_total_size = adapter->num_rx_queues *
+					adapter->rx_ring_bd_count *
+					sizeof(struct lsinic_bd_desc);
+	ring_total_size += adapter->num_tx_queues *
+					adapter->tx_ring_bd_count *
+					sizeof(struct lsinic_bd_desc);
+
+	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
+	adapter->rc_ring_phy_base = rc_reg_addr;
+	if (sim) {
+		vir_addr = DPAA2_IOVA_TO_VADDR(rc_reg_addr);
+		vir_offset = (uint64_t)vir_addr - rc_reg_addr;
+
+		adapter->rc_ring_virt_base = vir_addr;
+		lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
+	} else {
+		if (cfg->rbp_enable) {
+			adapter->rc_ring_virt_base =
+				(void *)lsx_pciep_set_ob_win(lsinic_dev,
+							rc_reg_addr,
+							ring_total_size);
+		} else {
+			adapter->rc_ring_virt_base =
+				(uint8_t *)lsinic_dev->ob_virt_base +
+					rc_reg_addr -
+					lsinic_dev->ob_map_bus_base;
+		}
+	}
+}
+
 void
 lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 {
@@ -1151,10 +1188,9 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	struct lsinic_dev_reg *cfg =
-		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
-	int ring_total_size;
+	int sim;
 
+	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
 	if (1) {
 		adapter->rx_ring_bd_count = LSINIC_BD_ENTRY_COUNT;
@@ -1171,12 +1207,6 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	adapter->num_tx_queues = LSINIC_READ_REG(&eth_reg->rx_ring_num);
 	lsinic_dev->mmsi_flag = LSINIC_READ_REG(&rcs_reg->msi_flag);
 
-	ring_total_size = adapter->num_rx_queues *
-					adapter->rx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
-	ring_total_size += adapter->num_tx_queues *
-					adapter->tx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
 	if (lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT) {
 		int i;
 
@@ -1192,31 +1222,10 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->r_regl));
 	if (adapter->rc_ring_phy_base == 0 ||
 		adapter->rc_ring_phy_base != rc_reg_addr) {
-		if (rc_reg_addr) {
-			adapter->rc_ring_phy_base = rc_reg_addr;
-			if (lsx_pciep_sim()) {
-				uint64_t vir_addr =
-					(uint64_t)DPAA2_IOVA_TO_VADDR(rc_reg_addr);
-				uint64_t vir_offset = vir_addr - rc_reg_addr;
-
-				adapter->rc_ring_virt_base = vir_addr;
-				lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
-			} else {
-				if (cfg->rbp_enable) {
-					adapter->rc_ring_virt_base =
-						lsx_pciep_set_ob_win(lsinic_dev,
-							rc_reg_addr,
-							ring_total_size);
-				} else {
-					adapter->rc_ring_virt_base =
-						lsinic_dev->ob_virt_base +
-						rc_reg_addr - lsinic_dev->ob_map_bus_base;
-				}
-			}
-		} else {
+		if (rc_reg_addr)
+			lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
+		else
 			LSXINIC_PMD_ERR("Reconfig from RC ERROR!");
-		}
-
 		LSXINIC_PMD_DBG("Reconfig from RC rc_reg_addr:%lX",
 			rc_reg_addr);
 	}
@@ -1226,7 +1235,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
 	adapter->tx_pcidma_dbg = rc_reg_addr;
 
-	if (!lsx_pciep_sim())
+	if (!sim)
 		lsx_pciep_msix_init(lsinic_dev);
 }
 
@@ -1238,7 +1247,7 @@ lsinic_dev_link_update(struct rte_eth_dev *dev,
 	struct lsinic_adapter *adapter;
 	struct rte_eth_link link;
 
-	adapter = (struct lsinic_adapter *)dev->data->dev_private;
+	adapter = (struct lsinic_adapter *)dev->process_private;
 	if (adapter->rc_state == LSINIC_DEV_UP) {
 		link.link_status = ETH_LINK_UP;
 		link.link_duplex = ETH_LINK_FULL_DUPLEX;
@@ -1257,7 +1266,7 @@ lsinic_dev_link_update(struct rte_eth_dev *dev,
 int
 lsinic_dev_chk_eth_status(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->data->dev_private;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	if (adapter->ep_state == LSINIC_DEV_INITING ||
 		adapter->ep_state == LSINIC_DEV_INITED ||
@@ -1404,10 +1413,9 @@ rte_lsinic_remove(struct rte_lsx_pciep_device *lsinic_dev)
 
 	lsinic_uninit_bar_addr(lsinic_dev);
 
-	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
-		rte_free(eth_dev->data->dev_private);
-		lsinic_dma_uninit();
-	}
+	rte_free(eth_dev->process_private);
+	lsinic_dma_uninit();
+
 	rte_eth_dev_release_port(eth_dev);
 	lsinic_dev->init_flag = 0;
 
