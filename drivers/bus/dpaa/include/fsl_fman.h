@@ -70,6 +70,7 @@ void fman_if_promiscuous_disable(struct fman_if *p);
 /* Enable/disable Rx on specific interfaces */
 void fman_if_enable_rx(struct fman_if *p);
 void fman_if_disable_rx(struct fman_if *p);
+int fman_if_get_rx_status(struct fman_if *p);
 
 /* Enable/disable loopback on specific interfaces */
 void fman_if_loopback_enable(struct fman_if *p);
