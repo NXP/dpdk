@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright 2017,2020 NXP
+ * Copyright 2017,2020-2021 NXP
  *
  */
 
@@ -312,6 +312,17 @@ fman_if_disable_rx(struct fman_if *p)
 
 	/* only disable Rx, not Tx */
 	out_be32(__if->ccsr_map + 8, in_be32(__if->ccsr_map + 8) & ~(u32)2);
+}
+
+int
+fman_if_get_rx_status(struct fman_if *p)
+{
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+
+	assert(fman_ccsr_map_fd != -1);
+
+	/* return true if RX bit is set */
+	return !!(in_be32(__if->ccsr_map + 8) & (u32)2);
 }
 
 void
