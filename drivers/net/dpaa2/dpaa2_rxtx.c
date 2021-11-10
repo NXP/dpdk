@@ -836,6 +836,12 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 #endif
 
+		if (priv->en_ordered) {
+			*dpaa2_seqn(bufs[num_rx]) = DPAA2_ENQUEUE_FLAG_ORP;
+			*dpaa2_seqn(bufs[num_rx]) |= qbman_result_DQ_odpid(dq_storage) << DPAA2_EQCR_OPRID_SHIFT;
+			*dpaa2_seqn(bufs[num_rx]) |= qbman_result_DQ_seqnum(dq_storage) << DPAA2_EQCR_SEQNUM_SHIFT;
+		}
+
 		if (eth_data->dev_conf.rxmode.offloads &
 				RTE_ETH_RX_OFFLOAD_VLAN_STRIP)
 			rte_vlan_strip(bufs[num_rx]);

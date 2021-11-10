@@ -2422,6 +2422,54 @@ rte_pmd_dpaa2_thread_init(void)
 	}
 }
 
+int rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id)
+{
+	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
+	struct dpaa2_queue *dpaa2_q =
+			(struct dpaa2_queue *)eth_priv->rx_vq[rx_queue_id];
+	struct opr_cfg ocfg;
+	uint8_t flow_id = dpaa2_q->flow_id, options = 0;
+	int ret;
+
+	/* Restoration window size = 256 frames */
+	ocfg.oprrws = 3;
+	/* Restoration window size = 512 frames for LX2 */
+	if (dpaa2_svr_family == SVR_LX2160A)
+		ocfg.oprrws = 4;
+	/* Auto advance NESN window enabled */
+	ocfg.oa = 1;
+	/* Late arrival window size disabled */
+	ocfg.olws = 0;
+	/* ORL resource exhaustaion advance NESN disabled */
+	ocfg.oeane = 0;
+	/* Loose ordering enabled */
+	ocfg.oloe = 1;
+	eth_priv->en_loose_ordered = 1;
+
+	/* Strict ordering enabled if explicitly set */
+	if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+		ocfg.oloe = 0;
+		eth_priv->en_loose_ordered = 0;
+	}
+
+	options |= (OPR_OPT_ASSIGN | OPR_OPT_CREATE);
+
+	/* opr_id=x means use xth opr allocated for this dpni" */
+	ret = dpni_set_opr(dpni, CMD_PRI_LOW, eth_priv->token,
+			   dpaa2_q->tc_index, flow_id, options, &ocfg,
+			   rx_queue_id);
+	if (ret) {
+		DPAA2_PMD_ERR("Error setting opr: ret: %d\n", ret);
+		return ret;
+	}
+
+	eth_priv->en_ordered = 1;
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_configure	  = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,

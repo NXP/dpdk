@@ -102,4 +102,9 @@ rte_pmd_dpaa2_thread_init(void);
 __rte_experimental
 uint32_t
 rte_pmd_dpaa2_get_tlu_hash(uint8_t *key, int size);
+
+__rte_experimental
+int
+rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id);
+
 #endif /* _RTE_PMD_DPAA2_H */

@@ -12,6 +12,7 @@ EXPERIMENTAL {
 
 	# added in 21.05
 	rte_pmd_dpaa2_mux_rx_frame_len;
+	rte_pmd_dpaa2_set_opr;
 	# added in 21.08
 	rte_pmd_dpaa2_thread_init;
 	# added in 21.11
