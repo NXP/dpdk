@@ -65,6 +65,9 @@ uint32_t max_rx_burst = MAX_PKT_BURST;
 /**< Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
 
+/* Ordered queues are not being used by default. */
+static int ordered_queues_on;
+
 /* Select Longest-Prefix, Exact match, Forwarding Information Base or Access Control. */
 enum L3FWD_LOOKUP_MODE {
 	L3FWD_LOOKUP_DEFAULT,
@@ -374,7 +377,8 @@ get_port_n_rx_queues(const uint16_t port)
 
 	for (i = 0; i < nb_lcore_params; ++i) {
 		if (lcore_params[i].port_id == port) {
-			if (lcore_params[i].queue_id == queue+1)
+			if (lcore_params[i].queue_id == queue ||
+			    lcore_params[i].queue_id == queue+1)
 				queue = lcore_params[i].queue_id;
 			else
 				rte_exit(EXIT_FAILURE, "queue ids of the port %d must be"
@@ -438,6 +442,7 @@ print_usage(const char *prgname)
 		" [--eventq-sched]"
 		" [--event-vector [--event-vector-size SIZE] [--event-vector-tmo NS]]"
 		" [-E]"
+		" [-O]"
 		" [-L]\n\n"
 
 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
@@ -482,6 +487,7 @@ print_usage(const char *prgname)
 		"  --event-vector-size: Max vector size if event vectorization is enabled.\n"
 		"  --event-vector-tmo: Max timeout to form vector in nanoseconds if event vectorization is enabled\n"
 		"  -E : Enable exact match, legacy flag please use --lookup=em instead\n"
+		"  -O : Enable Ordered queues\n"
 		"  -L : Enable longest prefix match, legacy flag please use --lookup=lpm instead\n"
 		"  -b NUM: burst size for receive packet (default is 32)\n"
 		"  --enable-flow=1: Enable flow classification on ecpri(sub_seq_id)\n"
@@ -771,6 +777,7 @@ static const char short_options[] =
 	"L"   /* legacy enable long prefix match */
 	"E"   /* legacy enable exact match */
 	"b:"  /* burst size */
+	"O"  /* ordered queues */
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
@@ -964,6 +971,10 @@ parse_args(int argc, char **argv)
 				return -1;
 			}
 			lookup_mode = L3FWD_LOOKUP_LPM;
+			break;
+
+		case 'O':
+			ordered_queues_on = 1;
 			break;
 
 		/* max_burst_size */
@@ -1481,7 +1492,8 @@ l3fwd_poll_resource_setup(void)
 	uint16_t queueid, portid;
 	unsigned int nb_ports;
 	unsigned int lcore_id;
-	int ret;
+	int is_opr_created[RTE_MAX_ETHPORTS][RTE_MAX_LCORE];
+	int i, j, ret;
 
 	if (check_lcore_params() < 0)
 		rte_exit(EXIT_FAILURE, "check_lcore_params failed\n");
@@ -1680,6 +1692,22 @@ l3fwd_poll_resource_setup(void)
 				rte_exit(EXIT_FAILURE,
 				"rte_eth_rx_queue_setup: err=%d, port=%d\n",
 				ret, portid);
+
+			for (i = 0; i < RTE_MAX_ETHPORTS; i++)
+				for (j = 0; j < RTE_MAX_LCORE; j++)
+					is_opr_created[i][j] = 0;
+
+			if (ordered_queues_on &&
+			    !is_opr_created[portid][queueid]) {
+				ret = rte_pmd_dpaa2_set_opr(portid, queueid);
+				if (ret < 0) {
+					rte_exit(EXIT_FAILURE,
+						 "rte_pmd_dpaa2_set_opr: err=%d, "
+						 "port=%d\n", ret, portid);
+				}
+				is_opr_created[portid][queueid] = 1;
+				printf(" ORP ID: %d", queueid);
+			}
 		}
 	}
 }
