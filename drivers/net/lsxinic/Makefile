@@ -43,6 +43,7 @@ LIBABIVER := 1
 #
 # all source are stored in SRCS-y
 #
+ifeq ($(CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS),y)
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_common_helper.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_tool.c
@@ -66,6 +67,19 @@ LDLIBS += -lrte_pmd_dpaa2
 LDLIBS += -lrte_rawdev
 LDLIBS += -lrte_bus_lsx_pciep
 LDLIBS += -lrte_common_dpaax
+else
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_common_helper.c
+
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_pf.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
+
+LDLIBS += -lrte_bus_fslmc
+LDLIBS += -lrte_mempool_dpaa2
+LDLIBS += -lrte_pmd_dpaa2
+LDLIBS += -lrte_rawdev
+LDLIBS += -lrte_common_dpaax
+endif
 
 LDLIBS += -lrte_bus_pci
 
