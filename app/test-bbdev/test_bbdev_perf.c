@@ -697,6 +697,7 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 	unsigned int nb_queues;
 	uint32_t lcore_id = -1;
 	uint32_t vector_count;
+	struct core_params *cp;
 
 /* Configure fpga lte fec with PF & VF values
  * if '-i' flag is set and using fpga device
@@ -820,6 +821,13 @@ add_bbdev_dev(uint8_t dev_id, struct rte_bbdev_info *info,
 
 	if (getenv("LA12XX_ENABLE_FECA_SD_SINGLE_QDMA"))
 		rte_pmd_la12xx_ldpc_dec_single_input_dma(dev_id);
+
+	cp = get_core_params();
+	if (cp->nb_params > 0) {
+		printf("cp->nb_params: %d\n\r", cp->nb_params);
+		rte_pmd_la12xx_queue_core_config(dev_id, cp->queue_ids,
+			cp->core_ids, cp->nb_params);
+	}
 
 	return TEST_SUCCESS;
 }

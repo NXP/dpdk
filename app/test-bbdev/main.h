@@ -116,6 +116,14 @@ void add_test_command(struct test_command *t);
 		add_test_command(&test_struct_##name); \
 	}
 
+#define MAX_CORE_PARAMS 128
+
+struct core_params {
+	uint16_t queue_ids[MAX_CORE_PARAMS];
+	uint16_t core_ids[MAX_CORE_PARAMS];
+	int nb_params;
+} __rte_cache_aligned;
+
 unsigned int get_vector_count(void);
 
 const char *get_vector_filename(void);
@@ -135,5 +143,7 @@ bool get_init_device(void);
 unsigned int get_reset_param(void);
 
 bool get_multi_hugepages(void);
+
+struct core_params *get_core_params(void);
 
 #endif

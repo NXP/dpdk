@@ -42,6 +42,18 @@ static struct test_params {
 static struct test_commands_list commands_list =
 	TAILQ_HEAD_INITIALIZER(commands_list);
 
+enum {
+	/* long options mapped to a short option */
+
+	/* first long only option value must be >= 256, so that we won't
+	 * conflict with short options.
+	 */
+	CMD_LINE_OPT_MIN_NUM = 256,
+	CMD_LINE_OPT_CONFIG_NUM,
+};
+
+static struct core_params g_core_params;
+
 void
 add_test_command(struct test_command *t)
 {
@@ -182,6 +194,12 @@ get_multi_hugepages(void)
 	return test_params.multi_hugepages;
 }
 
+struct core_params*
+get_core_params(void)
+{
+	return &g_core_params;
+}
+
 static void
 print_usage(const char *prog_name)
 {
@@ -195,13 +213,65 @@ print_usage(const char *prog_name)
 			"\t[-f/--vector-count VECTOR_FILES_COUNT]\n"
 			"\t[-c/--test-cases TEST_CASE[,TEST_CASE,...]]\n"
 			"\t[-r/--reset 1(reset_reconfig)/2(feca_reset)]]\n"
-			"\t[-u/--multi-hugepages]]\n",
+			"\t[-u/--multi-hugepages]]\n"
+			"\t[--config=\"(q1, core1), (q2, core2)...\"",
 			prog_name);
 
 	printf("Available testcases: ");
 	TAILQ_FOREACH(t, &commands_list, next)
 		printf("%s ", t->command);
 	printf("\n");
+}
+
+static int
+parse_config(const char *q_arg)
+{
+	char s[256];
+	const char *p, *p0 = q_arg;
+	char *end;
+	enum fieldnames {
+		FLD_QUEUE,
+		FLD_MODEM_CORE,
+		_NUM_FLD
+	};
+	unsigned long int_fld[_NUM_FLD];
+	char *str_fld[_NUM_FLD];
+	int i;
+	unsigned int size;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		p0 = strchr(p, ')');
+		if (p0 == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		if (rte_strsplit(s, sizeof(s), str_fld, _NUM_FLD, ',') !=
+		    _NUM_FLD)
+			return -1;
+		for (i = 0; i < _NUM_FLD; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+				return -1;
+		}
+		if (g_core_params.nb_params >= MAX_CORE_PARAMS) {
+			printf("exceeded max number of core params: %hu\n",
+				g_core_params.nb_params);
+			return -1;
+		}
+		g_core_params.queue_ids[g_core_params.nb_params] =
+			(uint8_t)int_fld[FLD_QUEUE];
+		g_core_params.core_ids[g_core_params.nb_params] =
+			(uint8_t)int_fld[FLD_MODEM_CORE];
+		g_core_params.nb_params++;
+	}
+
+	return 0;
 }
 
 static int
@@ -225,8 +295,9 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		{ "buf-size", 1, 0, 's' },
 		{ "num-segs", 1, 0, 'm' },
 		{ "init-device", 0, 0, 'i'},
-		{ "reset", 0, 0, 'r' },
+		{ "reset", 1, 0, 'r' },
 		{ "multi-hugepages", 0, 0, 'u' },
+		{ "config", 1, 0, CMD_LINE_OPT_CONFIG_NUM },
 		{ "help", 0, 0, 'h' },
 		{ NULL,  0, 0, 0 }
 	};
@@ -337,6 +408,16 @@ parse_args(int argc, char **argv, struct test_params *tp)
 		case 'h':
 			print_usage(argv[0]);
 			return 0;
+		/* long options */
+		case CMD_LINE_OPT_CONFIG_NUM:
+			ret = parse_config(optarg);
+			if (ret) {
+				fprintf(stderr, "Invalid config\n");
+				print_usage(argv[0]);
+				return -1;
+			}
+			break;
+
 		default:
 			printf("ERROR: Unknown option: -%c\n", opt);
 			return -1;
