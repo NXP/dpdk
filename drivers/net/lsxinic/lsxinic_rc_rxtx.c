@@ -221,6 +221,17 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 		tx_ring->rc_complete) {
 		if (tx_ring->rc_complete[bd_idx] !=
 			RING_BD_READY) {
+			uint8_t current_ep_status;
+
+			ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, bd_idx);
+			current_ep_status =
+				ep_tx_desc->bd_status & RING_BD_STATUS_MASK;
+			if (current_ep_status == RING_BD_HW_COMPLETE) {
+				/** Workaround to sync with EP BD status.*/
+				tx_ring->rc_complete[bd_idx] =
+					RING_BD_HW_COMPLETE;
+				tx_ring->sync_err++;
+			}
 #ifdef LXSNIC_DEBUG_RX_TX
 			tx_ring->adapter->stats.tx_desc_err++;
 #endif

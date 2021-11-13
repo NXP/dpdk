@@ -204,6 +204,7 @@ struct lxsnic_ring {
 	uint64_t errors;
 	uint64_t drop_packet_num;
 	uint64_t ring_full;
+	uint64_t sync_err;
 	uint64_t loop_total;
 	uint64_t loop_avail;
 	struct lxsnic_queue_stats stats;

@@ -251,11 +251,13 @@ print_queue_status(void *queue,
 
 		printf("\t\tpackets=%lld errors=%lld "
 			"drop_pkts=%lld\n"
-			"\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+			"\t\tring_full=%lld sync_err=%lld "
+			"loop_total=%lld loop_avail=%lld\n",
 			(unsigned long long)rcq->packets,
 			(unsigned long long)rcq->errors,
 			(unsigned long long)rcq->drop_packet_num,
 			(unsigned long long)rcq->ring_full,
+			(unsigned long long)rcq->sync_err,
 			(unsigned long long)rcq->loop_total,
 			(unsigned long long)rcq->loop_avail);
 
