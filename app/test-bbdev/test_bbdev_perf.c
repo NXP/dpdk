@@ -4381,8 +4381,15 @@ latency_test(struct active_device *ad,
 
 	if (get_reset_param() == RESTORE_RESET_CFG)
 		rte_pmd_la12xx_reset_restore_cfg(ad->dev_id);
-	else if (get_reset_param() == FECA_RESET)
+	else if (get_reset_param() == FECA_RESET) {
+		uint64_t start_time = 0, last_time = 0;
+		start_time = rte_rdtsc_precise();
 		rte_pmd_la12xx_feca_reset(ad->dev_id);
+		last_time = rte_rdtsc_precise() - start_time;
+		printf("FECA reset latency: %lg us\n",
+			(double)(last_time * 1000000) /
+			(double)rte_get_tsc_hz());
+	}
 
 	RTE_LCORE_FOREACH(lcore_id) {
 		if (used_cores > num_lcores)
