@@ -246,7 +246,6 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
 		return -1;
 	}
-	dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
 #endif
 
 	if (getenv("NXP_CHRT_PERF_MODE")) {
@@ -262,6 +261,9 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		 * for performance mode; It is assumed that this is taken
 		 * care of by the application.
 		 */
+#ifdef RTE_EVENT_DPAA2
+		dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
+#endif
 	}
 
 	return 0;
