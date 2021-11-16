@@ -1,0 +1,23 @@
+DPDK_23 {
+	global:
+
+	rte_pmd_dpaa_set_tx_loopback;
+
+	local: *;
+};
+
+EXPERIMENTAL {
+	global:
+
+	rte_pmd_dpaa_ol_reset_classif_info;
+	rte_pmd_dpaa_ol_reset_lgw_info;
+	rte_pmd_dpaa_ol_set_classif_info;
+	rte_pmd_dpaa_ol_set_lgw_info;
+};
+
+INTERNAL {
+	global:
+
+	dpaa_eth_eventq_attach;
+	dpaa_eth_eventq_detach;
+};
