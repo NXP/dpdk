@@ -76,7 +76,8 @@ TAILQ_HEAD(rte_dpaa_driver_list, rte_dpaa_driver);
 enum rte_dpaa_type {
 	FSL_DPAA_ETH = 1,
 	FSL_DPAA_CRYPTO,
-	FSL_DPAA_QDMA
+	FSL_DPAA_QDMA,
+	FSL_DPAA_OL
 };
 
 struct rte_dpaa_bus {
@@ -89,6 +90,7 @@ struct rte_dpaa_bus {
 
 struct dpaa_device_id {
 	uint8_t fman_id; /**< Fman interface ID, for ETH type device */
+	uint8_t ol_id;	/**< OH interface ID, for OH type device */
 	uint8_t mac_id; /**< Fman MAC interface ID, for ETH type device */
 	uint16_t dev_id; /**< Device Identifier from DPDK */
 };
