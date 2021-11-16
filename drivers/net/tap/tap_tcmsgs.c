@@ -288,7 +288,7 @@ qdisc_create_ingress(int nlsk_fd, unsigned int ifindex)
 
 	err = qdisc_add_ingress(nlsk_fd, ifindex);
 	if (err < 0 && errno != -EEXIST) {
-		TAP_LOG(ERR, "Could not add ingress qdisc (%d): %s",
+		TAP_LOG(DEBUG, "Could not add ingress qdisc (%d): %s",
 			errno, strerror(errno));
 		return -1;
 	}

@@ -2115,7 +2115,7 @@ eth_dev_tap_create(struct rte_vdev_device *vdev, const char *tap_name,
 		goto disable_rte_flow;
 	}
 	if (qdisc_create_ingress(pmd->nlsk_fd, pmd->if_index) < 0) {
-		TAP_LOG(ERR, "%s: failed to create ingress qdisc.",
+		TAP_LOG(DEBUG, "%s: failed to create ingress qdisc.",
 			pmd->name);
 		goto disable_rte_flow;
 	}
@@ -2176,7 +2176,7 @@ eth_dev_tap_create(struct rte_vdev_device *vdev, const char *tap_name,
 	return 0;
 
 disable_rte_flow:
-	TAP_LOG(ERR, " Disabling rte flow support: %s(%d)",
+	TAP_LOG(DEBUG, " Disabling rte flow support: %s(%d)",
 		strerror(errno), errno);
 	if (strlen(remote_iface)) {
 		TAP_LOG(ERR, "Remote feature requires flow support.");
