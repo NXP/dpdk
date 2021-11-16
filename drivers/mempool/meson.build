@@ -3,7 +3,6 @@
 
 drivers = [
         'bucket',
-        'cnxk',
         'dpaa',
         'dpaa2',
         'octeontx',

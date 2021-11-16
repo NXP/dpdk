@@ -7,7 +7,6 @@ drivers = [
         'bcmfs',
         'caam_jr',
         'ccp',
-        'cnxk',
         'dpaa_sec',
         'dpaa2_sec',
         'ipsec_mb',
