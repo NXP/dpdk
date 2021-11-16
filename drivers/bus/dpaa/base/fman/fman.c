@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017-2020 NXP
+ * Copyright 2017-2021 NXP
  *
  */
 
@@ -507,7 +507,11 @@ fman_if_init(const struct device_node *dpa_node)
 	 */
 	rx_phandle = of_get_property(dpa_node, rprop, &lenp);
 	if (!rx_phandle) {
-		FMAN_ERR(-EINVAL, "%s: no fsl,qman-frame-queues-rx\n", dname);
+		_errno = -EINVAL;
+		if (!getenv("OLDEV_ENABLED")) {
+			FMAN_ERR(_errno, "%s: no fsl,qman-frame-queues-rx\n",
+				 dname);
+		}
 		goto err;
 	}
 
@@ -691,15 +695,15 @@ fman_init(void)
 	for_each_child_node(parent_node, dpa_node) {
 		_errno = fman_if_init(dpa_node);
 		if (_errno) {
-			FMAN_ERR(_errno, "if_init(%s)\n", dpa_node->full_name);
-			goto err;
+			if (!getenv("OLDEV_ENABLED")) {
+				FMAN_ERR(_errno, "if_init(%s)\n",
+					 dpa_node->full_name);
+				return _errno;
+			}
 		}
 	}
 
 	return 0;
-err:
-	fman_finish();
-	return _errno;
 }
 
 void
