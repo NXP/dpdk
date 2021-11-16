@@ -4584,6 +4584,23 @@ lsinic_dev_rx_queue_release(void *rxq)
 	lsinic_queue_release(rxq);
 }
 
+static const struct rte_memzone *
+lsinic_dev_mempool_continue_mz(struct rte_mempool *mp)
+{
+	struct rte_mempool_memhdr *hdr;
+	struct rte_memzone *mz = NULL;
+	struct rte_memzone *last_mz = NULL;
+
+	STAILQ_FOREACH(hdr, &mp->mem_list, next) {
+		mz = hdr->opaque;
+		if (last_mz && mz != last_mz)
+			return NULL;
+		last_mz = mz;
+	}
+
+	return mz;
+}
+
 int
 lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint16_t queue_idx,
@@ -4603,10 +4620,13 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint32_t i;
 	struct lsinic_eth_reg *reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	struct rte_lsx_pciep_device *lsinic_dev;
 
 	qdma_dev_id = lsinic_dma_init();
 	if (qdma_dev_id < 0)
 		return -ENODEV;
+
+	lsinic_dev = adapter->lsinic_dev;
 
 	/* Note: ep-rx == rc-tx */
 
@@ -4661,6 +4681,25 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (adapter->num_rx_queues <= queue_idx) {
 		adapter->num_rx_queues = queue_idx + 1;
 		LSINIC_WRITE_REG(&eth_reg->tx_ring_num, adapter->num_rx_queues);
+	}
+
+	if (adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM &&
+		!lsinic_dev->virt_addr[LSX_PCIEP_XFER_MEM_BAR_IDX]) {
+		const struct rte_memzone *mz;
+		int ret;
+
+		mz = lsinic_dev_mempool_continue_mz(mp);
+		if (mz) {
+			ret = lsx_pciep_set_ib_win_mz(lsinic_dev,
+				LSX_PCIEP_XFER_MEM_BAR_IDX, mz,
+				0);
+
+			if (ret)
+				return ret;
+			if (lsx_pciep_hw_sim_get(adapter->pcie_idx) &&
+				!lsinic_dev->is_vf)
+				lsx_pciep_sim_dev_map_inbound(lsinic_dev);
+		}
 	}
 
 	return 0;

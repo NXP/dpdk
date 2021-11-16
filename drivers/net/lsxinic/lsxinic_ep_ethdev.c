@@ -255,7 +255,8 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	lsx_pciep_set_ib_win(lsinic_dev,
 		LSX_PCIEP_RING_BAR_IDX,
 		LSINIC_RING_BAR_MAX_SIZE);
-	if (sim && !lsinic_dev->is_vf)
+	if (sim && !lsinic_dev->is_vf &&
+		!(adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM))
 		lsx_pciep_sim_dev_map_inbound(lsinic_dev);
 
 	adapter->hw_addr =
@@ -468,6 +469,10 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	penv = getenv("LSINIC_TXQ_READ_BD_BY_DMA");
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_RX_BD_UPDATE;
+
+	penv = getenv("LSINIC_XFER_HOST_ACCESS_EP_MEM");
+	if (penv)
+		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
 		return;
@@ -860,8 +865,9 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		if (err)
 			return err;
 	}
-	lsinic_init_bar_addr(lsinic_dev);
+
 	lsinic_netdev_env_init(eth_dev);
+	lsinic_init_bar_addr(lsinic_dev);
 
 	lsinic_netdev_reg_init(adapter);
 	lsinic_dev_config_init(adapter);
