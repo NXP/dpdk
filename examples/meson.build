@@ -10,6 +10,7 @@ endif
 all_examples = [
         'bbdev_app',
         'bond',
+	'cmdif',
         'cmdline',
         'distributor',
         'dma',
