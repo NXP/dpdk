@@ -1,0 +1,63 @@
+===============================================================================
+DPDK DPAA2 TRAFFIC MANAGEMENT
+===============================================================================
+Note: Please first read nxp/README.
+
+1.Preparations
+  #Create required resources:
+      export FS_ENTRIES=12
+      export MAX_CHANNELS=2
+      source dynamic_dpl.sh dpmac.x dpmac.y
+
+2.Testing
+  #Start testpmd application in forwarding mode.
+      ./testpmd -c 0xf -n 1 -- -i --portmask 0x3 --nb-cores=1 --txq=4 --rxq=4
+
+  #Prepare and commit TM hierarchy
+     *on above command execution, there will be a prompt "testpmd>",
+      where user can prepare and commit the TM hierarchy as per the
+      requirements. Example:
+
+     1. 2 Channels each having 2 queues in SP mode on port 0:
+      add port tm node shaper profile 0 1 104857600 64 0 0 0 0
+      add port tm node shaper profile 0 2 52428800 64 0 0 0 0
+      add port tm nonleaf node 0 15 -1 0 1 0 1 1 3 0
+      add port tm nonleaf node 0 13 15 0 1 1 2 1 0 0
+      add port tm nonleaf node 0 14 15 0 1 1 2 1 0 0
+      add port tm leaf node 0 0 13 0 1 2 -1 0 0 0x3 0
+      add port tm leaf node 0 1 13 1 1 2 -1 0 0 0x3 0
+      add port tm leaf node 0 2 14 2 1 2 -1 0 0 0x3 0
+      add port tm leaf node 0 3 14 3 1 2 -1 0 0 0x3 0
+      port tm hierarchy commit 0 no
+
+  #Create flows as per the source IP addresses:
+
+    flow create 1 group 0 priority 1 ingress pattern ipv4 src is 10.10.10.1 / end actions queue index 0 / end
+    flow create 1 group 0 priority 2 ingress pattern ipv4 src is 10.10.10.2 / end actions queue index 1 / end
+    flow create 1 group 0 priority 3 ingress pattern ipv4 src is 10.10.10.3 / end actions queue index 2 / end
+    flow create 1 group 0 priority 4 ingress pattern ipv4 src is 10.10.10.4 / end actions queue index 3 / end
+
+  #configuration is done, Now start the application:
+
+    start
+
+  #Now, inject the traffic on port1 as per the configured flows, you will see
+   shaped and scheduled forwarded traffic on port0
+
+3.Command details and supported features:
+
+  Please read the DPDK document: https://doc.dpdk.org/guides/testpmd_app_ug/testpmd_funcs.html#traffic-management
+  for command details and to know the platform capabilities.
+
+  DPDK TM framework: https://doc.dpdk.org/guides/prog_guide/traffic_management.html
+
+  DPAA2 supported features:
+  * Level0(root node), level1 (channels) and level2 (queues) are supported.
+  * Private shapers at level0 and level1 are supported.
+  * 8 TX queues per channel(level1 node) and maximum 15 channels per port supported.
+  * Both SP and WFQ scheduling mechanisms are supported on all 8 queues.
+  * Level0 and level2 statistics are supported.
+  * Congestion notification is supported. It means if there is congestion on
+    the network, DPDK driver will not enqueue any packet (no taildrop or WRED)
+
+  Please refer node, level capabilities using testpmd commands for more supported features and limitations.

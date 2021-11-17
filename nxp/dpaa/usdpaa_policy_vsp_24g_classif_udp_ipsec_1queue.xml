@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: BSD-3-Clause
+
+  Copyright 2019-2021 NXP
+
+  Example to split the traffic with ip proto as ESP or UDP to dpdk
+-->
+
+<netpcd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="xmlProject/pcd.xsd" name="example"
+	description="Bridging configuration">
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxx Distributions xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+	<vsp name="shared_mac_pool" base="0"/>
+	<vsp name="dpdk_mac3_flows" base="1"/>
+	<vsp name="dpdk_mac4_flows" base="1"/>
+	<vsp name="dpdk_mac5_flows" base="1"/>
+	<vsp name="dpdk_mac6_flows" base="1"/>
+	<vsp name="dpdk_mac9_flows" base="1"/>
+	<vsp name="dpdk_mac10_flows" base="1"/>
+
+	<classification name="dpdk_mac3_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac3_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0x700" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac3_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0x700" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac3_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac3_dist">
+		<vsp name="dpdk_mac3_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0x700" count="1"/>
+		<action type="classification" name="dpdk_mac3_classif" />
+	</distribution>
+
+	<distribution name="default_mac3_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x86"/>
+	</distribution>
+
+	<classification name="dpdk_mac4_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac4_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0x800" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac4_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0x800" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac4_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac4_dist">
+		<vsp name="dpdk_mac4_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0x800" count="1"/>
+		<action type="classification" name="dpdk_mac4_classif" />
+	</distribution>
+
+	<distribution name="default_mac4_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x87"/>
+	</distribution>
+
+	<classification name="dpdk_mac5_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac5_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0x900" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac5_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0x900" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac5_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac5_dist">
+		<vsp name="dpdk_mac5_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0x900" count="1"/>
+		<action type="classification" name="dpdk_mac5_classif" />
+	</distribution>
+
+	<distribution name="default_mac5_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x88"/>
+	</distribution>
+
+	<classification name="dpdk_mac6_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac6_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0xa00" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac6_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0xa00" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac6_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac6_dist">
+		<vsp name="dpdk_mac6_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0xa00" count="1"/>
+		<action type="classification" name="dpdk_mac6_classif" />
+	</distribution>
+
+	<distribution name="default_mac6_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x89"/>
+	</distribution>
+
+	<classification name="dpdk_mac9_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac9_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0xd00" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac9_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0xd00" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac9_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac9_dist">
+		<vsp name="dpdk_mac9_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0xd00" count="1"/>
+		<action type="classification" name="dpdk_mac9_classif" />
+	</distribution>
+
+	<distribution name="default_mac9_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x8a"/>
+	</distribution>
+
+	<classification name="dpdk_mac10_classif" masks="yes">
+		<key>
+			<fieldref name ="ipv4.nextp"/>
+		</key>
+		<entry>
+			<vsp name="dpdk_mac10_flows" />
+			<data>0x11</data>
+			<mask>0xFF</mask>
+			<queue base="0xe00" count="1"/>
+		</entry>
+		<entry>
+			<vsp name="dpdk_mac10_flows" />
+			<data>0x32</data>
+			<mask>0xFF</mask>
+			<queue base="0xe00" count="1"/>
+		</entry>
+		<action condition="on-miss" type="distribution" name="default_mac10_dist"/>
+	</classification>
+
+	<distribution name="dpdk_mac10_dist">
+		<vsp name="dpdk_mac10_flows" />
+		<protocols>
+			<protocolref name="ipv4"/>
+		</protocols>
+		<queue base="0xe00" count="1"/>
+		<action type="classification" name="dpdk_mac10_classif" />
+	</distribution>
+
+	<distribution name="default_mac10_dist">
+		<vsp name="shared_mac_pool" />
+		<queue count="1" base="0x8b"/>
+	</distribution>
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+	<policy name="fm_policy_3">
+		<dist_order>
+			<distributionref name="dpdk_mac3_dist"/>
+			<distributionref name="default_mac3_dist"/>
+		</dist_order>
+	</policy>
+
+	<policy name="fm_policy_4">
+		<dist_order>
+			<distributionref name="dpdk_mac4_dist"/>
+			<distributionref name="default_mac4_dist"/>
+		</dist_order>
+	</policy>
+
+	<policy name="fm_policy_5">
+		<dist_order>
+			<distributionref name="dpdk_mac5_dist"/>
+			<distributionref name="default_mac5_dist"/>
+		</dist_order>
+	</policy>
+
+	<policy name="fm_policy_6">
+		<dist_order>
+			<distributionref name="dpdk_mac6_dist"/>
+			<distributionref name="default_mac6_dist"/>
+		</dist_order>
+	</policy>
+
+	<policy name="fm_policy_9">
+		<dist_order>
+			<distributionref name="dpdk_mac9_dist"/>
+			<distributionref name="default_mac9_dist"/>
+		</dist_order>
+	</policy>
+
+	<policy name="fm_policy_10">
+		<dist_order>
+			<distributionref name="dpdk_mac10_dist"/>
+			<distributionref name="default_mac10_dist"/>
+		</dist_order>
+	</policy>
+</netpcd>
