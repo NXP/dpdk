@@ -1,0 +1,25 @@
+<!--
+ Copyright 2019 NXP
+-->
+
+<!--
+This fmc configuration file sets the 4x1G on LS1046AFRWY to use the
+policies indicated below.
+-->
+
+
+<cfgdata>
+    <config>
+	<engine name="fm0">
+<!--
+In DPDK the ports are detected in order specified in the linux DTS file
+So here we need to specify ports in the order they are present in the linux DTS
+Also, the DPDK port 'X' should have policy as hash_ipsec_src_dst_spi_policy_mac'X'
+-->
+		<port type="MAC" number="1" policy="hash_ipsec_src_dst_spi_policy_mac1"/>
+		<port type="MAC" number="5" policy="hash_ipsec_src_dst_spi_policy_mac5"/>
+		<port type="MAC" number="6" policy="hash_ipsec_src_dst_spi_policy_mac6"/>
+		<port type="MAC" number="10" policy="hash_ipsec_src_dst_spi_policy_mac10"/>
+	</engine>
+    </config>
+</cfgdata>
