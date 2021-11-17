@@ -28,6 +28,7 @@ all_examples = [
         'l2fwd',
         'l2fwd-cat',
         'l2fwd-crypto',
+        'l2fwd-crypto-event',
         'l2fwd-event',
         'l2fwd-jobstats',
         'l2fwd-keepalive',
