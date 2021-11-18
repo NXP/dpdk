@@ -47,6 +47,7 @@ all_examples = [
         'pipeline',
         'pkt_split_app',
         'ptpclient',
+        'qdma_demo',
         'qos_meter',
         'qos_sched',
         'rxtx_callbacks',
