@@ -45,6 +45,7 @@ all_examples = [
         'ntb',
         'packet_ordering',
         'pipeline',
+        'pkt_split_app',
         'ptpclient',
         'qos_meter',
         'qos_sched',

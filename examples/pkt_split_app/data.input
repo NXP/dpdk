@@ -1,0 +1,26 @@
+# Classification information
+# IP Address
+#IPV6_INNER fe80:0000:0000:0000:0204:9fff:fe06:5112
+#IPV6_STATIC 1111:0000:0000:0000:0204:9fff:fe06:5112
+IPV4_INNER 1.1.1.1
+IPV4_STATIC 172.18.2.5
+
+# SEC DISABLE (optional), by default it is enabled.
+SEC_DISABLE 1
+
+# Application traffic listen modes
+# 0 both static and inner IP mode
+# 1 only static IP mode
+# 2 only inner IP mode
+LISTEN_MODE 0
+
+# UDP destination port
+DEST_PORT 2152 2123
+
+# Protocol ID to be received by dpdk(UDP=17)
+PROTOCOL_ID 17
+
+# LGW subnets list
+# List of subnets
+# LGW_IPV6 fdd4:365d:3a74:be0d:0000:0000:0000:0000/64
+LGW_IPV4 172.16.0.0/16 192.168.0.0/16
