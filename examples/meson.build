@@ -42,6 +42,7 @@ all_examples = [
         'multi_process/hotplug_mp',
         'multi_process/simple_mp',
         'multi_process/symmetric_mp',
+        'multi_process/symmetric_mp_qdma',
         'ntb',
         'packet_ordering',
         'pipeline',
