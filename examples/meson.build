@@ -33,6 +33,7 @@ all_examples = [
         'l2fwd-event',
         'l2fwd-jobstats',
         'l2fwd-keepalive',
+        'l2fwd-qdma',
         'l3fwd',
         'l3fwd-acl',
         'l3fwd-graph',
