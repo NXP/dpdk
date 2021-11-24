@@ -15,6 +15,8 @@
             <field type="bit" name="c" longname="concatenation indicator" mask="0x01" size="1"/>
             <field type="fixed" name="type" longname="eCPRI message type" size="1"/>
             <field type="fixed" name="size" longname="eCPRI payload size" size="2"/>
+            <field type="fixed" name="tc_id" longname="bandsector_id" size="1"/>
+            <field type="fixed" name="ant_id" longname="antenna id" size="1"/>
             <field type="fixed" name="id" longname="real time control data / IQ data transfer message series identifier" size="2"/>
             <field type="fixed" name="seq" longname="message identifier" size="2"/>
         </fields>
