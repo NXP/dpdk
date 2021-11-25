@@ -396,8 +396,8 @@ build_dpaa_raw_dp_chain_fd(uint8_t *drv_ctx,
 	unsigned int i;
 	uint16_t auth_hdr_len = ofs.ofs.cipher.head -
 				ofs.ofs.auth.head;
-	uint16_t auth_tail_len = ofs.ofs.auth.tail;
-	uint32_t auth_only_len = (auth_tail_len << 16) | auth_hdr_len;
+	uint16_t auth_tail_len;
+	uint32_t auth_only_len;
 	int data_len = 0, auth_len = 0, cipher_len = 0;
 
 	for (i = 0; i < sgl->num; i++)
@@ -405,6 +405,8 @@ build_dpaa_raw_dp_chain_fd(uint8_t *drv_ctx,
 
 	cipher_len = data_len - ofs.ofs.cipher.head - ofs.ofs.cipher.tail;
 	auth_len = data_len - ofs.ofs.auth.head - ofs.ofs.auth.tail;
+	auth_tail_len = auth_len - cipher_len - auth_hdr_len;
+	auth_only_len = (auth_tail_len << 16) | auth_hdr_len;
 
 	if (sgl->num > MAX_SG_ENTRIES) {
 		DPAA_SEC_DP_ERR("Cipher-Auth: Max sec segs supported is %d",
@@ -447,6 +449,7 @@ build_dpaa_raw_dp_chain_fd(uint8_t *drv_ctx,
 			qm_sg_entry_set64(sg, dest_sgl->vec[i].iova);
 			sg->length = dest_sgl->vec[i].len;
 		}
+		sg->length -= ofs.ofs.cipher.tail;
 	} else {
 		qm_sg_entry_set64(sg, sgl->vec[0].iova);
 		sg->length = sgl->vec[0].len - ofs.ofs.cipher.head;
@@ -459,6 +462,7 @@ build_dpaa_raw_dp_chain_fd(uint8_t *drv_ctx,
 			qm_sg_entry_set64(sg, sgl->vec[i].iova);
 			sg->length = sgl->vec[i].len;
 		}
+		sg->length -= ofs.ofs.cipher.tail;
 	}
 
 	if (is_encode(ses)) {
