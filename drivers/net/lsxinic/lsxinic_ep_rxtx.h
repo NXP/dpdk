@@ -73,7 +73,7 @@ struct lsinic_pci_dma_test {
 	enum lsinic_pci_dma_test_status status;
 	uint16_t pkt_len;
 	struct rte_qdma_queue_config qdma_cfg;
-	uint16_t dma_vq;
+	int dma_vq;
 	uint16_t latency_burst;
 	struct rte_mbuf **mbufs;
 	struct rte_ring *jobs_ring;
