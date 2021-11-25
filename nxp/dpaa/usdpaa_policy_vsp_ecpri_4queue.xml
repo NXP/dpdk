@@ -3,7 +3,7 @@
   SPDX-License-Identifier: BSD-3-Clause
 
   Copyright 2021 NXP
-  Split on ethernet type as eCPRI and 2 queues, one each for ecpri.type
+  Split on ethernet type as eCPRI and 4 queues, one each for ecpri antenna id and 1 kernel queue for PTP
 -->
 
 <netpcd>
@@ -13,9 +13,9 @@
 <vsp name="dpdk_vsp" base="1"/>
 
 <!-- xxxxxxxxxxxxxxxxxxxxxxx classifications xxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
-<classification name="hash_ecpri_type_class9" max="2" masks="yes" statistics="none" shared="no">
+<classification name="hash_ecpri_type_class9" max="4" masks="yes" statistics="none" shared="no">
     <key>
-        <fieldref name="ecpri.type" size="0" offset ="0" />
+        <fieldref name="ecpri.ant_id" size="0" offset ="0" />
     </key>
     <entry>
         <vsp name="dpdk_vsp"/>
@@ -25,9 +25,21 @@
     </entry>
     <entry>
         <vsp name="dpdk_vsp"/>
-        <data>0x02</data>
+        <data>0x01</data>
         <mask>0xff</mask>
         <queue base="0xd01"/>
+    </entry>
+     <entry>
+        <vsp name="dpdk_vsp"/>
+        <data>0x02</data>
+	<mask>0xff</mask>
+        <queue base="0xd02"/>
+    </entry>
+     <entry>
+        <vsp name="dpdk_vsp"/>
+        <data>0x03</data>
+	<mask>0xff</mask>
+        <queue base="0xd03"/>
     </entry>
     <action condition="on-miss" type="distribution" name="default_dist9" statistics="disable"/>
 </classification>
@@ -40,7 +52,7 @@
         <protocolref name="ecpri"/>
     </protocols>
     <vsp name="dpdk_vsp"/>
-    <queue base="0xd00" count="2"/>
+    <queue base="0xd00" count="4"/>
     <action type="classification" name="hash_ecpri_type_class9"/>
 </distribution>
 
