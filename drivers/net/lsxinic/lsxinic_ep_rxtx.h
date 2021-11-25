@@ -105,6 +105,14 @@ union ep_ep2rc_ring {
 	void *union_ring;
 };
 
+typedef struct lsinic_sw_bd *
+(*lsinic_recv_rxe_t)(struct lsinic_queue *rxq,
+	uint16_t bd_idx);
+
+typedef void
+(*lsinic_recv_update_t)(struct lsinic_queue *rxq,
+	uint16_t bd_idx, void *rxe);
+
 struct lsinic_queue {
 	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
@@ -132,6 +140,9 @@ struct lsinic_queue {
 	struct lsinic_sw_bd **sw_bd_pool;
 	int sw_bd_pool_cnt;
 	int sw_bd_pool_size;
+
+	lsinic_recv_rxe_t recv_rxe;
+	lsinic_recv_update_t recv_update;
 
 	struct lsinic_dpni_mg_dsc *mg_dsc;
 	uint16_t mg_dsc_head;
