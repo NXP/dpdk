@@ -2083,8 +2083,13 @@ lsinic_queue_start(struct lsinic_queue *q)
 #ifdef LSINIC_BD_CTX_IDX_USED
 	else if (q->ep2rc.tx_notify && q->type == LSINIC_QUEUE_TX) {
 		q->local_notify = rte_malloc(NULL,
-		sizeof(struct ep2rc_tx_notify) * q->nb_desc,
-		sizeof(__uint128_t));
+			sizeof(struct ep2rc_tx_notify) * q->nb_desc,
+			sizeof(__uint128_t));
+		if (adapter->ep_cap &
+			LSINIC_EP_CAP_COMPLETE_BURST_UPDATE)
+			q->ep2rc_update = EP2RC_BURST_UPDATE;
+		else
+			q->ep2rc_update = EP2RC_SINGLE_UPDATE;
 	}
 #endif
 
@@ -2453,6 +2458,41 @@ lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
  *  TX functions
  *
  **********************************************************************/
+static void
+lsinic_tx_notify_burst_to_rc(struct lsinic_queue *txq)
+{
+	uint16_t pending, burst1 = 0, burst2 = 0;
+	uint16_t bd_idx, bd_idx_first;
+	int i;
+	struct ep2rc_tx_notify *tx_notify =
+		txq->ep2rc.tx_notify;
+
+	pending = txq->next_dma_idx - txq->next_used_idx;
+	bd_idx_first = txq->next_used_idx & (txq->nb_desc - 1);
+	if ((bd_idx_first + pending) > txq->nb_desc) {
+		burst1 = txq->nb_desc - bd_idx_first;
+		burst2 = pending - burst1;
+	} else {
+		burst1 = pending;
+		burst2 = 0;
+	}
+	for (i = 0; i < pending; i++) {
+		bd_idx = txq->next_used_idx & (txq->nb_desc - 1);
+		lsinic_ep_notify_to_rc(txq, bd_idx, 0);
+	}
+	lsinic_pcie_memcp_align((uint8_t *)&tx_notify[bd_idx_first],
+		(uint8_t *)&txq->local_notify[bd_idx_first],
+		burst1 * sizeof(struct ep2rc_tx_notify));
+	if (burst2) {
+		lsinic_pcie_memcp_align((uint8_t *)&tx_notify[0],
+			(uint8_t *)&txq->local_notify[0],
+			burst2 * sizeof(struct ep2rc_tx_notify));
+	}
+	txq->next_used_idx += pending;
+	txq->new_desc += pending;
+	lsinic_queue_trigger_interrupt(txq);
+}
+
 
 static void
 lsinic_tx_update_to_rc(struct lsinic_queue *txq)
@@ -2461,12 +2501,20 @@ lsinic_tx_update_to_rc(struct lsinic_queue *txq)
 	uint16_t bd_idx;
 	int i;
 
+#ifdef LSINIC_BD_CTX_IDX_USED
+	if (txq->ep2rc_update == EP2RC_BURST_UPDATE) {
+		lsinic_tx_notify_burst_to_rc(txq);
+
+		return;
+	}
+#endif
+
 	pending = txq->next_dma_idx - txq->next_used_idx;
 	for (i = 0; i < pending; i++) {
 		bd_idx = txq->next_used_idx & (txq->nb_desc - 1);
 #ifdef LSINIC_BD_CTX_IDX_USED
 		if (txq->ep2rc.tx_notify)
-			lsinic_ep_notify_to_rc(txq, bd_idx);
+			lsinic_ep_notify_to_rc(txq, bd_idx, 1);
 		else
 #endif
 			lsinic_bd_update_used_to_rc(txq, bd_idx);
@@ -4171,118 +4219,6 @@ lsinic_recv_rxbd_update(struct lsinic_queue *rxq,
 		if (rxq->wdma_bd_start < 0)
 			rxq->wdma_bd_start = bd_idx;
 		rxq->wdma_bd_nb++;
-	}
-}
-
-static inline int is_align_16(void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0x1)
-		return 0;
-
-	return 1;
-}
-
-static inline int is_align_32(void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0x3)
-		return 0;
-
-	return 1;
-}
-
-static inline int is_align_64(void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0x7)
-		return 0;
-
-	return 1;
-}
-
-static inline int is_align_128(void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0xf)
-		return 0;
-
-	return 1;
-}
-
-static inline void lsinic_pcie_memset_align(uint8_t *dst,
-	uint8_t data, uint16_t size)
-{
-	uint64_t src64[2];
-	__uint128_t *src128 = (__uint128_t *)src64;
-	uint32_t *src32 = (uint32_t *)src64;
-	uint16_t *src16 = (uint16_t *)src64;
-
-	memset(src64, data, sizeof(src64));
-
-	if (!is_align_16(dst) && size > 0) {
-		*dst = data;
-		dst++;
-		size--;
-	}
-
-	if (!is_align_32(dst) &&
-		size >= sizeof(uint16_t)) {
-		*((uint16_t *)dst) = src16[0];
-		dst += sizeof(uint16_t);
-		size -= sizeof(uint16_t);
-	}
-
-	if (!is_align_64(dst) &&
-		size >= sizeof(uint32_t)) {
-		*((uint32_t *)dst) = src32[0];
-		dst += sizeof(uint32_t);
-		size -= sizeof(uint32_t);
-	}
-
-	if (!is_align_128(dst) &&
-		size >= sizeof(uint64_t)) {
-		*((uint64_t *)dst) = src64[0];
-		dst += sizeof(uint64_t);
-		size -= sizeof(uint64_t);
-	}
-
-	while (size >= sizeof(__uint128_t)) {
-		RTE_VERIFY(is_align_128(dst));
-		*((__uint128_t *)dst) = *src128;
-		dst += sizeof(__uint128_t);
-		size -= sizeof(__uint128_t);
-	}
-
-	while (size >= sizeof(uint64_t)) {
-		RTE_VERIFY(is_align_64(dst));
-		*((uint64_t *)dst) = src64[0];
-		dst += sizeof(uint64_t);
-		size -= sizeof(uint64_t);
-	}
-
-	while (size >= sizeof(uint32_t)) {
-		RTE_VERIFY(is_align_32(dst));
-		*((uint32_t *)dst) = src32[0];
-		dst += sizeof(uint32_t);
-		size -= sizeof(uint32_t);
-	}
-
-	while (size >= sizeof(uint16_t)) {
-		RTE_VERIFY(is_align_16(dst));
-		*((uint16_t *)dst) = src16[0];
-		dst += sizeof(uint16_t);
-		size -= sizeof(uint16_t);
-	}
-
-	while (size > 0) {
-		*dst = data;
-		dst++;
-		size--;
 	}
 }
 

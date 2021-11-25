@@ -328,7 +328,7 @@ lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 #ifdef LSINIC_BD_CTX_IDX_USED
 static __rte_always_inline void
 lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
-	uint16_t used_idx)
+	uint16_t used_idx, int remote)
 {
 	struct ep2rc_tx_notify *tx_notify = &queue->ep2rc.tx_notify[used_idx];
 	struct ep2rc_tx_notify *local_notify = &queue->local_notify[used_idx];
@@ -347,7 +347,8 @@ lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 	EP2RC_TX_IDX_CNT_SET(local_notify->cnt_idx,
 		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),
 		cnt);
-	*remote_32 = *local_32;
+	if (remote)
+		*remote_32 = *local_32;
 }
 #endif
 
