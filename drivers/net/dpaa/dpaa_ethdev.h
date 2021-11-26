@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2014-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2019 NXP
+ *   Copyright 2017-2021 NXP
  *
  */
 #ifndef __DPAA_ETHDEV_H__
@@ -131,6 +131,7 @@ struct dpaa_if {
 	struct qman_fq *rx_queues;
 	struct qman_cgr *cgr_rx;
 	struct qman_fq *tx_queues;
+	struct qman_fq *tx_conf_queues;
 	struct qman_cgr *cgr_tx;
 	struct qman_fq debug_queues[2];
 	uint16_t nb_rx_queues;

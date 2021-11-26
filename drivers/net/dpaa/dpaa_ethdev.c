@@ -1747,9 +1747,15 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 	opts.fqd.dest.wq = DPAA_IF_TX_PRIORITY;
 	opts.fqd.fq_ctrl = QM_FQCTRL_PREFERINCACHE;
 	opts.fqd.context_b = 0;
+#if defined(RTE_LIBRTE_IEEE1588)
+	opts.fqd.context_a.lo = 0;
+	opts.fqd.context_a.hi = fman_dealloc_bufs_mask_hi;
+#else
 	/* no tx-confirmation */
-	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
 	opts.fqd.context_a.lo = 0 | fman_dealloc_bufs_mask_lo;
+	opts.fqd.context_a.hi = 0x80000000 | fman_dealloc_bufs_mask_hi;
+#endif
+
 	if (fman_ip_rev >= FMAN_V3) {
 		/* Set B0V bit in contextA to set ASPID to 0 */
 		opts.fqd.context_a.hi |= 0x04000000;
@@ -1782,9 +1788,11 @@ without_cgr:
 	return ret;
 }
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-/* Initialise a DEBUG FQ ([rt]x_error, rx_default). */
-static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
+#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER) || defined(RTE_LIBRTE_IEEE1588)
+/* Initialise a DEBUG FQ ([rt]x_error, rx_default) and DPAA TX CONFIRM queue
+ * to support PTP
+ */
+static int dpaa_def_queue_init(struct qman_fq *fq, uint32_t fqid)
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
@@ -1793,15 +1801,15 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 
 	ret = qman_reserve_fqid(fqid);
 	if (ret) {
-		DPAA_PMD_ERR("Reserve debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("Reserve fqid %d failed with ret: %d",
 			fqid, ret);
 		return -EINVAL;
 	}
 	/* "map" this Rx FQ to one of the interfaces Tx FQID */
-	DPAA_PMD_DEBUG("Creating debug fq %p, fqid %d", fq, fqid);
+	DPAA_PMD_DEBUG("Creating fq %p, fqid %d", fq, fqid);
 	ret = qman_create_fq(fqid, QMAN_FQ_FLAG_NO_ENQUEUE, fq);
 	if (ret) {
-		DPAA_PMD_ERR("create debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("create fqid %d failed with ret: %d",
 			fqid, ret);
 		return ret;
 	}
@@ -1809,7 +1817,7 @@ static int dpaa_debug_queue_init(struct qman_fq *fq, uint32_t fqid)
 	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
 	ret = qman_init_fq(fq, 0, &opts);
 	if (ret)
-		DPAA_PMD_ERR("init debug fqid %d failed with ret: %d",
+		DPAA_PMD_ERR("init fqid %d failed with ret: %d",
 			    fqid, ret);
 	return ret;
 }
@@ -2012,6 +2020,14 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		goto free_rx;
 	}
 
+	dpaa_intf->tx_conf_queues = rte_zmalloc(NULL, sizeof(struct qman_fq) *
+		MAX_DPAA_CORES, MAX_CACHELINE);
+	if (!dpaa_intf->tx_conf_queues) {
+		DPAA_PMD_ERR("Failed to alloc mem for TX conf queues\n");
+		ret = -ENOMEM;
+		goto free_rx;
+	}
+
 	/* If congestion control is enabled globally*/
 	if (td_tx_threshold) {
 		dpaa_intf->cgr_tx = rte_zmalloc(NULL,
@@ -2048,21 +2064,28 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	dpaa_intf->nb_tx_queues = MAX_DPAA_CORES;
 
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	ret = dpaa_debug_queue_init(&dpaa_intf->debug_queues
+#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER) || defined(RTE_LIBRTE_IEEE1588)
+	ret = dpaa_def_queue_init(&dpaa_intf->debug_queues
 			[DPAA_DEBUG_FQ_RX_ERROR], fman_intf->fqid_rx_err);
 	if (ret) {
 		DPAA_PMD_ERR("DPAA RX ERROR queue init failed!");
 		goto free_tx;
 	}
 	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_RX_ERROR].dpaa_intf = dpaa_intf;
-	ret = dpaa_debug_queue_init(&dpaa_intf->debug_queues
+	ret = dpaa_def_queue_init(&dpaa_intf->debug_queues
 			[DPAA_DEBUG_FQ_TX_ERROR], fman_intf->fqid_tx_err);
 	if (ret) {
 		DPAA_PMD_ERR("DPAA TX ERROR queue init failed!");
 		goto free_tx;
 	}
 	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
+	ret = dpaa_def_queue_init(dpaa_intf->tx_conf_queues,
+			fman_intf->fqid_tx_confirm);
+	if (ret) {
+		DPAA_PMD_ERR("DPAA TX CONFIRM queue init failed!");
+		goto free_tx;
+	}
+	dpaa_intf->tx_conf_queues->dpaa_intf = dpaa_intf;
 #endif
 
 	DPAA_PMD_DEBUG("All frame queues created");
