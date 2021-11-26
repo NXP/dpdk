@@ -133,9 +133,12 @@ struct lsinic_queue {
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
 	union ep_ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
 	enum ep2rc_update_type ep2rc_update;
+	union {
 #ifdef LSINIC_BD_CTX_IDX_USED
-	struct ep2rc_notify *local_notify;
+		struct ep2rc_notify *local_notify;
 #endif
+		uint32_t *local_free_idx;
+	};
 	struct lsinic_sw_bd *sw_ring;
 	struct lsinic_sw_bd **sw_bd_pool;
 	int sw_bd_pool_cnt;

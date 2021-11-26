@@ -2179,6 +2179,9 @@ lsinic_queue_ep2rc_update_cfg(struct lsinic_queue *q)
 				goto configure_done;
 			}
 			q->ep2rc_update = EP2RC_INDEX_UPDATE;
+			q->local_free_idx = (void *)
+				((char *)q->ep_bd_desc +
+					LSINIC_BD_RING_SIZE);
 		} else {
 			if (adapter->ep_cap & LSINIC_EP_CAP_RXQ_WBD_DMA) {
 				if (e_type == EGRESS_RING_CNF) {
@@ -2258,14 +2261,9 @@ lsinic_queue_ep2rc_update_cfg(struct lsinic_queue *q)
 		}
 #ifdef LSINIC_BD_CTX_IDX_USED
 		if (i_type == INGRESS_RING_NOTIFY) {
-			q->local_notify = rte_malloc(NULL,
-				sizeof(struct ep2rc_notify) * q->nb_desc,
-				sizeof(__uint128_t));
-			if (!q->local_notify) {
-				q->ep2rc_update = EP2RC_INVALID_UPDATE;
-				err_msg = "local notify ring alloc failed";
-				ret = -ENOMEM;
-			}
+			q->local_notify = (void *)
+				((char *)q->ep_bd_desc +
+					LSINIC_BD_RING_SIZE);
 		}
 #endif
 	}
@@ -4803,7 +4801,9 @@ lsinic_dpaa2_recv_pkts(struct lsinic_queue *rxq,
 
 	if (rxq->ep2rc_update == EP2RC_INDEX_UPDATE &&
 		nb_rx > 0) {
-		*rxq->ep2rc.free_idx = (first_idx + nb_rx) & (rxq->nb_desc - 1);
+		*rxq->local_free_idx =
+			(first_idx + nb_rx) & (rxq->nb_desc - 1);
+		*rxq->ep2rc.free_idx = *rxq->local_free_idx;
 	} else if (rxq->ep2rc_update == EP2RC_RING_UPDATE &&
 		nb_rx > 0) {
 		rx_complete = rxq->ep2rc.rx_complete;
@@ -4902,7 +4902,9 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 
 	if (rxq->ep2rc_update == EP2RC_INDEX_UPDATE &&
 		nb_rx > 0) {
-		*rxq->ep2rc.free_idx = (first_idx + nb_rx) & (rxq->nb_desc - 1);
+		*rxq->local_free_idx =
+			(first_idx + nb_rx) & (rxq->nb_desc - 1);
+		*rxq->ep2rc.free_idx = *rxq->local_free_idx;
 	} else if (rxq->ep2rc_update == EP2RC_RING_UPDATE &&
 		nb_rx > 0) {
 		rx_complete = rxq->ep2rc.rx_complete;
@@ -5039,10 +5041,9 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	txq->rc_bd_desc = NULL;
 	txq->rc_reg = txq->ep_reg;
 	txq->dev = dev;
-	txq->ep_bd_desc = (struct lsinic_bd_desc *)(adapter->bd_desc_base +
-					LSINIC_RX_BD_OFFSET
-					+ queue_idx * txq->nb_desc
-					* sizeof(struct lsinic_bd_desc));
+	txq->ep_bd_desc = (struct lsinic_bd_desc *)
+		(adapter->bd_desc_base + LSINIC_RX_BD_OFFSET +
+		queue_idx * LSINIC_RING_SIZE);
 
 	inic_memset(txq->ep_bd_desc, 0,
 		txq->nb_desc * sizeof(struct lsinic_bd_desc));
@@ -5151,8 +5152,8 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->rc_reg = rxq->ep_reg;
 	rxq->dev = dev;
 	rxq->ep_bd_desc = (struct lsinic_bd_desc *)
-			  (adapter->bd_desc_base + queue_idx * rxq->nb_desc
-			   * sizeof(struct lsinic_bd_desc));
+		(adapter->bd_desc_base +
+		queue_idx * LSINIC_RING_SIZE);
 
 	inic_memset(rxq->ep_bd_desc, 0,
 		    rxq->nb_desc * sizeof(struct lsinic_bd_desc));

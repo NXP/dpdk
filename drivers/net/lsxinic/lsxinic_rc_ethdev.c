@@ -392,8 +392,7 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		(struct lsinic_bd_desc *)
 		(adapter->bd_desc_base +
 		LSINIC_RX_BD_OFFSET +
-		queue_idx * rx_ring->count *
-		sizeof(struct lsinic_bd_desc));
+		queue_idx * LSINIC_RING_SIZE);
 
 	rx_ring->last_avail_idx = 0;
 	rx_ring->last_used_idx = 0;
@@ -585,9 +584,8 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->queue_index = queue_idx;
 	tx_ring->port = dev->data->port_id;
 	tx_ring->adapter = adapter;
-	tx_ring->ep_bd_desc = (struct lsinic_bd_desc *)(adapter->bd_desc_base +
-			(queue_idx * tx_ring->count *
-			 sizeof(struct lsinic_bd_desc)));
+	tx_ring->ep_bd_desc = (struct lsinic_bd_desc *)
+		(adapter->bd_desc_base + (queue_idx * LSINIC_RING_SIZE));
 
 	tx_ring->last_avail_idx = 0;
 	tx_ring->last_used_idx = 0;
