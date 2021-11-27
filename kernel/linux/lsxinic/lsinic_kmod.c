@@ -810,9 +810,10 @@ static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
 				bd_status = rc_tx_desc->bd_status;
 				rmb();
 				count++;
-				if (count > 10000) {
-					e_dev_err("TXQ%d:BD%d is not link up with EP\n",
-						tx_ring->queue_index, j);
+				if (count > 1000) {
+					e_dev_err("TXQ%d:BD%d invalid status 0x%08x\n",
+						tx_ring->queue_index,
+						j, bd_status);
 					return -1;
 				}
 			}
@@ -1240,16 +1241,19 @@ int lsinic_setup_tx_resources(struct lsinic_adapter *adapter, int i)
 	tx_ring->adapter = adapter;
 	tx_ring->data_room = PAGE_SIZE;
 	tx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
-	tx_ring->ep_bd_desc = adapter->bd_desc_base +
-			i * tx_ring->count * sizeof(struct lsinic_bd_desc);
+	tx_ring->ep_bd_desc = (struct lsinic_bd_desc *)
+		((u8 *)adapter->bd_desc_base + LSINIC_TX_BD_OFFSET +
+		i * LSINIC_RING_SIZE);
 
 	tx_ring->tx_avail_idx = 0;
 
 #ifdef RC_RING_REG_SHADOW_ENABLE
 	tx_ring->size = tx_ring->count * sizeof(struct lsinic_bd_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
-	tx_ring->rc_bd_desc = adapter->rc_bd_desc_base +
-			i * tx_ring->count * sizeof(struct lsinic_bd_desc);
+	tx_ring->rc_bd_desc = (struct lsinic_bd_desc *)
+		((char *)adapter->rc_bd_desc_base +
+		LSINIC_TX_BD_OFFSET +
+		i * LSINIC_RING_SIZE);
 	tx_ring->rc_bd_desc_dma = ((u64)adapter->rc_bd_desc_phy) +
 	(u64)((u64)tx_ring->rc_bd_desc - (u64)adapter->rc_bd_desc_base);
 
@@ -1327,15 +1331,18 @@ int lsinic_setup_rx_resources(struct lsinic_adapter *adapter, int i)
 	rx_ring->adapter = adapter;
 	rx_ring->data_room = PAGE_SIZE;
 	rx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
-	rx_ring->ep_bd_desc = adapter->bd_desc_base + LSINIC_RX_BD_OFFSET
-			+ i * rx_ring->count * sizeof(struct lsinic_bd_desc);
+	rx_ring->ep_bd_desc = (struct lsinic_bd_desc *)
+		((u8 *)adapter->bd_desc_base +
+		LSINIC_RX_BD_OFFSET +
+		i * LSINIC_RING_SIZE);
 	rx_ring->rx_used_idx = 0;
 
 #ifdef RC_RING_REG_SHADOW_ENABLE
 	rx_ring->size = rx_ring->count * sizeof(struct lsinic_bd_desc);
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
-	rx_ring->rc_bd_desc = adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET
-			+ i * rx_ring->count * sizeof(struct lsinic_bd_desc);
+	rx_ring->rc_bd_desc = (struct lsinic_bd_desc *)((char *)
+			adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
+			i * LSINIC_RING_SIZE);
 	rx_ring->rc_bd_desc_dma = ((u64)adapter->rc_bd_desc_phy) +
 	(u64)((u64)rx_ring->rc_bd_desc - (u64)adapter->rc_bd_desc_base);
 
