@@ -160,6 +160,15 @@ enum lxsnic_ring_state_t {
 	__LXSNIC_RX_FCOE,
 };
 
+union rc_ep2rc_ring {
+#ifdef LSINIC_BD_CTX_IDX_USED
+	struct ep2rc_notify *rx_notify;
+#endif
+	uint8_t *tx_complete;
+	const uint32_t *free_idx;
+	void *union_ring;
+};
+
 #define MCACHE_NUM (LSINIC_MERGE_MAX_NUM * 4)
 #define MCACHE_MASK (MCACHE_NUM - 1)
 struct lxsnic_ring {
@@ -172,7 +181,7 @@ struct lxsnic_ring {
 	uint16_t count;			  /* amount of bd descriptors */
 	struct lsinic_bd_desc *ep_bd_desc;/* bd desc point to EP memory */
 	struct lsinic_bd_desc *rc_bd_desc;
-	union ep2rc_ring ep2rc;
+	union rc_ep2rc_ring ep2rc;
 	/* bd desc point to RC(local) memory */
 	dma_addr_t rc_bd_desc_dma;	  /* phys. address of rc_bd_desc */
 	dma_addr_t ep2rc_ring_dma;	  /* phys. address of ep2rc_ring */
@@ -195,6 +204,8 @@ struct lxsnic_ring {
 	/* use for manage queue */
 	uint16_t last_avail_idx;
 	uint16_t last_used_idx;
+	uint16_t tx_free_start_idx;
+	int tx_free_len;
 	/* statistics */
 	uint64_t packets;
 	uint64_t bytes;

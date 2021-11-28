@@ -80,7 +80,6 @@ struct lsinic_hw {
 #define LSINIC_EP_CAP_HW_DIRECT_EGRESS 0x00000100
 #define LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX 0x00000200
 #define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX 0x00000400
-#define LSINIC_EP_CAP_COMPLETE_BURST_UPDATE 0x00000800
 
 struct lsinic_adapter {
 	uint8_t *hw_addr;
@@ -133,6 +132,7 @@ struct lsinic_adapter {
 
 	int rx_mbuf_clone;
 	uint32_t cap;
+	rte_spinlock_t cap_lock;
 	uint32_t ep_cap;
 	uint8_t *complete_src;
 

@@ -68,7 +68,7 @@ static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 #endif
 	struct lsinic_bd_desc *rc_tx_desc;
 	struct rte_mbuf *last_mbuf;
-	uint8_t *rx_complete = tx_ring->ep2rc.rx_complete;
+	uint8_t *tx_complete = tx_ring->ep2rc.tx_complete;
 
 	bd_idx = tx_ring->last_used_idx & (tx_ring->count - 1);
 	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
@@ -76,7 +76,7 @@ static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 	rte_rmb();
 
 	do {
-		if (rx_complete[bd_idx] != RING_BD_HW_COMPLETE)
+		if (tx_complete[bd_idx] != RING_BD_HW_COMPLETE)
 			break;
 
 #ifdef LSINIC_BD_CTX_IDX_USED
@@ -117,7 +117,7 @@ static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 #else
 		rc_tx_desc->bd_status = RING_BD_READY;
 #endif
-		rx_complete[bd_idx] = RING_BD_READY;
+		tx_complete[bd_idx] = RING_BD_READY;
 
 		tx_ring->last_used_idx++;
 
@@ -194,6 +194,54 @@ static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 	} while (1);
 }
 
+static void lxsnic_tx_ring_idx_clean(struct lxsnic_ring *tx_ring)
+{
+	uint32_t start_free_idx = tx_ring->tx_free_start_idx;
+	const uint32_t last_free_idx = *(tx_ring->ep2rc.free_idx);
+#ifdef LSINIC_BD_CTX_IDX_USED
+	uint32_t mbuf_idx;
+#endif
+	struct lsinic_bd_desc *rc_tx_desc;
+	struct rte_mbuf *last_mbuf;
+
+	if (!tx_ring->tx_free_len)
+		return;
+
+	while (start_free_idx != last_free_idx) {
+		rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, start_free_idx);
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+		mbuf_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
+		last_mbuf = (struct rte_mbuf *)tx_ring->q_mbuf[mbuf_idx];
+#else
+		last_mbuf = (struct rte_mbuf *)rc_tx_desc->sw_ctx;
+#endif
+		if (tx_ring->adapter->self_test) {
+			tx_ring->self_xmit_pkts[tx_ring->self_xmit_pkts_count] =
+				last_mbuf;
+			tx_ring->self_xmit_pkts_count++;
+			RTE_ASSERT(tx_ring->self_xmit_pkts_count <=
+				tx_ring->self_xmit_pkts_total);
+		} else {
+			rte_pktmbuf_free_seg(last_mbuf);
+		}
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+		rc_tx_desc->bd_status &= (~((uint32_t)RING_BD_STATUS_MASK));
+		rc_tx_desc->bd_status |= RING_BD_READY;
+#else
+		rc_tx_desc->bd_status = RING_BD_READY;
+#endif
+
+		tx_ring->last_used_idx++;
+		start_free_idx = (start_free_idx + 1) & (tx_ring->count - 1);
+		tx_ring->tx_free_len--;
+		RTE_ASSERT(tx_ring->tx_free_len >= 0);
+	}
+
+	tx_ring->tx_free_start_idx = start_free_idx;
+}
+
 static int
 lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	uint16_t mg_num)
@@ -208,21 +256,34 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	uint32_t mbuf_idx = 0;
 #endif
 	char *pdata = NULL;
-	uint8_t *rx_complete = tx_ring->ep2rc.rx_complete;
+	uint8_t *tx_complete = tx_ring->ep2rc.tx_complete;
+	uint32_t cap = tx_ring->adapter->cap;
+	enum egress_cnf_type e_type =
+		LSINIC_CAP_XFER_EGRESS_CNF_GET(cap);
 
 
 	if (tx_pkt->nb_segs > 1)
 		return -1;
 
 	bd_idx = tx_ring->last_avail_idx & (tx_ring->count - 1);
-	if (!(tx_ring->adapter->cap & LSINIC_CAP_XFER_TX_BD_UPDATE))
+	if (!(cap & LSINIC_CAP_XFER_TX_BD_UPDATE))
 		ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, bd_idx);
 	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
+	if (e_type == EGRESS_INDEX_CNF) {
+		if (unlikely(((bd_idx + 1) &
+			(tx_ring->count - 1)) ==
+			tx_ring->tx_free_start_idx)) {
+			/** Make special room, otherwise no way to
+			 * identify ring is empty or full.
+			 */
+			tx_ring->ring_full++;
+			return -1;
+		}
+	}
 
 	bd_status = rc_tx_desc->bd_status;
-	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE &&
-		rx_complete) {
-		if (rx_complete[bd_idx] != RING_BD_READY) {
+	if (e_type == EGRESS_RING_CNF) {
+		if (tx_complete[bd_idx] != RING_BD_READY) {
 			uint8_t current_ep_status;
 
 			ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, bd_idx);
@@ -230,7 +291,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 				ep_tx_desc->bd_status & RING_BD_STATUS_MASK;
 			if (current_ep_status == RING_BD_HW_COMPLETE) {
 				/** Workaround to sync with EP BD status.*/
-				rx_complete[bd_idx] = RING_BD_HW_COMPLETE;
+				tx_complete[bd_idx] = RING_BD_HW_COMPLETE;
 				tx_ring->sync_err++;
 			}
 #ifdef LXSNIC_DEBUG_RX_TX
@@ -239,6 +300,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			tx_ring->ring_full++;
 			return -1;
 		}
+		tx_complete[bd_idx] = RING_BD_AVAILABLE;
 	} else if ((bd_status & RING_BD_STATUS_MASK) != RING_BD_READY) {
 #ifdef LXSNIC_DEBUG_RX_TX
 		tx_ring->adapter->stats.tx_desc_err++;
@@ -259,7 +321,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	pkt_len = tx_pkt->pkt_len;  /* total packet length */
 	cmd_type = LSINIC_BD_CMD_EOP;
 	dma = rte_mbuf_data_iova(tx_pkt);
-	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
+	if (cap & LSINIC_CAP_XFER_COMPLETE) {
 		pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
 		*((uint8_t *)pdata + pkt_len) =
 			LSINIC_XFER_COMPLETE_DONE_FLAG;
@@ -297,8 +359,6 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 		ep_tx_desc->desc = rc_tx_desc->desc;
 	}
 #endif
-	if (rx_complete)
-		rx_complete[bd_idx] = RING_BD_AVAILABLE;
 
 	if (mg_num == 0) {
 		tx_ring->packets++;
@@ -307,6 +367,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 		tx_ring->bytes_overhead += tx_pkt->pkt_len +
 			LSINIC_ETH_OVERHEAD_SIZE;
 	}
+	tx_ring->tx_free_len++;
 	tx_ring->last_avail_idx++;
 
 	return 0;
@@ -570,13 +631,13 @@ lxsnic_fetch_merge_rx_buffer(struct lxsnic_ring *rx_queue,
 	struct lsinic_bd_desc *bd_desc = NULL;
 #ifdef LSINIC_BD_CTX_IDX_USED
 	uint32_t mbuf_idx;
-	struct ep2rc_tx_notify *tx_notify;
+	struct ep2rc_notify *rx_notify;
 
-	if (rx_queue->ep2rc.tx_notify) {
-		tx_notify = rx_desc;
-		mbuf_idx = EP2RC_TX_CTX_IDX(tx_notify->cnt_idx);
+	if (rx_queue->ep2rc.rx_notify) {
+		rx_notify = rx_desc;
+		mbuf_idx = EP2RC_TX_CTX_IDX(rx_notify->cnt_idx);
 		mbuf = (struct rte_mbuf *)rx_queue->q_mbuf[mbuf_idx];
-		total_size = tx_notify->total_len;
+		total_size = rx_notify->total_len;
 	} else {
 		bd_desc = rx_desc;
 		mbuf_idx = lsinic_bd_ctx_idx(bd_desc->bd_status);
@@ -725,13 +786,13 @@ lxsnic_fetch_rx_buffer(struct lxsnic_ring *rx_queue,
 	struct lsinic_bd_desc *bd_desc;
 #ifdef LSINIC_BD_CTX_IDX_USED
 	uint32_t mbuf_idx;
-	struct ep2rc_tx_notify *tx_notify;
+	struct ep2rc_notify *rx_notify;
 
-	if (rx_queue->ep2rc.tx_notify) {
-		tx_notify = rx_desc;
-		mbuf_idx = EP2RC_TX_CTX_IDX(tx_notify->cnt_idx);
+	if (rx_queue->ep2rc.rx_notify) {
+		rx_notify = rx_desc;
+		mbuf_idx = EP2RC_TX_CTX_IDX(rx_notify->cnt_idx);
 		mbuf = (struct rte_mbuf *)rx_queue->q_mbuf[mbuf_idx];
-		rx_packet_len = tx_notify->total_len;
+		rx_packet_len = rx_notify->total_len;
 	} else {
 		bd_desc = rx_desc;
 		mbuf_idx = lsinic_bd_ctx_idx(bd_desc->bd_status);
@@ -859,8 +920,8 @@ lxsnic_rx_bd_mbuf_set(struct lxsnic_ring *rx_queue,
 	dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));
 	rc_rx_desc->pkt_addr = dma_addr;
 #ifdef LSINIC_BD_CTX_IDX_USED
-	if (rx_queue->ep2rc.tx_notify)
-		rx_queue->ep2rc.tx_notify[idx].cnt_idx = 0;
+	if (rx_queue->ep2rc.rx_notify)
+		rx_queue->ep2rc.rx_notify[idx].cnt_idx = 0;
 	mbuf_idx = lsinic_bd_ctx_idx(rc_rx_desc->bd_status);
 	rx_queue->q_mbuf[mbuf_idx] = mbuf;
 	rc_rx_desc->bd_status = RING_BD_READY |
@@ -891,8 +952,8 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 	struct lsinic_bd_desc *rx_desc;
 #ifdef LSINIC_BD_CTX_IDX_USED
 	struct lsinic_bd_desc local_desc;
-	struct ep2rc_tx_notify *tx_notify =
-			rx_queue->ep2rc.tx_notify;
+	struct ep2rc_notify *rx_notify =
+			rx_queue->ep2rc.rx_notify;
 #endif
 	struct rte_mbuf *mbuf = NULL;
 	struct rte_mbuf *new_mbuf;
@@ -929,8 +990,8 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 #endif
 
 #ifdef LSINIC_BD_CTX_IDX_USED
-		if (tx_notify) {
-			if (!tx_notify[idx].cnt_idx)
+		if (rx_notify) {
+			if (!rx_notify[idx].cnt_idx)
 				break;
 			goto skip_parse_bd;
 		}
@@ -962,14 +1023,14 @@ skip_parse_bd:
 		 */
 		count = 0;
 #ifdef LSINIC_BD_CTX_IDX_USED
-		if (tx_notify) {
-			count = EP2RC_TX_CTX_CNT(tx_notify[idx].cnt_idx);
+		if (rx_notify) {
+			count = EP2RC_TX_CTX_CNT(rx_notify[idx].cnt_idx);
 			if (count > 1) {
 				count = lxsnic_fetch_merge_rx_buffer(rx_queue,
-					&tx_notify[idx], count);
+					&rx_notify[idx], count);
 			} else {
 				mbuf = lxsnic_fetch_rx_buffer(rx_queue,
-					&tx_notify[idx]);
+					&rx_notify[idx]);
 				if (mbuf) {
 					rx_queue->mcache[rx_queue->mtail] =
 						mbuf;
@@ -1074,11 +1135,14 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 	struct rte_eth_dev *eth_dev = rx_queue->adapter->eth_dev;
 	struct lxsnic_ring *tx_queue =
 			eth_dev->data->tx_queues[rx_queue->queue_index];
+	enum egress_cnf_type e_type =
+		LSINIC_CAP_XFER_EGRESS_CNF_GET(tx_queue->adapter->cap);
 
 	if (tx_queue) {
-		if (tx_queue->adapter->cap & LSINIC_CAP_XFER_COMPLETE &&
-			tx_queue->ep2rc.rx_complete)
+		if (e_type == EGRESS_RING_CNF)
 			lxsnic_tx_complete_ring_clean(tx_queue);
+		else if (e_type == EGRESS_INDEX_CNF)
+			lxsnic_tx_ring_idx_clean(tx_queue);
 		else
 			lxsnic_tx_ring_clean(tx_queue);
 	}

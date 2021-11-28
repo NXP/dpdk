@@ -429,6 +429,8 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	char *penv;
 	struct lsinic_adapter *adapter = eth_dev->process_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	const char *cnf_env = "LSINIC_EP_RXQ_CONFIRM";
+	const char *notify_env = "LSINIC_EP_TXQ_NOTIFY";
 
 	adapter->ep_cap = 0;
 
@@ -446,10 +448,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_WBD_DMA;
 
-	penv = getenv("LSINIC_COMPLETE_RING_SINGLE_UPDATE");
-	if (!penv)
-		adapter->ep_cap |= LSINIC_EP_CAP_COMPLETE_BURST_UPDATE;
-
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
@@ -461,6 +459,50 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
+
+	if (adapter->cap & (LSINIC_CAP_XFER_COMPLETE |
+		LSINIC_EP_CAP_RXQ_ORP)) {
+		/** Index confirm as default*/
+		LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
+			EGRESS_INDEX_CNF);
+		penv = getenv(cnf_env);
+		if (penv) {
+			if (atoi(penv) == EGRESS_BD_CNF) {
+				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
+					EGRESS_BD_CNF);
+			} else if (atoi(penv) == EGRESS_RING_CNF) {
+				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
+					EGRESS_RING_CNF);
+			} else if (atoi(penv) == EGRESS_INDEX_CNF) {
+				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
+					EGRESS_INDEX_CNF);
+			} else {
+				LSXINIC_PMD_INFO("%s:%d-%s,%d-%s,%d-%s",
+					cnf_env,
+					EGRESS_BD_CNF, "BD confirm",
+					EGRESS_RING_CNF, "RING confirm",
+					EGRESS_INDEX_CNF, "INDEX confirm");
+			}
+		}
+	}
+
+	LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
+		INGRESS_RING_NOTIFY);
+	penv = getenv(notify_env);
+	if (penv) {
+		if (atoi(penv) == INGRESS_BD_NOTIFY) {
+			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
+				INGRESS_BD_NOTIFY);
+		} else if (atoi(penv) == INGRESS_RING_NOTIFY) {
+			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
+				INGRESS_RING_NOTIFY);
+		} else {
+			LSXINIC_PMD_INFO("%s:%d-%s,%d-%s",
+				notify_env,
+				INGRESS_BD_NOTIFY, "BD notify",
+				INGRESS_RING_NOTIFY, "RING notify");
+		}
+	}
 
 	penv = getenv("LSINIC_RXQ_READ_BD_BY_DMA");
 	if (penv)
@@ -764,6 +806,7 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	adapter->split_dev = NULL;
 	rte_spinlock_init(&adapter->merge_dev_cfg_lock);
 	rte_spinlock_init(&adapter->split_dev_cfg_lock);
+	rte_spinlock_init(&adapter->cap_lock);
 	adapter->merge_dev_cfg_done = 0;
 	adapter->split_dev_cfg_done = 0;
 	adapter->lsinic_dev = lsinic_dev;
@@ -1281,14 +1324,19 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	adapter->rx_pcidma_dbg = rc_reg_addr;
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
 	adapter->tx_pcidma_dbg = rc_reg_addr;
-	adapter->complete_src =
-		rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
-			LSINIC_EP2RC_COMPLETE_RING_SIZE);
-	if (adapter->complete_src) {
-		memset(adapter->complete_src, RING_BD_HW_COMPLETE,
-			LSINIC_EP2RC_COMPLETE_RING_SIZE);
+	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
+		EGRESS_RING_CNF) {
+		adapter->complete_src =
+			rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
+				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+		if (adapter->complete_src) {
+			memset(adapter->complete_src, RING_BD_HW_COMPLETE,
+				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+		} else {
+			LSXINIC_PMD_WARN("complete src malloc failed");
+		}
 	} else {
-		LSXINIC_PMD_WARN("complete src malloc failed");
+		adapter->complete_src = NULL;
 	}
 
 	if (!sim)

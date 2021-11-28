@@ -260,24 +260,16 @@ struct lsinic_bd_desc {
 #define EP2RC_TX_IDX_CNT_SET(cnt_idx, idx, cnt) \
 	(cnt_idx = (idx) | (cnt) << (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
 
-struct ep2rc_tx_notify {
+struct ep2rc_notify {
 	uint16_t total_len;
 	uint16_t cnt_idx;
 } __packed;
 #endif
 
-union ep2rc_ring {
-#ifdef LSINIC_BD_CTX_IDX_USED
-	struct ep2rc_tx_notify *tx_notify;
-#endif
-	uint8_t *rx_complete;
-	void *union_ring;
-};
-
 #define LSINIC_BD_RING_SIZE	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
 #ifdef LSINIC_BD_CTX_IDX_USED
 #define LSINIC_EP2RC_RING_MAX_SIZE \
-	(sizeof(struct ep2rc_tx_notify) * LSINIC_BD_ENTRY_COUNT)
+	(sizeof(struct ep2rc_notify) * LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_EP2RC_NOTIFY_RING_SIZE LSINIC_EP2RC_RING_MAX_SIZE
 
@@ -367,13 +359,66 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 
 #define LSINIC_ETH_REG_OFFSET (0x0300)
 
+static inline int mask_bit_len(uint64_t mask)
+{
+	int len = 0;
+
+	if (mask)
+		len = 1;
+	else
+		return 0;
+
+	while (mask >> 1) {
+		mask = mask >> 1;
+		len++;
+	}
+
+	return len;
+}
+
+enum egress_cnf_type {
+	EGRESS_BD_CNF = 0,
+	EGRESS_RING_CNF = 1,
+	EGRESS_INDEX_CNF = 2,
+	EGRESS_CNF_MASK = 3
+};
+
+#define LSINIC_CAP_XFER_EGRESS_CNF_POS 6
+
+#define LSINIC_CAP_XFER_EGRESS_CNF_GET(cap) \
+	(((cap) >> LSINIC_CAP_XFER_EGRESS_CNF_POS) & EGRESS_CNF_MASK)
+
+#define LSINIC_CAP_XFER_EGRESS_CNF_SET(cap, type) \
+	do { \
+		(cap) &= ~(EGRESS_CNF_MASK << LSINIC_CAP_XFER_EGRESS_CNF_POS); \
+		(cap) |= ((type) << LSINIC_CAP_XFER_EGRESS_CNF_POS); \
+	} while (0)
+
+enum ingress_notify_type {
+	INGRESS_BD_NOTIFY = 0,
+	INGRESS_RING_NOTIFY = 1,
+	INGRESS_INDEX_NOTIFY = 2,
+	INGRESS_NOTIFY_MASK = 3
+};
+
+#define LSINIC_CAP_XFER_INGRESS_NOTIFY_POS \
+	(LSINIC_CAP_XFER_EGRESS_CNF_POS + mask_bit_len(EGRESS_CNF_MASK))
+
+#define LSINIC_CAP_XFER_INGRESS_NOTIFY_GET(cap) \
+	(((cap) >> LSINIC_CAP_XFER_INGRESS_NOTIFY_POS) & INGRESS_NOTIFY_MASK)
+
+#define LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(cap, type) \
+	do { \
+		(cap) &= ~(INGRESS_NOTIFY_MASK << \
+			LSINIC_CAP_XFER_INGRESS_NOTIFY_POS); \
+		(cap) |= ((type) << LSINIC_CAP_XFER_INGRESS_NOTIFY_POS); \
+	} while (0)
+
 #define LSINIC_CAP_XFER_COMPLETE 0x00000001
 #define LSINIC_CAP_XFER_PKT_MERGE 0x00000002
 #define LSINIC_CAP_XFER_TX_BD_UPDATE 0x00000004
 #define LSINIC_CAP_XFER_RX_BD_UPDATE 0x00000008
-#define LSINIC_CAP_XFER_EP2RC_COMPLETE_RING 0x00000010
-#define LSINIC_CAP_XFER_EP2RC_NOTIFY_RING 0x00000020
-#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000040
+#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000010
 
 #define LSXINIC_VF_AVAILABLE (((uint32_t)1) << 15)
 

@@ -89,8 +89,20 @@ struct lsinic_pci_dma_test {
 
 enum ep2rc_update_type {
 	EP2RC_BD_UPDATE,
-	EP2RC_SINGLE_UPDATE,
-	EP2RC_BURST_UPDATE
+	EP2RC_RING_UPDATE,
+	EP2RC_BD_DMA_UPDATE,
+	EP2RC_RING_DMA_UPDATE,
+	EP2RC_INDEX_UPDATE,
+	EP2RC_INVALID_UPDATE
+};
+
+union ep_ep2rc_ring {
+#ifdef LSINIC_BD_CTX_IDX_USED
+	struct ep2rc_notify *tx_notify;
+#endif
+	uint8_t *rx_complete;
+	uint32_t *free_idx;
+	void *union_ring;
 };
 
 struct lsinic_queue {
@@ -111,10 +123,10 @@ struct lsinic_queue {
 
 	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP mem */
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
-	union ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
+	union ep_ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
 	enum ep2rc_update_type ep2rc_update;
 #ifdef LSINIC_BD_CTX_IDX_USED
-	struct ep2rc_tx_notify *local_notify;
+	struct ep2rc_notify *local_notify;
 #endif
 	struct lsinic_sw_bd *sw_ring;
 	struct lsinic_sw_bd **sw_bd_pool;
@@ -330,8 +342,8 @@ static __rte_always_inline void
 lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx, int remote)
 {
-	struct ep2rc_tx_notify *tx_notify = &queue->ep2rc.tx_notify[used_idx];
-	struct ep2rc_tx_notify *local_notify = &queue->local_notify[used_idx];
+	struct ep2rc_notify *tx_notify = &queue->ep2rc.tx_notify[used_idx];
+	struct ep2rc_notify *local_notify = &queue->local_notify[used_idx];
 	struct lsinic_bd_desc *ep_bd_desc = &queue->ep_bd_desc[used_idx];
 	uint32_t *local_32 = (uint32_t *)local_notify;
 	uint32_t *remote_32 = (uint32_t *)tx_notify;
