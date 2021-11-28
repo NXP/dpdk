@@ -235,6 +235,44 @@ print_queue_status(void *queue,
 			epq->bytes_overhead_old;
 		epq->bytes_overhead_old = epq->bytes_overhead;
 
+		if (epq->type == LSINIC_QUEUE_RX && epq->cyc_diff_total) {
+			double rx_burst_av_depth = epq->packets /
+				epq->loop_avail;
+			double tx_burst_av_depth = epq->pair->packets /
+				epq->pair->loop_avail;
+			double av_us = (double)epq->cyc_diff_total /
+				(double)epq->packets /
+				(double)epq->adapter->cycs_per_us;
+			double current_us = (double)epq->cyc_diff_curr /
+				(double)epq->adapter->cycs_per_us;
+
+			if (epq->dma_test.pci_addr)
+				printf("\tRC->EP average latency us:%f,"
+					" current latency us:%f RX burst depth:%f\n",
+					av_us, current_us, rx_burst_av_depth);
+			else
+				printf("\tEP->RC->EP average latency us:%f,"
+					" current latency us:%f\n"
+					"\tTX burst depth:%f, RX burst depth:%f\n",
+					av_us, current_us, tx_burst_av_depth,
+					rx_burst_av_depth);
+		}
+
+		if (epq->type == LSINIC_QUEUE_TX && epq->cyc_diff_total &&
+			epq->dma_test.pci_addr) {
+			double tx_burst_av_depth = epq->packets /
+				epq->loop_avail;
+			double av_us = (double)epq->cyc_diff_total /
+				(double)epq->packets /
+				(double)epq->adapter->cycs_per_us;
+			double current_us = (double)epq->cyc_diff_curr /
+				(double)epq->adapter->cycs_per_us;
+
+			printf("\tEP->RC average latency us:%f,"
+				" current latency us:%f TX burst depth:%f\n",
+				av_us, current_us, tx_burst_av_depth);
+		}
+
 		if (core_mask)
 			(*core_mask) |= (((uint64_t)1) << epq->core_id);
 	} else {

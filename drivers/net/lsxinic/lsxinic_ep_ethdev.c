@@ -791,6 +791,27 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	return 0;
 }
 
+#ifdef LSXINIC_LATENCY_TEST
+static uint64_t s_cycs_per_us;
+static uint64_t
+calculate_cycles_per_us(void)
+{
+	uint64_t start_cycles, end_cycles;
+
+	if (s_cycs_per_us)
+		return s_cycs_per_us;
+
+	start_cycles = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end_cycles = rte_get_timer_cycles();
+	s_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
+	LSXINIC_PMD_INFO("Cycles per us is: %ld",
+		(unsigned long)s_cycs_per_us);
+
+	return s_cycs_per_us;
+}
+#endif
+
 static int
 lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 {
@@ -860,6 +881,9 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	}
 	lsinic_set_init_flag(adapter);
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
+#ifdef LSXINIC_LATENCY_TEST
+	adapter->cycs_per_us = calculate_cycles_per_us();
+#endif
 
 	return 0;
 }

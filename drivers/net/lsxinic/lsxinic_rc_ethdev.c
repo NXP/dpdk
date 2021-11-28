@@ -246,6 +246,9 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 
 	lxsnic_up_complete(adapter);
 
+	if (adapter->dmapci_dbg)
+		goto skip_wait_tx_bd_ready;
+
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
 		ret = lxsnic_wait_tx_bd_ready(tx_queue);
@@ -253,6 +256,7 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			return ret;
 	}
 
+skip_wait_tx_bd_ready:
 	if (print_status) {
 		if (pthread_create(&debug_pid, NULL,
 			lxsnic_rc_debug_status, dev)) {

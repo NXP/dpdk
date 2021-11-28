@@ -160,11 +160,14 @@ static void lsinic_print_ep_status(void)
 		eth_dev = dev->eth_dev;
 		adapter = eth_dev->process_private;
 
-		if (adapter->ep_state != LSINIC_DEV_UP)
+		if (adapter->ep_state != LSINIC_DEV_UP) {
+			dev = (struct rte_lsx_pciep_device *)
+				TAILQ_NEXT(dev, next);
 			continue;
+		}
 
 		printf("\n\nPF%d", dev->pf);
-		if (dev->vf >= 0)
+		if (dev->is_vf)
 			printf("-VF%d", dev->vf);
 		printf("-Port%d -- statistics:\n", eth_dev->data->port_id);
 
@@ -186,9 +189,14 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	uint32_t command, status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0;
+	struct lsinic_queue *queue = NULL;
 
 	if (penv)
 		print_status = atoi(penv);
+
+#ifdef LSXINIC_LATENCY_TEST
+		print_status = 1;
+#endif
 
 	while (1) {
 		first_dev = lsx_pciep_first_dev();
@@ -204,6 +212,11 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			}
 			reg = LSINIC_REG_OFFSET(adapter->hw_addr,
 					LSINIC_DEV_REG_OFFSET);
+			if (dev->eth_dev->data->rx_queues) {
+				queue = dev->eth_dev->data->rx_queues[0];
+				if (queue && queue->dma_test.pci_addr)
+					print_status = 1;
+			}
 
 			command = LSINIC_READ_REG(&reg->command);
 			if (command == PCIDEV_COMMAND_IDLE) {

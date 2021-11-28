@@ -30,7 +30,16 @@
 #define rte_lsinic_prefetch(p)   do {} while (0)
 #endif
 
+#ifdef RTE_ARCH_ARM64
+#define lsinic_invalidate(p) \
+	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+#else
+#define lsinic_invalidate(p)
+#endif
+
 #define LSINIC_RING_FULL_THRESH_COUNT 1
+
+#undef LSXINIC_LATENCY_TEST
 
 /**
  * Structure associated with each descriptor of the TX ring of a TX queue.
@@ -62,7 +71,10 @@ enum lsinic_pci_dma_test_status {
 struct lsinic_pci_dma_test {
 	uint64_t pci_addr;
 	enum lsinic_pci_dma_test_status status;
-	uint32_t pkt_len;
+	uint16_t pkt_len;
+	struct rte_qdma_queue_config qdma_cfg;
+	uint16_t dma_vq;
+	uint16_t latency_burst;
 	struct rte_mbuf **mbufs;
 	struct rte_ring *jobs_ring;
 };
@@ -88,6 +100,8 @@ struct lsinic_queue {
 	enum LSINIC_QEUE_STATUS status;
 	/* flag */
 	uint32_t flag;
+	uint64_t cyc_diff_total;
+	uint64_t cyc_diff_curr;
 
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 

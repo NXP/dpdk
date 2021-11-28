@@ -138,6 +138,8 @@ struct lsinic_adapter {
 
 	uint32_t merge_threshold;
 	uint32_t data_room_size;
+
+	uint64_t cycs_per_us;
 };
 
 #define LSINIC_DEV_PRIVATE_TO_ADAPTER(data)\
