@@ -29,6 +29,8 @@ extern "C" {
 #include <rte_dev.h>
 #include <rte_bus.h>
 #include <rte_tailq.h>
+#include <rte_memzone.h>
+#include <rte_pci.h>
 
 struct rte_lsx_pciep_driver;
 struct rte_lsx_pciep_device;
@@ -67,7 +69,6 @@ enum lsx_pcie_pf_idx {
 #define LSX_PCIEP_MMSI_INT		(2)
 
 /* Not include MSIX bar.*/
-#define LSX_PCIEP_INBOUND_BAR_NUM (4)
 #define LSX_PCIEP_INBOUND_MIN_BAR_SIZE (4096)
 
 #define CFG_1M_SIZE		(1024 * 1024ULL)
@@ -118,7 +119,7 @@ struct rte_lsx_pciep_device {
 	uint64_t rbp_win_size;
 	int rbp_win_init_flag;
 
-	uint8_t *virt_addr[LSX_PCIEP_INBOUND_BAR_NUM];
+	uint8_t *virt_addr[PCI_MAX_RESOURCE];
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint32_t mmsi_flag;
 	uint32_t init_flag;
@@ -204,6 +205,10 @@ lsx_pciep_ctl_get_device_id(uint8_t pcie_idx,
 int
 lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, uint64_t size);
+
+int
+lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx, const struct rte_memzone *mz, int vf_isolate);
 
 int
 lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev);

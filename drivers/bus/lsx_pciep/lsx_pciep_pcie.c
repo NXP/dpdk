@@ -944,138 +944,6 @@ pcie_mapping_start:
 	return ep_nb;
 }
 
-static int
-lsx_pciep_ctl_init_inbound(struct lsx_pciep_ctl_dev *ctldev,
-	uint8_t bar_num, size_t bar_size, uint8_t pf,
-	int is_vf, uint8_t vf)
-{
-	int create = 0;
-	struct lsx_pciep_ib_mem *ib_mem;
-	struct lsx_pciep_inbound_bar *bar_mem;
-	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
-	struct lsx_pciep_ops *ops = ctldev->ops;
-	char mz_name[RTE_MEMZONE_NAMESIZE];
-	const struct rte_memzone *mz;
-	size_t mz_size;
-
-	if (bar_size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
-		bar_size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
-	if (!rte_is_power_of_2(bar_size))
-		bar_size = rte_align64pow2(bar_size);
-
-	if (!ops) {
-		LSX_PCIEP_BUS_ERR("%s no ops", __func__);
-
-		return -EINVAL;
-	}
-
-	ib_mem = &ctlhw->ib_mem;
-
-	if (bar_num >= LSX_PCIEP_INBOUND_BAR_NUM) {
-		LSX_PCIEP_BUS_ERR("%s too large bar number(%d)",
-			__func__, bar_num);
-
-		return -EINVAL;
-	}
-
-	if (pf >= PF_MAX_NB) {
-		LSX_PCIEP_BUS_ERR("%s invalid pf(%d)", __func__, pf);
-
-		return -EINVAL;
-	}
-
-	if (!is_vf) {
-		if (ib_mem->pf_mz[pf][bar_num]) {
-			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
-				ib_mem->pf_mz[pf][bar_num]->name);
-
-			return 0;
-		}
-		bzero(mz_name, RTE_MEMZONE_NAMESIZE);
-		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
-			"mz_pciep%d_pf%d_bar%d",
-			ctlhw->index, pf, bar_num);
-		create = 1;
-	} else {
-		if (vf >= PCIE_MAX_VF_NUM) {
-			LSX_PCIEP_BUS_ERR("%s invalid vf(%d)", __func__, vf);
-
-			return -EINVAL;
-		}
-		if (!ib_mem->vf_mz[pf][bar_num]) {
-			bzero(mz_name, RTE_MEMZONE_NAMESIZE);
-			snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
-				"mz_pciep%d_pf%d_vf_bar%d",
-				ctlhw->index, pf, bar_num);
-			create = 1;
-		}
-	}
-
-	if (create) {
-		if (is_vf)
-			mz_size = bar_size * PCIE_MAX_VF_NUM * 2;
-		else
-			mz_size = bar_size * 2;
-		mz = rte_memzone_reserve_aligned(mz_name,
-					mz_size, 0, RTE_MEMZONE_IOVA_CONTIG,
-					mz_size);
-		if (!mz || !mz->iova || !mz->addr) {
-			LSX_PCIEP_BUS_ERR("Reserve %s memory(%zuB) failed",
-				mz_name, bar_size);
-
-			return -ENOMEM;
-		}
-		LSX_PCIEP_BUS_INFO("%s len(%d) iova(0x%lx~0x%lx) %s",
-			mz_name, (int)mz_size, mz->iova, mz->iova + mz_size,
-			"reserved for inbound window");
-		if (!is_vf)
-			ib_mem->pf_mz[pf][bar_num] = mz;
-		else
-			ib_mem->vf_mz[pf][bar_num] = mz;
-
-		if (!lsx_pciep_hw_sim_get(ctlhw->index)) {
-			ops->pcie_set_ib_win(ctldev,
-				LSX_PCIEP_CTRL_IB_IDX(pf, is_vf, bar_num),
-				pf, is_vf,
-				bar_num,
-				mz->iova, mz->len, 0);
-		}
-	}
-
-	if (!is_vf) {
-		mz = ib_mem->pf_mz[pf][bar_num];
-		bar_mem = &ib_mem->pf_ib_bar[pf][bar_num];
-		bzero(bar_mem->name, RTE_DEV_NAME_MAX_LEN);
-		snprintf(bar_mem->name,
-			RTE_DEV_NAME_MAX_LEN - 1,
-			"pciep%d_pf%d_bar%d",
-			ctlhw->index, pf, bar_num);
-		bar_mem->inbound_virt = (uint8_t *)mz->addr;
-		bar_mem->inbound_iova = mz->iova;
-		bar_mem->size = mz->len;
-	} else {
-		mz = ib_mem->vf_mz[pf][bar_num];
-		bar_mem = &ib_mem->vf_ib_bar[pf][vf][bar_num];
-		if (bar_mem->inbound_virt) {
-			LSX_PCIEP_BUS_INFO("Inbound bar(%s) detected",
-				bar_mem->name);
-
-			return 0;
-		}
-		snprintf(bar_mem->name,
-			RTE_DEV_NAME_MAX_LEN - 1,
-			"pciep%d_pf%d_vf%d_bar%d",
-			ctlhw->index, pf, vf, bar_num);
-		bar_mem->inbound_virt =
-			(uint8_t *)mz->addr + bar_size * vf;
-		bar_mem->inbound_iova =
-			mz->iova + bar_size * vf;
-		bar_mem->size = bar_size;
-	}
-
-	return 0;
-}
-
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx)
 {
 	struct lsx_pciep_ctl_dev *ctldev =
@@ -1334,8 +1202,7 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 
 	snprintf(file_name, sizeof(file_name), "%s/resource", dir_name);
 	for (i = 0; i < PCI_MAX_RESOURCE; i++) {
-		if (i < LSX_PCIEP_INBOUND_BAR_NUM &&
-			ctlhw->ib_mem.pf_ib_bar[pf][i].size) {
+		if (ctlhw->ib_mem.pf_ib_bar[pf][i].size) {
 			sprintf(&buf[idx], "0x%016lx",
 				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_phy);
 			idx += 18;
@@ -1548,18 +1415,150 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	int pf = ep_dev->pf;
 	int vf = ep_dev->vf;
 	int is_vf = ep_dev->is_vf;
-	int ret;
 	struct lsx_pciep_ctl_dev *ctldev = &s_pctldev[pcie_id];
 	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
 	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
+	char mz_name[RTE_MEMZONE_NAMESIZE];
+	const struct rte_memzone *mz;
+	size_t mz_size;
 
-	ret = lsx_pciep_ctl_init_inbound(ctldev, bar_idx, size,
-		pf, is_vf, vf);
-	if (ret) {
-		LSX_PCIEP_BUS_ERR("%s Inbound window init failed!",
-			ep_dev->device.name);
+	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
+		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
+	if (!rte_is_power_of_2(size))
+		size = rte_align64pow2(size);
 
-		return ret;
+	if (bar_idx >= PCI_MAX_RESOURCE) {
+		LSX_PCIEP_BUS_ERR("%s too large bar number(%d)",
+			__func__, bar_idx);
+
+		return -EINVAL;
+	}
+
+	bzero(mz_name, RTE_MEMZONE_NAMESIZE);
+
+	if (is_vf) {
+		if (ib_mem->vf_mz[pf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
+				ib_mem->vf_mz[pf][bar_idx]->name);
+
+			ep_dev->virt_addr[bar_idx] =
+				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
+
+			return 0;
+		}
+		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
+			"mz_pciep%d_pf%d_vf_bar%d",
+			ctlhw->index, pf, bar_idx);
+		mz_size = size * PCIE_MAX_VF_NUM * 2;
+	} else {
+		if (ib_mem->pf_mz[pf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
+				ib_mem->pf_mz[pf][bar_idx]->name);
+
+			ep_dev->virt_addr[bar_idx] =
+				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
+
+			return 0;
+		}
+		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
+			"mz_pciep%d_pf%d_bar%d",
+			ctlhw->index, pf, bar_idx);
+		mz_size = size * 2;
+	}
+
+	mz = rte_memzone_reserve_aligned(mz_name,
+			mz_size, 0, RTE_MEMZONE_IOVA_CONTIG,
+			mz_size);
+	if (!mz || !mz->iova || !mz->addr) {
+		LSX_PCIEP_BUS_ERR("Reserve %s memory(%zuB) failed",
+			mz_name, mz_size);
+
+		return -ENOMEM;
+	}
+
+	return lsx_pciep_set_ib_win_mz(ep_dev, bar_idx, mz, 1);
+}
+
+int
+lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx, const struct rte_memzone *mz, int vf_isolate)
+{
+	int pcie_id = ep_dev->pcie_id;
+	int pf = ep_dev->pf;
+	int vf = ep_dev->vf;
+	int is_vf = ep_dev->is_vf;
+	int i;
+	struct lsx_pciep_ctl_dev *ctldev = &s_pctldev[pcie_id];
+	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
+	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
+	struct lsx_pciep_inbound_bar *ib_bar;
+	uint64_t vf_size, size = mz->len;
+
+	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
+		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
+	if (!rte_is_power_of_2(size))
+		size = rte_align64pow2(size);
+
+	if (bar_idx >= PCI_MAX_RESOURCE) {
+		LSX_PCIEP_BUS_ERR("%s too large bar number(%d)",
+			__func__, bar_idx);
+
+		return -EINVAL;
+	}
+
+	if (is_vf) {
+		if (ib_mem->vf_mz[pf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
+				ib_mem->vf_mz[pf][bar_idx]->name);
+
+			ep_dev->virt_addr[bar_idx] =
+				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
+
+			return 0;
+		}
+		ib_mem->vf_mz[pf][bar_idx] = mz;
+		if (vf_isolate)
+			vf_size = size / PCIE_MAX_VF_NUM;
+		else
+			vf_size = size;
+		for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
+			ib_bar = &ib_mem->vf_ib_bar[pf][i][bar_idx];
+			snprintf(ib_bar->name,
+				RTE_DEV_NAME_MAX_LEN - 1,
+				"pciep%d_pf%d_vf%d_bar%d",
+				ctlhw->index, pf, vf, bar_idx);
+			ib_bar->inbound_virt =
+				(uint8_t *)mz->addr + vf_size * vf;
+			ib_bar->inbound_iova =
+				mz->iova + vf_size * vf;
+			ib_bar->size = vf_size;
+		}
+	} else {
+		if (ib_mem->pf_mz[pf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
+				ib_mem->pf_mz[pf][bar_idx]->name);
+
+			ep_dev->virt_addr[bar_idx] =
+				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
+
+			return 0;
+		}
+		ib_mem->pf_mz[pf][bar_idx] = mz;
+		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
+		snprintf(ib_bar->name, RTE_DEV_NAME_MAX_LEN - 1,
+			"pciep%d_pf%d_bar%d",
+			pcie_id, pf, bar_idx);
+		ib_bar->inbound_virt = (uint8_t *)mz->addr;
+		ib_bar->inbound_iova = mz->iova;
+		ib_bar->size = size;
+	}
+
+	if (!lsx_pciep_hw_sim_get(ctlhw->index)) {
+		ctldev->ops->pcie_set_ib_win(ctldev,
+			LSX_PCIEP_CTRL_IB_IDX(pf, is_vf, bar_idx),
+			pf, is_vf,
+			bar_idx,
+			mz->iova, size, 1);
 	}
 
 	if (!is_vf) {

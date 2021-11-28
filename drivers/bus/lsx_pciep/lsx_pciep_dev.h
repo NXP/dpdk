@@ -67,16 +67,16 @@ enum sriov_fun_idx {
 };
 
 struct lsx_pciep_ib_mem {
-	const struct rte_memzone
-		*pf_mz[PF_MAX_NB][LSX_PCIEP_INBOUND_BAR_NUM];
+	const struct rte_memzone *
+		pf_mz[PF_MAX_NB][PCI_MAX_RESOURCE];
 	/* All the VFs of PF share one mz.*/
-	const struct rte_memzone
-		*vf_mz[PF_MAX_NB][LSX_PCIEP_INBOUND_BAR_NUM];
+	const struct rte_memzone *
+		vf_mz[PF_MAX_NB][PCI_MAX_RESOURCE];
 
 	struct lsx_pciep_inbound_bar
-		pf_ib_bar[PF_MAX_NB][LSX_PCIEP_INBOUND_BAR_NUM];
+		pf_ib_bar[PF_MAX_NB][PCI_MAX_RESOURCE];
 	struct lsx_pciep_inbound_bar
-		vf_ib_bar[PF_MAX_NB][PCIE_MAX_VF_NUM][LSX_PCIEP_INBOUND_BAR_NUM];
+		vf_ib_bar[PF_MAX_NB][PCIE_MAX_VF_NUM][PCI_MAX_RESOURCE];
 };
 
 /**

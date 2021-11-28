@@ -33,6 +33,9 @@
 #define PCIE_DW_OB_WINS_NUM	(256)
 #define PCIE_DW_IB_WINS_NUM	(24)
 
+#define PCIE_DW_IB_FUN_IDX(pf, is_vf) \
+	(((uint8_t)pf) << 1 | (uint8_t)is_vf)
+
 #define PCIE_MSI_MSG_LADDR_OFF		0x54
 #define PCIE_MSI_MSG_HADDR_OFF		0x58
 #define PCIE_MSI_MSG_DATA_OFF		0x5c
@@ -174,9 +177,9 @@ static void pcie_dw_set_ib_size(uint8_t *bar_base, int bar,
 }
 
 static void
-pcie_dw_set_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx,
-		   int pf, int is_vf,
-		   int bar, uint64_t phys, uint64_t size, int resize)
+pcie_dw_set_ib_win(struct lsx_pciep_ctl_dev *ctldev,
+	int idx, int pf, int is_vf,
+	int bar, uint64_t phys, uint64_t size, int resize)
 {
 	uint32_t ctrl1, ctrl2;
 
@@ -186,6 +189,16 @@ pcie_dw_set_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx,
 
 		rte_write32(0, ctldev->dbi_vir + PCIE_MISC_CONTROL_1_OFF);
 		pcie_dw_set_ib_size(bar_base, bar, size, is_vf);
+	}
+	/** Re-calculate the inbound win idx according to pf and is_vf*/
+	idx = PCIE_DW_IB_FUN_IDX(pf, is_vf) * PCI_MAX_RESOURCE;
+	idx += bar;
+	if (idx >= PCIE_DW_IB_WINS_NUM ||
+		bar >= PCI_MAX_RESOURCE) {
+		LSX_PCIEP_BUS_ERR("Invalid inbound idx(%d) or bar(%d)",
+			idx, bar);
+
+		return;
 	}
 
 	ctrl1 = PCIE_ATU_FUNC_NUM(pf, is_vf, 0) |
