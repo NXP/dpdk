@@ -137,7 +137,7 @@ extern bool dpaa2_enable_ts[];
 extern uint64_t dpaa2_timestamp_rx_dynflag;
 extern int dpaa2_timestamp_dynfield_offset;
 
-/*Externaly defined*/
+/* Externally defined */
 extern const struct rte_flow_ops dpaa2_flow_ops;
 
 extern const struct rte_tm_ops dpaa2_tm_ops;

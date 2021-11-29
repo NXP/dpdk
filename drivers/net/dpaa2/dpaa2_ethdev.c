@@ -151,7 +151,7 @@ dpaa2_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 	PMD_INIT_FUNC_TRACE();
 
 	if (mask & RTE_ETH_VLAN_FILTER_MASK) {
-		/* VLAN Filter not avaialble */
+		/* VLAN Filter not available */
 		if (!priv->max_vlan_filters) {
 			DPAA2_PMD_INFO("VLAN filter not available");
 			return -ENOTSUP;
@@ -988,7 +988,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		cong_notif_cfg.units = DPNI_CONGESTION_UNIT_FRAMES;
 		cong_notif_cfg.threshold_entry = nb_tx_desc;
 		/* Notify that the queue is not congested when the data in
-		 * the queue is below this thershold.(90% of value)
+		 * the queue is below this threshold.(90% of value)
 		 */
 		cong_notif_cfg.threshold_exit = (nb_tx_desc * 9) / 10;
 		cong_notif_cfg.message_ctx = 0;
@@ -1135,7 +1135,7 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev)
  * Dpaa2 link Interrupt handler
  *
  * @param param
- *  The address of parameter (struct rte_eth_dev *) regsitered before.
+ *  The address of parameter (struct rte_eth_dev *) registered before.
  *
  * @return
  *  void
@@ -2307,7 +2307,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		ocfg.oa = 1;
 		/* Late arrival window size disabled */
 		ocfg.olws = 0;
-		/* ORL resource exhaustaion advance NESN disabled */
+		/* ORL resource exhaustion advance NESN disabled */
 		ocfg.oeane = 0;
 		/* Loose ordering enabled */
 		ocfg.oloe = 1;
