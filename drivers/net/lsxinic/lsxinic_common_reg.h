@@ -197,8 +197,8 @@ struct lsinic_ring_reg {
 	uint32_t isr;
 	uint32_t r_descl;	/* desc PCI low address On RC side */
 	uint32_t r_desch;	/* desc PCI high address On RC side */
-	uint32_t r_completel;	/* complete PCI low address On RC side */
-	uint32_t r_completeh;	/* complete PCI high address On RC side */
+	uint32_t r_ep2rcl;	/* ep2rc PCI low address On RC side */
+	uint32_t r_ep2rch;	/* ep2rc PCI high address On RC side */
 	uint32_t  resr[1];
 } __packed;
 
@@ -247,12 +247,49 @@ struct lsinic_bd_desc {
 	};
 } __packed;
 
-#define LSINIC_BD_ENTRY_SIZE	sizeof(struct lsinic_bd_desc)
-#define LSINIC_BD_ENTRY_COUNT	512
-#define LSINIC_BD_RING_SIZE	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
-#define LSINIC_COMPLETE_RING_SIZE (sizeof(uint8_t) * LSINIC_BD_ENTRY_COUNT)
+#define LSINIC_BD_ENTRY_SIZE sizeof(struct lsinic_bd_desc)
+#define LSINIC_BD_ENTRY_COUNT_SHIFT 9
+#define LSINIC_BD_ENTRY_COUNT (1 << LSINIC_BD_ENTRY_COUNT_SHIFT)
 
-#define LSINIC_RING_SIZE (LSINIC_BD_RING_SIZE + LSINIC_COMPLETE_RING_SIZE)
+#ifdef LSINIC_BD_CTX_IDX_USED
+#define EP2RC_TX_CTX_IDX(cnt_idx) \
+	((cnt_idx) & (LSINIC_BD_ENTRY_COUNT - 1))
+#define EP2RC_TX_CTX_CNT(cnt_idx) \
+	((cnt_idx) >> (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
+
+#define EP2RC_TX_IDX_CNT_SET(cnt_idx, idx, cnt) \
+	(cnt_idx = (idx) | (cnt) << (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
+
+struct ep2rc_tx_notify {
+	uint16_t total_len;
+	uint16_t cnt_idx;
+} __packed;
+#endif
+
+union ep2rc_ring {
+#ifdef LSINIC_BD_CTX_IDX_USED
+	struct ep2rc_tx_notify *tx_notify;
+#endif
+	uint8_t *rx_complete;
+	void *union_ring;
+};
+
+#define LSINIC_BD_RING_SIZE	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
+#ifdef LSINIC_BD_CTX_IDX_USED
+#define LSINIC_EP2RC_RING_MAX_SIZE \
+	(sizeof(struct ep2rc_tx_notify) * LSINIC_BD_ENTRY_COUNT)
+
+#define LSINIC_EP2RC_NOTIFY_RING_SIZE LSINIC_EP2RC_RING_MAX_SIZE
+
+#else
+#define LSINIC_EP2RC_RING_MAX_SIZE \
+	(sizeof(uint8_t) * LSINIC_BD_ENTRY_COUNT)
+#endif
+
+#define LSINIC_EP2RC_COMPLETE_RING_SIZE \
+	(sizeof(uint8_t) * LSINIC_BD_ENTRY_COUNT)
+
+#define LSINIC_RING_SIZE (LSINIC_BD_RING_SIZE + LSINIC_EP2RC_RING_MAX_SIZE)
 
 #define LSINIC_TX_RING_BD_MAX_SIZE \
 	(LSINIC_RING_SIZE * LSINIC_RING_MAX_COUNT)
@@ -334,8 +371,9 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 #define LSINIC_CAP_XFER_PKT_MERGE 0x00000002
 #define LSINIC_CAP_XFER_TX_BD_UPDATE 0x00000004
 #define LSINIC_CAP_XFER_RX_BD_UPDATE 0x00000008
-#define LSINIC_CAP_XFER_COMPLETE_RING 0x00000010
-#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000020
+#define LSINIC_CAP_XFER_EP2RC_COMPLETE_RING 0x00000010
+#define LSINIC_CAP_XFER_EP2RC_NOTIFY_RING 0x00000020
+#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000040
 
 #define LSXINIC_VF_AVAILABLE (((uint32_t)1) << 15)
 

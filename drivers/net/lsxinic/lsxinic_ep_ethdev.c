@@ -1282,11 +1282,11 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
 	adapter->tx_pcidma_dbg = rc_reg_addr;
 	adapter->complete_src =
-		rte_malloc(NULL, LSINIC_COMPLETE_RING_SIZE,
-			LSINIC_COMPLETE_RING_SIZE);
+		rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
+			LSINIC_EP2RC_COMPLETE_RING_SIZE);
 	if (adapter->complete_src) {
 		memset(adapter->complete_src, RING_BD_HW_COMPLETE,
-			LSINIC_COMPLETE_RING_SIZE);
+			LSINIC_EP2RC_COMPLETE_RING_SIZE);
 	} else {
 		LSXINIC_PMD_WARN("complete src malloc failed");
 	}

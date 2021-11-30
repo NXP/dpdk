@@ -87,10 +87,10 @@ struct lsinic_pci_dma_test {
 
 #define SP_RING_MAX_NUM (1024)
 
-enum complete_notify_type {
-	NONE_COMPLETE_NOTIFY,
-	SINGLE_COMPLETE_NOTIFY,
-	BURST_COMPLETE_NOTIFY
+enum ep2rc_update_type {
+	EP2RC_BD_UPDATE,
+	EP2RC_SINGLE_UPDATE,
+	EP2RC_BURST_UPDATE
 };
 
 struct lsinic_queue {
@@ -111,9 +111,11 @@ struct lsinic_queue {
 
 	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP mem */
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
-	uint8_t *rc_complete; /* complete point to RC mem */
-	enum complete_notify_type com_notify;
-
+	union ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
+	enum ep2rc_update_type ep2rc_update;
+#ifdef LSINIC_BD_CTX_IDX_USED
+	struct ep2rc_tx_notify *local_notify;
+#endif
 	struct lsinic_sw_bd *sw_ring;
 	struct lsinic_sw_bd **sw_bd_pool;
 	int sw_bd_pool_cnt;
@@ -128,6 +130,7 @@ struct lsinic_queue {
 
 	struct rte_qdma_job *e2r_bd_dma_jobs;
 	struct rte_qdma_job *r2e_bd_dma_jobs;
+	uint16_t bd_dma_step;
 	int wdma_bd_start;
 	int wdma_bd_nb;
 
@@ -321,6 +324,32 @@ lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 	}
 #endif
 }
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+static __rte_always_inline void
+lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
+	uint16_t used_idx)
+{
+	struct ep2rc_tx_notify *tx_notify = &queue->ep2rc.tx_notify[used_idx];
+	struct ep2rc_tx_notify *local_notify = &queue->local_notify[used_idx];
+	struct lsinic_bd_desc *ep_bd_desc = &queue->ep_bd_desc[used_idx];
+	uint32_t *local_32 = (uint32_t *)local_notify;
+	uint32_t *remote_32 = (uint32_t *)tx_notify;
+	uint16_t cnt;
+
+	local_notify->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
+	if (ep_bd_desc->len_cmd & LSINIC_BD_CMD_MG) {
+		cnt = ((ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
+			LSINIC_BD_MG_NUM_SHIFT) + 1;
+	} else {
+		cnt = 1;
+	}
+	EP2RC_TX_IDX_CNT_SET(local_notify->cnt_idx,
+		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),
+		cnt);
+	*remote_32 = *local_32;
+}
+#endif
 
 static __rte_always_inline void
 lsinic_bd_read_rc_bd_desc(struct lsinic_queue *queue,

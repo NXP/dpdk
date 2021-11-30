@@ -295,10 +295,10 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_WRITE_REG(&ring_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
-	LSINIC_WRITE_REG(&ring_reg->r_completel,
-		ring->rc_complete_dma & DMA_BIT_MASK(32));
-	LSINIC_WRITE_REG(&ring_reg->r_completeh,
-		ring->rc_complete_dma >> 32);
+	LSINIC_WRITE_REG(&ring_reg->r_ep2rcl,
+		ring->ep2rc_ring_dma & DMA_BIT_MASK(32));
+	LSINIC_WRITE_REG(&ring_reg->r_ep2rch,
+		ring->ep2rc_ring_dma >> 32);
 	/* MSIX setting*/
 	/* Polling mode, no need to send int from EP.*/
 	LSINIC_WRITE_REG(&ring_reg->icr, 0);
@@ -406,20 +406,27 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rx_ring->rc_bd_desc = (struct lsinic_bd_desc *)((char *)
 			adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
 			queue_idx * LSINIC_RING_SIZE);
-	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE_RING) {
-		rx_ring->rc_complete = (uint8_t *)rx_ring->rc_bd_desc +
-			LSINIC_BD_RING_SIZE;
+#ifdef LSINIC_BD_CTX_IDX_USED
+	if (adapter->cap & LSINIC_CAP_XFER_EP2RC_NOTIFY_RING) {
+		rx_ring->ep2rc.tx_notify =
+			(void *)((uint8_t *)rx_ring->rc_bd_desc +
+				LSINIC_BD_RING_SIZE);
 	} else {
-		rx_ring->rc_complete = NULL;
-		rx_ring->rc_complete_dma = 0;
+		rx_ring->ep2rc.tx_notify = NULL;
+		rx_ring->ep2rc_ring_dma = 0;
 	}
+#else
+	rx_ring->ep2rc_ring_dma = 0;
+#endif
 	rx_ring->rc_bd_desc_dma = ((uint64_t)adapter->rc_bd_desc_phy) +
 		(uint64_t)((uint64_t)rx_ring->rc_bd_desc -
 				(uint64_t)adapter->rc_bd_desc_base);
-	if (rx_ring->rc_complete) {
-		rx_ring->rc_complete_dma = rx_ring->rc_bd_desc_dma +
+#ifdef LSINIC_BD_CTX_IDX_USED
+	if (rx_ring->ep2rc.tx_notify) {
+		rx_ring->ep2rc_ring_dma = rx_ring->rc_bd_desc_dma +
 			LSINIC_BD_RING_SIZE;
 	}
+#endif
 
 	LSXINIC_PMD_DBG("RX phy_base: %"
 		PRIX64 ", queue[ %" PRId32 " ] "
@@ -437,12 +444,12 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rx_ring->q_mbuf =
 		rte_zmalloc(NULL, sizeof(void *) * rx_ring->count, 64);
 	RTE_ASSERT(rx_ring->q_mbuf);
-#endif
 
-	if (rx_ring->rc_complete) {
-		memset(rx_ring->rc_complete, RING_BD_READY,
-			LSINIC_COMPLETE_RING_SIZE);
+	if (rx_ring->ep2rc.tx_notify) {
+		memset((uint8_t *)rx_ring->ep2rc.tx_notify,
+			0, LSINIC_EP2RC_NOTIFY_RING_SIZE);
 	}
+#endif
 
 	lxsnic_configure_rx_ring(adapter, rx_ring);
 	LSXINIC_PMD_DBG("%s %d:desc:%p %" PRIu64
@@ -475,9 +482,11 @@ lxsnic_dev_tx_queue_release(void *txq)
 	if (tx_ring->rc_bd_desc)
 		memset(tx_ring->rc_bd_desc, 0, LSINIC_BD_RING_SIZE);
 
-	if (tx_ring->rc_complete)
-		memset(tx_ring->rc_complete, 0, LSINIC_COMPLETE_RING_SIZE);
-
+#ifdef LSINIC_BD_CTX_IDX_USED
+	if (tx_ring->ep2rc.tx_notify)
+		memset((uint8_t *)tx_ring->ep2rc.tx_notify, 0,
+			LSINIC_EP2RC_NOTIFY_RING_SIZE);
+#endif
 	if (tx_ring->rc_reg)
 		memset(tx_ring->rc_reg, 0, sizeof(*tx_ring->rc_reg));
 
@@ -505,9 +514,9 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	LSINIC_WRITE_REG(&ring_reg->pir, 0); /* TDT */
 	LSINIC_WRITE_REG(&ring_reg->cir, 0); /* TDH */
 
-	if (ring->rc_complete) {
-		memset(ring->rc_complete, RING_BD_READY,
-			LSINIC_COMPLETE_RING_SIZE);
+	if (ring->ep2rc.rx_complete) {
+		memset(ring->ep2rc.rx_complete, RING_BD_READY,
+			LSINIC_EP2RC_COMPLETE_RING_SIZE);
 	}
 
 	if (ring->rc_bd_desc) {
@@ -516,10 +525,10 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_WRITE_REG(&ring_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
-	LSINIC_WRITE_REG(&ring_reg->r_completel,
-		ring->rc_complete_dma & DMA_BIT_MASK(32));
-	LSINIC_WRITE_REG(&ring_reg->r_completeh,
-		ring->rc_complete_dma >> 32);
+	LSINIC_WRITE_REG(&ring_reg->r_ep2rcl,
+		ring->ep2rc_ring_dma & DMA_BIT_MASK(32));
+	LSINIC_WRITE_REG(&ring_reg->r_ep2rch,
+		ring->ep2rc_ring_dma >> 32);
 
 	LSINIC_WRITE_REG(&ring_reg->iir, 0);
 
@@ -584,21 +593,21 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		((char *)adapter->rc_bd_desc_base +
 		LSINIC_TX_BD_OFFSET +
 		queue_idx * LSINIC_RING_SIZE);
-	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE_RING) {
-		tx_ring->rc_complete =
+	if (adapter->cap & LSINIC_CAP_XFER_EP2RC_COMPLETE_RING) {
+		tx_ring->ep2rc.rx_complete =
 			(uint8_t *)tx_ring->rc_bd_desc +
 			LSINIC_BD_RING_SIZE;
 	} else {
-		tx_ring->rc_complete = NULL;
-		tx_ring->rc_complete_dma = 0;
+		tx_ring->ep2rc.rx_complete = NULL;
+		tx_ring->ep2rc_ring_dma = 0;
 	}
 	tx_ring->rc_bd_desc_dma =
 		((uint64_t)adapter->rc_bd_desc_phy) +
 		(uint64_t)((uint64_t)tx_ring->rc_bd_desc -
 		(uint64_t)adapter->rc_bd_desc_base);
 
-	if (tx_ring->rc_complete) {
-		tx_ring->rc_complete_dma = tx_ring->rc_bd_desc_dma +
+	if (tx_ring->ep2rc.rx_complete) {
+		tx_ring->ep2rc_ring_dma = tx_ring->rc_bd_desc_dma +
 			LSINIC_BD_RING_SIZE;
 	}
 
@@ -1183,7 +1192,7 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 {
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
-	char *penv = getenv("LSINIC_NO_COMPLETE_RING");
+	char *penv;
 
 	/* get ring setting */
 	adapter->tx_ring_bd_count = LSINIC_READ_REG(&eth_reg->tx_entry_num);
@@ -1191,10 +1200,15 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 	adapter->num_tx_queues = LSINIC_READ_REG(&eth_reg->tx_ring_num);
 	adapter->num_rx_queues = LSINIC_READ_REG(&eth_reg->rx_ring_num);
 
-	if (penv && atoi(penv))
-		adapter->cap = 0;
-	else
-		adapter->cap = LSINIC_CAP_XFER_COMPLETE_RING;
+	penv = getenv("LSINIC_NO_EP2RC_COMPLETE_RING");
+	if (!(penv && atoi(penv)))
+		adapter->cap = LSINIC_CAP_XFER_EP2RC_COMPLETE_RING;
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+	penv = getenv("LSINIC_NO_EP2RC_NOTIFY_RING");
+	if (!(penv && atoi(penv)))
+		adapter->cap |= LSINIC_CAP_XFER_EP2RC_NOTIFY_RING;
+#endif
 
 	if (LSINIC_READ_REG(&eth_reg->cap) & LSINIC_CAP_XFER_COMPLETE)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;

@@ -172,10 +172,10 @@ struct lxsnic_ring {
 	uint16_t count;			  /* amount of bd descriptors */
 	struct lsinic_bd_desc *ep_bd_desc;/* bd desc point to EP memory */
 	struct lsinic_bd_desc *rc_bd_desc;
-	uint8_t *rc_complete;
+	union ep2rc_ring ep2rc;
 	/* bd desc point to RC(local) memory */
 	dma_addr_t rc_bd_desc_dma;	  /* phys. address of rc_bd_desc */
-	dma_addr_t rc_complete_dma;	  /* phys. address of rc_complete */
+	dma_addr_t ep2rc_ring_dma;	  /* phys. address of ep2rc_ring */
 	struct lsinic_ring_reg *ep_reg;	  /* ring reg point to EP memory */
 	struct lsinic_ring_reg *rc_reg;	  /* ring reg point to RC memory */
 	dma_addr_t rc_reg_dma;		  /* phys. address of rc_reg */
