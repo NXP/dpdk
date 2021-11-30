@@ -159,15 +159,15 @@ static int lsx_pciep_ctl_process_map(void)
 				return -ENOMEM;
 			}
 			ctldev->out_vir =
-				lsx_pciep_map_region(ctlhw->out_base,
-					ctlhw->out_size);
+				lsx_pciep_map_region(ctlhw->out_map_start,
+					ctlhw->out_map_size);
 			if (!ctldev->out_vir) {
 				LSX_PCIEP_BUS_ERR("Failed to map outbound");
 
 				return -ENOMEM;
 			}
 			LSX_PCIEP_BUS_INFO(OB_MAP_DUMP_FORMAT(i,
-				ctlhw->out_size, ctlhw->out_base,
+				ctlhw->out_map_size, ctlhw->out_map_start,
 				ctldev->out_vir));
 			ep_nb += ctlhw->function_num;
 		}
@@ -605,15 +605,21 @@ lsx_pciep_hw_set_type(void)
 }
 
 static int
-lsx_pciep_hw_enable_clear_inbound(int clear_ib)
+lsx_pciep_hw_enable_clear_inbound(void)
 {
-	int i;
+	int i, clear_win;
+	char *penv;
+	char env[64];
 
-	if (!s_pctl_hw)
-		return -ENODEV;
-
-	for (i = 0; i < LSX_MAX_PCIE_NB; i++)
-		s_pctl_hw[i].clear_ib = clear_ib;
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+		sprintf(env, "LSX_PCIE%d_CLEAR_WINDOWS", i);
+		penv = getenv(env);
+		if (penv)
+			clear_win = atoi(penv);
+		else
+			clear_win = 0;
+		s_pctldev[i].clear_win = clear_win;
+	}
 
 	return 0;
 }
@@ -702,85 +708,103 @@ lsx_pciep_hw_out_base(struct lsx_pciep_ctl_hw *ctlhw,
 	return 0;
 }
 
-static void
-lsx_pciep_hw_update_dma_addr(struct lsx_pciep_ctl_hw *ctlhw)
-{
-	if (ctlhw->rbp) {
-		if (ctlhw->type == PEX_LX2160_REV1 ||
-			ctlhw->type == PEX_LX2160_REV2)
-			ctlhw->dma_out_base = PCI_DMA_RBP_1T_BASE;
-		else
-			ctlhw->dma_out_base = PCI_DMA_RBP_0_BASE;
-	} else {
-		ctlhw->dma_out_base = ctlhw->out_base;
-	}
-}
+/** Following file is ued to share PCIe EP outbound configurations
+ * between multiple standalone processes. Each process reads
+ * the windows configurations writen by previous process and writes
+ * it's configures into file for next process to occupy outbound windows.
+ */
+
+#define LSX_OB_SHARED_SCH_NM "/tmp/lsx_ob_shared_scheme"
+
+struct lsx_pcie_ctl_shared_sch {
+	uint64_t ob_offset_start;
+	uint16_t ob_win_start;
+	uint16_t rsv[3];
+};
 
 static int
 lsx_pciep_ctl_ob_win_scheme(struct lsx_pciep_ctl_hw *ctlhw)
 {
 	int idx = 0;
-	uint64_t current_offset;
+	uint64_t current_offset = 0;
 	uint16_t current_win_idx = 0, i, j;
 	struct lsx_pciep_ob_win *ob_info;
+	size_t f_ret;
+	FILE *f_scheme;
+	struct lsx_pcie_ctl_shared_sch ob_sch;
 
-	if (ctlhw->rbp) {
-		ctlhw->out_win_size = CFG_SHAD_OB_SIZE;
-		ctlhw->out_win_per_fun = LSX_PCIEP_RBP_OB_WIN_NB;
-		ctlhw->out_size_per_fun = ctlhw->out_win_size *
-			ctlhw->out_win_per_fun;
-		return 0;
-	}
-
-	if (ctlhw->type == PEX_LX2160_REV2 ||
-		ctlhw->type == PEX_LS208X)
-		ctlhw->out_win_size = CFG_4G_SIZE;
-	else
-		ctlhw->out_win_size = CFG_32G_SIZE;
-
-	if (ctlhw->ob_policy == LSX_PCIEP_OB_SHARE) {
-		/* All the PF/VFs share global outbound windows,
-		 * in case PF/VFs devices are only mapped into
-		 * same VM or host.
-		 */
-		ctlhw->out_offset = 0;
-		if (ctlhw->type == PEX_LX2160_REV2 ||
-			ctlhw->type == PEX_LS208X) {
-			ctlhw->out_size = CFG_32G_SIZE;
-			ctlhw->out_size_per_fun = CFG_32G_SIZE;
-		} else {
-			ctlhw->out_size = CFG_1T_SIZE;
-			ctlhw->out_size_per_fun = CFG_1T_SIZE;
-		}
-		ctlhw->out_win_start = 0;
-		ctlhw->out_win_per_fun =
-			ctlhw->out_size_per_fun / ctlhw->out_win_size;
-
-		return 0;
-	}
-
-	ctlhw->out_offset = 0;
-	ctlhw->out_win_start = 0;
-
+	/** Hardware max outbound size.
+	 */
 	if (ctlhw->type == PEX_LX2160_REV2 ||
 		ctlhw->type == PEX_LS208X)
 		ctlhw->out_size = CFG_32G_SIZE;
 	else
 		ctlhw->out_size = CFG_1T_SIZE;
 
-	ctlhw->out_size_per_fun =
-		ctlhw->out_size / ctlhw->function_num;
-	if (ctlhw->out_size_per_fun < ctlhw->out_win_size) {
-		LSX_PCIEP_BUS_ERR("Too many functions(%d)",
-			ctlhw->function_num);
+	if (ctlhw->rbp) {
+		ctlhw->out_win_size = CFG_SHAD_OB_SIZE;
+		ctlhw->out_win_per_fun = LSX_PCIEP_RBP_OB_WIN_NB;
+		ctlhw->out_size_per_fun = ctlhw->out_win_size *
+			ctlhw->out_win_per_fun;
 
-		return -ENODEV;
+		ctlhw->out_map_size = ctlhw->out_size_per_fun *
+			ctlhw->function_num;
+	} else {
+		/** Hardware max window size.
+		 */
+		if (ctlhw->type == PEX_LX2160_REV2 ||
+			ctlhw->type == PEX_LS208X)
+			ctlhw->out_win_size = CFG_4G_SIZE;
+		else
+			ctlhw->out_win_size = CFG_32G_SIZE;
+
+		if (ctlhw->ob_policy == LSX_PCIEP_OB_FUN_IDX) {
+			ctlhw->out_size_per_fun =
+				ctlhw->out_size / ctlhw->function_num;
+		} else {
+			/* All the PF/VFs share global outbound windows,
+			 * in case PF/VFs devices are only mapped into
+			 * same VM or host.
+			 */
+			ctlhw->out_size_per_fun = ctlhw->out_size;
+		}
+		ctlhw->out_win_per_fun =
+			ctlhw->out_size_per_fun / ctlhw->out_win_size;
+		if (!ctlhw->out_win_per_fun) {
+			LSX_PCIEP_BUS_ERR("Error out_win_per_fun");
+
+			return -ENODEV;
+		}
+		ctlhw->out_map_size = ctlhw->out_size;
 	}
-	ctlhw->out_win_per_fun =
-		ctlhw->out_size_per_fun / ctlhw->out_win_size;
 
-	current_offset = ctlhw->out_offset;
-	current_win_idx = ctlhw->out_win_start;
+	if (!ctlhw->rbp && ctlhw->ob_policy == LSX_PCIEP_OB_SHARE) {
+		ctlhw->out_map_start = ctlhw->out_base;
+		ctlhw->out_win_start = 0;
+		goto skip_ob_win_cfg;
+	}
+
+	f_scheme = fopen(LSX_OB_SHARED_SCH_NM, "rb");
+	if (f_scheme) {
+		f_ret = fread(&ob_sch,
+			sizeof(struct lsx_pcie_ctl_shared_sch),
+			1, f_scheme);
+		if (f_ret == 1) {
+			current_offset = ob_sch.ob_offset_start;
+			current_win_idx = ob_sch.ob_win_start;
+		} else {
+			current_offset = 0;
+			current_win_idx = 0;
+		}
+		fclose(f_scheme);
+	} else {
+		current_offset = 0;
+		current_win_idx = 0;
+	}
+
+	ctlhw->out_map_start = ctlhw->out_base +
+		current_offset;
+	ctlhw->out_win_start = current_win_idx;
 
 	if (ctlhw->pf_enable[PF0_IDX]) {
 		ob_info = &ctlhw->ob_win[idx];
@@ -822,6 +846,21 @@ lsx_pciep_ctl_ob_win_scheme(struct lsx_pciep_ctl_hw *ctlhw)
 			idx++;
 		}
 	}
+skip_ob_win_cfg:
+
+	if (ctlhw->ob_policy != LSX_PCIEP_OB_SHARE) {
+		f_scheme = fopen(LSX_OB_SHARED_SCH_NM, "wb");
+		ob_sch.ob_offset_start = current_offset;
+		ob_sch.ob_win_start = current_win_idx;
+		f_ret = fwrite(&ob_sch,
+			sizeof(struct lsx_pcie_ctl_shared_sch),
+			1, f_scheme);
+		if (f_ret != 1) {
+			LSX_PCIEP_BUS_ERR("%s write failed",
+				LSX_OB_SHARED_SCH_NM);
+		}
+		fclose(f_scheme);
+	}
 
 	return 0;
 }
@@ -839,7 +878,7 @@ lsx_pciep_find_all(void)
 	if (ep_nb > 0) {
 		LSX_PCIEP_BUS_INFO("PCIe EP sim finds %d pcie ep(s)", ep_nb);
 		/** Simulator support only.*/
-		goto skip_hw_init;
+		goto pcie_mapping_start;
 	}
 
 	ret = of_init();
@@ -886,7 +925,6 @@ lsx_pciep_find_all(void)
 		if (lsx_pciep_ctl_is_ep(ctldev)) {
 			ret = lsx_pciep_hw_out_base(ctlhw, pcie_node);
 			if (!ret) {
-				lsx_pciep_hw_update_dma_addr(ctlhw);
 				ret = lsx_pciep_ctl_ob_win_scheme(ctlhw);
 				if (ret) {
 					LSX_PCIEP_BUS_ERR("Invalid OB win");
@@ -900,7 +938,7 @@ lsx_pciep_find_all(void)
 	}
 
 	LSX_PCIEP_BUS_INFO("PCIe EP finds %d pcie ep(s)", ep_nb);
-skip_hw_init:
+pcie_mapping_start:
 	ep_nb = lsx_pciep_ctl_process_map();
 
 	return ep_nb;
@@ -1048,12 +1086,14 @@ int lsx_pciep_ctl_init_win(uint8_t pcie_idx)
 		return 0;
 
 	if (ctlhw->ep_enable) {
-		if (!lsx_pciep_hw_sim_get(pcie_idx)) {
+		if (!lsx_pciep_hw_sim_get(pcie_idx) &&
+			rte_eal_process_type() == RTE_PROC_PRIMARY) {
 			if (!ctldev->ops)
 				return -EINVAL;
-			if (ctldev->ops->pcie_disable_ob_win)
+			if (ctldev->clear_win &&
+				ctldev->ops->pcie_disable_ob_win)
 				ctldev->ops->pcie_disable_ob_win(ctldev, -1);
-			if (ctlhw->clear_ib &&
+			if (ctldev->clear_win &&
 				ctldev->ops->pcie_disable_ib_win)
 				ctldev->ops->pcie_disable_ib_win(ctldev, -1);
 		}
@@ -1420,19 +1460,12 @@ int
 lsx_pciep_primary_init(void)
 {
 	int ret = 0;
-	char *penv;
-	int clear_ib = 0;
 
 	if (s_pciep_init_flag) {
 		LSX_PCIEP_BUS_INFO("%s has been executed!", __func__);
 
 		return 0;
 	}
-
-	/** Only set for standalone or primary process.*/
-	penv = getenv("LSX_PCIEP_CTL_CLEAR_INBOUND");
-	if (penv)
-		clear_ib = atoi(penv);
 
 	s_pctl_hw = malloc(LSX_PCIEP_CTL_HW_TOTAL_SIZE);
 	if (!s_pctl_hw) {
@@ -1446,8 +1479,12 @@ lsx_pciep_primary_init(void)
 
 	lsx_pciep_parse_env_variable();
 	lsx_pciep_hw_set_by_env();
-	lsx_pciep_hw_set_type();
-	lsx_pciep_hw_enable_clear_inbound(clear_ib);
+	ret = lsx_pciep_hw_set_type();
+	if (ret) {
+		ret = -ENODEV;
+		goto init_exit;
+	}
+	lsx_pciep_hw_enable_clear_inbound();
 
 	lsx_pciep_ctl_set_ops();
 
@@ -1464,6 +1501,7 @@ init_exit:
 			free(s_pctl_hw);
 
 		s_pctl_hw = NULL;
+		memset((char *)s_pctldev, 0, sizeof(s_pctldev));
 	}
 	s_pciep_init_flag = 1;
 
@@ -1485,14 +1523,16 @@ lsx_pciep_uninit(void)
 			munmap(ctldev->dbi_vir, ctldev->ctl_hw->dbi_size);
 
 		if (ctldev->out_vir)
-			munmap((void *)ctldev->out_vir, CFG_32G_SIZE);
+			munmap((void *)ctldev->out_vir,
+				ctldev->ctl_hw->out_map_size);
 		ctldev->ctl_hw = NULL;
 		ctldev->dbi_vir = NULL;
 		ctldev->out_vir = NULL;
 		ctldev->ops = NULL;
 	}
 
-	free(s_pctl_hw);
+	if (s_pctl_hw)
+		free(s_pctl_hw);
 	s_pctl_hw = NULL;
 
 	s_pciep_init_flag = 0;
@@ -1533,6 +1573,28 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	return 0;
 }
 
+static struct lsx_pciep_ob_win *
+lsx_pciep_find_hw_ctl_ob_win(struct lsx_pciep_ctl_hw *ctlhw,
+	int pf, int is_vf, int vf)
+{
+	int idx;
+	struct lsx_pciep_ob_win *ob_info;
+
+	for (idx = 0; idx < ctlhw->function_num; idx++) {
+		ob_info = &ctlhw->ob_win[idx];
+		if (is_vf) {
+			if (ob_info->pf == pf && ob_info->is_vf &&
+				ob_info->vf == vf)
+				return ob_info;
+		} else {
+			if (ob_info->pf == pf && !ob_info->is_vf)
+				return ob_info;
+		}
+	}
+
+	return NULL;
+}
+
 #define OB_PF_INFO_DUMP_FORMAT(pci, pf, win, \
 		vir, phy, bus, size) \
 		"Outbound PEX%d PF%d: Win:%d" \
@@ -1569,22 +1631,30 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 	struct lsx_pciep_ctl_dev *ctldev = &s_pctldev[pcie_id];
 	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
 	uint32_t win_idx;
+	struct lsx_pciep_ob_win *ob_info;
+	uint16_t win_off;
 
 	mask = ctlhw->out_win_size - 1;
 
 	offset = pci_addr & mask;
 	map_pci_addr = pci_addr & ~mask;
 
-	win_idx = LSX_PCIEP_RBP_OB_WIN_START(pf, is_vf, vf);
+	ob_info = lsx_pciep_find_hw_ctl_ob_win(ctlhw, pf, is_vf, vf);
+	if (!ob_info)
+		return NULL;
+
+	win_idx = ob_info->out_win_idx;
 	win_idx += LSX_PCIEP_RBP_OB_RC_MEM;
-	ep_dev->ob_phy_base =
-		ctlhw->out_base + win_idx * ctlhw->out_win_size;
-	ep_dev->ob_virt_base =
-		(uint64_t)ctldev->out_vir + win_idx * ctlhw->out_win_size;
+	win_off = win_idx - ctlhw->out_win_start;
+	ep_dev->ob_phy_base = ctlhw->out_map_start +
+		win_off * ctlhw->out_win_size;
+	ep_dev->ob_virt_base = ctldev->out_vir +
+		win_off * ctlhw->out_win_size;
 
 	ep_dev->ob_map_bus_base = map_pci_addr;
 	ep_dev->ob_orig_bus_base = pci_addr;
 	ep_dev->ob_win_size = ctlhw->out_win_size;
+	ep_dev->ob_win_idx = ob_info->out_win_idx;
 
 	if (size > ep_dev->ob_win_size) {
 		LSX_PCIEP_BUS_ERR("Outbound PEX%d PF%d-VF%d size expected %ld > %ld",
@@ -1623,34 +1693,21 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	int pcie_id = ep_dev->pcie_id;
 	struct lsx_pciep_ctl_dev *ctldev = &s_pctldev[pcie_id];
 	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
-	uint32_t idx, out_win_nb, out_win_start;
+	uint32_t idx, out_win_nb, out_win_start = 0;
 	uint64_t pci_addr = 0, out_phy, out_offset = 0;
 	uint64_t offset, map_pci_addr, mask;
 	struct lsx_pciep_ob_win *ob_info = NULL;
 
 	if (ctlhw->ob_policy == LSX_PCIEP_OB_FUN_IDX) {
-		for (idx = 0; idx < ctlhw->function_num; idx++) {
-			ob_info = &ctlhw->ob_win[idx];
-			if (is_vf) {
-				if (ob_info->pf == pf && ob_info->is_vf &&
-					ob_info->vf == vf)
-					break;
-			} else {
-				if (ob_info->pf == pf && !ob_info->is_vf)
-					break;
-			}
-			ob_info = NULL;
-		}
-
+		ob_info = lsx_pciep_find_hw_ctl_ob_win(ctlhw, pf, is_vf, vf);
 		if (!ob_info)
 			return NULL;
+
 		out_win_nb = ob_info->out_win_nb;
 		out_offset = ob_info->out_offset;
 		out_win_start = ob_info->out_win_idx;
 	} else {
 		out_win_nb = ctlhw->out_win_per_fun;
-		out_offset = ctlhw->out_offset;
-		out_win_start = ctlhw->out_win_start;
 	}
 
 	mask = ctlhw->out_win_size - 1;
@@ -1662,7 +1719,8 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	ep_dev->ob_orig_bus_base = pci_addr;
 	ep_dev->ob_map_bus_base = map_pci_addr;
 	ep_dev->ob_phy_base = out_phy;
-	ep_dev->ob_virt_base = (uint64_t)ctldev->out_vir + out_offset;
+	ep_dev->ob_virt_base = ctldev->out_vir +
+		out_phy - ctlhw->out_map_start;
 	ep_dev->ob_win_size = ctlhw->out_win_size * out_win_nb;
 
 	/* MSIx shares the same outbound */
@@ -1693,7 +1751,7 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	return (uint8_t *)ep_dev->ob_virt_base + offset;
 }
 
-uint64_t
+void *
 lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size)
 {
@@ -1706,7 +1764,7 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	else
 		vaddr = lsx_pciep_set_ob_win_norbp(ep_dev);
 
-	return (uint64_t)vaddr;
+	return vaddr;
 }
 
 void
@@ -1719,7 +1777,7 @@ lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	ep_dev->ob_orig_bus_base = 0;
 	ep_dev->ob_map_bus_base = 0;
 	ep_dev->ob_phy_base = 0;
-	ep_dev->ob_virt_base = vir_offset;
+	ep_dev->ob_virt_base = (void *)vir_offset;
 }
 
 void
@@ -1727,6 +1785,17 @@ lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev)
 {
 	int pcie_id = ep_dev->pcie_id;
 	struct lsx_pciep_ctl_dev *ctldev = &s_pctldev[pcie_id];
+	struct lsx_pciep_ctl_hw *ctlhw = ctldev->ctl_hw;
+
+	if (ctlhw->rbp) {
+		struct lsx_pciep_ob_win *ob_info;
+
+		ob_info = lsx_pciep_find_hw_ctl_ob_win(ctlhw,
+			ep_dev->pf, ep_dev->is_vf, ep_dev->vf);
+		if (!ob_info)
+			return;
+		ep_dev->ob_win_idx = ob_info->out_win_idx;
+	}
 
 	ctldev->ops->pcie_msix_init(ctldev, ep_dev);
 }
@@ -1759,7 +1828,17 @@ lsx_pciep_msix_cmd_send(uint64_t addr, uint32_t cmd)
 
 static void __attribute__((destructor(102))) lsx_pciep_finish(void)
 {
+	int ret;
+
 	lsx_pciep_uninit();
+
+	if (access(LSX_OB_SHARED_SCH_NM, F_OK) != -1) {
+		ret = remove(LSX_OB_SHARED_SCH_NM);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s removed failed",
+				LSX_OB_SHARED_SCH_NM);
+		}
+	}
 
 	if (primary_shared_mz) {
 		rte_memzone_free(primary_shared_mz);

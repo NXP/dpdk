@@ -97,8 +97,9 @@ struct rte_lsx_pciep_device {
 	uint64_t ob_map_bus_base;
 	uint64_t ob_orig_bus_base;
 	uint64_t ob_phy_base;
-	uint64_t ob_virt_base;
+	uint8_t *ob_virt_base;
 	uint64_t ob_win_size;
+	uint32_t ob_win_idx;
 	int ob_win_init_flag;
 
 	/* MSI/MSIx information */
@@ -179,7 +180,7 @@ int lsx_pciep_virtio(void);
 enum PEX_TYPE lsx_pciep_get_type(void);
 struct rte_lsx_pciep_device *lsx_pciep_first_dev(void);
 
-uint64_t
+void *
 lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size);
 void

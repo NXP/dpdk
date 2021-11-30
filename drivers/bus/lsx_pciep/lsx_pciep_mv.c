@@ -329,9 +329,7 @@ pcie_mv_msix_init(struct lsx_pciep_ctl_dev *ctldev,
 	}
 
 	if (ctldev->ctl_hw->rbp) {
-		win_idx = LSX_PCIEP_RBP_OB_WIN_START(ep_dev->pf,
-					ep_dev->is_vf, ep_dev->vf);
-		win_idx += LSX_PCIEP_RBP_OB_MSIX;
+		win_idx = ep_dev->ob_win_idx + LSX_PCIEP_RBP_OB_MSIX;
 		ep_dev->msix_phy_base =
 			out_base + win_idx * out_win_size;
 		ep_dev->msix_virt_base =

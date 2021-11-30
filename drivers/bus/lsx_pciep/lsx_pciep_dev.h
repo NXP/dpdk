@@ -51,15 +51,6 @@ enum lsx_pciep_rbp_ob_win {
 	LSX_PCIEP_RBP_OB_WIN_NB
 };
 
-static inline int
-LSX_PCIEP_RBP_OB_WIN_START(int pf, int is_vf, int vf)
-{
-	if (is_vf)
-		return (((pf) << 6 | (vf + 1)) * LSX_PCIEP_RBP_OB_WIN_NB);
-	else
-		return (((pf) << 6) * LSX_PCIEP_RBP_OB_WIN_NB);
-}
-
 /** Provide outbound space shared policy
  * for multiple functions of each PCIe controller.
  *  Note, this policy only works for none RBP mode.
@@ -113,20 +104,17 @@ struct lsx_pciep_ctl_hw {
 	uint64_t dbi_phy;
 
 	uint64_t out_base;
-	uint64_t dma_out_base;
-
-	enum lsx_ob_policy ob_policy;
-	int share_ob_complete;
-	int clear_ib;
-
-	uint64_t out_offset;
 	uint64_t out_size;
+	uint64_t out_map_start;
+	uint64_t out_map_size;
+	uint16_t out_win_start;
 	uint64_t out_win_size;
 	uint64_t out_size_per_fun;
-	uint32_t out_win_start;
 	uint32_t out_win_per_fun;
 
 	struct lsx_pciep_ib_mem ib_mem;
+	enum lsx_ob_policy ob_policy;
+	int share_ob_complete;
 	struct lsx_pciep_ob_win ob_win[PF_MAX_NB * (PCIE_MAX_VF_NUM + 1)];
 };
 
@@ -135,6 +123,7 @@ struct lsx_pciep_ctl_hw {
  */
 struct lsx_pciep_ctl_dev {
 	struct lsx_pciep_ctl_hw *ctl_hw;
+	int clear_win;
 	uint8_t *dbi_vir;
 	uint8_t *out_vir;
 	struct lsx_pciep_ops *ops;
