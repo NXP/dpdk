@@ -445,6 +445,10 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_WBD_DMA;
 
+	penv = getenv("LSINIC_COMPLETE_RING_SINGLE_UPDATE");
+	if (!penv)
+		adapter->ep_cap |= LSINIC_EP_CAP_COMPLETE_BURST_UPDATE;
+
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
@@ -1067,6 +1071,10 @@ lsinic_dev_stop(struct rte_eth_dev *dev)
 	adapter->adapter_stopped = true;
 
 	lsinic_dev_clear_queues(dev);
+	if (adapter->complete_src) {
+		rte_free(adapter->complete_src);
+		adapter->complete_src = NULL;
+	}
 }
 
 /* Reest and stop device.
@@ -1156,6 +1164,15 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 					adapter->tx_ring_bd_count *
 					sizeof(struct lsinic_bd_desc);
 
+	/** RX complete ring to notify RC recv complete.*/
+	ring_total_size += adapter->num_rx_queues *
+					adapter->rx_ring_bd_count *
+					sizeof(uint8_t);
+	/** TX complete ring to notify RC xmit complete.*/
+	ring_total_size += adapter->num_tx_queues *
+					adapter->tx_ring_bd_count *
+					sizeof(uint8_t);
+
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	adapter->rc_ring_phy_base = rc_reg_addr;
 	if (sim) {
@@ -1167,12 +1184,12 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	} else {
 		if (cfg->rbp_enable) {
 			adapter->rc_ring_virt_base =
-				(void *)lsx_pciep_set_ob_win(lsinic_dev,
+				lsx_pciep_set_ob_win(lsinic_dev,
 							rc_reg_addr,
 							ring_total_size);
 		} else {
 			adapter->rc_ring_virt_base =
-				(uint8_t *)lsinic_dev->ob_virt_base +
+				lsinic_dev->ob_virt_base +
 					rc_reg_addr -
 					lsinic_dev->ob_map_bus_base;
 		}
@@ -1234,6 +1251,15 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	adapter->rx_pcidma_dbg = rc_reg_addr;
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
 	adapter->tx_pcidma_dbg = rc_reg_addr;
+	adapter->complete_src =
+		rte_malloc(NULL, LSINIC_COMPLETE_RING_SIZE,
+			LSINIC_COMPLETE_RING_SIZE);
+	if (adapter->complete_src) {
+		memset(adapter->complete_src, RING_BD_HW_COMPLETE,
+			LSINIC_COMPLETE_RING_SIZE);
+	} else {
+		LSXINIC_PMD_WARN("complete src malloc failed");
+	}
 
 	if (!sim)
 		lsx_pciep_msix_init(lsinic_dev);

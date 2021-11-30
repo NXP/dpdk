@@ -170,11 +170,12 @@ struct lxsnic_ring {
 	uint32_t core_id;
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
-	uint32_t size;			  /* bd desc length in bytes */
 	struct lsinic_bd_desc *ep_bd_desc;/* bd desc point to EP memory */
 	struct lsinic_bd_desc *rc_bd_desc;
+	uint8_t *rc_complete;
 	/* bd desc point to RC(local) memory */
 	dma_addr_t rc_bd_desc_dma;	  /* phys. address of rc_bd_desc */
+	dma_addr_t rc_complete_dma;	  /* phys. address of rc_complete */
 	struct lsinic_ring_reg *ep_reg;	  /* ring reg point to EP memory */
 	struct lsinic_ring_reg *rc_reg;	  /* ring reg point to RC memory */
 	dma_addr_t rc_reg_dma;		  /* phys. address of rc_reg */

@@ -80,7 +80,7 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		size = RTE_MAX(CFG_1M_SIZE,
 			vring_size(LSXVIO_MAX_RING_DESC, RTE_CACHE_LINE_SIZE));
 		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx))
-			virt = (void *)lsx_pciep_set_ob_win(dev,
+			virt = lsx_pciep_set_ob_win(dev,
 				desc_addr, size);
 		else
 			virt = DPAA2_IOVA_TO_VADDR(desc_addr);

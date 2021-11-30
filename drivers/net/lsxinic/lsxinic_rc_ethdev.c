@@ -207,6 +207,8 @@ static int lxsnic_wait_tx_bd_ready(struct lxsnic_ring *tx_ring)
 		rc_tx_desc->bd_status |=
 			(((uint32_t)LSINIC_BD_CTX_IDX_INVALID) <<
 			LSINIC_BD_CTX_IDX_SHIFT);
+#else
+		rc_tx_desc->sw_ctx = 0;
 #endif
 	}
 
@@ -289,6 +291,10 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_WRITE_REG(&ring_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
+	LSINIC_WRITE_REG(&ring_reg->r_completel,
+		ring->rc_complete_dma & DMA_BIT_MASK(32));
+	LSINIC_WRITE_REG(&ring_reg->r_completeh,
+		ring->rc_complete_dma >> 32);
 	/* MSIX setting*/
 	/* Polling mode, no need to send int from EP.*/
 	LSINIC_WRITE_REG(&ring_reg->icr, 0);
@@ -393,17 +399,23 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	LSXINIC_PMD_DBG("prepare config rx_ring");
 
 #ifdef RC_RING_REG_SHADOW_ENABLE
-
-	rx_ring->size = rx_ring->count * sizeof(struct lsinic_bd_desc);
-	rx_ring->size = ALIGN(rx_ring->size, 4096);
-
 	rx_ring->rc_bd_desc = (struct lsinic_bd_desc *)((char *)
 			adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
-			queue_idx * rx_ring->count
-			* sizeof(struct lsinic_bd_desc));
+			queue_idx * LSINIC_RING_SIZE);
+	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE_RING) {
+		rx_ring->rc_complete = (uint8_t *)rx_ring->rc_bd_desc +
+			LSINIC_BD_RING_SIZE;
+	} else {
+		rx_ring->rc_complete = NULL;
+		rx_ring->rc_complete_dma = 0;
+	}
 	rx_ring->rc_bd_desc_dma = ((uint64_t)adapter->rc_bd_desc_phy) +
 		(uint64_t)((uint64_t)rx_ring->rc_bd_desc -
 				(uint64_t)adapter->rc_bd_desc_base);
+	if (rx_ring->rc_complete) {
+		rx_ring->rc_complete_dma = rx_ring->rc_bd_desc_dma +
+			LSINIC_BD_RING_SIZE;
+	}
 
 	LSXINIC_PMD_DBG("RX phy_base: %"
 		PRIX64 ", queue[ %" PRId32 " ] "
@@ -422,6 +434,11 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rte_zmalloc(NULL, sizeof(void *) * rx_ring->count, 64);
 	RTE_ASSERT(rx_ring->q_mbuf);
 #endif
+
+	if (rx_ring->rc_complete) {
+		memset(rx_ring->rc_complete, RING_BD_READY,
+			LSINIC_COMPLETE_RING_SIZE);
+	}
 
 	lxsnic_configure_rx_ring(adapter, rx_ring);
 	LSXINIC_PMD_DBG("%s %d:desc:%p %" PRIu64
@@ -452,7 +469,10 @@ lxsnic_dev_tx_queue_release(void *txq)
 
 	/*clean_pci_mem */
 	if (tx_ring->rc_bd_desc)
-		memset(tx_ring->rc_bd_desc, 0, tx_ring->size);
+		memset(tx_ring->rc_bd_desc, 0, LSINIC_BD_RING_SIZE);
+
+	if (tx_ring->rc_complete)
+		memset(tx_ring->rc_complete, 0, LSINIC_COMPLETE_RING_SIZE);
 
 	if (tx_ring->rc_reg)
 		memset(tx_ring->rc_reg, 0, sizeof(*tx_ring->rc_reg));
@@ -481,12 +501,21 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	LSINIC_WRITE_REG(&ring_reg->pir, 0); /* TDT */
 	LSINIC_WRITE_REG(&ring_reg->cir, 0); /* TDH */
 
+	if (ring->rc_complete) {
+		memset(ring->rc_complete, RING_BD_READY,
+			LSINIC_COMPLETE_RING_SIZE);
+	}
+
 	if (ring->rc_bd_desc) {
 		LSINIC_WRITE_REG(&ring_reg->r_descl,
 			ring->rc_bd_desc_dma & DMA_BIT_MASK(32));
 		LSINIC_WRITE_REG(&ring_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
+	LSINIC_WRITE_REG(&ring_reg->r_completel,
+		ring->rc_complete_dma & DMA_BIT_MASK(32));
+	LSINIC_WRITE_REG(&ring_reg->r_completeh,
+		ring->rc_complete_dma >> 32);
 
 	LSINIC_WRITE_REG(&ring_reg->iir, 0);
 
@@ -546,18 +575,28 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->mtail = 0;
 	tx_ring->mcnt = 0;
 #ifdef RC_RING_REG_SHADOW_ENABLE
-	tx_ring->size = tx_ring->count * sizeof(struct lsinic_bd_desc);
-	tx_ring->size = ALIGN(tx_ring->size, 4096);
-
 	tx_ring->rc_bd_desc =
 		(struct lsinic_bd_desc *)
 		((char *)adapter->rc_bd_desc_base +
-		queue_idx * tx_ring->count *
-		sizeof(struct lsinic_bd_desc));
+		LSINIC_TX_BD_OFFSET +
+		queue_idx * LSINIC_RING_SIZE);
+	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE_RING) {
+		tx_ring->rc_complete =
+			(uint8_t *)tx_ring->rc_bd_desc +
+			LSINIC_BD_RING_SIZE;
+	} else {
+		tx_ring->rc_complete = NULL;
+		tx_ring->rc_complete_dma = 0;
+	}
 	tx_ring->rc_bd_desc_dma =
 		((uint64_t)adapter->rc_bd_desc_phy) +
 		(uint64_t)((uint64_t)tx_ring->rc_bd_desc -
 		(uint64_t)adapter->rc_bd_desc_base);
+
+	if (tx_ring->rc_complete) {
+		tx_ring->rc_complete_dma = tx_ring->rc_bd_desc_dma +
+			LSINIC_BD_RING_SIZE;
+	}
 
 	LSXINIC_PMD_DBG("TX phy_base:%lX, queue:%d "
 		"bd_virt:%p bd_phy: %lX\n",
@@ -1140,6 +1179,7 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 {
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
+	char *penv = getenv("LSINIC_NO_COMPLETE_RING");
 
 	/* get ring setting */
 	adapter->tx_ring_bd_count = LSINIC_READ_REG(&eth_reg->tx_entry_num);
@@ -1147,7 +1187,10 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 	adapter->num_tx_queues = LSINIC_READ_REG(&eth_reg->tx_ring_num);
 	adapter->num_rx_queues = LSINIC_READ_REG(&eth_reg->rx_ring_num);
 
-	adapter->cap = 0;
+	if (penv && atoi(penv))
+		adapter->cap = 0;
+	else
+		adapter->cap = LSINIC_CAP_XFER_COMPLETE_RING;
 
 	if (LSINIC_READ_REG(&eth_reg->cap) & LSINIC_CAP_XFER_COMPLETE)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;

@@ -60,6 +60,73 @@ enum lxsnic_mbuf_mg_flag {
 
 #define LXSNIC_MBUF_MG_FLAG_OFFSET (-1)
 
+static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
+{
+	uint16_t bd_idx;
+#ifdef LSINIC_BD_CTX_IDX_USED
+	uint32_t mbuf_idx;
+#endif
+	struct lsinic_bd_desc *rc_tx_desc;
+	struct rte_mbuf *last_mbuf;
+
+	bd_idx = tx_ring->last_used_idx & (tx_ring->count - 1);
+	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
+
+	rte_rmb();
+
+	do {
+		if (tx_ring->rc_complete[bd_idx] != RING_BD_HW_COMPLETE)
+			break;
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+		mbuf_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
+		if (mbuf_idx == LSINIC_BD_CTX_IDX_INVALID)
+			break;
+		last_mbuf = (struct rte_mbuf *)tx_ring->q_mbuf[mbuf_idx];
+#else
+		last_mbuf = (struct rte_mbuf *)rc_tx_desc->sw_ctx;
+		if (!last_mbuf)
+			break;
+#endif
+		RTE_ASSERT(last_mbuf);
+#ifdef RTE_ENABLE_ASSERT
+		if (rc_tx_desc->bd_status & RING_BD_ADDR_CHECK) {
+			if (rc_tx_desc->len_cmd & LSINIC_BD_CMD_MG)
+				RTE_ASSERT((rte_mbuf_data_iova(last_mbuf) -
+					sizeof(struct lsinic_mg_header)) ==
+					rc_tx_desc->pkt_addr);
+			else
+				RTE_ASSERT(rte_mbuf_data_iova(last_mbuf) ==
+					rc_tx_desc->pkt_addr);
+		}
+#endif
+		if (tx_ring->adapter->self_test) {
+			tx_ring->self_xmit_pkts[tx_ring->self_xmit_pkts_count] =
+				last_mbuf;
+			tx_ring->self_xmit_pkts_count++;
+			RTE_ASSERT(tx_ring->self_xmit_pkts_count <=
+				tx_ring->self_xmit_pkts_total);
+		} else {
+			rte_pktmbuf_free_seg(last_mbuf);
+		}
+
+#ifdef LSINIC_BD_CTX_IDX_USED
+		rc_tx_desc->bd_status &= (~((uint32_t)RING_BD_STATUS_MASK));
+		rc_tx_desc->bd_status |= RING_BD_READY;
+#else
+		rc_tx_desc->bd_status = RING_BD_READY;
+#endif
+		tx_ring->rc_complete[bd_idx] = RING_BD_READY;
+
+		tx_ring->last_used_idx++;
+
+		bd_idx = tx_ring->last_used_idx & (tx_ring->count - 1);
+		rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
+
+		rte_rmb();
+	} while (1);
+}
+
 static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 {
 	uint16_t bd_idx;
@@ -150,8 +217,17 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
 
 	bd_status = rc_tx_desc->bd_status;
-
-	if ((bd_status & RING_BD_STATUS_MASK) != RING_BD_READY) {
+	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE &&
+		tx_ring->rc_complete) {
+		if (tx_ring->rc_complete[bd_idx] !=
+			RING_BD_READY) {
+#ifdef LXSNIC_DEBUG_RX_TX
+			tx_ring->adapter->stats.tx_desc_err++;
+#endif
+			tx_ring->ring_full++;
+			return -1;
+		}
+	} else if ((bd_status & RING_BD_STATUS_MASK) != RING_BD_READY) {
 #ifdef LXSNIC_DEBUG_RX_TX
 		tx_ring->adapter->stats.tx_desc_err++;
 #endif
@@ -208,8 +284,9 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 
 		ep_tx_desc->desc = rc_tx_desc->desc;
 	}
-
 #endif
+	if (tx_ring->rc_complete)
+		tx_ring->rc_complete[bd_idx] = RING_BD_AVAILABLE;
 
 	if (mg_num == 0) {
 		tx_ring->packets++;
@@ -918,8 +995,13 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 	struct lxsnic_ring *tx_queue =
 			eth_dev->data->tx_queues[rx_queue->queue_index];
 
-	if (tx_queue)
-		lxsnic_tx_ring_clean(tx_queue);
+	if (tx_queue) {
+		if (tx_queue->adapter->cap & LSINIC_CAP_XFER_COMPLETE &&
+			tx_queue->rc_complete)
+			lxsnic_tx_complete_ring_clean(tx_queue);
+		else
+			lxsnic_tx_ring_clean(tx_queue);
+	}
 
 	if (rx_queue->adapter->self_test && tx_queue) {
 		int count = 128, i, tx_nb, idx;

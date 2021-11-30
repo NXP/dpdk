@@ -75,6 +75,12 @@ struct lsinic_pci_dma_test {
 
 #define SP_RING_MAX_NUM (1024)
 
+enum complete_notify_type {
+	NONE_COMPLETE_NOTIFY,
+	SINGLE_COMPLETE_NOTIFY,
+	BURST_COMPLETE_NOTIFY
+};
+
 struct lsinic_queue {
 	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
@@ -91,6 +97,8 @@ struct lsinic_queue {
 
 	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP mem */
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
+	uint8_t *rc_complete; /* complete point to RC mem */
+	enum complete_notify_type com_notify;
 
 	struct lsinic_sw_bd *sw_ring;
 	struct lsinic_sw_bd **sw_bd_pool;

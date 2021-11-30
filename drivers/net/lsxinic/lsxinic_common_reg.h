@@ -196,7 +196,9 @@ struct lsinic_ring_reg {
 	uint32_t isr;
 	uint32_t r_descl;	/* desc PCI low address On RC side */
 	uint32_t r_desch;	/* desc PCI high address On RC side */
-	uint32_t  resr[3];
+	uint32_t r_completel;	/* complete PCI low address On RC side */
+	uint32_t r_completeh;	/* complete PCI high address On RC side */
+	uint32_t  resr[1];
 } __packed;
 
 struct lsinic_bdr_reg {
@@ -247,12 +249,15 @@ struct lsinic_bd_desc {
 #define LSINIC_BD_ENTRY_SIZE	sizeof(struct lsinic_bd_desc)
 #define LSINIC_BD_ENTRY_COUNT	512
 #define LSINIC_BD_RING_SIZE	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
+#define LSINIC_COMPLETE_RING_SIZE (sizeof(uint8_t) * LSINIC_BD_ENTRY_COUNT)
+
+#define LSINIC_RING_SIZE (LSINIC_BD_RING_SIZE + LSINIC_COMPLETE_RING_SIZE)
 
 #define LSINIC_TX_RING_BD_MAX_SIZE \
-	(LSINIC_BD_RING_SIZE * LSINIC_RING_MAX_COUNT)
+	(LSINIC_RING_SIZE * LSINIC_RING_MAX_COUNT)
 
 #define LSINIC_RX_RING_BD_MAX_SIZE \
-	(LSINIC_BD_RING_SIZE * LSINIC_RING_MAX_COUNT)
+	(LSINIC_RING_SIZE * LSINIC_RING_MAX_COUNT)
 
 #define LSINIC_RING_BD_MAX_SIZE \
 	(LSINIC_TX_RING_BD_MAX_SIZE + LSINIC_RX_RING_BD_MAX_SIZE)
@@ -261,7 +266,7 @@ struct lsinic_bd_desc {
 #define LSINIC_RX_BD_OFFSET LSINIC_TX_RING_BD_MAX_SIZE
 
 #define LSINIC_RING_BAR_MAX_SIZE \
-	(LSINIC_RING_BD_OFFSET + LSINIC_RING_BD_MAX_SIZE)
+	(LSINIC_RX_BD_OFFSET + LSINIC_RX_RING_BD_MAX_SIZE)
 
 #define LSINIC_REG_OFFSET(p, o) ((void *)((uint8_t *)(p) + (o)))
 
@@ -328,6 +333,7 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 #define LSINIC_CAP_XFER_PKT_MERGE 0x00000002
 #define LSINIC_CAP_XFER_TX_BD_UPDATE 0x00000004
 #define LSINIC_CAP_XFER_RX_BD_UPDATE 0x00000008
+#define LSINIC_CAP_XFER_COMPLETE_RING 0x00000010
 
 #define LSXINIC_VF_AVAILABLE (((uint32_t)1) << 15)
 

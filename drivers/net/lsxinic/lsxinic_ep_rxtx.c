@@ -578,10 +578,15 @@ lsinic_qdma_tx_multiple_enqueue(struct lsinic_queue *queue, bool append)
 	int rxq_dma_bd_start = -1;
 	int rxq_dma_bd_nb = 0;
 	struct lsinic_queue *rxq = queue->pair;
+	uint16_t rxq_dma_bd_size = 0;
 
 	if (likely(rxq)) {
 		rxq_dma_bd_start = rxq->wdma_bd_start;
 		rxq_dma_bd_nb = rxq->wdma_bd_nb;
+		if (rxq->rc_complete)
+			rxq_dma_bd_size = sizeof(uint8_t);
+		else
+			rxq_dma_bd_size = sizeof(struct lsinic_bd_desc);
 	}
 
 	if ((queue->adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
@@ -656,12 +661,12 @@ lsinic_qdma_tx_multiple_enqueue(struct lsinic_queue *queue, bool append)
 
 	if (rxq_dma_bd_nb > 0) {
 		jobs[nb_jobs] = &rxq->e2r_bd_dma_jobs[rxq_dma_bd_start];
-		bd_jobs_len = sizeof(struct lsinic_bd_desc) * rxq_dma_bd_nb;
+		bd_jobs_len = rxq_dma_bd_size * rxq_dma_bd_nb;
 		if ((rxq_dma_bd_start + rxq_dma_bd_nb) <= (int)rxq->nb_desc) {
 			jobs[nb_jobs]->len = bd_jobs_len;
 			rxq_bd_jobs_num = 1;
 		} else {
-			jobs[nb_jobs]->len = sizeof(struct lsinic_bd_desc) *
+			jobs[nb_jobs]->len = rxq_dma_bd_size *
 				(rxq->nb_desc - rxq_dma_bd_start);
 			jobs[nb_jobs + 1] =	&rxq->e2r_bd_dma_jobs[0];
 			jobs[nb_jobs + 1]->len =
@@ -884,16 +889,11 @@ lsinic_xmit_merged_one_pkt(struct lsinic_queue *txq,
 	 * nb_used better be less than or equal to txq->tx_rs_thresh
 	 */
 	if (unlikely(!lsinic_tx_bd_available(txq, bd_idx))) {
-		struct lsinic_adapter *adapter = txq->adapter;
-
 		txq->ring_full++;
 		txq->drop_packet_num++;
-		LSXINIC_PMD_DBG("%s: Status of TX bd[%d]:%d on cpu(%d)",
-			__func__, bd_idx, ep_txd->bd_status,
-			rte_lcore_id());
-		if (adapter->ep_cap & LSINIC_EP_CAP_RXQ_WBD_DMA &&
-			txq->pair && 0)
-			lsinic_qdma_tx_multiple_enqueue(txq, false);
+		LSXINIC_PMD_DBG("%s:TXQ%d:bd[%d]:0x%08x unavailable",
+			txq->adapter->lsinic_dev->name,
+			txq->queue_id, bd_idx, ep_txd->bd_status);
 
 		return 0;
 	}
@@ -2002,7 +2002,8 @@ lsinic_queue_start(struct lsinic_queue *q)
 {
 	struct lsinic_ring_reg *ring_reg = q->ep_reg;
 	uint32_t msix_vector, i;
-	uint64_t rc_bus_addr, ob_offset;
+	uint64_t bd_bus_addr, ring_bus_addr, ob_offset;
+	uint64_t dma_src_base, dma_dst_base, step;
 	int ret;
 	uint32_t queue_idx = q->queue_id;
 	struct lsinic_adapter *adapter = q->adapter;
@@ -2043,20 +2044,53 @@ lsinic_queue_start(struct lsinic_queue *q)
 		}
 	}
 
-	rc_bus_addr = LSINIC_READ_REG_64B((uint64_t *)(&q->ep_reg->r_descl));
-	if (rc_bus_addr) {
-		ob_offset = rc_bus_addr - adapter->lsinic_dev->ob_map_bus_base;
+	bd_bus_addr = LSINIC_READ_REG_64B((uint64_t *)(&q->ep_reg->r_descl));
+	if (bd_bus_addr) {
+		ob_offset = bd_bus_addr - adapter->lsinic_dev->ob_map_bus_base;
 		q->rc_bd_desc = (struct lsinic_bd_desc *)
 			(lsinic_dev->ob_virt_base + ob_offset);
 	} else {
 		q->rc_bd_desc = q->ep_bd_desc;
 	}
 
+	ring_bus_addr =
+		LSINIC_READ_REG_64B((uint64_t *)(&q->ep_reg->r_completel));
+	if (ring_bus_addr) {
+		ob_offset = ring_bus_addr -
+			adapter->lsinic_dev->ob_map_bus_base;
+		q->rc_complete = lsinic_dev->ob_virt_base +
+			ob_offset;
+	} else {
+		q->rc_complete = NULL;
+	}
+
+	q->com_notify = NONE_COMPLETE_NOTIFY;
+	if (q->rc_complete && q->type == LSINIC_QUEUE_RX) {
+		if ((adapter->cap & LSINIC_CAP_XFER_COMPLETE) ||
+			(adapter->ep_cap & LSINIC_EP_CAP_RXQ_ORP)) {
+			if (adapter->ep_cap &
+				LSINIC_EP_CAP_COMPLETE_BURST_UPDATE)
+				q->com_notify = BURST_COMPLETE_NOTIFY;
+			else
+				q->com_notify = SINGLE_COMPLETE_NOTIFY;
+		}
+	}
+
+	if (q->rc_complete && adapter->complete_src &&
+		q->type == LSINIC_QUEUE_RX) {
+		dma_src_base = DPAA2_VADDR_TO_IOVA(adapter->complete_src);
+		dma_dst_base = q->ob_base + ring_bus_addr;
+		step = sizeof(uint8_t);
+	} else {
+		dma_src_base = DPAA2_VADDR_TO_IOVA(&q->ep_bd_desc[0]);
+		dma_dst_base = q->ob_base + bd_bus_addr;
+		step = sizeof(struct lsinic_bd_desc);
+	}
+
 	for (i = 0; i < q->nb_desc; i++) {
 		memset(&e2r_bd_dma_jobs[i], 0, sizeof(struct rte_qdma_job));
-		e2r_bd_dma_jobs[i].src = DPAA2_VADDR_TO_IOVA(&q->ep_bd_desc[i]);
-		e2r_bd_dma_jobs[i].dest = q->ob_base + rc_bus_addr +
-			i * sizeof(struct lsinic_bd_desc);
+		e2r_bd_dma_jobs[i].src = dma_src_base + i * step;
+		e2r_bd_dma_jobs[i].dest = dma_dst_base + i * step;
 		e2r_bd_dma_jobs[i].flags = RTE_QDMA_JOB_SRC_PHY |
 			RTE_QDMA_JOB_DEST_PHY;
 		if (q->type == LSINIC_QUEUE_TX)
@@ -2065,13 +2099,14 @@ lsinic_queue_start(struct lsinic_queue *q)
 			e2r_bd_dma_jobs[i].vq_id = q->pair->dma_vq;
 	}
 
+	dma_src_base = q->ob_base + bd_bus_addr;
+	dma_dst_base = DPAA2_VADDR_TO_IOVA(&q->ep_bd_desc[0]);
+	step = sizeof(struct lsinic_bd_desc);
+
 	for (i = 0; i < q->nb_desc; i++) {
 		memset(&r2e_bd_dma_jobs[i], 0, sizeof(struct rte_qdma_job));
-		r2e_bd_dma_jobs[i].dest =
-			DPAA2_VADDR_TO_IOVA(&q->ep_bd_desc[i]);
-		r2e_bd_dma_jobs[i].src =
-			q->ob_base + rc_bus_addr +
-			i * sizeof(struct lsinic_bd_desc);
+		r2e_bd_dma_jobs[i].src = dma_src_base + i * step;
+		r2e_bd_dma_jobs[i].dest = dma_dst_base + i * step;
 		r2e_bd_dma_jobs[i].flags =
 			RTE_QDMA_JOB_SRC_PHY |
 			RTE_QDMA_JOB_DEST_PHY;
@@ -2116,6 +2151,9 @@ lsinic_queue_start(struct lsinic_queue *q)
 	if (q->type == LSINIC_QUEUE_RX) {
 		rte_memcpy(q->rc_bd_desc, q->ep_bd_desc,
 			q->nb_desc * sizeof(struct lsinic_bd_desc));
+		if (q->rc_complete)
+			memset(q->rc_complete, RING_BD_READY,
+				LSINIC_COMPLETE_RING_SIZE);
 	}
 
 	if (q->type == LSINIC_QUEUE_RX &&
@@ -2298,7 +2336,7 @@ lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	else
 		q->ob_base = adapter->lsinic_dev->ob_phy_base;
 
-	q->ob_virt_base = (uint8_t *)adapter->lsinic_dev->ob_virt_base;
+	q->ob_virt_base = adapter->lsinic_dev->ob_virt_base;
 	q->nb_desc = nb_desc;
 	q->new_desc_thresh = tx_rs_thresh;
 	q->queue_id = queue_idx;
@@ -3856,11 +3894,127 @@ lsinic_recv_rxbd_update(struct lsinic_queue *rxq,
 		lsinic_sw_bd_push(rxq, (void **)&rxe, 1);
 	}
 	if (!(adapter->ep_cap & LSINIC_EP_CAP_RXQ_WBD_DMA)) {
-		lsinic_bd_update_used_to_rc(rxq, bd_idx);
+		if (rxq->com_notify == SINGLE_COMPLETE_NOTIFY) {
+			rxq->rc_complete[bd_idx] = RING_BD_HW_COMPLETE;
+		} else if (rxq->com_notify == NONE_COMPLETE_NOTIFY) {
+			lsinic_bd_update_used_to_rc(rxq, bd_idx);
+		}
 	} else {
 		if (rxq->wdma_bd_start < 0)
 			rxq->wdma_bd_start = bd_idx;
 		rxq->wdma_bd_nb++;
+	}
+}
+
+static inline int is_align_16(void *addr)
+{
+	uint64_t x = (uint64_t)addr;
+
+	if (x & 0x1)
+		return 0;
+
+	return 1;
+}
+
+static inline int is_align_32(void *addr)
+{
+	uint64_t x = (uint64_t)addr;
+
+	if (x & 0x3)
+		return 0;
+
+	return 1;
+}
+
+static inline int is_align_64(void *addr)
+{
+	uint64_t x = (uint64_t)addr;
+
+	if (x & 0x7)
+		return 0;
+
+	return 1;
+}
+
+static inline int is_align_128(void *addr)
+{
+	uint64_t x = (uint64_t)addr;
+
+	if (x & 0xf)
+		return 0;
+
+	return 1;
+}
+
+static inline void lsinic_pcie_memset_align(uint8_t *dst,
+	uint8_t data, uint16_t size)
+{
+	uint64_t src64[2];
+	__uint128_t *src128 = (__uint128_t *)src64;
+	uint32_t *src32 = (uint32_t *)src64;
+	uint16_t *src16 = (uint16_t *)src64;
+
+	memset(src64, data, sizeof(src64));
+
+	if (!is_align_16(dst) && size > 0) {
+		*dst = data;
+		dst++;
+		size--;
+	}
+
+	if (!is_align_32(dst) &&
+		size >= sizeof(uint16_t)) {
+		*((uint16_t *)dst) = src16[0];
+		dst += sizeof(uint16_t);
+		size -= sizeof(uint16_t);
+	}
+
+	if (!is_align_64(dst) &&
+		size >= sizeof(uint32_t)) {
+		*((uint32_t *)dst) = src32[0];
+		dst += sizeof(uint32_t);
+		size -= sizeof(uint32_t);
+	}
+
+	if (!is_align_128(dst) &&
+		size >= sizeof(uint64_t)) {
+		*((uint64_t *)dst) = src64[0];
+		dst += sizeof(uint64_t);
+		size -= sizeof(uint64_t);
+	}
+
+	while (size >= sizeof(__uint128_t)) {
+		RTE_VERIFY(is_align_128(dst));
+		*((__uint128_t *)dst) = *src128;
+		dst += sizeof(__uint128_t);
+		size -= sizeof(__uint128_t);
+	}
+
+	while (size >= sizeof(uint64_t)) {
+		RTE_VERIFY(is_align_64(dst));
+		*((uint64_t *)dst) = src64[0];
+		dst += sizeof(uint64_t);
+		size -= sizeof(uint64_t);
+	}
+
+	while (size >= sizeof(uint32_t)) {
+		RTE_VERIFY(is_align_32(dst));
+		*((uint32_t *)dst) = src32[0];
+		dst += sizeof(uint32_t);
+		size -= sizeof(uint32_t);
+	}
+
+	while (size >= sizeof(uint16_t)) {
+		RTE_VERIFY(is_align_16(dst));
+		*((uint16_t *)dst) = src16[0];
+		dst += sizeof(uint16_t);
+		size -= sizeof(uint16_t);
+	}
+
+	while (size > 0) {
+		*dst = data;
+		dst++;
+		size--;
 	}
 }
 
@@ -3872,7 +4026,7 @@ lsinic_dpaa2_recv_pkts(struct lsinic_queue *rxq,
 	struct lsinic_sw_bd *rxe;
 	uint16_t bd_idx, nb_rx = 0, fd_idx = 0, mbuf_idx = 0;
 	struct lsinic_bd_desc *rxdp = NULL;
-	uint32_t count = 0, len;
+	uint32_t count = 0, len, first_idx;
 	struct rte_eth_dev *recycle_dev = adapter->split_dev->eth_dev;
 	eth_tx_burst_t tx_pkt_burst = NULL;
 	struct rte_mbuf *mbuf_array[rx_count];
@@ -3884,6 +4038,7 @@ lsinic_dpaa2_recv_pkts(struct lsinic_queue *rxq,
 			tx_pkt_burst = recycle_dev->tx_pkt_burst;
 	}
 
+	first_idx = rxq->next_used_idx & (rxq->nb_desc - 1);
 	while (nb_rx < rx_count) {
 		bd_idx = rxq->next_used_idx & (rxq->nb_desc - 1);
 		rxe = lsinic_recv_get_sw_bd(rxq, bd_idx);
@@ -3931,6 +4086,24 @@ lsinic_dpaa2_recv_pkts(struct lsinic_queue *rxq,
 		rxq->next_used_idx++;
 	}
 
+	if (rxq->com_notify == BURST_COMPLETE_NOTIFY &&
+		nb_rx > 0) {
+		if ((first_idx + nb_rx) < rxq->nb_desc) {
+			lsinic_pcie_memset_align(&rxq->rc_complete[first_idx],
+				RING_BD_HW_COMPLETE,
+				nb_rx);
+		} else {
+			lsinic_pcie_memset_align(&rxq->rc_complete[first_idx],
+				RING_BD_HW_COMPLETE,
+				rxq->nb_desc - first_idx);
+			if ((first_idx + nb_rx) != rxq->nb_desc) {
+				lsinic_pcie_memset_align(&rxq->rc_complete[0],
+					RING_BD_HW_COMPLETE,
+					first_idx + nb_rx - rxq->nb_desc);
+			}
+		}
+	}
+
 	if (tx_pkt_burst && mbuf_idx) {
 		tx_pkt_burst(rxq->recycle_txq, mbuf_array, mbuf_idx);
 	} else if (fd_idx > 0) {
@@ -3947,7 +4120,7 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 	struct lsinic_adapter *adapter = rxq->adapter;
 	struct rte_mbuf *rxm;
 	struct lsinic_sw_bd *rxe;
-	uint16_t bd_idx;
+	uint16_t bd_idx, first_idx;
 	uint16_t nb_rx = 0;
 	uint16_t rx_count;
 	struct lsinic_bd_desc *rxdp = NULL;
@@ -3968,6 +4141,7 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 	if (rxq->recycle_txq)
 		return lsinic_dpaa2_recv_pkts(rxq, rx_count);
 
+	first_idx = rxq->next_used_idx & (rxq->nb_desc - 1);
 	while (nb_rx < rx_count) {
 		bd_idx = rxq->next_used_idx & (rxq->nb_desc - 1);
 		rxe = lsinic_recv_get_sw_bd(rxq, bd_idx);
@@ -4004,6 +4178,24 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 			break;
 		if (rxq->mcnt > LSINIC_MERGE_MAX_NUM)
 			break;
+	}
+
+	if (rxq->com_notify == BURST_COMPLETE_NOTIFY &&
+		nb_rx > 0) {
+		if ((first_idx + nb_rx) < rxq->nb_desc) {
+			lsinic_pcie_memset_align(&rxq->rc_complete[first_idx],
+				RING_BD_HW_COMPLETE,
+				nb_rx);
+		} else {
+			lsinic_pcie_memset_align(&rxq->rc_complete[first_idx],
+				RING_BD_HW_COMPLETE,
+				rxq->nb_desc - first_idx);
+			if ((first_idx + nb_rx) != rxq->nb_desc) {
+				lsinic_pcie_memset_align(&rxq->rc_complete[0],
+					RING_BD_HW_COMPLETE,
+					first_idx + nb_rx - rxq->nb_desc);
+			}
+		}
 	}
 
 	return nb_rx;
