@@ -532,6 +532,8 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	struct lxsnic_ring *tx_ring = (struct lxsnic_ring *)tx_queue;
 	struct rte_mbuf *free_pkts[LSINIC_MERGE_MAX_NUM];
 	uint16_t free_nb = 0, i;
+	enum egress_cnf_type e_type =
+		LSINIC_CAP_XFER_EGRESS_CNF_GET(tx_ring->adapter->cap);
 
 	tx_ring->loop_total++;
 
@@ -552,6 +554,13 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		tx_num = 0;
 		goto end_of_tx;
 	}
+
+	if (e_type == EGRESS_RING_CNF)
+		lxsnic_tx_complete_ring_clean(tx_ring);
+	else if (e_type == EGRESS_INDEX_CNF)
+		lxsnic_tx_ring_idx_clean(tx_ring);
+	else
+		lxsnic_tx_ring_clean(tx_ring);
 
 	nb_pkts = (uint16_t)RTE_MIN(tx_ring->count, total_nb_pkts);
 	if (unlikely(!nb_pkts)) {
