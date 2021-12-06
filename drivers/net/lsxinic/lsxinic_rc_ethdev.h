@@ -224,9 +224,7 @@ struct lxsnic_ring {
 		struct lxsnic_rx_queue_stats rx_stats;
 	};
 	struct lxsnic_adapter *adapter;
-	struct rte_mbuf **self_xmit_pkts;
-	uint16_t self_xmit_pkts_total;
-	uint16_t self_xmit_pkts_count;
+	struct rte_ring *self_xmit_ring;
 	uint16_t mhead;
 	uint16_t mtail;
 	uint32_t mcnt;
