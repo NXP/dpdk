@@ -229,6 +229,8 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 
 				return -1;
 			}
+			memset(q->dma_jobs[i].usr_elem, 0, 4096);
+			memset(q->e2r_bd_dma_jobs[i].usr_elem, 0, 4096);
 		}
 	}
 
