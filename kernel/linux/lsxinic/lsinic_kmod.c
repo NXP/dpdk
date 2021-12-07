@@ -4,7 +4,7 @@
  * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
  * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
  */
- */
+
 #pragma GCC diagnostic ignored "-Winline"
 
 #include <linux/kernel.h>
@@ -47,11 +47,6 @@ MODULE_PARM_DESC(max_vfs,
 		" Maximum number of virtual functions to\n"
 		"\t\t\t allocate per physical function - default is\n"
 		"\t\t\t zero and maximum value is 64.");
-
-static unsigned int pcie_perf_tx;
-module_param(pcie_perf_tx, uint, S_IRUGO);
-static unsigned int pcie_perf_rx;
-module_param(pcie_perf_rx, uint, S_IRUGO);
 
 static unsigned int lsinic_thread_mode;
 module_param(lsinic_thread_mode, uint, S_IRUGO);
@@ -176,46 +171,6 @@ lsinic_set_netdev(struct lsinic_adapter *adapter,
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_REMOVED);
 		break;
 	case PCIDEV_COMMAND_INIT:
-		{
-			if (pcie_perf_tx) {
-				u32 size =
-					adapter->num_tx_queues *
-					LSINIC_QDMA_TEST_PKT_MAX_LEN *
-					adapter->tx_ring_bd_count;
-
-				if (size <= KMALLOC_MAX_SIZE) {
-					void *va_tx = kmalloc(size, GFP_KERNEL);
-					dma_addr_t pa_tx = __pa(va_tx);
-
-					printk(KERN_WARNING
-						"PCIe Tx perf enable host addr: 0x%lx, size: %d\n",
-						(unsigned long)pa_tx, size);
-					LSINIC_WRITE_REG(&rcs_reg->txdma_regl,
-						pa_tx & DMA_BIT_MASK(32));
-					LSINIC_WRITE_REG(&rcs_reg->txdma_regh,
-						pa_tx >> 32);
-				}
-			}
-
-			if (pcie_perf_rx) {
-				u32 size = adapter->num_rx_queues *
-						LSINIC_QDMA_TEST_PKT_MAX_LEN *
-						adapter->rx_ring_bd_count;
-
-				if (size <= KMALLOC_MAX_SIZE) {
-					void *va_rx = kmalloc(size, GFP_KERNEL);
-					dma_addr_t pa_rx = __pa(va_rx);
-
-					printk(KERN_WARNING
-						"PCIe RX perf enable host addr: 0x%lx, size: %d\n",
-						(unsigned long)pa_rx, size);
-					LSINIC_WRITE_REG(&rcs_reg->rxdma_regl,
-						pa_rx & DMA_BIT_MASK(32));
-					LSINIC_WRITE_REG(&rcs_reg->rxdma_regh,
-						pa_rx >> 32);
-				}
-			}
-		}
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
 	default:
