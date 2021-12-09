@@ -162,9 +162,8 @@ static int parse_port_fwd_dst(int portid)
 		fwd_dst_port[portid] = atoi(penv);
 
 	if (fwd_dst_port[portid] < 0) {
-		printf("error: destination of port %d fwd not set\n",
-			portid);
-		return -1;
+		printf("Drop packets from port %d\r\n", portid);
+		return 0;
 	}
 
 	printf("port forwarding from port %d to port %d\r\n",
@@ -522,15 +521,12 @@ port_forwarding:
 			queueid = qconf->rx_queue_list[i].queue_id;
 
 			dstportid = port_fwd_dst_port(portid);
-			if (dstportid < 0) {
-				printf("PORT RX err portid:%d\r\n", portid);
-				dstportid = 0;
-			}
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				MAX_PKT_BURST);
 			if (nb_rx == 0) {
-				if (unlikely(loopback_port == dstportid &&
+				if (unlikely(loopback_port >= 0 &&
+					loopback_port == dstportid &&
 					!loopback_start)) {
 					loopback_start_fun(portid, dstportid,
 						queueid,
@@ -556,6 +552,11 @@ port_forwarding:
 					PKTGEN_ETH_OVERHEAD_SIZE;
 			}
 			qconf->rx_statistic[portid].packets += nb_rx;
+
+			if (dstportid < 0) {
+				rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
+				continue;
+			}
 
 			nb_tx = rte_eth_tx_burst(dstportid,
 					qconf->tx_queue_id[dstportid],
@@ -1123,8 +1124,9 @@ parse_dst_port(uint16_t portid)
 
 static void *perf_statistics(void *arg)
 {
+	cpu_set_t cpuset;
 	unsigned int lcore_id, port_id;
-	int port_num;
+	int port_num, ret;
 	struct lcore_conf *qconf;
 	uint64_t rx_pkts[RTE_MAX_ETHPORTS];
 	uint64_t tx_pkts[RTE_MAX_ETHPORTS];
@@ -1137,6 +1139,12 @@ static void *perf_statistics(void *arg)
 
 	memset(rx_bytes_oh_old, 0, RTE_MAX_ETHPORTS * sizeof(uint64_t));
 	memset(tx_bytes_oh_old, 0, RTE_MAX_ETHPORTS * sizeof(uint64_t));
+
+	CPU_SET(0, &cpuset);
+	ret = pthread_setaffinity_np(pthread_self(),
+			sizeof(cpu_set_t), &cpuset);
+	printf("affinity statistics thread to cpu 0 %s\r\n",
+		ret ? "failed" : "success");
 
 loop:
 	if (force_quit)
@@ -1472,7 +1480,7 @@ main(int argc, char **argv)
 				init_lcore_rxq_ring(rx_queue);
 			} else {
 				if (parse_dst_port(portid)) {
-					rte_exit(0, "port%d fwd not set\n",
+					rte_exit(0, "port%d fwd error\n",
 						portid);
 				}
 			}
