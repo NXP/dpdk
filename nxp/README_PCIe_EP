@@ -9,8 +9,8 @@ i)  Endpoint build:
 export CROSS=aarch64-linux-gnu-
 export RTE_SDK=/Your/DPDK/path
 export RTE_TARGET=arm64-dpaa-linuxapp-gcc
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y' -C examples/port_fwd
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y' -C examples/port_fwd
 #Target image:
 #Endpoint example image: "example/port_fwd/build/port_fwd".
 
@@ -61,13 +61,13 @@ export DPRC=dprc.2
 export DPDMAI_COUNT=32
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 #forward traffic from dpmac5 to PF0
-export PORT0_FWD=1
-#forward traffic from PF0 to dpmac5
-export PORT1_FWD=0
-#forward traffic from dpmac6 to PF1
 export PORT0_FWD=2
-#forward traffic from PF1 to dpmac6
+#forward traffic from PF0 to dpmac5
+export PORT2_FWD=0
+#forward traffic from dpmac6 to PF1
 export PORT1_FWD=3
+#forward traffic from PF1 to dpmac6
+export PORT3_FWD=1
 #single core example:
 export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
@@ -80,6 +80,8 @@ export LSINIC_QDMA_SG_ENABLE=1
 export LSINIC_TXQ_QDMA_NO_RESPONSE=1
 #RC appends one byte after payload to notify EP qDMA complete.
 export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+#Clear all previous PCIe2 inbound/outbound configurations.
+export LSX_PCIE2_CLEAR_WINDOWS=1
 ./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
 ii) Start Root Complex:
@@ -87,6 +89,9 @@ ii) Start Root Complex:
 insmod lsinic.ko
 
 #For DPDK:
+#Larger continue huge page setup to improve performance
+echo 64 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+mount -t hugetlbfs hugetlbfs /mnt/hugepages -o "pagesize=1G"
 insmod igb_uio.ko
 echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
 #forward traffic from PF0 to PF1
@@ -117,28 +122,28 @@ export LSXINIC_PCIEx_PFy_VFz_EGRESS=portid
 4) Multiple EP processes used to communicate with fast path(host DPDK) and slow path(host kernel) respectively.
    Each process is a standalone process and has it's own DPAA2 resources/memory partion.
 
-             +---port_fwd---+                  +-kernel-loopback--+
-             |              |                  |                  |
-             |              |                  |                  |
-             |              |                  |                  |
-        +----------+    +----------+      +-------+           +----------+
-        | RC PF0   |    |RC PF0VF0 |      |RC PF1 |           |RC PF1VF0 |
-        +-----|----+    +-----|----+      +----|--+           +---|------+
-    ----------|-------------------PCIe-BUS-----------------------------------
-        +-----|----+    +-----|----+     +-----|--+           +---|------+
-        | EP PF0   |    |EP PF0VF0 |     | EP PF1 |           |EP PF1VF0 |
-        +----------+    +----------+     +--------+           +----------+
-              |               |                |                  |
-              |               |                |                  |
-              | +-----------+ |                | +-------------+  |
-               -| port_fwd1 |-                  -| port_fwd2   |-
-              | +-----------+ |                | +-------------+  |
-              |               |                |                  |
-        +-----|----+    +-----|---+       +----|---+          +---|----+
-        | DPNIa    |    | DPNIb   |       | DPNIc  |          | DPNId  |
-        +----------+    +---------+       +--------+          +--------+
+             +---port_fwd---+                     +----------------------+
+             |              |                     |     kernel stack     |
+             |              |                     +----------------------+
+             |              |                         |             |
+        +----------+    +----------+             +--------+      +----------+
+        | RC PF0   |    |RC PF0VF0 |             | RC PF1 |      | RC PF1VF0|
+        +-----|----+    +-----|----+             +----|---+      +-----|----+
+    ----------|-----------------------PCIe-BUS-----------------------------------
+        +-----|----+    +-----|----+             +----|---+      +-----|----+
+        | EP PF0   |    |EP PF0VF0 |             | EP PF1 |      | EP PF1VF0|
+        +----------+    +----------+             +--------+      +----------+
+              |               |                       |                |
+              |               |                       |                |
+              | +-----------+ |                       |  +-----------+ |
+               -| port_fwd1 |-                         - | port_fwd2 |-
+              | +-----------+ |                       |  +-----------+ |
+              |               |                       |                |
+        +-----|----+    +-----|---+               +--------+        +--------+
+        | DPNIa    |    | DPNIb   |               | DPNIc  |        | DPNId  |
+        +----------+    +---------+               +--------+        +--------+
 
-#First EP process:
+#First EP process for fast path:
 export ENABLE_PL_BIT=1
 export DPDMAI_COUNT=10
 export DPIO_COUNT=10
@@ -153,10 +158,13 @@ export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export LSX_PCIE2_PF1=0
 export LSX_PCIE2_PF0_VF0=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.3 dpmac.4
 ./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
-#Second EP process
+#Second EP process for slow path
 export ENABLE_PL_BIT=1
 export DPDMAI_COUNT=10
 export DPIO_COUNT=10
@@ -172,10 +180,11 @@ export P3_DIST_1='(3,0,4)'
 export LSX_PCIE2_PF0=0
 export LSX_PCIE2_PF1_VF0=1
 export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
+export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8d90
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./port_fwd -c 0x10 -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
-#RC DPDK for PF0 and PF0VF0
+#RC DPDK fast path for PF0 and PF0VF0
 echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
 echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
 echo 1 > /sys/bus/pci/rescan
@@ -188,8 +197,8 @@ export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
 ./port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
-#RC kernel module for PF1 and PF1VF0
-insmod lsinic.ko max_vfs=1 lsinic_loopback=1
+#RC kernel module slow path for PF1
+insmod lsinic.ko max_vfs=1
 
 5) Primary process is used to handle PCIe EP PMD and secondary process
    is used to handle reset devices(DPAA2, BBDEV etc).
@@ -228,6 +237,9 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export PORT_FWD_RING_FWD=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./port_fwd -c 0x4 -b fslmc:dpio.22 -b fslmc:dpio.23 -b fslmc:dpio.24 -b fslmc:dpio.25 -b fslmc:dpmcp.38 -n 1 -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
@@ -283,6 +295,9 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,8)'
 export P3_DIST_1='(3,0,8)'
 export PORT_FWD_RING_FWD=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 ./port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
 5) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
@@ -323,8 +338,9 @@ source ./dynamic_dpl.sh dpmac.5 dpmac.6
 
 #Secondary RC process
 i) Cross build:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=n CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LIBRTE_DPAA2_PMD=n CONFIG_RTE_LIBRTE_DPAA2_MEMPOOL=n CONFIG_RTE_LIBRTE_DPAA2_EVENTDEV_PMD=n CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=n CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LIBRTE_DPAA2_PMD=n CONFIG_RTE_LIBRTE_DPAA2_MEMPOOL=n CONFIG_RTE_LIBRTE_DPAA2_EVENTDEV_PMD=n CONFIG_RTE_LIBRTE_PMD_DPAA2_SEC=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y' -C examples/port_fwd
+export RTE_TARGET=arm64-lsxinic-rc-linuxapp-gcc
+make install T=arm64-lsxinic-rc-linuxapp-gcc CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n
+make install T=arm64-lsxinic-rc-linuxapp-gcc CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n -C examples/port_fwd
 
 ii) Run:
 export P0_DIST_1='(0,0,8)'
@@ -336,3 +352,48 @@ export PORT0_FWD=1
 export PORT1_FWD=0
 export SYSFS_PCI_DEVICES=/tmp
 ./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+6) PCIe EP/RC driver latency profiling.
+i) EP cross build:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING' -C examples/port_fwd
+
+ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profiling log something like:
+
+        packets=4047081959 errors=0 drop_pkts=0
+        EP->RC->EP average latency us:6.120000, TX burst depth:1.000000, RX burst depth:1.000000
+        Latency profile:
+        X2(9828783,0.242861%) X4(564299,0.013943%) X10(91526,0.002262%)
+        X20(7545,0.000186%) X40(1304,0.000032%) X100(0,0.000000%)
+
+7) Raw qDMA over PCIe throughput/latency benchmark.
+i) EP cross build:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING' -C examples/port_fwd
+
+ii)Environment settings in RC to start benchmark raw qDMA over PCIe:
+#benchmark raw qDMA PCIE from EP to RC:
+export LSINIC_EP2RC_PCI_DMA_RAW_TEST=1
+#benchmark raw qDMA PCIE from RC to EP:
+export LSINIC_RC2EP_PCI_DMA_RAW_TEST=1
+
+iii) Other options set in EP used for throughput/latency measurment:
+#Set DMA packet size before running EP PMD driver
+#default/minimum size is 60 and maximum size is 1514
+export LSINIC_PCIE_DMA_TEST_PKT_SIZE=1024
+#Set DMA burst size before running EP PMD driver
+#default burst size is 32
+export LSINIC_PCIE_DMA_RAW_BURST_SIZE=32
+#Enable sync mode before running EP PMD driver
+#sync mode is diasbled as default.
+#This is used to measure best latency of qDMA over PCIe
+export LSINIC_PCIE_DMA_RAW_SYNC_MODE=1
+
+#Check throughput and latency by EP runtime LOG something like:
+
+        EP->RC average latency us:87.402768, TX burst depth: 31.000000
+        RC->EP average latency us:89.581164, RX burst depth: 31.000000
+        Total txq:      total_pkts=1104839680 tx_pkts=1104839680 drop_pkts=0 ring_full=0
+TX performance: 48.095560Gbps, fcs bits: 9086201528320
+        Total rxq:      rx-pkts=1078013120 drop_pkts=0 ring_full=0
+RX performance: 46.857894Gbps, fcs bits: 8865579898880
