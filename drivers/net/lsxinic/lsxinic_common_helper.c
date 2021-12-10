@@ -181,6 +181,90 @@ lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
 	return -1;
 }
 
+enum dir_enum {
+	EP2RC_DIR,
+	RC2EP_DIR
+};
+
+#define SINGLE_DIR_LATENCY(dir, av, depth) \
+		"\t%s average latency us:%f, %s: %f\n", \
+		(dir) == EP2RC_DIR ? "EP->RC" : "RC->EP", \
+		av, (dir) == EP2RC_DIR ? \
+		"TX burst depth" : "RX burst depth", \
+		depth
+
+#define BI_DIR_LATENCY(av, tx_depth, rx_depth) \
+		"\t%s :%f, %s: %f, %s :%f\n", \
+		"EP->RC->EP average latency us", \
+		av, "TX burst depth", \
+		tx_depth, "RX burst depth", rx_depth
+
+#define LATENCY_PROFILING(x2, x2r, x4, x4r, \
+		x10, x10r, x20, x20r, x40, x40r, x100, x100r) \
+		"\tLatency profile:\n" \
+		"\tX2(%ld,%f%%) X4(%ld,%f%%) X10(%ld,%f%%)\n" \
+		"\tX20(%ld,%f%%) X40(%ld,%f%%)" \
+		" X100(%ld,%f%%)\n", \
+		x2, x2r, x4, x4r, x10, x10r, x20, x20r, \
+		x40, x40r, x100, x100r
+
+static void
+print_ep_latency(struct lsinic_queue *epq)
+{
+	if (epq->type == LSINIC_QUEUE_RX && epq->cyc_diff_total) {
+		double rx_burst_av_depth = epq->packets /
+			epq->loop_avail;
+		double tx_burst_av_depth = epq->pair->packets /
+			epq->pair->loop_avail;
+		double av_us = (double)epq->cyc_diff_total /
+			(double)epq->packets /
+			(double)epq->adapter->cycs_per_us;
+
+		if (epq->dma_test.status == LSINIC_PCI_DMA_TEST_START) {
+			av_us = (double)epq->cyc_diff_total /
+				(double)epq->packets /
+				(double)epq->adapter->cycs_per_us;
+			printf(SINGLE_DIR_LATENCY(RC2EP_DIR,
+				av_us, rx_burst_av_depth));
+		} else {
+			av_us = epq->avg_latency;
+			printf(BI_DIR_LATENCY(av_us,
+				tx_burst_av_depth, rx_burst_av_depth));
+			printf(LATENCY_PROFILING(epq->avg_x2_total,
+				((double)epq->avg_x2_total /
+				epq->packets * 100),
+				epq->avg_x4_total,
+				((double)epq->avg_x4_total /
+				epq->packets * 100),
+				epq->avg_x10_total,
+				((double)epq->avg_x10_total /
+				epq->packets * 100),
+				epq->avg_x20_total,
+				((double)epq->avg_x20_total /
+				epq->packets * 100),
+				epq->avg_x40_total,
+				((double)epq->avg_x40_total /
+				epq->packets * 100),
+				epq->avg_x100_total,
+				((double)epq->avg_x100_total /
+				epq->packets * 100)));
+		}
+	}
+
+	if (epq->type == LSINIC_QUEUE_TX &&
+		epq->cyc_diff_total &&
+		epq->dma_test.status == LSINIC_PCI_DMA_TEST_START) {
+		double tx_burst_av_depth = epq->packets /
+			epq->loop_avail;
+		double av_us = (double)epq->cyc_diff_total /
+			(double)epq->packets /
+			(double)epq->adapter->cycs_per_us;
+
+		printf(SINGLE_DIR_LATENCY(EP2RC_DIR, av_us,
+			tx_burst_av_depth));
+	}
+}
+
 static void
 print_queue_status(void *queue,
 	unsigned long long *packets,
@@ -235,43 +319,7 @@ print_queue_status(void *queue,
 			epq->bytes_overhead_old;
 		epq->bytes_overhead_old = epq->bytes_overhead;
 
-		if (epq->type == LSINIC_QUEUE_RX && epq->cyc_diff_total) {
-			double rx_burst_av_depth = epq->packets /
-				epq->loop_avail;
-			double tx_burst_av_depth = epq->pair->packets /
-				epq->pair->loop_avail;
-			double av_us = (double)epq->cyc_diff_total /
-				(double)epq->packets /
-				(double)epq->adapter->cycs_per_us;
-			double current_us = (double)epq->cyc_diff_curr /
-				(double)epq->adapter->cycs_per_us;
-
-			if (epq->dma_test.pci_addr)
-				printf("\tRC->EP average latency us:%f,"
-					" current latency us:%f RX burst depth:%f\n",
-					av_us, current_us, rx_burst_av_depth);
-			else
-				printf("\tEP->RC->EP average latency us:%f,"
-					" current latency us:%f\n"
-					"\tTX burst depth:%f, RX burst depth:%f\n",
-					av_us, current_us, tx_burst_av_depth,
-					rx_burst_av_depth);
-		}
-
-		if (epq->type == LSINIC_QUEUE_TX && epq->cyc_diff_total &&
-			epq->dma_test.pci_addr) {
-			double tx_burst_av_depth = epq->packets /
-				epq->loop_avail;
-			double av_us = (double)epq->cyc_diff_total /
-				(double)epq->packets /
-				(double)epq->adapter->cycs_per_us;
-			double current_us = (double)epq->cyc_diff_curr /
-				(double)epq->adapter->cycs_per_us;
-
-			printf("\tEP->RC average latency us:%f,"
-				" current latency us:%f TX burst depth:%f\n",
-				av_us, current_us, tx_burst_av_depth);
-		}
+		print_ep_latency(epq);
 
 		if (core_mask)
 			(*core_mask) |= (((uint64_t)1) << epq->core_id);

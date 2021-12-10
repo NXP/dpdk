@@ -167,8 +167,17 @@ static pthread_t debug_pid;
 static void *lxsnic_rc_debug_status(void *arg)
 {
 	struct rte_eth_dev *eth_dev = arg;
+	int ret;
+	cpu_set_t cpuset;
 
-	printf("RC start to print status thread\n");
+	CPU_SET(0, &cpuset);
+
+	ret = pthread_setaffinity_np(pthread_self(),
+			sizeof(cpu_set_t), &cpuset);
+	LSXINIC_PMD_INFO("affinity status thread to cpu 0 %s",
+		ret ? "failed" : "success");
+
+	LSXINIC_PMD_INFO("RC start to print status thread");
 
 	while (1) {
 		sleep(DEBUG_STATUS_INTERVAL);

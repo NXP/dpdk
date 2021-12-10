@@ -3432,7 +3432,7 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	struct rte_eth_dev *recycle_dev;
 
 	txq = tx_queue;
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	{
 		int i, j;
 		uint64_t tick = rte_get_timer_cycles();
@@ -3676,7 +3676,7 @@ lsinic_pci_dma_test_init(struct lsinic_queue *queue)
 	if (penv)
 		pkt_len = atoi(penv);
 
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	penv = getenv("LSINIC_PCIE_DMA_TEST_LATENCY_BURST");
 	if (penv) {
 		dma_test->latency_burst = atoi(penv);
@@ -3763,7 +3763,7 @@ skip_qdma_vq_setup:
 
 	dma_test->pkt_len = pkt_len;
 	dma_test->status = LSINIC_PCI_DMA_TEST_START;
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	LSXINIC_PMD_INFO("qDMA-PCIe benchmark latency pkt(%dB) burst(%d) %s",
 		pkt_len,
 		dma_test->latency_burst,
@@ -3958,7 +3958,6 @@ rx_latency_calculation:
 		if (rx_queue->dma_test.latency_burst && eq_ret > 0) {
 			rx_queue->cyc_diff_total += (dq_tick - eq_tick) *
 				rx_queue->dma_test.latency_burst;
-			rx_queue->cyc_diff_curr = (dq_tick - eq_tick);
 		}
 	}
 
@@ -4078,7 +4077,6 @@ tx_latency_calculation:
 		if (tx_queue->dma_test.latency_burst && eq_ret > 0) {
 			tx_queue->cyc_diff_total += (dq_tick - eq_tick) *
 				rx_queue->dma_test.latency_burst;
-			tx_queue->cyc_diff_curr = (dq_tick - eq_tick);
 		}
 	}
 
@@ -4938,12 +4936,14 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	uint16_t nb_rx;
 	uint16_t count;
 	struct lsinic_queue *rxq = rx_queue;
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	uint64_t current_tick = 0;
 	uint64_t tick_load;
 	uint8_t *tick_load_8 = (uint8_t *)&tick_load;
 	uint8_t *tick_save;
 	uint8_t i;
+	double cyc_per_us = rxq->adapter->cycs_per_us;
+	double curr_latency;
 #endif
 
 	lsinic_rxq_loop(rxq);
@@ -4957,19 +4957,55 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		return 0;
 
 	count = RTE_MIN(nb_pkts, rxq->mcnt);
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	if (count > 0)
 		current_tick = rte_get_timer_cycles();
 #endif
 	for (nb_rx = 0; nb_rx < count; nb_rx++) {
 		rxm = rxq->mcache[rxq->mhead];
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 		tick_save = rte_pktmbuf_mtod_offset(rxm,
 			uint8_t *, rxm->pkt_len - sizeof(uint64_t));
 		for (i = 0; i < (uint8_t)sizeof(uint64_t); i++)
 			tick_load_8[i] = tick_save[i];
 		rxq->cyc_diff_total += (current_tick - tick_load);
-		rxq->cyc_diff_curr = (current_tick - tick_load);
+		rxq->avg_latency =
+			rxq->cyc_diff_total /
+			(rxq->packets + nb_rx + 1) / cyc_per_us;
+		curr_latency = (current_tick - tick_load) / cyc_per_us;
+		if (curr_latency >= 2 * rxq->avg_latency &&
+			curr_latency < 4 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+		} else if (curr_latency >= 4 * rxq->avg_latency &&
+			curr_latency < 10 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+			rxq->avg_x4_total++;
+		} else if (curr_latency >= 10 * rxq->avg_latency &&
+			curr_latency < 20 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+			rxq->avg_x4_total++;
+			rxq->avg_x10_total++;
+		} else if (curr_latency >= 20 * rxq->avg_latency &&
+			curr_latency < 40 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+			rxq->avg_x4_total++;
+			rxq->avg_x10_total++;
+			rxq->avg_x20_total++;
+		} else if (curr_latency >= 40 * rxq->avg_latency &&
+			curr_latency < 100 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+			rxq->avg_x4_total++;
+			rxq->avg_x10_total++;
+			rxq->avg_x20_total++;
+			rxq->avg_x40_total++;
+		} else if (curr_latency >= 100 * rxq->avg_latency) {
+			rxq->avg_x2_total++;
+			rxq->avg_x4_total++;
+			rxq->avg_x10_total++;
+			rxq->avg_x20_total++;
+			rxq->avg_x40_total++;
+			rxq->avg_x100_total++;
+		}
 		rxm->pkt_len -= sizeof(uint64_t);
 		rxm->data_len -= sizeof(uint64_t);
 #endif

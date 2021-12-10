@@ -1116,6 +1116,8 @@ static void lxsnic_eth_self_xmit_gen_pkt(uint8_t *payload)
 	ipv4_header->hdr_checksum = rte_ipv4_cksum(ipv4_header);
 }
 
+uint8_t s_perf_mode_set[RTE_MAX_LCORE];
+
 uint16_t
 lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
@@ -1128,6 +1130,22 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 	struct lxsnic_ring *tx_queue =
 			eth_dev->data->tx_queues[rx_queue->queue_index];
 	enum egress_cnf_type e_type;
+
+	if (unlikely(!s_perf_mode_set[rte_lcore_id()])) {
+		if (getenv("NXP_CHRT_PERF_MODE")) {
+			pid_t tid = rte_gettid();
+			char command[256];
+			int ret;
+
+			snprintf(command, 256, "chrt -p 90 %d", tid);
+			ret = system(command);
+			if (ret < 0)
+				LSXINIC_PMD_ERR("%s excuted failed", command);
+			else
+				LSXINIC_PMD_INFO("%s excuted success", command);
+		}
+		s_perf_mode_set[rte_lcore_id()] = 1;
+	}
 
 	if (tx_queue) {
 		e_type =

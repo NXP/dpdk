@@ -39,8 +39,6 @@
 
 #define LSINIC_RING_FULL_THRESH_COUNT 1
 
-#undef LSXINIC_LATENCY_TEST
-
 /**
  * Structure associated with each descriptor of the TX ring of a TX queue.
  */
@@ -121,7 +119,13 @@ struct lsinic_queue {
 	/* flag */
 	uint32_t flag;
 	uint64_t cyc_diff_total;
-	uint64_t cyc_diff_curr;
+	double avg_latency;
+	uint64_t avg_x2_total;
+	uint64_t avg_x4_total;
+	uint64_t avg_x10_total;
+	uint64_t avg_x20_total;
+	uint64_t avg_x40_total;
+	uint64_t avg_x100_total;
 
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 

@@ -839,7 +839,7 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	return 0;
 }
 
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 static uint64_t s_cycs_per_us;
 static uint64_t
 calculate_cycles_per_us(void)
@@ -930,7 +930,7 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	}
 	lsinic_set_init_flag(adapter);
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	adapter->cycs_per_us = calculate_cycles_per_us();
 #endif
 
