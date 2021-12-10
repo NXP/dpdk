@@ -1680,7 +1680,7 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 				ep_dev->ob_map_bus_base,
 				ep_dev->ob_win_size);
 
-	return (uint8_t *)ep_dev->ob_virt_base + offset;
+	return ep_dev->ob_virt_base + offset;
 }
 
 static uint8_t *
@@ -1731,23 +1731,23 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 
 	if (ctlhw->ob_policy == LSX_PCIEP_OB_SHARE &&
 		ctlhw->share_ob_complete)
-		return (uint8_t *)ep_dev->ob_virt_base + pci_addr;
+		return ep_dev->ob_virt_base + pci_addr;
 
 	for (idx = 0; idx < out_win_nb; idx++) {
-		out_phy += ctlhw->out_win_size * idx;
-		pci_addr += ctlhw->out_win_size * idx;
 		ctldev->ops->pcie_set_ob_win(ctldev,
-						out_win_start + idx,
-					    pf, is_vf, vf,
-					    out_phy,
-					    pci_addr,
-					    ctlhw->out_win_size);
+					out_win_start + idx,
+					pf, is_vf, vf,
+					out_phy,
+					pci_addr,
+					ctlhw->out_win_size);
+		out_phy += ctlhw->out_win_size;
+		pci_addr += ctlhw->out_win_size;
 	}
 
 	if (ctlhw->ob_policy == LSX_PCIEP_OB_SHARE)
 		ctlhw->share_ob_complete = 1;
 
-	return (uint8_t *)ep_dev->ob_virt_base + offset;
+	return ep_dev->ob_virt_base + offset;
 }
 
 void *
