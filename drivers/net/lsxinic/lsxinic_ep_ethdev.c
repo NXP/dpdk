@@ -460,8 +460,8 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
 
-	if (adapter->cap & (LSINIC_CAP_XFER_COMPLETE |
-		LSINIC_EP_CAP_RXQ_ORP)) {
+	if ((adapter->cap & LSINIC_CAP_XFER_COMPLETE) ||
+		(adapter->ep_cap & LSINIC_EP_CAP_RXQ_ORP)) {
 		/** Index confirm as default*/
 		LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
 			EGRESS_INDEX_CNF);
@@ -515,6 +515,10 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	penv = getenv("LSINIC_XFER_HOST_ACCESS_EP_MEM");
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
+
+	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
+		(adapter->cap & LSINIC_CAP_XFER_COMPLETE))
+		adapter->cap |= LSINIC_CAP_XFER_ORDER_PRSV;
 
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
 		return;
@@ -1278,7 +1282,9 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int sim;
+	int sim, i;
+	struct rte_eth_dev *dev = lsinic_dev->eth_dev;
+	struct lsinic_queue *rxq;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1333,6 +1339,15 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		}
 	} else {
 		adapter->complete_src = NULL;
+	}
+
+	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
+	if (adapter->rc_dma_base) {
+		for (i = 0; i < dev->data->nb_rx_queues; i++) {
+			rxq = dev->data->rx_queues[i];
+			memset(rxq->notify_ep, 0,
+				sizeof(struct lsinic_notify_ep) * rxq->nb_desc);
+		}
 	}
 
 	if (!sim)

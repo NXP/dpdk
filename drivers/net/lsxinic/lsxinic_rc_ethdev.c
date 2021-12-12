@@ -194,11 +194,17 @@ static int lxsnic_wait_tx_bd_ready(struct lxsnic_ring *tx_ring)
 {
 	uint32_t i, bd_status, count;
 	struct lsinic_bd_desc *rc_tx_desc;
+	const uint32_t cap = tx_ring->adapter->cap;
 
 	for (i = 0; i < tx_ring->count; i++) {
 		rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
 		bd_status = rc_tx_desc->bd_status;
 		count = 0;
+		if (cap & LSINIC_CAP_XFER_SHORT_BD) {
+			rc_tx_desc->bd_status = 0;
+			rc_tx_desc->bd_status |= RING_BD_READY;
+			goto skip_wait_ep;
+		}
 		while ((bd_status & RING_BD_STATUS_MASK) != RING_BD_READY) {
 			msleep(1);
 			bd_status = rc_tx_desc->bd_status;
@@ -211,6 +217,7 @@ static int lxsnic_wait_tx_bd_ready(struct lxsnic_ring *tx_ring)
 				return -1;
 			}
 		}
+skip_wait_ep:
 #ifdef LSINIC_BD_CTX_IDX_USED
 		rc_tx_desc->bd_status &= (~LSINIC_BD_CTX_IDX_MASK);
 		rc_tx_desc->bd_status |=
@@ -274,8 +281,11 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 {
 	struct lxsnic_adapter *adapter =
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
+	uint8_t __iomem *hw_addr = adapter->hw.hw_addr;
 	struct lsinic_dev_reg *ep_reg =
-		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_DEV_REG_OFFSET);
+		LSINIC_REG_OFFSET(hw_addr, LSINIC_DEV_REG_OFFSET);
+	struct lsinic_rcs_reg *rcs_reg =
+			LSINIC_REG_OFFSET(hw_addr, LSINIC_RCS_REG_OFFSET);
 	uint32_t reg_val = 0, i;
 	char *penv = getenv("LSINIC_RC_PRINT_STATUS");
 	int print_status = 0, ret;
@@ -301,6 +311,13 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 
 	if (adapter->pdraw_test & LXSNIC_EP2RC_PCI_DMA_RAW_TEST)
 		lxsnic_dev_rx_dma_test(adapter);
+
+	if (!adapter->pdraw_test) {
+		if (adapter->cap & LSINIC_CAP_XFER_SHORT_BD) {
+			LSINIC_WRITE_REG_64B(&rcs_reg->r_dma_base,
+				adapter->pkt_addr_base);
+		}
+	}
 
 	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 
@@ -389,12 +406,14 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
  * Returns 0 on success, negative on failure
  */
 
+#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
+
 static int
 lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint16_t queue_idx,
 	uint16_t nb_desc,
 	unsigned int socket_id,
-	const struct rte_eth_rxconf *rx_conf __rte_unused,
+	const struct rte_eth_rxconf *rx_conf,
 	struct rte_mempool *mp)
 {
 	struct lxsnic_adapter *adapter =
@@ -526,6 +545,16 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rx_ring->ep_bd_desc);
 	dev->data->rx_queues[queue_idx] = rx_ring;
 	adapter->config_rx_queues++;
+
+	if (adapter->cap & LSINIC_CAP_XFER_ORDER_PRSV) {
+		uint64_t n_min = rx_conf->reserved_64s[0];
+		uint64_t n_max = rx_conf->reserved_64s[1];
+
+		if ((n_max - n_min) <= MAX_U32) {
+			adapter->pkt_addr_base = n_min;
+			adapter->cap |= LSINIC_CAP_XFER_SHORT_BD;
+		}
+	}
 	return 0;
 }
 

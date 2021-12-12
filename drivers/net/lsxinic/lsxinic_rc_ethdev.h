@@ -179,7 +179,12 @@ struct lxsnic_ring {
 	uint32_t core_id;
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
-	struct lsinic_bd_desc *ep_bd_desc;/* bd desc point to EP memory */
+	union {
+		/* point to EP memory */
+		struct lsinic_bd_desc *ep_bd_desc;
+		struct lsinic_notify_ep *notify_ep;
+		struct lsinic_prep_addr_ep *addr_ep;
+	};
 	struct lsinic_bd_desc *rc_bd_desc;
 	union rc_ep2rc_ring ep2rc;
 	/* bd desc point to RC(local) memory */
@@ -361,6 +366,7 @@ struct lxsnic_adapter {
 	int pdraw_test;
 	uint32_t merge_threshold;
 	uint32_t max_data_room;
+	uint64_t pkt_addr_base;
 };
 
 enum lxsnic_state_t {

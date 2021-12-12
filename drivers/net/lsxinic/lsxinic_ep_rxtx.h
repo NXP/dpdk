@@ -133,7 +133,12 @@ struct lsinic_queue {
 	struct lsinic_ring_reg *ep_reg; /* ring reg point to EP memory */
 	struct lsinic_ring_reg *rc_reg; /* ring reg point to RC memory */
 
-	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP mem */
+	/* point to EP mem */
+	union {
+		struct lsinic_bd_desc *ep_bd_desc;
+		struct lsinic_notify_ep *notify_ep;
+	};
+	char **complete_array;
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
 	union ep_ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
 	enum ep2rc_update_type ep2rc_update;

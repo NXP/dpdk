@@ -138,6 +138,7 @@ struct lsinic_adapter {
 
 	uint32_t merge_threshold;
 	uint32_t data_room_size;
+	uint64_t rc_dma_base;
 
 	uint64_t cycs_per_us;
 };

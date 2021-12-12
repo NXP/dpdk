@@ -264,6 +264,20 @@ struct ep2rc_notify {
 	uint16_t total_len;
 	uint16_t cnt_idx;
 } __packed;
+
+struct lsinic_prep_addr_ep {
+	uint32_t pkt_addr_low;
+} __packed;
+
+struct lsinic_notify_ep {
+	union {
+		uint64_t addr_cmd_len;
+		struct {
+			uint32_t pkt_addr_low;
+			uint32_t len_cmd;
+		};
+	};
+} __packed;
 #endif
 
 #define LSINIC_BD_RING_SIZE	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
@@ -349,6 +363,7 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	struct lsinic_command_reg cmd;
 	uint32_t r_regl;	/* shadow reg low address On RC side */
 	uint32_t r_regh;	/* shadow reg high address On RC side */
+	uint64_t r_dma_base;
 	uint32_t msi_flag;
 	uint32_t msix_mask[32];
 } __packed;
@@ -379,7 +394,7 @@ enum egress_cnf_type {
 	EGRESS_CNF_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_EGRESS_CNF_POS 6
+#define LSINIC_CAP_XFER_EGRESS_CNF_POS 8
 
 #define LSINIC_CAP_XFER_EGRESS_CNF_GET(cap) \
 	(((cap) >> LSINIC_CAP_XFER_EGRESS_CNF_POS) & EGRESS_CNF_MASK)
@@ -415,6 +430,8 @@ enum ingress_notify_type {
 #define LSINIC_CAP_XFER_TX_BD_UPDATE 0x00000004
 #define LSINIC_CAP_XFER_RX_BD_UPDATE 0x00000008
 #define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000010
+#define LSINIC_CAP_XFER_ORDER_PRSV 0x00000020
+#define LSINIC_CAP_XFER_SHORT_BD 0x00000040
 
 #define LSXINIC_VF_AVAILABLE (((uint32_t)1) << 15)
 
