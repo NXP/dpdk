@@ -141,6 +141,9 @@ static struct rte_mempool *pktmbuf_pool;
 #define RTE_MAX_QUEUES 128
 static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
 
+static uint64_t max_mbuf_addr;
+static uint64_t min_mbuf_addr = (~((uint64_t)0));
+
 struct loop_mode {
 	int (*parse_fwd_dst)(int portid);
 	rte_rx_callback_fn cb_parse_ptype;
@@ -964,6 +967,44 @@ print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 	printf("%s%s", name, buf);
 }
 
+static void
+port_fwd_mp_max_min_addr(struct rte_mempool *mp)
+{
+	uint32_t num = mp->size, i, alloced = 0, bulk_size;
+	int ret;
+	struct rte_mbuf **mbuf_arry =
+		malloc(sizeof(struct rte_mbuf *) * num);
+
+	if (!mbuf_arry)
+		return;
+
+	while (num) {
+		bulk_size = num > RTE_MEMPOOL_CACHE_MAX_SIZE ?
+			RTE_MEMPOOL_CACHE_MAX_SIZE : num;
+		ret = rte_pktmbuf_alloc_bulk(mp,
+			&mbuf_arry[alloced], bulk_size);
+		if (ret) {
+			printf("Drain %d bufs from %s failed\r\n",
+				num, mp->name);
+			if (alloced)
+				rte_pktmbuf_free_bulk(mbuf_arry, alloced);
+			free(mbuf_arry);
+			return;
+		}
+		alloced += bulk_size;
+		num -= bulk_size;
+	}
+
+	for (i = 0; i < mp->size; i++) {
+		if (mbuf_arry[i]->buf_iova > max_mbuf_addr)
+			max_mbuf_addr = mbuf_arry[i]->buf_iova;
+		if (mbuf_arry[i]->buf_iova < min_mbuf_addr)
+			min_mbuf_addr = mbuf_arry[i]->buf_iova;
+	}
+	rte_pktmbuf_free_bulk(mbuf_arry, mp->size);
+	free(mbuf_arry);
+}
+
 static int
 init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 {
@@ -1026,6 +1067,8 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
 	else
 		printf("mbuf pool(count=%d) created\n", nb_mbuf);
+
+	port_fwd_mp_max_min_addr(pktmbuf_pool);
 
 	return 0;
 }
@@ -1421,6 +1464,8 @@ main(int argc, char **argv)
 
 			rxq_conf = dev_info.default_rxconf;
 			rxq_conf.offloads = port_conf.rxmode.offloads;
+			rxq_conf.reserved_64s[0] = min_mbuf_addr;
+			rxq_conf.reserved_64s[1] = max_mbuf_addr;
 			ret = rte_eth_rx_queue_setup(portid, queueid,
 					nb_rxd, socketid,
 					&rxq_conf,
