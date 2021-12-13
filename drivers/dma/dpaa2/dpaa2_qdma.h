@@ -1,19 +1,24 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
-#ifndef __DPAA2_QDMA_H__
-#define __DPAA2_QDMA_H__
+#ifndef _DPAA2_QDMA_H_
+#define _DPAA2_QDMA_H_
 
-struct qdma_sdd;
-struct rte_qdma_job;
+#define DPAA2_QDMA_MAX_DESC		1024
+#define DPAA2_QDMA_MIN_DESC		1
+#define DPAA2_QDMA_MAX_VHANS		64
+
+#define DPAA2_QDMA_VQ_FD_LONG_FORMAT		(1ULL << 0)
+#define DPAA2_QDMA_VQ_FD_SG_FORMAT		(1ULL << 1)
+#define DPAA2_QDMA_VQ_NO_RESPONSE		(1ULL << 2)
 
 #define DPAA2_QDMA_MAX_FLE 3
 #define DPAA2_QDMA_MAX_SDD 2
 
 #define DPAA2_QDMA_MAX_SG_NB 64
 
-#define DPAA2_DPDMAI_MAX_QUEUES	8
+#define DPAA2_DPDMAI_MAX_QUEUES	1
 
 /** FLE single job pool size: job pointer(uint64_t) +
  * 3 Frame list + 2 source/destination descriptor.
@@ -74,104 +79,30 @@ struct rte_qdma_job;
 #define MAX_HW_QUEUE_PER_CORE		64
 
 #define QDMA_RBP_UPPER_ADDRESS_MASK (0xfff0000000000)
-/**
- * Represents a QDMA device.
- * A single QDMA device exists which is combination of multiple DPDMAI rawdev's.
- */
-struct qdma_device {
-	/** total number of hw queues. */
-	uint16_t num_hw_queues;
-	/**
-	 * Maximum number of hw queues to be alocated per core.
-	 * This is limited by MAX_HW_QUEUE_PER_CORE
-	 */
-	uint16_t max_hw_queues_per_core;
 
-	/** VQ's of this device */
-	struct qdma_virt_queue *vqs;
-	/** Maximum number of VQ's */
-	uint16_t max_vqs;
-	/** Device state - started or stopped */
-	uint8_t state;
-	/** FLE queue pool size */
-	int fle_queue_pool_cnt;
-	/** A lock to QDMA device whenever required */
-	rte_spinlock_t lock;
-};
-
-/** Represents a QDMA H/W queue */
-struct qdma_hw_queue {
-	/** Pointer to Next instance */
-	TAILQ_ENTRY(qdma_hw_queue) next;
-	/** DPDMAI device to communicate with HW */
-	struct dpaa2_dpdmai_dev *dpdmai_dev;
-	/** queue ID to communicate with HW */
-	uint16_t queue_id;
-	/** Associated lcore id */
-	uint32_t lcore_id;
-	/** Number of users of this hw queue */
-	uint32_t num_users;
-};
-
-struct qdma_virt_queue;
-
-typedef uint16_t (qdma_get_job_t)(struct qdma_virt_queue *qdma_vq,
-					const struct qbman_fd *fd,
-					struct rte_qdma_job **job,
-					uint16_t *nb_jobs);
-typedef int (qdma_set_fd_t)(struct qdma_virt_queue *qdma_vq,
-					struct qbman_fd *fd,
-					struct rte_qdma_job **job,
-					uint16_t nb_jobs);
-
-typedef int (qdma_dequeue_multijob_t)(
-				struct qdma_virt_queue *qdma_vq,
-				uint16_t *vq_id,
-				struct rte_qdma_job **job,
-				uint16_t nb_jobs);
-
-typedef int (qdma_enqueue_multijob_t)(
-			struct qdma_virt_queue *qdma_vq,
-			struct rte_qdma_job **job,
-			uint16_t nb_jobs);
-
-/** Represents a QDMA virtual queue */
-struct qdma_virt_queue {
-	/** Status ring of the virtual queue */
-	struct rte_ring *status_ring;
-	/** Associated hw queue */
-	struct qdma_hw_queue *hw_queue;
-	/** FLE pool for the queue */
-	struct rte_mempool *fle_pool;
-	/** Route by port */
-	struct rte_qdma_rbp rbp;
-	/** Associated lcore id */
-	uint32_t lcore_id;
-	/** States if this vq is in use or not */
-	uint8_t in_use;
-	/** States if this vq has exclusively associated hw queue */
-	uint8_t exclusive_hw_queue;
-	/* Total number of enqueues on this VQ */
-	uint64_t num_enqueues;
-	/* Total number of dequeues from this VQ */
-	uint64_t num_dequeues;
-
-	uint16_t vq_id;
+/** Determines a QDMA job */
+struct dpaa2_qdma_job {
+	/** Source Address from where DMA is (to be) performed */
+	uint64_t src;
+	/** Destination Address where DMA is (to be) done */
+	uint64_t dest;
+	/** Length of the DMA operation in bytes. */
+	uint32_t len;
+	/** See RTE_QDMA_JOB_ flags */
 	uint32_t flags;
-
-	qdma_set_fd_t *set_fd;
-	qdma_get_job_t *get_job;
-
-	qdma_dequeue_multijob_t *dequeue_job;
-	qdma_enqueue_multijob_t *enqueue_job;
-};
-
-/** Represents a QDMA per core hw queues allocation in virtual mode */
-struct qdma_per_core_info {
-	/** list for allocated hw queues */
-	struct qdma_hw_queue *hw_queues[MAX_HW_QUEUE_PER_CORE];
-	/* Number of hw queues allocated for this core */
-	uint16_t num_hw_queues;
+	/**
+	 * Status of the transaction.
+	 * This is filled in the dequeue operation by the driver.
+	 * upper 8bits acc_err for route by port.
+	 * lower 8bits fd error
+	 */
+	uint16_t status;
+	uint16_t vq_id;
+	/**
+	 * FLE pool element maintained by user, in case no qDMA response.
+	 * Note: the address must be allocated from DPDK memory pool.
+	 */
+	void *usr_elem;
 };
 
 /** Source/Destination Descriptor */
@@ -279,10 +210,71 @@ struct dpaa2_dpdmai_dev {
 	struct qdma_device *qdma_dev;
 };
 
-static inline struct qdma_device *
-QDMA_DEV_OF_VQ(struct qdma_virt_queue *vq)
-{
-	return vq->hw_queue->dpdmai_dev->qdma_dev;
-}
+struct qdma_virt_queue;
 
-#endif /* __DPAA2_QDMA_H__ */
+typedef uint16_t (qdma_get_job_t)(struct qdma_virt_queue *qdma_vq,
+					const struct qbman_fd *fd,
+					struct dpaa2_qdma_job **job,
+					uint16_t *nb_jobs);
+typedef int (qdma_set_fd_t)(struct qdma_virt_queue *qdma_vq,
+					struct qbman_fd *fd,
+					struct dpaa2_qdma_job **job,
+					uint16_t nb_jobs);
+
+typedef int (qdma_dequeue_multijob_t)(
+				struct qdma_virt_queue *qdma_vq,
+				uint16_t *vq_id,
+				struct dpaa2_qdma_job **job,
+				uint16_t nb_jobs);
+
+typedef int (qdma_enqueue_multijob_t)(
+			struct qdma_virt_queue *qdma_vq,
+			struct dpaa2_qdma_job **job,
+			uint16_t nb_jobs);
+
+/** Represents a QDMA virtual queue */
+struct qdma_virt_queue {
+	/** Status ring of the virtual queue */
+	struct rte_ring *status_ring;
+	/** Associated hw queue */
+	struct dpaa2_dpdmai_dev *dpdmai_dev;
+	/** FLE pool for the queue */
+	struct rte_mempool *fle_pool;
+	/** Route by port */
+	struct rte_dpaa2_qdma_rbp rbp;
+	/** States if this vq is in use or not */
+	uint8_t in_use;
+	/** States if this vq has exclusively associated hw queue */
+	uint8_t exclusive_hw_queue;
+	/* Total number of enqueues on this VQ */
+	uint64_t num_enqueues;
+	/* Total number of dequeues from this VQ */
+	uint64_t num_dequeues;
+
+	uint16_t vq_id;
+	uint32_t flags;
+
+	struct dpaa2_qdma_job *job_list[DPAA2_QDMA_MAX_DESC];
+	struct rte_mempool *job_pool;
+	int num_valid_jobs;
+
+	struct rte_dma_stats stats;
+
+	qdma_set_fd_t *set_fd;
+	qdma_get_job_t *get_job;
+
+	qdma_dequeue_multijob_t *dequeue_job;
+	qdma_enqueue_multijob_t *enqueue_job;
+};
+
+/** Represents a QDMA device. */
+struct qdma_device {
+	/** VQ's of this device */
+	struct qdma_virt_queue *vqs;
+	/** Total number of VQ's */
+	uint16_t num_vqs;
+	/** Device state - started or stopped */
+	uint8_t state;
+};
+
+#endif /* _DPAA2_QDMA_H_ */
