@@ -455,7 +455,7 @@ get_dpio_parameters() {
 get_dpci_parameters() {
 	if [[ -z "$DPCI_COUNT" ]]
 	then
-		DPCI_COUNT=2
+		DPCI_COUNT=8
 	fi
 	if [[ -z "$DPCI_PRIORITIES" ]]
 	then
