@@ -19,6 +19,8 @@
 #include <mc/fsl_dpni.h>
 #include <mc/fsl_mc_sys.h>
 
+#define BIT(x)		((uint64_t)1 << ((x)))
+
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
 #define NET_DPAA2_PMD_DRIVER_NAME net_dpaa2
@@ -60,31 +62,32 @@
 /* Enable TX Congestion control support
  * default is disable
  */
-#define DPAA2_TX_CGR_OFF	0x01
+#define DPAA2_TX_CGR_OFF	BIT(0)
 
 /* Drop packets with parsing error in hw */
-#define DPAA2_PARSE_ERR_DROP	0x02
+#define DPAA2_PARSE_ERR_DROP	BIT(1)
 
 /* Disable RX tail drop, default is enable */
-#define DPAA2_RX_TAILDROP_OFF	0x04
-/* Tx confirmation enabled */
-#define DPAA2_TX_CONF_ENABLE	0x06
+#define DPAA2_RX_TAILDROP_OFF	BIT(2)
 
 /* Disable prefetch Rx mode to get exact requested packets */
-#define DPAA2_NO_PREFETCH_RX	0x08
+#define DPAA2_NO_PREFETCH_RX	BIT(3)
 
 /* Driver level loop mode to simply transmit the ingress traffic */
-#define DPAA2_RX_LOOPBACK_MODE	0x10
+#define DPAA2_RX_LOOPBACK_MODE	BIT(4)
+
+/* HW loopback the egress traffic to self ingress*/
+#define DPAA2_TX_MAC_LOOPBACK_MODE	BIT(5)
+
+#define DPAA2_TX_SERDES_LOOPBACK_MODE	BIT(6)
+
+#define DPAA2_TX_DPNI_LOOPBACK_MODE	BIT(7)
+
+/* Tx confirmation enabled */
+#define DPAA2_TX_CONF_ENABLE	BIT(8)
 
 /* DPDMUX index for DPMAC */
 #define DPAA2_DPDMUX_DPMAC_IDX 0
-
-/* HW loopback the egress traffic to self ingress*/
-#define DPAA2_TX_MAC_LOOPBACK_MODE 0x20
-
-#define DPAA2_TX_SERDES_LOOPBACK_MODE 0x40
-
-#define DPAA2_TX_DPNI_LOOPBACK_MODE 0x80
 
 #define DPAA2_TX_LOOPBACK_MODE \
 	(DPAA2_TX_MAC_LOOPBACK_MODE | \
@@ -207,7 +210,7 @@ struct dpaa2_dev_priv {
 	struct dpaa2_bp_list *bp_list; /**<Attached buffer pool list */
 	void *tx_conf_vq[MAX_TX_QUEUES * DPAA2_MAX_CHANNELS];
 	void *rx_err_vq;
-	uint8_t flags; /*dpaa2 config flags */
+	uint32_t flags; /*dpaa2 config flags */
 	uint8_t max_mac_filters;
 	uint8_t max_vlan_filters;
 	uint8_t num_rx_tc;
