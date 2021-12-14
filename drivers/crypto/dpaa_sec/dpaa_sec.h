@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016-2021,2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -10,6 +10,12 @@
 #define CRYPTODEV_NAME_DPAA_SEC_PMD	crypto_dpaa_sec
 /**< NXP DPAA - SEC PMD device name */
 
+#define SEC_BASE_ADDR		0x1700000
+#define MAP_SIZE		0x100000
+#define BLOCK_OFFSET		0x10000
+#define CMD_REG			0x4
+#define QICTL_DQEN		0x01
+#define QI_BLOCK_NUMBER		7
 #define MAX_DPAA_CORES		4
 #define NUM_POOL_CHANNELS	4
 #define DPAA_SEC_BURST		7
