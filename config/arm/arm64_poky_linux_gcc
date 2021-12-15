@@ -8,4 +8,4 @@ cpu = 'armv8-a'
 endian = 'little'
 
 [properties]
-implementor_pn = '0xd03'
+platform = 'generic'
