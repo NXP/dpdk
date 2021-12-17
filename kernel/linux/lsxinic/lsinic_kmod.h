@@ -22,7 +22,6 @@ extern const char lsinic_driver_version[];
 
 #undef Q_VECTOR_TXRX_SEPARATE /* Tx Rx ring in separate q_vector */
 #undef VF_VLAN_ENABLE
-#define RC_RING_REG_SHADOW_ENABLE
 #define LSINIC_NO_SKB_FRAG /* will not support SG and jumbo frame */
 
 #define LSINIC_CMD_LOOP_NUM 10
