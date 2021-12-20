@@ -1,5 +1,9 @@
-/* SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: GPL-2.0
  * Copyright 2018-2021 NXP
+ *
+ * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
+ * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
+ */
  */
 #pragma GCC diagnostic ignored "-Winline"
 
