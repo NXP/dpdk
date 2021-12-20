@@ -366,7 +366,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	uint8_t num_rxqueue_per_tc;
 	struct dpaa2_queue *mc_q, *mcq;
 	uint32_t tot_queues;
-	int i;
+	int i, j;
 	struct dpaa2_queue *dpaa2_q;
 
 	PMD_INIT_FUNC_TRACE();
@@ -392,11 +392,26 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 					RTE_CACHE_LINE_SIZE);
 		if (!dpaa2_q->q_storage)
 			goto fail;
+		for (j = 0; j < RTE_MAX_LCORE; j++) {
+			dpaa2_q->per_core_q_storage[j] =
+				rte_malloc("per_core_dq_storage",
+					   sizeof(struct queue_storage_info_t),
+					   RTE_CACHE_LINE_SIZE);
+			if (!dpaa2_q->per_core_q_storage[j])
+				goto fail;
+		}
 
 		memset(dpaa2_q->q_storage, 0,
 		       sizeof(struct queue_storage_info_t));
+		for (j = 0; j < RTE_MAX_LCORE; j++)
+			memset(dpaa2_q->per_core_q_storage[j], 0,
+			       sizeof(struct queue_storage_info_t));
 		if (dpaa2_alloc_dq_storage(dpaa2_q->q_storage))
 			goto fail;
+		for (int j = 0; j < RTE_MAX_LCORE; j++)
+			if (dpaa2_alloc_dq_storage(
+					dpaa2_q->per_core_q_storage[j]))
+				goto fail;
 	}
 
 	if (dpaa2_enable_err_queue) {

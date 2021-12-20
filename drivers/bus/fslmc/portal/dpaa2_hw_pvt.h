@@ -166,6 +166,7 @@ struct dpaa2_queue {
 	uint64_t err_pkts;
 	union {
 		struct queue_storage_info_t *q_storage;
+		struct queue_storage_info_t *per_core_q_storage[RTE_MAX_LCORE];
 		struct qbman_result *cscn;
 	};
 	struct rte_event ev;

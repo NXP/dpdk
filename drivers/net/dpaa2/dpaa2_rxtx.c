@@ -717,7 +717,8 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
-	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
+	struct queue_storage_info_t *q_storage =
+			dpaa2_q->per_core_q_storage[rte_lcore_id()];
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 
@@ -1953,7 +1954,8 @@ dpaa2_dev_loopback_rx(void *queue,
 	struct qbman_fd *fd[DPAA2_LX2_DQRR_RING_SIZE];
 	struct qbman_pull_desc pulldesc;
 	struct qbman_eq_desc eqdesc;
-	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
+	struct queue_storage_info_t *q_storage =
+			dpaa2_q->per_core_q_storage[rte_lcore_id()];
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct dpaa2_queue *tx_q = priv->tx_vq[0];
