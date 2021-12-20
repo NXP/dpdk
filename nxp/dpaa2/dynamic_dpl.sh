@@ -71,10 +71,6 @@ script help :----->
 
 	Below "ENVIRONMENT VARIABLES" are exported to get user defined
 	configuration"
-		ENABLE_ORDERED_QUEUE = enable this for ordering queue support
-						Default is disabled.
-						Only 2 DPNIs can be created in this mode.
-						e.g. export ENABLE_ORDERED_QUEUE=1
 	/**DPNI**:-->
 		MAX_QUEUES         = max number of Rx/Tx Queues on DPNI.
 					Set the parameter using below command:
@@ -106,6 +102,14 @@ script help :----->
 					where "Number of CGR entries" is an
 					integer value. "e.g export MAX_CGR=16"
 					Default is set same as MAX_TCS.
+
+		MAX_OPR             = maximum OPR per DPNI
+					Set the parameter using below command:
+					'export MAX_OPR=<Num of OPR>'
+					where "Number of OPR" is an integer
+					value greater than 0.
+					"e.g export MAX_OPR=4"
+					Default is set to 8.
 
 		DPNI_NORMAL_BUF    = Change the mode to use normal buf mode.
 					The default mode is high performance buffer mode.
@@ -302,10 +306,7 @@ get_dpni_parameters() {
 		then
 			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_KEY_MASKING"
 		fi
-		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
-		then
-			DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
-		fi
+		DPNI_OPTIONS="$DPNI_OPTIONS,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
 		NEWDPNI_OPTIONS=1
 	fi
 	if [[ -z "$DPNI_NORMAL_BUF" ]]
@@ -326,13 +327,14 @@ get_dpni_parameters() {
 	then
 		FS_ENTRIES=1
 	fi
+	if [[ -z "$MAX_OPR" ]]
+	then
+		MAX_OPR=8
+	fi
 	if [[ -z "$DPSECI_OPTIONS" ]]
 	then
 		DPSECI_OPTIONS="DPSECI_OPT_HAS_CG"
-		if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
-		then
-			DPSECI_OPTIONS="$DPSECI_OPTIONS,DPSECI_OPT_HAS_OPR,DPSECI_OPT_OPR_SHARED"
-		fi
+		DPSECI_OPTIONS="$DPSECI_OPTIONS,DPSECI_OPT_HAS_OPR,DPSECI_OPT_OPR_SHARED"
 		NEWDPSECI_OPTIONS=1
 	fi
 	echo >> dynamic_dpl_logs
@@ -461,10 +463,7 @@ get_dpci_parameters() {
 	then
 		DPCI_PRIORITIES=2
 	fi
-	if [[ "$ENABLE_ORDERED_QUEUE" == "1" ]]
-	then
-			DPCI_OPTIONS="DPCI_OPT_HAS_OPR,DPCI_OPT_OPR_SHARED"
-	fi
+	DPCI_OPTIONS="DPCI_OPT_HAS_OPR,DPCI_OPT_OPR_SHARED"
 	echo "DPCI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPCI_PRIORITIES = "$DPCI_PRIORITIES >> dynamic_dpl_logs
 	echo -e "\tDPCI_COUNT = "$DPCI_COUNT >> dynamic_dpl_logs
@@ -698,7 +697,7 @@ then
 			else
 				ACTUAL_MAC="00:00:00:00:02:"$num
 			fi
-			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
+			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --num-opr=$MAX_OPR --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 			restool dprc sync
 			restool dpni update $OBJ --mac-addr=$ACTUAL_MAC
 			echo $OBJ "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
@@ -733,7 +732,7 @@ then
 				PRINT_ONCE=1
 			fi
 		fi
-		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-channels=$MAX_CHANNELS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
+		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-channels=$MAX_CHANNELS --num-queues=$MAX_QUEUES --num-opr=$MAX_OPR --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 		restool dprc sync
 		restool dpni update $DPNI --mac-addr=$ACTUAL_MAC
 		echo -e '\t'$DPNI "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
