@@ -596,6 +596,7 @@ int dpni_get_attributes(struct fsl_mc_io *mc_io,
 	attr->num_channels = rsp_params->num_channels;
 	attr->qos_entries = rsp_params->qos_entries;
 	attr->fs_entries = le16_to_cpu(rsp_params->fs_entries);
+	attr->num_opr = le16_to_cpu(rsp_params->num_opr);
 	attr->qos_key_size = rsp_params->qos_key_size;
 	attr->fs_key_size = rsp_params->fs_key_size;
 	attr->wriop_version = le16_to_cpu(rsp_params->wriop_version);
