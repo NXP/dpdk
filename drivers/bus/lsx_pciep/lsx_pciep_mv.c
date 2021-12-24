@@ -144,79 +144,80 @@
 	(((is_vf) == 0) ? (pf) : VF_NUM_128(pf, vf))
 
 static inline void
-ccsr_set_page(struct lsx_pciep_ctl_dev *ctldev, uint8_t pg_idx)
+ccsr_set_page(struct lsx_pciep_hw_low *hw, uint8_t pg_idx)
 {
 	uint32_t val;
 
-	val = rte_read32(ctldev->dbi_vir + PAB_CTRL);
+	val = rte_read32(hw->dbi_vir + PAB_CTRL);
 	val &= ~(PAB_CTRL_PAGE_SEL_MASK << PAB_CTRL_PAGE_SEL_SHIFT);
 	val |= (pg_idx & PAB_CTRL_PAGE_SEL_MASK) << PAB_CTRL_PAGE_SEL_SHIFT;
 
-	rte_write32(val, ctldev->dbi_vir + PAB_CTRL);
+	rte_write32(val, hw->dbi_vir + PAB_CTRL);
 }
 
 static inline uint32_t
-ccsr_readl(struct lsx_pciep_ctl_dev *ctldev, uint32_t offset)
+ccsr_readl(struct lsx_pciep_hw_low *hw, uint32_t offset)
 {
 	if (offset < INDIRECT_ADDR_BNDRY) {
-		ccsr_set_page(ctldev, 0);
-		return rte_read32(ctldev->dbi_vir + offset);
+		ccsr_set_page(hw, 0);
+		return rte_read32(hw->dbi_vir + offset);
 	}
 
-	ccsr_set_page(ctldev, OFFSET_TO_PAGE_IDX(offset));
-	return rte_read32(ctldev->dbi_vir + OFFSET_TO_PAGE_ADDR(offset));
+	ccsr_set_page(hw, OFFSET_TO_PAGE_IDX(offset));
+	return rte_read32(hw->dbi_vir + OFFSET_TO_PAGE_ADDR(offset));
 }
 
 static inline void
-ccsr_writel(struct lsx_pciep_ctl_dev *ctldev, uint32_t offset, uint32_t value)
+ccsr_writel(struct lsx_pciep_hw_low *hw, uint32_t offset, uint32_t value)
 {
 	if (offset < INDIRECT_ADDR_BNDRY) {
-		ccsr_set_page(ctldev, 0);
-		rte_write32(value, ctldev->dbi_vir + offset);
+		ccsr_set_page(hw, 0);
+		rte_write32(value, hw->dbi_vir + offset);
 	} else {
-		ccsr_set_page(ctldev, OFFSET_TO_PAGE_IDX(offset));
-		rte_write32(value, ctldev->dbi_vir +
+		ccsr_set_page(hw, OFFSET_TO_PAGE_IDX(offset));
+		rte_write32(value, hw->dbi_vir +
 			OFFSET_TO_PAGE_ADDR(offset));
 	}
 }
 
 static void
-pcie_mv_set_ib_win(struct lsx_pciep_ctl_dev *ctldev, int idx __rte_unused,
-		int pf, int is_vf,
-		int bar, uint64_t phys, uint64_t size __attribute__((unused)),
-		int resize __attribute__((unused)))
+pcie_mv_set_ib_win(struct lsx_pciep_hw_low *hw,
+	int pf, int is_vf, int vf __rte_unused,
+	int bar, uint64_t phys,
+	uint64_t size __rte_unused,
+	int resize __rte_unused)
 {
 	int bar_idx = is_vf ? (bar + 8) : bar;
 
-	ccsr_writel(ctldev,
+	ccsr_writel(hw,
 		PAB_EXT_PEX_BAR_AMAP(GET_IB_FUNC_NUM(pf, is_vf), bar_idx),
 		upper_32_bits(phys));
-	ccsr_writel(ctldev,
+	ccsr_writel(hw,
 		PAB_PEX_BAR_AMAP(GET_IB_FUNC_NUM(pf, is_vf), bar_idx),
 		lower_32_bits(phys) | 1);
 }
 
 static void
-pcie_mv_disable_ob_win(struct lsx_pciep_ctl_dev *ctldev, int idx)
+pcie_mv_disable_ob_win(struct lsx_pciep_hw_low *hw, int idx)
 {
 	uint32_t val;
 	int loop;
 
 	if (idx >= 0) {
-		val = ccsr_readl(ctldev, PAB_AXI_AMAP_CTRL(idx));
+		val = ccsr_readl(hw, PAB_AXI_AMAP_CTRL(idx));
 		val &= ~AXI_AMAP_CTRL_EN;
-		ccsr_writel(ctldev, PAB_AXI_AMAP_CTRL(idx), val);
+		ccsr_writel(hw, PAB_AXI_AMAP_CTRL(idx), val);
 	} else {
 		for (loop = 0; loop < PCIE_MV_OB_WINS_NUM; loop++) {
-			val = ccsr_readl(ctldev, PAB_AXI_AMAP_CTRL(loop));
+			val = ccsr_readl(hw, PAB_AXI_AMAP_CTRL(loop));
 			val &= ~AXI_AMAP_CTRL_EN;
-			ccsr_writel(ctldev, PAB_AXI_AMAP_CTRL(loop), val);
+			ccsr_writel(hw, PAB_AXI_AMAP_CTRL(loop), val);
 		}
 	}
 }
 
 static void
-pcie_mv_set_ob_win(struct lsx_pciep_ctl_dev *ctldev,
+pcie_mv_set_ob_win(struct lsx_pciep_hw_low *hw,
 		   int idx, int pf, int is_vf, int vf,
 		   uint64_t cpu_addr,
 		   uint64_t pci_addr,
@@ -238,142 +239,99 @@ pcie_mv_set_ob_win(struct lsx_pciep_ctl_dev *ctldev,
 		((size_l >> AXI_AMAP_CTRL_SIZE_SHIFT) <<
 		AXI_AMAP_CTRL_SIZE_SHIFT) | AXI_AMAP_CTRL_EN;
 
-	ccsr_writel(ctldev, PAB_AXI_AMAP_CTRL(idx), val);
-	ccsr_writel(ctldev, PAB_AXI_AMAP_PCI_HDR_PARAM(idx), func);
-	ccsr_writel(ctldev, PAB_AXI_AMAP_AXI_WIN(idx),
+	ccsr_writel(hw, PAB_AXI_AMAP_CTRL(idx), val);
+	ccsr_writel(hw, PAB_AXI_AMAP_PCI_HDR_PARAM(idx), func);
+	ccsr_writel(hw, PAB_AXI_AMAP_AXI_WIN(idx),
 		lower_32_bits(cpu_addr));
-	ccsr_writel(ctldev, PAB_EXT_AXI_AMAP_AXI_WIN(idx),
+	ccsr_writel(hw, PAB_EXT_AXI_AMAP_AXI_WIN(idx),
 		upper_32_bits(cpu_addr));
-	ccsr_writel(ctldev, PAB_AXI_AMAP_PEX_WIN_L(idx),
+	ccsr_writel(hw, PAB_AXI_AMAP_PEX_WIN_L(idx),
 		lower_32_bits(pci_addr));
-	ccsr_writel(ctldev, PAB_AXI_AMAP_PEX_WIN_H(idx),
+	ccsr_writel(hw, PAB_AXI_AMAP_PEX_WIN_H(idx),
 		upper_32_bits(pci_addr));
-	ccsr_writel(ctldev, PAB_EXT_AXI_AMAP_SIZE(idx), size_h);
+	ccsr_writel(hw, PAB_EXT_AXI_AMAP_SIZE(idx), size_h);
 }
 
-static void
-pcie_mv_msix_init(struct lsx_pciep_ctl_dev *ctldev,
-		  struct rte_lsx_pciep_device *ep_dev)
+static int
+pcie_mv_msix_init(struct lsx_pciep_hw_low *hw,
+	int pf, int is_vf, int vf,
+	uint64_t msg_addr[], uint32_t msg_data[],
+	int vector_total)
 {
-	int pf = ep_dev->pf;
-	int vf = ep_dev->vf;
-	int is_vf = ep_dev->is_vf;
 	int vector;
 	uint32_t val = 0;
-	uint32_t dev_id = 0, win_idx;
-	uint32_t msg_data = 0;
-	uint64_t msg_addr = 0;
+	uint32_t dev_id = 0;
+	uint32_t mdata = 0;
+	uint64_t maddr = 0;
 	uint32_t addr_h, addr_l;
-	uint64_t out_base = ctldev->ctl_hw->out_base;
-	uint64_t out_win_size = ctldev->ctl_hw->out_win_size;
-	uint8_t *out_vir = ctldev->out_vir;
 
-	if (ep_dev->mmsi_flag == LSX_PCIEP_DONT_INT)
-		return;
+	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
 
-	if (ep_dev->mmsi_flag == LSX_PCIEP_MMSI_INT) {
+	if (hw->msi_flag == LSX_PCIEP_MMSI_INT) {
 		dev_id = GET_OB_FUNC_NUM(pf, is_vf, vf);
 
 		/* set function number */
-		val =  ccsr_readl(ctldev, PAB_CTRL);
+		val =  ccsr_readl(hw, PAB_CTRL);
 		val &= ~(PAB_CTRL_FUNC_SEL_MASK << PAB_CTRL_FUNC_SEL_SHIFT);
 		val |= (dev_id & PAB_CTRL_FUNC_SEL_MASK) <<
 			PAB_CTRL_FUNC_SEL_SHIFT;
-		ccsr_writel(ctldev, PAB_CTRL, val);
+		ccsr_writel(hw, PAB_CTRL, val);
 
 		if (!is_vf) {
-			addr_l = ccsr_readl(ctldev, PCIE_MSI_MSG_ADDR_OFF
+			addr_l = ccsr_readl(hw, PCIE_MSI_MSG_ADDR_OFF
 				+ 0x00);
-			addr_h = ccsr_readl(ctldev, PCIE_MSI_MSG_ADDR_OFF
+			addr_h = ccsr_readl(hw, PCIE_MSI_MSG_ADDR_OFF
 				+ 0x04);
-			msg_addr = (((uint64_t)addr_h) << 32) | addr_l;
-			msg_data = ccsr_readl(ctldev, PCIE_MSI_MSG_DATA_OFF);
+			maddr = (((uint64_t)addr_h) << 32) | addr_l;
+			mdata = ccsr_readl(hw, PCIE_MSI_MSG_DATA_OFF);
 		} else {
-			addr_l = ccsr_readl(ctldev, PCIE_MSI_MSG_ADDR_OFF_VF
+			addr_l = ccsr_readl(hw, PCIE_MSI_MSG_ADDR_OFF_VF
 				+ 0x00);
-			addr_h = ccsr_readl(ctldev, PCIE_MSI_MSG_ADDR_OFF_VF
+			addr_h = ccsr_readl(hw, PCIE_MSI_MSG_ADDR_OFF_VF
 				+ 0x04);
-			msg_addr = (((uint64_t)addr_h) << 32) | addr_l;
-			msg_data = ccsr_readl(ctldev, PCIE_MSI_MSG_DATA_OFF_VF);
+			maddr = (((uint64_t)addr_h) << 32) | addr_l;
+			mdata = ccsr_readl(hw, PCIE_MSI_MSG_DATA_OFF_VF);
 		}
 
-		for (vector = 0; vector < 32; vector++) {
-			ep_dev->msix_addr[vector] = msg_addr;
-			ep_dev->msix_data[vector] = msg_data + vector;
+		for (vector = 0; vector < vector_total; vector++) {
+			msg_addr[vector] = maddr;
+			msg_data[vector] = mdata + vector;
 		}
 	} else {
 		dev_id = GET_OB_FUNC_NUM_128(pf, is_vf, vf);
 
 		/* set function number */
-		val =  ccsr_readl(ctldev, PAB_CTRL);
+		val =  ccsr_readl(hw, PAB_CTRL);
 		val &= ~(PAB_CTRL_FUNC_SEL_MASK << PAB_CTRL_FUNC_SEL_SHIFT);
 		val |= (dev_id & PAB_CTRL_FUNC_SEL_MASK)
 			<< PAB_CTRL_FUNC_SEL_SHIFT;
-		ccsr_writel(ctldev, PAB_CTRL, val);
+		ccsr_writel(hw, PAB_CTRL, val);
 
-		for (vector = 0; vector < 8; vector++) {
-			addr_l = ccsr_readl(ctldev,
+		vector_total = 8;
+
+		for (vector = 0; vector < vector_total; vector++) {
+			addr_l = ccsr_readl(hw,
 					MSIX_TABLE_BASE(vector) + 0x00);
-			addr_h = ccsr_readl(ctldev,
+			addr_h = ccsr_readl(hw,
 					MSIX_TABLE_BASE(vector) + 0x04);
-			ep_dev->msix_addr[vector] =
+			msg_addr[vector] =
 				(((uint64_t)addr_h) << 32) | addr_l;
-			ep_dev->msix_data[vector]  = ccsr_readl(ctldev,
+			msg_data[vector]  = ccsr_readl(hw,
 					MSIX_TABLE_BASE(vector) + 0x08);
 		}
 
 		/* clear function number */
-		val =  ccsr_readl(ctldev, PAB_CTRL);
+		val =  ccsr_readl(hw, PAB_CTRL);
 		val &= ~(PAB_CTRL_FUNC_SEL_MASK << PAB_CTRL_FUNC_SEL_SHIFT);
-		ccsr_writel(ctldev, PAB_CTRL, val);
+		ccsr_writel(hw, PAB_CTRL, val);
 	}
 
-	if (ctldev->ctl_hw->rbp) {
-		win_idx = ep_dev->ob_win_idx + LSX_PCIEP_RBP_OB_MSIX;
-		ep_dev->msix_phy_base =
-			out_base + win_idx * out_win_size;
-		ep_dev->msix_virt_base =
-			out_vir + win_idx * out_win_size;
-		ep_dev->msix_bus_base = ep_dev->msix_addr[0];
-		ep_dev->msix_win_size = out_win_size;
-		ep_dev->msix_win_init_flag = 1;
-		pcie_mv_set_ob_win(ctldev, win_idx, pf, is_vf, vf,
-				ep_dev->msix_phy_base,
-				ep_dev->msix_addr[0],
-				ep_dev->msix_win_size);
-	}
-}
-
-static uint64_t
-pcie_mv_msix_get_vaddr(struct lsx_pciep_ctl_dev *ctldev __rte_unused,
-		       struct rte_lsx_pciep_device *ep_dev,
-		       uint32_t vector)
-{
-	uint64_t offset;
-
-	if (vector > 32)
-		return 0;
-
-	if (!ep_dev->msix_win_init_flag)
-		return 0;
-
-	offset = ep_dev->msix_addr[vector] - ep_dev->msix_bus_base;
-	if (offset > ep_dev->msix_win_size)
-		return 0;
-
-	return (uint64_t)ep_dev->msix_virt_base + offset;
-}
-
-static uint32_t
-pcie_mv_msix_get_cmd(struct lsx_pciep_ctl_dev *ctldev __rte_unused,
-		     struct rte_lsx_pciep_device *ep_dev,
-		     uint32_t vector)
-{
-	return ep_dev->msix_data[vector];
+	return vector_total;
 }
 
 static void
-pcie_mv_setup_bar(struct lsx_pciep_ctl_dev *ctldev,
+pcie_mv_setup_bar(struct lsx_pciep_hw_low *hw,
 	int pf, int bar, uint64_t size)
 {
 	uint32_t value;
@@ -381,96 +339,93 @@ pcie_mv_setup_bar(struct lsx_pciep_ctl_dev *ctldev,
 	int bar_index = BAR_IDX(pf, bar);
 
 	/* Enable this bar */
-	value = ccsr_readl(ctldev, PCI_BAR_ENABLE);
+	value = ccsr_readl(hw, PCI_BAR_ENABLE);
 	value |= 1 << bar_index;
-	ccsr_writel(ctldev, PCI_BAR_ENABLE, value);
+	ccsr_writel(hw, PCI_BAR_ENABLE, value);
 
 	/* Set bar size */
-	ccsr_writel(ctldev, PCI_BAR_SELECT, bar_index);
-	ccsr_writel(ctldev, PCI_BAR_BAR_SIZE_LDW, lower_32_bits(size_mask));
-	ccsr_writel(ctldev, PCI_BAR_BAR_SIZE_UDW, upper_32_bits(size_mask));
+	ccsr_writel(hw, PCI_BAR_SELECT, bar_index);
+	ccsr_writel(hw, PCI_BAR_BAR_SIZE_LDW, lower_32_bits(size_mask));
+	ccsr_writel(hw, PCI_BAR_BAR_SIZE_UDW, upper_32_bits(size_mask));
 
 	/* Enable corresponding inbound window */
-	ccsr_writel(ctldev, PAB_PEX_BAR_AMAP(pf, bar), 1);
+	ccsr_writel(hw, PAB_PEX_BAR_AMAP(pf, bar), 1);
 }
 
 static void
-pcie_mv_setup_pf_bars(struct lsx_pciep_ctl_dev *ctldev, int pf)
+pcie_mv_setup_pf_bars(struct lsx_pciep_hw_low *hw, int pf)
 {
 	/* Enable bar0 for reg */
-	pcie_mv_setup_bar(ctldev, pf, BAR0, LSX_PCIEP_BAR0_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR0, LSX_PCIEP_BAR0_DEFAULT_SIZE);
 	/* Enable bar1 for MSIx */
-	pcie_mv_setup_bar(ctldev, pf, BAR1, LSX_PCIEP_BAR1_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR1, LSX_PCIEP_BAR1_DEFAULT_SIZE);
 	/* Enable bar2 for BD */
-	pcie_mv_setup_bar(ctldev, pf, BAR2, LSX_PCIEP_BAR2_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR2, LSX_PCIEP_BAR2_DEFAULT_SIZE);
 }
 
 static void
-pcie_mv_setup_bars(struct lsx_pciep_ctl_dev *ctldev, uint8_t pf_mask)
+pcie_mv_setup_bars(struct lsx_pciep_hw_low *hw,
+	uint8_t pf)
 {
 	/* disable all bars */
-	if (pf_mask & (1 << PF0_IDX) &&
-		pf_mask & (1 << PF1_IDX))
-		ccsr_writel(ctldev, PCI_BAR_ENABLE, 0);
+	ccsr_writel(hw, PCI_BAR_ENABLE, 0);
 
-	if (pf_mask & (1 << PF0_IDX))
-		pcie_mv_setup_pf_bars(ctldev, PF0_IDX);
-	if (pf_mask & (1 << PF1_IDX))
-		pcie_mv_setup_pf_bars(ctldev, PF1_IDX);
+	if (pf == PF0_IDX)
+		pcie_mv_setup_pf_bars(hw, PF0_IDX);
+	else if (pf == PF1_IDX)
+		pcie_mv_setup_pf_bars(hw, PF1_IDX);
 }
 
 static void
-pcie_mv_set_sriov(struct lsx_pciep_ctl_dev *ctldev, uint8_t pf_mask)
+pcie_mv_set_sriov(struct lsx_pciep_hw_low *hw, int pf)
 {
 	unsigned int val;
 
 	/* set PF0 VF number */
-	if (pf_mask & (1 << PF0_IDX)) {
-		val = ccsr_readl(ctldev, SRIOV_INIT_VFS_TOTAL_VF(PF0_IDX));
+	if (pf == PF0_IDX) {
+		val = ccsr_readl(hw, SRIOV_INIT_VFS_TOTAL_VF(PF0_IDX));
 		val &= ~(TTL_VF_MASK << TTL_VF_SHIFT);
 		val |= PCIE_MAX_VF_NUM << TTL_VF_SHIFT;
 		val &= ~(INI_VF_MASK << INI_VF_SHIFT);
 		val |= PCIE_MAX_VF_NUM << INI_VF_SHIFT;
-		ccsr_writel(ctldev, SRIOV_INIT_VFS_TOTAL_VF(PF0_IDX), val);
+		ccsr_writel(hw, SRIOV_INIT_VFS_TOTAL_VF(PF0_IDX), val);
 
 		/* set VF offset */
-		val =  ccsr_readl(ctldev, PCIE_SRIOV_VF_OFFSET_STRIDE);
+		val =  ccsr_readl(hw, PCIE_SRIOV_VF_OFFSET_STRIDE);
 		val += PCIE_MAX_VF_NUM - 1;
-		ccsr_writel(ctldev, GPEX_SRIOV_VF_OFFSET_STRIDE(PF0_IDX), val);
-	}
-
-	/* set PF1 VF number */
-	if (pf_mask & (1 << PF1_IDX)) {
-		val = ccsr_readl(ctldev, SRIOV_INIT_VFS_TOTAL_VF(PF1_IDX));
+		ccsr_writel(hw, GPEX_SRIOV_VF_OFFSET_STRIDE(PF0_IDX), val);
+	} else if (pf == PF1_IDX) {
+		val = ccsr_readl(hw, SRIOV_INIT_VFS_TOTAL_VF(PF1_IDX));
 		val &= ~(TTL_VF_MASK << TTL_VF_SHIFT);
 		val |= PCIE_MAX_VF_NUM << TTL_VF_SHIFT;
 		val &= ~(INI_VF_MASK << INI_VF_SHIFT);
 		val |= PCIE_MAX_VF_NUM << INI_VF_SHIFT;
-		ccsr_writel(ctldev, SRIOV_INIT_VFS_TOTAL_VF(PF1_IDX), val);
+		ccsr_writel(hw, SRIOV_INIT_VFS_TOTAL_VF(PF1_IDX), val);
 
 		/* set VF offset */
-		val =  ccsr_readl(ctldev, PCIE_SRIOV_VF_OFFSET_STRIDE);
+		val =  ccsr_readl(hw, PCIE_SRIOV_VF_OFFSET_STRIDE);
 		val += PCIE_MAX_VF_NUM - 1;
-		ccsr_writel(ctldev, GPEX_SRIOV_VF_OFFSET_STRIDE(PF1_IDX), val);
+		ccsr_writel(hw, GPEX_SRIOV_VF_OFFSET_STRIDE(PF1_IDX), val);
 	}
 }
 
 static void
-pcie_mv_reinit(struct lsx_pciep_ctl_dev *ctldev, uint8_t pf_mask)
+pcie_mv_reinit(struct lsx_pciep_hw_low *hw,
+	int pf, int is_vf __rte_unused,
+	uint16_t vendor_id __rte_unused,
+	uint16_t device_id __rte_unused,
+	uint16_t class_id __rte_unused)
 {
-	pcie_mv_setup_bars(ctldev, pf_mask);
-	pcie_mv_set_sriov(ctldev, pf_mask);
+	pcie_mv_setup_bars(hw, pf);
+	pcie_mv_set_sriov(hw, pf);
 }
 
-
 static struct lsx_pciep_ops pcie_mv_ops = {
-	.pcie_reinit = pcie_mv_reinit,
+	.pcie_fun_init = pcie_mv_reinit,
 	.pcie_disable_ob_win = pcie_mv_disable_ob_win,
-	.pcie_set_ob_win = pcie_mv_set_ob_win,
-	.pcie_set_ib_win = pcie_mv_set_ib_win,
-	.pcie_msix_init = pcie_mv_msix_init,
-	.pcie_msix_get_vaddr = pcie_mv_msix_get_vaddr,
-	.pcie_msix_get_cmd = pcie_mv_msix_get_cmd,
+	.pcie_cfg_ob_win = pcie_mv_set_ob_win,
+	.pcie_cfg_ib_win = pcie_mv_set_ib_win,
+	.pcie_msix_cfg = pcie_mv_msix_init,
 };
 
 struct lsx_pciep_ops *lsx_pciep_get_mv_ops(void)
