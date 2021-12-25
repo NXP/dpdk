@@ -188,7 +188,9 @@ struct lxsnic_ring {
 		struct lsinic_bd_desc *ep_bd_desc;
 		struct lsinic_rc_xmit_addrl *xmit_addrl;
 		struct lsinic_rc_xmit_idx *xmit_idx;
-		struct lsinic_prep_addr_ep *addr_ep;
+		struct lsinic_rc_recv_addr *recv_addr;
+		struct lsinic_rc_recv_addrl *recv_addrl;
+		struct lsinic_rc_recv_idx *recv_idx;
 	};
 	struct lsinic_bd_desc *rc_bd_desc;
 	union rc_ep2rc_ring ep2rc;

@@ -265,8 +265,16 @@ struct ep2rc_notify {
 	uint16_t cnt_idx;
 } __packed;
 
-struct lsinic_prep_addr_ep {
+struct lsinic_rc_recv_addr {
+	uint64_t pkt_addr;
+} __packed;
+
+struct lsinic_rc_recv_addrl {
 	uint32_t pkt_addr_low;
+} __packed;
+
+struct lsinic_rc_recv_idx {
+	uint16_t pkt_addr_idx;
 } __packed;
 
 struct lsinic_rc_xmit_addrl {
@@ -365,6 +373,8 @@ struct lsinic_dev_reg {  /* offset 0x000-0x1FF */
 } __packed;
 
 #define LSINIC_RCS_REG_OFFSET (0x0200)
+
+#define LSINIC_DEV_MSIX_MAX_NB LSINIC_RING_MAX_COUNT
 
 struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	/* RC sets the following reg */

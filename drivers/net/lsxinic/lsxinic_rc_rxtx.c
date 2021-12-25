@@ -266,7 +266,7 @@ lxsnic_xmit_one_pkt_idx(struct lxsnic_ring *tx_ring,
 	ep_tx_desc = &tx_ring->xmit_idx[bd_idx];
 	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
 	if (e_type == RC_XMIT_INDEX_CNF) {
-		if (unlikely(((bd_idx + 1) &
+		if (unlikely(((bd_idx + 1 + XMIT_IDX_EXTRA_SPACE) &
 			(tx_ring->count - 1)) ==
 			tx_ring->tx_free_start_idx)) {
 			/** Make special room, otherwise no way to
@@ -758,7 +758,7 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 {
 	int ret = 0;
 	uint8_t ret_val = 0;
-	uint16_t tx_num = 0;
+	uint16_t tx_num = 0, idx_tx_num;
 	uint16_t total_nb_pkts = nb_pkts;
 	struct lxsnic_ring *tx_ring = (struct lxsnic_ring *)tx_queue;
 	struct rte_mbuf *free_pkts[LSINIC_MERGE_MAX_NUM];
@@ -769,7 +769,8 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	uint16_t first_idx =
 		tx_ring->last_avail_idx & (tx_ring->count - 1);
 	struct lsinic_rc_xmit_addrl xmit_addrl[nb_pkts];
-	struct lsinic_rc_xmit_idx xmit_idx[nb_pkts];
+	struct lsinic_rc_xmit_idx xmit_idx[nb_pkts + XMIT_IDX_EXTRA_SPACE];
+	uint8_t *src, *dst;
 
 	tx_ring->loop_total++;
 
@@ -862,33 +863,51 @@ end_of_tx:
 		(LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
 		RC_XMIT_ADDRL_TYPE)) {
 		if ((first_idx + tx_num) <= tx_ring->count) {
-			memcpy(&tx_ring->xmit_addrl[first_idx],
-				&xmit_addrl[0],
-				tx_num * sizeof(struct lsinic_rc_xmit_addrl));
-		} else {
-			memcpy(&tx_ring->xmit_addrl[first_idx],
-				&xmit_addrl[0],
-				(tx_ring->count - first_idx) *
+			src = (uint8_t *)&xmit_addrl[0];
+			dst = (uint8_t *)&tx_ring->xmit_addrl[first_idx];
+			memcpy(dst, src, tx_num *
 				sizeof(struct lsinic_rc_xmit_addrl));
-			memcpy(&tx_ring->xmit_addrl[0],
-				&xmit_addrl[tx_ring->count - first_idx],
-				(tx_num + first_idx - tx_ring->count) *
+		} else {
+			src = (uint8_t *)&xmit_addrl[0];
+			dst = (uint8_t *)&tx_ring->xmit_addrl[first_idx];
+			memcpy(dst, src, (tx_ring->count - first_idx) *
+				sizeof(struct lsinic_rc_xmit_addrl));
+
+			src = (uint8_t *)
+				&xmit_addrl[tx_ring->count - first_idx];
+			dst = (uint8_t *)
+				&tx_ring->xmit_addrl[0];
+			memcpy(dst, src, (tx_num + first_idx - tx_ring->count) *
 				sizeof(struct lsinic_rc_xmit_addrl));
 		}
 	} else if (LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
 		RC_XMIT_IDX_TYPE) {
+		int i;
+
 		if ((first_idx + tx_num) <= tx_ring->count) {
-			memcpy(&tx_ring->xmit_idx[first_idx],
-				&xmit_idx[0],
-				tx_num * sizeof(struct lsinic_rc_xmit_idx));
-		} else {
-			memcpy(&tx_ring->xmit_idx[first_idx],
-				&xmit_idx[0],
-				(tx_ring->count - first_idx) *
+			for (i = 0; i < XMIT_IDX_EXTRA_SPACE; i++)
+				xmit_idx[tx_num + i].idx_cmd_len = 0;
+
+			idx_tx_num = tx_num + XMIT_IDX_EXTRA_SPACE;
+			src = (uint8_t *)&xmit_idx[0];
+			dst = (uint8_t *)&tx_ring->xmit_idx[first_idx];
+			memcpy(dst, src, idx_tx_num *
 				sizeof(struct lsinic_rc_xmit_idx));
-			memcpy(&tx_ring->xmit_idx[0],
-				&xmit_idx[tx_ring->count - first_idx],
-				(tx_num + first_idx - tx_ring->count) *
+		} else {
+			idx_tx_num = tx_ring->count - first_idx +
+				XMIT_IDX_EXTRA_SPACE;
+			src = (uint8_t *)&xmit_idx[0];
+			dst = (uint8_t *)&tx_ring->xmit_idx[first_idx];
+			memcpy(dst, src, idx_tx_num *
+				sizeof(struct lsinic_rc_xmit_idx));
+
+			for (i = 0; i < XMIT_IDX_EXTRA_SPACE; i++)
+				xmit_idx[tx_num + i].idx_cmd_len = 0;
+			idx_tx_num = first_idx + tx_num - tx_ring->count +
+				XMIT_IDX_EXTRA_SPACE;
+			src = (uint8_t *)&xmit_idx[tx_ring->count - first_idx];
+			dst = (uint8_t *)&tx_ring->xmit_idx[0];
+			memcpy(dst, src, idx_tx_num *
 				sizeof(struct lsinic_rc_xmit_idx));
 		}
 	}
@@ -1213,17 +1232,19 @@ static inline void
 lxsnic_rx_bd_mbuf_set(struct lxsnic_ring *rx_queue,
 	uint16_t idx, struct rte_mbuf *mbuf)
 {
-	struct lsinic_bd_desc *ep_rx_desc, *rc_rx_desc;
+	struct lsinic_bd_desc *ep_rx_desc = NULL, *rc_rx_desc;
 	uint64_t dma_addr = 0;
 #ifdef LSINIC_BD_CTX_IDX_USED
 	uint32_t mbuf_idx;
 #endif
+	const uint32_t cap = rx_queue->adapter->cap;
 
 	rc_rx_desc = LSINIC_RC_BD_DESC(rx_queue, idx);
-	if (rx_queue->adapter->cap & LSINIC_CAP_XFER_RX_BD_UPDATE)
+	if (cap & LSINIC_CAP_XFER_RX_BD_UPDATE)
 		ep_rx_desc = NULL;
 	else
 		ep_rx_desc = LSINIC_EP_BD_DESC(rx_queue, idx);
+
 	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
 	mbuf->port = rx_queue->port;
 	dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));

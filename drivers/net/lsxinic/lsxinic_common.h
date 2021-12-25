@@ -25,6 +25,8 @@
 #define RTE_VERIFY(exp) do {} while (0)
 #endif
 
+#define XMIT_IDX_EXTRA_SPACE 2
+
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)
 {
