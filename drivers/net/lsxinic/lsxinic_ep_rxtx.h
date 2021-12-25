@@ -136,7 +136,8 @@ struct lsinic_queue {
 	/* point to EP mem */
 	union {
 		struct lsinic_bd_desc *ep_bd_desc;
-		struct lsinic_notify_ep *notify_ep;
+		struct lsinic_rc_xmit_addrl *recv_addrl;
+		struct lsinic_rc_xmit_idx *recv_idx;
 	};
 	char **complete_array;
 	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */

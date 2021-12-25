@@ -269,12 +269,22 @@ struct lsinic_prep_addr_ep {
 	uint32_t pkt_addr_low;
 } __packed;
 
-struct lsinic_notify_ep {
+struct lsinic_rc_xmit_addrl {
 	union {
 		uint64_t addr_cmd_len;
 		struct {
 			uint32_t pkt_addr_low;
 			uint32_t len_cmd;
+		};
+	};
+} __packed;
+
+struct lsinic_rc_xmit_idx {
+	union {
+		uint32_t idx_cmd_len;
+		struct {
+			uint16_t pkt_idx;
+			uint16_t len_cmd;
 		};
 	};
 } __packed;
@@ -364,13 +374,14 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	uint32_t r_regl;	/* shadow reg low address On RC side */
 	uint32_t r_regh;	/* shadow reg high address On RC side */
 	uint64_t r_dma_base;
+	uint32_t r_dma_elt_size;
 	uint32_t msi_flag;
 	uint32_t msix_mask[32];
 } __packed;
 
 #define LSINIC_ETH_REG_OFFSET (0x0300)
 
-static inline int mask_bit_len(uint64_t mask)
+static inline int val_bit_len(uint64_t mask)
 {
 	int len = 0;
 
@@ -387,51 +398,87 @@ static inline int mask_bit_len(uint64_t mask)
 	return len;
 }
 
-enum egress_cnf_type {
-	EGRESS_BD_CNF = 0,
-	EGRESS_RING_CNF = 1,
-	EGRESS_INDEX_CNF = 2,
-	EGRESS_CNF_MASK = 3
+#define LSINIC_CAP_XFER_COMPLETE_POS 0
+#define LSINIC_CAP_XFER_COMPLETE \
+	(1 << LSINIC_CAP_XFER_COMPLETE_POS)
+
+#define LSINIC_CAP_XFER_PKT_MERGE_POS 1
+#define LSINIC_CAP_XFER_PKT_MERGE \
+	(1 << LSINIC_CAP_XFER_PKT_MERGE_POS)
+
+#define LSINIC_CAP_XFER_TX_BD_UPDATE_POS 2
+#define LSINIC_CAP_XFER_TX_BD_UPDATE \
+	(1 << LSINIC_CAP_XFER_TX_BD_UPDATE_POS)
+
+#define LSINIC_CAP_XFER_RX_BD_UPDATE_POS 3
+#define LSINIC_CAP_XFER_RX_BD_UPDATE \
+	(1 << LSINIC_CAP_XFER_RX_BD_UPDATE_POS)
+
+#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM_POS 4
+#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM \
+	(1 << LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM_POS)
+
+#define LSINIC_CAP_XFER_ORDER_PRSV_POS 5
+#define LSINIC_CAP_XFER_ORDER_PRSV \
+	(1 << LSINIC_CAP_XFER_ORDER_PRSV_POS)
+
+#define LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_POS 6
+
+enum rc_xmit_bd_type {
+	RC_XMIT_LBD_TYPE = 0,
+	RC_XMIT_ADDRL_TYPE = 1,
+	RC_XMIT_IDX_TYPE = 2,
+	RC_XMIT_BD_TYPE_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_EGRESS_CNF_POS 8
-
-#define LSINIC_CAP_XFER_EGRESS_CNF_GET(cap) \
-	(((cap) >> LSINIC_CAP_XFER_EGRESS_CNF_POS) & EGRESS_CNF_MASK)
-
-#define LSINIC_CAP_XFER_EGRESS_CNF_SET(cap, type) \
+#define LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) \
+	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_POS) & \
+	RC_XMIT_BD_TYPE_MASK)
+#define LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_SET(cap, type) \
 	do { \
-		(cap) &= ~(EGRESS_CNF_MASK << LSINIC_CAP_XFER_EGRESS_CNF_POS); \
-		(cap) |= ((type) << LSINIC_CAP_XFER_EGRESS_CNF_POS); \
+		(cap) &= ~(RC_XMIT_BD_TYPE_MASK << \
+			LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_POS); \
+		(cap) |= ((type) << LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_POS); \
 	} while (0)
 
-enum ingress_notify_type {
-	INGRESS_BD_NOTIFY = 0,
-	INGRESS_RING_NOTIFY = 1,
-	INGRESS_INDEX_NOTIFY = 2,
-	INGRESS_NOTIFY_MASK = 3
+#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS \
+	(LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_POS + \
+	val_bit_len(RC_XMIT_BD_TYPE_MASK))
+
+enum rc_xmit_cnf_type {
+	RC_XMIT_BD_CNF = 0,
+	RC_XMIT_RING_CNF = 1,
+	RC_XMIT_INDEX_CNF = 2,
+	RC_XMIT_CNF_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_INGRESS_NOTIFY_POS \
-	(LSINIC_CAP_XFER_EGRESS_CNF_POS + mask_bit_len(EGRESS_CNF_MASK))
-
-#define LSINIC_CAP_XFER_INGRESS_NOTIFY_GET(cap) \
-	(((cap) >> LSINIC_CAP_XFER_INGRESS_NOTIFY_POS) & INGRESS_NOTIFY_MASK)
-
-#define LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(cap, type) \
+#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(cap) \
+	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS) & RC_XMIT_CNF_MASK)
+#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(cap, type) \
 	do { \
-		(cap) &= ~(INGRESS_NOTIFY_MASK << \
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_POS); \
-		(cap) |= ((type) << LSINIC_CAP_XFER_INGRESS_NOTIFY_POS); \
+		(cap) &= ~(RC_XMIT_CNF_MASK << \
+			LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS); \
+		(cap) |= ((type) << LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS); \
 	} while (0)
 
-#define LSINIC_CAP_XFER_COMPLETE 0x00000001
-#define LSINIC_CAP_XFER_PKT_MERGE 0x00000002
-#define LSINIC_CAP_XFER_TX_BD_UPDATE 0x00000004
-#define LSINIC_CAP_XFER_RX_BD_UPDATE 0x00000008
-#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM 0x00000010
-#define LSINIC_CAP_XFER_ORDER_PRSV 0x00000020
-#define LSINIC_CAP_XFER_SHORT_BD 0x00000040
+#define LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_POS \
+	(LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS + val_bit_len(RC_XMIT_CNF_MASK))
+
+enum ep_xmit_bd_type {
+	EP_XMIT_LBD_TYPE = 0,
+	EP_XMIT_SBD_TYPE = 1,
+	EP_XMIT_BD_TYPE_MASK = 3
+};
+
+#define LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(cap) \
+	(((cap) >> LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_POS) & EP_XMIT_BD_TYPE_MASK)
+
+#define LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(cap, type) \
+	do { \
+		(cap) &= ~(EP_XMIT_BD_TYPE_MASK << \
+			LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_POS); \
+		(cap) |= ((type) << LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_POS); \
+	} while (0)
 
 #define LSXINIC_VF_AVAILABLE (((uint32_t)1) << 15)
 

@@ -128,6 +128,10 @@
 #else
 #define rte_lxsnic_packet_prefetch(p)	do {} while (0)
 #endif
+
+#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
+#define MAX_U16 0xffff
+
 typedef uint64_t dma_addr_t;
 
 struct lxsnic_queue_stats {
@@ -182,7 +186,8 @@ struct lxsnic_ring {
 	union {
 		/* point to EP memory */
 		struct lsinic_bd_desc *ep_bd_desc;
-		struct lsinic_notify_ep *notify_ep;
+		struct lsinic_rc_xmit_addrl *xmit_addrl;
+		struct lsinic_rc_xmit_idx *xmit_idx;
 		struct lsinic_prep_addr_ep *addr_ep;
 	};
 	struct lsinic_bd_desc *rc_bd_desc;
@@ -366,6 +371,7 @@ struct lxsnic_adapter {
 	int pdraw_test;
 	uint32_t merge_threshold;
 	uint32_t max_data_room;
+	uint32_t pkt_addr_interval;
 	uint64_t pkt_addr_base;
 };
 

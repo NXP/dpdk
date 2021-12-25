@@ -200,7 +200,10 @@ static int lxsnic_wait_tx_bd_ready(struct lxsnic_ring *tx_ring)
 		rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
 		bd_status = rc_tx_desc->bd_status;
 		count = 0;
-		if (cap & LSINIC_CAP_XFER_SHORT_BD) {
+		if (LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
+			RC_XMIT_ADDRL_TYPE ||
+			LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
+			RC_XMIT_IDX_TYPE) {
 			rc_tx_desc->bd_status = 0;
 			rc_tx_desc->bd_status |= RING_BD_READY;
 			goto skip_wait_ep;
@@ -290,6 +293,7 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 	char *penv = getenv("LSINIC_RC_PRINT_STATUS");
 	int print_status = 0, ret;
 	struct lxsnic_ring *tx_queue;
+	const uint32_t cap = adapter->cap;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -313,9 +317,18 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		lxsnic_dev_rx_dma_test(adapter);
 
 	if (!adapter->pdraw_test) {
-		if (adapter->cap & LSINIC_CAP_XFER_SHORT_BD) {
+		if (LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
+			RC_XMIT_ADDRL_TYPE ||
+			LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
+			RC_XMIT_IDX_TYPE) {
 			LSINIC_WRITE_REG_64B(&rcs_reg->r_dma_base,
 				adapter->pkt_addr_base);
+			if (LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_GET(cap) ==
+				RC_XMIT_ADDRL_TYPE)
+				LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size, 0);
+			else
+				LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size,
+					adapter->pkt_addr_interval);
 		}
 	}
 
@@ -400,13 +413,54 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 		ring->ep_reg->cr, ring->ep_reg->r_descl);
 }
 
+static void
+lxsnic_rxq_order_prsv_cfg(struct lxsnic_adapter *adapter,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool *mp)
+{
+	uint64_t resv0 = rx_conf->reserved_64s[0];
+	uint64_t resv1 = rx_conf->reserved_64s[1];
+	uint32_t elt_interval;
+
+	if (resv0 && resv1 && resv1 > resv0
+		&& (resv1 - resv0) <= MAX_U32) {
+		adapter->pkt_addr_base = resv0;
+		elt_interval = mp->elt_size + mp->header_size +
+			mp->trailer_size;
+		if (elt_interval * (mp->size - 1) != (resv1 - resv0)) {
+			adapter->pkt_addr_interval = 0;
+		} else {
+			if (mp->size < MAX_U16 &&
+				!(adapter->cap &
+				LSINIC_CAP_XFER_PKT_MERGE)) {
+				adapter->pkt_addr_base +=
+					RTE_PKTMBUF_HEADROOM;
+				adapter->pkt_addr_interval =
+					elt_interval;
+			} else {
+				adapter->pkt_addr_interval = 0;
+			}
+		}
+		if (adapter->pkt_addr_interval) {
+			LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_SET(adapter->cap,
+				RC_XMIT_IDX_TYPE);
+		} else {
+			LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_SET(adapter->cap,
+				RC_XMIT_ADDRL_TYPE);
+		}
+	} else {
+		adapter->pkt_addr_base = 0;
+		adapter->pkt_addr_interval = 0;
+		LSINIC_CAP_XFER_RC_XMIT_BD_TYPE_SET(adapter->cap,
+		RC_XMIT_LBD_TYPE);
+	}
+}
+
 /* lxsnic_setup_rx_resources - allocate Rx resources (Descriptors)
  * @rx_ring:    rx descriptor ring (for a specific queue) to setup
  *
  * Returns 0 on success, negative on failure
  */
-
-#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
 
 static int
 lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
@@ -485,18 +539,18 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
 			queue_idx * LSINIC_RING_SIZE);
 #ifdef LSINIC_BD_CTX_IDX_USED
-	if (LSINIC_CAP_XFER_INGRESS_NOTIFY_GET(adapter->cap) ==
-		INGRESS_RING_NOTIFY) {
+	if (LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
+		EP_XMIT_SBD_TYPE) {
 		rx_ring->ep2rc.rx_notify =
 			(void *)((uint8_t *)rx_ring->rc_bd_desc +
 				LSINIC_BD_RING_SIZE);
-	} else if (LSINIC_CAP_XFER_INGRESS_NOTIFY_GET(adapter->cap) ==
-		INGRESS_BD_NOTIFY){
+	} else if (LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
+		EP_XMIT_LBD_TYPE){
 		rx_ring->ep2rc.rx_notify = NULL;
 		rx_ring->ep2rc_ring_dma = 0;
 	} else {
 		LSXINIC_PMD_ERR("Invalid RX notify(%d)",
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_GET(adapter->cap));
+			LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap));
 		return -EINVAL;
 	}
 #else
@@ -546,15 +600,9 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	dev->data->rx_queues[queue_idx] = rx_ring;
 	adapter->config_rx_queues++;
 
-	if (adapter->cap & LSINIC_CAP_XFER_ORDER_PRSV) {
-		uint64_t n_min = rx_conf->reserved_64s[0];
-		uint64_t n_max = rx_conf->reserved_64s[1];
+	if (adapter->cap & LSINIC_CAP_XFER_ORDER_PRSV)
+		lxsnic_rxq_order_prsv_cfg(adapter, rx_conf, mp);
 
-		if ((n_max - n_min) <= MAX_U32) {
-			adapter->pkt_addr_base = n_min;
-			adapter->cap |= LSINIC_CAP_XFER_SHORT_BD;
-		}
-	}
 	return 0;
 }
 
@@ -608,8 +656,8 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	LSINIC_WRITE_REG(&ring_reg->pir, 0); /* TDT */
 	LSINIC_WRITE_REG(&ring_reg->cir, 0); /* TDH */
 
-	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
-		EGRESS_RING_CNF) {
+	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
+		RC_XMIT_RING_CNF) {
 		memset(ring->ep2rc.tx_complete, RING_BD_READY,
 			LSINIC_EP2RC_COMPLETE_RING_SIZE);
 	}
@@ -687,13 +735,13 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		((char *)adapter->rc_bd_desc_base +
 		LSINIC_TX_BD_OFFSET +
 		queue_idx * LSINIC_RING_SIZE);
-	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
-		EGRESS_RING_CNF) {
+	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
+		RC_XMIT_RING_CNF) {
 		tx_ring->ep2rc.tx_complete =
 			(uint8_t *)tx_ring->rc_bd_desc +
 			LSINIC_BD_RING_SIZE;
-	} else if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
-		EGRESS_INDEX_CNF) {
+	} else if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
+		RC_XMIT_INDEX_CNF) {
 		*((uint32_t *)((uint8_t *)tx_ring->rc_bd_desc +
 			LSINIC_BD_RING_SIZE)) = 0;
 		tx_ring->tx_free_start_idx = 0;

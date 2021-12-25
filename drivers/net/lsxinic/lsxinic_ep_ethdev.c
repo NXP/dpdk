@@ -423,6 +423,56 @@ lsinic_dev_id_to_dpaa2_dev(int eth_id)
 }
 
 static void
+lsinic_parse_rxq_cnf_type(const char *cnf_env,
+	struct lsinic_adapter *adapter)
+{
+	char *penv = getenv(cnf_env);
+
+	if (!penv)
+		return;
+
+	if (atoi(penv) == RC_XMIT_BD_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_BD_CNF);
+	} else if (atoi(penv) == RC_XMIT_RING_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_RING_CNF);
+	} else if (atoi(penv) == RC_XMIT_INDEX_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_INDEX_CNF);
+	} else {
+		LSXINIC_PMD_INFO("%s:%d-%s,%d-%s,%d-%s",
+			cnf_env,
+			RC_XMIT_BD_CNF, "BD confirm",
+			RC_XMIT_RING_CNF, "RING confirm",
+			RC_XMIT_INDEX_CNF, "INDEX confirm");
+	}
+}
+
+static void
+lsinic_parse_txq_notify_type(const char *notify_env,
+	struct lsinic_adapter *adapter)
+{
+	char *penv = getenv(notify_env);
+
+	if (!penv)
+		return;
+
+	if (atoi(penv) == EP_XMIT_LBD_TYPE) {
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+			EP_XMIT_LBD_TYPE);
+	} else if (atoi(penv) == EP_XMIT_SBD_TYPE) {
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+			EP_XMIT_SBD_TYPE);
+	} else {
+		LSXINIC_PMD_INFO("%s:%d-%s,%d-%s",
+			notify_env,
+			EP_XMIT_LBD_TYPE, "LBD notify",
+			EP_XMIT_SBD_TYPE, "SBD notify");
+	}
+}
+
+static void
 lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 {
 	char env_name[128];
@@ -463,46 +513,14 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if ((adapter->cap & LSINIC_CAP_XFER_COMPLETE) ||
 		(adapter->ep_cap & LSINIC_EP_CAP_RXQ_ORP)) {
 		/** Index confirm as default*/
-		LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-			EGRESS_INDEX_CNF);
-		penv = getenv(cnf_env);
-		if (penv) {
-			if (atoi(penv) == EGRESS_BD_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_BD_CNF);
-			} else if (atoi(penv) == EGRESS_RING_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_RING_CNF);
-			} else if (atoi(penv) == EGRESS_INDEX_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_INDEX_CNF);
-			} else {
-				LSXINIC_PMD_INFO("%s:%d-%s,%d-%s,%d-%s",
-					cnf_env,
-					EGRESS_BD_CNF, "BD confirm",
-					EGRESS_RING_CNF, "RING confirm",
-					EGRESS_INDEX_CNF, "INDEX confirm");
-			}
-		}
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_INDEX_CNF);
+		lsinic_parse_rxq_cnf_type(cnf_env, adapter);
 	}
 
-	LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-		INGRESS_RING_NOTIFY);
-	penv = getenv(notify_env);
-	if (penv) {
-		if (atoi(penv) == INGRESS_BD_NOTIFY) {
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-				INGRESS_BD_NOTIFY);
-		} else if (atoi(penv) == INGRESS_RING_NOTIFY) {
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-				INGRESS_RING_NOTIFY);
-		} else {
-			LSXINIC_PMD_INFO("%s:%d-%s,%d-%s",
-				notify_env,
-				INGRESS_BD_NOTIFY, "BD notify",
-				INGRESS_RING_NOTIFY, "RING notify");
-		}
-	}
+	LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+		EP_XMIT_SBD_TYPE);
+	lsinic_parse_txq_notify_type(notify_env, adapter);
 
 	penv = getenv("LSINIC_RXQ_READ_BD_BY_DMA");
 	if (penv)
@@ -1326,8 +1344,8 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 			rc_reg_addr);
 	}
 
-	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
-		EGRESS_RING_CNF) {
+	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
+		RC_XMIT_RING_CNF) {
 		adapter->complete_src =
 			rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
 				LSINIC_EP2RC_COMPLETE_RING_SIZE);
@@ -1342,11 +1360,20 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	}
 
 	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
-	if (adapter->rc_dma_base) {
+	adapter->rc_dma_elt_size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
+	if (adapter->rc_dma_base && !adapter->rc_dma_elt_size) {
 		for (i = 0; i < dev->data->nb_rx_queues; i++) {
 			rxq = dev->data->rx_queues[i];
-			memset(rxq->notify_ep, 0,
-				sizeof(struct lsinic_notify_ep) * rxq->nb_desc);
+			memset(rxq->recv_addrl, 0,
+				sizeof(struct lsinic_rc_xmit_addrl) *
+				rxq->nb_desc);
+		}
+	} else if (adapter->rc_dma_base && adapter->rc_dma_elt_size) {
+		for (i = 0; i < dev->data->nb_rx_queues; i++) {
+			rxq = dev->data->rx_queues[i];
+			memset(rxq->recv_idx, 0,
+				sizeof(struct lsinic_rc_xmit_idx) *
+				rxq->nb_desc);
 		}
 	}
 
