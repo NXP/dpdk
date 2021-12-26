@@ -45,7 +45,8 @@
 struct lsinic_sw_bd {
 	struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
 	struct lsinic_bd_desc bd;
-	uint32_t align_dma_offset;
+	uint16_t align_dma_offset;
+	uint16_t mg;
 	struct lsinic_mg_header mg_header;
 	union {
 		char *complete;
@@ -359,10 +360,10 @@ lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 
 	local_len_cmd->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
 	if (ep_bd_desc->len_cmd & LSINIC_BD_CMD_MG) {
-		cnt = ((ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
-			LSINIC_BD_MG_NUM_SHIFT) + 1;
+		cnt = (ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
+			LSINIC_BD_MG_NUM_SHIFT;
 	} else {
-		cnt = 1;
+		cnt = 0;
 	}
 	EP2RC_TX_IDX_CNT_SET(local_len_cmd->cnt_idx,
 		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),

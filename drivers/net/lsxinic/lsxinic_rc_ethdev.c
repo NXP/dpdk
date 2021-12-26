@@ -182,6 +182,8 @@ static void *lxsnic_rc_debug_status(void *arg)
 	while (1) {
 		sleep(DEBUG_STATUS_INTERVAL);
 
+		printf("%s-Port%d -- statistics:\r\n",
+			eth_dev->data->name, eth_dev->data->port_id);
 		print_port_status(eth_dev, NULL, DEBUG_STATUS_INTERVAL,
 			0, 0);
 		printf("\r\n\r\n");
@@ -475,9 +477,7 @@ lxsnic_rxq_order_prsv_cfg(struct lxsnic_adapter *adapter,
 		if (elt_interval * (mp->size - 1) != (resv1 - resv0)) {
 			adapter->pkt_addr_interval = 0;
 		} else {
-			if (mp->size < MAX_U16 &&
-				!(adapter->cap &
-				LSINIC_CAP_XFER_PKT_MERGE)) {
+			if (mp->size < MAX_U16) {
 				adapter->pkt_addr_base +=
 					RTE_PKTMBUF_HEADROOM;
 				adapter->pkt_addr_interval =

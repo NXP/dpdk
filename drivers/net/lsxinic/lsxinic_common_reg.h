@@ -273,8 +273,14 @@ struct lsinic_bd_desc {
 	(cnt_idx = (idx) | (cnt) << (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
 
 struct lsinic_rc_rx_len_cmd {
-	uint16_t total_len;
-	uint16_t cnt_idx;
+	union {
+		uint32_t len_cnt_idx;
+		struct {
+			/* For CB buffer, length excludes CB header.*/
+			uint16_t total_len;
+			uint16_t cnt_idx;
+		};
+	};
 } __packed;
 
 struct lsinic_rc_tx_bd_cnf {
@@ -307,6 +313,11 @@ struct lsinic_ep_rx_src_addrl {
 	};
 } __packed;
 
+#define LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT 15
+#define LSINIC_EP_RX_SRC_ADDRX_MERGE \
+	(1 << LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT)
+#define LSINIC_EP_RX_SRC_ADDRX_LEN_MASK \
+	(~LSINIC_EP_RX_SRC_ADDRX_MERGE)
 struct lsinic_ep_rx_src_addrx {
 	union {
 		uint32_t idx_cmd_len;
