@@ -959,15 +959,6 @@ parse_args(int argc, char **argv)
 }
 
 static void
-print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
-{
-	char buf[RTE_ETHER_ADDR_FMT_SIZE];
-
-	rte_ether_format_addr(buf, RTE_ETHER_ADDR_FMT_SIZE, eth_addr);
-	printf("%s%s", name, buf);
-}
-
-static void
 port_fwd_mp_max_min_addr(struct rte_mempool *mp)
 {
 	uint32_t num = mp->size, i, alloced = 0, bulk_size;
@@ -1078,14 +1069,13 @@ static void
 check_all_ports_link_status(uint32_t port_mask)
 {
 #define CHECK_INTERVAL 100 /* 100ms */
-#define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
+#define MAX_CHECK_TIME 10 /* 1s (10 * 100ms) in total */
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
 	int ret;
 
-	printf("\nChecking link status");
-	fflush(stdout);
+	printf("\nChecking link status\r\n");
 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
 		if (force_quit)
 			return;
@@ -1126,11 +1116,8 @@ check_all_ports_link_status(uint32_t port_mask)
 		if (print_flag == 1)
 			break;
 
-		if (all_ports_up == 0) {
-			printf(".");
-			fflush(stdout);
+		if (all_ports_up == 0)
 			rte_delay_ms(CHECK_INTERVAL);
-		}
 
 		/* set the print_flag if all ports up or timeout */
 		if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
@@ -1386,12 +1373,6 @@ main(int argc, char **argv)
 		enabled_port_num++;
 
 		/* init port */
-		printf("Initializing port %d ... ", portid);
-		fflush(stdout);
-
-		printf("Creating queues: nb_rxq=%d nb_txq=%u... ",
-			nb_rx_queue[portid], nb_tx_queue[portid]);
-
 		ret = rte_eth_dev_info_get(portid, &dev_info);
 		if (ret != 0)
 			rte_exit(EXIT_FAILURE,
@@ -1432,9 +1413,6 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				 "Cannot get MAC address: err=%d, port=%d\n",
 				 ret, portid);
-
-		print_ethaddr(" Address:", &ports_eth_addr[portid]);
-		printf("\r\n");
 	}
 
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
@@ -1442,8 +1420,6 @@ main(int argc, char **argv)
 			continue;
 
 		qconf = &s_lcore_conf[lcore_id];
-		printf("\nInitializing rxq/txq pairs on lcore %u ... ", lcore_id);
-		fflush(stdout);
 		/* init RX queues */
 		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
 			struct rte_eth_rxconf rxq_conf;
@@ -1453,8 +1429,8 @@ main(int argc, char **argv)
 
 			socketid = (uint8_t)rte_lcore_to_socket_id(lcore_id);
 
-			printf("rxq/txq=%d,%d,%d ", portid, queueid, socketid);
-			fflush(stdout);
+			printf("rxq/txq=%d,%d,%d\r\n",
+				portid, queueid, socketid);
 
 			ret = rte_eth_dev_info_get(portid, &dev_info);
 			if (ret != 0)
@@ -1491,8 +1467,6 @@ main(int argc, char **argv)
 		}
 	}
 
-	printf("\n");
-
 	/* start ports */
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0)
@@ -1510,8 +1484,6 @@ main(int argc, char **argv)
 				"rte_eth_promiscuous_enable: err=%s, port=%u\n",
 				rte_strerror(-ret), portid);
 	}
-
-	printf("\n");
 
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		if (rte_lcore_is_enabled(lcore_id) == 0)
