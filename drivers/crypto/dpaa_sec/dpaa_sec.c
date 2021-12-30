@@ -2762,6 +2762,20 @@ dpaa_sec_ipsec_aead_init(struct rte_crypto_aead_xform *aead_xform,
 		session->aead_key.algmode = OP_ALG_AAI_GCM;
 		session->aead_alg = RTE_CRYPTO_AEAD_AES_GCM;
 		break;
+	case RTE_CRYPTO_AEAD_AES_GMAC:
+		/**
+		 * AES-GMAC is an AEAD algo with NULL encryption and GMAC
+		 * authentication.
+		 */
+		session->aead_key.alg = OP_PCL_IPSEC_AES_NULL_WITH_GMAC;
+		if (session->dir == DIR_ENC) {
+			memcpy(session->encap_pdb.gcm.salt,
+				(uint8_t *)&(ipsec_xform->salt), 4);
+		} else {
+			memcpy(session->decap_pdb.gcm.salt,
+				(uint8_t *)&(ipsec_xform->salt), 4);
+		}
+		break;
 	default:
 		DPAA_SEC_ERR("Crypto: Undefined AEAD specified %u",
 			      aead_xform->algo);
