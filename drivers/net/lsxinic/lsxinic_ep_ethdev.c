@@ -1246,23 +1246,6 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	struct lsinic_dev_reg *cfg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
-	int ring_total_size;
-
-	ring_total_size = adapter->num_rx_queues *
-					adapter->rx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
-	ring_total_size += adapter->num_tx_queues *
-					adapter->tx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
-
-	/** RX complete ring to notify RC recv complete.*/
-	ring_total_size += adapter->num_rx_queues *
-					adapter->rx_ring_bd_count *
-					sizeof(uint8_t);
-	/** TX complete ring to notify RC xmit complete.*/
-	ring_total_size += adapter->num_tx_queues *
-					adapter->tx_ring_bd_count *
-					sizeof(uint8_t);
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	adapter->rc_ring_phy_base = rc_reg_addr;
@@ -1276,8 +1259,8 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 		if (cfg->rbp_enable) {
 			adapter->rc_ring_virt_base =
 				lsx_pciep_set_ob_win(lsinic_dev,
-							rc_reg_addr,
-							ring_total_size);
+					rc_reg_addr,
+					LSINIC_RING_BAR_MAX_SIZE);
 		} else {
 			adapter->rc_ring_virt_base =
 				lsinic_dev->ob_virt_base +
