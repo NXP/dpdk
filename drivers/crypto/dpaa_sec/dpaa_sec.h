@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016-2024 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -558,6 +558,36 @@ static const struct rte_cryptodev_capabilities dpaa_sec_capabilities[] = {
 					.max = 12,
 					.increment = 0
 				},
+			}, }
+		}, }
+	},
+	{       /* AES GMAC (AEAD) */
+		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+		{.sym = {
+			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,
+			{.aead = {
+				.algo = RTE_CRYPTO_AEAD_AES_GMAC,
+				.block_size = 16,
+				.key_size = {
+					.min = 16,
+					.max = 32,
+					.increment = 8
+				},
+				.digest_size = {
+					.min = 16,
+					.max = 16,
+					.increment = 0
+				},
+				.aad_size = {
+					.min = 0,
+					.max = 65535,
+					.increment = 1
+				},
+				.iv_size = {
+					.min = 12,
+					.max = 16,
+					.increment = 4
+				}
 			}, }
 		}, }
 	},
