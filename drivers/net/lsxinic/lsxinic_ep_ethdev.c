@@ -887,7 +887,9 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 
 	vendor_id = NXP_PCI_VENDOR_ID;
 	class_id = NXP_PCI_CLASS_ID;
-	if (pex_type == PEX_LX2160_REV1 || pex_type == PEX_LX2160_REV2)
+	if (pex_type == PEX_LX2160_REV2)
+		device_id = lx_rev2_pciep_default_dev_id();
+	else if (pex_type == PEX_LX2160_REV1)
 		device_id = NXP_PCI_DEV_ID_LX2160A;
 	else if (pex_type == PEX_LS208X)
 		device_id = NXP_PCI_DEV_ID_LS2088A;
@@ -910,15 +912,20 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		penv = getenv(env_name);
 		if (penv)
 			class_id = strtol(penv, 0, 16);
+	} else {
+		sprintf(env_name, "LSINIC_PCIE%d_PF%d_VF_DEVICE_ID",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+		penv = getenv(env_name);
+		if (penv)
+			device_id = strtol(penv, 0, 16);
 	}
 
-	if (!lsinic_dev->is_vf) {
-		err = lsx_pciep_ctl_dev_set(vendor_id,
-				device_id, class_id,
-				lsinic_dev->pcie_id, lsinic_dev->pf);
-		if (err)
-			return err;
-	}
+	err = lsx_pciep_fun_set(vendor_id,
+			device_id, class_id,
+			lsinic_dev->pcie_id,
+			lsinic_dev->pf, lsinic_dev->is_vf);
+	if (err)
+		return err;
 
 	lsinic_netdev_env_init(eth_dev);
 	lsinic_init_bar_addr(lsinic_dev);
