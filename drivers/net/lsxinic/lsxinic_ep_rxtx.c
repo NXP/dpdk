@@ -3111,6 +3111,8 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 	struct rte_mbuf *free_pkt = NULL;
 	struct rte_mbuf **ppkt = NULL;
 
+	txq->core_id = rte_lcore_id();
+
 	if (bulk_free)
 		ppkt = &free_pkt;
 
@@ -3148,6 +3150,25 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 
 	if (!txq->new_desc)
 		txq->new_tsc = rte_rdtsc();
+
+	if (unlikely(!txq->pair ||
+		(txq->pair && txq->pair->core_id != txq->core_id))) {
+		txq->core_id = rte_lcore_id();
+		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
+			uint16_t dq_total = 0, dq;
+
+			while (dq_total != tx_num) {
+				lsinic_qdma_tx_multiple_enqueue(txq, false);
+				dq = lsinic_tx_dma_dequeue(txq);
+				if (dq > 0)
+					dq_total += dq;
+			}
+			lsinic_tx_update_to_rc(txq);
+		} else if (!txq->recycle_txq) {
+			lsinic_qdma_tx_multiple_enqueue(txq, false);
+			txq->packets_old = txq->packets;
+		}
+	}
 
 	return tx_num;
 }
@@ -4482,6 +4503,11 @@ lsinic_txq_loop(struct lsinic_queue *rxq)
 			lsinic_queue_status_update(q);
 			if (!lsinic_queue_running(q))
 				continue;
+		}
+		if (unlikely(q->core_id != rte_lcore_id())) {
+			TAILQ_REMOVE(&RTE_PER_LCORE(lsinic_txq_list),
+				q, next);
+			continue;
 		}
 
 		if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
