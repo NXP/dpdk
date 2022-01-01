@@ -186,7 +186,7 @@ int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
 
-void lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
 int
 lsinic_split_dev_flow_create(struct lsinic_adapter *adapter);

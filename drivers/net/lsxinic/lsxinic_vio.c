@@ -40,13 +40,11 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 	dev->mmsi_flag = LSX_PCIEP_MSIX_INT;
 	/* Init msix before start queues. */
 	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
-		lsx_pciep_msix_init(dev);
+		lsx_pciep_multi_msix_init(dev, LSXVIO_MAX_QUEUE_PAIRS * 2);
 
 		adapter->msix_config = common->msix_config;
-		adapter->msix_cfg_addr = lsx_pciep_msix_get_vaddr(dev,
-			adapter->msix_config);
-		adapter->msix_cfg_cmd = lsx_pciep_msix_get_cmd(dev,
-			adapter->msix_config);
+		adapter->msix_cfg_addr = dev->msix_addr[adapter->msix_config];
+		adapter->msix_cfg_cmd = dev->msix_data[adapter->msix_config];
 	}
 
 	/* Check queue_used_num, which needs rc to set it. */
@@ -111,10 +109,8 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		if (queue->queue_msix_vector != VIRTIO_MSI_NO_VECTOR &&
 			!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 			vq->msix_irq = queue->queue_msix_vector;
-			vq->msix_vaddr = lsx_pciep_msix_get_vaddr(dev,
-				vq->msix_irq);
-			vq->msix_cmd = lsx_pciep_msix_get_cmd(dev,
-				vq->msix_irq);
+			vq->msix_vaddr = dev->msix_addr[vq->msix_irq];
+			vq->msix_cmd = dev->msix_data[vq->msix_irq];
 		}
 
 		vq->status = LSXVIO_QUEUE_START;

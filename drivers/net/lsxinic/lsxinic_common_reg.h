@@ -430,7 +430,7 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	uint64_t r_dma_base;
 	uint32_t r_dma_elt_size;
 	uint32_t msi_flag;
-	uint32_t msix_mask[32];
+	uint32_t msix_mask[LSINIC_DEV_MSIX_MAX_NB];
 } __packed;
 
 #define LSINIC_ETH_REG_OFFSET (0x0300)

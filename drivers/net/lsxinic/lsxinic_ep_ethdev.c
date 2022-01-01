@@ -1236,7 +1236,7 @@ rte_lsinic_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	uint64_t rc_reg_addr)
 {
@@ -1285,9 +1285,18 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 					lsinic_dev->ob_map_bus_base;
 		}
 	}
+
+	if (!adapter->rc_ring_virt_base)
+		return -EIO;
+
+	if (!lsx_pciep_bus_ob_mapped(lsinic_dev,
+		rc_reg_addr + LSINIC_RING_BAR_MAX_SIZE))
+		return -EIO;
+
+	return 0;
 }
 
-void
+int
 lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 {
 	uint64_t rc_reg_addr = 0;
@@ -1296,7 +1305,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int sim;
+	int sim, ret = 0;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1318,7 +1327,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	if (lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT) {
 		int i;
 
-		for (i = 0; i < 32; i++)
+		for (i = 0; i < LSINIC_DEV_MSIX_MAX_NB; i++)
 			LSINIC_WRITE_REG(&rcs_reg->msix_mask[i], 0x01);
 	}
 
@@ -1331,9 +1340,14 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	if (adapter->rc_ring_phy_base == 0 ||
 		adapter->rc_ring_phy_base != rc_reg_addr) {
 		if (rc_reg_addr)
-			lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
+			ret = lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
 		else
-			LSXINIC_PMD_ERR("Reconfig from RC ERROR!");
+			ret = -EIO;
+		if (ret) {
+			LSXINIC_PMD_ERR("Map RC ring failed");
+
+			return ret;
+		}
 		LSXINIC_PMD_DBG("Reconfig from RC rc_reg_addr:%lX",
 			rc_reg_addr);
 	}
@@ -1347,7 +1361,8 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 			memset(adapter->complete_src, RING_BD_HW_COMPLETE,
 				LSINIC_BD_CNF_RING_SIZE);
 		} else {
-			LSXINIC_PMD_WARN("complete src malloc failed");
+			LSXINIC_PMD_ERR("complete src malloc failed");
+			return -ENOMEM;
 		}
 	} else {
 		adapter->complete_src = NULL;
@@ -1356,8 +1371,12 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
 	adapter->rc_dma_elt_size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
 
-	if (!sim)
-		lsx_pciep_msix_init(lsinic_dev);
+	if (!sim) {
+		lsx_pciep_multi_msix_init(lsinic_dev,
+			LSINIC_DEV_MSIX_MAX_NB);
+	}
+
+	return 0;
 }
 
 /* return 0 means link status changed, -1 means not changed */
@@ -1533,6 +1552,11 @@ rte_lsinic_remove(struct rte_lsx_pciep_device *lsinic_dev)
 	lsinic_dev_uninit(eth_dev);
 
 	lsinic_uninit_bar_addr(lsinic_dev);
+
+	if (lsinic_dev->msix_addr)
+		free(lsinic_dev->msix_addr);
+	if (lsinic_dev->msix_data)
+		free(lsinic_dev->msix_data);
 
 	rte_free(eth_dev->process_private);
 	lsinic_dma_uninit();

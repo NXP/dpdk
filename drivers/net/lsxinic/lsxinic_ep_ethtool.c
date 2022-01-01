@@ -24,7 +24,9 @@ static int lsinic_if_init(struct rte_eth_dev *dev)
 	struct lsinic_adapter *adapter = dev->process_private;
 
 	adapter->rc_state = LSINIC_DEV_INITED;
-	lsinic_reset_config_fromrc(adapter);
+
+	if (lsinic_reset_config_fromrc(adapter))
+		return PCIDEV_RESULT_FAILED;
 
 	return PCIDEV_RESULT_SUCCEED;
 }

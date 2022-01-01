@@ -121,7 +121,7 @@ struct lsxvio_queue {
 	/* MSI-X */
 	uint32_t msix_irq;
 	uint32_t msix_cmd;
-	uint64_t msix_vaddr;
+	void *msix_vaddr;
 	uint64_t new_tsc;
 	uint64_t new_time_thresh;
 	uint16_t new_desc;

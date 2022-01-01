@@ -375,7 +375,9 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			lxsnic_dev_rx_dma_test(adapter);
 	}
 
-	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
+	ret = lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
+	if (ret != PCIDEV_RESULT_SUCCEED)
+		return -EIO;
 
 	lxsnic_up_complete(adapter);
 
@@ -393,10 +395,11 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 
 skip_wait_tx_bd_ready:
 	if (print_status) {
-		if (pthread_create(&debug_pid, NULL,
-			lxsnic_rc_debug_status, dev)) {
+		ret = pthread_create(&debug_pid, NULL,
+			lxsnic_rc_debug_status, dev);
+		if (ret) {
 			LSXINIC_PMD_ERR("Could not create print_status");
-			return -1;
+			return ret;
 		}
 	}
 

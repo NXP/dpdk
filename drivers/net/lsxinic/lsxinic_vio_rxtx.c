@@ -975,7 +975,7 @@ lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 			(q->new_desc >= q->new_desc_thresh ||
 			(lsxvio_timeout(q)))) {
 			/* MSI */
-			lsx_pciep_msix_cmd_send(q->msix_vaddr, q->msix_cmd);
+			lsx_pciep_start_msix(q->msix_vaddr, q->msix_cmd);
 			q->new_desc = 0;
 		}
 	}

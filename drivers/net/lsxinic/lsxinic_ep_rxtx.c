@@ -2122,12 +2122,8 @@ lsinic_queue_start(struct lsinic_queue *q)
 			LSINIC_INT_VECTOR_SHIFT);
 		q->msix_irq = msix_vector;
 		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
-			q->msix_cmd =
-				lsx_pciep_msix_get_cmd(q->adapter->lsinic_dev,
-					msix_vector);
-			q->msix_vaddr =
-				lsx_pciep_msix_get_vaddr(q->adapter->lsinic_dev,
-					msix_vector);
+			q->msix_cmd = lsinic_dev->msix_data[msix_vector];
+			q->msix_vaddr = lsinic_dev->msix_addr[msix_vector];
 			if (q->msix_vaddr == 0) {
 				LSXINIC_PMD_ERR("q->msix_vaddr == NULL");
 				return -EINVAL;
@@ -2137,7 +2133,7 @@ lsinic_queue_start(struct lsinic_queue *q)
 
 	bd_bus_addr = LSINIC_READ_REG_64B((uint64_t *)(&q->ep_reg->r_descl));
 	if (bd_bus_addr) {
-		ob_offset = bd_bus_addr - adapter->lsinic_dev->ob_map_bus_base;
+		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
 		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
 	} else {
 		rte_panic("No bd addr set from RC");
@@ -2574,7 +2570,7 @@ lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 		if (q->new_desc_thresh && (q->new_desc >= q->new_desc_thresh ||
 			(lsinic_timeout(q)))) {
 			/* MSI */
-			lsx_pciep_msix_cmd_send(q->msix_vaddr, q->msix_cmd);
+			lsx_pciep_start_msix(q->msix_vaddr, q->msix_cmd);
 			q->new_desc = 0;
 		}
 	}
