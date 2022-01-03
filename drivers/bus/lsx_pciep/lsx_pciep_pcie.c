@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <unistd.h>
@@ -1585,7 +1585,7 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 		ctlhw->ops->pcie_map_ob_win(&ctlhw->hw, pf,
 				is_vf, vf,
 				ep_dev->ob_map_bus_base,
-				size);
+				size, 0);
 	ep_dev->ob_virt_base =
 		lsx_pciep_map_region(ep_dev->ob_phy_base,
 				size);
@@ -1618,6 +1618,7 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	uint32_t idx, out_win_nb;
 	uint64_t pci_addr = 0, out_phy;
+	int shared;
 
 	out_win_nb = ctlhw->out_win_per_fun;
 
@@ -1625,32 +1626,25 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	ep_dev->ob_win_size = ctlhw->out_win_size;
 	ep_dev->ob_win_nb = out_win_nb;
 
-	if (ctlhw->hw.ob_policy == LSX_PCIEP_OB_SHARE &&
-		ctlhw->hw.primary_done) {
-		ep_dev->ob_phy_base = ctlhw->hw.out_base;
-		ep_dev->ob_virt_base = ctlhw->out_vir;
-
-		return ep_dev->ob_virt_base + pci_addr;
-	}
+	shared = ctlhw->hw.ob_policy == LSX_PCIEP_OB_SHARE ? 1 : 0;
 
 	for (idx = 0; idx < out_win_nb; idx++) {
 		out_phy = ctlhw->ops->pcie_map_ob_win(&ctlhw->hw,
 					pf, is_vf, vf,
 					pci_addr,
-					ctlhw->out_win_size);
+					ctlhw->out_win_size, shared);
 		pci_addr += ctlhw->out_win_size;
-		if (idx == 0) {
+		if (idx == 0)
 			ep_dev->ob_phy_base = out_phy;
-			ep_dev->ob_virt_base = ctlhw->out_vir +
-				out_phy - ctlhw->hw.out_base;
-		}
 	}
-	ep_dev->ob_virt_base =
-		lsx_pciep_map_region(ep_dev->ob_phy_base,
-			out_win_nb * ctlhw->out_win_size);
-
-	if (ctlhw->hw.ob_policy == LSX_PCIEP_OB_SHARE)
-		ctlhw->hw.primary_done = 1;
+	if (!shared) {
+		ep_dev->ob_virt_base =
+			lsx_pciep_map_region(ep_dev->ob_phy_base,
+				out_win_nb * ctlhw->out_win_size);
+	} else {
+		ep_dev->ob_virt_base = ctlhw->out_vir +
+			ep_dev->ob_phy_base - ctlhw->hw.out_base;
+	}
 
 	return ep_dev->ob_virt_base;
 }

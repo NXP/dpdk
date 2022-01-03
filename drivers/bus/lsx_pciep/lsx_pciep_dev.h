@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSX_PCIEP_DEV_H_
@@ -83,7 +83,6 @@ struct lsx_pciep_hw_low {
 	int msi_flag;
 
 	enum lsx_ob_policy ob_policy;
-	int primary_done;
 };
 
 struct lsx_pciep_ctl_hw {

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSX_PCIEP_CTRL_H_
@@ -44,7 +44,7 @@ struct lsx_pciep_ops {
 
 	uint64_t (*pcie_map_ob_win)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, int vf,
-			uint64_t pci_addr, uint64_t size);
+			uint64_t pci_addr, uint64_t size, int shared);
 
 	void (*pcie_cfg_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx, int pf, int is_vf, int vf,

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #include <unistd.h>
@@ -139,14 +139,23 @@ enum dw_win_type {
 
 #define PCIEP_DW_GLOBE_INFO_F "/tmp/pciep_dw_globe_info"
 
+struct pciep_dw_shared_ob_win {
+	uint64_t bus_start;
+	uint64_t bus_end;
+	uint64_t offset;
+};
+
 struct pciep_dw_globe_info {
 	uint64_t dbi_phy[LSX_MAX_PCIE_NB];
 	int ob_win_used[LSX_MAX_PCIE_NB][PCIE_DW_OB_WINS_NUM];
 	int ib_win_used[LSX_MAX_PCIE_NB][PCIE_DW_IB_WINS_NUM];
 	uint64_t ob_base[LSX_MAX_PCIE_NB];
 	uint64_t ob_offset[LSX_MAX_PCIE_NB];
+	struct pciep_dw_shared_ob_win
+		shared_ob_win[LSX_MAX_PCIE_NB][PCIE_DW_OB_WINS_NUM];
 	uint64_t ob_max_size;
 	uint64_t ob_win_max_size;
+	int shared_ob;
 };
 
 struct pciep_dw_globe_info *g_dw_globe_info;
@@ -363,6 +372,114 @@ pcie_dw_alloc_ob_space(int pcie_id,
 	return cpu_addr;
 }
 
+static uint64_t
+pcie_dw_find_shared_ob_space(int pcie_id,
+	uint64_t pci_addr, uint64_t size)
+{
+	FILE *f_dw_cfg;
+	size_t f_ret;
+	int i;
+	struct pciep_dw_shared_ob_win *ob_shared_win;
+	uint64_t ob_base;
+
+	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
+	if (!f_dw_cfg) {
+		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
+			__func__, PCIEP_DW_GLOBE_INFO_F);
+		return 0;
+	}
+
+	if (!g_dw_globe_info) {
+		g_dw_globe_info = malloc(sizeof(struct pciep_dw_globe_info));
+		memset(g_dw_globe_info, 0,
+			sizeof(struct pciep_dw_globe_info));
+	}
+
+	f_ret = fread(g_dw_globe_info,
+			sizeof(struct pciep_dw_globe_info),
+			1, f_dw_cfg);
+	fclose(f_dw_cfg);
+	if (f_ret != 1) {
+		LSX_PCIEP_BUS_ERR("%s: %s read failed",
+			__func__, PCIEP_DW_GLOBE_INFO_F);
+		return 0;
+	}
+
+	ob_shared_win = &g_dw_globe_info->shared_ob_win[pcie_id][0];
+	ob_base = g_dw_globe_info->ob_base[pcie_id];
+
+	for (i = 0; i < PCIE_DW_OB_WINS_NUM; i++) {
+		if (pci_addr >= ob_shared_win->bus_start &&
+			(pci_addr + size) <= ob_shared_win->bus_end) {
+			return ob_base + ob_shared_win->offset;
+		}
+		ob_shared_win++;
+	}
+
+	return 0;
+}
+
+static int
+pcie_dw_add_shared_ob_space(int pcie_id,
+	uint64_t pci_addr, uint64_t size, uint64_t cpu_addr,
+	int win_id)
+{
+	FILE *f_dw_cfg;
+	size_t f_ret;
+	struct pciep_dw_shared_ob_win *ob_shared_win;
+	uint64_t ob_base;
+
+	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
+	if (!f_dw_cfg) {
+		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
+			__func__, PCIEP_DW_GLOBE_INFO_F);
+		return -ENODEV;
+	}
+
+	if (!g_dw_globe_info) {
+		g_dw_globe_info = malloc(sizeof(struct pciep_dw_globe_info));
+		memset(g_dw_globe_info, 0,
+			sizeof(struct pciep_dw_globe_info));
+	}
+
+	f_ret = fread(g_dw_globe_info,
+			sizeof(struct pciep_dw_globe_info),
+			1, f_dw_cfg);
+	fclose(f_dw_cfg);
+	if (f_ret != 1) {
+		LSX_PCIEP_BUS_ERR("%s: %s read failed",
+			__func__, PCIEP_DW_GLOBE_INFO_F);
+		return -EIO;
+	}
+
+	ob_shared_win =
+		&g_dw_globe_info->shared_ob_win[pcie_id][win_id];
+	ob_base = g_dw_globe_info->ob_base[pcie_id];
+
+	ob_shared_win->bus_start = pci_addr;
+	ob_shared_win->bus_end = pci_addr + size;
+	ob_shared_win->offset = cpu_addr - ob_base;
+
+	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "wb");
+	if (!f_dw_cfg) {
+		LSX_PCIEP_BUS_ERR("%s: %s write open failed",
+			__func__, PCIEP_DW_GLOBE_INFO_F);
+		return -ENODEV;
+	}
+
+	f_ret = fwrite(g_dw_globe_info,
+		sizeof(struct pciep_dw_globe_info),
+		1, f_dw_cfg);
+	if (f_ret != 1) {
+		LSX_PCIEP_BUS_ERR("%s write failed",
+			PCIEP_DW_GLOBE_INFO_F);
+		return -EIO;
+	}
+	fclose(f_dw_cfg);
+
+	return 0;
+}
+
 static void
 pcie_dw_disable_ob_win(struct lsx_pciep_hw_low *hw,
 	int idx)
@@ -400,12 +517,19 @@ static uint64_t
 pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf,
 	uint64_t pci_addr,
-	uint64_t size)
+	uint64_t size, int shared)
 {
 	int win_id;
 	uint64_t cpu_addr;
 	uint64_t pcie_id = hw->index;
 	uint32_t route_id;
+
+	if (shared) {
+		cpu_addr = pcie_dw_find_shared_ob_space(pcie_id,
+			pci_addr, size);
+		if (cpu_addr)
+			return cpu_addr;
+	}
 
 	win_id = pcie_dw_alloc_win_idx(pcie_id, DW_OUTBOUND_WIN);
 	if (win_id < 0)
@@ -414,6 +538,13 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 	cpu_addr = pcie_dw_alloc_ob_space(pcie_id, size);
 
 	route_id = pcie_dw_route_fun_id(hw->dbi_vir, pf, is_vf, vf);
+
+	if (shared) {
+		if (pcie_dw_add_shared_ob_space(pcie_id,
+			pci_addr, size, cpu_addr, win_id)) {
+			return 0;
+		}
+	}
 
 	rte_write32(PCIE_ATU_REGION_OUTBOUND | win_id,
 		    hw->dbi_vir + PCIE_ATU_VIEWPORT);
@@ -656,7 +787,7 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 
 		if (hw->ob_policy != LSX_PCIEP_OB_SHARE) {
 			phy_addr = pcie_dw_map_ob_win(hw, pf, is_vf, vf,
-				maddr, CFG_MSIX_OB_SIZE);
+				maddr, CFG_MSIX_OB_SIZE, 0);
 		} else {
 			phy_addr = hw->out_base + maddr;
 		}
