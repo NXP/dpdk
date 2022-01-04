@@ -3461,6 +3461,43 @@ lsinic_rx_dma_dequeue(struct lsinic_queue *rxq)
 	return ret;
 }
 
+static uint64_t
+lsinic_pci_dma_test_get_remote_addr(struct lsinic_queue *queue,
+	uint32_t index)
+{
+	uint64_t remote_addr = 0;
+
+	printf("remote index:%d, type:%d, bd:%d\r\n",
+		index, queue->type, queue->ep_mem_bd_type);
+
+	if (queue->type == LSINIC_QUEUE_TX) {
+		if (queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
+			queue->ep_bd_desc = queue->ep_bd_shared_addr;
+			remote_addr = queue->ep_bd_desc[index].pkt_addr;
+		} else if (queue->ep_mem_bd_type == EP_MEM_DST_ADDR_BD) {
+			queue->tx_dst_addr = queue->ep_bd_shared_addr;
+			remote_addr = queue->tx_dst_addr[index].pkt_addr;
+		}
+	} else {
+		if (queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
+			queue->ep_bd_desc = queue->ep_bd_shared_addr;
+			remote_addr = queue->ep_bd_desc[index].pkt_addr;
+		} else if (queue->ep_mem_bd_type == EP_MEM_SRC_ADDRL_BD) {
+			queue->rx_src_addrl = queue->ep_bd_shared_addr;
+			remote_addr = queue->rx_src_addrl[index].pkt_addr_low;
+			remote_addr += queue->adapter->rc_dma_base;
+		} else if (queue->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD) {
+			queue->rx_src_addrx = queue->ep_bd_shared_addr;
+			remote_addr = queue->rx_src_addrx[index].pkt_idx;
+			remote_addr = remote_addr *
+				queue->adapter->rc_dma_elt_size;
+			remote_addr += queue->adapter->rc_dma_base;
+		}
+	}
+
+	return remote_addr;
+}
+
 static int
 lsinic_pci_dma_test_init(struct lsinic_queue *queue)
 {
@@ -3478,6 +3515,7 @@ lsinic_pci_dma_test_init(struct lsinic_queue *queue)
 			LSINIC_DEV_REG_OFFSET);
 	uint16_t pkt_len = RTE_ETHER_MIN_LEN - RTE_ETHER_CRC_LEN;
 	char *penv = getenv("LSINIC_PCIE_DMA_TEST_PKT_SIZE");
+	uint64_t remote_addr;
 
 	if (dma_test->status == LSINIC_PCI_DMA_TEST_START)
 		return 0;
@@ -3528,7 +3566,8 @@ lsinic_pci_dma_test_init(struct lsinic_queue *queue)
 	if (!dma_test->mbufs)
 		return -ENOMEM;
 
-	ret = rte_pktmbuf_alloc_bulk(pool, dma_test->mbufs, queue->nb_desc);
+	ret = rte_pktmbuf_alloc_bulk(pool,
+		dma_test->mbufs, queue->nb_desc);
 	if (ret)
 		return ret;
 
@@ -3553,8 +3592,13 @@ lsinic_pci_dma_test_init(struct lsinic_queue *queue)
 
 skip_qdma_vq_setup:
 	jobs = queue->dma_jobs;
+	queue->ep_mem_bd_type =
+		LSINIC_READ_REG(&queue->ep_reg->r_ep_mem_bd_type);
+	queue->rc_mem_bd_type =
+		LSINIC_READ_REG(&queue->ep_reg->r_rc_mem_bd_type);
 	for (i = 0; i < queue->nb_desc; i++) {
-		if (!queue->ep_bd_desc[i].pkt_addr) {
+		remote_addr = lsinic_pci_dma_test_get_remote_addr(queue, i);
+		if (!remote_addr) {
 			rte_panic("%s%d bd[%d] DMA test failed",
 				queue->type == LSINIC_QUEUE_RX ?
 				"RXQ" : "TXQ",
@@ -3562,12 +3606,10 @@ skip_qdma_vq_setup:
 			return -ENOMEM;
 		}
 		if (queue->type == LSINIC_QUEUE_RX) {
-			jobs[i].src = queue->ob_base +
-				queue->ep_bd_desc[i].pkt_addr;
+			jobs[i].src = queue->ob_base + remote_addr;
 			jobs[i].dest = rte_pktmbuf_iova(dma_test->mbufs[i]);
 		} else {
-			jobs[i].dest = queue->ob_base +
-				queue->ep_bd_desc[i].pkt_addr;
+			jobs[i].dest = queue->ob_base + remote_addr;
 			jobs[i].src = rte_pktmbuf_iova(dma_test->mbufs[i]);
 		}
 		jobs[i].len = pkt_len;

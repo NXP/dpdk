@@ -223,30 +223,57 @@ static int lxsnic_wait_tx_lbd_ready(struct lxsnic_ring *tx_ring)
 }
 
 static int
-lxsnic_dev_tx_dma_test(struct lxsnic_adapter *adapter)
+lxsnic_dev_tx_dma_test_fill(struct lxsnic_ring *tx_queue,
+	struct rte_mempool *mb_pool)
 {
-	int i, j;
-	struct lxsnic_ring *tx_queue;
-	struct lxsnic_ring *rx_queue;
+	int j;
 	struct rte_mbuf *mbuf;
 	rte_iova_t dma_addr;
+	uint32_t interval = tx_queue->adapter->pkt_addr_interval;
+	uint64_t base = tx_queue->adapter->pkt_addr_base;
+
+	for (j = 0; j < tx_queue->count; j++) {
+		mbuf = rte_mbuf_raw_alloc(mb_pool);
+		if (unlikely(!mbuf)) {
+			LSXINIC_PMD_ERR("Buf alloc failed q[%d].bd[%d]",
+				tx_queue->queue_index, j);
+			return -ENOMEM;
+		}
+		mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+		mbuf->port = tx_queue->port;
+		dma_addr = rte_mbuf_data_iova_default(mbuf);
+		dma_addr = rte_cpu_to_le_64(dma_addr);
+		if (tx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
+			tx_queue->ep_bd_desc[j].pkt_addr = dma_addr;
+		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_ADDRL_BD) {
+			tx_queue->ep_tx_addrl[j].pkt_addr_low =
+				dma_addr - base;
+		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD) {
+			tx_queue->ep_tx_addrx[j].pkt_idx =
+				(dma_addr - base) / interval;
+		} else {
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int
+lxsnic_dev_tx_dma_test(struct lxsnic_adapter *adapter)
+{
+	int i, ret;
+	struct lxsnic_ring *tx_queue;
+	struct lxsnic_ring *rx_queue;
 
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
 		rx_queue = adapter->eth_dev->data->rx_queues[i];
-		for (j = 0; j < tx_queue->count; j++) {
-			mbuf = rte_mbuf_raw_alloc(rx_queue->mb_pool);
-			if (unlikely(!mbuf)) {
-				LSXINIC_PMD_ERR("Buf alloc failed q[%d].bd[%d]",
-					tx_queue->queue_index, j);
-				return -ENOMEM;
-			}
-			mbuf->data_off = RTE_PKTMBUF_HEADROOM;
-			mbuf->port = rx_queue->port;
-			dma_addr = rte_mbuf_data_iova_default(mbuf);
-			dma_addr = rte_cpu_to_le_64(dma_addr);
-			tx_queue->ep_bd_desc[j].pkt_addr = dma_addr;
-		}
+		ret = lxsnic_dev_tx_dma_test_fill(tx_queue,
+			rx_queue->mb_pool);
+		if (ret)
+			return ret;
+
 		LSINIC_WRITE_REG(&tx_queue->ep_reg->dma_test, 1);
 	}
 
@@ -302,78 +329,76 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		return -EBUSY;
 	}
 
-	if (!adapter->pdraw_test) {
+	if (LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
+		RC_SET_ADDRL_TYPE ||
+		LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
+		RC_SET_ADDRX_TYPE) {
+		LSINIC_WRITE_REG_64B(&rcs_reg->r_dma_base,
+			adapter->pkt_addr_base);
 		if (LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
-			RC_SET_ADDRL_TYPE ||
-			LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
-			RC_SET_ADDRX_TYPE) {
-			LSINIC_WRITE_REG_64B(&rcs_reg->r_dma_base,
-				adapter->pkt_addr_base);
-			if (LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
-				RC_SET_ADDRL_TYPE)
-				LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size, 0);
-			else
-				LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size,
-					adapter->pkt_addr_interval);
-		}
-
-		for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
-			tx_queue = adapter->eth_dev->data->tx_queues[i];
-			tx_queue->ep_mem_bd_type = EP_MEM_LONG_BD;
-			tx_queue->rc_mem_bd_type = RC_MEM_LONG_BD;
-			if (adapter->cap & LSINIC_CAP_XFER_ORDER_PRSV) {
-				tx_queue->rc_mem_bd_type = RC_MEM_IDX_CNF;
-				if (adapter->pkt_addr_base)
-					tx_queue->ep_mem_bd_type =
-						EP_MEM_SRC_ADDRL_BD;
-				if (adapter->pkt_addr_interval)
-					tx_queue->ep_mem_bd_type =
-						EP_MEM_SRC_ADDRX_BD;
-			}
-			tx_ring_reg = &bdr_reg->tx_ring[i];
-			LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
-				tx_queue->ep_mem_bd_type);
-			LSINIC_WRITE_REG(&tx_ring_reg->r_rc_mem_bd_type,
-				tx_queue->rc_mem_bd_type);
-			if (tx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
-				tx_queue->ep_bd_desc =
-					tx_queue->ep_bd_mapped_addr;
-			} else if (tx_queue->ep_mem_bd_type ==
-				EP_MEM_SRC_ADDRL_BD) {
-				tx_queue->ep_tx_addrl =
-					tx_queue->ep_bd_mapped_addr;
-			} else if (tx_queue->ep_mem_bd_type ==
-				EP_MEM_SRC_ADDRX_BD) {
-				tx_queue->ep_tx_addrx =
-					tx_queue->ep_bd_mapped_addr;
-			} else {
-				rte_panic("TXQ%d invalid ep mem type(%d)",
-					tx_queue->queue_index,
-					tx_queue->ep_mem_bd_type);
-			}
-
-			if (tx_queue->rc_mem_bd_type == RC_MEM_LONG_BD) {
-				tx_queue->rc_bd_desc =
-					tx_queue->rc_bd_shared_addr;
-			} else if (tx_queue->rc_mem_bd_type == RC_MEM_BD_CNF) {
-				tx_queue->tx_complete =
-					tx_queue->rc_bd_shared_addr;
-			} else if (tx_queue->rc_mem_bd_type == RC_MEM_IDX_CNF) {
-				tx_queue->free_idx =
-					tx_queue->rc_bd_shared_addr;
-			} else {
-				rte_panic("TXQ%d invalid rc mem type(%d)",
-					tx_queue->queue_index,
-					tx_queue->rc_mem_bd_type);
-			}
-		}
-	} else {
-		if (adapter->pdraw_test & LXSNIC_RC2EP_PCI_DMA_RAW_TEST)
-			lxsnic_dev_tx_dma_test(adapter);
-
-		if (adapter->pdraw_test & LXSNIC_EP2RC_PCI_DMA_RAW_TEST)
-			lxsnic_dev_rx_dma_test(adapter);
+			RC_SET_ADDRL_TYPE)
+			LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size, 0);
+		else
+			LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size,
+				adapter->pkt_addr_interval);
 	}
+
+	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
+		tx_queue = adapter->eth_dev->data->tx_queues[i];
+		tx_queue->ep_mem_bd_type = EP_MEM_LONG_BD;
+		tx_queue->rc_mem_bd_type = RC_MEM_LONG_BD;
+		if (adapter->cap & LSINIC_CAP_XFER_ORDER_PRSV) {
+			tx_queue->rc_mem_bd_type = RC_MEM_IDX_CNF;
+			if (adapter->pkt_addr_base)
+				tx_queue->ep_mem_bd_type =
+					EP_MEM_SRC_ADDRL_BD;
+			if (adapter->pkt_addr_interval)
+				tx_queue->ep_mem_bd_type =
+					EP_MEM_SRC_ADDRX_BD;
+		}
+		tx_ring_reg = &bdr_reg->tx_ring[i];
+		LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
+			tx_queue->ep_mem_bd_type);
+		LSINIC_WRITE_REG(&tx_ring_reg->r_rc_mem_bd_type,
+			tx_queue->rc_mem_bd_type);
+		if (tx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
+			tx_queue->ep_bd_desc =
+				tx_queue->ep_bd_mapped_addr;
+		} else if (tx_queue->ep_mem_bd_type ==
+			EP_MEM_SRC_ADDRL_BD) {
+			tx_queue->ep_tx_addrl =
+				tx_queue->ep_bd_mapped_addr;
+		} else if (tx_queue->ep_mem_bd_type ==
+			EP_MEM_SRC_ADDRX_BD) {
+			tx_queue->ep_tx_addrx =
+				tx_queue->ep_bd_mapped_addr;
+		} else {
+			rte_panic("TXQ%d invalid ep mem type(%d)",
+				tx_queue->queue_index,
+				tx_queue->ep_mem_bd_type);
+		}
+
+		if (tx_queue->rc_mem_bd_type == RC_MEM_LONG_BD) {
+			tx_queue->rc_bd_desc =
+				tx_queue->rc_bd_shared_addr;
+		} else if (tx_queue->rc_mem_bd_type == RC_MEM_BD_CNF) {
+			tx_queue->tx_complete =
+				tx_queue->rc_bd_shared_addr;
+		} else if (tx_queue->rc_mem_bd_type == RC_MEM_IDX_CNF) {
+			tx_queue->free_idx =
+				tx_queue->rc_bd_shared_addr;
+		} else {
+			rte_panic("TXQ%d invalid rc mem type(%d)",
+				tx_queue->queue_index,
+				tx_queue->rc_mem_bd_type);
+		}
+	}
+
+	if (adapter->pdraw_test & LXSNIC_RC2EP_PCI_DMA_RAW_TEST)
+		lxsnic_dev_tx_dma_test(adapter);
+
+	if (adapter->pdraw_test & LXSNIC_EP2RC_PCI_DMA_RAW_TEST)
+		lxsnic_dev_rx_dma_test(adapter);
 
 	ret = lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 	if (ret != PCIDEV_RESULT_SUCCEED)
