@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _RTE_LSX_PCIEP_BUS_H_
@@ -177,17 +177,9 @@ lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset);
 
 void
-lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev __rte_unused);
-void
 lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total);
-uint64_t
-lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector);
-uint32_t
-lsx_pciep_msix_get_cmd(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector);
-void lsx_pciep_msix_cmd_send(uint64_t addr, uint32_t cmd);
+
 void lsx_pciep_start_msix(void *addr, uint32_t cmd);
 
 uint16_t lx_rev2_pciep_default_dev_id(void);

@@ -1701,11 +1701,6 @@ lsx_pciep_misx_ob_vir_map(uint64_t msix_addr[],
 }
 
 void
-lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev __rte_unused)
-{
-}
-
-void
 lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total)
 {
@@ -1736,30 +1731,10 @@ lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	}
 }
 
-uint64_t
-lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector)
-{
-	return (uint64_t)ep_dev->msix_addr[vector];
-}
-
-uint32_t
-lsx_pciep_msix_get_cmd(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector)
-{
-	return ep_dev->msix_data[vector];
-}
-
 void
 lsx_pciep_start_msix(void *addr, uint32_t cmd)
 {
 	rte_write32(cmd, addr);
-}
-
-void
-lsx_pciep_msix_cmd_send(uint64_t addr, uint32_t cmd)
-{
-	rte_write32(cmd, (void *)addr);
 }
 
 int

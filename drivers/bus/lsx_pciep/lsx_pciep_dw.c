@@ -104,28 +104,49 @@ struct pcie_dw_ext_cap {
 	uint32_t vfbar5;
 } __packed;
 
+#define PCIE_DW_IATU_REGION_OFFSET 0x900
+
+enum {
+	ADDR_LOW,
+	ADDR_UP,
+	ADDR_NUM
+};
+
+#define PCIE_ATU_VP_REGION_INBOUND		(0x1 << 31)
+#define PCIE_ATU_VP_REGION_OUTBOUND	(0x0 << 31)
+
+#define PCIE_ATU_CTL1_FUNC_SHIFT		(20)
+#define PCIE_ATU_CTL1_TYPE_MEM			(0x0 << 0)
+
+#define PCIE_ATU_CTL2_EN				(0x1 << 31)
+#define PCIE_ATU_CTL2_BAR_MODE_EN	(0x1 << 30)
+#define PCIE_ATU_CTL2_FUNC_NUM_MATCH_EN		(0x00080000)
+#define PCIE_ATU_CTL2_VFBAR_MATCH_MODE_EN	(0x04000000)
+#define PCIE_ATU_CTL2_VF_MATCH_MODE_EN	(0x00100000)
+#define PCIE_ATU_CTL2_BAR_NUM(bar)		((bar) << 8)
+
+#define PCIE_ATU_CTL3_VF_ACTIVE_EN		(0x1 << 31)
+
+struct pcie_dw_iatu_region {
+	uint32_t view_port;
+	union {
+		uint32_t ctl1_ib;
+		uint32_t ctl1_ob;
+	};
+	union {
+		uint32_t ctl2_ib;
+		uint32_t ctl2_ob;
+	};
+	uint32_t base_addr[ADDR_NUM];
+	uint32_t base_limit;
+	uint32_t bus_addr[ADDR_NUM];
+	union {
+		uint32_t ctl3_ib;
+		uint32_t ctl3_ob;
+	};
+} __packed;
+
 #define PCIE_MISC_CONTROL_1_OFF		0x8bc
-
-#define PCIE_ATU_VIEWPORT		0x900
-#define PCIE_ATU_REGION_INBOUND		(0x1 << 31)
-#define PCIE_ATU_REGION_OUTBOUND	(0x0 << 31)
-#define PCIE_ATU_CR1			0x904
-#define PCIE_ATU_CR2			0x908
-#define PCIE_ATU_ENABLE			(0x1 << 31)
-#define PCIE_ATU_BAR_MODE_ENABLE	(0x1 << 30)
-#define PCIE_ATU_LOWER_BASE		0x90C
-#define PCIE_ATU_UPPER_BASE		0x910
-#define PCIE_ATU_LIMIT			0x914
-#define PCIE_ATU_LOWER_TARGET		0x918
-#define PCIE_ATU_UPPER_TARGET		0x91C
-#define PCIE_FUNC_NUM_MATCH_EN		(0x00080000)
-#define PCIE_VFBAR_MATCH_MODE_EN	(0x04000000)
-
-#define PCIE_CTRL1_FUNC_SHIFT		(20)
-
-#define PCIE_ATU_TYPE_MEM		(0x0 << 0)
-
-#define PCIE_ATU_BAR_NUM(bar)		((bar) << 8)
 
 #define MSIX_DOORBELL_REG		0x948
 #define MSIX_DOORBELL_PF_SHIFT		24
@@ -485,30 +506,33 @@ pcie_dw_disable_ob_win(struct lsx_pciep_hw_low *hw,
 	int idx)
 {
 	int loop;
+	struct pcie_dw_iatu_region *iatu =
+		(struct pcie_dw_iatu_region *)
+		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
 	if (idx >= 0) {
-		rte_write32(PCIE_ATU_REGION_OUTBOUND | idx,
-				    hw->dbi_vir + PCIE_ATU_VIEWPORT);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_BASE);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_BASE);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_LIMIT);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
-		rte_write32(PCIE_ATU_TYPE_MEM,
-			hw->dbi_vir + PCIE_ATU_CR1);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_CR2);
+		rte_write32(PCIE_ATU_VP_REGION_OUTBOUND | idx,
+			&iatu->view_port);
+		rte_write32(0, &iatu->base_addr[ADDR_LOW]);
+		rte_write32(0, &iatu->base_addr[ADDR_UP]);
+		rte_write32(0, &iatu->base_limit);
+		rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
+		rte_write32(0, &iatu->bus_addr[ADDR_UP]);
+		rte_write32(PCIE_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ob);
+		rte_write32(0, &iatu->ctl3_ob);
+		rte_write32(0, &iatu->ctl2_ob);
 	} else {
 		for (loop = 0; loop < PCIE_DW_OB_WINS_NUM; loop++) {
-			rte_write32(PCIE_ATU_REGION_OUTBOUND | loop,
-				    hw->dbi_vir + PCIE_ATU_VIEWPORT);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_BASE);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_BASE);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_LIMIT);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
-			rte_write32(PCIE_ATU_TYPE_MEM,
-				hw->dbi_vir + PCIE_ATU_CR1);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_CR2);
+			rte_write32(PCIE_ATU_VP_REGION_OUTBOUND | loop,
+				&iatu->view_port);
+			rte_write32(0, &iatu->base_addr[ADDR_LOW]);
+			rte_write32(0, &iatu->base_addr[ADDR_UP]);
+			rte_write32(0, &iatu->base_limit);
+			rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
+			rte_write32(0, &iatu->bus_addr[ADDR_UP]);
+			rte_write32(PCIE_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ob);
+			rte_write32(0, &iatu->ctl3_ob);
+			rte_write32(0, &iatu->ctl2_ob);
 		}
 	}
 }
@@ -522,7 +546,10 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 	int win_id;
 	uint64_t cpu_addr;
 	uint64_t pcie_id = hw->index;
-	uint32_t route_id;
+	uint32_t ctrl1, ctrl2, ctrl3 = 0;
+	struct pcie_dw_iatu_region *iatu =
+		(struct pcie_dw_iatu_region *)
+		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
 	if (shared) {
 		cpu_addr = pcie_dw_find_shared_ob_space(pcie_id,
@@ -537,7 +564,10 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 
 	cpu_addr = pcie_dw_alloc_ob_space(pcie_id, size);
 
-	route_id = pcie_dw_route_fun_id(hw->dbi_vir, pf, is_vf, vf);
+	ctrl1 = PCIE_ATU_CTL1_TYPE_MEM | (pf << PCIE_ATU_CTL1_FUNC_SHIFT);
+	ctrl2 = PCIE_ATU_CTL2_EN;
+	if (is_vf)
+		ctrl3 = PCIE_ATU_CTL3_VF_ACTIVE_EN | vf;
 
 	if (shared) {
 		if (pcie_dw_add_shared_ob_space(pcie_id,
@@ -546,27 +576,26 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 		}
 	}
 
-	rte_write32(PCIE_ATU_REGION_OUTBOUND | win_id,
-		    hw->dbi_vir + PCIE_ATU_VIEWPORT);
+	rte_write32(PCIE_ATU_VP_REGION_OUTBOUND | win_id,
+		&iatu->view_port);
 
-	rte_write32(lower_32_bits(cpu_addr),
-		    hw->dbi_vir + PCIE_ATU_LOWER_BASE);
-	rte_write32(upper_32_bits(cpu_addr),
-		    hw->dbi_vir + PCIE_ATU_UPPER_BASE);
+	rte_write32(lower_32_bits(cpu_addr), &iatu->base_addr[ADDR_LOW]);
+	rte_write32(upper_32_bits(cpu_addr), &iatu->base_addr[ADDR_UP]);
 
 	rte_write32(lower_32_bits(cpu_addr + size - 1),
-		    hw->dbi_vir + PCIE_ATU_LIMIT);
+		&iatu->base_limit);
 
-	rte_write32(lower_32_bits(pci_addr),
-		    hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-	rte_write32(upper_32_bits(pci_addr),
-		    hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
+	rte_write32(lower_32_bits(pci_addr), &iatu->bus_addr[ADDR_LOW]);
+	rte_write32(upper_32_bits(pci_addr), &iatu->bus_addr[ADDR_UP]);
 
-	rte_write32(PCIE_ATU_TYPE_MEM |
-		(route_id << PCIE_CTRL1_FUNC_SHIFT),
-		hw->dbi_vir + PCIE_ATU_CR1);
-
-	rte_write32(PCIE_ATU_ENABLE, hw->dbi_vir + PCIE_ATU_CR2);
+	rte_write32(ctrl1, &iatu->ctl1_ob);
+	if (ctrl3) {
+		/* Don't program ctl3 for PF, otherwise,
+		 * qdma-PCIe perf drops???
+		 */
+		rte_write32(ctrl3, &iatu->ctl3_ob);
+	}
+	rte_write32(ctrl2, &iatu->ctl2_ob);
 
 	if (!is_vf) {
 		LSX_PCIEP_BUS_INFO(DWC_OB_PF_INFO_DUMP_FORMAT(hw->index,
@@ -585,30 +614,30 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 	uint64_t cpu_addr, uint64_t pci_addr,
 	uint64_t size)
 {
-	uint32_t route_id =
-		pcie_dw_route_fun_id(hw->dbi_vir, pf, is_vf, vf);
+	uint32_t ctrl1, ctrl2, ctrl3 = 0;
+	struct pcie_dw_iatu_region *iatu =
+		(struct pcie_dw_iatu_region *)
+		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
-	rte_write32(PCIE_ATU_REGION_OUTBOUND | idx,
-		    hw->dbi_vir + PCIE_ATU_VIEWPORT);
+	ctrl1 = PCIE_ATU_CTL1_TYPE_MEM | (pf << PCIE_ATU_CTL1_FUNC_SHIFT);
+	ctrl2 = PCIE_ATU_CTL2_EN;
+	if (is_vf)
+		ctrl3 = PCIE_ATU_CTL3_VF_ACTIVE_EN | vf;
 
-	rte_write32(lower_32_bits(cpu_addr),
-		    hw->dbi_vir + PCIE_ATU_LOWER_BASE);
-	rte_write32(upper_32_bits(cpu_addr),
-		    hw->dbi_vir + PCIE_ATU_UPPER_BASE);
+	rte_write32(PCIE_ATU_VP_REGION_OUTBOUND | idx, &iatu->view_port);
+
+	rte_write32(lower_32_bits(cpu_addr), &iatu->base_addr[ADDR_LOW]);
+	rte_write32(upper_32_bits(cpu_addr), &iatu->base_addr[ADDR_UP]);
 
 	rte_write32(lower_32_bits(cpu_addr + size - 1),
-		    hw->dbi_vir + PCIE_ATU_LIMIT);
+		&iatu->base_limit);
 
-	rte_write32(lower_32_bits(pci_addr),
-		    hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-	rte_write32(upper_32_bits(pci_addr),
-		    hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
+	rte_write32(lower_32_bits(pci_addr), &iatu->bus_addr[ADDR_LOW]);
+	rte_write32(upper_32_bits(pci_addr), &iatu->bus_addr[ADDR_UP]);
 
-	rte_write32(PCIE_ATU_TYPE_MEM |
-		(route_id << PCIE_CTRL1_FUNC_SHIFT),
-		hw->dbi_vir + PCIE_ATU_CR1);
-
-	rte_write32(PCIE_ATU_ENABLE, hw->dbi_vir + PCIE_ATU_CR2);
+	rte_write32(ctrl1, &iatu->ctl1_ob);
+	rte_write32(ctrl3, &iatu->ctl3_ob);
+	rte_write32(ctrl2, &iatu->ctl2_ob);
 
 	if (!is_vf) {
 		LSX_PCIEP_BUS_INFO(DWC_OB_PF_INFO_DUMP_FORMAT(hw->index,
@@ -672,9 +701,11 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf, int bar,
 	uint64_t phys, uint64_t size, int resize)
 {
-	uint32_t ctrl1, ctrl2;
+	uint32_t ctrl1, ctrl2, ctrl3 = 0;
 	int idx;
-	uint32_t route_id;
+	struct pcie_dw_iatu_region *iatu =
+		(struct pcie_dw_iatu_region *)
+		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
 	if (bar >= PCI_MAX_RESOURCE) {
 		LSX_PCIEP_BUS_ERR("Invalid bar(%d)", bar);
@@ -695,27 +726,26 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 		return;
 	}
 
-	route_id = pcie_dw_route_fun_id(hw->dbi_vir, pf, is_vf, vf);
+	ctrl1 = PCIE_ATU_CTL1_TYPE_MEM | (pf << PCIE_ATU_CTL1_FUNC_SHIFT);
 
-	ctrl1 = PCIE_ATU_TYPE_MEM | (route_id << PCIE_CTRL1_FUNC_SHIFT);
+	ctrl2 = PCIE_ATU_CTL2_EN |
+		PCIE_ATU_CTL2_BAR_MODE_EN |
+		PCIE_ATU_CTL2_BAR_NUM(bar) |
+		PCIE_ATU_CTL2_FUNC_NUM_MATCH_EN;
+	if (is_vf) {
+		ctrl2 |= PCIE_ATU_CTL2_VF_MATCH_MODE_EN;
+		ctrl3 = PCIE_ATU_CTL3_VF_ACTIVE_EN | vf;
+	}
 
-	ctrl2 = PCIE_ATU_ENABLE |
-		PCIE_ATU_BAR_MODE_ENABLE |
-		PCIE_ATU_BAR_NUM(bar) |
-		PCIE_FUNC_NUM_MATCH_EN;
-	if (is_vf)
-		ctrl2 |= PCIE_VFBAR_MATCH_MODE_EN;
+	rte_write32(PCIE_ATU_VP_REGION_INBOUND | idx,
+		&iatu->view_port);
 
-	rte_write32(PCIE_ATU_REGION_INBOUND | idx,
-		hw->dbi_vir + PCIE_ATU_VIEWPORT);
+	rte_write32(lower_32_bits(phys), &iatu->bus_addr[ADDR_LOW]);
+	rte_write32(upper_32_bits(phys), &iatu->bus_addr[ADDR_UP]);
 
-	rte_write32(lower_32_bits(phys),
-		hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-	rte_write32(upper_32_bits(phys),
-		hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
-
-	rte_write32(ctrl1, hw->dbi_vir + PCIE_ATU_CR1);
-	rte_write32(ctrl2, hw->dbi_vir + PCIE_ATU_CR2);
+	rte_write32(ctrl1, &iatu->ctl1_ib);
+	rte_write32(ctrl3, &iatu->ctl3_ib);
+	rte_write32(ctrl2, &iatu->ctl2_ib);
 
 	if (!is_vf) {
 		LSX_PCIEP_BUS_INFO(DWC_IB_PF_INFO_DUMP_FORMAT(hw->index,
@@ -730,24 +760,27 @@ static void
 pcie_dw_disable_ib_win(struct lsx_pciep_hw_low *hw, int idx)
 {
 	int loop;
+	struct pcie_dw_iatu_region *iatu =
+		(struct pcie_dw_iatu_region *)
+		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
 	if (idx >= 0) {
-		rte_write32(PCIE_ATU_REGION_INBOUND | idx,
-				    hw->dbi_vir + PCIE_ATU_VIEWPORT);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
-		rte_write32(PCIE_ATU_TYPE_MEM,
-			hw->dbi_vir + PCIE_ATU_CR1);
-		rte_write32(0, hw->dbi_vir + PCIE_ATU_CR2);
+		rte_write32(PCIE_ATU_VP_REGION_INBOUND | idx,
+			&iatu->view_port);
+		rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
+		rte_write32(0, &iatu->bus_addr[ADDR_UP]);
+		rte_write32(PCIE_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ib);
+		rte_write32(0, &iatu->ctl3_ib);
+		rte_write32(0, &iatu->ctl2_ib);
 	} else {
 		for (loop = 0; loop < PCIE_DW_IB_WINS_NUM; loop++) {
-			rte_write32(PCIE_ATU_REGION_INBOUND | loop,
-				    hw->dbi_vir + PCIE_ATU_VIEWPORT);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_LOWER_TARGET);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_UPPER_TARGET);
-			rte_write32(PCIE_ATU_TYPE_MEM,
-				hw->dbi_vir + PCIE_ATU_CR1);
-			rte_write32(0, hw->dbi_vir + PCIE_ATU_CR2);
+			rte_write32(PCIE_ATU_VP_REGION_INBOUND | loop,
+				&iatu->view_port);
+			rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
+			rte_write32(0, &iatu->bus_addr[ADDR_UP]);
+			rte_write32(PCIE_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ib);
+			rte_write32(0, &iatu->ctl3_ib);
+			rte_write32(0, &iatu->ctl2_ib);
 		}
 	}
 }
