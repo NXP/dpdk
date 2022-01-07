@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2020 NXP
+ *   Copyright 2017-2020,2022 NXP
  *
  */
 /* System headers */
@@ -39,6 +39,7 @@
 
 #include <dpaa_ethdev.h>
 #include <dpaa_rxtx.h>
+#include <dpaa_ptp.c>
 #include <dpaa_flow.h>
 #include <rte_pmd_dpaa.h>
 
@@ -1592,6 +1593,10 @@ static struct eth_dev_ops dpaa_devops = {
 	.rx_queue_intr_disable	  = dpaa_dev_queue_intr_disable,
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get        = dpaa_dev_rss_hash_conf_get,
+#if defined(RTE_LIBRTE_IEEE1588)
+	.timesync_read_rx_timestamp = dpaa_timesync_read_rx_timestamp,
+	.timesync_read_tx_timestamp = dpaa_timesync_read_tx_timestamp,
+#endif
 };
 
 static bool
@@ -2064,7 +2069,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	dpaa_intf->nb_tx_queues = MAX_DPAA_CORES;
 
-#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER) || defined(RTE_LIBRTE_IEEE1588)
+#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER)
 	ret = dpaa_def_queue_init(&dpaa_intf->debug_queues
 			[DPAA_DEBUG_FQ_RX_ERROR], fman_intf->fqid_rx_err);
 	if (ret) {
@@ -2078,6 +2083,8 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA_PMD_ERR("DPAA TX ERROR queue init failed!");
 		goto free_tx;
 	}
+#endif
+#if defined(RTE_LIBRTE_IEEE1588)
 	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
 	ret = dpaa_def_queue_init(dpaa_intf->tx_conf_queues,
 			fman_intf->fqid_tx_confirm);
