@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018, 2021 NXP
  */
 
 #ifndef __DPAA2_QDMA_LOGS_H__
