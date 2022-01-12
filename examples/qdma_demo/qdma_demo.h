@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 #ifndef __QDMA_DEMO_H__
 #define __QDMA_DEMO_H__
@@ -23,13 +23,14 @@
 #define PAGE_MASK	(~(PAGE_SIZE - 1))
 
 #define ULTRA_SHORT_FMT 1
+#define LONG_FMT 0
+
 #define USE_RBP 1
 #define NO_RBP 0
-#define LONG_FMT 0
-#define PCI_TO_PCI 1
-#define MEM_TO_PCI 2
-#define PCI_TO_MEM 3
-#define MEM_TO_MEM 4
+#define MEM_TO_MEM 0
+#define MEM_TO_PCI 1
+#define PCI_TO_MEM 2
+#define PCI_TO_PCI 3
 
 #define TEST_DEQUEU_CNT 6
 #define TEST_PACKETS_NUM (g_packet_num)
@@ -44,13 +45,25 @@
 #define LSINIC_QDMA_FLE_POOL_QUEUE_COUNT	2048
 #define LSINIC_QDMA_MAX_VQS			2048
 
-#define MAX_CORE_COUNT	16
+#define BURST_NB_MAX 256
 
 struct qdma_test_case {
 	const char *name;
 	const char *help;
 	int id;
 };
+
+struct dma_job {
+	/** Source Address from where DMA is (to be) performed */
+	uint64_t src;
+	/** Destination Address where DMA is (to be) done */
+	uint64_t dest;
+	/** Length of the DMA operation in bytes. */
+	uint32_t len;
+	/** Flags corresponding to an DMA operation */
+	uint32_t flags;
+};
+
 #define TEST_CASE_NAME_SIZE 30
 #define ARG_PCI_ADDR (1 << 0)
 #define ARG_SIZE (1 << 1)
