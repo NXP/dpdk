@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2015-2020 Intel Corporation
- * Copyright 2020 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #include <time.h>
@@ -12630,6 +12630,7 @@ test_enq_callback_setup(void)
 
 	struct rte_cryptodev_cb *cb;
 	uint16_t qp_id = 0;
+	unsigned int worker_id;
 
 	/* Stop the device in case it's started so it can be configured */
 	rte_cryptodev_stop(ts_params->valid_devs[0]);
@@ -12685,9 +12686,15 @@ test_enq_callback_setup(void)
 
 	rte_cryptodev_start(ts_params->valid_devs[0]);
 
+	worker_id = rte_get_next_lcore(-1, 1, 0);
+	if (worker_id == RTE_MAX_LCORE) {
+		printf("Not enough cores available\n");
+		return TEST_SKIPPED;
+	}
+
 	/* Launch a thread */
 	rte_eal_remote_launch(test_enqdeq_callback_thread, NULL,
-				rte_get_next_lcore(-1, 1, 0));
+				worker_id);
 
 	/* Wait until reader exited. */
 	rte_eal_mp_wait_lcore();
@@ -12729,6 +12736,7 @@ test_deq_callback_setup(void)
 
 	struct rte_cryptodev_cb *cb;
 	uint16_t qp_id = 0;
+	unsigned int worker_id;
 
 	/* Stop the device in case it's started so it can be configured */
 	rte_cryptodev_stop(ts_params->valid_devs[0]);
@@ -12784,9 +12792,15 @@ test_deq_callback_setup(void)
 
 	rte_cryptodev_start(ts_params->valid_devs[0]);
 
+	worker_id = rte_get_next_lcore(-1, 1, 0);
+	if (worker_id == RTE_MAX_LCORE) {
+		printf("Not enough cores available\n");
+		return TEST_SKIPPED;
+	}
+
 	/* Launch a thread */
 	rte_eal_remote_launch(test_enqdeq_callback_thread, NULL,
-				rte_get_next_lcore(-1, 1, 0));
+				worker_id);
 
 	/* Wait until reader exited. */
 	rte_eal_mp_wait_lcore();
