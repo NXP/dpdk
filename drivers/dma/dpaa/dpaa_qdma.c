@@ -648,8 +648,8 @@ fsl_qdma_alloc_chan_resources(struct fsl_qdma_chan *fsl_chan)
 	}
 
 finally:
-	return fsl_qdma->desc_allocated++;
-
+	fsl_qdma->desc_allocated++;
+	return 0;
 exit:
 	return -ENOMEM;
 }
@@ -670,7 +670,7 @@ dpaa_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_info,
 			     RTE_DMA_CAPA_DEV_TO_MEM |
 			     RTE_DMA_CAPA_SILENT |
 			     RTE_DMA_CAPA_OPS_COPY;
-	dev_info->max_vchans = 1;
+	dev_info->max_vchans = 4;
 	dev_info->max_desc = DPAADMA_MAX_DESC;
 	dev_info->min_desc = DPAADMA_MIN_DESC;
 
