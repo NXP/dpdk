@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #ifndef _LSX_RXTX_H_
 #define _LSX_RXTX_H_
@@ -111,7 +111,6 @@ struct lsxvio_queue {
 	struct rte_qdma_job *dma_jobs;
 
 	struct rte_qdma_job *e2r_bd_dma_jobs;
-	struct rte_qdma_job *r2e_bd_dma_jobs;
 
 	uint32_t core_id;
 	int32_t dma_id;

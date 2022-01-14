@@ -493,11 +493,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_ORP;
 
-	/* Write BD of RXQ from EP to RC by DMA of its TXQ pair.*/
-	penv = getenv("LSINIC_RXQ_WRITE_BD_BY_DMA");
-	if (penv)
-		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_WBD_DMA;
-
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
@@ -522,20 +517,14 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 		EP_XMIT_SBD_TYPE);
 	lsinic_parse_txq_notify_type(notify_env, adapter);
 
-	penv = getenv("LSINIC_RXQ_READ_BD_BY_DMA");
-	if (penv)
-		adapter->cap |= LSINIC_CAP_XFER_TX_BD_UPDATE;
-
-	penv = getenv("LSINIC_TXQ_READ_BD_BY_DMA");
-	if (penv)
-		adapter->cap |= LSINIC_CAP_XFER_RX_BD_UPDATE;
-
 	penv = getenv("LSINIC_XFER_HOST_ACCESS_EP_MEM");
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 
 	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
-		(adapter->cap & LSINIC_CAP_XFER_COMPLETE))
+		(adapter->cap & LSINIC_CAP_XFER_COMPLETE) &&
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
+		EP_XMIT_SBD_TYPE)
 		adapter->cap |= LSINIC_CAP_XFER_ORDER_PRSV;
 
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
@@ -1300,9 +1289,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int sim, i;
-	struct rte_eth_dev *dev = lsinic_dev->eth_dev;
-	struct lsinic_queue *rxq;
+	int sim;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1347,11 +1334,11 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
 		RC_XMIT_RING_CNF) {
 		adapter->complete_src =
-			rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
-				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+			rte_malloc(NULL, LSINIC_BD_CNF_RING_SIZE,
+				LSINIC_BD_CNF_RING_SIZE);
 		if (adapter->complete_src) {
 			memset(adapter->complete_src, RING_BD_HW_COMPLETE,
-				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+				LSINIC_BD_CNF_RING_SIZE);
 		} else {
 			LSXINIC_PMD_WARN("complete src malloc failed");
 		}
@@ -1361,21 +1348,6 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 
 	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
 	adapter->rc_dma_elt_size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
-	if (adapter->rc_dma_base && !adapter->rc_dma_elt_size) {
-		for (i = 0; i < dev->data->nb_rx_queues; i++) {
-			rxq = dev->data->rx_queues[i];
-			memset(rxq->recv_addrl, 0,
-				sizeof(struct lsinic_rc_xmit_addrl) *
-				rxq->nb_desc);
-		}
-	} else if (adapter->rc_dma_base && adapter->rc_dma_elt_size) {
-		for (i = 0; i < dev->data->nb_rx_queues; i++) {
-			rxq = dev->data->rx_queues[i];
-			memset(rxq->recv_idx, 0,
-				sizeof(struct lsinic_rc_xmit_idx) *
-				rxq->nb_desc);
-		}
-	}
 
 	if (!sim)
 		lsx_pciep_msix_init(lsinic_dev);
