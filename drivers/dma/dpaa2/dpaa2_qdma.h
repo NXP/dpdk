@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #ifndef _DPAA2_QDMA_H_
@@ -9,7 +9,7 @@
 #define DPAA2_QDMA_MIN_DESC		1
 #define DPAA2_QDMA_MAX_VHANS		64
 
-#define DPAA2_QDMA_VQ_FD_LONG_FORMAT		(1ULL << 0)
+#define DPAA2_QDMA_VQ_FD_SHORT_FORMAT		(1ULL << 0)
 #define DPAA2_QDMA_VQ_FD_SG_FORMAT		(1ULL << 1)
 #define DPAA2_QDMA_VQ_NO_RESPONSE		(1ULL << 2)
 
@@ -79,31 +79,6 @@
 #define MAX_HW_QUEUE_PER_CORE		64
 
 #define QDMA_RBP_UPPER_ADDRESS_MASK (0xfff0000000000)
-
-/** Determines a QDMA job */
-struct dpaa2_qdma_job {
-	/** Source Address from where DMA is (to be) performed */
-	uint64_t src;
-	/** Destination Address where DMA is (to be) done */
-	uint64_t dest;
-	/** Length of the DMA operation in bytes. */
-	uint32_t len;
-	/** See RTE_QDMA_JOB_ flags */
-	uint32_t flags;
-	/**
-	 * Status of the transaction.
-	 * This is filled in the dequeue operation by the driver.
-	 * upper 8bits acc_err for route by port.
-	 * lower 8bits fd error
-	 */
-	uint16_t status;
-	uint16_t vq_id;
-	/**
-	 * FLE pool element maintained by user, in case no qDMA response.
-	 * Note: the address must be allocated from DPDK memory pool.
-	 */
-	void *usr_elem;
-};
 
 /** Source/Destination Descriptor */
 struct qdma_sdd {
@@ -214,22 +189,22 @@ struct qdma_virt_queue;
 
 typedef uint16_t (qdma_get_job_t)(struct qdma_virt_queue *qdma_vq,
 					const struct qbman_fd *fd,
-					struct dpaa2_qdma_job **job,
+					struct rte_dpaa2_qdma_job **job,
 					uint16_t *nb_jobs);
 typedef int (qdma_set_fd_t)(struct qdma_virt_queue *qdma_vq,
 					struct qbman_fd *fd,
-					struct dpaa2_qdma_job **job,
+					struct rte_dpaa2_qdma_job **job,
 					uint16_t nb_jobs);
 
 typedef int (qdma_dequeue_multijob_t)(
 				struct qdma_virt_queue *qdma_vq,
 				uint16_t *vq_id,
-				struct dpaa2_qdma_job **job,
+				struct rte_dpaa2_qdma_job **job,
 				uint16_t nb_jobs);
 
 typedef int (qdma_enqueue_multijob_t)(
 			struct qdma_virt_queue *qdma_vq,
-			struct dpaa2_qdma_job **job,
+			struct rte_dpaa2_qdma_job **job,
 			uint16_t nb_jobs);
 
 /** Represents a QDMA virtual queue */
@@ -246,6 +221,8 @@ struct qdma_virt_queue {
 	uint8_t in_use;
 	/** States if this vq has exclusively associated hw queue */
 	uint8_t exclusive_hw_queue;
+	/** Number of descriptor for the virtual DMA channel */
+	uint16_t nb_desc;
 	/* Total number of enqueues on this VQ */
 	uint64_t num_enqueues;
 	/* Total number of dequeues from this VQ */
@@ -254,7 +231,7 @@ struct qdma_virt_queue {
 	uint16_t vq_id;
 	uint32_t flags;
 
-	struct dpaa2_qdma_job *job_list[DPAA2_QDMA_MAX_DESC];
+	struct rte_dpaa2_qdma_job *job_list[DPAA2_QDMA_MAX_DESC];
 	struct rte_mempool *job_pool;
 	int num_valid_jobs;
 
