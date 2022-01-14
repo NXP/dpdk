@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #include <time.h>
@@ -225,6 +225,51 @@ static int lxsnic_wait_tx_bd_ready(struct lxsnic_ring *tx_ring)
 }
 
 static int
+lxsnic_dev_tx_dma_test(struct lxsnic_adapter *adapter)
+{
+	int i, j;
+	struct lxsnic_ring *tx_queue;
+	struct lxsnic_ring *rx_queue;
+	struct rte_mbuf *mbuf;
+	rte_iova_t dma_addr;
+
+	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
+		tx_queue = adapter->eth_dev->data->tx_queues[i];
+		rx_queue = adapter->eth_dev->data->rx_queues[i];
+		for (j = 0; j < tx_queue->count; j++) {
+			mbuf = rte_mbuf_raw_alloc(rx_queue->mb_pool);
+			if (unlikely(!mbuf)) {
+				LSXINIC_PMD_ERR("Buf alloc failed q[%d].bd[%d]",
+					tx_queue->queue_index, j);
+				return -ENOMEM;
+			}
+			mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+			mbuf->port = rx_queue->port;
+			dma_addr = rte_mbuf_data_iova_default(mbuf);
+			dma_addr = rte_cpu_to_le_64(dma_addr);
+			tx_queue->ep_bd_desc[j].pkt_addr = dma_addr;
+		}
+		LSINIC_WRITE_REG(&tx_queue->ep_reg->dma_test, 1);
+	}
+
+	return 0;
+}
+
+static int
+lxsnic_dev_rx_dma_test(struct lxsnic_adapter *adapter)
+{
+	int i;
+	struct lxsnic_ring *rx_queue;
+
+	for (i = 0; i < adapter->eth_dev->data->nb_rx_queues; i++) {
+		rx_queue = adapter->eth_dev->data->rx_queues[i];
+		LSINIC_WRITE_REG(&rx_queue->ep_reg->dma_test, 1);
+	}
+
+	return 0;
+}
+
+static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
 {
 	struct lxsnic_adapter *adapter =
@@ -251,11 +296,17 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		return -EBUSY;
 	}
 
+	if (adapter->pdraw_test & LXSNIC_RC2EP_PCI_DMA_RAW_TEST)
+		lxsnic_dev_tx_dma_test(adapter);
+
+	if (adapter->pdraw_test & LXSNIC_EP2RC_PCI_DMA_RAW_TEST)
+		lxsnic_dev_rx_dma_test(adapter);
+
 	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 
 	lxsnic_up_complete(adapter);
 
-	if (adapter->dmapci_dbg)
+	if (adapter->pdraw_test & LXSNIC_RC2EP_PCI_DMA_RAW_TEST)
 		goto skip_wait_tx_bd_ready;
 
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
@@ -1449,55 +1500,14 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 
 	lxsnic_msix_disable_all(adapter);
 
-	penv = getenv("LSINIC_PCIE_RX_TEST");
-	if (penv) {
-		const struct rte_memzone *pcie_rx_mem = NULL;
-		uint16_t queue_nb = adapter->num_rx_queues;
-		uint32_t size = queue_nb * LSINIC_QDMA_TEST_PKT_MAX_LEN *
-						adapter->rx_ring_bd_count;
-		char name[64];
+	adapter->pdraw_test = 0;
+	penv = getenv("LSINIC_EP2RC_PCI_DMA_RAW_TEST");
+	if (penv)
+		adapter->pdraw_test |= LXSNIC_EP2RC_PCI_DMA_RAW_TEST;
 
-		sprintf(name, "PCIE_RX_MEM_%d", eth_dev->data->port_id);
-		pcie_rx_mem = rte_memzone_reserve_aligned(name, size,
-						eth_dev->data->numa_node,
-						RTE_MEMZONE_IOVA_CONTIG, 64);
-		if (!pcie_rx_mem) {
-			error = -ENOMEM;
-			goto free_adapter;
-		}
-
-		LSINIC_WRITE_REG(&rcs_reg->txdma_regl,
-			(pcie_rx_mem->iova) & DMA_BIT_MASK(32));
-		LSINIC_WRITE_REG(&rcs_reg->txdma_regh,
-			(pcie_rx_mem->iova) >> 32);
-
-		adapter->dmapci_dbg = 1;
-	}
-
-	penv = getenv("LSINIC_PCIE_TX_TEST");
-	if (penv) {
-		const struct rte_memzone *pcie_tx_mem = NULL;
-		uint16_t queue_nb = adapter->num_tx_queues;
-		uint32_t size = queue_nb * LSINIC_QDMA_TEST_PKT_MAX_LEN *
-						adapter->tx_ring_bd_count;
-		char name[64];
-
-		sprintf(name, "PCIE_TX_MEM_%d", eth_dev->data->port_id);
-		pcie_tx_mem = rte_memzone_reserve_aligned(name, size,
-						eth_dev->data->numa_node,
-						RTE_MEMZONE_IOVA_CONTIG, 64);
-		if (!pcie_tx_mem) {
-			error = -ENOMEM;
-			goto free_adapter;
-		}
-
-		LSINIC_WRITE_REG(&rcs_reg->rxdma_regl,
-			(pcie_tx_mem->iova) & DMA_BIT_MASK(32));
-		LSINIC_WRITE_REG(&rcs_reg->rxdma_regh,
-			(pcie_tx_mem->iova) >> 32);
-
-		adapter->dmapci_dbg = 1;
-	}
+	penv = getenv("LSINIC_RC2EP_PCI_DMA_RAW_TEST");
+	if (penv)
+		adapter->pdraw_test |= LXSNIC_RC2EP_PCI_DMA_RAW_TEST;
 
 	penv = getenv("LSINIC_SELF_XMIT_TEST");
 	if (penv) {

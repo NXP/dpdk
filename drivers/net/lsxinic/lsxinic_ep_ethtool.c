@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <stdio.h>
@@ -221,7 +221,8 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 					LSINIC_DEV_REG_OFFSET);
 			if (dev->eth_dev->data->rx_queues) {
 				queue = dev->eth_dev->data->rx_queues[0];
-				if (queue && queue->dma_test.pci_addr)
+				if (queue && queue->dma_test.status ==
+					LSINIC_PCI_DMA_TEST_START)
 					print_status = 1;
 			}
 

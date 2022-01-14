@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #ifndef _LSXINIC_RC_ETHDEV_H_
@@ -267,6 +267,11 @@ struct lxsnic_hw_stats {
 	uint64_t tx_desc_err;
 };
 
+enum lsx_pcie_dma_raw_test {
+	LXSNIC_EP2RC_PCI_DMA_RAW_TEST = (1 << 0),
+	LXSNIC_RC2EP_PCI_DMA_RAW_TEST = (1 << 1)
+};
+
 struct lxsnic_adapter {
 	/* OS defined structs */
 	unsigned long state;
@@ -353,7 +358,7 @@ struct lxsnic_adapter {
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
-	int dmapci_dbg;
+	int pdraw_test;
 	uint32_t merge_threshold;
 	uint32_t max_data_room;
 };

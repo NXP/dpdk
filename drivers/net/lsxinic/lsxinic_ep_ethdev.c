@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <time.h>
@@ -1320,10 +1320,6 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 			rc_reg_addr);
 	}
 
-	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->rxdma_regl));
-	adapter->rx_pcidma_dbg = rc_reg_addr;
-	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
-	adapter->tx_pcidma_dbg = rc_reg_addr;
 	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
 		EGRESS_RING_CNF) {
 		adapter->complete_src =

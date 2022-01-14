@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSINIC_REG_H_
@@ -199,7 +199,7 @@ struct lsinic_ring_reg {
 	uint32_t r_desch;	/* desc PCI high address On RC side */
 	uint32_t r_ep2rcl;	/* ep2rc PCI low address On RC side */
 	uint32_t r_ep2rch;	/* ep2rc PCI high address On RC side */
-	uint32_t  resr[1];
+	uint32_t dma_test;	/* EP DMA PCIe RAW test */
 } __packed;
 
 struct lsinic_bdr_reg {
@@ -349,10 +349,6 @@ struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	struct lsinic_command_reg cmd;
 	uint32_t r_regl;	/* shadow reg low address On RC side */
 	uint32_t r_regh;	/* shadow reg high address On RC side */
-	uint32_t rxdma_regl;	/* pci dma test rx low address On RC side */
-	uint32_t rxdma_regh;	/* pci dma test rx high address On RC side */
-	uint32_t txdma_regl;	/* pci dma test tx low address On RC side */
-	uint32_t txdma_regh;	/* pci dma test tx high address On RC side */
 	uint32_t msi_flag;
 	uint32_t msix_mask[32];
 } __packed;

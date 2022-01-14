@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <rte_mbuf.h>
@@ -216,9 +216,7 @@ print_ep_latency(struct lsinic_queue *epq)
 			epq->loop_avail;
 		double tx_burst_av_depth = epq->pair->packets /
 			epq->pair->loop_avail;
-		double av_us = (double)epq->cyc_diff_total /
-			(double)epq->packets /
-			(double)epq->adapter->cycs_per_us;
+		double av_us;
 
 		if (epq->dma_test.status == LSINIC_PCI_DMA_TEST_START) {
 			av_us = (double)epq->cyc_diff_total /

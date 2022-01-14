@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -67,12 +67,12 @@ enum lsinic_pci_dma_test_status {
 };
 
 struct lsinic_pci_dma_test {
-	uint64_t pci_addr;
 	enum lsinic_pci_dma_test_status status;
 	uint16_t pkt_len;
+	uint16_t burst_size;
+	int sync_mode;
 	struct rte_qdma_queue_config qdma_cfg;
 	int dma_vq;
-	uint16_t latency_burst;
 	struct rte_mbuf **mbufs;
 	struct rte_ring *jobs_ring;
 };
