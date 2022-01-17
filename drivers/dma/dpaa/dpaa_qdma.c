@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021 NXP
+ * Copyright 2021-2022 NXP
  */
 
 #include <bus_dpaa_driver.h>
@@ -615,7 +615,7 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 
 	list_add_tail(&fsl_comp->list, &fsl_queue->comp_used);
 
-	if (flags == RTE_DMA_OP_FLAG_SUBMIT) {
+	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		reg = qdma_readl_be(block + FSL_QDMA_BCQMR(fsl_queue->id));
 		reg |= FSL_QDMA_BCQMR_EI_BE;
 		qdma_writel_be(reg, block + FSL_QDMA_BCQMR(fsl_queue->id));
