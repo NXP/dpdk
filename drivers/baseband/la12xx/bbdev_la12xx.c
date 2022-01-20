@@ -43,17 +43,8 @@ struct bbdev_la12xx_params {
 };
 
 #define BBDEV_LA12XX_VDEV_MODEM_ID_ARG	"modem"
-#define LA12XX_MAX_MODEM 4
-
-/* SG table final entry */
-#define QDMA_SGT_F	0x80000000
-
-#define LA12XX_MAX_CORES	4
-
-/* TX retry count */
-#define BBDEV_LA12XX_TX_RETRY_COUNT 10000
-
-#define GUL_WDOG_SCHED_PRIORITY 98
+#define LA12XX_MAX_MODEM	4
+#define LA12XX_MAX_CORES	6
 
 #define BBDEV_LA12XX_LDPC_ENC_CORE	0
 #define BBDEV_LA12XX_LDPC_DEC_CORE	1
@@ -130,20 +121,20 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
 
-static struct rte_bbdev_queue_conf default_queue_conf = {
-	.queue_size = MAX_CHANNEL_DEPTH,
-};
+static struct rte_bbdev_queue_conf default_queue_conf;
 
 /* Get device info */
 static void
 la12xx_info_get(struct rte_bbdev *dev,
 		struct rte_bbdev_driver_info *dev_info)
 {
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+
 	PMD_INIT_FUNC_TRACE();
 
 	dev_info->driver_name = RTE_STR(DRIVER_NAME);
-	dev_info->max_num_queues = LA12XX_MAX_QUEUES;
-	dev_info->queue_size_lim = MAX_CHANNEL_DEPTH;
+	dev_info->max_num_queues = priv->max_queues;
+	dev_info->queue_size_lim = default_queue_conf.queue_size;
 	dev_info->hardware_accelerated = true;
 	dev_info->max_dl_queue_priority = 0;
 	dev_info->max_ul_queue_priority = 0;
@@ -279,8 +270,9 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	struct gul_hif *mhif;
 	ipc_metadata_t *ipc_md;
 	ipc_ch_t *ch;
-	int instance_id = 0, i;
+	int instance_id = 0;
 	void *vaddr;
+	uint32_t i;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -319,7 +311,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	/* Set queue properties for LA12xx device */
 	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
-		if (priv->num_ldpc_enc_queues >= MAX_LDPC_ENC_FECA_QUEUES) {
+		if (priv->num_ldpc_enc_queues >=
+				ipc_priv->instance->max_ldpc_enc_feca_queues) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_ldpc_enc_queues reached max value");
 			return -1;
@@ -328,7 +321,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->feca_blk_id = priv->num_ldpc_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
-		if (priv->num_ldpc_dec_queues >= MAX_LDPC_DEC_FECA_QUEUES) {
+		if (priv->num_ldpc_dec_queues >=
+				ipc_priv->instance->max_ldpc_dec_feca_queues) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_ldpc_dec_queues reached max value");
 			return -1;
@@ -337,7 +331,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->feca_blk_id = priv->num_ldpc_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
-		if (priv->num_polar_enc_queues >= MAX_POLAR_ENC_FECA_QUEUES) {
+		if (priv->num_polar_enc_queues >=
+				ipc_priv->instance->max_polar_enc_feca_queues) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_polar_enc_queues reached max value");
 			return -1;
@@ -347,7 +342,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		priv->num_polar_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
-		if (priv->num_polar_dec_queues >= MAX_POLAR_DEC_FECA_QUEUES) {
+		if (priv->num_polar_dec_queues >=
+				ipc_priv->instance->max_polar_dec_feca_queues) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_polar_dec_queues reached max value");
 			return -1;
@@ -364,7 +360,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 			return -1;
 		}
 
-		if (priv->num_raw_queues >= MAX_RAW_QUEUES) {
+		if (priv->num_raw_queues >=
+				ipc_priv->instance->max_raw_queues) {
 			BBDEV_LA12XX_PMD_ERR(
 				"num_raw_queues reached max value");
 			return -1;
@@ -386,7 +383,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	}
 
 	if (!q_priv->is_host_to_modem) {
-		for (i = 0; i < MAX_CHANNEL_DEPTH; i++) {
+		for (i = 0; i < queue_conf->queue_size; i++) {
 			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
 					sizeof(struct rte_bbdev_raw_op), 0);
 			if (!q_priv->bbdev_op[i]) {
@@ -1850,8 +1847,7 @@ consume_raw_op(struct rte_bbdev_queue_data *q_data,
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	struct bbdev_ipc_raw_op_t *raw_op;
-	uint32_t q_id = q_priv->q_id;
-	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
+	ipc_ch_t *ch = &(ipc_instance->ch_list[q_priv->q_id]);
 	ipc_br_md_t *md = &(ch->md);
 	uint32_t ci;
 	uint64_t virt;
@@ -2393,10 +2389,11 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct hugepage_info *hp = NULL;
 	ipc_channel_us_t *ipc_priv_ch = NULL;
-	int dev_ipc = 0, dev_mem = 0, i;
+	int dev_ipc = 0, dev_mem = 0;
+	ipc_instance_t *instance;
 	ipc_metadata_t *ipc_md;
 	struct gul_hif *mhif;
-	uint32_t phy_align = 0;
+	uint32_t phy_align = 0, i;
 	int ret = -1;
 
 	PMD_INIT_FUNC_TRACE();
@@ -2420,17 +2417,6 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 				"Unable to allocate memory for ipc priv");
 			ret = -ENOMEM;
 			goto err;
-		}
-
-		for (i = 0; i < IPC_MAX_CHANNEL_COUNT; i++) {
-			ipc_priv_ch = rte_zmalloc(0,
-				sizeof(ipc_channel_us_t), 0);
-			if (ipc_priv_ch == NULL) {
-				BBDEV_LA12XX_PMD_ERR(
-					"Unable to allocate memory for channels");
-				ret = -ENOMEM;
-			}
-			ipc_priv->channels[i] = ipc_priv_ch;
 		}
 
 		dev_mem = open("/dev/mem", O_RDWR);
@@ -2536,9 +2522,6 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	ipc_priv->hugepg_start[0].modem_phys =
 		ipc_priv->sys_map.hugepg_start.modem_phys;
 
-	printf("ipc_priv->sys_map.hugepg_start.modem_phys: %x\n",
-		ipc_priv->sys_map.hugepg_start.modem_phys);
-
 	ipc_priv->mhif_start.host_phys =
 		ipc_priv->sys_map.mhif_start.host_phys;
 	ipc_priv->mhif_start.size = ipc_priv->sys_map.mhif_start.size;
@@ -2577,6 +2560,26 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 
 	ipc_priv->instance = (ipc_instance_t *)
 		(&ipc_md->instance_list[ipc_priv->instance_id]);
+
+	instance = ipc_priv->instance;
+	priv->max_queues = instance->max_ldpc_dec_feca_queues +
+		instance->max_ldpc_enc_feca_queues +
+		instance->max_polar_enc_feca_queues +
+		instance->max_polar_dec_feca_queues +
+		instance->max_raw_queues;
+	default_queue_conf.queue_size = instance->max_channel_depth;
+	if (!ipc_priv->channels[0]) {
+		for (i = 0; i < priv->max_queues; i++) {
+			ipc_priv_ch = rte_zmalloc(0,
+				sizeof(ipc_channel_us_t), 0);
+			if (ipc_priv_ch == NULL) {
+				BBDEV_LA12XX_PMD_ERR(
+					"Unable to allocate memory for channels");
+				ret = -ENOMEM;
+			}
+			ipc_priv->channels[i] = ipc_priv_ch;
+		}
+	}
 
 	BBDEV_LA12XX_PMD_DEBUG("finish host init");
 

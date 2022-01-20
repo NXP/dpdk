@@ -21,6 +21,7 @@ struct bbdev_la12xx_private {
 	ipc_userspace_t *ipc_priv;
 	uint32_t per_queue_hram_size;
 
+	uint32_t max_queues;
 	uint32_t num_valid_queues;
 	uint8_t num_ldpc_enc_queues;
 	uint8_t num_ldpc_dec_queues;
@@ -69,9 +70,9 @@ struct bbdev_la12xx_q_priv {
 		/* LA12xx core ID on which this will be scheduled */
 	uint32_t feca_input_circ_size;	/* FECA transport block input circular buffer size */
 	struct rte_mempool *mp; /**< Pool from where buffers would be cut */
-	void *bbdev_op[MAX_CHANNEL_DEPTH];
+	void *bbdev_op[IPC_MAX_DEPTH];
 			/**< Stores bbdev op for each index */
-	void *msg_ch_vaddr[MAX_CHANNEL_DEPTH];
+	void *msg_ch_vaddr[IPC_MAX_DEPTH];
 			/**< Stores msg channel addr for modem->host */
 	struct vspa_desc *vspa_ring;	/**< Shared ring between Host and VSPA */
 	int vspa_desc_wr_index;	/**< Write desc index for VSPA */
