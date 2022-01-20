@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021 NXP
+ * Copyright 2021-2022 NXP
  */
 
 #include <rte_dpaa_bus.h>
@@ -615,7 +615,7 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 
 	list_add_tail(&fsl_comp->list, &fsl_queue->comp_used);
 
-	if (flags == RTE_DMA_OP_FLAG_SUBMIT) {
+	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		reg = qdma_readl_be(block + FSL_QDMA_BCQMR(fsl_queue->id));
 		reg |= FSL_QDMA_BCQMR_EI_BE;
 		qdma_writel_be(reg, block + FSL_QDMA_BCQMR(fsl_queue->id));
@@ -648,8 +648,8 @@ fsl_qdma_alloc_chan_resources(struct fsl_qdma_chan *fsl_chan)
 	}
 
 finally:
-	return fsl_qdma->desc_allocated++;
-
+	fsl_qdma->desc_allocated++;
+	return 0;
 exit:
 	return -ENOMEM;
 }
@@ -670,7 +670,7 @@ dpaa_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_info,
 			     RTE_DMA_CAPA_DEV_TO_MEM |
 			     RTE_DMA_CAPA_SILENT |
 			     RTE_DMA_CAPA_OPS_COPY;
-	dev_info->max_vchans = 1;
+	dev_info->max_vchans = 4;
 	dev_info->max_desc = DPAADMA_MAX_DESC;
 	dev_info->min_desc = DPAADMA_MIN_DESC;
 
