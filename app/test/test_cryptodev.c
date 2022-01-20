@@ -2248,6 +2248,157 @@ test_AES_CBC_HMAC_SHA1_encrypt_digest(void)
 	return TEST_SUCCESS;
 }
 
+static inline void
+ext_buf_free_callback_fn(void *addr,
+			 void *ext_buf_ptr __rte_unused)
+{
+	rte_free(addr);
+}
+
+static int
+test_AES_CBC_HMAC_SHA1_encrypt_digest_ext_buffer(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	void *buf;
+	rte_iova_t iova;
+	uint16_t buf_len = QUOTE_1024_BYTES;
+	struct rte_mbuf_ext_shared_info *shinfo = NULL;
+	struct rte_mbuf *m;
+
+
+	/* Verify the capabilities */
+	struct rte_cryptodev_sym_capability_idx cap_idx;
+	cap_idx.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+	cap_idx.algo.auth = RTE_CRYPTO_AUTH_SHA1_HMAC;
+	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
+			&cap_idx) == NULL)
+		return TEST_SKIPPED;
+	cap_idx.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_AES_CBC;
+	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
+			&cap_idx) == NULL)
+		return TEST_SKIPPED;
+
+	buf = rte_malloc(NULL, buf_len, RTE_CACHE_LINE_SIZE);
+	if (buf == NULL)
+		return TEST_SKIPPED;
+
+	rte_memcpy(buf, catch_22_quote, QUOTE_512_BYTES);
+	shinfo = rte_pktmbuf_ext_shinfo_init_helper(buf, &buf_len,
+				ext_buf_free_callback_fn, NULL);
+	if (unlikely(shinfo == NULL)) {
+		rte_free(buf);
+		return -1;
+	}
+	iova = rte_malloc_virt2iova(buf);
+	m = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+	if (m == NULL)
+		return TEST_SKIPPED;
+	rte_pktmbuf_attach_extbuf(m, buf, iova, buf_len, shinfo);
+	rte_pktmbuf_reset_headroom(m);
+	m->pkt_len = QUOTE_512_BYTES;
+	m->data_len  = QUOTE_512_BYTES;
+	m->data_off  = 0;
+
+	ut_params->ibuf = m;
+
+	ut_params->digest = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+			DIGEST_BYTE_LENGTH_SHA1);
+	TEST_ASSERT_NOT_NULL(ut_params->digest, "no room to append digest");
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.next = &ut_params->auth_xform;
+
+	ut_params->cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
+	ut_params->cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+	ut_params->cipher_xform.cipher.key.data = aes_cbc_key;
+	ut_params->cipher_xform.cipher.key.length = CIPHER_KEY_LENGTH_AES_CBC;
+	ut_params->cipher_xform.cipher.iv.offset = IV_OFFSET;
+	ut_params->cipher_xform.cipher.iv.length = CIPHER_IV_LENGTH_AES_CBC;
+
+	/* Setup HMAC Parameters */
+	ut_params->auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+
+	ut_params->auth_xform.next = NULL;
+
+	ut_params->auth_xform.auth.op = RTE_CRYPTO_AUTH_OP_GENERATE;
+	ut_params->auth_xform.auth.algo = RTE_CRYPTO_AUTH_SHA1_HMAC;
+	ut_params->auth_xform.auth.key.length = HMAC_KEY_LENGTH_SHA1;
+	ut_params->auth_xform.auth.key.data = hmac_sha1_key;
+	ut_params->auth_xform.auth.digest_length = DIGEST_BYTE_LENGTH_SHA1;
+
+	ut_params->sess = rte_cryptodev_sym_session_create(
+			ts_params->valid_devs[0], &ut_params->auth_xform,
+			ts_params->session_mpool);
+	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
+
+	/* Generate crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+			"Failed to allocate symmetric crypto operation struct");
+
+	rte_crypto_op_attach_sym_session(ut_params->op, ut_params->sess);
+
+	struct rte_crypto_sym_op *sym_op = ut_params->op->sym;
+
+	/* set crypto operation source mbuf */
+	sym_op->m_src = ut_params->ibuf;
+
+	/* Set crypto operation authentication parameters */
+	sym_op->auth.digest.data = ut_params->digest;
+	sym_op->auth.digest.phys_addr = rte_pktmbuf_iova_offset(
+			ut_params->ibuf, QUOTE_512_BYTES);
+
+	sym_op->auth.data.offset = 0;
+	sym_op->auth.data.length = QUOTE_512_BYTES;
+
+	/* Copy IV at the end of the crypto operation */
+	rte_memcpy(rte_crypto_op_ctod_offset(ut_params->op, uint8_t *, IV_OFFSET),
+			aes_cbc_iv, CIPHER_IV_LENGTH_AES_CBC);
+
+	/* Set crypto operation cipher parameters */
+	sym_op->cipher.data.offset = 0;
+	sym_op->cipher.data.length = QUOTE_512_BYTES;
+
+	/* Process crypto operation */
+	if (gbl_action_type == RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO)
+		process_cpu_crypt_auth_op(ts_params->valid_devs[0],
+			ut_params->op);
+	else
+		TEST_ASSERT_NOT_NULL(
+			process_crypto_request(ts_params->valid_devs[0],
+				ut_params->op),
+				"failed to process sym crypto op");
+
+	TEST_ASSERT_EQUAL(ut_params->op->status, RTE_CRYPTO_OP_STATUS_SUCCESS,
+			"crypto op processing failed");
+
+	/* Validate obuf */
+	uint8_t *ciphertext = rte_pktmbuf_mtod(ut_params->op->sym->m_src,
+			uint8_t *);
+
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(ciphertext,
+			catch_22_quote_2_512_bytes_AES_CBC_ciphertext,
+			QUOTE_512_BYTES,
+			"ciphertext data not as expected");
+
+	uint8_t *digest = ciphertext + QUOTE_512_BYTES;
+
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(digest,
+			catch_22_quote_2_512_bytes_AES_CBC_HMAC_SHA1_digest,
+			gbl_driver_id == rte_cryptodev_driver_id_get(
+					RTE_STR(CRYPTODEV_NAME_AESNI_MB_PMD)) ?
+					TRUNCATED_DIGEST_BYTE_LENGTH_SHA1 :
+					DIGEST_BYTE_LENGTH_SHA1,
+			"Generated digest data not as expected");
+
+	return TEST_SUCCESS;
+}
+
+
 /* ***** AES-CBC / HMAC-SHA512 Hash Tests ***** */
 
 #define HMAC_KEY_LENGTH_SHA512  (DIGEST_BYTE_LENGTH_SHA512)
@@ -15676,6 +15827,8 @@ static struct unit_test_suite cryptodev_gen_testsuite  = {
 		TEST_CASE_ST(ut_setup, ut_teardown, test_stats),
 		TEST_CASE_ST(ut_setup, ut_teardown, test_enq_callback_setup),
 		TEST_CASE_ST(ut_setup, ut_teardown, test_deq_callback_setup),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+				test_AES_CBC_HMAC_SHA1_encrypt_digest_ext_buffer),
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
