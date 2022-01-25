@@ -29,6 +29,7 @@
 #include <fsl_dpseci.h>
 #include <fsl_mc_sys.h>
 #include <rte_hexdump.h>
+#include <fsl_qbman_debug.h>
 
 #include "dpaa2_sec_priv.h"
 #include "dpaa2_sec_event.h"
@@ -3919,6 +3920,62 @@ dpaa2_sec_dev_infos_get(struct rte_cryptodev *dev,
 }
 
 static
+void dpaa2_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
+				struct rte_cryptodev_stats *stats)
+{
+	struct dpaa2_sec_qp **qp = (struct dpaa2_sec_qp **)
+					dev->data->queue_pairs;
+	if (stats == NULL) {
+		DPAA2_SEC_ERR("Invalid stats ptr NULL");
+		return;
+	}
+
+	stats->enqueued_count = qp[qp_id]->tx_vq.tx_pkts;
+	stats->dequeued_count = qp[qp_id]->rx_vq.rx_pkts;
+	stats->enqueue_err_count = qp[qp_id]->tx_vq.err_pkts;
+	stats->dequeue_err_count = qp[qp_id]->rx_vq.err_pkts;
+}
+
+static
+void dpaa2_get_pending_frames(struct rte_cryptodev *dev, uint16_t qp_id,
+		struct rte_cryptodev_pending_frames *frames)
+{
+	struct dpaa2_sec_qp **qp = (struct dpaa2_sec_qp **)
+					dev->data->queue_pairs;
+	struct qbman_fq_query_np_rslt state;
+	struct qbman_swp *swp;
+	int ret;
+
+	if (frames == NULL) {
+		DPAA2_SEC_ERR("Invalid stats ptr NULL");
+		return;
+	}
+	if (!DPAA2_PER_LCORE_DPIO) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_SEC_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
+			return;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	if (qp == NULL || qp[qp_id] == NULL)  {
+		printf("qp is invalid\n");
+		return;
+	}
+	DPAA2_SEC_DEBUG("QP: %d, tx fqid =%d and rx fqid =%d\n",
+			qp_id, qp[qp_id]->tx_vq.fqid, qp[qp_id]->rx_vq.fqid);
+
+	if (qbman_fq_query_state(swp, qp[qp_id]->tx_vq.fqid, &state) == 0)
+		frames->enqueue_pending = qbman_fq_state_frame_count(&state);
+
+	if (qbman_fq_query_state(swp, qp[qp_id]->rx_vq.fqid, &state) == 0)
+		frames->dequeue_pending = qbman_fq_state_frame_count(&state);
+}
+
+static
 void dpaa2_sec_stats_get(struct rte_cryptodev *dev,
 			 struct rte_cryptodev_stats *stats)
 {
@@ -4205,6 +4262,8 @@ static struct rte_cryptodev_ops crypto_ops = {
 	.dev_infos_get        = dpaa2_sec_dev_infos_get,
 	.stats_get	      = dpaa2_sec_stats_get,
 	.stats_reset	      = dpaa2_sec_stats_reset,
+	.pending_frames       = dpaa2_get_pending_frames,
+	.sw_stats             = dpaa2_get_qp_sw_stats,
 	.queue_pair_setup     = dpaa2_sec_queue_pair_setup,
 	.queue_pair_release   = dpaa2_sec_queue_pair_release,
 	.sym_session_get_size     = dpaa2_sec_sym_session_get_size,

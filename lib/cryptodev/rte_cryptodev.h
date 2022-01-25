@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2015-2020 Intel Corporation.
+ * Copyright 2022 NXP
  */
 
 #ifndef _RTE_CRYPTODEV_H_
@@ -597,6 +598,11 @@ struct rte_cryptodev_stats {
 	/**< Total error count on operations dequeued */
 };
 
+struct rte_cryptodev_pending_frames {
+	uint64_t enqueue_pending;
+	uint64_t dequeue_pending;
+};
+
 #define RTE_CRYPTODEV_NAME_MAX_LEN	(64)
 /**< Max length of name of crypto PMD */
 
@@ -810,6 +816,14 @@ rte_cryptodev_queue_pair_count(uint8_t dev_id);
 extern int
 rte_cryptodev_stats_get(uint8_t dev_id, struct rte_cryptodev_stats *stats);
 
+__rte_experimental
+extern int
+rte_cryptodev_pending_frames(uint8_t dev_id, uint16_t qp_id,
+		struct rte_cryptodev_pending_frames *pending_frames);
+
+__rte_experimental
+extern int
+rte_cryptodev_sw_stats(uint8_t dev_id, uint16_t qp_id, struct rte_cryptodev_stats *stats);
 /**
  * Reset the general I/O statistics of a device.
  *

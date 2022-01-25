@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2015-2020 Intel Corporation
+ * Copyright 2022 NXP
  */
 
 #include <sys/queue.h>
@@ -1701,6 +1702,46 @@ rte_cryptodev_stats_get(uint8_t dev_id, struct rte_cryptodev_stats *stats)
 	(*dev->dev_ops->stats_get)(dev, stats);
 
 	rte_cryptodev_trace_stats_get(dev_id, stats);
+	return 0;
+}
+
+int
+rte_cryptodev_pending_frames(uint8_t dev_id, uint16_t qp_id,
+				struct rte_cryptodev_pending_frames *frames)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_is_valid_dev(dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", dev_id);
+		return -ENODEV;
+	}
+
+	dev = &rte_crypto_devices[dev_id];
+
+	if (*dev->dev_ops->pending_frames == NULL)
+		return -ENOTSUP;
+
+	(*dev->dev_ops->pending_frames)(dev, qp_id, frames);
+	return 0;
+}
+
+int
+rte_cryptodev_sw_stats(uint8_t dev_id, uint16_t qp_id,
+			 struct rte_cryptodev_stats *stats)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_is_valid_dev(dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", dev_id);
+		return -ENODEV;
+	}
+
+	dev = &rte_crypto_devices[dev_id];
+
+	if (*dev->dev_ops->stats_get == NULL)
+		return -ENOTSUP;
+
+	(*dev->dev_ops->sw_stats)(dev, qp_id, stats);
 	return 0;
 }
 
