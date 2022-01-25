@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #ifndef _LSXINIC_RC_ETHDEV_H_
@@ -76,7 +76,6 @@
 #define LXSNIC_LINK_SPEED_1GB_FULL  0x0020
 #define LXSNIC_LINK_SPEED_10GB_FULL 0x0080
 #define LXSNIC_COMBINE_PKT_MAX_SIZE 1280
-#define RC_RING_REG_SHADOW_ENABLE
 
 /* TX/RX descriptor defines */
 #define LXSNIC_DEFAULT_TXD      LSINIC_BD_ENTRY_COUNT
@@ -128,6 +127,10 @@
 #else
 #define rte_lxsnic_packet_prefetch(p)	do {} while (0)
 #endif
+
+#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
+#define MAX_U16 0xffff
+
 typedef uint64_t dma_addr_t;
 
 struct lxsnic_queue_stats {
@@ -160,15 +163,6 @@ enum lxsnic_ring_state_t {
 	__LXSNIC_RX_FCOE,
 };
 
-union rc_ep2rc_ring {
-#ifdef LSINIC_BD_CTX_IDX_USED
-	struct ep2rc_notify *rx_notify;
-#endif
-	uint8_t *tx_complete;
-	const uint32_t *free_idx;
-	void *union_ring;
-};
-
 #define MCACHE_NUM (LSINIC_MERGE_MAX_NUM * 4)
 #define MCACHE_MASK (MCACHE_NUM - 1)
 struct lxsnic_ring {
@@ -179,18 +173,47 @@ struct lxsnic_ring {
 	uint32_t core_id;
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
-	struct lsinic_bd_desc *ep_bd_desc;/* bd desc point to EP memory */
+	enum EP_MEM_BD_TYPE ep_mem_bd_type;
+	/* point to EP memory */
+	void *ep_bd_mapped_addr;
+	/* EP_MEM_LONG_BD*/
+	struct lsinic_bd_desc *ep_bd_desc;
+
+	/* For RC TX*/
+	/* EP_MEM_SRC_ADDRL_BD*/
+	struct lsinic_ep_rx_src_addrl *ep_tx_addrl;
+	/* EP_MEM_SRC_ADDRX_BD*/
+	struct lsinic_ep_rx_src_addrx *ep_tx_addrx;
+
+	/* For RC RX*/
+	/* EP_MEM_DST_ADDR_BD*/
+	struct lsinic_ep_tx_dst_addr *ep_rx_addr;
+	/* EP_MEM_DST_ADDRL_BD*/
+	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
+	/* EP_MEM_DST_ADDX_BD*/
+	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
+
+	enum RC_MEM_BD_TYPE rc_mem_bd_type;
+	void *rc_bd_shared_addr;
+	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
-	union rc_ep2rc_ring ep2rc;
+
+	/* For RC RX*/
+	/* RC_MEM_LEN_CMD*/
+	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
+
+	/* For RC TX*/
+	/* RC_MEM_BD_CNF*/
+	struct lsinic_rc_tx_bd_cnf *tx_complete;
+	/* RC_MEM_IDX_CNF*/
+	const struct lsinic_rc_tx_idx_cnf *free_idx;
+
 	/* bd desc point to RC(local) memory */
-	dma_addr_t rc_bd_desc_dma;	  /* phys. address of rc_bd_desc */
-	dma_addr_t ep2rc_ring_dma;	  /* phys. address of ep2rc_ring */
+	dma_addr_t rc_bd_desc_dma;	/* phys. address of rc_bd_shared_addr */
 	struct lsinic_ring_reg *ep_reg;	  /* ring reg point to EP memory */
 	struct lsinic_ring_reg *rc_reg;	  /* ring reg point to RC memory */
 	dma_addr_t rc_reg_dma;		  /* phys. address of rc_reg */
-#ifdef LSINIC_BD_CTX_IDX_USED
 	void **q_mbuf;
-#endif
 	unsigned long state;
 	uint32_t ep_sr;
 	uint16_t tail;			/* current value of tail */
@@ -204,8 +227,14 @@ struct lxsnic_ring {
 	/* use for manage queue */
 	uint16_t last_avail_idx;
 	uint16_t last_used_idx;
-	uint16_t tx_free_start_idx;
-	int tx_free_len;
+	union {
+		uint16_t tx_free_start_idx;
+		uint16_t rx_fill_start_idx;
+	};
+	union {
+		int tx_free_len;
+		int rx_fill_len;
+	};
 	/* statistics */
 	uint64_t packets;
 	uint64_t bytes;
@@ -224,9 +253,7 @@ struct lxsnic_ring {
 		struct lxsnic_rx_queue_stats rx_stats;
 	};
 	struct lxsnic_adapter *adapter;
-	struct rte_mbuf **self_xmit_pkts;
-	uint16_t self_xmit_pkts_total;
-	uint16_t self_xmit_pkts_count;
+	struct rte_ring *self_xmit_ring;
 	uint16_t mhead;
 	uint16_t mtail;
 	uint32_t mcnt;
@@ -267,6 +294,11 @@ struct lxsnic_hw_stats {
 	uint64_t tx_desc_clean_num;
 	uint64_t tx_desc_clean_fail;
 	uint64_t tx_desc_err;
+};
+
+enum lsx_pcie_dma_raw_test {
+	LXSNIC_EP2RC_PCI_DMA_RAW_TEST = (1 << 0),
+	LXSNIC_RC2EP_PCI_DMA_RAW_TEST = (1 << 1)
 };
 
 struct lxsnic_adapter {
@@ -355,9 +387,11 @@ struct lxsnic_adapter {
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
-	int dmapci_dbg;
+	int pdraw_test;
 	uint32_t merge_threshold;
 	uint32_t max_data_room;
+	uint32_t pkt_addr_interval;
+	uint64_t pkt_addr_base;
 };
 
 enum lxsnic_state_t {
@@ -388,7 +422,5 @@ int lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 
 int lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 	uint16_t idx);
-
-int lxsnic_rc_mg_fast_fwd(void);
 
 #endif /* _LSXINIC_RC_ETHDEV_H_ */

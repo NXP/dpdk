@@ -4,7 +4,7 @@
  * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
  * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
  */
- */
+
 #pragma GCC diagnostic ignored "-Winline"
 
 #include <linux/kernel.h>
@@ -47,11 +47,6 @@ MODULE_PARM_DESC(max_vfs,
 		" Maximum number of virtual functions to\n"
 		"\t\t\t allocate per physical function - default is\n"
 		"\t\t\t zero and maximum value is 64.");
-
-static unsigned int pcie_perf_tx;
-module_param(pcie_perf_tx, uint, S_IRUGO);
-static unsigned int pcie_perf_rx;
-module_param(pcie_perf_rx, uint, S_IRUGO);
 
 static unsigned int lsinic_thread_mode;
 module_param(lsinic_thread_mode, uint, S_IRUGO);
@@ -176,46 +171,6 @@ lsinic_set_netdev(struct lsinic_adapter *adapter,
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_REMOVED);
 		break;
 	case PCIDEV_COMMAND_INIT:
-		{
-			if (pcie_perf_tx) {
-				u32 size =
-					adapter->num_tx_queues *
-					LSINIC_QDMA_TEST_PKT_MAX_LEN *
-					adapter->tx_ring_bd_count;
-
-				if (size <= KMALLOC_MAX_SIZE) {
-					void *va_tx = kmalloc(size, GFP_KERNEL);
-					dma_addr_t pa_tx = __pa(va_tx);
-
-					printk(KERN_WARNING
-						"PCIe Tx perf enable host addr: 0x%lx, size: %d\n",
-						(unsigned long)pa_tx, size);
-					LSINIC_WRITE_REG(&rcs_reg->txdma_regl,
-						pa_tx & DMA_BIT_MASK(32));
-					LSINIC_WRITE_REG(&rcs_reg->txdma_regh,
-						pa_tx >> 32);
-				}
-			}
-
-			if (pcie_perf_rx) {
-				u32 size = adapter->num_rx_queues *
-						LSINIC_QDMA_TEST_PKT_MAX_LEN *
-						adapter->rx_ring_bd_count;
-
-				if (size <= KMALLOC_MAX_SIZE) {
-					void *va_rx = kmalloc(size, GFP_KERNEL);
-					dma_addr_t pa_rx = __pa(va_rx);
-
-					printk(KERN_WARNING
-						"PCIe RX perf enable host addr: 0x%lx, size: %d\n",
-						(unsigned long)pa_rx, size);
-					LSINIC_WRITE_REG(&rcs_reg->rxdma_regl,
-						pa_rx & DMA_BIT_MASK(32));
-					LSINIC_WRITE_REG(&rcs_reg->rxdma_regh,
-						pa_rx >> 32);
-				}
-			}
-		}
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
 	default:
@@ -261,7 +216,7 @@ lsinic_msix_disable(struct lsinic_adapter *adapter, u16 idx)
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
-	if (idx >= 32) {
+	if (idx >= LSINIC_DEV_MSIX_MAX_NB) {
 		pr_info("lsinic_msix_disable hw:%p idx:%d ERROR\n",
 			adapter->hw_addr, idx);
 		return;
@@ -276,7 +231,7 @@ lsinic_msix_enable(struct lsinic_adapter *adapter, u16 idx)
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
-	if (idx >= 32) {
+	if (idx >= LSINIC_DEV_MSIX_MAX_NB) {
 		pr_info("%s hw:%p idx:%d ERROR\n",
 			__func__, adapter->hw_addr, idx);
 		return;
@@ -661,19 +616,9 @@ static int lxsnic_rx_bd_init_skb(struct lsinic_ring *rx_queue,
 	}
 
 	rc_rx_desc->pkt_addr = rx_buffer->dma;
-#ifndef LSINIC_BD_CTX_IDX_USED
-	rc_rx_desc->sw_ctx = (uint64_t)rx_buffer;
-	rc_rx_desc->bd_status = RING_BD_READY;
-
-	memcpy(ep_rx_desc, rc_rx_desc, offsetof(struct lsinic_bd_desc, desc));
-	wmb();
-	rc_rx_desc->sw_ctx = ioread64(&ep_rx_desc->sw_ctx);
-	ep_rx_desc->desc = rc_rx_desc->desc;
-#else
 	rc_rx_desc->bd_status = ((uint32_t)idx) << LSINIC_BD_CTX_IDX_SHIFT |
 							RING_BD_READY;
 	mem_cp128b_atomic((uint8_t *)ep_rx_desc, (uint8_t *)rc_rx_desc);
-#endif
 
 #ifdef INIC_RC_EP_DEBUG_ENABLE
 	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
@@ -823,15 +768,10 @@ static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
 			}
 			lsinic_assert((bd_status & RING_BD_STATUS_MASK) ==
 				RING_BD_READY);
-#ifdef LSINIC_BD_CTX_IDX_USED
 			rc_tx_desc->bd_status &=
 				(~LSINIC_BD_CTX_IDX_MASK);
 			rc_tx_desc->bd_status |=
 				(((u32)j) << LSINIC_BD_CTX_IDX_SHIFT);
-#else
-			rc_tx_desc->sw_ctx =
-				(uint64_t)&tx_ring->tx_buffer_info[j];
-#endif
 		}
 	}
 
@@ -1251,7 +1191,6 @@ int lsinic_setup_tx_resources(struct lsinic_adapter *adapter, int i)
 
 	tx_ring->tx_avail_idx = 0;
 
-#ifdef RC_RING_REG_SHADOW_ENABLE
 	tx_ring->size = tx_ring->count * sizeof(struct lsinic_bd_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
 	tx_ring->rc_bd_desc = (struct lsinic_bd_desc *)
@@ -1266,10 +1205,6 @@ int lsinic_setup_tx_resources(struct lsinic_adapter *adapter, int i)
 			tx_ring->rc_bd_desc_dma);
 
 	tx_ring->rc_reg = NULL;
-#else
-	tx_ring->rc_bd_desc = NULL;
-	tx_ring->rc_reg = NULL;
-#endif
 
 	return 0;
 
@@ -1341,7 +1276,6 @@ int lsinic_setup_rx_resources(struct lsinic_adapter *adapter, int i)
 		i * LSINIC_RING_SIZE);
 	rx_ring->rx_used_idx = 0;
 
-#ifdef RC_RING_REG_SHADOW_ENABLE
 	rx_ring->size = rx_ring->count * sizeof(struct lsinic_bd_desc);
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
 	rx_ring->rc_bd_desc = (struct lsinic_bd_desc *)((char *)
@@ -1353,9 +1287,6 @@ int lsinic_setup_rx_resources(struct lsinic_adapter *adapter, int i)
 	printk_init("RC rx phy_base:%lX, queue:%d bd_virt:%p bd_phy:%lX\n",
 			adapter->ep_ring_phy_base, i, rx_ring->rc_bd_desc,
 			rx_ring->rc_bd_desc_dma);
-#else
-	rx_ring->rc_bd_desc = NULL;
-#endif
 
 	printk_dev("%s %d: desc: %p 0x%llx [0x%x]. ep_bd_addr = 0x%p\n",
 		   __func__, __LINE__,
@@ -1461,15 +1392,11 @@ lsinic_fetch_rx_buffer(struct lsinic_ring *rx_ring,
 	struct sk_buff *skb;
 	unsigned int size;
 	struct lsinic_rx_buffer *rx_buffer;
-#ifdef LSINIC_BD_CTX_IDX_USED
 	u16 used_idx;
 
 	used_idx = lsinic_bd_ctx_idx(rx_desc->bd_status);
 
 	rx_buffer = &rx_ring->rx_buffer_info[used_idx];
-#else
-	rx_buffer = (struct lsinic_rx_buffer *)rx_desc->sw_ctx;
-#endif
 	size = lsinic_desc_len(rx_desc);
 	skb = rx_buffer->skb;
 	if (rx_desc->bd_status & RING_BD_ADDR_CHECK)
@@ -1501,15 +1428,11 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	int total_size, count = 0, i, len, offset = 0;
 	int align_off = 0, mg_header_size = 0;
 	struct lsinic_rx_buffer *rx_buffer;
-#ifdef LSINIC_BD_CTX_IDX_USED
 	u16 used_idx;
 
 	used_idx = lsinic_bd_ctx_idx(rx_desc->bd_status);
 
 	rx_buffer = &rx_ring->rx_buffer_info[used_idx];
-#else
-	rx_buffer = (struct lsinic_rx_buffer *)rx_desc->sw_ctx;
-#endif
 	skb = rx_buffer->skb;
 	if (rx_desc->bd_status & RING_BD_ADDR_CHECK)
 		lsinic_assert(rx_buffer->dma == rx_desc->pkt_addr);
@@ -1628,12 +1551,6 @@ static bool lsinic_is_non_eop(struct lsinic_ring *rx_ring,
 		  __func__, ntc, rx_desc->len_cmd);
 
 	 */
-
-/*
- *#ifdef RC_RING_REG_SHADOW_ENABLE
- *        prefetch(LSINIC_RC_BD_DESC(rx_ring, ntc));
- *#endif
- */
 
 	/* if we are the last buffer then there is nothing else to do */
 	if (likely(lsinic_test_staterr(rx_desc, LSINIC_BD_CMD_EOP)))
@@ -1777,19 +1694,13 @@ static inline int lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
 {
 	struct lsinic_bd_desc *ep_rx_desc, *rc_rx_desc;
 	struct lsinic_rx_buffer *rx_buffer;
-#ifdef LSINIC_BD_CTX_IDX_USED
 	uint32_t rxbuf_idx;
-#endif
 
 	rc_rx_desc = LSINIC_RC_BD_DESC(rx_queue, idx);
 	ep_rx_desc = LSINIC_EP_BD_DESC(rx_queue, idx);
 
-#ifdef LSINIC_BD_CTX_IDX_USED
 	rxbuf_idx = lsinic_bd_ctx_idx(rc_rx_desc->bd_status);
 	rx_buffer = &rx_queue->rx_buffer_info[rxbuf_idx];
-#else
-	rx_buffer = (struct lsinic_rx_buffer *)rc_rx_desc->sw_ctx;
-#endif
 
 	if (rx_buffer->dma)
 		dma_unmap_single(rx_queue->dev, rx_buffer->dma,
@@ -1799,19 +1710,9 @@ static inline int lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
 
 	rc_rx_desc->pkt_addr = rx_buffer->dma;
 	rx_buffer->skb = skb;
-#ifdef LSINIC_BD_CTX_IDX_USED
 	rc_rx_desc->bd_status = RING_BD_READY |
 					(rxbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
 	mem_cp128b_atomic((uint8_t *)ep_rx_desc, (uint8_t *)rc_rx_desc);
-#else
-	rc_rx_desc->sw_ctx = (uint64_t)rx_buffer;
-	rc_rx_desc->bd_status = RING_BD_READY;
-
-	memcpy(ep_rx_desc, rc_rx_desc, offsetof(struct lsinic_bd_desc, desc));
-	wmb();
-	rc_rx_desc->sw_ctx = ioread64(&ep_rx_desc->sw_ctx);
-	ep_rx_desc->desc = rc_rx_desc->desc;
-#endif
 	return 0;
 }
 
@@ -1894,9 +1795,7 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 	unsigned int total_bytes = 0, total_packets = 0;
 	unsigned int budget = q_vector->tx.work_limit;
 	u16 i = tx_ring->free_tail & (tx_ring->count - 1);
-#ifdef LSINIC_BD_CTX_IDX_USED
 	u16 txe_idx;
-#endif
 	u32 status;
 	struct lsinic_tx_buffer *first = NULL;
 	struct sk_buff *last_skb;
@@ -1914,12 +1813,8 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 			break;
 		}
 
-#ifdef LSINIC_BD_CTX_IDX_USED
 		txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
 		first = &tx_ring->tx_buffer_info[txe_idx];
-#else
-		first = (struct lsinic_tx_buffer *)rc_tx_desc->sw_ctx;
-#endif
 		lsinic_assert(first && first->skb);
 		if (rc_tx_desc->bd_status & RING_BD_ADDR_CHECK)
 			lsinic_assert(first->dma == rc_tx_desc->pkt_addr);
@@ -1939,12 +1834,8 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 		total_bytes += first->bytecount;
 		total_packets++;
 
-#ifdef LSINIC_BD_CTX_IDX_USED
 		rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
 		rc_tx_desc->bd_status |= RING_BD_READY;
-#else
-		rc_tx_desc->bd_status = RING_BD_READY;
-#endif
 
 		tx_ring->free_tail++;
 		i = tx_ring->free_tail & (tx_ring->count - 1);
@@ -2001,11 +1892,7 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 	u16 bd_idx;
 	u32 ret_val = 0;
 
-#ifdef RC_RING_REG_SHADOW_ENABLE
 	ret_val = rx_ring->rc_reg->sr;
-#else
-	ret_val = LSINIC_READ_REG(&rx_ring->ep_reg->sr);
-#endif
 	if (ret_val == LSINIC_QUEUE_STOP) {
 		if (ret_val != rx_ring->ep_sr)
 			pr_warn("inic: ep-tx queue down\n");
@@ -2027,37 +1914,19 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 
 	while (likely(total_rx_packets < budget)) {
 		struct lsinic_bd_desc *rx_desc;
-#ifdef LSINIC_BD_CTX_IDX_USED
 		struct lsinic_bd_desc local_desc;
-#endif
 		struct sk_buff *skb;
 		struct sk_buff *new_skb;
 		dma_addr_t new_dma;
 
 		bd_idx = rx_ring->rx_used_idx & (rx_ring->count - 1);
 
-#ifdef RC_RING_REG_SHADOW_ENABLE
 		rx_desc = LSINIC_RC_BD_DESC(rx_ring, bd_idx);
-#else
-		rx_desc = LSINIC_EP_BD_DESC(rx_ring, bd_idx);
-#endif
-#ifdef LSINIC_BD_CTX_IDX_USED
 		mem_cp128b_atomic((u8 *)&local_desc, (u8 *)rx_desc);
 		if ((local_desc.bd_status & RING_BD_STATUS_MASK) !=
 			RING_BD_HW_COMPLETE)
 			break;
 		rx_desc = &local_desc;
-#else
-		if ((rx_desc->bd_status & RING_BD_STATUS_MASK) !=
-			RING_BD_HW_COMPLETE)
-			break;
-
-		/* This memory barrier is needed to keep us from reading
-		 * any other fields out of the rx_desc until we know the
-		 * descriptor has been written back
-		 */
-		rmb();
-#endif
 
 		new_skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
 				rx_ring->data_room);
@@ -3090,22 +2959,9 @@ lsinic_tx_map(struct lsinic_ring *tx_ring,
 
 	cmd_type |= LSINIC_BD_CMD_EOP | size;
 	rc_tx_desc->len_cmd = cmd_type;
-
-#ifdef LSINIC_BD_CTX_IDX_USED
 	rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
 	rc_tx_desc->bd_status |= RING_BD_AVAILABLE;
 	mem_cp128b_atomic((u8 *)ep_tx_desc, (u8 *)rc_tx_desc);
-#else
-	rc_tx_desc->sw_ctx = (uint64_t)tx_buffer;
-	rc_tx_desc->bd_status = RING_BD_AVAILABLE;
-
-	memcpy(ep_tx_desc, rc_tx_desc,
-		offsetof(struct lsinic_bd_desc, desc));
-	wmb();
-	rc_tx_desc->sw_ctx = ioread64(&ep_tx_desc->sw_ctx);
-
-	ep_tx_desc->desc = rc_tx_desc->desc;
-#endif
 
 	tx_ring->tx_avail_idx++;
 
@@ -3155,9 +3011,7 @@ lsinic_xmit_frame_ring(struct sk_buff *skb,
 	int gso;
 	struct lsinic_bd_desc *rc_tx_desc;
 	u16 bd_idx;
-#ifdef LSINIC_BD_CTX_IDX_USED
 	u16 txe_idx;
-#endif
 	u32 status;
 
 	if (skb_shinfo(skb)->nr_frags > 1)
@@ -3173,12 +3027,8 @@ lsinic_xmit_frame_ring(struct sk_buff *skb,
 	if (status != RING_BD_READY)
 		return NETDEV_TX_BUSY;
 
-#ifdef LSINIC_BD_CTX_IDX_USED
 	txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
 	first = &tx_ring->tx_buffer_info[txe_idx];
-#else
-	first = (struct lsinic_tx_buffer *)rc_tx_desc->sw_ctx;
-#endif
 
 	first->skb = skb;
 	first->bytecount = skb->len;
@@ -3240,12 +3090,7 @@ lsinic_xmit_frame(struct sk_buff *skb,
 
 	tx_ring = adapter->tx_ring[skb->queue_mapping];
 
-	#ifdef RC_RING_REG_SHADOW_ENABLE
-		ret_val = tx_ring->rc_reg->sr;
-	#else
-		ret_val = LSINIC_READ_REG(&tx_ring->ep_reg->sr);
-	#endif
-
+	ret_val = tx_ring->rc_reg->sr;
 	if (ret_val == LSINIC_QUEUE_STOP) {
 		if (ret_val != tx_ring->ep_sr)
 			pr_warn("inic: ep-rx queue down\n");

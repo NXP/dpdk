@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <time.h>
@@ -423,6 +423,56 @@ lsinic_dev_id_to_dpaa2_dev(int eth_id)
 }
 
 static void
+lsinic_parse_rxq_cnf_type(const char *cnf_env,
+	struct lsinic_adapter *adapter)
+{
+	char *penv = getenv(cnf_env);
+
+	if (!penv)
+		return;
+
+	if (atoi(penv) == RC_XMIT_BD_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_BD_CNF);
+	} else if (atoi(penv) == RC_XMIT_RING_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_RING_CNF);
+	} else if (atoi(penv) == RC_XMIT_INDEX_CNF) {
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_INDEX_CNF);
+	} else {
+		LSXINIC_PMD_INFO("%s:%d-%s,%d-%s,%d-%s",
+			cnf_env,
+			RC_XMIT_BD_CNF, "BD confirm",
+			RC_XMIT_RING_CNF, "RING confirm",
+			RC_XMIT_INDEX_CNF, "INDEX confirm");
+	}
+}
+
+static void
+lsinic_parse_txq_notify_type(const char *notify_env,
+	struct lsinic_adapter *adapter)
+{
+	char *penv = getenv(notify_env);
+
+	if (!penv)
+		return;
+
+	if (atoi(penv) == EP_XMIT_LBD_TYPE) {
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+			EP_XMIT_LBD_TYPE);
+	} else if (atoi(penv) == EP_XMIT_SBD_TYPE) {
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+			EP_XMIT_SBD_TYPE);
+	} else {
+		LSXINIC_PMD_INFO("%s:%d-%s,%d-%s",
+			notify_env,
+			EP_XMIT_LBD_TYPE, "LBD notify",
+			EP_XMIT_SBD_TYPE, "SBD notify");
+	}
+}
+
+static void
 lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 {
 	char env_name[128];
@@ -443,11 +493,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_ORP;
 
-	/* Write BD of RXQ from EP to RC by DMA of its TXQ pair.*/
-	penv = getenv("LSINIC_RXQ_WRITE_BD_BY_DMA");
-	if (penv)
-		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_WBD_DMA;
-
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
@@ -460,61 +505,27 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
 
-	if (adapter->cap & (LSINIC_CAP_XFER_COMPLETE |
-		LSINIC_EP_CAP_RXQ_ORP)) {
+	if ((adapter->cap & LSINIC_CAP_XFER_COMPLETE) ||
+		(adapter->ep_cap & LSINIC_EP_CAP_RXQ_ORP)) {
 		/** Index confirm as default*/
-		LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-			EGRESS_INDEX_CNF);
-		penv = getenv(cnf_env);
-		if (penv) {
-			if (atoi(penv) == EGRESS_BD_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_BD_CNF);
-			} else if (atoi(penv) == EGRESS_RING_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_RING_CNF);
-			} else if (atoi(penv) == EGRESS_INDEX_CNF) {
-				LSINIC_CAP_XFER_EGRESS_CNF_SET(adapter->cap,
-					EGRESS_INDEX_CNF);
-			} else {
-				LSXINIC_PMD_INFO("%s:%d-%s,%d-%s,%d-%s",
-					cnf_env,
-					EGRESS_BD_CNF, "BD confirm",
-					EGRESS_RING_CNF, "RING confirm",
-					EGRESS_INDEX_CNF, "INDEX confirm");
-			}
-		}
+		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
+			RC_XMIT_INDEX_CNF);
+		lsinic_parse_rxq_cnf_type(cnf_env, adapter);
 	}
 
-	LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-		INGRESS_RING_NOTIFY);
-	penv = getenv(notify_env);
-	if (penv) {
-		if (atoi(penv) == INGRESS_BD_NOTIFY) {
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-				INGRESS_BD_NOTIFY);
-		} else if (atoi(penv) == INGRESS_RING_NOTIFY) {
-			LSINIC_CAP_XFER_INGRESS_NOTIFY_SET(adapter->cap,
-				INGRESS_RING_NOTIFY);
-		} else {
-			LSXINIC_PMD_INFO("%s:%d-%s,%d-%s",
-				notify_env,
-				INGRESS_BD_NOTIFY, "BD notify",
-				INGRESS_RING_NOTIFY, "RING notify");
-		}
-	}
-
-	penv = getenv("LSINIC_RXQ_READ_BD_BY_DMA");
-	if (penv)
-		adapter->cap |= LSINIC_CAP_XFER_TX_BD_UPDATE;
-
-	penv = getenv("LSINIC_TXQ_READ_BD_BY_DMA");
-	if (penv)
-		adapter->cap |= LSINIC_CAP_XFER_RX_BD_UPDATE;
+	LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_SET(adapter->cap,
+		EP_XMIT_SBD_TYPE);
+	lsinic_parse_txq_notify_type(notify_env, adapter);
 
 	penv = getenv("LSINIC_XFER_HOST_ACCESS_EP_MEM");
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
+
+	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
+		(adapter->cap & LSINIC_CAP_XFER_COMPLETE) &&
+		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
+		EP_XMIT_SBD_TYPE)
+		adapter->cap |= LSINIC_CAP_XFER_ORDER_PRSV;
 
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
 		return;
@@ -839,7 +850,7 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	return 0;
 }
 
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 static uint64_t s_cycs_per_us;
 static uint64_t
 calculate_cycles_per_us(void)
@@ -876,7 +887,9 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 
 	vendor_id = NXP_PCI_VENDOR_ID;
 	class_id = NXP_PCI_CLASS_ID;
-	if (pex_type == PEX_LX2160_REV1 || pex_type == PEX_LX2160_REV2)
+	if (pex_type == PEX_LX2160_REV2)
+		device_id = lx_rev2_pciep_default_dev_id();
+	else if (pex_type == PEX_LX2160_REV1)
 		device_id = NXP_PCI_DEV_ID_LX2160A;
 	else if (pex_type == PEX_LS208X)
 		device_id = NXP_PCI_DEV_ID_LS2088A;
@@ -899,15 +912,20 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		penv = getenv(env_name);
 		if (penv)
 			class_id = strtol(penv, 0, 16);
+	} else {
+		sprintf(env_name, "LSINIC_PCIE%d_PF%d_VF_DEVICE_ID",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+		penv = getenv(env_name);
+		if (penv)
+			device_id = strtol(penv, 0, 16);
 	}
 
-	if (!lsinic_dev->is_vf) {
-		err = lsx_pciep_ctl_dev_set(vendor_id,
-				device_id, class_id,
-				lsinic_dev->pcie_id, lsinic_dev->pf);
-		if (err)
-			return err;
-	}
+	err = lsx_pciep_fun_set(vendor_id,
+			device_id, class_id,
+			lsinic_dev->pcie_id,
+			lsinic_dev->pf, lsinic_dev->is_vf);
+	if (err)
+		return err;
 
 	lsinic_netdev_env_init(eth_dev);
 	lsinic_init_bar_addr(lsinic_dev);
@@ -930,7 +948,7 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	}
 	lsinic_set_init_flag(adapter);
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 	adapter->cycs_per_us = calculate_cycles_per_us();
 #endif
 
@@ -1218,7 +1236,7 @@ rte_lsinic_dev_atomic_write_link_status(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	uint64_t rc_reg_addr)
 {
@@ -1228,23 +1246,6 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	struct lsinic_dev_reg *cfg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
-	int ring_total_size;
-
-	ring_total_size = adapter->num_rx_queues *
-					adapter->rx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
-	ring_total_size += adapter->num_tx_queues *
-					adapter->tx_ring_bd_count *
-					sizeof(struct lsinic_bd_desc);
-
-	/** RX complete ring to notify RC recv complete.*/
-	ring_total_size += adapter->num_rx_queues *
-					adapter->rx_ring_bd_count *
-					sizeof(uint8_t);
-	/** TX complete ring to notify RC xmit complete.*/
-	ring_total_size += adapter->num_tx_queues *
-					adapter->tx_ring_bd_count *
-					sizeof(uint8_t);
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	adapter->rc_ring_phy_base = rc_reg_addr;
@@ -1258,8 +1259,8 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 		if (cfg->rbp_enable) {
 			adapter->rc_ring_virt_base =
 				lsx_pciep_set_ob_win(lsinic_dev,
-							rc_reg_addr,
-							ring_total_size);
+					rc_reg_addr,
+					LSINIC_RING_BAR_MAX_SIZE);
 		} else {
 			adapter->rc_ring_virt_base =
 				lsinic_dev->ob_virt_base +
@@ -1267,9 +1268,18 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 					lsinic_dev->ob_map_bus_base;
 		}
 	}
+
+	if (!adapter->rc_ring_virt_base)
+		return -EIO;
+
+	if (!lsx_pciep_bus_ob_mapped(lsinic_dev,
+		rc_reg_addr + LSINIC_RING_BAR_MAX_SIZE))
+		return -EIO;
+
+	return 0;
 }
 
-void
+int
 lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 {
 	uint64_t rc_reg_addr = 0;
@@ -1278,7 +1288,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int sim;
+	int sim, ret = 0;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1300,7 +1310,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	if (lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT) {
 		int i;
 
-		for (i = 0; i < 32; i++)
+		for (i = 0; i < LSINIC_DEV_MSIX_MAX_NB; i++)
 			LSINIC_WRITE_REG(&rcs_reg->msix_mask[i], 0x01);
 	}
 
@@ -1313,34 +1323,43 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	if (adapter->rc_ring_phy_base == 0 ||
 		adapter->rc_ring_phy_base != rc_reg_addr) {
 		if (rc_reg_addr)
-			lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
+			ret = lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
 		else
-			LSXINIC_PMD_ERR("Reconfig from RC ERROR!");
+			ret = -EIO;
+		if (ret) {
+			LSXINIC_PMD_ERR("Map RC ring failed");
+
+			return ret;
+		}
 		LSXINIC_PMD_DBG("Reconfig from RC rc_reg_addr:%lX",
 			rc_reg_addr);
 	}
 
-	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->rxdma_regl));
-	adapter->rx_pcidma_dbg = rc_reg_addr;
-	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->txdma_regl));
-	adapter->tx_pcidma_dbg = rc_reg_addr;
-	if (LSINIC_CAP_XFER_EGRESS_CNF_GET(adapter->cap) ==
-		EGRESS_RING_CNF) {
+	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
+		RC_XMIT_RING_CNF) {
 		adapter->complete_src =
-			rte_malloc(NULL, LSINIC_EP2RC_COMPLETE_RING_SIZE,
-				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+			rte_malloc(NULL, LSINIC_BD_CNF_RING_SIZE,
+				LSINIC_BD_CNF_RING_SIZE);
 		if (adapter->complete_src) {
 			memset(adapter->complete_src, RING_BD_HW_COMPLETE,
-				LSINIC_EP2RC_COMPLETE_RING_SIZE);
+				LSINIC_BD_CNF_RING_SIZE);
 		} else {
-			LSXINIC_PMD_WARN("complete src malloc failed");
+			LSXINIC_PMD_ERR("complete src malloc failed");
+			return -ENOMEM;
 		}
 	} else {
 		adapter->complete_src = NULL;
 	}
 
-	if (!sim)
-		lsx_pciep_msix_init(lsinic_dev);
+	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
+	adapter->rc_dma_elt_size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
+
+	if (!sim) {
+		lsx_pciep_multi_msix_init(lsinic_dev,
+			LSINIC_DEV_MSIX_MAX_NB);
+	}
+
+	return 0;
 }
 
 /* return 0 means link status changed, -1 means not changed */
@@ -1516,6 +1535,11 @@ rte_lsinic_remove(struct rte_lsx_pciep_device *lsinic_dev)
 	lsinic_dev_uninit(eth_dev);
 
 	lsinic_uninit_bar_addr(lsinic_dev);
+
+	if (lsinic_dev->msix_addr)
+		free(lsinic_dev->msix_addr);
+	if (lsinic_dev->msix_data)
+		free(lsinic_dev->msix_data);
 
 	rte_free(eth_dev->process_private);
 	lsinic_dma_uninit();

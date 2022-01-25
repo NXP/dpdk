@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <stdio.h>
@@ -24,7 +24,9 @@ static int lsinic_if_init(struct rte_eth_dev *dev)
 	struct lsinic_adapter *adapter = dev->process_private;
 
 	adapter->rc_state = LSINIC_DEV_INITED;
-	lsinic_reset_config_fromrc(adapter);
+
+	if (lsinic_reset_config_fromrc(adapter))
+		return PCIDEV_RESULT_FAILED;
 
 	return PCIDEV_RESULT_SUCCEED;
 }
@@ -188,15 +190,22 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	struct lsinic_dev_reg *reg;
 	uint32_t command, status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
-	int print_status = 0;
+	int print_status = 0, ret;
 	struct lsinic_queue *queue = NULL;
+	cpu_set_t cpuset;
 
 	if (penv)
 		print_status = atoi(penv);
 
-#ifdef LSXINIC_LATENCY_TEST
+#ifdef LSXINIC_LATENCY_PROFILING
 		print_status = 1;
 #endif
+
+	CPU_SET(0, &cpuset);
+	ret = pthread_setaffinity_np(pthread_self(),
+			sizeof(cpu_set_t), &cpuset);
+	LSXINIC_PMD_INFO("Cmd/status thread affinity to control cpu 0 %s",
+		ret ? "failed" : "success");
 
 	while (1) {
 		first_dev = lsx_pciep_first_dev();
@@ -214,7 +223,8 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 					LSINIC_DEV_REG_OFFSET);
 			if (dev->eth_dev->data->rx_queues) {
 				queue = dev->eth_dev->data->rx_queues[0];
-				if (queue && queue->dma_test.pci_addr)
+				if (queue && queue->dma_test.status ==
+					LSINIC_PCI_DMA_TEST_START)
 					print_status = 1;
 			}
 

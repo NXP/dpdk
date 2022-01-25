@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSXINIC_EP_ETHDEV_H_
@@ -71,15 +71,14 @@ struct lsinic_hw {
  */
 #define LSINIC_EP_CAP_TXQ_DMA_NO_RSP 0x00000001
 #define LSINIC_EP_CAP_RXQ_ORP 0x00000002
-#define LSINIC_EP_CAP_RXQ_WBD_DMA 0x00000004
-#define LSINIC_EP_CAP_HW_MERGE_PKTS 0x00000008
-#define LSINIC_EP_CAP_HW_SPLIT_PKTS 0x00000010
-#define LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS 0x00000020
-#define LSINIC_EP_CAP_SW_MERGE_PKTS 0x00000040
-#define LSINIC_EP_CAP_SW_SPLIT_PKTS 0x00000080
-#define LSINIC_EP_CAP_HW_DIRECT_EGRESS 0x00000100
-#define LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX 0x00000200
-#define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX 0x00000400
+#define LSINIC_EP_CAP_HW_MERGE_PKTS 0x00000004
+#define LSINIC_EP_CAP_HW_SPLIT_PKTS 0x00000008
+#define LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS 0x00000010
+#define LSINIC_EP_CAP_SW_MERGE_PKTS 0x00000020
+#define LSINIC_EP_CAP_SW_SPLIT_PKTS 0x00000040
+#define LSINIC_EP_CAP_HW_DIRECT_EGRESS 0x00000080
+#define LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX 0x00000100
+#define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX 0x00000200
 
 struct lsinic_adapter {
 	uint8_t *hw_addr;
@@ -138,6 +137,8 @@ struct lsinic_adapter {
 
 	uint32_t merge_threshold;
 	uint32_t data_room_size;
+	uint64_t rc_dma_base;
+	uint32_t rc_dma_elt_size;
 
 	uint64_t cycs_per_us;
 };
@@ -185,7 +186,7 @@ int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
 
-void lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
 int
 lsinic_split_dev_flow_create(struct lsinic_adapter *adapter);

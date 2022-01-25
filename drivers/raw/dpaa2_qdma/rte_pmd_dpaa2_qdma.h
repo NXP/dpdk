@@ -58,6 +58,8 @@ enum {
 
 #define RTE_QDMA_VQ_NO_RESPONSE			(1ULL << 3)
 
+#define RTE_QDMA_VQ_FLE_PRE_POPULATE	(1ULL << 4)
+
 /** States if the source addresses is physical. */
 #define RTE_QDMA_JOB_SRC_PHY		(1ULL)
 

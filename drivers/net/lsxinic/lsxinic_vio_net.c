@@ -467,7 +467,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 				VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				(status & VIRTIO_CONFIG_STATUS_NEEDS_RESET)) {
 				/* Wait for the driver to reset the device*/
-				lsx_pciep_msix_cmd_send(adapter->msix_cfg_addr,
+				lsx_pciep_start_msix(adapter->msix_cfg_addr,
 					adapter->msix_cfg_cmd);
 			}
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -39,15 +39,14 @@
 
 #define LSINIC_RING_FULL_THRESH_COUNT 1
 
-#undef LSXINIC_LATENCY_TEST
-
 /**
  * Structure associated with each descriptor of the TX ring of a TX queue.
  */
 struct lsinic_sw_bd {
 	struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
 	struct lsinic_bd_desc bd;
-	uint32_t align_dma_offset;
+	uint16_t align_dma_offset;
+	uint16_t mg;
 	struct lsinic_mg_header mg_header;
 	union {
 		char *complete;
@@ -69,12 +68,12 @@ enum lsinic_pci_dma_test_status {
 };
 
 struct lsinic_pci_dma_test {
-	uint64_t pci_addr;
 	enum lsinic_pci_dma_test_status status;
 	uint16_t pkt_len;
+	uint16_t burst_size;
+	int sync_mode;
 	struct rte_qdma_queue_config qdma_cfg;
 	int dma_vq;
-	uint16_t latency_burst;
 	struct rte_mbuf **mbufs;
 	struct rte_ring *jobs_ring;
 };
@@ -87,22 +86,9 @@ struct lsinic_pci_dma_test {
 
 #define SP_RING_MAX_NUM (1024)
 
-enum ep2rc_update_type {
-	EP2RC_BD_UPDATE,
-	EP2RC_RING_UPDATE,
-	EP2RC_BD_DMA_UPDATE,
-	EP2RC_RING_DMA_UPDATE,
-	EP2RC_INDEX_UPDATE,
-	EP2RC_INVALID_UPDATE
-};
-
-union ep_ep2rc_ring {
-#ifdef LSINIC_BD_CTX_IDX_USED
-	struct ep2rc_notify *tx_notify;
-#endif
-	uint8_t *rx_complete;
-	uint32_t *free_idx;
-	void *union_ring;
+enum queue_dma_bd_update {
+	DMA_BD_EP2RC_UPDATE = (1 << 0),
+	DMA_BD_RC2EP_UPDATE = (1 << 1)
 };
 
 typedef struct lsinic_sw_bd *
@@ -121,7 +107,13 @@ struct lsinic_queue {
 	/* flag */
 	uint32_t flag;
 	uint64_t cyc_diff_total;
-	uint64_t cyc_diff_curr;
+	double avg_latency;
+	uint64_t avg_x2_total;
+	uint64_t avg_x4_total;
+	uint64_t avg_x10_total;
+	uint64_t avg_x20_total;
+	uint64_t avg_x40_total;
+	uint64_t avg_x100_total;
 
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 
@@ -129,15 +121,37 @@ struct lsinic_queue {
 	struct lsinic_ring_reg *ep_reg; /* ring reg point to EP memory */
 	struct lsinic_ring_reg *rc_reg; /* ring reg point to RC memory */
 
-	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP mem */
-	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC mem */
-	union ep_ep2rc_ring ep2rc; /* ep2rc ring point to RC mem */
-	enum ep2rc_update_type ep2rc_update;
+	/* point to EP mem */
+	enum EP_MEM_BD_TYPE ep_mem_bd_type;
+	struct lsinic_bd_desc *local_src_bd_desc;
+	void *ep_bd_shared_addr;
+	/* Read only for EP*/
+	const struct lsinic_bd_desc *ep_bd_desc;
+	/* For TX ring*/
+	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
+
+	/* For RX ring*/
+	struct lsinic_ep_rx_src_addrl *rx_src_addrl;
+	struct lsinic_ep_rx_src_addrx *rx_src_addrx;
+
+	/* point to RC mem */
+	enum RC_MEM_BD_TYPE rc_mem_bd_type;
+	void *rc_bd_mapped_addr;
+
+	struct lsinic_bd_desc *rc_bd_desc;
+	/* For TX ring*/
+	struct lsinic_rc_rx_len_cmd *tx_len_cmd;
+
+	/* For RX ring*/
+	struct lsinic_rc_tx_bd_cnf *rx_complete;
+	struct lsinic_rc_tx_idx_cnf *free_idx;
+
+	uint32_t dma_bd_update;
 	union {
-#ifdef LSINIC_BD_CTX_IDX_USED
-		struct ep2rc_notify *local_notify;
-#endif
-		uint32_t *local_free_idx;
+		/* For TX ring*/
+		struct lsinic_rc_rx_len_cmd *local_src_len_cmd;
+		/* For RX ring*/
+		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
 	};
 	struct lsinic_sw_bd *sw_ring;
 	struct lsinic_sw_bd **sw_bd_pool;
@@ -155,12 +169,9 @@ struct lsinic_queue {
 	struct rte_qdma_job *dma_jobs;
 
 	struct rte_qdma_job *e2r_bd_dma_jobs;
-	struct rte_qdma_job *r2e_bd_dma_jobs;
 	uint16_t bd_dma_step;
 	int wdma_bd_start;
 	int wdma_bd_nb;
-
-	uint16_t rdma_idx;
 
 	uint32_t core_id;
 	int32_t dma_id;
@@ -173,7 +184,7 @@ struct lsinic_queue {
 	/* MSI-X */
 	uint32_t msix_irq;
 	uint32_t msix_cmd;
-	uint64_t msix_vaddr;
+	void *msix_vaddr;
 	uint64_t new_tsc;
 	uint64_t new_time_thresh;
 	uint16_t new_desc;
@@ -329,54 +340,37 @@ static __rte_always_inline void
 lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx)
 {
-#ifdef LSINIC_BD_CTX_IDX_USED
 	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
-		(const uint8_t *)&queue->ep_bd_desc[used_idx]);
-#else
-	/* Update sw_ctx and desc only. total 16B size.
-	 * Don't update pkt_addr, otherwise mem barrier is required.
-	 */
-	if (queue->ep_bd_desc[used_idx].bd_status & RING_BD_ADDR_CHECK) {
-		queue->rc_bd_desc[used_idx].pkt_addr =
-			queue->ep_bd_desc[used_idx].pkt_addr;
-		rte_wmb();
-	}
-	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx].sw_ctx,
-		(const uint8_t *)&queue->ep_bd_desc[used_idx].sw_ctx);
-	if (queue->ep_bd_desc[used_idx].bd_status & RING_BD_ADDR_CHECK) {
-		queue->ep_bd_desc[used_idx].len_cmd =
-			queue->rc_bd_desc[used_idx].len_cmd;
-		rte_rmb();
-	}
-#endif
+		(const uint8_t *)&queue->local_src_bd_desc[used_idx]);
 }
 
-#ifdef LSINIC_BD_CTX_IDX_USED
 static __rte_always_inline void
 lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx, int remote)
 {
-	struct ep2rc_notify *tx_notify = &queue->ep2rc.tx_notify[used_idx];
-	struct ep2rc_notify *local_notify = &queue->local_notify[used_idx];
-	struct lsinic_bd_desc *ep_bd_desc = &queue->ep_bd_desc[used_idx];
-	uint32_t *local_32 = (uint32_t *)local_notify;
-	uint32_t *remote_32 = (uint32_t *)tx_notify;
+	struct lsinic_rc_rx_len_cmd *tx_len_cmd =
+		&queue->tx_len_cmd[used_idx];
+	struct lsinic_rc_rx_len_cmd *local_len_cmd =
+		&queue->local_src_len_cmd[used_idx];
+	struct lsinic_bd_desc *ep_bd_desc =
+		&queue->local_src_bd_desc[used_idx];
+	uint32_t *local_32 = (uint32_t *)local_len_cmd;
+	uint32_t *remote_32 = (uint32_t *)tx_len_cmd;
 	uint16_t cnt;
 
-	local_notify->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
+	local_len_cmd->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
 	if (ep_bd_desc->len_cmd & LSINIC_BD_CMD_MG) {
-		cnt = ((ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
-			LSINIC_BD_MG_NUM_SHIFT) + 1;
+		cnt = (ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
+			LSINIC_BD_MG_NUM_SHIFT;
 	} else {
-		cnt = 1;
+		cnt = 0;
 	}
-	EP2RC_TX_IDX_CNT_SET(local_notify->cnt_idx,
+	EP2RC_TX_IDX_CNT_SET(local_len_cmd->cnt_idx,
 		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),
 		cnt);
 	if (remote)
 		*remote_32 = *local_32;
 }
-#endif
 
 static __rte_always_inline void
 lsinic_bd_read_rc_bd_desc(struct lsinic_queue *queue,
@@ -391,19 +385,14 @@ static __rte_always_inline void
 lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
 	uint16_t used_idx, struct lsinic_bd_desc *bd)
 {
-	rte_memcpy(&queue->ep_bd_desc[used_idx], bd,
+	rte_memcpy(&queue->local_src_bd_desc[used_idx], bd,
 		sizeof(struct lsinic_bd_desc));
-#ifdef LSINIC_BD_CTX_IDX_USED
-	queue->ep_bd_desc[used_idx].bd_status &=
+	queue->local_src_bd_desc[used_idx].bd_status &=
 		~((uint32_t)RING_BD_STATUS_MASK);
-	queue->ep_bd_desc[used_idx].bd_status |=
+	queue->local_src_bd_desc[used_idx].bd_status |=
 		RING_BD_ADDR_CHECK;
-	queue->ep_bd_desc[used_idx].bd_status |=
+	queue->local_src_bd_desc[used_idx].bd_status |=
 		RING_BD_HW_COMPLETE;
-#else
-	queue->ep_bd_desc[used_idx].bd_status =
-		RING_BD_HW_COMPLETE | RING_BD_ADDR_CHECK;
-#endif
 }
 
 void lsinic_rx_queue_release_mbufs(struct lsinic_rx_queue *rxq);

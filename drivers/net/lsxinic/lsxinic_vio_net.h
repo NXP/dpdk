@@ -83,7 +83,7 @@ struct lsxvio_adapter {
 	uint8_t port_mac_addr[RTE_ETHER_ADDR_LEN];
 	uint16_t msix_config;
 	uint32_t msix_cfg_cmd;
-	uint64_t msix_cfg_addr;
+	void *msix_cfg_addr;
 
 	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUE_PAIRS * 2];
 	struct rte_dpaa2_device *merge_dev;

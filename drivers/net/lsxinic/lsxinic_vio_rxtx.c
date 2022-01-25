@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #include <sys/queue.h>
 
@@ -84,8 +84,6 @@ lsxvio_queue_dma_release(struct lsxvio_queue *q)
 				q->dma_jobs[i].usr_elem);
 			rte_mempool_put(q->qdma_pool,
 				q->e2r_bd_dma_jobs[i].usr_elem);
-			rte_mempool_put(q->qdma_pool,
-				q->r2e_bd_dma_jobs[i].usr_elem);
 		}
 		rte_mempool_free(q->qdma_pool);
 		q->qdma_pool = NULL;
@@ -213,22 +211,20 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 		for (i = 0; i < q->nb_desc; i++) {
 			q->dma_jobs[i].usr_elem = NULL;
 			q->e2r_bd_dma_jobs[i].usr_elem = NULL;
-			q->r2e_bd_dma_jobs[i].usr_elem = NULL;
 			rte_mempool_get(q->qdma_pool,
 				&q->dma_jobs[i].usr_elem);
 			rte_mempool_get(q->qdma_pool,
 				&q->e2r_bd_dma_jobs[i].usr_elem);
-			rte_mempool_get(q->qdma_pool,
-				&q->r2e_bd_dma_jobs[i].usr_elem);
 			if (!q->dma_jobs[i].usr_elem ||
-				!q->e2r_bd_dma_jobs[i].usr_elem ||
-				!q->r2e_bd_dma_jobs[i].usr_elem) {
+				!q->e2r_bd_dma_jobs[i].usr_elem) {
 				rte_rawdev_queue_release(q->dma_id,
 					q->dma_vq);
 				q->dma_vq = -1;
 
 				return -1;
 			}
+			memset(q->dma_jobs[i].usr_elem, 0, 4096);
+			memset(q->e2r_bd_dma_jobs[i].usr_elem, 0, 4096);
 		}
 	}
 
@@ -268,8 +264,6 @@ lsxvio_queue_free_swring(struct lsxvio_queue *q)
 		rte_free(q->dma_jobs);
 	if (q->e2r_bd_dma_jobs)
 		rte_free(q->e2r_bd_dma_jobs);
-	if (q->r2e_bd_dma_jobs)
-		rte_free(q->r2e_bd_dma_jobs);
 }
 
 void
@@ -336,14 +330,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 			RTE_CACHE_LINE_SIZE, socket_id);
 	if (!q->e2r_bd_dma_jobs) {
 		LSXINIC_PMD_ERR("Failed to create EP 2 RC BD DMA jobs");
-		goto _err;
-	}
-
-	q->r2e_bd_dma_jobs = rte_zmalloc_socket(NULL,
-			sizeof(struct rte_qdma_job) * nb_desc,
-			RTE_CACHE_LINE_SIZE, socket_id);
-	if (!q->r2e_bd_dma_jobs) {
-		LSXINIC_PMD_ERR("Failed to create RC 2 EP BD DMA jobs");
 		goto _err;
 	}
 
@@ -989,7 +975,7 @@ lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 			(q->new_desc >= q->new_desc_thresh ||
 			(lsxvio_timeout(q)))) {
 			/* MSI */
-			lsx_pciep_msix_cmd_send(q->msix_vaddr, q->msix_cmd);
+			lsx_pciep_start_msix(q->msix_vaddr, q->msix_cmd);
 			q->new_desc = 0;
 		}
 	}

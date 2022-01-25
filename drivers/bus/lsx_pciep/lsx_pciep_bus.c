@@ -49,46 +49,6 @@
 
 #define LSX_PCIEP_BUS_NAME	lsx_pciep
 
-static uint32_t s_pf0_enable = 1;
-static uint32_t s_pf1_enable = 1;
-static uint32_t s_pf0_vfnum;
-static uint32_t s_pf1_vfnum;
-
-static int s_ep_sim;
-static int s_ep_virtio;
-
-int lsx_pciep_pf_available(enum lsx_pcie_pf_idx idx)
-{
-	if (idx == PF0_IDX)
-		return s_pf0_enable;
-
-	if (idx == PF1_IDX)
-		return s_pf1_enable;
-
-	return 0;
-}
-
-int lsx_pciep_vf_number(enum lsx_pcie_pf_idx idx)
-{
-	if (idx == PF0_IDX)
-		return s_pf0_vfnum;
-
-	if (idx == PF1_IDX)
-		return s_pf1_vfnum;
-
-	return 0;
-}
-
-int lsx_pciep_sim(void)
-{
-	return s_ep_sim;
-}
-
-int lsx_pciep_virtio(void)
-{
-	return s_ep_virtio;
-}
-
 static struct rte_lsx_pciep_bus lsx_pciep_bus;
 
 static int
@@ -156,18 +116,18 @@ lsx_pciep_find_device(const struct rte_device *start, rte_dev_cmp_t cmp,
 static int lsx_pciep_create_dev(uint8_t pcie_idx)
 {
 	struct rte_lsx_pciep_device *ep_dev;
-	struct lsx_pciep_ctl_dev *ctl_dev;
+	struct lsx_pciep_ctl_hw *ctlhw;
 	uint32_t i;
 	int ret = 0;
 
-	ctl_dev = lsx_pciep_ctl_get_dev(pcie_idx);
-	if (!ctl_dev)
+	ctlhw = lsx_pciep_get_dev(pcie_idx);
+	if (!ctlhw)
 		return -ENODEV;
 
-	if (!ctl_dev->ctl_hw->ep_enable)
+	if (!ctlhw->ep_enable)
 		return -ENODEV;
 
-	if (ctl_dev->ctl_hw->pf_enable[PF0_IDX]) {
+	if (ctlhw->pf_enable[PF0_IDX]) {
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
 			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
@@ -184,13 +144,13 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 		if (lsx_pciep_hw_vio_get(pcie_idx, PF0_IDX))
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf0",
-				ctl_dev->ctl_hw->index);
+				ctlhw->hw.index);
 		else
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf0",
-				ctl_dev->ctl_hw->index);
+				ctlhw->hw.index);
 
-		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->pcie_id = ctlhw->hw.index;
 
 		ep_dev->device.name = ep_dev->name;
 
@@ -198,7 +158,7 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 		ret++;
 	}
 
-	if (ctl_dev->ctl_hw->pf_enable[PF1_IDX]) {
+	if (ctlhw->pf_enable[PF1_IDX]) {
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
 			LSX_PCIEP_BUS_ERR("%s line:%d Out of memory",
@@ -215,13 +175,13 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 		if (lsx_pciep_hw_vio_get(pcie_idx, PF1_IDX))
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 					LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf1",
-					ctl_dev->ctl_hw->index);
+					ctlhw->hw.index);
 		else
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
 					LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf1",
-					ctl_dev->ctl_hw->index);
+					ctlhw->hw.index);
 
-		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->pcie_id = ctlhw->hw.index;
 
 		ep_dev->device.name = ep_dev->name;
 
@@ -230,7 +190,7 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 	}
 
 	for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
-		if (!ctl_dev->ctl_hw->vf_enable[PF0_IDX][i])
+		if (!ctlhw->vf_enable[PF0_IDX][i])
 			continue;
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
@@ -250,15 +210,15 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 				RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_VIRT_NAME_PREFIX
 				"_%d_pf0_vf%d",
-				ctl_dev->ctl_hw->index, i);
+				ctlhw->hw.index, i);
 		else
 			snprintf(ep_dev->name,
 				RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_NXP_NAME_PREFIX
 				"_%d_pf0_vf%d",
-				ctl_dev->ctl_hw->index, i);
+				ctlhw->hw.index, i);
 
-		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->pcie_id = ctlhw->hw.index;
 		ep_dev->device.name = ep_dev->name;
 
 		lsx_pciep_insert_device_list(ep_dev);
@@ -266,7 +226,7 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 	}
 
 	for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
-		if (!ctl_dev->ctl_hw->vf_enable[PF1_IDX][i])
+		if (!ctlhw->vf_enable[PF1_IDX][i])
 			continue;
 		ep_dev = calloc(1, sizeof(struct rte_lsx_pciep_device));
 		if (!ep_dev) {
@@ -286,15 +246,15 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 				RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_VIRT_NAME_PREFIX
 				"_%d_pf1_vf%d",
-				ctl_dev->ctl_hw->index, i);
+				ctlhw->hw.index, i);
 		else
 			snprintf(ep_dev->name,
 				RTE_DEV_NAME_MAX_LEN,
 				LSX_PCIEP_NXP_NAME_PREFIX
 				"_%d_pf1_vf%d",
-				ctl_dev->ctl_hw->index, i);
+				ctlhw->hw.index, i);
 
-		ep_dev->pcie_id = ctl_dev->ctl_hw->index;
+		ep_dev->pcie_id = ctlhw->hw.index;
 		ep_dev->device.name = ep_dev->name;
 
 		lsx_pciep_insert_device_list(ep_dev);

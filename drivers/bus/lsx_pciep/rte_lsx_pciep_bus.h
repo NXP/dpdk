@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _RTE_LSX_PCIEP_BUS_H_
@@ -36,7 +36,7 @@ struct rte_lsx_pciep_driver;
 struct rte_lsx_pciep_device;
 struct rte_lsx_pciep_bus;
 
-#define PCIE_MAX_VF_NUM 64
+#define PCIE_MAX_VF_NUM 32
 
 #define LSX_PCIEP_NXP_NAME_PREFIX "lsxep_nxp"
 #define LSX_PCIEP_VIRT_NAME_PREFIX "lsxep_virt"
@@ -82,6 +82,7 @@ enum lsx_pcie_pf_idx {
 #define CFG_32G_SIZE	(32 * CFG_1G_SIZE)
 #define CFG_1T_SIZE		(1024 * CFG_1G_SIZE)
 
+#define LSX_PCIEP_DEV_MAX_MSIX_NB 32
 /**
  * A structure describing a PCIe EP device for each PF or VF.
  */
@@ -96,24 +97,16 @@ struct rte_lsx_pciep_device {
 	int vf;
 	int is_vf;
 	uint64_t ob_map_bus_base;
-	uint64_t ob_orig_bus_base;
 	uint64_t ob_phy_base;
 	uint8_t *ob_virt_base;
 	uint64_t ob_win_size;
-	uint32_t ob_win_idx;
+	uint16_t ob_win_nb;
 	int ob_win_init_flag;
 
 	/* MSI/MSIx information */
 	int msix_read_once;
-	uint64_t msix_addr[32];
-	uint32_t msix_data[32];
-
-	/* MSI/MSIx window setting */
-	uint64_t msix_bus_base;
-	uint64_t msix_phy_base;
-	uint8_t *msix_virt_base;
-	uint64_t msix_win_size;
-	int msix_win_init_flag;
+	void **msix_addr;
+	uint32_t *msix_data;
 
 	/* RBP window setting */
 	uint64_t rbp_win_size;
@@ -163,8 +156,6 @@ struct rte_lsx_pciep_bus {
 #define RTE_DEV_TO_LSX_PCIEP_CONST(ptr) \
 	container_of(ptr, const struct rte_lsx_pciep_device, device)
 
-int lsx_pciep_pf_available(enum lsx_pcie_pf_idx idx);
-int lsx_pciep_vf_number(enum lsx_pcie_pf_idx idx);
 enum PEX_TYPE
 lsx_pciep_type_get(uint8_t pciep_idx);
 int
@@ -176,9 +167,6 @@ lsx_pciep_hw_vio_get(uint8_t pciep_idx,
 	uint8_t pf_idx);
 
 int lsx_pciep_ctl_rbp_enable(uint8_t pcie_idx);
-int lsx_pciep_sim(void);
-int lsx_pciep_virtio(void);
-enum PEX_TYPE lsx_pciep_get_type(void);
 struct rte_lsx_pciep_device *lsx_pciep_first_dev(void);
 
 void *
@@ -189,14 +177,12 @@ lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset);
 
 void
-lsx_pciep_msix_init(struct rte_lsx_pciep_device *ep_dev);
-uint64_t
-lsx_pciep_msix_get_vaddr(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector);
-uint32_t
-lsx_pciep_msix_get_cmd(struct rte_lsx_pciep_device *ep_dev,
-	uint32_t vector);
-void lsx_pciep_msix_cmd_send(uint64_t addr, uint32_t cmd);
+lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
+	int vector_total);
+
+void lsx_pciep_start_msix(void *addr, uint32_t cmd);
+
+uint16_t lx_rev2_pciep_default_dev_id(void);
 
 uint16_t
 lsx_pciep_ctl_get_device_id(uint8_t pcie_idx,
@@ -218,6 +204,14 @@ lsx_pciep_ctl_dev_set(uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id,
 	uint8_t pcie_id, uint8_t pf);
 
+int
+lsx_pciep_fun_set(uint16_t vendor_id,
+	uint16_t device_id, uint16_t class_id,
+	uint8_t pcie_id, int pf, int is_vf);
+
+int
+lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t bus_addr);
 /**
  * Register a PCIEP bus driver.
  *
