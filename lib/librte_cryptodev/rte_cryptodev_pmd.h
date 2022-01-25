@@ -164,7 +164,10 @@ typedef int (*cryptodev_close_t)(struct rte_cryptodev *dev);
 typedef void (*cryptodev_stats_get_t)(struct rte_cryptodev *dev,
 				struct rte_cryptodev_stats *stats);
 
-
+typedef void (*cryptodev_pending_frames_t)(struct rte_cryptodev *dev, uint16_t qp_id,
+			struct rte_cryptodev_pending_frames *frames);
+typedef void (*cryptodev_sw_stats_t)(struct rte_cryptodev *dev, uint16_t qp_id,
+			struct rte_cryptodev_stats *stats);
 /**
  * Function used to reset statistics of a device.
  *
@@ -373,6 +376,8 @@ struct rte_cryptodev_ops {
 	cryptodev_info_get_t dev_infos_get;	/**< Get device info. */
 
 	cryptodev_stats_get_t stats_get;
+	cryptodev_pending_frames_t pending_frames;
+	cryptodev_sw_stats_t sw_stats;
 	/**< Get device statistics. */
 	cryptodev_stats_reset_t stats_reset;
 	/**< Reset device statistics. */

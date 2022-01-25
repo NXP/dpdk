@@ -1131,6 +1131,42 @@ rte_cryptodev_stats_get(uint8_t dev_id, struct rte_cryptodev_stats *stats)
 	return 0;
 }
 
+__rte_experimental int
+rte_cryptodev_pending_frames(uint8_t dev_id, uint16_t qp_id,
+				struct rte_cryptodev_pending_frames *frames)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_pmd_is_valid_dev(dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", dev_id);
+		return -ENODEV;
+	}
+
+	dev = &rte_crypto_devices[dev_id];
+
+	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->pending_frames, -ENOTSUP);
+	(*dev->dev_ops->pending_frames)(dev, qp_id, frames);
+	return 0;
+}
+
+__rte_experimental int
+rte_cryptodev_sw_stats(uint8_t dev_id, uint16_t qp_id,
+			 struct rte_cryptodev_stats *stats)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_pmd_is_valid_dev(dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", dev_id);
+		return -ENODEV;
+	}
+
+	dev = &rte_crypto_devices[dev_id];
+
+	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->stats_get, -ENOTSUP);
+	(*dev->dev_ops->sw_stats)(dev, qp_id, stats);
+	return 0;
+}
+
 void
 rte_cryptodev_stats_reset(uint8_t dev_id)
 {
