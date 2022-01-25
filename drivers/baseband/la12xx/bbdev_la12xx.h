@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #ifndef __BBDEV_LA12XX_H__
@@ -82,6 +82,7 @@ struct bbdev_la12xx_q_priv {
 	host_ipc_params_t *host_params; /**< Host parameters */
 	uint32_t is_host_to_modem;	/**< Direction of operation */
 	uint32_t conf_enable;		/**< Confirmation mode enabled/disabled */
+	uint32_t cd_crc_stat_addr;	/**< CRC status address for CD */
 };
 
 #define lower_32_bits(x) ((uint32_t)((uint64_t)x))

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #include <string.h>
@@ -273,6 +273,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	int instance_id = 0;
 	void *vaddr;
 	uint32_t i;
+	void *cd_crc_stat;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -350,6 +351,12 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		}
 		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
 		q_priv->feca_blk_id = 0;
+		cd_crc_stat = rte_malloc(NULL, sizeof(uint32_t), RTE_CACHE_LINE_SIZE);
+		if (!cd_crc_stat) {
+			BBDEV_LA12XX_PMD_ERR("Unable to callote cd crc mem");
+			return -1;
+		}
+		q_priv->cd_crc_stat_addr = get_l1_pcie_addr(ipc_priv, cd_crc_stat);
 		priv->num_polar_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_RAW:
@@ -759,75 +766,61 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 	se_cmd.se_cfg1.lifting_size = lifting_index;
 	se_cmd.se_cfg1.base_graph2 = base_graph2;
 	se_cmd.se_cfg1.set_index = set_index;
-	se_command->se_cfg1.raw_se_cfg1 =
-		rte_cpu_to_be_32(se_cmd.se_cfg1.raw_se_cfg1);
+	se_command->se_cfg1.raw_se_cfg1 = se_cmd.se_cfg1.raw_se_cfg1;
 
 	se_cmd.se_sizes1.raw_se_sizes1 = 0;
 	se_cmd.se_sizes1.num_input_bytes = num_input_bytes;
 	se_cmd.se_sizes1.e_floor_thresh = e_floor_thresh;
-	se_command->se_sizes1.raw_se_sizes1 =
-		rte_cpu_to_be_32(se_cmd.se_sizes1.raw_se_sizes1);
+	se_command->se_sizes1.raw_se_sizes1 = se_cmd.se_sizes1.raw_se_sizes1;
 
-	se_command->se_circ_buf = rte_cpu_to_be_32(SE_CIRC_BUF);
-	se_command->se_floor_num_output_bits =
-		rte_cpu_to_be_32(num_output_bits_floor);
-	se_command->se_ceiling_num_output_bits =
-		rte_cpu_to_be_32(num_output_bits_ceiling);
-	se_command->se_sc_x1_init = rte_cpu_to_be_32(SE_SC_X1_INIT);
-	se_command->se_sc_x2_init = rte_cpu_to_be_32(SE_SC_X2_INIT);
+	se_command->se_circ_buf = SE_CIRC_BUF;
+	se_command->se_floor_num_output_bits = num_output_bits_floor;
+	se_command->se_ceiling_num_output_bits = num_output_bits_ceiling;
+	se_command->se_sc_x1_init = SE_SC_X1_INIT;
+	se_command->se_sc_x2_init = SE_SC_X2_INIT;
 
 	data_ptr = get_data_ptr(in_op_data);
 	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 
-	se_command->se_axi_in_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
-	se_command->se_axi_in_num_bytes =
-		rte_cpu_to_be_32(in_op_data->length);
+	se_command->se_axi_in_addr_low = l1_pcie_addr;
+	se_command->se_axi_in_num_bytes = in_op_data->length;
 
 	memset(se_command->se_cb_mask, 0xFF, (8 * sizeof(uint32_t)));
 
 	se_command->se_di_start_ofst_floor[0] =
-		rte_cpu_to_be_32((int_start_ofst_floor[1] << 16) |
-		int_start_ofst_floor[0]);
+		(int_start_ofst_floor[1] << 16) | int_start_ofst_floor[0];
 	se_command->se_di_start_ofst_floor[1] =
-		rte_cpu_to_be_32((int_start_ofst_floor[3] << 16) |
-		int_start_ofst_floor[2]);
+		(int_start_ofst_floor[3] << 16) | int_start_ofst_floor[2];
 	se_command->se_di_start_ofst_floor[2] =
-		rte_cpu_to_be_32((int_start_ofst_floor[5] << 16) |
-		int_start_ofst_floor[4]);
+		(int_start_ofst_floor[5] << 16) | int_start_ofst_floor[4];
 	se_command->se_di_start_ofst_floor[3] =
-		rte_cpu_to_be_32((int_start_ofst_floor[7] << 16) |
-		int_start_ofst_floor[6]);
+		(int_start_ofst_floor[7] << 16) | int_start_ofst_floor[6];
 	se_command->se_di_start_ofst_ceiling[0] =
-		rte_cpu_to_be_32((int_start_ofst_ceiling[1] << 16) |
-		int_start_ofst_ceiling[0]);
+		(int_start_ofst_ceiling[1] << 16) | int_start_ofst_ceiling[0];
 	se_command->se_di_start_ofst_ceiling[1] =
-		rte_cpu_to_be_32((int_start_ofst_ceiling[3] << 16) |
-		int_start_ofst_ceiling[2]);
+		(int_start_ofst_ceiling[3] << 16) | int_start_ofst_ceiling[2];
 	se_command->se_di_start_ofst_ceiling[2] =
-		rte_cpu_to_be_32((int_start_ofst_ceiling[5] << 16) |
-		int_start_ofst_ceiling[4]);
+		(int_start_ofst_ceiling[5] << 16) | int_start_ofst_ceiling[4];
 	se_command->se_di_start_ofst_ceiling[3] =
-		rte_cpu_to_be_32((int_start_ofst_ceiling[7] << 16) |
-		int_start_ofst_ceiling[6]);
+		(int_start_ofst_ceiling[7] << 16) | int_start_ofst_ceiling[6];
 
 	if (ldpc_enc->se_ce_mux) {
 		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE_DCM);
 		se_dcm_command =
 			&bbdev_ipc_op->feca_job.command_chain_t.se_dcm_command_ch_obj;
-		se_dcm_command->se_bits_per_re =
-			rte_cpu_to_be_32(ldpc_enc->se_bits_per_re);
+		se_dcm_command->se_bits_per_re = ldpc_enc->se_bits_per_re;
 
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			se_dcm_command->mux[i].se_n_re_ack_re =
-				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_re_ack_re);
+				ldpc_enc->mux[i].se_n_re_ack_re;
 			se_dcm_command->mux[i].se_n_csi1_re_n_csi2_re =
-				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_csi1_re_n_csi2_re);
+				ldpc_enc->mux[i].se_n_csi1_re_n_csi2_re;
 			se_dcm_command->mux[i].se_n_ulsch_re_d_ack =
-				rte_cpu_to_be_32(ldpc_enc->mux[i].se_n_ulsch_re_d_ack);
+				ldpc_enc->mux[i].se_n_ulsch_re_d_ack;
 			se_dcm_command->mux[i].se_d_csi1_d_csi2 =
-				rte_cpu_to_be_32(ldpc_enc->mux[i].se_d_csi1_d_csi2);
+				ldpc_enc->mux[i].se_d_csi1_d_csi2;
 			se_dcm_command->mux[i].se_d_ack2_ack2_re =
-				rte_cpu_to_be_32(ldpc_enc->mux[i].se_d_ack2_ack2_re);
+				ldpc_enc->mux[i].se_d_ack2_ack2_re;
 		}
 	}
 
@@ -940,91 +933,74 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	sd_cmd.sd_cfg1.lifting_index = lifting_index;
 	sd_cmd.sd_cfg1.base_graph2 = base_graph2;
 	sd_cmd.sd_cfg1.set_index = set_index;
-	sd_command->sd_cfg1.raw_sd_cfg1 =
-		rte_cpu_to_be_32(sd_cmd.sd_cfg1.raw_sd_cfg1);
+	sd_command->sd_cfg1.raw_sd_cfg1 = sd_cmd.sd_cfg1.raw_sd_cfg1;
 
 	sd_cmd.sd_cfg2.complete_trig_en = 1;
 	sd_cmd.sd_cfg2.harq_en = harq_en;
 	sd_cmd.sd_cfg2.compact_harq = compact_harq;
 	sd_cmd.sd_cfg2.mod_order = mod_order;
-	sd_command->sd_cfg2.raw_sd_cfg2 =
-		rte_cpu_to_be_32(sd_cmd.sd_cfg2.raw_sd_cfg2);
+	sd_command->sd_cfg2.raw_sd_cfg2 = sd_cmd.sd_cfg2.raw_sd_cfg2;
 
 	sd_cmd.sd_sizes1.num_output_bytes = num_output_bytes;
 	sd_cmd.sd_sizes1.e_floor_thresh = e_floor_thresh;
-	sd_command->sd_sizes1.raw_sd_sizes1 =
-		rte_cpu_to_be_32(sd_cmd.sd_sizes1.raw_sd_sizes1);
+	sd_command->sd_sizes1.raw_sd_sizes1 = sd_cmd.sd_sizes1.raw_sd_sizes1;
 
 	sd_cmd.sd_sizes2.num_filler_bits = num_filler_bits;
 	sd_cmd.sd_sizes2.bits_per_cb = bits_per_cb;
-	sd_command->sd_sizes2.raw_sd_sizes2 =
-		rte_cpu_to_be_32(sd_cmd.sd_sizes2.raw_sd_sizes2);
+	sd_command->sd_sizes2.raw_sd_sizes2 = sd_cmd.sd_sizes2.raw_sd_sizes2;
 
-	sd_command->sd_circ_buf = rte_cpu_to_be_32(SD_CIRC_BUF);
-	sd_command->sd_floor_num_input_bytes =
-		rte_cpu_to_be_32(e_div_qm_floor);
-	sd_command->sd_ceiling_num_input_bytes =
-		rte_cpu_to_be_32(e_div_qm_ceiling);
+	sd_command->sd_circ_buf = SD_CIRC_BUF;
+	sd_command->sd_floor_num_input_bytes = e_div_qm_floor;
+	sd_command->sd_ceiling_num_input_bytes = e_div_qm_ceiling;
 	sd_command->sd_hram_base =
-		rte_cpu_to_be_32(q_priv->feca_blk_id * q_priv->bbdev_priv->per_queue_hram_size);
-	sd_command->sd_sc_x1_init = rte_cpu_to_be_32(SD_SC_X1_INIT);
-	sd_command->sd_sc_x2_init = rte_cpu_to_be_32(SD_SC_X2_INIT);
+		q_priv->feca_blk_id * q_priv->bbdev_priv->per_queue_hram_size;
+	sd_command->sd_sc_x1_init = SD_SC_X1_INIT;
+	sd_command->sd_sc_x2_init = SD_SC_X2_INIT;
 
 	/* out_addr has already been swapped in the calling function */
 	data_ptr = get_data_ptr(out_op_data);
 	l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
-	sd_command->sd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
-	sd_command->sd_axi_data_num_bytes =
-		rte_cpu_to_be_32(out_op_data->length);
+	sd_command->sd_axi_data_addr_low = l1_pcie_addr;
+	sd_command->sd_axi_data_num_bytes = out_op_data->length;
 
 	for (i = 0; i < 8; i++)
-		sd_command->sd_cb_mask[i] =
-			rte_cpu_to_be_32(codeblock_mask[i]);
+		sd_command->sd_cb_mask[i] = codeblock_mask[i];
 
 	sd_command->sd_di_start_ofst_floor[0] =
-		rte_cpu_to_be_32((di_start_ofst_floor[1] << 16) |
-		di_start_ofst_floor[0]);
+		(di_start_ofst_floor[1] << 16) | di_start_ofst_floor[0];
 	sd_command->sd_di_start_ofst_floor[1] =
-		rte_cpu_to_be_32((di_start_ofst_floor[3] << 16) |
-		di_start_ofst_floor[2]);
+		(di_start_ofst_floor[3] << 16) | di_start_ofst_floor[2];
 	sd_command->sd_di_start_ofst_floor[2] =
-		rte_cpu_to_be_32((di_start_ofst_floor[5] << 16) |
-		di_start_ofst_floor[4]);
+		(di_start_ofst_floor[5] << 16) | di_start_ofst_floor[4];
 	sd_command->sd_di_start_ofst_floor[3] =
-		rte_cpu_to_be_32((di_start_ofst_floor[7] << 16) |
-		di_start_ofst_floor[6]);
+		(di_start_ofst_floor[7] << 16) | di_start_ofst_floor[6];
 	sd_command->sd_di_start_ofst_ceiling[0] =
-		rte_cpu_to_be_32((di_start_ofst_ceiling[1] << 16) |
-		di_start_ofst_ceiling[0]);
+		(di_start_ofst_ceiling[1] << 16) | di_start_ofst_ceiling[0];
 	sd_command->sd_di_start_ofst_ceiling[1] =
-		rte_cpu_to_be_32((di_start_ofst_ceiling[3] << 16) |
-		di_start_ofst_ceiling[2]);
+		(di_start_ofst_ceiling[3] << 16) | di_start_ofst_ceiling[2];
 	sd_command->sd_di_start_ofst_ceiling[2] =
-		rte_cpu_to_be_32((di_start_ofst_ceiling[5] << 16) |
-		di_start_ofst_ceiling[4]);
+		(di_start_ofst_ceiling[5] << 16) | di_start_ofst_ceiling[4];
 	sd_command->sd_di_start_ofst_ceiling[3] =
-		rte_cpu_to_be_32((di_start_ofst_ceiling[7] << 16) |
-		di_start_ofst_ceiling[6]);
+		(di_start_ofst_ceiling[7] << 16) | di_start_ofst_ceiling[6];
 
 	if (ldpc_dec->sd_cd_demux) {
 		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD_DCM);
 		sd_dcm_command =
 			&bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
-		sd_dcm_command->sd_llrs_per_re =
-			rte_cpu_to_be_32((SD_MAX_REQ_BYTES << 16) |
-				(SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re));
+		sd_dcm_command->sd_llrs_per_re = (SD_MAX_REQ_BYTES << 16) |
+				(SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re);
 
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			sd_dcm_command->demux[i].sd_n_re_ack_re =
-				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_n_re_ack_re);
+				ldpc_dec->demux[i].sd_n_re_ack_re;
 			sd_dcm_command->demux[i].sd_n_csi1_re_n_csi2_re =
-				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_n_csi1_re_n_csi2_re);
+				ldpc_dec->demux[i].sd_n_csi1_re_n_csi2_re;
 			sd_dcm_command->demux[i].sd_n_dlsch_re_d_ack =
-				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_n_dlsch_re_d_ack);
+				ldpc_dec->demux[i].sd_n_dlsch_re_d_ack;
 			sd_dcm_command->demux[i].sd_d_csi1_d_csi2 =
-				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_d_csi1_d_csi2);
+				ldpc_dec->demux[i].sd_d_csi1_d_csi2;
 			sd_dcm_command->demux[i].sd_d_ack2_ack2_re =
-				rte_cpu_to_be_32(ldpc_dec->demux[i].sd_d_ack2_ack2_re);
+				ldpc_dec->demux[i].sd_d_ack2_ack2_re;
 		}
 	}
 
@@ -1053,6 +1029,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	char *data_ptr;
 	uint32_t l1_pcie_addr, i;
 	uint32_t bbdev_ipc_op_flags;
+	uint32_t polar_cmd_size;
 
 	bbdev_ipc_op->feca_job.job_type =
 		rte_cpu_to_be_32(polar_params->feca_obj.job_type);
@@ -1067,21 +1044,23 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 				l_ce_cmd->ce_cfg3.out_pad_bytes;
 		/* Set complete trigger */
 		l_ce_cmd->ce_cfg1.complete_trig_en = 1;
-		ce_cmd->ce_cfg1.raw_ce_cfg1 =
-			rte_cpu_to_be_32(l_ce_cmd->ce_cfg1.raw_ce_cfg1);
-		ce_cmd->ce_cfg2.raw_ce_cfg2 =
-			rte_cpu_to_be_32(l_ce_cmd->ce_cfg2.raw_ce_cfg2);
-		ce_cmd->ce_cfg3.raw_ce_cfg3 =
-			rte_cpu_to_be_32(l_ce_cmd->ce_cfg3.raw_ce_cfg3);
+		ce_cmd->ce_cfg1.raw_ce_cfg1 = l_ce_cmd->ce_cfg1.raw_ce_cfg1;
+		ce_cmd->ce_cfg2.raw_ce_cfg2 = l_ce_cmd->ce_cfg2.raw_ce_cfg2;
+		ce_cmd->ce_cfg3.raw_ce_cfg3 = l_ce_cmd->ce_cfg3.raw_ce_cfg3;
 		ce_cmd->ce_pe_indices.raw_ce_pe_indices =
-			rte_cpu_to_be_32(l_ce_cmd->ce_pe_indices.raw_ce_pe_indices);
+			l_ce_cmd->ce_pe_indices.raw_ce_pe_indices;
+
 		data_ptr = get_data_ptr(in_op_data);
 		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
-		ce_cmd->ce_axi_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
+		ce_cmd->ce_axi_addr_low = l1_pcie_addr;
 
 		for (i = 0; i< 32; i++)
-			ce_cmd->ce_fz_lut[i] =
-				rte_cpu_to_be_32(l_ce_cmd->ce_fz_lut[i]);
+			ce_cmd->ce_fz_lut[i] = l_ce_cmd->ce_fz_lut[i];
+
+		polar_cmd_size  = (sizeof(*ce_cmd) - sizeof(ce_cmd->ce_fz_lut)) >> 2;
+		polar_cmd_size += (1 << ce_cmd->ce_cfg1.pe_n) / 32;
+		polar_cmd_size *= 4;
+		bbdev_ipc_op->polar_cmd_size = polar_cmd_size;
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		rte_bbuf_dump(stdout, polar_params->input.data,
@@ -1099,11 +1078,15 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 				 (polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_CS1) ||
 				 (polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_CS2))) {
 
-			cd_cmd->cd_cfg2.raw_cd_cfg2 =
-				rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+			cd_cmd->cd_cfg2.raw_cd_cfg2 = l_cd_cmd->cd_cfg2.raw_cd_cfg2;
 			polar_params->output.length = l_cd_cmd->cd_cfg2.E;
 			bbdev_ipc_op_flags = BBDEV_POLAR_DEQUEUE_LLRS;
 			bbdev_ipc_op->op_flags = rte_cpu_to_be_32(bbdev_ipc_op_flags);
+
+			polar_cmd_size  = (sizeof(*cd_cmd) - sizeof(cd_cmd->cd_fz_lut)) >> 2;
+			polar_cmd_size += (1 << cd_cmd->cd_cfg1.pd_n) / 32;
+			polar_cmd_size *= 4;
+			bbdev_ipc_op->polar_cmd_size = polar_cmd_size;
 
 			return;
 		}
@@ -1119,19 +1102,23 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 
 		l_cd_cmd->cd_cfg1.complete_trig_en = 1;
 		/* Set complete trigger */
-		cd_cmd->cd_cfg1.raw_cd_cfg1 =
-			rte_cpu_to_be_32(l_cd_cmd->cd_cfg1.raw_cd_cfg1);
-		cd_cmd->cd_cfg2.raw_cd_cfg2 =
-			rte_cpu_to_be_32(l_cd_cmd->cd_cfg2.raw_cd_cfg2);
+		cd_cmd->cd_cfg1.raw_cd_cfg1 = l_cd_cmd->cd_cfg1.raw_cd_cfg1;
+		cd_cmd->cd_cfg2.raw_cd_cfg2 = l_cd_cmd->cd_cfg2.raw_cd_cfg2;
 		cd_cmd->cd_pe_indices.raw_cd_pe_indices =
-			rte_cpu_to_be_32(l_cd_cmd->cd_pe_indices.raw_cd_pe_indices);
+			l_cd_cmd->cd_pe_indices.raw_cd_pe_indices;
+
 		data_ptr = get_data_ptr(out_op_data);
-		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
-		cd_cmd->cd_axi_data_addr_low = rte_cpu_to_be_32(l1_pcie_addr);
+		cd_cmd->cd_axi_data_addr_low =
+			get_l1_pcie_addr(ipc_priv, data_ptr);
+		cd_cmd->cd_axi_stat_addr_low = q_priv->cd_crc_stat_addr;
 
 		for (i = 0; i< 32; i++)
-			cd_cmd->cd_fz_lut[i] =
-				rte_cpu_to_be_32(l_cd_cmd->cd_fz_lut[i]);
+			cd_cmd->cd_fz_lut[i] = l_cd_cmd->cd_fz_lut[i];
+
+		polar_cmd_size  = (sizeof(*cd_cmd) - sizeof(cd_cmd->cd_fz_lut)) >> 2;
+		polar_cmd_size += (1 << cd_cmd->cd_cfg1.pd_n) / 32;
+		polar_cmd_size *= 4;
+		bbdev_ipc_op->polar_cmd_size = polar_cmd_size;
 
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		if (polar_params->input.data)
@@ -1330,8 +1317,7 @@ fill_feca_desc:
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
 	    bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ)) {
-		sd_circ_buf = rte_be_to_cpu_32(
-			bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf);
+		sd_circ_buf = bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf;
 		harq_len_per_cb =
 			(128 * (uint32_t)ceil((double)sd_circ_buf/128));
 
