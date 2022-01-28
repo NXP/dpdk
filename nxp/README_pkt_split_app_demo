@@ -97,18 +97,18 @@ Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is eth port
    Note: If above commands fail because of "python: no such file" error,
          Please try "ln -s /usr/bin/python3 /usr/bin/python"
 7. Run the dpdk-pkt_split_app application with three ports(Use PCI port):
-   $ ./dpdk-pkt_split_app -c 0xe -n 1 --vdev=net_tap0 -- -p 0xe0 -s 5 -m 1500
+   $ ./dpdk-pkt_split_app -c 0xe -n 1 --vdev=net_tap0 -- -p 0xe0 -s 5 -m 8000
 
    This command will use one eth port, one PCI port and one Tap interface. Tap
-   interface's mtu is 1500. Here split port id is 5.
+   interface's mtu is 8000. Here split port id is 5.
    First port will be PCI port, second port will be eth port and third port will
    be Tap interface.
 
 8. Run the dpdk-pkt_split_app application with two ports(Don't use PCI port):
-   $ ./dpdk-pkt_split_app -c 0x6 -n 1 --vdev=net_tap0 -- -p 0x6 -s 5 -m 1500
+   $ ./dpdk-pkt_split_app -c 0x6 -n 1 --vdev=net_tap0 -- -p 0x60 -s 5 -m 8000
 
    This command will use one eth port and one Tap interface. Tap
-   interface's mtu is 1500. Here split port id is 5
+   interface's mtu is 8000. Here split port id is 5.
    first port will be eth port and second port will be Tap interface.
 
    Note: number of split port id should not be more than one.
