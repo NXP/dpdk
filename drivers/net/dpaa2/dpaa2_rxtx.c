@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2022 NXP
  *
  */
 
@@ -1381,7 +1381,8 @@ skip_tx:
 }
 
 void
-dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci)
+dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci,
+			  __rte_unused struct dpaa2_queue *dpaa2_q)
 {
 	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
 	struct qbman_fd *fd;
