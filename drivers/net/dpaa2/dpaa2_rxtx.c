@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2022 NXP
  *
  */
 
@@ -299,6 +299,11 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 			dpaa2_dev_rx_parse(first_seg, hw_annot_addr);
 
 	rte_mbuf_refcnt_set(first_seg, 1);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+	rte_mempool_check_cookies(
+			rte_mempool_from_obj((void *)first_seg),
+			(void **)&first_seg, 1, 1);
+#endif
 	cur_seg = first_seg;
 	while (!DPAA2_SG_IS_FINAL(sge)) {
 		sge = &sgt[i++];
@@ -311,6 +316,11 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 		next_seg->data_len  = sge->length  & 0x1FFFF;
 		first_seg->nb_segs += 1;
 		rte_mbuf_refcnt_set(next_seg, 1);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+		rte_mempool_check_cookies(
+				rte_mempool_from_obj((void *)next_seg),
+				(void **)&next_seg, 1, 1);
+#endif
 		cur_seg->next = next_seg;
 		next_seg->next = NULL;
 		cur_seg = next_seg;
@@ -318,6 +328,11 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	temp = DPAA2_INLINE_MBUF_FROM_BUF(fd_addr,
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	rte_mbuf_refcnt_set(temp, 1);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+		rte_mempool_check_cookies(
+				rte_mempool_from_obj((void *)temp),
+				(void **)&temp, 1, 1);
+#endif
 	rte_pktmbuf_free_seg(temp);
 
 	return (void *)first_seg;
@@ -343,6 +358,11 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	mbuf->port = port_id;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+	rte_mempool_check_cookies(
+			rte_mempool_from_obj((void *)mbuf),
+			(void **)&mbuf, 1, 1);
+#endif
 
 	/* Parse the packet */
 	/* parse results for LX2 are there in FRC field of FD.
@@ -391,6 +411,11 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 			rte_mbuf_refcnt_update(temp, -1);
 		} else {
 			DPAA2_SET_ONLY_FD_BPID(fd, bpid);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+				rte_mempool_check_cookies(
+					rte_mempool_from_obj((void *)temp),
+					(void **)&temp, 1, 0);
+#endif
 		}
 		DPAA2_SET_FD_OFFSET(fd, offset);
 	} else {
@@ -401,6 +426,11 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		}
 		DPAA2_SET_ONLY_FD_BPID(fd, bpid);
 		DPAA2_SET_FD_OFFSET(fd, temp->data_off);
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+		rte_mempool_check_cookies(
+			rte_mempool_from_obj((void *)temp),
+			(void **)&temp, 1, 0);
+#endif
 	}
 	DPAA2_SET_FD_ADDR(fd, DPAA2_MBUF_VADDR_TO_IOVA(temp));
 	DPAA2_SET_FD_LEN(fd, mbuf->pkt_len);
@@ -437,6 +467,11 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				} else {
 					DPAA2_SET_FLE_BPID(sge,
 						mempool_to_bpid(cur_seg->pool));
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+				rte_mempool_check_cookies(
+					rte_mempool_from_obj((void *)cur_seg),
+					(void **)&cur_seg, 1, 0);
+#endif
 				}
 			}
 			cur_seg = cur_seg->next;
@@ -488,6 +523,13 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 			DPAA2_SET_FD_IVP(fd);
 			rte_mbuf_refcnt_update(mbuf, -1);
 		}
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+		else {
+			rte_mempool_check_cookies(
+				rte_mempool_from_obj((void *)mbuf),
+				(void **)&mbuf, 1, 0);
+		}
+#endif
 	} else if (RTE_MBUF_HAS_EXTBUF(mbuf)) {
 		DPAA2_SET_FD_IVP(fd);
 	} else {
@@ -527,6 +569,11 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 
 	DPAA2_MBUF_TO_CONTIG_FD(m, fd, bpid);
 
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+	rte_mempool_check_cookies(
+		rte_mempool_from_obj((void *)m),
+		(void **)&m, 1, 0);
+#endif
 	DPAA2_PMD_DP_DEBUG(
 		"mbuf: %p, BMAN buf addr: %p, fdaddr: %" PRIx64 ", bpid: %d,"
 		" meta: %d, off: %d, len: %d\n",
@@ -1233,6 +1280,11 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					}
 					DPAA2_MBUF_TO_CONTIG_FD((*bufs),
 					&fd_arr[loop], mempool_to_bpid(mp));
+#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
+					rte_mempool_check_cookies(
+						rte_mempool_from_obj((void *)*bufs),
+						(void **)bufs, 1, 0);
+#endif
 					bufs++;
 #ifdef RTE_LIBRTE_IEEE1588
 					enable_tx_tstamp(&fd_arr[loop]);
