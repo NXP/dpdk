@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- * Copyright 2016-2021 NXP
+ * Copyright 2016-2022 NXP
  *
  */
 #include <unistd.h>
@@ -678,7 +678,7 @@ dpaa2_free_eq_descriptors(void)
 
 		if (qbman_result_eqresp_rc(eqresp)) {
 			txq = eqresp_meta->dpaa2_q;
-			txq->cb_eqresp_free(dpio_dev->eqresp_ci);
+			txq->cb_eqresp_free(dpio_dev->eqresp_ci, txq);
 		}
 		qbman_result_eqresp_set_rspid(eqresp, 0);
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- * Copyright 2016,2019-2021 NXP
+ * Copyright 2016,2019-2022 NXP
  */
 
 #ifndef _DPAA2_SEC_PMD_PRIVATE_H_
@@ -29,7 +29,6 @@ extern uint8_t cryptodev_driver_id;
 struct dpaa2_sec_dev_private {
 	void *mc_portal; /**< MC Portal for configuring this device */
 	void *hw; /**< Hardware handle for this device.Used by NADK framework */
-	struct rte_mempool *fle_pool; /* per device memory pool for FLE */
 	int32_t hw_id; /**< An unique ID of this device instance */
 	int32_t vfio_fd; /**< File descriptor received via VFIO */
 	uint16_t token; /**< Token required by DPxxx objects */
@@ -42,6 +41,7 @@ struct dpaa2_sec_dev_private {
 struct dpaa2_sec_qp {
 	struct dpaa2_queue rx_vq;
 	struct dpaa2_queue tx_vq;
+	struct rte_mempool *fle_pool; /* per device memory pool for FLE */
 };
 
 enum shr_desc_type {
@@ -125,7 +125,6 @@ struct sec_flc_desc {
 };
 
 struct ctxt_priv {
-	struct rte_mempool *fle_pool; /* per device memory pool for FLE */
 	struct sec_flc_desc flc_desc[0];
 };
 
