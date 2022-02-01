@@ -176,7 +176,6 @@ struct fsl_qdma_comp {
 	dma_addr_t		bus_addr;
 	dma_addr_t		desc_bus_addr;
 	void			*virt_addr;
-	int			index;
 	void			*desc_virt_addr;
 	struct fsl_qdma_chan	*qchan;
 	dma_call_back		call_back_func;
