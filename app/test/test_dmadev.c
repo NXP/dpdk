@@ -755,9 +755,8 @@ test_dmadev_instance(int16_t dev_id)
 	struct rte_dma_stats stats;
 	struct rte_dma_info info;
 	const struct rte_dma_conf conf = { .nb_vchans = 1};
-	const struct rte_dma_vchan_conf qconf = {
-			.direction = RTE_DMA_DIR_MEM_TO_MEM,
-			.nb_desc = TEST_RINGSIZE,
+	struct rte_dma_vchan_conf qconf = {
+		.direction = RTE_DMA_DIR_MEM_TO_MEM,
 	};
 	const int vchan = 0;
 	int ret;
@@ -766,6 +765,7 @@ test_dmadev_instance(int16_t dev_id)
 	if (ret != 0)
 		ERR_RETURN("Error with rte_dma_info_get()\n");
 
+	qconf.nb_desc = RTE_MIN(TEST_RINGSIZE, info.max_desc);
 	printf("\n### Test dmadev instance %u [%s]\n",
 			dev_id, info.dev_name);
 
