@@ -57,6 +57,15 @@ struct bbdev_la12xx_params {
 #define SD_MAX_REQ_BYTES		0xFFC0
 #define SD_LLRS_PER_RE_MASK		0x0000FFFF
 
+/* BE Swapped Shared Decode (SD) Job type */
+#define FECA_JOB_SD_BE		0x1000000 /* BE for 1 */
+/* BE Swapped Shared Encode (SE) Job type */
+#define FECA_JOB_SE_BE		0x3000000 /* BE for 3 */
+/* BE Swapped Shared Encode Job Type used in DCM mode */
+#define FECA_JOB_SE_DCM_BE	0x7000000 /* BE for 7 */
+/* BE Swapped Shared Decode Job Type used in DCM mode */
+#define FECA_JOB_SD_DCM_BE	0x8000000 /* BE for 8 */
+
 static const char * const bbdev_la12xx_valid_params[] = {
 	BBDEV_LA12XX_VDEV_MODEM_ID_ARG,
 };
@@ -274,6 +283,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	void *vaddr;
 	uint32_t i;
 	void *cd_crc_stat;
+	feca_job_t *feca_jobs;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -307,6 +317,18 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	if (!q_priv->host_params) {
 		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for host_params");
 		return -ENOMEM;
+	}
+
+	if (q_priv->op_type != RTE_BBDEV_OP_RAW) {
+		feca_jobs = rte_zmalloc(NULL, sizeof(feca_job_t) * IPC_MAX_DEPTH,
+				RTE_CACHE_LINE_SIZE);
+		if (!feca_jobs) {
+			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for feca jobs");
+			return -ENOMEM;
+		}
+
+		for (i = 0; i < IPC_MAX_DEPTH; i++)
+			q_priv->feca_jobs[i] = &feca_jobs[i];
 	}
 
 	/* Set queue properties for LA12xx device */
@@ -705,9 +727,9 @@ static const struct rte_bbdev_ops pmd_ops = {
 
 static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
-		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_enc_op *bbdev_enc_op,
-		   struct rte_bbdev_op_data *in_op_data)
+		   struct rte_bbdev_op_data *in_op_data,
+		   feca_job_t *feca_job)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
@@ -752,10 +774,10 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		return -1;
 	}
 
-	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE);
-	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
+	feca_job->job_type = FECA_JOB_SE_BE;
+	feca_job->t_blk_id = q_priv->feca_blk_id_be32;
 
-	se_command = &bbdev_ipc_op->feca_job.command_chain_t.se_command_ch_obj;
+	se_command = &feca_job->command_chain_t.se_command_ch_obj;
 
 	se_cmd.se_cfg1.raw_se_cfg1 = 0;
 	se_cmd.se_cfg1.num_code_blocks = num_code_blocks;
@@ -805,9 +827,8 @@ fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		(int_start_ofst_ceiling[7] << 16) | int_start_ofst_ceiling[6];
 
 	if (ldpc_enc->se_ce_mux) {
-		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SE_DCM);
-		se_dcm_command =
-			&bbdev_ipc_op->feca_job.command_chain_t.se_dcm_command_ch_obj;
+		feca_job->job_type = FECA_JOB_SE_DCM_BE;
+		se_dcm_command = &feca_job->command_chain_t.se_dcm_command_ch_obj;
 		se_dcm_command->se_bits_per_re = ldpc_enc->se_bits_per_re;
 
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
@@ -842,7 +863,8 @@ static int
 fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		   struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		   struct rte_bbdev_dec_op *bbdev_dec_op,
-		   struct rte_bbdev_op_data *out_op_data)
+		   struct rte_bbdev_op_data *out_op_data,
+		   feca_job_t *feca_job)
 {
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
 	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
@@ -919,10 +941,10 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		return -1;
 	}
 
-	bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD);
-	bbdev_ipc_op->feca_job.t_blk_id = q_priv->feca_blk_id_be32;
+	feca_job->job_type = FECA_JOB_SD_BE;
+	feca_job->t_blk_id = q_priv->feca_blk_id_be32;
 
-	sd_command = &bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj;
+	sd_command = &feca_job->command_chain_t.sd_command_ch_obj;
 
 	sd_cmd.sd_cfg1.max_num_iterations = ldpc_dec->iter_max;
 	sd_cmd.sd_cfg1.min_num_iterations = 1;
@@ -984,9 +1006,8 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 		(di_start_ofst_ceiling[7] << 16) | di_start_ofst_ceiling[6];
 
 	if (ldpc_dec->sd_cd_demux) {
-		bbdev_ipc_op->feca_job.job_type = rte_cpu_to_be_32(FECA_JOB_SD_DCM);
-		sd_dcm_command =
-			&bbdev_ipc_op->feca_job.command_chain_t.sd_dcm_command_ch_obj;
+		feca_job->job_type = FECA_JOB_SD_DCM_BE;
+		sd_dcm_command = &feca_job->command_chain_t.sd_dcm_command_ch_obj;
 		sd_dcm_command->sd_llrs_per_re = (SD_MAX_REQ_BYTES << 16) |
 				(SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re);
 
@@ -1023,7 +1044,8 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 			struct rte_pmd_la12xx_polar_params *polar_params,
 			struct bbdev_la12xx_q_priv *q_priv,
 			struct rte_bbdev_op_data *in_op_data,
-			struct rte_bbdev_op_data *out_op_data)
+			struct rte_bbdev_op_data *out_op_data,
+			feca_job_t *feca_job)
 {
 	struct ipc_priv_t *ipc_priv = q_priv->bbdev_priv->ipc_priv;
 	char *data_ptr;
@@ -1031,14 +1053,13 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 	uint32_t bbdev_ipc_op_flags;
 	uint32_t polar_cmd_size;
 
-	bbdev_ipc_op->feca_job.job_type =
+	feca_job->job_type =
 		rte_cpu_to_be_32(polar_params->feca_obj.job_type);
 	if (polar_params->feca_obj.job_type ==  FECA_JOB_CE ||
 	    polar_params->feca_obj.job_type == FECA_JOB_CE_DCM) {
 		ce_command_t *l_ce_cmd =
 			&polar_params->feca_obj.command_chain_t.ce_command_ch_obj;
-		ce_command_t *ce_cmd =
-			&bbdev_ipc_op->feca_job.command_chain_t.ce_command_ch_obj;
+		ce_command_t *ce_cmd = &feca_job->command_chain_t.ce_command_ch_obj;
 
 		polar_params->output.length = (l_ce_cmd->ce_cfg2.E + 7)/8 +
 				l_ce_cmd->ce_cfg3.out_pad_bytes;
@@ -1071,7 +1092,7 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		cd_command_t *l_cd_cmd =
 			&polar_params->feca_obj.command_chain_t.cd_command_ch_obj;
 		cd_command_t *cd_cmd =
-			&bbdev_ipc_op->feca_job.command_chain_t.cd_command_ch_obj;
+			&feca_job->command_chain_t.cd_command_ch_obj;
 
 		if (polar_params->dequeue_polar_deq_llrs &&
 				((polar_params->feca_obj.job_type == FECA_JOB_CD_DCM_ACK) ||
@@ -1159,10 +1180,10 @@ is_bd_ring_full(uint32_t ci, uint32_t pi, uint32_t ring_size)
 
 static inline int
 prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
-		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		    struct bbdev_la12xx_q_priv *q_priv,
 		    struct rte_bbdev_op_data *in_op_data,
-		    struct rte_bbdev_op_data *out_op_data)
+		    struct rte_bbdev_op_data *out_op_data,
+		    feca_job_t *feca_job)
 {
 	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &bbdev_enc_op->ldpc_enc;
 	uint32_t total_out_bits;
@@ -1177,8 +1198,8 @@ prepare_ldpc_enc_op(struct rte_bbdev_enc_op *bbdev_enc_op,
 	else
 		ldpc_enc->output.length = (total_out_bits + 7)/8;
 
-	ret = fill_feca_desc_enc(q_priv, bbdev_ipc_op,
-				 bbdev_enc_op, in_op_data);
+	ret = fill_feca_desc_enc(q_priv, bbdev_enc_op,
+				 in_op_data, feca_job);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"fill_feca_desc_enc failed, ret: %d", ret);
@@ -1196,7 +1217,8 @@ static inline int
 prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 		    struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		    struct bbdev_la12xx_q_priv *q_priv,
-		    struct rte_bbdev_op_data *out_op_data)
+		    struct rte_bbdev_op_data *out_op_data,
+		    feca_job_t *feca_job)
 {
 	struct bbdev_la12xx_private *bbdev_priv = q_priv->bbdev_priv;
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &bbdev_dec_op->ldpc_dec;
@@ -1286,7 +1308,8 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 
 fill_feca_desc:
 	ret = fill_feca_desc_dec(q_priv, bbdev_ipc_op,
-				 bbdev_dec_op, out_op_data);
+				 bbdev_dec_op, out_op_data,
+				 feca_job);
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR("fill_feca_desc_dec failed, ret: %d", ret);
 		return ret;
@@ -1317,7 +1340,7 @@ fill_feca_desc:
 	    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE &&
 	    bbdev_dec_op->ldpc_dec.op_flags &
 	    RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ)) {
-		sd_circ_buf = bbdev_ipc_op->feca_job.command_chain_t.sd_command_ch_obj.sd_circ_buf;
+		sd_circ_buf = feca_job->command_chain_t.sd_command_ch_obj.sd_circ_buf;
 		harq_len_per_cb =
 			(128 * (uint32_t)ceil((double)sd_circ_buf/128));
 
@@ -1361,10 +1384,11 @@ prepare_polar_op(struct rte_pmd_la12xx_polar_params *polar_params,
 		 struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 		 struct bbdev_la12xx_q_priv *q_priv,
 		 struct rte_bbdev_op_data *in_op_data,
-		 struct rte_bbdev_op_data *out_op_data)
+		 struct rte_bbdev_op_data *out_op_data,
+		 feca_job_t *feca_job)
 {
 	fill_feca_desc_polar_op(bbdev_ipc_op, polar_params, q_priv,
-				in_op_data, out_op_data);
+				in_op_data, out_op_data, feca_job);
 
 	if (!out_op_data->is_direct_mem && out_op_data->bdata)
 		rte_bbuf_append((struct rte_bbuf *)out_op_data->bdata,
@@ -1411,6 +1435,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
 	struct rte_bbdev_op_data *in_op_data, *out_op_data;
+	feca_job_t *feca_job;
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	int ret;
@@ -1430,6 +1455,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 
 	virt = MODEM_P2V(q_priv->host_params->bd_m_modem_ptr[pi]);
 	bbdev_ipc_op = (struct bbdev_ipc_dequeue_op *)virt;
+	feca_job = q_priv->feca_jobs[pi];
 	q_priv->bbdev_op[pi] = bbdev_op;
 
 	switch (q_priv->op_type) {
@@ -1438,8 +1464,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		in_op_data = &ldpc_enc->input;
 		out_op_data = &ldpc_enc->output;
 
-		ret = prepare_ldpc_enc_op(bbdev_op, bbdev_ipc_op, q_priv,
-					  in_op_data, out_op_data);
+		ret = prepare_ldpc_enc_op(bbdev_op, q_priv, in_op_data,
+					  out_op_data, feca_job);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_ldpc_enc_op failed, ret: %d", ret);
@@ -1460,7 +1486,7 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 			out_op_data = &ldpc_dec->hard_output;
 
 		ret = prepare_ldpc_dec_op(bbdev_op, bbdev_ipc_op,
-					  q_priv, out_op_data);
+					  q_priv, out_op_data, feca_job);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_ldpc_dec_op failed, ret: %d", ret);
@@ -1475,8 +1501,8 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		in_op_data = &polar_params->input;
 		out_op_data = &polar_params->output;
 
-		ret = prepare_polar_op(polar_params, bbdev_ipc_op,
-				       q_priv, in_op_data, out_op_data);
+		ret = prepare_polar_op(polar_params, bbdev_ipc_op, q_priv,
+				       in_op_data, out_op_data, feca_job);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
 				"process_polar_op failed, ret: %d", ret);
@@ -1516,6 +1542,13 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
 		bbdev_ipc_op->out_addr = rte_cpu_to_be_32(l1_pcie_addr);
 		bbdev_ipc_op->out_len = rte_cpu_to_be_32(out_op_data->length);
+	}
+
+	if (q_priv->op_type != RTE_BBDEV_OP_RAW) {
+		bbdev_ipc_op->feca_job_addr =
+			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, feca_job));
+		bbdev_ipc_op->feca_job_type = feca_job->job_type;
+		bbdev_ipc_op->feca_blk_id = feca_job->t_blk_id;
 	}
 
 	/* Move Producer Index forward */
