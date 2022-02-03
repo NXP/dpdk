@@ -749,6 +749,15 @@ the primary application (the first one) for information. For example, the
 sample application 'dpdk-pdump' allows capturing of packets arriving on
 other interfaces/devices available in DPDK.
 
+The libpcap-based PMD has an external dependency on the libpcap development files
+which must be installed on the board.
+
+	$ wget https://www.tcpdump.org/release/libpcap-1.10.1.tar.gz
+	$ tar -xzvf libpcap-1.10.1.tar.gz
+	$ cd libpcap-1.10.1
+	$ ./configure --host=aarch64-linux-gnu --with-pcap=linux
+	$ make install
+
 Compiling 'dpdk-pdump' on host:
 
 Follow the below steps to compile DPDK on host:
