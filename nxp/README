@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 ===============================================================================
 NXP DPDK README
 ---------------
@@ -860,6 +860,32 @@ Pktgen app location: pktgen-dpdk/build/app/pktgen
 Pktgen Pktgen.lua location: pktgen-dpdk/Pktgen.lua
 
 Pktgen Tag being used: pktgen-19.12.0
+
+===============================================================================
+
+
+Building OVS Application
+======================================
+
+Steps to cross compile ovs
+--------------------------
+These steps assumes that compiled DPDK and openssl libraries are installed in
+specific directories.
+Refer to "Building DPDK and Example Applications using meson" for DPDK
+compilation steps.
+
+	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed DPDK directory>/lib:<Path to installed openssl directory>/lib
+	$ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:<Path to installed DPDK directory>/lib/pkgconfig:<Path to installed openssl directory>/lib/pkgconfig
+	$ pkg-config --modversion libdpdk     #Verify dpdk libraries can be used using pkgconfig.
+	$ pkg-config --modversion libssl      #Verify openssl libraries can be used using pkgconfig.
+	$ export CC=aarch64-linux-gnu-gcc
+	$ ./boot.sh
+	$ ./configure --with-dpdk=static --host=aarch64-fsl-linux CFLAGS="-g -Wno-cast-align -Ofast" --with-openssl=<Path to installed openssl directory>
+	$ make 'CFLAGS=-g -Ofast' -j 4
+
+	NOTE: Use complete absolute path(Dont use '~') in ./configure command to
+	      compile using openssl. Otherwise it will not be able to find the
+	      openssl libraries.
 
 =========================
 VM VFIO Direct Assignment
