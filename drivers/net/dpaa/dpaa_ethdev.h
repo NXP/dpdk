@@ -222,6 +222,22 @@ dpaa_rx_cb_atomic(void *event,
 		  void **bufs);
 
 int
+dpaa_timesync_enable(struct rte_eth_dev *dev);
+
+int
+dpaa_timesync_disable(struct rte_eth_dev *dev);
+
+int
+dpaa_timesync_read_time(struct rte_eth_dev *dev,
+		struct timespec *timestamp);
+
+int
+dpaa_timesync_write_time(struct rte_eth_dev *dev,
+		const struct timespec *timestamp);
+int
+dpaa_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta);
+
+int
 dpaa_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
 		struct timespec *timestamp);
 

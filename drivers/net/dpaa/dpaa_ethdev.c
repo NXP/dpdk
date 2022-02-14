@@ -1594,6 +1594,11 @@ static struct eth_dev_ops dpaa_devops = {
 	.rss_hash_update	  = dpaa_dev_rss_hash_update,
 	.rss_hash_conf_get        = dpaa_dev_rss_hash_conf_get,
 #if defined(RTE_LIBRTE_IEEE1588)
+	.timesync_enable	  = dpaa_timesync_enable,
+	.timesync_disable	  = dpaa_timesync_disable,
+	.timesync_read_time	  = dpaa_timesync_read_time,
+	.timesync_write_time	  = dpaa_timesync_write_time,
+	.timesync_adjust_time	  = dpaa_timesync_adjust_time,
 	.timesync_read_rx_timestamp = dpaa_timesync_read_rx_timestamp,
 	.timesync_read_tx_timestamp = dpaa_timesync_read_tx_timestamp,
 #endif
