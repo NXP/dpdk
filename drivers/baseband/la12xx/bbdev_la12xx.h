@@ -75,6 +75,7 @@ struct bbdev_la12xx_q_priv {
 	void *msg_ch_vaddr[IPC_MAX_DEPTH];
 			/**< Stores msg channel addr for modem->host */
 	struct vspa_desc *vspa_ring;	/**< Shared ring between Host and VSPA */
+	feca_job_t *feca_jobs[IPC_MAX_DEPTH];	/**< FECA jobs associated with queues */
 	int vspa_desc_wr_index;	/**< Write desc index for VSPA */
 	int vspa_desc_rd_index;	/**< Write desc index for VSPA */
 	uint32_t host_pi;	/**< Producer_Index for HOST->MODEM */
@@ -82,6 +83,7 @@ struct bbdev_la12xx_q_priv {
 	host_ipc_params_t *host_params; /**< Host parameters */
 	uint32_t is_host_to_modem;	/**< Direction of operation */
 	uint32_t conf_enable;		/**< Confirmation mode enabled/disabled */
+	uint32_t cd_crc_stat_addr;	/**< CRC status address for CD */
 };
 
 #define lower_32_bits(x) ((uint32_t)((uint64_t)x))
