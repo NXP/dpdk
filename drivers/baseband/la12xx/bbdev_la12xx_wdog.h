@@ -52,6 +52,7 @@ int libwdog_register(struct wdog *wdog_t, int modem_id);
 int libwdog_reinit_modem(struct wdog *wdog_t, uint32_t timeout);
 int libwdog_deregister(struct wdog *wdog_t);
 int libwdog_get_modem_status(struct wdog *wdog_t);
+int libwdog_readwait(int dev_wdog_handle, void *buf, int count);
 
 #endif /*__BBDEV_LA12XX_WDOG_H__*/
 

@@ -48,6 +48,11 @@ int libwdog_register(struct wdog *wdog_t, int modem_id)
 		goto err;
 	}
 
+	wdog_t->wdog_eventfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+	if (wdog_t->wdog_eventfd < 0)
+		BBDEV_LA12XX_PMD_WARN("Failed to create wdog eventfd.");
+
 	/* IOCTL - register FD with kernel */
 	ret = ioctl(wdog_t->dev_wdog_handle,
 			IOCTL_GUL_MODEM_WDOG_REGISTER, wdog_t);
@@ -89,10 +94,28 @@ int libwdog_deregister(struct wdog *wdog_t)
 		goto err;
 	}
 
+	/* Close event fd */
+	if (wdog_t->wdog_eventfd >= 0) {
+		close(wdog_t->wdog_eventfd);
+		wdog_t->wdog_eventfd = -1;
+	}
+
 	/* Close Dev Watchdog File */
 	ret = close_devwdog(wdog_t->dev_wdog_handle);
 	if (ret < 0) {
 		BBDEV_LA12XX_PMD_ERR("Error closing WATCHDOG device.");
+		goto err;
+	}
+err:
+	return ret;
+}
+
+int libwdog_readwait(int dev_wdog_handle, void *buf, int count)
+{
+	int32_t ret = MODEM_WDOG_OK;
+	ret = read(dev_wdog_handle, buf, count);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("wdog read failed.");
 		goto err;
 	}
 err:

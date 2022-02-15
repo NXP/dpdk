@@ -2163,40 +2163,81 @@ rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
 	op->polar_params.mempool = mempool;
 }
 
+static int
+register_watchdog(struct bbdev_la12xx_private *priv)
+{
+	int ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (!priv->wdog) {
+		priv->wdog = rte_malloc(NULL,
+			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
+
+		/* Register Modem & Watchdog */
+		ret = libwdog_register(priv->wdog, priv->modem_id);
+		if (ret < 0) {
+			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 int
 rte_pmd_la12xx_is_active(uint16_t dev_id)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	struct wdog *wdog = priv->wdog;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (!wdog) {
-		wdog = rte_malloc(NULL,
-			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
-
-		/* Register Modem & Watchdog */
-		ret = libwdog_register(wdog, priv->modem_id);
-		if (ret < 0) {
-			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
-			return ret;
-		}
-		priv->wdog = wdog;
+	ret = register_watchdog(priv);
+	if (ret != 0) {
+		BBDEV_LA12XX_PMD_ERR("watchdog registration failed");
+		return ret;
 	}
 
 	/* check if modem not in ready state */
-	ret = libwdog_get_modem_status(wdog);
+	ret = libwdog_get_modem_status(priv->wdog);
 	if (ret < 0) {
 		BBDEV_LA12XX_PMD_ERR("libwdog_get_modem_status failed");
 		return ret;
 	}
 
-	if (wdog->wdog_modem_status == WDOG_MODEM_NOT_READY)
+	if (priv->wdog->wdog_modem_status == WDOG_MODEM_NOT_READY)
 		return 0;
 
 	return 1;
+}
+
+int
+rte_pmd_la12xx_get_event_fd(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	int ret;
+
+	ret = register_watchdog(priv);
+	if (ret != 0) {
+		BBDEV_LA12XX_PMD_ERR("watchdog registration failed");
+		return ret;
+	}
+
+	return priv->wdog->wdog_eventfd;
+}
+
+void
+rte_pmd_la12xx_clear_event_fd(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	struct wdog *wdog = priv->wdog;
+	uint64_t eftd_ctr;
+
+	libwdog_readwait(wdog->wdog_eventfd, &eftd_ctr, sizeof(uint64_t));
 }
 
 int
@@ -2635,25 +2676,17 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
-	struct wdog *wdog = priv->wdog;
 	int ret = 0;
 
 	BBDEV_LA12XX_PMD_INFO("BBDEV LA12xx: Resetting device...\n");
 
-	if (!wdog) {
-		wdog = rte_malloc(NULL,
-			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
-
-		/* Register Modem & Watchdog */
-		ret = libwdog_register(wdog, priv->modem_id);
-		if (ret < 0) {
-			BBDEV_LA12XX_PMD_ERR("libwdog_register failed");
-			return ret;
-		}
-		priv->wdog = wdog;
+	ret = register_watchdog(priv);
+	if (ret != 0) {
+		BBDEV_LA12XX_PMD_ERR("watchdog registration failed");
+		return ret;
 	}
 
-	ret = libwdog_reinit_modem(wdog, 300);
+	ret = libwdog_reinit_modem(priv->wdog, 300);
 	if (ret < 0) {
 		BBDEV_LA12XX_PMD_ERR("libwdog_reinit_modem failed");
 		return ret;

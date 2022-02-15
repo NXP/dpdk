@@ -376,4 +376,30 @@ rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
 int
 rte_pmd_la12xx_feca_reset(uint16_t dev_id);
 
+/**
+ * Get the eventfd for the device. This eventfd gets triggered when device
+ * does not work properly (wdog gets triggered) and needs a reset.
+ *
+ * If LA12xx device has crashed/hung and needs reset/reboot, this event fd
+ * gets triggered. Bbdev application can call
+ * 'rte_pmd_la12xx_reset_restore_cfg' to reboot and re-configure LA12xx device.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   event_fd, < 0 - Error
+ */
+int
+rte_pmd_la12xx_get_event_fd(uint16_t dev_id);
+
+/**
+ * Read and clear the event fd data. This is done after event is triggered.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ */
+void
+rte_pmd_la12xx_clear_event_fd(uint16_t dev_id);
+
 #endif
