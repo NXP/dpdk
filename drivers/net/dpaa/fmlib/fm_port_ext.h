@@ -274,7 +274,7 @@ typedef struct ioc_fm_port_congestion_groups_t {
  * @Return	0 on success; error code otherwise.
  */
 #define FM_PORT_IOC_SET_RATE_LIMIT \
-	IOW(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(3), ioc_fm_port_rate_limit_t)
+	_IOW(FM_IOC_TYPE_BASE, FM_PORT_IOC_NUM(3), ioc_fm_port_rate_limit_t)
 
 /*
  * @Function	  fm_port_delete_rate_limit

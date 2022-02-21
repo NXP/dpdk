@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2017-2020 NXP
+ * Copyright 2017-2020,2022 NXP
  */
 
 #include <stdio.h>
@@ -557,4 +557,34 @@ get_device_id(t_handle h_dev)
 	t_device *p_dev = (t_device *)h_dev;
 
 	return (t_handle)p_dev->id;
+}
+
+uint32_t
+fm_port_delete_rate_limit(t_handle h_fm_port)
+{
+	t_device        *p_dev = (t_device *)h_fm_port;
+
+	_fml_dbg("Calling...\n");
+
+	if (ioctl(p_dev->fd, FM_PORT_IOC_REMOVE_RATE_LIMIT))
+		RETURN_ERROR(MINOR, E_INVALID_OPERATION, NO_MSG);
+
+	_fml_dbg("Finishing.\n");
+
+	return E_OK;
+}
+
+uint32_t
+fm_port_set_rate_limit(t_handle h_fm_port, t_fm_port_rate_limit *p_rate_limit)
+{
+	t_device        *p_dev = (t_device *)h_fm_port;
+
+	_fml_dbg("Calling...\n");
+
+	if (ioctl(p_dev->fd, FM_PORT_IOC_SET_RATE_LIMIT, p_rate_limit))
+		RETURN_ERROR(MINOR, E_INVALID_OPERATION, NO_MSG);
+
+	_fml_dbg("Finishing.\n");
+
+	return E_OK;
 }
