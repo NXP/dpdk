@@ -2,6 +2,7 @@ DPDK_23 {
 	global:
 
 	rte_pmd_dpaa_set_tx_loopback;
+	rte_pmd_dpaa_port_set_rate_limit;
 
 	local: *;
 };
