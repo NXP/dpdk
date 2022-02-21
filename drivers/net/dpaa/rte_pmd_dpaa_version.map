@@ -3,6 +3,7 @@ DPDK_20.0 {
 
 	dpaa_eth_eventq_attach;
 	dpaa_eth_eventq_detach;
+	rte_pmd_dpaa_port_set_rate_limit;
 	rte_pmd_dpaa_set_tx_loopback;
 
 	local: *;
@@ -12,7 +13,7 @@ EXPERIMENTAL {
 	global:
 
 	rte_pmd_dpaa_ol_reset_classif_info;
+	rte_pmd_dpaa_ol_reset_lgw_info;
 	rte_pmd_dpaa_ol_set_classif_info;
 	rte_pmd_dpaa_ol_set_lgw_info;
-	rte_pmd_dpaa_ol_reset_lgw_info;
 };
