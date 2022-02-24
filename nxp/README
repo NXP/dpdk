@@ -750,7 +750,7 @@ sample application 'dpdk-pdump' allows capturing of packets arriving on
 other interfaces/devices available in DPDK.
 
 The libpcap-based PMD has an external dependency on the libpcap development files
-which must be installed on the board.
+which must be installed on the board, if its not already installed.
 
 	$ wget https://www.tcpdump.org/release/libpcap-1.10.1.tar.gz
 	$ tar -xzvf libpcap-1.10.1.tar.gz
@@ -758,12 +758,31 @@ which must be installed on the board.
 	$ ./configure --host=aarch64-linux-gnu --with-pcap=linux
 	$ make install
 
-Compiling 'dpdk-pdump' on host:
+To check if the library is installed:
+	$ ldconfig -p | grep libpcap
 
-Follow the below steps to compile DPDK on host:
+Compiling 'dpdk-pdump':
+
+Steps to cross compile libpcap:
 ------------------------------------------------
-	$ meson arm64-build
-	$ ninja -C arm64-build install
+	$ git clone https://github.com/the-tcpdump-group/libpcap.git
+	$ cd libpcap
+	$ git checkout libpcap-1.10.1 -b libpcap-1.10.1
+	$ ./configure --host=aarch64-linux-gnu --with-pcap=linux --prefix=<Path to install pcap directory>
+	$ make install
+
+Steps to cross compile dpdk-pdump:
+------------------------------------------------
+
+	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed pcap directory>/lib
+	$ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:<Path to installed pcap directory>/lib/pkgconfig
+	$ pkg-config --modversion libpcap	#Verify pcap libraries can be used using pkgconfig.
+	$ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc
+	$ ninja -C arm64-build
+
+	NOTE: "--reconfigure" in meson may not work after updating
+	      PKG_CONFIG_PATH and PKG_CONFIG_LIBDIR. Better you delete the meson
+	      build folder and recreate it to use the updated paths.
 
 'dpdk-pdump'` would be available in the arm64-build/app folder along with 'testpmd'
 and other inbuilt DPDK apps.
