@@ -1234,6 +1234,22 @@ DPAA2:
 3. fslmc.dpni.<x>,drv_tx_conf=1		Enable Tx confirmation mode for a given interface
 ================================================================================
 
+================================================================================
+
+Using Address Sanitizer
+-----------------------
+
+1. Makefile compilation:
+   Use Extra Flags: EXTRA_CFLAGS='-DRTE_MALLOC_ASAN -fsanitize=address'
+     - make install T=arm64-dpaa-linux-gcc CONFIG_RTE_KNI_KMOD=n -j8 EXTRA_CFLAGS='-DRTE_MALLOC_ASAN -fsanitize=address'
+     - make -C examples/<app>/EXTRA_CFLAGS='-DRTE_MALLOC_ASAN -fsanitize=address'
+
+2. Meson Compilation
+   Use -Db_sanitize=address
+     - meson -Db_sanitize=address arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all
+
+================================================================================
+
 Minimum NXP LSDK version supported: LSDK 1909 (https://lsdk.github.io/)
 DPDK base version used: Release 19.11
 More info on DPDK :  www.dpdk.org

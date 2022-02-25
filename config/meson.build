@@ -280,3 +280,31 @@ if get_option('b_lto')
 		add_project_link_arguments('-Wno-lto-type-mismatch', language: 'c')
 	endif
 endif
+
+if get_option('b_sanitize') == 'address' or get_option('b_sanitize') == 'address,undefined'
+    if is_windows
+        error('ASan is not supported on windows')
+    endif
+
+    if cc.get_id() == 'gcc'
+        asan_dep = cc.find_library('asan', required: true)
+        if (not cc.links('int main(int argc, char *argv[]) { return 0; }',
+                dependencies: asan_dep))
+            error('broken dependency, "libasan"')
+        endif
+        add_project_link_arguments('-lasan', language: 'c')
+        dpdk_extra_ldflags += '-lasan'
+    endif
+
+    if is_linux and dpdk_conf.get('RTE_ARCH_64')
+        dpdk_conf.set10('RTE_MALLOC_ASAN', true)
+    endif
+
+    if is_linux and arch_subdir == 'x86' and dpdk_conf.get('RTE_ARCH_64')
+	dpdk_conf.set10('RTE_MALLOC_ASAN', true)
+    endif
+
+    if is_linux and arch_subdir == 'x86' and dpdk_conf.get('RTE_ARCH_64')
+	dpdk_conf.set10('RTE_MALLOC_ASAN', true)
+    endif
+endif

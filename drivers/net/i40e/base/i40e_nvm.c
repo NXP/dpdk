@@ -676,7 +676,7 @@ i40e_calc_nvm_checksum_exit:
 enum i40e_status_code i40e_update_nvm_checksum(struct i40e_hw *hw)
 {
 	enum i40e_status_code ret_code = I40E_SUCCESS;
-	u16 checksum;
+	u16 checksum = 0;
 	__le16 le_sum;
 
 	DEBUGFUNC("i40e_update_nvm_checksum");

@@ -123,6 +123,8 @@ rte_calloc(const char *type, size_t num, size_t size, unsigned align)
 void *
 rte_realloc_socket(void *ptr, size_t size, unsigned int align, int socket)
 {
+	size_t user_size;
+
 	if (ptr == NULL)
 		return rte_malloc_socket(NULL, size, align, socket);
 
@@ -131,6 +133,8 @@ rte_realloc_socket(void *ptr, size_t size, unsigned int align, int socket)
 		RTE_LOG(ERR, EAL, "Error: memory corruption detected\n");
 		return NULL;
 	}
+
+	user_size = size;
 
 	size = RTE_CACHE_LINE_ROUNDUP(size), align = RTE_CACHE_LINE_ROUNDUP(align);
 
@@ -151,9 +155,11 @@ rte_realloc_socket(void *ptr, size_t size, unsigned int align, int socket)
 	if (new_ptr == NULL)
 		return NULL;
 	/* elem: |pad|data_elem|data|trailer| */
-	const size_t old_size = elem->size - elem->pad - MALLOC_ELEM_OVERHEAD;
+	const size_t old_size = old_malloc_size(elem);
 	rte_memcpy(new_ptr, ptr, old_size < size ? old_size : size);
 	rte_free(ptr);
+
+	asan_set_redzone(elem, user_size);
 
 	return new_ptr;
 }
