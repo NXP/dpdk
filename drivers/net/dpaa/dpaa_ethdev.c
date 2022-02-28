@@ -1798,10 +1798,33 @@ without_cgr:
 	return ret;
 }
 
-#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER) || defined(RTE_LIBRTE_IEEE1588)
-/* Initialise a DEBUG FQ ([rt]x_error, rx_default) and DPAA TX CONFIRM queue
- * to support PTP
- */
+#if defined(RTE_LIBRTE_IEEE1588)
+static int
+dpaa_tx_conf_queue_init(struct qman_fq *fq)
+{
+	struct qm_mcc_initfq opts = {0};
+	int ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID, fq);
+	if (ret) {
+		DPAA_PMD_ERR("create Tx_conf failed with ret: %d", ret);
+		return ret;
+	}
+
+	opts.we_mask = QM_INITFQ_WE_DESTWQ | QM_INITFQ_WE_FQCTRL;
+	opts.fqd.dest.wq = DPAA_IF_DEBUG_PRIORITY;
+	ret = qman_init_fq(fq, 0, &opts);
+	if (ret)
+		DPAA_PMD_ERR("init Tx_conf fqid %d failed with ret: %d",
+			fq->fqid, ret);
+	return ret;
+}
+#endif
+
+#if defined(RTE_LIBRTE_DPAA_DEBUG_DRIVER)
+/* Initialise a DEBUG FQ ([rt]x_error, rx_default) */
 static int dpaa_def_queue_init(struct qman_fq *fq, uint32_t fqid)
 {
 	struct qm_mcc_initfq opts = {0};
@@ -2071,6 +2094,14 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		if (ret)
 			goto free_tx;
 		dpaa_intf->tx_queues[loop].dpaa_intf = dpaa_intf;
+
+#if defined(RTE_LIBRTE_IEEE1588)
+		ret = dpaa_tx_conf_queue_init(&dpaa_intf->tx_conf_queues[loop]);
+		if (ret)
+			goto free_tx;
+		dpaa_intf->tx_conf_queues[loop].dpaa_intf = dpaa_intf;
+		dpaa_intf->tx_queues[loop].tx_conf_queue = &dpaa_intf->tx_conf_queues[loop];
+#endif
 	}
 	dpaa_intf->nb_tx_queues = MAX_DPAA_CORES;
 
@@ -2089,17 +2120,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		goto free_tx;
 	}
 #endif
-#if defined(RTE_LIBRTE_IEEE1588)
-	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
-	ret = dpaa_def_queue_init(dpaa_intf->tx_conf_queues,
-			fman_intf->fqid_tx_confirm);
-	if (ret) {
-		DPAA_PMD_ERR("DPAA TX CONFIRM queue init failed!");
-		goto free_tx;
-	}
-	dpaa_intf->tx_conf_queues->dpaa_intf = dpaa_intf;
-#endif
-
 	DPAA_PMD_DEBUG("All frame queues created");
 
 	/* Get the initial configuration for flow control */

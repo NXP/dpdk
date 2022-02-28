@@ -1160,7 +1160,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 #if defined(RTE_LIBRTE_IEEE1588)
 	struct qman_fq *fq = q;
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
-	struct qman_fq *fq_txconf = dpaa_intf->tx_conf_queues;
+	struct qman_fq *fq_txconf = fq->tx_conf_queue;
 #endif
 
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
