@@ -25,6 +25,7 @@
 #include "dpaa2_pmd_logs.h"
 #include "dpaa2_ethdev.h"
 #include "base/dpaa2_hw_dpni_annot.h"
+#include "dpaa2_parse_dump.h"
 
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
@@ -49,6 +50,9 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
+
+	if (unlikely(dpaa2_print_parser_result))
+		dpaa2_print_parse_result(annotation);
 
 	m->packet_type = RTE_PTYPE_UNKNOWN;
 	switch (frc) {
@@ -222,6 +226,9 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 
 	DPAA2_PMD_DP_DEBUG("(fast parse) Annotation = 0x%" PRIx64 "\t",
 			   annotation->word4);
+
+	if (unlikely(dpaa2_print_parser_result))
+		dpaa2_print_parse_result(annotation);
 
 	if (BIT_ISSET_AT_POS(annotation->word8, DPAA2_ETH_FAS_L3CE))
 		mbuf->ol_flags |= PKT_RX_IP_CKSUM_BAD;

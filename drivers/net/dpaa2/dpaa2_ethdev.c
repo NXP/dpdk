@@ -73,6 +73,8 @@ bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
 /* Enable error queue */
 bool dpaa2_enable_err_queue;
 
+bool dpaa2_print_parser_result;
+
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint8_t page_id; /* dpni statistics page id */
@@ -2714,6 +2716,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
 		dpaa2_enable_err_queue = 1;
+
+	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
+		dpaa2_print_parser_result = 1;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
