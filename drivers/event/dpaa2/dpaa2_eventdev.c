@@ -709,15 +709,9 @@ dpaa2_eventdev_eth_queue_add_all(const struct rte_eventdev *dev,
 		if (ret) {
 			DPAA2_EVENTDEV_ERR(
 				"Event queue attach failed: err(%d)", ret);
-			goto fail;
 		}
 	}
 	return 0;
-fail:
-	for (i = (i - 1); i >= 0 ; i--)
-		dpaa2_eth_eventq_detach(eth_dev, i);
-
-	return ret;
 }
 
 static int
@@ -748,45 +742,15 @@ dpaa2_eventdev_eth_queue_add(const struct rte_eventdev *dev,
 }
 
 static int
-dpaa2_eventdev_eth_queue_del_all(const struct rte_eventdev *dev,
-			     const struct rte_eth_dev *eth_dev)
-{
-	int i, ret;
-
-	EVENTDEV_INIT_FUNC_TRACE();
-
-	RTE_SET_USED(dev);
-
-	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
-		ret = dpaa2_eth_eventq_detach(eth_dev, i);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"Event queue detach failed: err(%d)", ret);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static int
 dpaa2_eventdev_eth_queue_del(const struct rte_eventdev *dev,
 			     const struct rte_eth_dev *eth_dev,
 			     int32_t rx_queue_id)
 {
-	int ret;
-
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	if (rx_queue_id == -1)
-		return dpaa2_eventdev_eth_queue_del_all(dev, eth_dev);
-
-	ret = dpaa2_eth_eventq_detach(eth_dev, rx_queue_id);
-	if (ret) {
-		DPAA2_EVENTDEV_ERR(
-			"Event queue detach failed: err(%d)", ret);
-		return ret;
-	}
+	RTE_SET_USED(dev);
+	RTE_SET_USED(eth_dev);
+	RTE_SET_USED(rx_queue_id);
 
 	return 0;
 }
@@ -851,15 +815,9 @@ dpaa2_eventdev_crypto_queue_add_all(const struct rte_eventdev *dev,
 		if (ret) {
 			DPAA2_EVENTDEV_ERR("dpaa2_sec_eventq_attach failed: ret %d\n",
 				    ret);
-			goto fail;
 		}
 	}
 	return 0;
-fail:
-	for (i = (i - 1); i >= 0 ; i--)
-		dpaa2_sec_eventq_detach(cryptodev, i);
-
-	return ret;
 }
 
 static int
@@ -890,45 +848,15 @@ dpaa2_eventdev_crypto_queue_add(const struct rte_eventdev *dev,
 }
 
 static int
-dpaa2_eventdev_crypto_queue_del_all(const struct rte_eventdev *dev,
-			     const struct rte_cryptodev *cdev)
-{
-	int i, ret;
-
-	EVENTDEV_INIT_FUNC_TRACE();
-
-	RTE_SET_USED(dev);
-
-	for (i = 0; i < cdev->data->nb_queue_pairs; i++) {
-		ret = dpaa2_sec_eventq_detach(cdev, i);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"dpaa2_sec_eventq_detach failed:ret %d\n", ret);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static int
 dpaa2_eventdev_crypto_queue_del(const struct rte_eventdev *dev,
 			     const struct rte_cryptodev *cryptodev,
 			     int32_t rx_queue_id)
 {
-	int ret;
-
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	if (rx_queue_id == -1)
-		return dpaa2_eventdev_crypto_queue_del_all(dev, cryptodev);
-
-	ret = dpaa2_sec_eventq_detach(cryptodev, rx_queue_id);
-	if (ret) {
-		DPAA2_EVENTDEV_ERR(
-			"dpaa2_sec_eventq_detach failed: ret: %d\n", ret);
-		return ret;
-	}
+	RTE_SET_USED(dev);
+	RTE_SET_USED(cryptodev);
+	RTE_SET_USED(rx_queue_id);
 
 	return 0;
 }

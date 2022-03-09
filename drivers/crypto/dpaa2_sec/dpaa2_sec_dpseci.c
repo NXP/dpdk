@@ -4212,27 +4212,6 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 	return 0;
 }
 
-int
-dpaa2_sec_eventq_detach(const struct rte_cryptodev *dev,
-			int qp_id)
-{
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
-	struct dpseci_rx_queue_cfg cfg;
-	int ret;
-
-	memset(&cfg, 0, sizeof(struct dpseci_rx_queue_cfg));
-	cfg.options = DPSECI_QUEUE_OPT_DEST;
-	cfg.dest_cfg.dest_type = DPSECI_DEST_NONE;
-
-	ret = dpseci_set_rx_queue(dpseci, CMD_PRI_LOW, priv->token,
-				  qp_id, &cfg);
-	if (ret)
-		RTE_LOG(ERR, PMD, "Error in dpseci_set_queue: ret: %d\n", ret);
-
-	return ret;
-}
-
 static struct rte_cryptodev_ops crypto_ops = {
 	.dev_configure	      = dpaa2_sec_dev_configure,
 	.dev_start	      = dpaa2_sec_dev_start,

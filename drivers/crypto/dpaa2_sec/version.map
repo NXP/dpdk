@@ -2,7 +2,6 @@ INTERNAL {
 	global:
 
 	dpaa2_sec_eventq_attach;
-	dpaa2_sec_eventq_detach;
 
 	local: *;
 };

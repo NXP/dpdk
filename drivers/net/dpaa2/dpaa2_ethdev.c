@@ -2344,29 +2344,6 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 	return 0;
 }
 
-int dpaa2_eth_eventq_detach(const struct rte_eth_dev *dev,
-		int eth_rx_queue_id)
-{
-	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[eth_rx_queue_id];
-	uint8_t flow_id = dpaa2_ethq->flow_id;
-	struct dpni_queue cfg;
-	uint8_t options;
-	int ret;
-
-	memset(&cfg, 0, sizeof(struct dpni_queue));
-	options = DPNI_QUEUE_OPT_DEST;
-	cfg.destination.type = DPNI_DEST_NONE;
-
-	ret = dpni_set_queue(dpni, CMD_PRI_LOW, eth_priv->token, DPNI_QUEUE_RX,
-			     dpaa2_ethq->tc_index, flow_id, options, &cfg);
-	if (ret)
-		DPAA2_PMD_ERR("Error in dpni_set_queue: ret: %d", ret);
-
-	return ret;
-}
-
 static int
 dpaa2_dev_flow_ops_get(struct rte_eth_dev *dev,
 		       const struct rte_flow_ops **ops)
