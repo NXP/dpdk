@@ -69,8 +69,11 @@ Test Procedure with ptpclient on DPAA2:
 <Tester Machine>
 	Start ptp server on tester machine.
 	This will act as PTP Master
+	Set the Ethernet port to be used:
+		#ifconfig eth1 <valid ip address>
+
 	eth1 is port on tester machine which is connected to DUT
-	#./ptp4l -i eth1  -m -2
+		#./ptp4l -i eth1  -m -2
 
 
 <DUT Machine>
@@ -93,7 +96,9 @@ Test Procedure with ptpclient on DPAA2:
 
 Test Procedure with ptpclient on DPAA:
 =======================================
-----------------------
+
+Non-VSP Case:
+-------------
 <Tester Machine>
 	Start ptp server on tester machine.
 	This will act as PTP Master
@@ -105,8 +110,10 @@ Test Procedure with ptpclient on DPAA:
 	We need to enable CONFIG_FSL_DPAA_1588 so that DPAA HW timestamping
 	support is enabled.
 
+	Set the Ethernet port to be used:
+		#ifconfig fm1-mac9 <valid ip address>
 	fm1-mac9 is port on tester machine which is connected to DUT
-	#./ptp4l -i fm1-mac9  -m -2
+		#./ptp4l -i fm1-mac9  -m -2
 
 
 <DUT Machine>
@@ -123,3 +130,20 @@ Test Procedure with ptpclient on DPAA:
 	To verfiy if System kernel clock is updated, read time before and
 	after execution of above ptpclient command using date command.
 
+VSP Case:
+----------
+<Tester Machine>
+
+	Similar to Non-VSP case
+
+<DUT Machine>
+
+1. Reboot the board and set dtb as fsl-ls1046a-rdb-usdpaa-shared.dtb on the bank from which board is being booted
+and boot up the board.
+2. fmc -x
+3. Set the Ethernet ports to be used:
+	#ifconfig fm1-mac9 <valid ip address>
+4. Setup VSP fmc configuration: usdpaa_policy_vsp_24g_classif_ptp_1queue.xml splits the traffic with ptp proto to dpdk
+	#fmc -c /usr/local/dpdk/dpaa/usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_vsp_24g_classif_ptp_1queue.xml -a
+5. Run ptpclient application:
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x10 -T 1
