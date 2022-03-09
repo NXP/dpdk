@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2022 NXP
  *
  */
 
@@ -3534,17 +3534,6 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		memcpy(session->auth_key.data, auth_xform->key.data,
 		       auth_xform->key.length);
 		session->auth_alg = auth_xform->algo;
-	} else {
-		session->auth_key.data = NULL;
-		session->auth_key.length = 0;
-		session->auth_alg = 0;
-	}
-	authdata.key = (size_t)session->auth_key.data;
-	authdata.keylen = session->auth_key.length;
-	authdata.key_enc_flags = 0;
-	authdata.key_type = RTA_DATA_IMM;
-
-	if (session->auth_alg) {
 		switch (session->auth_alg) {
 		case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
 			authdata.algtype = PDCP_AUTH_TYPE_SNOW;
@@ -3563,12 +3552,20 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 				      session->auth_alg);
 			goto out;
 		}
-
 		p_authdata = &authdata;
-	} else if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_CONTROL) {
-		DPAA2_SEC_ERR("Crypto: Integrity must for c-plane");
-		goto out;
+	} else {
+		if (pdcp_xform->domain == RTE_SECURITY_PDCP_MODE_CONTROL) {
+			DPAA2_SEC_ERR("Crypto: Integrity must for c-plane");
+			goto out;
+		}
+		session->auth_key.data = NULL;
+		session->auth_key.length = 0;
+		session->auth_alg = 0;
 	}
+	authdata.key = (size_t)session->auth_key.data;
+	authdata.keylen = session->auth_key.length;
+	authdata.key_enc_flags = 0;
+	authdata.key_type = RTA_DATA_IMM;
 
 	if (pdcp_xform->sdap_enabled) {
 		int nb_keys_to_inline =
