@@ -1800,6 +1800,30 @@ l3fwd_event_service_setup(void)
 	}
 }
 
+static int
+get_dpdmux_id_from_env(void)
+{
+	int dpdmux_id, ret;
+	FILE *fp;
+
+	/* Get the dpdmux ID from environment */
+	fp = popen("restool dprc show $DPRC | grep dpdmux | "
+		"cut -f 1 | cut -d . -f 2", "r");
+	if (fp == NULL) {
+		printf("Error in getting dpdmux id\n");
+		return -1;
+	}
+
+	ret = fscanf(fp, "%d", &dpdmux_id);
+	if (ret != 1) {
+		printf("Failed to get dpdmux id\n");
+		return -1;
+	}
+	pclose(fp);
+
+	return dpdmux_id;
+}
+
 /* Constraints of this function:
  * 1. Assumes that only a single rule is being created, which is matching
  *    IPv4 proto_id field or ethertype.
@@ -1816,10 +1840,16 @@ configure_split_traffic(void)
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
-	int dpdmux_id = 0; /* constant: dpdmux.0 */
 	uint16_t mask = 0xffff;
 	struct rte_flow_item_ipv4 flow_item;
 	struct rte_flow_item_eth eitem;
+	int dpdmux_id;
+
+	dpdmux_id = get_dpdmux_id_from_env();
+	if (dpdmux_id < 0) {
+		printf("get_dpdmux_id_from_env failed\n");
+		return -1;
+	}
 
 	vf.id = mux_connection_id;
 
@@ -1857,11 +1887,17 @@ configure_split_traffic_config(void)
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
-	int dpdmux_id = 0; /* constant: dpdmux.0 */
 	uint16_t mask;
 	struct rte_flow_item_udp udp_item;
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
+	int dpdmux_id;
+
+	dpdmux_id = get_dpdmux_id_from_env();
+	if (dpdmux_id < 0) {
+		printf("get_dpdmux_id_from_env failed\n");
+		return -1;
+	}
 
 	vf.id = mux_connection_id;
 
