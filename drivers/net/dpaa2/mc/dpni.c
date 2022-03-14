@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2021 NXP
+ * Copyright 2016-2022 NXP
  *
  */
 #include <fsl_mc_sys.h>
@@ -2234,7 +2234,8 @@ int dpni_get_early_drop(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @qtype:	Type of queue - Rx, Tx and Tx confirm types are supported
- * @tc_id:	Traffic class selection (0-7)
+ * @param:	Traffic class and channel. Bits[0-7] contain traaffic class,
+ *		bite[8-15] contains channel id
  * @cfg:	congestion notification configuration
  *
  * Return:	'0' on Success; error code otherwise.
