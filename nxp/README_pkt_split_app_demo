@@ -82,11 +82,20 @@ Steps to run pkt_split_app on LS1046ARDB when split port is eth port
 (Without ASK's FMAN micro code)
 -------------------------------------------------------------------
 
+0. Boot up the board using fsl-ls1046a-rdb-usdpaa-shared.dtb file to enable
+   shared mac support on the board.
+
 1. fmc -x
 2. ifconfig fm1-mac10 <valid IP address>
 3. mount -t hugetlbfs hugetlbfs /dev/hugepages
 4. echo 512 > /proc/sys/vm/nr_hugepages
-5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_24g_classif_frag_gtp_1queue.xml -a
+5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_vsp_24g_classif_frag_gtp_1queue.xml -a
+
+   Note: The fmc configuration and policy files can be found in the rootfs in
+	 /usr/local/dpdk/dpaa directory. Please make sure you have latest copy
+	 of the files. Refer to nxp/dpaa directory in dpdk repository for the
+	 latest version of xml files.
+
 6. Bind PCI device with DPDK driver
 
    To print the available PCI devices, use:
