@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2021 NXP
+ *   Copyright 2016,2018-2022 NXP
  *
  */
 
@@ -21,6 +21,7 @@
 #include "fslmc_logs.h"
 
 #include <dpaax_iova_table.h>
+#include <dpaa2_hw_dpio.h>
 
 #define VFIO_IOMMU_GROUP_PATH "/sys/kernel/iommu_groups"
 #define FSLMC_BUS_NAME	fslmc
@@ -500,6 +501,11 @@ rte_fslmc_probe(void)
 
 	if (rte_eal_iova_mode() == RTE_IOVA_VA)
 		dpaa2_virt_mode = 1;
+
+	void *handle = rte_lcore_callback_register("dpaa2_init", dpaa2_thread_init,
+			NULL, NULL);
+	if (handle == NULL)
+		DPAA2_BUS_LOG(DEBUG, "Error: lcore callback register failed\n");
 
 	return 0;
 }
