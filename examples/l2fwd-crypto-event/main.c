@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019,2021 NXP
+ * Copyright 2019,2021-2022 NXP
  */
 
 #include <time.h>
@@ -1739,7 +1739,7 @@ eventdev_configure(struct l2fwd_crypto_options *options)
 		 * used as event port id and crypto session id
 		 */
 		qconf = &lcore_queue_conf[rx_lcore_id];
-		qconf->seq_core_id = seq_core_id++;
+		qconf->seq_core_id = seq_core_id;
 	}
 
 	eventdev_eth_configure(options);
