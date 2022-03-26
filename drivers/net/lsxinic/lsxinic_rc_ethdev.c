@@ -1279,11 +1279,30 @@ static struct eth_dev_ops eth_lxsnic_eth_dev_ops = {
 	.txq_info_get			= lxsnic_dev_txq_info,
 };
 
-static const struct rte_pci_id pci_id_lxsnic_map[] = {
-	{ RTE_PCI_DEVICE(NXP_PCI_VENDOR_ID, NXP_PCI_DEV_ID_LX2160A) },
-	{ RTE_PCI_DEVICE(NXP_PCI_VENDOR_ID, NXP_PCI_DEV_ID_LS2088A) },
-	{ .vendor_id = 0, /* sentinel */ },
-};
+static struct rte_pci_id pci_id_lxsnic_map[32];
+
+static void lxsnic_pre_init_pci_id(void)
+{
+	int i, num;
+
+	num = sizeof(s_lsinic_rev2_id_map) /
+		sizeof(struct lsinic_pcie_svr_map);
+
+	memset(pci_id_lxsnic_map, 0, sizeof(pci_id_lxsnic_map));
+	for (i = 0; i < (num + 1); i++) {
+		pci_id_lxsnic_map[i].class_id = RTE_CLASS_ANY_ID;
+		pci_id_lxsnic_map[i].vendor_id = NXP_PCI_VENDOR_ID;
+		if (i < num) {
+			pci_id_lxsnic_map[i].device_id =
+				s_lsinic_rev2_id_map[i].pci_dev_id;
+		} else {
+			pci_id_lxsnic_map[i].device_id =
+				NXP_PCI_DEV_ID_LS2088A;
+		}
+		pci_id_lxsnic_map[i].subsystem_vendor_id = PCI_ANY_ID;
+		pci_id_lxsnic_map[i].subsystem_device_id = PCI_ANY_ID;
+	}
+}
 
 static void
 lxsnic_reinit_locked(struct lxsnic_adapter *adapter __rte_unused)
@@ -1903,6 +1922,8 @@ static void
 lxsnic_dev_construct(void)
 {
 	char *penv = getenv("LSINIC_RC_SIM");
+
+	lxsnic_pre_init_pci_id();
 
 	if (penv)
 		g_lsxinic_rc_sim = atoi(penv);

@@ -5,12 +5,6 @@
 #ifndef _LSINIC_COMMON_H_
 #define _LSINIC_COMMON_H_
 
-#define NXP_PCI_VENDOR_ID (0x1957)
-#define NXP_PCI_DEV_ID_LX2160A (0x8d80)
-#define NXP_PCI_DEV_ID_LS2088A (0x8240)
-#define NXP_PCI_DEV_ID_NULL (0)
-#define NXP_PCI_CLASS_ID (0x0200)
-
 #define LSINIC_MERGE_DEFAULT_THRESHOLD		(600) /* bytes */
 
 #define LSINIC_ETH_FCS_SIZE \
@@ -24,6 +18,42 @@
 #ifndef RTE_VERIFY
 #define RTE_VERIFY(exp) do {} while (0)
 #endif
+
+struct lsinic_pcie_svr_map {
+	uint32_t svr_id;
+	uint16_t pci_dev_id;
+	uint16_t rsv;
+};
+
+#ifndef SVR_LX2160A
+#define SVR_LX2160A	0x87360000
+#endif
+
+static const
+struct lsinic_pcie_svr_map s_lsinic_rev2_id_map[] =
+{
+	{SVR_LX2160A | 0x0120, 0x8d81, 0},
+	{SVR_LX2160A | 0x1020, 0x8d90, 0},
+	{SVR_LX2160A | 0x0020, 0x8d80, 0},
+	{SVR_LX2160A | 0x1120, 0x8d91, 0},
+	{SVR_LX2160A | 0x2120, 0x8da1, 0},
+	{SVR_LX2160A | 0x3020, 0x8db0, 0},
+	{SVR_LX2160A | 0x2020, 0x8da0, 0},
+	{SVR_LX2160A | 0x3120, 0x8db1, 0},
+	{SVR_LX2160A | 0x0320, 0x8d83, 0},
+	{SVR_LX2160A | 0x1220, 0x8d92, 0},
+	{SVR_LX2160A | 0x0220, 0x8d82, 0},
+	{SVR_LX2160A | 0x1320, 0x8d93, 0}
+};
+
+#define NXP_PCI_VENDOR_ID (0x1957)
+#define NXP_DEFAULT_SOC_IDX 2
+#define NXP_PCI_DEV_ID_LX2160A_DEFAULT \
+	s_lsinic_rev2_id_map[NXP_DEFAULT_SOC_IDX].pci_dev_id
+
+#define NXP_PCI_DEV_ID_LS2088A (0x8240)
+#define NXP_PCI_DEV_ID_NULL (0)
+#define NXP_PCI_CLASS_ID (0x0200)
 
 #define XMIT_IDX_EXTRA_SPACE 2
 
