@@ -182,8 +182,6 @@ lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 
 void lsx_pciep_start_msix(void *addr, uint32_t cmd);
 
-uint16_t lx_rev2_pciep_default_dev_id(void);
-
 uint16_t
 lsx_pciep_ctl_get_device_id(uint8_t pcie_idx,
 	enum lsx_pcie_pf_idx pf_idx);
