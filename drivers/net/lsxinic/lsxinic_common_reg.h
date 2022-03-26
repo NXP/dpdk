@@ -420,14 +420,16 @@ struct lsinic_dev_reg {  /* offset 0x000-0x1FF */
 
 #define LSINIC_DEV_MSIX_MAX_NB LSINIC_RING_MAX_COUNT
 
+#define ALIGNED(x) \
+	__attribute__((__aligned__(x)))
+
 struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	/* RC sets the following reg */
-	uint32_t bind_dev_id;
 	uint32_t rc_state;
 	struct lsinic_command_reg cmd;
 	uint32_t r_regl;	/* shadow reg low address On RC side */
 	uint32_t r_regh;	/* shadow reg high address On RC side */
-	uint64_t r_dma_base;
+	uint64_t r_dma_base ALIGNED(sizeof(uint64_t));
 	uint32_t r_dma_elt_size;
 	uint32_t msi_flag;
 	uint32_t msix_mask[LSINIC_DEV_MSIX_MAX_NB];
