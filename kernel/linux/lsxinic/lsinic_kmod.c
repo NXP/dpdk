@@ -4552,12 +4552,7 @@ static void lsinic_sim_remove(struct platform_device *simdev)
 }
 
 /* The list of devices that this module will support */
-static struct pci_device_id lsinic_ids[] = {
-	{PCI_VENDOR_ID_FREESCALE, 0x8240, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1},
-	{PCI_VENDOR_ID_FREESCALE, 0x8d80, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1},
-	{PCI_VENDOR_ID_FREESCALE, 0x8d90, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1},
-	{ 0 },
-};
+static struct pci_device_id lsinic_ids[32];
 MODULE_DEVICE_TABLE(pci, lsinic_ids);
 
 static struct pci_driver lsinic_driver = {
@@ -4570,6 +4565,32 @@ static struct pci_driver lsinic_driver = {
 #endif
 };
 
+static void lsinic_pre_init_pci_id(void)
+{
+	int i, num;
+
+	num = sizeof(s_lsinic_rev2_id_map) /
+		sizeof(struct lsinic_pcie_svr_map);
+
+	memset(lsinic_ids, 0, sizeof(lsinic_ids));
+	for (i = 0; i < (num + 1); i++) {
+		lsinic_ids[i].vendor = NXP_PCI_VENDOR_ID;
+		if (i < num) {
+			lsinic_ids[i].device =
+				s_lsinic_rev2_id_map[i].pci_dev_id;
+		} else {
+			lsinic_ids[i].device =
+				NXP_PCI_DEV_ID_LS2088A;
+		}
+		lsinic_ids[i].subvendor = PCI_ANY_ID;
+		lsinic_ids[i].subdevice = PCI_ANY_ID;
+		lsinic_ids[i].class = 0;
+		lsinic_ids[i].class_mask = 0;
+		lsinic_ids[i].driver_data = 1;
+	}
+}
+
+
 /**
  * lsinic_init_module - Driver Registration Routine
  *
@@ -4581,6 +4602,8 @@ static int __init lsinic_init_module(void)
 	int ret = 0;
 
 	pr_info("NXP Layerscape 10 Gigabit PCI Express Network Driver\n");
+
+	lsinic_pre_init_pci_id();
 
 	if (lsinic_sim) {
 		int idx;
