@@ -496,7 +496,12 @@ lxsnic_rxq_order_prsv_cfg(struct lxsnic_adapter *adapter,
 	uint64_t resv0 = rx_conf->reserved_64s[0];
 	uint64_t resv1 = rx_conf->reserved_64s[1];
 	uint32_t elt_interval;
+	int interval_support = 1;
 
+#ifdef RTE_ARCH_ARM64
+	if (!g_lsxinic_rc_sim)
+		interval_support = 0;
+#endif
 	if (resv0 && resv1 && resv1 > resv0
 		&& (resv1 - resv0) <= MAX_U32) {
 		adapter->pkt_addr_base = resv0;
@@ -505,7 +510,7 @@ lxsnic_rxq_order_prsv_cfg(struct lxsnic_adapter *adapter,
 		if (elt_interval * (mp->size - 1) != (resv1 - resv0)) {
 			adapter->pkt_addr_interval = 0;
 		} else {
-			if (mp->size < MAX_U16) {
+			if (mp->size < MAX_U16 && interval_support) {
 				adapter->pkt_addr_base +=
 					RTE_PKTMBUF_HEADROOM;
 				adapter->pkt_addr_interval =
