@@ -1587,6 +1587,8 @@ ipsec_sa_init(struct ipsec_sa *lsa, struct rte_ipsec_sa *sa, uint32_t sa_size,
 	if (lsa->flags & SA_TELEMETRY_ENABLE)
 		rte_ipsec_telemetry_sa_add(sa);
 
+	rte_spinlock_init(&lsa->lock);
+
 	/* init primary processing session */
 	ips = ipsec_get_primary_session(lsa);
 	rc = fill_ipsec_session(ips, sa);

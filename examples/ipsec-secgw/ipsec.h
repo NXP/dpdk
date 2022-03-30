@@ -13,6 +13,7 @@
 #include <rte_security.h>
 #include <rte_flow.h>
 #include <rte_ipsec.h>
+#include <rte_spinlock.h>
 
 #include "event_helper.h"
 #include "ipsec-secgw.h"
@@ -170,6 +171,7 @@ struct ipsec_sa {
 	struct rte_flow_item_esp esp_spec;
 	struct rte_flow *flow;
 	struct rte_security_session_conf sess_conf;
+	rte_spinlock_t lock;
 } __rte_cache_aligned;
 
 struct ipsec_xf {

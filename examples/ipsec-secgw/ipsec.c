@@ -73,6 +73,12 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 	uint32_t lcore_id;
 	int32_t ret = 0;
 
+	rte_spinlock_lock(&sa->lock);
+	if (ips->security.ses != NULL) {
+		rte_spinlock_unlock(&sa->lock);
+		return 0;
+	}
+
 	RTE_LCORE_FOREACH(lcore_id) {
 		ipsec_ctx = ipsec_ctx_lcore[lcore_id];
 
@@ -91,6 +97,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 		if (ret == -ENOENT)
 			continue;
 		if (ret < 0) {
+			rte_spinlock_unlock(&sa->lock);
 			RTE_LOG(ERR, IPSEC,
 					"No cryptodev: core %u, cipher_algo %u, "
 					"auth_algo %u, aead_algo %u\n",
@@ -110,6 +117,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 		if (cdev_id == RTE_CRYPTO_MAX_DEVS)
 			cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
 		else if (cdev_id != ipsec_ctx->tbl[cdev_id_qp].id) {
+			rte_spinlock_unlock(&sa->lock);
 			RTE_LOG(ERR, IPSEC,
 					"SA mapping to multiple cryptodevs is "
 					"not supported!");
@@ -120,6 +128,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 		sa->cqp[lcore_id] = &ipsec_ctx->tbl[cdev_id_qp];
 	}
 	if (cdev_id == RTE_CRYPTO_MAX_DEVS) {
+		rte_spinlock_unlock(&sa->lock);
 		RTE_LOG(WARNING, IPSEC, "No cores found to handle SA\n");
 		return 0;
 	}
@@ -159,6 +168,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 			ips->security.ses = rte_security_session_create(ctx,
 					&sess_conf, skt_ctx->session_pool);
 			if (ips->security.ses == NULL) {
+				rte_spinlock_unlock(&sa->lock);
 				RTE_LOG(ERR, IPSEC,
 				"SEC Session init failed: err: %d\n", ret);
 				return -1;
@@ -169,6 +179,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 			op_type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
 			sess_type = RTE_CRYPTO_OP_SECURITY_SESSION;
 		} else {
+			rte_spinlock_unlock(&sa->lock);
 			RTE_LOG(ERR, IPSEC, "Inline not supported\n");
 			return -1;
 		}
@@ -178,8 +189,10 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 
 			rte_cryptodev_info_get(cdev_id, &info);
 			if (!(info.feature_flags &
-				RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO))
+				RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO)) {
+				rte_spinlock_unlock(&sa->lock);
 				return -ENOTSUP;
+			}
 
 		}
 		ips->crypto.dev_id = cdev_id;
@@ -210,6 +223,8 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 		rte_cryptodev_session_event_mdata_set(cdev_id, sess, op_type,
 				sess_type, &m_data, sizeof(m_data));
 	}
+
+	rte_spinlock_unlock(&sa->lock);
 
 	return 0;
 }
