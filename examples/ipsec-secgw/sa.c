@@ -1565,6 +1565,7 @@ ipsec_sa_init(struct ipsec_sa *lsa, struct rte_ipsec_sa *sa, uint32_t sa_size)
 	if (lsa->fallback_sessions == 1)
 		rc = fill_ipsec_session(ipsec_get_fallback_session(lsa), sa);
 
+	rte_spinlock_init(&lsa->lock);
 	return rc;
 }
 

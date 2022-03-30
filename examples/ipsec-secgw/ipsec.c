@@ -62,6 +62,11 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa,
 	unsigned long cdev_id_qp = 0;
 	int32_t ret = 0;
 
+	rte_spinlock_lock(&sa->lock);
+	if (ips->security.ses != NULL) {
+		rte_spinlock_unlock(&sa->lock);
+		return 0;
+	}
 	if (ipsec_ctx->cdev_map) {
 		struct cdev_key key = { 0 };
 
@@ -74,6 +79,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa,
 		ret = rte_hash_lookup_data(ipsec_ctx->cdev_map, &key,
 				(void **)&cdev_id_qp);
 		if (ret < 0) {
+			rte_spinlock_unlock(&sa->lock);
 			RTE_LOG(ERR, IPSEC,
 					"No cryptodev: core %u, cipher_algo %u, "
 					"auth_algo %u, aead_algo %u\n",
@@ -123,11 +129,13 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa,
 					&sess_conf, ipsec_ctx->session_pool,
 					ipsec_ctx->session_priv_pool);
 			if (ips->security.ses == NULL) {
+				rte_spinlock_unlock(&sa->lock);
 				RTE_LOG(ERR, IPSEC,
 				"SEC Session init failed: err: %d\n", ret);
 				return -1;
 			}
 		} else {
+			rte_spinlock_unlock(&sa->lock);
 			RTE_LOG(ERR, IPSEC, "Inline not supported\n");
 			return -1;
 		}
@@ -139,8 +147,10 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa,
 			cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
 			rte_cryptodev_info_get(cdev_id, &info);
 			if (!(info.feature_flags &
-				RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO))
+				RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO)) {
+				rte_spinlock_unlock(&sa->lock);
 				return -ENOTSUP;
+			}
 
 			ips->crypto.dev_id = cdev_id;
 		}
@@ -155,6 +165,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx, struct ipsec_sa *sa,
 	}
 
 	sa->cdev_id_qp = cdev_id_qp;
+	rte_spinlock_unlock(&sa->lock);
 
 	return 0;
 }
