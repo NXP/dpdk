@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  * Copyright 2008-2013 Freescale Semiconductor, Inc.
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef __DESC_PDCP_H__
@@ -3178,7 +3178,7 @@ cnstr_shdsc_pdcp_short_mac(uint32_t *descbuf,
 
 	case PDCP_AUTH_TYPE_ZUC:
 		iv[0] = 0xFFFFFFFF;
-		iv[1] = swap ? swab32(0xFC000000) : 0xFC000000;
+		iv[1] = swab32(0xFC000000);
 		iv[2] = 0x00000000; /* unused */
 
 		KEY(p, KEY2, authdata->key_enc_flags, authdata->key,
