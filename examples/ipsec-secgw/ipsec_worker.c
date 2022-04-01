@@ -281,12 +281,18 @@ static inline int
 process_ipsec_ev_inbound(struct ipsec_ctx *ctx, struct route_table *rt,
 		struct rte_event *ev)
 {
-	struct ipsec_sa *sa = NULL;
+	struct rte_ipsec_session *sess;
+	struct ipsec_mbuf_metadata *priv;
+	struct rte_crypto_sym_op *sym_cop;
+	struct rte_crypto_op *cop[1];
+	struct ipsec_sa *sa[1];
 	struct rte_mbuf *pkt;
 	uint16_t port_id = 0;
 	enum pkt_type type;
 	uint32_t sa_idx;
 	uint8_t *nlp;
+	int ret;
+	const struct rte_ipv4_hdr *iph4;
 
 	/* Get pkt from event */
 	pkt = ev->mbuf;
@@ -303,7 +309,11 @@ process_ipsec_ev_inbound(struct ipsec_ctx *ctx, struct route_table *rt,
 					"Inbound security offload failed\n");
 				goto drop_pkt_and_exit;
 			}
-			sa = *(struct ipsec_sa **)rte_security_dynfield(pkt);
+			sa[0] = *(struct ipsec_sa **)rte_security_dynfield(pkt);
+		} else {
+			RTE_LOG(ERR, IPSEC,
+					"Plain pkt from inbound port dropped");
+			goto drop_pkt_and_exit;
 		}
 
 		/* Check if we have a match */
@@ -313,6 +323,52 @@ process_ipsec_ev_inbound(struct ipsec_ctx *ctx, struct route_table *rt,
 		}
 		break;
 
+	case PKT_TYPE_IPSEC_IPV6:
+	case PKT_TYPE_IPSEC_IPV4:
+		iph4 = (const struct rte_ipv4_hdr *)rte_pktmbuf_adj(pkt,
+				RTE_ETHER_HDR_LEN);
+		adjust_ipv4_pktlen(pkt, iph4, 0);
+		pkt->l2_len = 0;
+		pkt->l3_len = sizeof(*iph4);
+		inbound_sa_lookup(ctx->sa_ctx, &pkt, (void *)sa, 1);
+		if (sa[0] == NULL)
+			goto drop_pkt_and_exit;
+
+		rte_prefetch0(sa[0]);
+		rte_prefetch0(pkt);
+		priv = get_priv(pkt);
+		priv->sa = sa[0];
+
+		priv->cop.type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
+		priv->cop.status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
+		sess = ipsec_get_primary_session(sa[0]);
+
+		rte_prefetch0(&priv->sym_cop);
+
+		if ((unlikely(sess->security.ses == NULL)) &&
+			create_lookaside_session(ctx, sa[0], sess)) {
+			goto drop_pkt_and_exit;
+		}
+
+		sym_cop = get_sym_cop(&priv->cop);
+		sym_cop->m_src = pkt;
+
+		rte_security_attach_session(&priv->cop, sess->security.ses);
+
+		cop[0] = &priv->cop;
+		ret = rte_cryptodev_enqueue_burst(
+				ctx->tbl[sa[0]->cdev_id_qp].id,
+				ctx->tbl[sa[0]->cdev_id_qp].qp,
+				cop, 1);
+		if (ret < 1) {
+			RTE_LOG_DP(DEBUG, IPSEC, "Cryptodev %u queue %u:"
+					" enqueued %u crypto ops\n",
+					ctx->tbl[sa[0]->cdev_id_qp].id,
+					ctx->tbl[sa[0]->cdev_id_qp].qp, ret);
+			/* drop packet that we fail to enqueue */
+			goto drop_pkt_and_exit;
+		}
+		return PKT_POSTED;
 	case PKT_TYPE_PLAIN_IPV6:
 		if (pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD) {
 			if (unlikely(pkt->ol_flags &
@@ -321,7 +377,7 @@ process_ipsec_ev_inbound(struct ipsec_ctx *ctx, struct route_table *rt,
 					"Inbound security offload failed\n");
 				goto drop_pkt_and_exit;
 			}
-			sa = *(struct ipsec_sa **)rte_security_dynfield(pkt);
+			sa[0] = *(struct ipsec_sa **)rte_security_dynfield(pkt);
 		}
 
 		/* Check if we have a match */
@@ -347,11 +403,11 @@ process_ipsec_ev_inbound(struct ipsec_ctx *ctx, struct route_table *rt,
 	/* Else the packet has to be protected with SA */
 
 	/* If the packet was IPsec processed, then SA pointer should be set */
-	if (sa == NULL)
+	if (sa[0] == NULL)
 		goto drop_pkt_and_exit;
 
 	/* SPI on the packet should match with the one in SA */
-	if (unlikely(sa->spi != ctx->sa_ctx->sa[sa_idx].spi))
+	if (unlikely(sa[0]->spi != ctx->sa_ctx->sa[sa_idx].spi))
 		goto drop_pkt_and_exit;
 
 route_and_send_pkt:
@@ -382,12 +438,18 @@ process_ipsec_ev_outbound(struct ipsec_ctx *ctx, struct route_table *rt,
 {
 	struct rte_ipsec_session *sess;
 	struct sa_ctx *sa_ctx;
+	struct ipsec_mbuf_metadata *priv;
+	struct rte_crypto_sym_op *sym_cop;
+	struct rte_crypto_op *cop[1];
 	struct rte_mbuf *pkt;
 	uint16_t port_id = 0;
-	struct ipsec_sa *sa;
+	struct ipsec_sa *sa = NULL;
 	enum pkt_type type;
 	uint32_t sa_idx;
 	uint8_t *nlp;
+	int ret;
+	const struct rte_ipv4_hdr *iph4;
+	const struct rte_ipv6_hdr *iph6;
 
 	/* Get pkt from event */
 	pkt = ev->mbuf;
@@ -397,6 +459,9 @@ process_ipsec_ev_outbound(struct ipsec_ctx *ctx, struct route_table *rt,
 
 	switch (type) {
 	case PKT_TYPE_PLAIN_IPV4:
+		iph4 = (const struct rte_ipv4_hdr *)rte_pktmbuf_adj(pkt,
+			RTE_ETHER_HDR_LEN);
+		adjust_ipv4_pktlen(pkt, iph4, 0);
 		/* Check if we have a match */
 		if (check_sp(ctx->sp4_ctx, nlp, &sa_idx) == 0) {
 			/* No valid match */
@@ -404,12 +469,17 @@ process_ipsec_ev_outbound(struct ipsec_ctx *ctx, struct route_table *rt,
 		}
 		break;
 	case PKT_TYPE_PLAIN_IPV6:
+		/* get protocol type */
+		iph6 = (const struct rte_ipv6_hdr *)rte_pktmbuf_adj(pkt,
+			RTE_ETHER_HDR_LEN);
+		adjust_ipv6_pktlen(pkt, iph6, 0);
 		/* Check if we have a match */
 		if (check_sp(ctx->sp6_ctx, nlp, &sa_idx) == 0) {
 			/* No valid match */
 			goto drop_pkt_and_exit;
 		}
 		break;
+
 	default:
 		/*
 		 * Only plain IPv4 & IPv6 packets are allowed
@@ -446,23 +516,119 @@ process_ipsec_ev_outbound(struct ipsec_ctx *ctx, struct route_table *rt,
 	sess = ipsec_get_primary_session(sa);
 
 	/* Allow only inline protocol for now */
-	if (unlikely(sess->type != RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL)) {
+	switch (sess->type) {
+	case RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL:
+		if (sa == NULL)
+			goto drop_pkt_and_exit;
+
+		rte_prefetch0(sa);
+		rte_prefetch0(pkt);
+		priv = get_priv(pkt);
+		priv->sa = sa;
+		priv->cop.type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
+		priv->cop.status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
+
+		rte_prefetch0(&priv->sym_cop);
+
+		if ((unlikely(sess->security.ses == NULL)) &&
+				create_lookaside_session(ctx, sa, sess)) {
+			goto drop_pkt_and_exit;
+		}
+
+		sym_cop = get_sym_cop(&priv->cop);
+		sym_cop->m_src = pkt;
+
+		rte_security_attach_session(&priv->cop, sess->security.ses);
+
+		cop[0] = &priv->cop;
+		ret = rte_cryptodev_enqueue_burst(
+				ctx->tbl[sa->cdev_id_qp].id,
+				ctx->tbl[sa->cdev_id_qp].qp,
+				cop, 1);
+		if (ret < 1) {
+			RTE_LOG_DP(DEBUG, IPSEC, "Cryptodev %u queue %u:"
+					" enqueued %u crypto ops\n",
+					ctx->tbl[sa->cdev_id_qp].id,
+					ctx->tbl[sa->cdev_id_qp].qp, ret);
+			/* drop packet that we fail to enqueue */
+			goto drop_pkt_and_exit;
+		}
+		return PKT_POSTED;
+	case RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL:
+		rte_security_set_pkt_metadata(sess->security.ctx,
+				      sess->security.ses, pkt, NULL);
+
+		/* Mark the packet for Tx security offload */
+		pkt->ol_flags |= RTE_MBUF_F_TX_SEC_OFFLOAD;
+
+		/* Get the port to which this pkt need to be submitted */
+		port_id = sa->portid;
+
+send_pkt:
+		/* Update mac addresses */
+		update_mac_addrs(pkt, port_id);
+		/* Update the event with the dest port */
+		ipsec_event_pre_forward(pkt, port_id);
+		return PKT_FORWARDED;
+
+	default:
 		RTE_LOG(ERR, IPSEC, "SA type not supported\n");
 		goto drop_pkt_and_exit;
 	}
 
-	rte_security_set_pkt_metadata(sess->security.ctx,
-				      sess->security.ses, pkt, NULL);
+drop_pkt_and_exit:
+	RTE_LOG(ERR, IPSEC, "Outbound packet dropped\n");
+	rte_pktmbuf_free(pkt);
+	ev->mbuf = NULL;
+	return PKT_DROPPED;
+}
 
-	/* Mark the packet for Tx security offload */
-	pkt->ol_flags |= RTE_MBUF_F_TX_SEC_OFFLOAD;
+static inline int
+process_crypto_events(struct ipsec_ctx *in_ctx,
+		      struct ipsec_ctx *out_ctx,
+		      struct route_table *rt,
+		      struct rte_crypto_op *op)
+{
+	uint16_t port_id = 0;
+	enum pkt_type type;
+	struct ip *ip;
+	struct rte_ether_hdr *ethhdr;
+	struct rte_mbuf *pkt;
 
-	/* Get the port to which this pkt need to be submitted */
-	port_id = sa->portid;
+	RTE_SET_USED(in_ctx);
+	RTE_SET_USED(out_ctx);
 
-send_pkt:
-	/* Provide L2 len for Outbound processing */
-	pkt->l2_len = RTE_ETHER_HDR_LEN;
+	pkt = (op->sym->m_dst == NULL) ? op->sym->m_src : op->sym->m_dst;
+	if (op->status)
+		goto drop_pkt_and_exit;
+
+	ip = rte_pktmbuf_mtod(pkt, struct ip *);
+
+	ethhdr = (struct rte_ether_hdr *)
+		rte_pktmbuf_prepend(pkt, RTE_ETHER_HDR_LEN);
+
+	if (ip->ip_v == IPVERSION) {
+		pkt->l3_len = sizeof(struct ip);
+		pkt->l2_len = RTE_ETHER_HDR_LEN;
+		ip->ip_sum = 0;
+		/* calculate IPv4 cksum in SW */
+		if ((pkt->ol_flags & RTE_MBUF_F_TX_IP_CKSUM) == 0)
+			ip->ip_sum = rte_ipv4_cksum((struct rte_ipv4_hdr *)ip);
+		ethhdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+		type = PKT_TYPE_PLAIN_IPV4;
+	} else {
+		pkt->l3_len = sizeof(struct ip6_hdr);
+		pkt->l2_len = RTE_ETHER_HDR_LEN;
+		ethhdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV6);
+		type = PKT_TYPE_PLAIN_IPV6;
+	}
+
+	port_id = get_route(pkt, rt, type);
+	if (unlikely(port_id == RTE_MAX_ETHPORTS)) {
+		/* no match */
+		goto drop_pkt_and_exit;
+	}
+	/* else, we have a matching route */
 
 	/* Update mac addresses */
 	update_mac_addrs(pkt, port_id);
@@ -472,9 +638,9 @@ send_pkt:
 	return PKT_FORWARDED;
 
 drop_pkt_and_exit:
-	RTE_LOG(ERR, IPSEC, "Outbound packet dropped\n");
+	RTE_LOG(ERR, IPSEC, "packet dropped after crypto dequeue\n");
 	rte_pktmbuf_free(pkt);
-	ev->mbuf = NULL;
+
 	return PKT_DROPPED;
 }
 
@@ -920,22 +1086,34 @@ ipsec_wrkr_non_burst_int_port_app_mode(struct eh_event_link_info *links,
 			continue;
 		case RTE_EVENT_TYPE_ETHDEV:
 			break;
+		case RTE_EVENT_TYPE_CRYPTODEV:
+			break;
 		default:
 			RTE_LOG(ERR, IPSEC, "Invalid event type %u",
 				ev.event_type);
 			continue;
 		}
 
-		if (is_unprotected_port(ev.mbuf->port))
-			ret = process_ipsec_ev_inbound(&lconf.inbound,
-							&lconf.rt, &ev);
-		else
-			ret = process_ipsec_ev_outbound(&lconf.outbound,
-							&lconf.rt, &ev);
-		if (ret != 1)
-			/* The pkt has been dropped */
-			continue;
+		if (ev.event_type == RTE_EVENT_TYPE_ETHDEV) {
+			if (is_unprotected_port(ev.mbuf->port))
+				ret = process_ipsec_ev_inbound(
+					&lconf.inbound, &lconf.rt, &ev);
+			else
+				ret = process_ipsec_ev_outbound(
+					&lconf.outbound, &lconf.rt, &ev);
 
+			if (ret != PKT_FORWARDED)
+				/* The pkt has been dropped or posted to cryptoedv */
+				continue;
+		} else if (ev.event_type == RTE_EVENT_TYPE_CRYPTODEV) {
+			ret = process_crypto_events(&lconf.inbound,
+					&lconf.outbound, &lconf.rt,
+					ev.event_ptr);
+			if (ret != PKT_FORWARDED)
+				continue;
+			ev.mbuf = ((struct rte_crypto_op *)(ev.event_ptr))->sym->m_src;
+			ev.event_type = RTE_EVENT_TYPE_ETHDEV;
+		}
 		/*
 		 * Since tx internal port is available, events can be
 		 * directly enqueued to the adapter and it would be

@@ -150,9 +150,6 @@ dqrr_out_fq_cb_rx(struct qman_portal *qm __always_unused,
 	struct dpaa_sec_job *job;
 	struct dpaa_sec_op_ctx *ctx;
 
-	if (DPAA_PER_LCORE_DPAA_SEC_OP_NB >= DPAA_SEC_BURST)
-		return qman_cb_dqrr_defer;
-
 	if (!(dqrr->stat & QM_DQRR_STAT_FD_VALID))
 		return qman_cb_dqrr_consume;
 
@@ -181,7 +178,6 @@ dqrr_out_fq_cb_rx(struct qman_portal *qm __always_unused,
 		}
 		mbuf->data_len = len;
 	}
-	DPAA_PER_LCORE_RTE_CRYPTO_OP[DPAA_PER_LCORE_DPAA_SEC_OP_NB++] = ctx->op;
 	dpaa_sec_op_ending(ctx);
 
 	return qman_cb_dqrr_consume;
@@ -2550,11 +2546,6 @@ dpaa_sec_attach_sess_q(struct dpaa_sec_qp *qp, dpaa_sec_session *sess)
 	int ret;
 
 	sess->qp[rte_lcore_id() % MAX_DPAA_CORES] = qp;
-	ret = dpaa_sec_prep_cdb(sess);
-	if (ret) {
-		DPAA_SEC_ERR("Unable to prepare sec cdb");
-		return ret;
-	}
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
@@ -2708,6 +2699,11 @@ dpaa_sec_sym_session_configure(struct rte_cryptodev *dev,
 	set_sym_session_private_data(sess, dev->driver_id,
 			sess_private_data);
 
+	ret = dpaa_sec_prep_cdb(sess_private_data);
+	if (ret) {
+		DPAA_SEC_ERR("Unable to prepare sec cdb");
+		return ret;
+	}
 
 	return 0;
 }
@@ -3347,6 +3343,12 @@ dpaa_sec_security_session_create(void *dev,
 	}
 
 	set_sec_session_private_data(sess, sess_private_data);
+
+	ret = dpaa_sec_prep_cdb(sess_private_data);
+	if (ret) {
+		DPAA_SEC_ERR("Unable to prepare sec cdb");
+		return ret;
+	}
 
 	return ret;
 }

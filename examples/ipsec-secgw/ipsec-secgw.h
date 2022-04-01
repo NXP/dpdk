@@ -177,4 +177,30 @@ free_pkts(struct rte_mbuf *mb[], uint32_t n)
 	core_stats_update_drop(n);
 }
 
+static inline void
+adjust_ipv4_pktlen(struct rte_mbuf *m, const struct rte_ipv4_hdr *iph,
+	uint32_t l2_len)
+{
+	uint32_t plen, trim;
+
+	plen = rte_be_to_cpu_16(iph->total_length) + l2_len;
+	if (plen < m->pkt_len) {
+		trim = m->pkt_len - plen;
+		rte_pktmbuf_trim(m, trim);
+	}
+}
+
+static inline void
+adjust_ipv6_pktlen(struct rte_mbuf *m, const struct rte_ipv6_hdr *iph,
+	uint32_t l2_len)
+{
+	uint32_t plen, trim;
+
+	plen = rte_be_to_cpu_16(iph->payload_len) + sizeof(*iph) + l2_len;
+	if (plen < m->pkt_len) {
+		trim = m->pkt_len - plen;
+		rte_pktmbuf_trim(m, trim);
+	}
+}
+
 #endif /* _IPSEC_SECGW_H_ */

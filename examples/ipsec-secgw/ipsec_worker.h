@@ -34,6 +34,9 @@ struct lcore_conf_ev_tx_int_port_wrkr {
 	struct route_table rt;
 } __rte_cache_aligned;
 
+extern struct rte_hash *cdev_map_in;
+extern struct rte_hash *cdev_map_out;
+
 void ipsec_poll_mode_worker(void);
 
 int ipsec_launch_one_lcore(void *args);

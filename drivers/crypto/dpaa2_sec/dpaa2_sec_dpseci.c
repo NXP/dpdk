@@ -1589,6 +1589,15 @@ sec_simple_fd_to_mbuf(const struct qbman_fd *fd)
 	else
 		mbuf->data_off += SEC_FLC_DHR_INBOUND;
 
+	if (unlikely(fd->simple.frc)) {
+		/* TODO Parse SEC errors */
+		DPAA2_SEC_ERR("SEC returned Error - %x",
+				fd->simple.frc);
+		op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+	} else {
+		op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+	}
+
 	return op;
 }
 #endif
@@ -4105,7 +4114,7 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __rte_unused,
 {
 	uint8_t dqrr_index;
 	struct dpaa2_sec_qp *qp;
-	struct rte_crypto_op *crypto_op = (struct rte_crypto_op *)ev->event_ptr;
+	struct rte_crypto_op *crypto_op;
 	/* Prefetching mbuf */
 	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd)-
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size));
@@ -4122,12 +4131,13 @@ dpaa2_sec_process_atomic_event(struct qbman_swp *swp __rte_unused,
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
-	ev->event_ptr = sec_fd_to_mbuf(fd, qp);
+	crypto_op = sec_fd_to_mbuf(fd, qp);
 	dqrr_index = qbman_get_dqrr_idx(dq);
 	*dpaa2_seqn(crypto_op->sym->m_src) = QBMAN_ENQUEUE_FLAG_DCA | dqrr_index;
 	DPAA2_PER_LCORE_DQRR_SIZE++;
 	DPAA2_PER_LCORE_DQRR_HELD |= 1 << dqrr_index;
 	DPAA2_PER_LCORE_DQRR_MBUF(dqrr_index) = crypto_op->sym->m_src;
+	ev->event_ptr = crypto_op;
 }
 
 static void __attribute__((hot))
@@ -4137,7 +4147,7 @@ dpaa2_sec_process_ordered_event(struct qbman_swp *swp,
 				struct dpaa2_queue *rxq,
 				struct rte_event *ev)
 {
-	struct rte_crypto_op *crypto_op = (struct rte_crypto_op *)ev->event_ptr;
+	struct rte_crypto_op *crypto_op;
 	struct dpaa2_sec_qp *qp;
 
 	/* Prefetching mbuf */
@@ -4155,7 +4165,7 @@ dpaa2_sec_process_ordered_event(struct qbman_swp *swp,
 	ev->sched_type = rxq->ev.sched_type;
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
-	ev->event_ptr = sec_fd_to_mbuf(fd, qp);
+	crypto_op = sec_fd_to_mbuf(fd, qp);
 
 	*dpaa2_seqn(crypto_op->sym->m_src) = DPAA2_ENQUEUE_FLAG_ORP;
 	*dpaa2_seqn(crypto_op->sym->m_src) |= qbman_result_DQ_odpid(dq) <<
@@ -4164,6 +4174,7 @@ dpaa2_sec_process_ordered_event(struct qbman_swp *swp,
 		DPAA2_EQCR_SEQNUM_SHIFT;
 
 	qbman_swp_dqrr_consume(swp, dq);
+	ev->event_ptr = crypto_op;
 }
 
 int
@@ -4247,27 +4258,6 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 	memcpy(&qp->rx_vq.ev, event, sizeof(struct rte_event));
 
 	return 0;
-}
-
-int
-dpaa2_sec_eventq_detach(const struct rte_cryptodev *dev,
-			int qp_id)
-{
-	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
-	struct dpseci_rx_queue_cfg cfg;
-	int ret;
-
-	memset(&cfg, 0, sizeof(struct dpseci_rx_queue_cfg));
-	cfg.options = DPSECI_QUEUE_OPT_DEST;
-	cfg.dest_cfg.dest_type = DPSECI_DEST_NONE;
-
-	ret = dpseci_set_rx_queue(dpseci, CMD_PRI_LOW, priv->token,
-				  qp_id, &cfg);
-	if (ret)
-		RTE_LOG(ERR, PMD, "Error in dpseci_set_queue: ret: %d\n", ret);
-
-	return ret;
 }
 
 static struct rte_cryptodev_ops crypto_ops = {
