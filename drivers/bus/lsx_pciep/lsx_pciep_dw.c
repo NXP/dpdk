@@ -654,21 +654,20 @@ static void pcie_dw_set_ib_size(uint8_t *base, int bar,
 	uint64_t mask;
 	struct pcie_dw_bar_size_mask *size_mask;
 
+	if (is_vf) {
+		/*Not support resize VF bar.*/
+		return;
+	}
+
 	/* The least inbound window is 4KiB */
 	if (size < (4 * 1024))
 		mask = 0;
 	else
 		mask = size - 1;
 
-	if (is_vf) {
-		size_mask = (struct pcie_dw_bar_size_mask *)
-			(base + PCIE_VF_SIZE_OFF +
-			pf * PCIE_CFG_OFFSET);
-	} else {
-		size_mask = (struct pcie_dw_bar_size_mask *)
-			(base + PCIE_PF_SIZE_OFF +
-			pf * PCIE_CFG_OFFSET);
-	}
+	size_mask = (struct pcie_dw_bar_size_mask *)
+		(base + PCIE_PF_SIZE_OFF +
+		pf * PCIE_CFG_OFFSET);
 
 	switch (bar) {
 	case 0:

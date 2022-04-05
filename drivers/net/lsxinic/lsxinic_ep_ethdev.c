@@ -871,6 +871,33 @@ calculate_cycles_per_us(void)
 }
 #endif
 
+static inline uint16_t
+lsinic_dev_pcie_dev_id(void)
+{
+	FILE *svr_file = NULL;
+	uint32_t svr_ver, i, num;
+
+	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
+	if (!svr_file) {
+		LSXINIC_PMD_ERR("Unable to open SoC device.");
+		return 0;
+	}
+	if (fscanf(svr_file, "svr:%x", &svr_ver) < 0) {
+		LSXINIC_PMD_ERR("Unable to read SoC device");
+		return 0;
+	}
+
+	num = sizeof(s_lsinic_rev2_id_map) /
+		sizeof(struct lsinic_pcie_svr_map);
+
+	for (i = 0; i < num; i++) {
+		if (s_lsinic_rev2_id_map[i].svr_id == svr_ver)
+			return s_lsinic_rev2_id_map[i].pci_dev_id;
+	}
+
+	return 0;
+}
+
 static int
 lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 {
@@ -888,9 +915,9 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	vendor_id = NXP_PCI_VENDOR_ID;
 	class_id = NXP_PCI_CLASS_ID;
 	if (pex_type == PEX_LX2160_REV2)
-		device_id = lx_rev2_pciep_default_dev_id();
+		device_id = lsinic_dev_pcie_dev_id();
 	else if (pex_type == PEX_LX2160_REV1)
-		device_id = NXP_PCI_DEV_ID_LX2160A;
+		device_id = NXP_PCI_DEV_ID_LX2160A_DEFAULT;
 	else if (pex_type == PEX_LS208X)
 		device_id = NXP_PCI_DEV_ID_LS2088A;
 	else

@@ -63,27 +63,6 @@
 #define SVR_MASK 0xffff0000
 #endif
 
-struct lsx_pcie_svr_map {
-	uint32_t svr_id;
-	uint16_t pci_dev_id;
-	uint16_t rsv;
-};
-
-static const struct lsx_pcie_svr_map s_lx_rev2_id_map[] = {
-	{SVR_LX2160A | 0x0120, 0x8d81, 0},
-	{SVR_LX2160A | 0x1020, 0x8d90, 0},
-	{SVR_LX2160A | 0x0020, 0x8d80, 0},
-	{SVR_LX2160A | 0x1120, 0x8d91, 0},
-	{SVR_LX2160A | 0x2120, 0x8da1, 0},
-	{SVR_LX2160A | 0x3020, 0x8db0, 0},
-	{SVR_LX2160A | 0x2020, 0x8da0, 0},
-	{SVR_LX2160A | 0x3120, 0x8db1, 0},
-	{SVR_LX2160A | 0x0320, 0x8d83, 0},
-	{SVR_LX2160A | 0x1220, 0x8d92, 0},
-	{SVR_LX2160A | 0x0220, 0x8d82, 0},
-	{SVR_LX2160A | 0x1320, 0x8d93, 0}
-};
-
 static struct lsx_pciep_ctl_hw *s_pctl_hw;
 
 static rte_spinlock_t lsx_pciep_shared_data_lock =
@@ -621,31 +600,6 @@ lsx_pciep_hw_set_type(void)
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++)
 		s_pctl_hw[i].type = type;
-
-	return 0;
-}
-
-uint16_t lx_rev2_pciep_default_dev_id(void)
-{
-	FILE *svr_file = NULL;
-	uint32_t svr_ver, i, num;
-
-	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
-	if (!svr_file) {
-		LSX_PCIEP_BUS_ERR("Unable to open SoC device.");
-		return 0;
-	}
-	if (fscanf(svr_file, "svr:%x", &svr_ver) < 0) {
-		LSX_PCIEP_BUS_ERR("PCIe EP unable to read SoC device");
-		return 0;
-	}
-
-	num = sizeof(s_lx_rev2_id_map) / sizeof(struct lsx_pcie_svr_map);
-
-	for (i = 0; i < num; i++) {
-		if (s_lx_rev2_id_map[i].svr_id == svr_ver)
-			return s_lx_rev2_id_map[i].pci_dev_id;
-	}
 
 	return 0;
 }
