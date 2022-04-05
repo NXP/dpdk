@@ -1600,6 +1600,25 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->rx_mbuf_alloc_failed = 0;
 	/* RX ring mbuf allocation failures */
 
+	if (pci_dev->mem_resource[LSX_PCIEP_XFER_MEM_BAR_IDX].len) {
+		adapter->ep_memzone_phy =
+			pci_dev->mem_resource[LSX_PCIEP_XFER_MEM_BAR_IDX].phys_addr;
+		adapter->ep_memzone_vir =
+			pci_dev->mem_resource[LSX_PCIEP_XFER_MEM_BAR_IDX].addr;
+		adapter->ep_memzone_size =
+			pci_dev->mem_resource[LSX_PCIEP_XFER_MEM_BAR_IDX].len;
+	}
+	rc_ring_mem = rte_eth_dma_zone_reserve(eth_dev,
+			"rc_memzone", 0, 32 * 1024 * 1024,
+			32 * 1024 * 1024,
+			eth_dev->data->numa_node);
+	if (!rc_ring_mem) {
+		LSXINIC_PMD_WARN("rc_memzone_vir reserve failed");
+		adapter->rc_memzone_vir = NULL;
+	} else {
+		adapter->rc_memzone_vir = rc_ring_mem->addr;
+	}
+
 	LSXINIC_PMD_DBG("RC RING PHY_BASE ADDR low 0x%" PRIX64 " ",
 		adapter->rc_ring_phy_base);
 	LSXINIC_PMD_DBG("RC_RING PHY_BASE ADDR high 0x%" PRIX64 " ",
@@ -1646,7 +1665,12 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 
 	penv = getenv("LSINIC_SELF_XMIT_TEST");
 	if (penv) {
-		adapter->self_test = true;
+		adapter->self_test = atoi(penv);
+		if (adapter->self_test > LXSNIC_RC_SELF_LOCAL_MEM_TEST) {
+			LSXINIC_PMD_WARN("Invalid self test mode(%d)",
+				adapter->self_test);
+			adapter->self_test = LXSNIC_RC_SELF_NONE_TEST;
+		}
 		penv = getenv("LSINIC_SELF_XMIT_LEN");
 		if (penv) {
 			adapter->self_test_len = atoi(penv);
@@ -1658,7 +1682,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 			adapter->self_test_len = LSXINIC_RC_SELF_XMIT_DFA_LEN;
 		}
 	} else {
-		adapter->self_test = false;
+		adapter->self_test = LXSNIC_RC_SELF_NONE_TEST;
 	}
 
 	/* register interrupt function for user to
@@ -1825,6 +1849,8 @@ eth_lxsnic_close(struct rte_eth_dev *dev __rte_unused)
 	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
 	if (adapter->rc_ring_virt_base)
 		rte_free(adapter->rc_ring_virt_base);
+	if (adapter->rc_memzone_vir)
+		rte_free(adapter->rc_memzone_vir);
 
 	rte_free(adapter);
 }

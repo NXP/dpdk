@@ -301,6 +301,13 @@ enum lsx_pcie_dma_raw_test {
 	LXSNIC_RC2EP_PCI_DMA_RAW_TEST = (1 << 1)
 };
 
+enum lxsnic_rc_self_test {
+	LXSNIC_RC_SELF_NONE_TEST = 0,
+	LXSNIC_RC_SELF_PMD_TEST,
+	LXSNIC_RC_SELF_REMOTE_MEM_TEST,
+	LXSNIC_RC_SELF_LOCAL_MEM_TEST
+};
+
 struct lxsnic_adapter {
 	/* OS defined structs */
 	unsigned long state;
@@ -356,6 +363,13 @@ struct lxsnic_adapter {
 	uint8_t *ep_ring_virt_base;  /* EP ring base */
 	dma_addr_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
+
+	uint8_t *ep_memzone_vir;
+	dma_addr_t ep_memzone_phy;
+	uint64_t ep_memzone_size;
+
+	uint8_t *rc_memzone_vir;
+
 	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
 	uint64_t rc_ring_win_size;
@@ -377,7 +391,7 @@ struct lxsnic_adapter {
 	uint32_t link_speed;
 	bool link_up;
 	bool adapter_stopped;
-	bool self_test;
+	int self_test;
 	uint32_t self_test_len;
 	unsigned long link_check_timeout;
 	/* SR-IOV */

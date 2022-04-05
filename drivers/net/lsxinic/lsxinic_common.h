@@ -253,6 +253,9 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 	}
 }
 
+#define LSINIC_EP_MAP_MEM_ENV \
+	"LSINIC_XFER_HOST_ACCESS_EP_MEM"
+
 #undef LSXINIC_ASSERT_PKT_SIZE
 
 #endif /*  _LSINIC_VDEV_H_ */

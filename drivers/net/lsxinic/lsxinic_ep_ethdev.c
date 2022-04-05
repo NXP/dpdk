@@ -517,7 +517,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 		EP_XMIT_SBD_TYPE);
 	lsinic_parse_txq_notify_type(notify_env, adapter);
 
-	penv = getenv("LSINIC_XFER_HOST_ACCESS_EP_MEM");
+	penv = getenv(LSINIC_EP_MAP_MEM_ENV);
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 

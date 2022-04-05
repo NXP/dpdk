@@ -1269,6 +1269,62 @@ static void lxsnic_eth_self_xmit_gen_pkt(uint8_t *payload)
 
 uint8_t s_perf_mode_set[RTE_MAX_LCORE];
 
+static uint16_t
+lxsnic_eth_xmit_by_rc_cpu(struct lxsnic_ring *tx_queue,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts,
+	uint8_t *vir_base)
+{
+	int i, max_size = RTE_MBUF_DEFAULT_DATAROOM;
+	uint16_t bd_idx;
+	uint8_t *src;
+
+	vir_base += 2 * max_size * tx_queue->count * tx_queue->reg_idx;
+	for (i = 0; i < nb_pkts; i++) {
+		bd_idx = tx_queue->last_avail_idx & (tx_queue->count - 1);
+		src = (uint8_t *)tx_pkts[i]->buf_addr + tx_pkts[i]->data_off;
+		memcpy(vir_base + max_size * bd_idx, src,
+			tx_pkts[i]->pkt_len);
+		tx_queue->packets++;
+		tx_queue->bytes += tx_pkts[i]->pkt_len;
+		tx_queue->bytes_fcs += tx_pkts[i]->pkt_len +
+			LSINIC_ETH_FCS_SIZE;
+		tx_queue->bytes_overhead += tx_pkts[i]->pkt_len +
+			LSINIC_ETH_OVERHEAD_SIZE;
+		tx_queue->last_avail_idx++;
+	}
+
+	return nb_pkts;
+}
+
+static uint16_t
+lxsnic_eth_recv_by_rc_cpu(struct lxsnic_ring *rx_queue,
+	struct rte_mbuf **rx_pkts, uint16_t nb_pkts,
+	uint8_t *vir_base, uint16_t test_len)
+{
+	int i, max_size = RTE_MBUF_DEFAULT_DATAROOM;
+	uint16_t bd_idx;
+	uint8_t *dst;
+
+	vir_base += 2 * max_size * rx_queue->count * rx_queue->reg_idx;
+	vir_base += max_size * rx_queue->count;
+	for (i = 0; i < nb_pkts; i++) {
+		bd_idx = rx_queue->last_avail_idx & (rx_queue->count - 1);
+		dst = (uint8_t *)rx_pkts[i]->buf_addr + rx_pkts[i]->data_off;
+		memcpy(dst, vir_base + max_size * bd_idx, test_len);
+		rx_queue->packets++;
+		rx_queue->bytes += test_len;
+		rx_queue->bytes_fcs += test_len +
+			LSINIC_ETH_FCS_SIZE;
+		rx_queue->bytes_overhead += test_len +
+			LSINIC_ETH_OVERHEAD_SIZE;
+		rx_queue->last_avail_idx++;
+		rx_pkts[i]->pkt_len = test_len;
+		rx_pkts[i]->data_len = test_len;
+	}
+
+	return nb_pkts;
+}
+
 uint16_t
 lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
@@ -1277,7 +1333,8 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 	uint16_t count = 0;
 	struct rte_mbuf *mbuf = NULL;
 	struct lxsnic_ring *rx_queue = (struct lxsnic_ring *)queue;
-	struct rte_eth_dev *eth_dev = rx_queue->adapter->eth_dev;
+	struct lxsnic_adapter *adapter = rx_queue->adapter;
+	struct rte_eth_dev *eth_dev = adapter->eth_dev;
 	struct lxsnic_ring *tx_queue =
 			eth_dev->data->tx_queues[rx_queue->queue_index];
 
@@ -1306,7 +1363,7 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 			lxsnic_tx_ring_clean(tx_queue);
 	}
 
-	if (rx_queue->adapter->self_test && tx_queue) {
+	if (adapter->self_test && tx_queue) {
 		int count = rx_queue->count;
 		int i, tx_nb, ret;
 		struct rte_mbuf *pkt;
@@ -1336,9 +1393,8 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 				pay_load = (uint8_t *)pkt->buf_addr +
 					pkt->data_off;
 				lxsnic_eth_self_xmit_gen_pkt(pay_load);
-				pkt->pkt_len = rx_queue->adapter->self_test_len;
-				pkt->data_len =
-					rx_queue->adapter->self_test_len;
+				pkt->pkt_len = adapter->self_test_len;
+				pkt->data_len = adapter->self_test_len;
 				ret = rte_ring_enqueue(tx_queue->self_xmit_ring,
 					pkt);
 				if (ret)
@@ -1348,15 +1404,61 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 				i, ring_nm);
 		}
 
-		if (tx_queue->self_xmit_ring) {
-			ret = rte_ring_dequeue_burst(tx_queue->self_xmit_ring,
+		ret = rte_ring_dequeue_burst(tx_queue->self_xmit_ring,
 				(void **)tx_pkts, 32, NULL);
 
+		if (adapter->self_test == LXSNIC_RC_SELF_REMOTE_MEM_TEST) {
+			if (!adapter->ep_memzone_vir) {
+				LSXINIC_PMD_ERR("NO EP memory mapped");
+				LSXINIC_PMD_ERR("please export %s = 1 in EP",
+					LSINIC_EP_MAP_MEM_ENV);
+				LSXINIC_PMD_ERR("please quit");
+				rte_delay_ms(2000);
+
+				return 0;
+			}
+			tx_nb = lxsnic_eth_xmit_by_rc_cpu(tx_queue,
+					tx_pkts, ret,
+					adapter->ep_memzone_vir);
+			rte_ring_enqueue_burst(tx_queue->self_xmit_ring,
+				(void **)tx_pkts, ret, NULL);
+		} else if (adapter->self_test ==
+			LXSNIC_RC_SELF_LOCAL_MEM_TEST) {
+			if (!adapter->rc_memzone_vir) {
+				LSXINIC_PMD_ERR("NO RC memory reserved");
+				LSXINIC_PMD_ERR("please quit");
+				rte_delay_ms(2000);
+
+				return 0;
+			}
+			tx_nb = lxsnic_eth_xmit_by_rc_cpu(tx_queue,
+				tx_pkts, ret,
+				adapter->rc_memzone_vir);
+			rte_ring_enqueue_burst(tx_queue->self_xmit_ring,
+				(void **)tx_pkts, ret, NULL);
+		} else {
 			tx_nb = _lxsnic_eth_xmit_pkts(tx_queue, tx_pkts, ret);
-			if (tx_nb < ret) {
-				rte_ring_enqueue_bulk(tx_queue->self_xmit_ring,
-					(void * const *)&tx_pkts[tx_nb],
-					ret - tx_nb, NULL);
+		}
+		if (tx_nb < ret) {
+			rte_ring_enqueue_bulk(tx_queue->self_xmit_ring,
+				(void * const *)&tx_pkts[tx_nb],
+				ret - tx_nb, NULL);
+		}
+		if (adapter->self_test != LXSNIC_RC_SELF_PMD_TEST) {
+			ret = rte_pktmbuf_alloc_bulk(rx_queue->mb_pool,
+				rx_pkts, nb_pkts);
+			if (ret)
+				return 0;
+			if (adapter->self_test == LXSNIC_RC_SELF_LOCAL_MEM_TEST) {
+				return lxsnic_eth_recv_by_rc_cpu(rx_queue,
+						rx_pkts, nb_pkts,
+						adapter->rc_memzone_vir,
+						adapter->self_test_len);
+			} else {
+				return lxsnic_eth_recv_by_rc_cpu(rx_queue,
+						rx_pkts, nb_pkts,
+						adapter->ep_memzone_vir,
+						adapter->self_test_len);
 			}
 		}
 	}
