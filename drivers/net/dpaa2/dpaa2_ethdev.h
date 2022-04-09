@@ -264,6 +264,8 @@ enum dpaa2_ecpri_fafe_type {
 /* ECPRI shares SP context with VXLAN*/
 #define DPAA2_ECPRI_MSG_OFFSET DPAA2_VXLAN_VNI_OFFSET
 
+#define DPAA2_ECPRI_MAX_EXTRACT_NB 8
+
 struct ipv4_sd_addr_extract_rule {
 	uint32_t ipv4_src;
 	uint32_t ipv4_dst;
