@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019-2021 NXP
+ *   Copyright 2017,2019-2022 NXP
  *
  */
 
@@ -1175,8 +1175,15 @@ send_pkts:
 
 	loop = 0;
 	while (loop < sent) {
-		if (unlikely(RTE_MBUF_HAS_EXTBUF(*orig_bufs)))
-			rte_pktmbuf_free(*orig_bufs);
+		struct rte_mbuf *temp, *temp_next;
+
+		temp = *orig_bufs;
+		while (temp) {
+			temp_next = temp->next;
+			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+				rte_pktmbuf_free_seg(temp);
+			temp = temp_next;
+		}
 		orig_bufs++;
 		loop++;
 	}
