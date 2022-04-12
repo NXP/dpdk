@@ -1388,8 +1388,15 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	loop = 0;
 	while (loop < num_tx) {
-		if (unlikely(RTE_MBUF_HAS_EXTBUF(*orig_bufs)))
-			rte_pktmbuf_free(*orig_bufs);
+		struct rte_mbuf *temp, *temp_next;
+
+		temp = *orig_bufs;
+		while (temp) {
+			temp_next = temp->next;
+			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+				rte_pktmbuf_free_seg(temp);
+			temp = temp_next;
+		}
 		orig_bufs++;
 		loop++;
 	}
@@ -1423,8 +1430,15 @@ skip_tx:
 
 	loop = 0;
 	while (loop < num_tx) {
-		if (unlikely(RTE_MBUF_HAS_EXTBUF(*orig_bufs)))
-			rte_pktmbuf_free(*orig_bufs);
+		struct rte_mbuf *temp, *temp_next;
+
+		temp = *orig_bufs;
+		while (temp) {
+			temp_next = temp->next;
+			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+				rte_pktmbuf_free_seg(temp);
+			temp = temp_next;
+		}
 		orig_bufs++;
 		loop++;
 	}
