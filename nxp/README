@@ -656,6 +656,62 @@ Following are some pre-requisites:
 		5: IP_FRAG_PROTO
 		6: IP_FRAG_UDP_AND_GTP_AND_ESP
 
+  IPsec Gateway 'dpdk-ipsec-secgw' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  For IPsec application, two DUTs need to be configured as endpoint 0 (ep0) and endpoint 1 (ep1). Assuming that endpoint
+  have 4 ports each:
+  ¿ Connect Port 1 and Port 1 of the ep0 and ep1 to each other (back-to-back).
+  ¿ Connect Port 0 and Port 0 of the ep0 and ep1 to packet generator (for example, Spirent).
+
+  The sample configurations for both ep0 and ep1 are available at "nxp/ipsec".
+  Custom port mappings, SA/SP and the routes can be configured in the corresponding
+  configuration file named as ep0.cfg and ep1.cfg for respective endpoint.
+
+  Endpoint0 Command:
+  -----------------
+  * Example command for 4 cores and 4 ports:
+  dpdk-ipsec-secgw -c 0xf -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
+  ep0_64X64_proto.cfg
+
+  Endpoint1 Command:
+  -----------------
+  * Example command for 4 cores and 4 ports:
+  dpdk-ipsec-secgw -c 0xf -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
+  ep1_64X64_proto.cfg
+
+  IPsec Gateway 'dpdk-ipsec-secgw' Application using eventdev
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run 'dpdk-ipsec-secgw' application with eventdev
+
+  Note:
+    1. For DPAA1 platforms
+
+	-> disable push mode queue, using 'export DPAA_PUSH_QUEUES_NUMBER=0'
+
+	-> virtual device should be "event_dpaa1" i.e. --vdev="event_dpaa1"
+
+    2. For DPAA2 platforms
+
+	-> virtual device should be "event_dpaa2" i.e. --vdev="event_dpaa2"
+
+  -- With parallel queue configuration
+
+  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=parallel
+
+  -- With atomic queue configuration
+
+  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=atomic
+
+  -- With ordered queue configuration
+
+  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=ordered
+
+  Note:
+      * Above commands are for the 1st endpoint, to run on 2nd endpoint just change the configuration file "ep0_64X64_proto.cfg" to "ep1_64X64_proto.cfg"
+      * There is no queue configuration for event mode. Only single QP is supported which will be shared by all the cores.
+
   Layer-3 Forwarding 'dpdk-l3fwd' Application using eventdev
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
