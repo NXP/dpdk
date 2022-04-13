@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2019,2021 NXP
+ * Copyright 2017-2019,2021-2022 NXP
  */
 
 /* System headers */
@@ -975,6 +975,13 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 		DPAA_PMD_ERR("Mac type %d error", fif->mac_type);
 		return -1;
 	}
+
+	/* For 1G fm-mac9 and fm-mac10 ports, configure the VSP as 10G
+	 * ports so that kernel can configure correct port.
+	 */
+	if (fif->mac_type == fman_mac_1g && fif->mac_idx > 8)
+		vsp_params.port_params.port_type = e_FM_PORT_TYPE_RX_10G;
+
 	vsp_params.ext_buf_pools.num_of_pools_used = 1;
 	vsp_params.ext_buf_pools.ext_buf_pool[0].id = dpaa_intf->vsp_bpid[vsp_id];
 	vsp_params.ext_buf_pools.ext_buf_pool[0].size = mbuf_data_room_size;

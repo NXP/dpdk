@@ -154,7 +154,7 @@ static void fman_if_vsp_init(struct __fman_if *__if)
 	size_t lenp;
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 
-	if (__if->__if.mac_type == fman_mac_1g) {
+	if (__if->__if.mac_idx <= 8) {
 		for_each_compatible_node(dev, NULL,
 			"fsl,fman-port-1g-rx-extended-args") {
 			prop = of_get_property(dev, "cell-index", &lenp);
@@ -177,7 +177,7 @@ static void fman_if_vsp_init(struct __fman_if *__if)
 				}
 			}
 		}
-	} else if (__if->__if.mac_type == fman_mac_10g) {
+	} else {
 		for_each_compatible_node(dev, NULL,
 			"fsl,fman-port-10g-rx-extended-args") {
 			prop = of_get_property(dev, "cell-index", &lenp);
