@@ -75,6 +75,8 @@ int dpaa2_timestamp_dynfield_offset = -1;
 /* Enable error queue */
 bool dpaa2_enable_err_queue;
 
+bool dpaa2_print_parser_result;
+
 #define MAX_NB_RX_DESC		11264
 int total_nb_rx_desc;
 
@@ -2771,6 +2773,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
 		dpaa2_enable_err_queue = 1;
+
+	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
+		dpaa2_print_parser_result = 1;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
