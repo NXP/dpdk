@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #include <stdio.h>
@@ -450,7 +450,7 @@ create_mempools(struct active_device *ad, int socket_id,
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
 	uint8_t op_pool_mask = 0;
 	const char *op_type_str;
-	enum rte_bbdev_op_type op_type, org_op_type = -1;
+	enum rte_bbdev_op_type op_type, org_op_type = RTE_BBDEV_OP_NONE;
 	unsigned int in_maxl = 0, hard_out_maxl = 0, soft_out_maxl = 0,
 		harq_in_maxl = 0, harq_out_maxl = 0, in_seg = 0,
 		hard_out_seg = 0, soft_out_seg = 0,
@@ -526,6 +526,13 @@ create_mempools(struct active_device *ad, int socket_id,
 				socket_id);
 		ad->ops_mempool[op_type] = mp;
 		op_pool_mask |= (1 << op_type);
+
+		if(op_type == RTE_BBDEV_OP_LDPC_ENC) {
+			org_op_type = RTE_BBDEV_OP_LDPC_ENC;
+		} else if(op_type != RTE_BBDEV_OP_NONE &&
+			  org_op_type != RTE_BBDEV_OP_LDPC_ENC) {
+			org_op_type = -1;
+		}
 	}
 
 
@@ -2256,8 +2263,8 @@ update_orig_ldpc_dec_out_data(struct rte_bbdev_dec_op **ops, const uint16_t n)
 
 			if ((start_index != -1) && ((end_index != i) ||
 			    (end_index == (num_cbs - 1)))) {
-				addr_off = start_index * cb_size;
-				len_to_copy = (end_index - start_index + 1) *
+				addr_off = (uint64_t)start_index * cb_size;
+				len_to_copy = (uint64_t)(end_index - start_index + 1) *
 					cb_size;
 				memcpy(hard_data + addr_off, partial_data +
 				       addr_off, len_to_copy);
