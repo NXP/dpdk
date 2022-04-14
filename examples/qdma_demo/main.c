@@ -193,6 +193,7 @@ static void *pci_addr_mmap(void *start, size_t length, int prot,
 	p = mmap(start, length, prot, flags, fd, newoff);
 	if (p == NULL) {
 		printf("%s %lX-%lX ERROR\n", __func__, newoff, offset);
+		close(fd);
 		return NULL;
 	}
 
@@ -201,6 +202,8 @@ static void *pci_addr_mmap(void *start, size_t length, int prot,
 
 	if (retfd)
 		*retfd = fd;
+	else
+		close(fd);
 
 	return p;
 }
@@ -373,7 +376,7 @@ static void calculate_latency(unsigned int lcore_id,
 static struct addr_t qdma_mem_iova2virt(uint64_t src, uint64_t dest)
 {
 	uint64_t off_s, off_d;
-	struct addr_t addr;
+	struct addr_t addr = {0};
 
 	switch (g_rbp_testcase) {
 	case PCI_TO_MEM:
