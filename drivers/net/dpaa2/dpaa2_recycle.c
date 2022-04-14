@@ -1,6 +1,6 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2019-2021 NXP
+ *   Copyright 2019-2022 NXP
  *
  */
 
@@ -186,6 +186,10 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 	start = addr & PAGE_MASK;
 	offset = addr - start;
 	len = len & PAGE_MASK;
+
+	if (PAGE_SIZE < 1)
+		return NULL;
+
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
 
