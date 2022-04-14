@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2020,2022 NXP
  */
 
 /* System headers */
@@ -174,6 +174,8 @@ void *pci_addr_mmap(void *start, size_t length, int prot,
 
 	if (retfd)
 		*retfd = fd;
+	else
+		close(fd);
 
 	return p;
 }
