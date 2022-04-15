@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2022 NXP
  *
  */
 
@@ -72,6 +72,8 @@ bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
 
 /* Enable error queue */
 bool dpaa2_enable_err_queue;
+
+bool dpaa2_print_parser_result;
 
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
@@ -2715,6 +2717,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
 		dpaa2_enable_err_queue = 1;
 
+	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
+		dpaa2_print_parser_result = 1;
+
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
 	if (ret) {
@@ -2793,39 +2798,20 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	/*Init fields w.r.t. classficaition*/
 	memset(&priv->extract.qos_key_extract, 0,
 		sizeof(struct dpaa2_key_extract));
-	priv->extract.qos_extract_param = (size_t)rte_malloc(NULL, 256, 64);
+	priv->extract.qos_extract_param = rte_malloc(NULL, 256, 64);
 	if (!priv->extract.qos_extract_param) {
-		DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow "
-			    " classificaiton ", ret);
+		DPAA2_PMD_ERR("Memory alloc failed");
 		goto init_err;
 	}
-	priv->extract.qos_key_extract.key_info.ipv4_src_offset =
-		IP_ADDRESS_OFFSET_INVALID;
-	priv->extract.qos_key_extract.key_info.ipv4_dst_offset =
-		IP_ADDRESS_OFFSET_INVALID;
-	priv->extract.qos_key_extract.key_info.ipv6_src_offset =
-		IP_ADDRESS_OFFSET_INVALID;
-	priv->extract.qos_key_extract.key_info.ipv6_dst_offset =
-		IP_ADDRESS_OFFSET_INVALID;
 
 	for (i = 0; i < MAX_TCS; i++) {
 		memset(&priv->extract.tc_key_extract[i], 0,
 			sizeof(struct dpaa2_key_extract));
-		priv->extract.tc_extract_param[i] =
-			(size_t)rte_malloc(NULL, 256, 64);
+		priv->extract.tc_extract_param[i] = rte_malloc(NULL, 256, 64);
 		if (!priv->extract.tc_extract_param[i]) {
-			DPAA2_PMD_ERR(" Error(%d) in allocation resources for flow classificaiton",
-				     ret);
+			DPAA2_PMD_ERR("Memory alloc failed");
 			goto init_err;
 		}
-		priv->extract.tc_key_extract[i].key_info.ipv4_src_offset =
-			IP_ADDRESS_OFFSET_INVALID;
-		priv->extract.tc_key_extract[i].key_info.ipv4_dst_offset =
-			IP_ADDRESS_OFFSET_INVALID;
-		priv->extract.tc_key_extract[i].key_info.ipv6_src_offset =
-			IP_ADDRESS_OFFSET_INVALID;
-		priv->extract.tc_key_extract[i].key_info.ipv6_dst_offset =
-			IP_ADDRESS_OFFSET_INVALID;
 	}
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
