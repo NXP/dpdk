@@ -8,6 +8,17 @@ Note: Please first read nxp/README.
 #Note: export DPAA2_FLOW_CONTROL_LOG=1 is used to check extracts and rules.
 #Note: Default missed action of flow control is to drop packets.
        export DPAA2_FLOW_CONTROL_MISS_FLOW=flow_id is used to receive missed packets from flow with flow ID specified.
+#Note: To support vxlan flow and eCPRI flow, the soft parser image should be pre-lodaded in u-boot.
+       1) Generate softparser image in host:
+          //Build generator tool in nxp/dpaa2:
+          gcc gen_ecpri_vxlan_blob.c -o gen_ecpri_vxlan_blob
+          //Generate soft parser to support vxlan and eCPRI, the "udp_dst_port" is used to identify eCPRI over UDP,
+          //Default port number is 0x1234.
+          //After following command is excuted, the "ecpri_vxlan.blob" image is generated.
+          ./gen_ecpri_vxlan_blob -p udp_dst_port
+       2) Load ecpri_vxlan.blob generated to hardware in u-boot:
+         //tftp 0xac000000 ecpri_vxlan.blob
+         //fsl_mc apply spb 0xac000000
 
 2.Flow control on single TC
   #Create dpni with 8 TCs
@@ -29,32 +40,64 @@ Note: Please first read nxp/README.
       testpmd> start
 
   #Inject the IPv4/UDP packet with 10.10.10.3 source IP and 11:22:33:44:55:66 source mac.
-  #Check the packet go to the expected queue(RXQ4) by stop command.
+  #Check the packet goes to the expected queue(RXQ4) by stop command.
      testpmd> stop
   #Remove the top priority flow and inject the same packet above.
      testpmd> flow destroy 0 rule 0
      testpmd> start
-  #Check the packet go to the expected queue(RXQ1) by stop command.
+  #Check the packet goes to the expected queue(RXQ1) by stop command.
      testpmd> stop
   #Remove the middle priority flow and inject the same packet above.
      testpmd> flow destroy 0 rule 1
      testpmd> start
-  #Check the packet go to the expected queue(RXQ2) by stop command.
+  #Check the packet goes to the expected queue(RXQ2) by stop command.
      testpmd> stop
 
-  #Check RAW flows (restart testpmd)
-     ./dpdk-dpdk-testpmd  --lcores='0,1,2,3,4@0' --main-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=8 --txq=8
-  #Create RAW flows
-     testpmd> flow create 0 group 0 priority 1 ingress pattern raw relative is 0 search is 0 offset is 0 limit is 0 pattern_hex spec 00000000000000000000000000000000000000000000000000000a0a0a0a pattern_hex mask 0000000000000000000000000000000000000000000000000000ffffffff / end actions queue index 4 / end
-     testpmd> flow create 0 group 0 priority 0 ingress pattern raw relative is 0 search is 0 offset is 0 limit is 0 pattern_hex spec 0000000000000000000000008100000000000000000000000000000000000a0a0a0a pattern_hex mask 000000000000000000000000FFFF00000000000000000000000000000000ffffffff / end actions queue index 4 / end
+  #Check RAW/standard protocol flows with various raw offsets
+     ./dpdk-testpmd  --lcores='0,1,2,3,4@0' --master-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=16 --txq=2
+  #Create flow with 11:22:33:44:55:66 ethernet source address and pattern 0xbbbbbbbb located at offset 42.
+     testpmd> flow create 0 group 0 priority 2 ingress pattern eth src is 11:22:33:44:55:66 / raw relative is 0 search is 0 offset is 42 limit is 0 pattern_hex spec bbbbbbbb pattern_hex mask ffffffff / end actions queue index 1 / end
      testpmd> start
-  #Create spirent traffic flow with ETH header and IP header having IP src as 10.10.10.10.
-  #Also create another spirent traffic flow with ETH header, VLAN header and IP header with same IP src as 10.10.10.10.
-  #Send the packets from both the flows.
-  #Check both flows should be received on expected queue(RXQ4)
+  #Inject UDP packet with 11:22:33:44:55:66 ETH src and 10.10.10.10 IP src and 0xbbbbbbbb user data following UDP header.
+  #Check the packet goes to the expected queue(RXQ1) by stop command.
      testpmd> stop
 
-  #Check flow switch by hardware (restart testpmd)
+  #Create generic IPV4 raw flow with 10.10.10.10 IPV4 source address, extract from offset 9.
+     testpmd> flow create 0 group 0 priority 1 ingress pattern raw relative is 0 search is 0 offset is 9 limit is 0 pattern_hex spec 00000000000000000000000000000000000a0a0a0a pattern_hex mask 0000000000000000000000000000000000ffffffff / end actions queue index 2 / end
+     testpmd> start
+  #Inject same packet as above.
+  #Check the packet goes to the expected queue(RXQ2) by stop command.
+     testpmd> stop
+
+  #Create vlan IPV4 raw flow with 10.10.10.10 IPV4 source address, extract from offset 0.
+     testpmd> flow create 0 group 0 priority 0 ingress pattern raw relative is 0 search is 0 offset is 0 limit is 0 pattern_hex spec 0000000000000000000000008100000000000000000000000000000000000a0a0a0a pattern_hex mask 000000000000000000000000FFFF00000000000000000000000000000000ffffffff / end actions queue index 3 / end
+     testpmd> start
+  #Inject vlan IPV4 packet with 10.10.10.10 IP src.
+  #Check the packet goes to the expected queue(RXQ3) by stop command.
+     testpmd> stop
+
+  #Create vxLan flow whose vni is 2.(restart dpdk-testpmd)
+     testpmd> flow create 0 group 0 priority 0 ingress pattern vxlan vni is 2 / end actions pf / queue index 2 / end
+     testpmd> flow create 0 group 0 priority 1 ingress pattern ipv4 dst is 10.10.10.4 / vxlan vni is 2 / eth dst is 01:02:03:04:05:06 / end actions pf / queue index 3 / end
+     testpmd> start
+  #Inject vxlan packet whose outer IPv4 dst address is 10.10.10.4, vni is 2 and inner ethernet dst address is 01:02:03:04:05:06.
+  #Check if the packet goes to the expected queue(RXQ2) by stop command.
+     testpmd> stop
+  #Remove the higher priority flow:
+     testpmd> flow destroy 0 rule 0
+     testpmd> start
+  #Inject above packet again and check if the packet goes to the expected queue(RXQ3) by stop command.
+     testpmd> stop
+
+  #Create ecpri flow whose message type is I/Q data and physical channel is 0x000a.(restart dpdk-testpmd)
+     testpmd> flow create 0 ingress pattern ecpri common type iq_data pc_id is 0x000a / end actions queue index 3 / end
+  #Inject ecpri over ethernet packet whose message type is I/Q data and physical channel is 0x000a.
+  #Inject ecpri over vlan packet whose message type is I/Q data and physical channel is 0x000a.
+  #Inject ecpri over udp packet whose message type is I/Q data and physical channel is 0x000a. The UDP dst port is identical to the number specfied by soft parser generator.
+  #Check if all these packets go to the expected queue(RXQ3) by stop command.
+     testpmd> stop
+
+  #Check flow switch by hardware (restart dpdk-testpmd)
      ./dpdk-testpmd  --lcores='0,1,2,3,4@0' --main-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=8 --txq=8
   #Create flow with port forwarding action
      testpmd> flow create 0 group 0 priority 1 ingress pattern ipv4 src is 10.10.10.10 / end actions port_id id 0 / end
