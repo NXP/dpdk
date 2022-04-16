@@ -60,6 +60,8 @@ static unsigned int lsinic_self_test_len = 1024;
 module_param(lsinic_self_test_len, uint, S_IRUGO);
 static unsigned int lsinic_sim_multi_pci;
 module_param(lsinic_sim_multi_pci, uint, S_IRUGO);
+static unsigned int lsinic_dev_id;
+module_param(lsinic_dev_id, uint, S_IRUGO);
 
 #define SIM_MAX_DEV_NB 16
 static struct platform_device *sim_dev[SIM_MAX_DEV_NB];
@@ -4568,6 +4570,18 @@ static struct pci_driver lsinic_driver = {
 static void lsinic_pre_init_pci_id(void)
 {
 	int i, num;
+
+	if (lsinic_dev_id) {
+		lsinic_ids[0].vendor = NXP_PCI_VENDOR_ID;
+		lsinic_ids[0].device = lsinic_dev_id;
+		lsinic_ids[0].subvendor = PCI_ANY_ID;
+		lsinic_ids[0].subdevice = PCI_ANY_ID;
+		lsinic_ids[0].class = 0;
+		lsinic_ids[0].class_mask = 0;
+		lsinic_ids[0].driver_data = 1;
+
+		return;
+	}
 
 	num = sizeof(s_lsinic_rev2_id_map) /
 		sizeof(struct lsinic_pcie_svr_map);
