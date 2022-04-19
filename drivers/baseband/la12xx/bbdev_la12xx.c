@@ -2649,25 +2649,25 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 
 err:
 	rte_free(hp);
-	rte_free(ipc_priv);
 	rte_free(ipc_priv_ch);
 	if (dev_mem)
 		close(dev_mem);
-	if (dev_ipc)
+	if (dev_ipc >= 0)
 		close(dev_ipc);
-	if (ipc_priv->mhif_start.host_vaddr &&
+	if (ipc_priv && ipc_priv->mhif_start.host_vaddr &&
 	    (ipc_priv->mhif_start.host_vaddr != MAP_FAILED)) {
 		phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
 		munmap(ipc_priv->mhif_start.host_vaddr,
 			ipc_priv->sys_map.mhif_start.size + phy_align);
 	}
-	if (ipc_priv->peb_start.host_vaddr &&
+	if (ipc_priv && ipc_priv->peb_start.host_vaddr &&
 	    (ipc_priv->peb_start.host_vaddr != MAP_FAILED)) {
 		phy_align = (ipc_priv->sys_map.peb_start.host_phys % 0x1000);
 		munmap(ipc_priv->peb_start.host_vaddr,
 			ipc_priv->sys_map.peb_start.size + phy_align);
 	}
 
+	rte_free(ipc_priv);
 	return ret;
 }
 

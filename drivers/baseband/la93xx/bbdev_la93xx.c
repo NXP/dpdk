@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021 NXP
+ * Copyright 2021-2022 NXP
  */
 
 #include <string.h>
@@ -819,24 +819,22 @@ setup_la93xx_dev(struct rte_bbdev *dev)
 
 err:
 	rte_free(hp);
-	rte_free(ipc_priv);
 	rte_free(ipc_priv_ch);
-	if (dev_mem)
+	if (dev_mem >= 0)
 		close(dev_mem);
-	if (dev_ipc)
-		close(dev_ipc);
-	if (ipc_priv->mhif_start.host_vaddr &&
+	if (ipc_priv && ipc_priv->mhif_start.host_vaddr &&
 	    (ipc_priv->mhif_start.host_vaddr != MAP_FAILED)) {
 		phy_align = (ipc_priv->sys_map.mhif_start.host_phys % 0x1000);
 		munmap(ipc_priv->mhif_start.host_vaddr,
 			ipc_priv->sys_map.mhif_start.size + phy_align);
 	}
-	if (ipc_priv->tcml_start.host_vaddr &&
+	if (ipc_priv && ipc_priv->tcml_start.host_vaddr &&
 	    (ipc_priv->tcml_start.host_vaddr != MAP_FAILED)) {
 		phy_align = (ipc_priv->sys_map.tcml_start.host_phys % 0x1000);
 		munmap(ipc_priv->tcml_start.host_vaddr,
 			ipc_priv->sys_map.tcml_start.size + phy_align);
 	}
+	rte_free(ipc_priv);
 
 	return ret;
 }
