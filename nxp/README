@@ -758,6 +758,20 @@ Following are some pre-requisites:
 
   $ dpdk-l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0),(5,2,1,0,0,0),(5,3,1,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
 
+
+  KNI Kernel NIC Interface:
+  ~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Sample kni commands for 2 interfaces:
+	- insmod rte_kni.ko lo_mode=lo_mode_fifo carrier=on
+	- ./dpdk-kni -c 0xF -- -p 0x3 --config='(0,0,1,0),(1,2,3,1)'
+
+	- ifconfig vEth0_0 1.1.1.1
+	- arp -s 1.1.1.4 00:11:22:22:33:44
+	- ping 1.1.1.4
+
+  Please vist DPDK document https://doc.dpdk.org/guides/prog_guide/kernel_nic_interface.html for application help.
+
 ================================================================================
 Executing dpdk-pdump/dpdk-procinfo on DPAA2
 ===========================================
