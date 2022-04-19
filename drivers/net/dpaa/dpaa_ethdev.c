@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2021 NXP
+ *   Copyright 2017-2022 NXP
  *
  */
 /* System headers */
@@ -1469,7 +1469,7 @@ static int dpaa_dev_queue_intr_disable(struct rte_eth_dev *dev,
 
 	temp1 = read(rxq->q_fd, &temp, sizeof(temp));
 	if (temp1 != sizeof(temp))
-		DPAA_PMD_ERR("irq read error");
+		DPAA_PMD_DEBUG("read did not return anything");
 
 	qman_fq_portal_thread_irq(rxq->qp);
 
