@@ -864,12 +864,14 @@ uint16_t dpaa_eth_queue_rx(void *q,
 static int
 dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		struct qm_fd *fd,
-		struct dpaa_bp_info *bp_info)
+		struct qman_fq *txq)
 {
 	struct rte_mbuf *cur_seg = mbuf, *prev_seg = NULL;
 	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
+	struct dpaa_if *dpaa_intf = txq->dpaa_intf;
+	struct dpaa_bp_info *bp_info = dpaa_intf->bp_info;
 
 	DPAA_DP_LOG(DEBUG, "Creating SG FD to transmit");
 
@@ -914,7 +916,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	fd->format = QM_FD_SG;
 	fd->addr = temp->buf_iova;
 	fd->offset = temp->data_off;
-	fd->bpid = bp_info ? bp_info->bpid : 0xff;
+	fd->bpid = bp_info->bpid;
 	fd->length20 = mbuf->pkt_len;
 
 	while (i < DPAA_SGT_MAX_ENTRIES) {
@@ -1033,7 +1035,8 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 static inline uint16_t
 tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		struct dpaa_bp_info *bp_info,
-		struct qm_fd *fd_arr)
+		struct qm_fd *fd_arr,
+		struct qman_fq *q)
 {
 	DPAA_DP_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
 
@@ -1042,7 +1045,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr);
 	} else if (mbuf->nb_segs > 1 &&
 		   mbuf->nb_segs <= DPAA_SGT_MAX_ENTRIES) {
-		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, bp_info)) {
+		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, q)) {
 			DPAA_PMD_DEBUG("Unable to create Scatter Gather FD");
 			return 1;
 		}
@@ -1252,7 +1255,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			}
 indirect_buf:
 			state = tx_on_dpaa_pool(mbuf, bp_info,
-						&fd_arr[loop]);
+						&fd_arr[loop], q);
 			if (unlikely(state)) {
 				/* Set frames_to_send & nb_bufs so
 				 * that packets are transmitted till
