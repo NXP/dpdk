@@ -118,6 +118,9 @@ Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is eth port
    Note: Port sequence: First all DPAA ports, then PCI port(s), if any and tap
 	 port at last.
 
+   Note: Please refer to "Steps to increase MTU of kernel interface in VSP mode"
+         section to increase the MTU of kernel interface.
+
 -------------------------------------------------------------------
 Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is OL port
 (With ASK's FMAN micro code)
@@ -232,3 +235,24 @@ LGW traffic information in file:
        "LGW_IPV6 2001:0db8:85a3:0000:0000:0000:0000:0000/64"
 
 Note: IPv6 address format must be: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
+
+-------------------------------------------------------------------
+Steps to increase MTU of kernel interface in VSP mode
+-------------------------------------------------------------------
+There are two ways to increase MTU of kernel interface:
+
+A. Increase the buffer size in kernel:
+  1. Compile the kernel after adding/updating following options in .config file:
+     CONFIG_FSL_DPAA_ETH_JUMBO_FRAME=y
+     CONFIG_FSL_FM_MAX_FRAME_SIZE=9600
+  2. Boot up the board with this kernel.
+  3. Run the following command to update the MTU:
+     $ ifconfig <interface-name> mtu 9578
+
+  This will increase the buffer size in kernel to 9600.
+
+B. Enable Scatter Gather on kernel:
+  1. Add the following entry to the bootargs and boot up the board:
+     fsl_fm_max_frm=9600
+  2. Run the following command to update the MTU:
+     $ ifconfig <interface-name> mtu 9578
