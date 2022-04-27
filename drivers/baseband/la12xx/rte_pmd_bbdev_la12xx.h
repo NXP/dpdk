@@ -340,7 +340,7 @@ void
 rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
 
 /**
- * This API can be used to map the address of the second hugepage.
+ * This API can be used to map the hugepage address.
  * With DPDK APIs the allocation of the memory for ring, mempools,
  * mbuf/bbuf pools or malloc start from the end of the allocated
  * hugepage. Thus this API maps the memory starting from the end
@@ -353,12 +353,14 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
  *   The identifier of the device.
  *
  * @param addr
- *   Any address from the second hugepage.
+ *   Address to be mapped over PCI.
  *
  * @return
- *   size of the mapping created from second hugepage.
+ *   size of the mapping created. This could be 0 in case mapping
+ *   already exists.
+ *   < 0 in case of failure.
  */
-uint32_t
+int
 rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
 
 /**

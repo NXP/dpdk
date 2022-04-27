@@ -169,13 +169,32 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	return 0;
 }
 
-static inline uint32_t
+static inline int
 map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 {
 	ipc_pci_map_query_t pci_map_query;
 	struct rte_memseg *mseg;
+	uint64_t addr_diff;
 	uint32_t size;
 	int ret;
+
+	addr_diff = ((uint64_t) (addr) -
+		((uint64_t)ipc_priv->hugepg_start[0].host_vaddr));
+
+	if (addr_diff < ipc_priv->hugepg_start[0].size) {
+		BBDEV_LA12XX_PMD_INFO(
+			"addr: %p already mapped at index 0", addr);
+		return 0;
+	}
+
+	addr_diff = ((uint64_t) (addr) -
+		((uint64_t)ipc_priv->hugepg_start[1].host_vaddr));
+
+	if (addr_diff < ipc_priv->hugepg_start[1].size) {
+		BBDEV_LA12XX_PMD_INFO(
+			"addr: %p already mapped at index 1", addr);
+		return 0;
+	}
 
 	BBDEV_LA12XX_PMD_INFO(
 		"Creating hugepage mapping for second hugepage");
@@ -185,13 +204,13 @@ map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"IOCTL_GUL_IPC_QUERY_PCI_MAP ioctl failed");
-		return 0;
+		return -1;
 	}
 
 	if (!pci_map_query.mem_avail) {
 		BBDEV_LA12XX_PMD_ERR(
 			"No memory available for mapping");
-		return 0;
+		return -1;
 	}
 
 	mseg = rte_mem_virt2memseg(addr, NULL);
@@ -210,7 +229,7 @@ map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 	if (ret) {
 		BBDEV_LA12XX_PMD_ERR(
 			"IOCTL_GUL_IPC_GET_PCI_MAP ioctl failed");
-		return 0;
+		return -1;
 	}
 
 	ipc_priv->hugepg_start[1].host_phys =
@@ -230,7 +249,7 @@ static inline uint32_t
 get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
 {
 	uint64_t addr_diff;
-	uint32_t mapped_size;
+	int mapped_size;
 
 	addr_diff = ((uint64_t) (addr) -
 		((uint64_t)ipc_priv->hugepg_start[0].host_vaddr));
@@ -242,7 +261,7 @@ get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
 	/* Create mapping for second hugepage if not created */
 	if (!ipc_priv->hugepg_start[1].host_vaddr) {
 		mapped_size = map_second_hugepage_addr(ipc_priv, addr);
-		if (mapped_size == 0) {
+		if (mapped_size < 0) {
 			BBDEV_LA12XX_PMD_ERR(
 				"Mapping of hugepage address failed");
 			return 0;
@@ -2315,7 +2334,7 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id)
 	ipc_instance->feca_sd_single_qdma = rte_cpu_to_be_32(1);
 }
 
-uint32_t
+int
 rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
