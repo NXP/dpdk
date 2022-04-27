@@ -256,3 +256,41 @@ B. Enable Scatter Gather on kernel:
      fsl_fm_max_frm=9600
   2. Run the following command to update the MTU:
      $ ifconfig <interface-name> mtu 9578
+
+------------------------------------------------------------------------------------
+Steps to run dpdk-pkt_split_app on DPAA2 (when split port is eth port)
+------------------------------------------------------------------------------------
+
+1. source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
+2. ./dpdk-pkt_split_app -c 0xf -n 1 --vdev=net_tap0 -- -p 0x7 -s 0
+
+'pkt-split' Application using traffic bifurcation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  pktsplit application has been modified to support traffic bifurcation, where traffic can be
+  bifurcated such that some traffic goes to the kernel and other to DPDK using DPDMUX.
+  Separate rules can be configured for this bifurcation. Below are some sample commands:
+
+1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
+
+  $ ls-addni --no-link
+  $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
+  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
+  $ restool dprc disconnect dprc.2 --endpoint=dpni.1
+  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT --container=dprc.1
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.1
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.3
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.1
+  $ restool dprc assign dprc.1 --object=dpdmux.0 --child=dprc.2 --plugged=1
+  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
+  $ export DPRC=dprc.2
+  $ ifconfig eth0 1.1.1.2
+  $ ifconfig eth0 promisc
+
+2. Run pkt-split application providing 'dpaa2-traffic-split-config' option for configuring DPDMUX rules:
+
+  $ ./dpdk-pkt_split_app -c 0xf -n 1 --vdev=net_tap0 -- -p 0x7 -s 0 --dpaa2-traffic-split-config="(3,2152,2)"
+
+  Here "--dpaa2-traffic-split-config - (type,val,mux_conn_id)" is defined by
+	'type' -  1:ETHTYPE, 2:IP_PROTO, 3:UDP_DST_PORT having value as 'val' based on which DPDMUX can split the traffic to mux_conn_id
+
