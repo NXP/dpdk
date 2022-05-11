@@ -2751,8 +2751,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->options = attr.options;
 	priv->max_mac_filters = attr.mac_filter_entries;
 	priv->max_vlan_filters = attr.vlan_filter_entries;
-#if defined(RTE_LIBRTE_IEEE1588)
-	printf("DPDK IEEE1588 is enabled\n");
+#if defined(RTE_LIBRTE_IEEE1588) || defined(DPAA2_TX_CONF)
+	DPAA2_PMD_INFO("DPDK IEEE1588/ TX_CONF is enabled");
 	priv->flags |= DPAA2_TX_CONF_ENABLE;
 #endif
 	/* Used with ``fslmc:dpni.1,drv_tx_conf=1`` */
