@@ -1206,6 +1206,8 @@ DPAA2:
 				2 - dump sec error along with useful debugging
 				    information.
 				By default, 1 is configured.
+
+12. DPAA2_TX_CONF		Enable Tx confirmation.
 ================================================================================
 
 ================================================================================
