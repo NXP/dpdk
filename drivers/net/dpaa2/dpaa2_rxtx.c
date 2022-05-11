@@ -1229,13 +1229,17 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
 			eth_data, dpaa2_q->fqid);
 
+#if (!defined DPAA2_TX_CONF) || (!defined RTE_LIBRTE_IEEE1588)
+	if (priv->flags & DPAA2_TX_CONF_ENABLE)
+#endif
+		dpaa2_dev_tx_conf(dpaa2_q->tx_conf_queue);
+
 #ifdef RTE_LIBRTE_IEEE1588
 	/* IEEE1588 driver need pointer to tx confirmation queue
 	 * corresponding to last packet transmitted for reading
 	 * the timestamp
 	 */
 	priv->next_tx_conf_queue = dpaa2_q->tx_conf_queue;
-	dpaa2_dev_tx_conf(dpaa2_q->tx_conf_queue);
 #endif
 
 	/*Prepare enqueue descriptor*/
