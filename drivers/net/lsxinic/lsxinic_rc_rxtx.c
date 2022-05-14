@@ -1354,15 +1354,6 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 		s_perf_mode_set[rte_lcore_id()] = 1;
 	}
 
-	if (tx_queue) {
-		if (tx_queue->rc_mem_bd_type == RC_MEM_BD_CNF)
-			lxsnic_tx_complete_ring_clean(tx_queue);
-		else if (tx_queue->rc_mem_bd_type == RC_MEM_IDX_CNF)
-			lxsnic_tx_ring_idx_clean(tx_queue);
-		else
-			lxsnic_tx_ring_clean(tx_queue);
-	}
-
 	if (adapter->self_test && tx_queue) {
 		int count = rx_queue->count;
 		int i, tx_nb, ret;
