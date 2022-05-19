@@ -292,5 +292,13 @@ Steps to run dpdk-pkt_split_app on DPAA2 (when split port is eth port)
   $ ./dpdk-pkt_split_app -c 0xf -n 1 --vdev=net_tap0 -- -p 0x7 -s 0 --dpaa2-traffic-split-config="(3,2152,2)"
 
   Here "--dpaa2-traffic-split-config - (type,val,mux_conn_id)" is defined by
-	'type' -  1:ETHTYPE, 2:IP_PROTO, 3:UDP_DST_PORT having value as 'val' based on which DPDMUX can split the traffic to mux_conn_id
+	value as 'val' based on which DPDMUX can split the traffic to mux_conn_id
 
+	'type' -
+		1: ETHTYPE,
+		2: IP_PROTO,
+		3: UDP_DST_PORT
+		4: IP_FRAG_UDP_AND_GTP
+		5: IP_FRAG_PROTO
+		6: IP_FRAG_UDP_AND_GTP_AND_ESP
+		7. VLAN (val here is the VLAN id)

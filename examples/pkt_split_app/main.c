@@ -162,6 +162,7 @@ enum traffic_split_type_t {
 	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP,
 	TRAFFIC_SPLIT_IP_FRAG_PROTO,
 	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP,
+	TRAFFIC_SPLIT_VLAN,
 	TRAFFIC_SPLIT_MAX_NUM
 };
 
@@ -872,6 +873,7 @@ configure_split_traffic_config(void)
 	struct rte_flow_item_udp udp_item;
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
+	struct rte_flow_item_vlan vlan_item;
 	int dpdmux_id;
 
 	dpdmux_id = get_dpdmux_id_from_env();
@@ -927,6 +929,14 @@ configure_split_traffic_config(void)
 		mask = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO;
 		pattern[0].spec = &ip_item;
+		pattern[0].mask = &mask;
+		break;
+	case TRAFFIC_SPLIT_VLAN:
+		printf("traffic_split_type on VLAN");
+		vlan_item.hdr.vlan_tci = traffic_split_val;
+		mask = 0xff;
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+		pattern[0].spec = &vlan_item;
 		pattern[0].mask = &mask;
 		break;
 	default:
