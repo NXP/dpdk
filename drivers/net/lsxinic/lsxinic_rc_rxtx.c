@@ -597,7 +597,7 @@ static uint16_t
 _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts)
 {
-	int ret = 0;
+	int ret = 0, i;
 	uint8_t ret_val = 0;
 	uint16_t tx_num = 0, idx_tx_num;
 	uint16_t total_nb_pkts = nb_pkts;
@@ -736,7 +736,6 @@ end_of_tx:
 				sizeof(struct lsinic_ep_rx_src_addrl));
 		}
 	} else if (tx_ring->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD) {
-		int i;
 		struct lsinic_ep_rx_src_addrx *addrx;
 
 		if ((first_idx + notify_idx) <= tx_ring->count) {
@@ -770,24 +769,34 @@ end_of_tx:
 				sizeof(struct lsinic_ep_rx_src_addrx));
 		}
 	} else {
-		if ((first_idx + notify_idx) <= tx_ring->count) {
-			src = (uint8_t *)&notify.ep_tx_addr[0];
-			dst = (uint8_t *)&tx_ring->ep_bd_desc[first_idx];
-			memcpy(dst, src, notify_idx *
-				sizeof(struct lsinic_bd_desc));
-		} else {
-			src = (uint8_t *)&notify.ep_tx_addr[0];
-			dst = (uint8_t *)&tx_ring->ep_bd_desc[first_idx];
-			memcpy(dst, src, (tx_ring->count - first_idx) *
-				sizeof(struct lsinic_bd_desc));
+		int update_nb, start_idx;
+		struct lsinic_bd_desc *src_desc;
+		struct lsinic_bd_desc *dst_desc;
 
-			src = (uint8_t *)
-				&notify.ep_tx_addr[tx_ring->count - first_idx];
-			dst = (uint8_t *)
-				&tx_ring->ep_bd_desc[0];
-			memcpy(dst, src,
-				(notify_idx + first_idx - tx_ring->count) *
-				sizeof(struct lsinic_bd_desc));
+		src_desc = notify.ep_tx_addr;
+		dst_desc = tx_ring->ep_bd_desc;
+
+		if ((first_idx + notify_idx) <= tx_ring->count) {
+			for (i = 0; i < notify_idx; i++) {
+				src = (void *)&src_desc[i];
+				dst = (void *)&dst_desc[first_idx + i];
+				mem_cp128b_atomic(dst, src);
+			}
+		} else {
+			update_nb = tx_ring->count - first_idx;
+			for (i = 0; i < update_nb; i++) {
+				src = (void *)&src_desc[i];
+				dst = (void *)&dst_desc[first_idx + i];
+				mem_cp128b_atomic(dst, src);
+			}
+
+			update_nb = first_idx + notify_idx - tx_ring->count;
+			start_idx = tx_ring->count - first_idx;
+			for (i = 0; i < update_nb; i++) {
+				src = (void *)&src_desc[start_idx + i];
+				dst = (void *)&dst_desc[i];
+				mem_cp128b_atomic(dst, src);
+			}
 		}
 	}
 
