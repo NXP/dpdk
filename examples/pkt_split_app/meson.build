@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020-2021 NXP
+# Copyright 2020-2022 NXP
 
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -17,3 +17,6 @@ allow_experimental_apis = true
 sources = files(
 	'main.c'
 )
+
+includes += include_directories('../../drivers/net/dpaa/')
+includes += include_directories('../../drivers/net/dpaa2/')
