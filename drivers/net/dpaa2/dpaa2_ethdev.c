@@ -933,6 +933,8 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	memset(&tx_conf_cfg, 0, sizeof(struct dpni_queue));
 	memset(&tx_flow_cfg, 0, sizeof(struct dpni_queue));
 
+	priv->flags = 0;
+
 	if (tx_queue_id == 0) {
 		/*Set tx-conf and error configuration*/
 		if (priv->flags & DPAA2_TX_CONF_ENABLE)
@@ -1008,6 +1010,8 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			   "err=%d", ret);
 			return -ret;
 		}
+	} else {
+		DPAA2_PMD_INFO("Tx congestion notification is disabled");
 	}
 	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
 	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
@@ -2733,7 +2737,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->options = attr.options;
 	priv->max_mac_filters = attr.mac_filter_entries;
 	priv->max_vlan_filters = attr.vlan_filter_entries;
-	priv->flags = 0;
 #if defined(RTE_LIBRTE_IEEE1588)
 	printf("DPDK IEEE1588 is enabled\n");
 	priv->flags |= DPAA2_TX_CONF_ENABLE;
@@ -2751,6 +2754,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_RX_TAILDROP_OFF"))
 		priv->flags |= DPAA2_RX_TAILDROP_OFF;
+
+	if (getenv("DPAA2_TX_CGR_OFF"))
+		priv->flags |= DPAA2_TX_CGR_OFF;
 
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
