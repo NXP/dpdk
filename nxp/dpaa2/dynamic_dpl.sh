@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 
 cat > script_help << EOF
 
@@ -491,6 +491,14 @@ get_dprtc_parameters() {
 	then
 		DPRTC_COUNT=0
 	fi
+	if [[ "$DPRTC_COUNT" = "1" ]]
+	then
+		echo dprtc.0 > /sys/bus/fsl-mc/drivers/fsl_dpaa2_ptp/unbind
+		restool dprc assign dprc.1 --object=dprtc.0 --plugged=0
+		sleep 1
+		restool dprc assign dprc.1 --object=dprtc.0 --child=dprc.2 --plugged=1
+	fi
+
 	echo "DPRTC parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPRTC_COUNT = "$DPRTC_COUNT >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
@@ -888,14 +896,6 @@ then
 		DPDMAI=$(restool -s dpdmai create --num-queues=1 --priorities=1,1 --container=$DPRC)
 		echo $DPDMAI "Created" >> dynamic_dpl_logs
 		obj_assign $DPDMAI
-	done;
-
-	# Create DPRTC's for timesync
-	unset DPRTC
-	for i in $(seq 1 ${DPRTC_COUNT}); do
-		DPRTC=$(restool -s dprtc create --container=$DPRC)
-		echo $DPRTC "Created" >> dynamic_dpl_logs
-		obj_assign $DPRTC
 	done;
 
 	dmesg -D
