@@ -3151,12 +3151,9 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 				free_idx++;
 				*ppkt = NULL;
 			}
-			if (ret != 1) {
-				rte_pktmbuf_free_seg(tx_pkts[tx_num]);
-				txq->errors++;
-				tx_num++;
-				nb_pkts--;
-				continue;
+			if (unlikely(ret != 1)) {
+				txq->errors += nb_pkts;
+				break;
 			}
 
 			tx_num++;
@@ -3485,9 +3482,6 @@ lsinic_pci_dma_test_get_remote_addr(struct lsinic_queue *queue,
 	uint32_t index)
 {
 	uint64_t remote_addr = 0;
-
-	printf("remote index:%d, type:%d, bd:%d\r\n",
-		index, queue->type, queue->ep_mem_bd_type);
 
 	if (queue->type == LSINIC_QUEUE_TX) {
 		if (queue->ep_mem_bd_type == EP_MEM_LONG_BD) {

@@ -804,14 +804,6 @@ end_of_tx:
 
 	tx_ring->drop_packet_num += (total_nb_pkts - tx_num);
 
-	if (tx_ring->adapter->self_test &&
-		tx_ring->self_xmit_ring) {
-		rte_ring_enqueue_bulk(tx_ring->self_xmit_ring,
-			(void * const *)free_pkts, free_nb, NULL);
-	} else {
-		rte_pktmbuf_free_bulk(free_pkts, free_nb);
-	}
-
 	return tx_num;
 }
 
