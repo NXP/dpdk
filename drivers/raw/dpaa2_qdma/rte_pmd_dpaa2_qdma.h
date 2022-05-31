@@ -60,11 +60,16 @@ enum {
 
 #define RTE_QDMA_VQ_FLE_PRE_POPULATE	(1ULL << 4)
 
+/** Valid with RTE_QDMA_VQ_NO_RESPONSE enabled*/
+#define RTE_QDMA_VQ_NO_RSP_DRAIN	(1ULL << 5)
+
 /** States if the source addresses is physical. */
 #define RTE_QDMA_JOB_SRC_PHY		(1ULL)
 
 /** States if the destination addresses is physical. */
 #define RTE_QDMA_JOB_DEST_PHY		(1ULL << 1)
+
+#define RTE_QDMA_CON_THRESHOLD_BYTES (1024 * 1024)
 
 /** Provides QDMA device attributes */
 struct rte_qdma_attr {

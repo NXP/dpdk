@@ -108,9 +108,21 @@ enum {
 	DPAA2_QDMA_MAX_SDD
 };
 
+#define FLE_SG_JOB_GET_NB(val) \
+	((uint32_t)(val >> 32))
+
+#define FLE_SG_JOB_GET_SIZE(val) \
+	((uint32_t)(val & 0xffffffff))
+
+#define FLE_SG_JOB_SET_NB(val, nb) \
+	(val |= ((uint64_t)nb) << 32)
+
+#define FLE_SG_JOB_SET_SIZE(val, size) \
+	(val |= size)
+
 struct qdma_fle_elem {
 	union {
-		uint16_t sg_job_nb;
+		uint64_t sg_job_nb_len;
 		struct rte_qdma_job *single_job;
 	};
 	struct qbman_fle fle[DPAA2_QDMA_MAX_FLE];
@@ -210,6 +222,9 @@ struct qdma_virt_queue {
 	/* Total number of dequeues from this VQ */
 	uint64_t num_dequeues;
 
+	/* Total size in DMA by this VQ */
+	uint64_t bytes_in_dma;
+
 	uint16_t vq_id;
 	uint32_t flags;
 
@@ -218,10 +233,10 @@ struct qdma_virt_queue {
 		struct rte_qdma_job **job,
 		uint16_t nb_jobs);
 
-	uint16_t (*get_job)(struct qdma_virt_queue *qdma_vq,
+	uint32_t (*get_job)(struct qdma_virt_queue *qdma_vq,
 		const struct qbman_fd *fd,
 		struct rte_qdma_job **job,
-		uint16_t *nb_jobs);
+		uint16_t *nb_jobs, uint16_t *vq_id);
 
 	int (*dequeue_job)(struct qdma_virt_queue *qdma_vq,
 		uint16_t *vq_id, struct rte_qdma_job **job,
