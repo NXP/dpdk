@@ -259,6 +259,9 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 			RTE_QDMA_VQ_FD_SG_FORMAT |
 			RTE_QDMA_VQ_NO_RESPONSE |
 			RTE_QDMA_VQ_FLE_PRE_POPULATE);
+		penv = getenv("LSINIC_QDMA_NO_RSP_DRAIN");
+		if (penv)
+			vq_flags |= RTE_QDMA_VQ_NO_RSP_DRAIN;
 	}
 
 	/* Avoid memory address conflicting with PCIe base in short format.*/
@@ -3252,6 +3255,11 @@ lsinic_xmit_directly(struct rte_mbuf **tx_pkts,
 	return direct_nb;
 }
 
+static void
+lsinic_rxq_loop(struct lsinic_queue *rxq);
+static void
+lsinic_txq_loop(struct lsinic_queue *rxq);
+
 uint16_t
 lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	uint16_t nb_pkts)
@@ -3282,6 +3290,29 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		lsinic_queue_status_update(txq);
 		if (!lsinic_queue_running(txq))
 			return 0;
+	}
+
+	if ((txq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) &&
+		(txq->qdma_config.flags & RTE_QDMA_VQ_NO_RSP_DRAIN)) {
+		uint64_t values[1] = {0};
+		unsigned int ids[1] = {0};
+		int ret, loop_count = 1000;
+
+get_stat_again:
+		ret = rte_rawdev_xstats_get(txq->dma_id, ids, values, 1);
+		if (ret == 1) {
+			if (values[0] > RTE_QDMA_CON_THRESHOLD_BYTES) {
+				if (loop_count > 0) {
+					lsinic_rxq_loop(txq->pair);
+					lsinic_txq_loop(txq->pair);
+					loop_count--;
+					goto get_stat_again;
+				}
+				return 0;
+			}
+		} else {
+			return 0;
+		}
 	}
 
 	if (txq->recycle_txq) {
@@ -4577,6 +4608,18 @@ lsinic_txq_loop(struct lsinic_queue *rxq)
 			continue;
 		}
 
+		if ((q->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) &&
+			(q->qdma_config.flags & RTE_QDMA_VQ_NO_RSP_DRAIN)) {
+			struct rte_qdma_enqdeq context;
+			struct rte_qdma_job *job[LSINIC_QDMA_DQ_MAX_NB];
+
+			context.vq_id = q->dma_vq;
+			context.job = job;
+			rte_qdma_dequeue_buffers(q->dma_id, NULL,
+				LSINIC_QDMA_DQ_MAX_NB,
+				&context);
+		}
+
 		if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
 			lsinic_tx_dma_dequeue(q);
 			lsinic_tx_update_to_rc(q);
@@ -4608,6 +4651,28 @@ lsinic_rxq_loop(struct lsinic_queue *rxq)
 		lsinic_pci_dma_rx_tx_test(rxq);
 
 		return;
+	}
+
+	if ((rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) &&
+		(rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RSP_DRAIN)) {
+		uint64_t values[1];
+		unsigned int ids[1] = {0};
+		int ret;
+		struct rte_qdma_enqdeq context;
+		struct rte_qdma_job *job[LSINIC_QDMA_DQ_MAX_NB];
+
+		context.vq_id = rxq->dma_vq;
+		context.job = job;
+		rte_qdma_dequeue_buffers(rxq->dma_id, NULL,
+			LSINIC_QDMA_DQ_MAX_NB,
+			&context);
+		ret = rte_rawdev_xstats_get(rxq->dma_id, ids, values, 1);
+		if (ret == 1) {
+			if (values[0] > RTE_QDMA_CON_THRESHOLD_BYTES)
+				return;
+		} else {
+			return;
+		}
 	}
 
 	if (bulk_alloc) {
