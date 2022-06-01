@@ -1362,8 +1362,16 @@ main(int argc, char **argv)
 
 	/* initialize all ports */
 	RTE_ETH_FOREACH_DEV(portid) {
+		char env_name[64];
+
 		memcpy(&local_port_conf[portid], &port_conf,
 			sizeof(struct rte_eth_conf));
+		sprintf(env_name, "PORT_FWD_PORT%d_LPBK", portid);
+		penv = getenv(env_name);
+		if (penv)
+			local_port_conf[portid].lpbk_mode = atoi(penv);
+		else
+			local_port_conf[portid].lpbk_mode = 0;
 
 		/* skip ports that are not enabled */
 		if ((enabled_port_mask & (1 << portid)) == 0) {
