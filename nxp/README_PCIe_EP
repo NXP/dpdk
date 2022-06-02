@@ -80,6 +80,8 @@ export LSINIC_QDMA_SG_ENABLE=1
 export LSINIC_TXQ_QDMA_NO_RESPONSE=1
 #RC appends one byte after payload to notify EP qDMA complete.
 export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+#Drain jobs from qDMA to avoid congestion with high loading.
+export LSINIC_QDMA_NO_RSP_DRAIN=1
 #Clear all previous PCIe2 inbound/outbound configurations.
 export LSX_PCIE2_CLEAR_WINDOWS=1
 ./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
