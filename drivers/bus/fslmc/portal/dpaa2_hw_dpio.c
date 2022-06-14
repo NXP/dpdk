@@ -65,8 +65,6 @@ static pthread_key_t dpaa2_portal_key;
 static int dpaa2_core_cluster_base = 0x04;
 static int dpaa2_cluster_sz = 2;
 
-static struct dpaa2_dpio_dev *dpaa2_portal_arr[RTE_MAX_LCORE];
-
 /* For LS208X platform There are four clusters with following mapping:
  * Cluster 1 (ID = x04) : CPU0, CPU1;
  * Cluster 2 (ID = x05) : CPU2, CPU3;
@@ -99,6 +97,32 @@ static struct dpaa2_dpio_dev *get_dpio_dev_from_id(int32_t dpio_id)
 	}
 
 	return dpio_dev;
+}
+
+static int
+dpaa2_get_core_id(void)
+{
+	rte_cpuset_t cpuset;
+	int i, ret, cpu_id = -1;
+
+	ret = pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t),
+		&cpuset);
+	if (ret) {
+		DPAA2_BUS_ERR("pthread_getaffinity_np() failed");
+		return ret;
+	}
+
+	for (i = 0; i < RTE_MAX_LCORE; i++) {
+		if (CPU_ISSET(i, &cpuset)) {
+			if (cpu_id == -1)
+				cpu_id = i;
+			else
+				/* Multiple cpus are affined */
+				return -1;
+		}
+	}
+
+	return cpu_id;
 }
 
 static int
@@ -279,7 +303,7 @@ static void dpaa2_put_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 	}
 }
 
-static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(unsigned int lcore_id)
+static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	int cpu_id;
@@ -299,7 +323,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(unsigned int lcore_id)
 			dpio_dev, dpio_dev->index, rte_gettid());
 
 	/* Set the Stashing Destination */
-	cpu_id = rte_lcore_to_cpu_id(lcore_id);
+	cpu_id = dpaa2_get_core_id();
 	if (cpu_id < 0) {
 		DPAA2_BUS_WARN("Thread not affined to a single core");
 		if (dpaa2_svr_family != SVR_LX2160A)
@@ -324,40 +348,14 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(unsigned int lcore_id)
 }
 
 int
-dpaa2_thread_init(unsigned int lcore_id, void *arg __rte_unused)
-{
-	struct dpaa2_dpio_dev *dpio_dev;
-
-	if (!dpaa2_portal_arr[lcore_id]) {
-		dpio_dev = dpaa2_get_qbman_swp(lcore_id);
-		if (!dpio_dev) {
-			DPAA2_BUS_ERR("Error in software portal allocation");
-			return -1;
-		}
-		dpaa2_portal_arr[lcore_id] = dpio_dev;
-		DPAA2_BUS_INFO(
-		"DPAA Portal=%p (%d) is affined to thread %" PRIu64,
-			dpio_dev, dpio_dev->index, (unsigned long) lcore_id);
-	}
-	return 0;
-}
-
-int
 dpaa2_affine_qbman_swp(void)
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	uint64_t tid = rte_gettid();
-	uint32_t lcore_id = rte_lcore_id();
 
 	/* Populate the dpaa2_io_portal structure */
 	if (!RTE_PER_LCORE(_dpaa2_io).dpio_dev) {
-		if (dpaa2_portal_arr[lcore_id]) {
-			RTE_PER_LCORE(_dpaa2_io).dpio_dev =
-				dpaa2_portal_arr[lcore_id];
-			return 0;
-		}
-
-		dpio_dev = dpaa2_get_qbman_swp(lcore_id);
+		dpio_dev = dpaa2_get_qbman_swp();
 		if (!dpio_dev) {
 			DPAA2_BUS_ERR("Error in software portal allocation");
 			return -1;
@@ -376,11 +374,10 @@ dpaa2_affine_qbman_ethrx_swp(void)
 {
 	struct dpaa2_dpio_dev *dpio_dev;
 	uint64_t tid = rte_gettid();
-	uint32_t lcore_id = rte_lcore_id();
 
 	/* Populate the dpaa2_io_portal structure */
 	if (!RTE_PER_LCORE(_dpaa2_io).ethrx_dpio_dev) {
-		dpio_dev = dpaa2_get_qbman_swp(lcore_id);
+		dpio_dev = dpaa2_get_qbman_swp();
 		if (!dpio_dev) {
 			DPAA2_BUS_ERR("Error in software portal allocation");
 			return -1;
