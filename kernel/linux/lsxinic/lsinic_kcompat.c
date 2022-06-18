@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #include "lsinic_kcompat.h"
 
-#if (KERNEL_VERSION(2, 6, 35) > LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(2, 6, 35) > LSINIC_HOST_KERNEL_VER)
 #ifdef HAVE_TX_MQ
 #ifndef CONFIG_NETDEVICES_MULTIQUEUE
 void __lsinic_netif_set_real_num_tx_queues(struct net_device *dev,
@@ -34,7 +34,7 @@ void __lsinic_netif_set_real_num_tx_queues(struct net_device *dev,
 #endif /* HAVE_TX_MQ */
 #endif /* < 2.6.35 */
 
-#if (KERNEL_VERSION(3, 7, 0) > LINUX_VERSION_CODE || \
+#if (KERNEL_VERSION(3, 7, 0) > LSINIC_HOST_KERNEL_VER || \
 	(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(6, 5)))
 
 static inline int __lsinic_pcie_cap_version(struct pci_dev *dev)
@@ -193,7 +193,7 @@ int __lsinic_pcie_capability_clear_and_set_word(struct pci_dev *dev, int pos,
 }
 #endif
 
-#if (KERNEL_VERSION(3, 10, 0) > LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(3, 10, 0) > LSINIC_HOST_KERNEL_VER)
 #ifdef CONFIG_PCI_IOV
 int __lsinic_pci_vfs_assigned(struct pci_dev *dev)
 {
@@ -238,7 +238,7 @@ int __lsinic_pci_vfs_assigned(struct pci_dev *dev)
 #endif /* CONFIG_PCI_IOV */
 #endif /* 3.10.0 */
 
-#if (KERNEL_VERSION(3, 14, 0) > LINUX_VERSION_CODE || \
+#if (KERNEL_VERSION(3, 14, 0) > LSINIC_HOST_KERNEL_VER || \
 	(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(6, 3)))
 int __lsinic_pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec)
 {
