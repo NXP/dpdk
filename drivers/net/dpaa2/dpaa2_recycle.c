@@ -187,8 +187,10 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 	offset = addr - start;
 	len = len & PAGE_MASK;
 
-	if (PAGE_SIZE < 1)
+	if (PAGE_SIZE < 1) {
+		close(fd);
 		return NULL;
+	}
 
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
