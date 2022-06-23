@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <unistd.h>
@@ -180,7 +180,7 @@ ccsr_writel(struct lsx_pciep_hw_low *hw, uint32_t offset, uint32_t value)
 	}
 }
 
-static void
+static int
 pcie_mv_set_ib_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf __rte_unused,
 	int bar, uint64_t phys,
@@ -195,6 +195,8 @@ pcie_mv_set_ib_win(struct lsx_pciep_hw_low *hw,
 	ccsr_writel(hw,
 		PAB_PEX_BAR_AMAP(GET_IB_FUNC_NUM(pf, is_vf), bar_idx),
 		lower_32_bits(phys) | 1);
+
+	return 0;
 }
 
 static void
@@ -216,19 +218,19 @@ pcie_mv_disable_ob_win(struct lsx_pciep_hw_low *hw, int idx)
 	}
 }
 
-static void
+static int
 pcie_mv_set_ob_win(struct lsx_pciep_hw_low *hw,
-		   int idx, int pf, int is_vf, int vf,
-		   uint64_t cpu_addr,
-		   uint64_t pci_addr,
-		    uint64_t size)
+	int idx, int pf, int is_vf, int vf,
+	uint64_t cpu_addr,
+	uint64_t pci_addr,
+	uint64_t size)
 {
 	uint32_t val;
 	uint32_t size_h, size_l;
 	uint32_t func = GET_OB_FUNC_NUM(pf, is_vf, vf);
 
 	if (idx >= PCIE_MV_OB_WINS_NUM)
-		return;
+		return -EINVAL;
 
 	size_h = upper_32_bits(~(size - 1));
 	size_l = lower_32_bits(~(size - 1));
@@ -250,6 +252,8 @@ pcie_mv_set_ob_win(struct lsx_pciep_hw_low *hw,
 	ccsr_writel(hw, PAB_AXI_AMAP_PEX_WIN_H(idx),
 		upper_32_bits(pci_addr));
 	ccsr_writel(hw, PAB_EXT_AXI_AMAP_SIZE(idx), size_h);
+
+	return 0;
 }
 
 static int
@@ -409,7 +413,7 @@ pcie_mv_set_sriov(struct lsx_pciep_hw_low *hw, int pf)
 	}
 }
 
-static void
+static int
 pcie_mv_reinit(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf __rte_unused,
 	uint16_t vendor_id __rte_unused,
@@ -418,6 +422,8 @@ pcie_mv_reinit(struct lsx_pciep_hw_low *hw,
 {
 	pcie_mv_setup_bars(hw, pf);
 	pcie_mv_set_sriov(hw, pf);
+
+	return 0;
 }
 
 static struct lsx_pciep_ops pcie_mv_ops = {

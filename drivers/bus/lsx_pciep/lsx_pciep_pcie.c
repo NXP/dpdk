@@ -137,18 +137,36 @@ lsx_pciep_ctl_set_ops(void)
 	return 0;
 }
 
-static int lsx_pciep_ctl_process_map(void)
+static void lsx_pciep_ctl_process_sriov(void)
 {
-	int i, ep_nb = 0;
+	int i;
 	struct lsx_pciep_ctl_hw *ctlhw;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		ctlhw = &s_pctl_hw[i];
 		if (ctlhw->sim) {
-			if (ctlhw->ep_enable)
-				ep_nb += ctlhw->function_num;
+			/* All the simulator controllers support SRIOV*/
+			ctlhw->hw.is_sriov = 1;
 			continue;
 		}
+		if (ctlhw->ep_enable) {
+			if (ctlhw->ops->pcie_is_sriov)
+				ctlhw->ops->pcie_is_sriov(&ctlhw->hw);
+			else
+				ctlhw->hw.is_sriov = 1;
+		}
+	}
+}
+
+static int lsx_pciep_ctl_process_map(void)
+{
+	int i;
+	struct lsx_pciep_ctl_hw *ctlhw;
+
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+		ctlhw = &s_pctl_hw[i];
+		if (ctlhw->sim)
+			continue;
 		if (ctlhw->ep_enable) {
 			ctlhw->hw.dbi_vir =
 				lsx_pciep_map_region(ctlhw->hw.dbi_phy,
@@ -158,7 +176,6 @@ static int lsx_pciep_ctl_process_map(void)
 
 				return -ENOMEM;
 			}
-			ep_nb += ctlhw->function_num;
 
 			if (ctlhw->hw.ob_policy != LSX_PCIEP_OB_SHARE)
 				continue;
@@ -174,7 +191,7 @@ static int lsx_pciep_ctl_process_map(void)
 		}
 	}
 
-	return ep_nb;
+	return 0;
 }
 
 int lsx_pciep_share_info_init(void)
@@ -239,9 +256,9 @@ lsx_pciep_ctl_rbp_enable(uint8_t pcie_idx)
 }
 
 static void
-lsx_pciep_env_default_set(void)
+lsx_pciep_general_env_default_set(void)
 {
-	int i, j, k;
+	int i;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		s_pciep_env[i].policy = LSX_PCIEP_DEFAULT_POLICY;
@@ -249,11 +266,26 @@ lsx_pciep_env_default_set(void)
 		s_pciep_env[i].ob_fun_size = LSX_PCIEP_DEFAULT_OB_FUN_SIZE;
 		s_pciep_env[i].sim = LSX_PCIEP_DEFAULT_SIM_ENABLE;
 		s_pciep_env[i].rbp = LSX_PCIEP_DEFAULT_RBP_ENABLE;
+	}
+}
+
+static void
+lsx_pciep_sriov_env_default_set(void)
+{
+	int i, j, k;
+	struct lsx_pciep_ctl_hw *ctlhw;
+
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+		ctlhw = &s_pctl_hw[i];
 		for (j = 0; j < PF_MAX_NB; j++) {
+			if (!ctlhw->hw.is_sriov && j > 0)
+				continue;
 			s_pciep_env[i].pf_enable[j] =
 				LSX_PCIEP_DEFAULT_PF_ENABLE;
 			s_pciep_env[i].pf_virtio[j] =
 				LSX_PCIEP_DEFAULT_VIO_ENABLE;
+			if (!ctlhw->hw.is_sriov)
+				continue;
 			for (k = 0; k < PCIE_MAX_VF_NUM; k++) {
 				s_pciep_env[i].vf_enable[j][k] =
 					LSX_PCIEP_DEFAULT_VF_ENABLE;
@@ -263,21 +295,30 @@ lsx_pciep_env_default_set(void)
 }
 
 static void
-lsx_pciep_env_adjust(void)
+lsx_pciep_general_env_adjust(void)
 {
-	int i, j;
+	int i;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		if (s_pciep_env[i].sim)
 			s_pciep_env[i].rbp = 0;
+		if (s_pciep_env[i].rbp)
+			s_pciep_env[i].ob_policy = LSX_PCIEP_OB_RBP;
+	}
+}
+
+static void
+lsx_pciep_sriov_env_adjust(void)
+{
+	int i, j;
+
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		for (j = 0; j < PF_MAX_NB; j++) {
 			if (!s_pciep_env[i].pf_enable[j]) {
 				memset(&s_pciep_env[i].vf_enable[j],
 					0, PCIE_MAX_VF_NUM);
 			}
 		}
-		if (s_pciep_env[i].rbp)
-			s_pciep_env[i].ob_policy = LSX_PCIEP_OB_RBP;
 	}
 }
 
@@ -409,15 +450,14 @@ lsx_pciep_ob_fun_size_env_get(uint8_t pciep_idx)
 	return s_pciep_env[pciep_idx].ob_fun_size;
 }
 
-
-static int
-lsx_pciep_parse_env_variable(void)
+static void
+lsx_pciep_parse_general_env(void)
 {
 	char *penv = NULL;
-	int i, j, k;
+	int i;
 	char env_name[64];
 
-	lsx_pciep_env_default_set();
+	lsx_pciep_general_env_default_set();
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		sprintf(env_name, "LSX_PCIE%d_BLACKLISTED", i);
@@ -444,8 +484,27 @@ lsx_pciep_parse_env_variable(void)
 		penv = getenv(env_name);
 		if (penv)
 			lsx_pciep_sim_env_set(i, atoi(penv));
+	}
+
+	lsx_pciep_general_env_adjust();
+}
+
+static void
+lsx_pciep_parse_sriov_env(void)
+{
+	char *penv = NULL;
+	int i, j, k;
+	struct lsx_pciep_ctl_hw *ctlhw;
+	char env_name[64];
+
+	lsx_pciep_sriov_env_default_set();
+
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+		ctlhw = &s_pctl_hw[i];
 
 		for (j = 0; j < PF_MAX_NB; j++) {
+			if (!ctlhw->hw.is_sriov && j > 0)
+				continue;
 			sprintf(env_name, "LSX_PCIE%d_PF%d", i, j);
 			penv = getenv(env_name);
 			if (penv)
@@ -456,6 +515,8 @@ lsx_pciep_parse_env_variable(void)
 			if (penv)
 				lsx_pciep_vio_env_set(i, j, atoi(penv));
 
+			if (!ctlhw->hw.is_sriov)
+				continue;
 			for (k = 0; k < PCIE_MAX_VF_NUM; k++) {
 				sprintf(env_name, "LSX_PCIE%d_PF%d_VF%d",
 					i, j, k);
@@ -468,9 +529,7 @@ lsx_pciep_parse_env_variable(void)
 		}
 	}
 
-	lsx_pciep_env_adjust();
-
-	return 0;
+	lsx_pciep_sriov_env_adjust();
 }
 
 static int lsx_pciep_ctl_filtered(int pcie_idx)
@@ -480,27 +539,22 @@ static int lsx_pciep_ctl_filtered(int pcie_idx)
 	return false;
 }
 
-int lsx_pciep_sim_dev_add(void)
+static int lsx_pciep_find_all_sim(void)
 {
 	struct lsx_pciep_ctl_hw *ctlhw;
-	int i, j, dev_nb = 0;
+	int i, dev_nb = 0;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		if (s_pciep_env[i].policy == RTE_DEV_BLACKLISTED)
 			continue;
-		for (j = 0; j < PF_MAX_NB; j++) {
-			if (s_pciep_env[i].pf_enable[j] &&
-				s_pciep_env[i].sim) {
-				ctlhw = lsx_pciep_get_dev(i);
-				ctlhw->hw.index = i;
-				ctlhw->rbp = 0;
-				ctlhw->sim = 1;
-				ctlhw->ep_enable = 1;
-				ctlhw->function_num++;
-				dev_nb++;
-				LSX_PCIEP_BUS_INFO("Simulator PCIe%dPF%d added",
-					i, j);
-			}
+		if (s_pciep_env[i].sim) {
+			ctlhw = lsx_pciep_get_dev(i);
+			ctlhw->hw.index = i;
+			ctlhw->rbp = 0;
+			ctlhw->sim = 1;
+			ctlhw->ep_enable = 1;
+			dev_nb++;
+			LSX_PCIEP_BUS_INFO("Simulator PCIe%d added", i);
 		}
 	}
 
@@ -752,19 +806,20 @@ lsx_pciep_ctl_hw_init(struct lsx_pciep_ctl_hw *ctlhw)
 }
 
 static int
-lsx_pciep_find_all(void)
+lsx_pciep_find_all_ctls(void)
 {
-	int ret, ep_nb = 0;
+	int ret, ctl_nb = 0, i = 0;
 	const struct device_node *pcie_node;
 	const char *compatible;
 	struct lsx_pciep_ctl_hw *ctlhw;
-
-	ep_nb = lsx_pciep_sim_dev_add();
-	if (ep_nb > 0) {
-		LSX_PCIEP_BUS_INFO("PCIe EP sim finds %d pcie ep(s)", ep_nb);
-		/** Simulator support only.*/
-		goto pcie_mapping_start;
-	}
+	const char *compatible_strs[] = {
+		LX2160A_REV1_PCIE_COMPATIBLE,
+		LX2160A_REV2_PCIE_COMPATIBLE,
+		LS2088A_PCIE_COMPATIBLE,
+		LX2160A_REV2_PCIE_OLD_COMPATIBLE,
+		NULL
+	};
+	int str_nb = sizeof(compatible_strs) / sizeof(const char *);
 
 	if (lsx_pciep_ctl_set_ops())
 		return -ENODEV;
@@ -780,51 +835,36 @@ lsx_pciep_find_all(void)
 	 * PCIe dev to identify the PEX type.
 	 */
 	ctlhw = &s_pctl_hw[0];
-	switch (ctlhw->type) {
-	case PEX_UNKNOWN:
-		return -ENODEV;
 
-	case PEX_LX2160_REV1:
-		compatible = LX2160A_REV1_PCIE_COMPATIBLE;
-		break;
-
-	case PEX_LX2160_REV2:
-		compatible = LX2160A_REV2_PCIE_COMPATIBLE;
-		break;
-
-	case PEX_LS208X:
-		compatible = LS2088A_PCIE_COMPATIBLE;
-		break;
-
-	default:
-		return -ENODEV;
-	}
-
-	for_each_compatible_node(pcie_node, NULL, compatible) {
-		if (!of_device_is_available(pcie_node))
-			continue;
-		ctlhw = lsx_pciep_node2ctl(pcie_node);
-		if (!ctlhw)
-			continue;
-		if (lsx_pciep_ctl_filtered(ctlhw->hw.index))
-			continue;
-		if (lsx_pciep_ctl_is_ep(ctlhw)) {
-			ret = lsx_pciep_hw_out_base(ctlhw, pcie_node);
-			if (!ret) {
-				ret = lsx_pciep_ctl_hw_init(ctlhw);
-				if (ret)
-					return ret;
-				ep_nb += ctlhw->function_num;
-				ctlhw->ep_enable = 1;
+	for (i = 0; i < str_nb; i++) {
+		compatible = compatible_strs[i];
+		for_each_compatible_node(pcie_node, NULL, compatible) {
+			if (!of_device_is_available(pcie_node))
+				continue;
+			ctlhw = lsx_pciep_node2ctl(pcie_node);
+			if (!ctlhw)
+				continue;
+			if (lsx_pciep_ctl_filtered(ctlhw->hw.index))
+				continue;
+			if (lsx_pciep_ctl_is_ep(ctlhw)) {
+				ret = lsx_pciep_hw_out_base(ctlhw, pcie_node);
+				if (!ret) {
+					ret = lsx_pciep_ctl_hw_init(ctlhw);
+					if (ret)
+						return ret;
+					ctlhw->ep_enable = 1;
+					ctl_nb++;
+				}
 			}
 		}
+		if (ctl_nb)
+			break;
 	}
 
-	LSX_PCIEP_BUS_INFO("PCIe EP finds %d pcie ep(s)", ep_nb);
-pcie_mapping_start:
-	ep_nb = lsx_pciep_ctl_process_map();
+	LSX_PCIEP_BUS_INFO("PCIe EP finds %d PCIe controller(s))",
+		ctl_nb);
 
-	return ep_nb;
+	return ctl_nb;
 }
 
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx)
@@ -1137,6 +1177,7 @@ lsx_pciep_fun_set(uint16_t vendor_id,
 	uint8_t pcie_id, int pf, int is_vf)
 {
 	struct lsx_pciep_ctl_hw *ctlhw;
+	int ret = 0;
 
 	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
 		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
@@ -1169,13 +1210,13 @@ lsx_pciep_fun_set(uint16_t vendor_id,
 
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
-			ctlhw->ops->pcie_fun_init(&ctlhw->hw,
+			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
 				pf, is_vf,
 				vendor_id, device_id, class_id);
 		}
 	}
 
-	return 0;
+	return ret;
 }
 
 int
@@ -1184,6 +1225,7 @@ lsx_pciep_ctl_dev_set(uint16_t vendor_id,
 	uint8_t pcie_id, uint8_t pf)
 {
 	struct lsx_pciep_ctl_hw *ctlhw;
+	int ret = 0;
 
 	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
 		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
@@ -1212,18 +1254,18 @@ lsx_pciep_ctl_dev_set(uint16_t vendor_id,
 
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
-			ctlhw->ops->pcie_fun_init(&ctlhw->hw,
+			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
 				pf, 0, vendor_id, device_id, class_id);
 		}
 	}
 
-	return 0;
+	return ret;
 }
 
 static void
-lsx_pciep_hw_set_by_env(void)
+lsx_pciep_hw_set_by_general_env(void)
 {
-	int i, j, k;
+	int i;
 	struct lsx_pciep_ctl_hw *ctlhw;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
@@ -1232,6 +1274,17 @@ lsx_pciep_hw_set_by_env(void)
 		ctlhw->sim = lsx_pciep_sim_env_get(i);
 		ctlhw->hw.ob_policy = lsx_pciep_ob_policy_env_get(i);
 		ctlhw->out_size_per_fun = lsx_pciep_ob_fun_size_env_get(i);
+	}
+}
+
+static void
+lsx_pciep_hw_set_by_sriov_env(void)
+{
+	int i, j, k;
+	struct lsx_pciep_ctl_hw *ctlhw;
+
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
+		ctlhw = &s_pctl_hw[i];
 		for (j = 0; j < PF_MAX_NB; j++) {
 			ctlhw->pf_enable[j] =
 				lsx_pciep_fun_env_get(i, j, -1);
@@ -1270,8 +1323,8 @@ lsx_pciep_primary_init(void)
 	}
 	memset(s_pctl_hw, 0, LSX_PCIEP_CTL_HW_TOTAL_SIZE);
 
-	lsx_pciep_parse_env_variable();
-	lsx_pciep_hw_set_by_env();
+	lsx_pciep_parse_general_env();
+	lsx_pciep_hw_set_by_general_env();
 	ret = lsx_pciep_hw_set_type();
 	if (ret) {
 		ret = -ENODEV;
@@ -1281,12 +1334,24 @@ lsx_pciep_primary_init(void)
 
 	lsx_pciep_ctl_set_ops();
 
-	ret = lsx_pciep_find_all();
-	if (ret <= 0) {
-		ret = -ENODEV;
+	ret = lsx_pciep_find_all_sim();
+	if (!ret) {
+		ret = lsx_pciep_find_all_ctls();
+		if (ret <= 0) {
+			ret = -ENODEV;
+			goto init_exit;
+		}
+	} else if (ret < 0)
 		goto init_exit;
-	}
-	ret = 0;
+
+	ret = lsx_pciep_ctl_process_map();
+	if (ret)
+		goto init_exit;
+
+	lsx_pciep_ctl_process_sriov();
+
+	lsx_pciep_parse_sriov_env();
+	lsx_pciep_hw_set_by_sriov_env();
 
 init_exit:
 	if (ret) {
@@ -1414,7 +1479,7 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	int pcie_id = ep_dev->pcie_id;
 	int pf = ep_dev->pf;
 	int vf = ep_dev->vf;
-	int is_vf = ep_dev->is_vf;
+	int is_vf = ep_dev->is_vf, ret;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
 	struct lsx_pciep_inbound_bar *ib_bar;
@@ -1472,9 +1537,11 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	}
 
 	if (!lsx_pciep_hw_sim_get(ctlhw->hw.index)) {
-		ctlhw->ops->pcie_cfg_ib_win(&ctlhw->hw,
+		ret = ctlhw->ops->pcie_cfg_ib_win(&ctlhw->hw,
 			pf, is_vf, vf,
 			bar_idx, mz->iova, size, 1);
+		if (ret)
+			return ret;
 	}
 
 	if (!is_vf) {
@@ -1540,6 +1607,10 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 				is_vf, vf,
 				ep_dev->ob_map_bus_base,
 				size, 0);
+	if (!ep_dev->ob_phy_base) {
+		LSX_PCIEP_BUS_ERR("%s: OB map failed", __func__);
+		return NULL;
+	}
 	ep_dev->ob_virt_base =
 		lsx_pciep_map_region(ep_dev->ob_phy_base,
 				size);
@@ -1587,6 +1658,13 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 					pf, is_vf, vf,
 					pci_addr,
 					ctlhw->out_win_size, shared);
+		if (!out_phy) {
+			LSX_PCIEP_BUS_ERR("%s: OB map failed",
+				__func__);
+			ep_dev->ob_phy_base = 0;
+			ep_dev->ob_virt_base = 0;
+			return NULL;
+		}
 		pci_addr += ctlhw->out_win_size;
 		if (idx == 0)
 			ep_dev->ob_phy_base = out_phy;
@@ -1667,10 +1745,16 @@ lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	ep_dev->msix_addr = malloc(sizeof(void *) * vector_total);
 	ep_dev->msix_data = malloc(sizeof(uint32_t) * vector_total);
 
-	ctlhw->ops->pcie_msix_cfg(&ctlhw->hw, ep_dev->pf,
+	vector_total = ctlhw->ops->pcie_msix_cfg(&ctlhw->hw,
+			ep_dev->pf,
 			ep_dev->is_vf, ep_dev->vf,
 			msix_phy, ep_dev->msix_data,
 			vector_total);
+	if (vector_total <= 0) {
+		LSX_PCIEP_BUS_ERR("%s: msix cfg failed",
+				__func__);
+		return;
+	}
 
 	if (ctlhw->hw.msi_flag == LSX_PCIEP_MSIX_INT) {
 		for (i = 0; i < vector_total; i++) {
