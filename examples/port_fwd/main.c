@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
