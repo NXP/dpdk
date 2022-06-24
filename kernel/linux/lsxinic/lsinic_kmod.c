@@ -3606,7 +3606,7 @@ lsinic_acquire_msix_vectors(struct lsinic_adapter *adapter,
 static void
 lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 {
-	int vector, v_budget, err;
+	int vector, v_budget, err, msix_cap;
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
@@ -3620,7 +3620,12 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 	v_budget = max(adapter->num_rx_queues, adapter->num_tx_queues);
 	v_budget = min_t(int, v_budget, num_online_cpus());
 	v_budget += NON_Q_VECTORS;
-	if (v_budget > MAX_MSIX_VECTORS) {
+
+	msix_cap = pci_find_capability(adapter->pdev, PCI_CAP_ID_MSIX);
+	if (!msix_cap) {
+		/* Force to use msi for NONE SRIOV device.*/
+		mmsi_flag = 1;
+	} else if (v_budget > MAX_MSIX_VECTORS) {
 		/* enable multi-msi */
 		mmsi_flag = 1;
 	}
@@ -3638,6 +3643,7 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 			LSINIC_WRITE_REG(&rcs_reg->msi_flag, LSINIC_MMSI_INT);
 			return;
 		}
+		goto legacy_int;
 	} else {
 		v_budget = min_t(int, v_budget, MAX_MSIX_VECTORS);
 	}
@@ -3657,6 +3663,8 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 		if (adapter->flags & LSINIC_FLAG_MSIX_ENABLED)
 			return;
 	}
+
+legacy_int:
 
 	adapter->num_q_vectors = 1;
 
