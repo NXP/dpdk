@@ -1341,9 +1341,10 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 			if (unlikely(RTE_MBUF_HAS_EXTBUF(*bufs))) {
 				if (unlikely((*bufs)->nb_segs > 1)) {
+					mp = (*bufs)->pool;
 					if (eth_mbuf_to_sg_fd(*bufs,
 							      &fd_arr[loop],
-							      mp, 0))
+							      mp, mempool_to_bpid(mp)))
 						goto send_n_return;
 				} else {
 					eth_mbuf_to_fd(*bufs,
