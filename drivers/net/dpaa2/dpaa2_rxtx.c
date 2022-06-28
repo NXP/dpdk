@@ -397,7 +397,7 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		  struct qbman_fd *fd, struct rte_mempool *mp,
 		  uint16_t bpid)
 {
-	struct rte_mbuf *cur_seg = mbuf, *prev_seg, *mi, *temp;
+	struct rte_mbuf *cur_seg = mbuf, *mi, *temp;
 	struct qbman_sge *sgt, *sge = NULL;
 	int i, offset = 0;
 
@@ -481,10 +481,8 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 #endif
 				}
 			}
-			cur_seg = cur_seg->next;
 		} else if (RTE_MBUF_HAS_EXTBUF(cur_seg)) {
 			DPAA2_SET_FLE_IVP(sge);
-			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
@@ -498,11 +496,8 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 						   mempool_to_bpid(mi->pool));
 				rte_mbuf_refcnt_update(mi, 1);
 			}
-			prev_seg = cur_seg;
-			cur_seg = cur_seg->next;
-			prev_seg->next = NULL;
-			rte_pktmbuf_free(prev_seg);
 		}
+		cur_seg = cur_seg->next;
 	}
 	DPAA2_SG_SET_FINAL(sge, true);
 	return 0;
@@ -547,7 +542,6 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 			DPAA2_SET_FD_IVP(fd);
 		else
 			rte_mbuf_refcnt_update(mi, 1);
-		rte_pktmbuf_free(mbuf);
 	}
 }
 
@@ -1405,8 +1399,9 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		temp = *orig_bufs;
 		while (temp) {
 			temp_next = temp->next;
-			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+			if (unlikely(!RTE_MBUF_DIRECT(temp))) {
 				rte_pktmbuf_free_seg(temp);
+			}
 			temp = temp_next;
 		}
 		orig_bufs++;
@@ -1447,8 +1442,9 @@ skip_tx:
 		temp = *orig_bufs;
 		while (temp) {
 			temp_next = temp->next;
-			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+			if (unlikely(!RTE_MBUF_DIRECT(temp))) {
 				rte_pktmbuf_free_seg(temp);
+			}
 			temp = temp_next;
 		}
 		orig_bufs++;
