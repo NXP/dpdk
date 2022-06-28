@@ -394,8 +394,8 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 
 static int __attribute__ ((noinline)) __attribute__((hot))
 eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
-		  struct qbman_fd *fd, struct rte_mempool *mp __rte_unused,
-		  uint16_t bpid __rte_unused)
+		  struct qbman_fd *fd, struct rte_mempool *mp,
+		  uint16_t bpid)
 {
 	struct rte_mbuf *cur_seg = mbuf, *prev_seg, *mi, *temp;
 	struct qbman_sge *sgt, *sge = NULL;
@@ -1309,9 +1309,10 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 			if (unlikely(RTE_MBUF_HAS_EXTBUF(*bufs))) {
 				if (unlikely((*bufs)->nb_segs > 1)) {
+					mp = (*bufs)->pool;
 					if (eth_mbuf_to_sg_fd(*bufs,
 							      &fd_arr[loop],
-							      mp, 0))
+							      mp, mempool_to_bpid(mp)))
 						goto send_n_return;
 				} else {
 					eth_mbuf_to_fd(*bufs,
