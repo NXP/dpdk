@@ -604,7 +604,8 @@ lsxvio_dev_info_get(struct rte_eth_dev *dev __rte_unused,
 
 	dev_info->rx_desc_lim = rx_desc_lim;
 	dev_info->tx_desc_lim = tx_desc_lim;
-	dev_info->rx_offload_capa = DEV_RX_OFFLOAD_CHECKSUM;
+	dev_info->rx_offload_capa = DEV_RX_OFFLOAD_CHECKSUM |
+		DEV_RX_OFFLOAD_JUMBO_FRAME;
 
 	return 0;
 }
