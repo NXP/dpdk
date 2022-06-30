@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #ifndef _LSX_VIRTIO_COMMON_H_
 #define _LSX_VIRTIO_COMMON_H_
@@ -49,6 +49,8 @@
 #define	VIRTIO_MSI_NO_VECTOR			0xffff
 #endif
 #define LSXVIO_BAR_NUM				(2)
+#define LSXVIO_REG_BAR_IDX 0
+
 
 #define	VIRTIO_READ_STATUS_DELAY		1
 #define LSXVIO_COMMON_OFFSET			0x0
