@@ -392,6 +392,120 @@ port_fwd_dst_port(uint16_t src_port)
 }
 
 static int
+main_injection_test_loop(void)
+{
+	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	uint16_t tx_len[MAX_PKT_BURST];
+	unsigned int lcore_id;
+	int i, nb_rx, j, ret;
+	uint16_t nb_tx, sent;
+	uint16_t portid;
+	int dstportid;
+	uint8_t queueid;
+	struct lcore_conf *qconf;
+	char *penv = getenv("PORT_FWD_INJECTION_PKT_SIZE");
+	uint16_t inject_size = 64, burst_size = MAX_PKT_BURST;
+
+	if (penv) {
+		inject_size = atoi(penv);
+		if (inject_size < 60 || inject_size > 1514)
+			inject_size = 64;
+	}
+
+	penv = getenv("PORT_FWD_INJECTION_BURST_SIZE");
+	if (penv) {
+		burst_size = atoi(penv);
+		if (burst_size < 1 || burst_size > MAX_PKT_BURST)
+			burst_size = MAX_PKT_BURST;
+	}
+	RTE_LOG(INFO, PMD, "Inject pkt size is %d and burst size is %d\n",
+		inject_size, burst_size);
+
+	lcore_id = rte_lcore_id();
+	qconf = &s_lcore_conf[lcore_id];
+
+	if (qconf->n_rx_queue == 0) {
+		RTE_LOG(INFO, PMD, "lcore %u has nothing to do\n", lcore_id);
+		return 0;
+	}
+
+	RTE_LOG(INFO, PMD, "entering injection test loop on lcore %u\n",
+		lcore_id);
+
+	for (i = 0; i < qconf->n_rx_queue; i++) {
+		portid = qconf->rx_queue_list[i].port_id;
+		queueid = qconf->rx_queue_list[i].queue_id;
+		RTE_LOG(INFO, PMD,
+			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
+			lcore_id, portid, queueid);
+	}
+
+	while (!force_quit) {
+		/* Read packet from RX queues
+		 */
+		for (i = 0; i < qconf->n_rx_queue; ++i) {
+			portid = qconf->rx_queue_list[i].port_id;
+			queueid = qconf->rx_queue_list[i].queue_id;
+
+			dstportid = port_fwd_dst_port(portid);
+
+			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
+				MAX_PKT_BURST);
+
+			for (j = 0; j < nb_rx; j++) {
+				qconf->rx_statistic[portid].bytes +=
+					pkts_burst[j]->pkt_len;
+				qconf->rx_statistic[portid].bytes_fcs +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_FCS_SIZE;
+				qconf->rx_statistic[portid].bytes_overhead +=
+					pkts_burst[j]->pkt_len +
+					PKTGEN_ETH_OVERHEAD_SIZE;
+			}
+			qconf->rx_statistic[portid].packets += nb_rx;
+
+			rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
+
+			ret = rte_pktmbuf_alloc_bulk(pktmbuf_pool,
+				pkts_burst, burst_size);
+			if (ret)
+				continue;
+			nb_tx = burst_size;
+
+			for (i = 0; i < nb_tx; i++) {
+				pkts_burst[i]->data_off = RTE_PKTMBUF_HEADROOM;
+				pkts_burst[i]->pkt_len = inject_size;
+				pkts_burst[i]->data_len = inject_size;
+				tx_len[i] = inject_size;
+			}
+
+			sent = rte_eth_tx_burst(dstportid,
+					qconf->tx_queue_id[dstportid],
+					pkts_burst, nb_tx);
+			for (j = 0; j < sent; j++) {
+				qconf->tx_statistic[dstportid].bytes +=
+					tx_len[j];
+				qconf->tx_statistic[dstportid].bytes_fcs +=
+					tx_len[j] +
+					PKTGEN_ETH_FCS_SIZE;
+				qconf->tx_statistic[dstportid].bytes_overhead +=
+					tx_len[j] +
+					PKTGEN_ETH_OVERHEAD_SIZE;
+			}
+			qconf->tx_statistic[dstportid].packets += sent;
+
+			/* Free any unsent packets. */
+			if (unlikely(sent < nb_tx)) {
+				rte_pktmbuf_free_bulk(&pkts_burst[sent],
+					nb_tx - sent);
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int
 main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
@@ -404,13 +518,20 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint8_t queueid;
 	struct lcore_conf *qconf;
 	int loopback_start = 0;
-	char *penv = getenv("PORT_FWD_LOOPBACK_PORT");
+	char *penv = getenv("PORT_FWD_INJECTION_TEST");
 	int loopback_port = -1;
 	int pktgen_len = 64, rx_only = 0;
 	uint64_t bytes_overhead[MAX_PKT_BURST];
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
 	struct rte_ring *tx_ring, *rx_ring;
+
+	if (penv && atoi(penv)) {
+		main_injection_test_loop();
+		return 0;
+	}
+
+	penv = getenv("PORT_FWD_LOOPBACK_PORT");
 
 	if (penv)
 		loopback_port = atoi(penv);
