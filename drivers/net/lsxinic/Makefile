@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
@@ -31,6 +31,8 @@ CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2
 CFLAGS += -I$(RTE_SDK)/drivers/net/dpaa2/mc
 CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc/mc
 
+CFLAGS += -I$(RTE_SDK)/drivers/net/virtio
+
 # depends on fslmc bus which uses experimental API
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 
@@ -61,6 +63,8 @@ SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_net.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_rxtx.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_vio.c
+
 LDLIBS += -lrte_bus_fslmc
 LDLIBS += -lrte_mempool_dpaa2
 LDLIBS += -lrte_pmd_dpaa2
@@ -74,6 +78,8 @@ SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_pf.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
 
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_vio.c
+
 LDLIBS += -lrte_bus_fslmc
 LDLIBS += -lrte_mempool_dpaa2
 LDLIBS += -lrte_pmd_dpaa2
@@ -85,6 +91,7 @@ LDLIBS += -lrte_bus_pci
 
 LDLIBS += -lrte_eal -lrte_mbuf -lrte_mempool -lrte_ring
 LDLIBS += -lrte_ethdev -lrte_net -lrte_kvargs -lrte_hash
+LDLIBS += -lrte_pmd_virtio
 LDLIBS += -lpthread
 
 include $(RTE_SDK)/mk/rte.lib.mk

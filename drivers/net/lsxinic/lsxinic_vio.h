@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #ifndef _LSX_VIRTIO_H_
 #define _LSX_VIRTIO_H_
@@ -16,8 +16,6 @@
 
 /* Features desired/implemented by this driver. */
 #define LSX_VIRTIO_NET_FEATURES (1ULL << VIRTIO_F_VERSION_1)
-
-#define VLAN_ETH_HLEN				18
 
 int lsxvio_virtio_check_driver_feature(struct lsxvio_common_cfg *common);
 void lsxvio_virtio_init(uint64_t virt, uint16_t id);

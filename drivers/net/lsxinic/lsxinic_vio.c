@@ -197,8 +197,10 @@ lsxvio_virtio_net_init(uint64_t virt)
 	if (common->device_feature[0] & VIRTIO_NET_F_MQ)
 		net->max_virtqueue_pairs = LSXVIO_MAX_QUEUE_PAIRS;
 
-	if (common->device_feature[0] & VIRTIO_NET_F_MTU)
-		net->mtu = 10 * 1024 - VLAN_ETH_HLEN;
+	if (common->device_feature[0] & VIRTIO_NET_F_MTU) {
+		net->mtu = 10 * 1024 - sizeof(struct rte_ether_hdr) -
+			sizeof(struct rte_vlan_hdr);
+	}
 }
 
 void
