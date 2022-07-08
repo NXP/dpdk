@@ -70,7 +70,6 @@ struct lsinic_hw {
 /* Structure to store private data for each driver instance (for each port).
  */
 #define LSINIC_EP_CAP_TXQ_DMA_NO_RSP 0x00000001
-#define LSINIC_EP_CAP_RXQ_ORP 0x00000002
 #define LSINIC_EP_CAP_HW_MERGE_PKTS 0x00000004
 #define LSINIC_EP_CAP_HW_SPLIT_PKTS 0x00000008
 #define LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS 0x00000010

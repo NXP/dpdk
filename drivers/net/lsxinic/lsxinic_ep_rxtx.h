@@ -44,7 +44,7 @@
  */
 struct lsinic_sw_bd {
 	struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
-	struct lsinic_bd_desc bd;
+	uint16_t my_idx; /* const after initalization*/
 	uint16_t align_dma_offset;
 	uint16_t mg;
 	struct lsinic_mg_header mg_header;
@@ -97,7 +97,7 @@ typedef struct lsinic_sw_bd *
 
 typedef void
 (*lsinic_recv_update_t)(struct lsinic_queue *rxq,
-	uint16_t bd_idx, void *rxe);
+	uint16_t bd_idx);
 
 struct lsinic_queue {
 	struct lsinic_adapter *adapter;
@@ -125,8 +125,7 @@ struct lsinic_queue {
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	struct lsinic_bd_desc *local_src_bd_desc;
 	void *ep_bd_shared_addr;
-	/* Read only for EP*/
-	const struct lsinic_bd_desc *ep_bd_desc;
+	struct lsinic_bd_desc *ep_bd_desc;
 	/* For TX ring*/
 	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
 
@@ -154,9 +153,6 @@ struct lsinic_queue {
 		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
 	};
 	struct lsinic_sw_bd *sw_ring;
-	struct lsinic_sw_bd **sw_bd_pool;
-	int sw_bd_pool_cnt;
-	int sw_bd_pool_size;
 
 	lsinic_recv_rxe_t recv_rxe;
 	lsinic_recv_update_t recv_update;
@@ -240,11 +236,6 @@ struct lsinic_queue {
 	uint32_t mcnt;
 	struct rte_mbuf *mcache[MCACHE_NUM];
 
-	uint16_t sw_bd_head;
-	uint16_t sw_bd_tail;
-	int sw_bd_cnt;
-	struct lsinic_sw_bd *sw_bd[MCACHE_NUM];
-
 	enum lsinix_split_type split_type;
 	void *recycle_txq;
 	void *recycle_rxq;
@@ -285,47 +276,6 @@ struct lsinic_dpni_mg_dsc {
 #define LSINIC_SHARED_MBUF    (1ULL << 63)
 /* Flagged in dma job*/
 #define LSINIC_QDMA_JOB_USING_FLAG (1ULL << 31)
-
-static inline void
-lsinic_sw_bd_reset(struct lsinic_queue *q)
-{
-	q->sw_bd_pool_cnt = 0;
-}
-
-static inline void
-lsinic_sw_bd_push(struct lsinic_queue *q,
-	void **elems, int elem_count)
-{
-	RTE_ASSERT((q->sw_bd_pool_cnt + elem_count) <=
-				q->sw_bd_pool_size);
-	memcpy(&q->sw_bd_pool[q->sw_bd_pool_cnt],
-		&elems[0], elem_count * sizeof(void *));
-	q->sw_bd_pool_cnt += elem_count;
-}
-
-static inline void
-lsinic_sw_bd_push_array(struct lsinic_queue *q,
-	struct lsinic_sw_bd *elems, int elem_count)
-{
-	int i;
-
-	RTE_ASSERT((q->sw_bd_pool_cnt + elem_count) <=
-				q->sw_bd_pool_size);
-	for (i = 0; i < elem_count; i++)
-		q->sw_bd_pool[q->sw_bd_pool_cnt + i] = (void *)&elems[i];
-	q->sw_bd_pool_cnt += elem_count;
-}
-
-static inline void
-lsinic_sw_bd_pop(struct lsinic_queue *q,
-	void **elems, int elem_count)
-{
-	RTE_ASSERT((q->sw_bd_pool_cnt - elem_count) >= 0);
-	memcpy(&elems[0],
-		&q->sw_bd_pool[q->sw_bd_pool_cnt - elem_count],
-		elem_count * sizeof(void *));
-	q->sw_bd_pool_cnt -= elem_count;
-}
 
 static inline uint32_t
 lsinic_get_pending(uint32_t tail, uint32_t head, uint32_t count)
@@ -383,7 +333,7 @@ lsinic_bd_read_rc_bd_desc(struct lsinic_queue *queue,
 
 static __rte_always_inline void
 lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
-	uint16_t used_idx, struct lsinic_bd_desc *bd)
+	uint16_t used_idx, const struct lsinic_bd_desc *bd)
 {
 	rte_memcpy(&queue->local_src_bd_desc[used_idx], bd,
 		sizeof(struct lsinic_bd_desc));
