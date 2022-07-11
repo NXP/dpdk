@@ -75,6 +75,8 @@ bool dpaa2_enable_err_queue;
 
 bool dpaa2_print_parser_result;
 
+struct rte_mempool *dpaa2_tx_sg_pool;
+
 struct rte_dpaa2_xstats_name_off {
 	char name[RTE_ETH_XSTATS_NAME_SIZE];
 	uint8_t page_id; /* dpni statistics page id */
@@ -2964,6 +2966,18 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	/* Invoke PMD device initialization function */
 	diag = dpaa2_dev_init(eth_dev);
 	if (diag == 0) {
+		if (!dpaa2_tx_sg_pool) {
+			dpaa2_tx_sg_pool =
+				rte_pktmbuf_pool_create("dpaa2_mbuf_tx_sg_pool",
+				DPAA2_POOL_SIZE,
+				DPAA2_POOL_CACHE_SIZE, 0,
+				DPAA2_MAX_SGS * sizeof(struct qbman_sge),
+				rte_socket_id());
+			if (dpaa2_tx_sg_pool == NULL) {
+				DPAA2_PMD_ERR("SG pool creation failed\n");
+				return -ENOMEM;
+			}
+		}
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;
 	}
