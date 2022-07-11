@@ -146,6 +146,15 @@ extern bool dpaa2_enable_err_queue;
 
 extern bool dpaa2_print_parser_result;
 
+/* Global pool used by driver for SG list TX */
+extern struct rte_mempool *dpaa2_tx_sg_pool;
+/* Maximum SG segments */
+#define DPAA2_MAX_SGS 128
+/* SG pool size */
+#define DPAA2_POOL_SIZE 2048
+/* SG pool cache size */
+#define DPAA2_POOL_CACHE_SIZE 256
+
 #define DPAA2_FAPR_SIZE \
 	(sizeof(struct dpaa2_annot_hdr) - \
 	offsetof(struct dpaa2_annot_hdr, word3))
