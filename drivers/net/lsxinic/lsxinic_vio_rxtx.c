@@ -915,7 +915,7 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 		j = 0;
 		do {
 			lsxvio_recv_one_pkt(vq, desc_idx, head);
-			jobs[j] = &vq->dma_jobs[desc_idx];
+			jobs[bd_num] = &vq->dma_jobs[desc_idx];
 			head = 0;
 			bd_num++;
 			j++;
@@ -924,14 +924,13 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 			desc_idx = vq->desc[desc_idx].next;
 		} while (1);
 
-		lsxvio_qdma_multiple_enqueue(vq, jobs, j);
-
 		if (bd_num >= DEFAULT_TX_RS_THRESH) {
 			i++;
 			break;
 		}
 	}
 
+	lsxvio_qdma_multiple_enqueue(vq, jobs, bd_num);
 	vq->last_avail_idx += i;
 }
 
@@ -1185,7 +1184,7 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 			vq->bytes_overhead +=
 				tx_pkts[tx_num]->pkt_len +
 				LSINIC_ETH_OVERHEAD_SIZE;
-			jobs[j] = &vq->dma_jobs[desc_idx];
+			jobs[tx_num] = &vq->dma_jobs[desc_idx];
 			j++;
 			tx_num++;
 			nb_pkts--;
@@ -1195,10 +1194,9 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 			desc_idx = vq->desc[desc_idx].next;
 			head = 0;
 		}
-
-		lsxvio_qdma_multiple_enqueue(vq, jobs, j);
 	}
 
+	lsxvio_qdma_multiple_enqueue(vq, jobs, tx_num);
 	vq->last_avail_idx += i;
 
 	return tx_num;
