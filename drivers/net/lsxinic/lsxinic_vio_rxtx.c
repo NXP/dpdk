@@ -690,21 +690,17 @@ update_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t i = vq->shadow_used_idx++;
 
 	vq->shadow_used_split[i].id  = desc_idx;
-	vq->shadow_used_split[i].len = len;
+	vq->shadow_used_split[i].len =
+		len + vq->adapter->vtnet_hdr_size;
 }
 
 static __rte_always_inline void
 do_flush_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t to, uint16_t from, uint16_t size)
 {
-	uint16_t i;
-
-	for (i = 0; i < size; i++) {
-		vq->used->ring[to + i].id = vq->shadow_used_split[from + i].id;
-		vq->used->ring[to + i].len =
-			vq->shadow_used_split[from + i].len +
-			vq->adapter->vtnet_hdr_size;
-	}
+	rte_memcpy(&vq->used->ring[to],
+		&vq->shadow_used_split[from],
+		size * sizeof(struct vring_used_elem));
 }
 
 static __rte_always_inline void
