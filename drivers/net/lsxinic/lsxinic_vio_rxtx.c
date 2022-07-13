@@ -60,7 +60,7 @@
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_ethdev.h>
 
-#define DEFAULT_TX_RS_THRESH 32
+#define DEFAULT_BURST_THRESH LSXVIO_QDMA_EQ_MAX_NB
 
 /* TX queues list */
 TAILQ_HEAD(lsxvio_tx_queue_list, lsxvio_queue);
@@ -310,7 +310,7 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 
 	q->ob_virt_base = adapter->ob_virt_base;
 	q->nb_desc = nb_desc;
-	q->new_desc_thresh = DEFAULT_TX_RS_THRESH;
+	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
 
@@ -440,7 +440,7 @@ static void
 lsxvio_queue_start(struct lsxvio_queue *q)
 {
 	q->new_time_thresh = 1 * rte_get_timer_hz() / 1000000; /* ns->s */
-	q->new_desc_thresh = DEFAULT_TX_RS_THRESH;
+	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 
 	if (lsxvio_queue_dma_create(q) < 0)
 		return;
@@ -817,15 +817,18 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 
 static void
 lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
-	uint16_t desc_idx, uint16_t head)
+	uint16_t desc_idx, uint16_t head,
+	struct rte_mbuf *rxm,
+	struct rte_qdma_job *dma_job)
 {
-	struct rte_qdma_job *dma_job = &rxq->dma_jobs[desc_idx];
 	struct lsxvio_queue_entry *rxe = &rxq->sw_ring[desc_idx];
 	struct vring_desc *desc = &rxq->desc[desc_idx];
-	struct rte_mbuf *rxm;
 	uint32_t pkt_len;
 	uint32_t total_bytes = 0, total_packets = 0;
 	uint32_t len;
+
+	if (!dma_job)
+		dma_job = &rxq->dma_jobs[desc_idx];
 
 	if (unlikely(dma_job->flags & LSINIC_QDMA_JOB_USING_FLAG)) {
 		/*Workaround, need further investigation for this situation.*/
@@ -847,7 +850,8 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	}
 	pkt_len = len - rxq->crc_len;
 
-	rxm = rte_mbuf_raw_alloc(rxq->mb_pool);
+	if (!rxm)
+		rxm = rte_mbuf_raw_alloc(rxq->mb_pool);
 	if (!rxm) {
 		LSXINIC_PMD_DBG("RX mbuf alloc failed"
 			" port_id=%u queue_id=%u",
@@ -900,6 +904,60 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 }
 
 static void
+lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
+{
+	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB];
+	uint16_t desc_idxs[DEFAULT_BURST_THRESH];
+	uint16_t heads[DEFAULT_BURST_THRESH];
+	struct rte_mbuf *mbufs[DEFAULT_BURST_THRESH];
+	int ret;
+	uint16_t free_entries, i, j, avail_idx, desc_idx, bd_num = 0;
+
+	if (vq->shadow_avail)
+		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
+	else
+		free_entries = vq->avail->idx - vq->last_avail_idx;
+
+	if (free_entries == 0)
+		return;
+
+	for (i = 0; i < free_entries; i++) {
+		avail_idx = (vq->last_avail_idx + i) & (vq->nb_desc - 1);
+		desc_idx = vq->avail->ring[avail_idx];
+		heads[bd_num] = 1;
+		j = 0;
+		do {
+			desc_idxs[bd_num] = desc_idx;
+			jobs[bd_num] = &vq->dma_jobs[desc_idx];
+			bd_num++;
+			j++;
+			if (!(vq->desc[desc_idx].flags & VRING_DESC_F_NEXT))
+				break;
+			desc_idx = vq->desc[desc_idx].next;
+			if (bd_num < DEFAULT_BURST_THRESH)
+				heads[bd_num] = 0;
+		} while (1);
+
+		if (bd_num >= DEFAULT_BURST_THRESH) {
+			i++;
+			break;
+		}
+	}
+
+	ret = rte_pktmbuf_alloc_bulk(vq->mb_pool, mbufs, bd_num);
+	if (unlikely(ret))
+		return;
+
+	for (j = 0; j < bd_num; j++) {
+		lsxvio_recv_one_pkt(vq, desc_idxs[j], heads[j],
+			mbufs[j], jobs[j]);
+	}
+
+	lsxvio_qdma_multiple_enqueue(vq, jobs, bd_num);
+	vq->last_avail_idx += i;
+}
+
+static void
 lsxvio_recv_bd(struct lsxvio_queue *vq)
 {
 	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB];
@@ -922,7 +980,7 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 		/** Currently no indirect support. */
 		j = 0;
 		do {
-			lsxvio_recv_one_pkt(vq, desc_idx, head);
+			lsxvio_recv_one_pkt(vq, desc_idx, head, NULL, NULL);
 			jobs[bd_num] = &vq->dma_jobs[desc_idx];
 			head = 0;
 			bd_num++;
@@ -932,7 +990,7 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 			desc_idx = vq->desc[desc_idx].next;
 		} while (1);
 
-		if (bd_num >= DEFAULT_TX_RS_THRESH) {
+		if (bd_num >= DEFAULT_BURST_THRESH) {
 			i++;
 			break;
 		}
@@ -1053,7 +1111,10 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			return 0;
 	}
 
-	lsxvio_recv_bd(rxq);
+	if (1)
+		lsxvio_recv_bd_burst(rxq);
+	else
+		lsxvio_recv_bd(rxq);
 	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
 		lsxvio_recv_pkts_to_cache(rxq);
 	else
