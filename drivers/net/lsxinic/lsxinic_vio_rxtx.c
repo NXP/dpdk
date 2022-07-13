@@ -689,8 +689,8 @@ update_shadow_used_ring_split(struct lsxvio_queue *vq,
 {
 	uint16_t i = vq->shadow_used_idx++;
 
-	vq->shadow_used_split[i].id  = desc_idx;
-	vq->shadow_used_split[i].len =
+	vq->shadow_used_split->ring[i].id  = desc_idx;
+	vq->shadow_used_split->ring[i].len =
 		len + vq->adapter->vtnet_hdr_size;
 }
 
@@ -699,7 +699,7 @@ do_flush_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t to, uint16_t from, uint16_t size)
 {
 	rte_memcpy(&vq->used->ring[to],
-		&vq->shadow_used_split[from],
+		&vq->shadow_used_split->ring[from],
 		size * sizeof(struct vring_used_elem));
 }
 

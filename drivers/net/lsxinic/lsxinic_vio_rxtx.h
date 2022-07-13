@@ -81,7 +81,7 @@ struct lsxvio_queue {
 
 	struct vring_avail *shadow_avail;
 
-	struct vring_used_elem *shadow_used_split;
+	struct vring_used *shadow_used_split;
 
 	uint16_t shadow_used_idx;
 	/* Record packed ring enqueue latest desc cache aligned index */
