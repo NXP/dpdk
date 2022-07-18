@@ -285,6 +285,9 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	if (getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE"))
 		lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
 
+	if (getenv("LSXVIO_RXQ_IN_ORDER"))
+		lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
+
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
 			lsx_dev->pf, lsx_dev->vf);

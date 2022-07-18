@@ -1746,7 +1746,8 @@ lsxvio_rc_eth_configure(struct rte_eth_dev *dev)
 		hw->vtnet_hdr_size;
 	uint64_t rx_offloads = rxmode->offloads;
 	uint64_t tx_offloads = txmode->offloads;
-	uint64_t req_features;
+	uint64_t req_features, lsx_feature;
+	struct lsxvio_common_cfg *lsx_com_cfg;
 	int ret;
 
 	PMD_INIT_LOG(DEBUG, "configure");
@@ -1820,11 +1821,15 @@ lsxvio_rc_eth_configure(struct rte_eth_dev *dev)
 		}
 
 	hw->use_simple_rx = 1;
+	lsx_com_cfg = &lsx_hw->lsx_cfg->common_cfg;
+	lsx_feature = rte_read64(&lsx_com_cfg->lsx_feature);
 
 	if (vtpci_with_feature(hw, VIRTIO_F_IN_ORDER)) {
 		hw->use_inorder_tx = 1;
 		hw->use_inorder_rx = 1;
 		hw->use_simple_rx = 0;
+	} else if (lsx_feature & LSX_VIO_RC2EP_IN_ORDER) {
+		hw->use_inorder_tx = 1;
 	}
 
 	if (vtpci_packed_queue(hw)) {

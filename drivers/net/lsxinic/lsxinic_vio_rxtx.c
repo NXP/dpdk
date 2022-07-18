@@ -151,6 +151,10 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 		(common->lsx_feature & LSX_VIO_RC2EP_DMA_NORSP))
 		vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
 
+	if (q->type == LSXVIO_QUEUE_RX &&
+		(common->lsx_feature & LSX_VIO_RC2EP_IN_ORDER))
+		q->flag |= LSXVIO_QUEUE_IN_ORDER_FLAG;
+
 	q->core_id = lcore_id;
 
 	memset(&q->rbp, 0, sizeof(struct rte_qdma_rbp));
@@ -780,6 +784,32 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 
 	LSXINIC_PMD_DBG("enter %s nb_in_dma=%ld, dequeue ret=%d",
 		__func__, rxq->pkts_eq - rxq->pkts_dq, ret);
+	if (unlikely(ret <= 0)) {
+		if (ret < 0) {
+			LSXINIC_PMD_ERR("nb_in_dma=%ld, dq err=%d",
+				rxq->pkts_eq - rxq->pkts_dq, ret);
+		}
+
+		return 0;
+	}
+	rxq->pkts_dq += ret;
+	if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG) {
+		for (i = 0; i < ret; i++) {
+			dma_job = jobs[i];
+			if (!dma_job)
+				continue;
+			dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+			rxe = (struct lsxvio_queue_entry *)dma_job->cnxt;
+			if (unlikely(dma_job->status != 0)) {
+				LSXINIC_PMD_ERR("rxe%d dma error %x, cpu:%d",
+					rxe->idx,
+					dma_job->status, rte_lcore_id());
+			}
+			if (rxe)
+				rxe->dma_complete = 1;
+		}
+		return i;
+	}
 	for (i = 0; i < ret; i++) {
 		dma_job = jobs[i];
 		if (!dma_job)
@@ -807,10 +837,6 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 			rte_prefetch0(rte_pktmbuf_mtod(rxe->mbuf, void *));
 		}
 	}
-	rxq->pkts_dq += ret;
-
-	LSXINIC_PMD_DBG("exit %s nb_in_dma=%ld dequeue ret=%d\n",
-			__func__, rxq->pkts_eq - rxq->pkts_dq, ret);
 
 	return i;
 }
@@ -1007,7 +1033,7 @@ lsxvio_queue_running(struct lsxvio_queue *q)
 }
 
 static uint16_t
-lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
+lsxvio_recv_pkts_no_dma_rsp(struct lsxvio_queue *rxq)
 {
 	uint16_t used_idx, bd_num = 0, start_from, size, idx;
 	struct lsxvio_queue_entry *sw_bd, *next_sw_bd;
@@ -1025,7 +1051,8 @@ lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
 			rxq->mhead))
 			break;
 		idx = sw_bd->idx & (rxq->nb_desc - 1);
-		update_shadow_used_ring_split(rxq, idx, 0);
+		if (!(rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG))
+			update_shadow_used_ring_split(rxq, idx, 0);
 		rxq->dma_jobs[idx].flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
 		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
@@ -1037,10 +1064,14 @@ lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
 		used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
 		sw_bd = &rxq->sw_ring[used_idx];
 	}
-	rxq->shadow_used_idx = 0;
 
 	if (!bd_num)
 		return 0;
+
+	if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG)
+		goto skip_update_used_ring;
+
+	rxq->shadow_used_idx = 0;
 
 	if (start_from + bd_num <= rxq->nb_desc) {
 		do_flush_shadow_used_ring_split(rxq, start_from, 0,
@@ -1053,6 +1084,41 @@ lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
 		do_flush_shadow_used_ring_split(rxq, 0, size,
 			bd_num - size);
 	}
+
+skip_update_used_ring:
+	rxq->used->idx += bd_num;
+
+	return bd_num;
+}
+
+static uint16_t
+lsxvio_recv_pkts_in_order(struct lsxvio_queue *rxq)
+{
+	uint16_t used_idx, bd_num = 0;
+	struct lsxvio_queue_entry *sw_bd;
+
+	used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+	sw_bd = &rxq->sw_ring[used_idx];
+	while (likely(sw_bd->dma_complete)) {
+		if (unlikely(((rxq->mtail + 2) & MCACHE_MASK) ==
+			rxq->mhead))
+			break;
+		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
+		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
+		rxq->mcnt++;
+		bd_num++;
+		rte_prefetch0(rte_pktmbuf_mtod(sw_bd->mbuf, void *));
+		sw_bd->dma_complete = 0;
+		rxq->last_used_idx++;
+		used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+		sw_bd = &rxq->sw_ring[used_idx];
+	}
+
+	if (!bd_num) {
+		/* Skip accessing PCIe*/
+		return 0;
+	}
+
 	rxq->used->idx += bd_num;
 
 	return bd_num;
@@ -1115,10 +1181,14 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		lsxvio_recv_bd_burst(rxq);
 	else
 		lsxvio_recv_bd(rxq);
-	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
-		lsxvio_recv_pkts_to_cache(rxq);
-	else
+	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		lsxvio_recv_pkts_no_dma_rsp(rxq);
+	} else if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG) {
 		lsxvio_rx_dma_dequeue(rxq);
+		lsxvio_recv_pkts_in_order(rxq);
+	} else {
+		lsxvio_rx_dma_dequeue(rxq);
+	}
 
 	lsxvio_tx_loop();
 

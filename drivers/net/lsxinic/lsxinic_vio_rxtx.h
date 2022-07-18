@@ -66,6 +66,7 @@ struct lsxvio_queue_entry {
 	};
 };
 
+#define LSXVIO_QUEUE_IN_ORDER_FLAG (1 << 0)
 /**
  * Structure associated with each RX queue.
  */
