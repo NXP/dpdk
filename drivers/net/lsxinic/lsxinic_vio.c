@@ -22,15 +22,17 @@ int lsxvio_virtio_check_driver_feature(struct lsxvio_common_cfg *common)
 		(common->device_feature & common->driver_feature));
 }
 
-void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
+int
+lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 {
 	struct lsxvio_adapter *adapter = dev->eth_dev->data->dev_private;
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 	struct lsxvio_queue_cfg *queue;
 	struct lsxvio_queue *vq;
 	uint64_t desc_addr;
-	int i, size;
+	uint32_t i, size, j;
 	uint8_t *virt;
+	char name[RTE_MEMZONE_NAMESIZE];
 
 	/* Get common config from bar.
 	 * Currently vdpa driver use MSI-X interrupts.
@@ -81,7 +83,24 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				desc_addr, size);
 		else
 			virt = DPAA2_IOVA_TO_VADDR(desc_addr);
-		vq->desc = (struct vring_desc *)virt;
+		if (!virt) {
+			LSXINIC_PMD_ERR("OB map host phy(0x%lx) failed\n",
+				desc_addr);
+			return -ENOMEM;
+		}
+		vq->desc_addr = virt;
+		if (vq->type == LSXVIO_QUEUE_RX) {
+			vq->vdesc = vq->desc_addr;
+			vq->pdesc = NULL;
+		} else {
+			if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+				vq->pdesc = vq->desc_addr;
+				vq->vdesc = NULL;
+			} else {
+				vq->vdesc = vq->desc_addr;
+				vq->pdesc = NULL;
+			}
+		}
 		vq->avail = (struct vring_avail *)(virt - desc_addr +
 				(queue->queue_avail_lo
 				| ((uint64_t)(queue->queue_avail_hi) << 32)));
@@ -92,6 +111,46 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			sizeof(struct vring_used) +
 			(vq->nb_desc * sizeof(struct vring_used_elem)),
 			RTE_CACHE_LINE_SIZE, rte_socket_id());
+		if (!vq->shadow_used_split) {
+			LSXINIC_PMD_ERR("shadow_used_split alloc failed\n");
+
+			return -ENOMEM;
+		}
+		sprintf(name, "shadow_pdesc_%d_%d_%d_%d_%d",
+			dev->pcie_id, dev->pf, dev->is_vf, dev->vf, i);
+		vq->shadow_pdesc_mz = rte_memzone_reserve_aligned(name,
+			vq->nb_desc * sizeof(struct vring_packed_desc),
+			SOCKET_ID_ANY, RTE_MEMZONE_IOVA_CONTIG,
+			RTE_CACHE_LINE_SIZE);
+		if (vq->shadow_pdesc_mz) {
+			vq->shadow_pdesc = vq->shadow_pdesc_mz->addr;
+			vq->shadow_pdesc_phy = vq->shadow_pdesc_mz->iova;
+		} else {
+			LSXINIC_PMD_ERR("RSV %s (size = %ld) failed\n",
+				name,
+				vq->nb_desc * sizeof(struct vring_packed_desc));
+
+			return -ENOMEM;
+		}
+
+		if (vq->type == LSXVIO_QUEUE_TX &&
+			vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG &&
+			vq->shadow_pdesc_mz) {
+			for (j = 0; j < vq->nb_desc; j++) {
+				vq->e2r_bd_dma_jobs[j].src =
+					vq->shadow_pdesc_phy +
+					j * sizeof(struct vring_packed_desc);
+				vq->e2r_bd_dma_jobs[j].dest =
+					vq->ob_base + desc_addr +
+					j * sizeof(struct vring_packed_desc);
+				vq->e2r_bd_dma_jobs[j].cnxt = 0;
+				vq->e2r_bd_dma_jobs[j].flags =
+					RTE_QDMA_JOB_SRC_PHY |
+					RTE_QDMA_JOB_DEST_PHY;
+				vq->e2r_bd_dma_jobs[j].vq_id = vq->dma_vq;
+			}
+		}
+
 		LSXINIC_PMD_INFO("desc_addr=%lx, avail_addr=%lx,"
 				" used_addr=%lx, size=%lx, desc=%p"
 				" avail=%p, used=%p, shadow_used_split=%p",
@@ -102,7 +161,7 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				((uint64_t)(queue->queue_used_hi) << 32),
 				lsx_vring_size(LSXVIO_MAX_RING_DESC,
 					RTE_CACHE_LINE_SIZE),
-				vq->desc, vq->avail, vq->used,
+				vq->desc_addr, vq->avail, vq->used,
 				vq->shadow_used_split);
 
 		if (queue->queue_msix_vector != VIRTIO_MSI_NO_VECTOR &&
@@ -114,6 +173,8 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 
 		vq->status = LSXVIO_QUEUE_START;
 	}
+
+	return 0;
 }
 
 void lsxvio_virtio_reset_dev(struct rte_eth_dev *dev)

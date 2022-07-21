@@ -54,6 +54,14 @@
 #define LSX_VIO_RC2EP_IN_ORDER \
 	(1ULL << LSX_VIO_RC2EP_IN_ORDER_POS)
 
+#define LSX_VIO_EP2RC_PACKED_POS 2
+#define LSX_VIO_EP2RC_PACKED \
+	(1ULL << LSX_VIO_EP2RC_PACKED_POS)
+
+#define LSX_VIO_EP2RC_DMA_NORSP_POS 3
+#define LSX_VIO_EP2RC_DMA_NORSP \
+	(1ULL << LSX_VIO_EP2RC_DMA_NORSP_POS)
+
 /* This common configuration definition is a little different from
  * the common data stuctures defined in virtio spec because the hw
  * does not support queue_select attribute, so a sereal of queue

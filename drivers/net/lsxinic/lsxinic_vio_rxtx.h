@@ -66,12 +66,17 @@ struct lsxvio_queue_entry {
 	};
 };
 
-#define LSXVIO_QUEUE_IN_ORDER_FLAG (1 << 0)
+#define LSXVIO_QUEUE_IDX_INORDER_FLAG (1ull << 0)
+#define LSXVIO_QUEUE_PKD_INORDER_FLAG (1ull << 1)
+
 /**
  * Structure associated with each RX queue.
  */
 struct lsxvio_queue {
-	struct vring_desc *desc;
+	void *desc_addr;
+	struct vring_desc *vdesc;
+	struct vring_packed_desc *pdesc;
+
 	struct vring_avail *avail;
 	struct vring_used *used;
 
@@ -83,6 +88,9 @@ struct lsxvio_queue {
 	struct vring_avail *shadow_avail;
 
 	struct vring_used *shadow_used_split;
+	struct vring_packed_desc *shadow_pdesc;
+	uint64_t shadow_pdesc_phy;
+	const struct rte_memzone *shadow_pdesc_mz;
 
 	uint16_t shadow_used_idx;
 	/* Record packed ring enqueue latest desc cache aligned index */
@@ -96,6 +104,7 @@ struct lsxvio_queue {
 	uint16_t status;
 	/* flag */
 	uint32_t flag;
+	uint16_t cached_flags;
 
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 

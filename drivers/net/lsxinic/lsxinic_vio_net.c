@@ -177,6 +177,9 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #else
 	adapter->vtnet_hdr_size = sizeof(struct virtio_net_hdr);
 #endif
+	/* Overwrite previous setting, to support header size in the future.*/
+	adapter->vtnet_hdr_size = 0;
+
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
 	lsxvio_virtio_init(adapter->cfg_base, device_id, lsx_feature);
 
@@ -285,8 +288,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	if (getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE"))
 		lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
 
+	if (getenv("LSXVIO_TXQ_QDMA_NO_RESPONSE"))
+		lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
+
 	if (getenv("LSXVIO_RXQ_IN_ORDER"))
 		lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
+
+	if (getenv("LSXVIO_TXQ_PACKED"))
+		lsx_feature |= LSX_VIO_EP2RC_PACKED;
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
@@ -435,7 +444,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	struct lsxvio_common_cfg *common;
 	uint8_t status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
-	int print_status = 0;
+	int print_status = 0, ret;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -487,7 +496,15 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
-				lsxvio_virtio_config_fromrc(dev);
+				ret = lsxvio_virtio_config_fromrc(dev);
+				if (ret) {
+					LSXINIC_PMD_ERR("%s link failed",
+						dev->name);
+					dev = (struct rte_lsx_pciep_device *)
+						TAILQ_NEXT(dev, next);
+					continue;
+				}
+
 				if (adapter->is_vf)
 					LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link up",
 						adapter->pcie_idx,

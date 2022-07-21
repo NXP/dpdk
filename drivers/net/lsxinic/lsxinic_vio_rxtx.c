@@ -119,6 +119,7 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 	struct lsxvio_adapter *adapter = q->adapter;
 	struct lsxvio_common_cfg *common =
 		BASE_TO_COMMON(adapter->cfg_base);
+	int dma_config_err = 0;
 
 	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
 	if (penv)
@@ -148,12 +149,18 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 	}
 
 	if (q->type == LSXVIO_QUEUE_RX &&
-		(common->lsx_feature & LSX_VIO_RC2EP_DMA_NORSP))
+		(common->lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
 		vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
+	} else if (q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		if (common->lsx_feature & LSX_VIO_EP2RC_PACKED)
+			vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
+		else
+			dma_config_err = 1;
+	}
 
-	if (q->type == LSXVIO_QUEUE_RX &&
-		(common->lsx_feature & LSX_VIO_RC2EP_IN_ORDER))
-		q->flag |= LSXVIO_QUEUE_IN_ORDER_FLAG;
+	if (dma_config_err)
+		LSXINIC_PMD_WARN("TXQ: DMA no RSP should use packed ring\n");
 
 	q->core_id = lcore_id;
 
@@ -366,6 +373,10 @@ lsxvio_queue_reset(struct lsxvio_queue *q)
 		xe[i].idx = i;
 		xe[i].bd_idx = i;
 		xe[i].flag = 0;
+		if (q->type == LSXVIO_QUEUE_TX &&
+			q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG)
+			xe[i].dma_complete = 1;
+
 		dma_jobs[i].cnxt = (uint64_t)(&xe[i]);
 		dma_jobs[i].flags = RTE_QDMA_JOB_SRC_PHY |
 				   RTE_QDMA_JOB_DEST_PHY;
@@ -496,6 +507,8 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct lsxvio_adapter *adapter = dev->data->dev_private;
 	uint16_t queue_idx = tx_queue_id * VIRTIO_QNUM + VIRTIO_RXQ;
 	struct lsxvio_queue *txq;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
 
 	/* Free memory prior to re-allocation if needed... */
 	if (dev->data->tx_queues[queue_idx])
@@ -518,6 +531,11 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		txq->sw_ring, txq->desc, txq->dma_jobs);
 
 	dev->data->tx_queues[tx_queue_id] = txq;
+
+	if (common->lsx_feature & LSX_VIO_EP2RC_PACKED) {
+		txq->flag |= LSXVIO_QUEUE_PKD_INORDER_FLAG;
+		txq->cached_flags = VRING_PACKED_DESC_F_AVAIL_USED;
+	}
 
 	return 0;
 }
@@ -545,6 +563,8 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct lsxvio_adapter *adapter = dev->data->dev_private;
 	uint16_t queue_idx = rx_queue_id * VIRTIO_QNUM + VIRTIO_TXQ;
 	struct lsxvio_queue *rxq;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
 
 	/* Free memory prior to re-allocation if needed... */
 	if (dev->data->rx_queues[queue_idx] != NULL)
@@ -562,7 +582,7 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->drop_en = rx_conf->rx_drop_en;
 
 	/* using RC's rx ring to send EP's packets */
-	rxq->desc = NULL;
+	rxq->desc_addr = NULL;
 	rxq->dev = dev;
 	rxq->type = LSXVIO_QUEUE_RX;
 	LSXINIC_PMD_DBG("port%d rxq%d dma_id=%d, sw_ring:%p "
@@ -571,6 +591,9 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rxq->sw_ring, rxq->desc, rxq->dma_jobs);
 
 	dev->data->rx_queues[rx_queue_id] = rxq;
+
+	if (common->lsx_feature & LSX_VIO_RC2EP_IN_ORDER)
+		rxq->flag |= LSXVIO_QUEUE_IDX_INORDER_FLAG;
 
 	return 0;
 }
@@ -662,6 +685,15 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 		struct lsxvio_queue *txq = dev->data->tx_queues[i];
 		struct lsxvio_queue *next = txq;
 
+		if (txq->shadow_pdesc_mz) {
+			rte_memzone_free(txq->shadow_pdesc_mz);
+			txq->shadow_pdesc_mz = NULL;
+		}
+		if (txq->shadow_used_split) {
+			rte_free(txq->shadow_used_split);
+			txq->shadow_used_split = NULL;
+		}
+
 		for (j = 0; j < txq->nb_q; j++) {
 			if (next == NULL)
 				break;
@@ -675,6 +707,15 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		struct lsxvio_queue *rxq = dev->data->rx_queues[i];
 		struct lsxvio_queue *next = rxq;
+
+		if (rxq->shadow_pdesc_mz) {
+			rte_memzone_free(rxq->shadow_pdesc_mz);
+			rxq->shadow_pdesc_mz = NULL;
+		}
+		if (rxq->shadow_used_split) {
+			rte_free(rxq->shadow_used_split);
+			rxq->shadow_used_split = NULL;
+		}
 
 		for (j = 0; j < rxq->nb_q; j++) {
 			if (!next)
@@ -793,7 +834,7 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 		return 0;
 	}
 	rxq->pkts_dq += ret;
-	if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG) {
+	if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) {
 		for (i = 0; i < ret; i++) {
 			dma_job = jobs[i];
 			if (!dma_job)
@@ -848,7 +889,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	struct rte_qdma_job *dma_job)
 {
 	struct lsxvio_queue_entry *rxe = &rxq->sw_ring[desc_idx];
-	struct vring_desc *desc = &rxq->desc[desc_idx];
+	struct vring_desc *desc = &rxq->vdesc[desc_idx];
 	uint32_t pkt_len;
 	uint32_t total_bytes = 0, total_packets = 0;
 	uint32_t len;
@@ -957,9 +998,9 @@ lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 			jobs[bd_num] = &vq->dma_jobs[desc_idx];
 			bd_num++;
 			j++;
-			if (!(vq->desc[desc_idx].flags & VRING_DESC_F_NEXT))
+			if (!(vq->vdesc[desc_idx].flags & VRING_DESC_F_NEXT))
 				break;
-			desc_idx = vq->desc[desc_idx].next;
+			desc_idx = vq->vdesc[desc_idx].next;
 			if (bd_num < DEFAULT_BURST_THRESH)
 				heads[bd_num] = 0;
 		} while (1);
@@ -1011,9 +1052,9 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 			head = 0;
 			bd_num++;
 			j++;
-			if (!(vq->desc[desc_idx].flags & VRING_DESC_F_NEXT))
+			if (!(vq->vdesc[desc_idx].flags & VRING_DESC_F_NEXT))
 				break;
-			desc_idx = vq->desc[desc_idx].next;
+			desc_idx = vq->vdesc[desc_idx].next;
 		} while (1);
 
 		if (bd_num >= DEFAULT_BURST_THRESH) {
@@ -1051,7 +1092,7 @@ lsxvio_recv_pkts_no_dma_rsp(struct lsxvio_queue *rxq)
 			rxq->mhead))
 			break;
 		idx = sw_bd->idx & (rxq->nb_desc - 1);
-		if (!(rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG))
+		if (!(rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG))
 			update_shadow_used_ring_split(rxq, idx, 0);
 		rxq->dma_jobs[idx].flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
@@ -1068,7 +1109,7 @@ lsxvio_recv_pkts_no_dma_rsp(struct lsxvio_queue *rxq)
 	if (!bd_num)
 		return 0;
 
-	if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG)
+	if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
 		goto skip_update_used_ring;
 
 	rxq->shadow_used_idx = 0;
@@ -1183,7 +1224,7 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		lsxvio_recv_bd(rxq);
 	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
 		lsxvio_recv_pkts_no_dma_rsp(rxq);
-	} else if (rxq->flag & LSXVIO_QUEUE_IN_ORDER_FLAG) {
+	} else if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) {
 		lsxvio_rx_dma_dequeue(rxq);
 		lsxvio_recv_pkts_in_order(rxq);
 	} else {
@@ -1258,7 +1299,17 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 			LSXINIC_PMD_ERR("QDMA fd returned err: %d",
 				dma_job->status);
 		}
-		if (txe) {
+		if (txq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG && txe) {
+			struct vring_packed_desc *desc = &txq->pdesc[txe->idx];
+			uint64_t *src, *dst;
+
+			src = (uint64_t *)(&txq->shadow_pdesc[txe->idx].len);
+			dst = (uint64_t *)(&desc->len);
+			*dst = *src;
+			rte_pktmbuf_free(txe->mbuf);
+			txe->mbuf = NULL;
+			txq->next_dma_idx++;
+		} else if (txe) {
 			idx = txe->idx & (txq->nb_desc - 1);
 			/* This should record the completed jobs,
 			 * so it need to be updated after got
@@ -1287,13 +1338,29 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 	return i;
 }
 
-static void
+static int
 lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	struct rte_mbuf *rxm, uint16_t head)
 {
 	struct rte_qdma_job *dma_job = &vq->dma_jobs[desc_idx];
 	struct lsxvio_queue_entry *txe = &vq->sw_ring[desc_idx];
-	struct vring_desc *desc = &vq->desc[desc_idx];
+	struct vring_desc *vdesc = NULL;
+	struct vring_packed_desc *pdesc = NULL;
+	uint64_t addr = 0;
+
+	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+		pdesc = &vq->pdesc[desc_idx];
+		memcpy(&vq->shadow_pdesc[desc_idx],
+			pdesc, sizeof(struct vring_packed_desc));
+		addr = vq->shadow_pdesc[desc_idx].addr;
+		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
+		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len;
+		if (txe->mbuf)
+			rte_pktmbuf_free(txe->mbuf);
+	} else {
+		vdesc = &vq->vdesc[desc_idx];
+		addr = vdesc->addr;
+	}
 
 	/* rxm is ret_mbuf passed to upper layer */
 	txe->mbuf = rxm;
@@ -1302,7 +1369,7 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 
 	dma_job->cnxt = (uint64_t)txe;
 	dma_job->src = rte_mbuf_data_iova(rxm) - vq->adapter->vtnet_hdr_size;
-	dma_job->dest = desc->addr + vq->ob_base;
+	dma_job->dest = addr + vq->ob_base;
 	dma_job->len = rxm->pkt_len + vq->adapter->vtnet_hdr_size;
 	if (vq->new_desc == 0)
 		vq->new_tsc = rte_rdtsc();
@@ -1310,6 +1377,8 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	vq->jobs_pending++;
 	LSXINIC_PMD_DBG("xmit src=%lx, dest=%lx, len=%d, pending=%d",
 		dma_job->src, dma_job->dest, dma_job->len, vq->jobs_pending);
+
+	return 0;
 }
 
 static void lsxvio_tx_loop(void)
@@ -1324,9 +1393,11 @@ static void lsxvio_tx_loop(void)
 				return;
 		}
 
-		if (q->pkts_eq > q->pkts_dq) {
+		if (!(q->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
+			&& q->pkts_eq > q->pkts_dq) {
 			lsxvio_tx_dma_dequeue(q);
-			if (q->shadow_used_idx) {
+			if (!(q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) &&
+				q->shadow_used_idx) {
 				q->new_desc += q->shadow_used_idx;
 				flush_shadow_used_ring_split(q);
 				lsxvio_queue_trigger_interrupt(q);
@@ -1335,6 +1406,91 @@ static void lsxvio_tx_loop(void)
 
 		q->loop_total++;
 	}
+}
+
+static inline uint16_t
+lsxvio_xmit_dma_bd_jobs(struct lsxvio_queue *vq,
+	struct rte_qdma_job *bd_jobs[],
+	uint16_t start_idx, uint16_t end_idx)
+{
+	uint16_t dma_bd_nb = 0;
+	struct rte_qdma_job *vq_bd_jobs = vq->e2r_bd_dma_jobs;
+
+	bd_jobs[0] = &vq_bd_jobs[start_idx];
+	dma_bd_nb++;
+	if (end_idx < start_idx && end_idx > 0) {
+		bd_jobs[0]->len = (vq->nb_desc - start_idx) *
+			sizeof(struct vring_packed_desc);
+		bd_jobs[dma_bd_nb] = &vq_bd_jobs[0];
+		bd_jobs[dma_bd_nb]->len = end_idx *
+			sizeof(struct vring_packed_desc);
+		dma_bd_nb++;
+	} else if (end_idx > 0) {
+		bd_jobs[0]->len = (end_idx - start_idx) *
+			sizeof(struct vring_packed_desc);
+	} else {
+		/* end_idx == 0*/
+		bd_jobs[0]->len = (vq->nb_desc - start_idx) *
+			sizeof(struct vring_packed_desc);
+	}
+
+	return dma_bd_nb;
+}
+
+#define LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD 32
+static uint16_t
+lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	uint16_t tx_num = 0, avail_idx;
+	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB + 2];
+	int ret;
+	uint16_t rc_last_avail_idx = vq->shadow_avail->idx;
+	uint16_t start_idx = vq->last_avail_idx;
+	uint16_t end_idx = 0, dma_bd_nb = 0;
+
+	while (((vq->last_avail_idx + LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD) &
+		(vq->nb_desc - 1)) !=
+		rc_last_avail_idx) {
+		avail_idx = vq->last_avail_idx;
+		ret = lsxvio_xmit_one_pkt(vq, avail_idx,
+			tx_pkts[tx_num], 1);
+		if (ret)
+			break;
+		memset((char *)tx_pkts[tx_num]->buf_addr +
+			tx_pkts[tx_num]->data_off -
+			vq->adapter->vtnet_hdr_size,
+			0, vq->adapter->vtnet_hdr_size);
+		vq->bytes += tx_pkts[tx_num]->pkt_len;
+		vq->bytes_fcs +=
+			tx_pkts[tx_num]->pkt_len +
+				LSINIC_ETH_FCS_SIZE;
+		vq->bytes_overhead +=
+			tx_pkts[tx_num]->pkt_len +
+				LSINIC_ETH_OVERHEAD_SIZE;
+		jobs[tx_num] = &vq->dma_jobs[avail_idx];
+		tx_num++;
+		nb_pkts--;
+		vq->packets++;
+		vq->last_avail_idx++;
+		if (unlikely(vq->last_avail_idx >= vq->nb_desc)) {
+			vq->cached_flags ^= VRING_PACKED_DESC_F_AVAIL_USED;
+			vq->last_avail_idx -= vq->nb_desc;
+		}
+		if (!nb_pkts)
+			break;
+	}
+	end_idx = vq->last_avail_idx;
+
+	if (tx_num > 0) {
+		if (vq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+			dma_bd_nb = lsxvio_xmit_dma_bd_jobs(vq,
+				&jobs[tx_num], start_idx, end_idx);
+		}
+		lsxvio_qdma_multiple_enqueue(vq, jobs, tx_num + dma_bd_nb);
+	}
+
+	return tx_num;
 }
 
 static uint16_t
@@ -1374,9 +1530,10 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 			tx_num++;
 			nb_pkts--;
 			vq->packets++;
-			if ((vq->desc[desc_idx].flags & VRING_DESC_F_NEXT) == 0)
+			if ((vq->vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT) == 0)
 				break;
-			desc_idx = vq->desc[desc_idx].next;
+			desc_idx = vq->vdesc[desc_idx].next;
 			head = 0;
 		}
 	}
@@ -1403,6 +1560,11 @@ lsxvio_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	}
 
 	txq->loop_avail++;
+
+	if (txq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+		return lsxvio_xmit_pkts_packed_burst(txq, tx_pkts,
+			nb_pkts);
+	}
 
 	/* TX loop */
 	return lsxvio_xmit_pkts_burst(txq, tx_pkts, nb_pkts);
