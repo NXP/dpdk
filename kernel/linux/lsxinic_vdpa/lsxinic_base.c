@@ -389,7 +389,7 @@ static int lsxvdpa_hw_hw_enable(struct lsxvdpa_hw *hw)
 static void lsxvdpa_hw_hw_disable(struct lsxvdpa_hw *hw)
 {
 	struct lsxvio_common_cfg __iomem *cfg;
-	struct lsxvio_queue_cfg *queue;
+	struct lsxvio_queue_cfg *queue = NULL;
 	u32 i;
 
 	cfg = hw->common_cfg;
@@ -400,7 +400,8 @@ static void lsxvdpa_hw_hw_disable(struct lsxvdpa_hw *hw)
 		writew(VIRTIO_MSI_NO_VECTOR, &queue->queue_msix_vector);
 	}
 
-	readw(&queue->queue_msix_vector);
+	if (queue)
+		readw(&queue->queue_msix_vector);
 }
 
 int lsxvdpa_hw_start_hw(struct lsxvdpa_hw *hw)
