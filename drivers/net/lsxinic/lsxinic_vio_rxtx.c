@@ -117,7 +117,7 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
 
-	penv = getenv("LSINIC_QDMA_SG_ENABLE");
+	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
 	if (penv)
 		sg_enable = atoi(penv);
 

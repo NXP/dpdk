@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #include <stdio.h>
-#include <linux/virtio_ids.h>
+
 #include <generic/rte_cycles.h>
 #include <rte_malloc.h>
 
@@ -18,10 +18,8 @@
 
 int lsxvio_virtio_check_driver_feature(struct lsxvio_common_cfg *common)
 {
-	return ((common->driver_feature[0] ==
-		(common->device_feature[0] & common->driver_feature[0])) &&
-		(common->driver_feature[1] ==
-		(common->device_feature[1] & common->driver_feature[1])));
+	return (common->driver_feature ==
+		(common->device_feature & common->driver_feature));
 }
 
 void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
@@ -76,7 +74,8 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			(queue->queue_desc_lo |
 			((uint64_t)(queue->queue_desc_hi) << 32));
 		size = RTE_MAX(CFG_1M_SIZE,
-			vring_size(LSXVIO_MAX_RING_DESC, RTE_CACHE_LINE_SIZE));
+			lsx_vring_size(LSXVIO_MAX_RING_DESC,
+				RTE_CACHE_LINE_SIZE));
 		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx))
 			virt = lsx_pciep_set_ob_win(dev,
 				desc_addr, size);
@@ -101,8 +100,8 @@ void lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				((uint64_t)(queue->queue_avail_hi) << 32),
 				queue->queue_used_lo |
 				((uint64_t)(queue->queue_used_hi) << 32),
-				vring_size(LSXVIO_MAX_RING_DESC,
-				RTE_CACHE_LINE_SIZE),
+				lsx_vring_size(LSXVIO_MAX_RING_DESC,
+					RTE_CACHE_LINE_SIZE),
 				vq->desc, vq->avail, vq->used,
 				vq->shadow_used_split);
 
@@ -144,8 +143,7 @@ lsxvio_virtio_common_init(uint64_t virt, uint64_t features)
 
 	/* Init common cfg. */
 	common = (struct lsxvio_common_cfg *)(virt + LSXVIO_COMMON_OFFSET);
-	common->device_feature[0] = features & 0xffffffff;
-	common->device_feature[1] = features >> 32;
+	common->device_feature = features;
 	common->num_queues = LSXVIO_MAX_QUEUE_PAIRS * 2;
 	common->device_status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
 
@@ -160,20 +158,6 @@ lsxvio_virtio_common_init(uint64_t virt, uint64_t features)
 }
 
 static void
-lsxvio_virtio_blk_init(uint64_t virt)
-{
-	struct lsxvio_common_cfg *common;
-	struct virtio_blk_config *blk;
-
-	common = (struct lsxvio_common_cfg *)(virt + LSXVIO_COMMON_OFFSET);
-	blk = (struct virtio_blk_config *)(virt + LSXVIO_DEVICE_OFFSET);
-	/* TBD */
-	blk->capacity = 0x10000000;
-	if (common->device_feature[0] & VIRTIO_NET_F_MQ)
-		blk->num_queues = LSXVIO_MAX_QUEUE_PAIRS;
-}
-
-static void
 lsxvio_virtio_net_init(uint64_t virt)
 {
 	struct lsxvio_common_cfg *common;
@@ -182,7 +166,7 @@ lsxvio_virtio_net_init(uint64_t virt)
 	common = (struct lsxvio_common_cfg *)(virt + LSXVIO_COMMON_OFFSET);
 	net = (struct virtio_net_config *)(virt + LSXVIO_DEVICE_OFFSET);
 	/* Init device cfg. */
-	if (common->device_feature[0] & VIRTIO_NET_F_MAC) {
+	if (common->device_feature & (1ULL << VIRTIO_NET_F_MAC)) {
 		net->mac[0] = 0x00;
 		net->mac[1] = 0xe0;
 		net->mac[2] = 0x0c;
@@ -191,13 +175,13 @@ lsxvio_virtio_net_init(uint64_t virt)
 		net->mac[5] = 0x0;
 	}
 
-	if (common->device_feature[0] & VIRTIO_NET_F_STATUS)
+	if (common->device_feature & (1ULL << VIRTIO_NET_F_STATUS))
 		net->status = VIRTIO_NET_S_LINK_UP;
 
-	if (common->device_feature[0] & VIRTIO_NET_F_MQ)
+	if (common->device_feature & (1ULL << VIRTIO_NET_F_MQ))
 		net->max_virtqueue_pairs = LSXVIO_MAX_QUEUE_PAIRS;
 
-	if (common->device_feature[0] & VIRTIO_NET_F_MTU) {
+	if (common->device_feature & (1ULL << VIRTIO_NET_F_MTU)) {
 		net->mtu = 10 * 1024 - sizeof(struct rte_ether_hdr) -
 			sizeof(struct rte_vlan_hdr);
 	}
@@ -207,7 +191,7 @@ void
 lsxvio_virtio_init(uint64_t virt, uint16_t id)
 {
 	switch (id) {
-	case VIRTIO_ID_NET:
+	case VIRTIO_ID_NETWORK:
 	case VIRTIO_PCI_MODERN_NET:
 	case VIRTIO_PCI_FSL:
 		lsxvio_virtio_common_init(virt, LSX_VIRTIO_NET_FEATURES);
@@ -215,7 +199,8 @@ lsxvio_virtio_init(uint64_t virt, uint16_t id)
 		break;
 	case VIRTIO_ID_BLOCK:
 	case VIRTIO_PCI_BLK:
-		lsxvio_virtio_common_init(virt, LSX_VIRTIO_BLK_FEATURES_TEST);
+		lsxvio_virtio_common_init(virt,
+			lsxvio_virtio_get_blk_feature());
 		lsxvio_virtio_blk_init(virt);
 		break;
 	default:

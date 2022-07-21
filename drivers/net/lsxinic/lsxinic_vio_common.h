@@ -15,18 +15,6 @@
 
 #define VIRTIO_ID_DEVICE_ID_BASE 0x1040
 
-#ifndef VIRTIO_ID_NETWORK
-#define VIRTIO_ID_NETWORK  0x01
-#endif
-#ifndef VIRTIO_ID_BLOCK
-#define VIRTIO_ID_BLOCK    0x02
-#endif
-
-#ifndef VIRTIO_PCI_MODERN_DEVICEID_NET
-#define VIRTIO_PCI_MODERN_DEVICEID_NET \
-	(VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_NETWORK)
-#endif
-
 #ifndef PCI_CLASS_NETWORK_ETHERNET
 #define PCI_CLASS_NETWORK_ETHERNET	0x0200
 #endif
@@ -45,9 +33,6 @@
 #define VIRTIO_CONFIG_STATUS_NEEDS_RESET	0x40
 #define VIRTIO_CONFIG_STATUS_FAILED		0x80
 
-#ifndef VIRTIO_MSI_NO_VECTOR
-#define	VIRTIO_MSI_NO_VECTOR			0xffff
-#endif
 #define LSXVIO_BAR_NUM				(2)
 #define LSXVIO_REG_BAR_IDX 0
 
@@ -68,8 +53,8 @@
  */
 struct lsxvio_common_cfg {
 	/* About the whole device. */
-	uint32_t device_feature[2];	/* read-only */
-	uint32_t driver_feature[2];	/* read-write */
+	uint64_t device_feature;	/* read-only */
+	uint64_t driver_feature;	/* read-write */
 	uint16_t msix_config;		/* read-write */
 	uint16_t num_queues;		/* read-only */
 	uint8_t device_status;		/* read-write */

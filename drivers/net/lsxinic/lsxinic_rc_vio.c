@@ -1198,14 +1198,13 @@ lsxvio_rc_modern_write_dev_config(struct virtio_hw *hw,
 static uint64_t
 lsxvio_rc_modern_get_features(struct virtio_hw *hw)
 {
-	uint32_t features_lo, features_hi;
+	uint64_t features;
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(hw);
 	struct lsxvio_common_cfg *cfg = &lsx_hw->lsx_cfg->common_cfg;
 
-	features_lo = rte_read32(&cfg->device_feature[0]);
-	features_hi = rte_read32(&cfg->device_feature[1]);
+	features = rte_read64(&cfg->device_feature);
 
-	return ((uint64_t)features_hi << 32) | features_lo;
+	return features;
 }
 
 static void

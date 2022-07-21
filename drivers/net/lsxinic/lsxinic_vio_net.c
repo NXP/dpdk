@@ -62,6 +62,8 @@
 #include <dpaa2_hw_pvt.h>
 #include <rte_lsx_pciep_bus.h>
 
+#include "virtqueue.h"
+
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common_helper.h"
 #include "lsxinic_vio.h"
@@ -261,7 +263,6 @@ lsxvio_netdev_reg_init(struct lsxvio_adapter *adapter)
  * we can port our MSIX interrupt in iNIC host driver to dpdk,
  * need to test the performance.
  */
-
 static int
 rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	struct rte_lsx_pciep_device *lsx_dev)
@@ -272,14 +273,12 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	int ret, rbp;
 	char env_name[128];
 
-	device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_NETWORK;
+	device_id = VIRTIO_PCI_MODERN_DEVICEID_NET;
 	class_id = PCI_CLASS_NETWORK_ETHERNET;
 	sprintf(env_name, "LSINIC_PCIE%d_PF%d_VIO_STORAGE",
 		lsx_dev->pcie_id, lsx_dev->pf);
-	if (getenv(env_name)) {
-		device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_BLOCK;
-		class_id = PCI_CLASS_STORAGE_SCSI;
-	}
+	if (getenv(env_name))
+		lsxvio_virtio_get_blk_id(&device_id, &class_id);
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",

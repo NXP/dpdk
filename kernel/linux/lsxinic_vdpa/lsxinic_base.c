@@ -2,7 +2,7 @@
 /*
  * NXP LSX NIC driver for virtio dataplane offloading
  *
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  *
  * Code was mostly borrowed from linux/drivers/vdpa/ifcvf/ifcvf_base.c
  * See linux/drivers/vdpa/ifcvf/ifcvf_base.c for additional Copyrights.
@@ -106,10 +106,8 @@ lsxvdpa_hw_dump_common_cfgs(struct lsxvdpa_hw *hw,
 	int i, num = common->num_queues;
 
 	LSX_INFO(dev, "######## common config ########\n");
-	LSX_INFO(dev, "device_feature_lo=%x\n", common->device_feature[0]);
-	LSX_INFO(dev, "device_feature_hi=%x\n", common->device_feature[1]);
-	LSX_INFO(dev, "driver_feature_lo=%x\n", common->driver_feature[0]);
-	LSX_INFO(dev, "driver_feature_hi=%x\n", common->driver_feature[1]);
+	LSX_INFO(dev, "device_feature_lo=%llx\n", common->device_feature);
+	LSX_INFO(dev, "driver_feature_lo=%llx\n", common->driver_feature);
 	LSX_INFO(dev, "msix_config=%x\n", common->msix_config);
 	LSX_INFO(dev, "num_queues=%x\n", common->num_queues);
 	LSX_INFO(dev, "device_status=%x\n", common->device_status);
@@ -260,12 +258,11 @@ static void lsxvdpa_hw_add_status(struct lsxvdpa_hw *hw, u8 status)
 u64 lsxvdpa_hw_get_features(struct lsxvdpa_hw *hw)
 {
 	struct lsxvio_common_cfg __iomem *cfg = hw->common_cfg;
-	u32 features_lo, features_hi;
+	u64 features;
 
-	features_lo = readl(&cfg->device_feature[0]);
-	features_hi = readl(&cfg->device_feature[1]);
+	features = readq(&cfg->device_feature);
 
-	return ((u64)features_hi << 32) | features_lo;
+	return features;
 }
 
 void lsxvdpa_hw_read_net_config(struct lsxvdpa_hw *hw, u64 offset,
@@ -301,8 +298,7 @@ void lsxvdpa_hw_set_features(struct lsxvdpa_hw *hw, u64 features)
 {
 	struct lsxvio_common_cfg __iomem *cfg = hw->common_cfg;
 
-	writel((u32)features, &cfg->driver_feature[0]);
-	writel(features >> 32, &cfg->driver_feature[1]);
+	writeq(features, &cfg->driver_feature);
 }
 
 static int lsxvdpa_hw_config_features(struct lsxvdpa_hw *hw)

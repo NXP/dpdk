@@ -61,6 +61,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_net.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_blk.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_rxtx.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_vio.c
