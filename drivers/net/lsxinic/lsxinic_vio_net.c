@@ -140,7 +140,8 @@ static struct eth_dev_ops lsxvio_eth_dev_ops = {
 };
 
 static int
-lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
+lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
+	uint64_t lsx_feature)
 {
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
 	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
@@ -177,7 +178,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 	adapter->vtnet_hdr_size = sizeof(struct virtio_net_hdr);
 #endif
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_virtio_init(adapter->cfg_base, device_id);
+	lsxvio_virtio_init(adapter->cfg_base, device_id, lsx_feature);
 
 	return 0;
 }
@@ -272,6 +273,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	uint16_t device_id, class_id;
 	int ret, rbp;
 	char env_name[128];
+	uint64_t lsx_feature = 0;
 
 	device_id = VIRTIO_PCI_MODERN_DEVICEID_NET;
 	class_id = PCI_CLASS_NETWORK_ETHERNET;
@@ -279,6 +281,9 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		lsx_dev->pcie_id, lsx_dev->pf);
 	if (getenv(env_name))
 		lsxvio_virtio_get_blk_id(&device_id, &class_id);
+
+	if (getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE"))
+		lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
@@ -331,7 +336,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->rx_pkt_burst = &lsxvio_recv_pkts;
 	eth_dev->tx_pkt_burst = &lsxvio_xmit_pkts;
 
-	lsxvio_init_bar_addr(lsx_dev);
+	lsxvio_init_bar_addr(lsx_dev, lsx_feature);
 	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
 		!lsx_dev->is_vf) {
 		lsx_pciep_sim_dev_map_inbound(lsx_dev);

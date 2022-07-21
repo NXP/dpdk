@@ -116,6 +116,9 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 	int pcie_id = q->adapter->lsx_dev->pcie_id;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
+	struct lsxvio_adapter *adapter = q->adapter;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
 
 	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
 	if (penv)
@@ -143,6 +146,10 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 
 		rte_rawdev_queue_release(q->dma_id, q->dma_vq);
 	}
+
+	if (q->type == LSXVIO_QUEUE_RX &&
+		(common->lsx_feature & LSX_VIO_RC2EP_DMA_NORSP))
+		vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
 
 	q->core_id = lcore_id;
 
@@ -868,6 +875,11 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	rxe->align_dma_offset = (dma_job->src) & LSXVIO_DMA_ALIGN_MASK;
 	dma_job->src -= rxe->align_dma_offset;
 	dma_job->len = pkt_len + rxe->align_dma_offset;
+	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		rxe->complete = rte_pktmbuf_mtod_offset(rxm, char *, len);
+		*(rxe->complete) = LSINIC_XFER_COMPLETE_INIT_FLAG;
+		dma_job->len++;
+	}
 
 	LSXINIC_PMD_DBG("dma info: src=%lx dest=%lx len=%d, "
 		"rxq_id=%d type=%d, drbp=%d, srbp=%d dma_id=%d",
@@ -943,8 +955,53 @@ lsxvio_queue_running(struct lsxvio_queue *q)
 static uint16_t
 lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
 {
-	/* Seems no need now.*/
-	return rxq->queue_id;
+	uint16_t used_idx, bd_num = 0, start_from, size, idx;
+	struct lsxvio_queue_entry *sw_bd, *next_sw_bd;
+
+	used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+	sw_bd = &rxq->sw_ring[used_idx];
+	start_from = used_idx;
+	while (likely(sw_bd->complete &&
+		*sw_bd->complete == LSINIC_XFER_COMPLETE_DONE_FLAG)) {
+		idx = (rxq->last_used_idx + 1) & (rxq->nb_desc - 1);
+		next_sw_bd = &rxq->sw_ring[idx];
+		if (likely(next_sw_bd->complete))
+			rte_prefetch0(next_sw_bd->complete);
+		if (unlikely(((rxq->mtail + 2) & MCACHE_MASK) ==
+			rxq->mhead))
+			break;
+		idx = sw_bd->idx & (rxq->nb_desc - 1);
+		update_shadow_used_ring_split(rxq, idx, 0);
+		rxq->dma_jobs[idx].flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
+		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
+		rxq->mcnt++;
+		bd_num++;
+		rte_prefetch0(rte_pktmbuf_mtod(sw_bd->mbuf, void *));
+		sw_bd->complete = NULL;
+		rxq->last_used_idx++;
+		used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+		sw_bd = &rxq->sw_ring[used_idx];
+	}
+	rxq->shadow_used_idx = 0;
+
+	if (!bd_num)
+		return 0;
+
+	if (start_from + bd_num <= rxq->nb_desc) {
+		do_flush_shadow_used_ring_split(rxq, start_from, 0,
+			bd_num);
+	} else {
+		size = rxq->nb_desc - start_from;
+		do_flush_shadow_used_ring_split(rxq, start_from, 0, size);
+
+		 /* update the left half used ring interval [0, left_size] */
+		do_flush_shadow_used_ring_split(rxq, 0, size,
+			bd_num - size);
+	}
+	rxq->used->idx += bd_num;
+
+	return bd_num;
 }
 
 static bool
@@ -1001,9 +1058,10 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	}
 
 	lsxvio_recv_bd(rxq);
-	lsxvio_recv_pkts_to_cache(rxq);
-
-	lsxvio_rx_dma_dequeue(rxq);
+	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
+		lsxvio_recv_pkts_to_cache(rxq);
+	else
+		lsxvio_rx_dma_dequeue(rxq);
 
 	lsxvio_tx_loop();
 

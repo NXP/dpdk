@@ -46,6 +46,10 @@
 #define LSXVIO_MAX_QUEUE_PAIRS			1
 #define LSXVIO_MAX_RING_DESC			512
 
+#define LSX_VIO_RC2EP_DMA_NORSP_POS 0
+#define LSX_VIO_RC2EP_DMA_NORSP \
+	(1ULL << LSX_VIO_RC2EP_DMA_NORSP_POS)
+
 /* This common configuration definition is a little different from
  * the common data stuctures defined in virtio spec because the hw
  * does not support queue_select attribute, so a sereal of queue
@@ -60,6 +64,7 @@ struct lsxvio_common_cfg {
 	uint8_t device_status;		/* read-write */
 	uint8_t config_generation;	/* read-only */
 	uint16_t queue_used_num;	/* read-write */
+	uint64_t lsx_feature;
 } __attribute__((__packed__));
 
 /* Fields in QUEUE_CFG: */

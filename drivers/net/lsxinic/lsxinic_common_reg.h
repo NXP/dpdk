@@ -75,11 +75,6 @@ struct lsinic_mg_header {
 		LSINIC_MG_ALIGN_OFFSET_SHIFT) | \
 		(((uint16_t)(pkt_len)) & LSINIC_MG_PKT_LEN_MASK))
 
-enum lsinic_xfer_complete_flag {
-	LSINIC_XFER_COMPLETE_INIT_FLAG = 0,
-	LSINIC_XFER_COMPLETE_DONE_FLAG = 1
-};
-
 enum lsinic_dev_status {
 	LSINIC_DEV_INITING,
 	LSINIC_DEV_INITED,

@@ -14,7 +14,7 @@
 int
 lsxvio_virtio_check_driver_feature(struct lsxvio_common_cfg *common);
 void
-lsxvio_virtio_init(uint64_t virt, uint16_t id);
+lsxvio_virtio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature);
 void
 lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev);
 void

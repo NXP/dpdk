@@ -135,7 +135,8 @@ void lsxvio_virtio_reset_dev(struct rte_eth_dev *dev)
 }
 
 static void
-lsxvio_virtio_common_init(uint64_t virt, uint64_t features)
+lsxvio_virtio_common_init(uint64_t virt,
+	uint64_t features, uint64_t lsx_feature)
 {
 	struct lsxvio_common_cfg *common;
 	struct lsxvio_queue_cfg *queue;
@@ -146,6 +147,7 @@ lsxvio_virtio_common_init(uint64_t virt, uint64_t features)
 	common->device_feature = features;
 	common->num_queues = LSXVIO_MAX_QUEUE_PAIRS * 2;
 	common->device_status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
+	common->lsx_feature = lsx_feature;
 
 	for (i = 0; i < LSXVIO_MAX_QUEUE_PAIRS * 2; i++) {
 		queue = (struct lsxvio_queue_cfg *)(virt
@@ -188,19 +190,20 @@ lsxvio_virtio_net_init(uint64_t virt)
 }
 
 void
-lsxvio_virtio_init(uint64_t virt, uint16_t id)
+lsxvio_virtio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
 {
 	switch (id) {
 	case VIRTIO_ID_NETWORK:
 	case VIRTIO_PCI_MODERN_NET:
 	case VIRTIO_PCI_FSL:
-		lsxvio_virtio_common_init(virt, LSX_VIRTIO_NET_FEATURES);
+		lsxvio_virtio_common_init(virt,
+			LSX_VIRTIO_NET_FEATURES, lsx_feature);
 		lsxvio_virtio_net_init(virt);
 		break;
 	case VIRTIO_ID_BLOCK:
 	case VIRTIO_PCI_BLK:
 		lsxvio_virtio_common_init(virt,
-			lsxvio_virtio_get_blk_feature());
+			lsxvio_virtio_get_blk_feature(), lsx_feature);
 		lsxvio_virtio_blk_init(virt);
 		break;
 	default:

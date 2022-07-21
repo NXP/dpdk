@@ -936,31 +936,93 @@ lsxvio_rc_negotiate_features(struct virtio_hw *hw,
 	return 0;
 }
 
+static inline void
+lsxvio_rc_xmit_help(struct rte_mbuf **tx_pkts,
+	uint16_t nb_pkts)
+{
+	uint16_t i, len;
+	char *src_complete;
+	struct rte_mbuf *pkt;
+
+	for (i = 0; i < nb_pkts; i++) {
+		pkt = tx_pkts[i];
+		len = pkt->pkt_len;
+		src_complete = rte_pktmbuf_mtod_offset(pkt, char *, len);
+		*(src_complete) = LSINIC_XFER_COMPLETE_DONE_FLAG;
+	}
+}
+
+static uint16_t
+lsxvio_rc_xmit_pkts_packed_help(void *tx_queue,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	lsxvio_rc_xmit_help(tx_pkts, nb_pkts);
+	return virtio_xmit_pkts_packed(tx_queue, tx_pkts, nb_pkts);
+}
+
+static uint16_t
+lsxvio_rc_xmit_pkts_inorder_help(void *tx_queue,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	lsxvio_rc_xmit_help(tx_pkts, nb_pkts);
+	return virtio_xmit_pkts_inorder(tx_queue, tx_pkts, nb_pkts);
+}
+
+static uint16_t
+lsxvio_rc_xmit_pkts_help(void *tx_queue,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	lsxvio_rc_xmit_help(tx_pkts, nb_pkts);
+	return virtio_xmit_pkts(tx_queue, tx_pkts, nb_pkts);
+}
+
 /* set rx and tx handlers according to what is supported */
 static void
 lsxvio_rc_set_rxtx_funcs(struct rte_eth_dev *eth_dev)
 {
 	struct lsxvio_rc_pci_hw *lsx_hw = eth_dev->data->dev_private;
 	struct virtio_hw *hw = &lsx_hw->common_cfg;
+	struct lsxvio_common_cfg *com_cfg = &lsx_hw->lsx_cfg->common_cfg;
+	uint64_t lsx_features = rte_read64(&com_cfg->lsx_feature);
 
+	if (lsx_features & LSX_VIO_RC2EP_DMA_NORSP) {
+		RTE_LOG(INFO, PMD, "%s: LSX VIO RC2EP help\n",
+			eth_dev->data->name);
+	}
 	eth_dev->tx_pkt_prepare = virtio_xmit_pkts_prepare;
 	if (vtpci_packed_queue(hw)) {
-		PMD_INIT_LOG(INFO,
-			"virtio: using packed ring %s Tx path on port %u",
-			hw->use_inorder_tx ? "inorder" : "standard",
-			eth_dev->data->port_id);
-		eth_dev->tx_pkt_burst = virtio_xmit_pkts_packed;
+		RTE_LOG(INFO, PMD,
+			"LSX VIO using packed ring %s on Tx\n",
+			hw->use_inorder_tx ?
+			"inorder" : "standard");
+		if (lsx_features & LSX_VIO_RC2EP_DMA_NORSP) {
+			eth_dev->tx_pkt_burst =
+				lsxvio_rc_xmit_pkts_packed_help;
+		} else {
+			eth_dev->tx_pkt_burst =
+				virtio_xmit_pkts_packed;
+		}
 	} else {
 		if (hw->use_inorder_tx) {
-			PMD_INIT_LOG(INFO,
-				"virtio: using inorder Tx path on port %u",
-				eth_dev->data->port_id);
-			eth_dev->tx_pkt_burst = virtio_xmit_pkts_inorder;
+			RTE_LOG(INFO, PMD,
+				"LSX VIO using inorder on Tx\n");
+			if (lsx_features & LSX_VIO_RC2EP_DMA_NORSP) {
+				eth_dev->tx_pkt_burst =
+					lsxvio_rc_xmit_pkts_inorder_help;
+			} else {
+				eth_dev->tx_pkt_burst =
+					virtio_xmit_pkts_inorder;
+			}
 		} else {
-			PMD_INIT_LOG(INFO,
-				"virtio: using standard Tx path on port %u",
-				eth_dev->data->port_id);
-			eth_dev->tx_pkt_burst = virtio_xmit_pkts;
+			RTE_LOG(INFO, PMD,
+				"LSX VIO using standard on Tx\n");
+			if (lsx_features & LSX_VIO_RC2EP_DMA_NORSP) {
+				eth_dev->tx_pkt_burst =
+					lsxvio_rc_xmit_pkts_help;
+			} else {
+				eth_dev->tx_pkt_burst =
+					virtio_xmit_pkts;
+			}
 		}
 	}
 
