@@ -1278,9 +1278,10 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 	struct rte_qdma_job *jobs[LSXVIO_QDMA_DQ_MAX_NB];
 	struct rte_qdma_job *dma_job;
 	struct lsxvio_queue_entry *txe = NULL;
-	uint16_t idx;
+	uint16_t idx, free_idx = 0;
 	int i, ret = 0;
 	struct rte_qdma_enqdeq context;
+	struct rte_mbuf *free_mbufs[LSXVIO_QDMA_DQ_MAX_NB];
 
 	if (txq->pkts_eq == txq->pkts_dq)
 		return 0;
@@ -1306,7 +1307,8 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 			src = (uint64_t *)(&txq->shadow_pdesc[txe->idx].len);
 			dst = (uint64_t *)(&desc->len);
 			*dst = *src;
-			rte_pktmbuf_free(txe->mbuf);
+			free_mbufs[free_idx] = txe->mbuf;
+			free_idx++;
 			txe->mbuf = NULL;
 			txq->next_dma_idx++;
 		} else if (txe) {
@@ -1328,19 +1330,24 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 				txq->last_used_idx,
 				idx, txe->idx, txe->len,
 				txq->shadow_used_idx);
-			rte_pktmbuf_free(txe->mbuf);
+			free_mbufs[free_idx] = txe->mbuf;
+			free_idx++;
 			txe->mbuf = NULL;
 			txq->next_dma_idx++;
 		}
 	}
 	txq->pkts_dq += ret;
 
+	if (free_idx)
+		rte_pktmbuf_free_bulk(free_mbufs, free_idx);
+
 	return i;
 }
 
 static int
 lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
-	struct rte_mbuf *rxm, uint16_t head)
+	struct rte_mbuf *rxm, uint16_t head,
+	struct rte_mbuf **free_mbuf)
 {
 	struct rte_qdma_job *dma_job = &vq->dma_jobs[desc_idx];
 	struct lsxvio_queue_entry *txe = &vq->sw_ring[desc_idx];
@@ -1348,6 +1355,8 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	struct vring_packed_desc *pdesc = NULL;
 	uint64_t addr = 0;
 
+	if (free_mbuf)
+		*free_mbuf = NULL;
 	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
 		pdesc = &vq->pdesc[desc_idx];
 		memcpy(&vq->shadow_pdesc[desc_idx],
@@ -1355,8 +1364,12 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 		addr = vq->shadow_pdesc[desc_idx].addr;
 		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
 		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len;
-		if (txe->mbuf)
-			rte_pktmbuf_free(txe->mbuf);
+		if (txe->mbuf) {
+			if (free_mbuf)
+				*free_mbuf = txe->mbuf;
+			else
+				rte_pktmbuf_free(txe->mbuf);
+		}
 	} else {
 		vdesc = &vq->vdesc[desc_idx];
 		addr = vdesc->addr;
@@ -1447,14 +1460,17 @@ lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
 	int ret;
 	uint16_t rc_last_avail_idx = vq->shadow_avail->idx;
 	uint16_t start_idx = vq->last_avail_idx;
-	uint16_t end_idx = 0, dma_bd_nb = 0;
+	uint16_t end_idx = 0, dma_bd_nb = 0, free_idx = 0;
+	struct rte_mbuf *free_pkts[nb_pkts];
 
 	while (((vq->last_avail_idx + LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD) &
 		(vq->nb_desc - 1)) !=
 		rc_last_avail_idx) {
 		avail_idx = vq->last_avail_idx;
 		ret = lsxvio_xmit_one_pkt(vq, avail_idx,
-			tx_pkts[tx_num], 1);
+			tx_pkts[tx_num], 1, &free_pkts[free_idx]);
+		if (free_pkts[free_idx])
+			free_idx++;
 		if (ret)
 			break;
 		memset((char *)tx_pkts[tx_num]->buf_addr +
@@ -1482,6 +1498,8 @@ lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
 	}
 	end_idx = vq->last_avail_idx;
 
+	if (free_idx)
+		rte_pktmbuf_free_bulk(free_pkts, free_idx);
 	if (tx_num > 0) {
 		if (vq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
 			dma_bd_nb = lsxvio_xmit_dma_bd_jobs(vq,
@@ -1517,7 +1535,7 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 				vq->adapter->vtnet_hdr_size,
 				0, vq->adapter->vtnet_hdr_size);
 			lsxvio_xmit_one_pkt(vq, desc_idx,
-				tx_pkts[tx_num], head);
+				tx_pkts[tx_num], head, NULL);
 			vq->bytes += tx_pkts[tx_num]->pkt_len;
 			vq->bytes_fcs +=
 				tx_pkts[tx_num]->pkt_len +
