@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2020 NXP
+# Copyright 2018-2022 NXP
 
 # tunable parameters
 
@@ -55,15 +55,24 @@ function system() {
 	mycmd "cat /proc/cpuinfo"
 	print "*************** MEMINFO *******"
 	mycmd "cat /proc/meminfo"
+	mycmd "cat /proc/iomem"
+	print "*************** interrupts *******"
+	mycmd "cat /proc/interrupts"
+	print "*************** misc *******"
+	mycmd "cat /proc/devices"
+	mycmd "cat /proc/execdomains"
+	mycmd "cat /proc/buddyinfo"
+	mycmd "cat /proc/misc"
+
 	print "*************** network interfaces"
 	mycmd "ifconfig -a"
 	print "*************** Distro information"
 	mycmd "cat /etc/*-release"
 	mycmd "cat /proc/version"
+	mycmd "lsb_release -a"
+
 	print "*************** Env"
 	mycmd "env"
-	print "*************** Kernel config"
-	mycmd "zcat /proc/config.gz"
 
 	print "*************** Performance Settings"
 	local gov_set=`cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor`
@@ -76,9 +85,6 @@ function system() {
 }
 
 function system_adv() {
-
-	print "*************** Device tree"
-	devicetree
 
 	print "*************** History"
 	history 100 >> ${logoutput}
@@ -137,16 +143,25 @@ function dpaa2_info() {
 	restool -v >> ${logoutput}
 	restool -m >> ${logoutput}
 	mycmd "ls-listmac"
+	for i in `ls-listmac | sed -e "s/dprc.1\///" | cut -f1 -d '('`;
+	do
+		echo "============================" >> ${logoutput}
+		mycmd "restool dpmac info $i"
+	done
 	mycmd "ls-listni"
 	for i in `restool dprc show $DPRC | tr -s "^I" | cut -f1`;
 	do
 		TYPE=$(echo $i | cut -f1 -d '.')
-		echo "$i"
-		if [ "$TYPE" == "dpni" -o "$TYPE" == "dpseci" ]
+		echo "$i" >> ${logoutput}
+		if [[ "$TYPE" == "dpni" || "$TYPE" == "dpseci" ]]
 		then
-			echo "============================"
-			restool $TYPE info $i >> outfile
-			echo "============================"
+			echo "============================" >> ${logoutput}
+			mycmd "restool $TYPE info $i"
+		fi
+		if [[ "$TYPE" == "dpmac" || "$TYPE" == "dpdmux" ]]
+		then
+			echo "============================" >> ${logoutput}
+			mycmd "restool $TYPE info $i"
 		fi
 	done
 }
@@ -164,14 +179,14 @@ function usage() {
 function board_config() {
 	if [ -e /sys/firmware/devicetree/base/compatible ]
 	then
-	board_type=`grep -ao '1012\|1046\|1043\|1088\|2088\|2160' /sys/firmware/devicetree/base/compatible | head -1`
+	board_type=`grep -ao 'imx8m\|imx9\|1028\|1012\|1046\|1043\|1088\|2088\|2160\|2162' /sys/firmware/devicetree/base/compatible | head -1`
 	fi
 
 	echo "Board type ${board_type} detected."
 
 	print "Board Detected is ${board_type}"
 
-	if [[ $board_type == "1088" || $board_type == "2088" || $board_type == "2160" ]]
+	if [[ $board_type == "1088" || $board_type == "2088" || $board_type == "2160" || $board_type == "2162" ]]
 	then
 		platform="dpaa2"
 		echo "platform detected is ${platform}"
@@ -190,6 +205,16 @@ function board_config() {
 		echo "platform detected is ${platform}"
 		ppfe_info
 	fi
+	if [[ $board_type == "1028" ]]
+	then
+		platform="enetc"
+		echo "platform detected is ${platform}"
+	fi
+	if [[ $board_type == "imx8m" || $board_type == "imx9" ]]
+	then
+		platform="fec-enet"
+		echo "platform detected is ${platform}"
+	fi
 }
 
 function dump_configuration() {
@@ -199,7 +224,12 @@ function dump_configuration() {
 	system_adv
 	print "============================================"
 	board_config
-	print "==========================================="
+	print "===============SYSCTL =================="
+	mycmd "sysctl -a"
+	print "===============Kernel Config =================="
+	mycmd "zcat /proc/config.gz"
+	print "===============Device Tree =================="
+	devicetree
 }
 
 while getopts ":o:h" o; do
