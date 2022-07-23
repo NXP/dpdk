@@ -690,7 +690,14 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			txq->shadow_pdesc_mz = NULL;
 		}
 		if (txq->shadow_used_split) {
-			rte_free(txq->shadow_used_split);
+			/** The address alloced was shift to align with 64b,
+			 * so let's recover to original address to free.
+			 * vq->shadow_used_split =
+			 * (void *)((char *)vq->shadow_used_split +
+			 * offsetof(struct vring_used, ring[0]));
+			 */
+			rte_free((uint8_t *)txq->shadow_used_split -
+				offsetof(struct vring_used, ring[0]));
 			txq->shadow_used_split = NULL;
 		}
 
@@ -713,7 +720,14 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			rxq->shadow_pdesc_mz = NULL;
 		}
 		if (rxq->shadow_used_split) {
-			rte_free(rxq->shadow_used_split);
+			/** The address alloced was shift to align with 64b,
+			 * so let's recover to original address to free.
+			 * vq->shadow_used_split =
+			 * (void *)((char *)vq->shadow_used_split +
+			 * offsetof(struct vring_used, ring[0]));
+			 */
+			rte_free((uint8_t *)rxq->shadow_used_split -
+				offsetof(struct vring_used, ring[0]));
 			rxq->shadow_used_split = NULL;
 		}
 

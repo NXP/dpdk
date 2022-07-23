@@ -106,7 +106,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				(queue->queue_used_lo
 				| ((uint64_t)(queue->queue_used_hi) << 32)));
 		vq->shadow_used_split = rte_zmalloc_socket("q->shadow_used",
-			sizeof(struct vring_used) +
+			sizeof(struct vring_used) + RTE_CACHE_LINE_SIZE +
 			(vq->nb_desc * sizeof(struct vring_used_elem)),
 			RTE_CACHE_LINE_SIZE, rte_socket_id());
 		if (!vq->shadow_used_split) {
@@ -114,6 +114,9 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 
 			return -ENOMEM;
 		}
+		vq->shadow_used_split =
+			(void *)((char *)vq->shadow_used_split +
+			offsetof(struct vring_used, ring[0]));
 		sprintf(name, "shadow_pdesc_%d_%d_%d_%d_%d",
 			dev->pcie_id, dev->pf, dev->is_vf, dev->vf, i);
 		vq->shadow_pdesc_mz = rte_memzone_reserve_aligned(name,

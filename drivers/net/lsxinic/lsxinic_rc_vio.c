@@ -270,6 +270,20 @@ lsxvio_rc_get_nr_vq(struct virtio_hw *hw)
 	return nr_vq;
 }
 
+static inline void
+lsxvio_rc_init_split(struct vring *vr, uint8_t *p,
+	unsigned long align, unsigned int num)
+{
+	vr->num = num;
+	vr->desc = (void *)p;
+	vr->avail = (void *)(p + num * sizeof(struct vring_desc));
+	vr->used = (void *)
+		RTE_ALIGN_CEIL((uintptr_t)(&vr->avail->ring[num]),
+			align);
+	vr->used = (void *)((uint8_t *)vr->used +
+		offsetof(struct vring_used, ring[0]));
+}
+
 static void
 lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 {
@@ -301,7 +315,8 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 	} else {
 		struct vring *vr = &vq->vq_split.ring;
 
-		vring_init_split(vr, ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
+		lsxvio_rc_init_split(vr, ring_mem,
+			VIRTIO_PCI_VRING_ALIGN, size);
 		vring_desc_init_split(vr->desc, size);
 	}
 
@@ -1308,17 +1323,20 @@ lsxvio_rc_modern_setup_queue(struct virtio_hw *hw,
 	struct virtqueue *vq)
 {
 	uint64_t desc_addr, avail_addr, used_addr;
+	uint64_t avail_offset, used_offset;
 	uint16_t notify_off;
 	uint16_t q_idx = vq->vq_queue_index;
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(hw);
 	struct lsxvio_queue_cfg *qcfg = lsx_hw->lsx_cfg->queue_cfg;
+	struct vring *sp_ring = &vq->vq_split.ring;
 
 	desc_addr = vq->vq_ring_mem;
-	avail_addr = desc_addr +
-		vq->vq_nentries * sizeof(struct vring_desc);
-	used_addr = RTE_ALIGN_CEIL(avail_addr +
-		offsetof(struct vring_avail, ring[vq->vq_nentries]),
-		VIRTIO_PCI_VRING_ALIGN);
+	avail_offset = (uint64_t)sp_ring->avail -
+		(uint64_t)sp_ring->desc;
+	used_offset = (uint64_t)sp_ring->used -
+		(uint64_t)sp_ring->desc;
+	avail_addr = desc_addr + avail_offset;
+	used_addr = desc_addr + used_offset;
 
 	lsxvio_write64_twopart(desc_addr, &qcfg[q_idx].queue_desc_lo,
 		&qcfg[q_idx].queue_desc_hi);
