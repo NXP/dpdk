@@ -30,7 +30,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 	struct lsxvio_queue_cfg *queue;
 	struct lsxvio_queue *vq;
 	uint64_t desc_addr;
-	uint32_t i, size, j;
+	uint32_t i, j;
 	uint8_t *virt;
 	char name[RTE_MEMZONE_NAMESIZE];
 
@@ -75,12 +75,10 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		desc_addr =
 			(queue->queue_desc_lo |
 			((uint64_t)(queue->queue_desc_hi) << 32));
-		size = RTE_MAX(CFG_1M_SIZE,
-			lsx_vring_size(LSXVIO_MAX_RING_DESC,
-				RTE_CACHE_LINE_SIZE));
+
 		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx))
 			virt = lsx_pciep_set_ob_win(dev,
-				desc_addr, size);
+				desc_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
 		else
 			virt = DPAA2_IOVA_TO_VADDR(desc_addr);
 		if (!virt) {

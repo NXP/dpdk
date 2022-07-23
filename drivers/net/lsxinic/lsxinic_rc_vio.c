@@ -382,14 +382,11 @@ lsxvio_rc_init_queue(struct rte_eth_dev *dev,
 		vq->vq_packed.cached_flags |= VRING_DESC_F_WRITE;
 	}
 
-	size = vring_size(hw, vq_size, VIRTIO_PCI_VRING_ALIGN);
-	vq->vq_ring_size = RTE_ALIGN_CEIL(size, VIRTIO_PCI_VRING_ALIGN);
-	PMD_INIT_LOG(DEBUG, "vring_size: %d, rounded_vring_size: %d",
-		     size, vq->vq_ring_size);
+	vq->vq_ring_size = LSXVIO_PER_RING_MEM_MAX_SIZE;
 
 	mz = rte_memzone_reserve_aligned(vq_name, vq->vq_ring_size,
 			numa_node, RTE_MEMZONE_IOVA_CONTIG,
-			VIRTIO_PCI_VRING_ALIGN);
+			vq->vq_ring_size);
 	if (!mz) {
 		if (rte_errno == EEXIST)
 			mz = rte_memzone_lookup(vq_name);
