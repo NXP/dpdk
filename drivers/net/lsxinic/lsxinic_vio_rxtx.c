@@ -1387,8 +1387,8 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 		*free_mbuf = NULL;
 	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
 		pdesc = &vq->pdesc[desc_idx];
-		memcpy(&vq->shadow_pdesc[desc_idx],
-			pdesc, sizeof(struct vring_packed_desc));
+		vq->shadow_pdesc[desc_idx].addr = pdesc->addr;
+
 		addr = vq->shadow_pdesc[desc_idx].addr;
 		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
 		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len;

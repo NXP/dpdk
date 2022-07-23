@@ -138,6 +138,8 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG &&
 			vq->shadow_pdesc_mz) {
 			for (j = 0; j < vq->nb_desc; j++) {
+				vq->shadow_pdesc[j].id = j;
+
 				vq->e2r_bd_dma_jobs[j].src =
 					vq->shadow_pdesc_phy +
 					j * sizeof(struct vring_packed_desc);
