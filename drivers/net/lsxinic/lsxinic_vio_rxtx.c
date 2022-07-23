@@ -1380,14 +1380,14 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	struct rte_qdma_job *dma_job = &vq->dma_jobs[desc_idx];
 	struct lsxvio_queue_entry *txe = &vq->sw_ring[desc_idx];
 	struct vring_desc *vdesc = NULL;
-	struct vring_packed_desc *pdesc = NULL;
+	struct lsxvio_packed_notify *pnotify = NULL;
 	uint64_t addr = 0;
 
 	if (free_mbuf)
 		*free_mbuf = NULL;
 	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
-		pdesc = &vq->pdesc[desc_idx];
-		vq->shadow_pdesc[desc_idx].addr = pdesc->addr;
+		pnotify = vq->packed_notify;
+		vq->shadow_pdesc[desc_idx].addr = pnotify->addr[desc_idx];
 
 		addr = vq->shadow_pdesc[desc_idx].addr;
 		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
@@ -1486,7 +1486,7 @@ lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
 	uint16_t tx_num = 0, avail_idx;
 	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB + 2];
 	int ret;
-	uint16_t rc_last_avail_idx = vq->shadow_avail->idx;
+	uint16_t rc_last_avail_idx = vq->packed_notify->last_avail_idx;
 	uint16_t start_idx = vq->last_avail_idx;
 	uint16_t end_idx = 0, dma_bd_nb = 0, free_idx = 0;
 	struct rte_mbuf *free_pkts[nb_pkts];

@@ -86,6 +86,7 @@ struct lsxvio_queue {
 	uint16_t last_used_idx;
 
 	struct vring_avail *shadow_avail;
+	struct lsxvio_packed_notify *packed_notify;
 
 	struct vring_used *shadow_used_split;
 	struct vring_packed_desc *shadow_pdesc;

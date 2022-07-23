@@ -67,11 +67,18 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 
 		vq->notify_addr = (uint16_t *)(BASE_TO_NOTIFY(adapter->cfg_base)
 			+ queue->queue_notify_off * LSXVIO_NOTIFY_OFF_MULTI);
-		vq->shadow_avail =
-			(struct vring_avail *)(adapter->ring_base +
-			queue->queue_notify_off *
-			(sizeof(struct vring_avail) +
-			(vq->nb_desc * sizeof(uint16_t))));
+		if (vq->type == LSXVIO_QUEUE_TX &&
+			vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+			vq->packed_notify = (void *)(adapter->ring_base +
+				queue->queue_notify_off *
+				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			vq->shadow_avail = NULL;
+		} else {
+			vq->shadow_avail = (void *)(adapter->ring_base +
+				queue->queue_notify_off *
+				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			vq->packed_notify = NULL;
+		}
 		desc_addr =
 			(queue->queue_desc_lo |
 			((uint64_t)(queue->queue_desc_hi) << 32));

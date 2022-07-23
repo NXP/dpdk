@@ -93,6 +93,12 @@ struct lsxvio_queue_cfg {
 	uint32_t queue_used_hi;		/* read-write */
 } __attribute__((__packed__));
 
+struct lsxvio_packed_notify {
+	uint16_t last_avail_idx;
+	uint16_t dummy[3];
+	uint64_t addr[0];
+} __attribute__((__packed__));
+
 #define	BASE_TO_COMMON(base) ((void *)((base) + LSXVIO_COMMON_OFFSET))
 #define	BASE_TO_QUEUE(base, i) \
 	((void *)((base) + LSXVIO_COMMON_OFFSET + \
@@ -108,6 +114,8 @@ struct lsxvio_queue_cfg {
 #define LSXVIO_RING_BAR_MAX_SIZE 0x4000
 
 #define LSXVIO_PER_RING_MEM_MAX_SIZE 0x8000
+
+#define LSXVIO_PER_RING_NOTIFY_MAX_SIZE (8 * 1024)
 
 #define LSXVIO_CONFIG_BAR_IDX 0
 #define LSXVIO_RING_BAR_IDX 2

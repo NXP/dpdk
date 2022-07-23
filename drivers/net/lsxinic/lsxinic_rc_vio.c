@@ -50,6 +50,7 @@ struct lsxvio_rc_pci_hw {
 	struct virtio_hw common_cfg;
 	struct lsxvio_pci_cfg *lsx_cfg;
 	uint8_t *ring_base;
+	uint16_t last_avail_idx[LSXVIO_MAX_QUEUE_PAIRS * 2];
 };
 
 #define LSXVIO_HW(COMMON_VIO_HW) \
@@ -1383,14 +1384,31 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
 
 	ring_base += vq->vq_queue_index *
-		(sizeof(struct vring_avail) +
-		(vq->vq_nentries * sizeof(uint16_t)));
-	avail_ring = (void *)ring_base;
+		LSXVIO_PER_RING_NOTIFY_MAX_SIZE;
+
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
-		rte_write16(vq->vq_avail_idx, &avail_ring->idx);
+		struct lsxvio_packed_notify *pnotify;
+		uint16_t last_avail_idx =
+			lsx_hw->last_avail_idx[vq->vq_queue_index];
+
+		pnotify = (void *)ring_base;
+
+		while (last_avail_idx != vq->vq_avail_idx) {
+			pnotify->addr[last_avail_idx] =
+				vq->vq_packed.ring.desc[last_avail_idx].addr;
+			last_avail_idx = (last_avail_idx + 1) &
+				(vq->vq_nentries - 1);
+		}
+
+		rte_wmb();
+
+		lsx_hw->last_avail_idx[vq->vq_queue_index] =
+			vq->vq_avail_idx;
+		rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
 		return;
 	}
+	avail_ring = (void *)ring_base;
 	rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
 	rte_write16(vq->vq_queue_index, vq->notify_addr);
 }
@@ -1450,6 +1468,8 @@ lsxvio_rc_read_caps(struct rte_pci_device *dev,
 	hw->notify_off_multiplier = LSXVIO_NOTIFY_OFF_MULTI;
 
 	lsx_hw->ring_base = ring_base;
+	memset(lsx_hw->last_avail_idx, 0,
+		LSXVIO_MAX_QUEUE_PAIRS * 2 * sizeof(uint16_t));
 
 	if (!s_lsxvio_rc_sim) {
 		if (rte_pci_map_device(dev)) {
