@@ -743,9 +743,23 @@ static __rte_always_inline void
 do_flush_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t to, uint16_t from, uint16_t size)
 {
-	rte_memcpy(&vq->used->ring[to],
-		&vq->shadow_used_split->ring[from],
-		size * sizeof(struct vring_used_elem));
+	if (likely(is_align_64(&vq->used->ring[0]) &&
+		is_align_64(&vq->shadow_used_split->ring[0]))) {
+		rte_memcpy(&vq->used->ring[to],
+			&vq->shadow_used_split->ring[from],
+			size * sizeof(struct vring_used_elem));
+	} else {
+		uint16_t i;
+
+		for (i = 0; i < size; i++) {
+			vq->used->ring[to + i].id =
+				vq->shadow_used_split->ring[from + i].id;
+			vq->used->ring[to + i].len =
+				vq->shadow_used_split->ring[from + i].len +
+					vq->adapter->vtnet_hdr_size;
+		}
+	}
+	rte_wmb();
 }
 
 static __rte_always_inline void
