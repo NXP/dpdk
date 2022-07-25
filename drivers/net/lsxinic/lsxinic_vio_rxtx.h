@@ -75,11 +75,13 @@ struct lsxvio_queue_entry {
 struct lsxvio_queue {
 	void *desc_addr;
 	struct vring_desc *vdesc;
+	struct vring_desc *shadow_vdesc;
 	struct vring_packed_desc *pdesc;
 
 	struct vring_avail *avail;
 	struct vring_used *used;
 
+	uint16_t local_used_idx;
 	uint32_t size;
 
 	uint16_t last_avail_idx;

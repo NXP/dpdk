@@ -43,8 +43,15 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		lsx_pciep_multi_msix_init(dev, LSXVIO_MAX_QUEUE_PAIRS * 2);
 
 		adapter->msix_config = common->msix_config;
-		adapter->msix_cfg_addr = dev->msix_addr[adapter->msix_config];
-		adapter->msix_cfg_cmd = dev->msix_data[adapter->msix_config];
+		if (common->msix_config != VIRTIO_MSI_NO_VECTOR) {
+			adapter->msix_cfg_addr =
+				dev->msix_addr[adapter->msix_config];
+			adapter->msix_cfg_cmd =
+				dev->msix_data[adapter->msix_config];
+		} else {
+			adapter->msix_cfg_addr = NULL;
+			adapter->msix_cfg_cmd = 0;
+		}
 	}
 
 	/* Check queue_used_num, which needs rc to set it. */
@@ -67,22 +74,10 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 
 		vq->notify_addr = (uint16_t *)(BASE_TO_NOTIFY(adapter->cfg_base)
 			+ queue->queue_notify_off * LSXVIO_NOTIFY_OFF_MULTI);
-		if (vq->type == LSXVIO_QUEUE_TX &&
-			vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
-			vq->packed_notify = (void *)(adapter->ring_base +
-				queue->queue_notify_off *
-				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
-			vq->shadow_avail = NULL;
-		} else {
-			vq->shadow_avail = (void *)(adapter->ring_base +
-				queue->queue_notify_off *
-				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
-			vq->packed_notify = NULL;
-		}
+
 		desc_addr =
 			(queue->queue_desc_lo |
 			((uint64_t)(queue->queue_desc_hi) << 32));
-
 		if (!lsx_pciep_hw_sim_get(adapter->pcie_idx))
 			virt = lsx_pciep_set_ob_win(dev,
 				desc_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
@@ -94,18 +89,42 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			return -ENOMEM;
 		}
 		vq->desc_addr = virt;
-		if (vq->type == LSXVIO_QUEUE_RX) {
-			vq->vdesc = vq->desc_addr;
-			vq->pdesc = NULL;
-		} else {
+
+		if (vq->type == LSXVIO_QUEUE_TX) {
 			if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+				vq->packed_notify = (void *)
+					(adapter->ring_base +
+					queue->queue_notify_off *
+					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+				vq->shadow_avail = NULL;
 				vq->pdesc = vq->desc_addr;
 				vq->vdesc = NULL;
 			} else {
+				vq->shadow_avail = (void *)
+					(adapter->ring_base +
+					queue->queue_notify_off *
+					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+				vq->packed_notify = NULL;
 				vq->vdesc = vq->desc_addr;
 				vq->pdesc = NULL;
 			}
+			vq->shadow_vdesc = NULL;
+		} else {
+			vq->shadow_vdesc = (void *)(adapter->ring_base +
+				queue->queue_notify_off *
+				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			vq->shadow_avail = (void *)((char *)vq->shadow_vdesc +
+				sizeof(struct vring_desc) * vq->nb_desc);
+			vq->vdesc = vq->desc_addr;
+			vq->pdesc = NULL;
+			vq->packed_notify = NULL;
 		}
+
+		if (vq->shadow_avail) {
+			for (j = 0; j < vq->nb_desc; j++)
+				vq->shadow_avail->ring[j] = j;
+		}
+
 		vq->avail = (struct vring_avail *)(virt - desc_addr +
 				(queue->queue_avail_lo
 				| ((uint64_t)(queue->queue_avail_hi) << 32)));
@@ -219,6 +238,7 @@ lsxvio_virtio_common_init(uint64_t virt,
 	common->num_queues = LSXVIO_MAX_QUEUE_PAIRS * 2;
 	common->device_status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
 	common->lsx_feature = lsx_feature;
+	common->msix_config = VIRTIO_MSI_NO_VECTOR;
 
 	for (i = 0; i < LSXVIO_MAX_QUEUE_PAIRS * 2; i++) {
 		queue = (struct lsxvio_queue_cfg *)(virt
@@ -227,6 +247,7 @@ lsxvio_virtio_common_init(uint64_t virt,
 
 		queue->queue_size = LSXVIO_MAX_RING_DESC;
 		queue->queue_notify_off = i;
+		queue->queue_msix_vector = VIRTIO_MSI_NO_VECTOR;
 	}
 }
 

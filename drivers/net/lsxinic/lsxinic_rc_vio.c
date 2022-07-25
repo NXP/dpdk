@@ -272,17 +272,36 @@ lsxvio_rc_get_nr_vq(struct virtio_hw *hw)
 }
 
 static inline void
-lsxvio_rc_init_split(struct vring *vr, uint8_t *p,
-	unsigned long align, unsigned int num)
+lsxvio_rc_init_split_desc(struct vring *vr, uint8_t *p)
+{
+	vr->desc = (void *)p;
+}
+
+static inline void
+lsxvio_rc_init_split_avail_used(struct vring *vr,
+	uint8_t *p, unsigned long align, unsigned int num)
 {
 	vr->num = num;
-	vr->desc = (void *)p;
-	vr->avail = (void *)(p + num * sizeof(struct vring_desc));
+	vr->avail = (void *)p;
 	vr->used = (void *)
 		RTE_ALIGN_CEIL((uintptr_t)(&vr->avail->ring[num]),
 			align);
 	vr->used = (void *)((uint8_t *)vr->used +
 		offsetof(struct vring_used, ring[0]));
+}
+
+static inline void
+lsxvio_rc_init_split(struct vring *vr, uint8_t *pdesc,
+	uint8_t *p, unsigned long align, unsigned int num)
+{
+	if (pdesc) {
+		lsxvio_rc_init_split_desc(vr, pdesc);
+		lsxvio_rc_init_split_avail_used(vr, p, align, num);
+	} else {
+		lsxvio_rc_init_split_desc(vr, p);
+		lsxvio_rc_init_split_avail_used(vr,
+			(p + num * sizeof(struct vring_desc)), align, num);
+	}
 }
 
 static void
@@ -292,6 +311,8 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 	uint8_t *ring_mem = vq->vq_ring_virt_mem;
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(vq->hw);
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint8_t *remote_ring_base = lsx_hw->ring_base;
+	struct vring *vr = &vq->vq_split.ring;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -313,10 +334,14 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 		vring_init_packed(&vq->vq_packed.ring, ring_mem,
 				  VIRTIO_PCI_VRING_ALIGN, size);
 		vring_desc_init_packed(vq, size);
+	} else if (queue_type == VTNET_TQ) {
+		remote_ring_base += vq->vq_queue_index *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE;
+		lsxvio_rc_init_split(vr, remote_ring_base,
+			ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
+		vring_desc_init_split(vr->desc, size);
 	} else {
-		struct vring *vr = &vq->vq_split.ring;
-
-		lsxvio_rc_init_split(vr, ring_mem,
+		lsxvio_rc_init_split(vr, NULL, ring_mem,
 			VIRTIO_PCI_VRING_ALIGN, size);
 		vring_desc_init_split(vr->desc, size);
 	}
@@ -1333,9 +1358,9 @@ lsxvio_rc_modern_setup_queue(struct virtio_hw *hw,
 
 	desc_addr = vq->vq_ring_mem;
 	avail_offset = (uint64_t)sp_ring->avail -
-		(uint64_t)sp_ring->desc;
+		(uint64_t)vq->vq_ring_virt_mem;
 	used_offset = (uint64_t)sp_ring->used -
-		(uint64_t)sp_ring->desc;
+		(uint64_t)vq->vq_ring_virt_mem;
 	avail_addr = desc_addr + avail_offset;
 	used_addr = desc_addr + used_offset;
 
@@ -1383,16 +1408,15 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	int queue_type = virtio_get_queue_type(hw, vq->vq_queue_index);
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
 
-	ring_base += vq->vq_queue_index *
-		LSXVIO_PER_RING_NOTIFY_MAX_SIZE;
-
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
 		struct lsxvio_packed_notify *pnotify;
 		uint16_t last_avail_idx =
 			lsx_hw->last_avail_idx[vq->vq_queue_index];
 
-		pnotify = (void *)ring_base;
+		pnotify = (void *)(ring_base +
+			vq->vq_queue_index *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
 
 		while (last_avail_idx != vq->vq_avail_idx) {
 			pnotify->addr[last_avail_idx] =
@@ -1406,11 +1430,20 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 		lsx_hw->last_avail_idx[vq->vq_queue_index] =
 			vq->vq_avail_idx;
 		rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
-		return;
+	} else if (queue_type == VTNET_TQ) {
+		avail_ring = (void *)(ring_base +
+			vq->vq_queue_index *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE +
+			sizeof(struct vring_desc) * vq->vq_nentries);
+		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
+		rte_write16(vq->vq_queue_index, vq->notify_addr);
+	} else {
+		avail_ring = (void *)(ring_base +
+			vq->vq_queue_index *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
+		rte_write16(vq->vq_queue_index, vq->notify_addr);
 	}
-	avail_ring = (void *)ring_base;
-	rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
-	rte_write16(vq->vq_queue_index, vq->notify_addr);
 }
 
 static const struct virtio_pci_ops lsxvio_rc_modern_ops = {

@@ -798,7 +798,8 @@ flush_shadow_used_ring_split(struct lsxvio_queue *vq)
 	}
 
 	vq->last_used_idx += shadow_used_idx;
-	vq->used->idx += shadow_used_idx;
+	vq->local_used_idx += shadow_used_idx;
+	vq->used->idx = vq->local_used_idx;
 	vq->shadow_used_idx = 0;
 }
 
@@ -917,7 +918,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	struct rte_qdma_job *dma_job)
 {
 	struct lsxvio_queue_entry *rxe = &rxq->sw_ring[desc_idx];
-	struct vring_desc *desc = &rxq->vdesc[desc_idx];
+	struct vring_desc *desc = &rxq->shadow_vdesc[desc_idx];
 	uint32_t pkt_len;
 	uint32_t total_bytes = 0, total_packets = 0;
 	uint32_t len;
@@ -1007,6 +1008,7 @@ lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 	struct rte_mbuf *mbufs[DEFAULT_BURST_THRESH];
 	int ret;
 	uint16_t free_entries, i, j, avail_idx, desc_idx, bd_num = 0;
+	struct vring_avail *avail;
 
 	if (vq->shadow_avail)
 		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
@@ -1016,9 +1018,14 @@ lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 	if (free_entries == 0)
 		return;
 
+	if (vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
+		avail = vq->shadow_avail;
+	else
+		avail = vq->avail;
+
 	for (i = 0; i < free_entries; i++) {
 		avail_idx = (vq->last_avail_idx + i) & (vq->nb_desc - 1);
-		desc_idx = vq->avail->ring[avail_idx];
+		desc_idx = avail->ring[avail_idx];
 		heads[bd_num] = 1;
 		j = 0;
 		do {
@@ -1026,7 +1033,8 @@ lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 			jobs[bd_num] = &vq->dma_jobs[desc_idx];
 			bd_num++;
 			j++;
-			if (!(vq->vdesc[desc_idx].flags & VRING_DESC_F_NEXT))
+			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT)))
 				break;
 			desc_idx = vq->vdesc[desc_idx].next;
 			if (bd_num < DEFAULT_BURST_THRESH)
@@ -1057,6 +1065,7 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 {
 	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB];
 	uint16_t free_entries, i, j, avail_idx, desc_idx, head, bd_num = 0;
+	struct vring_avail *avail;
 
 	if (vq->shadow_avail)
 		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
@@ -1066,9 +1075,14 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 	if (free_entries == 0)
 		return;
 
+	if (vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
+		avail = vq->shadow_avail;
+	else
+		avail = vq->avail;
+
 	for (i = 0; i < free_entries; i++) {
 		avail_idx = (vq->last_avail_idx + i) & (vq->nb_desc - 1);
-		desc_idx = vq->avail->ring[avail_idx];
+		desc_idx = avail->ring[avail_idx];
 		head = 1;
 		LSXINIC_PMD_DBG("avail_idx=%d, desc_idx=%d free_entries=%d",
 			avail_idx, desc_idx, free_entries);
@@ -1080,7 +1094,8 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 			head = 0;
 			bd_num++;
 			j++;
-			if (!(vq->vdesc[desc_idx].flags & VRING_DESC_F_NEXT))
+			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT)))
 				break;
 			desc_idx = vq->vdesc[desc_idx].next;
 		} while (1);
@@ -1155,7 +1170,8 @@ lsxvio_recv_pkts_no_dma_rsp(struct lsxvio_queue *rxq)
 	}
 
 skip_update_used_ring:
-	rxq->used->idx += bd_num;
+	rxq->local_used_idx += bd_num;
+	rxq->used->idx = rxq->local_used_idx;
 
 	return bd_num;
 }
@@ -1188,7 +1204,8 @@ lsxvio_recv_pkts_in_order(struct lsxvio_queue *rxq)
 		return 0;
 	}
 
-	rxq->used->idx += bd_num;
+	rxq->local_used_idx += bd_num;
+	rxq->used->idx = rxq->local_used_idx;
 
 	return bd_num;
 }
@@ -1212,7 +1229,7 @@ lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 		q->new_desc = 0;
 		return;
 	}
-	if (!q->new_desc)
+	if (!q->new_desc || !q->msix_vaddr)
 		return;
 
 	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
