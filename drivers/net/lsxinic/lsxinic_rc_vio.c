@@ -304,6 +304,8 @@ lsxvio_rc_init_split(struct vring *vr, uint8_t *pdesc,
 	}
 }
 
+#define LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE 1
+
 static void
 lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 {
@@ -311,7 +313,9 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 	uint8_t *ring_mem = vq->vq_ring_virt_mem;
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(vq->hw);
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+#ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
 	uint8_t *remote_ring_base = lsx_hw->ring_base;
+#endif
 	struct vring *vr = &vq->vq_split.ring;
 
 	PMD_INIT_FUNC_TRACE();
@@ -335,10 +339,15 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 				  VIRTIO_PCI_VRING_ALIGN, size);
 		vring_desc_init_packed(vq, size);
 	} else if (queue_type == VTNET_TQ) {
+#ifdef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
+		lsxvio_rc_init_split(vr, NULL,
+			ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
+#else
 		remote_ring_base += vq->vq_queue_index *
 			LSXVIO_PER_RING_NOTIFY_MAX_SIZE;
 		lsxvio_rc_init_split(vr, remote_ring_base,
 			ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
+#endif
 		vring_desc_init_split(vr->desc, size);
 	} else {
 		lsxvio_rc_init_split(vr, NULL, ring_mem,
@@ -1405,14 +1414,19 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(hw);
 	uint8_t *ring_base = lsx_hw->ring_base;
 	struct vring_avail *avail_ring;
+	struct vring_desc *remote_desc;
 	int queue_type = virtio_get_queue_type(hw, vq->vq_queue_index);
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint16_t last_avail_idx =
+		lsx_hw->last_avail_idx[vq->vq_queue_index];
+#ifdef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
+	uint16_t current_idx;
+	struct vring_desc *desc = vq->vq_split.ring.desc;
+#endif
 
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
 		struct lsxvio_packed_notify *pnotify;
-		uint16_t last_avail_idx =
-			lsx_hw->last_avail_idx[vq->vq_queue_index];
 
 		pnotify = (void *)(ring_base +
 			vq->vq_queue_index *
@@ -1431,12 +1445,36 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 			vq->vq_avail_idx;
 		rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
 	} else if (queue_type == VTNET_TQ) {
-		avail_ring = (void *)(ring_base +
+		remote_desc = (void *)(ring_base +
 			vq->vq_queue_index *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE +
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+#ifdef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
+		last_avail_idx = last_avail_idx &
+			(vq->vq_nentries - 1);
+		current_idx = vq->vq_split.ring.avail->idx &
+			(vq->vq_nentries - 1);
+		if (current_idx > last_avail_idx) {
+			memcpy(&remote_desc[last_avail_idx],
+				&desc[last_avail_idx],
+				(current_idx - last_avail_idx) *
+				sizeof(struct vring_desc));
+		} else {
+			memcpy(&remote_desc[last_avail_idx],
+				&desc[last_avail_idx],
+				(vq->vq_nentries - last_avail_idx) *
+				sizeof(struct vring_desc));
+			if (current_idx > 0) {
+				memcpy(&remote_desc[0], &desc[0],
+					current_idx *
+					sizeof(struct vring_desc));
+			}
+		}
+		lsx_hw->last_avail_idx[vq->vq_queue_index] =
+			vq->vq_split.ring.avail->idx;
+#endif
+		avail_ring = (void *)((uint8_t *)remote_desc +
 			sizeof(struct vring_desc) * vq->vq_nentries);
 		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
-		rte_write16(vq->vq_queue_index, vq->notify_addr);
 	} else {
 		avail_ring = (void *)(ring_base +
 			vq->vq_queue_index *
