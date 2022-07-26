@@ -10,6 +10,7 @@
 /* System headers */
 #include <stdbool.h>
 #include <rte_ethdev_driver.h>
+#include <rte_dpaa_bus.h>
 #include <rte_event_eth_rx_adapter.h>
 
 #include <fsl_usd.h>
@@ -129,6 +130,7 @@ struct dpaa_if {
 
 	void *vsp_handle[DPAA_VSP_PROFILE_MAX_NUM];
 	uint32_t vsp_bpid[DPAA_VSP_PROFILE_MAX_NUM];
+	enum rte_dpaa_type device_type;
 };
 
 struct dpaa_if_stats {

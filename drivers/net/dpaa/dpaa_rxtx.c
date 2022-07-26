@@ -820,22 +820,26 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	fd->cmd = 0;
 	fd->opaque_addr = 0;
 
-	if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK) {
-		if (!mbuf->packet_type) {
-			struct rte_net_hdr_lens hdr_lens;
+	if (dpaa_intf->device_type == FSL_DPAA_OL) {
+		fd->cmd = DPAA_FD_CMD_DCL4C;
+	} else {
+		if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK) {
+			if (!mbuf->packet_type) {
+				struct rte_net_hdr_lens hdr_lens;
 
-			mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
-					RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
-					| RTE_PTYPE_L4_MASK);
-			mbuf->l2_len = hdr_lens.l2_len;
-			mbuf->l3_len = hdr_lens.l3_len;
+				mbuf->packet_type = rte_net_get_ptype(mbuf, &hdr_lens,
+						RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK
+						| RTE_PTYPE_L4_MASK);
+				mbuf->l2_len = hdr_lens.l2_len;
+				mbuf->l3_len = hdr_lens.l3_len;
+			}
+			if (temp->data_off < DEFAULT_TX_ICEOF
+				+ sizeof(struct dpaa_eth_parse_results_t))
+				temp->data_off = DEFAULT_TX_ICEOF
+					+ sizeof(struct dpaa_eth_parse_results_t);
+			dcbz_64(temp->buf_addr);
+			dpaa_checksum_offload(mbuf, fd, temp->buf_addr);
 		}
-		if (temp->data_off < DEFAULT_TX_ICEOF
-			+ sizeof(struct dpaa_eth_parse_results_t))
-			temp->data_off = DEFAULT_TX_ICEOF
-				+ sizeof(struct dpaa_eth_parse_results_t);
-		dcbz_64(temp->buf_addr);
-		dpaa_checksum_offload(mbuf, fd, temp->buf_addr);
 	}
 
 	sgt = temp->buf_addr + temp->data_off;
@@ -899,9 +903,12 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 static inline void
 tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			    struct dpaa_bp_info *bp_info,
-			    struct qm_fd *fd_arr)
+			    struct qm_fd *fd_arr,
+			    struct qman_fq *q)
 {
 	struct rte_mbuf *mi = NULL;
+	struct qman_fq *dpaa_q = (struct qman_fq *)q;
+	struct dpaa_if *dpaa_intf = (struct dpaa_if *)dpaa_q->dpaa_intf;
 
 	if (RTE_MBUF_DIRECT(mbuf)) {
 		if (rte_mbuf_refcnt_read(mbuf) > 1) {
@@ -943,8 +950,12 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 		rte_pktmbuf_free(mbuf);
 	}
 
-	if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
-		dpaa_unsegmented_checksum(mbuf, fd_arr);
+	if (dpaa_intf->device_type == FSL_DPAA_OL) {
+		fd_arr->cmd = DPAA_FD_CMD_DCL4C;
+	} else {
+		if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
+			dpaa_unsegmented_checksum(mbuf, fd_arr);
+	}
 }
 
 /* Handle all mbufs on dpaa BMAN managed pool */
@@ -958,7 +969,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 
 	if (mbuf->nb_segs == 1) {
 		/* Case for non-segmented buffers */
-		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr);
+		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr, q);
 	} else if (mbuf->nb_segs > 1 &&
 		   mbuf->nb_segs <= DPAA_SGT_MAX_ENTRIES) {
 		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, q)) {
@@ -1066,6 +1077,8 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 	struct rte_mbuf **orig_bufs = bufs;
+	struct qman_fq *dpaa_q = (struct qman_fq *)q;
+	struct dpaa_if *dpaa_intf = (struct dpaa_if *)dpaa_q->dpaa_intf;
 
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
@@ -1114,10 +1127,14 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 					rte_mbuf_refcnt_read(mbuf) == 1)) {
 					DPAA_MBUF_TO_CONTIG_FD(mbuf,
 						&fd_arr[loop], bp_info->bpid);
-					if (mbuf->ol_flags &
-						DPAA_TX_CKSUM_OFFLOAD_MASK)
-						dpaa_unsegmented_checksum(mbuf,
-							&fd_arr[loop]);
+					if (dpaa_intf->device_type == FSL_DPAA_OL) {
+						fd_arr[loop].cmd = DPAA_FD_CMD_DCL4C;
+					} else {
+						if (mbuf->ol_flags &
+							DPAA_TX_CKSUM_OFFLOAD_MASK)
+							dpaa_unsegmented_checksum(mbuf,
+								&fd_arr[loop]);
+					}
 					continue;
 				}
 			} else {
