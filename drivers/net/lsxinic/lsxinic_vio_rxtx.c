@@ -111,7 +111,8 @@ lsxvio_queue_release_mbufs(struct lsxvio_queue *q)
 static int
 lsxvio_queue_dma_create(struct lsxvio_queue *q)
 {
-	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 0;
+	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 1;
+	int sg_unsupport = 0;
 	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	int pcie_id = q->adapter->lsx_dev->pcie_id;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
@@ -130,7 +131,21 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 			pex_type != PEX_LS208X) {
 			LSXINIC_PMD_WARN("RBP does not support qDMA SG");
 			sg_enable = 0;
+			sg_unsupport = 1;
 		}
+	}
+
+	if (sg_unsupport && q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		LSXINIC_PMD_ERR("EP2RC DMA NORSP should disable");
+
+		return -EINVAL;
+	}
+
+	if (!sg_enable && q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		LSXINIC_PMD_WARN("SG is enabled to support EP2RC DMA NORSP");
+		sg_enable = 1;
 	}
 
 	if (sg_enable)

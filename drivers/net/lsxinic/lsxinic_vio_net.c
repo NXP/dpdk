@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -260,6 +260,48 @@ lsxvio_netdev_reg_init(struct lsxvio_adapter *adapter)
 	lsxvio_child_mac_init(adapter);
 }
 
+static uint64_t
+lsxvio_dev_priv_feature_configure(void)
+{
+	uint64_t lsx_feature = 0;
+	int env_val;
+	char *penv;
+
+	lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
+	lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
+	lsx_feature |= LSX_VIO_EP2RC_PACKED;
+
+	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
+	if (penv) {
+		env_val = atoi(penv);
+		if (env_val)
+			lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
+	}
+
+	penv = getenv("LSXVIO_TXQ_QDMA_NO_RESPONSE");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_NORSP);
+	}
+
+	penv = getenv("LSXVIO_RXQ_IN_ORDER");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_RC2EP_IN_ORDER);
+	}
+
+	penv = getenv("LSXVIO_TXQ_PACKED");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_PACKED);
+	}
+
+	return lsx_feature;
+}
+
 /* rte_lsxvio_probe:
  *
  * Interrupt is used only for link status notification on dpdk.
@@ -285,17 +327,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	if (getenv(env_name))
 		lsxvio_virtio_get_blk_id(&device_id, &class_id);
 
-	if (getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE"))
-		lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
-
-	if (getenv("LSXVIO_TXQ_QDMA_NO_RESPONSE"))
-		lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
-
-	if (getenv("LSXVIO_RXQ_IN_ORDER"))
-		lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
-
-	if (getenv("LSXVIO_TXQ_PACKED"))
-		lsx_feature |= LSX_VIO_EP2RC_PACKED;
+	lsx_feature = lsxvio_dev_priv_feature_configure();
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
