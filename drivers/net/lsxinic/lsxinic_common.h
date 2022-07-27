@@ -62,6 +62,9 @@ enum lsinic_xfer_complete_flag {
 	LSINIC_XFER_COMPLETE_DONE_FLAG = 1
 };
 
+#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
+#define MAX_U16 0xffff
+
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)
 {

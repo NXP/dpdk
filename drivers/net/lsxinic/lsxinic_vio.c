@@ -110,11 +110,28 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			}
 			vq->shadow_vdesc = NULL;
 		} else {
-			vq->shadow_vdesc = (void *)(adapter->ring_base +
-				queue->queue_notify_off *
-				LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
-			vq->shadow_avail = (void *)((char *)vq->shadow_vdesc +
-				sizeof(struct vring_desc) * vq->nb_desc);
+			if (queue->queue_mem_base) {
+				vq->mem_base = queue->queue_mem_base;
+				vq->shadow_sdesc = (void *)(adapter->ring_base +
+					queue->queue_notify_off *
+					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+				vq->shadow_avail = (void *)
+					((char *)vq->shadow_sdesc +
+					sizeof(struct lsxvio_short_desc) *
+					vq->nb_desc);
+				vq->shadow_vdesc = NULL;
+			} else {
+				vq->mem_base = 0;
+				vq->shadow_vdesc = (void *)
+					(adapter->ring_base +
+					queue->queue_notify_off *
+					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+				vq->shadow_avail = (void *)
+					((char *)vq->shadow_vdesc +
+					sizeof(struct vring_desc) *
+					vq->nb_desc);
+				vq->shadow_sdesc = NULL;
+			}
 			vq->vdesc = vq->desc_addr;
 			vq->pdesc = NULL;
 			vq->packed_notify = NULL;

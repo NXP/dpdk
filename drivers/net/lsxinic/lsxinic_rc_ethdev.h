@@ -128,9 +128,6 @@
 #define rte_lxsnic_packet_prefetch(p)	do {} while (0)
 #endif
 
-#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
-#define MAX_U16 0xffff
-
 typedef uint64_t dma_addr_t;
 
 struct lxsnic_queue_stats {

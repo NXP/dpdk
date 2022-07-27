@@ -496,6 +496,11 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
+				while (!common->start_config) {
+					rte_wmb();
+					rte_rmb();
+					rte_delay_ms(1);
+				}
 				ret = lsxvio_virtio_config_fromrc(dev);
 				if (ret) {
 					LSXINIC_PMD_ERR("%s link failed",

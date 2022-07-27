@@ -62,6 +62,7 @@
 #define LSX_VIO_EP2RC_DMA_NORSP \
 	(1ULL << LSX_VIO_EP2RC_DMA_NORSP_POS)
 
+#define LSX_VIO_HW_START_CONFIG 1
 /* This common configuration definition is a little different from
  * the common data stuctures defined in virtio spec because the hw
  * does not support queue_select attribute, so a sereal of queue
@@ -77,6 +78,8 @@ struct lsxvio_common_cfg {
 	uint8_t config_generation;	/* read-only */
 	uint16_t queue_used_num;	/* read-write */
 	uint64_t lsx_feature;
+	uint8_t start_config;
+	uint8_t rsv[7];
 } __attribute__((__packed__));
 
 /* Fields in QUEUE_CFG: */
@@ -91,6 +94,9 @@ struct lsxvio_queue_cfg {
 	uint32_t queue_avail_hi;	/* read-write */
 	uint32_t queue_used_lo;		/* read-write */
 	uint32_t queue_used_hi;		/* read-write */
+	uint64_t queue_mem_base;
+	uint32_t queue_mem_interval;
+	uint32_t queue_rsv1;
 } __attribute__((__packed__));
 
 struct lsxvio_packed_notify {
@@ -98,6 +104,11 @@ struct lsxvio_packed_notify {
 	uint16_t dummy[3];
 	uint64_t addr[0];
 } __attribute__((__packed__));
+
+struct lsxvio_short_desc {
+	uint32_t addr_offset;
+	uint32_t len;
+};
 
 #define	BASE_TO_COMMON(base) ((void *)((base) + LSXVIO_COMMON_OFFSET))
 #define	BASE_TO_QUEUE(base, i) \

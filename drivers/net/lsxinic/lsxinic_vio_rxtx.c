@@ -918,10 +918,22 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	struct rte_qdma_job *dma_job)
 {
 	struct lsxvio_queue_entry *rxe = &rxq->sw_ring[desc_idx];
-	struct vring_desc *desc = &rxq->shadow_vdesc[desc_idx];
+	struct vring_desc *desc;
+	struct lsxvio_short_desc *sdesc;
+	uint64_t addr;
 	uint32_t pkt_len;
 	uint32_t total_bytes = 0, total_packets = 0;
 	uint32_t len;
+
+	if (rxq->shadow_sdesc) {
+		sdesc = &rxq->shadow_sdesc[desc_idx];
+		len = sdesc->len;
+		addr = rxq->mem_base + sdesc->addr_offset;
+	} else {
+		desc = &rxq->shadow_vdesc[desc_idx];
+		len = desc->len;
+		addr = desc->addr;
+	}
 
 	if (!dma_job)
 		dma_job = &rxq->dma_jobs[desc_idx];
@@ -933,9 +945,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 
 		return;
 	}
-	LSXINIC_PMD_DBG("desc info: addr=%lx len=%d flags=%x, next=%x",
-		desc->addr, desc->len, desc->flags, desc->next);
-	len = desc->len;
+	LSXINIC_PMD_DBG("desc info: addr=%lx len=%d", addr, len);
 	len -= rxq->adapter->vtnet_hdr_size;
 	if (len > LSXVIO_MAX_DATA_PER_TXD) {
 		LSXINIC_PMD_ERR("port%d rxq%d BD%d error len:0x%08x, cpu:%d",
@@ -965,8 +975,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	dma_job->cnxt = (uint64_t)rxe;
 	dma_job->dest =
 		rte_cpu_to_le_64(rte_mbuf_data_iova_default(rxm));
-	dma_job->src =
-		desc->addr + rxq->ob_base +
+	dma_job->src = addr + rxq->ob_base +
 		rxq->adapter->vtnet_hdr_size;
 	rxe->align_dma_offset = (dma_job->src) & LSXVIO_DMA_ALIGN_MASK;
 	dma_job->src -= rxe->align_dma_offset;
@@ -1033,6 +1042,8 @@ lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 			jobs[bd_num] = &vq->dma_jobs[desc_idx];
 			bd_num++;
 			j++;
+			if (!vq->shadow_vdesc)
+				break;
 			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
 				VRING_DESC_F_NEXT)))
 				break;
@@ -1094,6 +1105,8 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 			head = 0;
 			bd_num++;
 			j++;
+			if (!vq->shadow_vdesc)
+				break;
 			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
 				VRING_DESC_F_NEXT)))
 				break;

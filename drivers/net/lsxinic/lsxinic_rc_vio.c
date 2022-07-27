@@ -41,6 +41,13 @@
 
 #include "lsxinic_vio_common.h"
 
+struct lsxvio_local_cfg {
+	uint64_t lsx_feature;
+	uint64_t queue_mem_base[LSXVIO_MAX_QUEUE_PAIRS * 2];
+	void *shadow_desc[LSXVIO_MAX_QUEUE_PAIRS * 2];
+	uint32_t queue_mem_interval[LSXVIO_MAX_QUEUE_PAIRS * 2];
+};
+
 struct lsxvio_pci_cfg {
 	struct lsxvio_common_cfg common_cfg;
 	struct lsxvio_queue_cfg queue_cfg[LSXVIO_MAX_QUEUE_PAIRS * 2];
@@ -48,8 +55,9 @@ struct lsxvio_pci_cfg {
 
 struct lsxvio_rc_pci_hw {
 	struct virtio_hw common_cfg;
-	struct lsxvio_pci_cfg *lsx_cfg;
+	struct lsxvio_pci_cfg *lsx_cfg; /* PCIe space*/
 	uint8_t *ring_base;
+	struct lsxvio_local_cfg local_lsx_cfg;
 	uint16_t last_avail_idx[LSXVIO_MAX_QUEUE_PAIRS * 2];
 };
 
@@ -245,11 +253,19 @@ lsxvio_write64_twopart(uint64_t val,
 }
 
 static inline uint64_t
-lsxvio_priv_feature(struct lsxvio_rc_pci_hw *lsx_hw)
+lsxvio_priv_feature(struct lsxvio_rc_pci_hw *lsx_hw, int remote)
 {
 	struct lsxvio_pci_cfg *lsx_cfg = lsx_hw->lsx_cfg;
 	struct lsxvio_common_cfg *c_cfg = &lsx_cfg->common_cfg;
-	uint64_t lsx_feature = rte_read64(&c_cfg->lsx_feature);
+	uint64_t lsx_feature;
+
+	if (unlikely(remote)) {
+		lsx_feature = rte_read64(&c_cfg->lsx_feature);
+		if (lsx_hw->local_lsx_cfg.lsx_feature != lsx_feature)
+			lsx_hw->local_lsx_cfg.lsx_feature = lsx_feature;
+	} else {
+		lsx_feature = lsx_hw->local_lsx_cfg.lsx_feature;
+	}
 
 	return lsx_feature;
 }
@@ -312,7 +328,7 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 	int size = vq->vq_nentries;
 	uint8_t *ring_mem = vq->vq_ring_virt_mem;
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(vq->hw);
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 #ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
 	uint8_t *remote_ring_base = lsx_hw->ring_base;
 #endif
@@ -368,7 +384,7 @@ lsxvio_rc_init_queue(struct rte_eth_dev *dev,
 	uint32_t vq_size, size;
 	struct lsxvio_rc_pci_hw *lsx_hw = dev->data->dev_private;
 	struct virtio_hw *hw = &lsx_hw->common_cfg;
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 	struct virtnet_rx *rxvq = NULL;
 	struct virtnet_tx *txvq = NULL;
 	struct virtnet_ctl *cvq = NULL;
@@ -717,7 +733,7 @@ lsxvio_rc_eth_rxq_intr_enable(struct rte_eth_dev *dev,
 	struct virtio_hw *hw = &lsx_hw->common_cfg;
 	struct virtnet_rx *rxvq = dev->data->rx_queues[queue_id];
 	struct virtqueue *vq = rxvq->vq;
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 
 	if (lsx_feature & LSX_VIO_EP2RC_PACKED)
 		virtqueue_enable_intr_packed(vq);
@@ -737,6 +753,91 @@ lsxvio_rc_eth_rxq_intr_disable(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static void
+lsxvio_rc_rxq_pool_optimize(struct lsxvio_rc_pci_hw *lsx_hw,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool *mp, uint16_t q_idx)
+{
+	struct virtqueue *vq = lsx_hw->common_cfg.vqs[q_idx];
+	uint64_t resv0 = rx_conf->reserved_64s[0];
+	uint64_t resv1 = rx_conf->reserved_64s[1];
+	uint32_t elt_interval;
+	int interval_support = 1;
+	struct lsxvio_queue_cfg *qcfg =
+		&lsx_hw->lsx_cfg->queue_cfg[q_idx];
+	struct lsxvio_queue_cfg *txqcfg = qcfg + VTNET_SQ_TQ_QUEUE_IDX;
+	uint64_t *local_base;
+	uint32_t *local_interval;
+	void **shadow_desc;
+
+#ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
+	qcfg->queue_mem_base = 0;
+	qcfg->queue_mem_interval = 0;
+
+	txqcfg->queue_mem_interval = 0;
+	txqcfg->queue_mem_interval = 0;
+
+	return;
+#endif
+
+	if (resv0 && resv1 && resv1 > resv0
+		&& (resv1 - resv0) <= MAX_U32) {
+		qcfg->queue_mem_base = resv0;
+		elt_interval = mp->elt_size + mp->header_size +
+			mp->trailer_size;
+		if (elt_interval * (mp->size - 1) != (resv1 - resv0)) {
+			qcfg->queue_mem_interval = 0;
+		} else {
+			if (mp->size < MAX_U16 && interval_support) {
+				qcfg->queue_mem_base += RTE_PKTMBUF_HEADROOM;
+				qcfg->queue_mem_interval = elt_interval;
+			} else {
+				qcfg->queue_mem_interval = 0;
+			}
+		}
+	} else {
+		qcfg->queue_mem_base = 0;
+		qcfg->queue_mem_interval = 0;
+	}
+	txqcfg->queue_mem_base = qcfg->queue_mem_base;
+	txqcfg->queue_mem_interval = qcfg->queue_mem_interval;
+
+	local_base = lsx_hw->local_lsx_cfg.queue_mem_base;
+	local_interval = lsx_hw->local_lsx_cfg.queue_mem_interval;
+	shadow_desc = lsx_hw->local_lsx_cfg.shadow_desc;
+
+	local_base[q_idx] =	qcfg->queue_mem_base;
+	local_interval[q_idx] =	qcfg->queue_mem_interval;
+	shadow_desc[q_idx] = rte_malloc(NULL,
+		sizeof(struct lsxvio_short_desc) * vq->vq_nentries,
+		RTE_CACHE_LINE_SIZE);
+
+	q_idx += VTNET_SQ_TQ_QUEUE_IDX;
+	vq = lsx_hw->common_cfg.vqs[q_idx];
+	local_base[q_idx] =	qcfg->queue_mem_base;
+	local_interval[q_idx] =	qcfg->queue_mem_interval;
+	shadow_desc[q_idx] = rte_malloc(NULL,
+		sizeof(struct lsxvio_short_desc) * vq->vq_nentries,
+		RTE_CACHE_LINE_SIZE);
+}
+
+static int
+lsxvio_rc_dev_rx_queue_setup(struct rte_eth_dev *dev,
+	uint16_t queue_idx,	uint16_t nb_desc,
+	unsigned int socket_id,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool *mp)
+{
+	uint16_t vtpci_queue_idx = 2 * queue_idx + VTNET_SQ_RQ_QUEUE_IDX;
+	struct lsxvio_rc_pci_hw *lsx_hw = dev->data->dev_private;
+
+	PMD_INIT_FUNC_TRACE();
+	lsxvio_rc_rxq_pool_optimize(lsx_hw, rx_conf, mp, vtpci_queue_idx);
+	return virtio_dev_rx_queue_setup(dev, queue_idx, nb_desc,
+		socket_id, rx_conf, mp);
+}
+
+
 static const struct eth_dev_ops lsxvio_rc_eth_dev_ops = {
 	.dev_configure           = lsxvio_rc_eth_configure,
 	.dev_start               = lsxvio_rc_eth_start,
@@ -754,7 +855,7 @@ static const struct eth_dev_ops lsxvio_rc_eth_dev_ops = {
 	.stats_reset             = lsxvio_rc_eth_stats_reset,
 	.xstats_reset            = lsxvio_rc_eth_stats_reset,
 	.link_update             = lsxvio_rc_eth_link_update,
-	.rx_queue_setup          = virtio_dev_rx_queue_setup,
+	.rx_queue_setup          = lsxvio_rc_dev_rx_queue_setup,
 	.rx_queue_intr_enable    = lsxvio_rc_eth_rxq_intr_enable,
 	.rx_queue_intr_disable   = lsxvio_rc_eth_rxq_intr_disable,
 	.rx_queue_release        = lsxvio_rc_eth_queue_release,
@@ -1053,7 +1154,7 @@ lsxvio_rc_set_rxtx_funcs(struct rte_eth_dev *eth_dev)
 {
 	struct lsxvio_rc_pci_hw *lsx_hw = eth_dev->data->dev_private;
 	struct virtio_hw *hw = &lsx_hw->common_cfg;
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 
 	eth_dev->tx_pkt_prepare = virtio_xmit_pkts_prepare;
 
@@ -1220,6 +1321,9 @@ lsxvio_rc_init_device(struct rte_eth_dev *eth_dev,
 	}
 
 	vtpci_reinit_complete(hw);
+
+	lsx_hw->local_lsx_cfg.lsx_feature =
+		lsxvio_priv_feature(lsx_hw, true);
 
 	if (pci_dev)
 		PMD_INIT_LOG(DEBUG, "port %d vendorID=0x%x deviceID=0x%x",
@@ -1407,6 +1511,85 @@ lsxvio_rc_modern_del_queue(struct virtio_hw *hw,
 	rte_write16(0, &qcfg[q_idx].queue_enable);
 }
 
+static inline void *
+lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
+	struct lsxvio_rc_pci_hw *lsx_hw)
+{
+	uint16_t qidx = vq->vq_queue_index, i, j = 0, current_idx;
+	uint16_t last_avail_idx = lsx_hw->last_avail_idx[qidx];
+	uint64_t mem_base = lsx_hw->local_lsx_cfg.queue_mem_base[qidx];
+	uint8_t *ring_base = lsx_hw->ring_base;
+	struct vring_desc *desc = vq->vq_split.ring.desc;
+	struct lsxvio_short_desc *remote_sdesc, *local_sdesc;
+	struct vring_desc *remote_desc;
+	void *next_ring_addr;
+
+#ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
+	remote_desc = (void *)(ring_base + qidx *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+	next_ring_addr = remote_desc + vq->vq_nentries;
+
+	return next_ring_addr;
+#endif
+
+	last_avail_idx = last_avail_idx & (vq->vq_nentries - 1);
+	current_idx = vq->vq_split.ring.avail->idx & (vq->vq_nentries - 1);
+
+	if (mem_base) {
+		remote_sdesc = (void *)(ring_base + qidx *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+		local_sdesc = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
+		for (i = last_avail_idx; i != current_idx;
+			i = (i + 1) & (vq->vq_nentries - 1)) {
+			local_sdesc[j].addr_offset = desc[i].addr - mem_base;
+			local_sdesc[j].len = desc[i].len;
+			j++;
+		}
+		if (current_idx > last_avail_idx) {
+			memcpy(&remote_sdesc[last_avail_idx],
+				&local_sdesc[0],
+				(current_idx - last_avail_idx) *
+				sizeof(struct lsxvio_short_desc));
+		} else {
+			memcpy(&remote_sdesc[last_avail_idx],
+				&local_sdesc[0],
+				(vq->vq_nentries - last_avail_idx) *
+				sizeof(struct lsxvio_short_desc));
+			if (current_idx > 0) {
+				memcpy(&remote_sdesc[0],
+				&local_sdesc[vq->vq_nentries - last_avail_idx],
+				current_idx *
+				sizeof(struct lsxvio_short_desc));
+			}
+		}
+		next_ring_addr = remote_sdesc + vq->vq_nentries;
+	} else {
+		remote_desc = (void *)(ring_base + qidx *
+			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+		if (current_idx > last_avail_idx) {
+			memcpy(&remote_desc[last_avail_idx],
+				&desc[last_avail_idx],
+				(current_idx - last_avail_idx) *
+				sizeof(struct vring_desc));
+		} else {
+			memcpy(&remote_desc[last_avail_idx],
+				&desc[last_avail_idx],
+				(vq->vq_nentries - last_avail_idx) *
+				sizeof(struct vring_desc));
+			if (current_idx > 0) {
+				memcpy(&remote_desc[0], &desc[0],
+					current_idx *
+					sizeof(struct vring_desc));
+			}
+		}
+		next_ring_addr = remote_desc + vq->vq_nentries;
+	}
+
+	lsx_hw->last_avail_idx[qidx] = vq->vq_split.ring.avail->idx;
+
+	return next_ring_addr;
+}
+
 static void
 lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	struct virtqueue *vq)
@@ -1414,15 +1597,10 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(hw);
 	uint8_t *ring_base = lsx_hw->ring_base;
 	struct vring_avail *avail_ring;
-	struct vring_desc *remote_desc;
 	int queue_type = virtio_get_queue_type(hw, vq->vq_queue_index);
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, false);
 	uint16_t last_avail_idx =
 		lsx_hw->last_avail_idx[vq->vq_queue_index];
-#ifdef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
-	uint16_t current_idx;
-	struct vring_desc *desc = vq->vq_split.ring.desc;
-#endif
 
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
@@ -1445,35 +1623,7 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 			vq->vq_avail_idx;
 		rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
 	} else if (queue_type == VTNET_TQ) {
-		remote_desc = (void *)(ring_base +
-			vq->vq_queue_index *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
-#ifdef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
-		last_avail_idx = last_avail_idx &
-			(vq->vq_nentries - 1);
-		current_idx = vq->vq_split.ring.avail->idx &
-			(vq->vq_nentries - 1);
-		if (current_idx > last_avail_idx) {
-			memcpy(&remote_desc[last_avail_idx],
-				&desc[last_avail_idx],
-				(current_idx - last_avail_idx) *
-				sizeof(struct vring_desc));
-		} else {
-			memcpy(&remote_desc[last_avail_idx],
-				&desc[last_avail_idx],
-				(vq->vq_nentries - last_avail_idx) *
-				sizeof(struct vring_desc));
-			if (current_idx > 0) {
-				memcpy(&remote_desc[0], &desc[0],
-					current_idx *
-					sizeof(struct vring_desc));
-			}
-		}
-		lsx_hw->last_avail_idx[vq->vq_queue_index] =
-			vq->vq_split.ring.avail->idx;
-#endif
-		avail_ring = (void *)((uint8_t *)remote_desc +
-			sizeof(struct vring_desc) * vq->vq_nentries);
+		avail_ring = lsxvio_rc_tx_notify_bd_update(vq, lsx_hw);
 		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
 	} else {
 		avail_ring = (void *)(ring_base +
@@ -1907,7 +2057,7 @@ lsxvio_rc_eth_configure(struct rte_eth_dev *dev)
 		}
 
 	hw->use_simple_rx = 1;
-	lsx_feature = lsxvio_priv_feature(lsx_hw);
+	lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 
 	if (vtpci_with_feature(hw, VIRTIO_F_IN_ORDER)) {
 		hw->use_inorder_tx = 1;
@@ -2042,7 +2192,7 @@ lsxvio_rc_rx_queue_setup_finish(struct rte_eth_dev *dev,
 	uint16_t vtpci_queue_idx = 2 * queue_idx + VTNET_SQ_RQ_QUEUE_IDX;
 	struct lsxvio_rc_pci_hw *lsx_hw = dev->data->dev_private;
 	struct virtio_hw *hw = &lsx_hw->common_cfg;
-	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw);
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
 	struct virtqueue *vq = hw->vqs[vtpci_queue_idx];
 	struct virtnet_rx *rxvq = &vq->rxq;
 	struct rte_mbuf *m;
@@ -2096,7 +2246,8 @@ lsxvio_rc_eth_start(struct rte_eth_dev *dev)
 	uint16_t i;
 	struct virtnet_rx *rxvq;
 	struct virtnet_tx *txvq;
-	struct virtio_hw *hw = dev->data->dev_private;
+	struct lsxvio_rc_pci_hw *lsx_hw = dev->data->dev_private;
+	struct virtio_hw *hw = &lsx_hw->common_cfg;
 	int ret;
 
 	/* Finish the initialization of the queues */
@@ -2137,6 +2288,8 @@ lsxvio_rc_eth_start(struct rte_eth_dev *dev)
 
 	lsxvio_rc_set_rxtx_funcs(dev);
 	hw->started = true;
+	rte_write8(LSX_VIO_HW_START_CONFIG,
+		&lsx_hw->lsx_cfg->common_cfg.start_config);
 
 	/* Initialize Link state */
 	lsxvio_rc_eth_link_update(dev, 0);
