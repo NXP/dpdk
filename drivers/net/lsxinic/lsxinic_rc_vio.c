@@ -587,6 +587,7 @@ lsxvio_rc_free_queues(struct virtio_hw *hw)
 	struct virtqueue *vq;
 	int queue_type;
 	uint16_t i;
+	struct lsxvio_rc_pci_hw *lsx_hw = LSXVIO_HW(hw);
 
 	if (!hw->vqs)
 		return;
@@ -606,6 +607,10 @@ lsxvio_rc_free_queues(struct virtio_hw *hw)
 		} else {
 			rte_memzone_free(vq->cq.mz);
 			rte_memzone_free(vq->cq.virtio_net_hdr_mz);
+		}
+		if (lsx_hw->local_lsx_cfg.shadow_desc[i]) {
+			rte_free(lsx_hw->local_lsx_cfg.shadow_desc[i]);
+			lsx_hw->local_lsx_cfg.shadow_desc[i] = NULL;
 		}
 
 		rte_free(vq);
@@ -753,6 +758,19 @@ lsxvio_rc_eth_rxq_intr_disable(struct rte_eth_dev *dev,
 	return 0;
 }
 
+static inline size_t
+lsxvio_rc_max_size(const size_t *sizes, int size_nb)
+{
+	int i;
+	size_t max = 0;
+
+	for (i = 0; i < size_nb; i++) {
+		if (sizes[i] > max)
+			max = sizes[i];
+	}
+	return max;
+}
+
 static void
 lsxvio_rc_rxq_pool_optimize(struct lsxvio_rc_pci_hw *lsx_hw,
 	const struct rte_eth_rxconf *rx_conf,
@@ -769,6 +787,13 @@ lsxvio_rc_rxq_pool_optimize(struct lsxvio_rc_pci_hw *lsx_hw,
 	uint64_t *local_base;
 	uint32_t *local_interval;
 	void **shadow_desc;
+	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, true);
+	const size_t sizes[3] = {
+		sizeof(struct lsxvio_short_desc),
+		sizeof(uint64_t),
+		sizeof(uint32_t)
+	};
+	size_t max_size = lsxvio_rc_max_size(sizes, 3);
 
 #ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
 	qcfg->queue_mem_base = 0;
@@ -802,6 +827,11 @@ lsxvio_rc_rxq_pool_optimize(struct lsxvio_rc_pci_hw *lsx_hw,
 	txqcfg->queue_mem_base = qcfg->queue_mem_base;
 	txqcfg->queue_mem_interval = qcfg->queue_mem_interval;
 
+	if (!(lsx_feature & LSX_VIO_EP2RC_PACKED)) {
+		qcfg->queue_mem_base = 0;
+		qcfg->queue_mem_interval = 0;
+	}
+
 	local_base = lsx_hw->local_lsx_cfg.queue_mem_base;
 	local_interval = lsx_hw->local_lsx_cfg.queue_mem_interval;
 	shadow_desc = lsx_hw->local_lsx_cfg.shadow_desc;
@@ -809,15 +839,15 @@ lsxvio_rc_rxq_pool_optimize(struct lsxvio_rc_pci_hw *lsx_hw,
 	local_base[q_idx] =	qcfg->queue_mem_base;
 	local_interval[q_idx] =	qcfg->queue_mem_interval;
 	shadow_desc[q_idx] = rte_malloc(NULL,
-		sizeof(struct lsxvio_short_desc) * vq->vq_nentries,
+		max_size * vq->vq_nentries,
 		RTE_CACHE_LINE_SIZE);
 
 	q_idx += VTNET_SQ_TQ_QUEUE_IDX;
 	vq = lsx_hw->common_cfg.vqs[q_idx];
-	local_base[q_idx] =	qcfg->queue_mem_base;
-	local_interval[q_idx] =	qcfg->queue_mem_interval;
+	local_base[q_idx] =	txqcfg->queue_mem_base;
+	local_interval[q_idx] =	txqcfg->queue_mem_interval;
 	shadow_desc[q_idx] = rte_malloc(NULL,
-		sizeof(struct lsxvio_short_desc) * vq->vq_nentries,
+		max_size * vq->vq_nentries,
 		RTE_CACHE_LINE_SIZE);
 }
 
@@ -1511,6 +1541,75 @@ lsxvio_rc_modern_del_queue(struct virtio_hw *hw,
 	rte_write16(0, &qcfg[q_idx].queue_enable);
 }
 
+static inline void
+lsxvio_rc_rx_notify_addr(struct virtqueue *vq,
+	struct lsxvio_rc_pci_hw *lsx_hw)
+{
+	uint8_t *ring_base = lsx_hw->ring_base;
+	uint16_t qidx = vq->vq_queue_index, current_idx, i, j = 0;
+	uint16_t last_avail_idx = lsx_hw->last_avail_idx[qidx];
+	uint64_t mem_base = lsx_hw->local_lsx_cfg.queue_mem_base[qidx];
+	struct lsxvio_packed_notify *pnotify = (void *)(ring_base +
+			qidx * LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+	struct vring_packed_desc *pdesc = vq->vq_packed.ring.desc;
+	uint64_t *addrs;
+	uint32_t *addr_offs;
+
+	last_avail_idx = last_avail_idx & (vq->vq_nentries - 1);
+	current_idx = vq->vq_avail_idx & (vq->vq_nentries - 1);
+
+	if (mem_base) {
+		addr_offs = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
+		for (i = last_avail_idx; i != current_idx;
+			i = (i + 1) & (vq->vq_nentries - 1)) {
+			addr_offs[j] = pdesc[i].addr - mem_base;
+			j++;
+		}
+		if (current_idx > last_avail_idx) {
+			memcpy(&pnotify->addr_offset[last_avail_idx],
+				&addr_offs[0],
+				(current_idx - last_avail_idx) *
+				sizeof(uint32_t));
+		} else {
+			memcpy(&pnotify->addr_offset[last_avail_idx],
+				&addr_offs[0],
+				(vq->vq_nentries - last_avail_idx) *
+				sizeof(uint32_t));
+			if (current_idx > 0) {
+				memcpy(&pnotify->addr_offset[0],
+				&addr_offs[vq->vq_nentries - last_avail_idx],
+				current_idx * sizeof(uint32_t));
+			}
+		}
+	} else {
+		addrs = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
+		for (i = last_avail_idx; i != current_idx;
+			i = (i + 1) & (vq->vq_nentries - 1)) {
+			addrs[j] = pdesc[i].addr;
+			j++;
+		}
+		if (current_idx > last_avail_idx) {
+			memcpy(&pnotify->addr[last_avail_idx],
+				&addrs[last_avail_idx],
+				(current_idx - last_avail_idx) *
+				sizeof(uint64_t));
+		} else {
+			memcpy(&pnotify->addr[last_avail_idx],
+				&addrs[last_avail_idx],
+				(vq->vq_nentries - last_avail_idx) *
+				sizeof(uint64_t));
+			if (current_idx > 0) {
+				memcpy(&pnotify->addr[0], &addrs[0],
+					current_idx *
+					sizeof(uint64_t));
+			}
+		}
+	}
+
+	lsx_hw->last_avail_idx[qidx] = vq->vq_avail_idx;
+	rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
+}
+
 static inline void *
 lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
 	struct lsxvio_rc_pci_hw *lsx_hw)
@@ -1599,29 +1698,10 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	struct vring_avail *avail_ring;
 	int queue_type = virtio_get_queue_type(hw, vq->vq_queue_index);
 	uint64_t lsx_feature = lsxvio_priv_feature(lsx_hw, false);
-	uint16_t last_avail_idx =
-		lsx_hw->last_avail_idx[vq->vq_queue_index];
 
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
-		struct lsxvio_packed_notify *pnotify;
-
-		pnotify = (void *)(ring_base +
-			vq->vq_queue_index *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
-
-		while (last_avail_idx != vq->vq_avail_idx) {
-			pnotify->addr[last_avail_idx] =
-				vq->vq_packed.ring.desc[last_avail_idx].addr;
-			last_avail_idx = (last_avail_idx + 1) &
-				(vq->vq_nentries - 1);
-		}
-
-		rte_wmb();
-
-		lsx_hw->last_avail_idx[vq->vq_queue_index] =
-			vq->vq_avail_idx;
-		rte_write16(vq->vq_avail_idx, &pnotify->last_avail_idx);
+		lsxvio_rc_rx_notify_addr(vq, lsx_hw);
 	} else if (queue_type == VTNET_TQ) {
 		avail_ring = lsxvio_rc_tx_notify_bd_update(vq, lsx_hw);
 		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);

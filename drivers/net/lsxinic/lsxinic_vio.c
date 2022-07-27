@@ -91,7 +91,9 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		vq->desc_addr = virt;
 
 		if (vq->type == LSXVIO_QUEUE_TX) {
+			vq->mem_base = 0;
 			if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+				vq->mem_base = queue->queue_mem_base;
 				vq->packed_notify = (void *)
 					(adapter->ring_base +
 					queue->queue_notify_off *

@@ -1417,7 +1417,13 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 		*free_mbuf = NULL;
 	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
 		pnotify = vq->packed_notify;
-		vq->shadow_pdesc[desc_idx].addr = pnotify->addr[desc_idx];
+		if (vq->mem_base) {
+			vq->shadow_pdesc[desc_idx].addr = vq->mem_base +
+				pnotify->addr_offset[desc_idx];
+		} else {
+			vq->shadow_pdesc[desc_idx].addr =
+				pnotify->addr[desc_idx];
+		}
 
 		addr = vq->shadow_pdesc[desc_idx].addr;
 		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;

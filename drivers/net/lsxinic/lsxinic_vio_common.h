@@ -102,7 +102,10 @@ struct lsxvio_queue_cfg {
 struct lsxvio_packed_notify {
 	uint16_t last_avail_idx;
 	uint16_t dummy[3];
-	uint64_t addr[0];
+	union {
+		uint32_t addr_offset[0];
+		uint64_t addr[0];
+	};
 } __attribute__((__packed__));
 
 struct lsxvio_short_desc {
