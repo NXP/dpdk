@@ -539,7 +539,8 @@ static struct eth_dev_ops dpaa_ol_devops = {
 		.promiscuous_enable       = dpaa_ol_promiscuous_enable,
 };
 
-static int dpaa_oldev_init(struct rte_eth_dev *eth_dev)
+static int dpaa_oldev_init(struct rte_eth_dev *eth_dev,
+			   struct rte_dpaa_device *dpaa_dev)
 {
 	int num_fqs, ret;
 	struct dpaa_if *dpaa_intf;
@@ -577,6 +578,8 @@ static int dpaa_oldev_init(struct rte_eth_dev *eth_dev)
 	if (ret)
 		goto free_tx;
 
+	dpaa_intf->tx_queues[0].dpaa_intf = dpaa_intf;
+	dpaa_intf->device_type = dpaa_dev->device_type;
 	dpaa_intf->nb_tx_queues = num_fqs;
 
 	eth_dev->dev_ops = &dpaa_ol_devops;
@@ -608,7 +611,7 @@ free_rx:
 }
 
 static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
-			  __rte_unused struct rte_dpaa_device *dpaa_dev)
+			  struct rte_dpaa_device *dpaa_dev)
 {
 	int ret;
 	struct rte_eth_dev *eth_dev;
@@ -630,7 +633,7 @@ static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
 	eth_dev->device = &dpaa_dev->device;
 	dpaa_dev->eth_dev = eth_dev;
 
-	ret = dpaa_oldev_init(eth_dev);
+	ret = dpaa_oldev_init(eth_dev, dpaa_dev);
 	if (ret == 0) {
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;

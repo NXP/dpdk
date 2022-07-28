@@ -1817,7 +1817,8 @@ dpaa_dev_init_secondary(struct rte_eth_dev *eth_dev)
 
 /* Initialise a network interface */
 static int
-dpaa_dev_init(struct rte_eth_dev *eth_dev)
+dpaa_dev_init(struct rte_eth_dev *eth_dev,
+	      struct rte_dpaa_device *dpaa_dev)
 {
 	int num_rx_fqs, fqid;
 	int loop, ret = 0;
@@ -1847,6 +1848,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->process_private = fman_intf;
 	dpaa_intf->ifid = dev_id;
 	dpaa_intf->cfg = cfg;
+	dpaa_intf->device_type = dpaa_dev->device_type;
 
 	memset((char *)dev_rx_fqids, 0,
 		sizeof(uint32_t) * DPAA_MAX_NUM_PCD_QUEUES);
@@ -2290,7 +2292,7 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 		eth_dev->data->dev_flags |= RTE_ETH_DEV_INTR_LSC;
 
 	/* Invoke PMD device initialization function */
-	diag = dpaa_dev_init(eth_dev);
+	diag = dpaa_dev_init(eth_dev, dpaa_dev);
 	if (diag == 0) {
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;
