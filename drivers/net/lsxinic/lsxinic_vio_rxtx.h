@@ -6,6 +6,10 @@
 
 #include <rte_ethdev.h>
 #include <rte_pmd_dpaa2_qdma.h>
+
+#include "virtio_pci.h"
+#include "virtio_ring.h"
+
 #include "lsxinic_vio_ring.h"
 
 #ifndef __aligned
@@ -62,39 +66,43 @@ struct lsxvio_queue_entry {
 	};
 };
 
+#define LSXVIO_QUEUE_IDX_INORDER_FLAG (1ull << 0)
+#define LSXVIO_QUEUE_PKD_INORDER_FLAG (1ull << 1)
+#define LSXVIO_QUEUE_DMA_APPEND_FLAG (1ull << 2)
+
 /**
  * Structure associated with each RX queue.
  */
 struct lsxvio_queue {
-	union {
-		struct vring_desc	*desc;
-		struct vring_packed_desc   *desc_packed;
-	};
-	union {
-		struct vring_avail	*avail;
-		struct vring_packed_desc_event *driver_event;
-	};
-	union {
-		struct vring_used	*used;
-		struct vring_packed_desc_event *device_event;
-	};
-	uint32_t		size;
+	void *desc_addr;
+	struct vring_desc *vdesc;
+	struct vring_desc *shadow_vdesc;
+	struct lsxvio_short_desc *shadow_sdesc;
+	struct vring_packed_desc *pdesc;
 
-	uint16_t		last_avail_idx;
-	uint16_t		last_used_idx;
-	union {
-		struct vring_avail  *shadow_avail;
-		struct vring_packed_desc_event *shadow_driver_event;
-	};
-	union {
-		struct vring_used_elem  *shadow_used_split;
-		struct vring_used_elem_packed *shadow_used_packed;
-	};
-	uint16_t                shadow_used_idx;
+	struct vring_avail *avail;
+	struct vring_used *used;
+
+	uint64_t mem_base;
+	uint16_t local_used_idx;
+	uint32_t size;
+
+	uint16_t last_avail_idx;
+	uint16_t last_used_idx;
+
+	struct vring_avail *shadow_avail;
+	struct lsxvio_packed_notify *packed_notify;
+
+	struct vring_used *shadow_used_split;
+	struct vring_packed_desc *shadow_pdesc;
+	uint64_t shadow_pdesc_phy;
+	const struct rte_memzone *shadow_pdesc_mz;
+
+	uint16_t shadow_used_idx;
 	/* Record packed ring enqueue latest desc cache aligned index */
-	uint16_t		shadow_aligned_idx;
+	uint16_t shadow_aligned_idx;
 	/* Record packed ring first dequeue desc index */
-	uint16_t		shadow_last_used_idx;
+	uint16_t shadow_last_used_idx;
 	struct lsxvio_adapter *adapter;
 	struct lsxvio_queue_cfg *cfg;
 	struct lsxvio_queue *pair;
@@ -102,6 +110,7 @@ struct lsxvio_queue {
 	uint16_t status;
 	/* flag */
 	uint32_t flag;
+	uint16_t cached_flags;
 
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 
@@ -129,7 +138,9 @@ struct lsxvio_queue {
 
 	/* BD index */
 	uint16_t head;
-	uint16_t next_dma_idx;    /**< number of TX descriptors. */
+	uint16_t start_dma_idx;
+	uint16_t append_dma_idx;
+	uint16_t next_dma_idx;
 	uint16_t next_avail_idx;
 	uint16_t next_used_idx;
 
@@ -186,7 +197,7 @@ struct lsxvio_queue {
 
 	/* Pointer to Next instance used by q list */
 	TAILQ_ENTRY(lsxvio_queue) next;
-} __aligned(64);
+};
 
 #define  lsxvio_rx_queue lsxvio_queue
 #define  lsxvio_tx_queue lsxvio_queue

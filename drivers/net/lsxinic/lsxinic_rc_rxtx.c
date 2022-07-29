@@ -207,6 +207,7 @@ lxsnic_xmit_one_pkt_idx(struct lxsnic_ring *tx_ring,
 			 */
 			if (pending_cnt > 1000) {
 				tx_ring->ring_full++;
+				tx_ring->errors++;
 				return -1;
 			}
 			pending_cnt++;
@@ -222,6 +223,7 @@ lxsnic_xmit_one_pkt_idx(struct lxsnic_ring *tx_ring,
 			adapter->stats.tx_desc_err++;
 #endif
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		mbuf_idx = bd_idx;
@@ -298,6 +300,7 @@ lxsnic_xmit_one_pkt_addrl(struct lxsnic_ring *tx_ring,
 			 * identify ring is empty or full.
 			 */
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		mbuf_idx = bd_idx;
@@ -308,6 +311,7 @@ lxsnic_xmit_one_pkt_addrl(struct lxsnic_ring *tx_ring,
 			tx_ring->adapter->stats.tx_desc_err++;
 #endif
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		*tx_complete = RING_BD_AVAILABLE;
@@ -388,6 +392,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			 * identify ring is empty or full.
 			 */
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		mbuf_idx = bd_idx;
@@ -409,6 +414,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			tx_ring->adapter->stats.tx_desc_err++;
 #endif
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		*tx_complete = RING_BD_AVAILABLE;
@@ -422,6 +428,7 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			tx_ring->adapter->stats.tx_desc_err++;
 #endif
 			tx_ring->ring_full++;
+			tx_ring->errors++;
 			return -1;
 		}
 		mbuf_idx = lsinic_bd_ctx_idx(bd_status);
@@ -429,6 +436,9 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			mbuf_idx = bd_idx;
 
 		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
+		tx_complete_desc->bd_status &=
+			(~((uint32_t)RING_BD_STATUS_MASK));
+		tx_complete_desc->bd_status |= RING_BD_HW_PROCESSING;
 	}
 
 	pkt_len = tx_pkt->pkt_len;  /* total packet length */
@@ -769,36 +779,22 @@ end_of_tx:
 				sizeof(struct lsinic_ep_rx_src_addrx));
 		}
 	} else {
-		int update_nb, start_idx;
+		int dst_idx;
 		struct lsinic_bd_desc *src_desc;
 		struct lsinic_bd_desc *dst_desc;
 
 		src_desc = notify.ep_tx_addr;
 		dst_desc = tx_ring->ep_bd_desc;
-
-		if ((first_idx + notify_idx) <= tx_ring->count) {
-			for (i = 0; i < notify_idx; i++) {
-				src = (void *)&src_desc[i];
-				dst = (void *)&dst_desc[first_idx + i];
-				mem_cp128b_atomic(dst, src);
-			}
-		} else {
-			update_nb = tx_ring->count - first_idx;
-			for (i = 0; i < update_nb; i++) {
-				src = (void *)&src_desc[i];
-				dst = (void *)&dst_desc[first_idx + i];
-				mem_cp128b_atomic(dst, src);
-			}
-
-			update_nb = first_idx + notify_idx - tx_ring->count;
-			start_idx = tx_ring->count - first_idx;
-			for (i = 0; i < update_nb; i++) {
-				src = (void *)&src_desc[start_idx + i];
-				dst = (void *)&dst_desc[i];
-				mem_cp128b_atomic(dst, src);
-			}
+		for (i = 0; i < notify_idx; i++) {
+			src = (void *)&src_desc[i];
+			dst_idx = (first_idx + i) & (tx_ring->count - 1);
+			dst = (void *)&dst_desc[dst_idx];
+			mem_cp128b_atomic(dst, src);
 		}
 	}
+
+	if (free_nb > 0)
+		rte_pktmbuf_free_bulk(free_pkts, free_nb);
 
 	tx_ring->loop_avail++;
 

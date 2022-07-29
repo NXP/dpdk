@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #ifndef _LSINIC_COMMON_H_
@@ -56,6 +56,14 @@ struct lsinic_pcie_svr_map s_lsinic_rev2_id_map[] =
 #define NXP_PCI_CLASS_ID (0x0200)
 
 #define XMIT_IDX_EXTRA_SPACE 2
+
+enum lsinic_xfer_complete_flag {
+	LSINIC_XFER_COMPLETE_INIT_FLAG = 0,
+	LSINIC_XFER_COMPLETE_DONE_FLAG = 1
+};
+
+#define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
+#define MAX_U16 0xffff
 
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)

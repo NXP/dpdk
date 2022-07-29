@@ -399,3 +399,34 @@ export LSINIC_PCIE_DMA_RAW_SYNC_MODE=1
 TX performance: 48.095560Gbps, fcs bits: 9086201528320
         Total rxq:      rx-pkts=1078013120 drop_pkts=0 ring_full=0
 RX performance: 46.857894Gbps, fcs bits: 8865579898880
+
+8) VirtIO PCIe net device:
+i) EP running, same scenario as "Basic Test Setup mentioned above":
+export LSX_PCIE2_PF0_VIRTIO=1
+export LSX_PCIE2_PF1_VIRTIO=1
+#export LSX_PCIE2_SIM=1 can be used for EP virtio simulator.
+./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+
+ii) RC running:
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+echo 1 > /sys/bus/pci/rescan
+#VirtIO net devices are supposed to be scaned:
+#06:00.0 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
+#06:00.1 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
+insmod ./x86_64-native-linuxapp-gcc/build/kernel/linux/igb_uio/igb_uio.ko
+echo "0x1AF4 0x1041" > /sys/bus/pci/drivers/igb_uio/new_id
+export PORT0_FWD=1
+export PORT1_FWD=0
+#Following setting are used for RC simulatore on single board:
+#export LSINIC_RC_SIM=1
+#export LSINIC_RC_PROC_SECONDARY_STANDALONE=1
+#export PORT_FWD_SECONDARY_STANDALONE=1
+#export SYSFS_PCI_DEVICES=/tmp
+#export LSXVIO_PCI_SIM=1
+#export LSXVIO_RC_PROC_SECONDARY_STANDALONE=1
+#export P0_DIST_1='(0,0,8)'
+#export P1_DIST_1='(1,0,8)'
+#./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+./examples/port_fwd/build/port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2022 NXP
  */
 
 #include <rte_ethdev.h>
@@ -642,6 +642,7 @@ dpaa2_tm_sort_and_configure(struct rte_eth_dev *dev,
 			    struct dpaa2_tm_node **nodes, int n)
 {
 	struct dpaa2_tm_node *temp_node;
+	int i;
 
 	if (n == 1) {
 		DPAA2_PMD_DEBUG("node id = %d\n, priority = %d, index = %d\n",
@@ -651,7 +652,7 @@ dpaa2_tm_sort_and_configure(struct rte_eth_dev *dev,
 		return;
 	}
 
-	for (int i = 0; i < n - 1; i++) {
+	for (i = 0; i < n - 1; i++) {
 		if (nodes[i]->priority > nodes[i + 1]->priority) {
 			temp_node = nodes[i];
 			nodes[i] = nodes[i + 1];
@@ -674,7 +675,7 @@ dpaa2_hierarchy_commit(struct rte_eth_dev *dev, int clear_on_fail,
 	struct dpaa2_tm_node *node;
 	struct dpaa2_tm_node *leaf_node, *temp_leaf_node, *channel_node;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	int ret;
+	int ret, t;
 
 	/* Populate TCs */
 	LIST_FOREACH(channel_node, &priv->nodes, next) {
@@ -856,7 +857,7 @@ dpaa2_hierarchy_commit(struct rte_eth_dev *dev, int clear_on_fail,
 		}
 		DPAA2_PMD_DEBUG("########################################\n");
 		DPAA2_PMD_DEBUG("Channel idx = %d\n", prio_cfg.channel_idx);
-		for (int t = 0; t < DPNI_MAX_TC; t++) {
+		for (t = 0; t < DPNI_MAX_TC; t++) {
 			DPAA2_PMD_DEBUG("tc = %d mode = %d ", t, prio_cfg.tc_sched[t].mode);
 			DPAA2_PMD_DEBUG("delta = %d\n", prio_cfg.tc_sched[t].delta_bandwidth);
 		}

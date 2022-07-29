@@ -489,10 +489,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_DMA_NO_RSP;
 
-	penv = getenv("LSINIC_RXQ_ORDER_PRESERVE");
-	if (penv)
-		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_ORP;
-
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
@@ -505,8 +501,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
 
-	if ((adapter->cap & LSINIC_CAP_XFER_COMPLETE) ||
-		(adapter->ep_cap & LSINIC_EP_CAP_RXQ_ORP)) {
+	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
 		/** Index confirm as default*/
 		LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_SET(adapter->cap,
 			RC_XMIT_INDEX_CNF);

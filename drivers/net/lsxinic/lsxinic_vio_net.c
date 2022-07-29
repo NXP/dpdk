@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -61,6 +61,8 @@
 
 #include <dpaa2_hw_pvt.h>
 #include <rte_lsx_pciep_bus.h>
+
+#include "virtqueue.h"
 
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common_helper.h"
@@ -138,7 +140,8 @@ static struct eth_dev_ops lsxvio_eth_dev_ops = {
 };
 
 static int
-lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
+lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
+	uint64_t lsx_feature)
 {
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
 	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
@@ -174,8 +177,11 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 #else
 	adapter->vtnet_hdr_size = sizeof(struct virtio_net_hdr);
 #endif
+	/* Overwrite previous setting, to support header size in the future.*/
+	adapter->vtnet_hdr_size = 0;
+
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_virtio_init(adapter->cfg_base, device_id);
+	lsxvio_virtio_init(adapter->cfg_base, device_id, lsx_feature);
 
 	return 0;
 }
@@ -254,6 +260,48 @@ lsxvio_netdev_reg_init(struct lsxvio_adapter *adapter)
 	lsxvio_child_mac_init(adapter);
 }
 
+static uint64_t
+lsxvio_dev_priv_feature_configure(void)
+{
+	uint64_t lsx_feature = 0;
+	int env_val;
+	char *penv;
+
+	lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
+	lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
+	lsx_feature |= LSX_VIO_EP2RC_PACKED;
+
+	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
+	if (penv) {
+		env_val = atoi(penv);
+		if (env_val)
+			lsx_feature |= LSX_VIO_RC2EP_DMA_NORSP;
+	}
+
+	penv = getenv("LSXVIO_TXQ_QDMA_NO_RESPONSE");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_NORSP);
+	}
+
+	penv = getenv("LSXVIO_RXQ_IN_ORDER");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_RC2EP_IN_ORDER);
+	}
+
+	penv = getenv("LSXVIO_TXQ_PACKED");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_PACKED);
+	}
+
+	return lsx_feature;
+}
+
 /* rte_lsxvio_probe:
  *
  * Interrupt is used only for link status notification on dpdk.
@@ -261,7 +309,6 @@ lsxvio_netdev_reg_init(struct lsxvio_adapter *adapter)
  * we can port our MSIX interrupt in iNIC host driver to dpdk,
  * need to test the performance.
  */
-
 static int
 rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	struct rte_lsx_pciep_device *lsx_dev)
@@ -271,15 +318,16 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	uint16_t device_id, class_id;
 	int ret, rbp;
 	char env_name[128];
+	uint64_t lsx_feature = 0;
 
-	device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_NETWORK;
+	device_id = VIRTIO_PCI_MODERN_DEVICEID_NET;
 	class_id = PCI_CLASS_NETWORK_ETHERNET;
 	sprintf(env_name, "LSINIC_PCIE%d_PF%d_VIO_STORAGE",
 		lsx_dev->pcie_id, lsx_dev->pf);
-	if (getenv(env_name)) {
-		device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_BLOCK;
-		class_id = PCI_CLASS_STORAGE_SCSI;
-	}
+	if (getenv(env_name))
+		lsxvio_virtio_get_blk_id(&device_id, &class_id);
+
+	lsx_feature = lsxvio_dev_priv_feature_configure();
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
@@ -332,7 +380,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->rx_pkt_burst = &lsxvio_recv_pkts;
 	eth_dev->tx_pkt_burst = &lsxvio_xmit_pkts;
 
-	lsxvio_init_bar_addr(lsx_dev);
+	lsxvio_init_bar_addr(lsx_dev, lsx_feature);
 	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
 		!lsx_dev->is_vf) {
 		lsx_pciep_sim_dev_map_inbound(lsx_dev);
@@ -428,7 +476,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	struct lsxvio_common_cfg *common;
 	uint8_t status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
-	int print_status = 0;
+	int print_status = 0, ret;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -480,7 +528,20 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
-				lsxvio_virtio_config_fromrc(dev);
+				while (!common->start_config) {
+					rte_wmb();
+					rte_rmb();
+					rte_delay_ms(1);
+				}
+				ret = lsxvio_virtio_config_fromrc(dev);
+				if (ret) {
+					LSXINIC_PMD_ERR("%s link failed",
+						dev->name);
+					dev = (struct rte_lsx_pciep_device *)
+						TAILQ_NEXT(dev, next);
+					continue;
+				}
+
 				if (adapter->is_vf)
 					LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link up",
 						adapter->pcie_idx,
@@ -604,7 +665,8 @@ lsxvio_dev_info_get(struct rte_eth_dev *dev __rte_unused,
 
 	dev_info->rx_desc_lim = rx_desc_lim;
 	dev_info->tx_desc_lim = tx_desc_lim;
-	dev_info->rx_offload_capa = DEV_RX_OFFLOAD_CHECKSUM;
+	dev_info->rx_offload_capa = DEV_RX_OFFLOAD_CHECKSUM |
+		DEV_RX_OFFLOAD_JUMBO_FRAME;
 
 	return 0;
 }

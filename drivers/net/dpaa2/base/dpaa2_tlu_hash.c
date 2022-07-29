@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021 NXP
+ * Copyright 2022 NXP
  */
 #include <stdio.h>
 #include <inttypes.h>
@@ -36,7 +36,7 @@ static unsigned int mix_tbl[8][16];
 static unsigned int stage(unsigned int input)
 {
 	int sbox_out = 0;
-	int pbox_out = 0;
+	int pbox_out = 0, i;
 
 	// mix
 	input ^= input >> 16; // xor lower
@@ -44,11 +44,11 @@ static unsigned int stage(unsigned int input)
 
 	// printf("%08x\n",input);
 
-	for (int i = 0; i < 32; i += 4)// sbox stage
+	for (i = 0; i < 32; i += 4)// sbox stage
 		sbox_out |= (sbox_tbl[(input >> i) & 0xf]) << i;
 
 	// permutation
-	for (int i = 0; i < 16; i++)
+	for (i = 0; i < 16; i++)
 		pbox_out |= ((sbox_out >> i) & 0x10001) << pbox_tbl[i];
 
 	return pbox_out;
@@ -56,13 +56,13 @@ static unsigned int stage(unsigned int input)
 
 static unsigned int fast_stage(unsigned int input)
 {
-	int pbox_out = 0;
+	int pbox_out = 0, i;
 
 	// mix
 	input ^= input >> 16; // xor lower
 	input ^= input << 16; // move original lower to upper
 
-	for (int i = 0; i < 32; i += 4) // sbox stage
+	for (i = 0; i < 32; i += 4) // sbox stage
 		pbox_out |= mix_tbl[i >> 2][(input >> i) & 0xf];
 
 	return pbox_out;
@@ -70,7 +70,9 @@ static unsigned int fast_stage(unsigned int input)
 
 static unsigned int fast_hash32(unsigned int x)
 {
-	for (int i = 0; i < 4; i++)
+	int i;
+
+	for (i = 0; i < 4; i++)
 		x = fast_stage(x);
 	return x;
 }
@@ -108,9 +110,10 @@ crc32_string(unsigned char *data,
 	     int size, unsigned int old_crc)
 {
 	unsigned int crc;
+	int i;
 
 	crc = old_crc;
-	for (int i = 0; i < size; i++)
+	for (i = 0; i < size; i++)
 		crc = (crc >> 8) ^ crc32_table[(crc ^ data[i]) & 0xff];
 
 	return crc;
@@ -118,13 +121,15 @@ crc32_string(unsigned char *data,
 
 static void hash_init(void)
 {
+	int i, j;
+
 	init_crc32_table();
 
-	for (int i = 0; i < 16; i++)
+	for (i = 0; i < 16; i++)
 		sbox_tbl[i] = sbox(i);
 
-	for (int i = 0; i < 32; i += 4)
-		for (int j = 0; j < 16; j++) {
+	for (i = 0; i < 32; i += 4)
+		for (j = 0; j < 16; j++) {
 			// (a,b)
 			// (b,a^b)=(X,Y)
 			// (X^Y,X)

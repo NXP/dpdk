@@ -416,7 +416,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	double ibytes_diff = 0;
 	double obytes_diff = 0;
 	unsigned long long ibytes_fcs = 0, obytes_fcs = 0;
-	unsigned long long missed;
+	unsigned long long missed = 0;
 	int ret = 0;
 
 	if (is_ep && !is_vio_ep)

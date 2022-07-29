@@ -58,7 +58,7 @@ struct pcie_dw_bar_size_mask {
 	uint32_t bar5_mask;
 } __packed;
 
-struct pcie_dw_cap {
+struct pcie_dw_basic_ctl {
 	uint16_t vendor_id;
 	uint16_t device_id;
 	uint16_t control_reg;
@@ -78,8 +78,36 @@ struct pcie_dw_cap {
 	uint32_t pfbar5;
 } __packed;
 
+#define PCIE_DW_CAP_OFFSET 0x70
+
+#define PCIE_FUN_RESET_SRIOV_CAP (0x1 << 28)
+struct pcie_dw_cap {
+	uint8_t cap_id_reg;
+	uint8_t rsv1;
+	uint16_t cap_reg;
+	uint32_t dev_cap_reg;
+	uint16_t dev_ctrl_reg;
+	uint16_t dev_status_reg;
+	uint32_t link_cap_reg;
+	uint16_t link_ctrl_reg;
+	uint16_t link_status_reg;
+	uint32_t slot_cap_reg;
+	uint16_t slot_ctrl_reg;
+	uint16_t slot_status_reg;
+	uint16_t root_cap_reg;
+	uint16_t root_ctrl_reg;
+	uint32_t root_status_reg;
+	uint32_t dev_cap2_reg;
+	uint16_t dev_ctl2_reg;
+	uint16_t rsv2;
+	uint32_t link_cap2_reg;
+	uint16_t link_ctl2_reg;
+	uint16_t link_status2_reg;
+} __packed;
+
 #define PCIE_DW_EXT_CAP_OFFSET 0x178
 
+/* For SRIOV only*/
 struct pcie_dw_ext_cap {
 	uint32_t extend_cap_header;
 	uint32_t cap_reg;
@@ -672,6 +700,12 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 		(struct pcie_dw_iatu_region *)
 		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
+	if (!hw->is_sriov && (pf > 0 || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return 0;
+	}
+
 	if (shared) {
 		cpu_addr = pcie_dw_find_shared_ob_space(pcie_id,
 			pci_addr, size);
@@ -737,7 +771,7 @@ pcie_dw_map_ob_win(struct lsx_pciep_hw_low *hw,
 	return cpu_addr;
 }
 
-static void
+static int
 pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 	int idx, int pf, int is_vf, int vf,
 	uint64_t cpu_addr, uint64_t pci_addr,
@@ -747,6 +781,12 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 	struct pcie_dw_iatu_region *iatu =
 		(struct pcie_dw_iatu_region *)
 		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
+
+	if (!hw->is_sriov && (pf > 0 || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EIO;
+	}
 
 	ctrl1 = PCIE_ATU_CTL1_TYPE_MEM | (pf << PCIE_ATU_CTL1_FUNC_SHIFT);
 	ctrl2 = PCIE_ATU_CTL2_EN;
@@ -775,6 +815,8 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 		LSX_PCIEP_BUS_INFO(DWC_OB_VF_INFO_DUMP_FORMAT(hw->index,
 			pf, vf, cpu_addr, pci_addr, size, idx));
 	}
+
+	return 0;
 }
 
 static void pcie_dw_set_ib_size(uint8_t *base, int bar,
@@ -824,7 +866,7 @@ static void pcie_dw_set_ib_size(uint8_t *base, int bar,
 	}
 }
 
-static void
+static int
 pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf, int bar,
 	uint64_t phys, uint64_t size, int resize)
@@ -836,10 +878,16 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 		(struct pcie_dw_iatu_region *)
 		(hw->dbi_vir + PCIE_DW_IATU_REGION_OFFSET);
 
+	if (!hw->is_sriov && (pf > 0 || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EIO;
+	}
+
 	if (bar >= PCI_MAX_RESOURCE) {
 		LSX_PCIEP_BUS_ERR("Invalid bar(%d)", bar);
 
-		return;
+		return -EIO;
 	}
 
 	if (resize) {
@@ -852,7 +900,7 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	if (idx < 0) {
 		LSX_PCIEP_BUS_ERR("Inbound window alloc failed");
 
-		return;
+		return -ENOMEM;
 	}
 
 	ctrl1 = PCIE_ATU_CTL1_TYPE_MEM | (pf << PCIE_ATU_CTL1_FUNC_SHIFT);
@@ -890,6 +938,8 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 
 	proc_info->ib_idx[ib_nb] = idx;
 	proc_info->ib_nb++;
+
+	return 0;
 }
 
 static void
@@ -932,7 +982,19 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 	int vector;
 	uint8_t *dbi;
 
+	if (!hw->is_sriov && (pf > 0 || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return 0;
+	}
+
 	if (hw->msi_flag == LSX_PCIEP_MSIX_INT) {
+		if (!hw->is_sriov) {
+			LSX_PCIEP_BUS_ERR("PCIe%d (NONE-SRIOV) %s",
+				hw->index,
+				"does not support MSI-X");
+			return 0;
+		}
 		if (is_vf) {
 			mdata = pf << MSIX_DOORBELL_PF_SHIFT |
 				vf << MSIX_DOORBELL_VF_SHIFT |
@@ -969,27 +1031,33 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 	return vector_total;
 }
 
-static void
+static int
 pcie_dw_fun_init(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id)
 {
-	struct pcie_dw_cap *pf_cap;
+	struct pcie_dw_basic_ctl *basic_ctl;
 	struct pcie_dw_ext_cap *ext_cap;
+
+	if (!hw->is_sriov && (pf > 0 || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EIO;
+	}
 
 	rte_write16(1, hw->dbi_vir + PCIE_DBI_RO_WR_EN);
 
 	if (pf == PF0_IDX && !is_vf) {
-		pf_cap = (struct pcie_dw_cap *)hw->dbi_vir;
-		rte_write16(vendor_id, &pf_cap->vendor_id);
-		rte_write16(device_id, &pf_cap->device_id);
-		rte_write16(class_id, &pf_cap->class_id);
+		basic_ctl = (struct pcie_dw_basic_ctl *)hw->dbi_vir;
+		rte_write16(vendor_id, &basic_ctl->vendor_id);
+		rte_write16(device_id, &basic_ctl->device_id);
+		rte_write16(class_id, &basic_ctl->class_id);
 	} else if (pf == PF1_IDX && !is_vf) {
-		pf_cap = (struct pcie_dw_cap *)
+		basic_ctl = (struct pcie_dw_basic_ctl *)
 			(hw->dbi_vir + PCIE_CFG_OFFSET);
-		rte_write16(vendor_id, &pf_cap->vendor_id);
-		rte_write16(device_id, &pf_cap->device_id);
-		rte_write16(class_id, &pf_cap->class_id);
+		rte_write16(vendor_id, &basic_ctl->vendor_id);
+		rte_write16(device_id, &basic_ctl->device_id);
+		rte_write16(class_id, &basic_ctl->class_id);
 	} else if (pf == PF0_IDX && is_vf) {
 		ext_cap = (struct pcie_dw_ext_cap *)
 			(hw->dbi_vir + PCIE_DW_EXT_CAP_OFFSET);
@@ -1002,6 +1070,8 @@ pcie_dw_fun_init(struct lsx_pciep_hw_low *hw,
 	}
 
 	rte_write16(0, hw->dbi_vir + PCIE_DBI_RO_WR_EN);
+
+	return 0;
 }
 
 static uint64_t
@@ -1016,7 +1086,7 @@ pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
-		return -ENODEV;
+		return 0;
 	}
 
 	info = malloc(sizeof(struct pciep_dw_info));
@@ -1217,6 +1287,25 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 	free(info);
 }
 
+static int
+pcie_dw_is_sriov(struct lsx_pciep_hw_low *hw)
+{
+	struct pcie_dw_cap *cap;
+	uint32_t dev_cap_reg;
+
+	cap = (void *)(hw->dbi_vir + PCIE_DW_CAP_OFFSET);
+	dev_cap_reg = rte_read32(&cap->dev_cap_reg);
+	if (dev_cap_reg & PCIE_FUN_RESET_SRIOV_CAP)
+		hw->is_sriov = 1;
+	else
+		hw->is_sriov = 0;
+	LSX_PCIEP_BUS_INFO("PCIe%d is %s controller",
+		hw->index,
+		hw->is_sriov ? "SRIOV" : "NONE SRIOV");
+
+	return hw->is_sriov;
+}
+
 static struct lsx_pciep_ops pcie_dw_ops = {
 	.pcie_config = pcie_dw_config,
 	.pcie_deconfig = pcie_dw_deconfig,
@@ -1228,6 +1317,7 @@ static struct lsx_pciep_ops pcie_dw_ops = {
 	.pcie_cfg_ib_win = pcie_dw_set_ib_win,
 	.pcie_msix_cfg = pcie_dw_msix_init,
 	.pcie_get_ob_unmapped = pcie_dw_ob_unmapped,
+	.pcie_is_sriov = pcie_dw_is_sriov,
 };
 
 struct lsx_pciep_ops *lsx_pciep_get_dw_ops(void)

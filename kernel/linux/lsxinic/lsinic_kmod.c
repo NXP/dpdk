@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  *
  * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
  * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
@@ -859,7 +859,8 @@ static void lsinic_reinit_locked(struct lsinic_adapter *adapter)
 {
 	WARN_ON(in_interrupt());
 	/* put off any impending NetWatchDogTimeout */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+#if (KERNEL_VERSION(4, 7, 0) > LSINIC_HOST_KERNEL_VER && \
+	KERNEL_VERSION(3, 10, 0) < LSINIC_HOST_KERNEL_VER)
 	adapter->netdev->trans_start = jiffies;
 #endif
 	lsinic_down(adapter);
@@ -2633,7 +2634,7 @@ int lsinic_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 	return 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 62)
+#if KERNEL_VERSION(4, 9, 62) <= LSINIC_HOST_KERNEL_VER
 int
 lsinic_set_vf_vlan(struct net_device *netdev,
 	int vf, u16 vlan, u8 qos, __be16 vlan_proto)
@@ -2803,6 +2804,7 @@ static int lsinic_close(struct net_device *netdev)
 	return 0;
 }
 
+#if KERNEL_VERSION(3, 10, 0) < LSINIC_HOST_KERNEL_VER
 /**
  * lsinic_change_mtu - Change the Maximum Transfer Unit
  * @netdev: network interface device structure
@@ -2833,6 +2835,7 @@ static int lsinic_change_mtu(struct net_device *dev, int new_mtu)
 
 	return 0;
 }
+#endif
 
 #ifdef HAVE_NDO_GET_STATS64
 #ifdef HAVE_NEW_INTERFACE
@@ -3123,7 +3126,9 @@ static const struct net_device_ops lsinic_netdev_ops = {
 	.ndo_open		= lsinic_open,
 	.ndo_stop		= lsinic_close,
 	.ndo_start_xmit		= lsinic_xmit_frame,
+#if KERNEL_VERSION(3, 10, 0) < LSINIC_HOST_KERNEL_VER
 	.ndo_change_mtu		= lsinic_change_mtu,
+#endif
 	.ndo_set_rx_mode	= lsinic_set_rx_mode,
 	.ndo_validate_addr	= eth_validate_addr,
 #ifdef HAVE_NDO_GET_STATS64
@@ -3132,7 +3137,11 @@ static const struct net_device_ops lsinic_netdev_ops = {
 	.ndo_do_ioctl		= lsinic_ioctl,
 	.ndo_set_mac_address    = lsinic_set_mac,
 	.ndo_set_vf_mac		= lsinic_set_vf_mac,
+#if KERNEL_VERSION(3, 10, 0) < LSINIC_HOST_KERNEL_VER
 	.ndo_set_vf_vlan	= lsinic_set_vf_vlan,
+#else
+	.ndo_set_vf_vlan_rh73	= lsinic_set_vf_vlan,
+#endif
 #ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 	.ndo_set_vf_spoofchk    = lsinic_ndo_set_vf_spoofchk,
 #endif
@@ -3597,7 +3606,7 @@ lsinic_acquire_msix_vectors(struct lsinic_adapter *adapter,
 static void
 lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 {
-	int vector, v_budget, err;
+	int vector, v_budget, err, msix_cap;
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
@@ -3611,7 +3620,12 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 	v_budget = max(adapter->num_rx_queues, adapter->num_tx_queues);
 	v_budget = min_t(int, v_budget, num_online_cpus());
 	v_budget += NON_Q_VECTORS;
-	if (v_budget > MAX_MSIX_VECTORS) {
+
+	msix_cap = pci_find_capability(adapter->pdev, PCI_CAP_ID_MSIX);
+	if (!msix_cap) {
+		/* Force to use msi for NONE SRIOV device.*/
+		mmsi_flag = 1;
+	} else if (v_budget > MAX_MSIX_VECTORS) {
 		/* enable multi-msi */
 		mmsi_flag = 1;
 	}
@@ -3629,6 +3643,7 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 			LSINIC_WRITE_REG(&rcs_reg->msi_flag, LSINIC_MMSI_INT);
 			return;
 		}
+		goto legacy_int;
 	} else {
 		v_budget = min_t(int, v_budget, MAX_MSIX_VECTORS);
 	}
@@ -3648,6 +3663,8 @@ lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
 		if (adapter->flags & LSINIC_FLAG_MSIX_ENABLED)
 			return;
 	}
+
+legacy_int:
 
 	adapter->num_q_vectors = 1;
 
@@ -4187,13 +4204,17 @@ lsinic_pci_parse_res(char *line, size_t len, u64 *phys_addr,
 #define PCI_SIM_MAX_RESOURCE 6
 #define PCI_BAR_INFO_LEN (19 * 3 + 1)
 
-static char *read_line(char *buf, int buf_len, struct file *fp)
+static char *read_line(char *buf, size_t buf_len, struct file *fp)
 {
 	int ret;
 	int i = 0;
 	loff_t f_pos_old = fp->f_pos;
 read_again:
+#if KERNEL_VERSION(3, 10, 0) < LSINIC_HOST_KERNEL_VER
 	ret = kernel_read(fp, buf, buf_len, &(fp->f_pos));
+#else
+	ret = kernel_read(fp, fp->f_pos, buf, buf_len);
+#endif
 	if (ret <= 0)
 		return NULL;
 	if (buf[0] != '0') {
@@ -4562,7 +4583,7 @@ static struct pci_driver lsinic_driver = {
 	.id_table = lsinic_ids,
 	.probe    = lsinic_probe,
 	.remove   = lsinic_remove,
-#if KERNEL_VERSION(3, 8, 0) <= LINUX_VERSION_CODE
+#if KERNEL_VERSION(3, 8, 0) <= LSINIC_HOST_KERNEL_VER
 	.sriov_configure = lsinic_pci_sriov_configure,
 #endif
 };

@@ -60,7 +60,7 @@
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_ethdev.h>
 
-#define DEFAULT_TX_RS_THRESH 32
+#define DEFAULT_BURST_THRESH LSXVIO_QDMA_EQ_MAX_NB
 
 /* TX queues list */
 TAILQ_HEAD(lsxvio_tx_queue_list, lsxvio_queue);
@@ -111,13 +111,18 @@ lsxvio_queue_release_mbufs(struct lsxvio_queue *q)
 static int
 lsxvio_queue_dma_create(struct lsxvio_queue *q)
 {
-	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 0;
+	uint32_t lcore_id = rte_lcore_id(), i, sg_enable = 1;
+	int sg_unsupport = 0;
 	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	int pcie_id = q->adapter->lsx_dev->pcie_id;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
+	struct lsxvio_adapter *adapter = q->adapter;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
+	int dma_config_err = 0;
 
-	penv = getenv("LSINIC_QDMA_SG_ENABLE");
+	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
 	if (penv)
 		sg_enable = atoi(penv);
 
@@ -126,7 +131,21 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 			pex_type != PEX_LS208X) {
 			LSXINIC_PMD_WARN("RBP does not support qDMA SG");
 			sg_enable = 0;
+			sg_unsupport = 1;
 		}
+	}
+
+	if (sg_unsupport && q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		LSXINIC_PMD_ERR("EP2RC DMA NORSP should disable");
+
+		return -EINVAL;
+	}
+
+	if (!sg_enable && q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		LSXINIC_PMD_WARN("SG is enabled to support EP2RC DMA NORSP");
+		sg_enable = 1;
 	}
 
 	if (sg_enable)
@@ -143,6 +162,20 @@ lsxvio_queue_dma_create(struct lsxvio_queue *q)
 
 		rte_rawdev_queue_release(q->dma_id, q->dma_vq);
 	}
+
+	if (q->type == LSXVIO_QUEUE_RX &&
+		(common->lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
+		vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
+	} else if (q->type == LSXVIO_QUEUE_TX &&
+		(common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)) {
+		if (common->lsx_feature & LSX_VIO_EP2RC_PACKED)
+			vq_flags |= RTE_QDMA_VQ_NO_RESPONSE;
+		else
+			dma_config_err = 1;
+	}
+
+	if (dma_config_err)
+		LSXINIC_PMD_WARN("TXQ: DMA no RSP should use packed ring\n");
 
 	q->core_id = lcore_id;
 
@@ -303,7 +336,7 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 
 	q->ob_virt_base = adapter->ob_virt_base;
 	q->nb_desc = nb_desc;
-	q->new_desc_thresh = DEFAULT_TX_RS_THRESH;
+	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
 
@@ -355,6 +388,10 @@ lsxvio_queue_reset(struct lsxvio_queue *q)
 		xe[i].idx = i;
 		xe[i].bd_idx = i;
 		xe[i].flag = 0;
+		if (q->type == LSXVIO_QUEUE_TX &&
+			q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG)
+			xe[i].dma_complete = 1;
+
 		dma_jobs[i].cnxt = (uint64_t)(&xe[i]);
 		dma_jobs[i].flags = RTE_QDMA_JOB_SRC_PHY |
 				   RTE_QDMA_JOB_DEST_PHY;
@@ -433,7 +470,7 @@ static void
 lsxvio_queue_start(struct lsxvio_queue *q)
 {
 	q->new_time_thresh = 1 * rte_get_timer_hz() / 1000000; /* ns->s */
-	q->new_desc_thresh = DEFAULT_TX_RS_THRESH;
+	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 
 	if (lsxvio_queue_dma_create(q) < 0)
 		return;
@@ -485,6 +522,9 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct lsxvio_adapter *adapter = dev->data->dev_private;
 	uint16_t queue_idx = tx_queue_id * VIRTIO_QNUM + VIRTIO_RXQ;
 	struct lsxvio_queue *txq;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
+	char *penv;
 
 	/* Free memory prior to re-allocation if needed... */
 	if (dev->data->tx_queues[queue_idx])
@@ -507,6 +547,19 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		txq->sw_ring, txq->desc, txq->dma_jobs);
 
 	dev->data->tx_queues[tx_queue_id] = txq;
+
+	if (common->lsx_feature & LSX_VIO_EP2RC_PACKED) {
+		txq->flag |= LSXVIO_QUEUE_PKD_INORDER_FLAG;
+		txq->cached_flags = VRING_PACKED_DESC_F_AVAIL_USED;
+	}
+
+	penv = getenv("LSXVIO_TX_QDMA_APPEND");
+	if (penv) {
+		if (atoi(penv))
+			txq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
+	} else {
+		txq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
+	}
 
 	return 0;
 }
@@ -534,6 +587,9 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct lsxvio_adapter *adapter = dev->data->dev_private;
 	uint16_t queue_idx = rx_queue_id * VIRTIO_QNUM + VIRTIO_TXQ;
 	struct lsxvio_queue *rxq;
+	struct lsxvio_common_cfg *common =
+		BASE_TO_COMMON(adapter->cfg_base);
+	char *penv;
 
 	/* Free memory prior to re-allocation if needed... */
 	if (dev->data->rx_queues[queue_idx] != NULL)
@@ -551,7 +607,7 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->drop_en = rx_conf->rx_drop_en;
 
 	/* using RC's rx ring to send EP's packets */
-	rxq->desc = NULL;
+	rxq->desc_addr = NULL;
 	rxq->dev = dev;
 	rxq->type = LSXVIO_QUEUE_RX;
 	LSXINIC_PMD_DBG("port%d rxq%d dma_id=%d, sw_ring:%p "
@@ -560,6 +616,17 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rxq->sw_ring, rxq->desc, rxq->dma_jobs);
 
 	dev->data->rx_queues[rx_queue_id] = rxq;
+
+	if (common->lsx_feature & LSX_VIO_RC2EP_IN_ORDER)
+		rxq->flag |= LSXVIO_QUEUE_IDX_INORDER_FLAG;
+
+	penv = getenv("LSXVIO_RX_QDMA_APPEND");
+	if (penv) {
+		if (atoi(penv))
+			rxq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
+	} else {
+		rxq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
+	}
 
 	return 0;
 }
@@ -651,6 +718,22 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 		struct lsxvio_queue *txq = dev->data->tx_queues[i];
 		struct lsxvio_queue *next = txq;
 
+		if (txq->shadow_pdesc_mz) {
+			rte_memzone_free(txq->shadow_pdesc_mz);
+			txq->shadow_pdesc_mz = NULL;
+		}
+		if (txq->shadow_used_split) {
+			/** The address alloced was shift to align with 64b,
+			 * so let's recover to original address to free.
+			 * vq->shadow_used_split =
+			 * (void *)((char *)vq->shadow_used_split +
+			 * offsetof(struct vring_used, ring[0]));
+			 */
+			rte_free((uint8_t *)txq->shadow_used_split -
+				offsetof(struct vring_used, ring[0]));
+			txq->shadow_used_split = NULL;
+		}
+
 		for (j = 0; j < txq->nb_q; j++) {
 			if (next == NULL)
 				break;
@@ -664,6 +747,22 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		struct lsxvio_queue *rxq = dev->data->rx_queues[i];
 		struct lsxvio_queue *next = rxq;
+
+		if (rxq->shadow_pdesc_mz) {
+			rte_memzone_free(rxq->shadow_pdesc_mz);
+			rxq->shadow_pdesc_mz = NULL;
+		}
+		if (rxq->shadow_used_split) {
+			/** The address alloced was shift to align with 64b,
+			 * so let's recover to original address to free.
+			 * vq->shadow_used_split =
+			 * (void *)((char *)vq->shadow_used_split +
+			 * offsetof(struct vring_used, ring[0]));
+			 */
+			rte_free((uint8_t *)rxq->shadow_used_split -
+				offsetof(struct vring_used, ring[0]));
+			rxq->shadow_used_split = NULL;
+		}
 
 		for (j = 0; j < rxq->nb_q; j++) {
 			if (!next)
@@ -682,22 +781,32 @@ update_shadow_used_ring_split(struct lsxvio_queue *vq,
 {
 	uint16_t i = vq->shadow_used_idx++;
 
-	vq->shadow_used_split[i].id  = desc_idx;
-	vq->shadow_used_split[i].len = len;
+	vq->shadow_used_split->ring[i].id  = desc_idx;
+	vq->shadow_used_split->ring[i].len =
+		len + vq->adapter->vtnet_hdr_size;
 }
 
 static __rte_always_inline void
 do_flush_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t to, uint16_t from, uint16_t size)
 {
-	uint16_t i;
+	if (likely(is_align_64(&vq->used->ring[0]) &&
+		is_align_64(&vq->shadow_used_split->ring[0]))) {
+		rte_memcpy(&vq->used->ring[to],
+			&vq->shadow_used_split->ring[from],
+			size * sizeof(struct vring_used_elem));
+	} else {
+		uint16_t i;
 
-	for (i = 0; i < size; i++) {
-		vq->used->ring[to + i].id = vq->shadow_used_split[from + i].id;
-		vq->used->ring[to + i].len =
-			vq->shadow_used_split[from + i].len +
-			vq->adapter->vtnet_hdr_size;
+		for (i = 0; i < size; i++) {
+			vq->used->ring[to + i].id =
+				vq->shadow_used_split->ring[from + i].id;
+			vq->used->ring[to + i].len =
+				vq->shadow_used_split->ring[from + i].len +
+					vq->adapter->vtnet_hdr_size;
+		}
 	}
+	rte_wmb();
 }
 
 static __rte_always_inline void
@@ -722,8 +831,94 @@ flush_shadow_used_ring_split(struct lsxvio_queue *vq)
 	}
 
 	vq->last_used_idx += shadow_used_idx;
-	vq->used->idx += shadow_used_idx;
+	vq->local_used_idx += shadow_used_idx;
+	vq->used->idx = vq->local_used_idx;
 	vq->shadow_used_idx = 0;
+}
+
+static inline uint16_t
+lsxvio_xmit_dma_bd_jobs(struct lsxvio_queue *vq,
+	struct rte_qdma_job *bd_jobs[],
+	uint16_t start_idx, uint16_t end_idx)
+{
+	uint16_t dma_bd_nb = 0;
+	struct rte_qdma_job *vq_bd_jobs = vq->e2r_bd_dma_jobs;
+
+	bd_jobs[0] = &vq_bd_jobs[start_idx];
+	dma_bd_nb++;
+	if (end_idx < start_idx && end_idx > 0) {
+		bd_jobs[0]->len = (vq->nb_desc - start_idx) *
+			sizeof(struct vring_packed_desc);
+		bd_jobs[dma_bd_nb] = &vq_bd_jobs[0];
+		bd_jobs[dma_bd_nb]->len = end_idx *
+			sizeof(struct vring_packed_desc);
+		dma_bd_nb++;
+	} else if (end_idx > 0) {
+		bd_jobs[0]->len = (end_idx - start_idx) *
+			sizeof(struct vring_packed_desc);
+	} else {
+		/* end_idx == 0*/
+		bd_jobs[0]->len = (vq->nb_desc - start_idx) *
+			sizeof(struct vring_packed_desc);
+	}
+
+	return dma_bd_nb;
+}
+
+static inline void
+lsxvio_qdma_append(struct lsxvio_queue *vq,
+	bool append)
+{
+	int ret = 0, i, dma_idx, dma_bd_nb = 0;
+	struct rte_qdma_enqdeq e_context;
+	uint16_t append_len;
+	struct rte_qdma_job *dma_jobs[LSXVIO_QDMA_EQ_MAX_NB * 2 + 2];
+
+	if (vq->append_dma_idx >= vq->start_dma_idx) {
+		append_len = vq->append_dma_idx - vq->start_dma_idx;
+	} else {
+		append_len = vq->nb_desc - vq->start_dma_idx +
+			vq->append_dma_idx;
+	}
+
+	if (!(vq->flag & LSXVIO_QUEUE_DMA_APPEND_FLAG))
+		append = false;
+
+	if ((append && append_len < LSXVIO_QDMA_EQ_MAX_NB) ||
+		!append_len)
+		return;
+
+	for (i = 0; i < append_len; i++) {
+		dma_idx = (vq->start_dma_idx + i) & (vq->nb_desc - 1);
+		dma_jobs[i] = &vq->dma_jobs[dma_idx];
+	}
+
+	if (vq->type == LSXVIO_QUEUE_TX &&
+		vq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		dma_bd_nb = lsxvio_xmit_dma_bd_jobs(vq,
+			&dma_jobs[append_len],
+			vq->start_dma_idx,
+			(vq->start_dma_idx + append_len) & (vq->nb_desc - 1));
+	}
+
+	/* Qdma multi-enqueue support, max enqueue 32 entries once.
+	 * if there are 32 entries or time out, handle them in batch
+	 */
+	e_context.vq_id = vq->dma_vq;
+	e_context.job = dma_jobs;
+	ret = rte_qdma_enqueue_buffers(vq->dma_id, NULL,
+			append_len + dma_bd_nb,
+			&e_context);
+	if (likely(ret > 0)) {
+		vq->jobs_pending -= ret;
+		vq->pkts_eq += ret;
+		vq->start_dma_idx += append_len;
+		vq->start_dma_idx =
+			vq->start_dma_idx & (vq->nb_desc - 1);
+		vq->append_dma_idx = vq->start_dma_idx;
+	} else {
+		vq->errors++;
+	}
 }
 
 static inline void
@@ -777,6 +972,32 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 
 	LSXINIC_PMD_DBG("enter %s nb_in_dma=%ld, dequeue ret=%d",
 		__func__, rxq->pkts_eq - rxq->pkts_dq, ret);
+	if (unlikely(ret <= 0)) {
+		if (ret < 0) {
+			LSXINIC_PMD_ERR("nb_in_dma=%ld, dq err=%d",
+				rxq->pkts_eq - rxq->pkts_dq, ret);
+		}
+
+		return 0;
+	}
+	rxq->pkts_dq += ret;
+	if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) {
+		for (i = 0; i < ret; i++) {
+			dma_job = jobs[i];
+			if (!dma_job)
+				continue;
+			dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+			rxe = (struct lsxvio_queue_entry *)dma_job->cnxt;
+			if (unlikely(dma_job->status != 0)) {
+				LSXINIC_PMD_ERR("rxe%d dma error %x, cpu:%d",
+					rxe->idx,
+					dma_job->status, rte_lcore_id());
+			}
+			if (rxe)
+				rxe->dma_complete = 1;
+		}
+		return i;
+	}
 	for (i = 0; i < ret; i++) {
 		dma_job = jobs[i];
 		if (!dma_job)
@@ -804,25 +1025,36 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 			rte_prefetch0(rte_pktmbuf_mtod(rxe->mbuf, void *));
 		}
 	}
-	rxq->pkts_dq += ret;
-
-	LSXINIC_PMD_DBG("exit %s nb_in_dma=%ld dequeue ret=%d\n",
-			__func__, rxq->pkts_eq - rxq->pkts_dq, ret);
 
 	return i;
 }
 
 static void
 lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
-	uint16_t desc_idx, uint16_t head)
+	uint16_t desc_idx, uint16_t head,
+	struct rte_mbuf *rxm,
+	struct rte_qdma_job *dma_job)
 {
-	struct rte_qdma_job *dma_job = &rxq->dma_jobs[desc_idx];
 	struct lsxvio_queue_entry *rxe = &rxq->sw_ring[desc_idx];
-	struct vring_desc *desc = &rxq->desc[desc_idx];
-	struct rte_mbuf *rxm;
+	struct vring_desc *desc;
+	struct lsxvio_short_desc *sdesc;
+	uint64_t addr;
 	uint32_t pkt_len;
 	uint32_t total_bytes = 0, total_packets = 0;
 	uint32_t len;
+
+	if (rxq->shadow_sdesc) {
+		sdesc = &rxq->shadow_sdesc[desc_idx];
+		len = sdesc->len;
+		addr = rxq->mem_base + sdesc->addr_offset;
+	} else {
+		desc = &rxq->shadow_vdesc[desc_idx];
+		len = desc->len;
+		addr = desc->addr;
+	}
+
+	if (!dma_job)
+		dma_job = &rxq->dma_jobs[desc_idx];
 
 	if (unlikely(dma_job->flags & LSINIC_QDMA_JOB_USING_FLAG)) {
 		/*Workaround, need further investigation for this situation.*/
@@ -831,9 +1063,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 
 		return;
 	}
-	LSXINIC_PMD_DBG("desc info: addr=%lx len=%d flags=%x, next=%x",
-		desc->addr, desc->len, desc->flags, desc->next);
-	len = desc->len;
+	LSXINIC_PMD_DBG("desc info: addr=%lx len=%d", addr, len);
 	len -= rxq->adapter->vtnet_hdr_size;
 	if (len > LSXVIO_MAX_DATA_PER_TXD) {
 		LSXINIC_PMD_ERR("port%d rxq%d BD%d error len:0x%08x, cpu:%d",
@@ -844,7 +1074,8 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	}
 	pkt_len = len - rxq->crc_len;
 
-	rxm = rte_mbuf_raw_alloc(rxq->mb_pool);
+	if (!rxm)
+		rxm = rte_mbuf_raw_alloc(rxq->mb_pool);
 	if (!rxm) {
 		LSXINIC_PMD_DBG("RX mbuf alloc failed"
 			" port_id=%u queue_id=%u",
@@ -862,12 +1093,18 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	dma_job->cnxt = (uint64_t)rxe;
 	dma_job->dest =
 		rte_cpu_to_le_64(rte_mbuf_data_iova_default(rxm));
-	dma_job->src =
-		desc->addr + rxq->ob_base +
+	dma_job->src = addr + rxq->ob_base +
 		rxq->adapter->vtnet_hdr_size;
 	rxe->align_dma_offset = (dma_job->src) & LSXVIO_DMA_ALIGN_MASK;
 	dma_job->src -= rxe->align_dma_offset;
 	dma_job->len = pkt_len + rxe->align_dma_offset;
+	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		rxe->complete = rte_pktmbuf_mtod_offset(rxm, char *, len);
+		*(rxe->complete) = LSINIC_XFER_COMPLETE_INIT_FLAG;
+		dma_job->len++;
+	}
+	rxq->append_dma_idx++;
+	rxq->append_dma_idx = rxq->append_dma_idx & (rxq->nb_desc - 1);
 
 	LSXINIC_PMD_DBG("dma info: src=%lx dest=%lx len=%d, "
 		"rxq_id=%d type=%d, drbp=%d, srbp=%d dma_id=%d",
@@ -892,46 +1129,117 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 }
 
 static void
-lsxvio_recv_bd(struct lsxvio_queue *vq)
+lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 {
-	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB];
-	uint16_t free_entries, i, j, avail_idx, desc_idx, head, bd_num = 0;
+	uint16_t desc_idxs[DEFAULT_BURST_THRESH];
+	uint16_t heads[DEFAULT_BURST_THRESH];
+	struct rte_mbuf *mbufs[DEFAULT_BURST_THRESH];
+	int ret;
+	uint16_t free_entries, i, j, avail_idx, desc_idx, bd_num = 0;
+	struct vring_avail *avail;
 
 	if (vq->shadow_avail)
 		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
 	else
 		free_entries = vq->avail->idx - vq->last_avail_idx;
 
-	if (free_entries == 0)
+	if (free_entries == 0) {
+		lsxvio_qdma_append(vq, false);
 		return;
+	}
+
+	if (vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
+		avail = vq->shadow_avail;
+	else
+		avail = vq->avail;
 
 	for (i = 0; i < free_entries; i++) {
 		avail_idx = (vq->last_avail_idx + i) & (vq->nb_desc - 1);
-		desc_idx = vq->avail->ring[avail_idx];
+		desc_idx = avail->ring[avail_idx];
+		heads[bd_num] = 1;
+		j = 0;
+		do {
+			desc_idxs[bd_num] = desc_idx;
+			bd_num++;
+			j++;
+			if (!vq->shadow_vdesc)
+				break;
+			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT)))
+				break;
+			desc_idx = vq->vdesc[desc_idx].next;
+			if (bd_num < DEFAULT_BURST_THRESH)
+				heads[bd_num] = 0;
+		} while (1);
+
+		if (bd_num >= DEFAULT_BURST_THRESH) {
+			i++;
+			break;
+		}
+	}
+
+	ret = rte_pktmbuf_alloc_bulk(vq->mb_pool, mbufs, bd_num);
+	if (unlikely(ret))
+		return;
+
+	for (j = 0; j < bd_num; j++) {
+		lsxvio_recv_one_pkt(vq, desc_idxs[j], heads[j],
+			mbufs[j], NULL);
+	}
+
+	lsxvio_qdma_append(vq, false);
+	vq->last_avail_idx += i;
+}
+
+static void
+lsxvio_recv_bd(struct lsxvio_queue *vq)
+{
+	uint16_t free_entries, i, j, avail_idx, desc_idx, head, bd_num = 0;
+	struct vring_avail *avail;
+
+	if (vq->shadow_avail)
+		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
+	else
+		free_entries = vq->avail->idx - vq->last_avail_idx;
+
+	if (free_entries == 0) {
+		lsxvio_qdma_append(vq, false);
+		return;
+	}
+
+	if (vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
+		avail = vq->shadow_avail;
+	else
+		avail = vq->avail;
+
+	for (i = 0; i < free_entries; i++) {
+		avail_idx = (vq->last_avail_idx + i) & (vq->nb_desc - 1);
+		desc_idx = avail->ring[avail_idx];
 		head = 1;
 		LSXINIC_PMD_DBG("avail_idx=%d, desc_idx=%d free_entries=%d",
 			avail_idx, desc_idx, free_entries);
 		/** Currently no indirect support. */
 		j = 0;
 		do {
-			lsxvio_recv_one_pkt(vq, desc_idx, head);
-			jobs[j] = &vq->dma_jobs[desc_idx];
+			lsxvio_recv_one_pkt(vq, desc_idx, head, NULL, NULL);
 			head = 0;
 			bd_num++;
 			j++;
-			if (!(vq->desc[desc_idx].flags & VRING_DESC_F_NEXT))
+			if (!vq->shadow_vdesc)
 				break;
-			desc_idx = vq->desc[desc_idx].next;
+			if (likely(!(vq->shadow_vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT)))
+				break;
+			desc_idx = vq->vdesc[desc_idx].next;
 		} while (1);
 
-		lsxvio_qdma_multiple_enqueue(vq, jobs, j);
-
-		if (bd_num >= DEFAULT_TX_RS_THRESH) {
+		if (bd_num >= DEFAULT_BURST_THRESH) {
 			i++;
 			break;
 		}
 	}
 
+	lsxvio_qdma_append(vq, false);
 	vq->last_avail_idx += i;
 }
 
@@ -942,10 +1250,97 @@ lsxvio_queue_running(struct lsxvio_queue *q)
 }
 
 static uint16_t
-lsxvio_recv_pkts_to_cache(struct lsxvio_queue *rxq)
+lsxvio_recv_pkts_no_dma_rsp(struct lsxvio_queue *rxq)
 {
-	/* Seems no need now.*/
-	return rxq->queue_id;
+	uint16_t used_idx, bd_num = 0, start_from, size, idx;
+	struct lsxvio_queue_entry *sw_bd, *next_sw_bd;
+
+	used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+	sw_bd = &rxq->sw_ring[used_idx];
+	start_from = used_idx;
+	while (likely(sw_bd->complete &&
+		*sw_bd->complete == LSINIC_XFER_COMPLETE_DONE_FLAG)) {
+		idx = (rxq->last_used_idx + 1) & (rxq->nb_desc - 1);
+		next_sw_bd = &rxq->sw_ring[idx];
+		if (likely(next_sw_bd->complete))
+			rte_prefetch0(next_sw_bd->complete);
+		if (unlikely(((rxq->mtail + 2) & MCACHE_MASK) ==
+			rxq->mhead))
+			break;
+		idx = sw_bd->idx & (rxq->nb_desc - 1);
+		if (!(rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG))
+			update_shadow_used_ring_split(rxq, idx, 0);
+		rxq->dma_jobs[idx].flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
+		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
+		rxq->mcnt++;
+		bd_num++;
+		rte_prefetch0(rte_pktmbuf_mtod(sw_bd->mbuf, void *));
+		sw_bd->complete = NULL;
+		rxq->last_used_idx++;
+		used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+		sw_bd = &rxq->sw_ring[used_idx];
+	}
+
+	if (!bd_num)
+		return 0;
+
+	if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG)
+		goto skip_update_used_ring;
+
+	rxq->shadow_used_idx = 0;
+
+	if (start_from + bd_num <= rxq->nb_desc) {
+		do_flush_shadow_used_ring_split(rxq, start_from, 0,
+			bd_num);
+	} else {
+		size = rxq->nb_desc - start_from;
+		do_flush_shadow_used_ring_split(rxq, start_from, 0, size);
+
+		 /* update the left half used ring interval [0, left_size] */
+		do_flush_shadow_used_ring_split(rxq, 0, size,
+			bd_num - size);
+	}
+
+skip_update_used_ring:
+	rxq->local_used_idx += bd_num;
+	rxq->used->idx = rxq->local_used_idx;
+
+	return bd_num;
+}
+
+static uint16_t
+lsxvio_recv_pkts_in_order(struct lsxvio_queue *rxq)
+{
+	uint16_t used_idx, bd_num = 0;
+	struct lsxvio_queue_entry *sw_bd;
+
+	used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+	sw_bd = &rxq->sw_ring[used_idx];
+	while (likely(sw_bd->dma_complete)) {
+		if (unlikely(((rxq->mtail + 2) & MCACHE_MASK) ==
+			rxq->mhead))
+			break;
+		rxq->mcache[rxq->mtail] = sw_bd->mbuf;
+		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
+		rxq->mcnt++;
+		bd_num++;
+		rte_prefetch0(rte_pktmbuf_mtod(sw_bd->mbuf, void *));
+		sw_bd->dma_complete = 0;
+		rxq->last_used_idx++;
+		used_idx = rxq->last_used_idx & (rxq->nb_desc - 1);
+		sw_bd = &rxq->sw_ring[used_idx];
+	}
+
+	if (!bd_num) {
+		/* Skip accessing PCIe*/
+		return 0;
+	}
+
+	rxq->local_used_idx += bd_num;
+	rxq->used->idx = rxq->local_used_idx;
+
+	return bd_num;
 }
 
 static bool
@@ -967,7 +1362,7 @@ lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 		q->new_desc = 0;
 		return;
 	}
-	if (!q->new_desc)
+	if (!q->new_desc || !q->msix_vaddr)
 		return;
 
 	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
@@ -1001,10 +1396,18 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			return 0;
 	}
 
-	lsxvio_recv_bd(rxq);
-	lsxvio_recv_pkts_to_cache(rxq);
-
-	lsxvio_rx_dma_dequeue(rxq);
+	if (1)
+		lsxvio_recv_bd_burst(rxq);
+	else
+		lsxvio_recv_bd(rxq);
+	if (rxq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		lsxvio_recv_pkts_no_dma_rsp(rxq);
+	} else if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) {
+		lsxvio_rx_dma_dequeue(rxq);
+		lsxvio_recv_pkts_in_order(rxq);
+	} else {
+		lsxvio_rx_dma_dequeue(rxq);
+	}
 
 	lsxvio_tx_loop();
 
@@ -1053,9 +1456,10 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 	struct rte_qdma_job *jobs[LSXVIO_QDMA_DQ_MAX_NB];
 	struct rte_qdma_job *dma_job;
 	struct lsxvio_queue_entry *txe = NULL;
-	uint16_t idx;
+	uint16_t idx, free_idx = 0;
 	int i, ret = 0;
 	struct rte_qdma_enqdeq context;
+	struct rte_mbuf *free_mbufs[LSXVIO_QDMA_DQ_MAX_NB];
 
 	if (txq->pkts_eq == txq->pkts_dq)
 		return 0;
@@ -1074,7 +1478,18 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 			LSXINIC_PMD_ERR("QDMA fd returned err: %d",
 				dma_job->status);
 		}
-		if (txe) {
+		if (txq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG && txe) {
+			struct vring_packed_desc *desc = &txq->pdesc[txe->idx];
+			uint64_t *src, *dst;
+
+			src = (uint64_t *)(&txq->shadow_pdesc[txe->idx].len);
+			dst = (uint64_t *)(&desc->len);
+			*dst = *src;
+			free_mbufs[free_idx] = txe->mbuf;
+			free_idx++;
+			txe->mbuf = NULL;
+			txq->next_dma_idx++;
+		} else if (txe) {
 			idx = txe->idx & (txq->nb_desc - 1);
 			/* This should record the completed jobs,
 			 * so it need to be updated after got
@@ -1093,23 +1508,56 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 				txq->last_used_idx,
 				idx, txe->idx, txe->len,
 				txq->shadow_used_idx);
-			rte_pktmbuf_free(txe->mbuf);
+			free_mbufs[free_idx] = txe->mbuf;
+			free_idx++;
 			txe->mbuf = NULL;
 			txq->next_dma_idx++;
 		}
 	}
 	txq->pkts_dq += ret;
 
+	if (free_idx)
+		rte_pktmbuf_free_bulk(free_mbufs, free_idx);
+
 	return i;
 }
 
-static void
+static int
 lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
-	struct rte_mbuf *rxm, uint16_t head)
+	struct rte_mbuf *rxm, uint16_t head,
+	struct rte_mbuf **free_mbuf)
 {
-	struct rte_qdma_job *dma_job = &vq->dma_jobs[desc_idx];
+	struct rte_qdma_job *dma_job = &vq->dma_jobs[vq->append_dma_idx];
 	struct lsxvio_queue_entry *txe = &vq->sw_ring[desc_idx];
-	struct vring_desc *desc = &vq->desc[desc_idx];
+	struct vring_desc *vdesc = NULL;
+	struct lsxvio_packed_notify *pnotify = NULL;
+	uint64_t addr = 0;
+
+	if (free_mbuf)
+		*free_mbuf = NULL;
+	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+		pnotify = vq->packed_notify;
+		if (vq->mem_base) {
+			vq->shadow_pdesc[desc_idx].addr = vq->mem_base +
+				pnotify->addr_offset[desc_idx];
+		} else {
+			vq->shadow_pdesc[desc_idx].addr =
+				pnotify->addr[desc_idx];
+		}
+
+		addr = vq->shadow_pdesc[desc_idx].addr;
+		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
+		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len;
+		if (txe->mbuf) {
+			if (free_mbuf)
+				*free_mbuf = txe->mbuf;
+			else
+				rte_pktmbuf_free(txe->mbuf);
+		}
+	} else {
+		vdesc = &vq->vdesc[desc_idx];
+		addr = vdesc->addr;
+	}
 
 	/* rxm is ret_mbuf passed to upper layer */
 	txe->mbuf = rxm;
@@ -1118,14 +1566,17 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 
 	dma_job->cnxt = (uint64_t)txe;
 	dma_job->src = rte_mbuf_data_iova(rxm) - vq->adapter->vtnet_hdr_size;
-	dma_job->dest = desc->addr + vq->ob_base;
+	dma_job->dest = addr + vq->ob_base;
 	dma_job->len = rxm->pkt_len + vq->adapter->vtnet_hdr_size;
 	if (vq->new_desc == 0)
 		vq->new_tsc = rte_rdtsc();
 
 	vq->jobs_pending++;
+	vq->append_dma_idx = (vq->append_dma_idx + 1) & (vq->nb_desc - 1);
 	LSXINIC_PMD_DBG("xmit src=%lx, dest=%lx, len=%d, pending=%d",
 		dma_job->src, dma_job->dest, dma_job->len, vq->jobs_pending);
+
+	return 0;
 }
 
 static void lsxvio_tx_loop(void)
@@ -1140,17 +1591,74 @@ static void lsxvio_tx_loop(void)
 				return;
 		}
 
-		if (q->pkts_eq > q->pkts_dq) {
+		if (!(q->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
+			&& q->pkts_eq > q->pkts_dq) {
 			lsxvio_tx_dma_dequeue(q);
-			if (q->shadow_used_idx) {
+			if (!(q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) &&
+				q->shadow_used_idx) {
 				q->new_desc += q->shadow_used_idx;
 				flush_shadow_used_ring_split(q);
 				lsxvio_queue_trigger_interrupt(q);
 			}
 		}
 
+		if (q->packets == q->packets_old)
+			lsxvio_qdma_append(q, false);
+		q->packets_old = q->packets;
+
 		q->loop_total++;
 	}
+}
+
+#define LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD 32
+static uint16_t
+lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	uint16_t tx_num = 0, avail_idx;
+	int ret;
+	uint16_t rc_last_avail_idx = vq->packed_notify->last_avail_idx;
+	uint16_t free_idx = 0;
+	struct rte_mbuf *free_pkts[nb_pkts];
+
+	while (((vq->last_avail_idx + LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD) &
+		(vq->nb_desc - 1)) !=
+		rc_last_avail_idx) {
+		avail_idx = vq->last_avail_idx;
+		ret = lsxvio_xmit_one_pkt(vq, avail_idx,
+			tx_pkts[tx_num], 1, &free_pkts[free_idx]);
+		if (free_pkts[free_idx])
+			free_idx++;
+		if (ret)
+			break;
+		memset((char *)tx_pkts[tx_num]->buf_addr +
+			tx_pkts[tx_num]->data_off -
+			vq->adapter->vtnet_hdr_size,
+			0, vq->adapter->vtnet_hdr_size);
+		vq->bytes += tx_pkts[tx_num]->pkt_len;
+		vq->bytes_fcs +=
+			tx_pkts[tx_num]->pkt_len +
+				LSINIC_ETH_FCS_SIZE;
+		vq->bytes_overhead +=
+			tx_pkts[tx_num]->pkt_len +
+				LSINIC_ETH_OVERHEAD_SIZE;
+		tx_num++;
+		nb_pkts--;
+		vq->packets++;
+		vq->last_avail_idx++;
+		if (unlikely(vq->last_avail_idx >= vq->nb_desc)) {
+			vq->cached_flags ^= VRING_PACKED_DESC_F_AVAIL_USED;
+			vq->last_avail_idx -= vq->nb_desc;
+		}
+		if (!nb_pkts)
+			break;
+	}
+
+	if (free_idx)
+		rte_pktmbuf_free_bulk(free_pkts, free_idx);
+	lsxvio_qdma_append(vq, true);
+
+	return tx_num;
 }
 
 static uint16_t
@@ -1177,7 +1685,7 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 				vq->adapter->vtnet_hdr_size,
 				0, vq->adapter->vtnet_hdr_size);
 			lsxvio_xmit_one_pkt(vq, desc_idx,
-				tx_pkts[tx_num], head);
+				tx_pkts[tx_num], head, NULL);
 			vq->bytes += tx_pkts[tx_num]->pkt_len;
 			vq->bytes_fcs +=
 				tx_pkts[tx_num]->pkt_len +
@@ -1185,20 +1693,20 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 			vq->bytes_overhead +=
 				tx_pkts[tx_num]->pkt_len +
 				LSINIC_ETH_OVERHEAD_SIZE;
-			jobs[j] = &vq->dma_jobs[desc_idx];
+			jobs[tx_num] = &vq->dma_jobs[desc_idx];
 			j++;
 			tx_num++;
 			nb_pkts--;
 			vq->packets++;
-			if ((vq->desc[desc_idx].flags & VRING_DESC_F_NEXT) == 0)
+			if ((vq->vdesc[desc_idx].flags &
+				VRING_DESC_F_NEXT) == 0)
 				break;
-			desc_idx = vq->desc[desc_idx].next;
+			desc_idx = vq->vdesc[desc_idx].next;
 			head = 0;
 		}
-
-		lsxvio_qdma_multiple_enqueue(vq, jobs, j);
 	}
 
+	lsxvio_qdma_multiple_enqueue(vq, jobs, tx_num);
 	vq->last_avail_idx += i;
 
 	return tx_num;
@@ -1220,6 +1728,11 @@ lsxvio_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	}
 
 	txq->loop_avail++;
+
+	if (txq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
+		return lsxvio_xmit_pkts_packed_burst(txq, tx_pkts,
+			nb_pkts);
+	}
 
 	/* TX loop */
 	return lsxvio_xmit_pkts_burst(txq, tx_pkts, nb_pkts);

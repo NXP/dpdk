@@ -32,7 +32,7 @@ struct lsx_pciep_ops {
 
 	void (*pcie_deconfig)(struct lsx_pciep_hw_low *hw);
 
-	void (*pcie_fun_init)(struct lsx_pciep_hw_low *hw,
+	int (*pcie_fun_init)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, uint16_t vendor_id,
 			uint16_t device_id, uint16_t class_id);
 
@@ -46,12 +46,12 @@ struct lsx_pciep_ops {
 			int pf, int is_vf, int vf,
 			uint64_t pci_addr, uint64_t size, int shared);
 
-	void (*pcie_cfg_ob_win)(struct lsx_pciep_hw_low *hw,
+	int (*pcie_cfg_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx, int pf, int is_vf, int vf,
 			uint64_t cpu_addr, uint64_t pci_addr,
 			uint64_t size);
 
-	void (*pcie_cfg_ib_win)(struct lsx_pciep_hw_low *hw,
+	int (*pcie_cfg_ib_win)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, int vf, int bar,
 			uint64_t phys, uint64_t size, int resize);
 
@@ -61,6 +61,8 @@ struct lsx_pciep_ops {
 			int vector_total);
 
 	uint64_t (*pcie_get_ob_unmapped)(struct lsx_pciep_hw_low *hw);
+
+	int (*pcie_is_sriov)(struct lsx_pciep_hw_low *hw);
 };
 
 struct lsx_pciep_ops *lsx_pciep_get_mv_ops(void);

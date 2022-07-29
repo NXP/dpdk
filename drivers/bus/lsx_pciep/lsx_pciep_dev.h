@@ -18,6 +18,7 @@
 #define LS2088A_PCIE_COMPATIBLE "fsl,ls2088a-pcie-ep"
 #define LX2160A_REV1_PCIE_COMPATIBLE "fsl,lx2160a-pcie-ep"
 #define LX2160A_REV2_PCIE_COMPATIBLE LS2088A_PCIE_COMPATIBLE
+#define LX2160A_REV2_PCIE_OLD_COMPATIBLE "fsl,lx2160ar2-pcie-ep"
 
 #define PCI_DMA_RBP_1T_BASE		(0x010000000000)
 #define PCI_DMA_RBP_0_BASE		(0)
@@ -71,6 +72,7 @@ struct lsx_pciep_ib_mem {
  */
 struct lsx_pciep_hw_low {
 	uint8_t	index;
+	int is_sriov;
 
 	uint64_t dbi_phy;
 	uint8_t *dbi_vir;
@@ -119,7 +121,6 @@ int lsx_pciep_primary_init(void);
 int lsx_pciep_uninit(void);
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 
-int lsx_pciep_sim_dev_add(void);
 void *lsx_pciep_map_region(uint64_t addr, size_t len);
 int lsx_pciep_share_info_init(void);
 

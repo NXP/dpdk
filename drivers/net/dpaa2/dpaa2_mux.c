@@ -69,6 +69,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	static int i;
 	int num_rules = 1;
 	uint64_t *masks = NULL, *keys = NULL;
+	int loop;
 
 	/* Find the DPDMUX from dpdmux_id in our list */
 	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
@@ -389,12 +390,12 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	/* As now our key extract parameters are set, let us configure
 	 * the rule.
 	 */
-	for (int j = 0; j < num_rules; j++) {
+	for (loop = 0; loop < num_rules; loop++) {
 		if (keys) {
 			rte_be64_t key_val, mask_val;
 
-			key_val = rte_bswap64(keys[j]);
-			mask_val = rte_bswap64(masks[j]);
+			key_val = rte_bswap64(keys[loop]);
+			mask_val = rte_bswap64(masks[loop]);
 			memcpy(key_iova, &key_val, sizeof(rte_be64_t));
 			memcpy(mask_iova, &mask_val, sizeof(rte_be64_t));
 		}

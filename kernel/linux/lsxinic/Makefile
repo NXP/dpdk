@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
@@ -17,7 +17,7 @@ MODULE_CFLAGS += -I$(SRCDIR)
 MODULE_CFLAGS += -I$(RTE_OUTPUT)/include
 MODULE_CFLAGS += -I$(RTE_SDK)/drivers/bus/lsx_pciep
 MODULE_CFLAGS += -I$(RTE_SDK)/drivers/net/lsxinic
-MODULE_CFLAGS += -Winline -Wall -Werror
+MODULE_CFLAGS += -Wall -Werror
 MODULE_CFLAGS += -include $(RTE_OUTPUT)/include/rte_config.h
 
 #
