@@ -68,6 +68,7 @@ struct lsxvio_queue_entry {
 
 #define LSXVIO_QUEUE_IDX_INORDER_FLAG (1ull << 0)
 #define LSXVIO_QUEUE_PKD_INORDER_FLAG (1ull << 1)
+#define LSXVIO_QUEUE_DMA_APPEND_FLAG (1ull << 2)
 
 /**
  * Structure associated with each RX queue.
@@ -137,7 +138,9 @@ struct lsxvio_queue {
 
 	/* BD index */
 	uint16_t head;
-	uint16_t next_dma_idx;    /**< number of TX descriptors. */
+	uint16_t start_dma_idx;
+	uint16_t append_dma_idx;
+	uint16_t next_dma_idx;
 	uint16_t next_avail_idx;
 	uint16_t next_used_idx;
 
