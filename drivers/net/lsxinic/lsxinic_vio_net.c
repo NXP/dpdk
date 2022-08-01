@@ -163,6 +163,8 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
 	adapter->ring_base =
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
+	adapter->ring_phy_base =
+		(uint64_t)lsx_dev->phy_addr[LSXVIO_RING_BAR_IDX];
 	adapter->ob_base = lsx_dev->ob_phy_base;
 	adapter->ob_virt_base = (uint8_t *)lsx_dev->ob_virt_base;
 	adapter->pf_idx = lsx_dev->pf;
@@ -270,6 +272,7 @@ lsxvio_dev_priv_feature_configure(void)
 	lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
 	lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
 	lsx_feature |= LSX_VIO_EP2RC_PACKED;
+	lsx_feature |= LSX_VIO_RC2EP_DMA_NOTIFY;
 
 	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
 	if (penv) {
@@ -297,6 +300,13 @@ lsxvio_dev_priv_feature_configure(void)
 		env_val = atoi(penv);
 		if (!env_val)
 			lsx_feature &= (~LSX_VIO_EP2RC_PACKED);
+	}
+
+	penv = getenv("LSXVIO_RXQ_DMA_NOTIFY");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_RC2EP_DMA_NOTIFY);
 	}
 
 	return lsx_feature;
@@ -328,6 +338,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		lsxvio_virtio_get_blk_id(&device_id, &class_id);
 
 	lsx_feature = lsxvio_dev_priv_feature_configure();
+
+	if ((lsx_feature & LSX_VIO_RC2EP_DMA_NOTIFY) &&
+		(lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
+		/* TBD*/
+		LSXINIC_PMD_ERR("RC2EP DMA NORSP/notify BOTH supported error");
+
+		return -EINVAL;
+	}
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",

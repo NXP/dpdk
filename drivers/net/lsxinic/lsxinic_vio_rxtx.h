@@ -66,9 +66,23 @@ struct lsxvio_queue_entry {
 	};
 };
 
+enum lsxvio_dma_cntx_type {
+	LSXVIO_DMA_CNTX_DATA,
+	LSXVIO_DMA_CNTX_ADDR
+};
+
+struct lsxvio_dma_cntx {
+	enum lsxvio_dma_cntx_type cntx_type;
+	union {
+		uint32_t cntx_data;
+		void *cntx_addr;
+	};
+};
+
 #define LSXVIO_QUEUE_IDX_INORDER_FLAG (1ull << 0)
 #define LSXVIO_QUEUE_PKD_INORDER_FLAG (1ull << 1)
 #define LSXVIO_QUEUE_DMA_APPEND_FLAG (1ull << 2)
+#define LSXVIO_QUEUE_DMA_NOTIFY_FLAG (1ull << 3)
 
 /**
  * Structure associated with each RX queue.
@@ -78,6 +92,7 @@ struct lsxvio_queue {
 	struct vring_desc *vdesc;
 	struct vring_desc *shadow_vdesc;
 	struct lsxvio_short_desc *shadow_sdesc;
+	uint64_t shadow_phy;
 	struct vring_packed_desc *pdesc;
 
 	struct vring_avail *avail;
@@ -89,6 +104,7 @@ struct lsxvio_queue {
 
 	uint16_t last_avail_idx;
 	uint16_t last_used_idx;
+	uint16_t bd_dma_idx;
 
 	struct vring_avail *shadow_avail;
 	struct lsxvio_packed_notify *packed_notify;
@@ -115,11 +131,14 @@ struct lsxvio_queue {
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 
 	struct lsxvio_queue_entry *sw_ring;
+	struct lsxvio_dma_cntx *dma_sw_cntx;
 
 	/* DMA */
 	struct rte_qdma_job *dma_jobs;
 
 	struct rte_qdma_job *e2r_bd_dma_jobs;
+	struct rte_qdma_job *r2e_bd_dma_jobs;
+	struct lsxvio_dma_cntx *dma_bd_cntx;
 
 	uint32_t core_id;
 	int32_t dma_id;

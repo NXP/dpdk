@@ -46,6 +46,8 @@
 #define LSXVIO_MAX_QUEUE_PAIRS			1
 #define LSXVIO_MAX_RING_DESC			512
 
+#define LSXVIO_MAX_QUEUES (LSXVIO_MAX_QUEUE_PAIRS * 2)
+
 #define LSX_VIO_RC2EP_DMA_NORSP_POS 0
 #define LSX_VIO_RC2EP_DMA_NORSP \
 	(1ULL << LSX_VIO_RC2EP_DMA_NORSP_POS)
@@ -61,6 +63,10 @@
 #define LSX_VIO_EP2RC_DMA_NORSP_POS 3
 #define LSX_VIO_EP2RC_DMA_NORSP \
 	(1ULL << LSX_VIO_EP2RC_DMA_NORSP_POS)
+
+#define LSX_VIO_RC2EP_DMA_NOTIFY_POS 4
+#define LSX_VIO_RC2EP_DMA_NOTIFY \
+	(1ULL << LSX_VIO_RC2EP_DMA_NOTIFY_POS)
 
 #define LSX_VIO_HW_START_CONFIG 1
 /* This common configuration definition is a little different from
@@ -94,6 +100,7 @@ struct lsxvio_queue_cfg {
 	uint32_t queue_avail_hi;	/* read-write */
 	uint32_t queue_used_lo;		/* read-write */
 	uint32_t queue_used_hi;		/* read-write */
+	uint64_t queue_rc_shadow_base;
 	uint64_t queue_mem_base;
 	uint32_t queue_mem_interval;
 	uint32_t queue_rsv1;

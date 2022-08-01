@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2021 NXP  */
+/* Copyright 2020-2022 NXP  */
 
 #ifndef _LSX_NET_H_
 #define _LSX_NET_H_
@@ -42,6 +42,7 @@ struct lsxvio_hw {
 struct lsxvio_adapter {
 	uint64_t cfg_base;
 	uint64_t ring_base;
+	uint64_t ring_phy_base;
 	uint16_t device_id;
 	uint16_t vendor_id;
 	uint16_t subsystem_device_id;
@@ -85,7 +86,7 @@ struct lsxvio_adapter {
 	uint32_t msix_cfg_cmd;
 	void *msix_cfg_addr;
 
-	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUE_PAIRS * 2];
+	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUES];
 	struct rte_dpaa2_device *merge_dev;
 	struct rte_dpaa2_device *split_dev;
 
