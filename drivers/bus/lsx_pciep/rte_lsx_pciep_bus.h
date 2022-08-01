@@ -113,6 +113,7 @@ struct rte_lsx_pciep_device {
 	int rbp_win_init_flag;
 
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
+	uint64_t phy_addr[PCI_MAX_RESOURCE];
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint32_t mmsi_flag;
 	uint32_t init_flag;

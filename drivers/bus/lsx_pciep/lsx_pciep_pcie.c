@@ -1436,6 +1436,8 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 
 			ep_dev->virt_addr[bar_idx] =
 				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
+			ep_dev->phy_addr[bar_idx] =
+				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_iova;
 
 			return 0;
 		}
@@ -1449,6 +1451,8 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 
 			ep_dev->virt_addr[bar_idx] =
 				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
+			ep_dev->phy_addr[bar_idx] =
+				ib_mem->pf_ib_bar[pf][bar_idx].inbound_iova;
 
 			return 0;
 		}
@@ -1547,9 +1551,13 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	if (!is_vf) {
 		ep_dev->virt_addr[bar_idx] =
 			ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
+		ep_dev->phy_addr[bar_idx] =
+			ib_mem->pf_ib_bar[pf][bar_idx].inbound_iova;
 	} else {
 		ep_dev->virt_addr[bar_idx] =
 			ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
+		ep_dev->phy_addr[bar_idx] =
+			ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_iova;
 	}
 
 	return 0;
