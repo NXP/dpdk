@@ -362,7 +362,7 @@ lsxvio_rc_init_vring(struct virtqueue *vq, int queue_type)
 			ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
 #else
 		remote_ring_base += vq->vq_queue_index *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE;
+			LSXVIO_PER_RING_MEM_MAX_SIZE;
 		lsxvio_rc_init_split(vr, remote_ring_base,
 			ring_mem, VIRTIO_PCI_VRING_ALIGN, size);
 #endif
@@ -1339,7 +1339,7 @@ lsxvio_rc_init_device(struct rte_eth_dev *eth_dev,
 			config->mac[4], config->mac[5]);
 	} else {
 		PMD_INIT_LOG(DEBUG, "config->max_virtqueue_pairs=1");
-		hw->max_queue_pairs = 1;
+		hw->max_queue_pairs = LSXVIO_MAX_QUEUE_PAIRS;
 		hw->max_mtu = VIRTIO_MAX_RX_PKTLEN - RTE_ETHER_HDR_LEN -
 			VLAN_TAG_LEN - hw->vtnet_hdr_size;
 	}
@@ -1597,7 +1597,7 @@ lsxvio_rc_rx_notify_addr(struct virtqueue *vq,
 	uint16_t last_avail_idx = lsx_hw->last_avail_idx[qidx];
 	uint64_t mem_base = lsx_hw->local_lsx_cfg.queue_mem_base[qidx];
 	struct lsxvio_packed_notify *pnotify = (void *)(ring_base +
-			qidx * LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			qidx * LSXVIO_PER_RING_MEM_MAX_SIZE);
 	uint16_t *pidx;
 	uint16_t len;
 	struct vring_packed_desc *pdesc = vq->vq_packed.ring.desc;
@@ -1713,7 +1713,7 @@ lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
 
 #ifndef LSXVIO_TX_PACKED_BD_NOTIFICATION_UPDATE
 	remote_desc = (void *)(ring_base + qidx *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			LSXVIO_PER_RING_MEM_MAX_SIZE);
 	next_ring_addr = remote_desc + vq->vq_nentries;
 
 	return next_ring_addr;
@@ -1727,7 +1727,7 @@ lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
 
 	if (mem_base) {
 		remote_sdesc = (void *)(ring_base + qidx *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			LSXVIO_PER_RING_MEM_MAX_SIZE);
 		local_sdesc = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
 		i = last_avail_idx;
 		for (j = 0; j < len; j++) {
@@ -1743,7 +1743,7 @@ lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
 		next_ring_addr = remote_sdesc + vq->vq_nentries;
 	} else {
 		remote_desc = (void *)(ring_base + qidx *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			LSXVIO_PER_RING_MEM_MAX_SIZE);
 		if (!dma) {
 			lsxvio_rc_tx_sw_notify_bd(vq, current_idx,
 				last_avail_idx, remote_desc,
@@ -1784,7 +1784,7 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	} else {
 		avail_ring = (void *)(ring_base +
 			vq->vq_queue_index *
-			LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+			LSXVIO_PER_RING_MEM_MAX_SIZE);
 		rte_write16(vq->vq_split.ring.avail->idx, &avail_ring->idx);
 		rte_write16(vq->vq_queue_index, vq->notify_addr);
 	}

@@ -63,7 +63,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		adapter->num_queues = common->queue_used_num;
 
 	/* When DRIOVER_OK is set, this will be called. */
-	for (i = 0; i < LSXVIO_MAX_QUEUES; i++) {
+	for (i = 0; i < adapter->num_queues; i++) {
 		queue = BASE_TO_QUEUE(adapter->cfg_base, i);
 		if (!queue->queue_enable)
 			continue;
@@ -98,10 +98,10 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->packed_notify = (void *)
 					(adapter->ring_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				vq->shadow_phy = (adapter->ring_phy_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				vq->shadow_avail = NULL;
 				vq->pdesc = vq->desc_addr;
 				vq->vdesc = NULL;
@@ -109,7 +109,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->shadow_avail = (void *)
 					(adapter->ring_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				vq->packed_notify = NULL;
 				vq->vdesc = vq->desc_addr;
 				vq->pdesc = NULL;
@@ -120,13 +120,13 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->mem_base = queue->queue_mem_base;
 				vq->shadow_sdesc = (void *)(adapter->ring_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				memset(vq->shadow_sdesc, 0,
 					sizeof(struct lsxvio_short_desc) *
 					vq->nb_desc);
 				vq->shadow_phy = (adapter->ring_phy_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				vq->shadow_avail = (void *)
 					((char *)vq->shadow_sdesc +
 					sizeof(struct lsxvio_short_desc) *
@@ -137,7 +137,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->shadow_vdesc = (void *)
 					(adapter->ring_base +
 					queue->queue_notify_off *
-					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+					LSXVIO_PER_RING_MEM_MAX_SIZE);
 				vq->shadow_avail = (void *)
 					((char *)vq->shadow_vdesc +
 					sizeof(struct vring_desc) *
