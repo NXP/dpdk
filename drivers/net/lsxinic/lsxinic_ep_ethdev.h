@@ -15,6 +15,7 @@
 #include <rte_lsx_pciep_bus.h>
 #include <compat.h>
 
+#include "lsxinic_common.h"
 #include "lsxinic_common_reg.h"
 
 #define INIC_VERSION (001)
@@ -80,6 +81,7 @@ struct lsinic_hw {
 #define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX 0x00000200
 
 struct lsinic_adapter {
+	enum lsinic_dev_type dev_type;
 	uint8_t *hw_addr;
 	uint8_t *bd_desc_base;
 	uint16_t device_id;

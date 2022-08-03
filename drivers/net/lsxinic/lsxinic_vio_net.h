@@ -38,8 +38,11 @@ struct lsxvio_hw {
 	uint8_t allow_unsupported_sfp;
 } __packed;
 
+TAILQ_HEAD(lsxvio_tx_queue_list, lsxvio_queue);
+
 /* Structure to store private data for each driver instance (for each port). */
 struct lsxvio_adapter {
+	enum lsinic_dev_type dev_type;
 	uint64_t cfg_base;
 	uint64_t ring_base;
 	uint64_t ring_phy_base;
@@ -89,6 +92,9 @@ struct lsxvio_adapter {
 	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUES];
 	struct rte_dpaa2_device *merge_dev;
 	struct rte_dpaa2_device *split_dev;
+	uint8_t txq_list_initialized[RTE_MAX_LCORE];
+	uint8_t txq_num_in_list[RTE_MAX_LCORE];
+	struct lsxvio_tx_queue_list txq_list[RTE_MAX_LCORE];
 
 	uint32_t merge_threshold;
 } __packed;

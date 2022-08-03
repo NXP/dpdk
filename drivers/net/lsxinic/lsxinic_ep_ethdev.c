@@ -808,6 +808,7 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	}
 	eth_dev->process_private = adapter;
 
+	adapter->dev_type = LSINIC_NXP_DEV;
 	adapter->merge_dev = NULL;
 	adapter->split_dev = NULL;
 	rte_spinlock_init(&adapter->merge_dev_cfg_lock);

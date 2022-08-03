@@ -62,6 +62,11 @@ enum lsinic_xfer_complete_flag {
 	LSINIC_XFER_COMPLETE_DONE_FLAG = 1
 };
 
+enum lsinic_dev_type {
+	LSINIC_VIRTIO_DEV,
+	LSINIC_NXP_DEV
+};
+
 #define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
 #define MAX_U16 0xffff
 

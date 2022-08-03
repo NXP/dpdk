@@ -387,6 +387,8 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		adapter = eth_dev->data->dev_private;
 	}
 
+	adapter->dev_type = LSINIC_VIRTIO_DEV;
+
 	if (!lsx_dev->is_vf) {
 		ret = lsx_pciep_ctl_dev_set(VIRTIO_PCI_VENDORID,
 			device_id, class_id,
@@ -503,6 +505,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	uint8_t status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
+	enum lsinic_dev_type *dev_type;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -510,6 +513,12 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	while (1) {
 		dev = lsx_pciep_first_dev();
 		while (dev) {
+			dev_type = dev->eth_dev->data->dev_private;
+			if (*dev_type != LSINIC_VIRTIO_DEV) {
+				dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
+				continue;
+			}
 			adapter = dev->eth_dev->data->dev_private;
 			common = BASE_TO_COMMON(adapter->cfg_base);
 			status = common->device_status;

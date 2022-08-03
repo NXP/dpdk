@@ -193,6 +193,7 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	int print_status = 0, ret;
 	struct lsinic_queue *queue = NULL;
 	cpu_set_t cpuset;
+	enum lsinic_dev_type *dev_type;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -211,6 +212,14 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 		first_dev = lsx_pciep_first_dev();
 		dev = first_dev;
 		while (dev) {
+			dev_type = dev->eth_dev->process_private;
+			if (*dev_type != LSINIC_NXP_DEV) {
+				dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
+				if (dev == first_dev)
+					dev = NULL;
+				continue;
+			}
 			adapter = dev->eth_dev->process_private;
 			if (!adapter->hw_addr) {
 				dev = (struct rte_lsx_pciep_device *)

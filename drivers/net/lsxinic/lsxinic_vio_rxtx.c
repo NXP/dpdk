@@ -62,16 +62,7 @@
 
 #define DEFAULT_BURST_THRESH LSXVIO_QDMA_EQ_MAX_NB
 
-/* TX queues list */
-TAILQ_HEAD(lsxvio_tx_queue_list, lsxvio_queue);
-
-/* per thread TX queue list */
-RTE_DEFINE_PER_LCORE(uint8_t, lsxvio_txq_list_initialized);
-RTE_DEFINE_PER_LCORE(uint8_t, lsxvio_txq_deqeue_from_rxq);
-RTE_DEFINE_PER_LCORE(uint8_t, lsxvio_txq_num_in_list);
-RTE_DEFINE_PER_LCORE(struct lsxvio_tx_queue_list, lsxvio_txq_list);
-
-static void lsxvio_tx_loop(void);
+static void lsxvio_all_virt_dev_tx_loop(void);
 
 static void
 lsxvio_queue_dma_release(struct lsxvio_queue *q)
@@ -458,25 +449,27 @@ lsxvio_queue_reset(struct lsxvio_queue *q)
 static int lsxvio_add_txq_to_list(struct lsxvio_queue *txq)
 {
 	struct lsxvio_queue *queue = NULL;
+	struct lsxvio_adapter *adapter = txq->adapter;
+	uint32_t this_core = rte_lcore_id();
 
-	if (!RTE_PER_LCORE(lsxvio_txq_list_initialized)) {
-		TAILQ_INIT(&RTE_PER_LCORE(lsxvio_txq_list));
-		RTE_PER_LCORE(lsxvio_txq_list_initialized) = 1;
-		RTE_PER_LCORE(lsxvio_txq_num_in_list) = 0;
+	if (!adapter->txq_list_initialized[this_core]) {
+		TAILQ_INIT(&adapter->txq_list[this_core]);
+		adapter->txq_list_initialized[this_core] = 1;
+		adapter->txq_num_in_list[this_core] = 0;
 	}
 
 	/* Check if txq already added to list */
-	TAILQ_FOREACH(queue, &RTE_PER_LCORE(lsxvio_txq_list), next) {
+	TAILQ_FOREACH(queue, &adapter->txq_list[this_core], next) {
 		if (queue == txq)
 			return 0;
 	}
 
-	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lsxvio_txq_list), txq, next);
-	RTE_PER_LCORE(lsxvio_txq_num_in_list)++;
+	TAILQ_INSERT_TAIL(&adapter->txq_list[this_core], txq, next);
+	adapter->txq_num_in_list[this_core]++;
 
 	LSXINIC_PMD_DBG("Add port%d txq%d to list NUM%d",
 		txq->port_id, txq->queue_id,
-		RTE_PER_LCORE(lsxvio_txq_num_in_list));
+		adapter->txq_num_in_list[this_core]);
 
 	return 0;
 }
@@ -485,15 +478,17 @@ static int
 lsxvio_remove_txq_from_list(struct lsxvio_queue *txq)
 {
 	struct lsxvio_queue *q, *tq;
+	struct lsxvio_adapter *adapter = txq->adapter;
+	uint32_t this_core = rte_lcore_id();
 
-	TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsxvio_txq_list), next, tq) {
+	TAILQ_FOREACH_SAFE(q, &adapter->txq_list[this_core], next, tq) {
 		if (q == txq) {
-			TAILQ_REMOVE(&RTE_PER_LCORE(lsxvio_txq_list),
+			TAILQ_REMOVE(&adapter->txq_list[this_core],
 				q, next);
-			RTE_PER_LCORE(lsxvio_txq_num_in_list)--;
+			adapter->txq_num_in_list[this_core]--;
 			LSXINIC_PMD_DBG("Remove port%d txq%d from list NUM%d",
 				txq->port_id, txq->queue_id,
-				RTE_PER_LCORE(lsxvio_txq_num_in_list));
+				adapter->txq_num_in_list[this_core]);
 			break;
 		}
 	}
@@ -568,8 +563,8 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	char *penv;
 
 	/* Free memory prior to re-allocation if needed... */
-	if (dev->data->tx_queues[queue_idx])
-		lsxvio_queue_release(dev->data->tx_queues[queue_idx]);
+	if (dev->data->tx_queues[tx_queue_id])
+		lsxvio_queue_release(dev->data->tx_queues[tx_queue_id]);
 
 	/* First allocate the tx queue data structure */
 	txq = lsxvio_queue_alloc(adapter, queue_idx, socket_id, nb_desc);
@@ -636,8 +631,8 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	char *penv;
 
 	/* Free memory prior to re-allocation if needed... */
-	if (dev->data->rx_queues[queue_idx] != NULL)
-		lsxvio_queue_release(dev->data->rx_queues[queue_idx]);
+	if (dev->data->rx_queues[rx_queue_id] != NULL)
+		lsxvio_queue_release(dev->data->rx_queues[rx_queue_id]);
 
 	/* First allocate the tx queue data structure */
 	rxq = lsxvio_queue_alloc(adapter, queue_idx, socket_id, nb_desc);
@@ -1265,12 +1260,14 @@ lsxvio_append_bd_dma(struct lsxvio_queue *vq,
 }
 
 static int
-lsxvio_tx_dma_addr_loop(struct rte_qdma_job **jobs)
+lsxvio_tx_dma_addr_loop(struct rte_qdma_job **jobs,
+	struct lsxvio_adapter *adapter)
 {
 	struct lsxvio_queue *q, *tq;
 	uint16_t dma_nb = 0, ret;
+	uint32_t this_core = rte_lcore_id();
 
-	TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsxvio_txq_list), next, tq) {
+	TAILQ_FOREACH_SAFE(q, &adapter->txq_list[this_core], next, tq) {
 		ret = lsxvio_append_bd_dma(q, &jobs[dma_nb]);
 		dma_nb += ret;
 	}
@@ -1332,7 +1329,8 @@ lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 
 append_bd_dma:
 	dma_rbd_nb = lsxvio_append_bd_dma(vq, &jobs[bd_num]);
-	dma_tbd_nb = lsxvio_tx_dma_addr_loop(&jobs[bd_num + dma_rbd_nb]);
+	dma_tbd_nb = lsxvio_tx_dma_addr_loop(&jobs[bd_num + dma_rbd_nb],
+		vq->adapter);
 	if (!(bd_num + dma_rbd_nb + dma_tbd_nb))
 		return;
 
@@ -1626,7 +1624,7 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		lsxvio_rx_dma_dequeue(rxq);
 	}
 
-	lsxvio_tx_loop();
+	lsxvio_all_virt_dev_tx_loop();
 
 	if (rxq->mcnt < 1)
 		return 0;
@@ -1796,11 +1794,12 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	return 0;
 }
 
-static void lsxvio_tx_loop(void)
+static void lsxvio_tx_loop(struct lsxvio_adapter *adapter)
 {
 	struct lsxvio_queue *q, *tq;
+	uint32_t this_core = rte_lcore_id();
 
-	TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsxvio_txq_list), next, tq) {
+	TAILQ_FOREACH_SAFE(q, &adapter->txq_list[this_core], next, tq) {
 		if (!lsxvio_queue_running(q)) {
 			/* From now the queue can work. */
 			lsxvio_queue_update(q);
@@ -1824,6 +1823,27 @@ static void lsxvio_tx_loop(void)
 		q->packets_old = q->packets;
 
 		q->loop_total++;
+	}
+}
+
+static void lsxvio_all_virt_dev_tx_loop(void)
+{
+	struct rte_lsx_pciep_device *dev;
+	struct lsxvio_adapter *adapter;
+	enum lsinic_dev_type *dev_type;
+
+	dev = lsx_pciep_first_dev();
+	while (dev) {
+		dev_type = dev->eth_dev->data->dev_private;
+		if (*dev_type != LSINIC_VIRTIO_DEV) {
+			dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
+			continue;
+		}
+		adapter = dev->eth_dev->data->dev_private;
+		lsxvio_tx_loop(adapter);
+		dev = (struct rte_lsx_pciep_device *)
+			TAILQ_NEXT(dev, next);
 	}
 }
 
