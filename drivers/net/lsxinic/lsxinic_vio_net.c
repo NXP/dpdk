@@ -273,6 +273,7 @@ lsxvio_dev_priv_feature_configure(void)
 	lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
 	lsx_feature |= LSX_VIO_EP2RC_PACKED;
 	lsx_feature |= LSX_VIO_RC2EP_DMA_NOTIFY;
+	lsx_feature |= LSX_VIO_EP2RC_DMA_NOTIFY;
 
 	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
 	if (penv) {
@@ -307,6 +308,13 @@ lsxvio_dev_priv_feature_configure(void)
 		env_val = atoi(penv);
 		if (!env_val)
 			lsx_feature &= (~LSX_VIO_RC2EP_DMA_NOTIFY);
+	}
+
+	penv = getenv("LSXVIO_TXQ_DMA_NOTIFY");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_NOTIFY);
 	}
 
 	return lsx_feature;

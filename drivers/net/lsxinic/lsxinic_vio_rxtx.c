@@ -395,6 +395,14 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 		goto _err;
 	}
 
+	q->r2e_idx_dma_jobs = rte_zmalloc_socket(NULL,
+			sizeof(struct rte_qdma_job) * nb_desc,
+			RTE_CACHE_LINE_SIZE, socket_id);
+	if (!q->r2e_idx_dma_jobs) {
+		LSXINIC_PMD_ERR("Failed to create RC 2 EP BD DMA jobs");
+		goto _err;
+	}
+
 	adapter->num_queues += 1;
 
 	return q;
@@ -593,6 +601,9 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	} else {
 		txq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
 	}
+
+	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_NOTIFY)
+		txq->flag |= LSXVIO_QUEUE_DMA_NOTIFY_FLAG;
 
 	return 0;
 }
@@ -1025,9 +1036,16 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 			if (!dma_job)
 				continue;
 			dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+			if (!dma_job->cnxt)
+				continue;
 			dma_cntx = (struct lsxvio_dma_cntx *)dma_job->cnxt;
-			if (dma_cntx->cntx_type == LSXVIO_DMA_CNTX_DATA) {
+			if (dma_cntx->cntx_type == LSXVIO_DMA_RX_CNTX_DATA) {
 				rxq->shadow_avail->idx = dma_cntx->cntx_data;
+				continue;
+			} else if (dma_cntx->cntx_type ==
+				LSXVIO_DMA_TX_CNTX_DATA) {
+				rxq->pair->packed_notify->last_avail_idx =
+					dma_cntx->cntx_data;
 				continue;
 			}
 			rxe = dma_cntx->cntx_addr;
@@ -1189,9 +1207,19 @@ lsxvio_append_bd_dma(struct lsxvio_queue *vq,
 	uint32_t size = vq->mem_base ?
 		sizeof(struct lsxvio_short_desc) :
 		sizeof(struct vring_desc);
+	int rxq_rsp = 1;
 
 	last_bd_dma_idx = vq->bd_dma_idx;
-	bd_dma_idx = vq->shadow_avail->flags;
+	if (vq->type == LSXVIO_QUEUE_RX) {
+		bd_dma_idx = vq->shadow_avail->flags;
+	} else {
+		bd_dma_idx = vq->packed_notify->dma_idx;
+		size = vq->mem_base ?
+			sizeof(uint32_t) : sizeof(uint64_t);
+		if (vq->pair->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE)
+			rxq_rsp = 0;
+	}
+
 	if (last_bd_dma_idx == bd_dma_idx)
 		return 0;
 
@@ -1205,7 +1233,12 @@ lsxvio_append_bd_dma(struct lsxvio_queue *vq,
 		jobs[0] = &vq->r2e_bd_dma_jobs[last_bd_dma_idx];
 		jobs[0]->len = size * free;
 		jobs[0]->cnxt = (uint64_t)&vq->dma_bd_cntx[last_bd_dma_idx];
-		vq->dma_bd_cntx[last_bd_dma_idx].cntx_data = bd_dma_idx;
+		vq->dma_bd_cntx[last_bd_dma_idx].cntx_data =
+			bd_dma_idx;
+		if (vq->type == LSXVIO_QUEUE_TX && !rxq_rsp) {
+			jobs[1] = &vq->r2e_idx_dma_jobs[bd_dma_idx];
+			return 2;
+		}
 		return 1;
 	}
 
@@ -1218,19 +1251,41 @@ lsxvio_append_bd_dma(struct lsxvio_queue *vq,
 		jobs[1]->len = size * bd_dma_idx;
 		jobs[1]->cnxt = (uint64_t)&vq->dma_bd_cntx[0];
 		vq->dma_bd_cntx[0].cntx_data = bd_dma_idx;
+		if (vq->type == LSXVIO_QUEUE_TX && !rxq_rsp) {
+			jobs[2] = &vq->r2e_idx_dma_jobs[bd_dma_idx];
+			return 3;
+		}
+		return 2;
+	}
+	if (vq->type == LSXVIO_QUEUE_TX && !rxq_rsp) {
+		jobs[1] = &vq->r2e_idx_dma_jobs[bd_dma_idx];
 		return 2;
 	}
 	return 1;
 }
 
+static int
+lsxvio_tx_dma_addr_loop(struct rte_qdma_job **jobs)
+{
+	struct lsxvio_queue *q, *tq;
+	uint16_t dma_nb = 0, ret;
+
+	TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsxvio_txq_list), next, tq) {
+		ret = lsxvio_append_bd_dma(q, &jobs[dma_nb]);
+		dma_nb += ret;
+	}
+
+	return dma_nb;
+}
+
 static void
 lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 {
-	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB + 4];
+	struct rte_qdma_job *jobs[LSXVIO_QDMA_EQ_MAX_NB + 5];
 	struct rte_mbuf *mbufs[DEFAULT_BURST_THRESH];
 	int ret;
-	uint16_t i = 0, bd_num = 0;
-	uint16_t dma_bd_nb, start_idx = vq->last_avail_idx;
+	uint16_t i = 0, bd_num = 0, dma_tbd_nb;
+	uint16_t dma_rbd_nb, start_idx = vq->last_avail_idx;
 	struct lsxvio_short_desc *sdesc;
 	struct lsxvio_queue_entry *rxe;
 	struct lsxvio_dma_cntx *dma_cntx;
@@ -1276,11 +1331,13 @@ lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 	}
 
 append_bd_dma:
-	dma_bd_nb = lsxvio_append_bd_dma(vq, &jobs[bd_num]);
-	if (!(bd_num + dma_bd_nb))
+	dma_rbd_nb = lsxvio_append_bd_dma(vq, &jobs[bd_num]);
+	dma_tbd_nb = lsxvio_tx_dma_addr_loop(&jobs[bd_num + dma_rbd_nb]);
+	if (!(bd_num + dma_rbd_nb + dma_tbd_nb))
 		return;
 
-	lsxvio_qdma_multiple_enqueue(vq, jobs, bd_num + dma_bd_nb);
+	lsxvio_qdma_multiple_enqueue(vq, jobs,
+		bd_num + dma_rbd_nb + dma_tbd_nb);
 	vq->last_avail_idx += bd_num;
 }
 

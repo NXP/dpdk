@@ -67,8 +67,9 @@ struct lsxvio_queue_entry {
 };
 
 enum lsxvio_dma_cntx_type {
-	LSXVIO_DMA_CNTX_DATA,
-	LSXVIO_DMA_CNTX_ADDR
+	LSXVIO_DMA_RX_CNTX_DATA,
+	LSXVIO_DMA_CNTX_ADDR,
+	LSXVIO_DMA_TX_CNTX_DATA
 };
 
 struct lsxvio_dma_cntx {
@@ -138,6 +139,7 @@ struct lsxvio_queue {
 
 	struct rte_qdma_job *e2r_bd_dma_jobs;
 	struct rte_qdma_job *r2e_bd_dma_jobs;
+	struct rte_qdma_job *r2e_idx_dma_jobs;
 	struct lsxvio_dma_cntx *dma_bd_cntx;
 
 	uint32_t core_id;

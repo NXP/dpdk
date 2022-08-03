@@ -68,6 +68,10 @@
 #define LSX_VIO_RC2EP_DMA_NOTIFY \
 	(1ULL << LSX_VIO_RC2EP_DMA_NOTIFY_POS)
 
+#define LSX_VIO_EP2RC_DMA_NOTIFY_POS 5
+#define LSX_VIO_EP2RC_DMA_NOTIFY \
+	(1ULL << LSX_VIO_EP2RC_DMA_NOTIFY_POS)
+
 #define LSX_VIO_HW_START_CONFIG 1
 /* This common configuration definition is a little different from
  * the common data stuctures defined in virtio spec because the hw
@@ -108,7 +112,8 @@ struct lsxvio_queue_cfg {
 
 struct lsxvio_packed_notify {
 	uint16_t last_avail_idx;
-	uint16_t dummy[3];
+	uint16_t dma_idx;
+	uint16_t dummy[2];
 	union {
 		uint32_t addr_offset[0];
 		uint64_t addr[0];

@@ -99,6 +99,9 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 					(adapter->ring_base +
 					queue->queue_notify_off *
 					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
+				vq->shadow_phy = (adapter->ring_phy_base +
+					queue->queue_notify_off *
+					LSXVIO_PER_RING_NOTIFY_MAX_SIZE);
 				vq->shadow_avail = NULL;
 				vq->pdesc = vq->desc_addr;
 				vq->vdesc = NULL;
@@ -206,8 +209,56 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 			}
 		}
 
+		if (vq->type == LSXVIO_QUEUE_TX &&
+			vq->flag & LSXVIO_QUEUE_DMA_NOTIFY_FLAG) {
+			for (j = 0; j < vq->nb_desc; j++) {
+				if (vq->mem_base) {
+					src = queue->queue_rc_shadow_base +
+						vq->ob_base +
+						j * sizeof(uint32_t);
+					dst = vq->shadow_phy +
+					offsetof(struct lsxvio_packed_notify,
+					addr[0]) + j * sizeof(uint32_t);
+				} else {
+					src = queue->queue_rc_shadow_base +
+						vq->ob_base +
+						j * sizeof(uint64_t);
+					dst = vq->shadow_phy +
+					offsetof(struct lsxvio_packed_notify,
+					addr[0]) + j * sizeof(uint64_t);
+				}
+				vq->r2e_bd_dma_jobs[j].src = src;
+				vq->r2e_bd_dma_jobs[j].dest = dst;
+				vq->r2e_bd_dma_jobs[j].cnxt = 0;
+				vq->r2e_bd_dma_jobs[j].flags =
+					RTE_QDMA_JOB_SRC_PHY |
+					RTE_QDMA_JOB_DEST_PHY;
+				vq->r2e_bd_dma_jobs[j].vq_id = vq->dma_vq;
+
+				src = queue->queue_rc_shadow_base +
+					vq->ob_base +
+					sizeof(uint64_t) * vq->nb_desc +
+					j * sizeof(uint16_t);
+				dst = vq->shadow_phy +
+					offsetof(struct lsxvio_packed_notify,
+					last_avail_idx);
+
+				vq->r2e_idx_dma_jobs[j].src = src;
+				vq->r2e_idx_dma_jobs[j].dest = dst;
+				vq->r2e_idx_dma_jobs[j].len = sizeof(uint16_t);
+				vq->r2e_idx_dma_jobs[j].cnxt = 0;
+				vq->r2e_idx_dma_jobs[j].flags =
+					RTE_QDMA_JOB_SRC_PHY |
+					RTE_QDMA_JOB_DEST_PHY;
+				vq->r2e_idx_dma_jobs[j].vq_id = vq->dma_vq;
+
+				vq->dma_bd_cntx[j].cntx_type =
+					LSXVIO_DMA_TX_CNTX_DATA;
+			}
+		}
+
 		if (vq->type == LSXVIO_QUEUE_RX &&
-			vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG &&
+			(vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) &&
 			queue->queue_rc_shadow_base) {
 			for (j = 0; j < vq->nb_desc; j++) {
 				if (vq->mem_base) {
@@ -235,7 +286,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 				vq->r2e_bd_dma_jobs[j].vq_id = vq->dma_vq;
 
 				vq->dma_bd_cntx[j].cntx_type =
-					LSXVIO_DMA_CNTX_DATA;
+					LSXVIO_DMA_RX_CNTX_DATA;
 			}
 		}
 
