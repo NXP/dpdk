@@ -330,6 +330,25 @@ soc_dpaa = {
     'part_number': '0xd08',
     'flags': [
         ['RTE_MACHINE', '"dpaa"'],
+        ['RTE_USE_NON_CACHE_MEM', 0],
+        ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
+        ['RTE_MAX_LCORE', 16],
+        ['RTE_MAX_NUMA_NODES', 1],
+	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
+	['CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE', false],
+	['CONFIG_RTE_LIBRTE_IEEE1588', false],
+	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1]
+    ],
+    'numa': false
+}
+
+soc_imx = {
+    'description': 'NXP IMX',
+    'implementer': '0x41',
+    'part_number': '0xd08',
+    'flags': [
+        ['RTE_MACHINE', '"imx"'],
+        ['RTE_USE_NON_CACHE_MEM', 1],
         ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
@@ -482,6 +501,7 @@ socs = {
     'cn9k': soc_cn9k,
     'cn10k' : soc_cn10k,
     'dpaa': soc_dpaa,
+    'imx': soc_imx,
     'emag': soc_emag,
     'ft2000plus': soc_ft2000plus,
     'tys2500': soc_tys2500,
