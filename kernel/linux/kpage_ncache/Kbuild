@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2018 Luca Boccassi <bluca@debian.org>
+
+ccflags-y := $(MODULE_CFLAGS)
+obj-m :=  kpage_ncache.o
