@@ -52,6 +52,9 @@
 #include "base/ixgbe_dcb.h"
 #include "base/ixgbe_common.h"
 #include "ixgbe_rxtx.h"
+#if RTE_USE_NON_CACHE_MEM
+#include <kpage_ncache_api.h>
+#endif
 
 #ifdef RTE_LIBRTE_IEEE1588
 #define IXGBE_TX_IEEE1588_TMST RTE_MBUF_F_TX_IEEE1588_TMST
@@ -2762,6 +2765,11 @@ ixgbe_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
+/* Mark memory NON-CACHEABLE */
+#if RTE_USE_NON_CACHE_MEM
+	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(tz->addr, tz->hugepage_sz);
+	mark_kpage_ncache(huge_page);
+#endif
 	txq->mz = tz;
 	txq->nb_tx_desc = nb_desc;
 	txq->tx_rs_thresh = tx_rs_thresh;
@@ -3162,6 +3170,11 @@ ixgbe_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
+/* Mark memory NON-CACHEABLE */
+#if RTE_USE_NON_CACHE_MEM
+	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(rz->addr, rz->hugepage_sz);
+	mark_kpage_ncache(huge_page);
+#endif
 	rxq->mz = rz;
 	/*
 	 * Zero init all the descriptors in the ring.
