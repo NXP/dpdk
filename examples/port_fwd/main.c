@@ -73,9 +73,6 @@ uint32_t max_pkt_burst = MAX_PKT_BURST;
 uint32_t max_tx_burst = MAX_TX_BURST;
 uint32_t max_rx_burst = MAX_PKT_BURST;
 
-static int s_pktgen_tool;
-static struct rte_mempool *pktmbuf_tx_pool;
-
 enum port_fwd_proc_type {
 	proc_primary = 0,
 	proc_attach_secondary = 1,
@@ -144,6 +141,8 @@ static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
 static uint64_t max_mbuf_addr;
 static uint64_t min_mbuf_addr = (~((uint64_t)0));
 
+static int s_dump_mbuf;
+
 struct loop_mode {
 	int (*parse_fwd_dst)(int portid);
 	rte_rx_callback_fn cb_parse_ptype;
@@ -154,9 +153,6 @@ static int parse_port_fwd_dst(int portid)
 {
 	char *penv;
 	char env_name[64];
-
-	if (s_pktgen_tool)
-		return 0;
 
 	fwd_dst_port[portid] = -1;
 	sprintf(env_name, "PORT%d_FWD", portid);
@@ -173,216 +169,6 @@ static int parse_port_fwd_dst(int portid)
 		portid, fwd_dst_port[portid]);
 
 	return 0;
-}
-
-static __thread struct rte_mbuf *loopback_pkts[512 * MAX_PKT_BURST];
-
-static int loopback_start_fun(uint16_t rx_port,
-	uint16_t tx_port, uint16_t rx_queue, uint16_t tx_queue)
-{
-	struct rte_eth_rxq_info rxqinfo;
-	struct rte_eth_txq_info txqinfo;
-	struct rte_mempool *pool;
-	uint16_t nb_desc, loop, size = 0, total_nb, tx_nb = 0;
-	int ret;
-	char *penv = getenv("LOOPBACK_PACKETS_SIZE");
-
-	if (penv)
-		size = atoi(penv);
-
-	if (!size)
-		size = 60;
-
-	ret = rte_eth_rx_queue_info_get(rx_port, rx_queue, &rxqinfo);
-	if (ret) {
-		printf("error: can't get info of RXQ %d of port %d\n",
-			rx_queue, rx_port);
-		return ret;
-	}
-	pool = rxqinfo.mp;
-
-	ret = rte_eth_tx_queue_info_get(tx_port, tx_queue, &txqinfo);
-	if (ret) {
-		printf("error: can't get info of TXQ %d of port %d\n",
-			tx_queue, tx_port);
-		return ret;
-	}
-	nb_desc = txqinfo.nb_desc < 512 ? txqinfo.nb_desc : 512;
-
-	for (loop = 0; loop < (nb_desc * MAX_PKT_BURST); loop++) {
-		loopback_pkts[loop] = rte_pktmbuf_alloc(pool);
-		if (!loopback_pkts[loop])
-			break;
-	}
-
-	total_nb = loop;
-
-	for (loop = 0; loop < total_nb; loop++) {
-		loopback_pkts[loop]->data_off = RTE_PKTMBUF_HEADROOM;
-		loopback_pkts[loop]->nb_segs = 1;
-		loopback_pkts[loop]->next = 0;
-		loopback_pkts[loop]->pkt_len = size;
-		loopback_pkts[loop]->data_len = size;
-		*rte_pktmbuf_mtod_offset(loopback_pkts[loop], char *, -1) = 0;
-	}
-
-	printf("Trying to inject %d mbufs whose sizes are %d"
-			" to start loopback on port %d txq %d\r\n",
-			total_nb, size, tx_port, tx_queue);
-
-	for (loop = 0; loop < (total_nb / MAX_PKT_BURST); loop++) {
-		ret = rte_eth_tx_burst(tx_port, tx_queue,
-				&loopback_pkts[loop * MAX_PKT_BURST],
-				MAX_PKT_BURST);
-		tx_nb += ret;
-		if (ret != MAX_PKT_BURST)
-			break;
-	}
-
-	if (tx_nb < total_nb)
-		rte_pktmbuf_free_bulk(&loopback_pkts[tx_nb],
-			total_nb - tx_nb);
-
-	printf("Total %d mbufs are injected.\r\n", tx_nb);
-
-	return 0;
-}
-
-static uint8_t pkt_data_base[] = {
-	0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
-	0x00, 0x10, 0x94, 0x00, 0x00, 0x02,
-	0x08, 0x00,
-	0x45, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00,
-	0xff, 0x11, 0x2f, 0xb4,
-	0xc6, 0x12, 0x00, 0x00,
-	0xc6, 0x12, 0x00, 0x00,
-	0x04, 0x00, 0x04, 0x00,
-	0x00, 0x00, 0x6b, 0xc9
-};
-
-static void pktgen_drain(struct lcore_conf *qconf)
-{
-	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
-	int i, nb_rx, rx_count;
-	uint16_t portid;
-	uint8_t queueid;
-
-	for (i = 0; i < qconf->n_rx_queue; ++i) {
-		portid = qconf->rx_queue_list[i].port_id;
-		queueid = qconf->rx_queue_list[i].queue_id;
-		rx_count = 100;
-RX_DRAIN:
-		nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
-					MAX_PKT_BURST);
-		if (nb_rx > 0) {
-			rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
-			rx_count = 100;
-			goto RX_DRAIN;
-		}
-		rx_count--;
-		if (rx_count > 0)
-			goto RX_DRAIN;
-	}
-}
-
-static int s_pktgen_rx_drain;
-#define PKTGEN_RX_DRAIN_DEFAULT 10
-static void pktgen_rxtx(struct lcore_conf *qconf,
-			struct rte_mempool *pool, int pkt_len, int rx_only)
-{
-	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
-	int i, nb_rx, ret, nb_tx, j, rx_count;
-	uint16_t portid;
-	uint8_t queueid;
-	struct rte_ether_hdr *eth_hdr;
-	struct rte_ipv4_hdr *ipv4_hdr;
-	char *penv;
-
-	if (!s_pktgen_rx_drain) {
-		penv = getenv("PORT_FWD_PKTGEN_RX_DRAIN");
-		if (penv)
-			s_pktgen_rx_drain = atoi(penv);
-		else
-			s_pktgen_rx_drain = PKTGEN_RX_DRAIN_DEFAULT;
-	}
-
-	for (i = 0; i < qconf->n_rx_queue; ++i) {
-		portid = qconf->rx_queue_list[i].port_id;
-		queueid = qconf->rx_queue_list[i].queue_id;
-		rx_count = s_pktgen_rx_drain;
-
-RX_LOOP:
-		nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
-					MAX_PKT_BURST);
-		if (nb_rx > 0) {
-			for (j = 0; j < nb_rx; j++) {
-				if ((int)pkts_burst[j]->pkt_len != pkt_len)
-					printf("RX pkt should be %d, but it's %d\r\n",
-						pkt_len,
-						pkts_burst[j]->pkt_len);
-				qconf->rx_statistic[portid].bytes +=
-					pkts_burst[j]->pkt_len;
-				qconf->rx_statistic[portid].bytes_fcs +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
-				qconf->rx_statistic[portid].bytes_overhead +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
-			}
-			qconf->rx_statistic[portid].packets += nb_rx;
-			rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
-		}
-		if (nb_rx > 0) {
-			/* To reduce the TX Congestion*/
-			rx_count = s_pktgen_rx_drain;
-			goto RX_LOOP;
-		}
-		rx_count--;
-		if (rx_count > 0)
-			goto RX_LOOP;
-
-		if (rx_only)
-			continue;
-		ret = rte_pktmbuf_alloc_bulk(pool, pkts_burst, MAX_PKT_BURST);
-		if (!ret) {
-			for (j = 0; j < MAX_PKT_BURST; j++) {
-				pkts_burst[j]->pkt_len = pkt_len;
-				pkts_burst[j]->data_len = pkt_len;
-				memcpy(rte_pktmbuf_mtod(pkts_burst[j], char *),
-					pkt_data_base, sizeof(pkt_data_base));
-				eth_hdr = rte_pktmbuf_mtod(pkts_burst[j],
-					struct rte_ether_hdr *);
-				ipv4_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-				ipv4_hdr->total_length =
-					rte_cpu_to_be_16(pkt_len -
-						sizeof(struct rte_ether_hdr));
-				ipv4_hdr->src_addr =
-					rte_cpu_to_be_32(qconf->tx_ip[portid]);
-				qconf->tx_ip[portid]++;
-				ipv4_hdr->hdr_checksum = 0;
-				ipv4_hdr->hdr_checksum =
-					rte_cpu_to_be_16(rte_ipv4_cksum(ipv4_hdr));
-			}
-			nb_tx = rte_eth_tx_burst(portid, queueid, pkts_burst,
-						MAX_PKT_BURST);
-			if (nb_tx > 0) {
-				for (j = 0; j < nb_tx; j++) {
-					qconf->tx_statistic[portid].bytes +=
-						pkt_len;
-					qconf->tx_statistic[portid].bytes_fcs +=
-						pkt_len + PKTGEN_ETH_FCS_SIZE;
-					qconf->tx_statistic[portid].bytes_overhead +=
-						pkt_len + PKTGEN_ETH_OVERHEAD_SIZE;
-				}
-				qconf->tx_statistic[portid].packets += nb_tx;
-			}
-			/* Free any unsent packets. */
-			if (unlikely(nb_tx < MAX_PKT_BURST)) {
-				rte_pktmbuf_free_bulk(&pkts_burst[nb_tx],
-					MAX_PKT_BURST - nb_tx);
-			}
-		}
-	}
 }
 
 static int
@@ -505,6 +291,28 @@ main_injection_test_loop(void)
 	return 0;
 }
 
+static inline void
+dump_mbuf_data(struct rte_mbuf *pkt, int tx_rx,
+	uint16_t portid)
+{
+	uint32_t i;
+	uint8_t *data = (uint8_t *)pkt->buf_addr +
+		pkt->data_off;
+
+	if (likely(!s_dump_mbuf))
+		return;
+
+	printf("%s %d pkt len:%d\r\n", tx_rx ?
+		"Send to" : "Recv from",
+		portid, pkt->pkt_len);
+	for (i = 0; i < pkt->pkt_len; i++) {
+		printf("%02x ", data[i]);
+		if ((i + 1) % 16 == 0)
+			printf("\r\n");
+	}
+	printf("\r\n");
+}
+
 static int
 main_loop(__attribute__((unused)) void *dummy)
 {
@@ -517,10 +325,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
-	int loopback_start = 0;
 	char *penv = getenv("PORT_FWD_INJECTION_TEST");
-	int loopback_port = -1;
-	int pktgen_len = 64, rx_only = 0;
 	uint64_t bytes_overhead[MAX_PKT_BURST];
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
@@ -529,24 +334,6 @@ main_loop(__attribute__((unused)) void *dummy)
 	if (penv && atoi(penv)) {
 		main_injection_test_loop();
 		return 0;
-	}
-
-	penv = getenv("PORT_FWD_LOOPBACK_PORT");
-
-	if (penv)
-		loopback_port = atoi(penv);
-
-	if (s_pktgen_tool) {
-		penv = getenv("PORT_FWD_PKTGEN_PKT_LEN");
-		if (penv)
-			pktgen_len = atoi(penv);
-		if (pktgen_len < 64 || pktgen_len > 1518) {
-			RTE_LOG(INFO, PMD, "PKT len error %d\r\n", pktgen_len);
-			return 0;
-		}
-		penv = getenv("PORT_FWD_PKTGEN_RX_ONLY");
-		if (penv)
-			rx_only = atoi(penv);
 	}
 
 	lcore_id = rte_lcore_id();
@@ -568,13 +355,6 @@ main_loop(__attribute__((unused)) void *dummy)
 	}
 
 	while (!force_quit) {
-		if (unlikely(s_pktgen_tool)) {
-			pktgen_rxtx(qconf, pktmbuf_pool,
-				pktgen_len -
-				PKTGEN_ETH_FCS_SIZE, rx_only);
-			continue;
-		}
-
 		if (!s_ring_fwd)
 			goto port_forwarding;
 
@@ -648,17 +428,8 @@ port_forwarding:
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				MAX_PKT_BURST);
-			if (nb_rx == 0) {
-				if (unlikely(loopback_port >= 0 &&
-					loopback_port == dstportid &&
-					!loopback_start)) {
-					loopback_start_fun(portid, dstportid,
-						queueid,
-						qconf->tx_queue_id[dstportid]);
-					loopback_start = 1;
-				}
+			if (nb_rx == 0)
 				continue;
-			}
 
 			for (j = 0; j < nb_rx; j++) {
 				qconf->rx_statistic[portid].bytes +=
@@ -674,12 +445,19 @@ port_forwarding:
 					PKTGEN_ETH_OVERHEAD_SIZE;
 				bytes_overhead[j] = pkts_burst[j]->pkt_len +
 					PKTGEN_ETH_OVERHEAD_SIZE;
+				dump_mbuf_data(pkts_burst[j], 0, portid);
 			}
 			qconf->rx_statistic[portid].packets += nb_rx;
 
 			if (dstportid < 0) {
 				rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
 				continue;
+			}
+
+			if (unlikely(s_dump_mbuf)) {
+				for (j = 0; j < nb_rx; j++)
+					dump_mbuf_data(pkts_burst[j], 1,
+						dstportid);
 			}
 
 			nb_tx = rte_eth_tx_burst(dstportid,
@@ -702,9 +480,6 @@ port_forwarding:
 			}
 		}
 	}
-
-	if (s_pktgen_tool)
-		pktgen_drain(qconf);
 
 	return 0;
 }
@@ -1139,28 +914,6 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 		return 0;
 	}
 
-	if (s_pktgen_tool) {
-		if (s_proc_type == proc_standalone_secondary) {
-			pktmbuf_tx_pool =
-				rte_pktmbuf_pool_create_by_ops(s_tx_2nd,
-					nb_mbuf,
-					MEMPOOL_CACHE_SIZE, 0,
-					buf_size, 0,
-					RTE_MBUF_DEFAULT_MEMPOOL_OPS);
-		} else {
-			pktmbuf_tx_pool =
-				rte_pktmbuf_pool_create(s_tx,
-					nb_mbuf,
-					MEMPOOL_CACHE_SIZE, 0,
-					buf_size, 0);
-		}
-		if (!pktmbuf_tx_pool) {
-			rte_exit(EXIT_FAILURE,
-				"Create TX mbuf pool(%s) failed\n",
-				s_tx);
-		}
-	}
-
 	if (s_proc_type == proc_standalone_secondary) {
 		pktmbuf_pool =
 			rte_pktmbuf_pool_create_by_ops(s_2nd,
@@ -1433,11 +1186,9 @@ main(int argc, char **argv)
 	if (penv)
 		s_ring_fwd = 1;
 
-	if (s_proc_type != proc_attach_secondary) {
-		penv = getenv("PORT_FWD_PKTGEN_TOOL");
-		if (penv)
-			s_pktgen_tool = atoi(penv);
-	}
+	penv = getenv("PORT_FWD_DUMP_MBUF");
+	if (penv)
+		s_dump_mbuf = atoi(penv);
 
 	ret = init_lcore_rx_queues();
 	if (ret < 0)
