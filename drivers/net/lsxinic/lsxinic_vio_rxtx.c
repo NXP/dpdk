@@ -824,8 +824,7 @@ update_shadow_used_ring_split(struct lsxvio_queue *vq,
 	uint16_t i = vq->shadow_used_idx++;
 
 	vq->shadow_used_split->ring[i].id  = desc_idx;
-	vq->shadow_used_split->ring[i].len =
-		len + vq->adapter->vtnet_hdr_size;
+	vq->shadow_used_split->ring[i].len = len;
 }
 
 static __rte_always_inline void
@@ -844,8 +843,7 @@ do_flush_shadow_used_ring_split(struct lsxvio_queue *vq,
 			vq->used->ring[to + i].id =
 				vq->shadow_used_split->ring[from + i].id;
 			vq->used->ring[to + i].len =
-				vq->shadow_used_split->ring[from + i].len +
-					vq->adapter->vtnet_hdr_size;
+				vq->shadow_used_split->ring[from + i].len;
 		}
 	}
 	rte_wmb();
@@ -1130,7 +1128,6 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 		return;
 	}
 	LSXINIC_PMD_DBG("desc info: addr=%lx len=%d", addr, len);
-	len -= rxq->adapter->vtnet_hdr_size;
 	if (len > LSXVIO_MAX_DATA_PER_TXD) {
 		LSXINIC_PMD_ERR("port%d rxq%d BD%d error len:0x%08x, cpu:%d",
 			rxq->port_id, rxq->queue_id, desc_idx, len,
@@ -1159,8 +1156,7 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	dma_job->cnxt = (uint64_t)rxe;
 	dma_job->dest =
 		rte_cpu_to_le_64(rte_mbuf_data_iova_default(rxm));
-	dma_job->src = addr + rxq->ob_base +
-		rxq->adapter->vtnet_hdr_size;
+	dma_job->src = addr + rxq->ob_base;
 	rxe->align_dma_offset = (dma_job->src) & LSXVIO_DMA_ALIGN_MASK;
 	dma_job->src -= rxe->align_dma_offset;
 	dma_job->len = pkt_len + rxe->align_dma_offset;
@@ -1275,6 +1271,38 @@ lsxvio_tx_dma_addr_loop(struct rte_qdma_job **jobs,
 	return dma_nb;
 }
 
+#undef LSXVIO_REMOTE_PKT_DUMP
+
+#ifdef LSXVIO_REMOTE_PKT_DUMP
+static void
+lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
+	uint64_t remote_addr, uint16_t len)
+{
+	uint8_t *virt;
+	uint32_t i;
+
+	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
+		if (adapter->rbp_enable) {
+			LSXINIC_PMD_ERR("%s NOT support to dump remote buffer",
+				"RBP enabled");
+			return;
+		}
+		virt = lsx_pciep_set_ob_win(adapter->lsx_dev,
+			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
+	} else {
+		virt = DPAA2_IOVA_TO_VADDR(remote_addr);
+	}
+
+	printf("Remote buf(0x%lx) len:%d\r\n", remote_addr, len);
+	for (i = 0; i < len; i++) {
+		printf("%02x ", virt[i]);
+		if ((i + 1) % 16 == 0)
+			printf("\r\n");
+	}
+	printf("\r\n");
+}
+#endif
+
 static void
 lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 {
@@ -1299,6 +1327,10 @@ lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 		jobs[bd_num] = &vq->dma_jobs[start_idx];
 		jobs[bd_num]->src = sdesc->addr_offset + vq->mem_base;
 		jobs[bd_num]->len = sdesc->len;
+#ifdef LSXVIO_REMOTE_PKT_DUMP
+		lsxvio_dump_remote_buf(vq->adapter, jobs[bd_num]->src,
+			jobs[bd_num]->len);
+#endif
 		bd_num++;
 		start_idx = (start_idx + 1) & (vq->nb_desc - 1);
 		sdesc->len = 0;
@@ -1762,7 +1794,8 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 
 		addr = vq->shadow_pdesc[desc_idx].addr;
 		vq->shadow_pdesc[desc_idx].flags = vq->cached_flags;
-		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len;
+		vq->shadow_pdesc[desc_idx].len = rxm->pkt_len +
+			vq->adapter->vtnet_hdr_size;
 		if (txe->mbuf) {
 			if (free_mbuf)
 				*free_mbuf = txe->mbuf;
@@ -1780,9 +1813,9 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	txe->len = rxm->pkt_len;
 
 	dma_job->cnxt = (uint64_t)txe;
-	dma_job->src = rte_mbuf_data_iova(rxm) - vq->adapter->vtnet_hdr_size;
+	dma_job->src = rte_mbuf_data_iova(rxm);
 	dma_job->dest = addr + vq->ob_base;
-	dma_job->len = rxm->pkt_len + vq->adapter->vtnet_hdr_size;
+	dma_job->len = rxm->pkt_len;
 	if (vq->new_desc == 0)
 		vq->new_tsc = rte_rdtsc();
 
@@ -1868,10 +1901,6 @@ lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
 			free_idx++;
 		if (ret)
 			break;
-		memset((char *)tx_pkts[tx_num]->buf_addr +
-			tx_pkts[tx_num]->data_off -
-			vq->adapter->vtnet_hdr_size,
-			0, vq->adapter->vtnet_hdr_size);
 		vq->bytes += tx_pkts[tx_num]->pkt_len;
 		vq->bytes_fcs +=
 			tx_pkts[tx_num]->pkt_len +
@@ -1917,10 +1946,6 @@ lsxvio_xmit_pkts_burst(struct lsxvio_queue *vq,
 		/** Currently no indirect support. */
 		j = 0;
 		while (1) {
-			memset((char *)tx_pkts[tx_num]->buf_addr +
-				tx_pkts[tx_num]->data_off -
-				vq->adapter->vtnet_hdr_size,
-				0, vq->adapter->vtnet_hdr_size);
 			lsxvio_xmit_one_pkt(vq, desc_idx,
 				tx_pkts[tx_num], head, NULL);
 			vq->bytes += tx_pkts[tx_num]->pkt_len;

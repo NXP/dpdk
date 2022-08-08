@@ -1265,9 +1265,6 @@ lsxvio_rc_init_device(struct rte_eth_dev *eth_dev,
 	else
 		hw->vtnet_hdr_size = sizeof(struct virtio_net_hdr);
 
-	/* Overwrite previous setting, to support header size in the future.*/
-	hw->vtnet_hdr_size = 0;
-
 	/* Copy the permanent MAC address to: virtio_hw */
 	lsxvio_rc_get_hwaddr(hw);
 	rte_ether_addr_copy((struct rte_ether_addr *)hw->mac_addr,
@@ -1614,7 +1611,8 @@ lsxvio_rc_rx_notify_addr(struct virtqueue *vq,
 		addr_offs = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
 		i = last_avail_idx;
 		for (j = 0; j < len; j++) {
-			addr_offs[i] = pdesc[i].addr - mem_base;
+			addr_offs[i] = pdesc[i].addr - mem_base +
+				lsx_hw->common_cfg.vtnet_hdr_size;
 			i = (i + 1) & (vq->vq_nentries - 1);
 		}
 
@@ -1628,7 +1626,8 @@ lsxvio_rc_rx_notify_addr(struct virtqueue *vq,
 		addrs = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
 		i = last_avail_idx;
 		for (j = 0; j < len; j++) {
-			addrs[i] = pdesc[i].addr;
+			addrs[i] = pdesc[i].addr +
+				lsx_hw->common_cfg.vtnet_hdr_size;
 			i = (i + 1) & (vq->vq_nentries - 1);
 		}
 		if (!dma || last_avail_idx == current_idx) {
@@ -1731,8 +1730,10 @@ lsxvio_rc_tx_notify_bd_update(struct virtqueue *vq,
 		local_sdesc = lsx_hw->local_lsx_cfg.shadow_desc[qidx];
 		i = last_avail_idx;
 		for (j = 0; j < len; j++) {
-			local_sdesc[i].addr_offset = desc[i].addr - mem_base;
-			local_sdesc[i].len = desc[i].len;
+			local_sdesc[i].addr_offset = desc[i].addr - mem_base +
+				lsx_hw->common_cfg.vtnet_hdr_size;
+			local_sdesc[i].len = desc[i].len -
+				lsx_hw->common_cfg.vtnet_hdr_size;
 			i = (i + 1) & (vq->vq_nentries - 1);
 		}
 		if (!dma) {

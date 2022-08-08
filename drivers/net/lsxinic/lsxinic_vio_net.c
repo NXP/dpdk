@@ -179,8 +179,6 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #else
 	adapter->vtnet_hdr_size = sizeof(struct virtio_net_hdr);
 #endif
-	/* Overwrite previous setting, to support header size in the future.*/
-	adapter->vtnet_hdr_size = 0;
 
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
 	lsxvio_virtio_init(adapter->cfg_base, device_id, lsx_feature);
