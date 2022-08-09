@@ -940,7 +940,7 @@ int dpaa_fm_term(void)
 
 static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 		uint8_t vsp_id, t_Handle fman_handle,
-		struct fman_if *fif)
+		struct fman_if *fif, u32 mbuf_data_room_size)
 {
 	t_FmVspParams vsp_params;
 	t_FmBufferPrefixContent buf_prefix_cont;
@@ -984,10 +984,8 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 		vsp_params.portParams.portType = e_FM_PORT_TYPE_RX_10G;
 
 	vsp_params.extBufPools.numOfPoolsUsed = 1;
-	vsp_params.extBufPools.extBufPool[0].id =
-		dpaa_intf->vsp_bpid[vsp_id];
-	vsp_params.extBufPools.extBufPool[0].size =
-		RTE_MBUF_DEFAULT_BUF_SIZE;
+	vsp_params.extBufPools.extBufPool[0].id = dpaa_intf->vsp_bpid[vsp_id];
+	vsp_params.extBufPools.extBufPool[0].size = mbuf_data_room_size;
 
 	dpaa_intf->vsp_handle[vsp_id] = FM_VSP_Config(&vsp_params);
 	if (!dpaa_intf->vsp_handle[vsp_id]) {
@@ -1031,7 +1029,7 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 
 int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
 		bool fmc_mode, uint8_t vsp_id, uint32_t bpid,
-		struct fman_if *fif)
+		struct fman_if *fif, u32 mbuf_data_room_size)
 {
 	int ret = 0;
 	t_Handle fman_handle;
@@ -1064,7 +1062,8 @@ int dpaa_port_vsp_update(struct dpaa_if *dpaa_intf,
 
 	dpaa_intf->vsp_bpid[vsp_id] = bpid;
 
-	return dpaa_port_vsp_configure(dpaa_intf, vsp_id, fman_handle, fif);
+	return dpaa_port_vsp_configure(dpaa_intf, vsp_id, fman_handle, fif,
+				       mbuf_data_room_size);
 }
 
 int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf, struct fman_if *fif)
