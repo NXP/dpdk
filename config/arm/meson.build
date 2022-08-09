@@ -2,6 +2,7 @@
 # Copyright(c) 2017 Intel Corporation.
 # Copyright(c) 2017 Cavium, Inc
 # Copyright(c) 2021 PANTHEON.tech s.r.o.
+# Copyright 2022 NXP
 
 # common flags to all aarch64 builds, with lowest priority
 flags_common = [
