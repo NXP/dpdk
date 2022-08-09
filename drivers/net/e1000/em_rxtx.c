@@ -45,6 +45,9 @@
 #include "base/e1000_api.h"
 #include "e1000_ethdev.h"
 #include "base/e1000_osdep.h"
+#if RTE_USE_NON_CACHE_MEM
+#include <kpage_ncache_api.h>
+#endif
 
 #define	E1000_TXD_VLAN_SHIFT	16
 
@@ -1194,6 +1197,7 @@ em_get_tx_queue_offloads_capa(struct rte_eth_dev *dev)
 	return tx_queue_offload_capa;
 }
 
+
 int
 eth_em_tx_queue_setup(struct rte_eth_dev *dev,
 			 uint16_t queue_idx,
@@ -1283,6 +1287,11 @@ eth_em_tx_queue_setup(struct rte_eth_dev *dev,
 	if (tz == NULL)
 		return -ENOMEM;
 
+/* Mark memory NON-CACHEABLE */
+#if RTE_USE_NON_CACHE_MEM
+	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(tz->addr, tz->hugepage_sz);
+	mark_kpage_ncache(huge_page);
+#endif
 	/* Allocate the tx queue data structure. */
 	if ((txq = rte_zmalloc("ethdev TX queue", sizeof(*txq),
 			RTE_CACHE_LINE_SIZE)) == NULL)
@@ -1445,6 +1454,12 @@ eth_em_rx_queue_setup(struct rte_eth_dev *dev,
 				      RTE_CACHE_LINE_SIZE, socket_id);
 	if (rz == NULL)
 		return -ENOMEM;
+
+/* Mark memory NON-CACHEABLE */
+#if RTE_USE_NON_CACHE_MEM
+	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(rz->addr, rz->hugepage_sz);
+	mark_kpage_ncache(huge_page);
+#endif
 
 	/* Allocate the RX queue data structure. */
 	if ((rxq = rte_zmalloc("ethdev RX queue", sizeof(*rxq),
