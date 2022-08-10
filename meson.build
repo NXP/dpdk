@@ -64,21 +64,21 @@ endif
 # configure the build, and make sure configs here and in config folder are
 # able to be included in any file. We also store a global array of include dirs
 # for passing to pmdinfogen scripts
-platform =  meson.get_cross_property('platform', '')
+platform =  meson.get_cross_property('platform', '0')
 message(platform + '\n')
 if platform == 'imx'
-global_inc = include_directories('.', 'config',
-    'lib/eal/include',
-    'lib/eal/@0@/include'.format(host_machine.system()),
-    'lib/eal/@0@/include'.format(arch_subdir),
-	'kernel/linux/kpage_ncache',
-)
-elif
-global_inc = include_directories('.', 'config',
-    'lib/eal/include',
-    'lib/eal/@0@/include'.format(host_machine.system()),
-    'lib/eal/@0@/include'.format(arch_subdir),
-)
+	global_inc = include_directories('.', 'config',
+		'lib/eal/include',
+		'lib/eal/@0@/include'.format(host_machine.system()),
+		'lib/eal/@0@/include'.format(arch_subdir),
+		'kernel/linux/kpage_ncache',
+	)
+elif platform != 'imx'
+	global_inc = include_directories('.', 'config',
+		'lib/eal/include',
+		'lib/eal/@0@/include'.format(host_machine.system()),
+		'lib/eal/@0@/include'.format(arch_subdir),
+	)
 endif
 # do configuration and get tool paths
 subdir('buildtools')
