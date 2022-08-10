@@ -504,6 +504,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
 	enum lsinic_dev_type *dev_type;
+	char pcie_dev_nm[64];
 
 	if (penv)
 		print_status = atoi(penv);
@@ -520,6 +521,17 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			adapter = dev->eth_dev->data->dev_private;
 			common = BASE_TO_COMMON(adapter->cfg_base);
 			status = common->device_status;
+			memset(pcie_dev_nm, 0, sizeof(pcie_dev_nm));
+			if (adapter->is_vf) {
+				sprintf(pcie_dev_nm, "pcie%d:pf%d:vf:%d",
+					adapter->pcie_idx,
+					adapter->pf_idx,
+					adapter->vf_idx);
+			} else {
+				sprintf(pcie_dev_nm, "pcie%d:pf%d",
+					adapter->pcie_idx,
+					adapter->pf_idx);
+			}
 
 			if (status == adapter->status) {
 				dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
@@ -527,17 +539,10 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			}
 
 			if (status == VIRTIO_CONFIG_STATUS_SEND_RESET) {
-				if (adapter->status
-					& VIRTIO_CONFIG_STATUS_DRIVER_OK) {
-					if (adapter->is_vf)
-						LSXINIC_PMD_INFO("pcie%d:pf%d:vf:%d link down",
-							adapter->pcie_idx,
-							adapter->pf_idx,
-							adapter->vf_idx);
-					else
-						LSXINIC_PMD_INFO("pcie%d:pf%d link down",
-							adapter->pcie_idx,
-							adapter->pf_idx);
+				if (adapter->status &
+					VIRTIO_CONFIG_STATUS_DRIVER_OK) {
+					LSXINIC_PMD_INFO("%s link down",
+						pcie_dev_nm);
 				}
 				lsxvio_dev_reset(dev->eth_dev);
 				dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
@@ -561,29 +566,22 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
-				while (!common->start_config) {
-					rte_wmb();
-					rte_rmb();
-					rte_delay_ms(1);
-				}
+				LSXINIC_PMD_INFO("%s driver OK",
+					pcie_dev_nm);
+			}
+			if ((status & VIRTIO_CONFIG_STATUS_START) &&
+				!(adapter->status &
+				VIRTIO_CONFIG_STATUS_START)) {
 				ret = lsxvio_virtio_config_fromrc(dev);
 				if (ret) {
 					LSXINIC_PMD_ERR("%s link failed",
-						dev->name);
+						pcie_dev_nm);
 					dev = (struct rte_lsx_pciep_device *)
 						TAILQ_NEXT(dev, next);
 					continue;
 				}
 
-				if (adapter->is_vf)
-					LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link up",
-						adapter->pcie_idx,
-						adapter->pf_idx,
-						adapter->vf_idx);
-				else
-					LSXINIC_PMD_INFO("pcie%d:pf%d link up",
-						adapter->pcie_idx,
-						adapter->pf_idx);
+				LSXINIC_PMD_INFO("%s link up", pcie_dev_nm);
 			}
 
 			adapter->status = status;

@@ -2445,8 +2445,7 @@ lsxvio_rc_eth_start(struct rte_eth_dev *dev)
 
 	lsxvio_rc_set_rxtx_funcs(dev);
 	hw->started = true;
-	rte_write8(LSX_VIO_HW_START_CONFIG,
-		&lsx_hw->lsx_cfg->common_cfg.start_config);
+	vtpci_set_status(hw, VIRTIO_CONFIG_STATUS_START);
 
 	/* Initialize Link state */
 	lsxvio_rc_eth_link_update(dev, 0);
