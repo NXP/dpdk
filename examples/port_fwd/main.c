@@ -143,6 +143,9 @@ static uint64_t min_mbuf_addr = (~((uint64_t)0));
 
 static int s_dump_mbuf;
 
+static int s_txq_multi_core_test;
+static int s_multi_core_txq_id[RTE_MAX_ETHPORTS];
+
 struct loop_mode {
 	int (*parse_fwd_dst)(int portid);
 	rte_rx_callback_fn cb_parse_ptype;
@@ -186,7 +189,6 @@ main_injection_test_loop(void)
 	int i, nb_rx, j, ret;
 	uint16_t nb_tx, sent;
 	uint16_t portid;
-	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
 	char *penv = getenv("PORT_FWD_INJECTION_PKT_SIZE");
@@ -233,8 +235,6 @@ main_injection_test_loop(void)
 			portid = qconf->rx_queue_list[i].port_id;
 			queueid = qconf->rx_queue_list[i].queue_id;
 
-			dstportid = port_fwd_dst_port(portid);
-
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				MAX_PKT_BURST);
 
@@ -265,20 +265,20 @@ main_injection_test_loop(void)
 				tx_len[i] = inject_size;
 			}
 
-			sent = rte_eth_tx_burst(dstportid,
-					qconf->tx_queue_id[dstportid],
+			sent = rte_eth_tx_burst(portid,
+					qconf->tx_queue_id[portid],
 					pkts_burst, nb_tx);
 			for (j = 0; j < sent; j++) {
-				qconf->tx_statistic[dstportid].bytes +=
+				qconf->tx_statistic[portid].bytes +=
 					tx_len[j];
-				qconf->tx_statistic[dstportid].bytes_fcs +=
+				qconf->tx_statistic[portid].bytes_fcs +=
 					tx_len[j] +
 					PKTGEN_ETH_FCS_SIZE;
-				qconf->tx_statistic[dstportid].bytes_overhead +=
+				qconf->tx_statistic[portid].bytes_overhead +=
 					tx_len[j] +
 					PKTGEN_ETH_OVERHEAD_SIZE;
 			}
-			qconf->tx_statistic[dstportid].packets += sent;
+			qconf->tx_statistic[portid].packets += sent;
 
 			/* Free any unsent packets. */
 			if (unlikely(sent < nb_tx)) {
@@ -1142,7 +1142,7 @@ main(int argc, char **argv)
 	int ret;
 	uint32_t nb_ports;
 	uint16_t queueid, portid;
-	uint32_t lcore_id;
+	uint32_t lcore_id, i;
 	uint32_t nb_lcores;
 	uint8_t queue, socketid;
 	struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
@@ -1211,12 +1211,22 @@ main(int argc, char **argv)
 	}
 	port_conf.rxmode.max_rx_pkt_len = data_room_size;
 
+	penv = getenv("PORT_FWD_TXQ_MULTI_CORE_TEST");
+	if (penv && atoi(penv)) {
+		s_txq_multi_core_test = 1;
+		for (i = 0; i < RTE_MAX_ETHPORTS; i++)
+			s_multi_core_txq_id[i] = -1;
+	}
+
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0)
 			continue;
 
 		nb_rx_queue[portid] = get_port_n_rx_queues(portid);
-		nb_tx_queue[portid] = nb_rx_queue[portid];
+		if (s_txq_multi_core_test)
+			nb_tx_queue[portid] = 1;
+		else
+			nb_tx_queue[portid] = nb_rx_queue[portid];
 		total_rx_queues += nb_rx_queue[portid];
 		total_tx_queues += nb_tx_queue[portid];
 	}
@@ -1332,8 +1342,20 @@ main(int argc, char **argv)
 				ret, portid);
 			txconf = &dev_info.default_txconf;
 			txconf->offloads = local_port_conf[portid].txmode.offloads;
-			ret = rte_eth_tx_queue_setup(portid, queueid, nb_txd,
-						     socketid, txconf);
+			if (s_txq_multi_core_test) {
+				if (s_multi_core_txq_id[portid] < 0) {
+					s_multi_core_txq_id[portid] = queueid;
+					ret = rte_eth_tx_queue_setup(portid,
+						s_multi_core_txq_id[portid],
+						nb_txd, socketid, txconf);
+				} else {
+					queueid = s_multi_core_txq_id[portid];
+					ret = 0;
+				}
+			} else {
+				ret = rte_eth_tx_queue_setup(portid,
+					queueid, nb_txd, socketid, txconf);
+			}
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 					"rte_eth_tx_queue_setup: err=%d, "
