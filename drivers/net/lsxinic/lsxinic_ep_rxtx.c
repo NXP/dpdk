@@ -506,20 +506,13 @@ lsinic_qdma_tx_multiple_enqueue(struct lsinic_queue *queue,
 {
 	int ret = 0;
 	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx;
-	struct rte_qdma_job *jobs[LSINIC_QDMA_EQ_MAX_NB];
+	struct rte_qdma_job *jobs[LSINIC_QDMA_EQ_MAX_NB + 2];
 	struct rte_qdma_enqdeq e_context;
 	uint16_t txq_bd_jobs_num = 0;
-	uint16_t bd_jobs_len, max_jobs_nb;
+	uint16_t bd_jobs_len;
 	int txq_dma_bd_start = queue->wdma_bd_start;
 	uint16_t txq_bd_step = queue->bd_dma_step;
 	struct lsinic_bd_desc *ep_bd_desc = NULL;
-
-	if (queue->dma_bd_update & DMA_BD_EP2RC_UPDATE) {
-		/* At most 2 TX DMA bd jobs.*/
-		max_jobs_nb = LSINIC_QDMA_EQ_MAX_NB - 2;
-	} else {
-		max_jobs_nb = LSINIC_QDMA_EQ_MAX_NB;
-	}
 
 	if (queue->rc_mem_bd_type == RC_MEM_LONG_BD)
 		ep_bd_desc = queue->local_src_bd_desc;
@@ -528,10 +521,10 @@ lsinic_qdma_tx_multiple_enqueue(struct lsinic_queue *queue,
 
 	if (!append) {
 		nb_jobs = queue->jobs_pending;
-		if (nb_jobs > max_jobs_nb)
-			nb_jobs = max_jobs_nb;
-	} else if (queue->jobs_pending >= max_jobs_nb) {
-		nb_jobs = max_jobs_nb;
+		if (nb_jobs > LSINIC_QDMA_EQ_MAX_NB)
+			nb_jobs = LSINIC_QDMA_EQ_MAX_NB;
+	} else if (queue->jobs_pending >= LSINIC_QDMA_EQ_MAX_NB) {
+		nb_jobs = LSINIC_QDMA_EQ_MAX_NB;
 	}
 
 	if (!nb_jobs && append)
@@ -3138,6 +3131,7 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 			txq->packets_old = txq->packets;
 		}
 	}
+	lsinic_qdma_tx_multiple_enqueue(txq, false);
 
 	return tx_num;
 }
