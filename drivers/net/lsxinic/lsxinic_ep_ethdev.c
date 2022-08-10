@@ -486,7 +486,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 
 	/* NO TX DMA RSP and write BD to RC by DMA as well.*/
 	penv = getenv("LSINIC_TXQ_QDMA_NO_RESPONSE");
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_DMA_NO_RSP;
 
 	/* Above capability is handled only on EP side and no sensible to RC.*/
@@ -494,11 +494,11 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	adapter->cap = 0;
 
 	penv = getenv("LSINIC_MERGE_PACKETS");
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->cap |= LSINIC_CAP_XFER_PKT_MERGE;
 
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
 
 	if (adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
@@ -513,7 +513,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	lsinic_parse_txq_notify_type(notify_env, adapter);
 
 	penv = getenv(LSINIC_EP_MAP_MEM_ENV);
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 
 	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
@@ -526,11 +526,11 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 		return;
 
 	penv = getenv("LSXINIC_PMD_RCV_MERGE_RECYCLE_DEV");
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->ep_cap |= LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX;
 
 	penv = getenv("LSXINIC_PMD_RCV_SPLIT_RECYCLE_DEV");
-	if (penv)
+	if (penv && atoi(penv) > 0)
 		adapter->ep_cap |= LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX;
 
 	/** Direct MAC egress. */

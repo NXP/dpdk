@@ -104,6 +104,8 @@ struct lsinic_queue {
 	struct lsinic_queue *pair;
 	enum LSINIC_QEUE_TYPE type;
 	enum LSINIC_QEUE_STATUS status;
+	struct rte_ring *multi_core_ring;
+	rte_spinlock_t multi_core_lock;
 	/* flag */
 	uint32_t flag;
 	uint64_t cyc_diff_total;

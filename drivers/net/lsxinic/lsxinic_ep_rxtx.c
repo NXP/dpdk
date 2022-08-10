@@ -657,6 +657,9 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 {
 	struct lsinic_queue *queue = NULL;
 
+	if (txq->core_id != RTE_MAX_LCORE)
+		return 0;
+
 	if (!RTE_PER_LCORE(lsinic_txq_list_initialized)) {
 		TAILQ_INIT(&RTE_PER_LCORE(lsinic_txq_list));
 		RTE_PER_LCORE(lsinic_txq_list_initialized) = 1;
@@ -786,12 +789,6 @@ lsinic_xmit_merged_one_pkt(struct lsinic_queue *txq,
 	struct lsinic_mg_header *mg_header = NULL;
 	struct lsinic_bd_desc *ep_local_txd;
 	struct lsinic_rc_rx_len_cmd *local_cmd;
-
-	if (unlikely(!lsinic_queue_running(txq))) {
-		lsinic_queue_status_update(txq);
-		if (!lsinic_queue_running(txq))
-			return 0;
-	}
 
 	if (is_merged) {
 		mg_header =
@@ -2104,7 +2101,10 @@ lsinic_queue_start(struct lsinic_queue *q)
 		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
 		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
 	} else {
-		rte_panic("No bd addr set from RC");
+		LSXINIC_PMD_WARN("%s(id:%d)No bd addr set from RC",
+			q->type == LSINIC_QUEUE_RX ?
+			"RXQ" : "TXQ", q->queue_id);
+		return -EINVAL;
 	}
 
 	ep_mem_bd_type = LSINIC_READ_REG(&q->ep_reg->r_ep_mem_bd_type);
@@ -3086,8 +3086,6 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 	struct rte_mbuf *free_pkt = NULL;
 	struct rte_mbuf **ppkt = NULL;
 
-	txq->core_id = rte_lcore_id();
-
 	if (bulk_free)
 		ppkt = &free_pkt;
 
@@ -3125,7 +3123,6 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 
 	if (unlikely(!txq->pair ||
 		(txq->pair && txq->pair->core_id != txq->core_id))) {
-		txq->core_id = rte_lcore_id();
 		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
 			uint16_t dq_total = 0, dq;
 
@@ -3219,8 +3216,55 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 {
 	struct lsinic_queue *txq;
 	struct rte_eth_dev *recycle_dev;
+	uint16_t ret = 0;
 
 	txq = tx_queue;
+	if (unlikely(!lsinic_queue_running(txq))) {
+		rte_spinlock_lock(&txq->multi_core_lock);
+		lsinic_queue_status_update(txq);
+		if (!lsinic_queue_running(txq)) {
+			rte_spinlock_unlock(&txq->multi_core_lock);
+			goto quit_xmit;
+		}
+		rte_spinlock_unlock(&txq->multi_core_lock);
+	}
+
+	if (unlikely(txq->core_id != rte_lcore_id())) {
+		if (!txq->multi_core_ring) {
+			char ring_name[RTE_MEMZONE_NAMESIZE];
+
+			sprintf(ring_name,
+				"txq_mpsc_%d_%d_%d_%d_%d",
+				txq->adapter->pcie_idx,
+				txq->adapter->pf_idx,
+				txq->adapter->is_vf,
+				txq->adapter->vf_idx,
+				txq->queue_id);
+			rte_spinlock_lock(&txq->multi_core_lock);
+			if (txq->multi_core_ring) {
+				rte_spinlock_unlock(&txq->multi_core_lock);
+				goto eq_start;
+			}
+			txq->multi_core_ring = rte_ring_create(ring_name,
+				txq->nb_desc, rte_socket_id(),
+				RING_F_SC_DEQ);
+			rte_spinlock_unlock(&txq->multi_core_lock);
+			if (txq->multi_core_ring) {
+				LSXINIC_PMD_INFO("%s created on core %d.",
+					ring_name, rte_lcore_id());
+			} else {
+				LSXINIC_PMD_ERR("%s created on core %d failed.",
+					ring_name, rte_lcore_id());
+				goto quit_xmit;
+			}
+		}
+
+eq_start:
+		ret = rte_ring_mp_enqueue_burst(txq->multi_core_ring,
+			(void * const *)tx_pkts, nb_pkts, NULL);
+		goto quit_xmit;
+	}
+
 #ifdef LSXINIC_LATENCY_PROFILING
 	{
 		int i, j;
@@ -3239,17 +3283,11 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	}
 #endif
 
-	if (!lsinic_queue_running(txq)) {
-		lsinic_queue_status_update(txq);
-		if (!lsinic_queue_running(txq))
-			return 0;
-	}
-
 	if ((txq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) &&
 		(txq->qdma_config.flags & RTE_QDMA_VQ_NO_RSP_DRAIN)) {
 		uint64_t values[1] = {0};
 		unsigned int ids[1] = {0};
-		int ret, loop_count = 1000;
+		int loop_count = 1000;
 
 get_stat_again:
 		ret = rte_rawdev_xstats_get(txq->dma_id, ids, values, 1);
@@ -3261,24 +3299,28 @@ get_stat_again:
 					loop_count--;
 					goto get_stat_again;
 				}
-				return 0;
+				goto quit_xmit;
 			}
 		} else {
-			return 0;
+			goto quit_xmit;
 		}
 	}
 
 	if (txq->recycle_txq) {
 		recycle_dev = txq->adapter->merge_dev->eth_dev;
-		return recycle_dev->tx_pkt_burst(txq->recycle_txq,
+		ret = recycle_dev->tx_pkt_burst(txq->recycle_txq,
 				tx_pkts, nb_pkts);
+		goto quit_xmit;
 	}
 
 	txq->loop_avail++;
 
 	/* TX loop */
-	return lsinic_xmit_pkts_burst(txq, tx_pkts, nb_pkts,
-				txq->adapter->cap & LSINIC_CAP_XFER_PKT_MERGE);
+	ret = lsinic_xmit_pkts_burst(txq, tx_pkts, nb_pkts,
+			txq->adapter->cap & LSINIC_CAP_XFER_PKT_MERGE);
+
+quit_xmit:
+	return ret;
 }
 
 /*********************************************************************
@@ -4448,13 +4490,14 @@ static void
 lsinic_txq_loop(struct lsinic_queue *rxq)
 {
 	struct lsinic_queue *q, *tq;
+	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
+	uint16_t ret, i, xmit_ret;
 
 	if (rxq && rxq->pair) {
 		struct lsinic_queue *txq = rxq->pair;
 		struct lsinic_adapter *adapter = txq->adapter;
 
 		if (txq->recycle_rxq) {
-			uint16_t ret, i;
 			struct rte_eth_dev *offload_dev;
 			struct rte_mbuf *mbuf_merged[DEFAULT_TX_RS_THRESH];
 
@@ -4483,6 +4526,17 @@ lsinic_txq_loop(struct lsinic_queue *rxq)
 			if (!lsinic_queue_running(q))
 				continue;
 		}
+		if (unlikely(q->multi_core_ring &&
+			q->core_id == rte_lcore_id())) {
+			ret = rte_ring_sc_dequeue_burst(q->multi_core_ring,
+				(void **)tx_pkts, DEFAULT_TX_RS_THRESH, NULL);
+			if (ret) {
+				xmit_ret = lsinic_xmit_pkts(q, tx_pkts, ret);
+				for (i = xmit_ret; i < ret; i++)
+					rte_pktmbuf_free(tx_pkts[i]);
+			}
+		}
+
 		if (unlikely(q->core_id != rte_lcore_id())) {
 			TAILQ_REMOVE(&RTE_PER_LCORE(lsinic_txq_list),
 				q, next);
@@ -5194,7 +5248,7 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 
 	lsinic_rxq_loop(rxq);
 	if (unlikely(rxq->ep_reg->dma_test ||
-		rxq->pair->ep_reg->dma_test))
+		(rxq->pair && rxq->pair->ep_reg->dma_test)))
 		return 0;
 	if (rxq->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD)
 		lsinic_recv_pkts_to_cache_idx(rxq);
@@ -5334,6 +5388,8 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	txq->ep_bd_shared_addr =
 		(adapter->bd_desc_base + LSINIC_RX_BD_OFFSET +
 		queue_idx * LSINIC_RING_SIZE);
+	txq->core_id = RTE_MAX_LCORE;
+	rte_spinlock_init(&txq->multi_core_lock);
 
 	inic_memset(txq->ep_bd_shared_addr,
 		0, LSINIC_RING_SIZE);
@@ -5427,6 +5483,8 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->port_id = dev->data->port_id;
 	rxq->crc_len = 0;
 	rxq->drop_en = rx_conf->rx_drop_en;
+	rxq->core_id = RTE_MAX_LCORE;
+	rte_spinlock_init(&rxq->multi_core_lock);
 
 	/* using RC's tx ring to receive EP's packets */
 	rxq->ep_reg = &bdr_reg->tx_ring[queue_idx];
@@ -5489,6 +5547,10 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 
 			lsinic_queue_release_mbufs(txq);
 			lsinic_queue_reset(next);
+			if (txq->multi_core_ring) {
+				rte_ring_free(txq->multi_core_ring);
+				txq->multi_core_ring = NULL;
+			}
 			next = next->sibling;
 		}
 	}
@@ -5503,6 +5565,10 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 
 			lsinic_queue_release_mbufs(rxq);
 			lsinic_queue_reset(next);
+			if (rxq->multi_core_ring) {
+				rte_ring_free(rxq->multi_core_ring);
+				rxq->multi_core_ring = NULL;
+			}
 			next = next->sibling;
 		}
 	}
