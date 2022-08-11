@@ -73,6 +73,11 @@
 #include "lsxinic_ep_dma.h"
 #include "lsxinic_ep_tool.h"
 
+#define EP2RC_RING_DMA_ERR(ring_type, notify) \
+		"%s %s %s %s ring", \
+		"EP2RC DMA", notify, \
+		"should be supported with", ring_type
+
 static int lsxvio_dev_configure(struct rte_eth_dev *dev);
 static int lsxvio_dev_start(struct rte_eth_dev *dev);
 static void lsxvio_dev_stop(struct rte_eth_dev *dev);
@@ -270,8 +275,9 @@ lsxvio_dev_priv_feature_configure(void)
 	lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
 	lsx_feature |= LSX_VIO_RC2EP_IN_ORDER;
 	lsx_feature |= LSX_VIO_EP2RC_PACKED;
-	lsx_feature |= LSX_VIO_RC2EP_DMA_NOTIFY;
-	lsx_feature |= LSX_VIO_EP2RC_DMA_NOTIFY;
+	lsx_feature |= LSX_VIO_RC2EP_DMA_BD_NOTIFY;
+	lsx_feature |= LSX_VIO_EP2RC_DMA_ADDR_NOTIFY;
+	lsx_feature |= LSX_VIO_EP2RC_DMA_BD_NOTIFY;
 
 	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
 	if (penv) {
@@ -301,18 +307,25 @@ lsxvio_dev_priv_feature_configure(void)
 			lsx_feature &= (~LSX_VIO_EP2RC_PACKED);
 	}
 
-	penv = getenv("LSXVIO_RXQ_DMA_NOTIFY");
+	penv = getenv("LSXVIO_RXQ_DMA_BD_NOTIFY");
 	if (penv) {
 		env_val = atoi(penv);
 		if (!env_val)
-			lsx_feature &= (~LSX_VIO_RC2EP_DMA_NOTIFY);
+			lsx_feature &= (~LSX_VIO_RC2EP_DMA_BD_NOTIFY);
 	}
 
-	penv = getenv("LSXVIO_TXQ_DMA_NOTIFY");
+	penv = getenv("LSXVIO_TXQ_DMA_ADDR_NOTIFY");
 	if (penv) {
 		env_val = atoi(penv);
 		if (!env_val)
-			lsx_feature &= (~LSX_VIO_EP2RC_DMA_NOTIFY);
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_ADDR_NOTIFY);
+	}
+
+	penv = getenv("LSXVIO_TXQ_DMA_BD_NOTIFY");
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val)
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_BD_NOTIFY);
 	}
 
 	return lsx_feature;
@@ -345,10 +358,26 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 
 	lsx_feature = lsxvio_dev_priv_feature_configure();
 
-	if ((lsx_feature & LSX_VIO_RC2EP_DMA_NOTIFY) &&
+	if ((lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY) &&
 		(lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
 		/* TBD*/
-		LSXINIC_PMD_ERR("RC2EP DMA NORSP/notify BOTH supported error");
+		LSXINIC_PMD_ERR("RC2EP DMA NORSP/BD notify TBD");
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_EP2RC_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_EP2RC_PACKED)) {
+		LSXINIC_PMD_ERR(EP2RC_RING_DMA_ERR("PACKED",
+			"BD update"));
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_EP2RC_DMA_ADDR_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_EP2RC_PACKED)) {
+		LSXINIC_PMD_ERR(EP2RC_RING_DMA_ERR("PACKED",
+			"address notify"));
 
 		return -EINVAL;
 	}

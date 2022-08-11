@@ -210,7 +210,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		}
 
 		if (vq->type == LSXVIO_QUEUE_TX &&
-			vq->flag & LSXVIO_QUEUE_DMA_NOTIFY_FLAG) {
+			vq->flag & LSXVIO_QUEUE_DMA_ADDR_NOTIFY_FLAG) {
 			for (j = 0; j < vq->nb_desc; j++) {
 				if (vq->mem_base) {
 					src = queue->queue_rc_shadow_base +

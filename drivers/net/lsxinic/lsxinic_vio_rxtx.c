@@ -597,8 +597,10 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		txq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
 	}
 
-	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_NOTIFY)
-		txq->flag |= LSXVIO_QUEUE_DMA_NOTIFY_FLAG;
+	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_ADDR_NOTIFY)
+		txq->flag |= LSXVIO_QUEUE_DMA_ADDR_NOTIFY_FLAG;
+	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_BD_NOTIFY)
+		txq->flag |= LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG;
 
 	return 0;
 }
@@ -667,8 +669,8 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rxq->flag |= LSXVIO_QUEUE_DMA_APPEND_FLAG;
 	}
 
-	if (common->lsx_feature & LSX_VIO_RC2EP_DMA_NOTIFY)
-		rxq->flag |= LSXVIO_QUEUE_DMA_NOTIFY_FLAG;
+	if (common->lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY)
+		rxq->flag |= LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG;
 
 	return 0;
 }
@@ -934,7 +936,7 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 	}
 
 	if (vq->type == LSXVIO_QUEUE_TX &&
-		vq->qdma_config.flags & RTE_QDMA_VQ_NO_RESPONSE) {
+		vq->flag & LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG) {
 		dma_bd_nb = lsxvio_xmit_dma_bd_jobs(vq,
 			&dma_jobs[append_len],
 			vq->start_dma_idx,
@@ -1023,7 +1025,7 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 	}
 	rxq->pkts_dq += ret;
 	if ((rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) &&
-		(rxq->flag & LSXVIO_QUEUE_DMA_NOTIFY_FLAG)) {
+		(rxq->flag & LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG)) {
 		for (i = 0; i < ret; i++) {
 			dma_job = jobs[i];
 			if (!dma_job)
@@ -1639,7 +1641,7 @@ lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			return 0;
 	}
 
-	if (rxq->flag & LSXVIO_QUEUE_DMA_NOTIFY_FLAG) {
+	if (rxq->flag & LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG) {
 		lsxvio_recv_dma_notify(rxq);
 	} else {
 		if (1)
@@ -1716,6 +1718,9 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 	ret = rte_qdma_dequeue_buffers(txq->dma_id, NULL,
 			LSXVIO_QDMA_DQ_MAX_NB,
 			&context);
+	if (txq->flag & LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG)
+		goto skip_update_rc;
+
 	for (i = 0; i < ret; i++) {
 		dma_job = jobs[i];
 		if (!dma_job)
@@ -1761,12 +1766,14 @@ lsxvio_tx_dma_dequeue(struct lsxvio_queue *txq)
 			txq->next_dma_idx++;
 		}
 	}
+
+skip_update_rc:
 	txq->pkts_dq += ret;
 
 	if (free_idx)
 		rte_pktmbuf_free_bulk(free_mbufs, free_idx);
 
-	return i;
+	return ret;
 }
 
 static int
