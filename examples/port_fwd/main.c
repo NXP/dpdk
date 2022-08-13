@@ -317,10 +317,11 @@ static int
 main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
 	int i, nb_rx, j;
 	uint16_t idx;
-	uint16_t nb_tx;
+	uint16_t nb_tx, sent, re_send;
 	uint16_t portid;
 	int dstportid;
 	uint8_t queueid;
@@ -330,10 +331,18 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
 	struct rte_ring *tx_ring, *rx_ring;
+	int re_send_max = 0;
 
 	if (penv && atoi(penv)) {
 		main_injection_test_loop();
 		return 0;
+	}
+
+	penv = getenv("PORT_FWD_RE_SEND_MAX");
+	if (penv) {
+		re_send_max = atoi(penv);
+		if (re_send_max < 0)
+			re_send_max = 0;
 	}
 
 	lcore_id = rte_lcore_id();
@@ -396,10 +405,14 @@ main_loop(__attribute__((unused)) void *dummy)
 			if (nb_rx == 0)
 				continue;
 
+			tx_pkts = pkts_burst;
+			sent = 0;
+			re_send = 0;
+ring_fwd_tx_again:
 			nb_tx = rte_eth_tx_burst(portid,
 					qconf->tx_queue_id[portid],
-					pkts_burst, nb_rx);
-			for (j = 0; j < nb_tx; j++) {
+					tx_pkts, nb_rx - sent);
+			for (j = sent; j < sent + nb_tx; j++) {
 				qconf->tx_statistic[portid].bytes +=
 					bytes[j];
 				qconf->tx_statistic[portid].bytes_fcs +=
@@ -407,11 +420,17 @@ main_loop(__attribute__((unused)) void *dummy)
 				qconf->tx_statistic[portid].bytes_overhead +=
 					bytes_overhead[j];
 			}
+			sent += nb_tx;
 			qconf->tx_statistic[portid].packets += nb_tx;
+			if (sent < nb_rx && re_send < re_send_max) {
+				tx_pkts = &pkts_burst[sent];
+				re_send++;
+				goto ring_fwd_tx_again;
+			}
 
 			/* Free any unsent packets. */
-			if (unlikely(nb_tx < nb_rx)) {
-				for (idx = nb_tx; idx < nb_rx; idx++)
+			if (unlikely(sent < nb_rx)) {
+				for (idx = sent; idx < nb_rx; idx++)
 					rte_pktmbuf_free(pkts_burst[idx]);
 			}
 		}
@@ -460,10 +479,14 @@ port_forwarding:
 						dstportid);
 			}
 
+			tx_pkts = pkts_burst;
+			sent = 0;
+			re_send = 0;
+tx_again:
 			nb_tx = rte_eth_tx_burst(dstportid,
 					qconf->tx_queue_id[dstportid],
-					pkts_burst, nb_rx);
-			for (j = 0; j < nb_tx; j++) {
+					tx_pkts, nb_rx - sent);
+			for (j = sent; j < sent + nb_tx; j++) {
 				qconf->tx_statistic[dstportid].bytes +=
 					bytes[j];
 				qconf->tx_statistic[dstportid].bytes_fcs +=
@@ -471,11 +494,17 @@ port_forwarding:
 				qconf->tx_statistic[dstportid].bytes_overhead +=
 					bytes_overhead[j];
 			}
+			sent += nb_tx;
 			qconf->tx_statistic[dstportid].packets += nb_tx;
+			if (sent < nb_rx && re_send < re_send_max) {
+				tx_pkts = &pkts_burst[sent];
+				re_send++;
+				goto tx_again;
+			}
 
 			/* Free any unsent packets. */
-			if (unlikely(nb_tx < nb_rx)) {
-				for (idx = nb_tx; idx < nb_rx; idx++)
+			if (unlikely(sent < nb_rx)) {
+				for (idx = sent; idx < nb_rx; idx++)
 					rte_pktmbuf_free(pkts_burst[idx]);
 			}
 		}
