@@ -2571,12 +2571,12 @@ lsinic_tx_notify_burst_to_rc(struct lsinic_queue *txq)
 		burst1 = i;
 		burst2 = 0;
 	}
-	lsinic_pcie_memcp_align((uint8_t *)&tx_len_cmd[bd_idx_first],
-		(uint8_t *)&txq->local_src_len_cmd[bd_idx_first],
+	lsinic_pcie_memcp_align(&tx_len_cmd[bd_idx_first],
+		&txq->local_src_len_cmd[bd_idx_first],
 		burst1 * sizeof(struct lsinic_rc_rx_len_cmd));
 	if (burst2) {
-		lsinic_pcie_memcp_align((uint8_t *)&tx_len_cmd[0],
-			(uint8_t *)&txq->local_src_len_cmd[0],
+		lsinic_pcie_memcp_align(&tx_len_cmd[0],
+			&txq->local_src_len_cmd[0],
 			burst2 * sizeof(struct lsinic_rc_rx_len_cmd));
 	}
 	txq->next_used_idx += i;

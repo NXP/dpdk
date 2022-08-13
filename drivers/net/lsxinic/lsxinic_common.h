@@ -192,9 +192,14 @@ lsinic_pcie_memset_align(uint8_t *dst,
 }
 
 static inline void
-lsinic_pcie_memcp_align(uint8_t *dst,
-	uint8_t *src, uint32_t size)
+lsinic_pcie_memcp_align(void *vdst,
+	const void *vsrc, uint32_t size)
 {
+	uint8_t *dst = vdst;
+	const uint8_t *src = vsrc;
+
+	RTE_VERIFY(((uint64_t)dst & 0x7) == ((uint64_t)src & 0x7));
+
 	if (!is_align_16(dst) && size > 0) {
 		*dst = *src;
 		dst++;
@@ -204,7 +209,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	if (!is_align_32(dst) &&
 		size >= sizeof(uint16_t)) {
-		*((uint16_t *)dst) = *((uint16_t *)src);
+		*((uint16_t *)dst) = *((const uint16_t *)src);
 		dst += sizeof(uint16_t);
 		src += sizeof(uint16_t);
 		size -= sizeof(uint16_t);
@@ -212,7 +217,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	if (!is_align_64(dst) &&
 		size >= sizeof(uint32_t)) {
-		*((uint32_t *)dst) = *((uint32_t *)src);
+		*((uint32_t *)dst) = *((const uint32_t *)src);
 		dst += sizeof(uint32_t);
 		src += sizeof(uint32_t);
 		size -= sizeof(uint32_t);
@@ -220,7 +225,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	if (!is_align_128(dst) &&
 		size >= sizeof(uint64_t)) {
-		*((uint64_t *)dst) = *((uint64_t *)src);
+		*((uint64_t *)dst) = *((const uint64_t *)src);
 		dst += sizeof(uint64_t);
 		src += sizeof(uint64_t);
 		size -= sizeof(uint64_t);
@@ -228,7 +233,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	while (size >= sizeof(__uint128_t)) {
 		RTE_VERIFY(is_align_128(dst));
-		*((__uint128_t *)dst) = *((__uint128_t *)src);
+		*((__uint128_t *)dst) = *((const __uint128_t *)src);
 		dst += sizeof(__uint128_t);
 		src += sizeof(__uint128_t);
 		size -= sizeof(__uint128_t);
@@ -236,7 +241,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	while (size >= sizeof(uint64_t)) {
 		RTE_VERIFY(is_align_64(dst));
-		*((uint64_t *)dst) = *((uint64_t *)src);
+		*((uint64_t *)dst) = *((const uint64_t *)src);
 		dst += sizeof(uint64_t);
 		src += sizeof(uint64_t);
 		size -= sizeof(uint64_t);
@@ -244,7 +249,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	while (size >= sizeof(uint32_t)) {
 		RTE_VERIFY(is_align_32(dst));
-		*((uint32_t *)dst) = *((uint32_t *)src);
+		*((uint32_t *)dst) = *((const uint32_t *)src);
 		dst += sizeof(uint32_t);
 		src += sizeof(uint32_t);
 		size -= sizeof(uint32_t);
@@ -252,7 +257,7 @@ lsinic_pcie_memcp_align(uint8_t *dst,
 
 	while (size >= sizeof(uint16_t)) {
 		RTE_VERIFY(is_align_16(dst));
-		*((uint16_t *)dst) = *((uint16_t *)src);
+		*((uint16_t *)dst) = *((const uint16_t *)src);
 		dst += sizeof(uint16_t);
 		src += sizeof(uint16_t);
 		size -= sizeof(uint16_t);
