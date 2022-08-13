@@ -110,7 +110,8 @@ struct lsxvio_queue_cfg {
 struct lsxvio_packed_notify {
 	uint16_t last_avail_idx;
 	uint16_t dma_idx;
-	uint16_t dummy[2];
+	uint16_t dummy[6];
+	/* Align with 16Bytes*/
 	union {
 		uint32_t addr_offset[0];
 		uint64_t addr[0];
