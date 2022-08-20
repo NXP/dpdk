@@ -104,10 +104,9 @@ struct lsinic_queue {
 	struct lsinic_queue *pair;
 	enum LSINIC_QEUE_TYPE type;
 	enum LSINIC_QEUE_STATUS status;
+	int ep_enabled;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
-	/* flag */
-	uint32_t flag;
 	uint64_t cyc_diff_total;
 	double avg_latency;
 	uint64_t avg_x2_total;
@@ -358,8 +357,8 @@ int lsinic_dev_txq_init(struct lsinic_tx_queue *txq);
 int lsinic_dev_rx_mq_init(struct lsinic_rx_queue *rxq);
 int lsinic_dev_tx_mq_init(struct lsinic_tx_queue *txq);
 void lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev);
-void lsinic_dev_rx_stop(struct rte_eth_dev *dev);
-void lsinic_dev_tx_stop(struct rte_eth_dev *dev);
+uint16_t lsinic_dev_rx_stop(struct rte_eth_dev *dev, int force);
+uint16_t lsinic_dev_tx_stop(struct rte_eth_dev *dev, int force);
 void lsinic_dev_rx_enable_start(struct rte_eth_dev *dev);
 void lsinic_dev_tx_enable_start(struct rte_eth_dev *dev);
 int lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,

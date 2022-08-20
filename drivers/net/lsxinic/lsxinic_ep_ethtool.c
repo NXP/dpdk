@@ -66,8 +66,8 @@ static int lsinic_if_link_down(struct rte_eth_dev *dev)
 			adapter->pcie_idx, adapter->pf_idx);
 	}
 	adapter->rc_state = LSINIC_DEV_DOWN;
-	lsinic_dev_rx_stop(dev);
-	lsinic_dev_tx_stop(dev);
+	lsinic_dev_rx_stop(dev, 1);
+	lsinic_dev_tx_stop(dev, 1);
 
 	return PCIDEV_RESULT_SUCCEED;
 }
