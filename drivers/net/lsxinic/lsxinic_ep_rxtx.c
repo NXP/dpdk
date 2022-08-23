@@ -3296,9 +3296,11 @@ get_stat_again:
 					loop_count--;
 					goto get_stat_again;
 				}
+				ret = 0;
 				goto quit_xmit;
 			}
 		} else {
+			ret = 0;
 			goto quit_xmit;
 		}
 	}
