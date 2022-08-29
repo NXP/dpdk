@@ -2598,7 +2598,7 @@ lsinic_tx_update_to_rc(struct lsinic_queue *txq)
 
 	pending = txq->next_dma_idx - txq->next_used_idx;
 	for (i = 0; i < pending; i++) {
-		bd_idx = lsinic_queue_next_used_idx(txq, 0);
+		bd_idx = lsinic_queue_next_used_idx(txq, i);
 		local_bd = &txq->local_src_bd_desc[bd_idx];
 		if ((local_bd->bd_status & RING_BD_STATUS_MASK)
 			!= RING_BD_HW_COMPLETE) {
