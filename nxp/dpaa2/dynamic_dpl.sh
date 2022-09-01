@@ -735,8 +735,11 @@ then
 		fi
 		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-channels=$MAX_CHANNELS --num-queues=$MAX_QUEUES --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 		restool dprc sync
-		restool dpni update $DPNI --mac-addr=$ACTUAL_MAC
-		echo -e '\t'$DPNI "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
+		if [[ $TYPE != "dpmac" ]]
+		then
+			restool dpni update $DPNI --mac-addr=$ACTUAL_MAC
+			echo -e '\t'$DPNI "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
+		fi
 		export DPNI$num=$DPNI
 		MAC_ADDR2=$ACTUAL_MAC
 		if [[ $TYPE == "dpmac" ]]
