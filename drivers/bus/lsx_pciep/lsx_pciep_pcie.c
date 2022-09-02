@@ -816,8 +816,7 @@ lsx_pciep_find_all_ctls(void)
 		LX2160A_REV1_PCIE_COMPATIBLE,
 		LX2160A_REV2_PCIE_COMPATIBLE,
 		LS2088A_PCIE_COMPATIBLE,
-		LX2160A_REV2_PCIE_OLD_COMPATIBLE,
-		NULL
+		LX2160A_REV2_PCIE_OLD_COMPATIBLE
 	};
 	int str_nb = sizeof(compatible_strs) / sizeof(const char *);
 
