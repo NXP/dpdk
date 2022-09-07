@@ -275,8 +275,6 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 		rte_rawdev_queue_release(q->dma_id, q->dma_vq);
 	}
 
-	q->core_id = lcore_id;
-
 	memset(&q->rbp, 0, sizeof(struct rte_qdma_rbp));
 
 	q->qdma_config.lcore_id = lcore_id;
@@ -666,6 +664,7 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 	}
 
 	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lsinic_txq_list), txq, next);
+	txq->core_id = rte_lcore_id();
 	RTE_PER_LCORE(lsinic_txq_num_in_list)++;
 
 	LSXINIC_PMD_DBG("Add port%d txq%d to list NUM%d",
@@ -715,7 +714,7 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 			return;
 		}
 
-		if (q->type == LSINIC_QUEUE_TX)
+		if (q->type == LSINIC_QUEUE_TX && !q->pair)
 			lsinic_add_txq_to_list(q);
 		else
 			RTE_PER_LCORE(lsinic_txq_deqeue_from_rxq) = 1;
@@ -4576,6 +4575,9 @@ lsinic_rxq_loop(struct lsinic_queue *rxq)
 		lsinic_queue_status_update(rxq);
 		if (!lsinic_queue_running(rxq))
 			return;
+
+		rxq->core_id = rte_lcore_id();
+
 		if (rxq->pair)
 			lsinic_add_txq_to_list(rxq->pair);
 	}
