@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2011-2016 Freescale Semiconductor Inc.
- * Copyright 2017,2020 NXP
+ * Copyright 2017,2020,2022 NXP
  *
  */
 #include <assert.h>
