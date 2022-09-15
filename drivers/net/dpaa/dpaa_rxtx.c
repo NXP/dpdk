@@ -799,7 +799,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 {
 	struct dpaa_if *dpaa_intf = txq->dpaa_intf;
 	struct dpaa_bp_info *bp_info = dpaa_intf->bp_info;
-	struct rte_mbuf *cur_seg = mbuf, *prev_seg = NULL;
+	struct rte_mbuf *cur_seg = mbuf;
 	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
@@ -863,10 +863,8 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 			}
-			cur_seg = cur_seg->next;
         }else if(RTE_MBUF_HAS_EXTBUF(cur_seg)) {
 				sg_temp->bpid = 0xff;
-			    cur_seg = cur_seg->next;
         }
         else {
 			/* Get owner MBUF from indirect buffer */
@@ -880,11 +878,8 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(mi->pool);
 				rte_mbuf_refcnt_update(mi, 1);
 			}
-			prev_seg = cur_seg;
-			cur_seg = cur_seg->next;
-			prev_seg->next = NULL;
-			rte_pktmbuf_free(prev_seg);
 		}
+		cur_seg = cur_seg->next;
 		if (cur_seg == NULL) {
 			sg_temp->final = 1;
 			cpu_to_hw_sg(sg_temp);
@@ -940,7 +935,6 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			rte_mbuf_refcnt_update(mi, 1);
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
 		}
-		rte_pktmbuf_free(mbuf);
 	}
 
 	if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
@@ -1183,8 +1177,9 @@ send_pkts:
 		temp = *orig_bufs;
 		while (temp) {
 			temp_next = temp->next;
-			if (unlikely(RTE_MBUF_HAS_EXTBUF(temp)))
+			if (unlikely(!RTE_MBUF_DIRECT(temp)))
 				rte_pktmbuf_free_seg(temp);
+
 			temp = temp_next;
 		}
 		orig_bufs++;
