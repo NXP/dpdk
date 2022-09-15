@@ -794,7 +794,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 
 static int
 dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
-		struct qm_fd *fd)
+		struct qm_fd *fd,
+		struct dpaa_sw_buf_free *free_buf,
+		uint32_t *free_count,
+		uint32_t pkt_id)
 {
 	struct rte_mbuf *cur_seg = mbuf;
 	struct rte_mbuf *temp, *mi;
@@ -860,10 +863,12 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 			}
-        }else if(RTE_MBUF_HAS_EXTBUF(cur_seg)) {
-				sg_temp->bpid = 0xff;
-        }
-        else {
+		} else if (RTE_MBUF_HAS_EXTBUF(cur_seg)) {
+			free_buf[*free_count].seg = cur_seg;
+			free_buf[*free_count].pkt_id = pkt_id;
+			++*free_count;
+			sg_temp->bpid = 0xff;
+		} else {
 			/* Get owner MBUF from indirect buffer */
 			mi = rte_mbuf_from_indirect(cur_seg);
 			if (rte_mbuf_refcnt_read(mi) > 1) {
@@ -875,6 +880,9 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid = DPAA_MEMPOOL_TO_BPID(mi->pool);
 				rte_mbuf_refcnt_update(mi, 1);
 			}
+			free_buf[*free_count].seg = cur_seg;
+			free_buf[*free_count].pkt_id = pkt_id;
+			++*free_count;
 		}
 		cur_seg = cur_seg->next;
 		if (cur_seg == NULL) {
@@ -891,7 +899,10 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 static inline void
 tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			    struct dpaa_bp_info *bp_info,
-			    struct qm_fd *fd_arr)
+			    struct qm_fd *fd_arr,
+			    struct dpaa_sw_buf_free *buf_to_free,
+			    uint32_t *free_count,
+			    uint32_t pkt_id)
 {
 	struct rte_mbuf *mi = NULL;
 
@@ -909,10 +920,12 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 */
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
 		}
-    }else if(RTE_MBUF_HAS_EXTBUF(mbuf)) {
-        DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
-    }
-    else {
+	} else if (RTE_MBUF_HAS_EXTBUF(mbuf)) {
+		buf_to_free[*free_count].seg = mbuf;
+		buf_to_free[*free_count].pkt_id = pkt_id;
+		++*free_count;
+		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
+	} else {
 		/* This is data-containing core mbuf: 'mi' */
 		mi = rte_mbuf_from_indirect(mbuf);
 		if (rte_mbuf_refcnt_read(mi) > 1) {
@@ -932,6 +945,9 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			rte_mbuf_refcnt_update(mi, 1);
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info ? bp_info->bpid : 0xff);
 		}
+		buf_to_free[*free_count].seg = mbuf;
+		buf_to_free[*free_count].pkt_id = pkt_id;
+		++*free_count;
 	}
 
 	if (mbuf->ol_flags & DPAA_TX_CKSUM_OFFLOAD_MASK)
@@ -942,16 +958,21 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 static inline uint16_t
 tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		struct dpaa_bp_info *bp_info,
-		struct qm_fd *fd_arr)
+		struct qm_fd *fd_arr,
+		struct dpaa_sw_buf_free *buf_to_free,
+		uint32_t *free_count,
+		uint32_t pkt_id)
 {
 	DPAA_DP_LOG(DEBUG, "BMAN offloaded buffer, mbuf: %p", mbuf);
 
 	if (mbuf->nb_segs == 1) {
 		/* Case for non-segmented buffers */
-		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr);
+		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr,
+				buf_to_free, free_count, pkt_id);
 	} else if (mbuf->nb_segs > 1 &&
 		   mbuf->nb_segs <= DPAA_SGT_MAX_ENTRIES) {
-		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr)) {
+		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, buf_to_free,
+					   free_count, pkt_id)) {
 			DPAA_PMD_DEBUG("Unable to create Scatter Gather FD");
 			return 1;
 		}
@@ -1055,7 +1076,8 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint16_t state;
 	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
-	struct rte_mbuf **orig_bufs = bufs;
+	struct dpaa_sw_buf_free buf_to_free[DPAA_MAX_SGS * DPAA_MAX_DEQUEUE_NUM_FRAMES];
+	uint32_t free_count = 0;
 
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
@@ -1140,7 +1162,10 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			}
 indirect_buf:
 			state = tx_on_dpaa_pool(mbuf, bp_info,
-						&fd_arr[loop]);
+						&fd_arr[loop],
+						buf_to_free,
+						&free_count,
+						loop);
 			if (unlikely(state)) {
 				/* Set frames_to_send & nb_bufs so
 				 * that packets are transmitted till
@@ -1165,21 +1190,9 @@ send_pkts:
 
 	DPAA_DP_LOG(DEBUG, "Transmitted %d buffers on queue: %p", sent, q);
 
-
-	loop = 0;
-	while (loop < sent) {
-		struct rte_mbuf *temp, *temp_next;
-
-		temp = *orig_bufs;
-		while (temp) {
-			temp_next = temp->next;
-			if (unlikely(!RTE_MBUF_DIRECT(temp)))
-				rte_pktmbuf_free_seg(temp);
-
-			temp = temp_next;
-		}
-		orig_bufs++;
-		loop++;
+	for (loop = 0; loop < free_count; loop++) {
+		if (buf_to_free[loop].pkt_id < sent)
+			rte_pktmbuf_free_seg(buf_to_free[loop].seg);
 	}
 
 	return sent;
