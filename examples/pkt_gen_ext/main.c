@@ -217,6 +217,7 @@ int main(int argc, char *argv[])
 	}
 	printf("Packets sent. Count=%d and callback count = %d\n", sent_pkts,
 			callb);
+	rte_delay_ms(3000);
 	printf("end pool count = %d\n",
 			rte_mempool_avail_count(l2fwd_pktmbuf_pool));
 
