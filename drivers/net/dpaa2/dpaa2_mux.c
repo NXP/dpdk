@@ -427,6 +427,47 @@ creation_error:
 	return NULL;
 }
 
+struct dpdmux_l2_rule*
+rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
+			  uint8_t mac_addr[6],
+			  uint16_t vlan_id,
+			  int dest_if)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	struct dpdmux_l2_rule *rule;
+	int ret;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return NULL;
+	}
+
+	rule = rte_zmalloc(NULL, sizeof(struct dpdmux_l2_rule),
+			RTE_CACHE_LINE_SIZE);
+	if (!rule) {
+		DPAA2_PMD_ERR(
+			"Memory allocation failure for rule configuration\n");
+		return NULL;
+	}
+
+	for (int i = 0; i < 6; i++)
+		rule->mac_addr[i] = mac_addr[i];
+	rule->vlan_id = vlan_id;
+
+	ret = dpdmux_if_add_l2_rule(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
+				dpdmux_dev->token, dest_if, rule);
+	if (ret) {
+		DPAA2_PMD_ERR("dpdmux_if_add_l2_rule failed:err(%d)"
+				, ret);
+		return NULL;
+	}
+
+	return rule;
+}
+
+
 int
 rte_pmd_dpaa2_mux_rx_frame_len(uint32_t dpdmux_id, uint16_t max_rx_frame_len)
 {
@@ -463,6 +504,7 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 	int ret;
 	uint16_t maj_ver;
 	uint16_t min_ver;
+	uint8_t skip_reset_flags;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -489,13 +531,19 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 		goto init_err;
 	}
 
-	ret = dpdmux_if_set_default(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-				    dpdmux_dev->token, attr.default_if);
-	if (ret) {
-		DPAA2_PMD_ERR("setting default interface failed in %s",
-			      __func__);
-		goto init_err;
+	if (attr.method != DPDMUX_METHOD_C_VLAN_MAC) {
+		ret = dpdmux_if_set_default(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
+				dpdmux_dev->token, attr.default_if);
+		if (ret) {
+			DPAA2_PMD_ERR("setting default interface failed in %s",
+				      __func__);
+			goto init_err;
+		}
+		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE
+			| DPDMUX_SKIP_UNICAST_RULES | DPDMUX_SKIP_MULTICAST_RULES;
 	}
+	else
+		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE;
 
 	ret = dpdmux_get_api_version(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
 					&maj_ver, &min_ver);
@@ -510,10 +558,7 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 	 */
 	if (maj_ver >= 6 && min_ver >= 6) {
 		ret = dpdmux_set_resetable(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-				dpdmux_dev->token,
-				DPDMUX_SKIP_DEFAULT_INTERFACE |
-				DPDMUX_SKIP_UNICAST_RULES |
-				DPDMUX_SKIP_MULTICAST_RULES);
+				dpdmux_dev->token, skip_reset_flags);
 		if (ret) {
 			DPAA2_PMD_ERR("setting default interface failed in %s",
 				      __func__);
@@ -526,7 +571,11 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 
 		memset(&mux_err_cfg, 0, sizeof(mux_err_cfg));
 		mux_err_cfg.error_action = DPDMUX_ERROR_ACTION_CONTINUE;
-		mux_err_cfg.errors = DPDMUX_ERROR_DISC;
+
+		if (attr.method != DPDMUX_METHOD_C_VLAN_MAC)
+			mux_err_cfg.errors = DPDMUX_ERROR_DISC;
+		else
+			mux_err_cfg.errors = DPDMUX_ALL_ERRORS;
 
 		ret = dpdmux_if_set_errors_behavior(&dpdmux_dev->dpdmux,
 				CMD_PRI_LOW,
