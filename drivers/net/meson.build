@@ -35,6 +35,7 @@ drivers = [
         'ipn3ke',
         'ixgbe',
         'liquidio',
+        'lsxinic',
         'memif',
         'mlx4',
         'mlx5',
