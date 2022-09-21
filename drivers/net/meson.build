@@ -33,6 +33,7 @@ drivers = [
         'ixgbe',
         'kni',
         'liquidio',
+        'lsxinic',
         'memif',
         'mlx4',
         'mlx5',
