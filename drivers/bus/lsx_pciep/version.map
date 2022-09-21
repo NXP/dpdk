@@ -1,0 +1,25 @@
+DPDK_22 {
+	global:
+
+	lsx_pciep_first_dev;
+	lsx_pciep_bus_ob_mapped;
+	lsx_pciep_set_ob_win;
+	lsx_pciep_multi_msix_init;
+	lsx_pciep_start_msix;
+	lsx_pciep_ctl_dev_set;
+	lsx_pciep_set_ib_win;
+	lsx_pciep_set_ib_win_mz;
+	lsx_pciep_sim_dev_map_inbound;
+	lsx_pciep_set_sim_ob_win;
+	lsx_pciep_ctl_rbp_enable;
+	lsx_pciep_ctl_get_device_id;
+	lsx_pciep_type_get;
+	lsx_pciep_fun_set;
+	lsx_pciep_hw_rbp_get;
+	lsx_pciep_hw_sim_get;
+	lsx_pciep_hw_vio_get;
+	rte_lsx_pciep_driver_register;
+	rte_lsx_pciep_driver_unregister;
+
+	local: *;
+};
