@@ -117,13 +117,13 @@ static uint16_t nb_lcore_params = sizeof(lcore_params_array_default) /
 
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
-		.mq_mode = ETH_MQ_RX_RSS,
+		.mq_mode = RTE_ETH_MQ_RX_RSS,
 		.max_lro_pkt_size = RTE_MBUF_DEFAULT_DATAROOM,
 	},
 	.rx_adv_conf = {
 		.rss_conf = {
 			.rss_key = NULL,
-			.rss_hf = ETH_RSS_IP,
+			.rss_hf = RTE_ETH_RSS_IP,
 		},
 	},
 };
@@ -997,14 +997,14 @@ check_all_ports_link_status(uint32_t port_mask)
 					printf(
 					"Port%d Link Up. Speed %u Mbps -%s\n",
 						portid, link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+				(link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
 					("full-duplex") : ("half-duplex"));
 				else
 					printf("Port %d Link Down\n", portid);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
-			if (link.link_status == ETH_LINK_DOWN) {
+			if (link.link_status == RTE_ETH_LINK_DOWN) {
 				all_ports_up = 0;
 				break;
 			}
@@ -1288,13 +1288,13 @@ main(int argc, char **argv)
 		/* Enable Receive side SCATTER, if supported by NIC,
 		 * when jumbo packet is enabled.
 		 */
-		if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER)
+		if (dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_SCATTER)
 			local_port_conf[portid].rxmode.offloads |=
-				DEV_RX_OFFLOAD_SCATTER;
+				RTE_ETH_RX_OFFLOAD_SCATTER;
 
-		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
+		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf[portid].txmode.offloads |=
-				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
 		local_port_conf[portid].rx_adv_conf.rss_conf.rss_hf &=
 			dev_info.flow_type_rss_offloads;
