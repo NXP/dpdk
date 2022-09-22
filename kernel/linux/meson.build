@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2018 Intel Corporation
+# Copyright 2022 NXP
 
-subdirs = ['igb_uio', 'kni', 'kpage_ncache']
+subdirs = ['igb_uio', 'kni', 'kpage_ncache', 'lsxinic']
 
 kernel_build_dir = get_option('kernel_dir')
 kernel_source_dir = get_option('kernel_dir')
