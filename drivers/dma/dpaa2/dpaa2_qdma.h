@@ -18,7 +18,7 @@
 
 #define DPAA2_QDMA_MAX_SG_NB 64
 
-#define DPAA2_DPDMAI_MAX_QUEUES	1
+#define DPAA2_DPDMAI_MAX_QUEUES	16
 
 /** FLE single job pool size: job pointer(uint64_t) +
  * 3 Frame list + 2 source/destination descriptor.
@@ -245,8 +245,6 @@ typedef int (qdma_enqueue_multijob_t)(
 
 /** Represents a QDMA virtual queue */
 struct qdma_virt_queue {
-	/** Status ring of the virtual queue */
-	struct rte_ring *status_ring;
 	/** Associated hw queue */
 	struct dpaa2_dpdmai_dev *dpdmai_dev;
 	/** FLE pool for the queue */
@@ -255,8 +253,6 @@ struct qdma_virt_queue {
 	struct dpaa2_qdma_rbp rbp;
 	/** States if this vq is in use or not */
 	uint8_t in_use;
-	/** States if this vq has exclusively associated hw queue */
-	uint8_t exclusive_hw_queue;
 	/** Number of descriptor for the virtual DMA channel */
 	uint16_t nb_desc;
 	/* Total number of enqueues on this VQ */
