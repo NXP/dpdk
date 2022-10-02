@@ -20,7 +20,8 @@ sources = files(
 	'lsxinic_ep_vio_blk.c',
 	'lsxinic_ep_vio.c',
 	'lsxinic_ep_vio_net.c',
-	'lsxinic_ep_vio_rxtx.c'
+	'lsxinic_ep_vio_rxtx.c',
+	'lsxinic_rc_vio.c'
 )
 
 includes += include_directories(
