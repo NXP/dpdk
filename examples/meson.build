@@ -26,6 +26,7 @@ all_examples = [
         'ip_reassembly',
         'ipsec-secgw',
         'ipv4_multicast',
+	'l1_l2_comm',
         'l2fwd',
         'l2fwd-cat',
         'l2fwd-crypto',
