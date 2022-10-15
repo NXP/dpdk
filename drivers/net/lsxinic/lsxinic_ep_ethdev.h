@@ -73,6 +73,10 @@ struct lsinic_adapter {
 	uint8_t rbp_enable;
 	int txq_dma_id;
 	int rxq_dma_id;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	int txq_raw_dma_id;
+	int rxq_raw_dma_id;
+#endif
 	int txq_dma_silent;
 	int rxq_dma_silent;
 	uint16_t txq_dma_vchan_used;

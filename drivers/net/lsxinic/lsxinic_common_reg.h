@@ -47,6 +47,9 @@ enum LSINIC_QEUE_STATUS {
 	LSINIC_QUEUE_UNAVAILABLE,
 	LSINIC_QUEUE_START,
 	LSINIC_QUEUE_RUNNING,
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	LSINIC_QUEUE_RAW_TEST_RUNNING,
+#endif
 	LSINIC_QUEUE_STOP,
 };
 
@@ -172,6 +175,9 @@ struct lsinic_ring_reg {
 	uint32_t r_desch;	/* desc PCI high address On RC side */
 	uint32_t r_ep_mem_bd_type;
 	uint32_t r_rc_mem_bd_type;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	uint32_t r_raw_test;	/* EP PCIe RAW test */
+#endif
 } __packed;
 
 struct lsinic_bdr_reg {

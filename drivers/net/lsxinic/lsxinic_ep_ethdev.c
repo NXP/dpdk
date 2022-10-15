@@ -785,6 +785,11 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	if (err)
 		return err;
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	adapter->txq_raw_dma_id = -1;
+	adapter->rxq_raw_dma_id = -1;
+#endif
+
 	if (adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP)
 		dma_silent = 1;
 	else

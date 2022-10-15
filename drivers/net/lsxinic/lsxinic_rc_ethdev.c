@@ -219,6 +219,93 @@ static int lxsnic_wait_tx_lbd_ready(struct lxsnic_ring *tx_ring)
 	return 0;
 }
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+static int
+lxsnic_dev_tx_raw_test_fill(struct lxsnic_ring *tx_queue,
+	struct rte_mempool *mb_pool)
+{
+	int j;
+	struct rte_mbuf *mbuf;
+	rte_iova_t dma_addr;
+	uint32_t len = tx_queue->adapter->raw_test_size;
+
+	if (tx_queue->ep_mem_bd_type != EP_MEM_LONG_BD)
+		return -EINVAL;
+
+	for (j = 0; j < tx_queue->count; j++) {
+		mbuf = rte_mbuf_raw_alloc(mb_pool);
+		if (unlikely(!mbuf)) {
+			LSXINIC_PMD_ERR("Buf alloc failed q[%d].bd[%d]",
+				tx_queue->queue_index, j);
+			return -ENOMEM;
+		}
+		mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+		mbuf->port = tx_queue->port;
+		dma_addr = rte_mbuf_data_iova_default(mbuf);
+		dma_addr = rte_cpu_to_le_64(dma_addr);
+		tx_queue->ep_bd_desc[j].pkt_addr = dma_addr;
+		tx_queue->ep_bd_desc[j].len_cmd = len;
+	}
+
+	return 0;
+}
+
+static int
+lxsnic_dev_tx_raw_test_start(struct lxsnic_adapter *adapter)
+{
+	int i, ret;
+	struct lxsnic_ring *tx_queue;
+	struct lxsnic_ring *rx_queue;
+	struct lsinic_bdr_reg *bdr_reg =
+		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
+			LSINIC_RING_REG_OFFSET);
+	struct lsinic_ring_reg *tx_ring_reg;
+
+	if (adapter->eth_dev->data->nb_tx_queues !=
+		adapter->eth_dev->data->nb_rx_queues)
+		return -EINVAL;
+
+	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
+		tx_queue = adapter->eth_dev->data->tx_queues[i];
+		rx_queue = adapter->eth_dev->data->rx_queues[i];
+		if (!rx_queue || !rx_queue->mb_pool)
+			return -ENOMEM;
+		tx_queue->ep_mem_bd_type = EP_MEM_LONG_BD;
+		tx_queue->rc_mem_bd_type = RC_MEM_LONG_BD;
+		tx_queue->ep_bd_desc = tx_queue->ep_bd_mapped_addr;
+		tx_queue->rc_bd_desc = tx_queue->rc_bd_shared_addr;
+		tx_ring_reg = &bdr_reg->tx_ring[i];
+		ret = lxsnic_dev_tx_raw_test_fill(tx_queue,
+			rx_queue->mb_pool);
+		if (ret)
+			return ret;
+
+		LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
+			tx_queue->ep_mem_bd_type);
+		LSINIC_WRITE_REG(&tx_ring_reg->r_rc_mem_bd_type,
+			tx_queue->rc_mem_bd_type);
+
+		LSINIC_WRITE_REG(&tx_queue->ep_reg->r_raw_test, 1);
+	}
+
+	return 0;
+}
+
+static int
+lxsnic_dev_rx_raw_test_start(struct lxsnic_adapter *adapter)
+{
+	int i;
+	struct lxsnic_ring *rx_queue;
+
+	for (i = 0; i < adapter->eth_dev->data->nb_rx_queues; i++) {
+		rx_queue = adapter->eth_dev->data->rx_queues[i];
+		LSINIC_WRITE_REG(&rx_queue->ep_reg->r_raw_test, 1);
+	}
+
+	return 0;
+}
+#endif
+
 static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
 {
@@ -253,6 +340,15 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		LSXINIC_PMD_ERR("ep has NOT been initialized!");
 		return -EBUSY;
 	}
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (adapter->e_raw_test & LXSNIC_RC2EP_PCIE_RAW_TEST) {
+		ret = lxsnic_dev_tx_raw_test_start(adapter);
+		if (ret)
+			return ret;
+		goto skip_txq_bd_type_parse;
+	}
+#endif
 
 	if (LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
 		RC_SET_ADDRL_TYPE ||
@@ -309,11 +405,24 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		}
 	}
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+skip_txq_bd_type_parse:
+	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
+		ret = lxsnic_dev_rx_raw_test_start(adapter);
+		if (ret)
+			return ret;
+	}
+#endif
 	ret = lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 	if (ret != PCIDEV_RESULT_SUCCEED)
 		return -EIO;
 
 	lxsnic_up_complete(adapter);
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (adapter->e_raw_test != LXSNIC_NONE_PCIE_RAW_TEST)
+		return 0;
+#endif
 
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
@@ -524,6 +633,13 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
+		rx_ring->ep_mem_bd_type = EP_MEM_LONG_BD;
+		rx_ring->rc_mem_bd_type = RC_MEM_LONG_BD;
+		goto skip_parse_cap;
+	}
+#endif
 	if (LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
 		EP_XMIT_SBD_TYPE) {
 		rx_ring->rc_mem_bd_type = RC_MEM_LEN_CMD;
@@ -552,6 +668,9 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (adapter->pkt_addr_interval)
 			rx_ring->ep_mem_bd_type = EP_MEM_DST_ADDRX_BD;
 	}
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+skip_parse_cap:
+#endif
 
 	if (rx_ring->ep_mem_bd_type == EP_MEM_LONG_BD) {
 		rx_ring->ep_bd_desc = rx_ring->ep_bd_mapped_addr;
@@ -1513,6 +1632,31 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 
 	lxsnic_msix_disable_all(adapter);
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	adapter->e_raw_test = LXSNIC_NONE_PCIE_RAW_TEST;
+	penv = getenv("LSINIC_EP2RC_PCIE_RAW_TEST");
+	if (penv && atoi(penv))
+		adapter->e_raw_test |= LXSNIC_EP2RC_PCIE_RAW_TEST;
+
+	penv = getenv("LSINIC_RC2EP_PCIE_RAW_TEST");
+	if (penv && atoi(penv))
+		adapter->e_raw_test |= LXSNIC_RC2EP_PCIE_RAW_TEST;
+
+	penv = getenv("LSINIC_PCIE_RAW_TEST_SIZE");
+	if (penv)
+		adapter->raw_test_size = atoi(penv);
+	else
+		adapter->raw_test_size = LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT;
+	if (adapter->e_raw_test &&
+		(adapter->raw_test_size > LSINIC_PCIE_RAW_TEST_SIZE_MAX ||
+		adapter->raw_test_size < LSINIC_PCIE_RAW_TEST_SIZE_MIN)) {
+		LSXINIC_PMD_WARN("Invalid raw test size(%d)",
+			adapter->raw_test_size);
+		adapter->raw_test_size = LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT;
+		LSXINIC_PMD_WARN("Change raw test size to default(%d)",
+			adapter->raw_test_size);
+	}
+#endif
 	penv = getenv("LSINIC_SELF_XMIT_TEST");
 	if (penv) {
 		adapter->self_test = atoi(penv);
@@ -1741,6 +1885,9 @@ lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 	struct rte_mbuf *mbuf;
 	uint64_t dma_addr = 0;
 	struct lsinic_ep_tx_dst_addr *ep_rx_addr = NULL;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	uint32_t len = rx_queue->adapter->raw_test_size;
+#endif
 
 	if (rx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
 		ep_rx_desc = &rx_queue->ep_bd_desc[idx];
@@ -1767,6 +1914,9 @@ lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 
 	memset(&rc_rx_desc, 0, sizeof(struct lsinic_bd_desc));
 	rc_rx_desc.pkt_addr = dma_addr;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	rc_rx_desc.len_cmd = len;
+#endif
 
 	rx_queue->q_mbuf[idx] = mbuf;
 	rc_rx_desc.bd_status =

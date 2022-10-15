@@ -71,6 +71,17 @@ enum queue_dma_bd_update {
 #define LSINIC_BD_DMA_MAX_COUNT \
 	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+struct lsinic_pcie_raw_test {
+	uint16_t burst_size;
+	int sync_mode;
+	int cpu_mode;
+	int started;
+	struct rte_mbuf **mbufs;
+	struct rte_ring *jobs_ring;
+};
+#endif
+
 struct lsinic_queue {
 	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
@@ -206,6 +217,10 @@ struct lsinic_queue {
 	uint64_t bytes_eq;
 	uint64_t pkts_dq;
 	uint64_t pkts_eq;
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	struct lsinic_pcie_raw_test pcie_raw_test;
+#endif
 
 	/* Pointer to Next instance used by q list */
 	TAILQ_ENTRY(lsinic_queue) next;
