@@ -616,6 +616,12 @@ lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		LXSNIC_RC_SELF_NONE_TEST))
 		return 0;
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (unlikely(tx_ring->adapter->e_raw_test &
+		LXSNIC_RC2EP_PCIE_RAW_TEST))
+		return 0;
+#endif
+
 	return _lxsnic_eth_xmit_pkts(tx_queue, tx_pkts, nb_pkts);
 }
 
@@ -1106,6 +1112,11 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 		}
 		s_perf_mode_set[rte_lcore_id()] = 1;
 	}
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (unlikely(adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST))
+		return 0;
+#endif
 
 	if (unlikely(adapter->self_test != LXSNIC_RC_SELF_NONE_TEST))
 		return lxsnic_eth_self_test(rx_queue, rx_pkts, nb_pkts);

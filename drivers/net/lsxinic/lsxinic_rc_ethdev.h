@@ -290,6 +290,19 @@ struct lxsnic_hw_stats {
 	uint64_t tx_desc_err;
 };
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+enum lxsnic_pcie_raw_test {
+	LXSNIC_NONE_PCIE_RAW_TEST = 0,
+	LXSNIC_EP2RC_PCIE_RAW_TEST = (1 << 0),
+	LXSNIC_RC2EP_PCIE_RAW_TEST = (1 << 1)
+};
+
+#define LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT 1024
+#define LSINIC_PCIE_RAW_TEST_SIZE_MIN 64
+#define LSINIC_PCIE_RAW_TEST_SIZE_MAX 1518
+
+#endif
+
 enum lxsnic_rc_self_test {
 	LXSNIC_RC_SELF_NONE_TEST = 0,
 	LXSNIC_RC_SELF_PMD_TEST,
@@ -339,6 +352,11 @@ struct lxsnic_adapter {
 	bool adapter_stopped;
 	enum lxsnic_rc_self_test self_test;
 	uint32_t self_test_len;
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	enum lxsnic_pcie_raw_test e_raw_test;
+	uint32_t raw_test_size;
+#endif
 
 	unsigned long link_check_timeout;
 	/* SR-IOV */
