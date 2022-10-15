@@ -17,6 +17,10 @@
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_ethtool.h"
 
+#include "lsxinic_rc_rxtx.h"
+#include "lsxinic_rc_ethdev.h"
+#include "lsxinic_rc_hw.h"
+
 static inline struct rte_ipv4_hdr *
 ip_hdr(const struct rte_mbuf *mbuf)
 {
@@ -123,13 +127,14 @@ print_queue_status(void *queue,
 	double *bytes_diff, uint64_t *core_mask,
 	enum lsinic_port_type port_type)
 {
-	struct lsinic_queue *epq;
+	struct lsinic_queue *epq = NULL;
+	struct lxsnic_ring *rcq = NULL;
 
 	if (!queue)
 		return;
 
-	if (port_type != LSINIC_EP_PORT)
-		return;
+	if (port_type == LSINIC_RC_PORT)
+		goto print_rc_queue_status;
 
 	epq = queue;
 
@@ -170,6 +175,43 @@ print_queue_status(void *queue,
 
 	if (core_mask)
 		(*core_mask) |= (((uint64_t)1) << epq->core_id);
+
+	return;
+print_rc_queue_status:
+	rcq = queue;
+
+	printf("\t%sq%d: ",
+		rcq->type == LSINIC_QUEUE_RX ? "rx" : "tx",
+		rcq->queue_index);
+
+	printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
+		rcq->status,
+		rcq->last_avail_idx,
+		rcq->last_used_idx,
+		rcq->rc_reg->pir,
+		rcq->rc_reg->cir);
+
+	printf("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
+		(unsigned long long)rcq->packets,
+		(unsigned long long)rcq->errors,
+		(unsigned long long)rcq->drop_packet_num);
+
+	printf("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+		(unsigned long long)rcq->ring_full,
+		(unsigned long long)rcq->loop_total,
+		(unsigned long long)rcq->loop_avail);
+
+	(*packets) += rcq->packets;
+	(*errors) += rcq->errors;
+	(*drops) += rcq->drop_packet_num;
+	(*fulls) += rcq->ring_full;
+	(*bytes_fcs) += rcq->bytes_fcs;
+	(*bytes_diff) += rcq->bytes_overhead -
+		rcq->bytes_overhead_old;
+	rcq->bytes_overhead_old = rcq->bytes_overhead;
+
+	if (core_mask)
+		(*core_mask) |= (((uint64_t)1) << rcq->core_id);
 }
 
 void print_port_status(struct rte_eth_dev *eth_dev,
@@ -188,7 +230,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
-		if (port_type == LSINIC_EP_PORT) {
+		if (port_type != LSINIC_EP_PORT) {
 			print_queue_status(queue, &opackets, &oerrors,
 				&odrops, &oring_full, &obytes_fcs, &obytes_diff,
 				NULL, port_type);
@@ -201,7 +243,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 		*core_mask = 0;
 	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
 		queue = eth_dev->data->rx_queues[i];
-		if (port_type == LSINIC_EP_PORT) {
+		if (port_type != LSINIC_EP_PORT) {
 			print_queue_status(queue, &ipackets, &ierrors,
 				&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
 				core_mask, port_type);
