@@ -16,7 +16,11 @@ sources = files(
 	'lsxinic_ep_tool.c',
 	'lsxinic_rc_ethdev.c',
 	'lsxinic_rc_rxtx.c',
-	'lsxinic_rc_pf.c'
+	'lsxinic_rc_pf.c',
+	'lsxinic_ep_vio_blk.c',
+	'lsxinic_ep_vio.c',
+	'lsxinic_ep_vio_net.c',
+	'lsxinic_ep_vio_rxtx.c'
 )
 
 includes += include_directories(
@@ -26,4 +30,5 @@ includes += include_directories(
 	'../../bus/fslmc/qbman/include',
 	'../../mempool/dpaa2',
 	'../dpaa2/mc',
+	'../virtio'
 )
