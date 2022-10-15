@@ -14,6 +14,9 @@ sources = files(
 	'lsxinic_ep_dma.c',
 	'lsxinic_ep_ethtool.c',
 	'lsxinic_ep_tool.c',
+	'lsxinic_rc_ethdev.c',
+	'lsxinic_rc_rxtx.c',
+	'lsxinic_rc_pf.c'
 )
 
 includes += include_directories(
