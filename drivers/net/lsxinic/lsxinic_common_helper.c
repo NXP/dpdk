@@ -21,6 +21,8 @@
 #include "lsxinic_rc_ethdev.h"
 #include "lsxinic_rc_hw.h"
 
+#include "lsxinic_ep_vio_rxtx.h"
+
 static inline struct rte_ipv4_hdr *
 ip_hdr(const struct rte_mbuf *mbuf)
 {
@@ -214,6 +216,51 @@ print_rc_queue_status:
 		(*core_mask) |= (((uint64_t)1) << rcq->core_id);
 }
 
+static void
+print_ep_virtio_queue_status(void *queue,
+	unsigned long long *packets,
+	unsigned long long *errors,
+	unsigned long long *drops,
+	unsigned long long *fulls,
+	unsigned long long *bytes_fcs,
+	double *bytes_diff, uint64_t *core_mask)
+{
+	struct lsxvio_queue *q = queue;
+
+	if (!q)
+		return;
+
+	printf("\t%sq%d: ",
+		q->type == LSXVIO_QUEUE_RX ? "rx" : "tx",
+		q->reg_idx);
+
+	printf("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
+		(unsigned long long)q->packets,
+		(unsigned long long)q->errors,
+		(unsigned long long)q->drop_packet_num);
+
+	printf("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+		(unsigned long long)q->ring_full,
+		(unsigned long long)q->loop_total,
+		(unsigned long long)q->loop_avail);
+
+	printf("\tEP dmaq=%d next_dma_idx=%d\t\tnew_desc=%d in_dma=%ld\n",
+		q->dma_vq, q->next_dma_idx,
+		q->new_desc,
+		q->pkts_eq - q->pkts_dq);
+
+	(*packets) += q->packets;
+	(*errors) += q->errors;
+	(*drops) += q->drop_packet_num;
+	(*fulls) += q->ring_full;
+	(*bytes_fcs) += q->bytes_fcs;
+	(*bytes_diff) += q->bytes_overhead - q->bytes_overhead_old;
+	q->bytes_overhead_old = q->bytes_overhead;
+
+	if (core_mask)
+		(*core_mask) |= (((uint64_t)1) << q->core_id);
+}
+
 void print_port_status(struct rte_eth_dev *eth_dev,
 	uint64_t *core_mask, uint32_t debug_interval,
 	enum lsinic_port_type port_type)
@@ -235,7 +282,9 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 				&odrops, &oring_full, &obytes_fcs, &obytes_diff,
 				NULL, port_type);
 		} else {
-			/**TBD*/
+			print_ep_virtio_queue_status(queue, &opackets,
+				&oerrors, &odrops, &oring_full, &obytes_fcs,
+				&obytes_diff, NULL);
 		}
 	}
 
@@ -248,7 +297,9 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 				&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
 				core_mask, port_type);
 		} else {
-			/**TBD*/
+			print_ep_virtio_queue_status(queue, &ipackets,
+				&ierrors, &idrops, &iring_full, &ibytes_fcs,
+				&ibytes_diff, core_mask);
 		}
 	}
 
