@@ -34,6 +34,40 @@ enum LSINIC_QEUE_TYPE {
 /* For CB buffer, length excludes CB header.*/
 #define LSINIC_BD_LEN_MASK	0x0000ffff /* Data length mask */
 #define LSINIC_BD_CMD_EOP	0x80000000 /* End of Packet */
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_BD_CMD_MG	0x20000000 /* Merged Packet */
+
+#define LSINIC_MG_ALIGN_SIZE           8 /* bytes */
+
+/* Combination number shift/mask */
+#define LSINIC_BD_MG_NUM_SHIFT 16
+#define LSINIC_BD_MG_NUM_MASK \
+		(((uint32_t)0x1f) << LSINIC_BD_MG_NUM_SHIFT)
+
+/* Within one cache line*/
+#define LSINIC_MG_PKT_LEN_MASK 0x0fff
+#define LSINIC_MG_ALIGN_OFFSET_SHIFT 12
+#define LSINIC_MG_ALIGN_OFFSET_MASK \
+	(((uint16_t)0xf) << LSINIC_MG_ALIGN_OFFSET_SHIFT)
+
+#define LSINIC_MERGE_MAX_NUM LSINIC_MAX_BURST_NUM
+
+struct lsinic_mg_header {
+	uint16_t len_cmd[LSINIC_MERGE_MAX_NUM];
+} __packed;
+
+#define lsinic_mg_entry_len(len_cmd) \
+		((len_cmd) & LSINIC_MG_PKT_LEN_MASK)
+
+#define lsinic_mg_entry_align_offset(len_cmd) \
+		(((len_cmd) & LSINIC_MG_ALIGN_OFFSET_MASK) >> \
+			LSINIC_MG_ALIGN_OFFSET_SHIFT)
+
+#define lsinic_mg_entry_set(pkt_len, align_offset) \
+		((((uint16_t)(align_offset) & 0xf) << \
+		LSINIC_MG_ALIGN_OFFSET_SHIFT) | \
+		(((uint16_t)(pkt_len)) & LSINIC_MG_PKT_LEN_MASK))
+#endif
 
 enum lsinic_dev_status {
 	LSINIC_DEV_INITING,
@@ -222,6 +256,26 @@ struct lsinic_bd_desc {
 #define LSINIC_BD_ENTRY_COUNT_SHIFT 9
 #define LSINIC_BD_ENTRY_COUNT (1 << LSINIC_BD_ENTRY_COUNT_SHIFT)
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define EP2RC_TX_CTX_IDX(cnt_idx) \
+	((cnt_idx) & (LSINIC_BD_ENTRY_COUNT - 1))
+#define EP2RC_TX_CTX_CNT(cnt_idx) \
+	((cnt_idx) >> (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
+
+#define EP2RC_TX_IDX_CNT_SET(cnt_idx, idx, cnt) \
+	(cnt_idx = (idx) | (cnt) << (LSINIC_BD_ENTRY_COUNT_SHIFT + 1))
+
+struct lsinic_rc_rx_len_cmd {
+	union {
+		uint32_t len_cnt_idx;
+		struct {
+			/* For CB buffer, length excludes CB header.*/
+			uint16_t total_len;
+			uint16_t cnt_idx;
+		};
+	};
+} __packed;
+#else
 struct lsinic_rc_rx_len_idx {
 	union {
 		uint32_t len_idx;
@@ -232,6 +286,7 @@ struct lsinic_rc_rx_len_idx {
 		};
 	};
 } __packed;
+#endif
 
 struct lsinic_rc_tx_bd_cnf {
 	uint8_t bd_complete;
@@ -263,12 +318,23 @@ struct lsinic_ep_rx_src_addrl {
 	};
 } __packed;
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT 15
+#define LSINIC_EP_RX_SRC_ADDRX_MERGE \
+	(1 << LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT)
+#define LSINIC_EP_RX_SRC_ADDRX_LEN_MASK \
+	(~LSINIC_EP_RX_SRC_ADDRX_MERGE)
+#endif
 struct lsinic_ep_rx_src_addrx {
 	union {
 		uint32_t idx_cmd_len;
 		struct {
 			uint16_t pkt_idx;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+			uint16_t len_cmd;
+#else
 			uint16_t len;
+#endif
 		};
 	};
 } __packed;
@@ -278,8 +344,13 @@ struct lsinic_ep_rx_src_addrx {
 #define LSINIC_BD_RING_SIZE	\
 	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_LEN_CMD_RING_SIZE \
+	(sizeof(struct lsinic_rc_rx_len_cmd) * LSINIC_BD_ENTRY_COUNT)
+#else
 #define LSINIC_LEN_IDX_RING_SIZE \
 	(sizeof(struct lsinic_rc_rx_len_idx) * LSINIC_BD_ENTRY_COUNT)
+#endif
 
 #define LSINIC_BD_CNF_RING_SIZE \
 	(sizeof(struct lsinic_rc_tx_bd_cnf) * LSINIC_BD_ENTRY_COUNT)
@@ -407,6 +478,12 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_XFER_ORDER_PRSV \
 	(1 << LSINIC_CAP_XFER_ORDER_PRSV_POS)
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_CAP_XFER_PKT_MERGE_POS 3
+#define LSINIC_CAP_XFER_PKT_MERGE \
+	(1 << LSINIC_CAP_XFER_PKT_MERGE_POS)
+#endif
+
 enum rc_set_addr_type {
 	RC_SET_ADDRF_TYPE = 0,
 	RC_SET_ADDRL_TYPE = 1,
@@ -414,7 +491,7 @@ enum rc_set_addr_type {
 	RC_SET_ADDR_TYPE_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 3
+#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 4
 #define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) \
 	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS) & \
 	RC_SET_ADDR_TYPE_MASK)
@@ -484,6 +561,9 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 	uint32_t vf_macaddrl;
 	uint32_t vf_vlan;
 	uint32_t max_data_room;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	uint32_t merge_threshold;
+#endif
 } __packed;
 
 #define LSINIC_REG_BAR_MAX_SIZE \
