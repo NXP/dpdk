@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  *
  * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
  * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
@@ -1709,6 +1709,112 @@ lsinic_fetch_rx_buffer(struct lsinic_ring *rx_ring,
 	return skb;
 }
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+static int
+lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
+	struct lsinic_bd_desc *rx_desc,
+	struct sk_buff **skb_arry)
+{
+	struct sk_buff *skb;
+	struct lsinic_mg_header *mgd;
+	void *data;
+	int total_size, count = 0, i, len, offset = 0;
+	int align_off = 0, mg_header_size = 0;
+	struct lsinic_rx_buffer *rx_buffer;
+	u16 used_idx;
+
+	used_idx = lsinic_bd_ctx_idx(rx_desc->bd_status);
+
+	rx_buffer = &rx_ring->rx_buffer_info[used_idx];
+	skb = rx_buffer->skb;
+	if (rx_desc->bd_status & RING_BD_ADDR_CHECK) {
+		if (unlikely(rx_buffer->dma != rx_desc->pkt_addr)) {
+			netdev_crit(rx_ring->netdev,
+				"%s: dma(0x%llx) != pkt_addr(0x%llx)\n",
+				__func__, rx_buffer->dma,
+				rx_desc->pkt_addr);
+		}
+	}
+
+	/* we are not reusing the buffer so unmap it */
+	dma_unmap_single(rx_ring->dev, rx_buffer->dma,
+			rx_buffer->len,
+			DMA_FROM_DEVICE);
+	/* clear contents of buffer_info */
+	rx_buffer->skb = NULL;
+	rx_buffer->dma = 0;
+	rx_buffer->page = NULL;
+
+	prefetch(skb->data);
+
+	total_size = lsinic_desc_len(rx_desc);
+	if (total_size > rx_ring->data_room) {
+		pr_info("total_size(%d) > max size(%d)\n",
+			total_size, rx_ring->data_room);
+		return 0;
+	}
+
+	count = ((rx_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
+			LSINIC_BD_MG_NUM_SHIFT) + 1;
+
+	data = skb->data;
+	printk_rx("get merge packets size=%d count=%d data=%p\n",
+		  total_size, count, data);
+
+	mgd = data;
+	len = lsinic_mg_entry_len(mgd->len_cmd[0]);
+
+	/* Check the value correctness */
+	if ((offset + len) > total_size)
+		return 0;
+
+	mg_header_size = sizeof(struct lsinic_mg_header);
+	align_off = lsinic_mg_entry_align_offset(mgd->len_cmd[0]);
+	offset = mg_header_size + len + align_off;
+
+	skb_reserve(skb, mg_header_size);
+	skb_put(skb, len);
+	skb_arry[0] = skb;
+	printk_rx("MGD0: len=%d va:%p next mgd offset=%d\n",
+		   len, (void *)((char *)data + mg_header_size), offset);
+
+	for (i = 1; i < count; i++) {
+		len = lsinic_mg_entry_len(mgd->len_cmd[i]);
+		align_off = lsinic_mg_entry_align_offset(mgd->len_cmd[i]);
+
+		/* Check the value correctness */
+		if ((offset + len - mg_header_size) > total_size)
+			break;
+
+		/* allocate a skb to store the frags */
+		skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
+						ALIGN(len, sizeof(long)));
+		if (unlikely(!skb)) {
+			rx_ring->rx_stats.alloc_rx_buff_failed++;
+			break;
+		}
+
+		/*
+		 * we will be copying header into skb->data in
+		 * pskb_may_pull so it is in our interest to prefetch
+		 * it now to avoid a possible cache miss
+		 */
+		prefetchw(skb->data);
+		memcpy(__skb_put(skb, len),
+			(void *)((char *)data + offset), len);
+		skb_arry[i] = skb;
+
+		offset += len + align_off;
+		printk_rx("MGD%d: len=%d va:%p next mgd offset=%d\n",
+			i, len,
+			(void *)((char *)data + offset - len - align_off),
+			offset);
+	}
+
+	return i;
+}
+#endif
+
 /**
  * lsinic_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
@@ -2169,8 +2275,50 @@ lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 			break;
 		}
 
-		/* retrieve a buffer from the ring */
-		skb = lsinic_fetch_rx_buffer(rx_ring, rx_desc);
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+		if (lsinic_test_staterr(rx_desc, LSINIC_BD_CMD_MG)) {
+			struct sk_buff *skb_array[LSINIC_MERGE_MAX_NUM];
+			int count, i;
+
+			count = lsinic_fetch_merge_rx_buffers(rx_ring,
+						rx_desc,
+						skb_array);
+			if (!count) {
+				rx_desc->len_cmd = LSINIC_BD_CMD_EOP;
+				lsinic_is_non_eop(rx_ring, rx_desc, NULL);
+				dma_unmap_single(rx_ring->dev, new_dma,
+					rx_ring->data_room,
+					DMA_FROM_DEVICE);
+				dev_kfree_skb_any(new_skb);
+				continue;
+			}
+			count--;
+			for (i = 0; i < count; i++) {
+				skb = skb_array[i];
+				total_rx_bytes += skb->len;
+				/* update budget accounting */
+				total_rx_packets++;
+
+				if (lsinic_loopback) {
+					lsinic_loopback_rx_tx(skb,
+						q_vector,
+						rx_ring);
+				} else {
+					lsinic_process_skb_fields(rx_ring,
+						skb);
+					skb_mark_napi_id(skb,
+						&q_vector->napi);
+					lsinic_rx_skb(q_vector,
+						skb);
+				}
+			}
+			skb = skb_array[count]; /* The last packet */
+		} else
+#endif
+		{
+			/* retrieve a buffer from the ring */
+			skb = lsinic_fetch_rx_buffer(rx_ring, rx_desc);
+		}
 
 		/* exit if we failed to retrieve a buffer */
 		if (!skb) {
