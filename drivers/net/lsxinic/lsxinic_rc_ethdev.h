@@ -195,7 +195,11 @@ struct lxsnic_ring {
 
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
+#else
 	struct lsinic_rc_rx_len_idx *rx_len_idx;
+#endif
 
 	/* For RC TX*/
 	/* RC_MEM_BD_CNF*/
@@ -366,6 +370,9 @@ struct lxsnic_adapter {
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	uint32_t merge_threshold;
+#endif
 	uint16_t max_data_room;
 	uint32_t pkt_addr_interval;
 	uint64_t pkt_addr_base;

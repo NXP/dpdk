@@ -17,6 +17,12 @@
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_ethtool.h"
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#include <dpaa2_hw_mempool.h>
+#include <dpaa2_hw_pvt.h>
+#include <dpaa2_ethdev.h>
+#endif
+
 #include "lsxinic_rc_rxtx.h"
 #include "lsxinic_rc_ethdev.h"
 #include "lsxinic_rc_hw.h"
@@ -119,6 +125,36 @@ lsinic_mbuf_print_all(const struct rte_mbuf *mbuf)
 
 #define G_SIZE ((double)(1000 * 1000 * 1000))
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+static int
+lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
+	unsigned long long *dev_imissed)
+{
+	struct dpaa2_queue *recycle_txq;
+	struct rte_eth_dev_data *dpaa2_data;
+	struct dpaa2_dev_priv *dpaa2_priv;
+	struct rte_eth_dev *dpaa2_dev;
+	struct rte_eth_stats igb_stats;
+	struct lsinic_queue *rxq;
+
+	rxq = eth_dev->data->rx_queues[0];
+
+	if (rxq->split_type == LSINIC_HW_SPLIT) {
+		recycle_txq = rxq->recycle_txq;
+		dpaa2_data = recycle_txq->eth_data;
+		dpaa2_priv = dpaa2_data->dev_private;
+		dpaa2_dev = dpaa2_priv->eth_dev;
+
+		dpaa2_dev->dev_ops->stats_get(dpaa2_dev, &igb_stats);
+		*dev_imissed = (unsigned long long)igb_stats.imissed;
+
+		return 0;
+	}
+
+	return -1;
+}
+#endif
+
 static void
 print_queue_status(void *queue,
 	unsigned long long *packets,
@@ -164,8 +200,14 @@ print_queue_status(void *queue,
 	printf("\tEP dmaq=%d next_dma_idx=%d",
 		epq->dma_vq, epq->next_dma_idx);
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	printf("\t\tnew_desc=%d in_dma=%ld in_dpni=%ld\n",
+		epq->new_desc,
+		epq->pkts_eq - epq->pkts_dq, (long)epq->recycle_pending);
+#else
 	printf("\t\tnew_desc=%d in_dma=%ld\n",
 		epq->new_desc, epq->pkts_eq - epq->pkts_dq);
+#endif
 
 	(*packets) += epq->packets;
 	(*errors) += epq->errors;
@@ -274,6 +316,13 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	double ibytes_diff = 0;
 	double obytes_diff = 0;
 	unsigned long long ibytes_fcs = 0, obytes_fcs = 0;
+	unsigned long long missed = 0;
+	int ret = -1;
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	if (port_type == LSINIC_EP_PORT)
+		ret = lsinic_ep_rx_drop_count(eth_dev, &missed);
+#endif
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
@@ -311,6 +360,8 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	printf("TX performance: %fGbps, fcs bits: %lld\r\n",
 		obytes_diff * 8 /
 		(debug_interval * G_SIZE), obytes_fcs * 8);
+	if (!ret)
+		idrops = missed;
 	printf("\tTotal rxq:\trx=%lld drop=%lld full=%lld\n",
 		ipackets, idrops, iring_full);
 	printf("RX performance: %fGbps, fcs bits: %lld\r\n",
