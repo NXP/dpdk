@@ -60,6 +60,16 @@ static inline void lsinic_write_reg64(void *addr, uint64_t val)
 #define LSINIC_EP_CAP_TXQ_DMA_NO_RSP 0x00000001
 #define LSINIC_EP_CAP_TXQ_SG_DMA 0x00000002
 #define LSINIC_EP_CAP_RXQ_SG_DMA 0x00000004
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_EP_CAP_HW_MERGE_PKTS 0x00000008
+#define LSINIC_EP_CAP_HW_SPLIT_PKTS 0x00000010
+#define LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS 0x00000020
+#define LSINIC_EP_CAP_SW_MERGE_PKTS 0x00000040
+#define LSINIC_EP_CAP_SW_SPLIT_PKTS 0x00000080
+#define LSINIC_EP_CAP_HW_DIRECT_EGRESS 0x00000100
+#define LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX 0x00000200
+#define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX 0x00000400
+#endif
 
 struct lsinic_adapter {
 	enum lsinic_dev_type dev_type;
@@ -111,6 +121,17 @@ struct lsinic_adapter {
 
 	struct lsinic_queue *txqs;
 	struct lsinic_queue *rxqs;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	struct rte_dpaa2_device *merge_dev;
+	struct rte_dpaa2_device *split_dev;
+	struct rte_dpaa2_device *split_dst_dev;
+	rte_spinlock_t merge_dev_cfg_lock;
+	rte_spinlock_t split_dev_cfg_lock;
+	int merge_dev_cfg_done;
+	int split_dev_cfg_done;
+	int rx_mbuf_clone;
+	uint32_t merge_threshold;
+#endif
 	uint32_t cap;
 	rte_spinlock_t cap_lock;
 	uint32_t ep_cap;
@@ -161,5 +182,10 @@ int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
 
 int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+int
+lsinic_split_dev_flow_create(struct lsinic_adapter *adapter);
+#endif
 
 #endif /* _LSXINIC_EP_ETHDEV_H_ */
