@@ -744,7 +744,7 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 __rte_internal int
 dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	uint16_t qidx, uint64_t cntx,
-	eth_rx_burst_t tx_lpbk, eth_tx_burst_t rx_lpbk,
+	eth_tx_burst_t tx_lpbk, eth_rx_burst_t rx_lpbk,
 	struct dpaa2_queue **txq,
 	struct dpaa2_queue **rxq)
 {
@@ -753,6 +753,7 @@ dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	struct dpaa2_queue *txq_tmp;
 	struct dpaa2_queue *rxq_tmp;
 	struct dpaa2_dev_priv *priv;
+	int ret = 0;
 
 	dev = dpaa2_dev->eth_dev;
 	data = dev->data;
@@ -770,6 +771,12 @@ dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 
 	rte_spinlock_lock(&priv->lpbk_qp_lock);
 
+	if (dev->data->dev_started) {
+		ret = rte_eth_dev_stop(dev->data->port_id);
+		if (ret)
+			goto setup_quit;
+	}
+
 	if (tx_lpbk)
 		dev->tx_pkt_burst = tx_lpbk;
 
@@ -786,7 +793,10 @@ dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	if (rxq)
 		*rxq = rxq_tmp;
 
+	ret = rte_eth_dev_start(dev->data->port_id);
+
+setup_quit:
 	rte_spinlock_unlock(&priv->lpbk_qp_lock);
 
-	return 0;
+	return ret;
 }

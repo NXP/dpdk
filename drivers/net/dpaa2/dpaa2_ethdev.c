@@ -1999,7 +1999,11 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	}
 
 	/* changing tx burst function to start enqueues */
-	dev->tx_pkt_burst = dpaa2_dev_tx;
+	/** For recycle device, don't set TX callback
+	 * if it has been set by dpaa2_dev_recycle_qp_setup.
+	 */
+	if (!dev->tx_pkt_burst || dev->tx_pkt_burst == dummy_dev_tx)
+		dev->tx_pkt_burst = dpaa2_dev_tx;
 	dev->data->dev_link.link_status = state.up;
 	dev->data->dev_link.link_speed = state.rate;
 
