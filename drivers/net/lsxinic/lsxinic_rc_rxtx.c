@@ -493,6 +493,101 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	return 0;
 }
 
+static int
+lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
+	struct rte_mbuf *tx_pkt, struct lsinic_seg_desc *local_desc)
+{
+	dma_addr_t dma;
+	struct rte_mbuf *pkt_curr = NULL;
+	uint16_t bd_idx = 0, idx, copy_len;
+	struct lsinic_seg_desc *ep_sg_desc = 0;
+	struct lsinic_seg_desc local_sg_desc;
+	uint32_t mbuf_idx = 0;
+	char *pdata = NULL;
+
+	bd_idx = tx_ring->last_avail_idx & (tx_ring->count - 1);
+
+	ep_sg_desc = &tx_ring->ep_tx_sg[bd_idx];
+
+	if (tx_ring->rc_mem_bd_type == RC_MEM_IDX_CNF) {
+		if (unlikely(((bd_idx + 1) &
+			(tx_ring->count - 1)) ==
+			tx_ring->tx_free_start_idx)) {
+			/** Make special room, otherwise no way to
+			 * identify ring is empty or full.
+			 */
+			tx_ring->ring_full++;
+			tx_ring->errors++;
+			return -EAGAIN;
+		}
+		mbuf_idx = bd_idx;
+		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
+	} else {
+		return -EINVAL;
+	}
+
+	local_sg_desc.base_addr = tx_pkt->buf_iova + tx_pkt->data_off;
+	local_sg_desc.entry[0].positive = 0;
+	local_sg_desc.entry[0].offset = 0;
+	if (tx_pkt->data_len == tx_pkt->pkt_len ||
+		tx_pkt->nb_segs <= 1) {
+		local_sg_desc.entry[0].len = tx_pkt->pkt_len;
+		local_sg_desc.nb = 1;
+	} else {
+		local_sg_desc.entry[0].len = pkt_curr->data_len;
+		for (idx = 1; idx < tx_pkt->nb_segs; idx++) {
+			pkt_curr = pkt_curr->next;
+			dma = pkt_curr->buf_iova + pkt_curr->data_off;
+			if (dma > local_sg_desc.base_addr) {
+				local_sg_desc.entry[idx].positive = 1;
+				local_sg_desc.entry[idx].offset =
+					dma - local_sg_desc.base_addr;
+			} else {
+				local_sg_desc.entry[idx].positive = 0;
+				local_sg_desc.entry[idx].offset =
+					local_sg_desc.base_addr - dma;
+			}
+			local_sg_desc.entry[idx].len = pkt_curr->data_len;
+		}
+		local_sg_desc.nb = tx_pkt->nb_segs;
+	}
+
+	if (pkt_curr) {
+		pdata = (char *)rte_pktmbuf_mtod(pkt_curr, char *);
+		*((uint8_t *)pdata + pkt_curr->data_len) =
+			LSINIC_XFER_COMPLETE_DONE_FLAG;
+	} else {
+		pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
+		*((uint8_t *)pdata + tx_pkt->pkt_len) =
+			LSINIC_XFER_COMPLETE_DONE_FLAG;
+	}
+
+	if (local_desc) {
+		memcpy(local_desc, &local_sg_desc,
+			sizeof(struct lsinic_seg_desc));
+	} else {
+		copy_len = sizeof(uint64_t) +
+			sizeof(struct lsinic_seg_desc_entry) *
+			local_sg_desc.nb;
+
+		lsinic_pcie_memcp_align((uint8_t *)ep_sg_desc,
+			(const uint8_t *)&local_sg_desc, copy_len);
+		rte_wmb();
+		ep_sg_desc->nb = local_sg_desc.nb;
+	}
+
+	tx_ring->packets += local_sg_desc.nb;
+	tx_ring->bytes += tx_pkt->pkt_len;
+	tx_ring->bytes_fcs += tx_pkt->pkt_len + LSINIC_ETH_FCS_SIZE;
+	tx_ring->bytes_overhead += tx_pkt->pkt_len +
+			LSINIC_ETH_OVERHEAD_SIZE;
+
+	tx_ring->tx_free_len++;
+	tx_ring->last_avail_idx++;
+
+	return 0;
+}
+
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 static int
 lxsnic_try_to_merge(struct lxsnic_ring *txq,
@@ -657,6 +752,20 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	if (unlikely(!nb_pkts)) {
 		tx_num = 0;
 		goto end_of_tx;
+	}
+
+	if (tx_ring->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
+		while (nb_pkts) {
+			ret = lxsnic_xmit_one_seg_pkt(tx_ring,
+				tx_pkts[tx_num], NULL);
+			if (likely(!ret)) {
+				tx_num++;
+				nb_pkts--;
+			} else {
+				break;
+			}
+		}
+		return tx_num;
 	}
 
 	if (tx_ring->ep_mem_bd_type == EP_MEM_SRC_ADDRL_BD) {
