@@ -141,6 +141,7 @@ struct lsinic_queue {
 	/* For RX ring*/
 	struct lsinic_ep_rx_src_addrl *rx_src_addrl;
 	struct lsinic_ep_rx_src_addrx *rx_src_addrx;
+	struct lsinic_seg_desc *rx_src_seg;
 
 	/* point to RC mem */
 	enum RC_MEM_BD_TYPE rc_mem_bd_type;
@@ -182,6 +183,8 @@ struct lsinic_queue {
 
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
+	struct lsinic_dma_seg_job *dma_seg_jobs;
+
 	uint16_t bd_dma_step;
 	int wdma_bd_start;
 	int wdma_bd_nb;

@@ -533,6 +533,9 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_XFER_PKT_MERGE;
 #endif
+	penv = getenv("LSINIC_RC_XFER_SEGMENT_OFFLOAD");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD;
 
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
@@ -1311,9 +1314,10 @@ lsinic_dev_close(struct rte_eth_dev *dev)
 }
 
 static int
-lsinic_dev_info_get(struct rte_eth_dev *dev __rte_unused,
+lsinic_dev_info_get(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
+	dev_info->device = dev->device;
 	dev_info->max_rx_queues = LSINIC_MAX_NUM_RX_QUEUES;
 	dev_info->max_tx_queues = LSINIC_MAX_NUM_TX_QUEUES;
 	dev_info->min_rx_bufsize = 1024; /* cf BSIZEPACKET in SRRCTL register */

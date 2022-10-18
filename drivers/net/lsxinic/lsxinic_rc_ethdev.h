@@ -175,6 +175,7 @@ struct lxsnic_ring {
 	struct lsinic_bd_desc *ep_bd_desc;
 
 	/* For RC TX*/
+	struct lsinic_seg_desc *ep_tx_sg;
 	/* EP_MEM_SRC_ADDRL_BD*/
 	struct lsinic_ep_rx_src_addrl *ep_tx_addrl;
 	/* EP_MEM_SRC_ADDRX_BD*/
@@ -192,6 +193,8 @@ struct lxsnic_ring {
 	void *rc_bd_shared_addr;
 	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
+
+	struct lsinic_seg_desc *rc_sg_desc;
 
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
