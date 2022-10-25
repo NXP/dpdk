@@ -67,8 +67,6 @@
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
-#define BD_SEGMENT_NB 32
-
 uint32_t max_pkt_burst = MAX_PKT_BURST;
 uint32_t max_tx_burst = MAX_TX_BURST;
 uint32_t max_rx_burst = MAX_PKT_BURST;
@@ -80,6 +78,8 @@ enum port_fwd_proc_type {
 };
 static uint8_t s_proc_type = proc_primary;
 static uint8_t s_ring_fwd;
+
+static uint32_t s_data_room_size;
 
 #define SEC_2_PRI "SEC_2_PRI_p%d_q%d"
 #define PRI_2_SEC "PRI_2_SEC_p%d_q%d"
@@ -132,6 +132,8 @@ static struct lcore_conf s_lcore_conf[RTE_MAX_LCORE];
 
 static int fwd_dst_port[RTE_MAX_ETHPORTS];
 
+static int rx_seg_port[RTE_MAX_ETHPORTS];
+
 static struct rte_mempool *pktmbuf_pool;
 
 static struct rte_mempool *pktmbuf_pool_for_2nd;
@@ -149,6 +151,12 @@ struct loop_mode {
 	rte_rx_callback_fn cb_parse_ptype;
 	int (*main_loop)(void *dummy);
 };
+
+#define PORT_FWD_MBUF_FCS(mbuf) \
+	(mbuf->pkt_len + PKTGEN_ETH_FCS_SIZE * mbuf->nb_segs)
+
+#define PORT_FWD_MBUF_OVERHEAD(mbuf) \
+	(mbuf->pkt_len + PKTGEN_ETH_OVERHEAD_SIZE * mbuf->nb_segs)
 
 static int parse_port_fwd_dst(int portid)
 {
@@ -172,10 +180,33 @@ static int parse_port_fwd_dst(int portid)
 	return 0;
 }
 
+static int parse_seg_rx_port(int portid)
+{
+	char *penv;
+	char env_name[64];
+
+	sprintf(env_name, "PORT%d_RX_SEG", portid);
+	penv = getenv(env_name);
+	if (penv)
+		rx_seg_port[portid] = atoi(penv);
+
+	if (rx_seg_port[portid])
+		printf("Gather rx frames from port%d\r\n",
+			portid);
+
+	return 0;
+}
+
 static int
 port_fwd_dst_port(uint16_t src_port)
 {
 	return fwd_dst_port[src_port];
+}
+
+static int
+port_fwd_rx_seg_port(uint16_t rx_port)
+{
+	return rx_seg_port[rx_port];
 }
 
 static int
@@ -243,11 +274,9 @@ main_injection_test_loop(void)
 				qconf->rx_statistic[portid].bytes +=
 					pkts_burst[j]->pkt_len;
 				qconf->rx_statistic[portid].bytes_fcs +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
+					PORT_FWD_MBUF_FCS(pkts_burst[j]);
 				qconf->rx_statistic[portid].bytes_overhead +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
+					PORT_FWD_MBUF_OVERHEAD(pkts_burst[j]);
 			}
 			qconf->rx_statistic[portid].packets += nb_rx;
 
@@ -273,11 +302,9 @@ main_injection_test_loop(void)
 				qconf->tx_statistic[dstportid].bytes +=
 					tx_len[j];
 				qconf->tx_statistic[dstportid].bytes_fcs +=
-					tx_len[j] +
-					PKTGEN_ETH_FCS_SIZE;
+					tx_len[j] + PKTGEN_ETH_FCS_SIZE;
 				qconf->tx_statistic[dstportid].bytes_overhead +=
-					tx_len[j] +
-					PKTGEN_ETH_OVERHEAD_SIZE;
+					tx_len[j] + PKTGEN_ETH_OVERHEAD_SIZE;
 			}
 			qconf->tx_statistic[dstportid].packets += sent;
 
@@ -314,15 +341,146 @@ dump_mbuf_data(struct rte_mbuf *pkt, int tx_rx,
 	printf("\r\n");
 }
 
+static uint16_t
+port_fwd_xmit_burst(struct rte_mbuf *pkts_burst[],
+	uint16_t expected_nb, uint16_t rx_portid, int dstportid,
+	uint16_t queue_id, uint8_t sent[])
+{
+	uint16_t nb_tx = 0, ret, burst_nb = 0;
+	uint32_t max_size = 0;
+	int i, j;
+
+	if (dstportid < 0) {
+		rte_pktmbuf_free_bulk(pkts_burst, expected_nb);
+
+		return 0;
+	}
+
+	if (port_fwd_rx_seg_port(rx_portid)) {
+		for (j = (expected_nb - 1); j >= 0; j--) {
+			max_size += pkts_burst[j]->data_len;
+			if ((j - 1) >= 0 &&
+				(max_size + pkts_burst[j - 1]->data_len) <
+				s_data_room_size) {
+				pkts_burst[j - 1]->next = pkts_burst[j];
+				pkts_burst[j - 1]->pkt_len +=
+					pkts_burst[j]->pkt_len;
+				pkts_burst[j - 1]->nb_segs +=
+					pkts_burst[j]->nb_segs;
+				burst_nb++;
+			} else {
+				max_size = 0;
+				burst_nb++;
+				ret = rte_eth_tx_burst(dstportid,
+					queue_id,
+					&pkts_burst[j], 1);
+				if (unlikely(ret < 1)) {
+					rte_pktmbuf_free(pkts_burst[j]);
+					for (i = j; i < (j + burst_nb); i++)
+						sent[i] = 0;
+				} else {
+					nb_tx += burst_nb;
+					for (i = j; i < (j + burst_nb); i++)
+						sent[i] = 1;
+				}
+				burst_nb = 0;
+			}
+		}
+	} else {
+		nb_tx = rte_eth_tx_burst(dstportid, queue_id,
+				pkts_burst, expected_nb);
+		/* Free any unsent packets. */
+		if (unlikely(nb_tx < expected_nb)) {
+			rte_pktmbuf_free_bulk(&pkts_burst[nb_tx],
+				expected_nb - nb_tx);
+		}
+		for (i = 0; i < nb_tx; i++)
+			sent[i] = 1;
+		for (i = nb_tx; i < expected_nb; i++)
+			sent[i] = 0;
+	}
+
+	return nb_tx;
+}
+
+static uint16_t
+port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
+	struct rte_mbuf *pkts_single[], struct lcore_conf *qconf,
+	uint16_t rx_portid, uint16_t nb_rx)
+{
+	uint16_t i, single_nb = 0, j, nb_tx, nb_tx_expected;
+	struct rte_mbuf *pkts_tx[MAX_PKT_BURST];
+	struct rte_mbuf *curr, *tmp;
+	int dstportid = port_fwd_dst_port(rx_portid);
+	uint64_t bytes_overhead[MAX_PKT_BURST];
+	uint64_t bytes_fcs[MAX_PKT_BURST];
+	uint64_t bytes[MAX_PKT_BURST];
+	uint8_t sent[MAX_PKT_BURST];
+
+	for (i = 0; i < nb_rx; i++) {
+		if (!pkts_rx[i]->next) {
+			pkts_single[single_nb] = pkts_rx[i];
+			single_nb++;
+			continue;
+		}
+		curr = pkts_rx[i];
+		j = 0;
+		while (curr) {
+			pkts_tx[j] = curr;
+			pkts_tx[j]->pkt_len = pkts_tx[j]->data_len;
+			pkts_tx[j]->nb_segs = 1;
+			tmp = curr;
+			curr = curr->next;
+			tmp->next = NULL;
+
+			bytes[j] = pkts_tx[j]->pkt_len;
+			bytes_fcs[j] = PORT_FWD_MBUF_FCS(pkts_tx[j]);
+			bytes_overhead[j] = PORT_FWD_MBUF_OVERHEAD(pkts_tx[j]);
+			qconf->rx_statistic[rx_portid].bytes +=
+					bytes[j];
+			qconf->rx_statistic[rx_portid].bytes_fcs +=
+					bytes_fcs[j];
+			qconf->rx_statistic[rx_portid].bytes_overhead +=
+					bytes_overhead[j];
+			j++;
+		}
+		qconf->rx_statistic[rx_portid].packets += j;
+		nb_tx_expected = j;
+		if (unlikely(s_dump_mbuf)) {
+			for (j = 0; j < nb_tx_expected; j++)
+				dump_mbuf_data(pkts_tx[j], 1, dstportid);
+		}
+		if (dstportid < 0)
+			continue;
+		nb_tx = port_fwd_xmit_burst(pkts_tx, nb_tx_expected,
+			rx_portid, dstportid, qconf->tx_queue_id[rx_portid],
+			sent);
+		for (j = 0; j < nb_tx_expected; j++) {
+			if (!sent[j])
+				continue;
+			qconf->tx_statistic[dstportid].bytes +=
+				bytes[j];
+			qconf->tx_statistic[dstportid].bytes_fcs +=
+				bytes_fcs[j];
+			qconf->tx_statistic[dstportid].bytes_overhead +=
+				bytes_overhead[j];
+		}
+		qconf->tx_statistic[dstportid].packets += nb_tx;
+	}
+
+	return single_nb;
+}
+
 static int
 main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	struct rte_mbuf *tx_burst[MAX_PKT_BURST];
 	unsigned int lcore_id;
 	int i, nb_rx, j;
 	uint16_t idx;
-	uint16_t nb_tx;
-	uint16_t portid;
+	uint16_t nb_tx, rx_left;
+	uint16_t portid, rx_burst;
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
@@ -331,11 +489,18 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
 	struct rte_ring *tx_ring, *rx_ring;
+	uint8_t sent[MAX_PKT_BURST];
 
 	if (penv && atoi(penv)) {
 		main_injection_test_loop();
 		return 0;
 	}
+
+	penv = getenv("PORT_FWD_RX_BURST");
+	if (penv && atoi(penv) > 0 && atoi(penv) <= MAX_PKT_BURST)
+		rx_burst = atoi(penv);
+	else
+		rx_burst = MAX_PKT_BURST;
 
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
@@ -364,21 +529,19 @@ main_loop(__attribute__((unused)) void *dummy)
 			queueid = qconf->rx_queue_list[i].queue_id;
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
-				MAX_PKT_BURST);
+				rx_burst);
 			for (j = 0; j < nb_rx; j++) {
-				qconf->rx_statistic[portid].bytes +=
-					pkts_burst[j]->pkt_len;
 				bytes[j] = pkts_burst[j]->pkt_len;
+				bytes_fcs[j] =
+					PORT_FWD_MBUF_FCS(pkts_burst[j]);
+				bytes_overhead[j] =
+					PORT_FWD_MBUF_OVERHEAD(pkts_burst[j]);
+				qconf->rx_statistic[portid].bytes +=
+					bytes[j];
 				qconf->rx_statistic[portid].bytes_fcs +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
-				bytes_fcs[j] = pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
+					bytes_fcs[j];
 				qconf->rx_statistic[portid].bytes_overhead +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
-				bytes_overhead[j] = pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
+					bytes_overhead[j];
 			}
 			qconf->rx_statistic[portid].packets += nb_rx;
 			if (nb_rx > 0) {
@@ -393,7 +556,7 @@ main_loop(__attribute__((unused)) void *dummy)
 			rx_ring = qconf->rx_queue_list[i].recv_q;
 			nb_rx = rte_ring_dequeue_burst(rx_ring,
 				(void **)pkts_burst,
-				MAX_PKT_BURST, NULL);
+				rx_burst, NULL);
 			if (nb_rx == 0)
 				continue;
 
@@ -428,43 +591,40 @@ port_forwarding:
 			dstportid = port_fwd_dst_port(portid);
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
-				MAX_PKT_BURST);
+				rx_burst);
 			if (nb_rx == 0)
 				continue;
 
-			for (j = 0; j < nb_rx; j++) {
+			rx_left = port_fwd_handle_seg_rx(pkts_burst,
+				tx_burst, qconf, portid, nb_rx);
+
+			for (j = 0; j < rx_left; j++) {
+				bytes[j] = tx_burst[j]->pkt_len;
+				bytes_fcs[j] =
+					PORT_FWD_MBUF_FCS(tx_burst[j]);
+				bytes_overhead[j] =
+					PORT_FWD_MBUF_OVERHEAD(tx_burst[j]);
 				qconf->rx_statistic[portid].bytes +=
-					pkts_burst[j]->pkt_len;
-				bytes[j] = pkts_burst[j]->pkt_len;
+					bytes[j];
 				qconf->rx_statistic[portid].bytes_fcs +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
-				bytes_fcs[j] = pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_FCS_SIZE;
+					bytes_fcs[j];
 				qconf->rx_statistic[portid].bytes_overhead +=
-					pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
-				bytes_overhead[j] = pkts_burst[j]->pkt_len +
-					PKTGEN_ETH_OVERHEAD_SIZE;
-				dump_mbuf_data(pkts_burst[j], 0, portid);
+					bytes_overhead[j];
+				dump_mbuf_data(tx_burst[j], 0, portid);
 			}
-			qconf->rx_statistic[portid].packets += nb_rx;
+			qconf->rx_statistic[portid].packets += rx_left;
 
 			if (dstportid < 0) {
-				rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
+				rte_pktmbuf_free_bulk(tx_burst, rx_left);
 				continue;
 			}
 
-			if (unlikely(s_dump_mbuf)) {
-				for (j = 0; j < nb_rx; j++)
-					dump_mbuf_data(pkts_burst[j], 1,
-						dstportid);
-			}
-
-			nb_tx = rte_eth_tx_burst(dstportid,
-					qconf->tx_queue_id[dstportid],
-					pkts_burst, nb_rx);
-			for (j = 0; j < nb_tx; j++) {
+			nb_tx = port_fwd_xmit_burst(tx_burst, rx_left,
+				portid, dstportid,
+				qconf->tx_queue_id[dstportid], sent);
+			for (j = 0; j < rx_left; j++) {
+				if (!sent[j])
+					continue;
 				qconf->tx_statistic[dstportid].bytes +=
 					bytes[j];
 				qconf->tx_statistic[dstportid].bytes_fcs +=
@@ -473,12 +633,6 @@ port_forwarding:
 					bytes_overhead[j];
 			}
 			qconf->tx_statistic[dstportid].packets += nb_tx;
-
-			/* Free any unsent packets. */
-			if (unlikely(nb_tx < nb_rx)) {
-				for (idx = nb_tx; idx < nb_rx; idx++)
-					rte_pktmbuf_free(pkts_burst[idx]);
-			}
 		}
 	}
 
@@ -1249,10 +1403,11 @@ main(int argc, char **argv)
 	}
 
 	nb_mbuf = total_rx_queues * nb_rxd + total_tx_queues * nb_txd;
-	nb_mbuf = nb_ports * nb_mbuf * BD_SEGMENT_NB;
+	nb_mbuf = nb_ports * nb_mbuf;
 	nb_mbuf += nb_ports * nb_lcores * MAX_PKT_BURST +
 		nb_lcores * MEMPOOL_CACHE_SIZE;
 	nb_mbuf = nb_mbuf > 2048 ? nb_mbuf : 2048;
+	s_data_room_size = data_room_size;
 	ret = init_mem(nb_mbuf, data_room_size + RTE_PKTMBUF_HEADROOM);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE,
@@ -1407,6 +1562,10 @@ main(int argc, char **argv)
 			} else {
 				if (parse_dst_port(portid)) {
 					rte_exit(0, "port%d fwd error\n",
+						portid);
+				}
+				if (parse_seg_rx_port(portid)) {
+					rte_exit(0, "port%d seg rx error\n",
 						portid);
 				}
 			}
