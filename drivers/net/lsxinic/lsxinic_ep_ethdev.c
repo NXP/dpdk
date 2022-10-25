@@ -165,11 +165,11 @@ lsinic_txrx_queues_create(struct lsinic_adapter *adapter)
 {
 	adapter->txqs = rte_zmalloc_socket("ethdev queue",
 					sizeof(struct lsinic_queue) *
-					LSINIC_MAX_NUM_TX_QUEUES,
+					LSINIC_RING_MAX_COUNT,
 					RTE_CACHE_LINE_SIZE, 0);
 	adapter->rxqs = rte_zmalloc_socket("ethdev queue",
 					sizeof(struct lsinic_queue) *
-					LSINIC_MAX_NUM_RX_QUEUES,
+					LSINIC_RING_MAX_COUNT,
 					RTE_CACHE_LINE_SIZE, 0);
 	if (!adapter->txqs || !adapter->rxqs) {
 		LSXINIC_PMD_ERR("Cannot allocate txqs/rxqs");
