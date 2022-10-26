@@ -155,6 +155,7 @@ enum EP_MEM_BD_TYPE {
 	EP_MEM_DST_ADDR_BD,
 	EP_MEM_DST_ADDRL_BD,
 	EP_MEM_DST_ADDRX_BD,
+	EP_MEM_DST_ADDR_SEG,
 	/* For RC to set source addr in RC memory, RC->EP*/
 	EP_MEM_SRC_ADDRL_BD,
 	EP_MEM_SRC_ADDRX_BD,
@@ -165,6 +166,7 @@ enum RC_MEM_BD_TYPE {
 	RC_MEM_LONG_BD,
 	/* For EP to notify RC with len and cmd, EP->RC*/
 	RC_MEM_LEN_CMD,
+	RC_MEM_SEG_LEN,
 	/* For EP to confirm RC, RC->EP*/
 	RC_MEM_BD_CNF,
 	RC_MEM_IDX_CNF,
@@ -274,10 +276,6 @@ struct lsinic_seg_desc {
 	(sizeof(struct lsinic_seg_desc) / RTE_CACHE_LINE_SIZE + 1) : \
 	(sizeof(struct lsinic_seg_desc) / RTE_CACHE_LINE_SIZE))
 
-#define LSINIC_BD_ENTRY_SIZE \
-	RTE_MAX(sizeof(struct lsinic_seg_desc), \
-		sizeof(struct lsinic_bd_desc))
-
 #define LSINIC_BD_ENTRY_COUNT_SHIFT 9
 #define LSINIC_BD_ENTRY_COUNT (1 << LSINIC_BD_ENTRY_COUNT_SHIFT)
 
@@ -313,6 +311,14 @@ struct lsinic_rc_rx_len_idx {
 } __packed;
 #endif
 
+#define LSINIC_EP_TX_SEG_MAX_ENTRY (LSINIC_SG_DESC_MAX_ENTRY - 2)
+
+struct lsinic_rc_rx_seg {
+	uint16_t len[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint8_t rsv[7];
+	uint8_t nb;
+} __packed;
+
 struct lsinic_rc_tx_bd_cnf {
 	uint8_t bd_complete;
 } __packed;
@@ -331,6 +337,25 @@ struct lsinic_ep_tx_dst_addrl {
 
 struct lsinic_ep_tx_dst_addrx {
 	uint16_t pkt_addr_idx;
+} __packed;
+
+#define LSINIC_SEG_OFFSET_MAX ((1ull << 31) - 1)
+struct lsinic_ep_tx_seg_entry {
+	union {
+		uint32_t seg_entry;
+		struct {
+			uint32_t positive:1;
+			uint32_t offset:31;
+		};
+	};
+} __packed;
+
+/** Two cache lines(128B).*/
+struct lsinic_ep_tx_seg_dst_addr {
+	uint64_t addr_base;
+	struct lsinic_ep_tx_seg_entry entry[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint8_t rsv[7];
+	uint8_t ready;
 } __packed;
 
 struct lsinic_ep_rx_src_addrl {
@@ -364,6 +389,23 @@ struct lsinic_ep_rx_src_addrx {
 	};
 } __packed;
 
+#ifndef RTE_MAX
+#define RTE_MAX(a, b) \
+	__extension__ ({ \
+		typeof (a) _a = (a); \
+		typeof (b) _b = (b); \
+		_a > _b ? _a : _b; \
+	})
+#endif
+
+#define LSXINIC_MAX(a, b, c) \
+	RTE_MAX(RTE_MAX(a, b), c)
+
+#define LSINIC_BD_ENTRY_SIZE \
+	LSXINIC_MAX(sizeof(struct lsinic_seg_desc), \
+		sizeof(struct lsinic_ep_tx_seg_dst_addr), \
+		sizeof(struct lsinic_bd_desc))
+
 #define LSINIC_MAX_BD_ENTRY_SIZE LSINIC_BD_ENTRY_SIZE
 
 #define LSINIC_BD_RING_SIZE	\
@@ -376,6 +418,9 @@ struct lsinic_ep_rx_src_addrx {
 #define LSINIC_LEN_IDX_RING_SIZE \
 	(sizeof(struct lsinic_rc_rx_len_idx) * LSINIC_BD_ENTRY_COUNT)
 #endif
+
+#define LSINIC_SEG_LEN_RING_SIZE \
+	(sizeof(struct lsinic_rc_rx_seg) * LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_BD_CNF_RING_SIZE \
 	(sizeof(struct lsinic_rc_tx_bd_cnf) * LSINIC_BD_ENTRY_COUNT)
@@ -513,6 +558,10 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD \
 	(1 << LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD_POS)
 
+#define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS 5
+#define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD \
+	(1 << LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS)
+
 enum rc_set_addr_type {
 	RC_SET_ADDRF_TYPE = 0,
 	RC_SET_ADDRL_TYPE = 1,
@@ -520,7 +569,7 @@ enum rc_set_addr_type {
 	RC_SET_ADDR_TYPE_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 5
+#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 6
 #define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) \
 	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS) & \
 	RC_SET_ADDR_TYPE_MASK)
