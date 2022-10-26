@@ -534,6 +534,7 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 		local_sg_desc.entry[0].len = tx_pkt->pkt_len;
 		local_sg_desc.nb = 1;
 	} else {
+		pkt_curr = tx_pkt;
 		local_sg_desc.entry[0].len = pkt_curr->data_len;
 		for (idx = 1; idx < tx_pkt->nb_segs; idx++) {
 			pkt_curr = pkt_curr->next;
@@ -1258,6 +1259,128 @@ lxsnic_rx_bd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		lxsnic_rx_lbd_fill(rx_queue, start_idx, mbufs, count);
 }
 
+static inline void
+lxsnic_rx_seg_bd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
+	struct rte_mbuf *mbufs[], uint8_t count)
+{
+	int cnt = 0;
+	uint64_t dma_addr = 0;
+	struct lsinic_ep_tx_seg_dst_addr *local_seg =
+		rx_queue->local_rx_addr_seg;
+	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
+
+	local_seg->addr_base = rte_mbuf_data_iova_default(mbufs[0]);
+	ep_rx_addr_seg = &rx_queue->ep_rx_addr_seg[start_idx];
+	while (cnt < count) {
+		mbufs[cnt]->data_off = RTE_PKTMBUF_HEADROOM;
+		mbufs[cnt]->port = rx_queue->port;
+		dma_addr = rte_mbuf_data_iova_default(mbufs[cnt]);
+
+		if (dma_addr > local_seg->addr_base) {
+			local_seg->entry[cnt].positive = 1;
+			local_seg->entry[cnt].offset =
+				dma_addr - local_seg->addr_base;
+		} else {
+			local_seg->entry[cnt].positive = 0;
+			local_seg->entry[cnt].offset =
+				local_seg->addr_base - dma_addr;
+		}
+
+		rx_queue->seg_mbufs[start_idx].mbufs[cnt] = mbufs[cnt];
+		cnt++;
+	}
+
+	lsinic_pcie_memcp_align((uint8_t *)ep_rx_addr_seg,
+		(const uint8_t *)local_seg,
+		sizeof(uint64_t) +
+		sizeof(struct lsinic_ep_tx_seg_entry) * count);
+	rte_wmb();
+	ep_rx_addr_seg->ready = count;
+}
+
+static uint16_t
+lxsnic_eth_recv_seg_pkts_to_cache(struct lxsnic_ring *rxq)
+{
+	int ret, total_nb, i;
+	uint32_t ret_val = 0, total_len = 0;
+	uint16_t nb_rx = 0;
+	struct lsinic_rc_rx_seg *rx_seg;
+	struct rte_mbuf *mbuf, *next_mbuf = NULL;
+	uint16_t idx = 0, seg_nb = 0, next_idx;
+
+	rxq->loop_total++;
+
+	if (rxq->rc_reg)
+		ret_val = LSINIC_READ_REG(&rxq->rc_reg->sr);
+	else
+		ret_val = LSINIC_READ_REG(&rxq->ep_reg->sr);
+
+	rxq->status = ret_val;
+	rxq->core_id = rte_lcore_id();
+
+	if (ret_val == LSINIC_QUEUE_STOP) {
+		if (ret_val != rxq->ep_sr)
+			LSXINIC_PMD_DBG("ep-tx queue down");
+		rxq->ep_sr = ret_val;
+		return 0;
+	}
+	rxq->ep_sr = ret_val;
+
+	rx_seg = rxq->rx_seg;
+
+	while (nb_rx < rxq->count) {
+		if (rxq->mcnt > LSINIC_MAX_BURST_NUM)
+			break;
+		idx = rxq->last_used_idx & (rxq->count - 1);
+
+		next_idx = (idx + 1) & (rxq->count - 1);
+		rte_prefetch0(&rx_seg[next_idx]);
+
+		if (!rx_seg[idx].nb)
+			break;
+
+		rxq->rx_fill_len++;
+		total_nb = rx_seg[idx].nb;
+		total_len = 0;
+		seg_nb = 0;
+		next_mbuf = NULL;
+		for (i = total_nb - 1; i >= 0; i--) {
+			mbuf = rxq->seg_mbufs[idx].mbufs[i];
+			mbuf->data_len = rx_seg[idx].len[i];
+			total_len += mbuf->data_len;
+			mbuf->pkt_len = total_len;
+			seg_nb++;
+			mbuf->nb_segs = seg_nb;
+			mbuf->next = next_mbuf;
+			next_mbuf = mbuf;
+		}
+		rx_seg[idx].nb = 0;
+		rxq->mcache[rxq->mtail] = rxq->seg_mbufs[idx].mbufs[0];
+		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
+		rxq->mcnt++;
+
+		nb_rx++;
+
+		rxq->last_used_idx++;  /* step to next */
+		ret = rte_pktmbuf_alloc_bulk(rxq->mb_pool,
+			rxq->seg_mbufs[idx].mbufs,
+			total_nb);
+		if (ret)
+			break;
+
+		lxsnic_rx_seg_bd_fill(rxq, rxq->rx_fill_start_idx,
+			rxq->seg_mbufs[idx].mbufs, LSINIC_EP_TX_SEG_MAX_ENTRY);
+		rxq->rx_fill_start_idx++;
+		rxq->rx_fill_start_idx =
+			rxq->rx_fill_start_idx & (rxq->count - 1);
+		rxq->rx_fill_len--;
+	}
+
+	rxq->loop_avail++;
+
+	return nb_rx;
+}
+
 static uint16_t
 lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 {
@@ -1273,6 +1396,9 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 #endif
 	struct rte_mbuf *mbuf = NULL;
 	uint16_t idx = 0;
+
+	if (rx_queue->rc_mem_bd_type == RC_MEM_SEG_LEN)
+		return lxsnic_eth_recv_seg_pkts_to_cache(rx_queue);
 
 	rx_queue->loop_total++;
 

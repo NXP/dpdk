@@ -537,6 +537,10 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD;
 
+	penv = getenv("LSINIC_RC_RECV_SEGMENT_OFFLOAD");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD;
+
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
