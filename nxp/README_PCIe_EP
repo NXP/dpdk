@@ -1,0 +1,419 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2022 NXP
+
+===============================================================================
+NXP DPDK PCIe Endpoint README
+
+1) DPDK build:
+i)  Endpoint build:
+export CROSS=aarch64-linux-gnu-
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Ddpaa2_use_phys_iova=true -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=all -Dprefix=/Your/install/folder
+#Target image:
+#Endpoint example image: "arm64-build/examples/dpdk-port_fwd".
+
+ii) Root Complex build:
+#X86_64:
+meson build
+cd build
+ninja
+ninja install
+#Target images:
+#Root Complex kernel driver: "build/kernel/linux/lsxinic/lsinic_kmod.ko".
+#Root Complex DPDK UIO driver: "build/kernel/linux/igb_uio/igb_uio.ko".
+#Root Complex DPDK image: "build/examples/dpdk-port_fwd".
+
+#NXP ARM:
+#Same as Endpoint build:
+#Target image:
+#Root Complex kernel driver: "arm64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
+#Root Complex DPDK UIO driver: "arm64-build/kernel/linux/igb_uio/igb_uio.ko".
+#Root Complex DPDK image: "arm64-build/examples/dpdk-port_fwd".
+
+2) Basic Test Setup:
+
+             +---port_fwd---+
+             |(Kernel ipfwd)|
+             |              |
+             |              |
+        +----------+    +----------+
+        | RC PF0   |    |  RC PF1  |
+        +-----|----+    +-----|----+
+    ----------|----PCIe-BUS---|----------
+        +-----|----+    +-----|----+
+        | EP PF0   |    | EP PF1   |
+        +----------+    +----------+
+              |               |
+              |               |
+              | +-----------+ |
+               -| port_fwd  |-
+              | +-----------+ |
+              |               |
+        +-----|----+    +-----|---+
+        | DPNIx    |    | DPNIy   |
+        +----------+    +---------+
+
+i) Start Endpoint:
+export ENABLE_PL_BIT=1
+export DPRC=dprc.2
+export DPDMAI_COUNT=32
+source ./dynamic_dpl.sh dpmac.5 dpmac.6
+#forward traffic from dpmac5 to PF0
+export PORT0_FWD=2
+#forward traffic from PF0 to dpmac5
+export PORT2_FWD=0
+#forward traffic from dpmac6 to PF1
+export PORT1_FWD=3
+#forward traffic from PF1 to dpmac6
+export PORT3_FWD=1
+#single core example:
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+export P2_DIST_1='(2,0,2)'
+export P3_DIST_1='(3,0,2)'
+#Optional settings:
+#qDMA SG format used for burst transaction
+export LSINIC_QDMA_SG_ENABLE=1
+#qDMA of TXQ is used to update BD/status from EP to RC.
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+#RC appends one byte after payload to notify EP qDMA complete.
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+#Drain jobs from qDMA to avoid congestion with high loading.
+export LSINIC_QDMA_NO_RSP_DRAIN=1
+#Clear all previous PCIe2 inbound/outbound configurations.
+export LSX_PCIE2_CLEAR_WINDOWS=1
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+
+ii) Start Root Complex:
+#For kernel driver:
+insmod lsinic_kmod.ko
+
+#For DPDK:
+#Larger continue huge page setup to improve performance
+echo 64 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+mount -t hugetlbfs hugetlbfs /mnt/hugepages -o "pagesize=1G"
+insmod igb_uio.ko
+echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
+#forward traffic from PF0 to PF1
+export PORT0_FWD=1
+#forward traffic from PF1 to PF0
+export PORT1_FWD=0
+#single core example:
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+3) Small packets across PCIe performance improvment on Endpoint:
+i) EP build with additional meson configure parameter: "-Dlsinic_pkt_merge_across_pcie=true"
+ii) Run dpdk on Endpoint side:
+#Following enviroments are set in EP.
+#Merge burst small packets to large packet.
+export LSINIC_MERGE_PACKETS=1
+#Configure DPAA2 port as recycle port to merge small packets for PCIEx_PFy or PCIEx_PFy_VFz.
+#This DPAA2 port may be one dpni self or one single lan serdes port.
+export LSXINIC_PCIEx_PFy_HW_MERGE=portid
+export LSXINIC_PCIEx_PFy_VFz_HW_MERGE=portid
+#Configure DPAA2 port as recycle port to split packet merged with small packets from PCIe host.
+#This DPAA2 recycle port will redirect traffic to DPAA2 MAC according to rule applied.
+export LSXINIC_PCIEx_PFy_HW_SPLIT=portid
+export LSXINIC_PCIEx_PFy_VFz_HW_SPLIT=portid
+#Direct traffic from PCIE EP PMD port to DPAA2 port in egress direction.
+export LSXINIC_PCIEx_PFy_EGRESS=portid
+export LSXINIC_PCIEx_PFy_VFz_EGRESS=portid
+
+4) Multiple EP processes used to communicate with fast path(host DPDK) and slow path(host kernel) respectively.
+   Each process is a standalone process and has it's own DPAA2 resources/memory partion.
+
+             +---port_fwd---+                     +----------------------+
+             |              |                     |     kernel stack     |
+             |              |                     +----------------------+
+             |              |                         |             |
+        +----------+    +----------+             +--------+      +----------+
+        | RC PF0   |    |RC PF0VF0 |             | RC PF1 |      | RC PF1VF0|
+        +-----|----+    +-----|----+             +----|---+      +-----|----+
+    ----------|-----------------------PCIe-BUS-----------------------------------
+        +-----|----+    +-----|----+             +----|---+      +-----|----+
+        | EP PF0   |    |EP PF0VF0 |             | EP PF1 |      | EP PF1VF0|
+        +----------+    +----------+             +--------+      +----------+
+              |               |                       |                |
+              |               |                       |                |
+              | +-----------+ |                       |  +-----------+ |
+               -| port_fwd1 |-                         - | port_fwd2 |-
+              | +-----------+ |                       |  +-----------+ |
+              |               |                       |                |
+        +-----|----+    +-----|---+               +--------+        +--------+
+        | DPNIa    |    | DPNIb   |               | DPNIc  |        | DPNId  |
+        +----------+    +---------+               +--------+        +--------+
+
+#First EP process for fast path:
+export ENABLE_PL_BIT=1
+export DPDMAI_COUNT=10
+export DPIO_COUNT=10
+export DPRC=dprc.2
+export PORT0_FWD=2
+export PORT1_FWD=3
+export PORT2_FWD=0
+export PORT3_FWD=1
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+export P2_DIST_1='(2,0,2)'
+export P3_DIST_1='(3,0,2)'
+export LSX_PCIE2_PF1=0
+export LSX_PCIE2_PF0_VF0=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+source ./dynamic_dpl.sh dpmac.3 dpmac.4
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+
+#Second EP process for slow path
+export ENABLE_PL_BIT=1
+export DPDMAI_COUNT=10
+export DPIO_COUNT=10
+export DPRC=dprc.3
+export PORT0_FWD=2
+export PORT1_FWD=3
+export PORT2_FWD=0
+export PORT3_FWD=1
+export P0_DIST_1='(0,0,4)'
+export P1_DIST_1='(1,0,4)'
+export P2_DIST_1='(2,0,4)'
+export P3_DIST_1='(3,0,4)'
+export LSX_PCIE2_PF0=0
+export LSX_PCIE2_PF1_VF0=1
+export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
+export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8d90
+source ./dynamic_dpl.sh dpmac.5 dpmac.6
+./dpdk-port_fwd -c 0x10 -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+
+#RC DPDK fast path for PF0 and PF0VF0
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+echo 1 > /sys/bus/pci/rescan
+insmod igb_uio.ko
+echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/max_vfs
+export PORT0_FWD=1
+export PORT1_FWD=0
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+#RC kernel module slow path for PF1
+insmod lsinic_kmod.ko max_vfs=1
+
+5) Primary process is used to handle PCIe EP PMD and secondary process
+   is used to handle reset devices(DPAA2, BBDEV etc).
+
+             +-------port_fwd-----+
+             |                    |
+             |                    |
+             |                    |
+        +----------+            +----------+
+        | RC PF0   |            |RC PF1    |
+        +-----|----+            +-----|----+
+    ----------|--------PCIe-BUS-------|-----------
+        +-----|----+            +-----|----+
+        | EP PF0   |            |EP PF1    |
+        +----------+            +----------+
+              |                         |
+              |                         |
+              | +--------------------+  |
+               -| port_fwd_primary   |--
+              | +--------------------+  |
+           rte_ring                 rte_ring
+              | +--------------------+  |
+               -| port_fwd_secondary |--
+              | +--------------------+  |
+              |                         |
+        +-----|----+              +-----|---+
+        | DPNIa    |              | DPNIb   |
+        +----------+              +---------+
+
+#Primary proxy handles PCIe EP PMD ports only:
+export DPIO_COUNT=10
+export ENABLE_PL_BIT=1
+export DPDMAI_COUNT=10
+export DPMCP_COUNT=2
+export DPRC=dprc.2
+export P2_DIST_1='(2,0,2)'
+export P3_DIST_1='(3,0,2)'
+export PORT_FWD_RING_FWD=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+source ./dynamic_dpl.sh dpmac.5 dpmac.6
+./dpdk-port_fwd -c 0x4 -b fslmc:dpio.22 -b fslmc:dpio.23 -b fslmc:dpio.24 -b fslmc:dpio.25 -b fslmc:dpmcp.38 -n 1 -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
+
+#Secondary process handles dpmac ports only:
+export DPRC=dprc.2
+export P0_DIST_1='(0,0,8)'
+export P1_DIST_1='(1,0,8)'
+export PORT_FWD_RING_FWD=1
+./dpdk-port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+5) Secondary process is used to handle PCIe EP PMD and primary process
+   is used to handle reset devices(DPAA2, BBDEV etc).
+
+             +-------port_fwd-----+
+             |                    |
+             |                    |
+             |                    |
+        +----------+            +----------+
+        | RC PF0   |            |RC PF1    |
+        +-----|----+            +-----|----+
+    ----------|--------PCIe-BUS-------|-----------
+        +-----|----+            +-----|----+
+        | EP PF0   |            |EP PF1    |
+        +----------+            +----------+
+              |                         |
+              |                         |
+              | +--------------------+  |
+               -| port_fwd_secondary |--
+              | +--------------------+  |
+           rte_ring                 rte_ring
+              | +--------------------+  |
+               -| port_fwd_primary   |--
+              | +--------------------+  |
+              |                         |
+        +-----|----+              +-----|---+
+        | DPNIa    |              | DPNIb   |
+        +----------+              +---------+
+
+#Primary process handles dpmac ports only:
+export DPIO_COUNT=10
+export ENABLE_PL_BIT=1
+export DPDMAI_COUNT=10
+export DPMCP_COUNT=2
+export DPRC=dprc.2
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+export PORT_FWD_RING_FWD=1
+source ./dynamic_dpl.sh dpmac.5 dpmac.6
+./dpdk-port_fwd -c 0x4 -b fslmc:dpio.22 -b fslmc:dpio.23 -b fslmc:dpio.24 -b fslmc:dpio.25 -b fslmc:dpmcp.38 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+#Secondary proxy handles PCIe EP PMD ports only:
+export DPRC=dprc.2
+export P2_DIST_1='(2,0,8)'
+export P3_DIST_1='(3,0,8)'
+export PORT_FWD_RING_FWD=1
+export LSINIC_QDMA_SG_ENABLE=1
+export LSINIC_TXQ_QDMA_NO_RESPONSE=1
+export LSINIC_RXQ_QDMA_NO_RESPONSE=1
+./dpdk-port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
+
+5) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
+   This is used to develope, debug and tuning PCIe EP framework if PCIe EP env is insufficient.
+
+             +-----port_fwd----+
+             | (Secondary RC)  |
+             |                 |
+             |                 |
+        +----------+    +----------+
+        | RC PF0   |    |  RC PF1  |
+        +-----|----+    +------|---+
+    ----------|Shared Huge TLB |--------
+        +-----|----+    +------|---+
+        | EP PF0   |    | EP PF1   |
+        +----------+    +----------+
+              |                |
+              |                |
+              | +------------+ |
+               -|  port_fwd  |-
+              | |(Primary EP)| |
+              | +------------+ |
+              |                |
+        +-----|----+    +------|--+
+        | DPNIx    |    | DPNIy   |
+        +----------+    +---------+
+#Primary EP process
+export DPIO_COUNT=10
+export ENABLE_PL_BIT=1
+export DPDMAI_COUNT=10
+export DPMCP_COUNT=2
+export DPRC=dprc.2
+export P0_DIST_1='(0,0,2)'
+export P1_DIST_1='(1,0,2)'
+export LSX_PCIE2_SIM=1
+source ./dynamic_dpl.sh dpmac.5 dpmac.6
+./dpdk-port_fwd -c 0x4 -n 1 --proc-type=primary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+#Secondary RC process
+export P0_DIST_1='(0,0,8)'
+export P1_DIST_1='(1,0,8)'
+export LSINIC_RC_SIM=1
+export LSINIC_RC_PROC_SECONDARY_STANDALONE=1
+export PORT_FWD_SECONDARY_STANDALONE=1
+export PORT0_FWD=1
+export PORT1_FWD=0
+export SYSFS_PCI_DEVICES=/tmp
+./dpdk-port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+6) PCIe EP/RC driver latency profiling.
+i) EP cross build:
+Manually define macro "LSXINIC_LATENCY_PROFILING".
+
+ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profiling log something like:
+
+        packets=4047081959 errors=0 drop_pkts=0
+        EP->RC->EP average latency us:6.120000, TX burst depth:1.000000, RX burst depth:1.000000
+        Latency profile:
+        X2(9828783,0.242861%) X4(564299,0.013943%) X10(91526,0.002262%)
+        X20(7545,0.000186%) X40(1304,0.000032%) X100(0,0.000000%)
+
+7) Raw qDMA over PCIe throughput/latency benchmark.
+i) EP cross build:
+EP build with additional meson configure parameter: "-Dlsxinic_pcie_raw_test=true"
+
+ii) Environment settings in RC to start benchmark raw qDMA over PCIe:
+#benchmark raw qDMA PCIE from EP to RC:
+export LSINIC_EP2RC_PCIE_RAW_TEST=1
+#benchmark raw qDMA PCIE from RC to EP:
+export LSINIC_RC2EP_PCIE_RAW_TEST=1
+#Set DMA packet size before running EP PMD driver
+#default: 1024B, minimum: 60B, maximum: 1514B
+export LSINIC_PCIE_RAW_TEST_SIZE=1024
+
+iii) Check throughput and latency by EP runtime LOG something like:
+
+        EP->RC average latency us:87.402768, TX burst depth: 31.000000
+        RC->EP average latency us:89.581164, RX burst depth: 31.000000
+        Total txq:      total_pkts=1104839680 tx_pkts=1104839680 drop_pkts=0 ring_full=0
+TX performance: 48.095560Gbps, fcs bits: 9086201528320
+        Total rxq:      rx-pkts=1078013120 drop_pkts=0 ring_full=0
+RX performance: 46.857894Gbps, fcs bits: 8865579898880
+
+8) VirtIO PCIe net device:
+i) EP running, same scenario as "Basic Test Setup mentioned above":
+export LSX_PCIE2_PF0_VIRTIO=1
+export LSX_PCIE2_PF1_VIRTIO=1
+#export LSX_PCIE2_SIM=1 can be used for EP virtio simulator.
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+
+ii) RC running:
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+echo 1 > /sys/bus/pci/rescan
+#VirtIO net devices are supposed to be scaned:
+#06:00.0 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
+#06:00.1 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
+insmod igb_uio.ko
+echo "0x1AF4 0x1041" > /sys/bus/pci/drivers/igb_uio/new_id
+export PORT0_FWD=1
+export PORT1_FWD=0
+#Following setting are used for RC simulatore on single board:
+#export LSINIC_RC_SIM=1
+#export LSINIC_RC_PROC_SECONDARY_STANDALONE=1
+#export PORT_FWD_SECONDARY_STANDALONE=1
+#export SYSFS_PCI_DEVICES=/tmp
+#export LSXVIO_PCI_SIM=1
+#export LSXVIO_RC_PROC_SECONDARY_STANDALONE=1
+#export P0_DIST_1='(0,0,8)'
+#export P1_DIST_1='(1,0,8)'
+#./dpdk-port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+9) Swap between continue buffer on EP and segmentation buffer on RC:
+#Support by enviroment setting on EP:
+export LSINIC_RC_XFER_SEGMENT_OFFLOAD=1
+export LSINIC_RC_RECV_SEGMENT_OFFLOAD=1
