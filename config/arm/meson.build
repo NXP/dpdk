@@ -291,7 +291,6 @@ soc_dpaa = {
     'flags': [
         ['RTE_MACHINE', '"dpaa"'],
         ['RTE_USE_NON_CACHE_MEM', 0],
-        ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
 	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
@@ -309,7 +308,6 @@ soc_imx = {
     'flags': [
         ['RTE_MACHINE', '"imx"'],
         ['RTE_USE_NON_CACHE_MEM', 1],
-        ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
 	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
