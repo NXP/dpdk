@@ -1288,6 +1288,7 @@ lsinic_dev_stop(struct rte_eth_dev *dev)
 {
 	struct lsinic_adapter *adapter = dev->process_private;
 	int ret;
+	uint16_t rx_stop, tx_stop;
 
 	/* disable the netdev receive */
 	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
@@ -1295,14 +1296,15 @@ lsinic_dev_stop(struct rte_eth_dev *dev)
 		return ret;
 
 	/* disable all enabled rx & tx queues */
-	lsinic_dev_rx_stop(dev);
-	lsinic_dev_tx_stop(dev);
+	rx_stop = lsinic_dev_rx_stop(dev, 0);
+	tx_stop = lsinic_dev_tx_stop(dev, 0);
+	if (rx_stop == dev->data->nb_rx_queues &&
+		tx_stop == dev->data->nb_tx_queues) {
+		/* disable the netdev receive */
+		lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	}
 
 	lsinic_dev_clear_queues(dev);
-	if (adapter->complete_src) {
-		rte_free(adapter->complete_src);
-		adapter->complete_src = NULL;
-	}
 
 	return 0;
 }
@@ -1320,6 +1322,10 @@ lsinic_dev_close(struct rte_eth_dev *dev)
 		return ret;
 
 	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
+	if (adapter->complete_src) {
+		rte_free(adapter->complete_src);
+		adapter->complete_src = NULL;
+	}
 	return ret;
 }
 
