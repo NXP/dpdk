@@ -1722,11 +1722,17 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 	if (vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) {
 		pnotify = vq->packed_notify;
 		if (vq->mem_base) {
+			if (pnotify->addr_offset[desc_idx] == MAX_U32)
+				return -ENOSPC;
 			vq->shadow_pdesc[desc_idx].addr = vq->mem_base +
 				pnotify->addr_offset[desc_idx];
+			pnotify->addr_offset[desc_idx] = MAX_U32;
 		} else {
+			if (!pnotify->addr[desc_idx])
+				return -ENOSPC;
 			vq->shadow_pdesc[desc_idx].addr =
 				pnotify->addr[desc_idx];
+			pnotify->addr[desc_idx] = 0;
 		}
 
 		addr = vq->shadow_pdesc[desc_idx].addr;
@@ -1824,13 +1830,10 @@ lsxvio_xmit_pkts_packed_burst(struct lsxvio_queue *vq,
 {
 	uint16_t tx_num = 0, avail_idx;
 	int ret;
-	uint16_t rc_last_avail_idx = vq->packed_notify->last_avail_idx;
 	uint16_t free_idx = 0;
 	struct rte_mbuf *free_pkts[nb_pkts];
 
-	while (((vq->last_avail_idx + LSXVIO_XMIT_PACKED_AVAIL_THRESHOLD) &
-		(vq->nb_desc - 1)) !=
-		rc_last_avail_idx) {
+	while (1) {
 		avail_idx = vq->last_avail_idx;
 		ret = lsxvio_xmit_one_pkt(vq, avail_idx,
 			tx_pkts[tx_num], 1, &free_pkts[free_idx]);
