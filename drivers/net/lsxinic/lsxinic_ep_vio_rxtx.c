@@ -237,6 +237,8 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
+	q->nb_q = 1;
+	q->sibling = NULL;
 
 	/* Allocate software ring */
 	q->sw_ring = rte_zmalloc_socket("q->sw_ring",
