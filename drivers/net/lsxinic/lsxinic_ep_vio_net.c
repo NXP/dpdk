@@ -549,26 +549,17 @@ static void lsxvio_print_ep_status(void)
 
 static inline void
 lsxvio_dev_print_link_status(int pcie_idx,
-	int pf_idx, int vf_idx, int is_vf, int up)
+	int pf_idx, int vf_idx, int is_vf,
+	const char *link_status)
 {
-	if (is_vf && up) {
-		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link up",
-			pcie_idx,
-			pf_idx,
-			vf_idx);
-	} else if (!is_vf && up) {
-		LSXINIC_PMD_INFO("pcie%d:pf%d link up",
-			pcie_idx,
-			pf_idx);
-	} else if (is_vf && !up) {
-		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link down",
-			pcie_idx,
-			pf_idx,
-			vf_idx);
+	if (is_vf) {
+		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d link %s",
+			pcie_idx, pf_idx, vf_idx,
+			link_status);
 	} else {
-		LSXINIC_PMD_INFO("pcie%d:pf%d link down",
-			pcie_idx,
-			pf_idx);
+		LSXINIC_PMD_INFO("pcie%d:pf%d link %s",
+			pcie_idx, pf_idx,
+			link_status);
 	}
 }
 
@@ -613,7 +604,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 					continue;
 				lsxvio_dev_print_link_status(adapter->pcie_idx,
 					adapter->pf_idx, adapter->vf_idx,
-					adapter->is_vf, 0);
+					adapter->is_vf, "down");
 				continue;
 			}
 
@@ -634,11 +625,13 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
-				while (!common->start_config) {
-					rte_wmb();
-					rte_rmb();
-					rte_delay_ms(1);
-				}
+				lsxvio_dev_print_link_status(adapter->pcie_idx,
+					adapter->pf_idx, adapter->vf_idx,
+					adapter->is_vf, "ok");
+			}
+			if ((status & VIRTIO_CONFIG_STATUS_START) &&
+				!(adapter->status &
+				VIRTIO_CONFIG_STATUS_START)) {
 				ret = lsxvio_virtio_config_fromrc(dev);
 				if (ret) {
 					LSXINIC_PMD_ERR("%s link failed",
@@ -650,7 +643,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 
 				lsxvio_dev_print_link_status(adapter->pcie_idx,
 					adapter->pf_idx, adapter->vf_idx,
-					adapter->is_vf, 1);
+					adapter->is_vf, "up");
 			}
 
 			adapter->status = status;
