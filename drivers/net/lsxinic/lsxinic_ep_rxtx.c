@@ -4037,6 +4037,9 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 #endif
 
 	txq = tx_queue;
+	if (unlikely(!txq->ep_enabled))
+		return 0;
+
 	if (unlikely(!lsinic_queue_running(txq))) {
 		rte_spinlock_lock(&txq->multi_core_lock);
 		lsinic_queue_status_update(txq);
@@ -5664,6 +5667,9 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	double curr_latency;
 #endif
 
+	if (unlikely(!rxq->ep_enabled))
+		return 0;
+
 	lsinic_txq_loop();
 	ret = lsinic_rxq_loop(rxq);
 	if (unlikely(ret < 0)) {
@@ -5981,11 +5987,13 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 			if (!next)
 				break;
 
-			lsinic_queue_release_mbufs(txq);
-			lsinic_queue_reset(next);
-			if (txq->multi_core_ring) {
-				rte_ring_free(txq->multi_core_ring);
-				txq->multi_core_ring = NULL;
+			if (next->status != LSINIC_QUEUE_RUNNING) {
+				lsinic_queue_release_mbufs(next);
+				lsinic_queue_reset(next);
+				if (next->multi_core_ring) {
+					rte_ring_free(next->multi_core_ring);
+					next->multi_core_ring = NULL;
+				}
 			}
 			next = next->sibling;
 		}
@@ -5999,11 +6007,13 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 			if (!next)
 				break;
 
-			lsinic_queue_release_mbufs(rxq);
-			lsinic_queue_reset(next);
-			if (rxq->multi_core_ring) {
-				rte_ring_free(rxq->multi_core_ring);
-				rxq->multi_core_ring = NULL;
+			if (next->status != LSINIC_QUEUE_RUNNING) {
+				lsinic_queue_release_mbufs(next);
+				lsinic_queue_reset(next);
+				if (next->multi_core_ring) {
+					rte_ring_free(next->multi_core_ring);
+					next->multi_core_ring = NULL;
+				}
 			}
 			next = next->sibling;
 		}
@@ -6039,9 +6049,12 @@ lsinic_dev_rx_init(struct rte_eth_dev *dev)
 	/* Setup RX queues */
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		rxq = dev->data->rx_queues[i];
-		ret = lsinic_dev_rxq_init(rxq);
-		if (ret)
-			return ret;
+		if (rxq->status != LSINIC_QUEUE_RUNNING) {
+			ret = lsinic_dev_rxq_init(rxq);
+			if (ret)
+				return ret;
+		}
+		rxq->ep_enabled = 1;
 	}
 
 	return 0;
@@ -6065,7 +6078,9 @@ lsinic_dev_tx_init(struct rte_eth_dev *dev)
 	/* Setup the Base and Length of the Tx Descriptor Rings */
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
 		txq = dev->data->tx_queues[i];
-		lsinic_dev_txq_init(txq);
+		if (txq->status != LSINIC_QUEUE_RUNNING)
+			lsinic_dev_txq_init(txq);
+		txq->ep_enabled = 1;
 	}
 }
 
@@ -6090,26 +6105,40 @@ void lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev)
 	}
 }
 
-void lsinic_dev_rx_stop(struct rte_eth_dev *dev)
+uint16_t
+lsinic_dev_rx_stop(struct rte_eth_dev *dev, int force)
 {
 	struct lsinic_queue *rxq;
-	uint16_t i;
+	uint16_t i, stop_count = 0;
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		rxq = dev->data->rx_queues[i];
-		lsinic_queue_stop(rxq);
+		rxq->ep_enabled = 0;
+		if (force || rxq->status != LSINIC_QUEUE_RUNNING) {
+			lsinic_queue_stop(rxq);
+			stop_count++;
+		}
 	}
+
+	return stop_count;
 }
 
-void lsinic_dev_tx_stop(struct rte_eth_dev *dev)
+uint16_t
+lsinic_dev_tx_stop(struct rte_eth_dev *dev, int force)
 {
 	struct lsinic_queue *txq;
-	uint16_t i;
+	uint16_t i, stop_count = 0;
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
 		txq = dev->data->tx_queues[i];
-		lsinic_queue_stop(txq);
+		txq->ep_enabled = 0;
+		if (force || txq->status != LSINIC_QUEUE_RUNNING) {
+			lsinic_queue_stop(txq);
+			stop_count++;
+		}
 	}
+
+	return stop_count;
 }
 
 void lsinic_dev_rx_enable_start(struct rte_eth_dev *dev)
