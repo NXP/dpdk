@@ -74,9 +74,10 @@ struct lsxvio_dma_cntx {
 #define LSXVIO_QUEUE_IDX_INORDER_FLAG (1ull << 0)
 #define LSXVIO_QUEUE_PKD_INORDER_FLAG (1ull << 1)
 #define LSXVIO_QUEUE_DMA_APPEND_FLAG (1ull << 2)
-#define LSXVIO_QUEUE_DMA_NOTIFY_FLAG (1ull << 3)
-#define LSXVIO_QUEUE_DMA_SG_FLAG (1ull << 4)
-#define LSXVIO_QUEUE_DMA_SILENT_FLAG (1ull << 5)
+#define LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG (1ull << 3)
+#define LSXVIO_QUEUE_DMA_ADDR_NOTIFY_FLAG (1ull << 4)
+#define LSXVIO_QUEUE_DMA_SG_FLAG (1ull << 5)
+#define LSXVIO_QUEUE_DMA_SILENT_FLAG (1ull << 6)
 
 #define LSXVIO_DATA_DMA_START 0
 #define LSXVIO_E2R_BD_DMA_START \
