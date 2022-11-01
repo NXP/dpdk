@@ -104,6 +104,8 @@ struct lsinic_queue {
 	struct lsinic_queue *pair;
 	enum LSINIC_QEUE_TYPE type;
 	enum LSINIC_QEUE_STATUS status;
+	struct rte_ring *multi_core_ring;
+	rte_spinlock_t multi_core_lock;
 	/* flag */
 	uint32_t flag;
 #ifdef LSXINIC_LATENCY_PROFILING
@@ -186,6 +188,7 @@ struct lsinic_queue {
 	int wdma_bd_start;
 	int wdma_bd_nb;
 
+	pthread_t pid;
 	uint32_t core_id;
 	int16_t dma_id;
 	int32_t dma_vq;

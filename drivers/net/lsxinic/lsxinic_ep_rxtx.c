@@ -97,10 +97,15 @@
 TAILQ_HEAD(lsinic_tx_queue_list, lsinic_queue);
 
 /* per thread TX queue list */
-RTE_DEFINE_PER_LCORE(uint8_t, lsinic_txq_list_initialized);
-RTE_DEFINE_PER_LCORE(uint8_t, lsinic_txq_deqeue_from_rxq);
-RTE_DEFINE_PER_LCORE(uint8_t, lsinic_txq_num_in_list);
-RTE_DEFINE_PER_LCORE(struct lsinic_tx_queue_list, lsinic_txq_list);
+static RTE_DEFINE_PER_LCORE(uint8_t,
+	lsinic_txq_list_initialized);
+static RTE_DEFINE_PER_LCORE(uint8_t,
+	lsinic_txq_deqeue_from_rxq);
+static RTE_DEFINE_PER_LCORE(uint8_t,
+	lsinic_txq_num_in_list);
+static RTE_DEFINE_PER_LCORE(struct lsinic_tx_queue_list,
+	lsinic_txq_list);
+static RTE_DEFINE_PER_LCORE(pthread_t, pthrd_id);
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 struct lsinic_recycle_dev {
@@ -661,6 +666,9 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 {
 	struct lsinic_queue *queue = NULL;
 
+	if (txq->core_id != RTE_MAX_LCORE)
+		return 0;
+
 	if (!RTE_PER_LCORE(lsinic_txq_list_initialized)) {
 		TAILQ_INIT(&RTE_PER_LCORE(lsinic_txq_list));
 		RTE_PER_LCORE(lsinic_txq_list_initialized) = 1;
@@ -674,6 +682,8 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 	}
 
 	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lsinic_txq_list), txq, next);
+	txq->core_id = rte_lcore_id();
+	txq->pid = pthread_self();
 	RTE_PER_LCORE(lsinic_txq_num_in_list)++;
 
 	LSXINIC_PMD_DBG("Add port%d txq%d to list NUM%d",
@@ -1160,7 +1170,7 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 			return;
 		}
 
-		if (q->type == LSINIC_QUEUE_TX)
+		if (q->type == LSINIC_QUEUE_TX && !q->pair)
 			lsinic_add_txq_to_list(q);
 		else
 			RTE_PER_LCORE(lsinic_txq_deqeue_from_rxq) = 1;
@@ -1550,12 +1560,6 @@ lsinic_xmit_merged_one_pkt(struct lsinic_queue *txq,
 	struct lsinic_mg_header *mg_header = NULL;
 	struct lsinic_bd_desc *ep_local_txd;
 	struct lsinic_rc_rx_len_cmd *local_cmd;
-
-	if (unlikely(!lsinic_queue_running(txq))) {
-		lsinic_queue_status_update(txq);
-		if (!lsinic_queue_running(txq))
-			return 0;
-	}
 
 	mg_header = rte_pktmbuf_mtod_offset(tx_pkt,
 		struct lsinic_mg_header *,
@@ -3177,7 +3181,10 @@ lsinic_queue_start(struct lsinic_queue *q)
 		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
 		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
 	} else {
-		rte_panic("No bd addr set from RC");
+		LSXINIC_PMD_WARN("%s(id:%d)No bd addr set from RC",
+			q->type == LSINIC_QUEUE_RX ?
+			"RXQ" : "TXQ", q->queue_id);
+		return -EINVAL;
 	}
 
 	ep_mem_bd_type = LSINIC_READ_REG(&q->ep_reg->r_ep_mem_bd_type);
@@ -3885,8 +3892,6 @@ lsinic_xmit_pkts_burst(struct lsinic_queue *txq,
 	struct rte_mbuf *free_pkt = NULL;
 	struct rte_mbuf **ppkt = NULL;
 
-	txq->core_id = rte_lcore_id();
-
 	if (bulk_free)
 		ppkt = &free_pkt;
 
@@ -3958,7 +3963,6 @@ free_last_pkts:
 
 	if (unlikely(!txq->pair ||
 		(txq->pair && txq->pair->core_id != txq->core_id))) {
-		txq->core_id = rte_lcore_id();
 		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
 			uint16_t dq_total = 0, dq;
 
@@ -4033,6 +4037,54 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 #endif
 
 	txq = tx_queue;
+	if (unlikely(!lsinic_queue_running(txq))) {
+		rte_spinlock_lock(&txq->multi_core_lock);
+		lsinic_queue_status_update(txq);
+		if (!lsinic_queue_running(txq)) {
+			rte_spinlock_unlock(&txq->multi_core_lock);
+			return 0;
+		}
+		rte_spinlock_unlock(&txq->multi_core_lock);
+	}
+
+	if (unlikely(!RTE_PER_LCORE(pthrd_id)))
+		RTE_PER_LCORE(pthrd_id) = pthread_self();
+
+	if (unlikely(txq->core_id != rte_lcore_id() ||
+		!pthread_equal(txq->pid, RTE_PER_LCORE(pthrd_id)))) {
+		if (!txq->multi_core_ring) {
+			char ring_name[RTE_MEMZONE_NAMESIZE];
+
+			sprintf(ring_name,
+				"txq_mpsc_%d_%d_%d_%d_%d",
+				txq->adapter->pcie_idx,
+				txq->adapter->pf_idx,
+				txq->adapter->is_vf,
+				txq->adapter->vf_idx,
+				txq->queue_id);
+			rte_spinlock_lock(&txq->multi_core_lock);
+			if (txq->multi_core_ring) {
+				rte_spinlock_unlock(&txq->multi_core_lock);
+				goto eq_start;
+			}
+			txq->multi_core_ring = rte_ring_create(ring_name,
+				txq->nb_desc, rte_socket_id(),
+				RING_F_SC_DEQ);
+			rte_spinlock_unlock(&txq->multi_core_lock);
+			if (txq->multi_core_ring) {
+				LSXINIC_PMD_INFO("%s created on core %d.",
+					ring_name, rte_lcore_id());
+			} else {
+				LSXINIC_PMD_ERR("%s created on core %d failed.",
+					ring_name, rte_lcore_id());
+				return 0;
+			}
+		}
+
+eq_start:
+		return rte_ring_mp_enqueue_burst(txq->multi_core_ring,
+				(void * const *)tx_pkts, nb_pkts, NULL);
+	}
 #ifdef LSXINIC_LATENCY_PROFILING
 	{
 		int i, j;
@@ -4050,12 +4102,6 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		}
 	}
 #endif
-
-	if (unlikely(!lsinic_queue_running(txq))) {
-		lsinic_queue_status_update(txq);
-		if (!lsinic_queue_running(txq))
-			return 0;
-	}
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	if (txq->recycle_txq) {
@@ -4799,10 +4845,10 @@ lsinic_txq_loop(void)
 	struct lsinic_queue *q, *tq;
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	struct lsinic_adapter *adapter;
-	uint16_t ret, i;
 	struct rte_eth_dev *offload_dev;
-	struct rte_mbuf *mbuf_merged[DEFAULT_TX_RS_THRESH];
 #endif
+	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
+	uint16_t ret, i, xmit_ret;
 
 	/* Check if txq already added to list */
 	RTE_TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsinic_txq_list), next, tq) {
@@ -4811,6 +4857,17 @@ lsinic_txq_loop(void)
 			if (!lsinic_queue_running(q))
 				continue;
 		}
+		if (unlikely(q->multi_core_ring &&
+			q->core_id == rte_lcore_id())) {
+			ret = rte_ring_sc_dequeue_burst(q->multi_core_ring,
+				(void **)tx_pkts, DEFAULT_TX_RS_THRESH, NULL);
+			if (ret) {
+				xmit_ret = lsinic_xmit_pkts(q, tx_pkts, ret);
+				for (i = xmit_ret; i < ret; i++)
+					rte_pktmbuf_free(tx_pkts[i]);
+			}
+		}
+
 		if (unlikely(q->core_id != rte_lcore_id())) {
 			TAILQ_REMOVE(&RTE_PER_LCORE(lsinic_txq_list),
 				q, next);
@@ -4840,11 +4897,11 @@ lsinic_txq_loop(void)
 		if (q->recycle_rxq) {
 			offload_dev = adapter->merge_dev->eth_dev;
 			ret = offload_dev->rx_pkt_burst(q->recycle_rxq,
-					mbuf_merged,
+					tx_pkts,
 					DEFAULT_TX_RS_THRESH);
 			if (likely(ret > 0)) {
 				for (i = 0; i < ret; i++) {
-					lsinic_tx_merge_cb(mbuf_merged[i],
+					lsinic_tx_merge_cb(tx_pkts[i],
 						q->recycle_rxq);
 				}
 			} else {
@@ -5751,6 +5808,10 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		(adapter->bd_desc_base + LSINIC_RX_BD_OFFSET +
 		queue_idx * LSINIC_RING_SIZE);
 
+	txq->core_id = RTE_MAX_LCORE;
+	txq->pid = 0;
+	rte_spinlock_init(&txq->multi_core_lock);
+
 	lsinic_byte_memset(txq->ep_bd_shared_addr,
 		0, LSINIC_RING_SIZE);
 
@@ -5849,6 +5910,8 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->port_id = dev->data->port_id;
 	rxq->crc_len = 0;
 	rxq->drop_en = rx_conf->rx_drop_en;
+	rxq->core_id = RTE_MAX_LCORE;
+	rte_spinlock_init(&rxq->multi_core_lock);
 
 	/* using RC's tx ring to receive EP's packets */
 	rxq->ep_reg = &bdr_reg->tx_ring[queue_idx];
@@ -5922,6 +5985,10 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 
 			lsinic_queue_release_mbufs(txq);
 			lsinic_queue_reset(next);
+			if (txq->multi_core_ring) {
+				rte_ring_free(txq->multi_core_ring);
+				txq->multi_core_ring = NULL;
+			}
 			next = next->sibling;
 		}
 	}
@@ -5936,6 +6003,10 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 
 			lsinic_queue_release_mbufs(rxq);
 			lsinic_queue_reset(next);
+			if (rxq->multi_core_ring) {
+				rte_ring_free(rxq->multi_core_ring);
+				rxq->multi_core_ring = NULL;
+			}
 			next = next->sibling;
 		}
 	}
