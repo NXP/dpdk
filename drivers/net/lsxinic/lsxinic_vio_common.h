@@ -24,14 +24,9 @@
 #endif
 
 /* Status byte for guest to report progress. */
-#define VIRTIO_CONFIG_STATUS_RESET		0x00
-#define VIRTIO_CONFIG_STATUS_ACK		0x01
-#define VIRTIO_CONFIG_STATUS_DRIVER		0x02
-#define VIRTIO_CONFIG_STATUS_DRIVER_OK		0x04
-#define VIRTIO_CONFIG_STATUS_FEATURES_OK	0x08
+#define VIRTIO_CONFIG_STATUS_START	0x10
 #define VIRTIO_CONFIG_STATUS_SEND_RESET		0x20
 #define VIRTIO_CONFIG_STATUS_NEEDS_RESET	0x40
-#define VIRTIO_CONFIG_STATUS_FAILED		0x80
 
 #define LSXVIO_BAR_NUM				(2)
 #define LSXVIO_REG_BAR_IDX 0
@@ -97,8 +92,6 @@ struct lsxvio_common_cfg {
 	uint8_t config_generation;	/* read-only */
 	uint16_t queue_used_num;	/* read-write */
 	uint64_t lsx_feature;
-	uint8_t start_config;
-	uint8_t rsv[7];
 } __attribute__((__packed__));
 
 /* Fields in QUEUE_CFG: */
