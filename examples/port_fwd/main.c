@@ -344,11 +344,13 @@ dump_mbuf_data(struct rte_mbuf *pkt, int tx_rx,
 static uint16_t
 port_fwd_xmit_burst(struct rte_mbuf *pkts_burst[],
 	uint16_t expected_nb, uint16_t rx_portid, int dstportid,
-	uint16_t queue_id, uint8_t sent[])
+	uint16_t queue_id, uint8_t sents[],
+	int re_send_max)
 {
-	uint16_t nb_tx = 0, ret, burst_nb = 0;
+	uint16_t nb_tx = 0, ret, burst_nb = 0, sent, re_send;
 	uint32_t max_size = 0;
 	int i, j;
+	struct rte_mbuf **tx_pkts;
 
 	if (dstportid < 0) {
 		rte_pktmbuf_free_bulk(pkts_burst, expected_nb);
@@ -377,27 +379,37 @@ port_fwd_xmit_burst(struct rte_mbuf *pkts_burst[],
 				if (unlikely(ret < 1)) {
 					rte_pktmbuf_free(pkts_burst[j]);
 					for (i = j; i < (j + burst_nb); i++)
-						sent[i] = 0;
+						sents[i] = 0;
 				} else {
 					nb_tx += burst_nb;
 					for (i = j; i < (j + burst_nb); i++)
-						sent[i] = 1;
+						sents[i] = 1;
 				}
 				burst_nb = 0;
 			}
 		}
 	} else {
+		tx_pkts = pkts_burst;
+		sent = 0;
+		re_send = 0;
+tx_again:
 		nb_tx = rte_eth_tx_burst(dstportid, queue_id,
-				pkts_burst, expected_nb);
+				tx_pkts, expected_nb - sent);
+		sent += nb_tx;
+		if (sent < expected_nb && re_send < re_send_max) {
+			tx_pkts = &pkts_burst[sent];
+			re_send++;
+			goto tx_again;
+		}
 		/* Free any unsent packets. */
 		if (unlikely(nb_tx < expected_nb)) {
 			rte_pktmbuf_free_bulk(&pkts_burst[nb_tx],
 				expected_nb - nb_tx);
 		}
 		for (i = 0; i < nb_tx; i++)
-			sent[i] = 1;
+			sents[i] = 1;
 		for (i = nb_tx; i < expected_nb; i++)
-			sent[i] = 0;
+			sents[i] = 0;
 	}
 
 	return nb_tx;
@@ -406,7 +418,8 @@ port_fwd_xmit_burst(struct rte_mbuf *pkts_burst[],
 static uint16_t
 port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 	struct rte_mbuf *pkts_single[], struct lcore_conf *qconf,
-	uint16_t rx_portid, uint16_t nb_rx)
+	uint16_t rx_portid, uint16_t nb_rx,
+	int re_send_max)
 {
 	uint16_t i, single_nb = 0, j, nb_tx, nb_tx_expected;
 	struct rte_mbuf *pkts_tx[MAX_PKT_BURST];
@@ -454,7 +467,7 @@ port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 			continue;
 		nb_tx = port_fwd_xmit_burst(pkts_tx, nb_tx_expected,
 			rx_portid, dstportid, qconf->tx_queue_id[rx_portid],
-			sent);
+			sent, re_send_max);
 		for (j = 0; j < nb_tx_expected; j++) {
 			if (!sent[j])
 				continue;
@@ -476,10 +489,11 @@ main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *tx_burst[MAX_PKT_BURST];
+	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
 	int i, nb_rx, j;
 	uint16_t idx;
-	uint16_t nb_tx, rx_left;
+	uint16_t nb_tx, rx_left, re_send, sent;
 	uint16_t portid, rx_burst;
 	int dstportid;
 	uint8_t queueid;
@@ -489,7 +503,8 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
 	struct rte_ring *tx_ring, *rx_ring;
-	uint8_t sent[MAX_PKT_BURST];
+	uint8_t sents[MAX_PKT_BURST];
+	int re_send_max = 0;
 
 	if (penv && atoi(penv)) {
 		main_injection_test_loop();
@@ -501,6 +516,13 @@ main_loop(__attribute__((unused)) void *dummy)
 		rx_burst = atoi(penv);
 	else
 		rx_burst = MAX_PKT_BURST;
+
+	penv = getenv("PORT_FWD_RE_SEND_MAX");
+	if (penv) {
+		re_send_max = atoi(penv);
+		if (re_send_max < 0)
+			re_send_max = 0;
+	}
 
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
@@ -560,10 +582,14 @@ main_loop(__attribute__((unused)) void *dummy)
 			if (nb_rx == 0)
 				continue;
 
+			tx_pkts = pkts_burst;
+			sent = 0;
+			re_send = 0;
+ring_fwd_tx_again:
 			nb_tx = rte_eth_tx_burst(portid,
 					qconf->tx_queue_id[portid],
-					pkts_burst, nb_rx);
-			for (j = 0; j < nb_tx; j++) {
+					tx_pkts, nb_rx - sent);
+			for (j = sent; j < sent + nb_tx; j++) {
 				qconf->tx_statistic[portid].bytes +=
 					bytes[j];
 				qconf->tx_statistic[portid].bytes_fcs +=
@@ -571,11 +597,17 @@ main_loop(__attribute__((unused)) void *dummy)
 				qconf->tx_statistic[portid].bytes_overhead +=
 					bytes_overhead[j];
 			}
+			sent += nb_tx;
 			qconf->tx_statistic[portid].packets += nb_tx;
+			if (sent < nb_rx && re_send < re_send_max) {
+				tx_pkts = &pkts_burst[sent];
+				re_send++;
+				goto ring_fwd_tx_again;
+			}
 
 			/* Free any unsent packets. */
-			if (unlikely(nb_tx < nb_rx)) {
-				for (idx = nb_tx; idx < nb_rx; idx++)
+			if (unlikely(sent < nb_rx)) {
+				for (idx = sent; idx < nb_rx; idx++)
 					rte_pktmbuf_free(pkts_burst[idx]);
 			}
 		}
@@ -596,7 +628,8 @@ port_forwarding:
 				continue;
 
 			rx_left = port_fwd_handle_seg_rx(pkts_burst,
-				tx_burst, qconf, portid, nb_rx);
+				tx_burst, qconf, portid, nb_rx,
+				re_send_max);
 
 			for (j = 0; j < rx_left; j++) {
 				bytes[j] = tx_burst[j]->pkt_len;
@@ -621,9 +654,10 @@ port_forwarding:
 
 			nb_tx = port_fwd_xmit_burst(tx_burst, rx_left,
 				portid, dstportid,
-				qconf->tx_queue_id[dstportid], sent);
+				qconf->tx_queue_id[dstportid], sents,
+				re_send_max);
 			for (j = 0; j < rx_left; j++) {
-				if (!sent[j])
+				if (!sents[j])
 					continue;
 				qconf->tx_statistic[dstportid].bytes +=
 					bytes[j];
