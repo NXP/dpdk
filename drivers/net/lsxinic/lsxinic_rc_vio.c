@@ -3029,17 +3029,17 @@ lsxvio_rc_rx_sw_notify_addr_offset(struct virtqueue *vq,
 	uint32_t *remote, const uint32_t *local)
 {
 	if (current_idx > last_avail_idx) {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(current_idx - last_avail_idx) *
 			sizeof(uint32_t));
 	} else {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(vq->vq_nentries - last_avail_idx) *
 			sizeof(uint32_t));
 		if (current_idx > 0) {
-			memcpy(&remote[0], &local[0],
+			lsinic_pcie_memcp_align(&remote[0], &local[0],
 				current_idx * sizeof(uint32_t));
 		}
 	}
@@ -3051,17 +3051,17 @@ lsxvio_rc_rx_sw_notify_addr(struct virtqueue *vq,
 	uint64_t *remote, const uint64_t *local)
 {
 	if (current_idx > last_avail_idx) {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(current_idx - last_avail_idx) *
 			sizeof(uint64_t));
 	} else {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(vq->vq_nentries - last_avail_idx) *
 			sizeof(uint64_t));
 		if (current_idx > 0) {
-			memcpy(&remote[0], &local[0],
+			lsinic_pcie_memcp_align(&remote[0], &local[0],
 				current_idx * sizeof(uint64_t));
 		}
 	}
@@ -3138,17 +3138,17 @@ lsxvio_rc_tx_sw_notify_sbd(struct virtqueue *vq,
 	const struct lsxvio_short_desc *local)
 {
 	if (current_idx > last_avail_idx) {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(current_idx - last_avail_idx) *
 			sizeof(struct lsxvio_short_desc));
 	} else {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(vq->vq_nentries - last_avail_idx) *
 			sizeof(struct lsxvio_short_desc));
 		if (current_idx > 0) {
-			memcpy(&remote[0], &local[0],
+			lsinic_pcie_memcp_align(&remote[0], &local[0],
 				current_idx *
 				sizeof(struct lsxvio_short_desc));
 		}
@@ -3162,17 +3162,17 @@ lsxvio_rc_tx_sw_notify_bd(struct virtqueue *vq,
 	const struct vring_desc *local)
 {
 	if (current_idx > last_avail_idx) {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(current_idx - last_avail_idx) *
 			sizeof(struct vring_desc));
 	} else {
-		memcpy(&remote[last_avail_idx],
+		lsinic_pcie_memcp_align(&remote[last_avail_idx],
 			&local[last_avail_idx],
 			(vq->vq_nentries - last_avail_idx) *
 			sizeof(struct vring_desc));
 		if (current_idx > 0) {
-			memcpy(&remote[0], &local[0],
+			lsinic_pcie_memcp_align(&remote[0], &local[0],
 				current_idx *
 				sizeof(struct vring_desc));
 		}
