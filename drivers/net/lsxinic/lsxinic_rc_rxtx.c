@@ -571,8 +571,8 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 			sizeof(struct lsinic_seg_desc_entry) *
 			local_sg_desc.nb;
 
-		lsinic_pcie_memcp_align((uint8_t *)ep_sg_desc,
-			(const uint8_t *)&local_sg_desc, copy_len);
+		lsinic_pcie_memcp_align(ep_sg_desc,
+			&local_sg_desc, copy_len);
 		rte_wmb();
 		ep_sg_desc->nb = local_sg_desc.nb;
 	}
@@ -1290,8 +1290,8 @@ lxsnic_rx_seg_bd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		cnt++;
 	}
 
-	lsinic_pcie_memcp_align((uint8_t *)ep_rx_addr_seg,
-		(const uint8_t *)local_seg,
+	lsinic_pcie_memcp_align(ep_rx_addr_seg,
+		local_seg,
 		sizeof(uint64_t) +
 		sizeof(struct lsinic_ep_tx_seg_entry) * count);
 	rte_wmb();

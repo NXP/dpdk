@@ -203,9 +203,14 @@ lsinic_pcie_memset_align(uint8_t *dst,
 }
 
 static inline void
-lsinic_pcie_memcp_align(uint8_t *dst,
-	const uint8_t *src, uint32_t size)
+lsinic_pcie_memcp_align(void *vdst,
+	const void *vsrc, uint32_t size)
 {
+	uint8_t *dst = vdst;
+	const uint8_t *src = vsrc;
+
+	RTE_VERIFY(((uint64_t)dst & 0x7) == ((uint64_t)src & 0x7));
+
 	if (!is_align_16(dst) && size > 0) {
 		*dst = *src;
 		dst++;
