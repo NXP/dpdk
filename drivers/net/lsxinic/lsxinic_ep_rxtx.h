@@ -170,6 +170,7 @@ struct lsinic_queue {
 	int wdma_bd_start;
 	int wdma_bd_nb;
 
+	pthread_t pid;
 	uint32_t core_id;
 	int32_t dma_id;
 	int32_t dma_vq;

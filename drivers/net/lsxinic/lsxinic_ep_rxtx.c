@@ -102,6 +102,8 @@ RTE_DEFINE_PER_LCORE(uint8_t, lsinic_txq_deqeue_from_rxq);
 RTE_DEFINE_PER_LCORE(uint8_t, lsinic_txq_num_in_list);
 RTE_DEFINE_PER_LCORE(struct lsinic_tx_queue_list, lsinic_txq_list);
 
+static RTE_DEFINE_PER_LCORE(pthread_t, pthrd_id);
+
 struct lsinic_recycle_dev {
 	TAILQ_ENTRY(lsinic_recycle_dev) next;
 	struct rte_eth_dev *recycle_dev;
@@ -665,6 +667,7 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 
 	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lsinic_txq_list), txq, next);
 	txq->core_id = rte_lcore_id();
+	txq->pid = pthread_self();
 	RTE_PER_LCORE(lsinic_txq_num_in_list)++;
 
 	LSXINIC_PMD_DBG("Add port%d txq%d to list NUM%d",
@@ -3225,7 +3228,11 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		rte_spinlock_unlock(&txq->multi_core_lock);
 	}
 
-	if (unlikely(txq->core_id != rte_lcore_id())) {
+	if (!RTE_PER_LCORE(pthrd_id))
+		RTE_PER_LCORE(pthrd_id) = pthread_self();
+
+	if (unlikely(txq->core_id != rte_lcore_id() ||
+		!pthread_equal(txq->pid, RTE_PER_LCORE(pthrd_id)))) {
 		if (!txq->multi_core_ring) {
 			char ring_name[RTE_MEMZONE_NAMESIZE];
 
@@ -5393,6 +5400,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		(adapter->bd_desc_base + LSINIC_RX_BD_OFFSET +
 		queue_idx * LSINIC_RING_SIZE);
 	txq->core_id = RTE_MAX_LCORE;
+	txq->pid = 0;
 	rte_spinlock_init(&txq->multi_core_lock);
 
 	inic_memset(txq->ep_bd_shared_addr,
