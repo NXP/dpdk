@@ -53,6 +53,53 @@
 
 #include "lsxinic_self_test_data.h"
 
+/* Default RS bit threshold values */
+#ifndef DEFAULT_TX_RS_THRESH
+#define DEFAULT_TX_RS_THRESH   32
+#endif
+
+/* TX queues list */
+TAILQ_HEAD(lxsnic_tx_queue_list, lxsnic_ring);
+
+/* per thread TX queue list */
+RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_list_initialized);
+RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_num_in_list);
+RTE_DEFINE_PER_LCORE(struct lxsnic_tx_queue_list, lxsnic_txq_list);
+
+static RTE_DEFINE_PER_LCORE(pthread_t, pthrd_id);
+static RTE_DEFINE_PER_LCORE(int, txq_added[LSINIC_RING_MAX_COUNT]);
+
+static int lxsnic_add_txq_to_list(struct lxsnic_ring *txq)
+{
+	struct lxsnic_ring *queue = NULL;
+
+	if (txq->core_id != RTE_MAX_LCORE)
+		return 0;
+
+	if (!RTE_PER_LCORE(lxsnic_txq_list_initialized)) {
+		TAILQ_INIT(&RTE_PER_LCORE(lxsnic_txq_list));
+		RTE_PER_LCORE(lxsnic_txq_list_initialized) = 1;
+		RTE_PER_LCORE(lxsnic_txq_num_in_list) = 0;
+	}
+
+	/* Check if txq already added to list */
+	TAILQ_FOREACH(queue, &RTE_PER_LCORE(lxsnic_txq_list), next) {
+		if (queue == txq)
+			return 0;
+	}
+
+	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lxsnic_txq_list), txq, next);
+	txq->core_id = rte_lcore_id();
+	txq->pid = pthread_self();
+	RTE_PER_LCORE(lxsnic_txq_num_in_list)++;
+
+	LSXINIC_PMD_DBG("Add port%d txq%d to list NUM%d\n",
+		txq->port, txq->queue_index,
+		RTE_PER_LCORE(lxsnic_txq_num_in_list));
+
+	return 0;
+}
+
 static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 {
 	uint16_t bd_idx;
@@ -730,7 +777,50 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		ret_val = LSINIC_READ_REG(&tx_ring->ep_reg->sr);
 
 	tx_ring->status = ret_val;
-	tx_ring->core_id = rte_lcore_id();
+
+	if (unlikely(!RTE_PER_LCORE(txq_added[tx_ring->queue_index]))) {
+		rte_spinlock_lock(&tx_ring->multi_core_lock);
+		lxsnic_add_txq_to_list(tx_ring);
+		rte_spinlock_unlock(&tx_ring->multi_core_lock);
+		RTE_PER_LCORE(txq_added[tx_ring->queue_index]) = 1;
+	} else {
+		lxsnic_add_txq_to_list(tx_ring);
+	}
+
+	if (unlikely(!RTE_PER_LCORE(pthrd_id)))
+		RTE_PER_LCORE(pthrd_id) = pthread_self();
+
+	if (unlikely(tx_ring->core_id != rte_lcore_id() ||
+		!pthread_equal(tx_ring->pid, RTE_PER_LCORE(pthrd_id)))) {
+		if (!tx_ring->multi_core_ring) {
+			char ring_name[RTE_MEMZONE_NAMESIZE];
+
+			sprintf(ring_name, "tx_ring_mpsc_ring_%d_%d",
+				tx_ring->port, tx_ring->queue_index);
+			rte_spinlock_lock(&tx_ring->multi_core_lock);
+			if (tx_ring->multi_core_ring) {
+				rte_spinlock_unlock(&tx_ring->multi_core_lock);
+				goto eq_start;
+			}
+			tx_ring->multi_core_ring = rte_ring_create(ring_name,
+				tx_ring->count, rte_socket_id(),
+				RING_F_SC_DEQ);
+			rte_spinlock_unlock(&tx_ring->multi_core_lock);
+			if (tx_ring->multi_core_ring) {
+				LSXINIC_PMD_INFO("%s created on core%d",
+					ring_name, rte_lcore_id());
+			} else {
+				LSXINIC_PMD_ERR("%s created on core%d failed",
+					ring_name, rte_lcore_id());
+				return 0;
+			}
+		}
+
+eq_start:
+		ret = rte_ring_mp_enqueue_burst(tx_ring->multi_core_ring,
+			(void * const *)tx_pkts, nb_pkts, NULL);
+		return ret;
+	}
 
 	if (ret_val == LSINIC_QUEUE_STOP) {
 		if (ret_val != tx_ring->ep_sr)
@@ -1654,6 +1744,39 @@ lxsnic_eth_recv_by_rc_cpu(struct lxsnic_ring *rx_queue,
 	return nb_pkts;
 }
 
+static void lxsnic_txq_loop(void)
+{
+	struct lxsnic_ring *q, *tq;
+	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
+	uint16_t ret, i, xmit_ret;
+
+	if (RTE_PER_LCORE(lxsnic_txq_num_in_list) == 0)
+		return;
+
+	/* Check if txq already added to list */
+	RTE_TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lxsnic_txq_list), next, tq) {
+		if (unlikely(q->multi_core_ring &&
+			q->core_id == rte_lcore_id())) {
+			ret = rte_ring_sc_dequeue_burst(q->multi_core_ring,
+				(void **)tx_pkts, DEFAULT_TX_RS_THRESH, NULL);
+			if (ret) {
+				xmit_ret = lxsnic_eth_xmit_pkts(q,
+					tx_pkts, ret);
+				for (i = xmit_ret; i < ret; i++)
+					rte_pktmbuf_free(tx_pkts[i]);
+			}
+		}
+
+		if (unlikely(q->core_id != rte_lcore_id())) {
+			TAILQ_REMOVE(&RTE_PER_LCORE(lxsnic_txq_list),
+				q, next);
+			continue;
+		}
+
+		q->loop_total++;
+	}
+}
+
 static uint16_t
 _lxsnic_eth_recv_pkts(struct lxsnic_ring *rxq,
 	struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
@@ -1663,6 +1786,8 @@ _lxsnic_eth_recv_pkts(struct lxsnic_ring *rxq,
 	struct rte_mbuf *mbuf = NULL;
 
 	lxsnic_eth_recv_pkts_to_cache(rxq);
+
+	lxsnic_txq_loop();
 
 	count = RTE_MIN(nb_pkts, rxq->mcnt);
 	for (nb_rx = 0; nb_rx < count; nb_rx++) {
@@ -1776,6 +1901,20 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 {
 	struct lxsnic_ring *rx_queue = (struct lxsnic_ring *)queue;
 	struct lxsnic_adapter *adapter = rx_queue->adapter;
+	struct lxsnic_ring *pair_txq = rx_queue->pair;
+
+	if (pair_txq) {
+		uint8_t idx = pair_txq->queue_index;
+
+		if (unlikely(!RTE_PER_LCORE(txq_added[idx]))) {
+			rte_spinlock_lock(&pair_txq->multi_core_lock);
+			lxsnic_add_txq_to_list(pair_txq);
+			rte_spinlock_unlock(&pair_txq->multi_core_lock);
+			RTE_PER_LCORE(txq_added[idx]) = 1;
+		} else {
+			lxsnic_add_txq_to_list(pair_txq);
+		}
+	}
 
 	if (unlikely(!s_perf_mode_set[rte_lcore_id()])) {
 		if (getenv("NXP_CHRT_PERF_MODE")) {
