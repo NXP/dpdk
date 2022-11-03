@@ -52,8 +52,8 @@
 
 #include "l1_l2_comm.h"
 
-#define RTE_TEST_RX_DESC_DEFAULT 1024
-#define RTE_TEST_TX_DESC_DEFAULT 1024
+#define RTE_TEST_RX_DESC_DEFAULT 512
+#define RTE_TEST_TX_DESC_DEFAULT 512
 
 /* Static global variables used within this file. */
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
@@ -76,6 +76,15 @@ static char s_port_name[64];
 static uint8_t s_l2_downlink_print;
 
 static uint8_t s_l1_uplink_print;
+
+enum up_down_handle {
+	LINK_DISABLE = 0,
+	UP_LINK_ENABLE = 1 << 0,
+	DOWN_LINK_ENABLE = 1 << 1
+};
+
+static enum up_down_handle s_l1_l2_handle = \
+	(UP_LINK_ENABLE | DOWN_LINK_ENABLE);
 
 /* Global variables. */
 
@@ -142,6 +151,17 @@ l2_app_uplink_data_ready(struct rte_mbuf *mbufs)
 }
 
 static void
+mbufs_free_prepare(struct rte_mbuf **mbufs, int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		mbufs[i]->nb_segs = 1;
+		mbufs[i]->next = NULL;
+	}
+}
+
+static void
 l2_app_uplink_prepare(void)
 {
 	struct rte_mbuf *mbufs[L1_L2_MAX_CHAIN_NB];
@@ -156,10 +176,13 @@ l2_app_uplink_prepare(void)
 	chain_count = l2_app_uplink_data_prepare(mbufs,
 		L1_L2_MAX_CHAIN_NB);
 	if (unlikely(chain_count <= 0)) {
+		mbufs_free_prepare(mbufs, L1_L2_MAX_CHAIN_NB);
 		rte_pktmbuf_free_bulk(mbufs, L1_L2_MAX_CHAIN_NB);
 		return;
 	}
 	if (chain_count < L1_L2_MAX_CHAIN_NB) {
+		mbufs_free_prepare(&mbufs[chain_count],
+			L1_L2_MAX_CHAIN_NB - chain_count);
 		rte_pktmbuf_free_bulk(&mbufs[chain_count],
 			L1_L2_MAX_CHAIN_NB - chain_count);
 	}
@@ -168,6 +191,7 @@ l2_app_uplink_prepare(void)
 	tx_bytes = mbufs[0]->pkt_len;
 	ret = l2_app_uplink_data_ready(mbufs[0]);
 	if (unlikely(ret != 1)) {
+		mbufs_free_prepare(&mbufs[0], chain_count);
 		rte_pktmbuf_free_bulk(&mbufs[0], chain_count);
 	} else {
 		s_data_loop_conf.tx_statistic.packets += tx_pkts;
@@ -256,8 +280,10 @@ l2_app_downlink_handle(void)
 static void l2_app_handle(void)
 {
 	while (!force_quit) {
-		l2_app_uplink_prepare();
-		l2_app_downlink_handle();
+		if (s_l1_l2_handle & UP_LINK_ENABLE)
+			l2_app_uplink_prepare();
+		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
+			l2_app_downlink_handle();
 	}
 }
 
@@ -313,6 +339,7 @@ l1_app_downlink_data_prepare(struct rte_mbuf *mbuf)
 	mbuf->pkt_len = L1_TB_SIZE;
 	mbuf->data_len = L1_TB_SIZE;
 	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+	mbuf->tso_segsz = L2_SDU_SIZE;
 	/**Process data*/
 
 	return 0;
@@ -367,8 +394,10 @@ l1_app_downlink_process(void)
 static void l1_app_handle(void)
 {
 	while (!force_quit) {
-		l1_app_uplink_handle();
-		l1_app_downlink_process();
+		if (s_l1_l2_handle & UP_LINK_ENABLE)
+			l1_app_uplink_handle();
+		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
+			l1_app_downlink_process();
 	}
 }
 
@@ -392,11 +421,31 @@ parse_port_name(const char *sname)
 }
 
 static int
+parse_link_disable(const char *link_name)
+{
+	if (!strcmp("up", link_name)) {
+		s_l1_l2_handle &= ~UP_LINK_ENABLE;
+	} else if (!strcmp("down", link_name)) {
+		s_l1_l2_handle &= ~DOWN_LINK_ENABLE;
+	} else if (!strcmp("bi", link_name)) {
+		s_l1_l2_handle = LINK_DISABLE;
+	} else {
+		printf("link-disable supports up/down/bi\r\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int
 parse_core(const char *score)
 {
-	s_core = *score;
-	if (s_core > RTE_MAX_LCORE)
+	int core = atoi(score);
+
+	if (core > RTE_MAX_LCORE)
 		return -EINVAL;
+
+	s_core = core;
 
 	return 0;
 }
@@ -404,22 +453,22 @@ parse_core(const char *score)
 static int
 parse_layer(const char *slayer)
 {
+	int layer = atoi(slayer);
 
-	if (*slayer == 1)
-		s_layer = 1;
-	else if (*slayer == 2)
-		s_layer = 2;
-	else
+	if (layer != 1 && layer != 2)
 		return -EINVAL;
 
+	s_layer = layer;
 	return 0;
 }
 
 #define MEMPOOL_CACHE_SIZE 256
 
-#define CMD_LINE_OPT_PNAME "port_nm"
+#define CMD_LINE_OPT_PNAME "port-nm"
 #define CMD_LINE_OPT_CORE "core"
 #define CMD_LINE_OPT_LAYER "layer"
+#define CMD_LINE_OPT_LINK_DIS "link-disable"
+
 enum {
 	/* long options mapped to a short option */
 
@@ -430,12 +479,14 @@ enum {
 	CMD_LINE_OPT_PNAME_NUM,
 	CMD_LINE_OPT_CORE_NUM,
 	CMD_LINE_OPT_LAYER_NUM,
+	CMD_LINE_OPT_LINK_DIS_NUM,
 };
 
 static const struct option lgopts[] = {
 	{CMD_LINE_OPT_PNAME, 1, 0, CMD_LINE_OPT_PNAME_NUM},
 	{CMD_LINE_OPT_CORE, 1, 0, CMD_LINE_OPT_CORE_NUM},
 	{CMD_LINE_OPT_LAYER, 1, 0, CMD_LINE_OPT_LAYER_NUM},
+	{CMD_LINE_OPT_LINK_DIS, 1, 0, CMD_LINE_OPT_LINK_DIS_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -477,11 +528,20 @@ parse_args(int argc, char **argv)
 		case CMD_LINE_OPT_LAYER_NUM:
 			ret = parse_layer(optarg);
 			if (ret) {
-				fprintf(stderr, "Invalid layer\n");
+				fprintf(stderr, "Invalid layer(%d)\n",
+					atoi(optarg));
 				return ret;
 			}
 			break;
 
+		case CMD_LINE_OPT_LINK_DIS_NUM:
+			ret = parse_link_disable(optarg);
+			if (ret) {
+				fprintf(stderr,
+					"Invalid link disable\n");
+				return ret;
+			}
+			break;
 		default:
 			return -ENOTSUP;
 		}
@@ -502,7 +562,7 @@ init_l1_l2_mem(unsigned int nb_mbuf, uint32_t buf_size)
 
 	if (s_layer == 1)
 		sprintf(s, "layer1_mpool");
-	else if (s_layer == 1)
+	else if (s_layer == 2)
 		sprintf(s, "layer2_mpool");
 	else
 		return -EINVAL;
@@ -648,14 +708,21 @@ main(int argc, char **argv)
 
 	port_conf.rxmode.max_lro_pkt_size = RTE_MBUF_DEFAULT_DATAROOM;
 
-	nb_buf = 4096;
 	if (s_layer == 1) {
+		nb_buf = (nb_txd + nb_rxd) * 2;
 		data_room_size = (L1_TB_SIZE + RTE_PKTMBUF_HEADROOM +
 			MEMPOOL_CACHE_SIZE) /
 			MEMPOOL_CACHE_SIZE * MEMPOOL_CACHE_SIZE;
 	} else {
+		nb_buf = (nb_txd + nb_rxd) * 2 * 32;
 		data_room_size = (L2_SDU_SIZE + RTE_PKTMBUF_HEADROOM);
 	}
+
+	if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
+		data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
+	else
+		data_room_size = RTE_ALIGN(data_room_size, 1024);
+
 	ret = init_l1_l2_mem(nb_buf, data_room_size);
 	if (ret < 0) {
 		rte_exit(EXIT_FAILURE,
@@ -677,6 +744,7 @@ main(int argc, char **argv)
 		/* Enable Receive side SCATTER, if supported by NIC,
 		 * when jumbo packet is enabled.
 		 */
+		memset(&local_port_conf, 0, sizeof(struct rte_eth_conf));
 		if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER) {
 			local_port_conf.rxmode.offloads |=
 				DEV_RX_OFFLOAD_SCATTER;
