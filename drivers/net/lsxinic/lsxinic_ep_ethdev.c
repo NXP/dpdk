@@ -165,11 +165,11 @@ lsinic_txrx_queues_create(struct lsinic_adapter *adapter)
 {
 	adapter->txqs = rte_zmalloc_socket("ethdev queue",
 					sizeof(struct lsinic_queue) *
-					LSINIC_MAX_NUM_TX_QUEUES,
+					LSINIC_RING_MAX_COUNT,
 					RTE_CACHE_LINE_SIZE, 0);
 	adapter->rxqs = rte_zmalloc_socket("ethdev queue",
 					sizeof(struct lsinic_queue) *
-					LSINIC_MAX_NUM_RX_QUEUES,
+					LSINIC_RING_MAX_COUNT,
 					RTE_CACHE_LINE_SIZE, 0);
 	if (!adapter->txqs || !adapter->rxqs) {
 		LSXINIC_PMD_ERR("Cannot allocate txqs/rxqs");
@@ -1173,22 +1173,21 @@ static void
 lsinic_dev_stop(struct rte_eth_dev *dev)
 {
 	struct lsinic_adapter *adapter = dev->process_private;
-
-	/* disable the netdev receive */
-	lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	uint16_t rx_stop, tx_stop;
 
 	/* disable all enabled rx & tx queues */
-	lsinic_dev_rx_stop(dev);
-	lsinic_dev_tx_stop(dev);
+	rx_stop = lsinic_dev_rx_stop(dev, 0);
+	tx_stop = lsinic_dev_tx_stop(dev, 0);
+	if (rx_stop == dev->data->nb_rx_queues &&
+		tx_stop == dev->data->nb_tx_queues) {
+		/* disable the netdev receive */
+		lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	}
 
 	/* reset the NIC */
 	adapter->adapter_stopped = true;
 
 	lsinic_dev_clear_queues(dev);
-	if (adapter->complete_src) {
-		rte_free(adapter->complete_src);
-		adapter->complete_src = NULL;
-	}
 }
 
 /* Reest and stop device.
@@ -1202,6 +1201,10 @@ lsinic_dev_close(struct rte_eth_dev *dev)
 	adapter->adapter_stopped = true;
 
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
+	if (adapter->complete_src) {
+		rte_free(adapter->complete_src);
+		adapter->complete_src = NULL;
+	}
 }
 
 static int

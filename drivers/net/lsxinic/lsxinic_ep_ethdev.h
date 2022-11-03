@@ -20,12 +20,6 @@
 
 #define INIC_VERSION (001)
 
-#define LSINIC_DEFAULT_NUM_TX_QUEUES (32)
-#define LSINIC_DEFAULT_NUM_RX_QUEUES (32)
-
-#define LSINIC_MAX_NUM_TX_QUEUES (32)
-#define LSINIC_MAX_NUM_RX_QUEUES (32)
-
 static inline uint16_t lsinic_read_reg16(void *addr)
 {
 	return rte_be_to_cpu_16(rte_read16(addr));
