@@ -326,7 +326,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
-		if (port_type != LSINIC_EP_PORT) {
+		if (port_type != LSINIC_EPVIO_PORT) {
 			print_queue_status(queue, &opackets, &oerrors,
 				&odrops, &oring_full, &obytes_fcs, &obytes_diff,
 				NULL, port_type);
@@ -341,7 +341,7 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 		*core_mask = 0;
 	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
 		queue = eth_dev->data->rx_queues[i];
-		if (port_type != LSINIC_EP_PORT) {
+		if (port_type != LSINIC_EPVIO_PORT) {
 			print_queue_status(queue, &ipackets, &ierrors,
 				&idrops, &iring_full, &ibytes_fcs, &ibytes_diff,
 				core_mask, port_type);
