@@ -52,8 +52,12 @@
 
 #include "l1_l2_comm.h"
 
+/* ISC UPLINK: From air to core, DOWNLINK: From core to air*/
+
 #define RTE_TEST_RX_DESC_DEFAULT 512
 #define RTE_TEST_TX_DESC_DEFAULT 512
+
+#define TIME_STAMP_OFFSET 64
 
 /* Static global variables used within this file. */
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
@@ -73,9 +77,9 @@ static uint16_t s_port_id;
 
 static char s_port_name[64];
 
-static uint8_t s_l2_downlink_print;
+static uint8_t s_l2_uplink_print;
 
-static uint8_t s_l1_uplink_print;
+static uint8_t s_l1_downlink_print;
 
 enum up_down_handle {
 	LINK_DISABLE = 0,
@@ -106,17 +110,37 @@ static struct rte_mempool *l1_l2_mpool;
 
 struct data_loop_conf s_data_loop_conf;
 
+static uint64_t s_l1_l2_cycs_per_us;
+
+static int s_calculate_latency = 1;
+
+static int s_l2_sync = 1;
+
 #define L1_TB_SIZE 17500
 
 #define L2_SDU_SIZE 1500
 
 #define L1_L2_MAX_CHAIN_NB (L1_TB_SIZE / L2_SDU_SIZE + 1)
 
+static void
+l1_l2_calculate_cycles_per_us(void)
+{
+	uint64_t start_cycles, end_cycles;
+
+	start_cycles = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end_cycles = rte_get_timer_cycles();
+	s_l1_l2_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
+	printf("L1 L2 Cycles per us is: %ld", s_l1_l2_cycs_per_us);
+}
+
 static int
-l2_app_uplink_data_prepare(struct rte_mbuf **mbufs, int count)
+l2_app_downlink_data_prepare(struct rte_mbuf **mbufs, int count)
 {
 	int i;
 	uint32_t remain_len = L1_TB_SIZE, nb_segs;
+	uint64_t *ptick;
+	uint64_t tick = rte_get_timer_cycles();
 
 	if (remain_len % L2_SDU_SIZE)
 		nb_segs = remain_len / L2_SDU_SIZE + 1;
@@ -127,6 +151,9 @@ l2_app_uplink_data_prepare(struct rte_mbuf **mbufs, int count)
 		mbufs[i]->data_off = RTE_PKTMBUF_HEADROOM;
 		mbufs[i]->pkt_len = remain_len;
 		mbufs[i]->nb_segs = nb_segs;
+		ptick = (void *)((uint8_t *)mbufs[i]->buf_addr +
+			mbufs[i]->data_off + TIME_STAMP_OFFSET);
+		*ptick = tick;
 		nb_segs--;
 		if (nb_segs) {
 			mbufs[i]->data_len = L2_SDU_SIZE;
@@ -162,7 +189,7 @@ mbufs_free_prepare(struct rte_mbuf **mbufs, int count)
 }
 
 static void
-l2_app_uplink_prepare(void)
+l2_app_downlink_prepare(void)
 {
 	struct rte_mbuf *mbufs[L1_L2_MAX_CHAIN_NB];
 	int ret, chain_count;
@@ -173,7 +200,7 @@ l2_app_uplink_prepare(void)
 	if (ret)
 		return;
 
-	chain_count = l2_app_uplink_data_prepare(mbufs,
+	chain_count = l2_app_downlink_data_prepare(mbufs,
 		L1_L2_MAX_CHAIN_NB);
 	if (unlikely(chain_count <= 0)) {
 		mbufs_free_prepare(mbufs, L1_L2_MAX_CHAIN_NB);
@@ -200,7 +227,7 @@ l2_app_uplink_prepare(void)
 }
 
 static uint16_t
-l2_app_downlink_recv(struct rte_mbuf **mbufs,
+l2_app_uplink_recv(struct rte_mbuf **mbufs,
 	int wait)
 {
 	uint16_t ret;
@@ -217,23 +244,30 @@ recv_again:
 }
 
 static void
-l2_app_downlink_data_process(struct rte_mbuf *mbuf)
+l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 {
 	struct rte_mbuf *next_mbuf = NULL;
 	uint32_t seg_idx = 0, total_len = 0, pkt_len, nb_segs;
+	uint64_t current_tick = rte_get_timer_cycles();
+	uint64_t tick_send, *ptick;
 
 	pkt_len = mbuf->pkt_len;
 	nb_segs = mbuf->nb_segs;
-	if (s_l2_downlink_print) {
+	if (s_l2_uplink_print) {
 		printf("l2_rx_from_l1 total len:%d, segs:%d\r\n",
 			pkt_len, nb_segs);
 	}
 	while (1) {
-		if (s_l2_downlink_print) {
+		if (s_l2_uplink_print) {
 			printf("l2_rx_from_l1 len[%d]:%d\r\n",
 				seg_idx, mbuf->data_len);
 		}
 		total_len += mbuf->data_len;
+		ptick = (void *)((uint8_t *)mbuf->buf_addr +
+			mbuf->data_off + TIME_STAMP_OFFSET);
+		tick_send = *ptick;
+		s_data_loop_conf.cyc_diff_total +=
+			(current_tick - tick_send);
 		if (mbuf->next) {
 			next_mbuf = mbuf->next;
 			mbuf->next = NULL;
@@ -259,36 +293,46 @@ l2_app_downlink_data_process(struct rte_mbuf *mbuf)
 			"TB chain number from L1 nb_segs(%d) != seg_idx++(%d)\r\n",
 			nb_segs, seg_idx + 1);
 	}
+
 	s_data_loop_conf.rx_statistic.packets += nb_segs;
 	s_data_loop_conf.rx_statistic.bytes += total_len;
+
+	s_data_loop_conf.avg_latency =
+		s_data_loop_conf.cyc_diff_total /
+		(s_data_loop_conf.rx_statistic.packets) / s_l1_l2_cycs_per_us;
 }
 
 static void
-l2_app_downlink_handle(void)
+l2_app_uplink_handle(void)
 {
 	struct rte_mbuf *mbufs = NULL;
 	uint16_t recv_nb;
+	int wait = 0;
 
-	/**Receive from Uplink*/
-	recv_nb = l2_app_downlink_recv(&mbufs, 0);
+	if (s_l2_sync)
+		wait = 1;
+
+	/**Receive from L1*/
+	recv_nb = l2_app_uplink_recv(&mbufs, wait);
 	if (!recv_nb)
 		return;
 
-	l2_app_downlink_data_process(mbufs);
+	/**Send to core*/
+	l2_app_uplink_data_process(mbufs);
 }
 
 static void l2_app_handle(void)
 {
 	while (!force_quit) {
-		if (s_l1_l2_handle & UP_LINK_ENABLE)
-			l2_app_uplink_prepare();
 		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
-			l2_app_downlink_handle();
+			l2_app_downlink_prepare(); /* Send to L1*/
+		if (s_l1_l2_handle & UP_LINK_ENABLE)
+			l2_app_uplink_handle(); /* Recv from L1*/
 	}
 }
 
 static uint16_t
-l1_app_uplink_recv(struct rte_mbuf **mbufs)
+l1_app_downlink_recv(struct rte_mbuf **mbufs)
 {
 	uint16_t ret;
 
@@ -298,14 +342,14 @@ l1_app_uplink_recv(struct rte_mbuf **mbufs)
 }
 
 static void
-l1_app_uplink_data_process(struct rte_mbuf *mbuf)
+l1_app_downlink_data_process(struct rte_mbuf *mbuf)
 {
 	uint32_t pkt_len, data_len, nb_segs;
 
 	pkt_len = mbuf->pkt_len;
 	data_len = mbuf->data_len;
 	nb_segs = mbuf->nb_segs;
-	if (s_l1_uplink_print) {
+	if (s_l1_downlink_print) {
 		printf("l1 rx from l2 total len:%d(%d), segs:%d\r\n",
 			pkt_len, data_len, nb_segs);
 	}
@@ -317,24 +361,30 @@ l1_app_uplink_data_process(struct rte_mbuf *mbuf)
 	}
 	s_data_loop_conf.rx_statistic.packets++;
 	s_data_loop_conf.rx_statistic.bytes += pkt_len;
+
+	if (s_calculate_latency)
+		rte_ring_enqueue(s_data_loop_conf.mbuf_ring, mbuf);
+	else
+		rte_pktmbuf_free(mbuf);
 }
 
 static void
-l1_app_uplink_handle(void)
+l1_app_downlink_handle(void)
 {
 	struct rte_mbuf *mbufs = NULL;
 	uint16_t recv_nb;
 
-	/**Receive from Downlink*/
-	recv_nb = l1_app_uplink_recv(&mbufs);
+	/**Receive from L2*/
+	recv_nb = l1_app_downlink_recv(&mbufs);
 	if (!recv_nb)
 		return;
 
-	l1_app_uplink_data_process(mbufs);
+	/** Send to air.*/
+	l1_app_downlink_data_process(mbufs);
 }
 
 static int
-l1_app_downlink_data_prepare(struct rte_mbuf *mbuf)
+l1_app_uplink_data_prepare(struct rte_mbuf *mbuf)
 {
 	mbuf->pkt_len = L1_TB_SIZE;
 	mbuf->data_len = L1_TB_SIZE;
@@ -346,20 +396,27 @@ l1_app_downlink_data_prepare(struct rte_mbuf *mbuf)
 }
 
 static uint16_t
-l1_app_downlink_send(struct rte_mbuf *mbufs)
+l1_app_uplink_send(struct rte_mbuf *mbufs)
 {
 	return rte_eth_tx_burst(s_port_id, 0, &mbufs, 1);
 }
 
 static void
-l1_app_downlink_process(void)
+l1_app_uplink_process(void)
 {
-	struct rte_mbuf *mbuf;
+	struct rte_mbuf *mbuf = NULL;
 	int ret;
 	uint16_t sent;
 	uint32_t tx_pkts, tx_bytes;
 
-	mbuf = rte_pktmbuf_alloc(l1_l2_mpool);
+	if (s_calculate_latency) {
+		ret = rte_ring_dequeue(s_data_loop_conf.mbuf_ring,
+			(void **)&mbuf);
+		if (ret)
+			return;
+	} else {
+		mbuf = rte_pktmbuf_alloc(l1_l2_mpool);
+	}
 	if (!mbuf)
 		return;
 
@@ -371,7 +428,7 @@ l1_app_downlink_process(void)
 		return;
 	}
 
-	ret = l1_app_downlink_data_prepare(mbuf);
+	ret = l1_app_uplink_data_prepare(mbuf);
 	if (ret) {
 		rte_pktmbuf_free(mbuf);
 		return;
@@ -379,7 +436,7 @@ l1_app_downlink_process(void)
 
 	tx_pkts = 1;
 	tx_bytes = mbuf->pkt_len;
-	sent = l1_app_downlink_send(mbuf);
+	sent = l1_app_uplink_send(mbuf);
 	if (sent != 1) {
 		rte_pktmbuf_free(mbuf);
 
@@ -394,20 +451,43 @@ l1_app_downlink_process(void)
 static void l1_app_handle(void)
 {
 	while (!force_quit) {
-		if (s_l1_l2_handle & UP_LINK_ENABLE)
-			l1_app_uplink_handle();
-		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
-			l1_app_downlink_process();
+		if (s_l1_l2_handle & DOWN_LINK_ENABLE) {
+			/* Recv from L2 then send to air.*/
+			l1_app_downlink_handle();
+		}
+		if (s_l1_l2_handle & UP_LINK_ENABLE) {
+			/* Recv from air then send to L2*/
+			l1_app_uplink_process();
+		}
 	}
 }
 
 static int
 main_loop(__attribute__((unused)) void *dummy)
 {
+	char nm[RTE_MEMZONE_NAMESIZE];
+
+	l1_l2_calculate_cycles_per_us();
+	if (s_calculate_latency && s_layer == 1) {
+		sprintf(nm, "l1_mbuf_ring");
+		s_data_loop_conf.mbuf_ring = rte_ring_create(nm,
+				1024, -1, RING_F_SP_ENQ | RING_F_SC_DEQ);
+		if (!s_data_loop_conf.mbuf_ring) {
+			fprintf(stderr, "creat %s failed\n", nm);
+
+			return 0;
+		}
+	}
+
 	if (s_layer == 1)
 		l1_app_handle();
 	else if (s_layer == 2)
 		l2_app_handle();
+
+	if (s_data_loop_conf.mbuf_ring) {
+		rte_ring_free(s_data_loop_conf.mbuf_ring);
+		s_data_loop_conf.mbuf_ring = NULL;
+	}
 
 	return 0;
 }
@@ -644,10 +724,10 @@ loop:
 
 	rxs = &s_data_loop_conf.rx_statistic;
 	txs = &s_data_loop_conf.tx_statistic;
-	rx_pkts += rxs->packets;
-	tx_pkts += txs->packets;
-	rx_bytes += rxs->bytes;
-	tx_bytes += txs->bytes;
+	rx_pkts = rxs->packets;
+	tx_pkts = txs->packets;
+	rx_bytes = rxs->bytes;
+	tx_bytes = txs->bytes;
 
 	ret = rte_eth_stats_get(s_port_id, &stats);
 	if (ret)
@@ -666,6 +746,8 @@ skip_print_hw_status:
 		(unsigned long long)rx_bytes * 8,
 		(double)(rx_bytes - rx_bytes_old) * 8 /
 		(PERF_STATISTICS_INTERVAL * G_BITS_SIZE));
+	printf("Average latency: %f us\r\n\r\n",
+		s_data_loop_conf.avg_latency);
 	tx_bytes_old = tx_bytes;
 	rx_bytes_old = rx_bytes;
 

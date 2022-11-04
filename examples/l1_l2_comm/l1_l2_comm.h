@@ -17,6 +17,9 @@ struct perf_statistic {
 #include "rte_tm.h"
 
 struct data_loop_conf {
+	struct rte_ring *mbuf_ring;
+	uint64_t cyc_diff_total;
+	double avg_latency;
 	struct perf_statistic tx_statistic;
 	struct perf_statistic rx_statistic;
 } __rte_cache_aligned;
