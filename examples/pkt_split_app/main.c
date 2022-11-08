@@ -759,6 +759,8 @@ l2fwd_parse_args(int argc, char **argv)
 			break;
 
 		case 'f':
+			if (data_file)
+				free(data_file);
 			data_file = malloc(strlen(optarg) + 1);
 			if (data_file == NULL) {
 				printf("Failed to allocate memory for data file\n");
@@ -857,7 +859,7 @@ get_dpdmux_id_from_env(void)
 	ret = fscanf(fp, "%d", &dpdmux_id);
 	if (ret != 1) {
 		printf("Failed to get dpdmux id\n");
-		return -1;
+		dpdmux_id = -1;
 	}
 	pclose(fp);
 
