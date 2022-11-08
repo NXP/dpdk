@@ -210,6 +210,10 @@ static void fsl_qdma_comp_fill_memcpy(struct fsl_qdma_comp *fsl_comp,
 				      dma_addr_t dst, dma_addr_t src, u32 len)
 {
 	struct fsl_qdma_format *csgf_src, *csgf_dest;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+	struct fsl_qdma_sdf *sdf;
+	u32 cfg = 0;
+#endif
 
 	/* Note: command table (fsl_comp->virt_addr) is getting filled
 	 * directly in cmd descriptors of queues while enqueing the descriptor
@@ -221,6 +225,19 @@ static void fsl_qdma_comp_fill_memcpy(struct fsl_qdma_comp *fsl_comp,
 	 */
 	csgf_src = (struct fsl_qdma_format *)fsl_comp->virt_addr + 2;
 	csgf_dest = (struct fsl_qdma_format *)fsl_comp->virt_addr + 3;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+	sdf = (struct fsl_qdma_sdf *)fsl_comp->desc_virt_addr;
+	sdf->cmd = rte_cpu_to_le_32(FSL_QDMA_CMD_RWTTYPE <<
+				FSL_QDMA_CMD_RWTTYPE_OFFSET);
+	if (len > FSL_QDMA_CMD_SSS_DISTANCE) {
+		sdf->cmd |= rte_cpu_to_le_32(FSL_QDMA_CMD_SSEN);
+		cfg |= rte_cpu_to_le_32(FSL_QDMA_CMD_SSS_STRIDE <<
+				   FSL_QDMA_CFG_SSS_OFFSET |
+				   FSL_QDMA_CMD_SSS_DISTANCE);
+		sdf->cfg = cfg;
+	} else
+		sdf->cfg = 0;
+#endif
 
 	/* Status notification is enqueued to status queue. */
 	qdma_desc_addr_set64(csgf_src, src);

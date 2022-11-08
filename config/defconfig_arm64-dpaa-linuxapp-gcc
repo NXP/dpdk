@@ -44,6 +44,22 @@ CONFIG_RTE_EAL_IGB_UIO=n
 # interval of 8 and value is reversed after 64 buffer.
 CONFIG_RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022=y
 
+# DPAA ERRATA A-050757
+# For outbound PCIe read transactions, a completion buffer is used
+# to store the PCIe completions till the data is passed back to the
+# initiator. At most 16 outstanding transactions are allowed and
+# maximum read request is 256 bytes. The completion buffer size
+# inside the controller needs to be at least 4KB, but the PCIe
+# controller has 3 KB of buffer. In case the size of pending
+# outbound read transactions of more than 3KB, the PCIe controller
+# may drop the incoming completions without notifying the initiator
+# of the transaction, leaving transactions unfinished. All
+# subsequent outbound reads to PCIe are blocked permanently.
+# Workaround:
+# To avoid qDMA hang as it keeps waiting for data that was silently
+# dropped, set stride mode for qDMA
+CONFIG_RTE_DMA_DPAA_ERRATA_ERR050757=n
+
 # NXP CAAM_JR driver
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR=y
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE=n
