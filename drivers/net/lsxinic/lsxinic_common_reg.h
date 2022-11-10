@@ -214,7 +214,10 @@ struct lsinic_ring_reg {
 	uint32_t r_ep_mem_bd_type;
 	uint32_t r_rc_mem_bd_type;
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	uint32_t r_raw_test;	/* EP PCIe RAW test */
+	uint32_t r_raw_count;
+	uint32_t r_raw_size;
+	uint32_t r_raw_basel;
+	uint32_t r_raw_baseh;
 #endif
 } __packed;
 
@@ -646,6 +649,15 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 
 #define LSINIC_REG_BAR_MAX_SIZE \
 	(LSINIC_ETH_REG_OFFSET + sizeof(struct lsinic_eth_reg))
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+#define LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT 1024
+#define LSINIC_PCIE_RAW_TEST_SIZE_MIN 64
+#define LSINIC_PCIE_RAW_TEST_SIZE_MAX (16 * 1024 * 1024)
+#define LSINIC_PCIE_RAW_TEST_COUNT_MAX LSINIC_BD_ENTRY_COUNT
+#define LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT 128
+#define LSINIC_PCIE_RAW_TEST_COUNT_MIN 64
+#endif
 
 #define LSINIC_RC_BD_DESC(R, i)	(&(R)->rc_bd_desc[i])
 #define LSINIC_EP_BD_DESC(R, i)	(&(R)->ep_bd_desc[i])
