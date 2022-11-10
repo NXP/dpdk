@@ -726,6 +726,9 @@ lsinic_queue_pcie_raw_dma_create(struct lsinic_queue *q)
 	struct rte_eth_dev *eth_dev = adapter->lsinic_dev->eth_dev;
 	struct lsinic_queue **mqs;
 
+	if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_MEM_MODE)
+		goto re_config_dma;
+
 	if (q->type == LSINIC_QUEUE_TX && !adapter->txq_dma_silent) {
 		adapter->txq_raw_dma_id = adapter->txq_dma_id;
 		q->dma_id = adapter->txq_raw_dma_id;
@@ -739,9 +742,14 @@ lsinic_queue_pcie_raw_dma_create(struct lsinic_queue *q)
 
 		return 0;
 	}
+
+re_config_dma:
 	if (q->type == LSINIC_QUEUE_TX) {
 		raw_dma_id = &adapter->txq_raw_dma_id;
-		dir = LSINIC_DMA_MEM_TO_PCIE;
+		if (adapter->rbp_enable)
+			dir = LSINIC_DMA_MEM_TO_PCIE;
+		else
+			dir = LSINIC_DMA_MEM_TO_MEM;
 		nb_vchans = LSINIC_MAX_NUM_TX_QUEUES;
 		pvq = &adapter->txq_dma_vchan_used;
 		nb_qs = eth_dev->data->nb_tx_queues;
@@ -749,13 +757,18 @@ lsinic_queue_pcie_raw_dma_create(struct lsinic_queue *q)
 	} else {
 		raw_dma_id = &adapter->rxq_raw_dma_id;
 		dir = LSINIC_DMA_PCIE_TO_MEM;
+		if (adapter->rbp_enable)
+			dir = LSINIC_DMA_PCIE_TO_MEM;
+		else
+			dir = LSINIC_DMA_MEM_TO_MEM;
 		nb_vchans = LSINIC_MAX_NUM_RX_QUEUES;
 		pvq = &adapter->rxq_dma_vchan_used;
 		nb_qs = eth_dev->data->nb_rx_queues;
 		mqs = (struct lsinic_queue **)eth_dev->data->rx_queues;
 	}
 
-	if (lsx_pciep_hw_sim_get(adapter->pcie_idx))
+	if (lsx_pciep_hw_sim_get(adapter->pcie_idx) ||
+		(q->pcie_raw_test.mode & LSINIC_PCIE_RAW_MEM_MODE))
 		dir = LSINIC_DMA_MEM_TO_MEM;
 
 	if ((*raw_dma_id) < 0) {
@@ -769,6 +782,14 @@ lsinic_queue_pcie_raw_dma_create(struct lsinic_queue *q)
 		for (i = 0; i < nb_qs; i++) {
 			mqs[i]->dma_id = *raw_dma_id;
 			mqs[i]->dma_vq = *pvq;
+			if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_MEM_MODE) {
+				mqs[i]->qdma_config.direction =
+					RTE_DMA_DIR_MEM_TO_MEM;
+				mqs[i]->qdma_config.src_port.port_type =
+					RTE_DMA_PORT_NONE;
+				mqs[i]->qdma_config.dst_port.port_type =
+					RTE_DMA_PORT_NONE;
+			}
 			ret = rte_dma_vchan_setup(mqs[i]->dma_id,
 				mqs[i]->dma_vq, &mqs[i]->qdma_config);
 			if (ret)
@@ -784,26 +805,28 @@ static int
 lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 {
 	uint32_t i;
-	uint64_t bd_bus_addr, ob_offset;
+	uint64_t bd_bus_addr, ob_offset, remote_base;
 	int ret;
 	struct lsinic_adapter *adapter = q->adapter;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	struct lsinic_pcie_raw_test *raw_test = &q->pcie_raw_test;
-	struct rte_mempool *pool = (q->type == LSINIC_QUEUE_RX) ?
-			q->mb_pool :
-			q->pair->mb_pool;
-	char ring_name[RTE_MEMZONE_NAMESIZE];
-	uint32_t pkt_len;
+	char nm[RTE_MEMZONE_NAMESIZE];
+	uint32_t pkt_len, raw_count = q->ep_reg->r_raw_count;
+	uint32_t raw_size;
 	char *penv;
-	uint64_t remote_addr;
+	uint64_t remote_addr, ob_base, mz_offset = 0;
 	struct lsinic_dma_job *dma_jobs;
-	uint8_t *ob_vbase = q->ob_virt_base;
-	struct rte_mbuf *local_mbuf;
+	rte_iova_t loca_iova;
+	uint8_t *loca_addr;
 
 	LSXINIC_PMD_INFO("port%d %sq%d raw pcie test start",
 		q->port_id,
 		q->type == LSINIC_QUEUE_TX ? "tx" : "rx",
 		q->reg_idx);
+
+	raw_size = q->ep_reg->r_raw_size;
+	if (!rte_is_power_of_2(raw_size))
+		raw_size = rte_align32pow2(raw_size);
 
 	bd_bus_addr = LSINIC_READ_REG_64B(&q->ep_reg->r_descl);
 	if (bd_bus_addr) {
@@ -828,38 +851,103 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	}
 
 	penv = getenv("LSINIC_PCIE_RAW_TEST_SYNC_MODE");
-	if (penv)
-		raw_test->sync_mode = atoi(penv);
-	else
-		raw_test->sync_mode = 0;
+	if (penv && atoi(penv))
+		raw_test->mode |= LSINIC_PCIE_RAW_SYNC_MODE;
 
 	penv = getenv("LSINIC_PCIE_RAW_TEST_CPU_MODE");
-	if (penv)
-		raw_test->cpu_mode = atoi(penv);
-	else
-		raw_test->cpu_mode = 0;
+	if (penv && atoi(penv))
+		raw_test->mode |= LSINIC_PCIE_RAW_CPU_MODE;
 
-	raw_test->mbufs = rte_zmalloc(NULL,
-		sizeof(struct rte_mbuf *) * q->nb_desc, 64);
-	if (!raw_test->mbufs)
+	penv = getenv("LSINIC_PCIE_RAW_TEST_RC2EP_CHECK_MODE");
+	if (penv && atoi(penv) && q->type == LSINIC_QUEUE_RX)
+		raw_test->mode |= LSINIC_PCIE_RAW_CHECK_MODE;
+
+	penv = getenv("LSINIC_PCIE_RAW_TEST_EP2RC_CHECK_MODE");
+	if (penv && atoi(penv) && q->type == LSINIC_QUEUE_TX)
+		raw_test->mode |= LSINIC_PCIE_RAW_CHECK_MODE;
+
+	penv = getenv("LSINIC_PCIE_RAW_TEST_RC2EP_MEM_MODE");
+	if (penv && atoi(penv) && q->type == LSINIC_QUEUE_RX)
+		raw_test->mode |= LSINIC_PCIE_RAW_MEM_MODE;
+
+	penv = getenv("LSINIC_PCIE_RAW_TEST_EP2RC_MEM_MODE");
+	if (penv && atoi(penv) && q->type == LSINIC_QUEUE_TX)
+		raw_test->mode |= LSINIC_PCIE_RAW_MEM_MODE;
+
+	if (q->type == LSINIC_QUEUE_RX) {
+		sprintf(nm, "mz_%d_rxq_%d",
+			lsinic_dev->eth_dev->data->port_id,
+			q->queue_id);
+	} else {
+		sprintf(nm, "mz_%d_txq_%d",
+			lsinic_dev->eth_dev->data->port_id,
+			q->queue_id);
+	}
+	raw_test->local_mz = rte_memzone_reserve(nm,
+		raw_size,
+		SOCKET_ID_ANY, RTE_MEMZONE_IOVA_CONTIG);
+	if (!raw_test->local_mz)
 		return -ENOMEM;
 
-	ret = rte_pktmbuf_alloc_bulk(pool, raw_test->mbufs,
-		q->nb_desc);
-	if (ret)
-		return ret;
+	if (raw_test->mode & LSINIC_PCIE_RAW_MEM_MODE) {
+		if (q->type == LSINIC_QUEUE_RX) {
+			sprintf(nm, "mz_mem_%d_rxq_%d",
+				lsinic_dev->eth_dev->data->port_id,
+				q->queue_id);
+		} else {
+			sprintf(nm, "mz_mem_%d_txq_%d",
+				lsinic_dev->eth_dev->data->port_id,
+				q->queue_id);
+		}
+		raw_test->mem_mz = rte_memzone_reserve(nm,
+			raw_size,
+			SOCKET_ID_ANY, RTE_MEMZONE_IOVA_CONTIG);
+		if (!raw_test->mem_mz)
+			return -ENOMEM;
+	}
 
-	sprintf(ring_name, "raw_test_%d:%d:%d:%d_%d_%d",
-		q->adapter->pcie_idx,
-		q->adapter->pf_idx,
-		q->adapter->is_vf,
-		q->adapter->is_vf ?
-		q->adapter->vf_idx : 0,
-		q->type, q->queue_id);
-	raw_test->jobs_ring = rte_ring_create(ring_name,
-		q->nb_desc * 2, rte_socket_id(), 0);
+	raw_test->local_vaddr = rte_zmalloc(NULL,
+		sizeof(uint8_t *) * raw_count, 64);
+	if (!raw_test->local_vaddr)
+		return -ENOMEM;
+
+	raw_test->remote_vaddr = rte_zmalloc(NULL,
+		sizeof(uint8_t *) * raw_count, 64);
+	if (!raw_test->remote_vaddr)
+		return -ENOMEM;
+
+	if (q->type == LSINIC_QUEUE_RX) {
+		sprintf(nm, "raw_r_%d_rxq_%d",
+			lsinic_dev->eth_dev->data->port_id,
+			q->queue_id);
+	} else {
+		sprintf(nm, "raw_r_%d_txq_%d",
+			lsinic_dev->eth_dev->data->port_id,
+			q->queue_id);
+	}
+	raw_test->jobs_ring = rte_ring_create(nm,
+		raw_count * 2, rte_socket_id(), 0);
 	if (!raw_test->jobs_ring)
 		return -ENOMEM;
+
+	if (raw_test->mode & LSINIC_PCIE_RAW_MEM_MODE) {
+		remote_base = raw_test->mem_mz->iova;
+		raw_test->remote_vbase = raw_test->mem_mz->addr;
+		ob_base = 0;
+	} else {
+		remote_base = LSINIC_READ_REG(&q->ep_reg->r_raw_baseh);
+		remote_base = remote_base << 32;
+		remote_base |= LSINIC_READ_REG(&q->ep_reg->r_raw_basel);
+		raw_test->remote_vbase = lsx_pciep_set_ob_win(lsinic_dev,
+			remote_base, raw_size);
+		if (!raw_test->remote_vbase) {
+			LSXINIC_PMD_ERR("alloc ob for PCIe(0x%lx) failed",
+				remote_base);
+
+			return -ENOMEM;
+		}
+		ob_base = q->ob_base;
+	}
 
 	rte_spinlock_lock(&adapter->rxq_dma_start_lock);
 	if (q->type == LSINIC_QUEUE_RX)
@@ -896,8 +984,15 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	q->core_id = rte_lcore_id();
 
 	dma_jobs = q->dma_jobs;
-	for (i = 0; i < q->nb_desc; i++) {
-		remote_addr = q->ep_bd_desc[i].pkt_addr;
+
+	for (i = 0; i < raw_count; i++) {
+		loca_iova = raw_test->local_mz->iova + mz_offset;
+		loca_addr = (uint8_t *)raw_test->local_mz->addr + mz_offset;
+		if (raw_test->mode & LSINIC_PCIE_RAW_MEM_MODE)
+			remote_addr = remote_base +	mz_offset;
+		else
+			remote_addr = q->ep_bd_desc[i].pkt_addr;
+
 		if (!remote_addr) {
 			LSXINIC_PMD_ERR("%s%d bd[%d] DMA test failed",
 				q->type == LSINIC_QUEUE_RX ?
@@ -905,53 +1000,57 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 				q->reg_idx, i);
 			return -ENOMEM;
 		}
-		pkt_len = q->ep_bd_desc[i].len_cmd & LSINIC_BD_LEN_MASK;
-		local_mbuf = raw_test->mbufs[i];
+		pkt_len = q->ep_bd_desc[i].len_cmd;
+		raw_test->local_vaddr[i] = loca_addr;
+		raw_test->remote_vaddr[i] =
+			raw_test->remote_vbase + remote_addr - remote_base;
 		if (q->type == LSINIC_QUEUE_RX) {
-			if (raw_test->cpu_mode) {
+			if (raw_test->mode & LSINIC_PCIE_RAW_CPU_MODE) {
 				dma_jobs[i].src =
-					(rte_iova_t)ob_vbase + remote_addr;
-				dma_jobs[i].dst =
-					(rte_iova_t)local_mbuf->buf_addr;
+					(rte_iova_t)raw_test->remote_vaddr[i];
+				dma_jobs[i].dst = (rte_iova_t)loca_addr;
 			} else {
-				dma_jobs[i].src =
-					q->ob_base + remote_addr;
-				dma_jobs[i].dst =
-					rte_pktmbuf_iova(local_mbuf);
+				dma_jobs[i].src = ob_base + remote_addr;
+				dma_jobs[i].dst = loca_iova;
 			}
+			*(raw_test->remote_vaddr[i] + pkt_len - 1) =
+				LSINIC_PCIE_RAW_TEST_SRC_DATA;
+			*(loca_addr + pkt_len - 1) =
+				LSINIC_PCIE_RAW_TEST_DST_DATA;
 		} else {
-			if (raw_test->cpu_mode) {
-				dma_jobs[i].src =
-					(rte_iova_t)local_mbuf->buf_addr;
+			if (raw_test->mode & LSINIC_PCIE_RAW_CPU_MODE) {
+				dma_jobs[i].src = (rte_iova_t)loca_addr;
 				dma_jobs[i].dst =
-					(rte_iova_t)ob_vbase + remote_addr;
+					(rte_iova_t)raw_test->remote_vaddr[i];
 			} else {
-				dma_jobs[i].src =
-					rte_pktmbuf_iova(local_mbuf);
-				dma_jobs[i].dst =
-					q->ob_base + remote_addr;
+				dma_jobs[i].src = loca_iova;
+				dma_jobs[i].dst = ob_base + remote_addr;
 			}
+			*(loca_addr + pkt_len - 1) =
+				LSINIC_PCIE_RAW_TEST_SRC_DATA;
+			*(raw_test->remote_vaddr[i] + pkt_len - 1) =
+				LSINIC_PCIE_RAW_TEST_DST_DATA;
 		}
 		dma_jobs[i].len = pkt_len;
-		if (raw_test->cpu_mode) {
+		if (raw_test->mode & LSINIC_PCIE_RAW_CPU_MODE) {
 			/** Align len to 16B for CPU copy*/
 			dma_jobs[i].len &= ~((uint32_t)0xf);
 		}
+		mz_offset += pkt_len;
 		rte_ring_enqueue(raw_test->jobs_ring, &dma_jobs[i]);
 	}
 #ifdef LSXINIC_LATENCY_PROFILING
-	LSXINIC_PMD_INFO("%s latency pkt(%dB) burst(%d) %s",
-		raw_test->cpu_mode ?
-		"CPU-PCIe benchmark" : "qDMA-PCIe benchmark",
-		q->dma_jobs[0].len,
+	LSXINIC_PMD_INFO("%s m(%08x) s(%dB) c(%d) b(%d) %s",
+		"RAW-PCIe benchmark latency", raw_test->mode,
+		q->dma_jobs[0].len, raw_count,
 		raw_test->burst_size,
 		q->type == LSINIC_QUEUE_RX ?
 		"from RC to EP" : "from EP to RC");
 #else
-	LSXINIC_PMD_INFO("%s throughput pkt(%dB) %s",
-		raw_test->cpu_mode ?
-		"CPU-PCIe benchmark" : "qDMA-PCIe benchmark",
-		q->dma_jobs[0].len,
+	LSXINIC_PMD_INFO("%s m(%08x) s(%dB) c(%d) b(%d) %s",
+		"RAW-PCIe benchmark throughput", raw_test->mode,
+		q->dma_jobs[0].len, raw_count,
+		raw_test->burst_size,
 		q->type == LSINIC_QUEUE_RX ?
 		"from RC to EP" : "from EP to RC");
 #endif
@@ -959,6 +1058,80 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	raw_test->started = 1;
 
 	return 0;
+}
+
+static inline void
+lsinic_queue_pcie_dma_raw_dq(struct lsinic_queue *q,
+	uint16_t dq_num, uint16_t idx_completed[],
+	struct lsinic_dma_job *dq_jobs[])
+{
+	uint16_t i, idx;
+	uint8_t *dst;
+#ifdef LSXINIC_LATENCY_PROFILING
+	uint64_t dq_tick = rte_get_timer_cycles(), eq_tick;
+#endif
+
+	if (q->type == LSINIC_QUEUE_TX)
+		goto handle_tx_dq;
+
+	for (i = 0; i < dq_num; i++) {
+		idx = idx_completed[i];
+		dq_jobs[i] = &q->dma_jobs[idx];
+		if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_CHECK_MODE) {
+			dst = q->pcie_raw_test.local_vaddr[idx];
+			dst += q->dma_jobs[idx].len - 1;
+			if ((*dst) != LSINIC_PCIE_RAW_TEST_SRC_DATA) {
+				LSXINIC_PMD_ERR("qDMA read PCIe failed(%d)",
+					(*dst));
+				LSXINIC_PMD_ERR("qDMA has read %ldB from PCIe",
+					q->bytes);
+				RTE_VERIFY((*dst) ==
+					LSINIC_PCIE_RAW_TEST_SRC_DATA);
+			}
+
+			(*dst) = LSINIC_PCIE_RAW_TEST_DST_DATA;
+		}
+		q->bytes += q->dma_jobs[idx].len;
+		q->bytes_fcs += q->dma_jobs[idx].len +
+			LSINIC_ETH_FCS_SIZE;
+		q->bytes_overhead += q->dma_jobs[idx].len +
+			LSINIC_ETH_OVERHEAD_SIZE;
+#ifdef LSXINIC_LATENCY_PROFILING
+		eq_tick = q->dma_jobs[idx].cnxt;
+		q->cyc_diff_total += (dq_tick - eq_tick);
+#endif
+	}
+
+	return;
+
+handle_tx_dq:
+	for (i = 0; i < dq_num; i++) {
+		idx = idx_completed[i];
+		dq_jobs[i] = &q->dma_jobs[idx];
+		if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_CHECK_MODE) {
+			dst = q->pcie_raw_test.remote_vaddr[idx];
+			dst += q->dma_jobs[idx].len - 1;
+			if ((*dst) != LSINIC_PCIE_RAW_TEST_SRC_DATA) {
+				LSXINIC_PMD_ERR("qDMA write PCIe failed(%d)",
+					(*dst));
+				LSXINIC_PMD_ERR("qDMA has written %ldB to PCIe",
+					q->bytes);
+				RTE_VERIFY((*dst) ==
+					LSINIC_PCIE_RAW_TEST_SRC_DATA);
+			}
+
+			(*dst) = LSINIC_PCIE_RAW_TEST_DST_DATA;
+		}
+		q->bytes += q->dma_jobs[idx].len;
+		q->bytes_fcs += q->dma_jobs[idx].len +
+			LSINIC_ETH_FCS_SIZE;
+		q->bytes_overhead += q->dma_jobs[idx].len +
+			LSINIC_ETH_OVERHEAD_SIZE;
+#ifdef LSXINIC_LATENCY_PROFILING
+		eq_tick = q->dma_jobs[idx].cnxt;
+		q->cyc_diff_total += (dq_tick - eq_tick);
+#endif
+	}
 }
 
 static void
@@ -974,7 +1147,7 @@ lsinic_queue_pcie_dma_raw_test(struct lsinic_queue *q)
 	struct rte_dma_sge src[LSINIC_QDMA_EQ_DATA_MAX_NB];
 	struct rte_dma_sge dst[LSINIC_QDMA_EQ_DATA_MAX_NB];
 #ifdef LSXINIC_LATENCY_PROFILING
-	uint64_t eq_tick = 0, dq_tick = 0;
+	uint64_t eq_tick = 0;
 #endif
 
 	burst_nb = raw_test->burst_size;
@@ -1034,7 +1207,7 @@ lsinic_queue_pcie_dma_raw_test(struct lsinic_queue *q)
 			eq_nb += ring_ret;
 		}
 	} else {
-		if (raw_test->sync_mode)
+		if (raw_test->mode & LSINIC_PCIE_RAW_SYNC_MODE)
 			return;
 	}
 
@@ -1045,21 +1218,9 @@ dq_again:
 		idx_completed, NULL);
 	if (dq_num > 0) {
 		dq_ret += dq_num;
-#ifdef LSXINIC_LATENCY_PROFILING
-		dq_tick = rte_get_timer_cycles();
-#endif
-		for (i = 0; i < dq_num; i++) {
-			dq_jobs[i] = &q->dma_jobs[idx_completed[i]];
-			q->bytes +=  dq_jobs[i]->len;
-			q->bytes_fcs += dq_jobs[i]->len +
-				LSINIC_ETH_FCS_SIZE;
-			q->bytes_overhead += dq_jobs[i]->len +
-				LSINIC_ETH_OVERHEAD_SIZE;
-#ifdef LSXINIC_LATENCY_PROFILING
-			eq_tick = dq_jobs[i]->cnxt;
-			q->cyc_diff_total += (dq_tick - eq_tick);
-#endif
-		}
+		lsinic_queue_pcie_dma_raw_dq(q, dq_num, idx_completed,
+			dq_jobs);
+
 		q->pkts_dq += dq_num;
 		q->packets += dq_num;
 		ring_ret = 0;
@@ -1070,7 +1231,8 @@ dq_again:
 			dq_num -= ring_ret;
 		}
 	}
-	if (raw_test->sync_mode && dq_ret < eq_nb)
+	if ((raw_test->mode & LSINIC_PCIE_RAW_SYNC_MODE) &&
+		dq_ret < eq_nb)
 		goto dq_again;
 }
 
@@ -1133,6 +1295,23 @@ lsinic_queue_pcie_cpu_raw_test(struct lsinic_queue *q)
 		q->packets += ret;
 	}
 }
+
+static void
+lsinic_queue_pcie_raw_test_stop(struct lsinic_queue *q)
+{
+	if (q->pcie_raw_test.local_mz) {
+		rte_memzone_free(q->pcie_raw_test.local_mz);
+		q->pcie_raw_test.local_mz = NULL;
+	}
+	if (q->pcie_raw_test.remote_vaddr) {
+		rte_free(q->pcie_raw_test.remote_vaddr);
+		q->pcie_raw_test.remote_vaddr = NULL;
+	}
+	if (q->pcie_raw_test.jobs_ring) {
+		rte_ring_free(q->pcie_raw_test.jobs_ring);
+		q->pcie_raw_test.jobs_ring = NULL;
+	}
+}
 #endif
 
 static void
@@ -1145,7 +1324,7 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	if (unlikely(q->status == LSINIC_QUEUE_RAW_TEST_RUNNING)) {
-		if (q->pcie_raw_test.cpu_mode)
+		if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_CPU_MODE)
 			lsinic_queue_pcie_cpu_raw_test(q);
 		else
 			lsinic_queue_pcie_dma_raw_test(q);
@@ -1158,7 +1337,7 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 
 	if (q->status == LSINIC_QUEUE_START) {
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-		if (q->ep_reg->r_raw_test)
+		if (q->ep_reg->r_raw_count)
 			ret = lsinic_queue_pcie_raw_test_start(q);
 		else
 #endif
@@ -1176,7 +1355,7 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 			RTE_PER_LCORE(lsinic_txq_deqeue_from_rxq) = 1;
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-		if (q->ep_reg->r_raw_test)
+		if (q->ep_reg->r_raw_count)
 			q->status = LSINIC_QUEUE_RAW_TEST_RUNNING;
 		else
 #endif
@@ -3425,9 +3604,6 @@ lsinic_queue_stop(struct lsinic_queue *q)
 	q->status = LSINIC_QUEUE_STOP;
 	ring_reg->sr = q->status;
 	LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	lsinic_queue_hw_offload_decfg(q);
-#endif
 }
 
 static int
@@ -3487,6 +3663,13 @@ lsinic_queue_release(struct lsinic_queue *q)
 {
 	if (!q)
 		return;
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	lsinic_queue_hw_offload_decfg(q);
+#endif
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	lsinic_queue_pcie_raw_test_stop(q);
+#endif
 
 	lsinic_queue_release_mbufs(q);
 	lsinic_queue_free_swring(q);
