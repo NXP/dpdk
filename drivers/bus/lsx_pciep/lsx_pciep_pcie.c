@@ -19,13 +19,13 @@
 #include <signal.h>
 #include <stdbool.h>
 
+#include <rte_eal.h>
 #include <rte_log.h>
 #include <rte_bus.h>
 #include <rte_eal_memconfig.h>
 #include <rte_malloc.h>
 #include <rte_devargs.h>
 #include <rte_memcpy.h>
-#include <rte_ethdev.h>
 
 #include <rte_common.h>
 #include <rte_debug.h>
@@ -35,18 +35,15 @@
 #include <rte_io.h>
 #include <rte_byteorder.h>
 #include <rte_memzone.h>
-#include <rte_ether.h>
 #include <rte_log.h>
 #include <rte_kvargs.h>
 #include <dpaa_of.h>
-#include <fsl_qbman_portal.h>
 #include <linux/pci_regs.h>
-#include <compat.h>
-#include <fslmc_vfio.h>
 #include <rte_pci.h>
 #include <linux/virtio_net.h>
 #include <linux/virtio_blk.h>
 #include <rte_lsx_pciep_bus.h>
+#include <rte_spinlock.h>
 
 #include "lsx_pciep_dev.h"
 #include "lsx_pciep_ctrl.h"
@@ -62,6 +59,8 @@
 #ifndef SVR_MASK
 #define SVR_MASK 0xffff0000
 #endif
+
+#define LSX_SIM_UIO_NM "sim_uio"
 
 static struct lsx_pciep_ctl_hw *s_pctl_hw;
 
@@ -639,11 +638,10 @@ lsx_pciep_hw_set_type(void)
 	}
 
 	if ((svr_ver & SVR_MASK) == SVR_LX2160A) {
-		if ((svr_ver & SVR_MAJOR_VER_MASK) == 0x10) {
+		if ((svr_ver & SVR_MAJOR_VER_MASK) == 0x10)
 			type = PEX_LX2160_REV1;
-		} else {
+		else
 			type = PEX_LX2160_REV2;
-		}
 	} else if ((svr_ver & SVR_MASK) == SVR_LS2088A) {
 		type = PEX_LS208X;
 	} else {
@@ -812,7 +810,7 @@ lsx_pciep_find_all_ctls(void)
 	const struct device_node *pcie_node;
 	const char *compatible;
 	struct lsx_pciep_ctl_hw *ctlhw;
-	const char *compatible_strs[] = {
+	static const char * const compatible_strs[] = {
 		LX2160A_REV1_PCIE_COMPATIBLE,
 		LX2160A_REV2_PCIE_COMPATIBLE,
 		LS2088A_PCIE_COMPATIBLE,
@@ -1097,14 +1095,14 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	close(fd);
 
 	snprintf(file_link_name, sizeof(file_link_name),
-		"%s/igb_uio", dir_name);
-	sprintf(buf, "%s", "igb_uio\n");
+		"%s/%s", dir_name, LSX_SIM_UIO_NM);
+	sprintf(buf, "%s\n", LSX_SIM_UIO_NM);
 	fd = open(file_link_name, O_RDWR | O_CREAT, 0660);
 	if (fd < 0) {
 		LSX_PCIEP_BUS_ERR("Open file %s failed", file_name);
 		return -ENODEV;
 	}
-	ret = write(fd, buf, sizeof("igb_uio\n"));
+	ret = write(fd, buf, strlen(buf));
 	if (ret < 0) {
 		LSX_PCIEP_BUS_ERR("Write file %s failed", file_name);
 		close(fd);
@@ -1138,15 +1136,15 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 			sprintf(&buf[idx], "0x%016lx\r\n", flag);
 			idx += 20;
 		} else {
-			sprintf(&buf[idx], "0x%016lx", (dma_addr_t)0);
+			sprintf(&buf[idx], "0x%016lx", (uint64_t)0);
 			idx += 18;
 			sprintf(&buf[idx], " ");
 			idx++;
-			sprintf(&buf[idx], "0x%016lx", (dma_addr_t)0);
+			sprintf(&buf[idx], "0x%016lx", (uint64_t)0);
 			idx += 18;
 			sprintf(&buf[idx], " ");
 			idx++;
-			sprintf(&buf[idx], "0x%016lx\r\n", (dma_addr_t)0);
+			sprintf(&buf[idx], "0x%016lx\r\n", (uint64_t)0);
 			idx += 20;
 		}
 	}

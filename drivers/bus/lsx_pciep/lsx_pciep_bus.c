@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2022 NXP
  */
 
 #include <unistd.h>
@@ -25,8 +25,8 @@
 #include <rte_malloc.h>
 #include <rte_devargs.h>
 #include <rte_memcpy.h>
-#include <rte_ethdev.h>
 
+#include <rte_eal.h>
 #include <rte_common.h>
 #include <rte_debug.h>
 #include <rte_cycles.h>
@@ -37,9 +37,6 @@
 #include <rte_memzone.h>
 #include <rte_log.h>
 #include <rte_kvargs.h>
-#include <fsl_qbman_portal.h>
-#include <compat.h>
-#include <rte_fslmc.h>
 #include <rte_string_fns.h>
 
 #include "lsx_pciep_dev.h"

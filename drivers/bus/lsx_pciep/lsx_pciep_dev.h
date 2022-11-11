@@ -8,6 +8,18 @@
 #include <rte_lsx_pciep_bus.h>
 
 /* common definition */
+#ifndef SVR_LS1080A
+#define SVR_LS1080A	0x87030000
+#endif
+#ifndef SVR_LS2080A
+#define SVR_LS2080A	0x87010000
+#endif
+#ifndef SVR_LS2088A
+#define SVR_LS2088A	0x87090000
+#endif
+#ifndef SVR_LX2160A
+#define SVR_LX2160A	0x87360000
+#endif
 
 #define LSX_MAX_PCIE_NB 6
 

@@ -18,7 +18,6 @@
 #include <rte_malloc.h>
 #include <rte_devargs.h>
 #include <rte_memcpy.h>
-#include <rte_ethdev.h>
 #include <rte_io.h>
 #include <linux/pci_regs.h>
 
