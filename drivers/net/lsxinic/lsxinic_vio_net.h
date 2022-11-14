@@ -106,40 +106,4 @@ struct lsxvio_adapter {
 
 #define lsxvio_DEV_PRIVATE_TO_INTR(adapter) \
 	(&((struct lsxvio_adapter *)adapter)->intr)
-
-/* RX/TX function prototypes */
-void lsxvio_dev_clear_queues(struct rte_eth_dev *dev);
-void lsxvio_dev_rx_queue_release(void *rxq);
-void lsxvio_dev_tx_queue_release(void *txq);
-int
-lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t rx_queue_id,
-	uint16_t nb_rx_desc, unsigned int socket_id,
-	const struct rte_eth_rxconf *rx_conf,
-	struct rte_mempool *mb_pool);
-int
-lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t tx_queue_id,
-	uint16_t nb_tx_desc, unsigned int socket_id,
-	const struct rte_eth_txconf *tx_conf);
-
-int lsxvio_dev_rx_init(struct rte_eth_dev *dev);
-
-void lsxvio_dev_tx_init(struct rte_eth_dev *dev);
-
-uint16_t
-lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
-	uint16_t nb_pkts);
-
-uint16_t
-lsxvio_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
-	uint16_t nb_pkts);
-
-int lsxvio_chk_dev_link_update(struct rte_eth_dev *dev);
-
-int lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev);
-
-void lsxvio_reset_config_fromrc(struct lsxvio_adapter *adapter);
-
-int lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev);
-#endif /* _LSXINIC_EP_ETHDEV_H_ */
+#endif /* _LSX_NET_H_ */

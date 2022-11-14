@@ -228,34 +228,39 @@ struct lsxvio_queue {
 
 #define LSXVIO_QDMA_DQ_MAX_NB RTE_QDMA_SG_ENTRY_NB_MAX
 
-void lsxvio_rx_queue_release_mbufs(struct lsxvio_rx_queue *rxq);
-void lsxvio_rx_queue_release(struct lsxvio_rx_queue *rxq);
-void lsxvio_reset_rx_queue(struct lsxvio_rx_queue *rxq);
-void lsxvio_tx_queue_release(struct lsxvio_tx_queue *txq);
-void lsxvio_reset_tx_queue(struct lsxvio_tx_queue *txq);
-
-int lsxvio_dev_rxq_init(struct lsxvio_rx_queue *rxq);
-int lsxvio_dev_txq_init(struct lsxvio_tx_queue *txq);
-int lsxvio_dev_rx_mq_init(struct lsxvio_rx_queue *rxq);
-int lsxvio_dev_tx_mq_init(struct lsxvio_tx_queue *txq);
-void lsxvio_dev_rx_tx_bind(struct rte_eth_dev *dev);
-void lsxvio_dev_rx_stop(struct rte_eth_dev *dev);
-void lsxvio_dev_tx_stop(struct rte_eth_dev *dev);
-void lsxvio_dev_rx_enable_start(struct rte_eth_dev *dev);
-void lsxvio_dev_tx_enable_start(struct rte_eth_dev *dev);
-int lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
-			 uint16_t queue_idx,
-			 uint16_t nb_desc,
-			 unsigned int socket_id,
-			 const struct rte_eth_txconf *tx_conf);
-
-int lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
-			 uint16_t queue_idx,
-			 uint16_t nb_desc,
-			 unsigned int socket_id,
-			 const struct rte_eth_rxconf *rx_conf,
-			 struct rte_mempool *mp);
-
-void lsxvio_queue_reset(struct lsxvio_queue *q);
-void lsxvio_queue_release(struct lsxvio_queue *q);
+void
+lsxvio_dev_rx_tx_bind(struct rte_eth_dev *dev);
+void
+lsxvio_dev_rx_stop(struct rte_eth_dev *dev);
+void
+lsxvio_dev_tx_stop(struct rte_eth_dev *dev);
+uint16_t
+lsxvio_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
+	uint16_t nb_pkts);
+uint16_t
+lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
+	uint16_t nb_pkts);
+void
+lsxvio_dev_tx_init(struct rte_eth_dev *dev);
+int
+lsxvio_dev_rx_init(struct rte_eth_dev *dev);
+void
+lsxvio_dev_clear_queues(struct rte_eth_dev *dev);
+int
+lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
+	uint16_t queue_idx,
+	uint16_t nb_desc,
+	unsigned int socket_id,
+	const struct rte_eth_txconf *tx_conf);
+int
+lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
+	uint16_t queue_idx,
+	uint16_t nb_desc,
+	unsigned int socket_id,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool *mp);
+void
+lsxvio_dev_tx_queue_release(void *txq);
+void
+lsxvio_dev_rx_queue_release(void *rxq);
 #endif

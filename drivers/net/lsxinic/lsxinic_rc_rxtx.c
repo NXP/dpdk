@@ -62,9 +62,9 @@
 TAILQ_HEAD(lxsnic_tx_queue_list, lxsnic_ring);
 
 /* per thread TX queue list */
-RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_list_initialized);
-RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_num_in_list);
-RTE_DEFINE_PER_LCORE(struct lxsnic_tx_queue_list, lxsnic_txq_list);
+static RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_list_initialized);
+static RTE_DEFINE_PER_LCORE(uint8_t, lxsnic_txq_num_in_list);
+static RTE_DEFINE_PER_LCORE(struct lxsnic_tx_queue_list, lxsnic_txq_list);
 
 static RTE_DEFINE_PER_LCORE(pthread_t, pthrd_id);
 static RTE_DEFINE_PER_LCORE(int, txq_added[LSINIC_RING_MAX_COUNT]);

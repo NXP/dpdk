@@ -347,42 +347,45 @@ lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
 		RING_BD_HW_COMPLETE;
 }
 
-void lsinic_rx_queue_release_mbufs(struct lsinic_rx_queue *rxq);
-void lsinic_rx_queue_release(struct lsinic_rx_queue *rxq);
-void lsinic_reset_rx_queue(struct lsinic_rx_queue *rxq);
-void lsinic_tx_queue_release(struct lsinic_tx_queue *txq);
-void lsinic_reset_tx_queue(struct lsinic_tx_queue *txq);
+uint16_t
+lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
+	uint16_t nb_pkts);
+uint16_t
+lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
+	uint16_t nb_pkts);
+void
+lsinic_dev_tx_init(struct rte_eth_dev *dev);
+int
+lsinic_dev_rx_init(struct rte_eth_dev *dev);
+uint16_t
+lsinic_dev_rx_stop(struct rte_eth_dev *dev, int force);
+uint16_t
+lsinic_dev_tx_stop(struct rte_eth_dev *dev, int force);
+void
+lsinic_dev_rx_enable_start(struct rte_eth_dev *dev);
+void
+lsinic_dev_tx_enable_start(struct rte_eth_dev *dev);
+void
+lsinic_dev_rx_queue_release(void *rxq);
+void
+lsinic_dev_tx_queue_release(void *txq);
 
-int lsinic_dev_rxq_init(struct lsinic_rx_queue *rxq);
-int lsinic_dev_txq_init(struct lsinic_tx_queue *txq);
-int lsinic_dev_rx_mq_init(struct lsinic_rx_queue *rxq);
-int lsinic_dev_tx_mq_init(struct lsinic_tx_queue *txq);
-void lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev);
-uint16_t lsinic_dev_rx_stop(struct rte_eth_dev *dev, int force);
-uint16_t lsinic_dev_tx_stop(struct rte_eth_dev *dev, int force);
-void lsinic_dev_rx_enable_start(struct rte_eth_dev *dev);
-void lsinic_dev_tx_enable_start(struct rte_eth_dev *dev);
-int lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
+int
+lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	uint16_t queue_idx,
 	uint16_t nb_desc,
 	unsigned int socket_id,
 	const struct rte_eth_txconf *tx_conf);
 
-int lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
+int
+lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint16_t queue_idx,
 	uint16_t nb_desc,
 	unsigned int socket_id,
 	const struct rte_eth_rxconf *rx_conf,
 	struct rte_mempool *mp);
 
-void lsinic_queue_reset(struct lsinic_queue *q);
-
-void lsinic_queue_release(struct lsinic_queue *q);
-
-struct lsinic_queue *
-lsinic_queue_alloc(struct lsinic_adapter *adapter,
-	uint16_t queue_idx,
-	int socket_id, uint32_t nb_desc,
-	enum LSINIC_QEUE_TYPE type);
+void
+lsinic_dev_clear_queues(struct rte_eth_dev *dev);
 
 #endif

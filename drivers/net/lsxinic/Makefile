@@ -46,25 +46,25 @@ LIBABIVER := 1
 # all source are stored in SRCS-y
 #
 ifeq ($(CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS),y)
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_common_helper.c
-
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_tool.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_dma.c
-
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_rxtx.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_ep_ethtool.c
-
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_ethdev.c
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_pf.c
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
-
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_net.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_blk.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_vio_rxtx.c
 
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_vio.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_tool.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_dma.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_rxtx.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_ethtool.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_vio.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_vio_net.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_vio_blk.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_ep_vio_rxtx.c
 
 LDLIBS += -lrte_bus_fslmc
 LDLIBS += -lrte_mempool_dpaa2
@@ -72,21 +72,18 @@ LDLIBS += -lrte_pmd_dpaa2
 LDLIBS += -lrte_rawdev
 LDLIBS += -lrte_bus_lsx_pciep
 LDLIBS += -lrte_common_dpaax
-else
-SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_common_helper.c
+endif
 
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_common_helper.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_pf.c
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_rxtx.c
-
 SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += lsxinic_rc_vio.c
 
-LDLIBS += -lrte_bus_fslmc
-LDLIBS += -lrte_mempool_dpaa2
-LDLIBS += -lrte_pmd_dpaa2
-LDLIBS += -lrte_rawdev
-LDLIBS += -lrte_common_dpaax
-endif
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_common_helper.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_rc_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_rc_pf.c
+SRCS-$(CONFIG_RTE_LIBRTE_LSXINIC_PMD) += v2111/linic_rc_rxtx.c
 
 LDLIBS += -lrte_bus_pci
 

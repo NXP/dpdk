@@ -49,7 +49,8 @@
 #include <rte_alarm.h>
 
 #include <rte_ether.h>
-#include <rte_ethdev_pci.h>
+#include <rte_ethdev.h>
+#include <rte_ethdev_driver.h>
 #include <rte_tcp.h>
 #include <rte_atomic.h>
 #include <rte_errno.h>
@@ -730,6 +731,20 @@ lsinic_mac_init(struct rte_ether_addr *mac_addrs,
 	mac_addrs->addr_bytes[5] = vf_idx;
 }
 
+static int
+lsinic_dev_chk_eth_status(struct rte_eth_dev *dev)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+
+	if (adapter->ep_state == LSINIC_DEV_INITING ||
+		adapter->ep_state == LSINIC_DEV_INITED ||
+		adapter->ep_state == LSINIC_DEV_REMOVED)
+		return 0;
+	else
+		return 1;
+}
+
+
 /* rte_lsinic_probe:
  *
  * Interrupt is used only for link status notification on dpdk.
@@ -826,8 +841,8 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	eth_dev->data->rx_mbuf_alloc_failed = 0;
 
 	eth_dev->dev_ops = &lsinic_eth_dev_ops;
-	eth_dev->rx_pkt_burst = &lsinic_recv_pkts;
-	eth_dev->tx_pkt_burst = &lsinic_xmit_pkts;
+	eth_dev->rx_pkt_burst = lsinic_recv_pkts;
+	eth_dev->tx_pkt_burst = lsinic_xmit_pkts;
 
 	/* Allocate memory for storing MAC addresses */
 	if (!eth_dev->data->mac_addrs) {
@@ -1075,6 +1090,28 @@ lsinic_dev_recycle_start(struct rte_eth_dev *recycle_dev,
 	}
 
 	return 0;
+}
+
+static void
+lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev)
+{
+	struct lsinic_queue *txq;
+	struct lsinic_queue *rxq;
+	uint16_t i, num;
+
+	num = RTE_MIN(dev->data->nb_tx_queues,
+			dev->data->nb_rx_queues);
+
+	/* Link RX and Tx Descriptor Rings */
+	for (i = 0; i < num; i++) {
+		txq = dev->data->tx_queues[i];
+		rxq = dev->data->rx_queues[i];
+		if (!txq || !rxq)
+			continue;
+
+		rxq->pair = txq;
+		txq->pair = rxq;
+	}
 }
 
 /* Configure device link speed and setup link.
@@ -1410,19 +1447,6 @@ lsinic_dev_link_update(struct rte_eth_dev *dev,
 	rte_lsinic_dev_atomic_write_link_status(dev, &link);
 
 	return 0;
-}
-
-int
-lsinic_dev_chk_eth_status(struct rte_eth_dev *dev)
-{
-	struct lsinic_adapter *adapter = dev->process_private;
-
-	if (adapter->ep_state == LSINIC_DEV_INITING ||
-		adapter->ep_state == LSINIC_DEV_INITED ||
-		adapter->ep_state == LSINIC_DEV_REMOVED)
-		return 0;
-	else
-		return 1;
 }
 
 static int

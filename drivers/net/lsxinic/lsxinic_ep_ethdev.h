@@ -146,41 +146,6 @@ struct lsinic_adapter {
 #define LSINIC_DEV_PRIVATE_TO_INTR(adapter) \
 	(&((struct lsinic_adapter *)adapter)->intr)
 
-/* RX/TX function prototypes
- */
-void lsinic_dev_clear_queues(struct rte_eth_dev *dev);
-void lsinic_dev_rx_queue_release(void *rxq);
-void lsinic_dev_tx_queue_release(void *txq);
-int
-lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t rx_queue_id,
-	uint16_t nb_rx_desc,
-	unsigned int socket_id,
-	const struct rte_eth_rxconf *rx_conf,
-	struct rte_mempool *mb_pool);
-int
-lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t tx_queue_id,
-	uint16_t nb_tx_desc,
-	unsigned int socket_id,
-	const struct rte_eth_txconf *tx_conf);
-
-void lsinic_dev_disable_queue(struct lsinic_ring_reg *ring_reg);
-int lsinic_dev_rx_init(struct rte_eth_dev *dev);
-
-void lsinic_dev_tx_init(struct rte_eth_dev *dev);
-
-uint16_t
-lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
-	uint16_t nb_pkts);
-uint16_t
-lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
-	uint16_t nb_pkts);
-
-int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
-
-int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
-
 int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
 int

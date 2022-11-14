@@ -295,7 +295,7 @@ lsxvio_queue_free_swring(struct lsxvio_queue *q)
 		rte_free(q->e2r_bd_dma_jobs);
 }
 
-void
+static void
 lsxvio_queue_release(struct lsxvio_queue *q)
 {
 	if (!q)
@@ -405,7 +405,7 @@ _err:
 	return NULL;
 }
 
-void
+static void
 lsxvio_queue_reset(struct lsxvio_queue *q)
 {
 	struct lsxvio_queue_entry *xe = q->sw_ring;

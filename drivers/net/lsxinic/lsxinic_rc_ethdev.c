@@ -80,7 +80,7 @@ static struct rte_eth_dev_data *lxsnic_proc_2nd_eth_dev_data;
 static rte_spinlock_t lxsnic_proc_2nd_dev_alloc_lock =
 	RTE_SPINLOCK_INITIALIZER;
 
-int
+static int
 lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 	enum PCIDEV_COMMAND cmd)
 {
@@ -451,6 +451,58 @@ skip_wait_tx_bd_ready:
 			return ret;
 		}
 	}
+
+	return 0;
+}
+
+static int
+lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
+	uint16_t idx)
+{
+	struct lsinic_bd_desc *ep_rx_desc = NULL;
+	struct lsinic_bd_desc rc_rx_desc;
+	struct rte_mbuf *mbuf;
+	uint64_t dma_addr = 0;
+	struct lsinic_ep_tx_dst_addr *ep_rx_addr = NULL;
+
+	if (rx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
+		ep_rx_desc = &rx_queue->ep_bd_desc[idx];
+	} else if (rx_queue->ep_mem_bd_type == EP_MEM_DST_ADDR_BD) {
+		ep_rx_addr = &rx_queue->ep_rx_addr[idx];
+	} else {
+		rte_panic("RXQ%d ep mem type(%d) not support",
+			rx_queue->queue_index, rx_queue->ep_mem_bd_type);
+	}
+
+	mbuf = rte_mbuf_raw_alloc(rx_queue->mb_pool);
+	if (unlikely(!mbuf)) {
+		struct rte_eth_dev_data *dev_data;
+
+		LSXINIC_PMD_ERR("RX mbuf alloc failed queue_id=%u",
+			(unsigned int)rx_queue->queue_index);
+		dev_data = rte_eth_devices[rx_queue->port].data;
+		dev_data->rx_mbuf_alloc_failed++;
+		return -ENOMEM;
+	}
+	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+	mbuf->port = rx_queue->port;
+	dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));
+
+	memset(&rc_rx_desc, 0, sizeof(struct lsinic_bd_desc));
+	rc_rx_desc.pkt_addr = dma_addr;
+
+	rx_queue->q_mbuf[idx] = mbuf;
+	rc_rx_desc.bd_status =
+		(((uint32_t)idx) << LSINIC_BD_CTX_IDX_SHIFT) | RING_BD_READY;
+	if (ep_rx_desc)
+		memcpy(ep_rx_desc, &rc_rx_desc, sizeof(struct lsinic_bd_desc));
+	else
+		ep_rx_addr->pkt_addr = dma_addr;
+
+#ifdef INIC_RC_EP_DEBUG_ENABLE
+	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
+		(idx + 1) & (rx_queue->count - 1));
+#endif
 
 	return 0;
 }
@@ -1521,9 +1573,9 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	LSXINIC_PMD_INFO("start init lsnic driver");
 	adapter->eth_dev = eth_dev;
 	eth_dev->dev_ops = &eth_lxsnic_eth_dev_ops;
-	eth_dev->rx_pkt_burst = &lxsnic_eth_recv_pkts;
+	eth_dev->rx_pkt_burst = lxsnic_eth_recv_pkts;
 	/* < Pointer to PMD receive function. */
-	eth_dev->tx_pkt_burst = &lxsnic_eth_xmit_pkts;
+	eth_dev->tx_pkt_burst = lxsnic_eth_xmit_pkts;
 	/* < Pointer to PMD transmit function. */
 	if (!g_lsxinic_rc_proc_secondary_standalone) {
 		if (rte_eal_process_type() != RTE_PROC_PRIMARY)
@@ -1907,58 +1959,6 @@ eth_lxsnic_dev_uninit(struct rte_eth_dev *eth_dev)
 	rte_intr_disable(intr_handle);
 	rte_intr_callback_unregister(intr_handle,
 			eth_lxsnic_interrupt_handler, eth_dev);
-
-	return 0;
-}
-
-int
-lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
-	uint16_t idx)
-{
-	struct lsinic_bd_desc *ep_rx_desc = NULL;
-	struct lsinic_bd_desc rc_rx_desc;
-	struct rte_mbuf *mbuf;
-	uint64_t dma_addr = 0;
-	struct lsinic_ep_tx_dst_addr *ep_rx_addr = NULL;
-
-	if (rx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
-		ep_rx_desc = &rx_queue->ep_bd_desc[idx];
-	} else if (rx_queue->ep_mem_bd_type == EP_MEM_DST_ADDR_BD) {
-		ep_rx_addr = &rx_queue->ep_rx_addr[idx];
-	} else {
-		rte_panic("RXQ%d ep mem type(%d) not support",
-			rx_queue->queue_index, rx_queue->ep_mem_bd_type);
-	}
-
-	mbuf = rte_mbuf_raw_alloc(rx_queue->mb_pool);
-	if (unlikely(!mbuf)) {
-		struct rte_eth_dev_data *dev_data;
-
-		LSXINIC_PMD_ERR("RX mbuf alloc failed queue_id=%u",
-			(unsigned int)rx_queue->queue_index);
-		dev_data = rte_eth_devices[rx_queue->port].data;
-		dev_data->rx_mbuf_alloc_failed++;
-		return -ENOMEM;
-	}
-	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
-	mbuf->port = rx_queue->port;
-	dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));
-
-	memset(&rc_rx_desc, 0, sizeof(struct lsinic_bd_desc));
-	rc_rx_desc.pkt_addr = dma_addr;
-
-	rx_queue->q_mbuf[idx] = mbuf;
-	rc_rx_desc.bd_status =
-		(((uint32_t)idx) << LSINIC_BD_CTX_IDX_SHIFT) | RING_BD_READY;
-	if (ep_rx_desc)
-		memcpy(ep_rx_desc, &rc_rx_desc, sizeof(struct lsinic_bd_desc));
-	else
-		ep_rx_addr->pkt_addr = dma_addr;
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
-		(idx + 1) & (rx_queue->count - 1));
-#endif
 
 	return 0;
 }

@@ -435,10 +435,4 @@ void lxsnic_pf_host_init(struct rte_eth_dev *eth_dev);
 
 int lxsnic_disable_sriov(struct lxsnic_adapter *adapter);
 
-int lxsnic_set_netdev_state(struct lxsnic_hw *hw,
-	enum PCIDEV_COMMAND cmd);
-
-int lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
-	uint16_t idx);
-
 #endif /* _LSXINIC_RC_ETHDEV_H_ */

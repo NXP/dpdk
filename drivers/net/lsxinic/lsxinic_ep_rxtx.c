@@ -413,7 +413,7 @@ lsinic_queue_dma_clean(struct lsinic_queue *q)
 }
 
 /* (Re)set dynamic lsinic queue fields to defaults */
-void
+static void
 lsinic_queue_reset(struct lsinic_queue *q)
 {
 	struct lsinic_sw_bd *xe = q->sw_ring;
@@ -2387,7 +2387,7 @@ lsinic_queue_free_swring(struct lsinic_queue *q)
 		rte_free(q->dma_jobs);
 }
 
-void
+static void
 lsinic_queue_release(struct lsinic_queue *q)
 {
 	if (!q)
@@ -2411,7 +2411,7 @@ lsinic_queue_release(struct lsinic_queue *q)
 	rte_free(q);
 }
 
-struct lsinic_queue *
+static struct lsinic_queue *
 lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	uint16_t queue_idx,
 	int socket_id, uint32_t nb_desc,
@@ -5356,10 +5356,10 @@ lsinic_dev_tx_queue_release(void *txq)
 
 int
 lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
-			 uint16_t queue_idx,
-			 uint16_t nb_desc,
-			 unsigned int socket_id,
-			 const struct rte_eth_txconf *tx_conf __rte_unused)
+	uint16_t queue_idx,
+	uint16_t nb_desc,
+	unsigned int socket_id,
+	const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_bdr_reg *bdr_reg =
@@ -5413,11 +5413,13 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	if (adapter->tx_ring_bd_count != txq->nb_desc) {
 		adapter->tx_ring_bd_count = txq->nb_desc;
-		LSINIC_WRITE_REG(&eth_reg->rx_entry_num, txq->nb_desc);
+		LSINIC_WRITE_REG(&eth_reg->rx_entry_num,
+			txq->nb_desc);
 	}
 	if (adapter->num_tx_queues <= queue_idx) {
 		adapter->num_tx_queues = queue_idx + 1;
-		LSINIC_WRITE_REG(&eth_reg->rx_ring_num, adapter->num_tx_queues);
+		LSINIC_WRITE_REG(&eth_reg->rx_ring_num,
+			adapter->num_tx_queues);
 	}
 
 	return 0;
@@ -5594,7 +5596,7 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
  *  Device RX/TX init functions
  *
  **********************************************************************/
-int lsinic_dev_rxq_init(struct lsinic_queue *rxq)
+static int lsinic_dev_rxq_init(struct lsinic_queue *rxq)
 {
 	lsinic_queue_init(rxq);
 
@@ -5629,7 +5631,7 @@ lsinic_dev_rx_init(struct rte_eth_dev *dev)
 	return 0;
 }
 
-int lsinic_dev_txq_init(struct lsinic_tx_queue *txq)
+static int lsinic_dev_txq_init(struct lsinic_tx_queue *txq)
 {
 	lsinic_queue_init(txq);
 
@@ -5650,27 +5652,6 @@ lsinic_dev_tx_init(struct rte_eth_dev *dev)
 		if (txq->status != LSINIC_QUEUE_RUNNING)
 			lsinic_dev_txq_init(txq);
 		txq->ep_enabled = 1;
-	}
-}
-
-void lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev)
-{
-	struct lsinic_queue *txq;
-	struct lsinic_queue *rxq;
-	uint16_t i, num;
-
-	num = RTE_MIN(dev->data->nb_tx_queues,
-			dev->data->nb_rx_queues);
-
-	/* Link RX and Tx Descriptor Rings */
-	for (i = 0; i < num; i++) {
-		txq = dev->data->tx_queues[i];
-		rxq = dev->data->rx_queues[i];
-		if (!txq || !rxq)
-			continue;
-
-		rxq->pair = txq;
-		txq->pair = rxq;
 	}
 }
 

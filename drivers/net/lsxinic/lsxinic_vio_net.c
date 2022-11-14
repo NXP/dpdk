@@ -331,6 +331,17 @@ lsxvio_dev_priv_feature_configure(void)
 	return lsx_feature;
 }
 
+static int
+lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev)
+{
+	struct lsxvio_adapter *adapter = dev->data->dev_private;
+
+	if (adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)
+		return 1;
+
+	return 0;
+}
+
 /* rte_lsxvio_probe:
  *
  * Interrupt is used only for link status notification on dpdk.
@@ -432,8 +443,8 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->data->rx_mbuf_alloc_failed = 0;
 
 	eth_dev->dev_ops = &lsxvio_eth_dev_ops;
-	eth_dev->rx_pkt_burst = &lsxvio_recv_pkts;
-	eth_dev->tx_pkt_burst = &lsxvio_xmit_pkts;
+	eth_dev->rx_pkt_burst = lsxvio_recv_pkts;
+	eth_dev->tx_pkt_burst = lsxvio_xmit_pkts;
 
 	lsxvio_init_bar_addr(lsx_dev, lsx_feature);
 	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
@@ -470,17 +481,6 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 
 	lsx_dev->init_flag = 1;
 	rte_eth_dev_probing_finish(eth_dev);
-	return 0;
-}
-
-int
-lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev)
-{
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
-
-	if (adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)
-		return 1;
-
 	return 0;
 }
 
