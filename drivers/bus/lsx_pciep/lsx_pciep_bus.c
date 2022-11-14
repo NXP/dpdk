@@ -171,12 +171,12 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 
 		if (lsx_pciep_hw_vio_get(pcie_idx, PF1_IDX))
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf1",
-					ctlhw->hw.index);
+				LSX_PCIEP_VIRT_NAME_PREFIX "_%d_pf1",
+				ctlhw->hw.index);
 		else
 			snprintf(ep_dev->name, RTE_DEV_NAME_MAX_LEN,
-					LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf1",
-					ctlhw->hw.index);
+				LSX_PCIEP_NXP_NAME_PREFIX "_%d_pf1",
+				ctlhw->hw.index);
 
 		ep_dev->pcie_id = ctlhw->hw.index;
 
@@ -315,7 +315,6 @@ lsx_pciep_scan(void)
 	return 0;
 }
 
-
 static int
 lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 		struct rte_lsx_pciep_device *ep_dev)
@@ -324,11 +323,11 @@ lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 	static int s_cnt;
 
 	if (!strncmp(ep_drv->name, ep_dev->name,
-			strlen(LSX_PCIEP_NXP_NAME_PREFIX) - 1))
+			strlen(LSX_PCIEP_NXP_NAME_PREFIX)))
 		ret = 0;
 
 	if (!strncmp(ep_drv->name, ep_dev->name,
-			strlen(LSX_PCIEP_VIRT_NAME_PREFIX) - 1))
+			strlen(LSX_PCIEP_VIRT_NAME_PREFIX)))
 		ret = 0;
 
 	if (strstr(ep_dev->name, "_vf"))
@@ -340,6 +339,52 @@ lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 	s_cnt++;
 	return ret;
 }
+
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+static int
+lsx_pciep_match_ver(struct rte_lsx_pciep_driver *ep_drv,
+	struct rte_lsx_pciep_device *ep_dev)
+{
+	uint16_t expected_ver = LSX_PCIEP_PMD_DRV_VER_DEFAULT;
+	char env_name[64], *penv, nm[RTE_DEV_NAME_MAX_LEN];
+	uint16_t year = LSX_PCIEP_PMD_DRV_YEAR(expected_ver);
+	uint16_t month = LSX_PCIEP_PMD_DRV_MONTH(expected_ver);
+
+	sprintf(env_name, "LSX_PCIE%d_PF%d_VER_YEAR",
+		ep_dev->pcie_id, ep_dev->pf);
+	penv = getenv(env_name);
+	if (penv)
+		year = atoi(penv);
+
+	sprintf(env_name, "LSX_PCIE%d_PF%d_VER_MONTH",
+		ep_dev->pcie_id, ep_dev->pf);
+	penv = getenv(env_name);
+	if (penv)
+		month = atoi(penv);
+
+	expected_ver = year << 8 | month;
+
+	memcpy(nm, ep_dev->name, strlen(LSX_PCIEP_NXP_NAME_PREFIX));
+
+	sprintf(&nm[strlen(LSX_PCIEP_NXP_NAME_PREFIX)],
+		"_%d.%d", year, month);
+
+	if (!strncmp(ep_drv->name, nm, strlen(nm)))
+		return 0;
+
+	memcpy(nm, ep_dev->name, strlen(LSX_PCIEP_VIRT_NAME_PREFIX));
+
+	sprintf(&nm[strlen(LSX_PCIEP_VIRT_NAME_PREFIX)],
+		"_%d.%d", year, month);
+
+	if (!strncmp(ep_drv->name, nm, strlen(nm)))
+		return 0;
+
+	return 1;
+}
+#endif
+#endif
 
 struct rte_lsx_pciep_device *
 lsx_pciep_first_dev(void)
@@ -356,7 +401,7 @@ lsx_pciep_first_dev(void)
 static int
 lsx_pciep_probe(void)
 {
-	int ret = 0, i, added;
+	int ret = 0, i, added, probed;
 	struct rte_lsx_pciep_device *dev;
 	struct rte_lsx_pciep_driver *drv;
 
@@ -376,6 +421,35 @@ lsx_pciep_probe(void)
 		return 0;
 
 	TAILQ_FOREACH(dev, &lsx_pciep_bus.device_list, next) {
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+		probed = 0;
+		TAILQ_FOREACH(drv, &lsx_pciep_bus.driver_list, next) {
+			ret = lsx_pciep_match_ver(drv, dev);
+			if (ret)
+				continue;
+
+			lsx_pciep_ctl_init_win(dev->pcie_id);
+
+			if (!drv->probe)
+				continue;
+
+			ret = drv->probe(drv, dev);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("Probe %s with %s err(%d)",
+					dev->name, drv->name, ret);
+			}
+			probed = 1;
+			break;  /* note this  */
+		}
+		if (probed && !ret) {
+			LSX_PCIEP_BUS_INFO("%s loaded for %s",
+				drv->name, dev->name);
+			continue;
+		}
+#endif
+#endif
+		probed = 0;
 		TAILQ_FOREACH(drv, &lsx_pciep_bus.driver_list, next) {
 			ret = lsx_pciep_match(drv, dev);
 			if (ret)
@@ -387,9 +461,19 @@ lsx_pciep_probe(void)
 				continue;
 
 			ret = drv->probe(drv, dev);
-			if (ret)
-				LSX_PCIEP_BUS_LOG(ERR, "Unable to probe.\n");
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("Probe %s with %s err(%d)",
+					dev->name, drv->name, ret);
+			}
+			probed = 1;
 			break;  /* note this  */
+		}
+		if (probed && !ret) {
+			LSX_PCIEP_BUS_INFO("%s loaded for %s",
+				drv->name, dev->name);
+		} else if (!probed) {
+			LSX_PCIEP_BUS_ERR("No driver loaded for %s",
+				dev->name);
 		}
 	}
 

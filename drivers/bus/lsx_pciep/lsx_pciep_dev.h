@@ -100,7 +100,7 @@ struct lsx_pciep_hw_low {
 };
 
 struct lsx_pciep_ctl_hw {
-	uint8_t	init;
+	uint8_t init;
 	int sim;
 	int rbp;
 	int ep_enable;

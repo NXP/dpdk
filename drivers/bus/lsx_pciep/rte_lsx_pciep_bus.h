@@ -82,6 +82,16 @@ enum lsx_pcie_pf_idx {
 #define CFG_32G_SIZE	(32 * CFG_1G_SIZE)
 #define CFG_1T_SIZE		(1024 * CFG_1G_SIZE)
 
+#define LSX_PCIEP_PMD_DRV_VER(YEAR, MONTH) \
+	(YEAR << 8 | MONTH)
+
+#define LSX_PCIEP_PMD_DRV_YEAR(VER) (VER >> 8)
+
+#define LSX_PCIEP_PMD_DRV_MONTH(VER) (VER & 0xff)
+
+#define LSX_PCIEP_PMD_DRV_VER_DEFAULT \
+	LSX_PCIEP_PMD_DRV_VER(RTE_VER_YEAR, RTE_VER_MONTH)
+
 #define LSX_PCIEP_DEV_MAX_MSIX_NB 32
 /**
  * A structure describing a PCIe EP device for each PF or VF.
