@@ -36,6 +36,10 @@ struct lsx_pciep_ops {
 			int pf, int is_vf, uint16_t vendor_id,
 			uint16_t device_id, uint16_t class_id);
 
+	int (*pcie_fun_init_ext)(struct lsx_pciep_hw_low *hw,
+			int pf, uint16_t sub_vendor_id,
+			uint16_t sub_device_id);
+
 	void (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
 

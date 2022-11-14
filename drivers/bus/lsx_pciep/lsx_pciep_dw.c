@@ -75,6 +75,9 @@ struct pcie_dw_basic_ctl {
 	uint32_t pfbar3;
 	uint32_t pfbar4;
 	uint32_t pfbar5;
+	uint32_t prefetch_base;
+	uint16_t sub_vendor_id;
+	uint16_t sub_device_id;
 } __packed;
 
 #define PCIE_DW_CAP_OFFSET 0x70
@@ -1073,6 +1076,46 @@ pcie_dw_fun_init(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
+static int
+pcie_dw_fun_init_ext(struct lsx_pciep_hw_low *hw,
+	int pf, uint16_t sub_vendor_id, uint16_t sub_device_id)
+{
+	struct pcie_dw_basic_ctl *basic_ctl;
+
+	if (!hw->is_sriov && pf > 0) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EIO;
+	}
+
+	if (pf != PF0_IDX && pf != PF1_IDX) {
+		LSX_PCIEP_BUS_ERR("%s: Invalid PF ID(%d)",
+			__func__, pf);
+		return -EIO;
+	}
+
+	rte_write16(1, hw->dbi_vir + PCIE_DBI_RO_WR_EN);
+
+	if (pf == PF0_IDX) {
+		basic_ctl = (struct pcie_dw_basic_ctl *)hw->dbi_vir;
+		if (sub_vendor_id && sub_vendor_id != PCI_ANY_ID)
+			rte_write16(sub_vendor_id, &basic_ctl->sub_vendor_id);
+		if (sub_device_id && sub_device_id != PCI_ANY_ID)
+			rte_write16(sub_device_id, &basic_ctl->sub_device_id);
+	} else {
+		basic_ctl = (struct pcie_dw_basic_ctl *)
+			(hw->dbi_vir + PCIE_CFG_OFFSET);
+		if (sub_vendor_id && sub_vendor_id != PCI_ANY_ID)
+			rte_write16(sub_vendor_id, &basic_ctl->sub_vendor_id);
+		if (sub_device_id && sub_device_id != PCI_ANY_ID)
+			rte_write16(sub_device_id, &basic_ctl->sub_device_id);
+	}
+
+	rte_write16(0, hw->dbi_vir + PCIE_DBI_RO_WR_EN);
+
+	return 0;
+}
+
 static uint64_t
 pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 {
@@ -1309,6 +1352,7 @@ static struct lsx_pciep_ops pcie_dw_ops = {
 	.pcie_config = pcie_dw_config,
 	.pcie_deconfig = pcie_dw_deconfig,
 	.pcie_fun_init = pcie_dw_fun_init,
+	.pcie_fun_init_ext = pcie_dw_fun_init_ext,
 	.pcie_disable_ob_win = pcie_dw_disable_ob_win,
 	.pcie_disable_ib_win = pcie_dw_disable_ib_win,
 	.pcie_map_ob_win = pcie_dw_map_ob_win,

@@ -115,6 +115,9 @@ struct lsx_pciep_ctl_hw {
 	uint16_t vf_device_id[PF_MAX_NB];
 	uint16_t class_id[PF_MAX_NB];
 
+	uint16_t sub_vendor_id[PF_MAX_NB];
+	uint16_t sub_device_id[PF_MAX_NB];
+
 	enum PEX_TYPE type;
 	struct lsx_pciep_hw_low hw;
 
