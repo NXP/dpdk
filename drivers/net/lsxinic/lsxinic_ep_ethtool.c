@@ -212,6 +212,17 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 		first_dev = lsx_pciep_first_dev();
 		dev = first_dev;
 		while (dev) {
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+			if (dev->driver->drv_ver != LSINIC_DRV_SUB_DEV_ID) {
+				dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
+				if (dev == first_dev)
+					dev = NULL;
+				continue;
+			}
+#endif
+#endif
 			dev_type = dev->eth_dev->process_private;
 			if (*dev_type != LSINIC_NXP_DEV) {
 				dev = (struct rte_lsx_pciep_device *)

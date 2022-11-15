@@ -1364,10 +1364,23 @@ static struct eth_dev_ops eth_lxsnic_eth_dev_ops = {
 };
 
 static struct rte_pci_id pci_id_lxsnic_map[32];
+#define LSX_DISABLE_DRV_VENDOR_ID 0
 
 static void lxsnic_pre_init_pci_id(void)
 {
 	int i, num;
+	uint16_t vendor_id = NXP_PCI_VENDOR_ID;
+	uint16_t sub_dev_id = PCI_ANY_ID;
+
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	sub_dev_id = LSINIC_DRV_SUB_DEV_ID;
+#endif
+#endif
+
+#ifdef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	vendor_id = LSX_DISABLE_DRV_VENDOR_ID;
+#endif
 
 	num = sizeof(s_lsinic_rev2_id_map) /
 		sizeof(struct lsinic_pcie_svr_map);
@@ -1375,7 +1388,7 @@ static void lxsnic_pre_init_pci_id(void)
 	memset(pci_id_lxsnic_map, 0, sizeof(pci_id_lxsnic_map));
 	for (i = 0; i < (num + 1); i++) {
 		pci_id_lxsnic_map[i].class_id = RTE_CLASS_ANY_ID;
-		pci_id_lxsnic_map[i].vendor_id = NXP_PCI_VENDOR_ID;
+		pci_id_lxsnic_map[i].vendor_id = vendor_id;
 		if (i < num) {
 			pci_id_lxsnic_map[i].device_id =
 				s_lsinic_rev2_id_map[i].pci_dev_id;
@@ -1384,7 +1397,7 @@ static void lxsnic_pre_init_pci_id(void)
 				NXP_PCI_DEV_ID_LS2088A;
 		}
 		pci_id_lxsnic_map[i].subsystem_vendor_id = PCI_ANY_ID;
-		pci_id_lxsnic_map[i].subsystem_device_id = PCI_ANY_ID;
+		pci_id_lxsnic_map[i].subsystem_device_id = sub_dev_id;
 	}
 }
 
@@ -1570,7 +1583,9 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	const struct rte_memzone *rc_ring_mem = NULL;
 	char *penv;
 
-	LSXINIC_PMD_INFO("start init lsnic driver");
+	LSXINIC_PMD_INFO("start lsnic driver %d.%d",
+		LSINIC_DRV_VERSION >> 8,
+		LSINIC_DRV_VERSION & 0xff);
 	adapter->eth_dev = eth_dev;
 	eth_dev->dev_ops = &eth_lxsnic_eth_dev_ops;
 	eth_dev->rx_pkt_burst = lxsnic_eth_recv_pkts;

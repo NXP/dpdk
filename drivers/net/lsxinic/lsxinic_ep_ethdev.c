@@ -856,6 +856,11 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 		lsinic_mac_init(eth_dev->data->mac_addrs, lsinic_dev);
 	}
 	lsinic_dev->init_flag = 1;
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	lsinic_drv->drv_ver = LSINIC_DRV_SUB_DEV_ID;
+#endif
+#endif
 
 	rte_eth_dev_probing_finish(eth_dev);
 	return 0;
@@ -964,6 +969,27 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 			lsinic_dev->pf, lsinic_dev->is_vf);
 	if (err)
 		return err;
+
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	if (!lsinic_dev->is_vf) {
+		if (LSINIC_DRV_SUB_DEV_ID !=
+			LSX_PCIEP_PMD_DRV_VER_DEFAULT) {
+			LSXINIC_PMD_ERR("SUB_DEV_ID(%04x) != DRV VER(0x%04x)",
+				LSINIC_DRV_SUB_DEV_ID,
+				LSX_PCIEP_PMD_DRV_VER_DEFAULT);
+			LSXINIC_PMD_ERR("RC is not able to identify!");
+			return -ENODEV;
+		}
+		err = lsx_pciep_fun_set_ext(PCI_ANY_ID,
+			LSX_PCIEP_PMD_DRV_VER_DEFAULT,
+			lsinic_dev->pcie_id,
+			lsinic_dev->pf);
+		if (err)
+			return err;
+	}
+#endif
+#endif
 
 	lsinic_netdev_env_init(eth_dev);
 	lsinic_init_bar_addr(lsinic_dev);
@@ -1605,6 +1631,11 @@ static struct rte_lsx_pciep_driver rte_lsinic_pmd = {
 	.name = LSX_PCIEP_NXP_NAME_PREFIX "_driver",
 	.probe = rte_lsinic_probe,
 	.remove = rte_lsinic_remove,
+#ifdef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	.driver_disable = 1,
+#else
+	.driver_disable = 0,
+#endif
 };
 
 RTE_PMD_REGISTER_LSX_PCIEP(net_lsinic, rte_lsinic_pmd);

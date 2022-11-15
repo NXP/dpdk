@@ -86,6 +86,13 @@ enum lsinic_port_type {
 #define LSINIC_PCIE_RAW_TEST_DST_DATA 0x2
 #endif
 
+#define LSINIC_DRV_VERSION (21 << 8 | 11)
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#define LSINIC_DRV_SUB_DEV_ID LSINIC_DRV_VERSION
+#endif
+#endif
+
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)
 {

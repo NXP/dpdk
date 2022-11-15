@@ -24,6 +24,13 @@
 #define LSINIC_MAX_NUM_TX_QUEUES LSINIC_RING_MAX_COUNT
 #define LSINIC_MAX_NUM_RX_QUEUES LSINIC_RING_MAX_COUNT
 
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#define LSX_PCIEP_PMD_THIS_DRV_VER \
+	LSX_PCIEP_PMD_DRV_VER(21, 11)
+#endif
+#endif
+
 static inline uint16_t lsinic_read_reg16(void *addr)
 {
 	return rte_be_to_cpu_16(rte_read16(addr));

@@ -70,6 +70,13 @@ enum lsinic_dev_type {
 #define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
 #define MAX_U16 0xffff
 
+#define LSINIC_DRV_VERSION (RTE_VER_YEAR << 8 | RTE_VER_MONTH)
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#define LSINIC_DRV_SUB_DEV_ID LSINIC_DRV_VERSION
+#endif
+#endif
+
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)
 {
