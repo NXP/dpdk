@@ -131,9 +131,8 @@ struct rte_lsx_pciep_device {
 };
 
 typedef int (*rte_lsx_pciep_probe_t)(struct rte_lsx_pciep_driver *lsinic_drv,
-				 struct rte_lsx_pciep_device *lsinic_dev);
+			struct rte_lsx_pciep_device *lsinic_dev);
 typedef int (*rte_lsx_pciep_remove_t)(struct rte_lsx_pciep_device *lsinic_dev);
-
 
 /**
  * A structure describing a LSINIC_VDEV driver.
@@ -142,6 +141,13 @@ struct rte_lsx_pciep_driver {
 	TAILQ_ENTRY(rte_lsx_pciep_driver) next; /**< Next in list. */
 	struct rte_driver driver;           /**< Inherit core driver. */
 	enum rte_lsx_pciep_type drv_type;   /**< Driver Type */
+
+	uint8_t driver_disable;
+#ifdef RTE_PCIEP_2111_VER_PMD_DRV
+#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+	uint16_t drv_ver;
+#endif
+#endif
 
 	/**< PCIEP bus reference */
 	struct rte_lsx_pciep_bus *lsx_pciep_bus;

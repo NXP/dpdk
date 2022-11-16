@@ -560,6 +560,11 @@ rte_lsx_pciep_driver_register(struct rte_lsx_pciep_driver *driver)
 {
 	RTE_VERIFY(driver);
 
+	if (driver->driver_disable) {
+		driver->lsx_pciep_bus = NULL;
+		return;
+	}
+
 	TAILQ_INSERT_TAIL(&lsx_pciep_bus.driver_list, driver, next);
 	/* Update Bus references */
 	driver->lsx_pciep_bus = &lsx_pciep_bus;
@@ -572,6 +577,8 @@ rte_lsx_pciep_driver_unregister(struct rte_lsx_pciep_driver *driver)
 	struct rte_lsx_pciep_bus *bus;
 
 	bus = driver->lsx_pciep_bus;
+	if (!bus)
+		return;
 
 	TAILQ_REMOVE(&bus->driver_list, driver, next);
 	/* Update Bus references */
