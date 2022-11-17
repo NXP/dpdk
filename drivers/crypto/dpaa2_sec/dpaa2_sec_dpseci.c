@@ -371,8 +371,7 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 			sym_op->aead.data.length;
 
 	/* Configure Output SGE for Encap/Decap */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->aead.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + sym_op->aead.data.offset);
 	sge->length = mbuf->data_len - sym_op->aead.data.offset;
 
 	mbuf = mbuf->next;
@@ -417,8 +416,7 @@ build_authenc_gcm_sg_fd(dpaa2_sec_session *sess,
 		sge++;
 	}
 
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->aead.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + sym_op->aead.data.offset);
 	sge->length = mbuf->data_len - sym_op->aead.data.offset;
 
 	mbuf = mbuf->next;
@@ -530,8 +528,7 @@ build_authenc_gcm_fd(dpaa2_sec_session *sess,
 	DPAA2_SET_FLE_SG_EXT(fle);
 
 	/* Configure Output SGE for Encap/Decap */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(dst));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->aead.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(dst) + sym_op->aead.data.offset);
 	sge->length = sym_op->aead.data.length;
 
 	if (sess->dir == DIR_ENC) {
@@ -566,8 +563,7 @@ build_authenc_gcm_fd(dpaa2_sec_session *sess,
 		sge++;
 	}
 
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->aead.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src) + sym_op->aead.data.offset);
 	sge->length = sym_op->aead.data.length;
 	if (sess->dir == DIR_DEC) {
 		sge++;
@@ -660,8 +656,7 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 			sym_op->cipher.data.length;
 
 	/* Configure Output SGE for Encap/Decap */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + sym_op->auth.data.offset);
 	sge->length = mbuf->data_len - sym_op->auth.data.offset;
 
 	mbuf = mbuf->next;
@@ -699,8 +694,7 @@ build_authenc_sg_fd(dpaa2_sec_session *sess,
 	sge->length = sess->iv.length;
 
 	sge++;
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + sym_op->auth.data.offset);
 	sge->length = mbuf->data_len - sym_op->auth.data.offset;
 
 	mbuf = mbuf->next;
@@ -821,8 +815,7 @@ build_authenc_fd(dpaa2_sec_session *sess,
 	DPAA2_SET_FLE_SG_EXT(fle);
 
 	/* Configure Output SGE for Encap/Decap */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(dst));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->cipher.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(dst) + sym_op->cipher.data.offset);
 	sge->length = sym_op->cipher.data.length;
 
 	if (sess->dir == DIR_ENC) {
@@ -852,8 +845,7 @@ build_authenc_fd(dpaa2_sec_session *sess,
 	sge->length = sess->iv.length;
 	sge++;
 
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src));
-	DPAA2_SET_FLE_OFFSET(sge, sym_op->auth.data.offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src) + sym_op->auth.data.offset);
 	sge->length = sym_op->auth.data.length;
 	if (sess->dir == DIR_DEC) {
 		sge++;
@@ -954,8 +946,7 @@ static inline int build_auth_sg_fd(
 		sge++;
 	}
 	/* i/p 1st seg */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, data_offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + data_offset);
 
 	if (data_len <= (mbuf->data_len - data_offset)) {
 		sge->length = data_len;
@@ -1085,8 +1076,7 @@ build_auth_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	}
 
 	/* Setting data to authenticate */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src));
-	DPAA2_SET_FLE_OFFSET(sge, data_offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src) + data_offset);
 	sge->length = data_len;
 
 	if (sess->dir == DIR_DEC) {
@@ -1171,8 +1161,7 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	DPAA2_SET_FLE_SG_EXT(op_fle);
 
 	/* o/p 1st seg */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, data_offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + data_offset);
 	sge->length = mbuf->data_len - data_offset;
 
 	mbuf = mbuf->next;
@@ -1199,14 +1188,12 @@ build_cipher_sg_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 
 	/* i/p IV */
 	DPAA2_SET_FLE_ADDR(sge, DPAA2_VADDR_TO_IOVA(iv_ptr));
-	DPAA2_SET_FLE_OFFSET(sge, 0);
 	sge->length = sess->iv.length;
 
 	sge++;
 
 	/* i/p 1st seg */
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf));
-	DPAA2_SET_FLE_OFFSET(sge, data_offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(mbuf) + data_offset);
 	sge->length = mbuf->data_len - data_offset;
 
 	mbuf = mbuf->next;
@@ -1314,8 +1301,7 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 		sess->iv.length,
 		sym_op->m_src->data_off);
 
-	DPAA2_SET_FLE_ADDR(fle, rte_pktmbuf_iova(dst));
-	DPAA2_SET_FLE_OFFSET(fle, data_offset);
+	DPAA2_SET_FLE_ADDR(fle, rte_pktmbuf_iova(dst) + data_offset);
 
 	fle->length = data_len + sess->iv.length;
 
@@ -1335,8 +1321,7 @@ build_cipher_fd(dpaa2_sec_session *sess, struct rte_crypto_op *op,
 	sge->length = sess->iv.length;
 
 	sge++;
-	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src));
-	DPAA2_SET_FLE_OFFSET(sge, data_offset);
+	DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(sym_op->m_src) + data_offset);
 
 	sge->length = data_len;
 	DPAA2_SET_FLE_FIN(sge);
