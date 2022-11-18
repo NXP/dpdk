@@ -1176,29 +1176,40 @@ DPAA2:
 ------
 
 1. DPAA2_TX_CGR_OFF		Disable the TX congestion control - i.e. infinite size of TX queues
+				By default TX congestion control is enabled. Threshold is
+				set to number of tx descriptors configured by application.
 
 2. DPAA2_RX_TAILDROP_OFF	Disable RX taildrop.
+				By default RX taildrop is enabled. Threshold is set to
+				number of rx descriptors configured by application.
 
-3. DPAA2_PARSE_ERR_DROP		Start dropping the error packets in hardware (parse errors)
-				this is a good offload to have.
+3. DPAA2_PARSE_ERR_DROP		Start dropping the error packets in hardware (parse errors).
+				By default, these (parse) error packets are not dropped by hardware.
 
 4. DPAA2_PORTAL_INTR_THRESHOLD	Portal Interrupt threshold w.r.t number of packets for epoll.
+				By default, it is set to 3.
 
 5. DPAA2_PORTAL_INTR_TIMEOUT	Portal interrupt timeout w.r.t time for no packet received.
+				By default, it is set to 255(0xFF).
 
 6. DPAA2_HOST_START_CPU		Define the CPU id for the virtual m/c CPU - so that right
 				QMAN HW stashing can be configured.
 
 7. DPAA2_NO_PREFETCH_RX		Disable prefetch RX mode - better latency and allows different
-				size of pull request in each call.
+				size of pull request(number of packets to be received) in each
+				RX call.
+				By default, prefetch RX mode is enabled.
 
 8. DPAA2_DATA_STASHING_OFF	Switch off data stashing when this flag is enabled. This gives
 				better performance on LS1088 with number of cores >= 4.
 
 9. DPAA2_LOOPBACK		QBMAN based loopback. send the received fd back without touching
 				the payload.
+				By default, loopback mode is disabled.
 
 10. DPAA2_STRICT_ORDERING_ENABLE  Enable strict ordering when using ordered queues.
+				  By default, loose ordering is enabled while using
+				  ordered queues.
 
 11. DPAA2_SEC_DP_DUMP_LEVEL	SEC datapath debug messages dump level.
 				0 - No dump.
@@ -1207,7 +1218,27 @@ DPAA2:
 				    information.
 				By default, 1 is configured.
 
-12. DPAA2_TX_CONF		Enable Tx confirmation.
+12. DPAA2_TX_CONF		Enable TX confirmation mode.
+				By default, TX confirmation mode is disabled.
+
+13. DPAA2_ENABLE_ERROR_QUEUE	Enable RX error queue for error packets. All the error packets
+				are received on this queue instead of getting discarded/received
+				with normal flow.
+				By default, checksum error and parse error packets are received
+				with normal flow, others are discarded.
+
+14. DPAA2_ENABLE_SOFT_PARSER	Enable Soft parsing of RX packets by H/W(MC). Information
+				related to a packet is shared by H/W along with packet.
+				By default, soft parsing is disabled.
+
+15. DPAA2_FLOW_CONTROL_LOG	Enable flow control logs(for debugging).
+				By default, flow control logs are disabled.
+
+16. DPAA2_FLOW_CONTROL_MISS_FLOW  Set queue id for packets not bound for any queue.
+				  Set it to -1 to drop the missed flow packets.
+				  By default, it is set to queue 0.
+
+
 ================================================================================
 
 ================================================================================
