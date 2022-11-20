@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 
 ===============================================================================
 NXP DPDK PCIe Endpoint README
@@ -430,3 +430,26 @@ export PORT1_FWD=0
 #./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
 ./examples/port_fwd/build/port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+
+9) Support 21.11 driver on EP side:
+i) Only primary EP driver is enabled by default.
+
+ii) Support both primary EP driver and 21.11 driver
+a) define "RTE_PCIEP_2111_VER_PMD_DRV" by both EP and RC builds command:
+EP build example:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_PCIEP_2111_VER_PMD_DRV=y'
+b) Primary driver is loaded on EP by default. Set enviroment on EP to load 21.11 driver:
+export LSX_PCIE2_PF0_VER_YEAR=21
+export LSX_PCIE2_PF0_VER_MONTH=11
+export LSX_PCIE2_PF1_VER_YEAR=21
+export LSX_PCIE2_PF1_VER_MONTH=11
+
+iii) Support 21.11 driver only
+define "RTE_PCIEP_2111_VER_PMD_DRV" and "RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE" by both EP and RC builds command:
+EP build example:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_PCIEP_2111_VER_PMD_DRV=y -DRTE_PCIEP_PRIMARY_PMD_DRV_DISABLE'
+
+iv) 21.11 driver uses dmadev based dma driver by default. Set enviroment to choose rawdev based dma:
+Example:
+export LSXINIC_PCIE2_PF0_RAWDEV_DMA=1
+export LSXINIC_PCIE2_PF1_VF0_RAWDEV_DMA=1
