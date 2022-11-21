@@ -23,8 +23,7 @@
 #include <dpaa2_pmd_logs.h>
 
 static char *dpaa2_flow_control_log;
-static uint16_t dpaa2_flow_miss_flow_id =
-	DPNI_FS_MISS_DROP;
+static uint16_t dpaa2_flow_miss_flow_id; /* Default miss flow id is 0. */
 
 enum dpaa2_flow_entry_size {
 	DPAA2_FLOW_ENTRY_MIN_SIZE = (DPNI_MAX_KEY_SIZE / 2),
@@ -4496,7 +4495,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 
 	if (getenv("DPAA2_FLOW_CONTROL_MISS_FLOW")) {
 		dpaa2_flow_miss_flow_id =
-			atoi(getenv("DPAA2_FLOW_CONTROL_MISS_FLOW"));
+			(uint16_t) atoi(getenv("DPAA2_FLOW_CONTROL_MISS_FLOW"));
 		if (dpaa2_flow_miss_flow_id >= priv->dist_queues) {
 			DPAA2_PMD_ERR("Missed flow ID %d >= dist size(%d)",
 				dpaa2_flow_miss_flow_id, priv->dist_queues);
