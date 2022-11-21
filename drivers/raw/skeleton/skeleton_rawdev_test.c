@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017 NXP
+ * Copyright 2017,2022 NXP
  */
 
 #include <rte_common.h>
