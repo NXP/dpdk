@@ -1420,10 +1420,11 @@ lsinic_fetch_rx_buffer(struct lsinic_ring *rx_ring,
 	return skb;
 }
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 static int
 lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
-			       struct lsinic_bd_desc *rx_desc,
-			       struct sk_buff **skb_arry)
+	struct lsinic_bd_desc *rx_desc,
+	struct sk_buff **skb_arry)
 {
 	struct sk_buff *skb;
 	struct lsinic_mg_header *mgd;
@@ -1492,7 +1493,7 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 
 		/* allocate a skb to store the frags */
 		skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
-						ALIGN(len, sizeof(long)));
+				ALIGN(len, sizeof(long)));
 		if (unlikely(!skb)) {
 			rx_ring->rx_stats.alloc_rx_buff_failed++;
 			break;
@@ -1517,6 +1518,7 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 
 	return i;
 }
+#endif
 
 /**
  * lsinic_is_non_eop - process handling of non-EOP buffers
@@ -1946,6 +1948,7 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 			break;
 		}
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 		if (lsinic_test_staterr(rx_desc, LSINIC_BD_CMD_MG)) {
 			struct sk_buff *skb_array[LSINIC_MERGE_MAX_NUM];
 			int count, i;
@@ -1988,7 +1991,9 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 				}
 			}
 			skb = skb_array[count]; /* The last packet */
-		} else {
+		} else
+#endif
+		{
 			/* retrieve a buffer from the ring */
 			skb = lsinic_fetch_rx_buffer(rx_ring, rx_desc);
 		}
@@ -2983,7 +2988,7 @@ lsinic_tx_map(struct lsinic_ring *tx_ring,
 }
 
 static int lsinic_gso(struct lsinic_ring *tx_ring,
-		       struct lsinic_tx_buffer *first)
+	struct lsinic_tx_buffer *first)
 {
 	struct sk_buff *skb = first->skb;
 
@@ -2999,8 +3004,6 @@ static int lsinic_gso(struct lsinic_ring *tx_ring,
 		if (err)
 			return err;
 	}
-
-	first->tx_flags |= LSINIC_BD_CMD_SG;
 
 	return 1;
 }
