@@ -1886,12 +1886,6 @@ int dpni_get_port_cfg(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
 		uint16_t token, struct dpni_port_cfg *port_cfg);
 
 /**
- * When used for queue_idx in function dpni_set_rx_dist_default_queue will
- * signal to dpni to drop all unclassified frames
- */
-#define DPNI_FS_MISS_DROP		((uint16_t)-1)
-
-/**
  * struct dpni_rx_dist_cfg - distribution configuration
  * @dist_size:	distribution size; supported values: 1,2,3,4,6,7,8,
  *		12,14,16,24,28,32,48,56,64,96,112,128,192,224,256,384,448,
@@ -1904,9 +1898,9 @@ int dpni_get_port_cfg(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
  * @tc: TC id for which distribution is set
  * @fs_miss_flow_id: when packet misses all rules from flow steering table and
  *		hash is disabled it will be put into this queue id; use
- *		DPNI_FS_MISS_DROP to drop frames. The value of this field is
- *		used only when flow steering distribution is enabled and hash
- *		distribution is disabled
+ *		-1 to drop frames. The value of this field is used only when
+ *		flow steering distribution is enabled and hash distribution is
+ *		disabled
  */
 struct dpni_rx_dist_cfg {
 	uint16_t dist_size;
