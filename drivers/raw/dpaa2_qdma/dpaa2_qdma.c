@@ -29,8 +29,8 @@
 /* Dynamic log type identifier */
 int dpaa2_qdma_logtype;
 
-uint32_t dpaa2_coherent_no_alloc_cache;
-uint32_t dpaa2_coherent_alloc_cache;
+static uint32_t dpaa2_coherent_no_alloc_cache;
+static uint32_t dpaa2_coherent_alloc_cache;
 
 /* QDMA device */
 static struct qdma_device q_dev;
@@ -2102,8 +2102,20 @@ rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 {
 	struct rte_rawdev *rawdev;
 	int ret;
+	char env[64], *penv;
 
 	DPAA2_QDMA_FUNC_TRACE();
+
+	sprintf(env, "DPAA2_QDMA%d_DMADEV_DRIVER",
+		dpaa2_dev->object_id);
+	penv = getenv(env);
+	if (penv && atoi(penv))
+		return dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
+
+#ifdef DPAA2_QDMA_OBJ_ID_DMADEV_START
+	if (dpaa2_dev->object_id >= DPAA2_QDMA_OBJ_ID_DMADEV_START)
+		return dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
+#endif
 
 	rawdev = rte_rawdev_pmd_allocate(dpaa2_dev->device.name,
 			sizeof(struct dpaa2_dpdmai_dev),
@@ -2138,10 +2150,24 @@ rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 static int
 rte_dpaa2_qdma_remove(struct rte_dpaa2_device *dpaa2_dev)
 {
-	struct rte_rawdev *rawdev = dpaa2_dev->rawdev;
+	struct rte_rawdev *rawdev;
 	int ret;
+	char env[64], *penv;
 
 	DPAA2_QDMA_FUNC_TRACE();
+
+	sprintf(env, "DPAA2_QDMA%d_DMADEV_DRIVER",
+		dpaa2_dev->object_id);
+	penv = getenv(env);
+	if (penv && atoi(penv))
+		return dpaa2_qdma_dmadev_remove(dpaa2_dev);
+
+#ifdef DPAA2_QDMA_OBJ_ID_DMADEV_START
+	if (dpaa2_dev->object_id >= DPAA2_QDMA_OBJ_ID_DMADEV_START)
+		return dpaa2_qdma_dmadev_remove(dpaa2_dev);
+#endif
+
+	rawdev = dpaa2_dev->rawdev;
 
 	dpaa2_dpdmai_dev_uninit(rawdev);
 

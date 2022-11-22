@@ -122,6 +122,8 @@ enum {
 #define DPAA2_COHERENT_ALLOCATE_CACHE		0x6
 #define DPAA2_LX2_COHERENT_ALLOCATE_CACHE	0xb
 
+#define DPAA2_QDMA_OBJ_ID_DMADEV_START 4
+
 int
 dpaa2_qdma_dmadev_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	struct rte_dpaa2_device *dpaa2_dev);

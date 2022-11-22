@@ -6,107 +6,7 @@
 #define __DPAA2_QDMA_H__
 
 #include <rte_pmd_dpaa2_qdma.h>
-
-#define DPAA2_DPDMAI_MAX_QUEUES	8
-
-/** Source/Destination Descriptor */
-struct qdma_sdd {
-	uint32_t rsv;
-	/** Stride configuration */
-	uint32_t stride;
-	/** Route-by-port command */
-	union {
-		uint32_t rbpcmd;
-		struct rbpcmd_st {
-			uint32_t vfid:6;
-			uint32_t rsv4:2;
-			uint32_t pfid:1;
-			uint32_t rsv3:7;
-			uint32_t attr:3;
-			uint32_t rsv2:1;
-			uint32_t at:2;
-			uint32_t vfa:1;
-			uint32_t ca:1;
-			uint32_t tc:3;
-			uint32_t rsv1:5;
-		} rbpcmd_simple;
-	};
-	union {
-		uint32_t cmd;
-		struct rcmd_simple {
-			uint32_t portid:4;
-			uint32_t rsv1:14;
-			uint32_t rbp:1;
-			uint32_t ssen:1;
-			uint32_t rthrotl:4;
-			uint32_t sqos:3;
-			uint32_t ns:1;
-			uint32_t rdtype:4;
-		} read_cmd;
-		struct wcmd_simple {
-			uint32_t portid:4;
-			uint32_t rsv3:10;
-			uint32_t rsv2:2;
-			uint32_t lwc:2;
-			uint32_t rbp:1;
-			uint32_t dsen:1;
-			uint32_t rsv1:4;
-			uint32_t dqos:3;
-			uint32_t ns:1;
-			uint32_t wrttype:4;
-		} write_cmd;
-	};
-} __attribute__ ((__packed__));
-
-#define QDMA_SG_FMT_SDB	0x0 /* single data buffer */
-#define QDMA_SG_FMT_FDS	0x1 /* frame data section */
-#define QDMA_SG_FMT_SGTE	0x2 /* SGT extension */
-#define QDMA_SG_SL_SHORT	0x1 /* short length */
-#define QDMA_SG_SL_LONG	0x0 /* long length */
-#define QDMA_SG_F	0x1 /* last sg entry */
-#define QDMA_SG_BMT_ENABLE 0x1
-#define QDMA_SG_BMT_DISABLE 0x0
-
-struct qdma_sg_entry {
-	uint32_t addr_lo;		/* address 0:31 */
-	uint32_t addr_hi:17;	/* address 32:48 */
-	uint32_t rsv:15;
-	union {
-		uint32_t data_len_sl0;	/* SL=0, the long format */
-		struct {
-			uint32_t len:17;	/* SL=1, the short format */
-			uint32_t reserve:3;
-			uint32_t sf:1;
-			uint32_t sr:1;
-			uint32_t size:10;	/* buff size */
-		} data_len_sl1;
-	} data_len;					/* AVAIL_LENGTH */
-	union {
-		uint32_t ctrl_fields;
-		struct {
-			uint32_t bpid:14;
-			uint32_t ivp:1;
-			uint32_t bmt:1;
-			uint32_t offset:12;
-			uint32_t fmt:2;
-			uint32_t sl:1;
-			uint32_t f:1;
-		} ctrl;
-	};
-} __attribute__((__packed__));
-
-enum {
-	DPAA2_QDMA_SDD_FLE,
-	DPAA2_QDMA_SRC_FLE,
-	DPAA2_QDMA_DST_FLE,
-	DPAA2_QDMA_MAX_FLE
-};
-
-enum {
-	DPAA2_QDMA_SRC_SDD,
-	DPAA2_QDMA_DST_SDD,
-	DPAA2_QDMA_MAX_SDD
-};
+#include "dpaa2_qdma_common.h"
 
 #define FLE_SG_JOB_GET_NB(val) \
 	((uint32_t)(val >> 32))
@@ -140,22 +40,6 @@ struct qdma_fle_sg_elem {
 
 /** FLE pool cache size */
 #define QDMA_FLE_CACHE_SIZE(_num) (_num/(RTE_MAX_LCORE * 2))
-
-/** Notification by FQD_CTX[fqid] */
-#define QDMA_SER_CTX (1 << 8)
-#define DPAA2_RBP_MEM_RW            0x0
-/**
- * Source descriptor command read transaction type for RBP=0:
- * coherent copy of cacheable memory
- */
-#define DPAA2_COHERENT_NO_ALLOCATE_CACHE	0xb
-#define DPAA2_LX2_COHERENT_NO_ALLOCATE_CACHE	0x7
-/**
- * Destination descriptor command write transaction type for RBP=0:
- * coherent copy of cacheable memory
- */
-#define DPAA2_COHERENT_ALLOCATE_CACHE		0x6
-#define DPAA2_LX2_COHERENT_ALLOCATE_CACHE	0xb
 
 /** Maximum possible H/W Queues on each core */
 #define MAX_HW_QUEUE_PER_CORE		64
@@ -273,11 +157,5 @@ struct dpaa2_dpdmai_dev {
 	struct dpaa2_queue tx_queue[DPAA2_DPDMAI_MAX_QUEUES];
 	struct qdma_device *qdma_dev;
 };
-
-static inline struct qdma_device *
-QDMA_DEV_OF_VQ(struct qdma_virt_queue *vq)
-{
-	return vq->hw_queue->dpdmai_dev->qdma_dev;
-}
 
 #endif /* __DPAA2_QDMA_H__ */

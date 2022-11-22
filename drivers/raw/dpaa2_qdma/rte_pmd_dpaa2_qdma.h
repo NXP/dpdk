@@ -6,6 +6,7 @@
 #define __RTE_PMD_DPAA2_QDMA_H__
 
 #include <rte_rawdev.h>
+#include <rte_dmadev.h>
 
 /**
  * @file
@@ -211,5 +212,22 @@ void
 rte_qdma_vq_stats(struct rte_rawdev *rawdev,
 		uint16_t vq_id,
 		struct rte_qdma_vq_stats *vq_stats);
+
+/*For DMADEV based driver*/
+#define RTE_DPAA2_QDMA_IDX_SHIFT_POS 20
+#define RTE_DPAA2_QDMA_LEN_MASK \
+	(~((~0u) << RTE_DPAA2_QDMA_IDX_SHIFT_POS))
+
+#define RTE_DPAA2_QDMA_IDX_LEN(idx, len) \
+	(uint32_t)((idx << RTE_DPAA2_QDMA_IDX_SHIFT_POS) | \
+	(len & RTE_DPAA2_QDMA_LEN_MASK))
+
+#define RTE_DPAA2_QDMA_IDX_FROM_LENGTH(length) \
+	((uint16_t)((length) >> RTE_DPAA2_QDMA_IDX_SHIFT_POS))
+
+#define RTE_DPAA2_QDMA_LEN_FROM_LENGTH(length) \
+	((length) & RTE_DPAA2_QDMA_LEN_MASK)
+
+#define RTE_DPAA2_QDMA_JOB_SUBMIT_MAX (32 + 8)
 
 #endif /* __RTE_PMD_DPAA2_QDMA_H__*/
