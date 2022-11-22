@@ -141,9 +141,20 @@ lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
 
 	if (rxq->split_type == LSINIC_HW_SPLIT) {
 		recycle_txq = rxq->recycle_txq;
+		if (!recycle_txq)
+			return -EINVAL;
+
 		dpaa2_data = recycle_txq->eth_data;
+		if (!dpaa2_data)
+			return -EINVAL;
+
 		dpaa2_priv = dpaa2_data->dev_private;
+		if (!dpaa2_priv)
+			return -EINVAL;
+
 		dpaa2_dev = dpaa2_priv->eth_dev;
+		if (!dpaa2_dev)
+			return -EINVAL;
 
 		dpaa2_dev->dev_ops->stats_get(dpaa2_dev, &igb_stats);
 		*dev_imissed = (unsigned long long)igb_stats.imissed;
