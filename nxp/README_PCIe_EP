@@ -10,7 +10,8 @@ export CROSS=aarch64-linux-gnu-
 export RTE_SDK=/Your/DPDK/path
 export RTE_TARGET=arm64-dpaa-linuxapp-gcc
 make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y' -C examples/port_fwd
+cd examples/port_fwd
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
 #Target image:
 #Endpoint example image: "example/port_fwd/build/port_fwd".
 
@@ -19,14 +20,16 @@ ii) Root Complex build:
 export RTE_SDK=/Your/DPDK/path
 export RTE_TARGET=x86_64-native-linuxapp-gcc
 make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
-make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y -C examples/port_fwd
+cd examples/port_fwd
+make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
 #NXP ARM:
 export RTE_KERNELDIR=/Your/linux/kernel/path
 export CROSS=aarch64-linux-gnu-
 export RTE_SDK=/Your/DPDK/path
 export RTE_TARGET=arm64-dpaa-linuxapp-gcc
 make T=arm64-dpaa-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
-make T=arm64-dpaa-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y -C examples/port_fwd
+cd examples/port_fwd
+make T=arm64-dpaa-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
 #Target images:
 #Root Complex kernel driver: "kernel/linux/lsxinic/lsinic.ko".
 #Root Complex DPDK UIO driver: "kernel/linux/igb_uio/igb_uio.ko".
@@ -106,7 +109,11 @@ export P1_DIST_1='(1,0,2)'
 ./port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
 3) Small packets across PCIe performance improvment on Endpoint:
-#Following enviroments are set in EP.
+Define compile flag for both EP/RC build: "RTE_LSINIC_PKT_MERGE_ACROSS_PCIE"
+Exapmle:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y, -DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+
+#Following enviroments are set on EP.
 #Merge burst small packets to large packet.
 export LSINIC_MERGE_PACKETS=1
 #Configure DPAA2 port as recycle port to merge small packets for PCIEx_PFy or PCIEx_PFy_VFz.
@@ -356,9 +363,8 @@ export SYSFS_PCI_DEVICES=/tmp
 ./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
 6) PCIe EP/RC driver latency profiling.
-i) EP cross build:
+i) EP cross build, define compile flag "LSXINIC_LATENCY_PROFILING" for EP:
 make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING' -C examples/port_fwd
 
 ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profiling log something like:
 
@@ -369,27 +375,34 @@ ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profil
         X20(7545,0.000186%) X40(1304,0.000032%) X100(0,0.000000%)
 
 7) Raw qDMA over PCIe throughput/latency benchmark.
-i) EP cross build:
+i) Define compile flag for both EP/RC: "RTE_LSINIC_PCIE_RAW_TEST_ENABLE"
+Example:
 make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING' -C examples/port_fwd
 
-ii)Environment settings in RC to start benchmark raw qDMA over PCIe:
+ii)Environment settings on RC to start benchmark raw qDMA over PCIe:
 #benchmark raw qDMA PCIE from EP to RC:
-export LSINIC_EP2RC_PCI_DMA_RAW_TEST=1
+export LSINIC_EP2RC_PCIE_RAW_TEST=1
 #benchmark raw qDMA PCIE from RC to EP:
-export LSINIC_RC2EP_PCI_DMA_RAW_TEST=1
+export LSINIC_RC2EP_PCIE_RAW_TEST=1
 
-iii) Other options set in EP used for throughput/latency measurment:
-#Set DMA packet size before running EP PMD driver
-#default/minimum size is 60 and maximum size is 1514
-export LSINIC_PCIE_DMA_TEST_PKT_SIZE=1024
-#Set DMA burst size before running EP PMD driver
-#default burst size is 32
-export LSINIC_PCIE_DMA_RAW_BURST_SIZE=32
-#Enable sync mode before running EP PMD driver
-#sync mode is diasbled as default.
-#This is used to measure best latency of qDMA over PCIe
-export LSINIC_PCIE_DMA_RAW_SYNC_MODE=1
+export LSINIC_RC2EP_PCIE_RAW_TEST_BD_NUM=64 /*default 512*/
+export LSINIC_PCIE_RAW_TEST_SIZE=60000 /*default 1024*/
+
+
+iii) Other options set on EP used for throughput/latency measurment:
+#Sanity data check for DMA from EP to RC:
+export LSINIC_PCIE_RAW_TEST_EP2RC_CHECK_MODE=1
+#Sanity data check for DMA from RC to EP:
+export LSINIC_PCIE_RAW_TEST_RC2EP_CHECK_MODE=1
+#DDR to DDR test on EP
+export LSINIC_PCIE_RAW_TEST_EP2RC_MEM_MODE=1
+export LSINIC_PCIE_RAW_TEST_RC2EP_MEM_MODE=1
+#DMA burst depth:
+export LSINIC_PCIE_RAW_TEST_BURST_SIZE=1 /*default 32*/
+#DMA Sync mode test:
+export LSINIC_PCIE_RAW_TEST_SYNC_MODE=1
+#CPU copy between PCIe and EP DDR benchmark:
+export LSINIC_PCIE_RAW_TEST_CPU_MODE=1
 
 #Check throughput and latency by EP runtime LOG something like:
 
@@ -430,26 +443,3 @@ export PORT1_FWD=0
 #./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
 ./examples/port_fwd/build/port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
-
-9) Support 21.11 driver on EP side:
-i) Only primary EP driver is enabled by default.
-
-ii) Support both primary EP driver and 21.11 driver
-a) define "RTE_PCIEP_2111_VER_PMD_DRV" by both EP and RC builds command:
-EP build example:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_PCIEP_2111_VER_PMD_DRV=y'
-b) Primary driver is loaded on EP by default. Set enviroment on EP to load 21.11 driver:
-export LSX_PCIE2_PF0_VER_YEAR=21
-export LSX_PCIE2_PF0_VER_MONTH=11
-export LSX_PCIE2_PF1_VER_YEAR=21
-export LSX_PCIE2_PF1_VER_MONTH=11
-
-iii) Support 21.11 driver only
-define "RTE_PCIEP_2111_VER_PMD_DRV" and "RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE" by both EP and RC builds command:
-EP build example:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=y EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_PCIEP_2111_VER_PMD_DRV=y -DRTE_PCIEP_PRIMARY_PMD_DRV_DISABLE'
-
-iv) 21.11 driver uses dmadev based dma driver by default. Set enviroment to choose rawdev based dma:
-Example:
-export LSXINIC_PCIE2_PF0_RAWDEV_DMA=1
-export LSXINIC_PCIE2_PF1_VF0_RAWDEV_DMA=1
