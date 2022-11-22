@@ -38,8 +38,6 @@
 #include "qdma_demo.h"
 
 static int qdma_dev_id;
-/* Determines H/W or virtual mode */
-uint8_t qdma_mode = RTE_QDMA_MODE_HW;
 float rate;
 uint64_t freq;
 static rte_atomic32_t synchro;
@@ -121,12 +119,10 @@ test_dma_init(void)
 
 	if (TEST_DMA_INIT_FLAG)
 		return 0;
-	/* Configure QDMA to use HW resource - no virtual queues */
-	qdma_config.max_hw_queues_per_core = LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.fle_queue_pool_cnt = LSINIC_QDMA_FLE_POOL_QUEUE_COUNT;
-	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
 
-	dev_conf.dev_private = (void *)&qdma_config;
+	qdma_config.max_vqs = QDMA_DEMO_MAX_VQS;
+
+	dev_conf.dev_private = &qdma_config;
 	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
 	if (ret) {
 		RTE_LOG(ERR, PMD, "Failed to configure DMA\n");
@@ -527,13 +523,12 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 
 		q_config.lcore_id = i;
 		q_config.flags = 0;
-		if (qdma_mode == RTE_QDMA_MODE_HW)
-			q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
 		if (g_frame_format == RTE_QDMA_LONG_FORMAT)
 			q_config.flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
 		if (g_scatter_gather)
 			q_config.flags |= RTE_QDMA_VQ_FD_SG_FORMAT;
 		q_config.rbp = NULL;
+		q_config.queue_size = TEST_PACKETS_NUM;
 		g_vqid[i] = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 		printf("core id:%d g_vqid[%d]:%d\n", i, i, g_vqid[i]);
 		if (g_vqid[i] < 0)
@@ -595,7 +590,6 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 			if (g_userbp) {
 				job->dest =
 				(TEST_PCIBUS_BASE_ADDR + (long) (i * TEST_PACKET_SIZE));
-				job->flags = RTE_QDMA_JOB_DEST_PHY;
 			} else {
 				job->dest =
 				(g_target_pci_vaddr + (long) (i * TEST_PACKET_SIZE));
@@ -611,8 +605,6 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 				job->dest =
 					((long) g_iova1 +
 					(long) (i * TEST_PACKET_SIZE));
-				job->flags = RTE_QDMA_JOB_SRC_PHY |
-							RTE_QDMA_JOB_DEST_PHY;
 			}
 		} else if (g_rbp_testcase == PCI_TO_PCI) {
 			if (g_userbp) {
@@ -621,7 +613,6 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 					(long) (i * TEST_PACKET_SIZE));
 				job->src = (TEST_PCIBUS_BASE_ADDR +
 					(long) ((i * TEST_PACKET_SIZE)));
-				job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
 			} else {
 				job->dest = (g_target_pci_vaddr + g_pci_size +
 					(long) (i * TEST_PACKET_SIZE));
@@ -632,7 +623,6 @@ lcore_qdma_control_loop(__attribute__((unused)) void *arg)
 			if (g_userbp) {
 				job->src = (TEST_PCIBUS_BASE_ADDR +
 					(long) ((i * TEST_PACKET_SIZE)));
-				job->flags = RTE_QDMA_JOB_SRC_PHY;
 			} else {
 				job->src = (g_target_pci_vaddr +
 					(long) ((i * TEST_PACKET_SIZE)));
