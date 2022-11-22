@@ -369,9 +369,24 @@ ii) Environment settings in RC to start benchmark raw qDMA over PCIe:
 export LSINIC_EP2RC_PCIE_RAW_TEST=1
 #benchmark raw qDMA PCIE from RC to EP:
 export LSINIC_RC2EP_PCIE_RAW_TEST=1
-#Set DMA packet size before running EP PMD driver
-#default: 1024B, minimum: 60B, maximum: 1514B
-export LSINIC_PCIE_RAW_TEST_SIZE=1024
+#Set DMA frame size before running EP PMD driver
+export LSINIC_PCIE_RAW_TEST_SIZE=60000 /*default 1024*/
+export LSINIC_RC2EP_PCIE_RAW_TEST_BD_NUM=64 /*default 512*/
+
+iii) Other options set on EP used for throughput/latency measurment:
+#Sanity data check for DMA from EP to RC:
+export LSINIC_PCIE_RAW_TEST_EP2RC_CHECK_MODE=1
+#Sanity data check for DMA from RC to EP:
+export LSINIC_PCIE_RAW_TEST_RC2EP_CHECK_MODE=1
+#DDR to DDR test on EP
+export LSINIC_PCIE_RAW_TEST_EP2RC_MEM_MODE=1
+export LSINIC_PCIE_RAW_TEST_RC2EP_MEM_MODE=1
+#DMA burst depth:
+export LSINIC_PCIE_RAW_TEST_BURST_SIZE=1 /*default 32*/
+#DMA Sync mode test:
+export LSINIC_PCIE_RAW_TEST_SYNC_MODE=1
+#CPU copy between PCIe and EP DDR benchmark:
+export LSINIC_PCIE_RAW_TEST_CPU_MODE=1
 
 iii) Check throughput and latency by EP runtime LOG something like:
 
