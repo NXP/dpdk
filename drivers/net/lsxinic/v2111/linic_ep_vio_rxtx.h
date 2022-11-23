@@ -139,8 +139,17 @@ struct lsxvio_queue {
 	struct lsxvio_dma_cntx *dma_sw_cntx;
 
 	/* DMA */
+	uint8_t rawdev_dma;
 	struct lsinic_dma_job *dma_jobs;
+	struct rte_qdma_job *rawdma_jobs;
 	struct lsxvio_dma_cntx *dma_bd_cntx;
+
+	struct rte_qdma_job *e2r_bd_rawdma_jobs;
+	struct rte_qdma_job *r2e_bd_rawdma_jobs;
+	struct rte_qdma_job *r2e_idx_rawdma_jobs;
+
+	void (*dma_eq)(void *queue, void **jobs, uint16_t nb_jobs);
+	uint16_t (*dma_dq)(void *queue);
 
 	uint32_t core_id;
 	int32_t dma_id;
@@ -181,6 +190,9 @@ struct lsxvio_queue {
 
 	/* qDMA configure */
 	struct rte_dma_vchan_conf qdma_config;
+	/**Primary DMA*/
+	struct rte_qdma_rbp rbp;
+	struct rte_qdma_queue_config qrawdma_config;
 
 	uint64_t packets_old;
 	/* statistics */

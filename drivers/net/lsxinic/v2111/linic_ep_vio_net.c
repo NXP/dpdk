@@ -66,6 +66,7 @@
 #include "linic_ep_vio_net.h"
 #include "linic_ep_vio_rxtx.h"
 #include "linic_ep_dma.h"
+#include "linic_ep_rawdev_dma.h"
 #include "linic_ep_tool.h"
 #include "linic_common_helper.h"
 
@@ -284,7 +285,7 @@ lsxvio_dev_priv_feature_configure(struct lsxvio_adapter *adapter,
 {
 	uint64_t lsx_feature = 0;
 	int env_val;
-	char *penv;
+	char *penv, env_name[64];
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(adapter->pcie_idx);
 
 	lsx_feature |= LSX_VIO_EP2RC_DMA_NORSP;
@@ -351,6 +352,18 @@ lsxvio_dev_priv_feature_configure(struct lsxvio_adapter *adapter,
 
 	if (lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)
 		lsx_feature |= LSX_VIO_EP2RC_DMA_SG_ENABLE;
+
+	if (adapter->is_vf) {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_RAWDEV_DMA",
+			adapter->pcie_idx, adapter->pf_idx,
+			adapter->vf_idx);
+	} else {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_RAWDEV_DMA",
+			adapter->pcie_idx, adapter->pf_idx);
+	}
+	penv = getenv(env_name);
+	if (penv)
+		adapter->rawdev_dma = atoi(penv);
 
 	if (adapter->rbp_enable && pex_type == PEX_LX2160_REV1 &&
 		(lsx_feature &
@@ -477,6 +490,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		(lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
 		/* TBD*/
 		LSXINIC_PMD_ERR("RC2EP DMA NORSP/BD notify TBD");
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_RC2EP_IN_ORDER)) {
+		/* TBD*/
+		LSXINIC_PMD_ERR("RC2EP DMA-BD is NOT order ring");
 
 		return -EINVAL;
 	}
@@ -699,11 +720,19 @@ lsxvio_dev_configure(struct rte_eth_dev *dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		LSXVIO_MAX_QUEUE_PAIRS,
-		LSXVIO_BD_DMA_MAX_COUNT,
-		LSINIC_DMA_MEM_TO_PCIE,
-		&adapter->txq_dma_id);
+	if (adapter->rawdev_dma) {
+		adapter->txq_dma_id = lsinic_dma_init();
+		if (adapter->txq_dma_id >= 0)
+			err = 0;
+		else
+			err = adapter->txq_dma_id;
+	} else {
+		err = lsinic_dma_acquire(dma_silent,
+			LSXVIO_MAX_QUEUE_PAIRS,
+			LSXVIO_BD_DMA_MAX_COUNT,
+			LSINIC_DMA_MEM_TO_PCIE,
+			&adapter->txq_dma_id);
+	}
 	if (err)
 		return err;
 	adapter->txq_dma_silent = dma_silent;
@@ -712,11 +741,19 @@ lsxvio_dev_configure(struct rte_eth_dev *dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		LSXVIO_MAX_QUEUE_PAIRS,
-		LSXVIO_BD_DMA_MAX_COUNT,
-		LSINIC_DMA_PCIE_TO_MEM,
-		&adapter->rxq_dma_id);
+	if (adapter->rawdev_dma) {
+		adapter->rxq_dma_id = lsinic_dma_init();
+		if (adapter->rxq_dma_id >= 0)
+			err = 0;
+		else
+			err = adapter->rxq_dma_id;
+	} else {
+		err = lsinic_dma_acquire(dma_silent,
+			LSXVIO_MAX_QUEUE_PAIRS,
+			LSXVIO_BD_DMA_MAX_COUNT,
+			LSINIC_DMA_PCIE_TO_MEM,
+			&adapter->rxq_dma_id);
+	}
 	if (err)
 		return err;
 	adapter->rxq_dma_silent = dma_silent;

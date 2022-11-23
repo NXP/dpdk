@@ -41,6 +41,7 @@ struct lsxvio_adapter {
 	uint8_t status;
 	uint16_t vtnet_hdr_size;
 
+	uint8_t rawdev_dma;
 	int txq_dma_id;
 	int rxq_dma_id;
 	int txq_dma_silent;
