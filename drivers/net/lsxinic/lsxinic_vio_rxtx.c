@@ -1053,17 +1053,21 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 		dma_job = jobs[i];
 		if (!dma_job)
 			continue;
-		dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
-		if (!dma_job->cnxt)
-			continue;
-		dma_cntx = (void *)dma_job->cnxt;
-		RTE_ASSERT(dma_cntx->cntx_type == LSXVIO_DMA_CNTX_ADDR);
-		rxe = dma_cntx->cntx_addr;
 		if (unlikely(dma_job->status != 0)) {
 			LSXINIC_PMD_ERR("rxe%d dma error %x, cpu:%d",
 				rxe->idx,
 				dma_job->status, rte_lcore_id());
 		}
+		dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
+		if (!dma_job->cnxt)
+			continue;
+		dma_cntx = (void *)dma_job->cnxt;
+		if (dma_cntx->cntx_type != LSXVIO_DMA_CNTX_ADDR) {
+			LSXINIC_PMD_ERR("dma dq ctx type err %d",
+				dma_cntx->cntx_type);
+			continue;
+		}
+		rxe = dma_cntx->cntx_addr;
 		if (rxe) {
 			if (rxe->flag) {
 				idx = rxe->idx & (rxq->nb_desc - 1);
@@ -1193,6 +1197,9 @@ lsxvio_append_bd_dma(struct lsxvio_queue *vq,
 		sizeof(struct lsxvio_short_desc) :
 		sizeof(struct vring_desc);
 	int rxq_rsp = 1;
+
+	if (!(vq->flag & LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG))
+		return 0;
 
 	last_bd_dma_idx = vq->bd_dma_idx;
 	if (vq->type == LSXVIO_QUEUE_RX) {
@@ -1873,7 +1880,8 @@ static void lsxvio_tx_loop(struct lsxvio_adapter *adapter)
 			}
 		}
 
-		if (q->packets == q->packets_old)
+		if (q->packets == q->packets_old &&
+			(q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG))
 			lsxvio_qdma_append(q, false);
 		q->packets_old = q->packets;
 

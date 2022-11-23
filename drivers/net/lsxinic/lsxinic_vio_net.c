@@ -377,6 +377,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		return -EINVAL;
 	}
 
+	if ((lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_RC2EP_IN_ORDER)) {
+		/* TBD*/
+		LSXINIC_PMD_ERR("RC2EP DMA-BD is NOT order ring");
+
+		return -EINVAL;
+	}
+
 	if ((lsx_feature & LSX_VIO_EP2RC_DMA_BD_NOTIFY) &&
 		!(lsx_feature & LSX_VIO_EP2RC_PACKED)) {
 		LSXINIC_PMD_ERR(EP2RC_RING_DMA_ERR("PACKED",
