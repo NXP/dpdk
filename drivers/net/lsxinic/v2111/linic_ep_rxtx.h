@@ -199,12 +199,23 @@ struct lsinic_queue {
 	struct lsinic_dma_job *dma_jobs;
 	struct lsinic_dma_seg_job *dma_seg_jobs;
 
+	struct rte_qdma_job *rawdma_jobs;
+	struct rte_qdma_job *e2r_bd_rawdma_jobs;
+
+	void (*dma_eq)(void *queue, bool append);
+	uint16_t (*dma_dq)(void *queue);
+	void (*rx_dma_mbuf_set)(void *job,
+		struct rte_mbuf *mbuf,
+		uint32_t pkt_len, uint32_t port_id,
+		int complete_check);
+
 	uint16_t bd_dma_step;
 	int wdma_bd_start;
 	int wdma_bd_nb;
 
 	pthread_t pid;
 	uint32_t core_id;
+	uint8_t rawdev_dma;
 	int16_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
@@ -241,6 +252,11 @@ struct lsinic_queue {
 
 	/* qDMA configure */
 	struct rte_dma_vchan_conf qdma_config;
+
+	/* For primary dma only*/
+	struct rte_qdma_rbp rbp;
+	struct rte_qdma_queue_config qrawdma_config;
+	struct rte_mempool *qdma_pool;
 
 	uint64_t packets_old;
 	/* statistics */

@@ -67,6 +67,7 @@
 #include "linic_ep_ethdev.h"
 #include "linic_ep_rxtx.h"
 #include "linic_ep_dma.h"
+#include "linic_ep_rawdev_dma.h"
 #include "linic_ep_ethtool.h"
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #include <rte_fslmc.h>
@@ -500,9 +501,7 @@ lsinic_parse_txq_notify_type(const char *notify_env,
 static int
 lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 {
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	char env_name[128];
-#endif
 	char *penv;
 	struct lsinic_adapter *adapter = eth_dev->process_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
@@ -573,6 +572,18 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 		(LSINIC_EP_CAP_TXQ_SG_DMA |
 		LSINIC_EP_CAP_RXQ_SG_DMA)))
 		return -ENOTSUP;
+
+	if (lsinic_dev->is_vf) {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_RAWDEV_DMA",
+			lsinic_dev->pcie_id, lsinic_dev->pf,
+			lsinic_dev->vf);
+	} else {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_RAWDEV_DMA",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+	}
+	penv = getenv(env_name);
+	if (penv)
+		adapter->rawdev_dma = atoi(penv);
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
@@ -1090,11 +1101,19 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		LSINIC_MAX_NUM_TX_QUEUES,
-		LSINIC_BD_ENTRY_COUNT,
-		LSINIC_DMA_MEM_TO_PCIE,
-		&adapter->txq_dma_id);
+	if (adapter->rawdev_dma) {
+		adapter->txq_dma_id = lsinic_dma_init();
+		if (adapter->txq_dma_id < 0)
+			err = adapter->txq_dma_id;
+		else
+			err = 0;
+	} else {
+		err = lsinic_dma_acquire(dma_silent,
+			LSINIC_MAX_NUM_TX_QUEUES,
+			LSINIC_BD_ENTRY_COUNT,
+			LSINIC_DMA_MEM_TO_PCIE,
+			&adapter->txq_dma_id);
+	}
 	if (err) {
 		LSXINIC_PMD_ERR("%s dma acquire for txq failed(%d)",
 			eth_dev->data->name, err);
@@ -1106,11 +1125,19 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		LSINIC_MAX_NUM_RX_QUEUES,
-		LSINIC_BD_ENTRY_COUNT,
-		LSINIC_DMA_PCIE_TO_MEM,
-		&adapter->rxq_dma_id);
+	if (adapter->rawdev_dma) {
+		adapter->rxq_dma_id = lsinic_dma_init();
+		if (adapter->txq_dma_id < 0)
+			err = adapter->txq_dma_id;
+		else
+			err = 0;
+	} else {
+		err = lsinic_dma_acquire(dma_silent,
+			LSINIC_MAX_NUM_RX_QUEUES,
+			LSINIC_BD_ENTRY_COUNT,
+			LSINIC_DMA_PCIE_TO_MEM,
+			&adapter->rxq_dma_id);
+	}
 	if (err) {
 		LSXINIC_PMD_ERR("%s dma acquire for rxq failed(%d)",
 			eth_dev->data->name, err);
