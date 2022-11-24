@@ -294,11 +294,16 @@ lsxvio_dev_priv_feature_configure(struct lsxvio_adapter *adapter,
 	lsx_feature |= LSX_VIO_RC2EP_DMA_BD_NOTIFY;
 	lsx_feature |= LSX_VIO_EP2RC_DMA_ADDR_NOTIFY;
 	lsx_feature |= LSX_VIO_EP2RC_DMA_BD_NOTIFY;
+	lsx_feature |= LSX_VIO_EP2RC_DMA_SG_ENABLE;
+	lsx_feature |= LSX_VIO_RC2EP_DMA_SG_ENABLE;
 
 	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
-	if (penv && atoi(penv)) {
-		lsx_feature |= LSX_VIO_EP2RC_DMA_SG_ENABLE;
-		lsx_feature |= LSX_VIO_RC2EP_DMA_SG_ENABLE;
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val) {
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_SG_ENABLE);
+			lsx_feature &= (~LSX_VIO_RC2EP_DMA_SG_ENABLE);
+		}
 	}
 
 	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
@@ -514,6 +519,20 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		!(lsx_feature & LSX_VIO_EP2RC_PACKED)) {
 		LSXINIC_PMD_ERR(EP2RC_RING_DMA_ERR("PACKED",
 			"address notify"));
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_EP2RC_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_EP2RC_DMA_SG_ENABLE)) {
+		LSXINIC_PMD_ERR("EP2RC DMA-BD is NOT SG enabled");
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_RC2EP_IN_ORDER) &&
+		!(lsx_feature & LSX_VIO_RC2EP_DMA_SG_ENABLE)) {
+		LSXINIC_PMD_ERR("RC2EP order ring is NOT SG enabled");
 
 		return -EINVAL;
 	}
