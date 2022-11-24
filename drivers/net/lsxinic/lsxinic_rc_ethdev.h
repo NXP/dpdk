@@ -51,7 +51,6 @@
 #include <rte_eal.h>
 #include <rte_alarm.h>
 #include <rte_ether.h>
-#include <rte_ethdev_pci.h>
 #include <rte_tcp.h>
 
 #include "lsxinic_rc_hw.h"
@@ -59,8 +58,6 @@
 #include "lsxinic_common.h"
 
 #define  LXSNIC_DEBUG_RX_TX
-
-#define msleep(x) rte_delay_us((x) * 1000)
 
 #undef INIC_RC_EP_DEBUG_ENABLE
 #define LXSNIC_INTERRUPT_THRESHOLD  (32)
@@ -160,7 +157,12 @@ enum lxsnic_ring_state_t {
 	__LXSNIC_RX_FCOE,
 };
 
-#define MCACHE_NUM (LSINIC_MERGE_MAX_NUM * 4)
+struct lxsnic_seg_mbuf {
+	struct rte_mbuf *mbufs[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint16_t count;
+} __rte_aligned(16);
+
+#define MCACHE_NUM (LSINIC_MAX_BURST_NUM * 4)
 #define MCACHE_MASK (MCACHE_NUM - 1)
 struct lxsnic_ring {
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
@@ -172,6 +174,11 @@ struct lxsnic_ring {
 	rte_spinlock_t multi_core_lock;
 	uint32_t core_id;
 	pthread_t pid;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	const struct rte_memzone *raw_mz;
+	uint32_t raw_count;
+	uint32_t raw_size;
+#endif
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
@@ -181,6 +188,7 @@ struct lxsnic_ring {
 	struct lsinic_bd_desc *ep_bd_desc;
 
 	/* For RC TX*/
+	struct lsinic_seg_desc *ep_tx_sg;
 	/* EP_MEM_SRC_ADDRL_BD*/
 	struct lsinic_ep_rx_src_addrl *ep_tx_addrl;
 	/* EP_MEM_SRC_ADDRX_BD*/
@@ -193,15 +201,25 @@ struct lxsnic_ring {
 	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
 	/* EP_MEM_DST_ADDX_BD*/
 	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
+	/* EP_MEM_DST_ADDR_SEG*/
+	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
+	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
 
 	enum RC_MEM_BD_TYPE rc_mem_bd_type;
 	void *rc_bd_shared_addr;
 	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
 
+	struct lsinic_seg_desc *rc_sg_desc;
+
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
+#else
+	struct lsinic_rc_rx_len_idx *rx_len_idx;
+#endif
+	struct lsinic_rc_rx_seg *rx_seg;
 
 	/* For RC TX*/
 	/* RC_MEM_BD_CNF*/
@@ -215,6 +233,7 @@ struct lxsnic_ring {
 	struct lsinic_ring_reg *rc_reg;	  /* ring reg point to RC memory */
 	dma_addr_t rc_reg_dma;		  /* phys. address of rc_reg */
 	void **q_mbuf;
+	struct lxsnic_seg_mbuf *seg_mbufs;
 	unsigned long state;
 	uint32_t ep_sr;
 	uint16_t tail;			/* current value of tail */
@@ -254,7 +273,6 @@ struct lxsnic_ring {
 		struct lxsnic_rx_queue_stats rx_stats;
 	};
 	struct lxsnic_adapter *adapter;
-	struct rte_ring *self_xmit_ring;
 	uint16_t mhead;
 	uint16_t mtail;
 	uint32_t mcnt;
@@ -300,10 +318,13 @@ struct lxsnic_hw_stats {
 	uint64_t tx_desc_err;
 };
 
-enum lsx_pcie_dma_raw_test {
-	LXSNIC_EP2RC_PCI_DMA_RAW_TEST = (1 << 0),
-	LXSNIC_RC2EP_PCI_DMA_RAW_TEST = (1 << 1)
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+enum lxsnic_pcie_raw_test {
+	LXSNIC_NONE_PCIE_RAW_TEST = 0,
+	LXSNIC_EP2RC_PCIE_RAW_TEST = (1 << 0),
+	LXSNIC_RC2EP_PCIE_RAW_TEST = (1 << 1)
 };
+#endif
 
 enum lxsnic_rc_self_test {
 	LXSNIC_RC_SELF_NONE_TEST = 0,
@@ -315,53 +336,10 @@ enum lxsnic_rc_self_test {
 struct lxsnic_adapter {
 	/* OS defined structs */
 	unsigned long state;
-	uint32_t flags;
 	uint32_t rc_state;
 	uint32_t ep_state;
 
-#define LXSNIC_FLAG_MSI_CAPABLE                  (uint32_t)(1 << 0)
-#define LXSNIC_FLAG_MSI_ENABLED                  (uint32_t)(1 << 1)
-#define LXSNIC_FLAG_MSIX_CAPABLE                 (uint32_t)(1 << 2)
-#define LXSNIC_FLAG_MSIX_ENABLED                 (uint32_t)(1 << 3)
-#define LXSNIC_FLAG_RX_1BUF_CAPABLE              (uint32_t)(1 << 4)
-#define LXSNIC_FLAG_RX_PS_CAPABLE                (uint32_t)(1 << 5)
-#define LXSNIC_FLAG_RX_PS_ENABLED                (uint32_t)(1 << 6)
-#define LXSNIC_FLAG_IN_NETPOLL                   (uint32_t)(1 << 7)
-#define LXSNIC_FLAG_DCA_ENABLED                  (uint32_t)(1 << 8)
-#define LXSNIC_FLAG_DCA_CAPABLE                  (uint32_t)(1 << 9)
-#define LXSNIC_FLAG_IMIR_ENABLED                 (uint32_t)(1 << 10)
-#define LXSNIC_FLAG_MQ_CAPABLE                   (uint32_t)(1 << 11)
-#define LXSNIC_FLAG_DCB_ENABLED                  (uint32_t)(1 << 12)
-#define LXSNIC_FLAG_VMDQ_CAPABLE                 (uint32_t)(1 << 13)
-#define LXSNIC_FLAG_VMDQ_ENABLED                 (uint32_t)(1 << 14)
-#define LXSNIC_FLAG_FAN_FAIL_CAPABLE             (uint32_t)(1 << 15)
-#define LXSNIC_FLAG_NEED_LINK_UPDATE             (uint32_t)(1 << 16)
-#define LXSNIC_FLAG_NEED_LINK_CONFIG             (uint32_t)(1 << 17)
-#define LXSNIC_FLAG_FDIR_HASH_CAPABLE            (uint32_t)(1 << 18)
-#define LXSNIC_FLAG_FDIR_PERFECT_CAPABLE         (uint32_t)(1 << 19)
-#define LXSNIC_FLAG_FCOE_CAPABLE                 (uint32_t)(1 << 20)
-#define LXSNIC_FLAG_FCOE_ENABLED                 (uint32_t)(1 << 21)
-#define LXSNIC_FLAG_SRIOV_CAPABLE                (uint32_t)(1 << 22)
-#define LXSNIC_FLAG_SRIOV_ENABLED                (uint32_t)(1 << 23)
-#define LXSNIC_FLAG_THREAD_ENABLED		 (uint32_t)(1 << 24)
-#define LXSNIC_FLAG_MUTIMSI_CAPABLE              (uint32_t)(1 << 25)
-#define LXSNIC_FLAG_MUTIMSI_ENABLED              (uint32_t)(1 << 26)
-
-	uint32_t flags2;//is same as flag
-#define LXSNIC_FLAG2_RSC_CAPABLE		(uint32_t)(1 << 0)
-#define LXSNIC_FLAG2_RSC_ENABLED		(uint32_t)(1 << 1)
-#define LXSNIC_FLAG2_TEMP_SENSOR_CAPABLE	(uint32_t)(1 << 2)
-#define LXSNIC_FLAG2_TEMP_SENSOR_EVENT		(uint32_t)(1 << 3)
-#define LXSNIC_FLAG2_SEARCH_FOR_SFP		(uint32_t)(1 << 4)
-#define LXSNIC_FLAG2_SFP_NEEDS_RESET		(uint32_t)(1 << 5)
-#define LXSNIC_FLAG2_RESET_REQUESTED		(uint32_t)(1 << 6)
-#define LXSNIC_FLAG2_FDIR_REQUIRES_REINIT	(uint32_t)(1 << 7)
-#define LXSNIC_FLAG2_RSS_FIELD_IPV4_UDP		(uint32_t)(1 << 8)
-#define LXSNIC_FLAG2_RSS_FIELD_IPV6_UDP		(uint32_t)(1 << 9)
-#define LXSNIC_FLAG2_PTP_ENABLED		(uint32_t)(1 << 10)
-#define LXSNIC_FLAG2_PTP_PPS_ENABLED		(uint32_t)(1 << 11)
-#define LXSNIC_FLAG2_BRIDGE_MODE_VEB		(uint32_t)(1 << 12)
-	struct lxsnic_hw  hw;
+	struct lxsnic_hw hw;
 	struct rte_eth_dev *eth_dev;
 	uint8_t *bd_desc_base;
 	uint8_t *ep_ring_virt_base;  /* EP ring base */
@@ -395,8 +373,14 @@ struct lxsnic_adapter {
 	uint32_t link_speed;
 	bool link_up;
 	bool adapter_stopped;
-	int self_test;
+	enum lxsnic_rc_self_test self_test;
 	uint32_t self_test_len;
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	enum lxsnic_pcie_raw_test e_raw_test;
+	uint32_t raw_test_size;
+#endif
+
 	unsigned long link_check_timeout;
 	/* SR-IOV */
 	DECLARE_BITMAP(active_vfs, LXSNIC_MAX_VF_FUNCTIONS);
@@ -405,9 +389,10 @@ struct lxsnic_adapter {
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
-	int pdraw_test;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	uint32_t merge_threshold;
-	uint32_t max_data_room;
+#endif
+	uint16_t max_data_room;
 	uint32_t pkt_addr_interval;
 	uint64_t pkt_addr_base;
 };
@@ -433,6 +418,6 @@ enum lxsnic_state_t {
 
 void lxsnic_pf_host_init(struct rte_eth_dev *eth_dev);
 
-int lxsnic_disable_sriov(struct lxsnic_adapter *adapter);
+void lxsnic_disable_sriov(struct lxsnic_adapter *adapter);
 
 #endif /* _LSXINIC_RC_ETHDEV_H_ */

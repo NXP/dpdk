@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright 2020-2022 NXP  */
 
-#ifndef _LSX_RXTX_H_
-#define _LSX_RXTX_H_
+#ifndef _LSXINIC_EP_VIO_RXTX_H_
+#define _LSXINIC_EP_VIO_RXTX_H_
 
 #include <rte_ethdev.h>
+#include <rte_dmadev.h>
 #include <rte_pmd_dpaa2_qdma.h>
+#include <virtio_pci.h>
 
-#include "virtio_pci.h"
 #include "virtio_ring.h"
 
-#include "lsxinic_vio_ring.h"
+#include "lsxinic_ep_vio_ring.h"
 
 #ifndef __aligned
 #define __aligned __rte_aligned
@@ -29,22 +30,12 @@ enum LSXVIO_QEUE_STATUS {
 	LSXVIO_QUEUE_STOP,
 };
 
-#ifndef LSINIC_QDMA_EQ_MAX_NB
-#define LSINIC_QDMA_EQ_MAX_NB (RTE_QDMA_SG_ENTRY_NB_MAX / 2)
-#endif
-#ifndef LSINIC_QDMA_DQ_MAX_NB
-#define LSINIC_QDMA_DQ_MAX_NB RTE_QDMA_SG_ENTRY_NB_MAX
-#endif
-
-/* Within one cache line*/
-#define LSINIC_QDMA_JOB_USING_FLAG (1ULL << 31)
-
 #define	LSXVIO_MAX_DATA_PER_TXD	4096
 
 #define	LSXVIO_DMA_ALIGN_MASK	0x3F
 
 #ifndef MCACHE_NUM
-#define MCACHE_NUM (128)
+#define MCACHE_NUM (LSINIC_MAX_BURST_NUM * 4)
 #endif
 #define MCACHE_MASK (MCACHE_NUM - 1)
 
@@ -85,6 +76,18 @@ struct lsxvio_dma_cntx {
 #define LSXVIO_QUEUE_DMA_APPEND_FLAG (1ull << 2)
 #define LSXVIO_QUEUE_DMA_BD_NOTIFY_FLAG (1ull << 3)
 #define LSXVIO_QUEUE_DMA_ADDR_NOTIFY_FLAG (1ull << 4)
+#define LSXVIO_QUEUE_DMA_SG_FLAG (1ull << 5)
+#define LSXVIO_QUEUE_DMA_SILENT_FLAG (1ull << 6)
+
+#define LSXVIO_DATA_DMA_START 0
+#define LSXVIO_E2R_BD_DMA_START \
+	(LSXVIO_DATA_DMA_START + LSINIC_BD_ENTRY_COUNT)
+#define LSXVIO_R2E_BD_DMA_START \
+	(LSXVIO_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
+#define LSXVIO_R2E_IDX_BD_DMA_START \
+	(LSXVIO_R2E_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
+#define LSXVIO_BD_DMA_MAX_COUNT \
+	(LSXVIO_R2E_IDX_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
 /**
  * Structure associated with each RX queue.
@@ -136,12 +139,17 @@ struct lsxvio_queue {
 	struct lsxvio_dma_cntx *dma_sw_cntx;
 
 	/* DMA */
-	struct rte_qdma_job *dma_jobs;
-
-	struct rte_qdma_job *e2r_bd_dma_jobs;
-	struct rte_qdma_job *r2e_bd_dma_jobs;
-	struct rte_qdma_job *r2e_idx_dma_jobs;
+	uint8_t rawdev_dma;
+	struct lsinic_dma_job *dma_jobs;
+	struct rte_qdma_job *rawdma_jobs;
 	struct lsxvio_dma_cntx *dma_bd_cntx;
+
+	struct rte_qdma_job *e2r_bd_rawdma_jobs;
+	struct rte_qdma_job *r2e_bd_rawdma_jobs;
+	struct rte_qdma_job *r2e_idx_rawdma_jobs;
+
+	void (*dma_eq)(void *queue, void **jobs, uint16_t nb_jobs);
+	uint16_t (*dma_dq)(void *queue);
 
 	uint32_t core_id;
 	int32_t dma_id;
@@ -181,8 +189,10 @@ struct lsxvio_queue {
 	uint32_t drop_en;  /**< If not 0, set SRRCTL.Drop_En. */
 
 	/* qDMA configure */
+	struct rte_dma_vchan_conf qdma_config;
+	/**Primary DMA*/
 	struct rte_qdma_rbp rbp;
-	struct rte_qdma_queue_config qdma_config;
+	struct rte_qdma_queue_config qrawdma_config;
 
 	uint64_t packets_old;
 	/* statistics */
@@ -224,10 +234,6 @@ struct lsxvio_queue {
 #define  lsxvio_rx_queue lsxvio_queue
 #define  lsxvio_tx_queue lsxvio_queue
 
-#define LSXVIO_QDMA_EQ_MAX_NB (RTE_QDMA_SG_ENTRY_NB_MAX / 2)
-
-#define LSXVIO_QDMA_DQ_MAX_NB RTE_QDMA_SG_ENTRY_NB_MAX
-
 void
 lsxvio_dev_rx_tx_bind(struct rte_eth_dev *dev);
 void
@@ -235,11 +241,11 @@ lsxvio_dev_rx_stop(struct rte_eth_dev *dev);
 void
 lsxvio_dev_tx_stop(struct rte_eth_dev *dev);
 uint16_t
-lsxvio_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
-	uint16_t nb_pkts);
+lsxvio_xmit_pkts(void *tx_queue,
+	struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
 uint16_t
-lsxvio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
-	uint16_t nb_pkts);
+lsxvio_recv_pkts(void *rx_queue,
+	struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
 void
 lsxvio_dev_tx_init(struct rte_eth_dev *dev);
 int
@@ -263,4 +269,4 @@ void
 lsxvio_dev_tx_queue_release(void *txq);
 void
 lsxvio_dev_rx_queue_release(void *rxq);
-#endif
+#endif /*_LSXINIC_EP_VIO_RXTX_H_*/

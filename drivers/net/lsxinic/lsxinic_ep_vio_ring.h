@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright 2020-2022 NXP  */
 
-#ifndef _LSX_VIRTIO_RING_H_
-#define _LSX_VIRTIO_RING_H_
+#ifndef _LSXINIC_EP_VIO_RING_H_
+#define _LSXINIC_EP_VIO_RING_H_
 
 #include <stdint.h>
 
@@ -21,4 +21,4 @@ lsx_vring_size(unsigned int num, unsigned long align)
 	return size;
 }
 
-#endif /* _VIRTIO_RING_H_ */
+#endif /* _LSXINIC_EP_VIO_RING_H_ */

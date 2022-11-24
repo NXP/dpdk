@@ -5,23 +5,22 @@
 #include <rte_malloc.h>
 
 #include <rte_interrupts.h>
-#include <dpaa2_hw_pvt.h>
 #include <rte_lsx_pciep_bus.h>
 
 #include <linux/virtio_blk.h>
 
-#include "lsxinic_vio.h"
+#include "lsxinic_ep_vio.h"
 
 #define LSX_VIRTIO_BLK_FEATURES (VIRTIO_BLK_F_FLUSH)
 
 uint64_t
-lsxvio_virtio_get_blk_feature(void)
+lsxvio_vio_get_blk_feature(void)
 {
 	return LSX_VIRTIO_BLK_FEATURES;
 }
 
 void
-lsxvio_virtio_get_blk_id(uint16_t *device_id, uint16_t *class_id)
+lsxvio_vio_get_blk_id(uint16_t *device_id, uint16_t *class_id)
 {
 	if (device_id)
 		*device_id = VIRTIO_ID_DEVICE_ID_BASE + VIRTIO_ID_BLOCK;
@@ -30,7 +29,7 @@ lsxvio_virtio_get_blk_id(uint16_t *device_id, uint16_t *class_id)
 }
 
 void
-lsxvio_virtio_blk_init(uint64_t virt)
+lsxvio_vio_blk_init(uint64_t virt)
 {
 	struct lsxvio_common_cfg *common;
 	struct virtio_blk_config *blk;

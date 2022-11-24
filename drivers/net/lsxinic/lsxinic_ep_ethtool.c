@@ -103,19 +103,17 @@ static int lsinic_set_mac(struct rte_eth_dev *dev)
 	for (i = 0; i < 4; i++)
 		mac_addr[i + 2] = (uint8_t)(mac_low >> ((3 - i) * 8));
 
-	if (!adapter->is_vf)
-		LSXINIC_PMD_INFO("pcie%d:pf%d"
-			" mac addr=%02x:%02x:%02x:%02x:%02x:%02x",
+	if (!adapter->is_vf) {
+		LSXINIC_PMD_INFO("pcie%d:pf%d",
+			adapter->pcie_idx, adapter->pf_idx);
+	} else {
+		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d",
 			adapter->pcie_idx, adapter->pf_idx,
-			mac_addr[0], mac_addr[1], mac_addr[2],
-			mac_addr[3], mac_addr[4], mac_addr[5]);
-	else
-		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d"
-			" mac addr=%02x:%02x:%02x:%02x:%02x:%02x",
-			adapter->pcie_idx, adapter->pf_idx,
-			adapter->vf_idx,
-			mac_addr[0], mac_addr[1], mac_addr[2],
-			mac_addr[3], mac_addr[4], mac_addr[5]);
+			adapter->vf_idx);
+	}
+	LSXINIC_PMD_INFO("mac addr=%02x:%02x:%02x:%02x:%02x:%02x",
+		mac_addr[0], mac_addr[1], mac_addr[2],
+		mac_addr[3], mac_addr[4], mac_addr[5]);
 
 	return PCIDEV_RESULT_SUCCEED;
 }
@@ -134,7 +132,8 @@ static int lsinic_set_mtu(struct rte_eth_dev *dev)
 			adapter->pcie_idx, adapter->pf_idx, mtu);
 	else
 		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d align mtu(%d) with RC",
-			adapter->pcie_idx, adapter->pf_idx, adapter->vf_idx, mtu);
+			adapter->pcie_idx, adapter->pf_idx,
+			adapter->vf_idx, mtu);
 	adapter->data_room_size = mtu;
 
 	return PCIDEV_RESULT_SUCCEED;
@@ -175,12 +174,36 @@ static void lsinic_print_ep_status(void)
 
 		print_port_status(eth_dev, &core_mask,
 			(DEBUG_PRINT_INTERVAL + 1) *
-			LSINIC_CMD_POLLING_INTERVAL, 1, 0);
+			LSINIC_CMD_POLLING_INTERVAL, LSINIC_EP_PORT);
 
 		printf("\r\n\r\n");
-		dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
+		dev = (struct rte_lsx_pciep_device *)
+			TAILQ_NEXT(dev, next);
 	}
 }
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+static int
+lsinic_pcie_raw_test_print(struct rte_eth_dev *eth_dev)
+{
+	int i;
+	struct lsinic_queue *queue;
+
+	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
+		queue = eth_dev->data->rx_queues[i];
+		if (queue && queue->status == LSINIC_QUEUE_RAW_TEST_RUNNING)
+			return 1;
+	}
+
+	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
+		queue = eth_dev->data->tx_queues[i];
+		if (queue && queue->status == LSINIC_QUEUE_RAW_TEST_RUNNING)
+			return 1;
+	}
+
+	return 0;
+}
+#endif
 
 void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 {
@@ -191,7 +214,6 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	uint32_t command, status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
-	struct lsinic_queue *queue = NULL;
 	cpu_set_t cpuset;
 	enum lsinic_dev_type *dev_type;
 
@@ -212,17 +234,6 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 		first_dev = lsx_pciep_first_dev();
 		dev = first_dev;
 		while (dev) {
-#ifdef RTE_PCIEP_2111_VER_PMD_DRV
-#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
-			if (dev->driver->drv_ver != LSINIC_DRV_SUB_DEV_ID) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
-				if (dev == first_dev)
-					dev = NULL;
-				continue;
-			}
-#endif
-#endif
 			dev_type = dev->eth_dev->process_private;
 			if (*dev_type != LSINIC_NXP_DEV) {
 				dev = (struct rte_lsx_pciep_device *)
@@ -241,16 +252,15 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			}
 			reg = LSINIC_REG_OFFSET(adapter->hw_addr,
 					LSINIC_DEV_REG_OFFSET);
-			if (dev->eth_dev->data->rx_queues) {
-				queue = dev->eth_dev->data->rx_queues[0];
-				if (queue && queue->dma_test.status ==
-					LSINIC_PCI_DMA_TEST_START)
-					print_status = 1;
-			}
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+			if (lsinic_pcie_raw_test_print(dev->eth_dev))
+				print_status = 1;
+#endif
 
 			command = LSINIC_READ_REG(&reg->command);
 			if (command == PCIDEV_COMMAND_IDLE) {
-				dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
+				dev = (struct rte_lsx_pciep_device *)
+					TAILQ_NEXT(dev, next);
 				if (dev == first_dev)
 					dev = NULL;
 				continue;
@@ -283,7 +293,8 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			LSINIC_WRITE_REG(&reg->result, status);
 			LSINIC_WRITE_REG(&reg->command, PCIDEV_COMMAND_IDLE);
 
-			dev = (struct rte_lsx_pciep_device *)TAILQ_NEXT(dev, next);
+			dev = (struct rte_lsx_pciep_device *)
+				TAILQ_NEXT(dev, next);
 			if (dev == first_dev)
 				dev = NULL;
 		}

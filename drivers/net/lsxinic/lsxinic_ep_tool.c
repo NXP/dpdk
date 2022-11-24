@@ -19,11 +19,13 @@
 #include <rte_lsx_pciep_bus.h>
 
 #include "lsxinic_ep_tool.h"
+#include "lsxinic_common_logs.h"
 
 #define PAGE_SIZE   (sysconf(_SC_PAGESIZE))
 #define PAGE_MASK   (~(PAGE_SIZE - 1))
 
-void *inic_memset(void *s, int ch, size_t n)
+void *
+lsinic_byte_memset(void *s, int ch, size_t n)
 {
 	size_t i = 0;
 	char *ps = s;
@@ -35,22 +37,6 @@ void *inic_memset(void *s, int ch, size_t n)
 
 	for (i = 0; i < n; i++)
 		ps[i] = ch;
-
-	return s;
-}
-
-void *inic_memcpy(void *d, void *s, size_t n)
-{
-	size_t i = 0;
-	char *ps = s;
-	uint64_t dd = (uint64_t)d;
-	char *pd = (char *)ALIGN(dd, 4);  /* just for test */
-
-	if (!s || !d)
-		return NULL;
-
-	for (i = 0; i < n; i++)
-		pd[i] = ps[i];
 
 	return s;
 }

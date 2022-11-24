@@ -7,30 +7,178 @@
 #include <rte_malloc.h>
 
 #include <rte_interrupts.h>
-#include <dpaa2_hw_pvt.h>
 #include <rte_lsx_pciep_bus.h>
+#include <dpaa2_hw_pvt.h>
 
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_vio_common.h"
-#include "lsxinic_vio_net.h"
-#include "lsxinic_vio_rxtx.h"
-#include "lsxinic_vio.h"
+#include "lsxinic_ep_vio_net.h"
+#include "lsxinic_ep_vio_rxtx.h"
+#include "lsxinic_ep_vio.h"
+#include "lsxinic_ep_dma.h"
 
-int lsxvio_virtio_check_driver_feature(struct lsxvio_common_cfg *common)
+int
+lsxvio_vio_check_drv_feature(struct lsxvio_common_cfg *common)
 {
 	return (common->driver_feature ==
 		(common->device_feature & common->driver_feature));
 }
 
+static void
+lsxvio_vio_txq_packed_order_dma_bd_init(struct lsxvio_queue *vq,
+	uint64_t desc_addr)
+{
+	uint32_t j;
+	struct lsinic_dma_job *e2r_jobs = NULL;
+	struct rte_qdma_job *re2r_jobs = NULL;
+
+	if (vq->rawdev_dma)
+		re2r_jobs = vq->e2r_bd_rawdma_jobs;
+	else
+		e2r_jobs = &vq->dma_jobs[LSXVIO_E2R_BD_DMA_START];
+
+	for (j = 0; j < vq->nb_desc; j++) {
+		vq->shadow_pdesc[j].id = j;
+		if (vq->rawdev_dma) {
+			re2r_jobs[j].src = vq->shadow_pdesc_phy +
+				j * sizeof(struct vring_packed_desc);
+			re2r_jobs[j].dest = vq->ob_base +
+				desc_addr +
+				j * sizeof(struct vring_packed_desc);
+			re2r_jobs[j].cnxt = 0;
+			re2r_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
+				RTE_QDMA_JOB_DEST_PHY;
+			re2r_jobs[j].vq_id = vq->dma_vq;
+		} else {
+			e2r_jobs[j].src = vq->shadow_pdesc_phy +
+				j * sizeof(struct vring_packed_desc);
+			e2r_jobs[j].dst = vq->ob_base + desc_addr +
+				j * sizeof(struct vring_packed_desc);
+		}
+	}
+}
+
+static void
+lsxvio_vio_txq_dma_notify_dma_bd_init(struct lsxvio_queue *vq,
+	uint64_t queue_rc_shadow_base)
+{
+	uint32_t j;
+	uint64_t src, dst;
+	struct lsinic_dma_job *r2e_jobs = NULL;
+	struct lsinic_dma_job *r2e_idx_jobs = NULL;
+	struct rte_qdma_job *rr2e_jobs = NULL;
+	struct rte_qdma_job *rr2e_idx_jobs = NULL;
+
+	if (vq->rawdev_dma) {
+		rr2e_jobs = vq->r2e_bd_rawdma_jobs;
+		rr2e_idx_jobs = vq->r2e_idx_rawdma_jobs;
+	} else {
+		r2e_jobs = &vq->dma_jobs[LSXVIO_R2E_BD_DMA_START];
+		r2e_idx_jobs = &vq->dma_jobs[LSXVIO_R2E_IDX_BD_DMA_START];
+	}
+
+	for (j = 0; j < vq->nb_desc; j++) {
+		if (vq->mem_base) {
+			src = queue_rc_shadow_base + vq->ob_base +
+				j * sizeof(uint32_t);
+			dst = vq->shadow_phy +
+				offsetof(struct lsxvio_packed_notify,
+					addr[0]) + j * sizeof(uint32_t);
+		} else {
+			src = queue_rc_shadow_base + vq->ob_base +
+				j * sizeof(uint64_t);
+			dst = vq->shadow_phy +
+				offsetof(struct lsxvio_packed_notify,
+					addr[0]) + j * sizeof(uint64_t);
+		}
+		if (vq->rawdev_dma) {
+			rr2e_jobs[j].src = src;
+			rr2e_jobs[j].dest = dst;
+			rr2e_jobs[j].cnxt = 0;
+			rr2e_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
+				RTE_QDMA_JOB_DEST_PHY;
+			rr2e_jobs[j].vq_id = vq->dma_vq;
+		} else {
+			r2e_jobs[j].src = src;
+			r2e_jobs[j].dst = dst;
+		}
+
+		src = queue_rc_shadow_base + vq->ob_base +
+			sizeof(uint64_t) * vq->nb_desc +
+			j * sizeof(uint16_t);
+		dst = vq->shadow_phy +
+			offsetof(struct lsxvio_packed_notify,
+				last_avail_idx);
+		if (vq->rawdev_dma) {
+			rr2e_idx_jobs[j].src = src;
+			rr2e_idx_jobs[j].dest = dst;
+			rr2e_idx_jobs[j].len = sizeof(uint16_t);
+			rr2e_idx_jobs[j].cnxt = 0;
+			rr2e_idx_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
+				RTE_QDMA_JOB_DEST_PHY;
+			rr2e_idx_jobs[j].vq_id = vq->dma_vq;
+		} else {
+			r2e_idx_jobs[j].src = src;
+			r2e_idx_jobs[j].dst = dst;
+			r2e_idx_jobs[j].len = sizeof(uint16_t);
+		}
+		vq->dma_bd_cntx[j].cntx_type = LSXVIO_DMA_TX_CNTX_DATA;
+	}
+}
+
+static void
+lsxvio_vio_rxq_idx_order_dma_bd_init(struct lsxvio_queue *vq,
+	uint64_t queue_rc_shadow_base)
+{
+	uint32_t j;
+	uint64_t src, dst;
+	struct lsinic_dma_job *r2e_jobs = NULL;
+	struct rte_qdma_job *rr2e_jobs = NULL;
+
+	if (vq->rawdev_dma)
+		rr2e_jobs = vq->r2e_bd_rawdma_jobs;
+	else
+		r2e_jobs = &vq->dma_jobs[LSXVIO_R2E_BD_DMA_START];
+
+	for (j = 0; j < vq->nb_desc; j++) {
+		if (vq->mem_base) {
+			src = queue_rc_shadow_base +
+				vq->ob_base + j *
+				sizeof(struct lsxvio_short_desc);
+			dst = vq->shadow_phy +
+				j * sizeof(struct lsxvio_short_desc);
+		} else {
+			src = queue_rc_shadow_base +
+				vq->ob_base +
+				j * sizeof(struct vring_desc);
+			dst = vq->shadow_phy +
+				j * sizeof(struct vring_desc);
+		}
+
+		if (vq->rawdev_dma) {
+			rr2e_jobs[j].src = src;
+			rr2e_jobs[j].dest = dst;
+			rr2e_jobs[j].cnxt = 0;
+			rr2e_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
+				RTE_QDMA_JOB_DEST_PHY;
+			rr2e_jobs[j].vq_id = vq->dma_vq;
+		} else {
+			r2e_jobs[j].src = src;
+			r2e_jobs[j].dst = dst;
+		}
+
+		vq->dma_bd_cntx[j].cntx_type = LSXVIO_DMA_RX_CNTX_DATA;
+	}
+}
+
 int
-lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
+lsxvio_vio_config_fromrc(struct rte_lsx_pciep_device *dev)
 {
 	struct lsxvio_adapter *adapter = dev->eth_dev->data->dev_private;
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 	struct lsxvio_queue_cfg *queue;
 	struct lsxvio_queue *vq;
 	uint64_t desc_addr;
-	uint64_t src, dst;
 	uint32_t i, j;
 	uint8_t *virt;
 	char name[RTE_MEMZONE_NAMESIZE];
@@ -192,116 +340,33 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		if (vq->type == LSXVIO_QUEUE_TX &&
 			vq->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG &&
 			vq->shadow_pdesc_mz) {
-			for (j = 0; j < vq->nb_desc; j++) {
-				vq->shadow_pdesc[j].id = j;
-
-				vq->e2r_bd_dma_jobs[j].src =
-					vq->shadow_pdesc_phy +
-					j * sizeof(struct vring_packed_desc);
-				vq->e2r_bd_dma_jobs[j].dest =
-					vq->ob_base + desc_addr +
-					j * sizeof(struct vring_packed_desc);
-				vq->e2r_bd_dma_jobs[j].cnxt = 0;
-				vq->e2r_bd_dma_jobs[j].flags =
-					RTE_QDMA_JOB_SRC_PHY |
-					RTE_QDMA_JOB_DEST_PHY;
-				vq->e2r_bd_dma_jobs[j].vq_id = vq->dma_vq;
-			}
+			lsxvio_vio_txq_packed_order_dma_bd_init(vq,
+				desc_addr);
 		}
 
 		if (vq->type == LSXVIO_QUEUE_TX &&
 			vq->flag & LSXVIO_QUEUE_DMA_ADDR_NOTIFY_FLAG) {
-			for (j = 0; j < vq->nb_desc; j++) {
-				if (vq->mem_base) {
-					src = queue->queue_rc_shadow_base +
-						vq->ob_base +
-						j * sizeof(uint32_t);
-					dst = vq->shadow_phy +
-					offsetof(struct lsxvio_packed_notify,
-					addr[0]) + j * sizeof(uint32_t);
-				} else {
-					src = queue->queue_rc_shadow_base +
-						vq->ob_base +
-						j * sizeof(uint64_t);
-					dst = vq->shadow_phy +
-					offsetof(struct lsxvio_packed_notify,
-					addr[0]) + j * sizeof(uint64_t);
-				}
-				vq->r2e_bd_dma_jobs[j].src = src;
-				vq->r2e_bd_dma_jobs[j].dest = dst;
-				vq->r2e_bd_dma_jobs[j].cnxt = 0;
-				vq->r2e_bd_dma_jobs[j].flags =
-					RTE_QDMA_JOB_SRC_PHY |
-					RTE_QDMA_JOB_DEST_PHY;
-				vq->r2e_bd_dma_jobs[j].vq_id = vq->dma_vq;
-
-				src = queue->queue_rc_shadow_base +
-					vq->ob_base +
-					sizeof(uint64_t) * vq->nb_desc +
-					j * sizeof(uint16_t);
-				dst = vq->shadow_phy +
-					offsetof(struct lsxvio_packed_notify,
-					last_avail_idx);
-
-				vq->r2e_idx_dma_jobs[j].src = src;
-				vq->r2e_idx_dma_jobs[j].dest = dst;
-				vq->r2e_idx_dma_jobs[j].len = sizeof(uint16_t);
-				vq->r2e_idx_dma_jobs[j].cnxt = 0;
-				vq->r2e_idx_dma_jobs[j].flags =
-					RTE_QDMA_JOB_SRC_PHY |
-					RTE_QDMA_JOB_DEST_PHY;
-				vq->r2e_idx_dma_jobs[j].vq_id = vq->dma_vq;
-
-				vq->dma_bd_cntx[j].cntx_type =
-					LSXVIO_DMA_TX_CNTX_DATA;
-			}
+			lsxvio_vio_txq_dma_notify_dma_bd_init(vq,
+				queue->queue_rc_shadow_base);
 		}
 
 		if (vq->type == LSXVIO_QUEUE_RX &&
 			(vq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) &&
 			queue->queue_rc_shadow_base) {
-			for (j = 0; j < vq->nb_desc; j++) {
-				if (vq->mem_base) {
-					src = queue->queue_rc_shadow_base +
-					vq->ob_base +
-					j *
-					sizeof(struct lsxvio_short_desc);
-					dst = vq->shadow_phy +
-					j *
-					sizeof(struct lsxvio_short_desc);
-				} else {
-					src = queue->queue_rc_shadow_base +
-						vq->ob_base +
-						j * sizeof(struct vring_desc);
-					dst = vq->shadow_phy +
-						j * sizeof(struct vring_desc);
-				}
-
-				vq->r2e_bd_dma_jobs[j].src = src;
-				vq->r2e_bd_dma_jobs[j].dest = dst;
-				vq->r2e_bd_dma_jobs[j].cnxt = 0;
-				vq->r2e_bd_dma_jobs[j].flags =
-					RTE_QDMA_JOB_SRC_PHY |
-					RTE_QDMA_JOB_DEST_PHY;
-				vq->r2e_bd_dma_jobs[j].vq_id = vq->dma_vq;
-
-				vq->dma_bd_cntx[j].cntx_type =
-					LSXVIO_DMA_RX_CNTX_DATA;
-			}
+			lsxvio_vio_rxq_idx_order_dma_bd_init(vq,
+				queue->queue_rc_shadow_base);
 		}
 
-		LSXINIC_PMD_INFO("desc_addr=%lx, avail_addr=%lx,"
-				" used_addr=%lx, size=%lx, desc=%p"
-				" avail=%p, used=%p, shadow_used_split=%p",
-				desc_addr,
-				queue->queue_avail_lo |
-				((uint64_t)(queue->queue_avail_hi) << 32),
-				queue->queue_used_lo |
-				((uint64_t)(queue->queue_used_hi) << 32),
-				lsx_vring_size(LSXVIO_MAX_RING_DESC,
-					RTE_CACHE_LINE_SIZE),
-				vq->desc_addr, vq->avail, vq->used,
-				vq->shadow_used_split);
+		LSXINIC_PMD_INFO("PHY desc=%lx, avail=%lx, used_addr=%lx",
+			desc_addr,
+			queue->queue_avail_lo |
+			((uint64_t)(queue->queue_avail_hi) << 32),
+			queue->queue_used_lo |
+			((uint64_t)(queue->queue_used_hi) << 32));
+
+		LSXINIC_PMD_INFO("VIR desc=%p, avail=%p, used=%p, split=%p",
+			vq->desc_addr, vq->avail, vq->used,
+			vq->shadow_used_split);
 
 		if (queue->queue_msix_vector != VIRTIO_MSI_NO_VECTOR &&
 			!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
@@ -316,7 +381,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 	return 0;
 }
 
-void lsxvio_virtio_reset_dev(struct rte_eth_dev *dev)
+void lsxvio_vio_reset_dev(struct rte_eth_dev *dev)
 {
 	struct lsxvio_adapter *adapter = dev->data->dev_private;
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
@@ -392,7 +457,7 @@ lsxvio_virtio_net_init(uint64_t virt)
 }
 
 void
-lsxvio_virtio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
+lsxvio_vio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
 {
 	switch (id) {
 	case VIRTIO_ID_NETWORK:
@@ -405,8 +470,8 @@ lsxvio_virtio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
 	case VIRTIO_ID_BLOCK:
 	case VIRTIO_PCI_BLK:
 		lsxvio_virtio_common_init(virt,
-			lsxvio_virtio_get_blk_feature(), lsx_feature);
-		lsxvio_virtio_blk_init(virt);
+			lsxvio_vio_get_blk_feature(), lsx_feature);
+		lsxvio_vio_blk_init(virt);
 		break;
 	default:
 		LSXINIC_PMD_ERR("The device type is not supported!");

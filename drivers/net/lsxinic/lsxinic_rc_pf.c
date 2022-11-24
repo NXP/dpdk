@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #include "lsxinic_rc_ethdev.h"
+#include <rte_bus_pci.h>
 
 static inline uint16_t
 dev_num_vf(struct rte_eth_dev *eth_dev)
@@ -12,32 +13,20 @@ dev_num_vf(struct rte_eth_dev *eth_dev)
 	return pci_dev->max_vfs;
 }
 
-static int
+static void
 lxsnic_enable_sriov(struct lxsnic_adapter *adapter)
 {
 	uint8_t i = 0;
 	/* enable spoof checking for all VFs */
 	for (i = 0; i < adapter->num_vfs; i++)
 		adapter->vfinfo[i].spoofchk_enabled = true;
-
-	adapter->flags |= LXSNIC_FLAG_SRIOV_ENABLED;
-
-	return -ENOMEM;
 }
 
-int
+void
 lxsnic_disable_sriov(struct lxsnic_adapter *adapter)
 {
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
-
-	/* if SR-IOV is already disabled then there is nothing to do */
-	if (!(adapter->flags & LXSNIC_FLAG_SRIOV_ENABLED))
-		return 0;
-
-	/* take a breather then clean up driver data */
-	adapter->flags &= ~LXSNIC_FLAG_SRIOV_ENABLED;
-	return 0;
 }
 
 void

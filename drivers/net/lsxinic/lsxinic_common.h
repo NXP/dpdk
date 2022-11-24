@@ -2,18 +2,18 @@
  * Copyright 2019-2022 NXP
  */
 
-#ifndef _LSINIC_COMMON_H_
-#define _LSINIC_COMMON_H_
+#ifndef _LSXINIC_COMMON_H_
+#define _LSXINIC_COMMON_H_
 
-#define LSINIC_MERGE_DEFAULT_THRESHOLD		(600) /* bytes */
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_MERGE_DEFAULT_THRESHOLD (600) /* bytes */
+#endif
 
 #define LSINIC_ETH_FCS_SIZE \
 	(RTE_TM_ETH_FRAMING_OVERHEAD_FCS - RTE_TM_ETH_FRAMING_OVERHEAD)
 
 #define LSINIC_ETH_OVERHEAD_SIZE \
 	RTE_TM_ETH_FRAMING_OVERHEAD_FCS
-
-#define LSINIC_QDMA_TEST_PKT_MAX_LEN (4 * 1024)
 
 #ifndef RTE_VERIFY
 #define RTE_VERIFY(exp) do {} while (0)
@@ -30,8 +30,7 @@ struct lsinic_pcie_svr_map {
 #endif
 
 static const
-struct lsinic_pcie_svr_map s_lsinic_rev2_id_map[] =
-{
+struct lsinic_pcie_svr_map s_lsinic_rev2_id_map[] = {
 	{SVR_LX2160A | 0x0120, 0x8d81, 0},
 	{SVR_LX2160A | 0x1020, 0x8d90, 0},
 	{SVR_LX2160A | 0x0020, 0x8d80, 0},
@@ -67,14 +66,24 @@ enum lsinic_dev_type {
 	LSINIC_NXP_DEV
 };
 
+enum lsinic_port_type {
+	LSINIC_EP_PORT,
+	LSINIC_RC_PORT,
+	LSINIC_EPVIO_PORT
+};
+
+#define LSINIC_RING_MAX_COUNT 8
+
+#define LSINIC_MAX_BURST_NUM 32
+
 #define MAX_U32 ((uint64_t)4 * 1024 * 1024 * 1024 - 1)
 #define MAX_U16 0xffff
 
-#define LSINIC_DRV_VERSION (RTE_VER_YEAR << 8 | RTE_VER_MONTH)
-#ifdef RTE_PCIEP_2111_VER_PMD_DRV
-#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
-#define LSINIC_DRV_SUB_DEV_ID LSINIC_DRV_VERSION
-#endif
+#define UNUSED(x) (void)(x)
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+#define LSINIC_PCIE_RAW_TEST_SRC_DATA 0x1
+#define LSINIC_PCIE_RAW_TEST_DST_DATA 0x2
 #endif
 
 static inline __attribute__((always_inline))
@@ -125,19 +134,19 @@ static inline int is_align_128(void *addr)
 	return 1;
 }
 
+/* Length of data >= 16 && data is 16B aligned*/
 static inline void
 lsinic_pcie_memset_align(uint8_t *dst,
-	uint8_t data, uint16_t size)
+	const uint8_t data[], uint16_t size)
 {
-	uint64_t src64[2];
-	__uint128_t *src128 = (__uint128_t *)src64;
-	uint32_t *src32 = (uint32_t *)src64;
-	uint16_t *src16 = (uint16_t *)src64;
-
-	memset(src64, data, sizeof(src64));
+	const void *src = data;
+	const uint64_t *src64 = src;
+	const __uint128_t *src128 = src;
+	const uint32_t *src32 = src;
+	const uint16_t *src16 = src;
 
 	if (!is_align_16(dst) && size > 0) {
-		*dst = data;
+		*dst = data[0];
 		dst++;
 		size--;
 	}
@@ -192,7 +201,7 @@ lsinic_pcie_memset_align(uint8_t *dst,
 	}
 
 	while (size > 0) {
-		*dst = data;
+		*dst = data[0];
 		dst++;
 		size--;
 	}
@@ -281,6 +290,4 @@ lsinic_pcie_memcp_align(void *vdst,
 #define LSINIC_EP_MAP_MEM_ENV \
 	"LSINIC_XFER_HOST_ACCESS_EP_MEM"
 
-#undef LSXINIC_ASSERT_PKT_SIZE
-
-#endif /*  _LSINIC_VDEV_H_ */
+#endif /*  _LSXINIC_COMMON_H_ */

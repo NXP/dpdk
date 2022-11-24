@@ -3,8 +3,8 @@
  * Copyright 2020-2021 NXP
  */
 
-#ifndef _LSINIC_COMMON_PMD_H_
-#define _LSINIC_COMMON_PMD_H_
+#ifndef _LSXINIC_COMMON_PMD_H_
+#define _LSXINIC_COMMON_PMD_H_
 
 #include <rte_io.h>
 #include "rte_tm.h"
@@ -36,4 +36,4 @@ LSINIC_WRITE_REG_64B(uint64_t *reg, uint64_t value)
 	return rte_write64(value, reg);
 }
 
-#endif
+#endif /* _LSXINIC_COMMON_PMD_H_ */

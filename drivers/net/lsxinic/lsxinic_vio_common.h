@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright 2020-2022 NXP  */
 
-#ifndef _LSX_VIRTIO_COMMON_H_
-#define _LSX_VIRTIO_COMMON_H_
+#ifndef _LSXINIC_VIO_COMMON_H_
+#define _LSXINIC_VIO_COMMON_H_
 
 #include "lsxinic_common.h"
 
@@ -38,7 +38,7 @@
 #define LSXVIO_ISR_OFFSET				0x1200
 #define LSXVIO_DEVICE_OFFSET			0x1400
 #define LSXVIO_NOTIFY_OFF_MULTI			0x4
-#define LSXVIO_MAX_QUEUE_PAIRS			8
+#define LSXVIO_MAX_QUEUE_PAIRS			LSINIC_RING_MAX_COUNT
 #define LSXVIO_MAX_RING_DESC			512
 
 #define LSXVIO_MAX_QUEUES (LSXVIO_MAX_QUEUE_PAIRS * 2)
@@ -70,6 +70,14 @@
 #define LSX_VIO_EP2RC_DMA_BD_NOTIFY_POS 6
 #define LSX_VIO_EP2RC_DMA_BD_NOTIFY \
 	(1ULL << LSX_VIO_EP2RC_DMA_BD_NOTIFY_POS)
+
+#define LSX_VIO_EP2RC_DMA_SG_ENABLE_POS 7
+#define LSX_VIO_EP2RC_DMA_SG_ENABLE \
+	(1ULL << LSX_VIO_EP2RC_DMA_SG_ENABLE_POS)
+
+#define LSX_VIO_RC2EP_DMA_SG_ENABLE_POS 8
+#define LSX_VIO_RC2EP_DMA_SG_ENABLE \
+	(1ULL << LSX_VIO_RC2EP_DMA_SG_ENABLE_POS)
 
 #define LSX_VIO_HW_START_CONFIG 1
 /* This common configuration definition is a little different from
@@ -143,4 +151,4 @@ struct lsxvio_short_desc {
 
 #define LSXVIO_CONFIG_BAR_IDX 0
 #define LSXVIO_RING_BAR_IDX 2
-#endif /* _LSX_VIRTIO_COMMON_H_ */
+#endif /* _LSXINIC_VIO_COMMON_H_ */

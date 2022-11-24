@@ -17,123 +17,115 @@
 
 #include "lsxinic_ep_dma.h"
 #include "lsxinic_ep_tool.h"
+#include "lsxinic_common_logs.h"
 
-#define LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE	2
-#define LSINIC_QDMA_FLE_POOL_QUEUE_COUNT	2048
-#define LSINIC_QDMA_MAX_VQS			2048
+static int s_lsinic_dma_idx;
 
-static int LSINIC_DMA_INIT_FLAG;
-static rte_spinlock_t lsinic_dma_init_lock = RTE_SPINLOCK_INITIALIZER;
-static int qdma_dev_id;
+static rte_spinlock_t s_lsinic_dma_sl = RTE_SPINLOCK_INITIALIZER;
 
 int
-lsinic_dma_write_reg(uint64_t addr, uint32_t val)
+lsinic_dma_acquire(int silent,
+	uint16_t nb_vchans, uint16_t nb_desc,
+	enum lsinic_dma_direction dir,
+	int *dma_id_acquired)
 {
-	int retfd = 0;
-	void *ret_addr = 0;
-	void *map_addr = NULL;
+	struct rte_dma_info dev_info;
+	struct rte_dma_conf dev_conf;
+	int ret, dma_idx;
 
-	ret_addr = lsinic_mmap(NULL, QDMA_MAP_SIZE,
-		PROT_WRITE, MAP_SHARED,
-		addr, &map_addr, &retfd);
-	if (!ret_addr) {
-		RTE_LOG(ERR, PMD, "%s mmap error!\n", __func__);
-		return -1;
+	rte_spinlock_lock(&s_lsinic_dma_sl);
+
+	dma_idx = rte_dma_next_dev(s_lsinic_dma_idx);
+	s_lsinic_dma_idx = dma_idx + 1;
+
+	ret = rte_dma_info_get(dma_idx, &dev_info);
+	if (ret) {
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return ret;
 	}
 
-	*(uint32_t *)map_addr = val;
+	if (nb_vchans > dev_info.max_vchans) {
+		LSXINIC_PMD_ERR("acquire chan(%d) > dma[%d] max chan(%d)",
+			nb_vchans, dma_idx, dev_info.max_vchans);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
 
-	munmap(ret_addr, QDMA_MAP_SIZE);
-	close(retfd);
+	if (nb_desc > dev_info.max_desc) {
+		LSXINIC_PMD_ERR("acquire desc(%d) > dma[%d] max desc(%d)",
+			nb_desc, dma_idx, dev_info.max_desc);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	if (silent && !(dev_info.dev_capa & RTE_DMA_CAPA_SILENT)) {
+		LSXINIC_PMD_ERR("dma[%d] not support silent mode",
+			dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	if (dir == LSINIC_DMA_MEM_TO_PCIE &&
+		!(dev_info.dev_capa & RTE_DMA_CAPA_MEM_TO_DEV)) {
+		LSXINIC_PMD_ERR("dma[%d] not support mem2dev",
+			dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	if (dir == LSINIC_DMA_PCIE_TO_MEM &&
+		!(dev_info.dev_capa & RTE_DMA_CAPA_DEV_TO_MEM)) {
+		LSXINIC_PMD_ERR("dma[%d] not support dev2mem",
+			dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	if (dir == LSINIC_DMA_MEM_TO_MEM &&
+		!(dev_info.dev_capa & RTE_DMA_CAPA_MEM_TO_MEM)) {
+		LSXINIC_PMD_ERR("dma[%d] not support mem2mem",
+			dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	if (dir == LSINIC_DMA_PCIE_TO_PCIE &&
+		!(dev_info.dev_capa & RTE_DMA_CAPA_DEV_TO_DEV)) {
+		LSXINIC_PMD_ERR("dma[%d] not support dev2dev",
+			dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -ENOTSUP;
+	}
+
+	dev_conf.nb_vchans = nb_vchans;
+	dev_conf.enable_silent = silent;
+	ret = rte_dma_configure(dma_idx, &dev_conf);
+	if (ret) {
+		LSXINIC_PMD_ERR("dma[%d] configure failed(%d)",
+			dma_idx, ret);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return ret;
+	}
+
+	if (dma_id_acquired)
+		*dma_id_acquired = dma_idx;
+
+	rte_spinlock_unlock(&s_lsinic_dma_sl);
 
 	return 0;
 }
 
-uint32_t
-lsinic_dma_read_reg(uint64_t addr)
-{
-	int retfd = 0;
-	uint32_t val = 0;
-	void *ret_addr = 0;
-	void *map_addr = NULL;
-
-	ret_addr = lsinic_mmap(NULL, QDMA_MAP_SIZE,
-		PROT_READ, MAP_SHARED,
-		addr, &map_addr, &retfd);
-	if (!ret_addr) {
-		RTE_LOG(ERR, PMD, "%s mmap error!\n", __func__);
-		return 0;
-	}
-
-	val = *(uint32_t *)map_addr;
-
-	munmap(ret_addr, QDMA_MAP_SIZE);
-	close(retfd);
-
-	return val;
-}
-
 int
-lsinic_dma_reg_init(void)
+lsinic_dma_release(int dma_idx)
 {
-	lsinic_dma_write_reg(REG_DMR, 0x11000);
-	lsinic_dma_write_reg(REG_DWQBWCR0, 0x11111111);
-	lsinic_dma_write_reg(REG_DWQBWCR1, 0x11111110);
-
-	return 0;
-}
-
-int
-lsinic_dma_init(void)
-{
-	struct rte_qdma_config qdma_config;
-	struct rte_qdma_info dev_conf;
 	int ret;
 
-	rte_spinlock_lock(&lsinic_dma_init_lock);
-	if (LSINIC_DMA_INIT_FLAG) {
-		rte_spinlock_unlock(&lsinic_dma_init_lock);
-		return qdma_dev_id;
-	}
-
-	/* Configure QDMA to use HW resource - no virtual queues */
-	qdma_config.max_hw_queues_per_core = LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.fle_queue_pool_cnt = LSINIC_QDMA_FLE_POOL_QUEUE_COUNT;
-	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
-
-	dev_conf.dev_private = (void *)&qdma_config;
-	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
-	if (ret) {
-		RTE_LOG(ERR, PMD, "Failed to configure DMA\n");
-		rte_spinlock_unlock(&lsinic_dma_init_lock);
-		return -EINVAL;
-	}
-
-	ret = rte_qdma_start(qdma_dev_id);
-	if (ret) {
-		RTE_LOG(ERR, PMD, "Failed to start DMA\n");
-		rte_spinlock_unlock(&lsinic_dma_init_lock);
-		return -EINVAL;
-	}
-
-	lsinic_dma_reg_init();
-
-	LSINIC_DMA_INIT_FLAG = 1;
-	rte_spinlock_unlock(&lsinic_dma_init_lock);
-
-	return qdma_dev_id;
-}
-
-int
-lsinic_dma_uninit(void)
-{
-	if (LSINIC_DMA_INIT_FLAG == 0)
-		return 0;
-
-	rte_rawdev_stop(qdma_dev_id);
-	rte_rawdev_close(qdma_dev_id);
-
-	LSINIC_DMA_INIT_FLAG = 0;
+	ret = rte_dma_stop(dma_idx);
+	if (ret)
+		return ret;
+	ret = rte_dma_close(dma_idx);
+	if (ret)
+		return ret;
 
 	return 0;
 }

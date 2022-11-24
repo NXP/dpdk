@@ -20,21 +20,14 @@
 #define DMA_32BIT_MASK  0x00000000ffffffffULL
 #endif
 
-#define __iomem
-typedef rte_iova_t dma_addr_t;
-typedef uint64_t virt_addr_t;
-
-void *inic_memset(void *s, int ch, size_t n);
-void *inic_memcpy(void *d, void *s, size_t n);
-
-#define ALIGN(x, a) (((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
+#define ALIGN(x, a) \
+	(((x) + ((typeof(x))(a) - 1)) & \
+	~((typeof(x))(a) - 1))
 
 void *
-inic_memset(void *s, int ch, size_t n);
+lsinic_byte_memset(void *s, int ch, size_t n);
 void *
-inic_memcpy(void *d, void *s, size_t n);
+lsinic_mmap(void *start, size_t length, int prot,
+	int flags, off_t offset, void **map_addr, int *retfd);
 
-void *
-lsinic_mmap(void *start, size_t length, int prot, int flags,
-	off_t offset, void **map_addr, int *retfd);
 #endif /* _LSXINIC_EP_TOOL_H_ */

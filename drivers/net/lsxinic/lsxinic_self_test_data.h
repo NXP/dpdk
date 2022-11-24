@@ -2,8 +2,8 @@
  * Copyright 2018-2021 NXP
  */
 
-#ifndef _LSXINIC_SELF_TEST_H_
-#define _LSXINIC_SELF_TEST_H_
+#ifndef _LSXINIC_SELF_TEST_DATA_H_
+#define _LSXINIC_SELF_TEST_DATA_H_
 
 static uint8_t s_self_test_xmit_data_base[] = {
 	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
@@ -12,4 +12,4 @@ static uint8_t s_self_test_xmit_data_base[] = {
 	0xED, 0x40, 0xC0, 0xA8, 0x0B, 0x02, 0x01, 0x01,
 	0x01, 0x01
 };
-#endif
+#endif /* _LSXINIC_SELF_TEST_DATA_H_ */

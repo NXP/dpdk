@@ -7,22 +7,48 @@
 
 #include <rte_pmd_dpaa2_qdma.h>
 
-#define QDMA_MAP_SIZE (4096)
-#define QDMA_REG_BASE			(0x8380000)
+struct lsinic_dma_job {
+	rte_iova_t src;
+	rte_iova_t dst;
+	uint32_t len;
+	uint32_t idx;
+	uint64_t cnxt;
+};
 
-#define REG_DMR				(QDMA_REG_BASE + 0x00)
-#define REG_DSRP			(QDMA_REG_BASE + 0x04)
-#define REG_DEWQAR0		(QDMA_REG_BASE + 0x60)
-#define REG_DWQBWCR0		(QDMA_REG_BASE + 0x70)
-#define REG_DWQBWCR1		(QDMA_REG_BASE + 0x74)
-#define REG_DPWQAR		(QDMA_REG_BASE + 0x78)
-#define REG_DSRM			(QDMA_REG_BASE + 0x10004)
-#define REG_DGBTR			(QDMA_REG_BASE + 0x10040)
+struct lsinic_dma_seg_job {
+	rte_iova_t src[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	rte_iova_t dst[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	uint32_t len[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	uint32_t seg_nb;
+	uint64_t cnxt;
+};
 
-int lsinic_dma_write_reg(uint64_t addr, uint32_t val);
-uint32_t lsinic_dma_read_reg(uint64_t addr);
-int lsinic_dma_reg_init(void);
-int lsinic_dma_init(void);
-int lsinic_dma_uninit(void);
+enum lsinic_dma_direction {
+	LSINIC_DMA_MEM_TO_PCIE,
+	LSINIC_DMA_PCIE_TO_MEM,
+	LSINIC_DMA_MEM_TO_MEM,
+	LSINIC_DMA_PCIE_TO_PCIE
+};
+
+#define LSINIC_QDMA_EQ_MAX_NB RTE_DPAA2_QDMA_JOB_SUBMIT_MAX
+#define LSINIC_QDMA_DQ_MAX_NB 64
+#define LSINIC_QDMA_EQ_DATA_MAX_NB \
+	(RTE_DPAA2_QDMA_JOB_SUBMIT_MAX - 8)
+
+#define LSINIC_DMA_BURST_ASSERT(nb) \
+	do { \
+		if (unlikely((nb) > LSINIC_QDMA_EQ_MAX_NB)) { \
+			rte_panic("%s: lsinic eq(%d) > max(%d)\n", \
+				__func__, nb, LSINIC_QDMA_EQ_MAX_NB); \
+		} \
+	} while (0)
+
+int
+lsinic_dma_acquire(int silent,
+	uint16_t nb_vchans, uint16_t nb_desc,
+	enum lsinic_dma_direction dir,
+	int *dma_id_acquired);
+int
+lsinic_dma_release(int dma_idx);
 
 #endif /* _LSXINIC_EP_DMA_H_ */

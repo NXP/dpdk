@@ -60,15 +60,15 @@
 #include <virtio_pci.h>
 #include "virtqueue.h"
 
-#include "linic_common_pmd.h"
-#include "linic_ep_vio.h"
-#include "linic_vio_common.h"
-#include "linic_ep_vio_net.h"
-#include "linic_ep_vio_rxtx.h"
-#include "linic_ep_dma.h"
-#include "linic_ep_rawdev_dma.h"
-#include "linic_ep_tool.h"
-#include "linic_common_helper.h"
+#include "lsxinic_common_pmd.h"
+#include "lsxinic_ep_vio.h"
+#include "lsxinic_vio_common.h"
+#include "lsxinic_ep_vio_net.h"
+#include "lsxinic_ep_vio_rxtx.h"
+#include "lsxinic_ep_dma.h"
+#include "lsxinic_ep_rawdev_dma.h"
+#include "lsxinic_ep_tool.h"
+#include "lsxinic_common_helper.h"
 
 #define EP2RC_RING_DMA_ERR(ring_type, notify) \
 	"%s %s %s %s ring", \
@@ -128,10 +128,10 @@ static struct eth_dev_ops lsxvio_eth_dev_ops = {
 	.dev_close            = lsxvio_dev_close,
 	.dev_infos_get        = lsxvio_dev_info_get,
 	.mtu_set	      = lsxvio_dev_mtu_set,
-	.rx_queue_setup       = lsxvio_dev_v2111_rx_queue_setup,
-	.rx_queue_release     = lsxvio_dev_v2111_rx_queue_release,
-	.tx_queue_setup       = lsxvio_dev_v2111_tx_queue_setup,
-	.tx_queue_release     = lsxvio_dev_v2111_tx_queue_release,
+	.rx_queue_setup       = lsxvio_dev_rx_queue_setup,
+	.rx_queue_release     = lsxvio_dev_rx_queue_release,
+	.tx_queue_setup       = lsxvio_dev_tx_queue_setup,
+	.tx_queue_release     = lsxvio_dev_tx_queue_release,
 	.link_update          = lsxvio_dev_link_update,
 	.promiscuous_enable   = lsxvio_dev_promiscuous_enable,
 	.promiscuous_disable  = lsxvio_dev_promiscuous_disable,
@@ -178,7 +178,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #endif
 
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_v2111_vio_init(adapter->cfg_base, device_id, lsx_feature);
+	lsxvio_vio_init(adapter->cfg_base, device_id, lsx_feature);
 
 	return 0;
 }
@@ -414,7 +414,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	sprintf(env_name, "LSINIC_PCIE%d_PF%d_VIO_STORAGE",
 		lsx_dev->pcie_id, lsx_dev->pf);
 	if (getenv(env_name))
-		lsxvio_v2111_vio_get_blk_id(&device_id, &class_id);
+		lsxvio_vio_get_blk_id(&device_id, &class_id);
 
 	if (lsx_dev->init_flag) {
 		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
@@ -466,8 +466,8 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->data->rx_mbuf_alloc_failed = 0;
 
 	eth_dev->dev_ops = &lsxvio_eth_dev_ops;
-	eth_dev->rx_pkt_burst = lsxvio_v2111_recv_pkts;
-	eth_dev->tx_pkt_burst = lsxvio_v2111_xmit_pkts;
+	eth_dev->rx_pkt_burst = lsxvio_recv_pkts;
+	eth_dev->tx_pkt_burst = lsxvio_xmit_pkts;
 
 	rbp = lsx_pciep_hw_rbp_get(lsx_dev->pcie_id);
 	if (rbp)
@@ -544,6 +544,11 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		LSXINIC_PMD_ERR("Failed to allocate mac addr mem");
 		return -ENOMEM;
 	}
+
+#ifdef RTE_PCIEP_MULTI_VER_PMD_DRV
+	lsx_drv->drv_ver = LSINIC_EP_VIO_DRV_VER_NUM;
+#endif
+
 	/* Copy the permanent MAC address */
 	rte_ether_addr_copy((struct rte_ether_addr *)adapter->port_mac_addr,
 		&eth_dev->data->mac_addrs[0]);
@@ -584,7 +589,7 @@ static void lsxvio_print_ep_status(void)
 			printf("-VF%d", dev->vf);
 		printf("-Port%d -- statistics:\n", eth_dev->data->port_id);
 
-		print_port_v2111_status(eth_dev, &core_mask,
+		print_port_status(eth_dev, &core_mask,
 			(DEBUG_PRINT_INTERVAL + 1) * LSX_CMD_POLLING_INTERVAL,
 			LSINIC_EPVIO_PORT);
 
@@ -665,7 +670,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 
 			if (status & VIRTIO_CONFIG_STATUS_FEATURES_OK) {
 				/* ??? */
-				if (!lsxvio_v2111_vio_check_drv_feature(common))
+				if (!lsxvio_vio_check_drv_feature(common))
 					common->device_status &=
 					~VIRTIO_CONFIG_STATUS_FEATURES_OK;
 			}
@@ -679,7 +684,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if ((status & VIRTIO_CONFIG_STATUS_START) &&
 				!(adapter->status &
 				VIRTIO_CONFIG_STATUS_START)) {
-				ret = lsxvio_v2111_vio_config_fromrc(dev);
+				ret = lsxvio_vio_config_fromrc(dev);
 				if (ret) {
 					LSXINIC_PMD_ERR("%s link failed",
 						dev->name);
@@ -777,17 +782,17 @@ lsxvio_dev_start(struct rte_eth_dev *eth_dev)
 	adapter->status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
 
 	/* initialize transmission unit */
-	lsxvio_dev_v2111_tx_init(eth_dev);
+	lsxvio_dev_tx_init(eth_dev);
 
 	/* This can fail when allocating mbufs for descriptor rings */
-	err = lsxvio_dev_v2111_rx_init(eth_dev);
+	err = lsxvio_dev_rx_init(eth_dev);
 	if (err) {
 		LSXINIC_PMD_ERR("Unable to initialize RX hardware");
-		lsxvio_dev_v2111_clear_queues(eth_dev);
+		lsxvio_dev_clear_queues(eth_dev);
 		return -EIO;
 	}
 
-	lsxvio_dev_v2111_rx_tx_bind(eth_dev);
+	lsxvio_dev_rx_tx_bind(eth_dev);
 
 	if (!thread_init_flag) {
 		if (pthread_create(&thread, NULL, lsxvio_poll_dev, NULL)) {
@@ -806,10 +811,10 @@ static void
 lsxvio_dev_stop(struct rte_eth_dev *dev)
 {
 	/* disable all enabled rx & tx queues */
-	lsxvio_dev_v2111_rx_stop(dev);
-	lsxvio_dev_v2111_tx_stop(dev);
+	lsxvio_dev_rx_stop(dev);
+	lsxvio_dev_tx_stop(dev);
 
-	lsxvio_dev_v2111_clear_queues(dev);
+	lsxvio_dev_clear_queues(dev);
 }
 
 static void lsxvio_dev_reset(struct rte_eth_dev *dev)
@@ -818,7 +823,7 @@ static void lsxvio_dev_reset(struct rte_eth_dev *dev)
 
 	lsxvio_dev_start(dev);
 
-	lsxvio_v2111_vio_reset_dev(dev);
+	lsxvio_vio_reset_dev(dev);
 }
 
 /* Reest and stop device. */
@@ -1060,9 +1065,9 @@ rte_lsxvio_remove(struct rte_lsx_pciep_device *lsx_dev)
 
 static struct rte_lsx_pciep_driver rte_lsxvio_pmd = {
 	.drv_type = 0,
-	.name = LSX_PCIEP_VIRT_NAME_PREFIX "_21.11_driver",
+	.name = LSX_PCIEP_VIRT_NAME_PREFIX LSINIC_EP_VIO_DRV_SUFFIX_NAME,
 	.probe = rte_lsxvio_probe,
 	.remove = rte_lsxvio_remove,
 };
 
-RTE_PMD_REGISTER_LSX_PCIEP(net_lsx_2111, rte_lsxvio_pmd);
+RTE_PMD_REGISTER_LSX_PCIEP(LSX_PCIE_EP_VIO_PMD, rte_lsxvio_pmd);

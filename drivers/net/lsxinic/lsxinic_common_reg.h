@@ -2,12 +2,14 @@
  * Copyright 2019-2022 NXP
  */
 
-#ifndef _LSINIC_REG_H_
-#define _LSINIC_REG_H_
+#ifndef _LSXINIC_COMMON_REG_H_
+#define _LSXINIC_COMMON_REG_H_
 
 #ifndef __packed
 #define __packed	__rte_packed
 #endif
+
+#include "lsxinic_common.h"
 
 /* INIC device information */
 #define LSINIC_INIT_FLAG	0xfee5ca1e
@@ -31,25 +33,16 @@ enum LSINIC_QEUE_TYPE {
 /* len_cmd field bit definitions */
 /* For CB buffer, length excludes CB header.*/
 #define LSINIC_BD_LEN_MASK	0x0000ffff /* Data length mask */
+#define LSINIC_BD_CMD_EOP	0x80000000 /* End of Packet */
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_BD_CMD_MG	0x20000000 /* Merged Packet */
+
+#define LSINIC_MG_ALIGN_SIZE           8 /* bytes */
 
 /* Combination number shift/mask */
 #define LSINIC_BD_MG_NUM_SHIFT 16
 #define LSINIC_BD_MG_NUM_MASK \
 		(((uint32_t)0x1f) << LSINIC_BD_MG_NUM_SHIFT)
-
-#define LSINIC_BD_CMD_EOP	0x80000000 /* End of Packet */
-#define LSINIC_BD_CMD_SG	0x40000000 /* Segment Packet */
-#define LSINIC_BD_CMD_MG	0x20000000 /* Merged Packet */
-#define LSINIC_BD_CMD_VLE	0x10000000 /* Add VLAN tag */
-#define LSINIC_BD_CMD_IXSM	0x08000000 /* Insert IP checksum */
-#define LSINIC_BD_CMD_TXSM	0x04000000 /* Insert TCP/UDP checksum */
-#define LSINIC_BD_CMD_IFCS	0x02000000 /* Insert FCS (Ethernet CRC) */
-#define LSINIC_BD_CMD_IC	0x01000000 /* Insert Checksum */
-#define LSINIC_BD_CMD_DEXT	0x00800000 /* Descriptor extension */
-/* extended cmd field bit definitions */
-#define LSINIC_BD_SG_LEN_MASK	0x0000ffff /* SG length mask */
-
-#define LSINIC_MG_ALIGN_SIZE           8 /* bytes */
 
 /* Within one cache line*/
 #define LSINIC_MG_PKT_LEN_MASK 0x0fff
@@ -57,7 +50,7 @@ enum LSINIC_QEUE_TYPE {
 #define LSINIC_MG_ALIGN_OFFSET_MASK \
 	(((uint16_t)0xf) << LSINIC_MG_ALIGN_OFFSET_SHIFT)
 
-#define LSINIC_MERGE_MAX_NUM		32
+#define LSINIC_MERGE_MAX_NUM LSINIC_MAX_BURST_NUM
 
 struct lsinic_mg_header {
 	uint16_t len_cmd[LSINIC_MERGE_MAX_NUM];
@@ -74,6 +67,7 @@ struct lsinic_mg_header {
 		((((uint16_t)(align_offset) & 0xf) << \
 		LSINIC_MG_ALIGN_OFFSET_SHIFT) | \
 		(((uint16_t)(pkt_len)) & LSINIC_MG_PKT_LEN_MASK))
+#endif
 
 enum lsinic_dev_status {
 	LSINIC_DEV_INITING,
@@ -87,6 +81,9 @@ enum LSINIC_QEUE_STATUS {
 	LSINIC_QUEUE_UNAVAILABLE,
 	LSINIC_QUEUE_START,
 	LSINIC_QUEUE_RUNNING,
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	LSINIC_QUEUE_RAW_TEST_RUNNING,
+#endif
 	LSINIC_QUEUE_STOP,
 };
 
@@ -140,8 +137,6 @@ enum PCIDEV_STATUS {
 	PCIDEV_STATUS_NUM,
 };
 
-#define LSINIC_RING_MAX_COUNT	32
-
 #define LSINIC_RING_REG_OFFSET (0)
 
 /* Transmit Config masks */
@@ -160,18 +155,22 @@ enum EP_MEM_BD_TYPE {
 	EP_MEM_DST_ADDR_BD,
 	EP_MEM_DST_ADDRL_BD,
 	EP_MEM_DST_ADDRX_BD,
+	EP_MEM_DST_ADDR_SEG,
 	/* For RC to set source addr in RC memory, RC->EP*/
 	EP_MEM_SRC_ADDRL_BD,
-	EP_MEM_SRC_ADDRX_BD
+	EP_MEM_SRC_ADDRX_BD,
+	EP_MEM_SRC_SEG_BD
 };
 
 enum RC_MEM_BD_TYPE {
 	RC_MEM_LONG_BD,
 	/* For EP to notify RC with len and cmd, EP->RC*/
 	RC_MEM_LEN_CMD,
+	RC_MEM_SEG_LEN,
 	/* For EP to confirm RC, RC->EP*/
 	RC_MEM_BD_CNF,
-	RC_MEM_IDX_CNF
+	RC_MEM_IDX_CNF,
+	RC_MEM_SG_CNF
 };
 
 struct lsinic_ring_reg {
@@ -214,7 +213,12 @@ struct lsinic_ring_reg {
 	uint32_t r_desch;	/* desc PCI high address On RC side */
 	uint32_t r_ep_mem_bd_type;
 	uint32_t r_rc_mem_bd_type;
-	uint32_t dma_test;	/* EP DMA PCIe RAW test */
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	uint32_t r_raw_count;
+	uint32_t r_raw_size;
+	uint32_t r_raw_basel;
+	uint32_t r_raw_baseh;
+#endif
 } __packed;
 
 struct lsinic_bdr_reg {
@@ -255,10 +259,30 @@ struct lsinic_bd_desc {
 	};
 } __packed;
 
-#define LSINIC_BD_ENTRY_SIZE sizeof(struct lsinic_bd_desc)
+#define LSINIC_SG_DESC_MAX_ENTRY 30
+
+struct lsinic_seg_desc_entry {
+	uint32_t offset;
+	uint32_t positive:1;
+	uint32_t len:31;
+} __packed;
+
+struct lsinic_seg_desc {
+	uint64_t base_addr;
+	struct lsinic_seg_desc_entry entry[LSINIC_SG_DESC_MAX_ENTRY];
+	uint8_t rsv[7];
+	uint8_t nb;
+} __packed;
+
+#define LSINIC_SEG_DESC_CACHE_LINE_NB \
+	((sizeof(struct lsinic_seg_desc) % RTE_CACHE_LINE_SIZE) ? \
+	(sizeof(struct lsinic_seg_desc) / RTE_CACHE_LINE_SIZE + 1) : \
+	(sizeof(struct lsinic_seg_desc) / RTE_CACHE_LINE_SIZE))
+
 #define LSINIC_BD_ENTRY_COUNT_SHIFT 9
 #define LSINIC_BD_ENTRY_COUNT (1 << LSINIC_BD_ENTRY_COUNT_SHIFT)
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #define EP2RC_TX_CTX_IDX(cnt_idx) \
 	((cnt_idx) & (LSINIC_BD_ENTRY_COUNT - 1))
 #define EP2RC_TX_CTX_CNT(cnt_idx) \
@@ -276,6 +300,26 @@ struct lsinic_rc_rx_len_cmd {
 			uint16_t cnt_idx;
 		};
 	};
+} __packed;
+#else
+struct lsinic_rc_rx_len_idx {
+	union {
+		uint32_t len_idx;
+		struct {
+			/* For CB buffer, length excludes CB header.*/
+			uint16_t total_len;
+			uint16_t idx;
+		};
+	};
+} __packed;
+#endif
+
+#define LSINIC_EP_TX_SEG_MAX_ENTRY (LSINIC_SG_DESC_MAX_ENTRY - 2)
+
+struct lsinic_rc_rx_seg {
+	uint16_t len[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint8_t rsv[7];
+	uint8_t nb;
 } __packed;
 
 struct lsinic_rc_tx_bd_cnf {
@@ -298,6 +342,25 @@ struct lsinic_ep_tx_dst_addrx {
 	uint16_t pkt_addr_idx;
 } __packed;
 
+#define LSINIC_SEG_OFFSET_MAX ((1ull << 31) - 1)
+struct lsinic_ep_tx_seg_entry {
+	union {
+		uint32_t seg_entry;
+		struct {
+			uint32_t positive:1;
+			uint32_t offset:31;
+		};
+	};
+} __packed;
+
+/** Two cache lines(128B).*/
+struct lsinic_ep_tx_seg_dst_addr {
+	uint64_t addr_base;
+	struct lsinic_ep_tx_seg_entry entry[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint8_t rsv[7];
+	uint8_t ready;
+} __packed;
+
 struct lsinic_ep_rx_src_addrl {
 	union {
 		uint64_t addr_cmd_len;
@@ -308,28 +371,59 @@ struct lsinic_ep_rx_src_addrl {
 	};
 } __packed;
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #define LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT 15
 #define LSINIC_EP_RX_SRC_ADDRX_MERGE \
 	(1 << LSINIC_EP_RX_SRC_ADDRX_MERGE_SHIFT)
 #define LSINIC_EP_RX_SRC_ADDRX_LEN_MASK \
 	(~LSINIC_EP_RX_SRC_ADDRX_MERGE)
+#endif
 struct lsinic_ep_rx_src_addrx {
 	union {
 		uint32_t idx_cmd_len;
 		struct {
 			uint16_t pkt_idx;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 			uint16_t len_cmd;
+#else
+			uint16_t len;
+#endif
 		};
 	};
 } __packed;
+
+#ifndef RTE_MAX
+#define RTE_MAX(a, b) \
+	__extension__({ \
+		typeof(a) _a = (a); \
+		typeof(b) _b = (b); \
+		_a > _b ? _a : _b; \
+	})
+#endif
+
+#define LSXINIC_MAX(a, b, c) \
+	RTE_MAX(RTE_MAX(a, b), c)
+
+#define LSINIC_BD_ENTRY_SIZE \
+	LSXINIC_MAX(sizeof(struct lsinic_seg_desc), \
+		sizeof(struct lsinic_ep_tx_seg_dst_addr), \
+		sizeof(struct lsinic_bd_desc))
 
 #define LSINIC_MAX_BD_ENTRY_SIZE LSINIC_BD_ENTRY_SIZE
 
 #define LSINIC_BD_RING_SIZE	\
 	(LSINIC_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #define LSINIC_LEN_CMD_RING_SIZE \
 	(sizeof(struct lsinic_rc_rx_len_cmd) * LSINIC_BD_ENTRY_COUNT)
+#else
+#define LSINIC_LEN_IDX_RING_SIZE \
+	(sizeof(struct lsinic_rc_rx_len_idx) * LSINIC_BD_ENTRY_COUNT)
+#endif
+
+#define LSINIC_SEG_LEN_RING_SIZE \
+	(sizeof(struct lsinic_rc_rx_seg) * LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_BD_CNF_RING_SIZE \
 	(sizeof(struct lsinic_rc_tx_bd_cnf) * LSINIC_BD_ENTRY_COUNT)
@@ -399,8 +493,7 @@ struct lsinic_dev_reg {  /* offset 0x000-0x1FF */
 	uint32_t pf_idx;		/* 0x010 */
 	uint32_t vf_idx;		/* 0x014 */
 	uint32_t init_flag;		/* 0x018 */
-	uint32_t rbp_enable;		/* 0x01c */
-	uint32_t cap[62];		/* 0x020 - 0x114 */
+	uint32_t cap[63];		/* 0x01c - 0x114 */
 	uint32_t rx_ring_max_num;	/* 0x118 */
 	uint32_t rx_entry_max_num;	/* 0x11c */
 	uint32_t tx_ring_max_num;	/* 0x120 */
@@ -415,16 +508,13 @@ struct lsinic_dev_reg {  /* offset 0x000-0x1FF */
 
 #define LSINIC_DEV_MSIX_MAX_NB LSINIC_RING_MAX_COUNT
 
-#define ALIGNED(x) \
-	__attribute__((__aligned__(x)))
-
 struct lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	/* RC sets the following reg */
 	uint32_t rc_state;
 	struct lsinic_command_reg cmd;
 	uint32_t r_regl;	/* shadow reg low address On RC side */
 	uint32_t r_regh;	/* shadow reg high address On RC side */
-	uint64_t r_dma_base ALIGNED(sizeof(uint64_t));
+	uint64_t r_dma_base;
 	uint32_t r_dma_elt_size;
 	uint32_t msi_flag;
 	uint32_t msix_mask[LSINIC_DEV_MSIX_MAX_NB];
@@ -453,17 +543,27 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_XFER_COMPLETE \
 	(1 << LSINIC_CAP_XFER_COMPLETE_POS)
 
-#define LSINIC_CAP_XFER_PKT_MERGE_POS 1
-#define LSINIC_CAP_XFER_PKT_MERGE \
-	(1 << LSINIC_CAP_XFER_PKT_MERGE_POS)
-
-#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM_POS 2
+#define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM_POS 1
 #define LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM \
 	(1 << LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM_POS)
 
-#define LSINIC_CAP_XFER_ORDER_PRSV_POS 3
+#define LSINIC_CAP_XFER_ORDER_PRSV_POS 2
 #define LSINIC_CAP_XFER_ORDER_PRSV \
 	(1 << LSINIC_CAP_XFER_ORDER_PRSV_POS)
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_CAP_XFER_PKT_MERGE_POS 3
+#define LSINIC_CAP_XFER_PKT_MERGE \
+	(1 << LSINIC_CAP_XFER_PKT_MERGE_POS)
+#endif
+
+#define LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD_POS 4
+#define LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD \
+	(1 << LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD_POS)
+
+#define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS 5
+#define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD \
+	(1 << LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS)
 
 enum rc_set_addr_type {
 	RC_SET_ADDRF_TYPE = 0,
@@ -472,7 +572,7 @@ enum rc_set_addr_type {
 	RC_SET_ADDR_TYPE_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 4
+#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 6
 #define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) \
 	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS) & \
 	RC_SET_ADDR_TYPE_MASK)
@@ -542,13 +642,24 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 	uint32_t vf_macaddrl;
 	uint32_t vf_vlan;
 	uint32_t max_data_room;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	uint32_t merge_threshold;
+#endif
 } __packed;
 
 #define LSINIC_REG_BAR_MAX_SIZE \
 	(LSINIC_ETH_REG_OFFSET + sizeof(struct lsinic_eth_reg))
 
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+#define LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT 1024
+#define LSINIC_PCIE_RAW_TEST_SIZE_MIN 64
+#define LSINIC_PCIE_RAW_TEST_SIZE_MAX (16 * 1024 * 1024)
+#define LSINIC_PCIE_RAW_TEST_COUNT_MAX LSINIC_BD_ENTRY_COUNT
+#define LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT 128
+#define LSINIC_PCIE_RAW_TEST_COUNT_MIN 64
+#endif
+
 #define LSINIC_RC_BD_DESC(R, i)	(&(R)->rc_bd_desc[i])
 #define LSINIC_EP_BD_DESC(R, i)	(&(R)->ep_bd_desc[i])
 
-#endif /* _LSINIC_REG_H_ */
+#endif /* _LSXINIC_COMMON_REG_H_ */
