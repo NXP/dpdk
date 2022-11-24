@@ -208,8 +208,7 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 		}
 	}
 
-	if (sg_unsupport && q->type == LSXVIO_QUEUE_TX &&
-		adapter->txq_dma_silent) {
+	if (sg_unsupport && q->type == LSXVIO_QUEUE_TX && silent) {
 		LSXINIC_PMD_ERR("EP2RC DMA NORSP should disable");
 
 		return -EINVAL;
@@ -247,8 +246,10 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 
 	q->qrawdma_config.flags = 0;
 	q->qrawdma_config.lcore_id = rte_lcore_id();
-	/**Data + BD*/
-	q->qrawdma_config.queue_size = q->nb_desc * 2;
+	/**Data + e2r_bd_rawdma_jobs + r2e_bd_rawdma_jobs +
+	 * r2e_idx_rawdma_jobs
+	 */
+	q->qrawdma_config.queue_size = q->nb_desc * 4;
 
 	if (adapter->rbp_enable) {
 		q->rbp.enable = 1;
@@ -298,7 +299,8 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 	for (i = 0; i < q->nb_desc; i++) {
 		q->rawdma_jobs[i].job_ref = i;
 		q->e2r_bd_rawdma_jobs[i].job_ref = i + q->nb_desc;
-		q->r2e_bd_rawdma_jobs[i].job_ref = i + q->nb_desc;
+		q->r2e_bd_rawdma_jobs[i].job_ref = i + 2 * q->nb_desc;
+		q->r2e_idx_rawdma_jobs[i].job_ref = i + 3 * q->nb_desc;
 	}
 
 	if (q->dma_vq >= 0)
