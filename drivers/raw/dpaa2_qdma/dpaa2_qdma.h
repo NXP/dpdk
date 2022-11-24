@@ -64,8 +64,6 @@ struct qdma_device {
 	uint16_t max_vqs;
 	/** Device state - started or stopped */
 	uint8_t state;
-	/** FLE queue pool size */
-	uint32_t fle_queue_pool_cnt;
 	/** A lock to QDMA device whenever required */
 	rte_spinlock_t lock;
 };
@@ -96,6 +94,7 @@ struct qdma_virt_queue {
 	struct rte_qdma_rbp rbp;
 	/** Associated lcore id */
 	uint32_t lcore_id;
+	uint32_t queue_size;
 	/** States if this vq is in use or not */
 	uint8_t in_use;
 	uint8_t fle_pre_populate;
@@ -111,6 +110,8 @@ struct qdma_virt_queue {
 
 	uint16_t vq_id;
 	uint32_t flags;
+
+	void **fle_elems;
 
 	int (*set_fd)(struct qdma_virt_queue *qdma_vq,
 		struct qbman_fd *fd,

@@ -172,6 +172,7 @@ struct rte_qdma_job {
 	 * FLE pool element maintained by user, in case no qDMA response.
 	 * Note: the address must be allocated from DPDK memory pool.
 	 */
+	uint32_t job_ref;
 	void *usr_elem;
 };
 
@@ -183,6 +184,7 @@ struct rte_qdma_enqdeq {
 struct rte_qdma_queue_config {
 	uint32_t lcore_id;
 	uint32_t flags;
+	uint32_t queue_size;
 	struct rte_qdma_rbp *rbp;
 };
 
