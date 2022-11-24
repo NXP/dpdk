@@ -52,11 +52,6 @@ struct qdma_fle_sg_elem {
 struct qdma_device {
 	/** total number of hw queues. */
 	uint16_t num_hw_queues;
-	/**
-	 * Maximum number of hw queues to be alocated per core.
-	 * This is limited by MAX_HW_QUEUE_PER_CORE
-	 */
-	uint16_t max_hw_queues_per_core;
 
 	/** VQ's of this device */
 	struct qdma_virt_queue *vqs;
@@ -84,8 +79,6 @@ struct qdma_hw_queue {
 
 /** Represents a QDMA virtual queue */
 struct qdma_virt_queue {
-	/** Status ring of the virtual queue */
-	struct rte_ring *status_ring;
 	/** Associated hw queue */
 	struct qdma_hw_queue *hw_queue;
 	/** FLE pool for the queue */
@@ -98,8 +91,6 @@ struct qdma_virt_queue {
 	/** States if this vq is in use or not */
 	uint8_t in_use;
 	uint8_t fle_pre_populate;
-	/** States if this vq has exclusively associated hw queue */
-	uint8_t exclusive_hw_queue;
 	/* Total number of enqueues on this VQ */
 	uint64_t num_enqueues;
 	/* Total number of dequeues from this VQ */

@@ -40,13 +40,10 @@ TAILQ_HEAD(qdma_hw_queue_list, qdma_hw_queue);
 static struct qdma_hw_queue_list qdma_queue_list
 	= TAILQ_HEAD_INITIALIZER(qdma_queue_list);
 
-/* QDMA per core data */
-static struct qdma_per_core_info qdma_core_info[RTE_MAX_LCORE];
-
 static inline int
 qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
-			uint32_t len, struct qbman_fd *fd,
-			struct rte_qdma_rbp *rbp, int ser)
+	uint32_t len, struct qbman_fd *fd,
+	struct rte_qdma_rbp *rbp, int ser)
 {
 	fd->simple_pci.saddr_lo = lower_32_bits((uint64_t) (src));
 	fd->simple_pci.saddr_hi = upper_32_bits((uint64_t) (src));
@@ -89,7 +86,7 @@ qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
 
 static inline int
 qdma_populate_fd_ddr(phys_addr_t src, phys_addr_t dest,
-			uint32_t len, struct qbman_fd *fd, int ser)
+	uint32_t len, struct qbman_fd *fd, int ser)
 {
 	fd->simple_ddr.saddr_lo = lower_32_bits((uint64_t) (src));
 	fd->simple_ddr.saddr_hi = upper_32_bits((uint64_t) (src));
@@ -157,7 +154,7 @@ populate_fle(struct qbman_fle fle[],
 	struct qdma_sdd sdd[], uint64_t sdd_iova,
 	struct rte_qdma_rbp *rbp,
 	uint64_t src, uint64_t dest, size_t len,
-	uint32_t flags, uint32_t fmt)
+	uint32_t fmt)
 {
 	/* first frame list to source descriptor */
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SDD_FLE], sdd_iova);
@@ -212,28 +209,18 @@ populate_fle(struct qbman_fle fle[],
 			dpaa2_coherent_alloc_cache;
 	}
 	/* source frame list to source buffer */
-	if (flags & RTE_QDMA_JOB_SRC_PHY) {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
+	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
+	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
 #endif
-	} else {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE],
-			DPAA2_VADDR_TO_IOVA(src));
-	}
 	fle[DPAA2_QDMA_SRC_FLE].word4.fmt = fmt;
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_SRC_FLE], len);
 
 	/* destination frame list to destination buffer */
-	if (flags & RTE_QDMA_JOB_DEST_PHY) {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
+	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
+	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
 #endif
-	} else {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE],
-			DPAA2_VADDR_TO_IOVA(dest));
-	}
 	fle[DPAA2_QDMA_DST_FLE].word4.fmt = fmt;
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_DST_FLE], len);
 
@@ -296,28 +283,15 @@ post_populate_sg_entry(struct rte_qdma_job **jobs,
 {
 	uint16_t i = 0;
 	uint32_t total_len = 0;
-	uint64_t iova;
 
 	for (i = 0; i < (nb_jobs - 1); i++) {
 		/* source SG */
-		if (likely(jobs[i]->flags & RTE_QDMA_JOB_SRC_PHY)) {
-			src_sge->addr_lo = (uint32_t)jobs[i]->src;
-			src_sge->addr_hi = (jobs[i]->src >> 32);
-		} else {
-			iova = DPAA2_VADDR_TO_IOVA(jobs[i]->src);
-			src_sge->addr_lo = (uint32_t)iova;
-			src_sge->addr_hi = iova >> 32;
-		}
+		src_sge->addr_lo = (uint32_t)jobs[i]->src;
+		src_sge->addr_hi = (jobs[i]->src >> 32);
 		src_sge->data_len.data_len_sl0 = jobs[i]->len;
 
-		if (likely(jobs[i]->flags & RTE_QDMA_JOB_DEST_PHY)) {
-			dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
-			dst_sge->addr_hi = (jobs[i]->dest >> 32);
-		} else {
-			iova = DPAA2_VADDR_TO_IOVA(jobs[i]->dest);
-			dst_sge->addr_lo = (uint32_t)iova;
-			dst_sge->addr_hi = iova >> 32;
-		}
+		dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
+		dst_sge->addr_hi = (jobs[i]->dest >> 32);
 		dst_sge->data_len.data_len_sl0 = jobs[i]->len;
 		total_len += jobs[i]->len;
 
@@ -327,24 +301,12 @@ post_populate_sg_entry(struct rte_qdma_job **jobs,
 		dst_sge++;
 	}
 
-	if (likely(jobs[i]->flags & RTE_QDMA_JOB_SRC_PHY)) {
-		src_sge->addr_lo = (uint32_t)jobs[i]->src;
-		src_sge->addr_hi = (jobs[i]->src >> 32);
-	} else {
-		iova = DPAA2_VADDR_TO_IOVA(jobs[i]->src);
-		src_sge->addr_lo = (uint32_t)iova;
-		src_sge->addr_hi = iova >> 32;
-	}
+	src_sge->addr_lo = (uint32_t)jobs[i]->src;
+	src_sge->addr_hi = (jobs[i]->src >> 32);
 	src_sge->data_len.data_len_sl0 = jobs[i]->len;
 
-	if (likely(jobs[i]->flags & RTE_QDMA_JOB_DEST_PHY)) {
-		dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
-		dst_sge->addr_hi = (jobs[i]->dest >> 32);
-	} else {
-		iova = DPAA2_VADDR_TO_IOVA(jobs[i]->dest);
-		dst_sge->addr_lo = (uint32_t)iova;
-		dst_sge->addr_hi = iova >> 32;
-	}
+	dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
+	dst_sge->addr_hi = (jobs[i]->dest >> 32);
 	dst_sge->data_len.data_len_sl0 = jobs[i]->len;
 	total_len += jobs[i]->len;
 
@@ -362,18 +324,11 @@ populate_sg_entry(struct rte_qdma_job **jobs,
 {
 	uint16_t i;
 	uint32_t total_len = 0;
-	uint64_t iova;
 
 	for (i = 0; i < nb_jobs; i++) {
 		/* source SG */
-		if (likely(jobs[i]->flags & RTE_QDMA_JOB_SRC_PHY)) {
-			src_sge->addr_lo = (uint32_t)jobs[i]->src;
-			src_sge->addr_hi = (jobs[i]->src >> 32);
-		} else {
-			iova = DPAA2_VADDR_TO_IOVA(jobs[i]->src);
-			src_sge->addr_lo = (uint32_t)iova;
-			src_sge->addr_hi = iova >> 32;
-		}
+		src_sge->addr_lo = (uint32_t)jobs[i]->src;
+		src_sge->addr_hi = (jobs[i]->src >> 32);
 		src_sge->data_len.data_len_sl0 = jobs[i]->len;
 		src_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
@@ -383,14 +338,8 @@ populate_sg_entry(struct rte_qdma_job **jobs,
 		src_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
 #endif
 		/* destination SG */
-		if (likely(jobs[i]->flags & RTE_QDMA_JOB_DEST_PHY)) {
-			dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
-			dst_sge->addr_hi = (jobs[i]->dest >> 32);
-		} else {
-			iova = DPAA2_VADDR_TO_IOVA(jobs[i]->dest);
-			dst_sge->addr_lo = (uint32_t)iova;
-			dst_sge->addr_hi = iova >> 32;
-		}
+		dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
+		dst_sge->addr_hi = (jobs[i]->dest >> 32);
 		dst_sge->data_len.data_len_sl0 = jobs[i]->len;
 		dst_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		dst_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
@@ -418,7 +367,7 @@ populate_sg_entry(struct rte_qdma_job **jobs,
 static void
 fle_sdd_pre_populate(struct qdma_fle_elem *elem,
 	struct rte_qdma_rbp *rbp, uint64_t src, uint64_t dest,
-	uint32_t flags, uint32_t fmt)
+	uint32_t fmt)
 {
 	struct qbman_fle *fle = elem->fle;
 	struct qdma_sdd *sdd = elem->sdd;
@@ -476,23 +425,13 @@ fle_sdd_pre_populate(struct qdma_fle_elem *elem,
 			dpaa2_coherent_alloc_cache;
 	}
 	/* source frame list to source buffer */
-	if (flags & RTE_QDMA_JOB_SRC_PHY) {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
-		DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
-	} else {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE],
-			DPAA2_VADDR_TO_IOVA(src));
-	}
+	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
+	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
 	fle[DPAA2_QDMA_SRC_FLE].word4.fmt = fmt;
 
 	/* destination frame list to destination buffer */
-	if (flags & RTE_QDMA_JOB_DEST_PHY) {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
-		DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
-	} else {
-		DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE],
-			DPAA2_VADDR_TO_IOVA(dest));
-	}
+	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
+	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
 	fle[DPAA2_QDMA_DST_FLE].word4.fmt = fmt;
 
 	/* Final bit: 1, for last frame list */
@@ -504,18 +443,11 @@ fle_elem_pre_populate(struct qdma_fle_elem *elem,
 	struct qdma_virt_queue *qdma_vq)
 {
 	struct rte_qdma_rbp *rbp = &qdma_vq->rbp;
-	uint32_t flags;
 
 	memset(elem, 0, sizeof(struct qdma_fle_elem));
 
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
-#else
-	flags = 0;
-#endif
-
 	fle_sdd_pre_populate(elem, rbp,
-		0, 0, flags, QBMAN_FLE_WORD4_FMT_SBF);
+		0, 0, QBMAN_FLE_WORD4_FMT_SBF);
 }
 
 static inline int
@@ -583,7 +515,7 @@ dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 				offsetof(struct qdma_fle_elem, sdd);
 			populate_fle(fle, sdd, sdd_iova, rbp,
 				job[i]->src, job[i]->dest, job[i]->len,
-				job[i]->flags, QBMAN_FLE_WORD4_FMT_SBF);
+				QBMAN_FLE_WORD4_FMT_SBF);
 		}
 	}
 
@@ -625,22 +557,16 @@ fle_sdd_sg_pre_populate(struct qdma_fle_sg_elem *elem,
 	struct qdma_sg_entry *dst_sge = elem->sg_dst_entry;
 	uint64_t src_sge_iova, dst_sge_iova;
 	struct rte_qdma_rbp *rbp = &qdma_vq->rbp;
-	uint32_t flags;
 
 	memset(elem, 0, sizeof(struct qdma_fle_sg_elem));
 
 	src_sge_iova = DPAA2_VADDR_TO_IOVA(src_sge);
 	dst_sge_iova = DPAA2_VADDR_TO_IOVA(dst_sge);
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
-#else
-	flags = 0;
-#endif
 
 	sg_entry_pre_populate(elem);
 	fle_sdd_pre_populate(&elem->fle_elem,
 		rbp, src_sge_iova, dst_sge_iova,
-		flags, QBMAN_FLE_WORD4_FMT_SGE);
+		QBMAN_FLE_WORD4_FMT_SGE);
 }
 
 static inline int
@@ -740,7 +666,6 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 
 	populate_fle(fle, sdd, sdd_iova,
 		&qdma_vq->rbp, src, dst, len,
-		RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY,
 		QBMAN_FLE_WORD4_FMT_SGE);
 
 	return len;
@@ -826,7 +751,7 @@ dpdmai_dev_get_sg_job(struct qdma_virt_queue *qdma_vq,
 	 * in metadata in the enqueue operation.
 	 */
 	fle = (struct qbman_fle *)
-			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 	fle_elem = container_of(fle, struct qdma_fle_elem, fle[0]);
 	if (qdma_vq->flags & RTE_QDMA_VQ_NO_RSP_DRAIN)
 		return FLE_SG_JOB_GET_SIZE(fle_elem->sg_job_nb_len);
@@ -857,6 +782,14 @@ dpdmai_dev_get_sg_job(struct qdma_virt_queue *qdma_vq,
 	return FLE_SG_JOB_GET_SIZE(fle_elem->sg_job_nb_len);
 }
 
+static inline int
+dpdmai_dev_qbman_dpio_complete(void)
+{
+	struct qbman_result *res;
+
+	res = get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
+	return qbman_check_command_complete(res);
+}
 /* Function to receive a QDMA job for a given device and queue*/
 static int
 dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
@@ -889,15 +822,15 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
-				rte_gettid());
+			DPAA2_QDMA_ERR("Allocate IO portal err(%d), tid(%d)",
+				ret, rte_gettid());
 			return 0;
 		}
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	pull_size = (nb_jobs > dpaa2_dqrr_size) ? dpaa2_dqrr_size : nb_jobs;
+	pull_size = (nb_jobs > dpaa2_dqrr_size) ?
+		dpaa2_dqrr_size : nb_jobs;
 	rxq = &(dpdmai_dev->rx_queue[rxq_id]);
 	fqid = rxq->fqid;
 	q_storage = rxq->q_storage;
@@ -911,19 +844,16 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-				(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
-			while (!qbman_check_command_complete(
-			       get_swp_active_dqs(
-			       DPAA2_PER_LCORE_DPIO->index)))
+			while (!dpdmai_dev_qbman_dpio_complete())
 				;
 			clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
 		}
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				DPAA2_QDMA_DP_WARN(
-					"VDQ command not issued.QBMAN busy\n");
-					/* Portal was busy, try again */
+				DPAA2_QDMA_WARN("pull failed. QBMAN busy");
+				/* Portal was busy, try again */
 				continue;
 			}
 			break;
@@ -931,7 +861,7 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 		q_storage->active_dqs = dq_storage;
 		q_storage->active_dpio_id = DPAA2_PER_LCORE_DPIO->index;
 		set_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index,
-				   dq_storage);
+			dq_storage);
 	}
 
 	dq_storage = q_storage->active_dqs;
@@ -988,16 +918,14 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 	} while (pending);
 
 	if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
-		while (!qbman_check_command_complete(
-		       get_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)))
+		while (!dpdmai_dev_qbman_dpio_complete())
 			;
 		clear_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index);
 	}
 	/* issue a volatile dequeue command for next pull */
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			DPAA2_QDMA_DP_WARN(
-				"VDQ command is not issued. QBMAN is busy (2)\n");
+			DPAA2_QDMA_WARN("next pull failed. QBMAN busy");
 			continue;
 		}
 		break;
@@ -1042,9 +970,8 @@ dpdmai_dev_dequeue(struct qdma_virt_queue *qdma_vq,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
-				rte_gettid());
+			DPAA2_QDMA_ERR("Allocate IO portal err(%d), tid(%d)",
+				ret, rte_gettid());
 			return 0;
 		}
 	}
@@ -1072,8 +999,7 @@ dpdmai_dev_dequeue(struct qdma_virt_queue *qdma_vq,
 
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				DPAA2_QDMA_DP_WARN(
-					"VDQ command not issued. QBMAN busy");
+				DPAA2_QDMA_WARN("pull failed. QBMAN busy");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -1142,9 +1068,8 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_QDMA_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
-				rte_gettid());
+			DPAA2_QDMA_ERR("Allocate IO portal err(%d), tid(%d)",
+				ret, rte_gettid());
 			return 0;
 		}
 	}
@@ -1174,8 +1099,8 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 		memset(&fd[0], 0, sizeof(struct qbman_fd) * fd_nb);
 
 		for (loop = 0; loop < fd_nb; loop++) {
-			ret = qdma_vq->set_fd(qdma_vq, &fd[loop], &job[job_idx],
-								sg_entry_nb);
+			ret = qdma_vq->set_fd(qdma_vq, &fd[loop],
+				&job[job_idx], sg_entry_nb);
 			if (unlikely(ret < 0))
 				return 0;
 			fd_sg_nb[loop] = sg_entry_nb;
@@ -1229,10 +1154,10 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 
 		while ((int)enqueue_loop < loop) {
 			ret = qbman_swp_enqueue_multiple(swp,
-						&eqdesc,
-						&fd[num_tx + enqueue_loop],
-						NULL,
-						loop - enqueue_loop);
+					&eqdesc,
+					&fd[num_tx + enqueue_loop],
+					NULL,
+					loop - enqueue_loop);
 			if (unlikely(ret < 0)) {
 				retry_count++;
 				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT)
@@ -1283,87 +1208,10 @@ free_hw_queue(struct qdma_hw_queue *queue)
 	queue->num_users--;
 }
 
-
-static struct qdma_hw_queue *
-get_hw_queue(struct qdma_device *qdma_dev, uint32_t lcore_id)
-{
-	struct qdma_per_core_info *core_info;
-	struct qdma_hw_queue *queue, *temp;
-	uint32_t least_num_users;
-	int num_hw_queues, i;
-
-	DPAA2_QDMA_FUNC_TRACE();
-
-	core_info = &qdma_core_info[lcore_id];
-	num_hw_queues = core_info->num_hw_queues;
-
-	/*
-	 * Allocate a HW queue if there are less queues
-	 * than maximum per core queues configured
-	 */
-	if (num_hw_queues < qdma_dev->max_hw_queues_per_core) {
-		queue = alloc_hw_queue(lcore_id);
-		if (queue) {
-			core_info->hw_queues[num_hw_queues] = queue;
-			core_info->num_hw_queues++;
-			return queue;
-		}
-	}
-
-	queue = core_info->hw_queues[0];
-	/* In case there is no queue associated with the core return NULL */
-	if (!queue)
-		return NULL;
-
-	/* Fetch the least loaded H/W queue */
-	least_num_users = core_info->hw_queues[0]->num_users;
-	for (i = 0; i < num_hw_queues; i++) {
-		temp = core_info->hw_queues[i];
-		if (temp->num_users < least_num_users)
-			queue = temp;
-	}
-
-	if (queue)
-		queue->num_users++;
-
-	return queue;
-}
-
-static void
-put_hw_queue(struct qdma_hw_queue *queue)
-{
-	struct qdma_per_core_info *core_info;
-	int lcore_id, num_hw_queues, i;
-
-	DPAA2_QDMA_FUNC_TRACE();
-
-	/*
-	 * If this is the last user of the queue free it.
-	 * Also remove it from QDMA core info.
-	 */
-	if (queue->num_users == 1) {
-		free_hw_queue(queue);
-
-		/* Remove the physical queue from core info */
-		lcore_id = queue->lcore_id;
-		core_info = &qdma_core_info[lcore_id];
-		num_hw_queues = core_info->num_hw_queues;
-		for (i = 0; i < num_hw_queues; i++) {
-			if (queue == core_info->hw_queues[i])
-				break;
-		}
-		for (; i < num_hw_queues - 1; i++)
-			core_info->hw_queues[i] = core_info->hw_queues[i + 1];
-		core_info->hw_queues[i] = NULL;
-	} else {
-		queue->num_users--;
-	}
-}
-
 static int
 dpaa2_qdma_attr_get(struct rte_rawdev *rawdev,
-		    __rte_unused const char *attr_name,
-		    uint64_t *attr_value)
+	__rte_unused const char *attr_name,
+	uint64_t *attr_value)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
@@ -1406,21 +1254,11 @@ dpaa2_qdma_reset(struct rte_rawdev *rawdev)
 	TAILQ_FOREACH(queue, &qdma_queue_list, next)
 		queue->num_users = 0;
 
-	/* Reset and free virtual queues */
-	for (i = 0; i < qdma_dev->max_vqs; i++) {
-		if (qdma_dev->vqs[i].status_ring)
-			rte_ring_free(qdma_dev->vqs[i].status_ring);
-	}
 	if (qdma_dev->vqs)
 		rte_free(qdma_dev->vqs);
 	qdma_dev->vqs = NULL;
 
-	/* Reset per core info */
-	memset(&qdma_core_info, 0,
-		sizeof(struct qdma_per_core_info) * RTE_MAX_LCORE);
-
 	/* Reset QDMA device structure */
-	qdma_dev->max_hw_queues_per_core = 0;
 	qdma_dev->max_vqs = 0;
 
 	return 0;
@@ -1428,10 +1266,10 @@ dpaa2_qdma_reset(struct rte_rawdev *rawdev)
 
 static int
 dpaa2_qdma_configure(const struct rte_rawdev *rawdev,
-			 rte_rawdev_obj_t config)
+	rte_rawdev_obj_t config)
 {
 	char name[32]; /* RTE_MEMZONE_NAMESIZE = 32 */
-	struct rte_qdma_config *qdma_config = (struct rte_qdma_config *)config;
+	struct rte_qdma_config *qdma_config = config;
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	uint16_t i;
@@ -1440,19 +1278,9 @@ dpaa2_qdma_configure(const struct rte_rawdev *rawdev,
 
 	/* In case QDMA device is not in stopped state, return -EBUSY */
 	if (qdma_dev->state == 1) {
-		DPAA2_QDMA_ERR(
-			"Device is in running state. Stop before config.");
-		return -1;
+		DPAA2_QDMA_ERR("Configure should be int stopped state");
+		return -EBUSY;
 	}
-
-	/* Set max HW queue per core */
-	if (qdma_config->max_hw_queues_per_core > MAX_HW_QUEUE_PER_CORE) {
-		DPAA2_QDMA_ERR("H/W queues per core is more than: %d",
-			       MAX_HW_QUEUE_PER_CORE);
-		return -EINVAL;
-	}
-	qdma_dev->max_hw_queues_per_core =
-		qdma_config->max_hw_queues_per_core;
 
 	/* Allocate Virtual Queues */
 	sprintf(name, "qdma_%d_vq", rawdev->dev_id);
@@ -1484,8 +1312,8 @@ dpaa2_qdma_start(struct rte_rawdev *rawdev)
 }
 
 static int
-check_devargs_handler(__rte_unused const char *key, const char *value,
-		      __rte_unused void *opaque)
+check_devargs_handler(__rte_unused const char *key,
+	const char *value, __rte_unused void *opaque)
 {
 	if (strcmp(value, "1"))
 		return -1;
@@ -1511,7 +1339,7 @@ dpaa2_get_devargs(struct rte_devargs *devargs, const char *key)
 	}
 
 	if (rte_kvargs_process(kvlist, key,
-			       check_devargs_handler, NULL) < 0) {
+			check_devargs_handler, NULL) < 0) {
 		rte_kvargs_free(kvlist);
 		return 0;
 	}
@@ -1549,10 +1377,6 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 		vq->fle_pre_populate = 0;
 
 	if (vq->flags & RTE_QDMA_VQ_FD_SG_FORMAT) {
-		if (!(vq->flags & RTE_QDMA_VQ_EXCLUSIVE_PQ)) {
-			DPAA2_QDMA_ERR("SG format only supports PQ");
-			return -ENODEV;
-		}
 		if (!(vq->flags & RTE_QDMA_VQ_FD_LONG_FORMAT)) {
 			DPAA2_QDMA_ERR("SG format only supports FLE");
 			return -ENODEV;
@@ -1570,7 +1394,7 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 		0, NULL, NULL, fle_pool_elem_init, &pool_size,
 		SOCKET_ID_ANY, 0);
 	if (!vq->fle_pool) {
-		DPAA2_QDMA_ERR("qdma_fle_pool %s create for failed",
+		DPAA2_QDMA_ERR("qdma_fle_pool %s create failed",
 			pool_name);
 		return -ENOMEM;
 	}
@@ -1599,15 +1423,13 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 
 static int
 dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
-			  __rte_unused uint16_t queue_id,
-			  rte_rawdev_obj_t queue_conf)
+	__rte_unused uint16_t queue_id,
+	rte_rawdev_obj_t queue_conf)
 {
-	char ring_name[32];
 	int i, ret;
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
-	struct rte_qdma_queue_config *q_config =
-		(struct rte_qdma_queue_config *)queue_conf;
+	struct rte_qdma_queue_config *q_config = queue_conf;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
@@ -1626,32 +1448,10 @@ dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
 		return -ENODEV;
 	}
 
-	if (q_config->flags & RTE_QDMA_VQ_EXCLUSIVE_PQ) {
-		/* Allocate HW queue for a VQ */
-		qdma_dev->vqs[i].hw_queue = alloc_hw_queue(q_config->lcore_id);
-		qdma_dev->vqs[i].exclusive_hw_queue = 1;
-	} else {
-		/* Allocate a Ring for Virutal Queue in VQ mode */
-		snprintf(ring_name, sizeof(ring_name), "status ring %d", i);
-		qdma_dev->vqs[i].status_ring = rte_ring_create(ring_name,
-			q_config->queue_size, rte_socket_id(), 0);
-		if (!qdma_dev->vqs[i].status_ring) {
-			DPAA2_QDMA_ERR("Status ring creation failed for vq");
-			rte_spinlock_unlock(&qdma_dev->lock);
-			return rte_errno;
-		}
-
-		/* Get a HW queue (shared) for a VQ */
-		qdma_dev->vqs[i].hw_queue = get_hw_queue(qdma_dev,
-						    q_config->lcore_id);
-		qdma_dev->vqs[i].exclusive_hw_queue = 0;
-	}
-
+	/* Allocate HW queue for a VQ */
+	qdma_dev->vqs[i].hw_queue = alloc_hw_queue(q_config->lcore_id);
 	if (qdma_dev->vqs[i].hw_queue == NULL) {
 		DPAA2_QDMA_ERR("No H/W queue available for VQ");
-		if (qdma_dev->vqs[i].status_ring)
-			rte_ring_free(qdma_dev->vqs[i].status_ring);
-		qdma_dev->vqs[i].status_ring = NULL;
 		rte_spinlock_unlock(&qdma_dev->lock);
 		return -ENODEV;
 	}
@@ -1690,12 +1490,10 @@ dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
 			DPAA2_QDMA_NO_PREFETCH) ||
 			(getenv("DPAA2_NO_QDMA_PREFETCH_RX"))) {
 		/* If no prefetch is configured. */
-		qdma_dev->vqs[i].dequeue_job =
-				dpdmai_dev_dequeue;
+		qdma_dev->vqs[i].dequeue_job = dpdmai_dev_dequeue;
 		DPAA2_QDMA_INFO("No Prefetch RX Mode enabled");
 	} else {
-		qdma_dev->vqs[i].dequeue_job =
-			dpdmai_dev_dequeue_prefetch;
+		qdma_dev->vqs[i].dequeue_job = dpdmai_dev_dequeue_prefetch;
 	}
 
 	qdma_dev->vqs[i].enqueue_job = dpdmai_dev_enqueue;
@@ -1707,13 +1505,12 @@ dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
 
 static int
 dpaa2_qdma_enqueue(struct rte_rawdev *rawdev,
-		  __rte_unused struct rte_rawdev_buf **buffers,
-		  unsigned int nb_jobs,
-		  rte_rawdev_obj_t context)
+	__rte_unused struct rte_rawdev_buf **buffers,
+	unsigned int nb_jobs,
+	rte_rawdev_obj_t context)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
-	struct rte_qdma_enqdeq *e_context =
-		(struct rte_qdma_enqdeq *)context;
+	struct rte_qdma_enqdeq *e_context = context;
 	struct qdma_virt_queue *qdma_vq =
 		&dpdmai_dev->qdma_dev->vqs[e_context->vq_id];
 	int ret;
@@ -1731,18 +1528,15 @@ dpaa2_qdma_enqueue(struct rte_rawdev *rawdev,
 
 static int
 dpaa2_qdma_dequeue(struct rte_rawdev *rawdev,
-		   __rte_unused struct rte_rawdev_buf **buffers,
-		   unsigned int nb_jobs,
-		   rte_rawdev_obj_t cntxt)
+	__rte_unused struct rte_rawdev_buf **buffers,
+	unsigned int nb_jobs,
+	rte_rawdev_obj_t cntxt)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
-	struct rte_qdma_enqdeq *context =
-		(struct rte_qdma_enqdeq *)cntxt;
+	struct rte_qdma_enqdeq *context = cntxt;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[context->vq_id];
-	struct qdma_virt_queue *temp_qdma_vq;
-	int ret = 0, i;
-	unsigned int ring_count;
+	int ret = 0;
 
 	if (qdma_vq->flags & RTE_QDMA_VQ_FD_SG_FORMAT) {
 		/** Make sure there are enough space to get jobs.*/
@@ -1758,63 +1552,27 @@ dpaa2_qdma_dequeue(struct rte_rawdev *rawdev,
 		qdma_vq->num_enqueues < (qdma_vq->num_dequeues + nb_jobs))
 		nb_jobs = (qdma_vq->num_enqueues - qdma_vq->num_dequeues);
 
-	if (qdma_vq->exclusive_hw_queue) {
-		/* In case of exclusive queue directly fetch from HW queue */
-		ret = qdma_vq->dequeue_job(qdma_vq, NULL,
-					context->job, nb_jobs);
-		if (ret < 0) {
-			DPAA2_QDMA_ERR(
-				"Dequeue from DPDMAI device failed: %d", ret);
-			return ret;
-		}
-		qdma_vq->num_dequeues += ret;
-	} else {
-		uint16_t temp_vq_id[RTE_QDMA_BURST_NB_MAX];
-		/*
-		 * Get the QDMA completed jobs from the software ring.
-		 * In case they are not available on the ring poke the HW
-		 * to fetch completed jobs from corresponding HW queues
-		 */
-		ring_count = rte_ring_count(qdma_vq->status_ring);
-		if (ring_count < nb_jobs) {
-			/* TODO - How to have right budget */
-			ret = qdma_vq->dequeue_job(qdma_vq,
-					temp_vq_id, context->job, nb_jobs);
-			for (i = 0; i < ret; i++) {
-				temp_qdma_vq = &qdma_dev->vqs[temp_vq_id[i]];
-				rte_ring_enqueue(temp_qdma_vq->status_ring,
-					(void *)(context->job[i]));
-			}
-			ring_count = rte_ring_count(
-					qdma_vq->status_ring);
-		}
-
-		if (ring_count) {
-			/* Dequeue job from the software ring
-			 * to provide to the user
-			 */
-			ret = rte_ring_dequeue_bulk(qdma_vq->status_ring,
-						    (void **)context->job,
-						    ring_count, NULL);
-			if (ret)
-				qdma_vq->num_dequeues += ret;
-		}
+	ret = qdma_vq->dequeue_job(qdma_vq, NULL,
+			context->job, nb_jobs);
+	if (ret < 0) {
+		DPAA2_QDMA_ERR("DMA Dequeue failed(%d)", ret);
+		return ret;
 	}
+	qdma_vq->num_dequeues += ret;
 
 	return ret;
 }
 
 void
 rte_qdma_vq_stats(struct rte_rawdev *rawdev,
-		uint16_t vq_id,
-		struct rte_qdma_vq_stats *vq_status)
+	uint16_t vq_id,
+	struct rte_qdma_vq_stats *vq_status)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[vq_id];
 
 	if (qdma_vq->in_use) {
-		vq_status->exclusive_hw_queue = qdma_vq->exclusive_hw_queue;
 		vq_status->lcore_id = qdma_vq->lcore_id;
 		vq_status->num_enqueues = qdma_vq->num_enqueues;
 		vq_status->num_dequeues = qdma_vq->num_dequeues;
@@ -1825,7 +1583,7 @@ rte_qdma_vq_stats(struct rte_rawdev *rawdev,
 
 static int
 dpaa2_qdma_queue_release(struct rte_rawdev *rawdev,
-			 uint16_t vq_id)
+	uint16_t vq_id)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
@@ -1840,14 +1598,7 @@ dpaa2_qdma_queue_release(struct rte_rawdev *rawdev,
 
 	rte_spinlock_lock(&qdma_dev->lock);
 
-	if (qdma_vq->exclusive_hw_queue)
-		free_hw_queue(qdma_vq->hw_queue);
-	else {
-		if (qdma_vq->status_ring)
-			rte_ring_free(qdma_vq->status_ring);
-
-		put_hw_queue(qdma_vq->hw_queue);
-	}
+	free_hw_queue(qdma_vq->hw_queue);
 
 	if (qdma_vq->fle_pool)
 		rte_mempool_free(qdma_vq->fle_pool);
@@ -2119,7 +1870,7 @@ init_err:
 
 static int
 rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
-		     struct rte_dpaa2_device *dpaa2_dev)
+	struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_rawdev *rawdev;
 	int ret;

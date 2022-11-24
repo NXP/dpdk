@@ -20,38 +20,11 @@
 
 #define RTE_QDMA_SG_ENTRY_NB_MAX 64
 
-/** Determines the mode of operation */
-enum {
-	/**
-	 * Allocate a H/W queue per VQ i.e. Exclusive hardware queue for a VQ.
-	 * This mode will have best performance.
-	 */
-	RTE_QDMA_MODE_HW,
-	/**
-	 * A VQ shall not have an exclusive associated H/W queue.
-	 * Rather a H/W Queue will be shared by multiple Virtual Queues.
-	 * This mode will have intermediate data structures to support
-	 * multi VQ to PQ mappings thus having some performance implications.
-	 * Note: Even in this mode there is an option to allocate a H/W
-	 * queue for a VQ. Please see 'RTE_QDMA_VQ_EXCLUSIVE_PQ' flag.
-	 */
-	RTE_QDMA_MODE_VIRTUAL
-};
-
 /** Determines the format of FD */
 enum {
 	RTE_QDMA_LONG_FORMAT,
 	RTE_QDMA_ULTRASHORT_FORMAT,
 };
-
-/**
- * If user has configured a Virtual Queue mode, but for some particular VQ
- * user needs an exclusive H/W queue associated (for better performance
- * on that particular VQ), then user can pass this flag while creating the
- * Virtual Queue. A H/W queue will be allocated corresponding to
- * VQ which uses this flag.
- */
-#define RTE_QDMA_VQ_EXCLUSIVE_PQ	(1ULL)
 
 #define RTE_QDMA_VQ_FD_LONG_FORMAT		(1ULL << 1)
 
@@ -64,12 +37,6 @@ enum {
 /** Valid with RTE_QDMA_VQ_NO_RESPONSE enabled*/
 #define RTE_QDMA_VQ_NO_RSP_DRAIN	(1ULL << 5)
 
-/** States if the source addresses is physical. */
-#define RTE_QDMA_JOB_SRC_PHY		(1ULL)
-
-/** States if the destination addresses is physical. */
-#define RTE_QDMA_JOB_DEST_PHY		(1ULL << 1)
-
 #define RTE_QDMA_CON_THRESHOLD_BYTES (1024 * 1024)
 
 /** Provides QDMA device attributes */
@@ -80,19 +47,8 @@ struct rte_qdma_attr {
 
 /** QDMA device configuration structure */
 struct rte_qdma_config {
-	/** Number of maximum hw queues to allocate per core. */
-	uint16_t max_hw_queues_per_core;
 	/** Maximum number of VQ's to be used. */
 	uint16_t max_vqs;
-	/**
-	 * User provides this as input to the driver as a size of the FLE pool.
-	 * FLE's (and corresponding source/destination descriptors) are
-	 * allocated by the driver at enqueue time to store src/dest and
-	 * other data and are freed at the dequeue time. This determines the
-	 * maximum number of inflight jobs on the QDMA device. This should
-	 * be power of 2.
-	 */
-	int fle_queue_pool_cnt;
 };
 
 struct rte_qdma_rbp {
@@ -133,8 +89,6 @@ struct rte_qdma_rbp {
 
 /** Provides QDMA device statistics */
 struct rte_qdma_vq_stats {
-	/** States if this vq has exclusively associated hw queue */
-	uint8_t exclusive_hw_queue;
 	/** Associated lcore id */
 	uint32_t lcore_id;
 	/* Total number of enqueues on this VQ */
@@ -153,8 +107,6 @@ struct rte_qdma_job {
 	uint64_t dest;
 	/** Length of the DMA operation in bytes. */
 	uint32_t len;
-	/** See RTE_QDMA_JOB_ flags */
-	uint32_t flags;
 	/**
 	 * User can specify a context which will be maintained
 	 * on the dequeue operation.
@@ -173,7 +125,6 @@ struct rte_qdma_job {
 	 * Note: the address must be allocated from DPDK memory pool.
 	 */
 	uint32_t job_ref;
-	void *usr_elem;
 };
 
 struct rte_qdma_enqdeq {
