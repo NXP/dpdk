@@ -220,8 +220,6 @@ struct lsxvio_queue {
 	uint32_t mcnt;
 	struct rte_mbuf *mcache[MCACHE_NUM];
 
-	struct rte_mempool *qdma_pool;
-
 	uint64_t bytes_dq;
 	uint64_t bytes_eq;
 	uint64_t pkts_dq;

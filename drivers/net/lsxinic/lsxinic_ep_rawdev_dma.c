@@ -19,8 +19,6 @@
 #include "lsxinic_ep_tool.h"
 #include "lsxinic_common_logs.h"
 
-#define LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE 2
-#define LSINIC_QDMA_FLE_POOL_QUEUE_COUNT 2048
 #define LSINIC_QDMA_MAX_VQS 2048
 
 #define QDMA_MAP_SIZE (4096)
@@ -91,12 +89,9 @@ lsinic_dma_init(void)
 		return qdma_dev_id;
 	}
 
-	/* Configure QDMA to use HW resource - no virtual queues */
-	qdma_config.max_hw_queues_per_core = LSINIC_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.fle_queue_pool_cnt = LSINIC_QDMA_FLE_POOL_QUEUE_COUNT;
 	qdma_config.max_vqs = LSINIC_QDMA_MAX_VQS;
 
-	dev_conf.dev_private = (void *)&qdma_config;
+	dev_conf.dev_private = &qdma_config;
 	ret = rte_qdma_configure(qdma_dev_id, &dev_conf);
 	if (ret) {
 		LSXINIC_PMD_ERR("Configure DMA%d error(%d)",

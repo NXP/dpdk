@@ -320,11 +320,10 @@ lsinic_queue_rawdev_dma_create(struct lsinic_queue *q)
 	int pf_id = adapter->pf_idx;
 	int is_vf = adapter->is_vf;
 	int vf_id = adapter->vf_idx;
-	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
+	uint32_t vq_flags = 0;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	char *penv;
 	int sim = lsx_pciep_hw_sim_get(pcie_id), silent = 0;
-	char qdma_pool_name[32];
 
 	if (q->type == LSINIC_QUEUE_TX)
 		silent = adapter->txq_dma_silent;
@@ -430,6 +429,8 @@ lsinic_queue_rawdev_dma_create(struct lsinic_queue *q)
 		q->qrawdma_config.flags = vq_flags;
 		q->qrawdma_config.rbp = NULL;
 	}
+	/**Data + BD*/
+	q->qrawdma_config.queue_size = q->nb_desc * 2;
 
 	if (!(vq_flags & RTE_QDMA_VQ_NO_RESPONSE)) {
 		q->dma_vq = rte_qdma_queue_setup(q->dma_id,
@@ -437,42 +438,9 @@ lsinic_queue_rawdev_dma_create(struct lsinic_queue *q)
 		return q->dma_vq;
 	}
 
-	/* Only used for qdma no response.*/
-	if (is_vf) {
-		sprintf(qdma_pool_name, "pool_%d:pf%d_vf%d_%d_%d",
-			pcie_id, pf_id, vf_id,
-			q->type, q->queue_id);
-	} else {
-		sprintf(qdma_pool_name, "pool_%d:pf%d_%d_%d",
-			pcie_id, pf_id,
-			q->type, q->queue_id);
-	}
-	q->qdma_pool = rte_mempool_create(qdma_pool_name,
-		3 * q->nb_desc, 4096, q->nb_desc / 4, 0,
-		NULL, NULL, NULL, NULL, SOCKET_ID_ANY, 0);
-	if (!q->qdma_pool) {
-		LSXINIC_PMD_ERR("qdma_pool:%s create failed!",
-			qdma_pool_name);
-
-		return -1;
-	}
 	for (i = 0; i < q->nb_desc; i++) {
-		q->rawdma_jobs[i].usr_elem = NULL;
-		q->e2r_bd_rawdma_jobs[i].usr_elem = NULL;
-		rte_mempool_get(q->qdma_pool,
-			&q->rawdma_jobs[i].usr_elem);
-		rte_mempool_get(q->qdma_pool,
-			&q->e2r_bd_rawdma_jobs[i].usr_elem);
-		if (!q->rawdma_jobs[i].usr_elem ||
-			!q->e2r_bd_rawdma_jobs[i].usr_elem) {
-			rte_rawdev_queue_release(q->dma_id, q->dma_vq);
-			q->dma_vq = -1;
-			LSXINIC_PMD_ERR("User elem of qdma job alloc failed!");
-
-			return -1;
-		}
-		memset(q->rawdma_jobs[i].usr_elem, 0, 4096);
-		memset(q->e2r_bd_rawdma_jobs[i].usr_elem, 0, 4096);
+		q->rawdma_jobs[i].job_ref = i;
+		q->e2r_bd_rawdma_jobs[i].job_ref = i + q->nb_desc;
 	}
 
 	q->dma_vq = rte_qdma_queue_setup(q->dma_id,
@@ -581,8 +549,6 @@ lsinic_queue_reset(struct lsinic_queue *q)
 		if (dma_jobs)
 			dma_jobs[i].cnxt = (uint64_t)(&xe[i]);
 		if (rawdma_jobs) {
-			rawdma_jobs[i].flags = RTE_QDMA_JOB_SRC_PHY |
-				RTE_QDMA_JOB_DEST_PHY;
 			rawdma_jobs[i].vq_id = q->dma_vq;
 			rawdma_jobs[i].cnxt = (uint64_t)(&xe[i]);
 		}
@@ -1032,7 +998,6 @@ lsinic_txq_rawdev_dma_eq(void *q, bool append)
 		for (i = 0; i < nb_jobs; i++, jobs_avail_idx++) {
 			jobs_idx = jobs_avail_idx & (queue->nb_desc - 1);
 			jobs[i] = &queue->rawdma_jobs[jobs_idx];
-			jobs[i]->flags |= LSINIC_QDMA_JOB_USING_FLAG;
 		}
 	}
 
@@ -1123,7 +1088,7 @@ lsinic_queue_rawdev_raw_dma_create(struct lsinic_queue *q)
 	int pf_id = adapter->pf_idx;
 	int is_vf = adapter->is_vf;
 	int vf_id = adapter->vf_idx;
-	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
+	uint32_t vq_flags = 0;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	int sim = lsx_pciep_hw_sim_get(pcie_id);
 
@@ -1196,6 +1161,9 @@ lsinic_queue_rawdev_raw_dma_create(struct lsinic_queue *q)
 		q->qrawdma_config.flags = vq_flags;
 		q->qrawdma_config.rbp = NULL;
 	}
+
+	/**Data + BD*/
+	q->qrawdma_config.queue_size = q->nb_desc * 2;
 
 	q->dma_vq = rte_qdma_queue_setup(q->dma_id,
 			-1, &q->qrawdma_config);
@@ -1613,8 +1581,7 @@ rawdev_dma_jobs_init:
 			/** Align len to 16B for CPU copy*/
 			rawdma_jobs[i].len &= ~((uint32_t)0xf);
 		}
-		/*Borrow flags to set index.*/
-		rawdma_jobs[i].flags = i;
+		rawdma_jobs[i].job_ref = i;
 		mz_offset += pkt_len;
 		rte_ring_enqueue(raw_test->jobs_ring, &rawdma_jobs[i]);
 	}
@@ -1645,7 +1612,7 @@ static inline void
 lsinic_queue_pcie_rawdev_dma_raw_dq(struct lsinic_queue *q,
 	uint16_t dq_num, struct rte_qdma_job *dq_jobs[])
 {
-	uint16_t i, idx;
+	uint32_t i, idx;
 	uint8_t *dst;
 #ifdef LSXINIC_LATENCY_PROFILING
 	uint64_t dq_tick = rte_get_timer_cycles(), eq_tick;
@@ -1656,7 +1623,7 @@ lsinic_queue_pcie_rawdev_dma_raw_dq(struct lsinic_queue *q,
 
 	for (i = 0; i < dq_num; i++) {
 		if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_CHECK_MODE) {
-			idx = (uint16_t)dq_jobs[i]->flags;
+			idx = dq_jobs[i]->job_ref;
 			dst = q->pcie_raw_test.local_vaddr[idx];
 			dst += dq_jobs[idx]->len - 1;
 			if ((*dst) != LSINIC_PCIE_RAW_TEST_SRC_DATA) {
@@ -1686,7 +1653,7 @@ lsinic_queue_pcie_rawdev_dma_raw_dq(struct lsinic_queue *q,
 handle_tx_dq:
 	for (i = 0; i < dq_num; i++) {
 		if (q->pcie_raw_test.mode & LSINIC_PCIE_RAW_CHECK_MODE) {
-			idx = (uint16_t)dq_jobs[i]->flags;
+			idx = dq_jobs[i]->job_ref;
 			dst = q->pcie_raw_test.remote_vaddr[idx];
 			dst += q->dma_jobs[idx].len - 1;
 			if ((*dst) != LSINIC_PCIE_RAW_TEST_SRC_DATA) {
@@ -4314,9 +4281,6 @@ lsinic_queue_start(struct lsinic_queue *q)
 					dma_src_base + i * step;
 				e2r_bd_rawdma_jobs[i].dest =
 					dma_dst_base + i * step;
-				e2r_bd_rawdma_jobs[i].flags =
-					RTE_QDMA_JOB_SRC_PHY |
-					RTE_QDMA_JOB_DEST_PHY;
 			}
 		}
 	} else {
@@ -4919,13 +4883,6 @@ lsinic_txq_rawdev_dma_dq(void *q)
 	for (i = 0; i < ret; i++) {
 		dma_job = jobs[i];
 		RTE_ASSERT(dma_job);
-		if (unlikely(dma_job->cnxt &&
-			!(dma_job->flags &
-			LSINIC_QDMA_JOB_USING_FLAG))) {
-			rte_panic("TX Invalid job flags(0x%08x)",
-				dma_job->flags);
-		}
-		dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 		txq->bytes_dq += dma_job->len;
 		txe = (struct lsinic_sw_bd *)dma_job->cnxt;
 		if (dma_job->status != 0) {
@@ -5354,14 +5311,7 @@ lsinic_rxq_rawdev_dma_dq(void *q)
 	for (i = 0; i < ret; i++) {
 		dma_job = jobs[i];
 		RTE_ASSERT(dma_job);
-		if (unlikely(!(dma_job->flags &
-			LSINIC_QDMA_JOB_USING_FLAG) ||
-			!dma_job->cnxt)) {
-			rte_panic("RX Invalid job flags(0x%08x) cntx(0x%lx)",
-				dma_job->flags, dma_job->cnxt);
-		}
 		rxq->bytes_dq += dma_job->len;
-		dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 		rxe = (struct lsinic_sw_bd *)dma_job->cnxt;
 
 		rxe->dma_complete = 1;
@@ -5603,7 +5553,6 @@ lsinic_recv_idx_bulk_alloc_buf(struct lsinic_queue *rxq)
 				rxe->mg = 0;
 			}
 #endif
-			rawdma_job->flags |= LSINIC_QDMA_JOB_USING_FLAG;
 			jobs[bd_num] = rawdma_job;
 		} else {
 			dma_job = &rxq->dma_jobs[bd_idx];
@@ -5731,7 +5680,6 @@ lsinic_recv_addrl_bulk_alloc_buf(struct lsinic_queue *rx_queue)
 				rxe->mg = 0;
 			}
 #endif
-			rawdma_job->flags |= LSINIC_QDMA_JOB_USING_FLAG;
 			jobs[bd_num] = rawdma_job;
 		} else {
 			dma_job = &rxq->dma_jobs[bd_idx];
@@ -5883,7 +5831,6 @@ lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rx_queue)
 				rxe->mg = 0;
 			}
 #endif
-			rawdma_job->flags |= LSINIC_QDMA_JOB_USING_FLAG;
 			jobs[bd_num] = rawdma_job;
 		} else {
 			dma_job = &rxq->dma_jobs[bd_idx];
@@ -6072,7 +6019,6 @@ lsinic_recv_bd(struct lsinic_queue *rx_queue)
 					sizeof(struct lsinic_mg_header);
 			}
 #endif
-			rawdma_job->flags |= LSINIC_QDMA_JOB_USING_FLAG;
 		} else {
 			dma_job = &rxq->dma_jobs[bd_idx];
 			dma_job->cnxt = (uint64_t)rxe;

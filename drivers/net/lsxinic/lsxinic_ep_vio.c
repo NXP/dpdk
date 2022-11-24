@@ -46,8 +46,6 @@ lsxvio_vio_txq_packed_order_dma_bd_init(struct lsxvio_queue *vq,
 				desc_addr +
 				j * sizeof(struct vring_packed_desc);
 			re2r_jobs[j].cnxt = 0;
-			re2r_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
-				RTE_QDMA_JOB_DEST_PHY;
 			re2r_jobs[j].vq_id = vq->dma_vq;
 		} else {
 			e2r_jobs[j].src = vq->shadow_pdesc_phy +
@@ -95,8 +93,6 @@ lsxvio_vio_txq_dma_notify_dma_bd_init(struct lsxvio_queue *vq,
 			rr2e_jobs[j].src = src;
 			rr2e_jobs[j].dest = dst;
 			rr2e_jobs[j].cnxt = 0;
-			rr2e_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
-				RTE_QDMA_JOB_DEST_PHY;
 			rr2e_jobs[j].vq_id = vq->dma_vq;
 		} else {
 			r2e_jobs[j].src = src;
@@ -114,8 +110,6 @@ lsxvio_vio_txq_dma_notify_dma_bd_init(struct lsxvio_queue *vq,
 			rr2e_idx_jobs[j].dest = dst;
 			rr2e_idx_jobs[j].len = sizeof(uint16_t);
 			rr2e_idx_jobs[j].cnxt = 0;
-			rr2e_idx_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
-				RTE_QDMA_JOB_DEST_PHY;
 			rr2e_idx_jobs[j].vq_id = vq->dma_vq;
 		} else {
 			r2e_idx_jobs[j].src = src;
@@ -159,8 +153,6 @@ lsxvio_vio_rxq_idx_order_dma_bd_init(struct lsxvio_queue *vq,
 			rr2e_jobs[j].src = src;
 			rr2e_jobs[j].dest = dst;
 			rr2e_jobs[j].cnxt = 0;
-			rr2e_jobs[j].flags = RTE_QDMA_JOB_SRC_PHY |
-				RTE_QDMA_JOB_DEST_PHY;
 			rr2e_jobs[j].vq_id = vq->dma_vq;
 		} else {
 			r2e_jobs[j].src = src;

@@ -7,9 +7,6 @@
 
 #include <rte_pmd_dpaa2_qdma.h>
 
-/* Flagged in dma job*/
-#define LSINIC_QDMA_JOB_USING_FLAG (1ULL << 31)
-
 int lsinic_dma_init(void);
 int lsinic_dma_uninit(void);
 

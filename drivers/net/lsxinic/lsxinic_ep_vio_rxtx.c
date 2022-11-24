@@ -179,7 +179,7 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 {
 	uint32_t i, sg_enable = 0;
 	int sg_unsupport = 0;
-	uint32_t vq_flags = RTE_QDMA_VQ_EXCLUSIVE_PQ;
+	uint32_t vq_flags = 0;
 	int pcie_id = q->adapter->lsx_dev->pcie_id;
 	enum PEX_TYPE pex_type = lsx_pciep_type_get(pcie_id);
 	struct lsxvio_adapter *adapter = q->adapter;
@@ -247,6 +247,8 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 
 	q->qrawdma_config.flags = 0;
 	q->qrawdma_config.lcore_id = rte_lcore_id();
+	/**Data + BD*/
+	q->qrawdma_config.queue_size = q->nb_desc * 2;
 
 	if (adapter->rbp_enable) {
 		q->rbp.enable = 1;
@@ -293,41 +295,10 @@ lsxvio_queue_rawdev_dma_create(struct lsxvio_queue *q)
 	if (q->dma_vq < 0)
 		LSXINIC_PMD_ERR("Failed to create DMA");
 
-	if (vq_flags & RTE_QDMA_VQ_NO_RESPONSE && q->dma_vq >= 0) {
-		char qdma_pool_name[32];
-
-		sprintf(qdma_pool_name, "pool_%d:%d:%d:%d_%d_%d",
-				q->adapter->pcie_idx,
-				q->adapter->pf_idx,
-				q->adapter->is_vf,
-				q->adapter->is_vf ? q->adapter->vf_idx : 0,
-				q->type, q->queue_id);
-		q->qdma_pool = rte_mempool_create(qdma_pool_name,
-			3 * q->nb_desc, 4096, q->nb_desc / 4, 0,
-			NULL, NULL, NULL, NULL, SOCKET_ID_ANY, 0);
-		for (i = 0; i < q->nb_desc; i++) {
-			q->rawdma_jobs[i].usr_elem = NULL;
-			q->e2r_bd_rawdma_jobs[i].usr_elem = NULL;
-			q->r2e_bd_rawdma_jobs[i].usr_elem = NULL;
-			rte_mempool_get(q->qdma_pool,
-				&q->rawdma_jobs[i].usr_elem);
-			rte_mempool_get(q->qdma_pool,
-				&q->e2r_bd_rawdma_jobs[i].usr_elem);
-			rte_mempool_get(q->qdma_pool,
-				&q->r2e_bd_rawdma_jobs[i].usr_elem);
-			if (!q->rawdma_jobs[i].usr_elem ||
-				!q->e2r_bd_rawdma_jobs[i].usr_elem ||
-				!q->r2e_bd_rawdma_jobs[i].usr_elem) {
-				rte_rawdev_queue_release(q->dma_id,
-					q->dma_vq);
-				q->dma_vq = -1;
-
-				return -ENOMEM;
-			}
-			memset(q->rawdma_jobs[i].usr_elem, 0, 4096);
-			memset(q->e2r_bd_rawdma_jobs[i].usr_elem, 0, 4096);
-			memset(q->r2e_bd_rawdma_jobs[i].usr_elem, 0, 4096);
-		}
+	for (i = 0; i < q->nb_desc; i++) {
+		q->rawdma_jobs[i].job_ref = i;
+		q->e2r_bd_rawdma_jobs[i].job_ref = i + q->nb_desc;
+		q->r2e_bd_rawdma_jobs[i].job_ref = i + q->nb_desc;
 	}
 
 	if (q->dma_vq >= 0)
@@ -518,8 +489,6 @@ lsxvio_queue_reset(struct lsxvio_queue *q)
 
 		if (rawdma_jobs) {
 			rawdma_jobs[i].cnxt = (uint64_t)(&xe[i]);
-			rawdma_jobs[i].flags = RTE_QDMA_JOB_SRC_PHY |
-				   RTE_QDMA_JOB_DEST_PHY;
 			rawdma_jobs[i].vq_id = q->dma_vq;
 		}
 	}
@@ -884,7 +853,6 @@ lsxvio_rxq_rawdev_dma_dq(void *q)
 			dma_job = jobs[i];
 			if (!dma_job)
 				continue;
-			dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 			if (!dma_job->cnxt)
 				continue;
 			dma_cntx = (struct lsxvio_dma_cntx *)dma_job->cnxt;
@@ -906,7 +874,6 @@ lsxvio_rxq_rawdev_dma_dq(void *q)
 		dma_job = jobs[i];
 		if (!dma_job)
 			continue;
-		dma_job->flags &= ~LSINIC_QDMA_JOB_USING_FLAG;
 		if (!dma_job->cnxt)
 			continue;
 		dma_cntx = (void *)dma_job->cnxt;

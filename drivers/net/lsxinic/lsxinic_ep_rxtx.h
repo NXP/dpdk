@@ -256,7 +256,6 @@ struct lsinic_queue {
 	/* For primary dma only*/
 	struct rte_qdma_rbp rbp;
 	struct rte_qdma_queue_config qrawdma_config;
-	struct rte_mempool *qdma_pool;
 
 	uint64_t packets_old;
 	/* statistics */
