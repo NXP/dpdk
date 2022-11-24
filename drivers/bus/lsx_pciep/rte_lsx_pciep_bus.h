@@ -82,15 +82,17 @@ enum lsx_pcie_pf_idx {
 #define CFG_32G_SIZE	(32 * CFG_1G_SIZE)
 #define CFG_1T_SIZE		(1024 * CFG_1G_SIZE)
 
+#ifdef RTE_PCIEP_MULTI_VER_PMD_DRV
 #define LSX_PCIEP_PMD_DRV_VER(YEAR, MONTH) \
-	(YEAR << 8 | MONTH)
+	((YEAR) * 100 | (MONTH))
 
-#define LSX_PCIEP_PMD_DRV_YEAR(VER) (VER >> 8)
+#define LSX_PCIEP_PMD_DRV_YEAR(VER) ((VER) / 100)
 
-#define LSX_PCIEP_PMD_DRV_MONTH(VER) (VER & 0xff)
+#define LSX_PCIEP_PMD_DRV_MONTH(VER) ((VER) % 100)
 
 #define LSX_PCIEP_PMD_DRV_VER_DEFAULT \
 	LSX_PCIEP_PMD_DRV_VER(RTE_VER_YEAR, RTE_VER_MONTH)
+#endif
 
 #define LSX_PCIEP_DEV_MAX_MSIX_NB 32
 /**
@@ -143,10 +145,8 @@ struct rte_lsx_pciep_driver {
 	enum rte_lsx_pciep_type drv_type;   /**< Driver Type */
 
 	uint8_t driver_disable;
-#ifdef RTE_PCIEP_2111_VER_PMD_DRV
-#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#ifdef RTE_PCIEP_MULTI_VER_PMD_DRV
 	uint16_t drv_ver;
-#endif
 #endif
 
 	/**< PCIEP bus reference */

@@ -340,8 +340,7 @@ lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 	return ret;
 }
 
-#ifdef RTE_PCIEP_2111_VER_PMD_DRV
-#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#ifdef RTE_PCIEP_MULTI_VER_PMD_DRV
 static int
 lsx_pciep_match_ver(struct rte_lsx_pciep_driver *ep_drv,
 	struct rte_lsx_pciep_device *ep_dev)
@@ -363,12 +362,12 @@ lsx_pciep_match_ver(struct rte_lsx_pciep_driver *ep_drv,
 	if (penv)
 		month = atoi(penv);
 
-	expected_ver = year << 8 | month;
+	expected_ver = year * 100 | month;
 
 	memcpy(nm, ep_dev->name, strlen(LSX_PCIEP_NXP_NAME_PREFIX));
 
 	sprintf(&nm[strlen(LSX_PCIEP_NXP_NAME_PREFIX)],
-		"_%d.%d", year, month);
+		"_%d", expected_ver);
 
 	if (!strncmp(ep_drv->name, nm, strlen(nm)))
 		return 0;
@@ -376,14 +375,13 @@ lsx_pciep_match_ver(struct rte_lsx_pciep_driver *ep_drv,
 	memcpy(nm, ep_dev->name, strlen(LSX_PCIEP_VIRT_NAME_PREFIX));
 
 	sprintf(&nm[strlen(LSX_PCIEP_VIRT_NAME_PREFIX)],
-		"_%d.%d", year, month);
+		"_%d", expected_ver);
 
 	if (!strncmp(ep_drv->name, nm, strlen(nm)))
 		return 0;
 
 	return 1;
 }
-#endif
 #endif
 
 struct rte_lsx_pciep_device *
@@ -421,8 +419,7 @@ lsx_pciep_probe(void)
 		return 0;
 
 	TAILQ_FOREACH(dev, &lsx_pciep_bus.device_list, next) {
-#ifdef RTE_PCIEP_2111_VER_PMD_DRV
-#ifndef RTE_PCIEP_PRIMARY_PMD_DRV_DISABLE
+#ifdef RTE_PCIEP_MULTI_VER_PMD_DRV
 		probed = 0;
 		TAILQ_FOREACH(drv, &lsx_pciep_bus.driver_list, next) {
 			ret = lsx_pciep_match_ver(drv, dev);
@@ -447,7 +444,6 @@ lsx_pciep_probe(void)
 				drv->name, dev->name);
 			continue;
 		}
-#endif
 #endif
 		probed = 0;
 		TAILQ_FOREACH(drv, &lsx_pciep_bus.driver_list, next) {
