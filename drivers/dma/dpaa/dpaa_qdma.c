@@ -179,6 +179,9 @@ fsl_qdma_comp_fill_memcpy(struct fsl_qdma_comp *fsl_comp,
 	sdf = (struct fsl_qdma_sdf *)fsl_comp->desc_virt_addr;
 	sdf->cmd = rte_cpu_to_le_32(FSL_QDMA_CMD_RWTTYPE <<
 				FSL_QDMA_CMD_RWTTYPE_OFFSET);
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050265
+	sdf->cmd |= rte_cpu_to_le_32(FSL_QDMA_CMD_PF);
+#endif
 	if (len > FSL_QDMA_CMD_SSS_DISTANCE) {
 		sdf->cmd |= rte_cpu_to_le_32(FSL_QDMA_CMD_SSEN);
 		cfg |= rte_cpu_to_le_32(FSL_QDMA_CMD_SSS_STRIDE <<
@@ -247,6 +250,9 @@ fsl_qdma_pre_request_enqueue_comp_sd_desc(
 		/* Descriptor Buffer */
 		sdf->cmd = rte_cpu_to_le_32(FSL_QDMA_CMD_RWTTYPE <<
 			       FSL_QDMA_CMD_RWTTYPE_OFFSET);
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050265
+		sdf->cmd |= rte_cpu_to_le_32(FSL_QDMA_CMD_PF);
+#endif
 		ddf->cmd = rte_cpu_to_le_32(FSL_QDMA_CMD_RWTTYPE <<
 			       FSL_QDMA_CMD_RWTTYPE_OFFSET);
 		ddf->cmd |= rte_cpu_to_le_32(FSL_QDMA_CMD_LWC <<
