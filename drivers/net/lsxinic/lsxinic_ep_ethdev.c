@@ -523,6 +523,13 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv)) {
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_DMA_NO_RSP;
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_SG_DMA;
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
+	}
+
+	penv = getenv("LSINIC_TXQ_QDMA_BD_UPDATE");
+	if (penv && atoi(penv)) {
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_SG_DMA;
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
 	}
 
 	/* Above capability is handled only on EP side and no sensible to RC.*/
@@ -561,7 +568,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 
-	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
+	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE) &&
 		(adapter->cap & LSINIC_CAP_XFER_COMPLETE) &&
 		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
 		EP_XMIT_SBD_TYPE)
