@@ -181,6 +181,7 @@ struct lxsnic_ring {
 #endif
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
+	uint32_t rdma;
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	/* point to EP memory */
 	void *ep_bd_mapped_addr;
@@ -209,6 +210,8 @@ struct lxsnic_ring {
 	void *rc_bd_shared_addr;
 	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
+	struct lsinic_ep_rx_src_addrl *rc_tx_addrl;
+	struct lsinic_ep_rx_src_addrx *rc_tx_addrx;
 
 	struct lsinic_seg_desc *rc_sg_desc;
 
