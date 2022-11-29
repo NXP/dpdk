@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020,2022 NXP
  */
 
 #ifndef _FSL_QDMA_H_
@@ -118,6 +118,7 @@
 #define FSL_QDMA_CMD_WTHROTL_OFFSET	20
 #define FSL_QDMA_CMD_DSEN_OFFSET	19
 #define FSL_QDMA_CMD_LWC_OFFSET		16
+#define FSL_QDMA_CMD_PF			BIT(17)
 
 #define FSL_QDMA_CMD_SSEN		BIT(19)
 #define FSL_QDMA_CFG_SSS_OFFSET		12

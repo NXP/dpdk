@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2016 Freescale Semiconductor, Inc.
-# Copyright 2017-2021 NXP
+# Copyright 2017-2022 NXP
 
 #include "defconfig_arm64-armv8a-linux-gcc"
 
@@ -59,6 +59,15 @@ CONFIG_RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022=y
 # To avoid qDMA hang as it keeps waiting for data that was silently
 # dropped, set stride mode for qDMA
 CONFIG_RTE_DMA_DPAA_ERRATA_ERR050757=n
+
+# DPAA ERRATA A-050265
+# Non-prefetchable read setting in the source descriptor may be
+# required for targets other than local memory. Prefetchable read
+# setting will offer better performance for misaligned transfers
+# in the form of fewer transactions and should be set if possible.
+# Enabling this flag may also fix QDMA stall issue due to unaligned
+# transactions.
+CONFIG_RTE_DMA_DPAA_ERRATA_ERR050265=n
 
 # NXP CAAM_JR driver
 CONFIG_RTE_LIBRTE_PMD_CAAM_JR=y
