@@ -182,8 +182,6 @@ struct lsinic_queue {
 	/* For RX dma bd update debug*/
 	struct lsinic_seg_desc *rc_rx_src_seg;
 
-	struct lsinic_rc_tx_idx_cnf *free_idx;
-
 	uint32_t dma_bd_update;
 	union {
 		/* For TX ring*/

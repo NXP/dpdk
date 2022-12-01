@@ -224,8 +224,7 @@ struct lxsnic_ring {
 	/* For RC TX*/
 	/* RC_MEM_BD_CNF*/
 	struct lsinic_rc_tx_bd_cnf *tx_complete;
-	/* RC_MEM_IDX_CNF*/
-	const struct lsinic_rc_tx_idx_cnf *free_idx;
+	/* RC_MEM_IDX_CNF by rc_reg->cir*/
 
 	/* bd desc point to RC(local) memory */
 	dma_addr_t rc_bd_desc_dma;	/* phys. address of rc_bd_shared_addr */
