@@ -606,6 +606,7 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_WRITE_REG(&ring_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
+	LSINIC_WRITE_REG(&ring_reg->isr, 0);
 	LSINIC_WRITE_REG(&ring_reg->r_ep_mem_bd_type,
 		ring->ep_mem_bd_type);
 	LSINIC_WRITE_REG(&ring_reg->r_rc_mem_bd_type,
@@ -1028,6 +1029,7 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 			ring->rc_bd_desc_dma >> 32);
 	}
 
+	LSINIC_WRITE_REG(&ring_reg->isr, 0);
 	LSINIC_WRITE_REG(&ring_reg->iir, 0);
 
 	ring->ep_reg = ring_reg;
