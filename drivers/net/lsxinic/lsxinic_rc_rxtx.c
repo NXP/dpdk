@@ -263,9 +263,11 @@ lxsnic_xmit_one_pkt_idx(struct lxsnic_ring *tx_ring,
 
 	pkt_len = tx_pkt->pkt_len;  /* total packet length */
 	dma = rte_mbuf_data_iova(tx_pkt);
-	pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
-	*((uint8_t *)pdata + pkt_len) =
-		LSINIC_XFER_COMPLETE_DONE_FLAG;
+	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
+		pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
+		*((uint8_t *)pdata + pkt_len) =
+			LSINIC_XFER_COMPLETE_DONE_FLAG;
+	}
 
 	tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
 
@@ -600,14 +602,16 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 		local_sg_desc.nb = tx_pkt->nb_segs;
 	}
 
-	if (pkt_curr) {
-		pdata = (char *)rte_pktmbuf_mtod(pkt_curr, char *);
-		*((uint8_t *)pdata + pkt_curr->data_len) =
-			LSINIC_XFER_COMPLETE_DONE_FLAG;
-	} else {
-		pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
-		*((uint8_t *)pdata + tx_pkt->pkt_len) =
-			LSINIC_XFER_COMPLETE_DONE_FLAG;
+	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
+		if (pkt_curr) {
+			pdata = (char *)rte_pktmbuf_mtod(pkt_curr, char *);
+			*((uint8_t *)pdata + pkt_curr->data_len) =
+				LSINIC_XFER_COMPLETE_DONE_FLAG;
+		} else {
+			pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
+			*((uint8_t *)pdata + tx_pkt->pkt_len) =
+				LSINIC_XFER_COMPLETE_DONE_FLAG;
+		}
 	}
 
 	if (local_desc) {
