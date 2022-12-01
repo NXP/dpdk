@@ -172,7 +172,7 @@ static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 static void lxsnic_tx_ring_idx_clean(struct lxsnic_ring *tx_ring)
 {
 	uint32_t start_free_idx = tx_ring->tx_free_start_idx;
-	const uint32_t last_free_idx = tx_ring->free_idx->idx_complete;
+	const uint32_t last_free_idx = tx_ring->rc_reg->cir;
 	uint32_t mbuf_idx;
 	struct rte_mbuf *last_mbuf;
 
