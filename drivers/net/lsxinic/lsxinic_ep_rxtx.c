@@ -3699,7 +3699,6 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		LSXINIC_PMD_INFO("RXQ%d confirm to RC with bd complete",
 			q->queue_id);
 	} else if (q->rc_mem_bd_type == RC_MEM_IDX_CNF) {
-		q->free_idx = q->rc_bd_mapped_addr;
 		q->local_src_free_idx = rte_malloc(NULL,
 			sizeof(uint32_t), RTE_CACHE_LINE_SIZE);
 		LSXINIC_PMD_INFO("RXQ%d confirm to RC with idx",
@@ -5432,8 +5431,7 @@ lsinic_recv_cnf_burst_update(struct lsinic_queue *rxq,
 	if (rxq->rc_mem_bd_type == RC_MEM_IDX_CNF) {
 		rxq->local_src_free_idx->idx_complete =
 			(first_idx + nb_rx) & (rxq->nb_desc - 1);
-		rxq->free_idx->idx_complete =
-			rxq->local_src_free_idx->idx_complete;
+		rxq->rc_reg->cir = rxq->local_src_free_idx->idx_complete;
 	} else if (rxq->rc_mem_bd_type == RC_MEM_BD_CNF) {
 		start = &rxq->rc_rx_complete[first_idx].bd_complete;
 		if ((first_idx + nb_rx) < rxq->nb_desc) {

@@ -462,7 +462,7 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		} else if (tx_queue->rc_mem_bd_type == RC_MEM_BD_CNF) {
 			tx_queue->tx_complete = tx_queue->rc_bd_shared_addr;
 		} else if (tx_queue->rc_mem_bd_type == RC_MEM_IDX_CNF) {
-			tx_queue->free_idx = tx_queue->rc_bd_shared_addr;
+			/**Do nothing*/
 		} else {
 			rte_panic("TXQ%d invalid rc mem type(%d)",
 				tx_queue->queue_index,
