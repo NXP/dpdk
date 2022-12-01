@@ -4280,6 +4280,18 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	struct lsinic_adapter *adapter = q->adapter;
 	struct lsinic_bdr_reg *rc_bdr_reg;
 
+	if (q->ep_reg->isr && adapter->txq_dma_silent) {
+		LSXINIC_PMD_ERR("TXQ%d unable to trigger ISR in %s",
+			q->queue_id, "dma silent mode");
+
+		return -ENOTSUP;
+	}
+
+	if (q->ep_reg->isr) {
+		/* Don't support to write RC BD by DMA if ISR is enabled.*/
+		q->dma_bd_update &= (~DMA_BD_EP2RC_UPDATE);
+	}
+
 	dma_dst_base = q->ob_base + bd_bus_addr;
 
 	rc_bdr_reg = LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
@@ -4409,6 +4421,13 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	struct lsinic_adapter *adapter = q->adapter;
 	struct lsinic_bdr_reg *rc_bdr_reg;
 	void *remote_dma_bd = NULL;
+
+	if (q->ep_reg->isr && adapter->rxq_dma_silent) {
+		LSXINIC_PMD_ERR("RXQ%d unable to trigger ISR in %s",
+			q->queue_id, "dma silent mode");
+
+		return -ENOTSUP;
+	}
 
 	if (!q->ep_reg->rdma)
 		q->dma_bd_update &= (~DMA_BD_RC2EP_UPDATE);
@@ -4889,6 +4908,9 @@ _err:
 static void
 lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 {
+	if (likely(!q->ep_reg->isr))
+		return;
+
 	if (!q->new_desc_thresh) {
 		q->new_desc = 0;
 		return;
