@@ -252,11 +252,36 @@ Following are some pre-requisites:
   1. Bring up the board with proper images using below "othbootargs":
 	setenv othbootargs default_hugepagesz=2m hugepagesz=2m hugepages=256 isolcpus=1 iommu.passthrough=1
 
-  2. Mount the hugetlbfs required for DPDK applications:
+  2. Use "fsl-ls1028a-rdb-dpdk.dtb" device tree to test with DPDK.
+     or
+  2. Use "fdt" commands on uboot with default "fsl-ls1028a-rdb.dtb" device tree. fdt commands:
+	# Load images
+	tftp 0x82000000 <kernel image path>/Image
+	tftp 0x92000000 <dtb path>/fsl-ls1028a-rdb.dtb
+	tftp 0x94000000 <rootfs path>/fsl-image-networking-ls1028ardb.ext2.gz.u-boot
+
+	#fdt commands to modify device tree for DPDK
+	#set device tree address
+	fdt addr 0x92000000
+	fdt list /soc/pcie@1f0000000/
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@5/ ethernet
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@5/fixed-link pause
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@4/fixed-link pause
+	fdt rm /soc/pcie@1f0000000/mdio@0,3
+	fdt rm /soc/pcie@1f0000000/ethernet@0,0/ phy-handle
+	fdt rm /soc/pcie@1f0000000/ethernet@0,2/fixed-link pause
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@0 phy-handle
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@1 phy-handle
+	fdt rm /soc/pcie@1f0000000/ethernet-switch@0,5/ports/port@2 phy-handle
+
+	# boot command
+	booti 0x82000000 0x94000000 0x92000000
+
+  3. Mount the hugetlbfs required for DPDK applications:
 	1. mkdir -p /dev/hugepages
 	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
 
-  3. Get ethernet devices in userspace using below commands:
+  4. Get ethernet devices in userspace using below commands:
 	1. For QDS board:
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.1/sriov_numvfs
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.0/sriov_numvfs
