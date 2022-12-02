@@ -13,6 +13,7 @@
 #include <rte_dpaa_logs.h>
 #include <fmlib/fm_port_ext.h>
 #include <fmlib/fm_vsp_ext.h>
+#include <rte_pmd_dpaa.h>
 
 #define DPAA_MAX_NUM_ETH_DEV	8
 
@@ -25,6 +26,11 @@
 
 #define SCH_EXT_FULL_FLD(scheme_params, hdr_idx) \
 	SCH_EXT_HDR(scheme_params, hdr_idx).extract_by_hdr_type.full_field
+
+/* FMAN mac indexes mappings (0 is unused, first 8 are for 1G, next for 10G
+ * ports).
+ */
+const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 
 /* FM global info */
 struct dpaa_fm_info {
@@ -651,7 +657,7 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 }
 
 
-static inline int get_port_type(struct fman_if *fif)
+static inline int get_rx_port_type(struct fman_if *fif)
 {
 	if (fif->mac_type == fman_mac_1g)
 		return e_FM_PORT_TYPE_RX;
@@ -659,6 +665,19 @@ static inline int get_port_type(struct fman_if *fif)
 		return e_FM_PORT_TYPE_RX_2_5G;
 	else if (fif->mac_type == fman_mac_10g)
 		return e_FM_PORT_TYPE_RX_10G;
+
+	DPAA_PMD_ERR("MAC type unsupported");
+	return -1;
+}
+
+static inline int get_tx_port_type(struct fman_if *fif)
+{
+	if (fif->mac_type == fman_mac_1g)
+		return e_FM_PORT_TYPE_TX;
+	else if (fif->mac_type == fman_mac_2_5g)
+		return e_FM_PORT_TYPE_TX_2_5G;
+	else if (fif->mac_type == fman_mac_10g)
+		return e_FM_PORT_TYPE_TX_10G;
 
 	DPAA_PMD_ERR("MAC type unsupported");
 	return -1;
@@ -672,17 +691,12 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 	ioc_fm_pcd_net_env_params_t dist_units;
 	PMD_INIT_FUNC_TRACE();
 
-	/* FMAN mac indexes mappings (0 is unused,
-	 * first 8 are for 1G, next for 10G ports
-	 */
-	uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
-
 	/* Memset FM port params */
 	memset(&fm_port_params, 0, sizeof(fm_port_params));
 
 	/* Set FM port params */
 	fm_port_params.h_Fm = fm_info.fman_handle;
-	fm_port_params.portType = get_port_type(fif);
+	fm_port_params.portType = get_rx_port_type(fif);
 	fm_port_params.portId = mac_idx[fif->mac_idx];
 
 	/* FM PORT Open */
@@ -944,7 +958,6 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 {
 	t_FmVspParams vsp_params;
 	t_FmBufferPrefixContent buf_prefix_cont;
-	uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 	uint8_t idx = mac_idx[fif->mac_idx];
 	int ret;
 
@@ -1082,4 +1095,72 @@ int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf, struct fman_if *fif)
 	}
 
 	return E_OK;
+}
+
+int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
+				     uint32_t rate)
+{
+	t_FmPortRateLimit port_rate_limit;
+	bool port_handle_exists = true;
+	void *handle;
+	uint32_t ret;
+	struct rte_eth_dev *dev;
+	struct dpaa_if *dpaa_intf;
+	struct fman_if *fif;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
+	dev = &rte_eth_devices[port_id];
+	dpaa_intf = dev->data->dev_private;
+	fif = dev->process_private;
+
+	memset(&port_rate_limit, 0, sizeof(port_rate_limit));
+	port_rate_limit.maxBurstSize = burst;
+	port_rate_limit.rateLimit = rate;
+
+	DPAA_PMD_DEBUG("Setting Rate Limiter for port:%s  Max Burst =%u Max Rate =%u \n",
+		       dpaa_intf->name, burst, rate);
+
+	if (!dpaa_intf->port_handle) {
+
+		t_FmPortParams fm_port_params;
+
+		/* Memset FM port params */
+		memset(&fm_port_params, 0, sizeof(fm_port_params));
+
+		/* Set FM port params */
+		fm_port_params.h_Fm = FM_Open(0);
+		fm_port_params.portType = get_tx_port_type(fif);
+		fm_port_params.portId = mac_idx[fif->mac_idx];
+
+		/* FM PORT Open */
+		handle = FM_PORT_Open(&fm_port_params);
+		FM_Close(fm_port_params.h_Fm);
+		if (!handle) {
+			DPAA_PMD_ERR("%s: Can't open handle %p \n",
+				     __FUNCTION__, fm_info.fman_handle);
+			return -ENODEV;
+		}
+
+		port_handle_exists = false;
+	} else
+		handle = dpaa_intf->port_handle;
+
+	if (burst == 0 || rate == 0)
+		ret = FM_PORT_DeleteRateLimit(handle);
+	else
+		ret = FM_PORT_SetRateLimit(handle, &port_rate_limit);
+
+	if (ret) {
+		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x\n",
+			     __FUNCTION__, -ret);
+		return -ret;
+	}
+
+	DPAA_PMD_DEBUG("%s: FM_PORT_SetRateLimit ret = %#x\n",
+		       __FUNCTION__, -ret);
+
+	if (!port_handle_exists)
+		FM_PORT_Close(handle);
+
+	return 0;
 }

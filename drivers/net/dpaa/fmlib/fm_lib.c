@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  * Copyright 2008-2012 Freescale Semiconductor Inc.
- * Copyright 2017-2019 NXP
+ * Copyright 2017-2019,2022 NXP
  */
 
 #include <stdio.h>
@@ -438,6 +438,34 @@ uint32_t FM_PORT_Enable(t_Handle h_FmPort)
 	_fml_dbg("Calling...\n");
 
 	if (ioctl(p_Dev->fd, FM_PORT_IOC_ENABLE))
+		RETURN_ERROR(MINOR, E_INVALID_OPERATION, NO_MSG);
+
+	_fml_dbg("Finishing.\n");
+
+	return E_OK;
+}
+
+uint32_t FM_PORT_DeleteRateLimit(t_Handle h_FmPort)
+{
+	t_Device	*p_Dev = (t_Device *)h_FmPort;
+
+	_fml_dbg("Calling...\n");
+
+	if (ioctl(p_Dev->fd, FM_PORT_IOC_REMOVE_RATE_LIMIT))
+		RETURN_ERROR(MINOR, E_INVALID_OPERATION, NO_MSG);
+
+	_fml_dbg("Finishing.\n");
+
+	return E_OK;
+}
+
+uint32_t FM_PORT_SetRateLimit(t_Handle h_FmPort, t_FmPortRateLimit *p_RateLimit)
+{
+	t_Device	*p_Dev = (t_Device *)h_FmPort;
+
+	_fml_dbg("Calling...\n");
+
+	if (ioctl(p_Dev->fd, FM_PORT_IOC_SET_RATE_LIMIT, p_RateLimit))
 		RETURN_ERROR(MINOR, E_INVALID_OPERATION, NO_MSG);
 
 	_fml_dbg("Finishing.\n");
