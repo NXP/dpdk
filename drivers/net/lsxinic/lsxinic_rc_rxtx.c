@@ -1305,11 +1305,19 @@ lxsnic_rx_lbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		rc_rx_desc->pkt_addr = dma_addr;
 		rc_rx_desc->bd_status = RING_BD_READY |
 			(mbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
-		memcpy(&ep_rx_desc[idx], rc_rx_desc,
-			sizeof(struct lsinic_bd_desc));
+		if (!rx_queue->rdma) {
+			memcpy(&ep_rx_desc[idx], rc_rx_desc,
+				sizeof(struct lsinic_bd_desc));
+		}
 		rx_queue->q_mbuf[mbuf_idx] = mbufs[cnt];
 		cnt++;
 		idx = (idx + 1) & (rx_queue->count - 1);
+	}
+
+	if (rx_queue->rdma) {
+		rte_wmb();
+		rx_queue->ep_reg->pir =
+			(start_idx + count) & (rx_queue->count - 1);
 	}
 }
 
@@ -1321,15 +1329,14 @@ lxsnic_rx_sbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 	uint64_t dma_addr = 0;
 	uint16_t idx = start_idx;
 	uint32_t mbuf_idx;
-	struct lsinic_ep_tx_dst_addr *ep_rx_addr = NULL;
-	struct lsinic_ep_tx_dst_addr local_recv_addr[count];
+	struct lsinic_ep_tx_dst_addr *local_recv_addr;
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
 #else
 	struct lsinic_rc_rx_len_idx *rx_len_idx;
 #endif
 
-	ep_rx_addr = local_recv_addr;
+	local_recv_addr = rx_queue->rc_rx_addr;
 
 	while (cnt < count) {
 		mbufs[cnt]->data_off = RTE_PKTMBUF_HEADROOM;
@@ -1337,7 +1344,7 @@ lxsnic_rx_sbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		dma_addr = rte_mbuf_data_iova_default(mbufs[cnt]);
 
 		mbuf_idx = idx;
-		ep_rx_addr[cnt].pkt_addr = dma_addr;
+		local_recv_addr[idx].pkt_addr = dma_addr;
 		if (rx_queue->rc_mem_bd_type == RC_MEM_LEN_CMD) {
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 			rx_len_cmd = &rx_queue->rx_len_cmd[idx];
@@ -1352,17 +1359,24 @@ lxsnic_rx_sbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		idx = (idx + 1) & (rx_queue->count - 1);
 	}
 
+	if (rx_queue->rdma) {
+		rte_wmb();
+		rx_queue->ep_reg->pir =
+			(start_idx + count) & (rx_queue->count - 1);
+
+		return;
+	}
 	if ((start_idx + cnt) <= rx_queue->count) {
 		memcpy(&rx_queue->ep_rx_addr[start_idx],
-			local_recv_addr,
+			&local_recv_addr[start_idx],
 			sizeof(uint64_t) * cnt);
 	} else {
 		memcpy(&rx_queue->ep_rx_addr[start_idx],
-			local_recv_addr,
+			&local_recv_addr[start_idx],
 			sizeof(uint64_t) *
 			(rx_queue->count - start_idx));
 		memcpy(&rx_queue->ep_rx_addr[0],
-			&local_recv_addr[rx_queue->count - start_idx],
+			&local_recv_addr[0],
 			sizeof(uint64_t) *
 			(start_idx + cnt - rx_queue->count));
 	}
