@@ -549,6 +549,16 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD;
 
+	penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
+
+	if (adapter->cap & LSINIC_CAP_RC_XFER_BD_DMA_UPDATE) {
+		penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE_DBG");
+		if (penv && atoi(penv))
+			adapter->ep_cap |= LSINIC_EP_CAP_RXQ_BD_DMA_UPDATE_DBG;
+	}
+
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_XFER_COMPLETE;
