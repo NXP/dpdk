@@ -784,6 +784,15 @@ lsinic_reset_queue(struct lsinic_ring *ring)
 		LSINIC_WRITE_REG(&ring->ep_reg->r_desch,
 			ring->rc_bd_desc_dma >> 32);
 	}
+
+	LSINIC_WRITE_REG(&ring->ep_reg->isr, 1);
+	LSINIC_WRITE_REG(&ring->ep_reg->r_ep_mem_bd_type,
+		EP_MEM_LONG_BD);
+	LSINIC_WRITE_REG(&ring->ep_reg->r_rc_mem_bd_type,
+		RC_MEM_LONG_BD);
+	LSINIC_WRITE_REG(&ring->ep_reg->rdma, 0);
+	LSINIC_WRITE_REG(&ring->ep_reg->rdmal, 0);
+	LSINIC_WRITE_REG(&ring->ep_reg->rdmah, 0);
 }
 
 /* lsinic_configure_tx_ring - Configure 8259x Tx ring after Reset
