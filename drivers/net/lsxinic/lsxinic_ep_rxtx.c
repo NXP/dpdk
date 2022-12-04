@@ -6735,10 +6735,10 @@ lsinic_rxq_loop(struct lsinic_queue *rxq)
 			return -EAGAIN;
 		}
 #endif
-		if (!lsinic_queue_running(rxq))
-			return -EAGAIN;
 		if (rxq->pair)
 			lsinic_add_txq_to_list(rxq->pair);
+		if (!lsinic_queue_running(rxq))
+			return -EAGAIN;
 	}
 
 	if (unlikely(!rxq->ep_enabled))
