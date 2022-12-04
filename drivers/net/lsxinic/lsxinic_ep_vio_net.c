@@ -164,15 +164,9 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
 	adapter->ring_base =
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
-	adapter->ring_phy_base =
-		(uint64_t)lsx_dev->phy_addr[LSXVIO_RING_BAR_IDX];
+	adapter->ring_phy_base = lsx_dev->phy_addr[LSXVIO_RING_BAR_IDX];
 	adapter->ob_base = lsx_dev->ob_phy_base;
-	adapter->ob_virt_base = (uint8_t *)lsx_dev->ob_virt_base;
-	adapter->pf_idx = lsx_dev->pf;
-	adapter->is_vf = lsx_dev->is_vf;
-	if (lsx_dev->is_vf)
-		adapter->vf_idx = lsx_dev->vf;
-	adapter->pcie_idx = lsx_dev->pcie_id;
+	adapter->ob_virt_base = lsx_dev->ob_virt_base;
 	adapter->num_queues = 0;
 	adapter->num_descs = LSXVIO_MAX_RING_DESC;
 #if (LSX_VIRTIO_NET_FEATURES & (1ULL << VIRTIO_F_VERSION_1))
@@ -298,11 +292,16 @@ lsxvio_dev_priv_feature_configure(struct lsxvio_adapter *adapter,
 	lsx_feature |= LSX_VIO_RC2EP_DMA_BD_NOTIFY;
 	lsx_feature |= LSX_VIO_EP2RC_DMA_ADDR_NOTIFY;
 	lsx_feature |= LSX_VIO_EP2RC_DMA_BD_NOTIFY;
+	lsx_feature |= LSX_VIO_EP2RC_DMA_SG_ENABLE;
+	lsx_feature |= LSX_VIO_RC2EP_DMA_SG_ENABLE;
 
 	penv = getenv("LSXVIO_QDMA_SG_ENABLE");
-	if (penv && atoi(penv)) {
-		lsx_feature |= LSX_VIO_EP2RC_DMA_SG_ENABLE;
-		lsx_feature |= LSX_VIO_RC2EP_DMA_SG_ENABLE;
+	if (penv) {
+		env_val = atoi(penv);
+		if (!env_val) {
+			lsx_feature &= (~LSX_VIO_EP2RC_DMA_SG_ENABLE);
+			lsx_feature &= (~LSX_VIO_RC2EP_DMA_SG_ENABLE);
+		}
 	}
 
 	penv = getenv("LSXVIO_RXQ_QDMA_NO_RESPONSE");
@@ -450,27 +449,17 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	eth_dev->rx_pkt_burst = lsxvio_recv_pkts;
 	eth_dev->tx_pkt_burst = lsxvio_xmit_pkts;
 
-	lsxvio_init_bar_addr(lsx_dev, lsx_feature);
-	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
-		!lsx_dev->is_vf) {
-		lsx_pciep_sim_dev_map_inbound(lsx_dev);
-	}
-	lsxvio_netdev_reg_init(adapter);
-
-	adapter->txq_dma_id = -1;
-	adapter->rxq_dma_id = -1;
-	adapter->txq_dma_vchan_used = 0;
-	adapter->rxq_dma_vchan_used = 0;
-	rte_spinlock_init(&adapter->txq_dma_start_lock);
-	rte_spinlock_init(&adapter->rxq_dma_start_lock);
-
 	rbp = lsx_pciep_hw_rbp_get(lsx_dev->pcie_id);
 	if (rbp)
 		adapter->rbp_enable = 1;
 	else
 		adapter->rbp_enable = 0;
 
-	lsx_feature = 0;
+	adapter->pf_idx = lsx_dev->pf;
+	adapter->is_vf = lsx_dev->is_vf;
+	if (lsx_dev->is_vf)
+		adapter->vf_idx = lsx_dev->vf;
+	adapter->pcie_idx = lsx_dev->pcie_id;
 
 	ret = lsxvio_dev_priv_feature_configure(adapter,
 		&lsx_feature);
@@ -481,6 +470,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 		(lsx_feature & LSX_VIO_RC2EP_DMA_NORSP)) {
 		/* TBD*/
 		LSXINIC_PMD_ERR("RC2EP DMA NORSP/BD notify TBD");
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_RC2EP_IN_ORDER)) {
+		/* TBD*/
+		LSXINIC_PMD_ERR("RC2EP DMA-BD is NOT order ring");
 
 		return -EINVAL;
 	}
@@ -500,6 +497,34 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 
 		return -EINVAL;
 	}
+
+	if ((lsx_feature & LSX_VIO_EP2RC_DMA_BD_NOTIFY) &&
+		!(lsx_feature & LSX_VIO_EP2RC_DMA_SG_ENABLE)) {
+		LSXINIC_PMD_ERR("EP2RC DMA-BD is NOT SG enabled");
+
+		return -EINVAL;
+	}
+
+	if ((lsx_feature & LSX_VIO_RC2EP_IN_ORDER) &&
+		!(lsx_feature & LSX_VIO_RC2EP_DMA_SG_ENABLE)) {
+		LSXINIC_PMD_ERR("RC2EP order ring is NOT SG enabled");
+
+		return -EINVAL;
+	}
+
+	lsxvio_init_bar_addr(lsx_dev, lsx_feature);
+	if (lsx_pciep_hw_sim_get(lsx_dev->pcie_id) &&
+		!lsx_dev->is_vf) {
+		lsx_pciep_sim_dev_map_inbound(lsx_dev);
+	}
+	lsxvio_netdev_reg_init(adapter);
+
+	adapter->txq_dma_id = -1;
+	adapter->rxq_dma_id = -1;
+	adapter->txq_dma_vchan_used = 0;
+	adapter->rxq_dma_vchan_used = 0;
+	rte_spinlock_init(&adapter->txq_dma_start_lock);
+	rte_spinlock_init(&adapter->rxq_dma_start_lock);
 
 	if (!is_valid_ether_addr(adapter->mac_addr)) {
 		LSXINIC_PMD_ERR("Invalid MAC address");
