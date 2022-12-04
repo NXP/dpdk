@@ -19,6 +19,7 @@
 #include <rte_devargs.h>
 #include <rte_memcpy.h>
 #include <rte_io.h>
+#include <rte_spinlock.h>
 #include <linux/pci_regs.h>
 
 #include "lsx_pciep_ctrl.h"
@@ -186,6 +187,7 @@ enum dw_win_type {
 };
 
 #define PCIEP_DW_GLOBE_INFO_F "/tmp/pciep_dw_globe_info"
+static rte_spinlock_t s_f_lock = RTE_SPINLOCK_INITIALIZER;
 
 struct pciep_dw_shared_ob_win {
 	uint64_t bus_start;
@@ -311,10 +313,12 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 	if (pcie_id >= LSX_MAX_PCIE_NB)
 		return -EINVAL;
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 
@@ -323,7 +327,9 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
-		return 0;
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
+		return -ENOMEM;
 	}
 
 	memset(info, 0, sizeof(struct pciep_dw_info));
@@ -336,6 +342,7 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 			__func__, PCIEP_DW_GLOBE_INFO_F,
 			sizeof(struct pciep_dw_info), f_ret);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return -EIO;
 	}
 
@@ -344,6 +351,7 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s: %s write open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 
@@ -366,6 +374,7 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 		LSX_PCIEP_BUS_ERR("alloc win index failed");
 		fclose(f_dw_cfg);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 	f_ret = fwrite(info, sizeof(struct pciep_dw_info),
@@ -375,10 +384,12 @@ static int pcie_dw_alloc_win_idx(int pcie_id,
 			PCIEP_DW_GLOBE_INFO_F);
 		fclose(f_dw_cfg);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 	fclose(f_dw_cfg);
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 
 	return i;
 }
@@ -430,10 +441,12 @@ pcie_dw_alloc_ob_space(int pcie_id,
 	int i;
 	char err_str[128];
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -442,6 +455,8 @@ pcie_dw_alloc_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -454,6 +469,7 @@ pcie_dw_alloc_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s: %s read failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -462,6 +478,7 @@ pcie_dw_alloc_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s: %s write open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -486,6 +503,7 @@ pcie_dw_alloc_ob_space(int pcie_id,
 	}
 	fclose(f_dw_cfg);
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 
 	return cpu_addr;
 
@@ -496,6 +514,7 @@ no_space_available:
 	LSX_PCIEP_BUS_ERR("map failed: %s", err_str);
 	fclose(f_dw_cfg);
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 
 	return 0;
 }
@@ -512,10 +531,12 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 	struct pciep_dw_shared_ob_win *ob_shared_win;
 	uint64_t ob_base, ob_addr = 0;
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -524,6 +545,8 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -536,6 +559,7 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s: %s read failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -558,6 +582,7 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 			LSX_PCIEP_BUS_ERR("%s: %s write open failed",
 				__func__, PCIEP_DW_GLOBE_INFO_F);
 			free(info);
+			rte_spinlock_unlock(&s_f_lock);
 			return 0;
 		}
 		f_ret = fwrite(info, sizeof(struct pciep_dw_info),
@@ -566,6 +591,8 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 			LSX_PCIEP_BUS_ERR("%s write failed",
 				PCIEP_DW_GLOBE_INFO_F);
 			free(info);
+			fclose(f_dw_cfg);
+			rte_spinlock_unlock(&s_f_lock);
 			return 0;
 		}
 		fclose(f_dw_cfg);
@@ -574,6 +601,7 @@ pcie_dw_find_shared_ob_space(int pcie_id,
 	}
 
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 
 	return ob_addr;
 }
@@ -590,10 +618,12 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 	uint64_t ob_base;
 	int *shared_nb = &g_dw_proc_info[pcie_id].ob_shared_nb;
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 
@@ -602,6 +632,8 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENOMEM;
 	}
 
@@ -614,6 +646,7 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s: %s read failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return -EIO;
 	}
 
@@ -629,6 +662,7 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s write open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return -ENODEV;
 	}
 
@@ -638,12 +672,14 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 		LSX_PCIEP_BUS_ERR("%s write failed",
 			PCIEP_DW_GLOBE_INFO_F);
 		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return -EIO;
 	}
 	fclose(f_dw_cfg);
 
 	g_dw_proc_info[pcie_id].ob_shared_idx[*shared_nb] = win_id;
 	(*shared_nb)++;
+	rte_spinlock_unlock(&s_f_lock);
 
 	return 0;
 }
@@ -1081,10 +1117,12 @@ pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 	uint64_t offset, cpu_addr;
 	struct pciep_dw_info *info;
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -1093,6 +1131,8 @@ pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -1105,6 +1145,7 @@ pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 		LSX_PCIEP_BUS_ERR("%s: %s read failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return 0;
 	}
 
@@ -1112,6 +1153,7 @@ pcie_dw_ob_unmapped(struct lsx_pciep_hw_low *hw)
 	offset = info->ob_offset[hw->index];
 
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 
 	return cpu_addr + offset;
 }
@@ -1134,6 +1176,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 
 	memset(info, 0, sizeof(struct pciep_dw_info));
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (f_dw_cfg) {
 		f_ret = fread(info, sizeof(struct pciep_dw_info),
@@ -1142,6 +1185,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 			LSX_PCIEP_BUS_ERR("%s: %s read failed",
 				__func__, PCIEP_DW_GLOBE_INFO_F);
 			fclose(f_dw_cfg);
+			rte_spinlock_unlock(&s_f_lock);
 			return;
 		}
 		fclose(f_dw_cfg);
@@ -1165,6 +1209,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 	}
 	fclose(f_dw_cfg);
+	rte_spinlock_unlock(&s_f_lock);
 }
 
 static int
@@ -1204,10 +1249,12 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 	struct pciep_dw_info *info;
 	uint64_t phy_start;
 
+	rte_spinlock_lock(&s_f_lock);
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -1216,6 +1263,8 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		fclose(f_dw_cfg);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -1229,6 +1278,7 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 			__func__, PCIEP_DW_GLOBE_INFO_F,
 			sizeof(struct pciep_dw_info), f_ret);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -1265,6 +1315,7 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 			}
 		}
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -1273,6 +1324,7 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 		LSX_PCIEP_BUS_ERR("%s: %s write open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		free(info);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -1284,6 +1336,7 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 	}
 	fclose(f_dw_cfg);
 	free(info);
+	rte_spinlock_unlock(&s_f_lock);
 }
 
 static int
