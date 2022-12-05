@@ -199,10 +199,16 @@ struct lxsnic_ring {
 	/* For RC RX*/
 	/* EP_MEM_DST_ADDR_BD*/
 	struct lsinic_ep_tx_dst_addr *ep_rx_addr;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addr *rc_rx_addr;
 	/* EP_MEM_DST_ADDRL_BD*/
 	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addrl *rc_rx_addrl;
 	/* EP_MEM_DST_ADDX_BD*/
 	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addrx *rc_rx_addrx;
 	/* EP_MEM_DST_ADDR_SEG*/
 	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
 	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
