@@ -282,7 +282,7 @@ lsinic_queue_dma_create(struct lsinic_queue *q)
 
 	q->dma_bd_update = 0;
 	if (q->type == LSINIC_QUEUE_TX) {
-		if (q->adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP)
+		if (q->adapter->ep_cap & LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE)
 			q->dma_bd_update |= DMA_BD_EP2RC_UPDATE;
 	}
 
@@ -328,9 +328,9 @@ dq_again:
 
 	if (q->pkts_eq == q->pkts_dq ||
 		(q->type == LSINIC_QUEUE_TX &&
-		q->dma_bd_update & DMA_BD_EP2RC_UPDATE) ||
+		q->adapter->txq_dma_silent) ||
 		(q->type == LSINIC_QUEUE_RX &&
-		q->adapter->cap & LSINIC_CAP_XFER_COMPLETE))
+		q->adapter->rxq_dma_silent))
 		return 0;
 
 	ret = rte_dma_completed(q->dma_id, q->dma_vq,
@@ -4008,16 +4008,19 @@ lsinic_txq_dma_dq(void *q)
 		if (idx_completed[i] < LSINIC_BD_ENTRY_COUNT) {
 			idx = idx_completed[i];
 		} else {
-			/** Never goes to this branch.*/
 			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
 			continue;
 		}
 		dma_job = &txq->dma_jobs[idx];
 		txq->bytes_dq += dma_job->len;
-		txe = &txq->sw_ring[idx];
 		pkts_dq++;
-		bd = &txq->ep_bd_desc[txe->my_idx];
-		lsinic_bd_dma_complete_update(txq, txe->my_idx, bd);
+		if (likely(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+			continue;
+		txe = &txq->sw_ring[idx];
+		if (txq->ep_bd_desc) {
+			bd = &txq->ep_bd_desc[txe->my_idx];
+			lsinic_bd_dma_complete_update(txq, txe->my_idx, bd);
+		}
 		if (likely(!(txe->mbuf->ol_flags & LSINIC_SHARED_MBUF))) {
 			rte_pktmbuf_free(txe->mbuf);
 		} else {
@@ -4051,14 +4054,14 @@ dq_seg:
 		if (idx_completed[i] < LSINIC_BD_ENTRY_COUNT) {
 			idx = idx_completed[i];
 		} else {
-			/** Never goes to this branch.*/
 			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
 			continue;
 		}
-		txe = &txq->sw_ring[idx];
 		txq->bytes_dq += txe->mbuf->pkt_len;
 		pkts_dq++;
-		bd = &txq->ep_bd_desc[txe->my_idx];
+		if (likely(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+			continue;
+		txe = &txq->sw_ring[idx];
 		rte_pktmbuf_free(txe->mbuf);
 		txe->mbuf = NULL;
 		txq->next_dma_idx++;
@@ -4080,10 +4083,11 @@ static inline int lsinic_tx_bd_available(struct lsinic_queue *txq,
 
 	while (unlikely((ep_txd->bd_status & RING_BD_STATUS_MASK) !=
 					RING_BD_READY)) {
-		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
+		if (!txq->adapter->txq_dma_silent) {
 			if (txq->pkts_eq > txq->pkts_dq) {
 				txq->dma_dq(txq);
-				lsinic_tx_update_to_rc(txq);
+				if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+					lsinic_tx_update_to_rc(txq);
 			}
 		}
 		full_count++;
@@ -4177,7 +4181,7 @@ free_last_pkts:
 
 	if (unlikely(!txq->pair ||
 		(txq->pair && txq->pair->core_id != txq->core_id))) {
-		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
+		if (!txq->adapter->txq_dma_silent) {
 			uint16_t dq_total = 0, dq;
 
 			while (dq_total != tx_num) {
@@ -4186,7 +4190,8 @@ free_last_pkts:
 				if (dq > 0)
 					dq_total += dq;
 			}
-			lsinic_tx_update_to_rc(txq);
+			if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+				lsinic_tx_update_to_rc(txq);
 		}
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 		else if (!txq->recycle_txq) {
@@ -5031,8 +5036,8 @@ static void
 lsinic_txq_loop(void)
 {
 	struct lsinic_queue *q, *tq;
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	struct lsinic_adapter *adapter;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	struct rte_eth_dev *offload_dev;
 #endif
 	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
@@ -5040,6 +5045,7 @@ lsinic_txq_loop(void)
 
 	/* Check if txq already added to list */
 	RTE_TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsinic_txq_list), next, tq) {
+		adapter = q->adapter;
 		if (unlikely(!lsinic_queue_running(q))) {
 			lsinic_queue_status_update(q);
 			if (!lsinic_queue_running(q))
@@ -5062,9 +5068,10 @@ lsinic_txq_loop(void)
 			continue;
 		}
 
-		if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
+		if (!adapter->txq_dma_silent) {
 			q->dma_dq(q);
-			lsinic_tx_update_to_rc(q);
+			if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+				lsinic_tx_update_to_rc(q);
 		}
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 		else if (!q->recycle_txq) {
@@ -5081,7 +5088,6 @@ lsinic_txq_loop(void)
 #endif
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-		adapter = q->adapter;
 		if (q->recycle_rxq) {
 			offload_dev = adapter->merge_dev->eth_dev;
 			ret = offload_dev->rx_pkt_burst(q->recycle_rxq,
