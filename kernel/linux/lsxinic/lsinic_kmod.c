@@ -1727,10 +1727,11 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	struct sk_buff *skb;
 	struct lsinic_mg_header *mgd;
 	void *data;
-	int total_size, conunt = 0, i, len, offset = 0;
+	int total_size, i, len, offset = 0;
 	int align_off = 0, mg_header_size = 0;
 	struct lsinic_rx_buffer *rx_buffer;
 	u16 used_idx;
+	u32 count;
 
 	used_idx = lsinic_bd_ctx_idx(rx_desc->bd_status);
 
