@@ -193,6 +193,13 @@ struct lsinic_queue {
 	struct lsinic_dma_job *dma_jobs;
 	struct lsinic_dma_seg_job *dma_seg_jobs;
 
+	void (*dma_eq)(void *queue, bool append);
+	uint16_t (*dma_dq)(void *queue);
+	void (*rx_dma_mbuf_set)(void *job,
+		struct rte_mbuf *mbuf,
+		uint32_t pkt_len, uint32_t port_id,
+		int complete_check);
+
 	uint16_t bd_dma_step;
 	int wdma_bd_start;
 	int wdma_bd_nb;
