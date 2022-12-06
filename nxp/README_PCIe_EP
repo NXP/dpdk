@@ -76,17 +76,6 @@ export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
 export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
-#Optional settings:
-#qDMA SG format used for burst transaction
-export LSINIC_QDMA_SG_ENABLE=1
-#qDMA of TXQ is used to update BD/status from EP to RC.
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-#RC appends one byte after payload to notify EP qDMA complete.
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
-#Drain jobs from qDMA to avoid congestion with high loading.
-export LSINIC_QDMA_NO_RSP_DRAIN=1
-#Clear all previous PCIe2 inbound/outbound configurations.
-export LSX_PCIE2_CLEAR_WINDOWS=1
 ./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
 ii) Start Root Complex:
@@ -110,8 +99,13 @@ export P1_DIST_1='(1,0,2)'
 
 3) Small packets across PCIe performance improvment on Endpoint:
 Define compile flag for both EP/RC build: "RTE_LSINIC_PKT_MERGE_ACROSS_PCIE"
-Exapmle:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y, -DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+Example:
+EP:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+RC X86:
+export EXTRA_KERNEL_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+export EXTRA_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
 
 #Following enviroments are set on EP.
 #Merge burst small packets to large packet.
@@ -167,9 +161,6 @@ export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export LSX_PCIE2_PF1=0
 export LSX_PCIE2_PF0_VF0=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.3 dpmac.4
 ./port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
@@ -190,6 +181,7 @@ export LSX_PCIE2_PF0=0
 export LSX_PCIE2_PF1_VF0=1
 export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
 export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8d90
+export LSX_PCIE2_CLEAR_WINDOWS=0
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./port_fwd -c 0x10 -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
@@ -246,9 +238,6 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export PORT_FWD_RING_FWD=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./port_fwd -c 0x4 -b fslmc:dpio.22 -b fslmc:dpio.23 -b fslmc:dpio.24 -b fslmc:dpio.25 -b fslmc:dpmcp.38 -n 1 -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
@@ -304,9 +293,6 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,8)'
 export P3_DIST_1='(3,0,8)'
 export PORT_FWD_RING_FWD=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 ./port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
 5) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
@@ -346,12 +332,6 @@ source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./port_fwd -c 0x4 -n 1 --proc-type=primary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
 #Secondary RC process
-i) Cross build:
-export RTE_TARGET=arm64-lsxinic-rc-linuxapp-gcc
-make install T=arm64-lsxinic-rc-linuxapp-gcc CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n
-make install T=arm64-lsxinic-rc-linuxapp-gcc CONFIG_RTE_KNI_KMOD=n CONFIG_RTE_EAL_IGB_UIO=n -C examples/port_fwd
-
-ii) Run:
 export P0_DIST_1='(0,0,8)'
 export P1_DIST_1='(1,0,8)'
 export LSINIC_RC_SIM=1
@@ -377,7 +357,12 @@ ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profil
 7) Raw qDMA over PCIe throughput/latency benchmark.
 i) Define compile flag for both EP/RC: "RTE_LSINIC_PCIE_RAW_TEST_ENABLE"
 Example:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
+EP:
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_LSINIC_PCIE_RAW_TEST_ENABLE'
+RC X86:
+export EXTRA_KERNEL_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE=y'
+export EXTRA_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE=y'
+make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
 
 ii)Environment settings on RC to start benchmark raw qDMA over PCIe:
 #benchmark raw qDMA PCIE from EP to RC:
@@ -389,7 +374,7 @@ export LSINIC_RC2EP_PCIE_RAW_TEST_BD_NUM=64 /*default 512*/
 export LSINIC_PCIE_RAW_TEST_SIZE=60000 /*default 1024*/
 
 
-iii) Other options set on EP used for throughput/latency measurment:
+iii) Other options set on EP used for throughput/latency measurement:
 #Sanity data check for DMA from EP to RC:
 export LSINIC_PCIE_RAW_TEST_EP2RC_CHECK_MODE=1
 #Sanity data check for DMA from RC to EP:
