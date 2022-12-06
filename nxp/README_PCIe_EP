@@ -7,7 +7,8 @@ NXP DPDK PCIe Endpoint README
 1) DPDK build:
 i)  Endpoint build:
 export CROSS=aarch64-linux-gnu-
-meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Ddpaa2_use_phys_iova=true -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=all -Dprefix=/Your/install/folder
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Ddpaa2_use_phys_iova=true -Dexamples=all -Dprefix=/Your/install/folder
+ninja -C arm64-build install
 #Target image:
 #Endpoint example image: "arm64-build/examples/dpdk-port_fwd".
 
@@ -23,7 +24,9 @@ ninja install
 #Root Complex DPDK image: "build/examples/dpdk-port_fwd".
 
 #NXP ARM:
-#Same as Endpoint build:
+Based on Endpoint build, add kernel module build. This configuration and target dpdk image can be used for both EP/RC.
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Ddpaa2_use_phys_iova=true -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=all -Dprefix=/Your/install/folder
+ninja -C arm64-build install
 #Target image:
 #Root Complex kernel driver: "arm64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
 #Root Complex DPDK UIO driver: "arm64-build/kernel/linux/igb_uio/igb_uio.ko".
@@ -70,17 +73,6 @@ export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
 export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
-#Optional settings:
-#qDMA SG format used for burst transaction
-export LSINIC_QDMA_SG_ENABLE=1
-#qDMA of TXQ is used to update BD/status from EP to RC.
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-#RC appends one byte after payload to notify EP qDMA complete.
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
-#Drain jobs from qDMA to avoid congestion with high loading.
-export LSINIC_QDMA_NO_RSP_DRAIN=1
-#Clear all previous PCIe2 inbound/outbound configurations.
-export LSX_PCIE2_CLEAR_WINDOWS=1
 ./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
 ii) Start Root Complex:
@@ -102,8 +94,8 @@ export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
 ./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
-3) Small packets across PCIe performance improvment on Endpoint:
-i) EP build with additional meson configure parameter: "-Dlsinic_pkt_merge_across_pcie=true"
+3) Small packets across PCIe performance improvment:
+i) EP/RC build with additional meson configure parameter: "-Dlsinic_pkt_merge_across_pcie=true"
 ii) Run dpdk on Endpoint side:
 #Following enviroments are set in EP.
 #Merge burst small packets to large packet.
@@ -159,9 +151,6 @@ export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export LSX_PCIE2_PF1=0
 export LSX_PCIE2_PF0_VF0=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.3 dpmac.4
 ./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
@@ -182,6 +171,7 @@ export LSX_PCIE2_PF0=0
 export LSX_PCIE2_PF1_VF0=1
 export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
 export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8d90
+export LSX_PCIE2_CLEAR_WINDOWS=0
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./dpdk-port_fwd -c 0x10 -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
@@ -238,9 +228,6 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,2)'
 export P3_DIST_1='(3,0,2)'
 export PORT_FWD_RING_FWD=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./dpdk-port_fwd -c 0x4 -b fslmc:dpio.22 -b fslmc:dpio.23 -b fslmc:dpio.24 -b fslmc:dpio.25 -b fslmc:dpmcp.38 -n 1 -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
@@ -296,9 +283,6 @@ export DPRC=dprc.2
 export P2_DIST_1='(2,0,8)'
 export P3_DIST_1='(3,0,8)'
 export PORT_FWD_RING_FWD=1
-export LSINIC_QDMA_SG_ENABLE=1
-export LSINIC_TXQ_QDMA_NO_RESPONSE=1
-export LSINIC_RXQ_QDMA_NO_RESPONSE=1
 ./dpdk-port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
 5) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
@@ -361,8 +345,7 @@ ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profil
         X20(7545,0.000186%) X40(1304,0.000032%) X100(0,0.000000%)
 
 7) Raw qDMA over PCIe throughput/latency benchmark.
-i) EP cross build:
-EP build with additional meson configure parameter: "-Dlsxinic_pcie_raw_test=true"
+i) EP/RC build with additional meson configure parameter: "-Dlsxinic_pcie_raw_test=true"
 
 ii) Environment settings in RC to start benchmark raw qDMA over PCIe:
 #benchmark raw qDMA PCIE from EP to RC:
