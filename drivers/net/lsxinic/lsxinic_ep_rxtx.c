@@ -2467,7 +2467,8 @@ lsinic_dpaa2_merge_sg(struct rte_mbuf **tx_pkts,
 		sge = &sgt[i];
 		/*Resetting the buffer pool id and offset field*/
 		sge->fin_bpid_offset = 0;
-		DPAA2_SET_FLE_ADDR(sge, rte_pktmbuf_iova(tx_pkts[i]));
+		DPAA2_SET_FLE_ADDR(sge, DPAA2_MBUF_VADDR_TO_IOVA(tx_pkts[i]));
+		DPAA2_SET_FLE_OFFSET(sge, tx_pkts[i]->data_off);
 		if (!(tx_pkts[i]->ol_flags & LSINIC_SHARED_MBUF)) {
 			if (likely(tx_pkts[i] != tmp_mbuf))
 				DPAA2_SET_FLE_BPID(sge,
