@@ -510,12 +510,17 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	const char *cnf_env = "LSINIC_EP_RXQ_CONFIRM";
 	const char *notify_env = "LSINIC_EP_TXQ_NOTIFY";
 
-	adapter->ep_cap = 0;
+	adapter->ep_cap = LSINIC_EP_CAP_TXQ_SG_DMA;
+	adapter->ep_cap |= LSINIC_EP_CAP_RXQ_SG_DMA;
+	adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
 
 	penv = getenv("LSINIC_QDMA_SG_ENABLE");
 	if (penv && atoi(penv)) {
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_SG_DMA;
 		adapter->ep_cap |= LSINIC_EP_CAP_RXQ_SG_DMA;
+	} else if (penv && !atoi(penv)) {
+		adapter->ep_cap &= ~LSINIC_EP_CAP_TXQ_SG_DMA;
+		adapter->ep_cap &= ~LSINIC_EP_CAP_RXQ_SG_DMA;
 	}
 
 	/* NO TX DMA RSP and write BD to RC by DMA as well.*/
@@ -523,11 +528,23 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv)) {
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_DMA_NO_RSP;
 		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_SG_DMA;
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
+	} else if (penv && !atoi(penv)) {
+		adapter->ep_cap &= ~LSINIC_EP_CAP_TXQ_DMA_NO_RSP;
+	}
+
+	penv = getenv("LSINIC_TXQ_QDMA_BD_UPDATE");
+	if (penv && atoi(penv)) {
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_SG_DMA;
+		adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
+	} else if (penv && !atoi(penv)) {
+		adapter->ep_cap &= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
 	}
 
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
-	adapter->cap = 0;
+	adapter->cap = LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
+	adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	penv = getenv("LSINIC_MERGE_PACKETS");
@@ -541,6 +558,30 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	penv = getenv("LSINIC_RC_RECV_SEGMENT_OFFLOAD");
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD;
+
+	penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
+	else if (penv && !atoi(penv))
+		adapter->cap &= ~LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
+
+	if (adapter->cap & LSINIC_CAP_RC_XFER_BD_DMA_UPDATE) {
+		penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE_DBG");
+		if (penv && atoi(penv))
+			adapter->ep_cap |= LSINIC_EP_CAP_RXQ_BD_DMA_UPDATE_DBG;
+	}
+
+	penv = getenv("LSINIC_TXQ_QDMA_ADDR_READ");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
+	else if (penv && !atoi(penv))
+		adapter->cap &= ~LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
+
+	if (adapter->cap & LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE) {
+		penv = getenv("LSINIC_TXQ_QDMA_ADDR_READ_DBG");
+		if (penv && atoi(penv))
+			adapter->ep_cap |= LSINIC_EP_CAP_TXQ_ADDR_DMA_READ_DBG;
+	}
 
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
@@ -561,8 +602,7 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM;
 
-	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP) &&
-		(adapter->cap & LSINIC_CAP_XFER_COMPLETE) &&
+	if ((adapter->ep_cap & LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE) &&
 		LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
 		EP_XMIT_SBD_TYPE)
 		adapter->cap |= LSINIC_CAP_XFER_ORDER_PRSV;
@@ -1254,6 +1294,8 @@ lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev)
 	struct lsinic_queue *txq;
 	struct lsinic_queue *rxq;
 	uint16_t i, num;
+	uint32_t rdma;
+	struct lsinic_adapter *adapter = dev->process_private;
 
 	num = RTE_MIN(dev->data->nb_tx_queues,
 			dev->data->nb_rx_queues);
@@ -1267,6 +1309,16 @@ lsinic_dev_rx_tx_bind(struct rte_eth_dev *dev)
 
 		rxq->pair = txq;
 		txq->pair = rxq;
+	}
+	rdma = adapter->cap;
+	rdma = rdma & LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
+
+	for (i = 0; i < dev->data->nb_tx_queues; i++) {
+		txq = dev->data->tx_queues[i];
+		if (txq->pair && rdma)
+			txq->ep_reg->rdma = 1;
+		else
+			txq->ep_reg->rdma = 0;
 	}
 }
 

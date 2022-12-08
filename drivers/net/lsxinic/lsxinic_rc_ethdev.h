@@ -181,6 +181,7 @@ struct lxsnic_ring {
 #endif
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
+	uint32_t rdma;
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	/* point to EP memory */
 	void *ep_bd_mapped_addr;
@@ -197,10 +198,16 @@ struct lxsnic_ring {
 	/* For RC RX*/
 	/* EP_MEM_DST_ADDR_BD*/
 	struct lsinic_ep_tx_dst_addr *ep_rx_addr;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addr *rc_rx_addr;
 	/* EP_MEM_DST_ADDRL_BD*/
 	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addrl *rc_rx_addrl;
 	/* EP_MEM_DST_ADDX_BD*/
 	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
+	/* DMA read source*/
+	struct lsinic_ep_tx_dst_addrx *rc_rx_addrx;
 	/* EP_MEM_DST_ADDR_SEG*/
 	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
 	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
@@ -209,6 +216,8 @@ struct lxsnic_ring {
 	void *rc_bd_shared_addr;
 	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
+	struct lsinic_ep_rx_src_addrl *rc_tx_addrl;
+	struct lsinic_ep_rx_src_addrx *rc_tx_addrx;
 
 	struct lsinic_seg_desc *rc_sg_desc;
 
@@ -224,8 +233,7 @@ struct lxsnic_ring {
 	/* For RC TX*/
 	/* RC_MEM_BD_CNF*/
 	struct lsinic_rc_tx_bd_cnf *tx_complete;
-	/* RC_MEM_IDX_CNF*/
-	const struct lsinic_rc_tx_idx_cnf *free_idx;
+	/* RC_MEM_IDX_CNF by rc_reg->cir*/
 
 	/* bd desc point to RC(local) memory */
 	dma_addr_t rc_bd_desc_dma;	/* phys. address of rc_bd_shared_addr */
