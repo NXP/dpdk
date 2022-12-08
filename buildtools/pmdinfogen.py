@@ -117,7 +117,6 @@ def define_rte_pci_id(is_big_endian):
     class rte_pci_id(base_type):
         _pack_ = True
         _fields_ = [
-            ("class_id", ctypes.c_uint32),
             ("vendor_id", ctypes.c_uint16),
             ("device_id", ctypes.c_uint16),
             ("subsystem_vendor_id", ctypes.c_uint16),

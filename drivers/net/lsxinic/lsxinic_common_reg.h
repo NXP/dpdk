@@ -179,9 +179,9 @@ struct lsinic_ring_reg {
 	uint32_t barl;
 	uint32_t pir;	/* rc produce data, then modify the register */
 	uint32_t cir;	/* ep consume data, then modify the register */
-	uint32_t ar;
-	uint32_t icrl;
-	uint32_t icrh;
+	uint32_t rdma;
+	uint32_t rdmal;
+	uint32_t rdmah;
 	/**
 	 * Interrupt Coalescing Register
 	 * Interrupt vector bits 31:16
@@ -565,6 +565,14 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD \
 	(1 << LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS)
 
+#define LSINIC_CAP_RC_XFER_BD_DMA_UPDATE_POS 6
+#define LSINIC_CAP_RC_XFER_BD_DMA_UPDATE \
+	(1 << LSINIC_CAP_RC_XFER_BD_DMA_UPDATE_POS)
+
+#define LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE_POS 7
+#define LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE \
+	(1 << LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE_POS)
+
 enum rc_set_addr_type {
 	RC_SET_ADDRF_TYPE = 0,
 	RC_SET_ADDRL_TYPE = 1,
@@ -572,7 +580,7 @@ enum rc_set_addr_type {
 	RC_SET_ADDR_TYPE_MASK = 3
 };
 
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 6
+#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 8
 #define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) \
 	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS) & \
 	RC_SET_ADDR_TYPE_MASK)

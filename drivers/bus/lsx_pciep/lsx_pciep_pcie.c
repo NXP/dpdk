@@ -657,7 +657,7 @@ lsx_pciep_hw_set_type(void)
 }
 
 static int
-lsx_pciep_hw_enable_clear_inbound(void)
+lsx_pciep_hw_enable_clear_win(void)
 {
 	int i, clear_win;
 	char *penv;
@@ -666,10 +666,16 @@ lsx_pciep_hw_enable_clear_inbound(void)
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		sprintf(env, "LSX_PCIE%d_CLEAR_WINDOWS", i);
 		penv = getenv(env);
-		if (penv)
+		if (penv) {
 			clear_win = atoi(penv);
-		else
-			clear_win = 0;
+		} else {
+			/* Clear outbound/inbound windows configurations
+			 * for EP starts up everytime as default.
+			 * Notice: For the secondary standalone process,
+			 * this flag must be DISABLED by setting this env to 0.
+			 */
+			clear_win = 1;
+		}
 		s_pctl_hw[i].clear_win = clear_win;
 	}
 
@@ -1327,7 +1333,7 @@ lsx_pciep_primary_init(void)
 		ret = -ENODEV;
 		goto init_exit;
 	}
-	lsx_pciep_hw_enable_clear_inbound();
+	lsx_pciep_hw_enable_clear_win();
 
 	lsx_pciep_ctl_set_ops();
 
