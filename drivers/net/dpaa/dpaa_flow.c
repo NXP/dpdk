@@ -54,17 +54,6 @@ static struct dpaa_fm_info fm_info;
 static struct dpaa_fm_model fm_model;
 static const char *fm_log = "/tmp/fmdpdk.bin";
 
-static inline uint8_t fm_default_vsp_id(struct fman_if *fif)
-{
-	/* Avoid being same as base profile which could be used
-	 * for kernel interface of shared mac.
-	 */
-	if (fif->base_profile_id)
-		return 0;
-	else
-		return DPAA_DEFAULT_RXQ_VSP_ID;
-}
-
 static void fm_prev_cleanup(void)
 {
 	uint32_t fman_id = 0, i = 0, devid;
@@ -657,7 +646,9 @@ static inline int set_pcd_netenv_scheme(struct dpaa_if *dpaa_intf,
 
 static inline int get_rx_port_type(struct fman_if *fif)
 {
-	if (fif->mac_type == fman_mac_1g)
+	if (fif->mac_type == fman_offline)
+		return e_FM_PORT_TYPE_OH_OFFLINE_PARSING;
+	else if (fif->mac_type == fman_mac_1g)
 		return e_FM_PORT_TYPE_RX;
 	else if (fif->mac_type == fman_mac_2_5g)
 		return e_FM_PORT_TYPE_RX_2_5G;
@@ -665,12 +656,14 @@ static inline int get_rx_port_type(struct fman_if *fif)
 		return e_FM_PORT_TYPE_RX_10G;
 
 	DPAA_PMD_ERR("MAC type unsupported");
-	return -1;
+	return e_FM_PORT_TYPE_DUMMY;
 }
 
 static inline int get_tx_port_type(struct fman_if *fif)
 {
-	if (fif->mac_type == fman_mac_1g)
+	if (fif->mac_type == fman_offline)
+		return e_FM_PORT_TYPE_OH_OFFLINE_PARSING;
+	else if (fif->mac_type == fman_mac_1g)
 		return e_FM_PORT_TYPE_TX;
 	else if (fif->mac_type == fman_mac_2_5g)
 		return e_FM_PORT_TYPE_TX_2_5G;
@@ -678,7 +671,7 @@ static inline int get_tx_port_type(struct fman_if *fif)
 		return e_FM_PORT_TYPE_TX_10G;
 
 	DPAA_PMD_ERR("MAC type unsupported");
-	return -1;
+	return e_FM_PORT_TYPE_DUMMY;
 }
 
 static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
@@ -975,14 +968,27 @@ static int dpaa_port_vsp_configure(struct dpaa_if *dpaa_intf,
 	memset(&vsp_params, 0, sizeof(vsp_params));
 	vsp_params.h_fm = fman_handle;
 	vsp_params.relative_profile_id = vsp_id;
-	vsp_params.port_params.port_id = idx;
+	if (fif->mac_type == fman_offline)
+		vsp_params.port_params.port_id = fif->mac_idx;
+	else
+		vsp_params.port_params.port_id = idx;
+
 	if (fif->mac_type == fman_mac_1g) {
 		vsp_params.port_params.port_type = e_FM_PORT_TYPE_RX;
 	} else if (fif->mac_type == fman_mac_2_5g) {
 		vsp_params.port_params.port_type = e_FM_PORT_TYPE_RX_2_5G;
 	} else if (fif->mac_type == fman_mac_10g) {
 		vsp_params.port_params.port_type = e_FM_PORT_TYPE_RX_10G;
+	} else if (fif->mac_type == fman_offline) {
+		vsp_params.port_params.port_type =
+				e_FM_PORT_TYPE_OH_OFFLINE_PARSING;
 	} else {
+		DPAA_PMD_ERR("Mac type %d error", fif->mac_type);
+		return -1;
+	}
+
+	vsp_params.port_params.port_type = get_rx_port_type(fif);
+	if (vsp_params.port_params.port_type == e_FM_PORT_TYPE_DUMMY) {
 		DPAA_PMD_ERR("Mac type %d error", fif->mac_type);
 		return -1;
 	}

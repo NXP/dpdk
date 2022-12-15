@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017-2019 NXP
+ * Copyright 2017-2019,2023 NXP
  *
  */
 #include <inttypes.h>
@@ -44,6 +44,7 @@ dump_netcfg(struct netcfg_info *cfg_ptr)
 
 		printf("\n+ Fman %d, MAC %d (%s);\n",
 		       __if->fman_idx, __if->mac_idx,
+		       (__if->mac_type == fman_offline) ? "OFFLINE" :
 		       (__if->mac_type == fman_mac_1g) ? "1G" :
 		       (__if->mac_type == fman_mac_2_5g) ? "2.5G" : "10G");
 
@@ -56,13 +57,16 @@ dump_netcfg(struct netcfg_info *cfg_ptr)
 		printf("\tfqid_rx_def: 0x%x\n", p_cfg->rx_def);
 		printf("\tfqid_rx_err: 0x%x\n", __if->fqid_rx_err);
 
-		printf("\tfqid_tx_err: 0x%x\n", __if->fqid_tx_err);
-		printf("\tfqid_tx_confirm: 0x%x\n", __if->fqid_tx_confirm);
-		fman_if_for_each_bpool(bpool, __if)
-			printf("\tbuffer pool: (bpid=%d, count=%"PRId64
-			       " size=%"PRId64", addr=0x%"PRIx64")\n",
-			       bpool->bpid, bpool->count, bpool->size,
-			       bpool->addr);
+		if (__if->mac_type != fman_offline) {
+			printf("\tfqid_tx_err: 0x%x\n", __if->fqid_tx_err);
+			printf("\tfqid_tx_confirm: 0x%x\n",
+			       __if->fqid_tx_confirm);
+			fman_if_for_each_bpool(bpool, __if)
+				printf("\tbuffer pool: (bpid=%d, count=%"PRId64
+				       " size=%"PRId64", addr=0x%"PRIx64")\n",
+				       bpool->bpid, bpool->count, bpool->size,
+				       bpool->addr);
+		}
 	}
 }
 #endif /* RTE_LIBRTE_DPAA_DEBUG_DRIVER */

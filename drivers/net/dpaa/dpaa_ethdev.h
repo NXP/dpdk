@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2014-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2022 NXP
+ *   Copyright 2017-2023 NXP
  *
  */
 #ifndef __DPAA_ETHDEV_H__
@@ -112,6 +112,9 @@
 #define FMC_FILE "/tmp/fmc.bin"
 
 extern struct rte_mempool *dpaa_tx_sg_pool;
+
+/* PMD related logs */
+extern int dpaa_logtype_pmd;
 
 /* structure to free external and indirect
  * buffers.
@@ -246,8 +249,8 @@ dpaa_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
 		struct timespec *timestamp,
 		uint32_t flags __rte_unused);
 
-/* PMD related logs */
-extern int dpaa_logtype_pmd;
+uint8_t
+fm_default_vsp_id(struct fman_if *fif);
 
 #define DPAA_PMD_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, dpaa_logtype_pmd, "%s(): " fmt "\n", \
