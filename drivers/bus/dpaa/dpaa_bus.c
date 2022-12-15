@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017-2022 NXP
+ *   Copyright 2017-2023 NXP
  *
  */
 /* System headers */
@@ -41,6 +41,7 @@
 #include <fsl_qman.h>
 #include <fsl_bman.h>
 #include <netcfg.h>
+#include <fman.h>
 
 int dpaa_logtype_bus;
 int dpaa_logtype_mempool;
@@ -203,9 +204,12 @@ dpaa_create_device_list(void)
 
 		/* Create device name */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
-		sprintf(dev->name, "fm%d-mac%d", (fman_intf->fman_idx + 1),
-			fman_intf->mac_idx);
-		DPAA_BUS_LOG(INFO, "%s netdev added", dev->name);
+		if (fman_intf->mac_type == fman_offline)
+			sprintf(dev->name, "fm%d-oh%d",
+				(fman_intf->fman_idx + 1), fman_intf->mac_idx);
+		else
+			sprintf(dev->name, "fm%d-mac%d",
+				(fman_intf->fman_idx + 1), fman_intf->mac_idx);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);
 
@@ -437,7 +441,7 @@ static int
 rte_dpaa_bus_parse(const char *name, void *out_name)
 {
 	int i, j;
-	int max_fman = 2, max_macs = 16;
+	int max_fman = 2, max_macs = 16, max_oh = 5;
 	char *dup_name;
 	char *sep = NULL;
 
@@ -465,6 +469,19 @@ rte_dpaa_bus_parse(const char *name, void *out_name)
 		for (j = 0; j < max_macs; j++) {
 			char fm_name[16];
 			snprintf(fm_name, 16, "fm%d-mac%d", i, j);
+			if (strcmp(fm_name, sep) == 0) {
+				if (out_name)
+					strcpy(out_name, sep);
+				free(dup_name);
+				return 0;
+			}
+		}
+	}
+
+	for (i = 0; i < max_fman; i++) {
+		for (j = 0; j < max_oh; j++) {
+			char fm_name[16];
+			snprintf(fm_name, 16, "fm%d-oh%d", i, j);
 			if (strcmp(fm_name, sep) == 0) {
 				if (out_name)
 					strcpy(out_name, sep);

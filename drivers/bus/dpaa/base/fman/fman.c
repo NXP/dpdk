@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017-2022 NXP
+ * Copyright 2017-2023 NXP
  *
  */
 
@@ -176,6 +176,31 @@ static void fman_if_vsp_init(struct __fman_if *__if)
 				}
 			}
 		}
+
+		for_each_compatible_node(dev, NULL,
+					 "fsl,fman-port-op-extended-args") {
+			prop = of_get_property(dev, "cell-index", &lenp);
+
+			if (prop) {
+				cell_index = of_read_number(&prop[0],
+						lenp / sizeof(phandle));
+
+				if (cell_index == __if->__if.mac_idx) {
+					prop = of_get_property(dev,
+							       "vsp-window",
+							       &lenp);
+
+					if (prop) {
+						__if->__if.num_profiles =
+							of_read_number(&prop[0],
+								       1);
+						__if->__if.base_profile_id =
+							of_read_number(&prop[1],
+								       1);
+					}
+				}
+			}
+		}
 	} else {
 		for_each_compatible_node(dev, NULL,
 			"fsl,fman-port-10g-rx-extended-args") {
@@ -220,26 +245,34 @@ fman_if_init(const struct device_node *dpa_node)
 	uint64_t port_cell_idx_val = 0;
 	uint64_t ext_args_cell_idx_val = 0;
 
-	const struct device_node *mac_node = NULL, *tx_node, *ext_args_node;
-	const struct device_node *pool_node, *fman_node, *rx_node;
+	const struct device_node *mac_node = NULL, *ext_args_node;
+	const struct device_node *pool_node, *fman_node, *ext_args_node;
+	const struct device_node *rx_node = NULL, *tx_node = NULL;
+	const struct device_node *oh_node = NULL;
 	const uint32_t *regs_addr = NULL;
 	const char *mname, *fname;
 	const char *dname = dpa_node->full_name;
 	size_t lenp;
-	int _errno, is_shared = 0;
+	int _errno, is_shared = 0, is_offline = 0;
 	const char *char_prop;
 	uint32_t na;
 
 	if (of_device_is_available(dpa_node) == false)
 		return 0;
 
-	if (!of_device_is_compatible(dpa_node, "fsl,dpa-ethernet-init") &&
-		!of_device_is_compatible(dpa_node, "fsl,dpa-ethernet")) {
+	if (of_device_is_compatible(dpa_node, "fsl,dpa-oh"))
+		is_offline = 1;
+
+	if (!of_device_is_compatible(dpa_node, "fsl,dpa-oh") &&
+	    !of_device_is_compatible(dpa_node, "fsl,dpa-ethernet-init") &&
+	    !of_device_is_compatible(dpa_node, "fsl,dpa-ethernet")) {
 		return 0;
 	}
 
-	rprop = "fsl,qman-frame-queues-rx";
-	mprop = "fsl,fman-mac";
+	rprop = is_offline ? "fsl,qman-frame-queues-oh" :
+			     "fsl,qman-frame-queues-rx";
+	mprop = is_offline ? "fsl,fman-oh-port" :
+			     "fsl,fman-mac";
 
 	/* Obtain the MAC node used by this interface except macless */
 	mac_phandle = of_get_property(dpa_node, mprop, &lenp);
@@ -255,27 +288,45 @@ fman_if_init(const struct device_node *dpa_node)
 	}
 	mname = mac_node->full_name;
 
-	/* Extract the Rx and Tx ports */
-	ports_phandle = of_get_property(mac_node, "fsl,port-handles",
-					&lenp);
-	if (!ports_phandle)
-		ports_phandle = of_get_property(mac_node, "fsl,fman-ports",
+	if (!is_offline) {
+		/* Extract the Rx and Tx ports */
+		ports_phandle = of_get_property(mac_node, "fsl,port-handles",
 						&lenp);
-	if (!ports_phandle) {
-		FMAN_ERR(-EINVAL, "%s: no fsl,port-handles\n",
-			 mname);
-		return -EINVAL;
-	}
-	assert(lenp == (2 * sizeof(phandle)));
-	rx_node = of_find_node_by_phandle(ports_phandle[0]);
-	if (!rx_node) {
-		FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[0]\n", mname);
-		return -ENXIO;
-	}
-	tx_node = of_find_node_by_phandle(ports_phandle[1]);
-	if (!tx_node) {
-		FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[1]\n", mname);
-		return -ENXIO;
+		if (!ports_phandle)
+			ports_phandle = of_get_property(mac_node,
+							"fsl,fman-ports",
+							&lenp);
+		if (!ports_phandle) {
+			FMAN_ERR(-EINVAL, "%s: no fsl,port-handles\n",
+				 mname);
+			return -EINVAL;
+		}
+		assert(lenp == (2 * sizeof(phandle)));
+		rx_node = of_find_node_by_phandle(ports_phandle[0]);
+		if (!rx_node) {
+			FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[0]\n", mname);
+			return -ENXIO;
+		}
+		tx_node = of_find_node_by_phandle(ports_phandle[1]);
+		if (!tx_node) {
+			FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[1]\n", mname);
+			return -ENXIO;
+		}
+	} else {
+		/* Extract the OH ports */
+		ports_phandle = of_get_property(dpa_node, "fsl,fman-oh-port",
+						&lenp);
+		if (!ports_phandle) {
+			FMAN_ERR(-EINVAL, "%s: no fsl,fman-oh-port\n",
+				 dname);
+			return -EINVAL;
+		}
+		assert(lenp == (sizeof(phandle)));
+		oh_node = of_find_node_by_phandle(ports_phandle[0]);
+		if (!oh_node) {
+			FMAN_ERR(-ENXIO, "%s: bad fsl,port-handle[0]\n", mname);
+			return -ENXIO;
+		}
 	}
 
 	/* Check if the port is shared interface */
@@ -365,6 +416,7 @@ fman_if_init(const struct device_node *dpa_node)
 			 mname, regs_addr);
 		goto err;
 	}
+
 	__if->ccsr_map = mmap(NULL, __if->regs_size,
 			      PROT_READ | PROT_WRITE, MAP_SHARED,
 			      fman_ccsr_map_fd, phys_addr);
@@ -372,6 +424,7 @@ fman_if_init(const struct device_node *dpa_node)
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")\n", phys_addr);
 		goto err;
 	}
+
 	na = of_n_addr_cells(mac_node);
 	/* Get rid of endianness (issues). Convert to host byte order */
 	regs_addr_host = of_read_number(regs_addr, na);
@@ -406,17 +459,19 @@ fman_if_init(const struct device_node *dpa_node)
 		 * Set A2V, OVOM, EBD bits in contextA to allow external
 		 * buffer deallocation by fman.
 		 */
-		fman_dealloc_bufs_mask_hi = FMAN_V3_CONTEXTA_EN_A2V |
-						FMAN_V3_CONTEXTA_EN_OVOM;
-		fman_dealloc_bufs_mask_lo = FMAN_V3_CONTEXTA_EN_EBD;
+		fman_dealloc_bufs_mask_hi = DPAA_FQD_CTX_A_A2_FIELD_VALID |
+					    DPAA_FQD_CTX_A_OVERRIDE_OMB;
+		fman_dealloc_bufs_mask_lo = DPAA_FQD_CTX_A2_EBD_BIT;
 	} else {
 		fman_dealloc_bufs_mask_hi = 0;
 		fman_dealloc_bufs_mask_lo = 0;
 	}
-	/* Is the MAC node 1G, 2.5G, 10G? */
+	/* Is the MAC node 1G, 2.5G, 10G or offline? */
 	__if->__if.is_memac = 0;
 
-	if (of_device_is_compatible(mac_node, "fsl,fman-1g-mac"))
+	if (is_offline)
+		__if->__if.mac_type = fman_offline;
+	else if (of_device_is_compatible(mac_node, "fsl,fman-1g-mac"))
 		__if->__if.mac_type = fman_mac_1g;
 	else if (of_device_is_compatible(mac_node, "fsl,fman-10g-mac"))
 		__if->__if.mac_type = fman_mac_10g;
@@ -444,51 +499,89 @@ fman_if_init(const struct device_node *dpa_node)
 		goto err;
 	}
 
-	/*
-	 * For MAC ports, we cannot rely on cell-index. In
-	 * T2080, two of the 10G ports on single FMAN have same
-	 * duplicate cell-indexes as the other two 10G ports on
-	 * same FMAN. Hence, we now rely upon addresses of the
-	 * ports from device tree to deduce the index.
-	 */
+	if (!is_offline) {
+		/*
+		 * For MAC ports, we cannot rely on cell-index. In
+		 * T2080, two of the 10G ports on single FMAN have same
+		 * duplicate cell-indexes as the other two 10G ports on
+		 * same FMAN. Hence, we now rely upon addresses of the
+		 * ports from device tree to deduce the index.
+		 */
 
-	_errno = fman_get_mac_index(regs_addr_host, &__if->__if.mac_idx);
-	if (_errno) {
-		FMAN_ERR(-EINVAL, "Invalid register address: %" PRIx64,
-			 regs_addr_host);
-		goto err;
+		_errno = fman_get_mac_index(regs_addr_host,
+					    &__if->__if.mac_idx);
+		if (_errno) {
+			FMAN_ERR(-EINVAL, "Invalid register address: %" PRIx64,
+				 regs_addr_host);
+			goto err;
+		}
+	} else {
+		cell_idx = of_get_property(oh_node, "cell-index", &lenp);
+		if (!cell_idx) {
+			FMAN_ERR(-ENXIO, "%s: no cell-index)\n",
+				 oh_node->full_name);
+			goto err;
+		}
+		assert(lenp == sizeof(*cell_idx));
+		cell_idx_host = of_read_number(cell_idx,
+					       lenp / sizeof(phandle));
+
+		__if->__if.mac_idx = cell_idx_host;
 	}
 
-	/* Extract the MAC address for private and shared interfaces */
-	mac_addr = of_get_property(mac_node, "local-mac-address",
-				   &lenp);
-	if (!mac_addr) {
-		FMAN_ERR(-EINVAL, "%s: no local-mac-address\n",
-			 mname);
-		goto err;
-	}
-	memcpy(&__if->__if.mac_addr, mac_addr, ETHER_ADDR_LEN);
+	if (!is_offline) {
+		/* Extract the MAC address for private and shared interfaces */
+		mac_addr = of_get_property(mac_node, "local-mac-address",
+					   &lenp);
+		if (!mac_addr) {
+			FMAN_ERR(-EINVAL, "%s: no local-mac-address\n",
+				 mname);
+			goto err;
+		}
+		memcpy(&__if->__if.mac_addr, mac_addr, ETHER_ADDR_LEN);
 
-	/* Extract the channel ID (from tx-port-handle) */
-	tx_channel_id = of_get_property(tx_node, "fsl,qman-channel-id",
-					&lenp);
-	if (!tx_channel_id) {
-		FMAN_ERR(-EINVAL, "%s: no fsl-qman-channel-id\n",
-			 tx_node->full_name);
-		goto err;
+		/* Extract the channel ID (from tx-port-handle) */
+		tx_channel_id = of_get_property(tx_node, "fsl,qman-channel-id",
+						&lenp);
+		if (!tx_channel_id) {
+			FMAN_ERR(-EINVAL, "%s: no fsl-qman-channel-id\n",
+				 tx_node->full_name);
+			goto err;
+		}
+	} else {
+		/* Extract the channel ID (from mac) */
+		tx_channel_id = of_get_property(mac_node, "fsl,qman-channel-id",
+						&lenp);
+		if (!tx_channel_id) {
+			FMAN_ERR(-EINVAL, "%s: no fsl-qman-channel-id\n",
+				 tx_node->full_name);
+			goto err;
+		}
 	}
+	assert(lenp == sizeof(*tx_channel_id));
 
-	regs_addr = of_get_address(rx_node, 0, &__if->regs_size, NULL);
+	na = of_n_addr_cells(mac_node);
+	__if->__if.tx_channel_id = of_read_number(tx_channel_id, na);
+
+	if (!is_offline)
+		regs_addr = of_get_address(rx_node, 0, &__if->regs_size, NULL);
+	else
+		regs_addr = of_get_address(oh_node, 0, &__if->regs_size, NULL);
 	if (!regs_addr) {
 		FMAN_ERR(-EINVAL, "of_get_address(%s)\n", mname);
 		goto err;
 	}
-	phys_addr = of_translate_address(rx_node, regs_addr);
+
+	if (!is_offline)
+		phys_addr = of_translate_address(rx_node, regs_addr);
+	else
+		phys_addr = of_translate_address(oh_node, regs_addr);
 	if (!phys_addr) {
 		FMAN_ERR(-EINVAL, "of_translate_address(%s, %p)\n",
 			 mname, regs_addr);
 		goto err;
 	}
+
 	__if->bmi_map = mmap(NULL, __if->regs_size,
 				 PROT_READ | PROT_WRITE, MAP_SHARED,
 				 fman_ccsr_map_fd, phys_addr);
@@ -496,11 +589,6 @@ fman_if_init(const struct device_node *dpa_node)
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")\n", phys_addr);
 		goto err;
 	}
-
-	/* No channel ID for MAC-less */
-	assert(lenp == sizeof(*tx_channel_id));
-	na = of_n_addr_cells(mac_node);
-	__if->__if.tx_channel_id = of_read_number(tx_channel_id, na);
 
 	/* Extract the Rx FQIDs. (Note, the device representation is silly,
 	 * there are "counts" that must always be 1.)
@@ -515,13 +603,26 @@ fman_if_init(const struct device_node *dpa_node)
 		goto err;
 	}
 
-	/* Check if "fsl,qman-frame-queues-rx" in dtb file is valid entry or
-	 * not. A valid entry contains at least 4 entries, rx_error_queue,
-	 * rx_error_queue_count, fqid_rx_def and rx_error_queue_count.
+	/*
+	 * Check if "fsl,qman-frame-queues-rx/oh" in dtb file is valid entry or
+	 * not.
+	 *
+	 * A valid rx entry contains either 4 or 6 entries. Mandatory entries
+	 * are rx_error_queue, rx_error_queue_count, fqid_rx_def and
+	 * fqid_rx_def_count. Optional entries are fqid_rx_pcd and
+	 * fqid_rx_pcd_count.
+	 *
+	 * A valid oh entry contains 4 entries. Those entries are
+	 * rx_error_queue, rx_error_queue_count, fqid_rx_def and
+	 * fqid_rx_def_count.
 	 */
-	assert(lenp >= (4 * sizeof(phandle)));
 
-	na = of_n_addr_cells(mac_node);
+	if (!is_offline)
+		assert(lenp == (4 * sizeof(phandle)) ||
+		       lenp == (6 * sizeof(phandle)));
+	else
+		assert(lenp == (4 * sizeof(phandle)));
+
 	/* Get rid of endianness (issues). Convert to host byte order */
 	rx_phandle_host[0] = of_read_number(&rx_phandle[0], na);
 	rx_phandle_host[1] = of_read_number(&rx_phandle[1], na);
@@ -541,6 +642,9 @@ fman_if_init(const struct device_node *dpa_node)
 		__if->__if.fqid_rx_pcd = rx_phandle_host[4];
 		__if->__if.fqid_rx_pcd_count = rx_phandle_host[5];
 	}
+
+	if (is_offline)
+		goto oh_init_done;
 
 	/* Extract the Tx FQIDs */
 	tx_phandle = of_get_property(dpa_node,
@@ -653,6 +757,7 @@ fman_if_init(const struct device_node *dpa_node)
 	if (is_shared)
 		__if->__if.is_shared_mac = 1;
 
+oh_init_done:
 	fman_if_vsp_init(__if);
 
 	/* Parsing of the network interface is complete, add it to the list */
@@ -715,6 +820,10 @@ fman_finish(void)
 
 	list_for_each_entry_safe(__if, tmpif, &__ifs, __if.node) {
 		int _errno;
+
+		/* No need to disable Offline port */
+		if (__if->__if.mac_type == fman_offline)
+			continue;
 
 		/* disable Rx and Tx */
 		if ((__if->__if.mac_type == fman_mac_1g) &&

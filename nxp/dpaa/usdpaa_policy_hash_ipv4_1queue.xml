@@ -4,7 +4,7 @@
 
  Copyright (c) 2010 - 2011 Freescale Semiconductor, Inc.
  All rights reserved.
- Copyright 2017-2019 NXP
+ Copyright 2017-2019,2023 NXP
 
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are met:
@@ -83,6 +83,9 @@ policy.
 	description="Bridging configuration">
 
 <!--	xxxxxxxxxxxxxxxxxxxxxxxx Distributions xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+	<vsp name="dpdk_oh1_flow" base="1"/>
+	<vsp name="dpdk_oh2_flow" base="1"/>
 
 	<distribution name="hash_ipv4_src_dst_dist0">
 		<queue count="1" base="0x400"/>
@@ -585,6 +588,14 @@ policy.
 	<distribution name="default_dist19">
 		<queue count="1" base="0x1700"/>
 	</distribution>
+	<distribution name="default_dist_oh1">
+		<vsp name="dpdk_oh1_flow"/>
+		<queue count="1" base="0x1800"/>
+	</distribution>
+	<distribution name="default_dist_oh2">
+		<vsp name="dpdk_oh2_flow"/>
+		<queue count="1" base="0x1900"/>
+	</distribution>
 
 <!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
 
@@ -886,6 +897,18 @@ policy.
 	<policy name="hash_default_policy19">
 		<dist_order>
 			<distributionref name="default_dist19"/>
+		</dist_order>
+	</policy>
+
+	<policy name="hash_default_policy_oh1">
+		<dist_order>
+			<distributionref name="default_dist_oh1"/>
+		</dist_order>
+	</policy>
+
+	<policy name="hash_default_policy_oh2">
+		<dist_order>
+			<distributionref name="default_dist_oh2"/>
 		</dist_order>
 	</policy>
 

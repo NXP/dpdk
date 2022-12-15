@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2021 NXP
+ * Copyright 2017-2021,2023 NXP
  */
 
 /* System headers */
@@ -214,8 +214,13 @@ static int dpaa_port_fmc_port_parse(
 	const uint8_t mac_idx[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1};
 	const uint8_t mac_type[] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2};
 
+	if (pport->type == e_FM_PORT_TYPE_OH_OFFLINE_PARSING &&
+	    pport->number == fif->mac_idx &&
+	    fif->mac_type == fman_offline)
+		return current_port;
+
 	if (mac_idx[fif->mac_idx] != pport->number ||
-		mac_type[fif->mac_idx] != pport->type)
+	    mac_type[fif->mac_idx] != pport->type)
 		return -1;
 
 	return current_port;
@@ -238,8 +243,7 @@ static int dpaa_port_fmc_scheme_parse(
 		DPAA_PMD_WARN("Risk to receive pkts from skb pool to CRASH!");
 	}
 
-	if (e_IOC_FM_PCD_DONE ==
-		fmc_model->scheme[scheme_idx].next_engine) {
+	if (e_IOC_FM_PCD_DONE == fmc_model->scheme[scheme_idx].next_engine) {
 		for (i = 0; i < fmc_model->scheme[scheme_idx]
 			.key_extract_and_hash_params.hash_distribution_num_of_fqids; i++) {
 			uint32_t fqid = fmc_model->scheme[scheme_idx].base_fqid + i;
