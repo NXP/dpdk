@@ -422,14 +422,36 @@ Following are some pre-requisites:
         in either incorrectly configured I/O or I/O loss.
         For details of port numbering, refer the LSDK documentation.
 
-  For i.mx 8M (FEC) Platform:
+  For i.MX Platform:
   ~~~~~~~~~~~~~~~~~~
 
-  1. Bring up the imx-8mm-evk-rev board with latest kernel and dtb:
-	Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
-	On uboot set the dtb & boot linux using below commands:
-	1. setenv fdt_file imx8mm-evk-dpdk.dtb
-	2. boot
+  1.1 For i.MX8MM (FEC) Platform:
+    Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
+    Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
+    On uboot set the dtb & boot linux using below commands:
+    1. setenv fdt_file imx8mm-evk-dpdk.dtb
+    2. boot
+
+  1.2 For i.MX93 (FEC) Platform:
+    Bring up the iMX93 board with latest kernel.
+    On uboot, enable User space mode of the kernel driver & boot linux using below commands:
+    1. setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'
+    2. setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}'
+    3. fdt addr ${fdt_addr}
+    4. fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio"
+    5. setenv bootcmd 'mmc dev ${mmcdev}; run loadkernel; run mmcargs; run loadfdt; booti ${loadaddr} - ${fdt_addr};'
+    6. boot
+
+    The descriptions of the variables used above are as follows:
+    - mmcdev: MMC/SD device id.
+    - mmcpart: This is the partition on the MMC/SD card containing the kernel image.
+    - loadaddr: The address in the memory where the kernel is loaded.
+    - Image: Linux kernel image.
+    - fdt_addr: The address in the memory where the device tree is loaded.
+    - fdt_file: Used to specify the filename of the device tree file (DTB).
+    - mmcroot: The location of the root file system on the MMC SD card along with directives for the boot command for the rootfs.
+      For example,  mmcargs=setenv bootargs ${jh_clk} console=${console} root=${mmcroot}
+		    bootargs=console=ttyLP0,115200 earlycon root=/dev/mmcblk0p2 rootwait rw
 
   2. On Linux mount the hugetlbfs required for DPDK applications:
 	1. mkdir -p /dev/hugepages
@@ -448,7 +470,7 @@ Following are some pre-requisites:
   6. Run/observe traffic
      For functional testing, send the traffic from packet generator which is connected to the port.
 
-  NOTE: For i.mx 8M platform, For all the applications, user must provide the "--vdev"
+  NOTE: For i.MX platforms, all the applications, user must provide the "--vdev"
 	argument with value "net_enetfec" to enable ethernet device. Maximum supported
 	ethernet is currently 1 only.
 
