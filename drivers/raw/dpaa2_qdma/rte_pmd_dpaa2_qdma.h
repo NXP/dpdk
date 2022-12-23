@@ -121,8 +121,8 @@ struct rte_qdma_job {
 	uint16_t status;
 	uint16_t vq_id;
 	/**
-	 * FLE pool element maintained by user, in case no qDMA response.
-	 * Note: the address must be allocated from DPDK memory pool.
+	 * Job reference is used to identify which job is de-queued.
+	 * This is filled by user before eq operation.
 	 */
 	uint32_t job_ref;
 };
