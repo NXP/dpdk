@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2022 NXP
  */
 
 #include <stdio.h>
@@ -122,8 +122,6 @@ static uint64_t timer_period = 10; /* default period is 10 seconds */
 #define L2FWD_QDMA_FLE_POOL_QUEUE_COUNT		2048
 #define L2FWD_QDMA_MAX_VQS			128
 
-/* Determines H/W or virtual mode */
-uint8_t qdma_mode = RTE_QDMA_MODE_HW;
 uint8_t qdma_sg;
 
 /* Print out statistics on packets dropped */
@@ -271,7 +269,6 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		job->dest = (uint64_t)m_new_data;
 		job->len = m[i]->data_len;
 		job->cnxt = (uint64_t)qdma_job_cnxt;
-		job->flags = RTE_QDMA_JOB_SRC_PHY | RTE_QDMA_JOB_DEST_PHY;
 
 		qdma_job[i] = job;
 	}
@@ -332,8 +329,6 @@ l2fwd_qdma_main_loop(void)
 
 	q_config.lcore_id = lcore_id;
 	q_config.flags = RTE_QDMA_VQ_FD_LONG_FORMAT;
-	if (qdma_mode == RTE_QDMA_MODE_HW)
-		q_config.flags |= RTE_QDMA_VQ_EXCLUSIVE_PQ;
 	if (qdma_sg)
 		q_config.flags |= RTE_QDMA_VQ_FD_SG_FORMAT;
 	q_config.rbp = NULL;
@@ -415,7 +410,7 @@ l2fwd_launch_one_lcore(__attribute__((unused)) void *dummy)
 static void
 l2fwd_usage(const char *prgname)
 {
-	printf("%s [EAL options] -- -p PORTMASK [-q NQ] [-m qdma_mode] [-s qdma_sg]\n"
+	printf("%s [EAL options] -- -p PORTMASK [-q NQ] [-s qdma_sg]\n"
 	"  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
 	"  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
 	"  -T PERIOD: statistics will be refreshed each PERIOD seconds"
@@ -524,7 +519,7 @@ static const struct option lgopts[] = {
 static int
 l2fwd_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs, mode, sg;
+	int opt, ret, timer_secs, sg;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -564,17 +559,6 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			timer_period = timer_secs;
-			break;
-
-		/* mode */
-		case 'm':
-			mode = l2fwd_parse_mode(optarg);
-			if (mode < 0) {
-				printf("invalid mode\n");
-				l2fwd_usage(prgname);
-				return -1;
-			}
-			qdma_mode = mode;
 			break;
 
 		/* scatter gather */
@@ -904,8 +888,6 @@ main(int argc, char **argv)
 	if (ret)
 		rte_exit(EXIT_FAILURE, "QDMA reset failed\n");
 
-	qdma_config.max_hw_queues_per_core = L2FWD_QDMA_MAX_HW_QUEUES_PER_CORE;
-	qdma_config.fle_queue_pool_cnt = L2FWD_QDMA_FLE_POOL_QUEUE_COUNT;
 	qdma_config.max_vqs = L2FWD_QDMA_MAX_VQS;
 
 	dev_conf.dev_private = (void *)&qdma_config;
