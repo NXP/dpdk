@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2022 NXP
  *
  */
 
@@ -47,6 +47,8 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	struct dpaa2_bp_info *bp_info;
 	struct dpbp_attr dpbp_attr;
 	uint32_t bpid;
+	unsigned lcore_id;
+	struct rte_mempool_cache *cache;
 	int ret;
 
 	avail_dpbp = dpaa2_alloc_dpbp_dev();
@@ -135,6 +137,19 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	DPAA2_MEMPOOL_DEBUG("BP List created for bpid =%d", dpbp_attr.bpid);
 
 	h_bp_list = bp_list;
+	/* Update per core mempool cache threshold to optimal value which is
+	 * number of buffers that can be released to HW buffer pool in
+	 * a single API call.
+	 */
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		cache = &mp->local_cache[lcore_id];
+		DPAA2_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d\n",
+							lcore_id, cache->flushthresh,
+							(uint32_t)(cache->size + DPAA2_MBUF_MAX_ACQ_REL));
+		if (cache->flushthresh)
+			cache->flushthresh = cache->size + DPAA2_MBUF_MAX_ACQ_REL;
+	}
+
 	return 0;
 err3:
 	rte_free(bp_info);
