@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _RTE_LSX_PCIEP_BUS_H_
@@ -125,7 +125,8 @@ struct rte_lsx_pciep_device {
 	int rbp_win_init_flag;
 
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
-	uint64_t phy_addr[PCI_MAX_RESOURCE];
+	uint64_t phy_addr[PCI_MAX_RESOURCE]; /*PCIe inbound*/
+	uint64_t iov_addr[PCI_MAX_RESOURCE]; /*EP DMA*/
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint32_t mmsi_flag;
 	uint32_t init_flag;

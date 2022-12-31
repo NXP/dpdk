@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #include <unistd.h>
@@ -45,6 +45,7 @@
 #include <rte_lsx_pciep_bus.h>
 #include <rte_spinlock.h>
 
+#include <rte_fslmc.h>
 #include "lsx_pciep_dev.h"
 #include "lsx_pciep_ctrl.h"
 
@@ -1508,6 +1509,7 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 	const struct rte_memzone *mz;
 	size_t mz_size;
+	struct lsx_pciep_inbound_bar *ib_bar;
 
 	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
 		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
@@ -1524,31 +1526,23 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	bzero(mz_name, RTE_MEMZONE_NAMESIZE);
 
 	if (is_vf) {
+		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
 		if (ib_mem->vf_mz[pf][vf][bar_idx]) {
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->vf_mz[pf][vf][bar_idx]->name);
 
-			ep_dev->virt_addr[bar_idx] =
-				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
-			ep_dev->phy_addr[bar_idx] =
-				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_iova;
-
-			return 0;
+			goto config_ep_dev_addr;
 		}
 		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
 			"mz_pciep%d_pf%d_vf%d_bar%d",
 			ctlhw->hw.index, pf, vf, bar_idx);
 	} else {
+		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
 		if (ib_mem->pf_mz[pf][bar_idx]) {
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->pf_mz[pf][bar_idx]->name);
 
-			ep_dev->virt_addr[bar_idx] =
-				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
-			ep_dev->phy_addr[bar_idx] =
-				ib_mem->pf_ib_bar[pf][bar_idx].inbound_iova;
-
-			return 0;
+			goto config_ep_dev_addr;
 		}
 		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
 			"mz_pciep%d_pf%d_bar%d",
@@ -1567,6 +1561,13 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	}
 
 	return lsx_pciep_set_ib_win_mz(ep_dev, bar_idx, mz, 1);
+
+config_ep_dev_addr:
+	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
+	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
+	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
+
+	return 0;
 }
 
 int
@@ -1581,7 +1582,7 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
 	struct lsx_pciep_inbound_bar *ib_bar;
-	uint64_t size = mz->len;
+	uint64_t size = mz->len, phy, iova;
 
 	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
 		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
@@ -1595,64 +1596,67 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 		return -EINVAL;
 	}
 
+#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
+	phy = mz->iova;
+#else
+	if (lsx_pciep_hw_sim_get(ep_dev->pcie_id)) {
+		phy = mz->iova;
+	} else {
+		phy = rte_mem_virt2phy(mz->addr);
+		if (phy == RTE_BAD_IOVA)
+			return -EFAULT;
+	}
+#endif
+	iova = mz->iova;
+
 	if (is_vf) {
+		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
 		if (ib_mem->vf_mz[pf][vf][bar_idx]) {
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->vf_mz[pf][vf][bar_idx]->name);
 
-			ep_dev->virt_addr[bar_idx] =
-				ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
-
-			return 0;
+			goto config_ep_dev_addr;
 		}
 		ib_mem->vf_mz[pf][vf][bar_idx] = mz;
-		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
-		snprintf(ib_bar->name,
-			RTE_DEV_NAME_MAX_LEN - 1,
+		snprintf(ib_bar->name, RTE_DEV_NAME_MAX_LEN - 1,
 			"pciep%d_pf%d_vf%d_bar%d",
 			ctlhw->hw.index, pf, vf, bar_idx);
-		ib_bar->inbound_virt = (uint8_t *)mz->addr;
-		ib_bar->inbound_iova = mz->iova;
-		ib_bar->size = size;
 	} else {
+		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
 		if (ib_mem->pf_mz[pf][bar_idx]) {
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->pf_mz[pf][bar_idx]->name);
 
-			ep_dev->virt_addr[bar_idx] =
-				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
-
-			return 0;
+			goto config_ep_dev_addr;
 		}
 		ib_mem->pf_mz[pf][bar_idx] = mz;
-		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
 		snprintf(ib_bar->name, RTE_DEV_NAME_MAX_LEN - 1,
 			"pciep%d_pf%d_bar%d",
 			pcie_id, pf, bar_idx);
-		ib_bar->inbound_virt = (uint8_t *)mz->addr;
-		ib_bar->inbound_iova = mz->iova;
-		ib_bar->size = size;
 	}
+
+	ib_bar->inbound_virt = mz->addr;
+	ib_bar->inbound_iova = iova;
+	ib_bar->inbound_phy = phy;
+	ib_bar->size = size;
 
 	if (!lsx_pciep_hw_sim_get(ctlhw->hw.index)) {
 		ret = ctlhw->ops->pcie_cfg_ib_win(&ctlhw->hw,
 			pf, is_vf, vf,
-			bar_idx, mz->iova, size, 1);
+			bar_idx, phy, size, 1);
 		if (ret)
 			return ret;
 	}
 
-	if (!is_vf) {
-		ep_dev->virt_addr[bar_idx] =
-			ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
-		ep_dev->phy_addr[bar_idx] =
-			ib_mem->pf_ib_bar[pf][bar_idx].inbound_iova;
-	} else {
-		ep_dev->virt_addr[bar_idx] =
-			ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_virt;
-		ep_dev->phy_addr[bar_idx] =
-			ib_mem->vf_ib_bar[pf][vf][bar_idx].inbound_iova;
-	}
+	if (!is_vf)
+		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
+	else
+		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
+
+config_ep_dev_addr:
+	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
+	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
+	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
 
 	return 0;
 }
@@ -1660,11 +1664,11 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 #define OB_PF_INFO_DUMP_FORMAT(pci, pf, \
 		vir, phy, bus, size) \
 		"Outbound PEX%d PF%d:" \
-		"  MEM VIRT:%p" PRIx64 \
-		"  MEM:0x%" PRIx64 \
-		"  PCI:0x%" PRIx64 \
-		"  SIZE:0x%" PRIx64, \
-		pci, pf, (void *)vir, \
+		"  MEM VIRT:%p" \
+		"  MEM:0x%lx" \
+		"  PCI:0x%lx" \
+		"  SIZE:0x%lx", \
+		pci, pf, vir, \
 		(unsigned long)phy, \
 		(unsigned long)bus, \
 		(unsigned long)size
@@ -1672,11 +1676,11 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 #define OB_VF_INFO_DUMP_FORMAT(pci, pf, vf, \
 		vir, phy, bus, size) \
 		"Outbound PEX%d PF%d-VF%d:" \
-		"  MEM VIRT:%p" PRIx64 \
-		"  MEM:0x%" PRIx64 \
-		"  PCI:0x%" PRIx64 \
-		"  SIZE:0x%" PRIx64, \
-		pci, pf, vf, (void *)vir, \
+		"  MEM VIRT:%p" \
+		"  MEM:0x%lx" \
+		"  PCI:0x%lx" \
+		"  SIZE:0x%lx", \
+		pci, pf, vf, vir, \
 		(unsigned long)phy, \
 		(unsigned long)bus, \
 		(unsigned long)size
@@ -1775,9 +1779,31 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 		ep_dev->ob_virt_base =
 			lsx_pciep_map_region(ep_dev->ob_phy_base,
 				out_win_nb * ctlhw->out_win_size);
+		if (rte_fslmc_vfio_mem_dmamap((uint64_t)ep_dev->ob_virt_base,
+			ep_dev->ob_phy_base,
+			out_win_nb * ctlhw->out_win_size)) {
+			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
+				"VFIO map failed",
+				ep_dev->ob_virt_base, ep_dev->ob_phy_base,
+				out_win_nb * ctlhw->out_win_size);
+
+			return NULL;
+		}
 	} else {
 		ep_dev->ob_virt_base = ctlhw->out_vir +
 			ep_dev->ob_phy_base - ctlhw->hw.out_base;
+		if (!ctlhw->share_vfio_map) {
+			if (rte_fslmc_vfio_mem_dmamap((uint64_t)ctlhw->out_vir,
+				ctlhw->hw.out_base, ctlhw->hw.out_size)) {
+				LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
+					"Shared VFIO map failed",
+					ctlhw->out_vir, ctlhw->hw.out_base,
+					ctlhw->hw.out_size);
+
+				return NULL;
+			}
+		}
+		ctlhw->share_vfio_map++;
 	}
 
 	return ep_dev->ob_virt_base;
