@@ -316,39 +316,13 @@ lsinic_release_dma(struct rte_lsx_pciep_device *lsinic_dev)
 	return 0;
 }
 
-
-static inline unsigned long ilog2(unsigned long n)
-{
-	unsigned int e = 0;
-
-	while (n) {
-		if (n & ~((1 << 8) - 1)) {
-			e += 8;
-			n >>= 8;
-			continue;
-		}
-
-		if (n & ~((1 << 4) - 1)) {
-			e += 4;
-			n >>= 4;
-		}
-
-		for (;;) {
-			n >>= 1;
-			if (n == 0)
-				break;
-			e++;
-		}
-	}
-
-	return e;
-}
-
 static int
 lsinic_dev_config_init(struct lsinic_adapter *adapter)
 {
-	struct lsinic_dev_reg *cfg =
-		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
+	uint64_t size;
+	struct lsinic_dev_reg *cfg = LSINIC_REG_OFFSET(adapter->hw_addr,
+			LSINIC_DEV_REG_OFFSET);
+	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	cfg->rev = LSINIC_EP_DRV_VER_NUM;
 	cfg->rx_ring_max_num = LSINIC_RING_MAX_COUNT;
@@ -363,10 +337,8 @@ lsinic_dev_config_init(struct lsinic_adapter *adapter)
 	cfg->pf_idx = adapter->pf_idx;
 	cfg->vf_num = PCIE_MAX_VF_NUM;
 
-	if (adapter->rbp_enable)
-		cfg->obwin_size = ilog2(adapter->lsinic_dev->rbp_win_size);
-	else
-		cfg->obwin_size = ilog2(adapter->lsinic_dev->ob_win_size);
+	size = lsx_pciep_bus_ob_dma_size(lsinic_dev);
+	cfg->obwin_size = rte_log2_u64(size);
 
 	return 0;
 }
