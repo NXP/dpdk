@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #include <sys/queue.h>
@@ -1138,7 +1138,9 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	if (!rte_is_power_of_2(raw_size))
 		raw_size = rte_align32pow2(raw_size);
 
-	bd_bus_addr = LSINIC_READ_REG_64B(&q->ep_reg->r_descl);
+	bd_bus_addr = LSINIC_READ_REG(&q->ep_reg->r_desch);
+	bd_bus_addr = bd_bus_addr << 32;
+	bd_bus_addr |= LSINIC_READ_REG(&q->ep_reg->r_descl);
 	if (bd_bus_addr) {
 		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
 		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
@@ -3679,6 +3681,7 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		dma_rsrc_base |= q->ep_reg->rdmal;
 		offset = dma_rsrc_base - bd_bus_addr;
 		remote_dma_bd = (uint8_t *)q->rc_bd_mapped_addr + offset;
+		dma_rsrc_base += q->ob_base;
 	}
 
 	if (q->ep_mem_bd_type == EP_MEM_LONG_BD) {
@@ -3863,6 +3866,7 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	rc_bdr_reg = LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
 			LSINIC_RING_REG_OFFSET);
 
+	dma_src_base += q->ob_base;
 	dma_dst_base = DPAA2_VADDR_TO_IOVA(q->ep_bd_shared_addr);
 
 	if (q->ep_mem_bd_type == EP_MEM_LONG_BD) {
@@ -4029,12 +4033,14 @@ lsinic_queue_start(struct lsinic_queue *q)
 		}
 	}
 
-	bd_bus_addr = LSINIC_READ_REG_64B((uint64_t *)(&q->ep_reg->r_descl));
+	bd_bus_addr = LSINIC_READ_REG((&q->ep_reg->r_desch));
+	bd_bus_addr = bd_bus_addr << 32;
+	bd_bus_addr |= LSINIC_READ_REG((&q->ep_reg->r_descl));
 	if (bd_bus_addr) {
 		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
 		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
 	} else {
-		LSXINIC_PMD_WARN("%s(id:%d)No bd addr set from RC",
+		LSXINIC_PMD_ERR("%s%d No bd addr set from RC",
 			q->type == LSINIC_QUEUE_RX ?
 			"RXQ" : "TXQ", q->queue_id);
 		return -EINVAL;
