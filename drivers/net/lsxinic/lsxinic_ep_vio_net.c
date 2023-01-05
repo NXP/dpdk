@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -165,8 +165,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
 	adapter->ring_base =
 		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
-	adapter->ring_phy_base =
-		(uint64_t)lsx_dev->phy_addr[LSXVIO_RING_BAR_IDX];
+	adapter->ring_phy_base = lsx_dev->iov_addr[LSXVIO_RING_BAR_IDX];
 	adapter->ob_base = lsx_dev->ob_phy_base;
 	adapter->ob_virt_base = (uint8_t *)lsx_dev->ob_virt_base;
 	adapter->num_queues = 0;
