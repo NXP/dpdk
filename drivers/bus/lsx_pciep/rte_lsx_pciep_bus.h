@@ -105,24 +105,13 @@ struct rte_lsx_pciep_device {
 	int pf;
 	int vf;
 	int is_vf;
-	uint64_t ob_map_bus_base;
-	uint64_t ob_phy_base;
-	uint8_t *ob_virt_base;
-	uint64_t ob_win_size;
-	uint16_t ob_win_nb;
-	int ob_win_init_flag;
 	/*None-RBP device always uses the first window.*/
 	struct lsx_pciep_outbound ob_win[LSX_PCIEP_OB_MAX_NB];
 	uint8_t rbp_ob_win_nb;
 
 	/* MSI/MSIx information */
-	int msix_read_once;
 	void **msix_addr;
 	uint32_t *msix_data;
-
-	/* RBP window setting */
-	uint64_t rbp_win_size;
-	int rbp_win_init_flag;
 
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
 	uint64_t phy_addr[PCI_MAX_RESOURCE]; /*PCIe inbound*/
