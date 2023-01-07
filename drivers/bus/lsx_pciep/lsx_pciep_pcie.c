@@ -160,13 +160,17 @@ static void lsx_pciep_ctl_process_sriov(void)
 
 static int lsx_pciep_ctl_process_map(void)
 {
-	int i;
+	int i, ctl_nb = 0;
 	struct lsx_pciep_ctl_hw *ctlhw;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		ctlhw = &s_pctl_hw[i];
-		if (ctlhw->sim)
+		if (ctlhw->sim) {
+			/*Simulator is supported only in primary process*/
+			if (rte_eal_process_type() == RTE_PROC_PRIMARY)
+				ctl_nb++;
 			continue;
+		}
 		if (ctlhw->ep_enable) {
 			ctlhw->hw.dbi_vir =
 				lsx_pciep_map_region(ctlhw->hw.dbi_phy,
@@ -177,8 +181,10 @@ static int lsx_pciep_ctl_process_map(void)
 				return -ENOMEM;
 			}
 
-			if (ctlhw->hw.ob_policy != LSX_PCIEP_OB_SHARE)
+			if (ctlhw->hw.ob_policy != LSX_PCIEP_OB_SHARE) {
+				ctl_nb++;
 				continue;
+			}
 
 			ctlhw->out_vir =
 				lsx_pciep_map_region(ctlhw->hw.out_base,
@@ -188,10 +194,11 @@ static int lsx_pciep_ctl_process_map(void)
 
 				return -ENOMEM;
 			}
+			ctl_nb++;
 		}
 	}
 
-	return 0;
+	return ctl_nb;
 }
 
 int lsx_pciep_share_info_init(void)
@@ -234,12 +241,10 @@ int lsx_pciep_share_info_init(void)
 			goto share_info_init_done;
 
 		ret = lsx_pciep_ctl_process_map();
-		if (ret <= 0) {
-			ret = -ENODEV;
-			goto share_info_init_done;
-		} else {
+		if (ret > 0)
 			ret = 0;
-		}
+		else if (!ret)
+			ret = -ENODEV;
 	}
 share_info_init_done:
 
@@ -1349,8 +1354,13 @@ lsx_pciep_primary_init(void)
 		goto init_exit;
 
 	ret = lsx_pciep_ctl_process_map();
-	if (ret)
+	if (ret <= 0) {
+		if (!ret)
+			ret = -ENODEV;
 		goto init_exit;
+	} else {
+		ret = 0;
+	}
 
 	lsx_pciep_ctl_process_sriov();
 
