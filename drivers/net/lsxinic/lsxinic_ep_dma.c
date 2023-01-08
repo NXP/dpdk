@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2021 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #include <stdio.h>
@@ -35,13 +35,26 @@ lsinic_dma_acquire(int silent,
 
 	rte_spinlock_lock(&s_lsinic_dma_sl);
 
+acquire_again:
 	dma_idx = rte_dma_next_dev(s_lsinic_dma_idx);
+	if (dma_idx < 0) {
+		LSXINIC_PMD_ERR("No DMA available from DMA%d",
+			s_lsinic_dma_idx);
+		rte_spinlock_unlock(&s_lsinic_dma_sl);
+		return -EINVAL;
+	}
 	s_lsinic_dma_idx = dma_idx + 1;
 
 	ret = rte_dma_info_get(dma_idx, &dev_info);
 	if (ret) {
 		rte_spinlock_unlock(&s_lsinic_dma_sl);
 		return ret;
+	}
+
+	if (dev_info.nb_vchans) {
+		LSXINIC_PMD_INFO("DMA%d may be configured in another process",
+			dma_idx);
+		goto acquire_again;
 	}
 
 	if (nb_vchans > dev_info.max_vchans) {
