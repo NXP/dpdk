@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <unistd.h>
@@ -229,7 +229,7 @@ struct pciep_dw_proc_info {
 	int ib_nb;
 };
 
-struct pciep_dw_proc_info g_dw_proc_info[LSX_MAX_PCIE_NB];
+static struct pciep_dw_proc_info g_dw_proc_info[LSX_MAX_PCIE_NB];
 
 #define DWC_OB_PF_INFO_DUMP_FORMAT(pci, pf, \
 		phy, bus, size, win) \
@@ -1233,10 +1233,29 @@ pcie_dw_info_empty(struct pciep_dw_info *info)
 				goto finish_check;
 			}
 		}
+		for (j = 0; j < PCIE_DW_IB_WINS_NUM; j++) {
+			if (info->ib_win_used[i][j]) {
+				empty = 0;
+				goto finish_check;
+			}
+		}
 	}
 
 finish_check:
 	return empty;
+}
+
+static int
+pcie_dw_proc_info_empty(struct lsx_pciep_hw_low *hw)
+{
+	struct pciep_dw_proc_info *proc_info;
+
+	proc_info = &g_dw_proc_info[hw->index];
+	if (!proc_info->ob_nb && !proc_info->ob_shared_nb &&
+		!proc_info->ib_nb)
+		return 1;
+
+	return 0;
 }
 
 static void
@@ -1250,6 +1269,11 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 	uint64_t phy_start;
 
 	rte_spinlock_lock(&s_f_lock);
+	if (pcie_dw_proc_info_empty(hw)) {
+		rte_spinlock_unlock(&s_f_lock);
+		return;
+	}
+
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
