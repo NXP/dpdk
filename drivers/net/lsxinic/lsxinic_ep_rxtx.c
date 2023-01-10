@@ -1655,7 +1655,7 @@ static int
 lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 {
 	uint32_t i;
-	uint64_t bd_bus_addr, ob_offset, remote_base;
+	uint64_t bd_bus_addr, ob_offset, remote_base, ob_size;
 	int ret;
 	struct lsinic_adapter *adapter = q->adapter;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
@@ -1683,8 +1683,26 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	bd_bus_addr = bd_bus_addr << 32;
 	bd_bus_addr |= LSINIC_READ_REG(&q->ep_reg->r_descl);
 	if (bd_bus_addr) {
-		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
-		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
+		if (bd_bus_addr < adapter->rc_ring_bus_base) {
+			LSXINIC_PMD_ERR("%s%d %s(0x%lx) < %s(0x%lx)",
+				q->type == LSINIC_QUEUE_RX ?
+				"RXQ" : "TXQ", q->queue_id,
+				"BD PCIe address", bd_bus_addr,
+				"OB PCIe base",
+				adapter->rc_ring_bus_base);
+			return -EINVAL;
+		}
+		ob_offset = bd_bus_addr - adapter->rc_ring_bus_base;
+		ob_size = adapter->rc_ring_size;
+		if (ob_offset >= ob_size) {
+			LSXINIC_PMD_ERR("%s%d %s(0x%lx) > %s(0x%lx)",
+				q->type == LSINIC_QUEUE_RX ?
+				"RXQ" : "TXQ", q->queue_id,
+				"BD PCIe offset", ob_offset,
+				"OB PCIe size", ob_size);
+			return -EINVAL;
+		}
+		q->rc_bd_mapped_addr = adapter->rc_ring_virt_base + ob_offset;
 	} else {
 		rte_panic("No bd addr set from RC");
 	}
@@ -4848,7 +4866,7 @@ lsinic_queue_start(struct lsinic_queue *q)
 {
 	struct lsinic_ring_reg *ring_reg = q->ep_reg;
 	uint32_t msix_vector, cap;
-	uint64_t bd_bus_addr, ob_offset;
+	uint64_t bd_bus_addr, ob_offset, ob_size;
 	struct lsinic_adapter *adapter = q->adapter;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	struct lsinic_eth_reg *reg =
@@ -4885,8 +4903,26 @@ lsinic_queue_start(struct lsinic_queue *q)
 	bd_bus_addr = bd_bus_addr << 32;
 	bd_bus_addr |= LSINIC_READ_REG((&q->ep_reg->r_descl));
 	if (bd_bus_addr) {
-		ob_offset = bd_bus_addr - lsinic_dev->ob_map_bus_base;
-		q->rc_bd_mapped_addr = lsinic_dev->ob_virt_base + ob_offset;
+		if (bd_bus_addr < adapter->rc_ring_bus_base) {
+			LSXINIC_PMD_ERR("%s%d %s(0x%lx) < %s(0x%lx)",
+				q->type == LSINIC_QUEUE_RX ?
+				"RXQ" : "TXQ", q->queue_id,
+				"BD PCIe address", bd_bus_addr,
+				"BD PCIe base",
+				adapter->rc_ring_bus_base);
+			return -EINVAL;
+		}
+		ob_offset = bd_bus_addr - adapter->rc_ring_bus_base;
+		ob_size = adapter->rc_ring_size;
+		if (ob_offset >= ob_size) {
+			LSXINIC_PMD_ERR("%s%d %s(0x%lx) > %s(0x%lx)",
+				q->type == LSINIC_QUEUE_RX ?
+				"RXQ" : "TXQ", q->queue_id,
+				"BD PCIe offset", ob_offset,
+				"OB PCIe size", ob_size);
+			return -EINVAL;
+		}
+		q->rc_bd_mapped_addr = adapter->rc_ring_virt_base + ob_offset;
 	} else {
 		LSXINIC_PMD_ERR("%s%d No bd addr set from RC",
 			q->type == LSINIC_QUEUE_RX ?
@@ -5061,12 +5097,6 @@ lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	q->adapter = adapter;
 	q->type = type;
 
-	if (adapter->rbp_enable)
-		q->ob_base = 0;
-	else
-		q->ob_base = adapter->lsinic_dev->ob_phy_base;
-
-	q->ob_virt_base = adapter->lsinic_dev->ob_virt_base;
 	q->nb_desc = nb_desc;
 	q->new_desc_thresh = tx_rs_thresh;
 	q->queue_id = queue_idx;

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -235,7 +235,6 @@ struct lsinic_queue {
 	int16_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
-	uint8_t *ob_virt_base;
 
 	/* MSI-X */
 	uint32_t msix_irq;
