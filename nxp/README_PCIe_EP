@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2022 NXP
+# Copyright 2018-2023 NXP
 
 ===============================================================================
 NXP DPDK PCIe Endpoint README
@@ -9,9 +9,9 @@ i)  Endpoint build:
 export CROSS=aarch64-linux-gnu-
 export RTE_SDK=/Your/DPDK/path
 export RTE_TARGET=arm64-dpaa-linuxapp-gcc
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n
 cd examples/port_fwd
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n
 #Target image:
 #Endpoint example image: "example/port_fwd/build/port_fwd".
 
@@ -101,11 +101,9 @@ export P1_DIST_1='(1,0,2)'
 Define compile flag for both EP/RC build: "RTE_LSINIC_PKT_MERGE_ACROSS_PCIE"
 Example:
 EP:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
 RC X86:
-export EXTRA_KERNEL_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
-export EXTRA_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
-make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
+make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y EXTRA_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'
 
 #Following enviroments are set on EP.
 #Merge burst small packets to large packet.
@@ -248,7 +246,7 @@ export P1_DIST_1='(1,0,8)'
 export PORT_FWD_RING_FWD=1
 ./port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
-5) Secondary process is used to handle PCIe EP PMD and primary process
+6) Secondary process is used to handle PCIe EP PMD and primary process
    is used to handle reset devices(DPAA2, BBDEV etc).
 
              +-------port_fwd-----+
@@ -295,7 +293,7 @@ export P3_DIST_1='(3,0,8)'
 export PORT_FWD_RING_FWD=1
 ./port_fwd -c 0x100 -b fslmc:dpio.16 -b fslmc:dpio.17 -b fslmc:dpio.18 -b fslmc:dpio.19 -b fslmc:dpio.20 -b fslmc:dpio.21 -b fslmc:dpmcp.37 -n 1 --proc-type=secondary -- -p 0xc --config="$P2_DIST_1,$P3_DIST_1"
 
-5) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
+7) PCIe EP/RC PMD simulator setup and traffic measurment on single board.
    This is used to develope, debug and tuning PCIe EP framework if PCIe EP env is insufficient.
 
              +-----port_fwd----+
@@ -325,11 +323,17 @@ export ENABLE_PL_BIT=1
 export DPDMAI_COUNT=10
 export DPMCP_COUNT=2
 export DPRC=dprc.2
+export PORT0_FWD=2
+export PORT2_FWD=0
+export PORT1_FWD=3
+export PORT3_FWD=1
 export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
+export P2_DIST_1='(2,0,2)'
+export P3_DIST_1='(3,0,2)'
 export LSX_PCIE2_SIM=1
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
-./port_fwd -c 0x4 -n 1 --proc-type=primary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
+./port_fwd -c 0x4 -n 1 --proc-type=primary -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
 #Secondary RC process
 export P0_DIST_1='(0,0,8)'
@@ -342,9 +346,9 @@ export PORT1_FWD=0
 export SYSFS_PCI_DEVICES=/tmp
 ./port_fwd -c 0x100 -n 1 --proc-type=secondary -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
-6) PCIe EP/RC driver latency profiling.
+8) PCIe EP/RC driver latency profiling.
 i) EP cross build, define compile flag "LSXINIC_LATENCY_PROFILING" for EP:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DLSXINIC_LATENCY_PROFILING'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DLSXINIC_LATENCY_PROFILING'
 
 ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profiling log something like:
 
@@ -354,15 +358,13 @@ ii) Start traffic STC->MAC->PF->RC->PF->MAC->STC and check the EP latency profil
         X2(9828783,0.242861%) X4(564299,0.013943%) X10(91526,0.002262%)
         X20(7545,0.000186%) X40(1304,0.000032%) X100(0,0.000000%)
 
-7) Raw qDMA over PCIe throughput/latency benchmark.
+9) Raw qDMA over PCIe throughput/latency benchmark.
 i) Define compile flag for both EP/RC: "RTE_LSINIC_PCIE_RAW_TEST_ENABLE"
 Example:
 EP:
-make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y -DRTE_LSINIC_PCIE_RAW_TEST_ENABLE'
+make install T=arm64-dpaa-linuxapp-gcc CONFIG_RTE_LIBRTE_LSX_PCIEP_BUS=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_KNI_KMOD=n EXTRA_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE'
 RC X86:
-export EXTRA_KERNEL_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE=y'
-export EXTRA_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE=y'
-make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y
+make T=x86_64-native-linuxapp-gcc install CONFIG_RTE_EAL_IGB_UIO=y CONFIG_RTE_LIBRTE_LSXINIC_PMD=y CONFIG_RTE_LSXINIC_RC_KMOD=y EXTRA_CFLAGS='-DRTE_LSINIC_PCIE_RAW_TEST_ENABLE=y'
 
 ii)Environment settings on RC to start benchmark raw qDMA over PCIe:
 #benchmark raw qDMA PCIE from EP to RC:
@@ -372,7 +374,6 @@ export LSINIC_RC2EP_PCIE_RAW_TEST=1
 
 export LSINIC_RC2EP_PCIE_RAW_TEST_BD_NUM=64 /*default 512*/
 export LSINIC_PCIE_RAW_TEST_SIZE=60000 /*default 1024*/
-
 
 iii) Other options set on EP used for throughput/latency measurement:
 #Sanity data check for DMA from EP to RC:
@@ -389,16 +390,14 @@ export LSINIC_PCIE_RAW_TEST_SYNC_MODE=1
 #CPU copy between PCIe and EP DDR benchmark:
 export LSINIC_PCIE_RAW_TEST_CPU_MODE=1
 
-#Check throughput and latency by EP runtime LOG something like:
+#Check throughput by EP LOG something like:
 
-        EP->RC average latency us:87.402768, TX burst depth: 31.000000
-        RC->EP average latency us:89.581164, RX burst depth: 31.000000
-        Total txq:      total_pkts=1104839680 tx_pkts=1104839680 drop_pkts=0 ring_full=0
+        Total txq:      tx=1104839680 drop=0 full=0
 TX performance: 48.095560Gbps, fcs bits: 9086201528320
-        Total rxq:      rx-pkts=1078013120 drop_pkts=0 ring_full=0
+        Total rxq:      rx=1078013120 drop=0 full=0
 RX performance: 46.857894Gbps, fcs bits: 8865579898880
 
-8) VirtIO PCIe net device:
+10) VirtIO PCIe net device:
 i) EP running, same scenario as "Basic Test Setup mentioned above":
 export LSX_PCIE2_PF0_VIRTIO=1
 export LSX_PCIE2_PF1_VIRTIO=1
