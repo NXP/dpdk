@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -49,6 +49,7 @@
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
+#include <rte_pdump.h>
 
 #include "port_fwd.h"
 
@@ -1395,6 +1396,14 @@ main(int argc, char **argv)
 			s_proc_type = proc_standalone_secondary;
 		else
 			s_proc_type = proc_attach_secondary;
+	}
+
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		ret = rte_pdump_init();
+		if (ret) {
+			rte_exit(EXIT_FAILURE, "Failed to init pdump(%d)\n",
+				ret);
+		}
 	}
 
 	penv = getenv("PORT_FWD_RING_FWD");

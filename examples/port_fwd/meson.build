@@ -11,3 +11,6 @@
 sources = files(
 	'main.c',
 )
+
+includes += include_directories('../../lib/pdump')
+includes += include_directories('../../lib/bpf')
