@@ -441,7 +441,7 @@ Following are some pre-requisites:
      '/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
 
   5. Run-
-     ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0
+     ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
      ./dpdk-l3fwd -c 0x1 --vdev='net_enetfec'  -n 1 -- -p 0x1 --config="(0,0,0)" -P --parse-ptype
 
   6. Run/observe traffic
@@ -546,15 +546,15 @@ Following are some pre-requisites:
 
   Execute following commands to run the 'l2fwd' example application:
 
-  $ ./dpdk-l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1
+  $ ./dpdk-l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1 -P
 
   OR
 
-  $ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+  $ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -P
 
   For PPFE platform:
 
-  $ ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'eth_pfe0' --vdev='eth_pfe1' -- -p 0x3 -q 3
+  $ ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'eth_pfe0' --vdev='eth_pfe1' -- -p 0x3 -q 3 -P
 
   In the above commands, the port mask has been modified to support first and
   first two ports, respectively. Also, the Core mask has been modified to
@@ -1345,7 +1345,7 @@ On non-root user:
 
 1. export DPRC=dprc.2
 2. Execute the following command to run the 'l2fwd' example application:
-       ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+       ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -P
 
 
 ======================================================================================================================================================
