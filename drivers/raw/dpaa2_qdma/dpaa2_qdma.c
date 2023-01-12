@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <string.h>
@@ -35,10 +35,32 @@ static uint32_t dpaa2_coherent_alloc_cache;
 /* QDMA device */
 static struct qdma_device q_dev;
 
+struct qdma_dmadev_obj {
+	/** Pointer to Next instance */
+	TAILQ_ENTRY(qdma_dmadev_obj) next;
+	uint16_t object_id;
+};
+
+static int s_qdma_dmadev_max;
+static int s_qdma_dmadev_count;
+
+#define DPAA2_QDMA_MP_SYNC "dpaa2_qdma_mp_sync"
+
+#define DPAA2_QDMA_DRIVER_TYPE_QUERY 1
+struct dpaa2_qdma_mp_param {
+	int req;
+	uint16_t object_id;
+	uint16_t is_rawdev;
+};
+
 /* QDMA H/W queues list */
 TAILQ_HEAD(qdma_hw_queue_list, qdma_hw_queue);
 static struct qdma_hw_queue_list qdma_queue_list
 	= TAILQ_HEAD_INITIALIZER(qdma_queue_list);
+
+TAILQ_HEAD(qdma_dmadev_obj_list, qdma_dmadev_obj);
+static struct qdma_dmadev_obj_list s_qdmadev_obj_list
+	= TAILQ_HEAD_INITIALIZER(s_qdmadev_obj_list);
 
 static inline int
 qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
@@ -1869,26 +1891,173 @@ init_err:
 }
 
 static int
+dpaa2_qdma_mp_primary(const struct rte_mp_msg *msg,
+	const void *peer)
+{
+	int ret;
+	struct rte_mp_msg reply;
+	struct dpaa2_qdma_mp_param *r = (void *)reply.param;
+	const struct dpaa2_qdma_mp_param *m = (const void *)msg->param;
+	struct qdma_dmadev_obj *dmadev_obj, *tmp;
+
+	if (msg->len_param != sizeof(*m)) {
+		DPAA2_QDMA_ERR("msg len(%d) != sizeof(*m)(%d)",
+			msg->len_param, (int)sizeof(*m));
+		return -EINVAL;
+	}
+
+	memset(&reply, 0, sizeof(reply));
+
+	switch (m->req) {
+	case DPAA2_QDMA_DRIVER_TYPE_QUERY:
+		r->req = DPAA2_QDMA_DRIVER_TYPE_QUERY;
+		r->object_id = m->object_id;
+		r->is_rawdev = 1;
+		TAILQ_FOREACH_SAFE(dmadev_obj, &s_qdmadev_obj_list, next, tmp) {
+			if (dmadev_obj->object_id == m->object_id) {
+				r->is_rawdev = 0;
+				break;
+			}
+		}
+
+		break;
+	default:
+		DPAA2_QDMA_ERR("%s: Received invalid message!(%d)",
+			__func__, m->req);
+		return -ENOTSUP;
+	}
+
+	strcpy(reply.name, DPAA2_QDMA_MP_SYNC);
+	reply.len_param = sizeof(*r);
+	ret = rte_mp_reply(&reply, peer);
+
+	return ret;
+}
+
+static int
+dpaa2_qdma_mp_secondary(uint16_t object_id,
+	int *is_raw)
+{
+	int ret;
+	struct rte_mp_msg mp_req, *mp_rep;
+	struct rte_mp_reply mp_reply = {0};
+	struct timespec ts = {.tv_sec = 5, .tv_nsec = 0};
+	struct dpaa2_qdma_mp_param *p = (void *)mp_req.param;
+
+	p->req = DPAA2_QDMA_DRIVER_TYPE_QUERY;
+	p->object_id = object_id;
+	strcpy(mp_req.name, DPAA2_QDMA_MP_SYNC);
+	mp_req.len_param = sizeof(*p);
+	mp_req.num_fds = 0;
+
+	ret = rte_mp_request_sync(&mp_req, &mp_reply, &ts);
+	if (ret)
+		goto err_exit;
+
+	if (mp_reply.nb_received != 1) {
+		ret = -EIO;
+		goto err_exit;
+	}
+
+	mp_rep = &mp_reply.msgs[0];
+	p = (void *)mp_rep->param;
+	if (is_raw)
+		*is_raw = p->is_rawdev;
+	free(mp_reply.msgs);
+
+	return ret;
+
+err_exit:
+	if (mp_reply.msgs)
+		free(mp_reply.msgs);
+	DPAA2_QDMA_ERR("Cannot request DMA ID err(%d)", ret);
+
+	return ret;
+}
+
+static int
+dpaa2_qdma_drv_mp_sync(uint16_t object_id,
+	int *is_raw)
+{
+	static int primary_mp_init;
+	int ret = 0;
+
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY &&
+		!primary_mp_init) {
+		ret = rte_mp_action_register(DPAA2_QDMA_MP_SYNC,
+			dpaa2_qdma_mp_primary);
+		if (ret && rte_errno != ENOTSUP)
+			return ret;
+		primary_mp_init = 1;
+	} else if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		ret = dpaa2_qdma_mp_secondary(object_id, is_raw);
+	}
+
+	return ret;
+}
+
+static int
 rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_rawdev *rawdev;
-	int ret;
-	char env[64], *penv;
+	int ret, total;
+	char *penv;
+	struct qdma_dmadev_obj *dmadev_obj;
+	int is_raw = 0;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	sprintf(env, "DPAA2_QDMA%d_DMADEV_DRIVER",
-		dpaa2_dev->object_id);
-	penv = getenv(env);
-	if (penv && atoi(penv))
-		return dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
+	ret = dpaa2_qdma_drv_mp_sync(dpaa2_dev->object_id, &is_raw);
+	if (ret) {
+		DPAA2_QDMA_ERR("Driver(devid:%d) mp sync failed(%d)",
+			dpaa2_dev->object_id, ret);
+		return ret;
+	}
 
-#ifdef DPAA2_QDMA_OBJ_ID_DMADEV_START
-	if (dpaa2_dev->object_id >= DPAA2_QDMA_OBJ_ID_DMADEV_START)
-		return dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
-#endif
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		if (is_raw)
+			goto load_rawdev_driver;
+		else
+			goto load_dmadev_driver;
+	}
 
+	if (!s_qdma_dmadev_max) {
+		total = rte_fslmc_get_device_count(DPAA2_QDMA);
+		penv = getenv("DPAA2_QDMA_DMADEV_MAX");
+		if (penv) {
+			s_qdma_dmadev_max = atoi(penv);
+			if (s_qdma_dmadev_max > total ||
+				s_qdma_dmadev_max < 0)
+				s_qdma_dmadev_max = 0;
+		}
+		if (!s_qdma_dmadev_max)
+			s_qdma_dmadev_max = total / 2;
+	}
+
+	if (s_qdma_dmadev_count > s_qdma_dmadev_max)
+		goto load_rawdev_driver;
+
+load_dmadev_driver:
+	ret = dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
+	if (!ret) {
+		s_qdma_dmadev_count++;
+		dmadev_obj = rte_malloc(NULL,
+			sizeof(struct qdma_dmadev_obj), 0);
+		if (!dmadev_obj) {
+			ret = dpaa2_qdma_dmadev_remove(dpaa2_dev);
+			if (ret)
+				return ret;
+			return -ENOMEM;
+		}
+		dmadev_obj->object_id = dpaa2_dev->object_id;
+		TAILQ_INSERT_TAIL(&s_qdmadev_obj_list, dmadev_obj,
+			next);
+	}
+
+	return ret;
+
+load_rawdev_driver:
 	rawdev = rte_rawdev_pmd_allocate(dpaa2_dev->device.name,
 			sizeof(struct dpaa2_dpdmai_dev),
 			rte_socket_id());
@@ -1924,20 +2093,17 @@ rte_dpaa2_qdma_remove(struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_rawdev *rawdev;
 	int ret;
-	char env[64], *penv;
+	struct qdma_dmadev_obj *dmadev_obj, *tmp;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	sprintf(env, "DPAA2_QDMA%d_DMADEV_DRIVER",
-		dpaa2_dev->object_id);
-	penv = getenv(env);
-	if (penv && atoi(penv))
-		return dpaa2_qdma_dmadev_remove(dpaa2_dev);
-
-#ifdef DPAA2_QDMA_OBJ_ID_DMADEV_START
-	if (dpaa2_dev->object_id >= DPAA2_QDMA_OBJ_ID_DMADEV_START)
-		return dpaa2_qdma_dmadev_remove(dpaa2_dev);
-#endif
+	TAILQ_FOREACH_SAFE(dmadev_obj, &s_qdmadev_obj_list, next, tmp) {
+		if (dmadev_obj->object_id == dpaa2_dev->object_id) {
+			TAILQ_REMOVE(&s_qdmadev_obj_list, dmadev_obj, next);
+			rte_free(dmadev_obj);
+			return dpaa2_qdma_dmadev_remove(dpaa2_dev);
+		}
+	}
 
 	rawdev = dpaa2_dev->rawdev;
 
