@@ -32,9 +32,6 @@ int dpaa2_qdma_logtype;
 static uint32_t dpaa2_coherent_no_alloc_cache;
 static uint32_t dpaa2_coherent_alloc_cache;
 
-/* QDMA device */
-static struct qdma_device q_dev;
-
 struct qdma_dmadev_obj {
 	/** Pointer to Next instance */
 	TAILQ_ENTRY(qdma_dmadev_obj) next;
@@ -1286,6 +1283,194 @@ dpaa2_qdma_reset(struct rte_rawdev *rawdev)
 	return 0;
 }
 
+static void
+remove_hw_queues_from_list(struct dpaa2_dpdmai_dev *dpdmai_dev)
+{
+	struct qdma_hw_queue *queue = NULL;
+	struct qdma_hw_queue *tqueue = NULL;
+
+	DPAA2_QDMA_FUNC_TRACE();
+
+	TAILQ_FOREACH_SAFE(queue, &qdma_queue_list, next, tqueue) {
+		if (queue->dpdmai_dev == dpdmai_dev) {
+			TAILQ_REMOVE(&qdma_queue_list, queue, next);
+			rte_free(queue);
+			queue = NULL;
+		}
+	}
+}
+
+static int
+dpaa2_dpdmai_dev_hw_uninit(const struct rte_rawdev *rawdev)
+{
+	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
+	int ret, i;
+
+	DPAA2_QDMA_FUNC_TRACE();
+
+	/* Remove HW queues from global list */
+	remove_hw_queues_from_list(dpdmai_dev);
+
+	ret = dpdmai_disable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+		dpdmai_dev->token);
+	if (ret)
+		DPAA2_QDMA_ERR("dmdmai disable failed");
+
+	/* Set up the DQRR storage for Rx */
+	for (i = 0; i < dpdmai_dev->num_queues; i++) {
+		struct dpaa2_queue *rxq = &(dpdmai_dev->rx_queue[i]);
+
+		if (rxq->q_storage) {
+			dpaa2_free_dq_storage(rxq->q_storage);
+			rte_free(rxq->q_storage);
+		}
+	}
+
+	/* Close the device at underlying layer*/
+	ret = dpdmai_close(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+		dpdmai_dev->token);
+	if (ret)
+		DPAA2_QDMA_ERR("Failure closing dpdmai device");
+
+	return 0;
+}
+
+static int
+add_hw_queues_to_list(struct dpaa2_dpdmai_dev *dpdmai_dev)
+{
+	struct qdma_hw_queue *queue;
+	int i;
+
+	DPAA2_QDMA_FUNC_TRACE();
+
+	for (i = 0; i < dpdmai_dev->num_queues; i++) {
+		queue = rte_zmalloc(NULL, sizeof(struct qdma_hw_queue), 0);
+		if (!queue) {
+			DPAA2_QDMA_ERR(
+				"Memory allocation failed for QDMA queue");
+			return -ENOMEM;
+		}
+
+		queue->dpdmai_dev = dpdmai_dev;
+		queue->queue_id = i;
+
+		TAILQ_INSERT_TAIL(&qdma_queue_list, queue, next);
+		dpdmai_dev->qdma_dev->num_hw_queues++;
+	}
+
+	return 0;
+}
+
+static int
+dpaa2_dpdmai_dev_hw_init(const struct rte_rawdev *rawdev)
+{
+	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
+	struct dpdmai_rx_queue_cfg rx_queue_cfg;
+	struct dpdmai_attr attr;
+	struct dpdmai_rx_queue_attr rx_attr;
+	struct dpdmai_tx_queue_attr tx_attr;
+	int ret, i;
+
+	DPAA2_QDMA_FUNC_TRACE();
+
+	/* Open DPDMAI device */
+	ret = dpdmai_open(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+			  dpdmai_dev->dpdmai_id, &dpdmai_dev->token);
+	if (ret) {
+		DPAA2_QDMA_ERR("dpdmai_open() failed with err: %d", ret);
+		return ret;
+	}
+
+	/* Get DPDMAI attributes */
+	ret = dpdmai_get_attributes(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+			dpdmai_dev->token, &attr);
+	if (ret) {
+		DPAA2_QDMA_ERR("dpdmai get attributes failed with err: %d",
+			       ret);
+		goto init_err;
+	}
+	dpdmai_dev->num_queues = attr.num_of_queues;
+
+	/* Set up Rx Queues */
+	for (i = 0; i < dpdmai_dev->num_queues; i++) {
+		struct dpaa2_queue *rxq;
+
+		memset(&rx_queue_cfg, 0, sizeof(struct dpdmai_rx_queue_cfg));
+		ret = dpdmai_set_rx_queue(&dpdmai_dev->dpdmai,
+					  CMD_PRI_LOW,
+					  dpdmai_dev->token,
+					  i, 0, &rx_queue_cfg);
+		if (ret) {
+			DPAA2_QDMA_ERR("Setting Rx queue failed with err: %d",
+				       ret);
+			goto init_err;
+		}
+
+		/* Allocate DQ storage for the DPDMAI Rx queues */
+		rxq = &(dpdmai_dev->rx_queue[i]);
+		rxq->q_storage = rte_malloc("dq_storage",
+					    sizeof(struct queue_storage_info_t),
+					    RTE_CACHE_LINE_SIZE);
+		if (!rxq->q_storage) {
+			DPAA2_QDMA_ERR("q_storage allocation failed");
+			ret = -ENOMEM;
+			goto init_err;
+		}
+
+		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
+		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
+		if (ret) {
+			DPAA2_QDMA_ERR("dpaa2_alloc_dq_storage failed");
+			goto init_err;
+		}
+	}
+
+	/* Get Rx and Tx queues FQID's */
+	for (i = 0; i < dpdmai_dev->num_queues; i++) {
+		ret = dpdmai_get_rx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+					  dpdmai_dev->token, i, 0, &rx_attr);
+		if (ret) {
+			DPAA2_QDMA_ERR("Reading device failed with err: %d",
+				       ret);
+			goto init_err;
+		}
+		dpdmai_dev->rx_queue[i].fqid = rx_attr.fqid;
+
+		ret = dpdmai_get_tx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+					  dpdmai_dev->token, i, 0, &tx_attr);
+		if (ret) {
+			DPAA2_QDMA_ERR("Reading device failed with err: %d",
+				ret);
+			goto init_err;
+		}
+		dpdmai_dev->tx_queue[i].fqid = tx_attr.fqid;
+	}
+
+	/* Enable the device */
+	ret = dpdmai_enable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
+			dpdmai_dev->token);
+	if (ret) {
+		DPAA2_QDMA_ERR("Enabling device failed with err: %d", ret);
+		goto init_err;
+	}
+
+	/* Add the HW queue to the global list */
+	ret = add_hw_queues_to_list(dpdmai_dev);
+	if (ret) {
+		DPAA2_QDMA_ERR("Adding H/W queue to list failed");
+		goto init_err;
+	}
+
+	DPAA2_QDMA_DEBUG("Initialized dpdmai object successfully");
+
+	rte_spinlock_init(&dpdmai_dev->qdma_dev->lock);
+
+	return 0;
+init_err:
+	dpaa2_dpdmai_dev_hw_uninit(rawdev);
+	return ret;
+}
+
 static int
 dpaa2_qdma_configure(const struct rte_rawdev *rawdev,
 	rte_rawdev_obj_t config)
@@ -1295,6 +1480,7 @@ dpaa2_qdma_configure(const struct rte_rawdev *rawdev,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	uint16_t i;
+	int ret;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
@@ -1302,6 +1488,13 @@ dpaa2_qdma_configure(const struct rte_rawdev *rawdev,
 	if (qdma_dev->state == 1) {
 		DPAA2_QDMA_ERR("Configure should be int stopped state");
 		return -EBUSY;
+	}
+
+	ret = dpaa2_dpdmai_dev_hw_init(rawdev);
+	if (ret) {
+		DPAA2_QDMA_ERR("dpaa2 dma init failed");
+
+		return ret;
 	}
 
 	/* Allocate Virtual Queues */
@@ -1686,184 +1879,35 @@ static struct rte_rawdev_ops dpaa2_qdma_ops = {
 	.xstats_get = dpaa2_qdma_xstats_get,
 };
 
-static int
-add_hw_queues_to_list(struct dpaa2_dpdmai_dev *dpdmai_dev)
-{
-	struct qdma_hw_queue *queue;
-	int i;
-
-	DPAA2_QDMA_FUNC_TRACE();
-
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		queue = rte_zmalloc(NULL, sizeof(struct qdma_hw_queue), 0);
-		if (!queue) {
-			DPAA2_QDMA_ERR(
-				"Memory allocation failed for QDMA queue");
-			return -ENOMEM;
-		}
-
-		queue->dpdmai_dev = dpdmai_dev;
-		queue->queue_id = i;
-
-		TAILQ_INSERT_TAIL(&qdma_queue_list, queue, next);
-		dpdmai_dev->qdma_dev->num_hw_queues++;
-	}
-
-	return 0;
-}
-
 static void
-remove_hw_queues_from_list(struct dpaa2_dpdmai_dev *dpdmai_dev)
+dpaa2_dpdmai_dev_pre_uninit(struct rte_rawdev *rawdev)
 {
-	struct qdma_hw_queue *queue = NULL;
-	struct qdma_hw_queue *tqueue = NULL;
+	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	TAILQ_FOREACH_SAFE(queue, &qdma_queue_list, next, tqueue) {
-		if (queue->dpdmai_dev == dpdmai_dev) {
-			TAILQ_REMOVE(&qdma_queue_list, queue, next);
-			rte_free(queue);
-			queue = NULL;
-		}
+	if (dpdmai_dev->qdma_dev) {
+		rte_free(dpdmai_dev->qdma_dev);
+		dpdmai_dev->qdma_dev = NULL;
 	}
 }
 
 static int
-dpaa2_dpdmai_dev_uninit(struct rte_rawdev *rawdev)
+dpaa2_dpdmai_dev_pre_init(struct rte_rawdev *rawdev, int dpdmai_id)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
-	int ret, i;
-
-	DPAA2_QDMA_FUNC_TRACE();
-
-	/* Remove HW queues from global list */
-	remove_hw_queues_from_list(dpdmai_dev);
-
-	ret = dpdmai_disable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			     dpdmai_dev->token);
-	if (ret)
-		DPAA2_QDMA_ERR("dmdmai disable failed");
-
-	/* Set up the DQRR storage for Rx */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		struct dpaa2_queue *rxq = &(dpdmai_dev->rx_queue[i]);
-
-		if (rxq->q_storage) {
-			dpaa2_free_dq_storage(rxq->q_storage);
-			rte_free(rxq->q_storage);
-		}
-	}
-
-	/* Close the device at underlying layer*/
-	ret = dpdmai_close(&dpdmai_dev->dpdmai, CMD_PRI_LOW, dpdmai_dev->token);
-	if (ret)
-		DPAA2_QDMA_ERR("Failure closing dpdmai device");
-
-	return 0;
-}
-
-static int
-dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
-{
-	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
-	struct dpdmai_rx_queue_cfg rx_queue_cfg;
-	struct dpdmai_attr attr;
-	struct dpdmai_rx_queue_attr rx_attr;
-	struct dpdmai_tx_queue_attr tx_attr;
-	int ret, i;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
 	/* Open DPDMAI device */
 	dpdmai_dev->dpdmai_id = dpdmai_id;
 	dpdmai_dev->dpdmai.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
-	dpdmai_dev->qdma_dev = &q_dev;
-	ret = dpdmai_open(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			  dpdmai_dev->dpdmai_id, &dpdmai_dev->token);
-	if (ret) {
-		DPAA2_QDMA_ERR("dpdmai_open() failed with err: %d", ret);
-		return ret;
-	}
+	dpdmai_dev->qdma_dev = rte_malloc(NULL,
+		sizeof(struct qdma_device), 0);
+	if (!dpdmai_dev->qdma_dev) {
+		DPAA2_QDMA_ERR("qdma_dev malloc failed!");
 
-	/* Get DPDMAI attributes */
-	ret = dpdmai_get_attributes(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-				    dpdmai_dev->token, &attr);
-	if (ret) {
-		DPAA2_QDMA_ERR("dpdmai get attributes failed with err: %d",
-			       ret);
-		goto init_err;
-	}
-	dpdmai_dev->num_queues = attr.num_of_queues;
-
-	/* Set up Rx Queues */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		struct dpaa2_queue *rxq;
-
-		memset(&rx_queue_cfg, 0, sizeof(struct dpdmai_rx_queue_cfg));
-		ret = dpdmai_set_rx_queue(&dpdmai_dev->dpdmai,
-					  CMD_PRI_LOW,
-					  dpdmai_dev->token,
-					  i, 0, &rx_queue_cfg);
-		if (ret) {
-			DPAA2_QDMA_ERR("Setting Rx queue failed with err: %d",
-				       ret);
-			goto init_err;
-		}
-
-		/* Allocate DQ storage for the DPDMAI Rx queues */
-		rxq = &(dpdmai_dev->rx_queue[i]);
-		rxq->q_storage = rte_malloc("dq_storage",
-					    sizeof(struct queue_storage_info_t),
-					    RTE_CACHE_LINE_SIZE);
-		if (!rxq->q_storage) {
-			DPAA2_QDMA_ERR("q_storage allocation failed");
-			ret = -ENOMEM;
-			goto init_err;
-		}
-
-		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
-		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
-		if (ret) {
-			DPAA2_QDMA_ERR("dpaa2_alloc_dq_storage failed");
-			goto init_err;
-		}
-	}
-
-	/* Get Rx and Tx queues FQID's */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		ret = dpdmai_get_rx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-					  dpdmai_dev->token, i, 0, &rx_attr);
-		if (ret) {
-			DPAA2_QDMA_ERR("Reading device failed with err: %d",
-				       ret);
-			goto init_err;
-		}
-		dpdmai_dev->rx_queue[i].fqid = rx_attr.fqid;
-
-		ret = dpdmai_get_tx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-					  dpdmai_dev->token, i, 0, &tx_attr);
-		if (ret) {
-			DPAA2_QDMA_ERR("Reading device failed with err: %d",
-				       ret);
-			goto init_err;
-		}
-		dpdmai_dev->tx_queue[i].fqid = tx_attr.fqid;
-	}
-
-	/* Enable the device */
-	ret = dpdmai_enable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			    dpdmai_dev->token);
-	if (ret) {
-		DPAA2_QDMA_ERR("Enabling device failed with err: %d", ret);
-		goto init_err;
-	}
-
-	/* Add the HW queue to the global list */
-	ret = add_hw_queues_to_list(dpdmai_dev);
-	if (ret) {
-		DPAA2_QDMA_ERR("Adding H/W queue to list failed");
-		goto init_err;
+		return -ENOMEM;
 	}
 
 	if (!dpaa2_coherent_no_alloc_cache) {
@@ -1885,9 +1929,6 @@ dpaa2_dpdmai_dev_init(struct rte_rawdev *rawdev, int dpdmai_id)
 	rte_spinlock_init(&dpdmai_dev->qdma_dev->lock);
 
 	return 0;
-init_err:
-	dpaa2_dpdmai_dev_uninit(rawdev);
-	return ret;
 }
 
 static int
@@ -2072,7 +2113,7 @@ load_rawdev_driver:
 	rawdev->driver_name = dpaa2_drv->driver.name;
 
 	/* Invoke PMD device initialization function */
-	ret = dpaa2_dpdmai_dev_init(rawdev, dpaa2_dev->object_id);
+	ret = dpaa2_dpdmai_dev_pre_init(rawdev, dpaa2_dev->object_id);
 	if (ret) {
 		rte_rawdev_pmd_release(rawdev);
 		return ret;
@@ -2107,7 +2148,11 @@ rte_dpaa2_qdma_remove(struct rte_dpaa2_device *dpaa2_dev)
 
 	rawdev = dpaa2_dev->rawdev;
 
-	dpaa2_dpdmai_dev_uninit(rawdev);
+	ret = dpaa2_dpdmai_dev_hw_uninit(rawdev);
+	if (ret)
+		DPAA2_QDMA_ERR("Device hw uninit failed");
+
+	dpaa2_dpdmai_dev_pre_uninit(rawdev);
 
 	ret = rte_rawdev_pmd_release(rawdev);
 	if (ret)
