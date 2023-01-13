@@ -295,18 +295,23 @@ static int
 lsinic_release_dma(struct rte_lsx_pciep_device *lsinic_dev)
 {
 	struct rte_eth_dev *eth_dev = lsinic_dev->eth_dev;
-	struct lsinic_adapter *adapter = (struct lsinic_adapter *)
-		eth_dev->process_private;
+	struct lsinic_adapter *adapter = eth_dev->process_private;
 	int ret;
 
-	ret = lsinic_dma_release(adapter->txq_dma_id);
+	if (adapter->rawdev_dma)
+		ret = lsinic_dma_uninit();
+	else
+		ret = lsinic_dma_release(adapter->txq_dma_id);
 	if (ret)
 		return ret;
 	adapter->txq_dma_id = -1;
 	adapter->txq_dma_vchan_used = 0;
 	adapter->txq_dma_started = 0;
 
-	ret = lsinic_dma_release(adapter->rxq_dma_id);
+	if (adapter->rawdev_dma)
+		ret = lsinic_dma_uninit();
+	else
+		ret = lsinic_dma_release(adapter->rxq_dma_id);
 	if (ret)
 		return ret;
 	adapter->rxq_dma_id = -1;
@@ -898,6 +903,9 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 			return -ENODEV;
 		}
 	}
+
+	if (lsinic_dma_mp_sync_setup())
+		LSXINIC_PMD_WARN("DMA mp sync setup failed");
 
 	adapter = rte_zmalloc("ethdev process private adapter",
 				sizeof(struct lsinic_adapter),
