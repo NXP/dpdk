@@ -288,7 +288,8 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	}
 
 	/* Disable interrupt support on offline port*/
-	if (fif->mac_type == fman_offline)
+	if (fif->mac_type == fman_offline_internal ||
+	    fif->mac_type == fman_onic)
 		return 0;
 
 	/* if the interrupts were configured on this devices*/
@@ -417,6 +418,7 @@ static void dpaa_interrupt_handler(void *param)
 static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct fman_if *fif = dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -429,7 +431,8 @@ static int dpaa_eth_dev_start(struct rte_eth_dev *dev)
 	else
 		dev->tx_pkt_burst = dpaa_eth_queue_tx;
 
-	fman_if_enable_rx(dev->process_private);
+	if (fif->mac_type != fman_onic)
+		fman_if_enable_rx(dev->process_private);
 
 	return 0;
 }
@@ -440,7 +443,7 @@ static void dpaa_eth_dev_stop(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (!fif->is_shared_mac)
+	if (!fif->is_shared_mac && fif->mac_type != fman_onic)
 		fman_if_disable_rx(fif);
 	dev->tx_pkt_burst = dpaa_eth_tx_drop_all;
 }
@@ -462,7 +465,8 @@ static void dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	dpaa_eth_dev_stop(dev);
 
-	if (fif->mac_type == fman_offline)
+	if (fif->mac_type == fman_offline_internal ||
+	    fif->mac_type == fman_onic)
 		return;
 
 	/* Reset link to autoneg */
@@ -549,7 +553,8 @@ static int dpaa_eth_dev_info(struct rte_eth_dev *dev,
 					| ETH_LINK_SPEED_1G
 					| ETH_LINK_SPEED_2_5G
 					| ETH_LINK_SPEED_10G;
-	} else if (fif->mac_type == fman_offline) {
+	} else if (fif->mac_type == fman_offline_internal ||
+		   fif->mac_type == fman_onic) {
 		dev_info->speed_capa = ETH_LINK_SPEED_10M_HD
 					| ETH_LINK_SPEED_10M
 					| ETH_LINK_SPEED_100M_HD
@@ -656,7 +661,8 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 	ioctl_version = dpaa_get_ioctl_version_number();
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC &&
-	    fif->mac_type != fman_offline) {
+	    fif->mac_type != fman_offline_internal &&
+	    fif->mac_type != fman_onic) {
 		for (count = 0; count <= MAX_REPEAT_TIME; count++) {
 			ret = dpaa_get_link_status(__fif->node_name, link);
 			if (ret)
@@ -669,7 +675,8 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 		}
 	} else {
 		link->link_status = dpaa_intf->valid;
-		if (fif->mac_type == fman_offline) {
+		if (fif->mac_type == fman_offline_internal ||
+		    fif->mac_type == fman_onic) {
 			/*Max supported rate for O/H port is 3.75Mpps*/
 			link->link_speed = ETH_SPEED_NUM_2_5G;
 			link->link_duplex = ETH_LINK_FULL_DUPLEX;
@@ -819,7 +826,15 @@ dpaa_xstats_get_names_by_id(
 
 static int dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+
 	PMD_INIT_FUNC_TRACE();
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Enable promiscuous mode not supported on ONIC "
+			      "port");
+		return 0;
+	}
 
 	fman_if_promiscuous_enable(dev->process_private);
 
@@ -828,7 +843,15 @@ static int dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 
 static int dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+
 	PMD_INIT_FUNC_TRACE();
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Disable promiscuous mode not supported on ONIC "
+			      "port");
+		return 0;
+	}
 
 	fman_if_promiscuous_disable(dev->process_private);
 
@@ -837,7 +860,14 @@ static int dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 
 static int dpaa_eth_multicast_enable(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+
 	PMD_INIT_FUNC_TRACE();
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Enable Multicast not supported on ONIC port");
+		return 0;
+	}
 
 	fman_if_set_mcast_filter_table(dev->process_private);
 
@@ -846,7 +876,14 @@ static int dpaa_eth_multicast_enable(struct rte_eth_dev *dev)
 
 static int dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
 {
+	struct fman_if *fif = dev->process_private;
+
 	PMD_INIT_FUNC_TRACE();
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Disable Multicast not supported on ONIC port");
+		return 0;
+	}
 
 	fman_if_reset_mcast_filter_table(dev->process_private);
 
@@ -998,7 +1035,9 @@ int dpaa_rx_queue_setup_mpool(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 
 		/* For shared interface, it's done in kernel, skip.*/
-		if (!fif->is_shared_mac && fif->mac_type != fman_offline) {
+		if (!fif->is_shared_mac &&
+		    fif->mac_type != fman_offline_internal &&
+		    fif->mac_type != fman_onic) {
 			for (i = 0; i < nb_mp; i++)
 				dpaa_fman_if_pool_setup(dev, i);
 		}
@@ -1033,9 +1072,10 @@ int dpaa_rx_queue_setup_mpool(struct rte_eth_dev *dev, uint16_t queue_idx,
 	}
 
 	dpaa_intf->valid = 1;
-	DPAA_PMD_DEBUG("if:%s sg_on = %d, max_frm =%d\n", dpaa_intf->name,
-		fman_if_get_sg_enable(fif),
-		dev->data->dev_conf.rxmode.max_rx_pkt_len);
+	if (fif->mac_type != fman_onic)
+		DPAA_PMD_DEBUG("if:%s sg_on = %d, max_frm =%d\n",
+			       dpaa_intf->name, fman_if_get_sg_enable(fif),
+			       dev->data->dev_conf.rxmode.max_rx_pkt_len);
 	/* checking if push mode only, no error check for now */
 	if (!rxq->is_static &&
 	    dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
@@ -1316,7 +1356,8 @@ static int dpaa_link_down(struct rte_eth_dev *dev)
 	__fif = container_of(fif, struct __fman_if, __if);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC &&
-	    fif->mac_type != fman_offline)
+	    fif->mac_type != fman_offline_internal &&
+	    fif->mac_type != fman_onic)
 		dpaa_update_link_status(__fif->node_name, ETH_LINK_DOWN);
 	else
 		dpaa_eth_dev_stop(dev);
@@ -1333,7 +1374,8 @@ static int dpaa_link_up(struct rte_eth_dev *dev)
 	__fif = container_of(fif, struct __fman_if, __if);
 
 	if (dev->data->dev_flags & RTE_ETH_DEV_INTR_LSC &&
-	    fif->mac_type != fman_offline)
+	    fif->mac_type != fman_offline_internal &&
+	    fif->mac_type != fman_onic)
 		dpaa_update_link_status(__fif->node_name, ETH_LINK_UP);
 	else
 		dpaa_eth_dev_start(dev);
@@ -1434,8 +1476,13 @@ dpaa_dev_add_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fif->mac_type == fman_offline) {
+	if (fif->mac_type == fman_offline_internal) {
 		DPAA_PMD_DEBUG("Add MAC Address not supported on O/H port");
+		return 0;
+	}
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Add MAC Address not supported on ONIC port");
 		return 0;
 	}
 
@@ -1455,8 +1502,13 @@ dpaa_dev_remove_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fif->mac_type == fman_offline) {
+	if (fif->mac_type == fman_offline_internal) {
 		DPAA_PMD_DEBUG("Remove MAC Address not supported on O/H port");
+		return;
+	}
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Remove MAC Address not supported on ONIC port");
 		return;
 	}
 
@@ -1472,8 +1524,13 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (fif->mac_type == fman_offline) {
+	if (fif->mac_type == fman_offline_internal) {
 		DPAA_PMD_DEBUG("Set MAC Address not supported on O/H port");
+		return 0;
+	}
+
+	if (fif->mac_type == fman_onic) {
+		DPAA_PMD_INFO("Set MAC Address not supported on ONIC port");
 		return 0;
 	}
 
@@ -1813,7 +1870,8 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 		opts.fqd.context_a.hi |= DPAA_FQD_CTX_A_B0_FIELD_VALID;
 	}
 
-	if (fman_intf->mac_type == fman_offline) {
+	if (fman_intf->mac_type == fman_offline_internal ||
+	    fman_intf->mac_type == fman_onic) {
 		opts.fqd.context_a.lo = opts.fqd.context_a.lo |
 					DPAA_FQD_CTX_A2_VSPE_BIT;
 
@@ -1966,6 +2024,11 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			goto free_rx;
 		}
 		if (!num_rx_fqs) {
+			if (fman_intf->mac_type == fman_offline_internal ||
+			    fman_intf->mac_type == fman_onic) {
+				ret = -ENODEV;
+				goto free_rx;
+			}
 			DPAA_PMD_WARN("%s is not configured by FMC.",
 				dpaa_intf->name);
 		}
@@ -2135,7 +2198,8 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	DPAA_PMD_DEBUG("All frame queues created");
 
 	/* Get the initial configuration for flow control */
-	if (fman_intf->mac_type != fman_offline)
+	if (fman_intf->mac_type != fman_offline_internal &&
+	    fman_intf->mac_type != fman_onic)
 		dpaa_fc_set_default(dpaa_intf, fman_intf);
 
 	/* reset bpool list, initialize bpool dynamically */
@@ -2172,7 +2236,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		fman_intf->mac_addr.addr_bytes[4],
 		fman_intf->mac_addr.addr_bytes[5]);
 
-	if (!fman_intf->is_shared_mac && fman_intf->mac_type != fman_offline) {
+	if (!fman_intf->is_shared_mac &&
+	    fman_intf->mac_type != fman_offline_internal &&
+	    fman_intf->mac_type != fman_onic) {
 		/* Configure error packet handling */
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
@@ -2186,18 +2252,20 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fman_if_discard_rx_errors(fman_intf);
 #endif
 
-		/* Disable RX mode */
-		fman_if_disable_rx(fman_intf);
-		/* Disable promiscuous mode */
-		fman_if_promiscuous_disable(fman_intf);
-		/* Disable multicast */
-		fman_if_reset_mcast_filter_table(fman_intf);
-		/* Reset interface statistics */
-		fman_if_stats_reset(fman_intf);
-		/* Disable SG by default */
-		fman_if_set_sg(fman_intf, 0);
-		fman_if_set_maxfrm(fman_intf,
-				   RTE_ETHER_MAX_LEN + VLAN_TAG_SIZE);
+		if (fman_intf->mac_type != fman_onic) {
+			/* Disable RX mode */
+			fman_if_disable_rx(fman_intf);
+			/* Disable promiscuous mode */
+			fman_if_promiscuous_disable(fman_intf);
+			/* Disable multicast */
+			fman_if_reset_mcast_filter_table(fman_intf);
+			/* Reset interface statistics */
+			fman_if_stats_reset(fman_intf);
+			/* Disable SG by default */
+			fman_if_set_sg(fman_intf, 0);
+			fman_if_set_maxfrm(fman_intf,
+					   RTE_ETHER_MAX_LEN + VLAN_TAG_SIZE);
+		}
 	}
 
 	return 0;

@@ -216,7 +216,8 @@ static int dpaa_port_fmc_port_parse(
 
 	if (pport->type == e_FM_PORT_TYPE_OH_OFFLINE_PARSING &&
 	    pport->number == fif->mac_idx &&
-	    fif->mac_type == fman_offline)
+	    (fif->mac_type == fman_offline_internal ||
+	     fif->mac_type == fman_onic))
 		return current_port;
 
 	if (mac_idx[fif->mac_idx] != pport->number ||
