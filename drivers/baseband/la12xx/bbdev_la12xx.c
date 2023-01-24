@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <string.h>
@@ -41,6 +41,15 @@
 struct bbdev_la12xx_params {
 	int8_t modem_id; /*< LA12xx modem instance id */
 };
+
+#ifdef RTE_LA12XX_SOCKET
+struct la12xx_meta {
+	int socket_id;
+	rte_iova_t iova;
+};
+#endif
+
+int bbdev_socket_id;
 
 #define BBDEV_LA12XX_VDEV_MODEM_ID_ARG	"modem"
 #define LA12XX_MAX_MODEM	4
@@ -169,6 +178,25 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	return 0;
 }
 
+#ifdef RTE_LA12XX_SOCKET
+static int
+check_memseg(__rte_unused const struct rte_memseg_list *msl,
+	     const struct rte_memseg *ms, void *arg)
+{
+	struct la12xx_meta *meta = arg;
+
+	if (ms->iova == meta->iova) {
+		if (ms->socket_id != meta->socket_id)
+			BBDEV_LA12XX_PMD_DP_WARN("WARN: Mapping non BBDEV socket id"
+			       " %d memory to PCIe address space (BBDEV socket"
+			       " id = %d)\n",
+			       ms->socket_id, meta->socket_id);
+	}
+
+	return 0;
+}
+#endif
+
 static inline int
 map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 {
@@ -217,6 +245,13 @@ map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 
 	size = RTE_MIN(pci_map_query.mem_avail, mseg->len);
 
+#ifdef RTE_LA12XX_SOCKET
+	struct la12xx_meta meta;
+
+	meta.iova = mseg->iova;
+	meta.socket_id = RTE_LA12XX_SOCKET_ID;
+	rte_memseg_walk(check_memseg, &meta);
+#endif
 	/* Map last portion of the hugepage memory as in DPDK memory
 	 * allocation from hugepage starts from the end.
 	 */
@@ -241,6 +276,9 @@ map_second_hugepage_addr(ipc_userspace_t *ipc_priv, void *addr)
 	ipc_priv->hugepg_start[1].size =
 			ipc_priv->sys_map.hugepg_start.size;
 
+	BBDEV_LA12XX_PMD_DP_INFO("2nd hugepage Map %lx %p %zx\n",
+				  mseg->iova,
+				  mseg->addr, mseg->len);
 	return size;
 }
 
@@ -275,7 +313,8 @@ get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
 		return (uint32_t)(ipc_priv->hugepg_start[1].modem_phys +
 				  addr_diff);
 	} else {
-		BBDEV_LA12XX_PMD_ERR("Address not mapped over PCI");
+		BBDEV_LA12XX_PMD_ERR("Address not mapped over PCI %lx",
+				     (uint64_t) (addr));
 		return 0;
 	}
 }
@@ -322,7 +361,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	}
 
 	for (i = 0; i < q_priv->queue_size; i++) {
-		vaddr = rte_zmalloc(NULL, msg_size, RTE_CACHE_LINE_SIZE);
+		vaddr = rte_zmalloc_socket(NULL, msg_size, RTE_CACHE_LINE_SIZE,
+					   dev->data->socket_id);
 		if (!vaddr) {
 			BBDEV_LA12XX_PMD_ERR(
 				"Memory allocation failed for vaddr");
@@ -331,16 +371,16 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		q_priv->msg_ch_vaddr[i] = vaddr;
 	}
 
-	q_priv->host_params = rte_zmalloc(NULL, sizeof(host_ipc_params_t),
-			RTE_CACHE_LINE_SIZE);
+	q_priv->host_params = rte_zmalloc_socket(NULL, sizeof(host_ipc_params_t),
+			RTE_CACHE_LINE_SIZE, dev->data->socket_id);
 	if (!q_priv->host_params) {
 		BBDEV_LA12XX_PMD_ERR("Memory allocation failed for host_params");
 		return -ENOMEM;
 	}
 
 	if (q_priv->op_type != RTE_BBDEV_OP_RAW) {
-		feca_jobs = rte_zmalloc(NULL, sizeof(feca_job_t) * IPC_MAX_DEPTH,
-				RTE_CACHE_LINE_SIZE);
+		feca_jobs = rte_zmalloc_socket(NULL, sizeof(feca_job_t) * IPC_MAX_DEPTH,
+				RTE_CACHE_LINE_SIZE, dev->data->socket_id);
 		if (!feca_jobs) {
 			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for feca jobs");
 			return -ENOMEM;
@@ -392,7 +432,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		}
 		q_priv->la12xx_core_id = BBDEV_LA12XX_POLAR_DEC_CORE;
 		q_priv->feca_blk_id = 0;
-		cd_crc_stat = rte_malloc(NULL, sizeof(uint32_t), RTE_CACHE_LINE_SIZE);
+		cd_crc_stat = rte_malloc_socket(NULL, sizeof(uint32_t),
+				RTE_CACHE_LINE_SIZE, dev->data->socket_id);
 		if (!cd_crc_stat) {
 			BBDEV_LA12XX_PMD_ERR("Unable to callote cd crc mem");
 			return -1;
@@ -432,8 +473,9 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 
 	if (!q_priv->is_host_to_modem) {
 		for (i = 0; i < queue_conf->queue_size; i++) {
-			q_priv->bbdev_op[i] = rte_zmalloc(NULL,
-					sizeof(struct rte_bbdev_raw_op), 0);
+			q_priv->bbdev_op[i] = rte_zmalloc_socket(NULL,
+					sizeof(struct rte_bbdev_raw_op), 0,
+					dev->data->socket_id);
 			if (!q_priv->bbdev_op[i]) {
 				BBDEV_LA12XX_PMD_ERR(
 					"Memory allocation failed for bbdev_op[%d]", i);
@@ -506,8 +548,9 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 			q_priv->q_id);
 	} else {
 		/* Allocate memory for BD ring */
-		q_priv->vspa_ring = rte_zmalloc(NULL, sizeof(struct vspa_desc) *
-				q_priv->queue_size, RTE_CACHE_LINE_SIZE);
+		q_priv->vspa_ring = rte_zmalloc_socket(NULL, sizeof(struct vspa_desc) *
+				q_priv->queue_size, RTE_CACHE_LINE_SIZE,
+				dev->data->socket_id);
 		if (!q_priv->vspa_ring) {
 			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for vspa_ring");
 			return -ENOMEM;
@@ -558,8 +601,9 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 
 	/* If queue already configured, skip allocation */
 	if (!q_priv) {
-		q_priv = rte_zmalloc(NULL,
-			sizeof(struct bbdev_la12xx_q_priv), 0);
+		q_priv = rte_zmalloc_socket(NULL,
+			sizeof(struct bbdev_la12xx_q_priv), 0,
+			dev->data->socket_id);
 		if (!q_priv) {
 			BBDEV_LA12XX_PMD_ERR("Memory allocation failed for qpriv");
 			return -ENOMEM;
@@ -2190,8 +2234,9 @@ register_watchdog(struct bbdev_la12xx_private *priv)
 	PMD_INIT_FUNC_TRACE();
 
 	if (!priv->wdog) {
-		priv->wdog = rte_malloc(NULL,
-			sizeof(struct wdog), RTE_CACHE_LINE_SIZE);
+		priv->wdog = rte_malloc_socket(NULL,
+			sizeof(struct wdog), RTE_CACHE_LINE_SIZE,
+			bbdev_socket_id);
 
 		/* Register Modem & Watchdog */
 		ret = libwdog_register(priv->wdog, priv->modem_id);
@@ -2410,8 +2455,8 @@ get_hugepage_info(void)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* TODO - find a better way */
-	hp_info = rte_malloc(NULL, sizeof(struct hugepage_info), 0);
+	hp_info = rte_malloc_socket(NULL, sizeof(struct hugepage_info), 0,
+				    bbdev_socket_id);
 	if (!hp_info) {
 		BBDEV_LA12XX_PMD_ERR("Unable to allocate on local heap");
 		return NULL;
@@ -2490,7 +2535,8 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 		BBDEV_LA12XX_PMD_DEBUG("%lx %p %lx",
 				hp->paddr, hp->vaddr, hp->len);
 
-		ipc_priv = rte_zmalloc(0, sizeof(ipc_userspace_t), 0);
+		ipc_priv = rte_zmalloc_socket(0, sizeof(ipc_userspace_t), 0,
+				       dev->data->socket_id);
 		if (ipc_priv == NULL) {
 			BBDEV_LA12XX_PMD_ERR(
 				"Unable to allocate memory for ipc priv");
@@ -2649,8 +2695,9 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 	default_queue_conf.queue_size = instance->max_channel_depth;
 	if (!ipc_priv->channels[0]) {
 		for (i = 0; i < priv->max_queues; i++) {
-			ipc_priv_ch = rte_zmalloc(0,
-				sizeof(ipc_channel_us_t), 0);
+			ipc_priv_ch = rte_zmalloc_socket(0,
+				sizeof(ipc_channel_us_t), 0,
+				dev->data->socket_id);
 			if (ipc_priv_ch == NULL) {
 				BBDEV_LA12XX_PMD_ERR(
 					"Unable to allocate memory for channels");
@@ -2840,9 +2887,13 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 	if (bbdev == NULL)
 		return -ENODEV;
 
-	bbdev->data->dev_private = rte_zmalloc(name,
+#ifdef RTE_LA12XX_SOCKET
+	bbdev_socket_id = RTE_LA12XX_SOCKET_ID;
+#endif
+
+	bbdev->data->dev_private = rte_zmalloc_socket(name,
 			sizeof(struct bbdev_la12xx_private),
-			RTE_CACHE_LINE_SIZE);
+			RTE_CACHE_LINE_SIZE, bbdev_socket_id);
 	if (bbdev->data->dev_private == NULL) {
 		rte_bbdev_release(bbdev);
 		return -ENOMEM;
@@ -2867,6 +2918,7 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 	priv->la12xx_polar_dec_core = -1;
 	priv->num_valid_queues = 0;
 
+	bbdev->data->socket_id = bbdev_socket_id;
 	BBDEV_LA12XX_PMD_INFO("Setting Up %s: DevId=%d, ModemId=%d",
 				name, bbdev->data->dev_id, priv->modem_id);
 	ret = setup_la12xx_dev(bbdev);
@@ -2877,7 +2929,6 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 	}
 	bbdev->dev_ops = &pmd_ops;
 	bbdev->device = &vdev->device;
-	bbdev->data->socket_id = 0;
 	bbdev->intr_handle = NULL;
 
 	bbdev->enqueue_raw_op = enqueue_raw_op;

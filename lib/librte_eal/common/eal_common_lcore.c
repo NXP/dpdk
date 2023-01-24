@@ -189,6 +189,10 @@ rte_eal_cpu_init(void)
 					socket_id;
 		prev_socket_id = socket_id;
 	}
+#ifdef RTE_LA12XX_SOCKET
+	config->numa_nodes[config->numa_node_count++] = RTE_LA12XX_SOCKET_ID;
+#endif
+
 	RTE_LOG(INFO, EAL, "Detected %u NUMA nodes\n", config->numa_node_count);
 
 	return 0;

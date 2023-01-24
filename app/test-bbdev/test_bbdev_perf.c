@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <stdio.h>
@@ -461,7 +461,8 @@ create_mempools(struct active_device *ad, int socket_id,
 		/* Allocate 1G of memory so that memory from second
 		 * hugepage is also consumed
 		 */
-		void *dummy = rte_malloc(NULL, 1000 * 1024 * 1024, 0);
+		void *dummy = rte_malloc_socket(NULL, 1000 * 1024 * 1024, 0,
+						socket_id);
 		if (!dummy)
 			printf("dummy allocation failed\n");
 		RTE_SET_USED(dummy);
@@ -554,8 +555,8 @@ create_mempools(struct active_device *ad, int socket_id,
 		nb_seg = get_num_seg();
 
 		printf("bbuf size =%d and seg = %d\n", bbuf_size, nb_seg);
-		ops = rte_malloc(NULL, sizeof(struct rte_bbdev_enc_op *) *  ops_pool_size,
-				RTE_CACHE_LINE_SIZE);
+		ops = rte_malloc_socket(NULL, sizeof(struct rte_bbdev_enc_op *) *  ops_pool_size,
+				RTE_CACHE_LINE_SIZE, socket_id);
 		TEST_ASSERT_NOT_NULL(ops,
 				     "cannot allocate memory to hold buffers");
 		/* Create a bbuf pool */
@@ -3481,8 +3482,10 @@ throughput_test(struct active_device *ad,
 	lcore_function_t *throughput_function[RTE_MAX_LCORE];
 	uint16_t num_lcores;
 	enum rte_bbdev_op_type op_type;
+	int socket_id;
 
 	rte_bbdev_info_get(ad->dev_id, &info);
+	socket_id = GET_SOCKET(info.socket_id);
 
 	/* Set number of lcores */
 	num_lcores = get_vector_count();
@@ -3496,8 +3499,8 @@ throughput_test(struct active_device *ad,
 			(double)rte_get_tsc_hz() / 1000000000.0);
 
 	/* Allocate memory for thread parameters structure */
-	t_params = rte_zmalloc(NULL, num_lcores * sizeof(struct thread_params),
-			RTE_CACHE_LINE_SIZE);
+	t_params = rte_zmalloc_socket(NULL, num_lcores * sizeof(struct thread_params),
+			RTE_CACHE_LINE_SIZE, socket_id);
 	TEST_ASSERT_NOT_NULL(t_params, "Failed to alloc %zuB for t_params",
 			RTE_ALIGN(sizeof(struct thread_params) * num_lcores,
 				RTE_CACHE_LINE_SIZE));
@@ -4367,9 +4370,10 @@ latency_test(struct active_device *ad,
 	unsigned int lcore_id, used_cores = 0;
 	unsigned int master_lcore_id;
 	uint16_t num_lcores;
+	int socket_id;
 
 	rte_bbdev_info_get(ad->dev_id, &info);
-
+	socket_id = GET_SOCKET(info.socket_id);
 	/* Set number of lcores */
 	num_lcores = get_vector_count();
 	master_lcore_id = rte_lcore_id();
@@ -4380,8 +4384,8 @@ latency_test(struct active_device *ad,
 		num_lcores);
 
 	/* Allocate memory for thread parameters structure */
-	t_params = rte_zmalloc(NULL, num_lcores * sizeof(struct thread_params),
-			RTE_CACHE_LINE_SIZE);
+	t_params = rte_zmalloc_socket(NULL, num_lcores * sizeof(struct thread_params),
+			RTE_CACHE_LINE_SIZE, socket_id);
 	TEST_ASSERT_NOT_NULL(t_params, "Failed to alloc %zuB for t_params",
 			RTE_ALIGN(sizeof(struct thread_params) * num_lcores,
 				RTE_CACHE_LINE_SIZE));

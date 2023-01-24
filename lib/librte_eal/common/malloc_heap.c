@@ -557,10 +557,28 @@ alloc_more_mem_on_socket(struct malloc_heap *heap, size_t size, int socket,
 	n_other_msls = 0;
 	for (i = 0; i < RTE_MAX_MEMSEG_LISTS; i++) {
 		struct rte_memseg_list *msl = &mcfg->memsegs[i];
+#ifdef RTE_LA12XX_SOCKET
+		struct rte_fbarray *arr = &msl->memseg_arr;
+#endif
 
 		if (msl->socket_id != socket)
 			continue;
 
+#ifdef RTE_LA12XX_SOCKET
+		if (msl->socket_id == RTE_LA12XX_SOCKET_ID) {
+#ifdef RTE_LA12XX_SOCKET_MAX_SEG
+			if (arr->count == RTE_LA12XX_SOCKET_MAX_SEG) {
+#else
+			if (arr->count == 1) {
+#endif
+				printf("Cannot allocate more memory as already "
+				       "configured segments are attached to"
+				       " socket %d\n",
+				       RTE_LA12XX_SOCKET_ID);
+				return -1;
+			}
+		}
+#endif
 		if (msl->base_va == NULL)
 			continue;
 
