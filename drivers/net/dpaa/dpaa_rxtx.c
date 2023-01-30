@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019-2022 NXP
+ *   Copyright 2017,2019-2023 NXP
  *
  */
 
@@ -1023,7 +1023,7 @@ reallocate_mbuf(struct qman_fq *txq, struct rte_mbuf *mbuf)
 		/* Copy the data */
 		data = rte_pktmbuf_append(new_mbufs[0], bytes_to_copy);
 
-		rte_memcpy((uint8_t *)data, rte_pktmbuf_mtod_offset(mbuf,
+		rte_memcpy((uint8_t *)data, rte_pktmbuf_mtod_offset(temp_mbuf,
 			   void *, offset1), bytes_to_copy);
 
 		/* Set new offsets and the temp buffers */
