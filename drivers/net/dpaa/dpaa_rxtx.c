@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019-2022 NXP
+ *   Copyright 2017,2019-2023 NXP
  *
  */
 
@@ -982,7 +982,8 @@ static inline struct rte_mbuf *
 reallocate_mbuf(struct qman_fq *txq, struct rte_mbuf *mbuf)
 {
 	struct dpaa_if *dpaa_intf = txq->dpaa_intf;
-	struct dpaa_bp_info *bp_info = dpaa_intf->bp_info;
+	/* Using first attached mempool */
+	struct dpaa_bp_info *bp_info = dpaa_intf->bp_info[0];
 	struct rte_mbuf *new_mbufs[DPAA_SGT_MAX_ENTRIES + 1] = {0};
 	struct rte_mbuf *temp_mbuf;
 	int num_new_segs, mbuf_greater, ret, extra_seg = 0, i = 0;
