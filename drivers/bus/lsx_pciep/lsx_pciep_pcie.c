@@ -1520,9 +1520,31 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	const struct rte_memzone *mz;
 	size_t mz_size;
 	struct lsx_pciep_inbound_bar *ib_bar;
+	char *penv, *ptr;
+	char env[64];
+	uint64_t min_size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
 
-	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
-		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
+	if (is_vf) {
+		sprintf(env, "LSX_PCIE%d_PF%d_VF%d_BAR%d_MIN_SIZE",
+			pcie_id, pf, vf, bar_idx);
+	} else {
+		sprintf(env, "LSX_PCIE%d_PF%d_BAR%d_MIN_SIZE",
+			pcie_id, pf, bar_idx);
+	}
+	penv = getenv(env);
+	if (penv) {
+		if (strtol(penv, &ptr, 16) >= LSX_PCIEP_INBOUND_MIN_BAR_SIZE) {
+			min_size = strtol(penv, &ptr, 16);
+		} else if (atoi(penv) >= LSX_PCIEP_INBOUND_MIN_BAR_SIZE) {
+			min_size = atoi(penv);
+		} else {
+			LSX_PCIEP_BUS_WARN("%s = 0x%08x/0x%lx too small?",
+				env, atoi(penv), strtol(penv, &ptr, 16));
+		}
+	}
+
+	if (size < min_size)
+		size = min_size;
 	if (!rte_is_power_of_2(size))
 		size = rte_align64pow2(size);
 
