@@ -20,6 +20,9 @@ DEST_PORT 2152 2123
 # Protocol ID to be received by dpdk(UDP=17)
 PROTOCOL_ID 17
 
+#APP Host Mac Address
+APP_HOST_MAC_ADDR 00:11:22:33:44:55
+
 # LGW subnets list
 # List of subnets
 # LGW_IPV6 fdd4:365d:3a74:be0d:0000:0000:0000:0000/64
