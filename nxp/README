@@ -8,7 +8,7 @@ Supported Platforms (and their derivatives):
 2. DPAA  : LS1043, LS1046
 3. PPFE  : LS1012
 4. ENETC : LS1028
-5. FEC   : i.MX 8M Mini
+5. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -431,15 +431,48 @@ Following are some pre-requisites:
     1. setenv fdt_file imx8mm-evk-dpdk.dtb
     2. boot
 
-  1.2 For i.MX93 (FEC) Platform:
+	or
+
+  1.1 For i.MX8MM (FEC) Platform:
+    Use below steps on uboot to boot for DPDK after flasing the release images:
+    setenv fdt_file imx8mm-evk.dtb
+    setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'
+    setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}'
+    run loadkernel
+    run loadfdt
+    fdt addr ${fdt_addr}
+    fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio"
+    setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'
+    boot
+
+  1.2 For i.MX8MP (FEC) Platform:
+    Use below steps on uboot to boot for DPDK after flasing the release images:
+    setenv fdt_file imx8mp-evk.dtb
+    setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'
+    setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}'
+    run loadkernel
+    run loadfdt
+    fdt addr ${fdt_addr}
+    fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio"
+    setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'
+    boot
+
+     or
+
+    setenv fdt_file imx8mp-evk-dpdk.dtb
+    boot
+
+  1.3 For i.MX93 (FEC) Platform:
     Bring up the iMX93 board with latest kernel.
     On uboot, enable User space mode of the kernel driver & boot linux using below commands:
     1. setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'
     2. setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}'
-    3. fdt addr ${fdt_addr}
-    4. fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio"
-    5. setenv bootcmd 'mmc dev ${mmcdev}; run loadkernel; run mmcargs; run loadfdt; booti ${loadaddr} - ${fdt_addr};'
-    6. boot
+    3. run loadkernel
+    4. run loadfdt
+    5. fdt addr ${fdt_addr}
+    6. fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio"
+    7. setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'
+    8. boot
 
     The descriptions of the variables used above are as follows:
     - mmcdev: MMC/SD device id.
