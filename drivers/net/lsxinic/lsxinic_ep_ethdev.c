@@ -514,8 +514,13 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
-	adapter->cap = LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
-	adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
+	if (0) {
+		/* Disable BD read by DMA by default,
+		 * this is workaround to fix one-way traffic halt between PFs.
+		 */
+		adapter->cap = LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
+		adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
+	}
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 	penv = getenv("LSINIC_MERGE_PACKETS");
