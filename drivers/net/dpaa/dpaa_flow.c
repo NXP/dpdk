@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2022 NXP
+ * Copyright 2017-2023 NXP
  */
 
 /* System headers */
@@ -1153,6 +1153,10 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 	if (ret) {
 		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x\n",
 			     __FUNCTION__, -ret);
+
+		if (!port_handle_exists)
+			FM_PORT_Close(handle);
+
 		return -ret;
 	}
 
