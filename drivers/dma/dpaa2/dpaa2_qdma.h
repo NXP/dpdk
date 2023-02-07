@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef _DPAA2_QDMA_H_
@@ -200,8 +200,6 @@ struct qdma_cntx_long {
 struct dpaa2_dpdmai_dev {
 	/** Pointer to Next device instance */
 	TAILQ_ENTRY(dpaa2_qdma_device) next;
-	/** handle to DPDMAI object */
-	struct fsl_mc_io dpdmai;
 	/** HW ID for DPDMAI object */
 	uint32_t dpdmai_id;
 	/** Tocken of this device */
@@ -267,8 +265,6 @@ struct qdma_device {
 	struct qdma_virt_queue *vqs;
 	/** Total number of VQ's */
 	uint16_t num_vqs;
-	/** Device state - started or stopped */
-	uint8_t state;
 	uint8_t is_silent;
 };
 

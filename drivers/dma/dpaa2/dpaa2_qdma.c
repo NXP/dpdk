@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <rte_eal.h>
@@ -21,6 +21,8 @@ int dpaa2_qdma_logtype;
 
 static uint32_t dpaa2_coherent_no_alloc_cache;
 static uint32_t dpaa2_coherent_alloc_cache;
+
+static struct fsl_mc_io s_proc_mc_reg;
 
 static inline int
 qdma_cntx_idx_ring_eq(struct qdma_cntx_idx_ring *ring,
@@ -963,6 +965,9 @@ dpaa2_qdma_info_get(const struct rte_dma_dev *dev,
 	dev_info->max_vchans = dpdmai_dev->num_queues;
 	dev_info->max_desc = DPAA2_QDMA_MAX_DESC;
 	dev_info->min_desc = DPAA2_QDMA_MIN_DESC;
+	dev_info->dev_name = dev->device->name;
+	if (dpdmai_dev->qdma_dev)
+		dev_info->nb_vchans = dpdmai_dev->qdma_dev->num_vqs;
 
 	return 0;
 }
@@ -972,25 +977,102 @@ dpaa2_qdma_configure(struct rte_dma_dev *dev,
 	const struct rte_dma_conf *dev_conf,
 	uint32_t conf_sz)
 {
-	char name[32]; /* RTE_MEMZONE_NAMESIZE = 32 */
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	uint16_t i;
+	struct dpdmai_rx_queue_cfg rx_queue_cfg;
+	struct dpdmai_rx_queue_attr rx_attr;
+	struct dpdmai_tx_queue_attr tx_attr;
+	struct dpaa2_queue *rxq;
+	int ret = 0;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
 	RTE_SET_USED(conf_sz);
 
-	/* In case QDMA device is not in stopped state, return -EBUSY */
-	if (qdma_dev->state == 1) {
-		DPAA2_QDMA_ERR("%s Not stopped, configure failed.",
-			dev->data->dev_name);
-		return -EBUSY;
+	if (dev_conf->nb_vchans > dpdmai_dev->num_queues) {
+		DPAA2_QDMA_ERR("%s config queues(%d) > hw queues(%d)",
+			dev->data->dev_name, dev_conf->nb_vchans,
+			dpdmai_dev->num_queues);
+
+		return -ENOTSUP;
+	}
+
+	if (qdma_dev->vqs) {
+		DPAA2_QDMA_DEBUG("%s: queues de-config(%d)/re-config(%d)",
+			dev->data->dev_name,
+			qdma_dev->num_vqs, dev_conf->nb_vchans);
+		for (i = 0; i < qdma_dev->num_vqs; i++) {
+			if ((qdma_dev->vqs[i].num_enqueues !=
+				qdma_dev->vqs[i].num_dequeues) &&
+				!qdma_dev->is_silent) {
+				DPAA2_QDMA_ERR("VQ(%d) %ld jobs in dma.",
+					i, qdma_dev->vqs[i].num_enqueues -
+					qdma_dev->vqs[i].num_dequeues);
+				return -EBUSY;
+			}
+		}
+		for (i = 0; i < qdma_dev->num_vqs; i++) {
+			if (qdma_dev->vqs[i].fle_pool) {
+				rte_mempool_free(qdma_dev->vqs[i].fle_pool);
+				qdma_dev->vqs[i].fle_pool = NULL;
+			}
+			if (qdma_dev->vqs[i].ring_cntx_idx) {
+				rte_free(qdma_dev->vqs[i].ring_cntx_idx);
+				qdma_dev->vqs[i].ring_cntx_idx = NULL;
+			}
+			rxq = &dpdmai_dev->rx_queue[i];
+			if (rxq->q_storage) {
+				DPAA2_QDMA_DEBUG("%s rxq[%d] re-configure",
+					dev->data->dev_name, i);
+				dpaa2_free_dq_storage(rxq->q_storage);
+				rte_free(rxq->q_storage);
+				rxq->q_storage = NULL;
+			}
+		}
+		rte_free(qdma_dev->vqs);
+		qdma_dev->vqs = NULL;
+		qdma_dev->num_vqs = 0;
+	}
+
+	/* Set up Rx Queues */
+	for (i = 0; i < dev_conf->nb_vchans; i++) {
+		memset(&rx_queue_cfg, 0, sizeof(struct dpdmai_rx_queue_cfg));
+		rxq = &dpdmai_dev->rx_queue[i];
+		ret = dpdmai_set_rx_queue(&s_proc_mc_reg,
+				CMD_PRI_LOW,
+				dpdmai_dev->token,
+				i, 0, &rx_queue_cfg);
+		if (ret) {
+			DPAA2_QDMA_ERR("%s RXQ%d set failed(%d)",
+				dev->data->dev_name, i, ret);
+			return ret;
+		}
+	}
+
+	/* Get Rx and Tx queues FQID's */
+	for (i = 0; i < dev_conf->nb_vchans; i++) {
+		ret = dpdmai_get_rx_queue(&s_proc_mc_reg, CMD_PRI_LOW,
+				dpdmai_dev->token, i, 0, &rx_attr);
+		if (ret) {
+			DPAA2_QDMA_ERR("Get DPDMAI%d-RXQ%d failed(%d)",
+				dpdmai_dev->dpdmai_id, i, ret);
+			return ret;
+		}
+		dpdmai_dev->rx_queue[i].fqid = rx_attr.fqid;
+
+		ret = dpdmai_get_tx_queue(&s_proc_mc_reg, CMD_PRI_LOW,
+				dpdmai_dev->token, i, 0, &tx_attr);
+		if (ret) {
+			DPAA2_QDMA_ERR("Get DPDMAI%d-TXQ%d failed(%d)",
+				dpdmai_dev->dpdmai_id, i, ret);
+			return ret;
+		}
+		dpdmai_dev->tx_queue[i].fqid = tx_attr.fqid;
 	}
 
 	/* Allocate Virtual Queues */
-	sprintf(name, "qdma_%d_vq", dev->data->dev_id);
-	qdma_dev->vqs = rte_malloc(name,
+	qdma_dev->vqs = rte_zmalloc(NULL,
 		(sizeof(struct qdma_virt_queue) * dev_conf->nb_vchans),
 		RTE_CACHE_LINE_SIZE);
 	if (!qdma_dev->vqs) {
@@ -998,13 +1080,50 @@ dpaa2_qdma_configure(struct rte_dma_dev *dev,
 			dev->data->dev_name, dev_conf->nb_vchans);
 		return -ENOMEM;
 	}
-	for (i = 0; i < dev_conf->nb_vchans; i++)
+	for (i = 0; i < dev_conf->nb_vchans; i++) {
 		qdma_dev->vqs[i].vq_id = i;
+		rxq = &dpdmai_dev->rx_queue[i];
+		/* Allocate DQ storage for the DPDMAI Rx queues */
+		rxq->q_storage = rte_zmalloc(NULL,
+			sizeof(struct queue_storage_info_t),
+			RTE_CACHE_LINE_SIZE);
+		if (!rxq->q_storage) {
+			DPAA2_QDMA_ERR("%s Q[%d] storage alloc failed",
+				dev->data->dev_name, i);
+			ret = -ENOMEM;
+			goto alloc_failed;
+		}
+
+		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
+		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
+		if (ret) {
+			DPAA2_QDMA_ERR("%s Q[%d] dq storage alloc failed",
+				dev->data->dev_name, i);
+			ret = -ENOMEM;
+			goto alloc_failed;
+		}
+	}
 
 	qdma_dev->num_vqs = dev_conf->nb_vchans;
 	qdma_dev->is_silent = dev_conf->enable_silent;
 
 	return 0;
+
+alloc_failed:
+	for (i = 0; i < dev_conf->nb_vchans; i++) {
+		rxq = &dpdmai_dev->rx_queue[i];
+		if (rxq->q_storage) {
+			dpaa2_free_dq_storage(rxq->q_storage);
+			rte_free(rxq->q_storage);
+			rxq->q_storage = NULL;
+		}
+	}
+
+	rte_free(qdma_dev->vqs);
+	qdma_dev->vqs = NULL;
+	qdma_dev->num_vqs = 0;
+
+	return ret;
 }
 
 static int
@@ -1133,11 +1252,17 @@ static int
 dpaa2_qdma_start(struct rte_dma_dev *dev)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
-	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
+	int ret;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	qdma_dev->state = 1;
+	/* Enable the device */
+	ret = dpdmai_enable(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->token);
+	if (ret) {
+		DPAA2_QDMA_ERR("Enabling device failed with err: %d", ret);
+		return ret;
+	}
 
 	return 0;
 }
@@ -1146,36 +1271,39 @@ static int
 dpaa2_qdma_stop(struct rte_dma_dev *dev)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
-	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
+	int ret;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	qdma_dev->state = 0;
+	/* Disable the device */
+	ret = dpdmai_disable(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->token);
+	if (ret) {
+		DPAA2_QDMA_ERR("Disable device failed with err: %d", ret);
+		return ret;
+	}
 
 	return 0;
 }
 
 static int
-dpaa2_qdma_reset(struct rte_dma_dev *dev)
+dpaa2_qdma_close(struct rte_dma_dev *dev)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
+	struct dpaa2_queue *rxq;
 	int i;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	/* In case QDMA device is not in stopped state, return -EBUSY */
-	if (qdma_dev->state == 1) {
-		DPAA2_QDMA_ERR("%s Not stopped, reset failed.",
-			dev->data->dev_name);
-		return -EBUSY;
-	}
+	if (!qdma_dev)
+		return 0;
 
 	/* In case there are pending jobs on any VQ, return -EBUSY */
 	for (i = 0; i < qdma_dev->num_vqs; i++) {
 		if ((qdma_dev->vqs[i].num_enqueues !=
-		    qdma_dev->vqs[i].num_dequeues) &&
-		    !qdma_dev->is_silent) {
+			qdma_dev->vqs[i].num_dequeues) &&
+			!qdma_dev->is_silent) {
 			DPAA2_QDMA_ERR("VQ(%d) pending: eq(%ld) != dq(%ld)",
 				i, qdma_dev->vqs[i].num_enqueues,
 				qdma_dev->vqs[i].num_dequeues);
@@ -1183,9 +1311,32 @@ dpaa2_qdma_reset(struct rte_dma_dev *dev)
 		}
 	}
 
-	rte_free(qdma_dev->vqs);
-	qdma_dev->vqs = NULL;
+	/* Free RXQ storages */
+	for (i = 0; i < qdma_dev->num_vqs; i++) {
+		rxq = &dpdmai_dev->rx_queue[i];
+		if (rxq->q_storage) {
+			dpaa2_free_dq_storage(rxq->q_storage);
+			rte_free(rxq->q_storage);
+			rxq->q_storage = NULL;
+		}
+	}
 
+	if (qdma_dev->vqs) {
+		/* Free RXQ fle pool */
+		for (i = 0; i < qdma_dev->num_vqs; i++) {
+			if (qdma_dev->vqs[i].fle_pool) {
+				rte_mempool_free(qdma_dev->vqs[i].fle_pool);
+				qdma_dev->vqs[i].fle_pool = NULL;
+			}
+			if (qdma_dev->vqs[i].ring_cntx_idx) {
+				rte_free(qdma_dev->vqs[i].ring_cntx_idx);
+				qdma_dev->vqs[i].ring_cntx_idx = NULL;
+			}
+		}
+		rte_free(qdma_dev->vqs);
+		qdma_dev->vqs = NULL;
+	}
+ 
 	/* Reset QDMA device structure */
 	qdma_dev->num_vqs = 0;
 
@@ -1193,18 +1344,8 @@ dpaa2_qdma_reset(struct rte_dma_dev *dev)
 }
 
 static int
-dpaa2_qdma_close(__rte_unused struct rte_dma_dev *dev)
-{
-	DPAA2_QDMA_FUNC_TRACE();
-
-	dpaa2_qdma_reset(dev);
-
-	return 0;
-}
-
-static int
-dpaa2_qdma_stats_get(const struct rte_dma_dev *dmadev, uint16_t vchan,
-		    struct rte_dma_stats *rte_stats, uint32_t size)
+dpaa2_qdma_stats_get(const struct rte_dma_dev *dmadev,
+	uint16_t vchan, struct rte_dma_stats *rte_stats, uint32_t size)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dmadev->data->dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
@@ -1259,135 +1400,43 @@ static int
 dpaa2_dpdmai_dev_uninit(struct rte_dma_dev *dev)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
-	struct dpaa2_queue *rxq;
-	int ret, i;
+	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
+	int ret;
 
 	DPAA2_QDMA_FUNC_TRACE();
 
-	ret = dpdmai_disable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			dpdmai_dev->token);
-	if (ret) {
-		DPAA2_QDMA_ERR("dpdmai(%d) disable failed",
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		DPAA2_QDMA_DEBUG("Un-attach DMA(%d) in the 2nd proess.",
 			dpdmai_dev->dpdmai_id);
-	}
-
-	/* Set up the DQRR storage for Rx */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		rxq = &dpdmai_dev->rx_queue[i];
-		if (rxq->q_storage) {
-			dpaa2_free_dq_storage(rxq->q_storage);
-			rte_free(rxq->q_storage);
-		}
+		return 0;
 	}
 
 	/* Close the device at underlying layer*/
-	ret = dpdmai_close(&dpdmai_dev->dpdmai, CMD_PRI_LOW, dpdmai_dev->token);
+	ret = dpdmai_close(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->token);
 	if (ret) {
-		DPAA2_QDMA_ERR("dpdmai(%d) close failed",
-			dpdmai_dev->dpdmai_id);
+		DPAA2_QDMA_ERR("dpdmai(%d) close failed(%d)",
+			dpdmai_dev->dpdmai_id, ret);
+
+		return ret;
+	}
+
+	if (qdma_dev) {
+		rte_free(qdma_dev);
+		dpdmai_dev->qdma_dev = NULL;
 	}
 
 	return ret;
 }
 
 static int
-dpaa2_dpdmai_dev_init(struct rte_dma_dev *dev, int dpdmai_id)
+dpaa2_dpdmai_dev_init(struct rte_dma_dev *dev, uint32_t dpdmai_id)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
-	struct dpdmai_rx_queue_cfg rx_queue_cfg;
 	struct dpdmai_attr attr;
-	struct dpdmai_rx_queue_attr rx_attr;
-	struct dpdmai_tx_queue_attr tx_attr;
-	struct dpaa2_queue *rxq;
-	int ret, i;
+	int ret, err;
 
 	DPAA2_QDMA_FUNC_TRACE();
-
-	/* Open DPDMAI device */
-	dpdmai_dev->dpdmai_id = dpdmai_id;
-	dpdmai_dev->dpdmai.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
-	dpdmai_dev->qdma_dev = rte_malloc(NULL,
-		sizeof(struct qdma_device), RTE_CACHE_LINE_SIZE);
-	ret = dpdmai_open(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			dpdmai_dev->dpdmai_id, &dpdmai_dev->token);
-	if (ret) {
-		DPAA2_QDMA_ERR("%s: dma(%d) open failed(%d)",
-			__func__, dpdmai_dev->dpdmai_id, ret);
-		return ret;
-	}
-
-	/* Get DPDMAI attributes */
-	ret = dpdmai_get_attributes(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			dpdmai_dev->token, &attr);
-	if (ret) {
-		DPAA2_QDMA_ERR("%s: dma(%d) get attributes failed(%d)",
-			__func__, dpdmai_dev->dpdmai_id, ret);
-		goto init_err;
-	}
-	dpdmai_dev->num_queues = attr.num_of_queues;
-
-	/* Set up Rx Queues */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		memset(&rx_queue_cfg, 0, sizeof(struct dpdmai_rx_queue_cfg));
-		ret = dpdmai_set_rx_queue(&dpdmai_dev->dpdmai,
-				CMD_PRI_LOW,
-				dpdmai_dev->token,
-				i, 0, &rx_queue_cfg);
-		if (ret) {
-			DPAA2_QDMA_ERR("%s Q%d set failed(%d)",
-				dev->data->dev_name, i, ret);
-			goto init_err;
-		}
-
-		/* Allocate DQ storage for the DPDMAI Rx queues */
-		rxq = &dpdmai_dev->rx_queue[i];
-		rxq->q_storage = rte_malloc("dq_storage",
-			sizeof(struct queue_storage_info_t),
-			RTE_CACHE_LINE_SIZE);
-		if (!rxq->q_storage) {
-			DPAA2_QDMA_ERR("%s DQ info(Q%d) alloc failed",
-				dev->data->dev_name, i);
-			ret = -ENOMEM;
-			goto init_err;
-		}
-
-		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
-		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
-		if (ret) {
-			DPAA2_QDMA_ERR("%s DQ storage(Q%d) alloc failed(%d)",
-				dev->data->dev_name, i, ret);
-			goto init_err;
-		}
-	}
-
-	/* Get Rx and Tx queues FQID's */
-	for (i = 0; i < dpdmai_dev->num_queues; i++) {
-		ret = dpdmai_get_rx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-				dpdmai_dev->token, i, 0, &rx_attr);
-		if (ret) {
-			DPAA2_QDMA_ERR("Get DPDMAI%d-RXQ%d failed(%d)",
-				dpdmai_dev->dpdmai_id, i, ret);
-			goto init_err;
-		}
-		dpdmai_dev->rx_queue[i].fqid = rx_attr.fqid;
-
-		ret = dpdmai_get_tx_queue(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-				dpdmai_dev->token, i, 0, &tx_attr);
-		if (ret) {
-			DPAA2_QDMA_ERR("Get DPDMAI%d-TXQ%d failed(%d)",
-				dpdmai_dev->dpdmai_id, i, ret);
-			goto init_err;
-		}
-		dpdmai_dev->tx_queue[i].fqid = tx_attr.fqid;
-	}
-
-	/* Enable the device */
-	ret = dpdmai_enable(&dpdmai_dev->dpdmai, CMD_PRI_LOW,
-			    dpdmai_dev->token);
-	if (ret) {
-		DPAA2_QDMA_ERR("Enabling device failed with err: %d", ret);
-		goto init_err;
-	}
 
 	if (!dpaa2_coherent_no_alloc_cache) {
 		if (dpaa2_svr_family == SVR_LX2160A) {
@@ -1403,19 +1452,71 @@ dpaa2_dpdmai_dev_init(struct rte_dma_dev *dev, int dpdmai_id)
 		}
 	}
 
-	DPAA2_QDMA_DEBUG("Initialized dpdmai object successfully");
+	if (!s_proc_mc_reg.regs)
+		s_proc_mc_reg.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
 
-	/* Reset the QDMA device */
-	ret = dpaa2_qdma_reset(dev);
-	if (ret) {
-		DPAA2_QDMA_ERR("Resetting QDMA failed");
-		goto init_err;
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		DPAA2_QDMA_DEBUG("Attach DMA(%d) in the 2nd proess.",
+			dpdmai_id);
+		if (dpdmai_id != dpdmai_dev->dpdmai_id) {
+			DPAA2_QDMA_ERR("Fatal: Attach DMA(%d) to DMA(%d)",
+				dpdmai_id, dpdmai_dev->dpdmai_id);
+			return -EINVAL;
+		}
+		if (!dpdmai_dev->qdma_dev) {
+			DPAA2_QDMA_ERR("Fatal: DMA(%d) qdma_dev NOT allocated",
+				dpdmai_id);
+			return -ENOMEM;
+		}
+		if (dpdmai_dev->qdma_dev->num_vqs) {
+			DPAA2_QDMA_WARN("DMA(%d) %d vqs were configured",
+				dpdmai_id, dpdmai_dev->qdma_dev->num_vqs);
+		}
+
+		return 0;
 	}
 
+	/* Open DPDMAI device */
+	dpdmai_dev->dpdmai_id = dpdmai_id;
+
+	if (dpdmai_dev->qdma_dev) {
+		rte_free(dpdmai_dev->qdma_dev);
+		dpdmai_dev->qdma_dev = NULL;
+	}
+	dpdmai_dev->qdma_dev = rte_zmalloc(NULL,
+		sizeof(struct qdma_device), RTE_CACHE_LINE_SIZE);
+	if (!dpdmai_dev->qdma_dev) {
+		DPAA2_QDMA_ERR("DMA(%d) alloc memory failed",
+			dpdmai_id);
+		return -ENOMEM;
+	}
+	ret = dpdmai_open(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->dpdmai_id, &dpdmai_dev->token);
+	if (ret) {
+		DPAA2_QDMA_ERR("%s: dma(%d) open failed(%d)",
+			__func__, dpdmai_dev->dpdmai_id, ret);
+		return ret;
+	}
+
+	/* Get DPDMAI attributes */
+	ret = dpdmai_get_attributes(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->token, &attr);
+	if (ret) {
+		DPAA2_QDMA_ERR("%s: dma(%d) get attributes failed(%d)",
+			__func__, dpdmai_dev->dpdmai_id, ret);
+		err = dpdmai_close(&s_proc_mc_reg, CMD_PRI_LOW,
+			dpdmai_dev->token);
+		if (err) {
+			DPAA2_QDMA_ERR("dpdmai(%d) close failed(%d)",
+				dpdmai_dev->dpdmai_id, err);
+		}
+		return ret;
+	}
+	dpdmai_dev->num_queues = attr.num_of_queues;
+
+	DPAA2_QDMA_DEBUG("DMA(%d) is initialized.", dpdmai_id);
+
 	return 0;
-init_err:
-	dpaa2_dpdmai_dev_uninit(dev);
-	return ret;
 }
 
 static int
