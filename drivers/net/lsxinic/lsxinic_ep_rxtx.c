@@ -976,9 +976,6 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 {
 	struct lsinic_queue *queue = NULL;
 
-	if (txq->core_id != RTE_MAX_LCORE)
-		return 0;
-
 	if (!RTE_PER_LCORE(lsinic_txq_list_initialized)) {
 		TAILQ_INIT(&RTE_PER_LCORE(lsinic_txq_list));
 		RTE_PER_LCORE(lsinic_txq_list_initialized) = 1;
@@ -992,6 +989,9 @@ static int lsinic_add_txq_to_list(struct lsinic_queue *txq)
 	}
 
 	TAILQ_INSERT_TAIL(&RTE_PER_LCORE(lsinic_txq_list), txq, next);
+	/* Rewrite core ID and thread ID because polling context
+	 * may differs from the context to start this txq.
+	 */
 	txq->core_id = rte_lcore_id();
 	txq->pid = pthread_self();
 	RTE_PER_LCORE(lsinic_txq_num_in_list)++;
@@ -3827,6 +3827,7 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	rte_spinlock_unlock(&adapter->txq_dma_start_lock);
 
 	q->core_id = rte_lcore_id();
+	q->pid = pthread_self();
 
 	if (q->dma_bd_update & DMA_BD_RC2EP_UPDATE)
 		q->rdma_bd_start = 0;
@@ -4006,6 +4007,7 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	rte_spinlock_unlock(&adapter->rxq_dma_start_lock);
 
 	q->core_id = rte_lcore_id();
+	q->pid = pthread_self();
 
 	if (q->dma_bd_update & DMA_BD_RC2EP_UPDATE)
 		q->rdma_bd_start = 0;
@@ -5507,6 +5509,9 @@ lsinic_txq_loop(void)
 	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
 	uint16_t ret, i, xmit_ret;
 
+	if (unlikely(!RTE_PER_LCORE(pthrd_id)))
+		RTE_PER_LCORE(pthrd_id) = pthread_self();
+
 	/* Check if txq already added to list */
 	RTE_TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsinic_txq_list), next, tq) {
 		adapter = q->adapter;
@@ -5515,8 +5520,14 @@ lsinic_txq_loop(void)
 			if (!lsinic_queue_running(q))
 				continue;
 		}
-		if (unlikely(q->multi_core_ring &&
-			q->core_id == rte_lcore_id())) {
+
+		if (unlikely(q->core_id != rte_lcore_id())) {
+			TAILQ_REMOVE(&RTE_PER_LCORE(lsinic_txq_list),
+				q, next);
+			continue;
+		}
+
+		if (q->multi_core_ring) {
 			ret = rte_ring_sc_dequeue_burst(q->multi_core_ring,
 				(void **)tx_pkts, DEFAULT_TX_RS_THRESH, NULL);
 			if (ret) {
@@ -5524,12 +5535,6 @@ lsinic_txq_loop(void)
 				for (i = xmit_ret; i < ret; i++)
 					rte_pktmbuf_free(tx_pkts[i]);
 			}
-		}
-
-		if (unlikely(q->core_id != rte_lcore_id())) {
-			TAILQ_REMOVE(&RTE_PER_LCORE(lsinic_txq_list),
-				q, next);
-			continue;
 		}
 
 		if (!adapter->txq_dma_silent) {
@@ -6586,6 +6591,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->crc_len = 0;
 	rxq->drop_en = rx_conf->rx_drop_en;
 	rxq->core_id = RTE_MAX_LCORE;
+	rxq->pid = 0;
 	rte_spinlock_init(&rxq->multi_core_lock);
 
 	/* using RC's tx ring to receive EP's packets */
