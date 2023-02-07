@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
-#ifndef _LSX_VIRTIO_COMMON_H_
-#define _LSX_VIRTIO_COMMON_H_
+#ifndef _LSXINIC_VIO_COMMON_H_
+#define _LSXINIC_VIO_COMMON_H_
 
 #include "lsxinic_common.h"
 
@@ -132,14 +132,18 @@ struct lsxvio_short_desc {
 	uint32_t len;
 };
 
-#define	BASE_TO_COMMON(base) ((void *)((base) + LSXVIO_COMMON_OFFSET))
+#define	BASE_TO_COMMON(base) \
+	((void *)((uint8_t *)(base) + LSXVIO_COMMON_OFFSET))
 #define	BASE_TO_QUEUE(base, i) \
-	((void *)((base) + LSXVIO_COMMON_OFFSET + \
+	((void *)((uint8_t *)(base) + LSXVIO_COMMON_OFFSET + \
 	sizeof(struct lsxvio_common_cfg) + \
 	(i) * sizeof(struct lsxvio_queue_cfg)))
-#define	BASE_TO_NOTIFY(base) (((base) + LSXVIO_NOTIFY_OFFSET))
-#define	BASE_TO_ISR(base) ((void *)((base) + LSXVIO_ISR_OFFSET))
-#define	BASE_TO_DEVICE(base) ((void *)((base) + LSXVIO_DEVICE_OFFSET))
+#define	BASE_TO_NOTIFY(base, q_off) \
+	((void *)((uint8_t *)(base) + LSXVIO_NOTIFY_OFFSET + (q_off)))
+#define	BASE_TO_ISR(base) \
+	((void *)((uint8_t *)(base) + LSXVIO_ISR_OFFSET))
+#define	BASE_TO_DEVICE(base) \
+	((void *)((uint8_t *)(base) + LSXVIO_DEVICE_OFFSET))
 
 #define LSXVIO_DEVICE_MAX_SIZE 0x1000
 #define LSXVIO_CONFIG_BAR_MAX_SIZE \
@@ -150,6 +154,13 @@ struct lsxvio_short_desc {
 #define LSXVIO_RING_BAR_MAX_SIZE \
 	(LSXVIO_PER_RING_MEM_MAX_SIZE * LSXVIO_MAX_QUEUES)
 
+#define RING_BASE_OFF_VIRT(base, q) \
+	((void *)((uint8_t *)(base) + \
+	(q)->queue_notify_off * LSXVIO_PER_RING_MEM_MAX_SIZE))
+
+#define RING_BASE_OFF_PHY(base, q) \
+	((base) + (q)->queue_notify_off * LSXVIO_PER_RING_MEM_MAX_SIZE)
+
 #define LSXVIO_CONFIG_BAR_IDX 0
 #define LSXVIO_RING_BAR_IDX 2
-#endif /* _LSX_VIRTIO_COMMON_H_ */
+#endif /* _LSXINIC_VIO_COMMON_H_ */

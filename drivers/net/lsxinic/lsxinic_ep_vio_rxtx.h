@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
-#ifndef _LSX_RXTX_H_
-#define _LSX_RXTX_H_
+#ifndef _LSXINIC_EP_VIO_RXTX_H_
+#define _LSXINIC_EP_VIO_RXTX_H_
 
 #include <rte_ethdev.h>
 #include <rte_dmadev.h>
@@ -146,7 +146,6 @@ struct lsxvio_queue {
 	int32_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
-	uint8_t *ob_virt_base;
 
 	/* MSI-X */
 	uint32_t msix_irq;

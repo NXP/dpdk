@@ -160,13 +160,9 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		LSXVIO_RING_BAR_IDX,
 		LSXVIO_RING_BAR_MAX_SIZE);
 
-	adapter->cfg_base =
-		(uint64_t)lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
-	adapter->ring_base =
-		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
+	adapter->cfg_base = lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
+	adapter->ring_base = lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
 	adapter->ring_phy_base = lsx_dev->iov_addr[LSXVIO_RING_BAR_IDX];
-	adapter->ob_base = lsx_dev->ob_phy_base;
-	adapter->ob_virt_base = lsx_dev->ob_virt_base;
 	adapter->num_queues = 0;
 	adapter->num_descs = LSXVIO_MAX_RING_DESC;
 #if (LSX_VIRTIO_NET_FEATURES & (1ULL << VIRTIO_F_VERSION_1))
@@ -176,7 +172,8 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #endif
 
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_virtio_init(adapter->cfg_base, device_id, lsx_feature);
+	lsxvio_virtio_init((uint64_t)adapter->cfg_base,
+		device_id, lsx_feature);
 
 	return 0;
 }
@@ -188,8 +185,8 @@ lsxvio_uninit_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
 		eth_dev->data->dev_private;
 
-	adapter->cfg_base = 0;
-	adapter->ring_base = 0;
+	adapter->cfg_base = NULL;
+	adapter->ring_base = NULL;
 	adapter->pf_idx = 0;
 	adapter->is_vf = 0;
 	adapter->vf_idx = 0;
