@@ -1259,6 +1259,7 @@ lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 
 		jobs[bd_num] = &vq->dma_jobs[start_idx];
 		jobs[bd_num]->src = sdesc->addr_offset + vq->mem_base;
+		jobs[bd_num]->src += vq->ob_base;
 		jobs[bd_num]->len = sdesc->len;
 #ifdef LSXVIO_REMOTE_PKT_DUMP
 		lsxvio_dump_remote_buf(vq->adapter, jobs[bd_num]->src,
