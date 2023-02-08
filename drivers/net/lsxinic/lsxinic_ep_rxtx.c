@@ -702,8 +702,8 @@ lsinic_rxq_dma_eq(void *q, int append, int dma_bd)
 {
 	struct lsinic_queue *queue = q;
 	struct lsinic_queue *txq = queue->pair;
-	int ret;
-	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx, j, k;
+	int ret, loop;
+	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx, j, k, dq;
 	struct rte_dma_sge src[LSINIC_QDMA_EQ_MAX_NB];
 	struct rte_dma_sge dst[LSINIC_QDMA_EQ_MAX_NB];
 	uint16_t max_jobs_nb, bd_jobs_nb = 0, bd_size, txq_bd_jobs_nb = 0;
@@ -817,6 +817,7 @@ lsinic_rxq_dma_eq(void *q, int append, int dma_bd)
 		dst[i + j + k].length = idx_len;
 	}
 
+eq_again:
 	if (ep_cap & LSINIC_EP_CAP_RXQ_SG_DMA) {
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
@@ -837,8 +838,29 @@ lsinic_rxq_dma_eq(void *q, int append, int dma_bd)
 		queue->jobs_avail_idx += nb_jobs;
 		queue->bytes_eq += len_total;
 		queue->pkts_eq += nb_jobs;
+		queue->bd_eq += (bd_jobs_nb + txq_bd_jobs_nb);
 	} else {
-		queue->errors++;
+		if (!queue->adapter->rxq_dma_silent) {
+			loop = 0;
+			dq = 0;
+			while (!dq) {
+				dq = queue->dma_dq(queue);
+				loop++;
+				if (loop > 1000)
+					break;
+			}
+			if (dq)
+				goto eq_again;
+		}
+		nb_jobs -= (bd_jobs_nb + txq_bd_jobs_nb);
+		LSXINIC_PMD_ERR("RXQ rxbd(%d)/txbd(%d)/data(%d)",
+			bd_jobs_nb, txq_bd_jobs_nb,
+			nb_jobs);
+		LSXINIC_PMD_ERR("RXQ BD: eq(%ld)/dq(%ld)",
+			queue->bd_eq, queue->bd_dq);
+		LSXINIC_PMD_ERR("RXQ PKT: eq(%ld)/dq(%ld)",
+			queue->pkts_eq, queue->pkts_dq);
+		queue->errors += nb_jobs;
 	}
 	lsinic_rxq_print_local_bd(queue, ep_cap, last_pir, pir, 100);
 	lsinic_txq_print_local_bd(txq, ep_cap, txq_last_pir, txq_pir, 100);
@@ -852,13 +874,13 @@ static inline void
 lsinic_txq_dma_eq(void *q, int append)
 {
 	struct lsinic_queue *queue = q;
-	int ret;
+	int ret, loop;
 	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx;
 	struct rte_dma_sge src[LSINIC_QDMA_EQ_MAX_NB];
 	struct rte_dma_sge dst[LSINIC_QDMA_EQ_MAX_NB];
 	struct lsinic_dma_job *jobs[LSINIC_QDMA_EQ_MAX_NB];
 	struct lsinic_dma_job *e2r_bd_jobs;
-	uint16_t txq_bd_jobs_num = 0;
+	uint16_t txq_bd_jobs_num = 0, dq;
 	uint16_t bd_jobs_len, max_jobs_nb;
 	uint32_t txq_dma_bd_start = queue->wdma_bd_start;
 	uint16_t txq_bd_step = queue->wdma_bd_len;
@@ -944,6 +966,7 @@ lsinic_txq_dma_eq(void *q, int append)
 			jobs[i]->len);
 	}
 
+eq_again:
 	if (ep_cap & LSINIC_EP_CAP_TXQ_SG_DMA) {
 		ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
 			src, dst,
@@ -964,9 +987,28 @@ lsinic_txq_dma_eq(void *q, int append)
 		for (i = 0; i < (nb_jobs - txq_bd_jobs_num); i++)
 			queue->bytes_eq += jobs[i]->len;
 		queue->pkts_eq += (nb_jobs - txq_bd_jobs_num);
+		queue->bd_eq += txq_bd_jobs_num;
 	} else {
-		LSXINIC_PMD_ERR("LSINIC QDMA enqueue failed!");
-		queue->errors++;
+		if (!queue->adapter->txq_dma_silent) {
+			loop = 0;
+			dq = 0;
+			while (!dq) {
+				dq = queue->dma_dq(queue);
+				loop++;
+				if (loop > 10000)
+					break;
+			}
+			if (dq)
+				goto eq_again;
+		}
+		LSXINIC_PMD_ERR("TXQ txbd(%d)/data(%d)",
+			txq_bd_jobs_num,
+			(nb_jobs - txq_bd_jobs_num));
+		LSXINIC_PMD_ERR("TXQ BD: eq(%ld)/dq(%ld)",
+			queue->bd_eq, queue->bd_dq);
+		LSXINIC_PMD_ERR("TXQ PKT: eq(%ld)/dq(%ld)",
+			queue->pkts_eq, queue->pkts_dq);
+		queue->errors += (nb_jobs - txq_bd_jobs_num);
 	}
 
 	queue->wdma_bd_start = LSINIC_BD_DMA_START_FLAG;
@@ -4490,6 +4532,7 @@ lsinic_txq_dma_dq(void *q)
 			idx = idx_completed[i];
 		} else {
 			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
+			txq->bd_dq++;
 			continue;
 		}
 		dma_job = &txq->dma_jobs[idx];
@@ -4841,7 +4884,8 @@ lsinic_rxq_dma_dq(void *q)
 	int i, ret = 0;
 	uint16_t idx_completed[LSINIC_QDMA_DQ_MAX_NB], idx;
 
-	if (rxq->pkts_eq == rxq->pkts_dq)
+	if (rxq->pkts_eq == rxq->pkts_dq &&
+		rxq->bd_eq == rxq->bd_dq)
 		return 0;
 
 	ret = rte_dma_completed(rxq->adapter->rxq_dma_id,
@@ -4855,6 +4899,7 @@ lsinic_rxq_dma_dq(void *q)
 			idx = idx_completed[i];
 		} else {
 			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
+			rxq->bd_dq++;
 			continue;
 		}
 		rxe = &rxq->sw_ring[idx];
