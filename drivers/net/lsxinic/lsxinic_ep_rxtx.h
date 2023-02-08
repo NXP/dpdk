@@ -311,6 +311,8 @@ struct lsinic_queue {
 	uint64_t bytes_eq;
 	uint64_t pkts_dq;
 	uint64_t pkts_eq;
+	uint64_t bd_dq;
+	uint64_t bd_eq;
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	struct lsinic_pcie_raw_test pcie_raw_test;
