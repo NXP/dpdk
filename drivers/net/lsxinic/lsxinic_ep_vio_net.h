@@ -86,7 +86,7 @@ struct lsxvio_adapter {
 	struct lsxvio_tx_queue_list txq_list[RTE_MAX_LCORE];
 
 	uint32_t merge_threshold;
-} __packed;
+};
 
 #define lsxvio_DEV_PRIVATE_TO_ADAPTER(data)\
 	((struct lsxvio_adapter *)adapter)
