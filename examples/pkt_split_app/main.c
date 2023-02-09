@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <stdio.h>
@@ -51,8 +51,16 @@ static int tap_interface_port = -1;
 /* Split port id */
 static int split_port = -1;
 
+
+/* PCI/Demo port id */
+static int app_port = -1;
+
 /* Port count */
 static int nb_ports_available;
+
+/* PCI/Demo port and its host MAC addresses */
+static struct rte_ether_addr app_port_mac_addr;
+static struct rte_ether_addr app_host_mac_addr;
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
@@ -368,6 +376,16 @@ l2fwd_simple_forward(struct rte_mbuf *m,
 				udp_hdr->src_port = temp;
 			}
 		}
+	}
+	/* packet is sending on PCI/Demo port*/
+	if (dst_port == (unsigned int)app_port) {
+		struct rte_ether_hdr *eth_hdr;
+
+		eth_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ether_hdr *, 0);
+		memcpy(&eth_hdr->d_addr.addr_bytes, &app_host_mac_addr,
+			RTE_ETHER_ADDR_LEN);
+		memcpy(&eth_hdr->s_addr.addr_bytes, &app_port_mac_addr,
+			RTE_ETHER_ADDR_LEN);
 	}
 
 	sent = rte_eth_tx_burst(dst_port, 0, &m, 1);
@@ -1213,6 +1231,14 @@ get_user_data(struct rte_pmd_dpaa_uplink_cls_info_s *cls_info,
 
 			continue;
 		}
+		if (!strcmp(token, "APP_HOST_MAC_ADDR")) {
+			token = strtok(NULL, " \n");
+			if (rte_ether_unformat_addr(token,
+				&app_host_mac_addr) < 0) {
+				printf("WARNING: Invalid app(PCI/Demo) host ethernet MAC address: %s\n",
+								token);
+			}
+		}
 	}
 
 	if (!is_ol_port)
@@ -1630,10 +1656,9 @@ main(int argc, char **argv)
 				continue;
 			if (portid != split_port &&
 			    portid != tap_interface_port) {
-				static struct rte_ether_addr l2fwd_ports_eth_addr;
 
 				ret = rte_eth_macaddr_get(portid,
-						&l2fwd_ports_eth_addr);
+						&app_port_mac_addr);
 				if (ret < 0)
 					rte_exit(EXIT_FAILURE,
 					"Cannot get MAC address: err=%d, port=%u\n",
@@ -1642,16 +1667,17 @@ main(int argc, char **argv)
 				l2fwd_dst_ports[portid] = split_port;
 				l2fwd_dst_ports[split_port] = portid;
 				l2fwd_dst_ports[tap_interface_port] = portid;
+				app_port = portid;
 				printf("####################################################\n");
-				printf("PCI/Demo port ID = %d\n", portid);
+				printf("PCI/Demo port ID = %d\n", app_port);
 				printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n",
-						portid,
-						l2fwd_ports_eth_addr.addr_bytes[0],
-						l2fwd_ports_eth_addr.addr_bytes[1],
-						l2fwd_ports_eth_addr.addr_bytes[2],
-						l2fwd_ports_eth_addr.addr_bytes[3],
-						l2fwd_ports_eth_addr.addr_bytes[4],
-						l2fwd_ports_eth_addr.addr_bytes[5]);
+					app_port,
+					app_port_mac_addr.addr_bytes[0],
+					app_port_mac_addr.addr_bytes[1],
+					app_port_mac_addr.addr_bytes[2],
+					app_port_mac_addr.addr_bytes[3],
+					app_port_mac_addr.addr_bytes[4],
+					app_port_mac_addr.addr_bytes[5]);
 
 				printf("****************************************************\n");
 				printf("Tap port ID = %d\nSplit port ID = %d\n",
