@@ -131,6 +131,9 @@ static inline int
 lsinic_tx_bd_available(struct lsinic_queue *txq,
 	uint16_t bd_idx);
 
+static void
+lsinic_txq_loop(uint16_t dq_sync);
+
 static bool
 lsinic_timeout(struct lsinic_queue *q)
 {
@@ -4704,31 +4707,11 @@ free_last_pkts:
 	if (!txq->new_desc)
 		txq->new_tsc = rte_rdtsc();
 
-	if (unlikely(!txq->pair ||
-		(txq->pair && txq->pair->core_id != txq->core_id))) {
-		if (!txq->adapter->txq_dma_silent) {
-			uint16_t dq_total = 0, dq;
-
-			while (dq_total != tx_num) {
-				txq->txq_dma_eq(txq, false);
-				dq = txq->dma_dq(txq);
-				if (dq > 0)
-					dq_total += dq;
-			}
-			if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
-				lsinic_tx_update_to_rc(txq);
-		}
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-		else if (!txq->recycle_txq) {
-			txq->txq_dma_eq(txq, false);
-			txq->packets_old = txq->packets;
-		}
-#else
-		else if (txq->ep_mem_bd_type != EP_MEM_DST_ADDR_SEG) {
-			txq->txq_dma_eq(txq, false);
-			txq->packets_old = txq->packets;
-		}
-#endif
+	if (unlikely(!txq->pair)) {
+		if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
+			lsinic_txq_loop(tx_num);
+		else
+			lsinic_txq_loop(0);
 	}
 
 	return tx_num;
@@ -4781,6 +4764,11 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 #endif
 
 	txq = tx_queue;
+	if (unlikely(txq->core_id == RTE_MAX_LCORE && txq->pair)) {
+		/* This txq has not been added to list from it's pair.*/
+		return 0;
+	}
+
 	if (unlikely(!txq->ep_enabled))
 		return 0;
 
@@ -5543,7 +5531,7 @@ lsinic_recv_bd(struct lsinic_queue *rxq)
 }
 
 static void
-lsinic_txq_loop(void)
+lsinic_txq_loop(uint16_t dq_sync)
 {
 	struct lsinic_queue *q, *tq;
 	struct lsinic_adapter *adapter;
@@ -5551,7 +5539,7 @@ lsinic_txq_loop(void)
 	struct rte_eth_dev *offload_dev;
 #endif
 	struct rte_mbuf *tx_pkts[DEFAULT_TX_RS_THRESH];
-	uint16_t ret, i, xmit_ret;
+	uint16_t ret, i, xmit_ret, dq, dq_total = 0;
 
 	if (unlikely(!RTE_PER_LCORE(pthrd_id)))
 		RTE_PER_LCORE(pthrd_id) = pthread_self();
@@ -5582,9 +5570,20 @@ lsinic_txq_loop(void)
 		}
 
 		if (!adapter->txq_dma_silent) {
-			q->dma_dq(q);
-			if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE))
-				lsinic_tx_update_to_rc(q);
+			if (unlikely(dq_sync)) {
+				while (dq_total != dq_sync) {
+					q->txq_dma_eq(q, false);
+					dq = q->dma_dq(q);
+					if (dq > 0)
+						dq_total += dq;
+				}
+			} else {
+				dq_total = q->dma_dq(q);
+			}
+			if (!(q->dma_bd_update & DMA_BD_EP2RC_UPDATE)) {
+				if (dq_total > 0)
+					lsinic_tx_update_to_rc(q);
+			}
 		}
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 		else if (!q->recycle_txq) {
@@ -6380,7 +6379,7 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	if (unlikely(!rxq->ep_enabled))
 		return 0;
 
-	lsinic_txq_loop();
+	lsinic_txq_loop(0);
 	ret = lsinic_rxq_loop(rxq);
 	if (unlikely(ret < 0)) {
 		/**This RXQ not started yet.*/
