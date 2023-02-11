@@ -38,6 +38,7 @@
 #endif
 
 #define LSINIC_RING_FULL_THRESH_COUNT 1
+#define LSINIC_RING_WAIT_DEFAULT_SEC 100
 
 /**
  * Structure associated with each descriptor of the TX ring of a TX queue.

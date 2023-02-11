@@ -5076,8 +5076,42 @@ static void
 lsinic_queue_enable_start(struct lsinic_queue *q)
 {
 	struct lsinic_ring_reg *ring_reg = q->ep_reg;
+	uint32_t delay_ms = 0;
+	int wait_max_sec = LSINIC_RING_WAIT_DEFAULT_SEC;
+	enum LSINIC_QEUE_STATUS status = LSINIC_QUEUE_START;
 
+	if (getenv("LSINIC_RING_WAIT_SEC")) {
+		wait_max_sec = atoi("LSINIC_RING_WAIT_SEC");
+		if (wait_max_sec < 0)
+			wait_max_sec = LSINIC_RING_WAIT_DEFAULT_SEC;
+	}
 	q->status = LSINIC_QUEUE_START;
+	rte_smp_wmb();
+	do {
+		rte_delay_us_sleep(1000);
+		rte_smp_rmb();
+		delay_ms++;
+		status = q->status;
+		if (status == LSINIC_QUEUE_START &&
+			!(delay_ms % 1000)) {
+			LSXINIC_PMD_WARN("%s%d not running after %d seconds",
+				q->type == LSINIC_QUEUE_RX ?
+				"RXQ" : "TXQ", q->queue_id, delay_ms / 1000);
+			wait_max_sec--;
+		}
+	} while (status == LSINIC_QUEUE_START && wait_max_sec > 0);
+
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	if (status != LSINIC_QUEUE_RUNNING &&
+		status != LSINIC_QUEUE_RAW_TEST_RUNNING)
+#else
+	if (status != LSINIC_QUEUE_RUNNING)
+#endif
+	{
+		LSXINIC_PMD_WARN("%s%d un-expected status(%d)",
+			q->type == LSINIC_QUEUE_RX ?
+			"RXQ" : "TXQ", q->queue_id, status);
+	}
 	ring_reg->sr = q->status;
 	LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 }

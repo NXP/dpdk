@@ -90,8 +90,30 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int wait_loop = LXSNIC_CMD_LOOP_NUM;
+	int wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
 	uint32_t cmd_status;
+
+	if (getenv("LXSNIC_CMD_WAIT_SEC")) {
+		wait_ms = atoi("LXSNIC_CMD_WAIT_SEC") * 1000;
+		if (wait_ms < 0)
+			wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	}
+
+	LSINIC_WRITE_REG(&reg->command, cmd);
+	cmd_status = cmd;
+	do {
+		rte_delay_us_sleep(1000);
+		cmd_status = LSINIC_READ_REG(&reg->command);
+		wait_ms--;
+		if (wait_ms < 0)
+			break;
+	} while (cmd_status != PCIDEV_COMMAND_IDLE);
+
+	if (cmd_status != PCIDEV_COMMAND_IDLE) {
+		LSXINIC_PMD_ERR("CMD-%d executed failed, wait longer?",
+			cmd);
+		return PCIDEV_RESULT_FAILED;
+	}
 
 	switch (cmd) {
 	case PCIDEV_COMMAND_START:
@@ -111,17 +133,6 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		break;
 	default:
 		break;
-	}
-
-	LSINIC_WRITE_REG(&reg->command, cmd);
-	do {
-		rte_delay_us(500 * 1000);
-		cmd_status = LSINIC_READ_REG(&reg->command);
-	} while (--wait_loop && (cmd_status != PCIDEV_COMMAND_IDLE));
-
-	if (!wait_loop) {
-		printf("Command-%d: failed to get right status!\n", cmd);
-		return PCIDEV_RESULT_FAILED;
 	}
 
 	return LSINIC_READ_REG(&reg->result);
