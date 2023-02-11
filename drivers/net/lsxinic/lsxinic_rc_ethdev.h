@@ -87,7 +87,7 @@
 #define NUM_MSIX_VECTORS        8
 #define NON_Q_VECTORS           0
 
-#define LXSNIC_CMD_LOOP_NUM 10
+#define LXSNIC_CMD_WAIT_DEFAULT_SEC 10
 
 /* Supported Rx Buffer Sizes */
 #define LXSNIC_RXBUFFER_256    256  /* Used for skb receive header */
