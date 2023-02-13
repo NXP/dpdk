@@ -1685,6 +1685,27 @@ config_ep_dev_addr:
 		(unsigned long)bus, \
 		(unsigned long)size
 
+int
+lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size)
+{
+	uint8_t i;
+	struct lsx_pciep_outbound *ob_win;
+	uint64_t win_size;
+
+	for (i = 0; i < ep_dev->rbp_ob_win_nb; i++) {
+		ob_win = &ep_dev->ob_win[i];
+		win_size = ob_win->ob_win_size * ob_win->ob_win_nb;
+		if (pci_addr >= (ob_win->ob_map_bus_base + win_size))
+			continue;
+		if ((pci_addr + size) <= ob_win->ob_map_bus_base)
+			continue;
+		return true;
+	}
+
+	return false;
+}
+
 static uint8_t *
 lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size)
@@ -1695,6 +1716,17 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 	int pcie_id = ep_dev->pcie_id;
 	uint64_t mask;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+	struct lsx_pciep_outbound *ob_win;
+
+	if (ep_dev->rbp_ob_win_nb >= LSX_PCIEP_OB_MAX_NB) {
+		LSX_PCIEP_BUS_ERR("Too many outbound windows");
+		return NULL;
+	}
+
+	if (lsx_pciep_rbp_ob_overlap(ep_dev, pci_addr, size)) {
+		LSX_PCIEP_BUS_ERR("New outbound window overlaps");
+		return NULL;
+	}
 
 	mask = size - 1;
 
@@ -1704,43 +1736,48 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 		return NULL;
 	}
 
-	ep_dev->ob_map_bus_base = pci_addr;
-	ep_dev->ob_win_size = size;
-	ep_dev->ob_win_nb = 1;
+	ob_win = &ep_dev->ob_win[ep_dev->rbp_ob_win_nb];
 
-	ep_dev->ob_phy_base =
+	ob_win->ob_map_bus_base = pci_addr;
+	ob_win->ob_win_size = size;
+	ob_win->ob_win_nb = 1;
+
+	ob_win->ob_phy_base =
 		ctlhw->ops->pcie_map_ob_win(&ctlhw->hw, pf,
 				is_vf, vf,
-				ep_dev->ob_map_bus_base,
+				ob_win->ob_map_bus_base,
 				size, 0);
-	if (!ep_dev->ob_phy_base) {
+	if (!ob_win->ob_phy_base) {
 		LSX_PCIEP_BUS_ERR("%s: OB map failed", __func__);
 		return NULL;
 	}
-	ep_dev->ob_virt_base =
-		lsx_pciep_map_region(ep_dev->ob_phy_base,
+	ob_win->ob_virt_base =
+		lsx_pciep_map_region(ob_win->ob_phy_base,
 				size);
 
 	if (is_vf)
 		LSX_PCIEP_BUS_INFO(OB_VF_INFO_DUMP_FORMAT(pcie_id,
 			pf, vf,
-			ep_dev->ob_virt_base,
-			ep_dev->ob_phy_base,
-			ep_dev->ob_map_bus_base,
-			ep_dev->ob_win_size));
+			ob_win->ob_virt_base,
+			ob_win->ob_phy_base,
+			ob_win->ob_map_bus_base,
+			ob_win->ob_win_size));
 	else
 		LSX_PCIEP_BUS_INFO(OB_PF_INFO_DUMP_FORMAT(pcie_id,
 			pf,
-			ep_dev->ob_virt_base,
-			ep_dev->ob_phy_base,
-			ep_dev->ob_map_bus_base,
-			ep_dev->ob_win_size));
+			ob_win->ob_virt_base,
+			ob_win->ob_phy_base,
+			ob_win->ob_map_bus_base,
+			ob_win->ob_win_size));
 
-	return ep_dev->ob_virt_base;
+	ep_dev->rbp_ob_win_nb++;
+
+	return ob_win->ob_virt_base;
 }
 
 static uint8_t *
-lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
+lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_map, uint64_t size)
 {
 	int pf = ep_dev->pf;
 	int is_vf = ep_dev->is_vf;
@@ -1750,12 +1787,26 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 	uint32_t idx, out_win_nb;
 	uint64_t pci_addr = 0, out_phy;
 	int shared;
+	struct lsx_pciep_outbound *ob_win = &ep_dev->ob_win[0];
+
+	if (ob_win->ob_virt_base) {
+		if ((pci_map + size) >=
+			(ob_win->ob_win_size * ob_win->ob_win_nb)) {
+			LSX_PCIEP_BUS_ERR("%s(0x%lx ~ 0x%lx) >= %s(0 ~ 0x%lx)",
+				"New PCIe range",
+				pci_map, pci_map + size,
+				"Outbond Window",
+				ob_win->ob_win_size * ob_win->ob_win_nb);
+			return NULL;
+		}
+		goto return_pcie_map_vir;
+	}
 
 	out_win_nb = ctlhw->out_win_per_fun;
 
-	ep_dev->ob_map_bus_base = pci_addr;
-	ep_dev->ob_win_size = ctlhw->out_win_size;
-	ep_dev->ob_win_nb = out_win_nb;
+	ob_win->ob_map_bus_base = pci_addr;
+	ob_win->ob_win_size = ctlhw->out_win_size;
+	ob_win->ob_win_nb = out_win_nb;
 
 	shared = ctlhw->hw.ob_policy == LSX_PCIEP_OB_SHARE ? 1 : 0;
 
@@ -1767,31 +1818,31 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 		if (!out_phy) {
 			LSX_PCIEP_BUS_ERR("%s: OB map failed",
 				__func__);
-			ep_dev->ob_phy_base = 0;
-			ep_dev->ob_virt_base = 0;
+			ob_win->ob_phy_base = 0;
+			ob_win->ob_virt_base = 0;
 			return NULL;
 		}
 		pci_addr += ctlhw->out_win_size;
 		if (idx == 0)
-			ep_dev->ob_phy_base = out_phy;
+			ob_win->ob_phy_base = out_phy;
 	}
 	if (!shared) {
-		ep_dev->ob_virt_base =
-			lsx_pciep_map_region(ep_dev->ob_phy_base,
+		ob_win->ob_virt_base =
+			lsx_pciep_map_region(ob_win->ob_phy_base,
 				out_win_nb * ctlhw->out_win_size);
-		if (rte_fslmc_vfio_mem_dmamap((uint64_t)ep_dev->ob_virt_base,
-			ep_dev->ob_phy_base,
+		if (rte_fslmc_vfio_mem_dmamap((uint64_t)ob_win->ob_virt_base,
+			ob_win->ob_phy_base,
 			out_win_nb * ctlhw->out_win_size)) {
 			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
 				"VFIO map failed",
-				ep_dev->ob_virt_base, ep_dev->ob_phy_base,
+				ob_win->ob_virt_base, ob_win->ob_phy_base,
 				out_win_nb * ctlhw->out_win_size);
 
 			return NULL;
 		}
 	} else {
-		ep_dev->ob_virt_base = ctlhw->out_vir +
-			ep_dev->ob_phy_base - ctlhw->hw.out_base;
+		ob_win->ob_virt_base = ctlhw->out_vir +
+			ob_win->ob_phy_base - ctlhw->hw.out_base;
 		if (!ctlhw->share_vfio_map) {
 			if (rte_fslmc_vfio_mem_dmamap((uint64_t)ctlhw->out_vir,
 				ctlhw->hw.out_base, ctlhw->hw.out_size)) {
@@ -1806,7 +1857,8 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev)
 		ctlhw->share_vfio_map++;
 	}
 
-	return ep_dev->ob_virt_base;
+return_pcie_map_vir:
+	return ob_win->ob_virt_base + pci_map;
 }
 
 void *
@@ -1820,7 +1872,7 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	if (ctlhw->rbp)
 		vaddr = lsx_pciep_set_ob_win_rbp(ep_dev, pci_addr, size);
 	else
-		vaddr = lsx_pciep_set_ob_win_norbp(ep_dev);
+		vaddr = lsx_pciep_set_ob_win_norbp(ep_dev, pci_addr, size);
 
 	return vaddr;
 }
@@ -1829,12 +1881,15 @@ void
 lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset)
 {
+	struct lsx_pciep_outbound *ob_win;
+
 	if (!lsx_pciep_hw_sim_get(ep_dev->pcie_id))
 		return;
 
-	ep_dev->ob_map_bus_base = 0;
-	ep_dev->ob_phy_base = 0;
-	ep_dev->ob_virt_base = (void *)vir_offset;
+	ob_win = &ep_dev->ob_win[0];
+	ob_win->ob_map_bus_base = 0;
+	ob_win->ob_phy_base = 0;
+	ob_win->ob_virt_base = (void *)vir_offset;
 }
 
 static void
@@ -1908,17 +1963,72 @@ lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t bus_addr)
 {
 	uint64_t offset, range;
+	struct lsx_pciep_outbound *ob_win;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[ep_dev->pcie_id];
+	int i;
 
 	if (lsx_pciep_hw_sim_get(ep_dev->pcie_id))
 		return 1;
 
-	offset = bus_addr - ep_dev->ob_map_bus_base;
-	range = ep_dev->ob_win_size * ep_dev->ob_win_nb;
+	if (!ctlhw->rbp) {
+		ob_win = &ep_dev->ob_win[0];
+		offset = bus_addr - ob_win->ob_map_bus_base;
+		range = ob_win->ob_win_size * ob_win->ob_win_nb;
 
-	if (offset > range)
+		if (offset > range)
+			return 0;
+
+		return 1;
+	}
+
+	for (i = 0; i < ep_dev->rbp_ob_win_nb; i++) {
+		ob_win = &ep_dev->ob_win[i];
+		offset = bus_addr - ob_win->ob_map_bus_base;
+		range = ob_win->ob_win_size * ob_win->ob_win_nb;
+		if (offset <= range)
+			return 1;
+	}
+
+	return 0;
+}
+
+#define DMA_64BIT_MAX  0xffffffffffffffffULL
+uint64_t
+lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev)
+{
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[ep_dev->pcie_id];
+
+	if (ctlhw->rbp || ctlhw->sim)
+		return DMA_64BIT_MAX / 4;
+
+	return ep_dev->ob_win[0].ob_win_size * ep_dev->ob_win[0].ob_win_nb;
+}
+
+uint64_t
+lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t win_idx)
+{
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[ep_dev->pcie_id];
+
+	if (win_idx < ep_dev->rbp_ob_win_nb)
+		return ep_dev->ob_win[win_idx].ob_phy_base;
+
+	if (ctlhw->rbp) {
+		if (ep_dev->rbp_ob_win_nb) {
+			win_idx = ep_dev->rbp_ob_win_nb - 1;
+			return ep_dev->ob_win[win_idx].ob_phy_base;
+		}
+
+		LSX_PCIEP_BUS_ERR("No Outbound RBP win configured");
 		return 0;
+	}
 
-	return 1;
+	if (!ep_dev->ob_win[0].ob_phy_base) {
+		LSX_PCIEP_BUS_ERR("No Outbound NONE-RBP win configured");
+		return 0;
+	}
+
+	return ep_dev->ob_win[0].ob_phy_base;
 }
 
 static void __attribute__((destructor(102))) lsx_pciep_finish(void)

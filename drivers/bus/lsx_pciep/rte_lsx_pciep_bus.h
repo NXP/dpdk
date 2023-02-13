@@ -98,6 +98,15 @@ enum lsx_pcie_pf_idx {
 /**
  * A structure describing a PCIe EP device for each PF or VF.
  */
+#define LSX_PCIEP_OB_MAX_NB 6
+struct lsx_pciep_outbound {
+	uint64_t ob_map_bus_base;
+	uint64_t ob_phy_base;
+	uint8_t *ob_virt_base;
+	uint64_t ob_win_size;
+	uint16_t ob_win_nb;
+};
+
 struct rte_lsx_pciep_device {
 	TAILQ_ENTRY(rte_lsx_pciep_device) next; /**< Next probed device. */
 	struct rte_device device;           /**< Inherit core device */
@@ -114,6 +123,9 @@ struct rte_lsx_pciep_device {
 	uint64_t ob_win_size;
 	uint16_t ob_win_nb;
 	int ob_win_init_flag;
+	/*None-RBP device always uses the first window.*/
+	struct lsx_pciep_outbound ob_win[LSX_PCIEP_OB_MAX_NB];
+	uint8_t rbp_ob_win_nb;
 
 	/* MSI/MSIx information */
 	int msix_read_once;
@@ -235,10 +247,21 @@ lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	uint16_t sub_device_id, uint8_t pcie_id,
 	int pf);
 
+int
+lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size);
 
 int
 lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t bus_addr);
+
+uint64_t
+lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev);
+
+uint64_t
+lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t win_idx);
+
 /**
  * Register a PCIEP bus driver.
  *
