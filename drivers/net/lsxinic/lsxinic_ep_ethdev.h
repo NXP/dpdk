@@ -165,6 +165,9 @@ struct lsinic_adapter {
 int
 lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
+int
+lsinic_remove_config_fromrc(struct lsinic_adapter *adapter);
+
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 int
 lsinic_split_dev_flow_create(struct lsinic_adapter *adapter);

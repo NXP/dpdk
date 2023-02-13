@@ -1647,6 +1647,30 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	return 0;
 }
 
+/* Disconnect to RC, unmap rc address.*/
+int
+lsinic_remove_config_fromrc(struct lsinic_adapter *adapter)
+{
+	int sim = lsx_pciep_hw_sim_get(adapter->pcie_idx), ret;
+	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+
+	if (adapter->rc_ring_bus_base && !sim) {
+		ret = lsx_pciep_unset_ob_win(lsinic_dev,
+			adapter->rc_ring_bus_base);
+		if (ret) {
+			LSXINIC_PMD_ERR("unset PCIe addr(0x%lx) failed(%d)",
+				adapter->rc_ring_bus_base, ret);
+			return ret;
+		}
+	}
+	adapter->rc_ring_bus_base = 0;
+	adapter->rc_ring_phy_base = 0;
+	adapter->rc_ring_size = 0;
+	adapter->rc_ring_virt_base = NULL;
+
+	return 0;
+}
+
 /* return 0 means link status changed, -1 means not changed */
 static int
 lsinic_dev_link_update(struct rte_eth_dev *dev,

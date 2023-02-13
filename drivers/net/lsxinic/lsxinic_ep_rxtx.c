@@ -573,7 +573,8 @@ lsinic_queue_reset(struct lsinic_queue *q)
 	uint32_t i;
 
 	q->ep_reg->cir = 0;
-	LSINIC_WRITE_REG(&q->rc_reg->cir, 0);
+	if (q->rc_reg)
+		LSINIC_WRITE_REG(&q->rc_reg->cir, 0);
 	/* Initialize SW ring entries */
 	for (i = 0; i < q->nb_desc; i++) {
 		xe[i].mbuf = NULL;
@@ -2555,7 +2556,8 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 #endif
 			q->status = LSINIC_QUEUE_RUNNING;
 		q->ep_reg->sr = q->status;
-		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+		if (q->rc_reg)
+			LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 
 		return;
 	}
@@ -2574,7 +2576,8 @@ lsinic_queue_status_update(struct lsinic_queue *q)
 
 		q->status = LSINIC_QUEUE_UNAVAILABLE;
 		q->ep_reg->sr = q->status;
-		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+		if (q->rc_reg)
+			LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 
 		return;
 	}
@@ -5054,7 +5057,10 @@ lsinic_queue_stop(struct lsinic_queue *q)
 
 	q->status = LSINIC_QUEUE_STOP;
 	ring_reg->sr = q->status;
-	LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+	if (q->rc_reg) {
+		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+		q->rc_reg = NULL;
+	}
 }
 
 static int
@@ -5067,7 +5073,8 @@ lsinic_queue_init(struct lsinic_queue *q)
 
 	q->status = LSINIC_QUEUE_UNAVAILABLE;
 	ring_reg->sr = q->status;
-	LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+	if (q->rc_reg)
+		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 
 	return 0;
 }
@@ -5113,7 +5120,8 @@ lsinic_queue_enable_start(struct lsinic_queue *q)
 			"RXQ" : "TXQ", q->queue_id, status);
 	}
 	ring_reg->sr = q->status;
-	LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+	if (q->rc_reg)
+		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 }
 
 static void
