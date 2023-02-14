@@ -2053,70 +2053,178 @@ lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	ob_win->ob_virt_base = (void *)vir_offset;
 }
 
-static void
+static int
 lsx_pciep_misx_ob_vir_map(uint64_t msix_addr[],
-	void *msix_vir[], int num)
+	void *msix_vir[], int num, uint64_t *size)
 {
-	int i;
-	uint8_t *vir;
+	int i, ret = 0;
+	uint8_t *vir_min;
 	uint64_t min = msix_addr[0], max = 0, map_size;
 
 	for (i = 0; i < num; i++) {
 		if (msix_addr[i] > max)
 			max = msix_addr[i];
-		if (msix_addr[i] < min)
+		if (msix_addr[i] < min) {
 			min = msix_addr[i];
+			ret = i;
+		}
 	}
 
 	map_size = (max - min) > CFG_MSIX_OB_SIZE ?
 		(max - min) : CFG_MSIX_OB_SIZE;
-	vir = lsx_pciep_map_region(min, map_size);
+	vir_min = lsx_pciep_map_region(min, map_size);
+	if (vir_min) {
+		for (i = 0; i < num; i++)
+			msix_vir[i] = vir_min + msix_addr[i] - min;
+		if (size)
+			*size = map_size;
 
-	for (i = 0; i < num; i++)
-		msix_vir[i] = vir + msix_addr[i] - min;
+		return ret;
+	}
+	return -ENODATA;
 }
 
-void
+int
 lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total)
 {
-	int pcie_id = ep_dev->pcie_id, i;
+	int pcie_id = ep_dev->pcie_id, i, base_idx, ret = 0;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
-	uint64_t msix_phy[vector_total];
+	uint64_t size = 0, phy_base;
+	void *vir_base;
 
 	ctlhw->hw.msi_flag = ep_dev->mmsi_flag;
+	if (ctlhw->hw.msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
 
-	ep_dev->msix_addr = malloc(sizeof(void *) * vector_total);
-	ep_dev->msix_data = malloc(sizeof(uint32_t) * vector_total);
+	size = sizeof(uint64_t) * vector_total;
+	ep_dev->msix_phy = rte_malloc(NULL, size, RTE_CACHE_LINE_SIZE);
+	size = sizeof(void *) * vector_total;
+	ep_dev->msix_addr = rte_malloc(NULL, size, RTE_CACHE_LINE_SIZE);
+	size = sizeof(uint32_t) * vector_total;
+	ep_dev->msix_data = rte_malloc(NULL, size, RTE_CACHE_LINE_SIZE);
 
 	vector_total = ctlhw->ops->pcie_msix_cfg(&ctlhw->hw,
 			ep_dev->pf,
 			ep_dev->is_vf, ep_dev->vf,
-			msix_phy, ep_dev->msix_data,
+			ep_dev->msix_phy, ep_dev->msix_data,
 			vector_total);
 	if (vector_total <= 0) {
 		LSX_PCIEP_BUS_ERR("%s: msix cfg failed",
-				__func__);
-		return;
+			ep_dev->name);
+		ret = -EIO;
+		goto failed_init_msix;
 	}
 
 	if (ctlhw->hw.msi_flag == LSX_PCIEP_MSIX_INT) {
 		for (i = 0; i < vector_total; i++) {
 			ep_dev->msix_addr[i] =
 				ctlhw->hw.dbi_vir +
-				msix_phy[i] - ctlhw->hw.dbi_phy;
+				ep_dev->msix_phy[i] - ctlhw->hw.dbi_phy;
 		}
 	} else if (ctlhw->hw.msi_flag == LSX_PCIEP_MMSI_INT) {
-		lsx_pciep_misx_ob_vir_map(msix_phy,
-			ep_dev->msix_addr,
-			vector_total);
+		base_idx = lsx_pciep_misx_ob_vir_map(ep_dev->msix_phy,
+					ep_dev->msix_addr, vector_total, &size);
+		if (base_idx < 0) {
+			LSX_PCIEP_BUS_ERR("%s: failed to map msix",
+				ep_dev->name);
+			ret = base_idx;
+			goto failed_init_msix;
+		}
+		vir_base = ep_dev->msix_addr[base_idx];
+		phy_base = ep_dev->msix_phy[base_idx];
+		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vir_base,
+				phy_base, size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
+				"MSI VFIO map failed",
+				vir_base, ep_dev->msix_phy[base_idx],
+				size);
+
+			goto failed_init_msix;
+		}
+		ep_dev->msi_addr_base = vir_base;
+		ep_dev->msi_phy_base = phy_base;
+		ep_dev->msi_map_size = size;
 	}
+
+	return 0;
+
+failed_init_msix:
+	if (ep_dev->msix_addr) {
+		rte_free(ep_dev->msix_addr);
+		ep_dev->msix_addr = NULL;
+	}
+	if (ep_dev->msix_data) {
+		rte_free(ep_dev->msix_data);
+		ep_dev->msix_data = NULL;
+	}
+
+	return ret;
+}
+
+int
+lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev)
+{
+	int pcie_id = ep_dev->pcie_id, ret = 0;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+
+	if (ctlhw->hw.msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
+
+	/*To do: de-config msix from PCIe EP bus.*/
+
+	if (ctlhw->hw.msi_flag == LSX_PCIEP_MMSI_INT) {
+		if (!ep_dev->msi_phy_base || !ep_dev->msi_map_size) {
+			LSX_PCIEP_BUS_INFO("%s msi vfio no mapped",
+				ep_dev->name);
+			goto skip_vfio_map;
+		}
+		ret = rte_fslmc_vfio_mem_dmaunmap(ep_dev->msi_phy_base,
+				ep_dev->msi_map_size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: failed to vfio unmap msi(%d)",
+				ep_dev->name, ret);
+		}
+skip_vfio_map:
+		if (!ep_dev->msi_addr_base || !ep_dev->msi_map_size) {
+			LSX_PCIEP_BUS_INFO("%s msi region no mapped",
+				ep_dev->name);
+			goto skip_mem_map;
+		}
+		ret = lsx_pciep_unmap_region(ep_dev->msi_addr_base,
+			ep_dev->msi_map_size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: failed to unmap msi(%d)",
+				ep_dev->name, ret);
+		}
+skip_mem_map:
+		ep_dev->msi_phy_base = 0;
+		ep_dev->msi_addr_base = NULL;
+		ep_dev->msi_map_size = 0;
+	}
+
+	if (ep_dev->msix_phy) {
+		rte_free(ep_dev->msix_phy);
+		ep_dev->msix_phy = NULL;
+	}
+	if (ep_dev->msix_addr) {
+		rte_free(ep_dev->msix_addr);
+		ep_dev->msix_addr = NULL;
+	}
+	if (ep_dev->msix_data) {
+		rte_free(ep_dev->msix_data);
+		ep_dev->msix_data = NULL;
+	}
+
+	return ret;
 }
 
 void
 lsx_pciep_start_msix(void *addr, uint32_t cmd)
 {
-	rte_write32(cmd, addr);
+	if (likely(addr))
+		rte_write32(cmd, addr);
 }
 
 int

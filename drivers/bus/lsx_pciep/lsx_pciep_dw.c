@@ -1020,6 +1020,9 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 	int vector;
 	uint8_t *dbi;
 
+	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
+
 	if (!hw->is_sriov && (pf > 0 || is_vf)) {
 		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
 			__func__, hw->index);
