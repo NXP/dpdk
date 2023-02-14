@@ -25,7 +25,7 @@ extern const char lsinic_driver_version[];
 #undef VF_VLAN_ENABLE
 #define LSINIC_NO_SKB_FRAG /* will not support SG and jumbo frame */
 
-#define LSINIC_CMD_LOOP_NUM 10
+#define LSNIC_CMD_WAIT_DEFAULT_SEC 4
 
 /* Supported Rx Buffer Sizes */
 #define LSINIC_RXBUFFER_256    256  /* Used for skb receive header */
