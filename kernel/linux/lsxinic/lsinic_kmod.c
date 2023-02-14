@@ -394,8 +394,33 @@ lsinic_set_netdev(struct lsinic_nic *adapter,
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int wait_loop = LSINIC_CMD_LOOP_NUM;
-	u32 cmd_status;
+	int wait_ms = LSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	u32 cmd_status, res;
+
+	LSINIC_WRITE_REG(&reg->command, cmd);
+	cmd_status = cmd;
+	do {
+		msleep(100);
+		cmd_status = LSINIC_READ_REG(&reg->command);
+		wait_ms -= 100;
+		if (wait_ms <= 0)
+			break;
+	} while (cmd_status != PCIDEV_COMMAND_IDLE);
+
+	if (cmd_status != PCIDEV_COMMAND_IDLE) {
+		e_err(drv, "CMD-%d executed failed, wait longer?",
+			cmd);
+		return PCIDEV_RESULT_FAILED;
+	}
+
+	/* Read result after command executed.*/
+	rmb();
+	res = LSINIC_READ_REG(&reg->result);
+	if (res != PCIDEV_RESULT_SUCCEED) {
+		e_err(drv, "CMD-%d executed result error(%d)",
+			cmd, res);
+		return res;
+	}
 
 	switch (cmd) {
 	case PCIDEV_COMMAND_START:
@@ -410,22 +435,14 @@ lsinic_set_netdev(struct lsinic_nic *adapter,
 	case PCIDEV_COMMAND_INIT:
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
+	case PCIDEV_COMMAND_SET_MTU:
+		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
+		break;
 	default:
 		break;
 	}
 
-	LSINIC_WRITE_REG(&reg->command, cmd);
-	do {
-		msleep(500);
-		cmd_status = LSINIC_READ_REG(&reg->command);
-	} while (--wait_loop && (cmd_status != PCIDEV_COMMAND_IDLE));
-
-	if (!wait_loop) {
-		e_err(drv, "Command-%d: failed to get right status!\n", cmd);
-		return PCIDEV_RESULT_FAILED;
-	}
-
-	return LSINIC_READ_REG(&reg->result);
+	return res;
 }
 
 static void
@@ -1971,9 +1988,140 @@ lsinic_rx_skb(struct lsinic_q_vector *q_vector,
 		netif_rx(skb);
 }
 
-netdev_tx_t lsinic_xmit_frame_ring(struct sk_buff *skb,
+static int
+lsinic_gso(struct lsinic_ring *tx_ring,
+	struct lsinic_tx_buffer *first)
+{
+	struct sk_buff *skb = first->skb;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return 0;
+
+	if (!skb_is_gso(skb))
+		return 0;
+
+	if (skb_header_cloned(skb)) {
+		int err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
+
+		if (err)
+			return err;
+	}
+
+	return 1;
+}
+
+static u32
+lsinic_tx_cmd_type(u32 tx_flags)
+{
+	return tx_flags;
+}
+
+static void
+lsinic_tx_map(struct lsinic_ring *tx_ring,
+	struct lsinic_tx_buffer *tx_buffer,
+	const u8 hdr_len)
+{
+	dma_addr_t dma;
+	struct sk_buff *skb = tx_buffer->skb;
+	struct lsinic_bd_desc *ep_tx_desc, *rc_tx_desc;
+	unsigned int size = skb_headlen(skb);
+	u32 cmd_type;
+	u16 i = tx_ring->tx_avail_idx & (tx_ring->count - 1);
+
+	ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, i);
+	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
+
+
+	cmd_type = lsinic_tx_cmd_type(tx_buffer->tx_flags);
+
+	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
+
+	dma_unmap_len_set(tx_buffer, len, size);
+	dma_unmap_addr_set(tx_buffer, dma, dma);
+
+	rc_tx_desc->pkt_addr = dma;
+	ep_tx_desc->pkt_addr = dma;
+
+	cmd_type |= LSINIC_BD_CMD_EOP | size;
+	rc_tx_desc->len_cmd = cmd_type;
+	rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
+	rc_tx_desc->bd_status |= RING_BD_AVAILABLE;
+	mem_cp128b_atomic((u8 *)ep_tx_desc, (u8 *)rc_tx_desc);
+
+	tx_ring->tx_avail_idx++;
+
+#ifdef INIC_RC_EP_DEBUG_ENABLE
+	LSINIC_WRITE_REG(&tx_ring->ep_reg->pir, tx_ring->tx_avail_idx);
+#endif
+
+	/*
+	 *ep_tx_desc->len_cmd = rc_tx_desc->len_cmd;
+	 *ep_tx_desc->index = rc_tx_desc->index;
+	 *ep_tx_desc->flag = rc_tx_desc->flag;
+	 */
+	printk_tx("tx_ring->avail->idx = %d\n", tx_ring->tx_avail_idx);
+}
+
+static netdev_tx_t
+lsinic_xmit_frame_ring(struct sk_buff *skb,
 	struct lsinic_nic *adapter,
-	struct lsinic_ring *tx_ring);
+	struct lsinic_ring *tx_ring)
+{
+	struct lsinic_tx_buffer *first = NULL;
+	__be16 protocol = skb->protocol;
+	u8 hdr_len = 0;
+	int gso;
+	struct lsinic_bd_desc *rc_tx_desc;
+	u16 bd_idx;
+	u16 txe_idx;
+	u32 status;
+
+	if (skb_shinfo(skb)->nr_frags > 1)
+		return NETDEV_TX_BUSY;
+
+	bd_idx = tx_ring->tx_avail_idx & (tx_ring->count - 1);
+	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
+
+	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
+
+	/**Load complete*/
+	rmb();
+
+	if (status != RING_BD_READY)
+		return NETDEV_TX_BUSY;
+
+	txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
+	first = &tx_ring->tx_buffer_info[txe_idx];
+
+	first->skb = skb;
+	first->bytecount = skb->len;
+	first->gso_segs = 1;
+
+	printk_tx("\n%s:\n", __func__);
+	printk_tx("tx_buffer_info 0x%p\n", first);
+	printk_tx("skb->len=%d data_len=%d skb_headlen=%d\n",
+		  skb->len, skb->data_len, skb_headlen(skb));
+	printk_tx("BD count = %d\n", count);
+
+	first->tx_flags = 0;
+
+	first->protocol = protocol;
+
+	gso = lsinic_gso(tx_ring, first);
+	if (gso < 0)
+		goto out_drop;
+
+	lsinic_tx_map(tx_ring, first, hdr_len);
+
+	return NETDEV_TX_OK;
+
+out_drop:
+	if (lsinic_self_test)
+		return NETDEV_TX_BUSY;
+	dev_kfree_skb_any(skb);
+	return NETDEV_TX_OK;
+}
+
 
 static void
 lsinic_loopback_rx_tx(struct sk_buff *skb,
@@ -3286,139 +3434,6 @@ lsinic_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 		return -1;
 	}
 	return 0;
-}
-
-static u32 lsinic_tx_cmd_type(u32 tx_flags)
-{
-	return tx_flags;
-}
-
-static void
-lsinic_tx_map(struct lsinic_ring *tx_ring,
-	struct lsinic_tx_buffer *tx_buffer,
-	const u8 hdr_len)
-{
-	dma_addr_t dma;
-	struct sk_buff *skb = tx_buffer->skb;
-	struct lsinic_bd_desc *ep_tx_desc, *rc_tx_desc;
-	unsigned int size = skb_headlen(skb);
-	u32 cmd_type;
-	u16 i = tx_ring->tx_avail_idx & (tx_ring->count - 1);
-
-	ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, i);
-	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
-
-
-	cmd_type = lsinic_tx_cmd_type(tx_buffer->tx_flags);
-
-	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
-
-	dma_unmap_len_set(tx_buffer, len, size);
-	dma_unmap_addr_set(tx_buffer, dma, dma);
-
-	rc_tx_desc->pkt_addr = dma;
-	ep_tx_desc->pkt_addr = dma;
-
-	cmd_type |= LSINIC_BD_CMD_EOP | size;
-	rc_tx_desc->len_cmd = cmd_type;
-	rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
-	rc_tx_desc->bd_status |= RING_BD_AVAILABLE;
-	mem_cp128b_atomic((u8 *)ep_tx_desc, (u8 *)rc_tx_desc);
-
-	tx_ring->tx_avail_idx++;
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&tx_ring->ep_reg->pir, tx_ring->tx_avail_idx);
-#endif
-
-	/*
-	 *ep_tx_desc->len_cmd = rc_tx_desc->len_cmd;
-	 *ep_tx_desc->index = rc_tx_desc->index;
-	 *ep_tx_desc->flag = rc_tx_desc->flag;
-	 */
-	printk_tx("tx_ring->avail->idx = %d\n", tx_ring->tx_avail_idx);
-}
-
-static int
-lsinic_gso(struct lsinic_ring *tx_ring,
-	struct lsinic_tx_buffer *first)
-{
-	struct sk_buff *skb = first->skb;
-
-	if (skb->ip_summed != CHECKSUM_PARTIAL)
-		return 0;
-
-	if (!skb_is_gso(skb))
-		return 0;
-
-	if (skb_header_cloned(skb)) {
-		int err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
-
-		if (err)
-			return err;
-	}
-
-	return 1;
-}
-
-netdev_tx_t
-lsinic_xmit_frame_ring(struct sk_buff *skb,
-	struct lsinic_nic *adapter,
-	struct lsinic_ring *tx_ring)
-{
-	struct lsinic_tx_buffer *first = NULL;
-	__be16 protocol = skb->protocol;
-	u8 hdr_len = 0;
-	int gso;
-	struct lsinic_bd_desc *rc_tx_desc;
-	u16 bd_idx;
-	u16 txe_idx;
-	u32 status;
-
-	if (skb_shinfo(skb)->nr_frags > 1)
-		return NETDEV_TX_BUSY;
-
-	bd_idx = tx_ring->tx_avail_idx & (tx_ring->count - 1);
-	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
-
-	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
-
-	/**Load complete*/
-	rmb();
-
-	if (status != RING_BD_READY)
-		return NETDEV_TX_BUSY;
-
-	txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
-	first = &tx_ring->tx_buffer_info[txe_idx];
-
-	first->skb = skb;
-	first->bytecount = skb->len;
-	first->gso_segs = 1;
-
-	printk_tx("\n%s:\n", __func__);
-	printk_tx("tx_buffer_info 0x%p\n", first);
-	printk_tx("skb->len=%d data_len=%d skb_headlen=%d\n",
-		  skb->len, skb->data_len, skb_headlen(skb));
-	printk_tx("BD count = %d\n", count);
-
-	first->tx_flags = 0;
-
-	first->protocol = protocol;
-
-	gso = lsinic_gso(tx_ring, first);
-	if (gso < 0)
-		goto out_drop;
-
-	lsinic_tx_map(tx_ring, first, hdr_len);
-
-	return NETDEV_TX_OK;
-
-out_drop:
-	if (lsinic_self_test)
-		return NETDEV_TX_BUSY;
-	dev_kfree_skb_any(skb);
-	return NETDEV_TX_OK;
 }
 
 static netdev_tx_t
