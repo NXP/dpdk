@@ -4170,6 +4170,7 @@ lsinic_queue_stop(struct lsinic_queue *q)
 		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
 		q->rc_reg = NULL;
 	}
+	q->msix_vaddr = NULL;
 }
 
 static int
@@ -4393,7 +4394,16 @@ _err:
 static void
 lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 {
+	struct lsinic_adapter *adapter;
+	struct rte_lsx_pciep_device *lsinic_dev;
+
 	if (likely(!q->ep_reg->isr))
+		return;
+
+	adapter = q->adapter;
+	lsinic_dev = adapter->lsinic_dev;
+
+	if (likely(lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT))
 		return;
 
 	if (!q->new_desc_thresh) {
@@ -4406,7 +4416,7 @@ lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 	if (!q->new_desc)
 		return;
 
-	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
+	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		if (q->new_desc_thresh && (q->new_desc >= q->new_desc_thresh ||
 			(lsinic_timeout(q)))) {
 			/* MSI */
