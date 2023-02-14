@@ -394,8 +394,33 @@ lsinic_set_netdev(struct lsinic_nic *adapter,
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int wait_loop = LSINIC_CMD_LOOP_NUM;
-	u32 cmd_status;
+	int wait_ms = LSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	u32 cmd_status, res;
+
+	LSINIC_WRITE_REG(&reg->command, cmd);
+	cmd_status = cmd;
+	do {
+		msleep(100);
+		cmd_status = LSINIC_READ_REG(&reg->command);
+		wait_ms -= 100;
+		if (wait_ms <= 0)
+			break;
+	} while (cmd_status != PCIDEV_COMMAND_IDLE);
+
+	if (cmd_status != PCIDEV_COMMAND_IDLE) {
+		e_err(drv, "CMD-%d executed failed, wait longer?",
+			cmd);
+		return PCIDEV_RESULT_FAILED;
+	}
+
+	/* Read result after command executed.*/
+	rmb();
+	res = LSINIC_READ_REG(&reg->result);
+	if (res != PCIDEV_RESULT_SUCCEED) {
+		e_err(drv, "CMD-%d executed result error(%d)",
+			cmd, res);
+		return res;
+	}
 
 	switch (cmd) {
 	case PCIDEV_COMMAND_START:
@@ -410,22 +435,14 @@ lsinic_set_netdev(struct lsinic_nic *adapter,
 	case PCIDEV_COMMAND_INIT:
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
+	case PCIDEV_COMMAND_SET_MTU:
+		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
+		break;
 	default:
 		break;
 	}
 
-	LSINIC_WRITE_REG(&reg->command, cmd);
-	do {
-		msleep(500);
-		cmd_status = LSINIC_READ_REG(&reg->command);
-	} while (--wait_loop && (cmd_status != PCIDEV_COMMAND_IDLE));
-
-	if (!wait_loop) {
-		e_err(drv, "Command-%d: failed to get right status!\n", cmd);
-		return PCIDEV_RESULT_FAILED;
-	}
-
-	return LSINIC_READ_REG(&reg->result);
+	return res;
 }
 
 static void
