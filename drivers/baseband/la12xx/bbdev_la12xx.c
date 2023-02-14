@@ -2758,13 +2758,6 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 		return ret;
 	}
 
-	/* Setup the device */
-	ret = setup_la12xx_dev(dev);
-	if (ret < 0) {
-		BBDEV_LA12XX_PMD_ERR("setup_la12xx_dev failed");
-		return ret;
-	}
-
 	return 0;
 }
 
@@ -2778,6 +2771,13 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 
 	/* Reset the device */
 	rte_pmd_la12xx_reset(dev_id);
+
+	/* Setup the device */
+	ret = setup_la12xx_dev(dev);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("setup_la12xx_dev failed");
+		return ret;
+	}
 
 	ret = bbdev_soft_reset(dev_id);
 	if (ret) {

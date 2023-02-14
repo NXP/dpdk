@@ -965,8 +965,10 @@ testsuite_teardown(void)
 	uint8_t dev_id;
 
 	/* Unconfigure devices */
-	RTE_BBDEV_FOREACH(dev_id)
+	RTE_BBDEV_FOREACH(dev_id) {
+		rte_pmd_la12xx_reset(dev_id);
 		rte_bbdev_close(dev_id);
+	}
 
 	/* Clear active devices structs. */
 	memset(active_devs, 0, sizeof(active_devs));
