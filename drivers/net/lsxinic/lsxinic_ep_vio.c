@@ -171,9 +171,10 @@ lsxvio_vio_queue_desc_map(struct rte_lsx_pciep_device *dev,
 	struct lsxvio_adapter *adapter = dev->eth_dev->data->dev_private;
 	struct lsxvio_queue_cfg *queue;
 	uint32_t i, enabled = 0;
-	uint64_t desc_addr_min = 0, desc_addr_max = 0, size;
+	uint64_t desc_addr_min = 0, desc_addr_max = 0, size, mask;
 	uint8_t *virt_base;
 
+	mask = lsx_pciep_bus_win_mask(dev);
 	for (i = 0; i < num; i++) {
 		queue = BASE_TO_QUEUE(adapter->cfg_base, i);
 		if (!queue->queue_enable) {
@@ -201,8 +202,14 @@ lsxvio_vio_queue_desc_map(struct rte_lsx_pciep_device *dev,
 		return -EINVAL;
 	}
 
+	if (mask && (desc_addr_min & mask)) {
+		LSXINIC_PMD_ERR("VIO Bus(0x%lx) not aligned with 0x%lx",
+			desc_addr_min, mask + 1);
+		return -EINVAL;
+	}
+
 	size = desc_addr_max - desc_addr_min + LSXVIO_PER_RING_MEM_MAX_SIZE;
-	while (desc_addr_min & (size - 1))
+	while (mask && (size & mask))
 		size++;
 	virt_base = lsx_pciep_set_ob_win(dev, desc_addr_min, size);
 	*ob_base = lsx_pciep_bus_this_ob_base(dev, 0xff);
@@ -524,7 +531,7 @@ lsxvio_virtio_net_init(uint64_t virt)
 	}
 }
 
-void
+int
 lsxvio_vio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
 {
 	switch (id) {
@@ -542,6 +549,11 @@ lsxvio_vio_init(uint64_t virt, uint16_t id, uint64_t lsx_feature)
 		lsxvio_vio_blk_init(virt);
 		break;
 	default:
-		LSXINIC_PMD_ERR("The device type is not supported!");
+		LSXINIC_PMD_ERR("The device type(%d) not supported",
+			id);
+
+		return -ENOTSUP;
 	}
+
+	return 0;
 }

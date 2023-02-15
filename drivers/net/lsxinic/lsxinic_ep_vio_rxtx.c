@@ -1833,12 +1833,24 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 {
 	uint8_t *virt;
 	uint32_t i;
+	uint64_t mask;
 
 	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		if (adapter->rbp_enable) {
 			LSXINIC_PMD_ERR("%s NOT support to dump remote buffer",
 				"RBP enabled");
 			return;
+		}
+		mask = lsx_pciep_bus_win_mask(adapter->lsx_dev);
+		if (mask && (remote_addr & mask)) {
+			LSXINIC_PMD_ERR("Align err: Bus(0x%lx)-mask(0x%lx)",
+				remote_addr, mask);
+			return -EINVAL;
+		}
+		if (mask && (LSXVIO_PER_RING_MEM_MAX_SIZE & mask)) {
+			LSXINIC_PMD_ERR("Align err: Size(0x%lx)-mask(0x%lx)",
+				LSXVIO_PER_RING_MEM_MAX_SIZE, mask);
+			return -EINVAL;
 		}
 		virt = lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);

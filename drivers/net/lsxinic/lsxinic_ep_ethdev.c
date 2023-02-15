@@ -231,7 +231,8 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	struct rte_eth_dev *eth_dev = lsinic_dev->eth_dev;
 	struct lsinic_adapter *adapter = (struct lsinic_adapter *)
 		eth_dev->process_private;
-	int sim, rbp;
+	int sim, rbp, ret;
+	uint64_t size, mask;
 
 	adapter->pf_idx = lsinic_dev->pf;
 	adapter->is_vf = lsinic_dev->is_vf;
@@ -247,18 +248,49 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 
 	if (!rbp && !sim) {
 		/* OB setting does NOT depend on RC for NORBP.*/
-		lsx_pciep_set_ob_win(lsinic_dev, 0, 0);
+		if (!lsx_pciep_set_ob_win(lsinic_dev, 0, 0)) {
+			LSXINIC_PMD_ERR("%s: none RBP OB win set failed",
+				lsinic_dev->name);
+
+			return -EIO;
+		}
 	}
 
-	lsx_pciep_set_ib_win(lsinic_dev,
-		LSX_PCIEP_REG_BAR_IDX,
-		LSINIC_REG_BAR_MAX_SIZE);
-	lsx_pciep_set_ib_win(lsinic_dev,
-		LSX_PCIEP_RING_BAR_IDX,
-		LSINIC_RING_BAR_MAX_SIZE);
+	mask = lsx_pciep_bus_win_mask(lsinic_dev);
+
+	size = LSINIC_REG_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = lsx_pciep_set_ib_win(lsinic_dev,
+		LSX_PCIEP_REG_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsinic_dev->name, LSX_PCIEP_REG_BAR_IDX, size);
+
+		return ret;
+	}
+
+	size = LSINIC_RING_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = lsx_pciep_set_ib_win(lsinic_dev,
+		LSX_PCIEP_RING_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsinic_dev->name, LSX_PCIEP_RING_BAR_IDX, size);
+
+		return ret;
+	}
 	if (sim && !lsinic_dev->is_vf &&
-		!(adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM))
-		lsx_pciep_sim_dev_map_inbound(lsinic_dev);
+		!(adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM)) {
+		ret = lsx_pciep_sim_dev_map_inbound(lsinic_dev);
+		if (ret) {
+			LSXINIC_PMD_ERR("%s: sim map IB failed(%d)",
+			lsinic_dev->name, ret);
+
+			return ret;
+		}
+	}
 
 	adapter->hw_addr =
 		lsinic_dev->virt_addr[LSX_PCIEP_REG_BAR_IDX];
@@ -1517,7 +1549,7 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 {
 	int sim;
 	void *vir_addr;
-	uint64_t vir_offset;
+	uint64_t vir_offset, mask;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
@@ -1529,6 +1561,17 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 		lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
 		adapter->rc_ring_phy_base = 0;
 	} else {
+		mask = lsx_pciep_bus_win_mask(lsinic_dev);
+		if (mask && (rc_reg_addr & mask)) {
+			LSXINIC_PMD_ERR("Bus(0x%lx) not aligned with 0x%lx",
+				rc_reg_addr, mask + 1);
+			return -EINVAL;
+		}
+		if (mask && (LSINIC_RING_BAR_MAX_SIZE & mask)) {
+			LSXINIC_PMD_ERR("OB size(0x%lx) not aligned with 0x%lx",
+				LSINIC_RING_BAR_MAX_SIZE, mask + 1);
+			return -EINVAL;
+		}
 		adapter->rc_ring_virt_base = lsx_pciep_set_ob_win(lsinic_dev,
 			rc_reg_addr, LSINIC_RING_BAR_MAX_SIZE);
 		adapter->rc_ring_phy_base =
