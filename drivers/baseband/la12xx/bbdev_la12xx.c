@@ -2738,6 +2738,41 @@ err:
 }
 
 int
+rte_pmd_bbdev_reset(uint16_t dev_id)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+	mem_strt_addr_t hugepg_start;
+	int i, ret;
+
+	rte_pmd_la12xx_feca_reset(dev_id);
+	for (i = 0; i < MAX_PCI_USER_ALLOC_COUNT; i++) {
+		if (ipc_priv->hugepg_start[i].host_vaddr) {
+			hugepg_start.host_phys =
+				ipc_priv->hugepg_start[i].host_phys;
+			hugepg_start.modem_phys =
+				ipc_priv->hugepg_start[i].modem_phys;
+			hugepg_start.size = ipc_priv->hugepg_start[i].size;
+			/* Send IOCTL to put hugepg_start map */
+			ret = ioctl(ipc_priv->dev_ipc,
+				    IOCTL_GUL_IPC_PUT_PCI_MAP, &hugepg_start);
+			if (ret) {
+				BBDEV_LA12XX_PMD_ERR(
+					"IOCTL_GUL_IPC_GET_PUT_MAP ioctl failed");
+				return -1;
+			}
+			ipc_priv->hugepg_start[i].host_vaddr = 0;
+			ipc_priv->hugepg_start[i].modem_phys = 0;
+			ipc_priv->hugepg_start[i].host_phys = 0;
+			ipc_priv->hugepg_start[i].size = 0;
+		}
+	}
+
+	return 0;
+}
+
+int
 rte_pmd_la12xx_reset(uint16_t dev_id)
 {
 	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];

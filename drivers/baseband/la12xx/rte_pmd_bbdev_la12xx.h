@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #ifndef _PMD_LA12XX_H_
@@ -275,6 +275,18 @@ rte_pmd_la12xx_is_active(uint16_t dev_id);
  */
 int
 rte_pmd_la12xx_reset(uint16_t dev_id);
+
+/**
+ * Reset bbdev device only.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @return
+ *   0 - Success, otherwise Failure
+ */
+int
+rte_pmd_bbdev_reset(uint16_t dev_id);
 
 /**
  * Reset (reboot) LA12xx device and restore the configuration.
