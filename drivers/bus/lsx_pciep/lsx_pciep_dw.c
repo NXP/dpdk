@@ -48,6 +48,8 @@
 
 #define PCIE_VF_SIZE_OFF (PCIE_PF_SIZE_OFF + 0x18c)
 
+#define PCIEP_DW_WIN_MASK 0xfff
+
 struct pcie_dw_bar_size_mask {
 	uint32_t rsv[4];
 	uint32_t bar0_mask;
@@ -217,6 +219,7 @@ struct pciep_dw_info {
 		shared_ob_win[LSX_MAX_PCIE_NB][PCIE_DW_OB_WINS_NUM];
 	uint64_t ob_max_size;
 	uint64_t ob_win_max_size;
+	uint64_t win_mask;
 	int shared_ob;
 };
 
@@ -1240,12 +1243,14 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 		info->ob_base[pcie_id] = hw->out_base;
 		info->ob_max_size = CFG_32G_SIZE;
 		info->ob_win_max_size = CFG_4G_SIZE;
+		info->win_mask = PCIEP_DW_WIN_MASK;
 	}
 
 	hw->dbi_phy = info->dbi_phy[pcie_id];
 	hw->out_base = info->ob_base[pcie_id];
 	hw->out_size = info->ob_max_size;
 	hw->out_win_max_size = info->ob_win_max_size;
+	hw->win_mask = info->win_mask;
 
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "wb");
 	f_ret = fwrite(info, sizeof(struct pciep_dw_info),
