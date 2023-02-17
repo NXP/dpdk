@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_COMMON_H_
@@ -73,6 +73,7 @@ enum lsinic_port_type {
 };
 
 #define LSINIC_RING_MAX_COUNT 8
+#define LSINIC_RING_DEFAULT_MAX_QP 4
 
 #define LSINIC_MAX_BURST_NUM 32
 

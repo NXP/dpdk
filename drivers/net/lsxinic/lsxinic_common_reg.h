@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_COMMON_REG_H_
@@ -463,6 +463,15 @@ struct lsinic_ep_rx_src_addrx {
 #define LSINIC_RING_BAR_MAX_SIZE \
 	(LSINIC_RX_BD_OFFSET + LSINIC_RX_RING_BD_MAX_SIZE)
 
+#define LSINIC_MULTI_RING_SIZE(count) \
+	(LSINIC_RING_SIZE * (count))
+
+#define LSINIC_RC2EP_RING_OFFSET(count) 0
+#define LSINIC_EP2RC_RING_OFFSET(count) LSINIC_MULTI_RING_SIZE(count)
+
+#define LSINIC_RING_PAIR_SIZE(count) \
+	(LSINIC_MULTI_RING_SIZE(count) * 2)
+
 #define LSINIC_REG_OFFSET(p, o) ((void *)((uint8_t *)(p) + (o)))
 
 static inline uint32_t
@@ -640,6 +649,7 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 	uint32_t macidx;
 	uint32_t macaddrh;
 	uint32_t macaddrl;
+	uint32_t max_qpairs;
 	uint32_t tx_ring_num;
 	uint32_t tx_entry_num;
 	uint32_t rx_ring_num;
