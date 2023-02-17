@@ -44,9 +44,10 @@
 #define __packed	__rte_packed
 #endif
 
-#define PCIE_PF_SIZE_OFF 0x1000
+#define PCIE_PF_BAR_SIZE_MASK_OFF 0x1000
 
-#define PCIE_VF_SIZE_OFF (PCIE_PF_SIZE_OFF + 0x18c)
+#define PCIE_VF_BAR_SIZE_MASK_OFF \
+	(PCIE_PF_BAR_SIZE_MASK_OFF + 0x18c)
 
 #define PCIEP_DW_WIN_MASK 0xfff
 
@@ -860,26 +861,35 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
-static void pcie_dw_set_ib_size(uint8_t *base, int bar,
+static int pcie_dw_set_ib_size(uint8_t *base, int bar,
 		uint64_t size, int pf, int is_vf)
 {
-	uint64_t mask;
+	uint64_t mask, offset;
+	uint8_t *pf_base;
 	struct pcie_dw_bar_size_mask *size_mask;
 
-	if (is_vf) {
-		/*Not support resize VF bar.*/
-		return;
+	/* The least inbound window is 4KiB */
+	if (size < (PCIEP_DW_WIN_MASK + 1)) {
+		LSX_PCIEP_BUS_ERR("%s: Too small size(0x%lx)",
+			__func__, size);
+		return -EINVAL;
 	}
 
-	/* The least inbound window is 4KiB */
-	if (size < (4 * 1024))
-		mask = 0;
-	else
-		mask = size - 1;
+	if (!rte_is_power_of_2(size)) {
+		LSX_PCIEP_BUS_ERR("%s: Size(0x%lx) not power of 2",
+			__func__, size);
+		return -EINVAL;
+	}
 
-	size_mask = (struct pcie_dw_bar_size_mask *)
-		(base + PCIE_PF_SIZE_OFF +
-		pf * PCIE_CFG_OFFSET);
+	mask = size - 1;
+	pf_base = base + pf * PCIE_CFG_OFFSET;
+
+	if (is_vf)
+		offset = PCIE_VF_BAR_SIZE_MASK_OFF;
+	else
+		offset = PCIE_PF_BAR_SIZE_MASK_OFF;
+
+	size_mask = (void *)(pf_base + offset);
 
 	switch (bar) {
 	case 0:
@@ -903,8 +913,12 @@ static void pcie_dw_set_ib_size(uint8_t *base, int bar,
 			&size_mask->bar5_mask);
 	break;
 	default:
-	break;
+		LSX_PCIEP_BUS_ERR("%s: Invalid Bar number(%d)",
+			__func__, bar);
+		return -EINVAL;
 	}
+
+	return 0;
 }
 
 static int
@@ -913,7 +927,7 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	uint64_t phys, uint64_t size, int resize)
 {
 	uint32_t ctrl1, ctrl2, ctrl3 = 0;
-	int idx, ib_nb;
+	int idx, ib_nb, ret;
 	struct pciep_dw_proc_info *proc_info;
 	struct pcie_dw_iatu_region *iatu =
 		(struct pcie_dw_iatu_region *)
@@ -933,7 +947,13 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 
 	if (resize) {
 		rte_write32(0, hw->dbi_vir + PCIE_MISC_CONTROL_1_OFF);
-		pcie_dw_set_ib_size(hw->dbi_vir, bar, size, pf, is_vf);
+		ret = pcie_dw_set_ib_size(hw->dbi_vir, bar, size, pf, is_vf);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("Set IB[%d] size(0x%lx) failed(%d)",
+				bar, size, ret);
+
+			return ret;
+		}
 	}
 
 	idx = pcie_dw_alloc_win_idx(hw->index,
