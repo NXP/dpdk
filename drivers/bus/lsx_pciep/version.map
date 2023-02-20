@@ -11,6 +11,7 @@ DPDK_22 {
 	lsx_pciep_ctl_dev_set;
 	lsx_pciep_set_ib_win;
 	lsx_pciep_set_ib_win_mz;
+	lsx_pciep_unset_ib_win;
 	lsx_pciep_sim_dev_map_inbound;
 	lsx_pciep_set_sim_ob_win;
 	lsx_pciep_ctl_rbp_enable;

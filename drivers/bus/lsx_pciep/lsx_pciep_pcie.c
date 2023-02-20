@@ -1422,12 +1422,11 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	int pcie_id = ep_dev->pcie_id;
 	int pf = ep_dev->pf;
 	int vf = ep_dev->vf;
-	int is_vf = ep_dev->is_vf;
+	int is_vf = ep_dev->is_vf, ret;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
 	char mz_name[RTE_MEMZONE_NAMESIZE];
-	const struct rte_memzone *mz;
-	size_t mz_size;
+	const struct rte_memzone *mz = NULL;
 	struct lsx_pciep_inbound_bar *ib_bar;
 	char *penv, *ptr;
 	char env[64];
@@ -1472,6 +1471,8 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->vf_mz[pf][vf][bar_idx]->name);
 
+			mz = ib_mem->vf_mz[pf][vf][bar_idx];
+
 			goto config_ep_dev_addr;
 		}
 		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
@@ -1483,30 +1484,37 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
 				ib_mem->pf_mz[pf][bar_idx]->name);
 
+			mz = ib_mem->pf_mz[pf][bar_idx];
+
 			goto config_ep_dev_addr;
 		}
 		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
 			"mz_pciep%d_pf%d_bar%d",
 			ctlhw->hw.index, pf, bar_idx);
 	}
-	mz_size = size * 2;
 
 	mz = rte_memzone_reserve_aligned(mz_name,
-			mz_size, 0, RTE_MEMZONE_IOVA_CONTIG,
-			mz_size);
+			size, 0, RTE_MEMZONE_IOVA_CONTIG,
+			size);
 	if (!mz || !mz->iova || !mz->addr) {
 		LSX_PCIEP_BUS_ERR("Reserve %s memory(%zuB) failed",
-			mz_name, mz_size);
+			mz_name, size);
 
 		return -ENOMEM;
 	}
 
-	return lsx_pciep_set_ib_win_mz(ep_dev, bar_idx, mz, 1);
+	ret = lsx_pciep_set_ib_win_mz(ep_dev, bar_idx, mz, 1);
+	if (ret) {
+		rte_memzone_free(mz);
+
+		return ret;
+	}
 
 config_ep_dev_addr:
 	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
 	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
 	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
+	ep_dev->mz[bar_idx] = mz;
 
 	return 0;
 }
@@ -1525,10 +1533,12 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	struct lsx_pciep_inbound_bar *ib_bar;
 	uint64_t size = mz->len, phy, iova;
 
-	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE)
-		size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
-	if (!rte_is_power_of_2(size))
-		size = rte_align64pow2(size);
+	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE ||
+		!rte_is_power_of_2(size)) {
+		LSX_PCIEP_BUS_ERR("Invalid MZ(%s)'s size(0x%lx)",
+			mz->name, size);
+		return -EINVAL;
+	}
 
 	if (bar_idx >= PCI_MAX_RESOURCE) {
 		LSX_PCIEP_BUS_ERR("%s too large bar number(%d)",
@@ -1598,6 +1608,88 @@ config_ep_dev_addr:
 	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
 	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
 	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
+
+	return 0;
+}
+
+int
+lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx)
+{
+	int pcie_id = ep_dev->pcie_id;
+	int pf = ep_dev->pf;
+	int vf = ep_dev->vf;
+	int is_vf = ep_dev->is_vf, ret;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
+	struct lsx_pciep_inbound_bar *ib_bar;
+	const struct rte_memzone *mz = NULL;
+
+	if (is_vf) {
+		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
+		if (!ib_mem->vf_mz[pf][vf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("PF%d-VF%d-bar%d was unset",
+				pf, vf, bar_idx);
+		}
+		mz = ib_mem->vf_mz[pf][vf][bar_idx];
+		ib_mem->vf_mz[pf][vf][bar_idx] = NULL;
+	} else {
+		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
+		if (!ib_mem->pf_mz[pf][bar_idx]) {
+			LSX_PCIEP_BUS_INFO("PF%d-bar%d was unset",
+				pf, bar_idx);
+		}
+		mz = ib_mem->pf_mz[pf][bar_idx];
+		ib_mem->pf_mz[pf][bar_idx] = NULL;
+	}
+	memset(ib_bar, 0, sizeof(struct lsx_pciep_inbound_bar));
+
+	if (ep_dev->mz[bar_idx] != mz) {
+		if (ep_dev->mz[bar_idx] && mz) {
+			LSX_PCIEP_BUS_WARN("%s-mz[%d](%s) != mz(%s)",
+				ep_dev->name, bar_idx,
+				ep_dev->mz[bar_idx]->name,
+				mz->name);
+		} else if (ep_dev->mz[bar_idx]) {
+			LSX_PCIEP_BUS_WARN("%s-mz[%d](%s) not freed",
+				ep_dev->name, bar_idx,
+				ep_dev->mz[bar_idx]->name);
+		} else if (mz) {
+			LSX_PCIEP_BUS_WARN("%s: mz(%s) not freed",
+				ep_dev->name,
+				mz->name);
+		}
+		if (ep_dev->mz[bar_idx]) {
+			ret = rte_memzone_free(ep_dev->mz[bar_idx]);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: free mz[%d] err(%d)",
+					ep_dev->name, bar_idx, ret);
+				return ret;
+			}
+		}
+		if (mz) {
+			ret = rte_memzone_free(mz);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: free mz err(%d)",
+					ep_dev->name, ret);
+				return ret;
+			}
+		}
+	} else {
+		if (mz) {
+			ret = rte_memzone_free(mz);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: free mz err(%d)",
+					ep_dev->name, ret);
+				return ret;
+			}
+		}
+	}
+
+	ep_dev->virt_addr[bar_idx] = NULL;
+	ep_dev->phy_addr[bar_idx] = 0;
+	ep_dev->iov_addr[bar_idx] = 0;
+	ep_dev->mz[bar_idx] = NULL;
 
 	return 0;
 }
