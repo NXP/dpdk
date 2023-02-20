@@ -91,7 +91,7 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_RCS_REG_OFFSET);
 	int wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
-	uint32_t cmd_status;
+	uint32_t cmd_status, res;
 
 	if (getenv("LXSNIC_CMD_WAIT_SEC")) {
 		wait_ms = atoi("LXSNIC_CMD_WAIT_SEC") * 1000;
@@ -115,6 +115,14 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		return PCIDEV_RESULT_FAILED;
 	}
 
+	rte_rmb();
+	res = LSINIC_READ_REG(&reg->result);
+	if (res != PCIDEV_RESULT_SUCCEED) {
+		LSXINIC_PMD_ERR("CMD-%d executed result error(%d)",
+			cmd, res);
+		return res;
+	}
+
 	switch (cmd) {
 	case PCIDEV_COMMAND_START:
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_UP);
@@ -135,7 +143,7 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		break;
 	}
 
-	return LSINIC_READ_REG(&reg->result);
+	return res;
 }
 
 static int
