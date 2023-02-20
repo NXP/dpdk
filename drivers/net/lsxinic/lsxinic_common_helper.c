@@ -29,6 +29,8 @@
 
 #include "lsxinic_ep_vio_rxtx.h"
 
+#define perf_log printf
+
 static inline struct rte_ipv4_hdr *
 ip_hdr(const struct rte_mbuf *mbuf)
 {
@@ -46,23 +48,23 @@ lsinic_mbuf_print_eth(const struct rte_mbuf *mbuf)
 
 	eth = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
 	if (eth) {
-		printf("Ethernet header(0x%p):\n", eth);
-		printf("-------------------------------------\n");
-		printf("d_addr		= ");
+		perf_log("Ethernet header(0x%p):\n", eth);
+		perf_log("-------------------------------------\n");
+		perf_log("d_addr		= ");
 		for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
-			printf("%02x:", eth->dst_addr.addr_bytes[i]);
+			perf_log("%02x:", eth->dst_addr.addr_bytes[i]);
 
-		printf("\n");
+		perf_log("\n");
 
-		printf("s_addr		= ");
+		perf_log("s_addr		= ");
 		for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
-			printf("%02x:", eth->src_addr.addr_bytes[i]);
+			perf_log("%02x:", eth->src_addr.addr_bytes[i]);
 
-		printf("\n");
+		perf_log("\n");
 
-		printf("ether_type	= 0x%x\n", eth->ether_type);
+		perf_log("ether_type	= 0x%x\n", eth->ether_type);
 	}
-	printf("\n");
+	perf_log("\n");
 }
 
 static void
@@ -72,20 +74,20 @@ lsinic_mbuf_print_ip(const struct rte_mbuf *mbuf)
 
 	iph = ip_hdr(mbuf);
 	if (iph) {
-		printf("IP header (0x%p):\n", iph);
-		printf("-------------------------------------\n");
-		printf("version_ihl	= 0x%x\n", iph->version_ihl);
-		printf("type_of_service	= 0x%x\n", iph->type_of_service);
-		printf("packet_id	= 0x%x\n", iph->packet_id);
-		printf("fragment_offset	= 0x%x\n", iph->fragment_offset);
-		printf("time_to_live	= 0x%x\n", iph->time_to_live);
-		printf("next_proto_id	= 0x%x\n", iph->next_proto_id);
-		printf("hdr_checksum	= 0x%x\n", iph->hdr_checksum);
-		printf("src_addr	= 0x%x\n", iph->src_addr);
-		printf("dst_addr	= 0x%x\n", iph->dst_addr);
+		perf_log("IP header (0x%p):\n", iph);
+		perf_log("-------------------------------------\n");
+		perf_log("version_ihl = 0x%x\n", iph->version_ihl);
+		perf_log("type_of_service = 0x%x\n", iph->type_of_service);
+		perf_log("packet_id	= 0x%x\n", iph->packet_id);
+		perf_log("fragment_offset = 0x%x\n", iph->fragment_offset);
+		perf_log("time_to_live = 0x%x\n", iph->time_to_live);
+		perf_log("next_proto_id	= 0x%x\n", iph->next_proto_id);
+		perf_log("hdr_checksum = 0x%x\n", iph->hdr_checksum);
+		perf_log("src_addr = 0x%x\n", iph->src_addr);
+		perf_log("dst_addr = 0x%x\n", iph->dst_addr);
 	}
 
-	printf("\n");
+	perf_log("\n");
 }
 
 static void
@@ -98,21 +100,21 @@ lsinic_mbuf_print(const struct rte_mbuf *mbuf)
 
 	pkt_data = rte_pktmbuf_mtod_offset(mbuf, char *, 0);
 
-	printf("mbuf: %p\n", mbuf);
-	printf("=====================================\n");
-	printf("pool		= %p\n", mbuf->pool);
-	printf("type		= 0x%x\n", mbuf->packet_type);
-	printf("buf_addr	= %p\n", mbuf->buf_addr);
-	printf("buf_physaddr	= 0x%lx\n", mbuf->buf_iova);
-	printf("pkt.data	= %p\n", pkt_data);
-	printf("buf_len		= %d\n", mbuf->buf_len);
-	printf("pkt.in_port	= %d\n", mbuf->port);
-	printf("pkt.nb_segs	= %d\n", mbuf->nb_segs);
+	perf_log("mbuf: %p\n", mbuf);
+	perf_log("=====================================\n");
+	perf_log("pool		= %p\n", mbuf->pool);
+	perf_log("type		= 0x%x\n", mbuf->packet_type);
+	perf_log("buf_addr	= %p\n", mbuf->buf_addr);
+	perf_log("buf_physaddr	= 0x%lx\n", mbuf->buf_iova);
+	perf_log("pkt.data	= %p\n", pkt_data);
+	perf_log("buf_len		= %d\n", mbuf->buf_len);
+	perf_log("pkt.in_port	= %d\n", mbuf->port);
+	perf_log("pkt.nb_segs	= %d\n", mbuf->nb_segs);
 
-	printf("pkt.data_len	= %d\n", mbuf->data_len);
+	perf_log("pkt.data_len	= %d\n", mbuf->data_len);
 	/* Total pkt len: sum of all segment data_len */
-	printf("pkt.pkt_len	= %d\n", mbuf->pkt_len);
-	printf("\n");
+	perf_log("pkt.pkt_len	= %d\n", mbuf->pkt_len);
+	perf_log("\n");
 }
 
 void
@@ -187,36 +189,36 @@ print_queue_status(void *queue,
 
 	epq = queue;
 
-	printf("\t%sq%d: ",
+	perf_log("\t%sq%d: ",
 		epq->type == LSINIC_QUEUE_RX ? "rx" : "tx",
 		epq->reg_idx);
 
-	printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
+	perf_log("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
 		epq->status,
 		epq->next_avail_idx,
 		epq->next_used_idx,
 		epq->ep_reg->pir,
 		epq->ep_reg->cir);
 
-	printf("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
+	perf_log("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
 		(unsigned long long)epq->packets,
 		(unsigned long long)epq->errors,
 		(unsigned long long)epq->drop_packet_num);
 
-	printf("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+	perf_log("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
 		(unsigned long long)epq->ring_full,
 		(unsigned long long)epq->loop_total,
 		(unsigned long long)epq->loop_avail);
 
-	printf("\tEP dmaq=%d next_dma_idx=%d",
+	perf_log("\tEP dmaq=%d next_dma_idx=%d",
 		epq->dma_vq, epq->next_dma_idx);
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	printf("\t\tnew_desc=%d in_dma=%ld in_dpni=%ld\n",
+	perf_log("\t\tnew_desc=%d in_dma=%ld in_dpni=%ld\n",
 		epq->new_desc,
 		epq->pkts_eq - epq->pkts_dq, (long)epq->recycle_pending);
 #else
-	printf("\t\tnew_desc=%d in_dma=%ld\n",
+	perf_log("\t\tnew_desc=%d in_dma=%ld\n",
 		epq->new_desc, epq->pkts_eq - epq->pkts_dq);
 #endif
 
@@ -235,23 +237,23 @@ print_queue_status(void *queue,
 print_rc_queue_status:
 	rcq = queue;
 
-	printf("\t%sq%d: ",
+	perf_log("\t%sq%d: ",
 		rcq->type == LSINIC_QUEUE_RX ? "rx" : "tx",
 		rcq->queue_index);
 
-	printf("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
+	perf_log("\tstatus=%d avail_idx=%d used_idx=%d pir=%d cir=%d\n",
 		rcq->status,
 		rcq->last_avail_idx,
 		rcq->last_used_idx,
 		rcq->rc_reg->pir,
 		rcq->rc_reg->cir);
 
-	printf("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
+	perf_log("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
 		(unsigned long long)rcq->packets,
 		(unsigned long long)rcq->errors,
 		(unsigned long long)rcq->drop_packet_num);
 
-	printf("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+	perf_log("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
 		(unsigned long long)rcq->ring_full,
 		(unsigned long long)rcq->loop_total,
 		(unsigned long long)rcq->loop_avail);
@@ -283,21 +285,21 @@ print_ep_virtio_queue_status(void *queue,
 	if (!q)
 		return;
 
-	printf("\t%sq%d: ",
+	perf_log("\t%sq%d: ",
 		q->type == LSXVIO_QUEUE_RX ? "rx" : "tx",
 		q->reg_idx);
 
-	printf("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
+	perf_log("\t\tpackets=%lld errors=%lld drop_pkts=%lld\n",
 		(unsigned long long)q->packets,
 		(unsigned long long)q->errors,
 		(unsigned long long)q->drop_packet_num);
 
-	printf("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
+	perf_log("\t\tring_full=%lld loop_total=%lld loop_avail=%lld\n",
 		(unsigned long long)q->ring_full,
 		(unsigned long long)q->loop_total,
 		(unsigned long long)q->loop_avail);
 
-	printf("\tEP dmaq=%d next_dma_idx=%d\t\tnew_desc=%d in_dma=%ld\n",
+	perf_log("\tEP dmaq=%d next_dma_idx=%d\t\tnew_desc=%d in_dma=%ld\n",
 		q->dma_vq, q->next_dma_idx,
 		q->new_desc,
 		q->pkts_eq - q->pkts_dq);
@@ -363,19 +365,16 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 		}
 	}
 
-	printf("\tTotal txq:\ttotal_pkts=%lld tx_pkts=%lld ",
-		opackets + odrops, opackets);
-	printf("drop_pkts=%lld ring_full=%lld\n",
-		odrops, oring_full);
-
-	printf("TX performance: %fGbps, fcs bits: %lld\r\n",
+	perf_log("\tTotal txq:\ttx=%lld drop=%lld full=%lld\n",
+		opackets, odrops, oring_full);
+	perf_log("TX performance: %fGbps, fcs bits: %lld\r\n",
 		obytes_diff * 8 /
 		(debug_interval * G_SIZE), obytes_fcs * 8);
 	if (!ret)
 		idrops = missed;
-	printf("\tTotal rxq:\trx=%lld drop=%lld full=%lld\n",
+	perf_log("\tTotal rxq:\trx=%lld drop=%lld full=%lld\n",
 		ipackets, idrops, iring_full);
-	printf("RX performance: %fGbps, fcs bits: %lld\r\n",
+	perf_log("RX performance: %fGbps, fcs bits: %lld\r\n",
 		ibytes_diff * 8 /
 		(debug_interval * G_SIZE), ibytes_fcs * 8);
 }
