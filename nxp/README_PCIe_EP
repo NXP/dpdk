@@ -83,8 +83,16 @@ insmod lsinic_kmod.ko
 #Larger continue huge page setup to improve performance
 echo 64 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
 mount -t hugetlbfs hugetlbfs /mnt/hugepages -o "pagesize=1G"
+
+#Option1: Igbuio mode:
 insmod igb_uio.ko
 echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
+
+#Option2: VFIO mode:
+dpdk-devbind.py -b vfio-pci 0000:06:00.0
+dpdk-devbind.py -b vfio-pci 0000:06:00.1
+echo "0x1957 0x8d80" > /sys/bus/pci/drivers/vfio-pci/new_id
+
 #forward traffic from PF0 to PF1
 export PORT0_FWD=1
 #forward traffic from PF1 to PF0
@@ -179,6 +187,8 @@ source ./dynamic_dpl.sh dpmac.5 dpmac.6
 echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
 echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
 echo 1 > /sys/bus/pci/rescan
+
+#Igbuio mode only here, because vfio SRIOV not supported yet for this device.
 insmod igb_uio.ko
 echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
 echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/max_vfs
@@ -400,8 +410,16 @@ echo 1 > /sys/bus/pci/rescan
 #VirtIO net devices are supposed to be scaned:
 #06:00.0 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
 #06:00.1 Ethernet controller: Red Hat, Inc. Virtio network device (rev 20)
+
+#Option1: igbuio mode:
 insmod igb_uio.ko
 echo "0x1AF4 0x1041" > /sys/bus/pci/drivers/igb_uio/new_id
+
+#Option2: VFIO mode:
+dpdk-devbind.py -b vfio-pci 0000:06:00.0
+dpdk-devbind.py -b vfio-pci 0000:06:00.1
+echo "0x1AF4 0x1041" > /sys/bus/pci/drivers/vfio-pci/new_id
+
 export PORT0_FWD=1
 export PORT1_FWD=0
 #Following setting are used for RC simulatore on single board:
