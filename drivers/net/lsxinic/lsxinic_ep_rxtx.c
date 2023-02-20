@@ -1170,7 +1170,7 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	uint32_t pkt_len, raw_count = q->ep_reg->r_raw_count;
 	uint32_t raw_size;
 	char *penv;
-	uint64_t remote_addr, ob_base, mz_offset = 0;
+	uint64_t remote_addr, ob_base, mz_offset = 0, mask;
 	struct lsinic_dma_job *dma_jobs;
 	rte_iova_t loca_iova;
 	uint8_t *loca_addr;
@@ -1311,9 +1311,20 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 		raw_test->remote_vbase = raw_test->mem_mz->addr;
 		ob_base = 0;
 	} else {
+		mask = lsx_pciep_bus_win_mask(lsinic_dev);
 		remote_base = LSINIC_READ_REG(&q->ep_reg->r_raw_baseh);
 		remote_base = remote_base << 32;
 		remote_base |= LSINIC_READ_REG(&q->ep_reg->r_raw_basel);
+		if (mask && (remote_base & mask)) {
+			LSXINIC_PMD_ERR("Align err: Bus(0x%lx)-mask(0x%lx)",
+				remote_base, mask);
+			return -EINVAL;
+		}
+		if (mask && (raw_size & mask)) {
+			LSXINIC_PMD_ERR("Align err: Size(0x%08x)-mask(0x%lx)",
+				raw_size, mask);
+			return -EINVAL;
+		}
 		raw_test->remote_vbase = lsx_pciep_set_ob_win(lsinic_dev,
 			remote_base, raw_size);
 		if (!raw_test->remote_vbase) {
@@ -6718,13 +6729,19 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		!lsinic_dev->virt_addr[LSX_PCIEP_XFER_MEM_BAR_IDX]) {
 		const struct rte_memzone *mz;
 		int ret;
+		uint64_t mask;
 
 		mz = lsinic_dev_mempool_continue_mz(mp);
 		if (mz) {
+			mask = lsx_pciep_bus_win_mask(lsinic_dev);
+			if (mask && (mask & mz->len)) {
+				LSXINIC_PMD_ERR("!Align Len(0x%lx)-mask(0x%lx)",
+					mz->len, mask);
+				return -EINVAL;
+			}
 			ret = lsx_pciep_set_ib_win_mz(lsinic_dev,
 				LSX_PCIEP_XFER_MEM_BAR_IDX, mz,
 				0);
-
 			if (ret)
 				return ret;
 			if (lsx_pciep_hw_sim_get(adapter->pcie_idx) &&
