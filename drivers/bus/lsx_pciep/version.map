@@ -6,6 +6,7 @@ DPDK_22 {
 	lsx_pciep_set_ob_win;
 	lsx_pciep_unset_ob_win;
 	lsx_pciep_multi_msix_init;
+	lsx_pciep_multi_msix_remove;
 	lsx_pciep_start_msix;
 	lsx_pciep_ctl_dev_set;
 	lsx_pciep_set_ib_win;
