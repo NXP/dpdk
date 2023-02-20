@@ -178,6 +178,9 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 void
 lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset);
+int
+lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr);
 
 void
 lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
