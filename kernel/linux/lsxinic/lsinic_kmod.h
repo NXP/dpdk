@@ -334,6 +334,8 @@ struct lsinic_nic {
 #define LSINIC_FLAG2_PTP_PPS_ENABLED		(u32)(1 << 11)
 #define LSINIC_FLAG2_BRIDGE_MODE_VEB		(u32)(1 << 12)
 
+	u16 max_qpairs;
+
 	/* Tx fast path data */
 	int num_tx_queues;
 	u16 tx_itr_setting;
@@ -371,7 +373,7 @@ struct lsinic_nic {
 	struct vi_vectors_info vectors_info[MAX_Q_VECTORS];
 
 	void __iomem *hw_addr;
-	void *bd_desc_base;
+	u8 *bd_desc_base;
 	u16 msg_enable;
 
 	void *ep_ring_virt_base;  /* EP ring base */
@@ -382,7 +384,7 @@ struct lsinic_nic {
 	dma_addr_t rc_ring_phy_base;
 	u64 rc_ring_win_size;
 
-	void *rc_bd_desc_base;
+	u8 *rc_bd_desc_base;
 	dma_addr_t rc_bd_desc_phy;
 
 	u64 tx_busy;

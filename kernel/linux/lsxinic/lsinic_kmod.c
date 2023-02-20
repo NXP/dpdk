@@ -1387,6 +1387,8 @@ lsinic_sw_init(struct lsinic_nic *adapter)
 		return -EINVAL;
 	}
 
+	adapter->max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
+
 	adapter->max_q_vectors = MAX_Q_VECTORS;
 
 	/* set default work limits */
@@ -1481,9 +1483,12 @@ lsinic_setup_tx_resources(struct lsinic_nic *adapter, int i)
 {
 	struct lsinic_ring *tx_ring = adapter->tx_ring[i];
 	struct device *dev = tx_ring->dev;
-	int size;
+	u64 size, tx_offset, this_offset, total_offset;
 
 	size = sizeof(struct lsinic_tx_buffer) * tx_ring->count;
+	tx_offset = LSINIC_RC2EP_RING_OFFSET(adapter->max_qpairs);
+	this_offset = i * LSINIC_RING_SIZE;
+	total_offset = tx_offset + this_offset;
 
 	tx_ring->tx_buffer_info = vzalloc(size);
 	if (!tx_ring->tx_buffer_info)
@@ -1492,20 +1497,14 @@ lsinic_setup_tx_resources(struct lsinic_nic *adapter, int i)
 	tx_ring->adapter = adapter;
 	tx_ring->data_room = PAGE_SIZE;
 	tx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
-	tx_ring->ep_bd_desc = (struct lsinic_bd_desc *)
-		((u8 *)adapter->bd_desc_base + LSINIC_TX_BD_OFFSET +
-		i * LSINIC_RING_SIZE);
+	tx_ring->ep_bd_desc = (void *)(adapter->bd_desc_base + total_offset);
 
 	tx_ring->tx_avail_idx = 0;
 
 	tx_ring->size = tx_ring->count * sizeof(struct lsinic_bd_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
-	tx_ring->rc_bd_desc = (struct lsinic_bd_desc *)
-		((char *)adapter->rc_bd_desc_base +
-		LSINIC_TX_BD_OFFSET +
-		i * LSINIC_RING_SIZE);
-	tx_ring->rc_bd_desc_dma = ((u64)adapter->rc_bd_desc_phy) +
-	(u64)((u64)tx_ring->rc_bd_desc - (u64)adapter->rc_bd_desc_base);
+	tx_ring->rc_bd_desc = (void *)(adapter->rc_bd_desc_base + total_offset);
+	tx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy + total_offset;
 
 	printk_init("RC tx phy_base:%lX, queue:%d bd_virt:%p bd_phy:%lX\n",
 			adapter->ep_ring_phy_base, i, tx_ring->rc_bd_desc,
@@ -1568,9 +1567,12 @@ lsinic_setup_rx_resources(struct lsinic_nic *adapter, int i)
 {
 	struct lsinic_ring *rx_ring = adapter->rx_ring[i];
 	struct device *dev = rx_ring->dev;
-	int size;
+	u64 size, rx_offset, this_offset, total_offset;
 
 	size = sizeof(struct lsinic_rx_buffer) * rx_ring->count;
+	rx_offset = LSINIC_EP2RC_RING_OFFSET(adapter->max_qpairs);
+	this_offset = i * LSINIC_RING_SIZE;
+	total_offset = rx_offset + this_offset;
 
 	rx_ring->rx_buffer_info = vzalloc(size);
 	if (!rx_ring->rx_buffer_info)
@@ -1579,19 +1581,13 @@ lsinic_setup_rx_resources(struct lsinic_nic *adapter, int i)
 	rx_ring->adapter = adapter;
 	rx_ring->data_room = PAGE_SIZE;
 	rx_ring->data_room -= LSINIC_RC_TX_DATA_ROOM_OVERHEAD;
-	rx_ring->ep_bd_desc = (struct lsinic_bd_desc *)
-		((u8 *)adapter->bd_desc_base +
-		LSINIC_RX_BD_OFFSET +
-		i * LSINIC_RING_SIZE);
+	rx_ring->ep_bd_desc = (void *)(adapter->bd_desc_base + total_offset);
 	rx_ring->rx_used_idx = 0;
 
 	rx_ring->size = rx_ring->count * sizeof(struct lsinic_bd_desc);
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
-	rx_ring->rc_bd_desc = (struct lsinic_bd_desc *)((char *)
-			adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
-			i * LSINIC_RING_SIZE);
-	rx_ring->rc_bd_desc_dma = ((u64)adapter->rc_bd_desc_phy) +
-	(u64)((u64)rx_ring->rc_bd_desc - (u64)adapter->rc_bd_desc_base);
+	rx_ring->rc_bd_desc = (void *)(adapter->rc_bd_desc_base + total_offset);
+	rx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy + total_offset;
 
 	printk_init("RC rx phy_base:%lX, queue:%d bd_virt:%p bd_phy:%lX\n",
 			adapter->ep_ring_phy_base, i, rx_ring->rc_bd_desc,
@@ -4411,8 +4407,9 @@ lsinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	printk_dev("adapter->hw_addr = 0x%p\n", adapter->hw_addr);
 
 	size_bits = LSINIC_READ_REG(&ep_reg->obwin_size);
-	dev_info(&pdev->dev, "iNIC outbound window size 0x%lx\n",
-		(unsigned long)(0x1 << size_bits));
+	dev_info(&pdev->dev, "DMA size: 0x%llx(mask(%d) + 1)\n",
+			(DMA_BIT_MASK(size_bits) + 1),
+			size_bits);
 	err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(size_bits));
 	if (err) {
 		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
