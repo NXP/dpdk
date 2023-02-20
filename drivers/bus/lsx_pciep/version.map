@@ -18,6 +18,9 @@ DPDK_22 {
 	lsx_pciep_hw_rbp_get;
 	lsx_pciep_hw_sim_get;
 	lsx_pciep_hw_vio_get;
+	lsx_pciep_rbp_ob_overlap;
+	lsx_pciep_bus_ob_dma_size;
+	lsx_pciep_bus_this_ob_base;
 	rte_lsx_pciep_driver_register;
 	rte_lsx_pciep_driver_unregister;
 
