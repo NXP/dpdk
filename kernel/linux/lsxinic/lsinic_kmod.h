@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
-#ifndef _LS_INIC_H_
-#define _LS_INIC_H_
+#ifndef _LSINIC_KMOD_H_
+#define _LSINIC_KMOD_H_
 
 #include <linux/device.h>
 #include <linux/pci.h>
@@ -12,6 +12,7 @@
 #include <linux/pci.h>
 #include <linux/netdevice.h>
 
+#define LSINIC_KMOD
 #include "lsxinic_common.h"
 #include "lsxinic_common_reg.h"
 
@@ -158,7 +159,7 @@ struct lsinic_ring {
 	unsigned int data_room; /* Max payload size in bytes */
 
 	struct lsinic_bd_desc *ep_bd_desc; /* bd desc point to EP memory */
-	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC(local) memory */
+	struct lsinic_bd_desc *rc_bd_desc; /* bd desc point to RC memory */
 	dma_addr_t rc_bd_desc_dma; /* phys. address of rc_bd_desc */
 
 	struct lsinic_ring_reg *ep_reg;	/* ring reg point to EP memory */
@@ -186,13 +187,14 @@ struct lsinic_ring {
 		struct lsinic_tx_queue_stats tx_stats;
 		struct lsinic_rx_queue_stats rx_stats;
 	};
-	struct lsinic_adapter *adapter;
+	struct lsinic_nic *adapter;
 	struct sk_buff **self_test_skb;
 	u16 self_test_skb_total;
 	u16 self_test_skb_count;
 } ____cacheline_internodealigned_in_smp;
 
-static inline unsigned int lsinic_rx_bufsz(struct lsinic_ring *ring)
+static inline unsigned int
+lsinic_rx_bufsz(struct lsinic_ring *ring)
 {
 	return ring->data_room;
 }
@@ -235,7 +237,7 @@ struct lsinic_ring_container {
  * but we only use one per queue-specific vector.
  */
 struct lsinic_q_vector {
-	struct lsinic_adapter *adapter;
+	struct lsinic_nic *adapter;
 #ifdef CONFIG_LSINIC_DCA
 	int cpu;	    /* CPU for DCA */
 #endif
@@ -277,7 +279,7 @@ struct vi_vectors_info {
 	u16 vec;
 };
 
-struct lsinic_adapter {
+struct lsinic_nic {
 	/* OS defined structs */
 	struct net_device *netdev;
 	union {
@@ -474,4 +476,4 @@ txring_txq(const struct lsinic_ring *ring)
 
 #define VRING_REG_OFFSET (32)
 
-#endif /* _LS_INIC_H_ */
+#endif /* _LSINIC_KMOD_H_ */

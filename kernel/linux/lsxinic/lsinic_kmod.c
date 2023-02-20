@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  *
  * Code was mostly borrowed from drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
  * See drivers/net/ethernet/intel/ixgbe/ixgbe_main.c for additional Copyrights.
@@ -32,9 +32,7 @@
 #include <linux/platform_device.h>
 
 #include "lsinic_kmod.h"
-#include "print_buffer.h"
 #include "lsinic_kcompat.h"
-#include "lsinic_ethtool.h"
 
 #include "lsxinic_self_test_data.h"
 
@@ -42,36 +40,36 @@ const char lsinic_driver_version[] = "1.0";
 
 const char *lsinic_driver_name = "lsinic_driver";
 static unsigned int max_vfs;
-module_param(max_vfs, uint, S_IRUGO);
+module_param(max_vfs, uint, 0444);
 MODULE_PARM_DESC(max_vfs,
 		" Maximum number of virtual functions to\n"
 		"\t\t\t allocate per physical function - default is\n"
 		"\t\t\t zero and maximum value is 64.");
 
 static unsigned int lsinic_thread_mode;
-module_param(lsinic_thread_mode, uint, S_IRUGO);
+module_param(lsinic_thread_mode, uint, 0444);
 static unsigned int lsinic_loopback;
-module_param(lsinic_loopback, uint, S_IRUGO);
+module_param(lsinic_loopback, uint, 0444);
 static unsigned int lsinic_sim;
-module_param(lsinic_sim, uint, S_IRUGO);
+module_param(lsinic_sim, uint, 0444);
 static unsigned int lsinic_self_test;
-module_param(lsinic_self_test, uint, S_IRUGO);
+module_param(lsinic_self_test, uint, 0444);
 static unsigned int lsinic_self_test_len = 1024;
-module_param(lsinic_self_test_len, uint, S_IRUGO);
+module_param(lsinic_self_test_len, uint, 0444);
 static unsigned int lsinic_sim_multi_pci;
-module_param(lsinic_sim_multi_pci, uint, S_IRUGO);
+module_param(lsinic_sim_multi_pci, uint, 0444);
 static unsigned int lsinic_dev_id;
-module_param(lsinic_dev_id, uint, S_IRUGO);
+module_param(lsinic_dev_id, uint, 0444);
 
 #define SIM_MAX_DEV_NB 16
 static struct platform_device *sim_dev[SIM_MAX_DEV_NB];
 
 static bool mmsi_flag;
-module_param(mmsi_flag, bool, S_IRUGO);
+module_param(mmsi_flag, bool, 0444);
 MODULE_PARM_DESC(mmsi_flag, "Enable muti-msi interrupt");
 
 static char lsinic_default_device_descr[] =
-			      "Layerscape (R) 10 Gigabit Network Connection";
+	"Layerscape (R) 10 Gigabit Network Connection";
 
 #undef PRINT_TX
 #ifdef PRINT_TX
@@ -101,37 +99,274 @@ static char lsinic_default_device_descr[] =
 #define printk_init(format, ...) do {} while (0)
 #endif
 
-#define lsinic_assert(p) do {	\
-	if (!(p)) {	\
-		printk(KERN_CRIT "BUG at %s:%d assert(%s)\n",	\
-			__FILE__, __LINE__, #p);			\
-		BUG();	\
-	}		\
-} while (0)
-
 #define TEST_COUNT	1000
 
-#ifndef ioread64
-static inline u64 inic_read_reg64(u64 *reg)
-{
-	u64 __v = *reg;
+#if (KERNEL_VERSION(3, 7, 0) > LSINIC_HOST_KERNEL_VER || \
+	(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(6, 5)))
+#define pci_pcie_type(dev) ((dev)->pcie_type)
 
-	rmb();
-	return __v;
+/**
+ * Note that these accessor functions are only for the "PCI Express
+ * Capability" (see PCIe spec r3.0, sec 7.8).	They do not apply to the
+ * other "PCI Express Extended Capabilities" (AER, VC, ACS, MFVC, etc.)
+ */
+static int
+__lsinic_pcie_capability_read_word(struct pci_dev *dev,
+	int pos, u16 *val)
+{
+	int ret;
+
+	*val = 0;
+	if (pos & 1)
+		return -EINVAL;
+
+	if (__lsinic_pcie_capability_reg_implemented(dev, pos)) {
+		ret = pci_read_config_word(dev,
+			pci_pcie_cap(dev) + pos, val);
+		/*
+		 * Reset *val to 0 if pci_read_config_word() fails, it may
+		 * have been written as 0xFFFF if hardware error happens
+		 * during pci_read_config_word().
+		 */
+		if (ret)
+			*val = 0;
+		return ret;
+	}
+
+	/*
+	 * For Functions that do not implement the Slot Capabilities,
+	 * Slot Status, and Slot Control registers, these spaces must
+	 * be hardwired to 0b, with the exception of the Presence Detect
+	 * State bit in the Slot Status register of Downstream Ports,
+	 * which must be hardwired to 1b.  (PCIe Base Spec 3.0, sec 7.8)
+	 */
+	if (pci_is_pcie(dev) && pos == PCI_EXP_SLTSTA &&
+		pci_pcie_type(dev) == PCI_EXP_TYPE_DOWNSTREAM) {
+		*val = PCI_EXP_SLTSTA_PDS;
+	}
+
+	return 0;
 }
-#define ioread64(c) inic_read_reg64(c)
+
+static int
+__lsinic_pcie_capability_write_word(struct pci_dev *dev,
+	int pos, u16 val)
+{
+	if (pos & 1)
+		return -EINVAL;
+
+	if (!__lsinic_pcie_capability_reg_implemented(dev, pos))
+		return 0;
+
+	return pci_write_config_word(dev, pci_pcie_cap(dev) + pos, val);
+}
+
+static int
+__lsinic_pcie_capability_clear_and_set_word(struct pci_dev *dev,
+	int pos, u16 clear, u16 set)
+{
+	int ret;
+	u16 val;
+
+	ret = __lsinic_pcie_capability_read_word(dev, pos, &val);
+	if (!ret) {
+		val &= ~clear;
+		val |= set;
+		ret = __lsinic_pcie_capability_write_word(dev, pos, val);
+	}
+
+	return ret;
+}
+
+#define pcie_capability_read_word(d, p, v) \
+		__lsinic_pcie_capability_read_word(d, p, v)
+
+#define pcie_capability_clear_and_set_word(d, p, c, s) \
+		__lsinic_pcie_capability_clear_and_set_word(d, p, c, s)
+
+#define pcie_capability_write_word(d, p, v) \
+		__lsinic_pcie_capability_write_word(d, p, v)
+
+static inline int
+__lsinic_pcie_cap_version(struct pci_dev *dev)
+{
+	int pos;
+	u16 reg16;
+
+	pos = pci_find_capability(dev, PCI_CAP_ID_EXP);
+	if (!pos)
+		return 0;
+	pci_read_config_word(dev, pos + PCI_EXP_FLAGS, &reg16);
+	return reg16 & PCI_EXP_FLAGS_VERS;
+}
+
+static inline bool
+__lsinic_pcie_cap_has_devctl(const struct pci_dev *dev __always_unused)
+{
+	return true;
+}
+
+static inline bool
+__lsinic_pcie_cap_has_lnkctl(struct pci_dev *dev)
+{
+	int type = pci_pcie_type(dev);
+
+	return __lsinic_pcie_cap_version(dev) > 1 ||
+		type == PCI_EXP_TYPE_ROOT_PORT ||
+		type == PCI_EXP_TYPE_ENDPOINT ||
+		type == PCI_EXP_TYPE_LEG_END;
+}
+
+static inline bool
+__lsinic_pcie_cap_has_sltctl(struct pci_dev *dev)
+{
+	int type = pci_pcie_type(dev);
+	int pos;
+	u16 pcie_flags_reg;
+
+	pos = pci_find_capability(dev, PCI_CAP_ID_EXP);
+	if (!pos)
+		return 0;
+	pci_read_config_word(dev, pos + PCI_EXP_FLAGS, &pcie_flags_reg);
+
+	return __lsinic_pcie_cap_version(dev) > 1 ||
+		type == PCI_EXP_TYPE_ROOT_PORT ||
+		(type == PCI_EXP_TYPE_DOWNSTREAM &&
+		pcie_flags_reg & PCI_EXP_FLAGS_SLOT);
+}
+
+static inline bool
+__lsinic_pcie_cap_has_rtctl(struct pci_dev *dev)
+{
+	int type = pci_pcie_type(dev);
+
+	return __lsinic_pcie_cap_version(dev) > 1 ||
+		type == PCI_EXP_TYPE_ROOT_PORT ||
+		type == PCI_EXP_TYPE_RC_EC;
+}
+
+static bool
+__lsinic_pcie_capability_reg_implemented(struct pci_dev *dev,
+	int pos)
+{
+	if (!pci_is_pcie(dev))
+		return false;
+
+	switch (pos) {
+	case PCI_EXP_FLAGS_TYPE:
+		return true;
+	case PCI_EXP_DEVCAP:
+	case PCI_EXP_DEVCTL:
+	case PCI_EXP_DEVSTA:
+		return __lsinic_pcie_cap_has_devctl(dev);
+	case PCI_EXP_LNKCAP:
+	case PCI_EXP_LNKCTL:
+	case PCI_EXP_LNKSTA:
+		return __lsinic_pcie_cap_has_lnkctl(dev);
+	case PCI_EXP_SLTCAP:
+	case PCI_EXP_SLTCTL:
+	case PCI_EXP_SLTSTA:
+		return __lsinic_pcie_cap_has_sltctl(dev);
+	case PCI_EXP_RTCTL:
+	case PCI_EXP_RTCAP:
+	case PCI_EXP_RTSTA:
+		return __lsinic_pcie_cap_has_rtctl(dev);
+	case PCI_EXP_DEVCAP2:
+	case PCI_EXP_DEVCTL2:
+	case PCI_EXP_LNKCTL2:
+		return __lsinic_pcie_cap_version(dev) > 1;
+	default:
+		return false;
+	}
+}
 #endif
 
-#ifndef iowrite64
-static inline void inic_write_reg64(u64 *reg, u64 data)
+#if (KERNEL_VERSION(3, 10, 0) > LSINIC_HOST_KERNEL_VER)
+#ifdef CONFIG_PCI_IOV
+static int
+__lsinic_pci_vfs_assigned(struct pci_dev *dev)
 {
-	wmb();
-	*reg = data;
+	unsigned int vfs_assigned = 0;
+#ifdef HAVE_PCI_DEV_FLAGS_ASSIGNED
+	int pos;
+	struct pci_dev *vfdev;
+	unsigned short dev_id;
+
+	/* only search if we are a PF */
+	if (!dev->is_physfn)
+		return 0;
+
+	/* find SR-IOV capability */
+	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_SRIOV);
+	if (!pos)
+		return 0;
+
+	/*
+	 ** determine the device ID for the VFs, the vendor ID will be the
+	 ** same as the PF so there is no need to check for that one
+	 **/
+	pci_read_config_word(dev, pos + PCI_SRIOV_VF_DID, &dev_id);
+
+	/* loop through all the VFs to see if we own any that are assigned */
+	vfdev = pci_get_device(dev->vendor, dev_id, NULL);
+	while (vfdev) {
+		/*
+		 ** It is considered assigned if it is a virtual function with
+		 ** our dev as the physical function and the assigned bit is set
+		 **/
+		if (vfdev->is_virtfn && (vfdev->physfn == dev) &&
+			(vfdev->dev_flags & PCI_DEV_FLAGS_ASSIGNED))
+			vfs_assigned++;
+
+		vfdev = pci_get_device(dev->vendor, dev_id, vfdev);
+	}
+
+#endif /* HAVE_PCI_DEV_FLAGS_ASSIGNED */
+	return vfs_assigned;
 }
-#define iowrite64(c, d) inic_write_reg64(c, d)
+
+#else
+static inline int
+__lsinic_pci_vfs_assigned(struct pci_dev *dev)
+{
+	return 0;
+}
+#endif
+#define pci_vfs_assigned(dev) __lsinic_pci_vfs_assigned(dev)
 #endif
 
-static void lsinic_get_macaddr(struct lsinic_adapter *adapter)
+#if (KERNEL_VERSION(3, 14, 0) > LSINIC_HOST_KERNEL_VER || \
+	(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(6, 3)))
+static int
+__lsinic_pci_enable_msi_range(struct pci_dev *dev,
+	int minvec, int maxvec)
+{
+	int nvec = maxvec;
+	int rc;
+
+	if (maxvec < minvec)
+		return -ERANGE;
+
+	do {
+		rc = pci_enable_msi_block(dev, nvec);
+		if (rc < 0) {
+			return rc;
+		} else if (rc > 0) {
+			if (rc < minvec)
+				return -ENOSPC;
+			nvec = rc;
+		}
+	} while (rc);
+
+	return nvec;
+}
+
+#define pci_enable_msi_range(pdev, minvec, maxvec) \
+		__lsinic_pci_enable_msi_range(pdev, minvec, maxvec)
+#endif
+
+static void
+lsinic_get_macaddr(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	struct lsinic_eth_reg *eth_reg =
@@ -152,7 +387,7 @@ static void lsinic_get_macaddr(struct lsinic_adapter *adapter)
 }
 
 static int
-lsinic_set_netdev(struct lsinic_adapter *adapter,
+lsinic_set_netdev(struct lsinic_nic *adapter,
 	enum PCIDEV_COMMAND cmd)
 {
 	struct lsinic_dev_reg *reg =
@@ -194,7 +429,7 @@ lsinic_set_netdev(struct lsinic_adapter *adapter,
 }
 
 static void
-lsinic_disable_rx_queue(struct lsinic_adapter *adapter,
+lsinic_disable_rx_queue(struct lsinic_nic *adapter,
 	struct lsinic_ring *ring)
 {
 	u32 rxdctl;
@@ -213,14 +448,14 @@ lsinic_disable_rx_queue(struct lsinic_adapter *adapter,
 }
 
 static void
-lsinic_msix_disable(struct lsinic_adapter *adapter, u16 idx)
+lsinic_msix_disable(struct lsinic_nic *adapter, u16 idx)
 {
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
 	if (idx >= LSINIC_DEV_MSIX_MAX_NB) {
-		pr_info("lsinic_msix_disable hw:%p idx:%d ERROR\n",
-			adapter->hw_addr, idx);
+		pr_info("%s: hw:%p idx:%d ERROR\n",
+			__func__, adapter->hw_addr, idx);
 		return;
 	}
 
@@ -228,7 +463,7 @@ lsinic_msix_disable(struct lsinic_adapter *adapter, u16 idx)
 }
 
 static void
-lsinic_msix_enable(struct lsinic_adapter *adapter, u16 idx)
+lsinic_msix_enable(struct lsinic_nic *adapter, u16 idx)
 {
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
@@ -243,7 +478,7 @@ lsinic_msix_enable(struct lsinic_adapter *adapter, u16 idx)
 }
 
 static void
-lsinic_synchronize_irq(struct lsinic_adapter *adapter,
+lsinic_synchronize_irq(struct lsinic_nic *adapter,
 	unsigned int irq,
 	int vector)
 {
@@ -279,7 +514,8 @@ lsinic_unmap_and_free_tx_resource(struct lsinic_ring *ring,
 /* lsinic_irq_disable - Mask off interrupt generation on the NIC
  * @adapter: board private structure
  **/
-static inline void lsinic_irq_disable(struct lsinic_adapter *adapter)
+static inline void
+lsinic_irq_disable(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -319,7 +555,8 @@ static inline void lsinic_irq_disable(struct lsinic_adapter *adapter)
 	}
 }
 
-static void lsinic_clean_thread_stop(struct lsinic_q_vector *q_vector)
+static void
+lsinic_clean_thread_stop(struct lsinic_q_vector *q_vector)
 {
 	if (q_vector->clean_thread) {
 		kthread_stop(q_vector->clean_thread);
@@ -327,7 +564,8 @@ static void lsinic_clean_thread_stop(struct lsinic_q_vector *q_vector)
 	}
 }
 
-static void lsinic_clean_thread_stop_all(struct lsinic_adapter *adapter)
+static void
+lsinic_clean_thread_stop_all(struct lsinic_nic *adapter)
 {
 	int q_idx;
 
@@ -335,7 +573,8 @@ static void lsinic_clean_thread_stop_all(struct lsinic_adapter *adapter)
 		lsinic_clean_thread_stop(adapter->q_vector[q_idx]);
 }
 
-static void lsinic_napi_disable_all(struct lsinic_adapter *adapter)
+static void
+lsinic_napi_disable_all(struct lsinic_nic *adapter)
 {
 	int q_idx;
 
@@ -344,7 +583,7 @@ static void lsinic_napi_disable_all(struct lsinic_adapter *adapter)
 }
 
 static void
-lsinic_disable_tx_queue(struct lsinic_adapter *adapter,
+lsinic_disable_tx_queue(struct lsinic_nic *adapter,
 	struct lsinic_ring *ring)
 {
 	u32 txdctl;
@@ -364,7 +603,8 @@ lsinic_disable_tx_queue(struct lsinic_adapter *adapter,
 /* lsinic_clean_rx_ring - Free Rx Buffers per Queue
  * @rx_ring: ring to free buffers from
  **/
-static void lsinic_clean_rx_ring(struct lsinic_ring *rx_ring)
+static void
+lsinic_clean_rx_ring(struct lsinic_ring *rx_ring)
 {
 	struct device *dev = rx_ring->dev;
 	unsigned long size;
@@ -417,7 +657,8 @@ static void lsinic_clean_rx_ring(struct lsinic_ring *rx_ring)
 /* lsinic_clean_all_rx_rings - Free Rx Buffers for all queues
  * @adapter: board private structure
  **/
-static void lsinic_clean_all_rx_rings(struct lsinic_adapter *adapter)
+static void
+lsinic_clean_all_rx_rings(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -428,7 +669,8 @@ static void lsinic_clean_all_rx_rings(struct lsinic_adapter *adapter)
 /* lsinic_clean_tx_ring - Free Tx Buffers
  * @tx_ring: ring to be cleaned
  **/
-static void lsinic_clean_tx_ring(struct lsinic_ring *tx_ring)
+static void
+lsinic_clean_tx_ring(struct lsinic_ring *tx_ring)
 {
 	struct lsinic_tx_buffer *tx_buffer_info;
 	unsigned long size;
@@ -460,7 +702,8 @@ static void lsinic_clean_tx_ring(struct lsinic_ring *tx_ring)
 /* lsinic_clean_all_tx_rings - Free Tx Buffers for all queues
  * @adapter: board private structure
  **/
-static void lsinic_clean_all_tx_rings(struct lsinic_adapter *adapter)
+static void
+lsinic_clean_all_tx_rings(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -468,7 +711,8 @@ static void lsinic_clean_all_tx_rings(struct lsinic_adapter *adapter)
 		lsinic_clean_tx_ring(adapter->tx_ring[i]);
 }
 
-static void lsinic_down(struct lsinic_adapter *adapter)
+static void
+lsinic_down(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int i;
@@ -514,7 +758,8 @@ static void lsinic_down(struct lsinic_adapter *adapter)
 
 }
 
-static void lsinic_reset_queue(struct lsinic_ring *ring)
+static void
+lsinic_reset_queue(struct lsinic_ring *ring)
 {
 	/* disable queue to avoid issues while updating state */
 	LSINIC_WRITE_REG(&ring->ep_reg->cr, LSINIC_CR_DISABLE);
@@ -557,7 +802,7 @@ static void lsinic_reset_queue(struct lsinic_ring *ring)
  * Configure the Tx descriptor ring after a reset.
  **/
 static void
-lsinic_configure_tx_ring(struct lsinic_adapter *adapter,
+lsinic_configure_tx_ring(struct lsinic_nic *adapter,
 	struct lsinic_ring *ring)
 {
 	struct lsinic_bdr_reg *bdr_reg =
@@ -589,7 +834,8 @@ lsinic_configure_tx_ring(struct lsinic_adapter *adapter,
  *
  * Configure the Tx unit of the MAC after a reset.
  **/
-static void lsinic_configure_tx(struct lsinic_adapter *adapter)
+static void
+lsinic_configure_tx(struct lsinic_nic *adapter)
 {
 	u32 i;
 
@@ -598,7 +844,8 @@ static void lsinic_configure_tx(struct lsinic_adapter *adapter)
 		lsinic_configure_tx_ring(adapter, adapter->tx_ring[i]);
 }
 
-static int lxsnic_rx_bd_init_skb(struct lsinic_ring *rx_queue,
+static int
+lxsnic_rx_bd_init_skb(struct lsinic_ring *rx_queue,
 	u16 idx)
 {
 	struct lsinic_bd_desc *ep_rx_desc, *rc_rx_desc;
@@ -640,7 +887,7 @@ static int lxsnic_rx_bd_init_skb(struct lsinic_ring *rx_queue,
 }
 
 static void
-lsinic_configure_rx_ring(struct lsinic_adapter *adapter,
+lsinic_configure_rx_ring(struct lsinic_nic *adapter,
 	struct lsinic_ring *ring)
 {
 	struct lsinic_bdr_reg *bdr_reg =
@@ -675,7 +922,8 @@ lsinic_configure_rx_ring(struct lsinic_adapter *adapter,
  *
  * Configure the Rx unit of the MAC after a reset.
  **/
-static void lsinic_configure_rx(struct lsinic_adapter *adapter)
+static void
+lsinic_configure_rx(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -687,7 +935,8 @@ static void lsinic_configure_rx(struct lsinic_adapter *adapter)
 		lsinic_configure_rx_ring(adapter, adapter->rx_ring[i]);
 }
 
-static int lsinic_configure(struct lsinic_adapter *adapter)
+static int
+lsinic_configure(struct lsinic_nic *adapter)
 {
 	lsinic_configure_tx(adapter);
 	lsinic_configure_rx(adapter);
@@ -721,7 +970,8 @@ lsinic_clean_thread_creat(struct lsinic_q_vector *q_vector)
 	return 0;
 }
 
-static void lsinic_clean_thread_creat_all(struct lsinic_adapter *adapter)
+static void
+lsinic_clean_thread_creat_all(struct lsinic_nic *adapter)
 {
 	int q_idx, ti = 0, ri = 0;
 	struct lsinic_q_vector *q_vector;
@@ -751,7 +1001,8 @@ static void lsinic_clean_thread_creat_all(struct lsinic_adapter *adapter)
 	}
 }
 
-static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
+static int
+lsinic_init_tx_bd(struct lsinic_nic *adapter)
 {
 	u32 i, j, bd_status, count;
 	struct lsinic_ring *tx_ring;
@@ -766,8 +1017,9 @@ static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
 			count = 0;
 			while ((bd_status & RING_BD_STATUS_MASK) !=
 				RING_BD_READY) {
-				msleep(1);
+				msleep(30);
 				bd_status = rc_tx_desc->bd_status;
+				/**Load complete*/
 				rmb();
 				count++;
 				if (count > 1000) {
@@ -777,8 +1029,12 @@ static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
 					return -1;
 				}
 			}
-			lsinic_assert((bd_status & RING_BD_STATUS_MASK) ==
-				RING_BD_READY);
+			if (unlikely((bd_status & RING_BD_STATUS_MASK) !=
+				RING_BD_READY)) {
+				netdev_crit(adapter->netdev,
+					"%s: ERROR bd_status(0x%08x)\n",
+					__func__, bd_status);
+			}
 			rc_tx_desc->bd_status &=
 				(~LSINIC_BD_CTX_IDX_MASK);
 			rc_tx_desc->bd_status |=
@@ -789,7 +1045,8 @@ static int lsinic_init_tx_bd(struct lsinic_adapter *adapter)
 	return 0;
 }
 
-static void lsinic_napi_enable_all(struct lsinic_adapter *adapter)
+static void
+lsinic_napi_enable_all(struct lsinic_nic *adapter)
 {
 	int q_idx;
 
@@ -809,7 +1066,8 @@ static void lsinic_napi_enable_all(struct lsinic_adapter *adapter)
 	}
 }
 
-static void lsinic_clean_thread_run_all(struct lsinic_adapter *adapter)
+static void
+lsinic_clean_thread_run_all(struct lsinic_nic *adapter)
 {
 	int q_idx;
 	struct lsinic_q_vector *q_vector;
@@ -821,7 +1079,8 @@ static void lsinic_clean_thread_run_all(struct lsinic_adapter *adapter)
 	}
 }
 
-static int lsinic_up_complete(struct lsinic_adapter *adapter)
+static int
+lsinic_up_complete(struct lsinic_nic *adapter)
 {
 	int ret;
 
@@ -856,7 +1115,8 @@ static int lsinic_up_complete(struct lsinic_adapter *adapter)
 	return 0;
 }
 
-static void lsinic_up(struct lsinic_adapter *adapter)
+static void
+lsinic_up(struct lsinic_nic *adapter)
 {
 	/* hardware has been reset, we need to reload some things */
 	lsinic_configure(adapter);
@@ -864,7 +1124,8 @@ static void lsinic_up(struct lsinic_adapter *adapter)
 	lsinic_up_complete(adapter);
 }
 
-static void lsinic_reinit_locked(struct lsinic_adapter *adapter)
+static void
+lsinic_reinit_locked(struct lsinic_nic *adapter)
 {
 	WARN_ON(in_interrupt());
 	/* put off any impending NetWatchDogTimeout */
@@ -898,7 +1159,8 @@ static inline u32 lsinic_get_pending(u32 head, u32 tail, u32 count)
  * @adapter: pointer to the device adapter structure
  * @link_speed: pointer to a u32 to store the link_speed
  **/
-static void lsinic_watchdog_update_link(struct lsinic_adapter *adapter)
+static void
+lsinic_watchdog_update_link(struct lsinic_nic *adapter)
 {
 	u32 ep_state = 0;
 	u32 link_speed = adapter->link_speed;
@@ -921,10 +1183,12 @@ static void lsinic_watchdog_update_link(struct lsinic_adapter *adapter)
 
 	if (adapter->link_up != link_up) {
 		if (link_up) {
-			printk(KERN_WARNING "inic: ep link up\n");
+			netdev_info(adapter->netdev,
+				"ep link up\n");
 		} else {
 			lsinic_reinit_locked(adapter);
-			printk(KERN_WARNING "inic: ep link down\n");
+			netdev_info(adapter->netdev,
+				"ep link down\n");
 		}
 	}
 
@@ -940,7 +1204,8 @@ static void lsinic_watchdog_update_link(struct lsinic_adapter *adapter)
  *                             print link up message
  * @adapter: pointer to the device adapter structure
  **/
-static void lsinic_watchdog_link_is_up(struct lsinic_adapter *adapter)
+static void
+lsinic_watchdog_link_is_up(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	u32 link_speed = adapter->link_speed;
@@ -972,7 +1237,8 @@ static void lsinic_watchdog_link_is_up(struct lsinic_adapter *adapter)
  *                               print link down message
  * @adapter: pointer to the adapter structure
  **/
-static void lsinic_watchdog_link_is_down(struct lsinic_adapter *adapter)
+static void
+lsinic_watchdog_link_is_down(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 
@@ -990,7 +1256,8 @@ static void lsinic_watchdog_link_is_down(struct lsinic_adapter *adapter)
  * lsinic_watchdog_subtask - check and bring link up
  * @adapter: pointer to the device adapter structure
  **/
-static void lsinic_watchdog_subtask(struct lsinic_adapter *adapter)
+static void
+lsinic_watchdog_subtask(struct lsinic_nic *adapter)
 {
 	/* if interface is down do nothing */
 	if (test_bit(__LSINIC_DOWN, &adapter->state) ||
@@ -1005,7 +1272,8 @@ static void lsinic_watchdog_subtask(struct lsinic_adapter *adapter)
 		lsinic_watchdog_link_is_down(adapter);
 }
 
-static void lsinic_service_event_schedule(struct lsinic_adapter *adapter)
+static void
+lsinic_service_event_schedule(struct lsinic_nic *adapter)
 {
 	if (!test_bit(__LSINIC_DOWN, &adapter->state) &&
 	    !test_and_set_bit(__LSINIC_SERVICE_SCHED, &adapter->state))
@@ -1017,9 +1285,10 @@ static void lsinic_service_event_schedule(struct lsinic_adapter *adapter)
  * @data: pointer to adapter cast into an unsigned long
  **/
 #ifdef HAVE_TIMER_SETUP
-static void lsinic_service_timer(struct timer_list *t)
+static void
+lsinic_service_timer(struct timer_list *t)
 {
-	struct lsinic_adapter *adapter = from_timer(adapter, t, service_timer);
+	struct lsinic_nic *adapter = from_timer(adapter, t, service_timer);
 	unsigned long next_event_offset;
 	bool ready = true;
 
@@ -1036,9 +1305,10 @@ static void lsinic_service_timer(struct timer_list *t)
 		lsinic_service_event_schedule(adapter);
 }
 #else
-static void lsinic_service_timer(unsigned long data)
+static void
+lsinic_service_timer(unsigned long data)
 {
-	struct lsinic_adapter *adapter = (struct lsinic_adapter *)data;
+	struct lsinic_nic *adapter = (struct lsinic_nic *)data;
 	unsigned long next_event_offset;
 	bool ready = true;
 
@@ -1056,7 +1326,8 @@ static void lsinic_service_timer(unsigned long data)
 }
 #endif
 
-static void lsinic_service_event_complete(struct lsinic_adapter *adapter)
+static void
+lsinic_service_event_complete(struct lsinic_nic *adapter)
 {
 	WARN_ON(!test_bit(__LSINIC_SERVICE_SCHED, &adapter->state));
 
@@ -1067,10 +1338,11 @@ static void lsinic_service_event_complete(struct lsinic_adapter *adapter)
  * lsinic_service_task - manages and runs subtasks
  * @work: pointer to work_struct containing our data
  **/
-static void lsinic_service_task(struct work_struct *work)
+static void
+lsinic_service_task(struct work_struct *work)
 {
-	struct lsinic_adapter *adapter = container_of(work,
-						     struct lsinic_adapter,
+	struct lsinic_nic *adapter = container_of(work,
+						     struct lsinic_nic,
 						     service_task);
 
 	lsinic_watchdog_subtask(adapter);
@@ -1078,14 +1350,15 @@ static void lsinic_service_task(struct work_struct *work)
 	lsinic_service_event_complete(adapter);
 }
 
-/* lsinic_sw_init - Initialize (struct lsinic_adapter)
+/* lsinic_sw_init - Initialize (struct lsinic_nic)
  * @adapter: board private structure to initialize
  *
  * lsinic_sw_init initializes the Adapter private data structure.
  * Fields are initialized based on PCI device information and
  * OS network device settings (MTU size).
  **/
-static int lsinic_sw_init(struct lsinic_adapter *adapter)
+static int
+lsinic_sw_init(struct lsinic_nic *adapter)
 {
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
@@ -1119,7 +1392,8 @@ static int lsinic_sw_init(struct lsinic_adapter *adapter)
  *
  * Free all transmit software resources
  **/
-void lsinic_free_tx_resources(struct lsinic_ring *tx_ring)
+static void
+lsinic_free_tx_resources(struct lsinic_ring *tx_ring)
 {
 
 	lsinic_clean_tx_ring(tx_ring);
@@ -1137,7 +1411,8 @@ void lsinic_free_tx_resources(struct lsinic_ring *tx_ring)
  *
  * Free all transmit software resources
  **/
-static void lsinic_free_all_tx_resources(struct lsinic_adapter *adapter)
+static void
+lsinic_free_all_tx_resources(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -1151,7 +1426,8 @@ static void lsinic_free_all_tx_resources(struct lsinic_adapter *adapter)
  *
  * Free all receive software resources
  **/
-void lsinic_free_rx_resources(struct lsinic_ring *rx_ring)
+static void
+lsinic_free_rx_resources(struct lsinic_ring *rx_ring)
 {
 	lsinic_clean_rx_ring(rx_ring);
 
@@ -1168,7 +1444,8 @@ void lsinic_free_rx_resources(struct lsinic_ring *rx_ring)
  *
  * Free all receive software resources
  **/
-static void lsinic_free_all_rx_resources(struct lsinic_adapter *adapter)
+static void
+lsinic_free_all_rx_resources(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -1182,7 +1459,8 @@ static void lsinic_free_all_rx_resources(struct lsinic_adapter *adapter)
  *
  * Return 0 on success, negative on failure
  **/
-int lsinic_setup_tx_resources(struct lsinic_adapter *adapter, int i)
+static int
+lsinic_setup_tx_resources(struct lsinic_nic *adapter, int i)
 {
 	struct lsinic_ring *tx_ring = adapter->tx_ring[i];
 	struct device *dev = tx_ring->dev;
@@ -1240,7 +1518,8 @@ err:
  *
  * Return 0 on success, negative on failure
  **/
-static int lsinic_setup_all_tx_resources(struct lsinic_adapter *adapter)
+static int
+lsinic_setup_all_tx_resources(struct lsinic_nic *adapter)
 {
 	int i, err = 0;
 
@@ -1267,7 +1546,8 @@ err_setup_tx:
  *
  * Returns 0 on success, negative on failure
  **/
-int lsinic_setup_rx_resources(struct lsinic_adapter *adapter, int i)
+static int
+lsinic_setup_rx_resources(struct lsinic_nic *adapter, int i)
 {
 	struct lsinic_ring *rx_ring = adapter->rx_ring[i];
 	struct device *dev = rx_ring->dev;
@@ -1326,7 +1606,8 @@ err:
  *
  * Return 0 on success, negative on failure
  **/
-static int lsinic_setup_all_rx_resources(struct lsinic_adapter *adapter)
+static int
+lsinic_setup_all_rx_resources(struct lsinic_nic *adapter)
 {
 	int i, err = 0;
 
@@ -1348,8 +1629,9 @@ err_setup_rx:
 }
 
 #ifndef LSINIC_NO_SKB_FRAG
-static bool lsinic_alloc_mapped_page(struct lsinic_ring *rx_ring,
-				    struct lsinic_rx_buffer *bi)
+static bool
+lsinic_alloc_mapped_page(struct lsinic_ring *rx_ring,
+	struct lsinic_rx_buffer *bi)
 {
 	struct page *page = bi->page;
 	dma_addr_t dma;
@@ -1390,7 +1672,8 @@ static bool lsinic_alloc_mapped_page(struct lsinic_ring *rx_ring,
 }
 #endif
 
-static irqreturn_t lsinic_msix_other(int irq, void *data)
+static irqreturn_t
+lsinic_msix_other(int irq, void *data)
 {
 	pr_info("%s: irq = %d, data = 0x%p\n", __func__, irq, data);
 
@@ -1399,7 +1682,7 @@ static irqreturn_t lsinic_msix_other(int irq, void *data)
 
 static struct sk_buff *
 lsinic_fetch_rx_buffer(struct lsinic_ring *rx_ring,
-			struct lsinic_bd_desc *rx_desc)
+	struct lsinic_bd_desc *rx_desc)
 {
 	struct sk_buff *skb;
 	unsigned int size;
@@ -1411,8 +1694,14 @@ lsinic_fetch_rx_buffer(struct lsinic_ring *rx_ring,
 	rx_buffer = &rx_ring->rx_buffer_info[used_idx];
 	size = lsinic_desc_len(rx_desc);
 	skb = rx_buffer->skb;
-	if (rx_desc->bd_status & RING_BD_ADDR_CHECK)
-		lsinic_assert(rx_buffer->dma == rx_desc->pkt_addr);
+	if (rx_desc->bd_status & RING_BD_ADDR_CHECK) {
+		if (unlikely(rx_buffer->dma != rx_desc->pkt_addr)) {
+			netdev_crit(rx_ring->netdev,
+				"%s: dma(0x%llx) != pkt_addr(0x%llx)\n",
+				__func__, rx_buffer->dma,
+				rx_desc->pkt_addr);
+		}
+	}
 
 	/* we are not reusing the buffer so unmap it */
 	dma_unmap_single(rx_ring->dev, rx_buffer->dma,
@@ -1438,17 +1727,24 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	struct sk_buff *skb;
 	struct lsinic_mg_header *mgd;
 	char *data;
-	int total_size, count = 0, i, len, offset = 0;
+	int total_size, i, len, offset = 0;
 	int align_off = 0, mg_header_size = 0;
 	struct lsinic_rx_buffer *rx_buffer;
 	u16 used_idx;
+	u32 count;
 
 	used_idx = lsinic_bd_ctx_idx(rx_desc->bd_status);
 
 	rx_buffer = &rx_ring->rx_buffer_info[used_idx];
 	skb = rx_buffer->skb;
-	if (rx_desc->bd_status & RING_BD_ADDR_CHECK)
-		lsinic_assert(rx_buffer->dma == rx_desc->pkt_addr);
+	if (rx_desc->bd_status & RING_BD_ADDR_CHECK) {
+		if (unlikely(rx_buffer->dma != rx_desc->pkt_addr)) {
+			netdev_crit(rx_ring->netdev,
+				"%s: dma(0x%llx) != pkt_addr(0x%llx)\n",
+				__func__, rx_buffer->dma,
+				rx_desc->pkt_addr);
+		}
+	}
 
 	/* we are not reusing the buffer so unmap it */
 	dma_unmap_single(rx_ring->dev, rx_buffer->dma,
@@ -1533,9 +1829,10 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
  * sk_buff in the next buffer to be chained and return true indicating
  * that this is in fact a non-EOP buffer.
  **/
-static bool lsinic_is_non_eop(struct lsinic_ring *rx_ring,
-			       struct lsinic_bd_desc *rx_desc,
-			       struct sk_buff *skb)
+static bool
+lsinic_is_non_eop(struct lsinic_ring *rx_ring,
+	struct lsinic_bd_desc *rx_desc,
+	struct sk_buff *skb)
 {
 	u16 i;
 
@@ -1572,8 +1869,9 @@ static bool lsinic_is_non_eop(struct lsinic_ring *rx_ring,
 	return true;
 }
 
-static void lsinic_set_rsc_gso_size(struct lsinic_ring *ring,
-				   struct sk_buff *skb)
+static void
+lsinic_set_rsc_gso_size(struct lsinic_ring *ring,
+	struct sk_buff *skb)
 {
 	u16 hdr_len = skb_headlen(skb);
 
@@ -1583,8 +1881,9 @@ static void lsinic_set_rsc_gso_size(struct lsinic_ring *ring,
 	skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
 }
 
-static void lsinic_update_rsc_stats(struct lsinic_ring *rx_ring,
-				   struct sk_buff *skb)
+static void
+lsinic_update_rsc_stats(struct lsinic_ring *rx_ring,
+	struct sk_buff *skb)
 {
 	/* if append_cnt is 0 then frame is not RSC */
 	if (!LSINIC_CB(skb)->append_cnt)
@@ -1599,8 +1898,9 @@ static void lsinic_update_rsc_stats(struct lsinic_ring *rx_ring,
 	LSINIC_CB(skb)->append_cnt = 0;
 }
 
-static void lsinic_update_vlan(struct lsinic_ring *rx_ring,
-				struct sk_buff *skb)
+static void
+lsinic_update_vlan(struct lsinic_ring *rx_ring,
+	struct sk_buff *skb)
 {
 #ifdef VF_VLAN_ENABLE
 	u32 ret;
@@ -1641,8 +1941,9 @@ static void lsinic_update_vlan(struct lsinic_ring *rx_ring,
  * order to populate the hash, checksum, VLAN, timestamp, protocol, and
  * other fields within the skb.
  **/
-static void lsinic_process_skb_fields(struct lsinic_ring *rx_ring,
-				       struct sk_buff *skb)
+static void
+lsinic_process_skb_fields(struct lsinic_ring *rx_ring,
+	struct sk_buff *skb)
 {
 	struct net_device *dev = rx_ring->netdev;
 
@@ -1656,10 +1957,11 @@ static void lsinic_process_skb_fields(struct lsinic_ring *rx_ring,
 	skb->protocol = eth_type_trans(skb, dev);
 }
 
-static void lsinic_rx_skb(struct lsinic_q_vector *q_vector,
-			 struct sk_buff *skb)
+static void
+lsinic_rx_skb(struct lsinic_q_vector *q_vector,
+	struct sk_buff *skb)
 {
-	struct lsinic_adapter *adapter = q_vector->adapter;
+	struct lsinic_nic *adapter = q_vector->adapter;
 
 	if (adapter->flags & LSINIC_FLAG_THREAD_ENABLED)
 		netif_receive_skb(skb);
@@ -1669,18 +1971,149 @@ static void lsinic_rx_skb(struct lsinic_q_vector *q_vector,
 		netif_rx(skb);
 }
 
-netdev_tx_t lsinic_xmit_frame_ring(struct sk_buff *skb,
-			  struct lsinic_adapter *adapter,
-			  struct lsinic_ring *tx_ring);
+static int
+lsinic_gso(struct lsinic_ring *tx_ring,
+	struct lsinic_tx_buffer *first)
+{
+	struct sk_buff *skb = first->skb;
 
-static void lsinic_loopback_rx_tx(struct sk_buff *skb,
-				  struct lsinic_q_vector *q_vector,
-				  struct lsinic_ring *rx_ring)
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return 0;
+
+	if (!skb_is_gso(skb))
+		return 0;
+
+	if (skb_header_cloned(skb)) {
+		int err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
+
+		if (err)
+			return err;
+	}
+
+	return 1;
+}
+
+static u32
+lsinic_tx_cmd_type(u32 tx_flags)
+{
+	return tx_flags;
+}
+
+static void
+lsinic_tx_map(struct lsinic_ring *tx_ring,
+	struct lsinic_tx_buffer *tx_buffer,
+	const u8 hdr_len)
+{
+	dma_addr_t dma;
+	struct sk_buff *skb = tx_buffer->skb;
+	struct lsinic_bd_desc *ep_tx_desc, *rc_tx_desc;
+	unsigned int size = skb_headlen(skb);
+	u32 cmd_type;
+	u16 i = tx_ring->tx_avail_idx & (tx_ring->count - 1);
+
+	ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, i);
+	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
+
+
+	cmd_type = lsinic_tx_cmd_type(tx_buffer->tx_flags);
+
+	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
+
+	dma_unmap_len_set(tx_buffer, len, size);
+	dma_unmap_addr_set(tx_buffer, dma, dma);
+
+	rc_tx_desc->pkt_addr = dma;
+	ep_tx_desc->pkt_addr = dma;
+
+	cmd_type |= LSINIC_BD_CMD_EOP | size;
+	rc_tx_desc->len_cmd = cmd_type;
+	rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
+	rc_tx_desc->bd_status |= RING_BD_AVAILABLE;
+	mem_cp128b_atomic((u8 *)ep_tx_desc, (u8 *)rc_tx_desc);
+
+	tx_ring->tx_avail_idx++;
+
+#ifdef INIC_RC_EP_DEBUG_ENABLE
+	LSINIC_WRITE_REG(&tx_ring->ep_reg->pir, tx_ring->tx_avail_idx);
+#endif
+
+	/*
+	 *ep_tx_desc->len_cmd = rc_tx_desc->len_cmd;
+	 *ep_tx_desc->index = rc_tx_desc->index;
+	 *ep_tx_desc->flag = rc_tx_desc->flag;
+	 */
+	printk_tx("tx_ring->avail->idx = %d\n", tx_ring->tx_avail_idx);
+}
+
+static netdev_tx_t
+lsinic_xmit_frame_ring(struct sk_buff *skb,
+	struct lsinic_nic *adapter,
+	struct lsinic_ring *tx_ring)
+{
+	struct lsinic_tx_buffer *first = NULL;
+	__be16 protocol = skb->protocol;
+	u8 hdr_len = 0;
+	int gso;
+	struct lsinic_bd_desc *rc_tx_desc;
+	u16 bd_idx;
+	u16 txe_idx;
+	u32 status;
+
+	if (skb_shinfo(skb)->nr_frags > 1)
+		return NETDEV_TX_BUSY;
+
+	bd_idx = tx_ring->tx_avail_idx & (tx_ring->count - 1);
+	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
+
+	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
+
+	/**Load complete*/
+	rmb();
+
+	if (status != RING_BD_READY)
+		return NETDEV_TX_BUSY;
+
+	txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
+	first = &tx_ring->tx_buffer_info[txe_idx];
+
+	first->skb = skb;
+	first->bytecount = skb->len;
+	first->gso_segs = 1;
+
+	printk_tx("\n%s:\n", __func__);
+	printk_tx("tx_buffer_info 0x%p\n", first);
+	printk_tx("skb->len=%d data_len=%d skb_headlen=%d\n",
+		  skb->len, skb->data_len, skb_headlen(skb));
+	printk_tx("BD count = %d\n", count);
+
+	first->tx_flags = 0;
+
+	first->protocol = protocol;
+
+	gso = lsinic_gso(tx_ring, first);
+	if (gso < 0)
+		goto out_drop;
+
+	lsinic_tx_map(tx_ring, first, hdr_len);
+
+	return NETDEV_TX_OK;
+
+out_drop:
+	if (lsinic_self_test)
+		return NETDEV_TX_BUSY;
+	dev_kfree_skb_any(skb);
+	return NETDEV_TX_OK;
+}
+
+static void
+lsinic_loopback_rx_tx(struct sk_buff *skb,
+	struct lsinic_q_vector *q_vector,
+	struct lsinic_ring *rx_ring)
 {
 	struct iphdr *iph;
 	int tmpip, tx_idx;
 	netdev_tx_t ret;
-	struct lsinic_adapter *adapter;
+	struct lsinic_nic *adapter;
 
 	iph = (struct iphdr *)(skb->data + 14);
 	tmpip = iph->saddr;
@@ -1696,7 +2129,8 @@ static void lsinic_loopback_rx_tx(struct sk_buff *skb,
 		dev_kfree_skb_any(skb);
 }
 
-static inline int lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
+static inline int
+lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
 		uint16_t idx, struct sk_buff *skb, dma_addr_t dma)
 {
 	struct lsinic_bd_desc *ep_rx_desc, *rc_rx_desc;
@@ -1723,7 +2157,8 @@ static inline int lsinic_rx_bd_skb_set(struct lsinic_ring *rx_queue,
 	return 0;
 }
 
-static void lsinic_tx_self_gen_pkt(u8 *payload)
+static void
+lsinic_tx_self_gen_pkt(u8 *payload)
 {
 	struct ethhdr *eth_header;
 	struct iphdr *ipv4_header;
@@ -1740,7 +2175,8 @@ static void lsinic_tx_self_gen_pkt(u8 *payload)
 	ipv4_header->check = ip_fast_csum(ipv4_header, sizeof(struct iphdr));
 }
 
-static int lsinic_tx_self_test_skb_alloc(struct lsinic_ring *tx_ring)
+static int
+lsinic_tx_self_test_skb_alloc(struct lsinic_ring *tx_ring)
 {
 	int alloc_count = 64;
 	int i;
@@ -1772,7 +2208,8 @@ static int lsinic_tx_self_test_skb_alloc(struct lsinic_ring *tx_ring)
 	return tx_ring->self_test_skb_total;
 }
 
-static struct sk_buff *lsinic_tx_self_test_skb_get(struct lsinic_ring *tx_ring)
+static struct sk_buff *
+lsinic_tx_self_test_skb_get(struct lsinic_ring *tx_ring)
 {
 	struct sk_buff *skb = NULL;
 
@@ -1784,18 +2221,26 @@ static struct sk_buff *lsinic_tx_self_test_skb_get(struct lsinic_ring *tx_ring)
 	return skb;
 }
 
-static int lsinic_tx_self_test_skb_put(
-		struct lsinic_ring *tx_ring, struct sk_buff *skb)
+static int
+lsinic_tx_self_test_skb_put(struct lsinic_ring *tx_ring,
+	struct sk_buff *skb)
 {
-	lsinic_assert(tx_ring->self_test_skb_count <
-		tx_ring->self_test_skb_total);
+	if (unlikely(tx_ring->self_test_skb_count >=
+		tx_ring->self_test_skb_total)) {
+		netdev_crit(tx_ring->netdev,
+			"%s: skb_count(%d) != skb_total(%d)\n",
+			__func__,
+			tx_ring->self_test_skb_count,
+			tx_ring->self_test_skb_total);
+	}
 
 	tx_ring->self_test_skb[tx_ring->self_test_skb_count] = skb;
 	tx_ring->self_test_skb_count++;
 	return 0;
 }
 
-static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
+static bool
+lsinic_clean_tx(struct lsinic_ring *tx_ring)
 {
 	struct lsinic_q_vector *q_vector = tx_ring->q_vector;
 	struct lsinic_bd_desc *rc_tx_desc;
@@ -1812,6 +2257,7 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 
 	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
 
+	/** Load complete*/
 	rmb();
 
 	do {
@@ -1822,9 +2268,19 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 
 		txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
 		first = &tx_ring->tx_buffer_info[txe_idx];
-		lsinic_assert(first && first->skb);
-		if (rc_tx_desc->bd_status & RING_BD_ADDR_CHECK)
-			lsinic_assert(first->dma == rc_tx_desc->pkt_addr);
+		if (unlikely(!first->skb)) {
+			netdev_crit(tx_ring->netdev,
+				"%s: BD[%d]:NULL skb\n",
+				__func__, txe_idx);
+		}
+		if (rc_tx_desc->bd_status & RING_BD_ADDR_CHECK) {
+			if (unlikely(first->dma != rc_tx_desc->pkt_addr)) {
+				netdev_crit(tx_ring->netdev,
+					"%s: dma(0x%llx) != pkt_addr(0x%llx)\n",
+					__func__,
+					first->dma, rc_tx_desc->pkt_addr);
+			}
+		}
 		last_skb = first->skb;
 		if (lsinic_self_test)
 			lsinic_tx_self_test_skb_put(tx_ring, last_skb);
@@ -1832,9 +2288,9 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 			dev_kfree_skb_any(last_skb);
 
 		dma_unmap_single(tx_ring->dev,
-					dma_unmap_addr(first, dma),
-					dma_unmap_len(first, len),
-					DMA_TO_DEVICE);
+			dma_unmap_addr(first, dma),
+			dma_unmap_len(first, len),
+			DMA_TO_DEVICE);
 
 		first->skb = NULL;
 		dma_unmap_len_set(first, len, 0);
@@ -1852,6 +2308,7 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 
 		status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
 
+		/** Load complete*/
 		rmb();
 	} while (likely(budget));
 
@@ -1867,11 +2324,11 @@ static bool lsinic_clean_tx(struct lsinic_ring *tx_ring)
 	return complete;
 }
 
-static bool lsinic_clean_tx_irq(
-		struct lsinic_q_vector *q_vector,
-		struct lsinic_ring *tx_ring)
+static bool
+lsinic_clean_tx_irq(struct lsinic_q_vector *q_vector,
+	struct lsinic_ring *tx_ring)
 {
-	struct lsinic_adapter *adapter = q_vector->adapter;
+	struct lsinic_nic *adapter = q_vector->adapter;
 
 	if (test_bit(__LSINIC_DOWN, &adapter->state))
 		return true;
@@ -1891,9 +2348,10 @@ static bool lsinic_clean_tx_irq(
  * it by maintaining the mapping of the page to the system.
  *
  **/
-static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
-			struct lsinic_ring *rx_ring,
-			const int budget)
+static int
+lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
+	struct lsinic_ring *rx_ring,
+	const int budget)
 {
 	unsigned int total_rx_bytes = 0, total_rx_packets = 0;
 	u16 bd_idx;
@@ -1970,11 +2428,6 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 			count--;
 			for (i = 0; i < count; i++) {
 				skb = skb_array[i];
-
-#if defined(PRINT_SKB) && defined(PRINT_RX)
-				print_skb(skb, RX);
-#endif
-
 				total_rx_bytes += skb->len;
 				/* update budget accounting */
 				total_rx_packets++;
@@ -2022,10 +2475,6 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 		printk_rx("skb->len=%d skb->data_len=%d nr_frags=%d\n",
 			  skb->len, skb->data_len, skb_shinfo(skb)->nr_frags);
 
-#if defined(PRINT_SKB) && defined(PRINT_RX)
-		print_skb(skb, RX);
-#endif
-
 		/* probably a little skewed due to removing CRC */
 		total_rx_bytes += skb->len;
 		/* update budget accounting */
@@ -2061,7 +2510,8 @@ static int lsinic_clean_rx_irq(struct lsinic_q_vector *q_vector,
 	return total_rx_packets;
 }
 
-static irqreturn_t lsinic_napi_intr(int irq, void *data)
+static irqreturn_t
+lsinic_napi_intr(int irq, void *data)
 {
 	struct lsinic_q_vector *q_vector = data;
 
@@ -2073,10 +2523,11 @@ static irqreturn_t lsinic_napi_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static int lsinic_alloc_q_vectors(struct lsinic_adapter *adapter);
-static void lsinic_free_q_vectors(struct lsinic_adapter *adapter);
+static int lsinic_alloc_q_vectors(struct lsinic_nic *adapter);
+static void lsinic_free_q_vectors(struct lsinic_nic *adapter);
 
-int lsinic_init_thread(struct lsinic_adapter *adapter)
+static int
+lsinic_init_thread(struct lsinic_nic *adapter)
 {
 	int v_budget, err;
 
@@ -2090,9 +2541,7 @@ int lsinic_init_thread(struct lsinic_adapter *adapter)
 	if (err)
 		e_dev_err("Unable to allocate memory for queue vectors\n");
 
-	e_dev_info(
-		   "Thread mode Multiqueue: Rx Queue count = %u,"
-		   " Tx Queue count = %u\n",
+	e_dev_info("Thread mode Rx Queue(%u), Tx Queue(%u)\n",
 		   adapter->num_rx_queues, adapter->num_tx_queues);
 
 	set_bit(__LSINIC_DOWN, &adapter->state);
@@ -2100,7 +2549,8 @@ int lsinic_init_thread(struct lsinic_adapter *adapter)
 	return 0;
 }
 
-void lsinic_clear_thread(struct lsinic_adapter *adapter)
+static void
+lsinic_clear_thread(struct lsinic_nic *adapter)
 {
 	adapter->num_tx_queues = 0;
 	adapter->num_rx_queues = 0;
@@ -2108,7 +2558,8 @@ void lsinic_clear_thread(struct lsinic_adapter *adapter)
 	lsinic_free_q_vectors(adapter);
 }
 
-static int lsinic_clean_rings_thread(void *data)
+static int
+lsinic_clean_rings_thread(void *data)
 {
 	struct lsinic_q_vector *q_vector = data;
 	struct lsinic_ring *ring;
@@ -2153,7 +2604,8 @@ static int lsinic_clean_rings_thread(void *data)
  *
  * This function is used for legacy and MSI, NAPI mode
  **/
-int lsinic_poll(struct napi_struct *napi, int budget)
+static int
+lsinic_poll(struct napi_struct *napi, int budget)
 {
 	struct lsinic_q_vector *q_vector =
 			container_of(napi, struct lsinic_q_vector,
@@ -2200,7 +2652,8 @@ int lsinic_poll(struct napi_struct *napi, int budget)
  * lsinic_request_muti_msi_irqs allocates MUTI-MSI vectors and requests
  * interrupts from the kernel.
  **/
-static int lsinic_request_muti_msi_irqs(struct lsinic_adapter *adapter)
+static int
+lsinic_request_muti_msi_irqs(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int vector, err;
@@ -2234,8 +2687,8 @@ static int lsinic_request_muti_msi_irqs(struct lsinic_adapter *adapter)
 		err = request_irq(entry->vec, lsinic_napi_intr, 0,
 				q_vector->name, q_vector);
 		if (err) {
-			e_err(probe, "request_irq failed for MSIX Tx interrupt "
-					"Error: %d\n", err);
+			e_err(probe, "%s: Request irq(%d) failed(%d)\n",
+				__func__, entry->vec, err);
 			goto free_queue_irqs;
 		}
 		/* assign the mask for this irq */
@@ -2264,10 +2717,9 @@ free_queue_irqs:
 	return err;
 }
 
-static void lsinic_irq_set_affinity_hint(struct lsinic_adapter *adapter,
-					 unsigned int irq,
-					 int vector,
-					 void *cpumask)
+static void
+lsinic_irq_set_affinity_hint(struct lsinic_nic *adapter,
+	unsigned int irq, int vector, void *cpumask)
 {
 #ifdef HAVE_PCI_ALLOC_IRQ_VECTORS
 	irq_set_affinity_hint(pci_irq_vector(adapter->pdev, vector),
@@ -2277,12 +2729,13 @@ static void lsinic_irq_set_affinity_hint(struct lsinic_adapter *adapter,
 #endif
 }
 
-static int lsinic_request_muti_interrupt(struct lsinic_adapter *adapter,
-					 unsigned int irq,
-					 irqreturn_t (*handler)(int, void *),
-					 char *name,
-					 void *dev_id,
-					 int vector)
+static int
+lsinic_request_muti_interrupt(struct lsinic_nic *adapter,
+	unsigned int irq,
+	irqreturn_t (*handler)(int, void *),
+	char *name,
+	void *dev_id,
+	int vector)
 {
 	int err;
 
@@ -2296,11 +2749,12 @@ static int lsinic_request_muti_interrupt(struct lsinic_adapter *adapter,
 	return err;
 }
 
-static int lsinic_request_interrupt(struct lsinic_adapter *adapter,
-				    irqreturn_t (*handler)(int, void *),
-				    unsigned long irqflags,
-				    const char *name,
-				    void *dev_id)
+static int
+lsinic_request_interrupt(struct lsinic_nic *adapter,
+	irqreturn_t (*handler)(int, void *),
+	unsigned long irqflags,
+	const char *name,
+	void *dev_id)
 {
 	int err;
 
@@ -2315,10 +2769,11 @@ static int lsinic_request_interrupt(struct lsinic_adapter *adapter,
 	return err;
 }
 
-static void lsinic_free_interrupt(struct lsinic_adapter *adapter,
-				  unsigned int irq,
-				  int vector,
-				  void *dev_id)
+static void
+lsinic_free_interrupt(struct lsinic_nic *adapter,
+	unsigned int irq,
+	int vector,
+	void *dev_id)
 {
 #ifdef HAVE_PCI_ALLOC_IRQ_VECTORS
 	free_irq(pci_irq_vector(adapter->pdev, vector), dev_id);
@@ -2327,7 +2782,8 @@ static void lsinic_free_interrupt(struct lsinic_adapter *adapter,
 #endif
 }
 
-static void lsinic_pci_disable_msix(struct lsinic_adapter *adapter)
+static void
+lsinic_pci_disable_msix(struct lsinic_nic *adapter)
 {
 #ifdef HAVE_PCI_ALLOC_IRQ_VECTORS
 	pci_free_irq_vectors(adapter->pdev);
@@ -2336,7 +2792,8 @@ static void lsinic_pci_disable_msix(struct lsinic_adapter *adapter)
 #endif
 }
 
-static void lsinic_pci_disable_msi(struct lsinic_adapter *adapter)
+static void
+lsinic_pci_disable_msi(struct lsinic_nic *adapter)
 {
 #ifdef HAVE_PCI_ALLOC_IRQ_VECTORS
 	pci_free_irq_vectors(adapter->pdev);
@@ -2345,7 +2802,6 @@ static void lsinic_pci_disable_msi(struct lsinic_adapter *adapter)
 #endif
 }
 
-
 /**
  * lsinic_request_msix_irqs - Initialize MSI-X interrupts
  * @adapter: board private structure
@@ -2353,7 +2809,8 @@ static void lsinic_pci_disable_msi(struct lsinic_adapter *adapter)
  * lsinic_request_msix_irqs allocates MSI-X vectors and requests
  * interrupts from the kernel.
  **/
-static int lsinic_request_msix_irqs(struct lsinic_adapter *adapter)
+static int
+lsinic_request_msix_irqs(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int vector, err;
@@ -2388,8 +2845,8 @@ static int lsinic_request_msix_irqs(struct lsinic_adapter *adapter)
 				lsinic_napi_intr,
 				q_vector->name, q_vector, vector);
 		if (err) {
-			e_err(probe, "request_irq failed for MSIX Tx interrupt "
-				"Error: %d\n", err);
+			e_err(probe, "%s: Request irq(%d) failed(%d)\n",
+				__func__, entry->vector, err);
 			goto free_queue_irqs;
 		}
 
@@ -2404,7 +2861,12 @@ static int lsinic_request_msix_irqs(struct lsinic_adapter *adapter)
 				lsinic_msix_other, netdev->name,
 				adapter, vector);
 		if (err) {
-			e_err(probe, "request_irq for msix_other failed: %d\n", err);
+			e_err(probe,
+				"%s: Request msix[%d].vector(%d) failed(%d)\n",
+				__func__,
+				vector,
+				adapter->msix_entries[vector].vector,
+				err);
 			goto free_queue_irqs;
 		}
 	}
@@ -2430,7 +2892,8 @@ free_queue_irqs:
  * @irq: interrupt number
  * @data: pointer to a network interface device structure
  **/
-static irqreturn_t lsinic_intr(int irq, void *data)
+static irqreturn_t
+lsinic_intr(int irq, void *data)
 {
 	return IRQ_HANDLED;
 }
@@ -2442,7 +2905,8 @@ static irqreturn_t lsinic_intr(int irq, void *data)
  * Attempts to configure interrupts using the best available
  * capabilities of the hardware and kernel.
  **/
-static int lsinic_request_irq(struct lsinic_adapter *adapter)
+static int
+lsinic_request_irq(struct lsinic_nic *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int err = 0;
@@ -2467,7 +2931,8 @@ static int lsinic_request_irq(struct lsinic_adapter *adapter)
 	return err;
 }
 
-void lsinic_reset(struct lsinic_adapter *adapter)
+static void
+lsinic_reset(struct lsinic_nic *adapter __always_unused)
 {
 }
 
@@ -2480,7 +2945,8 @@ void lsinic_reset(struct lsinic_adapter *adapter)
  * responsible for configuring the hardware for proper unicast, multicast and
  * promiscuous mode.
  **/
-void lsinic_set_rx_mode(struct net_device *netdev)
+static void
+lsinic_set_rx_mode(struct net_device *netdev __always_unused)
 {
 }
 
@@ -2491,7 +2957,8 @@ enum latency_range {
 	latency_invalid = 255
 };
 
-static void lsinic_free_irq(struct lsinic_adapter *adapter)
+static void
+lsinic_free_irq(struct lsinic_nic *adapter)
 {
 	int vector;
 
@@ -2558,9 +3025,10 @@ static void lsinic_free_irq(struct lsinic_adapter *adapter)
 	}
 }
 
-static int lsinic_set_mac(struct net_device *netdev, void *p)
+static int
+lsinic_set_mac(struct net_device *netdev, void *p)
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
@@ -2603,9 +3071,10 @@ static int lsinic_set_mac(struct net_device *netdev, void *p)
 	return 0;
 }
 
-int lsinic_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
+static int
+lsinic_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 	int i;
@@ -2642,16 +3111,16 @@ int lsinic_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 }
 
 #if KERNEL_VERSION(4, 9, 62) <= LSINIC_HOST_KERNEL_VER
-int
+static int
 lsinic_set_vf_vlan(struct net_device *netdev,
 	int vf, u16 vlan, u8 qos, __be16 vlan_proto)
 #else
-int
+static int
 lsinic_set_vf_vlan(struct net_device *netdev,
 	int vf, u16 vlan, u8 qos)
 #endif
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
@@ -2681,19 +3150,21 @@ lsinic_set_vf_vlan(struct net_device *netdev,
 	return 0;
 }
 
-int lsinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
+static int
+lsinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 
 	adapter->vfinfo[vf].spoofchk_enabled = setting;
 
 	return 0;
 }
 
-int lsinic_get_vf_config(struct net_device *netdev,
-			    int vf, struct ifla_vf_info *ivi)
+static int
+lsinic_get_vf_config(struct net_device *netdev,
+	int vf, struct ifla_vf_info *ivi)
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 
 	if (vf >= adapter->num_vfs)
 		return -EINVAL;
@@ -2719,11 +3190,12 @@ int lsinic_get_vf_config(struct net_device *netdev,
  * handler is registered with the OS, the watchdog timer is started,
  * and the stack is notified that the interface is ready.
  **/
-static int lsinic_open(struct net_device *netdev)
+static int
+lsinic_open(struct net_device *netdev)
 {
 	int err = 0;
 	u32 reg_val = 0;
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_dev_reg *ep_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
 
@@ -2733,7 +3205,8 @@ static int lsinic_open(struct net_device *netdev)
 
 	reg_val = LSINIC_READ_REG(&ep_reg->ep_state);
 	if (reg_val == LSINIC_DEV_INITING) {
-		printk(KERN_WARNING "inic: ep has NOT been initialized!\n");
+		netdev_crit(adapter->netdev,
+			"ep has NOT been initialized!\n");
 		return -EBUSY;
 	}
 
@@ -2786,7 +3259,8 @@ err_setup_tx:
 	return err;
 }
 
-static void lsinic_reset_interrupt_capability(struct lsinic_adapter *adapter);
+static void
+lsinic_reset_interrupt_capability(struct lsinic_nic *adapter);
 /**
  * lsinic_close - Disables a network interface
  * @netdev: network interface device structure
@@ -2798,9 +3272,10 @@ static void lsinic_reset_interrupt_capability(struct lsinic_adapter *adapter);
  * needs to be disabled.  A global MAC reset is issued to stop the
  * hardware, and all transmit and receive resources are freed.
  **/
-static int lsinic_close(struct net_device *netdev)
+static int
+lsinic_close(struct net_device *netdev)
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 
 	lsinic_down(adapter);
 	lsinic_free_irq(adapter);
@@ -2819,19 +3294,22 @@ static int lsinic_close(struct net_device *netdev)
  *
  * Returns 0 on success, negative on failure
  **/
-static int lsinic_change_mtu(struct net_device *dev, int new_mtu)
+static int
+lsinic_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct net_device *netdev = dev;
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	int max_frame = new_mtu + ETH_HLEN + ETH_FCS_LEN;
 
 	/* MTU < 68 is an error and causes problems on some kernels */
-	if ((new_mtu < 68) || (max_frame > LSINIC_READ_REG(&eth_reg->max_data_room)))
+	if ((new_mtu < 68) ||
+		(max_frame > LSINIC_READ_REG(&eth_reg->max_data_room)))
 		return -EINVAL;
 
-	e_info(probe, "changing MTU from %d to %d\n", netdev->mtu, new_mtu);
+	e_info(probe, "changing MTU from %d to %d\n",
+		netdev->mtu, new_mtu);
 
 	LSINIC_WRITE_REG(&eth_reg->max_data_room, new_mtu);
 	if (lsinic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU))
@@ -2855,7 +3333,7 @@ lsinic_get_stats64(struct net_device *netdev,
 	struct rtnl_link_stats64 *stats)
 #endif
 {
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	int i;
 
 	rcu_read_lock();
@@ -2863,34 +3341,35 @@ lsinic_get_stats64(struct net_device *netdev,
 		struct lsinic_ring *ring = INIC_READ_ONCE(adapter->rx_ring[i]);
 		unsigned int start;
 
-		if (ring) {
-			do {
-				start = INIC_U64_STATS_FETCH_BEGIN(&ring->syncp);
-				stats->rx_packets += ring->stats.packets;
-				stats->rx_bytes += ring->stats.bytes;
-				stats->rx_errors +=
-					ring->rx_stats.alloc_rx_page_failed +
-					ring->rx_stats.alloc_rx_buff_failed +
-					ring->rx_stats.alloc_rx_dma_failed;
-				stats->rx_crc_errors +=
-					ring->rx_stats.csum_err;
+		if (!ring)
+			continue;
 
-			} while (INIC_U64_STATS_FETCH_RETRY(&ring->syncp, start));
-		}
+		do {
+			start = INIC_U64_STATS_FETCH_BEGIN(&ring->syncp);
+			stats->rx_packets += ring->stats.packets;
+			stats->rx_bytes += ring->stats.bytes;
+			stats->rx_errors +=
+				ring->rx_stats.alloc_rx_page_failed +
+				ring->rx_stats.alloc_rx_buff_failed +
+				ring->rx_stats.alloc_rx_dma_failed;
+			stats->rx_crc_errors +=
+				ring->rx_stats.csum_err;
+		} while (INIC_U64_STATS_FETCH_RETRY(&ring->syncp, start));
 	}
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct lsinic_ring *ring = INIC_READ_ONCE(adapter->tx_ring[i]);
 		unsigned int start;
 
-		if (ring) {
-			do {
-				start = INIC_U64_STATS_FETCH_BEGIN(&ring->syncp);
-				stats->tx_packets += ring->stats.packets;
-				stats->tx_bytes += ring->stats.bytes;
-				stats->tx_dropped += ring->tx_stats.tx_busy;
-			} while (INIC_U64_STATS_FETCH_RETRY(&ring->syncp, start));
-		}
+		if (!ring)
+			continue;
+
+		do {
+			start = INIC_U64_STATS_FETCH_BEGIN(&ring->syncp);
+			stats->tx_packets += ring->stats.packets;
+			stats->tx_bytes += ring->stats.bytes;
+			stats->tx_dropped += ring->tx_stats.tx_busy;
+		} while (INIC_U64_STATS_FETCH_RETRY(&ring->syncp, start));
 	}
 	rcu_read_unlock();
 	/* following stats updated by lsinic_watchdog_task() */
@@ -2906,7 +3385,8 @@ lsinic_get_stats64(struct net_device *netdev,
 }
 #endif
 
-static int lsinic_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
+static int
+lsinic_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 {
 	struct mii_ioctl_data *mii_data = if_mii(req);
 	u16 addr = mii_data->reg_num;
@@ -2938,143 +3418,12 @@ static int lsinic_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 	return 0;
 }
 
-static u32 lsinic_tx_cmd_type(u32 tx_flags)
-{
-	return tx_flags;
-}
-
-static void
-lsinic_tx_map(struct lsinic_ring *tx_ring,
-	struct lsinic_tx_buffer *tx_buffer,
-	const u8 hdr_len)
-{
-	dma_addr_t dma;
-	struct sk_buff *skb = tx_buffer->skb;
-	struct lsinic_bd_desc *ep_tx_desc, *rc_tx_desc;
-	unsigned int size = skb_headlen(skb);
-	u32 cmd_type;
-	u16 i = tx_ring->tx_avail_idx & (tx_ring->count - 1);
-
-	ep_tx_desc = LSINIC_EP_BD_DESC(tx_ring, i);
-	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, i);
-
-
-	cmd_type = lsinic_tx_cmd_type(tx_buffer->tx_flags);
-
-	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
-
-	dma_unmap_len_set(tx_buffer, len, size);
-	dma_unmap_addr_set(tx_buffer, dma, dma);
-
-	rc_tx_desc->pkt_addr = dma;
-	ep_tx_desc->pkt_addr = dma;
-
-	cmd_type |= LSINIC_BD_CMD_EOP | size;
-	rc_tx_desc->len_cmd = cmd_type;
-	rc_tx_desc->bd_status &= (~RING_BD_STATUS_MASK);
-	rc_tx_desc->bd_status |= RING_BD_AVAILABLE;
-	mem_cp128b_atomic((u8 *)ep_tx_desc, (u8 *)rc_tx_desc);
-
-	tx_ring->tx_avail_idx++;
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&tx_ring->ep_reg->pir, tx_ring->tx_avail_idx);
-#endif
-
-	/*
-	 *ep_tx_desc->len_cmd = rc_tx_desc->len_cmd;
-	 *ep_tx_desc->index = rc_tx_desc->index;
-	 *ep_tx_desc->flag = rc_tx_desc->flag;
-	 */
-	printk_tx("tx_ring->avail->idx = %d\n", tx_ring->tx_avail_idx);
-}
-
-static int lsinic_gso(struct lsinic_ring *tx_ring,
-	struct lsinic_tx_buffer *first)
-{
-	struct sk_buff *skb = first->skb;
-
-	if (skb->ip_summed != CHECKSUM_PARTIAL)
-		return 0;
-
-	if (!skb_is_gso(skb))
-		return 0;
-
-	if (skb_header_cloned(skb)) {
-		int err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
-
-		if (err)
-			return err;
-	}
-
-	return 1;
-}
-
-netdev_tx_t
-lsinic_xmit_frame_ring(struct sk_buff *skb,
-	struct lsinic_adapter *adapter,
-	struct lsinic_ring *tx_ring)
-{
-	struct lsinic_tx_buffer *first = NULL;
-	__be16 protocol = skb->protocol;
-	u8 hdr_len = 0;
-	int gso;
-	struct lsinic_bd_desc *rc_tx_desc;
-	u16 bd_idx;
-	u16 txe_idx;
-	u32 status;
-
-	if (skb_shinfo(skb)->nr_frags > 1)
-		return NETDEV_TX_BUSY;
-
-	bd_idx = tx_ring->tx_avail_idx & (tx_ring->count - 1);
-	rc_tx_desc = LSINIC_RC_BD_DESC(tx_ring, bd_idx);
-
-	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
-
-	rmb();
-
-	if (status != RING_BD_READY)
-		return NETDEV_TX_BUSY;
-
-	txe_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
-	first = &tx_ring->tx_buffer_info[txe_idx];
-
-	first->skb = skb;
-	first->bytecount = skb->len;
-	first->gso_segs = 1;
-
-	printk_tx("\n%s:\n", __func__);
-	printk_tx("tx_buffer_info 0x%p\n", first);
-	printk_tx("skb->len=%d data_len=%d skb_headlen=%d\n",
-		  skb->len, skb->data_len, skb_headlen(skb));
-	printk_tx("BD count = %d\n", count);
-
-	first->tx_flags = 0;
-
-	first->protocol = protocol;
-
-	gso = lsinic_gso(tx_ring, first);
-	if (gso < 0)
-		goto out_drop;
-
-	lsinic_tx_map(tx_ring, first, hdr_len);
-
-	return NETDEV_TX_OK;
-
-out_drop:
-	if (lsinic_self_test)
-		return NETDEV_TX_BUSY;
-	dev_kfree_skb_any(skb);
-	return NETDEV_TX_OK;
-}
-
 static netdev_tx_t
 lsinic_xmit_frame(struct sk_buff *skb,
 	struct net_device *netdev)
 {
 	u32 ret_val = 0;
-	struct lsinic_adapter *adapter = netdev_priv(netdev);
+	struct lsinic_nic *adapter = netdev_priv(netdev);
 	struct lsinic_ring *tx_ring;
 #ifdef VF_VLAN_ENABLE
 	struct lsinic_eth_reg *eth_reg =
@@ -3120,10 +3469,6 @@ lsinic_xmit_frame(struct sk_buff *skb,
 	}
 #endif
 
-#if defined(PRINT_SKB) && defined(PRINT_TX)
-	print_skb(skb, TX);
-#endif
-
 	return lsinic_xmit_frame_ring(skb, adapter, tx_ring);
 }
 
@@ -3154,7 +3499,8 @@ static const struct net_device_ops lsinic_netdev_ops = {
 };
 
 #ifndef HAVE_FREE_RCU
-static void kfree_q_vector(struct rcu_head *rcu_head)
+static void
+kfree_q_vector(struct rcu_head *rcu_head)
 {
 	struct lsinic_q_vector *q_vector =
 			container_of(rcu_head, struct lsinic_q_vector, rcu);
@@ -3163,7 +3509,8 @@ static void kfree_q_vector(struct rcu_head *rcu_head)
 }
 #endif
 
-static void lsinic_free_rcu(struct lsinic_q_vector *q_vector)
+static void
+lsinic_free_rcu(struct lsinic_q_vector *q_vector)
 {
 #ifdef HAVE_FREE_RCU
 	kfree_rcu(q_vector, rcu);
@@ -3182,7 +3529,7 @@ static void lsinic_free_rcu(struct lsinic_q_vector *q_vector)
  * to freeing the q_vector.
  **/
 static void
-lsinic_free_q_vector(struct lsinic_adapter *adapter,
+lsinic_free_q_vector(struct lsinic_nic *adapter,
 	int v_idx)
 {
 	struct lsinic_q_vector *q_vector = adapter->q_vector[v_idx];
@@ -3203,7 +3550,8 @@ lsinic_free_q_vector(struct lsinic_adapter *adapter,
 	lsinic_free_rcu(q_vector);
 }
 
-static void lsinic_add_ring(struct lsinic_ring *ring,
+static void
+lsinic_add_ring(struct lsinic_ring *ring,
 	struct lsinic_ring_container *head)
 {
 	ring->next = head->ring;
@@ -3224,7 +3572,7 @@ static void lsinic_add_ring(struct lsinic_ring *ring,
  * We allocate one q_vector.  If allocation fails we return -ENOMEM.
  **/
 static int
-lsinic_alloc_q_vector(struct lsinic_adapter *adapter,
+lsinic_alloc_q_vector(struct lsinic_nic *adapter,
 	int v_count, int v_idx,
 	int txr_count, int txr_idx,
 	int rxr_count, int rxr_idx)
@@ -3354,7 +3702,8 @@ lsinic_alloc_q_vector(struct lsinic_adapter *adapter,
  * We allocate one q_vector per queue interrupt.  If allocation fails we
  * return -ENOMEM.
  **/
-static int lsinic_alloc_q_vectors(struct lsinic_adapter *adapter)
+static int
+lsinic_alloc_q_vectors(struct lsinic_nic *adapter)
 {
 	int q_vectors = adapter->num_q_vectors;
 	int rxr_remaining = adapter->num_rx_queues;
@@ -3435,7 +3784,8 @@ err_out:
  * NAPI is enabled it will delete any references to the NAPI struct prior
  * to freeing the q_vector.
  **/
-static void lsinic_free_q_vectors(struct lsinic_adapter *adapter)
+static void
+lsinic_free_q_vectors(struct lsinic_nic *adapter)
 {
 	int v_idx = adapter->num_q_vectors;
 
@@ -3447,7 +3797,8 @@ static void lsinic_free_q_vectors(struct lsinic_adapter *adapter)
 		lsinic_free_q_vector(adapter, v_idx);
 }
 
-static void lsinic_reset_interrupt_capability(struct lsinic_adapter *adapter)
+static void
+lsinic_reset_interrupt_capability(struct lsinic_nic *adapter)
 {
 	if (adapter->flags & LSINIC_FLAG_MSIX_ENABLED) {
 		adapter->flags &= ~LSINIC_FLAG_MSIX_ENABLED;
@@ -3464,7 +3815,7 @@ static void lsinic_reset_interrupt_capability(struct lsinic_adapter *adapter)
 }
 
 static int
-lsinic_acquire_muti_msi(struct lsinic_adapter *adapter,
+lsinic_acquire_muti_msi(struct lsinic_nic *adapter,
 	unsigned int min_vecs,
 	unsigned int max_vecs)
 {
@@ -3482,7 +3833,7 @@ lsinic_acquire_muti_msi(struct lsinic_adapter *adapter,
 }
 
 static int
-lsinic_acquire_muti_msi_vectors(struct lsinic_adapter *adapter,
+lsinic_acquire_muti_msi_vectors(struct lsinic_nic *adapter,
 	int vectors)
 {
 	int i = 0;
@@ -3514,9 +3865,10 @@ lsinic_acquire_muti_msi_vectors(struct lsinic_adapter *adapter,
 	return ret;
 }
 
-static int lsinic_pci_alloc_muti_irq(struct lsinic_adapter *adapter,
-				     unsigned int vecs,
-				     int vector_threshold)
+static int
+lsinic_pci_alloc_muti_irq(struct lsinic_nic *adapter,
+	unsigned int vecs,
+	int vector_threshold)
 {
 	int err;
 	int vectors = vecs;
@@ -3549,7 +3901,8 @@ static int lsinic_pci_alloc_muti_irq(struct lsinic_adapter *adapter,
 	return vectors;
 }
 
-static int lsinic_pci_alloc_irq(struct lsinic_adapter *adapter)
+static int
+lsinic_pci_alloc_irq(struct lsinic_nic *adapter)
 {
 #ifdef HAVE_PCI_ALLOC_IRQ_VECTORS
 	int nvec;
@@ -3566,7 +3919,7 @@ static int lsinic_pci_alloc_irq(struct lsinic_adapter *adapter)
 }
 
 static void
-lsinic_acquire_msix_vectors(struct lsinic_adapter *adapter,
+lsinic_acquire_msix_vectors(struct lsinic_nic *adapter,
 	int vectors)
 {
 	int vector_threshold;
@@ -3609,7 +3962,7 @@ lsinic_acquire_msix_vectors(struct lsinic_adapter *adapter,
  * capabilities of the hardware and the kernel.
  **/
 static void
-lsinic_set_interrupt_capability(struct lsinic_adapter *adapter)
+lsinic_set_interrupt_capability(struct lsinic_nic *adapter)
 {
 	int vector, v_budget, err, msix_cap;
 	struct lsinic_rcs_reg *rcs_reg =
@@ -3675,9 +4028,8 @@ legacy_int:
 
 	err = lsinic_pci_alloc_irq(adapter);
 	if (err) {
-		netif_printk(adapter, hw, KERN_DEBUG, adapter->netdev,
-			"Unable to allocate MSI interrupt, "
-			"falling back to legacy.  Error: %d\n", err);
+		e_dev_warn("Alloc MSI failed(%d), falling back to legacy\n",
+			err);
 		return;
 	}
 	adapter->flags |= LSINIC_FLAG_MSI_ENABLED;
@@ -3693,7 +4045,8 @@ legacy_int:
  * - Hardware queue count (num_*_queues)
  *   - defined by miscellaneous hardware support/features (RSS, etc.)
  **/
-int lsinic_init_interrupt_scheme(struct lsinic_adapter *adapter)
+static int
+lsinic_init_interrupt_scheme(struct lsinic_nic *adapter)
 {
 	int err;
 
@@ -3726,7 +4079,8 @@ err_alloc_q_vectors:
  * We go through and clear interrupt specific resources and reset the structure
  * to pre-load conditions
  **/
-void lsinic_clear_interrupt_scheme(struct lsinic_adapter *adapter)
+void
+lsinic_clear_interrupt_scheme(struct lsinic_nic *adapter)
 {
 	adapter->num_tx_queues = 0;
 	adapter->num_rx_queues = 0;
@@ -3735,7 +4089,8 @@ void lsinic_clear_interrupt_scheme(struct lsinic_adapter *adapter)
 	lsinic_reset_interrupt_capability(adapter);
 }
 
-static int lsinic_enable_sriov(struct lsinic_adapter *adapter)
+static int
+lsinic_enable_sriov(struct lsinic_nic *adapter)
 {
 	int i;
 
@@ -3752,16 +4107,18 @@ static int lsinic_enable_sriov(struct lsinic_adapter *adapter)
 	return -ENOMEM;
 }
 
-int lsinic_free_sriov(struct lsinic_adapter *adapter)
+static int
+lsinic_free_sriov(struct lsinic_nic *adapter)
 {
 	kfree(adapter->vfinfo);
 	adapter->vfinfo = NULL;
 	return 0;
 }
 
-static int lsinic_vf_init(struct pci_dev *pdev)
+static int
+lsinic_vf_init(struct pci_dev *pdev)
 {
-	struct lsinic_adapter *adapter = pci_get_drvdata(pdev);
+	struct lsinic_nic *adapter = pci_get_drvdata(pdev);
 	int pos;
 	int ret;
 	u16 vf_total, vf_availbe;
@@ -3813,7 +4170,8 @@ static int lsinic_vf_init(struct pci_dev *pdev)
 	return 0;
 }
 
-static int lsinic_disable_sriov(struct lsinic_adapter *adapter)
+static int
+lsinic_disable_sriov(struct lsinic_nic *adapter)
 {
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
@@ -3853,16 +4211,18 @@ lsinic_pci_sriov_enable(struct pci_dev *pdev, int num_vfs)
 	return 0;
 }
 
-static int lsinic_pci_sriov_disable(struct pci_dev *pdev)
+static int
+lsinic_pci_sriov_disable(struct pci_dev *pdev)
 {
-	struct lsinic_adapter *adapter = pci_get_drvdata(pdev);
+	struct lsinic_nic *adapter = pci_get_drvdata(pdev);
 
 	lsinic_disable_sriov(adapter);
 
 	return 0;
 }
 
-int lsinic_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
+static int
+lsinic_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
 {
 	if (dev->is_virtfn)
 		return 0;
@@ -3873,7 +4233,8 @@ int lsinic_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
 		return lsinic_pci_sriov_enable(dev, num_vfs);
 }
 
-static int lsinic_tune_caps(struct pci_dev *pdev)
+static int
+lsinic_tune_caps(struct pci_dev *pdev)
 {
 	struct pci_dev *parent;
 	u16 pcaps, ecaps, ctl;
@@ -3920,11 +4281,59 @@ static int lsinic_tune_caps(struct pci_dev *pdev)
 	return 0;
 }
 
-int lsinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+static void
+lsinic_get_drvinfo(struct net_device *netdev,
+	struct ethtool_drvinfo *drvinfo)
+{
+	struct lsinic_nic *adapter = netdev_priv(netdev);
+
+	strlcpy(drvinfo->driver, lsinic_driver_name,
+		sizeof(drvinfo->driver));
+
+	strlcpy(drvinfo->version, lsinic_driver_version,
+		sizeof(drvinfo->version));
+
+	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
+		sizeof(drvinfo->bus_info));
+}
+
+#ifndef ETHTOOL_GLINKSETTINGS
+static int
+lsinic_get_settings(struct net_device *netdev,
+	struct ethtool_cmd *ecmd)
+{
+	struct lsinic_nic *adapter = netdev_priv(netdev);
+
+	ecmd->supported = (SUPPORTED_100baseT_Full |
+			SUPPORTED_1000baseT_Full|
+			SUPPORTED_10000baseT_Full);
+
+	ethtool_cmd_speed_set(ecmd, adapter->link_speed);
+	ecmd->duplex = DUPLEX_FULL;
+
+	return 0;
+}
+#endif
+
+static const struct ethtool_ops lsinic_ethtool_ops = {
+	.get_drvinfo		= lsinic_get_drvinfo,
+#ifndef ETHTOOL_GLINKSETTINGS
+	.get_settings		= lsinic_get_settings,
+#endif
+};
+
+static void
+lsinic_set_ethtool_ops(struct net_device *netdev)
+{
+	netdev->ethtool_ops = &lsinic_ethtool_ops;
+}
+
+static int
+lsinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct net_device *netdev;
 	struct lsinic_dev_reg *ep_reg = NULL;
-	struct lsinic_adapter *adapter = NULL;
+	struct lsinic_nic *adapter = NULL;
 	unsigned int indices = LSINIC_RING_MAX_COUNT;
 	static int cards_found;
 	int size_bits;
@@ -3947,7 +4356,7 @@ int lsinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	lsinic_tune_caps(pdev);
 
-	netdev = alloc_etherdev_mq(sizeof(struct lsinic_adapter), indices);
+	netdev = alloc_etherdev_mq(sizeof(struct lsinic_nic), indices);
 	if (!netdev) {
 		dev_err(&pdev->dev, "failed to create netdev\n");
 		err = -ENOMEM;
@@ -4159,7 +4568,7 @@ lsinic_strsplit(char *string, int stringlen,
 	int tokstart = 1; /* first token is right at start of string */
 
 	if (string == NULL || tokens == NULL)
-		return -1;
+		return -EINVAL;
 
 	for (i = 0; i < stringlen; i++) {
 		if (string[i] == '\0' || tok >= maxtokens)
@@ -4191,7 +4600,7 @@ lsinic_pci_parse_res(char *line, size_t len, u64 *phys_addr,
 	} res_info;
 
 	if (lsinic_strsplit(line, len, res_info.ptrs, 3, ' ') != 3)
-		return -1;
+		return -EINVAL;
 
 	ret = kstrtoull(res_info.phys_addr, 16, phys_addr);
 	if (ret)
@@ -4209,7 +4618,8 @@ lsinic_pci_parse_res(char *line, size_t len, u64 *phys_addr,
 #define PCI_SIM_MAX_RESOURCE 6
 #define PCI_BAR_INFO_LEN (19 * 3 + 1)
 
-static char *read_line(char *buf, size_t buf_len, struct file *fp)
+static char *
+read_line(char *buf, size_t buf_len, struct file *fp)
 {
 	int ret;
 	int i = 0;
@@ -4240,7 +4650,8 @@ read_again:
 	return buf;
 }
 
-static int lsinic_sim_scan_pci(struct resource *res, int idx)
+static int
+lsinic_sim_scan_pci(struct resource *res, int idx)
 {
 	struct file *res_file;
 	int ret = -1;
@@ -4254,13 +4665,9 @@ static int lsinic_sim_scan_pci(struct resource *res, int idx)
 		file_name = multi_pf_res_file_name[idx];
 
 	res_file = filp_open(file_name, O_RDWR, 0644);
-	if (IS_ERR(res_file)) {
-		printk(KERN_ERR
-			"error occurred while opening file %s, exiting...\n",
-			file_name);
+	if (IS_ERR(res_file))
+		return -ENXIO;
 
-		return -1;
-	}
 	memset(res_file_data, 0, RES_FILE_DATA_MAX_SIZE);
 
 	for (i = 0; i < PCI_SIM_MAX_RESOURCE; i++) {
@@ -4281,7 +4688,7 @@ static int lsinic_sim_scan_pci(struct resource *res, int idx)
 }
 
 static resource_size_t
-pci_sim_resource_len(struct lsinic_adapter *adapter, int bar)
+pci_sim_resource_len(struct lsinic_nic *adapter, int bar)
 {
 	struct resource *res = &adapter->res[bar];
 
@@ -4289,7 +4696,7 @@ pci_sim_resource_len(struct lsinic_adapter *adapter, int bar)
 }
 
 static resource_size_t
-pci_sim_resource_start(struct lsinic_adapter *adapter, int bar)
+pci_sim_resource_start(struct lsinic_nic *adapter, int bar)
 {
 	struct resource *res = &adapter->res[bar];
 
@@ -4297,18 +4704,19 @@ pci_sim_resource_start(struct lsinic_adapter *adapter, int bar)
 }
 
 static void __iomem *
-pci_sim_ioremap_bar(struct lsinic_adapter *adapter, int bar)
+pci_sim_ioremap_bar(struct lsinic_nic *adapter, int bar)
 {
 	struct resource *res = &adapter->res[bar];
 
 	return phys_to_virt(res->start);
 }
 
-static int lsinic_sim_probe(int idx)
+static int
+lsinic_sim_probe(int idx)
 {
 	struct net_device *netdev;
 	struct lsinic_dev_reg *ep_reg = NULL;
-	struct lsinic_adapter *adapter = NULL;
+	struct lsinic_nic *adapter = NULL;
 	unsigned int indices = LSINIC_RING_MAX_COUNT;
 	int size_bits, err = 0;
 	struct lsinic_rcs_reg *rcs_reg = NULL;
@@ -4340,7 +4748,7 @@ static int lsinic_sim_probe(int idx)
 		goto err_add_platform_dev;
 	}
 
-	netdev = alloc_etherdev_mq(sizeof(struct lsinic_adapter), indices);
+	netdev = alloc_etherdev_mq(sizeof(struct lsinic_nic), indices);
 	if (!netdev) {
 		err = -EIO;
 		goto err_alloc_etherdev;
@@ -4501,9 +4909,10 @@ err_res_alloc:
 	return err;
 }
 
-static void lsinic_remove(struct pci_dev *pdev)
+static void
+lsinic_remove(struct pci_dev *pdev)
 {
-	struct lsinic_adapter *adapter = pci_get_drvdata(pdev);
+	struct lsinic_nic *adapter = pci_get_drvdata(pdev);
 	struct net_device *netdev;
 
 	if (!adapter)
@@ -4548,9 +4957,10 @@ static void lsinic_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
-static void lsinic_sim_remove(struct platform_device *simdev)
+static void
+lsinic_sim_remove(struct platform_device *simdev)
 {
-	struct lsinic_adapter *adapter;
+	struct lsinic_nic *adapter;
 	struct net_device *netdev;
 
 	adapter = dev_get_drvdata(&simdev->dev);

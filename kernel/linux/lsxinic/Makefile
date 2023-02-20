@@ -24,8 +24,5 @@ MODULE_CFLAGS += -include $(RTE_OUTPUT)/include/rte_config.h
 # all source are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_LSXINIC_RC_KMOD) = lsinic_kmod.c
-SRCS-$(CONFIG_RTE_LSXINIC_RC_KMOD) += lsinic_ethtool.c
-SRCS-$(CONFIG_RTE_LSXINIC_RC_KMOD) += lsinic_kcompat.c
-SRCS-$(CONFIG_RTE_LSXINIC_RC_KMOD) += print_buffer.c
 
 include $(RTE_SDK)/mk/rte.module.mk
