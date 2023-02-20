@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
-#ifndef _LSINIC_COMMON_H_
-#define _LSINIC_COMMON_H_
+#ifndef _LSXINIC_COMMON_H_
+#define _LSXINIC_COMMON_H_
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #define LSINIC_MERGE_DEFAULT_THRESHOLD (600) /* bytes */
@@ -73,6 +73,7 @@ enum lsinic_port_type {
 };
 
 #define LSINIC_RING_MAX_COUNT 8
+#define LSINIC_RING_DEFAULT_MAX_QP 4
 
 #define LSINIC_MAX_BURST_NUM 32
 
@@ -290,4 +291,4 @@ lsinic_pcie_memcp_align(void *vdst,
 #define LSINIC_EP_MAP_MEM_ENV \
 	"LSINIC_XFER_HOST_ACCESS_EP_MEM"
 
-#endif /*  _LSINIC_VDEV_H_ */
+#endif /*  _LSXINIC_COMMON_H_ */

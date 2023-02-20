@@ -22,9 +22,6 @@
 
 #define INIC_VERSION (001)
 
-#define LSINIC_MAX_NUM_TX_QUEUES LSINIC_RING_MAX_COUNT
-#define LSINIC_MAX_NUM_RX_QUEUES LSINIC_RING_MAX_COUNT
-
 static inline uint16_t lsinic_read_reg16(void *addr)
 {
 	return rte_be_to_cpu_16(rte_read16(addr));
@@ -83,6 +80,7 @@ struct lsinic_adapter {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 
+	uint16_t max_qpairs;
 	uint8_t rbp_enable;
 	int txq_dma_id;
 	int rxq_dma_id;
@@ -105,7 +103,7 @@ struct lsinic_adapter {
 	uint32_t rc_state;
 	uint32_t ep_state;
 
-	void *ep_ring_virt_base;  /* EP ring base */
+	uint8_t *ep_ring_virt_base;  /* EP ring base */
 	rte_iova_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
 
