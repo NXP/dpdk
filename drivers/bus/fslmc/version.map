@@ -2,6 +2,7 @@ DPDK_22 {
 	global:
 
 	rte_fslmc_vfio_mem_dmamap;
+	rte_fslmc_vfio_mem_dmaunmap;
 
 	local: *;
 };
