@@ -291,7 +291,14 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			}
 
 			LSINIC_WRITE_REG(&reg->result, status);
+			rte_wmb();
+			status = LSINIC_READ_REG(&reg->result);
+			rte_rmb();
 			LSINIC_WRITE_REG(&reg->command, PCIDEV_COMMAND_IDLE);
+
+			if (command == PCIDEV_COMMAND_REMOVE &&
+				status == PCIDEV_RESULT_SUCCEED)
+				lsinic_remove_config_fromrc(adapter);
 
 			dev = (struct rte_lsx_pciep_device *)
 				TAILQ_NEXT(dev, next);
