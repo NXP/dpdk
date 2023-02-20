@@ -1325,10 +1325,15 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 				raw_size, mask);
 			return -EINVAL;
 		}
-		raw_test->remote_vbase = lsx_pciep_set_ob_win(lsinic_dev,
-			remote_base, raw_size);
+
+		if (lsx_pciep_hw_sim_get(lsinic_dev->pcie_id)) {
+			raw_test->remote_vbase = DPAA2_IOVA_TO_VADDR(remote_base);
+		} else {
+			raw_test->remote_vbase = lsx_pciep_set_ob_win(lsinic_dev,
+				remote_base, raw_size);
+		}
 		if (!raw_test->remote_vbase) {
-			LSXINIC_PMD_ERR("alloc ob for PCIe(0x%lx) failed",
+			LSXINIC_PMD_ERR("Remote addr(0x%lx) map failed",
 				remote_base);
 
 			return -ENOMEM;
@@ -1337,8 +1342,15 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	}
 
 	rte_spinlock_lock(&adapter->rxq_dma_start_lock);
-	if (q->type == LSINIC_QUEUE_RX)
-		lsinic_queue_pcie_raw_dma_create(q);
+	if (q->type == LSINIC_QUEUE_RX) {
+		ret = lsinic_queue_pcie_raw_dma_create(q);
+		if (ret) {
+			LSXINIC_PMD_ERR("rxq[%d] dma create failed(%d)",
+				q->queue_id, ret);
+			rte_spinlock_unlock(&adapter->rxq_dma_start_lock);
+			return ret;
+		}
+	}
 	if (q->type == LSINIC_QUEUE_RX &&
 		!adapter->rxq_dma_started) {
 		ret = rte_dma_start(adapter->rxq_dma_id);
@@ -1353,8 +1365,15 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	rte_spinlock_unlock(&adapter->rxq_dma_start_lock);
 
 	rte_spinlock_lock(&adapter->txq_dma_start_lock);
-	if (q->type == LSINIC_QUEUE_TX)
-		lsinic_queue_pcie_raw_dma_create(q);
+	if (q->type == LSINIC_QUEUE_TX) {
+		ret = lsinic_queue_pcie_raw_dma_create(q);
+		if (ret) {
+			LSXINIC_PMD_ERR("txq[%d] dma create failed(%d)",
+				q->queue_id, ret);
+			rte_spinlock_unlock(&adapter->txq_dma_start_lock);
+			return ret;
+		}
+	}
 	if (q->type == LSINIC_QUEUE_TX &&
 		!adapter->txq_dma_started) {
 		ret = rte_dma_start(adapter->txq_dma_id);
