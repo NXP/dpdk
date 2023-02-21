@@ -1637,6 +1637,8 @@ main(int argc, char **argv)
 		rte_eth_dev_close(portid);
 		printf(" Done\n");
 	}
+
+	rte_eal_cleanup();
 	printf("Bye...\n");
 
 	return ret;
