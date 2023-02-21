@@ -411,6 +411,20 @@ lsx_pciep_probe(void)
 }
 
 static int
+lsx_pciep_close(void)
+{
+	int ret = 0;
+
+	ret = lsx_pciep_uninit();
+	if (ret)
+		LSX_PCIEP_BUS_ERR("Uninit failed.");
+
+	lsx_pciep_free_shared_mem();
+
+	return 0;
+}
+
+static int
 lsx_pciep_parse(const char *name, void *out_name)
 {
 	int i, j;
@@ -476,6 +490,7 @@ static struct rte_lsx_pciep_bus lsx_pciep_bus = {
 	.bus = {
 		.scan = lsx_pciep_scan,
 		.probe = lsx_pciep_probe,
+		.close = lsx_pciep_close,
 		.parse = lsx_pciep_parse,
 		.dev_iterate = lsx_pciep_dev_iterate,
 		.find_device = lsx_pciep_find_device,

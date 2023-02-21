@@ -132,6 +132,7 @@ struct lsx_pciep_ctl_hw *lsx_pciep_get_dev(uint8_t pcie_idx);
 
 int lsx_pciep_primary_init(void);
 int lsx_pciep_uninit(void);
+void lsx_pciep_free_shared_mem(void);
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 
 void *lsx_pciep_map_region(uint64_t addr, size_t len);

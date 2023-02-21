@@ -1415,6 +1415,15 @@ lsx_pciep_uninit(void)
 	return 0;
 }
 
+void
+lsx_pciep_free_shared_mem(void)
+{
+	if (primary_shared_mz) {
+		rte_memzone_free(primary_shared_mz);
+		primary_shared_mz = NULL;
+	}
+}
+
 int
 lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, uint64_t size)
@@ -2309,9 +2318,12 @@ static void __attribute__((destructor(102))) lsx_pciep_finish(void)
 {
 	lsx_pciep_uninit();
 
+	/* rte_eal_memory_detach or rte_bus_close should be called
+	 * by application to free this memory zone.
+	 */
 	if (primary_shared_mz) {
-		rte_memzone_free(primary_shared_mz);
-
+		LSX_PCIEP_BUS_LOG(DEBUG,
+			"Bus is not closed, is memory detached?");
 		primary_shared_mz = NULL;
 	}
 }
