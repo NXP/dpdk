@@ -992,6 +992,8 @@ lsxvio_rx_dma_dequeue(struct lsxvio_queue *rxq)
 	if (rxq->flag & LSXVIO_QUEUE_IDX_INORDER_FLAG) {
 		for (i = 0; i < ret; i++) {
 			dma_job = &rxq->dma_jobs[idx_completed[i]];
+			if (!dma_job->cnxt)
+				continue;
 			dma_cntx = (void *)dma_job->cnxt;
 			if (dma_cntx->cntx_type == LSXVIO_DMA_RX_CNTX_DATA) {
 				rxq->shadow_avail->idx = dma_cntx->cntx_data;
