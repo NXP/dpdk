@@ -194,6 +194,7 @@ enum dw_win_type {
 
 #define PCIEP_DW_GLOBE_INFO_F "/tmp/pciep_dw_globe_info"
 static rte_spinlock_t s_f_lock = RTE_SPINLOCK_INITIALIZER;
+static int s_f_create;
 
 struct pciep_dw_shared_ob_win {
 	uint64_t bus_start;
@@ -1264,6 +1265,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 		info->ob_max_size = CFG_32G_SIZE;
 		info->ob_win_max_size = CFG_4G_SIZE;
 		info->win_mask = PCIEP_DW_WIN_MASK;
+		s_f_create = 1;
 	}
 
 	hw->dbi_phy = info->dbi_phy[pcie_id];
@@ -1341,12 +1343,16 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 
 	rte_spinlock_lock(&s_f_lock);
 	if (pcie_dw_proc_info_empty(hw)) {
-		rte_spinlock_unlock(&s_f_lock);
-		return;
+		if (!s_f_create) {
+			rte_spinlock_unlock(&s_f_lock);
+			return;
+		}
 	}
 
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
+		if (pcie_dw_proc_info_empty(hw))
+			return;
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		rte_spinlock_unlock(&s_f_lock);
