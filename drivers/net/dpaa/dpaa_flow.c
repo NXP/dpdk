@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2019,2021-2022 NXP
+ * Copyright 2017-2019,2021-2023 NXP
  */
 
 /* System headers */
@@ -794,8 +794,6 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 		return -1;
 	}
 
-	dpaa_intf->nb_rx_queues = dev->data->nb_rx_queues;
-
 	/* Open FM Port and set it in port info */
 	ret = set_fm_port_handle(dpaa_intf, req_dist_set, fif);
 	if (ret) {
@@ -804,7 +802,7 @@ int dpaa_fm_config(struct rte_eth_dev *dev, uint64_t req_dist_set)
 	}
 
 	if (fif->num_profiles) {
-		for (i = 0; i < dpaa_intf->nb_rx_queues; i++)
+		for (i = 0; i < dev->data->nb_rx_queues; i++)
 			dpaa_intf->rx_queues[i].vsp_id =
 				fm_default_vsp_id(fif);
 
