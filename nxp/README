@@ -453,6 +453,9 @@ Following are some pre-requisites:
     run loadkernel
     run loadfdt
     fdt addr ${fdt_addr}
+    fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios"
+    fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us"
+    fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-deassert-us"
     fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio"
     setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'
     boot
