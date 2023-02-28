@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef _LSXINIC_RC_ETHDEV_H_
@@ -86,7 +86,7 @@
 #define NUM_MSIX_VECTORS        8
 #define NON_Q_VECTORS           0
 
-#define LXSNIC_CMD_LOOP_NUM 10
+#define LXSNIC_CMD_WAIT_DEFAULT_SEC 10
 
 /* Supported Rx Buffer Sizes */
 #define LXSNIC_RXBUFFER_256    256  /* Used for skb receive header */
@@ -368,11 +368,12 @@ struct lxsnic_adapter {
 	uint16_t  num_tx_queues;
 	uint16_t  config_tx_queues;
 	/* Tx fast path data */
-	void *rc_bd_desc_base;
+	uint8_t *rc_bd_desc_base;
 	dma_addr_t rc_bd_desc_phy;
 
 	/* hardware ring is full can't send pkt */
 	uint64_t tx_busy;
+	uint16_t max_qpairs;
 	/*total apapter tx pkt rx pkt num */
 	unsigned int tx_ring_bd_count;
 	unsigned int rx_ring_bd_count;

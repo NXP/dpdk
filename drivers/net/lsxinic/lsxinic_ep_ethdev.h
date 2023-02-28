@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_EP_ETHDEV_H_
@@ -33,9 +33,6 @@
 #define LSINIC_EP_DRV_SUFFIX_NAME "_driver"
 #define LSX_PCIE_EP_PMD net_lsinic
 #endif
-
-#define LSINIC_MAX_NUM_TX_QUEUES LSINIC_RING_MAX_COUNT
-#define LSINIC_MAX_NUM_RX_QUEUES LSINIC_RING_MAX_COUNT
 
 static inline uint16_t lsinic_read_reg16(void *addr)
 {
@@ -95,6 +92,7 @@ struct lsinic_adapter {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 
+	uint16_t max_qpairs;
 	uint8_t rbp_enable;
 	uint8_t rawdev_dma;
 	int txq_dma_id;
@@ -118,12 +116,14 @@ struct lsinic_adapter {
 	uint32_t rc_state;
 	uint32_t ep_state;
 
-	void *ep_ring_virt_base;  /* EP ring base */
+	uint8_t *ep_ring_virt_base;  /* EP ring base */
 	rte_iova_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
 
-	void *rc_ring_virt_base;  /* RC ring shadow base */
+	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	rte_iova_t rc_ring_phy_base;
+	dma_addr_t rc_ring_bus_base;
+	uint64_t rc_ring_size;
 
 	rte_iova_t rx_pcidma_dbg;
 	rte_iova_t tx_pcidma_dbg;
@@ -162,6 +162,9 @@ struct lsinic_adapter {
 
 int
 lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
+
+int
+lsinic_remove_config_fromrc(struct lsinic_adapter *adapter);
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 int

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -38,6 +38,7 @@
 #endif
 
 #define LSINIC_RING_FULL_THRESH_COUNT 1
+#define LSINIC_RING_WAIT_DEFAULT_SEC 100
 
 /**
  * Structure associated with each descriptor of the TX ring of a TX queue.
@@ -235,7 +236,6 @@ struct lsinic_queue {
 	int16_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
-	uint8_t *ob_virt_base;
 
 	/* MSI-X */
 	uint32_t msix_irq;
@@ -312,6 +312,8 @@ struct lsinic_queue {
 	uint64_t bytes_eq;
 	uint64_t pkts_dq;
 	uint64_t pkts_eq;
+	uint64_t bd_dq;
+	uint64_t bd_eq;
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	struct lsinic_pcie_raw_test pcie_raw_test;

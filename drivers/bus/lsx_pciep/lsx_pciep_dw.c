@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <unistd.h>
@@ -44,9 +44,12 @@
 #define __packed	__rte_packed
 #endif
 
-#define PCIE_PF_SIZE_OFF 0x1000
+#define PCIE_PF_BAR_SIZE_MASK_OFF 0x1000
 
-#define PCIE_VF_SIZE_OFF (PCIE_PF_SIZE_OFF + 0x18c)
+#define PCIE_VF_BAR_SIZE_MASK_OFF \
+	(PCIE_PF_BAR_SIZE_MASK_OFF + 0x18c)
+
+#define PCIEP_DW_WIN_MASK 0xfff
 
 struct pcie_dw_bar_size_mask {
 	uint32_t rsv[4];
@@ -191,6 +194,7 @@ enum dw_win_type {
 
 #define PCIEP_DW_GLOBE_INFO_F "/tmp/pciep_dw_globe_info"
 static rte_spinlock_t s_f_lock = RTE_SPINLOCK_INITIALIZER;
+static int s_f_create;
 
 struct pciep_dw_shared_ob_win {
 	uint64_t bus_start;
@@ -217,6 +221,7 @@ struct pciep_dw_info {
 		shared_ob_win[LSX_MAX_PCIE_NB][PCIE_DW_OB_WINS_NUM];
 	uint64_t ob_max_size;
 	uint64_t ob_win_max_size;
+	uint64_t win_mask;
 	int shared_ob;
 };
 
@@ -232,7 +237,7 @@ struct pciep_dw_proc_info {
 	int ib_nb;
 };
 
-struct pciep_dw_proc_info g_dw_proc_info[LSX_MAX_PCIE_NB];
+static struct pciep_dw_proc_info g_dw_proc_info[LSX_MAX_PCIE_NB];
 
 #define DWC_OB_PF_INFO_DUMP_FORMAT(pci, pf, \
 		phy, bus, size, win) \
@@ -857,26 +862,35 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
-static void pcie_dw_set_ib_size(uint8_t *base, int bar,
+static int pcie_dw_set_ib_size(uint8_t *base, int bar,
 		uint64_t size, int pf, int is_vf)
 {
-	uint64_t mask;
+	uint64_t mask, offset;
+	uint8_t *pf_base;
 	struct pcie_dw_bar_size_mask *size_mask;
 
-	if (is_vf) {
-		/*Not support resize VF bar.*/
-		return;
+	/* The least inbound window is 4KiB */
+	if (size < (PCIEP_DW_WIN_MASK + 1)) {
+		LSX_PCIEP_BUS_ERR("%s: Too small size(0x%lx)",
+			__func__, size);
+		return -EINVAL;
 	}
 
-	/* The least inbound window is 4KiB */
-	if (size < (4 * 1024))
-		mask = 0;
-	else
-		mask = size - 1;
+	if (!rte_is_power_of_2(size)) {
+		LSX_PCIEP_BUS_ERR("%s: Size(0x%lx) not power of 2",
+			__func__, size);
+		return -EINVAL;
+	}
 
-	size_mask = (struct pcie_dw_bar_size_mask *)
-		(base + PCIE_PF_SIZE_OFF +
-		pf * PCIE_CFG_OFFSET);
+	mask = size - 1;
+	pf_base = base + pf * PCIE_CFG_OFFSET;
+
+	if (is_vf)
+		offset = PCIE_VF_BAR_SIZE_MASK_OFF;
+	else
+		offset = PCIE_PF_BAR_SIZE_MASK_OFF;
+
+	size_mask = (void *)(pf_base + offset);
 
 	switch (bar) {
 	case 0:
@@ -900,8 +914,12 @@ static void pcie_dw_set_ib_size(uint8_t *base, int bar,
 			&size_mask->bar5_mask);
 	break;
 	default:
-	break;
+		LSX_PCIEP_BUS_ERR("%s: Invalid Bar number(%d)",
+			__func__, bar);
+		return -EINVAL;
 	}
+
+	return 0;
 }
 
 static int
@@ -910,7 +928,7 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	uint64_t phys, uint64_t size, int resize)
 {
 	uint32_t ctrl1, ctrl2, ctrl3 = 0;
-	int idx, ib_nb;
+	int idx, ib_nb, ret;
 	struct pciep_dw_proc_info *proc_info;
 	struct pcie_dw_iatu_region *iatu =
 		(struct pcie_dw_iatu_region *)
@@ -930,7 +948,13 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 
 	if (resize) {
 		rte_write32(0, hw->dbi_vir + PCIE_MISC_CONTROL_1_OFF);
-		pcie_dw_set_ib_size(hw->dbi_vir, bar, size, pf, is_vf);
+		ret = pcie_dw_set_ib_size(hw->dbi_vir, bar, size, pf, is_vf);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("Set IB[%d] size(0x%lx) failed(%d)",
+				bar, size, ret);
+
+			return ret;
+		}
 	}
 
 	idx = pcie_dw_alloc_win_idx(hw->index,
@@ -1019,6 +1043,9 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 	uint32_t mdata;
 	int vector;
 	uint8_t *dbi;
+
+	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
 
 	if (!hw->is_sriov && (pf > 0 || is_vf)) {
 		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
@@ -1237,12 +1264,15 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 		info->ob_base[pcie_id] = hw->out_base;
 		info->ob_max_size = CFG_32G_SIZE;
 		info->ob_win_max_size = CFG_4G_SIZE;
+		info->win_mask = PCIEP_DW_WIN_MASK;
+		s_f_create = 1;
 	}
 
 	hw->dbi_phy = info->dbi_phy[pcie_id];
 	hw->out_base = info->ob_base[pcie_id];
 	hw->out_size = info->ob_max_size;
 	hw->out_win_max_size = info->ob_win_max_size;
+	hw->win_mask = info->win_mask;
 
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "wb");
 	f_ret = fwrite(info, sizeof(struct pciep_dw_info),
@@ -1276,10 +1306,29 @@ pcie_dw_info_empty(struct pciep_dw_info *info)
 				goto finish_check;
 			}
 		}
+		for (j = 0; j < PCIE_DW_IB_WINS_NUM; j++) {
+			if (info->ib_win_used[i][j]) {
+				empty = 0;
+				goto finish_check;
+			}
+		}
 	}
 
 finish_check:
 	return empty;
+}
+
+static int
+pcie_dw_proc_info_empty(struct lsx_pciep_hw_low *hw)
+{
+	struct pciep_dw_proc_info *proc_info;
+
+	proc_info = &g_dw_proc_info[hw->index];
+	if (!proc_info->ob_nb && !proc_info->ob_shared_nb &&
+		!proc_info->ib_nb)
+		return 1;
+
+	return 0;
 }
 
 static void
@@ -1293,8 +1342,17 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 	uint64_t phy_start;
 
 	rte_spinlock_lock(&s_f_lock);
+	if (pcie_dw_proc_info_empty(hw)) {
+		if (!s_f_create) {
+			rte_spinlock_unlock(&s_f_lock);
+			return;
+		}
+	}
+
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
+		if (pcie_dw_proc_info_empty(hw))
+			return;
 		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
 			__func__, PCIEP_DW_GLOBE_INFO_F);
 		rte_spinlock_unlock(&s_f_lock);

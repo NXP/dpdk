@@ -9,5 +9,6 @@
 
 int lsinic_dma_init(void);
 int lsinic_dma_uninit(void);
+int lsinic_dma_mp_sync_setup(void);
 
 #endif /* _LSXINIC_EP_RAWDEV_DMA_H_ */

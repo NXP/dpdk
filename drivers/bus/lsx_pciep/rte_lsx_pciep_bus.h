@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _RTE_LSX_PCIEP_BUS_H_
@@ -98,6 +98,15 @@ enum lsx_pcie_pf_idx {
 /**
  * A structure describing a PCIe EP device for each PF or VF.
  */
+#define LSX_PCIEP_OB_MAX_NB 6
+struct lsx_pciep_outbound {
+	uint64_t ob_map_bus_base;
+	uint64_t ob_phy_base;
+	uint8_t *ob_virt_base;
+	uint64_t ob_win_size;
+	uint16_t ob_win_nb;
+};
+
 struct rte_lsx_pciep_device {
 	TAILQ_ENTRY(rte_lsx_pciep_device) next; /**< Next probed device. */
 	struct rte_device device;           /**< Inherit core device */
@@ -108,24 +117,22 @@ struct rte_lsx_pciep_device {
 	int pf;
 	int vf;
 	int is_vf;
-	uint64_t ob_map_bus_base;
-	uint64_t ob_phy_base;
-	uint8_t *ob_virt_base;
-	uint64_t ob_win_size;
-	uint16_t ob_win_nb;
-	int ob_win_init_flag;
+	/*None-RBP device always uses the first window.*/
+	struct lsx_pciep_outbound ob_win[LSX_PCIEP_OB_MAX_NB];
+	uint8_t rbp_ob_win_nb;
 
 	/* MSI/MSIx information */
-	int msix_read_once;
+	uint64_t msi_phy_base;
+	void *msi_addr_base;
+	uint64_t msi_map_size;
+	uint64_t *msix_phy;
 	void **msix_addr;
 	uint32_t *msix_data;
 
-	/* RBP window setting */
-	uint64_t rbp_win_size;
-	int rbp_win_init_flag;
-
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
-	uint64_t phy_addr[PCI_MAX_RESOURCE];
+	uint64_t phy_addr[PCI_MAX_RESOURCE]; /*PCIe inbound*/
+	uint64_t iov_addr[PCI_MAX_RESOURCE]; /*EP DMA*/
+	const struct rte_memzone *mz[PCI_MAX_RESOURCE];
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint32_t mmsi_flag;
 	uint32_t init_flag;
@@ -192,10 +199,16 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 void
 lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset);
+int
+lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr);
 
-void
+int
 lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total);
+
+int
+lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev);
 
 void lsx_pciep_start_msix(void *addr, uint32_t cmd);
 
@@ -210,6 +223,10 @@ lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 int
 lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, const struct rte_memzone *mz, int vf_isolate);
+
+int
+lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx);
 
 int
 lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev);
@@ -234,10 +251,24 @@ lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	uint16_t sub_device_id, uint8_t pcie_id,
 	int pf);
 
+int
+lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size);
 
 int
 lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t bus_addr);
+
+uint64_t
+lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev);
+
+uint64_t
+lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t win_idx);
+
+uint64_t
+lsx_pciep_bus_win_mask(struct rte_lsx_pciep_device *ep_dev);
+
 /**
  * Register a PCIEP bus driver.
  *

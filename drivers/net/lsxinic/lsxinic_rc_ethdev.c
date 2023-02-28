@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <time.h>
@@ -90,8 +90,38 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int wait_loop = LXSNIC_CMD_LOOP_NUM;
-	uint32_t cmd_status;
+	int wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	uint32_t cmd_status, res;
+
+	if (getenv("LXSNIC_CMD_WAIT_SEC")) {
+		wait_ms = atoi("LXSNIC_CMD_WAIT_SEC") * 1000;
+		if (wait_ms < 0)
+			wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	}
+
+	LSINIC_WRITE_REG(&reg->command, cmd);
+	cmd_status = cmd;
+	do {
+		rte_delay_us_sleep(1000);
+		cmd_status = LSINIC_READ_REG(&reg->command);
+		wait_ms--;
+		if (wait_ms < 0)
+			break;
+	} while (cmd_status != PCIDEV_COMMAND_IDLE);
+
+	if (cmd_status != PCIDEV_COMMAND_IDLE) {
+		LSXINIC_PMD_ERR("CMD-%d executed failed, wait longer?",
+			cmd);
+		return PCIDEV_RESULT_FAILED;
+	}
+
+	rte_rmb();
+	res = LSINIC_READ_REG(&reg->result);
+	if (res != PCIDEV_RESULT_SUCCEED) {
+		LSXINIC_PMD_ERR("CMD-%d executed result error(%d)",
+			cmd, res);
+		return res;
+	}
 
 	switch (cmd) {
 	case PCIDEV_COMMAND_START:
@@ -113,18 +143,7 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		break;
 	}
 
-	LSINIC_WRITE_REG(&reg->command, cmd);
-	do {
-		rte_delay_us(500 * 1000);
-		cmd_status = LSINIC_READ_REG(&reg->command);
-	} while (--wait_loop && (cmd_status != PCIDEV_COMMAND_IDLE));
-
-	if (!wait_loop) {
-		printf("Command-%d: failed to get right status!\n", cmd);
-		return PCIDEV_RESULT_FAILED;
-	}
-
-	return LSINIC_READ_REG(&reg->result);
+	return res;
 }
 
 static int
@@ -993,8 +1012,19 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lxsnic_ring *rx_ring;
 	int ret;
+	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(adapter->max_qpairs);
+	uint8_t *ep_ring_base = adapter->bd_desc_base + base_offset;
+	uint8_t *rc_ring_base = adapter->rc_bd_desc_base + base_offset;
+	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
+	uint64_t total_offset = base_offset + q_offset;
 
 	LSXINIC_PMD_DBG("config rx_queue");
+
+	if (adapter->config_rx_queues >= adapter->max_qpairs) {
+		LSXINIC_PMD_ERR("config rxq number(%d) > max qpair(%d)",
+			adapter->config_rx_queues + 1, adapter->max_qpairs);
+		return -EINVAL;
+	}
 	rx_ring = rte_zmalloc_socket("lsnic ethdev RX queue",
 			sizeof(struct lxsnic_ring),
 			RTE_CACHE_LINE_SIZE,
@@ -1034,9 +1064,7 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rx_ring->type = LSINIC_QUEUE_RX;
 	rx_ring->adapter = adapter;
 	rx_ring->mb_pool = mp;
-	rx_ring->ep_bd_mapped_addr = (adapter->bd_desc_base +
-		LSINIC_RX_BD_OFFSET +
-		queue_idx * LSINIC_RING_SIZE);
+	rx_ring->ep_bd_mapped_addr = ep_ring_base + q_offset;
 
 	rx_ring->last_avail_idx = 0;
 	rx_ring->last_used_idx = 0;
@@ -1045,12 +1073,8 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rx_ring->mcnt = 0;
 	LSXINIC_PMD_DBG("prepare config rx_ring");
 
-	rx_ring->rc_bd_shared_addr =
-		((char *)adapter->rc_bd_desc_base + LSINIC_RX_BD_OFFSET +
-		queue_idx * LSINIC_RING_SIZE);
-	rx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy +
-		((uint64_t)rx_ring->rc_bd_shared_addr -
-		(uint64_t)adapter->rc_bd_desc_base);
+	rx_ring->rc_bd_shared_addr = rc_ring_base + q_offset;
+	rx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy + total_offset;
 	rx_ring->rc_reg = NULL;
 	rx_ring->q_mbuf = rte_zmalloc(NULL,
 		sizeof(void *) * rx_ring->count, 64);
@@ -1275,15 +1299,23 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 
 static int
 lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
-		   uint16_t queue_idx,
-		   uint16_t nb_desc,
-		   unsigned int socket_id,
-		   const struct rte_eth_txconf *tx_conf __rte_unused)
+	uint16_t queue_idx,
+	uint16_t nb_desc,
+	unsigned int socket_id,
+	const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct lxsnic_ring *tx_ring = NULL;
 	struct lxsnic_adapter *adapter =
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
+	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(adapter->max_qpairs);
+	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
+	uint64_t total_offset = base_offset + q_offset;
 
+	if (adapter->config_tx_queues >= adapter->max_qpairs) {
+		LSXINIC_PMD_ERR("config txq number(%d) > max qpair(%d)",
+			adapter->config_tx_queues + 1, adapter->max_qpairs);
+		return -EINVAL;
+	}
 	tx_ring = rte_zmalloc_socket("lsnic ethdev TX queue",
 			sizeof(struct lxsnic_ring),
 			RTE_CACHE_LINE_SIZE, socket_id);
@@ -1310,20 +1342,15 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->queue_index = queue_idx;
 	tx_ring->port = dev->data->port_id;
 	tx_ring->adapter = adapter;
-	tx_ring->ep_bd_mapped_addr =
-		adapter->bd_desc_base + (queue_idx * LSINIC_RING_SIZE);
+	tx_ring->ep_bd_mapped_addr = adapter->bd_desc_base + total_offset;
 
 	tx_ring->last_avail_idx = 0;
 	tx_ring->last_used_idx = 0;
 	tx_ring->mhead = 0;
 	tx_ring->mtail = 0;
 	tx_ring->mcnt = 0;
-	tx_ring->rc_bd_shared_addr = ((char *)adapter->rc_bd_desc_base +
-		LSINIC_TX_BD_OFFSET + queue_idx * LSINIC_RING_SIZE);
-
-	tx_ring->rc_bd_desc_dma = (adapter->rc_bd_desc_phy) +
-		((uint64_t)tx_ring->rc_bd_shared_addr -
-		(uint64_t)adapter->rc_bd_desc_base);
+	tx_ring->rc_bd_shared_addr = adapter->rc_bd_desc_base + total_offset;
+	tx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy + total_offset;
 
 	tx_ring->q_mbuf = rte_zmalloc(NULL,
 		sizeof(void *) * tx_ring->count,
@@ -1881,6 +1908,7 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 
 	/* get ring setting */
+	adapter->max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 	adapter->tx_ring_bd_count = LSINIC_READ_REG(&eth_reg->tx_entry_num);
 	adapter->rx_ring_bd_count = LSINIC_READ_REG(&eth_reg->rx_entry_num);
 	adapter->num_tx_queues = LSINIC_READ_REG(&eth_reg->tx_ring_num);

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSX_PCIEP_DEV_H_
@@ -42,10 +42,8 @@
 struct lsx_pciep_inbound_bar {
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint8_t *inbound_virt;
-	union {
-		uint64_t inbound_iova;
-		uint64_t inbound_phy;
-	};
+	uint64_t inbound_iova; /*Used for EP DMA*/
+	uint64_t inbound_phy; /*Used PCIe inbound*/
 	uint64_t size;
 };
 
@@ -83,7 +81,7 @@ struct lsx_pciep_ib_mem {
  * processes.
  */
 struct lsx_pciep_hw_low {
-	uint8_t	index;
+	uint8_t index;
 	int is_sriov;
 
 	uint64_t dbi_phy;
@@ -93,6 +91,8 @@ struct lsx_pciep_hw_low {
 	uint64_t out_base;
 	uint64_t out_size;
 	uint64_t out_win_max_size;
+
+	uint64_t win_mask;
 
 	int msi_flag;
 
@@ -125,6 +125,7 @@ struct lsx_pciep_ctl_hw {
 	uint64_t out_win_size;
 	uint64_t out_size_per_fun;
 	uint32_t out_win_per_fun;
+	int share_vfio_map;
 
 	struct lsx_pciep_ib_mem ib_mem;
 };
@@ -137,6 +138,7 @@ int lsx_pciep_uninit(void);
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 
 void *lsx_pciep_map_region(uint64_t addr, size_t len);
+int lsx_pciep_unmap_region(void *vaddr, size_t len);
 int lsx_pciep_share_info_init(void);
 
 #endif

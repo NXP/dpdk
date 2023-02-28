@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
 #include <sys/queue.h>
 
@@ -378,12 +378,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	adapter->vqs[queue_idx] = q;
 	q->adapter = adapter;
 
-	if (adapter->rbp_enable)
-		q->ob_base = 0;
-	else
-		q->ob_base = adapter->ob_base;
-
-	q->ob_virt_base = adapter->ob_virt_base;
 	q->nb_desc = nb_desc;
 	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;
@@ -1839,12 +1833,24 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 {
 	uint8_t *virt;
 	uint32_t i;
+	uint64_t mask;
 
 	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		if (adapter->rbp_enable) {
 			LSXINIC_PMD_ERR("%s NOT support to dump remote buffer",
 				"RBP enabled");
 			return;
+		}
+		mask = lsx_pciep_bus_win_mask(adapter->lsx_dev);
+		if (mask && (remote_addr & mask)) {
+			LSXINIC_PMD_ERR("Align err: Bus(0x%lx)-mask(0x%lx)",
+				remote_addr, mask);
+			return -EINVAL;
+		}
+		if (mask && (LSXVIO_PER_RING_MEM_MAX_SIZE & mask)) {
+			LSXINIC_PMD_ERR("Align err: Size(0x%lx)-mask(0x%lx)",
+				LSXVIO_PER_RING_MEM_MAX_SIZE, mask);
+			return -EINVAL;
 		}
 		virt = lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
@@ -1885,6 +1891,7 @@ lsxvio_recv_dma_notify(struct lsxvio_queue *vq)
 
 		jobs[bd_num] = &vq->dma_jobs[start_idx];
 		jobs[bd_num]->src = sdesc->addr_offset + vq->mem_base;
+		jobs[bd_num]->src += vq->ob_base;
 		jobs[bd_num]->len = sdesc->len;
 #ifdef LSXVIO_REMOTE_PKT_DUMP
 		lsxvio_dump_remote_buf(vq->adapter, jobs[bd_num]->src,
@@ -1953,6 +1960,7 @@ lsxvio_recv_rawdev_dma_notify(struct lsxvio_queue *vq)
 
 		jobs[bd_num] = &vq->rawdma_jobs[start_idx];
 		jobs[bd_num]->src = sdesc->addr_offset + vq->mem_base;
+		jobs[bd_num]->src += vq->ob_base;
 		jobs[bd_num]->len = sdesc->len;
 #ifdef LSXVIO_REMOTE_PKT_DUMP
 		lsxvio_dump_remote_buf(vq->adapter, jobs[bd_num]->src,

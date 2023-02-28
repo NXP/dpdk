@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef _LSINIC_KCOMPAT_H_
@@ -83,48 +83,6 @@
 #endif
 
 /*****************************************************************************/
-#if (KERNEL_VERSION(3, 7, 0) > LSINIC_HOST_KERNEL_VER || \
-	(RHEL_RELEASE_CODE && \
-	RHEL_RELEASE_VERSION(6, 5) > RHEL_RELEASE_CODE))
-#define pci_pcie_type(dev) ((dev)->pcie_type)
-extern int
-__lsinic_pcie_capability_clear_and_set_word(struct pci_dev *dev,
-	int pos, u16 clear, u16 set);
-
-extern int
-__lsinic_pcie_capability_read_word(struct pci_dev *dev,
-	int pos, u16 *val);
-
-extern int
-__lsinic_pcie_capability_write_word(struct pci_dev *dev,
-	int pos, u16 val);
-
-#define pcie_capability_read_word(d, p, v) \
-		__lsinic_pcie_capability_read_word(d, p, v)
-
-#define pcie_capability_clear_and_set_word(d, p, c, s) \
-		__lsinic_pcie_capability_clear_and_set_word(d, p, c, s)
-
-#define pcie_capability_write_word(d, p, v) \
-		__lsinic_pcie_capability_write_word(d, p, v)
-#endif
-
-/*****************************************************************************/
-#if (KERNEL_VERSION(3, 10, 0) > LSINIC_HOST_KERNEL_VER)
-#ifdef CONFIG_PCI_IOV
-extern int
-__lsinic_pci_vfs_assigned(struct pci_dev *dev);
-#else
-static inline int
-__lsinic_pci_vfs_assigned(struct pci_dev *dev)
-{
-	return 0;
-}
-#endif
-#define pci_vfs_assigned(dev) __lsinic_pci_vfs_assigned(dev)
-#endif
-
-/*****************************************************************************/
 #if (KERNEL_VERSION(3, 11, 0) > LSINIC_HOST_KERNEL_VER)
 #include <net/ip.h>
 #if (RHEL_RELEASE_CODE && \
@@ -136,20 +94,6 @@ __lsinic_pci_vfs_assigned(struct pci_dev *dev)
 #else
 #include <net/busy_poll.h>
 #endif
-
-/*****************************************************************************/
-#if (KERNEL_VERSION(3, 14, 0) > LSINIC_HOST_KERNEL_VER || \
-	(RHEL_RELEASE_CODE && \
-	RHEL_RELEASE_VERSION(6, 3) > RHEL_RELEASE_CODE))
-extern int
-__lsinic_pci_enable_msi_range(struct pci_dev *dev,
-	int minvec, int maxvec);
-#define pci_enable_msi_range(pdev, minvec, maxvec) \
-		__lsinic_pci_enable_msi_range(pdev, minvec, maxvec)
-
-#endif
-
-/*****************************************************************************/
 
 #if (KERNEL_VERSION(3, 15, 0) <= LSINIC_HOST_KERNEL_VER || \
 	(RHEL_RELEASE_CODE && \
@@ -185,7 +129,4 @@ __lsinic_pci_enable_msi_range(struct pci_dev *dev,
 #if (KERNEL_VERSION(4, 15, 0) <= LSINIC_HOST_KERNEL_VER)
 #define HAVE_TIMER_SETUP
 #endif
-
-/*****************************************************************************/
-
 #endif /* LSINIC_KCOMPAT_H */

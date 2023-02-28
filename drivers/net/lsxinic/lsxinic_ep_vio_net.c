@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -150,25 +150,41 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		eth_dev->data->dev_private;
 	uint16_t device_id;
 	enum lsx_pcie_pf_idx pf_idx = lsx_dev->pf;
+	uint64_t mask, size;
+	int ret;
 
 	adapter->lsx_dev = lsx_dev;
 	/* Get queue config.*/
 
-	lsx_pciep_set_ib_win(lsx_dev,
-		LSXVIO_CONFIG_BAR_IDX,
-		LSXVIO_CONFIG_BAR_MAX_SIZE);
-	lsx_pciep_set_ib_win(lsx_dev,
-		LSXVIO_RING_BAR_IDX,
-		LSXVIO_RING_BAR_MAX_SIZE);
+	mask = lsx_pciep_bus_win_mask(lsx_dev);
 
-	adapter->cfg_base =
-		(uint64_t)lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
-	adapter->ring_base =
-		(uint64_t)lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
-	adapter->ring_phy_base =
-		(uint64_t)lsx_dev->phy_addr[LSXVIO_RING_BAR_IDX];
-	adapter->ob_base = lsx_dev->ob_phy_base;
-	adapter->ob_virt_base = (uint8_t *)lsx_dev->ob_virt_base;
+	size = LSXVIO_CONFIG_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = lsx_pciep_set_ib_win(lsx_dev,
+		LSXVIO_CONFIG_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsx_dev->name, LSXVIO_CONFIG_BAR_IDX, size);
+
+		return ret;
+	}
+
+	size = LSXVIO_RING_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = lsx_pciep_set_ib_win(lsx_dev,
+		LSXVIO_RING_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsx_dev->name, LSXVIO_RING_BAR_IDX, size);
+
+		return ret;
+	}
+
+	adapter->cfg_base = lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
+	adapter->ring_base = lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
+	adapter->ring_phy_base = lsx_dev->iov_addr[LSXVIO_RING_BAR_IDX];
 	adapter->num_queues = 0;
 	adapter->num_descs = LSXVIO_MAX_RING_DESC;
 #if (LSX_VIRTIO_NET_FEATURES & (1ULL << VIRTIO_F_VERSION_1))
@@ -178,7 +194,14 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #endif
 
 	device_id = lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_vio_init(adapter->cfg_base, device_id, lsx_feature);
+	ret = lsxvio_vio_init((uint64_t)adapter->cfg_base,
+		device_id, lsx_feature);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: vio init dev(%d) failed(%d)",
+			lsx_dev->name, device_id, ret);
+
+		return ret;
+	}
 
 	return 0;
 }
@@ -190,8 +213,8 @@ lsxvio_uninit_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
 		eth_dev->data->dev_private;
 
-	adapter->cfg_base = 0;
-	adapter->ring_base = 0;
+	adapter->cfg_base = NULL;
+	adapter->ring_base = NULL;
 	adapter->pf_idx = 0;
 	adapter->is_vf = 0;
 	adapter->vf_idx = 0;
