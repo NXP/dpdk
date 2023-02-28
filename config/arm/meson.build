@@ -2,7 +2,7 @@
 # Copyright(c) 2017 Intel Corporation.
 # Copyright(c) 2017 Cavium, Inc
 # Copyright(c) 2021 PANTHEON.tech s.r.o.
-# Copyright 2022 NXP
+# Copyright 2022-2023 NXP
 
 # common flags to all aarch64 builds, with lowest priority
 flags_common = [
@@ -355,8 +355,7 @@ soc_imx = {
         ['RTE_MAX_NUMA_NODES', 1],
 	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
 	['CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE', false],
-	['CONFIG_RTE_LIBRTE_IEEE1588', false],
-	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1]
+	['CONFIG_RTE_LIBRTE_IEEE1588', false]
     ],
     'numa': false
 }

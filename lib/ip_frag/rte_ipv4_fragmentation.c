@@ -18,6 +18,7 @@
 #define	IPV4_HDR_MF_MASK			(1 << RTE_IPV4_HDR_MF_SHIFT)
 
 #define	IPV4_HDR_FO_ALIGN			(1 << RTE_IPV4_HDR_FO_SHIFT)
+#define ERRATA_ls1043_ALIGN			16
 
 #define IPV4_HDR_MAX_LEN			60
 
@@ -120,6 +121,12 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 	uint16_t frag_bytes_remaining;
 	uint8_t ipopt_frag_hdr[IPV4_HDR_MAX_LEN];
 	uint16_t ipopt_len;
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+	uint16_t bytes_to_adjust_len = 0, val;
+	uint16_t eth_len = sizeof(struct rte_ether_hdr);
+	bool is_ls1043 = false;
+	void *tail;
+#endif
 
 	/*
 	 * Formal parameter checking.
@@ -181,6 +188,12 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 
 		/* Reserve space for the IP header that will be built later */
 		out_pkt->data_len = header_len;
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+		if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY) {
+			is_ls1043 = true;
+			out_pkt->data_off += eth_len;
+		}
+#endif
 		out_pkt->pkt_len = header_len;
 		frag_bytes_remaining = frag_size;
 
@@ -207,10 +220,62 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 				len = in_seg->data_len - in_seg_data_pos;
 			}
 			out_seg->data_off = in_seg->data_off + in_seg_data_pos;
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+			if (is_ls1043) {
+				bytes_to_adjust_len =
+					RTE_ALIGN_CEIL(out_pkt->data_len, ERRATA_ls1043_ALIGN)
+						- out_pkt->data_len + 2;
+				val = out_seg->data_off + bytes_to_adjust_len;
+				if (rte_is_aligned((void *)(uintptr_t) val, ERRATA_ls1043_ALIGN) &&
+						pkt_in->nb_segs == 1) {
+					if (len > ERRATA_ls1043_ALIGN)
+						len = RTE_ALIGN_FLOOR(len, ERRATA_ls1043_ALIGN);
+					frag_bytes_remaining = len;
+				}
+			}
+#endif
 			out_seg->data_len = (uint16_t)len;
 			out_pkt->pkt_len = (uint16_t)(len +
 			    out_pkt->pkt_len);
 			out_pkt->nb_segs += 1;
+
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+			if (is_ls1043) {
+				if (rte_is_aligned((void *)(uintptr_t) val, ERRATA_ls1043_ALIGN) &&
+						pkt_in->nb_segs == 1) {
+					tail = (char *)out_pkt->buf_addr +
+						out_pkt->data_off +
+						out_pkt->data_len;
+					if (unlikely(bytes_to_adjust_len >
+						rte_pktmbuf_tailroom(out_pkt))) {
+						tail = NULL;
+						printf("Not enough tailroom \n");
+						return 0;
+					}
+
+					if (bytes_to_adjust_len >= out_seg->data_len) {
+						rte_memcpy((uint8_t *)tail,
+							rte_pktmbuf_mtod(out_seg, void*),
+							out_seg->data_len);
+						out_pkt->data_len = (uint16_t)(out_pkt->data_len + out_seg->data_len);
+						out_pkt->pkt_len = (uint16_t)(out_pkt->pkt_len + out_seg->data_len);
+						out_pkt->nb_segs--;
+						rte_pktmbuf_free(out_seg);
+						out_pkt->next = NULL;
+					} else {
+						rte_memcpy((uint8_t *)tail,
+							rte_pktmbuf_mtod(out_seg, void*),
+							bytes_to_adjust_len);
+						out_pkt->data_len = (uint16_t)(out_pkt->data_len + bytes_to_adjust_len);
+						out_seg->data_len = (uint16_t)(out_seg->data_len - bytes_to_adjust_len);
+						out_seg->data_off = out_seg->data_off +
+							bytes_to_adjust_len;
+					}
+				}
+			}
+#endif
+
 			in_seg_data_pos += len;
 			frag_bytes_remaining -= len;
 
