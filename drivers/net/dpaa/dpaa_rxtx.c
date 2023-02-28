@@ -1143,6 +1143,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 	struct rte_mbuf **orig_bufs = bufs;
+	struct rte_mbuf *temp_mbuf;
 #if defined(RTE_LIBRTE_IEEE1588)
 	struct qman_fq *fq = q;
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
@@ -1180,9 +1181,18 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			 * FMAN can stall because of an errata. So reallocate
 			 * the buffer in such case.
 			 */
-			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
-					(mbuf->data_off & 0x7F) != 0x0)
-				realloc_mbuf = 1;
+			temp_mbuf = mbuf;
+			while (temp_mbuf) {
+				if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
+					if ((temp_mbuf->next && !rte_is_aligned((void *)(uintptr_t)temp_mbuf->data_len, 16)) ||
+						!rte_is_aligned((void *)(uintptr_t)temp_mbuf->data_off, 16)) {
+						DPAA_PMD_DEBUG("Errata condition hit \n");
+						realloc_mbuf = 1;
+						break;
+					}
+				}
+				temp_mbuf = temp_mbuf->next;
+			}
 #endif
 			seqn = *dpaa_seqn(mbuf);
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
