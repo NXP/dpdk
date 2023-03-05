@@ -107,6 +107,9 @@
 #define QDMA_BLOCKS			4
 #define QDMA_QUEUES			8
 #define QDMA_DELAY			1000
+#define QDMA_SGF_SRC_OFF		2
+#define QDMA_SGF_DST_OFF		3
+#define QDMA_DESC_OFF			1
 
 #define QDMA_BIG_ENDIAN			1
 #ifdef QDMA_BIG_ENDIAN
@@ -157,55 +160,31 @@ struct fsl_qdma_ddf {
 	__le32 cmd;
 };
 
-struct fsl_qdma_chan {
-	struct fsl_qdma_engine	*qdma;
-	struct fsl_qdma_queue	*queue;
-	bool			free;
-	struct list_head	list;
-};
-
 struct fsl_qdma_queue {
 	struct fsl_qdma_format	*virt_head;
-	struct list_head	comp_used;
-	struct list_head	comp_free;
-	dma_addr_t		bus_addr;
-	u32			n_cq;
-	u32			id;
-	u32			count;
-	u32			pending;
+	void                    **virt_addr;
+	u8			ci;
+	u8			n_cq;
+	u8			id;
+	void			*queue_base;
 	struct fsl_qdma_format	*cq;
-	void			*block_base;
 	struct rte_dma_stats	stats;
-};
-
-struct fsl_qdma_comp {
+	u8			pending;
 	dma_addr_t		bus_addr;
-	dma_addr_t		desc_bus_addr;
-	void			*virt_addr;
-	void			*desc_virt_addr;
-	struct fsl_qdma_chan	*qchan;
-	dma_call_back		call_back_func;
-	void			*params;
-	struct list_head	list;
+	void			**desc_virt_addr;
 };
 
 struct fsl_qdma_engine {
-	int			desc_allocated;
 	void			*ctrl_base;
 	void			*status_base;
 	void			*block_base;
-	u32			n_chans;
 	u32			n_queues;
-	int			error_irq;
-	struct fsl_qdma_queue	*queue;
+	struct fsl_qdma_queue	**queue;
 	struct fsl_qdma_queue	**status;
-	struct fsl_qdma_chan	*chans;
 	u32			num_blocks;
 	u8			free_block_id;
 	u32			vchan_map[4];
 	int			block_offset;
 };
-
-static rte_atomic32_t wait_task[CORE_NUMBER];
 
 #endif /* _DPAA_QDMA_H_ */
