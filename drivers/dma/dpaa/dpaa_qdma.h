@@ -58,11 +58,17 @@
 #define FSL_QDMA_BCQMR_CD_THLD(x)	((x) << 20)
 #define FSL_QDMA_BCQMR_CQ_SIZE(x)	((x) << 16)
 
+/* Update the value appropriately whenever QDMA_QUEUE_SIZE
+ * changes.
+ */
+#define FSL_QDMA_BCQMR_EI		0x20c0
+
 #define FSL_QDMA_BCQSR_QF_XOFF_BE	0x1000100
 
 #define FSL_QDMA_BSQMR_EN		0x80000000
 #define FSL_QDMA_BSQMR_DI_BE		0x40
 #define FSL_QDMA_BSQMR_CQ_SIZE(x)	((x) << 16)
+#define FSL_QDMA_BSQMR_DI		0xc0
 
 #define FSL_QDMA_BSQSR_QE_BE		0x200
 
@@ -110,6 +116,7 @@
 #define QDMA_SGF_SRC_OFF		2
 #define QDMA_SGF_DST_OFF		3
 #define QDMA_DESC_OFF			1
+#define QDMA_QUEUE_CR_WM		32
 
 #define QDMA_BIG_ENDIAN			1
 #ifdef QDMA_BIG_ENDIAN
