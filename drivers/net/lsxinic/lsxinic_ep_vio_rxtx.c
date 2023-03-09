@@ -379,7 +379,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	q->adapter = adapter;
 
 	q->nb_desc = nb_desc;
-	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
 	q->nb_q = 1;
@@ -492,7 +491,6 @@ lsxvio_queue_reset(struct lsxvio_queue *q)
 	q->next_dma_idx = 0;
 	q->last_avail_idx = 0;
 	q->last_used_idx = 0;
-	q->new_desc = 0;
 	q->errors = 0;
 	q->drop_packet_num = 0;
 	q->ring_full = 0;
@@ -566,9 +564,6 @@ lsxvio_queue_start(struct lsxvio_queue *q)
 {
 	struct lsxvio_adapter *adapter = q->adapter;
 	int ret;
-
-	q->new_time_thresh = 1 * rte_get_timer_hz() / 1000000; /* ns->s */
-	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 
 	if (adapter->rawdev_dma) {
 		ret = lsxvio_queue_rawdev_dma_create(q);
@@ -1654,8 +1649,6 @@ lsxvio_recv_one_pkt(struct lsxvio_queue *rxq,
 	rxm->data_off = RTE_PKTMBUF_HEADROOM + rxe->align_dma_offset;
 
 	rxq->jobs_pending++;
-	if (rxq->new_desc == 0)
-		rxq->new_tsc = rte_rdtsc();
 	/*rxq->nb_in_dma++;*/
 	total_bytes += len + rxe->align_dma_offset;
 	total_packets++;
@@ -2246,36 +2239,15 @@ lsxvio_recv_pkts_in_order(struct lsxvio_queue *rxq)
 	return bd_num;
 }
 
-static bool
-lsxvio_timeout(struct lsxvio_queue *q)
-{
-	uint64_t timer_period;
-
-	timer_period = rte_rdtsc() - q->new_tsc;
-	if (timer_period >= q->new_time_thresh)
-		return true;
-	else
-		return false;
-}
-
 static void
 lsxvio_queue_trigger_interrupt(struct lsxvio_queue *q)
 {
-	if (!q->new_desc_thresh) {
-		q->new_desc = 0;
-		return;
-	}
-	if (!q->new_desc || !q->msix_vaddr)
+	if (!q->msix_vaddr)
 		return;
 
 	if (!lsx_pciep_hw_sim_get(q->adapter->pcie_idx)) {
-		if (q->new_desc_thresh &&
-			(q->new_desc >= q->new_desc_thresh ||
-			(lsxvio_timeout(q)))) {
-			/* MSI */
-			lsx_pciep_start_msix(q->msix_vaddr, q->msix_cmd);
-			q->new_desc = 0;
-		}
+		/* MSI/MSIx */
+		lsx_pciep_start_msix(q->msix_vaddr, q->msix_cmd);
 	}
 }
 
@@ -2291,6 +2263,7 @@ lsxvio_recv_pkts(void *rx_queue,
 	uint16_t i;
 	char *cpu_virt;
 #endif
+	uint64_t pkt_old = rxq->packets;
 
 	if (!lsxvio_queue_running(rxq)) {
 		/* From now the queue can work. */
@@ -2352,10 +2325,10 @@ lsxvio_recv_pkts(void *rx_queue,
 	if (rxq->shadow_used_idx)
 		flush_shadow_used_ring_split(rxq);
 
-	rxq->new_desc += nb_rx;
 	rxq->packets += nb_rx;
 
-	lsxvio_queue_trigger_interrupt(rxq);
+	if (rxq->packets > pkt_old)
+		lsxvio_queue_trigger_interrupt(rxq);
 
 	return nb_rx;
 }
@@ -2426,8 +2399,6 @@ lsxvio_xmit_one_pkt(struct lsxvio_queue *vq, uint16_t desc_idx,
 		rawdma_job->dest = addr + vq->ob_base;
 		rawdma_job->len = rxm->pkt_len;
 	}
-	if (vq->new_desc == 0)
-		vq->new_tsc = rte_rdtsc();
 
 	vq->jobs_pending++;
 	vq->append_dma_idx = (vq->append_dma_idx + 1) & (vq->nb_desc - 1);
@@ -2453,7 +2424,6 @@ static void lsxvio_tx_loop(struct lsxvio_adapter *adapter)
 			q->dma_dq(q);
 			if (!(q->flag & LSXVIO_QUEUE_PKD_INORDER_FLAG) &&
 				q->shadow_used_idx) {
-				q->new_desc += q->shadow_used_idx;
 				flush_shadow_used_ring_split(q);
 				lsxvio_queue_trigger_interrupt(q);
 			}
