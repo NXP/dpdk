@@ -94,6 +94,12 @@ enum dw_win_type {
 	DW_INBOUND_WIN
 };
 
+const uint8_t s_dw_32b_bar_support_id[] = {0, 1, 2, 4};
+
+const uint8_t s_dw_32b_bar_id[] = {0, 1};
+
+#define DW_ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 #define PCIEP_DW_GLOBE_INFO_F "/tmp/pciep_dw_globe_info"
 static rte_spinlock_t s_f_lock = RTE_SPINLOCK_INITIALIZER;
 static int s_f_create;
@@ -192,6 +198,32 @@ static struct pciep_dw_proc_info g_dw_proc_info[LSX_MAX_PCIE_NB];
 		bar, \
 		(unsigned long)size, \
 		win
+
+static inline int
+pcie_dw_32b_bar_support(uint8_t bar)
+{
+	size_t i;
+
+	for (i = 0; i < DW_ARRAY_SIZE(s_dw_32b_bar_support_id); i++) {
+		if (bar == s_dw_32b_bar_support_id[i])
+			return 1;
+	}
+
+	return 0;
+}
+
+static inline int
+pcie_dw_using_32b_bar(uint8_t bar)
+{
+	size_t i;
+
+	for (i = 0; i < DW_ARRAY_SIZE(s_dw_32b_bar_id); i++) {
+		if (bar == s_dw_32b_bar_id[i])
+			return 1;
+	}
+
+	return 0;
+}
 
 static inline uint32_t
 pcie_dw_route_fun_id(uint8_t *pf_base,
@@ -767,29 +799,50 @@ pcie_dw_set_ob_win(struct lsx_pciep_hw_low *hw,
 }
 
 static int
-pcie_dw_set_ib_size(uint8_t *pf_base, int bar,
-	uint64_t size, int is_vf)
+pcie_dw_set_bar(uint8_t *pf_base, int id, uint64_t size,
+	int is_vf, int is_64b, int pref, int is_io)
 {
 	uint64_t mask, offset;
+	uint32_t bar, mask_lo, mask_hi;
 	struct pcie_ctrl_bar_size_mask *size_mask;
-	uint32_t mask_lo, mask_hi;
+	struct pcie_ctrl_cfg *cfg;
+	int ret = 0;
+	uint32_t *bar_cfg;
 
+	if (is_io) {
+		if (is_64b) {
+			LSX_PCIEP_BUS_ERR("IO bar must be a 32b bar");
+			return -EINVAL;
+		}
+		if (pref) {
+			LSX_PCIEP_BUS_ERR("IO bar cannot be prefetchable");
+			return -EINVAL;
+		}
+	}
+
+	if (is_64b && !lsx_pciep_valid_64b_bar_id(id)) {
+		LSX_PCIEP_BUS_ERR("Invalid bar pair ID(%d)", id);
+		return -EINVAL;
+	}
+	if (!is_64b && !pcie_dw_32b_bar_support(id)) {
+		LSX_PCIEP_BUS_ERR("Invalid bar ID(%d)", id);
+		return -EINVAL;
+	}
 	/* The least inbound window is 4KiB */
 	if (size < (LSX_PCIEP_DW_WIN_MASK + 1)) {
-		LSX_PCIEP_BUS_ERR("%s: Too small size(0x%lx)",
-			__func__, size);
+		LSX_PCIEP_BUS_ERR("Too small bar size(0x%lx)", size);
 		return -EINVAL;
 	}
 
 	if (!rte_is_power_of_2(size)) {
-		LSX_PCIEP_BUS_ERR("%s: Size(0x%lx) not power of 2",
-			__func__, size);
+		LSX_PCIEP_BUS_ERR("Size(0x%lx) not power of 2", size);
 		return -EINVAL;
 	}
 
 	mask = size - 1;
 	mask_lo = (uint32_t)mask;
 	mask_hi = (uint32_t)(mask >> 32);
+	cfg = (void *)pf_base;
 
 	if (is_vf)
 		offset = LSX_PCIE_DW_VF_BAR_SIZE_MASK_OFFSET;
@@ -798,26 +851,52 @@ pcie_dw_set_ib_size(uint8_t *pf_base, int bar,
 
 	size_mask = (void *)(pf_base + offset);
 
-	switch (bar) {
-	case 0:
-	case 1:
-		lsx_pciep_write_config(&size_mask->bar_mask[bar], &mask_lo,
-			sizeof(uint32_t), 0);
-	break;
-	case 2:
-	case 4:
-		lsx_pciep_write_config(&size_mask->bar_mask[bar], &mask_lo,
-			sizeof(uint32_t), 0);
-		lsx_pciep_write_config(&size_mask->bar_mask[bar + 1], &mask_hi,
-			sizeof(uint32_t), 0);
-	break;
-	default:
-		LSX_PCIEP_BUS_ERR("%s: Invalid Bar number(%d)",
-			__func__, bar);
-		return -EINVAL;
-	}
+	if (is_64b)
+		goto bar_64b_config;
 
-	return 0;
+	lsx_pciep_write_config(&size_mask->bar_mask[id],
+		&mask_lo, sizeof(uint32_t), 0);
+	if (is_vf)
+		bar_cfg = &cfg->vfbar[id];
+	else
+		bar_cfg = &cfg->pfbar[id];
+	lsx_pciep_read_config(bar_cfg, &bar, sizeof(uint32_t), 0);
+	PCIE_BAR_SET_32B_WIDTH(bar);
+	if (is_io) {
+		PCIE_BAR_SET_IO_SPACE_IND(bar);
+		PCIE_BAR_DISABLE_PREFETCH(bar);
+	} else {
+		PCIE_BAR_SET_MEM_SPACE_IND(bar);
+		if (pref)
+			PCIE_BAR_ENABLE_PREFETCH(bar);
+		else
+			PCIE_BAR_DISABLE_PREFETCH(bar);
+	}
+	lsx_pciep_write_config(bar_cfg,	&bar, sizeof(uint32_t), 0);
+
+	return ret;
+
+bar_64b_config:
+
+	id = lsx_pciep_64bar_to_32bar(id);
+	if (id < 0)
+		return id;
+
+	lsx_pciep_write_config(&size_mask->bar_mask[id],
+		&mask_lo, sizeof(uint32_t), 0);
+	lsx_pciep_write_config(&size_mask->bar_mask[id + 1],
+		&mask_hi, sizeof(uint32_t), 0);
+	lsx_pciep_read_config(&cfg->pfbar[id],
+		&bar, sizeof(uint32_t), 0);
+	PCIE_BAR_SET_64B_WIDTH(bar);
+	if (pref)
+		PCIE_BAR_ENABLE_PREFETCH(bar);
+	else
+		PCIE_BAR_DISABLE_PREFETCH(bar);
+	lsx_pciep_write_config(&cfg->pfbar[id],
+		&bar, sizeof(uint32_t), 0);
+
+	return ret;
 }
 
 static int
@@ -826,9 +905,10 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	uint64_t phys, uint64_t size, int resize)
 {
 	uint32_t ctrl1, ctrl2, ctrl3 = 0, tmp;
-	int idx, ib_nb, ret;
+	int idx, ib_nb, ret, bar_64b;
 	struct pciep_dw_proc_info *proc_info;
 	struct pcie_dw_iatu_region *iatu;
+	void *pf_base;
 
 	if (!hw->is_sriov && (pf > PF0_IDX || is_vf)) {
 		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
@@ -843,11 +923,22 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	}
 
 	if (resize) {
+		pf_base = hw->dbi_vir + pf * hw->dbi_pf_size;
 		tmp = PCIE_DW_DBI_WR_ENA;
 		lsx_pciep_write_config(hw->dbi_vir, &tmp, sizeof(uint32_t),
 			PCIE_DW_MISC_CONTROL_1_OFF_OFFSET);
-		ret = pcie_dw_set_ib_size(hw->dbi_vir + pf * hw->dbi_pf_size,
-				bar, size, is_vf);
+		if (pcie_dw_using_32b_bar(bar)) {
+			ret = pcie_dw_set_bar(pf_base, bar, size,
+				is_vf, 0, 0, 0);
+		} else {
+			bar_64b = lsx_pciep_32bar_to_64bar(bar);
+			if (bar_64b < 0) {
+				ret = bar_64b;
+			} else {
+				ret = pcie_dw_set_bar(pf_base, bar_64b, size,
+					is_vf, 1, 1, 0);
+			}
+		}
 		tmp = PCIE_DW_DBI_WR_DIS;
 		lsx_pciep_write_config(hw->dbi_vir, &tmp, sizeof(uint32_t),
 			PCIE_DW_MISC_CONTROL_1_OFF_OFFSET);
