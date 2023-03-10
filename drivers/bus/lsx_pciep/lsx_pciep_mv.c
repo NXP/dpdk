@@ -24,6 +24,10 @@
 
 #include "lsx_pciep_ctrl.h"
 
+#define BAR0_DEFAULT_SIZE (8 * 1024)
+#define BAR1_DEFAULT_SIZE (8 * 1024 * 1024)
+#define BAR2_DEFAULT_SIZE (2 * 1024 * 1024)
+
 #define PCIE_MV_OB_WINS_NUM	(256)
 
 #define INDIRECT_ADDR_BNDRY	0xc00
@@ -360,11 +364,11 @@ static void
 pcie_mv_setup_pf_bars(struct lsx_pciep_hw_low *hw, int pf)
 {
 	/* Enable bar0 for reg */
-	pcie_mv_setup_bar(hw, pf, BAR0, LSX_PCIEP_BAR0_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR0, BAR0_DEFAULT_SIZE);
 	/* Enable bar1 for MSIx */
-	pcie_mv_setup_bar(hw, pf, BAR1, LSX_PCIEP_BAR1_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR1, BAR1_DEFAULT_SIZE);
 	/* Enable bar2 for BD */
-	pcie_mv_setup_bar(hw, pf, BAR2, LSX_PCIEP_BAR2_DEFAULT_SIZE);
+	pcie_mv_setup_bar(hw, pf, BAR2, BAR2_DEFAULT_SIZE);
 }
 
 static void

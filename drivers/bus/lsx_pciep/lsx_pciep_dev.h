@@ -87,6 +87,7 @@ struct lsx_pciep_hw_low {
 	uint64_t dbi_phy;
 	uint8_t *dbi_vir;
 	uint32_t dbi_size;
+	uint64_t dbi_pf_size;
 
 	uint64_t out_base;
 	uint64_t out_size;

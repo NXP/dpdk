@@ -49,6 +49,9 @@
 #include "lsx_pciep_dev.h"
 #include "lsx_pciep_ctrl.h"
 
+#define LSX_PCIE_PF_LS2_DBI_SIZE 0x20000
+#define LSX_PCIE_PF_LX2_DBI_SIZE 0x8000
+
 #define LSX_PCIE_REG_PHY_START 0x3400000
 #define LSX_PCIE_REG_STRIDE 0x100000
 
@@ -656,8 +659,13 @@ lsx_pciep_hw_set_type(void)
 		return -ENOTSUP;
 	}
 
-	for (i = 0; i < LSX_MAX_PCIE_NB; i++)
+	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 		s_pctl_hw[i].type = type;
+		if (type == PEX_LS208X)
+			s_pctl_hw[i].hw.dbi_pf_size = LSX_PCIE_PF_LS2_DBI_SIZE;
+		else if (type == PEX_LX2160_REV2)
+			s_pctl_hw[i].hw.dbi_pf_size = LSX_PCIE_PF_LX2_DBI_SIZE;
+	}
 
 	return 0;
 }
