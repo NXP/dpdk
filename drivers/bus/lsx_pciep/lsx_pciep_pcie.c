@@ -1270,7 +1270,7 @@ lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
 			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id);
+				pf, sub_vendor_id, sub_device_id, 0);
 		}
 	}
 
@@ -1358,7 +1358,7 @@ lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
 			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id);
+				pf, sub_vendor_id, sub_device_id, 0);
 		}
 	}
 

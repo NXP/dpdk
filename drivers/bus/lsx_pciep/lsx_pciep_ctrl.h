@@ -57,7 +57,54 @@ lsx_pciep_64bar_to_32bar(uint8_t bar_64b)
 	return bar_64b * 2;
 }
 
+#define PCIE_EXT_CAP_ID_NULL 0x00
+#define PCIE_EXT_CAP_ID_AER 0x01
+#define PCIE_EXT_CAP_ID_VC 0x02
+#define PCIE_EXT_CAP_ID_DSN 0x03
+#define PCIE_EXT_CAP_ID_PB 0x04
+#define PCIE_EXT_CAP_ID_RCLINK 0x05
+#define PCIE_EXT_CAP_ID_RCILINK 0x06
+#define PCIE_EXT_CAP_ID_RCEC 0x07
+#define PCIE_EXT_CAP_ID_MFVC 0x08
+#define PCIE_EXT_CAP_ID_VC2 0x09
+#define PCIE_EXT_CAP_ID_RCRB 0x0a
+#define PCIE_EXT_CAP_ID_VNDR 0x0b
+#define PCIE_EXT_CAP_ID_ACS 0x0d
+#define PCIE_EXT_CAP_ID_ARI 0x0e
+#define PCIE_EXT_CAP_ID_ATS 0x0f
+#define PCIE_EXT_CAP_ID_SRIOV 0x10
+#define PCIE_EXT_CAP_ID_MRIOV 0x11
+#define PCIE_EXT_CAP_ID_MCAST 0x12
+#define PCIE_EXT_CAP_ID_PRI 0x13
+#define PCIE_EXT_CAP_ID_REBAR 0x15
+#define PCIE_EXT_CAP_ID_DPA 0x16
+#define PCIE_EXT_CAP_ID_TPH 0x17
+#define PCIE_EXT_CAP_ID_LTR 0x18
+#define PCIE_EXT_CAP_ID_SECPCI 0x19
+#define PCIE_EXT_CAP_ID_PMUX 0x1a
+#define PCIE_EXT_CAP_ID_PASID 0x1b
+#define PCIE_EXT_CAP_ID_LNR 0x1c
+#define PCIE_EXT_CAP_ID_DPC 0x1d
+#define PCIE_EXT_CAP_ID_L1PM 0x1e
+#define PCIE_EXT_CAP_ID_PTM 0x1f
+#define PCIE_EXT_CAP_ID_M_PCIE 0x20
+#define PCIE_EXT_CAP_ID_FRS 0x21
+#define PCIE_EXT_CAP_ID_RTR 0x22
+#define PCIE_EXT_CAP_ID_DVSEC 0x23
+#define PCIE_EXT_CAP_ID_VF_REBAR 0x24
+#define PCIE_EXT_CAP_ID_DLNK 0x25
+#define PCIE_EXT_CAP_ID_16GT 0x26
+#define PCIE_EXT_CAP_ID_LMR 0x27
+#define PCIE_EXT_CAP_ID_HIER_ID 0x28
+#define PCIE_EXT_CAP_ID_NPEM 0x29
+
 #define PCIE_FUN_RESET_SRIOV_CAP (0x1 << 28)
+
+struct pcie_ctrl_ext_cap {
+	uint32_t next_cap_off:12;
+	uint32_t cap_ver:4;
+	uint32_t ext_cap_id:16;
+} __packed;
 
 struct pcie_ctrl_cfg {
 	uint16_t vendor_id;
@@ -407,7 +454,7 @@ struct lsx_pciep_ops {
 
 	int (*pcie_fun_init_ext)(struct lsx_pciep_hw_low *hw,
 			int pf, uint16_t sub_vendor_id,
-			uint16_t sub_device_id);
+			uint16_t sub_device_id, int sriov_disable);
 
 	void (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);

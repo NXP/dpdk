@@ -127,6 +127,7 @@ struct pciep_dw_info {
 		priv_ob_win[LSX_MAX_PCIE_NB][LSX_PCIE_DW_OB_WINS_NUM];
 	struct pciep_dw_shared_ob_win
 		shared_ob_win[LSX_MAX_PCIE_NB][LSX_PCIE_DW_OB_WINS_NUM];
+	uint32_t ext_cap_start[LSX_MAX_PCIE_NB][PF_MAX_NB];
 	uint64_t ob_max_size;
 	uint64_t ob_win_max_size;
 	uint64_t win_mask;
@@ -1135,12 +1136,85 @@ pcie_dw_fun_init(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
+static uint32_t
+pcie_dw_ext_cap_remove(struct pcie_ctrl_cfg *cfg,
+	uint16_t cap_remove, uint32_t start_offset)
+{
+	uint32_t cap, next, curr, ret = start_offset, removed = 0;
+	struct pcie_ctrl_ext_cap *ext_cap, *prev_ext_cap = NULL;
+	struct pcie_ctrl_ext_cap read, write;
+
+	write.next_cap_off = 0;
+	write.cap_ver = 0;
+	write.ext_cap_id = 0;
+	next = start_offset;
+
+	do {
+		ext_cap = (void *)((uint8_t *)cfg + next);
+		curr = next;
+		lsx_pciep_read_config(ext_cap, &read,
+			sizeof(struct pcie_ctrl_ext_cap), 0);
+		if (curr == start_offset)
+			memcpy(&write, &read, sizeof(struct pcie_ctrl_ext_cap));
+		cap = read.ext_cap_id;
+		next = read.next_cap_off;
+		LSX_PCIEP_BUS_INFO("Ext cap at 0x%04x: 0x%04x, next:0x%04x",
+			curr, cap, next);
+		if (cap == cap_remove) {
+			LSX_PCIEP_BUS_INFO("Remove Ext cap(0x%04x) at 0x%04x",
+				cap, curr);
+			if (prev_ext_cap) {
+				write.next_cap_off = next;
+				lsx_pciep_write_config(prev_ext_cap,
+					&write,
+					sizeof(struct pcie_ctrl_ext_cap),
+					0);
+			} else {
+				ret = write.next_cap_off;
+			}
+			write.next_cap_off = 0;
+			write.cap_ver = read.cap_ver;
+			write.ext_cap_id = PCIE_EXT_CAP_ID_NULL;
+			lsx_pciep_write_config(ext_cap,
+				&write, sizeof(struct pcie_ctrl_ext_cap), 0);
+			removed = 1;
+			break;
+		}
+		prev_ext_cap = ext_cap;
+		memcpy(&write, &read, sizeof(struct pcie_ctrl_ext_cap));
+	} while (next);
+
+	if (!removed) {
+		LSX_PCIEP_BUS_WARN("Ext cap(0x%04x) was not found",
+			cap_remove);
+		return ret;
+	}
+	next = ret;
+
+	do {
+		ext_cap = (void *)((uint8_t *)cfg + next);
+		curr = next;
+		lsx_pciep_read_config(ext_cap, &read,
+			sizeof(struct pcie_ctrl_ext_cap), 0);
+		cap = read.ext_cap_id;
+		next = read.next_cap_off;
+		LSX_PCIEP_BUS_INFO("New Ext cap at 0x%04x: 0x%04x, next:0x%04x",
+			curr, cap, next);
+	} while (next);
+
+	return ret;
+}
+
 static int
 pcie_dw_fun_init_ext(struct lsx_pciep_hw_low *hw,
-	int pf, uint16_t sub_vendor_id, uint16_t sub_device_id)
+	int pf, uint16_t sub_vendor_id, uint16_t sub_device_id,
+	int sriov_disable)
 {
 	struct pcie_ctrl_cfg *cfg;
-	uint32_t tmp;
+	uint32_t tmp, offset;
+	size_t f_ret;
+	struct pciep_dw_info *info;
+	FILE *f_dw_cfg;
 
 	if (!hw->is_sriov && pf > PF0_IDX) {
 		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
@@ -1160,6 +1234,55 @@ pcie_dw_fun_init_ext(struct lsx_pciep_hw_low *hw,
 		PCIE_DW_MISC_CONTROL_1_OFF_OFFSET);
 
 	cfg = (void *)(hw->dbi_vir + pf * hw->dbi_pf_size);
+	if (sriov_disable) {
+		rte_spinlock_lock(&s_f_lock);
+		f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
+		if (!f_dw_cfg) {
+			LSX_PCIEP_BUS_ERR("%s: %s read open failed",
+				__func__, PCIEP_DW_GLOBE_INFO_F);
+			rte_spinlock_unlock(&s_f_lock);
+			return -ENODEV;
+		}
+
+		info = malloc(sizeof(struct pciep_dw_info));
+		if (!info) {
+			LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
+				__func__,
+				PCIEP_DW_GLOBE_INFO_F);
+			fclose(f_dw_cfg);
+			rte_spinlock_unlock(&s_f_lock);
+			return -ENOMEM;
+		}
+
+		memset(info, 0, sizeof(struct pciep_dw_info));
+
+		f_ret = fread(info, sizeof(struct pciep_dw_info),
+				1, f_dw_cfg);
+		fclose(f_dw_cfg);
+		if (f_ret != 1) {
+			LSX_PCIEP_BUS_ERR("%s: %s read (%ldB) failed (%ld)",
+				__func__, PCIEP_DW_GLOBE_INFO_F,
+				sizeof(struct pciep_dw_info), f_ret);
+			free(info);
+			rte_spinlock_unlock(&s_f_lock);
+			return -EIO;
+		}
+		offset = pcie_dw_ext_cap_remove(cfg, PCIE_EXT_CAP_ID_SRIOV,
+			info->ext_cap_start[hw->index][pf]);
+		if (offset != info->ext_cap_start[hw->index][pf]) {
+			info->ext_cap_start[hw->index][pf] = offset;
+			f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "wb");
+			f_ret = fwrite(info, sizeof(struct pciep_dw_info),
+				1, f_dw_cfg);
+			if (f_ret != 1) {
+				LSX_PCIEP_BUS_ERR("%s: %s write failed",
+					__func__, PCIEP_DW_GLOBE_INFO_F);
+			}
+			fclose(f_dw_cfg);
+		}
+		free(info);
+		rte_spinlock_unlock(&s_f_lock);
+	}
 	if (sub_vendor_id && sub_vendor_id != PCI_ANY_ID) {
 		lsx_pciep_write_config(&cfg->sub_vendor_id,
 			&sub_vendor_id, sizeof(uint16_t), 0);
@@ -1232,6 +1355,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 	FILE *f_dw_cfg;
 	size_t f_ret;
 	uint8_t pcie_id = hw->index;
+	uint32_t i, offset;
 	struct pciep_dw_info *info;
 
 	info = malloc(sizeof(struct pciep_dw_info));
@@ -1263,6 +1387,10 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 		info->ob_max_size = CFG_32G_SIZE;
 		info->ob_win_max_size = CFG_4G_SIZE;
 		info->win_mask = LSX_PCIEP_DW_WIN_MASK;
+		offset = offsetof(struct pcie_ctrl_cfg,
+			adv_err_report_cap_id);
+		for (i = 0; i < PF_MAX_NB; i++)
+			info->ext_cap_start[pcie_id][i] = offset;
 		s_f_create = 1;
 	}
 
