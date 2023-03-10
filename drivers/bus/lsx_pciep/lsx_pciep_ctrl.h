@@ -28,6 +28,35 @@
 
 #define CFG_MSIX_OB_SIZE (64 * CFG_1M_SIZE)  /* 64M */
 
+static inline int
+lsx_pciep_32bar_to_64bar(uint8_t bar)
+{
+	if (bar >= PCI_MAX_RESOURCE)
+		return -EINVAL;
+	if (bar % 2)
+		return -EINVAL;
+
+	return bar / 2;
+}
+
+static inline int
+lsx_pciep_valid_64b_bar_id(uint8_t bar_64b)
+{
+	if (bar_64b >= (PCI_MAX_RESOURCE / 2))
+		return 0;
+
+	return 1;
+}
+
+static inline int
+lsx_pciep_64bar_to_32bar(uint8_t bar_64b)
+{
+	if (!lsx_pciep_valid_64b_bar_id(bar_64b))
+		return -EINVAL;
+
+	return bar_64b * 2;
+}
+
 #define PCIE_FUN_RESET_SRIOV_CAP (0x1 << 28)
 
 struct pcie_ctrl_cfg {
@@ -106,6 +135,58 @@ struct pcie_ctrl_bar_size_mask {
 	uint32_t rsv[4];
 	uint32_t bar_mask[PCI_MAX_RESOURCE];
 } __packed;
+
+#define PCIE_BAR_MEM_IO_SPACE_IND_SHIFT 0
+#define PCIE_BAR_MEM_IO_SPACE_IND_MASK \
+	(~(((uint32_t)1) << PCIE_BAR_MEM_IO_SPACE_IND_SHIFT))
+#define PCIE_BAR_MEM_SPACE_IND \
+	(((uint32_t)0) << PCIE_BAR_MEM_IO_SPACE_IND_SHIFT)
+#define PCIE_BAR_IO_SPACE_IND \
+	(((uint32_t)1) << PCIE_BAR_MEM_IO_SPACE_IND_SHIFT)
+#define PCIE_BAR_SET_MEM_SPACE_IND(bar) \
+	do { \
+		(bar) &= PCIE_BAR_MEM_IO_SPACE_IND_MASK; \
+		(bar) |= PCIE_BAR_MEM_SPACE_IND; \
+	} while (0)
+#define PCIE_BAR_SET_IO_SPACE_IND(bar) \
+	do { \
+		(bar) &= PCIE_BAR_MEM_IO_SPACE_IND_MASK; \
+		(bar) |= PCIE_BAR_IO_SPACE_IND; \
+	} while (0)
+
+#define PCIE_BAR_ADDR_WIDTH_SHIFT 1
+#define PCIE_BAR_ADDR_WIDTH_MASK \
+	(~(((uint32_t)3) << PCIE_BAR_ADDR_WIDTH_SHIFT))
+#define PCIE_BAR_32B_ADDR_TYPE \
+	(((uint32_t)0) << PCIE_BAR_ADDR_WIDTH_SHIFT)
+#define PCIE_BAR_64B_ADDR_TYPE \
+	(((uint32_t)2) << PCIE_BAR_ADDR_WIDTH_SHIFT)
+#define PCIE_BAR_SET_32B_WIDTH(bar) \
+	do { \
+		(bar) &= PCIE_BAR_ADDR_WIDTH_MASK; \
+		(bar) |= PCIE_BAR_32B_ADDR_TYPE; \
+	} while (0)
+#define PCIE_BAR_SET_64B_WIDTH(bar) \
+	do { \
+		(bar) &= PCIE_BAR_ADDR_WIDTH_MASK; \
+		(bar) |= PCIE_BAR_64B_ADDR_TYPE; \
+	} while (0)
+
+#define PCIE_BAR_PREF_SHIFT 3
+#define PCIE_BAR_PREF_MASK \
+	(~(((uint32_t)1) << PCIE_BAR_PREF_SHIFT))
+#define PCIE_BAR_PREF_DIS (((uint32_t)0) << PCIE_BAR_PREF_SHIFT)
+#define PCIE_BAR_PREF_EN (((uint32_t)1) << PCIE_BAR_PREF_SHIFT)
+#define PCIE_BAR_ENABLE_PREFETCH(bar) \
+	do { \
+		(bar) &= PCIE_BAR_PREF_MASK; \
+		(bar) |= PCIE_BAR_PREF_EN; \
+	} while (0)
+#define PCIE_BAR_DISABLE_PREFETCH(bar) \
+	do { \
+		(bar) &= PCIE_BAR_PREF_MASK; \
+		(bar) |= PCIE_BAR_PREF_DIS; \
+	} while (0)
 
 static inline int
 lsx_pciep_is_align_16(const void *addr)
