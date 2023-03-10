@@ -38,6 +38,7 @@ LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
 LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --static --libs libdpdk)
 
 CFLAGS += -I.
+CFLAGS += -DALLOW_EXPERIMENTAL_API
 
 OBJS := $(patsubst %.c,build/%.o,$(SRCS-y))
 

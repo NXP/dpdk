@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2019 NXP
+# Copyright 2019,2023 NXP
 
 # binary name
 APP = l2fwd-crypto-event
@@ -20,6 +20,7 @@ static: build/$(APP)-static
 
 PC_FILE := $(shell pkg-config --path libdpdk)
 CFLAGS += -O3 $(shell pkg-config --cflags libdpdk)
+CFLAGS += -DALLOW_EXPERIMENTAL_API
 LDFLAGS_SHARED = $(shell pkg-config --libs libdpdk)
 LDFLAGS_STATIC = -Wl,-Bstatic $(shell pkg-config --static --libs libdpdk)
 
