@@ -1643,6 +1643,8 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	int sim, ret = 0;
 	uint32_t i;
 	struct lsinic_queue *q;
+	struct lsx_pciep_outbound *ob_win;
+	uint64_t ob_base;
 
 	sim = lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1672,35 +1674,43 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		lsinic_dev->mmsi_flag);
 
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->r_regl));
-	if (!adapter->rc_ring_bus_base) {
-		if (rc_reg_addr)
-			ret = lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
-		else
-			ret = -EIO;
-		if (ret) {
-			LSXINIC_PMD_ERR("Map RC ring failed");
-
-			return ret;
-		}
-		LSXINIC_PMD_INFO("Config from RC rc ring base:%lX",
-			rc_reg_addr);
-		for (i = 0; i < adapter->num_rx_queues; i++) {
-			q = &adapter->rxqs[i];
-			if (adapter->rbp_enable)
-				q->ob_base = 0;
-			else
-				q->ob_base = adapter->rc_ring_phy_base;
-		}
-		for (i = 0; i < adapter->num_tx_queues; i++) {
-			q = &adapter->txqs[i];
-			if (adapter->rbp_enable)
-				q->ob_base = 0;
-			else
-				q->ob_base = adapter->rc_ring_phy_base;
-		}
-	} else {
+	LSXINIC_PMD_INFO("Config from RC rc ring base:%lX",
+		rc_reg_addr);
+	if (adapter->rc_ring_bus_base) {
 		LSXINIC_PMD_WARN("RC ring(bus=%lx) has been mapped",
 			adapter->rc_ring_bus_base);
+		goto skip_map_rc_ring;
+	}
+
+	if (rc_reg_addr)
+		ret = lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
+	else
+		ret = -EIO;
+	if (ret) {
+		LSXINIC_PMD_ERR("Map RC ring failed");
+
+		return ret;
+	}
+
+skip_map_rc_ring:
+	if (adapter->rbp_enable) {
+		ob_base = 0;
+	} else {
+		ob_win = &lsinic_dev->ob_win[0];
+		ob_base = rte_fslmc_io_vaddr_to_iova(ob_win->ob_virt_base);
+		if (ob_base == RTE_BAD_IOVA) {
+			LSXINIC_PMD_ERR("Map %p to IOVA failed!",
+				ob_win->ob_virt_base);
+			return -EIO;
+		}
+	}
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		q = &adapter->rxqs[i];
+		q->ob_base = ob_base;
+	}
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		q = &adapter->txqs[i];
+		q->ob_base = ob_base;
 	}
 
 	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
