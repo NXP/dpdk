@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018,2019 NXP
+# Copyright 2018-2023 NXP
 
 ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
@@ -18,6 +18,7 @@ SRCS-y := main.c
 
 CFLAGS += -O3 -g
 CFLAGS += -I$(RTE_SDK)/drivers/raw/dpaa2_qdma
+CFLAGS += -I$(RTE_SDK)/drivers/bus/fslmc
 CFLAGS += -I$(RTE_SDK)/lib/librte_hash
 CFLAGS += -I$(RTE_SDK)/lib/librte_eal/common/include
 CFLAGS += $(WERROR_FLAGS)
