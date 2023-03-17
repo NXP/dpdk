@@ -83,6 +83,7 @@ struct qdma_virt_queue {
 	struct qdma_hw_queue *hw_queue;
 	/** FLE pool for the queue */
 	struct rte_mempool *fle_pool;
+	uint64_t fle_iova2va_offset;
 	/** Route by port */
 	struct rte_qdma_rbp rbp;
 	/** Associated lcore id */

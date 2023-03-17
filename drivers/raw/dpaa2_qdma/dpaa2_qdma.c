@@ -150,23 +150,12 @@ static inline void
 post_populate_fle(struct qbman_fle fle[],
 	uint64_t src, uint64_t dest, size_t len)
 {
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
-#else
-	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE],
-		DPAA2_VADDR_TO_IOVA(src));
-#endif
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_SRC_FLE], len);
 
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
-#else
-	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE],
-		DPAA2_VADDR_TO_IOVA(dest));
-#endif
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_DST_FLE], len);
 }
-
 
 static inline void
 populate_fle(struct qbman_fle fle[],
@@ -229,17 +218,16 @@ populate_fle(struct qbman_fle fle[],
 	}
 	/* source frame list to source buffer */
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
-#endif
+	/** IOMMU is always on for either VA or PA mode,
+	 * so Bypass Memory Translation should be disabled.
+	 * DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
+	 * DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
+	 */
 	fle[DPAA2_QDMA_SRC_FLE].word4.fmt = fmt;
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_SRC_FLE], len);
 
 	/* destination frame list to destination buffer */
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
-#endif
 	fle[DPAA2_QDMA_DST_FLE].word4.fmt = fmt;
 	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_DST_FLE], len);
 
@@ -351,22 +339,22 @@ populate_sg_entry(struct rte_qdma_job **jobs,
 		src_sge->data_len.data_len_sl0 = jobs[i]->len;
 		src_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		src_sge->ctrl.bmt = QDMA_SG_BMT_ENABLE;
-#else
+		/** IOMMU is always on for either VA or PA mode,
+		 * so Bypass Memory Translation should be disabled.
+		 */
 		src_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
-#endif
+
 		/* destination SG */
 		dst_sge->addr_lo = (uint32_t)jobs[i]->dest;
 		dst_sge->addr_hi = (jobs[i]->dest >> 32);
 		dst_sge->data_len.data_len_sl0 = jobs[i]->len;
 		dst_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		dst_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		dst_sge->ctrl.bmt = QDMA_SG_BMT_ENABLE;
-#else
+		/** IOMMU is always on for either VA or PA mode,
+		 * so Bypass Memory Translation should be disabled.
+		 */
 		dst_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
-#endif
+
 		total_len += jobs[i]->len;
 
 		if (i == (nb_jobs - 1)) {
@@ -390,7 +378,14 @@ fle_sdd_pre_populate(struct qdma_fle_elem *elem,
 {
 	struct qbman_fle *fle = elem->fle;
 	struct qdma_sdd *sdd = elem->sdd;
-	uint64_t sdd_iova = DPAA2_VADDR_TO_IOVA(sdd);
+	uint64_t sdd_iova, iova_size;
+
+	iova_size = sizeof(struct qdma_sdd) * DPAA2_QDMA_MAX_SDD;
+	sdd_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(sdd, iova_size);
+	if (sdd_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for sdd(%p)(size=%lx)",
+			sdd, iova_size);
+	}
 
 	/* first frame list to source descriptor */
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SDD_FLE], sdd_iova);
@@ -505,11 +500,7 @@ dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 			DPAA2_SET_FD_FRC(&fd[i], QDMA_SER_CTX);
 		}
 		total_len += job[i]->len;
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		elem_iova = rte_mempool_virt2iova(elem);
-#else
-		elem_iova = DPAA2_VADDR_TO_IOVA(elem);
-#endif
+		elem_iova = (uint64_t)elem - qdma_vq->fle_iova2va_offset;
 
 		fle = elem->fle;
 		fle_iova = elem_iova +
@@ -552,19 +543,17 @@ sg_entry_pre_populate(struct qdma_fle_sg_elem *elem)
 		/* source SG */
 		src_sge[i].ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge[i].ctrl.fmt = QDMA_SG_FMT_SDB;
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		src_sge[i].ctrl.bmt = QDMA_SG_BMT_ENABLE;
-#else
+		/** IOMMU is always on for either VA or PA mode,
+		 * so Bypass Memory Translation should be disabled.
+		 */
 		src_sge[i].ctrl.bmt = QDMA_SG_BMT_DISABLE;
-#endif
 		/* destination SG */
 		dst_sge[i].ctrl.sl = QDMA_SG_SL_LONG;
 		dst_sge[i].ctrl.fmt = QDMA_SG_FMT_SDB;
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		dst_sge[i].ctrl.bmt = QDMA_SG_BMT_ENABLE;
-#else
+		/** IOMMU is always on for either VA or PA mode,
+		 * so Bypass Memory Translation should be disabled.
+		 */
 		dst_sge[i].ctrl.bmt = QDMA_SG_BMT_DISABLE;
-#endif
 	}
 }
 
@@ -574,13 +563,24 @@ fle_sdd_sg_pre_populate(struct qdma_fle_sg_elem *elem,
 {
 	struct qdma_sg_entry *src_sge = elem->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = elem->sg_dst_entry;
-	uint64_t src_sge_iova, dst_sge_iova;
+	uint64_t src_sge_iova, dst_sge_iova, iova_size;
 	struct rte_qdma_rbp *rbp = &qdma_vq->rbp;
 
 	memset(elem, 0, sizeof(struct qdma_fle_sg_elem));
 
-	src_sge_iova = DPAA2_VADDR_TO_IOVA(src_sge);
-	dst_sge_iova = DPAA2_VADDR_TO_IOVA(dst_sge);
+	iova_size = DPAA2_QDMA_MAX_SG_NB * sizeof(struct qdma_sg_entry);
+
+	src_sge_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(src_sge, iova_size);
+	if (src_sge_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for src_sge(%p)(size=%lx)",
+			src_sge, iova_size);
+	}
+
+	dst_sge_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(dst_sge, iova_size);
+	if (dst_sge_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for dst_sge(%p)(size=%lx)",
+			dst_sge, iova_size);
+	}
 
 	sg_entry_pre_populate(elem);
 	fle_sdd_pre_populate(&elem->fle_elem,
@@ -629,12 +629,7 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 		sg_elem->sg_jobs[0]->vq_id = qdma_vq->vq_id;
 		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
 	}
-
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	sg_elem_iova = rte_mempool_virt2iova(sg_elem);
-#else
-	sg_elem_iova = DPAA2_VADDR_TO_IOVA(sg_elem);
-#endif
+	sg_elem_iova = (uint64_t)sg_elem - qdma_vq->fle_iova2va_offset;
 
 	fle_elem = &sg_elem->fle_elem;
 	fle_elem_iova = sg_elem_iova +
@@ -730,13 +725,14 @@ dpdmai_dev_get_job(struct qdma_virt_queue *qdma_vq,
 	struct qbman_fle *fle;
 	struct qdma_fle_elem *fle_elem;
 	uint16_t status;
+	rte_iova_t iova;
 
 	/*
 	 * Fetch metadata from FLE. job and vq_id were set
 	 * in metadata in the enqueue operation.
 	 */
-	fle = (struct qbman_fle *)
-			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	iova = DPAA2_GET_FD_ADDR(fd);
+	fle = (void *)(iova + qdma_vq->fle_iova2va_offset);
 	fle_elem = container_of(fle, struct qdma_fle_elem, fle[0]);
 
 	*nb_jobs = 1;
@@ -764,13 +760,14 @@ dpdmai_dev_get_sg_job(struct qdma_virt_queue *qdma_vq,
 	struct qdma_fle_elem *fle_elem;
 	struct qdma_fle_sg_elem *fle_sg_elem;
 	uint16_t i, status;
+	rte_iova_t iova;
 
 	/*
 	 * Fetch metadata from FLE. job and vq_id were set
 	 * in metadata in the enqueue operation.
 	 */
-	fle = (struct qbman_fle *)
-		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	iova = DPAA2_GET_FD_ADDR(fd);
+	fle = (void *)(iova + qdma_vq->fle_iova2va_offset);
 	fle_elem = container_of(fle, struct qdma_fle_elem, fle[0]);
 	if (qdma_vq->flags & RTE_QDMA_VQ_NO_RSP_DRAIN)
 		return FLE_SG_JOB_GET_SIZE(fle_elem->sg_job_nb_len);
@@ -863,7 +860,7 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			DPAA2_VADDR_TO_IOVA(dq_storage), 1);
 		if (check_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index)) {
 			while (!dpdmai_dev_qbman_dpio_complete())
 				;
@@ -896,7 +893,7 @@ dpdmai_dev_dequeue_prefetch(struct qdma_virt_queue *qdma_vq,
 	qbman_pull_desc_set_numframes(&pulldesc, pull_size);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage1,
-		(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+		DPAA2_VADDR_TO_IOVA(dq_storage1), 1);
 
 	/* Check if the previous issued command is completed.
 	 * Also seems like the SWP is shared between the Ethernet Driver
@@ -1005,7 +1002,7 @@ dpdmai_dev_dequeue(struct qdma_virt_queue *qdma_vq,
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			DPAA2_VADDR_TO_IOVA(dq_storage), 1);
 
 		if (next_pull > dpaa2_dqrr_size) {
 			qbman_pull_desc_set_numframes(&pulldesc,
@@ -1408,7 +1405,7 @@ dpaa2_dpdmai_dev_hw_init(const struct rte_rawdev *rawdev)
 
 		/* Allocate DQ storage for the DPDMAI Rx queues */
 		rxq = &(dpdmai_dev->rx_queue[i]);
-		rxq->q_storage = rte_malloc("dq_storage",
+		rxq->q_storage = rte_zmalloc("dq_storage",
 					    sizeof(struct queue_storage_info_t),
 					    RTE_CACHE_LINE_SIZE);
 		if (!rxq->q_storage) {
@@ -1417,7 +1414,6 @@ dpaa2_dpdmai_dev_hw_init(const struct rte_rawdev *rawdev)
 			goto init_err;
 		}
 
-		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
 		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
 		if (ret) {
 			DPAA2_QDMA_ERR("dpaa2_alloc_dq_storage failed");
@@ -1582,6 +1578,7 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 	uint32_t pool_size, i;
 	char *fle_prepare_env = NULL;
 	int ret;
+	rte_iova_t iova, va;
 
 	fle_prepare_env = getenv("DPAA2_QDMA_FLE_PRE_POPULATE");
 
@@ -1613,6 +1610,9 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 			pool_name);
 		return -ENOMEM;
 	}
+	iova = vq->fle_pool->mz->iova;
+	va = vq->fle_pool->mz->addr_64;
+	vq->fle_iova2va_offset = va - iova;
 
 	if (vq->flags & RTE_QDMA_VQ_NO_RESPONSE) {
 		vq->fle_elems = rte_zmalloc(NULL, count * sizeof(void *),

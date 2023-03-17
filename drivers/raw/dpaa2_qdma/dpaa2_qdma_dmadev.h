@@ -117,6 +117,7 @@ struct qdma_virt_queue {
 	struct dpaa2_dpdmai_dev *dpdmai_dev;
 	/** FLE pool for the queue */
 	struct rte_mempool *fle_pool;
+	uint64_t fle_iova2va_offset;
 	void **fle_elem;
 	/** Route by port */
 	struct dpaa2_qdma_rbp rbp;
