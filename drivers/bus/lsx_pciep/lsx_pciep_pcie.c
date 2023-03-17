@@ -1646,17 +1646,7 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 		return -EINVAL;
 	}
 
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-	phy = mz->iova;
-#else
-	if (lsx_pciep_hw_sim_get(ep_dev->pcie_id)) {
-		phy = mz->iova;
-	} else {
-		phy = rte_mem_virt2phy(mz->addr);
-		if (phy == RTE_BAD_IOVA)
-			return -EFAULT;
-	}
-#endif
+	phy = rte_mem_virt2phy(mz->addr);
 	iova = mz->iova;
 
 	if (is_vf) {
@@ -1908,8 +1898,8 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 	int pcie_id = ep_dev->pcie_id;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	uint32_t idx, out_win_nb;
-	uint64_t pci_addr = 0, out_phy;
-	int shared;
+	uint64_t pci_addr = 0, out_phy, iova, va;
+	int shared, ret;
 	struct lsx_pciep_outbound *ob_win = &ep_dev->ob_win[0];
 
 	if (ob_win->ob_virt_base) {
@@ -1953,28 +1943,41 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 		ob_win->ob_virt_base =
 			lsx_pciep_map_region(ob_win->ob_phy_base,
 				out_win_nb * ctlhw->out_win_size);
-		if (rte_fslmc_vfio_mem_dmamap((uint64_t)ob_win->ob_virt_base,
-			ob_win->ob_phy_base,
-			out_win_nb * ctlhw->out_win_size)) {
-			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
-				"VFIO map failed",
-				ob_win->ob_virt_base, ob_win->ob_phy_base,
+		va = (uint64_t)ob_win->ob_virt_base;
+		if (rte_eal_iova_mode() == RTE_IOVA_VA)
+			iova = va;
+		else
+			iova = ob_win->ob_phy_base;
+		ret = rte_fslmc_vfio_mem_dmamap(va, iova,
 				out_win_nb * ctlhw->out_win_size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("MAP va(%lx):pa(%lx):iova(%lx)",
+				va, ob_win->ob_phy_base, iova);
+			ob_win->ob_iova_base = RTE_BAD_IOVA;
 
 			return NULL;
+		} else {
+			ob_win->ob_iova_base = iova;
 		}
 	} else {
 		ob_win->ob_virt_base = ctlhw->out_vir +
 			ob_win->ob_phy_base - ctlhw->hw.out_base;
 		if (!ctlhw->share_vfio_map) {
-			if (rte_fslmc_vfio_mem_dmamap((uint64_t)ctlhw->out_vir,
-				ctlhw->hw.out_base, ctlhw->hw.out_size)) {
-				LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
-					"Shared VFIO map failed",
-					ctlhw->out_vir, ctlhw->hw.out_base,
+			va = (uint64_t)ctlhw->out_vir;
+			if (rte_eal_iova_mode() == RTE_IOVA_VA)
+				iova = va;
+			else
+				iova = ctlhw->hw.out_base;
+			ret = rte_fslmc_vfio_mem_dmamap(va, iova,
 					ctlhw->hw.out_size);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("MAP va(%lx):iova(%lx)",
+					va, iova);
+				ctlhw->out_iova = RTE_BAD_IOVA;
 
 				return NULL;
+			} else {
+				ctlhw->out_iova = iova;
 			}
 		}
 		ctlhw->share_vfio_map++;
@@ -2069,7 +2072,7 @@ lsx_pciep_unset_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 				ep_dev->name, ret);
 			return ret;
 		}
-		ret = rte_fslmc_vfio_mem_dmaunmap(ob_win->ob_phy_base,
+		ret = rte_fslmc_vfio_mem_dmaunmap(ob_win->ob_iova_base,
 				size);
 		if (ret) {
 			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
@@ -2095,7 +2098,7 @@ lsx_pciep_unset_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 					ep_dev->name, ret);
 				return ret;
 			}
-			ret = rte_fslmc_vfio_mem_dmaunmap(ctlhw->hw.out_base,
+			ret = rte_fslmc_vfio_mem_dmaunmap(ctlhw->out_iova,
 					ctlhw->hw.out_size);
 			if (ret) {
 				LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
@@ -2181,7 +2184,7 @@ lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 {
 	int pcie_id = ep_dev->pcie_id, i, base_idx, ret = 0;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
-	uint64_t size = 0, phy_base;
+	uint64_t size = 0, phy_base, iova;
 	void *vir_base;
 
 	ctlhw->hw.msi_flag = ep_dev->mmsi_flag;
@@ -2224,18 +2227,22 @@ lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 		}
 		vir_base = ep_dev->msix_addr[base_idx];
 		phy_base = ep_dev->msix_phy[base_idx];
+		if (rte_eal_iova_mode() == RTE_IOVA_VA)
+			iova = (uint64_t)vir_base;
+		else
+			iova = phy_base;
 		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vir_base,
-				phy_base, size);
+				iova, size);
 		if (ret) {
-			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
-				"MSI VFIO map failed",
-				vir_base, ep_dev->msix_phy[base_idx],
-				size);
+			LSX_PCIEP_BUS_ERR("MAP va(%p):pa(%lx):iova(%lx)",
+				vir_base, phy_base, iova);
 
 			goto failed_init_msix;
 		}
+
 		ep_dev->msi_addr_base = vir_base;
 		ep_dev->msi_phy_base = phy_base;
+		ep_dev->msi_iova_base = iova;
 		ep_dev->msi_map_size = size;
 	}
 
@@ -2271,7 +2278,7 @@ lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev)
 				ep_dev->name);
 			goto skip_vfio_map;
 		}
-		ret = rte_fslmc_vfio_mem_dmaunmap(ep_dev->msi_phy_base,
+		ret = rte_fslmc_vfio_mem_dmaunmap(ep_dev->msi_iova_base,
 				ep_dev->msi_map_size);
 		if (ret) {
 			LSX_PCIEP_BUS_ERR("%s: failed to vfio unmap msi(%d)",

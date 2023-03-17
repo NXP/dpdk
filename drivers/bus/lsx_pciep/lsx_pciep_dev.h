@@ -123,6 +123,7 @@ struct lsx_pciep_ctl_hw {
 	struct lsx_pciep_hw_low hw;
 
 	uint8_t *out_vir;
+	uint64_t out_iova;
 	uint64_t out_win_size;
 	uint64_t out_size_per_fun;
 	uint32_t out_win_per_fun;

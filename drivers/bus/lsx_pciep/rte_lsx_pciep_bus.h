@@ -102,6 +102,7 @@ enum lsx_pcie_pf_idx {
 struct lsx_pciep_outbound {
 	uint64_t ob_map_bus_base;
 	uint64_t ob_phy_base;
+	uint64_t ob_iova_base;
 	uint8_t *ob_virt_base;
 	uint64_t ob_win_size;
 	uint16_t ob_win_nb;
@@ -123,6 +124,7 @@ struct rte_lsx_pciep_device {
 
 	/* MSI/MSIx information */
 	uint64_t msi_phy_base;
+	uint64_t msi_iova_base;
 	void *msi_addr_base;
 	uint64_t msi_map_size;
 	uint64_t *msix_phy;
