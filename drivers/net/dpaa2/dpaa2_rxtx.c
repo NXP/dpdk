@@ -507,6 +507,27 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	return 0;
 }
 
+static inline void
+dpaa2_dev_prefetch_next_psr(const struct qbman_result *dq)
+{
+	const struct qbman_fd *fd;
+	const struct dpaa2_annot_hdr *annotation;
+	uint64_t annot_iova;
+
+	if (dpaa2_svr_family == SVR_LX2160A) {
+		/** Packet type is parsed from FRC for LX2160A.*/
+		return;
+	}
+	dq++;
+
+	fd = qbman_result_DQ_fd(dq);
+	annot_iova = DPAA2_GET_FD_ADDR(fd) + DPAA2_FD_PTA_SIZE;
+	annotation = DPAA2_IOVA_TO_VADDR(annot_iova);
+
+	/** Prefetch from word3 to parse next header.*/
+	rte_prefetch0(&annotation->word3);
+}
+
 static void
 eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	       struct qbman_fd *fd,
@@ -811,18 +832,10 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0))
 				continue;
 		}
+
+		dpaa2_dev_prefetch_next_psr(dq_storage);
+
 		fd = qbman_result_DQ_fd(dq_storage);
-
-#ifndef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-		if (dpaa2_svr_family != SVR_LX2160A) {
-			const struct qbman_fd *next_fd =
-				qbman_result_DQ_fd(dq_storage + 1);
-			/* Prefetch Annotation address for the parse results */
-			rte_prefetch0(DPAA2_IOVA_TO_VADDR((DPAA2_GET_FD_ADDR(
-				next_fd) + DPAA2_FD_PTA_SIZE + 16)));
-		}
-#endif
-
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 			bufs[num_rx] = eth_sg_fd_to_mbuf(fd, eth_data->port_id);
 		else
@@ -1022,22 +1035,10 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					QBMAN_DQ_STAT_VALIDFRAME) == 0))
 					continue;
 			}
+
+			dpaa2_dev_prefetch_next_psr(dq_storage);
+
 			fd = qbman_result_DQ_fd(dq_storage);
-
-#ifndef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-			if (dpaa2_svr_family != SVR_LX2160A) {
-				const struct qbman_fd *next_fd =
-					qbman_result_DQ_fd(dq_storage + 1);
-
-				/* Prefetch Annotation address for the parse
-				 * results.
-				 */
-				rte_prefetch0((DPAA2_IOVA_TO_VADDR(
-					DPAA2_GET_FD_ADDR(next_fd) +
-					DPAA2_FD_PTA_SIZE + 16)));
-			}
-#endif
-
 			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 				bufs[num_rx] = eth_sg_fd_to_mbuf(fd,
 							eth_data->port_id);
@@ -1075,7 +1076,7 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 	int ret, num_tx_conf = 0, num_pulled;
 	uint8_t pending, status;
 	struct qbman_swp *swp;
-	const struct qbman_fd *fd, *next_fd;
+	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
 	struct qbman_release_desc releasedesc;
 	uint32_t bpid;
@@ -1141,14 +1142,10 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 					QBMAN_DQ_STAT_VALIDFRAME) == 0))
 					continue;
 			}
+
+			dpaa2_dev_prefetch_next_psr(dq_storage);
+
 			fd = qbman_result_DQ_fd(dq_storage);
-
-			next_fd = qbman_result_DQ_fd(dq_storage + 1);
-			/* Prefetch Annotation address for the parse results */
-			rte_prefetch0((void *)(size_t)
-				(DPAA2_GET_FD_ADDR(next_fd) +
-				 DPAA2_FD_PTA_SIZE + 16));
-
 			bpid = DPAA2_GET_FD_BPID(fd);
 
 			/* Create a release descriptor required for releasing
