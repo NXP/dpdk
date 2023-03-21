@@ -1298,7 +1298,7 @@ prepare_ldpc_dec_op(struct rte_bbdev_dec_op *bbdev_dec_op,
 	int ret;
 
 	sys_cols = (ldpc_dec->basegraph == 1) ? 22 : 10;
-	if (ldpc_dec->tb_params.ea == 0) {
+	if (ldpc_dec->tb_params.c == 0) {
 		ldpc_dec->hard_output.length = 0;
 		goto fill_feca_desc;
 	} else if (ldpc_dec->tb_params.c == 1) {
