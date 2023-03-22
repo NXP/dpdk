@@ -223,7 +223,6 @@ dpdk_conf.set('RTE_LIBEAL_USE_HPET', get_option('use_hpet'))
 # values which have defaults which may be overridden
 dpdk_conf.set('RTE_MAX_VFIO_GROUPS', 64)
 dpdk_conf.set('RTE_DRIVER_MEMPOOL_BUCKET_SIZE_KB', 64)
-dpdk_conf.set('RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', true)
 if dpdk_conf.get('RTE_ARCH_64')
 	dpdk_conf.set('RTE_MAX_MEM_MB', 524288)
 else # for 32-bit we need smaller reserved memory areas

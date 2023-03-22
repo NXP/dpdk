@@ -48,8 +48,7 @@ flags_dpaa = [
 	['RTE_USE_C11_MEM_MODEL', true],
 	['RTE_CACHE_LINE_SIZE', 64],
 	['RTE_MAX_NUMA_NODES', 1],
-	['RTE_MAX_LCORE', 16],
-	['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false]]
+	['RTE_MAX_LCORE', 16]]
 flags_emag = [
 	['RTE_MACHINE', '"emag"'],
 	['RTE_CACHE_LINE_SIZE', 64],
