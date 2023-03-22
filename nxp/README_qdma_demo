@@ -68,13 +68,7 @@ In the above command: -c refers to the core mask for cores to be assigned to
 DPDK;
 -p is the port mask for ports to be used by application;
 -q defines the number of queues to serve on each port.
--m mode specifies HW (-m is 0) or Virtuial (-m is 1) mode for QDMA queues.
---scatter enable Scatter Gather Mode (use RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y
-  in EXTRA_CFLAGS by appending "EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'"
-  to the build command)
-
-Apart from -m parameter other parameters are similar to DPDK
-l2fwd application -refer L2 Forwarding Sample
+--scatter enable Scatter Gather Mode.
 
 ------------------------------------------------------
 qdma_demo - APP to test memory transfer over PCI
@@ -104,8 +98,6 @@ The setup is as given below:
 
    compilation command
    -------------------
-   Note: if you are using Scatter Gather support, better to build DPDK with
-	  RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y in EXTRA_CFLAGS
    make -C examples/qdma_demo/
 
 4. Steps of execution
@@ -207,9 +199,9 @@ The setup is as given below:
 
 1. The current QDMA demo code read/write only 4KB area, that yield best
 bandwidth number. To test read/write big memory size, you can optionally pass
---pci_size (size in byte)
+--pci_size (size in byte, hex format)
 
-e.g for 2MB PCI use:  --pci_size=2147483648
+e.g for 2MB PCI use:  --pci_size=80000000
 
 LATENCY_TEST
 ------------
@@ -224,5 +216,3 @@ SCATTER GATHER
 --------------
 
 One can use --scatter option to use Scatter Gather buffers instead of normal single buffer.
-It is perferable to build dpdk with RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y in EXTRA_CFLAGS
-e.g. command: make install T=arm64-dpaa-linux-gcc EXTRA_CFLAGS='-DRTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y'
