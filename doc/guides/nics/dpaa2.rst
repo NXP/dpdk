@@ -453,10 +453,6 @@ Please note that enabling debugging options may affect system performance.
 
   Toggle display of debugging messages/logic
 
-- ``CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA`` (default ``n``)
-
-  Toggle to use physical address vs virtual address for hardware accelerators.
-
 Driver compilation and testing
 ------------------------------
 
