@@ -123,10 +123,10 @@ struct rte_lsx_pciep_device {
 	uint8_t rbp_ob_win_nb;
 
 	/* MSI/MSIx information */
-	uint64_t msi_phy_base;
-	uint64_t msi_iova_base;
-	void *msi_addr_base;
-	uint64_t msi_map_size;
+	uint64_t msix_phy_base;
+	uint64_t msix_iova_base;
+	void *msix_addr_base;
+	uint64_t msix_map_size;
 	uint64_t *msix_phy;
 	void **msix_addr;
 	uint32_t *msix_data;

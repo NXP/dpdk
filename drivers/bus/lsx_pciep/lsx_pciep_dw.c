@@ -21,6 +21,7 @@
 #include <rte_io.h>
 #include <rte_spinlock.h>
 #include <linux/pci_regs.h>
+#include <rte_fslmc.h>
 
 #include "lsx_pciep_ctrl.h"
 
@@ -1029,16 +1030,20 @@ pcie_dw_disable_ib_win(struct lsx_pciep_hw_low *hw, int idx)
 }
 
 static int
-pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
+pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
+	uint8_t *out_vir,
 	int pf, int is_vf, int vf,
-	uint64_t msg_addr[], uint32_t msg_data[],
+	uint64_t msg_phy_addr[], void *msg_vir_addr[],
+	uint32_t msg_data[], uint64_t *size,
 	int vector_total)
 {
 	struct pcie_ctrl_cfg *cfg;
-	uint64_t maddr, phy_addr, doorbell_addr;
+	uint64_t maddr, phy_addr, doorbell_addr, iova;
+	void *vaddr;
 	uint32_t maddr_32;
 	uint16_t mdata;
-	int vector;
+	int vector, ret;
+	char pci_info[128];
 
 	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
 		return 0;
@@ -1046,17 +1051,26 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 	if (!hw->is_sriov && (pf > PF0_IDX || is_vf)) {
 		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
 			__func__, hw->index);
-		return 0;
+		return -EINVAL;
+	}
+
+	if (is_vf) {
+		sprintf(pci_info, "PCI%d:PF%d:VF%d MSI map",
+			hw->index, pf, vf);
+	} else {
+		sprintf(pci_info, "PCI%d:PF%d MSI map",
+			hw->index, pf);
 	}
 
 	doorbell_addr = hw->dbi_phy + PCIE_DW_MSIX_DOORBELL_REG;
+	vaddr = hw->dbi_vir + PCIE_DW_MSIX_DOORBELL_REG;
 
 	if (hw->msi_flag == LSX_PCIEP_MSIX_INT) {
 		if (!hw->is_sriov) {
 			LSX_PCIEP_BUS_ERR("PCIe%d (NONE-SRIOV) %s",
 				hw->index,
 				"does not support MSI-X");
-			return 0;
+			return -ENOTSUP;
 		}
 		if (is_vf) {
 			mdata = pf << PCIE_DW_MSIX_DOORBELL_PF_SHIFT |
@@ -1066,9 +1080,12 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 			mdata = pf << PCIE_DW_MSIX_DOORBELL_PF_SHIFT;
 		}
 		for (vector = 0; vector < vector_total; vector++) {
-			msg_addr[vector] = doorbell_addr;
+			msg_phy_addr[vector] = doorbell_addr;
+			msg_vir_addr[vector] = vaddr;
 			msg_data[vector] = mdata | vector;
 		}
+		if (size)
+			*size = sizeof(uint32_t);
 	} else if (hw->msi_flag == LSX_PCIEP_MMSI_INT) {
 		cfg = (void *)(hw->dbi_vir + pf * hw->dbi_pf_size);
 		lsx_pciep_read_config(&cfg->msi_addr_high,
@@ -1081,19 +1098,118 @@ pcie_dw_msix_init(struct lsx_pciep_hw_low *hw,
 		lsx_pciep_read_config(&cfg->msi_data,
 			&mdata, sizeof(uint16_t), 0);
 
-		if (hw->ob_policy != LSX_PCIEP_OB_SHARE) {
+		if (!out_vir) {
 			phy_addr = pcie_dw_map_ob_win(hw, pf, is_vf, vf,
 				maddr, CFG_MSIX_OB_SIZE, 0);
+			if (!phy_addr) {
+				LSX_PCIEP_BUS_ERR("%s bus(%lx) failed",
+					pci_info, maddr);
+				return -EIO;
+			}
+			vaddr = lsx_pciep_map_region(phy_addr,
+				CFG_MSIX_OB_SIZE);
+			if (!vaddr) {
+				LSX_PCIEP_BUS_ERR("%s phy(%lx) failed",
+					pci_info, phy_addr);
+				return -ENOMEM;
+			}
+			if (rte_eal_iova_mode() == RTE_IOVA_VA)
+				iova = (uint64_t)vaddr;
+			else
+				iova = phy_addr;
+			ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vaddr,
+					iova, CFG_MSIX_OB_SIZE);
+			if (ret) {
+				LSX_PCIEP_BUS_WARN("%s: %p:%lx:%lx",
+					"MSI VFIO MAP failed: VA:PA:IOVA:",
+					vaddr, phy_addr, iova);
+			}
 		} else {
+			/* maddr is offset to outbound start.*/
 			phy_addr = hw->out_base + maddr;
+			vaddr = out_vir + maddr;
 		}
 		for (vector = 0; vector < vector_total; vector++) {
-			msg_addr[vector] = phy_addr;
+			msg_phy_addr[vector] = phy_addr;
+			msg_vir_addr[vector] = vaddr;
 			msg_data[vector] = mdata + vector;
 		}
+		if (size)
+			*size = CFG_MSIX_OB_SIZE;
 	}
 
 	return vector_total;
+}
+
+static int
+pcie_dw_msix_decfg(struct lsx_pciep_hw_low *hw,
+	uint8_t *out_vir, int pf, int is_vf, int vf,
+	uint64_t msg_phy_addr[], void *msg_vir_addr[],
+	uint64_t size[], int vector_total)
+{
+	uint64_t phy_addr, iova;
+	void *vaddr;
+	int vector, ret;
+	char pci_info[1024];
+	int print_offset = 0, print_len = 0, pci_print_offset;
+
+	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
+		return 0;
+
+	if (!hw->is_sriov && (pf > PF0_IDX || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EINVAL;
+	}
+
+	if (is_vf)
+		print_len = sprintf(pci_info, "PCI%d:PF%d:VF%d",
+			hw->index, pf, vf);
+	else
+		print_len = sprintf(pci_info, "PCI%d:PF%d",
+			hw->index, pf);
+	print_offset += print_len;
+	pci_print_offset = print_offset;
+
+	if (hw->msi_flag != LSX_PCIEP_MMSI_INT || out_vir) {
+		/** Do nothing*/
+		return 0;
+	}
+
+	for (vector = 0; vector < vector_total; vector++) {
+		phy_addr = msg_phy_addr[vector];
+		vaddr = msg_vir_addr[vector];
+		if (rte_eal_iova_mode() == RTE_IOVA_VA)
+			iova = (uint64_t)vaddr;
+		else
+			iova = phy_addr;
+		ret = rte_fslmc_vfio_mem_dmaunmap(iova, size[vector]);
+		if (ret) {
+			print_offset = pci_print_offset;
+			print_len = sprintf(&pci_info[print_offset],
+				"%s vector%d:", "MSI VFIO UNMAP failed",
+				vector);
+			print_offset += print_len;
+			print_len = sprintf(&pci_info[print_offset],
+				"size(%lx):va(%p):pa(%lx):iova(%lx)",
+				size[vector], vaddr, phy_addr, iova);
+			LSX_PCIEP_BUS_WARN("%s", pci_info);
+		}
+		ret = munmap(vaddr, size[vector]);
+		if (ret) {
+			print_offset = pci_print_offset;
+			print_len = sprintf(&pci_info[print_offset],
+				"%s vector%d:", "MSI address UNMAP failed",
+				vector);
+			print_offset += print_len;
+			print_len = sprintf(&pci_info[print_offset],
+				"size(%lx):va(%p)",
+				size[vector], vaddr);
+			LSX_PCIEP_BUS_WARN("%s", pci_info);
+		}
+	}
+
+	return 0;
 }
 
 static int
@@ -1596,7 +1712,8 @@ static struct lsx_pciep_ops pcie_dw_ops = {
 	.pcie_map_ob_win = pcie_dw_map_ob_win,
 	.pcie_cfg_ob_win = pcie_dw_set_ob_win,
 	.pcie_cfg_ib_win = pcie_dw_set_ib_win,
-	.pcie_msix_cfg = pcie_dw_msix_init,
+	.pcie_msix_cfg = pcie_dw_msix_cfg,
+	.pcie_msix_decfg = pcie_dw_msix_decfg,
 	.pcie_get_ob_unmapped = pcie_dw_ob_unmapped,
 	.pcie_is_sriov = pcie_dw_is_sriov,
 };
