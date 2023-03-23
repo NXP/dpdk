@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
- * Copyright 2017 NXP
+ * Copyright 2017,2023 NXP
  *
  */
 
@@ -78,7 +78,7 @@ void fman_if_loopback_disable(struct fman_if *p);
 
 /* Set buffer pool on specific interface */
 void fman_if_set_bp(struct fman_if *fm_if, unsigned int num, int bpid,
-		    size_t bufsize);
+		    size_t bufsize, uint16_t idx);
 
 /* Get Flow Control threshold parameters on specific interface */
 int fman_if_get_fc_threshold(struct fman_if *fm_if);
