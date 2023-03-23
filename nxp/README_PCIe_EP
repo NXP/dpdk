@@ -7,25 +7,23 @@ NXP DPDK PCIe Endpoint README
 1) DPDK build:
 i)  Endpoint build:
 export CROSS=aarch64-linux-gnu-
-meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Dexamples=all -Dprefix=/Your/install/folder
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Dexamples=port_fwd -Dprefix=/Your/install/folder
 ninja -C arm64-build install
 #Target image:
 #Endpoint example image: "arm64-build/examples/dpdk-port_fwd".
 
 ii) Root Complex build:
 #X86_64:
-meson build
-cd build
-ninja
-ninja install
+meson x86_64-build -Denable_kmods=true -Dexamples=port_fwd -Dprefix=/Your/install/folder
+ninja -C x86_64-build install
 #Target images:
-#Root Complex kernel driver: "build/kernel/linux/lsxinic/lsinic_kmod.ko".
-#Root Complex DPDK UIO driver: "build/kernel/linux/igb_uio/igb_uio.ko".
-#Root Complex DPDK image: "build/examples/dpdk-port_fwd".
+#Root Complex kernel driver: "x86_64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
+#Root Complex DPDK UIO driver: "x86_64-build/kernel/linux/igb_uio/igb_uio.ko".
+#Root Complex DPDK image: "x86_64-build/examples/dpdk-port_fwd".
 
 #NXP ARM:
 Based on Endpoint build, add kernel module build. This configuration and target dpdk image can be used for both EP/RC.
-meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=all -Dprefix=/Your/install/folder
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=port_fwd -Dprefix=/Your/install/folder
 ninja -C arm64-build install
 #Target image:
 #Root Complex kernel driver: "arm64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
@@ -123,46 +121,63 @@ export LSXINIC_PCIEx_PFy_VFz_EGRESS=portid
 4) Multiple EP processes used to communicate with fast path(host DPDK) and slow path(host kernel) respectively.
    Each process is a standalone process and has it's own DPAA2 resources/memory partion.
 
-             +---port_fwd---+                     +----------------------+
-             |              |                     |     kernel stack     |
-             |              |                     +----------------------+
-             |              |                         |             |
-        +----------+    +----------+             +--------+      +----------+
-        | RC PF0   |    |RC PF0VF0 |             | RC PF1 |      | RC PF1VF0|
-        +-----|----+    +-----|----+             +----|---+      +-----|----+
-    ----------|-----------------------PCIe-BUS-----------------------------------
-        +-----|----+    +-----|----+             +----|---+      +-----|----+
-        | EP PF0   |    |EP PF0VF0 |             | EP PF1 |      | EP PF1VF0|
-        +----------+    +----------+             +--------+      +----------+
-              |               |                       |                |
-              |               |                       |                |
-              | +-----------+ |                       |  +-----------+ |
-               -| port_fwd1 |-                         - | port_fwd2 |-
-              | +-----------+ |                       |  +-----------+ |
-              |               |                       |                |
-        +-----|----+    +-----|---+               +--------+        +--------+
-        | DPNIa    |    | DPNIb   |               | DPNIc  |        | DPNId  |
-        +----------+    +---------+               +--------+        +--------+
+      +---------------+		        +------------+
+      |RC kernel stack|		       -|  port_fwd  |-
+      +---------------+ 	      | +------------+ |
+	      |			      |                |
+	+----------+		+---------+	+----------+
+	| RC PF0   |		| RC PF1  |	| RC PF1VF0|
+	+-----|----+		+-----|---+	+------|---+
+    ----------|-------PCIe-BUS-----------------------------------
+	+-----|----+		+-----|---+	+------|---+
+	| EP PF0   |		|EP PF1   |	|EP PF1VF0 |
+	+----------+		+---------+	+----------+
+	      |			      |		       |
+	+-----------+		      |  +-----------+ |
+	| port_fwd1 |		       - | port_fwd2 |-
+	+-----------+		      |  +-----------+ |
+	      |			      |		       |
+	+-----|-----+		+-----|---+	   +-------+
+	|DPNIa(DPDK)|		| DPNIc   |	   | DPNIc |
+	+-----------+		+---------+	   +-------+
+              |
+        +-------------+
+        |DPNIb(Kernel)|
+        +-------------+
+              |
+       +---------------+
+       |EP kernel stack|
+       +---------------+
 
-#First EP process for fast path:
+#First EP process for slow path:
 export ENABLE_PL_BIT=1
+export PORT1_FWD=0
+export PORT0_FWD=1
 export DPDMAI_COUNT=10
 export DPIO_COUNT=10
 export DPRC=dprc.2
-export PORT0_FWD=2
-export PORT1_FWD=3
-export PORT2_FWD=0
-export PORT3_FWD=1
 export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
-export P2_DIST_1='(2,0,2)'
-export P3_DIST_1='(3,0,2)'
 export LSX_PCIE2_PF1=0
-export LSX_PCIE2_PF0_VF0=1
-source ./dynamic_dpl.sh dpmac.3 dpmac.4
-./dpdk-port_fwd -c 0x4 -n 1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
+export LSINIC_PCIE2_PF0_DEVICE_ID=0x8d90
+source ./dynamic_dpl.sh dpni
+#Assume dpni.3 is configure by dynamic_dpl.sh
+ls-addni dpni.3
+#Assume eth3 is kernel interface connected to dpni.3
+ifconfig eth3 1.1.1.3 up
+./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
 
-#Second EP process for slow path
+#Create RC kernel interface for slow path
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+echo 1 > /sys/bus/pci/rescan
+insmod ./lsinic_kmod.ko lsinic_dev_id=0x8d90
+#Assume enp6s0f0 is kernel interface of PF0
+ifconfig enp6s0f0 1.1.1.1 up
+#Check link between RC kernel and EP kernel
+ping 1.1.1.3
+
+#Second EP process for fast path
 export ENABLE_PL_BIT=1
 export DPDMAI_COUNT=10
 export DPIO_COUNT=10
@@ -177,29 +192,25 @@ export P2_DIST_1='(2,0,4)'
 export P3_DIST_1='(3,0,4)'
 export LSX_PCIE2_PF0=0
 export LSX_PCIE2_PF1_VF0=1
-export LSINIC_PCIE2_PF1_DEVICE_ID=0x8d90
-export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8d90
+export LSINIC_PCIE2_PF1_DEVICE_ID=0x8da0
+export LSINIC_PCIE2_PF1_VF_DEVICE_ID=0x8da0
 export LSX_PCIE2_CLEAR_WINDOWS=0
 source ./dynamic_dpl.sh dpmac.5 dpmac.6
 ./dpdk-port_fwd -c 0x10 -n 1 --file-prefix rte1 -- -p 0xf --config="$P0_DIST_1,$P1_DIST_1,$P2_DIST_1,$P3_DIST_1"
 
-#RC DPDK fast path for PF0 and PF0VF0
-echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/remove
-echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
-echo 1 > /sys/bus/pci/rescan
-
-#Igbuio mode only here, because vfio SRIOV not supported yet for this device.
-insmod igb_uio.ko
-echo "0x1957 0x8d80" > /sys/bus/pci/drivers/igb_uio/new_id
-echo 1 > /sys/bus/pci/devices/0000\:06\:00.0/max_vfs
-export PORT0_FWD=1
-export PORT1_FWD=0
+#RC DPDK fast path for PF1 and PF1VF0
+echo 64 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+mount -t hugetlbfs hugetlbfs /mnt/hugepages -o "pagesize=1G"
 export P0_DIST_1='(0,0,2)'
 export P1_DIST_1='(1,0,2)'
+export PORT0_FWD=1
+export PORT1_FWD=0
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/remove
+echo 1 > /sys/bus/pci/rescan
+insmod ./igb_uio.ko
+echo "0x1957 0x8da0" > /sys/bus/pci/drivers/igb_uio/new_id
+echo 1 > /sys/bus/pci/devices/0000\:06\:00.1/max_vfs
 ./dpdk-port_fwd -c 0x4 -n 1 -- -p 0x3 --config="$P0_DIST_1,$P1_DIST_1"
-
-#RC kernel module slow path for PF1
-insmod lsinic_kmod.ko max_vfs=1
 
 5) Primary process is used to handle PCIe EP PMD and secondary process
    is used to handle reset devices(DPAA2, BBDEV etc).
