@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020,2022 NXP
+ * Copyright 2020,2022-2023 NXP
  * Driver for NXP Layerscape Queue direct memory access controller (qDMA)
  */
 
@@ -468,6 +468,7 @@ fsl_qdma_queue_transfer_complete(struct fsl_qdma_engine *fsl_qdma,
 {
 	struct fsl_qdma_queue *fsl_queue = fsl_qdma->queue;
 	struct fsl_qdma_queue *fsl_status = fsl_qdma->status[id];
+	struct fsl_qdma_chan *fsl_chan = &fsl_qdma->chans[e_context->vq_id];
 	struct fsl_qdma_queue *temp_queue;
 	struct fsl_qdma_format *status_addr;
 	struct fsl_qdma_comp *fsl_comp = NULL;
@@ -489,17 +490,15 @@ fsl_qdma_queue_transfer_complete(struct fsl_qdma_engine *fsl_qdma,
 					    list);
 		list_del(&fsl_comp->list);
 
-		reg = qdma_readl_be(block + FSL_QDMA_BSQMR);
-		reg |= FSL_QDMA_BSQMR_DI_BE;
-
 		qdma_desc_addr_set64(status_addr, 0x0);
 		fsl_status->virt_head++;
 		if (fsl_status->virt_head == fsl_status->cq + fsl_status->n_cq)
 			fsl_status->virt_head = fsl_status->cq;
-		qdma_writel_be(reg, block + FSL_QDMA_BSQMR);
+		qdma_writel_be(FSL_QDMA_BSQMR_DI, block + FSL_QDMA_BSQMR);
 		list_add_tail(&fsl_comp->list, &temp_queue->comp_free);
 		e_context->job[count] = (struct rte_qdma_job *)fsl_comp->params;
 		count++;
+		fsl_chan->queue->total_dequeue++;
 
 	}
 	return count;
@@ -626,6 +625,8 @@ static int fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 	struct fsl_qdma_queue *fsl_queue = fsl_chan->queue;
 	void *block = fsl_queue->block_base;
 	struct fsl_qdma_format *ccdf;
+
+#ifdef CONFIG_RTE_DMA_DPAA_ERR_CHK
 	u32 reg;
 
 	/* retrieve and store the register value in big endian
@@ -634,6 +635,16 @@ static int fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 			 FSL_QDMA_BCQSR(fsl_queue->id));
 	if (reg & (FSL_QDMA_BCQSR_QF_XOFF_BE))
 		return -1;
+#else
+	/* check whether critical watermark level reached,
+	 * below check is valid for only single queue per block
+	 */
+	if (unlikely((fsl_queue->total_enqueue - fsl_queue->total_dequeue)
+			>= QDMA_QUEUE_CR_WM)) {
+		DPAA_QDMA_DEBUG("Queue is full, try dequeue first\n");
+		return -1;
+	}
+#endif
 
 	/* filling descriptor  command table */
 	ccdf = (struct fsl_qdma_format *)fsl_queue->virt_head;
@@ -647,9 +658,9 @@ static int fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 
 	list_add_tail(&fsl_comp->list, &fsl_queue->comp_used);
 
-	reg = qdma_readl_be(block + FSL_QDMA_BCQMR(fsl_queue->id));
-	reg |= FSL_QDMA_BCQMR_EI_BE;
-	qdma_writel_be(reg, block + FSL_QDMA_BCQMR(fsl_queue->id));
+	qdma_writel_be(FSL_QDMA_BCQMR_EI,
+			block + FSL_QDMA_BCQMR(fsl_queue->id));
+	fsl_queue->total_enqueue++;
 
 	return 0;
 }
@@ -805,46 +816,44 @@ dpaa_qdma_dequeue(struct rte_rawdev *rawdev,
 	struct fsl_qdma_engine *fsl_qdma = rawdev->dev_private;
 	struct rte_qdma_enqdeq *e_context = (struct rte_qdma_enqdeq *)cntxt;
 	int id = (int)((e_context->vq_id) / QDMA_QUEUES);
+	int ret;
 	void *block;
+#ifdef CONFIG_RTE_DMA_DPAA_ERR_CHK
 	unsigned int reg;
 	int intr;
-	void *status = fsl_qdma->status_base;
+	void *status;
 
-	intr = qdma_readl_be(status + FSL_QDMA_DEDR);
-	if (intr) {
-		DPAA_QDMA_ERR("DMA transaction error! %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECFDW0R);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW0R %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECFDW1R);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW1R %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECFDW2R);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW2R %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECFDW3R);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW3R %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECFQIDR);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECFQIDR %x\n", intr);
-		intr = qdma_readl(status + FSL_QDMA_DECBR);
-		DPAA_QDMA_INFO("reg FSL_QDMA_DECBR %x\n", intr);
-		qdma_writel(0xffffffff,
-			    status + FSL_QDMA_DEDR);
-		intr = qdma_readl(status + FSL_QDMA_DEDR);
-	}
+	status = fsl_qdma->status_base;
+#endif
 
 	block = fsl_qdma->block_base +
 		FSL_QDMA_BLOCK_BASE_OFFSET(fsl_qdma, id);
+	ret = fsl_qdma_queue_transfer_complete(fsl_qdma, block, id, e_context);
+#ifdef CONFIG_RTE_DMA_DPAA_ERR_CHK
+	if (!ret) {
 
-	intr = fsl_qdma_queue_transfer_complete(fsl_qdma, block, id, e_context);
-	if (intr < 0) {
-		void *ctrl = fsl_qdma->ctrl_base;
-
-		reg = qdma_readl(ctrl + FSL_QDMA_DMR);
-		reg |= FSL_QDMA_DMR_DQD;
-		qdma_writel(reg, ctrl + FSL_QDMA_DMR);
-		qdma_writel(0, block + FSL_QDMA_BCQIER(0));
-		DPAA_QDMA_ERR("QDMA: status err!\n");
+		intr = qdma_readl_be(status + FSL_QDMA_DEDR);
+		if (intr) {
+			DPAA_QDMA_ERR("DMA transaction error! %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECFDW0R);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW0R %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECFDW1R);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW1R %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECFDW2R);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW2R %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECFDW3R);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECFDW3R %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECFQIDR);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECFQIDR %x\n", intr);
+			intr = qdma_readl(status + FSL_QDMA_DECBR);
+			DPAA_QDMA_INFO("reg FSL_QDMA_DECBR %x\n", intr);
+			qdma_writel(0xffffffff,
+				    status + FSL_QDMA_DEDR);
+			intr = qdma_readl(status + FSL_QDMA_DEDR);
+		}
 	}
-
-	return intr;
+#endif
+	return ret;
 }
 
 static int
