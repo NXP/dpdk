@@ -38,6 +38,7 @@ DIRS-$(CONFIG_RTE_LIBRTE_HASH) += ipv4_multicast
 DIRS-$(CONFIG_RTE_LIBRTE_KNI) += kni
 DIRS-y += l2fwd
 DIRS-y += pkt_gen_ext
+DIRS-y += pkt_gen_ext_mem
 DIRS-y += l2fwd-event
 ifneq ($(PQOS_INSTALL_PATH),)
 DIRS-y += l2fwd-cat
