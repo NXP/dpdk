@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020,2022 NXP
+ * Copyright 2020,2022-2023 NXP
  */
 
 #ifndef _FSL_QDMA_H_
@@ -82,7 +82,6 @@
 #define FSL_QDMA_QUEUE_MAX		8
 
 #define FSL_QDMA_BCQMR_EN		0x80000000
-#define FSL_QDMA_BCQMR_EI		0x40000000
 #define FSL_QDMA_BCQMR_EI_BE           0x40
 #define FSL_QDMA_BCQMR_CD_THLD(x)	((x) << 20)
 #define FSL_QDMA_BCQMR_CQ_SIZE(x)	((x) << 16)
@@ -90,11 +89,16 @@
 #define FSL_QDMA_BCQSR_QF		0x10000
 #define FSL_QDMA_BCQSR_XOFF		0x1
 #define FSL_QDMA_BCQSR_QF_XOFF_BE      0x1000100
+/* Update the value appropriately whenever QDMA_QUEUE_SIZE
+ * changes.
+ */
+#define FSL_QDMA_BCQMR_EI		0x20c0
 
 #define FSL_QDMA_BSQMR_EN		0x80000000
-#define FSL_QDMA_BSQMR_DI		0x40000000
 #define FSL_QDMA_BSQMR_DI_BE		0x40
 #define FSL_QDMA_BSQMR_CQ_SIZE(x)	((x) << 16)
+#define FSL_QDMA_BSQMR_DI		0xc0
+#define QDMA_QUEUE_CR_WM		32
 
 #define FSL_QDMA_BSQSR_QE		0x20000
 #define FSL_QDMA_BSQSR_QE_BE		0x200
@@ -240,6 +244,8 @@ struct fsl_qdma_queue {
 	u32			count;
 	struct fsl_qdma_format	*cq;
 	void			*block_base;
+	u64			total_enqueue;
+	u64			total_dequeue;
 };
 
 struct fsl_qdma_comp {
