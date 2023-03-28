@@ -70,10 +70,11 @@ TAILQ_HEAD(rte_fman_if_list, __fman_if);
 
 /* Represents the different flavour of network interface */
 enum fman_mac_type {
-	fman_offline = 0,
+	fman_offline_internal = 0,
 	fman_mac_1g,
 	fman_mac_2_5g,
 	fman_mac_10g,
+	fman_onic,
 };
 
 struct mac_addr {
@@ -304,6 +305,16 @@ struct fman_port_qmi_regs {
 	uint32_t fmqm_pndcc;		/**< PortID n Dequeue Confirm Counter */
 };
 
+struct onic_port_cfg {
+	char macless_name[IF_NAME_MAX_LEN];
+	uint32_t rx_start;
+	uint32_t rx_count;
+	uint32_t tx_start;
+	uint32_t tx_count;
+	struct rte_ether_addr src_mac;
+	struct rte_ether_addr peer_mac;
+};
+
 /* This struct exports parameters about an Fman network interface, determined
  * from the device-tree.
  */
@@ -338,6 +349,9 @@ struct fman_if {
 	uint32_t fqid_rx_err;
 	uint32_t fqid_tx_err;
 	uint32_t fqid_tx_confirm;
+
+	/* oNIC port info */
+	struct onic_port_cfg onic_info;
 
 	struct list_head bpool_list;
 	/* The node for linking this interface into "fman_if_list" */
@@ -410,11 +424,30 @@ extern int fman_ccsr_map_fd;
 #define FMAN_IP_REV_1_MAJOR_MASK 0x0000FF00
 #define FMAN_IP_REV_1_MAJOR_SHIFT 8
 #define FMAN_V3	0x06
-#define FMAN_V3_CONTEXTA_EN_A2V	0x10000000
-#define FMAN_V3_CONTEXTA_EN_OVOM	0x02000000
-#define FMAN_V3_CONTEXTA_EN_EBD	0x80000000
-#define FMAN_CONTEXTA_DIS_CHECKSUM	0x7ull
-#define FMAN_CONTEXTA_SET_OPCODE11 0x2000000b00000000
+
+#define DPAA_FQD_CTX_A_SHIFT_BITS       24
+#define DPAA_FQD_CTX_B_SHIFT_BITS       24
+
+/* Following flags are used to set in context A hi field of FQD */
+#define DPAA_FQD_CTX_A_OVERRIDE_FQ	(0x80 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_IGNORE_CMD	(0x40 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_A1_FIELD_VALID	(0x20 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_A2_FIELD_VALID	(0x10 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_A0_FIELD_VALID	(0x08 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_B0_FIELD_VALID	(0x04 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_OVERRIDE_OMB	(0x02 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A_RESERVED		(0x01 << DPAA_FQD_CTX_A_SHIFT_BITS)
+
+/* Following flags are used to set in context A lo field of FQD */
+#define DPAA_FQD_CTX_A2_EBD_BIT		(0x80 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_EBAD_BIT	(0x40 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_FWD_BIT		(0x20 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_NL_BIT		(0x10 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_CWD_BIT		(0x08 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_NENQ_BIT	(0x04 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_RESERVED_BIT	(0x02 << DPAA_FQD_CTX_A_SHIFT_BITS)
+#define DPAA_FQD_CTX_A2_VSPE_BIT	(0x01 << DPAA_FQD_CTX_A_SHIFT_BITS)
+
 extern u16 fman_ip_rev;
 extern u32 fman_dealloc_bufs_mask_hi;
 extern u32 fman_dealloc_bufs_mask_lo;

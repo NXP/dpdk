@@ -213,4 +213,7 @@ dpaa_rx_cb_atomic(void *event,
 		  struct qman_fq *fq,
 		  const struct qm_dqrr_entry *dqrr,
 		  void **bufs);
+
+uint8_t fm_default_vsp_id(struct fman_if *fif);
+
 #endif

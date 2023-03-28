@@ -1,0 +1,93 @@
+================================================================================
+Interprocess communication using DPAA1 Hardware
+-----------------------------------------------
+This section give overview of how to use DPAA Hardware assisted interface for
+interprocess communication. It require both applications to create an FMAN based
+offline/onic port instance and configure it to be use it as a ethernet
+interface.
+
+Supported Platforms (and their derivatives):
+1. DPAA: LS1046, LS1043
+
+================================================================================
+OFFLINE PORT
+------------
+
+Offline(O/H) port is a type of hardware port which is able to dequeue and
+enqueue from/to a QMan queue. The FMan applies a Parse Classify Distribute (PCD)
+flow and (if configured to do so) enqueues the frame back in a QMan queue.
+Its maximum speed is 3.75 Mpps(2.5 Gbps).
+
+The FMan is able to copy the frame into new buffers and enqueue back to the
+QMan. This means these ports can be used to send and receive packets between two
+applications.
+
+An O/H port Have two queues. One to receive and one to send the packets. It will
+loopback all the packets on Tx queue which are received on Rx queue.
+
+
+		--------      Tx Packets     ---------
+		| App  |-------------------->| O/H   |
+		|      |<--------------------| Port  |
+		--------      Rx Packets     ---------
+
+
+To use this port to communicate between two applications, we can assign Rx port
+of an O/H port to Application 1 and Tx port to Application 2 so that
+Application 1 can send packets to Application 2. Similarly, we can assign Tx
+port of another O/H port to Application 1 and Rx port to Application 2 so that
+Applicaiton 2 can send packets to Application 1.
+
+================================================================================
+ONIC PORT
+---------
+
+To simplify this for DPDK applications, we have introduced ONIC ports.
+Internally it will use one Rx queue of an O/H port and one Tx queue of another
+O/H port. For application, it will behave as single O/H port.
+
+
+		--------	--------	--------
+--------   Tx	|      |   Rx   | O/H  |   Tx   |      |   Rx   --------
+|      |------->|      |------->| Port |------->|      |------->|      |
+|      |	|      |	|  1   |	|      |	|      |
+|      |	|      |	--------	|      |	|      |
+| App  |	| ONIC |			| ONIC |	| App  |
+|  1   |	| Port |			| Port |	|  2   |
+|      |	|  1   |	--------	|  2   |	|      |
+|      |   Rx   |      |   Tx   | O/H  |   Rx   |      |   Tx	|      |
+|      |<-------|      |<-------| Port |<-------|      |<-------|      |
+--------	|      |	|  2   |	|      |	--------
+		--------	--------	--------
+
+All the packets received by ONIC port 1 will be send to ONIC port 2 and vice
+versa. These ports can be used by DPDK applications just like physical ports.
+
+
+Steps to use ONIC ports on LS1046 with l2fwd applications
+---------------------------------------------------------
+
+1. Mount hugepages:
+	$ mkdir -p /dev/hugetlbfs
+	$ echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+	$ mount -t hugetlbfs hugetlbfs /dev/hugetlbfs/
+
+2. Load fmc configuration:
+	$ fmc -x
+	$ fmc -c usdpaa_config_ls1046_oh.xml
+	  -p usdpaa_policy_hash_ipv4_1queue.xml -a
+
+3. Run first instance of l2fwd Application:
+	$ l2fwd -c 0x3 -n 1 -b dpaa_bus:fm1-mac10 -b dpaa_bus:fm1-onic2 --
+	  -p 0x21 -q 1
+   In this instance, l2fwd will use fm1-onic1 port and fm1-mac9 port.
+
+4. Run second instance of l2fwd Application:
+	$ l2fwd -c 0xc -n 1 --file-prefix 1 -b dpaa_bus:fm1-mac9
+	  -b dpaa_bus:fm1-onic1 -- -p 0x21 -q 1
+   In this instance, l2fwd will use fm1-onic2 port and fm1-mac10 port.
+
+5. Send packets to first instance of l2fwd application(fm1-mac9 port).
+   Packets will be received back from second instance of l2fwd
+   application(fm1-mac10 port).
+================================================================================
