@@ -109,7 +109,7 @@ Following information can be used to obtain these components:
 
     Checkout the specific tag to match openssl library in your target rootfs
 
-        $ git checkout OpenSSL_1_1_0g
+        $ git checkout OpenSSL_1_1_1t
 
     Set the following environment variable:
 
@@ -117,11 +117,12 @@ Following information can be used to obtain these components:
 
     Build and install 64 bit version of openssl
 
-        $ ./Configure linux-aarch64  --prefix=<OpenSSL lib path> shared
+        $ ./Configure linux-aarch64 --prefix=<OpenSSL lib path>
         $ make depend
         $ make
         $ make install
         $ export PKG_CONFIG_PATH=<OpenSSL lib path>/lib/pkgconfig:$PKG_CONFIG_PATH
+        $ export PKG_CONFIG_LIBDIR=<OpenSSL lib path>/lib:$PKG_CONFIG_LIBDIR
 
     NOTE: When building DPDK directly on NXP board, OpenSSL might already be
           available in the rootfs. In which case, separate compilation of
@@ -988,18 +989,34 @@ specific directories.
 Refer to "Building DPDK and Example Applications using meson" for DPDK
 compilation steps.
 
+Clone OVS repository:
+	$ git clone ssh://git@bitbucket.sw.nxp.com/dqns/ovs-dpdk.git
+	$ cd ovs-dpdk
+	$ git checkout branch-3.1-qoriq
+
+Build OVS:
 	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed DPDK directory>/lib:<Path to installed openssl directory>/lib
 	$ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:<Path to installed DPDK directory>/lib/pkgconfig:<Path to installed openssl directory>/lib/pkgconfig
 	$ pkg-config --modversion libdpdk     #Verify dpdk libraries can be used using pkgconfig.
 	$ pkg-config --modversion libssl      #Verify openssl libraries can be used using pkgconfig.
 	$ export CC=aarch64-linux-gnu-gcc
 	$ ./boot.sh
-	$ ./configure --with-dpdk=static --host=aarch64-fsl-linux CFLAGS="-g -Wno-cast-align -Ofast" --with-openssl=<Path to installed openssl directory>
+	$ ./configure --with-dpdk=static --host=aarch64-fsl-linux
+	  CFLAGS="-g -Wno-cast-align -Ofast"
+	  --with-openssl=<Path to installed openssl directory>
 	$ make 'CFLAGS=-g -Ofast' -j 4
 
 	NOTE: Use complete absolute path(Dont use '~') in ./configure command to
 	      compile using openssl. Otherwise it will not be able to find the
 	      openssl libraries.
+
+OVS binaries:
+	ovsdb/ovsdb-server
+	ovsdb/ovsdb-tool
+	utilities/ovs-ofctl
+	utilities/ovs-vsctl
+	vswitchd/ovs-vswitchd
+	vswitchd/vswitch.ovsschema
 
 =========================
 VM VFIO Direct Assignment
