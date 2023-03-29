@@ -630,7 +630,7 @@ pcie_dw_add_shared_ob_space(int pcie_id,
 	return 0;
 }
 
-static void
+static int
 pcie_dw_disable_ob_win(struct lsx_pciep_hw_low *hw,
 	int idx)
 {
@@ -639,17 +639,8 @@ pcie_dw_disable_ob_win(struct lsx_pciep_hw_low *hw,
 
 	iatu = (void *)(hw->dbi_vir + LSX_PCIE_DW_IATU_REGION_OFFSET);
 
-	if (idx >= 0) {
-		rte_write32(PCIE_DW_ATU_VP_REGION_OUTBOUND | idx,
-			&iatu->view_port);
-		rte_write32(0, &iatu->base_addr[ADDR_LOW]);
-		rte_write32(0, &iatu->base_addr[ADDR_UP]);
-		rte_write32(0, &iatu->base_limit);
-		rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
-		rte_write32(0, &iatu->bus_addr[ADDR_UP]);
-		rte_write32(PCIE_DW_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ob);
-		rte_write32(0, &iatu->ctl3_ob);
-		rte_write32(0, &iatu->ctl2_ob);
+	if (idx != PCIE_EP_DISABLE_ALL_WIN) {
+		return -ENOTSUP;
 	} else {
 		for (loop = 0; loop < LSX_PCIE_DW_OB_WINS_NUM; loop++) {
 			rte_write32(PCIE_DW_ATU_VP_REGION_OUTBOUND | loop,
@@ -664,6 +655,8 @@ pcie_dw_disable_ob_win(struct lsx_pciep_hw_low *hw,
 			rte_write32(0, &iatu->ctl2_ob);
 		}
 	}
+
+	return 0;
 }
 
 static uint64_t
@@ -811,6 +804,21 @@ pcie_dw_set_bar(uint8_t *pf_base, int id, uint64_t size,
 	int ret = 0;
 	uint32_t *bar_cfg;
 
+	if (is_vf)
+		offset = LSX_PCIE_DW_VF_BAR_SIZE_MASK_OFFSET;
+	else
+		offset = LSX_PCIE_DW_PF_BAR_SIZE_MASK_OFFSET;
+
+	size_mask = (void *)(pf_base + offset);
+
+	if (!size) {
+		/** Disable bar[id]*/
+		mask_lo = 0;
+		lsx_pciep_write_config(&size_mask->bar_mask[id],
+			&mask_lo, sizeof(uint32_t), 0);
+		return 0;
+	}
+
 	if (is_io) {
 		if (is_64b) {
 			LSX_PCIEP_BUS_ERR("IO bar must be a 32b bar");
@@ -845,13 +853,6 @@ pcie_dw_set_bar(uint8_t *pf_base, int id, uint64_t size,
 	mask_lo = (uint32_t)mask;
 	mask_hi = (uint32_t)(mask >> 32);
 	cfg = (void *)pf_base;
-
-	if (is_vf)
-		offset = LSX_PCIE_DW_VF_BAR_SIZE_MASK_OFFSET;
-	else
-		offset = LSX_PCIE_DW_PF_BAR_SIZE_MASK_OFFSET;
-
-	size_mask = (void *)(pf_base + offset);
 
 	if (is_64b)
 		goto bar_64b_config;
@@ -1001,21 +1002,25 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
-static void
+static int
 pcie_dw_disable_ib_win(struct lsx_pciep_hw_low *hw, int idx)
 {
 	struct pcie_dw_iatu_region *iatu;
-	int loop;
+	int loop, ret = 0, i;
+	uint32_t tmp;
+	uint8_t *pf_base;
+	char env[64];
+	char *penv;
 
 	iatu = (void *)(hw->dbi_vir + LSX_PCIE_DW_IATU_REGION_OFFSET);
-	if (idx >= 0) {
-		rte_write32(PCIE_DW_ATU_VP_REGION_INBOUND | idx,
-			&iatu->view_port);
-		rte_write32(0, &iatu->bus_addr[ADDR_LOW]);
-		rte_write32(0, &iatu->bus_addr[ADDR_UP]);
-		rte_write32(PCIE_DW_ATU_CTL1_TYPE_MEM, &iatu->ctl1_ib);
-		rte_write32(0, &iatu->ctl3_ib);
-		rte_write32(0, &iatu->ctl2_ib);
+
+	tmp = PCIE_DW_DBI_WR_ENA;
+	lsx_pciep_write_config(hw->dbi_vir, &tmp, sizeof(uint32_t),
+		PCIE_DW_MISC_CONTROL_1_OFF_OFFSET);
+
+	if (idx != PCIE_EP_DISABLE_ALL_WIN) {
+		/* Not support yet.*/
+		ret = -ENOTSUP;
 	} else {
 		for (loop = 0; loop < LSX_PCIE_DW_IB_WINS_NUM; loop++) {
 			rte_write32(PCIE_DW_ATU_VP_REGION_INBOUND | loop,
@@ -1026,7 +1031,42 @@ pcie_dw_disable_ib_win(struct lsx_pciep_hw_low *hw, int idx)
 			rte_write32(0, &iatu->ctl3_ib);
 			rte_write32(0, &iatu->ctl2_ib);
 		}
+
+		for (loop = 0; loop < PCI_MAX_RESOURCE; loop++) {
+			for (i = 0; i < PF_MAX_NB; i++) {
+				pf_base = hw->dbi_vir + i * hw->dbi_pf_size;
+				sprintf(env,
+					"LSX_DW_PCIE%d_PF%d_BAR%d_DISABLE",
+					hw->index, i, loop);
+				penv = getenv(env);
+				if (penv && atoi(penv)) {
+					ret = pcie_dw_set_bar(pf_base, loop,
+							0, 0, 0, 0, 0);
+					if (ret)
+						goto quit_disable_win;
+				}
+
+				sprintf(env,
+					"LSX_DW_PCIE%d_PF%d_VF_BAR%d_DISABLE",
+					hw->index, i, loop);
+				penv = getenv(env);
+				if (penv && atoi(penv)) {
+					ret = pcie_dw_set_bar(pf_base, loop,
+							0, 1, 0, 0, 0);
+					if (ret)
+						goto quit_disable_win;
+				}
+			}
+		}
 	}
+
+quit_disable_win:
+	tmp = PCIE_DW_DBI_WR_DIS;
+	lsx_pciep_write_config(hw->dbi_vir, &tmp,
+		sizeof(uint32_t),
+		PCIE_DW_MISC_CONTROL_1_OFF_OFFSET);
+
+	return ret;
 }
 
 static int

@@ -886,27 +886,43 @@ lsx_pciep_find_all_ctls(void)
 
 int lsx_pciep_ctl_init_win(uint8_t pcie_idx)
 {
-	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_idx];
+	struct lsx_pciep_ctl_hw *ctlhw;
+	int ret = 0;
 
-	if (ctlhw->init)
-		return 0;
+	if (pcie_idx >= LSX_MAX_PCIE_NB)
+		return -EINVAL;
 
-	if (ctlhw->ep_enable) {
-		if (!lsx_pciep_hw_sim_get(pcie_idx) &&
-			rte_eal_process_type() == RTE_PROC_PRIMARY) {
-			if (!ctlhw->ops)
-				return -EINVAL;
-			if (ctlhw->clear_win &&
-				ctlhw->ops->pcie_disable_ob_win)
-				ctlhw->ops->pcie_disable_ob_win(&ctlhw->hw, -1);
-			if (ctlhw->clear_win &&
-				ctlhw->ops->pcie_disable_ib_win)
-				ctlhw->ops->pcie_disable_ib_win(&ctlhw->hw, -1);
-		}
-		ctlhw->init = 1;
+	ctlhw = &s_pctl_hw[pcie_idx];
+
+	if (ctlhw->init || !ctlhw->ep_enable)
+		goto end;
+
+	if (lsx_pciep_hw_sim_get(pcie_idx) ||
+		rte_eal_process_type() != RTE_PROC_PRIMARY)
+		goto init_end;
+
+	if (!ctlhw->ops)
+		return -EINVAL;
+
+	if (ctlhw->clear_win &&
+		ctlhw->ops->pcie_disable_ob_win) {
+		ret = ctlhw->ops->pcie_disable_ob_win(&ctlhw->hw,
+				PCIE_EP_DISABLE_ALL_WIN);
+		if (ret)
+			return ret;
+	}
+	if (ctlhw->clear_win &&
+		ctlhw->ops->pcie_disable_ib_win) {
+		ret = ctlhw->ops->pcie_disable_ib_win(&ctlhw->hw,
+				PCIE_EP_DISABLE_ALL_WIN);
+		if (ret)
+			return ret;
 	}
 
-	return 0;
+init_end:
+	ctlhw->init = 1;
+end:
+	return ret;
 }
 
 #ifndef IORESOURCE_MEM
