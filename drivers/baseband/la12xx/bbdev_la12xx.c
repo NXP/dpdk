@@ -63,7 +63,8 @@ int bbdev_socket_id;
 
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
-#define SD_MAX_REQ_BYTES		0xFFC0
+/* Maximum allowed requested bytes */
+#define SD_MAX_REQ_BYTES		0xFF80
 #define SD_LLRS_PER_RE_MASK		0x0000FFFF
 
 /* BE Swapped Shared Decode (SD) Job type */
@@ -766,10 +767,15 @@ la12xx_start(struct rte_bbdev *dev)
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	int ready = 0;
 	struct gul_hif *hif_start;
+	struct bbdev_la12xx_q_priv *q_priv;
+	ipc_metadata_t *ipc_md;
+	ipc_ch_t *ch;
 
 	PMD_INIT_FUNC_TRACE();
 
 	hif_start = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
+	ipc_md = (ipc_metadata_t *)((uint64_t)ipc_priv->peb_start.host_vaddr +
+			hif_start->ipc_regs.ipc_mdata_offset);
 
 	/* Set Host Read bit */
 	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
@@ -778,6 +784,14 @@ la12xx_start(struct rte_bbdev *dev)
 	while (!ready)
 		ready = CHK_HIF_MOD_RDY(hif_start, HIF_MOD_READY_IPC_APP);
 
+	/* Update the input circular buffer size */
+	for (uint32_t i = 0; i < dev->data->num_queues; i++) {
+		ch = &ipc_md->instance_list[0].ch_list[i];
+		q_priv = dev->data->queues[i].queue_private;
+
+		q_priv->feca_input_circ_size =
+			rte_be_to_cpu_32(ch->feca_input_circ_size);
+	}
 	return 0;
 }
 
@@ -942,11 +956,11 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	uint32_t SD_SC_X1_INIT, SD_SC_X2_INIT, SD_CIRC_BUF;
 	uint32_t di_start_ofst_floor[8], di_start_ofst_ceiling[8];
 	uint32_t axi_data_num_bytes, bbdev_ipc_op_flags = 0;
-	uint32_t byte, bit, valid_bytes;
+	uint32_t byte, bit, valid_bytes, llrs_per_re;
 	sd_command_t sd_cmd, *sd_command;
 	sd_dcm_command_t *sd_dcm_command;
 	char *data_ptr;
-	uint32_t l1_pcie_addr;
+	uint32_t l1_pcie_addr, max_req_bytes;
 	int16_t TBS_VALID;
 
 	for (i = 0; i < ldpc_dec->tb_params.cab; i++)
@@ -1071,8 +1085,19 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	if (ldpc_dec->sd_cd_demux) {
 		feca_job->job_type = FECA_JOB_SD_DCM_BE;
 		sd_dcm_command = &feca_job->command_chain_t.sd_dcm_command_ch_obj;
-		sd_dcm_command->sd_llrs_per_re = (SD_MAX_REQ_BYTES << 16) |
-				(SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re);
+		/* Calculating the max_req_bytes as per the FECA RM */
+		llrs_per_re = SD_LLRS_PER_RE_MASK & ldpc_dec->sd_llrs_per_re;
+		if (q_priv->feca_input_circ_size &&
+				q_priv->feca_input_circ_size < (1 << 16)) {
+			max_req_bytes = q_priv->feca_input_circ_size - 128;
+			max_req_bytes = max_req_bytes - (max_req_bytes %
+					llrs_per_re);
+		} else
+			max_req_bytes = SD_MAX_REQ_BYTES - (SD_MAX_REQ_BYTES %
+						llrs_per_re);
+
+		sd_dcm_command->sd_llrs_per_re = (max_req_bytes << 16) |
+						 llrs_per_re;
 
 		for (i = 0; i < RTE_BBDEV_5G_MAX_SYMBOLS; i++) {
 			sd_dcm_command->demux[i].sd_n_re_ack_re =
