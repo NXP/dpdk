@@ -2274,6 +2274,26 @@ register_watchdog(struct bbdev_la12xx_private *priv)
 	return 0;
 }
 
+static int
+deregister_watchdog(struct bbdev_la12xx_private *priv)
+{
+	int ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (priv->wdog) {
+		ret = libwdog_deregister(priv->wdog);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR("libwdog_deregister failed");
+			return ret;
+		}
+		rte_free(priv->wdog);
+		priv->wdog = NULL;
+	}
+
+	return 0;
+}
+
 int
 rte_pmd_la12xx_is_active(uint16_t dev_id)
 {
@@ -2818,6 +2838,12 @@ rte_pmd_la12xx_reset(uint16_t dev_id)
 		return ret;
 	}
 
+	ret = deregister_watchdog(priv);
+	if (ret < 0) {
+		BBDEV_LA12XX_PMD_ERR("watchdog de-registration failed");
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -2940,6 +2966,7 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 	const char *name = rte_vdev_device_name(vdev);
 	struct bbdev_la12xx_private *priv;
 	int ret;
+	char *env = NULL;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2968,6 +2995,18 @@ la12xx_bbdev_create(struct rte_vdev_device *vdev,
 	BBDEV_LA12XX_PMD_INFO("Initializing bbdev for:%s  modem-id=%d",
 		name, init_params->modem_id);
 
+	/* export environment variable LA12XX_MODEM_RESET=1 to
+	 * auto reset the modem on BBDEV device probe.
+	 */
+	env = getenv("LA12XX_MODEM_RESET");
+	if (env && atoi(env)) {
+		ret = rte_pmd_la12xx_reset(bbdev->data->dev_id);
+		if (ret) {
+			BBDEV_LA12XX_PMD_ERR("Modem reset failed\n");
+			rte_free(bbdev->data->dev_private);
+			return ret;
+		}
+	}
 	/* Reset Global variables */
 	priv->num_ldpc_enc_queues = 0;
 	priv->num_ldpc_dec_queues = 0;
