@@ -32,8 +32,9 @@ struct dpaa2_dpdmux_dev {
 	uint8_t num_ifs;   /* Number of interfaces in DPDMUX */
 };
 
-struct rte_flow {
-	struct dpdmux_rule_cfg rule;
+#define DPAA2_MUX_FLOW_MAX_RULE_NUM 8
+struct dpaa2_mux_flow {
+	struct dpdmux_rule_cfg rule[DPAA2_MUX_FLOW_MAX_RULE_NUM];
 };
 
 TAILQ_HEAD(dpdmux_dev_list, dpaa2_dpdmux_dev);
@@ -53,51 +54,75 @@ static struct dpaa2_dpdmux_dev *get_dpdmux_from_id(uint32_t dpdmux_id)
 	return dpdmux_dev;
 }
 
-struct rte_flow *
+int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
-			      struct rte_flow_item *pattern[],
-			      struct rte_flow_action *actions[])
+	struct rte_flow_item *pattern[],
+	struct rte_flow_action *actions[])
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
 	struct dpkg_profile_cfg kg_cfg;
 	const struct rte_flow_action_vf *vf_conf;
 	struct dpdmux_cls_action dpdmux_action;
-	struct rte_flow *flow = NULL;
-	void *key_iova, *mask_iova, *key_cfg_iova = NULL;
+	struct dpaa2_mux_flow *flow = NULL;
+	void *key_va, *mask_va, *key_cfg_va = NULL;
+	uint64_t key_iova, mask_iova, flow_iova, key_cfg_iova;
 	uint8_t key_size = 0;
-	int ret;
-	static int i;
-	int num_rules = 1;
-	uint64_t *masks = NULL, *keys = NULL;
-
-	if (!pattern || !actions || !pattern[0] || !actions[0])
-		return NULL;
+	int ret = 0, loop, num_rules = 1;
+	static int s_i;
+	uint64_t keys[DPAA2_MUX_FLOW_MAX_RULE_NUM];
+	uint64_t masks[DPAA2_MUX_FLOW_MAX_RULE_NUM];
+	uint64_t flow_alloc_size;
 
 	/* Find the DPDMUX from dpdmux_id in our list */
 	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
 	if (!dpdmux_dev) {
 		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
-		return NULL;
-	}
-
-	key_cfg_iova = rte_zmalloc(NULL, DIST_PARAM_IOVA_SIZE,
-				   RTE_CACHE_LINE_SIZE);
-	if (!key_cfg_iova) {
-		DPAA2_PMD_ERR("Unable to allocate flow-dist parameters");
-		return NULL;
-	}
-	flow = rte_zmalloc(NULL, sizeof(struct rte_flow) +
-			   (2 * DIST_PARAM_IOVA_SIZE), RTE_CACHE_LINE_SIZE);
-	if (!flow) {
-		DPAA2_PMD_ERR(
-			"Memory allocation failure for rule configuration\n");
+		ret = -ENODEV;
 		goto creation_error;
 	}
-	key_iova = (void *)((size_t)flow + sizeof(struct rte_flow));
-	mask_iova = (void *)((size_t)key_iova + DIST_PARAM_IOVA_SIZE);
+
+	key_cfg_va = rte_zmalloc(NULL, DIST_PARAM_IOVA_SIZE,
+				RTE_CACHE_LINE_SIZE);
+	if (!key_cfg_va) {
+		DPAA2_PMD_ERR("Unable to allocate key configure buffer");
+		ret = -ENOMEM;
+		goto creation_error;
+	}
+
+	key_cfg_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(key_cfg_va,
+		DIST_PARAM_IOVA_SIZE);
+	if (key_cfg_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU map for key cfg(%p)",
+			__func__, key_cfg_va);
+		ret = -ENOBUFS;
+		goto creation_error;
+	}
+
+	flow_alloc_size = sizeof(struct dpaa2_mux_flow);
+	flow_alloc_size += (2 * DIST_PARAM_IOVA_SIZE);
+	flow = rte_zmalloc(NULL, flow_alloc_size, RTE_CACHE_LINE_SIZE);
+	if (!flow) {
+		DPAA2_PMD_ERR("Unable to allocate flow and dist parameter");
+		ret = -ENOMEM;
+		goto creation_error;
+	}
+
+	flow_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(flow, flow_alloc_size);
+	if (flow_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
+			__func__, flow);
+		ret = -ENOBUFS;
+		goto creation_error;
+	}
+
+	key_va = (void *)((size_t)flow + sizeof(struct dpaa2_mux_flow));
+	mask_va = (void *)((size_t)key_va + DIST_PARAM_IOVA_SIZE);
+
+	key_iova = flow_iova + sizeof(struct dpaa2_mux_flow);
+	mask_iova = key_iova + DIST_PARAM_IOVA_SIZE;
 
 	/* Currently taking only IP protocol as an extract type.
-	 * This can be extended to other fields using pattern->type.
+	 * This can be exended to other fields using pattern->type.
 	 */
 	memset(&kg_cfg, 0, sizeof(struct dpkg_profile_cfg));
 
@@ -112,10 +137,9 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
 		kg_cfg.num_extracts = 1;
 
-		spec = (const struct rte_flow_item_ipv4 *)pattern[0]->spec;
-		memcpy(key_iova, (const void *)(&spec->hdr.next_proto_id),
-			sizeof(uint8_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint8_t));
+		spec = pattern[0]->spec;
+		memcpy(key_va, &spec->hdr.next_proto_id, sizeof(uint8_t));
+		memcpy(mask_va, pattern[0]->mask, sizeof(uint8_t));
 		key_size = sizeof(uint8_t);
 	}
 	break;
@@ -132,10 +156,9 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		kg_cfg.extracts[0].extract.from_hdr.size = 1;
 		kg_cfg.num_extracts = 1;
 
-		spec = (const struct rte_flow_item_vlan *)pattern[0]->spec;
-		memcpy((void *) key_iova, (const void *)(&spec->hdr.vlan_tci),
-			sizeof(uint16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
+		spec = pattern[0]->spec;
+		memcpy(key_va, &spec->tci, sizeof(uint16_t));
+		memcpy(mask_va, pattern[0]->mask, sizeof(uint16_t));
 		key_size = sizeof(uint16_t);
 	}
 	break;
@@ -154,21 +177,9 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 		uint64_t mask[] = {0x0001000000000000, 0x2000FF0000000000};
 		uint64_t key[] = {0x0001000000000000, 0x2000110000000000};
-		int j = 0, k;
+		int j = 0;
 
 		num_rules = 2;
-
-		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		if (!keys) {
-			printf("Memory allocation failure for keys\n");
-			goto creation_error;
-		}
-
-		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		if (!masks) {
-			printf("Memory allocation failure for masks\n");
-			goto creation_error;
-		}
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
 		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
@@ -187,10 +198,12 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		for (k = 0; k < num_rules; k++) {
-			masks[k] = mask[k];
-			keys[k] = key[k];
-		}
+		if (sizeof(mask) > sizeof(masks) ||
+			sizeof(key) > sizeof(keys))
+			goto creation_error;
+
+		memcpy(masks, mask, sizeof(mask));
+		memcpy(keys, key, sizeof(key));
 		key_size = sizeof(uint8_t) * 3;
 	}
 	break;
@@ -211,7 +224,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 				   0x200000FF00000000};
 		uint64_t key[] = {0x0001000000000000, 0x0000020000000000,
 				  0x2000001100000000};
-		int j = 0, k;
+		int j = 0;
 
 		/* Mask/Key value needs to be exactly 256 bytes(16 digits). Zero
 		 * bits can be added as padding if extracted bytes are less.
@@ -230,18 +243,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		 */
 
 		num_rules = 3;
-
-		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		if (!keys) {
-			printf("Memory allocation failure for keys\n");
-			goto creation_error;
-		}
-
-		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		if (!masks) {
-			printf("Memory allocation failure for masks\n");
-			goto creation_error;
-		}
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
 		/* 0x0A Represents bits from 48-55 */
@@ -269,10 +270,12 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		for (k = 0; k < num_rules; k++) {
-			masks[k] = mask[k];
-			keys[k] = key[k];
-		}
+		if (sizeof(mask) > sizeof(masks) ||
+			sizeof(key) > sizeof(keys))
+			goto creation_error;
+
+		memcpy(masks, mask, sizeof(mask));
+		memcpy(keys, key, sizeof(key));
 		/* Four keys are extracted. */
 		key_size = sizeof(uint8_t) * 4;
 	}
@@ -282,6 +285,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	{
 		uint8_t key_val = 0x20;
 		uint8_t mask_val = 0x20;
+		const struct rte_flow_item_ipv4 *spec;
 		int j = 0;
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_HDR;
@@ -296,14 +300,13 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		const struct rte_flow_item_ipv4 *spec;
 
-		spec = (const struct rte_flow_item_ipv4 *)pattern[0]->spec;
-		memcpy(key_iova, (const void *)(&spec->hdr.next_proto_id),
+		spec = pattern[0]->spec;
+		memcpy(key_va, (const void *)(&spec->hdr.next_proto_id),
 			sizeof(uint8_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint8_t));
-		memcpy((char *)key_iova + 1, &key_val, sizeof(uint8_t));
-		memcpy((char *)mask_iova + 1, &mask_val, sizeof(uint8_t));
+		memcpy(mask_va, pattern[0]->mask, sizeof(uint8_t));
+		memcpy((char *)key_va + 1, &key_val, sizeof(uint8_t));
+		memcpy((char *)mask_va + 1, &mask_val, sizeof(uint8_t));
 		key_size = sizeof(uint8_t) + sizeof(uint8_t);
 	}
 	break;
@@ -319,11 +322,10 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
 		kg_cfg.num_extracts = 1;
 
-		spec = (const struct rte_flow_item_udp *)pattern[0]->spec;
+		spec = pattern[0]->spec;
 		udp_dst_port = rte_constant_bswap16(spec->hdr.dst_port);
-		memcpy((void *)key_iova, (const void *)&udp_dst_port,
-							sizeof(rte_be16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
+		memcpy(key_va, &udp_dst_port, sizeof(rte_be16_t));
+		memcpy(mask_va, pattern[0]->mask, sizeof(uint16_t));
 		key_size = sizeof(uint16_t);
 	}
 	break;
@@ -339,11 +341,10 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
 		kg_cfg.num_extracts = 1;
 
-		spec = (const struct rte_flow_item_eth *)pattern[0]->spec;
+		spec = pattern[0]->spec;
 		eth_type = rte_constant_bswap16(spec->type);
-		memcpy((void *)key_iova, (const void *)&eth_type,
-							sizeof(rte_be16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
+		memcpy(key_va, &eth_type, sizeof(rte_be16_t));
+		memcpy(mask_va, pattern[0]->mask, sizeof(uint16_t));
 		key_size = sizeof(uint16_t);
 	}
 	break;
@@ -352,14 +353,13 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	{
 		const struct rte_flow_item_raw *spec;
 
-		spec = (const struct rte_flow_item_raw *)pattern[0]->spec;
+		spec = pattern[0]->spec;
 		kg_cfg.extracts[0].extract.from_data.offset = spec->offset;
 		kg_cfg.extracts[0].extract.from_data.size = spec->length;
 		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_DATA;
 		kg_cfg.num_extracts = 1;
-		memcpy((void *)key_iova, (const void *)spec->pattern,
-							spec->length);
-		memcpy(mask_iova, pattern[0]->mask, spec->length);
+		memcpy(key_va, spec->pattern, spec->length);
+		memcpy(mask_va, pattern[0]->mask, spec->length);
 
 		key_size = spec->length;
 	}
@@ -371,7 +371,12 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		goto creation_error;
 	}
 
-	ret = dpkg_prepare_key_cfg(&kg_cfg, key_cfg_iova);
+	if (num_rules > DPAA2_MUX_FLOW_MAX_RULE_NUM) {
+		DPAA2_PMD_ERR("Too many rules(%d) > %d",
+			num_rules, DPAA2_MUX_FLOW_MAX_RULE_NUM);
+		goto creation_error;
+	}
+	ret = dpkg_prepare_key_cfg(&kg_cfg, key_cfg_va);
 	if (ret) {
 		DPAA2_PMD_ERR("dpkg_prepare_key_cfg failed: err(%d)", ret);
 		goto creation_error;
@@ -381,10 +386,9 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	 * offset and length values in raw is supported right now. Different
 	 * values of kg_cfg may not work.
 	 */
-	if (i == 0) {
-		ret = dpdmux_set_custom_key(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-					    dpdmux_dev->token,
-				(uint64_t)(DPAA2_VADDR_TO_IOVA(key_cfg_iova)));
+	if (!s_i) {
+		ret = dpdmux_set_custom_key(&dpdmux_dev->dpdmux,
+				CMD_PRI_LOW, dpdmux_dev->token, key_cfg_iova);
 		if (ret) {
 			DPAA2_PMD_ERR("dpdmux_set_custom_key failed: err(%d)",
 					ret);
@@ -392,7 +396,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		}
 	}
 
-	vf_conf = (const struct rte_flow_action_vf *)(actions[0]->conf);
+	vf_conf = actions[0]->conf;
 	if (vf_conf->id == 0 || vf_conf->id > dpdmux_dev->num_ifs) {
 		DPAA2_PMD_ERR("Invalid destination id\n");
 		goto creation_error;
@@ -402,46 +406,37 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	/* As now our key extract parameters are set, let us configure
 	 * the rule.
 	 */
+	for (loop = 0; loop < num_rules; loop++) {
+		rte_be64_t key_val, mask_val;
 
-	for (int j = 0; j < num_rules; j++) {
-		if (keys) {
-			rte_be64_t key_val, mask_val;
+		key_val = rte_bswap64(keys[loop]);
+		mask_val = rte_bswap64(masks[loop]);
+		memcpy(key_va, &key_val, sizeof(rte_be64_t));
+		memcpy(mask_va, &mask_val, sizeof(rte_be64_t));
 
-			key_val = rte_bswap64(keys[j]);
-			mask_val = rte_bswap64(masks[j]);
-			memcpy(key_iova, &key_val, sizeof(rte_be64_t));
-			memcpy(mask_iova, &mask_val, sizeof(rte_be64_t));
-		}
-		flow->rule.key_iova =
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(key_iova));
-		flow->rule.mask_iova =
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(mask_iova));
-		flow->rule.key_size = key_size;
-		flow->rule.entry_index = i++;
+		flow->rule[loop].key_iova = key_iova;
+		flow->rule[loop].mask_iova = mask_iova;
+
+		flow->rule[loop].key_size = key_size;
+		flow->rule[loop].entry_index = s_i++;
 
 		ret = dpdmux_add_custom_cls_entry(&dpdmux_dev->dpdmux,
-					CMD_PRI_LOW, dpdmux_dev->token,
-					&flow->rule, &dpdmux_action);
+				CMD_PRI_LOW, dpdmux_dev->token,
+				&flow->rule[loop], &dpdmux_action);
 
 		if (ret) {
-			DPAA2_PMD_ERR("dpdmux_add_custom_cls_entry failed:err(%d)"
-							, ret);
+			DPAA2_PMD_ERR("Add classification entry failed:err(%d)",
+				ret);
 			goto creation_error;
 		}
 	}
-	rte_free(keys);
-	rte_free(masks);
-
-	return flow;
 
 creation_error:
-	if (keys)
-		rte_free(keys);
-	if (masks)
-		rte_free(masks);
-	rte_free((void *)key_cfg_iova);
-	rte_free((void *)flow);
-	return NULL;
+	if (key_cfg_va)
+		rte_free(key_cfg_va);
+	if (flow)
+		rte_free(flow);
+	return ret;
 }
 
 struct dpdmux_l2_rule*
