@@ -1822,11 +1822,13 @@ lsxvio_tx_dma_addr_loop(void **jobs,
 #ifdef LSXVIO_REMOTE_PKT_DUMP
 static void
 lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
-	uint64_t remote_addr, uint16_t len)
+	uint64_t remote_addr, const uint16_t len)
 {
 	uint8_t *virt;
 	uint32_t i;
 	uint64_t mask;
+	char *print_buf;
+	uint32_t print_len = 0, offset = 0;
 
 	if (!lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		if (adapter->rbp_enable) {
@@ -1838,26 +1840,48 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 		if (mask && (remote_addr & mask)) {
 			LSXINIC_PMD_ERR("Align err: Bus(0x%lx)-mask(0x%lx)",
 				remote_addr, mask);
-			return -EINVAL;
+			return;
 		}
 		if (mask && (LSXVIO_PER_RING_MEM_MAX_SIZE & mask)) {
 			LSXINIC_PMD_ERR("Align err: Size(0x%lx)-mask(0x%lx)",
-				LSXVIO_PER_RING_MEM_MAX_SIZE, mask);
-			return -EINVAL;
+				(unsigned long)LSXVIO_PER_RING_MEM_MAX_SIZE,
+				mask);
+			return;
 		}
 		virt = lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
 	} else {
-		virt = DPAA2_IOVA_TO_VADDR(remote_addr);
+		virt = DPAA2_IOVA_TO_VADDR_AND_CHECK(remote_addr,
+			LSXVIO_PER_RING_MEM_MAX_SIZE);
+	}
+	if (!virt) {
+		LSXINIC_PMD_ERR("Failed to map remote addr(%lx)",
+			remote_addr);
+		return;
 	}
 
-	printf("Remote buf(0x%lx) len:%d\r\n", remote_addr, len);
-	for (i = 0; i < len; i++) {
-		printf("%02x ", virt[i]);
-		if ((i + 1) % 16 == 0)
-			printf("\r\n");
+	print_buf = rte_malloc(NULL, len * 16 + 1024, 0);
+	if (print_buf) {
+		LSXINIC_PMD_ERR("Failed to alloc print buffer");
+		return;
 	}
-	printf("\r\n");
+
+	print_len = sprintf(print_buf,
+		"Remote buf(0x%lx) len:%d\r\n", remote_addr, len);
+	offset = print_len;
+	for (i = 0; i < len; i++) {
+		print_len = sprintf(&print_buf[offset], "%02x ", virt[i]);
+		offset += print_len;
+		if ((i + 1) % 16 == 0) {
+			print_len = sprintf(&print_buf[offset], "\r\n");
+			offset += print_len;
+		}
+	}
+	print_len = sprintf(&print_buf[offset], "\r\n");
+	offset += print_len;
+
+	LSXINIC_PMD_INFO("%s", print_buf);
+	rte_free(print_buf);
 }
 #endif
 

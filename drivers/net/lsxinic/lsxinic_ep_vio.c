@@ -341,7 +341,8 @@ lsxvio_vio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		if (lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 			desc_addr[i] = (queue->queue_desc_lo |
 				((uint64_t)(queue->queue_desc_hi) << 32));
-			virt[i] = DPAA2_IOVA_TO_VADDR(desc_addr[i]);
+			virt[i] = DPAA2_IOVA_TO_VADDR_AND_CHECK(desc_addr[i],
+				0);
 		}
 
 		if (!virt[i]) {

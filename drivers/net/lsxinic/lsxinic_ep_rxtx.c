@@ -1742,7 +1742,7 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 	struct lsinic_dma_job *dma_jobs = NULL;
 	struct rte_qdma_job *rawdma_jobs = NULL;
 	rte_iova_t loca_iova;
-	uint8_t *loca_addr;
+	uint8_t *loca_addr, *va;
 
 	LSXINIC_PMD_INFO("port%d %sq%d raw pcie test start",
 		q->port_id,
@@ -1896,17 +1896,19 @@ lsinic_queue_pcie_raw_test_start(struct lsinic_queue *q)
 		}
 
 		if (lsx_pciep_hw_sim_get(lsinic_dev->pcie_id)) {
-			raw_test->remote_vbase = DPAA2_IOVA_TO_VADDR(remote_base);
+			va = DPAA2_IOVA_TO_VADDR_AND_CHECK(remote_base,
+				raw_size);
 		} else {
-			raw_test->remote_vbase = lsx_pciep_set_ob_win(lsinic_dev,
+			va = lsx_pciep_set_ob_win(lsinic_dev,
 				remote_base, raw_size);
 		}
-		if (!raw_test->remote_vbase) {
+		if (!va) {
 			LSXINIC_PMD_ERR("Remote addr(0x%lx) map failed",
 				remote_base);
 
 			return -ENOMEM;
 		}
+		raw_test->remote_vbase = va;
 		ob_base = q->ob_base;
 	}
 
@@ -4627,7 +4629,18 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		q->ep_bd_desc = q->ep_bd_shared_addr;
 		if (q->dma_bd_update & DMA_BD_RC2EP_UPDATE) {
 			q->rc_bd_desc = remote_dma_bd;
-			dma_rdst_base = DPAA2_VADDR_TO_IOVA(q->ep_bd_desc);
+			dma_rdst_base =
+				DPAA2_VADDR_TO_IOVA_AND_CHECK(q->ep_bd_desc,
+					sizeof(struct lsinic_bd_desc) *
+					q->nb_desc);
+			if (dma_rdst_base == RTE_BAD_IOVA) {
+				LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+					q->ep_bd_desc,
+					sizeof(struct lsinic_bd_desc) *
+					q->nb_desc);
+
+				return -ENOBUFS;
+			}
 			q->rdma_bd_len = sizeof(struct lsinic_bd_desc);
 		}
 		LSXINIC_PMD_INFO("TXQ%d notify by RC with long bd",
@@ -4636,7 +4649,18 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		q->tx_dst_addr = q->ep_bd_shared_addr;
 		if (q->dma_bd_update & DMA_BD_RC2EP_UPDATE) {
 			q->rc_tx_dst_addr = remote_dma_bd;
-			dma_rdst_base = DPAA2_VADDR_TO_IOVA(q->tx_dst_addr);
+			dma_rdst_base =
+				DPAA2_VADDR_TO_IOVA_AND_CHECK(q->tx_dst_addr,
+				sizeof(struct lsinic_ep_tx_dst_addr) *
+				q->nb_desc);
+			if (dma_rdst_base == RTE_BAD_IOVA) {
+				LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+					q->tx_dst_addr,
+					sizeof(struct lsinic_ep_tx_dst_addr) *
+					q->nb_desc);
+
+				return -ENOBUFS;
+			}
 			q->rdma_bd_len = sizeof(struct lsinic_ep_tx_dst_addr);
 		}
 		LSXINIC_PMD_INFO("TXQ%d notify by RC with full address",
@@ -4671,7 +4695,16 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 
 		q->rc_bd_desc = q->rc_bd_mapped_addr;
 
-		dma_src_base = DPAA2_VADDR_TO_IOVA(q->local_src_bd_desc);
+		dma_src_base =
+			DPAA2_VADDR_TO_IOVA_AND_CHECK(q->local_src_bd_desc,
+			sizeof(struct lsinic_bd_desc) * q->nb_desc);
+		if (dma_src_base == RTE_BAD_IOVA) {
+			LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+				q->local_src_bd_desc,
+				sizeof(struct lsinic_bd_desc) * q->nb_desc);
+
+			return -ENOBUFS;
+		}
 		q->wdma_bd_len = sizeof(struct lsinic_bd_desc);
 		LSXINIC_PMD_INFO("TXQ%d notify to RC with long bd",
 			q->queue_id);
@@ -4681,14 +4714,30 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		q->local_src_len_cmd = rte_malloc(NULL,
 			LSINIC_LEN_CMD_RING_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		dma_src_base = DPAA2_VADDR_TO_IOVA(q->local_src_len_cmd);
+		dma_src_base =
+			DPAA2_VADDR_TO_IOVA_AND_CHECK(q->local_src_len_cmd,
+			LSINIC_LEN_CMD_RING_SIZE);
+		if (dma_src_base == RTE_BAD_IOVA) {
+			LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+				q->local_src_len_cmd, LSINIC_LEN_CMD_RING_SIZE);
+
+			return -ENOBUFS;
+		}
 		q->wdma_bd_len = sizeof(struct lsinic_rc_rx_len_cmd);
 #else
 		q->tx_len_idx = q->rc_bd_mapped_addr;
 		q->local_src_len_idx = rte_malloc(NULL,
 			LSINIC_LEN_IDX_RING_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		dma_src_base = DPAA2_VADDR_TO_IOVA(q->local_src_len_idx);
+		dma_src_base =
+			DPAA2_VADDR_TO_IOVA_AND_CHECK(q->local_src_len_idx,
+				LSINIC_LEN_IDX_RING_SIZE);
+		if (dma_src_base == RTE_BAD_IOVA) {
+			LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+				q->local_src_len_idx, LSINIC_LEN_IDX_RING_SIZE);
+
+			return -ENOBUFS;
+		}
 		q->wdma_bd_len = sizeof(struct lsinic_rc_rx_len_idx);
 #endif
 		LSXINIC_PMD_INFO("TXQ%d notify to RC with len/cmd",
@@ -4698,7 +4747,14 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		q->local_src_seg = rte_malloc(NULL,
 			LSINIC_SEG_LEN_RING_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		dma_src_base = DPAA2_VADDR_TO_IOVA(q->local_src_seg);
+		dma_src_base = DPAA2_VADDR_TO_IOVA_AND_CHECK(q->local_src_seg,
+			LSINIC_SEG_LEN_RING_SIZE);
+		if (dma_src_base == RTE_BAD_IOVA) {
+			LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+				q->local_src_seg, LSINIC_SEG_LEN_RING_SIZE);
+
+			return -ENOBUFS;
+		}
 		q->wdma_bd_len = sizeof(struct lsinic_rc_rx_seg);
 		LSXINIC_PMD_INFO("TXQ%d notify to RC with seg desc",
 			q->queue_id);
@@ -4828,7 +4884,14 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 			LSINIC_RING_REG_OFFSET);
 
 	dma_src_base += q->ob_base;
-	dma_dst_base = DPAA2_VADDR_TO_IOVA(q->ep_bd_shared_addr);
+	dma_dst_base = DPAA2_VADDR_TO_IOVA_AND_CHECK(q->ep_bd_shared_addr,
+		LSINIC_BD_RING_SIZE);
+	if (dma_dst_base == RTE_BAD_IOVA) {
+		LSXINIC_PMD_ERR("No IOMMU map for %p, size=%lx",
+			q->ep_bd_shared_addr, LSINIC_BD_RING_SIZE);
+
+		return -ENOBUFS;
+	}
 
 	if (q->ep_mem_bd_type == EP_MEM_LONG_BD) {
 		q->ep_bd_desc = q->ep_bd_shared_addr;
