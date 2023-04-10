@@ -2,13 +2,13 @@ Software Content Register
 --------------------------------------------
 
 Package:                     dpdk.git
-Version:                     21.11
+Version:                     22.11
 Outgoing License:            BSD-3-Clause
 License File:                LICENSE
 Package Category:            BSP
 Type of Content:             source
 Description and comments:    Data Plane Development Kit
-Release Location:            https://github.com/nxp-qoriq/dpdk -b lf-6.1.1-1.0.0
+Release Location:            https://github.com/nxp-qoriq/dpdk -b lf-6.1.y-2.0.0
 Origin:                      NXP (BSD-3-Clause)
                              DPDK - Intel Corporation (BSD-3-Clause) - https://github.com/DPDK/dpdk
                              KNI Linux Device driver - Intel Corporation (GPL-2.0) Separate component of DPDK
