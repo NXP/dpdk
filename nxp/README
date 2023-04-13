@@ -1076,6 +1076,26 @@ OVS binaries:
 	vswitchd/ovs-vswitchd
 	vswitchd/vswitch.ovsschema
 
+=============================================
+IP-fragmentation & Reassembly Appilcations:
+
+The IP Fragmentation and Reassembly Library implements IPv4 and IPv6 packet
+fragmentation and reassembly.
+
+Steps to execute IP-fragmentation:
+----------------------------------
+1. Run the following command:
+	./dpdk-ip_fragmentation -c 0xf -n 1 -- -p 0x20
+2. Send different sized packets from spirent and capture the frames to verify
+   the fragments formed in every case.
+
+Steps to execute Reassembly application:
+-----------------------------------------
+1. Run the following command:
+	./dpdk-ip_reassembly -c 0xf -n 1 -- -p 0x20 --maxflows=1024
+2. Create fragmented packets on Spirent and capture the output to verify the
+   reassembled packet.
+
 =========================
 VM VFIO Direct Assignment
 =========================
