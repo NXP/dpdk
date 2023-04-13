@@ -555,7 +555,7 @@
 	<policy name="fm_policy_10">
 		<dist_order>
 			<distributionref name="dpdk_dist"/>
-			<distributionref name="default_dist10"/>
+			<distributionref name="default_vsp_dist10">
 		</dist_order>
 	</policy>
 
