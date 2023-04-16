@@ -26,6 +26,8 @@ int dpaa2_logtype_bus;
 #define VFIO_IOMMU_GROUP_PATH "/sys/kernel/iommu_groups"
 #define FSLMC_BUS_NAME	fslmc
 
+#define FSLMC_CONTAINER_MAX_LEN 8 /**< Of the format dprc.XX */
+
 struct rte_fslmc_bus rte_fslmc_bus;
 uint8_t dpaa2_virt_mode;
 
@@ -322,6 +324,10 @@ rte_fslmc_scan(void)
 	group_name = getenv("DPRC");
 	if (!group_name) {
 		DPAA2_BUS_DEBUG("DPAA2: DPRC not available");
+		return -EINVAL;
+	}
+	if (strlen(group_name) >= FSLMC_CONTAINER_MAX_LEN) {
+		DPAA2_BUS_ERR("Invalid container name: %s", group_name);
 		return -EINVAL;
 	}
 

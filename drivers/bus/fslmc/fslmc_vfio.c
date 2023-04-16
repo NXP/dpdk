@@ -41,8 +41,6 @@
 #include "portal/dpaa2_hw_pvt.h"
 #include "portal/dpaa2_hw_dpio.h"
 
-#define FSLMC_CONTAINER_MAX_LEN 8 /**< Of the format dprc.XX */
-
 #define FSLMC_VFIO_MP "fslmc_vfio_mp_sync"
 
 /* Container is composed by multiple groups, however,
