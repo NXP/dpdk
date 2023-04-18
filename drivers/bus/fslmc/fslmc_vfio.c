@@ -41,8 +41,6 @@
 #include "portal/dpaa2_hw_pvt.h"
 #include "portal/dpaa2_hw_dpio.h"
 
-#define FSLMC_CONTAINER_MAX_LEN 8 /**< Of the format dprc.XX */
-
 #define FSLMC_VFIO_MP "fslmc_vfio_mp_sync"
 
 /* Container is composed by multiple groups, however,
@@ -348,8 +346,10 @@ add_vfio_group:
 	} else {
 		ret = fslmc_vfio_add_group(vfio_group_fd, iommu_group_num,
 			group_name);
-		if (ret)
+		if (ret) {
+			close(vfio_group_fd);
 			return ret;
+		}
 	}
 
 	return vfio_group_fd;
@@ -1434,6 +1434,8 @@ fslmc_vfio_setup_group(void)
 	if (vfio_group_fd <= 0) {
 		vfio_group_fd = fslmc_vfio_open_group_fd(group_name);
 		if (vfio_group_fd <= 0) {
+			if (!vfio_group_fd)
+				close(vfio_group_fd);
 			DPAA2_BUS_ERR("Failed to create MC VFIO group");
 			return -rte_errno;
 		}

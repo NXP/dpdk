@@ -954,6 +954,7 @@ int dpaa_rx_queue_setup_mpool(struct rte_eth_dev *dev, uint16_t queue_idx,
 	u32 flags = 0;
 	int ret, i;
 	u32 t_buffsz, buffsz = 0, mp_configured = 0;
+	u32 ch_id;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1099,7 +1100,9 @@ int dpaa_rx_queue_setup_mpool(struct rte_eth_dev *dev, uint16_t queue_idx,
 						DPAA_IF_RX_CONTEXT_STASH;
 
 		/*Create a channel and associate given queue with the channel*/
-		qman_alloc_pool_range((u32 *)&rxq->ch_id, 1, 1, 0);
+		qman_alloc_pool_range(&ch_id, 1, 1, 0);
+		rxq->ch_id = (u16)ch_id;
+
 		opts.we_mask = opts.we_mask | QM_INITFQ_WE_DESTWQ;
 		opts.fqd.dest.channel = rxq->ch_id;
 		opts.fqd.dest.wq = DPAA_IF_RX_PRIORITY;
