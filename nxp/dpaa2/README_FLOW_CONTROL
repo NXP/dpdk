@@ -54,7 +54,7 @@ Note: Please first read nxp/README.
      testpmd> stop
 
   #Check RAW/standard protocol flows with various raw offsets
-     ./dpdk-testpmd  --lcores='0,1,2,3,4@0' --master-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=16 --txq=2
+     ./dpdk-testpmd  --lcores='0,1,2,3,4@0' --main-lcore 0 -n 1 -- -i --nb-cores=4 --portmask=0x1 --nb-ports=1 --forward-mode=io --rxq=16 --txq=2
   #Create flow with 11:22:33:44:55:66 ethernet source address and pattern 0xbbbbbbbb located at offset 42.
      testpmd> flow create 0 group 0 priority 2 ingress pattern eth src is 11:22:33:44:55:66 / raw relative is 0 search is 0 offset is 42 limit is 0 pattern_hex spec bbbbbbbb pattern_hex mask ffffffff / end actions queue index 1 / end
      testpmd> start
@@ -91,6 +91,7 @@ Note: Please first read nxp/README.
 
   #Create ecpri flow whose message type is I/Q data and physical channel is 0x000a.(restart dpdk-testpmd)
      testpmd> flow create 0 ingress pattern ecpri common type iq_data pc_id is 0x000a / end actions queue index 3 / end
+     testpmd> start
   #Inject ecpri over ethernet packet whose message type is I/Q data and physical channel is 0x000a.
   #Inject ecpri over vlan packet whose message type is I/Q data and physical channel is 0x000a.
   #Inject ecpri over udp packet whose message type is I/Q data and physical channel is 0x000a. The UDP dst port is identical to the number specfied by soft parser generator.
