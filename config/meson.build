@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022 NXP
+# Copyright 2022-2023 NXP
 
 # check the OS is supported, rather than going any further
 supported_exec_envs = ['freebsd', 'linux', 'windows']
