@@ -73,7 +73,6 @@ test_sources = files(
         'test_ipsec.c',
         'test_ipsec_sad.c',
         'test_ipsec_perf.c',
-        'test_kni.c',
         'test_kvargs.c',
         'test_lcores.c',
         'test_logs.c',

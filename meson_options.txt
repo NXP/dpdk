@@ -10,7 +10,7 @@ option('disable_apps', type: 'string', value: '', description:
        'Comma-separated list of apps to explicitly disable.')
 option('disable_drivers', type: 'string', value: '', description:
        'Comma-separated list of drivers to explicitly disable.')
-option('disable_libs', type: 'string', value: 'flow_classify,kni', description:
+option('disable_libs', type: 'string', value: 'flow_classify', description:
        'Comma-separated list of libraries to explicitly disable. [NOTE: not all libs can be disabled]')
 option('dpaa2_use_phys_iova', type: 'boolean', value: false, description:
        'use physical address as iova address on dpaa2 platform')

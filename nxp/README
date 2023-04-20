@@ -63,12 +63,6 @@ Following information can be used to obtain these components:
     Linux-4.19, 5.4, 5.10 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
-    NOTE: By default, the KNI module compilation is enabled in DPDK when
-          compiled using make requiring a pre-compiled Linux Kernel. Though,
-          this is optional and can be toggled off using DPDK configuration. More
-          details in section below. KNI module is reuqired for KNI (Kernel
-          Network Interface) app.
-
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
           be available in the rootfs. In this case, requirements for a compiled
           Linux Kernel source would not be required.
@@ -228,10 +222,6 @@ arm64-build/examples directory.
 
 
   Compiling the Example applications:
-
-    a) Build the KNI example. This requires the KNI module to be compiled.
-
-      $ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Denable_kmods=true -Dkernel_dir=<absolute path to the kernel sources> -Dexamples=kni
 
     b) Build all applications
 
@@ -843,19 +833,6 @@ Following are some pre-requisites:
   $ dpdk-l3fwd -c 0x0F -n 1 --vdev="event_dpaa1" -- -p 0x20 --config="(5,0,0),(5,1,1),(5,2,2),(5,3,3)" -e="(0,1,4)" -a="(5,0,1,0,0,0),(5,1,1,0,0,0),(5,2,1,0,0,0),(5,3,1,0,0,0)" -l="(0,0,0,0),(1,0,0,1),(2,0,0,2),(3,0,0,3)" -P
 
 
-  KNI Kernel NIC Interface:
-  ~~~~~~~~~~~~~~~~~~~~~~~~
-
-  Sample kni commands for 2 interfaces:
-	- insmod rte_kni.ko lo_mode=lo_mode_fifo carrier=on
-	- ./dpdk-kni -c 0xF -- -p 0x3 --config='(0,0,1,0),(1,2,3,1)'
-
-	- ifconfig vEth0_0 1.1.1.1
-	- arp -s 1.1.1.4 00:11:22:22:33:44
-	- ping 1.1.1.4
-
-  Please vist DPDK document https://doc.dpdk.org/guides/prog_guide/kernel_nic_interface.html for application help.
-
 ================================================================================
 Executing dpdk-pdump/dpdk-procinfo on DPAA2
 ===========================================
@@ -1214,7 +1191,7 @@ Applications validated DPAA/DPAA2 Platforms
  6. ip_fragmentation
  7. ip_reassembly
  8. ipv4_multicast
- 9. kni
+ 9. ipsecgw
  10. cmdline
  11. timer
  12. vhost
@@ -1222,7 +1199,6 @@ Applications validated DPAA/DPAA2 Platforms
  14. l3fwd-acl
  15. skelton
  16. rxtx_callback
- 17. ipsecgw
 
  Applications Validated PPFE Platform
  ------------------------------------

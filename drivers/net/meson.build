@@ -33,7 +33,6 @@ drivers = [
         'ionic',
         'ipn3ke',
         'ixgbe',
-        'kni',
         'liquidio',
         'memif',
         'mlx4',

@@ -39,7 +39,6 @@ libraries = [
         'gso',
         'ip_frag',
         'jobstats',
-        'kni',
         'latencystats',
         'lpm',
         'member',
