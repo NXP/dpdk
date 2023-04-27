@@ -175,8 +175,9 @@ do {								\
 			  rte_cpu_to_be_16(*pw) & frm_attr_ext->fld_mask);\
 } while (0)
 
-int dpaa2_eth_load_wriop_soft_parser(struct dpaa2_dev_priv *priv,
-				     enum dpni_soft_sequence_dest dest)
+int
+dpaa2_eth_load_wriop_soft_parser(struct dpaa2_dev_priv *priv,
+	enum dpni_soft_sequence_dest dest)
 {
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_load_ss_cfg     cfg;
@@ -193,32 +194,40 @@ int dpaa2_eth_load_wriop_soft_parser(struct dpaa2_dev_priv *priv,
 	cfg.ss_offset = sp_param.start_pc;
 	cfg.ss_size = sp_param.size;
 
-	addr = rte_malloc(NULL, sp_param.size, 64);
+	addr = rte_malloc(NULL, sp_param.size, RTE_CACHE_LINE_SIZE);
 	if (!addr) {
-		DPAA2_PMD_ERR("Memory unavailable for soft parser param\n");
-		return -1;
+		DPAA2_PMD_ERR("Memory unavailable for soft parser param");
+		return -ENOMEM;
 	}
 
 	memcpy(addr, sp_param.byte_code, sp_param.size);
-	cfg.ss_iova = (uint64_t)(DPAA2_VADDR_TO_IOVA(addr));
+	cfg.ss_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(addr, sp_param.size);
+	if (cfg.ss_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("No IOMMU map for soft sequence(%p), size=%d",
+			addr, sp_param.size);
+		rte_free(addr);
+
+		return -ENOBUFS;
+	}
 
 	ret = dpni_load_sw_sequence(dpni, CMD_PRI_LOW, priv->token, &cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("dpni_load_sw_sequence failed\n");
+		DPAA2_PMD_ERR("dpni_load_sw_sequence failed");
 		rte_free(addr);
 		return ret;
 	}
 
-	priv->ss_iova = (uint64_t)(DPAA2_VADDR_TO_IOVA(addr));
+	priv->ss_iova = cfg.ss_iova;
 	priv->ss_offset += sp_param.size;
-	RTE_LOG(INFO, PMD, "Soft parser loaded for dpni@%d\n", priv->hw_id);
+	DPAA2_PMD_INFO("Soft parser loaded for dpni@%d", priv->hw_id);
 
 	rte_free(addr);
 	return 0;
 }
 
-int dpaa2_eth_enable_wriop_soft_parser(struct dpaa2_dev_priv *priv,
-				       enum dpni_soft_sequence_dest dest)
+int
+dpaa2_eth_enable_wriop_soft_parser(struct dpaa2_dev_priv *priv,
+	enum dpni_soft_sequence_dest dest)
 {
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpni_enable_ss_cfg cfg;
@@ -242,14 +251,23 @@ int dpaa2_eth_enable_wriop_soft_parser(struct dpaa2_dev_priv *priv,
 	cfg.param_offset = sp_param.param_offset;
 	cfg.param_size = sp_param.param_size;
 	if (cfg.param_size) {
-		param_addr = rte_malloc(NULL, cfg.param_size, 64);
+		param_addr = rte_malloc(NULL, cfg.param_size,
+			RTE_CACHE_LINE_SIZE);
 		if (!param_addr) {
-			DPAA2_PMD_ERR("Memory unavailable for soft parser param\n");
-			return -1;
+			DPAA2_PMD_ERR("Soft parser param alloc failed");
+			return -ENOMEM;
 		}
 
 		memcpy(param_addr, sp_param.param_array, cfg.param_size);
-		cfg.param_iova = (uint64_t)(DPAA2_VADDR_TO_IOVA(param_addr));
+		cfg.param_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(param_addr,
+			cfg.param_size);
+		if (cfg.param_iova == RTE_BAD_IOVA) {
+			DPAA2_PMD_ERR("%s: No IOMMU map for %p, size=%d",
+				__func__, param_addr, cfg.param_size);
+			rte_free(param_addr);
+
+			return -ENOBUFS;
+		}
 		priv->ss_param_iova = cfg.param_iova;
 	} else {
 		cfg.param_iova = 0;
@@ -257,13 +275,13 @@ int dpaa2_eth_enable_wriop_soft_parser(struct dpaa2_dev_priv *priv,
 
 	ret = dpni_enable_sw_sequence(dpni, CMD_PRI_LOW, priv->token, &cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("dpni_enable_sw_sequence failed for dpni%d\n",
+		DPAA2_PMD_ERR("Soft parser enabled for dpni@%d failed",
 			priv->hw_id);
 		rte_free(param_addr);
 		return ret;
 	}
 
 	rte_free(param_addr);
-	RTE_LOG(INFO, PMD, "Soft parser enabled for dpni@%d\n", priv->hw_id);
+	DPAA2_PMD_INFO("Soft parser enabled for dpni@%d", priv->hw_id);
 	return 0;
 }

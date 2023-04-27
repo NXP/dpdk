@@ -891,6 +891,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct dpni_queue_id qid;
 	uint32_t tc_id;
 	int ret;
+	uint64_t iova;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -926,7 +927,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		if (ret) {
 			DPAA2_PMD_ERR("Error in set tx conf mode settings: "
 				      "err=%d", ret);
-			return -1;
+			return ret;
 		}
 	}
 
@@ -940,7 +941,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		DPAA2_PMD_ERR("Error in setting the tx flow: "
 			"tc_id=%d, flow=%d err=%d",
 			tc_id, flow_id, ret);
-			return -1;
+			return ret;
 	}
 
 	dpaa2_q->flow_id = flow_id;
@@ -948,11 +949,11 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q->tc_index = tc_id;
 
 	ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
-			     DPNI_QUEUE_TX, ((channel_id << 8) | dpaa2_q->tc_index),
-			     dpaa2_q->flow_id, &tx_flow_cfg, &qid);
+			DPNI_QUEUE_TX, ((channel_id << 8) | dpaa2_q->tc_index),
+			dpaa2_q->flow_id, &tx_flow_cfg, &qid);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in getting LFQID err=%d", ret);
-		return -1;
+		return ret;
 	}
 	dpaa2_q->fqid = qid.fqid;
 
@@ -966,10 +967,19 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		/* Notify that the queue is not congested when the data in
 		 * the queue is below this thershold.(90% of value)
 		 */
-		cong_notif_cfg.threshold_exit = (nb_tx_desc*9)/10;
+		cong_notif_cfg.threshold_exit = (nb_tx_desc * 9) / 10;
 		cong_notif_cfg.message_ctx = 0;
-		cong_notif_cfg.message_iova =
-				(size_t)DPAA2_VADDR_TO_IOVA(dpaa2_q->cscn);
+
+		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(dpaa2_q->cscn,
+			sizeof(struct qbman_result));
+		if (iova == RTE_BAD_IOVA) {
+			DPAA2_PMD_ERR("No IOMMU map for cscn(%p)(size=%lx)",
+				dpaa2_q->cscn, sizeof(struct qbman_result));
+
+			return -ENOBUFS;
+		}
+
+		cong_notif_cfg.message_iova = iova;
 		cong_notif_cfg.dest_cfg.dest_type = DPNI_DEST_NONE;
 		cong_notif_cfg.notification_mode =
 					 DPNI_CONG_OPT_WRITE_MEM_ON_ENTER |
@@ -977,16 +987,13 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 					 DPNI_CONG_OPT_COHERENT_WRITE;
 		cong_notif_cfg.cg_point = DPNI_CP_QUEUE;
 
-		ret = dpni_set_congestion_notification(dpni, CMD_PRI_LOW,
-						       priv->token,
-						       DPNI_QUEUE_TX,
-						       ((channel_id << 8) | tc_id),
-						       &cong_notif_cfg);
+		ret = dpni_set_congestion_notification(dpni,
+				CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
+				((channel_id << 8) | tc_id), &cong_notif_cfg);
 		if (ret) {
-			DPAA2_PMD_ERR(
-			   "Error in setting tx congestion notification: "
-			   "err=%d", ret);
-			return -ret;
+			DPAA2_PMD_ERR("Set TX congestion notification err=%d",
+			   ret);
+			return ret;
 		}
 	}
 	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
@@ -997,22 +1004,24 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		options = options | DPNI_QUEUE_OPT_USER_CTX;
 		tx_conf_cfg.user_context = (size_t)(dpaa2_q);
 		ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
-			     DPNI_QUEUE_TX_CONFIRM, ((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
-			     dpaa2_tx_conf_q->flow_id, options, &tx_conf_cfg);
+				DPNI_QUEUE_TX_CONFIRM,
+				((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
+				dpaa2_tx_conf_q->flow_id,
+				options, &tx_conf_cfg);
 		if (ret) {
-			DPAA2_PMD_ERR("Error in setting the tx conf flow: "
-			      "tc_index=%d, flow=%d err=%d",
-			      dpaa2_tx_conf_q->tc_index,
-			      dpaa2_tx_conf_q->flow_id, ret);
-			return -1;
+			DPAA2_PMD_ERR("Set TC[%d].TX[%d] conf flow err=%d",
+				dpaa2_tx_conf_q->tc_index,
+				dpaa2_tx_conf_q->flow_id, ret);
+			return ret;
 		}
 
 		ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
-			     DPNI_QUEUE_TX_CONFIRM, ((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
-			     dpaa2_tx_conf_q->flow_id, &tx_conf_cfg, &qid);
+				DPNI_QUEUE_TX_CONFIRM,
+				((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
+				dpaa2_tx_conf_q->flow_id, &tx_conf_cfg, &qid);
 		if (ret) {
 			DPAA2_PMD_ERR("Error in getting LFQID err=%d", ret);
-			return -1;
+			return ret;
 		}
 		dpaa2_tx_conf_q->fqid = qid.fqid;
 	}
@@ -2806,7 +2815,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	/*Init fields w.r.t. classficaition*/
 	memset(&priv->extract.qos_key_extract, 0,
 		sizeof(struct dpaa2_key_extract));
-	priv->extract.qos_extract_param = rte_malloc(NULL, 256, 64);
+	priv->extract.qos_extract_param = rte_malloc(NULL,
+		DPAA2_EXTRACT_PARAM_MAX_SIZE,
+		RTE_CACHE_LINE_SIZE);
 	if (!priv->extract.qos_extract_param) {
 		DPAA2_PMD_ERR("Memory alloc failed");
 		goto init_err;
@@ -2815,7 +2826,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	for (i = 0; i < MAX_TCS; i++) {
 		memset(&priv->extract.tc_key_extract[i], 0,
 			sizeof(struct dpaa2_key_extract));
-		priv->extract.tc_extract_param[i] = rte_malloc(NULL, 256, 64);
+		priv->extract.tc_extract_param[i] = rte_malloc(NULL,
+			DPAA2_EXTRACT_PARAM_MAX_SIZE,
+			RTE_CACHE_LINE_SIZE);
 		if (!priv->extract.tc_extract_param[i]) {
 			DPAA2_PMD_ERR("Memory alloc failed");
 			goto init_err;
