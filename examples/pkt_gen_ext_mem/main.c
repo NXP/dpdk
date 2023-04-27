@@ -76,7 +76,7 @@ int open_port(uint16_t port_id, uint64_t iaddr, uint64_t size, int fd)
 	size_t len = size;
 	size_t pgsz = RTE_PGSIZE_2M;
 	void *addr;
-	int n_pages;
+	int n_pages, i;
 	const char *heap_name = "heap";
 	int socket_id;
 	int k = 0;
@@ -172,6 +172,11 @@ int open_port(uint16_t port_id, uint64_t iaddr, uint64_t size, int fd)
 		printf("%s():%i: cannot find socket for external heap\n",
 			__func__, __LINE__);
 		return -4;
+	}
+
+	if (rte_eal_iova_mode() == RTE_IOVA_VA) {
+		for (i = 0; i < n_pages; i++)
+			iova[i] = (uint64_t)addr + pgsz * i;
 	}
 
 	if (rte_malloc_heap_memory_add(heap_name, addr, len,
