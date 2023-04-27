@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2020 NXP
+ *   Copyright 2016,2020-2023 NXP
  *
  */
 
@@ -32,8 +32,6 @@
  * is to optimize the PA_to_VA searches until a better mechanism (algo) is
  * available.
  */
-struct dpaa2_memseg_list rte_dpaa2_memsegs
-	= TAILQ_HEAD_INITIALIZER(rte_dpaa2_memsegs);
 
 TAILQ_HEAD(dpbp_dev_list, dpaa2_dpbp_dev);
 static struct dpbp_dev_list dpbp_dev_list

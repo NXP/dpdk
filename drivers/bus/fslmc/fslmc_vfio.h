@@ -10,6 +10,10 @@
 
 #include <rte_vfio.h>
 
+#ifndef __hot
+#define __hot __attribute__((hot))
+#endif
+
 /* Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES	"/sys/bus/fsl-mc/devices"
 #define DPAA2_MC_DPNI_DEVID	7
@@ -56,6 +60,21 @@ int fslmc_vfio_close_group(void);
 char *fslmc_get_container(void);
 int fslmc_get_container_group(const char *group_name, int *gropuid);
 int rte_fslmc_vfio_dmamap(void);
+uint64_t
+rte_fslmc_cold_mem_vaddr_to_iova(void *vaddr,
+	uint64_t size);
+void *
+rte_fslmc_cold_mem_iova_to_vaddr(uint64_t iova,
+	uint64_t size);
+__hot uint64_t
+rte_fslmc_mem_vaddr_to_iova(void *vaddr);
+__hot void *
+rte_fslmc_mem_iova_to_vaddr(uint64_t iova);
+uint64_t
+rte_fslmc_io_vaddr_to_iova(void *vaddr);
+void *
+rte_fslmc_io_iova_to_vaddr(uint64_t iova);
+
 __rte_experimental
 int rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova,
 	uint64_t size);

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -9,10 +9,15 @@
 #define _DPAA2_HW_PVT_H_
 
 #include <rte_eventdev.h>
-#include <dpaax_iova_table.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include <fcntl.h>
 
+#include <rte_eal.h>
 #include <mc/fsl_mc_sys.h>
 #include <fsl_qbman_portal.h>
+#include <fslmc_vfio.h>
 
 #ifndef false
 #define false      0
@@ -364,86 +369,63 @@ enum qbman_fd_format {
  */
 #define DPAA2_EQ_RESP_ALWAYS		1
 
-/* Various structures representing contiguous memory maps */
-struct dpaa2_memseg {
-	TAILQ_ENTRY(dpaa2_memseg) next;
-	char *vaddr;
-	rte_iova_t iova;
-	size_t len;
-};
-
-TAILQ_HEAD(dpaa2_memseg_list, dpaa2_memseg);
-extern struct dpaa2_memseg_list rte_dpaa2_memsegs;
-
-#ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
-extern uint8_t dpaa2_virt_mode;
-static void *dpaa2_mem_ptov(phys_addr_t paddr) __attribute__((unused));
-
-static void *dpaa2_mem_ptov(phys_addr_t paddr)
+static inline uint64_t
+dpaa2_mem_va_to_iova(void *va)
 {
-	void *va;
+	if (likely(rte_eal_iova_mode() == RTE_IOVA_VA))
+		return (uint64_t)va;
 
-	if (dpaa2_virt_mode)
-		return (void *)(size_t)paddr;
-
-	va = (void *)dpaax_iova_table_get_va(paddr);
-	if (likely(va != NULL))
-		return va;
-
-	/* If not, Fallback to full memseg list searching */
-	va = rte_mem_iova2virt(paddr);
-
-	return va;
+	return rte_fslmc_mem_vaddr_to_iova(va);
 }
 
-static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr) __attribute__((unused));
-
-static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
+static inline void *
+dpaa2_mem_iova_to_va(uint64_t iova)
 {
-	const struct rte_memseg *memseg;
+	if (likely(rte_eal_iova_mode() == RTE_IOVA_VA))
+		return (void *)iova;
 
-	if (dpaa2_virt_mode)
-		return vaddr;
-
-	memseg = rte_mem_virt2memseg((void *)(uintptr_t)vaddr, NULL);
-	if (memseg)
-		return memseg->phys_addr + RTE_PTR_DIFF(vaddr, memseg->addr);
-	return (size_t)NULL;
+	return rte_fslmc_mem_iova_to_vaddr(iova);
 }
-
-/**
- * When we are using Physical addresses as IO Virtual Addresses,
- * Need to call conversion routines dpaa2_mem_vtop & dpaa2_mem_ptov
- * wherever required.
- * These routines are called with help of below MACRO's
- */
 
 #define DPAA2_MBUF_VADDR_TO_IOVA(mbuf) ((mbuf)->buf_iova)
-
-/**
- * macro to convert Virtual address to IOVA
- */
-#define DPAA2_VADDR_TO_IOVA(_vaddr) dpaa2_mem_vtop((size_t)(_vaddr))
-
-/**
- * macro to convert IOVA to Virtual address
- */
-#define DPAA2_IOVA_TO_VADDR(_iova) dpaa2_mem_ptov((size_t)(_iova))
-
-/**
- * macro to convert modify the memory containing IOVA to Virtual address
- */
+#define DPAA2_VADDR_TO_IOVA(_vaddr) \
+	dpaa2_mem_va_to_iova((void *)_vaddr)
+#define DPAA2_IOVA_TO_VADDR(_iova) \
+	dpaa2_mem_iova_to_va((uint64_t)_iova)
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type) \
-	{_mem = (_type)(dpaa2_mem_ptov((size_t)(_mem))); }
+	{_mem = (_type)DPAA2_IOVA_TO_VADDR(_mem); }
 
-#else	/* RTE_LIBRTE_DPAA2_USE_PHYS_IOVA */
+#define DPAA2_VAMODE_VADDR_TO_IOVA(_vaddr) ((uint64_t)_vaddr)
+#define DPAA2_VAMODE_IOVA_TO_VADDR(_iova) ((void *)_iova)
+#define DPAA2_VAMODE_MODIFY_IOVA_TO_VADDR(_mem, _type) \
+	{_mem = (_type)(_mem); }
 
-#define DPAA2_MBUF_VADDR_TO_IOVA(mbuf) ((mbuf)->buf_addr)
-#define DPAA2_VADDR_TO_IOVA(_vaddr) (phys_addr_t)(_vaddr)
-#define DPAA2_IOVA_TO_VADDR(_iova) (void *)(_iova)
-#define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type)
+#define DPAA2_PAMODE_VADDR_TO_IOVA(_vaddr) \
+	rte_fslmc_mem_vaddr_to_iova((void *)_vaddr)
+#define DPAA2_PAMODE_IOVA_TO_VADDR(_iova) \
+	rte_fslmc_mem_iova_to_vaddr((uint64_t)_iova)
+#define DPAA2_PAMODE_MODIFY_IOVA_TO_VADDR(_mem, _type) \
+	{_mem = (_type)rte_fslmc_mem_iova_to_vaddr(_mem); }
 
-#endif /* RTE_LIBRTE_DPAA2_USE_PHYS_IOVA */
+static inline uint64_t
+dpaa2_mem_va_to_iova_check(void *va, uint64_t size)
+{
+	uint64_t iova = rte_fslmc_cold_mem_vaddr_to_iova(va, size);
+
+	if (iova == RTE_BAD_IOVA)
+		return RTE_BAD_IOVA;
+
+	/** Double check the iova is valid.*/
+	if (iova != rte_mem_virt2iova(va))
+		return RTE_BAD_IOVA;
+
+	return iova;
+}
+
+#define DPAA2_VADDR_TO_IOVA_AND_CHECK(_vaddr, size) \
+	dpaa2_mem_va_to_iova_check(_vaddr, size)
+#define DPAA2_IOVA_TO_VADDR_AND_CHECK(_iova, size) \
+	rte_fslmc_cold_mem_iova_to_vaddr(_iova, size)
 
 static inline
 int check_swp_active_dqs(uint16_t dpio_index)
