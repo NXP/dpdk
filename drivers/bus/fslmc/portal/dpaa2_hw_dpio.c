@@ -14,6 +14,7 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sched.h>
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/ioctl.h>
@@ -254,8 +255,6 @@ static int
 dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
-	pid_t tid;
-	char command[STRING_LEN];
 
 	/*
 	 *  In case of running DPDK on the Virtual Machine the Stashing
@@ -290,13 +289,15 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 #endif
 
 	if (getenv("NXP_CHRT_PERF_MODE")) {
+		pid_t tid;
+		struct sched_param sp = { .sched_priority = 90 };
+
 		tid = rte_gettid();
-		snprintf(command, STRING_LEN, "chrt -p 90 %d", tid);
-		ret = system(command);
+		ret = sched_setscheduler(tid, SCHED_RR, &sp);
 		if (ret < 0)
-			DPAA2_BUS_WARN("Failed to change thread priority");
+			DPAA2_BUS_WARN("Failed to change thread(%d) priority", tid);
 		else
-			DPAA2_BUS_DEBUG(" %s command is executed", command);
+			DPAA2_BUS_DEBUG("Thread %d Priority is updated", tid);
 
 		/* Above would only work when the CPU governors are configured
 		 * for performance mode; It is assumed that this is taken
