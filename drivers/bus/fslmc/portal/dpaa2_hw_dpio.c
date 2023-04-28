@@ -139,12 +139,19 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 {
 #define STRING_LEN	28
 #define AFFINITY_LEN	128
+#define CMD_LEN			300
 	uint32_t cpu_mask = 1;
-	size_t len = 0;
-	char *temp = NULL, *token = NULL;
+	size_t len = CMD_LEN;
+	char *temp, *token = NULL;
 	char string[STRING_LEN];
 	char smp_affinity[AFFINITY_LEN];
 	FILE *file;
+
+	temp = (char *)malloc(len * sizeof(char));
+	if ( temp == NULL) {
+		DPAA2_BUS_WARN("Unable to allocate temp buffer");
+		return;
+	}
 
 	snprintf(string, STRING_LEN, "dpio.%d", dpio_id);
 	file = fopen("/proc/interrupts", "r");
@@ -166,12 +173,13 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 		fclose(file);
 		return;
 	}
-	free(temp);
-	fclose(file);
 
+	cpu_mask = cpu_mask << cpu_id;
 	snprintf(smp_affinity, AFFINITY_LEN,
 		 "/proc/irq/%s/smp_affinity", token);
-	cpu_mask = cpu_mask << cpu_id;
+	/* Free 'temp' memory after using the substring 'token' */
+	free(temp);
+	fclose(file);
 
 	file = fopen(smp_affinity, "w");
 	if (file == NULL) {
