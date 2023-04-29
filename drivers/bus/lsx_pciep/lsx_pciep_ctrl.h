@@ -102,9 +102,9 @@ lsx_pciep_64bar_to_32bar(uint8_t bar_64b)
 #define PCIE_FUN_RESET_SRIOV_CAP (0x1 << 28)
 
 struct pcie_ctrl_ext_cap {
-	uint32_t next_cap_off:12;
-	uint32_t cap_ver:4;
 	uint32_t ext_cap_id:16;
+	uint32_t cap_ver:4;
+	uint32_t next_cap_off:12;
 } __packed;
 
 struct pcie_ctrl_cfg {
