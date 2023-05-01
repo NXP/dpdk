@@ -2394,6 +2394,40 @@ int rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
 		struct rte_mempool *mb_pool);
 
 /**
+  * @warning
+  * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
+  *
+  * Allocate and set up a receive queue for an Ethernet device with multiple
+  * mempools.
+  *
+  * Please check definition of API rte_eth_rx_queue_setup() for more details.
+  *
+  * The difference from API rte_eth_rx_queue_setup() is that it accepts
+  * multiple mempools to be configured on a device.
+  *
+  * DPAA specific limitation:
+  * on DPAA platform, we can setup multiple mempools on an interface, but
+  * not on a queue. So when user call this API for the first time for an
+  * interface with multiple mempools, DPAA driver will configure the mempools
+  * to interface and on subsequent call of this API with same interface
+  * for same/different queue with same/new mempools, driver will
+  * ignore the mempools parameter and configure the new queue if supported.
+  *
+  * Maxmimum supported mempools are 4.
+  *
+  * Mempool list @param mb_pool must be ascending order of buffer size
+  * supported by mempools i.e. mempool with smallest buffer size should be at
+  * index 0 of @param mb_pool and mempool with largest buffer size should
+  * be at last index of @param mb_pool.
+  * This is required so that HW can allocate the best buffer from a pool
+  * for the incoming packets.
+  */
+int rte_eth_rx_queue_mpool_setup(uint16_t port_id, uint16_t rx_queue_id,
+				 uint16_t nb_rx_desc, unsigned int socket_id,
+				 const struct rte_eth_rxconf *rx_conf,
+				 struct rte_mempool **mb_pool, uint16_t nb_mp);
+
+/**
  * @warning
  * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
  *

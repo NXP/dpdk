@@ -48,7 +48,7 @@
 #define IF_MODE_RLP 0x00000820
 
 /**< Pool Limits */
-#define FMAN_PORT_MAX_EXT_POOLS_NUM	8
+#define FMAN_PORT_MAX_EXT_POOLS_NUM	4
 #define FMAN_PORT_OBS_EXT_POOLS_NUM	2
 
 #define FMAN_PORT_CG_MAP_NUM		8

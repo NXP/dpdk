@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2021,2023 NXP
  */
 
 #include <stdio.h>
@@ -356,7 +356,8 @@ int dpaa_ol_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		return -rte_errno;
 	}
 
-	dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+	/* only one mempool can be configured for ol device */
+	dpaa_intf->bp_info[0] = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 	dpaa_intf->valid = 1;
 
 	rxq->bp_array = rte_dpaa_bpid_info;
@@ -387,11 +388,12 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	if (dpaa_intf->bp_info == NULL || rxq == NULL)
 		return 0;
 
-	mbp_priv = (struct rte_pktmbuf_pool_private *)rte_mempool_get_priv(dpaa_intf->bp_info->mp);
+	mbp_priv = (struct rte_pktmbuf_pool_private *)
+		   rte_mempool_get_priv(dpaa_intf->bp_info[0]->mp);
 	fq_info.tx_fq_id = txq->fqid;
 	fq_info.rx_fq_id = rxq->fqid;
 	fq_info.buff_size = mbp_priv->mbuf_data_room_size;
-	fq_info.bp_id = dpaa_intf->bp_info->bpid;
+	fq_info.bp_id = dpaa_intf->bp_info[0]->bpid;
 
 /* Private area reserved by driver.
  * Aligned with "struct annotations_t". Parse results will be written from
