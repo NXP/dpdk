@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright 2017,2020,2022-2023 NXP
+ * Copyright 2017,2020,2022-2024 NXP
  *
  */
 
@@ -449,8 +449,8 @@ fman_if_loopback_disable(struct fman_if *p)
 }
 
 void
-fman_if_set_bp(struct fman_if *fm_if, unsigned num __always_unused,
-		    int bpid, size_t bufsize)
+fman_if_set_bp(struct fman_if *fm_if, int bpid,
+	size_t bufsize, uint16_t idx)
 {
 	u32 fmbm_ebmpi;
 	u32 ebmpi_val_ace = 0xc0000000;
@@ -461,11 +461,11 @@ fman_if_set_bp(struct fman_if *fm_if, unsigned num __always_unused,
 	assert(fman_ccsr_map_fd != -1);
 
 	fmbm_ebmpi =
-	       in_be32(&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_ebmpi[0]);
+		in_be32(&((struct rx_bmi_regs*)__if->bmi_map)->fmbm_ebmpi[idx]);
 	fmbm_ebmpi = ebmpi_val_ace | (fmbm_ebmpi & ebmpi_mask) | (bpid << 16) |
 		     (bufsize);
 
-	out_be32(&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_ebmpi[0],
+	out_be32(&((struct rx_bmi_regs*)__if->bmi_map)->fmbm_ebmpi[idx],
 		 fmbm_ebmpi);
 }
 

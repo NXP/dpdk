@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018,2022 NXP
+ * Copyright 2018, 2022, 2024 NXP
  */
 
 #ifndef _PMD_DPAA_H_
@@ -56,8 +56,8 @@ int
 rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 				 uint32_t rate);
 
-__rte_experimental
-int rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
+int
+rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
 	uint16_t queue_idx, uint16_t nb_desc,
 	const struct rte_eth_rxconf *rx_conf,
 	struct rte_mempool **mps, uint8_t pool_num);

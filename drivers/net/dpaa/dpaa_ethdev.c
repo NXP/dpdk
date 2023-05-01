@@ -225,6 +225,42 @@ dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 }
 
 static int
+dpaa_if_multiple_pool_configure(struct rte_eth_dev *dev,
+	struct dpaa_bp_info *bp[], uint8_t bp_num)
+{
+	struct fman_if_ic_params icp;
+	uint32_t fd_offset;
+	int ret;
+	uint8_t i;
+
+	if (bp_num > FMAN_PORT_MAX_EXT_POOLS_NUM) {
+		DPAA_PMD_ERR("Too many pools(%d) assigned on %s",
+			bp_num, dev->data->name);
+
+		return -EINVAL;
+	}
+
+	memset(&icp, 0, sizeof(icp));
+	/* set ICEOF for to the default value , which is 0*/
+	icp.iciof = DEFAULT_ICIOF;
+	icp.iceof = DEFAULT_RX_ICEOF;
+	icp.icsz = DEFAULT_ICSZ;
+	ret = fman_if_set_ic_params(dev->process_private, &icp);
+	if (ret)
+		return ret;
+
+	fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
+	fman_if_set_fdoff(dev->process_private, fd_offset);
+
+	for (i = 0; i < bp_num; i++) {
+		fman_if_set_bp(dev->process_private, bp[i]->bpid,
+			bp[i]->size, i);
+	}
+
+	return 0;
+}
+
+static int
 dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	struct rte_eth_conf *eth_conf = &dev->data->dev_conf;
@@ -539,7 +575,7 @@ static int dpaa_eth_dev_close(struct rte_eth_dev *dev)
 		return 0;
 
 	if (!dpaa_intf) {
-		DPAA_PMD_DEBUG("Already closed or not started");
+		DPAA_PMD_WARN("Already closed or not started");
 		return -ENOENT;
 	}
 
@@ -646,7 +682,7 @@ static int dpaa_eth_dev_close(struct rte_eth_dev *dev)
 		}
 	}
 	if (fif->num_profiles) {
-		ret = dpaa_port_vsp_cleanup(dpaa_intf, fif);
+		ret = dpaa_port_vsp_cleanup(dpaa_intf);
 		if (ret) {
 			DPAA_PMD_WARN("%s: cleanup VSP failed(%d)",
 				dev->data->name, ret);
@@ -1067,73 +1103,27 @@ static int dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static void dpaa_fman_if_pool_setup(struct rte_eth_dev *dev)
+static int
+_dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
+	uint16_t queue_idx, uint16_t nb_desc,
+	uint32_t socket_id __rte_unused,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool **mps, uint8_t pool_num)
 {
-	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct fman_if_ic_params icp;
-	uint32_t fd_offset;
-	uint32_t bp_size;
-
-	memset(&icp, 0, sizeof(icp));
-	/* set ICEOF for to the default value , which is 0*/
-	icp.iciof = DEFAULT_ICIOF;
-	icp.iceof = DEFAULT_RX_ICEOF;
-	icp.icsz = DEFAULT_ICSZ;
-	fman_if_set_ic_params(dev->process_private, &icp);
-
-	fd_offset = RTE_PKTMBUF_HEADROOM + DPAA_HW_BUF_RESERVE;
-	fman_if_set_fdoff(dev->process_private, fd_offset);
-
-	/* Buffer pool size should be equal to Dataroom Size*/
-	bp_size = rte_pktmbuf_data_room_size(dpaa_intf->bp_info->mp);
-
-	fman_if_set_bp(dev->process_private,
-		       dpaa_intf->bp_info->mp->size,
-		       dpaa_intf->bp_info->bpid, bp_size);
-}
-
-static inline int dpaa_eth_rx_queue_bp_check(struct rte_eth_dev *dev,
-					     int8_t vsp_id, uint32_t bpid)
-{
-	struct dpaa_if *dpaa_intf = dev->data->dev_private;
-	struct fman_if *fif = dev->process_private;
-
-	if (fif->num_profiles) {
-		if (vsp_id < 0)
-			vsp_id = fif->base_profile_id;
-	} else {
-		if (vsp_id < 0)
-			vsp_id = 0;
-	}
-
-	if (dpaa_intf->vsp_bpid[vsp_id] &&
-		bpid != dpaa_intf->vsp_bpid[vsp_id]) {
-		DPAA_PMD_ERR("Various MPs are assigned to RXQs with same VSP");
-
-		return -1;
-	}
-
-	return 0;
-}
-
-static
-int _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
-			    uint16_t nb_desc,
-			    unsigned int socket_id __rte_unused,
-			    const struct rte_eth_rxconf *rx_conf,
-			    struct rte_mempool **mmp, uint8_t pool_num __rte_unused)
-{
-	struct rte_mempool *mp = mmp[0];
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct fman_if *fif = dev->process_private;
 	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
 	struct qm_mcc_initfq opts = {0};
-	u32 ch_id, flags = 0;
-	int ret, set_push_rxq = false;
-	u32 buffsz = rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
-	uint32_t max_rx_pktlen;
+	u32 ch_id, flags = 0, buffsz, max_rx_pktlen;
+	int ret, mp_update = 0, set_push_rxq = false;
+	struct dpaa_bp_info *bp_info;
+	struct dpaa_if_vsp *vsp;
+	uint8_t i;
 
 	PMD_INIT_FUNC_TRACE();
+
+	max_rx_pktlen = dev->data->mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN +
+		VLAN_TAG_SIZE;
 
 	if (queue_idx >= dev->data->nb_rx_queues) {
 		rte_errno = EOVERFLOW;
@@ -1157,84 +1147,73 @@ int _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	/* Shutdown FQ before configure */
 	qman_shutdown_fq(rxq->fqid);
 
-	if (!fif->num_profiles) {
-		if (dpaa_intf->bp_info && dpaa_intf->bp_info->bp &&
-			dpaa_intf->bp_info->mp != mp) {
-			DPAA_PMD_WARN("Multiple pools on same interface not"
-				      " supported");
-			return -EINVAL;
-		}
+	if (rxq->vsp_id >= 0) {
+		vsp = &dpaa_intf->vsp[rxq->vsp_id];
 	} else {
-		if (dpaa_eth_rx_queue_bp_check(dev, rxq->vsp_id,
-			DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid)) {
+		if (fif->is_shared_mac) {
+			DPAA_PMD_ERR("Fatal: ShareMAC(%s) must enable VSP!",
+				dpaa_intf->name);
 			return -EINVAL;
 		}
+		vsp = &dpaa_intf->vsp[dpaa_intf->base_vsp];
 	}
 
-	if (dpaa_intf->bp_info && dpaa_intf->bp_info->bp &&
-	    dpaa_intf->bp_info->mp != mp) {
-		DPAA_PMD_WARN("Multiple pools on same interface not supported");
+	if (pool_num > FMAN_PORT_MAX_EXT_POOLS_NUM) {
+		DPAA_PMD_ERR("Too many pools(%d) assigned on %s/vsp%d",
+			pool_num, dev->data->name,
+			rxq->vsp_id >= 0 ? rxq->vsp_id : dpaa_intf->base_vsp);
 		return -EINVAL;
 	}
 
-	max_rx_pktlen = dev->data->mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN +
-		VLAN_TAG_SIZE;
-	/* Max packet can fit in single buffer */
-	if (max_rx_pktlen <= buffsz) {
-		;
-	} else if (dev->data->dev_conf.rxmode.offloads &
-			RTE_ETH_RX_OFFLOAD_SCATTER) {
-		if (max_rx_pktlen > buffsz * DPAA_SGT_MAX_ENTRIES) {
-			DPAA_PMD_ERR("Maximum Rx packet size %d too big to fit "
-				"MaxSGlist %d",
-				max_rx_pktlen, buffsz * DPAA_SGT_MAX_ENTRIES);
-			rte_errno = EOVERFLOW;
-			return -rte_errno;
+	for (i = 0; i < pool_num; i++) {
+		bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mps[i]);
+		if (vsp->vsp_bp[i] && vsp->vsp_bp[i] != bp_info) {
+			DPAA_PMD_WARN("VSP%d' pool%d mp (%s) is replaced by %s",
+				rxq->vsp_id >= 0 ?
+				rxq->vsp_id >= 0 : dpaa_intf->base_vsp,
+				i, vsp->vsp_bp[i]->mp->name, mps[i]->name);
+			mp_update = 1;
+		} else if (!vsp->vsp_bp[i]) {
+			mp_update = 1;
 		}
-	} else {
-		DPAA_PMD_WARN("The requested maximum Rx packet size (%u) is"
-		     " larger than a single mbuf (%u) and scattered"
-		     " mode has not been requested", max_rx_pktlen, buffsz);
+		vsp->vsp_bp[i] = bp_info;
+		buffsz = rte_pktmbuf_data_room_size(mps[i]) -
+			RTE_PKTMBUF_HEADROOM;
+		if (vsp->max_size < buffsz)
+			vsp->max_size = buffsz;
+	}
+	vsp->bp_num = vsp->bp_num > pool_num ? vsp->bp_num : pool_num;
+	if ((dev->data->dev_conf.rxmode.offloads &
+		RTE_ETH_RX_OFFLOAD_SCATTER) &&
+		(max_rx_pktlen > (vsp->max_size * DPAA_SGT_MAX_ENTRIES))) {
+		DPAA_PMD_ERR("MTU(%d) > SG list max buffer size(%d)",
+			max_rx_pktlen, vsp->max_size * DPAA_SGT_MAX_ENTRIES);
+		rte_errno = EOVERFLOW;
+		return -rte_errno;
+	} else if (!(dev->data->dev_conf.rxmode.offloads &
+		RTE_ETH_RX_OFFLOAD_SCATTER) &&
+		max_rx_pktlen > vsp->max_size) {
+		DPAA_PMD_ERR("MTU(%d) > Single max buffer size(%d)",
+			max_rx_pktlen, vsp->max_size);
+		rte_errno = EOVERFLOW;
+		return -rte_errno;
 	}
 
-	dpaa_intf->bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
-
-	/* For shared interface, it's done in kernel, skip.*/
-	if (!fif->is_shared_mac && fif->mac_type != fman_offline_internal &&
-	    fif->mac_type != fman_onic)
-		dpaa_fman_if_pool_setup(dev);
-
-	if (fif->num_profiles) {
-		int8_t vsp_id = rxq->vsp_id;
-
-		if (vsp_id >= 0) {
-			ret = dpaa_port_vsp_update(dpaa_intf, fmc_q, vsp_id,
-					DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid,
-					fif, buffsz + RTE_PKTMBUF_HEADROOM);
-			if (ret) {
-				DPAA_PMD_ERR("dpaa_port_vsp_update failed");
-				return ret;
-			}
-		} else {
-			DPAA_PMD_INFO("Base profile is associated to"
-				" RXQ fqid:%d", rxq->fqid);
-			if (fif->is_shared_mac) {
-				DPAA_PMD_ERR("Fatal: Base profile is associated"
-					     " to shared interface on DPDK.");
-				return -EINVAL;
-			}
-			dpaa_intf->vsp_bpid[fif->base_profile_id] =
-				DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid;
-		}
-	} else {
-		dpaa_intf->vsp_bpid[0] =
-			DPAA_MEMPOOL_TO_POOL_INFO(mp)->bpid;
+	ret = 0;
+	if (rxq->vsp_id >= 0 && fif->num_profiles > 0 && mp_update) {
+		ret = dpaa_port_vsp_update(dpaa_intf, fmc_q,
+			rxq->vsp_id, fif);
+	} else if (mp_update) {
+		ret = dpaa_if_multiple_pool_configure(dev,
+			vsp->vsp_bp, vsp->bp_num);
+	}
+	if (ret) {
+		DPAA_PMD_ERR("Associate %s's rxq%d's pool failed(%d)",
+			dpaa_intf->name, queue_idx, ret);
+		return ret;
 	}
 
 	dpaa_intf->valid = 1;
-	if (fif->mac_type != fman_onic)
-		DPAA_PMD_DEBUG("if:%s sg_on = %d, max_frm =%d", dpaa_intf->name,
-			       fman_if_get_sg_enable(fif), max_rx_pktlen);
 	/* checking if push mode only, no error check for now */
 	if (!rxq->is_static)
 		set_push_rxq = dpaa_push_queue_num_update();
@@ -1369,7 +1348,6 @@ dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 		socket_id, rx_conf, &mp, 1);
 }
 
-RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_dpaa_eth_rx_queue_mp_setup, 25.11)
 int
 rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
 	uint16_t queue_idx, uint16_t nb_desc,
@@ -1389,8 +1367,7 @@ rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
 }
 
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa_eth_eventq_attach)
-int
-dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
+int dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 	int eth_rx_queue_id, u16 ch_id,
 	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
 {
@@ -1569,7 +1546,9 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct rte_eth_fc_conf *net_fc;
-	struct fman_if *fm_if = dev->process_private;
+	uint16_t i, j;
+	struct dpaa_if_vsp *vsp;
+	struct fman_if *fm_if;
 	int ret;
 
 	PMD_INIT_FUNC_TRACE();
@@ -1596,14 +1575,22 @@ dpaa_flow_ctrl_set(struct rte_eth_dev *dev,
 		fc_conf->mode != RTE_ETH_FC_FULL)
 		goto save_fc;
 
-	ret = fman_if_set_fc_threshold(fm_if,
-					 fc_conf->high_water,
-					 fc_conf->low_water,
-					 dpaa_intf->bp_info->bpid);
-	if (ret) {
-		DPAA_PMD_ERR("Set %s's fc on bpid(%d) err(%d)",
-				dev->data->name, dpaa_intf->bp_info->bpid,
-				ret);
+	fm_if = dev->process_private;
+	for (i = 0; i < DPAA_VSP_PROFILE_MAX_NUM; i++) {
+		vsp = &dpaa_intf->vsp[i];
+		if (!vsp->bp_num)
+			continue;
+		for (j = 0; j < vsp->bp_num; j++) {
+			ret = fman_if_set_fc_threshold(fm_if,
+				fc_conf->high_water,
+				fc_conf->low_water,
+				vsp->vsp_bp[j]->bpid);
+			if (ret) {
+				DPAA_PMD_ERR("Set %s's fc on bpid(%d) err(%d)",
+					dev->data->name, vsp->vsp_bp[j]->bpid,
+					ret);
+			}
+		}
 	}
 	if (fc_conf->pause_time) {
 		ret = fman_if_set_fc_quanta(fm_if, fc_conf->pause_time);
@@ -1812,10 +1799,17 @@ dpaa_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct qman_fq *rxq;
 	int ret;
+	struct dpaa_if_vsp *vsp;
 
 	rxq = dev->data->rx_queues[queue_id];
 
-	qinfo->mp = dpaa_intf->bp_info->mp;
+	if (rxq->vsp_id >= 0)
+		vsp = &dpaa_intf->vsp[rxq->vsp_id];
+	else
+		vsp = &dpaa_intf->vsp[dpaa_intf->base_vsp];
+	/** We select the first pool here.*/
+	qinfo->mp = vsp->vsp_bp[0]->mp;
+
 	qinfo->scattered_rx = dev->data->scattered_rx;
 	qinfo->nb_desc = rxq->nb_desc;
 
@@ -1901,35 +1895,15 @@ static struct eth_dev_ops dpaa_devops = {
 	.timesync_read_tx_timestamp = dpaa_timesync_read_tx_timestamp,
 };
 
-static bool
-is_device_supported(struct rte_eth_dev *dev, struct rte_dpaa_driver *drv)
-{
-	if (strcmp(dev->device->driver->name,
-		   drv->driver.name))
-		return false;
-
-	return true;
-}
-
-static bool
-is_dpaa_supported(struct rte_eth_dev *dev)
-{
-	return is_device_supported(dev, &rte_dpaa_pmd);
-}
-
-RTE_EXPORT_SYMBOL(rte_pmd_dpaa_set_tx_loopback)
 int
 rte_pmd_dpaa_set_tx_loopback(uint16_t port, uint8_t on)
 {
 	struct rte_eth_dev *dev;
 
-	RTE_ETH_VALID_PORTID_OR_ERR_RET(port, -ENODEV);
+	if (!is_dpaa_device(port))
+		return -EINVAL;
 
 	dev = &rte_eth_devices[port];
-
-	if (!is_dpaa_supported(dev))
-		return -ENOTSUP;
-
 	if (on)
 		fman_if_loopback_enable(dev->process_private);
 	else
@@ -2026,15 +2000,16 @@ without_cgr:
 	return ret;
 }
 
-uint8_t fm_default_vsp_id(struct fman_if *fif)
+static uint8_t
+fm_default_vsp_id(struct fman_if *fif)
 {
 	/* Avoid being same as base profile which could be used
 	 * for kernel interface of shared mac.
 	 */
-	if (fif->base_profile_id)
-		return 0;
+	if (fif->is_shared_mac)
+		return fif->base_profile_id + 1;
 	else
-		return DPAA_DEFAULT_RXQ_VSP_ID;
+		return fif->base_profile_id;
 }
 
 /* Initialise a Tx FQ */
@@ -2245,7 +2220,7 @@ dpaa_error_queue_init(struct dpaa_if *dpaa_intf,
 
 static int
 check_devargs_handler(__rte_unused const char *key, const char *value,
-		      __rte_unused void *opaque)
+	__rte_unused void *opaque)
 {
 	if (strcmp(value, "1"))
 		return -1;
@@ -2271,7 +2246,7 @@ dpaa_get_devargs(struct rte_devargs *devargs, const char *key)
 	}
 
 	if (rte_kvargs_process(kvlist, key,
-			       check_devargs_handler, NULL) < 0) {
+		check_devargs_handler, NULL) < 0) {
 		rte_kvargs_free(kvlist);
 		return 0;
 	}
@@ -2298,9 +2273,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	int8_t dev_vspids[DPAA_MAX_NUM_PCD_QUEUES];
 	int8_t vsp_id = -1;
 	struct rte_device *dev = eth_dev->device;
-#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
 	char *penv;
-#endif
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2387,8 +2360,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_RX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Rx tail drop is disabled.
 	 */
-	if (getenv("DPAA_RX_TAILDROP_THRESHOLD")) {
-		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_RX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_threshold);
 		/* if a very large value is being configured */
@@ -2399,8 +2373,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_TX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Tx tail drop is disabled.
 	 */
-	if (getenv("DPAA_TX_TAILDROP_THRESHOLD")) {
-		td_tx_threshold = atoi(getenv("DPAA_TX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_TX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_tx_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_tx_threshold);
 		/* if a very large value is being configured */
@@ -2436,7 +2411,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (!fmc_q && !default_q) {
 		ret = qman_alloc_fqid_range(dev_rx_fqids, num_rx_fqs,
-					    num_rx_fqs, 0);
+			num_rx_fqs, 0);
 		if (ret < 0) {
 			DPAA_PMD_ERR("Failed to alloc rx fqid's");
 			goto free_rx;
@@ -2503,7 +2478,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 		dpaa_intf->cgr_tx = NULL;
 	}
 
-
 	for (loop = 0; loop < MAX_DPAA_CORES; loop++) {
 		if (dpaa_intf->cgr_tx)
 			dpaa_intf->cgr_tx[loop].cgrid = cgrid_tx[loop];
@@ -2519,7 +2493,6 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			ret = dpaa_tx_conf_queue_init(&dpaa_intf->tx_conf_queues[loop]);
 			if (ret)
 				goto free_tx;
-
 			dpaa_intf->tx_conf_queues[loop].dpaa_intf = dpaa_intf;
 			dpaa_intf->tx_queues[loop].tx_conf_queue = &dpaa_intf->tx_conf_queues[loop];
 		}
@@ -2530,6 +2503,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret)
 		goto free_tx;
 #endif
+
+	dpaa_intf->base_vsp = fm_default_vsp_id(fman_intf);
+
 	DPAA_PMD_DEBUG("All frame queues created");
 
 	/* Get the initial configuration for flow control */
@@ -2564,7 +2540,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	rte_ether_addr_copy(&fman_intf->mac_addr, &eth_dev->data->mac_addrs[0]);
 
 	DPAA_PMD_INFO("net: dpaa: %s: " RTE_ETHER_ADDR_PRT_FMT,
-		      dpaa_device->name, RTE_ETHER_ADDR_BYTES(&fman_intf->mac_addr));
+		dpaa_device->name, RTE_ETHER_ADDR_BYTES(&fman_intf->mac_addr));
 
 	if (!fman_intf->is_shared_mac &&
 	    fman_intf->mac_type != fman_offline_internal &&
@@ -2603,6 +2579,7 @@ free_rx:
 	rte_free(dpaa_intf->rx_queues);
 	dpaa_intf->rx_queues = NULL;
 	dpaa_intf->nb_rx_queues = 0;
+
 	return ret;
 }
 
@@ -2648,7 +2625,7 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 	}
 
 	if (!is_global_init && (rte_eal_process_type() == RTE_PROC_PRIMARY)) {
-		if (access("/tmp/fmc.bin", F_OK) == -1) {
+		if (access(FMC_FILE, F_OK) < 0) {
 			if (getenv("DPAA_DEFAULT_Q_ONLY")) {
 				default_q = 1;
 			} else {
@@ -2658,8 +2635,7 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 				}
 			}
 		} else {
-			DPAA_PMD_INFO("Using FMC script mode,"
-			"RXQs will be setup according to FMC configuration");
+			DPAA_PMD_INFO("Using FMC mode to setup RXQs.");
 		}
 
 		if (!(default_q || fmc_q)) {
@@ -2749,7 +2725,7 @@ RTE_FINI_PRIO(dpaa_finish, 103)
 	if (!(default_q || fmc_q)) {
 			if (dpaa_fm_term())
 				DPAA_PMD_WARN("DPAA FM term failed");
-
+		is_global_init = 0;
 		DPAA_PMD_INFO("DPAA fman cleaned up");
 	}
 
