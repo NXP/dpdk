@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <stdbool.h>
@@ -289,6 +289,16 @@ enetc_dev_rx_parse(struct rte_mbuf *m, uint16_t parse_results)
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 				 RTE_PTYPE_L3_IPV6 |
 				 RTE_PTYPE_L4_UDP;
+		return;
+	case ENETC_PKT_TYPE_IPV4_ESP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+				 RTE_PTYPE_L3_IPV4 |
+				 RTE_PTYPE_TUNNEL_ESP;
+		return;
+	case ENETC_PKT_TYPE_IPV6_ESP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+				 RTE_PTYPE_L3_IPV6 |
+				 RTE_PTYPE_TUNNEL_ESP;
 		return;
 	case ENETC_PKT_TYPE_IPV4_SCTP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
