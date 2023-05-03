@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2019 NXP
+ * Copyright 2017-2023 NXP
  */
 
 #include <fcntl.h>
@@ -42,9 +42,6 @@ enum sec_driver_state_e {
 	SEC_DRIVER_STATE_STARTED,	/* Driver initialized and can be used*/
 	SEC_DRIVER_STATE_RELEASE,	/* Driver release is in progress */
 };
-
-/* Job rings used for communication with SEC HW */
-static struct sec_job_ring_t g_job_rings[MAX_SEC_JOB_RINGS];
 
 /* The current state of SEC user space driver */
 static enum sec_driver_state_e g_driver_state = SEC_DRIVER_STATE_IDLE;
@@ -2141,55 +2138,20 @@ caam_jr_dev_uninit(struct rte_cryptodev *dev)
 	return SEC_SUCCESS;
 }
 
-/* @brief Initialize the software and hardware resources tied to a job ring.
- * @param [in] jr_mode;		Model to be used by SEC Driver to receive
- *				notifications from SEC.  Can be either
- *				of the three: #SEC_NOTIFICATION_TYPE_NAPI
- *				#SEC_NOTIFICATION_TYPE_IRQ or
- *				#SEC_NOTIFICATION_TYPE_POLL
- * @param [in] NAPI_mode	The NAPI work mode to configure a job ring at
- *				startup. Used only when #SEC_NOTIFICATION_TYPE
- *				is set to #SEC_NOTIFICATION_TYPE_NAPI.
- * @param [in] irq_coalescing_timer This value determines the maximum
- *					amount of time after processing a
- *					descriptor before raising an interrupt.
- * @param [in] irq_coalescing_count This value determines how many
- *					descriptors are completed before
- *					raising an interrupt.
- * @param [in] reg_base_addr,	The job ring base address register
- * @param [in] irq_id		The job ring interrupt identification number.
- * @retval  job_ring_handle for successful job ring configuration
- * @retval  NULL on error
- *
- */
-static void *
-init_job_ring(void *reg_base_addr, int irq_id)
+static int
+init_job_ring(void *reg_base_addr, int irq_id,
+	      struct sec_job_ring_t *job_ring)
 {
-	struct sec_job_ring_t *job_ring = NULL;
-	int i, ret = 0;
+	int ret = 0;
 	int jr_mode = SEC_NOTIFICATION_TYPE_POLL;
 	int napi_mode = 0;
 	int irq_coalescing_timer = 0;
 	int irq_coalescing_count = 0;
 
-	for (i = 0; i < MAX_SEC_JOB_RINGS; i++) {
-		if (g_job_rings[i].irq_fd == -1) {
-			job_ring = &g_job_rings[i];
-			g_job_rings_no++;
-			break;
-		}
-	}
-	if (job_ring == NULL) {
-		CAAM_JR_ERR("No free job ring\n");
-		return NULL;
-	}
-
 	job_ring->register_base_addr = reg_base_addr;
 	job_ring->jr_mode = jr_mode;
 	job_ring->napi_mode = 0;
 	job_ring->irq_fd = irq_id;
-
-	/* Allocate mem for input and output ring */
 
 	/* Allocate memory for input ring */
 	job_ring->input_ring = caam_jr_dma_mem_alloc(L1_CACHE_BYTES,
@@ -2245,12 +2207,13 @@ init_job_ring(void *reg_base_addr, int irq_id)
 	job_ring->jr_state = SEC_JOB_RING_STATE_STARTED;
 	job_ring->max_nb_queue_pairs = RTE_CAAM_MAX_NB_SEC_QPS;
 	job_ring->max_nb_sessions = RTE_CAAM_JR_PMD_MAX_NB_SESSIONS;
+	g_job_rings_no++;
 
-	return job_ring;
+	return 0;
 cleanup:
 	caam_jr_dma_free(job_ring->output_ring);
 	caam_jr_dma_free(job_ring->input_ring);
-	return NULL;
+	return -1;
 }
 
 
@@ -2259,6 +2222,7 @@ caam_jr_dev_init(const char *name,
 		 struct rte_vdev_device *vdev,
 		 struct rte_cryptodev_pmd_init_params *init_params)
 {
+	int ret;
 	struct rte_cryptodev *dev;
 	struct rte_security_ctx *security_instance;
 	struct uio_job_ring *job_ring;
@@ -2296,12 +2260,12 @@ caam_jr_dev_init(const char *name,
 		CAAM_JR_ERR("failed to create cryptodev vdev");
 		goto cleanup;
 	}
-	/*TODO free it during teardown*/
-	dev->data->dev_private = init_job_ring(job_ring->register_base_addr,
-						job_ring->uio_fd);
 
-	if (!dev->data->dev_private) {
-		CAAM_JR_ERR("Ring memory allocation failed\n");
+	ret = init_job_ring(job_ring->register_base_addr,
+			    job_ring->uio_fd,
+			    dev->data->dev_private);
+	if (ret) {
+		CAAM_JR_ERR("Ring initialization failed\n");
 		goto cleanup2;
 	}
 
@@ -2436,15 +2400,6 @@ cryptodev_caam_jr_remove(struct rte_vdev_device *vdev)
 	return rte_cryptodev_pmd_destroy(cryptodev);
 }
 
-static void
-sec_job_rings_init(void)
-{
-	int i;
-
-	for (i = 0; i < MAX_SEC_JOB_RINGS; i++)
-		g_job_rings[i].irq_fd = -1;
-}
-
 static struct rte_vdev_driver cryptodev_caam_jr_drv = {
 	.probe = cryptodev_caam_jr_probe,
 	.remove = cryptodev_caam_jr_remove
@@ -2462,7 +2417,6 @@ RTE_PMD_REGISTER_CRYPTO_DRIVER(caam_jr_crypto_drv, cryptodev_caam_jr_drv.driver,
 RTE_INIT(caam_jr_init)
 {
 	sec_uio_job_rings_init();
-	sec_job_rings_init();
 }
 
 RTE_LOG_REGISTER(caam_jr_logtype, pmd.crypto.caam, NOTICE);
