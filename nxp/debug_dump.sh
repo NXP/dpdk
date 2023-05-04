@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2022 NXP
+# Copyright 2018-2023 NXP
 
 # tunable parameters
 
@@ -109,12 +109,6 @@ function system_adv() {
 	mycmd "vmstat -m"
 }
 
-function ppfe_info() {
-	echo "PPFE: $@" >> ${logoutput}
-	mycmd "ls /sys/module/pfe/parameters/*"
-	mycmd "cat /sys/module/pfe/parameters/*"
-}
-
 function dpaa_info() {
 	echo "DPAA1: $@" >> ${logoutput}
 	fmc --version >> ${logoutput}
@@ -179,7 +173,7 @@ function usage() {
 function board_config() {
 	if [ -e /sys/firmware/devicetree/base/compatible ]
 	then
-	board_type=`grep -ao 'imx8m\|imx9\|1028\|1012\|1046\|1043\|1088\|2088\|2160\|2162' /sys/firmware/devicetree/base/compatible | head -1`
+	board_type=`grep -ao 'imx8m\|imx9\|1028\|1046\|1043\|1088\|2088\|2160\|2162' /sys/firmware/devicetree/base/compatible | head -1`
 	fi
 
 	echo "Board type ${board_type} detected."
@@ -199,12 +193,6 @@ function board_config() {
 		dpaa_info
 	fi
 
-	if [[ $board_type == "1012" ]]
-	then
-		platform="ppfe"
-		echo "platform detected is ${platform}"
-		ppfe_info
-	fi
 	if [[ $board_type == "1028" ]]
 	then
 		platform="enetc"

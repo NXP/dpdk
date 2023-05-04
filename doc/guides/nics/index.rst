@@ -42,7 +42,6 @@ Network Interface Controller Drivers
     ionic
     ipn3ke
     ixgbe
-    kni
     liquidio
     mana
     memif
@@ -58,7 +57,6 @@ Network Interface Controller Drivers
     octeon_ep
     octeontx
     pcap_ring
-    pfe
     qede
     sfc_efx
     softnic

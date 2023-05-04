@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2022 NXP
+# Copyright 2018-2023 NXP
 ===============================================================================
 NXP DPDK README
 ---------------
 Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
-3. PPFE  : LS1012
-4. ENETC : LS1028
-5. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
+3. ENETC : LS1028
+4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -66,13 +65,6 @@ Following information can be used to obtain these components:
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
           be available in the rootfs. In this case, requirements for a compiled
           Linux Kernel source would not be required.
-
-    NOTE: For PPFE platform, DPDK has dependency on pfe.ko module to perform the
-	  necessary intilatization of firmware and ethernet. "pfe.ko" might already
-	  be available in rootfs and loaded automatically on board up. Otherwise, user
-	  must compile the kernel to generate pfe.ko and insmod the module on board
-	  up using below command:
-		insmod pfe.ko us=1
 
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -206,10 +198,6 @@ arm64-build/examples directory.
 
         $ export DESTDIR=/path/toinsall
 
-    NOTE: For PPFE platform, to perform crypto operations using "caam_jr" crypto driver,
-	  use following (remove arm64-build directory before it):
-	  $ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all -Dc_args="-DRTE_LIBRTE_PMD_CAAM_JR_BE=1"
-
   Building DPDK Example Applications
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -232,7 +220,7 @@ arm64-build/examples directory.
 Executing DPDK Applications
 -------------------------
 
-There are some pre-requisites for running DPDK applications on the PPFE, DPAA,
+There are some pre-requisites for running DPDK applications on the DPAA,
 DPAA2 or ENETC boards.
 
 Following are some pre-requisites:
@@ -296,38 +284,6 @@ Following are some pre-requisites:
 	2. For RDB board, run below script:
 	       /usr/local/dpdk/enetc/dpdk_configure_1028ardb.sh
 
-
-  For PPFE Platform:
-  ~~~~~~~~~~~~~~~~~~
-
-  1. Bring up the board with PPFE images with proper bootargs:
-	<bootargs>
-
-  2. Mount the hugetlbfs required for DPDK applications:
-	1. mkdir -p /dev/hugepages
-	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
-
-  3. Make sure pfe.ko is loaded in User Space mode using below command:
-	1. cat /sys/module/pfe/parameters/us
-
-	Output of this command should be 1
-
-    NOTE: pfe.ko will be loaded on board bring up automatically. User can check
-	  Whether it is loaded or not using below command:
-		1. lsmod
-
-	  In case, if it is not loaded automatically, below command can be used to
-	  to load:
-		1. insmod /lib/modules/<kernel_version>/kernel/drivers/staging/fsl_ppfe/pfe.ko us=1
-
-  4. Set enviroment variable PPFE_INTR_SUPPORT to enable interrupt mode. It will
-     free CPU when traffic is low. With this mode there is a slight drop(~5%) in
-     performance as compared to default mode(POLL).
-
-  NOTE: For PPFE platform, For all the applications, user must provide the "--vdev"
-	argument with value "eth_pfe" to enable ethernet device. Maximum supported
-	ethernet on LS1012 are 2, so user can give upto two "--vdev" arguments with
-	values "eth_pfe0" and "eth_pfe1".
 
   For DPAA2 Platform:
   ~~~~~~~~~~~~~~~~~~~
@@ -545,8 +501,6 @@ Following are some pre-requisites:
   On the `testpmd` prompt, <tab> key can be used for command completion as well
   as command help.
 
-  NOTE: testpmd is not supported on PPFE platform
-
   On i.mx8mm platform
   ./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=io
 
@@ -600,10 +554,6 @@ Following are some pre-requisites:
   OR
 
   $ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -P
-
-  For PPFE platform:
-
-  $ ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'eth_pfe0' --vdev='eth_pfe1' -- -p 0x3 -q 3 -P
 
   In the above commands, the port mask has been modified to support first and
   first two ports, respectively. Also, the Core mask has been modified to
@@ -680,10 +630,6 @@ Following are some pre-requisites:
   For 8 core - 4 Port with 4 queue per port =>
 
   $ ./dpdk-l3fwd -c 0xFF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
-
-  FOR PPFE platform:
-
-  $ ./dpdk-l3fwd -c 0x1 --vdev='eth_pfe0' --vdev='eth_pfe1' -n 1 -- -p 0x3 --config="(0,0,0),(1,0,0)" -P
 
   Hereafter, use the packet generator (Spirent, for example) to send traffic
   streams with below configuration of the destination IP address in the frames
@@ -1200,14 +1146,6 @@ Applications validated DPAA/DPAA2 Platforms
  15. skelton
  16. rxtx_callback
 
- Applications Validated PPFE Platform
- ------------------------------------
-
- 1. l2fwd
- 2. l3fwd
- 3. l2fwd-crypto
- 4. ipsecgw
-
 ================================================================================
 
 Running DPDK Applications Without Root Privileges
@@ -1241,10 +1179,6 @@ On non-root user:
 
 Environment configuration variables
 ------------------------------------
-
-PPFE:
------
-1. PPFE_INTR_SUPPORT		Enable Interrupt mode for I/O. This will free CPU if traffic is low.
 
 Common for DPAA1 & DPAA2
 ------------------------

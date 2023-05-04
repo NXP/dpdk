@@ -1,5 +1,5 @@
 ..  SPDX-License-Identifier: BSD-3-Clause
-    Copyright 2018 NXP
+    Copyright 2018-2023 NXP
 
 
 NXP CAAM JOB RING (caam_jr)
@@ -78,7 +78,6 @@ Supported DPAA SoCs
 * LS1046A/LS1026A
 * LS1043A/LS1023A
 * LS1028A
-* LS1012A
 
 Limitations
 -----------

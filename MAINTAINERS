@@ -910,12 +910,6 @@ F: drivers/net/enetfec/
 F: doc/guides/nics/enetfec.rst
 F: doc/guides/nics/features/enetfec.ini
 
-NXP pfe
-M: Gagandeep Singh <g.singh@nxp.com>
-F: doc/guides/nics/pfe.rst
-F: drivers/net/pfe/
-F: doc/guides/nics/features/pfe.ini
-
 Marvell QLogic bnx2x
 M: Rasesh Mody <rmody@marvell.com>
 M: Shahed Shaikh <shshaikh@marvell.com>
@@ -1004,10 +998,6 @@ Tap PMD
 F: drivers/net/tap/
 F: doc/guides/nics/tap.rst
 F: doc/guides/nics/features/tap.ini
-
-KNI PMD
-F: drivers/net/kni/
-F: doc/guides/nics/kni.rst
 
 Ring PMD
 M: Bruce Richardson <bruce.richardson@intel.com>
