@@ -274,16 +274,19 @@ Steps to run dpdk-pkt_split_app on DPAA2 (when split port is eth port)
 1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
 
   $ ls-addni --no-link
-  $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
-  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
-  $ restool dprc disconnect dprc.2 --endpoint=dpni.1
+	let us assume the interface created is dpni.z
+  $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.x dpmac.y
+	let us assume the interface for dpmac.x is dpni.x and for dpmac.y is dpni.y
+	and the container created be dprc.x
+  $ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
+  $ restool dprc disconnect dprc.x --endpoint=dpni.x
   $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT --container=dprc.1
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.1
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.3
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.1
-  $ restool dprc assign dprc.1 --object=dpdmux.0 --child=dprc.2 --plugged=1
-  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
-  $ export DPRC=dprc.2
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.x
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.z
+  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.x
+  $ restool dprc assign dprc.1 --object=dpdmux.0 --child=dprc.x --plugged=1
+  $ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
+  $ export DPRC=dprc.x
   $ ifconfig eth0 1.1.1.2
   $ ifconfig eth0 promisc
 
