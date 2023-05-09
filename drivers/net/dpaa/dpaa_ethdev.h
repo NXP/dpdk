@@ -140,7 +140,8 @@ struct dpaa_if {
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
-	struct dpaa_bp_info *bp_info;
+	struct dpaa_bp_info *bp_info[FMAN_PORT_MAX_EXT_POOLS_NUM];
+	uint16_t nb_bp;
 	struct rte_eth_fc_conf *fc_conf;
 	void *port_handle;
 	void *netenv_handle;
