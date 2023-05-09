@@ -455,6 +455,8 @@ Following are some pre-requisites:
   NOTE: For i.MX platforms, all the applications, user must provide the "--vdev"
 	argument with value "net_enetfec" to enable ethernet device. Maximum supported
 	ethernet is currently 1 only.
+  NOTE: For i.MX platforms, reserve the initial DDR memory from uboot via 'mem' environment variable in bootargs.
+	Example: 'mem=4096M'
 
 
 
