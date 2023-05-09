@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  * Copyright 2014-2015 Freescale Semiconductor Inc.
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <stdlib.h>
@@ -27,8 +27,8 @@ static rte_atomic16_t module_count;
 static int
 gpp_cmdif_srv_init(void)
 {
-	srv = cmdif_srv_allocate((void * (*)(int))(malloc),
-		(void * (*)(int))(malloc));
+	srv = cmdif_srv_allocate((void * (*)(size_t))(malloc),
+		(void * (*)(size_t))(malloc));
 	if (srv == NULL)
 		return -ENOMEM;
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  * Copyright 2014-2015 Freescale Semiconductor Inc.
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <cmdif.h>
@@ -42,8 +42,8 @@
 	(((struct cmdif_srv *)srv)->m_id[(ID)] < M_NUM_OF_MODULES))
 
 void *
-cmdif_srv_allocate(void *(*fast_malloc)(int size),
-		   void *(*slow_malloc)(int size))
+cmdif_srv_allocate(void *(*fast_malloc)(size_t size),
+		   void *(*slow_malloc)(size_t size))
 {
 	struct cmdif_srv *srv = fast_malloc(sizeof(struct cmdif_srv));
 
