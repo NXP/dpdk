@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2022 NXP
+ * Copyright 2022-2023 NXP
  */
 
 /* This application will create two mbufs using rte_mempool_alloc API
@@ -151,12 +151,23 @@ int main(__rte_unused int argc, char *argv[])
 {
 	printf("Begin\n");
 
-	const char *_argv[] = {argv[0], "-l", "0-2", "--log-level", "8"};
-	int _argc = sizeof(_argv) / (sizeof(_argv[0]));
+	char arg1[] = "-l";
+	char arg2[] = "0-2";
+	char arg3[] = "--log-level";
+	char arg4[] = "8";
 	uint64_t sent_pkts = 0;
 	uint32_t i;
+	char *_argv[argc + 4];
 
-	if (rte_eal_init(_argc, (char **)_argv) < 0) {
+	argc += 4;
+
+	_argv[0] = argv[0];
+	_argv[1] = arg1;
+	_argv[2] = arg2;
+	_argv[3] = arg3;
+	_argv[4] = arg4;
+
+	if (rte_eal_init(argc, _argv) < 0) {
 		printf("DPDK init failed\n");
 		return -1;
 	}

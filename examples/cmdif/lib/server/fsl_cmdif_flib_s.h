@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  * Copyright 2014-2015 Freescale Semiconductor Inc.
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef __FSL_CMDIF_FLIB_S_H__
@@ -45,8 +45,8 @@ extern "C" {
  *   - Valid pointer on success
  *   - NULL in case of error
  */
-void *cmdif_srv_allocate(void *(*fast_malloc)(int),
-			 void *(*slow_malloc)(int));
+void *cmdif_srv_allocate(void *(*fast_malloc)(size_t),
+			 void *(*slow_malloc)(size_t));
 
 /**
  * Deallocate server handle allocated by cmdif_srv_allocate().
