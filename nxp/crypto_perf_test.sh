@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2022 NXP
 
 #usages are:
 #./crypto_perf_test.sh dpaa2_sec
