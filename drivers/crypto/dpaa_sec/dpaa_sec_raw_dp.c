@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021 NXP
+ * Copyright 2021,2023 NXP
  */
 
 #include <rte_cryptodev_pmd.h>
@@ -850,8 +850,8 @@ send_pkts:
 	}
 
 skip_tx:
-	dpaa_qp->tx_pkts += num_tx;
-	dpaa_qp->tx_errs += vec->num - num_tx;
+	dpaa_qp->enqueue_pkt_c += num_tx;
+	dpaa_qp->enqueue_miss_c += vec->num - num_tx;
 
 	return num_tx;
 }
@@ -951,7 +951,7 @@ dpaa_sec_raw_dequeue_burst(void *qp_data, uint8_t *drv_ctx,
 	num_rx = dpaa_sec_deq_raw(dpaa_qp, out_user_data,
 			is_user_data_array, post_dequeue, nb_ops);
 
-	dpaa_qp->rx_pkts += num_rx;
+	dpaa_qp->dequeue_pkt_c += num_rx;
 	*return_status = 1;
 	*n_success_jobs = num_rx;
 

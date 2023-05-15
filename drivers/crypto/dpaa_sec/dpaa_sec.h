@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016-2021 NXP
+ *   Copyright 2016-2021,2023 NXP
  *
  */
 
@@ -202,10 +202,14 @@ struct dpaa_sec_qp {
 	struct dpaa_sec_dev_private *internals;
 	struct rte_mempool *ctx_pool; /* mempool for dpaa_sec_op_ctx */
 	struct qman_fq outq;
-	int rx_pkts;
-	int rx_errs;
-	int tx_pkts;
-	int tx_errs;
+	uint64_t enqueue_calls_c;
+	uint64_t enqueue_pkt_c;
+	uint64_t enqueue_miss_c;
+	uint64_t dequeue_calls_c;
+	uint64_t dequeue_pkt_c;
+	uint64_t dequeue_pkt_err_c;
+	uint64_t dequeue_miss_c;
+	uint64_t dequeue_empty_c;
 };
 
 #define RTE_DPAA_MAX_NB_SEC_QPS 2
