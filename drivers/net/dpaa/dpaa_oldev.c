@@ -617,6 +617,20 @@ static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+		eth_dev = rte_eth_dev_attach_secondary(dpaa_dev->name);
+		if (!eth_dev)
+			return -ENOMEM;
+
+		eth_dev->device = &dpaa_dev->device;
+		eth_dev->dev_ops = &dpaa_ol_devops;
+		eth_dev->tx_pkt_burst = dpaa_eth_queue_tx;
+		eth_dev->rx_pkt_burst = dpaa_eth_queue_rx;
+
+		rte_eth_dev_probing_finish(eth_dev);
+		return 0;
+	}
+
 	eth_dev = rte_eth_dev_allocate(dpaa_dev->name);
 	if (!eth_dev)
 		return -ENOMEM;
