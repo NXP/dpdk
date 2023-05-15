@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2017 Intel Corporation
+ * Copyright 2023 NXP
  */
 
 #include <stdio.h>
@@ -1207,6 +1208,62 @@ display_crypto_feature_info(uint64_t x)
 }
 
 static void
+dump_dpaa_stats(uint8_t dev_id)
+{
+	int k  = 0, ret;
+	int qp_c = rte_cryptodev_queue_pair_count(dev_id);
+	struct rte_cryptodev_dpaa_stats_s stats;
+
+	for (k = 0; k < qp_c; k++) {
+		memset(&stats, 0, sizeof(struct rte_cryptodev_dpaa_stats_s));
+
+		ret = rte_cryptodev_dpaa_stats(dev_id, k, &stats);
+		if (ret)
+			continue;
+		printf("##############################################\n");
+		printf("******Devid = %d and queue id = %d ******\n", dev_id, k);
+		printf("###############################################\n");
+		printf("enq API calls = %lu, deq API calls = %lu, enq pkts = %lu, deq pkts = %lu,\n"
+		       "enq misses = %lu, deq misses =%lu, deq error = %lu, deq empty polling =%lu \n",
+		       stats.enqueue_calls_c, stats.dequeue_calls_c, stats.enqueue_pkt_c, stats.dequeue_pkt_c,
+		       stats.enqueue_miss_c, stats.dequeue_miss_c, stats.dequeue_pkt_err_c, stats.dequeue_empty_c);
+		printf("\n\n");
+
+		rte_cryptodev_dpaa_dump_pending(dev_id, k);
+	}
+}
+
+static void
+dump_dpaa2_stats(uint8_t dev_id)
+{
+	int k  = 0, ret;
+	int qp_c = rte_cryptodev_queue_pair_count(dev_id);
+	struct rte_cryptodev_stats stats;
+	struct rte_cryptodev_pending_frames frames;
+
+	for (k = 0; k < qp_c; k++) {
+		memset(&stats, 0, sizeof(struct rte_cryptodev_stats));
+		ret = rte_cryptodev_sw_stats(dev_id, k, &stats);
+		if (!ret) {
+			printf("########################################\n");
+			printf("***** DevID = %d and queue id = %d ****\n", dev_id, k);
+			printf("enqueued_count = %ld, dequeued_count = %ld\n",
+				stats.enqueued_count, stats.dequeued_count);
+			printf("enqueue_err_count = %ld, dequeue_err_count = %ld\n\n",
+				stats.enqueue_err_count, stats.dequeue_err_count);
+		}
+		memset(&frames, 0, sizeof(struct rte_cryptodev_pending_frames));
+		ret = rte_cryptodev_pending_frames(dev_id, k, &frames);
+		if (!ret) {
+			printf("########################################\n");
+			printf("***** DevID = %d and queue id = %d ****\n", dev_id, k);
+			printf("enqueue_pending = %ld, dequeue_pending = %ld\n\n\n",
+				frames.enqueue_pending, frames.dequeue_pending);
+		}
+	}
+}
+
+static void
 show_crypto(void)
 {
 	uint8_t crypto_dev_count = rte_cryptodev_count(), i;
@@ -1231,7 +1288,13 @@ show_crypto(void)
 		       dev_info.device->numa_node,
 		       rte_cryptodev_queue_pair_count(i));
 
+
 		display_crypto_feature_info(dev_info.feature_flags);
+
+		if (!strcmp(dev_info.driver_name, "crypto_dpaa_sec"))
+			dump_dpaa_stats(i);
+		else if (!strcmp(dev_info.driver_name, "crypto_dpaa2_sec"))
+			dump_dpaa2_stats(i);
 
 		memset(&stats, 0, sizeof(0));
 		if (rte_cryptodev_stats_get(i, &stats) == 0) {
