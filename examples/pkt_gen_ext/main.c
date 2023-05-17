@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2022 NXP
+ * Copyright 2022-2023 NXP
  */
 
 
@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
 		if (ret_shinfo == NULL)
 			printf("%s: Shared info initialization failed!\n",
 					__func__);
-		buf_iova = rte_mempool_virt2iova(ext_buf_addr);
+		buf_iova = rte_malloc_virt2iova(ext_buf_addr);
 		rte_pktmbuf_attach_extbuf(hdr, ext_buf_addr, buf_iova, buf_len,
 			ret_shinfo);
 		if (hdr->ol_flags != EXT_ATTACHED_MBUF)
