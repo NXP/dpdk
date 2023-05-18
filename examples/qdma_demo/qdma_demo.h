@@ -28,10 +28,10 @@ struct qdma_test_case {
 #define ARG_SIZE (1 << 1)
 #define ARG_TEST_ID (1 << 2)
 #define ARG_LATENCY (1 << 3)
-#define ARG_PCI_SIZE (1 << 4)
-#define ARG_MEMCPY (1 << 5)
-#define ARG_SCATTER_GATHER (1 << 6)
-#define ARG_BURST (1 << 7)
-#define ARG_NUM (1 << 8)
+#define ARG_MEMCPY (1 << 4)
+#define ARG_SCATTER_GATHER (1 << 5)
+#define ARG_BURST (1 << 6)
+#define ARG_NUM (1 << 7)
+#define ARG_VALIDATE (1 << 8)
 
 #endif
