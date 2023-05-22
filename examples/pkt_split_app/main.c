@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2022 NXP
+ * Copyright 2020-2023 NXP
  */
 
 #include <stdio.h>
@@ -37,12 +37,14 @@
 #include <rte_mbuf.h>
 #include <rte_ip_frag.h>
 #include <arpa/inet.h>
+#include <bus_driver.h>
 
 #include <rte_pmd_dpaa_oldev.h>
 #include <rte_pmd_dpaa2.h>
 
 static volatile bool force_quit;
 const char *split_port_driver_name;
+const char *bus_name;
 
 /* Tap interface port id */
 static int tap_interface_port = -1;
@@ -168,6 +170,9 @@ enum traffic_split_type_t {
 
 static uint32_t traffic_split_val; /**< Split traffic based on this value */
 static uint8_t traffic_split_type; /**< Split traffic based on type */
+
+#define GTP_U 2152
+#define GTP_C 2123
 
 /*
  * This variable defines where the traffic is split in DPDMUX - the logical
@@ -919,11 +924,17 @@ configure_split_traffic_config(void)
 	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP:
 		printf("traffic_split_type on IP_FRAG_UDP and GTP");
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP;
+		num_ports = 2;
+		gtp_udp_port[0] = GTP_U;
+		gtp_udp_port[1] = GTP_C;
 		break;
 	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP:
 		printf("traffic_split_type on IP_FRAG_UDP, GTP and ESP");
 		pattern[0].type =
 			RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP_AND_ESP;
+		num_ports = 2;
+		gtp_udp_port[0] = GTP_U;
+		gtp_udp_port[1] = GTP_C;
 		break;
 	case TRAFFIC_SPLIT_IP_FRAG_PROTO:
 		printf("traffic_split_type on IP FRAG");
@@ -1316,7 +1327,7 @@ set_classif_info(bool is_ol_port)
 	memset(&cls_info, 0, sizeof(struct rte_pmd_dpaa_uplink_cls_info_s));
 	ret = get_user_data(&cls_info, NULL, is_ol_port);
 	if (ret) {
-		rte_exit(EXIT_FAILURE, "Failed to paarse user data\n");
+		rte_exit(EXIT_FAILURE, "Failed to parse user data\n");
 		return ret;
 	}
 
@@ -1486,6 +1497,7 @@ main(int argc, char **argv)
 	int socket;
 	uint64_t frag_cycles;
 	struct rx_queue *rxq;
+	struct rte_bus *bus = NULL;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1761,6 +1773,9 @@ main(int argc, char **argv)
 
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
+		bus = rte_bus_find_by_device(dev_info.device);
+		if (bus != NULL)
+			bus_name = bus->name;
 	}
 
 	if (!nb_ports_available) {
@@ -1782,7 +1797,7 @@ main(int argc, char **argv)
 		ret = set_lgw_info(OL_PORT);
 		if (ret)
 			printf("WARN: LGW config. set failed\n");
-	} else {
+	} else if (!strcmp(bus_name, "dpaa_bus")) {
 		ret = set_classif_info(NON_OL_PORT);
 	}
 
