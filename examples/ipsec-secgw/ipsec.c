@@ -108,122 +108,107 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 			return ret;
 		}
 
-		/* Verify that all cores are using same cryptodev for current
-		 * algorithm combination, required by SA.
-		 * Current cryptodev mapping process will map SA to the first
-		 * cryptodev that matches requirements, so it's a double check,
-		 * not an additional restriction.
-		 */
-		if (cdev_id == RTE_CRYPTO_MAX_DEVS)
-			cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
-		else if (cdev_id != ipsec_ctx->tbl[cdev_id_qp].id) {
-			rte_spinlock_unlock(&sa->lock);
-			RTE_LOG(ERR, IPSEC,
-					"SA mapping to multiple cryptodevs is "
-					"not supported!");
-			return -EINVAL;
-		}
+		cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
 
 		/* Store per core queue pair information */
 		sa->cqp[lcore_id] = &ipsec_ctx->tbl[cdev_id_qp];
-	}
-	if (cdev_id == RTE_CRYPTO_MAX_DEVS) {
-		rte_spinlock_unlock(&sa->lock);
-		RTE_LOG(WARNING, IPSEC, "No cores found to handle SA\n");
-		return 0;
-	}
+		if (cdev_id == RTE_CRYPTO_MAX_DEVS) {
+			rte_spinlock_unlock(&sa->lock);
+			RTE_LOG(WARNING, IPSEC, "No cores found to handle SA\n");
+			return 0;
+		}
 
-	RTE_LOG(DEBUG, IPSEC, "Create session for SA spi %u on cryptodev "
-			"%u\n", sa->spi, cdev_id);
+		RTE_LOG(DEBUG, IPSEC, "Create session for SA spi %u on cryptodev "
+				"%u\n", sa->spi, cdev_id);
 
-	if (ips->type != RTE_SECURITY_ACTION_TYPE_NONE &&
-		ips->type != RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO) {
-		struct rte_security_session_conf sess_conf = {
-			.action_type = ips->type,
-			.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
-			{.ipsec = {
-				.spi = sa->spi,
-				.salt = sa->salt,
-				.options = { 0 },
-				.replay_win_sz = 0,
-				.direction = sa->direction,
-				.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
-				.mode = (IS_TUNNEL(sa->flags)) ?
-					RTE_SECURITY_IPSEC_SA_MODE_TUNNEL :
-					RTE_SECURITY_IPSEC_SA_MODE_TRANSPORT,
-			} },
-			.crypto_xform = sa->xforms,
-			.userdata = NULL,
+		if (ips->type != RTE_SECURITY_ACTION_TYPE_NONE &&
+			ips->type != RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO) {
+			struct rte_security_session_conf sess_conf = {
+				.action_type = ips->type,
+				.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+				{.ipsec = {
+					.spi = sa->spi,
+					.salt = sa->salt,
+					.options = { 0 },
+					.replay_win_sz = 0,
+					.direction = sa->direction,
+					.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
+					.mode = (IS_TUNNEL(sa->flags)) ?
+						RTE_SECURITY_IPSEC_SA_MODE_TUNNEL :
+						RTE_SECURITY_IPSEC_SA_MODE_TRANSPORT,
+				} },
+				.crypto_xform = sa->xforms,
+				.userdata = NULL,
 
-		};
+			};
 
-		if (ips->type == RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL) {
-			struct rte_security_ctx *ctx = (struct rte_security_ctx *)
-							rte_cryptodev_get_sec_ctx(
-							cdev_id);
+			if (ips->type == RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL) {
+				struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+								rte_cryptodev_get_sec_ctx(
+								cdev_id);
 
-			/* Set IPsec parameters in conf */
-			set_ipsec_conf(sa, &(sess_conf.ipsec));
+				/* Set IPsec parameters in conf */
+				set_ipsec_conf(sa, &(sess_conf.ipsec));
 
-			ips->security.ses = rte_security_session_create(ctx,
-					&sess_conf, skt_ctx->session_pool);
-			if (ips->security.ses == NULL) {
+				ips->security.ses = rte_security_session_create(ctx,
+						&sess_conf, skt_ctx->session_pool);
+				if (ips->security.ses == NULL) {
+					rte_spinlock_unlock(&sa->lock);
+					RTE_LOG(ERR, IPSEC,
+					"SEC Session init failed: err: %d\n", ret);
+					return -1;
+				}
+				ips->security.ctx = ctx;
+
+				sess = ips->security.ses;
+				op_type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
+				sess_type = RTE_CRYPTO_OP_SECURITY_SESSION;
+			} else {
 				rte_spinlock_unlock(&sa->lock);
-				RTE_LOG(ERR, IPSEC,
-				"SEC Session init failed: err: %d\n", ret);
+				RTE_LOG(ERR, IPSEC, "Inline not supported\n");
 				return -1;
 			}
-			ips->security.ctx = ctx;
-
-			sess = ips->security.ses;
-			op_type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
-			sess_type = RTE_CRYPTO_OP_SECURITY_SESSION;
 		} else {
-			rte_spinlock_unlock(&sa->lock);
-			RTE_LOG(ERR, IPSEC, "Inline not supported\n");
-			return -1;
-		}
-	} else {
-		if (ips->type == RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO) {
-			struct rte_cryptodev_info info;
+			if (ips->type == RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO) {
+				struct rte_cryptodev_info info;
 
-			rte_cryptodev_info_get(cdev_id, &info);
-			if (!(info.feature_flags &
-				RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO)) {
-				rte_spinlock_unlock(&sa->lock);
-				return -ENOTSUP;
+				rte_cryptodev_info_get(cdev_id, &info);
+				if (!(info.feature_flags &
+					RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO)) {
+					rte_spinlock_unlock(&sa->lock);
+					return -ENOTSUP;
+				}
+
 			}
+			ips->crypto.dev_id = cdev_id;
+			ips->crypto.ses = rte_cryptodev_sym_session_create(cdev_id,
+					sa->xforms, skt_ctx->session_pool);
 
+			rte_cryptodev_info_get(cdev_id, &cdev_info);
 		}
-		ips->crypto.dev_id = cdev_id;
-		ips->crypto.ses = rte_cryptodev_sym_session_create(cdev_id,
-				sa->xforms, skt_ctx->session_pool);
 
-		rte_cryptodev_info_get(cdev_id, &cdev_info);
+		/* Setup meta data required by event crypto adapter */
+		if (em_conf->enable_event_crypto_adapter && sess != NULL) {
+			union rte_event_crypto_metadata m_data;
+			const struct eventdev_params *eventdev_conf;
+
+			eventdev_conf = &(em_conf->eventdev_config[0]);
+			memset(&m_data, 0, sizeof(m_data));
+
+			/* Fill in response information */
+			m_data.response_info.sched_type = em_conf->ext_params.sched_type;
+			m_data.response_info.op = RTE_EVENT_OP_NEW;
+			m_data.response_info.queue_id = eventdev_conf->ev_cpt_queue_id;
+
+			/* Fill in request information */
+			m_data.request_info.cdev_id = cdev_id;
+			m_data.request_info.queue_pair_id = 0;
+
+			/* Attach meta info to session */
+			rte_cryptodev_session_event_mdata_set(cdev_id, sess, op_type,
+					sess_type, &m_data, sizeof(m_data));
+		}
 	}
-
-	/* Setup meta data required by event crypto adapter */
-	if (em_conf->enable_event_crypto_adapter && sess != NULL) {
-		union rte_event_crypto_metadata m_data;
-		const struct eventdev_params *eventdev_conf;
-
-		eventdev_conf = &(em_conf->eventdev_config[0]);
-		memset(&m_data, 0, sizeof(m_data));
-
-		/* Fill in response information */
-		m_data.response_info.sched_type = em_conf->ext_params.sched_type;
-		m_data.response_info.op = RTE_EVENT_OP_NEW;
-		m_data.response_info.queue_id = eventdev_conf->ev_cpt_queue_id;
-
-		/* Fill in request information */
-		m_data.request_info.cdev_id = cdev_id;
-		m_data.request_info.queue_pair_id = 0;
-
-		/* Attach meta info to session */
-		rte_cryptodev_session_event_mdata_set(cdev_id, sess, op_type,
-				sess_type, &m_data, sizeof(m_data));
-	}
-
 	rte_spinlock_unlock(&sa->lock);
 
 	return 0;
