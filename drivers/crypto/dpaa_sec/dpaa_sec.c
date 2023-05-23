@@ -3616,6 +3616,29 @@ void dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
 	stats->dequeue_empty_c = qp->dequeue_empty_c;
 }
 
+static void
+dpaa_sec_stats_get(struct rte_cryptodev *dev,
+		   struct rte_cryptodev_stats *stats)
+{
+	int qp_c, i;
+	struct dpaa_sec_qp *qp;
+
+	if (stats == NULL) {
+		DPAA_SEC_ERR("Stats pointer is NULL");
+		return;
+	}
+
+	qp_c = dev->data->nb_queue_pairs;
+	for (i = 0; i < qp_c; i++) {
+		qp = dev->data->queue_pairs[i];
+
+		stats->enqueued_count += qp->enqueue_pkt_c;
+		stats->dequeued_count += qp->dequeue_pkt_c;
+		stats->enqueue_err_count += qp->enqueue_miss_c;
+		stats->dequeue_err_count += qp->dequeue_pkt_err_c;
+	}
+}
+
 static struct rte_cryptodev_ops crypto_ops = {
 	.dev_configure	      = dpaa_sec_dev_configure,
 	.dev_start	      = dpaa_sec_dev_start,
@@ -3625,6 +3648,7 @@ static struct rte_cryptodev_ops crypto_ops = {
 	.queue_pair_setup     = dpaa_sec_queue_pair_setup,
 	.queue_pair_release   = dpaa_sec_queue_pair_release,
 	.queue_pair_count     = dpaa_sec_queue_pair_count,
+	.stats_get	      = dpaa_sec_stats_get,
 	.dpaa_stats	      = dpaa_get_qp_sw_stats,
 	.sym_session_get_size     = dpaa_sec_sym_session_get_size,
 	.sym_session_configure    = dpaa_sec_sym_session_configure,
