@@ -33,5 +33,6 @@ struct qdma_test_case {
 #define ARG_BURST (1 << 6)
 #define ARG_NUM (1 << 7)
 #define ARG_VALIDATE (1 << 8)
+#define ARG_SEG_IOVA (1 << 9)
 
 #endif

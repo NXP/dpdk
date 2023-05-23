@@ -92,6 +92,7 @@ static uint32_t g_packet_num = (1 * 1024);
 static uint32_t g_latency;
 static uint32_t g_memcpy;
 static int g_validate;
+static int g_seg_iova;
 static uint32_t g_scatter_gather;
 
 struct qdma_demo_job {
@@ -313,7 +314,6 @@ pci_addr_mmap(void *start, size_t length, int prot,
 	return p;
 }
 
-
 static int test_dma_init(void)
 {
 	struct rte_qdma_config qdma_config;
@@ -475,6 +475,147 @@ qdma_demo_memcpy_process(struct qdma_demo_job *job[],
 }
 
 static int
+lcore_qdma_iova_seg_to_continue(void)
+{
+	uint8_t *vir_base, *dst, *src, *vir;
+	uint64_t iova_base, src_iova, iova_offset, iova[g_burst];
+	int ret = 0;
+	uint32_t seg_size, seg_num, total_size, i, j, src_idx;
+	struct qdma_demo_job demo_job;
+	struct rte_qdma_enqdeq e_context;
+	struct rte_qdma_job *eq_job[1], *dq_job[1];
+	uint64_t page_size = sysconf(_SC_PAGESIZE);
+
+	if (rte_eal_iova_mode() != RTE_IOVA_PA) {
+		RTE_LOG(ERR, qdma_demo,
+			"IOVA PA mode support only\n");
+		return -ENOMEM;
+	}
+
+	seg_size = g_packet_size;
+
+	if (seg_size < page_size)
+		seg_size = page_size;
+
+	while (seg_size & ~page_size)
+		seg_size--;
+
+	if (g_packet_size != seg_size) {
+		RTE_LOG(ERR, qdma_demo,
+			"Adjust segment size(%lx) to (%x)\n",
+			g_packet_size, seg_size);
+	}
+
+	seg_num = g_burst;
+	total_size = seg_size * seg_num;
+
+	vir_base = mmap(NULL, total_size, PROT_WRITE | PROT_READ,
+			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (vir_base == MAP_FAILED) {
+		RTE_LOG(ERR, qdma_demo,
+			"mmap %d bytes size failed\n",
+			total_size);
+		return -ENOMEM;
+	}
+
+	memset(vir_base, 0, total_size);
+	iova_offset = 0;
+	memset(iova, 0, sizeof(uint64_t) * g_burst);
+	iova_base = (uint64_t)vir_base;
+	for (i = 0; i < seg_num; i++) {
+		if (i % 2)
+			continue;
+
+		vir = vir_base + i * seg_size;
+		iova[i] = iova_base + iova_offset;
+		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vir,
+			iova[i], seg_size);
+		if (ret) {
+			RTE_LOG(ERR, qdma_demo,
+				"IOVA map(va:%p, iova:0x%lx, size:%d) failed(%d)\n",
+				vir, iova[i], seg_size, ret);
+			iova[i] = 0;
+			goto quit;
+		}
+		iova_offset += seg_size;
+	}
+
+	src = rte_zmalloc(NULL, iova_offset, 4096);
+	for (i = 0; i < iova_offset; i++)
+		src[i] = i;
+	src_iova = rte_fslmc_mem_vaddr_to_iova(src);
+
+	demo_job.job.src = src_iova;
+	demo_job.job.dest = iova_base;
+	demo_job.job.len = iova_offset;
+	eq_job[0] = &demo_job.job;
+	e_context.vq_id = g_vqid[rte_lcore_id()];
+	e_context.job = eq_job;
+	ret = rte_qdma_enqueue_buffers(qdma_dev_id,
+			NULL, 1, &e_context);
+	if (ret != 1) {
+		RTE_LOG(ERR, qdma_demo,
+			"DMA eq failed(%d)\n",
+			ret);
+		goto quit;
+	}
+	sleep(1);
+	e_context.vq_id = g_vqid[rte_lcore_id()];
+	e_context.job = dq_job;
+	ret = rte_qdma_dequeue_buffers(qdma_dev_id, NULL,
+			1, &e_context);
+	if (ret != 1) {
+		RTE_LOG(ERR, qdma_demo,
+			"DMA dq failed(%d)\n",
+			ret);
+		goto quit;
+	}
+	if (dq_job[0] != eq_job[0]) {
+		RTE_LOG(ERR, qdma_demo,
+			"DMA dq job(%p) != eq job(%p)\n",
+			dq_job[0], eq_job[0]);
+		ret = -EIO;
+		goto quit;
+	}
+
+	src_idx = 0;
+
+	for (i = 0; i < seg_num; i++) {
+		if (i % 2)
+			continue;
+		dst = vir_base + i * seg_size;
+		for (j = 0; j < seg_size; j++) {
+			if (dst[j] != src[src_idx]) {
+				RTE_LOG(ERR, qdma_demo,
+					"SEG[%d][%d](%d) != SRC[%d](%d)\n",
+					i, j, dst[j],
+					src_idx, src[src_idx]);
+				ret = -EIO;
+				goto quit;
+			}
+			src_idx++;
+		}
+	}
+	RTE_LOG(INFO, qdma_demo,
+		"Single DMA R/W multiple segments by IOMMU complete\n");
+
+quit:
+	for (i = 0; i < seg_num; i++) {
+		if (iova[i]) {
+			ret = rte_fslmc_vfio_mem_dmaunmap(iova[i], seg_size);
+			if (ret) {
+				RTE_LOG(ERR, qdma_demo,
+					"IOVA unmap(iova:0x%lx, size:%d) failed(%d)\n",
+					iova[i], seg_size, ret);
+			}
+		}
+	}
+	munmap(vir_base, total_size);
+
+	return ret;
+}
+
+static int
 lcore_qdma_process_loop(__attribute__((unused))void *arg)
 {
 	uint32_t lcore_id;
@@ -495,6 +636,9 @@ lcore_qdma_process_loop(__attribute__((unused))void *arg)
 		"Processing coreid: %d ready, now!\n",
 		lcore_id);
 	r_recycle = g_job_ring[lcore_id];
+
+	if (g_seg_iova)
+		return lcore_qdma_iova_seg_to_continue();
 
 	latency_data[lcore_id].min = 9999999.0;
 	while (!quit_signal) {
@@ -855,6 +999,10 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 	rte_atomic32_set(&synchro, 1);
 
 	while (!quit_signal) {
+		if (g_seg_iova) {
+			rte_delay_ms(1);
+			continue;
+		}
 		cycle1 = rte_get_timer_cycles();
 		rte_delay_ms(4000);
 		diff = 0;
@@ -1104,6 +1252,10 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		g_validate = 1;
 		RTE_LOG(INFO, qdma_demo, "Validate data transfer\n");
 		break;
+	case ARG_SEG_IOVA:
+		g_seg_iova = 1;
+		RTE_LOG(INFO, qdma_demo, "IOVA segments test\n");
+		break;
 	default:
 		RTE_LOG(ERR, qdma_demo, "Unknown Argument\n");
 		ret = -EINVAL;
@@ -1130,6 +1282,7 @@ qdma_demo_parse_args(int argc, char **argv)
 	 {"burst", optional_argument, &flg, ARG_BURST},
 	 {"packet_num", optional_argument, &flg, ARG_NUM},
 	 {"validate", optional_argument, &flg, ARG_VALIDATE},
+	 {"seg_iova", optional_argument, &flg, ARG_SEG_IOVA},
 	 {0, 0, 0, 0},
 	};
 	struct option *lopt_cur;
