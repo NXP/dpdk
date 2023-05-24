@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -413,7 +413,10 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 		ret = qbman_swp_acquire(swp, bpid, bufs,
 			(count - n) > DPAA2_MBUF_MAX_ACQ_REL ?
 			DPAA2_MBUF_MAX_ACQ_REL : (count - n));
-		if (unlikely(ret < 0))
+		/* In case of less than requested number of buffers available
+		 * in pool, qbman_swp_acquire returns 0
+		 */
+		if (unlikely(ret <= 0))
 			goto acquire_failed;
 
 		/* assigning mbuf from the acquired objects */
@@ -436,7 +439,7 @@ iova_pa_acquire:
 		ret = qbman_swp_acquire(swp, bpid, bufs,
 			(count - n) > DPAA2_MBUF_MAX_ACQ_REL ?
 			DPAA2_MBUF_MAX_ACQ_REL : (count - n));
-		if (unlikely(ret < 0))
+		if (unlikely(ret <= 0))
 			goto acquire_failed;
 
 		/* assigning mbuf from the acquired objects */
@@ -458,7 +461,7 @@ acquire_success:
 	return 0;
 
 acquire_failed:
-	DPAA2_MEMPOOL_WARN("Buffer acquire err: %d", ret);
+	DPAA2_MEMPOOL_DP_DEBUG("Buffer acquire err: %d", ret);
 	/* The API expect the exact number of requested bufs */
 	/* Releasing all buffers allocated */
 	ret = dpaa2_mbuf_release(obj_table, bpid,
