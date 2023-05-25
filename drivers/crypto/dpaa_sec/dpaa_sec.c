@@ -2554,11 +2554,15 @@ static int
 dpaa_sec_detach_rxq(struct dpaa_sec_dev_private *qi, struct qman_fq *fq)
 {
 	unsigned int i;
+	int ret;
 
 	for (i = 0; i < RTE_DPAA_MAX_RX_QUEUE; i++) {
 		if (&qi->inq[i] == fq) {
-			if (qman_retire_fq(fq, NULL) != 0)
-				DPAA_SEC_DEBUG("Queue is not retired\n");
+			ret = qman_retire_fq(fq, NULL);
+			if (ret != 0)
+				DPAA_SEC_DEBUG("Queue %d is not retired"
+					       " err: %d\n", fq->fqid,
+					       ret);
 			qman_oos_fq(fq);
 			qi->inq_attach[i] = 0;
 			return 0;
@@ -2732,10 +2736,25 @@ free_session_memory(struct rte_cryptodev *dev, dpaa_sec_session *s)
 	struct dpaa_sec_dev_private *qi = dev->data->dev_private;
 	struct rte_mempool *sess_mp = rte_mempool_from_obj((void *)s);
 	uint8_t i;
+	int ret;
+	uint32_t frames;
 
 	for (i = 0; i < MAX_DPAA_CORES; i++) {
-		if (s->inq[i])
+		if (s->inq[i]) {
+			ret = qman_query_fq_frm_cnt(s->inq[i], &frames);
+			if (ret) {
+				RTE_LOG(ERR, PMD, "ses destroy: frames check"
+				       " in INFQ = 0x%x\n",
+				       qman_fq_fqid(&qi->inq[i]));
+			} else {
+				if (frames)
+					RTE_LOG(ERR, PMD, "sess dest.: Pending"
+					       " frames = %d INFQid = 0x%x\n",
+					       frames,
+					       qman_fq_fqid(&qi->inq[i]));
+			}
 			dpaa_sec_detach_rxq(qi, s->inq[i]);
+		}
 		s->inq[i] = NULL;
 		s->qp[i] = NULL;
 	}
@@ -3595,6 +3614,41 @@ dpaa_sec_eventq_detach(const struct rte_cryptodev *dev,
 	return ret;
 }
 
+static void
+dpaa_dump_pending_frames(struct rte_cryptodev *dev, uint16_t qp_id)
+{
+	unsigned int i, frames;
+	int ret;
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+	struct dpaa_sec_dev_private *qi = qp->internals;
+
+	for (i = 0; i < RTE_DPAA_MAX_RX_QUEUE; i++) {
+		if (qi->inq_attach[i] == 1) {
+			ret = qman_query_fq_frm_cnt(&qi->inq[i], &frames);
+			if (ret) {
+				printf("Error in frames check in INFQ = 0x%x\n",
+					qman_fq_fqid(&qi->inq[i]));
+			} else {
+				if (frames)
+					printf("Pending frames = %d"
+					       " INFQid = 0x%x\n", frames,
+					       qman_fq_fqid(&qi->inq[i]));
+			}
+		}
+	}
+	ret = qman_query_fq_frm_cnt(&qp->outq, &frames);
+	if (ret) {
+		printf("Error in frames check in OUTFQ = 0x%x\n",
+			qman_fq_fqid(&qp->outq));
+	} else {
+		if (frames)
+			printf("Pending frames = %d in  OUT FQid = 0x%x\n",
+				frames, qman_fq_fqid(&qp->outq));
+	}
+
+	printf("\n");
+}
+
 static
 void dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
 			  struct rte_cryptodev_dpaa_stats_s *stats)
@@ -3650,6 +3704,7 @@ static struct rte_cryptodev_ops crypto_ops = {
 	.queue_pair_count     = dpaa_sec_queue_pair_count,
 	.stats_get	      = dpaa_sec_stats_get,
 	.dpaa_stats	      = dpaa_get_qp_sw_stats,
+	.dpaa_dump_pending	      = dpaa_dump_pending_frames,
 	.sym_session_get_size     = dpaa_sec_sym_session_get_size,
 	.sym_session_configure    = dpaa_sec_sym_session_configure,
 	.sym_session_clear        = dpaa_sec_sym_session_clear,

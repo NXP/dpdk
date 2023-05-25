@@ -1185,6 +1185,22 @@ rte_cryptodev_dpaa_stats(uint8_t dev_id, uint16_t qp_id,
 	return 0;
 }
 
+int
+rte_cryptodev_dpaa_dump_pending(uint8_t dev_id, uint16_t qp_id)
+{
+	struct rte_cryptodev *dev;
+
+	if (!rte_cryptodev_pmd_is_valid_dev(dev_id)) {
+		CDEV_LOG_ERR("Invalid dev_id=%d", dev_id);
+		return -ENODEV;
+	}
+
+	dev = &rte_crypto_devices[dev_id];
+
+	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->dpaa_dump_pending, -ENOTSUP);
+	(*dev->dev_ops->dpaa_dump_pending)(dev, qp_id);
+	return 0;
+}
 void
 rte_cryptodev_stats_reset(uint8_t dev_id)
 {

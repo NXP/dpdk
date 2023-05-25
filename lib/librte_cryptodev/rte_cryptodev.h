@@ -786,6 +786,9 @@ __rte_experimental
 extern int
 rte_cryptodev_dpaa_stats(uint8_t dev_id, uint16_t qp_id,
 			 struct rte_cryptodev_dpaa_stats_s *stats);
+__rte_experimental
+extern int
+rte_cryptodev_dpaa_dump_pending(uint8_t dev_id, uint16_t qp_id);
 /**
  * Reset the general I/O statistics of a device.
  *
