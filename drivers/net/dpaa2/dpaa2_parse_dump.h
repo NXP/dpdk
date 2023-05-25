@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2022 NXP
+ *   Copyright 2022-2023 NXP
  *
  */
 
@@ -229,6 +229,8 @@ dpaa2_print_faf(struct dpaa2_fapr_array *fapr)
 			faf_bits[i].name = "TCP Present";
 		else if (i == FAFE_ECPRI_FRAM)
 			faf_bits[i].name = "ECPRI Present";
+		else if (i == FAF_GTP_FRAM)
+			faf_bits[i].name = "GTP Present";
 		else
 			faf_bits[i].name = "Check RM for this unusual frame";
 	}
