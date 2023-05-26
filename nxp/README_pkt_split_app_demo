@@ -279,6 +279,9 @@ Steps to run pkt_split_app on DPAA2 (when split port is eth port)
   bifurcated such that some traffic goes to the kernel and other to DPDK using DPDMUX.
   Separate rules can be configured for this bifurcation. Below are some sample commands:
 
+Note:
+   We do not require data.input file to configure the classification rules in case of DPAA2.
+
 1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
 
   $ ls-addni --no-link
