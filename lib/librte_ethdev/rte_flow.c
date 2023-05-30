@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
+ * Copyright 2023 NXP
  */
 
 #include <errno.h>
@@ -94,6 +95,7 @@ static const struct rte_flow_desc_data rte_flow_desc_item[] = {
 	MK_FLOW_ITEM(AH, sizeof(struct rte_flow_item_ah)),
 	MK_FLOW_ITEM(HIGIG2, sizeof(struct rte_flow_item_higig2_hdr)),
 	MK_FLOW_ITEM(L2TPV3OIP, sizeof(struct rte_flow_item_l2tpv3oip)),
+	MK_FLOW_ITEM(ROCEV2, sizeof(struct rte_flow_item_rocev2)),
 	MK_FLOW_ITEM(ECPRI, sizeof(struct rte_flow_item_ecpri)),
 };
 
