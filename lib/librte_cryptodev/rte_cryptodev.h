@@ -548,6 +548,17 @@ struct rte_cryptodev_pending_frames {
 	uint64_t dequeue_pending;
 };
 
+struct rte_cryptodev_dpaa_stats_s {
+	uint64_t enqueue_calls_c; /* no. of times enqueue API call */
+	uint64_t enqueue_pkt_c; /* Total number of packets enqueued */
+	uint64_t enqueue_miss_c; /* Total enqueue miss packets */
+	uint64_t dequeue_calls_c; /* no. of times dequeue API call */
+	uint64_t dequeue_pkt_c; /* Total dequeued packets */
+	uint64_t dequeue_pkt_err_c; /* Total dequeued error packets */
+	uint64_t dequeue_miss_c; /* Dequeue miss packets */
+	uint64_t dequeue_empty_c; /* no. of times empty dequeue */
+};
+
 #define RTE_CRYPTODEV_NAME_MAX_LEN	(64)
 /**< Max length of name of crypto PMD */
 
@@ -761,11 +772,23 @@ rte_cryptodev_queue_pair_count(uint8_t dev_id);
 extern int
 rte_cryptodev_stats_get(uint8_t dev_id, struct rte_cryptodev_stats *stats);
 
+__rte_experimental
 extern int
-rte_cryptodev_pending_frames(uint8_t dev_id, uint16_t qp_id, struct rte_cryptodev_pending_frames *pending_frames);
+rte_cryptodev_pending_frames(uint8_t dev_id, uint16_t qp_id,
+		struct rte_cryptodev_pending_frames *pending_frames);
 
+__rte_experimental
 extern int
-rte_cryptodev_sw_stats(uint8_t dev_id, uint16_t qp_id, struct rte_cryptodev_stats *stats);
+rte_cryptodev_sw_stats(uint8_t dev_id, uint16_t qp_id,
+		       struct rte_cryptodev_stats *stats);
+
+__rte_experimental
+extern int
+rte_cryptodev_dpaa_stats(uint8_t dev_id, uint16_t qp_id,
+			 struct rte_cryptodev_dpaa_stats_s *stats);
+__rte_experimental
+extern int
+rte_cryptodev_dpaa_dump_pending(uint8_t dev_id, uint16_t qp_id);
 /**
  * Reset the general I/O statistics of a device.
  *

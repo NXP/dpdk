@@ -72,6 +72,8 @@ EXPERIMENTAL {
 	rte_cryptodev_asym_session_init;
 	rte_cryptodev_asym_xform_capability_check_modlen;
 	rte_cryptodev_asym_xform_capability_check_optype;
+	rte_cryptodev_dpaa_stats;
+	rte_cryptodev_dpaa_dump_pending;
 	rte_cryptodev_pending_frames;
 	rte_cryptodev_sw_stats;
 	rte_cryptodev_sym_cpu_crypto_process;

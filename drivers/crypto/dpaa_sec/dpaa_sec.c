@@ -775,11 +775,11 @@ mbuf_dump:
 	printf("********************************************************\n");
 	printf("Queue data:\n");
 	printf("\tFQID = 0x%x\n\tstate = %d\n\tnb_desc = %d\n"
-		"\tctx_pool = %p\n\trx_pkts = %d\n\ttx_pkts"
-	       "= %d\n\trx_errs = %d\n\ttx_errs = %d\n\n",
+		"\tctx_pool = %p\n\trx_pkts = %lu\n\ttx_pkts"
+		"= %lu\n\trx_misses = %lu\n\ttx_errs = %lu\n\n",
 		qp->outq.fqid, qp->outq.state, qp->outq.nb_desc,
-		qp->ctx_pool, qp->rx_pkts, qp->tx_pkts,
-		qp->rx_errs, qp->tx_errs);
+		qp->ctx_pool, qp->dequeue_pkt_c, qp->enqueue_pkt_c,
+		qp->dequeue_miss_c, qp->enqueue_miss_c);
 }
 
 /* qp is lockless, should be accessed by only one thread */
@@ -860,6 +860,7 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 		if (!ctx->fd_status) {
 			op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 		} else {
+			qp->dequeue_pkt_err_c++;
 			if (dpaa_sec_dp_dump > DPAA_SEC_DP_NO_DUMP) {
 				DPAA_SEC_DP_WARN("SEC return err:0x%x\n",
 						  ctx->fd_status);
@@ -1903,6 +1904,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	uint32_t index, flags[DPAA_SEC_BURST] = {0};
 	struct qman_fq *inq[DPAA_SEC_BURST];
 
+	dpaa_qp->enqueue_calls_c++;
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		if (rte_dpaa_portal_init((void *)0)) {
 			DPAA_SEC_ERR("Failure in affining portal");
@@ -2097,8 +2099,8 @@ send_pkts:
 		num_tx += frames_to_send;
 	}
 
-	dpaa_qp->tx_pkts += num_tx;
-	dpaa_qp->tx_errs += nb_ops - num_tx;
+	dpaa_qp->enqueue_pkt_c += num_tx;
+	dpaa_qp->enqueue_miss_c += nb_ops;
 
 	return num_tx;
 }
@@ -2110,6 +2112,7 @@ dpaa_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	uint16_t num_rx;
 	struct dpaa_sec_qp *dpaa_qp = (struct dpaa_sec_qp *)qp;
 
+	dpaa_qp->dequeue_calls_c++;
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		if (rte_dpaa_portal_init((void *)0)) {
 			DPAA_SEC_ERR("Failure in affining portal");
@@ -2119,8 +2122,11 @@ dpaa_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 	num_rx = dpaa_sec_deq(dpaa_qp, ops, nb_ops);
 
-	dpaa_qp->rx_pkts += num_rx;
-	dpaa_qp->rx_errs += nb_ops - num_rx;
+	if (!num_rx)
+		dpaa_qp->dequeue_empty_c++;
+
+	dpaa_qp->dequeue_pkt_c += num_rx;
+	dpaa_qp->dequeue_miss_c += (nb_ops - num_rx);
 
 	DPAA_SEC_DP_DEBUG("SEC Received %d Packets\n", num_rx);
 
@@ -2548,11 +2554,15 @@ static int
 dpaa_sec_detach_rxq(struct dpaa_sec_dev_private *qi, struct qman_fq *fq)
 {
 	unsigned int i;
+	int ret;
 
 	for (i = 0; i < RTE_DPAA_MAX_RX_QUEUE; i++) {
 		if (&qi->inq[i] == fq) {
-			if (qman_retire_fq(fq, NULL) != 0)
-				DPAA_SEC_DEBUG("Queue is not retired\n");
+			ret = qman_retire_fq(fq, NULL);
+			if (ret != 0)
+				DPAA_SEC_DEBUG("Queue %d is not retired"
+					       " err: %d\n", fq->fqid,
+					       ret);
 			qman_oos_fq(fq);
 			qi->inq_attach[i] = 0;
 			return 0;
@@ -2726,10 +2736,25 @@ free_session_memory(struct rte_cryptodev *dev, dpaa_sec_session *s)
 	struct dpaa_sec_dev_private *qi = dev->data->dev_private;
 	struct rte_mempool *sess_mp = rte_mempool_from_obj((void *)s);
 	uint8_t i;
+	int ret;
+	uint32_t frames;
 
 	for (i = 0; i < MAX_DPAA_CORES; i++) {
-		if (s->inq[i])
+		if (s->inq[i]) {
+			ret = qman_query_fq_frm_cnt(s->inq[i], &frames);
+			if (ret) {
+				RTE_LOG(ERR, PMD, "ses destroy: frames check"
+				       " in INFQ = 0x%x\n",
+				       qman_fq_fqid(&qi->inq[i]));
+			} else {
+				if (frames)
+					RTE_LOG(ERR, PMD, "sess dest.: Pending"
+					       " frames = %d INFQid = 0x%x\n",
+					       frames,
+					       qman_fq_fqid(&qi->inq[i]));
+			}
 			dpaa_sec_detach_rxq(qi, s->inq[i]);
+		}
 		s->inq[i] = NULL;
 		s->qp[i] = NULL;
 	}
@@ -3589,6 +3614,85 @@ dpaa_sec_eventq_detach(const struct rte_cryptodev *dev,
 	return ret;
 }
 
+static void
+dpaa_dump_pending_frames(struct rte_cryptodev *dev, uint16_t qp_id)
+{
+	unsigned int i, frames;
+	int ret;
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+	struct dpaa_sec_dev_private *qi = qp->internals;
+
+	for (i = 0; i < RTE_DPAA_MAX_RX_QUEUE; i++) {
+		if (qi->inq_attach[i] == 1) {
+			ret = qman_query_fq_frm_cnt(&qi->inq[i], &frames);
+			if (ret) {
+				printf("Error in frames check in INFQ = 0x%x\n",
+					qman_fq_fqid(&qi->inq[i]));
+			} else {
+				if (frames)
+					printf("Pending frames = %d"
+					       " INFQid = 0x%x\n", frames,
+					       qman_fq_fqid(&qi->inq[i]));
+			}
+		}
+	}
+	ret = qman_query_fq_frm_cnt(&qp->outq, &frames);
+	if (ret) {
+		printf("Error in frames check in OUTFQ = 0x%x\n",
+			qman_fq_fqid(&qp->outq));
+	} else {
+		if (frames)
+			printf("Pending frames = %d in  OUT FQid = 0x%x\n",
+				frames, qman_fq_fqid(&qp->outq));
+	}
+
+	printf("\n");
+}
+
+static
+void dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
+			  struct rte_cryptodev_dpaa_stats_s *stats)
+{
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+
+	if (stats == NULL) {
+		DPAA_SEC_ERR("Invalid stats ptr NULL");
+		return;
+	}
+
+	stats->enqueue_calls_c = qp->enqueue_calls_c;
+	stats->enqueue_pkt_c = qp->enqueue_pkt_c;
+	stats->enqueue_miss_c = qp->enqueue_miss_c;
+	stats->dequeue_calls_c = qp->dequeue_calls_c;
+	stats->dequeue_pkt_c = qp->dequeue_pkt_c;
+	stats->dequeue_pkt_err_c = qp->dequeue_pkt_err_c;
+	stats->dequeue_miss_c = qp->dequeue_miss_c;
+	stats->dequeue_empty_c = qp->dequeue_empty_c;
+}
+
+static void
+dpaa_sec_stats_get(struct rte_cryptodev *dev,
+		   struct rte_cryptodev_stats *stats)
+{
+	int qp_c, i;
+	struct dpaa_sec_qp *qp;
+
+	if (stats == NULL) {
+		DPAA_SEC_ERR("Stats pointer is NULL");
+		return;
+	}
+
+	qp_c = dev->data->nb_queue_pairs;
+	for (i = 0; i < qp_c; i++) {
+		qp = dev->data->queue_pairs[i];
+
+		stats->enqueued_count += qp->enqueue_pkt_c;
+		stats->dequeued_count += qp->dequeue_pkt_c;
+		stats->enqueue_err_count += qp->enqueue_miss_c;
+		stats->dequeue_err_count += qp->dequeue_pkt_err_c;
+	}
+}
+
 static struct rte_cryptodev_ops crypto_ops = {
 	.dev_configure	      = dpaa_sec_dev_configure,
 	.dev_start	      = dpaa_sec_dev_start,
@@ -3598,6 +3702,9 @@ static struct rte_cryptodev_ops crypto_ops = {
 	.queue_pair_setup     = dpaa_sec_queue_pair_setup,
 	.queue_pair_release   = dpaa_sec_queue_pair_release,
 	.queue_pair_count     = dpaa_sec_queue_pair_count,
+	.stats_get	      = dpaa_sec_stats_get,
+	.dpaa_stats	      = dpaa_get_qp_sw_stats,
+	.dpaa_dump_pending	      = dpaa_dump_pending_frames,
 	.sym_session_get_size     = dpaa_sec_sym_session_get_size,
 	.sym_session_configure    = dpaa_sec_sym_session_configure,
 	.sym_session_clear        = dpaa_sec_sym_session_clear,
