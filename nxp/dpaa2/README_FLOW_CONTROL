@@ -8,16 +8,16 @@ Note: Please first read nxp/README.
 #Note: export DPAA2_FLOW_CONTROL_LOG=1 is used to check extracts and rules.
 #Note: Default missed action of flow control is to drop packets.
        export DPAA2_FLOW_CONTROL_MISS_FLOW=flow_id is used to receive missed packets from flow with flow ID specified.
-#Note: To support vxlan flow and eCPRI flow, the soft parser image should be pre-lodaded in u-boot.
+#Note: To support vxlan, eCPRI and ROCEV2 flows, the soft parser image should be pre-lodaded in u-boot.
        1) Generate softparser image in host:
           //Build generator tool in nxp/dpaa2:
-          gcc gen_ecpri_vxlan_blob.c -o gen_ecpri_vxlan_blob
-          //Generate soft parser to support vxlan and eCPRI, the "udp_dst_port" is used to identify eCPRI over UDP,
+          gcc gen_sp_blob.c -o gen_sp_blob
+          //Generate soft parser, the "udp_dst_port" is used to identify eCPRI over UDP,
           //Default port number is 0x1234.
-          //After following command is excuted, the "ecpri_vxlan.blob" image is generated.
-          ./gen_ecpri_vxlan_blob -p udp_dst_port
-       2) Load ecpri_vxlan.blob generated to hardware in u-boot:
-         //tftp 0xac000000 ecpri_vxlan.blob
+          //After following command is excuted, the "sp.blob" image is generated.
+          ./gen_sp_blob -p udp_dst_port -n sp.blob
+       2) Load sp.blob generated to hardware in u-boot:
+         //tftp 0xac000000 sp.blob
          //fsl_mc apply spb 0xac000000
 
 2.Flow control on single TC
@@ -94,6 +94,12 @@ Note: Please first read nxp/README.
   #Inject ecpri over ethernet packet whose message type is I/Q data and physical channel is 0x000a.
   #Inject ecpri over vlan packet whose message type is I/Q data and physical channel is 0x000a.
   #Inject ecpri over udp packet whose message type is I/Q data and physical channel is 0x000a. The UDP dst port is identical to the number specfied by soft parser generator.
+  #Check if all these packets go to the expected queue(RXQ3) by stop command.
+     testpmd> stop
+
+  #Create rocev2 flow whose pair queue ID is 0x123456.
+     testpmd> flow create 0 ingress pattern rocev2 qp is 0x123456 / end actions queue index 3 / end
+  #Inject rocev2 over UDP whose pair queue ID is 0x123456.
   #Check if all these packets go to the expected queue(RXQ3) by stop command.
      testpmd> stop
 
