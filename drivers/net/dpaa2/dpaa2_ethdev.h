@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -177,6 +177,8 @@ enum dpaa2_rx_faf_offset {
 	FAFE_VXLAN_IN_UDP_FRAM = 3,
 	FAFE_VXLAN_IN_TCP_FRAM = 4,
 
+	FAFE_IBTH = 5,
+
 	FAFE_ECPRI_FRAM = 7,
 	/* Set by SP end*/
 
@@ -249,7 +251,13 @@ enum dpaa2_ecpri_fafe_type {
 /* ECPRI shares SP context with VXLAN*/
 #define DPAA2_ECPRI_MSG_OFFSET DPAA2_VXLAN_VNI_OFFSET
 
+#define DPAA2_ROCEV2_OPCODE_OFFSET DPAA2_VXLAN_VNI_OFFSET
+
+#define DPAA2_ROCEV2_DST_QP_OFFSET (DPAA2_ROCEV2_OPCODE_OFFSET + 1)
+
 #define DPAA2_ECPRI_MAX_EXTRACT_NB 8
+
+#define DPAA2_IBTH_MAX_EXTRACT_NB 4
 
 struct ipv4_sd_addr_extract_rule {
 	uint32_t ipv4_src;

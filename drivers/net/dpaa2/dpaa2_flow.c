@@ -171,6 +171,11 @@ static const struct rte_flow_item_gtp dpaa2_flow_item_gtp_mask = {
 	.teid = RTE_BE32(0xffffffff),
 };
 
+static const struct rte_flow_item_rocev2 dpaa2_flow_item_rocev2_mask = {
+	.opcode = 0xff,
+	.dest_qp = "\xff\xff\xff",
+};
+
 #endif
 
 #define DPAA2_FLOW_DUMP printf
@@ -1584,6 +1589,10 @@ dpaa2_flow_extract_support(const uint8_t *mask_src,
 	case RTE_FLOW_ITEM_TYPE_GTP:
 		mask_support = (const char *)&dpaa2_flow_item_gtp_mask;
 		size = sizeof(struct rte_flow_item_gtp);
+		break;
+	case RTE_FLOW_ITEM_TYPE_ROCEV2:
+		mask_support = (const char *)&dpaa2_flow_item_rocev2_mask;
+		size = sizeof(struct rte_flow_item_rocev2);
 		break;
 	default:
 		return -EINVAL;
@@ -3571,6 +3580,121 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 }
 
 static int
+dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
+	struct rte_eth_dev *dev,
+	const struct rte_flow_attr *attr,
+	const struct rte_dpaa2_flow_item *dpaa2_pattern,
+	const struct rte_flow_action actions[] __rte_unused,
+	struct rte_flow_error *error __rte_unused,
+	int *device_configured)
+{
+	int ret, local_cfg = 0;
+	uint32_t group;
+	const struct rte_flow_item_rocev2 *spec, *mask;
+	struct rte_flow_item_rocev2 local_mask;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	const struct rte_flow_item *pattern =
+		&dpaa2_pattern->generic_item;
+	uint8_t extract_nb = 0, i;
+	uint64_t rule_data[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint64_t mask_data[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint8_t extract_size[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint8_t extract_off[DPAA2_IBTH_MAX_EXTRACT_NB];
+
+	group = attr->group;
+
+	/* Parse pattern list to get the matching parameters */
+	spec = pattern->spec;
+	if (pattern->mask) {
+		memcpy(&local_mask, pattern->mask,
+			sizeof(struct rte_flow_item_rocev2));
+		mask = &local_mask;
+	} else {
+		mask = &dpaa2_flow_item_rocev2_mask;
+	}
+
+	/* Get traffic class index and flow id to be configured */
+	flow->tc_id = group;
+	flow->tc_index = attr->priority;
+
+	if (dpaa2_pattern->in_tunnel) {
+		DPAA2_PMD_ERR("Tunnel-ROCEV2 distribution not support");
+		return -ENOTSUP;
+	}
+
+	if (!spec) {
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+			FAFE_IBTH, DPAA2_FLOW_QOS_TYPE,
+			group, &local_cfg);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+			FAFE_IBTH, DPAA2_FLOW_FS_TYPE,
+			group, &local_cfg);
+		if (ret)
+			return ret;
+
+		(*device_configured) |= local_cfg;
+		return 0;
+	}
+
+	if (dpaa2_flow_extract_support((const uint8_t *)mask,
+		RTE_FLOW_ITEM_TYPE_ROCEV2)) {
+		DPAA2_PMD_WARN("Extract field(s) of rocev2 not support.");
+
+		return -1;
+	}
+
+	if (mask->opcode) {
+		rule_data[extract_nb] = spec->opcode;
+		mask_data[extract_nb] = mask->opcode;
+		extract_size[extract_nb] = sizeof(uint8_t);
+		extract_off[extract_nb] = DPAA2_ROCEV2_OPCODE_OFFSET;
+		extract_nb++;
+	}
+
+	for (i = 0; i < ROCEV2_DEST_QP_SIZE; i++) {
+		if (mask->dest_qp[i])
+			break;
+	}
+
+	if (i < ROCEV2_DEST_QP_SIZE) {
+		memcpy(&rule_data[extract_nb],
+			&spec->dest_qp, ROCEV2_DEST_QP_SIZE);
+		memcpy(&mask_data[extract_nb],
+			&mask->dest_qp, ROCEV2_DEST_QP_SIZE);
+		extract_size[extract_nb] = ROCEV2_DEST_QP_SIZE;
+		extract_off[extract_nb] = DPAA2_ROCEV2_DST_QP_OFFSET;
+		extract_nb++;
+	}
+
+	for (i = 0; i < extract_nb; i++) {
+		ret = dpaa2_flow_add_pr_extract_rule(flow,
+			extract_off[i],
+			extract_size[i], &rule_data[i], &mask_data[i],
+			priv, group,
+			device_configured,
+			DPAA2_FLOW_QOS_TYPE);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_add_pr_extract_rule(flow,
+			extract_off[i],
+			extract_size[i], &rule_data[i], &mask_data[i],
+			priv, group,
+			device_configured,
+			DPAA2_FLOW_FS_TYPE);
+		if (ret)
+			return ret;
+	}
+
+	(*device_configured) |= local_cfg;
+
+	return 0;
+}
+
+static int
 dpaa2_configure_flow_gtp(struct dpaa2_dev_flow *flow,
 	struct rte_eth_dev *dev,
 	const struct rte_flow_attr *attr,
@@ -4318,6 +4442,16 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 					&is_keycfg_configured);
 			if (ret) {
 				DPAA2_PMD_ERR("GTP flow config failed!");
+				goto end_flow_set;
+			}
+			break;
+		case RTE_FLOW_ITEM_TYPE_ROCEV2:
+			ret = dpaa2_configure_flow_rocev2(flow,
+					dev, attr, &dpaa2_pattern[i],
+					actions, error,
+					&is_keycfg_configured);
+			if (ret) {
+				DPAA2_PMD_ERR("IBTH flow config failed!");
 				goto end_flow_set;
 			}
 			break;
