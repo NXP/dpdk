@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2022 NXP
+# Copyright 2018-2023 NXP
 
 # tunable parameters
 
@@ -82,6 +82,14 @@ function system() {
 	print "Current Max CPU freq is ${max_freq} and Min is ${min_freq}"
 	local rt_us=`cat /proc/sys/kernel/sched_rt_runtime_us`
 	print "Value for Userspace non-RT slice: ${rt_us}"
+	mycmd "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"
+	mycmd "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+	mycmd "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"
+	mycmd "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
+	mycmd "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"
+
+	print "************** DPDK config file path"
+	mycmd "ls -l /var/run/dpdk/*"
 }
 
 function system_adv() {
