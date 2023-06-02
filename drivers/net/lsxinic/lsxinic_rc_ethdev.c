@@ -768,6 +768,8 @@ lxsnic_configure_rxq_bd(struct lxsnic_ring *rxq)
 #else
 		offset = sizeof(struct lsinic_rc_rx_len_idx) * rxq->count;
 #endif
+	} else if (rxq->rc_mem_bd_type == RC_MEM_SEG_LEN) {
+		offset = sizeof(struct lsinic_rc_rx_seg) * rxq->count;
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of BD in RC mem not support",
 			__func__, rxq->rc_mem_bd_type);
@@ -792,6 +794,9 @@ lxsnic_configure_rxq_bd(struct lxsnic_ring *rxq)
 	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDRX_BD) {
 		rxq->rc_rx_addrx = v_rdma_addr;
 		len = sizeof(struct lsinic_ep_tx_dst_addrx) * rxq->count;
+	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDR_SEG) {
+		rxq->rc_rx_addrx = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_tx_seg_entry) * rxq->count;
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of BD in EP mem not support",
 			__func__, rxq->ep_mem_bd_type);
