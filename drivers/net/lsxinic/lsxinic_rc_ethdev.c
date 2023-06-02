@@ -2225,6 +2225,18 @@ static int lxsnic_sim_pci_resource_set(struct rte_pci_device *dev)
 			continue;
 
 		mapaddr = rte_mem_iova2virt(dev->mem_resource[i].phys_addr);
+		if (!mapaddr) {
+			mapaddr = mmap(NULL, dev->mem_resource[i].len,
+					PROT_READ | PROT_WRITE, MAP_SHARED, -1,
+					dev->mem_resource[i].phys_addr);
+			LSXINIC_PMD_INFO("RC Sim: bar[%d] map phy(%lx)",
+				i, dev->mem_resource[i].phys_addr);
+			if (mapaddr == MAP_FAILED) {
+				LSXINIC_PMD_ERR("RC Sim: map bar[%d]:0x%lx",
+					i, dev->mem_resource[i].phys_addr);
+				return -ENOMEM;
+			}
+		}
 		dev->mem_resource[i].addr = mapaddr;
 		map_idx++;
 	}
