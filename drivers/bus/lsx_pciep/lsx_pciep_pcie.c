@@ -1156,13 +1156,13 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	for (i = 0; i < PCI_MAX_RESOURCE; i++) {
 		if (ctlhw->ib_mem.pf_ib_bar[pf][i].size) {
 			sprintf(&buf[idx], "0x%016lx",
-				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_phy);
+				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_iova);
 			idx += 18;
 			sprintf(&buf[idx], " ");
 			idx++;
 
 			sprintf(&buf[idx], "0x%016lx",
-				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_phy +
+				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_iova +
 				ctlhw->ib_mem.pf_ib_bar[pf][i].size - 1);
 
 			idx += 18;
@@ -1883,6 +1883,27 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 	ob_win->ob_virt_base =
 		lsx_pciep_map_region(ob_win->ob_phy_base,
 				size);
+	if (ob_win->ob_virt_base) {
+		int ret;
+		uint64_t va, iova;
+
+		va = (uint64_t)ob_win->ob_virt_base;
+		if (rte_eal_iova_mode() == RTE_IOVA_VA)
+			iova = va;
+		else
+			iova = ob_win->ob_phy_base;
+		ret = rte_fslmc_vfio_mem_dmamap(va, iova, size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("MAP va(%lx):iova(%lx):size(%lx)",
+				va, iova, size);
+
+			return NULL;
+		}
+	} else {
+		LSX_PCIEP_BUS_ERR("MAP pa(%lx):size(%lx)",
+			ob_win->ob_phy_base, size);
+		return NULL;
+	}
 
 	if (is_vf)
 		LSX_PCIEP_BUS_INFO(OB_VF_INFO_DUMP_FORMAT(pcie_id,
@@ -2009,7 +2030,20 @@ lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 {
 	int pcie_id = ep_dev->pcie_id;
 	uint8_t *vaddr;
+	uint64_t phy;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+
+	if (lsx_pciep_hw_sim_get(ctlhw->hw.index)) {
+		ep_dev->ob_win[0].ob_map_bus_base = pci_addr;
+		ep_dev->ob_win[0].ob_iova_base = pci_addr;
+		vaddr = rte_fslmc_mem_iova_to_vaddr(pci_addr);
+		phy = rte_mem_virt2phy((const void *)vaddr);
+		if (phy == RTE_BAD_IOVA)
+			return NULL;
+		ep_dev->ob_win[0].ob_phy_base = phy;
+		ep_dev->ob_win[0].ob_virt_base = vaddr;
+		return vaddr;
+	}
 
 	if (ctlhw->rbp)
 		vaddr = lsx_pciep_set_ob_win_rbp(ep_dev, pci_addr, size);
@@ -2146,21 +2180,6 @@ lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
 		return lsx_pciep_unset_ob_win_rbp(ep_dev, pci_addr);
 	else
 		return lsx_pciep_unset_ob_win_norbp(ep_dev, pci_addr);
-}
-
-void
-lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
-	uint64_t vir_offset)
-{
-	struct lsx_pciep_outbound *ob_win;
-
-	if (!lsx_pciep_hw_sim_get(ep_dev->pcie_id))
-		return;
-
-	ob_win = &ep_dev->ob_win[0];
-	ob_win->ob_map_bus_base = 0;
-	ob_win->ob_phy_base = 0;
-	ob_win->ob_virt_base = (void *)vir_offset;
 }
 
 static int
