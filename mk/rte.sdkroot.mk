@@ -69,7 +69,6 @@ warning:
 	@echo "Building DPDK with 'make' will be deprecated in a future release"
 	@echo "================================================================"
 	@echo
-	@sleep 3
 
 .PHONY: config defconfig showconfigs showversion showversionum
 config: warning
