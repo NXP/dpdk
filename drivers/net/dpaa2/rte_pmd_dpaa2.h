@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef _RTE_PMD_DPAA2_H
@@ -137,5 +137,16 @@ rte_pmd_dpaa2_get_tlu_hash(uint8_t *key, int size);
 __rte_experimental
 void
 rte_pmd_dpaa2_thread_init(void);
+
+/**
+ * @warning
+ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
+ *
+ * Do thread specific I/O initialization & warmup to reduce initial delays
+ *
+ */
+__rte_experimental
+int
+rte_pmd_dpaa2_thread_warmup(uint8_t rx_flag);
 
 #endif /* _RTE_PMD_DPAA2_H */

@@ -2424,6 +2424,18 @@ dpaa2_tm_ops_get(struct rte_eth_dev *dev __rte_unused, void *ops)
 	return 0;
 }
 
+int
+rte_pmd_dpaa2_thread_warmup(uint8_t rx_flag)
+{
+	int ret;
+
+	ret = dpaa2_affine_qbman_swp();
+	if ((ret == 0) && rx_flag)
+		ret = dpaa2_affine_qbman_ethrx_swp();
+
+	return ret;
+}
+
 void
 rte_pmd_dpaa2_thread_init(void)
 {

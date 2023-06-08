@@ -20,4 +20,5 @@ EXPERIMENTAL {
 	rte_pmd_dpaa2_set_custom_hash;
 	rte_pmd_dpaa2_set_timestamp;
 	rte_pmd_dpaa2_thread_init;
+	rte_pmd_dpaa2_thread_warmup;
 };
