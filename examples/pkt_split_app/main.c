@@ -38,7 +38,7 @@
 #include <rte_ip_frag.h>
 #include <arpa/inet.h>
 #include <rte_string_fns.h>
-#include <bus_driver.h>
+#include <rte_bus.h>
 
 #include <rte_pmd_dpaa_oldev.h>
 #include <rte_pmd_dpaa2.h>
