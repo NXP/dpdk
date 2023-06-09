@@ -83,15 +83,18 @@ then
 	A=$($DEVMEM r $(($CAAM_BASE + 0x5C)) $(($CAAM_BASE + 0x5F)) w)
 	B=$(echo "$A" | awk '{print $NF}' | tail -2 | head -1)
 	echo "JRSTARTR:" ${B:6:2}${B:4:2}${B:2:2}${B:0:2}
-	A=$($DEVMEM r $(($CAAM_BASE + 0x120)) $(($CAAM_BASE + 0x123)) w)
-	B=$(echo "$A" | awk '{print $NF}' | tail -1)
-	echo "DAR:     " ${B:6:2}${B:4:2}${B:2:2}${B:0:2}
 	A=$($DEVMEM r $(($CAAM_BASE + 0x504)) $(($CAAM_BASE + 0x507)) w)
 	B=$(echo "$A" | awk '{print $NF}' | tail -1)
 	echo "DMA_CTRL:" ${B:6:2}${B:4:2}${B:2:2}${B:0:2}
 	A=$($DEVMEM r $(($CAAM_BASE + 0x50C)) $(($CAAM_BASE + 0x50F)) w)
 	B=$(echo "$A" | awk '{print $NF}' | tail -2 | head -1)
 	echo "DMA_STA: " ${B:6:2}${B:4:2}${B:2:2}${B:0:2}
+	echo "Reading DAR..."
+	echo "0xFFFFFFFF" | $DEVMEM w $(($CAAM_BASE + 0x120))
+	sleep 2
+	A=$($DEVMEM r $(($CAAM_BASE + 0x120)) $(($CAAM_BASE + 0x123)) w)
+	B=$(echo "$A" | awk '{print $NF}' | tail -1)
+	echo "DAR:     " ${B:6:2}${B:4:2}${B:2:2}${B:0:2}
 	echo
 	echo "QI STATUS REGISTERS:"
 	echo "============================"
