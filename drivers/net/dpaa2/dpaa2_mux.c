@@ -154,16 +154,20 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		uint64_t key[] = {0x0001000000000000, 0x2000110000000000};
 		int j = 0;
 
-		keys = rte_malloc(NULL, sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, sizeof(uint64_t), 0);
+		num_rules = 2;
+		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+
+		for (loop = 0; loop < num_rules; loop++) {
+			keys[loop] = key[loop];
+			masks[loop] = mask[loop];
+		}
 
 		if (!keys)
 			printf("Memory allocation failure for keys\n");
 
 		if (!masks)
 			printf("Memory allocation failure for masks\n");
-
-		num_rules = 2;
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
 		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
@@ -182,8 +186,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		masks = mask;
-		keys = key;
 		key_size = sizeof(uint8_t) * 3;
 	}
 	break;
@@ -223,8 +225,13 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		 */
 
 		num_rules = 3;
-		keys = rte_malloc(NULL, sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, sizeof(uint64_t), 0);
+		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+
+		for (loop = 0; loop < num_rules; loop++) {
+			keys[loop] = key[loop];
+			masks[loop] = mask[loop];
+		}
 
 		if (!keys)
 			printf("Memory allocation failure for keys\n");
@@ -258,8 +265,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		masks = mask;
-		keys = key;
 		/* Four keys are extracted. */
 		key_size = sizeof(uint8_t) * 4;
 	}
