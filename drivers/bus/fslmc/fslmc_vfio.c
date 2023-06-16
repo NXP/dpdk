@@ -485,7 +485,6 @@ fslmc_vfio_open_container_fd(void)
 		if (ret) {
 			DPAA2_BUS_ERR("Unsupported IOMMU extensions found(%d)",
 				ret);
-			close(vfio_container_fd);
 			goto err_exit;
 		}
 
