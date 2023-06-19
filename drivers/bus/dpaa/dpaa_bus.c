@@ -627,7 +627,7 @@ rte_dpaa_bus_dev_build(void)
 
 	/* Get the interface configurations from device-tree */
 	dpaa_netcfg = netcfg_acquire();
-	if (!dpaa_netcfg && !getenv("OLDEV_ENABLED")) {
+	if (!dpaa_netcfg && !getenv("OLDEV_ENABLED") && getenv("DPAA_SEC_DISABLE")) {
 		DPAA_BUS_LOG(ERR,
 			"netcfg failed: /dev/fsl_usdpaa device not available");
 		DPAA_BUS_WARN(
@@ -637,7 +637,7 @@ rte_dpaa_bus_dev_build(void)
 
 	RTE_LOG(NOTICE, EAL, "DPAA Bus Detected\n");
 
-	if (!getenv("OLDEV_ENABLED")) {
+	if (!getenv("OLDEV_ENABLED") && getenv("DPAA_SEC_DISABLE")) {
 		if (!dpaa_netcfg->num_ethports) {
 			DPAA_BUS_LOG(INFO, "NO DPDK mapped net interfaces available");
 			/* This is not an error */
@@ -647,7 +647,7 @@ rte_dpaa_bus_dev_build(void)
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
 	dump_netcfg(dpaa_netcfg);
 #endif
-	if (!getenv("OLDEV_ENABLED")) {
+	if (!getenv("OLDEV_ENABLED") && getenv("DPAA_SEC_DISABLE")) {
 		DPAA_BUS_LOG(DEBUG, "Number of ethernet devices = %d",
 			     dpaa_netcfg->num_ethports);
 	}

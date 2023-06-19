@@ -3781,15 +3781,6 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 	internals->max_nb_queue_pairs = RTE_DPAA_MAX_NB_SEC_QPS;
 	internals->max_nb_sessions = RTE_DPAA_SEC_PMD_MAX_NB_SESSIONS;
 
-	/*
-	 * For secondary processes, we don't initialise any further as primary
-	 * has already done this work. Only check we don't need a different
-	 * RX function
-	 */
-	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-		DPAA_SEC_WARN("Device already init by primary process");
-		return 0;
-	}
 #ifdef RTE_LIBRTE_SECURITY
 	/* Initialize security_ctx only for primary process*/
 	security_instance = rte_malloc("rte_security_instances_ops",
@@ -3801,6 +3792,16 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 	security_instance->sess_cnt = 0;
 	cryptodev->security_ctx = security_instance;
 #endif
+	/*
+	 * For secondary processes, we don't initialise any further as primary
+	 * has already done this work. Only check we don't need a different
+	 * RX function
+	 */
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+		DPAA_SEC_WARN("Device already init by primary process");
+		return 0;
+	}
+
 	rte_spinlock_init(&internals->lock);
 	for (i = 0; i < internals->max_nb_queue_pairs; i++) {
 		/* init qman fq for queue pair */
