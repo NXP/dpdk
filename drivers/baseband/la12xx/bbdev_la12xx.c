@@ -765,7 +765,7 @@ la12xx_start(struct rte_bbdev *dev)
 {
 	struct bbdev_la12xx_private *priv = dev->data->dev_private;
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
-	int ready = 0;
+	int ready = 0, i, n_vspa_q = 0;
 	struct gul_hif *hif_start;
 	struct bbdev_la12xx_q_priv *q_priv;
 	ipc_metadata_t *ipc_md;
@@ -779,6 +779,17 @@ la12xx_start(struct rte_bbdev *dev)
 
 	/* Set Host Read bit */
 	SET_HIF_HOST_RDY(hif_start, HIF_HOST_READY_IPC_APP);
+
+	/* No need to wait if only VSPA queues */
+	for (i = 0; i < dev->data->num_queues; i++) {
+		if (dev->data->queues[i].conf.op_type != RTE_BBDEV_OP_LA12XX_VSPA) {
+			n_vspa_q = 1;
+			break;
+		}
+	}
+
+	if (n_vspa_q == 0)
+		return 0;
 
 	/* Now wait for modem ready bit */
 	while (!ready)
