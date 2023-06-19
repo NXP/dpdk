@@ -1448,7 +1448,7 @@ reset_classif_info(void)
 static int
 set_lgw_info(bool is_ol_port)
 {
-	struct rte_pmd_dpaa_lgw_info_s lgw_info;
+	struct rte_pmd_dpaa_lgw_info_s lgw_info = {0};
 	int ret;
 
 	ret = get_user_data(NULL, &lgw_info, is_ol_port);
