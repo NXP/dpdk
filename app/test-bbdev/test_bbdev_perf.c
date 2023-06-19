@@ -399,8 +399,10 @@ check_dev_cap(const struct rte_bbdev_info *dev_info,
 		}
 	}
 
-	if (vector->op_type == RTE_BBDEV_OP_NONE)
-		return TEST_SUCCESS; /* Special case for NULL device */
+	if (vector->op_type == RTE_BBDEV_OP_NONE ||
+			vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA ||
+			vector->op_type == RTE_BBDEV_OP_RAW)
+		return TEST_SUCCESS;
 
 	return TEST_FAILED;
 }
