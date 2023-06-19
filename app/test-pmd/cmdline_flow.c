@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
+ * Copyright 2023 NXP
  */
 
 #include <stddef.h>
@@ -400,6 +401,9 @@ enum index {
 	ITEM_PFCP,
 	ITEM_PFCP_S_FIELD,
 	ITEM_PFCP_SEID,
+	ITEM_ROCEV2,
+	ITEM_ROCEV2_OPCODE,
+	ITEM_ROCEV2_DST_QP,
 	ITEM_ECPRI,
 	ITEM_ECPRI_COMMON,
 	ITEM_ECPRI_COMMON_TYPE,
@@ -1345,6 +1349,7 @@ static const enum index next_item[] = {
 	ITEM_ESP,
 	ITEM_AH,
 	ITEM_PFCP,
+	ITEM_ROCEV2,
 	ITEM_ECPRI,
 	ITEM_GENEVE_OPT,
 	ITEM_INTEGRITY,
@@ -1688,6 +1693,7 @@ static const enum index item_ecpri[] = {
 
 static const enum index item_ecpri_common[] = {
 	ITEM_ECPRI_COMMON_TYPE,
+	ITEM_NEXT,
 	ZERO,
 };
 
@@ -1695,6 +1701,14 @@ static const enum index item_ecpri_common_type[] = {
 	ITEM_ECPRI_COMMON_TYPE_IQ_DATA,
 	ITEM_ECPRI_COMMON_TYPE_RTC_CTRL,
 	ITEM_ECPRI_COMMON_TYPE_DLY_MSR,
+	ITEM_NEXT,
+	ZERO,
+};
+
+static const enum index item_rocev2[] = {
+	ITEM_ROCEV2_OPCODE,
+	ITEM_ROCEV2_DST_QP,
+	ITEM_NEXT,
 	ZERO,
 };
 
@@ -4634,6 +4648,29 @@ static const struct token token_list[] = {
 		.next = NEXT(item_pfcp, NEXT_ENTRY(COMMON_UNSIGNED),
 			     item_param),
 		.args = ARGS(ARGS_ENTRY_HTON(struct rte_flow_item_pfcp, seid)),
+	},
+	[ITEM_ROCEV2] = {
+		.name = "rocev2",
+		.help = "match ROCEv2 header",
+		.priv = PRIV_ITEM(ROCEV2, sizeof(struct rte_flow_item_rocev2)),
+		.next = NEXT(item_rocev2),
+		.call = parse_vc,
+	},
+	[ITEM_ROCEV2_OPCODE] = {
+		.name = "opcode",
+		.help = "ROCEv2 opCode",
+		.next = NEXT(item_rocev2, NEXT_ENTRY(COMMON_UNSIGNED),
+				item_param),
+		.args = ARGS(ARGS_ENTRY_HTON(struct rte_flow_item_rocev2,
+				opcode)),
+	},
+	[ITEM_ROCEV2_DST_QP] = {
+		.name = "qp",
+		.help = "ROCEv2 dest queue pair",
+		.next = NEXT(item_rocev2, NEXT_ENTRY(COMMON_UNSIGNED),
+				item_param),
+		.args = ARGS(ARGS_ENTRY_HTON(struct rte_flow_item_rocev2,
+				dest_qp)),
 	},
 	[ITEM_ECPRI] = {
 		.name = "ecpri",
