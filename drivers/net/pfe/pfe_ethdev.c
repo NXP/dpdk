@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2020,2023 NXP
  */
 
 #include <sys/ioctl.h>
@@ -1049,6 +1049,11 @@ pmd_pfe_probe(struct rte_vdev_device *vdev)
 	g_pfe->cbus_size = cbus_size;
 
 	fd = open("/dev/mem", O_RDWR);
+	if (fd < 0) {
+		PFE_PMD_ERR("Failed to open /dev/mem");
+		return  -EINVAL;
+	}
+
 	g_pfe->cbus_baseaddr = mmap(NULL, cbus_size, PROT_READ | PROT_WRITE,
 					MAP_SHARED, fd, cbus_addr);
 	close(fd);
