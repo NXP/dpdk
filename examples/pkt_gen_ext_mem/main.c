@@ -70,6 +70,69 @@ void set_mbuf_data(struct rte_mbuf *mbuf, const unsigned char *data,
 	mbuf->next = NULL;
 }
 
+/* Check the link status of all ports in up to 9s, and print them finally */
+static void
+check_all_ports_link_status(uint32_t port_mask)
+{
+#define CHECK_INTERVAL 100 /* 100ms */
+#define MAX_CHECK_TIME 350 /* 9s (90 * 100ms) in total */
+	uint16_t portid;
+	uint8_t count, all_ports_up, print_flag = 0;
+	struct rte_eth_link link;
+	int ret;
+
+	printf("\nChecking link status");
+	fflush(stdout);
+	for (count = 0; count <= MAX_CHECK_TIME; count++) {
+		all_ports_up = 1;
+		RTE_ETH_FOREACH_DEV(portid) {
+			if ((port_mask & (1 << portid)) == 0)
+				continue;
+			memset(&link, 0, sizeof(link));
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
+			/* print link status if flag set */
+			if (print_flag == 1) {
+				if (link.link_status)
+					printf(
+					"Port%d Link Up. Speed %u Mbps - %s\n",
+						portid, link.link_speed,
+				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+					("full-duplex") : ("half-duplex"));
+				else
+					printf("Port %d Link Down\n", portid);
+				continue;
+			}
+			/* clear all_ports_up flag if any link down */
+			if (link.link_status == ETH_LINK_DOWN) {
+				all_ports_up = 0;
+				break;
+			}
+		}
+		/* after finally printing all link status, get out */
+		if (print_flag == 1)
+			break;
+
+		if (all_ports_up == 0) {
+			printf(".");
+			fflush(stdout);
+			rte_delay_ms(CHECK_INTERVAL);
+		}
+
+		/* set the print_flag if all ports up or timeout */
+		if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
+			print_flag = 1;
+			printf("done\n");
+		}
+	}
+}
+
 int open_port(uint16_t port_id, uint64_t iaddr, uint64_t size, int fd)
 {
 	int rez = 0;
@@ -293,10 +356,12 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	check_all_ports_link_status(0x1);
 	printf("DPDK TX Ethernet device (destination) opened successfully\n");
 	printf("in start pool count = %d\n",
 			rte_mempool_avail_count(l2fwd_pktmbuf_pool));
 
+	rte_delay_ms(2000);
 	for (uint32_t i = 0; i < 1000; ++i) {
 		struct rte_mbuf *m;
 		uint16_t buf_len = 128;
@@ -312,7 +377,7 @@ int main(int argc, char *argv[])
 		sent_pkts += ret;
 	}
 	printf("Packets sent. Count=%d \n", sent_pkts);
-	rte_delay_ms(3000);
+	rte_delay_ms(5000);
 	printf("end pool count = %d\n",
 			rte_mempool_avail_count(l2fwd_pktmbuf_pool));
 
