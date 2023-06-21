@@ -648,6 +648,18 @@ static int rte_dpaa_probe(__rte_unused struct rte_dpaa_driver *dpaa_drv,
 
 	ret = dpaa_oldev_init(eth_dev);
 	if (ret == 0) {
+		if (!dpaa_tx_sg_pool) {
+			dpaa_tx_sg_pool =
+				rte_pktmbuf_pool_create("dpaa_mbuf_tx_sg_pool",
+				DPAA_POOL_SIZE,
+				DPAA_POOL_CACHE_SIZE, 0,
+				DPAA_MAX_SGS * sizeof(struct qm_sg_entry),
+				rte_socket_id());
+			if (dpaa_tx_sg_pool == NULL) {
+				DPAA_PMD_ERR("SG pool creation failed\n");
+				return -ENOMEM;
+			}
+		}
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;
 	}
