@@ -393,7 +393,7 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
  * the 17th byte by the HW.
  */
 #define DPAA_OL_PARSERSLT_START_OFFSET 16
-#define DPAA_OL_DATA_ALIGNMENT 64
+#define DPAA_OL_DATA_ALIGNMENT 128
 /* Change this value to increase the data offset.
  * final value will be aligned by DPAA_OL_DATA_ALIGNMENT
  */
