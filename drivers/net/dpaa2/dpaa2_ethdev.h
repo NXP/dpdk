@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -177,6 +177,8 @@ enum dpaa2_rx_faf_offset {
 	FAFE_VXLAN_IN_UDP_FRAM = 3,
 	FAFE_VXLAN_IN_TCP_FRAM = 4,
 
+	FAFE_IBTH = 5,
+
 	FAFE_ECPRI_FRAM = 7,
 	/* Set by SP end*/
 
@@ -249,7 +251,13 @@ enum dpaa2_ecpri_fafe_type {
 /* ECPRI shares SP context with VXLAN*/
 #define DPAA2_ECPRI_MSG_OFFSET DPAA2_VXLAN_VNI_OFFSET
 
+#define DPAA2_ROCEV2_OPCODE_OFFSET DPAA2_VXLAN_VNI_OFFSET
+
+#define DPAA2_ROCEV2_DST_QP_OFFSET (DPAA2_ROCEV2_OPCODE_OFFSET + 1)
+
 #define DPAA2_ECPRI_MAX_EXTRACT_NB 8
+
+#define DPAA2_IBTH_MAX_EXTRACT_NB 4
 
 struct ipv4_sd_addr_extract_rule {
 	uint32_t ipv4_src;
@@ -456,6 +464,7 @@ void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *queue)  __attribute__((unused));
 int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
+int dpaa2_soft_parser_loaded(void);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);
 int dpaa2_timesync_disable(struct rte_eth_dev *dev);

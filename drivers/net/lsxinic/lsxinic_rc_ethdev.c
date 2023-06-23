@@ -768,6 +768,8 @@ lxsnic_configure_rxq_bd(struct lxsnic_ring *rxq)
 #else
 		offset = sizeof(struct lsinic_rc_rx_len_idx) * rxq->count;
 #endif
+	} else if (rxq->rc_mem_bd_type == RC_MEM_SEG_LEN) {
+		offset = sizeof(struct lsinic_rc_rx_seg) * rxq->count;
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of BD in RC mem not support",
 			__func__, rxq->rc_mem_bd_type);
@@ -792,6 +794,9 @@ lxsnic_configure_rxq_bd(struct lxsnic_ring *rxq)
 	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDRX_BD) {
 		rxq->rc_rx_addrx = v_rdma_addr;
 		len = sizeof(struct lsinic_ep_tx_dst_addrx) * rxq->count;
+	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDR_SEG) {
+		rxq->rc_rx_addrx = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_tx_seg_entry) * rxq->count;
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of BD in EP mem not support",
 			__func__, rxq->ep_mem_bd_type);
@@ -2225,6 +2230,18 @@ static int lxsnic_sim_pci_resource_set(struct rte_pci_device *dev)
 			continue;
 
 		mapaddr = rte_mem_iova2virt(dev->mem_resource[i].phys_addr);
+		if (!mapaddr) {
+			mapaddr = mmap(NULL, dev->mem_resource[i].len,
+					PROT_READ | PROT_WRITE, MAP_SHARED, -1,
+					dev->mem_resource[i].phys_addr);
+			LSXINIC_PMD_INFO("RC Sim: bar[%d] map phy(%lx)",
+				i, dev->mem_resource[i].phys_addr);
+			if (mapaddr == MAP_FAILED) {
+				LSXINIC_PMD_ERR("RC Sim: map bar[%d]:0x%lx",
+					i, dev->mem_resource[i].phys_addr);
+				return -ENOMEM;
+			}
+		}
 		dev->mem_resource[i].addr = mapaddr;
 		map_idx++;
 	}

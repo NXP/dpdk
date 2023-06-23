@@ -1583,7 +1583,7 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 {
 	int sim;
 	void *vir_addr;
-	uint64_t vir_offset, mask, size;
+	uint64_t mask, size;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	size = LSINIC_RING_PAIR_SIZE(adapter->max_qpairs);
@@ -1596,11 +1596,15 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 				rc_reg_addr);
 			return -ENOBUFS;
 		}
-		vir_offset = (uint64_t)vir_addr - rc_reg_addr;
 
 		adapter->rc_ring_virt_base = vir_addr;
-		lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
-		adapter->rc_ring_phy_base = 0;
+		adapter->rc_ring_phy_base = rc_reg_addr;
+		vir_addr = lsx_pciep_set_ob_win(lsinic_dev, rc_reg_addr, size);
+		if (vir_addr != adapter->rc_ring_virt_base) {
+			LSXINIC_PMD_ERR("Simulator: vir mapped from RC(%p!=%p)",
+				vir_addr, adapter->rc_ring_virt_base);
+			return -EIO;
+		}
 	} else {
 		mask = lsx_pciep_bus_win_mask(lsinic_dev);
 		if (mask && (rc_reg_addr & mask)) {
@@ -1698,11 +1702,11 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	}
 
 skip_map_rc_ring:
-	if (adapter->rbp_enable) {
+	if (adapter->rbp_enable || sim) {
 		ob_base = 0;
 	} else {
 		ob_win = &lsinic_dev->ob_win[0];
-		ob_base = rte_fslmc_io_vaddr_to_iova(ob_win->ob_virt_base);
+		ob_base = ob_win->ob_iova_base;
 		if (ob_base == RTE_BAD_IOVA) {
 			LSXINIC_PMD_ERR("Map %p to IOVA failed!",
 				ob_win->ob_virt_base);

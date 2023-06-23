@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <sys/mman.h>
 
 #include <rte_ethdev.h>
 #include <rte_log.h>
@@ -25,6 +26,7 @@
 static char *dpaa2_flow_control_log;
 static uint16_t dpaa2_flow_miss_flow_id =
 	DPNI_FS_MISS_DROP;
+static int dpaa2_sp_loaded = -1;
 
 enum dpaa2_flow_entry_size {
 	DPAA2_FLOW_ENTRY_MIN_SIZE = (DPNI_MAX_KEY_SIZE / 2),
@@ -64,7 +66,7 @@ struct rte_dpaa2_flow_item {
 };
 
 static const
-enum rte_flow_item_type dpaa2_supported_pattern_type[] = {
+enum rte_flow_item_type dpaa2_hp_supported_pattern_type[] = {
 	RTE_FLOW_ITEM_TYPE_END,
 	RTE_FLOW_ITEM_TYPE_ETH,
 	RTE_FLOW_ITEM_TYPE_VLAN,
@@ -75,6 +77,15 @@ enum rte_flow_item_type dpaa2_supported_pattern_type[] = {
 	RTE_FLOW_ITEM_TYPE_TCP,
 	RTE_FLOW_ITEM_TYPE_SCTP,
 	RTE_FLOW_ITEM_TYPE_GRE,
+	RTE_FLOW_ITEM_TYPE_GTP,
+	RTE_FLOW_ITEM_TYPE_RAW
+};
+
+static const
+enum rte_flow_item_type dpaa2_sp_supported_pattern_type[] = {
+	RTE_FLOW_ITEM_TYPE_VXLAN,
+	RTE_FLOW_ITEM_TYPE_ECPRI,
+	RTE_FLOW_ITEM_TYPE_ROCEV2
 };
 
 static const
@@ -165,6 +176,16 @@ static const struct rte_flow_item_ecpri dpaa2_flow_item_ecpri_mask = {
 	.hdr.dummy[1] = RTE_BE32(0xffffffff),
 	.hdr.dummy[2] = RTE_BE32(0xffffffff),
 };
+
+static const struct rte_flow_item_gtp dpaa2_flow_item_gtp_mask = {
+	.teid = RTE_BE32(0xffffffff),
+};
+
+static const struct rte_flow_item_rocev2 dpaa2_flow_item_rocev2_mask = {
+	.opcode = 0xff,
+	.dest_qp = "\xff\xff\xff",
+};
+
 #endif
 
 #define DPAA2_FLOW_DUMP printf
@@ -238,6 +259,12 @@ dpaa2_prot_field_string(uint32_t prot, uint32_t field,
 		strcpy(string, "gre");
 		if (field == NH_FLD_GRE_TYPE)
 			strcat(string, ".type");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_GTP) {
+		strcpy(string, "gtp");
+		if (field == NH_FLD_GTP_TEID)
+			strcat(string, ".teid");
 		else
 			strcat(string, ".unknown field");
 	} else {
@@ -389,6 +416,92 @@ dpaa2_flow_fs_entry_log(const char *log_info,
 	for (idx = 0; idx < flow->fs_rule_size; idx++)
 		DPAA2_FLOW_DUMP("%02x ", mask[idx]);
 	DPAA2_FLOW_DUMP("\r\n");
+}
+
+/** For LX2160A, LS2088A and LS1088A*/
+#define WRIOP_CCSR_BASE 0x8b80000
+#define WRIOP_CCSR_CTLU_OFFSET 0
+#define WRIOP_CCSR_CTLU_PARSER_OFFSET 0
+#define WRIOP_CCSR_CTLU_PARSER_INGRESS_OFFSET 0
+
+#define WRIOP_INGRESS_PARSER_PHY \
+	(WRIOP_CCSR_BASE + WRIOP_CCSR_CTLU_OFFSET + \
+	WRIOP_CCSR_CTLU_PARSER_OFFSET + \
+	WRIOP_CCSR_CTLU_PARSER_INGRESS_OFFSET)
+
+struct dpaa2_parser_ccsr {
+	uint32_t psr_cfg;
+	uint32_t psr_idle;
+	uint32_t psr_pclm;
+	uint8_t psr_ver_min;
+	uint8_t psr_ver_maj;
+	uint8_t psr_id1_l;
+	uint8_t psr_id1_h;
+	uint32_t psr_rev2;
+	uint8_t rsv[0x2c];
+	uint8_t sp_ins[4032];
+};
+
+int
+dpaa2_soft_parser_loaded(void)
+{
+	int fd, i, ret = 0;
+	struct dpaa2_parser_ccsr *parser_ccsr = NULL;
+
+	dpaa2_flow_control_log = getenv("DPAA2_FLOW_CONTROL_LOG");
+
+	if (dpaa2_sp_loaded >= 0)
+		return dpaa2_sp_loaded;
+
+	fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (fd < 0) {
+		DPAA2_PMD_ERR("open \"/dev/mem\" ERROR(%d)", fd);
+		ret = fd;
+		goto exit;
+	}
+
+	parser_ccsr = mmap(NULL, sizeof(struct dpaa2_parser_ccsr),
+		PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+		WRIOP_INGRESS_PARSER_PHY);
+	if (!parser_ccsr) {
+		DPAA2_PMD_ERR("Map 0x%lx(size=0x%lx) failed",
+			(uint64_t)WRIOP_INGRESS_PARSER_PHY,
+			sizeof(struct dpaa2_parser_ccsr));
+		ret = -ENOBUFS;
+		goto exit;
+	}
+
+	DPAA2_PMD_INFO("Parser ID:0x%02x%02x, Rev:major(%02x), minor(%02x)",
+		parser_ccsr->psr_id1_h, parser_ccsr->psr_id1_l,
+		parser_ccsr->psr_ver_maj, parser_ccsr->psr_ver_min);
+
+	if (dpaa2_flow_control_log) {
+		for (i = 0; i < 64; i++) {
+			DPAA2_FLOW_DUMP("%02x ",
+				parser_ccsr->sp_ins[i]);
+			if (!((i + 1) % 16))
+				DPAA2_FLOW_DUMP("\r\n");
+		}
+	}
+
+	for (i = 0; i < 16; i++) {
+		if (parser_ccsr->sp_ins[i]) {
+			dpaa2_sp_loaded = 1;
+			break;
+		}
+	}
+	if (dpaa2_sp_loaded < 0)
+		dpaa2_sp_loaded = 0;
+
+	ret = dpaa2_sp_loaded;
+
+exit:
+	if (parser_ccsr)
+		munmap(parser_ccsr, sizeof(struct dpaa2_parser_ccsr));
+	if (fd >= 0)
+		close(fd);
+
+	return ret;
 }
 
 static int
@@ -1568,6 +1681,14 @@ dpaa2_flow_extract_support(const uint8_t *mask_src,
 	case RTE_FLOW_ITEM_TYPE_ECPRI:
 		mask_support = (const char *)&dpaa2_flow_item_ecpri_mask;
 		size = sizeof(struct rte_flow_item_ecpri);
+		break;
+	case RTE_FLOW_ITEM_TYPE_GTP:
+		mask_support = (const char *)&dpaa2_flow_item_gtp_mask;
+		size = sizeof(struct rte_flow_item_gtp);
+		break;
+	case RTE_FLOW_ITEM_TYPE_ROCEV2:
+		mask_support = (const char *)&dpaa2_flow_item_rocev2_mask;
+		size = sizeof(struct rte_flow_item_rocev2);
 		break;
 	default:
 		return -EINVAL;
@@ -3555,6 +3676,199 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 }
 
 static int
+dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
+	struct rte_eth_dev *dev,
+	const struct rte_flow_attr *attr,
+	const struct rte_dpaa2_flow_item *dpaa2_pattern,
+	const struct rte_flow_action actions[] __rte_unused,
+	struct rte_flow_error *error __rte_unused,
+	int *device_configured)
+{
+	int ret, local_cfg = 0;
+	uint32_t group;
+	const struct rte_flow_item_rocev2 *spec, *mask;
+	struct rte_flow_item_rocev2 local_mask;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	const struct rte_flow_item *pattern =
+		&dpaa2_pattern->generic_item;
+	uint8_t extract_nb = 0, i;
+	uint64_t rule_data[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint64_t mask_data[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint8_t extract_size[DPAA2_IBTH_MAX_EXTRACT_NB];
+	uint8_t extract_off[DPAA2_IBTH_MAX_EXTRACT_NB];
+
+	group = attr->group;
+
+	/* Parse pattern list to get the matching parameters */
+	spec = pattern->spec;
+	if (pattern->mask) {
+		memcpy(&local_mask, pattern->mask,
+			sizeof(struct rte_flow_item_rocev2));
+		mask = &local_mask;
+	} else {
+		mask = &dpaa2_flow_item_rocev2_mask;
+	}
+
+	/* Get traffic class index and flow id to be configured */
+	flow->tc_id = group;
+	flow->tc_index = attr->priority;
+
+	if (dpaa2_pattern->in_tunnel) {
+		DPAA2_PMD_ERR("Tunnel-ROCEV2 distribution not support");
+		return -ENOTSUP;
+	}
+
+	if (!spec) {
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+			FAFE_IBTH, DPAA2_FLOW_QOS_TYPE,
+			group, &local_cfg);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+			FAFE_IBTH, DPAA2_FLOW_FS_TYPE,
+			group, &local_cfg);
+		if (ret)
+			return ret;
+
+		(*device_configured) |= local_cfg;
+		return 0;
+	}
+
+	if (dpaa2_flow_extract_support((const uint8_t *)mask,
+		RTE_FLOW_ITEM_TYPE_ROCEV2)) {
+		DPAA2_PMD_WARN("Extract field(s) of rocev2 not support.");
+
+		return -1;
+	}
+
+	if (mask->opcode) {
+		rule_data[extract_nb] = spec->opcode;
+		mask_data[extract_nb] = mask->opcode;
+		extract_size[extract_nb] = sizeof(uint8_t);
+		extract_off[extract_nb] = DPAA2_ROCEV2_OPCODE_OFFSET;
+		extract_nb++;
+	}
+
+	for (i = 0; i < ROCEV2_DEST_QP_SIZE; i++) {
+		if (mask->dest_qp[i])
+			break;
+	}
+
+	if (i < ROCEV2_DEST_QP_SIZE) {
+		memcpy(&rule_data[extract_nb],
+			&spec->dest_qp, ROCEV2_DEST_QP_SIZE);
+		memcpy(&mask_data[extract_nb],
+			&mask->dest_qp, ROCEV2_DEST_QP_SIZE);
+		extract_size[extract_nb] = ROCEV2_DEST_QP_SIZE;
+		extract_off[extract_nb] = DPAA2_ROCEV2_DST_QP_OFFSET;
+		extract_nb++;
+	}
+
+	for (i = 0; i < extract_nb; i++) {
+		ret = dpaa2_flow_add_pr_extract_rule(flow,
+			extract_off[i],
+			extract_size[i], &rule_data[i], &mask_data[i],
+			priv, group,
+			device_configured,
+			DPAA2_FLOW_QOS_TYPE);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_add_pr_extract_rule(flow,
+			extract_off[i],
+			extract_size[i], &rule_data[i], &mask_data[i],
+			priv, group,
+			device_configured,
+			DPAA2_FLOW_FS_TYPE);
+		if (ret)
+			return ret;
+	}
+
+	(*device_configured) |= local_cfg;
+
+	return 0;
+}
+
+static int
+dpaa2_configure_flow_gtp(struct dpaa2_dev_flow *flow,
+	struct rte_eth_dev *dev,
+	const struct rte_flow_attr *attr,
+	const struct rte_dpaa2_flow_item *dpaa2_pattern,
+	const struct rte_flow_action actions[] __rte_unused,
+	struct rte_flow_error *error __rte_unused,
+	int *device_configured)
+{
+	int ret, local_cfg = 0;
+	uint32_t group;
+	const struct rte_flow_item_gtp *spec, *mask;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	const struct rte_flow_item *pattern =
+		&dpaa2_pattern->generic_item;
+
+	group = attr->group;
+
+	/* Parse pattern list to get the matching parameters */
+	spec = pattern->spec;
+	mask = pattern->mask ?
+		pattern->mask : &dpaa2_flow_item_gtp_mask;
+
+	/* Get traffic class index and flow id to be configured */
+	flow->tc_id = group;
+	flow->tc_index = attr->priority;
+
+	if (dpaa2_pattern->in_tunnel) {
+		DPAA2_PMD_ERR("Tunnel-GTP distribution not support");
+		return -ENOTSUP;
+	}
+
+	if (!spec) {
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+				FAF_GTP_FRAM, DPAA2_FLOW_QOS_TYPE,
+				group, &local_cfg);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+				FAF_GTP_FRAM, DPAA2_FLOW_FS_TYPE,
+				group, &local_cfg);
+		if (ret)
+			return ret;
+
+		(*device_configured) |= local_cfg;
+		return 0;
+	}
+
+	if (dpaa2_flow_extract_support((const uint8_t *)mask,
+		RTE_FLOW_ITEM_TYPE_GTP)) {
+		DPAA2_PMD_WARN("Extract field(s) of GTP not support.");
+
+		return -1;
+	}
+
+	if (!mask->teid)
+		return 0;
+
+	ret = dpaa2_flow_add_hdr_extract_rule(flow, NET_PROT_GTP,
+			NH_FLD_GTP_TEID, &spec->teid,
+			&mask->teid, sizeof(rte_be32_t),
+			priv, group, &local_cfg, DPAA2_FLOW_QOS_TYPE);
+	if (ret)
+		return ret;
+
+	ret = dpaa2_flow_add_hdr_extract_rule(flow, NET_PROT_GTP,
+			NH_FLD_GTP_TEID, &spec->teid,
+			&mask->teid, sizeof(rte_be32_t),
+			priv, group, &local_cfg, DPAA2_FLOW_FS_TYPE);
+	if (ret)
+		return ret;
+
+	(*device_configured) |= local_cfg;
+
+	return 0;
+}
+
+static int
 dpaa2_configure_flow_raw(struct dpaa2_dev_flow *flow,
 	struct rte_eth_dev *dev,
 	const struct rte_flow_attr *attr,
@@ -4217,6 +4531,26 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 				goto end_flow_set;
 			}
 			break;
+		case RTE_FLOW_ITEM_TYPE_GTP:
+			ret = dpaa2_configure_flow_gtp(flow,
+					dev, attr, &dpaa2_pattern[i],
+					actions, error,
+					&is_keycfg_configured);
+			if (ret) {
+				DPAA2_PMD_ERR("GTP flow config failed!");
+				goto end_flow_set;
+			}
+			break;
+		case RTE_FLOW_ITEM_TYPE_ROCEV2:
+			ret = dpaa2_configure_flow_rocev2(flow,
+					dev, attr, &dpaa2_pattern[i],
+					actions, error,
+					&is_keycfg_configured);
+			if (ret) {
+				DPAA2_PMD_ERR("IBTH flow config failed!");
+				goto end_flow_set;
+			}
+			break;
 		case RTE_FLOW_ITEM_TYPE_RAW:
 			ret = dpaa2_configure_flow_raw(flow,
 					dev, attr, &dpaa2_pattern[i],
@@ -4362,20 +4696,21 @@ dpaa2_dev_verify_attr(struct dpni_attr *dpni_attr,
 	int ret = 0;
 
 	if (unlikely(attr->group >= dpni_attr->num_rx_tcs)) {
-		DPAA2_PMD_ERR("Priority group is out of range\n");
+		DPAA2_PMD_ERR("Group/TC(%d) is out of range(%d)",
+			attr->group, dpni_attr->num_rx_tcs);
 		ret = -ENOTSUP;
 	}
 	if (unlikely(attr->priority >= dpni_attr->fs_entries)) {
-		DPAA2_PMD_ERR("Priority within the group is out of range\n");
+		DPAA2_PMD_ERR("Priority(%d) within group is out of range(%d)",
+			attr->priority, dpni_attr->fs_entries);
 		ret = -ENOTSUP;
 	}
 	if (unlikely(attr->egress)) {
-		DPAA2_PMD_ERR(
-			"Flow configuration is not supported on egress side\n");
+		DPAA2_PMD_ERR("Egress flow configuration is not supported");
 		ret = -ENOTSUP;
 	}
 	if (unlikely(!attr->ingress)) {
-		DPAA2_PMD_ERR("Ingress flag must be configured\n");
+		DPAA2_PMD_ERR("Ingress flag must be configured");
 		ret = -EINVAL;
 	}
 	return ret;
@@ -4386,24 +4721,38 @@ dpaa2_dev_verify_patterns(const struct rte_flow_item pattern[])
 {
 	unsigned int i, j, is_found = 0;
 	int ret = 0;
+	const enum rte_flow_item_type *hp_supported;
+	const enum rte_flow_item_type *sp_supported;
+	uint64_t hp_supported_num, sp_supported_num;
+
+	hp_supported = dpaa2_hp_supported_pattern_type;
+	hp_supported_num = RTE_DIM(dpaa2_hp_supported_pattern_type);
+
+	sp_supported = dpaa2_sp_supported_pattern_type;
+	sp_supported_num = RTE_DIM(dpaa2_sp_supported_pattern_type);
 
 	for (j = 0; pattern[j].type != RTE_FLOW_ITEM_TYPE_END; j++) {
-		for (i = 0; i < RTE_DIM(dpaa2_supported_pattern_type); i++) {
-			if (dpaa2_supported_pattern_type[i]
-					== pattern[j].type) {
+		is_found = 0;
+		for (i = 0; i < hp_supported_num; i++) {
+			if (hp_supported[i] == pattern[j].type) {
 				is_found = 1;
 				break;
 			}
 		}
-		if (!is_found) {
-			ret = -ENOTSUP;
-			break;
+		if (is_found)
+			continue;
+		if (dpaa2_sp_loaded > 0) {
+			for (i = 0; i < sp_supported_num; i++) {
+				if (sp_supported[i] == pattern[j].type) {
+					is_found = 1;
+					break;
+				}
+			}
 		}
-	}
-	/* Lets verify other combinations of given pattern rules */
-	for (j = 0; pattern[j].type != RTE_FLOW_ITEM_TYPE_END; j++) {
-		if (!pattern[j].spec) {
-			ret = -EINVAL;
+		if (!is_found) {
+			DPAA2_PMD_WARN("Flow type(%d) not supported",
+				pattern[j].type);
+			ret = -ENOTSUP;
 			break;
 		}
 	}
@@ -4453,43 +4802,39 @@ dpaa2_flow_validate(struct rte_eth_dev *dev,
 	memset(&dpni_attr, 0, sizeof(struct dpni_attr));
 	ret = dpni_get_attributes(dpni, CMD_PRI_LOW, token, &dpni_attr);
 	if (ret < 0) {
-		DPAA2_PMD_ERR(
-			"Failure to get dpni@%p attribute, err code  %d\n",
-			dpni, ret);
+		DPAA2_PMD_ERR("Get dpni@%d attribute failed(%d)",
+			priv->hw_id, ret);
 		rte_flow_error_set(error, EPERM,
-			   RTE_FLOW_ERROR_TYPE_ATTR,
-			   flow_attr, "invalid");
+			RTE_FLOW_ERROR_TYPE_ATTR,
+			flow_attr, "invalid");
 		return ret;
 	}
 
 	/* Verify input attributes */
 	ret = dpaa2_dev_verify_attr(&dpni_attr, flow_attr);
 	if (ret < 0) {
-		DPAA2_PMD_ERR(
-			"Invalid attributes are given\n");
+		DPAA2_PMD_ERR("Invalid attributes are given");
 		rte_flow_error_set(error, EPERM,
-			   RTE_FLOW_ERROR_TYPE_ATTR,
-			   flow_attr, "invalid");
+			RTE_FLOW_ERROR_TYPE_ATTR,
+			flow_attr, "invalid");
 		goto not_valid_params;
 	}
 	/* Verify input pattern list */
 	ret = dpaa2_dev_verify_patterns(pattern);
 	if (ret < 0) {
-		DPAA2_PMD_ERR(
-			"Invalid pattern list is given\n");
+		DPAA2_PMD_ERR("Invalid pattern list is given");
 		rte_flow_error_set(error, EPERM,
-			   RTE_FLOW_ERROR_TYPE_ITEM,
-			   pattern, "invalid");
+			RTE_FLOW_ERROR_TYPE_ITEM,
+			pattern, "invalid");
 		goto not_valid_params;
 	}
 	/* Verify input action list */
 	ret = dpaa2_dev_verify_actions(actions);
 	if (ret < 0) {
-		DPAA2_PMD_ERR(
-			"Invalid action list is given\n");
+		DPAA2_PMD_ERR("Invalid action list is given");
 		rte_flow_error_set(error, EPERM,
-			   RTE_FLOW_ERROR_TYPE_ACTION,
-			   actions, "invalid");
+			RTE_FLOW_ERROR_TYPE_ACTION,
+			actions, "invalid");
 		goto not_valid_params;
 	}
 not_valid_params:

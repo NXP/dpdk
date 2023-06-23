@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
+ * Copyright 2023 NXP
  */
 
 #ifndef RTE_FLOW_H_
@@ -529,6 +530,15 @@ enum rte_flow_item_type {
 	 * See struct rte_flow_item_ecpri.
 	 */
 	RTE_FLOW_ITEM_TYPE_ECPRI,
+
+	/**
+	 * Matches InfiniBand Base Transport Header.
+	 *
+	 * Configure flow for ROCEV2 over UDP packets.
+	 *
+	 * See struct rte_flow_item_rocev2.
+	 */
+	RTE_FLOW_ITEM_TYPE_ROCEV2,
 
 	/**
 	 * Configure flow for GTP and IP fragmented UDP
@@ -1429,7 +1439,6 @@ static const struct rte_flow_item_l2tpv3oip rte_flow_item_l2tpv3oip_mask = {
 };
 #endif
 
-
 /**
  * @warning
  * @b EXPERIMENTAL: this structure may change without prior notice
@@ -1549,6 +1558,27 @@ static const struct rte_flow_item_ah rte_flow_item_ah_mask = {
 struct rte_flow_item_ecpri {
 	struct rte_ecpri_combined_msg_hdr hdr;
 };
+
+/**
+ * @warning
+ * @b EXPERIMENTAL: this structure may change without prior notice
+ *
+ * RTE_FLOW_ITEM_TYPE_ROCEV2
+ *
+ * Match IBTH Header, InfiniBand Base Transport Header
+ *
+ */
+#define ROCEV2_DEST_QP_SIZE 3
+struct rte_flow_item_rocev2 {
+	uint8_t opcode;
+	uint8_t s_m_tver;
+	uint16_t part_key;
+	uint8_t rsvd1;
+	uint8_t dest_qp[ROCEV2_DEST_QP_SIZE];
+	uint8_t a_rsvd2;
+	uint8_t psn_h;
+	uint16_t psn_l;
+} __attribute__ ((__packed__));
 
 /** Default mask for RTE_FLOW_ITEM_TYPE_ECPRI. */
 #ifndef __cplusplus

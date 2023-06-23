@@ -625,15 +625,17 @@ lsinic_qdma_rx_seg_enqueue(struct lsinic_queue *queue)
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
 			job->seg_nb, job->seg_nb, RTE_DMA_OP_FLAG_SUBMIT);
+		if (likely(!ret)) {
+			queue->pkts_eq += job->seg_nb;
+		} else {
+			queue->errors++;
+			return;
+		}
 	}
-	if (likely(!ret)) {
-		queue->jobs_pending -= nb_jobs;
-		queue->jobs_avail_idx += nb_jobs;
-		queue->bytes_eq += len_total;
-		queue->pkts_eq += nb_jobs;
-	} else {
-		queue->errors++;
-	}
+
+	queue->jobs_pending -= nb_jobs;
+	queue->jobs_avail_idx += nb_jobs;
+	queue->bytes_eq += len_total;
 }
 
 static inline void
@@ -648,7 +650,7 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 	struct lsinic_dma_seg_job *seg_job;
 	uint16_t sg_nb = 0;
 	uint32_t txq_dma_bd_start = queue->wdma_bd_start;
-	uint32_t total_len = 0;
+	uint32_t total_len = 0, idx_len;
 
 	jobs_avail_idx = queue->jobs_avail_idx;
 
@@ -678,10 +680,12 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 	sg_nb = seg_job->seg_nb;
 
 	if (bd_job) {
+		idx_len =  RTE_DPAA2_QDMA_IDX_LEN(bd_job->idx,
+			bd_job->len);
 		src[seg_job->seg_nb].addr = bd_job->src;
-		src[seg_job->seg_nb].length = bd_job->len;
+		src[seg_job->seg_nb].length = idx_len;
 		dst[seg_job->seg_nb].addr = bd_job->dst;
-		dst[seg_job->seg_nb].length = bd_job->len;
+		dst[seg_job->seg_nb].length = idx_len;
 		sg_nb++;
 	}
 
@@ -5538,6 +5542,7 @@ lsinic_txq_dma_dq(void *q)
 {
 	struct lsinic_queue *txq = q;
 	struct lsinic_dma_job *dma_job;
+	struct lsinic_dma_seg_job *seg_job;
 	struct lsinic_sw_bd *txe = NULL;
 	const struct lsinic_bd_desc *bd;
 	uint16_t pkts_dq = 0;
@@ -5616,11 +5621,22 @@ dq_seg:
 			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
 			continue;
 		}
-		txq->bytes_dq += txe->mbuf->pkt_len;
+		txe = &txq->sw_ring[idx];
 		pkts_dq++;
+		seg_job = &txq->dma_seg_jobs[idx];
+		if (unlikely(!seg_job->seg_nb ||
+			seg_job->seg_nb >= RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)) {
+			LSXINIC_PMD_ERR("Invalid segment number(%d)",
+				seg_job->seg_nb);
+			rte_panic("Fatal quit\n");
+		}
+		seg_job->seg_nb--;
+		if (!seg_job->seg_nb)
+			txq->bytes_dq += txe->mbuf->pkt_len;
+
 		if (likely(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
 			continue;
-		txe = &txq->sw_ring[idx];
+
 		rte_pktmbuf_free(txe->mbuf);
 		txe->mbuf = NULL;
 		txq->next_dma_idx++;
@@ -6019,12 +6035,15 @@ lsinic_rxq_dma_dq(void *q)
 		}
 		rxe = &rxq->sw_ring[idx];
 		if (rxq->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
-			rxq->bytes_dq += rxe->mbuf->pkt_len;
+			rxq->dma_seg_jobs[idx].seg_nb--;
+			if (!rxq->dma_seg_jobs[idx].seg_nb)
+				rxq->bytes_dq += rxe->mbuf->pkt_len;
+			rxq->pkts_dq++;
 		} else {
 			dma_job = &rxq->dma_jobs[idx];
 			rxq->bytes_dq += dma_job->len;
+			rxq->pkts_dq++;
 		}
-		rxq->pkts_dq++;
 		rxe->dma_complete = 1;
 		if (rxq->ep_bd_desc) {
 			rxdp = &rxq->ep_bd_desc[rxe->my_idx];
@@ -8081,6 +8100,8 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 		struct lsinic_queue *txq = dev->data->tx_queues[i];
 		struct lsinic_queue *next = txq;
 
+		if (!txq)
+			continue;
 		for (j = 0; j < txq->nb_q; j++) {
 			if (!next)
 				break;
@@ -8101,6 +8122,8 @@ lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 		struct lsinic_queue *rxq = dev->data->rx_queues[i];
 		struct lsinic_queue *next = rxq;
 
+		if (!rxq)
+			continue;
 		for (j = 0; j < rxq->nb_q; j++) {
 			if (!next)
 				break;
@@ -8194,6 +8217,10 @@ lsinic_dev_rx_stop(struct rte_eth_dev *dev, int force)
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		rxq = dev->data->rx_queues[i];
+		if (!rxq) {
+			stop_count++;
+			continue;
+		}
 		rxq->ep_enabled = 0;
 		if (force || rxq->status != LSINIC_QUEUE_RUNNING) {
 			lsinic_queue_stop(rxq);
@@ -8212,6 +8239,10 @@ lsinic_dev_tx_stop(struct rte_eth_dev *dev, int force)
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
 		txq = dev->data->tx_queues[i];
+		if (!txq) {
+			stop_count++;
+			continue;
+		}
 		txq->ep_enabled = 0;
 		if (force || txq->status != LSINIC_QUEUE_RUNNING) {
 			lsinic_queue_stop(txq);
