@@ -128,6 +128,7 @@ int
 vfio_get_iommu_type(void);
 
 /* check if we have any supported extensions */
+__rte_experimental
 int
 vfio_has_supported_extensions(int vfio_container_fd);
 

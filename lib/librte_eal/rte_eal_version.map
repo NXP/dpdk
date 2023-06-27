@@ -335,4 +335,6 @@ EXPERIMENTAL {
 
 	# added in 20.11
 	rte_bus_close;
+
+	vfio_has_supported_extensions;
 };
