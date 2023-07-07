@@ -268,8 +268,8 @@ fman_if_stats_get_all(struct fman_if *p, uint64_t *value, int n)
 	uint64_t base_offset = offsetof(struct memac_regs, reoct_l);
 
 	for (i = 0; i < n; i++)
-		value[i] = (((u64)in_be32((char *)regs + base_offset + 8 * i) |
-				(u64)in_be32((char *)regs + base_offset +
+		value[i] = ((u64)in_be32((char *)regs + base_offset + 8 * i) |
+				((u64)in_be32((char *)regs + base_offset +
 				8 * i + 4)) << 32);
 }
 
@@ -288,6 +288,68 @@ fman_if_stats_reset(struct fman_if *p)
 
 	while (in_be32(&regs->statn_config) & STATS_CFG_CLR)
 		;
+}
+
+void
+fman_if_bmi_stats_enable(struct fman_if *p)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	uint32_t tmp;
+
+	tmp = in_be32(&regs->fmbm_rstc);
+
+	tmp |= FMAN_BMI_COUNTERS_EN;
+
+	out_be32(&regs->fmbm_rstc, tmp);
+}
+
+void
+fman_if_bmi_stats_disable(struct fman_if *p)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	uint32_t tmp;
+
+	tmp = in_be32(&regs->fmbm_rstc);
+
+	tmp &= ~FMAN_BMI_COUNTERS_EN;
+
+	out_be32(&regs->fmbm_rstc, tmp);
+}
+
+
+void
+fman_if_bmi_stats_get_all(struct fman_if *p, uint64_t *value)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	int i = 0;
+
+	value[i++] = (u32)in_be32(&regs->fmbm_rfrc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rfbc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rlfc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rffc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rfdc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rfldec);
+	value[i++] = (u32)in_be32(&regs->fmbm_rodc);
+	value[i++] = (u32)in_be32(&regs->fmbm_rbdc);
+}
+
+void
+fman_if_bmi_stats_reset(struct fman_if *p)
+{
+	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+
+	out_be32(&regs->fmbm_rfrc, 0);
+	out_be32(&regs->fmbm_rfbc, 0);
+	out_be32(&regs->fmbm_rlfc, 0);
+	out_be32(&regs->fmbm_rffc, 0);
+	out_be32(&regs->fmbm_rfdc, 0);
+	out_be32(&regs->fmbm_rfldec, 0);
+	out_be32(&regs->fmbm_rodc, 0);
+	out_be32(&regs->fmbm_rbdc, 0);
 }
 
 void

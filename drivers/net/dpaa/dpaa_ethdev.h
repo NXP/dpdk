@@ -191,6 +191,18 @@ struct dpaa_if_stats {
 	uint64_t tund;		/**<Tx Undersized */
 };
 
+struct dpaa_if_rx_bmi_stats {
+	uint32_t fmbm_rstc;		/**< Rx Statistics Counters*/
+	uint32_t fmbm_rfrc;		/**< Rx Frame Counter*/
+	uint32_t fmbm_rfbc;		/**< Rx Bad Frames Counter*/
+	uint32_t fmbm_rlfc;		/**< Rx Large Frames Counter*/
+	uint32_t fmbm_rffc;		/**< Rx Filter Frames Counter*/
+	uint32_t fmbm_rfdc;		/**< Rx Frame Discard Counter*/
+	uint32_t fmbm_rfldec;		/**< Rx Frames List DMA Error Counter*/
+	uint32_t fmbm_rodc;		/**< Rx Out of Buffers Discard nntr*/
+	uint32_t fmbm_rbdc;		/**< Rx Buffers Deallocate Counter*/
+};
+
 int
 dpaa_eth_eventq_attach(const struct rte_eth_dev *dev,
 		int eth_rx_queue_id,
