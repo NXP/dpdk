@@ -57,6 +57,11 @@ void fman_if_stats_reset(struct fman_if *p);
 /* Get all of the FMAN statistics */
 void fman_if_stats_get_all(struct fman_if *p, uint64_t *value, int n);
 
+void fman_if_bmi_stats_enable(struct fman_if *p);
+void fman_if_bmi_stats_disable(struct fman_if *p);
+void fman_if_bmi_stats_get_all(struct fman_if *p, uint64_t *value);
+void fman_if_bmi_stats_reset(struct fman_if *p);
+
 /* Set ignore pause option for a specific interface */
 void fman_if_set_rx_ignore_pause_frames(struct fman_if *p, bool enable);
 
