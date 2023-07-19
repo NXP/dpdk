@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2022 NXP
+ * Copyright 2016-2023 NXP
  *
  */
 #ifndef _FSL_DPNI_CMD_H
@@ -9,7 +9,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				8
-#define DPNI_VER_MINOR				2
+#define DPNI_VER_MINOR				4
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -108,8 +108,8 @@
 #define DPNI_CMDID_GET_EARLY_DROP		DPNI_CMD_V3(0x26A)
 #define DPNI_CMDID_GET_OFFLOAD			DPNI_CMD_V2(0x26B)
 #define DPNI_CMDID_SET_OFFLOAD			DPNI_CMD_V2(0x26C)
-#define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD(0x266)
-#define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD(0x26D)
+#define DPNI_CMDID_SET_TX_CONFIRMATION_MODE	DPNI_CMD_V2(0x266)
+#define DPNI_CMDID_GET_TX_CONFIRMATION_MODE	DPNI_CMD_V2(0x26D)
 #define DPNI_CMDID_SET_OPR			DPNI_CMD_V2(0x26e)
 #define DPNI_CMDID_GET_OPR			DPNI_CMD_V2(0x26f)
 #define DPNI_CMDID_LOAD_SW_SEQUENCE		DPNI_CMD(0x270)
@@ -121,7 +121,16 @@
 #define DPNI_CMDID_REMOVE_CUSTOM_TPID		DPNI_CMD(0x276)
 #define DPNI_CMDID_GET_CUSTOM_TPID		DPNI_CMD(0x277)
 #define DPNI_CMDID_GET_LINK_CFG			DPNI_CMD(0x278)
+#define DPNI_CMDID_SET_SINGLE_STEP_CFG			DPNI_CMD(0x279)
+#define DPNI_CMDID_GET_SINGLE_STEP_CFG		DPNI_CMD_V2(0x27a)
 #define DPNI_CMDID_SET_PORT_CFG			DPNI_CMD(0x27B)
+#define DPNI_CMDID_GET_PORT_CFG			DPNI_CMD(0x27C)
+#define DPNI_CMDID_DUMP_TABLE           DPNI_CMD(0x27D)
+#define DPNI_CMDID_SET_SP_PROFILE		DPNI_CMD(0x27E)
+#define DPNI_CMDID_GET_QDID_EX			DPNI_CMD(0x27F)
+#define DPNI_CMDID_SP_ENABLE		    DPNI_CMD(0x280)
+#define DPNI_CMDID_SET_QUEUE_TX_CONFIRMATION_MODE	DPNI_CMD(0x281)
+#define DPNI_CMDID_GET_QUEUE_TX_CONFIRMATION_MODE	DPNI_CMD(0x282)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -327,6 +336,10 @@ struct dpni_cmd_get_qdid {
 
 struct dpni_rsp_get_qdid {
 	uint16_t qdid;
+};
+
+struct dpni_rsp_get_qdid_ex {
+	uint16_t qdid[16];
 };
 
 struct dpni_rsp_get_sp_info {
@@ -748,7 +761,16 @@ struct dpni_cmd_set_taildrop {
 };
 
 struct dpni_tx_confirmation_mode {
-	uint32_t pad;
+	uint8_t ceetm_ch_idx;
+	uint8_t pad1;
+	uint16_t pad2;
+	uint8_t confirmation_mode;
+};
+
+struct dpni_queue_tx_confirmation_mode {
+	uint8_t ceetm_ch_idx;
+	uint8_t index;
+	uint16_t pad;
 	uint8_t confirmation_mode;
 };
 
@@ -894,6 +916,42 @@ struct dpni_sw_sequence_layout_entry {
 	uint16_t pad;
 };
 
+#define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_FS_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_fs_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc;
+	uint16_t	miss_flow_id;
+	uint16_t 	pad1;
+	uint64_t	key_cfg_iova;
+};
+
+#define DPNI_RX_HASH_DIST_ENABLE_SHIFT	0
+#define DPNI_RX_HASH_DIST_ENABLE_SIZE		1
+struct dpni_cmd_set_rx_hash_dist {
+	uint16_t	dist_size;
+	uint8_t		enable;
+	uint8_t		tc_id;
+	uint32_t 	pad;
+	uint64_t	key_cfg_iova;
+};
+
+struct dpni_cmd_add_custom_tpid {
+	uint16_t	pad;
+	uint16_t	tpid;
+};
+
+struct dpni_cmd_remove_custom_tpid {
+	uint16_t	pad;
+	uint16_t	tpid;
+};
+
+struct dpni_rsp_get_custom_tpid {
+	uint16_t	tpid1;
+	uint16_t	tpid2;
+};
+
 #define DPNI_PTP_ENABLE_SHIFT			0
 #define DPNI_PTP_ENABLE_SIZE			1
 #define DPNI_PTP_CH_UPDATE_SHIFT		1
@@ -925,40 +983,45 @@ struct dpni_rsp_get_port_cfg {
 	uint32_t	bit_params;
 };
 
-#define DPNI_RX_FS_DIST_ENABLE_SHIFT	0
-#define DPNI_RX_FS_DIST_ENABLE_SIZE		1
-struct dpni_cmd_set_rx_fs_dist {
-	uint16_t	dist_size;
-	uint8_t		enable;
-	uint8_t		tc;
-	uint16_t	miss_flow_id;
-	uint16_t	pad1;
-	uint64_t	key_cfg_iova;
+struct dpni_cmd_dump_table {
+	uint16_t table_type;
+	uint16_t table_index;
+	uint32_t pad0;
+	uint64_t iova_addr;
+	uint32_t iova_size;
 };
 
-#define DPNI_RX_HASH_DIST_ENABLE_SHIFT	0
-#define DPNI_RX_HASH_DIST_ENABLE_SIZE		1
-struct dpni_cmd_set_rx_hash_dist {
-	uint16_t	dist_size;
-	uint8_t		enable;
-	uint8_t		tc_id;
-	uint32_t	pad;
-	uint64_t	key_cfg_iova;
+struct dpni_rsp_dump_table {
+	uint16_t num_entries;
 };
 
-struct dpni_cmd_add_custom_tpid {
-	uint16_t	pad;
-	uint16_t	tpid;
+struct dump_table_header {
+	uint16_t table_type;
+	uint16_t table_num_entries;
+	uint16_t table_max_entries;
+	uint8_t default_action;
+	uint8_t match_type;
+	uint8_t reserved[24];
 };
 
-struct dpni_cmd_remove_custom_tpid {
-	uint16_t	pad;
-	uint16_t	tpid;
+struct dump_table_entry {
+	uint8_t key[DPNI_MAX_KEY_SIZE];
+	uint8_t mask[DPNI_MAX_KEY_SIZE];
+	uint8_t key_action;
+	uint16_t result[3];
+	uint8_t reserved[21];
 };
 
-struct dpni_rsp_get_custom_tpid {
-	uint16_t	tpid1;
-	uint16_t	tpid2;
+#define MAX_SP_PROFILE_ID_SIZE	8
+
+struct dpni_cmd_set_sp_profile {
+	uint8_t sp_profile[MAX_SP_PROFILE_ID_SIZE];
+	uint8_t type;
+};
+
+struct dpni_cmd_sp_enable {
+	uint8_t type;
+	uint8_t en;
 };
 
 #pragma pack(pop)
