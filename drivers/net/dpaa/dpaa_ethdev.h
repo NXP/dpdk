@@ -225,6 +225,18 @@ dpaa_rx_cb_atomic(void *event,
 		  const struct qm_dqrr_entry *dqrr,
 		  void **bufs);
 
+struct dpaa_if_rx_bmi_stats {
+	uint32_t fmbm_rstc;		/**< Rx Statistics Counters*/
+	uint32_t fmbm_rfrc;		/**< Rx Frame Counter*/
+	uint32_t fmbm_rfbc;		/**< Rx Bad Frames Counter*/
+	uint32_t fmbm_rlfc;		/**< Rx Large Frames Counter*/
+	uint32_t fmbm_rffc;		/**< Rx Filter Frames Counter*/
+	uint32_t fmbm_rfdc;		/**< Rx Frame Discard Counter*/
+	uint32_t fmbm_rfldec;		/**< Rx Frames List DMA Error Counter*/
+	uint32_t fmbm_rodc;		/**< Rx Out of Buffers Discard nntr*/
+	uint32_t fmbm_rbdc;		/**< Rx Buffers Deallocate Counter*/
+};
+
 int
 dpaa_timesync_enable(struct rte_eth_dev *dev);
 
