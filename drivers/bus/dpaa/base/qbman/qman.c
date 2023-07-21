@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2017,2019-2022 NXP
+ * Copyright 2017,2019-2023 NXP
  *
  */
 
@@ -895,7 +895,7 @@ mr_loop:
 				/* Lookup in the retirement table */
 				fq = table_find_fq(p,
 						   be32_to_cpu(msg->fq.fqid));
-				DPAA_BUG_ON(!fq);
+				DPAA_BUG_ON(fq != NULL);
 				fq_state_change(p, fq, &swapped_msg, verb);
 				if (fq->cb.fqs)
 					fq->cb.fqs(p, fq, &swapped_msg);
@@ -907,6 +907,7 @@ mr_loop:
 #else
 				fq = (void *)(uintptr_t)msg->fq.contextB;
 #endif
+				DPAA_BUG_ON(fq != NULL);
 				fq_state_change(p, fq, msg, verb);
 				if (fq->cb.fqs)
 					fq->cb.fqs(p, fq, &swapped_msg);
