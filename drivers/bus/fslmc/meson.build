@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018,2021 NXP
+# Copyright 2018,2021-2023 NXP
 
 if not is_linux
 	build = false
@@ -27,3 +27,4 @@ sources = files('fslmc_bus.c',
 allow_experimental_apis = true
 
 includes += include_directories('mc', 'qbman/include', 'portal')
+includes += include_directories('../../../lib/librte_eal/linux/eal')
