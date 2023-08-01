@@ -478,6 +478,40 @@ Following are some pre-requisites:
 	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
 	to use these rings.
 
+Steps for ENET-QOS:
+-------------------
+
+For i.MX8MP Platform:
+
+Steps for compilation:
+	1. Build dpdk with enable_kmods on to build the kpage_ncache.ko module.
+		meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Denable_kmods=true -Dkernel_dir=<path to compiled kernel dir> -Dexamples=all
+	2. ninja -C arm64-build
+
+On board:
+
+	1. Set the dpdk DTB file.
+		setenv fdt_file imx8mp-evk-dpdk.dtb
+		boot
+	2. Manually allocate hugepages
+	        e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+	3. Load the non-cacheable module when using enet-qos
+		insmod kpage_ncache.ko
+	4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
+		'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
+
+	5. Run -
+		./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  -- -p 0x1 -T 0 -P
+		./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
+
+		For testing the forwarding between both FEC and QOS port run:
+			./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
+			./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+
+	6. Run traffic
+		For functional testing, send the traffic from packet generator
+		which is connected to the port.
+
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 

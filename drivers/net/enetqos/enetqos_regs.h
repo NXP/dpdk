@@ -1,0 +1,309 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 2023 NXP
+ */
+
+/*  MAC registers */
+#define GMAC_CONFIG			0x00000000
+#define GMAC_EXT_CONFIG			0x00000004
+#define GMAC_PACKET_FILTER		0x00000008
+#define GMAC_HASH_TAB(x)		(0x10 + (x) * 4)
+#define GMAC_VLAN_TAG			0x00000050
+#define GMAC_VLAN_TAG_DATA		0x00000054
+#define GMAC_VLAN_HASH_TABLE		0x00000058
+#define GMAC_RX_FLOW_CTRL		0x00000090
+#define GMAC_VLAN_INCL			0x00000060
+#define GMAC_QX_TX_FLOW_CTRL(x)		(0x70 + x * 4)
+#define GMAC_TXQ_PRTY_MAP0		0x98
+#define GMAC_TXQ_PRTY_MAP1		0x9C
+#define GMAC_RXQ_CTRL0			0x000000a0
+#define GMAC_RXQ_CTRL1			0x000000a4
+#define GMAC_RXQ_CTRL2			0x000000a8
+#define GMAC_RXQ_CTRL3			0x000000ac
+#define GMAC_INT_STATUS			0x000000b0
+#define GMAC_INT_EN			0x000000b4
+#define GMAC_1US_TIC_COUNTER		0x000000dc
+#define GMAC_PCS_BASE			0x000000e0
+#define GMAC_PHYIF_CONTROL_STATUS	0x000000f8
+#define GMAC_PMT			0x000000c0
+#define GMAC_DEBUG			0x00000114
+#define GMAC_HW_FEATURE0		0x0000011c
+#define GMAC_HW_FEATURE1		0x00000120
+#define GMAC_HW_FEATURE2		0x00000124
+#define GMAC_HW_FEATURE3		0x00000128
+#define GMAC_MDIO_ADDR			0x00000200
+#define GMAC_MDIO_DATA			0x00000204
+#define GMAC_GPIO_STATUS		0x0000020C
+#define GMAC_ARP_ADDR			0x00000210
+#define GMAC_ADDR_HIGH(reg)		(0x300 + reg * 8)
+#define GMAC_ADDR_LOW(reg)		(0x304 + reg * 8)
+#define GMAC_L3L4_CTRL(reg)		(0x900 + (reg) * 0x30)
+#define GMAC_L4_ADDR(reg)		(0x904 + (reg) * 0x30)
+#define GMAC_L3_ADDR0(reg)		(0x910 + (reg) * 0x30)
+#define GMAC_L3_ADDR1(reg)		(0x914 + (reg) * 0x30)
+#define GMAC_TIMESTAMP_STATUS		0x00000b20
+
+/* RX Queues Routing */
+#define GMAC_RXQCTRL_AVCPQ_MASK		GENMASK(2, 0)
+#define GMAC_RXQCTRL_AVCPQ_SHIFT	0
+#define GMAC_RXQCTRL_PTPQ_MASK		GENMASK(6, 4)
+#define GMAC_RXQCTRL_PTPQ_SHIFT		4
+#define GMAC_RXQCTRL_DCBCPQ_MASK	GENMASK(10, 8)
+#define GMAC_RXQCTRL_DCBCPQ_SHIFT	8
+#define GMAC_RXQCTRL_UPQ_MASK		GENMASK(14, 12)
+#define GMAC_RXQCTRL_UPQ_SHIFT		12
+#define GMAC_RXQCTRL_MCBCQ_MASK		GENMASK(18, 16)
+#define GMAC_RXQCTRL_MCBCQ_SHIFT	16
+#define GMAC_RXQCTRL_MCBCQEN		BIT(20)
+#define GMAC_RXQCTRL_MCBCQEN_SHIFT	20
+#define GMAC_RXQCTRL_TACPQE		BIT(21)
+#define GMAC_RXQCTRL_TACPQE_SHIFT	21
+#define GMAC_RXQCTRL_FPRQ		GENMASK(26, 24)
+#define GMAC_RXQCTRL_FPRQ_SHIFT		24
+
+/* MAC Packet Filtering */
+#define GMAC_PACKET_FILTER_PR		BIT(0)
+#define GMAC_PACKET_FILTER_HMC		BIT(2)
+#define GMAC_PACKET_FILTER_PM		BIT(4)
+#define GMAC_PACKET_FILTER_PCF		BIT(7)
+#define GMAC_PACKET_FILTER_HPF		BIT(10)
+#define GMAC_PACKET_FILTER_VTFE		BIT(16)
+#define GMAC_PACKET_FILTER_IPFE		BIT(20)
+#define GMAC_PACKET_FILTER_RA		BIT(31)
+
+/* MAC RX Queue Enable */
+#define GMAC_RX_QUEUE_CLEAR(queue)	~(GENMASK(1, 0) << ((queue) * 2))
+#define GMAC_RX_AV_QUEUE_ENABLE(queue)	BIT((queue) * 2)
+#define GMAC_RX_DCB_QUEUE_ENABLE(queue)	BIT(((queue) * 2) + 1)
+
+/* MAC Flow Control RX */
+#define GMAC_RX_FLOW_CTRL_RFE		BIT(0)
+
+/* RX Queues Priorities */
+#define GMAC_RXQCTRL_PSRQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
+#define GMAC_RXQCTRL_PSRQX_SHIFT(x)	((x) * 8)
+
+/* TX Queues Priorities */
+#define GMAC_TXQCTRL_PSTQX_MASK(x)	GENMASK(7 + ((x) * 8), 0 + ((x) * 8))
+#define GMAC_TXQCTRL_PSTQX_SHIFT(x)	((x) * 8)
+
+/* MAC Flow Control TX */
+#define GMAC_TX_FLOW_CTRL_TFE		BIT(1)
+#define GMAC_TX_FLOW_CTRL_PT_SHIFT	16
+
+/* MAC config */
+#define GMAC_CONFIG_ARPEN		BIT(31)
+#define GMAC_CONFIG_SARC		GENMASK(30, 28)
+#define GMAC_CONFIG_SARC_SHIFT		28
+#define GMAC_CONFIG_IPC			BIT(27)
+#define GMAC_CONFIG_IPG			GENMASK(26, 24)
+#define GMAC_CONFIG_IPG_SHIFT		24
+#define GMAC_CONFIG_2K			BIT(22)
+#define GMAC_CONFIG_ACS			BIT(20)
+#define GMAC_CONFIG_BE			BIT(18)
+#define GMAC_CONFIG_JD			BIT(17)
+#define GMAC_CONFIG_JE			BIT(16)
+#define GMAC_CONFIG_PS			BIT(15)
+#define GMAC_CONFIG_FES			BIT(14)
+#define GMAC_CONFIG_FES_SHIFT		14
+#define GMAC_CONFIG_DM			BIT(13)
+#define GMAC_CONFIG_LM			BIT(12)
+#define GMAC_CONFIG_DCRS		BIT(9)
+#define GMAC_CONFIG_TE			BIT(1)
+#define GMAC_CONFIG_RE			BIT(0)
+
+/* MAC HW ADDR regs */
+#define GMAC_HI_DCS			GENMASK(18, 16)
+#define GMAC_HI_DCS_SHIFT		16
+#define GMAC_HI_REG_AE			BIT(31)
+
+/*  MTL registers */
+#define MTL_OPERATION_MODE		0x00000c00
+#define MTL_FRPE			BIT(15)
+#define MTL_OPERATION_SCHALG_MASK	GENMASK(6, 5)
+#define MTL_OPERATION_SCHALG_WRR	(0x0 << 5)
+#define MTL_OPERATION_SCHALG_WFQ	(0x1 << 5)
+#define MTL_OPERATION_SCHALG_DWRR	(0x2 << 5)
+#define MTL_OPERATION_SCHALG_SP		(0x3 << 5)
+#define MTL_OPERATION_RAA		BIT(2)
+#define MTL_OPERATION_RAA_SP		(0x0 << 2)
+#define MTL_OPERATION_RAA_WSP		(0x1 << 2)
+
+#define MTL_INT_STATUS			0x00000c20
+#define MTL_INT_QX(x)			BIT(x)
+
+#define MTL_RXQ_DMA_MAP0		0x00000c30 /* queue 0 to 3 */
+#define MTL_RXQ_DMA_MAP1		0x00000c34 /* queue 4 to 7 */
+#define MTL_RXQ_DMA_Q04MDMACH_MASK	GENMASK(3, 0)
+#define MTL_RXQ_DMA_Q04MDMACH(x)	((x) << 0)
+#define MTL_RXQ_DMA_QXMDMACH_MASK(x)	GENMASK(11 + (8 * ((x) - 1)), 8 * (x))
+#define MTL_RXQ_DMA_QXMDMACH(chan, q)	((chan) << (8 * (q)))
+
+#define MTL_CHAN_BASE_ADDR		0x00000d00
+#define MTL_CHAN_BASE_OFFSET		0x40
+#define MTL_CHANX_BASE_ADDR(x)		(MTL_CHAN_BASE_ADDR + \
+					(x * MTL_CHAN_BASE_OFFSET))
+
+#define MTL_CHAN_TX_OP_MODE(x)		MTL_CHANX_BASE_ADDR(x)
+#define MTL_CHAN_TX_DEBUG(x)		(MTL_CHANX_BASE_ADDR(x) + 0x8)
+#define MTL_CHAN_INT_CTRL(x)		(MTL_CHANX_BASE_ADDR(x) + 0x2c)
+#define MTL_CHAN_RX_OP_MODE(x)		(MTL_CHANX_BASE_ADDR(x) + 0x30)
+#define MTL_CHAN_RX_DEBUG(x)		(MTL_CHANX_BASE_ADDR(x) + 0x38)
+
+#define MTL_OP_MODE_RSF			BIT(5)
+#define MTL_OP_MODE_TXQEN_MASK		GENMASK(3, 2)
+#define MTL_OP_MODE_TXQEN_AV		BIT(2)
+#define MTL_OP_MODE_TXQEN		BIT(3)
+#define MTL_OP_MODE_TSF			BIT(1)
+
+#define MTL_OP_MODE_TQS_MASK		GENMASK(24, 16)
+#define MTL_OP_MODE_TQS_SHIFT		16
+
+#define MTL_OP_MODE_TTC_MASK		0x70
+#define MTL_OP_MODE_TTC_SHIFT		4
+
+#define MTL_OP_MODE_TTC_32		0
+#define MTL_OP_MODE_TTC_64		(1 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_96		(2 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_128		(3 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_192		(4 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_256		(5 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_384		(6 << MTL_OP_MODE_TTC_SHIFT)
+#define MTL_OP_MODE_TTC_512		(7 << MTL_OP_MODE_TTC_SHIFT)
+
+#define MTL_OP_MODE_RQS_MASK		GENMASK(29, 20)
+#define MTL_OP_MODE_RQS_SHIFT		20
+
+#define MTL_OP_MODE_RFD_MASK		GENMASK(19, 14)
+#define MTL_OP_MODE_RFD_SHIFT		14
+
+#define MTL_OP_MODE_RFA_MASK		GENMASK(13, 8)
+#define MTL_OP_MODE_RFA_SHIFT		8
+
+#define MTL_OP_MODE_EHFC		BIT(7)
+
+#define MTL_OP_MODE_RTC_MASK		0x18
+#define MTL_OP_MODE_RTC_SHIFT		3
+
+#define MTL_OP_MODE_RTC_32		(1 << MTL_OP_MODE_RTC_SHIFT)
+#define MTL_OP_MODE_RTC_64		0
+#define MTL_OP_MODE_RTC_96		(2 << MTL_OP_MODE_RTC_SHIFT)
+#define MTL_OP_MODE_RTC_128		(3 << MTL_OP_MODE_RTC_SHIFT)
+
+
+/* MTL Queue Quantum Weight */
+#define MTL_TXQ_WEIGHT_BASE_ADDR	0x00000d18
+#define MTL_TXQ_WEIGHT_BASE_OFFSET	0x40
+#define MTL_TXQX_WEIGHT_BASE_ADDR(x)	(MTL_TXQ_WEIGHT_BASE_ADDR + \
+					((x) * MTL_TXQ_WEIGHT_BASE_OFFSET))
+#define MTL_TXQ_WEIGHT_ISCQW_MASK	GENMASK(20, 0)
+
+
+/* Default operating mode of the MAC */
+#define GMAC_CORE_INIT (GMAC_CONFIG_JD | GMAC_CONFIG_DM | \
+			GMAC_CONFIG_BE | GMAC_CONFIG_DCRS | \
+			GMAC_CONFIG_JE | GMAC_CONFIG_BE)
+
+/* Rx status */
+enum rx_frame_status {
+	good_frame = 0x0,
+	discard_frame = 0x1,
+	csum_none = 0x2,
+	llc_snap = 0x4,
+	dma_own = 0x8,
+	rx_not_ls = 0x10,
+};
+
+/* Tx status */
+enum tx_frame_status {
+	tx_done = 0x0,
+	tx_not_ls = 0x1,
+	tx_err = 0x2,
+	tx_dma_own = 0x4,
+	tx_err_bump_tc = 0x8,
+};
+
+#define STMMAC_CHAIN_MODE	0x1
+#define STMMAC_RING_MODE	0x2
+
+#define DMA_BUS_MODE			0x00001000
+#define DMA_SYS_BUS_MODE		0x00001004
+#define DMA_STATUS			0x00001008
+#define DMA_DEBUG_STATUS_0		0x0000100c
+#define DMA_DEBUG_STATUS_1		0x00001010
+#define DMA_DEBUG_STATUS_2		0x00001014
+#define DMA_TBS_CTRL			0x00001050
+
+/* DMA Bus Mode bitmap */
+#define DMA_BUS_MODE_DCHE		BIT(19)
+#define DMA_BUS_MODE_INTM_MASK		GENMASK(17, 16)
+#define DMA_BUS_MODE_INTM_SHIFT		16
+#define DMA_BUS_MODE_INTM_MODE1		0x1
+#define DMA_BUS_MODE_SFT_RESET		BIT(0)
+
+/* DMA SYS Bus Mode bitmap */
+#define DMA_BUS_MODE_SPH		BIT(24)
+#define DMA_BUS_MODE_PBL		BIT(16)
+#define DMA_BUS_MODE_PBL_SHIFT		16
+#define DMA_BUS_MODE_RPBL_SHIFT		16
+#define DMA_BUS_MODE_MB			BIT(14)
+#define DMA_BUS_MODE_FB			BIT(0)
+
+/* DMA Interrupt top status */
+#define DMA_STATUS_MAC			BIT(17)
+#define DMA_STATUS_MTL			BIT(16)
+#define DMA_STATUS_CHAN7		BIT(7)
+#define DMA_STATUS_CHAN6		BIT(6)
+#define DMA_STATUS_CHAN5		BIT(5)
+#define DMA_STATUS_CHAN4		BIT(4)
+#define DMA_STATUS_CHAN3		BIT(3)
+#define DMA_STATUS_CHAN2		BIT(2)
+#define DMA_STATUS_CHAN1		BIT(1)
+#define DMA_STATUS_CHAN0		BIT(0)
+
+/* DMA debug status bitmap */
+#define DMA_DEBUG_STATUS_TS_MASK	0xf
+#define DMA_DEBUG_STATUS_RS_MASK	0xf
+
+#define DMA_SYS_BUS_MB			BIT(14)
+#define DMA_SYS_BUS_AAL			BIT(12)
+#define DMA_SYS_BUS_EAME		BIT(11)
+#define DMA_SYS_BUS_FB			BIT(0)
+
+/* Following DMA defines are chanels oriented */
+#define DMA_CHAN_BASE_ADDR		0x00001100
+#define DMA_CHAN_BASE_OFFSET		0x80
+#define DMA_CHANX_BASE_ADDR(x)		(DMA_CHAN_BASE_ADDR + \
+					(x * DMA_CHAN_BASE_OFFSET))
+#define DMA_CHAN_REG_NUMBER		17
+
+#define DMA_CHAN_CONTROL(x)		DMA_CHANX_BASE_ADDR(x)
+#define DMA_CHAN_TX_CONTROL(x)		(DMA_CHANX_BASE_ADDR(x) + 0x4)
+#define DMA_CHAN_RX_CONTROL(x)		(DMA_CHANX_BASE_ADDR(x) + 0x8)
+#define DMA_CHAN_TX_BASE_ADDR_HI(x)	(DMA_CHANX_BASE_ADDR(x) + 0x10)
+#define DMA_CHAN_TX_BASE_ADDR(x)	(DMA_CHANX_BASE_ADDR(x) + 0x14)
+#define DMA_CHAN_RX_BASE_ADDR_HI(x)	(DMA_CHANX_BASE_ADDR(x) + 0x18)
+#define DMA_CHAN_RX_BASE_ADDR(x)	(DMA_CHANX_BASE_ADDR(x) + 0x1c)
+#define DMA_CHAN_TX_END_ADDR(x)		(DMA_CHANX_BASE_ADDR(x) + 0x20)
+#define DMA_CHAN_RX_END_ADDR(x)		(DMA_CHANX_BASE_ADDR(x) + 0x28)
+#define DMA_CHAN_TX_RING_LEN(x)		(DMA_CHANX_BASE_ADDR(x) + 0x2c)
+#define DMA_CHAN_RX_RING_LEN(x)		(DMA_CHANX_BASE_ADDR(x) + 0x30)
+#define DMA_CHAN_INTR_ENA(x)		(DMA_CHANX_BASE_ADDR(x) + 0x34)
+#define DMA_CHAN_RX_WATCHDOG(x)		(DMA_CHANX_BASE_ADDR(x) + 0x38)
+#define DMA_CHAN_SLOT_CTRL_STATUS(x)	(DMA_CHANX_BASE_ADDR(x) + 0x3c)
+#define DMA_CHAN_CUR_TX_DESC(x)		(DMA_CHANX_BASE_ADDR(x) + 0x44)
+#define DMA_CHAN_CUR_RX_DESC(x)		(DMA_CHANX_BASE_ADDR(x) + 0x4c)
+#define DMA_CHAN_CUR_TX_BUF_ADDR(x)	(DMA_CHANX_BASE_ADDR(x) + 0x54)
+#define DMA_CHAN_CUR_RX_BUF_ADDR(x)	(DMA_CHANX_BASE_ADDR(x) + 0x5c)
+#define DMA_CHAN_STATUS(x)		(DMA_CHANX_BASE_ADDR(x) + 0x60)
+
+/* DMA Tx Channel X Control register defines */
+#define DMA_CONTROL_EDSE		BIT(28)
+#define DMA_CONTROL_TSE			BIT(12)
+#define DMA_CONTROL_OSP			BIT(4)
+#define DMA_CONTROL_ST			BIT(0)
+
+/* DMA Rx Channel X Control register defines */
+#define DMA_CONTROL_SR			BIT(0)
+#define DMA_RBSZ_MASK			GENMASK(14, 1)
+#define DMA_RBSZ_SHIFT			1
+
