@@ -1145,6 +1145,8 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 	if (ret) {
 		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x\n",
 			     __FUNCTION__, -ret);
+		if (!port_handle_exists)
+			fm_port_close(handle);
 		return -ret;
 	}
 
