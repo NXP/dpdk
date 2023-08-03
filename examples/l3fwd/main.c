@@ -1817,6 +1817,7 @@ get_dpdmux_id_from_env(void)
 	ret = fscanf(fp, "%d", &dpdmux_id);
 	if (ret != 1) {
 		printf("Failed to get dpdmux id\n");
+		pclose(fp);
 		return -1;
 	}
 	pclose(fp);
