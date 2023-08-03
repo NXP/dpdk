@@ -158,6 +158,7 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 	file = fopen("/proc/interrupts", "r");
 	if (!file) {
 		DPAA2_BUS_WARN("Failed to open /proc/interrupts file");
+		free(temp);
 		return;
 	}
 	while (getline(&temp, &len, file) != -1) {
