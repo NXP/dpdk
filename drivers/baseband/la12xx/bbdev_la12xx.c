@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2021,2023 NXP
  */
 
 #include <stdlib.h>
@@ -705,6 +705,7 @@ open_ipc_dev(int modem_id)
 		    sizeof(dev_initials) - 1))
 			break;
 	}
+	closedir(dir);
 
 	if (!entry) {
 		rte_bbdev_log(ERR, "Error: No gulipcgul%d device", modem_id);
