@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 /* System headers */
@@ -557,7 +557,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 			}
 		}
 
-		if (g_scatter_gather) {
+		if (g_scatter_gather && !g_memcpy) {
 			ret = rte_dma_copy_sg(qdma_dev_id[lcore_id], g_vqid[lcore_id],
 				src_sge, dst_sge, job_num, job_num, RTE_DMA_OP_FLAG_SUBMIT);
 			if (likely(!ret)) {
