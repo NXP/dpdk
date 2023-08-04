@@ -71,7 +71,6 @@ optional_libs = [
         'gpudev',
         'gro',
         'gso',
-        'kni',
         'jobstats',
         'latencystats',
         'metrics',
@@ -86,15 +85,11 @@ optional_libs = [
 
 dpdk_libs_deprecated += [
         'flow_classify',
-        'kni',
 ]
 
 disabled_libs = []
 opt_disabled_libs = run_command(list_dir_globs, get_option('disable_libs'),
         check: true).stdout().split()
-if dpdk_conf.get('RTE_IOVA_AS_PA') == 0
-    opt_disabled_libs += ['kni']
-endif
 foreach l:opt_disabled_libs
     if not optional_libs.contains(l)
         warning('Cannot disable mandatory library "@0@"'.format(l))

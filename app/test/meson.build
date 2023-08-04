@@ -235,7 +235,6 @@ fast_tests = [
         ['fbarray_autotest', true, true],
         ['hash_readwrite_func_autotest', false, true],
         ['ipsec_autotest', true, true],
-        ['kni_autotest', false, true],
         ['kvargs_autotest', true, true],
         ['member_autotest', true, true],
         ['power_cpufreq_autotest', false, true],
