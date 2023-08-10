@@ -1136,10 +1136,15 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 			device_id = strtol(penv, 0, 16);
 	}
 
-	err = lsx_pciep_fun_set(vendor_id,
+	err = lsx_pciep_fun_config(vendor_id,
 			device_id, class_id,
+			/** Reuse vendor ID and device ID for
+			 * sub vendor ID and sub device ID.
+			 */
+			vendor_id, device_id,
 			lsinic_dev->pcie_id,
-			lsinic_dev->pf, lsinic_dev->is_vf);
+			lsinic_dev->pf, lsinic_dev->is_vf,
+			lsinic_dev->vf);
 	if (err) {
 		LSXINIC_PMD_ERR("%s function set failed(%d)",
 			eth_dev->data->name, err);
