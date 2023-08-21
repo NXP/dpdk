@@ -3236,7 +3236,6 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 			encap_pdb.options |= PDBHMO_ESP_ENCAP_DTTL;
 		if (ipsec_xform->options.esn) {
 			encap_pdb.options |= PDBOPTS_ESP_ESN;
-			printf ("\n hi=%d, low = %d", conf->ipsec.esn.hi, conf->ipsec.esn.low); 
 			encap_pdb.seq_num_ext_hi = conf->ipsec.esn.hi;
 			encap_pdb.seq_num = conf->ipsec.esn.low;
 		}
@@ -3341,7 +3340,6 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		}
 		if (ipsec_xform->options.esn) {
 			decap_pdb.options |= PDBOPTS_ESP_ESN;
-			printf ("\n hi=%d, low = %d", conf->ipsec.esn.hi, conf->ipsec.esn.low); 
 			decap_pdb.seq_num_ext_hi = conf->ipsec.esn.hi;
 			decap_pdb.seq_num = conf->ipsec.esn.low;
 		}
