@@ -63,7 +63,7 @@ Application can be build using:
 
 Layer 2 information (switching) using QDMA.
 
-./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 1
+./l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1
 In the above command: -c refers to the core mask for cores to be assigned to
 DPDK;
 -p is the port mask for ports to be used by application;
@@ -236,6 +236,11 @@ bandwidth number. To test read/write big memory size, you can optionally pass
 --pci_size (size in byte, hex format)
 
 e.g for 2MB PCI use:  --pci_size=80000000
+
+2. PCIe address should be:
+   - mapped to valid memory area.
+   - bar address of device which is NOT used by driver.
+
 
 LATENCY_TEST
 ------------
