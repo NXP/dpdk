@@ -10,9 +10,9 @@
 #define ENETQOS_MAX_Q		1 //Support for single queue for now
 
 /* RX/TX Queue Mode */
-#define MTL_QUEUE_AVB		0x0
-#define MTL_QUEUE_DCB		0x1
-#define ENETQOS_MAX_RX_PKT_LEN	3000
+#define MTL_QUEUE_AVB_MODE		0x0
+#define MTL_QUEUE_DCB_MODE		0x1
+#define ENETQOS_MAX_RX_PKT_LEN		3000
 
 #define SF_DMA_MODE 1           /* DMA STORE-AND-FORWARD Operation Mode */
 /* TX and RX Descriptor Length, these need to be power of two.
@@ -52,7 +52,7 @@ typedef	unsigned long long	dma_addr_t;
 #define ENETQOS_BASE_ADDR 0x30bf0000
 #define ENETQOS_CCSR_SIZE 0x2000
 
-#define MTL_QUEUE_BLOCK 256
+#define MTL_QUEUE_BLK 256
 #define MTL_FIFO_SIZE 8192
 #define FIFO_SIZE_4KiB 4096
 
@@ -140,14 +140,14 @@ static
 void enetqos_set_rx_tail_ptr(void *ioaddr, uint32_t tail_ptr, uint32_t chan)
 {
 	rte_write32(tail_ptr,
-		(void *)((size_t)ioaddr + DMA_CHAN_RX_END_ADDR(chan)));
+		(void *)((size_t)ioaddr + EQOS_DMA_CHAN_RX_END_ADDR(chan)));
 }
 
 static
 void enetqos_set_tx_tail_ptr(void *ioaddr, dma_addr_t tail_ptr, uint32_t chan)
 {
 	rte_write64(tail_ptr,
-		(void *)((size_t) ioaddr + DMA_CHAN_TX_END_ADDR(chan)));
+		(void *)((size_t) ioaddr + EQOS_DMA_CHAN_TX_END_ADDR(chan)));
 }
 
 static

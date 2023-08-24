@@ -10,35 +10,34 @@
 #include <rte_mbuf.h>
 #include <rte_io.h>
 
-#include "enetqos_regs.h"
+#include "enetqos_hw.h"
 #include "enetqos_ethdev.h"
-#include "enetqos_descs.h"
 #include "enetqos_pmd_logs.h"
 
 static int enetqos_get_rx_status(struct dma_desc *p)
 {
 	unsigned int rdes3 = p->des3;
-	int ret = good_frame;
+	int ret = ok_frame;
 
-	if (unlikely(rdes3 & RDES3_OWN))
-		return dma_own;
+	if (unlikely(rdes3 & EQOS_RDES3_OWN))
+		return dma_owner;
 
-	if (unlikely(rdes3 & RDES3_CONTEXT_DESCRIPTOR))
+	if (unlikely(rdes3 & EQOS_RDES3_CTX_DESC))
 		return discard_frame;
 
-	if (likely(!(rdes3 & RDES3_LAST_DESCRIPTOR)))
-		return rx_not_ls;
+	if (likely(!(rdes3 & EQOS_RDES3_LAST_DESC)))
+		return rx_not_ldesc;
 
-	if (unlikely(rdes3 & RDES3_ERROR_SUMMARY)) {
-		if (unlikely(rdes3 & RDES3_GIANT_PACKET))
+	if (unlikely(rdes3 & EQOS_RDES3_ERR_SUMMARY)) {
+		if (unlikely(rdes3 & EQOS_RDES3_GIANT_PKT))
 			ENETQOS_DP_LOG(DEBUG, "rx_fifo_error");
-		if (unlikely(rdes3 & RDES3_OVERFLOW_ERROR))
+		if (unlikely(rdes3 & EQOS_RDES3_OVERFLOW_ERR))
 			ENETQOS_DP_LOG(DEBUG, "overflow_error");
-		if (unlikely(rdes3 & RDES3_RECEIVE_ERROR))
+		if (unlikely(rdes3 & EQOS_RDES3_RECEIVE_ERR))
 			ENETQOS_DP_LOG(DEBUG, "receive_error");
-		if (unlikely(rdes3 & RDES3_CRC_ERROR))
+		if (unlikely(rdes3 & EQOS_RDES3_CRC_ERR))
 			ENETQOS_DP_LOG(DEBUG, "crc_error");
-		if (unlikely(rdes3 & RDES3_DRIBBLE_ERROR))
+		if (unlikely(rdes3 & EQOS_RDES3_DRIBBLE_ERR))
 			ENETQOS_DP_LOG(DEBUG, "dribble_error");
 
 		ret = discard_frame;
@@ -49,12 +48,12 @@ static int enetqos_get_rx_status(struct dma_desc *p)
 
 static void enetqos_set_rx_owner(struct dma_desc *p)
 {
-	p->des3 |= RDES3_OWN | RDES3_BUFFER1_VALID_ADDR;
+	p->des3 |= EQOS_RDES3_OWN | EQOS_RDES3_BUFFER1_VALID_ADDR;
 }
 
 static int enetqos_wrback_get_rx_frame_len(struct dma_desc *p)
 {
-	return (p->des3 & RDES3_PACKET_SIZE_MASK);
+	return (p->des3 & EQOS_RDES3_PKT_SZ_MASK);
 }
 
 uint16_t
@@ -83,7 +82,7 @@ enetqos_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 
 	/* Process the incoming packet */
 	status = enetqos_get_rx_status(first);
-	while (!(status & dma_own)) {
+	while (!(status & dma_owner)) {
 
 		if (pkt_received >= nb_pkts)
 			break;
@@ -151,11 +150,11 @@ enetqos_prepare_tx_desc(struct dma_desc *p, int len, unsigned int tot_pkt_len)
 {
 	unsigned int tdes3 = p->des3;
 
-	p->des2 |= len & TDES2_BUFFER1_SIZE_MASK;
+	p->des2 |= len & EQOS_TDES2_BUF1_SZ_MASK;
 
-	tdes3 |= tot_pkt_len & TDES3_PACKET_SIZE_MASK;
-	tdes3 |= TDES3_FIRST_DESCRIPTOR;
-	tdes3 |= TDES3_LAST_DESCRIPTOR;
+	tdes3 |= tot_pkt_len & EQOS_TDES3_PKT_SZ_MASK;
+	tdes3 |= EQOS_TDES3_FIRST_DESC;
+	tdes3 |= EQOS_TDES3_LAST_DESC;
 
 	p->des3 |= tdes3;
 }
@@ -163,47 +162,47 @@ enetqos_prepare_tx_desc(struct dma_desc *p, int len, unsigned int tot_pkt_len)
 static int enetqos_get_tx_status(struct dma_desc *p)
 {
 	unsigned int tdes3;
-	int ret = tx_done;
+	int ret = tx_comp;
 
 	tdes3 = p->des3;
 
 	/* Get tx owner first */
-	if (tdes3 & TDES3_OWN)
-		return tx_dma_own;
+	if (tdes3 & EQOS_TDES3_OWN)
+		return tx_dma_owner;
 
 	/* Verify tx error by looking at the last segment. */
-	if (!(tdes3 & TDES3_LAST_DESCRIPTOR))
-		return tx_not_ls;
+	if (!(tdes3 & EQOS_TDES3_LAST_DESC))
+		return tx_not_ldesc;
 
-	if (tdes3 & TDES3_ERROR_SUMMARY) {
-		ret = tx_err;
+	if (tdes3 & EQOS_TDES3_ERR_SUMMARY) {
+		ret = tx_error;
 
-		if (tdes3 & TDES3_JABBER_TIMEOUT)
+		if (tdes3 & EQOS_TDES3_JABBER_TIMEOUT)
 			ENETQOS_DP_LOG(DEBUG, "Jabber Timeout");
-		if (tdes3 & TDES3_PACKET_FLUSHED)
+		if (tdes3 & EQOS_TDES3_PKT_FLUSHED)
 			ENETQOS_DP_LOG(DEBUG, "Packet Flush");
-		if (tdes3 & TDES3_LOSS_CARRIER)
+		if (tdes3 & EQOS_TDES3_LOSS_CARRIER)
 			ENETQOS_DP_LOG(DEBUG, "Loss of Carrier");
-		if (tdes3 & TDES3_NO_CARRIER)
+		if (tdes3 & EQOS_TDES3_NO_CARRIER)
 			ENETQOS_DP_LOG(DEBUG, "No Carrier");
-		if ((tdes3 & TDES3_LATE_COLLISION) ||
-				(tdes3 & TDES3_EXCESSIVE_COLLISION))
+		if ((tdes3 & EQOS_TDES3_LATE_COLLISION) ||
+				(tdes3 & EQOS_TDES3_EXCESSIVE_COLLISION))
 			ENETQOS_DP_LOG(DEBUG, "late or excessive collision");
-		if (tdes3 & TDES3_EXCESSIVE_DEFERRAL)
+		if (tdes3 & EQOS_TDES3_EXCESSIVE_DEFERRAL)
 			ENETQOS_DP_LOG(DEBUG, "Excessive Deferral");
-		if (tdes3 & TDES3_UNDERFLOW_ERROR) {
+		if (tdes3 & EQOS_TDES3_UNDERFLOW_ERR) {
 			ENETQOS_DP_LOG(DEBUG, "Underflow Error");
-			ret |= tx_err_bump_tc;
+			ret |= tx_error_bump_tc;
 		}
 
-		if (tdes3 & TDES3_IP_HDR_ERROR)
+		if (tdes3 & EQOS_TDES3_IP_HDR_ERR)
 			ENETQOS_DP_LOG(DEBUG, "IP Header Error");
 
-		if (tdes3 & TDES3_PAYLOAD_ERROR)
+		if (tdes3 & EQOS_TDES3_PL_ERR)
 			ENETQOS_DP_LOG(DEBUG, "Payload Checksum Error");
 	}
 
-	if (tdes3 & TDES3_DEFERRED)
+	if (tdes3 & EQOS_TDES3_DEF)
 		ENETQOS_DP_LOG(DEBUG, "Deferred");
 
 	return ret;
@@ -248,7 +247,7 @@ enetqos_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 
 		status = enetqos_get_tx_status(first);
 
-		if (status & tx_dma_own) {
+		if (status & tx_dma_owner) {
 			stats->oerrors++;
 			break;
 		}
@@ -281,7 +280,7 @@ enetqos_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		desc = tx_q->dma_tx + entry;
 		rte_wmb();
 		/* Finally set the OWN bit. Later the DMA will start! */
-		first->des3 |= TDES3_OWN;
+		first->des3 |= EQOS_TDES3_OWN;
 		enetqos_flush_tx_descriptors(priv, tx_q->queue_index);
 		first = desc;
 		tx_pkts++;
