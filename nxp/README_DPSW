@@ -1,0 +1,218 @@
+DPAA2 Switch: Using tc filter in Linux 4.19-rt with DPDK
+=========================================================
+
+The DPAA2 switch is able to offload flow-based redirection of packets making use
+of ACL tables. Shared filter blocks are supported by sharing a single ACL table
+between multiple ports.
+
+The following flow keys are supported:
+--------------------------------------
+Ethernet: dst_mac/src_mac/ether_type
+IPv4: dst_ip/src_ip/ip_proto/tos
+VLAN: vlan_id/vlan_prio/vlan_tpid/vlan_dei
+L4: dst_port/src_port
+
+As per flow actions, the following are supported:
+-------------------------------------------------
+-> drop
+-> mirred egress redirect
+And each ACL entry (filter) can be setup with only one of the listed actions.
+
+In order to use this feature the following Kconfigs will be needed:
+-------------------------------------------------------------------
+CONFIG_FSL_DPAA2_ETHSW=y
+CONFIG_NET_CLS_FLOWER=y
+CONFIG_NET_ACT_GACT=y
+CONFIG_NET_ACT_MIRRED=y
+
+Tc compilation steps:
+=====================
+Tc version required: iproute2-ss181023
+
+iproute2 - compile and install for 4.19 Kernel (On board steps):
+=================================================================
+
+git clone git://git.kernel.org/pub/scm/network/iproute2/iproute2.git
+cd iproute2
+
+git checkout v4.19.0
+git checkout -b br-v4.19.0
+
+./configure
+make -j8
+make install
+
+Steps to setup a DPSW object connected to 2 DPMACs and 2 DPNIs on LX2160A:
+===========================================================================
+
+#Create a DPNI for assigning to Linux Kernel.
+$ ls-addni -n
+let us assume the dpni and eth interface created are dpni.z and ethx resp.
+
+$ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.x dpmac.y
+let us assume the interface for dpmac.x is dpni.x and for dpmac.y is dpni.y
+and the container created be dprc.x
+
+#Unbinding dprc.x from VFIO
+$ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
+
+#Remove dpni.x and dpni.y from dprc.x so that it can be assigned to dpsw
+$ restool dprc disconnect dprc.x --endpoint=dpni.x
+$ restool dprc disconnect dprc.x --endpoint=dpni.y
+
+#Create DPSW
+$ ls-addsw dpmac.x dpmac.y dpni.x dpni.y dpni.z
+Created ETHSW object dpsw.x with the following  5 ports:
+etha, ethb, ethc, ethd, ethe respectively for dpmac.x, dpmac.y, dpni.x, dpni.y, dpni.z
+
+#Bind the DPRC back to VFIO
+$ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
+
+#Export the DPRC
+$ export DPRC=dprc.x
+
+#Create the bridge device
+
+$ ip link add br0 type bridge
+$ ip link set dev etha master br0
+$ ip link set dev ethb master br0
+$ ip link set dev ethc master br0
+$ ip link set dev ethd master br0
+$ ip link set dev ethe master br0
+
+#Bring up all the switch interfaces and the bridge
+
+$ ip link set dev br0 up
+$ ip link set dev etha up
+$ ip link set dev ethb up
+$ ip link set dev ethc up
+$ ip link set dev ethd up
+$ ip link set dev ethe up
+
+#Bring up the DPNI netdevice
+$ ip link set dev ethx up
+
+#Setup a shared filter block on the switch ports
+$ tc qdisc add dev etha ingress_block 1 clsact
+$ tc qdisc add dev ethc ingress_block 2 clsact
+$ tc qdisc add dev ethd ingress_block 3 clsact
+$ tc qdisc add dev ethe ingress_block 4 clsact
+
+Redirect based on the EtherType and SRC/DST IPv4:
+==================================================
+
+Under this setup, we send the traffic through spirent from dpmac.x which in
+turns has the rule to match a specific src/dst traffic and send that to
+ethc (dpni connected to dpmac.x) which in turns has the rule to sending matching
+traffic to ethd (dpni connected to dpmac.y) which sends the matching traffic
+to ethb (dpmac.y).
+
+The non matching traffic can be sent to kernel interface (ethe in our case)
+or whatever the usecase suggests.
+
+
+      ---------  Matched pkt  ---------  Matched pkt        ---------
+     | DPMAC.X |------------>|   ETHc  |------------------>|   ETHd  |
+     |  PORT   |             |   blk2  |                   |   blk3  |
+      ---------               ---------                     ---------
+	 |------------- matched --------------------------------|
+	 |
+	 |
+	 v
+      ---------               ---------
+     | DPMAC.Y |             |   ETHe  |
+     |  PORT   |             |  kernel |
+      ---------               ---------
+
+Creating rules on block 1 (etha):
+-------------------------------------------
+SRC/DST IP rule:
+
+$ tc filter add block 1 ingress pref 17 protocol ipv4 flower \
+src_ip 10.0.0.10 \
+dst_ip 10.0.0.50 \
+skip_sw action mirred egress redirect dev ethc
+
+Default rule to send non-matching traffic to kernel:
+
+$ tc filter add block 1 ingress pref 19 flower action mirred egress redirect dev ethe
+
+If multiple rules are created on a single block then the preference is set for
+different rules in order of which needs to be checked first.
+	-> The lower preference denotes the higher priority.
+
+Creating rules on block 2 (ethc):
+----------------------------------
+If we run dpdk-l2fwd it modifies the destination mac address to
+02:00:00:00:00:TX_PORT_ID so the below rule verifies this and sends the
+matched traffic to ethd. This rule can be modified as per the use-case.
+
+$ tc filter add block 2 ingress pref 19 flower dst_mac 02:00:00:00:00:01 action mirred egress redirect dev ethd
+
+Creating rules on block 3 (ethc):
+----------------------------------
+
+$ tc filter add block 3 ingress pref 19 flower dst_mac 02:00:00:00:00:01 action mirred egress redirect dev ethb
+
+After creating the above rules we can check the installed rules or delete any (if required) using below commands:
+-----------------------------------------------------------------------------------------------------------------
+Show all installed ACL rules:
+	$ tc filter show block <block_no> ingress
+How to delete an explicit rule based on the pref value:
+	$ tc filter del block <block_no> pref <rule_pref_val>
+
+Once the rules are installed, run the dpdk application:
+-------------------------------------------------------
+
+$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+
+The packets can be captured on spirent to analyze the traffic.
+
+To check the frames on kernel interface:
+----------------------------------------
+ethtool -S ethe
+
+To check the dpsw stats:
+------------------------
+restool dpsw info dpsw.x
+
+Redirect based on EtherType (802.1Q VLAN), TPID (Vlan Ethertype = IPv4) and VLAN id + prio
+==========================================================================================
+Similar to the above way, VLAN rule can be installed on dpmac.x:
+
+$ tc filter add block 1 ingress pref 16 protocol 802.1q flower \
+vlan_id 10 vlan_prio 4 \
+vlan_ethtype ipv4 \
+skip_sw action mirred egress redirect dev ethc
+
+Other rules on block 2 and 3 will be similar to the above case.
+
+Important:
+If a frame with VLAN 10 is sent from an external entity to be received on
+DPMAC.3 (connected the dpsw.0.0), then that frame will get discarded
+because we didn't install VLAN 10 on the port.
+
+So to remedy this, we can install VLAN 10 on all the switch ports that need to
+accept and switch packets with VLAN 10.
+
+$ bridge vlan add dev etha vid 10
+$ bridge vlan add dev ethb vid 10
+$ bridge vlan add dev ethc vid 10
+$ bridge vlan add dev ethd vid 10
+$ bridge vlan add dev ethe vid 10
+$ bridge vlan add dev ethx vid 10
+
+An example to create an ACL rule that matches on all the dpaa2-switch supported fields:
+--------------------------------------------------------------------------------------
+$ tc filter add block 1 ingress pref 14 protocol 802.1q flower \
+dst_mac 00:01:02:03:04:08 src_mac 00:01:02:03:04:58 \
+vlan_id 10 vlan_prio 3 \
+vlan_ethtype ipv4 \
+src_ip 10.0.0.11 dst_ip 10.0.0.55 \
+ip_proto tcp \
+src_port 1001 dst_port 1002 \
+skip_sw action mirred egress redirect dev ethc
+
+Note:
+	1. If no rule matches a switch interface then the packet is broadcasted to all the other interfaces of switch.
+	2. If the rule is created to drop a packet then the buffers are freed properly back to the mempool.
