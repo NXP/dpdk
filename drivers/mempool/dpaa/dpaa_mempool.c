@@ -129,7 +129,7 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	 */
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		cache = &mp->local_cache[lcore_id];
-		DPAA_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d\n",
+		DPAA_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d",
 							lcore_id, cache->flushthresh,
 							(uint32_t)(cache->size + DPAA_MBUF_MAX_ACQ_REL));
 		if (cache->flushthresh)

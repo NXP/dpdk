@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2019,2022 NXP
+ *   Copyright 2016-2019,2022-2023 NXP
  *
  */
 
@@ -140,7 +140,7 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	 */
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		cache = &mp->local_cache[lcore_id];
-		DPAA2_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d\n",
+		DPAA2_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d",
 							lcore_id, cache->flushthresh,
 							(uint32_t)(cache->size + DPAA2_MBUF_MAX_ACQ_REL));
 		if (cache->flushthresh)
