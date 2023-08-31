@@ -19,7 +19,6 @@ drivers = [
         'ena',
         'enetc',
         'enetfec',
-        'enetqos',
         'enic',
         'failsafe',
         'fm10k',
