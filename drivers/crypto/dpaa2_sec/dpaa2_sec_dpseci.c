@@ -1644,10 +1644,8 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = CRYPTODEV_GET_SYM_SESS_PRIV(op->sym->session);
-#ifdef RTE_LIBRTE_SECURITY
 	else if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION)
 		sess = SECURITY_GET_SESS_PRIV(op->sym->session);
-#endif
 
 	if (sess == NULL)
 		goto mbuf_dump;
@@ -1671,7 +1669,7 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 		sess->digest_length, sess->status,
 		sess->ext_params.aead_ctxt.auth_only_len,
 		sess->ext_params.aead_ctxt.auth_cipher_text);
-#ifdef RTE_LIBRTE_SECURITY
+
 	printf("PDCP session params:\n"
 		"\tDomain:\t\t%d\n\tBearer:\t\t%d\n\tpkt_dir:\t%d\n\thfn_ovd:"
 		"\t%d\n\tsn_size:\t%d\n\thfn_ovd_offset:\t%d\n\thfn:\t\t%d\n"
@@ -1680,22 +1678,33 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 		sess->pdcp.sn_size, sess->pdcp.hfn_ovd_offset, sess->pdcp.hfn,
 		sess->pdcp.hfn_threshold);
 
-#endif
 	bufsize = (uint8_t)priv->flc_desc[0].flc.word1_sdl;
 	printf("Descriptor Dump:\n");
 	for (i = 0; i < bufsize; i++)
 		printf("\tDESC[%d]:0x%x\n", i, priv->flc_desc[0].desc[i]);
+	printf("input for dump_caam_desc:\n");
+	for (i = 0; i < bufsize; i++)
+		printf("0x%x\n", priv->flc_desc[0].desc[i]);
+
 
 	printf("\n");
 mbuf_dump:
 	sym_op = op->sym;
 	if (sym_op->m_src) {
-		printf("Source mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_src, sym_op->m_src->data_len);
+		uint16_t len = sym_op->m_src->data_len;
+		if (len > 1500) {
+			printf("Source mbuf: data_len = %d limiting to 1500 bytes\n", len);
+			len = 1500;
+		}
+		rte_pktmbuf_dump(stdout, sym_op->m_src, len);
 	}
 	if (sym_op->m_dst) {
-		printf("Destination mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_dst, sym_op->m_dst->data_len);
+		uint16_t len = sym_op->m_dst->data_len;
+		if (len > 1500) {
+			printf("Dest mbuf: data_len = %d limiting to 1500 bytes\n", len);
+			len = 1500;
+		}
+		rte_pktmbuf_dump(stdout, sym_op->m_dst, len);
 	}
 
 	printf("Session address = %p\ncipher offset: %d, length: %d\n"
@@ -2424,7 +2433,7 @@ dpaa2_sec_auth_init(struct rte_crypto_sym_xform *xform,
 	case RTE_CRYPTO_AUTH_AES_GMAC:
 	case RTE_CRYPTO_AUTH_KASUMI_F9:
 	case RTE_CRYPTO_AUTH_NULL:
-		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %un",
+		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %u",
 			      xform->auth.algo);
 		ret = -ENOTSUP;
 		goto error_out;
@@ -3709,7 +3718,7 @@ dpaa2_sec_security_session_create(void *dev,
 		return -EINVAL;
 	}
 	if (ret != 0) {
-		DPAA2_SEC_ERR("Failed to configure session parameters");
+		DPAA2_SEC_DEBUG("Failed to configure session parameters %d", ret);
 		return ret;
 	}
 
@@ -3751,7 +3760,7 @@ dpaa2_sec_sym_session_configure(struct rte_cryptodev *dev __rte_unused,
 
 	ret = dpaa2_sec_set_session_parameters(xform, sess_private_data);
 	if (ret != 0) {
-		DPAA2_SEC_ERR("Failed to configure session parameters");
+		DPAA2_SEC_DEBUG("Failed to configure session parameters %d", ret);
 		/* Return session to mempool */
 		return ret;
 	}
@@ -4456,7 +4465,7 @@ cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv __rte_unused,
 	else
 		rta_set_sec_era(RTA_SEC_ERA_8);
 
-	DPAA2_SEC_INFO("2-SEC ERA is %d", rta_get_sec_era());
+	DPAA2_SEC_INFO("2-SEC ERA is %d", USER_SEC_ERA(rta_get_sec_era()));
 
 	/* Invoke PMD device initialization function */
 	retval = dpaa2_sec_dev_init(cryptodev);
