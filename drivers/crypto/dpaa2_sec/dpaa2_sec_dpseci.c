@@ -1385,9 +1385,10 @@ build_sec_fd(struct rte_crypto_op *op,
 			ret = build_proto_compound_sg_fd(sess, op, fd, bpid);
 			break;
 #endif
-		case DPAA2_SEC_HASH_CIPHER:
 		default:
-			DPAA2_SEC_ERR("error: Unsupported session");
+			DPAA2_SEC_ERR("error: Unsupported session %d",
+				sess->ctxt_type);
+			ret = -ENOTSUP;
 		}
 	} else {
 		switch (sess->ctxt_type) {
@@ -1411,9 +1412,9 @@ build_sec_fd(struct rte_crypto_op *op,
 			ret = build_proto_compound_fd(sess, op, fd, bpid, qp);
 			break;
 #endif
-		case DPAA2_SEC_HASH_CIPHER:
 		default:
-			DPAA2_SEC_ERR("error: Unsupported session");
+			DPAA2_SEC_ERR("error: Unsupported session%d",
+				sess->ctxt_type);
 			ret = -ENOTSUP;
 		}
 	}
@@ -2191,20 +2192,9 @@ dpaa2_sec_cipher_init(struct rte_crypto_sym_xform *xform,
 					      &cipherdata,
 					      session->dir);
 		break;
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-	case RTE_CRYPTO_CIPHER_AES_F8:
-	case RTE_CRYPTO_CIPHER_AES_ECB:
-	case RTE_CRYPTO_CIPHER_3DES_ECB:
-	case RTE_CRYPTO_CIPHER_3DES_CTR:
-	case RTE_CRYPTO_CIPHER_AES_XTS:
-	case RTE_CRYPTO_CIPHER_ARC4:
-	case RTE_CRYPTO_CIPHER_NULL:
-		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
-			xform->cipher.algo);
-		ret = -ENOTSUP;
-		goto error_out;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Cipher specified %u",
+		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %s (%u)",
+			rte_crypto_cipher_algorithm_strings[xform->cipher.algo],
 			xform->cipher.algo);
 		ret = -ENOTSUP;
 		goto error_out;
@@ -2429,23 +2419,16 @@ dpaa2_sec_auth_init(struct rte_crypto_sym_xform *xform,
 					   !session->dir,
 					   session->digest_length);
 		break;
-	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
-	case RTE_CRYPTO_AUTH_AES_GMAC:
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
-	case RTE_CRYPTO_AUTH_NULL:
-		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %u",
-			      xform->auth.algo);
-		ret = -ENOTSUP;
-		goto error_out;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Auth specified %u",
-			      xform->auth.algo);
+		DPAA2_SEC_ERR("Crypto: Unsupported Auth alg %s (%u)",
+			rte_crypto_auth_algorithm_strings[xform->auth.algo],
+			xform->auth.algo);
 		ret = -ENOTSUP;
 		goto error_out;
 	}
 
 	if (bufsize < 0) {
-		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
+		DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 		ret = -EINVAL;
 		goto error_out;
 	}
@@ -2522,14 +2505,11 @@ dpaa2_sec_aead_init(struct rte_crypto_sym_xform *xform,
 		aeaddata.algmode = OP_ALG_AAI_GCM;
 		session->aead_alg = RTE_CRYPTO_AEAD_AES_GCM;
 		break;
-	case RTE_CRYPTO_AEAD_AES_CCM:
-		DPAA2_SEC_ERR("Crypto: Unsupported AEAD alg %u",
-			      aead_xform->algo);
-		ret = -ENOTSUP;
-		goto error_out;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined AEAD specified %u",
-			      aead_xform->algo);
+
+		DPAA2_SEC_ERR("Crypto: Unsupported AEAD alg %s (%u)",
+			rte_crypto_aead_algorithm_strings[aead_xform->algo],
+			aead_xform->algo);
 		ret = -ENOTSUP;
 		goto error_out;
 	}
@@ -2567,7 +2547,7 @@ dpaa2_sec_aead_init(struct rte_crypto_sym_xform *xform,
 				&aeaddata, session->iv.length,
 				session->digest_length);
 	if (bufsize < 0) {
-		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
+		DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 		ret = -EINVAL;
 		goto error_out;
 	}
@@ -2702,24 +2682,9 @@ dpaa2_sec_aead_chain_init(struct rte_crypto_sym_xform *xform,
 		authdata.algmode = OP_ALG_AAI_CMAC;
 		session->auth_alg = RTE_CRYPTO_AUTH_AES_CMAC;
 		break;
-	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
-	case RTE_CRYPTO_AUTH_AES_GMAC:
-	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
-	case RTE_CRYPTO_AUTH_NULL:
-	case RTE_CRYPTO_AUTH_SHA1:
-	case RTE_CRYPTO_AUTH_SHA256:
-	case RTE_CRYPTO_AUTH_SHA512:
-	case RTE_CRYPTO_AUTH_SHA224:
-	case RTE_CRYPTO_AUTH_SHA384:
-	case RTE_CRYPTO_AUTH_MD5:
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
-	case RTE_CRYPTO_AUTH_ZUC_EIA3:
-		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %u",
-			      auth_xform->algo);
-		ret = -ENOTSUP;
-		goto error_out;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Auth specified %u",
+		DPAA2_SEC_ERR("Crypto: Undefined Auth specified %s (%u)",
+				   rte_crypto_auth_algorithm_strings[auth_xform->algo],
 			      auth_xform->algo);
 		ret = -ENOTSUP;
 		goto error_out;
@@ -2750,20 +2715,10 @@ dpaa2_sec_aead_chain_init(struct rte_crypto_sym_xform *xform,
 		cipherdata.algmode = OP_ALG_AAI_CTR;
 		session->cipher_alg = RTE_CRYPTO_CIPHER_AES_CTR;
 		break;
-	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
-	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
-	case RTE_CRYPTO_CIPHER_NULL:
-	case RTE_CRYPTO_CIPHER_3DES_ECB:
-	case RTE_CRYPTO_CIPHER_3DES_CTR:
-	case RTE_CRYPTO_CIPHER_AES_ECB:
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
-			      cipher_xform->algo);
-		ret = -ENOTSUP;
-		goto error_out;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Cipher specified %u",
-			      cipher_xform->algo);
+		DPAA2_SEC_ERR("Crypto: Undefined Cipher specified %s (%u)",
+			      rte_crypto_cipher_algorithm_strings[cipher_xform->algo],
+				  cipher_xform->algo);
 		ret = -ENOTSUP;
 		goto error_out;
 	}
@@ -2806,7 +2761,7 @@ dpaa2_sec_aead_chain_init(struct rte_crypto_sym_xform *xform,
 					      session->digest_length,
 					      session->dir);
 		if (bufsize < 0) {
-			DPAA2_SEC_ERR("Crypto: Invalid buffer length");
+			DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 			ret = -EINVAL;
 			goto error_out;
 		}
@@ -3066,22 +3021,9 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 		DPAA2_SEC_ERR(
 			"AES_GMAC is supported as AEAD algo for IPSEC proto only");
 		return -ENOTSUP;
-	case RTE_CRYPTO_AUTH_SHA224_HMAC:
-	case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
-	case RTE_CRYPTO_AUTH_SHA1:
-	case RTE_CRYPTO_AUTH_SHA256:
-	case RTE_CRYPTO_AUTH_SHA512:
-	case RTE_CRYPTO_AUTH_SHA224:
-	case RTE_CRYPTO_AUTH_SHA384:
-	case RTE_CRYPTO_AUTH_MD5:
-	case RTE_CRYPTO_AUTH_KASUMI_F9:
-	case RTE_CRYPTO_AUTH_AES_CBC_MAC:
-	case RTE_CRYPTO_AUTH_ZUC_EIA3:
-		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %u",
-			      session->auth_alg);
-		return -ENOTSUP;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Auth specified %u",
+		DPAA2_SEC_ERR("Crypto: Unsupported auth alg %s (%u)",
+			rte_crypto_auth_algorithm_strings[session->auth_alg],
 			      session->auth_alg);
 		return -ENOTSUP;
 	}
@@ -3110,18 +3052,10 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	case RTE_CRYPTO_CIPHER_NULL:
 		cipherdata->algtype = OP_PCL_IPSEC_NULL;
 		break;
-	case RTE_CRYPTO_CIPHER_SNOW3G_UEA2:
-	case RTE_CRYPTO_CIPHER_ZUC_EEA3:
-	case RTE_CRYPTO_CIPHER_3DES_ECB:
-	case RTE_CRYPTO_CIPHER_3DES_CTR:
-	case RTE_CRYPTO_CIPHER_AES_ECB:
-	case RTE_CRYPTO_CIPHER_KASUMI_F8:
-		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %u",
-			      session->cipher_alg);
-		return -ENOTSUP;
 	default:
-		DPAA2_SEC_ERR("Crypto: Undefined Cipher specified %u",
-			      session->cipher_alg);
+		DPAA2_SEC_ERR("Crypto: Unsupported Cipher alg %s (%u)",
+			rte_crypto_cipher_algorithm_strings[session->cipher_alg],
+			session->cipher_alg);
 		return -ENOTSUP;
 	}
 
@@ -3391,7 +3325,7 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 		goto out;
 
 	if (bufsize < 0) {
-		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
+		DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 		goto out;
 	}
 
@@ -3679,7 +3613,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	}
 
 	if (bufsize < 0) {
-		DPAA2_SEC_ERR("Crypto: Invalid buffer length");
+		DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 		goto out;
 	}
 
