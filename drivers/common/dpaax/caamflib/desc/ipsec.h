@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2016,2019-2022 NXP
+ * Copyright 2016,2019-2023 NXP
  *
  */
 
@@ -709,6 +709,11 @@ static inline void __gen_auth_key(struct program *program,
 		break;
 	case OP_PCL_IPSEC_HMAC_SHA2_512_256:
 		dkp_protid = OP_PCLID_DKP_SHA512;
+		break;
+	case OP_PCL_IPSEC_HMAC_SHA2_224_96:
+	case OP_PCL_IPSEC_HMAC_SHA2_224_112:
+	case OP_PCL_IPSEC_HMAC_SHA2_224_224:
+		dkp_protid = OP_PCLID_DKP_SHA224;
 		break;
 	default:
 		KEY(program, KEY2, authdata->key_enc_flags, authdata->key,
