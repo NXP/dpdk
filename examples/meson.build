@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022 NXP
+# Copyright 2022-2023 NXP
 
 link_whole_libs = []
 if get_option('default_library') == 'static'
@@ -25,6 +25,7 @@ all_examples = [
         'ip_pipeline',
         'ip_reassembly',
         'ipsec-secgw',
+        'ipsec-ike',
         'ipv4_multicast',
 	'l1_l2_comm',
         'l2fwd',
