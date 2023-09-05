@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 NXP
+
+===============================================================================
+NXP DPDK IPSec dynamic IKE README
+
+ipsec-ike demostrates to configure DPDK IPSec by dynamic IKE(strongswan).
+Gateway is one generic Linux machine to run as VPN server.
+EP negotiates with gateway to setup Security link.
+ipsec-ike runs on EP to configures SP/SA according to KFRM via netlink.
+
+1. Install strongswan-swanctl on both gateway and endpoint.
+apt-get install strongswan-swanctl
+
+2. Gateway setup:
+1) Copy swanctl-gw.conf to /etc/swanctl/conf.d/swanctl.conf
+2) ip addr add 20.20.20.10/29 dev eth1(plain port)
+3) ifconfig eth2 10.88.51.210 up(security port)
+4) nohup /usr/lib/ipsec/charon&
+5) swanctl --load-all
+
+3. EP platform setup:
+#DPAA2 platform:
+   1) export DPRC=dprc.2
+   2) export FS_ENTRIES=8
+   3) source dynamic_dpl.sh dpmac.x dpni
+   4) ls-addni dpni.y
+   5) ipsec-ike -c 0x4 -n 1 -- --sec_port dpni.x --tap_port dpni.y
+      #dpmac.x connects to gateway, dpni.x connects to dpmac.x and dpni.y is virtual port.
+   6) ifconfig eth0 10.88.51.8 up
+      #eth0 is tap port connected to dpni.y
+#DPAA1 share MAC platform:
+   1) fmc -c usdpaa_config_ls1046_mac9.xml -p usdpaa_policy_ipsec_ike.xml -a
+   2) ipsec-ike -c 0x4 -n 1 -- --sec_port fm1-mac9
+      #fm1-mac9 connects to gateway.
+   3) ifconfig fm1-mac9 10.88.51.8 up
+
+4. EP generic setup:
+1) Copy swanctl-ep.conf to /etc/swanctl/conf.d/swanctl.conf
+2) nohup /usr/lib/ipsec/charon&
+3) swanctl --load-all
+4) /usr/lib/ipsec/stroke down host-host1
+5) /usr/lib/ipsec/stroke up host-host1
+
+5. ping from gateway to EP to verify security link by crypted ICMP.
+ping -I 20.20.20.10 10.88.51.8
+
+IKE setup
+Gateway KFRM(kernel)--->port---Security/IKE link----->EP port----------SP(in)---->SA(in)----SEC
+                                                         |               |          |
+                                                         |               |- netlink-|
+                                                         |                    |
+                                                         |                    |
+                                                          ----->TAP--->KFRM(kernel)
+
+EP Inbound:
+Gateway KFRM(kernel)--->port---Security/IKE link----->EP port--------->SP(in)---->SA(in)---->SEC
+                                                         ^
+                                                         |
+                                                          ------>TAP--->KFRM(kernel)
+
+EP Outbound:
+Gateway KFRM(kernel)<---port<---Security/IKE link-----EP port<------SEC<-----SA(out)<---SP(out)
