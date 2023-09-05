@@ -1,0 +1,24 @@
+<!--
+  SPDX-License-Identifier: BSD-3-Clause
+
+  Copyright 2023 NXP
+-->
+
+<!--
+This fmc configuration file sets the 6x1G and 1x10G on LS1043 to use the
+policies indicated below.
+-->
+
+
+<cfgdata>
+    <config>
+	<engine name="fm0">
+<!--
+In DPDK the ports are detected in order specified in the linux DTS file
+So here we need to specify ports in the order they are present in the linux DTS
+Also, the DPDK port 'X' should have policy as hash_ipsec_src_dst_spi_policy_mac'X'
+-->
+		<port type="MAC" number="9" policy="hash_ipsec_spi_policy_mac9"/>
+	</engine>
+    </config>
+</cfgdata>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: BSD-3-Clause
+
+  Copyright 2023 NXP
+-->
+
+<netpcd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="xmlProject/pcd.xsd" name="example"
+	description="Bridging configuration">
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxx Distributions xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+	<vsp name="shared_mac_pool" base="0"/>
+	<vsp name="dpdk_flows" base="1"/>
+
+	<distribution name="hash_ipsec_spi_dist9">
+		<vsp name="dpdk_flows" />
+		<queue count="1" base="0xd00"/>
+		<key>
+			<fieldref name="ipsec_esp.spi"/>
+		</key>
+	</distribution>
+
+	<distribution name="default_dist9">
+		<queue count="1" base="0x5d"/>
+	</distribution>
+
+<!--	xxxxxxxxxxxxxxxxxxxxxxxxxx Policies xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -->
+
+
+	<policy name="hash_ipsec_spi_policy_mac9">
+		<dist_order>
+			<distributionref name="hash_ipsec_spi_dist9"/>
+			<distributionref name="default_dist9"/>
+		</dist_order>
+	</policy>
+
+
+</netpcd>
