@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2022 NXP
+# Copyright 2018-2023 NXP
 
 #usages are:
 #./crypto_perf_test.sh dpaa2_sec
@@ -19,7 +19,7 @@ buffer_size=64,128,256,512,1024,2048
 #buffer_size=64
 
 #logs=--log-level=8
-logs=--log-level=3
+logs=--log-level=6
 
 silent=--silent
 #csv_format=--csv-friendly
