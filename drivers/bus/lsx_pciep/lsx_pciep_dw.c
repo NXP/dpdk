@@ -187,6 +187,9 @@ struct pciep_dw_proc_info {
 
 	int ib_idx[LSX_PCIE_DW_IB_WINS_NUM];
 	int ib_nb;
+
+	uint64_t pf_moff[PF_MAX_NB];
+	uint64_t vf_moff[PF_MAX_NB][PCIE_MAX_VF_NUM];
 };
 
 #define PCI_EXT_CAP_ID_NULL_OFF 0
@@ -1771,7 +1774,7 @@ pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
 	int vector_total)
 {
 	struct pcie_ctrl_cfg *cfg;
-	uint64_t maddr, phy_addr, doorbell_addr, iova, iatu_phy;
+	uint64_t maddr, phy_addr, doorbell_addr, iova, iatu_phy, moff = 0;
 	void *vaddr;
 	uint32_t maddr_32, msi_data, tb_bar;
 	union pcie_dw_msix_db msix_data;
@@ -1880,6 +1883,14 @@ pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
 		if (ret)
 			return ret;
 
+		/* The start address must be aligned to 4 KB. */
+		moff = maddr & LSX_PCIEP_DW_WIN_MASK;
+		if (is_vf)
+			g_dw_proc_info[hw->index].vf_moff[pf][vf] = moff;
+		else
+			g_dw_proc_info[hw->index].pf_moff[pf] = moff;
+
+		maddr -= moff;
 		if (!out_vir) {
 			phy_addr = pcie_dw_map_ob_win(hw, pf, is_vf, vf,
 				maddr, CFG_MSIX_OB_SIZE, 0);
@@ -1911,6 +1922,8 @@ pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
 			phy_addr = hw->out_base + maddr;
 			vaddr = out_vir + maddr;
 		}
+		phy_addr += moff;
+		vaddr = (uint8_t *)vaddr + moff;
 		for (vector = 0; vector < vector_total; vector++) {
 			msg_phy_addr[vector] = phy_addr;
 			msg_vir_addr[vector] = vaddr;
@@ -1936,11 +1949,15 @@ pcie_dw_msix_decfg(struct lsx_pciep_hw_low *hw,
 	uint64_t msg_phy_addr[], void *msg_vir_addr[],
 	uint64_t size[], int vector_total)
 {
-	uint64_t phy_addr, iova;
+	uint64_t phy_addr, iova, moff;
 	void *vaddr;
 	int vector, ret;
 	char pci_info[1024];
 	int print_offset = 0, print_len = 0, pci_print_offset;
+	uint64_t msi_phy_addr[vector_total];
+	void *msi_vir_addr[vector_total];
+	uint64_t msi_size[vector_total];
+	int msi_nb = 0, i, found;
 
 	if (hw->msi_flag == LSX_PCIEP_DONT_INT)
 		return 0;
@@ -1965,14 +1982,36 @@ pcie_dw_msix_decfg(struct lsx_pciep_hw_low *hw,
 		return 0;
 	}
 
+	if (!is_vf)
+		moff = g_dw_proc_info[hw->index].pf_moff[pf];
+	else
+		moff = g_dw_proc_info[hw->index].vf_moff[pf][vf];
+
 	for (vector = 0; vector < vector_total; vector++) {
-		phy_addr = msg_phy_addr[vector];
-		vaddr = msg_vir_addr[vector];
+		found = 0;
+		for (i = 0; i < msi_nb; i++) {
+			if (msg_phy_addr[vector] == msi_phy_addr[i]) {
+				found = 1;
+				break;
+			}
+		}
+		if (found)
+			continue;
+		msi_phy_addr[msi_nb] = msg_phy_addr[vector];
+		msi_vir_addr[msi_nb] = msg_vir_addr[vector];
+		msi_size[msi_nb] = size[vector];
+		msi_nb++;
+	}
+
+	for (vector = 0; vector < msi_nb; vector++) {
+		phy_addr = msi_phy_addr[vector] - moff;
+		vaddr = (uint8_t *)msi_vir_addr[vector] - moff;
+		/** Size is constant (CFG_MSIX_OB_SIZE).*/
 		if (rte_eal_iova_mode() == RTE_IOVA_VA)
 			iova = (uint64_t)vaddr;
 		else
 			iova = phy_addr;
-		ret = rte_fslmc_vfio_mem_dmaunmap(iova, size[vector]);
+		ret = rte_fslmc_vfio_mem_dmaunmap(iova, msi_size[vector]);
 		if (ret) {
 			print_offset = pci_print_offset;
 			print_len = sprintf(&pci_info[print_offset],
@@ -1981,10 +2020,10 @@ pcie_dw_msix_decfg(struct lsx_pciep_hw_low *hw,
 			print_offset += print_len;
 			print_len = sprintf(&pci_info[print_offset],
 				"size(%lx):va(%p):pa(%lx):iova(%lx)",
-				size[vector], vaddr, phy_addr, iova);
+				msi_size[vector], vaddr, phy_addr, iova);
 			LSX_PCIEP_BUS_WARN("%s", pci_info);
 		}
-		ret = munmap(vaddr, size[vector]);
+		ret = lsx_pciep_unmap_region(vaddr, msi_size[vector]);
 		if (ret) {
 			print_offset = pci_print_offset;
 			print_len = sprintf(&pci_info[print_offset],
@@ -1993,7 +2032,7 @@ pcie_dw_msix_decfg(struct lsx_pciep_hw_low *hw,
 			print_offset += print_len;
 			print_len = sprintf(&pci_info[print_offset],
 				"size(%lx):va(%p)",
-				size[vector], vaddr);
+				msi_size[vector], vaddr);
 			LSX_PCIEP_BUS_WARN("%s", pci_info);
 		}
 	}
