@@ -1067,9 +1067,9 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 		return -ENODEV;
 	}
 
-	vendor_id = ctlhw->vendor_id[pf];
+	vendor_id = ctlhw->pf_vendor_id[pf];
 	device_id = ctlhw->pf_device_id[pf];
-	class_id = ctlhw->class_id[pf];
+	class_id = ctlhw->pf_class_id[pf];
 
 	penv = getenv("PCIE_EP_SIM_DEV_PATH");
 	if (!penv) {
@@ -1259,7 +1259,7 @@ lsx_pciep_fun_set(uint16_t vendor_id,
 	uint8_t pcie_id, int pf, int is_vf)
 {
 	struct lsx_pciep_ctl_hw *ctlhw;
-	int ret = 0;
+	int ret = 0, i;
 
 	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
 		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
@@ -1292,14 +1292,87 @@ lsx_pciep_fun_set(uint16_t vendor_id,
 
 	if (!ret) {
 		if (!is_vf) {
-			ctlhw->vendor_id[pf] = vendor_id;
+			ctlhw->pf_vendor_id[pf] = vendor_id;
 			ctlhw->pf_device_id[pf] = device_id;
-			ctlhw->class_id[pf] = class_id;
+			ctlhw->pf_class_id[pf] = class_id;
 			ret = lsx_pciep_fun_set_ext(vendor_id, device_id,
 				pcie_id, pf);
 		} else {
-			ctlhw->vf_device_id[pf] = device_id;
+			for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
+				ctlhw->vf_vendor_id[pf][i] = vendor_id;
+				ctlhw->vf_device_id[pf][i] = device_id;
+				ctlhw->vf_class_id[pf][i] = class_id;
+			}
 		}
+	}
+
+	return ret;
+}
+
+int
+lsx_pciep_fun_config(uint16_t vendor_id,
+	uint16_t device_id, uint16_t class_id,
+	uint16_t sub_vendor_id, uint16_t sub_device_id,
+	uint8_t pcie_id, int pf, int is_vf, int vf)
+{
+	struct lsx_pciep_ctl_hw *ctlhw;
+	int ret = 0;
+
+	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
+		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
+			__func__);
+
+		return -EINVAL;
+	}
+
+	ctlhw = &s_pctl_hw[pcie_id];
+	if (!ctlhw->ep_enable) {
+		LSX_PCIEP_BUS_ERR("%s PCIe(%d) is not EP",
+			__func__, pcie_id);
+
+		return -ENODEV;
+	}
+	if (!ctlhw->pf_enable[pf]) {
+		LSX_PCIEP_BUS_ERR("%s PCIe(%d) pf(%d) is not enabled",
+			__func__, pcie_id, pf);
+
+		return -ENODEV;
+	}
+
+	if (!lsx_pciep_hw_sim_get(pcie_id)) {
+		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
+			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
+				pf, is_vf,
+				vendor_id, device_id, class_id);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s Fun init err(%d)",
+					__func__, ret);
+				return ret;
+			}
+		}
+		ret = lsx_pciep_fun_set_ext(sub_vendor_id,
+				sub_device_id, pcie_id, pf);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s Fun set ext err(%d)",
+				__func__, ret);
+			return ret;
+		}
+	}
+
+	if (is_vf) {
+		ctlhw->vf_vendor_id[pf][vf] = vendor_id;
+		ctlhw->vf_device_id[pf][vf] = device_id;
+		ctlhw->vf_class_id[pf][vf] = class_id;
+
+		ctlhw->vf_sub_vendor_id[pf][vf] = sub_vendor_id;
+		ctlhw->vf_sub_device_id[pf][vf] = sub_device_id;
+	} else {
+		ctlhw->pf_vendor_id[pf] = vendor_id;
+		ctlhw->pf_device_id[pf] = device_id;
+		ctlhw->pf_class_id[pf] = class_id;
+
+		ctlhw->pf_sub_vendor_id[pf] = sub_vendor_id;
+		ctlhw->pf_sub_device_id[pf] = sub_device_id;
 	}
 
 	return ret;
@@ -1345,8 +1418,8 @@ lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	}
 
 	if (!ret) {
-		ctlhw->sub_vendor_id[pf] = sub_vendor_id;
-		ctlhw->sub_device_id[pf] = sub_device_id;
+		ctlhw->pf_sub_vendor_id[pf] = sub_vendor_id;
+		ctlhw->pf_sub_device_id[pf] = sub_device_id;
 	}
 
 	return ret;
@@ -1389,9 +1462,9 @@ lsx_pciep_ctl_dev_set(uint16_t vendor_id,
 	}
 
 	if (!ret) {
-		ctlhw->vendor_id[pf] = vendor_id;
+		ctlhw->pf_vendor_id[pf] = vendor_id;
 		ctlhw->pf_device_id[pf] = device_id;
-		ctlhw->class_id[pf] = class_id;
+		ctlhw->pf_class_id[pf] = class_id;
 	}
 
 	return ret;
@@ -1436,8 +1509,8 @@ lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
 	}
 
 	if (!ret) {
-		ctlhw->sub_vendor_id[pf] = sub_vendor_id;
-		ctlhw->sub_device_id[pf] = sub_device_id;
+		ctlhw->pf_sub_vendor_id[pf] = sub_vendor_id;
+		ctlhw->pf_sub_device_id[pf] = sub_device_id;
 	}
 
 	return ret;
