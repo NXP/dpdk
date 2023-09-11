@@ -925,7 +925,7 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 		return -EIO;
 	}
 
-	if (resize) {
+	if (resize && !is_vf) {
 		pf_base = hw->dbi_vir + pf * hw->dbi_pf_size;
 		tmp = PCIE_DW_DBI_WR_ENA;
 		lsx_pciep_write_config(hw->dbi_vir, &tmp, sizeof(uint32_t),
