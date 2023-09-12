@@ -105,6 +105,8 @@ struct lsx_pciep_env {
 	uint8_t pf_dis_sriov[PF_MAX_NB];
 	uint8_t pf_dis_ari[PF_MAX_NB];
 	uint8_t pf_dis_ats[PF_MAX_NB];
+	uint8_t vf_dis_ari[PF_MAX_NB][PCIE_MAX_VF_NUM];
+	uint8_t vf_dis_ats[PF_MAX_NB][PCIE_MAX_VF_NUM];
 };
 
 static struct lsx_pciep_env s_pciep_env[LSX_MAX_PCIE_NB];
@@ -145,7 +147,7 @@ lsx_pciep_ctl_set_ops(void)
 
 static void lsx_pciep_ctl_process_sriov(void)
 {
-	int i;
+	int i, ret;
 	struct lsx_pciep_ctl_hw *ctlhw;
 
 	for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
@@ -155,11 +157,15 @@ static void lsx_pciep_ctl_process_sriov(void)
 			ctlhw->hw.is_sriov = 1;
 			continue;
 		}
-		if (ctlhw->ep_enable) {
-			if (ctlhw->ops->pcie_is_sriov)
-				ctlhw->ops->pcie_is_sriov(&ctlhw->hw);
-			else
-				ctlhw->hw.is_sriov = 1;
+		if (ctlhw->ep_enable && ctlhw->ops->pcie_is_sriov) {
+			ret = ctlhw->ops->pcie_is_sriov(&ctlhw->hw);
+			if (ret < 0) {
+				LSX_PCIEP_BUS_ERR("PCIe%d is SRIOV?(%d)",
+					ctlhw->hw.index, ret);
+			}
+		} else if (ctlhw->ep_enable) {
+			/**SRIOV as default.*/
+			ctlhw->hw.is_sriov = 1;
 		}
 	}
 }
@@ -362,22 +368,28 @@ lsx_pciep_fun_env_dis_sriov(int pciep_idx,
 
 static void
 lsx_pciep_fun_env_dis_ari(int pciep_idx,
-	uint8_t pf_idx, int dis)
+	uint8_t pf_idx, int vf_idx, int dis)
 {
 	RTE_ASSERT(pciep_idx >= 0 && pciep_idx < LSX_MAX_PCIE_NB);
-	RTE_ASSERT(pf_idx < PF_MAX_NB);
+	RTE_ASSERT(pf_idx < PF_MAX_NB && vf_idx < PCIE_MAX_VF_NUM);
 
-	s_pciep_env[pciep_idx].pf_dis_ari[pf_idx] = dis;
+	if (vf_idx < 0)
+		s_pciep_env[pciep_idx].pf_dis_ari[pf_idx] = dis;
+	else
+		s_pciep_env[pciep_idx].vf_dis_ari[pf_idx][vf_idx] = dis;
 }
 
 static void
 lsx_pciep_fun_env_dis_ats(int pciep_idx,
-	uint8_t pf_idx, int dis)
+	uint8_t pf_idx, int vf_idx, int dis)
 {
 	RTE_ASSERT(pciep_idx >= 0 && pciep_idx < LSX_MAX_PCIE_NB);
-	RTE_ASSERT(pf_idx < PF_MAX_NB);
+	RTE_ASSERT(pf_idx < PF_MAX_NB && vf_idx < PCIE_MAX_VF_NUM);
 
-	s_pciep_env[pciep_idx].pf_dis_ats[pf_idx] = dis;
+	if (vf_idx < 0)
+		s_pciep_env[pciep_idx].pf_dis_ats[pf_idx] = dis;
+	else
+		s_pciep_env[pciep_idx].vf_dis_ats[pf_idx][vf_idx] = dis;
 }
 
 static void
@@ -569,17 +581,41 @@ lsx_pciep_parse_sriov_env(void)
 					i, j);
 			penv = getenv(env_name);
 			if (penv) {
-				lsx_pciep_fun_env_dis_ari(i, j,
+				lsx_pciep_fun_env_dis_ari(i, j, -1,
 					atoi(penv));
 			}
 			/** Disable ATS as default.*/
-			lsx_pciep_fun_env_dis_ats(i, j, 1);
+			lsx_pciep_fun_env_dis_ats(i, j, -1, 1);
+			sprintf(env_name, "LSX_PCIE%d_PF%d_DIS_ATS",
+					i, j);
+			penv = getenv(env_name);
+			if (penv) {
+				lsx_pciep_fun_env_dis_ats(i, j, -1,
+					atoi(penv));
+			}
 			for (k = 0; k < PCIE_MAX_VF_NUM; k++) {
 				sprintf(env_name, "LSX_PCIE%d_PF%d_VF%d",
 					i, j, k);
 				penv = getenv(env_name);
 				if (penv) {
 					lsx_pciep_fun_env_set(i, j, k,
+						atoi(penv));
+				}
+				sprintf(env_name,
+					"LSX_PCIE%d_PF%d_VF%d_DIS_ARI",
+					i, j, k);
+				penv = getenv(env_name);
+				if (penv) {
+					lsx_pciep_fun_env_dis_ari(i, j, k,
+						atoi(penv));
+				}
+				lsx_pciep_fun_env_dis_ats(i, j, k, 1);
+				sprintf(env_name,
+					"LSX_PCIE%d_PF%d_VF%d_DIS_ATS",
+					i, j, k);
+				penv = getenv(env_name);
+				if (penv) {
+					lsx_pciep_fun_env_dis_ats(i, j, k,
 						atoi(penv));
 				}
 			}
@@ -1254,62 +1290,6 @@ lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 }
 
 int
-lsx_pciep_fun_set(uint16_t vendor_id,
-	uint16_t device_id, uint16_t class_id,
-	uint8_t pcie_id, int pf, int is_vf)
-{
-	struct lsx_pciep_ctl_hw *ctlhw;
-	int ret = 0, i;
-
-	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
-		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
-			__func__);
-
-		return -EINVAL;
-	}
-
-	ctlhw = &s_pctl_hw[pcie_id];
-	if (!ctlhw->ep_enable) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) is not EP",
-			__func__, pcie_id);
-
-		return -ENODEV;
-	}
-	if (!ctlhw->pf_enable[pf]) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) pf(%d) is not enabled",
-			__func__, pcie_id, pf);
-
-		return -ENODEV;
-	}
-
-	if (!lsx_pciep_hw_sim_get(pcie_id)) {
-		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
-			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
-				pf, is_vf,
-				vendor_id, device_id, class_id);
-		}
-	}
-
-	if (!ret) {
-		if (!is_vf) {
-			ctlhw->pf_vendor_id[pf] = vendor_id;
-			ctlhw->pf_device_id[pf] = device_id;
-			ctlhw->pf_class_id[pf] = class_id;
-			ret = lsx_pciep_fun_set_ext(vendor_id, device_id,
-				pcie_id, pf);
-		} else {
-			for (i = 0; i < PCIE_MAX_VF_NUM; i++) {
-				ctlhw->vf_vendor_id[pf][i] = vendor_id;
-				ctlhw->vf_device_id[pf][i] = device_id;
-				ctlhw->vf_class_id[pf][i] = class_id;
-			}
-		}
-	}
-
-	return ret;
-}
-
-int
 lsx_pciep_fun_config(uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id,
 	uint16_t sub_vendor_id, uint16_t sub_device_id,
@@ -1342,7 +1322,7 @@ lsx_pciep_fun_config(uint16_t vendor_id,
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
 			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
-				pf, is_vf,
+				pf, is_vf, vf,
 				vendor_id, device_id, class_id);
 			if (ret) {
 				LSX_PCIEP_BUS_ERR("%s Fun init err(%d)",
@@ -1351,7 +1331,7 @@ lsx_pciep_fun_config(uint16_t vendor_id,
 			}
 		}
 		ret = lsx_pciep_fun_set_ext(sub_vendor_id,
-				sub_device_id, pcie_id, pf);
+				sub_device_id, pcie_id, pf, is_vf, vf);
 		if (ret) {
 			LSX_PCIEP_BUS_ERR("%s Fun set ext err(%d)",
 				__func__, ret);
@@ -1381,10 +1361,11 @@ lsx_pciep_fun_config(uint16_t vendor_id,
 int
 lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	uint16_t sub_device_id, uint8_t pcie_id,
-	int pf)
+	int pf, int is_vf, int vf)
 {
 	struct lsx_pciep_ctl_hw *ctlhw;
 	int ret = 0;
+	uint8_t dis_sriov, dis_ari, dis_ats;
 
 	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
 		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
@@ -1405,112 +1386,34 @@ lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 			__func__, pcie_id, pf);
 
 		return -ENODEV;
+	}
+
+	if (is_vf) {
+		dis_sriov = 0;
+		dis_ari = s_pciep_env[pcie_id].vf_dis_ari[pf][vf];
+		dis_ats = s_pciep_env[pcie_id].vf_dis_ats[pf][vf];
+	} else {
+		dis_sriov = s_pciep_env[pcie_id].pf_dis_sriov[pf];
+		dis_ari = s_pciep_env[pcie_id].pf_dis_ari[pf];
+		dis_ats = s_pciep_env[pcie_id].pf_dis_ats[pf];
 	}
 
 	if (!lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
 			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id,
-				s_pciep_env[pcie_id].pf_dis_sriov[pf],
-				s_pciep_env[pcie_id].pf_dis_ari[pf],
-				s_pciep_env[pcie_id].pf_dis_ats[pf]);
+				pf, is_vf, vf, sub_vendor_id, sub_device_id,
+				dis_sriov, dis_ari, dis_ats);
+			if (ret)
+				return ret;
 		}
 	}
 
-	if (!ret) {
+	if (!is_vf) {
 		ctlhw->pf_sub_vendor_id[pf] = sub_vendor_id;
 		ctlhw->pf_sub_device_id[pf] = sub_device_id;
-	}
-
-	return ret;
-}
-
-int
-lsx_pciep_ctl_dev_set(uint16_t vendor_id,
-	uint16_t device_id, uint16_t class_id,
-	uint8_t pcie_id, uint8_t pf)
-{
-	struct lsx_pciep_ctl_hw *ctlhw;
-	int ret = 0;
-
-	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
-		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
-			__func__);
-
-		return -EINVAL;
-	}
-
-	ctlhw = &s_pctl_hw[pcie_id];
-	if (!ctlhw->ep_enable) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) is not EP",
-			__func__, pcie_id);
-
-		return -ENODEV;
-	}
-	if (!ctlhw->pf_enable[pf]) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) pf(%d) is not enabled",
-			__func__, pcie_id, pf);
-
-		return -ENODEV;
-	}
-
-	if (!lsx_pciep_hw_sim_get(pcie_id)) {
-		if (ctlhw->ops && ctlhw->ops->pcie_fun_init) {
-			ret = ctlhw->ops->pcie_fun_init(&ctlhw->hw,
-				pf, 0, vendor_id, device_id, class_id);
-		}
-	}
-
-	if (!ret) {
-		ctlhw->pf_vendor_id[pf] = vendor_id;
-		ctlhw->pf_device_id[pf] = device_id;
-		ctlhw->pf_class_id[pf] = class_id;
-	}
-
-	return ret;
-}
-
-int
-lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
-	uint16_t sub_device_id, uint8_t pcie_id, uint8_t pf)
-{
-	struct lsx_pciep_ctl_hw *ctlhw;
-	int ret = 0;
-
-	if (pcie_id >= LSX_MAX_PCIE_NB || pf >= PF_MAX_NB) {
-		LSX_PCIEP_BUS_ERR("%s Invalid PCIe ID or PF ID",
-			__func__);
-
-		return -EINVAL;
-	}
-
-	ctlhw = &s_pctl_hw[pcie_id];
-	if (!ctlhw->ep_enable) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) is not EP",
-			__func__, pcie_id);
-
-		return -ENODEV;
-	}
-	if (!ctlhw->pf_enable[pf]) {
-		LSX_PCIEP_BUS_ERR("%s PCIe(%d) pf(%d) is not enabled",
-			__func__, pcie_id, pf);
-
-		return -ENODEV;
-	}
-
-	if (!lsx_pciep_hw_sim_get(pcie_id)) {
-		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
-			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id,
-				s_pciep_env[pcie_id].pf_dis_sriov[pf],
-				s_pciep_env[pcie_id].pf_dis_ari[pf],
-				s_pciep_env[pcie_id].pf_dis_ats[pf]);
-		}
-	}
-
-	if (!ret) {
-		ctlhw->pf_sub_vendor_id[pf] = sub_vendor_id;
-		ctlhw->pf_sub_device_id[pf] = sub_device_id;
+	} else {
+		ctlhw->vf_sub_vendor_id[pf][vf] = sub_vendor_id;
+		ctlhw->vf_sub_device_id[pf][vf] = sub_device_id;
 	}
 
 	return ret;
@@ -1829,7 +1732,7 @@ lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	if (!lsx_pciep_hw_sim_get(ctlhw->hw.index)) {
 		ret = ctlhw->ops->pcie_cfg_ib_win(&ctlhw->hw,
 			pf, is_vf, vf,
-			bar_idx, phy, size, 1);
+			bar_idx, phy, size);
 		if (ret)
 			return ret;
 	}

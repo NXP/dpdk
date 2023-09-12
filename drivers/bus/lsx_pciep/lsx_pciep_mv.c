@@ -188,8 +188,7 @@ static int
 pcie_mv_set_ib_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf __rte_unused,
 	int bar, uint64_t phys,
-	uint64_t size __rte_unused,
-	int resize __rte_unused)
+	uint64_t size __rte_unused)
 {
 	int bar_idx = is_vf ? (bar + 8) : bar;
 
@@ -429,6 +428,7 @@ pcie_mv_set_sriov(struct lsx_pciep_hw_low *hw, int pf)
 static int
 pcie_mv_reinit(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf __rte_unused,
+	int vf __rte_unused,
 	uint16_t vendor_id __rte_unused,
 	uint16_t device_id __rte_unused,
 	uint16_t class_id __rte_unused)
