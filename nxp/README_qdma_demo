@@ -37,10 +37,9 @@ https://doc.dpdk.org/api/rte__pmd__dpaa2__qdma_8h.html
 or at: https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk/tree
 /drivers/raw/dpaa2_qdma/rte_pmd_dpaa2_qdma.h?h=integration
 
-There are two sample applications in NXP SDK to demonstrate the usages of QDMA
+There is one sample application in NXP SDK to demonstrate the usages of QDMA
 APIs.
-1. dpdk-l2fwd-qdma - Packet forwarding + copy of packet from mem-to-mem using QDMA
-2. dpdk-qdma-demo - simple app to transfer and test memory copy between mem and pci
+1. dpdk-qdma-demo - simple app to transfer and test memory copy between mem and pci
 in various options using QDMA.
 
 =====================================
@@ -54,29 +53,6 @@ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
 or
 source /usr/bin/dpdk-example/extras/dpaa2/dynamic_dpl.sh dpmac.5
 export DPRC=dprc.2
-
-------------------------------------------------------
-l2fwd-qdma - Layer 2 Forwarding Application using QDMA
-------------------------------------------------------
-
-Sample application to show forwarding between multiple ports based on the
-
-Application can be build using:
-     #meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=l2fwd-qdma
-
-
-Layer 2 information (switching) using QDMA.
-
-./dpdk-l2fwd-qdma -c 0x2 -n 1 -- -p 0x1 -q 1 -m 1
-In the above command: -c refers to the core mask for cores to be assigned to
-DPDK;
--p is the port mask for ports to be used by application;
--q defines the number of queues to serve on each port.
--m mode specifies HW (-m is 0) or Virtuial (-m is 1) mode for QDMA queues.
---scatter enable Scatter Gather Mode (use CONFIG_RTE_LIBRTE_DPAA2_USE_PHYS_IOVA=y)
-
-Apart from -m parameter other parameters are similar to DPDK
-l2fwd application -refer L2 Forwarding Sample
 
 ------------------------------------------------------
 qdma_demo - APP to test memory transfer over PCI
@@ -215,6 +191,10 @@ bandwidth number. To test read/write big memory size, you can optionally pass
 --pci_size (size in byte)
 
 e.g for 2MB PCI use:  --pci_size=2147483648
+
+2. PCIe address should be:
+   - mapped to valid memory area.
+   - bar address of device which is NOT used by driver.
 
 LATENCY_TEST
 ------------
