@@ -110,7 +110,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_ICMP;
 		break;
 	default:
-		m->packet_type = dpaa2_dev_rx_parse_slow(m, annotation);
+		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);
 	}
 	m->hash.rss = fd->simple.flc_hi;
 	m->ol_flags |= PKT_RX_RSS_HASH;
