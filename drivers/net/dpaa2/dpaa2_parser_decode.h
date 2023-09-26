@@ -54,6 +54,7 @@ enum dpaa2_parser_protocol_id {
 #define DPAA2_PSR_SUMMARY_NONIP 6
 #define DPAA2_PSR_SUMMARY_ARP 3
 #define DPAA2_PSR_SUMMARY_NONIP_PTP 4
+#define DPAA2_PSR_SUMMARY_MPLS 6
 
 #define DPAA2_PSR_SUMMARY_L4_EXT 2
 #define DPAA2_PSR_SUMMARY_IPV4 0
@@ -72,7 +73,8 @@ enum dpaa2_parser_protocol_id {
 #define DPAA2_PSR_SUMMARY_UDP 16
 #define DPAA2_PSR_SUMMARY_PTP 18
 #define DPAA2_PSR_SUMMARY_UDP_ESP_IKE 19
-#define DPAA2_PSR_SUMMARY_GTP 20
+#define DPAA2_PSR_SUMMARY_GTPU 20
+#define DPAA2_PSR_SUMMARY_GTPC 21
 #define DPAA2_PSR_SUMMARY_VXLAN 27
 
 union dpaa2_psr_summary_l {
@@ -98,7 +100,9 @@ struct dpaa2_psr_summary {
 	union dpaa2_psr_summary_l sum_l;
 	uint8_t vlan:2;
 	uint8_t l2_l2_ext:2;
-	uint8_t fafe02:3;
+	uint8_t fafe2:1;
+	uint8_t fafe1:1;
+	uint8_t fafe0:1;
 	uint8_t checksum_err:1;
 } __attribute__((__packed__));
 
@@ -157,18 +161,19 @@ union dpaa2_fas_parse_32b {
 } __attribute__((__packed__));
 
 struct dpaa2_sp_fafe_ecpri {
-	uint8_t ecpri:1; /**Always 1*/
 	uint8_t msg_type:7;
+	uint8_t ecpri:1; /**Always 1, FRC FAFE0*/
 } __attribute__((__packed__));
 
 struct dpaa2_sp_fafe_ibth_vxlan {
-	uint8_t non_used:1;
-	uint8_t ibth:2;
-	uint8_t vxlan_tcp:1;
-	uint8_t vxlan_udp:1;
-	uint8_t vxlan_ipv6:1;
-	uint8_t vxlan_ipv4:1;
+	uint8_t rsv:1;
 	uint8_t vxlan_vlan:1;
+	uint8_t vxlan_udp:1;
+	uint8_t vxlan_tcp:1;
+	uint8_t vxlan_ipv6:1; /**FRC FAFE3*/
+	uint8_t vxlan_ipv4:1; /**FRC FAFE2*/
+	uint8_t ibth:1; /**FRC FAFE1*/
+	uint8_t non_used:1;
 } __attribute__((__packed__));
 
 union dpaa2_sp_fafe_parse {
@@ -879,8 +884,10 @@ dpaa2_print_fd_frc(const struct qbman_fd *fd)
 			l4_nm = "ptp";
 		else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_UDP_ESP_IKE)
 			l4_nm = "udp/esp/ike";
-		else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_GTP)
-			l4_nm = "gtp";
+		else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_GTPU)
+			l4_nm = "gtpu";
+		else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_GTPC)
+			l4_nm = "gtpc";
 		else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_VXLAN)
 			l4_nm = "vxlan";
 		else
@@ -890,6 +897,9 @@ dpaa2_print_fd_frc(const struct qbman_fd *fd)
 			"ipv4" : "ipv6", sum_l->l4.l3,
 			l4_nm, sum_l->l4.l4);
 	}
+
+	DPAA2_PR_PRINT("FRC FAFE bit0~3: %d%d%d%d\r\n",
+		sum->fafe0, sum->fafe1, sum->fafe2, sum_l->l4.fafe3);
 }
 
 static inline void
