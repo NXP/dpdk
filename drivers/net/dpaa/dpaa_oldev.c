@@ -385,7 +385,7 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	dev->data->tx_queues[queue_idx] = txq;
 
-	if (dpaa_intf->bp_info == NULL || rxq == NULL)
+	if (dpaa_intf->bp_info[0] == NULL || rxq == NULL)
 		return 0;
 
 	mbp_priv = (struct rte_pktmbuf_pool_private *)
