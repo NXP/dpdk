@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020-2023 NXP
  */
 
 #ifndef TEST_BBDEV_VECTOR_H_
 #define TEST_BBDEV_VECTOR_H_
 
+#include <rte_pmd_bbdev_la12xx.h>
 #include <rte_bbdev_op.h>
 
 /* Flags which are set when specific parameter is define in vector file */
@@ -35,12 +37,26 @@ enum {
 	TEST_BBDEV_VF_CODE_BLOCK_MODE = (1ULL << 23),
 	TEST_BBDEV_VF_OP_FLAGS = (1ULL << 24),
 	TEST_BBDEV_VF_EXPECTED_STATUS = (1ULL << 25),
+	TEST_BBDEV_VF_NETWORK_ORDER = (1ULL << 26),
+	TEST_BBDEV_VF_EN_SCRAMBLE = (1ULL << 27),
+	TEST_BBDEV_VF_Q = (1ULL << 28),
+	TEST_BBDEV_VF_N_ID = (1ULL << 29),
+	TEST_BBDEV_VF_N_RNTI = (1ULL << 30),
+	TEST_BBDEV_VF_SD_CD_DEMUX = (1ULL << 31),
+	TEST_BBDEV_VF_SD_LLRS_PER_RE = (1ULL << 32),
+	TEST_BBDEV_VF_SD_CD_DEMUX_PARAMS = (1ULL << 33),
+	TEST_BBDEV_VF_SE_CE_MUX = (1ULL << 34),
+	TEST_BBDEV_VF_SE_BITS_PER_RE = (1ULL << 35),
+	TEST_BBDEV_VF_SE_CE_MUX_PARAMS = (1ULL << 36),
+	TEST_BBDEV_VF_SD_NON_COMPACT_HARQ = (1ULL << 37),
+	TEST_BBDEV_VF_SD_COMPACT_HARQ_CB_MASK = (1ULL << 38),
 };
 
 enum op_data_type {
 	DATA_INPUT = 0,
 	DATA_SOFT_OUTPUT,
 	DATA_HARD_OUTPUT,
+	DATA_PARTIAL_OUTPUT,
 	DATA_HARQ_INPUT,
 	DATA_HARQ_OUTPUT,
 	DATA_NUM_TYPES,
@@ -59,14 +75,17 @@ struct op_data_entries {
 struct test_bbdev_vector {
 	enum rte_bbdev_op_type op_type;
 	int expected_status;
-	int mask;
+	uint64_t mask;
+	int network_order;
 	union {
 		struct rte_bbdev_op_turbo_dec turbo_dec;
 		struct rte_bbdev_op_turbo_enc turbo_enc;
 		struct rte_bbdev_op_ldpc_dec ldpc_dec;
 		struct rte_bbdev_op_ldpc_enc ldpc_enc;
+		struct rte_pmd_la12xx_op la12xx_op;
 		struct rte_bbdev_op_fft fft;
 	};
+	uint16_t core_mask;
 	/* Additional storage for op data entries */
 	struct op_data_entries entries[DATA_NUM_TYPES];
 };

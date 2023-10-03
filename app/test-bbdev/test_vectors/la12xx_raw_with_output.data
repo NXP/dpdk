@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2020-2023 NXP
+
+op_type =
+RTE_BBDEV_OP_RAW
+
+network_order =
+1
+
+input0 =
+0x11223344, 0x55667788, 0x99
+
+output0 =
+0x44332211, 0x88776655

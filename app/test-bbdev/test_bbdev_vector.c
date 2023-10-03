@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2020-2023 NXP
  */
 
 #ifdef RTE_EXEC_ENV_FREEBSD
@@ -11,6 +12,7 @@
 #include <stdbool.h>
 #include <rte_malloc.h>
 
+#include <rte_pmd_bbdev_la12xx.h>
 #include "test_bbdev_vector.h"
 
 #define VALUE_DELIMITER ","
@@ -21,6 +23,7 @@ const char *op_data_prefixes[] = {
 	"input",
 	"soft_output",
 	"hard_output",
+	"partial_output",
 	"harq_input",
 	"harq_output",
 };
@@ -56,7 +59,8 @@ starts_with(const char *str, const char *pre)
 
 /* tokenization test values separated by a comma */
 static int
-parse_values(char *tokens, uint32_t **data, uint32_t *data_length)
+parse_values(char *tokens, uint32_t **data, uint32_t *data_length,
+	     int network_order)
 {
 	uint32_t n_tokens = 0;
 	uint32_t data_size = 32;
@@ -97,6 +101,17 @@ parse_values(char *tokens, uint32_t **data, uint32_t *data_length)
 		}
 
 		*data_length = *data_length + (strlen(tok) - strlen("0x"))/2;
+		if (network_order) {
+			/* TODO: Check if 3 byte length is also required */
+			if ((strlen(tok) - strlen("0x"))/2 == 4) {
+				values[n_tokens] = rte_cpu_to_be_32(values[n_tokens]);
+			} else if ((strlen(tok) - strlen("0x"))/2 == 3) {
+				values[n_tokens] <<= 8;
+				values[n_tokens] = rte_cpu_to_be_32(values[n_tokens]);
+			} else if ((strlen(tok) - strlen("0x"))/2 == 2) {
+				values[n_tokens] = rte_cpu_to_be_16(values[n_tokens]);
+			}
+		}
 
 		tok = strtok(NULL, VALUE_DELIMITER);
 		if (tok == NULL)
@@ -207,6 +222,12 @@ op_ldpc_decoder_flag_strtoul(char *token, uint32_t *op_flag_value)
 	else if (!strcmp(token,
 			"RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_LOOPBACK"))
 		*op_flag_value = RTE_BBDEV_LDPC_INTERNAL_HARQ_MEMORY_LOOPBACK;
+	else if (!strcmp(token,
+			"RTE_BBDEV_LDPC_COMPACT_HARQ"))
+		*op_flag_value = RTE_BBDEV_LDPC_COMPACT_HARQ;
+	else if (!strcmp(token,
+			"RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ"))
+		*op_flag_value = RTE_BBDEV_LDPC_PARTIAL_COMPACT_HARQ;
 	else {
 		printf("The given value is not a LDPC decoder flag\n");
 		return -1;
@@ -355,6 +376,14 @@ op_turbo_type_strtol(char *token, enum rte_bbdev_op_type *op_type)
 		*op_type = RTE_BBDEV_OP_FFT;
 	else if (!strcmp(token, "RTE_BBDEV_OP_NONE"))
 		*op_type = RTE_BBDEV_OP_NONE;
+	else if (!strcmp(token, "RTE_BBDEV_OP_POLAR_DEC"))
+		*op_type = RTE_BBDEV_OP_POLAR_DEC;
+	else if (!strcmp(token, "RTE_BBDEV_OP_POLAR_ENC"))
+		*op_type = RTE_BBDEV_OP_POLAR_ENC;
+	else if (!strcmp(token, "RTE_BBDEV_OP_RAW"))
+		*op_type = RTE_BBDEV_OP_RAW;
+	else if (!strcmp(token, "RTE_BBDEV_OP_LA12XX_VSPA"))
+		*op_type = RTE_BBDEV_OP_LA12XX_VSPA;
 	else {
 		printf("Not valid turbo op_type: '%s'\n", token);
 		return -1;
@@ -458,7 +487,8 @@ parse_data_entry(const char *key_token, char *token,
 	/* Clear new op data struct */
 	memset(op_data + *nb_ops, 0, sizeof(struct op_data_buf));
 
-	ret = parse_values(token, &data, &data_length);
+	ret = parse_values(token, &data, &data_length,
+			vector->network_order);
 	if (!ret) {
 		op_data[*nb_ops].addr = data;
 		op_data[*nb_ops].length = data_length;
@@ -704,11 +734,13 @@ parse_ldpc_encoder_params(const char *key_token, char *token,
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_INPUT,
 				op_data_prefixes[DATA_INPUT]);
-	else if (starts_with(key_token, "output"))
+	else if (starts_with(key_token, "output")) {
 		ret = parse_data_entry(key_token, token, vector,
 				DATA_HARD_OUTPUT,
 				"output");
-	else if (!strcmp(key_token, "e")) {
+		ldpc_enc->se_ce_mux_output_size =
+			vector->entries[DATA_HARD_OUTPUT].segments[0].length;
+	} else if (!strcmp(key_token, "e")) {
 		vector->mask |= TEST_BBDEV_VF_E;
 		ldpc_enc->cb_params.e = (uint32_t) strtoul(token, &err, 0);
 		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
@@ -770,6 +802,43 @@ parse_ldpc_encoder_params(const char *key_token, char *token,
 		ret = parse_expected_status(token, &status, vector->op_type);
 		if (!ret)
 			vector->expected_status = status;
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "en_scramble")) {
+		vector->mask |= TEST_BBDEV_VF_EN_SCRAMBLE;
+		ldpc_enc->en_scramble = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "q")) {
+		vector->mask |= TEST_BBDEV_VF_Q;
+		ldpc_enc->q = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_id")) {
+		vector->mask |= TEST_BBDEV_VF_N_ID;
+		ldpc_enc->n_id = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_rnti")) {
+		vector->mask |= TEST_BBDEV_VF_N_RNTI;
+		ldpc_enc->n_rnti = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "se_ce_mux")) {
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX;
+		ldpc_enc->se_ce_mux = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "se_bits_per_re")) {
+		vector->mask |= TEST_BBDEV_VF_SE_BITS_PER_RE;
+		ldpc_enc->se_bits_per_re = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "se_ce_mux_params")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX_PARAMS;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_enc->mux[0].se_n_re_ack_re, data, data_length);
+			rte_free(data);
+		}
 	} else {
 		printf("Not valid ldpc enc key: '%s'\n", key_token);
 		return -1;
@@ -880,6 +949,52 @@ parse_ldpc_decoder_params(const char *key_token, char *token,
 		ret = parse_expected_status(token, &status, vector->op_type);
 		if (!ret)
 			vector->expected_status = status;
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "en_scramble")) {
+		vector->mask |= TEST_BBDEV_VF_EN_SCRAMBLE;
+		ldpc_dec->en_scramble = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "q")) {
+		vector->mask |= TEST_BBDEV_VF_Q;
+		ldpc_dec->q = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_id")) {
+		vector->mask |= TEST_BBDEV_VF_N_ID;
+		ldpc_dec->n_id = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "n_rnti")) {
+		vector->mask |= TEST_BBDEV_VF_N_RNTI;
+		ldpc_dec->n_rnti = (uint16_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "codeblock_mask")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SD_COMPACT_HARQ_CB_MASK;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_dec->codeblock_mask[0], data, data_length);
+			rte_free(data);
+		}
+	} else if (!strcmp(key_token, "sd_cd_demux")) {
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
+		ldpc_dec->sd_cd_demux = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "sd_llrs_per_re")) {
+		vector->mask |= TEST_BBDEV_VF_SD_LLRS_PER_RE;
+		ldpc_dec->sd_llrs_per_re = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (starts_with(key_token, "sd_cd_demux_params")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX_PARAMS;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy(&ldpc_dec->demux[0].sd_n_re_ack_re, data, data_length);
+			rte_free(data);
+		}
 	} else {
 		printf("Not valid ldpc dec key: '%s'\n", key_token);
 		return -1;
@@ -998,12 +1113,308 @@ parse_fft_params(const char *key_token, char *token,
 	return 0;
 }
 
+/* parses polar decoder parameters and assigns to global variable */
+static int
+parse_polar_decoder_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0, status = 0;
+	char *err = NULL;
+
+	struct rte_pmd_la12xx_op *polar_dec = &vector->la12xx_op;
+
+	if ((vector->mask & TEST_BBDEV_VF_SD_CD_DEMUX) == 0)
+		RTE_PMD_LA12xx_SET_POLAR_DEC(polar_dec);
+
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pd_n")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PD_pd_n(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "rm_mode")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PD_rm_mode(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_en")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PD_pc_en(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_type")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PD_crc_type(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "ip_deint_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_input_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "op_deint_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_output_deint_bypass(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "K")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_K(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "E")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_E(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_rtni")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_crc_rnti(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index0")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_pc_index0(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index1")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_pc_index1(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index2")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_pc_index2(polar_dec) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "dequeue_polar_deq_llrs")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PD_DEQUEUE_LLRS(polar_dec) = 1;
+	} else if (!strcmp(key_token, "sd_cd_demux")) {
+		vector->mask |= TEST_BBDEV_VF_SD_CD_DEMUX;
+		ret = (uint8_t) strtoul(token, &err, 0);
+		if (ret == 1) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_ACK(polar_dec);
+		} else if (ret == 2) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI1(polar_dec);
+		} else if (ret == 3) {
+			RTE_PMD_LA12xx_SET_POLAR_DEC_DEMUX_CSI2(polar_dec);
+		}
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "FZ_LUT")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy((RTE_PMD_LA12xx_PD_FZ_LUT(polar_dec)), data, data_length);
+			rte_free(data);
+		}
+	} else if (!strcmp(key_token, "expected_status")) {
+		vector->mask |= TEST_BBDEV_VF_EXPECTED_STATUS;
+		ret = parse_expected_status(token, &status, vector->op_type);
+		if (!ret)
+			vector->expected_status = status;
+	} else {
+		printf("Not valid ldpc dec key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return 0;
+}
+
+/* parses polar encoder parameters and assigns to global variable */
+static int
+parse_polar_encoder_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0, status = 0;
+	char *err = NULL;
+
+	struct rte_pmd_la12xx_op *polar_enc = &vector->la12xx_op;
+
+	if ((vector->mask & TEST_BBDEV_VF_SE_CE_MUX) == 0)
+		RTE_PMD_LA12xx_SET_POLAR_ENC(polar_enc);
+
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pe_n")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_pe_n(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "rm_mode")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_rm_mode(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_en")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_pc_en(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_type")) {
+		vector->mask |= TEST_BBDEV_VF_C;
+		RTE_PMD_LA12xx_PE_crc_type(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "ip_int_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_input_int_bypass(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "op_int_bypass")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_output_int_bypass(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "dst_sel")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_dst_sel(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "K")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_K(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "E")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_E(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "crc_rtni")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_crc_rnti(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "block_concat_en")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_block_concat_en(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "out_pad_bytes")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_out_pad_bytes(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index0")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index0(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index1")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index1(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "pc_index2")) {
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		RTE_PMD_LA12xx_PE_pc_index2(polar_enc) = (uint32_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "FZ_LUT")) {
+		uint32_t data_length = 0;
+		uint32_t *data = NULL;
+		vector->mask |= TEST_BBDEV_VF_CAB;
+		ret = parse_values(token, (uint32_t **)&data, &data_length, 0);
+		if (data) {
+			memcpy((RTE_PMD_LA12xx_PE_FZ_LUT(polar_enc)), data, data_length);
+			rte_free(data);
+		}
+	} else if (!strcmp(key_token, "se_ce_mux")) {
+		vector->mask |= TEST_BBDEV_VF_SE_CE_MUX;
+		if ((uint8_t) strtoul(token, &err, 0) == 1)
+			RTE_PMD_LA12xx_SET_POLAR_ENC_MUX(polar_enc);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else if (!strcmp(key_token, "expected_status")) {
+		vector->mask |= TEST_BBDEV_VF_EXPECTED_STATUS;
+		ret = parse_expected_status(token, &status, vector->op_type);
+		if (!ret)
+			vector->expected_status = status;
+	} else {
+		printf("Not valid polar key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return 0;
+}
+
+/* parses polar encoder parameters and assigns to global variable */
+static int
+parse_la12xx_raw_op_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0;
+	char *err = NULL;
+
+	vector->la12xx_op.op_type = RTE_BBDEV_OP_RAW;
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	} else if (!strcmp(key_token, "network_order")) {
+		vector->mask |= TEST_BBDEV_VF_NETWORK_ORDER;
+		vector->network_order = (uint8_t) strtoul(token, &err, 0);
+		ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	} else {
+		printf("Not valid none op key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return 0;
+}
+
+/* parses polar encoder parameters and assigns to global variable */
+static int
+parse_la12xx_vspa_op_params(const char *key_token, char *token,
+		struct test_bbdev_vector *vector)
+{
+	int ret = 0;
+
+	vector->la12xx_op.op_type = RTE_BBDEV_OP_LA12XX_VSPA;
+	if (starts_with(key_token, op_data_prefixes[DATA_INPUT])) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_INPUT,
+				op_data_prefixes[DATA_INPUT]);
+	} else if (starts_with(key_token, "output")) {
+		ret = parse_data_entry(key_token, token, vector,
+				DATA_HARD_OUTPUT,
+				"output");
+	} else {
+		printf("Not valid none op key: '%s'\n", key_token);
+		return -1;
+	}
+
+	if (ret != 0) {
+		printf("Failed with convert '%s\t%s'\n", key_token, token);
+		return -1;
+	}
+
+	return ret;
+}
+
 /* checks the type of key and assigns data */
 static int
 parse_entry(char *entry, struct test_bbdev_vector *vector)
 {
 	int ret = 0;
-	char *token, *key_token;
+	char *token, *key_token, *err = NULL;
 	enum rte_bbdev_op_type op_type = RTE_BBDEV_OP_NONE;
 
 	if (entry == NULL) {
@@ -1036,6 +1447,11 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 		return -1;
 	}
 
+	if (!strcmp(key_token, "coremask")) {
+		vector->core_mask = (uint16_t) strtoul(token, &err, 0);
+		return ((err == NULL) || (*err != '\0')) ? -1 : 0;
+	}
+
 	/* compare keys */
 	if (vector->op_type == RTE_BBDEV_OP_TURBO_DEC) {
 		if (parse_decoder_params(key_token, token, vector) == -1)
@@ -1048,6 +1464,18 @@ parse_entry(char *entry, struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LDPC_DEC) {
 		if (parse_ldpc_decoder_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_DEC) {
+		if (parse_polar_decoder_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
+		if (parse_polar_encoder_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_RAW) {
+		if (parse_la12xx_raw_op_params(key_token, token, vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
+		if (parse_la12xx_vspa_op_params(key_token, token, vector) == -1)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_FFT) {
 		if (parse_fft_params(key_token, token, vector) == -1)
@@ -1096,9 +1524,15 @@ check_ldpc_decoder_segments(struct test_bbdev_vector *vector)
 	unsigned char i;
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &vector->ldpc_dec;
 
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
 	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
 		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
 			return -1;
+
+	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0)
+		return -1;
 
 	for (i = 0; i < vector->entries[DATA_HARD_OUTPUT].nb_segments; i++)
 		if (vector->entries[DATA_HARD_OUTPUT].segments[i].addr == NULL)
@@ -1351,6 +1785,86 @@ check_ldpc_decoder(struct test_bbdev_vector *vector)
 	return 0;
 }
 
+/* checks polar encoder parameters */
+static int
+check_la12xx_raw(struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
+/* checks polar encoder parameters */
+static int
+check_la12xx_vspa(struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
+/* checks polar decoder parameters */
+static int
+check_polar_decoder(struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0 &&
+	    ((vector->mask & TEST_BBDEV_VF_SD_CD_DEMUX) == 0))
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_HARD_OUTPUT].nb_segments; i++)
+		if (vector->entries[DATA_HARD_OUTPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
+/* checks polar encoder parameters */
+static int
+check_polar_encoder(struct test_bbdev_vector *vector)
+{
+	unsigned int i;
+
+	if (vector->entries[DATA_INPUT].nb_segments == 0)
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_INPUT].nb_segments; i++)
+		if (vector->entries[DATA_INPUT].segments[i].addr == NULL)
+			return -1;
+
+	if (vector->entries[DATA_HARD_OUTPUT].nb_segments == 0 &&
+	    ((vector->mask & TEST_BBDEV_VF_SE_CE_MUX) == 0))
+		return -1;
+
+	for (i = 0; i < vector->entries[DATA_HARD_OUTPUT].nb_segments; i++)
+		if (vector->entries[DATA_HARD_OUTPUT].segments[i].addr == NULL)
+			return -1;
+
+	return 0;
+}
+
 /* Checks fft parameters. */
 static int
 check_fft(struct test_bbdev_vector *vector)
@@ -1528,6 +2042,18 @@ bbdev_check_vector(struct test_bbdev_vector *vector)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_LDPC_DEC) {
 		if (check_ldpc_decoder(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_DEC) {
+		if (check_polar_decoder(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_POLAR_ENC) {
+		if (check_polar_encoder(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_RAW) {
+		if (check_la12xx_raw(vector) == -1)
+			return -1;
+	} else if (vector->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
+		if (check_la12xx_vspa(vector) == -1)
 			return -1;
 	} else if (vector->op_type == RTE_BBDEV_OP_FFT) {
 		if (check_fft(vector) == -1)

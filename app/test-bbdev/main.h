@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2021-2023 NXP
  */
 
 #ifndef _MAIN_H_
@@ -21,7 +22,13 @@
 #define DEFAULT_BURST 32U
 #define DEFAULT_OPS 64U
 #define DEFAULT_ITER 6U
+#define BBUF_MAX_SEGS 256
+#define MAX_VECTORS 64
+#define BBUF_POOL_ELEM_SIZE     (RTE_BBUF_HEADROOM + 1024)
+#define DEFAULT_BBUF_SEGS 1
 
+#define RESTORE_RESET_CFG	1
+#define FECA_RESET		2
 
 
 #define TEST_ASSERT(cond, msg, ...) do {  \
@@ -112,6 +119,16 @@ void add_test_command(struct test_command *t);
 		add_test_command(&test_struct_##name); \
 	}
 
+#define MAX_CORE_PARAMS 128
+
+struct core_params {
+	uint16_t queue_ids[MAX_CORE_PARAMS];
+	uint16_t core_ids[MAX_CORE_PARAMS];
+	int nb_params;
+} __rte_cache_aligned;
+
+unsigned int get_vector_count(void);
+
 const char *get_vector_filename(void);
 
 unsigned int get_num_ops(void);
@@ -119,11 +136,20 @@ unsigned int get_num_ops(void);
 unsigned int get_burst_sz(void);
 
 unsigned int get_num_lcores(void);
+unsigned int get_num_seg(void);
+
+unsigned int get_buf_size(void);
 
 double get_snr(void);
 
 unsigned int get_iter_max(void);
 
 bool get_init_device(void);
+
+unsigned int get_reset_param(void);
+
+bool get_multi_hugepages(void);
+
+struct core_params *get_core_params(void);
 
 #endif
