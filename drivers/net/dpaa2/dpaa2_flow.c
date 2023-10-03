@@ -57,6 +57,7 @@ struct dpaa2_dev_flow {
 	uint16_t fs_rule_size;
 	uint8_t tc_id; /** Traffic Class ID. */
 	uint8_t tc_index; /** index within this Traffic Class. */
+	enum net_prot ip_key;
 	enum rte_flow_action_type action_type;
 	struct dpni_fs_action_cfg fs_action_cfg;
 };
@@ -812,7 +813,7 @@ dpaa2_flow_faf_advance(struct dpaa2_dev_priv *priv,
 {
 	int offset, ret;
 	struct dpaa2_key_profile *key_profile;
-	int num, pos;
+	uint8_t num, idx;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_profile = &priv->extract.qos_key_extract.key_profile;
@@ -827,10 +828,10 @@ dpaa2_flow_faf_advance(struct dpaa2_dev_priv *priv,
 	}
 
 	if (key_profile->ip_addr_type != IP_NONE_ADDR_EXTRACT) {
-		offset = key_profile->ip_addr_extract_off;
-		pos = key_profile->ip_addr_extract_pos;
-		key_profile->ip_addr_extract_pos++;
-		key_profile->ip_addr_extract_off++;
+		offset = key_profile->ip_addr_key_offset;
+		idx = key_profile->ip_addr_extract_idx;
+		key_profile->ip_addr_extract_idx++;
+		key_profile->ip_addr_key_offset++;
 		if (dist_type == DPAA2_FLOW_QOS_TYPE) {
 			ret = dpaa2_flow_qos_rule_insert_hole(priv,
 					offset, 1);
@@ -841,28 +842,28 @@ dpaa2_flow_faf_advance(struct dpaa2_dev_priv *priv,
 		if (ret)
 			return ret;
 	} else {
-		pos = num;
+		idx = num;
 	}
 
-	if (pos > 0) {
-		key_profile->key_offset[pos] =
-			key_profile->key_offset[pos - 1] +
-			key_profile->key_size[pos - 1];
+	if (idx > 0) {
+		key_profile->key_offset[idx] =
+			key_profile->key_offset[idx - 1] +
+			key_profile->key_size[idx - 1];
 	} else {
-		key_profile->key_offset[pos] = 0;
+		key_profile->key_offset[idx] = 0;
 	}
 
-	key_profile->key_size[pos] = 1;
-	key_profile->prot_field[pos].type = DPAA2_FAF_KEY;
-	key_profile->prot_field[pos].key_field = faf_byte;
+	key_profile->key_size[idx] = 1;
+	key_profile->prot_field[idx].type = DPAA2_FAF_KEY;
+	key_profile->prot_field[idx].key_field = faf_byte;
 	key_profile->num++;
 
 	if (insert_offset)
-		*insert_offset = key_profile->key_offset[pos];
+		*insert_offset = key_profile->key_offset[idx];
 
 	key_profile->key_max_size++;
 
-	return pos;
+	return idx;
 }
 
 static int
@@ -873,7 +874,7 @@ dpaa2_flow_pr_advance(struct dpaa2_dev_priv *priv,
 {
 	int offset, ret;
 	struct dpaa2_key_profile *key_profile;
-	int num, pos;
+	uint8_t num, idx;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_profile = &priv->extract.qos_key_extract.key_profile;
@@ -888,10 +889,10 @@ dpaa2_flow_pr_advance(struct dpaa2_dev_priv *priv,
 	}
 
 	if (key_profile->ip_addr_type != IP_NONE_ADDR_EXTRACT) {
-		offset = key_profile->ip_addr_extract_off;
-		pos = key_profile->ip_addr_extract_pos;
-		key_profile->ip_addr_extract_pos++;
-		key_profile->ip_addr_extract_off += pr_size;
+		offset = key_profile->ip_addr_key_offset;
+		idx = key_profile->ip_addr_extract_idx;
+		key_profile->ip_addr_extract_idx++;
+		key_profile->ip_addr_key_offset += pr_size;
 		if (dist_type == DPAA2_FLOW_QOS_TYPE) {
 			ret = dpaa2_flow_qos_rule_insert_hole(priv,
 					offset, pr_size);
@@ -902,29 +903,29 @@ dpaa2_flow_pr_advance(struct dpaa2_dev_priv *priv,
 		if (ret)
 			return ret;
 	} else {
-		pos = num;
+		idx = num;
 	}
 
-	if (pos > 0) {
-		key_profile->key_offset[pos] =
-			key_profile->key_offset[pos - 1] +
-			key_profile->key_size[pos - 1];
+	if (idx > 0) {
+		key_profile->key_offset[idx] =
+			key_profile->key_offset[idx - 1] +
+			key_profile->key_size[idx - 1];
 	} else {
-		key_profile->key_offset[pos] = 0;
+		key_profile->key_offset[idx] = 0;
 	}
 
-	key_profile->key_size[pos] = pr_size;
-	key_profile->prot_field[pos].type = DPAA2_PR_KEY;
-	key_profile->prot_field[pos].key_field =
+	key_profile->key_size[idx] = pr_size;
+	key_profile->prot_field[idx].type = DPAA2_PR_KEY;
+	key_profile->prot_field[idx].key_field =
 		(pr_offset << 16) | pr_size;
 	key_profile->num++;
 
 	if (insert_offset)
-		*insert_offset = key_profile->key_offset[pos];
+		*insert_offset = key_profile->key_offset[idx];
 
 	key_profile->key_max_size += pr_size;
 
-	return pos;
+	return idx;
 }
 
 /* Move IPv4/IPv6 addresses to fill new extract previous IP address.
@@ -941,7 +942,7 @@ dpaa2_flow_key_profile_advance(enum net_prot prot,
 {
 	int offset, ret;
 	struct dpaa2_key_profile *key_profile;
-	int num, pos;
+	uint8_t num, idx;
 
 	if (dpaa2_flow_ip_address_extract(prot, field)) {
 		DPAA2_PMD_ERR("%s only for none IP address extract",
@@ -962,10 +963,10 @@ dpaa2_flow_key_profile_advance(enum net_prot prot,
 	}
 
 	if (key_profile->ip_addr_type != IP_NONE_ADDR_EXTRACT) {
-		offset = key_profile->ip_addr_extract_off;
-		pos = key_profile->ip_addr_extract_pos;
-		key_profile->ip_addr_extract_pos++;
-		key_profile->ip_addr_extract_off += field_size;
+		offset = key_profile->ip_addr_key_offset;
+		idx = key_profile->ip_addr_extract_idx;
+		key_profile->ip_addr_extract_idx++;
+		key_profile->ip_addr_key_offset += field_size;
 		if (dist_type == DPAA2_FLOW_QOS_TYPE) {
 			ret = dpaa2_flow_qos_rule_insert_hole(priv,
 					offset, field_size);
@@ -976,40 +977,40 @@ dpaa2_flow_key_profile_advance(enum net_prot prot,
 		if (ret)
 			return ret;
 	} else {
-		pos = num;
+		idx = num;
 	}
 
-	if (pos > 0) {
-		key_profile->key_offset[pos] =
-			key_profile->key_offset[pos - 1] +
-			key_profile->key_size[pos - 1];
+	if (idx > 0) {
+		key_profile->key_offset[idx] =
+			key_profile->key_offset[idx - 1] +
+			key_profile->key_size[idx - 1];
 	} else {
-		key_profile->key_offset[pos] = 0;
+		key_profile->key_offset[idx] = 0;
 	}
 
-	key_profile->key_size[pos] = field_size;
-	key_profile->prot_field[pos].type = DPAA2_NET_PROT_KEY;
-	key_profile->prot_field[pos].prot = prot;
-	key_profile->prot_field[pos].key_field = field;
+	key_profile->key_size[idx] = field_size;
+	key_profile->prot_field[idx].type = DPAA2_NET_PROT_KEY;
+	key_profile->prot_field[idx].prot = prot;
+	key_profile->prot_field[idx].key_field = field;
 	key_profile->num++;
 
 	if (insert_offset)
-		*insert_offset = key_profile->key_offset[pos];
+		*insert_offset = key_profile->key_offset[idx];
 
 	if (dpaa2_flow_l4_src_port_extract(prot, field)) {
-		key_profile->l4_src_port_present = 1;
-		key_profile->l4_src_port_pos = pos;
-		key_profile->l4_src_port_offset =
-			key_profile->key_offset[pos];
+		key_profile->l4_sp_present = 1;
+		key_profile->l4_sp_extract_idx = idx;
+		key_profile->l4_sp_key_offset =
+			key_profile->key_offset[idx];
 	} else if (dpaa2_flow_l4_dst_port_extract(prot, field)) {
-		key_profile->l4_dst_port_present = 1;
-		key_profile->l4_dst_port_pos = pos;
-		key_profile->l4_dst_port_offset =
-			key_profile->key_offset[pos];
+		key_profile->l4_dp_present = 1;
+		key_profile->l4_dp_extract_idx = idx;
+		key_profile->l4_dp_key_offset =
+			key_profile->key_offset[idx];
 	}
 	key_profile->key_max_size += field_size;
 
-	return pos;
+	return idx;
 }
 
 static int
@@ -1018,7 +1019,7 @@ dpaa2_flow_faf_add_hdr(int faf_byte,
 	enum dpaa2_flow_dist_type dist_type, int tc_id,
 	int *insert_offset)
 {
-	int pos, i;
+	int extract_idx, i;
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract *extracts;
@@ -1036,23 +1037,23 @@ dpaa2_flow_faf_add_hdr(int faf_byte,
 		return -EINVAL;
 	}
 
-	pos = dpaa2_flow_faf_advance(priv,
+	extract_idx = dpaa2_flow_faf_advance(priv,
 			faf_byte, dist_type, tc_id,
 			insert_offset);
-	if (pos < 0)
-		return pos;
+	if (extract_idx < 0)
+		return extract_idx;
 
-	if (pos != dpkg->num_extracts) {
-		/* Not the last pos, must have IP address extract.*/
-		for (i = dpkg->num_extracts - 1; i >= pos; i--) {
+	if (extract_idx != dpkg->num_extracts) {
+		/* Not the last extract index, must have IP address extract.*/
+		for (i = dpkg->num_extracts - 1; i >= extract_idx; i--) {
 			memcpy(&extracts[i + 1],
 				&extracts[i], sizeof(struct dpkg_extract));
 		}
 	}
 
-	extracts[pos].type = DPKG_EXTRACT_FROM_PARSE;
-	extracts[pos].extract.from_parse.offset = faf_byte;
-	extracts[pos].extract.from_parse.size = 1;
+	extracts[extract_idx].type = DPKG_EXTRACT_FROM_PARSE;
+	extracts[extract_idx].extract.from_parse.offset = faf_byte;
+	extracts[extract_idx].extract.from_parse.size = 1;
 
 	dpkg->num_extracts++;
 
@@ -1065,7 +1066,7 @@ dpaa2_flow_pr_add_hdr(uint32_t pr_offset,
 	enum dpaa2_flow_dist_type dist_type, int tc_id,
 	int *insert_offset)
 {
-	int pos, i;
+	int extract_idx, i;
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract *extracts;
@@ -1089,23 +1090,23 @@ dpaa2_flow_pr_add_hdr(uint32_t pr_offset,
 		return -EINVAL;
 	}
 
-	pos = dpaa2_flow_pr_advance(priv,
+	extract_idx = dpaa2_flow_pr_advance(priv,
 			pr_offset, pr_size, dist_type, tc_id,
 			insert_offset);
-	if (pos < 0)
-		return pos;
+	if (extract_idx < 0)
+		return extract_idx;
 
-	if (pos != dpkg->num_extracts) {
-		/* Not the last pos, must have IP address extract.*/
-		for (i = dpkg->num_extracts - 1; i >= pos; i--) {
+	if (extract_idx != dpkg->num_extracts) {
+		/* Not the last extract index, must have IP address extract.*/
+		for (i = dpkg->num_extracts - 1; i >= extract_idx; i--) {
 			memcpy(&extracts[i + 1],
 				&extracts[i], sizeof(struct dpkg_extract));
 		}
 	}
 
-	extracts[pos].type = DPKG_EXTRACT_FROM_PARSE;
-	extracts[pos].extract.from_parse.offset = pr_offset;
-	extracts[pos].extract.from_parse.size = pr_size;
+	extracts[extract_idx].type = DPKG_EXTRACT_FROM_PARSE;
+	extracts[extract_idx].extract.from_parse.offset = pr_offset;
+	extracts[extract_idx].extract.from_parse.size = pr_size;
 
 	dpkg->num_extracts++;
 
@@ -1119,7 +1120,7 @@ dpaa2_flow_extract_add_hdr(enum net_prot prot,
 	enum dpaa2_flow_dist_type dist_type, int tc_id,
 	int *insert_offset)
 {
-	int pos, i;
+	int extract_idx, i;
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract *extracts;
@@ -1143,25 +1144,25 @@ dpaa2_flow_extract_add_hdr(enum net_prot prot,
 		return -EINVAL;
 	}
 
-	pos = dpaa2_flow_key_profile_advance(prot,
+	extract_idx = dpaa2_flow_key_profile_advance(prot,
 			field, field_size, priv,
 			dist_type, tc_id,
 			insert_offset);
-	if (pos < 0)
-		return pos;
+	if (extract_idx < 0)
+		return extract_idx;
 
-	if (pos != dpkg->num_extracts) {
-		/* Not the last pos, must have IP address extract.*/
-		for (i = dpkg->num_extracts - 1; i >= pos; i--) {
+	if (extract_idx != dpkg->num_extracts) {
+		/* Not the last extract index, must have IP address extract.*/
+		for (i = dpkg->num_extracts - 1; i >= extract_idx; i--) {
 			memcpy(&extracts[i + 1],
 				&extracts[i], sizeof(struct dpkg_extract));
 		}
 	}
 
-	extracts[pos].type = DPKG_EXTRACT_FROM_HDR;
-	extracts[pos].extract.from_hdr.prot = prot;
-	extracts[pos].extract.from_hdr.type = DPKG_FULL_FIELD;
-	extracts[pos].extract.from_hdr.field = field;
+	extracts[extract_idx].type = DPKG_EXTRACT_FROM_HDR;
+	extracts[extract_idx].extract.from_hdr.prot = prot;
+	extracts[extract_idx].extract.from_hdr.type = DPKG_FULL_FIELD;
+	extracts[extract_idx].extract.from_hdr.field = field;
 
 	dpkg->num_extracts++;
 
@@ -1176,7 +1177,7 @@ dpaa2_flow_extract_new_raw(struct dpaa2_dev_priv *priv,
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpaa2_key_profile *key_profile;
-	int last_extract_size, index, pos, item_size;
+	int last_extract_size, index, raw_idx, item_size;
 	uint8_t num_extracts;
 	uint32_t field;
 
@@ -1206,25 +1207,25 @@ dpaa2_flow_extract_new_raw(struct dpaa2_dev_priv *priv,
 		field = offset << DPAA2_FLOW_RAW_OFFSET_FIELD_SHIFT;
 		field |= item_size;
 
-		pos = dpaa2_flow_key_profile_advance(NET_PROT_PAYLOAD,
+		raw_idx = dpaa2_flow_key_profile_advance(NET_PROT_PAYLOAD,
 				field, item_size, priv, dist_type,
 				tc_id, NULL);
-		if (pos < 0)
-			return pos;
+		if (raw_idx < 0)
+			return raw_idx;
 
-		dpkg->extracts[pos].type = DPKG_EXTRACT_FROM_DATA;
-		dpkg->extracts[pos].extract.from_data.size = item_size;
-		dpkg->extracts[pos].extract.from_data.offset = offset;
+		dpkg->extracts[raw_idx].type = DPKG_EXTRACT_FROM_DATA;
+		dpkg->extracts[raw_idx].extract.from_data.size = item_size;
+		dpkg->extracts[raw_idx].extract.from_data.offset = offset;
 
 		if (index == 0) {
-			key_profile->raw_extract_pos = pos;
-			key_profile->raw_extract_off =
-				key_profile->key_offset[pos];
+			key_profile->raw_extract_idx = raw_idx;
+			key_profile->raw_key_offset =
+				key_profile->key_offset[raw_idx];
 			key_profile->raw_region.raw_start = offset;
 		}
 		key_profile->raw_extract_num++;
 		key_profile->raw_region.raw_size +=
-			key_profile->key_size[pos];
+			key_profile->key_size[raw_idx];
 
 		offset += item_size;
 		dpkg->num_extracts++;
@@ -1241,7 +1242,7 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	struct dpaa2_key_profile *key_profile;
 	struct dpaa2_raw_region *raw_region;
 	int end = offset + size, ret = 0, extract_extended, sz_extend;
-	int start_cmp, end_cmp, new_size, index, pos, end_pos;
+	int start_cmp, end_cmp, new_size, index, idx, end_idx;
 	int last_extract_size, item_size, num_extracts, bk_num = 0;
 	struct dpkg_extract extract_bk[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint8_t key_offset_bk[DPKG_MAX_NUM_OF_EXTRACTS];
@@ -1303,7 +1304,7 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	}
 
 	if (offset < start_cmp) {
-		raw_hole.raw_start = key_profile->raw_extract_off;
+		raw_hole.raw_start = key_profile->raw_key_offset;
 		raw_hole.raw_size = start_cmp - offset;
 		raw_region->raw_start = offset;
 		raw_region->raw_size += start_cmp - offset;
@@ -1326,7 +1327,7 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 
 	if (end > end_cmp) {
 		raw_hole.raw_start =
-			key_profile->raw_extract_off +
+			key_profile->raw_key_offset +
 			raw_region->raw_size;
 		raw_hole.raw_size = end - end_cmp;
 		raw_region->raw_size += end - end_cmp;
@@ -1347,17 +1348,17 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 		}
 	}
 
-	end_pos = key_profile->raw_extract_pos +
+	end_idx = key_profile->raw_extract_idx +
 		key_profile->raw_extract_num;
-	if (key_profile->num > end_pos) {
-		bk_num = key_profile->num - end_pos;
-		memcpy(extract_bk, &dpkg->extracts[end_pos],
+	if (key_profile->num > end_idx) {
+		bk_num = key_profile->num - end_idx;
+		memcpy(extract_bk, &dpkg->extracts[end_idx],
 			bk_num * sizeof(struct dpkg_extract));
-		memcpy(key_offset_bk, &key_profile->key_offset[end_pos],
+		memcpy(key_offset_bk, &key_profile->key_offset[end_idx],
 			bk_num * sizeof(uint8_t));
-		memcpy(key_size_bk, &key_profile->key_size[end_pos],
+		memcpy(key_size_bk, &key_profile->key_size[end_idx],
 			bk_num * sizeof(uint8_t));
-		memcpy(prot_field_bk, &key_profile->prot_field[end_pos],
+		memcpy(prot_field_bk, &key_profile->prot_field[end_idx],
 			bk_num * sizeof(struct key_prot_field));
 
 		for (index = 0; index < bk_num; index++) {
@@ -1366,21 +1367,23 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 			field = prot_field_bk[index].key_field;
 			if (dpaa2_flow_l4_src_port_extract(prot,
 				field)) {
-				key_profile->l4_src_port_present = 1;
-				key_profile->l4_src_port_pos = end_pos + index;
-				key_profile->l4_src_port_offset =
+				key_profile->l4_sp_present = 1;
+				key_profile->l4_sp_extract_idx =
+					end_idx + index;
+				key_profile->l4_sp_key_offset =
 					key_offset_bk[index];
 			} else if (dpaa2_flow_l4_dst_port_extract(prot,
 				field)) {
-				key_profile->l4_dst_port_present = 1;
-				key_profile->l4_dst_port_pos = end_pos + index;
-				key_profile->l4_dst_port_offset =
+				key_profile->l4_dp_present = 1;
+				key_profile->l4_dp_extract_idx =
+					end_idx + index;
+				key_profile->l4_dp_key_offset =
 					key_offset_bk[index];
 			}
 		}
 	}
 
-	pos = key_profile->raw_extract_pos;
+	idx = key_profile->raw_extract_idx;
 
 	for (index = 0; index < num_extracts; index++) {
 		if (index == num_extracts - 1)
@@ -1390,40 +1393,40 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 		field = offset << DPAA2_FLOW_RAW_OFFSET_FIELD_SHIFT;
 		field |= item_size;
 
-		if (pos > 0) {
-			key_profile->key_offset[pos] =
-				key_profile->key_offset[pos - 1] +
-				key_profile->key_size[pos - 1];
+		if (idx > 0) {
+			key_profile->key_offset[idx] =
+				key_profile->key_offset[idx - 1] +
+				key_profile->key_size[idx - 1];
 		} else {
-			key_profile->key_offset[pos] = 0;
+			key_profile->key_offset[idx] = 0;
 		}
-		key_profile->key_size[pos] = item_size;
-		key_profile->prot_field[pos].type = DPAA2_NET_PROT_KEY;
-		key_profile->prot_field[pos].prot = NET_PROT_PAYLOAD;
-		key_profile->prot_field[pos].key_field = field;
+		key_profile->key_size[idx] = item_size;
+		key_profile->prot_field[idx].type = DPAA2_NET_PROT_KEY;
+		key_profile->prot_field[idx].prot = NET_PROT_PAYLOAD;
+		key_profile->prot_field[idx].key_field = field;
 
-		dpkg->extracts[pos].type = DPKG_EXTRACT_FROM_DATA;
-		dpkg->extracts[pos].extract.from_data.size = item_size;
-		dpkg->extracts[pos].extract.from_data.offset = offset;
+		dpkg->extracts[idx].type = DPKG_EXTRACT_FROM_DATA;
+		dpkg->extracts[idx].extract.from_data.size = item_size;
+		dpkg->extracts[idx].extract.from_data.offset = offset;
 		offset += item_size;
-		pos++;
+		idx++;
 	}
 
 	if (bk_num) {
-		memcpy(&dpkg->extracts[pos], extract_bk,
+		memcpy(&dpkg->extracts[idx], extract_bk,
 			bk_num * sizeof(struct dpkg_extract));
-		memcpy(&key_profile->key_offset[end_pos],
+		memcpy(&key_profile->key_offset[end_idx],
 			key_offset_bk, bk_num * sizeof(uint8_t));
-		memcpy(&key_profile->key_size[end_pos],
+		memcpy(&key_profile->key_size[end_idx],
 			key_size_bk, bk_num * sizeof(uint8_t));
-		memcpy(&key_profile->prot_field[end_pos],
+		memcpy(&key_profile->prot_field[end_idx],
 			prot_field_bk, bk_num * sizeof(struct key_prot_field));
 	}
 
 	extract_extended = num_extracts - key_profile->raw_extract_num;
 	if (key_profile->ip_addr_type != IP_NONE_ADDR_EXTRACT) {
-		key_profile->ip_addr_extract_pos += extract_extended;
-		key_profile->ip_addr_extract_off += sz_extend;
+		key_profile->ip_addr_extract_idx += extract_extended;
+		key_profile->ip_addr_key_offset += sz_extend;
 	}
 	key_profile->raw_extract_num = num_extracts;
 	key_profile->num += extract_extended;
@@ -1440,7 +1443,7 @@ static inline int
 dpaa2_flow_extract_search(struct dpaa2_key_profile *key_profile,
 	enum key_prot_type type, enum net_prot prot, uint32_t key_field)
 {
-	int pos;
+	int extract_idx;
 	struct key_prot_field *prot_field;
 
 	if (dpaa2_flow_ip_address_extract(prot, key_field)) {
@@ -1450,30 +1453,30 @@ dpaa2_flow_extract_search(struct dpaa2_key_profile *key_profile,
 	}
 
 	prot_field = key_profile->prot_field;
-	for (pos = 0; pos < key_profile->num; pos++) {
+	for (extract_idx = 0; extract_idx < key_profile->num; extract_idx++) {
 		if (type == DPAA2_NET_PROT_KEY &&
-			prot_field[pos].prot == prot &&
-			prot_field[pos].key_field == key_field &&
-			prot_field[pos].type == type)
-			return pos;
+			prot_field[extract_idx].prot == prot &&
+			prot_field[extract_idx].key_field == key_field &&
+			prot_field[extract_idx].type == type)
+			return extract_idx;
 		else if (type == DPAA2_FAF_KEY &&
-			prot_field[pos].key_field == key_field &&
-			prot_field[pos].type == type)
-			return pos;
+			prot_field[extract_idx].key_field == key_field &&
+			prot_field[extract_idx].type == type)
+			return extract_idx;
 		else if (type == DPAA2_PR_KEY &&
-			prot_field[pos].key_field == key_field &&
-			prot_field[pos].type == type)
-			return pos;
+			prot_field[extract_idx].key_field == key_field &&
+			prot_field[extract_idx].type == type)
+			return extract_idx;
 	}
 
 	if (type == DPAA2_NET_PROT_KEY &&
 		dpaa2_flow_l4_src_port_extract(prot, key_field)) {
-		if (key_profile->l4_src_port_present)
-			return key_profile->l4_src_port_pos;
+		if (key_profile->l4_sp_present)
+			return key_profile->l4_sp_extract_idx;
 	} else if (type == DPAA2_NET_PROT_KEY &&
 		dpaa2_flow_l4_dst_port_extract(prot, key_field)) {
-		if (key_profile->l4_dst_port_present)
-			return key_profile->l4_dst_port_pos;
+		if (key_profile->l4_dp_present)
+			return key_profile->l4_dp_extract_idx;
 	}
 
 	return -ENXIO;
@@ -2000,7 +2003,7 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_dev_flow *flow,
 	struct dpaa2_dev_priv *priv, int tc_id, int *recfg,
 	enum dpaa2_flow_dist_type dist_type)
 {
-	int local_cfg = 0, num, ipaddr_extract_len = 0;
+	int local_cfg = 0, num, ipaddr_key_len = 0;
 	struct dpaa2_key_extract *key_extract;
 	struct dpaa2_key_profile *key_profile;
 	struct dpkg_profile_cfg *dpkg;
@@ -2074,32 +2077,32 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_dev_flow *flow,
 			key_profile->ip_addr_type = IP_SRC_EXTRACT;
 		else
 			key_profile->ip_addr_type = IP_DST_EXTRACT;
-		ipaddr_extract_len = size;
+		ipaddr_key_len = size;
 
-		key_profile->ip_addr_extract_pos = num;
+		key_profile->ip_addr_extract_idx = num;
 		if (num > 0) {
-			key_profile->ip_addr_extract_off =
+			key_profile->ip_addr_key_offset =
 				key_profile->key_offset[num - 1] +
 				key_profile->key_size[num - 1];
 		} else {
-			key_profile->ip_addr_extract_off = 0;
+			key_profile->ip_addr_key_offset = 0;
 		}
 		key_profile->key_max_size += NH_FLD_IPV6_ADDR_SIZE;
 	} else if (key_profile->ip_addr_type == IP_SRC_EXTRACT) {
 		if (field == NH_FLD_IP_SRC) {
-			ipaddr_extract_len = size;
+			ipaddr_key_len = size;
 			goto rule_configure;
 		}
 		key_profile->ip_addr_type = IP_SRC_DST_EXTRACT;
-		ipaddr_extract_len = size * 2;
+		ipaddr_key_len = size * 2;
 		key_profile->key_max_size += NH_FLD_IPV6_ADDR_SIZE;
 	} else if (key_profile->ip_addr_type == IP_DST_EXTRACT) {
 		if (field == NH_FLD_IP_DST) {
-			ipaddr_extract_len = size;
+			ipaddr_key_len = size;
 			goto rule_configure;
 		}
 		key_profile->ip_addr_type = IP_DST_SRC_EXTRACT;
-		ipaddr_extract_len = size * 2;
+		ipaddr_key_len = size * 2;
 		key_profile->key_max_size += NH_FLD_IPV6_ADDR_SIZE;
 	}
 	key_profile->num++;
@@ -2116,9 +2119,9 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_dev_flow *flow,
 		local_cfg = DPAA2_FLOW_FS_TYPE;
 
 rule_configure:
-	key_addr += key_profile->ip_addr_extract_off;
+	key_addr += key_profile->ip_addr_key_offset;
 	ip_addr_data = (union ip_addr_extract_rule *)key_addr;
-	mask_addr += key_profile->ip_addr_extract_off;
+	mask_addr += key_profile->ip_addr_key_offset;
 	ip_addr_mask = (union ip_addr_extract_rule *)mask_addr;
 
 	if (orig_prot == NET_PROT_IPV4 &&
@@ -2181,10 +2184,10 @@ rule_configure:
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE) {
 		flow->qos_rule_size =
-			key_profile->ip_addr_extract_off + ipaddr_extract_len;
+			key_profile->ip_addr_key_offset + ipaddr_key_len;
 	} else {
 		flow->fs_rule_size =
-			key_profile->ip_addr_extract_off + ipaddr_extract_len;
+			key_profile->ip_addr_key_offset + ipaddr_key_len;
 	}
 
 	if (recfg)
@@ -2763,6 +2766,11 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 		return ret;
 
 	if (!spec_ipv4) {
+		if (flow->ip_key == NET_PROT_IPV6) {
+			DPAA2_PMD_ERR("IPv6 flow has been configured");
+			return -EINVAL;
+		}
+		flow->ip_key = NET_PROT_IPV4;
 		(*device_configured) |= local_cfg;
 		return 0;
 	}
@@ -2869,6 +2877,11 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
+	if (flow->ip_key == NET_PROT_IPV6) {
+		DPAA2_PMD_ERR("IPv6 flow has been configured");
+		return -EINVAL;
+	}
+	flow->ip_key = NET_PROT_IPV4;
 
 	(*device_configured) |= local_cfg;
 
@@ -2947,6 +2960,11 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 		return ret;
 
 	if (!spec_ipv6) {
+		if (flow->ip_key == NET_PROT_IPV4) {
+			DPAA2_PMD_ERR("IPv4 flow has been configured");
+			return -EINVAL;
+		}
+		flow->ip_key = NET_PROT_IPV6;
 		(*device_configured) |= local_cfg;
 		return 0;
 	}
@@ -3017,6 +3035,11 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
+	if (flow->ip_key == NET_PROT_IPV4) {
+		DPAA2_PMD_ERR("IPv4 flow has been configured");
+		return -EINVAL;
+	}
+	flow->ip_key = NET_PROT_IPV6;
 
 	(*device_configured) |= local_cfg;
 
@@ -4754,6 +4777,9 @@ dpaa2_configure_fs_rss_table(struct dpaa2_dev_priv *priv,
 	}
 
 	tc_extract = &priv->extract.tc_key_extract[tc_id];
+	if (!tc_extract->dpkg.num_extracts)
+		return 0;
+
 	key_cfg_buf = priv->extract.tc_extract_param[tc_id];
 	key_cfg_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(key_cfg_buf,
 		DPAA2_EXTRACT_PARAM_MAX_SIZE);
@@ -4839,12 +4865,15 @@ dpaa2_configure_qos_table(struct dpaa2_dev_priv *priv,
 		ret = dpni_clear_qos_table(dpni, CMD_PRI_LOW,
 				priv->token);
 		if (ret < 0) {
-			DPAA2_PMD_ERR("QoS table clear failed");
+			DPAA2_PMD_ERR("QoS table clear failed(%d)", ret);
 			return ret;
 		}
 	}
 
 	qos_extract = &priv->extract.qos_key_extract;
+	if (!qos_extract->dpkg.num_extracts)
+		return 0;
+
 	key_cfg_buf = priv->extract.qos_extract_param;
 	key_cfg_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(key_cfg_buf,
 		DPAA2_EXTRACT_PARAM_MAX_SIZE);
@@ -5503,6 +5532,8 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	}
 	flow->fs_rule.mask_iova = iova;
 
+	flow->ip_key = NET_PROT_NONE;
+
 	priv->curr = flow;
 
 	switch (dpaa2_filter_type) {
@@ -5549,16 +5580,404 @@ creation_error:
 }
 
 static int
+dpaa2_flow_rule_data_valid(struct dpaa2_dev_flow *flow,
+	uint8_t key_offset, uint8_t key_size,
+	enum dpaa2_flow_dist_type type)
+{
+	uint8_t *key;
+	uint8_t *mask;
+	uint8_t i;
+	int valid = 0;
+
+	if (type == DPAA2_FLOW_QOS_TYPE) {
+		key = flow->qos_key_addr + key_offset;
+		mask = flow->qos_mask_addr + key_offset;
+	} else {
+		key = flow->fs_key_addr + key_offset;
+		mask = flow->fs_mask_addr + key_offset;
+	}
+
+	for (i = 0; i < key_size; i++) {
+		if (key[i] & mask[i]) {
+			valid = 1;
+			break;
+		}
+	}
+
+	return valid;
+}
+
+static void
+dpaa2_flow_remove_invalid_rule_data(struct dpaa2_dev_priv *priv,
+	enum dpaa2_flow_dist_type type, uint8_t tc_id,
+	uint8_t key_offset, uint8_t key_size)
+{
+	struct dpaa2_dev_flow *flow, *next;
+
+	flow = LIST_FIRST(&priv->flows);
+	while (flow) {
+		next = LIST_NEXT(flow, next);
+		if (type == DPAA2_FLOW_FS_TYPE &&
+			flow->tc_id != tc_id)
+			goto skip_update_flow;
+
+		if (type == DPAA2_FLOW_QOS_TYPE) {
+			if (key_offset < flow->qos_rule_size) {
+				memmove(flow->qos_key_addr + key_offset,
+					flow->qos_key_addr +
+					key_offset + key_size,
+					flow->qos_rule_size -
+					(key_offset + key_size));
+				memmove(flow->qos_mask_addr + key_offset,
+					flow->qos_mask_addr +
+					key_offset + key_size,
+					flow->qos_rule_size -
+					(key_offset + key_size));
+				flow->qos_rule_size -= key_size;
+			}
+			if (flow->qos_rule.key_size > flow->qos_rule_size) {
+				memset(flow->qos_key_addr +
+					flow->qos_rule_size, 0,
+					flow->qos_rule.key_size -
+					flow->qos_rule_size);
+				memset(flow->qos_mask_addr +
+					flow->qos_rule_size, 0,
+					flow->qos_rule.key_size -
+					flow->qos_rule_size);
+			}
+		} else {
+			if (key_offset < flow->fs_rule_size) {
+				memmove(flow->fs_key_addr + key_offset,
+					flow->fs_key_addr +
+					key_offset + key_size,
+					flow->fs_rule_size -
+					(key_offset + key_size));
+				memmove(flow->fs_mask_addr + key_offset,
+					flow->fs_mask_addr +
+					key_offset + key_size,
+					flow->fs_rule_size -
+					(key_offset + key_size));
+				flow->fs_rule_size -= key_size;
+			}
+			if (flow->fs_rule.key_size > flow->fs_rule_size) {
+				memset(flow->fs_key_addr +
+					flow->fs_rule_size, 0,
+					flow->fs_rule.key_size -
+					flow->fs_rule_size);
+				memset(flow->fs_mask_addr +
+					flow->fs_rule_size, 0,
+					flow->fs_rule.key_size -
+					flow->fs_rule_size);
+			}
+		}
+
+skip_update_flow:
+		flow = next;
+	}
+}
+
+static int
+dpaa2_flow_key_offset_size(struct dpaa2_dev_flow *flow,
+	struct dpaa2_key_extract *key_extract, uint8_t idx,
+	uint8_t *offset, uint8_t *size)
+{
+	struct dpkg_profile_cfg *dpkg = &key_extract->dpkg;
+	struct dpaa2_key_profile *profile = &key_extract->key_profile;
+	int ret = 0;
+
+	if (dpkg->extracts[idx].type == DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[idx].extract.from_hdr.prot == NET_PROT_IP &&
+		dpkg->extracts[idx].extract.from_hdr.field == NH_FLD_IP_SRC) {
+		if (profile->ip_addr_type == IP_SRC_EXTRACT ||
+			profile->ip_addr_type == IP_SRC_DST_EXTRACT) {
+			*offset = profile->ip_addr_key_offset;
+			if (flow->ip_key == NET_PROT_IPV4)
+				*size = sizeof(rte_be32_t);
+			else if (flow->ip_key == NET_PROT_IPV6)
+				*size = 16;
+			else
+				ret = -EINVAL;
+		} else if (profile->ip_addr_type == IP_DST_SRC_EXTRACT) {
+			if (flow->ip_key == NET_PROT_IPV4) {
+				*offset = profile->ip_addr_key_offset +
+					sizeof(rte_be32_t);
+				*size = sizeof(rte_be32_t);
+			} else if (flow->ip_key == NET_PROT_IPV6) {
+				*offset = profile->ip_addr_key_offset + 16;
+				*size = 16;
+			} else {
+				ret = -EINVAL;
+			}
+		} else {
+			ret = -EINVAL;
+		}
+	} else if (dpkg->extracts[idx].type == DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[idx].extract.from_hdr.prot == NET_PROT_IP &&
+		dpkg->extracts[idx].extract.from_hdr.field == NH_FLD_IP_DST) {
+		if (profile->ip_addr_type == IP_DST_EXTRACT ||
+			profile->ip_addr_type == IP_DST_SRC_EXTRACT) {
+			*offset = profile->ip_addr_key_offset;
+			if (flow->ip_key == NET_PROT_IPV4)
+				*size = sizeof(rte_be32_t);
+			else if (flow->ip_key == NET_PROT_IPV6)
+				*size = 16;
+			else
+				ret = -EINVAL;
+		} else if (profile->ip_addr_type == IP_SRC_DST_EXTRACT) {
+			if (flow->ip_key == NET_PROT_IPV4) {
+				*offset = profile->ip_addr_key_offset +
+					sizeof(rte_be32_t);
+				*size = sizeof(rte_be32_t);
+			} else if (flow->ip_key == NET_PROT_IPV6) {
+				*offset = profile->ip_addr_key_offset + 16;
+				*size = 16;
+			} else {
+				ret = -EINVAL;
+			}
+		} else {
+			ret = -EINVAL;
+		}
+	} else {
+		*offset = profile->key_offset[idx];
+		*size = profile->key_size[idx];
+	}
+
+	return ret;
+}
+
+static int
+dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
+	enum dpaa2_flow_dist_type type, uint8_t tc_id)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct dpaa2_dev_flow *flow, *next;
+	uint8_t i, key_offset, key_size, j, remove_conut = 0;
+	struct dpaa2_key_extract *key_extract;
+	struct dpkg_profile_cfg *dpkg;
+	struct dpaa2_key_profile *key_profile;
+	int valid[DPKG_MAX_NUM_OF_EXTRACTS], update = 0, ret;
+
+	if (type == DPAA2_FLOW_QOS_TYPE)
+		key_extract = &priv->extract.qos_key_extract;
+	else
+		key_extract = &priv->extract.tc_key_extract[tc_id];
+	dpkg = &key_extract->dpkg;
+	key_profile = &key_extract->key_profile;
+	for (i = 0; i < key_profile->num; i++) {
+		valid[i] = 0;
+		flow = LIST_FIRST(&priv->flows);
+		while (flow) {
+			next = LIST_NEXT(flow, next);
+
+			if (type == DPAA2_FLOW_FS_TYPE &&
+				flow->tc_id != tc_id)
+				goto skip_validation;
+
+			key_offset = 0;
+			key_size = 0;
+
+			ret = dpaa2_flow_key_offset_size(flow, key_extract, i,
+				&key_offset, &key_size);
+			if (ret)
+				goto skip_validation;
+
+			if (dpaa2_flow_rule_data_valid(flow,
+				key_offset, key_size, type)) {
+				valid[i] = 1;
+				break;
+			}
+skip_validation:
+			flow = next;
+		}
+		if (!valid[i])
+			remove_conut++;
+	}
+
+	i = key_profile->num - 1;
+	while (remove_conut) {
+		if (valid[i]) {
+			if (i == 0) {
+				DPAA2_PMD_ERR("Fatal: %d key(s) not removed!",
+					remove_conut);
+				return -EINVAL;
+			}
+			i--;
+			continue;
+		}
+		key_size = key_profile->key_size[i];
+		key_offset = key_profile->key_offset[i];
+
+		for (j = i + 1; j < key_profile->num; j++)
+			key_profile->key_offset[j] -= key_size;
+
+		if ((i + 1) < key_profile->num) {
+			memmove(&key_profile->key_offset[i],
+				&key_profile->key_offset[i + 1],
+				key_profile->num - i - 1);
+			memmove(&key_profile->key_size[i],
+				&key_profile->key_size[i + 1],
+				key_profile->num - i - 1);
+			memmove(&key_profile->prot_field[i],
+				&key_profile->prot_field[i + 1],
+				(key_profile->num - i - 1) *
+				sizeof(struct key_prot_field));
+
+			memmove(&dpkg->extracts[i], &dpkg->extracts[i + 1],
+				(key_profile->num - i - 1) *
+				sizeof(struct dpkg_extract));
+		}
+
+		dpaa2_flow_remove_invalid_rule_data(priv, type, tc_id,
+			key_offset, key_size);
+
+		key_profile->num--;
+		dpkg->num_extracts--;
+		update = 1;
+		i--;
+		remove_conut--;
+	};
+
+	key_profile->ip_addr_type = IP_NONE_ADDR_EXTRACT;
+	key_profile->raw_extract_num = 0;
+	key_profile->raw_region.raw_start = 0;
+	key_profile->raw_region.raw_size = 0;
+	key_profile->l4_sp_present = 0;
+	key_profile->l4_dp_present = 0;
+
+	if (key_profile->num >= 2 &&
+		dpkg->extracts[key_profile->num - 2].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 1].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 2].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 2].extract.from_hdr.field ==
+		NH_FLD_IP_SRC &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.field ==
+		NH_FLD_IP_DST) {
+		key_profile->ip_addr_type = IP_SRC_DST_EXTRACT;
+		key_profile->ip_addr_extract_idx = key_profile->num - 2;
+		key_profile->ip_addr_key_offset =
+			key_profile->key_offset[key_profile->num - 2];
+	} else if (key_profile->num >= 2 &&
+		dpkg->extracts[key_profile->num - 2].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 1].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 2].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 2].extract.from_hdr.field ==
+		NH_FLD_IP_DST &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.field ==
+		NH_FLD_IP_SRC) {
+		key_profile->ip_addr_type = IP_DST_SRC_EXTRACT;
+		key_profile->ip_addr_extract_idx = key_profile->num - 2;
+		key_profile->ip_addr_key_offset =
+			key_profile->key_offset[key_profile->num - 2];
+	} else if (key_profile->num >= 1 &&
+		dpkg->extracts[key_profile->num - 1].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.field ==
+		NH_FLD_IP_SRC) {
+		key_profile->ip_addr_type = IP_SRC_EXTRACT;
+		key_profile->ip_addr_extract_idx = key_profile->num - 1;
+		key_profile->ip_addr_key_offset =
+			key_profile->key_offset[key_profile->num - 1];
+	} else if (key_profile->num >= 1 &&
+		dpkg->extracts[key_profile->num - 1].type ==
+		DPKG_EXTRACT_FROM_HDR &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.prot ==
+		NET_PROT_IP &&
+		dpkg->extracts[key_profile->num - 1].extract.from_hdr.field ==
+		NH_FLD_IP_DST) {
+		key_profile->ip_addr_type = IP_DST_EXTRACT;
+		key_profile->ip_addr_extract_idx = key_profile->num - 1;
+		key_profile->ip_addr_key_offset =
+			key_profile->key_offset[key_profile->num - 1];
+	} else {
+		key_profile->ip_addr_type = IP_NONE_ADDR_EXTRACT;
+	}
+
+	for (i = 0; i < dpkg->num_extracts; i++) {
+		if (dpkg->extracts[i].type == DPKG_EXTRACT_FROM_DATA) {
+			if (!key_profile->raw_extract_num) {
+				key_profile->raw_extract_idx = i;
+				key_profile->raw_key_offset =
+					key_profile->key_offset[i];
+				key_profile->raw_region.raw_start =
+					key_profile->key_offset[i];
+				key_profile->raw_region.raw_size =
+					key_profile->key_size[i];
+			}
+			key_profile->raw_region.raw_size +=
+				key_profile->key_size[i];
+			key_profile->raw_extract_num++;
+		}
+		if ((dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_TCP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_TCP_PORT_SRC) ||
+			(dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_UDP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_UDP_PORT_SRC) ||
+			(dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_SCTP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_SCTP_PORT_SRC)) {
+			key_profile->l4_sp_present = 1;
+			key_profile->l4_sp_extract_idx = i;
+			key_profile->l4_sp_key_offset =
+				key_profile->key_offset[i];
+		} else if ((dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_TCP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_TCP_PORT_DST) ||
+			(dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_UDP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_UDP_PORT_DST) ||
+			(dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR &&
+			dpkg->extracts[i].extract.from_hdr.prot ==
+			NET_PROT_SCTP &&
+			dpkg->extracts[i].extract.from_hdr.field ==
+			NH_FLD_SCTP_PORT_DST)) {
+			key_profile->l4_dp_present = 1;
+			key_profile->l4_dp_extract_idx = i;
+			key_profile->l4_dp_key_offset =
+				key_profile->key_offset[i];
+		}
+	}
+
+	return update;
+}
+
+static int
 dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	struct rte_flow *_flow,
 	struct rte_flow_error *error)
 {
-	int ret = 0;
+	int ret = 0, update;
+	uint8_t tc_id, dist_size;
+	uint16_t tc_idx;
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = priv->hw;
 
 	flow = (struct dpaa2_dev_flow *)_flow;
+	tc_id = flow->tc_id;
+	tc_idx = tc_id * priv->fs_entries + flow->tc_index;
 
 	switch (flow->action_type) {
 	case RTE_FLOW_ACTION_TYPE_QUEUE:
@@ -5566,42 +5985,42 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	case RTE_FLOW_ACTION_TYPE_PORT_ID:
 		if (priv->num_rx_tc > 1) {
 			/* Remove entry from QoS table first */
-			ret = dpni_remove_qos_entry(dpni,
-					CMD_PRI_LOW, priv->token,
+			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+					priv->token,
 					&flow->qos_rule);
-			if (ret < 0) {
-				DPAA2_PMD_ERR("Remove FS QoS entry failed");
-				dpaa2_flow_qos_entry_log("Delete failed",
-					flow, -1);
-				abort();
+			if (ret) {
+				DPAA2_PMD_ERR("Remove FS QoS entry failed(%d)",
+					ret);
+				dpaa2_flow_qos_entry_log("Delete failed", flow,
+					tc_idx);
 				goto error;
 			}
 		}
 
 		/* Then remove entry from FS table */
-		ret = dpni_remove_fs_entry(dpni,
-				CMD_PRI_LOW, priv->token,
+		ret = dpni_remove_fs_entry(dpni, CMD_PRI_LOW, priv->token,
 				flow->tc_id, &flow->fs_rule);
-		if (ret < 0) {
-			DPAA2_PMD_ERR("Remove entry from FS[%d] failed",
-				flow->tc_id);
+		if (ret) {
+			DPAA2_PMD_ERR("Remove entry from FS[%d] failed(%d)",
+				flow->tc_id, ret);
+			dpaa2_flow_fs_entry_log("Delete failed", flow);
 			goto error;
 		}
 		break;
 	case RTE_FLOW_ACTION_TYPE_RSS:
 		if (priv->num_rx_tc > 1) {
-			ret = dpni_remove_qos_entry(dpni,
-					CMD_PRI_LOW, priv->token,
+			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+					priv->token,
 					&flow->qos_rule);
-			if (ret < 0) {
-				DPAA2_PMD_ERR("Remove RSS QoS entry failed");
+			if (ret) {
+				DPAA2_PMD_ERR("Remove RSS QoS entry failed(%d)",
+					ret);
 				goto error;
 			}
 		}
 		break;
 	default:
-		DPAA2_PMD_ERR("Action(%d) not supported",
-			flow->action_type);
+		DPAA2_PMD_ERR("Action(%d) not supported", flow->action_type);
 		ret = -ENOTSUP;
 		break;
 	}
@@ -5618,11 +6037,34 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	/* Now free the flow */
 	rte_free(flow);
 
+	update = dpaa2_flow_remove_invalid_extract(dev,
+		DPAA2_FLOW_FS_TYPE, tc_id);
+	if (update > 0) {
+		dist_size = priv->nb_rx_queues / priv->num_rx_tc;
+		ret = dpaa2_configure_fs_rss_table(priv,
+			tc_id, dist_size, false);
+		if (ret) {
+			DPAA2_PMD_ERR("Re-configure FS table failed(%d)", ret);
+			goto error;
+		}
+	}
+
+	update = dpaa2_flow_remove_invalid_extract(dev,
+		DPAA2_FLOW_QOS_TYPE, 0);
+	if (update > 0) {
+		ret = dpaa2_configure_qos_table(priv, false);
+		if (ret) {
+			DPAA2_PMD_ERR("Re-configure QoS table failed(%d)", ret);
+			goto error;
+		}
+	}
+
 error:
-	if (ret)
+	if (ret) {
 		rte_flow_error_set(error, EPERM,
 			RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
 			NULL, "unknown");
+	}
 	return ret;
 }
 
@@ -5675,8 +6117,11 @@ dpaa2_flow_clean(struct rte_eth_dev *dev)
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 
-	while ((flow = LIST_FIRST(&priv->flows)))
+	flow = LIST_FIRST(&priv->flows);
+	while (flow) {
 		dpaa2_flow_destroy(dev, (struct rte_flow *)flow, NULL);
+		flow = LIST_FIRST(&priv->flows);
+	}
 }
 
 const struct rte_flow_ops dpaa2_flow_ops = {
