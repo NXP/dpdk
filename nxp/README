@@ -478,6 +478,47 @@ Following are some pre-requisites:
 	You will need to use --vdev as "crypto_caam_jr0" "crypto_caam_jr1"
 	to use these rings.
 
+Steps for ENET-QOS:
+-------------------
+
+1.1 For i.MX8MP Platform:
+-------------------------
+Set the dpdk DTB file.
+	setenv fdt_file imx8mp-evk-dpdk.dtb
+	boot
+
+1.2 For i.MX93 Platform:
+------------------------
+Use below steps on uboot to boot for DPDK after flasing the release images:
+
+	setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image
+	run loadkernel
+	run loadfdt
+	fdt addr 0x83000000
+	fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a"
+	run mmcargs
+	booti ${loadaddr} - ${fdt_addr};
+
+Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
+2. Manually allocate hugepages
+        e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+3. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
+	'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
+
+4. Run -
+	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
+	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
+
+	For testing the forwarding between both FEC and QOS port run:
+		./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
+		./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+
+6. Run traffic
+	For functional testing, send the traffic from packet generator
+	which is connected to the port.
+
+===============================================================================
+
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 
