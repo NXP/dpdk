@@ -15,7 +15,6 @@ apps = [
         'pdump',
         'proc-info',
         'test-acl',
-        'test-bbdev',
         'test-cmdline',
         'test-compress-perf',
         'test-crypto-perf',
@@ -29,6 +28,12 @@ apps = [
         'test-sad',
         'test-security-perf',
 ]
+
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+if COMMON_HEADERS_DIR != ''
+  apps += 'test-bbdev'
+endif
 
 default_cflags = machine_args + ['-DALLOW_EXPERIMENTAL_API']
 default_ldflags = []
