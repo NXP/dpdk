@@ -3,13 +3,14 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <getopt.h>
 
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <rte_bbdev.h>
 #include <rte_cycles.h>
-#if 0
+
 #define TEST_REPETITIONS 10000
 
 #define OPS_POOL_SIZE 16
@@ -551,11 +552,10 @@ static int parse_args(int argc, char **argv)
 
 	return 0;
 }
-#endif
+
 int
 main(int argc, char **argv)
 {
-#if 0
 	struct rte_bbdev_queue_conf qconf;
 	struct rte_bbdev_info info;
 	char pool_name[RTE_MEMPOOL_NAMESIZE];
@@ -712,12 +712,12 @@ main(int argc, char **argv)
 
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(bbdev_raw_app_launch_one_lcore, NULL,
-				 CALL_MASTER);
+				 CALL_MAIN);
 
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;
 	}
-#endif
+
 	return 0;
 }
