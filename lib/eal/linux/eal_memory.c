@@ -1752,10 +1752,12 @@ memseg_primary_init_32(void)
 
 		socket_id = rte_socket_id_by_idx(i);
 
+#ifndef RTE_LA12XX_SOCKET
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
 		/* we can still sort pages by socket in legacy mode */
 		if (!internal_conf->legacy_mem && socket_id > 0)
 			break;
+#endif
 #endif
 
 		/* if we didn't specifically request memory on this socket */
@@ -1903,9 +1905,11 @@ rte_eal_memseg_init(void)
 	/* increase rlimit to maximum */
 	struct rlimit lim;
 
+#ifndef RTE_LA12XX_SOCKET
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
 	const struct internal_config *internal_conf =
 		eal_get_internal_configuration();
+#endif
 #endif
 	if (getrlimit(RLIMIT_NOFILE, &lim) == 0) {
 		/* set limit to maximum */
@@ -1922,12 +1926,14 @@ rte_eal_memseg_init(void)
 	} else {
 		RTE_LOG(ERR, EAL, "Cannot get current resource limits\n");
 	}
+#ifndef RTE_LA12XX_SOCKET
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
 	if (!internal_conf->legacy_mem && rte_socket_count() > 1) {
 		RTE_LOG(WARNING, EAL, "DPDK is running on a NUMA system, but is compiled without NUMA support.\n");
 		RTE_LOG(WARNING, EAL, "This will have adverse consequences for performance and usability.\n");
 		RTE_LOG(WARNING, EAL, "Please use --"OPT_LEGACY_MEM" option, or recompile with NUMA support.\n");
 	}
+#endif
 #endif
 
 	return rte_eal_process_type() == RTE_PROC_PRIMARY ?

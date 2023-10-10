@@ -340,6 +340,34 @@ soc_dpaa = {
 	['CONFIG_RTE_DMA_DPAA_ERRATA_ERR050757', false],
 	['CONFIG_RTE_DMA_DPAA_ERRATA_ERR050265', false],
 	['CONFIG_RTE_DMA_DPAA_ERR_CHK', false],
+
+	# Enable this flag to use dedicated socket memory
+	# for LA12XX usecases, as RTE_LA12XX_SOCKET=y
+	# Valid only for 1G size hugepages.
+	['RTE_LA12XX_SOCKET', false],
+
+	# When RTE_LA12XX_SOCKET flag is enabled,
+	# update RTE_MAX_NUMA_NODES to 2 to enable 2 sockets.
+	# Keep RTE_MAX_NUMA_NODES=1 for non LA12XX use cases.
+	# Maximum 2 NUMA nodes are supported.
+	['RTE_MAX_NUMA_NODES', 1],
+
+	# LA12XX device socket ID.
+	# Application will use this socket ID to allocate memory
+	# for LA12XX use cases.
+	# Value range can be 0 to "RTE_MAX_NUMA_NODES - 1".
+	# Keep RTE_LIBRTE_LA12XX_SOCKET value to 1 if system is
+	# already allocating memory from socket 0.
+	# Flag is applicable only when RTE_LA12XX_SOCKET is enabled.
+	['RTE_LA12XX_SOCKET_ID', 1],
+
+	# Maximum segments a LA12XX socket can have.
+	# For 1G size hugepages, 1 segment = 1 hugepage.
+	# default is 1, maximum can be 2. But in case 2 segments,
+	# there are chances that allocated memory may not be mapped
+	# to PCIe as we can map only 1.7Gb memory to PCIe address space.
+	# Flag is applicable only when RTE_LA12XX_SOCKET is enabled.
+	['RTE_LA12XX_SOCKET_MAX_SEG', 1],
 	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1]
     ],
     'numa': false

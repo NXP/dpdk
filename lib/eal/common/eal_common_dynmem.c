@@ -93,10 +93,12 @@ eal_dynmem_memseg_lists_init(void)
 		for (i = 0; i < (int) rte_socket_count(); i++, cur_type++) {
 			int socket_id = rte_socket_id_by_idx(i);
 
+#ifndef RTE_LA12XX_SOCKET
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
 			/* we can still sort pages by socket in legacy mode */
 			if (!internal_conf->legacy_mem && socket_id > 0)
 				break;
+#endif
 #endif
 			memtypes[cur_type].page_sz = hugepage_sz;
 			memtypes[cur_type].socket_id = socket_id;

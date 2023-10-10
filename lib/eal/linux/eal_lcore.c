@@ -42,6 +42,18 @@ eal_cpu_socket_id(unsigned lcore_id)
 {
 	unsigned socket;
 
+#ifdef RTE_LA12XX_SOCKET
+	/* Only 2 sockets are supported */
+	if (RTE_MAX_NUMA_NODES > 2)
+		RTE_LOG(ERR, EAL, "Only 2 NUMA nodes are supported"
+				  " for DPAA platforms but given %d"
+				  " \n", RTE_MAX_NUMA_NODES);
+
+	if (RTE_LA12XX_SOCKET_ID == 0)
+		return 1;
+	else
+		return 0;
+#endif
 	for (socket = 0; socket < RTE_MAX_NUMA_NODES; socket++) {
 		char path[PATH_MAX];
 
