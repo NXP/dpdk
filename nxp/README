@@ -760,6 +760,42 @@ Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
       * Above commands are for the 1st endpoint, to run on 2nd endpoint just change the configuration file "ep0_64X64_proto.cfg" to "ep1_64X64_proto.cfg"
       * There is no queue configuration for event mode. Only single QP is supported which will be shared by all the cores.
 
+  Layer-2 Forwarding 'dpdk-l2fwd-event' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run 'dpdk-l2fwd-event' application with eventdev
+
+  Note:
+    1. For DPAA1 platforms
+
+	-> disable push mode queue, using 'export DPAA_PUSH_QUEUES_NUMBER=0'
+
+	-> virtual device should be "event_dpaa1" i.e. --vdev="event_dpaa1"
+
+    2. For DPAA2 platforms
+
+	-> virtual device should be "event_dpaa2" i.e. --vdev="event_dpaa2"
+
+    3. Only single instance of virtual device(vdev) is allowed.
+
+  -- With parallel queue configuration
+
+  For 1 core, 1 Port, 1 queue per port=>
+
+  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=parallel
+
+  -- With atomic queue configuration
+
+  For 1 core, 1 Port, 1 queue per port=>
+
+  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=atomic
+
+  -- With ordered queue configuration
+
+  For 1 core, 1 Port, 1 queue per port=>
+
+  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=ordered
+
   Layer-3 Forwarding 'dpdk-l3fwd' Application using eventdev
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
