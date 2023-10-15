@@ -54,6 +54,7 @@ int bbdev_socket_id;
 #define BBDEV_LA12XX_VDEV_MODEM_ID_ARG	"modem"
 #define LA12XX_MAX_MODEM	4
 #define LA12XX_MAX_CORES	6
+#define LA12XX_MAX_VSPA		8
 
 #define BBDEV_LA12XX_LDPC_ENC_CORE	0
 #define BBDEV_LA12XX_LDPC_DEC_CORE	1
@@ -320,6 +321,16 @@ get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
 	}
 }
 
+int
+rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+
+	return get_l1_pcie_addr(ipc_priv, addr);
+}
+
 #define MODEM_P2V(A) \
 	((uint64_t) ((unsigned long) (A) \
 		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
@@ -567,10 +578,11 @@ la12xx_vspa_queue_setup(struct rte_bbdev *dev,
 	q_priv->vspa_desc_wr_index = 0;
 	q_priv->vspa_desc_rd_index = 0;
 
+	/* Mail box 0 */
 	lsb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
-		VSPA_ADDRESS(0) + VSPA_LSB_OFFSET);
+		VSPA_ADDRESS(q_priv->la12xx_core_id) + VSPA_LSB_OFFSET);
 	msb_addr = (void *)((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
-		VSPA_ADDRESS(0) + VSPA_MSB_OFFSET);
+		VSPA_ADDRESS(q_priv->la12xx_core_id) + VSPA_MSB_OFFSET);
 
 	rte_write32(q_priv->queue_size, msb_addr);
 	rte_mb();
@@ -627,6 +639,15 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 	ch->op_type = rte_cpu_to_be_32(q_priv->op_type);
 
 	if (q_priv->op_type == RTE_BBDEV_OP_LA12XX_VSPA) {
+		if (queue_conf->raw_queue_conf.modem_core_id < LA12XX_MAX_VSPA)
+			q_priv->la12xx_core_id =
+				queue_conf->raw_queue_conf.modem_core_id;
+		else
+			q_priv->la12xx_core_id = 0;
+		printf("VSPA core is %d for queue id = %d\n",
+				q_priv->la12xx_core_id, q_id);
+		ch->la12xx_core_id =
+			rte_cpu_to_be_32(q_priv->la12xx_core_id);
 		ret = la12xx_vspa_queue_setup(dev, q_priv);
 		if (ret) {
 			BBDEV_LA12XX_PMD_ERR(
@@ -1030,7 +1051,12 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 	}
 
 	feca_job->job_type = FECA_JOB_SD_BE;
+
+#ifdef VSPA_PUSCH
+	feca_job->t_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_dec_op)->feca_id);
+#else
 	feca_job->t_blk_id = q_priv->feca_blk_id_be32;
+#endif
 
 	sd_command = &feca_job->command_chain_t.sd_command_ch_obj;
 
@@ -1648,6 +1674,10 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, feca_job));
 		bbdev_ipc_op->feca_job_type = feca_job->job_type;
 		bbdev_ipc_op->feca_blk_id = feca_job->t_blk_id;
+#ifdef VSPA_PUSCH
+		if (q_priv->op_type == RTE_BBDEV_OP_LDPC_DEC)
+			bbdev_ipc_op->feca_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_op)->feca_id);
+#endif
 	}
 
 	/* Move Producer Index forward */
@@ -1720,7 +1750,7 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	char *data_ptr;
 	uint32_t l1_pcie_addr;
 	void *lsb_addr;
-	int prev_desc_index;
+	int prev_desc_index, i;
 
 	desc = &q_priv->vspa_ring[q_priv->vspa_desc_wr_index];
 
@@ -1755,6 +1785,10 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 		desc->meta_addr = l1_pcie_addr;
 	}
 
+	/* copy extra data in reserved */
+	for (i=0 ; i < 8; i++)
+		desc->rsvd[i] = vspa_params->extra_data[i];
+
 	desc->vspa_flag = 0;
 	desc->host_cnxt_hi = (uint32_t)((uint64_t)bbdev_op >> 32);
 	desc->host_cnxt_lo = (uint32_t)((uint64_t)bbdev_op);
@@ -1778,7 +1812,7 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	if (!prev_desc->host_flag) {
 		lsb_addr = (void *)
 			((uint64_t)ipc_priv->modem_ccsrbar.host_vaddr +
-			VSPA_ADDRESS(0) + VSPA_LSB_OFFSET);
+			VSPA_ADDRESS(q_priv->la12xx_core_id) + VSPA_LSB_OFFSET);
 		rte_write32(VSPA_MAILBOX_DUMMY_WRITE, lsb_addr);
 	}
 
@@ -2096,7 +2130,6 @@ dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
 		    RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE) &&
 		    !(l_op->crc_stat[tb_crc >> 3] & (1 << (tb_crc & 0x7))))
 			l_op->status = 1 << RTE_BBDEV_CRC_ERROR;
-
 #ifdef RTE_LIBRTE_LA12XX_DEBUG_DRIVER
 		rte_bbuf_dump(stdout,
 			ops[nb_dequeued]->ldpc_dec.hard_output.data,
