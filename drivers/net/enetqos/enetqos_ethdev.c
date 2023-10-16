@@ -839,22 +839,23 @@ enetqos_free_queue(struct rte_eth_dev *dev)
 
 static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 {
-	struct rte_eth_dev *dev = NULL;
-	const char *name;
-	struct enetqos_priv *priv;
-	int bd_total = 0;
-	unsigned int bdsize, i;
-	const char *mz_name = "bd_addr_v";
-	const struct rte_memzone *tz;
-	int fd = -1;
-	int size;
-	size_t ccsr_addr, ccsr_size;
-	int rt;
-	FILE *file;
-	char *string = malloc(MAX_LINE_SIZE);
 	struct rte_ether_addr macaddr = {
 		.addr_bytes = { 0x1, 0x1, 0x1, 0x1, 0x1, 0x1 }
 	};
+	char *string = malloc(MAX_LINE_SIZE);
+	const char *mz_name = "bd_addr_v";
+	struct rte_eth_dev *dev = NULL;
+	const struct rte_memzone *tz;
+	size_t ccsr_addr, ccsr_size;
+	struct enetqos_priv *priv;
+	unsigned int bdsize, i;
+	const char *name;
+	int bd_total = 0;
+	int fd = -1;
+	FILE *file;
+	int size;
+	int rt;
+	int cnt;
 
 	name = rte_vdev_device_name(vdev);
 	ENETQOS_PMD_LOG(INFO, "Initializing pmd_fec for %s", name);
@@ -902,30 +903,38 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 #endif
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
-	if (!file)
-		printf("Unable to read from FDT.\n");
-
-	fread(string, sizeof(char), MAX_LINE_SIZE, file);
-
-	fclose(file);
-
-	string = string + strlen(string) - 8;
-	sscanf(string, "%lx", &ccsr_addr);
-	ccsr_size = ENETQ_CCSR_SIZE;
-
-	fd = open("/dev/mem", O_RDWR);
-	if (fd < 0)
-		ENETQOS_PMD_ERR("Failed to open /dev/mem");
-
-	priv->hw_baseaddr_v = mmap(NULL, ccsr_size, PROT_READ | PROT_WRITE,
-		MAP_SHARED, fd, ccsr_addr);
-
-	close(fd);
-	if (priv->hw_baseaddr_v == MAP_FAILED) {
-		ENETQOS_PMD_ERR("Can not map CCSR base");
-		rt = -EINVAL;
+	if (file) {
+		cnt = fread(string, sizeof(char), MAX_LINE_SIZE, file);
+		/* fread success */
+		if (cnt) {
+			string = string + strlen(string) - 8;
+			sscanf(string, "%lx", &ccsr_addr);
+			ccsr_size = ENETQ_CCSR_SIZE;
+		}
+		fclose(file);
+	} else {
+		ENETQOS_PMD_ERR("File open failed!!");
+		rt = -1;
 		goto err;
 	}
+
+	fd = open("/dev/mem", O_RDWR);
+	if (fd) {
+		priv->hw_baseaddr_v = mmap(NULL, ccsr_size, PROT_READ | PROT_WRITE,
+				      MAP_SHARED, fd, ccsr_addr);
+		if (priv->hw_baseaddr_v == MAP_FAILED) {
+			ENETQOS_PMD_ERR("Can not map CCSR base");
+			rt = -EINVAL;
+			close(fd);
+			goto err;
+		}
+		close(fd);
+	} else {
+		ENETQOS_PMD_ERR("Failed to open /dev/mem");
+		rt = -1;
+		goto err;
+	}
+
 	priv->ioaddr = priv->hw_baseaddr_v;
 
 	/* Copy the station address into the dev structure, */

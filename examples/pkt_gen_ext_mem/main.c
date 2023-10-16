@@ -39,6 +39,7 @@
 #include <rte_ethdev.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -59,7 +60,8 @@ const unsigned char OutFrame[] = {
 		 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
 		 0x0B, 0x0C, 0xAE, 0xFE, 0x0F, 0x10};
 
-void set_mbuf_data(struct rte_mbuf *mbuf, const unsigned char *data,
+static void
+set_mbuf_data(struct rte_mbuf *mbuf, const unsigned char *data,
 		   const unsigned int data_len)
 {
 	mbuf->data_len = data_len; //Amount of data in segment buffer
@@ -77,7 +79,8 @@ check_all_ports_link_status(uint32_t port_mask)
 #define CHECK_INTERVAL 100 /* 100ms */
 #define MAX_CHECK_TIME 350 /* 9s (90 * 100ms) in total */
 	uint16_t portid;
-	uint8_t count, all_ports_up, print_flag = 0;
+	uint16_t count;
+	uint8_t all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
 	int ret;
 
@@ -133,7 +136,8 @@ check_all_ports_link_status(uint32_t port_mask)
 	}
 }
 
-int open_port(uint16_t port_id, uint64_t iaddr, uint64_t size, int fd)
+static int
+open_port(uint16_t port_id, uint64_t iaddr, uint64_t size, int fd)
 {
 	int rez = 0;
 	size_t len = size;
@@ -364,7 +368,6 @@ int main(int argc, char *argv[])
 	rte_delay_ms(2000);
 	for (uint32_t i = 0; i < 1000; ++i) {
 		struct rte_mbuf *m;
-		uint16_t buf_len = 128;
 
 		m = rte_pktmbuf_alloc(l2fwd_pktmbuf_pool);
 		if (m == NULL) {
@@ -376,7 +379,7 @@ int main(int argc, char *argv[])
 		ret = rte_eth_tx_burst(DPDK_PORT_ID, 0, &m, 1);
 		sent_pkts += ret;
 	}
-	printf("Packets sent. Count=%d \n", sent_pkts);
+	printf("Packets sent. Count=%ld \n", sent_pkts);
 	rte_delay_ms(5000);
 	printf("end pool count = %d\n",
 			rte_mempool_avail_count(l2fwd_pktmbuf_pool));

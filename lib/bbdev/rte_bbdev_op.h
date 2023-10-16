@@ -57,7 +57,7 @@ extern "C" {
  * including padding for future enum insertion.
  * The enum values must be explicitly kept smaller or equal to this padded maximum size.
  */
-#define RTE_BBDEV_OP_TYPE_SIZE_MAX 8
+#define RTE_BBDEV_OP_TYPE_SIZE_MAX RTE_BBDEV_OP_TYPE_COUNT + 1
 /* Maximum number of symbols in a slot for 5G */
 #define RTE_BBDEV_5G_MAX_SYMBOLS 14
 

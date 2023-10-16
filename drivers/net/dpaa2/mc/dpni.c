@@ -892,7 +892,7 @@ int dpni_get_qdid_ex(struct fsl_mc_io *mc_io,
 		return err;
 
 	/* retrieve response parameters */
-	rsp_params = (struct dpni_rsp_get_qdid *)cmd.params;
+	rsp_params = (struct dpni_rsp_get_qdid_ex *)cmd.params;
 	for( i = 0 ; i < DPNI_MAX_CHANNELS ; i++ ) {
 		qdid[i] = le16_to_cpu(rsp_params->qdid[i]);
 	}
