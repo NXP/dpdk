@@ -46,6 +46,7 @@
 #include <rte_ip.h>
 #include <rte_ip_frag.h>
 #include <rte_tm.h>
+#include <rte_kni.h>
 
 #include "ipsec_ike.h"
 #include "xfrm_km.h"
@@ -85,6 +86,7 @@ static char *s_tap_port_nm;
 
 static uint16_t s_sec_port_id = RTE_MAX_ETHPORTS;
 static uint16_t s_tap_port_id = RTE_MAX_ETHPORTS;
+struct rte_kni *s_kni;
 
 static int s_icmp_reply = 1;
 static int s_frame_dump;
@@ -177,6 +179,27 @@ struct ipsec_ike_cntx *
 ipsec_ike_get_cntx(void)
 {
 	return &s_ipsec_ike_cntx;
+}
+
+static struct rte_kni *
+ipsec_ike_kni_alloc(struct rte_mempool *pktmbuf_pool)
+{
+	struct rte_kni *kni;
+	struct rte_kni_conf conf;
+	struct rte_kni_ops ops;
+
+	memset(&conf, 0, sizeof(conf));
+	snprintf(conf.name, RTE_KNI_NAMESIZE, "IPSEC_KNI_TAP");
+
+	memset(&ops, 0, sizeof(ops));
+
+	conf.mbuf_size = rte_pktmbuf_data_room_size(pktmbuf_pool);
+	conf.mbuf_size -= RTE_PKTMBUF_HEADROOM;
+	conf.mtu = conf.mbuf_size - RTE_ETHER_HDR_LEN;
+
+	kni = rte_kni_alloc(pktmbuf_pool, &conf, &ops);
+
+	return kni;
 }
 
 static inline void
@@ -474,6 +497,8 @@ prepare_inbound_one_packet(struct rte_mbuf *pkt,
 			if (s_tap_port_id != RTE_MAX_ETHPORTS) {
 				tx_nb = rte_eth_tx_burst(s_tap_port_id,
 						q_idx, &pkt, 1);
+			} else if (s_kni) {
+				tx_nb = rte_kni_tx_burst(s_kni, &pkt, 1);
 			}
 			if (!tx_nb)
 				rte_pktmbuf_free(pkt);
@@ -493,6 +518,8 @@ prepare_inbound_one_packet(struct rte_mbuf *pkt,
 		tx_nb = 0;
 		if (s_tap_port_id != RTE_MAX_ETHPORTS)
 			tx_nb = rte_eth_tx_burst(s_tap_port_id, q_idx, &pkt, 1);
+		else if (s_kni)
+			tx_nb = rte_kni_tx_burst(s_kni, &pkt, 1);
 
 		if (!tx_nb)
 			rte_pktmbuf_free(pkt);
@@ -816,7 +843,7 @@ static int32_t
 main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts[MAX_PKT_BURST];
-	int32_t nb_rx, nb_tx, i;
+	int32_t nb_rx, nb_tx, i, ret;
 	uint16_t e_qp = 0, c_qp = 0;
 	struct ipsec_ike_sa_entry *sa;
 
@@ -824,6 +851,14 @@ main_loop(__attribute__((unused)) void *dummy)
 		rte_lcore_id());
 
 	while (1) {
+		if (s_kni) {
+			ret = rte_kni_handle_request(s_kni);
+			if (ret) {
+				RTE_LOG(ERR, IPSEC_IKE,
+					"Handle KNI failed(%d)\n", ret);
+				return ret;
+			}
+		}
 		nb_rx = rte_eth_rx_burst(s_sec_port_id, e_qp,
 				pkts, MAX_PKT_BURST);
 		if (nb_rx > 0) {
@@ -853,15 +888,17 @@ main_loop(__attribute__((unused)) void *dummy)
 		if (s_tap_port_id != RTE_MAX_ETHPORTS) {
 			nb_rx = rte_eth_rx_burst(s_tap_port_id, e_qp,
 					pkts, MAX_PKT_BURST);
-			if (nb_rx > 0) {
-				for (i = 0; i < nb_rx; i++)
-					dump_pkt_info(pkts[i], 0, 0, 1, 1);
-				nb_tx = rte_eth_tx_burst(s_sec_port_id, e_qp,
-					pkts, nb_rx);
-				if (nb_tx < nb_rx) {
-					rte_pktmbuf_free_bulk(&pkts[nb_tx],
-						nb_rx - nb_tx);
-				}
+		} else if (s_kni) {
+			nb_rx = rte_kni_rx_burst(s_kni, pkts, MAX_PKT_BURST);
+		}
+		if (nb_rx > 0) {
+			for (i = 0; i < nb_rx; i++)
+				dump_pkt_info(pkts[i], 0, 0, 1, 1);
+			nb_tx = rte_eth_tx_burst(s_sec_port_id, e_qp,
+				pkts, nb_rx);
+			if (nb_tx < nb_rx) {
+				rte_pktmbuf_free_bulk(&pkts[nb_tx],
+					nb_rx - nb_tx);
 			}
 		}
 		e_qp++;
@@ -900,9 +937,10 @@ parse_args(int32_t argc, char **argv)
 				"Tap port:%s\n", s_tap_port_nm);
 			break;
 		case CMD_LINE_OPT_ICMP_REPLY_NUM:
-			s_icmp_reply = 1;
+			s_icmp_reply = atoi(optarg);
 			RTE_LOG(INFO, IPSEC_IKE,
-				"ICMP reply enabled.\n");
+				"ICMP reply %s.\n",
+				s_icmp_reply ? "enabled" : "disabled");
 			break;
 		case CMD_LINE_OPT_FRAME_DUMP_NUM:
 			s_frame_dump = 1;
@@ -1082,6 +1120,11 @@ ipsec_ike_port_init(uint16_t portid)
 			s_port_conf.rx_adv_conf.rss_conf.rss_hf);
 		return -ENOTSUP;
 	}
+
+	if (s_eth_qp_nb > dev_info.max_rx_queues)
+		s_eth_qp_nb = dev_info.max_rx_queues;
+	if (s_eth_qp_nb > dev_info.max_tx_queues)
+		s_eth_qp_nb = dev_info.max_tx_queues;
 
 	ret = rte_eth_dev_configure(portid, s_eth_qp_nb, s_eth_qp_nb,
 			&local_port_conf);
@@ -1579,10 +1622,17 @@ main(int32_t argc, char **argv)
 				"Init tap port%d failed(%d)\n",
 				s_tap_port_id, ret);
 		}
+	} else {
+		ret = rte_kni_init(0);
+		if (!ret) {
+			s_kni = ipsec_ike_kni_alloc(s_mem_ctx.mbuf_pool);
+			if (!s_kni)
+				rte_exit(EXIT_FAILURE, "Alloc KNI failed\n");
+		}
 	}
 
 	s_ipsec_ike_cntx.sp_in_fast = rte_zmalloc(NULL,
-		sizeof(void *) * (s_eth_qp_nb - 1),
+		sizeof(void *) * s_eth_qp_nb,
 		RTE_CACHE_LINE_SIZE);
 	s_ipsec_ike_cntx.max_flow_in_nb = s_eth_qp_nb - 1;
 	ret = ipsec_ike_default_inbound_flow(s_eth_qp_nb - 1,
