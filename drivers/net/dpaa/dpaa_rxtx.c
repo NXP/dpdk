@@ -47,6 +47,10 @@
 #include <dpaa_of.h>
 #include <netcfg.h>
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+static int s_force_display_frm;
+#endif
+
 #define DPAA_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid) \
 	do { \
 		(_fd)->cmd = 0; \
@@ -59,37 +63,122 @@
 	} while (0)
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-#define DISPLAY_PRINT printf
-static void dpaa_display_frame_info(const struct qm_fd *fd,
-			uint32_t fqid, bool rx)
+void
+dpaa_force_display_frame_set(int set)
 {
-	int ii;
-	char *ptr;
+	s_force_display_frm = set;
+}
+
+#define DISPLAY_PRINT printf
+static void
+dpaa_display_frame_info(const struct qm_fd *fd,
+	uint32_t fqid, bool rx)
+{
+	int pos, offset = 0;
+	char *ptr, info[1024];
 	struct annotations_t *annot = rte_dpaa_mem_ptov(fd->addr);
 	uint8_t format;
+	const struct dpaa_eth_parse_results_t *psr;
 
-	if (!fd->status) {
-		/* Do not display correct packets.*/
+	if (!fd->status && !s_force_display_frm) {
+		/* Do not display correct packets unless force display.*/
 		return;
 	}
+	psr = &annot->parse;
 
-	format = (fd->opaque & DPAA_FD_FORMAT_MASK) >>
-				DPAA_FD_FORMAT_SHIFT;
+	format = (fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
+	if (format == qm_fd_contig)
+		sprintf(info, "simple");
+	else if (format == qm_fd_sg)
+		sprintf(info, "sg");
+	else
+		sprintf(info, "unknown format(%d)", format);
 
-	DISPLAY_PRINT(
-		"fqid %d bpid %d addr 0x%lx, format %d off %d, len %d stat 0x%x\r\n",
-		fqid, fd->bpid, (unsigned long)fd->addr, fd->format,
-		fd->offset, fd->length20, fd->status);
+	DISPLAY_PRINT("%s: fqid=%08x, bpid=%d, phy addr=0x%lx ",
+		rx ? "RX" : "TX", fqid, fd->bpid, (unsigned long)fd->addr);
+	DISPLAY_PRINT("format=%s offset=%d, len=%d, stat=0x%x\r\n",
+		info, fd->offset, fd->length20, fd->status);
 	if (rx) {
-		ptr = (char *)&annot->parse;
-		DISPLAY_PRINT("RX parser result:\r\n");
-		for (ii = 0; ii < (int)sizeof(struct dpaa_eth_parse_results_t);
-			ii++) {
-			DISPLAY_PRINT("%02x ", ptr[ii]);
-			if (((ii + 1) % 16) == 0)
-				DISPLAY_PRINT("\n");
+		DISPLAY_PRINT("Display usual RX parser result:\r\n");
+		if (psr->eth_frame_type == 0)
+			offset += sprintf(&info[offset], "unicast");
+		else if (psr->eth_frame_type == 1)
+			offset += sprintf(&info[offset], "multicast");
+		else if (psr->eth_frame_type == 3)
+			offset += sprintf(&info[offset], "broadcast");
+		else
+			offset += sprintf(&info[offset], "unknown eth type(%d)",
+				psr->eth_frame_type);
+		if (psr->l2r_err) {
+			offset += sprintf(&info[offset], " L2 error(%d)",
+				psr->l2r_err);
+		} else {
+			offset += sprintf(&info[offset], " L2 non error");
 		}
-		DISPLAY_PRINT("\n");
+		DISPLAY_PRINT("L2: %s, %s, ethernet type:%s\r\n",
+			psr->ethernet ? "is ethernet" : "non ethernet",
+			psr->vlan ? "is vlan" : "non vlan", info);
+
+		offset = 0;
+		DISPLAY_PRINT("L3: %s/%s, %s/%s, %s, %s\r\n",
+			psr->first_ipv4 ? "first IPv4" : "non first IPv4",
+			psr->last_ipv4 ? "last IPv4" : "non last IPv4",
+			psr->first_ipv6 ? "first IPv6" : "non first IPv6",
+			psr->last_ipv6 ? "last IPv6" : "non last IPv6",
+			psr->gre ? "GRE" : "non GRE",
+			psr->l3_err ? "L3 has error" : "L3 non error");
+
+		if (psr->l4_type == DPAA_PR_L4_TCP_TYPE) {
+			offset += sprintf(&info[offset], "tcp");
+		} else if (psr->l4_type == DPAA_PR_L4_UDP_TYPE) {
+			offset += sprintf(&info[offset], "udp");
+		} else if (psr->l4_type == DPAA_PR_L4_IPSEC_TYPE) {
+			offset += sprintf(&info[offset], "IPSec ");
+			if (psr->esp_sum)
+				offset += sprintf(&info[offset], "ESP");
+			if (psr->ah)
+				offset += sprintf(&info[offset], "AH");
+		} else if (psr->l4_type == DPAA_PR_L4_SCTP_TYPE) {
+			offset += sprintf(&info[offset], "sctp");
+		} else if (psr->l4_type == DPAA_PR_L4_DCCP_TYPE) {
+			offset += sprintf(&info[offset], "dccp");
+		} else {
+			offset += sprintf(&info[offset], "unknown l4 type(%d)",
+				psr->l4_type);
+		}
+		DISPLAY_PRINT("L4: type:%s, L4 validation %s\r\n",
+			info, psr->l4cv ? "Performed" : "NOT performed");
+
+		offset = 0;
+		if (psr->ethernet) {
+			offset += sprintf(&info[offset],
+				"Eth offset=%d, ethtype offset=%d, ",
+				psr->eth_off, psr->etype_off);
+		}
+		if (psr->vlan) {
+			offset += sprintf(&info[offset], "vLAN offset=%d, ",
+				psr->vlan_off[0]);
+		}
+		if (psr->first_ipv4 || psr->first_ipv6) {
+			offset += sprintf(&info[offset], "first IP offset=%d, ",
+				psr->ip_off[0]);
+		}
+		if (psr->last_ipv4 || psr->last_ipv6) {
+			offset += sprintf(&info[offset], "last IP offset=%d, ",
+				psr->ip_off[1]);
+		}
+		if (psr->gre) {
+			offset += sprintf(&info[offset], "GRE offset=%d, ",
+				psr->gre_off);
+		}
+		if (psr->l4_type >= DPAA_PR_L4_TCP_TYPE) {
+			offset += sprintf(&info[offset], "L4 offset=%d, ",
+				psr->l4_off);
+		}
+		offset += sprintf(&info[offset], "Next HDR(0x%04x) offset=%d.",
+			rte_be_to_cpu_16(psr->nxthdr), psr->nxthdr_off);
+
+		DISPLAY_PRINT("%s\r\n", info);
 	}
 
 	if (unlikely(format == qm_fd_sg)) {
@@ -100,10 +189,10 @@ static void dpaa_display_frame_info(const struct qm_fd *fd,
 	DISPLAY_PRINT("Frame payload:\r\n");
 	ptr = (char *)annot;
 	ptr += fd->offset;
-	for (ii = 0; ii < fd->length20; ii++) {
-		DISPLAY_PRINT("%02x ", ptr[ii]);
-		if (((ii + 1) % 16) == 0)
-			printf("\n");
+	for (pos = 0; pos < fd->length20; pos++) {
+		DISPLAY_PRINT("%02x ", ptr[pos]);
+		if (((pos + 1) % 16) == 0)
+			DISPLAY_PRINT("\n");
 	}
 	DISPLAY_PRINT("\n");
 }
@@ -111,11 +200,38 @@ static void dpaa_display_frame_info(const struct qm_fd *fd,
 #define dpaa_display_frame_info(a, b, c)
 #endif
 
-static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
-				     uint64_t prs __rte_unused)
+static inline void
+dpaa_slow_parsing(struct rte_mbuf *m,
+	const struct annotations_t *annot)
 {
+	const struct dpaa_eth_parse_results_t *parse;
+
 	DPAA_DP_LOG(DEBUG, "Slow parsing");
-	/*TBD:XXX: to be implemented*/
+	parse = &annot->parse;
+
+	if (parse->ethernet)
+		m->packet_type |= RTE_PTYPE_L2_ETHER;
+	if (parse->vlan)
+		m->packet_type |= RTE_PTYPE_L2_ETHER_VLAN;
+	if (parse->first_ipv4)
+		m->packet_type |= RTE_PTYPE_L3_IPV4;
+	if (parse->first_ipv6)
+		m->packet_type |= RTE_PTYPE_L3_IPV6;
+	if (parse->gre)
+		m->packet_type |= RTE_PTYPE_TUNNEL_GRE;
+	if (parse->last_ipv4)
+		m->packet_type |= RTE_PTYPE_L3_IPV4_EXT;
+	if (parse->last_ipv6)
+		m->packet_type |= RTE_PTYPE_L3_IPV6_EXT;
+	if (parse->l4_type == DPAA_PR_L4_TCP_TYPE)
+		m->packet_type |= RTE_PTYPE_L4_TCP;
+	else if (parse->l4_type == DPAA_PR_L4_UDP_TYPE)
+		m->packet_type |= RTE_PTYPE_L4_UDP;
+	else if (parse->l4_type == DPAA_PR_L4_IPSEC_TYPE &&
+		!parse->l4_info_err && parse->esp_sum)
+		m->packet_type |= RTE_PTYPE_TUNNEL_ESP;
+	else if (parse->l4_type == DPAA_PR_L4_SCTP_TYPE)
+		m->packet_type |= RTE_PTYPE_L4_SCTP;
 }
 
 static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
@@ -217,7 +333,7 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 		break;
 	/* More switch cases can be added */
 	default:
-		dpaa_slow_parsing(m, prs);
+		dpaa_slow_parsing(m, annot);
 	}
 
 	m->tx_offload = annot->parse.ip_off[0];

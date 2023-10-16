@@ -2027,6 +2027,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	uint32_t dev_rx_fqids[DPAA_MAX_NUM_PCD_QUEUES];
 	int8_t dev_vspids[DPAA_MAX_NUM_PCD_QUEUES];
 	int8_t vsp_id = -1;
+	char *penv;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2099,8 +2100,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_RX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Rx tail drop is disabled.
 	 */
-	if (getenv("DPAA_RX_TAILDROP_THRESHOLD")) {
-		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_RX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_threshold);
 		/* if a very large value is being configured */
@@ -2111,14 +2113,21 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_TX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Tx tail drop is disabled.
 	 */
-	if (getenv("DPAA_TX_TAILDROP_THRESHOLD")) {
-		td_tx_threshold = atoi(getenv("DPAA_TX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_TX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_tx_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_tx_threshold);
 		/* if a very large value is being configured */
 		if (td_tx_threshold > UINT16_MAX)
 			td_tx_threshold = CGR_RX_PERFQ_THRESH;
 	}
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	penv = getenv("DPAA_DISPLAY_FRAME_AND_PARSER_RESULT");
+	if (penv)
+		dpaa_force_display_frame_set(atoi(penv));
+#endif
 
 	/* If congestion control is enabled globally*/
 	if (num_rx_fqs > 0 && td_threshold) {
