@@ -481,6 +481,16 @@ Following are some pre-requisites:
 Steps for ENET-QOS:
 -------------------
 
+Steps to compile the kpage non-cacheable module:
+------------------------------------------------
+Under the dpdk-extras repo,
+https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse?at=refs%2Fheads%2Fmain
+
+External repo:
+https://github.com/nxp-qoriq/dpdk-extras
+
+Refer README for kpage_ncache module in linux/kpage_ncache directory.
+
 1.1 For i.MX8MP Platform:
 -------------------------
 Set the dpdk DTB file.
@@ -502,10 +512,12 @@ Use below steps on uboot to boot for DPDK after flasing the release images:
 Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
 2. Manually allocate hugepages
         e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-3. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
+3. Load the non-cacheable module
+	$ insmod kpage_ncache.ko
+4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
 	'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
 
-4. Run -
+5. Run -
 	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
 	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
 
