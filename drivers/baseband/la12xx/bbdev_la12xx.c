@@ -1745,14 +1745,14 @@ enqueue_vspa_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 	if (out_op_data->bdata) {
 		data_ptr = get_data_ptr(out_op_data);
 		l1_pcie_addr = get_l1_pcie_addr(ipc_priv, data_ptr);
-		desc->in_addr = l1_pcie_addr;
+		desc->out_addr = l1_pcie_addr;
 	}
 
 	/* Set meta data */
 	if (vspa_params->metadata) {
 		l1_pcie_addr = get_l1_pcie_addr(ipc_priv,
 					vspa_params->metadata);
-		desc->meta_addr = rte_cpu_to_be_32(l1_pcie_addr);
+		desc->meta_addr = l1_pcie_addr;
 	}
 
 	desc->vspa_flag = 0;
