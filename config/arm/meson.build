@@ -334,12 +334,12 @@ soc_dpaa = {
         ['RTE_USE_NON_CACHE_MEM', 1],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
-	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
-	['CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE', false],
-	['CONFIG_RTE_LIBRTE_IEEE1588', false],
-	['CONFIG_RTE_DMA_DPAA_ERRATA_ERR050757', false],
-	['CONFIG_RTE_DMA_DPAA_ERRATA_ERR050265', false],
-	['CONFIG_RTE_DMA_DPAA_ERR_CHK', false],
+	['RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
+	['RTE_LIBRTE_PMD_CAAM_JR_BE', false],
+	['RTE_LIBRTE_IEEE1588', false],
+	['RTE_DMA_DPAA_ERRATA_ERR050757', false],
+	['RTE_DMA_DPAA_ERRATA_ERR050265', false],
+	['RTE_DMA_DPAA_ERR_CHK', false],
 
 	# Enable this flag to use dedicated socket memory
 	# for LA12XX usecases, as RTE_LA12XX_SOCKET=y
@@ -382,9 +382,6 @@ soc_imx = {
         ['RTE_USE_NON_CACHE_MEM', 1],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
-	['CONFIG_RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
-	['CONFIG_RTE_LIBRTE_PMD_CAAM_JR_BE', false],
-	['CONFIG_RTE_LIBRTE_IEEE1588', false]
     ],
     'numa': false
 }
