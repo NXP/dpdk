@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
- * Copyright 2022 NXP
+ * Copyright 2022-2023 NXP
  */
 
 #include <stdint.h>
@@ -3254,11 +3254,11 @@ lsxvio_rc_modern_notify_queue(struct virtio_hw *hw,
 	if (queue_type == VTNET_RQ &&
 		lsx_feature & LSX_VIO_EP2RC_PACKED) {
 		lsxvio_rc_rx_notify_addr(vq, lsx_hw,
-			lsx_feature & LSX_VIO_EP2RC_DMA_NOTIFY);
+			lsx_feature & LSX_VIO_EP2RC_DMA_ADDR_NOTIFY);
 	} else if (queue_type == VTNET_TQ) {
 		avail_ring = lsxvio_rc_tx_notify_bd_update(vq,
-			lsx_hw, lsx_feature & LSX_VIO_RC2EP_DMA_NOTIFY);
-		if (lsx_feature & LSX_VIO_RC2EP_DMA_NOTIFY) {
+			lsx_hw, lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY);
+		if (lsx_feature & LSX_VIO_RC2EP_DMA_BD_NOTIFY) {
 			rte_write16(vq->vq_split.ring.avail->idx,
 				&avail_ring->flags);
 		} else {
