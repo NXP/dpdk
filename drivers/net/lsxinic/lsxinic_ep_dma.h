@@ -16,6 +16,14 @@ struct lsinic_dma_job {
 	uint64_t cnxt;
 };
 
+struct lsinic_dma_seg_job {
+	rte_iova_t src[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	rte_iova_t dst[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	uint32_t len[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
+	uint32_t seg_nb;
+	uint64_t cnxt;
+};
+
 enum lsinic_dma_direction {
 	LSINIC_DMA_MEM_TO_PCIE,
 	LSINIC_DMA_PCIE_TO_MEM,

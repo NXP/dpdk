@@ -375,6 +375,10 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			if (adapter->pkt_addr_interval)
 				tx_queue->ep_mem_bd_type = EP_MEM_SRC_ADDRX_BD;
 		}
+		if (adapter->cap & LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD) {
+			tx_queue->rc_mem_bd_type = RC_MEM_IDX_CNF;
+			tx_queue->ep_mem_bd_type = EP_MEM_SRC_SEG_BD;
+		}
 		tx_ring_reg = &bdr_reg->tx_ring[i];
 		LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
 			tx_queue->ep_mem_bd_type);
@@ -386,6 +390,8 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			tx_queue->ep_tx_addrl = tx_queue->ep_bd_mapped_addr;
 		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD) {
 			tx_queue->ep_tx_addrx = tx_queue->ep_bd_mapped_addr;
+		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
+			tx_queue->ep_tx_sg = tx_queue->ep_bd_mapped_addr;
 		} else {
 			rte_panic("TXQ%d invalid ep mem type(%d)",
 				tx_queue->queue_index,
