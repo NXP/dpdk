@@ -2010,6 +2010,41 @@ dpaa_dev_init_secondary(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+static int
+dpaa_error_queue_init(struct dpaa_if *dpaa_intf,
+	struct fman_if *fman_intf)
+{
+	int i, ret;
+	struct qman_fq *err_queues = dpaa_intf->debug_queues;
+	uint32_t err_fqid = 0;
+
+	if (fman_intf->is_shared_mac) {
+		DPAA_PMD_DEBUG("Shared MAC's err queues are handled in kernel");
+		return 0;
+	}
+
+	for (i = 0; i < DPAA_DEBUG_FQ_MAX_NUM; i++) {
+		if (i == DPAA_DEBUG_FQ_RX_ERROR)
+			err_fqid = fman_intf->fqid_rx_err;
+		else if (i == DPAA_DEBUG_FQ_TX_ERROR)
+			err_fqid = fman_intf->fqid_tx_err;
+		else
+			continue;
+		ret = dpaa_debug_queue_init(&err_queues[i], err_fqid);
+		if (ret) {
+			DPAA_PMD_ERR("DPAA %s ERROR queue init failed!",
+				i == DPAA_DEBUG_FQ_RX_ERROR ?
+				"RX" : "TX");
+			return ret;
+		}
+		err_queues[i].dpaa_intf = dpaa_intf;
+	}
+
+	return 0;
+}
+#endif
+
 /* Initialise a network interface */
 static int
 dpaa_dev_init(struct rte_eth_dev *eth_dev)
@@ -2027,6 +2062,7 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	uint32_t dev_rx_fqids[DPAA_MAX_NUM_PCD_QUEUES];
 	int8_t dev_vspids[DPAA_MAX_NUM_PCD_QUEUES];
 	int8_t vsp_id = -1;
+	char *penv;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2099,8 +2135,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_RX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Rx tail drop is disabled.
 	 */
-	if (getenv("DPAA_RX_TAILDROP_THRESHOLD")) {
-		td_threshold = atoi(getenv("DPAA_RX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_RX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_threshold);
 		/* if a very large value is being configured */
@@ -2111,14 +2148,21 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	/* if DPAA_TX_TAILDROP_THRESHOLD is set, use that value; if 0, it means
 	 * Tx tail drop is disabled.
 	 */
-	if (getenv("DPAA_TX_TAILDROP_THRESHOLD")) {
-		td_tx_threshold = atoi(getenv("DPAA_TX_TAILDROP_THRESHOLD"));
+	penv = getenv("DPAA_TX_TAILDROP_THRESHOLD");
+	if (penv) {
+		td_tx_threshold = atoi(penv);
 		DPAA_PMD_DEBUG("Tail drop threshold env configured: %u",
 			       td_tx_threshold);
 		/* if a very large value is being configured */
 		if (td_tx_threshold > UINT16_MAX)
 			td_tx_threshold = CGR_RX_PERFQ_THRESH;
 	}
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	penv = getenv("DPAA_DISPLAY_FRAME_AND_PARSER_RESULT");
+	if (penv)
+		dpaa_force_display_frame_set(atoi(penv));
+#endif
 
 	/* If congestion control is enabled globally*/
 	if (num_rx_fqs > 0 && td_threshold) {
@@ -2216,20 +2260,9 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	dpaa_intf->nb_tx_queues = MAX_DPAA_CORES;
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
-	ret = dpaa_debug_queue_init(&dpaa_intf->debug_queues[
-		DPAA_DEBUG_FQ_RX_ERROR], fman_intf->fqid_rx_err);
-	if (ret) {
-		DPAA_PMD_ERR("DPAA RX ERROR queue init failed!");
+	ret = dpaa_error_queue_init(dpaa_intf, fman_intf);
+	if (ret)
 		goto free_tx;
-	}
-	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_RX_ERROR].dpaa_intf = dpaa_intf;
-	ret = dpaa_debug_queue_init(&dpaa_intf->debug_queues[
-		DPAA_DEBUG_FQ_TX_ERROR], fman_intf->fqid_tx_err);
-	if (ret) {
-		DPAA_PMD_ERR("DPAA TX ERROR queue init failed!");
-		goto free_tx;
-	}
-	dpaa_intf->debug_queues[DPAA_DEBUG_FQ_TX_ERROR].dpaa_intf = dpaa_intf;
 #endif
 
 	DPAA_PMD_DEBUG("All frame queues created");
