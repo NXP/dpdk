@@ -356,14 +356,76 @@ lxsnic_rx_bd_raw_dma_test_init(struct lxsnic_ring *q,
 	ep_rx_desc->len_cmd = len;
 	ep_rx_desc->bd_status =
 		(((uint32_t)idx) << LSINIC_BD_CTX_IDX_SHIFT) | RING_BD_READY;
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&q->ep_reg->pir, (idx + 1) & (q->count - 1));
-#endif
+	LSINIC_WRITE_REG(&q->ep_reg->pir, 0);
 
 	return 0;
 }
 #endif
+
+static int
+lxsnic_configure_txq_bd_dma_read(struct lxsnic_ring *txq)
+{
+	uint64_t rdma_addr = 0, offset = 0, len = 0;
+	void *v_rdma_addr = NULL;
+
+	if (txq->rc_mem_bd_type == RC_MEM_LONG_BD) {
+		offset = 0;
+	} else if (txq->rc_mem_bd_type == RC_MEM_BD_CNF) {
+		offset = sizeof(struct lsinic_rc_tx_bd_cnf) * txq->count;
+	} else if (txq->rc_mem_bd_type == RC_MEM_IDX_CNF) {
+		offset = 0;
+	} else {
+		LSXINIC_PMD_ERR("%s line%d ep mem bd type(%d) err",
+			__func__, __LINE__,
+			txq->rc_mem_bd_type);
+
+		return -EINVAL;
+	}
+
+	rdma_addr = txq->rc_bd_desc_dma + offset;
+	rdma_addr = RTE_CACHE_LINE_ROUNDUP(rdma_addr);
+	offset = rdma_addr - txq->rc_bd_desc_dma;
+	v_rdma_addr = (uint8_t *)txq->rc_bd_shared_addr + offset;
+
+	if (txq->ep_mem_bd_type == EP_MEM_LONG_BD) {
+		txq->rc_bd_desc = v_rdma_addr;
+		len = sizeof(struct lsinic_bd_desc) * txq->count;
+	} else if (txq->ep_mem_bd_type == EP_MEM_SRC_ADDRL_BD) {
+		txq->rc_tx_addrl = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_rx_src_addrl) * txq->count;
+	} else if (txq->ep_mem_bd_type == EP_MEM_SRC_ADDRX_BD) {
+		txq->rc_tx_addrx = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_rx_src_addrx) * txq->count;
+	} else if (txq->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
+		txq->rc_sg_desc = v_rdma_addr;
+		len = sizeof(struct lsinic_seg_desc) * txq->count;
+	} else {
+		LSXINIC_PMD_ERR("%s line%d ep mem bd type(%d) err",
+				__func__, __LINE__,
+				txq->ep_mem_bd_type);
+
+			return -EINVAL;
+	}
+
+	if ((offset + len) > LSINIC_BD_RING_SIZE) {
+		LSXINIC_PMD_ERR("%s: offset(%ld) + (len)%ld > %ld",
+			__func__, offset, len,
+			LSINIC_BD_RING_SIZE);
+		txq->rc_bd_desc = NULL;
+		txq->rc_tx_addrl = NULL;
+		txq->rc_tx_addrx = NULL;
+		txq->rc_sg_desc = NULL;
+
+		return -EOVERFLOW;
+	}
+
+	LSINIC_WRITE_REG(&txq->ep_reg->rdmal,
+		rdma_addr & DMA_BIT_MASK(32));
+	LSINIC_WRITE_REG(&txq->ep_reg->rdmah,
+		rdma_addr >> 32);
+
+	return 0;
+}
 
 static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
@@ -464,9 +526,16 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		} else if (tx_queue->rc_mem_bd_type == RC_MEM_IDX_CNF) {
 			/**Do nothing*/
 		} else {
-			rte_panic("TXQ%d invalid rc mem type(%d)",
+			LSXINIC_PMD_ERR("TXQ%d invalid rc mem type(%d)",
 				tx_queue->queue_index,
 				tx_queue->rc_mem_bd_type);
+			return -EINVAL;
+		}
+
+		if (tx_queue->rdma) {
+			ret = lxsnic_configure_txq_bd_dma_read(tx_queue);
+			if (ret)
+				return ret;
 		}
 	}
 
@@ -944,6 +1013,7 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	LSINIC_WRITE_REG(&ring_reg->cr, LSINIC_CR_DISABLE);
 	LSINIC_WRITE_REG(&ring_reg->pir, 0); /* TDT */
 	LSINIC_WRITE_REG(&ring_reg->cir, 0); /* TDH */
+	ring->rdma = LSINIC_READ_REG(&ring_reg->rdma);
 
 	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
 		RC_XMIT_RING_CNF) {
@@ -2135,11 +2205,7 @@ lxsnic_rc_seg_bd_init_buffer(struct lxsnic_ring *rx_queue,
 		ep_rx_seg->entry[i].seg_entry =
 			local_rx_seg.entry[i].seg_entry;
 	}
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
-		(idx + 1) & (rx_queue->count - 1));
-#endif
+	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir, 0);
 
 	return 0;
 }
@@ -2190,11 +2256,7 @@ lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 		memcpy(ep_rx_desc, &rc_rx_desc, sizeof(struct lsinic_bd_desc));
 	else
 		ep_rx_addr->pkt_addr = dma_addr;
-
-#ifdef INIC_RC_EP_DEBUG_ENABLE
-	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
-		(idx + 1) & (rx_queue->count - 1));
-#endif
+	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir, 0);
 
 	return 0;
 }
