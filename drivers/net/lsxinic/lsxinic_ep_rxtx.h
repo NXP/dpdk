@@ -89,12 +89,22 @@ enum queue_dma_bd_update {
 	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+enum lsinic_pcie_raw_test_mode {
+	LSINIC_PCIE_RAW_CPU_MODE = 1,
+	LSINIC_PCIE_RAW_SYNC_MODE = (1 << 1),
+	LSINIC_PCIE_RAW_CHECK_MODE = (1 << 2),
+	LSINIC_PCIE_RAW_MEM_MODE = (1 << 3)
+};
+
 struct lsinic_pcie_raw_test {
 	uint16_t burst_size;
-	int sync_mode;
-	int cpu_mode;
+	enum lsinic_pcie_raw_test_mode mode;
 	int started;
-	struct rte_mbuf **mbufs;
+	const struct rte_memzone *local_mz;
+	const struct rte_memzone *mem_mz;
+	uint8_t **local_vaddr;
+	uint8_t *remote_vbase;
+	uint8_t **remote_vaddr;
 	struct rte_ring *jobs_ring;
 };
 #endif

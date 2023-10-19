@@ -171,6 +171,11 @@ struct lxsnic_ring {
 	uint32_t port;
 	enum LSINIC_QEUE_STATUS status;
 	uint32_t core_id;
+#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	const struct rte_memzone *raw_mz;
+	uint32_t raw_count;
+	uint32_t raw_size;
+#endif
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
@@ -313,11 +318,6 @@ enum lxsnic_pcie_raw_test {
 	LXSNIC_EP2RC_PCIE_RAW_TEST = (1 << 0),
 	LXSNIC_RC2EP_PCIE_RAW_TEST = (1 << 1)
 };
-
-#define LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT 1024
-#define LSINIC_PCIE_RAW_TEST_SIZE_MIN 64
-#define LSINIC_PCIE_RAW_TEST_SIZE_MAX 1518
-
 #endif
 
 enum lxsnic_rc_self_test {
