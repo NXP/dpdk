@@ -129,6 +129,7 @@ struct lsinic_queue {
 	struct lsinic_bd_desc *ep_bd_desc;
 	/* For TX ring*/
 	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
+	struct lsinic_ep_tx_seg_dst_addr *tx_seg_dst_addr;
 
 	/* For RX ring*/
 	struct lsinic_ep_rx_src_addrl *rx_src_addrl;
@@ -146,6 +147,7 @@ struct lsinic_queue {
 #else
 	struct lsinic_rc_rx_len_idx *tx_len_idx;
 #endif
+	struct lsinic_rc_rx_seg *tx_seg;
 
 	/* For RX ring*/
 	struct lsinic_rc_tx_bd_cnf *rx_complete;
@@ -159,6 +161,7 @@ struct lsinic_queue {
 #else
 		struct lsinic_rc_rx_len_idx *local_src_len_idx;
 #endif
+		struct lsinic_rc_rx_seg *local_src_seg;
 		/* For RX ring*/
 		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
 	};

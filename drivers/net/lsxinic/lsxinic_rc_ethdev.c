@@ -638,6 +638,12 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		LSXINIC_PMD_ERR("rxq%d: q_mbuf alloc failed", queue_idx);
 		return -ENOMEM;
 	}
+	rx_ring->seg_mbufs = rte_zmalloc(NULL,
+		sizeof(struct lxsnic_seg_mbuf) * rx_ring->count, 64);
+	if (!rx_ring->seg_mbufs) {
+		LSXINIC_PMD_ERR("rxq%d: seg_mbufs alloc failed", queue_idx);
+		return -ENOMEM;
+	}
 
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
@@ -666,6 +672,10 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		rx_ring->ep_mem_bd_type = EP_MEM_DST_ADDR_BD;
 		rx_ring->rc_mem_bd_type = RC_MEM_LEN_CMD;
 	}
+	if (adapter->cap & LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD) {
+		rx_ring->ep_mem_bd_type = EP_MEM_DST_ADDR_SEG;
+		rx_ring->rc_mem_bd_type = RC_MEM_SEG_LEN;
+	}
 
 	if (0) {
 		/* TBD*/
@@ -686,6 +696,16 @@ skip_parse_cap:
 		rx_ring->ep_rx_addrl = rx_ring->ep_bd_mapped_addr;
 	} else if (rx_ring->ep_mem_bd_type == EP_MEM_DST_ADDRX_BD) {
 		rx_ring->ep_rx_addrx = rx_ring->ep_bd_mapped_addr;
+	} else if (rx_ring->ep_mem_bd_type == EP_MEM_DST_ADDR_SEG) {
+		rx_ring->ep_rx_addr_seg = rx_ring->ep_bd_mapped_addr;
+		rx_ring->local_rx_addr_seg = rte_zmalloc(NULL,
+			sizeof(struct lsinic_ep_tx_seg_dst_addr),
+			RTE_CACHE_LINE_SIZE);
+		if (!rx_ring->local_rx_addr_seg) {
+			LSXINIC_PMD_ERR("rxq%d: local seg alloc failed",
+				queue_idx);
+			return -ENOMEM;
+		}
 	} else {
 		rte_panic("Invalid RXQ ep mem bd type(%d)",
 			rx_ring->ep_mem_bd_type);
@@ -703,6 +723,10 @@ skip_parse_cap:
 		memset((uint8_t *)rx_ring->rx_len_idx,
 			0, LSINIC_LEN_IDX_RING_SIZE);
 #endif
+	} else if (rx_ring->rc_mem_bd_type == RC_MEM_SEG_LEN) {
+		rx_ring->rx_seg = rx_ring->rc_bd_shared_addr;
+		memset((uint8_t *)rx_ring->rx_seg,
+			0, LSINIC_SEG_LEN_RING_SIZE);
 	} else {
 		rte_panic("Invalid RXQ rc mem bd type(%d)",
 			rx_ring->rc_mem_bd_type);
@@ -734,6 +758,10 @@ lxsnic_dev_rx_queue_release(struct rte_eth_dev *dev,
 		rte_free(rx_ring->q_mbuf);
 		rx_ring->q_mbuf = NULL;
 	}
+	if (rx_ring->seg_mbufs) {
+		rte_free(rx_ring->seg_mbufs);
+		rx_ring->seg_mbufs = NULL;
+	}
 }
 
 static void
@@ -754,6 +782,10 @@ lxsnic_dev_tx_queue_release(struct rte_eth_dev *dev,
 	if (tx_ring->q_mbuf) {
 		rte_free(tx_ring->q_mbuf);
 		tx_ring->q_mbuf = NULL;
+	}
+	if (tx_ring->seg_mbufs) {
+		rte_free(tx_ring->seg_mbufs);
+		tx_ring->seg_mbufs = NULL;
 	}
 }
 
@@ -1891,6 +1923,91 @@ eth_lxsnic_dev_uninit(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+static int
+lxsnic_rc_seg_bd_init_buffer(struct lxsnic_ring *rx_queue,
+	uint16_t idx)
+{
+	uint64_t dma_addr = 0;
+	struct lsinic_ep_tx_seg_dst_addr *ep_rx_seg = NULL;
+	struct lsinic_ep_tx_seg_dst_addr local_rx_seg;
+	struct lxsnic_seg_mbuf *seg_mbuf;
+	int ret, i;
+	struct rte_mbuf *mbuf;
+
+	ep_rx_seg = &rx_queue->ep_rx_addr_seg[idx];
+	seg_mbuf = &rx_queue->seg_mbufs[idx];
+	ret = rte_pktmbuf_alloc_bulk(rx_queue->mb_pool,
+		seg_mbuf->mbufs, LSINIC_EP_TX_SEG_MAX_ENTRY);
+	if (ret) {
+		struct rte_eth_dev_data *dev_data;
+
+		LSXINIC_PMD_ERR("RX mbuf alloc failed queue_id=%u",
+			(unsigned int)rx_queue->queue_index);
+		dev_data = rte_eth_devices[rx_queue->port].data;
+		dev_data->rx_mbuf_alloc_failed++;
+		return -ENOMEM;
+	}
+
+	seg_mbuf->count = LSINIC_EP_TX_SEG_MAX_ENTRY;
+
+	mbuf = seg_mbuf->mbufs[0];
+	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+	mbuf->port = rx_queue->port;
+	dma_addr = rte_mbuf_data_iova_default(mbuf);
+	dma_addr = rte_cpu_to_le_64(dma_addr);
+	memset(&local_rx_seg, 0,
+		sizeof(struct lsinic_ep_tx_seg_dst_addr));
+	local_rx_seg.addr_base = dma_addr;
+	local_rx_seg.entry[0].positive = 0;
+	local_rx_seg.entry[0].offset = 0;
+	local_rx_seg.ready = 1;
+	rte_memcpy(ep_rx_seg, &local_rx_seg,
+		sizeof(struct lsinic_ep_tx_seg_dst_addr));
+
+	for (i = 1; i < LSINIC_EP_TX_SEG_MAX_ENTRY; i++) {
+		mbuf = seg_mbuf->mbufs[i];
+		mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+		mbuf->port = rx_queue->port;
+		dma_addr = rte_mbuf_data_iova_default(mbuf);
+		dma_addr = rte_cpu_to_le_64(dma_addr);
+		if (dma_addr > local_rx_seg.addr_base) {
+			if ((dma_addr - local_rx_seg.addr_base) >
+				LSINIC_SEG_OFFSET_MAX) {
+				LSXINIC_PMD_ERR("%s: 0x%lx - 0x%lx > 0x%lx",
+					__func__, (unsigned long)dma_addr,
+					(unsigned long)local_rx_seg.addr_base,
+					(unsigned long)LSINIC_SEG_OFFSET_MAX);
+				return -EFAULT;
+			}
+			local_rx_seg.entry[i].positive = 1;
+			local_rx_seg.entry[i].offset =
+				dma_addr - local_rx_seg.addr_base;
+		} else {
+			if ((local_rx_seg.addr_base - dma_addr) >
+				LSINIC_SEG_OFFSET_MAX) {
+				LSXINIC_PMD_ERR("%s: 0x%lx - 0x%lx > 0x%lx",
+					__func__,
+					(unsigned long)local_rx_seg.addr_base,
+					(unsigned long)dma_addr,
+					(unsigned long)LSINIC_SEG_OFFSET_MAX);
+				return -EFAULT;
+			}
+			local_rx_seg.entry[i].positive = 0;
+			local_rx_seg.entry[i].offset =
+				local_rx_seg.addr_base - dma_addr;
+		}
+		ep_rx_seg->entry[i].seg_entry =
+			local_rx_seg.entry[i].seg_entry;
+	}
+
+#ifdef INIC_RC_EP_DEBUG_ENABLE
+	LSINIC_WRITE_REG(&rx_queue->ep_reg->pir,
+		(idx + 1) & (rx_queue->count - 1));
+#endif
+
+	return 0;
+}
+
 int
 lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 	uint16_t idx)
@@ -1903,6 +2020,9 @@ lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	uint32_t len = rx_queue->adapter->raw_test_size;
 #endif
+
+	if (rx_queue->ep_mem_bd_type == EP_MEM_DST_ADDR_SEG)
+		return lxsnic_rc_seg_bd_init_buffer(rx_queue, idx);
 
 	if (rx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
 		ep_rx_desc = &rx_queue->ep_bd_desc[idx];

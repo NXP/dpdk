@@ -158,6 +158,11 @@ enum lxsnic_ring_state_t {
 	__LXSNIC_RX_FCOE,
 };
 
+struct lxsnic_seg_mbuf {
+	struct rte_mbuf *mbufs[LSINIC_EP_TX_SEG_MAX_ENTRY];
+	uint16_t count;
+} __rte_aligned(16);
+
 #define MCACHE_NUM (LSINIC_MAX_BURST_NUM * 4)
 #define MCACHE_MASK (MCACHE_NUM - 1)
 struct lxsnic_ring {
@@ -188,6 +193,9 @@ struct lxsnic_ring {
 	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
 	/* EP_MEM_DST_ADDX_BD*/
 	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
+	/* EP_MEM_DST_ADDR_SEG*/
+	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
+	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
 
 	enum RC_MEM_BD_TYPE rc_mem_bd_type;
 	void *rc_bd_shared_addr;
@@ -203,6 +211,7 @@ struct lxsnic_ring {
 #else
 	struct lsinic_rc_rx_len_idx *rx_len_idx;
 #endif
+	struct lsinic_rc_rx_seg *rx_seg;
 
 	/* For RC TX*/
 	/* RC_MEM_BD_CNF*/
@@ -216,6 +225,7 @@ struct lxsnic_ring {
 	struct lsinic_ring_reg *rc_reg;	  /* ring reg point to RC memory */
 	dma_addr_t rc_reg_dma;		  /* phys. address of rc_reg */
 	void **q_mbuf;
+	struct lxsnic_seg_mbuf *seg_mbufs;
 	unsigned long state;
 	uint32_t ep_sr;
 	uint16_t tail;			/* current value of tail */
