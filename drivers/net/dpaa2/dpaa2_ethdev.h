@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -468,7 +468,6 @@ uint16_t dpaa2_dev_tx_multi_txq_ordered(void **queue,
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *queue)  __rte_unused;
-int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);
 int dpaa2_timesync_disable(struct rte_eth_dev *dev);
@@ -485,7 +484,12 @@ int dpaa2_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
 
 int dpaa2_dev_recycle_config(struct rte_eth_dev *eth_dev);
 int dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev);
-int dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
+
+int
+rte_pmd_dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
+
+int
+rte_pmd_dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	uint16_t qidx, uint64_t cntx,
 	eth_tx_burst_t tx_lpbk, eth_rx_burst_t rx_lpbk,
 	struct dpaa2_queue **txq,

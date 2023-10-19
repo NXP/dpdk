@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #include <sys/queue.h>
@@ -3735,7 +3735,7 @@ dpaa2_flow_redirect_dev(struct dpaa2_dev_priv *priv,
 		dest_dev = priv->eth_dev;
 	}
 
-	if (!dpaa2_dev_is_dpaa2(dest_dev))
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(dest_dev))
 		return NULL;
 
 	return dest_dev;
