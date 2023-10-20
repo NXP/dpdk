@@ -688,9 +688,15 @@ skip_parse_cap:
 	if (rx_ring->rc_mem_bd_type == RC_MEM_LONG_BD) {
 		rx_ring->rc_bd_desc = rx_ring->rc_bd_shared_addr;
 	} else if (rx_ring->rc_mem_bd_type == RC_MEM_LEN_CMD) {
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+		rx_ring->rx_len_cmd = rx_ring->rc_bd_shared_addr;
+		memset((uint8_t *)rx_ring->rx_len_cmd,
+			0, LSINIC_LEN_CMD_RING_SIZE);
+#else
 		rx_ring->rx_len_idx = rx_ring->rc_bd_shared_addr;
 		memset((uint8_t *)rx_ring->rx_len_idx,
 			0, LSINIC_LEN_IDX_RING_SIZE);
+#endif
 	} else {
 		rte_panic("Invalid RXQ rc mem bd type(%d)",
 			rx_ring->rc_mem_bd_type);
@@ -1402,6 +1408,9 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 
 	adapter->cap = LSINIC_READ_REG(&eth_reg->cap);
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	adapter->merge_threshold = LSINIC_READ_REG(&eth_reg->merge_threshold);
+#endif
 	adapter->max_data_room = LSINIC_READ_REG(&eth_reg->max_data_room);
 
 	set_bit(__LXSNIC_DOWN, &adapter->state);

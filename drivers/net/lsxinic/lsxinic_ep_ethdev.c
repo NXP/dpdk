@@ -66,6 +66,9 @@
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_dma.h"
 #include "lsxinic_ep_ethtool.h"
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#include <dpaa2_ethdev.h>
+#endif
 
 static int
 lsinic_dev_configure(struct rte_eth_dev *dev);
@@ -371,6 +374,83 @@ lsinic_dev_config_init(struct lsinic_adapter *adapter)
 	return 0;
 }
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+int
+lsinic_split_dev_flow_create(struct lsinic_adapter *adapter)
+{
+	struct rte_dpaa2_device *split_dev = adapter->split_dev;
+	struct rte_dpaa2_device *split_dst_dev = adapter->split_dst_dev;
+	uint16_t split_id, dst_id;
+	struct rte_flow_attr flow_attr;
+	struct rte_flow_item flow_item[2];
+	struct rte_flow_action flow_action[2];
+	struct rte_flow_item_eth spec, mask;
+	struct rte_flow_action_port_id dst_port;
+	char dst_name[RTE_ETH_NAME_MAX_LEN];
+	char split_name[RTE_ETH_NAME_MAX_LEN];
+
+	if (split_dev && split_dst_dev) {
+		split_id = split_dev->eth_dev->data->port_id;
+		dst_id = split_dst_dev->eth_dev->data->port_id;
+		memcpy(dst_name, split_dst_dev->eth_dev->data->name,
+			RTE_ETH_NAME_MAX_LEN);
+		memcpy(split_name, split_dev->eth_dev->data->name,
+			RTE_ETH_NAME_MAX_LEN);
+		memset(&flow_attr, 0, sizeof(struct rte_flow_attr));
+		memset(flow_item, 0, 2 * sizeof(struct rte_flow_item));
+		memset(flow_action, 0, 2 * sizeof(struct rte_flow_action));
+		memset(&spec, 0, sizeof(struct rte_flow_item_eth));
+		memset(&mask, 0, sizeof(struct rte_flow_item_eth));
+		memset(&dst_port, 0, sizeof(struct rte_flow_action_port_id));
+
+		flow_attr.group = 0;
+		flow_attr.priority = 0;
+		flow_attr.egress = 1;
+
+		flow_item[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+		spec.type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+		mask.type = 0xffff;
+		flow_item[0].spec = &spec;
+		flow_item[0].mask = &mask;
+		flow_item[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+		flow_action[0].type = RTE_FLOW_ACTION_TYPE_PORT_ID;
+		dst_port.original = 0;
+		dst_port.id = dst_id;
+		flow_action[0].conf = &dst_port;
+		flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+		if (rte_flow_create(split_id, &flow_attr, &flow_item[0],
+			&flow_action[0], NULL))
+			LSXINIC_PMD_INFO("Redirect ipv4 to %s by %s",
+				dst_name, split_name);
+		else
+			LSXINIC_PMD_ERR("Unable redirect ipv4 to %s by %s",
+				dst_name, split_name);
+
+		return 0;
+	}
+
+	return -1;
+}
+
+static inline struct rte_dpaa2_device *
+lsinic_dev_id_to_dpaa2_dev(int eth_id)
+{
+	struct rte_dpaa2_device *dpaa2_dev = NULL;
+	struct rte_device *rdev;
+
+	if (eth_id >= 0 && eth_id < RTE_MAX_ETHPORTS &&
+		rte_pmd_dpaa2_dev_is_dpaa2(&rte_eth_devices[eth_id])) {
+		rdev = rte_eth_devices[eth_id].device;
+		dpaa2_dev = container_of(rdev,
+			struct rte_dpaa2_device, device);
+	}
+
+	return dpaa2_dev;
+}
+#endif
+
 static void
 lsinic_parse_rxq_cnf_type(const char *cnf_env,
 	struct lsinic_adapter *adapter)
@@ -424,6 +504,9 @@ lsinic_parse_txq_notify_type(const char *notify_env,
 static int
 lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 {
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	char env_name[128];
+#endif
 	char *penv;
 	struct lsinic_adapter *adapter = eth_dev->process_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
@@ -450,6 +533,12 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
 	adapter->cap = 0;
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	penv = getenv("LSINIC_MERGE_PACKETS");
+	if (penv && atoi(penv))
+		adapter->cap |= LSINIC_CAP_XFER_PKT_MERGE;
+#endif
 
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
@@ -481,6 +570,146 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 		(LSINIC_EP_CAP_TXQ_SG_DMA |
 		LSINIC_EP_CAP_RXQ_SG_DMA)))
 		return -ENOTSUP;
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	if (!(adapter->cap & LSINIC_CAP_XFER_PKT_MERGE))
+		return 0;
+
+	penv = getenv("LSXINIC_PMD_RCV_MERGE_RECYCLE_DEV");
+	if (penv && atoi(penv))
+		adapter->ep_cap |= LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX;
+
+	penv = getenv("LSXINIC_PMD_RCV_SPLIT_RECYCLE_DEV");
+	if (penv && atoi(penv))
+		adapter->ep_cap |= LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX;
+
+	/** Direct MAC egress. */
+	if (lsinic_dev->is_vf) {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_EGRESS",
+			lsinic_dev->pcie_id, lsinic_dev->pf,
+			lsinic_dev->vf);
+	} else {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_EGRESS",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+	}
+	penv = getenv(env_name);
+	if (penv) {
+		adapter->split_dev =
+			lsinic_dev_id_to_dpaa2_dev(atoi(penv));
+		if (adapter->split_dev)
+			adapter->ep_cap |= LSINIC_EP_CAP_HW_DIRECT_EGRESS;
+	}
+
+	/** Split traffic from PCIe host by recycle port. */
+	if (!adapter->split_dev) {
+		if (lsinic_dev->is_vf) {
+			sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_HW_SPLIT",
+				lsinic_dev->pcie_id, lsinic_dev->pf,
+				lsinic_dev->vf);
+		} else {
+			sprintf(env_name, "LSXINIC_PCIE%d_PF%d_HW_SPLIT",
+				lsinic_dev->pcie_id, lsinic_dev->pf);
+		}
+
+		penv = getenv(env_name);
+		if (penv) {
+			adapter->split_dev =
+				lsinic_dev_id_to_dpaa2_dev(atoi(penv));
+		}
+
+		/** Apply rule on recycle port to fwd traffic by HW. */
+		if (adapter->is_vf) {
+			sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_SPLIT_DST",
+				lsinic_dev->pcie_id, lsinic_dev->pf,
+				lsinic_dev->vf);
+		} else {
+			sprintf(env_name, "LSXINIC_PCIE%d_PF%d_SPLIT_DST",
+				lsinic_dev->pcie_id, lsinic_dev->pf);
+		}
+		penv = getenv(env_name);
+		if (penv) {
+			adapter->split_dst_dev =
+				lsinic_dev_id_to_dpaa2_dev(atoi(penv));
+		}
+	}
+
+	if (adapter->split_dev) {
+		adapter->ep_cap |= LSINIC_EP_CAP_HW_SPLIT_PKTS;
+		if (adapter->ep_cap & LSINIC_EP_CAP_HW_DIRECT_EGRESS) {
+			LSXINIC_PMD_INFO("Traffic from %s is directed to %s",
+				eth_dev->data->name,
+				adapter->split_dev->eth_dev->data->name);
+		} else {
+			LSXINIC_PMD_INFO("Traffic from %s is splited by %s",
+				eth_dev->data->name,
+				adapter->split_dev->eth_dev->data->name);
+		}
+	}
+
+	if (lsinic_dev->is_vf) {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_HW_MERGE",
+			lsinic_dev->pcie_id, lsinic_dev->pf,
+			lsinic_dev->vf);
+	} else {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_HW_MERGE",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+	}
+	penv = getenv(env_name);
+	if (penv) {
+		adapter->merge_dev = lsinic_dev_id_to_dpaa2_dev(atoi(penv));
+		if (adapter->merge_dev)
+			adapter->ep_cap |= LSINIC_EP_CAP_HW_MERGE_PKTS;
+	}
+
+	if (lsinic_dev->is_vf) {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_VF%d_MERGE_THRESHOLD",
+			lsinic_dev->pcie_id, lsinic_dev->pf,
+			lsinic_dev->vf);
+	} else {
+		sprintf(env_name, "LSXINIC_PCIE%d_PF%d_MERGE_THRESHOLD",
+			lsinic_dev->pcie_id, lsinic_dev->pf);
+	}
+	penv = getenv(env_name);
+	if (penv) {
+		adapter->merge_threshold = atoi(penv);
+		if (adapter->merge_threshold <
+			(RTE_ETHER_MIN_LEN - RTE_ETHER_CRC_LEN)) {
+			LSXINIC_PMD_WARN("Invalid merge threshold %d",
+				adapter->merge_threshold);
+			adapter->merge_threshold =
+				LSINIC_MERGE_DEFAULT_THRESHOLD;
+		}
+	} else {
+		adapter->merge_threshold =
+			LSINIC_MERGE_DEFAULT_THRESHOLD;
+	}
+
+	if (!(adapter->ep_cap & LSINIC_EP_CAP_HW_SPLIT_PKTS)) {
+		if (lsinic_dev->is_vf) {
+			sprintf(env_name,
+				"LSXINIC_PCIE%d_PF%d_VF%d_CLONE_SPLIT",
+				lsinic_dev->pcie_id, lsinic_dev->pf,
+				lsinic_dev->vf);
+		} else {
+			sprintf(env_name,
+				"LSXINIC_PCIE%d_PF%d_CLONE_SPLIT",
+				lsinic_dev->pcie_id, lsinic_dev->pf);
+		}
+		penv = getenv(env_name);
+		if (penv && atoi(penv) > 0)
+			adapter->ep_cap |= LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS;
+	}
+
+	if (!(adapter->ep_cap & LSINIC_EP_CAP_HW_MERGE_PKTS))
+		adapter->ep_cap |= LSINIC_EP_CAP_SW_MERGE_PKTS;
+
+	if (!((adapter->ep_cap & LSINIC_EP_CAP_HW_SPLIT_PKTS) ||
+		(adapter->ep_cap & LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS)))
+		adapter->ep_cap |= LSINIC_EP_CAP_SW_SPLIT_PKTS;
+
+	if (adapter->ep_cap & LSINIC_EP_CAP_HW_DIRECT_EGRESS)
+		adapter->ep_cap &= ~LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX;
+#endif
 
 	return 0;
 }
@@ -522,6 +751,10 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 	LSINIC_WRITE_REG(&reg->rx_entry_num, LSINIC_BD_ENTRY_COUNT);
 
 	LSINIC_WRITE_REG(&reg->cap, adapter->cap);
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	LSINIC_WRITE_REG(&reg->merge_threshold, adapter->merge_threshold);
+#endif
 
 	memcpy(adapter->mac_addr,
 		eth_dev->data->mac_addrs->addr_bytes,
@@ -638,6 +871,14 @@ rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
 	eth_dev->process_private = adapter;
 
 	adapter->dev_type = LSINIC_NXP_DEV;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	adapter->merge_dev = NULL;
+	adapter->split_dev = NULL;
+	rte_spinlock_init(&adapter->merge_dev_cfg_lock);
+	rte_spinlock_init(&adapter->split_dev_cfg_lock);
+	adapter->merge_dev_cfg_done = 0;
+	adapter->split_dev_cfg_done = 0;
+#endif
 	rte_spinlock_init(&adapter->cap_lock);
 	rte_spinlock_init(&adapter->txq_dma_start_lock);
 	rte_spinlock_init(&adapter->rxq_dma_start_lock);
@@ -838,6 +1079,109 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+static int
+lsinic_dev_recycle_start(struct rte_eth_dev *recycle_dev,
+	int nb_tx_queues, int nb_rx_queues,
+	uint16_t nb_tx_desc, uint16_t nb_rx_desc,
+	const struct rte_eth_conf *port_conf,
+	struct rte_mempool *mb_pool)
+{
+	const struct eth_dev_ops *dev_ops;
+	struct rte_eth_dev_info dev_info;
+	struct rte_eth_rxconf rxconf;
+	struct rte_eth_txconf txconf;
+	int ret, qnb;
+
+	if (recycle_dev->data->dev_started)
+		return 0;
+
+	dev_ops = recycle_dev->dev_ops;
+	RTE_ASSERT(dev_ops);
+	ret = -ENOTSUP;
+	if (dev_ops->dev_infos_get)
+		ret = dev_ops->dev_infos_get(recycle_dev, &dev_info);
+	if (ret) {
+		LSXINIC_PMD_ERR("Recycle device gets info failed!");
+		return ret;
+	}
+
+	memcpy(&recycle_dev->data->dev_conf, port_conf,
+			sizeof(struct rte_eth_conf));
+
+	recycle_dev->data->rx_queues = rte_zmalloc(NULL,
+				sizeof(void *) * nb_rx_queues,
+				RTE_CACHE_LINE_SIZE);
+	if (!recycle_dev->data->rx_queues) {
+		LSXINIC_PMD_ERR("Recycle device alloc rxqs failed!");
+		return -ENOMEM;
+	}
+	recycle_dev->data->nb_rx_queues = nb_rx_queues;
+
+	recycle_dev->data->tx_queues = rte_zmalloc(NULL,
+				sizeof(void *) * nb_tx_queues,
+				RTE_CACHE_LINE_SIZE);
+	if (!recycle_dev->data->tx_queues) {
+		LSXINIC_PMD_ERR("Recycle device alloc txqs failed!");
+		return -ENOMEM;
+	}
+	recycle_dev->data->nb_tx_queues = nb_tx_queues;
+
+	ret = -ENOTSUP;
+	if (dev_ops->dev_configure) {
+		recycle_dev->data->dev_conf.lpbk_mode = 1;
+		ret = dev_ops->dev_configure(recycle_dev);
+	}
+	if (ret) {
+		LSXINIC_PMD_ERR("Recycle device conf failed!");
+		return ret;
+	}
+
+	for (qnb = 0; qnb < recycle_dev->data->nb_tx_queues; qnb++) {
+		memcpy(&txconf, &dev_info.default_txconf,
+			sizeof(struct rte_eth_txconf));
+		txconf.offloads = port_conf->txmode.offloads;
+		ret = dev_ops->tx_queue_setup(recycle_dev, qnb,
+						nb_tx_desc,
+						0, &txconf);
+		if (ret < 0) {
+			LSXINIC_PMD_ERR("Failed to set %s txq%d",
+				recycle_dev->data->name, qnb);
+			return ret;
+		}
+	}
+
+	for (qnb = 0; qnb < recycle_dev->data->nb_rx_queues; qnb++) {
+		rte_memcpy(&rxconf, &dev_info.default_rxconf,
+			sizeof(struct rte_eth_rxconf));
+		rxconf.offloads = port_conf->rxmode.offloads;
+		ret = dev_ops->rx_queue_setup(recycle_dev, qnb,
+						nb_rx_desc,
+						0, &rxconf, mb_pool);
+		if (ret < 0) {
+			LSXINIC_PMD_ERR("Failed to set %s rxq%d",
+				recycle_dev->data->name, qnb);
+			return ret;
+		}
+	}
+
+	ret = dev_ops->dev_start(recycle_dev);
+	if (ret) {
+		LSXINIC_PMD_ERR("Recycle device start failed!");
+		return ret;
+	}
+	recycle_dev->data->dev_started = 1;
+
+	ret = dev_ops->promiscuous_enable(recycle_dev);
+	if (ret) {
+		LSXINIC_PMD_ERR("Recycle device promiscuous enable failed!");
+		return ret;
+	}
+
+	return 0;
+}
+#endif
+
 /* Configure device link speed and setup link.
  * It returns 0 on success.
  */
@@ -873,6 +1217,57 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 
 		thread_init_flag = 1;
 	}
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	if (adapter->ep_cap & LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX ||
+		adapter->ep_cap & LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX) {
+		struct rte_eth_dev *recycle_eth_dev;
+
+		if (eth_dev->data->nb_tx_queues !=
+			eth_dev->data->nb_rx_queues &&
+			(adapter->merge_dev || adapter->split_dev)) {
+			LSXINIC_PMD_ERR("Recycle(%s) nb_txq(%d)!=nb_rxq(%d)",
+				eth_dev->data->name,
+				eth_dev->data->nb_tx_queues,
+				eth_dev->data->nb_rx_queues);
+			return -ENOTSUP;
+		}
+		if (adapter->merge_dev &&
+			(adapter->ep_cap &
+			LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX)) {
+			recycle_eth_dev = adapter->merge_dev->eth_dev;
+			err = lsinic_dev_recycle_start(recycle_eth_dev,
+					eth_dev->data->nb_tx_queues,
+					eth_dev->data->nb_rx_queues,
+					adapter->txqs[0].nb_desc,
+					adapter->rxqs[0].nb_desc,
+					&eth_dev->data->dev_conf,
+					adapter->rxqs[0].mb_pool);
+			if (err) {
+				LSXINIC_PMD_ERR("Start merge dev %s",
+					recycle_eth_dev->data->name);
+				return -EIO;
+			}
+		}
+		if (adapter->split_dev &&
+			(adapter->ep_cap &
+			LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX)) {
+			recycle_eth_dev = adapter->split_dev->eth_dev;
+			err = lsinic_dev_recycle_start(recycle_eth_dev,
+					eth_dev->data->nb_tx_queues,
+					eth_dev->data->nb_rx_queues,
+					adapter->txqs[0].nb_desc,
+					adapter->rxqs[0].nb_desc,
+					&eth_dev->data->dev_conf,
+					adapter->rxqs[0].mb_pool);
+			if (err) {
+				LSXINIC_PMD_ERR("Start split dev %s",
+					recycle_eth_dev->data->name);
+				return -EIO;
+			}
+		}
+	}
+#endif
 
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_START);
 

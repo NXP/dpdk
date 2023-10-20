@@ -1,9 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSINIC_COMMON_H_
 #define _LSINIC_COMMON_H_
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+#define LSINIC_MERGE_DEFAULT_THRESHOLD (600) /* bytes */
+#endif
 
 #define LSINIC_ETH_FCS_SIZE \
 	(RTE_TM_ETH_FRAMING_OVERHEAD_FCS - RTE_TM_ETH_FRAMING_OVERHEAD)

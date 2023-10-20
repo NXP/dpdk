@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -46,11 +46,28 @@ struct lsinic_sw_bd {
 	struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
 	uint16_t my_idx; /* const after initalization*/
 	uint16_t align_dma_offset;
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	uint16_t mg;
+	struct lsinic_mg_header mg_header;
+#endif
 	union {
 		char *complete;
 		uint8_t dma_complete;
 	};
 };
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+struct lsinic_dpni_mg_dsc {
+	struct rte_mbuf *attach_mbuf;
+	struct lsinic_mg_header mg_header;
+};
+
+enum lsinix_split_type {
+	LSINIC_CPU_SPLIT,
+	LSINIC_HW_SPLIT,
+	LSINIC_MBUF_CLONE_SPLIT
+};
+#endif
 
 /**
  * Structure associated with each RX queue.
@@ -123,7 +140,11 @@ struct lsinic_queue {
 
 	struct lsinic_bd_desc *rc_bd_desc;
 	/* For TX ring*/
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	struct lsinic_rc_rx_len_cmd *tx_len_cmd;
+#else
 	struct lsinic_rc_rx_len_idx *tx_len_idx;
+#endif
 
 	/* For RX ring*/
 	struct lsinic_rc_tx_bd_cnf *rx_complete;
@@ -132,7 +153,11 @@ struct lsinic_queue {
 	uint32_t dma_bd_update;
 	union {
 		/* For TX ring*/
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+		struct lsinic_rc_rx_len_cmd *local_src_len_cmd;
+#else
 		struct lsinic_rc_rx_len_idx *local_src_len_idx;
+#endif
 		/* For RX ring*/
 		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
 	};
@@ -142,6 +167,12 @@ struct lsinic_queue {
 		uint16_t bd_idx);
 	void (*recv_update)(struct lsinic_queue *rxq,
 		uint16_t bd_idx);
+
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	struct lsinic_dpni_mg_dsc *mg_dsc;
+	uint16_t mg_dsc_head;
+	uint16_t mg_dsc_tail;
+#endif
 
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
@@ -213,6 +244,15 @@ struct lsinic_queue {
 	uint32_t mcnt;
 	struct rte_mbuf *mcache[MCACHE_NUM];
 
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	enum lsinix_split_type split_type;
+	void *recycle_txq;
+	void *recycle_rxq;
+	struct qbman_fd *recycle_fd;
+	uint16_t split_cnt[MCACHE_NUM];
+	int64_t recycle_pending;
+#endif
+
 	uint64_t bytes_dq;
 	uint64_t bytes_eq;
 	uint64_t pkts_dq;
@@ -256,6 +296,26 @@ lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 {
 	struct lsinic_bd_desc *ep_bd_desc =
 		&queue->local_src_bd_desc[used_idx];
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+	uint16_t cnt;
+	struct lsinic_rc_rx_len_cmd *tx_len_cmd =
+		&queue->tx_len_cmd[used_idx];
+	struct lsinic_rc_rx_len_cmd *local_len_cmd =
+		&queue->local_src_len_cmd[used_idx];
+	uint32_t *local_32 = (uint32_t *)local_len_cmd;
+	uint32_t *remote_32 = (uint32_t *)tx_len_cmd;
+
+	local_len_cmd->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
+	if (ep_bd_desc->len_cmd & LSINIC_BD_CMD_MG) {
+		cnt = (ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
+			LSINIC_BD_MG_NUM_SHIFT;
+	} else {
+		cnt = 0;
+	}
+	EP2RC_TX_IDX_CNT_SET(local_len_cmd->cnt_idx,
+		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),
+		cnt);
+#else
 	struct lsinic_rc_rx_len_idx *tx_len_idx =
 		&queue->tx_len_idx[used_idx];
 	struct lsinic_rc_rx_len_idx *local_len_idx =
@@ -265,6 +325,7 @@ lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 
 	local_len_idx->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
 	local_len_idx->idx = lsinic_bd_ctx_idx(ep_bd_desc->bd_status);
+#endif
 
 	if (remote)
 		*remote_32 = *local_32;
