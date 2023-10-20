@@ -143,6 +143,8 @@ struct lsinic_queue {
 	struct lsinic_bd_desc *ep_bd_desc;
 	/* For TX ring*/
 	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
+	/* For debug*/
+	struct lsinic_ep_tx_dst_addr *rc_tx_dst_addr;
 	struct lsinic_ep_tx_seg_dst_addr *tx_seg_dst_addr;
 
 	/* For RX ring*/

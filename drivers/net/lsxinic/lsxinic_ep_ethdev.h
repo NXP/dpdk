@@ -72,6 +72,7 @@ static inline void lsinic_write_reg64(void *addr, uint64_t val)
 #endif
 #define LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE RTE_BIT32(11)
 #define LSINIC_EP_CAP_RXQ_BD_DMA_UPDATE_DBG RTE_BIT32(12)
+#define LSINIC_EP_CAP_TXQ_ADDR_DMA_READ_DBG RTE_BIT32(13)
 
 struct lsinic_adapter {
 	enum lsinic_dev_type dev_type;

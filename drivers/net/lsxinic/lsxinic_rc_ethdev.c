@@ -580,6 +580,73 @@ skip_txq_bd_type_parse:
 }
 
 static int
+lxsnic_configure_rxq_bd(struct lxsnic_ring *rxq)
+{
+	uint64_t rdma_addr = 0, offset = 0, len = 0;
+	void *v_rdma_addr = NULL;
+
+	if (rxq->rc_mem_bd_type == RC_MEM_LONG_BD) {
+		offset = 0;
+	} else if (rxq->rc_mem_bd_type == RC_MEM_LEN_CMD) {
+#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
+		offset = sizeof(struct lsinic_rc_rx_len_cmd) * rxq->count;
+#else
+		offset = sizeof(struct lsinic_rc_rx_len_idx) * rxq->count;
+#endif
+	} else {
+		LSXINIC_PMD_ERR("%s: type(%d) of BD in RC mem not support",
+			__func__, rxq->rc_mem_bd_type);
+
+		return -ENOTSUP;
+	}
+
+	rdma_addr = rxq->rc_bd_desc_dma + offset;
+	rdma_addr = RTE_CACHE_LINE_ROUNDUP(rdma_addr);
+	offset = rdma_addr - rxq->rc_bd_desc_dma;
+	v_rdma_addr = (uint8_t *)rxq->rc_bd_shared_addr + offset;
+
+	if (rxq->ep_mem_bd_type == EP_MEM_LONG_BD) {
+		rxq->rc_bd_desc = v_rdma_addr;
+		len = sizeof(struct lsinic_bd_desc) * rxq->count;
+	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDR_BD) {
+		rxq->rc_rx_addr = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_tx_dst_addr) * rxq->count;
+	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDRL_BD) {
+		rxq->rc_rx_addrl = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_tx_dst_addrl) * rxq->count;
+	} else if (rxq->ep_mem_bd_type == EP_MEM_DST_ADDRX_BD) {
+		rxq->rc_rx_addrx = v_rdma_addr;
+		len = sizeof(struct lsinic_ep_tx_dst_addrx) * rxq->count;
+	} else {
+		LSXINIC_PMD_ERR("%s: type(%d) of BD in EP mem not support",
+			__func__, rxq->ep_mem_bd_type);
+
+		return -ENOTSUP;
+	}
+
+	if ((offset + len) > LSINIC_BD_RING_SIZE) {
+		LSXINIC_PMD_ERR("%s: offset(%ld) + (len)%ld > %ld",
+			__func__, offset, len,
+			LSINIC_BD_RING_SIZE);
+		rxq->rc_bd_desc = NULL;
+		rxq->rc_rx_addr = NULL;
+		rxq->rc_rx_addrl = NULL;
+		rxq->rc_rx_addrx = NULL;
+
+		return -EOVERFLOW;
+	}
+
+	if (rxq->rdma) {
+		LSINIC_WRITE_REG(&rxq->ep_reg->rdmal,
+			rdma_addr & DMA_BIT_MASK(32));
+		LSINIC_WRITE_REG(&rxq->ep_reg->rdmah,
+			rdma_addr >> 32);
+	}
+
+	return 0;
+}
+
+static int
 lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 	struct lxsnic_ring *ring)
 {
@@ -615,6 +682,7 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 	/* Polling mode, no need to send int from EP.*/
 	LSINIC_WRITE_REG(&ring_reg->icr, 0);
 	LSINIC_WRITE_REG(&ring_reg->iir, 0);
+	ring->rdma = LSINIC_READ_REG(&ring_reg->rdma);
 	ring->ep_reg = ring_reg;
 	if (adapter->rc_ring_virt_base)
 		ring->rc_reg = rc_ring_reg;
@@ -692,6 +760,11 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 #endif
 	ring->rx_fill_start_idx = 0;
 	ring->rx_fill_len = 0;
+
+	ret = lxsnic_configure_rxq_bd(ring);
+	if (ret)
+		return ret;
+
 	LSXINIC_PMD_DBG("ring_reg->cr %u ring_reg->r_descl %u\n",
 		ring->ep_reg->cr, ring->ep_reg->r_descl);
 
