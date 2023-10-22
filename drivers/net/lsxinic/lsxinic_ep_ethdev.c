@@ -268,7 +268,7 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	adapter->ep_ring_virt_base =
 		lsinic_dev->virt_addr[LSX_PCIEP_RING_BAR_IDX];
 	adapter->ep_ring_phy_base =
-		lsinic_dev->phy_addr[LSX_PCIEP_RING_BAR_IDX];
+		lsinic_dev->iov_addr[LSX_PCIEP_RING_BAR_IDX];
 	adapter->bd_desc_base =
 		(uint8_t *)adapter->ep_ring_virt_base +
 		LSINIC_RING_BD_OFFSET;
