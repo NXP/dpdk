@@ -233,6 +233,9 @@ uint64_t
 rte_lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t win_idx);
 
+uint64_t
+rte_lsx_pciep_bus_win_mask(struct rte_lsx_pciep_device *ep_dev);
+
 /**
  * Register a PCIEP bus driver.
  *

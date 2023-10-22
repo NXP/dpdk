@@ -1641,7 +1641,6 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 	int vf = ep_dev->vf;
 	int is_vf = ep_dev->is_vf;
 	int pcie_id = ep_dev->pcie_id;
-	uint64_t mask;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
 	struct lsx_pciep_outbound *ob_win;
 
@@ -1652,14 +1651,6 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 
 	if (rte_lsx_pciep_rbp_ob_overlap(ep_dev, pci_addr, size)) {
 		LSX_PCIEP_BUS_ERR("New outbound window overlaps");
-		return NULL;
-	}
-
-	mask = size - 1;
-
-	if (pci_addr & mask) {
-		LSX_PCIEP_BUS_ERR("bus(0x%lx) and size(0x%lx) not aligned",
-			pci_addr, size);
 		return NULL;
 	}
 
@@ -2194,6 +2185,19 @@ rte_lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
 	}
 
 	return ep_dev->ob_win[0].ob_phy_base;
+}
+
+uint64_t
+rte_lsx_pciep_bus_win_mask(struct rte_lsx_pciep_device *ep_dev)
+{
+	struct lsx_pciep_ctl_hw *ctlhw;
+
+	if (rte_lsx_pciep_hw_sim_get(ep_dev->pcie_id))
+		return 0;
+
+	ctlhw = &s_pctl_hw[ep_dev->pcie_id];
+
+	return ctlhw->hw.win_mask;
 }
 
 static void __attribute__((destructor(102))) lsx_pciep_finish(void)
