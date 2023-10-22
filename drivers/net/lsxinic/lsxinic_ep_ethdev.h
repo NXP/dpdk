@@ -109,8 +109,10 @@ struct lsinic_adapter {
 	rte_iova_t ep_ring_phy_base;
 	uint64_t ep_ring_win_size;
 
-	void *rc_ring_virt_base;  /* RC ring shadow base */
+	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	rte_iova_t rc_ring_phy_base;
+	dma_addr_t rc_ring_bus_base;
+	uint64_t rc_ring_size;
 
 	rte_iova_t rx_pcidma_dbg;
 	rte_iova_t tx_pcidma_dbg;

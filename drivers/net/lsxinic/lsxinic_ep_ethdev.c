@@ -1434,25 +1434,19 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	sim = rte_lsx_pciep_hw_sim_get(adapter->pcie_idx);
-	adapter->rc_ring_phy_base = rc_reg_addr;
 	if (sim) {
 		vir_addr = DPAA2_IOVA_TO_VADDR(rc_reg_addr);
 		vir_offset = (uint64_t)vir_addr - rc_reg_addr;
 
 		adapter->rc_ring_virt_base = vir_addr;
 		rte_lsx_pciep_set_sim_ob_win(lsinic_dev, vir_offset);
+		adapter->rc_ring_phy_base = 0;
 	} else {
-		if (adapter->rbp_enable) {
-			adapter->rc_ring_virt_base =
-				rte_lsx_pciep_set_ob_win(lsinic_dev,
-					rc_reg_addr,
-					LSINIC_RING_BAR_MAX_SIZE);
-		} else {
-			adapter->rc_ring_virt_base =
-				lsinic_dev->ob_virt_base +
-					rc_reg_addr -
-					lsinic_dev->ob_map_bus_base;
-		}
+		adapter->rc_ring_virt_base =
+			rte_lsx_pciep_set_ob_win(lsinic_dev,
+				rc_reg_addr, LSINIC_RING_BAR_MAX_SIZE);
+		adapter->rc_ring_phy_base =
+			rte_lsx_pciep_bus_this_ob_base(lsinic_dev, 0xff);
 	}
 
 	if (!adapter->rc_ring_virt_base)
@@ -1461,6 +1455,9 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	if (!rte_lsx_pciep_bus_ob_mapped(lsinic_dev,
 		rc_reg_addr + LSINIC_RING_BAR_MAX_SIZE))
 		return -EIO;
+
+	adapter->rc_ring_bus_base = rc_reg_addr;
+	adapter->rc_ring_size = LSINIC_RING_BAR_MAX_SIZE;
 
 	return 0;
 }
@@ -1475,6 +1472,8 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 	int sim, ret = 0;
+	uint32_t i;
+	struct lsinic_queue *q;
 
 	sim = rte_lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
@@ -1494,8 +1493,6 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	lsinic_dev->mmsi_flag = LSINIC_READ_REG(&rcs_reg->msi_flag);
 
 	if (lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT) {
-		int i;
-
 		for (i = 0; i < LSINIC_DEV_MSIX_MAX_NB; i++)
 			LSINIC_WRITE_REG(&rcs_reg->msix_mask[i], 0x01);
 	}
@@ -1506,8 +1503,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		lsinic_dev->mmsi_flag);
 
 	rc_reg_addr = LSINIC_READ_REG_64B((uint64_t *)(&rcs_reg->r_regl));
-	if (adapter->rc_ring_phy_base == 0 ||
-		adapter->rc_ring_phy_base != rc_reg_addr) {
+	if (!adapter->rc_ring_bus_base) {
 		if (rc_reg_addr)
 			ret = lsinic_dev_map_rc_ring(adapter, rc_reg_addr);
 		else
@@ -1517,8 +1513,25 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 
 			return ret;
 		}
-		LSXINIC_PMD_DBG("Reconfig from RC rc_reg_addr:%lX",
+		LSXINIC_PMD_INFO("Config from RC rc ring base:%lX",
 			rc_reg_addr);
+		for (i = 0; i < adapter->num_rx_queues; i++) {
+			q = &adapter->rxqs[i];
+			if (adapter->rbp_enable)
+				q->ob_base = 0;
+			else
+				q->ob_base = adapter->rc_ring_phy_base;
+		}
+		for (i = 0; i < adapter->num_tx_queues; i++) {
+			q = &adapter->txqs[i];
+			if (adapter->rbp_enable)
+				q->ob_base = 0;
+			else
+				q->ob_base = adapter->rc_ring_phy_base;
+		}
+	} else {
+		LSXINIC_PMD_WARN("RC ring(bus=%lx) has been mapped",
+			adapter->rc_ring_bus_base);
 	}
 
 	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==

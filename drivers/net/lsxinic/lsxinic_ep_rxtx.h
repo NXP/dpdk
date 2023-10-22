@@ -224,7 +224,6 @@ struct lsinic_queue {
 	int16_t dma_id;
 	int32_t dma_vq;
 	uint64_t ob_base;
-	uint8_t *ob_virt_base;
 
 	/* MSI-X */
 	uint32_t msix_irq;
