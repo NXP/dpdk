@@ -6,6 +6,7 @@ DPDK_23 {
 	rte_lsx_pciep_set_ob_win;
 	rte_lsx_pciep_unset_ob_win;
 	rte_lsx_pciep_multi_msix_init;
+	rte_lsx_pciep_multi_msix_remove;
 	rte_lsx_pciep_start_msix;
 	rte_lsx_pciep_ctl_dev_set;
 	rte_lsx_pciep_set_ib_win;

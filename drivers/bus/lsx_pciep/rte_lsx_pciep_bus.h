@@ -112,6 +112,10 @@ struct rte_lsx_pciep_device {
 	uint8_t rbp_ob_win_nb;
 
 	/* MSI/MSIx information */
+	uint64_t msi_phy_base;
+	void *msi_addr_base;
+	uint64_t msi_map_size;
+	uint64_t *msix_phy;
 	void **msix_addr;
 	uint32_t *msix_data;
 
@@ -179,9 +183,12 @@ int
 rte_lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr);
 
-void
+int
 rte_lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total);
+
+int
+rte_lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev);
 
 void
 rte_lsx_pciep_start_msix(void *addr, uint32_t cmd);
