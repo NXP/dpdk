@@ -1717,7 +1717,7 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 {
 	struct sk_buff *skb;
 	struct lsinic_mg_header *mgd;
-	void *data;
+	char *data;
 	int total_size, count = 0, i, len, offset = 0;
 	int align_off = 0, mg_header_size = 0;
 	struct lsinic_rx_buffer *rx_buffer;
@@ -1755,13 +1755,13 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	}
 
 	count = ((rx_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
-			LSINIC_BD_MG_NUM_SHIFT) + 1;
+		LSINIC_BD_MG_NUM_SHIFT);
 
 	data = skb->data;
 	printk_rx("get merge packets size=%d count=%d data=%p\n",
 		  total_size, count, data);
 
-	mgd = data;
+	mgd = (void *)(data - sizeof(struct lsinic_mg_header));
 	len = lsinic_mg_entry_len(mgd->len_cmd[0]);
 
 	/* Check the value correctness */
@@ -1775,8 +1775,6 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 	skb_reserve(skb, mg_header_size);
 	skb_put(skb, len);
 	skb_arry[0] = skb;
-	printk_rx("MGD0: len=%d va:%p next mgd offset=%d\n",
-		   len, (void *)((char *)data + mg_header_size), offset);
 
 	for (i = 1; i < count; i++) {
 		len = lsinic_mg_entry_len(mgd->len_cmd[i]);
@@ -1788,7 +1786,7 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 
 		/* allocate a skb to store the frags */
 		skb = netdev_alloc_skb_ip_align(rx_ring->netdev,
-						ALIGN(len, sizeof(long)));
+			ALIGN(len, sizeof(long)));
 		if (unlikely(!skb)) {
 			rx_ring->rx_stats.alloc_rx_buff_failed++;
 			break;
@@ -1800,15 +1798,10 @@ lsinic_fetch_merge_rx_buffers(struct lsinic_ring *rx_ring,
 		 * it now to avoid a possible cache miss
 		 */
 		prefetchw(skb->data);
-		memcpy(__skb_put(skb, len),
-			(void *)((char *)data + offset), len);
+		memcpy(__skb_put(skb, len), data + offset, len);
 		skb_arry[i] = skb;
 
 		offset += len + align_off;
-		printk_rx("MGD%d: len=%d va:%p next mgd offset=%d\n",
-			i, len,
-			(void *)((char *)data + offset - len - align_off),
-			offset);
 	}
 
 	return i;
