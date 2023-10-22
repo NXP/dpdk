@@ -122,6 +122,7 @@ struct rte_lsx_pciep_device {
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
 	uint64_t phy_addr[PCI_MAX_RESOURCE]; /*PCIe inbound*/
 	uint64_t iov_addr[PCI_MAX_RESOURCE]; /*EP DMA*/
+	const struct rte_memzone *mz[PCI_MAX_RESOURCE];
 	char name[RTE_DEV_NAME_MAX_LEN];
 	uint32_t mmsi_flag;
 	uint32_t init_flag;
@@ -204,6 +205,10 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 int
 rte_lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, const struct rte_memzone *mz, int vf_isolate);
+
+int
+rte_lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx);
 
 int
 rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev);

@@ -11,6 +11,7 @@ DPDK_23 {
 	rte_lsx_pciep_ctl_dev_set;
 	rte_lsx_pciep_set_ib_win;
 	rte_lsx_pciep_set_ib_win_mz;
+	rte_lsx_pciep_unset_ib_win;
 	rte_lsx_pciep_sim_dev_map_inbound;
 	rte_lsx_pciep_set_sim_ob_win;
 	rte_lsx_pciep_ctl_get_device_id;
