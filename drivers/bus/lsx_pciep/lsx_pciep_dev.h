@@ -139,6 +139,8 @@ int
 lsx_pciep_primary_init(void);
 int
 lsx_pciep_uninit(void);
+void
+lsx_pciep_free_shared_mem(void);
 int
 lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 
