@@ -362,11 +362,12 @@ struct lxsnic_adapter {
 	uint16_t  num_tx_queues;
 	uint16_t  config_tx_queues;
 	/* Tx fast path data */
-	void *rc_bd_desc_base;
+	uint8_t *rc_bd_desc_base;
 	dma_addr_t rc_bd_desc_phy;
 
 	/* hardware ring is full can't send pkt */
 	uint64_t tx_busy;
+	uint16_t max_qpairs;
 	/*total apapter tx pkt rx pkt num */
 	unsigned int tx_ring_bd_count;
 	unsigned int rx_ring_bd_count;

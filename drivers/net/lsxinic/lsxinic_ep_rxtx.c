@@ -1106,7 +1106,7 @@ re_config_dma:
 			dir = LSINIC_DMA_MEM_TO_PCIE;
 		else
 			dir = LSINIC_DMA_MEM_TO_MEM;
-		nb_vchans = LSINIC_MAX_NUM_TX_QUEUES;
+		nb_vchans = adapter->max_qpairs;
 		pvq = &adapter->txq_dma_vchan_used;
 		nb_qs = eth_dev->data->nb_tx_queues;
 		mqs = (struct lsinic_queue **)eth_dev->data->tx_queues;
@@ -1116,7 +1116,7 @@ re_config_dma:
 			dir = LSINIC_DMA_PCIE_TO_MEM;
 		else
 			dir = LSINIC_DMA_MEM_TO_MEM;
-		nb_vchans = LSINIC_MAX_NUM_RX_QUEUES;
+		nb_vchans = adapter->max_qpairs;
 		pvq = &adapter->rxq_dma_vchan_used;
 		nb_qs = eth_dev->data->nb_rx_queues;
 		mqs = (struct lsinic_queue **)eth_dev->data->rx_queues;
@@ -6560,7 +6560,15 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_queue *txq;
 	int ret;
+	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(adapter->max_qpairs);
+	uint8_t *txq_base = adapter->bd_desc_base + base_offset;
+	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 
+	if ((queue_idx + 1) > adapter->max_qpairs) {
+		LSXINIC_PMD_ERR("config txq number(%d) > max qpair(%d)",
+			queue_idx + 1, adapter->max_qpairs);
+		return -EINVAL;
+	}
 	/* Note: ep-tx == rc-rx */
 
 	/* Free memory prior to re-allocation if needed... */
@@ -6584,9 +6592,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	txq->rc_bd_desc = NULL;
 	txq->rc_reg = txq->ep_reg;
 	txq->dev = dev;
-	txq->ep_bd_shared_addr =
-		(adapter->bd_desc_base + LSINIC_RX_BD_OFFSET +
-		queue_idx * LSINIC_RING_SIZE);
+	txq->ep_bd_shared_addr = txq_base + q_offset;
 
 	txq->core_id = RTE_MAX_LCORE;
 	txq->pid = 0;
@@ -6668,7 +6674,15 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct lsinic_eth_reg *reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct rte_lsx_pciep_device *lsinic_dev;
+	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(adapter->max_qpairs);
+	uint8_t *rxq_base = adapter->bd_desc_base + base_offset;
+	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 
+	if ((queue_idx + 1) > adapter->max_qpairs) {
+		LSXINIC_PMD_ERR("config rxq number(%d) > max qpair(%d)",
+			queue_idx + 1, adapter->max_qpairs);
+		return -EINVAL;
+	}
 	lsinic_dev = adapter->lsinic_dev;
 
 	/* Note: ep-rx == rc-tx */
@@ -6705,8 +6719,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->rc_bd_desc = NULL;
 	rxq->rc_reg = rxq->ep_reg;
 	rxq->dev = dev;
-	rxq->ep_bd_shared_addr = (adapter->bd_desc_base +
-		queue_idx * LSINIC_RING_SIZE);
+	rxq->ep_bd_shared_addr = rxq_base + q_offset;
 
 	lsinic_byte_memset(rxq->ep_bd_shared_addr, 0,
 		LSINIC_RING_SIZE);
