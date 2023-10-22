@@ -227,12 +227,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	adapter->vqs[queue_idx] = q;
 	q->adapter = adapter;
 
-	if (adapter->rbp_enable)
-		q->ob_base = 0;
-	else
-		q->ob_base = adapter->ob_base;
-
-	q->ob_virt_base = adapter->ob_virt_base;
 	q->nb_desc = nb_desc;
 	q->new_desc_thresh = DEFAULT_BURST_THRESH;
 	q->queue_id = queue_idx;

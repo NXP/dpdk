@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2022 NXP  */
+/* Copyright 2020-2023 NXP  */
 
-#ifndef _LSX_NET_H_
-#define _LSX_NET_H_
+#ifndef _LSXINIC_EP_VIO_NET_H_
+#define _LSXINIC_EP_VIO_NET_H_
 
 #include <rte_common.h>
 #include <rte_debug.h>
@@ -31,8 +31,8 @@ TAILQ_HEAD(lsxvio_tx_queue_list, lsxvio_queue);
 /* Structure to store private data for each driver instance (for each port). */
 struct lsxvio_adapter {
 	enum lsinic_dev_type dev_type;
-	uint64_t cfg_base;
-	uint64_t ring_base;
+	void *cfg_base;
+	void *ring_base;
 	uint64_t ring_phy_base;
 	uint16_t device_id;
 	uint16_t vendor_id;
@@ -71,8 +71,6 @@ struct lsxvio_adapter {
 	int pf_idx;
 	int vf_idx;
 	int is_vf;
-	uint64_t ob_base;
-	uint8_t *ob_virt_base;
 	struct rte_lsx_pciep_device *lsx_dev;
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
 	uint8_t port_mac_addr[RTE_ETHER_ADDR_LEN];
@@ -135,4 +133,4 @@ int lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev);
 void lsxvio_reset_config_fromrc(struct lsxvio_adapter *adapter);
 
 int lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev);
-#endif /* _LSXINIC_EP_ETHDEV_H_ */
+#endif /* _LSXINIC_EP_VIO_NET_H_ */
