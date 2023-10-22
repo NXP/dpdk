@@ -149,16 +149,35 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 		eth_dev->data->dev_private;
 	uint16_t device_id;
 	enum lsx_pcie_pf_idx pf_idx = lsx_dev->pf;
+	uint64_t mask, size;
+	int ret;
 
 	adapter->lsx_dev = lsx_dev;
 	/* Get queue config.*/
 
-	rte_lsx_pciep_set_ib_win(lsx_dev,
-		LSXVIO_CONFIG_BAR_IDX,
-		LSXVIO_CONFIG_BAR_MAX_SIZE);
-	rte_lsx_pciep_set_ib_win(lsx_dev,
-		LSXVIO_RING_BAR_IDX,
-		LSXVIO_RING_BAR_MAX_SIZE);
+	mask = rte_lsx_pciep_bus_win_mask(lsx_dev);
+
+	size = LSXVIO_CONFIG_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = rte_lsx_pciep_set_ib_win(lsx_dev, LSXVIO_CONFIG_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsx_dev->name, LSXVIO_CONFIG_BAR_IDX, size);
+
+		return ret;
+	}
+
+	size = LSXVIO_RING_BAR_MAX_SIZE;
+	while (mask && (size & mask))
+		size++;
+	ret = rte_lsx_pciep_set_ib_win(lsx_dev, LSXVIO_RING_BAR_IDX, size);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: IB win[%d] size(0x%lx) set failed",
+			lsx_dev->name, LSXVIO_RING_BAR_IDX, size);
+
+		return ret;
+	}
 
 	adapter->cfg_base = lsx_dev->virt_addr[LSXVIO_CONFIG_BAR_IDX];
 	adapter->ring_base = lsx_dev->virt_addr[LSXVIO_RING_BAR_IDX];
@@ -172,8 +191,14 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 #endif
 
 	device_id = rte_lsx_pciep_ctl_get_device_id(lsx_dev->pcie_id, pf_idx);
-	lsxvio_virtio_init((uint64_t)adapter->cfg_base,
+	ret = lsxvio_virtio_init((uint64_t)adapter->cfg_base,
 		device_id, lsx_feature);
+	if (ret) {
+		LSXINIC_PMD_ERR("%s: vio init dev(%d) failed(%d)",
+			lsx_dev->name, device_id, ret);
+
+		return ret;
+	}
 
 	return 0;
 }

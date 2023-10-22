@@ -1207,12 +1207,14 @@ lsxvio_tx_dma_addr_loop(struct lsinic_dma_job **jobs,
 #undef LSXVIO_REMOTE_PKT_DUMP
 
 #ifdef LSXVIO_REMOTE_PKT_DUMP
+#define DUMP_REMOTE_BUF printf
 static void
 lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 	uint64_t remote_addr, uint16_t len)
 {
 	uint8_t *virt;
 	uint32_t i;
+	uint64_t mask;
 
 	if (!rte_lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 		if (adapter->rbp_enable) {
@@ -1220,19 +1222,30 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 				"RBP enabled");
 			return;
 		}
+		mask = rte_lsx_pciep_bus_win_mask(adapter->lsx_dev);
+		if (mask && (remote_addr & mask)) {
+			LSXINIC_PMD_ERR("Align err: Bus(0x%lx)-mask(0x%lx)",
+				remote_addr, mask);
+			return -EINVAL;
+		}
+		if (mask && (LSXVIO_PER_RING_MEM_MAX_SIZE & mask)) {
+			LSXINIC_PMD_ERR("Align err: Size(0x%lx)-mask(0x%lx)",
+				LSXVIO_PER_RING_MEM_MAX_SIZE, mask);
+			return -EINVAL;
+		}
 		virt = rte_lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
 	} else {
 		virt = DPAA2_IOVA_TO_VADDR(remote_addr);
 	}
 
-	printf("Remote buf(0x%lx) len:%d\r\n", remote_addr, len);
+	DUMP_REMOTE_BUF("Remote buf(0x%lx) len:%d\r\n", remote_addr, len);
 	for (i = 0; i < len; i++) {
-		printf("%02x ", virt[i]);
+		DUMP_REMOTE_BUF("%02x ", virt[i]);
 		if ((i + 1) % 16 == 0)
-			printf("\r\n");
+			DUMP_REMOTE_BUF("\r\n");
 	}
-	printf("\r\n");
+	DUMP_REMOTE_BUF("\r\n");
 }
 #endif
 
