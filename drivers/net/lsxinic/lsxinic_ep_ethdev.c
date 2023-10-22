@@ -1513,9 +1513,9 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 
 	if (LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_GET(adapter->cap) ==
 		RC_XMIT_RING_CNF) {
-		adapter->complete_src =
-			rte_malloc(NULL, LSINIC_BD_CNF_RING_SIZE,
-				LSINIC_BD_CNF_RING_SIZE);
+		adapter->complete_src = rte_malloc(NULL,
+			LSINIC_BD_CNF_RING_SIZE,
+			LSINIC_BD_CNF_RING_SIZE);
 		if (adapter->complete_src) {
 			memset(adapter->complete_src, RING_BD_HW_COMPLETE,
 				LSINIC_BD_CNF_RING_SIZE);
@@ -1531,8 +1531,13 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 	adapter->rc_dma_elt_size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
 
 	if (!sim) {
-		rte_lsx_pciep_multi_msix_init(lsinic_dev,
+		ret = rte_lsx_pciep_multi_msix_init(lsinic_dev,
 			LSINIC_DEV_MSIX_MAX_NB);
+		if (ret) {
+			LSXINIC_PMD_ERR("%s MSI(x) init failed(%d)",
+				lsinic_dev->name, ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -1549,8 +1554,17 @@ lsinic_remove_config_fromrc(struct lsinic_adapter *adapter)
 		ret = rte_lsx_pciep_unset_ob_win(lsinic_dev,
 			adapter->rc_ring_bus_base);
 		if (ret) {
-			LSXINIC_PMD_ERR("unset PCIe addr(0x%lx) failed(%d)",
+			LSXINIC_PMD_ERR("%s: unset PCIe addr(0x%lx) failed(%d)",
+				lsinic_dev->name,
 				adapter->rc_ring_bus_base, ret);
+			return ret;
+		}
+	}
+	if (!sim) {
+		ret = rte_lsx_pciep_multi_msix_remove(lsinic_dev);
+		if (ret) {
+			LSXINIC_PMD_ERR("%s: remove msi(x) failed(%d)",
+				lsinic_dev->name, ret);
 			return ret;
 		}
 	}
