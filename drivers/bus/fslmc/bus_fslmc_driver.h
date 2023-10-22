@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2021 NXP
+ *   Copyright 2016,2021-2023 NXP
  *
  */
 
@@ -148,6 +148,11 @@ struct rte_dpaa2_driver {
 	rte_dpaa2_probe_t probe;
 	rte_dpaa2_remove_t remove;
 };
+
+int
+rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size);
+int
+rte_fslmc_vfio_mem_dmaunmap(uint64_t iova, uint64_t size);
 
 /**
  * Register a DPAA2 driver.

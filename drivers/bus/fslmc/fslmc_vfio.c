@@ -848,7 +848,8 @@ rte_fslmc_vfio_mem_dmaunmap(uint64_t iova, uint64_t size)
 	return fslmc_unmap_dma(iova, 0, size);
 }
 
-int rte_fslmc_vfio_dmamap(void)
+int
+fslmc_vfio_dmamap(void)
 {
 	int i = 0, ret;
 
@@ -1481,8 +1482,7 @@ fslmc_vfio_setup_group(void)
 		vfio_group_fd = fslmc_vfio_open_group_fd(group_name);
 		if (vfio_group_fd <= 0) {
 			if (!vfio_group_fd)
-				close(vfio_group_fd);
-			DPAA2_BUS_ERR("Failed to create MC VFIO group");
+				return -EIO;
 			return -rte_errno;
 		}
 	}
