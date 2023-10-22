@@ -121,6 +121,11 @@ static int lsx_pciep_create_dev(uint8_t pcie_idx)
 	if (!ctlhw)
 		return -ENODEV;
 
+	if (rte_eal_process_type() == RTE_PROC_SECONDARY && ctlhw->sim) {
+		/*PCIe EP simulator is supported only in primary process.*/
+		return -ENODEV;
+	}
+
 	if (!ctlhw->ep_enable)
 		return -ENODEV;
 
@@ -366,8 +371,12 @@ lsx_pciep_probe(void)
 	struct rte_lsx_pciep_driver *drv;
 
 	ret = lsx_pciep_share_info_init();
-	if (ret)
+	if (ret) {
+		if (ret == (-ENODEV))
+			return 0;
+
 		return ret;
+	}
 
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
 		for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
