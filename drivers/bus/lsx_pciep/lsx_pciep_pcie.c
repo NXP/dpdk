@@ -1804,6 +1804,136 @@ rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	return vaddr;
 }
 
+static int
+lsx_pciep_unset_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr)
+{
+	int ret;
+	uint64_t min, max;
+	struct lsx_pciep_outbound *ob_win;
+	uint8_t i, j, k;
+
+	for (i = 0; i < ep_dev->rbp_ob_win_nb; i++) {
+		ob_win = &ep_dev->ob_win[i];
+		min = ob_win->ob_map_bus_base;
+		max = ob_win->ob_map_bus_base + ob_win->ob_win_size - 1;
+		if (pci_addr >= min && pci_addr < max) {
+			ret = lsx_pciep_unmap_region(ob_win->ob_virt_base,
+				ob_win->ob_win_size);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: OB%d unmap err(%d)",
+					ep_dev->name, i, ret);
+				return ret;
+			}
+			/*TO DO: Free this outbound window from PCIe bus.*/
+			memset(ob_win, 0, sizeof(struct lsx_pciep_outbound));
+			k = i;
+			for (j = i + 1; j < ep_dev->rbp_ob_win_nb; j++) {
+				memcpy(&ep_dev->ob_win[k],
+					&ep_dev->ob_win[j],
+					sizeof(struct lsx_pciep_outbound));
+				k++;
+			}
+			if (ep_dev->rbp_ob_win_nb > 0)
+				ep_dev->rbp_ob_win_nb--;
+
+			return 0;
+		}
+	}
+
+	LSX_PCIEP_BUS_ERR("%s: bus(0x%lx) not mapped in this device",
+		ep_dev->name, pci_addr);
+
+	return -ENOMEM;
+}
+
+static int
+lsx_pciep_unset_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr)
+{
+	int pcie_id = ep_dev->pcie_id;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+	int shared, ret;
+	struct lsx_pciep_outbound *ob_win = &ep_dev->ob_win[0];
+	uint64_t min, max, size;
+
+	shared = ctlhw->hw.ob_policy == LSX_PCIEP_OB_SHARE ? 1 : 0;
+	size = ob_win->ob_win_size * ob_win->ob_win_nb;
+	min = ob_win->ob_map_bus_base;
+	max = min + size - 1;
+
+	if (pci_addr < min || pci_addr > max) {
+		LSX_PCIEP_BUS_ERR("%s: bus(0x%lx) not mapped in this device",
+			ep_dev->name, pci_addr);
+		return -ENOMEM;
+	}
+	if (!shared) {
+		ret = lsx_pciep_unmap_region(ob_win->ob_virt_base, size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: unshared OB unmap err(%d)",
+				ep_dev->name, ret);
+			return ret;
+		}
+		ret = rte_fslmc_vfio_mem_dmaunmap(ob_win->ob_phy_base,
+				size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
+				"VFIO unmap failed",
+				ob_win->ob_virt_base,
+				ob_win->ob_phy_base, size);
+
+			return ret;
+		}
+	} else {
+		if (!ctlhw->share_vfio_map) {
+			LSX_PCIEP_BUS_ERR("PCIe%d shared ob has been unmapped.",
+				pcie_id);
+
+			return -EINVAL;
+		}
+		ctlhw->share_vfio_map--;
+		if (!ctlhw->share_vfio_map) {
+			ret = lsx_pciep_unmap_region(ctlhw->out_vir,
+					ctlhw->hw.out_size);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: shared OB unmap err(%d)",
+					ep_dev->name, ret);
+				return ret;
+			}
+			ret = rte_fslmc_vfio_mem_dmaunmap(ctlhw->hw.out_base,
+					ctlhw->hw.out_size);
+			if (ret) {
+				LSX_PCIEP_BUS_ERR("%s: v(%p)/p(%lx)/s(%lx)",
+					"VFIO unmap failed",
+					ob_win->ob_virt_base,
+					ob_win->ob_phy_base, size);
+
+				return ret;
+			}
+			ctlhw->out_vir = NULL;
+		}
+	}
+
+	ob_win->ob_virt_base = NULL;
+	ob_win->ob_phy_base = 0;
+	ob_win->ob_map_bus_base = 0;
+
+	return 0;
+}
+
+int
+rte_lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr)
+{
+	int pcie_id = ep_dev->pcie_id;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+
+	if (ctlhw->rbp)
+		return lsx_pciep_unset_ob_win_rbp(ep_dev, pci_addr);
+	else
+		return lsx_pciep_unset_ob_win_norbp(ep_dev, pci_addr);
+}
+
 void
 rte_lsx_pciep_set_sim_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t vir_offset)

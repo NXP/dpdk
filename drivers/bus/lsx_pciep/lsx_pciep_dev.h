@@ -143,6 +143,8 @@ lsx_pciep_ctl_init_win(uint8_t pcie_idx);
 void *
 lsx_pciep_map_region(uint64_t addr, size_t len);
 int
+lsx_pciep_unmap_region(void *vaddr, size_t len);
+int
 lsx_pciep_share_info_init(void);
 
 #endif

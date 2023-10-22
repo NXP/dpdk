@@ -290,6 +290,11 @@ void *lsx_pciep_map_region(uint64_t addr, size_t len)
 		return NULL;
 }
 
+int lsx_pciep_unmap_region(void *vaddr, size_t len)
+{
+	return munmap(vaddr, len);
+}
+
 static int
 lsx_pciep_scan(void)
 {

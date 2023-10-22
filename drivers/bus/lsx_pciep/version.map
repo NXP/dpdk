@@ -4,6 +4,7 @@ DPDK_23 {
 	rte_lsx_pciep_first_dev;
 	rte_lsx_pciep_bus_ob_mapped;
 	rte_lsx_pciep_set_ob_win;
+	rte_lsx_pciep_unset_ob_win;
 	rte_lsx_pciep_multi_msix_init;
 	rte_lsx_pciep_start_msix;
 	rte_lsx_pciep_ctl_dev_set;
