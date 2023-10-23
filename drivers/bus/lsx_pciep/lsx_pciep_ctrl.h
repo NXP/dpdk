@@ -5,6 +5,7 @@
 #ifndef _LSX_PCIEP_CTRL_H_
 #define _LSX_PCIEP_CTRL_H_
 
+#include <sys/mman.h>
 #include <rte_debug.h>
 #include "lsx_pciep_dev.h"
 
@@ -476,9 +477,15 @@ struct lsx_pciep_ops {
 			uint64_t phys, uint64_t size, int resize);
 
 	int (*pcie_msix_cfg)(struct lsx_pciep_hw_low *hw,
-			int pf, int is_vf, int vf,
-			uint64_t msg_addr[], uint32_t msg_data[],
+			uint8_t *out_vir, int pf, int is_vf, int vf,
+			uint64_t msg_phy_addr[], void *msg_vir_addr[],
+			uint32_t msg_data[], uint64_t *size,
 			int vector_total);
+
+	int (*pcie_msix_decfg)(struct lsx_pciep_hw_low *hw,
+			uint8_t *out_vir, int pf, int is_vf, int vf,
+			uint64_t msg_phy_addr[], void *msg_vir_addr[],
+			uint64_t size[], int vector_total);
 
 	uint64_t (*pcie_get_ob_unmapped)(struct lsx_pciep_hw_low *hw);
 

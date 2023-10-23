@@ -262,8 +262,9 @@ pcie_mv_set_ob_win(struct lsx_pciep_hw_low *hw,
 
 static int
 pcie_mv_msix_init(struct lsx_pciep_hw_low *hw,
-	int pf, int is_vf, int vf,
-	uint64_t msg_addr[], uint32_t msg_data[],
+	uint8_t *out_virt, int pf, int is_vf, int vf,
+	uint64_t msg_phy_addr[], void *msg_vir_addr[],
+	uint32_t msg_data[], uint64_t *size,
 	int vector_total)
 {
 	int vector;
@@ -303,9 +304,12 @@ pcie_mv_msix_init(struct lsx_pciep_hw_low *hw,
 		}
 
 		for (vector = 0; vector < vector_total; vector++) {
-			msg_addr[vector] = maddr;
+			msg_phy_addr[vector] = hw->out_base + maddr;
+			msg_vir_addr[vector] = out_virt + maddr;
 			msg_data[vector] = mdata + vector;
 		}
+		if (size)
+			*size = sizeof(uint32_t);
 	} else {
 		dev_id = GET_OB_FUNC_NUM_128(pf, is_vf, vf);
 
@@ -323,8 +327,9 @@ pcie_mv_msix_init(struct lsx_pciep_hw_low *hw,
 					MSIX_TABLE_BASE(vector) + 0x00);
 			addr_h = ccsr_readl(hw,
 					MSIX_TABLE_BASE(vector) + 0x04);
-			msg_addr[vector] =
-				(((uint64_t)addr_h) << 32) | addr_l;
+			maddr = (((uint64_t)addr_h) << 32) | addr_l;
+			msg_phy_addr[vector] = hw->out_base + maddr;
+			msg_vir_addr[vector] = out_virt + maddr;
 			msg_data[vector]  = ccsr_readl(hw,
 					MSIX_TABLE_BASE(vector) + 0x08);
 		}
@@ -333,6 +338,8 @@ pcie_mv_msix_init(struct lsx_pciep_hw_low *hw,
 		val =  ccsr_readl(hw, PAB_CTRL);
 		val &= ~(PAB_CTRL_FUNC_SEL_MASK << PAB_CTRL_FUNC_SEL_SHIFT);
 		ccsr_writel(hw, PAB_CTRL, val);
+		if (size)
+			*size = CFG_MSIX_OB_SIZE;
 	}
 
 	return vector_total;
