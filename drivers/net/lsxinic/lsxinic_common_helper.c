@@ -210,16 +210,14 @@ print_queue_status(void *queue,
 		(unsigned long long)epq->loop_total,
 		(unsigned long long)epq->loop_avail);
 
-	perf_log("\tEP dmaq=%d next_dma_idx=%d",
-		epq->dma_vq, epq->next_dma_idx);
-
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	perf_log("\t\tnew_desc=%d in_dma=%ld in_dpni=%ld\n",
-		epq->new_desc,
+	perf_log("\tEP dmaq=%d next_dma_idx=%d in_dma=%ld in_dpni=%ld\n",
+		epq->dma_vq, epq->next_dma_idx,
 		epq->pkts_eq - epq->pkts_dq, (long)epq->recycle_pending);
 #else
-	perf_log("\t\tnew_desc=%d in_dma=%ld\n",
-		epq->new_desc, epq->pkts_eq - epq->pkts_dq);
+	perf_log("\tEP dmaq=%d next_dma_idx=%d in_dma=%ld\n",
+		epq->dma_vq, epq->next_dma_idx,
+		epq->pkts_eq - epq->pkts_dq);
 #endif
 
 	(*packets) += epq->packets;
@@ -299,9 +297,9 @@ print_ep_virtio_queue_status(void *queue,
 		(unsigned long long)q->loop_total,
 		(unsigned long long)q->loop_avail);
 
-	perf_log("\tEP dmaq=%d next_dma_idx=%d\t\tnew_desc=%d in_dma=%ld\n",
+	perf_log("\tEP dmaq=%d next_dma_idx=%d\t\tpackets=%ld in_dma=%ld\n",
 		q->dma_vq, q->next_dma_idx,
-		q->new_desc,
+		q->packets,
 		q->pkts_eq - q->pkts_dq);
 
 	(*packets) += q->packets;

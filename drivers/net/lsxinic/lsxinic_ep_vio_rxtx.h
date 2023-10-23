@@ -151,10 +151,6 @@ struct lsxvio_queue {
 	uint32_t msix_irq;
 	uint32_t msix_cmd;
 	void *msix_vaddr;
-	uint64_t new_tsc;
-	uint64_t new_time_thresh;
-	uint16_t new_desc;
-	uint32_t new_desc_thresh;
 
 	/* BD index */
 	uint16_t head;
