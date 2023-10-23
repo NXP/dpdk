@@ -167,10 +167,14 @@ struct lxsnic_seg_mbuf {
 #define MCACHE_MASK (MCACHE_NUM - 1)
 struct lxsnic_ring {
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
+	struct lxsnic_ring *pair;
 	enum LSINIC_QEUE_TYPE type;
 	uint32_t port;
 	enum LSINIC_QEUE_STATUS status;
+	struct rte_ring *multi_core_ring;
+	rte_spinlock_t multi_core_lock;
 	uint32_t core_id;
+	pthread_t pid;
 #ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
 	const struct rte_memzone *raw_mz;
 	uint32_t raw_count;
@@ -282,6 +286,9 @@ struct lxsnic_ring {
 	uint16_t mtail;
 	uint32_t mcnt;
 	struct rte_mbuf *mcache[MCACHE_NUM];
+
+	/* Pointer to Next instance used by q list */
+	TAILQ_ENTRY(lxsnic_ring) next;
 };
 
 /* TDBA/RDBA should be aligned on 16 byte boundary. But TDLEN/RDLEN should be

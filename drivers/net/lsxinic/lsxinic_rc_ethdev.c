@@ -446,6 +446,27 @@ lxsnic_configure_txq_bd_dma_read(struct lxsnic_ring *txq)
 	return 0;
 }
 
+static void
+lxsnic_dev_rx_tx_bind(struct rte_eth_dev *dev)
+{
+	struct lxsnic_ring *txq;
+	struct lxsnic_ring *rxq;
+	uint16_t i, num;
+
+	num = RTE_MIN(dev->data->nb_tx_queues, dev->data->nb_rx_queues);
+
+	/* Link RX and Tx Descriptor Rings */
+	for (i = 0; i < num; i++) {
+		txq = dev->data->tx_queues[i];
+		rxq = dev->data->rx_queues[i];
+		if (!txq || !rxq)
+			continue;
+
+		rxq->pair = txq;
+		txq->pair = rxq;
+	}
+}
+
 static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
 {
@@ -503,6 +524,8 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size,
 				adapter->pkt_addr_interval);
 	}
+
+	lxsnic_dev_rx_tx_bind(dev);
 
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
@@ -1182,6 +1205,9 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->tx_free_len = 0;
 
 	tx_ring->type = LSINIC_QUEUE_TX;
+	tx_ring->core_id = RTE_MAX_LCORE;
+	tx_ring->pid = 0;
+	rte_spinlock_init(&tx_ring->multi_core_lock);
 	tx_ring->queue_index = queue_idx;
 	tx_ring->port = dev->data->port_id;
 	tx_ring->adapter = adapter;
