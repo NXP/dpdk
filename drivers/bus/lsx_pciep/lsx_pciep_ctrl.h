@@ -444,6 +444,8 @@ lsx_pciep_write_config(void *base,
 	RTE_ASSERT(!len);
 }
 
+#define PCIE_EP_DISABLE_ALL_WIN (-1)
+
 struct lsx_pciep_ops {
 	void (*pcie_config)(struct lsx_pciep_hw_low *hw);
 
@@ -457,10 +459,10 @@ struct lsx_pciep_ops {
 			int pf, uint16_t sub_vendor_id,
 			uint16_t sub_device_id, int sriov_disable);
 
-	void (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
+	int (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
 
-	void (*pcie_disable_ib_win)(struct lsx_pciep_hw_low *hw,
+	int (*pcie_disable_ib_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
 
 	uint64_t (*pcie_map_ob_win)(struct lsx_pciep_hw_low *hw,

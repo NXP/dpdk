@@ -203,13 +203,13 @@ pcie_mv_set_ib_win(struct lsx_pciep_hw_low *hw,
 	return 0;
 }
 
-static void
+static int
 pcie_mv_disable_ob_win(struct lsx_pciep_hw_low *hw, int idx)
 {
 	uint32_t val;
 	int loop;
 
-	if (idx >= 0) {
+	if (idx != PCIE_EP_DISABLE_ALL_WIN) {
 		val = ccsr_readl(hw, PAB_AXI_AMAP_CTRL(idx));
 		val &= ~AXI_AMAP_CTRL_EN;
 		ccsr_writel(hw, PAB_AXI_AMAP_CTRL(idx), val);
@@ -220,6 +220,8 @@ pcie_mv_disable_ob_win(struct lsx_pciep_hw_low *hw, int idx)
 			ccsr_writel(hw, PAB_AXI_AMAP_CTRL(loop), val);
 		}
 	}
+
+	return 0;
 }
 
 static int
