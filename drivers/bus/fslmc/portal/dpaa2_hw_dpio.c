@@ -381,9 +381,8 @@ dpaa2_affine_qbman_swp(void)
 		}
 		RTE_PER_LCORE(_dpaa2_io).dpio_dev = dpio_dev;
 
-		DPAA2_BUS_INFO(
-			"DPAA Portal=%p (%d) is affined to thread %" PRIu64,
-			dpio_dev, dpio_dev->index, tid);
+		DPAA2_BUS_DEBUG("Portal[%d] is affined to thread %ld",
+			dpio_dev->index, tid);
 	}
 	return 0;
 }
@@ -403,9 +402,8 @@ dpaa2_affine_qbman_ethrx_swp(void)
 		}
 		RTE_PER_LCORE(_dpaa2_io).ethrx_dpio_dev = dpio_dev;
 
-		DPAA2_BUS_INFO(
-			"DPAA Portal=%p (%d) is affined for eth rx to thread %"
-			PRIu64, dpio_dev, dpio_dev->index, tid);
+		DPAA2_BUS_DEBUG("Portal_eth_rx[%d] is affined to thread %ld",
+			dpio_dev->index, tid);
 	}
 	return 0;
 }

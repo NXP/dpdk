@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016 NXP
+ *   Copyright 2016-2023 NXP
  *
  */
 
@@ -10,7 +10,8 @@
 extern int dpaa2_logtype_bus;
 
 #define DPAA2_BUS_LOG(level, fmt, args...) \
-	rte_log(RTE_LOG_ ## level, dpaa2_logtype_bus, "fslmc: " fmt "\n", \
+	rte_log(RTE_LOG_ ## level, dpaa2_logtype_bus, \
+		"fslmc " # level ": " fmt "\n", \
 		##args)
 
 /* Debug logs are with Function names */

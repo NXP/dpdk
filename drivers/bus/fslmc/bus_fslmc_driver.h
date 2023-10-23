@@ -37,9 +37,6 @@ extern "C" {
 
 #include <fslmc_vfio.h>
 
-#include "portal/dpaa2_hw_pvt.h"
-#include "portal/dpaa2_hw_dpio.h"
-
 #define FSLMC_OBJECT_MAX_LEN 32   /**< Length of each device on bus */
 
 #define DPAA2_INVALID_MBUF_SEQN        0
@@ -153,6 +150,20 @@ int
 rte_fslmc_vfio_mem_dmamap(uint64_t vaddr, uint64_t iova, uint64_t size);
 int
 rte_fslmc_vfio_mem_dmaunmap(uint64_t iova, uint64_t size);
+uint64_t
+rte_fslmc_cold_mem_vaddr_to_iova(void *vaddr,
+	uint64_t size);
+void *
+rte_fslmc_cold_mem_iova_to_vaddr(uint64_t iova,
+	uint64_t size);
+__hot uint64_t
+rte_fslmc_mem_vaddr_to_iova(void *vaddr);
+__hot void *
+rte_fslmc_mem_iova_to_vaddr(uint64_t iova);
+uint64_t
+rte_fslmc_io_vaddr_to_iova(void *vaddr);
+void *
+rte_fslmc_io_iova_to_vaddr(uint64_t iova);
 
 /**
  * Register a DPAA2 driver.

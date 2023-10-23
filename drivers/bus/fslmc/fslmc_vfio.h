@@ -11,6 +11,10 @@
 #include <rte_compat.h>
 #include <rte_vfio.h>
 
+#ifndef __hot
+#define __hot __attribute__((hot))
+#endif
+
 /* Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES	"/sys/bus/fsl-mc/devices"
 #define DPAA2_MC_DPNI_DEVID	7
