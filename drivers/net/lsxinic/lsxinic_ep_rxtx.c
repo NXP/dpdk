@@ -2631,7 +2631,7 @@ lsinic_dpaa2_rx_lpbk(void *queue,
 	struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function receive frames for a given device and VQ*/
-	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct dpaa2_queue *dpaa2_q = queue;
 	struct qbman_result *dq_storage, *dq_storage1 = NULL;
 	uint32_t fqid = dpaa2_q->fqid;
 	int ret, num_rx = 0, pull_size;
@@ -2667,7 +2667,7 @@ lsinic_dpaa2_rx_lpbk(void *queue,
 					      q_storage->last_num_pkts);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+			DPAA2_VADDR_TO_IOVA(dq_storage), 1);
 		if (check_swp_active_dqs(ETH_CORE_DPIO->index)) {
 check_again1:
 			res = get_swp_active_dqs(ETH_CORE_DPIO->index);
@@ -2699,7 +2699,7 @@ check_again1:
 	qbman_pull_desc_set_numframes(&pulldesc, pull_size);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage1,
-		(uint64_t)(DPAA2_VADDR_TO_IOVA(dq_storage1)), 1);
+		DPAA2_VADDR_TO_IOVA(dq_storage1), 1);
 
 	while (!qbman_check_command_complete(dq_storage))
 		;
@@ -2823,18 +2823,19 @@ lsinic_dpaa2_merge_sg(struct rte_mbuf **tx_pkts,
 
 	if (direct_mbuf) {
 		tmp_mbuf = direct_mbuf;
-		fd_iova = (uint64_t)DPAA2_MBUF_VADDR_TO_IOVA(tmp_mbuf);
-		fd_va = DPAA2_IOVA_TO_VADDR(fd_iova);
+		fd_iova = DPAA2_MBUF_VADDR_TO_IOVA(tmp_mbuf);
+		fd_va = tmp_mbuf->buf_addr;
 	} else if (attach_mbuf) {
 		tmp_mbuf = attach_mbuf;
 		fd_va = (char *)tmp_mbuf +
 				(uint32_t)(sizeof(struct rte_mbuf) +
 				rte_pktmbuf_priv_size(mp));
-		fd_iova = DPAA2_VADDR_TO_IOVA(fd_va);
+		fd_iova = (rte_iova_t)fd_va +
+			tmp_mbuf->buf_iova - (rte_iova_t)tmp_mbuf->buf_addr;
 	} else {
 		tmp_mbuf = rte_pktmbuf_alloc(mp);
-		fd_iova = (uint64_t)DPAA2_MBUF_VADDR_TO_IOVA(tmp_mbuf);
-		fd_va = DPAA2_IOVA_TO_VADDR(fd_iova);
+		fd_iova = DPAA2_MBUF_VADDR_TO_IOVA(tmp_mbuf);
+		fd_va = tmp_mbuf->buf_addr;
 	}
 
 	mg_header = &mg_dsc->mg_header;
