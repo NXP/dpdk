@@ -219,6 +219,10 @@ rte_lsx_pciep_ctl_dev_set(uint16_t vendor_id,
 	uint8_t pcie_id, uint8_t pf);
 
 int
+rte_lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
+	uint16_t sub_device_id, uint8_t pcie_id, uint8_t pf);
+
+int
 rte_lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size);
 
@@ -226,6 +230,10 @@ int
 rte_lsx_pciep_fun_set(uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id,
 	uint8_t pcie_id, int pf, int is_vf);
+
+int
+rte_lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
+	uint16_t sub_device_id, uint8_t pcie_id, int pf);
 
 int
 rte_lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,

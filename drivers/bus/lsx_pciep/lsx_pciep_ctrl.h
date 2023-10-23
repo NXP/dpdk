@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  */
 
 #ifndef _LSX_PCIEP_CTRL_H_
@@ -35,6 +35,10 @@ struct lsx_pciep_ops {
 	int (*pcie_fun_init)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, uint16_t vendor_id,
 			uint16_t device_id, uint16_t class_id);
+
+	int (*pcie_fun_init_ext)(struct lsx_pciep_hw_low *hw,
+			int pf, uint16_t sub_vendor_id,
+			uint16_t sub_device_id);
 
 	void (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
