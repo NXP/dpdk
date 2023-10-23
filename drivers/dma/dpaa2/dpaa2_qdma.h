@@ -5,6 +5,9 @@
 #ifndef _DPAA2_QDMA_H_
 #define _DPAA2_QDMA_H_
 
+#include "portal/dpaa2_hw_pvt.h"
+#include "portal/dpaa2_hw_dpio.h"
+
 #define DPAA2_QDMA_MAX_DESC		4096
 #define DPAA2_QDMA_MIN_DESC		1
 #define DPAA2_QDMA_MAX_VHANS		64
