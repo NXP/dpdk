@@ -30,6 +30,7 @@ all_examples = [
 	'l1_l2_comm',
         'l2fwd',
         'l2fwd-cat',
+        'l2fwd-qdma',
         'l2fwd-crypto',
         'l2fwd-crypto-event',
         'l2fwd-event',
