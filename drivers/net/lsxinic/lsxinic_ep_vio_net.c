@@ -452,13 +452,13 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 
 	adapter->dev_type = LSINIC_VIRTIO_DEV;
 
-	if (!lsx_dev->is_vf) {
-		ret = rte_lsx_pciep_ctl_dev_set(VIRTIO_PCI_VENDORID,
-			device_id, class_id,
-			lsx_dev->pcie_id, lsx_dev->pf);
-		if (ret)
-			return ret;
-	}
+	ret = rte_lsx_pciep_fun_config(VIRTIO_PCI_VENDORID,
+		device_id, class_id,
+		VIRTIO_PCI_VENDORID, device_id,
+		lsx_dev->pcie_id, lsx_dev->pf,
+		lsx_dev->is_vf, lsx_dev->vf);
+	if (ret)
+		return ret;
 
 	eth_dev->device = &lsx_dev->device;
 	eth_dev->device->driver = &lsx_drv->driver;
