@@ -198,7 +198,7 @@ dpaa2_print_faf(struct dpaa2_fapr_array *fapr)
 	int i, byte_pos, bit_pos, vxlan = 0, vxlan_vlan = 0;
 	struct rte_ether_hdr vxlan_in_eth;
 	uint16_t vxlan_vlan_tci;
-	int ecpri = 0;
+	int ecpri = 0, rocev2 = 0;
 
 	for (i = 0; i < faf_bit_len; i++) {
 		faf_bits[i].position = i;
@@ -230,6 +230,8 @@ dpaa2_print_faf(struct dpaa2_fapr_array *fapr)
 			faf_bits[i].name = "ECPRI Present";
 		else if (i == FAF_GTP_FRAM)
 			faf_bits[i].name = "GTP Present";
+		else if (i == FAFE_IBTH)
+			faf_bits[i].name = "ROCEV2 Present";
 		else
 			faf_bits[i].name = "Check RM for this unusual frame";
 	}
@@ -245,8 +247,14 @@ dpaa2_print_faf(struct dpaa2_fapr_array *fapr)
 				vxlan = 1;
 			else if (i == FAFE_ECPRI_FRAM)
 				ecpri = 1;
+			else if (i == FAFE_IBTH)
+				rocev2 = 1;
 		}
 	}
+
+	/** FAFE_IBTH maybe be set for ecpri(type2, 3, 6, 7)*/
+	if (ecpri && rocev2)
+		rocev2 = 0;
 
 	if (vxlan) {
 		vxlan_in_eth.dst_addr.addr_bytes[0] =
@@ -312,6 +320,17 @@ dpaa2_print_faf(struct dpaa2_fapr_array *fapr)
 			DPAA2_PR_PRINT("vlan tci: 0x%04x\r\n",
 				vxlan_vlan_tci);
 		}
+	}
+
+	if (rocev2) {
+		DPAA2_PR_PRINT("ROCEv2 opcode: 0x%02x\r\n",
+			fapr->pr[DPAA2_ROCEV2_OPCODE_OFFSET]);
+		DPAA2_PR_PRINT("ROCEv2 qp: 0x");
+		for (i = 0; i < ROCEV2_DEST_QP_SIZE; i++) {
+			DPAA2_PR_PRINT("%02x",
+				fapr->pr[DPAA2_ROCEV2_DST_QP_OFFSET + i]);
+		}
+		DPAA2_PR_PRINT("\r\n");
 	}
 
 	if (ecpri)
