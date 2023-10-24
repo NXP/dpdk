@@ -27,8 +27,10 @@ struct qdma_test_case {
 struct dma_job {
 	/** Source Address from where DMA is (to be) performed */
 	uint64_t src;
+	uint64_t vsrc;
 	/** Destination Address where DMA is (to be) done */
 	uint64_t dest;
+	uint64_t vdst;
 	/** Length of the DMA operation in bytes. */
 	uint32_t len;
 	/** Flags corresponding to an DMA operation */
@@ -40,10 +42,10 @@ struct dma_job {
 #define ARG_SIZE (1 << 1)
 #define ARG_TEST_ID (1 << 2)
 #define ARG_LATENCY (1 << 3)
-#define ARG_PCI_SIZE (1 << 4)
-#define ARG_MEMCPY (1 << 5)
-#define ARG_SCATTER_GATHER (1 << 6)
-#define ARG_BURST (1 << 7)
-#define ARG_NUM (1 << 8)
+#define ARG_MEMCPY (1 << 4)
+#define ARG_SCATTER_GATHER (1 << 5)
+#define ARG_BURST (1 << 6)
+#define ARG_NUM (1 << 7)
+#define ARG_VALIDATE (1 << 8)
 
 #endif
