@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2021 Intel Corporation
+ * Copyright 2023 NXP
  */
 
 #include <stdio.h>
@@ -1803,22 +1804,21 @@ l3fwd_event_service_setup(void)
 static int
 get_dpdmux_id_from_env(void)
 {
-	int dpdmux_id, ret;
+	int dpdmux_id = -ENODEV, ret;
 	FILE *fp;
 
 	/* Get the dpdmux ID from environment */
 	fp = popen("restool dprc show $DPRC | grep dpdmux | "
 		"cut -f 1 | cut -d . -f 2", "r");
-	if (fp == NULL) {
+	if (!fp) {
 		printf("Error in getting dpdmux id\n");
-		return -1;
+		return -ENODEV;
 	}
 
 	ret = fscanf(fp, "%d", &dpdmux_id);
 	if (ret != 1) {
 		printf("Failed to get dpdmux id\n");
-		pclose(fp);
-		return -1;
+		dpdmux_id = -ENODEV;
 	}
 	pclose(fp);
 
@@ -1837,7 +1837,7 @@ get_dpdmux_id_from_env(void)
 static int
 configure_split_traffic(void)
 {
-	struct rte_flow *result;
+	int ret;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -1849,7 +1849,7 @@ configure_split_traffic(void)
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
 		printf("get_dpdmux_id_from_env failed\n");
-		return -1;
+		return dpdmux_id;
 	}
 
 	vf.id = mux_connection_id;
@@ -1872,19 +1872,18 @@ configure_split_traffic(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-					       &actions1);
-	if (!result)
-		/* Unable to create the flow */
-		return -1;
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+			&actions1);
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
-	return 0;
+	return ret;
 }
 
 static int
 configure_split_traffic_config(void)
 {
-	struct rte_flow *result;
+	int ret;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -1897,7 +1896,7 @@ configure_split_traffic_config(void)
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
 		printf("get_dpdmux_id_from_env failed\n");
-		return -1;
+		return dpdmux_id;
 	}
 
 	vf.id = mux_connection_id;
@@ -1948,7 +1947,7 @@ configure_split_traffic_config(void)
 		break;
 	default:
 		printf("invalid traffic_split_type\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	actions[0].conf = &vf;
@@ -1956,13 +1955,12 @@ configure_split_traffic_config(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-					       &actions1);
-	if (!result)
-		/* Unable to create the flow */
-		return -1;
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+			&actions1);
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
-	return 0;
+	return ret;
 }
 
 int
