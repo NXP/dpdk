@@ -111,13 +111,18 @@ struct lsx_pciep_ctl_hw {
 	uint16_t function_num;
 	int pf_enable[PF_MAX_NB];
 	int vf_enable[PF_MAX_NB][PCIE_MAX_VF_NUM];
-	uint16_t vendor_id[PF_MAX_NB];
-	uint16_t pf_device_id[PF_MAX_NB];
-	uint16_t vf_device_id[PF_MAX_NB];
-	uint16_t class_id[PF_MAX_NB];
 
-	uint16_t sub_vendor_id[PF_MAX_NB];
-	uint16_t sub_device_id[PF_MAX_NB];
+	uint16_t pf_vendor_id[PF_MAX_NB];
+	uint16_t pf_device_id[PF_MAX_NB];
+	uint16_t pf_class_id[PF_MAX_NB];
+	uint16_t pf_sub_vendor_id[PF_MAX_NB];
+	uint16_t pf_sub_device_id[PF_MAX_NB];
+
+	uint16_t vf_vendor_id[PF_MAX_NB][PCIE_MAX_VF_NUM];
+	uint16_t vf_device_id[PF_MAX_NB][PCIE_MAX_VF_NUM];
+	uint16_t vf_class_id[PF_MAX_NB][PCIE_MAX_VF_NUM];
+	uint16_t vf_sub_vendor_id[PF_MAX_NB][PCIE_MAX_VF_NUM];
+	uint16_t vf_sub_device_id[PF_MAX_NB][PCIE_MAX_VF_NUM];
 
 	enum PEX_TYPE type;
 	struct lsx_pciep_hw_low hw;
