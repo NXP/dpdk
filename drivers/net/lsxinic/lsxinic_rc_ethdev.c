@@ -2089,6 +2089,20 @@ static int lxsnic_sim_pci_resource_set(struct rte_pci_device *dev)
 			continue;
 
 		mapaddr = rte_mem_iova2virt(dev->mem_resource[i].phys_addr);
+		if (!mapaddr) {
+			mapaddr = mmap(NULL, dev->mem_resource[i].len,
+					PROT_READ | PROT_WRITE, MAP_SHARED, -1,
+					dev->mem_resource[i].phys_addr);
+			LSXINIC_PMD_INFO("%s: bar[%d] map phy(%lx)",
+				"RC Simulator",
+				i, dev->mem_resource[i].phys_addr);
+			if (mapaddr == MAP_FAILED) {
+				LSXINIC_PMD_ERR("%s: map bar[%d](%lx) failed",
+					"RC Simulator",
+					i, dev->mem_resource[i].phys_addr);
+				return -ENOMEM;
+			}
+		}
 		dev->mem_resource[i].addr = mapaddr;
 		map_idx++;
 	}
