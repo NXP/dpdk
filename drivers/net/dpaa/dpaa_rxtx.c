@@ -1145,6 +1145,35 @@ reallocate_mbuf(struct qman_fq *txq, struct rte_mbuf *mbuf)
 	return new_mbufs[0];
 }
 
+#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
+/* In case the data offset is not multiple of 16,
+ * FMAN can stall because of an errata. So reallocate
+ * the buffer in such case.
+ */
+static inline int
+dpaa_eth_ls1043a_mbuf_realloc(struct rte_mbuf *mbuf)
+{
+	uint64_t len, offset;
+
+	if (dpaa_svr_family != SVR_LS1043A_FAMILY)
+		return 0;
+
+	while (mbuf) {
+		len = mbuf->data_len;
+		offset = mbuf->data_off;
+		if ((mbuf->next &&
+			!rte_is_aligned((void *)len, 16)) ||
+			!rte_is_aligned((void *)offset, 16)) {
+			DPAA_PMD_DEBUG("Errata condition hit");
+
+			return 1;
+		}
+		mbuf = mbuf->next;
+	}
+	return 0;
+}
+#endif
+
 uint16_t
 dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 {
@@ -1158,7 +1187,6 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 	struct dpaa_sw_buf_free buf_to_free[DPAA_MAX_SGS * DPAA_MAX_DEQUEUE_NUM_FRAMES];
 	uint32_t free_count = 0;
-	struct rte_mbuf *temp_mbuf;
 #if defined(RTE_LIBRTE_IEEE1588)
 	struct qman_fq *fq = q;
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
@@ -1186,28 +1214,15 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				DPAA_TX_BURST_SIZE : nb_bufs;
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
-		fd_arr[loop].cmd = 0;
+			fd_arr[loop].cmd = 0;
 #if defined(RTE_LIBRTE_IEEE1588)
-		fd_arr[loop].cmd |= DPAA_FD_CMD_FCO | qman_fq_fqid(fq_txconf);
-		fd_arr[loop].cmd |= DPAA_FD_CMD_RPD | DPAA_FD_CMD_UPD;
+			fd_arr[loop].cmd |= DPAA_FD_CMD_FCO |
+				qman_fq_fqid(fq_txconf);
+			fd_arr[loop].cmd |= DPAA_FD_CMD_RPD |
+				DPAA_FD_CMD_UPD;
 #endif
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
-			/* In case the data offset is not multiple of 16,
-			 * FMAN can stall because of an errata. So reallocate
-			 * the buffer in such case.
-			 */
-			temp_mbuf = mbuf;
-			while (temp_mbuf) {
-				if (dpaa_svr_family == SVR_LS1043A_FAMILY) {
-					if ((temp_mbuf->next && !rte_is_aligned((void *)(uintptr_t)temp_mbuf->data_len, 16)) ||
-						!rte_is_aligned((void *)(uintptr_t)temp_mbuf->data_off, 16)) {
-						DPAA_PMD_DEBUG("Errata condition hit \n");
-						realloc_mbuf = 1;
-						break;
-					}
-				}
-				temp_mbuf = temp_mbuf->next;
-			}
+			realloc_mbuf = dpaa_eth_ls1043a_mbuf_realloc(mbuf);
 #endif
 			seqn = *dpaa_seqn(mbuf);
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
