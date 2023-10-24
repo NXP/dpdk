@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020-2022 NXP
+# Copyright 2020-2023 NXP
 
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -13,3 +13,4 @@ sources = files(
 )
 
 includes += include_directories('../../drivers/dma/dpaa2/')
+includes += include_directories('../../drivers/bus/fslmc/')
