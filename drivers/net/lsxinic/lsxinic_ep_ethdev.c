@@ -1470,7 +1470,12 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	size += LSINIC_RING_BD_OFFSET;
 	sim = rte_lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	if (sim) {
-		vir_addr = DPAA2_IOVA_TO_VADDR(rc_reg_addr);
+		vir_addr = DPAA2_IOVA_TO_VADDR_AND_CHECK(rc_reg_addr, 0);
+		if (!vir_addr) {
+			LSXINIC_PMD_ERR("Sim RC addr(%lx) no IOMMU mapped",
+				rc_reg_addr);
+			return -ENOBUFS;
+		}
 		vir_offset = (uint64_t)vir_addr - rc_reg_addr;
 
 		adapter->rc_ring_virt_base = vir_addr;
