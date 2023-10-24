@@ -10,6 +10,7 @@
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <netinet/in.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -79,27 +80,27 @@ static int mac_updating = 1;
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RX_DESC_DEFAULT 1024
-#define TX_DESC_DEFAULT 1024
-static uint16_t nb_rxd = RX_DESC_DEFAULT;
-static uint16_t nb_txd = TX_DESC_DEFAULT;
+#define RTE_TEST_RX_DESC_DEFAULT 128
+#define RTE_TEST_TX_DESC_DEFAULT 512
+static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
 /* ethernet addresses of ports */
-static struct rte_ether_addr l2fwd_ports_eth_addr[RTE_MAX_ETHPORTS];
+static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
 /* mask of enabled ports */
-static uint32_t l2fwd_enabled_port_mask = 0;
+static uint32_t port_mask;
 
 /* list of enabled ports */
-static uint32_t l2fwd_dst_ports[RTE_MAX_ETHPORTS];
+static uint32_t dst_ports[RTE_MAX_ETHPORTS];
 
 static unsigned int rx_queue_per_lcore = 1;
 
 #define MAX_RX_QUEUE_PER_LCORE 16
 #define MAX_TX_QUEUE_PER_PORT 16
 struct lcore_queue_conf {
-	unsigned n_rx_port;
-	unsigned rx_port_list[MAX_RX_QUEUE_PER_LCORE];
+	unsigned int n_rx_port;
+	unsigned int rx_port_list[MAX_RX_QUEUE_PER_LCORE];
 } __rte_cache_aligned;
 struct lcore_queue_conf s_lcore_queue_conf[RTE_MAX_LCORE];
 
@@ -115,12 +116,12 @@ struct rte_mempool *s_pktmbuf_pool;
 struct rte_mempool *s_pktmbuf_qdma_pool;
 
 /* Per-port statistics struct */
-struct l2fwd_port_statistics {
+struct port_statistics {
 	uint64_t tx;
 	uint64_t rx;
 	uint64_t dropped;
 } __rte_cache_aligned;
-struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
+struct port_statistics s_port_statistics[RTE_MAX_ETHPORTS];
 
 #define MAX_TIMER_PERIOD 86400 /* 1 day max */
 /* A tsc-based timer responsible for triggering statistics printout */
@@ -134,7 +135,7 @@ static void
 print_stats(void)
 {
 	uint64_t total_packets_dropped, total_packets_tx, total_packets_rx;
-	unsigned portid;
+	unsigned int portid;
 
 	total_packets_dropped = 0;
 	total_packets_tx = 0;
@@ -150,20 +151,20 @@ print_stats(void)
 
 	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) {
 		/* skip disabled ports */
-		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
+		if ((port_mask & (1 << portid)) == 0)
 			continue;
 		printf("\nStatistics for port %u ------------------------------"
 			   "\nPackets sent: %24"PRIu64
 			   "\nPackets received: %20"PRIu64
 			   "\nPackets dropped: %21"PRIu64,
 			   portid,
-			   port_statistics[portid].tx,
-			   port_statistics[portid].rx,
-			   port_statistics[portid].dropped);
+			   s_port_statistics[portid].tx,
+			   s_port_statistics[portid].rx,
+			   s_port_statistics[portid].dropped);
 
-		total_packets_dropped += port_statistics[portid].dropped;
-		total_packets_tx += port_statistics[portid].tx;
-		total_packets_rx += port_statistics[portid].rx;
+		total_packets_dropped += s_port_statistics[portid].dropped;
+		total_packets_tx += s_port_statistics[portid].tx;
+		total_packets_rx += s_port_statistics[portid].rx;
 	}
 	printf("\nAggregate statistics ==============================="
 		   "\nTotal packets sent: %18"PRIu64
@@ -173,8 +174,6 @@ print_stats(void)
 		   total_packets_rx,
 		   total_packets_dropped);
 	printf("\n====================================================\n");
-
-	fflush(stdout);
 }
 
 static void
@@ -190,7 +189,7 @@ l2fwd_qdma_mac_updating(struct rte_mbuf *m, unsigned int dest_portid)
 	*((uint64_t *)tmp) = 0x000000000002 + ((uint64_t)dest_portid << 40);
 
 	/* src addr */
-	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->src_addr);
+	rte_ether_addr_copy(&ports_eth_addr[dest_portid], &eth->src_addr);
 }
 
 static void
@@ -223,7 +222,7 @@ l2fwd_qdma_forward(uint16_t vq_id, int nb_jobs)
 
 	sent = rte_eth_tx_burst(dst_port, 0, out_mbuf, to_sent);
 	if (sent)
-		port_statistics[dst_port].tx += sent;
+		s_port_statistics[dst_port].tx += sent;
 }
 
 static void
@@ -368,12 +367,13 @@ l2fwd_qdma_main_loop(void)
 
 			for (i = 0; i < qconf->n_rx_port; i++) {
 
-				portid = l2fwd_dst_ports[qconf->rx_port_list[i]];
+				portid = dst_ports[qconf->rx_port_list[i]];
 				buffer = tx_buffer[portid];
 
-				sent = rte_eth_tx_buffer_flush(portid, 0, buffer);
+				sent = rte_eth_tx_buffer_flush(portid,
+								0, buffer);
 				if (sent)
-					port_statistics[portid].tx += sent;
+					s_port_statistics[portid].tx += sent;
 
 			}
 
@@ -407,7 +407,7 @@ l2fwd_qdma_main_loop(void)
 			nb_rx = rte_eth_rx_burst(portid, 0,
 						 pkts_burst, MAX_PKT_BURST);
 
-			port_statistics[portid].rx += nb_rx;
+			s_port_statistics[portid].rx += nb_rx;
 			if (nb_rx)
 				l2fwd_qdma_copy(pkts_burst,
 						portid, vq_id, nb_rx);
@@ -546,8 +546,8 @@ l2fwd_qdma_parse_args(int argc, char **argv)
 		switch (opt) {
 		/* portmask */
 		case 'p':
-			l2fwd_enabled_port_mask = l2fwd_qdma_parse_portmask(optarg);
-			if (!l2fwd_enabled_port_mask) {
+			port_mask = l2fwd_qdma_parse_portmask(optarg);
+			if (!port_mask) {
 				RTE_LOG(ERR, l2fwd_qdma,
 					"invalid portmask\n");
 				l2fwd_qdma_usage(prgname);
@@ -616,11 +616,8 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
-	int ret;
-	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 
-	printf("\nChecking link status");
-	fflush(stdout);
+	RTE_LOG(INFO, l2fwd_qdma, "Checking link status\n");
 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
 		if (force_quit)
 			return;
@@ -631,20 +628,28 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			ret = rte_eth_link_get_nowait(portid, &link);
-			if (ret < 0) {
-				all_ports_up = 0;
-				if (print_flag == 1)
-					printf("Port %u link get failed: %s\n",
-						portid, rte_strerror(-ret));
-				continue;
-			}
+			rte_eth_link_get_nowait(portid, &link);
 			/* print link status if flag set */
 			if (print_flag == 1) {
-				rte_eth_link_to_str(link_status_text,
-					sizeof(link_status_text), &link);
-				printf("Port %d %s\n", portid,
-				       link_status_text);
+				if (link.link_status &&
+					link.link_duplex ==
+					RTE_ETH_LINK_FULL_DUPLEX) {
+					RTE_LOG(INFO, l2fwd_qdma,
+						"Port%d Link Up. Speed %u Mbps - %s\n",
+						portid, link.link_speed,
+						"full-duplex");
+				} else if (link.link_status &&
+					link.link_duplex ==
+					RTE_ETH_LINK_HALF_DUPLEX) {
+					RTE_LOG(INFO, l2fwd_qdma,
+						"Port%d Link Up. Speed %u Mbps - %s\n",
+						portid, link.link_speed,
+						"half-duplex");
+				} else {
+					RTE_LOG(INFO, l2fwd_qdma,
+						"Port %d Link Down\n",
+						portid);
+				}
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
@@ -811,17 +816,17 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "Cannot init qdma mbuf pool\n");
 
 	nb_ports = rte_eth_dev_count_avail();
-	if (nb_ports == 0)
+	if (!nb_ports)
 		rte_exit(EXIT_FAILURE, "No Ethernet ports - bye\n");
 
 	/* check port mask to possible port mask */
-	if (l2fwd_enabled_port_mask & ~((1 << nb_ports) - 1))
+	if (port_mask & ~((1 << nb_ports) - 1))
 		rte_exit(EXIT_FAILURE, "Invalid portmask; possible (0x%x)\n",
 			(1 << nb_ports) - 1);
 
 	/* reset l2fwd qdma dst ports */
 	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++)
-		l2fwd_dst_ports[portid] = 0;
+		dst_ports[portid] = 0;
 	last_port = 0;
 
 	/*
@@ -829,12 +834,12 @@ main(int argc, char **argv)
 	 */
 	RTE_ETH_FOREACH_DEV(portid) {
 		/* skip ports that are not enabled */
-		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
+		if ((port_mask & (1 << portid)) == 0)
 			continue;
 
 		if (nb_ports_in_mask % 2) {
-			l2fwd_dst_ports[portid] = last_port;
-			l2fwd_dst_ports[last_port] = portid;
+			dst_ports[portid] = last_port;
+			dst_ports[last_port] = portid;
 		} else
 			last_port = portid;
 
@@ -843,7 +848,7 @@ main(int argc, char **argv)
 	if (nb_ports_in_mask % 2) {
 		RTE_LOG(INFO, l2fwd_qdma,
 			"Notice: odd number of ports in portmask.\n");
-		l2fwd_dst_ports[last_port] = last_port;
+		dst_ports[last_port] = last_port;
 	}
 
 	rx_lcore_id = 0;
@@ -852,7 +857,7 @@ main(int argc, char **argv)
 	/* Initialize the port/queue configuration of each logical core */
 	RTE_ETH_FOREACH_DEV(portid) {
 		/* skip ports that are not enabled */
-		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
+		if ((port_mask & (1 << portid)) == 0)
 			continue;
 
 		/* get the lcore_id for this port */
@@ -883,7 +888,7 @@ main(int argc, char **argv)
 		struct rte_eth_dev_info dev_info;
 
 		/* skip ports that are not enabled */
-		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0) {
+		if ((port_mask & (1 << portid)) == 0) {
 			RTE_LOG(INFO, l2fwd_qdma,
 				"Skipping disabled port %u\n", portid);
 			continue;
@@ -913,7 +918,7 @@ main(int argc, char **argv)
 		}
 
 		ret = rte_eth_macaddr_get(portid,
-			&l2fwd_ports_eth_addr[portid]);
+			&ports_eth_addr[portid]);
 		if (ret < 0) {
 			rte_exit(EXIT_FAILURE,
 				"Port%d get max address failed(%d)\n",
@@ -962,7 +967,7 @@ main(int argc, char **argv)
 
 		ret = rte_eth_tx_buffer_set_err_callback(tx_buffer[portid],
 				rte_eth_tx_buffer_count_callback,
-				&port_statistics[portid].dropped);
+				&s_port_statistics[portid].dropped);
 		if (ret < 0) {
 			rte_exit(EXIT_FAILURE,
 				"Port%d set TX error callback failed(%d)\n",
@@ -986,21 +991,21 @@ main(int argc, char **argv)
 		RTE_LOG(INFO, l2fwd_qdma,
 			"Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n",
 			portid,
-			l2fwd_ports_eth_addr[portid].addr_bytes[0],
-			l2fwd_ports_eth_addr[portid].addr_bytes[1],
-			l2fwd_ports_eth_addr[portid].addr_bytes[2],
-			l2fwd_ports_eth_addr[portid].addr_bytes[3],
-			l2fwd_ports_eth_addr[portid].addr_bytes[4],
-			l2fwd_ports_eth_addr[portid].addr_bytes[5]);
+			ports_eth_addr[portid].addr_bytes[0],
+			ports_eth_addr[portid].addr_bytes[1],
+			ports_eth_addr[portid].addr_bytes[2],
+			ports_eth_addr[portid].addr_bytes[3],
+			ports_eth_addr[portid].addr_bytes[4],
+			ports_eth_addr[portid].addr_bytes[5]);
 
 		/* initialize port stats */
-		memset(&port_statistics, 0, sizeof(port_statistics));
+		memset(&s_port_statistics, 0, sizeof(s_port_statistics));
 	}
 
 	if (!nb_ports_available)
 		rte_exit(EXIT_FAILURE, "No port is selected\n");
 
-	check_all_ports_link_status(l2fwd_enabled_port_mask);
+	check_all_ports_link_status(port_mask);
 
 	l2fwd_qdma_dma_init();
 
@@ -1052,7 +1057,7 @@ main(int argc, char **argv)
 	}
 
 	RTE_ETH_FOREACH_DEV(portid) {
-		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
+		if ((port_mask & (1 << portid)) == 0)
 			continue;
 		printf("Closing port %d...", portid);
 		rte_eth_dev_stop(portid);
