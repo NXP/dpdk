@@ -102,9 +102,12 @@ struct lsx_pciep_env {
 	uint8_t vf_enable[PF_MAX_NB][PCIE_MAX_VF_NUM];
 
 	uint8_t pf_virtio[PF_MAX_NB];
+	uint8_t pf_dis_sriov[PF_MAX_NB];
+	uint8_t pf_dis_ari[PF_MAX_NB];
+	uint8_t pf_dis_ats[PF_MAX_NB];
 };
 
-struct lsx_pciep_env s_pciep_env[LSX_MAX_PCIE_NB];
+static struct lsx_pciep_env s_pciep_env[LSX_MAX_PCIE_NB];
 
 #define OB_MAP_DUMP_FORMAT(pci_id, size, phy, vir) \
 	"PCIe%d map outbound size(0x%lx) from (0x%lx) to %p", \
@@ -341,6 +344,36 @@ lsx_pciep_fun_env_set(int pciep_idx,
 }
 
 static void
+lsx_pciep_fun_env_dis_sriov(int pciep_idx,
+	uint8_t pf_idx, int dis)
+{
+	RTE_ASSERT(pciep_idx >= 0 && pciep_idx < LSX_MAX_PCIE_NB);
+	RTE_ASSERT(pf_idx < PF_MAX_NB);
+
+	s_pciep_env[pciep_idx].pf_dis_sriov[pf_idx] = dis;
+}
+
+static void
+lsx_pciep_fun_env_dis_ari(int pciep_idx,
+	uint8_t pf_idx, int dis)
+{
+	RTE_ASSERT(pciep_idx >= 0 && pciep_idx < LSX_MAX_PCIE_NB);
+	RTE_ASSERT(pf_idx < PF_MAX_NB);
+
+	s_pciep_env[pciep_idx].pf_dis_ari[pf_idx] = dis;
+}
+
+static void
+lsx_pciep_fun_env_dis_ats(int pciep_idx,
+	uint8_t pf_idx, int dis)
+{
+	RTE_ASSERT(pciep_idx >= 0 && pciep_idx < LSX_MAX_PCIE_NB);
+	RTE_ASSERT(pf_idx < PF_MAX_NB);
+
+	s_pciep_env[pciep_idx].pf_dis_ats[pf_idx] = dis;
+}
+
+static void
 lsx_pciep_rbp_env_set(uint8_t pciep_idx,
 	int enable)
 {
@@ -518,6 +551,22 @@ lsx_pciep_parse_sriov_env(void)
 
 			if (!ctlhw->hw.is_sriov)
 				continue;
+			sprintf(env_name, "LSX_PCIE%d_PF%d_DIS_SRIOV",
+					i, j);
+			penv = getenv(env_name);
+			if (penv) {
+				lsx_pciep_fun_env_dis_sriov(i, j,
+					atoi(penv));
+			}
+			sprintf(env_name, "LSX_PCIE%d_PF%d_DIS_ARI",
+					i, j);
+			penv = getenv(env_name);
+			if (penv) {
+				lsx_pciep_fun_env_dis_ari(i, j,
+					atoi(penv));
+			}
+			/** Disable ATS as default.*/
+			lsx_pciep_fun_env_dis_ats(i, j, 1);
 			for (k = 0; k < PCIE_MAX_VF_NUM; k++) {
 				sprintf(env_name, "LSX_PCIE%d_PF%d_VF%d",
 					i, j, k);
@@ -1230,6 +1279,8 @@ rte_lsx_pciep_fun_set(uint16_t vendor_id,
 		ctlhw->vendor_id[pf] = vendor_id;
 		ctlhw->pf_device_id[pf] = device_id;
 		ctlhw->class_id[pf] = class_id;
+		ret = rte_lsx_pciep_fun_set_ext(vendor_id, device_id,
+				pcie_id, pf);
 	} else {
 		ctlhw->vf_device_id[pf] = device_id;
 	}
@@ -1277,7 +1328,10 @@ rte_lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	if (!rte_lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
 			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id, 0);
+				pf, sub_vendor_id, sub_device_id,
+				s_pciep_env[pcie_id].pf_dis_sriov[pf],
+				s_pciep_env[pcie_id].pf_dis_ari[pf],
+				s_pciep_env[pcie_id].pf_dis_ats[pf]);
 		}
 	}
 
@@ -1363,7 +1417,10 @@ rte_lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
 	if (!rte_lsx_pciep_hw_sim_get(pcie_id)) {
 		if (ctlhw->ops && ctlhw->ops->pcie_fun_init_ext) {
 			ret = ctlhw->ops->pcie_fun_init_ext(&ctlhw->hw,
-				pf, sub_vendor_id, sub_device_id, 0);
+				pf, sub_vendor_id, sub_device_id,
+				s_pciep_env[pcie_id].pf_dis_sriov[pf],
+				s_pciep_env[pcie_id].pf_dis_ari[pf],
+				s_pciep_env[pcie_id].pf_dis_ats[pf]);
 		}
 	}
 

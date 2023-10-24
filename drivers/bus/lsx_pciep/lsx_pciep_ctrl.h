@@ -457,7 +457,8 @@ struct lsx_pciep_ops {
 
 	int (*pcie_fun_init_ext)(struct lsx_pciep_hw_low *hw,
 			int pf, uint16_t sub_vendor_id,
-			uint16_t sub_device_id, int sriov_disable);
+			uint16_t sub_device_id, int sriov_disable,
+			int ari_disable, int ats_disable);
 
 	int (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
