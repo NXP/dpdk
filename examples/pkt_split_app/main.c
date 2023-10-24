@@ -856,13 +856,13 @@ get_dpdmux_id_from_env(void)
 				"cut -f 1 | cut -d . -f 2", "r");
 	if (fp == NULL) {
 		printf("Error in getting dpdmux id\n");
-		return -1;
+		return -ENODEV;
 	}
 
 	ret = fscanf(fp, "%d", &dpdmux_id);
 	if (ret != 1) {
 		printf("Failed to get dpdmux id\n");
-		dpdmux_id = -1;
+		dpdmux_id = -ENODEV;
 	}
 	pclose(fp);
 
@@ -872,7 +872,6 @@ get_dpdmux_id_from_env(void)
 static int
 configure_split_traffic_config(void)
 {
-	struct rte_flow *result;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -881,12 +880,12 @@ configure_split_traffic_config(void)
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
 	struct rte_flow_item_vlan vlan_item;
-	int dpdmux_id;
+	int dpdmux_id, ret;
 
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
 		printf("get_dpdmux_id_from_env failed\n");
-		return -1;
+		return dpdmux_id;
 	}
 
 	vf.id = mux_connection_id;
@@ -954,7 +953,7 @@ configure_split_traffic_config(void)
 		break;
 	default:
 		printf("invalid traffic_split_type\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	actions[0].conf = &vf;
@@ -962,13 +961,12 @@ configure_split_traffic_config(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
 			&actions1);
-	if (!result)
-		/* Unable to create the flow */
-		return -1;
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
-	return 0;
+	return ret;
 }
 
 /* Check the link status of all ports in up to 9s, and print them finally */
