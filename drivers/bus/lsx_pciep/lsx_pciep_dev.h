@@ -94,6 +94,7 @@ struct lsx_pciep_hw_low {
 	uint64_t out_win_max_size;
 
 	uint64_t win_mask;
+	uint64_t win_max;
 
 	int msi_flag;
 

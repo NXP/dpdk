@@ -6,6 +6,7 @@
 #define _LSX_PCIEP_CTRL_H_
 
 #include <sys/mman.h>
+#include <linux/pci_regs.h>
 #include <rte_debug.h>
 #include "lsx_pciep_dev.h"
 
@@ -58,53 +59,54 @@ lsx_pciep_64bar_to_32bar(uint8_t bar_64b)
 	return bar_64b * 2;
 }
 
-#define PCIE_EXT_CAP_ID_NULL 0x00
-#define PCIE_EXT_CAP_ID_AER 0x01
-#define PCIE_EXT_CAP_ID_VC 0x02
-#define PCIE_EXT_CAP_ID_DSN 0x03
-#define PCIE_EXT_CAP_ID_PB 0x04
-#define PCIE_EXT_CAP_ID_RCLINK 0x05
-#define PCIE_EXT_CAP_ID_RCILINK 0x06
-#define PCIE_EXT_CAP_ID_RCEC 0x07
-#define PCIE_EXT_CAP_ID_MFVC 0x08
-#define PCIE_EXT_CAP_ID_VC2 0x09
-#define PCIE_EXT_CAP_ID_RCRB 0x0a
-#define PCIE_EXT_CAP_ID_VNDR 0x0b
-#define PCIE_EXT_CAP_ID_ACS 0x0d
-#define PCIE_EXT_CAP_ID_ARI 0x0e
-#define PCIE_EXT_CAP_ID_ATS 0x0f
-#define PCIE_EXT_CAP_ID_SRIOV 0x10
-#define PCIE_EXT_CAP_ID_MRIOV 0x11
-#define PCIE_EXT_CAP_ID_MCAST 0x12
-#define PCIE_EXT_CAP_ID_PRI 0x13
-#define PCIE_EXT_CAP_ID_REBAR 0x15
-#define PCIE_EXT_CAP_ID_DPA 0x16
-#define PCIE_EXT_CAP_ID_TPH 0x17
-#define PCIE_EXT_CAP_ID_LTR 0x18
-#define PCIE_EXT_CAP_ID_SECPCI 0x19
-#define PCIE_EXT_CAP_ID_PMUX 0x1a
-#define PCIE_EXT_CAP_ID_PASID 0x1b
-#define PCIE_EXT_CAP_ID_LNR 0x1c
-#define PCIE_EXT_CAP_ID_DPC 0x1d
-#define PCIE_EXT_CAP_ID_L1PM 0x1e
-#define PCIE_EXT_CAP_ID_PTM 0x1f
-#define PCIE_EXT_CAP_ID_M_PCIE 0x20
-#define PCIE_EXT_CAP_ID_FRS 0x21
-#define PCIE_EXT_CAP_ID_RTR 0x22
-#define PCIE_EXT_CAP_ID_DVSEC 0x23
-#define PCIE_EXT_CAP_ID_VF_REBAR 0x24
-#define PCIE_EXT_CAP_ID_DLNK 0x25
-#define PCIE_EXT_CAP_ID_16GT 0x26
-#define PCIE_EXT_CAP_ID_LMR 0x27
-#define PCIE_EXT_CAP_ID_HIER_ID 0x28
-#define PCIE_EXT_CAP_ID_NPEM 0x29
+#define PCI_EXT_CAP_ID_NULL 0
 
-#define PCIE_FUN_RESET_SRIOV_CAP (0x1 << 28)
+#define PCI_FUN_RESET_SRIOV_CAP (0x1 << 28)
+
+struct pcie_ctrl_cap_head {
+	uint8_t cap_id;
+	uint8_t next_offset;
+} __packed;
+
+struct pcie_ctrl_sriov_cap {
+	struct pcie_ctrl_cap_head head;
+	uint32_t msix_table_size:11;
+	uint32_t rsv1:3;
+	uint32_t msix_fun_mask:1;
+	uint32_t msix_enable:1;
+	uint32_t msix_table_offset_bir;
+	uint32_t msix_pba_offset_bir;
+} __packed;
 
 struct pcie_ctrl_ext_cap {
 	uint32_t ext_cap_id:16;
 	uint32_t cap_ver:4;
 	uint32_t next_cap_off:12;
+} __packed;
+
+struct pcie_ctrl_ext_sriov_cap_ctl {
+	uint16_t vf_enable:1;
+	uint16_t vf_mig_enable:1;
+	uint16_t vf_mig_int_enable:1;
+	uint16_t vf_mse:1;
+	uint16_t ari_hier:1;
+	uint16_t rsv:11;
+} __packed;
+
+struct pcie_ctrl_ext_sriov_cap {
+	struct pcie_ctrl_ext_cap ext_hdr;
+	uint32_t sriov_cap;
+	struct pcie_ctrl_ext_sriov_cap_ctl sriov_ctrl;
+	uint16_t sriov_stat;
+	uint16_t init_vf;
+	uint16_t total_vf;
+	uint16_t number_vf;
+	uint8_t fun_link;
+	uint8_t rsv4;
+	uint16_t first_vf_pos;
+	uint16_t vf_stride;
+	uint16_t rsv5;
+	uint16_t vf_dev_id;
 } __packed;
 
 struct pcie_ctrl_cfg {
@@ -123,7 +125,9 @@ struct pcie_ctrl_cfg {
 	uint32_t prefetch_base;
 	uint16_t sub_vendor_id;
 	uint16_t sub_device_id;
-	uint8_t unused0[0x50 - 0x30];
+	uint32_t exp_rom_base;
+	uint8_t cap_list;
+	uint8_t unused0[0x50 - 0x35];
 	uint8_t msi_cap_id;
 	uint8_t rsv1;
 	uint16_t msi_ctrl;
@@ -153,31 +157,38 @@ struct pcie_ctrl_cfg {
 	uint32_t msix_tbl;
 	uint32_t msix_pba;
 	uint8_t unused3[0x100 - 0xbc];
-	uint32_t adv_err_report_cap_id;
+	struct pcie_ctrl_ext_cap aer_ext_hdr;
 	uint32_t uncorrect_err_stat;
 	uint32_t uncorrect_err_mask;
 	uint32_t uncorrect_err_ser;
 	uint32_t correct_err_stat;
 	uint32_t correct_err_mask;
 	uint32_t adv_err_cap_ctl;
-	uint8_t unused4[0x178 - 0x11c];
-	uint32_t sriov_ext_cap_header;
-	uint32_t sriov_cap;
-	uint16_t sriov_ctrl;
-	uint16_t sriov_stat;
-	uint16_t init_vf;
-	uint16_t total_vf;
-	uint16_t number_vf;
-	uint8_t fun_link;
-	uint8_t rsv4;
-	uint16_t first_vf_pos;
-	uint16_t vf_stride;
-	uint16_t rsv5;
-	uint16_t vf_dev_id;
+	uint8_t unused4[0x148 - 0x11c];
+	struct pcie_ctrl_ext_cap ari_ext_hdr;
+	uint8_t unused5[0x158 - 0x14c];
+	struct pcie_ctrl_ext_cap secpci_ext_hdr;
+	uint8_t unused6[0x178 - 0x15c];
+	struct pcie_ctrl_ext_sriov_cap sriov_ext_cap;
 	uint32_t sup_page_size;
 	uint32_t sys_page_size;
 	uint32_t vfbar[PCI_MAX_RESOURCE];
+	uint32_t msao;
+	struct pcie_ctrl_ext_cap ats_hdr;
 } __packed;
+
+struct pcie_ctrl_msix_entry {
+	uint32_t msg_laddr;
+	uint32_t msg_haddr;
+	uint32_t msg_data;
+	uint32_t vec_ctl;
+} __packed;
+
+struct pcie_ctrl_msix_pba_entry {
+	uint64_t pba_entry;
+} __packed;
+
+#define BITS_PER_PBA_ENTRY (sizeof(struct pcie_ctrl_msix_pba_entry) * 8)
 
 struct pcie_ctrl_bar_size_mask {
 	uint32_t rsv[4];
@@ -236,212 +247,183 @@ struct pcie_ctrl_bar_size_mask {
 		(bar) |= PCIE_BAR_PREF_DIS; \
 	} while (0)
 
-static inline int
-lsx_pciep_is_align_16(const void *addr)
-{
-	uint64_t x = (uint64_t)addr;
+#define PCIE_BAR_ADDR_SHIFT 12
+#define PCIE_BAR_ADDR_MASK (0xfffff)
+#define PCIE_BAR_SIZE(bar, size) \
+	do { \
+		uint64_t bar_64 = (bar); \
+		\
+		bar_64 &= (PCIE_BAR_ADDR_MASK << PCIE_BAR_ADDR_SHIFT); \
+		bar_64 = bar_64 >> PCIE_BAR_ADDR_SHIFT; \
+		bar_64 = PCIE_BAR_ADDR_MASK + 1 - bar_64; \
+		bar_64 = bar_64 << PCIE_BAR_ADDR_SHIFT; \
+		size = bar_64; \
+	} while (0)
 
-	if (x & 0x1)
-		return 0;
-
-	return 1;
-}
-
-static inline int
-lsx_pciep_is_align_32(const void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0x3)
-		return 0;
-
-	return 1;
-}
-
-static inline int
-lsx_pciep_is_align_64(const void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0x7)
-		return 0;
-
-	return 1;
-}
+#define PCIE_BAR64_ADDR_MASK (0xfffffffffffff)
+#define PCIE_BAR64_SIZE(bar, size) \
+	do { \
+		uint64_t bar_64 = (bar); \
+		\
+		bar_64 &= (PCIE_BAR64_ADDR_MASK << PCIE_BAR_ADDR_SHIFT); \
+		bar_64 = bar_64 >> PCIE_BAR_ADDR_SHIFT; \
+		bar_64 = PCIE_BAR64_ADDR_MASK + 1 - bar_64; \
+		bar_64 = bar_64 << PCIE_BAR_ADDR_SHIFT; \
+		size = bar_64; \
+	} while (0)
 
 static inline int
-lsx_pciep_is_align_128(const void *addr)
-{
-	uint64_t x = (uint64_t)addr;
-
-	if (x & 0xf)
-		return 0;
-
-	return 1;
-}
-
-static inline void
 lsx_pciep_read_config(const void *base,
 	void *buf, size_t len, off_t offset)
 {
 	uint8_t *dst = buf;
 	const uint8_t *src = (const uint8_t *)base + offset;
 
-	if (!lsx_pciep_is_align_16(src) && len > 0) {
-		*dst = rte_read8(src);
-		dst++;
-		src++;
-		len--;
+	if (len == sizeof(uint8_t)) {
+		*((uint8_t *)dst) = rte_read8(src);
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_32(src) && len >= sizeof(uint16_t)) {
+	if (len == sizeof(uint16_t)) {
+		if (((uint64_t)src) % sizeof(uint16_t)) {
+			rte_panic("%s: PCIe config read16 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
 		*((uint16_t *)dst) = rte_read16(src);
-		dst += sizeof(uint16_t);
-		src += sizeof(uint16_t);
-		len -= sizeof(uint16_t);
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_64(src) && len >= sizeof(uint32_t)) {
+	if (len == sizeof(uint32_t)) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config read32 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
 		*((uint32_t *)dst) = rte_read32(src);
-		dst += sizeof(uint32_t);
-		src += sizeof(uint32_t);
-		len -= sizeof(uint32_t);
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_128(src) && len >= sizeof(uint64_t)) {
-		*((uint64_t *)dst) = rte_read64(src);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(__uint128_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_128(src));
-		*((uint64_t *)dst) = rte_read64(src);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-
-		*((uint64_t *)dst) = rte_read64(src);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(uint64_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_64(src));
-		*((uint64_t *)dst) = rte_read64(src);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(uint32_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_32(src));
+	if (len == (sizeof(uint32_t) + sizeof(uint8_t))) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config read40 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
 		*((uint32_t *)dst) = rte_read32(src);
-		dst += sizeof(uint32_t);
 		src += sizeof(uint32_t);
-		len -= sizeof(uint32_t);
-	}
-
-	while (len >= sizeof(uint16_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_16(src));
-		*((uint16_t *)dst) = rte_read16(src);
-		dst += sizeof(uint16_t);
-		src += sizeof(uint16_t);
-		len -= sizeof(uint16_t);
-	}
-
-	while (len > 0) {
+		dst += sizeof(uint32_t);
 		*dst = rte_read8(src);
-		dst++;
-		src++;
-		len--;
+		return 0;
 	}
 
-	RTE_ASSERT(!len);
+	if (len == (sizeof(uint32_t) + sizeof(uint16_t))) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config read40 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
+		*((uint32_t *)dst) = rte_read32(src);
+		src += sizeof(uint32_t);
+		dst += sizeof(uint32_t);
+		*((uint16_t *)dst) = rte_read16(src);
+		return 0;
+	}
+
+	if (len == sizeof(uint64_t)) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config read64 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
+		*((uint32_t *)dst) = rte_read32(src);
+		src += sizeof(uint32_t);
+		dst += sizeof(uint32_t);
+		*((uint32_t *)dst) = rte_read32(src);
+		return 0;
+	}
+
+	rte_panic("%s: Invalid PCIe config read size(%ld)",
+		__func__, len);
+
+	return -EIO;
 }
 
-static inline void
+static inline int
 lsx_pciep_write_config(void *base,
 	const void *buf, size_t len, off_t offset)
 {
 	const uint8_t *src = buf;
 	uint8_t *dst = (uint8_t *)base + offset;
 
-	if (!lsx_pciep_is_align_16(dst) && len > 0) {
+	if (len == sizeof(uint8_t)) {
 		rte_write8(*src, dst);
-		dst++;
-		src++;
-		len--;
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_32(dst) && len >= sizeof(uint16_t)) {
+	if (len == sizeof(uint16_t)) {
+		if (((uint64_t)dst) % sizeof(uint16_t)) {
+			rte_panic("%s: PCIe config write16 addr(%p)",
+				__func__, dst);
+			return -EIO;
+		}
 		rte_write16(*((const uint16_t *)src), dst);
-		dst += sizeof(uint16_t);
-		src += sizeof(uint16_t);
-		len -= sizeof(uint16_t);
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_64(dst) && len >= sizeof(uint32_t)) {
+	if (len == sizeof(uint32_t)) {
+		if (((uint64_t)dst) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config write32 addr(%p)",
+				__func__, dst);
+			return -EIO;
+		}
 		rte_write32(*((const uint32_t *)src), dst);
-		dst += sizeof(uint32_t);
-		src += sizeof(uint32_t);
-		len -= sizeof(uint32_t);
+		return 0;
 	}
 
-	if (!lsx_pciep_is_align_128(dst) && len >= sizeof(uint64_t)) {
-		rte_write64(*((const uint64_t *)src), dst);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(__uint128_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_128(dst));
-		rte_write64(*((const uint64_t *)src), dst);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-
-		rte_write64(*((const uint64_t *)src), dst);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(uint64_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_64(dst));
-		rte_write64(*((const uint64_t *)src), dst);
-		dst += sizeof(uint64_t);
-		src += sizeof(uint64_t);
-		len -= sizeof(uint64_t);
-	}
-
-	while (len >= sizeof(uint32_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_32(dst));
+	if (len == (sizeof(uint32_t) + sizeof(uint8_t))) {
+		if (((uint64_t)dst) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config write40 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
 		rte_write32(*((const uint32_t *)src), dst);
-		dst += sizeof(uint32_t);
 		src += sizeof(uint32_t);
-		len -= sizeof(uint32_t);
-	}
-
-	while (len >= sizeof(uint16_t)) {
-		RTE_VERIFY(lsx_pciep_is_align_16(dst));
-		rte_write16(*((const uint16_t *)src), dst);
-		dst += sizeof(uint16_t);
-		src += sizeof(uint16_t);
-		len -= sizeof(uint16_t);
-	}
-
-	while (len > 0) {
+		dst += sizeof(uint32_t);
 		rte_write8(*src, dst);
-		dst++;
-		src++;
-		len--;
+		return 0;
 	}
 
-	RTE_ASSERT(!len);
+	if (len == (sizeof(uint32_t) + sizeof(uint16_t))) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config write40 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
+		rte_write32(*((const uint32_t *)src), dst);
+		src += sizeof(uint32_t);
+		dst += sizeof(uint32_t);
+		rte_write16(*((const uint16_t *)src), dst);
+		return 0;
+	}
+
+	if (len == sizeof(uint64_t)) {
+		if (((uint64_t)src) % sizeof(uint32_t)) {
+			rte_panic("%s: PCIe config write64 addr(%p)",
+				__func__, src);
+			return -EIO;
+		}
+		rte_write32(*((const uint32_t *)src), dst);
+		src += sizeof(uint32_t);
+		dst += sizeof(uint32_t);
+		rte_write16(*((const uint32_t *)src), dst);
+		return 0;
+	}
+
+	rte_panic("%s: Invalid PCIe config write size(%ld)",
+		__func__, len);
+
+	return -EIO;
 }
 
 #define PCIE_EP_DISABLE_ALL_WIN (-1)
@@ -452,13 +434,14 @@ struct lsx_pciep_ops {
 	void (*pcie_deconfig)(struct lsx_pciep_hw_low *hw);
 
 	int (*pcie_fun_init)(struct lsx_pciep_hw_low *hw,
-			int pf, int is_vf, uint16_t vendor_id,
-			uint16_t device_id, uint16_t class_id);
+			int pf, int is_vf, int vf,
+			uint16_t vendor_id, uint16_t device_id,
+			uint16_t class_id);
 
 	int (*pcie_fun_init_ext)(struct lsx_pciep_hw_low *hw,
-			int pf, uint16_t sub_vendor_id,
-			uint16_t sub_device_id, int sriov_disable,
-			int ari_disable, int ats_disable);
+			int pf, int is_vf, int vf,
+			uint16_t sub_vendor_id, uint16_t sub_device_id,
+			int sriov_disable, int ari_disable, int ats_disable);
 
 	int (*pcie_disable_ob_win)(struct lsx_pciep_hw_low *hw,
 			int idx);
@@ -477,7 +460,7 @@ struct lsx_pciep_ops {
 
 	int (*pcie_cfg_ib_win)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, int vf, int bar,
-			uint64_t phys, uint64_t size, int resize);
+			uint64_t phys, uint64_t size);
 
 	int (*pcie_msix_cfg)(struct lsx_pciep_hw_low *hw,
 			uint8_t *out_vir, int pf, int is_vf, int vf,

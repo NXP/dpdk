@@ -212,15 +212,6 @@ int
 rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev);
 
 int
-rte_lsx_pciep_ctl_dev_set(uint16_t vendor_id,
-	uint16_t device_id, uint16_t class_id,
-	uint8_t pcie_id, uint8_t pf);
-
-int
-rte_lsx_pciep_ctl_dev_set_ext(uint16_t sub_vendor_id,
-	uint16_t sub_device_id, uint8_t pcie_id, uint8_t pf);
-
-int
 rte_lsx_pciep_fun_config(uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id,
 	uint16_t sub_vendor_id, uint16_t sub_device_id,
@@ -231,13 +222,9 @@ rte_lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size);
 
 int
-rte_lsx_pciep_fun_set(uint16_t vendor_id,
-	uint16_t device_id, uint16_t class_id,
-	uint8_t pcie_id, int pf, int is_vf);
-
-int
 rte_lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
-	uint16_t sub_device_id, uint8_t pcie_id, int pf);
+	uint16_t sub_device_id, uint8_t pcie_id,
+	int pf, int is_vf, int vf);
 
 int
 rte_lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
@@ -286,6 +273,8 @@ RTE_PMD_EXPORT_NAME(nm, __COUNTER__)
 
 #define LSX_PCIEP_BUS_INFO(fmt, args...) \
 	LSX_PCIEP_BUS_LOG(INFO, fmt, ## args)
+#define LSX_PCIEP_BUS_DBG(fmt, args...) \
+	LSX_PCIEP_BUS_LOG(DEBUG, fmt, ## args)
 #define LSX_PCIEP_BUS_ERR(fmt, args...) \
 	LSX_PCIEP_BUS_LOG(ERR, fmt, ## args)
 #define LSX_PCIEP_BUS_WARN(fmt, args...) \
