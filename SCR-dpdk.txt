@@ -8,7 +8,7 @@ License File:                LICENSE
 Package Category:            BSP
 Type of Content:             source
 Description and comments:    Data Plane Development Kit
-Release Location:            https://github.com/nxp-qoriq/dpdk -b lf-6.1.36-2.1.0
+Release Location:            https://github.com/nxp-qoriq/dpdk
 Origin:                      NXP (BSD-3-Clause)
                              DPDK - Intel Corporation (BSD-3-Clause) - https://github.com/DPDK/dpdk
                              pmdinfogen - Neil Horman (GPL-2.0) - Separate tool in DPDK
