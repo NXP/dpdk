@@ -30,7 +30,7 @@
 
 struct rte_mempool *mp_ldpc_dec_op, *mp_vspa_op, *mp_bbuf_pool_in, *mp_bbuf_pool_out, *mp_vspa_data;
 uint8_t dev_id;
-int bbuf_burst = 1;
+int bbuf_burst = 1, vspa_burst = 1;
 
 struct ldpc_dec_vector {
 	enum rte_bbdev_op_type op_type;
@@ -472,8 +472,7 @@ ldpc_dec_bbdev_process(int burst)
 	int ret_vspa = 0;
 	struct rte_pmd_la12xx_op *vops_enq[MAX_OPS];
         struct rte_pmd_la12xx_op *vops_deq[MAX_OPS];
-	uint8_t *vdata[MAX_OPS];
-	struct rte_bbuf *in[MAX_OPS], *out[MAX_OPS], *out_vspa_dummy[MAX_OPS];
+	struct rte_bbuf *in[MAX_OPS], *out[MAX_OPS], *out_vspa[MAX_OPS], *vdata[MAX_OPS];;
 
 	/* allocate e200 ldpc dec ops */
 	ret = rte_bbdev_dec_op_alloc_bulk(mp_ldpc_dec_op, ops_enq, burst);
@@ -481,17 +480,19 @@ ldpc_dec_bbdev_process(int burst)
 		printf("op buffer allocate failed\n");
 		return -1;
 	}
-	/* allocate VSPA op and metadata buffer */
-	ret = rte_mempool_get_bulk(mp_vspa_op, (void **)vops_enq, burst);
+	/* allocate VSPA op , only 1 op per burst */
+	ret = rte_mempool_get_bulk(mp_vspa_op, (void **)vops_enq, vspa_burst);
 	if (ret) {
 		printf("vspa op buffer allocate failed\n");
 		return -1;
 	}
-	ret = rte_mempool_get_bulk(mp_vspa_data, (void **)&vdata[0], burst);
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_in, &vdata[0], vspa_burst);
         if (unlikely(ret < 0))
                 return ret;
 
-	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_in, &in[0], burst);
+	/* Allocating only 2 input buffers 1 for antena0 and 2nd for antena1,
+	 * Will divide the data among these 2 buffers */ 
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_in, &in[0], vspa_burst * 2);
 	if (ret) {
 		printf("in bbuf alloc failed\n");
 		return -1;
@@ -503,8 +504,8 @@ ldpc_dec_bbdev_process(int burst)
 		return -1;
 	}
 
-	/*Dummy vspa out addr */
-	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_out, &out_vspa_dummy[0], burst);
+	/*vspa control addr  only 1 op per burst*/
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_out, &out_vspa[0], vspa_burst);
 	if (ret) {
 		printf("out vspa dummy bbuf alloc failed\n");
 		return -1;
@@ -513,9 +514,6 @@ ldpc_dec_bbdev_process(int burst)
 	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &vector.ldpc_dec;
 
         for (int i = 0; i < burst; ++i) {
-		rte_memcpy(rte_bbuf_mtod(in[i], char *), (char *)idata, idata_length);
-		in[i]->data_len = idata_length;
-		in[i]->pkt_len = idata_length;
                 if (ldpc_dec->code_block_mode == 0) {
                         ops_enq[i]->ldpc_dec.tb_params.ea =
                                         ldpc_dec->tb_params.ea;
@@ -548,25 +546,35 @@ ldpc_dec_bbdev_process(int burst)
                 ops_enq[i]->ldpc_dec.hard_output.is_direct_mem = 0;
                 ops_enq[i]->ldpc_dec.hard_output.bdata = out[i];
 		ops_enq[i]->feca_id = i;
-		/* filling vspa ops*/
-		/* Filling vops_enq equal to ops_enq for demo, can 1 vops
-		 * per burst */
-               vops_enq[i]->vspa_params.input.is_direct_mem = 0;
-               vops_enq[i]->vspa_params.input.bdata = in[i];
-               vops_enq[i]->vspa_params.input.length = idata_length;
-               /* filling empty out addr for demo expecting input data at output*/
-               vops_enq[i]->vspa_params.output.is_direct_mem = 0;
-               vops_enq[i]->vspa_params.output.bdata = out_vspa_dummy[i];
-               /* Writing control info */
-               rte_memcpy(vdata[i], "123", 4);
-               vops_enq[i]->vspa_params.metadata = (void *)vdata[i];
-#if 0
-	      /* filling vdata[i] for demo in extras */
-	      // vops_enq[i]->vspa_params.extra_data[0] = rte_pmd_get_la12xx_mapaddr(dev_id, vdata[i]);
-#endif
-	       /* filling feca_id/userid/opid  for VSPA data*/
-	       vops_enq[i]->vspa_params.extra_data[0] = i;
 	}
+	/* filling only 1 vspa ops*/
+        vops_enq[0]->vspa_params.input.is_direct_mem = 0;
+	/* Filling only 4 bytes i.e number of users (control data)*/
+	*((int *)rte_bbuf_mtod(vdata[0],int *)) = burst;
+        vops_enq[0]->vspa_params.input.bdata = (void *)vdata[0];
+        vops_enq[0]->vspa_params.input.length = 4;
+        /* filling empty out addr for output data from VSPA, if any */
+        vops_enq[0]->vspa_params.output.is_direct_mem = 0;
+        vops_enq[0]->vspa_params.output.bdata = out_vspa[0];
+	
+	/* Dividing and filling the data in 2 input buffers */
+	unsigned int offset = idata_length / 2;
+	rte_memcpy(rte_bbuf_mtod(in[0], char *), (char *)idata, offset);
+	in[0]->data_len = offset;
+	in[0]->pkt_len = offset;
+	rte_memcpy(rte_bbuf_mtod(in[1], char *), (char *)idata + offset, idata_length - offset);
+	in[1]->data_len = idata_length - offset;
+	in[1]->pkt_len = idata_length - offset;
+	/* Antena 0 */
+	vops_enq[0]->vspa_params.extra_data[0] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(in[0], char *));
+	vops_enq[0]->vspa_params.extra_data[1] = in[0]->data_len;
+	/* Antenna 1 */
+	vops_enq[0]->vspa_params.extra_data[2] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(in[1], char *));
+	vops_enq[0]->vspa_params.extra_data[3] = in[1]->data_len;
+#if 0
+	   /* filling feca_id/userid/opid  for VSPA data*/
+//	vops_enq[0]->vspa_params.extra_data[0] = i;
+#endif
 
 	ret = rte_bbdev_enqueue_ldpc_dec_ops(dev_id,
                                         BBDEV_IPC_QUEUE, &ops_enq[0], burst);
@@ -576,7 +584,7 @@ ldpc_dec_bbdev_process(int burst)
 	}
 
        ret = rte_pmd_la12xx_enqueue_ops(dev_id,
-                                        VSPA_IPC_QUEUE, &vops_enq[0], burst);
+                                        VSPA_IPC_QUEUE, &vops_enq[0], vspa_burst);
        if (ret == 0) {
                printf("failed to enqueue vspa op\n");
                return -1;
@@ -585,41 +593,48 @@ ldpc_dec_bbdev_process(int burst)
         ret = 0;
 	ret_vspa = 0;
         ret_vspa = rte_pmd_la12xx_dequeue_ops(dev_id,
-                                        VSPA_IPC_QUEUE, &vops_deq[0], burst);
+                                        VSPA_IPC_QUEUE, &vops_deq[0], vspa_burst);
 
 	ret = rte_bbdev_dequeue_ldpc_dec_ops(dev_id,
 				BBDEV_IPC_QUEUE, &ops_deq[0], burst);
-       while (ret != burst || ret_vspa != burst) {
+       while (ret != burst || ret_vspa != vspa_burst) {
                if (ret != burst) {
 		ret += rte_bbdev_dequeue_ldpc_dec_ops(dev_id,
-                                        BBDEV_IPC_QUEUE, &ops_deq[0], burst);
+                                        BBDEV_IPC_QUEUE, &ops_deq[ret], burst);
 	       }
-               if (ret_vspa != burst) {
+               if (ret_vspa != vspa_burst) {
                        ret_vspa += rte_pmd_la12xx_dequeue_ops(dev_id,
-                                        VSPA_IPC_QUEUE, &vops_deq[0], burst);
+                                        VSPA_IPC_QUEUE, &vops_deq[ret_vspa], vspa_burst);
                }
 	}
 	printf("Dequeue ldpc dec ret = %d and vspa ret = %d\n\r", ret, ret_vspa);
-#if 0
+	
 	for (int i =0; i< burst; i++) {
 		struct rte_bbuf *b = ops_deq[i]->ldpc_dec.hard_output.bdata;
 
 		b->data_len = b->pkt_len;
+		if (memcmp(rte_bbuf_mtod(b, char *), odata,  b->pkt_len) != 0) {
+			printf("Mem compare failed for op = %d\n", i);
+		} else {
+			printf("Mem compare passed for op = %d\n", i);
+		}
+#if 0
 		printf("Decoded data of index = %d\n", i);
 		rte_pktmbuf_dump(stdout, b,  b->pkt_len);
-		rte_hexdump(stdout, "RSSI/TA output", (char *)vops_deq[i]->vspa_params.metadata, 4);
-#if 0
-		 rte_hexdump(stdout, "output buffer", rte_bbuf_mtod((struct rte_mbuf *)vops_deq[i]->vspa_params.output.bdata, char *) , vops_enq[i]->vspa_params.output.length);
 #endif
 	}
+#if 0
+        rte_hexdump(stdout, "output buffer", rte_bbuf_mtod((struct rte_mbuf *)vops_deq[0]->vspa_params.output.bdata, char *) , vops_enq[0]->vspa_params.output.length);
+	rte_hexdump(stdout, "RSSI/TA output", (char *)&vops_enq[0]->vspa_params.extra_data[0], 4);
 
 #endif
 	/* free buffers */
-	rte_bbuf_free_bulk(&out_vspa_dummy[0], burst);
-	rte_bbuf_free_bulk(&in[0], burst);
+	rte_bbuf_free_bulk(&out_vspa[0], vspa_burst);
+	rte_bbuf_free_bulk(&in[0], vspa_burst * 2);
 	rte_bbuf_free_bulk(&out[0], burst);
-	rte_mempool_put_bulk(mp_vspa_data, (void **)&vdata[0], burst);
-	rte_mempool_put_bulk(mp_vspa_op, (void **)vops_enq, burst);
+	rte_bbuf_free_bulk(&vdata[0], vspa_burst);
+	/* for VSPA op we can use generic DPDK API for buffer free */
+	rte_mempool_put_bulk(mp_vspa_op, (void **)vops_enq, vspa_burst);
 	rte_bbdev_dec_op_free_bulk(ops_enq, burst);
 	printf("done ret = %d\n", ret);
 
@@ -761,7 +776,7 @@ main(int argc, char **argv)
                                 256 /* Maximum of (control info size and RSSI/TA outpu )*/,
                                 MAX_OPS,
                                 sizeof(struct rte_bbdev_op_pool_private),
-                                NULL, NULL, rte_pmd_la12xx_op_init, &op_type,
+                                NULL, NULL, NULL, &op_type,
                                 socket_id, 0);
         if (mp_vspa_data == NULL) {
                 printf("VSPA pool data creation failed\n");
@@ -784,7 +799,7 @@ main(int argc, char **argv)
 		bbuf_size = 8192;
 
 	/* in data pool  to be */
-        mp_bbuf_pool_in = rte_bbuf_pool_create("bbuf_pool_in", MAX_OPS, 0, 0,
+        mp_bbuf_pool_in = rte_bbuf_pool_create("bbuf_pool_in", MAX_OPS * 3, 0, 0,
                         bbuf_size + RTE_BBUF_HEADROOM, socket_id);
 
 	if (mp_bbuf_pool_in == NULL) {
