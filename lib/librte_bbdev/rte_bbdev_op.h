@@ -979,6 +979,10 @@ struct rte_bbdev_enc_op {
 struct rte_bbdev_dec_op {
 	/** Status of operation that was performed */
 	int status;
+#ifdef VSPA_PUSCH
+	/* Feca ID 0 - 4 */
+	int feca_id;
+#endif
 	/** Mempool which op instance is in */
 	struct rte_mempool *mempool;
 	/** Opaque pointer for user data */
