@@ -391,6 +391,10 @@ install_headers(['rte_config.h'],
 # enable VFIO only if it is linux OS
 dpdk_conf.set('RTE_EAL_VFIO', is_linux)
 
+if not dpdk_conf.has('RTE_USE_NON_CACHE_MEM')
+    dpdk_conf.set('RTE_USE_NON_CACHE_MEM', 0)
+endif
+
 # specify -D_GNU_SOURCE unconditionally
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
