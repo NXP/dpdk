@@ -24,13 +24,21 @@
 #define ENTRY_DELIMITER "="
 #define BBDEV_IPC_QUEUE 0
 #define VSPA_IPC_QUEUE 1
-#define MAX_QUEUES 2
+#define PRACH_VSPA_IPC_QUEUE 2
+#define MAX_QUEUES 3
 #define GET_SOCKET(socket_id) (((socket_id) == SOCKET_ID_ANY) ? 0 : (socket_id))
 #define FECA_BLOCKS 4
 
-struct rte_mempool *mp_ldpc_dec_op, *mp_vspa_op, *mp_bbuf_pool_in, *mp_bbuf_pool_out, *mp_vspa_data;
+struct rte_mempool *mp_ldpc_dec_op, *mp_vspa_op, *mp_vspa_op_prach, *mp_bbuf_pool_in, *mp_bbuf_pool_out, *mp_prach_ctx, *mp_bbuf_pool_prach;
 uint8_t dev_id;
-int bbuf_burst = 1, vspa_burst = 1;
+int bbuf_burst = 1, vspa_burst = 1, vspa_burst_prach = 4, prach_num_ops = 1;
+
+struct prach_bbuf_ctx {
+	struct rte_bbuf *ant0;
+	struct rte_bbuf *ant1;
+	struct rte_bbuf *out_vspa_prach;
+	struct rte_bbuf *vdata_prach;
+};
 
 struct ldpc_dec_vector {
 	enum rte_bbdev_op_type op_type;
@@ -44,11 +52,13 @@ struct ldpc_dec_vector {
 struct ldpc_dec_vector vector;
 uint32_t idata_length = 0, odata_length = 0;
 uint32_t *idata = NULL, *odata = NULL;
+uint64_t prach_enq_count = 0, prach_deq_count = 0;
 
 static struct test_params {
         unsigned int num_tests;
         unsigned int num_ops;
         unsigned int burst_sz;
+        unsigned int prach_num_ops;
         unsigned int num_lcores;
         unsigned int num_seg;
         unsigned int buf_size;
@@ -75,6 +85,7 @@ parse_args(int argc, char **argv, struct test_params *tp)
         static struct option lgopts[] = {
                 { "num-ops", 1, 0, 'n' },
                 { "burst-size", 1, 0, 'b' },
+                { "prach num-ops", 1, 0, 'p' },
                 { "test-vector", 1, 0, 'v' },
                 { "lcores", 1, 0, 'l' },
                 { "buf-size", 1, 0, 's' },
@@ -83,7 +94,7 @@ parse_args(int argc, char **argv, struct test_params *tp)
                 { NULL,  0, 0, 0 }
         };
 
-        while ((opt = getopt_long(argc, argv, "hin:b:v:l:s:", lgopts,
+        while ((opt = getopt_long(argc, argv, "hin:b:p:v:l:s:", lgopts,
                         &option_index)) != EOF)
                 switch (opt) {
                 case 'n':
@@ -99,6 +110,13 @@ parse_args(int argc, char **argv, struct test_params *tp)
 				return -1;
 			}
                         tp->burst_sz = strtol(optarg, NULL, 10);
+                        break;
+                case 'p':
+			if (strlen(optarg) == 0) {
+				printf("prach num ops is not provided");
+				return -1;
+			}
+                        tp->prach_num_ops = strtol(optarg, NULL, 10);
                         break;
                 case 'v':
                         tp->vector_count = 1;
@@ -463,6 +481,129 @@ exit:
         return ret;
 }
 
+static int prach_enq(int burst)
+{
+	struct rte_pmd_la12xx_op *vops_enq_prach[MAX_OPS];
+	struct prach_bbuf_ctx *vops_ctx_prach[MAX_OPS];
+	struct rte_bbuf *ant0_prach[MAX_OPS], *ant1_prach[MAX_OPS], *out_vspa_prach[MAX_OPS], *vdata_prach[MAX_OPS];
+	int ret;
+
+	/* PRACH allocation and submission */
+	/*********************/
+	/* allocate VSPA op for prach */
+	ret = rte_mempool_get_bulk(mp_vspa_op_prach, (void **)vops_enq_prach, burst);
+	if (ret) {
+		printf("vspa op prach buffer allocate failed\n");
+		return -1;
+	}
+	/* allocate control buffer for prach */
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_prach, &vdata_prach[0], burst);
+        if (unlikely(ret < 0)) {
+		printf("bbuf allocate control fails\n");
+                return ret;
+	}
+	/* Allocate prach out buffer */
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_prach, &out_vspa_prach[0], burst);
+        if (unlikely(ret < 0)) {
+		printf("bbuf allocate out prach fails\n");
+                return ret;
+	}
+	/* Allocate prach in buffer */
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_prach, &ant0_prach[0], burst);
+        if (unlikely(ret < 0)) {
+		printf("bbuf allocate ANT0 prach fails\n");
+                return ret;
+	}
+	/* Allocate prach in buffer */
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_prach, &ant1_prach[0], burst);
+        if (unlikely(ret < 0)) {
+		printf("bbuf allocate ANT1 fails\n");
+                return ret;
+	}
+	/* Allocate prach ctx buffer*/
+	ret = rte_mempool_get_bulk(mp_prach_ctx, (void **)vops_ctx_prach, burst);
+	if (ret) {
+		printf("vspa ctx buffer allocate failed\n");
+		return -1;
+	}
+
+	for (int i = 0; i < burst; i++) {
+        	vops_enq_prach[i]->vspa_params.input.is_direct_mem = 0;
+		rte_memcpy(rte_bbuf_mtod(vdata_prach[i], char *), (char *)idata, 100);
+        	vops_enq_prach[i]->vspa_params.input.bdata = (void *)vdata_prach[i];
+      		vops_enq_prach[i]->vspa_params.input.length = 100;
+        	vops_enq_prach[i]->vspa_params.output.is_direct_mem = 0;
+        	vops_enq_prach[i]->vspa_params.output.bdata = out_vspa_prach[i];
+	
+		/* copying only 64 data */
+		rte_memcpy(rte_bbuf_mtod(ant0_prach[i], char *), (char *)idata, 516);
+		ant0_prach[i]->data_len = 516;
+		ant0_prach[i]->pkt_len = 516;
+		rte_memcpy(rte_bbuf_mtod(ant1_prach[i], char *), (char *)idata, 64);
+		ant1_prach[i]->data_len = 64;
+		ant1_prach[i]->pkt_len = 64;
+		/* Antena 0 */
+		vops_enq_prach[i]->vspa_params.extra_data[0] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(ant0_prach[i], char *));
+		vops_enq_prach[i]->vspa_params.extra_data[1] = ant0_prach[i]->data_len;
+		/* Antenna 1 */
+		vops_enq_prach[i]->vspa_params.extra_data[2] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(ant1_prach[i], char *));
+		vops_enq_prach[i]->vspa_params.extra_data[3] = ant1_prach[i]->data_len;
+		/* populate ctx */
+		struct prach_bbuf_ctx *vctx = vops_ctx_prach[i];
+		vctx->ant0 = ant0_prach[i];
+		vctx->ant1 = ant1_prach[i];
+		vctx->out_vspa_prach = out_vspa_prach[i];
+		vctx->vdata_prach = vdata_prach[i];
+		vops_enq_prach[i]->opaque_data = (void *)vctx;
+	}
+       	ret = rte_pmd_la12xx_enqueue_ops(dev_id,
+                                         PRACH_VSPA_IPC_QUEUE, &vops_enq_prach[0], vspa_burst);
+        if (ret == 0) {
+               printf("failed to enqueue vspa prach op\n");
+               return -1;
+        }
+
+
+	return ret;
+	/****************************************************/
+}
+
+static int prach_deq(void)
+{
+        struct rte_pmd_la12xx_op *vops_deq_prach[MAX_OPS];
+	int ret;
+
+	ret = rte_pmd_la12xx_dequeue_ops(dev_id,
+                                        PRACH_VSPA_IPC_QUEUE, &vops_deq_prach[0], 4);
+	if(ret) {
+		for (int i = 0; i < ret; i++) {
+#if 0
+			/* Dump each op */
+			rte_hexdump(stdout, "PRACH output buffer", rte_bbuf_mtod((struct rte_mbuf *)vops_deq_prach[i]->vspa_params.output.bdata, char *) , vops_deq_prach[i]->vspa_params.output.length);
+        		rte_hexdump(stdout, "PRACH Control data", (char *)&(vops_deq_prach[i]->vspa_params.extra_data[0]), 32);
+#endif			
+			if (memcmp(rte_bbuf_mtod((struct rte_mbuf *)vops_deq_prach[i]->vspa_params.output.bdata, char *), idata,
+					       ((struct rte_mbuf *)vops_deq_prach[i]->vspa_params.output.bdata)->pkt_len) != 0) {
+				printf("Mem compare failed for PRACH\n");
+			} else {
+				printf("Mem compare PASSED for PRACH\n");
+			}
+			/* free each op */
+			struct prach_bbuf_ctx *vctx = (struct prach_bbuf_ctx *)vops_deq_prach[i]->opaque_data;
+			
+
+			rte_bbuf_free(vctx->ant0);
+        		rte_bbuf_free(vctx->ant1);
+        		rte_bbuf_free(vctx->out_vspa_prach);
+        		rte_bbuf_free(vctx->vdata_prach);
+
+        		rte_mempool_put_bulk(mp_vspa_op_prach, (void **)&vops_deq_prach[0], 1);
+        		rte_mempool_put(mp_prach_ctx, vctx);
+		}
+	}
+	return ret;
+}
+
 static int
 ldpc_dec_bbdev_process(int burst)
 {
@@ -472,7 +613,7 @@ ldpc_dec_bbdev_process(int burst)
 	int ret_vspa = 0;
 	struct rte_pmd_la12xx_op *vops_enq[MAX_OPS];
         struct rte_pmd_la12xx_op *vops_deq[MAX_OPS];
-	struct rte_bbuf *in[MAX_OPS], *out[MAX_OPS], *out_vspa[MAX_OPS], *vdata[MAX_OPS];;
+	struct rte_bbuf *in[MAX_OPS], *out[MAX_OPS], *out_vspa[MAX_OPS], *vdata[MAX_OPS];
 
 	/* allocate e200 ldpc dec ops */
 	ret = rte_bbdev_dec_op_alloc_bulk(mp_ldpc_dec_op, ops_enq, burst);
@@ -616,7 +757,7 @@ ldpc_dec_bbdev_process(int burst)
 		if (memcmp(rte_bbuf_mtod(b, char *), odata,  b->pkt_len) != 0) {
 			printf("Mem compare failed for op = %d\n", i);
 		} else {
-			printf("Mem compare passed for op = %d\n", i);
+			printf("Mem compare PASSED for op = %d\n", i);
 		}
 #if 0
 		printf("Decoded data of index = %d\n", i);
@@ -633,7 +774,7 @@ ldpc_dec_bbdev_process(int burst)
 	rte_bbuf_free_bulk(&in[0], vspa_burst * 2);
 	rte_bbuf_free_bulk(&out[0], burst);
 	rte_bbuf_free_bulk(&vdata[0], vspa_burst);
-	/* for VSPA op we can use generic DPDK API for buffer free */
+
 	rte_mempool_put_bulk(mp_vspa_op, (void **)vops_enq, vspa_burst);
 	rte_bbdev_dec_op_free_bulk(ops_enq, burst);
 	printf("done ret = %d\n", ret);
@@ -644,7 +785,7 @@ ldpc_dec_bbdev_process(int burst)
 static int
 bbdev_process(__rte_unused void *dummy)
 {
-	int nops;
+	int nops, ret;
 
 	nops = test_params.num_ops;
 
@@ -661,7 +802,34 @@ bbdev_process(__rte_unused void *dummy)
 		ldpc_dec_bbdev_process(bbuf_burst);
 	}
 
+	printf("PRACH ops = %d\n", prach_num_ops);
+	while (prach_num_ops) {
+		/* sending one by one, can be update to multiple */
+		ret = prach_enq(1);
+		if (ret < 0) {
+			printf("PRACH Enqueue Failed");
+			return -1;
+		}
+		prach_enq_count += ret;
+		prach_num_ops -= ret;
+		do {
+			ret = prach_deq();
+		} while (!ret);
+		prach_deq_count += ret;
+	}
+	printf("PRACH enq count = %lu and deq count = %lu\n", prach_enq_count, prach_deq_count);
+
 	return 1;
+}
+
+static void
+prach_ctx_init(__rte_unused struct rte_mempool *mempool,
+                __rte_unused void *arg, void *element,
+                __rte_unused unsigned int n)
+{
+	struct prach_bbuf_ctx *ctx = element;
+
+        memset(ctx, 0, sizeof(struct prach_bbuf_ctx));
 }
 
 int
@@ -692,6 +860,9 @@ main(int argc, char **argv)
 	if (test_params.burst_sz != 0)
 		bbuf_burst = test_params.burst_sz;
 
+	if (test_params.prach_num_ops != 0)
+		prach_num_ops = test_params.prach_num_ops;
+
 	if (bbuf_burst > FECA_BLOCKS) {
 		printf("Burst cannot be more than %d\n", FECA_BLOCKS);
 		return -1;
@@ -706,7 +877,7 @@ main(int argc, char **argv)
 
                 rte_bbdev_info_get(dev_id, &info);
 		/* check capability and continue for non-matched device */
-		nb_queues = MAX_QUEUES; /* LDPC_DEC and VSPA_IPC */
+		nb_queues = MAX_QUEUES; /* LDPC_DEC and 2 VSPA_IPC */
 		/* setup device */
 		ret = rte_bbdev_setup_queues(dev_id, nb_queues, info.socket_id);
 		if (ret < 0) {
@@ -730,6 +901,7 @@ main(int argc, char **argv)
                                         BBDEV_IPC_QUEUE, qconf.priority, dev_id);
 			return -1;
 		}
+		/* VSPA queue for PUSCH */
 		qconf.op_type = RTE_BBDEV_OP_LA12XX_VSPA;
 		/* Maximum 8 VSPA cores */
 		qconf.raw_queue_conf.modem_core_id = 0;
@@ -739,6 +911,17 @@ main(int argc, char **argv)
                                         VSPA_IPC_QUEUE, qconf.priority, dev_id);
 			return -1;
 		}
+		/* VSPA queue for PRACH */
+		qconf.op_type = RTE_BBDEV_OP_LA12XX_VSPA;
+		/* Maximum 8 VSPA cores */
+		qconf.raw_queue_conf.modem_core_id = 1;
+		ret = rte_bbdev_queue_configure(dev_id, PRACH_VSPA_IPC_QUEUE, &qconf);
+                if (ret != 0) {
+                        printf("Allocated all queues (id=%u) at prio%u on dev%u\n",
+                                        PRACH_VSPA_IPC_QUEUE, qconf.priority, dev_id);
+			return -1;
+		}
+
 		/* assigning la12xx core to BBDEV IPC queue */
 		uint16_t queue_ids[MAX_QUEUES];
 	        uint16_t core_ids[MAX_QUEUES];
@@ -760,7 +943,7 @@ main(int argc, char **argv)
 	socket_id = GET_SOCKET(info.socket_id);
 
 	int op_type = RTE_BBDEV_OP_LA12XX_VSPA;
-	/* VSPA op pool */
+	/* VSPA op pool for PUSCH*/
 	mp_vspa_op = rte_mempool_create("vspa_op_pool", 64,
                                 sizeof(struct rte_pmd_la12xx_op),
                                 MAX_OPS,
@@ -771,18 +954,29 @@ main(int argc, char **argv)
 		printf("VSPA pool op creation failed\n");
 		return -1;
 	}
-	/* VSPA data pool */
-	mp_vspa_data = rte_mempool_create("vspa_data_pool", 64,
-                                256 /* Maximum of (control info size and RSSI/TA outpu )*/,
+	/***********************************************/
+	/* VSPA op pool for PRACH*/
+	mp_vspa_op_prach = rte_mempool_create("vspa_op_pool_prach", 64,
+                                sizeof(struct rte_pmd_la12xx_op),
                                 MAX_OPS,
                                 sizeof(struct rte_bbdev_op_pool_private),
-                                NULL, NULL, NULL, &op_type,
+                                NULL, NULL, rte_pmd_la12xx_op_init, &op_type,
                                 socket_id, 0);
-        if (mp_vspa_data == NULL) {
-                printf("VSPA pool data creation failed\n");
-                return -1;
-        }
-
+	if (mp_vspa_op_prach == NULL) {
+		printf("VSPA pool op pPRACH creation failed\n");
+		return -1;
+	}
+	/* PRACH context pool */
+	mp_prach_ctx = rte_mempool_create("vspa_op_pool_prach_ctx", 64,
+                                sizeof(struct prach_bbuf_ctx),
+                                MAX_OPS, 64,
+                                NULL, NULL, prach_ctx_init, NULL,
+                                socket_id, 0);
+	if (mp_prach_ctx == NULL) {
+		printf("VSPA ctx pool op pPRACH creation failed\n");
+		return -1;
+	}
+	/***********************************************/
 	op_type = RTE_BBDEV_OP_LDPC_DEC;
 	/* e200 op pool */
 	mp_ldpc_dec_op = rte_bbdev_op_pool_create("ldpc_dec_op_pool", op_type,
@@ -814,6 +1008,14 @@ main(int argc, char **argv)
 		return -1;
 	}
 
+	/* VSPA PRACH pool */
+        mp_bbuf_pool_prach = rte_bbuf_pool_create("bbuf_pool_prach", MAX_OPS, 0, 0,
+                        bbuf_size + RTE_BBUF_HEADROOM, socket_id);
+
+	if (mp_bbuf_pool_prach == NULL) {
+		printf("mp_bbuf_pool_prach is failed to create\n");
+		return -1;
+	}
 
 	unsigned lcore_id;
 	/* data path */
