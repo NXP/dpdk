@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2023 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -109,7 +109,7 @@ static struct rte_eth_conf port_conf = {
 
 static struct rte_mempool *l1_l2_mpool;
 
-struct data_loop_conf s_data_loop_conf;
+static struct data_loop_conf s_data_loop_conf;
 
 static uint64_t s_l1_l2_cycs_per_us;
 
@@ -250,7 +250,8 @@ l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 	struct rte_mbuf *next_mbuf = NULL;
 	uint32_t seg_idx = 0, total_len = 0, pkt_len, nb_segs;
 	uint64_t current_tick = rte_get_timer_cycles();
-	uint64_t tick_send, *ptick;
+	uint64_t tick_send, *ptick, tick_diff = 0;
+	double this_latency;
 
 	pkt_len = mbuf->pkt_len;
 	nb_segs = mbuf->nb_segs;
@@ -267,8 +268,13 @@ l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 		ptick = (void *)((uint8_t *)mbuf->buf_addr +
 			mbuf->data_off + TIME_STAMP_OFFSET);
 		tick_send = *ptick;
-		s_data_loop_conf.cyc_diff_total +=
-			(current_tick - tick_send);
+		tick_diff = (current_tick - tick_send);
+		this_latency = ((double)tick_diff) / s_l1_l2_cycs_per_us;
+		s_data_loop_conf.cyc_diff_total += tick_diff;
+		if (this_latency > s_data_loop_conf.max_latency)
+			s_data_loop_conf.max_latency = this_latency;
+		if (this_latency < s_data_loop_conf.min_latency)
+			s_data_loop_conf.min_latency = this_latency;
 		if (mbuf->next) {
 			next_mbuf = mbuf->next;
 			mbuf->next = NULL;
@@ -299,7 +305,7 @@ l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 	s_data_loop_conf.rx_statistic.bytes += total_len;
 
 	s_data_loop_conf.avg_latency =
-		s_data_loop_conf.cyc_diff_total /
+		((double)s_data_loop_conf.cyc_diff_total) /
 		(s_data_loop_conf.rx_statistic.packets) / s_l1_l2_cycs_per_us;
 }
 
@@ -479,6 +485,8 @@ main_loop(__attribute__((unused)) void *dummy)
 			return 0;
 		}
 	}
+	s_data_loop_conf.max_latency = 0;
+	s_data_loop_conf.min_latency = 0xffffffff;
 
 	if (s_layer == 1)
 		l1_app_handle();
@@ -747,8 +755,9 @@ skip_print_hw_status:
 		(unsigned long long)rx_bytes * 8,
 		(double)(rx_bytes - rx_bytes_old) * 8 /
 		(PERF_STATISTICS_INTERVAL * G_BITS_SIZE));
-	printf("Average latency: %f us\r\n\r\n",
-		s_data_loop_conf.avg_latency);
+	printf("Latency avg=%f us, max=%f us, min=%f us\r\n\r\n",
+		s_data_loop_conf.avg_latency,
+		s_data_loop_conf.max_latency, s_data_loop_conf.min_latency);
 	tx_bytes_old = tx_bytes;
 	rx_bytes_old = rx_bytes;
 
