@@ -22,14 +22,16 @@
 
 #define VALUE_DELIMITER ","
 #define ENTRY_DELIMITER "="
-#define BBDEV_IPC_QUEUE 0
-#define VSPA_IPC_QUEUE 1
-#define PRACH_VSPA_IPC_QUEUE 2
-#define MAX_QUEUES 3
+#define BBDEV_IPC_SE_QUEUE 0
+#define BBDEV_IPC_SD_QUEUE 1
+#define VSPA_IPC_QUEUE 2
+#define PRACH_VSPA_IPC_QUEUE 3
+#define MAX_QUEUES 4
 #define GET_SOCKET(socket_id) (((socket_id) == SOCKET_ID_ANY) ? 0 : (socket_id))
 #define FECA_BLOCKS 4
 
 struct rte_mempool *mp_ldpc_dec_op, *mp_vspa_op, *mp_vspa_op_prach, *mp_bbuf_pool_in, *mp_bbuf_pool_out, *mp_prach_ctx, *mp_bbuf_pool_prach;
+struct rte_mempool *mp_ldpc_enc_op,  *mp_bbuf_pool_se_in, *mp_bbuf_pool_se_out;
 uint8_t dev_id;
 int bbuf_burst = 1, vspa_burst = 1, vspa_burst_prach = 4, prach_num_ops = 1;
 
@@ -46,12 +48,17 @@ struct ldpc_dec_vector {
         uint64_t mask;
 	uint16_t core_mask;
 	int network_order;
-	struct rte_bbdev_op_ldpc_dec ldpc_dec;
+	union {
+		struct rte_bbdev_op_ldpc_dec ldpc_dec;
+		struct rte_bbdev_op_ldpc_enc ldpc_enc;
+	};
 };
 
-struct ldpc_dec_vector vector;
+struct ldpc_dec_vector vector_sd, vector_se;
 uint32_t idata_length = 0, odata_length = 0;
+uint32_t se_idata_length = 0, se_odata_length = 0;
 uint32_t *idata = NULL, *odata = NULL;
+uint32_t *se_idata = NULL, *se_odata = NULL;
 uint64_t prach_enq_count = 0, prach_deq_count = 0;
 
 static struct test_params {
@@ -62,7 +69,8 @@ static struct test_params {
         unsigned int num_lcores;
         unsigned int num_seg;
         unsigned int buf_size;
-        char test_vector_filename[PATH_MAX];
+        char test_vector_sd_filename[PATH_MAX];
+        char test_vector_se_filename[PATH_MAX];
         unsigned int vector_count;
         unsigned int reset;
         bool init_device;
@@ -86,7 +94,8 @@ parse_args(int argc, char **argv, struct test_params *tp)
                 { "num-ops", 1, 0, 'n' },
                 { "burst-size", 1, 0, 'b' },
                 { "prach num-ops", 1, 0, 'p' },
-                { "test-vector", 1, 0, 'v' },
+                { "test-vector sd", 1, 0, 'v' },
+                { "test-vector se", 1, 0, 'f' },
                 { "lcores", 1, 0, 'l' },
                 { "buf-size", 1, 0, 's' },
                 { "init-device", 0, 0, 'i'},
@@ -94,7 +103,7 @@ parse_args(int argc, char **argv, struct test_params *tp)
                 { NULL,  0, 0, 0 }
         };
 
-        while ((opt = getopt_long(argc, argv, "hin:b:p:v:l:s:", lgopts,
+        while ((opt = getopt_long(argc, argv, "hin:b:p:v:f:l:s:", lgopts,
                         &option_index)) != EOF)
                 switch (opt) {
                 case 'n':
@@ -119,13 +128,23 @@ parse_args(int argc, char **argv, struct test_params *tp)
                         tp->prach_num_ops = strtol(optarg, NULL, 10);
                         break;
                 case 'v':
-                        tp->vector_count = 1;
+                        tp->vector_count += 1;
 			if (strlen(optarg) == 0) {
-				printf("filename is not provided");
+				printf("SD filename is not provided");
 				return -1;
 			}
-                        snprintf(tp->test_vector_filename,
-                                        sizeof(tp->test_vector_filename),
+                        snprintf(tp->test_vector_sd_filename,
+                                        sizeof(tp->test_vector_sd_filename),
+                                        "%s", optarg);
+                        break;
+                case 'f':
+                        tp->vector_count += 1;
+			if (strlen(optarg) == 0) {
+				printf("SE filename is not provided");
+				return -1;
+			}
+                        snprintf(tp->test_vector_se_filename,
+                                        sizeof(tp->test_vector_se_filename),
                                         "%s", optarg);
                         break;
                 case 'l':
@@ -296,9 +315,116 @@ parse_values(char *tokens, uint32_t **data, uint32_t *data_length,
         return 0;
 }
 
+static int
+parse_entry_se(char *entry, struct ldpc_dec_vector *vector)
+{
+        int ret = 0;
+        char *token, *key_token, *err = NULL;
+
+        if (entry == NULL) {
+                printf("Expected entry value\n");
+                return -1;
+        }
+
+        /* get key */
+        token = strtok(entry, ENTRY_DELIMITER);
+        key_token = token;
+        /* get values for key */
+        token = strtok(NULL, ENTRY_DELIMITER);
+
+        if (key_token == NULL || token == NULL) {
+                printf("Expected 'key = values' but was '%.40s'..\n", entry);
+                return -1;
+        }
+        trim_space(key_token);
+
+	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &vector->ldpc_enc;
+
+        if (starts_with(key_token, "input"))
+		ret = parse_values(token, &se_idata, &se_idata_length,
+                        vector->network_order);
+        else if (starts_with(key_token, "output")) {
+		ret = parse_values(token, &se_odata, &se_odata_length,
+                        vector->network_order);
+        } else if (!strcmp(key_token, "e")) {
+                ldpc_enc->cb_params.e = (uint32_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "ea")) {
+                ldpc_enc->tb_params.ea = (uint32_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "eb")) {
+                ldpc_enc->tb_params.eb = (uint32_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "c")) {
+                ldpc_enc->tb_params.c = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "cab")) {
+                ldpc_enc->tb_params.cab = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "rv_index")) {
+                ldpc_enc->rv_index = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "n_cb")) {
+                ldpc_enc->n_cb = (uint16_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "r")) {
+                ldpc_enc->tb_params.r = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "q_m")) {
+                ldpc_enc->q_m = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "basegraph")) {
+                ldpc_enc->basegraph = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "z_c")) {
+                ldpc_enc->z_c = (uint16_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "n_filler")) {
+                ldpc_enc->n_filler = (uint16_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "code_block_mode")) {
+                ldpc_enc->code_block_mode = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "op_flags")) {
+		if (!strcmp(token, "RTE_BBDEV_LDPC_CRC_24B_ATTACH"))
+                        ldpc_enc->op_flags = RTE_BBDEV_LDPC_CRC_24B_ATTACH;
+        } else if (!strcmp(key_token, "expected_status")) {
+		if (!strcmp(token, "OK")) {
+                        vector->expected_status = true;
+                }
+        } else if (!strcmp(key_token, "network_order")) {
+                vector->network_order = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "en_scramble")) {
+                ldpc_enc->en_scramble = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "q")) {
+                ldpc_enc->q = (uint8_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "n_id")) {
+                ldpc_enc->n_id = (uint16_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } else if (!strcmp(key_token, "n_rnti")) {
+                ldpc_enc->n_rnti = (uint16_t) strtoul(token, &err, 0);
+                ret = ((err == NULL) || (*err != '\0')) ? -1 : 0;
+        } 
+#if 0
+	else {
+                printf("Not valid ldpc enc key: '%s'\n", key_token);
+                return -1;
+        }
+#endif
+	if (ret != 0) {
+                printf("Failed with convert '%s\t%s'\n", key_token, token);
+                return -1;
+        }
+
+        return 0;
+}
+
 /* checks the type of key and assigns data */
 static int
-parse_entry(char *entry, struct ldpc_dec_vector *vector)
+parse_entry_sd(char *entry, struct ldpc_dec_vector *vector)
 {
         int ret = 0;
         char *token, *key_token, *err = NULL;
@@ -401,7 +527,7 @@ parse_entry(char *entry, struct ldpc_dec_vector *vector)
 }
 
 static int
-bbdev_vector_process(void)
+bbdev_vector_se_process(void)
 {
 	int ret = 0;
         size_t len = 0;
@@ -410,10 +536,10 @@ bbdev_vector_process(void)
         char *line = NULL;
         char *entry = NULL;
 
-	if (strcmp(test_params.test_vector_filename, "") != 0) {
-        	fp = fopen(test_params.test_vector_filename, "r");
+	if (strcmp(test_params.test_vector_se_filename, "") != 0) {
+        	fp = fopen(test_params.test_vector_se_filename, "r");
         	if (fp == NULL) {
-                	printf("File %s does not exist\n", test_params.test_vector_filename);
+                	printf("File %s does not exist\n", test_params.test_vector_se_filename);
       	        	return -1;
         	}
 	} else {
@@ -467,7 +593,88 @@ bbdev_vector_process(void)
                                         break;
                         }
                 }
-                ret = parse_entry(entry, &vector);
+                ret = parse_entry_se(entry, &vector_se);
+                if (ret != 0) {
+                        printf("An error occurred while parsing!\n");
+                        goto exit;
+                }
+	}
+exit:
+        fclose(fp);
+        free(line);
+        free(entry);
+
+        return ret;
+}
+
+static int
+bbdev_vector_sd_process(void)
+{
+	int ret = 0;
+        size_t len = 0;
+
+        FILE *fp = NULL;
+        char *line = NULL;
+        char *entry = NULL;
+
+	if (strcmp(test_params.test_vector_sd_filename, "") != 0) {
+        	fp = fopen(test_params.test_vector_sd_filename, "r");
+        	if (fp == NULL) {
+                	printf("File %s does not exist\n", test_params.test_vector_sd_filename);
+      	        	return -1;
+        	}
+	} else {
+        	fp = fopen("./input_vector1.data", "r");
+        	if (fp == NULL) {
+                	printf("File ./input_vector1.data does not exist\n");
+      	        	return -1;
+        	}
+	}
+
+        while (getline(&line, &len, fp) != -1) {
+		/* ignore comments and new lines */
+                if (line[0] == '#' || line[0] == '/' || line[0] == '\n'
+                        || line[0] == '\r')
+                        continue;
+
+                trim_space(line);
+		/* buffer for multiline */
+                entry = realloc(entry, strlen(line) + 1);
+                if (entry == NULL) {
+                        printf("Fail to realloc %zu bytes\n", strlen(line) + 1);
+                        ret = -ENOMEM;
+                        goto exit;
+                }
+
+                strcpy(entry, line);
+
+                /* check if entry ends with , or = */
+                if (entry[strlen(entry) - 1] == ','
+                        || entry[strlen(entry) - 1] == '=') {
+                        while (getline(&line, &len, fp) != -1) {
+                                trim_space(line);
+
+                                /* extend entry about length of new line */
+                                char *entry_extended = realloc(entry,
+                                                strlen(line) +
+                                                strlen(entry) + 1);
+				if (entry_extended == NULL) {
+                                        printf("Fail to allocate %zu bytes\n",
+                                                        strlen(line) +
+                                                        strlen(entry) + 1);
+                                        ret = -ENOMEM;
+                                        goto exit;
+                                }
+
+                                entry = entry_extended;
+                                /* entry has been allocated accordingly */
+                                strcpy(&entry[strlen(entry)], line);
+
+                                if (entry[strlen(entry) - 1] != ',')
+                                        break;
+                        }
+                }
+                ret = parse_entry_sd(entry, &vector_sd);
                 if (ret != 0) {
                         printf("An error occurred while parsing!\n");
                         goto exit;
@@ -605,6 +812,96 @@ static int prach_deq(void)
 }
 
 static int
+ldpc_enc_bbdev_process(void)
+{
+	int ret;
+        struct rte_bbdev_enc_op *ops_enq[MAX_OPS];
+        struct rte_bbdev_enc_op *ops_deq[MAX_OPS];
+	struct rte_bbuf *in[MAX_OPS], *out[MAX_OPS];
+
+
+	/* Testing only single op in this demo */
+	ret = rte_bbdev_enc_op_alloc_bulk(mp_ldpc_enc_op, ops_enq, 1);
+	if (ret) {
+		printf("op buffer allocate failed\n");
+		return -1;
+	}
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_se_in, &in[0], 1);
+	if (ret) {
+		printf("SE in bbuf alloc failed\n");
+		return -1;
+	}
+
+	ret = rte_bbuf_alloc_bulk(mp_bbuf_pool_se_in, &out[0], 1);
+	if (ret) {
+		printf("SE out bbuf alloc failed\n");
+		return -1;
+	}
+
+	struct rte_bbdev_op_ldpc_enc *ldpc_enc = &vector_se.ldpc_enc;
+
+	if (ldpc_enc->code_block_mode == 0) {
+		ops_enq[0]->ldpc_enc.tb_params.ea = ldpc_enc->tb_params.ea;
+		ops_enq[0]->ldpc_enc.tb_params.eb = ldpc_enc->tb_params.eb;
+                ops_enq[0]->ldpc_enc.tb_params.cab =
+                                      ldpc_enc->tb_params.cab;
+                ops_enq[0]->ldpc_enc.tb_params.c = ldpc_enc->tb_params.c;
+                ops_enq[0]->ldpc_enc.tb_params.r = ldpc_enc->tb_params.r;
+        } else {
+                ops_enq[0]->ldpc_enc.cb_params.e = ldpc_enc->cb_params.e;
+        }
+        ops_enq[0]->ldpc_enc.basegraph = ldpc_enc->basegraph;
+        ops_enq[0]->ldpc_enc.z_c = ldpc_enc->z_c;
+        ops_enq[0]->ldpc_enc.q_m = ldpc_enc->q_m;
+        ops_enq[0]->ldpc_enc.n_filler = ldpc_enc->n_filler;
+        ops_enq[0]->ldpc_enc.n_cb = ldpc_enc->n_cb;
+        ops_enq[0]->ldpc_enc.rv_index = ldpc_enc->rv_index;
+        ops_enq[0]->ldpc_enc.op_flags = ldpc_enc->op_flags;
+        ops_enq[0]->ldpc_enc.en_scramble = ldpc_enc->en_scramble;
+        ops_enq[0]->ldpc_enc.se_ce_mux = ldpc_enc->se_ce_mux;
+        ops_enq[0]->ldpc_enc.q = ldpc_enc->q;
+        ops_enq[0]->ldpc_enc.n_id = ldpc_enc->n_id;
+        ops_enq[0]->ldpc_enc.n_rnti = ldpc_enc->n_rnti;
+        ops_enq[0]->ldpc_enc.code_block_mode = ldpc_enc->code_block_mode;
+	ops_enq[0]->ldpc_enc.output.is_direct_mem = 0;
+        ops_enq[0]->ldpc_enc.output.bdata = out[0];
+	ops_enq[0]->ldpc_enc.input.is_direct_mem = 0;
+        ops_enq[0]->ldpc_enc.input.bdata = in[0];
+        ops_enq[0]->ldpc_enc.input.length = se_idata_length;
+
+	rte_memcpy(rte_bbuf_mtod(in[0], char *), (char *)se_idata, se_idata_length);
+	in[0]->data_len = se_idata_length;
+	in[0]->pkt_len = se_idata_length;
+	ret = rte_bbdev_enqueue_ldpc_enc_ops(dev_id,
+                                        BBDEV_IPC_SE_QUEUE, &ops_enq[0], 1);
+        if (ret == 0) {
+                printf("failed to enqueue\n");
+                return -1;
+        }
+	ret = 0;
+	while(!ret) {
+		ret = rte_bbdev_dequeue_ldpc_enc_ops(dev_id,
+                                BBDEV_IPC_SE_QUEUE, &ops_deq[0], 1);
+	}
+	struct rte_bbuf *b = ops_deq[0]->ldpc_enc.output.bdata;
+
+	b->data_len = b->pkt_len;
+	if (memcmp(rte_bbuf_mtod(b, char *), se_odata,  se_odata_length) != 0) {
+		printf("Mem compare failed for SE op\n");
+	} else {
+		printf("Mem compare PASSED for SE op\n");
+	}
+	printf("SE Thread done\n");
+	/* memcpr or hexdump output data */
+
+	rte_bbuf_free_bulk(&in[0], 1);
+	rte_bbuf_free_bulk(&out[0], 1);
+	rte_bbdev_enc_op_free_bulk(ops_enq, 1);
+
+	return 0;
+}
+
+static int
 ldpc_dec_bbdev_process(int burst)
 {
 	int ret;
@@ -652,7 +949,7 @@ ldpc_dec_bbdev_process(int burst)
 		return -1;
 	}
 	/*filling op */
-	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &vector.ldpc_dec;
+	struct rte_bbdev_op_ldpc_dec *ldpc_dec = &vector_sd.ldpc_dec;
 
         for (int i = 0; i < burst; ++i) {
                 if (ldpc_dec->code_block_mode == 0) {
@@ -718,7 +1015,7 @@ ldpc_dec_bbdev_process(int burst)
 #endif
 
 	ret = rte_bbdev_enqueue_ldpc_dec_ops(dev_id,
-                                        BBDEV_IPC_QUEUE, &ops_enq[0], burst);
+                                        BBDEV_IPC_SD_QUEUE, &ops_enq[0], burst);
 	if (ret == 0) {
 		printf("failed to enqueue\n");
 		return -1;
@@ -737,11 +1034,11 @@ ldpc_dec_bbdev_process(int burst)
                                         VSPA_IPC_QUEUE, &vops_deq[0], vspa_burst);
 
 	ret = rte_bbdev_dequeue_ldpc_dec_ops(dev_id,
-				BBDEV_IPC_QUEUE, &ops_deq[0], burst);
+				BBDEV_IPC_SD_QUEUE, &ops_deq[0], burst);
        while (ret != burst || ret_vspa != vspa_burst) {
                if (ret != burst) {
 		ret += rte_bbdev_dequeue_ldpc_dec_ops(dev_id,
-                                        BBDEV_IPC_QUEUE, &ops_deq[ret], burst);
+                                        BBDEV_IPC_SD_QUEUE, &ops_deq[ret], burst);
 	       }
                if (ret_vspa != vspa_burst) {
                        ret_vspa += rte_pmd_la12xx_dequeue_ops(dev_id,
@@ -785,8 +1082,14 @@ ldpc_dec_bbdev_process(int burst)
 static int
 bbdev_process(__rte_unused void *dummy)
 {
+	int master, lcore;
 	int nops, ret;
 
+	printf("in bbdev_process %d\n", rte_lcore_id());
+	master = rte_get_master_lcore();
+	lcore = rte_lcore_id();
+	if (master == lcore) {
+		printf("in decode......\n");
 	nops = test_params.num_ops;
 
 	if (nops != 0) {
@@ -818,7 +1121,12 @@ bbdev_process(__rte_unused void *dummy)
 		prach_deq_count += ret;
 	}
 	printf("PRACH enq count = %lu and deq count = %lu\n", prach_enq_count, prach_deq_count);
-
+	} else if (lcore == 1) {
+		printf("in SE processing on core = %d\n", lcore);
+		ldpc_enc_bbdev_process();
+	} else {
+		printf("%d thread finished\n", lcore);
+	}
 	return 1;
 }
 
@@ -849,7 +1157,7 @@ main(int argc, char **argv)
         argc -= ret;
         argv += ret;
 
-	memset(&test_params, 0, sizeof(struct ldpc_dec_vector));
+	memset(&test_params, 0, sizeof(struct test_params));
         /* Parse application arguments (after the EAL ones) */
         ret = parse_args(argc, argv, &test_params);
         if (ret < 0) {
@@ -867,9 +1175,14 @@ main(int argc, char **argv)
 		printf("Burst cannot be more than %d\n", FECA_BLOCKS);
 		return -1;
 	}
-	ret = bbdev_vector_process();
+	ret = bbdev_vector_sd_process();
 	if (ret) {
-		printf("vector process error\n");
+		printf("vector sd process error\n");
+		return -1;
+	}
+	ret = bbdev_vector_se_process();
+	if (ret) {
+		printf("vector se process error\n");
 		return -1;
 	}
 	RTE_BBDEV_FOREACH(dev_id) {
@@ -877,7 +1190,7 @@ main(int argc, char **argv)
 
                 rte_bbdev_info_get(dev_id, &info);
 		/* check capability and continue for non-matched device */
-		nb_queues = MAX_QUEUES; /* LDPC_DEC and 2 VSPA_IPC */
+		nb_queues = MAX_QUEUES; /*1 LDPC_ENC , 1 LDPC_DEC and 2 VSPA_IPC */
 		/* setup device */
 		ret = rte_bbdev_setup_queues(dev_id, nb_queues, info.socket_id);
 		if (ret < 0) {
@@ -894,11 +1207,19 @@ main(int argc, char **argv)
 		qconf.raw_queue_conf.conf_enable = 1;
 		qconf.raw_queue_conf.modem_core_id = 0;
 
-		qconf.op_type = RTE_BBDEV_OP_LDPC_DEC;
-		ret = rte_bbdev_queue_configure(dev_id, BBDEV_IPC_QUEUE, &qconf);
+		qconf.op_type = RTE_BBDEV_OP_LDPC_ENC;
+		ret = rte_bbdev_queue_configure(dev_id, BBDEV_IPC_SE_QUEUE, &qconf);
                 if (ret != 0) {
                         printf("Allocated all queues (id=%u) at prio%u on dev%u\n",
-                                        BBDEV_IPC_QUEUE, qconf.priority, dev_id);
+                                        BBDEV_IPC_SE_QUEUE, qconf.priority, dev_id);
+			return -1;
+		}
+		
+		qconf.op_type = RTE_BBDEV_OP_LDPC_DEC;
+		ret = rte_bbdev_queue_configure(dev_id, BBDEV_IPC_SD_QUEUE, &qconf);
+                if (ret != 0) {
+                        printf("Allocated all queues (id=%u) at prio%u on dev%u\n",
+                                        BBDEV_IPC_SD_QUEUE, qconf.priority, dev_id);
 			return -1;
 		}
 		/* VSPA queue for PUSCH */
@@ -926,9 +1247,11 @@ main(int argc, char **argv)
 		uint16_t queue_ids[MAX_QUEUES];
 	        uint16_t core_ids[MAX_QUEUES];
 
-		queue_ids[0] = BBDEV_IPC_QUEUE;
-		core_ids[0] = 2;
-		ret = rte_pmd_la12xx_queue_core_config(dev_id, queue_ids, core_ids, 1);
+		queue_ids[0] = BBDEV_IPC_SE_QUEUE;
+		core_ids[0] = 0;
+		queue_ids[1] = BBDEV_IPC_SD_QUEUE;
+		core_ids[1] = 1;
+		ret = rte_pmd_la12xx_queue_core_config(dev_id, queue_ids, core_ids, 2);
 		if (ret) {
 			printf("Failed to assign e200 core\n");
 			return -1;
@@ -977,6 +1300,40 @@ main(int argc, char **argv)
 		return -1;
 	}
 	/***********************************************/
+	int bbuf_size;
+	if (test_params.buf_size != 0)
+		bbuf_size = test_params.buf_size;
+	else
+		bbuf_size = 8192;
+
+	/* in data pool  to be */
+	/********************** LDPC ENC ******************/
+	op_type = RTE_BBDEV_OP_LDPC_ENC;
+	/* e200 op pool */
+	mp_ldpc_enc_op = rte_bbdev_op_pool_create("ldpc_enc_op_pool", op_type,
+                                MAX_OPS, 8, socket_id);
+	if (mp_ldpc_enc_op == NULL) {
+		printf("LDPC ENC pool op creation failed\n");
+		return -1;
+	}
+
+	/* in data pool  to be */
+        mp_bbuf_pool_se_in = rte_bbuf_pool_create("bbuf_pool_se_in", MAX_OPS * 3, 0, 0,
+                        bbuf_size + RTE_BBUF_HEADROOM, socket_id);
+
+	if (mp_bbuf_pool_se_in == NULL) {
+		printf("mp_bbuf_pool_se_in is failed to create\n");
+		return -1;
+	}
+        mp_bbuf_pool_se_out = rte_bbuf_pool_create("bbuf_pool_se_out", MAX_OPS * 2, 0, 0,
+                        bbuf_size + RTE_BBUF_HEADROOM, socket_id);
+
+	if (mp_bbuf_pool_se_out == NULL) {
+		printf("mp_bbuf_pool_se_out is failed to create\n");
+		return -1;
+	}
+
+	/***********************************************/
 	op_type = RTE_BBDEV_OP_LDPC_DEC;
 	/* e200 op pool */
 	mp_ldpc_dec_op = rte_bbdev_op_pool_create("ldpc_dec_op_pool", op_type,
@@ -986,13 +1343,6 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	int bbuf_size;
-	if (test_params.buf_size != 0)
-		bbuf_size = test_params.buf_size;
-	else
-		bbuf_size = 8192;
-
-	/* in data pool  to be */
         mp_bbuf_pool_in = rte_bbuf_pool_create("bbuf_pool_in", MAX_OPS * 3, 0, 0,
                         bbuf_size + RTE_BBUF_HEADROOM, socket_id);
 
@@ -1018,6 +1368,7 @@ main(int argc, char **argv)
 	}
 
 	unsigned lcore_id;
+	printf("Launching cores\n");
 	/* data path */
 	rte_eal_mp_remote_launch(bbdev_process, NULL, CALL_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
