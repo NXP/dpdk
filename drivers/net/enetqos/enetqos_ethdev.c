@@ -14,9 +14,7 @@
 #include "enetqos_hw.h"
 #include "enetqos_ethdev.h"
 #include "enetqos_pmd_logs.h"
-#if RTE_USE_NON_CACHE_MEM
 #include <kpage_ncache_api.h>
-#endif
 
 static void
 enetqos_free_buffers(struct rte_eth_dev *dev)
@@ -837,6 +835,64 @@ enetqos_free_queue(struct rte_eth_dev *dev)
 		rte_free(priv->tx_queue[i]);
 }
 
+static int
+mark_memory_ncache(struct enetqos_priv *priv, const char *mz_name, int size) {
+	const struct rte_memzone *tz;
+	struct rte_memseg* memseg;
+	uint64_t non_alloc_diff;
+	uint64_t huge_page;
+
+	tz = rte_memzone_reserve(mz_name, size, SOCKET_ID_ANY, 0);
+
+	if (tz) {
+		priv->bd_addr_v = tz->addr;
+		priv->bd_addr_p = tz->iova;
+
+		memseg = rte_mem_virt2memseg((void*) ((uintptr_t)tz->addr + size - 1), NULL);
+		non_alloc_diff = (uintptr_t)memseg->addr - (uintptr_t)tz->addr;
+
+		if (non_alloc_diff != 0) {
+			rte_memzone_free(tz);
+			tz = rte_memzone_reserve(mz_name, size + non_alloc_diff, SOCKET_ID_ANY, 0);
+
+			if (tz) {
+				if (priv->bd_addr_v == tz->addr) {
+					priv->bd_addr_v = (void*) ((uintptr_t)tz->addr + non_alloc_diff);
+					priv->bd_addr_p = tz->iova + non_alloc_diff;
+				} else {
+					/* If the memzone allocation after freeing it is different
+					 * from the previous allocated, system will reserve
+					 * a 2MB aligned hugepage for BD memory.
+					 */
+					rte_memzone_free(tz);
+					tz = rte_memzone_reserve_aligned(mz_name, SIZE_2MB, SOCKET_ID_ANY, 0, SIZE_2MB);
+					if (tz) {
+						priv->bd_addr_v = tz->addr;
+						priv->bd_addr_p = tz->iova;
+					} else {
+						ENETQOS_PMD_ERR("Failed to allocate memzone");
+						return -ENOMEM;
+					}
+				}
+			} else {
+				ENETQOS_PMD_ERR("Failed to allocate memzone");
+				return -ENOMEM;
+			}
+		}
+	} else {
+		ENETQOS_PMD_ERR("Failed to allocate memzone");
+		return -ENOMEM;
+	}
+
+/* Mark memory NON-CACHEABLE */
+	huge_page =
+		(uint64_t)RTE_PTR_ALIGN_FLOOR(priv->bd_addr_v, SIZE_2MB);
+
+	mark_kpage_ncache(huge_page);
+
+	return 0;
+}
+
 static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 {
 	struct rte_ether_addr macaddr = {
@@ -845,7 +901,6 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	char *string = malloc(MAX_LINE_SIZE);
 	const char *mz_name = "bd_addr_v";
 	struct rte_eth_dev *dev = NULL;
-	const struct rte_memzone *tz;
 	size_t ccsr_addr, ccsr_size;
 	struct enetqos_priv *priv;
 	unsigned int bdsize, i;
@@ -872,14 +927,18 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		priv->dma_rx_size = DMA_DEFAULT_RX_SIZE;
 
 	size = sizeof(struct dma_desc);
-	bd_total = size * (priv->dma_rx_size + priv->dma_tx_size) * NUM_OF_BD_QUEUES;
-	tz = rte_memzone_reserve(mz_name, bd_total, SOCKET_ID_ANY, 0);
-	priv->bd_addr_v = tz->addr;
-	priv->bd_addr_p = tz->iova;
+	/* BD memory is 160kb so reserving a max of 2MB memory */
+	bd_total = SIZE_2MB;
 
 	priv->rx_queues_to_use = 1;
 	priv->tx_queues_to_use = 1;
 	bdsize = size * DMA_DEFAULT_SIZE;
+
+	if (mark_memory_ncache(priv, mz_name, bd_total)) {
+		ENETQOS_PMD_ERR("Failed to mark BD memory non-cacheable!");
+		rt = -1;
+		goto err;
+	}
 
 	for (i = 0; i < priv->tx_queues_to_use; i++) {
 		priv->dma_baseaddr_t[i] = priv->bd_addr_v;
@@ -894,13 +953,6 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		priv->bd_addr_p = priv->bd_addr_p + bdsize;
 	}
 
-/* Mark memory NON-CACHEABLE */
-#if RTE_USE_NON_CACHE_MEM
-	uint64_t huge_page =
-		(uint64_t)RTE_PTR_ALIGN_FLOOR(tz->addr, tz->hugepage_sz);
-
-	mark_kpage_ncache(huge_page);
-#endif
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
 	if (file) {

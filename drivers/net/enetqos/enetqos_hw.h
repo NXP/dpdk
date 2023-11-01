@@ -43,6 +43,7 @@
 
 /* MAC Configuration Register (ENETQ_MAC_CONFIG) */
 #define ENETQ_MAC_CONFIG_DCRS		BIT(9) /* Disable Carrier Sense During Transmission */
+#define ENETQ_MAC_CONFIG_CST		BIT(21) /* CRC stripping */
 #define ENETQ_MAC_CONFIG_BE		BIT(18) /* Packet Burst Enable */
 #define ENETQ_MAC_CONFIG_JD		BIT(17) /* Jabber Disable */
 #define ENETQ_MAC_CONFIG_JE		BIT(16) /* Jumbo Packet Enable */
@@ -112,7 +113,7 @@
 /* INIT operating mode for MAC */
 #define ENETQ_MAC_CORE_INIT (ENETQ_MAC_CONFIG_JD | ENETQ_MAC_CONFIG_DM | \
 		ENETQ_MAC_CONFIG_BE | ENETQ_MAC_CONFIG_DCRS | \
-		ENETQ_MAC_CONFIG_JE)
+		ENETQ_MAC_CONFIG_JE | ENETQ_MAC_CONFIG_CST)
 
 /* Rx frame status */
 enum rx_frame_status {

@@ -51,6 +51,7 @@ typedef	unsigned long long	dma_addr_t;
 #define BUF_SIZE_2KiB 2048
 #define DEFAULT_BUFSIZE 1536
 
+#define SIZE_2MB 0x200000
 #define MTL_QUEUE_BLK 256
 #define MTL_FIFO_SIZE 8192
 #define FIFO_SIZE_4KiB 4096
