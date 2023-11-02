@@ -15,6 +15,7 @@ DIRS-$(CONFIG_RTE_LIBRTE_IPSEC) += test-sad
 ifneq ($(COMMON_HEADERS_DIR),)
 ifeq ($(CONFIG_RTE_LIBRTE_BBDEV),y)
 DIRS-$(CONFIG_RTE_TEST_BBDEV) += test-bbdev
+DIRS-$(CONFIG_RTE_TEST_BBDEV) += bbdev-du
 endif
 endif
 
