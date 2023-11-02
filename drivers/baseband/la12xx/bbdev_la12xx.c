@@ -423,6 +423,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		}
 		q_priv->la12xx_core_id = BBDEV_LA12XX_LDPC_DEC_CORE;
 		q_priv->feca_blk_id = priv->num_ldpc_dec_queues++;
+		q_priv->per_op_hw_id = queue_conf->per_op_hw_id;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
 		if (priv->num_polar_enc_queues >=
@@ -644,7 +645,7 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 				queue_conf->raw_queue_conf.modem_core_id;
 		else
 			q_priv->la12xx_core_id = 0;
-		printf("VSPA core is %d for queue id = %d\n",
+		BBDEV_LA12XX_PMD_INFO("VSPA core is %d for queue id = %d\n",
 				q_priv->la12xx_core_id, q_id);
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(q_priv->la12xx_core_id);
@@ -1052,11 +1053,10 @@ fill_feca_desc_dec(struct bbdev_la12xx_q_priv *q_priv,
 
 	feca_job->job_type = FECA_JOB_SD_BE;
 
-#ifdef VSPA_PUSCH
-	feca_job->t_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_dec_op)->feca_id);
-#else
-	feca_job->t_blk_id = q_priv->feca_blk_id_be32;
-#endif
+	if (q_priv->per_op_hw_id)
+		feca_job->t_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_dec_op)->hw_id);
+	else
+		feca_job->t_blk_id = q_priv->feca_blk_id_be32;
 
 	sd_command = &feca_job->command_chain_t.sd_command_ch_obj;
 
@@ -1674,10 +1674,10 @@ enqueue_single_op(struct bbdev_la12xx_q_priv *q_priv, void *bbdev_op)
 			rte_cpu_to_be_32(get_l1_pcie_addr(ipc_priv, feca_job));
 		bbdev_ipc_op->feca_job_type = feca_job->job_type;
 		bbdev_ipc_op->feca_blk_id = feca_job->t_blk_id;
-#ifdef VSPA_PUSCH
-		if (q_priv->op_type == RTE_BBDEV_OP_LDPC_DEC)
-			bbdev_ipc_op->feca_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_op)->feca_id);
-#endif
+		if (q_priv->op_type == RTE_BBDEV_OP_LDPC_DEC) {
+			if (q_priv->per_op_hw_id)
+				bbdev_ipc_op->feca_blk_id = rte_cpu_to_be_32(((struct rte_bbdev_dec_op *)bbdev_op)->hw_id);
+		}
 	}
 
 	/* Move Producer Index forward */

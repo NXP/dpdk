@@ -6,7 +6,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 #
 # library name
 #
-APP = test-bbdev-ldpc-dec
+APP = bbdev-du
 
 CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += -O3

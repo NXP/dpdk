@@ -2,6 +2,20 @@
  * Copyright 2023 NXP
  */
 
+/* This example demontrate following options (some implementation is TBD)
+ * LDPC encode and decode directly to FECA (via e200)
+ * offloading UL to VSPA core - ( Here N users job requests are sent to
+ *	e200 (via LDPC DEC IPC Channel), one consolidated job is sent to VSPA
+ *	(via VSPA IPC). Data is first picked by VSPA DMA to VSPA DMEM and
+ *	than to FECA post VSPA processing.
+ * offloading DL to VSPA core
+ * Direct VSPA communcation e.g. PRACH
+ * HARQ support.
+ *
+ * Sample command:
+ * ./bbdev-du --vdev=bbdev_la12xx -c 0x3 -- -n 4 -b 4 -s 270000  -v ./ldpc_dec_tb.data -f ./ldpc_enc_tb.dat
+ */
+
 #include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -74,6 +88,8 @@ static struct test_params {
         unsigned int vector_count;
         unsigned int reset;
         bool init_device;
+        bool vspa_sd_en;
+        bool vspa_se_en;
 } test_params;
 
 #define MAX_BURST 8U
@@ -96,6 +112,8 @@ parse_args(int argc, char **argv, struct test_params *tp)
                 { "prach num-ops", 1, 0, 'p' },
                 { "test-vector sd", 1, 0, 'v' },
                 { "test-vector se", 1, 0, 'f' },
+                { "vspa sd", 1, 0, 'd' },
+                { "vspa se", 1, 0, 'e' },
                 { "lcores", 1, 0, 'l' },
                 { "buf-size", 1, 0, 's' },
                 { "init-device", 0, 0, 'i'},
@@ -103,9 +121,15 @@ parse_args(int argc, char **argv, struct test_params *tp)
                 { NULL,  0, 0, 0 }
         };
 
-        while ((opt = getopt_long(argc, argv, "hin:b:p:v:f:l:s:", lgopts,
+        while ((opt = getopt_long(argc, argv, "hdein:b:p:v:f:l:s:", lgopts,
                         &option_index)) != EOF)
                 switch (opt) {
+                case 'd':
+			tp->vspa_sd_en = true;
+			break;
+                case 'e':
+			tp->vspa_se_en = true;
+			break;
                 case 'n':
 			if (strlen(optarg) == 0) {
 				printf("Num of operations is not provided");
@@ -983,7 +1007,7 @@ ldpc_dec_bbdev_process(int burst)
 
                 ops_enq[i]->ldpc_dec.hard_output.is_direct_mem = 0;
                 ops_enq[i]->ldpc_dec.hard_output.bdata = out[i];
-		ops_enq[i]->feca_id = i;
+		ops_enq[i]->hw_id = i;
 	}
 	/* filling only 1 vspa ops*/
         vops_enq[0]->vspa_params.input.is_direct_mem = 0;
@@ -1204,7 +1228,7 @@ main(int argc, char **argv)
 		qconf.queue_size = info.drv.default_queue_conf.queue_size;
 		qconf.priority = 0;
 		qconf.deferred_start = 0;
-		qconf.raw_queue_conf.conf_enable = 1;
+	        qconf.per_op_hw_id = true;
 		qconf.raw_queue_conf.modem_core_id = 0;
 
 		qconf.op_type = RTE_BBDEV_OP_LDPC_ENC;

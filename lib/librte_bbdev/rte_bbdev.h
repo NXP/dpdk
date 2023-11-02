@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
- * Copyright 2021 NXP
+ * Copyright 2021-2023 NXP
  */
 
 #ifndef _RTE_BBDEV_H_
@@ -176,6 +176,8 @@ struct rte_bbdev_queue_conf {
 	 * RAW queue configuration. Only applicable when 'op_type’ is
 	 * ‘RTE_BBDEV_OP_LA12XX_RAW’
 	 */
+	bool per_op_hw_id; /** Default is 1 HW id mapped per queue. 
+			    * Applicable for LDPC DEC only */
 	struct rte_bbdev_raw_queue_conf raw_queue_conf;
 };
 

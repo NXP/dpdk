@@ -63,6 +63,7 @@ struct bbdev_la12xx_q_priv {
 	uint32_t feca_blk_id;	/** FECA block ID for processing */
 	uint32_t feca_blk_id_be32; /**< FECA Block ID for this queue */
 	uint8_t en_napi; /* 0: napi disabled, 1: napi enabled */
+	uint8_t per_op_hw_id; /**< per OP or per queue HW ID */
 	uint16_t queue_size;	/**< Queue depth */
 	int32_t eventfd;	/**< Event FD value */
 	enum rte_bbdev_op_type op_type; /**< Operation type */

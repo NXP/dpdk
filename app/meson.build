@@ -21,7 +21,7 @@ cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
 COMMON_HEADERS_DIR = cmd.stdout().strip()
 if COMMON_HEADERS_DIR != ''
 apps += ['test-bbdev']
-apps += ['test-bbdev-ldpc-dec']
+apps += ['bbdev-du']
 endif
 
 # for BSD only
