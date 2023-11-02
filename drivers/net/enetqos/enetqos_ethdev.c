@@ -16,6 +16,8 @@
 #include "enetqos_pmd_logs.h"
 #include <kpage_ncache_api.h>
 
+#define EXTRACT_CCSR_ADDR(s)	(s + strlen(s) - 8)
+
 static void
 enetqos_free_buffers(struct rte_eth_dev *dev)
 {
@@ -898,7 +900,7 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	struct rte_ether_addr macaddr = {
 		.addr_bytes = { 0x1, 0x1, 0x1, 0x1, 0x1, 0x1 }
 	};
-	char *string = malloc(MAX_LINE_SIZE);
+	char *dtb_entry;
 	const char *mz_name = "bd_addr_v";
 	struct rte_eth_dev *dev = NULL;
 	size_t ccsr_addr, ccsr_size;
@@ -909,7 +911,7 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	int fd = -1;
 	FILE *file;
 	int size;
-	int rt;
+	int ret, rt;
 	int cnt;
 
 	name = rte_vdev_device_name(vdev);
@@ -956,13 +958,27 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
 	if (file) {
-		cnt = fread(string, sizeof(char), MAX_LINE_SIZE, file);
+		dtb_entry = malloc(MAX_LINE_SIZE);
+		if (!dtb_entry) {
+			ENETQOS_PMD_ERR("malloc failed!!");
+			rt = -1;
+			goto err;
+		}
+		cnt = fread(dtb_entry, sizeof(char), MAX_LINE_SIZE, file);
 		/* fread success */
 		if (cnt) {
-			string = string + strlen(string) - 8;
-			sscanf(string, "%lx", &ccsr_addr);
+			ret = sscanf(EXTRACT_CCSR_ADDR(dtb_entry), "%lx",
+				     &ccsr_addr);
+			if (ret != 1) {
+				ENETQOS_PMD_ERR("sscanf failed!!");
+				rt = -1;
+				free(dtb_entry);
+				fclose(file);
+				goto err;
+			}
 			ccsr_size = ENETQ_CCSR_SIZE;
 		}
+		free(dtb_entry);
 		fclose(file);
 	} else {
 		ENETQOS_PMD_ERR("File open failed!!");
