@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2021,2023 NXP
  */
 
 #include <inttypes.h>
@@ -375,6 +375,11 @@ enetfec_tx_queue_setup(struct rte_eth_dev *dev,
 	unsigned int dsize = fep->bufdesc_ex ? sizeof(struct bufdesc_ex) :
 		sizeof(struct bufdesc);
 	unsigned int dsize_log2 = fls64(dsize);
+
+	if (queue_idx > 0) {
+		ENETFEC_PMD_ERR("Multi queue not supported");
+		return -EINVAL;
+	}
 
 	/* Tx deferred start is not supported */
 	if (tx_conf->tx_deferred_start) {
