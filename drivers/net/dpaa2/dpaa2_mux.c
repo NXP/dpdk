@@ -154,18 +154,21 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 		uint64_t mask[] = {0x0001000000000000, 0x2000FF0000000000};
 		uint64_t key[] = {0x0001000000000000, 0x2000110000000000};
-		int j = 0;
-
-		keys = rte_malloc(NULL, sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, sizeof(uint64_t), 0);
-
-		if (!keys)
-			printf("Memory allocation failure for keys\n");
-
-		if (!masks)
-			printf("Memory allocation failure for masks\n");
+		int j = 0, k;
 
 		num_rules = 2;
+
+		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		if (!keys) {
+			printf("Memory allocation failure for keys\n");
+			goto creation_error;
+		}
+
+		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		if (!masks) {
+			printf("Memory allocation failure for masks\n");
+			goto creation_error;
+		}
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
 		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
@@ -184,8 +187,10 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		masks = mask;
-		keys = key;
+		for (k = 0; k < num_rules; k++) {
+			masks[k] = mask[k];
+			keys[k] = key[k];
+		}
 		key_size = sizeof(uint8_t) * 3;
 	}
 	break;
@@ -206,7 +211,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 				   0x200000FF00000000};
 		uint64_t key[] = {0x0001000000000000, 0x0000020000000000,
 				  0x2000001100000000};
-		int j = 0;
+		int j = 0, k;
 
 		/* Mask/Key value needs to be exactly 256 bytes(16 digits). Zero
 		 * bits can be added as padding if extracted bytes are less.
@@ -225,14 +230,18 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		 */
 
 		num_rules = 3;
-		keys = rte_malloc(NULL, sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, sizeof(uint64_t), 0);
 
-		if (!keys)
+		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		if (!keys) {
 			printf("Memory allocation failure for keys\n");
+			goto creation_error;
+		}
 
-		if (!masks)
+		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
+		if (!masks) {
 			printf("Memory allocation failure for masks\n");
+			goto creation_error;
+		}
 
 		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
 		/* 0x0A Represents bits from 48-55 */
@@ -260,8 +269,10 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		j++;
 
 		kg_cfg.num_extracts = j;
-		masks = mask;
-		keys = key;
+		for (k = 0; k < num_rules; k++) {
+			masks[k] = mask[k];
+			keys[k] = key[k];
+		}
 		/* Four keys are extracted. */
 		key_size = sizeof(uint8_t) * 4;
 	}
@@ -418,10 +429,16 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			goto creation_error;
 		}
 	}
+	rte_free(keys);
+	rte_free(masks);
 
 	return flow;
 
 creation_error:
+	if (keys)
+		rte_free(keys);
+	if (masks)
+		rte_free(masks);
 	rte_free((void *)key_cfg_iova);
 	rte_free((void *)flow);
 	return NULL;
