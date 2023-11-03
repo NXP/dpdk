@@ -8,6 +8,7 @@ Supported Platforms (and their derivatives):
 2. DPAA  : LS1043, LS1046
 3. ENETC : LS1028
 4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
+5. QOS   : i.MX 8MP, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -496,6 +497,10 @@ External repo:
 https://github.com/nxp-qoriq/dpdk-extras
 
 Refer README for kpage_ncache module in linux/kpage_ncache directory.
+
+NOTE: Remember for i.MX platforms, reserve the initial DDR memory from uboot
+via 'mem' environment variable in bootargs.
+	Example: 'mem=4096M'
 
 1.1 For i.MX8MP Platform:
 -------------------------
