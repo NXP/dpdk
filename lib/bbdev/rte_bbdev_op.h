@@ -1127,6 +1127,10 @@ struct rte_bbdev_enc_op {
 struct rte_bbdev_dec_op {
 	/** Status of operation that was performed */
 	int status;
+	/* NXP Feca ID 0 - 4, Valid only if per op hw id option
+	 * selected in queue setup
+	 */
+	int hw_id;
 	/** Mempool which op instance is in */
 	struct rte_mempool *mempool;
 	/** Opaque pointer for user data */

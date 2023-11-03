@@ -911,7 +911,7 @@ testsuite_setup(void)
 {
 	if (!strcmp(get_vector_filename(), "no-file")) {
 		unsigned int i, v_count;
-		char v_file[22];
+		char v_file[52];
 
 		v_count = get_vector_count();
 		for (i = 0; i < v_count; i++) {

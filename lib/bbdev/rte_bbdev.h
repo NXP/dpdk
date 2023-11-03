@@ -170,6 +170,8 @@ struct rte_bbdev_queue_conf {
 	uint8_t priority;  /**< Queue priority */
 	bool deferred_start; /**< Do not start queue when device is started. */
 	enum rte_bbdev_op_type op_type; /**< Operation type */
+	bool per_op_hw_id; /** Default is 1 HW id mapped per queue.
+			    * Applicable for LDPC DEC only */
 	/**
 	 * RAW queue configuration. Only applicable when 'op_type’ is
 	 * ‘RTE_BBDEV_OP_LA12XX_RAW’

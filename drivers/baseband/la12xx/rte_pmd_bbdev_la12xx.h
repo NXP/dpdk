@@ -46,6 +46,8 @@ struct rte_pmd_la12xx_vspa_params {
 	struct rte_bbdev_op_data output;
 	/** Associated metadata */
 	void *metadata;
+	/** extra data to be send to VSPA */
+	uint32_t extra_data[8];
 };
 
 /** Structure specifying a single operation for la12xx */
@@ -372,6 +374,26 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
  */
 int
 rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
+
+
+/**
+ * This API can be used to know the mapped PCI address for a given
+ * host addrs, which should be used for sending address to the LA12xx
+ * map the hugepage address.
+ *
+ * @param dev_id
+ *   The identifier of the device.
+ *
+ * @param addr
+ *   Address for which mapped address is needed.
+ *.. It is 32 bit -as the LA12xx can only support 32 bit address
+ *
+ * @return
+ *   mapped physical address.
+  *  0 - if mapping not available.
+ */
+int
+rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr);
 
 /**
  * This options reset FECA and bbdev queues to state which was after
