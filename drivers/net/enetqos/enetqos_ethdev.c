@@ -626,7 +626,7 @@ err_alloc:
 
 static int enetqos_hw_setup(struct enetqos_priv *priv)
 {
-	struct enetqos_dma_cfg *dma_cfg = malloc(sizeof(struct enetqos_dma_cfg));
+	struct enetqos_dma_cfg *dma_cfg;
 	uint32_t chan;
 	int ret;
 
@@ -639,9 +639,18 @@ static int enetqos_hw_setup(struct enetqos_priv *priv)
 	if (ret)
 		return ret;
 
+	dma_cfg = malloc(sizeof(struct enetqos_dma_cfg));
+	if (!dma_cfg)
+		return -ENOMEM;
+
 	dma_cfg->pbl = PBL_VAL;
 	dma_cfg->pblx8 = true;
 	dma_cfg->eame = true;
+	dma_cfg->aal = false;
+	dma_cfg->dche = false;
+	dma_cfg->fixed_burst = 0;
+	dma_cfg->mixed_burst = 0;
+
 	priv->dma_cfg = dma_cfg;
 
 	enetqos_dma_init(priv->ioaddr, priv->dma_cfg);
