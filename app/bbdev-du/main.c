@@ -1021,6 +1021,13 @@ ldpc_dec_bbdev_process(int burst)
 	
 	/* Dividing and filling the data in 2 input buffers */
 	unsigned int offset = idata_length / 2;
+
+	/* Aligning the offset (start address for antena1) to 16 as
+	 * VDMA will work only 16 bytes aligned address*/
+	offset = RTE_ALIGN_CEIL(offset, 16);
+	if (offset > idata_length)
+		offset = idata_length;
+
 	rte_memcpy(rte_bbuf_mtod(in[0], char *), (char *)idata, offset);
 	in[0]->data_len = offset;
 	in[0]->pkt_len = offset;
@@ -1030,6 +1037,7 @@ ldpc_dec_bbdev_process(int burst)
 	/* Antena 0 */
 	vops_enq[0]->vspa_params.extra_data[0] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(in[0], char *));
 	vops_enq[0]->vspa_params.extra_data[1] = in[0]->data_len;
+
 	/* Antenna 1 */
 	vops_enq[0]->vspa_params.extra_data[2] = rte_pmd_get_la12xx_mapaddr(dev_id, rte_bbuf_mtod(in[1], char *));
 	vops_enq[0]->vspa_params.extra_data[3] = in[1]->data_len;
@@ -1077,6 +1085,7 @@ ldpc_dec_bbdev_process(int burst)
 		b->data_len = b->pkt_len;
 		if (memcmp(rte_bbuf_mtod(b, char *), odata,  b->pkt_len) != 0) {
 			printf("Mem compare failed for op = %d\n", i);
+			printf("status = %x\n", ops_deq[i]->status);
 		} else {
 			printf("Mem compare PASSED for op = %d\n", i);
 		}
