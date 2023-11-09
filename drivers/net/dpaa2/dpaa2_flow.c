@@ -2107,7 +2107,10 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_dev_flow *flow,
 	}
 	key_profile->num++;
 	key_profile->prot_field[num].type = DPAA2_NET_PROT_KEY;
+	key_profile->prot_field[num].prot = orig_prot;
+	key_profile->prot_field[num].key_field = orig_field;
 
+	dpkg->extracts[num].type = DPKG_EXTRACT_FROM_HDR;
 	dpkg->extracts[num].extract.from_hdr.prot = prot;
 	dpkg->extracts[num].extract.from_hdr.field = field;
 	dpkg->extracts[num].extract.from_hdr.type = DPKG_FULL_FIELD;
@@ -5692,19 +5695,20 @@ dpaa2_flow_key_offset_size(struct dpaa2_dev_flow *flow,
 			profile->ip_addr_type == IP_SRC_DST_EXTRACT) {
 			*offset = profile->ip_addr_key_offset;
 			if (flow->ip_key == NET_PROT_IPV4)
-				*size = sizeof(rte_be32_t);
+				*size = NH_FLD_IPV4_ADDR_SIZE;
 			else if (flow->ip_key == NET_PROT_IPV6)
-				*size = 16;
+				*size = NH_FLD_IPV6_ADDR_SIZE;
 			else
 				ret = -EINVAL;
 		} else if (profile->ip_addr_type == IP_DST_SRC_EXTRACT) {
 			if (flow->ip_key == NET_PROT_IPV4) {
 				*offset = profile->ip_addr_key_offset +
-					sizeof(rte_be32_t);
-				*size = sizeof(rte_be32_t);
+					NH_FLD_IPV4_ADDR_SIZE;
+				*size = NH_FLD_IPV4_ADDR_SIZE;
 			} else if (flow->ip_key == NET_PROT_IPV6) {
-				*offset = profile->ip_addr_key_offset + 16;
-				*size = 16;
+				*offset = profile->ip_addr_key_offset +
+					NH_FLD_IPV6_ADDR_SIZE;
+				*size = NH_FLD_IPV6_ADDR_SIZE;
 			} else {
 				ret = -EINVAL;
 			}
@@ -5718,19 +5722,20 @@ dpaa2_flow_key_offset_size(struct dpaa2_dev_flow *flow,
 			profile->ip_addr_type == IP_DST_SRC_EXTRACT) {
 			*offset = profile->ip_addr_key_offset;
 			if (flow->ip_key == NET_PROT_IPV4)
-				*size = sizeof(rte_be32_t);
+				*size = NH_FLD_IPV4_ADDR_SIZE;
 			else if (flow->ip_key == NET_PROT_IPV6)
-				*size = 16;
+				*size = NH_FLD_IPV6_ADDR_SIZE;
 			else
 				ret = -EINVAL;
 		} else if (profile->ip_addr_type == IP_SRC_DST_EXTRACT) {
 			if (flow->ip_key == NET_PROT_IPV4) {
 				*offset = profile->ip_addr_key_offset +
-					sizeof(rte_be32_t);
-				*size = sizeof(rte_be32_t);
+					NH_FLD_IPV4_ADDR_SIZE;
+				*size = NH_FLD_IPV4_ADDR_SIZE;
 			} else if (flow->ip_key == NET_PROT_IPV6) {
-				*offset = profile->ip_addr_key_offset + 16;
-				*size = 16;
+				*offset = profile->ip_addr_key_offset +
+					NH_FLD_IPV6_ADDR_SIZE;
+				*size = NH_FLD_IPV6_ADDR_SIZE;
 			} else {
 				ret = -EINVAL;
 			}
@@ -5755,7 +5760,9 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpaa2_key_profile *key_profile;
-	int valid[DPKG_MAX_NUM_OF_EXTRACTS], update = 0, ret;
+	int valid[DPKG_MAX_NUM_OF_EXTRACTS], update = 0, ret, ipaddr;
+	enum net_prot prot;
+	uint32_t field;
 
 	if (type == DPAA2_FLOW_QOS_TYPE)
 		key_extract = &priv->extract.qos_key_extract;
@@ -5810,6 +5817,17 @@ skip_validation:
 		for (j = i + 1; j < key_profile->num; j++)
 			key_profile->key_offset[j] -= key_size;
 
+		ipaddr = 0;
+		if (dpkg->extracts[i].type == DPKG_EXTRACT_FROM_HDR) {
+			prot = dpkg->extracts[i].extract.from_hdr.prot;
+			field = dpkg->extracts[i].extract.from_hdr.field;
+			ipaddr = dpaa2_flow_ip_address_extract(prot, field);
+		}
+		if (ipaddr)
+			update += NH_FLD_IPV6_ADDR_SIZE;
+		else
+			update += key_size;
+
 		if ((i + 1) < key_profile->num) {
 			memmove(&key_profile->key_offset[i],
 				&key_profile->key_offset[i + 1],
@@ -5832,10 +5850,11 @@ skip_validation:
 
 		key_profile->num--;
 		dpkg->num_extracts--;
-		update = 1;
 		i--;
 		remove_conut--;
 	};
+
+	key_profile->key_max_size -= update;
 
 	key_profile->ip_addr_type = IP_NONE_ADDR_EXTRACT;
 	key_profile->raw_extract_num = 0;
