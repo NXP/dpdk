@@ -288,11 +288,6 @@ struct key_prot_field {
 	uint32_t key_field;
 };
 
-struct dpaa2_raw_region {
-	uint8_t raw_start;
-	uint8_t raw_size;
-};
-
 struct dpaa2_key_profile {
 	uint8_t num;
 	uint8_t key_offset[DPKG_MAX_NUM_OF_EXTRACTS];
@@ -302,10 +297,6 @@ struct dpaa2_key_profile {
 	uint8_t ip_addr_extract_idx;
 	uint8_t ip_addr_key_offset;
 
-	uint8_t raw_extract_idx;
-	uint8_t raw_key_offset;
-	uint8_t raw_extract_num;
-
 	uint8_t l4_sp_present;
 	uint8_t l4_sp_extract_idx;
 	uint8_t l4_sp_key_offset;
@@ -314,7 +305,6 @@ struct dpaa2_key_profile {
 	uint8_t l4_dp_key_offset;
 	struct key_prot_field prot_field[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint16_t key_max_size;
-	struct dpaa2_raw_region raw_region;
 };
 
 struct dpaa2_key_extract {
