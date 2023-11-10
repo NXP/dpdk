@@ -1,5 +1,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2022 NXP
+# Copyright 2022-2023 NXP
+
+if is_windows
+    build = false
+    reason = 'not supported on Windows'
+    subdir_done()
+endif
+if (arch_subdir != 'aarch64' and arch_subdir != 'arm')
+    build = false
+    reason = 'only supported on arm'
+    subdir_done()
+endif
 
 kmod_cflags = ''
 mkfile = custom_target('lsinic_makefile',
