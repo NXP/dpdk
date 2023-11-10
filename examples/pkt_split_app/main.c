@@ -872,7 +872,6 @@ get_dpdmux_id_from_env(void)
 static int
 configure_split_traffic_config(void)
 {
-	struct rte_flow *result;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -881,7 +880,7 @@ configure_split_traffic_config(void)
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
 	struct rte_flow_item_vlan vlan_item;
-	int dpdmux_id;
+	int dpdmux_id, ret;
 
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
@@ -962,13 +961,12 @@ configure_split_traffic_config(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
 			&actions1);
-	if (!result) {
-		printf("%s: Create mux flow failed\n", __func__);
-		return -1;
-	}
-	return 0;
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
+
+	return ret;
 }
 
 /* Check the link status of all ports in up to 9s, and print them finally */

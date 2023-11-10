@@ -1837,7 +1837,7 @@ get_dpdmux_id_from_env(void)
 static int
 configure_split_traffic(void)
 {
-	struct rte_flow *result;
+	int ret;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -1849,7 +1849,7 @@ configure_split_traffic(void)
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
 		printf("get_dpdmux_id_from_env failed\n");
-		return -1;
+		return dpdmux_id;
 	}
 
 	vf.id = mux_connection_id;
@@ -1872,19 +1872,18 @@ configure_split_traffic(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-					       &actions1);
-	if (!result)
-		/* Unable to create the flow */
-		return -1;
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+			&actions1);
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
-	return 0;
+	return ret;
 }
 
 static int
 configure_split_traffic_config(void)
 {
-	struct rte_flow *result;
+	int ret;
 	struct rte_flow_item pattern[1], *pattern1;
 	struct rte_flow_action actions[1], *actions1;
 	struct rte_flow_action_vf vf;
@@ -1897,7 +1896,7 @@ configure_split_traffic_config(void)
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
 		printf("get_dpdmux_id_from_env failed\n");
-		return -1;
+		return dpdmux_id;
 	}
 
 	vf.id = mux_connection_id;
@@ -1956,13 +1955,12 @@ configure_split_traffic_config(void)
 	pattern1 = pattern;
 	actions1 = actions;
 
-	result = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-					       &actions1);
-	if (!result)
-		/* Unable to create the flow */
-		return -1;
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
+			&actions1);
+	if (ret)
+		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
-	return 0;
+	return ret;
 }
 
 int
