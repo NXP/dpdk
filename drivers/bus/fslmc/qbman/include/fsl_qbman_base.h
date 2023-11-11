@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014 Freescale Semiconductor, Inc.
- * Copyright 2017-2021 NXP
+ * Copyright 2017-2021, 2023 NXP
  *
  */
 #ifndef _FSL_QBMAN_BASE_H
@@ -195,7 +195,7 @@ struct qbman_fd {
 			uint32_t saddr_lo;
 
 			uint32_t saddr_hi:17;
-			uint32_t rsv1:15;
+			uint32_t rsv1_att:15;
 
 			uint32_t len;
 
