@@ -1,11 +1,18 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2023 NXP
  */
 
 #ifndef __DPAA2_QDMA_COMMON_H__
 #define __DPAA2_QDMA_COMMON_H__
 
 #define DPAA2_DPDMAI_MAX_QUEUES	8
+
+#define DPAA2_QDMA_FD_FLUSH_FORMAT 0x0
+#define DPAA2_QDMA_FD_LONG_FORMAT 0x1
+#define DPAA2_QDMA_FD_SHORT_FORMAT 0x3
+
+#define DPAA2_QDMA_BMT_ENABLE 0x1
+#define DPAA2_QDMA_BMT_DISABLE 0x0
 
 /** Source/Destination Descriptor */
 struct qdma_sdd {
@@ -62,8 +69,8 @@ struct qdma_sdd {
 #define QDMA_SG_SL_SHORT	0x1 /* short length */
 #define QDMA_SG_SL_LONG	0x0 /* long length */
 #define QDMA_SG_F	0x1 /* last sg entry */
-#define QDMA_SG_BMT_ENABLE 0x1
-#define QDMA_SG_BMT_DISABLE 0x0
+#define QDMA_SG_BMT_ENABLE DPAA2_QDMA_BMT_ENABLE
+#define QDMA_SG_BMT_DISABLE DPAA2_QDMA_BMT_DISABLE
 
 struct qdma_sg_entry {
 	uint32_t addr_lo;		/* address 0:31 */
@@ -92,6 +99,40 @@ struct qdma_sg_entry {
 		} ctrl;
 	};
 } __rte_packed;
+
+enum dpaa2_qdma_fd_type {
+	DPAA2_QDMA_FD_SHORT = 1,
+	DPAA2_QDMA_FD_LONG = 2,
+	DPAA2_QDMA_FD_SG = 3
+};
+
+#define DPAA2_QDMA_FD_ATT_TYPE_OFFSET 13
+#define DPAA2_QDMA_FD_ATT_TYPE(att) \
+	(att >> DPAA2_QDMA_FD_ATT_TYPE_OFFSET)
+#define DPAA2_QDMA_FD_ATT_CNTX(att) \
+	(att & ((1 << DPAA2_QDMA_FD_ATT_TYPE_OFFSET) - 1))
+
+static inline void
+dpaa2_qdma_fd_set_addr(struct qbman_fd *fd,
+	uint64_t addr)
+{
+	fd->simple_ddr.saddr_lo = lower_32_bits(addr);
+	fd->simple_ddr.saddr_hi = upper_32_bits(addr);
+}
+
+static inline void
+dpaa2_qdma_fd_save_att(struct qbman_fd *fd,
+	uint16_t job_idx, enum dpaa2_qdma_fd_type type)
+{
+	fd->simple_ddr.rsv1_att = job_idx |
+		(type << DPAA2_QDMA_FD_ATT_TYPE_OFFSET);
+}
+
+static inline uint16_t
+dpaa2_qdma_fd_get_att(const struct qbman_fd *fd)
+{
+	return fd->simple_ddr.rsv1_att;
+}
 
 enum {
 	DPAA2_QDMA_SDD_FLE,

@@ -32,6 +32,8 @@ int dpaa2_qdma_logtype;
 static uint32_t dpaa2_coherent_no_alloc_cache;
 static uint32_t dpaa2_coherent_alloc_cache;
 
+#define QDMA_FD_SIMPLE_MAX_JOB_CNT 0x8000
+
 struct qdma_dmadev_obj {
 	/** Pointer to Next instance */
 	TAILQ_ENTRY(qdma_dmadev_obj) next;
@@ -59,22 +61,46 @@ TAILQ_HEAD(qdma_dmadev_obj_list, qdma_dmadev_obj);
 static struct qdma_dmadev_obj_list s_qdmadev_obj_list
 	= TAILQ_HEAD_INITIALIZER(s_qdmadev_obj_list);
 
-static inline int
-qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
+static inline uint16_t
+qdma_simple_fd_save_jobs(struct qdma_virt_queue *vq,
+	struct rte_qdma_job **job, uint16_t job_nb,
+	uint16_t job_idx[])
+{
+	int i, max;
+	uint16_t idx = 0;
+
+	max = RTE_MIN(vq->queue_size,
+		(uint16_t)QDMA_FD_SIMPLE_MAX_JOB_CNT);
+
+	for (i = 0; i < max; i++) {
+		if (!vq->simple_job_pool[i]) {
+			vq->simple_job_pool[i] = job[idx];
+			job_idx[idx] = i;
+			idx++;
+			if (idx == job_nb)
+				break;
+		}
+	}
+
+	return idx;
+}
+
+static inline void
+qdma_populate_fd_pci(uint64_t src, uint64_t dest,
 	uint32_t len, struct qbman_fd *fd,
 	struct rte_qdma_rbp *rbp, int ser)
 {
-	fd->simple_pci.saddr_lo = lower_32_bits((uint64_t) (src));
-	fd->simple_pci.saddr_hi = upper_32_bits((uint64_t) (src));
+	fd->simple_pci.saddr_lo = lower_32_bits(src);
+	fd->simple_pci.saddr_hi = upper_32_bits(src);
 
 	fd->simple_pci.len_sl = len;
 
-	fd->simple_pci.bmt = 1;
-	fd->simple_pci.fmt = 3;
+	fd->simple_pci.bmt = DPAA2_QDMA_BMT_DISABLE;
+	fd->simple_pci.fmt = DPAA2_QDMA_FD_SHORT_FORMAT;
 	fd->simple_pci.sl = 1;
 	fd->simple_pci.ser = ser;
 
-	fd->simple_pci.sportid = rbp->sportid;	/*pcie 3 */
+	fd->simple_pci.sportid = rbp->sportid;
 
 	fd->simple_pci.svfid = rbp->svfid;
 	fd->simple_pci.spfid = rbp->spfid;
@@ -90,30 +116,28 @@ qdma_populate_fd_pci(phys_addr_t src, phys_addr_t dest,
 		fd->simple_pci.rdttype = dpaa2_coherent_alloc_cache;
 
 	/*dest is pcie memory */
-	fd->simple_pci.dportid = rbp->dportid;	/*pcie 3 */
+	fd->simple_pci.dportid = rbp->dportid;
 	fd->simple_pci.drbp = rbp->drbp;
 	if (rbp->drbp)
 		fd->simple_pci.wrttype = 0;
 	else
 		fd->simple_pci.wrttype = dpaa2_coherent_no_alloc_cache;
 
-	fd->simple_pci.daddr_lo = lower_32_bits((uint64_t) (dest));
-	fd->simple_pci.daddr_hi = upper_32_bits((uint64_t) (dest));
-
-	return 0;
+	fd->simple_pci.daddr_lo = lower_32_bits(dest);
+	fd->simple_pci.daddr_hi = upper_32_bits(dest);
 }
 
-static inline int
-qdma_populate_fd_ddr(phys_addr_t src, phys_addr_t dest,
+static inline void
+qdma_populate_fd_ddr(uint64_t src, uint64_t dest,
 	uint32_t len, struct qbman_fd *fd, int ser)
 {
-	fd->simple_ddr.saddr_lo = lower_32_bits((uint64_t) (src));
-	fd->simple_ddr.saddr_hi = upper_32_bits((uint64_t) (src));
+	fd->simple_ddr.saddr_lo = lower_32_bits(src);
+	fd->simple_ddr.saddr_hi = upper_32_bits(src);
 
 	fd->simple_ddr.len = len;
 
-	fd->simple_ddr.bmt = 1;
-	fd->simple_ddr.fmt = 3;
+	fd->simple_ddr.bmt = DPAA2_QDMA_BMT_DISABLE;
+	fd->simple_ddr.fmt = DPAA2_QDMA_FD_SHORT_FORMAT;
 	fd->simple_ddr.sl = 1;
 	fd->simple_ddr.ser = ser;
 	/**
@@ -132,10 +156,8 @@ qdma_populate_fd_ddr(phys_addr_t src, phys_addr_t dest,
 	fd->simple_ddr.wns = 0;
 	fd->simple_ddr.wrttype = dpaa2_coherent_no_alloc_cache;
 
-	fd->simple_ddr.daddr_lo = lower_32_bits((uint64_t) (dest));
-	fd->simple_ddr.daddr_hi = upper_32_bits((uint64_t) (dest));
-
-	return 0;
+	fd->simple_ddr.daddr_lo = lower_32_bits(dest);
+	fd->simple_ddr.daddr_hi = upper_32_bits(dest);
 }
 
 static inline void
@@ -238,12 +260,11 @@ populate_fle(struct qbman_fle fle[],
 static inline int
 dpdmai_dev_set_fd_us(struct qdma_virt_queue *qdma_vq,
 	struct qbman_fd *fd, struct rte_qdma_job **job,
-	uint16_t nb_jobs)
+	uint16_t nb_jobs, uint16_t *nb_set)
 {
 	struct rte_qdma_rbp *rbp = &qdma_vq->rbp;
-	struct rte_qdma_job **ppjob;
-	size_t iova;
-	int ret = 0, loop, total_len = 0, ser;
+	int loop, total_len = 0, ser;
+	uint16_t job_idxs[nb_jobs];
 
 	if (qdma_vq->flags & RTE_QDMA_VQ_NO_RESPONSE &&
 		!(qdma_vq->flags & RTE_QDMA_VQ_NO_RSP_DRAIN))
@@ -251,36 +272,32 @@ dpdmai_dev_set_fd_us(struct qdma_virt_queue *qdma_vq,
 	else
 		ser = 1;
 
-	/* TO DO: EP PCIe2PCIe.*/
-	RTE_ASSERT(!(rbp->srbp && rbp->drbp));
+	nb_jobs = qdma_simple_fd_save_jobs(qdma_vq, job,
+		nb_jobs, job_idxs);
 
 	for (loop = 0; loop < nb_jobs; loop++) {
-		if (rbp->drbp)
-			iova = (size_t)job[loop]->src;
-		else if (rbp->srbp)
-			iova = (size_t)job[loop]->dest;
-		else if (job[loop]->src & QDMA_PCIE_BASE_ADDRESS_MASK)
-			iova = (size_t)job[loop]->dest;
-		else
-			iova = (size_t)job[loop]->src;
-
-		/* Set the metadata */
 		job[loop]->vq_id = qdma_vq->vq_id;
-		ppjob = (struct rte_qdma_job **)DPAA2_IOVA_TO_VADDR(iova) - 1;
-		*ppjob = job[loop];
 		total_len += job[loop]->len;
 
-		if ((rbp->drbp == 1) || (rbp->srbp == 1))
-			ret = qdma_populate_fd_pci((phys_addr_t)job[loop]->src,
-							(phys_addr_t)job[loop]->dest,
-							job[loop]->len, &fd[loop], rbp, ser);
-		else
-			ret = qdma_populate_fd_ddr((phys_addr_t)job[loop]->src,
-							(phys_addr_t)job[loop]->dest,
-							job[loop]->len, &fd[loop], ser);
+		if (rbp->drbp || rbp->srbp) {
+			/** PCIe EP*/
+			qdma_populate_fd_pci(job[loop]->src,
+				job[loop]->dest, job[loop]->len,
+				&fd[loop], rbp, ser);
+		} else {
+			/** DDR or PCIe RC*/
+			qdma_populate_fd_ddr(job[loop]->src,
+				job[loop]->dest, job[loop]->len,
+				&fd[loop], ser);
+		}
+		dpaa2_qdma_fd_save_att(&fd[loop], job_idxs[loop],
+			DPAA2_QDMA_FD_SHORT);
 	}
 
-	return ret < 0 ? ret : total_len;
+	if (nb_set)
+		(*nb_set) = nb_jobs;
+
+	return total_len;
 }
 
 static inline uint32_t
@@ -467,7 +484,7 @@ fle_elem_pre_populate(struct qdma_fle_elem *elem,
 static inline int
 dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 	struct qbman_fd *fd, struct rte_qdma_job **job,
-	uint16_t nb_jobs)
+	uint16_t nb_jobs, uint16_t *nb_set)
 {
 	struct rte_qdma_rbp *rbp = &qdma_vq->rbp;
 	uint32_t i, idx;
@@ -483,6 +500,8 @@ dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 			(void **)elems, nb_jobs);
 		if (ret) {
 			DPAA2_QDMA_DP_DEBUG("Memory alloc failed for FLE");
+			if (nb_set)
+				*nb_set = 0;
 			return ret;
 		}
 	}
@@ -506,8 +525,10 @@ dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 		fle_iova = elem_iova +
 			offsetof(struct qdma_fle_elem, fle);
 
-		DPAA2_SET_FD_ADDR(&fd[i], fle_iova);
+		dpaa2_qdma_fd_set_addr(&fd[i], fle_iova);
 		DPAA2_SET_FD_COMPOUND_FMT(&fd[i]);
+		dpaa2_qdma_fd_save_att(&fd[i], 0,
+			DPAA2_QDMA_FD_LONG);
 
 		if (qdma_vq->fle_pre_populate) {
 			if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length)) {
@@ -528,6 +549,9 @@ dpdmai_dev_set_fd(struct qdma_virt_queue *qdma_vq,
 				QBMAN_FLE_WORD4_FMT_SBF);
 		}
 	}
+
+	if (nb_set)
+		(*nb_set) = nb_jobs;
 
 	return total_len;
 }
@@ -591,7 +615,7 @@ fle_sdd_sg_pre_populate(struct qdma_fle_sg_elem *elem,
 static inline int
 dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 	struct qbman_fd *fd, struct rte_qdma_job **job,
-	uint16_t nb_jobs)
+	uint16_t nb_jobs, uint16_t *nb_set)
 {
 	struct qdma_fle_sg_elem *sg_elem;
 	struct qdma_fle_elem *fle_elem;
@@ -618,6 +642,9 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 			(void **)&sg_elem);
 		if (ret < 0) {
 			DPAA2_QDMA_DP_DEBUG("Memory alloc failed for FLE");
+
+			if (nb_set)
+				(*nb_set) = 0;
 			return ret;
 		}
 		sg_elem->fle_elem.sg_job_nb_len = 0;
@@ -638,7 +665,7 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 	fle_iova = fle_elem_iova +
 			offsetof(struct qdma_fle_elem, fle);
 
-	DPAA2_SET_FD_ADDR(fd, fle_iova);
+	dpaa2_qdma_fd_set_addr(fd, fle_iova);
 	DPAA2_SET_FD_COMPOUND_FMT(fd);
 
 	/* Populate FLE */
@@ -663,8 +690,12 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 			len);
 		post_populate_sg_fle(fle, len);
 
+		if (nb_set)
+			(*nb_set) = nb_jobs;
+
 		return len;
 	}
+	dpaa2_qdma_fd_save_att(fd, 0, DPAA2_QDMA_FD_SG);
 
 	sdd = fle_elem->sdd;
 	sdd_iova = fle_elem_iova +
@@ -682,34 +713,23 @@ dpdmai_dev_set_sg_fd(struct qdma_virt_queue *qdma_vq,
 		&qdma_vq->rbp, src, dst, len,
 		QBMAN_FLE_WORD4_FMT_SGE);
 
+	if (nb_set)
+		(*nb_set) = nb_jobs;
+
 	return len;
 }
 
 static inline uint32_t
-dpdmai_dev_get_job_us(__rte_unused struct qdma_virt_queue *qdma_vq,
+dpdmai_dev_get_job_us(struct qdma_virt_queue *qdma_vq,
 	const struct qbman_fd *fd, struct rte_qdma_job **job,
 	uint16_t *nb_jobs, uint16_t *vqid)
 {
-	size_t iova;
-	struct rte_qdma_job **ppjob;
+	uint16_t att = dpaa2_qdma_fd_get_att(fd), job_idx;
 
-	if (fd->simple_pci.srbp)
-		iova = (size_t)(((uint64_t)fd->simple_pci.daddr_hi) << 32
-				| (uint64_t)fd->simple_pci.daddr_lo);
-	else if (fd->simple_pci.drbp)
-		iova = (size_t)(((uint64_t)fd->simple_pci.saddr_hi) << 32
-				| (uint64_t)fd->simple_pci.saddr_lo);
-	else if (fd->simple_pci.saddr_hi & (QDMA_PCIE_BASE_ADDRESS_MASK >> 32))
-		iova = (size_t)(((uint64_t)fd->simple_pci.daddr_hi) << 32
-				| (uint64_t)fd->simple_pci.daddr_lo);
-	else
-		iova = (size_t)(((uint64_t)fd->simple_pci.saddr_hi) << 32
-				| (uint64_t)fd->simple_pci.saddr_lo);
+	job_idx = DPAA2_QDMA_FD_ATT_CNTX(att);
+	*job = qdma_vq->simple_job_pool[job_idx];
+	qdma_vq->simple_job_pool[job_idx] = NULL;
 
-	ppjob = (struct rte_qdma_job **)DPAA2_IOVA_TO_VADDR(iova) - 1;
-	*job = (struct rte_qdma_job *)*ppjob;
-	(*job)->status = (fd->simple_pci.acc_err << 8) |
-					(fd->simple_pci.error);
 	*nb_jobs = 1;
 	if (vqid)
 		*vqid = (*job)->vq_id;
@@ -1076,10 +1096,8 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 	struct dpaa2_queue *txq;
 	struct qbman_eq_desc eqdesc;
 	struct qbman_swp *swp;
-	int ret, loop;
-	uint32_t num_to_send = 0;
-	uint16_t num_tx = 0;
-	uint32_t enqueue_loop, retry_count;
+	int ret, loop, enqueue_loop, retry_count;
+	uint16_t num_tx = 0, num_to_send = 0;
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1116,7 +1134,7 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 
 		for (loop = 0; loop < fd_nb; loop++) {
 			ret = qdma_vq->set_fd(qdma_vq, &fd[loop],
-				&job[job_idx], sg_entry_nb);
+				&job[job_idx], sg_entry_nb, NULL);
 			if (unlikely(ret < 0))
 				return 0;
 			fd_sg_nb[loop] = sg_entry_nb;
@@ -1160,7 +1178,7 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 			dpaa2_eqcr_size : nb_jobs;
 
 		ret = qdma_vq->set_fd(qdma_vq, &fd[num_tx],
-						&job[num_tx], num_to_send);
+				&job[num_tx], num_to_send, &num_to_send);
 		if (unlikely(ret < 0))
 			break;
 
@@ -1168,7 +1186,7 @@ dpdmai_dev_enqueue(struct qdma_virt_queue *qdma_vq,
 		enqueue_loop = 0; retry_count = 0;
 		loop = num_to_send;
 
-		while ((int)enqueue_loop < loop) {
+		while (enqueue_loop < loop) {
 			ret = qbman_swp_enqueue_multiple(swp,
 					&eqdesc,
 					&fd[num_tx + enqueue_loop],
@@ -1619,7 +1637,8 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 			RTE_CACHE_LINE_SIZE);
 		if (!vq->fle_elems) {
 			DPAA2_QDMA_ERR("fle elems create failed");
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto err_free;
 		}
 		for (i = 0; i < count; i++) {
 			ret = rte_mempool_get(vq->fle_pool, &vq->fle_elems[i]);
@@ -1628,12 +1647,23 @@ dpaa2_qdma_fle_pool_init(struct qdma_virt_queue *vq,
 					pool_name, count);
 				DPAA2_QDMA_ERR("But Get %d elems err(%d)",
 					i, ret);
-				return ret;
+				goto err_free;
 			}
 		}
 	}
 
 	return 0;
+err_free:
+	if (vq->fle_elems) {
+		rte_free(vq->fle_elems);
+		vq->fle_elems = NULL;
+	}
+	if (vq->fle_pool) {
+		rte_mempool_free(vq->fle_pool);
+		vq->fle_pool = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -1697,6 +1727,15 @@ dpaa2_qdma_queue_setup(struct rte_rawdev *rawdev,
 			qdma_dev->vqs[i].get_job = dpdmai_dev_get_job;
 		}
 	} else {
+		qdma_dev->vqs[i].simple_job_pool = rte_zmalloc(NULL,
+			q_config->queue_size * sizeof(void *),
+			RTE_CACHE_LINE_SIZE);
+		if (!qdma_dev->vqs[i].simple_job_pool) {
+			DPAA2_QDMA_ERR("VQ[%d]'s simple job pool create failed",
+				i);
+			rte_spinlock_unlock(&qdma_dev->lock);
+			return -ENOMEM;
+		}
 		qdma_dev->vqs[i].set_fd = dpdmai_dev_set_fd_us;
 		qdma_dev->vqs[i].get_job = dpdmai_dev_get_job_us;
 	}
@@ -1817,6 +1856,12 @@ dpaa2_qdma_queue_release(struct rte_rawdev *rawdev,
 
 	if (qdma_vq->fle_pool)
 		rte_mempool_free(qdma_vq->fle_pool);
+
+	if (qdma_vq->simple_job_pool)
+		rte_free(qdma_vq->simple_job_pool);
+
+	if (qdma_vq->fle_elems)
+		rte_free(qdma_vq->fle_elems);
 
 	memset(qdma_vq, 0, sizeof(struct qdma_virt_queue));
 
