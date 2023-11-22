@@ -205,6 +205,7 @@ struct lsinic_queue {
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
 	struct lsinic_dma_seg_job *dma_seg_jobs;
+	uint16_t *dma_idx;
 
 	void (*txq_dma_eq)(void *queue, int append);
 	void (*rxq_dma_eq)(void *queue, int append, int dma_bd);

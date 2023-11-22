@@ -508,6 +508,12 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_SG_ENABLE)
 		txq->flag |= LSXVIO_QUEUE_DMA_SG_FLAG;
 
+	txq->dma_idx = rte_malloc(NULL,
+		sizeof(uint16_t) * nb_desc,
+		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+	if (!txq->dma_idx)
+		return -ENOMEM;
+
 	return 0;
 }
 
@@ -586,6 +592,12 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	if (common->lsx_feature & LSX_VIO_RC2EP_DMA_SG_ENABLE)
 		rxq->flag |= LSXVIO_QUEUE_DMA_SG_FLAG;
+
+	rxq->dma_idx = rte_malloc(NULL,
+		sizeof(uint16_t) * nb_desc,
+		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+	if (!rxq->dma_idx)
+		return -ENOMEM;
 
 	return 0;
 }
@@ -829,7 +841,7 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 {
 	int ret = 0, i, dma_idx, dma_bd_nb = 0;
 	uint16_t append_len;
-	uint32_t idx_len;
+	uint64_t flags;
 	struct lsinic_dma_job *dma_jobs[LSINIC_QDMA_EQ_MAX_NB];
 
 	if (vq->append_dma_idx >= vq->start_dma_idx) {
@@ -868,25 +880,25 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 		struct rte_dma_sge dst_sg[append_len + dma_bd_nb];
 
 		for (i = 0; i < (append_len + dma_bd_nb); i++) {
-			idx_len = RTE_DPAA2_QDMA_IDX_LEN(dma_jobs[i]->idx,
-					dma_jobs[i]->len);
+			vq->dma_idx[i] = dma_jobs[i]->idx;
 			src_sg[i].addr = dma_jobs[i]->src;
-			src_sg[i].length = idx_len;
+			src_sg[i].length = dma_jobs[i]->len;
 			dst_sg[i].addr = dma_jobs[i]->dst;
-			dst_sg[i].length = idx_len;
+			dst_sg[i].length = dma_jobs[i]->len;
 		}
+		flags = RTE_DPAA2_QDMA_SG_SUBMIT(vq->dma_idx,
+					RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(vq->dma_id,
 			vq->dma_vq,
 			src_sg, dst_sg, append_len + dma_bd_nb,
 			append_len + dma_bd_nb,
-			RTE_DMA_OP_FLAG_SUBMIT);
+			flags);
 	} else {
 		for (i = 0; i < (append_len + dma_bd_nb); i++) {
-			idx_len = RTE_DPAA2_QDMA_IDX_LEN(dma_jobs[i]->idx,
-					dma_jobs[i]->len);
+			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(dma_jobs[i]->idx, 0);
 			ret = rte_dma_copy(vq->dma_id, vq->dma_vq,
 				dma_jobs[i]->src, dma_jobs[i]->dst,
-				idx_len, 0);
+				dma_jobs[i]->len, flags);
 			if (unlikely(ret))
 				break;
 		}
@@ -909,34 +921,34 @@ lsxvio_qdma_multiple_enqueue(struct lsxvio_queue *queue,
 	struct lsinic_dma_job **jobs, uint16_t nb_jobs)
 {
 	int ret = 0, i;
-	uint32_t idx_len;
 	struct rte_dma_sge src_sg[nb_jobs];
 	struct rte_dma_sge dst_sg[nb_jobs];
+	uint64_t flags;
 
 	LSINIC_DMA_BURST_ASSERT(nb_jobs);
 
 	if (queue->flag & LSXVIO_QUEUE_DMA_SG_FLAG) {
 		for (i = 0; i < nb_jobs; i++) {
-			idx_len = RTE_DPAA2_QDMA_IDX_LEN(jobs[i]->idx,
-					jobs[i]->len);
+			queue->dma_idx[i] = jobs[i]->idx;
 			src_sg[i].addr = jobs[i]->src;
-			src_sg[i].length = idx_len;
+			src_sg[i].length = jobs[i]->len;
 
 			dst_sg[i].addr = jobs[i]->dst;
-			dst_sg[i].length = idx_len;
+			dst_sg[i].length = jobs[i]->len;
 		}
+		flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+					RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq,
 			src_sg, dst_sg, nb_jobs, nb_jobs,
-			RTE_DMA_OP_FLAG_SUBMIT);
+			flags);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
-			idx_len = RTE_DPAA2_QDMA_IDX_LEN(jobs[i]->idx,
-					jobs[i]->len);
+			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(jobs[i]->idx, 0);
 			ret = rte_dma_copy(queue->dma_id,
 				queue->dma_vq,
 				jobs[i]->src, jobs[i]->dst,
-				idx_len, 0);
+				jobs[i]->len, flags);
 			if (unlikely(ret))
 				break;
 		}
