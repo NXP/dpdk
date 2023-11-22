@@ -300,25 +300,22 @@ sg_entry_post_populate(const struct rte_dma_sge *src,
 	const struct rte_dma_sge *dst, struct qdma_cntx_sg *sg_cntx,
 	uint16_t nb_sge)
 {
-	uint16_t i = 0, idx;
-	uint32_t total_len = 0, len;
+	uint16_t i;
+	uint32_t total_len = 0;
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
 
 	for (i = 0; i < (nb_sge - 1); i++) {
 		if (unlikely(src[i].length != dst[i].length))
 			return -ENOTSUP;
-		len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-		idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
 		src_sge->addr_lo = (uint32_t)src[i].addr;
 		src_sge->addr_hi = (src[i].addr >> 32);
-		src_sge->data_len.data_len_sl0 = len;
+		src_sge->data_len.data_len_sl0 = src[i].length;
 
 		dst_sge->addr_lo = (uint32_t)dst[i].addr;
 		dst_sge->addr_hi = (dst[i].addr >> 32);
-		dst_sge->data_len.data_len_sl0 = len;
-		total_len += len;
-		sg_cntx->cntx_idx[i] = idx;
+		dst_sge->data_len.data_len_sl0 = dst[i].length;
+		total_len += dst[i].length;
 
 		src_sge->ctrl.f = 0;
 		dst_sge->ctrl.f = 0;
@@ -329,19 +326,15 @@ sg_entry_post_populate(const struct rte_dma_sge *src,
 	if (unlikely(src[i].length != dst[i].length))
 		return -ENOTSUP;
 
-	len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-	idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
-
 	src_sge->addr_lo = (uint32_t)src[i].addr;
 	src_sge->addr_hi = (src[i].addr >> 32);
-	src_sge->data_len.data_len_sl0 = len;
+	src_sge->data_len.data_len_sl0 = src[i].length;
 
 	dst_sge->addr_lo = (uint32_t)dst[i].addr;
 	dst_sge->addr_hi = (dst[i].addr >> 32);
-	dst_sge->data_len.data_len_sl0 = len;
+	dst_sge->data_len.data_len_sl0 = dst[i].length;
 
-	total_len += len;
-	sg_cntx->cntx_idx[i] = idx;
+	total_len += dst[i].length;
 	sg_cntx->job_nb = nb_sge;
 
 	src_sge->ctrl.f = QDMA_SG_F;
@@ -363,20 +356,18 @@ sg_entry_populate(const struct rte_dma_sge *src,
 	const struct rte_dma_sge *dst, struct qdma_cntx_sg *sg_cntx,
 	uint16_t nb_sge)
 {
-	uint16_t i, idx;
-	uint32_t total_len = 0, len;
+	uint16_t i;
+	uint32_t total_len = 0;
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
 
 	for (i = 0; i < nb_sge; i++) {
 		if (unlikely(src[i].length != dst[i].length))
 			return -ENOTSUP;
-		len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-		idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
 
 		src_sge->addr_lo = (uint32_t)src[i].addr;
 		src_sge->addr_hi = (src[i].addr >> 32);
-		src_sge->data_len.data_len_sl0 = len;
+		src_sge->data_len.data_len_sl0 = src[i].length;
 		src_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
 		/** IOMMU is always on for either VA or PA mode,
@@ -385,15 +376,14 @@ sg_entry_populate(const struct rte_dma_sge *src,
 		src_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
 		dst_sge->addr_lo = (uint32_t)dst[i].addr;
 		dst_sge->addr_hi = (dst[i].addr >> 32);
-		dst_sge->data_len.data_len_sl0 = len;
+		dst_sge->data_len.data_len_sl0 = dst[i].length;
 		dst_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		dst_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
 		/** IOMMU is always on for either VA or PA mode,
 		 * so Bypass Memory Translation should be disabled.
 		 */
 		dst_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
-		total_len += len;
-		sg_cntx->cntx_idx[i] = idx;
+		total_len += src[i].length;
 
 		if (i == (nb_sge - 1)) {
 			src_sge->ctrl.f = QDMA_SG_F;
@@ -623,14 +613,15 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[vchan];
-	int ret = 0, expected;
-	uint32_t cntx_idx, len;
+	int ret = 0, expected, i;
+	uint32_t len;
 	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
-	struct qdma_cntx_sg *cntx_sg;
+	struct qdma_cntx_sg *cntx_sg = NULL;
 	rte_iova_t cntx_iova, fle_iova, sdd_iova;
 	rte_iova_t src_sge_iova, dst_sge_iova;
 	struct qbman_fle *fle;
 	struct qdma_sdd *sdd;
+	const uint16_t *idx_addr = NULL;
 
 	if (unlikely(nb_src != nb_dst)) {
 		DPAA2_QDMA_ERR("SG entry src num(%d) != dst num(%d)",
@@ -647,14 +638,16 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	memset(fd, 0, sizeof(struct qbman_fd));
 
 	if (qdma_dev->is_silent) {
-		cntx_idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[0].length);
-		cntx_sg = qdma_vq->cntx_sg[cntx_idx];
+		cntx_sg = qdma_vq->cntx_sg[qdma_vq->slient_idx];
 	} else {
 		ret = rte_mempool_get(qdma_vq->fle_pool,
 			(void **)&cntx_sg);
 		if (ret)
 			return ret;
 		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
+		idx_addr = DPAA2_QDMA_IDXADDR_FROM_SG_FLAG(flags);
+		for (i = 0; i < nb_src; i++)
+			cntx_sg->cntx_idx[i] = idx_addr[i];
 	}
 
 	cntx_iova = (uint64_t)cntx_sg - qdma_vq->fle_iova2va_offset;
@@ -669,8 +662,13 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	DPAA2_SET_FD_FLC(fd, (uint64_t)cntx_sg);
 
 	if (qdma_vq->fle_pre_populate) {
-		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length))
+		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length)) {
 			fle_sdd_sg_pre_populate(cntx_sg, qdma_vq);
+			if (!qdma_dev->is_silent && cntx_sg && idx_addr) {
+				for (i = 0; i < nb_src; i++)
+					cntx_sg->cntx_idx[i] = idx_addr[i];
+			}
+		}
 
 		len = sg_entry_post_populate(src, dst,
 			cntx_sg, nb_src);
@@ -695,6 +693,8 @@ dpaa2_qdma_copy_sg(void *dev_private,
 		dpaa2_qdma_long_fmt_dump(cntx_sg->fle_sdd.fle);
 
 	qdma_vq->fd_idx++;
+	qdma_vq->slient_idx =
+		(qdma_vq->slient_idx + 1) & (DPAA2_QDMA_MAX_DESC - 1);
 
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
@@ -717,28 +717,23 @@ dpaa2_qdma_copy(void *dev_private, uint16_t vchan,
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[vchan];
 	int ret = 0, expected;
-	uint16_t cntx_idx;
-	uint32_t len;
 	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
-	struct qdma_cntx_long *cntx_long;
+	struct qdma_cntx_long *cntx_long = NULL;
 	rte_iova_t cntx_iova, fle_iova, sdd_iova;
 	struct qbman_fle *fle;
 	struct qdma_sdd *sdd;
 
 	memset(fd, 0, sizeof(struct qbman_fd));
 
-	cntx_idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(length);
-	len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(length);
-
 	if (qdma_dev->is_silent) {
-		cntx_long = qdma_vq->cntx_long[cntx_idx];
+		cntx_long = qdma_vq->cntx_long[qdma_vq->slient_idx];
 	} else {
 		ret = rte_mempool_get(qdma_vq->fle_pool,
 			(void **)&cntx_long);
 		if (ret)
 			return ret;
 		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
-		cntx_long->cntx_idx = cntx_idx;
+		cntx_long->cntx_idx = DPAA2_QDMA_IDX_FROM_FLAG(flags);
 	}
 
 	cntx_iova = (uint64_t)cntx_long - qdma_vq->fle_iova2va_offset;
@@ -757,16 +752,20 @@ dpaa2_qdma_copy(void *dev_private, uint16_t vchan,
 			fle_sdd_pre_populate(&cntx_long->fle_sdd,
 				&qdma_vq->rbp,
 				0, 0, QBMAN_FLE_WORD4_FMT_SBF);
+			if (!qdma_dev->is_silent && cntx_long) {
+				cntx_long->cntx_idx =
+					DPAA2_QDMA_IDX_FROM_FLAG(flags);
+			}
 		}
 
-		fle_post_populate(fle, src, dst, len);
+		fle_post_populate(fle, src, dst, length);
 	} else {
 		sdd = cntx_long->fle_sdd.sdd;
 		sdd_iova = cntx_iova +
 			offsetof(struct qdma_cntx_long, fle_sdd) +
 			offsetof(struct qdma_cntx_fle_sdd, sdd);
 		fle_populate(fle, sdd, sdd_iova, &qdma_vq->rbp,
-			src, dst, len,
+			src, dst, length,
 			QBMAN_FLE_WORD4_FMT_SBF);
 	}
 
@@ -774,6 +773,8 @@ dpaa2_qdma_copy(void *dev_private, uint16_t vchan,
 		dpaa2_qdma_long_fmt_dump(cntx_long->fle_sdd.fle);
 
 	qdma_vq->fd_idx++;
+	qdma_vq->slient_idx =
+		(qdma_vq->slient_idx + 1) & (DPAA2_QDMA_MAX_DESC - 1);
 
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
@@ -971,14 +972,17 @@ dpaa2_qdma_info_get(const struct rte_dma_dev *dev,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
 
 	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM |
-			     RTE_DMA_CAPA_MEM_TO_DEV |
-			     RTE_DMA_CAPA_DEV_TO_DEV |
-			     RTE_DMA_CAPA_DEV_TO_MEM |
-			     RTE_DMA_CAPA_SILENT |
-			     RTE_DMA_CAPA_OPS_COPY;
+		RTE_DMA_CAPA_MEM_TO_DEV |
+		RTE_DMA_CAPA_DEV_TO_DEV |
+		RTE_DMA_CAPA_DEV_TO_MEM |
+		RTE_DMA_CAPA_SILENT |
+		RTE_DMA_CAPA_OPS_COPY |
+		RTE_DMA_CAPA_OPS_COPY_SG;
+	dev_info->dev_capa |= RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX;
 	dev_info->max_vchans = dpdmai_dev->num_queues;
 	dev_info->max_desc = DPAA2_QDMA_MAX_DESC;
 	dev_info->min_desc = DPAA2_QDMA_MIN_DESC;
+	dev_info->max_sges = RTE_DPAA2_QDMA_JOB_SUBMIT_MAX;
 	dev_info->dev_name = dev->device->name;
 	if (dpdmai_dev->qdma_dev)
 		dev_info->nb_vchans = dpdmai_dev->qdma_dev->num_vqs;
