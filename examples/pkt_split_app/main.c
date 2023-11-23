@@ -838,9 +838,9 @@ l2fwd_parse_args(int argc, char **argv)
 	}
 
 	if (optind >= 0)
-		argv[optind-1] = prgname;
+		argv[optind - 1] = prgname;
 
-	ret = optind-1;
+	ret = optind - 1;
 	optind = 1; /* reset getopt lib */
 	return ret;
 }
@@ -872,14 +872,17 @@ get_dpdmux_id_from_env(void)
 static int
 configure_split_traffic_config(void)
 {
-	struct rte_flow_item pattern[1], *pattern1;
-	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_item pattern[2];
+	struct rte_flow_action actions[1];
 	struct rte_flow_action_vf vf;
-	uint16_t mask;
 	struct rte_flow_item_udp udp_item;
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
 	struct rte_flow_item_vlan vlan_item;
+	struct rte_flow_item_udp udp_mask;
+	struct rte_flow_item_ipv4 ip_mask;
+	struct rte_flow_item_eth eth_mask;
+	struct rte_flow_item_vlan vlan_mask;
 	int dpdmux_id, ret;
 
 	dpdmux_id = get_dpdmux_id_from_env();
@@ -896,28 +899,29 @@ configure_split_traffic_config(void)
 	case TRAFFIC_SPLIT_ETHTYPE:
 		printf("traffic_split_type on ETH with Type=0x%x\n",
 			traffic_split_val);
-		eth_item.type = traffic_split_val;
-		mask = 0xffff;
+		eth_item.type = rte_cpu_to_be_16((uint16_t)traffic_split_val);
+		eth_mask.type = 0xffff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
 		pattern[0].spec = &eth_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &eth_mask;
 		break;
 	case TRAFFIC_SPLIT_IP_PROTO:
 		printf("traffic_split_type on IP PROTO with Type=0x%x\n",
 			traffic_split_val);
 		ip_item.hdr.next_proto_id = traffic_split_val;
-		mask = 0xff;
+		ip_mask.hdr.next_proto_id = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
 		pattern[0].spec = &ip_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &ip_mask;
 		break;
 	case TRAFFIC_SPLIT_UDP_DST_PORT:
 		printf("traffic_split_type on UDP DST PORT with Type=%d\n",
 			traffic_split_val);
-		udp_item.hdr.dst_port = traffic_split_val;
-		mask = 0xffff;
+		udp_item.hdr.dst_port =
+			rte_cpu_to_be_16((uint16_t)traffic_split_val);
+		udp_mask.hdr.dst_port = 0xffff;
 		pattern[0].spec = &udp_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &udp_mask;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_UDP;
 		break;
 	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP:
@@ -938,31 +942,30 @@ configure_split_traffic_config(void)
 	case TRAFFIC_SPLIT_IP_FRAG_PROTO:
 		printf("traffic_split_type on IP FRAG");
 		ip_item.hdr.next_proto_id = traffic_split_val;
-		mask = 0xff;
+		ip_mask.hdr.next_proto_id = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO;
 		pattern[0].spec = &ip_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &ip_mask;
 		break;
 	case TRAFFIC_SPLIT_VLAN:
 		printf("traffic_split_type on VLAN");
-		vlan_item.hdr.vlan_tci = traffic_split_val;
-		mask = 0xff;
+		vlan_item.hdr.vlan_tci =
+			rte_cpu_to_be_16((uint16_t)traffic_split_val);
+		vlan_mask.hdr.vlan_tci = RTE_BE16(0x0fff);
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
 		pattern[0].spec = &vlan_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &vlan_mask;
 		break;
 	default:
 		printf("invalid traffic_split_type\n");
 		return -EINVAL;
 	}
+	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
 
 	actions[0].conf = &vf;
 
-	pattern1 = pattern;
-	actions1 = actions;
-
-	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-			&actions1);
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, pattern,
+			actions);
 	if (ret)
 		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
