@@ -55,8 +55,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		       void *hw_annot_addr)
 {
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
-	struct dpaa2_annot_hdr *annotation =
-			(struct dpaa2_annot_hdr *)hw_annot_addr;
+	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
 
 	if (unlikely(dpaa2_print_parser_result)) {
 		dpaa2_print_fd_frc(fd);
@@ -117,7 +116,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_ICMP;
 		break;
 	default:
-		m->packet_type = dpaa2_dev_rx_parse_slow(m, annotation);
+		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);
 	}
 	m->hash.rss = fd->simple.flc_hi;
 	m->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;

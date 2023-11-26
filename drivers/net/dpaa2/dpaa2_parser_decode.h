@@ -726,6 +726,117 @@ dpaa2_protocol_psr_bit_offset(uint32_t *bit_offset,
 	return 0;
 }
 
+#define ECPRI(type) (void)(type)
+#define ROCEv2(type) (void)(type)
+
+static inline uint32_t __attribute__((hot))
+dpaa2_dev_rx_parse_frc(const struct qbman_fd *fd,
+	struct rte_mbuf *m,
+	const struct dpaa2_annot_hdr *annotation)
+{
+	const struct dpaa2_ingress_frc *frc = (const void *)&fd->simple.frc;
+	const struct dpaa2_psr_summary *sum = &frc->psr_sum.sum;
+	const union dpaa2_psr_summary_l *sum_l = &sum->sum_l;
+	int ip4_6 = 0, vxlan = 0;
+	struct dpaa2_annot_hdr annot_convert;
+	const struct dpaa2_psr_result_parse *psr;
+	const struct dpaa2_fas_parse *fas;
+	uint32_t packet_type = RTE_PTYPE_L4_NONFRAG;
+
+	/**Access annotation only for vlan and checksum error.*/
+
+	if (sum->vlan) {
+		annot_convert.word5 = annotation->word5;
+		annot_convert.word5 = rte_cpu_to_be_64(annot_convert.word5);
+		psr = (const void *)&annot_convert.word3;
+		packet_type |= RTE_PTYPE_L2_ETHER_VLAN;
+		m->ol_flags |= RTE_MBUF_F_RX_VLAN;
+		if (sum->vlan > 1) {
+			psr = (const void *)&annotation->word3;
+			m->vlan_tci = psr->vlan_tci_n_off;
+			packet_type |= RTE_PTYPE_L2_ETHER_QINQ;
+			m->ol_flags |= RTE_MBUF_F_RX_QINQ;
+		} else {
+			m->vlan_tci = psr->vlan_tci_1_off;
+		}
+	}
+	if (sum_l->l4.l3 == DPAA2_PSR_SUMMARY_IPV4) {
+		packet_type |= RTE_PTYPE_L3_IPV4;
+		ip4_6 = 1;
+	} else if (sum_l->l4.l3 == DPAA2_PSR_SUMMARY_IPV6) {
+		packet_type |= RTE_PTYPE_L3_IPV6;
+		ip4_6 = 1;
+	}
+
+	if (ip4_6) {
+		if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_IP_FRAG) {
+			packet_type &= ~RTE_PTYPE_L4_NONFRAG;
+			packet_type |= RTE_PTYPE_L4_FRAG;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_ICMP) {
+			packet_type |= RTE_PTYPE_L4_ICMP;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_IPSEC_ESP) {
+			packet_type |= RTE_PTYPE_TUNNEL_ESP;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_TCP) {
+			packet_type |= RTE_PTYPE_L4_TCP;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_UDP) {
+			packet_type |= RTE_PTYPE_L4_UDP;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_SCTP) {
+			packet_type |= RTE_PTYPE_L4_SCTP;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_GTPU) {
+			packet_type |= RTE_PTYPE_TUNNEL_GTPU;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_GTPC) {
+			packet_type |= RTE_PTYPE_TUNNEL_GTPC;
+		} else if (sum_l->l4.l4 == DPAA2_PSR_SUMMARY_VXLAN) {
+			packet_type |= RTE_PTYPE_TUNNEL_VXLAN;
+			vxlan = 1;
+		}
+	} else if (sum_l->l4_ext.l3 == DPAA2_PSR_SUMMARY_L4_EXT) {
+		if (sum_l->l4_ext.ip == DPAA2_PSR_SUMMARY_IPV4)
+			packet_type |= RTE_PTYPE_L3_IPV4;
+		else if (sum_l->l4_ext.ip == DPAA2_PSR_SUMMARY_IPV6)
+			packet_type |= RTE_PTYPE_L3_IPV6;
+		if (sum_l->l4_ext.l4_ext == DPAA2_PSR_SUMMARY_GRE_IPV4 ||
+			sum_l->l4_ext.l4_ext == DPAA2_PSR_SUMMARY_GRE_IPV6)
+			packet_type |= RTE_PTYPE_TUNNEL_GRE;
+		else if (sum_l->l4_ext.l4_ext ==
+			DPAA2_PSR_SUMMARY_GRE_IPV4_UDP_TCP ||
+			sum_l->l4_ext.l4_ext ==
+			DPAA2_PSR_SUMMARY_GRE_IPV6_UDP_TCP)
+			packet_type |= RTE_PTYPE_TUNNEL_NVGRE;
+	} else if (sum_l->non_ip.non_ip == DPAA2_PSR_SUMMARY_NONIP) {
+		if (sum_l->non_ip.l2 == DPAA2_PSR_SUMMARY_ARP) {
+			packet_type |= RTE_PTYPE_L2_ETHER_ARP;
+		} else if (sum_l->non_ip.l2 == DPAA2_PSR_SUMMARY_NONIP_PTP) {
+			packet_type |= RTE_PTYPE_L2_ETHER_TIMESYNC;
+			m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_PTP;
+		} else if (sum_l->non_ip.l2 == DPAA2_PSR_SUMMARY_MPLS) {
+			packet_type |= RTE_PTYPE_L2_ETHER_MPLS;
+		}
+	}
+
+	if (unlikely(sum->checksum_err)) {
+		fas = (const void *)&annotation->word1;
+		if (fas->l3ce)
+			m->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+		if (fas->l4ce)
+			m->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
+	}
+
+	if (sum->fafe0) {
+		ECPRI(packet_type);
+	} else if (sum->fafe1) {
+		ROCEv2(packet_type);
+	} else if (vxlan && sum->fafe2) {
+		packet_type |= RTE_PTYPE_INNER_L2_ETHER;
+		packet_type |= RTE_PTYPE_INNER_L3_IPV4;
+	} else if (vxlan && sum_l->l4.fafe3) {
+		packet_type |= RTE_PTYPE_INNER_L2_ETHER;
+		packet_type |= RTE_PTYPE_INNER_L3_IPV6;
+	}
+
+	return packet_type;
+}
+
 static inline void
 dpaa2_print_rocev2_parse_result(const struct dpaa2_psr_result_parse *psr)
 {
