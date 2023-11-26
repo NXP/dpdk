@@ -139,6 +139,8 @@ static const struct rte_flow_item_ipv4 dpaa2_flow_item_ipv4_mask = {
 	.hdr.src_addr = RTE_BE32(0xffffffff),
 	.hdr.dst_addr = RTE_BE32(0xffffffff),
 	.hdr.next_proto_id = 0xff,
+	.hdr.packet_id = 0xffff,
+	.hdr.fragment_offset = 0xffff,
 };
 
 static const struct rte_flow_item_ipv6 dpaa2_flow_item_ipv6_mask = {
@@ -2735,6 +2737,49 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 			priv, group, &local_cfg, DPAA2_FLOW_FS_TYPE);
 		if (ret)
 			return ret;
+	}
+
+	if (mask_ipv4->hdr.packet_id) {
+		key = &spec_ipv4->hdr.packet_id;
+		mask = &mask_ipv4->hdr.packet_id;
+		size = sizeof(rte_be16_t);
+		ret = dpaa2_flow_add_hdr_extract_rule(flow, NET_PROT_IP,
+			NH_FLD_IP_ID, key, mask, size,
+			priv, group, &local_cfg, DPAA2_FLOW_QOS_TYPE);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_add_hdr_extract_rule(flow, NET_PROT_IP,
+			NH_FLD_IP_ID, key, mask, size,
+			priv, group, &local_cfg, DPAA2_FLOW_FS_TYPE);
+		if (ret)
+			return ret;
+	}
+
+	if (mask_ipv4->hdr.fragment_offset) {
+		key = &spec_ipv4->hdr.fragment_offset;
+		mask = &mask_ipv4->hdr.fragment_offset;
+		size = sizeof(rte_be16_t);
+
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+				DPAA2_PARSER_IPV4_FRAG_ID);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
+				group, &local_cfg);
+		if (ret)
+			return ret;
+
+		ret = dpaa2_flow_identify_by_faf(priv, flow,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
+				group, &local_cfg);
+		if (ret)
+			return ret;
+
+		if (spec_ipv4->hdr.fragment_offset)
+			DPAA2_PMD_WARN("Unsupport Extract of frag offset");
 	}
 
 	if (mask_ipv4->hdr.next_proto_id) {
