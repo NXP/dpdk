@@ -183,6 +183,7 @@ struct dpaa2_queue {
 	uint16_t tm_sw_td; 	/* TM software taildrop */
 	uint64_t offloads;
 	uint64_t lpbk_cntx;
+	uint8_t data_stashing_off;
 } __rte_cache_aligned;
 
 struct swp_active_dqs {
