@@ -22,6 +22,7 @@
 
 #include <dpaa2_ethdev.h>
 #include <dpaa2_pmd_logs.h>
+#include "dpaa2_parser_decode.h"
 
 struct dpaa2_dpdmux_dev {
 	TAILQ_ENTRY(dpaa2_dpdmux_dev) next;
@@ -54,6 +55,54 @@ static struct dpaa2_dpdmux_dev *get_dpdmux_from_id(uint32_t dpdmux_id)
 	return dpdmux_dev;
 }
 
+static inline int
+_dpaa2_mux_add_parser_extract(struct dpkg_extract *extract,
+	enum dpaa2_parser_protocol_id protocol,
+	uint8_t *key_va, uint8_t *mask_va)
+{
+	int ret;
+	uint32_t bit_offset, byte_offset, faf_bit_in_byte;
+
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset, protocol);
+	if (ret)
+		return ret;
+	byte_offset = bit_offset / 8;
+	extract->type = DPKG_EXTRACT_FROM_PARSE;
+	extract->extract.from_parse.offset = byte_offset;
+	extract->extract.from_parse.size = sizeof(uint8_t);
+	faf_bit_in_byte = bit_offset % 8;
+	faf_bit_in_byte = 7 - faf_bit_in_byte;
+	*key_va = (1 << faf_bit_in_byte);
+	*mask_va =  (1 << faf_bit_in_byte);
+
+	return 0;
+}
+
+static inline int
+dpaa2_mux_add_parser_extract(struct dpkg_profile_cfg *kg_cfg,
+	enum dpaa2_parser_protocol_id protocol,
+	uint8_t *key_va, uint8_t *mask_va)
+{
+	int ret;
+	struct dpkg_extract *extract;
+
+	if (kg_cfg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+		DPAA2_PMD_ERR("Too many extracts(%d)",
+			kg_cfg->num_extracts);
+		return -ENOTSUP;
+	}
+	extract = &kg_cfg->extracts[kg_cfg->num_extracts];
+
+	ret = _dpaa2_mux_add_parser_extract(extract, protocol,
+			key_va, mask_va);
+	if (ret)
+		return ret;
+
+	kg_cfg->num_extracts++;
+
+	return 0;
+}
+
 int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct rte_flow_item pattern[],
@@ -71,7 +120,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	int ret = 0, loop = 0;
 	static int s_i;
 	struct dpkg_extract *extract;
-	uint8_t faf_bit_in_byte;
 	struct dpdmux_rule_cfg rule;
 
 	memset(&kg_cfg, 0, sizeof(struct dpkg_profile_cfg));
@@ -128,8 +176,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 	while (pattern[loop].type != RTE_FLOW_ITEM_TYPE_END) {
 		if (kg_cfg.num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
-			DPAA2_PMD_ERR("%s: Too many extracts(%d)",
-				__func__, kg_cfg.num_extracts);
+			DPAA2_PMD_ERR("Too many extracts(%d)",
+				kg_cfg.num_extracts);
 			ret = -ENOTSUP;
 			goto creation_error;
 		}
@@ -192,100 +240,58 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 		case RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP:
 		{
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_IP_FRAG_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_IP_FRAG_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_IP_FRAG_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_GTP_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_GTP_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_UDP_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_UDP_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_UDP_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_GTP_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 		}
 		break;
 
 		case RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP_AND_ESP:
 		{
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_IP_FRAG_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_IP_FRAG_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_IP_FRAG_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_GTP_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_GTP_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_UDP_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_UDP_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_UDP_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_GTP_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_IPSEC_ESP_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_IPSEC_ESP_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_IPSEC_ESP_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 		}
 		break;
 
@@ -294,19 +300,19 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			const struct rte_flow_item_ipv4 *spec;
 			const struct rte_flow_item_ipv4 *mask;
 
-			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
-			extract->type = DPKG_EXTRACT_FROM_PARSE;
-			extract->extract.from_parse.offset =
-				DPAA2_FAFE_PSR_OFFSET + FAF_IP_FRAG_FRAM / 8;
-			extract->extract.from_parse.size =
-				sizeof(uint8_t);
-			kg_cfg.num_extracts++;
-			faf_bit_in_byte = FAF_IP_FRAG_FRAM % 8;
-			faf_bit_in_byte = 7 - faf_bit_in_byte;
-			key_va[key_size] = (1 << faf_bit_in_byte);
-			mask_va[key_size] =  (1 << faf_bit_in_byte);
-			key_size += sizeof(uint8_t);
+			ret = dpaa2_mux_add_parser_extract(&kg_cfg,
+				DPAA2_PARSER_IP_FRAG_ID,
+				&key_va[key_size], &mask_va[key_size]);
+			if (ret)
+				goto creation_error;
+			key_size++;
 
+			if (kg_cfg.num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+				DPAA2_PMD_ERR("Too many extracts(%d)",
+					kg_cfg.num_extracts);
+				ret = -ENOTSUP;
+				goto creation_error;
+			}
 			extract = &kg_cfg.extracts[kg_cfg.num_extracts];
 			extract->type = DPKG_EXTRACT_FROM_HDR;
 			extract->extract.from_hdr.prot = NET_PROT_IP;
