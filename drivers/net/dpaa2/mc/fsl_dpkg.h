@@ -180,7 +180,8 @@ struct dpni_ext_set_rx_tc_dist {
 	struct dpni_dist_extract extracts[DPKG_MAX_NUM_OF_EXTRACTS];
 };
 
-int dpkg_prepare_key_cfg(const struct dpkg_profile_cfg *cfg,
-			 uint8_t *key_cfg_buf);
+int
+dpkg_prepare_key_cfg(const struct dpkg_profile_cfg *cfg,
+	void *key_cfg_buf);
 
 #endif /* __FSL_DPKG_H_ */
