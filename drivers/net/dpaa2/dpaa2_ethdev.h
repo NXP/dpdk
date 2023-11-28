@@ -299,19 +299,19 @@ struct dpaa2_key_profile {
 	uint8_t key_size[DPKG_MAX_NUM_OF_EXTRACTS];
 
 	enum ip_addr_extract_type ip_addr_type;
-	uint8_t ip_addr_extract_pos;
-	uint8_t ip_addr_extract_off;
+	uint8_t ip_addr_extract_idx;
+	uint8_t ip_addr_key_offset;
 
-	uint8_t raw_extract_pos;
-	uint8_t raw_extract_off;
+	uint8_t raw_extract_idx;
+	uint8_t raw_key_offset;
 	uint8_t raw_extract_num;
 
-	uint8_t l4_src_port_present;
-	uint8_t l4_src_port_pos;
-	uint8_t l4_src_port_offset;
-	uint8_t l4_dst_port_present;
-	uint8_t l4_dst_port_pos;
-	uint8_t l4_dst_port_offset;
+	uint8_t l4_sp_present;
+	uint8_t l4_sp_extract_idx;
+	uint8_t l4_sp_key_offset;
+	uint8_t l4_dp_present;
+	uint8_t l4_dp_extract_idx;
+	uint8_t l4_dp_key_offset;
 	struct key_prot_field prot_field[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint16_t key_max_size;
 	struct dpaa2_raw_region raw_region;
