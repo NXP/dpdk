@@ -4566,38 +4566,44 @@ dpaa2_flow_verify_action(struct dpaa2_dev_priv *priv,
 		switch (actions[j].type) {
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
 			dest_queue = actions[j].conf;
+			if (dest_queue->index >= MAX_RX_QUEUES ||
+				!priv->rx_vq[dest_queue->index]) {
+				DPAA2_PMD_ERR("Invalid FSQ index(%d)",
+					dest_queue->index);
+
+				return -EINVAL;
+			}
 			rxq = priv->rx_vq[dest_queue->index];
 			if (attr->group != rxq->tc_index) {
 				DPAA2_PMD_ERR("FSQ(%d.%d) not in TC[%d]",
 					rxq->tc_index, rxq->flow_id,
 					attr->group);
 
-				return -ENOTSUP;
+				return -EINVAL;
 			}
 			break;
 		case RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT:
 		case RTE_FLOW_ACTION_TYPE_PORT_ID:
 			if (!dpaa2_flow_redirect_dev(priv, &actions[j])) {
 				DPAA2_PMD_ERR("Invalid port id of action");
-				return -ENOTSUP;
+				return -EINVAL;
 			}
 			break;
 		case RTE_FLOW_ACTION_TYPE_RSS:
-			rss_conf = (const struct rte_flow_action_rss *)
-					(actions[j].conf);
+			rss_conf = actions[j].conf;
 			if (rss_conf->queue_num > priv->dist_queues) {
 				DPAA2_PMD_ERR("RSS number too large");
-				return -ENOTSUP;
+				return -EINVAL;
 			}
 			for (i = 0; i < (int)rss_conf->queue_num; i++) {
 				if (rss_conf->queue[i] >= priv->nb_rx_queues) {
 					DPAA2_PMD_ERR("RSS queue not in range");
-					return -ENOTSUP;
+					return -EINVAL;
 				}
 				rxq = priv->rx_vq[rss_conf->queue[i]];
 				if (rxq->tc_index != attr->group) {
 					DPAA2_PMD_ERR("RSS queue not in group");
-					return -ENOTSUP;
+					return -EINVAL;
 				}
 			}
 
@@ -4610,7 +4616,7 @@ dpaa2_flow_verify_action(struct dpaa2_dev_priv *priv,
 			break;
 		default:
 			DPAA2_PMD_ERR("Invalid action type");
-			return -ENOTSUP;
+			return -EINVAL;
 		}
 		j++;
 	}
@@ -4627,6 +4633,7 @@ dpaa2_configure_flow_fs_action(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_priv *dest_priv;
 	const struct rte_flow_action_queue *dest_queue;
 	struct dpaa2_queue *dest_q;
+	uint64_t flc = 0;
 
 	memset(&flow->fs_action_cfg, 0,
 		sizeof(struct dpni_fs_action_cfg));
@@ -4634,10 +4641,44 @@ dpaa2_configure_flow_fs_action(struct dpaa2_dev_priv *priv,
 
 	if (flow->action_type == RTE_FLOW_ACTION_TYPE_QUEUE) {
 		dest_queue = rte_action->conf;
+		if (dest_queue->index >= MAX_RX_QUEUES ||
+			!priv->rx_vq[dest_queue->index]) {
+			DPAA2_PMD_ERR("Invalid FSQ index(%d)",
+				dest_queue->index);
+
+			return -EINVAL;
+		}
 		dest_q = priv->rx_vq[dest_queue->index];
+		if (flow->tc_id != dest_q->tc_index) {
+			DPAA2_PMD_ERR("RXQ[%d](%d.%d) not in TC[%d]",
+				dest_queue->index,
+				dest_q->tc_index, dest_q->flow_id,
+				flow->tc_id);
+
+			return -EINVAL;
+		}
+		flow->fs_action_cfg.options =
+			DPNI_FS_OPT_SET_FLC | DPNI_FS_OPT_SET_STASH_CONTROL;
+
+		if (dest_q->data_stashing_off) {
+			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING,
+				0, &flc);
+		} else {
+			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING,
+				1, &flc);
+		}
+		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
+			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING,
+				1, &flc);
+		}
+
+		flc |= ((uint64_t)1) << DPAA2_FS_FLC_FS_MARK_OFFSET;
+		flc |= ((uint64_t)dest_q->tc_index) << DPAA2_FS_FLC_TC_OFFSET;
+		flc |= ((uint64_t)dest_q->flow_id) << DPAA2_FS_FLC_FLOW_OFFSET;
+		flow->fs_action_cfg.flc = flc;
 		flow->fs_action_cfg.flow_id = dest_q->flow_id;
 	} else if (flow->action_type == RTE_FLOW_ACTION_TYPE_PORT_ID ||
-		   flow->action_type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
+		flow->action_type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
 		dest_dev = dpaa2_flow_redirect_dev(priv, rte_action);
 		if (!dest_dev) {
 			DPAA2_PMD_ERR("Invalid device to redirect");
@@ -5303,9 +5344,9 @@ static inline int
 dpaa2_dev_verify_actions(const struct rte_flow_action actions[])
 {
 	unsigned int i, j, is_found = 0;
-	int ret = 0;
 
 	for (j = 0; actions[j].type != RTE_FLOW_ACTION_TYPE_END; j++) {
+		is_found = 0;
 		for (i = 0; i < RTE_DIM(dpaa2_supported_action_type); i++) {
 			if (dpaa2_supported_action_type[i] == actions[j].type) {
 				is_found = 1;
@@ -5313,16 +5354,21 @@ dpaa2_dev_verify_actions(const struct rte_flow_action actions[])
 			}
 		}
 		if (!is_found) {
-			ret = -ENOTSUP;
-			break;
+			DPAA2_PMD_ERR("actions[%d].type(%d) not supported",
+				j, actions[j].type);
+			return -ENOTSUP;
 		}
 	}
 	for (j = 0; actions[j].type != RTE_FLOW_ACTION_TYPE_END; j++) {
-		if ((actions[j].type != RTE_FLOW_ACTION_TYPE_DROP) &&
-		    !actions[j].conf)
-			ret = -EINVAL;
+		if (actions[j].type != RTE_FLOW_ACTION_TYPE_DROP &&
+			!actions[j].conf) {
+			DPAA2_PMD_ERR("No config for actions[%d].type(%d)",
+				j, actions[j].type);
+			return -EINVAL;
+		}
 	}
-	return ret;
+
+	return 0;
 }
 
 static int
