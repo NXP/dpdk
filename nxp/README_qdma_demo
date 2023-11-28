@@ -109,7 +109,43 @@ The setup is as given below:
    meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=qdma_demo
    ninja -C arm64-build
 
-4. Steps of execution
+4. Steps of execution on LA1224RDB:
+
+   a) Boot LX2 to Linux prompt
+
+   b) Allocate required resources for qdma_demo application:
+	- export DPDMAI_COUNT=32
+	- export DPDMAI_QUEUES=8
+        - source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.3
+
+   c) Refer BSP release guide to load yami.ko for memory mapping on
+      PCI address space. sample command:
+        - insmod ./yami.ko
+          scratch_buf_size=0x10000000 scratch_buf_phys_addr=0x2360000000
+          pci_addr_array="0002:01:00.0"
+
+   d) Find the FECA(HRAM) memory start address mapped to PCI address space:
+        - modem_info
+
+        Expected logs:
+        -------------
+        <....snip...>
+
+        HIF start 0xa068200700 Size:0x:2648
+        CCSR phys 0xa048000000 Size:0x8000000
+        DCSR start 0xa04c000000 Size:0x100000
+        PEB start 0xa068200000 Size:0x200000
+        FECA start 0xa06d000000 Size:0x2000000
+        Scratch buf phys 0x2360000000 Size:0x8000000
+        Scrach Buf Regions
+        <...snip...>
+
+   e) Execute qdma_demo application. sample command:
+        - dpdk-qdma_demo -c 0xc -- --pci_addr=0xa06d000000 --packet_size=4096  --test_case=pci_to_pci
+
+   or
+
+4. Steps of execution on DPAA2 except LA1224RDB:
 
   End Point steps
   ===============

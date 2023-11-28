@@ -210,6 +210,12 @@ script help :----->
 					e.g export DPDMAI_COUNT=2".
 					By default there are 8 dpdmai object.
 
+		DPDMAI_QUEUES       = number of rx/tx queues.
+					Set the parameter using below command:
+					'export DPDMAI_QUEUES=<Num of Queues>'
+					where "Number of Queues" is an integer
+					value "e.g export DPDMAI_QUEUES=8".
+
 	/**DPRTC**:-->
 		DPRTC_COUNT	    = DPRTC objects count for PTP (timesync)
 					Only single instance of DPRTC supported
@@ -486,8 +492,13 @@ get_dpdmai_parameters() {
 	then
 		DPDMAI_COUNT=64
 	fi
+	if [[ -z "$DPDMAI_QUEUES" ]]
+	then
+		DPDMAI_QUEUES=1
+	fi
 	echo "DPDMAI parameters :-->" >> dynamic_dpl_logs
 	echo -e "\tDPDMAI_COUNT = "$DPDMAI_COUNT >> dynamic_dpl_logs
+	echo -e "\tDPDMAI_QUEUES = "$DPDMAI_QUEUES >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 }
@@ -904,7 +915,7 @@ then
 	# Create DPDMAI's for qDMA
 	unset DPDMAI
 	for i in $(seq 1 ${DPDMAI_COUNT}); do
-		DPDMAI=$(restool -s dpdmai create --num-queues=1 --priorities=1,1 --container=$DPRC)
+		DPDMAI=$(restool -s dpdmai create --num-queues=$DPDMAI_QUEUES --priorities=1,1 --container=$DPRC)
 		echo $DPDMAI "Created" >> dynamic_dpl_logs
 		obj_assign $DPDMAI
 	done;
