@@ -53,6 +53,7 @@ struct l2fwd_dma_job {
 	uint64_t dest;
 	/** Length of the DMA operation in bytes. */
 	uint32_t len;
+	uint32_t idx;
 	/** Flags corresponding to an DMA operation */
 	uint32_t flags;
 	uint32_t port_id;
@@ -66,6 +67,7 @@ static int qdma_dev_id;
 static int g_vqid[RTE_MAX_LCORE];
 static struct l2fwd_dma_job *g_l2fwd_dma_jobs[RTE_MAX_LCORE];
 static struct rte_ring *g_l2fwd_dma_job_ring[RTE_MAX_LCORE];
+static uint16_t *g_l2fwd_dma_idx[RTE_MAX_LCORE];
 static int L2FWD_QDMA_DMA_INIT_FLAG;
 
 /* MAC updating enabled by default */
@@ -129,6 +131,8 @@ static uint64_t timer_period = 10; /* default period is 10 seconds */
 
 /* Determines H/W or virtual mode */
 static uint8_t qdma_sg;
+
+static int s_flags_cntx;
 
 /* Print out statistics on packets dropped */
 static void
@@ -230,12 +234,12 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		uint16_t vq_id, uint8_t nb_jobs)
 {
 	struct rte_mbuf *m_new[nb_jobs];
-	uint64_t m_data, m_new_data;
+	uint64_t m_data, m_new_data, flags;
 	struct l2fwd_dma_job *qdma_job[nb_jobs];
 	struct rte_dma_sge src_sge[nb_jobs];
 	struct rte_dma_sge dst_sge[nb_jobs];
 	int i, ret = 0;
-	uint32_t idx, flags, q_ret;
+	uint32_t q_ret;
 
 	ret = rte_pktmbuf_alloc_bulk(s_pktmbuf_qdma_pool,
 		m_new, nb_jobs);
@@ -267,13 +271,19 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 
 		qdma_job[i]->src = m_data;
 		qdma_job[i]->dest = m_new_data;
-		idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(qdma_job[i]->len);
-		qdma_job[i]->len = RTE_DPAA2_QDMA_IDX_LEN(idx, m[i]->data_len);
+		g_l2fwd_dma_idx[vq_id][i] = qdma_job[i]->idx;
+		qdma_job[i]->len = m[i]->data_len;
 		qdma_job[i]->port_id = portid;
 		qdma_job[i]->in_mbuf = m[i];
 		qdma_job[i]->out_mbuf = m_new[i];
 		flags = qdma_job[i]->flags;
-		if (i == nb_jobs - 1)
+		if (i == (nb_jobs - 1) && s_flags_cntx)
+			flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
+				RTE_DMA_OP_FLAG_SUBMIT);
+		else if (s_flags_cntx)
+			flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
+				0);
+		else if (i == (nb_jobs - 1))
 			flags |= RTE_DMA_OP_FLAG_SUBMIT;
 
 		if (qdma_sg) {
@@ -294,10 +304,15 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 	}
 
 	if (qdma_sg) {
+		if (s_flags_cntx)
+			flags = RTE_DPAA2_QDMA_SG_SUBMIT(g_l2fwd_dma_idx[vq_id],
+				RTE_DMA_OP_FLAG_SUBMIT);
+		else
+			flags = RTE_DMA_OP_FLAG_SUBMIT;
 		ret = rte_dma_copy_sg(qdma_dev_id,
 				g_vqid[vq_id], src_sge, dst_sge,
 				nb_jobs, nb_jobs,
-				RTE_DMA_OP_FLAG_SUBMIT);
+				flags);
 	}
 
 	if (ret < 0) {
@@ -707,6 +722,8 @@ init_dma:
 			qdma_dev_id, ret);
 		return ret;
 	}
+	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX)
+		s_flags_cntx = 1;
 	dma_config.nb_vchans = dma_info.max_vchans;
 	dma_config.enable_silent = 0;
 
@@ -729,7 +746,7 @@ l2fwd_qdma_job_ring_init(uint32_t lcore_id)
 	uint32_t i;
 	char nm[RTE_MEMZONE_NAMESIZE];
 	struct l2fwd_dma_job *job;
-	int ret;
+	int ret = 0;
 
 	sprintf(nm, "job-ring-%d", lcore_id);
 	g_l2fwd_dma_job_ring[lcore_id] = rte_ring_create(nm,
@@ -738,7 +755,8 @@ l2fwd_qdma_job_ring_init(uint32_t lcore_id)
 		RTE_LOG(ERR, l2fwd_qdma,
 			"job ring created failed on core%d\n",
 			lcore_id);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_free;
 	}
 	g_l2fwd_dma_jobs[lcore_id] = rte_zmalloc(NULL,
 		MAX_JOBS_PER_RING * sizeof(struct l2fwd_dma_job),
@@ -747,23 +765,53 @@ l2fwd_qdma_job_ring_init(uint32_t lcore_id)
 		RTE_LOG(ERR, l2fwd_qdma,
 			"jobs created failed on core%d\n",
 			lcore_id);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_free;
+	}
+
+	if (s_flags_cntx) {
+		g_l2fwd_dma_idx[lcore_id] = rte_zmalloc(NULL,
+			MAX_JOBS_PER_RING * sizeof(uint16_t),
+			RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		if (!g_l2fwd_dma_idx[lcore_id]) {
+			RTE_LOG(ERR, l2fwd_qdma,
+				"dma index created failed on core%d\n",
+				lcore_id);
+			ret = -ENOMEM;
+			goto err_free;
+		}
 	}
 
 	job = g_l2fwd_dma_jobs[lcore_id];
 	for (i = 0; i < MAX_JOBS_PER_RING; i++) {
-		job->len = RTE_DPAA2_QDMA_IDX_LEN(i, 0);
+		job->idx = i;
 		ret = rte_ring_enqueue(g_l2fwd_dma_job_ring[lcore_id], job);
 		if (ret) {
 			RTE_LOG(ERR, l2fwd_qdma,
 				"eq job[%d] failed on core%d, err(%d)\n",
 				i, lcore_id, ret);
-			return ret;
+			goto err_free;
 		}
 		job++;
 	}
 
 	return 0;
+
+err_free:
+	if (g_l2fwd_dma_job_ring[lcore_id]) {
+		rte_ring_free(g_l2fwd_dma_job_ring[lcore_id]);
+		g_l2fwd_dma_job_ring[lcore_id] = NULL;
+	}
+	if (g_l2fwd_dma_jobs[lcore_id]) {
+		rte_free(g_l2fwd_dma_jobs[lcore_id]);
+		g_l2fwd_dma_jobs[lcore_id] = NULL;
+	}
+	if (g_l2fwd_dma_idx[lcore_id]) {
+		rte_free(g_l2fwd_dma_idx[lcore_id]);
+		g_l2fwd_dma_idx[lcore_id] = NULL;
+	}
+
+	return ret;
 }
 
 int

@@ -12,10 +12,6 @@
 #define PCI_TO_MEM 3
 #define MEM_TO_MEM 4
 
-#define TEST_PACKETS_NUM (g_packet_num)
-#define TEST_PCI_DEFAULT_SIZE (32 * 1024)
-#define TEST_PACKET_SIZE (g_packet_size)
-
 #define BURST_NB_MAX 256
 
 struct qdma_test_case {
@@ -33,6 +29,7 @@ struct dma_job {
 	uint64_t vdst;
 	/** Length of the DMA operation in bytes. */
 	uint32_t len;
+	uint32_t idx;
 	/** Flags corresponding to an DMA operation */
 	uint32_t flags;
 };
@@ -48,5 +45,6 @@ struct dma_job {
 #define ARG_NUM (1 << 7)
 #define ARG_VALIDATE (1 << 8)
 #define ARG_SEG_IOVA (1 << 9)
+#define ARG_PCI_SIZE (1 << 10)
 
 #endif

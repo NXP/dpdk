@@ -141,6 +141,7 @@ struct lsxvio_queue {
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
 	struct lsxvio_dma_cntx *dma_bd_cntx;
+	uint16_t *dma_idx;
 
 	uint32_t core_id;
 	int32_t dma_id;

@@ -1838,13 +1838,19 @@ static int
 configure_split_traffic(void)
 {
 	int ret;
-	struct rte_flow_item pattern[1], *pattern1;
-	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_item pattern[2];
+	struct rte_flow_action actions[1];
 	struct rte_flow_action_vf vf;
-	uint16_t mask = 0xffff;
-	struct rte_flow_item_ipv4 flow_item;
+	struct rte_flow_item_ipv4 ipv4_item;
 	struct rte_flow_item_eth eitem;
+	struct rte_flow_item_ipv4 ipv4_mask;
+	struct rte_flow_item_eth emask;
 	int dpdmux_id;
+
+	memset(&ipv4_item, 0, sizeof(ipv4_item));
+	memset(&eitem, 0, sizeof(eitem));
+	memset(&ipv4_mask, 0, sizeof(ipv4_mask));
+	memset(&emask, 0, sizeof(emask));
 
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
@@ -1855,25 +1861,24 @@ configure_split_traffic(void)
 	vf.id = mux_connection_id;
 
 	if (traffic_split_proto) {
-		flow_item.hdr.next_proto_id = traffic_split_proto;
-		mask = 0xff;
+		ipv4_item.hdr.next_proto_id = traffic_split_proto;
+		ipv4_mask.hdr.next_proto_id = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
-		pattern[0].spec = &flow_item;
-		pattern[0].mask = &mask;
+		pattern[0].spec = &ipv4_item;
+		pattern[0].mask = &ipv4_mask;
 	} else {
-		eitem.type = traffic_split_ethtype;
+		eitem.type = rte_cpu_to_be_16((uint16_t)traffic_split_ethtype);
+		emask.type = 0xffff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
 		pattern[0].spec = &eitem;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &emask;
 	}
+	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
 
 	actions[0].conf = &vf;
 
-	pattern1 = pattern;
-	actions1 = actions;
-
-	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-			&actions1);
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, pattern,
+			actions);
 	if (ret)
 		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
@@ -1884,14 +1889,23 @@ static int
 configure_split_traffic_config(void)
 {
 	int ret;
-	struct rte_flow_item pattern[1], *pattern1;
-	struct rte_flow_action actions[1], *actions1;
+	struct rte_flow_item pattern[2];
+	struct rte_flow_action actions[1];
 	struct rte_flow_action_vf vf;
-	uint16_t mask;
 	struct rte_flow_item_udp udp_item;
 	struct rte_flow_item_ipv4 ip_item;
 	struct rte_flow_item_eth eth_item;
+	struct rte_flow_item_udp udp_mask;
+	struct rte_flow_item_ipv4 ip_mask;
+	struct rte_flow_item_eth eth_mask;
 	int dpdmux_id;
+
+	memset(&udp_item, 0, sizeof(udp_item));
+	memset(&ip_item, 0, sizeof(ip_item));
+	memset(&eth_item, 0, sizeof(eth_item));
+	memset(&udp_mask, 0, sizeof(udp_mask));
+	memset(&ip_mask, 0, sizeof(ip_mask));
+	memset(&eth_mask, 0, sizeof(eth_mask));
 
 	dpdmux_id = get_dpdmux_id_from_env();
 	if (dpdmux_id < 0) {
@@ -1907,28 +1921,30 @@ configure_split_traffic_config(void)
 	case TRAFFIC_SPLIT_ETHTYPE:
 		printf("traffic_split_type on ETH with Type=0x%x\n",
 			traffic_split_val);
-		eth_item.type = traffic_split_val;
-		mask = 0xffff;
+		eth_item.type =
+			rte_cpu_to_be_16((uint16_t)traffic_split_val);
+		eth_mask.type = 0xffff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
 		pattern[0].spec = &eth_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &eth_mask;
 		break;
 	case TRAFFIC_SPLIT_IP_PROTO:
 		printf("traffic_split_type on IP PROTO with Type=0x%x\n",
 			traffic_split_val);
 		ip_item.hdr.next_proto_id = traffic_split_val;
-		mask = 0xff;
+		ip_mask.hdr.next_proto_id = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
 		pattern[0].spec = &ip_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &ip_mask;
 		break;
 	case TRAFFIC_SPLIT_UDP_DST_PORT:
 		printf("traffic_split_type on UDP DST PORT with Type=%d\n",
 			traffic_split_val);
-		udp_item.hdr.dst_port = traffic_split_val;
-		mask = 0xffff;
+		udp_item.hdr.dst_port =
+			rte_cpu_to_be_16((uint16_t)traffic_split_val);
+		udp_mask.hdr.dst_port = 0xffff;
 		pattern[0].spec = &udp_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &udp_mask;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_UDP;
 		break;
 	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP:
@@ -1940,23 +1956,21 @@ configure_split_traffic_config(void)
 		break;
 	case TRAFFIC_SPLIT_IP_FRAG_PROTO:
 		ip_item.hdr.next_proto_id = traffic_split_val;
-		mask = 0xff;
+		ip_mask.hdr.next_proto_id = 0xff;
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO;
 		pattern[0].spec = &ip_item;
-		pattern[0].mask = &mask;
+		pattern[0].mask = &ip_mask;
 		break;
 	default:
 		printf("invalid traffic_split_type\n");
 		return -EINVAL;
 	}
+	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
 
 	actions[0].conf = &vf;
 
-	pattern1 = pattern;
-	actions1 = actions;
-
-	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, &pattern1,
-			&actions1);
+	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, pattern,
+			actions);
 	if (ret)
 		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
 
