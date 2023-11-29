@@ -51,6 +51,8 @@
 #include "l3fwd_event.h"
 #include "l3fwd_route.h"
 
+#include "nxp/rte_dpaa2_mux_demo.h"
+
 #define MAX_TX_QUEUE_PER_PORT RTE_MAX_LCORE
 #define MAX_RX_QUEUE_PER_PORT 128
 
@@ -85,33 +87,7 @@ static int parse_ptype; /**< Parse packet type using rx callback, and */
 			/**< disabled by default */
 static int per_port_pool = 1; /**< Use separate buffer pools per port */
 				/**< Set to 0 as default - disabled */
-static int traffic_split_proto; /**< Split traffic based on this protocol ID */
-static int traffic_split_ethtype; /**< Split traffic based on eth type */
 uint8_t enable_flow;
-
-enum traffic_split_type_t {
-	TRAFFIC_SPLIT_NONE,
-	TRAFFIC_SPLIT_ETHTYPE,
-	TRAFFIC_SPLIT_IP_PROTO,
-	TRAFFIC_SPLIT_UDP_DST_PORT,
-	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP,
-	TRAFFIC_SPLIT_IP_FRAG_PROTO,
-	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP,
-	TRAFFIC_SPLIT_MAX_NUM
-};
-
-static uint32_t traffic_split_val; /**< Split traffic based on this value */
-static uint8_t traffic_split_type; /**< Split traffic based on type */
-
-/*
- * This variable defines where the traffic is split in DPDMUX - the logical
- * interface ID - which is connected to a DPNI. e.g. 2 for dpdmux.0.2
- * All other traffic would be sent to another interface - if multiple
- * interfaces are available, next interface (dpni) in series to the one
- * specified in this variable would be used.
- */
-static uint8_t mux_connection_id; /**< DPMUX ID connected to DPNI Interface to
-					which split traffic is sent */
 
 volatile bool force_quit;
 
@@ -604,52 +580,6 @@ parse_config(const char *q_arg)
 	return 0;
 }
 
-static int
-parse_traffic_split_config(const char *q_arg)
-{
-	char s[256];
-	const char *p, *p0 = q_arg;
-	char *end;
-	enum fieldnames {
-		FLD_SPLIT_TYPE = 0,
-		FLD_SPLIT_VAL,
-		FLD_MUX_CONN_ID,
-		_NUM_FLD
-	};
-	unsigned long int_fld[_NUM_FLD];
-	char *str_fld[_NUM_FLD];
-	int i;
-	unsigned int size;
-
-	p = strchr(p0, '(');
-	++p;
-	p0 = strchr(p, ')');
-	if (p0 == NULL)
-		return -1;
-
-	size = p0 - p;
-	if (size >= sizeof(s))
-		return -1;
-
-	snprintf(s, sizeof(s), "%.*s", size, p);
-	if (rte_strsplit(s, sizeof(s), str_fld, _NUM_FLD, ',') != _NUM_FLD)
-		return -1;
-	for (i = 0; i < _NUM_FLD; i++) {
-		errno = 0;
-		int_fld[i] = strtoul(str_fld[i], &end, 0);
-		if (errno != 0 || end == str_fld[i])
-			return -1;
-	}
-
-	traffic_split_type = (uint8_t)int_fld[FLD_SPLIT_TYPE];
-	if (traffic_split_type > TRAFFIC_SPLIT_MAX_NUM)
-		return -1;
-	traffic_split_val = int_fld[FLD_SPLIT_VAL];
-	mux_connection_id = (uint8_t)int_fld[FLD_MUX_CONN_ID];
-
-	return 0;
-}
-
 static void
 parse_eth_dest(const char *optarg)
 {
@@ -879,50 +809,6 @@ static const struct option lgopts[] = {
 	nb_lcores*MEMPOOL_CACHE_SIZE),		\
 	(unsigned int)2048)
 
-static int
-parse_traffic_split_info(const char *split_args)
-{
-	int key, dpni_id;
-	char *dup_str;
-	char *dpni, *proto;
-	char delim = ':';
-
-	/* the string would be in format <number>:<number> */
-	dup_str = strdup(split_args);
-	if (!dup_str)
-		return -1;
-	proto = dup_str;
-	dpni = strchr(dup_str, delim);
-	if (dpni) {
-		proto[dpni - proto] = '\0';
-		dpni += 1;
-	} else
-		goto err_ret;
-
-	key = strtod(proto, NULL);
-	if (proto[0] == '\0' || key <= 0 || key > USHRT_MAX)
-		goto err_ret;
-
-	dpni_id = strtod(dpni, NULL);
-	if (dpni[0] == '\0' || dpni_id < 0 || dpni_id > INT_MAX)
-		goto err_ret;
-
-	/* if key is < 0xff - consider it tobe IP protocol
-	 * else it is ether type
-	 */
-	if (key > 0xff)
-		traffic_split_ethtype = key;
-	else
-		traffic_split_proto = key;
-	mux_connection_id = dpni_id;
-	return 0;
-
-err_ret:
-	if (dup_str)
-		free(dup_str);
-	return -1;
-}
-
 /* Parse the argument given in the command line of the application */
 static int
 parse_args(int argc, char **argv)
@@ -1098,24 +984,18 @@ parse_args(int argc, char **argv)
 
 		case CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT:
 			ret = parse_traffic_split_info(optarg);
-			if (ret != 0) {
+			if (ret) {
 				print_usage(prgname);
-				return -1;
+				return ret;
 			}
-			printf("Splitting traffic on Proto:%d or ethtype= 0x%x,"
-				"DPDMUX.0.%d\n", traffic_split_proto,
-				traffic_split_ethtype, mux_connection_id);
 			break;
 
 		case CMD_LINE_OPT_PARSE_TRAFFIC_SPLIT_CONFIG:
 			ret = parse_traffic_split_config(optarg);
-			if (ret != 0) {
+			if (ret) {
 				print_usage(prgname);
-				return -1;
+				return ret;
 			}
-			printf("Splitting traffic on type:%d with val: %d on DPDMUX.x.%d\n",
-				traffic_split_type, traffic_split_val,
-				mux_connection_id);
 			break;
 
 		case CMD_LINE_OPT_ENABLE_FLOW_CTL:
@@ -1801,182 +1681,6 @@ l3fwd_event_service_setup(void)
 	}
 }
 
-static int
-get_dpdmux_id_from_env(void)
-{
-	int dpdmux_id = -ENODEV, ret;
-	FILE *fp;
-
-	/* Get the dpdmux ID from environment */
-	fp = popen("restool dprc show $DPRC | grep dpdmux | "
-		"cut -f 1 | cut -d . -f 2", "r");
-	if (!fp) {
-		printf("Error in getting dpdmux id\n");
-		return -ENODEV;
-	}
-
-	ret = fscanf(fp, "%d", &dpdmux_id);
-	if (ret != 1) {
-		printf("Failed to get dpdmux id\n");
-		dpdmux_id = -ENODEV;
-	}
-	pclose(fp);
-
-	return dpdmux_id;
-}
-
-/* Constraints of this function:
- * 1. Assumes that only a single rule is being created, which is matching
- *    IPv4 proto_id field or ethertype.
- * 2. Mask for this match condition is 0xFF - which would be for exact match
- *    to user-provided traffic_split_proto
- * 3. DPDMUX.0 is assumed to the available device.
- * 4. rte_flow is created, but not used in this call - though, in future that
- *    can be used/extended if required
- */
-static int
-configure_split_traffic(void)
-{
-	int ret;
-	struct rte_flow_item pattern[2];
-	struct rte_flow_action actions[1];
-	struct rte_flow_action_vf vf;
-	struct rte_flow_item_ipv4 ipv4_item;
-	struct rte_flow_item_eth eitem;
-	struct rte_flow_item_ipv4 ipv4_mask;
-	struct rte_flow_item_eth emask;
-	int dpdmux_id;
-
-	memset(&ipv4_item, 0, sizeof(ipv4_item));
-	memset(&eitem, 0, sizeof(eitem));
-	memset(&ipv4_mask, 0, sizeof(ipv4_mask));
-	memset(&emask, 0, sizeof(emask));
-
-	dpdmux_id = get_dpdmux_id_from_env();
-	if (dpdmux_id < 0) {
-		printf("get_dpdmux_id_from_env failed\n");
-		return dpdmux_id;
-	}
-
-	vf.id = mux_connection_id;
-
-	if (traffic_split_proto) {
-		ipv4_item.hdr.next_proto_id = traffic_split_proto;
-		ipv4_mask.hdr.next_proto_id = 0xff;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
-		pattern[0].spec = &ipv4_item;
-		pattern[0].mask = &ipv4_mask;
-	} else {
-		eitem.type = rte_cpu_to_be_16((uint16_t)traffic_split_ethtype);
-		emask.type = 0xffff;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-		pattern[0].spec = &eitem;
-		pattern[0].mask = &emask;
-	}
-	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
-
-	actions[0].conf = &vf;
-
-	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, pattern,
-			actions);
-	if (ret)
-		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
-
-	return ret;
-}
-
-static int
-configure_split_traffic_config(void)
-{
-	int ret;
-	struct rte_flow_item pattern[2];
-	struct rte_flow_action actions[1];
-	struct rte_flow_action_vf vf;
-	struct rte_flow_item_udp udp_item;
-	struct rte_flow_item_ipv4 ip_item;
-	struct rte_flow_item_eth eth_item;
-	struct rte_flow_item_udp udp_mask;
-	struct rte_flow_item_ipv4 ip_mask;
-	struct rte_flow_item_eth eth_mask;
-	int dpdmux_id;
-
-	memset(&udp_item, 0, sizeof(udp_item));
-	memset(&ip_item, 0, sizeof(ip_item));
-	memset(&eth_item, 0, sizeof(eth_item));
-	memset(&udp_mask, 0, sizeof(udp_mask));
-	memset(&ip_mask, 0, sizeof(ip_mask));
-	memset(&eth_mask, 0, sizeof(eth_mask));
-
-	dpdmux_id = get_dpdmux_id_from_env();
-	if (dpdmux_id < 0) {
-		printf("get_dpdmux_id_from_env failed\n");
-		return dpdmux_id;
-	}
-
-	vf.id = mux_connection_id;
-
-	switch (traffic_split_type) {
-	case TRAFFIC_SPLIT_NONE:
-		return 0;
-	case TRAFFIC_SPLIT_ETHTYPE:
-		printf("traffic_split_type on ETH with Type=0x%x\n",
-			traffic_split_val);
-		eth_item.type =
-			rte_cpu_to_be_16((uint16_t)traffic_split_val);
-		eth_mask.type = 0xffff;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-		pattern[0].spec = &eth_item;
-		pattern[0].mask = &eth_mask;
-		break;
-	case TRAFFIC_SPLIT_IP_PROTO:
-		printf("traffic_split_type on IP PROTO with Type=0x%x\n",
-			traffic_split_val);
-		ip_item.hdr.next_proto_id = traffic_split_val;
-		ip_mask.hdr.next_proto_id = 0xff;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_IPV4;
-		pattern[0].spec = &ip_item;
-		pattern[0].mask = &ip_mask;
-		break;
-	case TRAFFIC_SPLIT_UDP_DST_PORT:
-		printf("traffic_split_type on UDP DST PORT with Type=%d\n",
-			traffic_split_val);
-		udp_item.hdr.dst_port =
-			rte_cpu_to_be_16((uint16_t)traffic_split_val);
-		udp_mask.hdr.dst_port = 0xffff;
-		pattern[0].spec = &udp_item;
-		pattern[0].mask = &udp_mask;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_UDP;
-		break;
-	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP:
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP;
-		break;
-	case TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP:
-		pattern[0].type =
-			RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP_AND_ESP;
-		break;
-	case TRAFFIC_SPLIT_IP_FRAG_PROTO:
-		ip_item.hdr.next_proto_id = traffic_split_val;
-		ip_mask.hdr.next_proto_id = 0xff;
-		pattern[0].type = RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO;
-		pattern[0].spec = &ip_item;
-		pattern[0].mask = &ip_mask;
-		break;
-	default:
-		printf("invalid traffic_split_type\n");
-		return -EINVAL;
-	}
-	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
-
-	actions[0].conf = &vf;
-
-	ret = rte_pmd_dpaa2_mux_flow_create(dpdmux_id, pattern,
-			actions);
-	if (ret)
-		printf("%s: Create mux flow failed(%d)\n", __func__, ret);
-
-	return ret;
-}
-
 int
 main(int argc, char **argv)
 {
@@ -2075,12 +1779,12 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (traffic_split_type) {
-		ret = configure_split_traffic_config();
+	if (rte_dpaa2_mux_demo_split_flow()) {
+		ret = rte_dpaa2_mux_demo_config_split_traffic();
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
-	} else if (traffic_split_proto || traffic_split_ethtype) {
-		ret = configure_split_traffic();
+	} else if (rte_dpaa2_mux_demo_split_eth_ip()) {
+		ret = rte_dpaa2_mux_demo_config_ip_eth_split();
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Unable to split traffic;\n");
 	}
