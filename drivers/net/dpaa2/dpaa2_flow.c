@@ -217,182 +217,30 @@ static const struct rte_flow_item_rocev2 dpaa2_flow_item_rocev2_mask = {
 	.opcode = 0xff,
 	.dest_qp = "\xff\xff\xff",
 };
-
 #endif
-
-#define DPAA2_FLOW_DUMP printf
-
-static inline void
-dpaa2_prot_field_string(uint32_t prot, uint32_t field,
-	char *string)
-{
-	if (!dpaa2_flow_control_log)
-		return;
-
-	if (prot == NET_PROT_ETH) {
-		strcpy(string, "eth");
-		if (field == NH_FLD_ETH_DA)
-			strcat(string, ".dst");
-		else if (field == NH_FLD_ETH_SA)
-			strcat(string, ".src");
-		else if (field == NH_FLD_ETH_TYPE)
-			strcat(string, ".type");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_VLAN) {
-		strcpy(string, "vlan");
-		if (field == NH_FLD_VLAN_TCI)
-			strcat(string, ".tci");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_IP) {
-		strcpy(string, "ip");
-		if (field == NH_FLD_IP_SRC)
-			strcat(string, ".src");
-		else if (field == NH_FLD_IP_DST)
-			strcat(string, ".dst");
-		else if (field == NH_FLD_IP_PROTO)
-			strcat(string, ".proto");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_TCP) {
-		strcpy(string, "tcp");
-		if (field == NH_FLD_TCP_PORT_SRC)
-			strcat(string, ".src");
-		else if (field == NH_FLD_TCP_PORT_DST)
-			strcat(string, ".dst");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_UDP) {
-		strcpy(string, "udp");
-		if (field == NH_FLD_UDP_PORT_SRC)
-			strcat(string, ".src");
-		else if (field == NH_FLD_UDP_PORT_DST)
-			strcat(string, ".dst");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_ICMP) {
-		strcpy(string, "icmp");
-		if (field == NH_FLD_ICMP_TYPE)
-			strcat(string, ".type");
-		else if (field == NH_FLD_ICMP_CODE)
-			strcat(string, ".code");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_SCTP) {
-		strcpy(string, "sctp");
-		if (field == NH_FLD_SCTP_PORT_SRC)
-			strcat(string, ".src");
-		else if (field == NH_FLD_SCTP_PORT_DST)
-			strcat(string, ".dst");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_GRE) {
-		strcpy(string, "gre");
-		if (field == NH_FLD_GRE_TYPE)
-			strcat(string, ".type");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_GTP) {
-		strcpy(string, "gtp");
-		if (field == NH_FLD_GTP_TEID)
-			strcat(string, ".teid");
-		else
-			strcat(string, ".unknown field");
-	} else if (prot == NET_PROT_IPSEC_ESP) {
-		strcpy(string, "esp");
-		if (field == NH_FLD_IPSEC_ESP_SPI)
-			strcat(string, ".spi");
-		else if (field == NH_FLD_IPSEC_ESP_SEQUENCE_NUM)
-			strcat(string, ".seq");
-		else
-			strcat(string, ".unknown field");
-	} else {
-		sprintf(string, "unknown protocol(%d)", prot);
-	}
-}
 
 static inline void
 dpaa2_flow_qos_extracts_log(const struct dpaa2_dev_priv *priv)
 {
-	int idx;
-	char string[32];
-	const struct dpkg_profile_cfg *dpkg =
-		&priv->extract.qos_key_extract.dpkg;
-	const struct dpkg_extract *extract;
-	enum dpkg_extract_type type;
-	enum net_prot prot;
-	uint32_t field;
-
 	if (!dpaa2_flow_control_log)
 		return;
 
 	DPAA2_FLOW_DUMP("QoS table: %d extracts\r\n",
-		dpkg->num_extracts);
-	for (idx = 0; idx < dpkg->num_extracts; idx++) {
-		extract = &dpkg->extracts[idx];
-		type = extract->type;
-		if (type == DPKG_EXTRACT_FROM_HDR) {
-			prot = extract->extract.from_hdr.prot;
-			field = extract->extract.from_hdr.field;
-			dpaa2_prot_field_string(prot, field,
-				string);
-		} else if (type == DPKG_EXTRACT_FROM_DATA) {
-			sprintf(string, "raw offset/len: %d/%d",
-				extract->extract.from_data.offset,
-				extract->extract.from_data.size);
-		} else if (type == DPKG_EXTRACT_FROM_PARSE) {
-			sprintf(string, "parse offset/len: %d/%d",
-				extract->extract.from_parse.offset,
-				extract->extract.from_parse.size);
-		}
-		DPAA2_FLOW_DUMP("%s", string);
-		if ((idx + 1) < dpkg->num_extracts)
-			DPAA2_FLOW_DUMP(" / ");
-	}
-	DPAA2_FLOW_DUMP("\r\n");
+		priv->extract.qos_key_extract.dpkg.num_extracts);
+	dpaa2_dump_dpkg(&priv->extract.qos_key_extract.dpkg);
 }
 
 static inline void
 dpaa2_flow_fs_extracts_log(const struct dpaa2_dev_priv *priv,
 	int tc_id)
 {
-	int idx;
-	char string[32];
-	const struct dpkg_profile_cfg *dpkg =
-		&priv->extract.tc_key_extract[tc_id].dpkg;
-	const struct dpkg_extract *extract;
-	enum dpkg_extract_type type;
-	enum net_prot prot;
-	uint32_t field;
-
 	if (!dpaa2_flow_control_log)
 		return;
 
 	DPAA2_FLOW_DUMP("FS table: %d extracts in TC[%d]\r\n",
-		dpkg->num_extracts, tc_id);
-	for (idx = 0; idx < dpkg->num_extracts; idx++) {
-		extract = &dpkg->extracts[idx];
-		type = extract->type;
-		if (type == DPKG_EXTRACT_FROM_HDR) {
-			prot = extract->extract.from_hdr.prot;
-			field = extract->extract.from_hdr.field;
-			dpaa2_prot_field_string(prot, field,
-				string);
-		} else if (type == DPKG_EXTRACT_FROM_DATA) {
-			sprintf(string, "raw offset/len: %d/%d",
-				extract->extract.from_data.offset,
-				extract->extract.from_data.size);
-		} else if (type == DPKG_EXTRACT_FROM_PARSE) {
-			sprintf(string, "parse offset/len: %d/%d",
-				extract->extract.from_parse.offset,
-				extract->extract.from_parse.size);
-		}
-		DPAA2_FLOW_DUMP("%s", string);
-		if ((idx + 1) < dpkg->num_extracts)
-			DPAA2_FLOW_DUMP(" / ");
-	}
-	DPAA2_FLOW_DUMP("\r\n");
+		priv->extract.tc_key_extract[tc_id].dpkg.num_extracts,
+		tc_id);
+	dpaa2_dump_dpkg(&priv->extract.tc_key_extract[tc_id].dpkg);
 }
 
 static inline void
