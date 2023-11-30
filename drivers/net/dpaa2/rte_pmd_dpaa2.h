@@ -129,4 +129,9 @@ __rte_experimental
 int
 rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id);
 
+int
+rte_pmd_dpaa2_dev_is_dpaa2(void *_dev);
+const char*
+rte_pmd_dpaa2_ep_name(void *_dev);
+
 #endif /* _RTE_PMD_DPAA2_H */

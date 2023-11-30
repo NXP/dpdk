@@ -2950,9 +2950,25 @@ init_err:
 }
 
 int
-rte_pmd_dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev)
+rte_pmd_dpaa2_dev_is_dpaa2(void *_dev)
 {
+	struct rte_eth_dev *dev = _dev;
 	return dev->device->driver == &rte_dpaa2_pmd.driver;
+}
+
+const char*
+rte_pmd_dpaa2_ep_name(void *_dev)
+{
+	struct rte_eth_dev *dev = _dev;
+	struct rte_device *rdev;
+	struct rte_dpaa2_device *dpaa2_dev;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(dev))
+		return NULL;
+
+	rdev = dev->device;
+	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
+	return dpaa2_dev->ep_name;
 }
 
 static int dpaa2_tx_sg_pool_init(void)
