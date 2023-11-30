@@ -81,10 +81,18 @@ rte_dpaa2_create_dprc_device(int vdev_fd __rte_unused,
 				dev->ep_dev_type = DPAA2_UNKNOWN;
 
 			dev->ep_object_id = endpoint2.id;
+
+			if (dev->ep_dev_type == DPAA2_MUX) {
+				sprintf(dev->ep_name, "%s.%d.%d",
+					endpoint2.type, endpoint2.id,
+					endpoint2.if_id);
+			} else {
+				sprintf(dev->ep_name, "%s.%d",
+					endpoint2.type, endpoint2.id);
+			}
 		} else {
 			dev->ep_dev_type = DPAA2_UNKNOWN;
 		}
-		sprintf(dev->ep_name, "%s.%d", endpoint2.type, endpoint2.id);
 	}
 
 	TAILQ_INSERT_TAIL(&dprc_dev_list, dprc_node, next);
