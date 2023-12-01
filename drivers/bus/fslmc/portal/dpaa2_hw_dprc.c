@@ -23,13 +23,13 @@ static struct dprc_dev_list dprc_dev_list
 
 static int
 rte_dpaa2_create_dprc_device(int vdev_fd __rte_unused,
-			     struct vfio_device_info *obj_info __rte_unused,
-			     int dprc_id)
+	struct vfio_device_info *obj_info __rte_unused,
+	struct rte_dpaa2_device *obj)
 {
 	struct dpaa2_dprc_dev *dprc_node;
 	struct dprc_endpoint endpoint1, endpoint2;
 	struct rte_dpaa2_device *dev, *dev_tmp;
-	int ret;
+	int ret, dprc_id = obj->object_id;
 
 	/* Allocate DPAA2 dprc handle */
 	dprc_node = rte_malloc(NULL, sizeof(struct dpaa2_dprc_dev), 0);
@@ -93,6 +93,8 @@ rte_dpaa2_create_dprc_device(int vdev_fd __rte_unused,
 		} else {
 			dev->ep_dev_type = DPAA2_UNKNOWN;
 		}
+		/** DPRC is always created before it's children are created.*/
+		dev->container = dprc_node;
 	}
 
 	TAILQ_INSERT_TAIL(&dprc_dev_list, dprc_node, next);
