@@ -1452,13 +1452,13 @@ main(int argc, char *argv[])
 		}
 		if (pci_size < g_pci_size || !g_pci_size)
 			g_pci_size = pci_size;
-		if (g_pci_phy % RTE_CACHE_LINE_MASK) {
+		if (g_pci_phy & RTE_CACHE_LINE_MASK) {
 			RTE_LOG(ERR, qdma_demo,
 				"PCI addr(%lx) not multiple of cache size\n",
 				g_pci_phy);
 			return 0;
 		}
-		if (g_pci_size % RTE_CACHE_LINE_MASK) {
+		if (g_pci_size & RTE_CACHE_LINE_MASK) {
 			RTE_LOG(ERR, qdma_demo,
 				"PCI size(%lx) not multiple of cache size\n",
 				g_pci_size);
