@@ -630,18 +630,18 @@ dpaa2_dev_recycle_config(struct rte_eth_dev *eth_dev)
 		return 0;
 	}
 
-	if (dpaa2_dev->ep_dev_type == DPAA2_MAC) {
+	if (priv->ep_dev_type == DPAA2_MAC) {
 		/** For dpmac-dpni connection,
 		 * try setting serdes loopback as recycle device at first.
 		 */
 		if (dpaa2_svr_family == SVR_LS2088A) {
-			ret = ls_serdes_eth_lpbk(dpaa2_dev->ep_object_id, 1);
+			ret = ls_serdes_eth_lpbk(priv->ep_object_id, 1);
 			if (!ret) {
 				priv->flags |= DPAA2_TX_SERDES_LOOPBACK_MODE;
 				return 0;
 			}
 		} else if (dpaa2_svr_family == SVR_LX2160A) {
-			ret = lx_serdes_eth_lpbk(dpaa2_dev->ep_object_id, 1);
+			ret = lx_serdes_eth_lpbk(priv->ep_object_id, 1);
 			if (!ret) {
 				priv->flags |= DPAA2_TX_SERDES_LOOPBACK_MODE;
 				return 0;
@@ -670,8 +670,8 @@ dpaa2_dev_recycle_config(struct rte_eth_dev *eth_dev)
 		return 0;
 	}
 
-	if (dpaa2_dev->ep_dev_type == DPAA2_ETH &&
-		dpaa2_dev->object_id == dpaa2_dev->ep_object_id) {
+	if (priv->ep_dev_type == DPAA2_ETH &&
+		dpaa2_dev->object_id == priv->ep_object_id) {
 		priv->flags |= DPAA2_TX_DPNI_LOOPBACK_MODE;
 
 		return 0;
@@ -683,10 +683,7 @@ dpaa2_dev_recycle_config(struct rte_eth_dev *eth_dev)
 int
 dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 {
-	struct rte_device *dev = eth_dev->device;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct rte_dpaa2_device *dpaa2_dev =
-			container_of(dev, struct rte_dpaa2_device, device);
 	struct fsl_mc_io *dpni_dev = eth_dev->process_private;
 	struct dpni_port_cfg port_cfg;
 	int ret = 0;
@@ -696,7 +693,7 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 
 	if (priv->flags & DPAA2_TX_SERDES_LOOPBACK_MODE) {
 		if (dpaa2_svr_family == SVR_LS2088A) {
-			ret = ls_serdes_eth_lpbk(dpaa2_dev->ep_object_id, 0);
+			ret = ls_serdes_eth_lpbk(priv->ep_object_id, 0);
 			if (ret) {
 				DPAA2_PMD_WARN("Error(%d) to disable Serdes loopback",
 					ret);
@@ -704,7 +701,7 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 				priv->flags &= ~DPAA2_TX_SERDES_LOOPBACK_MODE;
 			}
 		} else if (dpaa2_svr_family == SVR_LX2160A) {
-			ret = lx_serdes_eth_lpbk(dpaa2_dev->ep_object_id, 0);
+			ret = lx_serdes_eth_lpbk(priv->ep_object_id, 0);
 			if (ret) {
 				DPAA2_PMD_WARN("Error(%d) to disable Serdes loopback",
 					ret);
