@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2021,2023 NXP
+ * Copyright 2018-2021,2023-2026 NXP
  */
 
 #include <sys/queue.h>
@@ -20,9 +20,18 @@
 #include <bus_fslmc_driver.h>
 #include <fsl_dpdmux.h>
 #include <fsl_dpkg.h>
+#include <fsl_dprc.h>
 
 #include <dpaa2_ethdev.h>
 #include <dpaa2_pmd_logs.h>
+
+struct dpaa2_mux_ep {
+	uint16_t mux_if_id;
+	enum rte_dpaa2_dev_type ep_type;
+	uint16_t ep_object_id;
+	uint16_t ep_if_id;
+	char ep_name[RTE_DEV_NAME_MAX_LEN];
+};
 
 struct dpaa2_dpdmux_dev {
 	TAILQ_ENTRY(dpaa2_dpdmux_dev) next;
@@ -31,6 +40,7 @@ struct dpaa2_dpdmux_dev {
 	uint16_t token;
 	uint32_t dpdmux_id; /*HW ID for DPDMUX object */
 	uint8_t num_ifs;   /* Number of interfaces in DPDMUX */
+	struct dpaa2_mux_ep *mux_eps;
 };
 
 #define DPAA2_MUX_FLOW_MAX_RULE_NUM 8
@@ -64,7 +74,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
 	static struct dpkg_profile_cfg s_kg_cfg;
 	struct dpkg_profile_cfg kg_cfg;
-	const struct rte_flow_action_vf *vf_conf;
+	const struct rte_flow_action_vf *vf_conf = NULL;
 	struct dpdmux_cls_action dpdmux_action;
 	uint8_t *key_va = NULL, *mask_va = NULL;
 	void *key_cfg_va = NULL;
@@ -83,6 +93,22 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
 		ret = -ENODEV;
 		goto creation_error;
+	}
+
+	if (actions[0].type == RTE_FLOW_ACTION_TYPE_VF) {
+		vf_conf = actions[0].conf;
+		if (vf_conf->id > dpdmux_dev->num_ifs ||
+			dpdmux_dev->mux_eps[vf_conf->id].ep_type ==
+			DPAA2_UNKNOWN) {
+			DPAA2_PMD_ERR("Invalid DPDMUX%d IF ID(%d)",
+				dpdmux_dev->dpdmux_id, actions[0].type);
+			return -EINVAL;
+		}
+	} else {
+		/** TODO*/
+		DPAA2_PMD_ERR("MUX Action TYPE(%d) not support",
+				actions[0].type);
+		return -ENOTSUP;
 	}
 
 	key_cfg_va = rte_zmalloc(NULL, DIST_PARAM_IOVA_SIZE,
@@ -485,10 +511,12 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
 	struct dpdmux_attr attr;
-	int ret, dpdmux_id = obj->object_id;
+	int ret, dpdmux_id = obj->object_id, i;
 	uint16_t maj_ver;
 	uint16_t min_ver;
 	uint8_t skip_reset_flags;
+	struct dprc_endpoint endpoint1, endpoint2;
+	int link_state;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -548,7 +576,7 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 				dpdmux_dev->token, skip_reset_flags);
 		if (ret) {
 			DPAA2_PMD_ERR("setting default interface failed in %s",
-				      __func__);
+				__func__);
 			goto init_err;
 		}
 	}
@@ -569,22 +597,80 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 				&mux_err_cfg);
 		if (ret) {
 			DPAA2_PMD_ERR("dpdmux_if_set_errors_behavior %s err %d",
-				      __func__, ret);
+				__func__, ret);
 			goto init_err;
 		}
 	}
 
 	dpdmux_dev->dpdmux_id = dpdmux_id;
 	dpdmux_dev->num_ifs = attr.num_ifs;
+	/**Up link + down link.*/
+	dpdmux_dev->mux_eps = rte_zmalloc(NULL,
+		sizeof(struct dpaa2_mux_ep) * (attr.num_ifs + 1),
+		RTE_CACHE_LINE_SIZE);
+	if (!dpdmux_dev->mux_eps) {
+		ret = -ENOMEM;
+		goto init_err;
+	}
+
+	memset(&endpoint1, 0, sizeof(struct dprc_endpoint));
+	strcpy(endpoint1.type, "dpdmux");
+	endpoint1.id = dpdmux_id;
+	for (i = 0; i < (attr.num_ifs + 1); i++) {
+		memset(&endpoint2, 0, sizeof(struct dprc_endpoint));
+		endpoint1.if_id = i;
+		dpdmux_dev->mux_eps[i].mux_if_id = i;
+		ret = dprc_get_connection(&obj->container->dprc,
+				CMD_PRI_LOW,
+				obj->container->token,
+				&endpoint1, &endpoint2,
+				&link_state);
+		if (ret) {
+			DPAA2_PMD_WARN("DPDMUX get ep of %s.%d.%d failed(%d)",
+				endpoint1.type, endpoint1.id, endpoint1.if_id,
+				ret);
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_UNKNOWN;
+			continue;
+		}
+		dpdmux_dev->mux_eps[i].ep_object_id = endpoint2.id;
+		if (!strcmp(endpoint2.type, "dpmac")) {
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_MAC;
+		} else if (!strcmp(endpoint2.type, "dpni")) {
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_ETH;
+		} else if (!strcmp(endpoint2.type, "dpdmux")) {
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_MUX;
+			dpdmux_dev->mux_eps[i].ep_if_id = endpoint2.if_id;
+		} else if (!strcmp(endpoint2.type, "dpsw")) {
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_SW;
+			dpdmux_dev->mux_eps[i].ep_if_id = endpoint2.if_id;
+		} else {
+			DPAA2_PMD_WARN("DPDMUX get unknown EP type(%s)",
+				endpoint2.type);
+			dpdmux_dev->mux_eps[i].ep_type = DPAA2_UNKNOWN;
+		}
+		if (dpdmux_dev->mux_eps[i].ep_type == DPAA2_MUX ||
+			dpdmux_dev->mux_eps[i].ep_type == DPAA2_SW) {
+			sprintf(dpdmux_dev->mux_eps[i].ep_name,
+				"%s.%d.%d", endpoint2.type, endpoint2.id,
+				endpoint2.if_id);
+		} else {
+			sprintf(dpdmux_dev->mux_eps[i].ep_name,
+				"%s.%d", endpoint2.type, endpoint2.id);
+		}
+		DPAA2_PMD_INFO("DPDMUX(%d)-IF%d: %s",
+			dpdmux_id, i, dpdmux_dev->mux_eps[i].ep_name);
+	}
 
 	TAILQ_INSERT_TAIL(&dpdmux_dev_list, dpdmux_dev, next);
 
 	return 0;
 
 init_err:
+	if (dpdmux_dev->mux_eps)
+		rte_free(dpdmux_dev->mux_eps);
 	rte_free(dpdmux_dev);
 
-	return -1;
+	return ret;
 }
 
 static void
