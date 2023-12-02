@@ -16,6 +16,7 @@ enum {
 	TRAFFIC_SPLIT_IP_FRAG_PROTO,
 	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP,
 	TRAFFIC_SPLIT_VLAN,
+	TRAFFIC_SPLIT_ECPRI,
 	TRAFFIC_SPLIT_MAX_NUM
 };
 
@@ -285,11 +286,13 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 	struct rte_flow_item_ipv4 ip_item[MAX_PATTERN_NUM];
 	struct rte_flow_item_eth eth_item[MAX_PATTERN_NUM];
 	struct rte_flow_item_vlan vlan_item[MAX_PATTERN_NUM];
+	struct rte_flow_item_ecpri ecpri_item[MAX_PATTERN_NUM];
 
 	struct rte_flow_item_udp udp_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_ipv4 ip_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_eth eth_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_vlan vlan_mask[MAX_PATTERN_NUM];
+	struct rte_flow_item_ecpri ecpri_mask[MAX_PATTERN_NUM];
 
 	memset(pattern, 0, sizeof(pattern));
 	memset(actions, 0, sizeof(actions));
@@ -298,10 +301,12 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 	memset(ip_item, 0, sizeof(ip_item));
 	memset(eth_item, 0, sizeof(eth_item));
 	memset(vlan_item, 0, sizeof(vlan_item));
+	memset(ecpri_item, 0, sizeof(ecpri_item));
 	memset(udp_mask, 0, sizeof(udp_mask));
 	memset(ip_mask, 0, sizeof(ip_mask));
 	memset(eth_mask, 0, sizeof(eth_mask));
 	memset(vlan_mask, 0, sizeof(vlan_mask));
+	memset(ecpri_mask, 0, sizeof(ecpri_mask));
 
 	dpdmux_id = dpaa2_mux_demo_get_mux_id();
 	if (dpdmux_id < 0) {
@@ -406,6 +411,21 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 		pattern[0].spec = &vlan_item[0];
 		pattern[0].mask = &vlan_mask[0];
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+		pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
+		flow_nb++;
+		break;
+	case TRAFFIC_SPLIT_ECPRI:
+		RTE_LOG(INFO, dpaa2_mux_demo,
+			"Split on IQ eCPRI with physical channel(0x%x)\n",
+			s_mux_val);
+		ecpri_item[0].hdr.common.type = RTE_ECPRI_MSG_TYPE_IQ_DATA;
+		ecpri_item[0].hdr.type0.pc_id =
+			rte_cpu_to_be_16((uint16_t)s_mux_val);
+		ecpri_mask[0].hdr.common.type = 0xff;
+		ecpri_mask[0].hdr.type0.pc_id = 0xffff;
+		pattern[0].spec = &ecpri_item[0];
+		pattern[0].mask = &ecpri_mask[0];
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_ECPRI;
 		pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
 		flow_nb++;
 		break;
