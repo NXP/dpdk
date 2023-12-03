@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2021 NXP
+# Copyright 2021, 2023 NXP
 
 # binary name
 APP = pkt_split_app
@@ -55,6 +55,7 @@ CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 # Add flag to allow experimental API as l2fwd uses rte_ethdev_set_ptype API
 CFLAGS += -DALLOW_EXPERIMENTAL_API
+CFLAGS += -I$(RTE_SDK)/examples/common
 
 include $(RTE_SDK)/mk/rte.extapp.mk
 endif
