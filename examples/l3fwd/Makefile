@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2010-2016 Intel Corporation
+# Copyright 2023 NXP
 
 # binary name
 APP = l3fwd
@@ -51,6 +52,7 @@ RTE_TARGET ?= $(notdir $(abspath $(dir $(firstword $(wildcard $(RTE_SDK)/*/.conf
 include $(RTE_SDK)/mk/rte.vars.mk
 
 CFLAGS += -I$(SRCDIR)
+CFLAGS += -I$(RTE_SDK)/examples/common
 CFLAGS += -O3 $(USER_FLAGS)
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -DALLOW_EXPERIMENTAL_API
