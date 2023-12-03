@@ -539,27 +539,6 @@ enum rte_flow_item_type {
 	 * See struct rte_flow_item_rocev2.
 	 */
 	RTE_FLOW_ITEM_TYPE_ROCEV2,
-
-	/**
-	 * Configure flow for GTP and IP fragmented UDP
-	 * packets.
-	 */
-
-	RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP,
-
-	/**
-	 * Configure flow for GTP, ESP and IP fragmented UDP
-	 * packets.
-	 */
-
-	RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP_AND_ESP,
-
-	/**
-	 * Configure flow for IP fragmented proto
-	 * packets.
-	 */
-
-	RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO,
 };
 
 /**
