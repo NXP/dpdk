@@ -4382,7 +4382,7 @@ dpaa2_flow_redirect_dev(struct dpaa2_dev_priv *priv,
 		dest_dev = priv->eth_dev;
 	}
 
-	if (!dpaa2_dev_is_dpaa2(dest_dev))
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(dest_dev))
 		return NULL;
 
 	return dest_dev;

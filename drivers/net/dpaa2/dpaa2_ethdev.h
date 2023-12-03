@@ -404,7 +404,6 @@ uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *queue)  __attribute__((unused));
-int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
 int dpaa2_soft_parser_loaded(void);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);

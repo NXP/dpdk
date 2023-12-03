@@ -149,4 +149,9 @@ __rte_experimental
 int
 rte_pmd_dpaa2_thread_warmup(uint8_t rx_flag);
 
+int
+rte_pmd_dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
+const char*
+rte_pmd_dpaa2_ep_name(struct rte_eth_dev *dev);
+
 #endif /* _RTE_PMD_DPAA2_H */
