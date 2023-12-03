@@ -370,7 +370,8 @@ dpaa2_soft_parser_loaded(void)
 		goto exit;
 	}
 
-	DPAA2_PMD_INFO("Parser ID:0x%02x%02x, Rev:major(%02x), minor(%02x)",
+	RTE_LOG(INFO, PMD,
+		"Parser ID:0x%02x%02x, Rev:major(%02x), minor(%02x)\n",
 		parser_ccsr->psr_id1_h, parser_ccsr->psr_id1_l,
 		parser_ccsr->psr_ver_maj, parser_ccsr->psr_ver_min);
 
@@ -3566,7 +3567,7 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
-	uint8_t extract_nb = 0, i;
+	int extract_nb, i;
 	uint64_t rule_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
 	uint64_t mask_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
 	uint8_t extract_size[DPAA2_ECPRI_MAX_EXTRACT_NB];
@@ -3630,202 +3631,14 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 		return ret;
 	}
 
-	if (mask->hdr.common.type != 0xff) {
-		DPAA2_PMD_ERR("ECPRI header type not specified.");
+	extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
+		rule_data, mask_data, extract_size, extract_off,
+		&fafe);
+	if (extract_nb < 0) {
+		DPAA2_PMD_ERR("Extract eCPRI from spec/mask failed(%d)",
+			extract_nb);
 
-		return -EINVAL;
-	}
-
-	if (spec->hdr.common.type > RTE_ECPRI_MSG_TYPE_IWF_DCTRL) {
-		DPAA2_PMD_ERR("ECPRI header type(%d) not supported.",
-			spec->hdr.common.type);
-
-		return -ENOTSUP;
-	}
-
-	/** Extract eCPRI type from FAFE.*/
-	fafe.ecpri.ecpri = 1;
-	fafe.ecpri.msg_type = spec->hdr.common.type;
-	rule_data[extract_nb] = fafe.fafe_8b;
-	mask_data[extract_nb] = 0xff;
-	extract_size[extract_nb] = sizeof(uint8_t);
-	extract_off[extract_nb] = DPAA2_FAFE_PSR_RESULT_OFFSET;
-	extract_nb++;
-
-	if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_IQ_DATA) {
-		if (mask->hdr.type0.pc_id) {
-			rule_data[extract_nb] = spec->hdr.type0.pc_id;
-			mask_data[extract_nb] = mask->hdr.type0.pc_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_iq_data, pc_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type0.seq_id) {
-			rule_data[extract_nb] = spec->hdr.type0.seq_id;
-			mask_data[extract_nb] = mask->hdr.type0.seq_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_iq_data, seq_id);
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_BIT_SEQ) {
-		if (mask->hdr.type1.pc_id) {
-			rule_data[extract_nb] = spec->hdr.type1.pc_id;
-			mask_data[extract_nb] = mask->hdr.type1.pc_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_bit_seq, pc_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type1.seq_id) {
-			rule_data[extract_nb] = spec->hdr.type1.seq_id;
-			mask_data[extract_nb] = mask->hdr.type1.seq_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_bit_seq, seq_id);
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RTC_CTRL) {
-		if (mask->hdr.type2.rtc_id) {
-			rule_data[extract_nb] = spec->hdr.type2.rtc_id;
-			mask_data[extract_nb] = mask->hdr.type2.rtc_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_rtc_ctrl, rtc_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type2.seq_id) {
-			rule_data[extract_nb] = spec->hdr.type2.seq_id;
-			mask_data[extract_nb] = mask->hdr.type2.seq_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_rtc_ctrl, seq_id);
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_GEN_DATA) {
-		if (mask->hdr.type3.pc_id || mask->hdr.type3.seq_id)
-			DPAA2_PMD_WARN("Extract type3 msg not support.");
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RM_ACC) {
-		if (mask->hdr.type4.rma_id) {
-			rule_data[extract_nb] = spec->hdr.type4.rma_id;
-			mask_data[extract_nb] = mask->hdr.type4.rma_id;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET + 0;
-				/** Compiler not support to take address
-				 * of bit-field
-				 * offsetof(struct rte_ecpri_msg_rm_access,
-				 * rma_id);
-				 */
-			extract_nb++;
-		}
-		if (mask->hdr.type4.ele_id) {
-			rule_data[extract_nb] = spec->hdr.type4.ele_id;
-			mask_data[extract_nb] = mask->hdr.type4.ele_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET + 2;
-				/** Compiler not support to take address
-				 * of bit-field
-				 * offsetof(struct rte_ecpri_msg_rm_access,
-				 * ele_id);
-				 */
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_DLY_MSR) {
-		if (mask->hdr.type5.msr_id) {
-			rule_data[extract_nb] = spec->hdr.type5.msr_id;
-			mask_data[extract_nb] = mask->hdr.type5.msr_id;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_delay_measure,
-					msr_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type5.act_type) {
-			rule_data[extract_nb] = spec->hdr.type5.act_type;
-			mask_data[extract_nb] = mask->hdr.type5.act_type;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_delay_measure,
-					act_type);
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RMT_RST) {
-		if (mask->hdr.type6.rst_id) {
-			rule_data[extract_nb] = spec->hdr.type6.rst_id;
-			mask_data[extract_nb] = mask->hdr.type6.rst_id;
-			extract_size[extract_nb] = sizeof(rte_be16_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_remote_reset,
-					rst_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type6.rst_op) {
-			rule_data[extract_nb] = spec->hdr.type6.rst_op;
-			mask_data[extract_nb] = mask->hdr.type6.rst_op;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_remote_reset,
-					rst_op);
-			extract_nb++;
-		}
-	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_EVT_IND) {
-		if (mask->hdr.type7.evt_id) {
-			rule_data[extract_nb] = spec->hdr.type7.evt_id;
-			mask_data[extract_nb] = mask->hdr.type7.evt_id;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_event_ind,
-					evt_id);
-			extract_nb++;
-		}
-		if (mask->hdr.type7.evt_type) {
-			rule_data[extract_nb] = spec->hdr.type7.evt_type;
-			mask_data[extract_nb] = mask->hdr.type7.evt_type;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_event_ind,
-					evt_type);
-			extract_nb++;
-		}
-		if (mask->hdr.type7.seq) {
-			rule_data[extract_nb] = spec->hdr.type7.seq;
-			mask_data[extract_nb] = mask->hdr.type7.seq;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_event_ind,
-					seq);
-			extract_nb++;
-		}
-		if (mask->hdr.type7.number) {
-			rule_data[extract_nb] = spec->hdr.type7.number;
-			mask_data[extract_nb] = mask->hdr.type7.number;
-			extract_size[extract_nb] = sizeof(uint8_t);
-			extract_off[extract_nb] =
-				DPAA2_ECPRI_MSG_OFFSET +
-				offsetof(struct rte_ecpri_msg_event_ind,
-					number);
-			extract_nb++;
-		}
-	} else {
-		DPAA2_PMD_ERR("Unsupported ecpri header type(%d)",
-			spec->hdr.common.type);
-		return -ENOTSUP;
+		return extract_nb;
 	}
 
 	for (i = 0; i < extract_nb; i++) {

@@ -256,8 +256,8 @@ set_rule:
 }
 
 static inline int
-dpaa2_mux_add_raw_extract(struct dpaa2_key_extract *key_ext,
-	uint8_t offset, uint8_t size,
+dpaa2_mux_add_non_hdr_extract(struct dpaa2_key_extract *key_ext,
+	uint8_t offset, uint8_t size, enum dpkg_extract_type type,
 	const void *field_data, const void *field_mask,
 	uint8_t *key_va, uint8_t *mask_va, int *extract_update)
 {
@@ -274,9 +274,19 @@ dpaa2_mux_add_raw_extract(struct dpaa2_key_extract *key_ext,
 	}
 
 	memset(&local_extract, 0, sizeof(struct dpkg_extract));
-	local_extract.type = DPKG_EXTRACT_FROM_DATA;
-	local_extract.extract.from_data.offset = offset;
-	local_extract.extract.from_data.size = size;
+	if (type == DPKG_EXTRACT_FROM_DATA) {
+		local_extract.type = DPKG_EXTRACT_FROM_DATA;
+		local_extract.extract.from_data.offset = offset;
+		local_extract.extract.from_data.size = size;
+	} else if (type == DPKG_EXTRACT_FROM_PARSE) {
+		local_extract.type = DPKG_EXTRACT_FROM_PARSE;
+		local_extract.extract.from_parse.offset = offset;
+		local_extract.extract.from_parse.size = size;
+	} else {
+		DPAA2_PMD_ERR("%s: Invalid extract type(%d)",
+			__func__, type);
+		return -EINVAL;
+	}
 
 	pos = dpaa2_mux_find_extract(key_ext, &local_extract);
 	if (pos >= 0)
@@ -348,24 +358,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		return -ENOTSUP;
 	}
 
-	if (!dpdmux_dev->key_param) {
-		dpdmux_dev->key_param = rte_zmalloc(NULL,
-			DIST_PARAM_IOVA_SIZE, RTE_CACHE_LINE_SIZE);
-		if (!dpdmux_dev->key_param) {
-			DPAA2_PMD_ERR("Failure to allocate memory for extract");
-			goto creation_error;
-		}
-		dpdmux_dev->key_param_iova =
-			DPAA2_VADDR_TO_IOVA_AND_CHECK(dpdmux_dev->key_param,
-				DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
-		if (dpdmux_dev->key_param_iova == RTE_BAD_IOVA) {
-			DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
-				__func__, dpdmux_dev->key_param);
-			ret = -ENOBUFS;
-			goto creation_error;
-		}
-	}
-
 	flow = rte_zmalloc(NULL, sizeof(struct dpaa2_mux_flow),
 			   RTE_CACHE_LINE_SIZE);
 	if (!flow) {
@@ -419,6 +411,12 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			ret = -ENOTSUP;
 			goto creation_error;
 		}
+		if (pattern[loop].spec && !pattern[loop].mask) {
+			DPAA2_PMD_ERR("Pattern[%d] has no mask for spec",
+				loop);
+			ret = -EINVAL;
+			goto creation_error;
+		}
 		switch (pattern[loop].type) {
 		case RTE_FLOW_ITEM_TYPE_IPV4:
 		{
@@ -428,8 +426,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
 
-			if (!mask || !memcmp(mask, zero_cmp,
-				sizeof(struct rte_flow_item_ipv4))) {
+			if (!spec || (mask && !memcmp(mask, zero_cmp,
+				sizeof(struct rte_flow_item_ipv4)))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_IPV4_ID,
 						flow->key_addr, flow->mask_addr,
@@ -438,7 +436,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 
-			if (mask && mask->hdr.next_proto_id) {
+			if (spec && mask && mask->hdr.next_proto_id) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_IP, NH_FLD_IP_PROTO,
 					sizeof(uint8_t),
@@ -450,7 +448,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 
-			if (mask && mask->hdr.fragment_offset) {
+			if (spec && mask && mask->hdr.fragment_offset) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_IP_FRAG_ID,
 						flow->key_addr, flow->mask_addr,
@@ -470,8 +468,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
 
-			if (!mask || !memcmp(zero_cmp, mask,
-				sizeof(struct rte_flow_item_vlan))) {
+			if (!spec || (mask && !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_vlan)))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_VLAN_ID,
 						flow->key_addr, flow->mask_addr,
@@ -480,7 +478,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 
-			if (mask && mask->tci) {
+			if (spec && mask && mask->tci) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_VLAN, NH_FLD_VLAN_TCI,
 					sizeof(uint16_t),
@@ -500,7 +498,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
-			if (!mask || (!mask->hdr.spi && !mask->hdr.seq)) {
+			if (!spec ||
+				(mask && (!mask->hdr.spi && !mask->hdr.seq))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_IPSEC_ESP_ID,
 						flow->key_addr, flow->mask_addr,
@@ -520,8 +519,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
-			if (!mask || !memcmp(zero_cmp, mask,
-				sizeof(struct rte_flow_item_gtp))) {
+			if (!spec || (mask && !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_gtp)))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_GTP_ID,
 						flow->key_addr, flow->mask_addr,
@@ -542,8 +541,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
-			if (!mask || (!mask->hdr.src_port &&
-				!mask->hdr.dst_port)) {
+			if (!spec || (mask && (!mask->hdr.src_port &&
+				!mask->hdr.dst_port))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_UDP_ID,
 						flow->key_addr, flow->mask_addr,
@@ -551,7 +550,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 				if (ret)
 					goto creation_error;
 			}
-			if (mask && mask->hdr.dst_port) {
+			if (spec && mask && mask->hdr.dst_port) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_UDP, NH_FLD_UDP_PORT_DST,
 					sizeof(rte_be16_t),
@@ -574,8 +573,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
 
-			if (!mask || !memcmp(zero_cmp, mask,
-				sizeof(struct rte_flow_item_eth))) {
+			if (!spec || (mask && !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_eth)))) {
 				ret = dpaa2_mux_add_parser_extract(key_extract,
 						DPAA2_PARSER_MAC_ID,
 						flow->key_addr, flow->mask_addr,
@@ -584,7 +583,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 
-			if (mask && mask->type) {
+			if (spec && mask && mask->type) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_ETH, NH_FLD_ETH_TYPE,
 					sizeof(rte_be16_t),
@@ -606,13 +605,68 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
 
-			ret = dpaa2_mux_add_raw_extract(key_extract,
+			ret = dpaa2_mux_add_non_hdr_extract(key_extract,
 				spec->offset, spec->length,
+				DPKG_EXTRACT_FROM_DATA,
 				spec->pattern, mask->pattern,
 				flow->key_addr, flow->mask_addr,
 				&extract_update);
 			if (ret)
 				goto creation_error;
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_ECPRI:
+		{
+			const struct rte_flow_item_ecpri *spec, *mask;
+			int extract_nb, i;
+			uint64_t rule_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
+			uint64_t mask_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
+			uint8_t extract_size[DPAA2_ECPRI_MAX_EXTRACT_NB];
+			uint8_t extract_off[DPAA2_ECPRI_MAX_EXTRACT_NB];
+			union dpaa2_sp_fafe_parse fafe;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+
+			if (!dpaa2_soft_parser_loaded()) {
+				DPAA2_PMD_ERR("eCPRI mux flow: SP not loaded");
+				ret = -ENOTSUP;
+				goto creation_error;
+			}
+
+			if (!spec) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_ECPRI_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+
+				break;
+			}
+
+			extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
+				rule_data, mask_data, extract_size, extract_off,
+				&fafe);
+			if (extract_nb < 0) {
+				DPAA2_PMD_ERR("MUX Extract eCPRI failed(%d)",
+					extract_nb);
+
+				ret = extract_nb;
+
+				goto creation_error;
+			}
+			for (i = 0; i < extract_nb; i++) {
+				ret = dpaa2_mux_add_non_hdr_extract(key_extract,
+					extract_off[i], extract_size[i],
+					DPKG_EXTRACT_FROM_PARSE,
+					&rule_data[i], &mask_data[i],
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
 		}
 		break;
 
@@ -994,6 +1048,22 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 			dpdmux_id, i, dpdmux_dev->mux_eps[i].ep_name);
 	}
 
+	dpdmux_dev->key_param = rte_zmalloc(NULL,
+		DIST_PARAM_IOVA_SIZE, RTE_CACHE_LINE_SIZE);
+	if (!dpdmux_dev->key_param) {
+		DPAA2_PMD_ERR("Failure to allocate memory for extract");
+		goto init_err;
+	}
+	dpdmux_dev->key_param_iova =
+		DPAA2_VADDR_TO_IOVA_AND_CHECK(dpdmux_dev->key_param,
+			DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+	if (dpdmux_dev->key_param_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
+			__func__, dpdmux_dev->key_param);
+		ret = -ENOBUFS;
+		goto init_err;
+	}
+
 	TAILQ_INSERT_TAIL(&dpdmux_dev_list, dpdmux_dev, next);
 
 	return 0;
@@ -1001,6 +1071,8 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 init_err:
 	if (dpdmux_dev->mux_eps)
 		rte_free(dpdmux_dev->mux_eps);
+	if (dpdmux_dev->key_param)
+		rte_free(dpdmux_dev->key_param);
 	rte_free(dpdmux_dev);
 
 	return ret;
