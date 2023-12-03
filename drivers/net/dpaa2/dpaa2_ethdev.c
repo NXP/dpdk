@@ -25,6 +25,7 @@
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
+#include <fsl_dprc.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
 #include "dpaa2_sparser.h"
@@ -2609,6 +2610,54 @@ dpaa2_get_devargs(struct rte_devargs *devargs, const char *key)
 }
 
 static int
+dpaa2_dev_ep_init(struct rte_dpaa2_device *dpaa2_dev,
+	struct dpaa2_dev_priv *priv)
+{
+	struct dpaa2_dprc_dev *dprc_node;
+	struct dprc_endpoint endpoint1, endpoint2;
+	int link_state, ret;
+
+	dprc_node = dpaa2_dev->container;
+	memset(&endpoint1, 0, sizeof(struct dprc_endpoint));
+	memset(&endpoint2, 0, sizeof(struct dprc_endpoint));
+	strcpy(endpoint1.type, "dpni");
+	endpoint1.id = dpaa2_dev->object_id;
+	ret = dprc_get_connection(&dprc_node->dprc,
+			CMD_PRI_LOW, dprc_node->token,
+			&endpoint1, &endpoint2, &link_state);
+	if (ret) {
+		DPAA2_PMD_ERR("dpni.%d connection failed!",
+			dpaa2_dev->object_id);
+
+		return ret;
+	}
+
+	if (!strcmp(endpoint2.type, "dpmac"))
+		priv->ep_dev_type = DPAA2_MAC;
+	else if (!strcmp(endpoint2.type, "dpni"))
+		priv->ep_dev_type = DPAA2_ETH;
+	else if (!strcmp(endpoint2.type, "dpdmux"))
+		priv->ep_dev_type = DPAA2_MUX;
+	else if (!strcmp(endpoint2.type, "dpsw"))
+		priv->ep_dev_type = DPAA2_SW;
+	else
+		priv->ep_dev_type = DPAA2_UNKNOWN;
+
+	priv->ep_object_id = endpoint2.id;
+
+	if (priv->ep_dev_type == DPAA2_MUX ||
+		priv->ep_dev_type == DPAA2_SW) {
+		sprintf(priv->ep_name, "%s.%d.%d",
+			endpoint2.type, endpoint2.id, endpoint2.if_id);
+	} else {
+		sprintf(priv->ep_name, "%s.%d",
+			endpoint2.type, endpoint2.id);
+	}
+
+	return 0;
+}
+
+static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 {
 	struct rte_device *dev = eth_dev->device;
@@ -2680,9 +2729,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpni_get_attributes(dpni_dev, CMD_PRI_LOW, priv->token, &attr);
 	if (ret) {
-		DPAA2_PMD_ERR(
-			     "Failure in get dpni@%d attribute, err code %d",
-			     hw_id, ret);
+		DPAA2_PMD_ERR("Failure in get dpni@%d attribute, err code %d",
+			hw_id, ret);
+		goto init_err;
+	}
+
+	ret = dpaa2_dev_ep_init(dpaa2_dev, priv);
+	if (ret) {
+		DPAA2_PMD_ERR("Failure in get dpni@%d's endpoint, err code %d",
+			hw_id, ret);
 		goto init_err;
 	}
 
@@ -2878,7 +2933,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret > 0)
 		RTE_LOG(INFO, PMD, "soft parser is loaded\n");
 	RTE_LOG(INFO, PMD, "%s: netdev created, connected to %s\n",
-		eth_dev->data->name, dpaa2_dev->ep_name);
+		eth_dev->data->name, priv->ep_name);
 
 	return 0;
 init_err:
@@ -2947,15 +3002,14 @@ rte_pmd_dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev)
 const char*
 rte_pmd_dpaa2_ep_name(struct rte_eth_dev *dev)
 {
-	struct rte_device *rdev;
-	struct rte_dpaa2_device *dpaa2_dev;
+	struct dpaa2_dev_priv *priv;
 
 	if (!rte_pmd_dpaa2_dev_is_dpaa2(dev))
 		return NULL;
 
-	rdev = dev->device;
-	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
-	return dpaa2_dev->ep_name;
+	priv = dev->data->dev_private;
+
+	return priv->ep_name;
 }
 
 static int

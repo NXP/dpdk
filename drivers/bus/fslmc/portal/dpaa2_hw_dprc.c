@@ -27,7 +27,6 @@ rte_dpaa2_create_dprc_device(int vdev_fd __rte_unused,
 	struct rte_dpaa2_device *obj)
 {
 	struct dpaa2_dprc_dev *dprc_node;
-	struct dprc_endpoint endpoint1, endpoint2;
 	struct rte_dpaa2_device *dev, *dev_tmp;
 	int ret, dprc_id = obj->object_id;
 
@@ -50,49 +49,6 @@ rte_dpaa2_create_dprc_device(int vdev_fd __rte_unused,
 	}
 
 	TAILQ_FOREACH_SAFE(dev, &rte_fslmc_bus.device_list, next, dev_tmp) {
-		if (dev->dev_type == DPAA2_ETH) {
-			int link_state;
-
-			memset(&endpoint1, 0, sizeof(struct dprc_endpoint));
-			memset(&endpoint2, 0, sizeof(struct dprc_endpoint));
-			strcpy(endpoint1.type, "dpni");
-			endpoint1.id = dev->object_id;
-			ret = dprc_get_connection(&dprc_node->dprc,
-						CMD_PRI_LOW,
-						dprc_node->token,
-						&endpoint1, &endpoint2,
-						&link_state);
-			if (ret) {
-				DPAA2_BUS_ERR("dpni.%d connection failed!",
-					dev->object_id);
-				dprc_close(&dprc_node->dprc, CMD_PRI_LOW,
-					   dprc_node->token);
-				rte_free(dprc_node);
-				return ret;
-			}
-
-			if (!strcmp(endpoint2.type, "dpmac"))
-				dev->ep_dev_type = DPAA2_MAC;
-			else if (!strcmp(endpoint2.type, "dpni"))
-				dev->ep_dev_type = DPAA2_ETH;
-			else if (!strcmp(endpoint2.type, "dpdmux"))
-				dev->ep_dev_type = DPAA2_MUX;
-			else
-				dev->ep_dev_type = DPAA2_UNKNOWN;
-
-			dev->ep_object_id = endpoint2.id;
-
-			if (dev->ep_dev_type == DPAA2_MUX) {
-				sprintf(dev->ep_name, "%s.%d.%d",
-					endpoint2.type, endpoint2.id,
-					endpoint2.if_id);
-			} else {
-				sprintf(dev->ep_name, "%s.%d",
-					endpoint2.type, endpoint2.id);
-			}
-		} else {
-			dev->ep_dev_type = DPAA2_UNKNOWN;
-		}
 		/** DPRC is always created before it's children are created.*/
 		dev->container = dprc_node;
 	}
