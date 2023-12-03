@@ -53,7 +53,6 @@
 #include <cmdline_parse_etheraddr.h>
 
 #include "l3fwd.h"
-#include "ecpri_proto.h"
 #include "nxp/rte_dpaa2_mux_demo.h"
 
 /*
@@ -1325,80 +1324,47 @@ prepare_ptype_parser(uint16_t portid, uint16_t queueid)
 }
 
 static void
-ecpri_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
+ecpri_port_flow_configure(uint16_t portid,
+	uint8_t nb_rx_queue)
 {
-	struct rte_flow_attr attr = {0};
-	struct rte_flow_item pattern[2] = {0}, *pattern1;
-	struct rte_flow_action actions[2] = {0}, *actions1;
+	struct rte_flow_attr flow_attr;
+	struct rte_flow_item flow_item[2];
+	struct rte_flow_action flow_action[2];
 	struct rte_flow_error error;
-	struct rte_flow *flow;
-	struct rte_flow_item_raw spec = {0}, mask = {0};
-	struct rte_flow_action_queue *dest_queue;
-	uint8_t *spec_pattern, *mask_pattern;
-	struct rte_ether_hdr *eth_hdr;
-	ecpri_iq_data_t *iq;
-	int i;
+	void *flow;
+	struct rte_flow_item_ecpri ecpri_item;
+	struct rte_flow_item_ecpri ecpri_mask;
+	struct rte_flow_action_queue dest_queue;
+	uint8_t i;
 
-	/* Set attribute */
-	attr.group = 0;
-	attr.ingress = 1;
-	attr.egress = 0;
-	attr.transfer = 0;
-
-	/* Set spec (pattern) */
-	spec_pattern = rte_zmalloc(NULL, 128, 0);
-	eth_hdr = (struct rte_ether_hdr *)spec_pattern;
-	eth_hdr->ether_type = rte_cpu_to_be_16(ETHERTYPE_ECPRI);
-	spec.offset = 0;
-	spec.pattern = spec_pattern;
-	spec.length = sizeof(struct rte_ether_hdr) + sizeof(ecpri_header_t) +
-		sizeof(ecpri_iq_data_t);
-
-	/* Set mask (pattern) */
-	mask_pattern = rte_zmalloc(NULL, 128, 0);
-	eth_hdr = (struct rte_ether_hdr *)mask_pattern;
-	eth_hdr->ether_type = 0xFFFF;
-	iq = (ecpri_iq_data_t *)(mask_pattern + sizeof(struct rte_ether_hdr) +
-		sizeof(ecpri_header_t));
-	/* eCPRI pc or rtc_id - max distribution size */
-	iq->pc_rtc_id = rte_cpu_to_be_16(nb_rx_queue - 1);
-
-	mask.offset = 0;
-	mask.pattern = mask_pattern;
-	mask.length = sizeof(struct rte_ether_hdr) + sizeof(ecpri_header_t) +
-		sizeof(ecpri_iq_data_t);
-
-	/* Set pattern */
-	pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
-	pattern[0].spec = (void *)&spec;
-	pattern[0].mask = (void *)&mask;
-	pattern[0].last = NULL;
-	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
-
-	/* Set action */
-	dest_queue = rte_zmalloc(NULL,
-		sizeof(struct rte_flow_action_queue), 0);
-	actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-	actions[0].conf = dest_queue;
-	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
-
-	pattern1 = pattern;
-	actions1 = actions;
+	memset(&flow_attr, 0, sizeof(struct rte_flow_attr));
+	memset(flow_item, 0, 2 * sizeof(struct rte_flow_item));
+	memset(flow_action, 0, 2 * sizeof(struct rte_flow_action));
+	memset(&error, 0, sizeof(struct rte_flow_error));
 
 	for (i = 0; i < nb_rx_queue; i++) {
 		/* RXQ0~RXQ7 are in TC0,  RXQ8-RXQ15 are in TC1 and so on*/
-		attr.group = i/8;
-		attr.priority = i%8;
-		iq = (ecpri_iq_data_t *)(spec_pattern +
-			sizeof(struct rte_ether_hdr) +
-			sizeof(ecpri_header_t));
-		iq->pc_rtc_id = rte_cpu_to_be_16(i);
-		dest_queue->index = i;
-		flow = rte_flow_create(portid, &attr, pattern1,
-			actions1, &error);
-		if (!flow)
+		flow_attr.group = i / 8;
+		flow_attr.priority = i % 8;
+		ecpri_item.hdr.common.type = RTE_ECPRI_MSG_TYPE_IQ_DATA;
+		ecpri_item.hdr.type0.pc_id = rte_cpu_to_be_16(i);
+		ecpri_mask.hdr.common.type = 0xff;
+		ecpri_mask.hdr.type0.pc_id = 0xffff;
+		flow_item[0].spec = &ecpri_item;
+		flow_item[0].mask = &ecpri_mask;
+		flow_item[0].type = RTE_FLOW_ITEM_TYPE_ECPRI;
+		flow_item[1].type = RTE_FLOW_ITEM_TYPE_END;
+		dest_queue.index = i;
+		flow_action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+		flow_action[0].conf = &dest_queue;
+		flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
+		flow = rte_flow_create(portid, &flow_attr, flow_item,
+			flow_action, &error);
+		if (!flow) {
 			rte_exit(EXIT_FAILURE,
-				 "Cannot create flow on port=%d\n", portid);
+				 "Cannot create flow to RXQ%d on port=%d\n",
+				 i, portid);
+		}
 	}
 }
 
