@@ -72,6 +72,12 @@ struct qdma_cntx_long {
 	uint16_t rsv[3];
 } __rte_packed;
 
+#define DPAA2_QDMA_IDXADDR_FROM_SG_FLAG(flag) \
+	((void *)((flag) - ((flag) & RTE_DPAA2_QDMA_SG_IDX_ADDR_MASK)))
+
+#define DPAA2_QDMA_IDX_FROM_FLAG(flag) \
+	((flag) >> RTE_DPAA2_QDMA_COPY_IDX_OFFSET)
+
 /** Represents a QDMA device. */
 struct qdma_device {
 	/** VQ's of this device */
@@ -139,6 +145,7 @@ struct qdma_virt_queue {
 	/**Used for silent enabled*/
 	struct qdma_cntx_sg *cntx_sg[DPAA2_QDMA_MAX_DESC];
 	struct qdma_cntx_long *cntx_long[DPAA2_QDMA_MAX_DESC];
+	uint16_t slient_idx;
 
 	int num_valid_jobs;
 
