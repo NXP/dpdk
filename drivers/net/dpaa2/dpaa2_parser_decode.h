@@ -31,8 +31,8 @@ enum dpaa2_parser_protocol_id {
 	DPAA2_PARSER_VLAN_ID,
 	DPAA2_PARSER_ICMP_ID,
 	DPAA2_PARSER_IPV4_ID,
-	DPAA2_PARSER_IPV4_FRAG_ID,
 	DPAA2_PARSER_IPV6_ID,
+	DPAA2_PARSER_IP_FRAG_ID,
 	DPAA2_PARSER_GRE_ID,
 	DPAA2_PARSER_UDP_ID,
 	DPAA2_PARSER_TCP_ID,
@@ -663,7 +663,7 @@ dpaa2_protocol_psr_bit_offset(uint32_t *bit_offset,
 	} else if (protocol == DPAA2_PARSER_IPV4_ID) {
 		faf_h.ipv4_1 = 1;
 		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
-	} else if (protocol == DPAA2_PARSER_IPV4_FRAG_ID) {
+	} else if (protocol == DPAA2_PARSER_IP_FRAG_ID) {
 		faf_h.ip_1_frag = 1;
 		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
 	} else if (protocol == DPAA2_PARSER_IPV6_ID) {

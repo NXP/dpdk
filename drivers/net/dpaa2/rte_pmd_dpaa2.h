@@ -35,16 +35,14 @@
  *    A valid handle in case of success, NULL otherwise.
  */
 __rte_experimental
-struct rte_flow *
+int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
-			      struct rte_flow_item *pattern[],
-			      struct rte_flow_action *actions[]);
+	struct rte_flow_item pattern[],
+	struct rte_flow_action actions[]);
 
-struct dpdmux_l2_rule*
+int
 rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
-			  uint8_t mac_addr[6],
-			  uint16_t vlan_id,
-			  int dest_if);
+	uint8_t mac_addr[6], uint16_t vlan_id, int dest_if);
 
 /**
  * @warning

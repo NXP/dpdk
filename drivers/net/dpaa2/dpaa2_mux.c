@@ -22,25 +22,74 @@
 
 #include <dpaa2_ethdev.h>
 #include <dpaa2_pmd_logs.h>
+#include "dpaa2_parser_decode.h"
+
+struct dpaa2_mux_flow {
+	LIST_ENTRY(dpaa2_mux_flow) next;
+	struct dpdmux_rule_cfg rule;
+	uint8_t *key_addr;
+	uint8_t *mask_addr;
+	enum net_prot ip_key;
+	struct dpdmux_cls_action action;
+};
 
 struct dpaa2_dpdmux_dev {
 	TAILQ_ENTRY(dpaa2_dpdmux_dev) next;
-		/**< Pointer to Next device instance */
+	/**< Pointer to Next device instance */
 	struct fsl_mc_io dpdmux;  /** handle to DPDMUX portal object */
 	uint16_t token;
 	uint32_t dpdmux_id; /*HW ID for DPDMUX object */
 	uint8_t num_ifs;   /* Number of interfaces in DPDMUX */
-};
-
-struct rte_flow {
-	struct dpdmux_rule_cfg rule;
+	struct dpaa2_key_extract key_extract;
+	uint8_t *key_param;
+	uint64_t key_param_iova;
+	uint16_t flow_num;
+	LIST_HEAD(, dpaa2_mux_flow) flows;
 };
 
 TAILQ_HEAD(dpdmux_dev_list, dpaa2_dpdmux_dev);
 static struct dpdmux_dev_list dpdmux_dev_list =
 	TAILQ_HEAD_INITIALIZER(dpdmux_dev_list); /*!< DPDMUX device list */
 
-static struct dpaa2_dpdmux_dev *get_dpdmux_from_id(uint32_t dpdmux_id)
+static char *dpaa2_mux_flow_log;
+
+static inline void
+dpaa2_mux_extracts_log(const struct dpaa2_dpdmux_dev *dpdmux_dev)
+{
+	if (!dpaa2_mux_flow_log)
+		return;
+
+	DPAA2_FLOW_DUMP("DPDMUX[%d] flow table: %d extracts\r\n",
+		dpdmux_dev->dpdmux_id,
+		dpdmux_dev->key_extract.dpkg.num_extracts);
+	dpaa2_dump_dpkg(&dpdmux_dev->key_extract.dpkg);
+}
+
+static inline void
+dpaa2_mux_flow_rule_log(struct dpaa2_mux_flow *flow,
+	const char *prefix)
+{
+	int i;
+
+	if (!dpaa2_mux_flow_log)
+		return;
+
+	DPAA2_FLOW_DUMP("DPMUX: %s flow(%p):\r\n", prefix, flow);
+	DPAA2_FLOW_DUMP("key_iova:0x%lx, mask_iova:0x%lx\r\n",
+		flow->rule.key_iova, flow->rule.mask_iova);
+	DPAA2_FLOW_DUMP("key_size:%d, entry_index:%d\r\n",
+		flow->rule.key_size, flow->rule.entry_index);
+	DPAA2_FLOW_DUMP("data:\r\n");
+	for (i = 0; i < flow->rule.key_size; i++)
+		DPAA2_FLOW_DUMP("%02x ", flow->key_addr[i]);
+	DPAA2_FLOW_DUMP("\r\nmask:\r\n");
+	for (i = 0; i < flow->rule.key_size; i++)
+		DPAA2_FLOW_DUMP("%02x ", flow->mask_addr[i]);
+	DPAA2_FLOW_DUMP("\r\n");
+}
+
+static struct dpaa2_dpdmux_dev *
+get_dpdmux_from_id(uint32_t dpdmux_id)
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev = NULL;
 
@@ -53,381 +102,641 @@ static struct dpaa2_dpdmux_dev *get_dpdmux_from_id(uint32_t dpdmux_id)
 	return dpdmux_dev;
 }
 
-struct rte_flow *
+static inline int
+_dpaa2_mux_add_parser_extract(struct dpkg_extract *extract,
+	enum dpaa2_parser_protocol_id protocol,
+	uint8_t *key_va, uint8_t *mask_va)
+{
+	int ret;
+	uint32_t bit_offset, byte_offset, faf_bit_in_byte;
+
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset, protocol);
+	if (ret)
+		return ret;
+	byte_offset = bit_offset / 8;
+	extract->type = DPKG_EXTRACT_FROM_PARSE;
+	extract->extract.from_parse.offset = byte_offset;
+	extract->extract.from_parse.size = sizeof(uint8_t);
+	faf_bit_in_byte = bit_offset % 8;
+	faf_bit_in_byte = 7 - faf_bit_in_byte;
+	*key_va = (1 << faf_bit_in_byte);
+	*mask_va =  (1 << faf_bit_in_byte);
+
+	return 0;
+}
+
+static int
+dpaa2_mux_find_extract(struct dpaa2_key_extract *key_ext,
+	struct dpkg_extract *ext)
+{
+	uint8_t i;
+	struct dpkg_profile_cfg *dpkg = &key_ext->dpkg;
+	struct dpaa2_key_profile *key_profile = &key_ext->key_profile;
+
+	for (i = 0; i < dpkg->num_extracts; i++) {
+		if (!memcmp(ext, &dpkg->extracts[i], sizeof(*ext)))
+			return key_profile->key_offset[i];
+	}
+
+	return -ENODATA;
+}
+
+static inline int
+dpaa2_mux_add_parser_extract(struct dpaa2_key_extract *key_ext,
+	enum dpaa2_parser_protocol_id protocol,
+	uint8_t *key_va, uint8_t *mask_va, int *extract_update)
+{
+	int ret, pos;
+	struct dpkg_extract *extract;
+	struct dpkg_extract local_extract;
+	uint8_t local_key, local_mask;
+	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
+	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+
+	if (kg_cfg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+		DPAA2_PMD_ERR("Too many extracts(%d)",
+			kg_cfg->num_extracts);
+		return -ENOTSUP;
+	}
+	memset(&local_extract, 0, sizeof(struct dpkg_extract));
+
+	ret = _dpaa2_mux_add_parser_extract(&local_extract, protocol,
+			&local_key, &local_mask);
+	if (ret)
+		return ret;
+
+	pos = dpaa2_mux_find_extract(key_ext, &local_extract);
+	if (pos < 0) {
+		extract = &kg_cfg->extracts[kg_cfg->num_extracts];
+		rte_memcpy(extract, &local_extract, sizeof(local_extract));
+		kg_cfg->num_extracts++;
+
+		if (profile->num > 0) {
+			pos = profile->key_offset[profile->num - 1] +
+				profile->key_size[profile->num - 1];
+		} else {
+			pos = 0;
+		}
+		profile->key_offset[profile->num] = pos;
+		profile->key_size[profile->num] = sizeof(uint8_t);
+		profile->key_max_size += sizeof(uint8_t);
+		profile->num++;
+
+		*extract_update = 1;
+	}
+
+	key_va[pos] = local_key;
+	mask_va[pos] = local_mask;
+
+	return 0;
+}
+
+static inline int
+dpaa2_mux_add_hdr_extract(struct dpaa2_key_extract *key_ext,
+	enum net_prot prot, uint32_t field, uint32_t field_size,
+	const void *field_data, const void *field_mask,
+	uint8_t *key_va, uint8_t *mask_va, int *extract_update)
+{
+	int pos;
+	struct dpkg_extract *extract;
+	struct dpkg_extract local_extract;
+	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
+	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+
+	if (kg_cfg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+		DPAA2_PMD_ERR("Too many extracts(%d)",
+			kg_cfg->num_extracts);
+		return -ENOTSUP;
+	}
+
+	memset(&local_extract, 0, sizeof(struct dpkg_extract));
+	local_extract.type = DPKG_EXTRACT_FROM_HDR;
+	local_extract.extract.from_hdr.prot = prot;
+	local_extract.extract.from_hdr.field = field;
+	local_extract.extract.from_hdr.type = DPKG_FULL_FIELD;
+
+	pos = dpaa2_mux_find_extract(key_ext, &local_extract);
+	if (pos >= 0)
+		goto set_rule;
+
+	extract = &kg_cfg->extracts[kg_cfg->num_extracts];
+	rte_memcpy(extract, &local_extract, sizeof(local_extract));
+	kg_cfg->num_extracts++;
+	if (profile->num > 0) {
+		pos = profile->key_offset[profile->num - 1] +
+			profile->key_size[profile->num - 1];
+	} else {
+		pos = 0;
+	}
+	profile->key_offset[profile->num] = pos;
+	profile->key_size[profile->num] = field_size;
+	profile->key_max_size += field_size;
+	profile->num++;
+	*extract_update = 1;
+
+set_rule:
+
+	rte_memcpy(&key_va[pos], field_data, field_size);
+	if (field_mask)
+		rte_memcpy(&mask_va[pos], field_mask, field_size);
+	else
+		memset(&mask_va[pos], 0xff, field_size);
+
+	return 0;
+}
+
+static inline int
+dpaa2_mux_add_raw_extract(struct dpaa2_key_extract *key_ext,
+	uint8_t offset, uint8_t size,
+	const void *field_data, const void *field_mask,
+	uint8_t *key_va, uint8_t *mask_va, int *extract_update)
+{
+	int pos;
+	struct dpkg_extract *extract;
+	struct dpkg_extract local_extract;
+	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
+	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+
+	if (kg_cfg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+		DPAA2_PMD_ERR("Too many extracts(%d)",
+			kg_cfg->num_extracts);
+		return -ENOTSUP;
+	}
+
+	memset(&local_extract, 0, sizeof(struct dpkg_extract));
+	local_extract.type = DPKG_EXTRACT_FROM_DATA;
+	local_extract.extract.from_data.offset = offset;
+	local_extract.extract.from_data.size = size;
+
+	pos = dpaa2_mux_find_extract(key_ext, &local_extract);
+	if (pos >= 0)
+		goto set_rule;
+
+	extract = &kg_cfg->extracts[kg_cfg->num_extracts];
+	rte_memcpy(extract, &local_extract, sizeof(local_extract));
+	kg_cfg->num_extracts++;
+	if (profile->num > 0) {
+		pos = profile->key_offset[profile->num - 1] +
+			profile->key_size[profile->num - 1];
+	} else {
+		pos = 0;
+	}
+	profile->key_offset[profile->num] = pos;
+	profile->key_size[profile->num] = size;
+	profile->num++;
+	*extract_update = 1;
+	profile->key_max_size += size;
+
+set_rule:
+
+	rte_memcpy(&key_va[pos], field_data, size);
+	if (field_mask)
+		rte_memcpy(&mask_va[pos], field_mask, size);
+	else
+		memset(&mask_va[pos], 0xff, size);
+
+	return 0;
+}
+
+int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
-			      struct rte_flow_item *pattern[],
-			      struct rte_flow_action *actions[])
+	struct rte_flow_item pattern[],
+	struct rte_flow_action actions[])
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
-	struct dpkg_profile_cfg kg_cfg;
+	struct dpaa2_key_extract *key_extract;
+	struct dpkg_profile_cfg *dpkg;
 	const struct rte_flow_action_vf *vf_conf;
-	struct dpdmux_cls_action dpdmux_action;
-	struct rte_flow *flow = NULL;
-	void *key_iova, *mask_iova, *key_cfg_iova = NULL;
-	uint8_t key_size = 0;
-	int ret;
-	static int i;
-	int num_rules = 1;
-	uint64_t *masks = NULL, *keys = NULL;
-	int loop;
+	int ret = 0, loop = 0, extract_update = 0;
+	struct dpaa2_mux_flow *flow = NULL;
+	struct dpaa2_mux_flow *_flow;
+	char zero_cmp[256];
+
+	dpaa2_mux_flow_log = getenv("DPAA2_MUX_FLOW_LOG");
 
 	/* Find the DPDMUX from dpdmux_id in our list */
 	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
 	if (!dpdmux_dev) {
 		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
-		return NULL;
-	}
-
-	key_cfg_iova = rte_zmalloc(NULL, DIST_PARAM_IOVA_SIZE,
-				   RTE_CACHE_LINE_SIZE);
-	if (!key_cfg_iova) {
-		DPAA2_PMD_ERR("Unable to allocate flow-dist parameters");
-		return NULL;
-	}
-	flow = rte_zmalloc(NULL, sizeof(struct rte_flow) +
-			   (2 * DIST_PARAM_IOVA_SIZE), RTE_CACHE_LINE_SIZE);
-	if (!flow) {
-		DPAA2_PMD_ERR(
-			"Memory allocation failure for rule configuration\n");
+		ret = -ENODEV;
 		goto creation_error;
 	}
-	key_iova = (void *)((size_t)flow + sizeof(struct rte_flow));
-	mask_iova = (void *)((size_t)key_iova + DIST_PARAM_IOVA_SIZE);
 
-	/* Currently taking only IP protocol as an extract type.
-	 * This can be exended to other fields using pattern->type.
-	 */
-	memset(&kg_cfg, 0, sizeof(struct dpkg_profile_cfg));
-
-	switch (pattern[0]->type) {
-	case RTE_FLOW_ITEM_TYPE_IPV4:
-	{
-		const struct rte_flow_item_ipv4 *spec;
-
-		kg_cfg.extracts[0].extract.from_hdr.prot = NET_PROT_IP;
-		kg_cfg.extracts[0].extract.from_hdr.field = NH_FLD_IP_PROTO;
-		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.num_extracts = 1;
-
-		spec = (const struct rte_flow_item_ipv4 *)pattern[0]->spec;
-		memcpy(key_iova, (const void *)(&spec->hdr.next_proto_id),
-			sizeof(uint8_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint8_t));
-		key_size = sizeof(uint8_t);
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_VLAN:
-	{
-		const struct rte_flow_item_vlan *spec;
-
-		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[0].extract.from_hdr.prot = NET_PROT_VLAN;
-		kg_cfg.extracts[0].extract.from_hdr.field = NH_FLD_VLAN_TCI;
-		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FROM_FIELD;
-		kg_cfg.extracts[0].extract.from_hdr.offset = 1;
-		kg_cfg.extracts[0].extract.from_hdr.size = 1;
-		kg_cfg.num_extracts = 1;
-
-		spec = (const struct rte_flow_item_vlan *)pattern[0]->spec;
-		memcpy((void *) key_iova, (const void *)(&spec->tci),
-			sizeof(uint16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
-		key_size = sizeof(uint16_t);
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP:
-	{
-		/* The bit 50 and bit 87 in Parse Results signal the
-		 * presence of an IP fragmented frame and GTP frame
-		 * respectively. The following rule extracts the octet
-		 * from 0xA containing bit 50 and from 0xE containing
-		 * bit 87 from Parse Results. The arrays mask and key
-		 * contain the cases for which the rules are created
-		 * in this switch case ie. GTP traffic, and IP fragmented
-		 * UDP traffic filled in this particular order in the arrays.
-		 */
-
-		uint64_t mask[] = {0x0001000000000000, 0x2000FF0000000000};
-		uint64_t key[] = {0x0001000000000000, 0x2000110000000000};
-		int j = 0;
-
-		num_rules = 2;
-		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-
-		for (loop = 0; loop < num_rules; loop++) {
-			keys[loop] = key[loop];
-			masks[loop] = mask[loop];
+	if (!dpdmux_dev->key_param) {
+		dpdmux_dev->key_param = rte_zmalloc(NULL,
+			DIST_PARAM_IOVA_SIZE, RTE_CACHE_LINE_SIZE);
+		if (!dpdmux_dev->key_param) {
+			DPAA2_PMD_ERR("Failure to allocate memory for extract");
+			goto creation_error;
 		}
-
-		if (!keys)
-			printf("Memory allocation failure for keys\n");
-
-		if (!masks)
-			printf("Memory allocation failure for masks\n");
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0E;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[j].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.extracts[j].extract.from_hdr.prot = NET_PROT_IP;
-		kg_cfg.extracts[j].extract.from_hdr.field = NH_FLD_IP_PROTO;
-		j++;
-
-		kg_cfg.num_extracts = j;
-		key_size = sizeof(uint8_t) * 3;
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_IP_FRAG_UDP_AND_GTP_AND_ESP:
-	{
-		/* The bit 50, bit 87 and bit 78 in Parse Results signal the
-		 * presence of an IP fragmented frame, GTP frame or ESP frame
-		 * respectively. The following rule extracts the octet from 0xA
-		 * containing bit 50, from 0xE containing bit 87 and from 0xD of
-		 * the Parse Results. The arrays mask and key contain the cases
-		 * for which the rules are created in this switch case ie. GTP
-		 * traffic, ESP traffic and IP fragmented UDP traffic filled in
-		 * this particular order in the arrays.
-		 */
-
-		uint64_t mask[] = {0x0001000000000000, 0x0000020000000000,
-				   0x200000FF00000000};
-		uint64_t key[] = {0x0001000000000000, 0x0000020000000000,
-				  0x2000001100000000};
-		int j = 0;
-
-		/* Mask/Key value needs to be exactly 256 bytes(16 digits). Zero
-		 * bits can be added as padding if extracted bytes are less.
-		 */
-
-		/* 0x020102FF00000000
-		 *    ^ ^ ^ ^ ^ ^ ^ ^
-		 *    | | | | | | | |
-		 *    1 2 3 4 Padding
-		 *
-		 * 02: 1st byte 0x0A
-		 * 01: 2nd byte 0x0E
-		 * 02: 3rd byte 0x0D
-		 * FF: 4th byte NH_FLD_IP_PROTO
-		 * Remaining bytes: Padding
-		 */
-
-		num_rules = 3;
-		keys = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-		masks = rte_malloc(NULL, num_rules * sizeof(uint64_t), 0);
-
-		for (loop = 0; loop < num_rules; loop++) {
-			keys[loop] = key[loop];
-			masks[loop] = mask[loop];
-		}
-
-		if (!keys)
-			printf("Memory allocation failure for keys\n");
-
-		if (!masks)
-			printf("Memory allocation failure for masks\n");
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		/* 0x0A Represents bits from 48-55 */
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		/* 0x0E Represents bits from 80-87 */
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0E;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		/* 0x0D Represents bits from 72-79 */
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0D;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[j].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.extracts[j].extract.from_hdr.prot = NET_PROT_IP;
-		/* Size 1. Gets set automatically(NH_FLD_IP_PROTO_SIZE) */
-		kg_cfg.extracts[j].extract.from_hdr.field = NH_FLD_IP_PROTO;
-		j++;
-
-		kg_cfg.num_extracts = j;
-		/* Four keys are extracted. */
-		key_size = sizeof(uint8_t) * 4;
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_IP_FRAG_PROTO:
-	{
-		uint8_t key_val = 0x20;
-		uint8_t mask_val = 0x20;
-		int j = 0;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[j].extract.from_hdr.prot = NET_PROT_IP;
-		kg_cfg.extracts[j].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.extracts[j].extract.from_hdr.field = NH_FLD_IP_PROTO;
-		j++;
-
-		kg_cfg.extracts[j].type = DPKG_EXTRACT_FROM_PARSE;
-		kg_cfg.extracts[j].extract.from_parse.offset = 0x0A;
-		kg_cfg.extracts[j].extract.from_parse.size = 1;
-		j++;
-
-		kg_cfg.num_extracts = j;
-		const struct rte_flow_item_ipv4 *spec;
-
-		spec = (const struct rte_flow_item_ipv4 *)pattern[0]->spec;
-		memcpy(key_iova, (const void *)(&spec->hdr.next_proto_id),
-			sizeof(uint8_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint8_t));
-		memcpy((char *)key_iova + 1, &key_val, sizeof(uint8_t));
-		memcpy((char *)mask_iova + 1, &mask_val, sizeof(uint8_t));
-		key_size = sizeof(uint8_t) + sizeof(uint8_t);
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_UDP:
-	{
-		const struct rte_flow_item_udp *spec;
-		uint16_t udp_dst_port;
-
-		kg_cfg.extracts[0].extract.from_hdr.prot = NET_PROT_UDP;
-		kg_cfg.extracts[0].extract.from_hdr.field = NH_FLD_UDP_PORT_DST;
-		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.num_extracts = 1;
-
-		spec = (const struct rte_flow_item_udp *)pattern[0]->spec;
-		udp_dst_port = rte_constant_bswap16(spec->hdr.dst_port);
-		memcpy((void *)key_iova, (const void *)&udp_dst_port,
-							sizeof(rte_be16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
-		key_size = sizeof(uint16_t);
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_ETH:
-	{
-		const struct rte_flow_item_eth *spec;
-		uint16_t eth_type;
-
-		kg_cfg.extracts[0].extract.from_hdr.prot = NET_PROT_ETH;
-		kg_cfg.extracts[0].extract.from_hdr.field = NH_FLD_ETH_TYPE;
-		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_HDR;
-		kg_cfg.extracts[0].extract.from_hdr.type = DPKG_FULL_FIELD;
-		kg_cfg.num_extracts = 1;
-
-		spec = (const struct rte_flow_item_eth *)pattern[0]->spec;
-		eth_type = rte_constant_bswap16(spec->type);
-		memcpy((void *)key_iova, (const void *)&eth_type,
-							sizeof(rte_be16_t));
-		memcpy(mask_iova, pattern[0]->mask, sizeof(uint16_t));
-		key_size = sizeof(uint16_t);
-	}
-	break;
-
-	case RTE_FLOW_ITEM_TYPE_RAW:
-	{
-		const struct rte_flow_item_raw *spec;
-
-		spec = (const struct rte_flow_item_raw *)pattern[0]->spec;
-		kg_cfg.extracts[0].extract.from_data.offset = spec->offset;
-		kg_cfg.extracts[0].extract.from_data.size = spec->length;
-		kg_cfg.extracts[0].type = DPKG_EXTRACT_FROM_DATA;
-		kg_cfg.num_extracts = 1;
-		memcpy((void *)key_iova, (const void *)spec->pattern,
-							spec->length);
-		memcpy(mask_iova, pattern[0]->mask, spec->length);
-
-		key_size = spec->length;
-	}
-	break;
-
-	default:
-		DPAA2_PMD_ERR("Not supported pattern type: %d",
-				pattern[0]->type);
-		goto creation_error;
-	}
-
-	ret = dpkg_prepare_key_cfg(&kg_cfg, key_cfg_iova);
-	if (ret) {
-		DPAA2_PMD_ERR("dpkg_prepare_key_cfg failed: err(%d)", ret);
-		goto creation_error;
-	}
-
-	/* Multiple rules with same DPKG extracts (kg_cfg.extracts) like same
-	 * offset and length values in raw is supported right now. Different
-	 * values of kg_cfg may not work.
-	 */
-	if (i == 0) {
-
-		ret = dpdmux_set_custom_key(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-					    dpdmux_dev->token,
-				(uint64_t)(DPAA2_VADDR_TO_IOVA(key_cfg_iova)));
-		if (ret) {
-			DPAA2_PMD_ERR("dpdmux_set_custom_key failed: err(%d)",
-					ret);
+		dpdmux_dev->key_param_iova =
+			DPAA2_VADDR_TO_IOVA_AND_CHECK(dpdmux_dev->key_param,
+				DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+		if (dpdmux_dev->key_param_iova == RTE_BAD_IOVA) {
+			DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
+				__func__, dpdmux_dev->key_param);
+			ret = -ENOBUFS;
 			goto creation_error;
 		}
 	}
 
-	vf_conf = (const struct rte_flow_action_vf *)(actions[0]->conf);
-	if (vf_conf->id == 0 || vf_conf->id > dpdmux_dev->num_ifs) {
-		DPAA2_PMD_ERR("Invalid destination id\n");
+	flow = rte_zmalloc(NULL, sizeof(struct dpaa2_mux_flow),
+			   RTE_CACHE_LINE_SIZE);
+	if (!flow) {
+		DPAA2_PMD_ERR("Failure to allocate memory for flow");
 		goto creation_error;
 	}
-	dpdmux_action.dest_if = vf_conf->id;
+
+	key_extract = &dpdmux_dev->key_extract;
+	dpkg = &key_extract->dpkg;
+
+	flow->key_addr = rte_zmalloc(NULL, DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE,
+		RTE_CACHE_LINE_SIZE);
+	if (!flow->key_addr) {
+		DPAA2_PMD_ERR("Unable to allocate flow rule buffer");
+		ret = -ENOMEM;
+		goto creation_error;
+	}
+
+	flow->rule.key_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(flow->key_addr,
+		DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+	if (flow->rule.key_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
+			__func__, flow->key_addr);
+		ret = -ENOBUFS;
+		goto creation_error;
+	}
+
+	flow->mask_addr = rte_zmalloc(NULL, DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE,
+		RTE_CACHE_LINE_SIZE);
+	if (!flow->mask_addr) {
+		DPAA2_PMD_ERR("Unable to allocate flow rule mask buffer");
+		ret = -ENOMEM;
+		goto creation_error;
+	}
+
+	flow->rule.mask_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(flow->mask_addr,
+		DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+	if (flow->rule.mask_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU mapping for address(%p)",
+			__func__, flow->mask_addr);
+		ret = -ENOBUFS;
+		goto creation_error;
+	}
+
+	memset(zero_cmp, 0, 256);
+
+	while (pattern[loop].type != RTE_FLOW_ITEM_TYPE_END) {
+		if (dpkg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
+			DPAA2_PMD_ERR("Too many extracts(%d)",
+				dpkg->num_extracts);
+			ret = -ENOTSUP;
+			goto creation_error;
+		}
+		switch (pattern[loop].type) {
+		case RTE_FLOW_ITEM_TYPE_IPV4:
+		{
+			const struct rte_flow_item_ipv4 *spec;
+			const struct rte_flow_item_ipv4 *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+
+			if (!mask || !memcmp(mask, zero_cmp,
+				sizeof(struct rte_flow_item_ipv4))) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_IPV4_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+
+			if (mask && mask->hdr.next_proto_id) {
+				ret = dpaa2_mux_add_hdr_extract(key_extract,
+					NET_PROT_IP, NH_FLD_IP_PROTO,
+					sizeof(uint8_t),
+					&spec->hdr.next_proto_id,
+					&mask->hdr.next_proto_id,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+
+			if (mask && mask->hdr.fragment_offset) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_IP_FRAG_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_VLAN:
+		{
+			const struct rte_flow_item_vlan *spec;
+			const struct rte_flow_item_vlan *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+
+			if (!mask || !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_vlan))) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_VLAN_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+
+			if (mask && mask->tci) {
+				ret = dpaa2_mux_add_hdr_extract(key_extract,
+					NET_PROT_VLAN, NH_FLD_VLAN_TCI,
+					sizeof(uint16_t),
+					&spec->tci, &mask->tci,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_ESP:
+		{
+			const struct rte_flow_item_esp *spec, *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+			if (!mask || (!mask->hdr.spi && !mask->hdr.seq)) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_IPSEC_ESP_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+			(void)spec;
+			(void)mask;
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_GTP:
+		{
+			const struct rte_flow_item_gtp *spec, *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+			if (!mask || !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_gtp))) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_GTP_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+			(void)spec;
+			(void)mask;
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_UDP:
+		{
+			const struct rte_flow_item_udp *spec;
+			const struct rte_flow_item_udp *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+			if (!mask || (!mask->hdr.src_port &&
+				!mask->hdr.dst_port)) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_UDP_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			if (mask && mask->hdr.dst_port) {
+				ret = dpaa2_mux_add_hdr_extract(key_extract,
+					NET_PROT_UDP, NH_FLD_UDP_PORT_DST,
+					sizeof(rte_be16_t),
+					&spec->hdr.dst_port,
+					&mask->hdr.dst_port,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_ETH:
+		{
+			const struct rte_flow_item_eth *spec;
+			const struct rte_flow_item_eth *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+
+			if (!mask || !memcmp(zero_cmp, mask,
+				sizeof(struct rte_flow_item_eth))) {
+				ret = dpaa2_mux_add_parser_extract(key_extract,
+						DPAA2_PARSER_MAC_ID,
+						flow->key_addr, flow->mask_addr,
+						&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+
+			if (mask && mask->type) {
+				ret = dpaa2_mux_add_hdr_extract(key_extract,
+					NET_PROT_ETH, NH_FLD_ETH_TYPE,
+					sizeof(rte_be16_t),
+					&spec->type, &mask->type,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
+			/**TO DO*/
+		}
+		break;
+
+		case RTE_FLOW_ITEM_TYPE_RAW:
+		{
+			const struct rte_flow_item_raw *spec;
+			const struct rte_flow_item_raw *mask;
+
+			spec = pattern[loop].spec;
+			mask = pattern[loop].mask;
+
+			ret = dpaa2_mux_add_raw_extract(key_extract,
+				spec->offset, spec->length,
+				spec->pattern, mask->pattern,
+				flow->key_addr, flow->mask_addr,
+				&extract_update);
+			if (ret)
+				goto creation_error;
+		}
+		break;
+
+		default:
+			DPAA2_PMD_ERR("Not supported pattern[%d] type: %d",
+				loop, pattern[loop].type);
+			ret = -ENOTSUP;
+			goto creation_error;
+		}
+		loop++;
+	}
+
+	if (!extract_update)
+		goto add_entry;
+
+	_flow = LIST_FIRST(&dpdmux_dev->flows);
+	while (_flow) {
+		dpaa2_mux_flow_rule_log(_flow, "remove");
+		ret = dpdmux_remove_custom_cls_entry(&dpdmux_dev->dpdmux,
+			CMD_PRI_LOW, dpdmux_dev->token,
+			&_flow->rule);
+		if (ret) {
+			DPAA2_PMD_ERR("Remove mux rule failed(%d)", ret);
+			goto creation_error;
+		}
+		_flow = LIST_NEXT(_flow, next);
+	}
+	dpaa2_mux_extracts_log(dpdmux_dev);
+	ret = dpkg_prepare_key_cfg(dpkg, dpdmux_dev->key_param);
+	if (ret) {
+		DPAA2_PMD_ERR("dpkg_prepare_key_cfg failed(%d)", ret);
+		goto creation_error;
+	}
+	ret = dpdmux_set_custom_key(&dpdmux_dev->dpdmux,
+			CMD_PRI_LOW, dpdmux_dev->token,
+			dpdmux_dev->key_param_iova);
+	if (ret) {
+		DPAA2_PMD_ERR("dpdmux_set_custom_key failed(%d)",
+			ret);
+		goto creation_error;
+	}
+	_flow = LIST_FIRST(&dpdmux_dev->flows);
+	while (_flow) {
+		_flow->rule.key_size = key_extract->key_profile.key_max_size;
+		dpaa2_mux_flow_rule_log(_flow, "update");
+		ret = dpdmux_add_custom_cls_entry(&dpdmux_dev->dpdmux,
+			CMD_PRI_LOW, dpdmux_dev->token,
+			&_flow->rule, &_flow->action);
+		if (ret) {
+			DPAA2_PMD_ERR("Re-add mux rule failed(%d)", ret);
+			goto creation_error;
+		}
+		_flow = LIST_NEXT(_flow, next);
+	}
+
+add_entry:
+	if (actions[0].type == RTE_FLOW_ACTION_TYPE_VF) {
+		vf_conf = actions[0].conf;
+		flow->action.dest_if = vf_conf->id;
+	} else {
+		/** TODO*/
+		DPAA2_PMD_ERR("MUX Action TYPE(%d) not support",
+			actions[0].type);
+		ret = -ENOTSUP;
+		goto creation_error;
+	}
 
 	/* As now our key extract parameters are set, let us configure
 	 * the rule.
 	 */
-	for (loop = 0; loop < num_rules; loop++) {
-		if (keys) {
-			rte_be64_t key_val, mask_val;
-
-			key_val = rte_bswap64(keys[loop]);
-			mask_val = rte_bswap64(masks[loop]);
-			memcpy(key_iova, &key_val, sizeof(rte_be64_t));
-			memcpy(mask_iova, &mask_val, sizeof(rte_be64_t));
-		}
-		flow->rule.key_iova =
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(key_iova));
-		flow->rule.mask_iova =
-			(uint64_t)(DPAA2_VADDR_TO_IOVA(mask_iova));
-		flow->rule.key_size = key_size;
-		flow->rule.entry_index = i++;
-
-		ret = dpdmux_add_custom_cls_entry(&dpdmux_dev->dpdmux,
-					CMD_PRI_LOW, dpdmux_dev->token,
-					&flow->rule, &dpdmux_action);
-
-		if (ret) {
-			DPAA2_PMD_ERR("dpdmux_add_custom_cls_entry failed:err(%d)"
-					, ret);
-			goto creation_error;
-		}
+	flow->rule.entry_index = dpdmux_dev->flow_num;
+	flow->rule.key_size = key_extract->key_profile.key_max_size;
+	dpaa2_mux_flow_rule_log(flow, "new");
+	ret = dpdmux_add_custom_cls_entry(&dpdmux_dev->dpdmux,
+			CMD_PRI_LOW, dpdmux_dev->token,
+			&flow->rule, &flow->action);
+	if (ret) {
+		DPAA2_PMD_ERR("MUX add classification entry failed(%d)",
+			ret);
+		goto creation_error;
 	}
+	dpdmux_dev->flow_num++;
+	LIST_INSERT_HEAD(&dpdmux_dev->flows, flow, next);
 
-	return flow;
+	return flow->rule.entry_index;
 
 creation_error:
-	rte_free((void *)key_cfg_iova);
-	rte_free((void *)flow);
-	return NULL;
+	if (flow->key_addr)
+		rte_free(flow->key_addr);
+	if (flow->mask_addr)
+		rte_free(flow->mask_addr);
+	if (flow)
+		rte_free(flow);
+
+	return ret;
+}
+
+int
+rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
+	uint8_t mac_addr[6], uint16_t vlan_id, int dest_if)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	struct dpdmux_l2_rule rule;
+	int ret, i;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return -ENODEV;
+	}
+
+	for (i = 0; i < 6; i++)
+		rule.mac_addr[i] = mac_addr[i];
+	rule.vlan_id = vlan_id;
+
+	ret = dpdmux_if_add_l2_rule(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
+			dpdmux_dev->token, dest_if, &rule);
+	if (ret) {
+		DPAA2_PMD_ERR("dpdmux_if_add_l2_rule failed:err(%d)", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int
+rte_pmd_dpaa2_mux_rx_frame_len(uint32_t dpdmux_id, uint16_t max_rx_frame_len)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	int ret;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return -1;
+	}
+
+	ret = dpdmux_set_max_frame_length(&dpdmux_dev->dpdmux,
+			CMD_PRI_LOW, dpdmux_dev->token, max_rx_frame_len);
+	if (ret) {
+		DPAA2_PMD_ERR("DPDMUX:Unable to set mtu. check config %d", ret);
+		return ret;
+	}
+
+	DPAA2_PMD_INFO("dpdmux mtu set as %u",
+			DPAA2_MAX_RX_PKT_LEN - RTE_ETHER_CRC_LEN);
+
+	return ret;
 }
 
 /* dump the status of the dpaa2_mux counters on the console */
@@ -514,72 +823,6 @@ rte_pmd_dpaa2_mux_dump_counter(FILE *f, uint32_t dpdmux_id, int num_if)
 	}
 }
 
-struct dpdmux_l2_rule*
-rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
-			  uint8_t mac_addr[6],
-			  uint16_t vlan_id,
-			  int dest_if)
-{
-	struct dpaa2_dpdmux_dev *dpdmux_dev;
-	struct dpdmux_l2_rule *rule;
-	int ret;
-
-	/* Find the DPDMUX from dpdmux_id in our list */
-	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
-	if (!dpdmux_dev) {
-		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
-		return NULL;
-	}
-
-	rule = rte_zmalloc(NULL, sizeof(struct dpdmux_l2_rule),
-			RTE_CACHE_LINE_SIZE);
-	if (!rule) {
-		DPAA2_PMD_ERR(
-			"Memory allocation failure for rule configuration\n");
-		return NULL;
-	}
-
-	for (int i = 0; i < 6; i++)
-		rule->mac_addr[i] = mac_addr[i];
-	rule->vlan_id = vlan_id;
-
-	ret = dpdmux_if_add_l2_rule(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-				dpdmux_dev->token, dest_if, rule);
-	if (ret) {
-		DPAA2_PMD_ERR("dpdmux_if_add_l2_rule failed:err(%d)"
-				, ret);
-		return NULL;
-	}
-
-	return rule;
-}
-
-int
-rte_pmd_dpaa2_mux_rx_frame_len(uint32_t dpdmux_id, uint16_t max_rx_frame_len)
-{
-	struct dpaa2_dpdmux_dev *dpdmux_dev;
-	int ret;
-
-	/* Find the DPDMUX from dpdmux_id in our list */
-	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
-	if (!dpdmux_dev) {
-		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
-		return -1;
-	}
-
-	ret = dpdmux_set_max_frame_length(&dpdmux_dev->dpdmux,
-			CMD_PRI_LOW, dpdmux_dev->token, max_rx_frame_len);
-	if (ret) {
-		DPAA2_PMD_ERR("DPDMUX:Unable to set mtu. check config %d", ret);
-		return ret;
-	}
-
-	DPAA2_PMD_INFO("dpdmux mtu set as %u",
-			DPAA2_MAX_RX_PKT_LEN - RTE_ETHER_CRC_LEN);
-
-	return ret;
-}
-
 static int
 dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 			   struct vfio_device_info *obj_info __rte_unused,
@@ -619,16 +862,18 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 
 	if (attr.method != DPDMUX_METHOD_C_VLAN_MAC) {
 		ret = dpdmux_if_set_default(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
-					    dpdmux_dev->token, attr.default_if);
+				dpdmux_dev->token, attr.default_if);
 		if (ret) {
 			DPAA2_PMD_ERR("setting default interface failed in %s",
 				      __func__);
 			goto init_err;
 		}
 		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE
-				| DPDMUX_SKIP_UNICAST_RULES | DPDMUX_SKIP_MULTICAST_RULES;
-	} else
+			| DPDMUX_SKIP_UNICAST_RULES |
+			DPDMUX_SKIP_MULTICAST_RULES;
+	} else {
 		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE;
+	}
 
 	ret = dpdmux_get_api_version(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
 					&maj_ver, &min_ver);
@@ -649,16 +894,6 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 				      __func__);
 			goto init_err;
 		}
-
-		ret = dpdmux_set_max_frame_length(&dpdmux_dev->dpdmux,
-				CMD_PRI_LOW, dpdmux_dev->token,
-				DPAA2_MAX_RX_PKT_LEN - RTE_ETHER_CRC_LEN);
-		if (ret) {
-			DPAA2_PMD_ERR("DPDMUX:Unable to set mtu. check config");
-			goto init_err;
-		}
-		DPAA2_PMD_INFO("dpdmux mtu set as %u",
-				DPAA2_MAX_RX_PKT_LEN - RTE_ETHER_CRC_LEN);
 	}
 
 	if (maj_ver >= 6 && min_ver >= 9) {
@@ -690,8 +925,7 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 	return 0;
 
 init_err:
-	if (dpdmux_dev)
-		rte_free(dpdmux_dev);
+	rte_free(dpdmux_dev);
 
 	return -1;
 }
@@ -700,8 +934,28 @@ static void
 dpaa2_close_dpdmux_device(int object_id)
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	struct dpaa2_mux_flow *flow, *next;
+	int ret;
 
 	dpdmux_dev = get_dpdmux_from_id((uint32_t)object_id);
+
+	flow = LIST_FIRST(&dpdmux_dev->flows);
+	while (flow) {
+		next = LIST_NEXT(flow, next);
+		dpaa2_mux_flow_rule_log(flow, "remove");
+		ret = dpdmux_remove_custom_cls_entry(&dpdmux_dev->dpdmux,
+				CMD_PRI_LOW, dpdmux_dev->token,
+				&flow->rule);
+		if (ret)
+			DPAA2_PMD_ERR("Remove mux rule failed: err(%d)", ret);
+		LIST_REMOVE(flow, next);
+		if (flow->key_addr)
+			rte_free(flow->key_addr);
+		if (flow->mask_addr)
+			rte_free(flow->mask_addr);
+		rte_free(flow);
+		flow = next;
+	}
 
 	if (dpdmux_dev) {
 		dpdmux_close(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
