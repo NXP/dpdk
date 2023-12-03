@@ -211,6 +211,7 @@ struct lsinic_queue {
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
 	struct lsinic_dma_seg_job *dma_seg_jobs;
+	uint16_t *dma_idx;
 
 	struct rte_qdma_job *rawdma_jobs;
 	struct rte_qdma_job *e2r_bd_rawdma_jobs;
