@@ -25,7 +25,7 @@
 #include "dpaa2_pmd_logs.h"
 #include "dpaa2_ethdev.h"
 #include "base/dpaa2_hw_dpni_annot.h"
-#include "dpaa2_parse_dump.h"
+#include "dpaa2_parser_decode.h"
 
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
@@ -51,8 +51,10 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
 
-	if (unlikely(dpaa2_print_parser_result))
+	if (unlikely(dpaa2_print_parser_result)) {
+		dpaa2_print_fd_frc(fd);
 		dpaa2_print_parse_result(annotation);
+	}
 
 	m->packet_type = RTE_PTYPE_UNKNOWN;
 	switch (frc) {
@@ -711,6 +713,8 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 
 		if (!dpaa2_print_parser_result) {
 			/** Don't print parse result twice.*/
+			if (dpaa2_svr_family == SVR_LX2160A)
+				dpaa2_print_fd_frc(fd);
 			dpaa2_print_parse_result(hw_annot_addr);
 		}
 

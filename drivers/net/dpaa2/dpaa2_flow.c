@@ -22,6 +22,7 @@
 
 #include <dpaa2_ethdev.h>
 #include <dpaa2_pmd_logs.h>
+#include "dpaa2_parser_decode.h"
 
 static char *dpaa2_flow_control_log;
 static uint16_t dpaa2_flow_miss_flow_id =
@@ -107,6 +108,21 @@ enum rte_flow_action_type dpaa2_supported_fs_action_type[] = {
 };
 
 enum rte_filter_type dpaa2_filter_type = RTE_ETH_FILTER_NONE;
+
+#define DPAA2_FLOW_HDR_HEX_DUMP_SIZE \
+	(RTE_MAX(sizeof(struct rte_flow_item_eth), \
+	RTE_MAX(sizeof(struct rte_flow_item_vlan), \
+	RTE_MAX(sizeof(struct rte_flow_item_ipv4), \
+	RTE_MAX(sizeof(struct rte_flow_item_ipv6), \
+	RTE_MAX(sizeof(struct rte_flow_item_icmp), \
+	RTE_MAX(sizeof(struct rte_flow_item_udp), \
+	RTE_MAX(sizeof(struct rte_flow_item_tcp), \
+	RTE_MAX(sizeof(struct rte_flow_item_sctp), \
+	RTE_MAX(sizeof(struct rte_flow_item_gre), \
+	RTE_MAX(sizeof(struct rte_flow_item_vxlan), \
+	RTE_MAX(sizeof(struct rte_flow_item_ecpri), \
+	RTE_MAX(sizeof(struct rte_flow_item_gtp), \
+	sizeof(struct rte_flow_item_rocev2))))))))))))) * 10)
 
 #ifndef __cplusplus
 static const struct rte_flow_item_eth dpaa2_flow_item_eth_mask = {
@@ -1000,7 +1016,7 @@ dpaa2_flow_faf_add_hdr(int faf_byte,
 	enum dpaa2_flow_dist_type dist_type, int tc_id,
 	int *insert_offset)
 {
-	int pos, i, offset;
+	int pos, i;
 	struct dpaa2_key_extract *key_extract;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract *extracts;
@@ -1032,10 +1048,8 @@ dpaa2_flow_faf_add_hdr(int faf_byte,
 		}
 	}
 
-	offset = DPAA2_FAFE_PSR_OFFSET + faf_byte;
-
 	extracts[pos].type = DPKG_EXTRACT_FROM_PARSE;
-	extracts[pos].extract.from_parse.offset = offset;
+	extracts[pos].extract.from_parse.offset = faf_byte;
 	extracts[pos].extract.from_parse.size = 1;
 
 	dpkg->num_extracts++;
@@ -1054,7 +1068,7 @@ dpaa2_flow_pr_add_hdr(uint32_t pr_offset,
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract *extracts;
 
-	if ((pr_offset + pr_size) > DPAA2_FAPR_SIZE) {
+	if ((pr_offset + pr_size) > DPAA2_PSR_RESULT_SIZE) {
 		DPAA2_PMD_ERR("PR extracts(%d:%d) overflow",
 			pr_offset, pr_size);
 		return -EINVAL;
@@ -1479,7 +1493,7 @@ dpaa2_flow_extract_key_offset(struct dpaa2_key_profile *key_profile,
 static int
 dpaa2_flow_faf_add_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *flow,
-	enum dpaa2_rx_faf_offset faf_bit_off,
+	uint32_t faf_bit_off,
 	int group,
 	enum dpaa2_flow_dist_type dist_type)
 {
@@ -1737,14 +1751,14 @@ dpaa2_flow_extract_support(const uint8_t *mask_src,
 static int
 dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *flow,
-	enum dpaa2_rx_faf_offset faf_off,
+	uint32_t faf_bit_off,
 	enum dpaa2_flow_dist_type dist_type,
 	int group, int *recfg)
 {
 	int ret, index, local_cfg = 0;
 	struct dpaa2_key_extract *extract;
 	struct dpaa2_key_profile *key_profile;
-	uint8_t faf_byte = faf_off / 8;
+	uint8_t faf_byte = faf_bit_off / 8;
 
 	if (dist_type & DPAA2_FLOW_QOS_TYPE) {
 		extract = &priv->extract.qos_key_extract;
@@ -1764,7 +1778,7 @@ dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 			local_cfg |= DPAA2_FLOW_QOS_TYPE;
 		}
 
-		ret = dpaa2_flow_faf_add_rule(priv, flow, faf_off, group,
+		ret = dpaa2_flow_faf_add_rule(priv, flow, faf_bit_off, group,
 				DPAA2_FLOW_QOS_TYPE);
 		if (ret) {
 			DPAA2_PMD_ERR("QoS faf rule set failed");
@@ -1791,7 +1805,7 @@ dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 			local_cfg |= DPAA2_FLOW_FS_TYPE;
 		}
 
-		ret = dpaa2_flow_faf_add_rule(priv, flow, faf_off, group,
+		ret = dpaa2_flow_faf_add_rule(priv, flow, faf_bit_off, group,
 				DPAA2_FLOW_FS_TYPE);
 		if (ret) {
 			DPAA2_PMD_ERR("FS[%d] faf rule set failed",
@@ -2106,6 +2120,15 @@ rule_configure:
 	return 0;
 }
 
+static void dpaa2_flow_hdr_hexdump(char *dump_buf,
+	const uint8_t *hdr, uint32_t size)
+{
+	uint32_t i;
+
+	for (i = 0; i < size; i++)
+		sprintf(&dump_buf[i], "%02x ", hdr[i]);
+}
+
 static int
 dpaa2_configure_flow_tunnel_eth(struct dpaa2_dev_flow *flow,
 	struct rte_eth_dev *dev,
@@ -2118,6 +2141,7 @@ dpaa2_configure_flow_tunnel_eth(struct dpaa2_dev_flow *flow,
 	const struct rte_flow_item_eth *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const char zero_cmp[RTE_ETHER_ADDR_LEN] = {0};
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2136,7 +2160,10 @@ dpaa2_configure_flow_tunnel_eth(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ETH);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of ethernet failed");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_eth));
+		DPAA2_PMD_WARN("Extract ethernet(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2310,12 +2337,13 @@ dpaa2_configure_flow_eth(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_eth *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const char zero_cmp[RTE_ETHER_ADDR_LEN] = {0};
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	if (dpaa2_pattern->in_tunnel) {
 		return dpaa2_configure_flow_tunnel_eth(flow,
@@ -2334,14 +2362,19 @@ dpaa2_configure_flow_eth(struct dpaa2_dev_flow *flow,
 	flow->tc_index = attr->priority;
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_MAC_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_ETH_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_ETH_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -2353,7 +2386,10 @@ dpaa2_configure_flow_eth(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ETH);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of ethernet failed");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_eth));
+		DPAA2_PMD_WARN("Extract ethernet(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2422,9 +2458,10 @@ dpaa2_configure_flow_tunnel_vlan(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_vlan *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2438,15 +2475,20 @@ dpaa2_configure_flow_tunnel_vlan(struct dpaa2_dev_flow *flow,
 	flow->tc_index = attr->priority;
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_VLAN_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_VLAN_FRAM,
+				bit_offset,
 				DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_VLAN_FRAM,
+				bit_offset,
 				DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
@@ -2459,7 +2501,10 @@ dpaa2_configure_flow_tunnel_vlan(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_VLAN);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of vlan not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_vlan));
+		DPAA2_PMD_WARN("Extract vlan(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2496,11 +2541,12 @@ dpaa2_configure_flow_vlan(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_vlan *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	if (dpaa2_pattern->in_tunnel) {
 		return dpaa2_configure_flow_tunnel_vlan(flow,
@@ -2519,14 +2565,19 @@ dpaa2_configure_flow_vlan(struct dpaa2_dev_flow *flow,
 	flow->tc_index = attr->priority;
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VLAN_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_VLAN_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_VLAN_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -2538,7 +2589,10 @@ dpaa2_configure_flow_vlan(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_VLAN);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of vlan not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_vlan));
+		DPAA2_PMD_WARN("Extract vlan(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2575,7 +2629,7 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_ipv4 *spec_ipv4 = 0,
 		*mask_ipv4 = 0;
 	const void *key, *mask;
@@ -2583,6 +2637,7 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 	int size;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2600,25 +2655,36 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 			DPAA2_PMD_ERR("Tunnel-IPv4 distribution not support");
 			return -ENOTSUP;
 		}
+
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_IPV4_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_IPV4_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_IPV4_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		return ret;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_IPV4_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPV4_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPV4_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -2631,7 +2697,10 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask_ipv4,
 		RTE_FLOW_ITEM_TYPE_IPV4);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of IPv4 not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask_ipv4,
+			sizeof(struct rte_flow_item_ipv4));
+		DPAA2_PMD_WARN("Extract IPv4(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2700,7 +2769,7 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_ipv6 *spec_ipv6 = 0,
 		*mask_ipv6 = 0;
 	const void *key, *mask;
@@ -2709,6 +2778,7 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 	int size;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2726,25 +2796,36 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 			DPAA2_PMD_ERR("Tunnel-IPv6 distribution not support");
 			return -ENOTSUP;
 		}
+
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_IPV6_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_IPV6_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_IPV6_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		return ret;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_IPV6_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPV6_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPV6_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -2757,7 +2838,10 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask_ipv6,
 		RTE_FLOW_ITEM_TYPE_IPV6);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of IPv6 not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask_ipv6,
+			sizeof(struct rte_flow_item_ipv6));
+		DPAA2_PMD_WARN("Extract IPv6(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2833,11 +2917,12 @@ dpaa2_configure_flow_icmp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_icmp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2856,14 +2941,19 @@ dpaa2_configure_flow_icmp(struct dpaa2_dev_flow *flow,
 	}
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_ICMP_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_ICMP_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_ICMP_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -2875,7 +2965,10 @@ dpaa2_configure_flow_icmp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ICMP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of ICMP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_icmp));
+		DPAA2_PMD_WARN("Extract ICMP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -2927,11 +3020,12 @@ dpaa2_configure_flow_udp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_udp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -2949,25 +3043,36 @@ dpaa2_configure_flow_udp(struct dpaa2_dev_flow *flow,
 			DPAA2_PMD_ERR("Tunnel-UDP distribution not support");
 			return -ENOTSUP;
 		}
+
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_UDP_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_UDP_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_UDP_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		return ret;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_UDP_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_UDP_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_UDP_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -2980,7 +3085,10 @@ dpaa2_configure_flow_udp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_UDP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of UDP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_udp));
+		DPAA2_PMD_ERR("Extract UDP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3032,11 +3140,12 @@ dpaa2_configure_flow_tcp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_tcp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3054,25 +3163,36 @@ dpaa2_configure_flow_tcp(struct dpaa2_dev_flow *flow,
 			DPAA2_PMD_ERR("Tunnel-TCP distribution not support");
 			return -ENOTSUP;
 		}
+
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_TCP_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_TCP_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAFE_VXLAN_IN_TCP_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		return ret;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_TCP_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_TCP_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_TCP_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -3085,7 +3205,10 @@ dpaa2_configure_flow_tcp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_TCP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of TCP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_tcp));
+		DPAA2_PMD_ERR("Extract TCP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3137,11 +3260,12 @@ dpaa2_configure_flow_esp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_esp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3159,14 +3283,19 @@ dpaa2_configure_flow_esp(struct dpaa2_dev_flow *flow,
 		return -ENOTSUP;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+		DPAA2_PARSER_IPSEC_ESP_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPSEC_ESP_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPSEC_ESP_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -3179,7 +3308,10 @@ dpaa2_configure_flow_esp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ESP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of ESP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_esp));
+		DPAA2_PMD_ERR("Extract ESP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3231,11 +3363,12 @@ dpaa2_configure_flow_ah(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_ah *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3253,14 +3386,19 @@ dpaa2_configure_flow_ah(struct dpaa2_dev_flow *flow,
 		return -ENOTSUP;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+		DPAA2_PARSER_IPSEC_AH_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPSEC_AH_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_IPSEC_AH_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -3273,7 +3411,10 @@ dpaa2_configure_flow_ah(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_AH);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of AH not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_ah));
+		DPAA2_PMD_ERR("Extract AH(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3314,11 +3455,12 @@ dpaa2_configure_flow_sctp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_sctp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3336,14 +3478,19 @@ dpaa2_configure_flow_sctp(struct dpaa2_dev_flow *flow,
 		return -ENOTSUP;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_SCTP_ID);
+	if (ret)
+		return ret;
+
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_SCTP_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
 
 	ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAF_SCTP_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 	if (ret)
 		return ret;
@@ -3356,7 +3503,10 @@ dpaa2_configure_flow_sctp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_SCTP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of SCTP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_sctp));
+		DPAA2_PMD_ERR("Extract SCTP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3408,11 +3558,12 @@ dpaa2_configure_flow_gre(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_gre *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3431,14 +3582,19 @@ dpaa2_configure_flow_gre(struct dpaa2_dev_flow *flow,
 	}
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_GRE_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_GRE_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_GRE_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -3450,7 +3606,10 @@ dpaa2_configure_flow_gre(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_GRE);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of GRE not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_gre));
+		DPAA2_PMD_ERR("Extract GRE(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3487,11 +3646,12 @@ dpaa2_configure_flow_vxlan(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_vxlan *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3510,14 +3670,19 @@ dpaa2_configure_flow_vxlan(struct dpaa2_dev_flow *flow,
 	}
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_VXLAN_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_VXLAN_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_VXLAN_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -3529,7 +3694,10 @@ dpaa2_configure_flow_vxlan(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_VXLAN);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of VXLAN not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_vxlan));
+		DPAA2_PMD_ERR("Extract vXLAN(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -3579,7 +3747,7 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_ecpri *spec, *mask;
 	struct rte_flow_item_ecpri local_mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -3590,6 +3758,8 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 	uint64_t mask_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
 	uint8_t extract_size[DPAA2_ECPRI_MAX_EXTRACT_NB];
 	uint8_t extract_off[DPAA2_ECPRI_MAX_EXTRACT_NB];
+	union dpaa2_sp_fafe_parse fafe;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3614,15 +3784,20 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 		return -ENOTSUP;
 	}
 
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_ECPRI_ID);
+	if (ret)
+		return ret;
+
 	if (!spec) {
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAFE_ECPRI_FRAM, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAFE_ECPRI_FRAM, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 		if (ret)
 			return ret;
@@ -3634,24 +3809,37 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ECPRI);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of ECPRI not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_ecpri));
+		DPAA2_PMD_ERR("Extract eCPRI(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
 
 	if (mask->hdr.common.type != 0xff) {
-		DPAA2_PMD_WARN("ECPRI header type not specified.");
+		DPAA2_PMD_ERR("ECPRI header type not specified.");
 
 		return -EINVAL;
 	}
 
-	if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_IQ_DATA) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_0;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
+	if (spec->hdr.common.type > RTE_ECPRI_MSG_TYPE_IWF_DCTRL) {
+		DPAA2_PMD_ERR("ECPRI header type(%d) not supported.",
+			spec->hdr.common.type);
 
+		return -ENOTSUP;
+	}
+
+	/** Extract eCPRI type from FAFE.*/
+	fafe.ecpri.ecpri = 1;
+	fafe.ecpri.msg_type = spec->hdr.common.type;
+	rule_data[extract_nb] = fafe.fafe_8b;
+	mask_data[extract_nb] = 0xff;
+	extract_size[extract_nb] = sizeof(uint8_t);
+	extract_off[extract_nb] = DPAA2_FAFE_PSR_RESULT_OFFSET;
+	extract_nb++;
+
+	if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_IQ_DATA) {
 		if (mask->hdr.type0.pc_id) {
 			rule_data[extract_nb] = spec->hdr.type0.pc_id;
 			mask_data[extract_nb] = mask->hdr.type0.pc_id;
@@ -3671,12 +3859,6 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_BIT_SEQ) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_1;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type1.pc_id) {
 			rule_data[extract_nb] = spec->hdr.type1.pc_id;
 			mask_data[extract_nb] = mask->hdr.type1.pc_id;
@@ -3696,12 +3878,6 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RTC_CTRL) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_2;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type2.rtc_id) {
 			rule_data[extract_nb] = spec->hdr.type2.rtc_id;
 			mask_data[extract_nb] = mask->hdr.type2.rtc_id;
@@ -3721,21 +3897,9 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_GEN_DATA) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_3;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type3.pc_id || mask->hdr.type3.seq_id)
 			DPAA2_PMD_WARN("Extract type3 msg not support.");
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RM_ACC) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_4;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type4.rma_id) {
 			rule_data[extract_nb] = spec->hdr.type4.rma_id;
 			mask_data[extract_nb] = mask->hdr.type4.rma_id;
@@ -3763,12 +3927,6 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_DLY_MSR) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_5;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type5.msr_id) {
 			rule_data[extract_nb] = spec->hdr.type5.msr_id;
 			mask_data[extract_nb] = mask->hdr.type5.msr_id;
@@ -3790,12 +3948,6 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_RMT_RST) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_6;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type6.rst_id) {
 			rule_data[extract_nb] = spec->hdr.type6.rst_id;
 			mask_data[extract_nb] = mask->hdr.type6.rst_id;
@@ -3817,12 +3969,6 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else if (spec->hdr.common.type == RTE_ECPRI_MSG_TYPE_EVT_IND) {
-		rule_data[extract_nb] = ECPRI_FAFE_TYPE_7;
-		mask_data[extract_nb] = 0xff;
-		extract_size[extract_nb] = sizeof(uint8_t);
-		extract_off[extract_nb] = DPAA2_FAFE_PSR_OFFSET;
-		extract_nb++;
-
 		if (mask->hdr.type7.evt_id) {
 			rule_data[extract_nb] = spec->hdr.type7.evt_id;
 			mask_data[extract_nb] = mask->hdr.type7.evt_id;
@@ -3864,9 +4010,9 @@ dpaa2_configure_flow_ecpri(struct dpaa2_dev_flow *flow,
 			extract_nb++;
 		}
 	} else {
-		DPAA2_PMD_ERR("Invalid ecpri header type(%d)",
-				spec->hdr.common.type);
-		return -EINVAL;
+		DPAA2_PMD_ERR("Unsupported ecpri header type(%d)",
+			spec->hdr.common.type);
+		return -ENOTSUP;
 	}
 
 	for (i = 0; i < extract_nb; i++) {
@@ -3904,7 +4050,7 @@ dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_rocev2 *spec, *mask;
 	struct rte_flow_item_rocev2 local_mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -3915,6 +4061,7 @@ dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
 	uint64_t mask_data[DPAA2_IBTH_MAX_EXTRACT_NB];
 	uint8_t extract_size[DPAA2_IBTH_MAX_EXTRACT_NB];
 	uint8_t extract_off[DPAA2_IBTH_MAX_EXTRACT_NB];
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -3938,14 +4085,19 @@ dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
 	}
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_ROCEV2_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAFE_IBTH, DPAA2_FLOW_QOS_TYPE,
+			bit_offset, DPAA2_FLOW_QOS_TYPE,
 			group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-			FAFE_IBTH, DPAA2_FLOW_FS_TYPE,
+			bit_offset, DPAA2_FLOW_FS_TYPE,
 			group, &local_cfg);
 		if (ret)
 			return ret;
@@ -3957,7 +4109,10 @@ dpaa2_configure_flow_rocev2(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_ROCEV2);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of rocev2 not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_rocev2));
+		DPAA2_PMD_ERR("Extract ROCEv2(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
@@ -4020,11 +4175,12 @@ dpaa2_configure_flow_gtp(struct dpaa2_dev_flow *flow,
 	int *device_configured)
 {
 	int ret, local_cfg = 0;
-	uint32_t group;
+	uint32_t group, bit_offset;
 	const struct rte_flow_item_gtp *spec, *mask;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	const struct rte_flow_item *pattern =
 		&dpaa2_pattern->generic_item;
+	char hex_dump[DPAA2_FLOW_HDR_HEX_DUMP_SIZE];
 
 	group = attr->group;
 
@@ -4043,14 +4199,19 @@ dpaa2_configure_flow_gtp(struct dpaa2_dev_flow *flow,
 	}
 
 	if (!spec) {
+		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+			DPAA2_PARSER_GTP_ID);
+		if (ret)
+			return ret;
+
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_GTP_FRAM, DPAA2_FLOW_QOS_TYPE,
+				bit_offset, DPAA2_FLOW_QOS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
 
 		ret = dpaa2_flow_identify_by_faf(priv, flow,
-				FAF_GTP_FRAM, DPAA2_FLOW_FS_TYPE,
+				bit_offset, DPAA2_FLOW_FS_TYPE,
 				group, &local_cfg);
 		if (ret)
 			return ret;
@@ -4062,7 +4223,10 @@ dpaa2_configure_flow_gtp(struct dpaa2_dev_flow *flow,
 	ret = dpaa2_flow_extract_support((const uint8_t *)mask,
 		RTE_FLOW_ITEM_TYPE_GTP);
 	if (ret) {
-		DPAA2_PMD_WARN("Extract field(s) of GTP not support.");
+		dpaa2_flow_hdr_hexdump(hex_dump, (const uint8_t *)mask,
+			sizeof(struct rte_flow_item_gtp));
+		DPAA2_PMD_ERR("Extract GTP(%s) failed(%d)",
+			hex_dump, ret);
 
 		return ret;
 	}
