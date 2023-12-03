@@ -436,6 +436,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 
+			/** Following extraction supports both IPv4 and IPv6*/
 			if (spec && mask && mask->hdr.next_proto_id) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_IP, NH_FLD_IP_PROTO,
@@ -541,15 +542,15 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			spec = pattern[loop].spec;
 			mask = pattern[loop].mask;
-			if (!spec || (mask && (!mask->hdr.src_port &&
-				!mask->hdr.dst_port))) {
-				ret = dpaa2_mux_add_parser_extract(key_extract,
-						DPAA2_PARSER_UDP_ID,
-						flow->key_addr, flow->mask_addr,
-						&extract_update);
-				if (ret)
-					goto creation_error;
-			}
+
+			/** For L4 protocol, we must specify UDP.*/
+			ret = dpaa2_mux_add_parser_extract(key_extract,
+					DPAA2_PARSER_UDP_ID,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+			if (ret)
+				goto creation_error;
+
 			if (spec && mask && mask->hdr.dst_port) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_UDP, NH_FLD_UDP_PORT_DST,
