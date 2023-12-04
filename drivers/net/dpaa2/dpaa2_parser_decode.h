@@ -521,10 +521,10 @@ struct dpaa2_psr_result_parse {
 		struct {
 			uint8_t vxlan_vni[3];
 			rte_be16_t vxlan_eth_type;
-		};
+		} __attribute__((__packed__));
 		union dpaa2_sp_ecpri_msg ecpri_msg;
 		struct dpaa2_sp_rocev2 rocev2;
-	};
+	} __attribute__((__packed__));
 } __attribute__((__packed__));
 
 #define DPAA2_PSR_RESULT_SIZE sizeof(struct dpaa2_psr_result_parse)
