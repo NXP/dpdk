@@ -77,10 +77,8 @@ parse_traffic_split_config(const char *q_arg)
 	char *str_fld[_NUM_FLD];
 	int i;
 	unsigned int size;
-	int dpdmux_id, found = 0;
-	struct rte_eth_dev *dest_dev;
+	int dpdmux_id;;
 	char mux_ep_nm[64];
-	const char *ep_nm;
 
 	p = strchr(p0, '(');
 	++p;
@@ -118,27 +116,10 @@ parse_traffic_split_config(const char *q_arg)
 		return dpdmux_id;
 	}
 	sprintf(mux_ep_nm, "dpdmux.%d.%d", dpdmux_id, s_mux_ep_id);
-	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
-		if (rte_eth_dev_is_valid_port(i)) {
-			dest_dev = &rte_eth_devices[i];
-			ep_nm = rte_pmd_dpaa2_ep_name(dest_dev);
-			if (ep_nm && !strcmp(ep_nm, mux_ep_nm)) {
-				found = 1;
-				break;
-			}
-		}
-	}
-
-	if (!found) {
-		RTE_LOG(ERR, dpaa2_mux_demo,
-			"Invalid MUX EP ID(%d)\n", s_mux_ep_id);
-		return -EINVAL;
-	}
 
 	RTE_LOG(INFO, dpaa2_mux_demo,
-		"Splitting MUX traffic on type:%d with val:%d on %s-%s\n",
-		s_mux_type, s_mux_val,
-		dest_dev->data->name, mux_ep_nm);
+		"Splitting MUX traffic on type:%d with val:%d on %s\n",
+		s_mux_type, s_mux_val, mux_ep_nm);
 
 	return 0;
 }
