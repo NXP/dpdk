@@ -3466,7 +3466,7 @@ lsxvio_rc_2nd_proc_eth_dev_allocate(const char *name)
 	size_t name_len, size;
 	uint16_t port_id;
 
-	name_len = strnlen(name, RTE_ETH_NAME_MAX_LEN);
+	name_len = strlen(name);
 	if (name_len == 0) {
 		LSXVIO_PMD_ERR("Zero length lsxvio RC device name\n");
 		return NULL;
@@ -3498,7 +3498,7 @@ lsxvio_rc_2nd_proc_eth_dev_allocate(const char *name)
 	eth_dev = &rte_eth_devices[port_id];
 	eth_dev->data = &s_lsxvio_rc_eth_data[port_id];
 
-	strlcpy(eth_dev->data->name, name, sizeof(eth_dev->data->name));
+	strcpy(eth_dev->data->name, name);
 	eth_dev->data->port_id = port_id;
 	eth_dev->data->mtu = RTE_ETHER_MTU;
 
