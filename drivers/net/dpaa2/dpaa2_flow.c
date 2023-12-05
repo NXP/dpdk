@@ -2566,6 +2566,11 @@ dpaa2_configure_flow_ipv4(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
+	if (flow->ip_key == NET_PROT_IPV6) {
+		DPAA2_PMD_ERR("IPv6 flow has been configured");
+		return -EINVAL;
+	}
+	flow->ip_key = NET_PROT_IPV4;
 
 	(*device_configured) |= local_cfg;
 	return 0;
@@ -2725,6 +2730,11 @@ dpaa2_configure_flow_ipv6(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
+	if (flow->ip_key == NET_PROT_IPV4) {
+		DPAA2_PMD_ERR("IPv4 flow has been configured");
+		return -EINVAL;
+	}
+	flow->ip_key = NET_PROT_IPV6;
 
 	(*device_configured) |= local_cfg;
 	return 0;
@@ -2826,11 +2836,6 @@ dpaa2_configure_flow_icmp(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
-	if (flow->ip_key == NET_PROT_IPV6) {
-		DPAA2_PMD_ERR("IPv6 flow has been configured");
-		return -EINVAL;
-	}
-	flow->ip_key = NET_PROT_IPV4;
 
 	(*device_configured) |= local_cfg;
 
@@ -2951,11 +2956,6 @@ dpaa2_configure_flow_udp(struct dpaa2_dev_flow *flow,
 		if (ret)
 			return ret;
 	}
-	if (flow->ip_key == NET_PROT_IPV4) {
-		DPAA2_PMD_ERR("IPv4 flow has been configured");
-		return -EINVAL;
-	}
-	flow->ip_key = NET_PROT_IPV6;
 
 	(*device_configured) |= local_cfg;
 
