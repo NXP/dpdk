@@ -937,9 +937,9 @@ lsxvio_dev_link_update(struct rte_eth_dev *dev,
 {
 	struct rte_eth_link link;
 	struct rte_eth_link *src, *dst;
-	struct lsxvio_adapter *adapter =
-		(struct lsxvio_adapter *)dev->data->dev_private;
+	struct lsxvio_adapter *adapter = dev->data->dev_private;
 
+	memset(&link, 0, sizeof(struct rte_eth_link));
 	if (adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK) {
 		link.link_status = ETH_LINK_UP;
 		link.link_duplex = ETH_LINK_FULL_DUPLEX;
