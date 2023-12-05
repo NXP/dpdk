@@ -25,13 +25,13 @@ apt-get install strongswan-swanctl
    2) export FS_ENTRIES=8
    3) source dynamic_dpl.sh dpmac.x dpni
    4) ls-addni dpni.y
-   5) ipsec-ike -c 0x4 -n 1 -- --sec_port dpni.x --tap_port dpni.y
+   5) dpdk-ipsec-ike -c 0x4 -n 1 -- --sec_port dpni.x --tap_port dpni.y
       #dpmac.x connects to gateway, dpni.x connects to dpmac.x and dpni.y is virtual port.
    6) ifconfig eth0 10.88.51.8 up
       #eth0 is tap port connected to dpni.y
 #DPAA1 share MAC platform:
    1) fmc -c usdpaa_config_ls1046_mac9.xml -p usdpaa_policy_ipsec_ike.xml -a
-   2) ipsec-ike -c 0x4 -n 1 -- --sec_port fm1-mac9
+   2) dpdk-ipsec-ike -c 0x4 -n 1 -- --sec_port fm1-mac9
       #fm1-mac9 connects to gateway.
    3) ifconfig fm1-mac9 10.88.51.8 up
 
