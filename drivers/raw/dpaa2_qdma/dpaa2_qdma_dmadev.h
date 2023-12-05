@@ -12,45 +12,7 @@
 #define DPAA2_QDMA_MIN_DESC		1
 #define DPAA2_QDMA_MAX_VHANS		64
 
-#define DPAA2_QDMA_VQ_FD_SHORT_FORMAT		(1ULL << 0)
-#define DPAA2_QDMA_VQ_FD_SG_FORMAT		(1ULL << 1)
-#define DPAA2_QDMA_VQ_NO_RESPONSE		(1ULL << 2)
-
-struct dpaa2_qdma_rbp {
-	uint32_t use_ultrashort:1;
-	uint32_t enable:1;
-	/**
-	 * dportid:
-	 * 0000 PCI-Express 1
-	 * 0001 PCI-Express 2
-	 * 0010 PCI-Express 3
-	 * 0011 PCI-Express 4
-	 * 0100 PCI-Express 5
-	 * 0101 PCI-Express 6
-	 */
-	uint32_t dportid:4;
-	uint32_t dpfid:2;
-	uint32_t dvfid:6;
-	uint32_t dvfa:1;
-	/*using route by port for destination */
-	uint32_t drbp:1;
-	/**
-	 * sportid:
-	 * 0000 PCI-Express 1
-	 * 0001 PCI-Express 2
-	 * 0010 PCI-Express 3
-	 * 0011 PCI-Express 4
-	 * 0100 PCI-Express 5
-	 * 0101 PCI-Express 6
-	 */
-	uint32_t sportid:4;
-	uint32_t spfid:2;
-	uint32_t svfid:6;
-	uint32_t svfa:1;
-	/* using route by port for source */
-	uint32_t srbp:1;
-	uint32_t rsv:2;
-};
+#define dpaa2_qdma_rbp rte_qdma_rbp
 
 struct qdma_cntx_fle_sdd {
 	struct qbman_fle fle[DPAA2_QDMA_MAX_FLE];
@@ -63,12 +25,6 @@ struct qdma_cntx_sg {
 	struct qdma_sg_entry sg_dst_entry[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
 	uint16_t cntx_idx[RTE_DPAA2_QDMA_JOB_SUBMIT_MAX];
 	uint16_t job_nb;
-	uint16_t rsv[3];
-} __rte_packed;
-
-struct qdma_cntx_long {
-	struct qdma_cntx_fle_sdd fle_sdd;
-	uint16_t cntx_idx;
 	uint16_t rsv[3];
 } __rte_packed;
 
@@ -144,10 +100,11 @@ struct qdma_virt_queue {
 
 	/**Used for silent enabled*/
 	struct qdma_cntx_sg *cntx_sg[DPAA2_QDMA_MAX_DESC];
-	struct qdma_cntx_long *cntx_long[DPAA2_QDMA_MAX_DESC];
+	struct qdma_cntx_fle_sdd *cntx_fle_sdd[DPAA2_QDMA_MAX_DESC];
 	uint16_t slient_idx;
 
 	int num_valid_jobs;
+	int using_short_fd;
 
 	struct rte_dma_stats stats;
 };

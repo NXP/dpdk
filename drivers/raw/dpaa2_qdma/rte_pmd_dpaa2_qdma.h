@@ -167,20 +167,6 @@ rte_qdma_vq_stats(struct rte_rawdev *rawdev,
 		struct rte_qdma_vq_stats *vq_stats);
 
 /*For DMADEV based driver*/
-#define RTE_DPAA2_QDMA_IDX_SHIFT_POS 20
-#define RTE_DPAA2_QDMA_LEN_MASK \
-	(~((~0u) << RTE_DPAA2_QDMA_IDX_SHIFT_POS))
-
-#define RTE_DPAA2_QDMA_IDX_LEN(idx, len) \
-	(uint32_t)((idx << RTE_DPAA2_QDMA_IDX_SHIFT_POS) | \
-	(len & RTE_DPAA2_QDMA_LEN_MASK))
-
-#define RTE_DPAA2_QDMA_IDX_FROM_LENGTH(length) \
-	((uint16_t)((length) >> RTE_DPAA2_QDMA_IDX_SHIFT_POS))
-
-#define RTE_DPAA2_QDMA_LEN_FROM_LENGTH(length) \
-	((length) & RTE_DPAA2_QDMA_LEN_MASK)
-
 #define RTE_DPAA2_QDMA_COPY_IDX_OFFSET 8
 #define RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN \
 	RTE_BIT64(RTE_DPAA2_QDMA_COPY_IDX_OFFSET)
