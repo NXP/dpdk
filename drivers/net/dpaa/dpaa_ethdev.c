@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
+#include <sys/ioctl.h>
 
 #include <rte_string_fns.h>
 #include <rte_byteorder.h>
@@ -181,8 +182,14 @@ dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	uint32_t frame_size = mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN
 				+ VLAN_TAG_SIZE;
 	uint32_t buffsz = dev->data->min_rx_buf_size - RTE_PKTMBUF_HEADROOM;
+	struct fman_if *fif = dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (fif->is_shared_mac) {
+		DPAA_PMD_ERR("Cannot configure mtu from DPDK in VSP mode.");
+		return -ENOTSUP;
+	}
 
 	if (mtu < RTE_ETHER_MIN_MTU || frame_size > DPAA_MAX_RX_PKT_LEN)
 		return -EINVAL;
@@ -232,7 +239,8 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	struct __fman_if *__fif;
 	struct rte_intr_handle *intr_handle;
 	int speed, duplex;
-	int ret, rx_status;
+	int ret, rx_status, socket_fd;
+	struct ifreq ifr;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -248,6 +256,27 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 				     dpaa_intf->name);
 			return -EHOSTDOWN;
 		}
+
+		socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+		if (socket_fd == -1) {
+			DPAA_PMD_ERR("Cannot open IF socket");
+			return -errno;
+		}
+
+		strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ);
+
+		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {
+			DPAA_PMD_ERR("Cannot get interface mtu");
+			return -errno;
+		}
+
+		DPAA_PMD_INFO("Using kernel configured mtu size(%u)",
+			     ifr.ifr_mtu);
+
+		dev->data->dev_conf.rxmode.max_rx_pkt_len = ifr.ifr_mtu +
+							    RTE_ETHER_HDR_LEN +
+							    RTE_ETHER_CRC_LEN +
+							    VLAN_TAG_SIZE;
 	}
 
 	/* Rx offloads which are enabled by default */
@@ -271,18 +300,20 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 
 		DPAA_PMD_DEBUG("enabling jumbo");
 
-		if (dev->data->dev_conf.rxmode.max_rx_pkt_len <=
-		    DPAA_MAX_RX_PKT_LEN)
-			max_len = dev->data->dev_conf.rxmode.max_rx_pkt_len;
-		else {
-			DPAA_PMD_INFO("enabling jumbo override conf max len=%d "
-				"supported is %d",
-				dev->data->dev_conf.rxmode.max_rx_pkt_len,
-				DPAA_MAX_RX_PKT_LEN);
-			max_len = DPAA_MAX_RX_PKT_LEN;
+		if (dev->data->dev_conf.rxmode.max_rx_pkt_len >
+		    DPAA_MAX_RX_PKT_LEN) {
+			DPAA_PMD_INFO("Overriding configured max len=%d "
+				      "supported is %d",
+				      dev->data->dev_conf.rxmode.max_rx_pkt_len,
+				      DPAA_MAX_RX_PKT_LEN);
+			dev->data->dev_conf.rxmode.max_rx_pkt_len =
+					DPAA_MAX_RX_PKT_LEN;
 		}
+		max_len = dev->data->dev_conf.rxmode.max_rx_pkt_len;
 
-		fman_if_set_maxfrm(dev->process_private, max_len);
+		if (!fif->is_shared_mac)
+			fman_if_set_maxfrm(dev->process_private, max_len);
+
 		dev->data->mtu = max_len
 			- RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN - VLAN_TAG_SIZE;
 	}
@@ -2322,20 +2353,18 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fman_if_discard_rx_errors(fman_intf);
 #endif
 
-		if (fman_intf->mac_type != fman_onic) {
-			/* Disable RX mode */
-			fman_if_disable_rx(fman_intf);
-			/* Disable promiscuous mode */
-			fman_if_promiscuous_disable(fman_intf);
-			/* Disable multicast */
-			fman_if_reset_mcast_filter_table(fman_intf);
-			/* Reset interface statistics */
-			fman_if_stats_reset(fman_intf);
-			/* Disable SG by default */
-			fman_if_set_sg(fman_intf, 0);
-			fman_if_set_maxfrm(fman_intf,
-					   RTE_ETHER_MAX_LEN + VLAN_TAG_SIZE);
-		}
+		/* Disable RX mode */
+		fman_if_disable_rx(fman_intf);
+		/* Disable promiscuous mode */
+		fman_if_promiscuous_disable(fman_intf);
+		/* Disable multicast */
+		fman_if_reset_mcast_filter_table(fman_intf);
+		/* Reset interface statistics */
+		fman_if_stats_reset(fman_intf);
+		/* Disable SG by default */
+		fman_if_set_sg(fman_intf, 0);
+		fman_if_set_maxfrm(fman_intf,
+				   RTE_ETHER_MAX_LEN + VLAN_TAG_SIZE);
 	}
 
 	return 0;
