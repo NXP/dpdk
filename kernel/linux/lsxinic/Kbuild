@@ -1,2 +1,0 @@
-ccflags-y := $(MODULE_CFLAGS)
-obj-m := lsinic_kmod.o
