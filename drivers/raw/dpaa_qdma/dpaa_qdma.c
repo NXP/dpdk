@@ -625,9 +625,9 @@ static int fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 	struct fsl_qdma_queue *fsl_queue = fsl_chan->queue;
 	void *block = fsl_queue->block_base;
 	struct fsl_qdma_format *ccdf;
+	u32 reg;
 
 #ifdef CONFIG_RTE_DMA_DPAA_ERR_CHK
-	u32 reg;
 
 	/* retrieve and store the register value in big endian
 	 * to avoid bits swap */
@@ -657,9 +657,10 @@ static int fsl_qdma_enqueue_desc(struct fsl_qdma_chan *fsl_chan,
 		fsl_queue->virt_head = fsl_queue->cq;
 
 	list_add_tail(&fsl_comp->list, &fsl_queue->comp_used);
+	reg = qdma_readl_be(block + FSL_QDMA_BCQMR(fsl_queue->id));
+	reg |= FSL_QDMA_BCQMR_EI_BE;
+	qdma_writel_be(reg, block + FSL_QDMA_BCQMR(fsl_queue->id));
 
-	qdma_writel_be(FSL_QDMA_BCQMR_EI,
-			block + FSL_QDMA_BCQMR(fsl_queue->id));
 	fsl_queue->total_enqueue++;
 
 	return 0;
