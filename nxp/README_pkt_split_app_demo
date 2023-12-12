@@ -308,3 +308,4 @@ Note:
 		5: IP_FRAG_PROTO
 		6: IP_FRAG_UDP_AND_GTP_AND_ESP
 		7. VLAN (val here is the VLAN id)
+		8. eCPRI(val here is IQ channel ID)

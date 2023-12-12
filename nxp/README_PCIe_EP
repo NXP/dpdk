@@ -14,21 +14,35 @@ ninja -C arm64-build install
 
 ii) Root Complex build:
 #X86_64:
-meson x86_64-build -Denable_kmods=true -Dexamples=port_fwd -Dprefix=/Your/install/folder
+meson x86_64-build -Dexamples=port_fwd -Dprefix=/Your/install/folder
 ninja -C x86_64-build install
 #Target images:
-#Root Complex kernel driver: "x86_64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
-#Root Complex DPDK UIO driver: "x86_64-build/kernel/linux/igb_uio/igb_uio.ko".
 #Root Complex DPDK image: "x86_64-build/examples/dpdk-port_fwd".
+dpdk-extras build:
+in "dpdk-extras/linux/lsxinic"
+make
+#Target images:
+#Root Complex kernel driver: "dpdk-extras/linux/lsxinic/lsinic_kmod.ko"
+in "dpdk-extras/linux/igb_uio"
+make
+#Target images:
+#Root Complex DPDK UIO driver: "dpdk-extras/linux/igb_uio/igb_uio.ko".
 
 #NXP ARM:
 Based on Endpoint build, add kernel module build. This configuration and target dpdk image can be used for both EP/RC.
-meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Denable_kmods=true -Dkernel_dir=/Your/kernel/folder -Dexamples=port_fwd -Dprefix=/Your/install/folder
+meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dc_args="-Werror" -Dexamples=port_fwd -Dprefix=/Your/install/folder
 ninja -C arm64-build install
 #Target image:
-#Root Complex kernel driver: "arm64-build/kernel/linux/lsxinic/lsinic_kmod.ko".
-#Root Complex DPDK UIO driver: "arm64-build/kernel/linux/igb_uio/igb_uio.ko".
 #Root Complex DPDK image: "arm64-build/examples/dpdk-port_fwd".
+dpdk-extras build:
+in "dpdk-extras/linux/lsxinic"
+make KSRC=/Your/kernel/folder CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
+#Target images:
+#Root Complex kernel driver: "dpdk-extras/linux/lsxinic/lsinic_kmod.ko"
+in "dpdk-extras/linux/igb_uio"
+make KSRC=/Your/kernel/folder CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
+#Target images:
+#Root Complex DPDK UIO driver: "dpdk-extras/linux/igb_uio/igb_uio.ko".
 
 2) Basic Test Setup:
 
@@ -102,6 +116,7 @@ export P1_DIST_1='(1,0,2)'
 
 3) Small packets across PCIe performance improvment:
 i) EP/RC build with additional meson configure parameter: "-Dlsinic_pkt_merge_across_pcie=true"
+   and dpdk-extras make flag: "EXTRA_CFLAGS='-DRTE_LSINIC_PKT_MERGE_ACROSS_PCIE=y'"
 ii) Run dpdk on Endpoint side:
 #Following enviroments are set in EP.
 #Merge burst small packets to large packet.

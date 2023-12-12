@@ -16,6 +16,7 @@ enum {
 	TRAFFIC_SPLIT_IP_FRAG_PROTO,
 	TRAFFIC_SPLIT_IP_FRAG_UDP_AND_GTP_AND_ESP,
 	TRAFFIC_SPLIT_VLAN,
+	TRAFFIC_SPLIT_ECPRI,
 	TRAFFIC_SPLIT_MAX_NUM
 };
 
@@ -76,10 +77,8 @@ parse_traffic_split_config(const char *q_arg)
 	char *str_fld[_NUM_FLD];
 	int i;
 	unsigned int size;
-	int dpdmux_id, found = 0;
-	struct rte_eth_dev *dest_dev;
+	int dpdmux_id;;
 	char mux_ep_nm[64];
-	const char *ep_nm;
 
 	p = strchr(p0, '(');
 	++p;
@@ -117,27 +116,10 @@ parse_traffic_split_config(const char *q_arg)
 		return dpdmux_id;
 	}
 	sprintf(mux_ep_nm, "dpdmux.%d.%d", dpdmux_id, s_mux_ep_id);
-	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
-		if (rte_eth_dev_is_valid_port(i)) {
-			dest_dev = &rte_eth_devices[i];
-			ep_nm = rte_pmd_dpaa2_ep_name(dest_dev);
-			if (ep_nm && !strcmp(ep_nm, mux_ep_nm)) {
-				found = 1;
-				break;
-			}
-		}
-	}
-
-	if (!found) {
-		RTE_LOG(ERR, dpaa2_mux_demo,
-			"Invalid MUX EP ID(%d)\n", s_mux_ep_id);
-		return -EINVAL;
-	}
 
 	RTE_LOG(INFO, dpaa2_mux_demo,
-		"Splitting MUX traffic on type:%d with val:%d on %s-%s\n",
-		s_mux_type, s_mux_val,
-		dest_dev->data->name, mux_ep_nm);
+		"Splitting MUX traffic on type:%d with val:%d on %s\n",
+		s_mux_type, s_mux_val, mux_ep_nm);
 
 	return 0;
 }
@@ -285,11 +267,13 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 	struct rte_flow_item_ipv4 ip_item[MAX_PATTERN_NUM];
 	struct rte_flow_item_eth eth_item[MAX_PATTERN_NUM];
 	struct rte_flow_item_vlan vlan_item[MAX_PATTERN_NUM];
+	struct rte_flow_item_ecpri ecpri_item[MAX_PATTERN_NUM];
 
 	struct rte_flow_item_udp udp_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_ipv4 ip_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_eth eth_mask[MAX_PATTERN_NUM];
 	struct rte_flow_item_vlan vlan_mask[MAX_PATTERN_NUM];
+	struct rte_flow_item_ecpri ecpri_mask[MAX_PATTERN_NUM];
 
 	memset(pattern, 0, sizeof(pattern));
 	memset(actions, 0, sizeof(actions));
@@ -298,10 +282,12 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 	memset(ip_item, 0, sizeof(ip_item));
 	memset(eth_item, 0, sizeof(eth_item));
 	memset(vlan_item, 0, sizeof(vlan_item));
+	memset(ecpri_item, 0, sizeof(ecpri_item));
 	memset(udp_mask, 0, sizeof(udp_mask));
 	memset(ip_mask, 0, sizeof(ip_mask));
 	memset(eth_mask, 0, sizeof(eth_mask));
 	memset(vlan_mask, 0, sizeof(vlan_mask));
+	memset(ecpri_mask, 0, sizeof(ecpri_mask));
 
 	dpdmux_id = dpaa2_mux_demo_get_mux_id();
 	if (dpdmux_id < 0) {
@@ -407,6 +393,21 @@ rte_dpaa2_mux_demo_config_split_traffic(void)
 		pattern[0].spec = &vlan_item[0];
 		pattern[0].mask = &vlan_mask[0];
 		pattern[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+		pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
+		flow_nb++;
+		break;
+	case TRAFFIC_SPLIT_ECPRI:
+		RTE_LOG(INFO, dpaa2_mux_demo,
+			"Split on IQ eCPRI with physical channel(0x%x)\n",
+			s_mux_val);
+		ecpri_item[0].hdr.common.type = RTE_ECPRI_MSG_TYPE_IQ_DATA;
+		ecpri_item[0].hdr.type0.pc_id =
+			rte_cpu_to_be_16((uint16_t)s_mux_val);
+		ecpri_mask[0].hdr.common.type = 0xff;
+		ecpri_mask[0].hdr.type0.pc_id = 0xffff;
+		pattern[0].spec = &ecpri_item[0];
+		pattern[0].mask = &ecpri_mask[0];
+		pattern[0].type = RTE_FLOW_ITEM_TYPE_ECPRI;
 		pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
 		flow_nb++;
 		break;
