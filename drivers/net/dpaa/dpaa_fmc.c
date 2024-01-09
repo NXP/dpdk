@@ -364,8 +364,21 @@ dpaa_port_fmc_scheme_parse(struct fman_if *fif,
 		 */
 		for (i = 0; i < num_rxq; i++) {
 			fqid = scheme->base_fqid + i;
+			DPAA_PMD_WARN("Removed fqid(0x%08x) of Scheme[%d]",
+				fqid, scheme_idx);
 			dpaa_fmc_remove_fq_from_allocated(fqids,
 				rxq_idx, fqid);
+			if (!dpaa_fq_is_in_kernel(fqid, fif)) {
+				char reason_msg[128];
+				char result_msg[128];
+
+				sprintf(reason_msg,
+					"NOT handled in kernel");
+				sprintf(result_msg,
+					"will DRAIN kernel pool!");
+				DPAA_PMD_WARN("Traffic to FQ(%08x)(%s) %s",
+					fqid, reason_msg, result_msg);
+			}
 		}
 
 		return 0;

@@ -254,7 +254,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 			return -errno;
 		}
 
-		strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ);
+		strcpy(ifr.ifr_name, dpaa_intf->name);
 
 		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {
 			DPAA_PMD_ERR("Cannot get interface mtu");
@@ -2142,7 +2142,7 @@ dpaa_error_queue_init(struct dpaa_if *dpaa_intf,
 			err_fqid = fman_intf->fqid_tx_err;
 		else
 			continue;
-		ret = dpaa_debug_queue_init(&err_queues[i], err_fqid);
+		ret = dpaa_def_queue_init(&err_queues[i], err_fqid);
 		if (ret) {
 			DPAA_PMD_ERR("DPAA %s ERROR queue init failed!",
 				i == DPAA_DEBUG_FQ_RX_ERROR ?
