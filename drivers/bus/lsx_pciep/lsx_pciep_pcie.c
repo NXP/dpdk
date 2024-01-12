@@ -2062,6 +2062,59 @@ return_pcie_map_vir:
 }
 
 void *
+rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size, uint64_t *phy_base)
+{
+	int pcie_id = ep_dev->pcie_id;
+	int pf = ep_dev->pf;
+	int vf = ep_dev->vf;
+	int is_vf = ep_dev->is_vf;
+	uint8_t *vaddr;
+	uint64_t phy;
+	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
+
+	phy = ctlhw->ops->pcie_map_ob_win(&ctlhw->hw, pf,
+			is_vf, vf, pci_addr, size, 0);
+	if (!phy) {
+		LSX_PCIEP_BUS_ERR("%s: OB map failed", __func__);
+		return NULL;
+	}
+	vaddr = lsx_pciep_map_region(phy, size);
+	if (vaddr) {
+		int ret;
+		uint64_t va, iova;
+
+		va = (uint64_t)vaddr;
+		if (rte_eal_iova_mode() == RTE_IOVA_VA)
+			iova = va;
+		else
+			iova = phy;
+		ret = rte_fslmc_vfio_mem_dmamap(va, iova, size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("MAP va(%lx):iova(%lx):size(%lx)",
+				va, iova, size);
+
+			return NULL;
+		}
+	} else {
+		LSX_PCIEP_BUS_ERR("MAP pa(%lx):size(%lx)",
+			phy, size);
+		return NULL;
+	}
+
+	if (is_vf)
+		LSX_PCIEP_BUS_INFO(OB_VF_INFO_DUMP_FORMAT(pcie_id,
+			pf, vf, vaddr, phy, pci_addr, size));
+	else
+		LSX_PCIEP_BUS_INFO(OB_PF_INFO_DUMP_FORMAT(pcie_id,
+			pf, vaddr, phy, pci_addr, size));
+
+	*phy_base = phy;
+
+	return vaddr;
+}
+
+void *
 rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size)
 {
