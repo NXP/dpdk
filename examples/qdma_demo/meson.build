@@ -15,6 +15,7 @@ sources = files(
 cflags += ['-DALLOW_INTERNAL_API']
 
 includes += include_directories('../../drivers/dma/dpaa2/')
+includes += include_directories('../../drivers/net/lsxinic/')
 includes += include_directories('../../drivers/bus/fslmc/')
 includes += include_directories('../../drivers/bus/pci/')
 includes += include_directories('../../lib/pci/')

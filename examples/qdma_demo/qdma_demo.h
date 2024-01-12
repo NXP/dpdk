@@ -46,5 +46,9 @@ struct dma_job {
 #define ARG_VALIDATE (1 << 8)
 #define ARG_SEG_IOVA (1 << 9)
 #define ARG_PCI_SIZE (1 << 10)
+#define ARG_PCI_EP (1 << 11)
+#define ARG_PCI_EP_RBP (1 << 12)
+#define ARG_SILENT (1 << 13)
+#define ARG_DMA_LATENCY (1 << 14)
 
 #endif
