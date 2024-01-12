@@ -123,6 +123,7 @@ struct lsinic_queue {
 	rte_spinlock_t multi_core_lock;
 #ifdef LSXINIC_LATENCY_PROFILING
 	uint64_t cyc_diff_total;
+	double latency_min;
 	double avg_latency;
 	uint64_t avg_x2_total;
 	uint64_t avg_x4_total;

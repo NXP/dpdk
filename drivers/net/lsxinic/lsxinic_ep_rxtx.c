@@ -6527,10 +6527,12 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		for (i = 0; i < (uint8_t)sizeof(uint64_t); i++)
 			tick_load_8[i] = tick_save[i];
 		rxq->cyc_diff_total += (current_tick - tick_load);
+		curr_latency = (current_tick - tick_load) / cyc_per_us;
+		if (rxq->latency_min > curr_latency)
+			rxq->latency_min = curr_latency;
 		rxq->avg_latency =
 			rxq->cyc_diff_total /
 			(rxq->packets + nb_rx + 1) / cyc_per_us;
-		curr_latency = (current_tick - tick_load) / cyc_per_us;
 		if (curr_latency >= 2 * rxq->avg_latency &&
 			curr_latency < 4 * rxq->avg_latency) {
 			rxq->avg_x2_total++;
@@ -6843,6 +6845,10 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!rxq->dma_idx)
 		return -ENOMEM;
+
+#ifdef LSXINIC_LATENCY_PROFILING
+	rxq->latency_min = 1000 * 1000;
+#endif
 
 	return 0;
 }

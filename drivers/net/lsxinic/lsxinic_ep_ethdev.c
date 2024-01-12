@@ -56,6 +56,7 @@
 #include <rte_eal_memconfig.h>
 #include <rte_net.h>
 #include <portal/dpaa2_hw_pvt.h>
+#include <rte_pmd_lsxinic.h>
 
 #include <rte_lsx_pciep_bus.h>
 #include "lsxinic_common_pmd.h"
@@ -69,6 +70,8 @@
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 #include <dpaa2_ethdev.h>
 #endif
+
+static struct rte_lsx_pciep_driver rte_lsinic_pmd;
 
 static int
 lsinic_dev_configure(struct rte_eth_dev *dev);
@@ -1357,6 +1360,156 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+#ifdef RTE_ARCH_ARM64
+#define dccivac(p) \
+	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+#endif
+
+#define PCI_WRITE_CODE 0x12
+#define PCI_INIT_CODE 0x34
+
+static int
+lsinic_dma_config_fromlocal(struct lsinic_adapter *adapter)
+{
+	uint64_t rc_dma_addr = 0, phy_addr;
+	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	uint32_t size, miss = 0;
+	const struct rte_memzone *local_mz;
+	void *pci_vir, *local_vir;
+	uint64_t start, end, wr_time, st_time, ns_per_cyc;
+	char msg[512];
+
+	local_mz = rte_eth_dma_zone_reserve(lsinic_dev->eth_dev,
+			"local_mz", 0, 32 * 1024 * 1024,
+			32 * 1024 * 1024,
+			lsinic_dev->eth_dev->data->numa_node);
+	if (!local_mz) {
+		LSXINIC_PMD_ERR("local mz reserve failed");
+		return -ENOMEM;
+	}
+
+	local_vir = local_mz->addr;
+	rc_dma_addr = local_mz->iova;
+	size = local_mz->len;
+	LSXINIC_PMD_INFO("Config from LOCAL DMA base:%lX, size:0x%08x",
+		rc_dma_addr, size);
+
+	pci_vir = rte_lsx_pciep_alloc_pci_ob(lsinic_dev,
+			rc_dma_addr, size, &phy_addr);
+	if (!pci_vir) {
+		LSXINIC_PMD_ERR("PCI OB alloc failed");
+		return -EIO;
+	}
+
+	start = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end = rte_get_timer_cycles();
+
+	ns_per_cyc = (1000 * 1000 * 1000) / (end - start);
+	*((uint8_t *)local_vir) = PCI_INIT_CODE;
+	start = rte_get_timer_cycles();
+	*((uint8_t *)pci_vir) = PCI_WRITE_CODE;
+	wr_time = rte_get_timer_cycles();
+	rte_wmb();
+	st_time = rte_get_timer_cycles();
+	while (*((uint8_t *)local_vir) != PCI_WRITE_CODE) {
+		dccivac(local_vir);
+		miss++;
+		if (miss > (1000 * 1000)) {
+			LSXINIC_PMD_ERR("PCIe to PCIe loopback failed!");
+			rte_eth_dma_zone_free(lsinic_dev->eth_dev,
+				local_mz->name, 0);
+			return -EIO;
+		}
+	}
+	end = rte_get_timer_cycles();
+	sprintf(msg,
+		"ns wr: %ld, wmb: %ld, rd local: %ld, total: %ld",
+		(wr_time - start) * ns_per_cyc,
+		(st_time - wr_time) * ns_per_cyc,
+		(end - st_time) * ns_per_cyc,
+		(end - start) * ns_per_cyc);
+	LSXINIC_PMD_INFO("One byte over PCI:%s, cyc:%ld ns, miss:%d",
+		msg, ns_per_cyc, miss);
+
+	if (getenv("LSINIC_PCIE_VIR_REMOTE_MAP"))
+		adapter->rc_dma_vir = pci_vir;
+	else
+		adapter->rc_dma_vir = local_vir;
+	adapter->rc_dma_phy = phy_addr;
+	adapter->rc_dma_elt_size = size;
+	adapter->rc_dma_base = rc_dma_addr;
+	adapter->local_mz = local_mz;
+
+	return 0;
+}
+
+int
+rte_lsinic_dev_get_rc_dma(void *_dev,
+	void **pci_vir, uint64_t *pci_phy,
+	uint64_t *pci_bus, uint64_t *pci_size,
+	int *pci_id, int *pf_id, int *is_vf, int *vf_id)
+{
+	struct lsinic_adapter *adapter;
+	struct rte_eth_dev *eth_dev = _dev;
+	int ret;
+
+	if (eth_dev->device->driver != &rte_lsinic_pmd.driver)
+		return -EPERM;
+
+	adapter = eth_dev->process_private;
+	if (getenv("LSINIC_PCIE_TO_PCIE_LOOPBACK")) {
+		ret = lsinic_dma_config_fromlocal(adapter);
+		if (ret)
+			return ret;
+	}
+	if (pci_vir)
+		*pci_vir = adapter->rc_dma_vir;
+	if (pci_phy)
+		*pci_phy = adapter->rc_dma_phy;
+	if (pci_bus)
+		*pci_bus = adapter->rc_dma_base;
+	if (pci_size)
+		*pci_size = adapter->rc_dma_elt_size;
+	if (pci_id)
+		*pci_id = adapter->pcie_idx;
+	if (pf_id)
+		*pf_id = adapter->pf_idx;
+	if (is_vf)
+		*is_vf = adapter->is_vf;
+	if (vf_id)
+		*vf_id = adapter->vf_idx;
+
+	return 0;
+}
+
+int
+rte_lsinic_dev_start_poll_rc(void *_dev)
+{
+	pthread_t thread;
+	static uint32_t thread_init_flag;
+	struct lsinic_adapter *adapter;
+	struct rte_eth_dev *eth_dev = _dev;
+
+	if (eth_dev->device->driver != &rte_lsinic_pmd.driver)
+		return -EPERM;
+
+	adapter = eth_dev->process_private;
+
+	if (!thread_init_flag) {
+		if (pthread_create(&thread, NULL, lsinic_poll_dev_cmd, NULL)) {
+			LSXINIC_PMD_ERR("Failed to create poll thread");
+			return -EIO;
+		}
+
+		thread_init_flag = 1;
+	}
+
+	lsinic_set_netdev(adapter, PCIDEV_COMMAND_START);
+
+	return 0;
+}
+
 /* Stop device: disable rx and tx functions to allow for reconfiguring.
  */
 static int
@@ -1402,6 +1555,12 @@ lsinic_dev_close(struct rte_eth_dev *dev)
 		rte_free(adapter->complete_src);
 		adapter->complete_src = NULL;
 	}
+	if (adapter->local_mz) {
+		rte_eth_dma_zone_free(dev,
+			adapter->local_mz->name, 0);
+		adapter->local_mz = NULL;
+	}
+
 	return ret;
 }
 
@@ -1523,6 +1682,30 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 			adapter->rc_ring_size,
 			adapter->ep_ring_win_size);
 	}
+
+	return 0;
+}
+
+int
+lsinic_dma_config_fromrc(struct lsinic_adapter *adapter)
+{
+	uint64_t rc_dma_addr = 0, phy_addr;
+	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	struct lsinic_rcs_reg *rcs_reg =
+		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
+	uint32_t size;
+
+	rc_dma_addr = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);
+	size = LSINIC_READ_REG(&rcs_reg->r_dma_elt_size);
+	LSXINIC_PMD_INFO("Config from RC DMA base:%lX, size:0x%08x",
+		rc_dma_addr, size);
+
+	adapter->rc_dma_vir = rte_lsx_pciep_alloc_pci_ob(lsinic_dev,
+			rc_dma_addr, size, &phy_addr);
+
+	adapter->rc_dma_phy = phy_addr;
+	adapter->rc_dma_elt_size = size;
+	adapter->rc_dma_base = rc_dma_addr;
 
 	return 0;
 }

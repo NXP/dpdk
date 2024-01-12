@@ -143,6 +143,10 @@ struct lsinic_adapter {
 	uint32_t data_room_size;
 	uint64_t rc_dma_base;
 	uint32_t rc_dma_elt_size;
+	const struct rte_memzone *local_mz;
+
+	void *rc_dma_vir;
+	uint64_t rc_dma_phy;
 
 	uint64_t cycs_per_us;
 };
@@ -183,6 +187,8 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
+
+int lsinic_dma_config_fromrc(struct lsinic_adapter *adapter);
 
 int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
