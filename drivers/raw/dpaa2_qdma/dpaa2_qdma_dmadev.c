@@ -25,9 +25,6 @@
 #include "dpaa2_qdma_dmadev.h"
 #include "dpaa2_qdma_logs.h"
 
-static uint32_t dpaa2_coherent_no_alloc_cache;
-static uint32_t dpaa2_coherent_alloc_cache;
-
 static struct fsl_mc_io s_proc_mc_reg;
 
 static inline int
@@ -160,91 +157,6 @@ dpaa2_qdma_multi_eq(struct qdma_virt_queue *qdma_vq)
 }
 
 static void
-fle_sdd_pre_populate(struct qdma_cntx_fle_sdd *fle_sdd,
-	struct dpaa2_qdma_rbp *rbp, uint64_t src, uint64_t dest,
-	uint32_t fmt)
-{
-	struct qbman_fle *fle = fle_sdd->fle;
-	struct qdma_sdd *sdd = fle_sdd->sdd;
-	uint64_t sdd_iova, iova_size;
-
-	iova_size = sizeof(struct qdma_sdd) * DPAA2_QDMA_MAX_SDD;
-	sdd_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(sdd, iova_size);
-	if (sdd_iova == RTE_BAD_IOVA) {
-		rte_panic("No IOMMU map for sdd(%p)(size=%lx)",
-			sdd, iova_size);
-	}
-
-	/* first frame list to source descriptor */
-	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SDD_FLE], sdd_iova);
-	DPAA2_SET_FLE_LEN(&fle[DPAA2_QDMA_SDD_FLE],
-		DPAA2_QDMA_MAX_SDD * (sizeof(struct qdma_sdd)));
-
-	/* source and destination descriptor */
-	if (rbp && rbp->enable) {
-		/* source */
-		sdd[DPAA2_QDMA_SRC_SDD].read_cmd.portid =
-			rbp->sportid;
-		sdd[DPAA2_QDMA_SRC_SDD].rbpcmd_simple.pfid =
-			rbp->spfid;
-		sdd[DPAA2_QDMA_SRC_SDD].rbpcmd_simple.vfid =
-			rbp->svfid;
-		sdd[DPAA2_QDMA_SRC_SDD].rbpcmd_simple.vfa =
-			rbp->svfa;
-
-		if (rbp->srbp) {
-			sdd[DPAA2_QDMA_SRC_SDD].read_cmd.rbp =
-				rbp->srbp;
-			sdd[DPAA2_QDMA_SRC_SDD].read_cmd.rdtype =
-				DPAA2_RBP_MEM_RW;
-		} else {
-			sdd[DPAA2_QDMA_SRC_SDD].read_cmd.rdtype =
-				dpaa2_coherent_no_alloc_cache;
-		}
-		/* destination */
-		sdd[DPAA2_QDMA_DST_SDD].write_cmd.portid =
-			rbp->dportid;
-		sdd[DPAA2_QDMA_DST_SDD].rbpcmd_simple.pfid =
-			rbp->dpfid;
-		sdd[DPAA2_QDMA_DST_SDD].rbpcmd_simple.vfid =
-			rbp->dvfid;
-		sdd[DPAA2_QDMA_DST_SDD].rbpcmd_simple.vfa =
-			rbp->dvfa;
-
-		if (rbp->drbp) {
-			sdd[DPAA2_QDMA_DST_SDD].write_cmd.rbp =
-				rbp->drbp;
-			sdd[DPAA2_QDMA_DST_SDD].write_cmd.wrttype =
-				DPAA2_RBP_MEM_RW;
-		} else {
-			sdd[DPAA2_QDMA_DST_SDD].write_cmd.wrttype =
-				dpaa2_coherent_alloc_cache;
-		}
-	} else {
-		sdd[DPAA2_QDMA_SRC_SDD].read_cmd.rdtype =
-			dpaa2_coherent_no_alloc_cache;
-		sdd[DPAA2_QDMA_DST_SDD].write_cmd.wrttype =
-			dpaa2_coherent_alloc_cache;
-	}
-	/* source frame list to source buffer */
-	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SRC_FLE], src);
-	/** IOMMU is always on for either VA or PA mode,
-	 * so Bypass Memory Translation should be disabled.
-	 *
-	 * DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_SRC_FLE]);
-	 * DPAA2_SET_FLE_BMT(&fle[DPAA2_QDMA_DST_FLE]);
-	 */
-	fle[DPAA2_QDMA_SRC_FLE].word4.fmt = fmt;
-
-	/* destination frame list to destination buffer */
-	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_DST_FLE], dest);
-	fle[DPAA2_QDMA_DST_FLE].word4.fmt = fmt;
-
-	/* Final bit: 1, for last frame list */
-	DPAA2_SET_FLE_FIN(&fle[DPAA2_QDMA_DST_FLE]);
-}
-
-static void
 sg_entry_pre_populate(struct qdma_cntx_sg *sg_cntx)
 {
 	uint16_t i;
@@ -284,7 +196,8 @@ fle_sdd_sg_pre_populate(struct qdma_cntx_sg *sg_cntx,
 	dst_sge_iova = DPAA2_VADDR_TO_IOVA(dst_sge);
 
 	sg_entry_pre_populate(sg_cntx);
-	fle_sdd_pre_populate(&sg_cntx->fle_sdd,
+	fle_sdd_pre_populate(sg_cntx->fle_sdd.fle,
+		sg_cntx->fle_sdd.sdd,
 		rbp, src_sge_iova, dst_sge_iova,
 		QBMAN_FLE_WORD4_FMT_SGE);
 }
@@ -294,25 +207,22 @@ sg_entry_post_populate(const struct rte_dma_sge *src,
 	const struct rte_dma_sge *dst, struct qdma_cntx_sg *sg_cntx,
 	uint16_t nb_sge)
 {
-	uint16_t i = 0, idx;
-	uint32_t total_len = 0, len;
+	uint16_t i = 0;
+	uint32_t total_len = 0;
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
 
 	for (i = 0; i < (nb_sge - 1); i++) {
 		if (unlikely(src[i].length != dst[i].length))
 			return -ENOTSUP;
-		len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-		idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
 		src_sge->addr_lo = (uint32_t)src[i].addr;
 		src_sge->addr_hi = (src[i].addr >> 32);
-		src_sge->data_len.data_len_sl0 = len;
+		src_sge->data_len.data_len_sl0 = src[i].length;
 
 		dst_sge->addr_lo = (uint32_t)dst[i].addr;
 		dst_sge->addr_hi = (dst[i].addr >> 32);
-		dst_sge->data_len.data_len_sl0 = len;
-		total_len += len;
-		sg_cntx->cntx_idx[i] = idx;
+		dst_sge->data_len.data_len_sl0 = dst[i].length;
+		total_len += dst[i].length;
 
 		src_sge->ctrl.f = 0;
 		dst_sge->ctrl.f = 0;
@@ -323,19 +233,15 @@ sg_entry_post_populate(const struct rte_dma_sge *src,
 	if (unlikely(src[i].length != dst[i].length))
 		return -ENOTSUP;
 
-	len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-	idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
-
 	src_sge->addr_lo = (uint32_t)src[i].addr;
 	src_sge->addr_hi = (src[i].addr >> 32);
-	src_sge->data_len.data_len_sl0 = len;
+	src_sge->data_len.data_len_sl0 = src[i].length;
 
 	dst_sge->addr_lo = (uint32_t)dst[i].addr;
 	dst_sge->addr_hi = (dst[i].addr >> 32);
-	dst_sge->data_len.data_len_sl0 = len;
+	dst_sge->data_len.data_len_sl0 = dst[i].length;
 
-	total_len += len;
-	sg_cntx->cntx_idx[i] = idx;
+	total_len += dst[i].length;
 	sg_cntx->job_nb = nb_sge;
 
 	src_sge->ctrl.f = QDMA_SG_F;
@@ -357,20 +263,18 @@ sg_entry_populate(const struct rte_dma_sge *src,
 	const struct rte_dma_sge *dst, struct qdma_cntx_sg *sg_cntx,
 	uint16_t nb_sge)
 {
-	uint16_t i, idx;
-	uint32_t total_len = 0, len;
+	uint16_t i;
+	uint32_t total_len = 0;
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
 
 	for (i = 0; i < nb_sge; i++) {
 		if (unlikely(src[i].length != dst[i].length))
 			return -ENOTSUP;
-		len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(src[i].length);
-		idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[i].length);
 
 		src_sge->addr_lo = (uint32_t)src[i].addr;
 		src_sge->addr_hi = (src[i].addr >> 32);
-		src_sge->data_len.data_len_sl0 = len;
+		src_sge->data_len.data_len_sl0 = src[i].length;
 		src_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
 		/** IOMMU is always on for either VA or PA mode,
@@ -379,15 +283,14 @@ sg_entry_populate(const struct rte_dma_sge *src,
 		src_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
 		dst_sge->addr_lo = (uint32_t)dst[i].addr;
 		dst_sge->addr_hi = (dst[i].addr >> 32);
-		dst_sge->data_len.data_len_sl0 = len;
+		dst_sge->data_len.data_len_sl0 = dst[i].length;
 		dst_sge->ctrl.sl = QDMA_SG_SL_LONG;
 		dst_sge->ctrl.fmt = QDMA_SG_FMT_SDB;
 		/** IOMMU is always on for either VA or PA mode,
 		 * so Bypass Memory Translation should be disabled.
 		 */
 		dst_sge->ctrl.bmt = QDMA_SG_BMT_DISABLE;
-		total_len += len;
-		sg_cntx->cntx_idx[i] = idx;
+		total_len += src[i].length;
 
 		if (i == (nb_sge - 1)) {
 			src_sge->ctrl.f = QDMA_SG_F;
@@ -543,7 +446,6 @@ dpaa2_qdma_long_fmt_dump(const struct qbman_fle *fle)
 	const struct qdma_cntx_fle_sdd *fle_sdd;
 	const struct qdma_sdd *sdd;
 	const struct qdma_cntx_sg *cntx_sg = NULL;
-	const struct qdma_cntx_long *cntx_long = NULL;
 
 	fle_sdd = container_of(fle, const struct qdma_cntx_fle_sdd, fle[0]);
 	sdd = fle_sdd->sdd;
@@ -566,11 +468,8 @@ dpaa2_qdma_long_fmt_dump(const struct qbman_fle *fle)
 		QBMAN_FLE_WORD4_FMT_SGE) {
 		cntx_sg = container_of(fle_sdd, const struct qdma_cntx_sg,
 			fle_sdd);
-	} else if (fle[DPAA2_QDMA_SRC_FLE].word4.fmt ==
+	} else if (fle[DPAA2_QDMA_SRC_FLE].word4.fmt !=
 		QBMAN_FLE_WORD4_FMT_SBF) {
-		cntx_long = container_of(fle_sdd, const struct qdma_cntx_long,
-			fle_sdd);
-	} else {
 		DPAA2_QDMA_ERR("Unsupported fle format:%d",
 			fle[DPAA2_QDMA_SRC_FLE].word4.fmt);
 		return;
@@ -579,11 +478,6 @@ dpaa2_qdma_long_fmt_dump(const struct qbman_fle *fle)
 	for (i = 0; i < DPAA2_QDMA_MAX_SDD; i++) {
 		DPAA2_QDMA_INFO("sdd[%d] info:", i);
 		dpaa2_qdma_sdd_dump(&sdd[i]);
-	}
-
-	if (cntx_long) {
-		DPAA2_QDMA_INFO("long format/Single buffer cntx idx:%d",
-			cntx_long->cntx_idx);
 	}
 
 	if (cntx_sg) {
@@ -603,6 +497,8 @@ dpaa2_qdma_long_fmt_dump(const struct qbman_fle *fle)
 			DPAA2_QDMA_INFO("cntx_idx[%d]:%d", i,
 				cntx_sg->cntx_idx[i]);
 		}
+	} else {
+		DPAA2_QDMA_INFO("long format/Single buffer cntx");
 	}
 }
 
@@ -617,30 +513,43 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[vchan];
-	int ret = 0, expected;
-	uint32_t cntx_idx, len;
+	int ret = 0, expected, i;
+	uint32_t len;
 	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
-	struct qdma_cntx_sg *cntx_sg;
+	struct qdma_cntx_sg *cntx_sg = NULL;
 	rte_iova_t cntx_iova, fle_iova, sdd_iova;
 	rte_iova_t src_sge_iova, dst_sge_iova;
 	struct qbman_fle *fle;
 	struct qdma_sdd *sdd;
+	const uint16_t *idx_addr = NULL;
 
-	if (unlikely(nb_src != nb_dst))
+	if (unlikely(nb_src != nb_dst)) {
+		DPAA2_QDMA_ERR("SG entry src num(%d) != dst num(%d)",
+			nb_src, nb_dst);
 		return -ENOTSUP;
+	}
+
+	if (unlikely(nb_src > RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)) {
+		DPAA2_QDMA_ERR("SG entry number(%d) > MAX(%d)",
+			nb_src, RTE_DPAA2_QDMA_JOB_SUBMIT_MAX);
+		return -EINVAL;
+	}
 
 	memset(fd, 0, sizeof(struct qbman_fd));
 
 	if (qdma_dev->is_silent) {
-		cntx_idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(src[0].length);
-		cntx_sg = qdma_vq->cntx_sg[cntx_idx];
+		cntx_sg = qdma_vq->cntx_sg[qdma_vq->slient_idx];
 	} else {
 		ret = rte_mempool_get(qdma_vq->fle_pool,
 			(void **)&cntx_sg);
 		if (ret)
 			return ret;
 		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
+		idx_addr = DPAA2_QDMA_IDXADDR_FROM_SG_FLAG(flags);
+		for (i = 0; i < nb_src; i++)
+			cntx_sg->cntx_idx[i] = idx_addr[i];
 	}
+
 	cntx_iova = (uint64_t)cntx_sg - qdma_vq->fle_iova2va_offset;
 
 	fle = cntx_sg->fle_sdd.fle;
@@ -648,13 +557,18 @@ dpaa2_qdma_copy_sg(void *dev_private,
 		offsetof(struct qdma_cntx_sg, fle_sdd) +
 		offsetof(struct qdma_cntx_fle_sdd, fle);
 
-	DPAA2_SET_FD_ADDR(fd, fle_iova);
+	dpaa2_qdma_fd_set_addr(fd, fle_iova);
 	DPAA2_SET_FD_COMPOUND_FMT(fd);
 	DPAA2_SET_FD_FLC(fd, (uint64_t)cntx_sg);
 
 	if (qdma_vq->fle_pre_populate) {
-		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length))
+		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length)) {
 			fle_sdd_sg_pre_populate(cntx_sg, qdma_vq);
+			if (!qdma_dev->is_silent && cntx_sg && idx_addr) {
+				for (i = 0; i < nb_src; i++)
+					cntx_sg->cntx_idx[i] = idx_addr[i];
+			}
+		}
 
 		len = sg_entry_post_populate(src, dst,
 			cntx_sg, nb_src);
@@ -678,7 +592,116 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	if (unlikely(qdma_vq->flags & DPAA2_QDMA_DESC_DEBUG_FLAG))
 		dpaa2_qdma_long_fmt_dump(cntx_sg->fle_sdd.fle);
 
+	dpaa2_qdma_fd_save_att(fd, 0, DPAA2_QDMA_FD_SG);
 	qdma_vq->fd_idx++;
+	qdma_vq->slient_idx =
+		(qdma_vq->slient_idx + 1) & (DPAA2_QDMA_MAX_DESC - 1);
+
+	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+		expected = qdma_vq->fd_idx;
+		ret = dpaa2_qdma_multi_eq(qdma_vq);
+		if (likely(ret == expected))
+			return 0;
+	} else {
+		return 0;
+	}
+
+	return ret;
+}
+
+static int
+dpaa2_qdma_short_copy(struct qdma_virt_queue *qdma_vq,
+	rte_iova_t src, rte_iova_t dst, uint32_t length,
+	int is_silent, uint64_t flags)
+{
+	int ret = 0, expected;
+	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
+
+	memset(fd, 0, sizeof(struct qbman_fd));
+
+	if (qdma_vq->rbp.drbp || qdma_vq->rbp.srbp) {
+		/** PCIe EP*/
+		qdma_populate_fd_pci(src,
+			dst, length,
+			fd, &qdma_vq->rbp,
+			is_silent ? 0 : 1);
+	} else {
+		/** DDR or PCIe RC*/
+		qdma_populate_fd_ddr(src,
+			dst, length,
+			fd, is_silent ? 0 : 1);
+	}
+	dpaa2_qdma_fd_save_att(fd, DPAA2_QDMA_IDX_FROM_FLAG(flags),
+		DPAA2_QDMA_FD_SHORT);
+	qdma_vq->fd_idx++;
+
+	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+		expected = qdma_vq->fd_idx;
+		ret = dpaa2_qdma_multi_eq(qdma_vq);
+		if (likely(ret == expected))
+			return 0;
+	} else {
+		return 0;
+	}
+
+	return ret;
+}
+
+static int
+dpaa2_qdma_long_copy(struct qdma_virt_queue *qdma_vq,
+	rte_iova_t src, rte_iova_t dst, uint32_t length,
+	int is_silent, uint64_t flags)
+{
+	int ret = 0, expected;
+	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
+	struct qdma_cntx_fle_sdd *fle_sdd = NULL;
+	rte_iova_t fle_iova, sdd_iova;
+	struct qbman_fle *fle;
+	struct qdma_sdd *sdd;
+
+	memset(fd, 0, sizeof(struct qbman_fd));
+
+	if (is_silent) {
+		fle_sdd = qdma_vq->cntx_fle_sdd[qdma_vq->slient_idx];
+	} else {
+		ret = rte_mempool_get(qdma_vq->fle_pool,
+			(void **)&fle_sdd);
+		if (ret)
+			return ret;
+		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
+	}
+
+	fle = fle_sdd->fle;
+	fle_iova = (uint64_t)fle - qdma_vq->fle_iova2va_offset;
+
+	dpaa2_qdma_fd_set_addr(fd, fle_iova);
+	DPAA2_SET_FD_COMPOUND_FMT(fd);
+	DPAA2_SET_FD_FLC(fd, (uint64_t)fle);
+
+	if (qdma_vq->fle_pre_populate) {
+		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length)) {
+			fle_sdd_pre_populate(fle_sdd->fle,
+				fle_sdd->sdd, &qdma_vq->rbp,
+				0, 0, QBMAN_FLE_WORD4_FMT_SBF);
+		}
+
+		fle_post_populate(fle, src, dst, length);
+	} else {
+		sdd = fle_sdd->sdd;
+		sdd_iova = (uint64_t)sdd - qdma_vq->fle_iova2va_offset;
+		fle_populate(fle, sdd, sdd_iova, &qdma_vq->rbp,
+			src, dst, length,
+			QBMAN_FLE_WORD4_FMT_SBF);
+	}
+
+	if (unlikely(qdma_vq->flags & DPAA2_QDMA_DESC_DEBUG_FLAG))
+		dpaa2_qdma_long_fmt_dump(fle);
+
+	dpaa2_qdma_fd_save_att(fd, DPAA2_QDMA_IDX_FROM_FLAG(flags),
+		DPAA2_QDMA_FD_LONG);
+	qdma_vq->fd_idx++;
+	qdma_vq->slient_idx =
+		(qdma_vq->slient_idx + 1) & (DPAA2_QDMA_MAX_DESC - 1);
 
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
@@ -700,75 +723,67 @@ dpaa2_qdma_copy(void *dev_private, uint16_t vchan,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev_private;
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	struct qdma_virt_queue *qdma_vq = &qdma_dev->vqs[vchan];
-	int ret = 0, expected;
-	uint16_t cntx_idx;
-	uint32_t len;
-	struct qbman_fd *fd = &qdma_vq->fd[qdma_vq->fd_idx];
-	struct qdma_cntx_long *cntx_long;
-	rte_iova_t cntx_iova, fle_iova, sdd_iova;
-	struct qbman_fle *fle;
-	struct qdma_sdd *sdd;
 
-	memset(fd, 0, sizeof(struct qbman_fd));
+	if (qdma_vq->using_short_fd)
+		return dpaa2_qdma_short_copy(qdma_vq, src, dst,
+				length, qdma_dev->is_silent, flags);
+	else
+		return dpaa2_qdma_long_copy(qdma_vq, src, dst,
+				length, qdma_dev->is_silent, flags);
+}
 
-	cntx_idx = RTE_DPAA2_QDMA_IDX_FROM_LENGTH(length);
-	len = RTE_DPAA2_QDMA_LEN_FROM_LENGTH(length);
+static inline int
+dpaa2_qdma_dq_fd(const struct qbman_fd *fd,
+	struct qdma_virt_queue *qdma_vq,
+	uint16_t *free_space, uint16_t *fle_elem_nb)
+{
+	uint16_t idx, att;
+	enum dpaa2_qdma_fd_type type;
+	int ret;
+	struct qdma_cntx_sg *cntx_sg;
+	struct qdma_cntx_fle_sdd *fle_sdd;
 
-	if (qdma_dev->is_silent) {
-		cntx_long = qdma_vq->cntx_long[cntx_idx];
-	} else {
-		ret = rte_mempool_get(qdma_vq->fle_pool,
-			(void **)&cntx_long);
-		if (ret)
-			return ret;
-		DPAA2_SET_FD_FRC(fd, QDMA_SER_CTX);
-		cntx_long->cntx_idx = cntx_idx;
+	att = dpaa2_qdma_fd_get_att(fd);
+	type = DPAA2_QDMA_FD_ATT_TYPE(att);
+	if (type == DPAA2_QDMA_FD_SHORT) {
+		idx = DPAA2_QDMA_FD_ATT_CNTX(att);
+		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
+				&idx, 1, free_space);
+		if (unlikely(ret != 1))
+			return -ENOSPC;
+
+		return 0;
 	}
+	if (type == DPAA2_QDMA_FD_LONG) {
+		idx = DPAA2_QDMA_FD_ATT_CNTX(att);
+		fle_sdd = (void *)DPAA2_GET_FD_FLC(fd);
+		qdma_vq->fle_elem[*fle_elem_nb] = fle_sdd;
+		(*fle_elem_nb)++;
+		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
+				&idx, 1, free_space);
+		if (unlikely(ret != 1))
+			return -ENOSPC;
 
-	cntx_iova = (uint64_t)cntx_long - qdma_vq->fle_iova2va_offset;
-
-	fle = cntx_long->fle_sdd.fle;
-	fle_iova = cntx_iova +
-		offsetof(struct qdma_cntx_long, fle_sdd) +
-		offsetof(struct qdma_cntx_fle_sdd, fle);
-
-	DPAA2_SET_FD_ADDR(fd, fle_iova);
-	DPAA2_SET_FD_COMPOUND_FMT(fd);
-	DPAA2_SET_FD_FLC(fd, (uint64_t)cntx_long);
-
-	if (qdma_vq->fle_pre_populate) {
-		if (unlikely(!fle[DPAA2_QDMA_SRC_FLE].length)) {
-			fle_sdd_pre_populate(&cntx_long->fle_sdd,
-				&qdma_vq->rbp,
-				0, 0, QBMAN_FLE_WORD4_FMT_SBF);
-		}
-
-		fle_post_populate(fle, src, dst, len);
-	} else {
-		sdd = cntx_long->fle_sdd.sdd;
-		sdd_iova = cntx_iova +
-			offsetof(struct qdma_cntx_long, fle_sdd) +
-			offsetof(struct qdma_cntx_fle_sdd, sdd);
-		fle_populate(fle, sdd, sdd_iova, &qdma_vq->rbp,
-			src, dst, len,
-			QBMAN_FLE_WORD4_FMT_SBF);
+		return 0;
 	}
+	if (type == DPAA2_QDMA_FD_SG) {
+		fle_sdd = (void *)DPAA2_GET_FD_FLC(fd);
+		qdma_vq->fle_elem[*fle_elem_nb] = fle_sdd;
+		(*fle_elem_nb)++;
+		cntx_sg = container_of(fle_sdd,
+				struct qdma_cntx_sg, fle_sdd);
+		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
+				cntx_sg->cntx_idx,
+				cntx_sg->job_nb, free_space);
+		if (unlikely(ret < cntx_sg->job_nb))
+			return -ENOSPC;
 
-	if (unlikely(qdma_vq->flags & DPAA2_QDMA_DESC_DEBUG_FLAG))
-		dpaa2_qdma_long_fmt_dump(cntx_long->fle_sdd.fle);
-
-	qdma_vq->fd_idx++;
-
-	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
-		expected = qdma_vq->fd_idx;
-		ret = dpaa2_qdma_multi_eq(qdma_vq);
-		if (likely(ret == expected))
-			return 0;
-	} else {
 		return 0;
 	}
 
-	return ret;
+	DPAA2_QDMA_ERR("Invalid FD type, ATT=0x%04x",
+		fd->simple_ddr.rsv1_att);
+	return -EIO;
 }
 
 static uint16_t
@@ -790,10 +805,6 @@ dpaa2_qdma_dequeue(void *dev_private,
 	uint8_t num_rx = 0;
 	const struct qbman_fd *fd;
 	int ret, pull_size;
-	struct qbman_fle *fle;
-	struct qdma_cntx_fle_sdd *fle_sdd;
-	struct qdma_cntx_sg *cntx_sg;
-	struct qdma_cntx_long *cntx_long;
 	uint16_t free_space = 0, fle_elem_nb = 0;
 
 	if (unlikely(qdma_dev->is_silent))
@@ -892,25 +903,8 @@ dpaa2_qdma_dequeue(void *dev_private,
 				continue;
 		}
 		fd = qbman_result_DQ_fd(dq_storage);
-		fle_sdd = (void *)DPAA2_GET_FD_FLC(fd);
-		fle = fle_sdd->fle;
-		qdma_vq->fle_elem[fle_elem_nb] = fle_sdd;
-		fle_elem_nb++;
-		if (fle[DPAA2_QDMA_SRC_FLE].word4.fmt ==
-			QBMAN_FLE_WORD4_FMT_SGE) {
-			cntx_sg = container_of(fle_sdd,
-				struct qdma_cntx_sg, fle_sdd);
-			ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
-				cntx_sg->cntx_idx,
-				cntx_sg->job_nb, &free_space);
-		} else {
-			cntx_long = container_of(fle_sdd,
-				struct qdma_cntx_long, fle_sdd);
-			ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
-				&cntx_long->cntx_idx,
-				1, &free_space);
-		}
-		if (!ret || free_space < RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)
+		ret = dpaa2_qdma_dq_fd(fd, qdma_vq, &free_space, &fle_elem_nb);
+		if (ret || free_space < RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)
 			pending = 0;
 
 		dq_storage++;
@@ -935,8 +929,10 @@ dpaa2_qdma_dequeue(void *dev_private,
 	q_storage->active_dpio_id = DPAA2_PER_LCORE_DPIO->index;
 	set_swp_active_dqs(DPAA2_PER_LCORE_DPIO->index, dq_storage1);
 
-	rte_mempool_put_bulk(qdma_vq->fle_pool,
-		qdma_vq->fle_elem, fle_elem_nb);
+	if (fle_elem_nb > 0) {
+		rte_mempool_put_bulk(qdma_vq->fle_pool,
+			qdma_vq->fle_elem, fle_elem_nb);
+	}
 
 	num_rx = qdma_cntx_idx_ring_dq(qdma_vq->ring_cntx_idx,
 		cntx_idx, nb_cpls);
@@ -955,14 +951,17 @@ dpaa2_qdma_info_get(const struct rte_dma_dev *dev,
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
 
 	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM |
-			     RTE_DMA_CAPA_MEM_TO_DEV |
-			     RTE_DMA_CAPA_DEV_TO_DEV |
-			     RTE_DMA_CAPA_DEV_TO_MEM |
-			     RTE_DMA_CAPA_SILENT |
-			     RTE_DMA_CAPA_OPS_COPY;
+		RTE_DMA_CAPA_MEM_TO_DEV |
+		RTE_DMA_CAPA_DEV_TO_DEV |
+		RTE_DMA_CAPA_DEV_TO_MEM |
+		RTE_DMA_CAPA_SILENT |
+		RTE_DMA_CAPA_OPS_COPY |
+		RTE_DMA_CAPA_OPS_COPY_SG;
+	dev_info->dev_capa |= RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX;
 	dev_info->max_vchans = dpdmai_dev->num_queues;
 	dev_info->max_desc = DPAA2_QDMA_MAX_DESC;
 	dev_info->min_desc = DPAA2_QDMA_MIN_DESC;
+	dev_info->max_sges = RTE_DPAA2_QDMA_JOB_SUBMIT_MAX;
 	dev_info->dev_name = dev->device->name;
 	if (dpdmai_dev->qdma_dev)
 		dev_info->nb_vchans = dpdmai_dev->qdma_dev->num_vqs;
@@ -1167,7 +1166,7 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 	struct qdma_device *qdma_dev = dpdmai_dev->qdma_dev;
 	uint32_t pool_size;
 	char pool_name[64];
-	int ret;
+	int ret = 0;
 	char *env = NULL;
 	uint64_t iova, va;
 
@@ -1194,8 +1193,7 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 
 	snprintf(pool_name, sizeof(pool_name),
 		"qdma_fle_pool_dev%d_qid%d", dpdmai_dev->dpdmai_id, vchan);
-	pool_size = RTE_MAX(sizeof(struct qdma_cntx_sg),
-		sizeof(struct qdma_cntx_long));
+	pool_size = sizeof(struct qdma_cntx_sg);
 
 	qdma_dev->vqs[vchan].fle_pool = rte_mempool_create(pool_name,
 		DPAA2_QDMA_MAX_DESC * 2, pool_size,
@@ -1203,7 +1201,8 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 		SOCKET_ID_ANY, 0);
 	if (!qdma_dev->vqs[vchan].fle_pool) {
 		DPAA2_QDMA_ERR("%s create failed", pool_name);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_free;
 	}
 	iova = qdma_dev->vqs[vchan].fle_pool->mz->iova;
 	va = qdma_dev->vqs[vchan].fle_pool->mz->addr_64;
@@ -1216,15 +1215,15 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 		if (ret) {
 			DPAA2_QDMA_ERR("sg cntx get from %s for silent mode",
 				pool_name);
-			return ret;
+			goto err_free;
 		}
 		ret = rte_mempool_get_bulk(qdma_dev->vqs[vchan].fle_pool,
-			(void **)qdma_dev->vqs[vchan].cntx_long,
+			(void **)qdma_dev->vqs[vchan].cntx_fle_sdd,
 			DPAA2_QDMA_MAX_DESC);
 		if (ret) {
 			DPAA2_QDMA_ERR("long cntx get from %s for silent mode",
 				pool_name);
-			return ret;
+			goto err_free;
 		}
 	} else {
 		qdma_dev->vqs[vchan].ring_cntx_idx = rte_malloc(NULL,
@@ -1233,7 +1232,8 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 		if (!qdma_dev->vqs[vchan].ring_cntx_idx) {
 			DPAA2_QDMA_ERR("DQ response ring alloc failed.");
 
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto err_free;
 		}
 		qdma_dev->vqs[vchan].ring_cntx_idx->start = 0;
 		qdma_dev->vqs[vchan].ring_cntx_idx->tail = 0;
@@ -1244,12 +1244,35 @@ dpaa2_qdma_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
 		qdma_dev->vqs[vchan].fle_elem = rte_malloc(NULL,
 			sizeof(void *) * DPAA2_QDMA_MAX_DESC,
 			RTE_CACHE_LINE_SIZE);
+		if (!qdma_dev->vqs[vchan].fle_elem) {
+			DPAA2_QDMA_ERR("FLE elements alloc failed.");
+
+			ret = -ENOMEM;
+			goto err_free;
+		}
 	}
 
 	qdma_dev->vqs[vchan].dpdmai_dev = dpdmai_dev;
 	qdma_dev->vqs[vchan].nb_desc = conf->nb_desc;
 
 	return 0;
+
+err_free:
+
+	if (qdma_dev->vqs[vchan].fle_pool) {
+		rte_mempool_free(qdma_dev->vqs[vchan].fle_pool);
+		qdma_dev->vqs[vchan].fle_pool = NULL;
+	}
+	if (qdma_dev->vqs[vchan].ring_cntx_idx) {
+		rte_free(qdma_dev->vqs[vchan].ring_cntx_idx);
+		qdma_dev->vqs[vchan].ring_cntx_idx = NULL;
+	}
+	if (qdma_dev->vqs[vchan].fle_elem) {
+		rte_free(qdma_dev->vqs[vchan].fle_elem);
+		qdma_dev->vqs[vchan].fle_elem = NULL;
+	}
+
+	return ret;
 }
 
 static int
@@ -1335,6 +1358,10 @@ dpaa2_qdma_close(struct rte_dma_dev *dev)
 			if (qdma_dev->vqs[i].ring_cntx_idx) {
 				rte_free(qdma_dev->vqs[i].ring_cntx_idx);
 				qdma_dev->vqs[i].ring_cntx_idx = NULL;
+			}
+			if (qdma_dev->vqs[i].fle_elem) {
+				rte_free(qdma_dev->vqs[i].fle_elem);
+				qdma_dev->vqs[i].fle_elem = NULL;
 			}
 		}
 		rte_free(qdma_dev->vqs);

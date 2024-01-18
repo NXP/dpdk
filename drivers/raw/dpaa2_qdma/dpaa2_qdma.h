@@ -83,6 +83,8 @@ struct qdma_virt_queue {
 	struct qdma_hw_queue *hw_queue;
 	/** FLE pool for the queue */
 	struct rte_mempool *fle_pool;
+	/** For simple fd */
+	void **simple_job_pool;
 	uint64_t fle_iova2va_offset;
 	/** Route by port */
 	struct rte_qdma_rbp rbp;
@@ -108,7 +110,7 @@ struct qdma_virt_queue {
 	int (*set_fd)(struct qdma_virt_queue *qdma_vq,
 		struct qbman_fd *fd,
 		struct rte_qdma_job **job,
-		uint16_t nb_jobs);
+		uint16_t nb_jobs, uint16_t *nb_set);
 
 	uint32_t (*get_job)(struct qdma_virt_queue *qdma_vq,
 		const struct qbman_fd *fd,

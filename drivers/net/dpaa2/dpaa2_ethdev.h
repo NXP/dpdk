@@ -31,7 +31,9 @@
 #define MAX_DPNI		8
 #define DPAA2_MAX_CHANNELS	16
 
-#define DPAA2_EXTRACT_PARAM_MAX_SIZE 256
+#define DPAA2_EXTRACT_PARAM_MAX_SIZE \
+	RTE_ALIGN(sizeof(struct dpni_ext_set_rx_tc_dist), 256)
+
 #define DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE 256
 
 #define DPAA2_RX_DEFAULT_NBDESC 512
@@ -56,7 +58,7 @@
 #define CONG_RX_OAL	128
 
 /* Size of the input SMMU mapped memory required by MC */
-#define DIST_PARAM_IOVA_SIZE 256
+#define DIST_PARAM_IOVA_SIZE DPAA2_EXTRACT_PARAM_MAX_SIZE
 
 /* Enable TX Congestion control support
  * default is disable
@@ -153,107 +155,56 @@ struct sw_buf_free {
 	struct rte_mbuf *seg;
 };
 
-#define DPAA2_FAPR_SIZE \
-	(sizeof(struct dpaa2_annot_hdr) - \
-	offsetof(struct dpaa2_annot_hdr, word3))
+/* 00 00 00 - last 6 bit represent data, annotation,
+ * context stashing setting 01 01 00 (0x14)
+ * (in following order ->DS AS CS)
+ * to enable 1 line data, 1 line annotation.
+ * For LX2, this setting should be 01 00 00 (0x10)
+ */
+#define DPAA2_FLC_STASHING_MAX_BIT_SIZE 2
+#define DPAA2_FLC_STASHING_MAX_CACHE_LINE \
+	((1ULL << DPAA2_FLC_STASHING_MAX_BIT_SIZE) - 1)
 
-#define DPAA2_PR_NXTHDR_OFFSET 0
-
-#define DPAA2_FAFE_PSR_OFFSET 2
-#define DPAA2_FAFE_PSR_SIZE 2
-
-#define DPAA2_FAF_PSR_OFFSET 4
-#define DPAA2_FAF_PSR_SIZE 12
-
-#define DPAA2_FAF_TOTAL_SIZE \
-	(DPAA2_FAFE_PSR_SIZE + DPAA2_FAF_PSR_SIZE)
-
-/* Just most popular Frame attribute flags (FAF) here.*/
-enum dpaa2_rx_faf_offset {
-	/* Set by SP start*/
-	FAFE_VXLAN_IN_VLAN_FRAM = 0,
-	FAFE_VXLAN_IN_IPV4_FRAM = 1,
-	FAFE_VXLAN_IN_IPV6_FRAM = 2,
-	FAFE_VXLAN_IN_UDP_FRAM = 3,
-	FAFE_VXLAN_IN_TCP_FRAM = 4,
-
-	FAFE_IBTH = 5,
-
-	FAFE_ECPRI_FRAM = 7,
-	/* Set by SP end*/
-
-	FAF_GTP_PRIMED_FRAM = 1 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_PTP_FRAM = 3 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_VXLAN_FRAM = 4 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_ETH_FRAM = 10 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_LLC_SNAP_FRAM = 18 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_VLAN_FRAM = 21 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_PPPOE_PPP_FRAM = 25 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_MPLS_FRAM = 27 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_ARP_FRAM = 30 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IPV4_FRAM = 34 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IPV6_FRAM = 42 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IP_FRAM = 48 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_ICMP_FRAM = 57 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IGMP_FRAM = 58 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_GRE_FRAM = 65 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_UDP_FRAM = 70 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_TCP_FRAM = 72 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IPSEC_FRAM = 77 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IPSEC_ESP_FRAM = 78 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_IPSEC_AH_FRAM = 79 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_SCTP_FRAM = 81 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_DCCP_FRAM = 83 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_GTP_FRAM = 87 + DPAA2_FAFE_PSR_SIZE * 8,
-	FAF_ESP_FRAM = 89 + DPAA2_FAFE_PSR_SIZE * 8,
+enum dpaa2_flc_stashing_type {
+	DPAA2_FLC_CNTX_STASHING = 0,
+	DPAA2_FLC_ANNO_STASHING =
+		DPAA2_FLC_CNTX_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
+	DPAA2_FLC_DATA_STASHING =
+		DPAA2_FLC_ANNO_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE
 };
 
-enum dpaa2_ecpri_fafe_type {
-	ECPRI_FAFE_TYPE_0 = (8 - FAFE_ECPRI_FRAM),
-	ECPRI_FAFE_TYPE_1 = (8 - FAFE_ECPRI_FRAM) | (1 << 1),
-	ECPRI_FAFE_TYPE_2 = (8 - FAFE_ECPRI_FRAM) | (2 << 1),
-	ECPRI_FAFE_TYPE_3 = (8 - FAFE_ECPRI_FRAM) | (3 << 1),
-	ECPRI_FAFE_TYPE_4 = (8 - FAFE_ECPRI_FRAM) | (4 << 1),
-	ECPRI_FAFE_TYPE_5 = (8 - FAFE_ECPRI_FRAM) | (5 << 1),
-	ECPRI_FAFE_TYPE_6 = (8 - FAFE_ECPRI_FRAM) | (6 << 1),
-	ECPRI_FAFE_TYPE_7 = (8 - FAFE_ECPRI_FRAM) | (7 << 1)
-};
+static inline void
+dpaa2_flc_stashing_set(enum dpaa2_flc_stashing_type type,
+	uint8_t cache_line, uint64_t *flc)
+{
+	RTE_ASSERT(cache_line <= DPAA2_FLC_STASHING_MAX_CACHE_LINE);
+	RTE_ASSERT(type == DPAA2_FLC_CNTX_STASHING ||
+		type == DPAA2_FLC_ANNO_STASHING ||
+		type == DPAA2_FLC_DATA_STASHING);
 
-#define DPAA2_PR_ETH_OFF_OFFSET 19
-#define DPAA2_PR_TCI_OFF_OFFSET 21
-#define DPAA2_PR_LAST_ETYPE_OFFSET 23
-#define DPAA2_PR_L3_OFF_OFFSET 27
-#define DPAA2_PR_L4_OFF_OFFSET 30
-#define DPAA2_PR_L5_OFF_OFFSET 31
-#define DPAA2_PR_NXTHDR_OFF_OFFSET 34
+	(*flc) &= ~(DPAA2_FLC_STASHING_MAX_CACHE_LINE << type);
+	(*flc) |= (cache_line << type);
+}
 
-/* Set by SP for vxlan distribution start*/
-#define DPAA2_VXLAN_IN_TCI_OFFSET 16
+static inline void
+dpaa2_flc_stashing_clear_all(uint64_t *flc)
+{
+	dpaa2_flc_stashing_set(DPAA2_FLC_CNTX_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0, flc);
+}
 
-#define DPAA2_VXLAN_IN_DADDR0_OFFSET 20
-#define DPAA2_VXLAN_IN_DADDR1_OFFSET 22
-#define DPAA2_VXLAN_IN_DADDR2_OFFSET 24
-#define DPAA2_VXLAN_IN_DADDR3_OFFSET 25
-#define DPAA2_VXLAN_IN_DADDR4_OFFSET 26
-#define DPAA2_VXLAN_IN_DADDR5_OFFSET 28
+#define DPAA2_FS_FLC_FS_MARK_OFFSET \
+	(DPAA2_FLC_DATA_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE)
 
-#define DPAA2_VXLAN_IN_SADDR0_OFFSET 29
-#define DPAA2_VXLAN_IN_SADDR1_OFFSET 32
-#define DPAA2_VXLAN_IN_SADDR2_OFFSET 33
-#define DPAA2_VXLAN_IN_SADDR3_OFFSET 35
-#define DPAA2_VXLAN_IN_SADDR4_OFFSET 41
-#define DPAA2_VXLAN_IN_SADDR5_OFFSET 42
+#define DPAA2_FS_FLC_TC_OFFSET \
+	(DPAA2_FS_FLC_FS_MARK_OFFSET + DPAA2_FLC_STASHING_MAX_BIT_SIZE)
 
-#define DPAA2_VXLAN_VNI_OFFSET 43
-#define DPAA2_VXLAN_IN_TYPE_OFFSET 46
-/* Set by SP for vxlan distribution end*/
+#define DPAA2_FS_FLC_TC_BIT_SIZE (sizeof(uint8_t) * 8)
+#define DPAA2_FS_FLC_TC_MASK ((1 << DPAA2_FS_FLC_TC_BIT_SIZE) - 1)
 
-/* ECPRI shares SP context with VXLAN*/
-#define DPAA2_ECPRI_MSG_OFFSET DPAA2_VXLAN_VNI_OFFSET
-
-#define DPAA2_ROCEV2_OPCODE_OFFSET DPAA2_VXLAN_VNI_OFFSET
-
-#define DPAA2_ROCEV2_DST_QP_OFFSET (DPAA2_ROCEV2_OPCODE_OFFSET + 1)
+#define DPAA2_FS_FLC_FLOW_OFFSET \
+	(DPAA2_FS_FLC_TC_OFFSET + DPAA2_FS_FLC_TC_BIT_SIZE)
 
 #define DPAA2_ECPRI_MAX_EXTRACT_NB 8
 
@@ -319,33 +270,23 @@ struct key_prot_field {
 	uint32_t key_field;
 };
 
-struct dpaa2_raw_region {
-	uint8_t raw_start;
-	uint8_t raw_size;
-};
-
 struct dpaa2_key_profile {
 	uint8_t num;
 	uint8_t key_offset[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint8_t key_size[DPKG_MAX_NUM_OF_EXTRACTS];
 
 	enum ip_addr_extract_type ip_addr_type;
-	uint8_t ip_addr_extract_pos;
-	uint8_t ip_addr_extract_off;
+	uint8_t ip_addr_extract_idx;
+	uint8_t ip_addr_key_offset;
 
-	uint8_t raw_extract_pos;
-	uint8_t raw_extract_off;
-	uint8_t raw_extract_num;
-
-	uint8_t l4_src_port_present;
-	uint8_t l4_src_port_pos;
-	uint8_t l4_src_port_offset;
-	uint8_t l4_dst_port_present;
-	uint8_t l4_dst_port_pos;
-	uint8_t l4_dst_port_offset;
+	uint8_t l4_sp_present;
+	uint8_t l4_sp_extract_idx;
+	uint8_t l4_sp_key_offset;
+	uint8_t l4_dp_present;
+	uint8_t l4_dp_extract_idx;
+	uint8_t l4_dp_key_offset;
 	struct key_prot_field prot_field[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint16_t key_max_size;
-	struct dpaa2_raw_region raw_region;
 };
 
 struct dpaa2_key_extract {
@@ -387,6 +328,10 @@ struct dpaa2_dev_priv {
 	uint8_t max_cgs;
 	uint8_t cgid_in_use[MAX_RX_QUEUES];
 
+	enum rte_dpaa2_dev_type ep_dev_type;   /**< Endpoint Device Type */
+	uint16_t ep_object_id;                 /**< Endpoint DPAA2 Object ID */
+	char ep_name[RTE_DEV_NAME_MAX_LEN];
+
 	struct extract_s extract;
 
 	uint16_t ss_offset;
@@ -410,6 +355,129 @@ struct dpaa2_dev_priv {
 	LIST_HEAD(nodes, dpaa2_tm_node) nodes;
 	LIST_HEAD(shaper_profiles, dpaa2_tm_shaper_profile) shaper_profiles;
 };
+
+#define DPAA2_FLOW_DUMP printf
+
+static inline void
+dpaa2_prot_field_string(uint32_t prot, uint32_t field,
+	char *string)
+{
+	if (prot == NET_PROT_ETH) {
+		strcpy(string, "eth");
+		if (field == NH_FLD_ETH_DA)
+			strcat(string, ".dst");
+		else if (field == NH_FLD_ETH_SA)
+			strcat(string, ".src");
+		else if (field == NH_FLD_ETH_TYPE)
+			strcat(string, ".type");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_VLAN) {
+		strcpy(string, "vlan");
+		if (field == NH_FLD_VLAN_TCI)
+			strcat(string, ".tci");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_IP) {
+		strcpy(string, "ip");
+		if (field == NH_FLD_IP_SRC)
+			strcat(string, ".src");
+		else if (field == NH_FLD_IP_DST)
+			strcat(string, ".dst");
+		else if (field == NH_FLD_IP_PROTO)
+			strcat(string, ".proto");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_TCP) {
+		strcpy(string, "tcp");
+		if (field == NH_FLD_TCP_PORT_SRC)
+			strcat(string, ".src");
+		else if (field == NH_FLD_TCP_PORT_DST)
+			strcat(string, ".dst");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_UDP) {
+		strcpy(string, "udp");
+		if (field == NH_FLD_UDP_PORT_SRC)
+			strcat(string, ".src");
+		else if (field == NH_FLD_UDP_PORT_DST)
+			strcat(string, ".dst");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_ICMP) {
+		strcpy(string, "icmp");
+		if (field == NH_FLD_ICMP_TYPE)
+			strcat(string, ".type");
+		else if (field == NH_FLD_ICMP_CODE)
+			strcat(string, ".code");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_SCTP) {
+		strcpy(string, "sctp");
+		if (field == NH_FLD_SCTP_PORT_SRC)
+			strcat(string, ".src");
+		else if (field == NH_FLD_SCTP_PORT_DST)
+			strcat(string, ".dst");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_GRE) {
+		strcpy(string, "gre");
+		if (field == NH_FLD_GRE_TYPE)
+			strcat(string, ".type");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_GTP) {
+		strcpy(string, "gtp");
+		if (field == NH_FLD_GTP_TEID)
+			strcat(string, ".teid");
+		else
+			strcat(string, ".unknown field");
+	} else if (prot == NET_PROT_IPSEC_ESP) {
+		strcpy(string, "esp");
+		if (field == NH_FLD_IPSEC_ESP_SPI)
+			strcat(string, ".spi");
+		else if (field == NH_FLD_IPSEC_ESP_SEQUENCE_NUM)
+			strcat(string, ".seq");
+		else
+			strcat(string, ".unknown field");
+	} else {
+		sprintf(string, "unknown protocol(%d)", prot);
+	}
+}
+
+static inline void
+dpaa2_dump_dpkg(const struct dpkg_profile_cfg *dpkg)
+{
+	int idx;
+	char string[32];
+	const struct dpkg_extract *extract;
+	enum dpkg_extract_type type;
+	enum net_prot prot;
+	uint32_t field;
+
+	for (idx = 0; idx < dpkg->num_extracts; idx++) {
+		extract = &dpkg->extracts[idx];
+		type = extract->type;
+		if (type == DPKG_EXTRACT_FROM_HDR) {
+			prot = extract->extract.from_hdr.prot;
+			field = extract->extract.from_hdr.field;
+			dpaa2_prot_field_string(prot, field,
+				string);
+		} else if (type == DPKG_EXTRACT_FROM_DATA) {
+			sprintf(string, "raw offset/len: %d/%d",
+				extract->extract.from_data.offset,
+				extract->extract.from_data.size);
+		} else if (type == DPKG_EXTRACT_FROM_PARSE) {
+			sprintf(string, "parse offset/len: %d/%d",
+				extract->extract.from_parse.offset,
+				extract->extract.from_parse.size);
+		}
+		DPAA2_FLOW_DUMP("%s", string);
+		if ((idx + 1) < dpkg->num_extracts)
+			DPAA2_FLOW_DUMP(" / ");
+	}
+	DPAA2_FLOW_DUMP("\r\n");
+}
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
 				      struct dpkg_profile_cfg *kg_cfg);
@@ -463,7 +531,6 @@ uint16_t dummy_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *queue)  __attribute__((unused));
-int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev);
 int dpaa2_soft_parser_loaded(void);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);

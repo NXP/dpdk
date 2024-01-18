@@ -143,6 +143,7 @@ struct lsxvio_queue {
 	struct lsinic_dma_job *dma_jobs;
 	struct rte_qdma_job *rawdma_jobs;
 	struct lsxvio_dma_cntx *dma_bd_cntx;
+	uint16_t *dma_idx;
 
 	struct rte_qdma_job *e2r_bd_rawdma_jobs;
 	struct rte_qdma_job *r2e_bd_rawdma_jobs;

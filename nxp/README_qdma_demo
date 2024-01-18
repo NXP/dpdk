@@ -251,7 +251,8 @@ MEMCOPY
 
 One can use --memcpy option to use core instead of qdma engine for comparision reasons.
 
-SCATTER GATHER
+FORMAT
 --------------
 
-One can use --scatter option to use Scatter Gather buffers instead of normal single buffer.
+One can use --format option to use short format, long format or scatter gather format for DPAA2 driver.
+--format=<short, long, sg>

@@ -180,7 +180,8 @@ struct dpaa2_queue {
 	struct dpaa2_queue *tx_conf_queue;
 	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint16_t nb_desc;
-	uint16_t resv;
+	uint8_t resv;
+	uint8_t data_stashing_off;
 	uint64_t offloads;
 	uint64_t lpbk_cntx;
 } __rte_cache_aligned;

@@ -25,6 +25,7 @@
 #include <dpaa2_hw_pvt.h>
 #include <dpaa2_hw_mempool.h>
 #include <dpaa2_hw_dpio.h>
+#include <fsl_dprc.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
 #include "dpaa2_sparser.h"
@@ -779,31 +780,26 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if ((dpaa2_svr_family & 0xffff0000) != SVR_LS2080A) {
 		options |= DPNI_QUEUE_OPT_FLC;
 		cfg.flc.stash_control = true;
-		cfg.flc.value &= 0xFFFFFFFFFFFFFFC0;
-		/* 00 00 00 - last 6 bit represent annotation, context stashing,
-		 * data stashing setting 01 01 00 (0x14)
-		 * (in following order ->DS AS CS)
-		 * to enable 1 line data, 1 line annotation.
-		 * For LX2, this setting should be 01 00 00 (0x10)
-		 */
-		if ((dpaa2_svr_family & 0xffff0000) == SVR_LX2160A)
-			cfg.flc.value |= 0x10;
-		else
-			cfg.flc.value |= 0x14;
-
-		/* Bits 4 & 5 of flc value represents data stashing.
-		 * Switch off these bits from flc when data stashing is
-		 * configured to be off.
-		 */
-		if (getenv("DPAA2_DATA_STASHING_OFF"))
-			cfg.flc.value &= 0xFFFFFFFFFFFFFFCF;
-
+		dpaa2_flc_stashing_clear_all(&cfg.flc.value);
+		if (getenv("DPAA2_DATA_STASHING_OFF")) {
+			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0,
+				&cfg.flc.value);
+			dpaa2_q->data_stashing_off = 1;
+		} else {
+			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
+				&cfg.flc.value);
+			dpaa2_q->data_stashing_off = 0;
+		}
+		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
+			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
+				&cfg.flc.value);
+		}
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
 			     dpaa2_q->tc_index, flow_id, options, &cfg);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in setting the rx flow: = %d", ret);
-		return -1;
+		return ret;
 	}
 
 	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
@@ -843,7 +839,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (ret) {
 			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
 				      ret);
-			return -1;
+			return ret;
 		}
 	} else { /* Disable tail Drop */
 		struct dpni_taildrop taildrop = {0};
@@ -863,7 +859,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (ret) {
 			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
 				      ret);
-			return -1;
+			return ret;
 		}
 	}
 
@@ -2614,6 +2610,54 @@ dpaa2_get_devargs(struct rte_devargs *devargs, const char *key)
 }
 
 static int
+dpaa2_dev_ep_init(struct rte_dpaa2_device *dpaa2_dev,
+	struct dpaa2_dev_priv *priv)
+{
+	struct dpaa2_dprc_dev *dprc_node;
+	struct dprc_endpoint endpoint1, endpoint2;
+	int link_state, ret;
+
+	dprc_node = dpaa2_dev->container;
+	memset(&endpoint1, 0, sizeof(struct dprc_endpoint));
+	memset(&endpoint2, 0, sizeof(struct dprc_endpoint));
+	strcpy(endpoint1.type, "dpni");
+	endpoint1.id = dpaa2_dev->object_id;
+	ret = dprc_get_connection(&dprc_node->dprc,
+			CMD_PRI_LOW, dprc_node->token,
+			&endpoint1, &endpoint2, &link_state);
+	if (ret) {
+		DPAA2_PMD_ERR("dpni.%d connection failed!",
+			dpaa2_dev->object_id);
+
+		return ret;
+	}
+
+	if (!strcmp(endpoint2.type, "dpmac"))
+		priv->ep_dev_type = DPAA2_MAC;
+	else if (!strcmp(endpoint2.type, "dpni"))
+		priv->ep_dev_type = DPAA2_ETH;
+	else if (!strcmp(endpoint2.type, "dpdmux"))
+		priv->ep_dev_type = DPAA2_MUX;
+	else if (!strcmp(endpoint2.type, "dpsw"))
+		priv->ep_dev_type = DPAA2_SW;
+	else
+		priv->ep_dev_type = DPAA2_UNKNOWN;
+
+	priv->ep_object_id = endpoint2.id;
+
+	if (priv->ep_dev_type == DPAA2_MUX ||
+		priv->ep_dev_type == DPAA2_SW) {
+		sprintf(priv->ep_name, "%s.%d.%d",
+			endpoint2.type, endpoint2.id, endpoint2.if_id);
+	} else {
+		sprintf(priv->ep_name, "%s.%d",
+			endpoint2.type, endpoint2.id);
+	}
+
+	return 0;
+}
+
+static int
 dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 {
 	struct rte_device *dev = eth_dev->device;
@@ -2685,9 +2729,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpni_get_attributes(dpni_dev, CMD_PRI_LOW, priv->token, &attr);
 	if (ret) {
-		DPAA2_PMD_ERR(
-			     "Failure in get dpni@%d attribute, err code %d",
-			     hw_id, ret);
+		DPAA2_PMD_ERR("Failure in get dpni@%d attribute, err code %d",
+			hw_id, ret);
+		goto init_err;
+	}
+
+	ret = dpaa2_dev_ep_init(dpaa2_dev, priv);
+	if (ret) {
+		DPAA2_PMD_ERR("Failure in get dpni@%d's endpoint, err code %d",
+			hw_id, ret);
 		goto init_err;
 	}
 
@@ -2827,7 +2877,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	/*Init fields w.r.t. classficaition*/
 	memset(&priv->extract.qos_key_extract, 0,
 		sizeof(struct dpaa2_key_extract));
-	priv->extract.qos_extract_param = rte_malloc(NULL,
+	priv->extract.qos_extract_param = rte_zmalloc(NULL,
 		DPAA2_EXTRACT_PARAM_MAX_SIZE,
 		RTE_CACHE_LINE_SIZE);
 	if (!priv->extract.qos_extract_param) {
@@ -2838,7 +2888,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	for (i = 0; i < MAX_TCS; i++) {
 		memset(&priv->extract.tc_key_extract[i], 0,
 			sizeof(struct dpaa2_key_extract));
-		priv->extract.tc_extract_param[i] = rte_malloc(NULL,
+		priv->extract.tc_extract_param[i] = rte_zmalloc(NULL,
 			DPAA2_EXTRACT_PARAM_MAX_SIZE,
 			RTE_CACHE_LINE_SIZE);
 		if (!priv->extract.tc_extract_param[i]) {
@@ -2883,7 +2933,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (ret > 0)
 		RTE_LOG(INFO, PMD, "soft parser is loaded\n");
 	RTE_LOG(INFO, PMD, "%s: netdev created, connected to %s\n",
-		eth_dev->data->name, dpaa2_dev->ep_name);
+		eth_dev->data->name, priv->ep_name);
 
 	return 0;
 init_err:
@@ -2939,13 +2989,27 @@ dpaa2_dev_uninit(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
-int dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev)
+int
+rte_pmd_dpaa2_dev_is_dpaa2(struct rte_eth_dev *dev)
 {
 	if (!dev->device)
 		return 0;
 	if (!dev->device->driver)
 		return 0;
 	return dev->device->driver == &rte_dpaa2_pmd.driver;
+}
+
+const char*
+rte_pmd_dpaa2_ep_name(struct rte_eth_dev *dev)
+{
+	struct dpaa2_dev_priv *priv;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(dev))
+		return NULL;
+
+	priv = dev->data->dev_private;
+
+	return priv->ep_name;
 }
 
 static int

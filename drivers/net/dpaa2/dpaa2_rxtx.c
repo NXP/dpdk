@@ -25,7 +25,7 @@
 #include "dpaa2_pmd_logs.h"
 #include "dpaa2_ethdev.h"
 #include "base/dpaa2_hw_dpni_annot.h"
-#include "dpaa2_parse_dump.h"
+#include "dpaa2_parser_decode.h"
 
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
@@ -50,9 +50,12 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
 	struct dpaa2_annot_hdr *annotation =
 			(struct dpaa2_annot_hdr *)hw_annot_addr;
+	uint32_t flc_lo, tc, flow;
 
-	if (unlikely(dpaa2_print_parser_result))
+	if (unlikely(dpaa2_print_parser_result)) {
+		dpaa2_print_fd_frc(fd);
 		dpaa2_print_parse_result(annotation);
+	}
 
 	m->packet_type = RTE_PTYPE_UNKNOWN;
 	switch (frc) {
@@ -108,10 +111,23 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_ICMP;
 		break;
 	default:
-		m->packet_type = dpaa2_dev_rx_parse_slow(m, annotation);
+		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);
 	}
-	m->hash.rss = fd->simple.flc_hi;
-	m->ol_flags |= PKT_RX_RSS_HASH;
+	flc_lo = fd->simple.flc_lo;
+	if (flc_lo & (1 << DPAA2_FS_FLC_FS_MARK_OFFSET)) {
+		m->ol_flags |= PKT_RX_FDIR;
+		tc = (flc_lo >> DPAA2_FS_FLC_TC_OFFSET) &
+			DPAA2_FS_FLC_TC_MASK;
+		flow = flc_lo >> DPAA2_FS_FLC_FLOW_OFFSET;
+		rte_mbuf_sched_set(m, flow, tc, 0);
+		DPAA2_PMD_DP_DEBUG("FS frame received from TC[%d]->flow%d",
+			tc, flow);
+	} else {
+		m->hash.rss = fd->simple.flc_hi;
+		m->ol_flags |= PKT_RX_RSS_HASH;
+		DPAA2_PMD_DP_DEBUG("Hash frame received with RSS(%08x)",
+			m->hash.rss);
+	}
 
 	if (dpaa2_enable_ts[m->port]) {
 		m->timestamp = annotation->word2;
@@ -711,6 +727,8 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 
 		if (!dpaa2_print_parser_result) {
 			/** Don't print parse result twice.*/
+			if (dpaa2_svr_family == SVR_LX2160A)
+				dpaa2_print_fd_frc(fd);
 			dpaa2_print_parse_result(hw_annot_addr);
 		}
 

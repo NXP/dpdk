@@ -2271,7 +2271,7 @@ lxsnic_proc_secondary_eth_dev_allocate(const char *name)
 	uint16_t port_id;
 	char memzone_name[64];
 
-	name_len = strnlen(name, RTE_ETH_NAME_MAX_LEN);
+	name_len = strlen(name);
 	if (name_len == 0) {
 		LSXINIC_PMD_ERR("Zero length LSINIC RC device name");
 		return NULL;
@@ -2306,7 +2306,7 @@ lxsnic_proc_secondary_eth_dev_allocate(const char *name)
 	eth_dev->data =
 		&lxsnic_proc_2nd_eth_dev_data[port_id];
 
-	strlcpy(eth_dev->data->name, name, sizeof(eth_dev->data->name));
+	strcpy(eth_dev->data->name, name);
 	eth_dev->data->port_id = port_id;
 	eth_dev->data->mtu = RTE_ETHER_MTU;
 

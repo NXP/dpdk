@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2019-2021 NXP
+ *   Copyright 2016, 2019-2021, 2023 NXP
  *
  */
 
@@ -70,31 +70,13 @@ enum rte_dpaa2_dev_type {
 	DPAA2_MPORTAL,  /**< DPMCP type device */
 	DPAA2_QDMA,     /**< DPDMAI type device */
 	DPAA2_MUX,	/**< DPDMUX type device */
+	DPAA2_SW,	/**< DPSW type device */
 	DPAA2_DPRTC,	/**< DPRTC type device */
 	DPAA2_DPRC,	/**< DPRC type device */
 	DPAA2_MAC,	/**< DPMAC type device */
 	/* Unknown device placeholder */
 	DPAA2_UNKNOWN,
 	DPAA2_DEVTYPE_MAX,
-};
-
-TAILQ_HEAD(rte_dpaa2_object_list, rte_dpaa2_object);
-
-typedef int (*rte_dpaa2_obj_create_t)(int vdev_fd,
-				      struct vfio_device_info *obj_info,
-				      int object_id);
-
-typedef void (*rte_dpaa2_obj_close_t)(int object_id);
-
-/**
- * A structure describing a DPAA2 object.
- */
-struct rte_dpaa2_object {
-	TAILQ_ENTRY(rte_dpaa2_object) next; /**< Next in list. */
-	const char *name;                   /**< Name of Object. */
-	enum rte_dpaa2_dev_type dev_type;   /**< Type of device */
-	rte_dpaa2_obj_create_t create;
-	rte_dpaa2_obj_close_t close;
 };
 
 /**
@@ -110,17 +92,34 @@ struct rte_dpaa2_device {
 	};
 	enum rte_dpaa2_dev_type dev_type;   /**< Device Type */
 	uint16_t object_id;                 /**< DPAA2 Object ID */
-	enum rte_dpaa2_dev_type ep_dev_type;   /**< Endpoint Device Type */
-	uint16_t ep_object_id;                 /**< Endpoint DPAA2 Object ID */
-	char ep_name[RTE_DEV_NAME_MAX_LEN];
+	struct dpaa2_dprc_dev *container;
 	struct rte_intr_handle intr_handle; /**< Interrupt handle */
 	struct rte_dpaa2_driver *driver;    /**< Associated driver */
 	char name[FSLMC_OBJECT_MAX_LEN];    /**< DPAA2 Object name*/
 };
 
+typedef int (*rte_dpaa2_obj_create_t)(int vdev_fd,
+	struct vfio_device_info *obj_info,
+	struct rte_dpaa2_device *dev);
+
+typedef void (*rte_dpaa2_obj_close_t)(int object_id);
+
 typedef int (*rte_dpaa2_probe_t)(struct rte_dpaa2_driver *dpaa2_drv,
 				 struct rte_dpaa2_device *dpaa2_dev);
 typedef int (*rte_dpaa2_remove_t)(struct rte_dpaa2_device *dpaa2_dev);
+
+TAILQ_HEAD(rte_dpaa2_object_list, rte_dpaa2_object);
+
+/**
+ * A structure describing a DPAA2 object.
+ */
+struct rte_dpaa2_object {
+	TAILQ_ENTRY(rte_dpaa2_object) next; /**< Next in list. */
+	const char *name;                   /**< Name of Object. */
+	enum rte_dpaa2_dev_type dev_type;   /**< Type of device */
+	rte_dpaa2_obj_create_t create;
+	rte_dpaa2_obj_close_t close;
+};
 
 /**
  * A structure describing a DPAA2 driver.

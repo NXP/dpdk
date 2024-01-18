@@ -77,23 +77,28 @@ static struct qdma_test_case test_case[] = {
 		MEM_TO_MEM},
 };
 
+static struct qdma_demo_vq_format s_format[] = {
+	{"short", "short format", 0},
+	{"long", "long format", RTE_QDMA_VQ_FD_LONG_FORMAT},
+	{"sg", "scatter gather format",
+		RTE_QDMA_VQ_FD_LONG_FORMAT | RTE_QDMA_VQ_FD_SG_FORMAT}
+};
+
 /*Configurable options*/
-static int g_frame_format = RTE_QDMA_LONG_FORMAT;
+static uint32_t g_vq_format = RTE_QDMA_VQ_FD_LONG_FORMAT;
 static int g_test_path = MEM_TO_PCI;
 static uint32_t g_arg_mask;
 static uint64_t g_pci_phy = RTE_BAD_IOVA;
-static uint8_t *g_pci_vir;
 static uint32_t g_burst = 32;
-static uint64_t g_pci_iova;
 
 static uint64_t g_packet_size = 1024;
-static uint64_t g_pci_size = TEST_PCI_DEFAULT_SIZE;
+static uint64_t g_pci_size = 0x1000000;
+
 static uint32_t g_packet_num = (1 * 1024);
 static uint32_t g_latency;
 static uint32_t g_memcpy;
 static int g_validate;
 static int g_seg_iova;
-static uint32_t g_scatter_gather;
 
 struct qdma_demo_job {
 	struct rte_qdma_job job;
@@ -112,7 +117,7 @@ uint32_t core_count;
 static int TEST_DMA_INIT_FLAG;
 
 #define START_ADDR(base, num) \
-	((uint64_t)base + TEST_PACKET_SIZE * num)
+	((uint64_t)base + g_packet_size * num)
 
 struct qdma_demo_pci_bar {
 	uint64_t phy_start[PCI_MAX_RESOURCE];
@@ -367,7 +372,7 @@ calculate_latency(unsigned int lcore_id, uint64_t cycle1,
 
 	RTE_LOG(INFO, qdma_demo,
 		"cpu=%d pkt_cnt:%d, pkt_size %ld\n",
-		lcore_id, pkt_cnt, TEST_PACKET_SIZE);
+		lcore_id, pkt_cnt, g_packet_size);
 	RTE_LOG(INFO, qdma_demo,
 		"min %.1f, max %.1f, mean %.1f\n",
 		core_latency->min, core_latency->max,
@@ -393,7 +398,7 @@ qdma_demo_validate_set(struct qdma_demo_job *job)
 	j = 0;
 	while ((i * 4 + j) < len) {
 		*(uint8_t *)(job->vsrc + i * 4 + j) = r_num;
-		*(uint8_t *)(job->vdst + i * 4 + j) = r_num;
+		*(uint8_t *)(job->vdst + i * 4 + j) = 0;
 		j++;
 	}
 }
@@ -415,8 +420,9 @@ qdma_demo_validate_check(struct qdma_demo_job *job[],
 			cmp_dst = *((int *)(job[i]->vdst) + j);
 			if (cmp_src != cmp_dst) {
 				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(0x%08x) != cmp_dst(0x%08x)\n",
-					cmp_src, cmp_dst);
+					"cmp_src(%lx)(0x%08x) != cmp_dst(%lx)(0x%08x)\n",
+					job[i]->vsrc + j, cmp_src,
+					job[i]->vdst + j, cmp_dst);
 				rte_exit(EXIT_FAILURE, "Validate failed\n");
 				return -EINVAL;
 			}
@@ -540,7 +546,7 @@ lcore_qdma_iova_seg_to_continue(void)
 		iova_offset += seg_size;
 	}
 
-	src = rte_zmalloc(NULL, iova_offset, 4096);
+	src = rte_zmalloc(NULL, iova_offset, RTE_CACHE_LINE_SIZE);
 	for (i = 0; i < iova_offset; i++)
 		src[i] = i;
 	src_iova = rte_fslmc_mem_vaddr_to_iova(src);
@@ -623,7 +629,8 @@ lcore_qdma_process_loop(__attribute__((unused))void *arg)
 	int ret = 0, first_time = 1, need_eq_again = 0;
 
 	uint32_t dq_num = 0, eq_num = 0;
-	uint32_t burst_nb = g_scatter_gather ? 32 : g_burst;
+	uint32_t burst_nb = (g_vq_format & RTE_QDMA_VQ_FD_SG_FORMAT) ?
+		32 : g_burst;
 	struct rte_ring *r_recycle;
 
 	lcore_id = rte_lcore_id();
@@ -647,7 +654,8 @@ lcore_qdma_process_loop(__attribute__((unused))void *arg)
 		struct rte_qdma_enqdeq e_context;
 		uint32_t i, job_num, ring_eq;
 
-		burst_nb = g_scatter_gather ? 32 : g_burst;
+		burst_nb = (g_vq_format & RTE_QDMA_VQ_FD_SG_FORMAT) ?
+			32 : g_burst;
 		if (g_latency)
 			cycle1 = rte_get_timer_cycles();
 		job_num = rte_ring_dequeue_bulk(r_recycle,
@@ -658,6 +666,7 @@ lcore_qdma_process_loop(__attribute__((unused))void *arg)
 				RTE_LOG(ERR, qdma_demo,
 					"memcpy %d jobs failed(%d)\n",
 					job_num, ret);
+				quit_signal = 1;
 				return ret;
 			}
 			continue;
@@ -681,6 +690,7 @@ eq_again:
 			RTE_LOG(ERR, qdma_demo,
 				"eq dma %d jobs failed(%d)\n",
 				job_num - eq_num, ret);
+			quit_signal = 1;
 			return -EIO;
 		}
 		eq_num += ret;
@@ -695,6 +705,7 @@ eq_again:
 				RTE_LOG(ERR, qdma_demo,
 					"recycle %d jobs failed(%d)\n",
 					job_num - eq_num, ring_eq);
+				quit_signal = 1;
 				return -EIO;
 			}
 
@@ -704,11 +715,12 @@ eq_again:
 			RTE_LOG(ERR, qdma_demo,
 				"eq dma %d jobs > (%d)\n",
 				eq_num, job_num);
+			quit_signal = 1;
 			return -EIO;
 		}
 
 skip_eq:
-		if (g_scatter_gather)
+		if (g_vq_format & RTE_QDMA_VQ_FD_SG_FORMAT)
 			burst_nb = RTE_QDMA_SG_ENTRY_NB_MAX;
 dequeue:
 		e_context.vq_id = g_vqid[lcore_id];
@@ -720,6 +732,7 @@ dequeue:
 			RTE_LOG(ERR, qdma_demo,
 				"dq dma %d jobs failed(%d)\n",
 				burst_nb - dq_num, ret);
+			quit_signal = 1;
 			return ret;
 		}
 
@@ -739,6 +752,7 @@ dequeue:
 			RTE_LOG(ERR, qdma_demo,
 				"Validate check %d jobs failed(%d)\n",
 				dq_num, ret);
+			quit_signal = 1;
 			return ret;
 		}
 		if (g_latency) {
@@ -753,6 +767,7 @@ dequeue:
 			RTE_LOG(ERR, qdma_demo,
 				"recycle %d jobs failed(%d)\n",
 				dq_num, ring_eq);
+			quit_signal = 1;
 			return -EIO;
 		}
 
@@ -760,36 +775,23 @@ dequeue:
 		dq_num = 0;
 	}
 	RTE_LOG(INFO, qdma_demo, "exit core %d\n", lcore_id);
+	quit_signal = 1;
 
 	return 0;
 }
 
 static int
 qdma_demo_jobs_init(struct qdma_demo_job *jobs,
-	uint32_t lcore_id, uint32_t idx)
+	uint32_t lcore_id, uint64_t pci_src_iova,
+	uint64_t pci_dst_iova, uint64_t total_size,
+	uint32_t num, uint32_t len)
 {
-	int src_mem = 0, dst_mem = 0;
 	char nm[RTE_MEMZONE_NAMESIZE];
-	uint64_t total_size = TEST_PACKETS_NUM * TEST_PACKET_SIZE;
 	uint32_t i;
 	uint64_t src_iova, dst_iova;
-	uint64_t src_va, dst_va;
+	void *src_va, *dst_va;
 
-	if (g_test_path == MEM_TO_MEM) {
-		src_mem = 1;
-		dst_mem = 1;
-	} else if (g_test_path == MEM_TO_PCI) {
-		src_mem = 1;
-		dst_mem = 0;
-	} else if (g_test_path == PCI_TO_MEM) {
-		src_mem = 0;
-		dst_mem = 1;
-	} else if (g_test_path == PCI_TO_PCI) {
-		src_mem = 0;
-		dst_mem = 0;
-	}
-
-	if (src_mem) {
+	if (pci_src_iova == RTE_BAD_IOVA) {
 		sprintf(nm, "memz-src-%d", lcore_id);
 		g_memz_src[lcore_id] = rte_memzone_reserve_aligned(nm,
 			total_size, 0,
@@ -801,13 +803,13 @@ qdma_demo_jobs_init(struct qdma_demo_job *jobs,
 			return -ENOMEM;
 		}
 		src_iova = g_memz_src[lcore_id]->iova;
-		src_va = g_memz_src[lcore_id]->addr_64;
+		src_va = g_memz_src[lcore_id]->addr;
 	} else {
-		src_iova = g_pci_iova + idx * g_pci_size;
-		src_va = (uint64_t)g_pci_vir + idx * g_pci_size;
+		src_iova = pci_src_iova;
+		src_va = rte_fslmc_io_iova_to_vaddr(src_iova);
 	}
 
-	if (dst_mem) {
+	if (pci_dst_iova == RTE_BAD_IOVA) {
 		sprintf(nm, "memz-dst-%d", lcore_id);
 		g_memz_dst[lcore_id] = rte_memzone_reserve_aligned(nm,
 			total_size, 0,
@@ -819,20 +821,20 @@ qdma_demo_jobs_init(struct qdma_demo_job *jobs,
 			return -ENOMEM;
 		}
 		dst_iova = g_memz_dst[lcore_id]->iova;
-		dst_va = g_memz_dst[lcore_id]->addr_64;
+		dst_va = g_memz_dst[lcore_id]->addr;
 	} else {
-		dst_iova = g_pci_iova + idx * g_pci_size;
-		dst_va = (uint64_t)g_pci_vir + idx * g_pci_size;
+		dst_iova = pci_dst_iova;
+		dst_va = rte_fslmc_io_iova_to_vaddr(dst_iova);
 	}
 
-	for (i = 0; i < TEST_PACKETS_NUM; i++) {
+	for (i = 0; i < num; i++) {
 		jobs[i].job.src = START_ADDR(src_iova, i);
 		jobs[i].vsrc = START_ADDR(src_va, i);
 
 		jobs[i].job.dest = START_ADDR(dst_iova, i);
 		jobs[i].vdst = START_ADDR(dst_va, i);
 
-		jobs[i].job.len = TEST_PACKET_SIZE;
+		jobs[i].job.len = len;
 		jobs[i].job.job_ref = i;
 	}
 
@@ -843,51 +845,72 @@ static int
 qdma_demo_job_ring_init(void)
 {
 	uint32_t lcore_id, cores = core_count, i, idx = 0;
-	uint64_t total_size = TEST_PACKETS_NUM * TEST_PACKET_SIZE;
 	char nm[RTE_MEMZONE_NAMESIZE];
 	struct qdma_demo_job *job;
 	int ret;
+	uint64_t core_size = g_packet_num * g_packet_size;
+	uint64_t pci_iova = RTE_BAD_IOVA;
+	uint64_t pci_src_iova = RTE_BAD_IOVA, pci_dst_iova = RTE_BAD_IOVA;
+	void *pci_vir;
 
 	if (g_pci_phy != RTE_BAD_IOVA) {
-		g_pci_vir = pci_addr_mmap(NULL, g_pci_size,
+		pci_vir = pci_addr_mmap(NULL, g_pci_size,
 			PROT_READ | PROT_WRITE, MAP_SHARED,
 			g_pci_phy, NULL, NULL);
-		if (!g_pci_vir) {
+		if (!pci_vir) {
 			RTE_LOG(ERR, qdma_demo,
 				"Failed to mmap PCI addr %lx\n",
 				g_pci_phy);
 			return -ENOMEM;
 		}
 		if (rte_eal_iova_mode() == RTE_IOVA_PA)
-			g_pci_iova = g_pci_phy;
+			pci_iova = g_pci_phy;
 		else
-			g_pci_iova = (uint64_t)g_pci_vir;
+			pci_iova = (uint64_t)pci_vir;
 		/* configure pci virtual address in SMMU via VFIO */
-		rte_fslmc_vfio_mem_dmamap((uint64_t)g_pci_vir,
-			g_pci_iova, g_pci_size);
-	}
-
-	if (g_test_path == PCI_TO_PCI)
-		g_pci_size = g_pci_size / 2;
-	g_pci_size = g_pci_size / (core_count - 1);
-	if (g_test_path != MEM_TO_MEM) {
-		while (g_pci_size < total_size)
-			g_packet_num = g_packet_num / 2;
-
-		if (g_packet_num < 32) {
+		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)pci_vir,
+			pci_iova, g_pci_size);
+		if (ret) {
 			RTE_LOG(ERR, qdma_demo,
-				"Too small pci size(%lx)\n",
-				g_pci_size);
-			return -EINVAL;
+				"VFIO map failed(%d)\n", ret);
+			return ret;
 		}
 	}
+
+	if (g_test_path != MEM_TO_MEM && pci_iova == RTE_BAD_IOVA) {
+		RTE_LOG(ERR, qdma_demo,
+			"PCIe addree unavailable for test path(%d)\n",
+			g_test_path);
+		return -EINVAL;
+	}
+
+	if (g_test_path == MEM_TO_PCI) {
+		pci_dst_iova = pci_iova;
+		core_size = g_pci_size / (core_count - 1);
+		g_packet_num = core_size / g_packet_size;
+	} else if (g_test_path == PCI_TO_MEM) {
+		pci_src_iova = pci_iova;
+		core_size = g_pci_size / (core_count - 1);
+		g_packet_num = core_size / g_packet_size;
+	} else if (g_test_path == PCI_TO_PCI) {
+		pci_src_iova = pci_iova;
+		pci_dst_iova = pci_src_iova + g_pci_size / 2;
+		core_size = g_pci_size / 2 / (core_count - 1);
+		g_packet_num = core_size / g_packet_size;
+	} else {
+		core_size = g_packet_num * g_packet_size;
+	}
+
+	if (g_packet_num < g_burst)
+		g_burst = g_packet_num;
+
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (cores == 1)
 			break;
 		cores--;
 		sprintf(nm, "job-ring-%d", lcore_id);
 		g_job_ring[lcore_id] = rte_ring_create(nm,
-			TEST_PACKETS_NUM * 2, 0, 0);
+			g_packet_num * 2, 0, 0);
 		if (!g_job_ring[lcore_id]) {
 			RTE_LOG(ERR, qdma_demo,
 				"job ring created failed on core%d\n",
@@ -895,7 +918,8 @@ qdma_demo_job_ring_init(void)
 			return -ENOMEM;
 		}
 		g_jobs[lcore_id] = rte_zmalloc("test qdma",
-			TEST_PACKETS_NUM * sizeof(struct qdma_demo_job), 4096);
+			g_packet_num * sizeof(struct qdma_demo_job),
+			RTE_CACHE_LINE_SIZE);
 		if (!g_jobs[lcore_id]) {
 			RTE_LOG(ERR, qdma_demo,
 				"jobs created failed on core%d\n",
@@ -903,12 +927,19 @@ qdma_demo_job_ring_init(void)
 			return -ENOMEM;
 		}
 
-		ret = qdma_demo_jobs_init(g_jobs[lcore_id], lcore_id, idx);
+		ret = qdma_demo_jobs_init(g_jobs[lcore_id], lcore_id,
+			pci_src_iova == RTE_BAD_IOVA ?
+			RTE_BAD_IOVA :
+			pci_src_iova + idx * core_size,
+			pci_dst_iova == RTE_BAD_IOVA ?
+			RTE_BAD_IOVA :
+			pci_dst_iova + idx * core_size,
+			core_size, g_packet_num, g_packet_size);
 		if (ret)
 			return ret;
 
 		job = g_jobs[lcore_id];
-		for (i = 0; i < TEST_PACKETS_NUM; i++) {
+		for (i = 0; i < g_packet_num; i++) {
 			ret = rte_ring_enqueue(g_job_ring[lcore_id], job);
 			if (ret) {
 				RTE_LOG(ERR, qdma_demo,
@@ -936,6 +967,7 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 	float speed;
 	int ret, offset, log_len;
 	char perf_buf[1024];
+	const char *pformat;
 
 	lcore_id = rte_lcore_id();
 
@@ -950,12 +982,9 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 
 		q_config.lcore_id = i;
 		q_config.flags = 0;
-		if (g_frame_format == RTE_QDMA_LONG_FORMAT)
-			q_config.flags |= RTE_QDMA_VQ_FD_LONG_FORMAT;
-		if (g_scatter_gather)
-			q_config.flags |= RTE_QDMA_VQ_FD_SG_FORMAT;
+		q_config.flags |= g_vq_format;
 		q_config.rbp = NULL;
-		q_config.queue_size = TEST_PACKETS_NUM;
+		q_config.queue_size = QDMA_DEMO_VQ_MAX_SIZE;
 		g_vqid[i] = rte_qdma_queue_setup(qdma_dev_id, -1, &q_config);
 		RTE_LOG(INFO, qdma_demo, "core id:%d g_vqid[%d]:%d\n",
 			i, i, g_vqid[i]);
@@ -970,11 +999,19 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 		return ret;
 	}
 
+	if (!g_vq_format)
+		pformat = "Using short format";
+	else if (g_vq_format == RTE_QDMA_VQ_FD_LONG_FORMAT)
+		pformat = "Using long format";
+	else if (g_vq_format & RTE_QDMA_VQ_FD_SG_FORMAT)
+		pformat = "Using sg format";
+	else
+		pformat = "Unknown format";
+
 	RTE_LOG(INFO, qdma_demo,
 		"%s to test: packet size %ldB, number %d\n",
-		g_frame_format == RTE_QDMA_ULTRASHORT_FORMAT ?
-		"Using short format" : "Using long format",
-		TEST_PACKET_SIZE, TEST_PACKETS_NUM);
+		pformat,
+		g_packet_size, g_packet_num);
 
 	switch (g_test_path) {
 	case PCI_TO_MEM:
@@ -1018,7 +1055,7 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 		}
 		speed = (float)diff /
 			(ns_per_cyc * cycle_diff / (1000 * 1000 * 1000));
-		speed = speed * TEST_PACKET_SIZE;
+		speed = speed * g_packet_size;
 
 		offset = 0;
 
@@ -1034,7 +1071,7 @@ lcore_qdma_control_loop(__attribute__((unused))void *arg)
 		log_len = sprintf(&perf_buf[offset],
 			"Rate: %.3f Mbps OR %.3f Kpps\n",
 			8 * speed / (1000 * 1000),
-			speed / (TEST_PACKET_SIZE * 1000));
+			speed / (g_packet_size * 1000));
 		offset += log_len;
 
 		RTE_LCORE_FOREACH(lcore_id) {
@@ -1132,7 +1169,7 @@ get_tsc_freq_from_cpuinfo(void)
 static void qdma_demo_usage(void)
 {
 	size_t i;
-	char buf[2048];
+	char buf[4096];
 	int pos = 0, j;
 
 	j = sprintf(&buf[pos],
@@ -1146,26 +1183,37 @@ static void qdma_demo_usage(void)
 	pos += j;
 	j = sprintf(&buf[pos], "Args	:\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --pci_addr <target_pci_addr>\n");
+	j = sprintf(&buf[pos], ": --pci_addr=<hex pci start addr>\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --packet_size <bytes>\n");
+	j = sprintf(&buf[pos], ": --pci_size=<hex pci space size>\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --test_case <test_case_name>\n");
+	j = sprintf(&buf[pos], ": --packet_size=<bytes>\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --test_case=<test_case_name>\n");
 	pos += j;
 	for (i = 0; i < ARRAY_SIZE(test_case); i++) {
-		j = sprintf(&buf[pos], "		%s - %s\n",
+		j = sprintf(&buf[pos], "	%s - %s\n",
 			test_case[i].name, test_case[i].help);
 		pos += j;
 	}
-	j = sprintf(&buf[pos], "	: --latency_test\n");
+	j = sprintf(&buf[pos], ": --latency_test\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --memcpy\n");
+	j = sprintf(&buf[pos], ": --memcpy\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --scatter_gather\n");
+	j = sprintf(&buf[pos], ": --format=<format_name>\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --burst\n");
+	for (i = 0; i < ARRAY_SIZE(s_format); i++) {
+		j = sprintf(&buf[pos], "	%s - %s\n",
+			s_format[i].name, s_format[i].help);
+		pos += j;
+	}
+	j = sprintf(&buf[pos], ": --burst\n");
 	pos += j;
-	j = sprintf(&buf[pos], "	: --packet_num\n");
+	j = sprintf(&buf[pos], ": --packet_num=<number>\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --validate\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --seg_iova\n");
 
 	RTE_LOG(WARNING, qdma_demo, "%s", buf);
 }
@@ -1179,7 +1227,7 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 	switch (lopt->val) {
 	case ARG_PCI_ADDR:
 		ret = sscanf(optarg, "%lx", &g_pci_phy);
-		if (ret == EOF) {
+		if (ret != 1) {
 			RTE_LOG(ERR, qdma_demo, "Invalid PCI address\n");
 			ret = -EINVAL;
 			goto out;
@@ -1189,13 +1237,23 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		break;
 	case ARG_SIZE:
 		ret = sscanf(optarg, "%lu", &g_packet_size);
-		if (ret == EOF) {
+		if (ret != 1) {
 			RTE_LOG(ERR, qdma_demo, "Invalid Packet size\n");
 			ret = -EINVAL;
 			goto out;
 		}
 		ret = 0;
 		RTE_LOG(INFO, qdma_demo, "Pkt size %ld\n", g_packet_size);
+		break;
+	case ARG_PCI_SIZE:
+		ret = sscanf(optarg, "%lx", &g_pci_size);
+		if (ret != 1) {
+			RTE_LOG(ERR, qdma_demo, "Invalid PCI size\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		RTE_LOG(INFO, qdma_demo, "PCI size %ld\n", g_pci_size);
 		break;
 	case ARG_TEST_ID:
 		for (i = 0; i < ARRAY_SIZE(test_case); i++) {
@@ -1221,13 +1279,27 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 	case ARG_MEMCPY:
 		g_memcpy = 1;
 		break;
-	case ARG_SCATTER_GATHER:
-		g_frame_format = RTE_QDMA_LONG_FORMAT;
-		g_scatter_gather = 1;
+	case ARG_VQ_FORMAT:
+		for (i = 0; i < ARRAY_SIZE(s_format); i++) {
+			ret = strncmp(s_format[i].name, optarg,
+				VQ_FORMAT_NAME_SIZE);
+			if (!ret) {
+				g_vq_format = s_format[i].vq_format;
+				break;
+			}
+		}
+		if (i == ARRAY_SIZE(s_format)) {
+			RTE_LOG(ERR, qdma_demo, "Invalid format(%s)\n", optarg);
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		RTE_LOG(INFO, qdma_demo, "VQ format: %s\n",
+			s_format[i].name);
 		break;
 	case ARG_BURST:
 		ret = sscanf(optarg, "%u", &g_burst);
-		if (ret == EOF) {
+		if (ret != 1) {
 			RTE_LOG(ERR, qdma_demo, "Invalid burst size\n");
 			ret = -EINVAL;
 			goto out;
@@ -1240,7 +1312,7 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		break;
 	case ARG_NUM:
 		ret = sscanf(optarg, "%d", &g_packet_num);
-		if (ret == EOF) {
+		if (ret != EOF) {
 			RTE_LOG(ERR, qdma_demo, "Invalid Packet number\n");
 			ret = -EINVAL;
 			goto out;
@@ -1257,7 +1329,8 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		RTE_LOG(INFO, qdma_demo, "IOVA segments test\n");
 		break;
 	default:
-		RTE_LOG(ERR, qdma_demo, "Unknown Argument\n");
+		RTE_LOG(ERR, qdma_demo, "Unknown Argument(%d)\n",
+			lopt->val);
 		ret = -EINVAL;
 		qdma_demo_usage();
 		goto out;
@@ -1274,11 +1347,12 @@ qdma_demo_parse_args(int argc, char **argv)
 	int opt, ret = 0, flg, option_index;
 	struct option lopts[] = {
 	 {"pci_addr", optional_argument, &flg, ARG_PCI_ADDR},
+	 {"pci_size", optional_argument, &flg, ARG_PCI_SIZE},
 	 {"packet_size", optional_argument, &flg, ARG_SIZE},
 	 {"test_case", required_argument, &flg, ARG_TEST_ID},
 	 {"latency_test", optional_argument, &flg, ARG_LATENCY},
 	 {"memcpy", optional_argument, &flg, ARG_MEMCPY},
-	 {"scatter_gather", optional_argument, &flg, ARG_SCATTER_GATHER},
+	 {"format", optional_argument, &flg, ARG_VQ_FORMAT},
 	 {"burst", optional_argument, &flg, ARG_BURST},
 	 {"packet_num", optional_argument, &flg, ARG_NUM},
 	 {"validate", optional_argument, &flg, ARG_VALIDATE},
@@ -1342,7 +1416,7 @@ main(int argc, char *argv[])
 	int ret = 0;
 	uint64_t freq;
 	float ns_per_cyc;
-	uint64_t start_cycles, end_cycles;
+	uint64_t start_cycles, end_cycles, pci_size;
 	uint64_t time_diff;
 
 	/* catch ctrl-c so we can print on exit */
@@ -1381,8 +1455,8 @@ main(int argc, char *argv[])
 
 			return 0;
 		}
-		g_pci_size = pci_find_bar_available_size(g_pci_phy);
-		if (!g_pci_size) {
+		pci_size = pci_find_bar_available_size(g_pci_phy);
+		if (!pci_size) {
 			RTE_LOG(ERR, qdma_demo,
 				"PCI address 0x%lx not found for %s(%d)!\n",
 				g_pci_phy,
@@ -1393,15 +1467,17 @@ main(int argc, char *argv[])
 
 			return 0;
 		}
-		if (g_pci_phy % PAGE_SIZE) {
+		if (pci_size < g_pci_size || !g_pci_size)
+			g_pci_size = pci_size;
+		if (g_pci_phy & RTE_CACHE_LINE_MASK) {
 			RTE_LOG(ERR, qdma_demo,
-				"PCI addr(%lx) not multiple of page size\n",
+				"PCI addr(%lx) not multiple of cache size\n",
 				g_pci_phy);
 			return 0;
 		}
-		if (g_pci_size % PAGE_SIZE) {
+		if (g_pci_size & RTE_CACHE_LINE_MASK) {
 			RTE_LOG(ERR, qdma_demo,
-				"PCI size(%lx) not multiple of page size\n",
+				"PCI size(%lx) not multiple of cache size\n",
 				g_pci_size);
 			return 0;
 		}
