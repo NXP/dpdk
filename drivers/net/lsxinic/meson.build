@@ -33,3 +33,5 @@ includes += include_directories(
 	'../dpaa2/mc',
 	'../virtio'
 )
+
+headers = files('rte_pmd_lsxinic.h')

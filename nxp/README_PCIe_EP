@@ -20,6 +20,7 @@ ninja -C x86_64-build install
 #Root Complex DPDK image: "x86_64-build/examples/dpdk-port_fwd".
 dpdk-extras build:
 in "dpdk-extras/linux/lsxinic"
+export DPDKDIR=/path/to/your/dpdk/source
 make
 #Target images:
 #Root Complex kernel driver: "dpdk-extras/linux/lsxinic/lsinic_kmod.ko"
@@ -36,6 +37,7 @@ ninja -C arm64-build install
 #Root Complex DPDK image: "arm64-build/examples/dpdk-port_fwd".
 dpdk-extras build:
 in "dpdk-extras/linux/lsxinic"
+export DPDKDIR=/path/to/your/dpdk/source
 make KSRC=/Your/kernel/folder CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
 #Target images:
 #Root Complex kernel driver: "dpdk-extras/linux/lsxinic/lsinic_kmod.ko"

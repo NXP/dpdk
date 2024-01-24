@@ -175,6 +175,10 @@ struct rte_lsx_pciep_device *
 rte_lsx_pciep_first_dev(void);
 
 void *
+rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
+	uint64_t pci_addr, uint64_t size, uint64_t *phy_base);
+
+void *
 rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size);
 

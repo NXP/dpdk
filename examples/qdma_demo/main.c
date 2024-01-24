@@ -30,6 +30,8 @@
 #include <rte_lcore.h>
 #include <rte_debug.h>
 #include <rte_cycles.h>
+#include <rte_ethdev.h>
+#include <ethdev_driver.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -42,11 +44,28 @@
 #include <bus_fslmc_driver.h>
 #include <rte_pmd_dpaa2_qdma.h>
 #include "qdma_demo.h"
+#include <rte_pmd_lsxinic.h>
 
 static int qdma_dev_id;
-static float rate;
-static uint64_t freq;
+static float s_ns_per_cyc;
 static rte_atomic32_t synchro;
+static struct rte_eth_conf port_conf = {
+	.rxmode = {
+		.mq_mode = RTE_ETH_MQ_RX_RSS,
+	},
+	.rx_adv_conf = {
+		.rss_conf = {
+			.rss_key = NULL,
+			.rss_hf = RTE_ETH_RSS_IP,
+		},
+	},
+};
+
+#define NS_PER_US 1000
+#define NS_PER_MS (NS_PER_US * 1000)
+#ifndef NS_PER_S
+#define NS_PER_S (NS_PER_MS * 1000)
+#endif
 
 static uint64_t g_dq_num[RTE_MAX_LCORE];
 static uint64_t g_dq_num_last[RTE_MAX_LCORE];
@@ -85,12 +104,24 @@ static uint32_t g_burst = BURST_NB_MAX;
 static uint64_t g_pci_phy = RTE_BAD_IOVA;
 static uint64_t g_packet_size = 1024;
 static uint64_t g_pci_size = 0x1000000;
+static uint64_t g_pci_bus;
+static void *g_pci_vir;
+
 static uint32_t g_packet_num = (1 * 1024);
 static int g_latency;
 static int g_memcpy;
 static int g_validate;
 static int g_seg_iova;
 static int g_scatter_gather;
+static int g_silent;
+static int g_dma_prep_latency;
+
+static int g_pci_ep;
+static int g_pci_ep_rbp;
+static int g_pci_ep_pci_id;
+static int g_pci_ep_pf_id;
+static int g_pci_ep_vf_id;
+static int g_pci_ep_is_vf;
 
 static struct dma_job *g_jobs[RTE_MAX_LCORE];
 static struct rte_ring *g_job_ring[RTE_MAX_LCORE];
@@ -102,6 +133,8 @@ static uint8_t quit_signal;
 static uint32_t core_count;
 
 static int TEST_DMA_INIT_FLAG;
+#define LATENCY_TEST_SRC_DATA 1
+#define LATENCY_TEST_DST_DATA 0
 
 #define START_ADDR(base, num) \
 	((uint64_t)base + g_packet_size * num)
@@ -117,30 +150,43 @@ static struct qdma_demo_pci_bar g_pci_bar[QDMA_DEMO_MAX_PCI_DEV];
 static int s_flags_cntx;
 
 static int
-test_dma_init(void)
+test_dma_init(struct rte_dma_info *dma_info)
 {
 	struct rte_dma_conf dma_config;
-	struct rte_dma_info dma_info;
+	struct rte_dma_info local_dma_info;
 	int ret, i = 0, max_avail = rte_dma_count_avail();
 
-	if (TEST_DMA_INIT_FLAG)
+	if (TEST_DMA_INIT_FLAG) {
+		ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
+		if (ret) {
+			RTE_LOG(ERR, qdma_demo,
+				"Failed to get DMA[%d] info(%d)\n",
+				qdma_dev_id, ret);
+			return ret;
+		}
+		if (dma_info) {
+			rte_memcpy(dma_info, &local_dma_info,
+				sizeof(struct rte_dma_info));
+		}
 		return 0;
+	}
 
 init_dma:
 	if (i >= max_avail)
 		return -EBUSY;
 	qdma_dev_id = i;
 
-	ret = rte_dma_info_get(qdma_dev_id, &dma_info);
+	ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
 	if (ret) {
-		RTE_LOG(ERR, qdma_demo, "Failed to get DMA[%d] info(%d)\n",
+		RTE_LOG(ERR, qdma_demo,
+			"Failed to get DMA[%d] info(%d)\n",
 			qdma_dev_id, ret);
 		return ret;
 	}
-	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX)
+	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX)
 		s_flags_cntx = 1;
-	dma_config.nb_vchans = dma_info.max_vchans;
-	dma_config.enable_silent = 0;
+	dma_config.nb_vchans = local_dma_info.max_vchans;
+	dma_config.enable_silent = g_silent;
 
 	ret = rte_dma_configure(qdma_dev_id, &dma_config);
 	if (ret) {
@@ -148,6 +194,10 @@ init_dma:
 			"Failed to configure DMA[%d](%d)\n",
 			qdma_dev_id, ret);
 		goto init_dma;
+	}
+	if (dma_info) {
+		rte_memcpy(dma_info, &local_dma_info,
+			sizeof(struct rte_dma_info));
 	}
 
 	TEST_DMA_INIT_FLAG = 1;
@@ -347,20 +397,29 @@ pci_addr_mmap(void *start, size_t length, int prot,
 	return p;
 }
 
+#define LATENCY_WARMUP_COUNT 3
 static void
-calculate_latency(unsigned int lcore_id, uint64_t cycle1,
-	int pkt_cnt)
+calculate_latency(unsigned int lcore_id,
+	uint64_t cycle1, uint64_t cycle2,
+	struct dma_job *job[], int pkt_cnt, uint32_t miss_time)
 {
-	uint64_t cycle2 = 0;
+	uint64_t burst_size = 0;
 	uint64_t my_time_diff;
+	int i;
+	static uint64_t s_cnt;
 	struct qdma_demo_latency *core_latency = &latency_data[lcore_id];
 
-	float ns_per_cyc = (1000 * rate) / freq;
 	float time_us = 0.0;
 
-	cycle2 = rte_get_timer_cycles();
 	my_time_diff = cycle2 - cycle1;
-	time_us = ns_per_cyc * my_time_diff / 1000;
+	time_us = s_ns_per_cyc * my_time_diff / 1000;
+
+	s_cnt++;
+
+	if (s_cnt < LATENCY_WARMUP_COUNT) {
+		rte_delay_ms(1000);
+		return;
+	}
 
 	if (time_us < core_latency->min)
 		core_latency->min = time_us;
@@ -369,12 +428,18 @@ calculate_latency(unsigned int lcore_id, uint64_t cycle1,
 	core_latency->total += time_us;
 	core_latency->count++;
 
+	for (i = 0; i < pkt_cnt; i++) {
+		RTE_LOG(INFO, qdma_demo,
+			"job[%d]: src(%lx)->size(%d)->dst(%lx)\n",
+			i, job[i]->src, job[i]->len, job[i]->dest);
+		burst_size += job[i]->len;
+	}
 	RTE_LOG(INFO, qdma_demo,
-		"cpu=%d pkt_cnt:%d, pkt_size %ld\n",
-		lcore_id, pkt_cnt, g_packet_size);
+		"cpu=%d burst size %ld, miss_time %d\n",
+		lcore_id, burst_size, miss_time);
 	RTE_LOG(INFO, qdma_demo,
-		"min %.1f, max %.1f, mean %.1f\n",
-		core_latency->min, core_latency->max,
+		"this %.1f, min %.1f, max %.1f, mean %.1f\n\r\n",
+		time_us, core_latency->min, core_latency->max,
 		core_latency->total / core_latency->count);
 	rte_delay_ms(1000);
 }
@@ -448,19 +513,23 @@ qdma_demo_memcpy_process(struct dma_job *job[],
 	uint32_t job_num)
 {
 	uint32_t i, lcore_id, eq_ret;
-	uint64_t cycle;
+	uint64_t cycle1, cycle2;
 	int ret;
 
 	lcore_id = rte_lcore_id();
-	cycle = rte_get_timer_cycles();
 
 	for (i = 0; i < job_num; i++) {
 		qdma_demo_validate_set(job[i]);
+	}
+
+	cycle1 = rte_get_timer_cycles();
+	for (i = 0; i < job_num; i++) {
 		rte_memcpy((void *)job[i]->vdst,
 			(void *)job[i]->vsrc, job[i]->len);
 	}
+	cycle2 = rte_get_timer_cycles();
 	if (g_latency)
-		calculate_latency(lcore_id, cycle, job_num);
+		calculate_latency(lcore_id, cycle1, cycle2, job, job_num, 0);
 
 	ret = qdma_demo_validate_check(job, job_num);
 
@@ -608,15 +677,21 @@ quit:
 	return ret;
 }
 
+#ifdef RTE_ARCH_ARM64
+#define dccivac(p) \
+	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+#endif
+
 static int
 lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 {
 	uint32_t lcore_id;
-	uint64_t cycle1 = 0;
+	uint64_t cycle1 = 0, cycle2 = 0, cycle3 = 0, cycle4 = 0;
 	int ret = 0;
 
-	uint32_t dq_num = 0;
+	uint32_t dq_num = 0, miss_time = 0;
 	uint32_t burst_nb = g_scatter_gather ? 32 : g_burst;
+	uint8_t *vsrc, *vdst;
 
 	lcore_id = rte_lcore_id();
 
@@ -632,7 +707,6 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		return lcore_qdma_iova_seg_to_continue();
 
 	latency_data[lcore_id].min = 9999999.0;
-	cycle1 = rte_get_timer_cycles();
 	while (!quit_signal) {
 		struct dma_job *job[burst_nb];
 		struct rte_dma_sge src_sge[burst_nb];
@@ -675,6 +749,8 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 			else if (i == (job_num - 1))
 				flags |= RTE_DMA_OP_FLAG_SUBMIT;
 
+			if (g_latency && (flags & RTE_DMA_OP_FLAG_SUBMIT))
+				cycle1 = rte_get_timer_cycles();
 			ret = rte_dma_copy(qdma_dev_id,
 					g_vqid[lcore_id],
 					job[i]->src, job[i]->dest,
@@ -703,6 +779,8 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		} else {
 			flags = RTE_DMA_OP_FLAG_SUBMIT;
 		}
+		if (g_latency)
+			cycle1 = rte_get_timer_cycles();
 		ret = rte_dma_copy_sg(qdma_dev_id,
 				g_vqid[lcore_id], src_sge, dst_sge,
 				job_num, job_num,
@@ -715,6 +793,14 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				"Job submit failed\n");
 		}
 dequeue:
+		if (g_latency)
+			cycle2 = rte_get_timer_cycles();
+		if (g_silent) {
+			dq_num = job_num;
+			goto skip_dq;
+		}
+		if (!dq_num && g_latency)
+			cycle3 = rte_get_timer_cycles();
 		ret = rte_dma_completed(qdma_dev_id,
 			g_vqid[lcore_id], burst_nb - dq_num,
 			&dq_idx[dq_num],
@@ -732,9 +818,41 @@ dequeue:
 			RTE_LOG(ERR, qdma_demo, "DMA complete error\n");
 			rte_exit(EXIT_FAILURE, "Job Processing Error\n");
 		}
+skip_dq:
+		if (g_silent) {
+			miss_time = 0;
+			if (g_latency)
+				cycle3 = rte_get_timer_cycles();
+			for (i = 0; i < dq_num; i++) {
+				vsrc = (void *)(job[i]->vsrc + job[i]->len - 1);
+				vdst = (void *)(job[i]->vdst + job[i]->len - 1);
+				while ((*vsrc) != (*vdst)) {
+#ifdef RTE_ARCH_ARM64
+					dccivac(vdst);
+#endif
+					miss_time++;
+					if (quit_signal)
+						break;
+				}
+			}
+		}
+
 		if (g_latency) {
-			calculate_latency(lcore_id, cycle1, dq_num);
-			cycle1 = rte_get_timer_cycles();
+			cycle4 = rte_get_timer_cycles();
+			calculate_latency(lcore_id,
+				g_dma_prep_latency ? cycle1 : cycle2,
+				cycle4, job, dq_num, miss_time);
+			RTE_LOG(INFO, qdma_demo,
+				"DMA prepare:%ld, check:%ld\n",
+				cycle2 - cycle1, cycle4 - cycle3);
+			for (i = 0; i < dq_num; i++) {
+				vsrc = (void *)(job[i]->vsrc + job[i]->len - 1);
+				vdst = (void *)(job[i]->vdst + job[i]->len - 1);
+				(*vsrc) = LATENCY_TEST_SRC_DATA;
+				(*vdst) = LATENCY_TEST_DST_DATA;
+			}
+			rte_wmb();
+			rte_rmb();
 		}
 		job_num = rte_ring_enqueue_bulk(g_job_ring[lcore_id],
 			(void **)job, dq_num, NULL);
@@ -755,13 +873,15 @@ dequeue:
 static int
 qdma_demo_jobs_init(struct dma_job *jobs,
 	uint32_t lcore_id, uint64_t pci_src_iova,
-	uint64_t pci_dst_iova, uint64_t total_size,
+	uint64_t pci_dst_iova, void *pci_src_vir,
+	void *pci_dst_vir, uint64_t total_size,
 	uint32_t num, uint32_t len)
 {
 	char nm[RTE_MEMZONE_NAMESIZE];
 	uint32_t i;
 	uint64_t src_iova, dst_iova;
 	void *src_va, *dst_va;
+	uint8_t *src_last, *dst_last;
 	int ret = 0;
 
 	if (pci_src_iova == RTE_BAD_IOVA) {
@@ -780,7 +900,7 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 		src_va = g_memz_src[lcore_id]->addr;
 	} else {
 		src_iova = pci_src_iova;
-		src_va = rte_fslmc_io_iova_to_vaddr(src_iova);
+		src_va = pci_src_vir;
 	}
 
 	if (pci_dst_iova == RTE_BAD_IOVA) {
@@ -799,7 +919,7 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 		dst_va = g_memz_dst[lcore_id]->addr;
 	} else {
 		dst_iova = pci_dst_iova;
-		dst_va = rte_fslmc_io_iova_to_vaddr(dst_iova);
+		dst_va = pci_dst_vir;
 	}
 
 	g_dma_idx[lcore_id] = rte_malloc(NULL,
@@ -822,6 +942,14 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 
 		jobs[i].len = len;
 		jobs[i].idx = i;
+		if (g_latency || g_silent) {
+			src_last = (void *)(jobs[i].vsrc + jobs[i].len - 1);
+			dst_last = (void *)(jobs[i].vdst + jobs[i].len - 1);
+			*src_last = LATENCY_TEST_SRC_DATA;
+			*dst_last = LATENCY_TEST_DST_DATA;
+			rte_wmb();
+			rte_rmb();
+		}
 	}
 
 	return 0;
@@ -843,7 +971,7 @@ err_free:
 }
 
 static int
-qdma_demo_job_ring_init(void)
+qdma_demo_job_ring_init(uint32_t max_desc)
 {
 	uint32_t lcore_id, cores = core_count, i, idx = 0;
 	char nm[RTE_MEMZONE_NAMESIZE];
@@ -852,53 +980,92 @@ qdma_demo_job_ring_init(void)
 	uint64_t core_size = g_packet_num * g_packet_size;
 	uint64_t pci_iova = RTE_BAD_IOVA;
 	uint64_t pci_src_iova = RTE_BAD_IOVA, pci_dst_iova = RTE_BAD_IOVA;
-	void *pci_vir;
+	char *pci_vir = NULL;
+	char *pci_src_vir = NULL, *pci_dst_vir = NULL;
 
-	if (g_pci_phy != RTE_BAD_IOVA) {
-		pci_vir = pci_addr_mmap(NULL, g_pci_size,
-			PROT_READ | PROT_WRITE, MAP_SHARED,
-			g_pci_phy, NULL, NULL);
-		if (!pci_vir) {
-			RTE_LOG(ERR, qdma_demo,
-				"Failed to mmap PCI addr %lx\n",
-				g_pci_phy);
-			return -ENOMEM;
-		}
-		if (rte_eal_iova_mode() == RTE_IOVA_PA)
-			pci_iova = g_pci_phy;
-		else
-			pci_iova = (uint64_t)pci_vir;
-		/* configure pci virtual address in SMMU via VFIO */
-		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)pci_vir,
-			pci_iova, g_pci_size);
-		if (ret) {
-			RTE_LOG(ERR, qdma_demo,
-				"VFIO map failed(%d)\n", ret);
-			return ret;
-		}
-	}
-
-	if (g_test_path != MEM_TO_MEM && pci_iova == RTE_BAD_IOVA) {
+	if (g_test_path != MEM_TO_MEM && g_pci_phy == RTE_BAD_IOVA) {
 		RTE_LOG(ERR, qdma_demo,
 			"PCIe addree unavailable for test path(%d)\n",
 			g_test_path);
 		return -EINVAL;
 	}
 
+	if (g_test_path != MEM_TO_MEM) {
+		if (g_pci_vir) {
+			pci_vir = g_pci_vir;
+		} else {
+			if (g_pci_phy == RTE_BAD_IOVA) {
+				RTE_LOG(ERR, qdma_demo,
+					"PCIe addree unavailable for test path(%d)\n",
+					g_test_path);
+				return -EINVAL;
+			}
+			pci_vir = pci_addr_mmap(NULL, g_pci_size,
+				PROT_READ | PROT_WRITE, MAP_SHARED,
+				g_pci_phy, NULL, NULL);
+		}
+		if (!pci_vir) {
+			RTE_LOG(ERR, qdma_demo,
+				"Failed to mmap PCI addr %lx\n",
+				g_pci_phy);
+			return -ENOMEM;
+		}
+		if (g_pci_ep && g_pci_ep_rbp)
+			pci_iova = g_pci_bus;
+		else if (rte_eal_iova_mode() == RTE_IOVA_PA)
+			pci_iova = g_pci_phy;
+		else
+			pci_iova = (uint64_t)pci_vir;
+		if (pci_iova == RTE_BAD_IOVA) {
+			RTE_LOG(ERR, qdma_demo,
+				"PCIe iova unavailable for test path(%d)\n",
+				g_test_path);
+			return -EINVAL;
+		}
+		/* configure pci virtual address in SMMU via VFIO */
+		if (!g_pci_ep) {
+			ret = rte_fslmc_vfio_mem_dmamap((uint64_t)pci_vir,
+				pci_iova, g_pci_size);
+			if (ret) {
+				RTE_LOG(ERR, qdma_demo,
+					"VFIO map failed(%d)\n", ret);
+				return ret;
+			}
+		}
+	}
+
 	if (g_test_path == MEM_TO_PCI) {
 		pci_dst_iova = pci_iova;
+		pci_dst_vir = pci_vir;
 		core_size = g_pci_size / (core_count - 1);
 		g_packet_num = core_size / g_packet_size;
+		if (g_packet_num > max_desc) {
+			g_packet_num = max_desc;
+			core_size = g_packet_num * g_packet_size;
+		}
 	} else if (g_test_path == PCI_TO_MEM) {
 		pci_src_iova = pci_iova;
+		pci_src_vir = pci_vir;
 		core_size = g_pci_size / (core_count - 1);
 		g_packet_num = core_size / g_packet_size;
+		if (g_packet_num > max_desc) {
+			g_packet_num = max_desc;
+			core_size = g_packet_num * g_packet_size;
+		}
 	} else if (g_test_path == PCI_TO_PCI) {
 		pci_src_iova = pci_iova;
+		pci_src_vir = pci_vir;
 		pci_dst_iova = pci_src_iova + g_pci_size / 2;
+		pci_dst_vir = pci_src_vir + g_pci_size / 2;
 		core_size = g_pci_size / 2 / (core_count - 1);
 		g_packet_num = core_size / g_packet_size;
+		if (g_packet_num > max_desc) {
+			g_packet_num = max_desc;
+			core_size = g_packet_num * g_packet_size;
+		}
 	} else {
+		if (g_packet_num > max_desc)
+			g_packet_num = max_desc;
 		core_size = g_packet_num * g_packet_size;
 	}
 
@@ -935,6 +1102,10 @@ qdma_demo_job_ring_init(void)
 			pci_dst_iova == RTE_BAD_IOVA ?
 			RTE_BAD_IOVA :
 			pci_dst_iova + idx * core_size,
+			pci_src_vir == NULL ?
+			NULL : pci_src_vir + idx * core_size,
+			pci_dst_vir == NULL ?
+			NULL : pci_dst_vir + idx * core_size,
 			core_size, g_packet_num, g_packet_size);
 		if (ret)
 			return ret;
@@ -964,7 +1135,6 @@ lcore_qdma_control_loop(void)
 	struct rte_dma_vchan_conf conf;
 	struct rte_dma_info info;
 	uint64_t diff;
-	float ns_per_cyc = (1000 * rate) / freq;
 	uint64_t cycle1 = 0, cycle2 = 0, cycle_diff;
 	float speed;
 	int ret, offset, log_len;
@@ -974,41 +1144,82 @@ lcore_qdma_control_loop(void)
 	lcore_id = rte_lcore_id();
 
 	/* wait synchro for slaves */
-	if (!g_memcpy)
-		test_dma_init();
-
-	/* setup QDMA queues */
-	for (i = 0; (!g_memcpy) && i < RTE_MAX_LCORE; i++) {
-		if (!rte_lcore_is_enabled(i))
-			continue;
-
-		ret = rte_dma_info_get(qdma_dev_id, &info);
+	memset(&info, 0, sizeof(struct rte_dma_info));
+	if (!g_memcpy) {
+		ret = test_dma_init(&info);
 		if (ret)
 			return ret;
+		memset(&conf, 0, sizeof(struct rte_dma_vchan_conf));
 
-		conf.direction = RTE_DMA_DIR_MEM_TO_MEM;
-		conf.nb_desc = info.max_desc;
-		conf.src_port.port_type = RTE_DMA_PORT_NONE;
-		conf.dst_port.port_type = RTE_DMA_PORT_NONE;
-		g_vqid[i] = i;
-		ret = rte_dma_vchan_setup(qdma_dev_id, g_vqid[i], &conf);
-		if (ret) {
-			RTE_LOG(ERR, qdma_demo,
-				"Vchan setup failed(%d)\n", ret);
-			return ret;
+		if (g_test_path == MEM_TO_PCI &&
+			g_pci_ep && g_pci_ep_rbp) {
+			conf.direction = RTE_DMA_DIR_MEM_TO_DEV;
+			conf.nb_desc = info.max_desc;
+			conf.src_port.port_type = RTE_DMA_PORT_NONE;
+			conf.dst_port.port_type = RTE_DMA_PORT_PCIE;
+			conf.dst_port.pcie.coreid = g_pci_ep_pci_id;
+			conf.dst_port.pcie.pfid = g_pci_ep_pf_id;
+			conf.dst_port.pcie.vfen = g_pci_ep_is_vf;
+			if (g_pci_ep_is_vf)
+				conf.dst_port.pcie.vfid = g_pci_ep_vf_id;
+		} else if (g_test_path == PCI_TO_MEM &&
+			g_pci_ep && g_pci_ep_rbp) {
+			conf.direction = RTE_DMA_DIR_DEV_TO_MEM;
+			conf.nb_desc = info.max_desc;
+			conf.src_port.port_type = RTE_DMA_PORT_PCIE;
+			conf.dst_port.port_type = RTE_DMA_PORT_NONE;
+			conf.src_port.pcie.coreid = g_pci_ep_pci_id;
+			conf.src_port.pcie.pfid = g_pci_ep_pf_id;
+			conf.src_port.pcie.vfen = g_pci_ep_is_vf;
+			if (g_pci_ep_is_vf)
+				conf.src_port.pcie.vfid = g_pci_ep_vf_id;
+		} else if (g_test_path == PCI_TO_PCI &&
+			g_pci_ep && g_pci_ep_rbp) {
+			conf.direction = RTE_DMA_DIR_DEV_TO_DEV;
+			conf.nb_desc = info.max_desc;
+			conf.src_port.port_type = RTE_DMA_PORT_PCIE;
+			conf.dst_port.port_type = RTE_DMA_PORT_PCIE;
+			conf.src_port.pcie.coreid = g_pci_ep_pci_id;
+			conf.src_port.pcie.pfid = g_pci_ep_pf_id;
+			conf.src_port.pcie.vfen = g_pci_ep_is_vf;
+			if (g_pci_ep_is_vf)
+				conf.src_port.pcie.vfid = g_pci_ep_vf_id;
+			conf.dst_port.pcie.coreid = g_pci_ep_pci_id;
+			conf.dst_port.pcie.pfid = g_pci_ep_pf_id;
+			conf.dst_port.pcie.vfen = g_pci_ep_is_vf;
+			if (g_pci_ep_is_vf)
+				conf.dst_port.pcie.vfid = g_pci_ep_vf_id;
+		} else {
+			conf.direction = RTE_DMA_DIR_MEM_TO_MEM;
+			conf.nb_desc = info.max_desc;
+			conf.src_port.port_type = RTE_DMA_PORT_NONE;
+			conf.dst_port.port_type = RTE_DMA_PORT_NONE;
 		}
-	}
 
-	if (!g_memcpy) {
+		for (i = 0; i < RTE_MAX_LCORE; i++) {
+			if (!rte_lcore_is_enabled(i))
+				continue;
+
+			g_vqid[i] = i;
+			ret = rte_dma_vchan_setup(qdma_dev_id, g_vqid[i],
+					&conf);
+			if (ret) {
+				RTE_LOG(ERR, qdma_demo,
+					"Vchan setup failed(%d)\n", ret);
+				return ret;
+			}
+		}
+
 		ret = rte_dma_start(qdma_dev_id);
 		if (ret) {
-			RTE_LOG(ERR, qdma_demo, "Failed to start DMA[0](%d)\n",
-				ret);
+			RTE_LOG(ERR, qdma_demo, "Failed to start DMA[%d](%d)\n",
+				qdma_dev_id, ret);
 			return ret;
 		}
 	}
 
-	ret = qdma_demo_job_ring_init();
+	ret = qdma_demo_job_ring_init(info.max_desc > 0 ?
+			info.max_desc : 4096);
 	if (ret) {
 		RTE_LOG(ERR, qdma_demo, "Failed to init job ring(%d)\n",
 			ret);
@@ -1055,7 +1266,7 @@ lcore_qdma_control_loop(void)
 			g_dq_num_last[i] = g_dq_num[i];
 		}
 		speed = (float)diff /
-			(ns_per_cyc * cycle_diff / (1000 * 1000 * 1000));
+			(s_ns_per_cyc * cycle_diff / NS_PER_S);
 		speed = speed * g_packet_size;
 
 		offset = 0;
@@ -1065,13 +1276,13 @@ lcore_qdma_control_loop(void)
 
 		log_len = sprintf(&perf_buf[offset],
 			"Time Spend :%.3f ms rcvd cnt:%ld\n",
-			(ns_per_cyc * cycle_diff) / (1000 * 1000),
+			(s_ns_per_cyc * cycle_diff) / NS_PER_MS,
 			diff);
 		offset += log_len;
 
 		log_len = sprintf(&perf_buf[offset],
 			"Rate: %.3f Mbps OR %.3f Kpps\n",
-			8 * speed / (1000 * 1000),
+			8 * speed / NS_PER_MS,
 			speed / (g_packet_size * 1000));
 		offset += log_len;
 
@@ -1147,6 +1358,7 @@ get_tsc_freq_from_cpuinfo(void)
 	char line[256];
 	FILE *stream;
 	double dmhz;
+	uint64_t freq = 0;
 
 	stream = fopen(CPU_INFO_FREQ_FILE, "r");
 	if (!stream) {
@@ -1210,6 +1422,14 @@ static void qdma_demo_usage(void)
 	j = sprintf(&buf[pos], ": --validate\n");
 	pos += j;
 	j = sprintf(&buf[pos], ": --seg_iova\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --pci_ep\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --pci_ep_rbp\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --silent\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --dma_latency\n");
 
 	RTE_LOG(WARNING, qdma_demo, "%s", buf);
 }
@@ -1230,6 +1450,18 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		}
 		ret = 0;
 		RTE_LOG(INFO, qdma_demo, "PCI addr %lx\n", g_pci_phy);
+		break;
+	case ARG_PCI_EP:
+		g_pci_ep = 1;
+		RTE_LOG(INFO, qdma_demo, "PCI EP test\n");
+		break;
+	case ARG_PCI_EP_RBP:
+		g_pci_ep_rbp = 1;
+		RTE_LOG(INFO, qdma_demo, "PCI EP RBP mode\n");
+		break;
+	case ARG_SILENT:
+		g_silent = 1;
+		RTE_LOG(INFO, qdma_demo, "DMA silent mode\n");
 		break;
 	case ARG_PCI_SIZE:
 		ret = sscanf(optarg, "%lx", &g_pci_size);
@@ -1271,6 +1503,10 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 	case ARG_LATENCY:
 		g_latency = 1;
 		RTE_LOG(INFO, qdma_demo, "Latency test mode\n");
+		break;
+	case ARG_DMA_LATENCY:
+		g_dma_prep_latency = 1;
+		RTE_LOG(INFO, qdma_demo, "DMA prepare latency included\n");
 		break;
 	case ARG_MEMCPY:
 		g_memcpy = 1;
@@ -1333,12 +1569,16 @@ qdma_demo_parse_args(int argc, char **argv)
 		{"packet_size", optional_argument, &flg, ARG_SIZE},
 		{"test_case", required_argument, &flg, ARG_TEST_ID},
 		{"latency_test", optional_argument, &flg, ARG_LATENCY},
+		{"dma_latency", optional_argument, &flg, ARG_DMA_LATENCY},
 		{"memcpy", optional_argument, &flg, ARG_MEMCPY},
 		{"sg", optional_argument, &flg, ARG_SCATTER_GATHER},
 		{"burst", optional_argument, &flg, ARG_BURST},
 		{"packet_num", optional_argument, &flg, ARG_NUM},
 		{"validate", optional_argument, &flg, ARG_VALIDATE},
 		{"seg_iova", optional_argument, &flg, ARG_SEG_IOVA},
+		{"pci_ep", optional_argument, &flg, ARG_PCI_EP},
+		{"pci_ep_rbp", optional_argument, &flg, ARG_PCI_EP_RBP},
+		{"silent", optional_argument, &flg, ARG_SILENT},
 		{0, 0, 0, 0},
 	};
 	struct option *lopt_cur;
@@ -1355,6 +1595,8 @@ qdma_demo_parse_args(int argc, char **argv)
 		case 0:
 			lopt_cur = &lopts[option_index];
 			ret = qdma_parse_long_arg(optarg, lopt_cur);
+			if (ret)
+				return ret;
 			break;
 		default:
 			qdma_demo_usage();
@@ -1370,7 +1612,7 @@ static int qdma_demo_validate_args(void)
 {
 	int valid = 1;
 
-	if (g_test_path != MEM_TO_MEM)
+	if (g_test_path != MEM_TO_MEM && !g_pci_ep)
 		valid = !!(g_arg_mask & ARG_PCI_ADDR);
 
 	if (!(g_arg_mask & ARG_SIZE)) {
@@ -1398,9 +1640,10 @@ main(int argc, char *argv[])
 {
 	int ret = 0;
 	uint64_t freq;
-	float ns_per_cyc;
+	float ns_per_cyc, rate;
 	uint64_t start_cycles, end_cycles, pci_size;
 	uint64_t time_diff;
+	uint16_t portid;
 
 	/* catch ctrl-c so we can print on exit */
 	signal(SIGINT, int_handler);
@@ -1427,6 +1670,88 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
+	if (g_pci_ep) {
+		char pci_ep_port[128];
+		char pci_ep_ob[128];
+
+		ret = -EPERM;
+		RTE_ETH_FOREACH_DEV(portid) {
+			struct rte_eth_dev *dev;
+			struct rte_eth_dev_info dev_info;
+			struct rte_eth_conf local_port_conf;
+
+			rte_memcpy(&local_port_conf, &port_conf,
+				sizeof(struct rte_eth_conf));
+			memset(&dev_info, 0, sizeof(struct rte_eth_dev_info));
+
+			ret = rte_eth_dev_info_get(portid, &dev_info);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Error during getting device (port %u) info: %s\n",
+					portid, strerror(-ret));
+
+			local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
+				dev_info.flow_type_rss_offloads;
+
+			ret = rte_eth_dev_configure(portid,
+				1, 1, &local_port_conf);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					"Cannot configure device: err=%d, port=%d\n",
+					ret, portid);
+
+			dev = &rte_eth_devices[portid];
+			ret = rte_lsinic_dev_start_poll_rc(dev);
+			if (!ret)
+				RTE_LOG(INFO, qdma_demo,
+					"%s starts poll RC\n",
+					dev->data->name);
+		}
+		if (ret) {
+			RTE_LOG(ERR, qdma_demo,
+				"No PCIe EP port found\n");
+
+			return 0;
+		}
+
+		while (1) {
+			if (quit_signal)
+				return 0;
+			sleep(2);
+			RTE_ETH_FOREACH_DEV(portid) {
+				struct rte_eth_dev *dev;
+
+				dev = &rte_eth_devices[portid];
+				ret = rte_lsinic_dev_get_rc_dma(dev, &g_pci_vir,
+					&g_pci_phy, &g_pci_bus, &g_pci_size,
+					&g_pci_ep_pci_id, &g_pci_ep_pf_id,
+					&g_pci_ep_is_vf, &g_pci_ep_vf_id);
+				if (!ret && g_pci_size > 0)
+					break;
+			}
+			if (g_pci_phy != RTE_BAD_IOVA && g_pci_phy)
+				break;
+			RTE_LOG(INFO, qdma_demo,
+				"Waiting for loading RC driver\n");
+		}
+
+		if (!g_pci_ep_is_vf) {
+			sprintf(pci_ep_port, "pci%d, pf%d",
+				g_pci_ep_pci_id, g_pci_ep_pf_id);
+		} else {
+			sprintf(pci_ep_port, "pci%d, pf%d-vf%d",
+				g_pci_ep_pci_id, g_pci_ep_pf_id,
+				g_pci_ep_vf_id);
+		}
+
+		sprintf(pci_ep_ob,
+			"phy(%lx), size(%lx), bus(%lx) vir(%p)",
+			g_pci_phy, g_pci_size, g_pci_bus, g_pci_vir);
+
+		RTE_LOG(INFO, qdma_demo,
+			"PCIe EP: %s from %s\n", pci_ep_ob, pci_ep_port);
+	}
+
 	if (g_test_path != MEM_TO_MEM) {
 		if (g_pci_phy == RTE_BAD_IOVA) {
 			RTE_LOG(ERR, qdma_demo,
@@ -1438,20 +1763,22 @@ main(int argc, char *argv[])
 
 			return 0;
 		}
-		pci_size = pci_find_bar_available_size(g_pci_phy);
-		if (!pci_size) {
-			RTE_LOG(ERR, qdma_demo,
-				"PCI address 0x%lx not found for %s(%d)!\n",
-				g_pci_phy,
-				g_test_path == MEM_TO_PCI ? "mem2pci" :
-				g_test_path == PCI_TO_MEM ? "pci2mem" :
-				g_test_path == PCI_TO_PCI ? "pci2pci" :
-				"invalid path", g_test_path);
+		if (!g_pci_ep) {
+			pci_size = pci_find_bar_available_size(g_pci_phy);
+			if (!pci_size) {
+				RTE_LOG(ERR, qdma_demo,
+					"PCI address 0x%lx not found for %s(%d)!\n",
+					g_pci_phy,
+					g_test_path == MEM_TO_PCI ? "mem2pci" :
+					g_test_path == PCI_TO_MEM ? "pci2mem" :
+					g_test_path == PCI_TO_PCI ? "pci2pci" :
+					"invalid path", g_test_path);
 
-			return 0;
+				return 0;
+			}
+			if (pci_size < g_pci_size || !g_pci_size)
+				g_pci_size = pci_size;
 		}
-		if (pci_size < g_pci_size || !g_pci_size)
-			g_pci_size = pci_size;
 		if (g_pci_phy & RTE_CACHE_LINE_MASK) {
 			RTE_LOG(ERR, qdma_demo,
 				"PCI addr(%lx) not multiple of cache size\n",
@@ -1474,17 +1801,19 @@ main(int argc, char *argv[])
 	rte_delay_ms(1000);
 	end_cycles = rte_get_timer_cycles();
 	time_diff = end_cycles - start_cycles;
-	rate = (1000) / ((ns_per_cyc * time_diff) / (1000 * 1000));
-	RTE_LOG(INFO, qdma_demo, "Rate:%.5f cpu freq:%ld MHz\n",
-		rate, freq);
+	rate = (1000) / ((ns_per_cyc * time_diff) / NS_PER_MS);
+	s_ns_per_cyc = (NS_PER_US * rate) / freq;
+	RTE_LOG(INFO, qdma_demo,
+		"Rate:%.5f cpu freq:%ld MHz, ns per cyc: %.5f\n",
+		rate, freq, s_ns_per_cyc);
 
 	start_cycles = rte_get_timer_cycles();
 	rte_delay_ms(2000);
 	end_cycles = rte_get_timer_cycles();
 	time_diff = end_cycles - start_cycles;
 
-	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ms\n",
-		(ns_per_cyc * time_diff * rate) / (1000 * 1000));
+	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ms, cyc diff:%ld\n",
+		(s_ns_per_cyc * time_diff), time_diff);
 
 	ret = launch_cores(core_count);
 	if (ret < 0)

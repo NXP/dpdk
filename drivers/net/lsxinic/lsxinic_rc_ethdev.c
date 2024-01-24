@@ -83,9 +83,10 @@ static rte_spinlock_t lxsnic_proc_2nd_dev_alloc_lock =
 	RTE_SPINLOCK_INITIALIZER;
 
 int
-lxsnic_set_netdev_state(struct lxsnic_hw *hw,
+lxsnic_set_netdev_state(struct lxsnic_adapter *adapter,
 	enum PCIDEV_COMMAND cmd)
 {
+	struct lxsnic_hw *hw = &adapter->hw;
 	struct lsinic_dev_reg *reg =
 		LSINIC_REG_OFFSET(hw->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
@@ -97,6 +98,16 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 		wait_ms = atoi("LXSNIC_CMD_WAIT_SEC") * 1000;
 		if (wait_ms < 0)
 			wait_ms = LXSNIC_CMD_WAIT_DEFAULT_SEC * 1000;
+	}
+
+	if (cmd == PCIDEV_COMMAND_DMA_TEST) {
+		LSINIC_WRITE_REG_64B(&rcs_reg->r_dma_base,
+			adapter->rc_memzone_iova);
+		LSINIC_WRITE_REG(&rcs_reg->r_dma_elt_size,
+			adapter->rc_memzone_size);
+		LSXINIC_PMD_INFO("Reserve 0x%08xB from 0x%lx for DMA test",
+			adapter->rc_memzone_size,
+			adapter->rc_memzone_iova);
 	}
 
 	LSINIC_WRITE_REG(&reg->command, cmd);
@@ -139,6 +150,9 @@ lxsnic_set_netdev_state(struct lxsnic_hw *hw,
 	case PCIDEV_COMMAND_SET_MTU:
 		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_INITED);
 		break;
+	case PCIDEV_COMMAND_DMA_TEST:
+		LSINIC_WRITE_REG(&rcs_reg->rc_state, LSINIC_DEV_DMA_TEST);
+		break;
 	default:
 		break;
 	}
@@ -150,7 +164,7 @@ static int
 lxsnic_set_netdev(struct lxsnic_adapter *adapter,
 				enum PCIDEV_COMMAND cmd)
 {
-	return lxsnic_set_netdev_state(&adapter->hw, cmd);
+	return lxsnic_set_netdev_state(adapter, cmd);
 }
 
 static int
@@ -173,7 +187,10 @@ lxsnic_up_complete(struct lxsnic_adapter *adapter)
 #else
 	/* lxsnic_napi_enable_all(adapter); */
 #endif
-	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_START);
+	if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_START)) {
+		LSXINIC_PMD_ERR("Start %s failed!",
+			adapter->eth_dev->data->name);
+	}
 }
 
 static pthread_t debug_pid;
@@ -926,7 +943,10 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			RTE_PKTMBUF_HEADROOM;
 		LSINIC_WRITE_REG(&eth_reg->max_data_room,
 			adapter->max_data_room);
-		lxsnic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU);
+		if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU)) {
+			LSXINIC_PMD_ERR("Set %s's MTU failed!",
+				adapter->eth_dev->data->name);
+		}
 	}
 
 	rx_ring->queue_index = queue_idx;
@@ -1282,7 +1302,10 @@ lxsnic_down(struct rte_eth_dev *dev)
 	set_bit(__LXSNIC_DOWN, &adapter->state);
 
 	/* disable the netdev receive */
-	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_STOP)) {
+		LSXINIC_PMD_ERR("Stop %s failed!",
+			adapter->eth_dev->data->name);
+	}
 
 	/* disable all enabled rx queues */
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
@@ -1948,12 +1971,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	adapter->rc_ring_virt_base = rc_ring_mem->addr;
 	adapter->rc_ring_phy_base = rc_ring_mem->iova;
-
-	if (!adapter->rc_ring_virt_base) {
-		LSXINIC_PMD_ERR("rc_ring_virt_base is NULL, ERROR!");
-		error =  -ENOMEM;
-		goto free_adapter;
-	}
+	adapter->rc_ring_mz = rc_ring_mem;
 
 	adapter->rc_bd_desc_base =
 		adapter->rc_ring_virt_base + LSINIC_RING_BD_OFFSET;
@@ -1979,9 +1997,12 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 			eth_dev->data->numa_node);
 	if (!rc_ring_mem) {
 		LSXINIC_PMD_WARN("rc_memzone_vir reserve failed");
-		adapter->rc_memzone_vir = NULL;
+		adapter->rc_mz = NULL;
 	} else {
 		adapter->rc_memzone_vir = rc_ring_mem->addr;
+		adapter->rc_memzone_iova = rc_ring_mem->iova;
+		adapter->rc_memzone_size = 32 * 1024 * 1024;
+		adapter->rc_mz = rc_ring_mem;
 	}
 
 	LSXINIC_PMD_DBG("RC RING PHY_BASE ADDR low 0x%" PRIX64 " ",
@@ -2064,6 +2085,14 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		}
 	} else {
 		adapter->self_test = LXSNIC_RC_SELF_NONE_TEST;
+	}
+
+	penv = getenv("LSINIC_RC_START_EP_PCI_DMA_DEMO");
+	if (penv) {
+		if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_DMA_TEST)) {
+			LSXINIC_PMD_ERR("Start %s's DMA demo failed!",
+				adapter->eth_dev->data->name);
+		}
 	}
 
 	/* register interrupt function for user to
@@ -2227,7 +2256,7 @@ eth_lxsnic_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 }
 
 static void
-eth_lxsnic_close(struct rte_eth_dev *dev __rte_unused)
+eth_lxsnic_close(struct rte_eth_dev *dev)
 {
 	struct lxsnic_adapter *adapter =
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
@@ -2239,11 +2268,18 @@ eth_lxsnic_close(struct rte_eth_dev *dev __rte_unused)
 	if (adapter->num_vfs)
 		lxsnic_disable_sriov(adapter);
 
-	lxsnic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
-	if (adapter->rc_ring_virt_base)
-		rte_free(adapter->rc_ring_virt_base);
-	if (adapter->rc_memzone_vir)
-		rte_free(adapter->rc_memzone_vir);
+	if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE)) {
+		LSXINIC_PMD_ERR("Remove %s failed!",
+			adapter->eth_dev->data->name);
+	}
+	if (adapter->rc_ring_mz) {
+		rte_eth_dma_zone_free(dev,
+			adapter->rc_ring_mz->name, 0);
+	}
+	if (adapter->rc_mz) {
+		rte_eth_dma_zone_free(dev,
+			adapter->rc_mz->name, 0);
+	}
 
 	rte_free(adapter);
 }

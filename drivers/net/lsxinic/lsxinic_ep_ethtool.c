@@ -19,6 +19,16 @@
 
 #define LSINIC_CMD_POLLING_INTERVAL 2
 
+static int lsinic_if_dma_test(struct rte_eth_dev *dev)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+
+	if (lsinic_dma_config_fromrc(adapter))
+		return PCIDEV_RESULT_FAILED;
+
+	return PCIDEV_RESULT_SUCCEED;
+}
+
 static int lsinic_if_init(struct rte_eth_dev *dev)
 {
 	struct lsinic_adapter *adapter = dev->process_private;
@@ -220,10 +230,6 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	if (penv)
 		print_status = atoi(penv);
 
-#ifdef LSXINIC_LATENCY_PROFILING
-		print_status = 1;
-#endif
-
 	CPU_SET(0, &cpuset);
 	ret = pthread_setaffinity_np(pthread_self(),
 			sizeof(cpu_set_t), &cpuset);
@@ -267,6 +273,9 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			}
 
 			switch (command) {
+			case PCIDEV_COMMAND_DMA_TEST:
+				status = lsinic_if_dma_test(dev->eth_dev);
+				break;
 			case PCIDEV_COMMAND_INIT:
 				status = lsinic_if_init(dev->eth_dev);
 				break;

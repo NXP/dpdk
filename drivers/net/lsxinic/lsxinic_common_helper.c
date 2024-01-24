@@ -220,6 +220,11 @@ print_queue_status(void *queue,
 		epq->pkts_eq - epq->pkts_dq);
 #endif
 
+#ifdef LSXINIC_LATENCY_PROFILING
+	perf_log("\tEP latency_min=%.1f avg_latency=%.1f\n",
+		epq->latency_min, epq->avg_latency);
+#endif
+
 	(*packets) += epq->packets;
 	(*errors) += epq->errors;
 	(*drops) += epq->drop_packet_num;

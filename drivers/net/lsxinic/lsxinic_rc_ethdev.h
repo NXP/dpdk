@@ -360,7 +360,11 @@ struct lxsnic_adapter {
 	uint64_t ep_memzone_size;
 
 	uint8_t *rc_memzone_vir;
+	dma_addr_t rc_memzone_iova;
+	uint32_t rc_memzone_size;
+	const struct rte_memzone *rc_mz;
 
+	const struct rte_memzone *rc_ring_mz;
 	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
 	uint64_t rc_ring_win_size;
@@ -430,7 +434,7 @@ void lxsnic_pf_host_init(struct rte_eth_dev *eth_dev);
 
 void lxsnic_disable_sriov(struct lxsnic_adapter *adapter);
 
-int lxsnic_set_netdev_state(struct lxsnic_hw *hw,
+int lxsnic_set_netdev_state(struct lxsnic_adapter *adapter,
 	enum PCIDEV_COMMAND cmd);
 
 int lxsnic_rx_bd_init_buffer(struct lxsnic_ring *rx_queue,
