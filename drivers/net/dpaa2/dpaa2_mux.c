@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <sys/queue.h>
@@ -944,9 +944,11 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 			goto init_err;
 		}
 		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE |
-			DPDMUX_SKIP_UNICAST_RULES | DPDMUX_SKIP_MULTICAST_RULES;
+			DPDMUX_SKIP_UNICAST_RULES | DPDMUX_SKIP_MULTICAST_RULES |
+			DPDMUX_SKIP_RESET_DEFAULT_INTERFACE;
 	} else {
-		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE;
+		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE | 
+					DPDMUX_SKIP_RESET_DEFAULT_INTERFACE;
 	}
 
 	ret = dpdmux_get_api_version(&dpdmux_dev->dpdmux, CMD_PRI_LOW,

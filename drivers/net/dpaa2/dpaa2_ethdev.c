@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -1370,8 +1370,8 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 					     dpaa2_interrupt_handler,
 					     (void *)dev);
 	}
-
-	dpaa2_dev_set_link_down(dev);
+	//TODO : Do not set link down for shared interface.
+	//dpaa2_dev_set_link_down(dev);
 
 	ret = dpni_disable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
