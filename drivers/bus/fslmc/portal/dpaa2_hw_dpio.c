@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 #include <unistd.h>
@@ -345,8 +345,7 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 	cpu_id = dpaa2_get_core_id();
 	if (cpu_id < 0) {
 		DPAA2_BUS_WARN("Thread not affined to a single core");
-		if (dpaa2_svr_family != SVR_LX2160A)
-			qbman_swp_update(dpio_dev->sw_portal, 1);
+		assert(0);
 	} else {
 		ret = dpaa2_configure_stashing(dpio_dev, cpu_id);
 		if (ret) {
