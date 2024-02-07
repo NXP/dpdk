@@ -18,6 +18,13 @@ COMMON_HEADERS_DIR = cmd.stdout().strip()
 if COMMON_HEADERS_DIR != ''
   drivers += 'la12xx'
 endif
+
+cmd = run_command('sh', '-c', 'echo $LA9310_COMMON_HEADERS')
+LA9310_COMMON_HEADERS = cmd.stdout().strip()
+if LA9310_COMMON_HEADERS != ''
+  drivers += 'la93xx'
+endif
+
 message('####### Dumping list of compiled baseband drivers ########')
 foreach elem : drivers
   message (elem)

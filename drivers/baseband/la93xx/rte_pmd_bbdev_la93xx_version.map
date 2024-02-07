@@ -1,0 +1,10 @@
+EXPERIMENTAL {
+	global:
+
+	rte_pmd_la93xx_get_nlm_mem;
+	rte_pmd_la93xx_reset;
+	rte_pmd_la93xx_reset_restore_cfg;
+	rte_pmd_get_pps_out_count;
+
+	local: *;
+};
