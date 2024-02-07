@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2023 NXP
+# Copyright 2023-2024 NXP
 
 if is_windows
     build = false
@@ -17,5 +17,6 @@ endif
 cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
 COMMON_HEADERS_DIR = cmd.stdout().strip()
 message('COMMON_HEADERS_DIR=' + COMMON_HEADERS_DIR)
+allow_experimental_apis = true
 includes += [include_directories(COMMON_HEADERS_DIR)]
 includes += include_directories('../../drivers/baseband/la12xx/')
