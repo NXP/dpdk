@@ -10,6 +10,7 @@ endif
 # list of all example apps. Keep 1-3 per line, in alphabetical order.
 all_examples = [
         'bbdev_app',
+        'bbdev_raw_app',
         'bond',
 	'cmdif',
         'cmdline',
