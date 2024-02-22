@@ -35,6 +35,10 @@
 
 #define DRIVER_NAME baseband_la93xx
 
+#define dcbf(p) { asm volatile("dc cvac, %0" : : "r"(p) : "memory"); }
+#define dcbf_64(p) dcbf(p)
+#define dccivac(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+
 /*  Initialisation params structure that can be used by LA93xx BBDEV driver */
 struct bbdev_la93xx_params {
 	int8_t modem_id; /*< LA93xx modem instance id */
@@ -354,10 +358,12 @@ get_next_raw_buf(struct rte_bbdev_queue_data *q_data,
 	int conf_enable = q_data->conf.raw_queue_conf.conf_enable;
 	uint32_t ci, pi;
 
-	if (conf_enable)
+	if (conf_enable) {
 		ci = q_priv->host_ci;
-	else
+	} else {
+		dccivac(&q_priv->host_params->ci);
 		ci = q_priv->host_params->ci;
+	}
 	pi = q_priv->host_pi;
 
 	if (is_bd_ring_full(ci, pi, q_priv->queue_size)) {
@@ -383,7 +389,7 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	ipc_instance_t *ipc_instance = ipc_priv->instance;
 	struct bbdev_ipc_raw_op_t *raw_op;
 	uint32_t q_id = q_priv->q_id;
-	uint32_t ci, pi, queue_size;
+	uint32_t ci, pi, queue_size, i;
 	ipc_ch_t *ch = &(ipc_instance->ch_list[q_id]);
 	ipc_br_md_t *md = &(ch->md);
 	uint64_t virt;
@@ -405,10 +411,14 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 	 * will rely on the shared consumer index, which will be incrememnted by
 	 * other side after consuming the packet.
 	 */
-	if (conf_enable)
+
+	if (conf_enable) {
 		ci = q_priv->host_ci;
-	else
+	} else {
+		dccivac(&q_priv->host_params->ci);
 		ci = q_priv->host_params->ci;
+	}
+
 	pi = q_priv->host_pi;
 	queue_size = q_priv->queue_size;
 
@@ -438,6 +448,9 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 			       data_ptr - huge_start_addr;
 		raw_op->in_addr = l1_pcie_addr;
 		raw_op->in_len = in_op_data->length;
+
+		for (i = 0; i <= in_op_data->length; i += RTE_CACHE_LINE_SIZE)
+			dcbf(data_ptr + i);
 	}
 
 	if (out_op_data->bdata) {
@@ -448,6 +461,11 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 		raw_op->out_len = out_op_data->length;
 	}
 
+	dcbf(&raw_op->in_len);
+	dcbf(&raw_op->in_addr);
+	dcbf(&raw_op->out_len);
+	dcbf(&raw_op->out_addr);
+
 	/* Move Producer Index forward */
 	pi++;
 	/* Reset PI, if wrapping */
@@ -457,8 +475,10 @@ enqueue_raw_op(struct rte_bbdev_queue_data *q_data,
 
 	/* Wait for Data Copy to complete before updating modem pi */
 	rte_mb();
+
 	/* now update pi */
 	md->pi = pi;
+	dcbf(&md->pi);
 
 	BBDEV_LA93XX_PMD_DP_DEBUG(
 			"exit: pi: %u, ci: %u, ring size: %u",
@@ -476,10 +496,11 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 	ipc_userspace_t *ipc_priv = priv->ipc_priv;
 	struct bbdev_ipc_raw_op_t *dequeue_op;
 	struct rte_bbdev_raw_op *op;
-	uint32_t ci, pi, temp_ci;
+	uint32_t ci, pi, temp_ci, i;
 	int is_host_to_modem = q_data->conf.raw_queue_conf.direction;
 
 	if (is_host_to_modem) {
+		dccivac(&q_priv->host_params->ci);
 		temp_ci = q_priv->host_params->ci;
 		ci = q_priv->host_ci;
 		if (temp_ci == ci)
@@ -492,8 +513,13 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 
 		dequeue_op = q_priv->msg_ch_vaddr[ci];
 
+		dccivac(&dequeue_op->status);
+		dccivac(&dequeue_op->out_len);
 		op->status = dequeue_op->status;
 		op->output.length = dequeue_op->out_len;
+
+		for (i = 0; i <= op->output.length; i += RTE_CACHE_LINE_SIZE)
+			dccivac((uint32_t *)op->output.mem + i);
 
 		/* Move Consumer Index forward */
 		ci++;
@@ -506,6 +532,7 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 			"exit: ci: %u, ring size: %u", ci, q_priv->queue_size);
 
 	} else {
+		dccivac(&q_priv->host_params->pi);
 		ci = q_priv->host_ci;
 		pi = q_priv->host_params->pi;
 
@@ -517,8 +544,15 @@ dequeue_raw_op(struct rte_bbdev_queue_data *q_data)
 
 		dequeue_op = q_priv->msg_ch_vaddr[ci];
 
+		for (i = 0; i <= sizeof(*dequeue_op); i += RTE_CACHE_LINE_SIZE)
+			dccivac(dequeue_op + i);
+
 		op = q_priv->bbdev_op[ci];
 
+		dccivac(&dequeue_op->in_len);
+		dccivac(&dequeue_op->out_len);
+		dccivac(&dequeue_op->in_addr);
+		dccivac(&dequeue_op->out_addr);
 		op->input.length = dequeue_op->in_len;
 		op->output.length = dequeue_op->out_len;
 		op->input.mem = (void *)MODEM_P2V(dequeue_op->in_addr);
@@ -566,8 +600,10 @@ consume_raw_op(struct rte_bbdev_queue_data *q_data,
 
 	/* Wait for Data Copy & ci_flag update to complete before updating ci */
 	rte_mb();
+
 	/* now update ci */
 	md->ci = ci;
+	dcbf(&md->ci);
 
 	BBDEV_LA93XX_PMD_DP_DEBUG(
 		"exit: ci: %u, ring size: %u", ci, q_priv->queue_size);
