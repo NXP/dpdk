@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2023 NXP
+ * Copyright 2021-2024 NXP
  */
 
 #include <stdio.h>
@@ -121,7 +121,7 @@ host_to_modem_test(int queue_id, int conf_mode)
 			if (raw_ops_enq[0]->output.mem != NULL) {
 				for (j = 0; j < pkt_len/8; j++) {
 					if (output[j] != input[j]) {
-						printf("output %x does not match expected output %x",
+						printf("output 0x%x does not match expected output 0x%x",
 							output[j],
 							input[j]);
 						printf("\n============================================================================================\n");
