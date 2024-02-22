@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #include <rte_memzone.h>
@@ -18,7 +18,8 @@
 
 #define EXTRACT_CCSR_ADDR(s)	(s + strlen(s) - 8)
 
-#define EXTRACT_CCSR_ADDR(s)	(s + strlen(s) - 8)
+/* Supported Rx offloads */
+static uint64_t dev_rx_offloads_sup = RTE_ETH_RX_OFFLOAD_CHECKSUM;
 
 static void
 enetqos_free_buffers(struct rte_eth_dev *dev)
@@ -179,6 +180,8 @@ static void enetqos_core_init(void *ioaddr)
 	value |= ENETQ_MAC_CORE_INIT;
 	value |= ENETQ_MAC_CONFIG_TE;
 	value |= ENETQ_MAC_CONFIG_RE;
+
+	value |= ENETQ_MAC_CONFIG_IPC;
 
 	rte_write32(value, (void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
 }
@@ -722,6 +725,7 @@ enetqos_eth_info(struct rte_eth_dev *dev __rte_unused,
 	dev_info->nb_rx_queues = ENETQOS_MAX_Q;
 	dev_info->max_rx_queues = ENETQOS_MAX_Q;
 	dev_info->max_tx_queues = ENETQOS_MAX_Q;
+	dev_info->rx_offload_capa = dev_rx_offloads_sup;
 
 	return 0;
 }

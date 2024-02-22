@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #include <rte_memzone.h>
@@ -16,6 +16,7 @@
 
 static int enetqos_get_rx_status(struct dma_desc *p)
 {
+	unsigned int rdes1 = p->des1;
 	unsigned int rdes3 = p->des3;
 	int ret = ok_frame;
 
@@ -40,6 +41,16 @@ static int enetqos_get_rx_status(struct dma_desc *p)
 		if (unlikely(rdes3 & ENETQ_RDES3_DRIBBLE_ERR))
 			ENETQOS_DP_LOG(DEBUG, "dribble_error");
 
+		ret = discard_frame;
+	}
+
+	if(rdes1 & ENETQ_RDES1_IPHE) {
+		ENETQOS_DP_LOG(DEBUG, "IP Header Error");
+		ret = discard_frame;
+	}
+
+	if(rdes1 & ENETQ_RDES1_IPCE) {
+		ENETQOS_DP_LOG(DEBUG, "IP Payload Error");
 		ret = discard_frame;
 	}
 
@@ -102,6 +113,8 @@ enetqos_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 		mbuf = rxq->rx_mbuf[entry];
 		mbuf->data_len = pkt_len;
 		mbuf->pkt_len = pkt_len;
+		mbuf->ol_flags = RTE_MBUF_F_RX_IP_CKSUM_GOOD
+				| RTE_MBUF_F_RX_L4_CKSUM_GOOD;
 
 		rx_pkts[pkt_received] = mbuf;
 		pkt_received++;
