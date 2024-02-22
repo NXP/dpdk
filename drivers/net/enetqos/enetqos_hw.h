@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 #ifndef __ENETQOS_HW_
 #define __ENETQOS_HW_
@@ -42,13 +42,14 @@
 #define ENETQ_MAC_CONFIG	0x0 /* MAC Configuration Register */
 
 /* MAC Configuration Register (ENETQ_MAC_CONFIG) */
-#define ENETQ_MAC_CONFIG_DCRS		BIT(9) /* Disable Carrier Sense During Transmission */
+#define ENETQ_MAC_CONFIG_IPC		BIT(27) /* Checksum Offload */
 #define ENETQ_MAC_CONFIG_CST		BIT(21) /* CRC stripping */
 #define ENETQ_MAC_CONFIG_BE		BIT(18) /* Packet Burst Enable */
 #define ENETQ_MAC_CONFIG_JD		BIT(17) /* Jabber Disable */
 #define ENETQ_MAC_CONFIG_JE		BIT(16) /* Jumbo Packet Enable */
 #define ENETQ_MAC_CONFIG_PS		BIT(15) /* Port Select */
 #define ENETQ_MAC_CONFIG_DM		BIT(13) /* Duplex Mode */
+#define ENETQ_MAC_CONFIG_DCRS		BIT(9) /* Disable Carrier Sense During Transmission */
 #define ENETQ_MAC_CONFIG_TE		BIT(1) /* Transmitter Enable */
 #define ENETQ_MAC_CONFIG_RE		BIT(0) /* Receiver Enable */
 
@@ -249,5 +250,9 @@ struct eqos_dma_ch_regs {
 #define ENETQ_RDES3_BUFFER1_VALID_ADDR	BIT(24) /* Buffer 1 Address Valid */
 #define ENETQ_RDES3_BUFFER2_VALID_ADDR	BIT(25) /* Buffer 2 Address Valid */
 #define ENETQ_RDES3_OWN		BIT(31) /* Own Bit */
+
+#define ENETQ_RDES1_IPV4			BIT(4) /* IPv4 Header Present */
+#define ENETQ_RDES1_IPHE			BIT(3) /* IP Header Error */
+#define ENETQ_RDES1_IPCE			BIT(7) /* IP Payload Error */
 
 #endif /*__ENETQOS_HW_*/
