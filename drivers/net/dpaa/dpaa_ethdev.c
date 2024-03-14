@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2023 NXP
+ *   Copyright 2017-2024 NXP
  *
  */
 /* System headers */
@@ -241,6 +241,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	int speed, duplex;
 	int ret, rx_status, socket_fd;
 	struct ifreq ifr;
+	char *sh_if_name, sh_if_name_env_str[24];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -262,14 +263,21 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 			DPAA_PMD_ERR("Cannot open IF socket");
 			return -errno;
 		}
-
-		strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ - 1);
+		sprintf(sh_if_name_env_str, "DPAA_SHARED_IF_NAME_%d", dpaa_intf->ifid);
+		sh_if_name = getenv(sh_if_name_env_str);
+		if (sh_if_name == NULL){
+			strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ - 1);
+		} else {
+			strncpy(ifr.ifr_name, sh_if_name, IFNAMSIZ - 1);
+		}
 
 		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {
 			DPAA_PMD_ERR("Cannot get interface mtu");
+			close(socket_fd);
 			return -errno;
 		}
 
+		close(socket_fd);
 		DPAA_PMD_INFO("Using kernel configured mtu size(%u)",
 			     ifr.ifr_mtu);
 
