@@ -109,7 +109,7 @@ struct parm_cfg parm_config;
 
 struct lcore_params {
 	uint16_t port_id;
-	uint8_t queue_id;
+	uint16_t queue_id;
 	uint8_t lcore_id;
 } __rte_cache_aligned;
 
@@ -301,14 +301,14 @@ setup_l3fwd_lookup_tables(void)
 static int
 check_lcore_params(void)
 {
-	uint8_t queue, lcore;
-	uint16_t i;
+	uint16_t queue, i;
+	uint8_t lcore;
 	int socketid;
 
 	for (i = 0; i < nb_lcore_params; ++i) {
 		queue = lcore_params[i].queue_id;
 		if (queue >= MAX_RX_QUEUE_PER_PORT) {
-			printf("invalid queue number: %hhu\n", queue);
+			printf("invalid queue number: %" PRIu16 "\n", queue);
 			return -1;
 		}
 		lcore = lcore_params[i].lcore_id;
@@ -345,7 +345,7 @@ check_port_config(void)
 	return 0;
 }
 
-static uint8_t
+static uint16_t
 get_port_n_rx_queues(const uint16_t port)
 {
 	int queue = -1;
@@ -362,7 +362,7 @@ get_port_n_rx_queues(const uint16_t port)
 						lcore_params[i].port_id);
 		}
 	}
-	return (uint8_t)(++queue);
+	return (uint16_t)(++queue);
 }
 
 static int
@@ -541,6 +541,7 @@ parse_config(const char *q_arg)
 	char *str_fld[_NUM_FLD];
 	int i;
 	unsigned size;
+	uint16_t max_fld[_NUM_FLD] = {255, RTE_MAX_QUEUES_PER_PORT, 255};
 
 	nb_lcore_params = 0;
 
@@ -559,7 +560,7 @@ parse_config(const char *q_arg)
 		for (i = 0; i < _NUM_FLD; i++){
 			errno = 0;
 			int_fld[i] = strtoul(str_fld[i], &end, 0);
-			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+			if (errno != 0 || end == str_fld[i] || int_fld[i] > max_fld[i])
 				return -1;
 		}
 		if (nb_lcore_params >= MAX_LCORE_PARAMS) {
@@ -570,7 +571,7 @@ parse_config(const char *q_arg)
 		lcore_params_array[nb_lcore_params].port_id =
 			(uint8_t)int_fld[FLD_PORT];
 		lcore_params_array[nb_lcore_params].queue_id =
-			(uint8_t)int_fld[FLD_QUEUE];
+			(uint16_t)int_fld[FLD_QUEUE];
 		lcore_params_array[nb_lcore_params].lcore_id =
 			(uint8_t)int_fld[FLD_LCORE];
 		++nb_lcore_params;
@@ -668,7 +669,7 @@ parse_event_eth_rx_queues(const char *eth_rx_queues)
 {
 	struct l3fwd_event_resources *evt_rsrc = l3fwd_get_eventdev_rsrc();
 	char *end = NULL;
-	uint8_t num_eth_rx_queues;
+	uint16_t num_eth_rx_queues;
 
 	/* parse decimal string */
 	num_eth_rx_queues = strtoul(eth_rx_queues, &end, 10);
@@ -1331,7 +1332,8 @@ ecpri_port_flow_configure(uint16_t portid,
 static void
 l3fwd_poll_resource_setup(void)
 {
-	uint8_t nb_rx_queue, queue, socketid;
+	uint8_t socketid;
+	uint16_t nb_rx_queue, queue;
 	struct rte_eth_dev_info dev_info;
 	uint32_t n_tx_queue, nb_lcores;
 	struct rte_eth_txconf *txconf;
@@ -1654,7 +1656,7 @@ main(int argc, char **argv)
 	struct lcore_conf *qconf;
 	uint16_t queueid, portid;
 	unsigned int lcore_id;
-	uint8_t queue;
+	uint16_t queue;
 	int i, ret;
 
 	/* init EAL */
