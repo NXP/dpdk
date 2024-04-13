@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017-2018 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #include <errno.h>
@@ -24,6 +25,7 @@
 #include <linux/falloc.h>
 #include <linux/mman.h> /* for hugetlb-related mmap flags */
 
+#include <eal_export.h>
 #include <rte_common.h>
 #include <rte_log.h>
 #include <rte_eal.h>
@@ -1094,6 +1096,20 @@ eal_memalloc_free_seg(struct rte_memseg *ms)
 		return -1;
 
 	return eal_memalloc_free_seg_bulk(&ms, 1);
+}
+
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_eal_memalloc_alloc_seg, 25.11)
+struct rte_memseg *
+rte_eal_memalloc_alloc_seg(size_t page_sz, int socket)
+{
+	return eal_memalloc_alloc_seg(page_sz, socket);
+}
+
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_eal_memalloc_free_seg, 25.11)
+int
+rte_eal_memalloc_free_seg(struct rte_memseg *ms)
+{
+	return eal_memalloc_free_seg(ms);
 }
 
 static int
