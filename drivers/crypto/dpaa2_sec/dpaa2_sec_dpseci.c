@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -1600,12 +1600,14 @@ sec_fd_to_mbuf(const struct qbman_fd *fd, struct dpaa2_sec_qp *qp)
 #ifdef RTE_LIBRTE_SECURITY
 	if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
 		uint16_t len = DPAA2_GET_FD_LEN(fd);
-		dst->pkt_len = len;
-		while (dst->next != NULL) {
-			len -= dst->data_len;
-			dst = dst->next;
+		if (!(unlikely(fd->simple.frc)) && len != 0) {
+			dst->pkt_len = len;
+			while (dst->next != NULL) {
+				len -= dst->data_len;
+				dst = dst->next;
+			}
+			dst->data_len = len;
 		}
-		dst->data_len = len;
 	}
 #endif
 	DPAA2_SEC_DP_DEBUG("mbuf %p BMAN buf addr %p,"
@@ -1860,11 +1862,11 @@ mbuf_dump:
 	sym_op = op->sym;
 	if (sym_op->m_src) {
 		printf("Source mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_src, 64);
+		rte_pktmbuf_dump(stdout, sym_op->m_src, sym_op->m_src->data_len);
 	}
 	if (sym_op->m_dst) {
 		printf("Destination mbuf:\n");
-		rte_pktmbuf_dump(stdout, sym_op->m_dst, 64);
+		rte_pktmbuf_dump(stdout, sym_op->m_dst, sym_op->m_dst->data_len);
 	}
 
 	printf("Session address = %p\ncipher offset: %d, length: %d\n"
