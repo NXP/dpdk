@@ -2063,23 +2063,27 @@ rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 			goto load_dmadev_driver;
 	}
 
-	if (!s_qdma_dmadev_max) {
-		total = rte_fslmc_get_device_count(DPAA2_QDMA);
-		penv = getenv("DPAA2_QDMA_DMADEV_MAX");
-		if (penv) {
-			s_qdma_dmadev_max = atoi(penv);
-			if (s_qdma_dmadev_max > total ||
-				s_qdma_dmadev_max < 0)
-				s_qdma_dmadev_max = 0;
+	if (getenv("DPAA2_QDMA_DMALIB_ENABLE")) {
+		if (!s_qdma_dmadev_max) {
+			total = rte_fslmc_get_device_count(DPAA2_QDMA);
+			penv = getenv("DPAA2_QDMA_DMADEV_MAX");
+			if (penv) {
+				s_qdma_dmadev_max = atoi(penv);
+				if (s_qdma_dmadev_max > total ||
+					s_qdma_dmadev_max < 0)
+					s_qdma_dmadev_max = 0;
+			}
+			if (!s_qdma_dmadev_max)
+				s_qdma_dmadev_max = total / 2;
 		}
-		if (!s_qdma_dmadev_max)
-			s_qdma_dmadev_max = total / 2;
-	}
 
-	if (s_qdma_dmadev_count > s_qdma_dmadev_max)
+		if (s_qdma_dmadev_count > s_qdma_dmadev_max)
+			goto load_rawdev_driver;
+	} else
 		goto load_rawdev_driver;
 
 load_dmadev_driver:
+	DPAA2_QDMA_DEBUG("Loading DMA DEV lib\n");
 	ret = dpaa2_qdma_dmadev_probe(dpaa2_drv, dpaa2_dev);
 	if (!ret) {
 		s_qdma_dmadev_count++;
@@ -2099,6 +2103,7 @@ load_dmadev_driver:
 	return ret;
 
 load_rawdev_driver:
+	DPAA2_QDMA_DEBUG("Loading RAW DMA lib\n");
 	rawdev = rte_rawdev_pmd_allocate(dpaa2_dev->device.name,
 			sizeof(struct dpaa2_dpdmai_dev),
 			rte_socket_id());

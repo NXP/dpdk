@@ -52,6 +52,19 @@ or
 source /usr/bin/dpdk-example/extras/dpaa2/dynamic_dpl.sh dpmac.5
 export DPRC=dprc.2
 
+====================================
+A note about DMA framework
+
+DPDK support two DMA frameworks:
+1. RAW DMA framework: In this mode application will have to call
+		rte_qdma*/rte_raw* APIs to use DMA functionality.
+		This is default mode.
+2. DMA LIB frwamework: Application will have to use rte_dma* APIs
+		to test DMA in this mode. This option is safer to
+		migrate DMA applications to new DPDK version.
+		To enable this mode use below environment variable:
+export DPAA2_QDMA_DMALIB_ENABLE=1
+
 ------------------------------------------------------
 l2fwd-qdma - Layer 2 Forwarding Application using QDMA
 ------------------------------------------------------
