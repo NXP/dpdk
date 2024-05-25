@@ -813,18 +813,10 @@ io_mapping_check:
 	}
 
 start_mapping:
-	dmaseg = rte_malloc(NULL, sizeof(struct fslmc_dmaseg),
-				RTE_CACHE_LINE_SIZE);
-	if (!dmaseg) {
-		DPAA2_BUS_ERR("DMA segment malloc failed!");
-		return -ENOMEM;
-	}
-
 	fd = fslmc_vfio_group_fd_by_name(group_name);
 	if (fd <= 0) {
 		DPAA2_BUS_ERR("%s: Get fd by name(%s) failed(%d)",
 			__func__, group_name, fd);
-		rte_free(dmaseg);
 		if (fd < 0)
 			return fd;
 		return -EIO;
@@ -833,7 +825,6 @@ start_mapping:
 		DPAA2_BUS_DEBUG("Running in NOIOMMU mode");
 		if (phy != iovaddr) {
 			DPAA2_BUS_ERR("IOVA should support with IOMMU");
-			rte_free(dmaseg);
 			return -EIO;
 		}
 		goto end_mapping;
@@ -846,7 +837,6 @@ start_mapping:
 	/* SET DMA MAP for IOMMU */
 	if (!fslmc_vfio_container_connected(fd)) {
 		DPAA2_BUS_ERR("Container is not connected");
-		rte_free(dmaseg);
 		return -EIO;
 	}
 
@@ -856,11 +846,15 @@ start_mapping:
 		DPAA2_BUS_ERR("%s(%d) VA(%lx):IOVA(%lx):PHY(%lx)",
 			is_io ? "DMA IO map err" : "DMA MEM map err",
 			errno, vaddr, iovaddr, phy);
-		rte_free(dmaseg);
 		return ret;
 	}
 
 end_mapping:
+	dmaseg = malloc(sizeof(struct fslmc_dmaseg));
+	if (!dmaseg) {
+		DPAA2_BUS_ERR("DMA segment malloc failed!");
+		return -ENOMEM;
+	}
 	dmaseg->vaddr = vaddr;
 	dmaseg->iova = iovaddr;
 	dmaseg->size = len;
@@ -958,7 +952,7 @@ fslmc_unmap_dma(uint64_t vaddr, uint64_t iovaddr, size_t len)
 			fslmc_mem_va2iova = RTE_BAD_IOVA;
 	}
 
-	rte_free(dmaseg);
+	free(dmaseg);
 
 	return 0;
 }
