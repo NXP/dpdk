@@ -2561,7 +2561,7 @@ dpaa_sec_detach_rxq(struct dpaa_sec_dev_private *qi, struct qman_fq *fq)
 		if (&qi->inq[i] == fq) {
 			ret = qman_retire_fq(fq, NULL);
 			if (ret != 0)
-				DPAA_SEC_DEBUG("Queue %d is not retired"
+				DPAA_SEC_ERR("Queue %d is not retired"
 					       " err: %d\n", fq->fqid,
 					       ret);
 			qman_oos_fq(fq);
