@@ -59,6 +59,76 @@ uint8_t dpaa_sec_dp_dump = DPAA_SEC_DP_ERR_DUMP;
 
 uint8_t dpaa_cryptodev_driver_id;
 
+uint64_t dpaa_ctx_alloc_fail;
+uint64_t dpaa_ctx_display_fail_cnt = 1;
+
+static void
+dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
+			  struct rte_cryptodev_dpaa_stats_s *stats)
+{
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+
+	if (stats == NULL) {
+		DPAA_SEC_ERR("Invalid stats ptr NULL");
+		return;
+	}
+
+	stats->enqueue_calls_c = qp->enqueue_calls_c;
+	stats->enqueue_pkt_c = qp->enqueue_pkt_c;
+	stats->enqueue_miss_c = qp->enqueue_miss_c;
+	stats->dequeue_calls_c = qp->dequeue_calls_c;
+	stats->dequeue_pkt_c = qp->dequeue_pkt_c;
+	stats->dequeue_pkt_err_c = qp->dequeue_pkt_err_c;
+	stats->dequeue_miss_c = qp->dequeue_miss_c;
+	stats->dequeue_empty_c = qp->dequeue_empty_c;
+}
+
+static void
+dpaa_check_queue_status(struct dpaa_sec_qp *dpaa_qp, dpaa_sec_session *s)
+{
+	int ret = 0;
+	unsigned int i, frames = 0;
+
+	if (dpaa_sec_dp_dump > DPAA_SEC_DP_ERR_DUMP) {
+		if (dpaa_qp) {
+			RTE_LOG(INFO, PMD, "QP: Total enqueue = %lu, Total dequeue = %lu"
+					" ctx pool size = %u, avail count = %u\n",
+				dpaa_qp->enqueue_pkt_c, dpaa_qp->dequeue_pkt_c,
+				dpaa_qp->ctx_pool->size,
+				rte_mempool_avail_count(dpaa_qp->ctx_pool));
+			if ((dpaa_qp->enqueue_pkt_c - dpaa_qp->dequeue_pkt_c) >=
+					dpaa_qp->ctx_pool->size)
+				RTE_LOG(INFO, PMD, "Queue full, please dequeue first\n");
+
+			for (i = 0; i < MAX_DPAA_CORES; i++) {
+				if (s->inq[i]) {
+					ret = qman_query_fq_frm_cnt(s->inq[i], &frames);
+					if (ret) {
+						RTE_LOG(INFO, PMD, "Error in frames check in INFQ = 0x%x\n",
+								qman_fq_fqid(s->inq[i]));
+					} else {
+						if (frames)
+							RTE_LOG(INFO, PMD, "Pending frames = %d"
+									" INFQid = 0x%x\n", frames,
+									qman_fq_fqid(s->inq[i]));
+					}
+				}
+			}
+			ret = qman_query_fq_frm_cnt(&dpaa_qp->outq, &frames);
+			if (ret) {
+				RTE_LOG(INFO, PMD, "Error in frames check in OUT FQ = 0x%x\n",
+						qman_fq_fqid(&dpaa_qp->outq));
+			} else {
+				if (frames)
+					RTE_LOG(INFO, PMD, "Pending frames = %d"
+							" OUT FQid = 0x%x\n", frames,
+							qman_fq_fqid(&dpaa_qp->outq));
+                        }
+
+		}
+	}
+}
+
 static inline void
 dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 {
@@ -80,7 +150,11 @@ dpaa_sec_alloc_ctx(dpaa_sec_session *ses, int sg_count)
 			ses->qp[rte_lcore_id() % MAX_DPAA_CORES]->ctx_pool,
 			(void **)(&ctx));
 	if (!ctx || retval) {
-		DPAA_SEC_DP_WARN("Alloc sec descriptor failed!");
+		if ((dpaa_ctx_alloc_fail++ % dpaa_ctx_display_fail_cnt) == 0) {
+			DPAA_SEC_DP_WARN("Alloc sec descriptor failed! count = %lu", dpaa_ctx_alloc_fail);
+			dpaa_check_queue_status(ses->qp[rte_lcore_id() % MAX_DPAA_CORES], ses);
+		}
+
 		return NULL;
 	}
 	/*
@@ -1820,6 +1894,7 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
+
 	cf = &ctx->job;
 	ctx->op = op;
 	/* output */
@@ -3650,27 +3725,6 @@ dpaa_dump_pending_frames(struct rte_cryptodev *dev, uint16_t qp_id)
 	printf("\n");
 }
 
-static
-void dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
-			  struct rte_cryptodev_dpaa_stats_s *stats)
-{
-	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
-
-	if (stats == NULL) {
-		DPAA_SEC_ERR("Invalid stats ptr NULL");
-		return;
-	}
-
-	stats->enqueue_calls_c = qp->enqueue_calls_c;
-	stats->enqueue_pkt_c = qp->enqueue_pkt_c;
-	stats->enqueue_miss_c = qp->enqueue_miss_c;
-	stats->dequeue_calls_c = qp->dequeue_calls_c;
-	stats->dequeue_pkt_c = qp->dequeue_pkt_c;
-	stats->dequeue_pkt_err_c = qp->dequeue_pkt_err_c;
-	stats->dequeue_miss_c = qp->dequeue_miss_c;
-	stats->dequeue_empty_c = qp->dequeue_empty_c;
-}
-
 static void
 dpaa_sec_stats_get(struct rte_cryptodev *dev,
 		   struct rte_cryptodev_stats *stats)
@@ -3858,6 +3912,11 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 				"supported, changing to FULL error prints\n");
 			dpaa_sec_dp_dump = DPAA_SEC_DP_FULL_DUMP;
 		}
+	}
+	if (getenv("DPAA_SEC_CTX_FAIL_DISPLAY_CNT")) {
+		dpaa_ctx_display_fail_cnt = atoi(getenv("DPAA_SEC_CTX_FAIL_DISPLAY_CNT"));
+		if (dpaa_ctx_display_fail_cnt == 0)
+			dpaa_ctx_display_fail_cnt = 1;
 	}
 
 	RTE_LOG(INFO, PMD, "%s cryptodev init\n", cryptodev->data->name);
