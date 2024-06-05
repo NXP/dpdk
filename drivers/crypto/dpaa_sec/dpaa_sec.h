@@ -204,10 +204,7 @@ typedef struct dpaa_sec_session_entry {
 	};
 } dpaa_sec_session;
 
-struct dpaa_sec_qp {
-	struct dpaa_sec_dev_private *internals;
-	struct rte_mempool *ctx_pool; /* mempool for dpaa_sec_op_ctx */
-	struct qman_fq outq;
+struct qp_stats {
 	uint64_t enqueue_calls_c;
 	uint64_t enqueue_pkt_c;
 	uint64_t enqueue_miss_c;
@@ -216,6 +213,13 @@ struct dpaa_sec_qp {
 	uint64_t dequeue_pkt_err_c;
 	uint64_t dequeue_miss_c;
 	uint64_t dequeue_empty_c;
+};
+
+struct dpaa_sec_qp {
+	struct dpaa_sec_dev_private *internals;
+	struct rte_mempool *ctx_pool; /* mempool for dpaa_sec_op_ctx */
+	struct qman_fq outq;
+	struct qp_stats stats[MAX_DPAA_CORES];
 };
 
 #define RTE_DPAA_MAX_NB_SEC_QPS 2

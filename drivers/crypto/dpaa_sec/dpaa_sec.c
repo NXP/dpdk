@@ -59,6 +59,83 @@ uint8_t dpaa_sec_dp_dump = DPAA_SEC_DP_ERR_DUMP;
 
 uint8_t dpaa_cryptodev_driver_id;
 
+uint64_t dpaa_ctx_alloc_fail[MAX_DPAA_CORES];
+uint64_t dpaa_ctx_display_fail_cnt = 1;
+
+static void
+dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
+			  struct rte_cryptodev_dpaa_stats_s *stats)
+{
+	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
+	int i;
+
+	if (stats == NULL) {
+		DPAA_SEC_ERR("Invalid stats ptr NULL");
+		return;
+	}
+
+	for (i = 0; i < MAX_DPAA_CORES; i++) {
+		stats->enqueue_calls_c += qp->stats[i].enqueue_calls_c;
+		stats->enqueue_pkt_c += qp->stats[i].enqueue_pkt_c;
+		stats->enqueue_miss_c += qp->stats[i].enqueue_miss_c;
+		stats->dequeue_calls_c += qp->stats[i].dequeue_calls_c;
+		stats->dequeue_pkt_c += qp->stats[i].dequeue_pkt_c;
+		stats->dequeue_pkt_err_c += qp->stats[i].dequeue_pkt_err_c;
+		stats->dequeue_miss_c += qp->stats[i].dequeue_miss_c;
+		stats->dequeue_empty_c += qp->stats[i].dequeue_empty_c;
+	}
+}
+
+static void
+dpaa_check_queue_status(struct dpaa_sec_qp *dpaa_qp, dpaa_sec_session *s)
+{
+	int ret = 0;
+	unsigned int i, frames = 0;
+	uint64_t t_enq = 0, t_deq = 0;
+
+	if (dpaa_sec_dp_dump > DPAA_SEC_DP_ERR_DUMP) {
+		if (dpaa_qp) {
+			for (i = 0; i < MAX_DPAA_CORES; i++) {
+				if (s->inq[i]) {
+					ret = qman_query_fq_frm_cnt(s->inq[i], &frames);
+					if (ret) {
+						RTE_LOG(INFO, PMD, "Error in frames check in INFQ = 0x%x, Core = %d\n",
+								qman_fq_fqid(s->inq[i]), rte_lcore_id());
+					} else {
+						if (frames)
+							RTE_LOG(INFO, PMD, "Pending frames = %d"
+									" INFQid = 0x%x, Core = %d\n", frames,
+									qman_fq_fqid(s->inq[i]), rte_lcore_id());
+					}
+				}
+				t_enq += dpaa_qp->stats[i].enqueue_pkt_c;
+				t_deq += dpaa_qp->stats[i].dequeue_pkt_c;
+			}
+			ret = qman_query_fq_frm_cnt(&dpaa_qp->outq, &frames);
+			if (ret) {
+				RTE_LOG(INFO, PMD, "Error in frames check in OUT FQ = 0x%x, Core = %d\n",
+						qman_fq_fqid(&dpaa_qp->outq), rte_lcore_id());
+			} else {
+				if (frames)
+					RTE_LOG(INFO, PMD, "Pending frames = %d"
+							" OUT FQid = 0x%x, Core = %d\n", frames,
+							qman_fq_fqid(&dpaa_qp->outq), rte_lcore_id());
+                        }
+
+			RTE_LOG(INFO, PMD, "QP: Total enqueue = %lu, Total dequeue = %lu"
+					" ctx pool size = %u, avail count = %u, Core = %d\n",
+				t_enq, t_deq,
+				dpaa_qp->ctx_pool->size,
+				rte_mempool_avail_count(dpaa_qp->ctx_pool), rte_lcore_id());
+			if ((t_enq - t_deq) >=
+					dpaa_qp->ctx_pool->size)
+				RTE_LOG(INFO, PMD, "Queue full, please dequeue first, Core = %d\n", rte_lcore_id());
+
+
+		}
+	}
+}
+
 static inline void
 dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 {
@@ -80,7 +157,12 @@ dpaa_sec_alloc_ctx(dpaa_sec_session *ses, int sg_count)
 			ses->qp[rte_lcore_id() % MAX_DPAA_CORES]->ctx_pool,
 			(void **)(&ctx));
 	if (!ctx || retval) {
-		DPAA_SEC_DP_WARN("Alloc sec descriptor failed!");
+		if ((dpaa_ctx_alloc_fail[rte_lcore_id() % MAX_DPAA_CORES]++ % dpaa_ctx_display_fail_cnt) == 0) {
+			DPAA_SEC_DP_WARN("Core = %d, Alloc sec descriptor failed! count = %lu\n",
+					rte_lcore_id(), dpaa_ctx_alloc_fail[rte_lcore_id() % MAX_DPAA_CORES]);
+			dpaa_check_queue_status(ses->qp[rte_lcore_id() % MAX_DPAA_CORES], ses);
+		}
+
 		return NULL;
 	}
 	/*
@@ -660,6 +742,8 @@ dpaa_sec_dump(struct dpaa_sec_op_ctx *ctx, struct dpaa_sec_qp *qp)
 	uint8_t bufsize;
 	struct rte_crypto_sym_op *sym_op;
 	struct qm_sg_entry sg[2];
+	int i;
+	uint64_t t_enq = 0, t_deq = 0, t_enq_miss = 0, t_deq_miss = 0;
 
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = (dpaa_sec_session *)
@@ -773,14 +857,22 @@ mbuf_dump:
 		printf("op pool available counts = %d\n",
 			rte_mempool_avail_count(op->mempool));
 
+
+	for (i = 0; i < MAX_DPAA_CORES; i++) {
+		t_enq += qp->stats[i].enqueue_pkt_c;
+		t_deq += qp->stats[i].dequeue_pkt_c;
+		t_enq_miss += qp->stats[i].enqueue_miss_c;
+		t_deq_miss += qp->stats[i].dequeue_miss_c;
+	}
+
 	printf("********************************************************\n");
 	printf("Queue data:\n");
 	printf("\tFQID = 0x%x\n\tstate = %d\n\tnb_desc = %d\n"
 		"\tctx_pool = %p\n\trx_pkts = %lu\n\ttx_pkts"
 		"= %lu\n\trx_misses = %lu\n\ttx_errs = %lu\n\n",
 		qp->outq.fqid, qp->outq.state, qp->outq.nb_desc,
-		qp->ctx_pool, qp->dequeue_pkt_c, qp->enqueue_pkt_c,
-		qp->dequeue_miss_c, qp->enqueue_miss_c);
+		qp->ctx_pool, t_deq, t_enq,
+		t_deq_miss, t_enq_miss);
 }
 
 /* qp is lockless, should be accessed by only one thread */
@@ -861,7 +953,7 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 		if (!ctx->fd_status) {
 			op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 		} else {
-			qp->dequeue_pkt_err_c++;
+			qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_pkt_err_c++;
 			if (dpaa_sec_dp_dump > DPAA_SEC_DP_NO_DUMP) {
 				DPAA_SEC_DP_WARN("SEC return err:0x%x\n",
 						  ctx->fd_status);
@@ -1820,6 +1912,7 @@ build_proto_sg(struct rte_crypto_op *op, dpaa_sec_session *ses)
 	ctx = dpaa_sec_alloc_ctx(ses, req_segs);
 	if (!ctx)
 		return NULL;
+
 	cf = &ctx->job;
 	ctx->op = op;
 	/* output */
@@ -1905,7 +1998,7 @@ dpaa_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	uint32_t index, flags[DPAA_SEC_BURST] = {0};
 	struct qman_fq *inq[DPAA_SEC_BURST];
 
-	dpaa_qp->enqueue_calls_c++;
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].enqueue_calls_c++;
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		if (rte_dpaa_portal_init((void *)0)) {
 			DPAA_SEC_ERR("Failure in affining portal");
@@ -2100,8 +2193,8 @@ send_pkts:
 		num_tx += frames_to_send;
 	}
 
-	dpaa_qp->enqueue_pkt_c += num_tx;
-	dpaa_qp->enqueue_miss_c += nb_ops;
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].enqueue_pkt_c += num_tx;
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].enqueue_miss_c += nb_ops;
 
 	return num_tx;
 }
@@ -2113,7 +2206,7 @@ dpaa_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	uint16_t num_rx;
 	struct dpaa_sec_qp *dpaa_qp = (struct dpaa_sec_qp *)qp;
 
-	dpaa_qp->dequeue_calls_c++;
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_calls_c++;
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		if (rte_dpaa_portal_init((void *)0)) {
 			DPAA_SEC_ERR("Failure in affining portal");
@@ -2124,10 +2217,10 @@ dpaa_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	num_rx = dpaa_sec_deq(dpaa_qp, ops, nb_ops);
 
 	if (!num_rx)
-		dpaa_qp->dequeue_empty_c++;
+		dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_empty_c++;
 
-	dpaa_qp->dequeue_pkt_c += num_rx;
-	dpaa_qp->dequeue_miss_c += (nb_ops - num_rx);
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_pkt_c += num_rx;
+	dpaa_qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_miss_c += (nb_ops - num_rx);
 
 	DPAA_SEC_DP_DEBUG("SEC Received %d Packets\n", num_rx);
 
@@ -3650,32 +3743,11 @@ dpaa_dump_pending_frames(struct rte_cryptodev *dev, uint16_t qp_id)
 	printf("\n");
 }
 
-static
-void dpaa_get_qp_sw_stats(struct rte_cryptodev *dev, uint16_t qp_id,
-			  struct rte_cryptodev_dpaa_stats_s *stats)
-{
-	struct dpaa_sec_qp *qp = dev->data->queue_pairs[qp_id];
-
-	if (stats == NULL) {
-		DPAA_SEC_ERR("Invalid stats ptr NULL");
-		return;
-	}
-
-	stats->enqueue_calls_c = qp->enqueue_calls_c;
-	stats->enqueue_pkt_c = qp->enqueue_pkt_c;
-	stats->enqueue_miss_c = qp->enqueue_miss_c;
-	stats->dequeue_calls_c = qp->dequeue_calls_c;
-	stats->dequeue_pkt_c = qp->dequeue_pkt_c;
-	stats->dequeue_pkt_err_c = qp->dequeue_pkt_err_c;
-	stats->dequeue_miss_c = qp->dequeue_miss_c;
-	stats->dequeue_empty_c = qp->dequeue_empty_c;
-}
-
 static void
 dpaa_sec_stats_get(struct rte_cryptodev *dev,
 		   struct rte_cryptodev_stats *stats)
 {
-	int qp_c, i;
+	int qp_c, i, j;
 	struct dpaa_sec_qp *qp;
 
 	if (stats == NULL) {
@@ -3687,10 +3759,12 @@ dpaa_sec_stats_get(struct rte_cryptodev *dev,
 	for (i = 0; i < qp_c; i++) {
 		qp = dev->data->queue_pairs[i];
 
-		stats->enqueued_count += qp->enqueue_pkt_c;
-		stats->dequeued_count += qp->dequeue_pkt_c;
-		stats->enqueue_err_count += qp->enqueue_miss_c;
-		stats->dequeue_err_count += qp->dequeue_pkt_err_c;
+		for (j = 0; j < MAX_DPAA_CORES; j++) {
+			stats->enqueued_count += qp->stats[j].enqueue_pkt_c;
+			stats->dequeued_count += qp->stats[j].dequeue_pkt_c;
+			stats->enqueue_err_count += qp->stats[j].enqueue_miss_c;
+			stats->dequeue_err_count += qp->stats[j].dequeue_pkt_err_c;
+		}
 	}
 }
 
@@ -3858,6 +3932,11 @@ dpaa_sec_dev_init(struct rte_cryptodev *cryptodev)
 				"supported, changing to FULL error prints\n");
 			dpaa_sec_dp_dump = DPAA_SEC_DP_FULL_DUMP;
 		}
+	}
+	if (getenv("DPAA_SEC_CTX_FAIL_DISPLAY_CNT")) {
+		dpaa_ctx_display_fail_cnt = atoi(getenv("DPAA_SEC_CTX_FAIL_DISPLAY_CNT"));
+		if (dpaa_ctx_display_fail_cnt == 0)
+			dpaa_ctx_display_fail_cnt = 1;
 	}
 
 	RTE_LOG(INFO, PMD, "%s cryptodev init\n", cryptodev->data->name);
