@@ -29,6 +29,9 @@ extern uint8_t dpaa_cryptodev_driver_id;
 
 #define DPAA_IPv6_DEFAULT_VTC_FLOW	0x60000000
 
+/* Integrity Failure Mask */
+#define DPAA_ICV_FAIL_MASK    0x2000000a
+
 /* Minimum job descriptor consists of a oneword job descriptor HEADER and
  * a pointer to the shared descriptor.
  */

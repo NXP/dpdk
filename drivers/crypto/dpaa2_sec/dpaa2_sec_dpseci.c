@@ -1811,6 +1811,9 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 	uint8_t bufsize;
 	struct rte_crypto_sym_op *sym_op;
 
+	if (op->status == RTE_CRYPTO_OP_STATUS_AUTH_FAILED)
+		printf("\nPossible cause: Data corruption or invalid/wrong session");
+
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = (dpaa2_sec_session *)get_sym_session_private_data(
 			op->sym->session, cryptodev_driver_id);
@@ -1960,15 +1963,25 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 
 		if (unlikely(fd->simple.frc)) {
 			/* TODO Parse SEC errors */
+			if ((fd->simple.frc & DPAA2_ICV_FAIL_MASK) ==
+					DPAA2_ICV_FAIL_MASK)
+				ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+			else
+				ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
+
 			if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_NO_DUMP) {
-				DPAA2_SEC_DP_ERR("SEC returned Error - %x\n",
+				if (ops[num_rx]->status == RTE_CRYPTO_OP_STATUS_AUTH_FAILED)
+					DPAA2_SEC_DP_ERR("DPAA2: SEC returned Error - %x, "
+							 "Authentication failure\n",
+						 fd->simple.frc);
+				else
+					DPAA2_SEC_DP_ERR("DPAA2: SEC returned Error - %x\n",
 						 fd->simple.frc);
 				if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_ERR_DUMP)
 					dpaa2_sec_dump(ops[num_rx]);
 			}
 
 			dpaa2_qp->rx_vq.err_pkts += 1;
-			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_ERROR;
 		} else {
 			ops[num_rx]->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 		}

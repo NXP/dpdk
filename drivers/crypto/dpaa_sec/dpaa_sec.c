@@ -142,8 +142,15 @@ dpaa_sec_op_ending(struct dpaa_sec_op_ctx *ctx)
 	if (!ctx->fd_status) {
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 	} else {
-		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
-		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		if ((ctx->fd_status & DPAA_ICV_FAIL_MASK) ==
+				DPAA_ICV_FAIL_MASK) {
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x, "
+					 "Authentication failure", ctx->fd_status);
+		} else {
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x", ctx->fd_status);
+		}
 	}
 }
 
@@ -745,6 +752,9 @@ dpaa_sec_dump(struct dpaa_sec_op_ctx *ctx, struct dpaa_sec_qp *qp)
 	int i;
 	uint64_t t_enq = 0, t_deq = 0, t_enq_miss = 0, t_deq_miss = 0;
 
+	if (op->status == RTE_CRYPTO_OP_STATUS_AUTH_FAILED)
+		printf("\nPossible cause: Data corruption or invalid/wrong session");
+
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = (dpaa_sec_session *)
 			get_sym_session_private_data(
@@ -954,13 +964,23 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 			op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 		} else {
 			qp->stats[rte_lcore_id() % MAX_DPAA_CORES].dequeue_pkt_err_c++;
+			if ((ctx->fd_status & DPAA_ICV_FAIL_MASK) ==
+					DPAA_ICV_FAIL_MASK)
+				op->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+			else
+				op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+
 			if (dpaa_sec_dp_dump > DPAA_SEC_DP_NO_DUMP) {
-				DPAA_SEC_DP_WARN("SEC return err:0x%x\n",
+				if (op->status == RTE_CRYPTO_OP_STATUS_AUTH_FAILED)
+					DPAA_SEC_DP_WARN("DPAA: SEC return err:0x%x, "
+							 "Authentication failure\n",
+						  ctx->fd_status);
+				else
+					DPAA_SEC_DP_WARN("DPAA: SEC return err:0x%x\n",
 						  ctx->fd_status);
 				if (dpaa_sec_dp_dump > DPAA_SEC_DP_ERR_DUMP)
 					dpaa_sec_dump(ctx, qp);
 			}
-			op->status = RTE_CRYPTO_OP_STATUS_ERROR;
 		}
 		ops[pkts++] = op;
 
@@ -3561,8 +3581,15 @@ dpaa_sec_process_parallel_event(void *event,
 	if (!ctx->fd_status) {
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 	} else {
-		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
-		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		if ((ctx->fd_status & DPAA_ICV_FAIL_MASK) ==
+				DPAA_ICV_FAIL_MASK) {
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x, "
+					 "Authentication failure", ctx->fd_status);
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+		} else {
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x", ctx->fd_status);
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		}
 	}
 	ev->event_ptr = (void *)ctx->op;
 
@@ -3616,8 +3643,15 @@ dpaa_sec_process_atomic_event(void *event,
 	if (!ctx->fd_status) {
 		ctx->op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 	} else {
-		DPAA_SEC_DP_WARN("SEC return err: 0x%x", ctx->fd_status);
-		ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		if ((ctx->fd_status & DPAA_ICV_FAIL_MASK) ==
+				DPAA_ICV_FAIL_MASK) {
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x "
+					 "Authentication failure", ctx->fd_status);
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+		} else {
+			DPAA_SEC_DP_WARN("DPAA: SEC return err: 0x%x", ctx->fd_status);
+			ctx->op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+		}
 	}
 	ev->event_ptr = (void *)ctx->op;
 	ev->flow_id = outq->ev.flow_id;
