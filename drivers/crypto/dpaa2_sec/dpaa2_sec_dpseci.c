@@ -1803,7 +1803,7 @@ skip_tx:
 }
 
 static void
-dpaa2_sec_dump(struct rte_crypto_op *op)
+dpaa2_sec_dump(struct rte_crypto_op *op, const struct qbman_fd *fd)
 {
 	int i;
 	dpaa2_sec_session *sess = NULL;
@@ -1878,6 +1878,8 @@ mbuf_dump:
 		sym_op->cipher.data.offset, sym_op->cipher.data.length,
 		sym_op->auth.data.offset, sym_op->auth.data.length,
 		sym_op->aead.data.offset, sym_op->aead.data.length);
+
+	rte_hexdump(stdout, "DUMP FD", fd, sizeof(struct qbman_fd));
 	printf("\n");
 
 }
@@ -1978,7 +1980,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 					DPAA2_SEC_DP_ERR("DPAA2: SEC returned Error - %x\n",
 						 fd->simple.frc);
 				if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_ERR_DUMP)
-					dpaa2_sec_dump(ops[num_rx]);
+					dpaa2_sec_dump(ops[num_rx], fd);
 			}
 
 			dpaa2_qp->rx_vq.err_pkts += 1;

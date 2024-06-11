@@ -740,7 +740,8 @@ dpaa_sec_prep_cdb(dpaa_sec_session *ses)
 }
 
 static void
-dpaa_sec_dump(struct dpaa_sec_op_ctx *ctx, struct dpaa_sec_qp *qp)
+dpaa_sec_dump(struct dpaa_sec_op_ctx *ctx, struct dpaa_sec_qp *qp,
+	      const struct qm_fd *fd)
 {
 	struct dpaa_sec_job *job = &ctx->job;
 	struct rte_crypto_op *op = ctx->op;
@@ -883,6 +884,8 @@ mbuf_dump:
 		qp->outq.fqid, qp->outq.state, qp->outq.nb_desc,
 		qp->ctx_pool, t_deq, t_enq,
 		t_deq_miss, t_enq_miss);
+
+	rte_hexdump(stdout, "Dump FD", fd, sizeof(struct qm_fd));
 }
 
 /* qp is lockless, should be accessed by only one thread */
@@ -979,7 +982,7 @@ dpaa_sec_deq(struct dpaa_sec_qp *qp, struct rte_crypto_op **ops, int nb_ops)
 					DPAA_SEC_DP_WARN("DPAA: SEC return err:0x%x\n",
 						  ctx->fd_status);
 				if (dpaa_sec_dp_dump > DPAA_SEC_DP_ERR_DUMP)
-					dpaa_sec_dump(ctx, qp);
+					dpaa_sec_dump(ctx, qp, fd);
 			}
 		}
 		ops[pkts++] = op;
