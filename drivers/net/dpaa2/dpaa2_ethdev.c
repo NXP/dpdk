@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -2985,9 +2985,11 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	} else {
 		eth_dev = rte_eth_dev_attach_secondary(dpaa2_dev->device.name);
 		if (!eth_dev) {
-			DPAA2_PMD_DEBUG("returning enodev");
+			DPAA2_PMD_DEBUG("returning nodev");
 			return -ENODEV;
 		}
+		DPAA2_PMD_DEBUG("%s  already init by primary process",
+			dpaa2_dev->device.name);
 	}
 
 	eth_dev->device = &dpaa2_dev->device;

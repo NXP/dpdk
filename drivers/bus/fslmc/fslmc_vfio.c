@@ -1430,8 +1430,7 @@ fslmc_process_iodevices(struct rte_dpaa2_device *dev)
 		break;
 	}
 
-	DPAA2_BUS_LOG(DEBUG, "Device (%s) abstracted from VFIO",
-		      dev->device.name);
+	DPAA2_BUS_DEBUG("Device (%s) abstracted from VFIO", dev->device.name);
 	return 0;
 }
 

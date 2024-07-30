@@ -4361,7 +4361,6 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	struct dpseci_attr attr;
 	int retcode, hw_id;
 
-	PMD_INIT_FUNC_TRACE();
 	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
 	hw_id = dpaa2_dev->object_id;
 
@@ -4389,7 +4388,7 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	 * RX function
 	 */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-		DPAA2_SEC_DEBUG("Device already init by primary process");
+		DPAA2_SEC_DEBUG("dpseci-%d already init by primary process", hw_id);
 		return 0;
 	}
 #ifdef RTE_LIBRTE_SECURITY
@@ -4492,8 +4491,6 @@ cryptodev_dpaa2_sec_probe(struct rte_dpaa2_driver *dpaa2_drv __rte_unused,
 		rta_set_sec_era(RTA_SEC_ERA_10);
 	else
 		rta_set_sec_era(RTA_SEC_ERA_8);
-
-	DPAA2_SEC_INFO("2-SEC ERA is %d", rta_get_sec_era());
 
 	/* Invoke PMD device initialization function */
 	retval = dpaa2_sec_dev_init(cryptodev);

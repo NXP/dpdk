@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2023 NXP
+ *   Copyright 2016,2018-2024 NXP
  *
  */
 
@@ -232,8 +232,6 @@ rte_fslmc_parse(const char *name, void *addr)
 	const char *sep;
 	uint8_t sep_exists = 0;
 	int ret = -1;
-
-	DPAA2_BUS_DEBUG("Parsing dev=(%s)", name);
 
 	/* There are multiple ways this can be called, with bus:dev, name=dev
 	 * or just dev. In all cases, the 'addr' is actually a string.

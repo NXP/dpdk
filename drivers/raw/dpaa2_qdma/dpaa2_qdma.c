@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <string.h>
@@ -1897,8 +1897,6 @@ dpaa2_dpdmai_dev_pre_init(struct rte_rawdev *rawdev, int dpdmai_id)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = rawdev->dev_private;
 
-	DPAA2_QDMA_FUNC_TRACE();
-
 	/* Open DPDMAI device */
 	dpdmai_dev->dpdmai_id = dpdmai_id;
 	dpdmai_dev->dpdmai.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
@@ -2047,8 +2045,6 @@ rte_dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	struct qdma_dmadev_obj *dmadev_obj;
 	int is_raw = 0;
 
-	DPAA2_QDMA_FUNC_TRACE();
-
 	ret = dpaa2_qdma_drv_mp_sync(dpaa2_dev->object_id, &is_raw);
 	if (ret) {
 		DPAA2_QDMA_ERR("Driver(devid:%d) mp sync failed(%d)",
@@ -2103,7 +2099,7 @@ load_dmadev_driver:
 	return ret;
 
 load_rawdev_driver:
-	DPAA2_QDMA_DEBUG("Loading RAW DMA lib\n");
+	DPAA2_QDMA_DEBUG("Loading RAW DMA lib");
 	rawdev = rte_rawdev_pmd_allocate(dpaa2_dev->device.name,
 			sizeof(struct dpaa2_dpdmai_dev),
 			rte_socket_id());
