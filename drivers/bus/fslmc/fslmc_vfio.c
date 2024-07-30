@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -1525,12 +1525,12 @@ fslmc_vfio_close_group(void)
 		case DPAA2_ETH:
 		case DPAA2_CRYPTO:
 		case DPAA2_QDMA:
+		case DPAA2_BPOOL:
 		case DPAA2_IO:
 			fslmc_close_iodevices(dev, vfio_group_fd);
 			break;
 		case DPAA2_CON:
 		case DPAA2_CI:
-		case DPAA2_BPOOL:
 		case DPAA2_MUX:
 			if (rte_eal_process_type() == RTE_PROC_SECONDARY)
 				continue;
@@ -1651,6 +1651,7 @@ fslmc_vfio_process_group(void)
 		    dev->dev_type != DPAA2_ETH &&
 		    dev->dev_type != DPAA2_CRYPTO &&
 		    dev->dev_type != DPAA2_QDMA &&
+		    dev->dev_type != DPAA2_BPOOL &&
 		    dev->dev_type != DPAA2_IO) {
 			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
 			continue;
@@ -1659,6 +1660,7 @@ fslmc_vfio_process_group(void)
 		case DPAA2_ETH:
 		case DPAA2_CRYPTO:
 		case DPAA2_QDMA:
+		case DPAA2_BPOOL:
 			ret = fslmc_process_iodevices(dev);
 			if (ret) {
 				DPAA2_BUS_DEBUG("Dev (%s) init failed",
@@ -1668,11 +1670,10 @@ fslmc_vfio_process_group(void)
 			break;
 		case DPAA2_CON:
 		case DPAA2_CI:
-		case DPAA2_BPOOL:
 		case DPAA2_DPRTC:
 		case DPAA2_MUX:
 			/* IN case of secondary processes, all control objects
-			 * like dpbp, dpcon, dpci are not initialized/required
+			 * like dpcon, dpci are not initialized/required
 			 * - all of these are assumed to be initialized and made
 			 *   available by primary.
 			 */
@@ -1691,6 +1692,9 @@ fslmc_vfio_process_group(void)
 
 			break;
 		case DPAA2_IO:
+			/* if the application is not using blocklist, leave one
+			 * dpio object to be used by the secondary application
+			 */
 			if (!is_dpio_in_blocklist && dpio_count > 1) {
 				if (rte_eal_process_type() == RTE_PROC_SECONDARY
 				    && current_device != dpio_count) {
