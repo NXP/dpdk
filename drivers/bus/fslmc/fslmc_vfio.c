@@ -868,10 +868,6 @@ end_mapping:
 			fslmc_mem_va2iova = RTE_BAD_IOVA;
 		TAILQ_INSERT_TAIL(&fslmc_memsegs, dmaseg, next);
 	}
-	DPAA2_BUS_LOG(NOTICE,
-		"%s(%lx): VA(%lx):IOVA(%lx):PHY(%lx)",
-		is_io ? "DMA I/O map size" : "DMA MEM map size",
-		len, vaddr, iovaddr, phy);
 
 	return 0;
 }
@@ -1555,7 +1551,8 @@ fslmc_vfio_process_group(void)
 	int found_mportal = 0;
 	struct rte_dpaa2_device *dev, *dev_temp;
 	bool is_dpmcp_in_blocklist = false, is_dpio_in_blocklist = false;
-	int dpmcp_count = 0, dpio_count = 0, current_device;
+	bool is_dpbp_in_blocklist = false;
+	int dpmcp_count = 0, dpio_count = 0, dpbp_count = 0, current_device;
 
 	TAILQ_FOREACH_SAFE(dev, &rte_fslmc_bus.device_list, next, dev_temp) {
 		if (dev->dev_type == DPAA2_MPORTAL) {
@@ -1569,6 +1566,13 @@ fslmc_vfio_process_group(void)
 			if (dev->device.devargs &&
 			    dev->device.devargs->policy == RTE_DEV_BLACKLISTED)
 				is_dpio_in_blocklist = true;
+		}
+
+		if (dev->dev_type == DPAA2_BPOOL) {
+			dpbp_count++;
+			if (dev->device.devargs &&
+			    dev->device.devargs->policy == RTE_DEV_BLACKLISTED)
+				is_dpbp_in_blocklist = true;
 		}
 	}
 
@@ -1649,9 +1653,20 @@ fslmc_vfio_process_group(void)
 		if (rte_eal_process_type() == RTE_PROC_SECONDARY &&
 		    dev->dev_type != DPAA2_ETH &&
 		    dev->dev_type != DPAA2_CRYPTO &&
-		    dev->dev_type != DPAA2_QDMA &&
 		    dev->dev_type != DPAA2_BPOOL &&
+		    dev->dev_type != DPAA2_QDMA &&
 		    dev->dev_type != DPAA2_IO) {
+			DPAA2_BUS_LOG(DEBUG, "%s IO, skipping",
+				      dev->device.name);
+
+			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
+			continue;
+		}
+		/* if no DPBP is in allow/blocklist, do not initialize it*/
+		if (rte_eal_process_type() == RTE_PROC_SECONDARY &&
+			(dev->dev_type == DPAA2_BPOOL && !is_dpbp_in_blocklist)) {
+				DPAA2_BUS_INFO("***********Dev (%s), is_dpbp_in_blocklist=%d",
+						dev->device.name, is_dpbp_in_blocklist);		
 			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
 			continue;
 		}
