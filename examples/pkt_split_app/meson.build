@@ -11,7 +11,9 @@ deps += ['ip_frag']
 if dpdk_conf.has('RTE_LIBRTE_DPAA_PMD')
 	deps += ['pmd_dpaa']
 endif
-
+if dpdk_conf.has('RTE_LIBRTE_DPAA2_PMD')
+	deps += ['pmd_dpaa2']
+endif
 # Enable experimental API flag as l2fwd uses rte_ethdev_set_ptype API
 allow_experimental_apis = true
 sources = files(
