@@ -14,10 +14,12 @@ sources = files('lib/client/cmdif_client_flib.c',
 	'lib/shbp/shbp.c',
 	'cmdif_demo/main.c')
 
-#CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib
-#CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib/client
-#CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib/server
-#CFLAGS += -I$(RTE_SDK)/examples/cmdif/lib/shbp
+cflags += ['-D_GNU_SOURCE']
+if cc.has_argument('-Wno-cast-qual')
+        cflags += '-Wno-cast-qual'
+endif
+
+cflags += '-Wno-cast-function-type'
 
 includes = include_directories('lib',
 			'lib/client',

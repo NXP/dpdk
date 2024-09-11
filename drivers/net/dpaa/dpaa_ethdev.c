@@ -263,7 +263,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 			return -errno;
 		}
 
-		strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ);
+		strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ - 1);
 
 		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {
 			DPAA_PMD_ERR("Cannot get interface mtu");
