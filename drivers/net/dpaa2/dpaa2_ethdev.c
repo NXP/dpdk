@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2025 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -406,6 +406,7 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	union rte_pmd_dpaa2_dev_tc_desc tc_desc;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -435,6 +436,15 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 	dev_info->default_rxportconf.ring_size = DPAA2_RX_DEFAULT_NBDESC;
 
 	dev_info->speed_capa = priv->speed_capa;
+
+	tc_desc.rx_tc_num = priv->num_rx_tc;
+	tc_desc.tx_tc_num = priv->num_tx_tc;
+	tc_desc.qos_entries = priv->qos_entries;
+	tc_desc.fs_entries = priv->fs_entries;
+	tc_desc.dist_queues = priv->dist_queues;
+
+	dev_info->reserved_64s[RTE_DPAA2_DEV_TC_INFO_RSV_IDX] =
+		tc_desc.tc_info;
 
 	return 0;
 }
@@ -2674,6 +2684,7 @@ dpaa2_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = dev->process_private;
 	uint16_t max_frame_length;
+	union rte_pmd_dpaa2_rxq_tc_desc desc;
 
 	rxq = dev->data->rx_queues[queue_id];
 
@@ -2688,6 +2699,10 @@ dpaa2_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	qinfo->conf.rx_drop_en = 1;
 	qinfo->conf.rx_deferred_start = 0;
 	qinfo->conf.offloads = rxq->offloads;
+	desc.tc_id = rxq->tc_index;
+	desc.flow_id = rxq->flow_id;
+	qinfo->conf.reserved_64s[RTE_DPAA2_RXQ_TC_INFO_RSV_IDX] =
+		desc.tc_info;
 }
 
 static void
