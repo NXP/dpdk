@@ -50,6 +50,7 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	struct dpaa_bp_info *bp_info;
 	uint8_t bpid;
 	int num_bufs = 0, ret = 0;
+	uint16_t elem_max_size;
 	struct bman_pool_params params = {
 		.flags = BMAN_POOL_FLAG_DYNAMIC_BPID
 	};
@@ -100,13 +101,11 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 		}
 	}
 
+	elem_max_size = rte_pktmbuf_data_room_size(mp);
+
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;
-	rte_dpaa_bpid_info[bpid].size = mp->elt_size;
-#ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
-	if (dpaa_svr_family_1 == SVR_LS1043A_FAMILY)
-		rte_dpaa_bpid_info[bpid].size -= LS1043_MAX_BUF_OFFSET;
-#endif
+	rte_dpaa_bpid_info[bpid].size = elem_max_size;
 	rte_dpaa_bpid_info[bpid].bp = bp;
 	rte_dpaa_bpid_info[bpid].meta_data_size =
 		sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
