@@ -108,7 +108,8 @@ enum rte_flow_action_type dpaa2_supported_action_type[] = {
 	RTE_FLOW_ACTION_TYPE_QUEUE,
 	RTE_FLOW_ACTION_TYPE_PORT_ID,
 	RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT,
-	RTE_FLOW_ACTION_TYPE_RSS
+	RTE_FLOW_ACTION_TYPE_RSS,
+	RTE_FLOW_ACTION_TYPE_DROP
 };
 
 #define DPAA2_FLOW_HDR_HEX_DUMP_SIZE \
@@ -340,6 +341,8 @@ dpaa2_flow_fs_entry_log(const char *log_info,
 		flow->action_type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
 		DPAA2_FLOW_DUMP("Re-direct to port %s\r\n\n",
 			flow->dst_name);
+	} else if (flow->action_type == RTE_FLOW_ACTION_TYPE_DROP) {
+		DPAA2_FLOW_DUMP("Drop\r\n\n");
 	} else {
 		DPAA2_FLOW_DUMP("Un-supported action type(%d)\r\n\n",
 			flow->action_type);
@@ -4221,6 +4224,7 @@ dpaa2_flow_verify_action(struct dpaa2_dev_priv *priv,
 			break;
 		case RTE_FLOW_ACTION_TYPE_PF:
 			/* Skip this action, have to add for vxlan*/
+		case RTE_FLOW_ACTION_TYPE_DROP:
 			break;
 		case RTE_FLOW_ACTION_TYPE_END:
 			end_of_list = 1;
@@ -4304,6 +4308,12 @@ dpaa2_configure_flow_fs_action(struct dpaa2_dev_priv *priv,
 			dest_priv->token;
 		flow->fs_action_cfg.flow_id = dest_q->flow_id;
 		strcpy(flow->dst_name, dest_priv->eth_dev->data->name);
+	} else if (flow->action_type == RTE_FLOW_ACTION_TYPE_DROP) {
+		flow->fs_action_cfg.options = DPNI_FS_OPT_DISCARD;
+	} else {
+		DPAA2_PMD_ERR("Flow action(%d) not supported!",
+			flow->action_type);
+		return -ENOTSUP;
 	}
 
 	return 0;
@@ -4602,6 +4612,7 @@ dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
 		case RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT:
 		case RTE_FLOW_ACTION_TYPE_PORT_ID:
+		case RTE_FLOW_ACTION_TYPE_DROP:
 			ret = dpaa2_configure_flow_fs_action(priv, flow,
 					&actions[i]);
 			if (ret)
@@ -5641,6 +5652,7 @@ dpaa2_flow_remove_entry(struct rte_eth_dev *dev,
 	case RTE_FLOW_ACTION_TYPE_QUEUE:
 	case RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT:
 	case RTE_FLOW_ACTION_TYPE_PORT_ID:
+	case RTE_FLOW_ACTION_TYPE_DROP:
 		if (priv->num_rx_tc > 1) {
 			/* Remove entry from QoS table first */
 			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
