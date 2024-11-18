@@ -6,11 +6,12 @@
 # Set defaults
 no_download=false
 url=""
+exact=false
 platform=""
 output_dir="lf_images_$(date +%Y%m%d_%H%M%S)"
 
 # Options string
-opts=":u:p:o:ndh"
+opts=":u:p:o:ndhe"
 
 # Usage message
 usage() {
@@ -19,6 +20,7 @@ usage() {
   echo "  -p <platform>   Platform (e.g., imx8mm, imx8mp, imx8dxl, imx91, imx93, imx95)"
   echo "  -o <dir>        Output directory"
   echo "  -n              No download"
+  echo "  -e              Exact URL, no change in base URL"
   echo "  -h              Show this help"
   exit 1
 }
@@ -43,6 +45,13 @@ if [ -z "$url" ]; then
   exit 1
 fi
 
+# Check if xmllint is installed
+if ! command -v xmllint &> /dev/null; then
+  echo "Error: xmllint is not installed."
+  echo "To install, run: sudo apt-get install libxml2-utils"
+  exit 1
+fi
+
 # creating directory for logs and files
 if [ -d "$output_dir" ]; then
   echo "Error: Directory '$output_dir' already exists."
@@ -59,7 +68,6 @@ excluded_dirs=(
   imx_mcore_demos
   imx_mfgtool_install_packages
   imx_porting_kit
-  imx_revision_log
   optee-os-imx
   imx_uboot
 )
@@ -71,32 +79,64 @@ images_files=$output_dir/"parsed_files.txt"
 logs=$output_dir/"logs.txt"
 > "$logs"
 
+if [ $exact == false ]; then
+  # Extract protocol and domain
+  protocol=${url%%://*}
+  domain=${url#*://}
+  domain=${domain%%/*}
+
+  # Extract path and tokens
+  path=${url#*://*/}
+  path=${path#*/}
+
+  # Remove '#browse/' from path
+  path=${path/##browse\/}
+
+  # Split path into tokens
+  IFS=: read -r -a tokens <<< "$path"
+
+  # Replace '%2F' with '/' in tokens
+  for i in "${!tokens[@]}"; do
+    tokens[$i]=${tokens[$i]//%2F/\/}
+  done
+
+  # Print extracted tokens
+  echo "Protocol: $protocol" >> $logs
+  echo "Domain: $domain" >> $logs
+  echo "Tokens: ${tokens[@]}" >> $logs
+
+  prepared_url="$protocol://$domain/service/rest/repository/${tokens[@]/#/}"
+  url=${prepared_url// /\/}
+fi
+echo "Base URL: $url" | tee -a "$logs"
+
 date | tee -a "$logs"
 # Platform-specific files to grep and download
 declare -A platform_files
 platform_files[imx95]="Image-imx95evk.bin
 imx-boot-imx95-19x19-.*-evk-sd.bin-flash_a55
-imx-image-full-imx95evk.rootfs-.*.tar.zst
+imx-image-full-imx95evk.rootfs-.*.wic.zst
 imx95-19x19-evk.dtb"
 platform_files[imx8mm]="imx-boot-imx8mmevk-sd.bin-flash_evk
 Image-imx8mmevk.bin
-imx-image-full-imx8mmevk.rootfs-.*.tar.zst
+imx-image-full-imx8mmevk.rootfs-.*.wic.zst
 imx8mm-evk-dpdk.dtb"
 platform_files[imx8mp]="imx-boot-imx8mpevk-sd.bin-flash_evk
 Image-imx8mpevk.bin
-imx-image-full-imx8mpevk.rootfs-.*.tar.zst
+imx-image-full-imx8mpevk.rootfs-.*.wic.zst
 imx8mp-evk-dpdk.dtb"
 platform_files[imx91]="imx-boot-imx91-11x11-.*-evk-sd.bin-flash_singleboot
 Image-imx91evk.bin
-imx-image-full-imx91evk.rootfs-.*.tar.zst
+imx-image-full-imx91evk.rootfs-.*.wic.zst
 imx91-11x11-evk.dtb"
 platform_files[imx93]="imx-boot-imx93-11x11-.*-evk-sd.bin-flash_singleboot
+imx-boot-imx93evk-sd.bin-flash_singleboot
 Image-imx93evk.bin
-imx-image-full-imx93evk.rootfs-.*.tar.zst
+imx-image-full-imx93evk.rootfs-.*.wic.zst
 imx93-11x11-evk.dtb"
-platform_files[imx8dxl]="imx-boot-imx8dxlevk-sd.bin-flash_spl
+platform_files[imx8dxl]="imx-boot-imx8dxlb0-lpddr4-evk-sd.bin-flash
 Image-imx8dxlevk.bin
-imx-image-full-imx8dxlevk.rootfs-.*.tar.zst
+imx-image-full-imx8dxlevk.rootfs-.*.wic.zst
 imx8dxl-evk.dtb"
 
 # Function to get subdirectories and files
@@ -197,4 +237,19 @@ else
     echo
   done
 fi
+
+#Download revisions
+mkdir -p "$output_dir/build_log"
+  grep -E "revision" "$images_files" | while read -r file; do
+    # Skip files starting with "SCR"
+    if [[ "${file%%-*}" == "SCR" ]]; then
+      continue
+    fi
+    wget -P "$output_dir/build_log" "${file}" >> $logs
+    echo "Downloaded ${file}" | tee -a "$logs"
+done
+echo
+echo "DPDK revisions" | tee -a "$logs"
+grep -hE "dpdk|vpp|ovs|fpr|mtcp" $output_dir/build_log/*revision* | tee -a "$logs"
+
 date | tee -a "$logs"
