@@ -5,6 +5,11 @@ if not is_linux
     build = false
     reason = 'only supported on Linux'
 endif
+if cc.get_id() == 'clang'
+    build = false
+    reason = 'only supported on gcc'
+endif
+
 
 if cc.get_id() == 'clang'
     build = false

@@ -119,6 +119,34 @@ static const struct rte_dpaa2_xstats_name_off dpaa2_xstats_strings[] = {
 	{"egress_confirmed_frames", 2, 4},
 	{"cgr_reject_frames", 4, 0},
 	{"cgr_reject_bytes", 4, 1},
+	{"mac_rx_64 bytes", 0, 0},
+	{"mac_rx_65-127 bytes", 0, 0},
+	{"mac_rx_128-255 bytes", 0, 0},
+	{"mac_rx_256-511 bytes", 0, 0},
+	{"mac_rx_512-1023 bytes", 0, 0},
+	{"mac_rx_1024-1518 bytes", 0, 0},
+	{"mac_rx_1519-max bytes", 0, 0},
+	{"mac_rx_frags", 0, 0},
+	{"mac_rx_jabber", 0, 0},
+	{"mac_rx_frame discards", 0, 0},
+	{"mac_rx_align errors", 0, 0},
+	{"mac_tx_undersized", 0, 0},
+	{"mac_rx_oversized", 0, 0},
+	{"mac_rx_pause", 0, 0},
+	{"mac_tx_b-pause", 0, 0},
+	{"mac_rx_bytes", 0, 0},
+	{"mac_rx_m-cast", 0, 0},
+	{"mac_rx_b-cast", 0, 0},
+	{"mac_rx_all frames", 0, 0},
+	{"mac_rx_u-cast", 0, 0},
+	{"mac_rx_frame errors", 0, 0},
+	{"mac_tx_bytes", 0, 0},
+	{"mac_tx_m-cast", 0, 0},
+	{"mac_tx_b-cast", 0, 0},
+	{"mac_tx_u-cast", 0, 0},
+	{"mac_tx_frame errors", 0, 0},
+	{"mac_rx_frames ok", 0, 0},
+	{"mac_tx_frames ok", 0, 0},
 };
 
 static struct rte_dpaa2_driver rte_dpaa2_pmd;
@@ -723,7 +751,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	total_nb_rx_desc += nb_rx_desc;
 	if (total_nb_rx_desc > MAX_NB_RX_DESC) {
-		DPAA2_PMD_WARN("\nTotal nb_rx_desc exceeds %d limit. Please use Normal buffers",
+		DPAA2_PMD_WARN("Total nb_rx_desc exceeds %d limit. Please use Normal buffers",
 			       MAX_NB_RX_DESC);
 		DPAA2_PMD_WARN("To use Normal buffers, run 'export DPNI_NORMAL_BUF=1' before running dynamic_dpl.sh script");
 	}
@@ -955,7 +983,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	}
 
 	tc_id = tx_queue_id % priv->num_tx_tc;
-	channel_id = (tx_queue_id / priv->num_tx_tc) % priv->num_channels;
+	channel_id = (uint8_t)(tx_queue_id / priv->num_tx_tc) % priv->num_channels;
 	flow_id = 0;
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
@@ -996,8 +1024,8 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(dpaa2_q->cscn,
 			sizeof(struct qbman_result));
 		if (iova == RTE_BAD_IOVA) {
-			DPAA2_PMD_ERR("No IOMMU map for cscn(%p)(size=%lx)",
-				dpaa2_q->cscn, sizeof(struct qbman_result));
+			DPAA2_PMD_ERR("No IOMMU map for cscn(%p)(size=%x)",
+				dpaa2_q->cscn, (uint32_t)sizeof(struct qbman_result));
 
 			return -ENOBUFS;
 		}
@@ -1097,7 +1125,7 @@ dpaa2_dev_rx_queue_count(void *rx_queue)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return -EINVAL;
 		}
@@ -1723,16 +1751,67 @@ err:
 	return retcode;
 };
 
+void
+dpaa2_dev_mac_setup_stats(struct rte_eth_dev *dev)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	uint32_t *cnt_idx;
+	int i;
+
+	priv->cnt_idx_dma_mem = rte_malloc(NULL, DPAA2_MAC_STATS_INDEX_DMA_SIZE,
+					   RTE_CACHE_LINE_SIZE);
+	if (!priv->cnt_idx_dma_mem) {
+		DPAA2_PMD_ERR("Failure to allocate memory for mac index");
+		goto out;
+	}
+
+	priv->cnt_values_dma_mem = rte_malloc(NULL, DPAA2_MAC_STATS_VALUE_DMA_SIZE,
+					      RTE_CACHE_LINE_SIZE);
+	if (!priv->cnt_values_dma_mem) {
+		DPAA2_PMD_ERR("Failure to allocate memory for mac values");
+		goto err_alloc_values;
+	}
+
+	cnt_idx = priv->cnt_idx_dma_mem;
+	for (i = 0; i < DPAA2_MAC_NUM_STATS; i++)
+		*cnt_idx++ = rte_cpu_to_le_32((uint32_t)i);
+
+	priv->cnt_idx_iova = rte_mem_virt2iova(priv->cnt_idx_dma_mem);
+	if (priv->cnt_idx_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU map for count index dma mem(%p)",
+			__func__, priv->cnt_idx_dma_mem);
+		goto err_dma_map;
+	}
+
+	priv->cnt_values_iova = rte_mem_virt2iova(priv->cnt_values_dma_mem);
+	if (priv->cnt_values_iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU map for count values dma mem(%p)",
+			__func__, priv->cnt_values_dma_mem);
+		goto err_dma_map;
+	}
+
+	return;
+
+err_dma_map:
+	rte_free(priv->cnt_values_dma_mem);
+err_alloc_values:
+	rte_free(priv->cnt_idx_dma_mem);
+out:
+	priv->cnt_idx_dma_mem = NULL;
+	priv->cnt_values_dma_mem = NULL;
+}
+
 static int
 dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 	struct rte_eth_xstat *xstats, unsigned int n)
 {
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	int32_t retcode;
+	unsigned int i = 0, j = 0, num = RTE_DIM(dpaa2_xstats_strings);
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	union dpni_statistics value[5] = {};
-	unsigned int i = 0, num = RTE_DIM(dpaa2_xstats_strings);
 	uint8_t page_id, stats_id;
+	uint64_t *cnt_values;
+	int32_t retcode;
 
 	if (n < num)
 		return num;
@@ -1758,8 +1837,8 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 	if (retcode)
 		goto err;
 
-	for (i = 0; i < priv->max_cgs; i++) {
-		if (!priv->cgid_in_use[i]) {
+	for (j = 0; j < priv->max_cgs; j++) {
+		if (!priv->cgid_in_use[j]) {
 			/* Get Counters from page_4*/
 			retcode = dpni_get_statistics(dpni, CMD_PRI_LOW,
 						      priv->token,
@@ -1769,13 +1848,38 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 			break;
 		}
 	}
-
-	for (i = 0; i < num; i++) {
+	while (i < (num - DPAA2_MAC_NUM_STATS)) {
 		xstats[i].id = i;
 		page_id = dpaa2_xstats_strings[i].page_id;
 		stats_id = dpaa2_xstats_strings[i].stats_id;
 		xstats[i].value = value[page_id].raw.counter[stats_id];
+		i++;
 	}
+
+	dpaa2_dev_mac_setup_stats(dev);
+	retcode = dpni_get_mac_statistics(dpni, CMD_PRI_LOW, priv->token,
+					  priv->cnt_idx_iova, priv->cnt_values_iova,
+					  DPAA2_MAC_NUM_STATS);
+	if (retcode) {
+		DPAA2_PMD_WARN("MAC (mac_*) counters are not supported!!");
+		rte_free(priv->cnt_values_dma_mem);
+		rte_free(priv->cnt_idx_dma_mem);
+		while (i >= (num - DPAA2_MAC_NUM_STATS) && i < num) {
+			xstats[i].id = i;
+			xstats[i].value = 0;
+			i++;
+		}
+	}
+	if (!retcode) {
+		cnt_values = priv->cnt_values_dma_mem;
+		while (i >= (num - DPAA2_MAC_NUM_STATS) && i < num) {
+			/* mac counters value */
+			xstats[i].id = i;
+			xstats[i].value = rte_le_to_cpu_64(*cnt_values++);
+			i++;
+		}
+	}
+
 	return i;
 err:
 	DPAA2_PMD_ERR("Error in obtaining extended stats (%d)", retcode);
@@ -1973,7 +2077,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	if (ret < 0)
 		DPAA2_PMD_DEBUG("No change in status");
 	else
-		DPAA2_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
+		DPAA2_PMD_INFO("Port %d Link is %s", dev->data->port_id,
 			       link.link_status ? "Up" : "Down");
 
 	return ret;
@@ -2099,8 +2203,8 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		DPAA2_PMD_DEBUG("Port %d Link DOWN successful",
-			dev->data->port_id);
+		DPAA2_PMD_INFO("Port %d Link DOWN successful",
+			       dev->data->port_id);
 	}
 
 	dev->data->dev_link.link_status = 0;
@@ -2357,7 +2461,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 				   dpaa2_ethq->tc_index, flow_id,
 				   OPR_OPT_CREATE, &ocfg, 0);
 		if (ret) {
-			DPAA2_PMD_ERR("Error setting opr: ret: %d\n", ret);
+			DPAA2_PMD_ERR("Error setting opr: ret: %d", ret);
 			return ret;
 		}
 
@@ -2455,7 +2559,7 @@ rte_pmd_dpaa2_thread_init(void)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return;
 		}
@@ -2910,7 +3014,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->mac_addrs = rte_zmalloc("dpni",
 		RTE_ETHER_ADDR_LEN * attr.mac_filter_entries, 0);
 	if (eth_dev->data->mac_addrs == NULL) {
-		DPAA2_PMD_ERR("Failed to allocate %dB for MAC addresses",
+		DPAA2_PMD_ERR(
+		   "Failed to allocate %d bytes needed to store MAC addresses",
 		   RTE_ETHER_ADDR_LEN * attr.mac_filter_entries);
 		ret = -ENOMEM;
 		goto init_err;
@@ -3013,7 +3118,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		WRIOP_SS_INITIALIZER(priv);
 		ret = dpaa2_eth_load_wriop_soft_parser(priv, DPNI_SS_INGRESS);
 		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in loading softparser\n",
+			DPAA2_PMD_ERR(" Error(%d) in loading softparser",
 				      ret);
 			return ret;
 		}
@@ -3021,7 +3126,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		ret = dpaa2_eth_enable_wriop_soft_parser(priv,
 							 DPNI_SS_INGRESS);
 		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in enabling softparser\n",
+			DPAA2_PMD_ERR(" Error(%d) in enabling softparser",
 				      ret);
 			return ret;
 		}
@@ -3029,8 +3134,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpaa2_soft_parser_loaded();
 	if (ret > 0)
-		RTE_LOG(INFO, PMD, "soft parser is loaded\n");
-	RTE_LOG(INFO, PMD, "%s: netdev created, connected to %s\n",
+		DPAA2_PMD_INFO("soft parser is loaded");
+	DPAA2_PMD_INFO("%s: netdev created, connected to %s",
 		eth_dev->data->name, priv->ep_name);
 
 	return 0;
@@ -3120,12 +3225,12 @@ rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query)
 		return priv->ptp_correction_offset;
 
 	err = dpni_get_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &ptp_cfg);
-	if(err){
+	if (err) {
 		DPAA2_PMD_ERR("Failed to retrieve onestep configuration");
 		return err;
 	}
 
-	if (!ptp_cfg.ptp_onestep_reg_base){
+	if (!ptp_cfg.ptp_onestep_reg_base) {
 		DPAA2_PMD_ERR("1588 onestep reg not available");
 		return -1;
 	}
@@ -3150,7 +3255,7 @@ rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_upda
 	cfg.peer_delay = 0;
 
 	err = dpni_set_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
-	if(err)
+	if (err)
 		return err;
 
 	priv->ptp_correction_offset = offset;
@@ -3174,13 +3279,13 @@ static int dpaa2_tx_sg_pool_init(void)
 			DPAA2_MAX_SGS * sizeof(struct qbman_sge),
 			rte_socket_id());
 		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool creation failed\n");
+			DPAA2_PMD_ERR("SG pool creation failed");
 			return -ENOMEM;
 		}
 	} else {
 		dpaa2_tx_sg_pool = rte_mempool_lookup(name);
 		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool lookup failed\n");
+			DPAA2_PMD_ERR("SG pool lookup failed");
 			return -ENOMEM;
 		}
 	}
