@@ -95,7 +95,7 @@ Following information can be used to obtain these components:
 
     Checkout the specific tag to match openssl library in your target rootfs
 
-        $ git checkout OpenSSL_1_1_1t
+        $ git checkout openssl-3.3.1
 
     Set the following environment variable:
 
@@ -109,6 +109,13 @@ Following information can be used to obtain these components:
         $ make install
         $ export PKG_CONFIG_PATH=<OpenSSL lib path>/lib/pkgconfig:$PKG_CONFIG_PATH
         $ export PKG_CONFIG_LIBDIR=<OpenSSL lib path>/lib:$PKG_CONFIG_LIBDIR
+
+    By default, OpenSSL libraries and modules are installed to the directory specified
+    by the <OpenSSL lib path> in the prefix. To deploy these libraries and modules to a
+    target machine, copy them to /usr/lib/ and set the OPENSSL_MODULES environment
+    variable as follows:
+
+	export OPENSSL_MODULES=/usr/lib/ossl-modules
 
     NOTE: When building DPDK directly on NXP board, OpenSSL might already be
           available in the rootfs. In which case, separate compilation of
