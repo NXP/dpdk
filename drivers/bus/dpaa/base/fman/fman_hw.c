@@ -449,8 +449,8 @@ fman_if_loopback_disable(struct fman_if *p)
 }
 
 void
-fman_if_set_bp(struct fman_if *fm_if, unsigned num __always_unused,
-		    int bpid, size_t bufsize, uint16_t idx)
+fman_if_set_bp(struct fman_if *fm_if, int bpid,
+	size_t bufsize, uint16_t idx)
 {
 	u32 fmbm_ebmpi;
 	u32 ebmpi_val_ace = 0xc0000000;

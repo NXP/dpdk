@@ -100,7 +100,7 @@ void fman_if_loopback_disable(struct fman_if *p);
 
 /* Set buffer pool on specific interface */
 __rte_internal
-void fman_if_set_bp(struct fman_if *fm_if, unsigned int num, int bpid,
+void fman_if_set_bp(struct fman_if *fm_if, int bpid,
 		    size_t bufsize, uint16_t idx);
 
 /* Get Flow Control threshold parameters on specific interface */
