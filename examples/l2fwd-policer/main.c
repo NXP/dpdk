@@ -49,8 +49,9 @@
 #define POLICER_OPT_DISCARD_RED 0x00000002
 
 /* policer units */
-#define POLICER_UNIT_BYTES  0
-#define POLICER_UNIT_FRAMES 1
+#define POLICER_UNIT_BYTES_L3              0
+#define POLICER_UNIT_FRAMES                1
+#define POLICER_UNIT_BYTES_L2_WITHOUT_FCS  2
 
 /* policer color */
 #define POLICER_COLOR_GREEN  0
@@ -97,7 +98,7 @@ static struct port_vlan_pair_params *port_vlan_pair_params;
 static uint16_t nb_port_vlan_pair_params;
 
 /* policer default configuration */
-int policer_unit = POLICER_UNIT_BYTES;
+int policer_unit = POLICER_UNIT_BYTES_L2_WITHOUT_FCS;
 int default_color = POLICER_COLOR_RED;
 uint32_t policer_option = POLICER_OPT_DISCARD_RED;
 uint32_t cir;
@@ -400,8 +401,8 @@ l2fwd_policer_usage(const char *prgname)
 	       "      vlan_prio is number of vlan priorities, maximum is 8 i.e.(0 to 7)"
 	       "  --policer_option: configure policer options (opt_discard_red, opt_color_aware or opt_both)\n"
 	       "      Default: opt_discard_red\n"
-	       "  --policer_unit: configure policer unit (bytes, frames)\n"
-	       "      Default: bytes\n"
+	       "  --policer_unit: configure policer unit (bytes_l2, bytes_l3, frames)\n"
+	       "      Default: bytes_l2\n"
 	       "  --default_color: configure policer default color (red, yellow or green)\n"
 	       "      Default: red\n"
 	       "  -cir NUM in bytes/frames as selected\n"
@@ -509,8 +510,10 @@ l2fwd_policer_parse_scheduler_unit(const char *optarg)
 {
 	if (!strcmp(optarg, "frames"))
 		policer_unit = POLICER_UNIT_FRAMES;
-	else if (!strcmp(optarg, "bytes"))
-		policer_unit = POLICER_UNIT_BYTES;
+	else if (!strcmp(optarg, "bytes_l3"))
+		policer_unit = POLICER_UNIT_BYTES_L3;
+	else if (!strcmp(optarg, "bytes_l2"))
+		policer_unit = POLICER_UNIT_BYTES_L2_WITHOUT_FCS;
 	else
 		printf("Invalid Policer Unit, default set to Bytes!!\n");
 }
