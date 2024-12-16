@@ -232,6 +232,9 @@ enum enetc_bdr_type {TX, RX};
 #define ENETC_PKT_TYPE_IPV6_ESP \
 			(0x0005 | ENETC_PKT_TYPE_IPV6)
 
+#define ENETC_RXBD_LSTATUS_R		BIT(30)
+#define ENETC_RXBD_LSTATUS_F		BIT(31)
+
 /* PCI device info */
 struct enetc_hw {
 	void *reg;	/* SI registers, used by all PCI functions */
