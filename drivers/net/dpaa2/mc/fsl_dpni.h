@@ -1117,12 +1117,17 @@ enum dpni_policer_mode {
 
 /**
  * enum dpni_policer_unit - DPNI policer units
- * @DPNI_POLICER_UNIT_BYTES: bytes units
+ * @DPNI_POLICER_UNIT_BYTES_L3: bytes units (for each frame takes into account
+ * FD length - L3 offset)
  * @DPNI_POLICER_UNIT_FRAMES: frames units
+ * @DPNI_POLICER_UNIT_BYTES_L2_WITHOUT_FCS: bytes units (for each frame takes
+ * into account FD length - L2 offset, which means L2 size without the 4 bytes
+ * for the FCS)
  */
 enum dpni_policer_unit {
-	DPNI_POLICER_UNIT_BYTES = 0,
-	DPNI_POLICER_UNIT_FRAMES
+	DPNI_POLICER_UNIT_BYTES_L3 = 0,
+	DPNI_POLICER_UNIT_FRAMES,
+	DPNI_POLICER_UNIT_BYTES_L2_WITHOUT_FCS,
 };
 
 /**
