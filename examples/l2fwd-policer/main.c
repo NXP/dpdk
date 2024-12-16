@@ -74,6 +74,7 @@
 #define MAX_PKT_BURST 32
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
+#define MAX_SIZE 256
 
 static volatile bool force_quit;
 
@@ -109,6 +110,8 @@ uint32_t pbs;
 void *sch_handle;
 
 static int max_burst_size = MAX_PKT_BURST;
+uint16_t max_rx_queues;
+
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -948,6 +951,78 @@ vlan_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue,
 }
 
 static void
+update_policer_param(uint32_t new_cir, uint32_t new_cbs, uint32_t new_pir, uint32_t new_pbs)
+{
+	uint16_t portid = RTE_MAX_ETHPORTS;
+	int i, ret;
+
+	cir = new_cir;
+	cbs = new_cbs;
+	pir = new_pir;
+	pbs = new_pbs;
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		/* skip disabled port */
+		if ((l2fwd_policer_enabled_port_mask & (1 << portid)) == 0)
+			continue;
+		for (i = 0; i < max_rx_queues; i++) {
+			/* configure scheduler on each Rx queue */
+			ret = rte_dpaa2_conf_scheduler(portid, i, policer_unit,
+						       policer_option,
+						       default_color,
+						       cir, cbs, pir, pbs);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_dpaa2_policer:err=%d,\n", ret);
+		}
+		printf("Successfully updated CIR=%d, CBS=%d PIR=%d PBS=%d\n", new_cir, new_cbs, new_pir, new_pbs);
+	}
+}
+
+static void
+*runtime_policer_update(void *arg)
+{
+	uint32_t new_cir = cir, new_cbs = cbs;
+	uint32_t new_pir = pir, new_pbs = pbs;
+	char command[MAX_SIZE];
+	int ret;
+
+	/* Set this cpu-affinity to CPU 0 */
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(0, &cpuset);
+
+	ret = pthread_setaffinity_np(pthread_self(),
+		sizeof(cpuset), &cpuset);
+	if (ret) {
+		RTE_LOG(INFO, L2FWD, "runtime_policer_update thread set affinity failed(%d)\n\n", ret);
+		pthread_exit(NULL);
+	}
+
+	if (force_quit)
+		return arg;
+
+	while (1) {
+		printf("Update policer parameters 'cir <num> or cbs <num> or pir <num> or pbs <num>':\n");
+		if (fgets(command, MAX_SIZE, stdin) != NULL) {
+			if (strncmp(command, "cir", 3) == 0) {
+				new_cir = strtoul(command + 4, NULL, 10);
+			} else if (strncmp(command, "cbs", 3) == 0) {
+				new_cbs = strtoul(command + 4, NULL, 10);
+			} else if (strncmp(command, "pir", 3) == 0) {
+				new_pir = strtoul(command + 4, NULL, 10);
+			} else if (strncmp(command, "pbs", 3) == 0) {
+				new_pbs = strtoul(command + 4, NULL, 10);
+			} else {
+				printf("Invalid input!!\n");
+				continue;
+			}
+			update_policer_param(new_cir, new_cbs, new_pir, new_pbs);
+		}
+	}
+	return arg;
+}
+
+static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
@@ -1098,6 +1173,7 @@ main(int argc, char **argv)
 			local_port_conf.txmode.offloads |=
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
+		max_rx_queues = dev_info.max_rx_queues;
 		/* Configure the number of queues for a port. */
 		ret = rte_eth_dev_configure(portid, dev_info.max_rx_queues,
 					    dev_info.max_tx_queues, &local_port_conf);
@@ -1244,6 +1320,13 @@ main(int argc, char **argv)
 	check_all_ports_link_status(l2fwd_policer_enabled_port_mask);
 
 	ret = 0;
+
+	if (getenv("RUNTIME_POLICER_PARAMETER_UPDATE")) {
+		pthread_t policer_update;
+
+		pthread_create(&policer_update, NULL, runtime_policer_update, NULL);
+	}
+
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(l2fwd_policer_launch_one_lcore, NULL, CALL_MAIN);
 	RTE_LCORE_FOREACH_WORKER(lcore_id) {
