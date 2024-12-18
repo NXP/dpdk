@@ -109,7 +109,7 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 {
 	uint16_t ch_id = dpcon_dev->qbman_ch_id;
 	struct qbman_result *dq_sch_storage;
-	uint16_t total_nb_pkts = nb_pkts;
+	uint16_t total_nb_pkts;
 	struct qbman_pull_desc pulldesc;
 	const struct qbman_fd *fd;
 	struct dpaa2_queue *rvq;
@@ -127,6 +127,12 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 	}
 	swp = DPAA2_PER_LCORE_ETHRX_PORTAL;
 	dq_sch_storage = dq_storage[rte_lcore_id()];
+
+	/* Number of packets to be received is checked against dpaa2_dqrr_size
+	 * to ensure that it is within the range.
+	 */
+	nb_pkts = (nb_pkts > dpaa2_dqrr_size) ? dpaa2_dqrr_size : nb_pkts;
+	total_nb_pkts = nb_pkts;
 
 	do {
 		is_last = false;
