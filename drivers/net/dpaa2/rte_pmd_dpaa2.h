@@ -226,6 +226,14 @@ rte_dpaa2_scheduler_start(void *scheduler_handle);
 __rte_experimental
 int
 rte_dpaa2_scheduler_destroy(void *scheduler_handle);
+
+/* rte_dpaa2_scheduler_rx()- DPCON scheduler receive function
+ * @scheduler_handle: DPCON scheduler handle
+ * @mbuf:             Packet mbuf
+ * @nb_pkts:          Number of packets to be received. For LX2160 supported
+ *                    dequeue upto 32 frames at a time.
+ * Return 'Number of received packet' on Success; '0' otherwise.
+ */
 __rte_experimental
 int32_t
 rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
