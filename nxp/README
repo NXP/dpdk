@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2024 NXP
+# Copyright 2018-2025 NXP
 ===============================================================================
 NXP DPDK README
 ---------------
@@ -236,6 +236,17 @@ DPAA2, ENETC and i.MX boards.
 
 Following are some pre-requisites:
 
+  DPDK binaries and scripts location in rootfs:
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  For release L6.12.3_1.0.0 (Q1 2025) RC1 onwards-
+  $PREFIX_SCRIPT_PATH = /etc/dpdk
+  $PREFIX_BIN_PATH = /usr/bin
+
+  For old releases-
+  $PREFIX_SCRIPT_PATH = /usr/local/dpdk or /usr/share/dpdk
+  $PREFIX_BIN_PATH = /usr/local/bin or /usr/share/bin
+
   For ENETC Platform (LS1028):
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -276,8 +287,8 @@ Following are some pre-requisites:
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.1/sriov_numvfs
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.0/sriov_numvfs
 
-		/usr/bin/dpdk-devbind.py -b vfio-pci 0000:00:01.2
-		/usr/bin/dpdk-devbind.py -b vfio-pci 0000:00:01.0
+		$PREFIX_BIN_PATH/dpdk-devbind.py -b vfio-pci 0000:00:01.2
+		$PREFIX_BIN_PATH/dpdk-devbind.py -b vfio-pci 0000:00:01.0
 
 		ifconfig eno0 up
 		ifconfig eno1 up
@@ -289,7 +300,7 @@ Following are some pre-requisites:
 		* Port level hardware stats are not available.
 
 	2. For RDB board, run below script:
-	       /usr/local/dpdk/enetc/dpdk_configure_1028ardb.sh
+		$PREFIX_SCRIPT_PATH/enetc/dpdk_configure_1028ardb.sh
 
 
   For DPAA2 Platform:
@@ -299,7 +310,7 @@ Following are some pre-requisites:
      configurations in the DPL file.
 
   2. Get the dpdk applications binaries and dynamic_dpl.sh on the DPAA2 board.
-     It may already be present in rootfs at (/usr/local/dpdk/dpaa2).
+     It may already be present in rootfs at ($PREFIX_SCRIPT_PATH/dpaa2).
 
       NOTE: If `pktgen` application is to be run, please increase the number of
             buffer pool available by setting the below environment variable
@@ -330,7 +341,7 @@ Following are some pre-requisites:
   3. Run the following on the board:
 
     a) Change directory to location of Dynamic DPL script. It would ideally be
-       placed in (/usr/local/dpdk/dpaa2). It is also part of the DPDK
+       placed in ($PREFIX_SCRIPT_PATH/dpaa2). It is also part of the DPDK
        source code in `nxp` folder.
 
     b) source ./dynamic_dpl.sh dpmac.1 dpmac.2 dpmac.3 dpmac.4
@@ -357,7 +368,7 @@ Following are some pre-requisites:
      By default, =>
      Before running application, a binary `fmc` needs to be executed to
      configure the FMan on DPAA platforms. This requires two configuration files
-     which are available in rootfs at (/usr/local/dpdk/dpaa) and
+     which are available in rootfs at ($PREFIX_SCRIPT_PATH/dpaa) and
      also available as part of DPDK source code (./nxp/dpaa/).
 
      If the files are not available on the rootfs, upload them. Thereafter,
@@ -606,8 +617,8 @@ Run DPDK applications on i.MX8MM, i.MX8MP, i.MX91 and i.MX93 boards:
   3. Manually allocate hugepages
 	e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 
-  4. Find DPDK applications(dpdk-l2fwd & dpdk-l3fwd) under the folder
-     '/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
+  4. Find DPDK applications(dpdk-testpmd, dpdk-l2fwd and dpdk-l3fwd) under the folder
+     '$PREFIX_SCRIPT_PATH/' or '$PREFIX_BIN_PATH/'.
 
   5. Run-
      ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
@@ -714,7 +725,7 @@ Run DPDK applications on i.MX8MP, i.MX8DXL, i.MX91 and i.MX93 boards:
   3. Load the non-cacheable module
 	$ insmod kpage_ncache.ko
   4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
-	'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
+	'$PREFIX_SCRIPT_PATH/' or '$PREFIX_BIN_PATH/'.
 
   5. Run -
 	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
@@ -1095,7 +1106,7 @@ Notes:
 
   'dpdk-testpmd' is part of standard DPDK build process. The binary is generated in
   the (./<target>/app/) folder. On a rootfs having DPDK binaries, the binary
-  would be placed in (/usr/local/bin/).
+  would be placed in ($PREFIX_SCRIPT_PATH/).
 
   Execute following commands to run DPDK testpmd
 
@@ -1276,7 +1287,7 @@ Notes:
   1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
 
   $ ls-addni --no-link
-  $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
+  $ source $PREFIX_SCRIPT_PATH/dpaa2/dynamic_dpl.sh dpmac.5
   $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
   $ restool dprc disconnect dprc.2 --endpoint=dpni.3
   $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
@@ -1449,7 +1460,7 @@ with the primary process.
   1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
 
   $ ls-addni --no-link
-  $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
+  $ source $PREFIX_SCRIPT_PATH/dpaa2/dynamic_dpl.sh dpmac.5
   $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
   $ restool dprc disconnect dprc.2 --endpoint=dpni.3
   $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
@@ -1704,7 +1715,7 @@ of NXP LSDK documentation.
    scheduling its tasks. Cores 1-7 can then be used by DPDK Applications
    without interruption from Kernel.
 
-   Also, in the folder (/usr/local/dpdk/), `disable_services.sh` script has
+   Also, in the folder ('$PREFIX_SCRIPT_PATH/'), `disable_services.sh` script has
    been provided for disabling all services on a Ubuntu 16.04 rootfs which are
    known to impact DPDK performance. (Only for Stock 16.04).
 
@@ -1818,7 +1829,7 @@ On root user:
        username        hard            nofile          4096
        username        hard            locks           unlimited
 
-2. source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
+2. source $PREFIX_SCRIPT_PATH/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
 3. The following permissions should be adjusted:
 	chmod -R 777 /run/user
 	chmod -R 777 /dev/hugepages
@@ -2068,7 +2079,7 @@ On root user:
        username        hard            nofile          4096
        username        hard            locks           unlimited
 
-2. source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
+2. source $PREFIX_SCRIPT_PATH/dpaa2/dynamic_dpl.sh dpmac.1 dpmac.2
 3. The following permissions should be adjusted:
 	chmod -R 777 /run/user
 	chmod -R 777 /dev/hugepages
