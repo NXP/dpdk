@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2024 NXP
+ * Copyright 2020-2025 NXP
  */
 
 #include <stdio.h>
@@ -330,7 +330,7 @@ dpaa_poll_queue_default_config(struct qm_mcc_initfq *opts)
 	opts->fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			    QM_FQCTRL_PREFERINCACHE;
 	opts->fqd.context_a.stashing.exclusive = 0;
-	if (dpaa_svr_family != SVR_LS1046A_FAMILY)
+	if (dpaa_soc_ver() != SVR_LS1046A_FAMILY)
 		opts->fqd.context_a.stashing.annotation_cl =
 				DPAA_IF_RX_ANNOTATION_STASH;
 	opts->fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
