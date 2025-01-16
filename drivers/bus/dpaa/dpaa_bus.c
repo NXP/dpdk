@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2024 NXP
+ * Copyright 2017-2025 NXP
  */
 /* System headers */
 #include <stdio.h>
@@ -42,12 +42,16 @@
 #include <netcfg.h>
 #include <fman.h>
 
+#define DPAA_SOC_ID_FILE	"/sys/devices/soc0/soc_id"
+#define DPAA_SVR_MASK 0xffff0000
+
 struct rte_dpaa_bus {
 	struct rte_bus bus;
 	TAILQ_HEAD(, rte_dpaa_device) device_list;
 	TAILQ_HEAD(, rte_dpaa_driver) driver_list;
 	int device_count;
 	int detected;
+	uint32_t svr_ver;
 };
 
 static struct rte_dpaa_bus s_rte_dpaa_bus;
@@ -56,14 +60,17 @@ static struct netcfg_info *dpaa_netcfg;
 /* define a variable to hold the portal_key, once created.*/
 static pthread_key_t dpaa_portal_key;
 
-unsigned int dpaa_svr_family;
-
 #define FSL_DPAA_BUS_NAME	dpaa_bus
 
 RTE_DEFINE_PER_LCORE(struct dpaa_portal *, dpaa_io);
 
 #define DPAA_SEQN_DYNFIELD_NAME "dpaa_seqn_dynfield"
 int dpaa_seqn_dynfield_offset = -1;
+
+uint32_t dpaa_soc_ver(void)
+{
+	return s_rte_dpaa_bus.svr_ver;
+}
 
 struct fm_eth_port_cfg *
 dpaa_get_eth_port_cfg(int dev_id)
@@ -723,7 +730,7 @@ rte_dpaa_bus_probe(void)
 	struct rte_dpaa_device *dev;
 	struct rte_dpaa_driver *drv;
 	FILE *svr_file = NULL;
-	unsigned int svr_ver;
+	uint32_t svr_ver;
 	int probe_all = false;
 	static int process_once;
 
@@ -737,8 +744,21 @@ rte_dpaa_bus_probe(void)
 	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
 	if (svr_file) {
 		if (fscanf(svr_file, "svr:%x", &svr_ver) > 0)
-			dpaa_svr_family = svr_ver & SVR_MASK;
+			s_rte_dpaa_bus.svr_ver = svr_ver & DPAA_SVR_MASK;
+		else
+			s_rte_dpaa_bus.svr_ver = 0;
 		fclose(svr_file);
+	} else {
+		s_rte_dpaa_bus.svr_ver = 0;
+	}
+	if (s_rte_dpaa_bus.svr_ver == SVR_LS1046A_FAMILY) {
+		DPAA_BUS_LOG(NOTICE, "This is LS1046A family SoC.");
+	} else if (s_rte_dpaa_bus.svr_ver == SVR_LS1043A_FAMILY) {
+		DPAA_BUS_LOG(NOTICE, "This is LS1043A family SoC.");
+	} else {
+		DPAA_BUS_LOG(WARNING,
+			"This is Unknown(%08x) DPAA1 family SoC.",
+			s_rte_dpaa_bus.svr_ver);
 	}
 
 	/* Device list creation is only done once */
