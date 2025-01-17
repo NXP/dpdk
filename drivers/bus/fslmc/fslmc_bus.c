@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2024 NXP
+ *   Copyright 2016,2018-2025 NXP
  *
  */
 
@@ -341,7 +341,8 @@ rte_fslmc_scan(void)
 		goto scan_fail;
 
 	/* Scan devices on the group */
-	sprintf(fslmc_dirpath, "%s/%s", SYSFS_FSL_MC_DEVICES, group_name);
+	snprintf(fslmc_dirpath, sizeof(fslmc_dirpath), "%s/%s",
+			SYSFS_FSL_MC_DEVICES, group_name);
 	dir = opendir(fslmc_dirpath);
 	if (!dir) {
 		DPAA2_BUS_ERR("Unable to open VFIO group directory");
