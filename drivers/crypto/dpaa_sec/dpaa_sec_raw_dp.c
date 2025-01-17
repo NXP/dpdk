@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2022 NXP
+ * Copyright 2021-2022, 2025 NXP
  */
 
 #include <rte_byteorder.h>
@@ -200,6 +200,12 @@ build_dpaa_raw_dp_auth_fd(uint8_t *drv_ctx,
 
 	if (is_decode(ses)) {
 		/* Digest verification case */
+		if (ses->digest_length > sizeof(ctx->digest)) {
+			DPAA_SEC_DP_ERR("Digest length (%d) exceeds buffer size (%lu)",
+				ses->digest_length, sizeof(ctx->digest));
+			return NULL;
+		}
+
 		cpu_to_hw_sg(sg);
 		sg++;
 		rte_memcpy(old_digest, digest->va,
