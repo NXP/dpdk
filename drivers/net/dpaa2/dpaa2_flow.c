@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2024 NXP
+ * Copyright 2018-2025 NXP
  */
 
 #include <sys/queue.h>
@@ -5779,12 +5779,13 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 	struct dpaa2_key_extract *extract;
 	uint16_t dist_size, tc_idx;
 	uint8_t num_rxqueue_per_tc;
-	uint8_t tc_id;
+	uint8_t tc_id, tc_index;
+
+	tc_id = flow->tc_id;
+	tc_index = flow->tc_index;
+	tc_idx = tc_id * priv->fs_entries + tc_index;
 
 	dpaa2_dump_extract_map(priv, "Start destroying flow");
-	tc_id = flow->tc_id;
-	tc_idx = tc_id * priv->fs_entries + flow->tc_index;
-
 	switch (flow->action_type) {
 	case RTE_FLOW_ACTION_TYPE_QUEUE:
 	case RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT:
@@ -5839,68 +5840,8 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 		break;
 	}
 
-	if (ret) {
-		if (qos_removed) {
-			ret1 = dpni_add_qos_entry(dpni, CMD_PRI_LOW,
-				priv->token, &flow->qos_rule,
-				flow->tc_id, tc_idx, 0, 0);
-			if (ret1 < 0) {
-				DPAA2_PMD_ERR("Add QoS.entry%d->FS%d err(%d)",
-					tc_idx, flow->tc_id, ret1);
-				goto error;
-			}
-		}
-		if (fs_removed) {
-			ret1 = dpni_add_fs_entry(dpni, CMD_PRI_LOW,
-				priv->token, flow->tc_id,
-				flow->tc_index, &flow->fs_rule,
-				&flow->fs_action_cfg);
-			if (ret1 < 0) {
-				DPAA2_PMD_ERR("Add FS%d.entry%d err(%d)",
-					flow->tc_id, flow->tc_index, ret1);
-				goto error;
-			}
-		}
-		ret = -EAGAIN;
-
-		goto error;
-	}
-
-	if (qos_removed) {
-		extract = &priv->extract.qos_key_extract;
-		extract->entry_num--;
-		dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
-	}
-
-	if (fs_removed) {
-		extract = &priv->extract.tc_key_extract[tc_id];
-		extract->entry_num--;
-		dpaa2_flow_entry_map_set(extract->entry_map,
-			flow->tc_index, 0);
-	}
-	LIST_REMOVE(flow, next);
-
-	update = dpaa2_flow_remove_invalid_extract(dev,
-		DPAA2_FLOW_FS_TYPE, tc_id);
-	if (update > 0) {
-		dist_size = priv->nb_rx_queues / priv->num_rx_tc;
-		ret = dpaa2_configure_fs_rss_table(priv,
-			tc_id, dist_size, false);
-		if (ret) {
-			DPAA2_PMD_ERR("Re-configure FS table failed(%d)", ret);
-			goto error;
-		}
-	}
-
-	update = dpaa2_flow_remove_invalid_extract(dev,
-		DPAA2_FLOW_QOS_TYPE, 0);
-	if (update > 0) {
-		ret = dpaa2_configure_qos_table(priv, false);
-		if (ret) {
-			DPAA2_PMD_ERR("Re-configure QoS table failed(%d)", ret);
-			goto error;
-		}
-	}
+	if (ret)
+		goto retry;
 
 	/* number of rx queue per TC */
 	num_rxqueue_per_tc = priv->nb_rx_queues / priv->num_rx_tc;
@@ -5939,13 +5880,12 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 			if (priv->num_rx_tc > 1) {
 				ret = dpaa2_flow_add_qos_rule(priv, flow);
 				if (ret)
-					goto end_flow_set;
+					goto end_flow_set_qos_fs;
 			}
 
 			ret = dpaa2_flow_add_fs_rule(priv, flow);
 			if (ret)
-				goto end_flow_set;
-
+				goto end_flow_set_qos_fs;
 			break;
 		case RTE_FLOW_ACTION_TYPE_RSS:
 			rss_conf = actions[j].conf;
@@ -5962,11 +5902,11 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 
 			ret = dpaa2_flow_add_qos_rule(priv, flow);
 			if (ret)
-				goto end_flow_set;
+				goto end_flow_set_qos_fs;
 
 			ret = dpaa2_flow_add_fs_rule(priv, flow);
 			if (ret)
-				goto end_flow_set;
+				goto end_flow_set_qos_fs;
 
 			break;
 		case RTE_FLOW_ACTION_TYPE_PF:
@@ -5981,6 +5921,72 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 			break;
 		}
 		j++;
+	}
+
+	if (qos_removed) {
+		extract = &priv->extract.qos_key_extract;
+		extract->entry_num--;
+		dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
+	}
+
+	if (fs_removed) {
+		extract = &priv->extract.tc_key_extract[tc_id];
+		extract->entry_num--;
+		dpaa2_flow_entry_map_set(extract->entry_map,
+			tc_index, 0);
+	}
+
+	LIST_REMOVE(flow, next);
+
+	update = dpaa2_flow_remove_invalid_extract(dev,
+		DPAA2_FLOW_FS_TYPE, tc_id);
+	if (update > 0) {
+		dist_size = priv->nb_rx_queues / priv->num_rx_tc;
+		ret = dpaa2_configure_fs_rss_table(priv,
+			tc_id, dist_size, false);
+		if (ret) {
+			DPAA2_PMD_ERR("Re-configure FS table failed(%d)", ret);
+			goto error;
+		}
+	}
+
+	update = dpaa2_flow_remove_invalid_extract(dev,
+		DPAA2_FLOW_QOS_TYPE, 0);
+	if (update > 0) {
+		ret = dpaa2_configure_qos_table(priv, false);
+		if (ret) {
+			DPAA2_PMD_ERR("Re-configure QoS table failed(%d)", ret);
+			goto error;
+		}
+	}
+
+end_flow_set_qos_fs:
+	if (ret) {
+		flow->tc_id = tc_id;
+		flow->tc_index = tc_index;
+retry:
+		if (qos_removed) {
+			ret1 = dpni_add_qos_entry(dpni, CMD_PRI_LOW,
+				priv->token, &flow->qos_rule,
+				flow->tc_id, tc_idx, 0, 0);
+			if (ret1 < 0) {
+				DPAA2_PMD_ERR("Add QoS.entry%d->FS%d err(%d)",
+					tc_idx, flow->tc_id, ret1);
+				goto error;
+			}
+		}
+
+		if (fs_removed) {
+			ret1 = dpni_add_fs_entry(dpni, CMD_PRI_LOW,
+				priv->token, flow->tc_id,
+				flow->tc_index, &flow->fs_rule,
+				&flow->fs_action_cfg);
+			if (ret1 < 0) {
+				DPAA2_PMD_ERR("Add FS%d.entry%d err(%d)",
+					flow->tc_id, flow->tc_index, ret1);
+				goto error;
+			}
+		}
 	}
 
 end_flow_set:
