@@ -1863,8 +1863,10 @@ dpaa2_sec_dump(const struct rte_crypto_op *op, FILE *f)
 			"\tsn_size:\t%d\n\thfn_ovd_offset:\t%d\n",
 			sess->pdcp.sn_size, sess->pdcp.hfn_ovd_offset);
 		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
-			"\thfn:\t\t%d\n\thfn_threshold:\t0x%x\n",
-			sess->pdcp.hfn, sess->pdcp.hfn_threshold);
+			"\thfn:\t\t%d\n\thfn_threshold:\t0x%x\n"
+			"\tsdap:\t0%u\n",
+			sess->pdcp.hfn, sess->pdcp.hfn_threshold,
+			sess->pdcp.sdap);
 	} else {
 		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
 			"\tIV len:\t\t%d\n\tIV offset:\t%d\n",
@@ -3752,6 +3754,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	session->pdcp.hfn = pdcp_xform->hfn;
 	session->pdcp.hfn_threshold = pdcp_xform->hfn_threshold;
 	session->pdcp.hfn_ovd = pdcp_xform->hfn_ovrd;
+	session->pdcp.sdap = pdcp_xform->sdap_enabled;
 	/* hfv ovd offset location is stored in iv.offset value*/
 	if (cipher_xform)
 		session->pdcp.hfn_ovd_offset = cipher_xform->iv.offset;
