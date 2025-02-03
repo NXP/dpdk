@@ -1,6 +1,6 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2019-2024 NXP
+ *   Copyright 2019-2025 NXP
  *
  */
 
@@ -172,17 +172,32 @@ struct ccsr_gur {
 	uint8_t	res_858[0x1000 - 0xc00];
 } __rte_packed;
 
-static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
+struct lsx_map_region_ptr {
+	void *mapped_ptr;		/* Original mapped base ptr */
+	void *mapped_adj_ptr;	/* Offset-adjusted ptr */
+	size_t len;		/* length of the mapping */
+};
+
+static int
+lsx_ccsr_map_region(uint64_t addr, size_t len, struct lsx_map_region_ptr *region)
 {
 	int fd;
 	void *tmp;
 	uint64_t start;
 	uint64_t offset;
 
+	if (!region) {
+		DPAA2_PMD_ERR("Invalid region pointer.");
+		return -1;
+	}
+	region->mapped_ptr = NULL;
+	region->mapped_adj_ptr = NULL;
+	region->len = 0;
+
 	fd = open("/dev/mem", O_RDWR);
 	if (fd < 0) {
 		DPAA2_PMD_ERR("Fail to open /dev/mem");
-		return NULL;
+		return -1;
 	}
 
 	start = addr & PAGE_MASK;
@@ -191,20 +206,30 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 
 	if (PAGE_SIZE < 1) {
 		close(fd);
-		return NULL;
+		return -1;
 	}
-
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
 
 	tmp = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, start);
-
 	close(fd);
+	if (tmp == MAP_FAILED)
+		return -1;
 
-	if (tmp != MAP_FAILED)
-		return (uint8_t *)tmp + offset;
-	else
-		return NULL;
+	region->mapped_ptr = tmp;
+	region->mapped_adj_ptr = (uint8_t *)tmp + offset;
+	region->len = len;
+	return 0;
+}
+
+static void
+lsx_ccsr_unmap_region(struct lsx_map_region_ptr *region) {
+	if (region && region->mapped_ptr) {
+		munmap(region->mapped_ptr, region->len);
+		region->mapped_ptr = NULL;
+		region->mapped_adj_ptr = NULL;
+		region->len = 0;
+	}
 }
 
 static const uint8_t ls_sd1_prot_idx_map[] = {
@@ -404,14 +429,20 @@ static inline int
 ls_mac_serdes_lpbk_support(uint16_t mac_id,
 	uint16_t *serdes_id, uint16_t *lan_id)
 {
-	struct ccsr_gur *gur_base =
-		lsx_ccsr_map_region(CONFIG_SYS_FSL_GUTS_ADDR,
-			sizeof(struct ccsr_gur) / 64 * 64 + 64);
+	size_t len = sizeof(struct ccsr_gur) / 64 * 64 + 64;
+	struct lsx_map_region_ptr region;
 	uint32_t sd_cfg;
 	int sd_id, sd_idx;
 	uint16_t lan_id_tmp = 0;
 	const uint8_t *ls_sd_loopback_support;
+	struct ccsr_gur *gur_base;
+	bool res = false;
 
+	if (lsx_ccsr_map_region(CONFIG_SYS_FSL_GUTS_ADDR, len, &region) < 0) {
+		DPAA2_PMD_ERR("Failed to map CCSR region.");
+		return res;
+	}
+	gur_base = (struct ccsr_gur *)(region.mapped_adj_ptr);
 	sd_id = ls_mac_to_serdes_id(mac_id);
 
 	if (sd_id == LSX_SERDES_1) {
@@ -422,16 +453,15 @@ ls_mac_serdes_lpbk_support(uint16_t mac_id,
 		sd_cfg = rte_read32(&gur_base->rcwsr[FSL_LS_SRDS2_REGSR - 1]) &
 				FSL_LS_SRDS2_PRTCL_MASK;
 		sd_cfg >>= FSL_LS_SRDS2_PRTCL_SHIFT;
-	} else {
-		return false;
-	}
-	sd_cfg = sd_cfg & 0xff;
+	} else
+		goto ccsr_unmap;
 
+	sd_cfg = sd_cfg & 0xff;
 	sd_idx = ls_serdes_cfg_to_idx(sd_cfg, sd_id);
 	if (sd_idx < 0) {
 		DPAA2_PMD_ERR("Serdes protocol(0x%02x) does not exist",
 			sd_cfg);
-		return false;
+		goto ccsr_unmap;
 	}
 
 	if (sd_id == LSX_SERDES_1) {
@@ -449,32 +479,42 @@ ls_mac_serdes_lpbk_support(uint16_t mac_id,
 
 	if (lan_id_tmp >= LSX_SERDES_LAN_NB) {
 		DPAA2_PMD_ERR("Invalid serdes lan(%d).", lan_id_tmp);
-		return false;
+		goto ccsr_unmap;
 	}
 
-	if (!ls_sd_loopback_support[lan_id_tmp])
-		return false;
+	if (!ls_sd_loopback_support[lan_id_tmp]) {
+		goto ccsr_unmap;
+	}
 
 	if (lan_id)
 		*lan_id = lan_id_tmp;
 	if (serdes_id)
 		*serdes_id = sd_id;
 
-	return true;
+	res = true;
+ccsr_unmap:
+	lsx_ccsr_unmap_region(&region);
+	return res;
 }
 
 static inline int
 lx_mac_serdes_lpbk_support(uint16_t mac_id,
 	uint16_t *serdes_id, uint16_t *lan_id)
 {
-	struct ccsr_gur *gur_base =
-		lsx_ccsr_map_region(CONFIG_SYS_FSL_GUTS_ADDR,
-			sizeof(struct ccsr_gur) / 64 * 64 + 64);
+	size_t len = sizeof(struct ccsr_gur) / 64 * 64 + 64;
+	struct lsx_map_region_ptr region;
 	uint32_t sd_cfg;
 	int sd_id, sd_idx;
 	uint16_t lan_id_tmp = 0;
 	const uint8_t *lx_sd_loopback_support;
+	struct ccsr_gur *gur_base;
+	bool res = false;
 
+	if (lsx_ccsr_map_region(CONFIG_SYS_FSL_GUTS_ADDR, len, &region) < 0) {
+		DPAA2_PMD_ERR("Failed to map CCSR region.");
+		return res;
+	}
+	gur_base = (struct ccsr_gur *)(region.mapped_adj_ptr);
 	sd_id = lx_mac_to_serdes_id(mac_id);
 
 	if (sd_id == LSX_SERDES_1) {
@@ -485,15 +525,13 @@ lx_mac_serdes_lpbk_support(uint16_t mac_id,
 		sd_cfg = rte_read32(&gur_base->rcwsr[FSL_LX_SRDS2_REGSR - 1]) &
 				FSL_LX_SRDS2_PRTCL_MASK;
 		sd_cfg >>= FSL_LX_SRDS2_PRTCL_SHIFT;
-	} else {
-		return false;
-	}
+	} else
+		goto ccsr_unmap;
 	sd_cfg = sd_cfg & 0xff;
 
 	sd_idx = lx_serdes_cfg_to_idx(sd_cfg, sd_id);
 	if (sd_idx < 0)
-		return false;
-
+		goto ccsr_unmap;
 	if (sd_id == LSX_SERDES_1)
 		lx_sd_loopback_support = &lx_sd1_loopback_support[sd_idx][0];
 	else
@@ -524,21 +562,23 @@ lx_mac_serdes_lpbk_support(uint16_t mac_id,
 		else if (mac_id == 18)
 			lan_id_tmp = 3;
 		else
-			return false;
+			goto ccsr_unmap;
 	}
 
 	if (lan_id_tmp >= LSX_SERDES_LAN_NB)
-		return false;
-
+		goto ccsr_unmap;
 	if (!lx_sd_loopback_support[lan_id_tmp])
-		return false;
+		goto ccsr_unmap;
 
 	if (lan_id)
 		*lan_id = lan_id_tmp;
 	if (serdes_id)
 		*serdes_id = sd_id;
 
-	return true;
+	res = true;
+ccsr_unmap:
+	lsx_ccsr_unmap_region(&region);
+	return res;
 }
 
 static inline int
@@ -549,19 +589,19 @@ ls_serdes_eth_lpbk(uint16_t mac_id, int en)
 	uint32_t data;
 	struct ccsr_ls_serdes *serdes_base;
 	void *reg = 0;
+	size_t len = sizeof(struct ccsr_ls_serdes) / 64 * 64 + 64;
+	struct lsx_map_region_ptr region;
 
 	ret = ls_mac_serdes_lpbk_support(mac_id, &serdes_id, &lan_id);
 	if (!ret)
 		return -ENOTSUP;
 
-	serdes_base = lsx_ccsr_map_region(CONFIG_SYS_FSL_SERDES_ADDR +
-				(serdes_id - LSX_SERDES_1) * 0x10000,
-				sizeof(struct ccsr_ls_serdes) / 64 * 64 + 64);
-	if (!serdes_base) {
-		DPAA2_PMD_ERR("Serdes register map failed");
+	if(lsx_ccsr_map_region(CONFIG_SYS_FSL_SERDES_ADDR +
+		(serdes_id - LSX_SERDES_1) * 0x10000, len, &region) < 0) {
+		DPAA2_PMD_ERR("Failed to map CCSR region.");
 		return -ENOMEM;
 	}
-
+	serdes_base = region.mapped_adj_ptr;
 	if (serdes_id == LSX_SERDES_1)
 		lan_id = LSX_SERDES_LAN_NB - lan_id - 1;
 
@@ -573,6 +613,7 @@ ls_serdes_eth_lpbk(uint16_t mac_id, int en)
 	else
 		rte_write32(data & (~LSX_LB_EN_BIT), reg);
 
+	lsx_ccsr_unmap_region(&region);
 	return 0;
 }
 
@@ -584,18 +625,19 @@ lx_serdes_eth_lpbk(uint16_t mac_id, int en)
 	uint32_t data;
 	struct ccsr_lx_serdes *serdes_base;
 	void *reg = 0;
+	size_t len = sizeof(struct ccsr_lx_serdes) / 64 * 64 + 64;
+	struct lsx_map_region_ptr region;
 
 	ret = lx_mac_serdes_lpbk_support(mac_id, &serdes_id, &lan_id);
 	if (!ret)
 		return -ENOTSUP;
 
-	serdes_base = lsx_ccsr_map_region(CONFIG_SYS_FSL_SERDES_ADDR +
-					(serdes_id - LSX_SERDES_1) * 0x10000,
-					sizeof(struct ccsr_lx_serdes) / 64 * 64 + 64);
-	if (!serdes_base) {
-		DPAA2_PMD_ERR("Serdes register map failed");
+	if(lsx_ccsr_map_region(CONFIG_SYS_FSL_SERDES_ADDR +
+		(serdes_id - LSX_SERDES_1) * 0x10000, len, &region) < 0) {
+		DPAA2_PMD_ERR("Failed to map CCSR region.");
 		return -ENOMEM;
-	}
+        }
+	serdes_base = region.mapped_adj_ptr;
 
 	if (serdes_id == LSX_SERDES_1)
 		lan_id = LSX_SERDES_LAN_NB - lan_id - 1;
@@ -608,6 +650,7 @@ lx_serdes_eth_lpbk(uint16_t mac_id, int en)
 	else
 		rte_write32(data & (~LSX_LB_EN_BIT), reg);
 
+	lsx_ccsr_unmap_region(&region);
 	return 0;
 }
 
