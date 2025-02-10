@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022-2024 NXP
+# Copyright 2022-2025 NXP
 
 link_whole_libs = []
 if get_option('default_library') == 'static'
@@ -147,7 +147,6 @@ foreach example: examples
             link_args: ldflags,
             c_args: cflags,
             dependencies: dep_objs,
-	    install_rpath: join_paths(get_option('prefix'), driver_install_path),
 	    install: true)
     else
       executable('dpdk-' + name, sources,

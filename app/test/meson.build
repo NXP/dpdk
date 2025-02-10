@@ -468,8 +468,6 @@ dpdk_test = executable('dpdk-test',
         link_whole: link_libs,
         dependencies: test_dep_objs + ext_deps,
         c_args: cflags,
-        install_rpath: join_paths(get_option('prefix'),
-             driver_install_path),
         install: true)
 
 has_hugepage = run_command(py3, 'has_hugepage.py', check: true).stdout().strip() != '0'
