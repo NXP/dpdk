@@ -132,7 +132,6 @@ foreach example: examples
             link_args: ldflags,
             c_args: cflags,
             dependencies: dep_objs,
-	    install_rpath: join_paths(get_option('prefix'), driver_install_path),
 	    install: true)
     else
       executable('dpdk-' + name, sources,
