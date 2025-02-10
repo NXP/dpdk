@@ -473,8 +473,6 @@ dpdk_test = executable('dpdk-test',
         link_whole: link_libs,
         dependencies: test_dep_objs + ext_deps,
         c_args: cflags,
-        install_rpath: join_paths(get_option('prefix'),
-             driver_install_path),
         install: true)
 
 # some perf tests (eg: memcpy perf autotest)take very long
