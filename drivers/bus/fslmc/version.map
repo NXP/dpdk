@@ -38,6 +38,8 @@ INTERNAL {
 	dpbp_get_num_free_bufs;
 	dpbp_open;
 	dpbp_reset;
+	dpbp_set_notifications;
+	dpbp_get_notifications;
 	dpci_get_opr;
 	dpci_set_opr;
 	dpci_set_rx_queue;

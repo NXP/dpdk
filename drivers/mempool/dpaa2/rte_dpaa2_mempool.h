@@ -19,6 +19,16 @@ extern "C" {
 #include <rte_compat.h>
 #include <rte_mempool.h>
 
+struct dpaa2_dpbp_cfg {
+	uint32_t depletion_entry;
+	uint32_t depletion_exit;
+	uint32_t surplus_entry;
+	uint32_t surplus_exit;
+	uint64_t message_iova;
+	uint64_t message_ctx;
+	uint32_t options;
+};
+
 /**
  * Get BPID corresponding to the packet pool
  *
@@ -61,6 +71,8 @@ rte_dpaa2_mbuf_from_buf_addr(struct rte_mempool *mp, void *buf_addr);
  */
 __rte_internal
 int rte_dpaa2_bpid_info_init(struct rte_mempool *mp);
+
+int rte_dpaa2_dpbp_set_notifications(struct rte_mempool *mp, struct dpaa2_dpbp_cfg *dpbp_cfg);
 
 #ifdef __cplusplus
 }

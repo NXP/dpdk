@@ -3,6 +3,7 @@ DPDK_23 {
 
 	rte_dpaa2_mbuf_from_buf_addr;
 	rte_dpaa2_mbuf_pool_bpid;
+	rte_dpaa2_dpbp_set_notifications;
 
 	local: *;
 };
