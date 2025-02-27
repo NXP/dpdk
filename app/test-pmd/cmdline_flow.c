@@ -101,7 +101,6 @@ enum index {
 	PULL,
 
 	/* Flex arguments */
-	FLEX_ITEM_INIT,
 	FLEX_ITEM_CREATE,
 	FLEX_ITEM_DESTROY,
 
@@ -1088,7 +1087,6 @@ struct parse_action_priv {
 	})
 
 static const enum index next_flex_item[] = {
-	FLEX_ITEM_INIT,
 	FLEX_ITEM_CREATE,
 	FLEX_ITEM_DESTROY,
 	ZERO,
@@ -2994,7 +2992,7 @@ static const struct token token_list[] = {
 	[QUEUE_DESTROY] = {
 		.name = "destroy",
 		.help = "destroy a flow rule",
-		.next = NEXT(NEXT_ENTRY(QUEUE_DESTROY_ID),
+		.next = NEXT(NEXT_ENTRY(QUEUE_DESTROY_POSTPONE),
 			     NEXT_ENTRY(COMMON_QUEUE_ID)),
 		.args = ARGS(ARGS_ENTRY(struct buffer, queue)),
 		.call = parse_qo_destroy,
@@ -3310,15 +3308,6 @@ static const struct token token_list[] = {
 		.help = "flex item API",
 		.next = NEXT(next_flex_item),
 		.call = parse_flex,
-	},
-	[FLEX_ITEM_INIT] = {
-		.name = "init",
-		.help = "flex item init",
-		.args = ARGS(ARGS_ENTRY(struct buffer, args.flex.token),
-			     ARGS_ENTRY(struct buffer, port)),
-		.next = NEXT(NEXT_ENTRY(COMMON_FLEX_TOKEN),
-			     NEXT_ENTRY(COMMON_PORT_ID)),
-		.call = parse_flex
 	},
 	[FLEX_ITEM_CREATE] = {
 		.name = "create",
@@ -4809,9 +4798,12 @@ static const struct token token_list[] = {
 	[ITEM_CONNTRACK] = {
 		.name = "conntrack",
 		.help = "conntrack state",
+		.priv = PRIV_ITEM(CONNTRACK,
+				  sizeof(struct rte_flow_item_conntrack)),
 		.next = NEXT(NEXT_ENTRY(ITEM_NEXT), NEXT_ENTRY(COMMON_UNSIGNED),
 			     item_param),
 		.args = ARGS(ARGS_ENTRY(struct rte_flow_item_conntrack, flags)),
+		.call = parse_vc,
 	},
 	[ITEM_PORT_REPRESENTOR] = {
 		.name = "port_representor",
@@ -9267,7 +9259,6 @@ parse_flex(struct context *ctx, const struct token *token,
 		switch (ctx->curr) {
 		default:
 			break;
-		case FLEX_ITEM_INIT:
 		case FLEX_ITEM_CREATE:
 		case FLEX_ITEM_DESTROY:
 			out->command = ctx->curr;

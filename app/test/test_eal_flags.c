@@ -671,14 +671,14 @@ test_missing_c_flag(void)
 	    launch_proc(argv26) == 0 || launch_proc(argv27) == 0 ||
 	    launch_proc(argv28) == 0 || launch_proc(argv30) == 0) {
 		printf("Error - "
-		       "process ran without error with invalid --lcore flag\n");
+		       "process ran without error with invalid --lcores flag\n");
 		return -1;
 	}
 
 	if (rte_lcore_is_enabled(0) && rte_lcore_is_enabled(1) &&
 	    rte_lcore_is_enabled(2) && rte_lcore_is_enabled(3) &&
-	    rte_lcore_is_enabled(3) && rte_lcore_is_enabled(5) &&
-	    rte_lcore_is_enabled(4) && rte_lcore_is_enabled(7) &&
+	    rte_lcore_is_enabled(4) && rte_lcore_is_enabled(5) &&
+	    rte_lcore_is_enabled(6) && rte_lcore_is_enabled(7) &&
 	    launch_proc(argv29) != 0) {
 		printf("Error - "
 		       "process did not run ok with valid corelist value\n");

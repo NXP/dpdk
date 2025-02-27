@@ -95,13 +95,14 @@ else
             cpu_instruction_set = 'generic'
         endif
     endif
+    if platform == 'native'
+        if cpu_instruction_set == 'auto'
+            cpu_instruction_set = 'native'
+        endif
+    endif
 endif
 
-if platform == 'native'
-    if cpu_instruction_set == 'auto'
-        cpu_instruction_set = 'native'
-    endif
-elif platform == 'generic'
+if platform == 'generic'
     if cpu_instruction_set == 'auto'
         cpu_instruction_set = 'generic'
     endif
@@ -150,6 +151,9 @@ dpdk_conf.set('RTE_ARCH_32', cc.sizeof('void *') == 4)
 
 if not is_windows
     add_project_link_arguments('-Wl,--no-as-needed', language: 'c')
+    if cc.has_link_argument('-Wl,--undefined-version')
+        add_project_link_arguments('-Wl,--undefined-version', language: 'c')
+    endif
 endif
 
 # use pthreads if available for the platform
@@ -213,6 +217,11 @@ dpdk_conf.set('RTE_BACKTRACE', cc.has_header('execinfo.h') or is_windows)
 libarchive = dependency('libarchive', required: false, method: 'pkg-config')
 if libarchive.found()
     dpdk_conf.set('RTE_HAS_LIBARCHIVE', 1)
+    # Push libarchive link dependency at the project level to support
+    # statically linking dpdk apps. Details at:
+    # https://inbox.dpdk.org/dev/20210605004024.660267a1@sovereign/
+    add_project_link_arguments('-larchive', language: 'c')
+    dpdk_extra_ldflags += '-larchive'
 endif
 
 # check for libbsd

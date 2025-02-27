@@ -159,7 +159,7 @@ foreach subpath:subdirs
             # component disable printout in those cases
             if reason != ''
                 dpdk_drvs_disabled += drv_path
-                set_variable(drv_path.underscorify() + '_disable_reason', reason)
+                set_variable('drv_' + drv_path.underscorify() + '_disable_reason', reason)
             endif
             continue
         endif
@@ -175,6 +175,7 @@ foreach subpath:subdirs
         if get_option('enable_driver_sdk')
             install_headers(driver_sdk_headers)
         endif
+        dpdk_chkinc_headers += driver_sdk_headers
 
         if headers.length() > 0
             dpdk_includes += include_directories(drv_path)
