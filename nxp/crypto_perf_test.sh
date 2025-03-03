@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2024 NXP
+# Copyright 2018-2025 NXP
 
 #usages are:
 #./crypto_perf_test.sh dpaa2_sec
@@ -48,7 +48,7 @@ logoutput="dpdk_${dev_string}_report.txt"
 #logoutput="${logoutput}_"`date +%d%m%Y_%H%M%S`".txt"
 
 function mycmd() {
-	$@ | tee ${logoutput}
+	$@ | tee -a ${logoutput}
 	if [ $? -ne 0 ]; then
 		failed=$((failed+1))
 	fi
@@ -73,138 +73,144 @@ fi
 arg=1
 if [[ ${!arg} == "dpaa_sec" ]]
 then
-	echo -e "=============== running dpaa_sec" | tee ${logoutput}
         vdev_string=
         dev_string=crypto_dpaa_sec
 	logoutput="dpdk_${dev_string}_report.txt"
+	echo -e "=============== running dpaa_sec" | tee ${logoutput}
 elif [[ ${!arg} == "dpaa2_sec" ]]
 then
-	echo -e "=============== running dpaa2_sec" | tee ${logoutput}
         vdev_string=
         dev_string=crypto_dpaa2_sec
 	logoutput="dpdk_${dev_string}_report.txt"
+	echo -e "=============== running dpaa2_sec" | tee ${logoutput}
 
 elif [[ ${!arg} == "openssl" ]]
 then
-	echo -e "=============== running openssl" | tee ${logoutput}
         # for openssl
         vdev_string="--vdev crypto_openssl"
         dev_string=crypto_openssl
 	logoutput="dpdk_${dev_string}_report.txt"
+	pdcp=0
+	ipsec=0
+	echo -e "=============== running openssl" | tee ${logoutput}
 
 elif [[ ${!arg} == "caam_jr" ]]
 then
-	echo -e "=============== running caam_jr" | tee ${logoutput}
 	export DPAA_SEC_DISABLE=1
 	vdev_string="--vdev crypto_caam_jr0"
 	dev_string=crypto_caam_jr
 	logoutput="dpdk_${dev_string}_report.txt"
+	echo -e "=============== running caam_jr" | tee ${logoutput}
 
 elif [[ ${!arg} == "armv8" ]]
 then
-	echo -e "=============== running armv8 crypto" | tee ${logoutput}
         vdev_string="--vdev crypto_armv8"
 	dev_string=crypto_armv8
 	logoutput="dpdk_${dev_string}_report.txt"
 	authonly=0
 	cipheronly=0
 	aead=0
+	echo -e "=============== running armv8 crypto" | tee ${logoutput}
 fi
 
 if [ $authonly -ne 0 ]; then
 	#auth algos
-	echo "**********auth-only: md5" | tee ${logoutput}
+	echo ${logoutput}
+	echo "**********auth-only: md5" | tee -a ${logoutput}
 	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
 	--optype auth-only --auth-algo md5 --auth-op generate --auth-key-sz 0 \
 	--digest-sz 16 --ptest $test_type --total-ops $ops_num \
 	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
 	mycmd ${cmd}
 
-	echo "**********auth-only: md5-hmac" | tee ${logoutput}
+	echo "**********auth-only: md5-hmac" | tee -a ${logoutput}
 	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
 	--optype auth-only --auth-algo md5-hmac --auth-op generate --auth-key-sz 64 \
 	--digest-sz 16 --ptest $test_type --total-ops $ops_num \
 	--burst-sz $burst --buffer-sz $buffer_size $extra_flags"
 	mycmd ${cmd}
 
-	echo "**********auth-only: sha1" | tee ${logoutput}
+	echo "**********auth-only: sha1" | tee -a ${logoutput}
 	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
 	--optype auth-only --auth-algo sha1 --auth-op generate --auth-key-sz 0 \
 	--digest-sz 20 --ptest $test_type --total-ops $ops_num \
 	--burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-	echo "**********auth-only: sha1-hmac" | tee ${logoutput}
+	echo "**********auth-only: sha1-hmac" | tee -a ${logoutput}
 	cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
 	--optype auth-only --auth-algo sha1-hmac --auth-op generate --auth-key-sz 64 \
 	--digest-sz 20 --ptest $test_type --total-ops $ops_num \
 	--burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-224" | tee ${logoutput}
+        echo "**********auth-only: sha2-224" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-224 --auth-op generate --auth-key-sz 0 \
         --digest-sz 28 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
         mycmd ${cmd}
 
-        echo "**********auth-only: sha2-224-hmac" | tee ${logoutput}
+        echo "**********auth-only: sha2-224-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-224-hmac --auth-op generate --auth-key-sz 64 \
         --digest-sz 28 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
         mycmd ${cmd}
 
-        echo "**********auth-only: sha2-256" | tee ${logoutput}
+        echo "**********auth-only: sha2-256" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-256 --auth-op generate --auth-key-sz 0 \
         --digest-sz 32 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-256-hmac" | tee ${logoutput}
+        echo "**********auth-only: sha2-256-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-256-hmac --auth-op generate --auth-key-sz 64 \
         --digest-sz 32 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-384" | tee ${logoutput}
+        echo "**********auth-only: sha2-384" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-384 --auth-op generate --auth-key-sz 0 \
         --digest-sz 48 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-384-hmac" | tee ${logoutput}
+        echo "**********auth-only: sha2-384-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-384-hmac --auth-op generate --auth-key-sz 128 \
         --digest-sz 48 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-512" | tee ${logoutput}
+        echo "**********auth-only: sha2-512" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-512 --auth-op generate --auth-key-sz 0 \
         --digest-sz 64 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: sha2-512-hmac" | tee ${logoutput}
+        echo "**********auth-only: sha2-512-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo sha2-512-hmac --auth-op generate --auth-key-sz 128 \
         --digest-sz 64 --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********auth-only: aes-xcbc-mac" | tee ${logoutput}
-        cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
-        --optype auth-only --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 \
-        --digest-sz 16 --ptest $test_type --total-ops $ops_num \
-        --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
-	mycmd ${cmd}
+	if [[ ${!arg} != "openssl" ]]
+	then
+	        echo "**********auth-only: aes-xcbc-mac" | tee -a ${logoutput}
+		cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
+	        --optype auth-only --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 \
+		--digest-sz 16 --ptest $test_type --total-ops $ops_num \
+	        --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
+		mycmd ${cmd}
+	fi
 
-        echo "**********auth-only: aes-cmac" | tee ${logoutput}
+        echo "**********auth-only: aes-cmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype auth-only --auth-algo aes-cmac --auth-op generate --auth-key-sz 16 \
         --digest-sz 16 --ptest $test_type --total-ops $ops_num \
@@ -214,28 +220,28 @@ fi
 
 # cipher alogs
 if [ $cipheronly -ne 0 ]; then
-        echo "**********cipher-only: aes-cbc" | tee ${logoutput}
+        echo "**********cipher-only: aes-cbc" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
         --optype cipher-only --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16   --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-only: aes-ctr" | tee ${logoutput}
+        echo "**********cipher-only: aes-ctr" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
         --optype cipher-only --cipher-algo aes-ctr --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16  --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-only: 3des-cbc" | tee ${logoutput}
+        echo "**********cipher-only: 3des-cbc" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
         --optype cipher-only --cipher-algo 3des-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 8  --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-only: des-cbc" | tee ${logoutput}
+        echo "**********cipher-only: des-cbc" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
         --optype cipher-only --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
         --cipher-iv-sz 8  --ptest $test_type --total-ops $ops_num \
@@ -245,7 +251,7 @@ fi
 
 #cipher - auth algos
 if [ $cipher_auth -ne 0 ]; then
-        echo "**********cipher-auth: aes-cbc-sha1" | tee ${logoutput}
+        echo "**********cipher-auth: aes-cbc-sha1" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha1-hmac --auth-op generate --auth-key-sz 64 \
@@ -253,7 +259,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: aes-cbc-sha2-224" | tee ${logoutput}
+        echo "**********cipher-auth: aes-cbc-sha2-224" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha2-224-hmac --auth-op generate --auth-key-sz 64 \
@@ -261,7 +267,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: aes-cbc-sha2-256" | tee ${logoutput}
+        echo "**********cipher-auth: aes-cbc-sha2-256" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha2-256-hmac --auth-op generate --auth-key-sz 64 \
@@ -269,7 +275,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: aes-cbc-sha2-384" | tee ${logoutput}
+        echo "**********cipher-auth: aes-cbc-sha2-384" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha2-384-hmac --auth-op generate --auth-key-sz 128 \
@@ -277,7 +283,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: aes-cbc-sha2-512" | tee ${logoutput}
+        echo "**********cipher-auth: aes-cbc-sha2-512" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha2-512-hmac --auth-op generate --auth-key-sz 128 \
@@ -285,15 +291,18 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: aes-cbc-aes-xcbc-mac" | tee ${logoutput}
-        cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
-        --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
-        --cipher-iv-sz 16 --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 \
-        --digest-sz 16 --ptest $test_type --total-ops $ops_num \
-        --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
-	mycmd ${cmd}
+	if [[ ${!arg} != "openssl" ]]
+	then
+	        echo "**********cipher-auth: aes-cbc-aes-xcbc-mac" | tee -a ${logoutput}
+		cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
+	        --optype cipher-then-auth --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 \
+		--cipher-iv-sz 16 --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 \
+	        --digest-sz 16 --ptest $test_type --total-ops $ops_num \
+		--burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
+		mycmd ${cmd}
+	fi
 
-        echo "**********cipher-auth: aes-ctr-sha1" | tee ${logoutput}
+        echo "**********cipher-auth: aes-ctr-sha1" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo aes-ctr --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 16 --auth-algo sha1-hmac --auth-op generate --auth-key-sz 64 \
@@ -301,7 +310,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: 3des-cbc-sha1-hmac" | tee ${logoutput}
+        echo "**********cipher-auth: 3des-cbc-sha1-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo 3des-cbc --cipher-op encrypt --cipher-key-sz 16 \
         --cipher-iv-sz 8 --auth-algo sha1-hmac --auth-op generate --auth-key-sz 64 --digest-sz 20 \
@@ -309,7 +318,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: des-cbc-sha1-hmac" | tee ${logoutput}
+        echo "**********cipher-auth: des-cbc-sha1-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
         --cipher-iv-sz 8 --auth-algo sha1-hmac --auth-op generate --auth-key-sz 64 --digest-sz 20 \
@@ -317,7 +326,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: des-cbc-sha2-hmac" | tee ${logoutput}
+        echo "**********cipher-auth: des-cbc-sha2-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
         --cipher-iv-sz 8 --auth-algo sha2-256-hmac --auth-op generate --auth-key-sz 64 --digest-sz 32 \
@@ -325,7 +334,7 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: des-cbc-sha512-hmac" | tee ${logoutput}
+        echo "**********cipher-auth: des-cbc-sha512-hmac" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype cipher-then-auth --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
         --cipher-iv-sz 8 --auth-algo sha2-512-hmac --auth-op generate --auth-key-sz 128 --digest-sz 64 \
@@ -333,18 +342,21 @@ if [ $cipher_auth -ne 0 ]; then
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-        echo "**********cipher-auth: des-cbc-aes-xcbc-mac" | tee ${logoutput}
-        cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
-        --optype cipher-then-auth --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
-        --cipher-iv-sz 8 --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 --digest-sz 16 \
-        --ptest $test_type --total-ops $ops_num \
-        --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
-	mycmd ${cmd}
+	if [[ ${!arg} != "openssl" ]]
+	then
+		echo "**********cipher-auth: des-cbc-aes-xcbc-mac" | tee -a ${logoutput}
+		cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
+	        --optype cipher-then-auth --cipher-algo des-cbc --cipher-op encrypt --cipher-key-sz 8 \
+		--cipher-iv-sz 8 --auth-algo aes-xcbc-mac --auth-op generate --auth-key-sz 16 --digest-sz 16 \
+	        --ptest $test_type --total-ops $ops_num \
+		--burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
+		mycmd ${cmd}
+	fi
 fi
 
 #aead algo gcm
 if [ $aead -ne 0 ]; then
-        echo "**********aead: aes-gcm" | tee ${logoutput}
+        echo "**********aead: aes-gcm" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype aead --aead-algo aes-gcm --aead-op encrypt --aead-key-sz 16 --aead-iv-sz 12 \
         --aead-aad-sz 16 --digest-sz 16  --ptest $test_type --total-ops $ops_num \
@@ -354,14 +366,14 @@ fi
 
 #IPsec algo aes-gcm, aes-sha1
 if [ $ipsec -ne 0 ]; then
-        echo "**********ipsec: aes-gcm" | tee ${logoutput}
+        echo "**********ipsec: aes-gcm" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype ipsec --aead-algo aes-gcm --aead-op encrypt --aead-key-sz 32 --aead-iv-sz 12 \
         --aead-aad-sz 16 --digest-sz 16  --ptest $test_type --total-ops $ops_num \
         --burst-sz $burst --buffer-sz $buffer_size  $extra_flags"
 	mycmd ${cmd}
 
-	echo "**********ipsec: aes-cbc-sha1" | tee ${logoutput}
+	echo "**********ipsec: aes-cbc-sha1" | tee -a ${logoutput}
         cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string  $logs -- --devtype $dev_string \
         --optype ipsec --cipher-algo aes-cbc --cipher-op encrypt --cipher-key-sz 16 --cipher-iv-sz 16 \
         --auth-algo sha1-hmac --auth-op generate --digest-sz 20 --auth-key-sz 32  --ptest $test_type --total-ops $ops_num \
@@ -387,7 +399,7 @@ if [ $pdcp -ne 0 ]; then
 		do
 			for k in 0 1 2 3
 			do
-				echo "***pdcp $hfn_param : ${pdcp_cipher[$j]}- ${pdcp_auth[$k]}" | tee ${logoutput}
+				echo "***pdcp $hfn_param : ${pdcp_cipher[$j]}- ${pdcp_auth[$k]}" | tee -a ${logoutput}
 				cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
 				--optype pdcp --cipher-algo ${pdcp_cipher[$j]} --cipher-op encrypt \
 				--auth-algo ${pdcp_auth[$k]} \
@@ -418,7 +430,7 @@ if [ $pdcp -ne 0 ]; then
 		do
 			for k in 0 1 2 3
 			do
-				echo "***pdcp sdap $hfn_param : ${pdcp_cipher[$j]}- ${pdcp_auth[$k]}" | tee ${logoutput}
+				echo "***pdcp sdap $hfn_param : ${pdcp_cipher[$j]}- ${pdcp_auth[$k]}" | tee -a ${logoutput}
 				cmd="$DPDK_EXAMPLE_PATH/dpdk-test-crypto-perf -c $cores $vdev_string $logs -- --devtype $dev_string \
 				--optype pdcp --cipher-algo ${pdcp_cipher[$j]} --cipher-op encrypt \
 				--auth-algo ${pdcp_auth[$k]} \
@@ -435,7 +447,7 @@ if [ $pdcp -ne 0 ]; then
 	done
 fi
 
-echo -e "===========================================" | tee ${logoutput}
-echo -e "Total testcases run $count : failed $failed" | tee ${logoutput}
-echo -e "Results available at ${logoutput}" | tee ${logoutput}
-echo -e "===========================================" | tee ${logoutput}
+echo -e "===========================================" | tee -a ${logoutput}
+echo -e "Total testcases run $count : failed $failed" | tee -a ${logoutput}
+echo -e "Results available at ${logoutput}" | tee -a ${logoutput}
+echo -e "===========================================" | tee -a ${logoutput}
