@@ -3055,6 +3055,14 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		goto init_err;
 	}
 
+	ret = dpni_get_api_version(dpni_dev, CMD_PRI_LOW, &priv->dpni_ver_major,
+				   &priv->dpni_ver_minor);
+	if (ret) {
+		DPAA2_PMD_ERR("Failure in get dpni@%d API version, err code %d",
+			hw_id, ret);
+		goto init_err;
+	}
+
 	ret = dpaa2_dev_ep_init(dpaa2_dev, priv);
 	if (ret) {
 		DPAA2_PMD_ERR("Failure in get dpni@%d's endpoint, err code %d",
