@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2024 NXP
+ *   Copyright 2016-2025 NXP
  *
  */
 
@@ -2400,6 +2400,176 @@ send_frames:
 			rte_pktmbuf_free_seg(buf_to_free[i].seg);
 	}
 	return loop;
+}
+
+static uint16_t
+dpaa2_dev_tx_multi_txqs(void **queue,
+	struct rte_mbuf **bufs, uint16_t nb_pkts)
+{
+	/* Function to transmit the frames to multiple queues respectively.*/
+	uint32_t loop, i, retry_count;
+	int32_t ret;
+	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
+	uint32_t frames_to_send;
+	struct rte_mempool *mp;
+	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
+	struct dpaa2_queue *dpaa2_q[MAX_TX_RING_SLOTS];
+	struct qbman_swp *swp;
+	uint16_t bpid;
+	struct rte_mbuf *mi;
+	struct rte_eth_dev_data *eth_data;
+	struct dpaa2_dev_priv *priv;
+	struct sw_buf_free buf_to_free[DPAA2_MAX_SGS * dpaa2_dqrr_size];
+	uint32_t free_count = 0;
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_PMD_ERR("Failed to allocate IO portal");
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	frames_to_send = (nb_pkts > dpaa2_eqcr_size) ?
+		dpaa2_eqcr_size : nb_pkts;
+
+	for (loop = 0; loop < frames_to_send; loop++) {
+		dpaa2_q[loop] = queue[loop];
+		eth_data = dpaa2_q[loop]->eth_data;
+		priv = eth_data->dev_private;
+
+		DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d",
+				   eth_data, dpaa2_q[loop]->fqid);
+
+		/* Check if the queue is congested */
+		retry_count = 0;
+		while (qbman_result_SCN_state(dpaa2_q[loop]->cscn)) {
+			retry_count++;
+			/* Retry for some time before giving up */
+			if (retry_count > CONG_RETRY_COUNT)
+				goto send_frames;
+		}
+
+		/* Prepare enqueue descriptor */
+		qbman_eq_desc_clear(&eqdesc[loop]);
+
+		qbman_eq_desc_set_no_orp(&eqdesc[loop],
+			DPAA2_EQ_RESP_ERR_FQ);
+		qbman_eq_desc_set_fq(&eqdesc[loop],
+			dpaa2_q[loop]->fqid);
+
+		if (likely(RTE_MBUF_DIRECT(*bufs))) {
+			mp = (*bufs)->pool;
+			/* Check the basic scenario and set
+			 * the FD appropriately here itself.
+			 */
+			if (likely(mp && mp->ops_index ==
+				priv->bp_list->dpaa2_ops_index &&
+				(*bufs)->nb_segs == 1 &&
+				rte_mbuf_refcnt_read((*bufs)) == 1)) {
+				if (unlikely((*bufs)->ol_flags
+					& RTE_MBUF_F_TX_VLAN)) {
+					ret = rte_vlan_insert(bufs);
+					if (ret)
+						goto send_frames;
+				}
+				DPAA2_MBUF_TO_CONTIG_FD((*bufs),
+					&fd_arr[loop],
+					mempool_to_bpid(mp));
+				bufs++;
+				continue;
+			}
+		} else {
+			mi = rte_mbuf_from_indirect(*bufs);
+			mp = mi->pool;
+		}
+		/* Not a hw_pkt pool allocated frame */
+		if (unlikely(!mp || !priv->bp_list)) {
+			DPAA2_PMD_ERR("Err: No buffer pool attached");
+			goto send_frames;
+		}
+
+		if (mp->ops_index != priv->bp_list->dpaa2_ops_index) {
+			DPAA2_PMD_WARN("Non DPAA2 buffer pool");
+			/* alloc should be from the default buffer pool
+			 * attached to this interface
+			 */
+			bpid = priv->bp_list->buf_pool.bpid;
+
+			if (unlikely((*bufs)->nb_segs > 1)) {
+				DPAA2_PMD_ERR("S/G support HW pool only.\n");
+				goto send_frames;
+			}
+			if (eth_copy_mbuf_to_fd(*bufs,
+					&fd_arr[loop], bpid)) {
+				goto send_frames;
+			}
+			/* free the original packet */
+			rte_pktmbuf_free(*bufs);
+		} else {
+			bpid = mempool_to_bpid(mp);
+			if (unlikely((*bufs)->nb_segs > 1)) {
+				if (eth_mbuf_to_sg_fd(*bufs,
+						&fd_arr[loop], buf_to_free,
+						&free_count, loop, bpid))
+					goto send_frames;
+			} else {
+				eth_mbuf_to_fd(*bufs, &fd_arr[loop],
+					buf_to_free, &free_count,
+					loop, bpid);
+			}
+		}
+
+		bufs++;
+	}
+
+send_frames:
+	frames_to_send = loop;
+	loop = 0;
+	retry_count = 0;
+	while (loop < frames_to_send) {
+		ret = qbman_swp_enqueue_multiple_desc(swp, &eqdesc[loop],
+				&fd_arr[loop],
+				frames_to_send - loop);
+		if (likely(ret > 0)) {
+			loop += ret;
+			retry_count = 0;
+		} else {
+			retry_count++;
+			if (retry_count > DPAA2_MAX_TX_RETRY_COUNT)
+				break;
+		}
+	}
+
+	for (i = 0; i < free_count; i++) {
+		if (buf_to_free[i].pkt_id < loop)
+			rte_pktmbuf_free_seg(buf_to_free[i].seg);
+	}
+	return loop;
+}
+
+uint16_t
+rte_dpaa2_dev_tx_multi_ports(uint16_t port_id[],
+	uint16_t txq_id[], struct rte_mbuf **bufs,
+	uint16_t nb_pkts)
+{
+	uint16_t i;
+	void *txq[nb_pkts];
+	struct rte_eth_dev_data *data;
+
+	if (txq_id) {
+		for (i = 0; i < nb_pkts; i++) {
+			data = rte_eth_devices[port_id[i]].data;
+			txq[i] = data->tx_queues[txq_id[i]];
+		}
+	} else {
+		for (i = 0; i < nb_pkts; i++) {
+			data = rte_eth_devices[port_id[i]].data;
+			txq[i] = data->tx_queues[0];
+		}
+	}
+	return dpaa2_dev_tx_multi_txqs(txq, bufs, nb_pkts);
 }
 
 /* Callback to handle sending ordered packets through WRIOP based interface */

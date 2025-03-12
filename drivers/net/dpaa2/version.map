@@ -10,6 +10,7 @@ DPDK_23 {
 	rte_pmd_dpaa2_clean_tx_conf;
 	rte_pmd_dpaa2_rx_get_offset;
 	rte_pmd_dpaa2_flow_table_query;
+	rte_dpaa2_dev_tx_multi_ports;
 
 	local: *;
 };
