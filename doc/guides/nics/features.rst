@@ -34,6 +34,17 @@ Supports getting the speed capabilities that the current device is capable of.
 * **[related]  API**: ``rte_eth_dev_info_get()``.
 
 
+.. _nic_features_link_speeds_config:
+
+Link speed configuration
+------------------------
+
+Supports configurating fixed speed and link autonegotiation.
+
+* **[uses]     user config**: ``dev_conf.link_speeds:RTE_ETH_LINK_SPEED_*``.
+* **[related]  API**: ``rte_eth_dev_configure()``.
+
+
 .. _nic_features_link_status:
 
 Link status
@@ -694,12 +705,30 @@ Basic stats
 Support basic statistics such as: ipackets, opackets, ibytes, obytes,
 imissed, ierrors, oerrors, rx_nombuf.
 
-And per queue stats: q_ipackets, q_opackets, q_ibytes, q_obytes, q_errors.
-
 These apply to all drivers.
 
 * **[implements] eth_dev_ops**: ``stats_get``, ``stats_reset``.
 * **[related]    API**: ``rte_eth_stats_get``, ``rte_eth_stats_reset()``.
+
+
+.. _nic_features_stats_per_queue:
+
+Stats per queue
+---------------
+
+Supports per queue stats: q_ipackets, q_opackets, q_ibytes, q_obytes, q_errors.
+Statistics only supplied for first ``RTE_ETHDEV_QUEUE_STAT_CNTRS`` (16) queues.
+If driver does not support this feature the per queue stats will be zero.
+
+* **[implements] eth_dev_ops**: ``stats_get``, ``stats_reset``.
+* **[related]    API**: ``rte_eth_stats_get``, ``rte_eth_stats_reset()``.
+
+May also support configuring per-queue stat counter mapping.
+Used by some drivers to workaround HW limitations.
+
+* **[implements] eth_dev_ops**: ``queue_stats_mapping_set``.
+* **[related]    API**: ``rte_eth_dev_set_rx_queue_stats_mapping()``,
+  ``rte_eth_dev_set_tx_queue_stats_mapping()``.
 
 
 .. _nic_features_extended_stats:
@@ -716,18 +745,6 @@ Supports Extended Statistics, changes from driver to driver.
   ``rte_eth_xstats_get_names_by_id()``, ``rte_eth_xstats_get_id_by_name()``.
 
 
-.. _nic_features_stats_per_queue:
-
-Stats per queue
----------------
-
-Supports configuring per-queue stat counter mapping.
-
-* **[implements] eth_dev_ops**: ``queue_stats_mapping_set``.
-* **[related]    API**: ``rte_eth_dev_set_rx_queue_stats_mapping()``,
-  ``rte_eth_dev_set_tx_queue_stats_mapping()``.
-
-
 .. _nic_features_congestion_management:
 
 Congestion management
@@ -738,6 +755,19 @@ Supports congestion management.
 * **[implements] eth_dev_ops**: ``cman_info_get``, ``cman_config_set``, ``cman_config_get``.
 * **[related]    API**: ``rte_eth_cman_info_get()``, ``rte_eth_cman_config_init()``,
   ``rte_eth_cman_config_set()``, ``rte_eth_cman_config_get()``.
+
+
+.. _nic_features_traffic_manager:
+
+Traffic manager
+---------------
+
+Supports Traffic manager.
+
+* **[implements] rte_tm_ops**: ``capabilities_get``, ``shaper_profile_add``,
+  ``hierarchy_commit`` and so on.
+* **[related]    API**: ``rte_tm_capabilities_get()``, ``rte_tm_shaper_profile_add()``,
+  ``rte_tm_hierarchy_commit()`` and so on.
 
 
 .. _nic_features_fw_version:

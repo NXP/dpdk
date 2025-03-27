@@ -1856,7 +1856,15 @@ DPAA1:
 				shared interface name to DPDK e.g. export DPAA_SHARED_IF_NAME_0="eth1"
 				(Here the 0 is the DPDK ethernet interface id for this port).
 5. FMCLESS_MAX_RX_QUEUES	Maximum number of fmc rx queue to be used.
-	
+
+6. DPAA_QMAN_IESR_ISR_DISABLE	ShareMAC port is alive even after dpdk process
+				quits but RXQ setup in dpdk process is in invalid
+				state. If high loading ingress traffic hits the
+				FMan PCD then it's en-queued to the RXQ to generate
+				frequent interrupts. This causes system stuck.
+				User can disable this kind of interrupt by env
+				to avoid this issue:
+					export DPAA_QMAN_IESR_ISR_DISABLE=1
 DPAA2:
 ------
 

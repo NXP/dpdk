@@ -87,7 +87,7 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 			continue;
 
 		/* Looking for cryptodev, which can handle this SA */
-		key.lcore_id = (uint8_t)lcore_id;
+		key.lcore_id = lcore_id;
 		key.cipher_algo = (uint8_t)sa->cipher_algo;
 		key.auth_algo = (uint8_t)sa->auth_algo;
 		key.aead_algo = (uint8_t)sa->aead_algo;
@@ -108,8 +108,31 @@ create_lookaside_session(struct ipsec_ctx *ipsec_ctx_lcore[],
 			return ret;
 		}
 
-		cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
+		/* Verify that all cores are using same cryptodev for current
+		 * algorithm combination, required by SA.
+		 * Current cryptodev mapping process will map SA to the first
+		 * cryptodev that matches requirements, so it's a double check,
+		 * not an additional restriction.
+		 */
+		if (cdev_id == RTE_CRYPTO_MAX_DEVS)
+			cdev_id = ipsec_ctx->tbl[cdev_id_qp].id;
+		else if (cdev_id != ipsec_ctx->tbl[cdev_id_qp].id) {
+			struct rte_cryptodev_info dev_info_1, dev_info_2;
+			rte_cryptodev_info_get(cdev_id, &dev_info_1);
+			rte_cryptodev_info_get(ipsec_ctx->tbl[cdev_id_qp].id,
+					&dev_info_2);
+			if (dev_info_1.driver_id == dev_info_2.driver_id) {
+				RTE_LOG(WARNING, IPSEC,
+					"SA mapped to multiple cryptodevs for SPI %d\n",
+					sa->spi);
 
+			} else {
+				RTE_LOG(WARNING, IPSEC,
+					"SA mapped to multiple cryptodevs of different types for SPI %d\n",
+					sa->spi);
+
+			}
+		}
 		/* Store per core queue pair information */
 		sa->cqp[lcore_id] = &ipsec_ctx->tbl[cdev_id_qp];
 		if (cdev_id == RTE_CRYPTO_MAX_DEVS) {

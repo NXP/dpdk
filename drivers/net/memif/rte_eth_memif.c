@@ -261,8 +261,6 @@ memif_free_stored_mbufs(struct pmd_process_private *proc_private, struct memif_q
 	cur_tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
 	while (mq->last_tail != cur_tail) {
 		RTE_MBUF_PREFETCH_TO_FREE(mq->buffers[(mq->last_tail + 1) & mask]);
-		/* Decrement refcnt and free mbuf. (current segment) */
-		rte_mbuf_refcnt_update(mq->buffers[mq->last_tail & mask], -1);
 		rte_pktmbuf_free_seg(mq->buffers[mq->last_tail & mask]);
 		mq->last_tail++;
 	}
@@ -533,6 +531,10 @@ refill:
 	ret = rte_pktmbuf_alloc_bulk(mq->mempool, &mq->buffers[head & mask], n_slots);
 	if (unlikely(ret < 0))
 		goto no_free_mbufs;
+	if (unlikely(n_slots > ring_size - (head & mask))) {
+		rte_memcpy(mq->buffers, &mq->buffers[ring_size],
+			(n_slots + (head & mask) - ring_size) * sizeof(struct rte_mbuf *));
+	}
 
 	while (n_slots--) {
 		s0 = head++ & mask;
@@ -707,10 +709,6 @@ memif_tx_one_zc(struct pmd_process_private *proc_private, struct memif_queue *mq
 next_in_chain:
 	/* store pointer to mbuf to free it later */
 	mq->buffers[slot & mask] = mbuf;
-	/* Increment refcnt to make sure the buffer is not freed before server
-	 * receives it. (current segment)
-	 */
-	rte_mbuf_refcnt_update(mbuf, 1);
 	/* populate descriptor */
 	d0 = &ring->desc[slot & mask];
 	d0->length = rte_pktmbuf_data_len(mbuf);
@@ -1133,8 +1131,12 @@ memif_init_queues(struct rte_eth_dev *dev)
 		}
 		mq->buffers = NULL;
 		if (pmd->flags & ETH_MEMIF_FLAG_ZERO_COPY) {
+			/*
+			 * Allocate 2x ring_size to reserve a contiguous array for
+			 * rte_pktmbuf_alloc_bulk (to store allocated mbufs).
+			 */
 			mq->buffers = rte_zmalloc("bufs", sizeof(struct rte_mbuf *) *
-						  (1 << mq->log2_ring_size), 0);
+						  (1 << (mq->log2_ring_size + 1)), 0);
 			if (mq->buffers == NULL)
 				return -ENOMEM;
 		}

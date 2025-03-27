@@ -27,8 +27,6 @@ extern "C" {
 
 #include "rte_cryptodev_trace_fp.h"
 
-extern const char **rte_cyptodev_names;
-
 /* Logging Macros */
 
 #define CDEV_LOG_ERR(...) \
@@ -1867,7 +1865,7 @@ rte_cryptodev_dequeue_burst(uint8_t dev_id, uint16_t qp_id,
 	nb_ops = fp_ops->dequeue_burst(qp, ops, nb_ops);
 
 #ifdef RTE_CRYPTO_CALLBACKS
-	if (unlikely(fp_ops->qp.deq_cb != NULL)) {
+	if (unlikely(fp_ops->qp.deq_cb[qp_id].next != NULL)) {
 		struct rte_cryptodev_cb_rcu *list;
 		struct rte_cryptodev_cb *cb;
 
@@ -1934,7 +1932,7 @@ rte_cryptodev_enqueue_burst(uint8_t dev_id, uint16_t qp_id,
 	fp_ops = &rte_crypto_fp_ops[dev_id];
 	qp = fp_ops->qp.data[qp_id];
 #ifdef RTE_CRYPTO_CALLBACKS
-	if (unlikely(fp_ops->qp.enq_cb != NULL)) {
+	if (unlikely(fp_ops->qp.enq_cb[qp_id].next != NULL)) {
 		struct rte_cryptodev_cb_rcu *list;
 		struct rte_cryptodev_cb *cb;
 

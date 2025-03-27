@@ -1745,6 +1745,7 @@ vhost_user_set_inflight_fd(struct virtio_net **pdev,
 		if (!vq)
 			continue;
 
+		cleanup_vq_inflight(dev, vq);
 		if (vq_is_packed(dev)) {
 			vq->inflight_packed = addr;
 			vq->inflight_packed->desc_num = queue_size;
@@ -2144,7 +2145,9 @@ vhost_user_get_vring_base(struct virtio_net **pdev,
 
 	vhost_user_iotlb_flush_all(vq);
 
+	rte_spinlock_lock(&vq->access_lock);
 	vring_invalidate(dev, vq);
+	rte_spinlock_unlock(&vq->access_lock);
 
 	return RTE_VHOST_MSG_RESULT_REPLY;
 }
@@ -2266,7 +2269,7 @@ vhost_user_set_log_base(struct virtio_net **pdev,
 	 * mmap from 0 to workaround a hugepage mmap bug: mmap will
 	 * fail when offset is not page size aligned.
 	 */
-	addr = mmap(0, size + off, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	addr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, off);
 	close(fd);
 	if (addr == MAP_FAILED) {
 		VHOST_LOG_CONFIG(dev->ifname, ERR, "mmap log base failed!\n");
