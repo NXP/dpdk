@@ -955,7 +955,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 0;
 		}
-		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
+		if (dpaa2_svr_family != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
 				&cfg->flc.value);
 		}
@@ -2642,7 +2642,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		/* Restoration window size = 256 frames */
 		ocfg.oprrws = 3;
 		/* Restoration window size = 512 frames for LX2 */
-		if (dpaa2_svr_family == SVR_LX2160A)
+		if ((dpaa2_svr_family & 0xffff0000) == SVR_LX2160A)
 			ocfg.oprrws = 4;
 		/* Auto advance NESN window enabled */
 		ocfg.oa = 1;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014-2016 Freescale Semiconductor, Inc.
- * Copyright 2019-2020 NXP
+ * Copyright 2019-2020,2025 NXP
  */
 /* qbman_sys_decl.h and qbman_sys.h are the two platform-specific files in the
  * driver. They are only included via qbman_private.h, which is itself a
@@ -21,6 +21,7 @@
 #ifndef _QBMAN_SYS_H_
 #define _QBMAN_SYS_H_
 
+#include <fslmc_vfio.h>
 #include "qbman_sys_decl.h"
 
 #define CENA_WRITE_ENABLE 0
@@ -437,14 +438,6 @@ static inline uint32_t qbman_set_swp_cfg(uint8_t max_fill, uint8_t wn,
 #define QMAN_REV_4101	0x04010001
 #define QMAN_REV_5000	0x05000000
 #define QMAN_REV_MASK	0xffff0000
-
-#define SVR_LS1080A	0x87030000
-#define SVR_LS2080A	0x87010000
-#define SVR_LS2088A	0x87090000
-#define SVR_LX2160A	0x87360000
-
-/* Variable to store DPAA2 platform type */
-extern uint32_t dpaa2_svr_family;
 
 static inline int qbman_swp_sys_init(struct qbman_swp_sys *s,
 				     const struct qbman_swp_desc *d,
