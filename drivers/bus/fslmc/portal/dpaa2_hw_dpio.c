@@ -605,6 +605,8 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
 			goto fail;
+		q_storage->iova_dq_storage[i] =
+			DPAA2_VADDR_TO_IOVA(q_storage->dq_storage[i]);
 	}
 	return 0;
 fail:

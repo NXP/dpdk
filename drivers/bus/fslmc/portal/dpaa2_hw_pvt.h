@@ -147,6 +147,7 @@ struct dpaa2_dpbp_dev {
 
 struct queue_storage_info_t {
 	struct qbman_result *dq_storage[NUM_DQS_PER_QUEUE];
+	uint64_t iova_dq_storage[NUM_DQS_PER_QUEUE];
 	struct qbman_result *active_dqs;
 	uint8_t active_dpio_id;
 	uint8_t toggle;
@@ -273,6 +274,7 @@ struct dpaa2_dpcon_dev {
 	uint16_t qbman_ch_id;
 	uint8_t num_priorities;
 	uint8_t channel_index;
+	struct queue_storage_info_t q_storage[RTE_MAX_LCORE];
 };
 
 /* Refer to Table 7-3 in SEC BG */

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include <unistd.h>
@@ -33,30 +33,25 @@ TAILQ_HEAD(dpcon_dev_list, dpaa2_dpcon_dev);
 static struct dpcon_dev_list dpcon_dev_list =
 		TAILQ_HEAD_INITIALIZER(dpcon_dev_list); /*!< DPCON device list */
 
-
-/* Create storage for dpcon entries per lcore */
-static struct qbman_result *dq_storage[RTE_MAX_LCORE];
-
-static
-int rte_dpaa2_schedule_storage_info_init(void)
+static int
+dpaa2_dpcon_dq_storage_init(struct dpaa2_dpcon_dev *dpcon_dev)
 {
-	int i;
+	int i, ret = 0;
 
-	/* TODO: Replace RTE_MAX_LCORE with mask lcore value */
+	memset(&dpcon_dev->q_storage, 0,
+		sizeof(struct queue_storage_info_t) * RTE_MAX_LCORE);
+
 	for (i = 0; i < RTE_MAX_LCORE; i++) {
-		dq_storage[i] = (struct qbman_result *)rte_zmalloc(NULL,
-				sizeof(struct qbman_result) * DPAA2_LX2_DQRR_RING_SIZE,
-				RTE_CACHE_LINE_SIZE);
-		if (!dq_storage[i])
+		ret = dpaa2_alloc_dq_storage(&dpcon_dev->q_storage[i]);
+		if (ret)
 			goto err;
 	}
 	return 0;
 err:
-	while (--i >= 0) {
-		rte_free(dq_storage[i]);
-		dq_storage[i] = NULL;
-	}
-	return -1;
+	for (i = 0; i < RTE_MAX_LCORE; i++)
+		dpaa2_free_dq_storage(&dpcon_dev->q_storage[i]);
+
+	return ret;
 }
 
 int32_t
@@ -90,26 +85,24 @@ dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev)
 
 static inline void
 dpaa2_qbman_pull_desc_channel_set(struct qbman_pull_desc *pulldesc,
-				  uint32_t num, uint16_t ch_id,
-				  struct qbman_result *dq_sch_storage)
+	uint32_t num, uint16_t ch_id, struct qbman_result *dq_sch_storage,
+	uint64_t iova_storage)
 {
 	qbman_pull_desc_clear(pulldesc);
 	qbman_pull_desc_set_numframes(pulldesc, num);
 	qbman_pull_desc_set_channel(pulldesc, ch_id,
-				    qbman_pull_type_active_noics);
+		qbman_pull_type_active_noics);
 	qbman_pull_desc_set_storage(pulldesc, dq_sch_storage,
-				    (dma_addr_t)(DPAA2_VADDR_TO_IOVA(dq_sch_storage)),
-				    1);
+		iova_storage, 1);
 }
 
 int
 dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
-		 struct rte_mbuf **mbuf,
-		 uint16_t nb_pkts)
+	struct rte_mbuf **mbuf, uint16_t nb_pkts)
 {
 	uint16_t ch_id = dpcon_dev->qbman_ch_id;
 	struct qbman_result *dq_sch_storage;
-	uint16_t total_nb_pkts;
+	uint16_t total_nb_pkts = nb_pkts;
 	struct qbman_pull_desc pulldesc;
 	const struct qbman_fd *fd;
 	struct dpaa2_queue *rvq;
@@ -117,32 +110,30 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 	int ret, rcvd_pkts = 0;
 	struct qbman_swp *swp;
 	uint8_t status;
+	struct queue_storage_info_t *q_storage;
+	uint64_t iova_storage;
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
 		if (ret) {
-			DPAA2_PMD_ERR("Failure in affining portal");
+			DPAA2_PMD_ERR("Failure(%d) in affining portal", ret);
 			return 0;
 		}
 	}
 	swp = DPAA2_PER_LCORE_ETHRX_PORTAL;
-	dq_sch_storage = dq_storage[rte_lcore_id()];
-
-	/* Number of packets to be received is checked against dpaa2_dqrr_size
-	 * to ensure that it is within the range.
-	 */
-	nb_pkts = (nb_pkts > dpaa2_dqrr_size) ? dpaa2_dqrr_size : nb_pkts;
-	total_nb_pkts = nb_pkts;
+	q_storage = &dpcon_dev->q_storage[rte_lcore_id()];
+	dq_sch_storage = q_storage->dq_storage[0];
+	iova_storage = q_storage->iova_dq_storage[0];
 
 	do {
 		is_last = false;
 		next_pull = false;
-		dpaa2_qbman_pull_desc_channel_set(&pulldesc, nb_pkts, ch_id, dq_sch_storage);
+		dpaa2_qbman_pull_desc_channel_set(&pulldesc, nb_pkts, ch_id,
+			dq_sch_storage, iova_storage);
 
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
-						   " QBMAN is busy\n");
+				DPAA2_PMD_DP_DEBUG("QBMAN is busy (1)");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -164,8 +155,9 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 			if (qbman_result_DQ_is_pull_complete(dq_sch_storage)) {
 				is_last = true;
 				/* Check for valid frame. */
-				status = (uint8_t)qbman_result_DQ_flags(dq_sch_storage);
-				if (unlikely((status & QBMAN_DQ_STAT_VALIDFRAME) == 0)) {
+				status = qbman_result_DQ_flags(dq_sch_storage);
+				if (unlikely(!(status &
+					QBMAN_DQ_STAT_VALIDFRAME))) {
 					next_pull = true;
 					DPAA2_PMD_DP_DEBUG("No frame is delivered\n");
 					break;
@@ -176,11 +168,17 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 			}
 
 			fd = qbman_result_DQ_fd(dq_sch_storage);
-			rvq = (struct dpaa2_queue *)(size_t)qbman_result_DQ_fqd_ctx(dq_sch_storage);
-			mbuf[rcvd_pkts] = eth_fd_to_mbuf(fd, rvq->eth_data->port_id);
-			if (mbuf[rcvd_pkts])
-				rcvd_pkts++;
+			rvq = (void *)qbman_result_DQ_fqd_ctx(dq_sch_storage);
+			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg)) {
+				mbuf[rcvd_pkts] = eth_sg_fd_to_mbuf(fd,
+					rvq->eth_data->port_id);
+			} else {
+				mbuf[rcvd_pkts] = eth_fd_to_mbuf(fd,
+					rvq->eth_data->port_id);
+			}
+			rcvd_pkts++;
 			dq_sch_storage++;
+			iova_storage += sizeof(struct qbman_result);
 		}
 	} while (!next_pull);
 	/* End of Packet Rx loop */
@@ -233,9 +231,11 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 			dpcon_dev->qbman_ch_id, dpcon_dev->num_priorities,
 			dpcon_dev->dpcon_id);
 
-	ret = rte_dpaa2_schedule_storage_info_init();
-	if (ret < 0)
-		printf("rte_dpaa2_schedule_storage_info_init: err(%d)", ret);
+	ret = dpaa2_dpcon_dq_storage_init(dpcon_dev);
+	if (ret) {
+		DPAA2_PMD_ERR("dpcon init storage info failed: err(%d)", ret);
+		goto get_attr_failure;
+	}
 
 	rte_atomic16_init(&dpcon_dev->in_use);
 	TAILQ_INSERT_TAIL(&dpcon_dev_list, dpcon_dev, next);
@@ -243,7 +243,7 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 
 get_attr_failure:
 	dpcon_close(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
-	return -1;
+	return ret;
 }
 
 struct dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void)
