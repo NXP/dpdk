@@ -70,13 +70,35 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 	DPAA2_RESET_FD_FLC(_fd);		\
 } while (0)
 
-void __rte_hot
+static inline void
+dpaa2_dev_rx_mbuf_sched_set(struct rte_mbuf *m,
+	const struct qbman_fd *fd)
+{
+	uint32_t flc_lo, tc, flow;
+
+	flc_lo = fd->simple.flc_lo;
+	if (flc_lo & (1 << DPAA2_FS_FLC_FS_MARK_OFFSET)) {
+		m->ol_flags |= RTE_MBUF_F_RX_FDIR;
+		tc = (flc_lo >> DPAA2_FS_FLC_TC_OFFSET) &
+			DPAA2_FS_FLC_TC_MASK;
+		flow = flc_lo >> DPAA2_FS_FLC_FLOW_OFFSET;
+		rte_mbuf_sched_set(m, flow, tc, DPAA2_GET_FD_DROPP(fd));
+		DPAA2_PMD_DP_DEBUG("FS frame received from TC[%d]->flow%d",
+			tc, flow);
+	} else {
+		m->hash.rss = fd->simple.flc_hi;
+		m->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
+		DPAA2_PMD_DP_DEBUG("Hash frame received with RSS(%08x)",
+			m->hash.rss);
+	}
+}
+
+static void __rte_hot
 dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
-		       void *hw_annot_addr)
+	void *hw_annot_addr)
 {
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
-	uint32_t flc_lo, tc, flow;
 
 #if defined(RTE_LIBRTE_IEEE1588)
 	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
@@ -146,21 +168,6 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	default:
 		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);
 	}
-	flc_lo = fd->simple.flc_lo;
-	if (flc_lo & (1 << DPAA2_FS_FLC_FS_MARK_OFFSET)) {
-		m->ol_flags |= RTE_MBUF_F_RX_FDIR;
-		tc = (flc_lo >> DPAA2_FS_FLC_TC_OFFSET) &
-			DPAA2_FS_FLC_TC_MASK;
-		flow = flc_lo >> DPAA2_FS_FLC_FLOW_OFFSET;
-		rte_mbuf_sched_set(m, flow, tc, 0);
-		DPAA2_PMD_DP_DEBUG("FS frame received from TC[%d]->flow%d",
-			tc, flow);
-	} else {
-		m->hash.rss = fd->simple.flc_hi;
-		m->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
-		DPAA2_PMD_DP_DEBUG("Hash frame received with RSS(%08x)",
-			m->hash.rss);
-	}
 
 	if (dpaa2_enable_ts[m->port]) {
 		*dpaa2_timestamp_dynfield(m) = annotation->word2;
@@ -176,7 +183,7 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 
 static inline uint32_t __rte_hot
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
-			struct dpaa2_annot_hdr *annotation)
+	struct dpaa2_annot_hdr *annotation)
 {
 	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
 	uint16_t *vlan_tci;
@@ -276,7 +283,7 @@ parse_done:
 	return pkt_type;
 }
 
-uint32_t __rte_hot
+static inline uint32_t __rte_hot
 dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
@@ -347,14 +354,13 @@ rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
 	return 0;
 }
 
-static inline struct rte_mbuf *__rte_hot
-eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
-		  int port_id)
+struct rte_mbuf *__rte_hot
+eth_sg_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 {
 	struct qbman_sge *sgt, *sge;
-	size_t sg_addr, fd_addr;
+	size_t fd_addr;
 	int i = 0;
-	void *hw_annot_addr;
+	void *hw_annot_addr, *sg_addr;
 	struct rte_mbuf *first_seg, *next_seg, *cur_seg, *temp;
 
 	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
@@ -366,13 +372,13 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
 
 	sge = &sgt[i++];
-	sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
+	sg_addr = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
 
 	/* First Scatter gather entry */
 	first_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	/* Prepare all the metadata for first segment */
-	first_seg->buf_addr = (uint8_t *)sg_addr;
+	first_seg->buf_addr = sg_addr;
 	first_seg->ol_flags = 0;
 	first_seg->data_off = DPAA2_GET_FLE_OFFSET(sge);
 	first_seg->data_len = sge->length  & 0x1FFFF;
@@ -380,34 +386,35 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	first_seg->nb_segs = 1;
 	first_seg->next = NULL;
 	first_seg->port = port_id;
-	if (dpaa2_svr_family == SVR_LX2160A)
+	if (dpaa2_svr_family == SVR_LX2160A) {
 		dpaa2_dev_rx_parse_new(first_seg, fd, hw_annot_addr);
-	else
-		first_seg->packet_type =
-			dpaa2_dev_rx_parse(first_seg, hw_annot_addr);
+	} else {
+		first_seg->packet_type = dpaa2_dev_rx_parse(first_seg,
+			hw_annot_addr);
+	}
+	dpaa2_dev_rx_mbuf_sched_set(first_seg, fd);
 
 	dpaa2_parse_result_offset(first_seg, hw_annot_addr);
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 	rte_mempool_check_cookies(rte_mempool_from_obj((void *)first_seg),
-			(void **)&first_seg, 1, 1);
+		(void **)&first_seg, 1, 1);
 #endif
 	cur_seg = first_seg;
 	while (!DPAA2_SG_IS_FINAL(sge)) {
 		sge = &sgt[i++];
-		sg_addr = (size_t)DPAA2_IOVA_TO_VADDR(
-				DPAA2_GET_FLE_ADDR(sge));
+		sg_addr = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FLE_ADDR(sge));
 		next_seg = DPAA2_INLINE_MBUF_FROM_BUF(sg_addr,
 			rte_dpaa2_bpid_info[DPAA2_GET_FLE_BPID(sge)].meta_data_size);
-		next_seg->buf_addr  = (uint8_t *)sg_addr;
-		next_seg->data_off  = DPAA2_GET_FLE_OFFSET(sge);
-		next_seg->data_len  = sge->length  & 0x1FFFF;
+		next_seg->buf_addr = sg_addr;
+		next_seg->data_off = DPAA2_GET_FLE_OFFSET(sge);
+		next_seg->data_len = sge->length & 0x1FFFF;
 		first_seg->nb_segs += 1;
 		rte_mbuf_refcnt_set(next_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 		rte_mempool_check_cookies(rte_mempool_from_obj((void *)next_seg),
-				(void **)&next_seg, 1, 1);
+			(void **)&next_seg, 1, 1);
 #endif
 		cur_seg->next = next_seg;
 		next_seg->next = NULL;
@@ -417,8 +424,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 	rte_mbuf_refcnt_set(temp, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-		rte_mempool_check_cookies(rte_mempool_from_obj((void *)temp),
-				(void **)&temp, 1, 1);
+	rte_mempool_check_cookies(rte_mempool_from_obj((void *)temp),
+		(void **)&temp, 1, 1);
 #endif
 	rte_pktmbuf_free_seg(temp);
 
@@ -426,11 +433,10 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 }
 
 struct rte_mbuf *__rte_hot
-eth_fd_to_mbuf(const struct qbman_fd *fd,
-	       int port_id)
+eth_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 {
-	void *v_addr = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
-	void *hw_annot_addr = (void *)((size_t)v_addr + DPAA2_FD_PTA_SIZE);
+	uint8_t *v_addr = DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	void *hw_annot_addr = v_addr + DPAA2_FD_PTA_SIZE;
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(v_addr,
 		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 
@@ -447,11 +453,10 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	mbuf->pkt_len = mbuf->data_len;
 	mbuf->port = port_id;
 	mbuf->next = NULL;
-	mbuf->hash.sched.color = DPAA2_GET_FD_DROPP(fd);
 	rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 	rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
-			(void **)&mbuf, 1, 1);
+		(void **)&mbuf, 1, 1);
 #endif
 
 	/* Parse the packet */
@@ -464,6 +469,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 		dpaa2_dev_rx_parse_new(mbuf, fd, hw_annot_addr);
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf, hw_annot_addr);
+	dpaa2_dev_rx_mbuf_sched_set(mbuf, fd);
 
 	dpaa2_parse_result_offset(mbuf, hw_annot_addr);
 
