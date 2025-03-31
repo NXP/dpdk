@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2025 NXP
  *
  */
 
@@ -34,11 +34,6 @@ RTE_DECLARE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 	RTE_PER_LCORE(_dpaa2_io).dpio_dev->dpaa2_held_bufs.dqrr_held
 #define DPAA2_PER_LCORE_DQRR_MBUF(i) \
 	RTE_PER_LCORE(_dpaa2_io).dpio_dev->dpaa2_held_bufs.mbuf[i]
-
-/* Variable to store DPAA2 DQRR size */
-extern uint8_t dpaa2_dqrr_size;
-/* Variable to store DPAA2 EQCR size */
-extern uint8_t dpaa2_eqcr_size;
 
 extern struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
 

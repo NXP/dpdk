@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2024 NXP
+ *   Copyright 2016-2025 NXP
  *
  */
 
@@ -83,6 +83,80 @@ enum {
 	FSLMC_VFIO_SOCKET_REQ_MEM
 };
 
+/* Variable to store DPAA2 platform type */
+uint32_t dpaa2_svr_family;
+
+/* Variable to store DPAA2 DQRR size */
+uint32_t dpaa2_dqrr_size;
+/* Variable to store DPAA2 EQCR size */
+uint32_t dpaa2_eqcr_size;
+
+uint32_t dpaa2_cluster_base;
+
+uint32_t dpaa2_cluster_size;
+
+struct fslmc_soc_type {
+	uint32_t svr;
+	uint32_t cluster_base;
+	uint32_t cluster_size;
+	uint32_t qm_dq_size;
+	uint32_t qm_eq_size;
+};
+
+/* For LS208X platform There are four clusters with following mapping:
+ * Cluster 1 (ID = x04) : CPU0, CPU1;
+ * Cluster 2 (ID = x05) : CPU2, CPU3;
+ * Cluster 3 (ID = x06) : CPU4, CPU5;
+ * Cluster 4 (ID = x07) : CPU6, CPU7;
+ */
+/* For LS108X platform There are two clusters with following mapping:
+ * Cluster 1 (ID = x02) : CPU0, CPU1, CPU2, CPU3;
+ * Cluster 2 (ID = x03) : CPU4, CPU5, CPU6, CPU7;
+ */
+/* For LX2160 platform There are four clusters with following mapping:
+ * Cluster 1 (ID = x00) : CPU0, CPU1;
+ * Cluster 2 (ID = x01) : CPU2, CPU3;
+ * Cluster 3 (ID = x02) : CPU4, CPU5;
+ * Cluster 4 (ID = x03) : CPU6, CPU7;
+ * Cluster 1 (ID = x04) : CPU8, CPU9;
+ * Cluster 2 (ID = x05) : CPU10, CP11;
+ * Cluster 3 (ID = x06) : CPU12, CPU13;
+ * Cluster 4 (ID = x07) : CPU14, CPU15;
+ */
+
+int
+fslmc_vfio_core_cluster_sdest(uint32_t cpu_id)
+{
+	int x = cpu_id / dpaa2_cluster_size;
+
+	if (!dpaa2_cluster_size) {
+		DPAA2_BUS_ERR("SoC type has not been initalized!\r\n");
+
+		return -ENODEV;
+	}
+
+	return dpaa2_cluster_base + x;
+}
+
+static const struct fslmc_soc_type s_soc_type[] = {
+	{
+		SVR_LS2080A, 4, 2,
+		DPAA2_DQRR_RING_SIZE, DPAA2_EQCR_RING_SIZE
+	},
+	{
+		SVR_LS2088A, 4, 2,
+		DPAA2_DQRR_RING_SIZE, DPAA2_EQCR_RING_SIZE
+	},
+	{
+		SVR_LS1080A, 2, 4,
+		DPAA2_DQRR_RING_SIZE, DPAA2_EQCR_RING_SIZE
+	},
+	{
+		SVR_LX2160A, 0, 2,
+		DPAA2_LX2_DQRR_RING_SIZE, DPAA2_LX2_EQCR_RING_SIZE
+	}
+};
+
 void *
 dpaa2_get_mcp_ptr(int portal_idx)
 {
@@ -160,6 +234,42 @@ rte_fslmc_object_register(struct rte_dpaa2_object *object)
 	RTE_VERIFY(object);
 
 	TAILQ_INSERT_TAIL(&dpaa2_obj_list, object, next);
+}
+
+static int
+fslmc_vfio_soc_type_init(void)
+{
+	struct fsl_mc_io mc_io;
+	struct mc_soc_version mc_plat_info;
+	int ret;
+	size_t i;
+
+	mc_io.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
+
+	memset(&mc_plat_info, 0, sizeof(struct mc_soc_version));
+	ret = mc_get_soc_version(&mc_io, CMD_PRI_LOW, &mc_plat_info);
+	if (ret) {
+		DPAA2_BUS_ERR("Unable to get SoC version err:%d\r\n",
+			ret);
+		return ret;
+	}
+
+	for (i = 0; i < RTE_DIM(s_soc_type); i++) {
+		if ((mc_plat_info.svr & DPAA2_SVR_MASK) == s_soc_type[i].svr) {
+			dpaa2_svr_family = s_soc_type[i].svr;
+			dpaa2_cluster_base = s_soc_type[i].cluster_base;
+			dpaa2_cluster_size = s_soc_type[i].cluster_size;
+			dpaa2_dqrr_size = s_soc_type[i].qm_dq_size;
+			dpaa2_eqcr_size = s_soc_type[i].qm_eq_size;
+			break;
+		}
+	}
+	if (i == RTE_DIM(s_soc_type)) {
+		DPAA2_BUS_ERR("Invalid SoC version: 0x%08x", mc_plat_info.svr);
+		return -ENODEV;
+	}
+
+	return 0;
 }
 
 static const char *
@@ -1651,6 +1761,11 @@ fslmc_vfio_process_group(void)
 					return ret;
 				}
 				found_mportal = 1;
+				ret = fslmc_vfio_soc_type_init();
+				if (ret) {
+					DPAA2_BUS_ERR("SoC type init failed(%d)", ret);
+					return ret;
+				}
 			}
 
 			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);

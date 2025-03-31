@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2019-2023 NXP
+ *   Copyright 2016,2019-2023,2025 NXP
  *
  */
 
@@ -10,6 +10,7 @@
 
 #include <rte_compat.h>
 #include <rte_vfio.h>
+#include <rte_interrupts.h>
 
 #ifndef __hot
 #define __hot __attribute__((hot))
@@ -49,6 +50,19 @@ struct fslmc_vfio_container {
 
 extern char *fslmc_container;
 
+extern uint32_t dpaa2_svr_family;
+extern uint32_t dpaa2_dqrr_size;
+extern uint32_t dpaa2_eqcr_size;
+extern uint32_t dpaa2_cluster_base;
+extern uint32_t dpaa2_cluster_size;
+
+#define DPAA2_SVR_MASK 0xffff0000
+
+#define SVR_LS1080A	0x87030000
+#define SVR_LS2080A	0x87010000
+#define SVR_LS2088A	0x87090000
+#define SVR_LX2160A	0x87360000
+
 __rte_internal
 int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);
 
@@ -62,7 +76,8 @@ int rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 int fslmc_vfio_setup_group(void);
 int fslmc_vfio_process_group(void);
 int fslmc_vfio_close_group(void);
-char *fslmc_get_container(void);
 int fslmc_get_container_group(const char *group_name, int *gropuid);
 int fslmc_vfio_dmamap(void);
+int fslmc_vfio_core_cluster_sdest(uint32_t cpu_id);
+
 #endif /* _FSLMC_VFIO_H_ */

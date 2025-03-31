@@ -1062,9 +1062,9 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	/* Function receive frames for a given device and VQ */
 	struct dpaa2_queue *dpaa2_q = queue;
 	struct qbman_result *dq_storage;
-	uint32_t fqid = dpaa2_q->fqid;
-	int ret, num_rx = 0, next_pull = nb_pkts, num_pulled;
-	uint8_t pending, status;
+	uint32_t fqid = dpaa2_q->fqid, next_pull = nb_pkts;
+	int ret;
+	uint8_t pending, status, num_rx = 0, num_pulled;
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
@@ -1177,8 +1177,8 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 	/* Function receive frames for a given device and VQ */
 	struct dpaa2_queue *dpaa2_q = queue;
 	struct qbman_result *dq_storage;
-	uint32_t fqid = dpaa2_q->fqid;
-	int ret, num_tx_conf = 0, num_pulled;
+	uint32_t fqid = dpaa2_q->fqid, num_pulled, num_tx_conf = 0;
+	int ret;
 	uint8_t pending, status;
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
@@ -1979,7 +1979,7 @@ dpaa2_dev_tx_with_dynamic_cnf(void *queue,
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	if (tx_conf_q->to_cnfd >= (dpaa2_dqrr_size * 2)) {
+	if (tx_conf_q->to_cnfd >= (int)(dpaa2_dqrr_size * 2)) {
 confirm_again:
 		num_cnf = dpaa2_dev_tx_conf_dynamic(tx_conf_q);
 		if (unlikely(!num_cnf)) {

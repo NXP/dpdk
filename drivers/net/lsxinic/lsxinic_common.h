@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2024 NXP
+ * Copyright 2019-2025 NXP
  */
 
 #ifndef _LSXINIC_COMMON_H_
@@ -19,15 +19,24 @@
 #define RTE_VERIFY(exp) do {} while (0)
 #endif
 
+#ifndef SVR_LS1080A
+#define SVR_LS1080A	0x87030000
+#endif
+#ifndef SVR_LS2080A
+#define SVR_LS2080A	0x87010000
+#endif
+#ifndef SVR_LS2088A
+#define SVR_LS2088A	0x87090000
+#endif
+#ifndef SVR_LX2160A
+#define SVR_LX2160A	0x87360000
+#endif
+
 struct lsinic_pcie_svr_map {
 	uint32_t svr_id;
 	uint16_t pci_dev_id;
 	uint16_t rsv;
 };
-
-#ifndef SVR_LX2160A
-#define SVR_LX2160A	0x87360000
-#endif
 
 static const
 struct lsinic_pcie_svr_map s_lsinic_rev2_id_map[] = {
