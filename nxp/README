@@ -6,7 +6,7 @@ NXP DPDK README
 Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
-3. ENETC : LS1028, i.MX95
+3. ENETC : LS1028, i.MX95, i.MX943
 4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93, i.MX8QXP
 5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX91, i.MX93
 ===============================================================================
@@ -56,10 +56,12 @@ Following information can be used to obtain these components:
     Linux Kernel can be obtained either through the NXP SDK for the board or
     via the Github repository below:
 
-      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-5.10
+    $ git clone https://github.com/nxp-qoriq/linux.git
+	or
+    $ git clone https://github.com/nxp-imx/linux-imx.git
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.19, 5.4, 5.10, 5.15, 6.1, 6.6 has been verified with DPDK. Other kernels may work but
+    Linux-4.19, 5.4, 5.10, 5.15, 6.1, 6.6, 6.12 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
@@ -69,7 +71,7 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-13.3` for latest LF6.6 releases:
+    Get the `gcc-14.2` for latest LF6.12 releases:
     # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
     Thereafter, set the environment variable:
@@ -181,7 +183,7 @@ application:
      Example: To compile l2fwd and l3fwd applications, execute this command:
               meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=l2fwd,l3fwd
 
-     NOTE: For i.MX-95, i.MX-93 & i.MX-91 [A55 platforms]:
+     NOTE: For i.MX-95, i.mx-943, i.MX-93 & i.MX-91 [A55 platforms]:
 		meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 
      NOTE: By default, both Static and Shared compilation is done by DPDK.
@@ -1101,6 +1103,46 @@ Notes:
 -> It may takes few seconds to get link status UP notification.
 
 ===============================================================================
+DPDK on i.mx943:
+----------------
+
+Note:
+Only the internal ENETC port supports VF, which is connected to the switch
+CPU port. External ENETC ports do not support VF.
+
+1. Set the below dtb file to enable switch port:
+	uboot> setenv fdtfile imx943-evk-sgmii.dtb;
+2. Create and configure the bridge with two switch ports
+	$ ip link add name br0 type bridge
+	$ ip link set dev swp0 master br0
+	$ ip link set dev swp1 master br0
+	$ ip link set dev br0 up
+	$ ip link set dev swp0 up
+	$ ip link set dev swp1 up
+3. Enable 2 Virtual Functions (VFs):
+	$ echo 2 > /sys/bus/pci/devices/0000:00:00.0/sriov_numvfs
+4. Bind the VFs to the DPDK-compatible driver
+	$ dpdk-devbind.py -b uio_pci_generic 0000:00:08.0
+	$ dpdk-devbind.py -b uio_pci_generic 0000:00:10.0
+5. Enable trusted mode for both VFs:
+	$ ip link set eth0 vf 0 trust on
+	$ ip link set eth0 vf 1 trust on
+6. Allocate hugepages for DPDK memory
+	$ echo 512 > /proc/sys/vm/nr_hugepages
+7. Load the non-cacheable module:
+	$ modprobe kpage_ncache.ko
+8. Add static forwarding entries to the bridge's forwarding database (FDB)
+	$ bridge fdb add 02:00:00:00:00:00 dev swp0 master static
+	$ bridge fdb add 02:00:00:00:00:01 dev swp1 master static
+
+	Note: 	These mean, that if a packet has destination MAC 02:00:00:00:00:00,
+		the bridge will forward it out swp0. If the destination is
+		02:00:00:00:00:01,it will go out via swp1.
+		For dpdk-l2fwd, The destination MAC address is replaced by
+		02:00:00:00:00:TX_PORT_ID hence this is set here. For dpdk-l3fwd
+		we can add static mac address via cmdline.
+
+===============================================================================
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 
@@ -1131,6 +1173,8 @@ Notes:
   On i.mx8mm platform
   ./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=io
 
+  In TX-only mode:
+	./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
   'dpdk-test' Application
   ~~~~~~~~~~~~~~~~~~
 
@@ -1448,36 +1492,6 @@ Both, 'dpdk-pdump' and 'dpdk-procinfo' are examples of secondary applications
 which run along a primary DPDK process. Being different processes, rather than
 thread, they work over the DPDK EAL's Multiprocess infrastructure to communicate
 with the primary process.
-
-  Layer-3 Forwarding 'l3fwd' Application using traffic bifurcation
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  L3fwd application has been modified to support traffic bifurcation, where traffic can be
-  bifurcated such that some traffic goes to the kernel and other to DPDK using DPDMUX.
-  Separate rules can be configured for this bifurcation. Below are some sample commands
-  on LX2:
-
-  1. Configure DPDMUX to have two DPNI's, one with kernel and other with user-space
-
-  $ ls-addni --no-link
-  $ source $PREFIX_SCRIPT_PATH/dpaa2/dynamic_dpl.sh dpmac.5
-  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
-  $ restool dprc disconnect dprc.2 --endpoint=dpni.3
-  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.5
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.2
-  $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.3
-  $ restool dprc assign dprc.1 --object=dpdmux.0 --child=dprc.2 --plugged=1
-  $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/bind
-  $ ifconfig eth0 1.1.1.2
-  $ ifconfig eth0 promisc
-
-  2. Run l3fwd application providing 'traffic-split-config' option for configuring DPDMUC rules:
-
-  $ ./l3fwd -c 0x6 -n 1 -- -p 0x1 --config="(0,0,1),(0,1,2)" -P --traffic-split-config="(3,2152,2)"
-
-  Here "--traffic-split-config - (type,val,mux_conn_id)" is defined by
-       'type' -  1:ETHTYPE, 2:IP_PROTO, 3:UDP_DST_PORT having value as 'val' based on which DPDMUX can split the traffic to mux_conn_id
 
 `dpdk-pdump` for capturing packets
 ----------------------------------
