@@ -71,7 +71,7 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-13.3` for latest LF6.6 releases:
+    Get the `gcc-14.2` for latest LF6.12 releases:
     # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
     Thereafter, set the environment variable:
@@ -1103,6 +1103,46 @@ Notes:
 -> It may takes few seconds to get link status UP notification.
 
 ===============================================================================
+DPDK on i.mx943:
+----------------
+
+Note:
+Only the internal ENETC port supports VF, which is connected to the switch
+CPU port. External ENETC ports do not support VF.
+
+1. Set the below dtb file to enable switch port:
+	uboot> setenv fdtfile imx943-evk-sgmii.dtb;
+2. Create and configure the bridge with two switch ports
+	$ ip link add name br0 type bridge
+	$ ip link set dev swp0 master br0
+	$ ip link set dev swp1 master br0
+	$ ip link set dev br0 up
+	$ ip link set dev swp0 up
+	$ ip link set dev swp1 up
+3. Enable 2 Virtual Functions (VFs):
+	$ echo 2 > /sys/bus/pci/devices/0000:00:00.0/sriov_numvfs
+4. Bind the VFs to the DPDK-compatible driver
+	$ dpdk-devbind.py -b uio_pci_generic 0000:00:08.0
+	$ dpdk-devbind.py -b uio_pci_generic 0000:00:10.0
+5. Enable trusted mode for both VFs:
+	$ ip link set eth0 vf 0 trust on
+	$ ip link set eth0 vf 1 trust on
+6. Allocate hugepages for DPDK memory
+	$ echo 512 > /proc/sys/vm/nr_hugepages
+7. Load the non-cacheable module:
+	$ modprobe kpage_ncache.ko
+8. Add static forwarding entries to the bridge's forwarding database (FDB)
+	$ bridge fdb add 02:00:00:00:00:00 dev swp0 master static
+	$ bridge fdb add 02:00:00:00:00:01 dev swp1 master static
+
+	Note: 	These mean, that if a packet has destination MAC 02:00:00:00:00:00,
+		the bridge will forward it out swp0. If the destination is
+		02:00:00:00:00:01,it will go out via swp1.
+		For dpdk-l2fwd, The destination MAC address is replaced by
+		02:00:00:00:00:TX_PORT_ID hence this is set here. For dpdk-l3fwd
+		we can add static mac address via cmdline.
+
+===============================================================================
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 
@@ -1136,6 +1176,8 @@ Notes:
   in tx_only mode:
     ./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
 
+  In TX-only mode:
+	./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
   'dpdk-test' Application
   ~~~~~~~~~~~~~~~~~~
 
