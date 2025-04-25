@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019,2024 NXP
+ * Copyright 2018-2019,2024-2025 NXP
  */
 
 #ifndef _ENETC_H_
