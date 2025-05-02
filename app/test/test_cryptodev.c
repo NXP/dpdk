@@ -16947,6 +16947,12 @@ test_cryptodev_mrvl(void)
 	return run_cryptodev_testsuite(RTE_STR(CRYPTODEV_NAME_MVSAM_PMD));
 }
 
+static int
+test_cryptodev_v2x_fce(void)
+{
+	return run_cryptodev_testsuite(RTE_STR(CRYPTODEV_NAME_V2X_FCE_PMD));
+}
+
 #ifdef RTE_CRYPTO_SCHEDULER
 
 static int
@@ -17199,3 +17205,4 @@ REGISTER_TEST_COMMAND(cryptodev_nitrox_autotest, test_cryptodev_nitrox);
 REGISTER_TEST_COMMAND(cryptodev_bcmfs_autotest, test_cryptodev_bcmfs);
 REGISTER_TEST_COMMAND(cryptodev_cn9k_autotest, test_cryptodev_cn9k);
 REGISTER_TEST_COMMAND(cryptodev_cn10k_autotest, test_cryptodev_cn10k);
+REGISTER_TEST_COMMAND(cryptodev_v2x_fce_autotest, test_cryptodev_v2x_fce);

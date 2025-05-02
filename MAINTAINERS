@@ -1157,6 +1157,11 @@ F: drivers/crypto/virtio/
 F: doc/guides/cryptodevs/virtio.rst
 F: doc/guides/cryptodevs/features/virtio.ini
 
+NXP V2X FCE
+M: Gaurav Jain <gaurav.jain@nxp.com>
+F: drivers/crypto/v2x_fce/
+F: doc/guides/cryptodevs/v2x_fce.rst
+F: doc/guides/cryptodevs/features/v2x_fce.ini
 
 Compression Drivers
 -------------------

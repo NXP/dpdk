@@ -325,6 +325,10 @@ cperf_set_ops_auth(struct rte_crypto_op **ops,
 		sym_op->m_src = (struct rte_mbuf *)((uint8_t *)ops[i] +
 							src_buf_offset);
 
+		memcpy(rte_pktmbuf_mtod(sym_op->m_src, void*),
+			test_vector->plaintext.data,
+			test_vector->plaintext.length);
+
 		/* Set dest mbuf to NULL if out-of-place (dst_buf_offset = 0) */
 		if (dst_buf_offset == 0)
 			sym_op->m_dst = NULL;

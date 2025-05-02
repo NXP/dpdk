@@ -9,6 +9,7 @@ Supported Platforms (and their derivatives):
 3. ENETC : LS1028, i.MX95, i.MX943
 4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93, i.MX8QXP
 5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX91, i.MX93
+6. V2X_FCE : i.MX943
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -1149,6 +1150,25 @@ CPU port. External ENETC ports do not support VF.
 	$ dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x3 --forward-mode=mac
 		testpmd> set promisc all off
 		testpmd> start
+10. To run dpdk-application with v2X fast crypto engine
+
+	$ ./dpdk-test --vdev 'v2x_fce' --log-level=6
+	  >>cryptodev_v2x_fce_autotest
+
+  'dpdk-test-crypto-perf' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  'test-crypto-perf' is part of standard DPDK build process. The binary is generated
+  in (./<target>/build/app/test-crypto-perf/) folder.
+  A script 'v2x_fce_perf_test.sh' is added in nxp/ folder to run all supported cases
+  in one go.
+
+  Use the script as (for V2X_FCE)
+  $./v2x_fce_perf_test.sh v2x_fce
+
+  Some default parameters are added in the script which can be modified as per
+  requirement.
+
 NOTE:
 =====
 Currently, The below test cases are not supported on I.MX943:
@@ -1277,6 +1297,8 @@ Currently, The below test cases are not supported on I.MX943:
 	use --vdev 'crypto_openssl'
   For armv8_crypto mode:
 	use --vdev 'crypto_armv8'
+  For v2x_fce mode (valid for iMX943 only):
+	use --vdev 'v2x_fce'
 
   You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
    export DPAA_SEC_DISABLE=1
