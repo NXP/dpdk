@@ -285,14 +285,14 @@ cperf_throughput_test_runner(void *test_ctx)
 		if (!ctx->options->csv) {
 			if (__atomic_compare_exchange_n(&display_once, &exp, 1, 0,
 					__ATOMIC_RELAXED, __ATOMIC_RELAXED))
-				printf("%12s%12s%12s%12s%12s%12s%12s%12s%12s%12s\n\n",
+				printf("%12s%12s%12s%12s%12s%12s%12s%12s%12s%12s%12s\n\n",
 					"lcore id", "Buf Size", "Burst Size",
 					"Enqueued", "Dequeued", "Failed Enq",
-					"Failed Deq", "MOps", "Gbps",
+					"Failed Deq", "MOps", "Gbps", "us/op",
 					"Cycles/Buf");
 
 			printf("%12u%12u%12u%12"PRIu64"%12"PRIu64"%12"PRIu64
-					"%12"PRIu64"%12.4f%12.4f%12.2f\n",
+					"%12"PRIu64"%12.4f%12.4f%12.4f%12.2f\n",
 					ctx->lcore_id,
 					ctx->options->test_buffer_size,
 					test_burst_size,
@@ -302,6 +302,7 @@ cperf_throughput_test_runner(void *test_ctx)
 					ops_deqd_failed,
 					ops_per_second/1000000,
 					throughput_gbps,
+					1000000/ops_per_second,
 					cycles_per_packet);
 		} else {
 			if (__atomic_compare_exchange_n(&display_once, &exp, 1, 0,

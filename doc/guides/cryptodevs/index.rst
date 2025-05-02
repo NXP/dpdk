@@ -31,5 +31,6 @@ Crypto Device Drivers
     snow3g
     qat
     uadk
+    v2x_fce
     virtio
     zuc

@@ -75,6 +75,7 @@
 #define CRYPTODEV_NAME_CN10K_PMD	crypto_cn10k
 #define CRYPTODEV_NAME_MLX5_PMD		crypto_mlx5
 #define CRYPTODEV_NAME_UADK_PMD		crypto_uadk
+#define CRYPTODEV_NAME_V2X_FCE_PMD	v2x_fce
 
 
 enum cryptodev_api_test_type {
