@@ -42,9 +42,6 @@
 #include <rte_pmd_dpaa2.h>
 #include <rte_mtr.h>
 
-#define POLICER_RFC_NUM           2698
-#define SHIFT_RESERVED_PRIORITY    16
-
 /* Traffic classes */
 enum {
 	POLICER_TC0 = 0,
@@ -280,26 +277,6 @@ print_stats(void)
 	printf("\n====================================================\n");
 
 	fflush(stdout);
-}
-
-/* set the scheduler WQ priority in reserved_64s[0] */
-static inline void
-set_scheduler_wq_prio(struct rte_eth_rxconf *rx_conf, int priority)
-{
-	rx_conf->reserved_64s[0] = priority;
-	rx_conf->reserved_64s[0] = rx_conf->reserved_64s[0] << SHIFT_RESERVED_PRIORITY;
-	rx_conf->reserved_64s[0] |= POLICER_RFC_NUM;
-	if (priority > 7)
-		rte_exit(EXIT_FAILURE, "Acceptable scheduler WQ priority are 0-7!\n");
-}
-
-/* set the initialized scheduler handle in reserved_64s[1] */
-static inline void
-set_scheduler_handle(struct rte_eth_rxconf *rx_conf, void *sch_handle)
-{
-	rx_conf->reserved_64s[1] = (uint64_t)sch_handle;
-	if (rx_conf->reserved_64s[1] == 0)
-		rte_exit(EXIT_FAILURE, "Scheduler handle not set!\n");
 }
 
 static void
@@ -1682,15 +1659,7 @@ main(int argc, char **argv)
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = local_port_conf.rxmode.offloads;
 
-		/* set the initialized scheduler handle */
-		set_scheduler_handle(&rxq_conf, sch_handle);
-
 		for (i = 0; i < dev_info.max_rx_queues; i++) {
-			/* set the scheduler WQ priority
-			 * TC[0] traffic in WQ prio 0, TC[1] traffic in WQ prio 1 and so on
-			 */
-			set_scheduler_wq_prio(&rxq_conf, i);
-
 			/* RX queue setup. 8< */
 			ret = rte_eth_rx_queue_setup(portid, i, nb_rxd,
 				rte_eth_dev_socket_id(portid),
@@ -1710,6 +1679,17 @@ main(int argc, char **argv)
 			}
 			rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo,
 				&tc_id, &flow_id);
+
+			/* set the scheduler WQ priority
+			 * TC[0] traffic in WQ prio 0, TC[1] traffic in WQ prio 1 and so on
+			 */
+			ret = rte_dpaa2_scheduler_add(sch_handle,
+				portid, i, tc_id);
+			if (ret) {
+				rte_exit(EXIT_FAILURE,
+					"Schedule port%d-rxq%d failed(%d).\n",
+					portid, i, ret);
+			}
 			queue_num = s_port_param[portid].queue_num[tc_id];
 			s_port_param[portid].queue_ids[tc_id][queue_num] = i;
 			s_port_param[portid].flow_ids[tc_id][queue_num] = flow_id;
