@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2017 Intel Corporation
+ * Copyright 2025 NXP
  */
 
 #include <stdarg.h>
@@ -1601,14 +1602,13 @@ static void
 core_to_queue_mapping(portid_t pid)
 {
 	struct rte_port *port = &ports[pid];
-	int i;
+	lcoreid_t i;
 
 	if (nb_fwd_lcores != nb_txq)
 		rte_exit(EXIT_FAILURE, "Num of cores is not equal to the no of queues.");
 
-	for (i = 0; i < nb_fwd_lcores; i++) {
+	for (i = 0; i < nb_fwd_lcores; i++)
 		port->core_to_queue_map[i] = i % port->dev_info.max_tx_queues;
-	}
 }
 
 static void
