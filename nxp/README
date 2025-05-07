@@ -1140,8 +1140,26 @@ CPU port. External ENETC ports do not support VF.
 		02:00:00:00:00:01,it will go out via swp1.
 		For dpdk-l2fwd, The destination MAC address is replaced by
 		02:00:00:00:00:TX_PORT_ID hence this is set here. For dpdk-l3fwd
-		we can add static mac address via cmdline.
+		we can add static mac address via cmdline. dpdk-testpmd sets the
+		same MAC when run in mac mode.
+9. Run dpdk-application:
 
+	$ dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -T 0
+	$ dpdk-l3fwd -c 0x2 -n 1 -- -p 0x3 --config="(0,0,1), (1,0,1)"
+	$ dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x3 --forward-mode=mac
+		testpmd> set promisc all off
+		testpmd> start
+NOTE:
+=====
+Currently, The below test cases are not supported on I.MX943:
+	-> Allmulti promisc mode
+	-> Get Link status of VF
+	-> MAC address exact match filter
+	-> Multi queue
+	-> Link status interrupts
+	-> Jumbo frame
+	-> dpdk-ip-fragmentation
+	-> dpdk-reassembly
 ===============================================================================
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
