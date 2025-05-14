@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2024 NXP
+# Copyright 2018-2025 NXP
 
 if not is_linux
     build = false
@@ -20,6 +20,7 @@ sources = files(
         'dpaa2_ptp.c',
         'dpaa2_dpcon.c',
         'dpaa2_scheduler.c',
+        'dpaa2_meter.c',
         'mc/dprtc.c',
         'mc/dpkg.c',
         'mc/dpdmux.c',

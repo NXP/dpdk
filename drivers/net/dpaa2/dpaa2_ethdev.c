@@ -2882,6 +2882,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.timesync_read_rx_timestamp = dpaa2_timesync_read_rx_timestamp,
 	.timesync_read_tx_timestamp = dpaa2_timesync_read_tx_timestamp,
 #endif
+	.mtr_ops_get = dpaa2_mtr_ops_get,
 };
 
 /* Populate the mac address from physically available (u-boot/firmware) and/or

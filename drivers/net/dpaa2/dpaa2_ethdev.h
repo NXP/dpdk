@@ -267,6 +267,30 @@ struct extract_s {
 	struct dpaa2_key_extract tc_key_extract[MAX_TCS];
 };
 
+struct dpaa2_dev_meter_profile {
+	LIST_ENTRY(dpaa2_dev_meter_profile) next;
+	uint32_t profile_id;
+	uint64_t cir;
+	uint64_t cbs;
+	uint64_t pir;
+	uint64_t pbs;
+	enum dpni_policer_mode mode;
+	enum dpni_policer_unit policer_unit;
+};
+
+struct dpaa2_dev_meter_policy {
+	LIST_ENTRY(dpaa2_dev_meter_policy) next;
+	uint32_t policy_id;
+	int red_drop;
+};
+
+struct dpaa2_dev_meter {
+	LIST_ENTRY(dpaa2_dev_meter) next;
+	uint32_t meter_id;
+	uint32_t profile_id;
+	uint32_t policy_id;
+};
+
 struct dpaa2_dev_priv {
 	void *hw;
 	int32_t hw_id;
@@ -295,6 +319,7 @@ struct dpaa2_dev_priv {
 	uint8_t cgid_in_use[MAX_RX_QUEUES];
 	uint8_t default_tc;
 	uint16_t default_flow;
+	rte_spinlock_t meter_lock;
 
 	uint16_t dpni_ver_major;
 	uint16_t dpni_ver_minor;
@@ -332,6 +357,9 @@ struct dpaa2_dev_priv {
 
 	struct dpaa2_dev_flow *curr;
 	LIST_HEAD(, dpaa2_dev_flow) flows;
+	LIST_HEAD(, dpaa2_dev_meter_profile) profiles;
+	LIST_HEAD(, dpaa2_dev_meter_policy) policies;
+	LIST_HEAD(, dpaa2_dev_meter) meters;
 	LIST_HEAD(nodes, dpaa2_tm_node) nodes;
 	LIST_HEAD(shaper_profiles, dpaa2_tm_shaper_profile) shaper_profiles;
 };
@@ -578,4 +606,7 @@ struct
 dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void);
 void
 dpaa2_dev_mac_setup_stats(struct rte_eth_dev *dev);
+int
+dpaa2_mtr_ops_get(struct rte_eth_dev *dev, void *ops);
+
 #endif /* _DPAA2_ETHDEV_H */
