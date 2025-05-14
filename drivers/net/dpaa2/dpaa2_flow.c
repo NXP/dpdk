@@ -79,7 +79,6 @@ struct rte_dpaa2_flow_item {
 static const
 enum rte_flow_item_type dpaa2_hp_supported_pattern_type[] = {
 	RTE_FLOW_ITEM_TYPE_END,
-	RTE_FLOW_ITEM_TYPE_ANY,
 	RTE_FLOW_ITEM_TYPE_ETH,
 	RTE_FLOW_ITEM_TYPE_VLAN,
 	RTE_FLOW_ITEM_TYPE_IPV4,
@@ -109,7 +108,9 @@ enum rte_flow_action_type dpaa2_supported_action_type[] = {
 	RTE_FLOW_ACTION_TYPE_PORT_ID,
 	RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT,
 	RTE_FLOW_ACTION_TYPE_RSS,
-	RTE_FLOW_ACTION_TYPE_DROP
+	RTE_FLOW_ACTION_TYPE_DROP,
+	RTE_FLOW_ACTION_TYPE_METER_MARK,
+	RTE_FLOW_ACTION_TYPE_METER
 };
 
 #define DPAA2_FLOW_HDR_HEX_DUMP_SIZE \
@@ -4226,6 +4227,10 @@ dpaa2_flow_verify_action(struct dpaa2_dev_priv *priv,
 			/* Skip this action, have to add for vxlan*/
 		case RTE_FLOW_ACTION_TYPE_DROP:
 			break;
+		case RTE_FLOW_ACTION_TYPE_METER_MARK:
+			break;
+		case RTE_FLOW_ACTION_TYPE_METER:
+			break;
 		case RTE_FLOW_ACTION_TYPE_END:
 			end_of_list = 1;
 			break;
@@ -4598,6 +4603,136 @@ dpaa2_flow_table_update(struct dpaa2_dev_priv *priv,
 }
 
 static int
+dpaa2_flow_action_meter_mark_init(struct dpaa2_dev_priv *priv,
+	uint32_t mtr_id, struct rte_flow_action_meter_mark *meter_mark)
+{
+	struct dpaa2_dev_meter *meter;
+	struct dpaa2_dev_meter_profile *profile;
+	struct dpaa2_dev_meter_policy *policy;
+	int found = 0;
+
+	meter = LIST_FIRST(&priv->meters);
+	while (meter) {
+		if (meter->meter_id == mtr_id) {
+			found = 1;
+			break;
+		}
+		meter = LIST_NEXT(meter, next);
+	}
+
+	if (!found) {
+		DPAA2_PMD_ERR("Meter ID(%d) is not found!", mtr_id);
+		return -ENXIO;
+	}
+
+	found = 0;
+	profile = LIST_FIRST(&priv->profiles);
+	while (profile) {
+		if (profile->profile_id == meter->profile_id) {
+			found = 1;
+			break;
+		}
+		profile = LIST_NEXT(profile, next);
+	}
+	if (!found) {
+		DPAA2_PMD_ERR("Meter ID(%d)'s profile(%d) not exist!",
+			mtr_id, meter->profile_id);
+		return -ENXIO;
+	}
+
+	found = 0;
+	policy = LIST_FIRST(&priv->policies);
+	while (policy) {
+		if (policy->policy_id == meter->policy_id) {
+			found = 1;
+			break;
+		}
+		policy = LIST_NEXT(policy, next);
+	}
+	if (!found) {
+		/** Option.*/
+		DPAA2_PMD_WARN("Meter ID(%d)'s policy(%d) not exist!",
+			mtr_id, meter->policy_id);
+		policy = NULL;
+	}
+
+	meter_mark->profile = (void *)profile;
+	meter_mark->policy = (void *)policy;
+	meter_mark->color_mode = 1;
+	meter_mark->init_color = RTE_COLOR_GREEN;
+
+	return 0;
+}
+
+static int
+dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
+	uint8_t tc_id, const struct rte_flow_action_meter_mark *meter_mark)
+{
+	struct dpni_rx_tc_policing_cfg policing_cfg;
+	const struct dpaa2_dev_meter_profile *dpaa2_profile;
+	const struct dpaa2_dev_meter_policy *dpaa2_policy = NULL;
+	int ret;
+
+	dpaa2_profile = (void *)meter_mark->profile;
+	if (!dpaa2_profile) {
+		DPAA2_PMD_ERR("Meter profile not specified!");
+		return -EINVAL;
+	}
+
+	/** Blind as default.*/
+	policing_cfg.options = 0;
+	if (meter_mark->color_mode)
+		policing_cfg.options = DPNI_POLICER_OPT_COLOR_AWARE;
+	if (meter_mark->policy)
+		dpaa2_policy = (void *)meter_mark->policy;
+	if (dpaa2_policy && dpaa2_policy->red_drop) {
+		policing_cfg.options |= DPNI_POLICER_OPT_DISCARD_RED;
+	} else if (!dpaa2_policy) {
+		/** Default: Red is discarded if no policy specified.*/
+		policing_cfg.options |= DPNI_POLICER_OPT_DISCARD_RED;
+	}
+
+	if (meter_mark->init_color == RTE_COLOR_GREEN) {
+		policing_cfg.default_color = DPNI_POLICER_COLOR_GREEN;
+	} else if (meter_mark->init_color == RTE_COLOR_YELLOW) {
+		policing_cfg.default_color = DPNI_POLICER_COLOR_YELLOW;
+	} else if (meter_mark->init_color == RTE_COLOR_RED) {
+		policing_cfg.default_color = DPNI_POLICER_COLOR_RED;
+	} else {
+		DPAA2_PMD_ERR("Invalid meter init color(%d)",
+			meter_mark->init_color);
+		return -EINVAL;
+	}
+
+	policing_cfg.mode = dpaa2_profile->mode;
+	if (policing_cfg.mode < DPNI_POLICER_MODE_NONE ||
+		policing_cfg.mode > DPNI_POLICER_MODE_RFC_4115) {
+		DPAA2_PMD_ERR("Invalid policer mode(%d)",
+			policing_cfg.mode);
+		return -EINVAL;
+	}
+	policing_cfg.units = dpaa2_profile->policer_unit;
+	if (policing_cfg.units < DPNI_POLICER_UNIT_BYTES_L3 ||
+		policing_cfg.units > DPNI_POLICER_UNIT_BYTES_L2_WITHOUT_FCS) {
+		DPAA2_PMD_ERR("Invalid policer units(%d)",
+			policing_cfg.units);
+		return -EINVAL;
+	}
+	policing_cfg.cir = dpaa2_profile->cir;
+	policing_cfg.cbs = dpaa2_profile->cbs;
+	policing_cfg.eir = dpaa2_profile->pir;
+	policing_cfg.ebs = dpaa2_profile->pbs;
+
+	ret = dpni_set_rx_tc_policing(priv->hw, CMD_PRI_LOW,
+		priv->token, tc_id, &policing_cfg);
+	DPAA2_PMD_INFO("%s RX TC%d policer configure %s.",
+		priv->eth_dev->data->name, tc_id,
+		ret ? "failed" : "successfully");
+
+	return ret;
+}
+
+static int
 dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *flow,
 	const struct rte_flow_action actions[],
@@ -4606,6 +4741,8 @@ dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 {
 	int end_of_list = 0, ret = 0, i = 0;
 	const struct rte_flow_action_rss *rss_conf;
+	const struct rte_flow_action_meter *meter;
+	struct rte_flow_action_meter_mark meter_mark;
 
 	while (!end_of_list) {
 		switch (actions[i].type) {
@@ -4639,6 +4776,25 @@ dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 				*dist_size = rss_conf->queue_num;
 			if (is_rss)
 				*is_rss = true;
+			break;
+		case RTE_FLOW_ACTION_TYPE_METER_MARK:
+			rte_memcpy(&meter_mark, actions[i].conf,
+				sizeof(meter_mark));
+			ret = dpaa2_flow_set_police_action(priv,
+				flow->tc_id, &meter_mark);
+			if (ret)
+				goto end_action_set;
+			break;
+		case RTE_FLOW_ACTION_TYPE_METER:
+			meter = actions[i].conf;
+			ret = dpaa2_flow_action_meter_mark_init(priv,
+				meter->mtr_id, &meter_mark);
+			if (ret)
+				goto end_action_set;
+			ret = dpaa2_flow_set_police_action(priv,
+				flow->tc_id, &meter_mark);
+			if (ret)
+				goto end_action_set;
 			break;
 		case RTE_FLOW_ACTION_TYPE_PF:
 			/* Skip this action, have to add for vxlan*/
@@ -4706,13 +4862,6 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 	/* Parse pattern list to get the matching parameters */
 	while (!end_of_list) {
 		switch (pattern[i].type) {
-		case RTE_FLOW_ITEM_TYPE_ANY:
-			priv->default_tc = attr->reserved & UINT8_MAX;
-			if (priv->default_tc > MAX_TCS) {
-				DPAA2_PMD_ERR("Invalid default_tc!");
-				goto end_flow_set;
-			}
-			break;
 		case RTE_FLOW_ITEM_TYPE_ETH:
 			ret = dpaa2_configure_flow_eth(flow, dev, attr,
 					&dpaa2_pattern[i],
