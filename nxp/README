@@ -1289,24 +1289,31 @@ Currently, The below test cases are not supported on I.MX943:
 
   Policer unit in bytes:
 
-  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,2)' --policer_unit frames --policer_option opt_discard_red --cir 2000 --cbs 10240 --pir 2000 --pbs 20480 -T0
+  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,3)' --unit bytes --cir 2000 --cbs 10240 --pir 2000 --pbs 20480 -T0
 
   Policer unit in frames:
 
-  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,2)' --policer_unit bytes --policer_option opt_discard_red --cir 10 --cbs 10240 --pir 20 --pbs 20480 -T0
+  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,3)' --unit frames --cir 2000 --cbs 10240 --pir 2000 --pbs 20480 -T0
+
+  Policer action update by RTE_FLOW_ACTION_TYPE_METER action type:
+
+  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,3)' --unit frames --cir 2000 --cbs 10240 --pir 2000 --pbs 20480 -T0 --meter_action=meter
 
   In the above commands, the core mask is to execute on core 1.
   --config:(portid,vlanid,vlan_prio)[,(portid,vlanid,vlan_prio)]
     portid: acceptable which are used in portmask
     vlanid: acceptable range 0 to 4095
-    vlan_prio: number of vlan priorities, maximum is 8 i.e.(0 to 7)
+    vlan_prio: number of vlan priorities, maximum is 7 i.e.(0 to 7)
   Policer unit can be modified as bytes or frames.
-  Below parameters can be configured by the user in the set unit:
+  Action update can be executed by RTE_FLOW_ACTION_TYPE_METER_MARK or RTE_FLOW_ACTION_TYPE_METER, default is RTE_FLOW_ACTION_TYPE_METER_MARK.
+  Below parameters can be configured by the user as default policy profile:
   cir: Committed information rate (CIR) in Kbps or packets/second
   cbs: Committed burst size (CBS) in bytes or packets
   pir: Peak information rate (PIR) in Kbps or packets/second
   pbs: Peak burst size (PBS) in bytes or packets
   NOTE: In bytes mode, configure L3 rate(kbps) in cir and pir.
+
+  Policy profile, RXQ(in same TC) and action(drop or pass) of packets marked as RED can be changed on the fly by user's input commands.
 
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
