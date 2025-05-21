@@ -61,7 +61,7 @@ Following information can be used to obtain these components:
       $ git clone https://github.com/nxp-imx/linux-imx.git
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.19, 5.4, 5.10, 5.15, 6.1, 6.6 has been verified with DPDK. Other kernels may work but
+    Linux-4.19, 5.4, 5.10, 5.15, 6.1, 6.6, 6.12 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
