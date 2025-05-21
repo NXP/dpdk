@@ -60,8 +60,14 @@ $ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
 $ restool dprc disconnect dprc.x --endpoint=dpni.x
 $ restool dprc disconnect dprc.x --endpoint=dpni.y
 
-#Create DPSW
-$ ls-addsw dpmac.x dpmac.y dpni.x dpni.y dpni.z
+#unbind DPMAC from VFIO
+$ echo dpmac.x > /sys/bus/fsl-mc/drivers/fsl_dpaa2_mac/unbind
+$ echo dpmac.y > /sys/bus/fsl-mc/drivers/fsl_dpaa2_mac/unbind
+
+
+#Create DPSW (kernel 5.15 onwards)
+$ ls-addsw --flooding-cfg=DPSW_FLOODING_PER_FDB --broadcast-cfg=DPSW_BROADCARS_PER_FDB dpmac.x dpmac.y dpni.x dpni.y dpni.z
+
 Created ETHSW object dpsw.x with the following  5 ports:
 etha, ethb, ethc, ethd, ethe respectively for dpmac.x, dpmac.y, dpni.x, dpni.y, dpni.z
 

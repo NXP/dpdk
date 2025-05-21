@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2024 NXP
+# Copyright 2018-2025 NXP
 
 # tunable parameters
 
@@ -62,6 +62,7 @@ function system() {
 	mycmd "lsmod"
 	print "*************** CPU INFO *******"
 	mycmd "cat /proc/cpuinfo"
+	mycmd "cat /sys/devices/system/cpu/cpu0/*"
 	print "*************** MEMINFO *******"
 	mycmd "cat /proc/meminfo"
 	mycmd "cat /proc/iomem"
@@ -99,6 +100,7 @@ function system() {
 	print "Current ${cur_freq} Max CPU freq is ${max_freq} and Min is ${min_freq}"
 	local rt_us=`cat /proc/sys/kernel/sched_rt_runtime_us`
 	print "Value for Userspace non-RT slice: ${rt_us}"
+	mycmd "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
 }
 
 function system_adv() {
