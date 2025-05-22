@@ -226,6 +226,10 @@ rte_dpaa2_scheduler_start(void *scheduler_handle);
 __rte_experimental
 int
 rte_dpaa2_scheduler_destroy(void *scheduler_handle);
+__rte_experimental
+int
+rte_dpaa2_scheduler_add(void *scheduler_handle,
+	uint16_t port_id, uint16_t rxq_id, uint8_t priority);
 
 /* rte_dpaa2_scheduler_rx()- DPCON scheduler receive function
  * @scheduler_handle: DPCON scheduler handle
