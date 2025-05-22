@@ -32,28 +32,25 @@ void *
 rte_dpaa2_scheduler_init(void)
 {
 	struct dpaa2_dpcon_dev *dpcon_dev;
-	void *scheduler_handle;
 
 	dpcon_dev = dpaa2_alloc_dpcon_dev();
 	if (!dpcon_dev)
 		DPAA2_PMD_ERR("Failed dpaa2_alloc_dpcon_dev!!");
 
-	scheduler_handle = (void *)dpcon_dev;
-	return scheduler_handle;
+	return dpcon_dev;
 }
 
 __rte_experimental
 int
 rte_dpaa2_scheduler_start(void *scheduler_handle)
 {
-	uint32_t ret;
-	struct dpaa2_dpcon_dev *dpcon_dev =
-				(struct dpaa2_dpcon_dev *)scheduler_handle;
+	struct dpaa2_dpcon_dev *dpcon_dev = scheduler_handle;
+	int32_t ret;
 
 	ret = dpaa2_dpcon_start(dpcon_dev);
 	if (ret) {
-		DPAA2_PMD_ERR("Failed Conc - dpaa2_dev_start\n");
-		return -1;
+		DPAA2_PMD_ERR("Failed(%d) Conc - dpaa2_dev_start\n", ret);
+		return ret;
 	}
 	return 0;
 }
@@ -62,16 +59,65 @@ __rte_experimental
 int
 rte_dpaa2_scheduler_destroy(void *scheduler_handle)
 {
-	struct dpaa2_dpcon_dev *dpcon_dev =
-				(struct dpaa2_dpcon_dev *)scheduler_handle;
+	struct dpaa2_dpcon_dev *dpcon_dev = scheduler_handle;
 	int32_t ret;
 
 	ret = dpaa2_dpcon_stop(dpcon_dev);
 	if (ret) {
-		DPAA2_PMD_ERR("Failed Conc - rte_dpaa2_schedule_destroy\n");
-		return -1;
+		DPAA2_PMD_ERR("Failed(%d) Conc - rte_dpaa2_schedule_destroy\n",
+			ret);
+		return ret;
 	}
 	dpcon_dev = NULL;
+
+	return 0;
+}
+
+__rte_experimental
+int
+rte_dpaa2_scheduler_add(void *scheduler_handle,
+	uint16_t port_id, uint16_t rxq_id, uint8_t priority)
+{
+	int32_t ret;
+	struct dpaa2_dpcon_dev *dpcon_dev = scheduler_handle;
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	struct dpaa2_queue *dpaa2_q;
+	struct dpni_queue *cfg;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(port_id))
+		return -ENODEV;
+
+	dev = &rte_eth_devices[port_id];
+	priv = dev->data->dev_private;
+	if (rxq_id >= priv->nb_rx_queues) {
+		DPAA2_PMD_ERR("rxq_id(%d) >= queue number(%d)\n",
+			rxq_id, priv->nb_rx_queues);
+		return -EINVAL;
+	}
+	dpni = dev->process_private;
+	dpaa2_q = priv->rx_vq[rxq_id];
+	cfg = dpaa2_q->cfg;
+	if (!cfg) {
+		DPAA2_PMD_ERR("%s: %s'rxq[%d] has not been configured!\n",
+			__func__, dev->data->name, rxq_id);
+		return -EINVAL;
+	}
+
+	cfg->destination.type = DPNI_DEST_DPCON;
+	cfg->destination.id = dpcon_dev->dpcon_id;
+	cfg->destination.priority = priority;
+	dpaa2_q->options |= DPNI_QUEUE_OPT_DEST;
+
+	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
+		DPNI_QUEUE_RX, dpaa2_q->tc_index, dpaa2_q->flow_id,
+		dpaa2_q->options, cfg);
+	if (ret) {
+		DPAA2_PMD_ERR("%s: Error in setting the rx queue: = %d\n",
+			__func__, ret);
+		return ret;
+	}
 
 	return 0;
 }
@@ -81,8 +127,7 @@ int32_t
 rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
 		       uint16_t nb_pkts)
 {
-	struct dpaa2_dpcon_dev *dpcon_dev =
-				(struct dpaa2_dpcon_dev *)scheduler_handle;
+	struct dpaa2_dpcon_dev *dpcon_dev = scheduler_handle;
 	int ret = 0;
 	ret = dpaa2_dpcon_recv(dpcon_dev, mbuf, nb_pkts);
 	if (ret > 0)

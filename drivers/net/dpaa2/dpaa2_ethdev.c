@@ -38,10 +38,6 @@
 #define CHECK_INTERVAL         100  /* 100ms */
 #define MAX_REPEAT_TIME        90   /* 9s (90 * 100ms) in total */
 
-/* scheduler rfc magic number */
-#define POLICER_RFC_NUM         2698
-#define SHIFT_RESERVED_PRIORITY 16
-
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
 		RTE_ETH_RX_OFFLOAD_CHECKSUM |
@@ -873,7 +869,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpaa2_queue *dpaa2_q;
-	struct dpni_queue cfg;
+	struct dpni_queue *cfg;
 	uint8_t options = 0;
 	uint8_t flow_id;
 	uint32_t bpid;
@@ -909,6 +905,10 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			return ret;
 	}
 	dpaa2_q = priv->rx_vq[rx_queue_id];
+	cfg = rte_zmalloc(NULL, sizeof(struct dpni_queue), 0);
+	if (!cfg)
+		return -ENOMEM;
+	dpaa2_q->cfg = cfg;
 	dpaa2_q->mb_pool = mb_pool; /**< mbuf pool to populate RX ring. */
 	dpaa2_q->bp_array = rte_dpaa2_bpid_info;
 	dpaa2_q->nb_desc = UINT16_MAX;
@@ -919,10 +919,10 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	/*Get the flow id from given VQ id*/
 	flow_id = dpaa2_q->flow_id;
-	memset(&cfg, 0, sizeof(struct dpni_queue));
+	memset(cfg, 0, sizeof(struct dpni_queue));
 
 	options = options | DPNI_QUEUE_OPT_USER_CTX;
-	cfg.user_context = (size_t)(dpaa2_q);
+	cfg->user_context = (size_t)(dpaa2_q);
 
 	/* check if a private cgr available. */
 	for (i = 0; i < priv->max_cgs; i++) {
@@ -934,8 +934,8 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	if (i < priv->max_cgs) {
 		options |= DPNI_QUEUE_OPT_SET_CGID;
-		cfg.cgid = i;
-		dpaa2_q->cgid = cfg.cgid;
+		cfg->cgid = i;
+		dpaa2_q->cgid = cfg->cgid;
 	} else {
 		dpaa2_q->cgid = DPAA2_INVALID_CGID;
 	}
@@ -944,44 +944,28 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	if ((dpaa2_svr_family & 0xffff0000) != SVR_LS2080A) {
 		options |= DPNI_QUEUE_OPT_FLC;
-		cfg.flc.stash_control = true;
-		dpaa2_flc_stashing_clear_all(&cfg.flc.value);
+		cfg->flc.stash_control = true;
+		dpaa2_flc_stashing_clear_all(&cfg->flc.value);
 		if (getenv("DPAA2_DATA_STASHING_OFF")) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0,
-				&cfg.flc.value);
+				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 1;
 		} else {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
-				&cfg.flc.value);
+				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 0;
 		}
 		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
-				&cfg.flc.value);
+				&cfg->flc.value);
 		}
 	}
 
-	/*
-	 * if scheduler magic number match then set its configuration parameters.
-	 * Here,
-	 * uint64_t reserved_64s[0] is scheduler uint16_t rfc magic number and
-	 *                                       uint8_t WQ priority
-	 * uint64_t reserved_64s[1] is scheduler handle
-	 */
-	if ((rx_conf->reserved_64s[0] & UINT16_MAX) == POLICER_RFC_NUM) {
-		if (rx_conf->reserved_64s[1]) {
-			struct dpaa2_dpcon_dev *dpcon_dev =
-					(struct dpaa2_dpcon_dev *)rx_conf->reserved_64s[1];
-			cfg.destination.type = DPNI_DEST_DPCON;
-			cfg.destination.id = dpcon_dev->dpcon_id;
-			cfg.destination.priority =
-					(rx_conf->reserved_64s[0] >> SHIFT_RESERVED_PRIORITY) & UINT8_MAX;
-			options |= DPNI_QUEUE_OPT_DEST;
-		}
-	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
-			dpaa2_q->tc_index, flow_id, options, &cfg);
+			dpaa2_q->tc_index, flow_id, options, cfg);
 	if (ret) {
+		rte_free(dpaa2_q->cfg);
+		dpaa2_q->cfg = NULL;
 		DPAA2_PMD_ERR("Error in setting the rx flow: = %d", ret);
 		return ret;
 	}
@@ -1021,6 +1005,8 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 						&taildrop);
 		}
 		if (ret) {
+			rte_free(dpaa2_q->cfg);
+			dpaa2_q->cfg = NULL;
 			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
 				ret);
 			return ret;
@@ -1041,11 +1027,15 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 					dpaa2_q->tc_index, flow_id, &taildrop);
 		}
 		if (ret) {
+			rte_free(dpaa2_q->cfg);
+			dpaa2_q->cfg = NULL;
 			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
 				ret);
 			return ret;
 		}
 	}
+
+	dpaa2_q->options = options;
 
 	dev->data->rx_queues[rx_queue_id] = dpaa2_q;
 	return 0;
