@@ -3144,6 +3144,9 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->num_channels = attr.num_channels;
 	priv->channel_inuse = 0;
 	rte_spinlock_init(&priv->lpbk_qp_lock);
+	priv->default_tc = priv->num_rx_tc - 1;
+	priv->default_flow = RTE_MIN(priv->fs_entries,
+		priv->dist_queues) - 1;
 
 	/* only if the custom CG is enabled */
 	if (attr.options & DPNI_OPT_CUSTOM_CG)
