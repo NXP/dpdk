@@ -1908,7 +1908,7 @@ void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
  * When used for queue_idx in function dpni_set_rx_dist_default_queue will signal to dpni
  * to drop all unclassified frames
  */
-#define DPNI_FS_MISS_DROP		((uint16_t)-1)
+#define DPNI_FS_MISS_ACTION_DROP		((uint16_t)-1)
 
 /**
  * struct dpni_rx_dist_cfg - distribution configuration
@@ -1921,9 +1921,10 @@ void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
  * @enable: enable/disable the distribution.
  * @tc: TC id for which distribution is set
  * @fs_miss_flow_id: when packet misses all rules from flow steering table and hash is
- * 		disabled it will be put into this queue id; use DPNI_FS_MISS_DROP to drop
- * 		frames. The value of this field is used only when flow steering distribution
- * 		is enabled and hash distribution is disabled
+ *		disabled it will be put into this queue id;
+ *		use DPNI_FS_MISS_ACTION_DROP to drop frames.
+ *		The value of this field is used only when flow steering
+ *		distribution is enabled and hash distribution is disabled.
  */
 struct dpni_rx_dist_cfg {
 	uint16_t dist_size;

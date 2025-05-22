@@ -294,6 +294,7 @@ struct dpaa2_dev_priv {
 	uint8_t max_cgs;
 	uint8_t cgid_in_use[MAX_RX_QUEUES];
 	uint8_t default_tc;
+	uint16_t default_flow;
 
 	uint16_t dpni_ver_major;
 	uint16_t dpni_ver_minor;
