@@ -593,10 +593,6 @@ int32_t
 dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev);
 void
 dpaa2_free_dpcon_dev(struct dpaa2_dpcon_dev *dpcon_dev);
-int
-dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
-		 struct rte_mbuf **mbuf,
-		 uint16_t nb_pkts);
 struct
 dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void);
 void
