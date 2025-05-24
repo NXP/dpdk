@@ -60,13 +60,12 @@ dpaa2_dpcon_start(struct dpaa2_dpcon_dev *dpcon_dev)
 	int32_t ret;
 
 	ret = dpcon_enable(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
-	if (ret != 0) {
+	if (ret) {
 		DPAA2_PMD_ERR("DPCONC is not enabled at MC: Error code = %0x\n",
-			      ret);
-		return -1;
+			ret);
 	}
 
-	return 0;
+	return ret;
 }
 
 int32_t
@@ -75,12 +74,12 @@ dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev)
 	int32_t ret;
 
 	ret = dpcon_disable(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
-	if (ret != 0) {
-		DPAA2_PMD_ERR("Device cannot be disabled:Error Code = %0x\n", ret);
-		return -1;
+	if (ret) {
+		DPAA2_PMD_ERR("Device cannot be disabled:Error Code = %0x\n",
+			ret);
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline void
@@ -96,7 +95,7 @@ dpaa2_qbman_pull_desc_channel_set(struct qbman_pull_desc *pulldesc,
 		iova_storage, 1);
 }
 
-int
+static uint16_t
 dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 	struct rte_mbuf **mbuf, uint16_t nb_pkts)
 {
@@ -146,7 +145,8 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 			/* Loop until the dq_storage is updated with
 			 * new result by QBMAN
 			 */
-			while (!qbman_result_has_new_result(swp, dq_sch_storage))
+			while (!qbman_result_has_new_result(swp,
+				dq_sch_storage))
 				;
 
 			/* Check whether Last Pull command is Expired and
@@ -187,6 +187,142 @@ dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
 	return rcvd_pkts;
 }
 
+static uint16_t
+dpaa2_dpcon_prefetch_recv(struct dpaa2_dpcon_dev *dpcon_dev,
+	struct rte_mbuf **mbuf, uint16_t nb_pkts)
+{
+	uint16_t ch_id = dpcon_dev->qbman_ch_id, pull_size;
+	struct qbman_result *dq_storage, *dq_storage1 = NULL, *active;
+	struct qbman_pull_desc pulldesc;
+	struct queue_storage_info_t *q_storage;
+	uint64_t iova_storage;
+	const struct qbman_fd *fd;
+	struct dpaa2_queue *rvq;
+	int ret, rcvd_pkts = 0;
+	struct qbman_swp *swp;
+	struct dpaa2_dpio_dev *ethrx_dpio_dev;
+	uint8_t status, pending;
+
+	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
+		ret = dpaa2_affine_qbman_ethrx_swp();
+		if (ret) {
+			DPAA2_PMD_ERR("Failure(%d) in affining portal", ret);
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_ETHRX_PORTAL;
+	ethrx_dpio_dev = DPAA2_PER_LCORE_ETHRX_DPIO;
+	q_storage = &dpcon_dev->q_storage[rte_lcore_id()];
+
+	pull_size = (nb_pkts > dpaa2_dqrr_size) ?
+		dpaa2_dqrr_size : nb_pkts;
+	if (likely(q_storage->active_dqs))
+		goto pull_active_dqs;
+
+	q_storage->toggle = 0;
+	dq_storage = q_storage->dq_storage[q_storage->toggle];
+	iova_storage = q_storage->iova_dq_storage[q_storage->toggle];
+	q_storage->last_num_pkts = pull_size;
+	dpaa2_qbman_pull_desc_channel_set(&pulldesc, nb_pkts,
+		ch_id, dq_storage, iova_storage);
+	if (check_swp_active_dqs(ethrx_dpio_dev->index)) {
+		do {
+			active = get_swp_active_dqs(ethrx_dpio_dev->index);
+			if (qbman_check_command_complete(active))
+				break;
+		} while (1);
+		clear_swp_active_dqs(ethrx_dpio_dev->index);
+	}
+	while (1) {
+		if (qbman_swp_pull(swp, &pulldesc)) {
+			DPAA2_PMD_DP_DEBUG("QBMAN is busy (1)");
+			/* Portal was busy, try again */
+			continue;
+		}
+		break;
+	}
+	q_storage->active_dqs = dq_storage;
+	q_storage->active_dpio_id = ethrx_dpio_dev->index;
+	set_swp_active_dqs(ethrx_dpio_dev->index, dq_storage);
+
+pull_active_dqs:
+
+	dq_storage = q_storage->active_dqs;
+	rte_prefetch0((void *)(size_t)(dq_storage));
+	rte_prefetch0((void *)(size_t)(dq_storage + 1));
+
+	/* Prepare next pull descriptor. This will give space for the
+	 * prefetching done on DQRR entries
+	 */
+	q_storage->toggle ^= 1;
+	dq_storage1 = q_storage->dq_storage[q_storage->toggle];
+	iova_storage = q_storage->iova_dq_storage[q_storage->toggle];
+	dpaa2_qbman_pull_desc_channel_set(&pulldesc, nb_pkts,
+			ch_id, dq_storage1, iova_storage);
+
+	while (!qbman_check_command_complete(dq_storage))
+		;
+	active = get_swp_active_dqs(q_storage->active_dpio_id);
+	if (dq_storage == active)
+		clear_swp_active_dqs(q_storage->active_dpio_id);
+
+	pending = 1;
+
+	do {
+		/* Loop until the dq_storage is updated with
+		 * new token by QBMAN
+		 */
+		while (!qbman_check_new_result(dq_storage))
+			;
+		rte_prefetch0((void *)((size_t)(dq_storage + 2)));
+		/* Check whether Last Pull command is Expired and
+		 * setting Condition for Loop termination
+		 */
+		if (qbman_result_DQ_is_pull_complete(dq_storage)) {
+			pending = 0;
+			/* Check for valid frame. */
+			status = qbman_result_DQ_flags(dq_storage);
+			if (unlikely(!(status & QBMAN_DQ_STAT_VALIDFRAME)))
+				continue;
+		}
+
+		fd = qbman_result_DQ_fd(dq_storage);
+		rvq = (void *)qbman_result_DQ_fqd_ctx(dq_storage);
+		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg)) {
+			mbuf[rcvd_pkts] = eth_sg_fd_to_mbuf(fd,
+				rvq->eth_data->port_id);
+		} else {
+			mbuf[rcvd_pkts] = eth_fd_to_mbuf(fd,
+				rvq->eth_data->port_id);
+		}
+		rcvd_pkts++;
+
+		dq_storage++;
+	} while (pending);
+
+	if (check_swp_active_dqs(ethrx_dpio_dev->index)) {
+		do {
+			active = get_swp_active_dqs(ethrx_dpio_dev->index);
+			if (qbman_check_command_complete(active))
+				break;
+		} while (1);
+		clear_swp_active_dqs(ethrx_dpio_dev->index);
+	}
+	/* issue a volatile dequeue command for next pull */
+	while (1) {
+		if (qbman_swp_pull(swp, &pulldesc)) {
+			DPAA2_PMD_DP_DEBUG("QBMAN is busy (2)");
+			continue;
+		}
+		break;
+	}
+	q_storage->active_dqs = dq_storage1;
+	q_storage->active_dpio_id = ethrx_dpio_dev->index;
+	set_swp_active_dqs(ethrx_dpio_dev->index, dq_storage1);
+
+	return rcvd_pkts;
+}
+
 static int
 dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 	struct vfio_device_info *obj_info __rte_unused,
@@ -194,13 +330,13 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 {
 	struct dpaa2_dpcon_dev *dpcon_dev;
 	struct dpcon_attr attr;
-	int ret, dpcon_id = obj->object_id;
+	int ret = 0, dpcon_id = obj->object_id;
 
 	/* Allocate DPAA2 dpcon handle */
 	dpcon_dev = rte_malloc(NULL, sizeof(struct dpaa2_dpcon_dev), 0);
 	if (!dpcon_dev) {
 		DPAA2_PMD_ERR("Memory allocation failed for dpcon device");
-		return -1;
+		return -ENOMEM;
 	}
 
 	/* Open the dpcon object via MC and save handle for further use */
@@ -208,18 +344,16 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 	ret = dpcon_open(&dpcon_dev->dpcon,
 			CMD_PRI_LOW, dpcon_id, &dpcon_dev->token);
 	if (ret) {
-		DPAA2_PMD_ERR("Unable to open dpcon device: err(%d)",
-		ret);
+		DPAA2_PMD_ERR("Unable to open dpcon device: err(%d)", ret);
 		rte_free(dpcon_dev);
-		return -1;
+		return ret;
 	}
 
 	/* Get the resource information i.e. Channel ID, dpconc ID, priority*/
 	ret = dpcon_get_attributes(&dpcon_dev->dpcon,
-	CMD_PRI_LOW, dpcon_dev->token, &attr);
-	if (ret != 0) {
+		CMD_PRI_LOW, dpcon_dev->token, &attr);
+	if (ret) {
 		DPAA2_PMD_ERR("dpcon attribute fetch failed: err(%d)", ret);
-		rte_free(dpcon_dev);
 		goto get_attr_failure;
 	}
 
@@ -239,21 +373,30 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 
 	rte_atomic16_init(&dpcon_dev->in_use);
 	TAILQ_INSERT_TAIL(&dpcon_dev_list, dpcon_dev, next);
-	return 0;
+	return ret;
 
 get_attr_failure:
 	dpcon_close(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
+	rte_free(dpcon_dev);
 	return ret;
 }
 
 struct dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void)
 {
 	struct dpaa2_dpcon_dev *dpcon_dev = NULL;
+	char *env = getenv("DPAA2_SCHEDULE_RX_PREFETCH");
+	int prefetch_enable = env ? atoi(env) : 1;
 
 	/* Get DPCON dev handle from list using index */
 	TAILQ_FOREACH(dpcon_dev, &dpcon_dev_list, next) {
 		if (dpcon_dev && rte_atomic16_test_and_set(&dpcon_dev->in_use))
 			break;
+	}
+	if (dpcon_dev) {
+		if (prefetch_enable)
+			dpcon_dev->rx_schedule = dpaa2_dpcon_prefetch_recv;
+		else
+			dpcon_dev->rx_schedule = dpaa2_dpcon_recv;
 	}
 
 	return dpcon_dev;
@@ -291,20 +434,22 @@ static void
 dpaa2_close_dpcon_device(int object_id)
 {
 	struct dpaa2_dpcon_dev *dpcon_dev = NULL;
-	int32_t ret;
+	int32_t ret, i;
 
 	dpcon_dev = get_dpcon_from_id((uint32_t)object_id);
 	if (dpcon_dev) {
 		/*Reset the device to it's default state*/
 		ret = dpcon_reset(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
-		if (ret != 0)
+		if (ret)
 			DPAA2_PMD_ERR("Error in resetting  the device: err(%d)", ret);
 
 		dpaa2_free_dpcon_dev(dpcon_dev);
 		dpcon_close(&dpcon_dev->dpcon, CMD_PRI_LOW, dpcon_dev->token);
-		if (ret != 0)
+		if (ret)
 			DPAA2_PMD_ERR("Error in closing the device: err(%d)", ret);
 		TAILQ_REMOVE(&dpcon_dev_list, dpcon_dev, next);
+		for (i = 0; i < RTE_MAX_LCORE; i++)
+			dpaa2_free_dq_storage(&dpcon_dev->q_storage[i]);
 		rte_free(dpcon_dev);
 	}
 }

@@ -123,14 +123,11 @@ rte_dpaa2_scheduler_add(void *scheduler_handle,
 }
 
 __rte_experimental
-int32_t
+uint16_t
 rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
-		       uint16_t nb_pkts)
+	uint16_t nb_pkts)
 {
 	struct dpaa2_dpcon_dev *dpcon_dev = scheduler_handle;
-	int ret = 0;
-	ret = dpaa2_dpcon_recv(dpcon_dev, mbuf, nb_pkts);
-	if (ret > 0)
-		return ret;
-	return 0;
+
+	return dpcon_dev->rx_schedule(dpcon_dev, mbuf, nb_pkts);
 }
