@@ -95,10 +95,11 @@ dpaa2_dev_rx_mbuf_sched_set(struct rte_mbuf *m,
 
 static void __rte_hot
 dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
-	void *hw_annot_addr)
+	void *hw_annot_addr, int is_vlan)
 {
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
+	int default_parsed = false, vlan2 = false;
 
 #if defined(RTE_LIBRTE_IEEE1588)
 	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
@@ -113,6 +114,11 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	}
 
 	m->packet_type = RTE_PTYPE_UNKNOWN;
+	if (unlikely(is_vlan)) {
+		if (frc & DPAA2_PKT_TYPE_VLAN_2)
+			vlan2 = true;
+		frc &= (~DPAA2_PKT_TYPE_VLAN);
+	}
 	switch (frc) {
 	case DPAA2_PKT_TYPE_ETHER:
 		m->packet_type = RTE_PTYPE_L2_ETHER;
@@ -167,6 +173,24 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		break;
 	default:
 		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);
+		default_parsed = true;
+	}
+
+	if (unlikely(is_vlan && !default_parsed)) {
+		struct dpaa2_psr_result_word5 word5;
+		rte_be16_t *vlan_tci = NULL;
+
+		m->packet_type |= RTE_PTYPE_L2_ETHER_VLAN;
+		m->ol_flags |= RTE_MBUF_F_RX_VLAN;
+		*(rte_be64_t *)&word5 = rte_cpu_to_be_64(annotation->word5);
+		if (vlan2) {
+			vlan_tci = rte_pktmbuf_mtod_offset(m, void *,
+				word5.vlan_tci_n_off);
+		} else {
+			vlan_tci = rte_pktmbuf_mtod_offset(m, void *,
+				word5.vlan_tci_1_off);
+		}
+		m->vlan_tci = rte_be_to_cpu_16(*vlan_tci);
 	}
 
 	if (dpaa2_enable_ts[m->port]) {
@@ -387,7 +411,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 	first_seg->next = NULL;
 	first_seg->port = port_id;
 	if (dpaa2_svr_family == SVR_LX2160A) {
-		dpaa2_dev_rx_parse_new(first_seg, fd, hw_annot_addr);
+		dpaa2_dev_rx_parse_new(first_seg, fd, hw_annot_addr, false);
 	} else {
 		first_seg->packet_type = dpaa2_dev_rx_parse(first_seg,
 			hw_annot_addr);
@@ -439,9 +463,21 @@ eth_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 	void *hw_annot_addr = v_addr + DPAA2_FD_PTA_SIZE;
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(v_addr,
 		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+	int is_vlan = false, prefetch = false;
 
-	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
+	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0) {
 		rte_prefetch0(hw_annot_addr);
+		prefetch = true;
+	}
+	if (unlikely(dpaa2_svr_family == SVR_LX2160A &&
+		(DPAA2_GET_FD_FRC_PARSE_SUM(fd) &
+		DPAA2_PKT_TYPE_VLAN))) {
+		mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
+		rte_prefetch0(rte_pktmbuf_mtod(mbuf, void *));
+		if (!prefetch)
+			rte_prefetch0(hw_annot_addr);
+		is_vlan = true;
+	}
 
 	/* need to repopulated some of the fields,
 	 * as they may have changed in last transmission
@@ -466,7 +502,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 	 */
 
 	if (dpaa2_svr_family == SVR_LX2160A)
-		dpaa2_dev_rx_parse_new(mbuf, fd, hw_annot_addr);
+		dpaa2_dev_rx_parse_new(mbuf, fd, hw_annot_addr, is_vlan);
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf, hw_annot_addr);
 	dpaa2_dev_rx_mbuf_sched_set(mbuf, fd);
