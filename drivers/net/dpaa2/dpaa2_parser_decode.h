@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2022-2024 NXP
+ *   Copyright 2022-2025 NXP
  *
  */
 
@@ -768,6 +768,8 @@ dpaa2_dev_rx_parse_frc(const struct qbman_fd *fd,
 	const struct dpaa2_psr_result_parse *psr;
 	const struct dpaa2_fas_parse *fas;
 	uint32_t packet_type = RTE_PTYPE_L4_NONFRAG;
+	uint8_t vlan_offset;
+	rte_be16_t *vlan_tci;
 
 	/**Access annotation only for vlan and checksum error.*/
 
@@ -778,13 +780,14 @@ dpaa2_dev_rx_parse_frc(const struct qbman_fd *fd,
 		packet_type |= RTE_PTYPE_L2_ETHER_VLAN;
 		m->ol_flags |= RTE_MBUF_F_RX_VLAN;
 		if (sum->vlan > 1) {
-			psr = (const void *)&annotation->word3;
-			m->vlan_tci = psr->word5.vlan_tci_n_off;
+			vlan_offset = psr->word5.vlan_tci_n_off;
 			packet_type |= RTE_PTYPE_L2_ETHER_QINQ;
 			m->ol_flags |= RTE_MBUF_F_RX_QINQ;
 		} else {
-			m->vlan_tci = psr->word5.vlan_tci_1_off;
+			vlan_offset = psr->word5.vlan_tci_1_off;
 		}
+		vlan_tci = rte_pktmbuf_mtod_offset(m, void *, vlan_offset);
+		m->vlan_tci = rte_be_to_cpu_16(*vlan_tci);
 	}
 	if (sum_l->l4.l3 == DPAA2_PSR_SUMMARY_IPV4) {
 		packet_type |= RTE_PTYPE_L3_IPV4;
