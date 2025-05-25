@@ -4784,6 +4784,10 @@ dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 				flow->tc_id, &meter_mark);
 			if (ret)
 				goto end_action_set;
+			if (dist_size)
+				*dist_size = priv->dist_queues;
+			if (is_rss)
+				*is_rss = false;
 			break;
 		case RTE_FLOW_ACTION_TYPE_METER:
 			meter = actions[i].conf;
@@ -4795,6 +4799,10 @@ dpaa2_flow_action_update(struct dpaa2_dev_priv *priv,
 				flow->tc_id, &meter_mark);
 			if (ret)
 				goto end_action_set;
+			if (dist_size)
+				*dist_size = priv->dist_queues;
+			if (is_rss)
+				*is_rss = false;
 			break;
 		case RTE_FLOW_ACTION_TYPE_PF:
 			/* Skip this action, have to add for vxlan*/
@@ -4834,7 +4842,7 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 	const struct rte_flow_action actions[],
 	struct rte_flow_error *error)
 {
-	int is_keycfg_configured = 0, end_of_list = 0, is_rss;
+	int is_keycfg_configured = 0, end_of_list = 0, is_rss = -1;
 	int ret = 0, i = 0;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *curr = LIST_FIRST(&priv->flows);
@@ -5047,6 +5055,10 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 		&tc_key_extract->dpkg, &dist_size, &is_rss);
 	if (ret)
 		goto end_flow_set;
+	if (is_rss < 0) {
+		ret = -EINVAL;
+		goto end_flow_set;
+	}
 
 	ret = dpaa2_flow_table_update(priv, dist_size,
 		is_keycfg_configured, flow->tc_id, is_rss);
@@ -5956,7 +5968,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_key_extract *tc_ext;
 	uint16_t dist_size;
-	int ret, is_rss;
+	int ret, is_rss = -1;
 
 	/* check for the valid flow */
 	LIST_FOREACH(flow, &priv->flows, next) {
@@ -5990,6 +6002,13 @@ action_update:
 	if (ret) {
 		DPAA2_PMD_ERR("%s: action update failed(%d)",
 			__func__, ret);
+
+		goto quit;
+	}
+	if (is_rss < 0) {
+		DPAA2_PMD_ERR("%s: action update rss not set",
+			__func__);
+		ret = -EINVAL;
 
 		goto quit;
 	}
