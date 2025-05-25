@@ -120,56 +120,64 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		frc &= (~DPAA2_PKT_TYPE_VLAN);
 	}
 	switch (frc) {
-	case DPAA2_PKT_TYPE_ETHER:
-		m->packet_type = RTE_PTYPE_L2_ETHER;
-		break;
-	case DPAA2_PKT_TYPE_IPV4:
+	case DPAA2_PKT_TYPE_IPV4_UDP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV4;
-		break;
-	case DPAA2_PKT_TYPE_IPV6:
-		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV6;
-		break;
-	case DPAA2_PKT_TYPE_IPV4_EXT:
-		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV4_EXT;
-		break;
-	case DPAA2_PKT_TYPE_IPV6_EXT:
-		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV6_EXT;
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
 		break;
 	case DPAA2_PKT_TYPE_IPV4_TCP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP;
 		break;
-	case DPAA2_PKT_TYPE_IPV6_TCP:
+	case DPAA2_PKT_TYPE_IPV4:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP;
-		break;
-	case DPAA2_PKT_TYPE_IPV4_UDP:
-		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
+			RTE_PTYPE_L3_IPV4;
 		break;
 	case DPAA2_PKT_TYPE_IPV6_UDP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP;
 		break;
-	case DPAA2_PKT_TYPE_IPV4_SCTP:
+	case DPAA2_PKT_TYPE_IPV6_TCP:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_SCTP;
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP;
 		break;
-	case DPAA2_PKT_TYPE_IPV6_SCTP:
+	case DPAA2_PKT_TYPE_IPV6:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_SCTP;
+			RTE_PTYPE_L3_IPV6;
 		break;
-	case DPAA2_PKT_TYPE_IPV4_ICMP:
+	case DPAA2_PKT_TYPE_IPV4_FRAG:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_ICMP;
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_FRAG;
 		break;
-	case DPAA2_PKT_TYPE_IPV6_ICMP:
+	case DPAA2_PKT_TYPE_IPV6_FRAG:
 		m->packet_type = RTE_PTYPE_L2_ETHER |
-			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_ICMP;
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_FRAG;
+		break;
+	case DPAA2_PKT_TYPE_IPV4_ESP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_TUNNEL_ESP;
+		break;
+	case DPAA2_PKT_TYPE_IPV6_ESP:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_TUNNEL_ESP;
+		break;
+	case DPAA2_PKT_TYPE_IPV4_GTPU:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_TUNNEL_GTPU;
+		break;
+	case DPAA2_PKT_TYPE_IPV6_GTPU:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_TUNNEL_GTPU;
+		break;
+	case DPAA2_PKT_TYPE_IPV4_GTPC:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV4 | RTE_PTYPE_TUNNEL_GTPC;
+		break;
+	case DPAA2_PKT_TYPE_IPV6_GTPC:
+		m->packet_type = RTE_PTYPE_L2_ETHER |
+			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_TUNNEL_GTPC;
+		break;
+	case DPAA2_PKT_TYPE_ETHER:
+		m->packet_type = RTE_PTYPE_L2_ETHER;
 		break;
 	default:
 		m->packet_type = dpaa2_dev_rx_parse_frc(fd, m, annotation);

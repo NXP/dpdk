@@ -77,21 +77,34 @@ enum dpaa2_parser_protocol_id {
 #define DPAA2_PSR_SUMMARY_GTPC 21
 #define DPAA2_PSR_SUMMARY_VXLAN 27
 
+#define DPAA2_PSR_SUMMARY_L4_BIT_SIZE 5
+#define DPAA2_PSR_SUMMARY_L3_BIT_SIZE 2
+
+#define DPAA2_PSR_SUMMARY_L4_EXT_BIT_SIZE 4
+#define DPAA2_PSR_SUMMARY_L4_EXT_IP_BIT_SIZE 1
+#define DPAA2_PSR_SUMMARY_L4_EXT_L3_BIT_SIZE 2
+#define DPAA2_PSR_SUMMARY_L4_EXT_L3_POS \
+	(DPAA2_PSR_SUMMARY_L4_EXT_BIT_SIZE + \
+	DPAA2_PSR_SUMMARY_L4_EXT_IP_BIT_SIZE)
+
+#define DPAA2_PSR_SUMMARY_NON_IP_L2_BIT_SIZE 4
+#define DPAA2_PSR_SUMMARY_NON_IP_NON_IP_BIT_SIZE 3
+
 union dpaa2_psr_summary_l {
 	struct {
-		uint8_t l4:5;
-		uint8_t l3:2;
+		uint8_t l4:DPAA2_PSR_SUMMARY_L4_BIT_SIZE;
+		uint8_t l3:DPAA2_PSR_SUMMARY_L3_BIT_SIZE;
 		uint8_t fafe3:1;
 	} l4;
 	struct {
-		uint8_t l4_ext:4;
-		uint8_t ip:1;
-		uint8_t l3:2;
+		uint8_t l4_ext:DPAA2_PSR_SUMMARY_L4_EXT_BIT_SIZE;
+		uint8_t ip:DPAA2_PSR_SUMMARY_L4_EXT_IP_BIT_SIZE;
+		uint8_t l3:DPAA2_PSR_SUMMARY_L4_EXT_L3_BIT_SIZE;
 		uint8_t fafe3:1;
 	} l4_ext;
 	struct {
-		uint8_t l2:4;
-		uint8_t non_ip:3;
+		uint8_t l2:DPAA2_PSR_SUMMARY_NON_IP_L2_BIT_SIZE;
+		uint8_t non_ip:DPAA2_PSR_SUMMARY_NON_IP_NON_IP_BIT_SIZE;
 		uint8_t fafe3:1;
 	} non_ip;
 } __attribute__((__packed__));
