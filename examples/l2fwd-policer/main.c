@@ -90,7 +90,6 @@ struct l2fwd_policer_tc_flow {
 #define RTE_LOGTYPE_L2FWD_POLICER RTE_LOGTYPE_USER1
 
 #define MAX_PKT_BURST 32
-#define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
 static volatile bool force_quit;
@@ -103,6 +102,8 @@ static int promiscuous_on;
 
 /* Flow classification enabled by default */
 static int enable_flow = 1;
+
+static int tx_multi_ports = 1;
 
 #define PORT_MAX_FLOWS 128
 
@@ -150,8 +151,6 @@ static uint32_t s_pbs_update;
 
 static uint16_t s_meter_action = RTE_FLOW_ACTION_TYPE_METER_MARK;
 
-static void *sch_handle;
-
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -170,16 +169,22 @@ static uint32_t l2fwd_policer_enabled_port_mask = 0;
 static uint32_t l2fwd_policer_dst_ports[RTE_MAX_ETHPORTS];
 
 #define MAX_RX_QUEUE_PER_LCORE 16
-#define MAX_TX_QUEUE_PER_PORT 16
 /* List of queues to be polled for a given lcore. 8< */
-struct lcore_queue_conf {
-	unsigned n_rx_port;
-	unsigned rx_port_list[MAX_RX_QUEUE_PER_LCORE];
-} __rte_cache_aligned;
-struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
-/* >8 End of list of queues to be polled for a given lcore. */
 
-static struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS];
+struct port_rxq_pair {
+	uint16_t port_id;
+	uint16_t queue_id;
+};
+
+struct lcore_queue_conf {
+	void *sch_handle;
+	uint16_t n_rx_port;
+	struct port_rxq_pair rx_port_list[MAX_RX_QUEUE_PER_LCORE];
+};
+
+static struct lcore_queue_conf s_lcore_queue_conf[RTE_MAX_LCORE];
+static int s_port_queue_nb[RTE_MAX_LCORE];
+/* >8 End of list of queues to be polled for a given lcore. */
 
 static struct rte_eth_conf port_conf = {
 	.txmode = {
@@ -297,19 +302,11 @@ l2fwd_policer_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 
 /* Simple forward. 8< */
 static void
-l2fwd_policer_simple_forward(struct rte_mbuf *m, unsigned portid)
+l2fwd_policer_simple_forward(struct rte_mbuf *m, uint16_t dst_port)
 {
-	unsigned dst_port;
-	int sent;
-	struct rte_eth_dev_tx_buffer *buffer;
+	uint16_t sent;
 
-	dst_port = l2fwd_policer_dst_ports[portid];
-
-	if (mac_updating)
-		l2fwd_policer_mac_updating(m, dst_port);
-
-	buffer = tx_buffer[dst_port];
-	sent = rte_eth_tx_buffer(dst_port, 0, buffer, m);
+	sent = rte_eth_tx_burst(dst_port, 0, &m, 1);
 	if (sent)
 		port_statistics[dst_port].tx += sent;
 }
@@ -321,35 +318,24 @@ l2fwd_policer_main_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *m;
-	int sent;
-	uint16_t lcore_id, i, portid, nb_rx;
-	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
+	uint16_t sent;
+	uint16_t lcore_id, i, nb_rx;
+	uint64_t prev_tsc = 0, diff_tsc, cur_tsc;
 	struct lcore_queue_conf *qconf;
-	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
-		US_PER_S * BURST_TX_DRAIN_US;
-	struct rte_eth_dev_tx_buffer *buffer;
-
-	prev_tsc = 0;
-	timer_tsc = 0;
+	uint16_t rx_ports[MAX_PKT_BURST];
+	uint16_t tx_ports[MAX_PKT_BURST];
 
 	lcore_id = rte_lcore_id();
-	qconf = &lcore_queue_conf[lcore_id];
+	qconf = &s_lcore_queue_conf[lcore_id];
 
 	if (qconf->n_rx_port == 0) {
-		RTE_LOG(INFO, L2FWD_POLICER,
+		RTE_LOG(WARNING, L2FWD_POLICER,
 			"lcore %u has nothing to do\n", lcore_id);
 		return;
 	}
 
 	RTE_LOG(INFO, L2FWD_POLICER,
 		"entering main loop on lcore %u\n", lcore_id);
-
-	for (i = 0; i < qconf->n_rx_port; i++) {
-
-		portid = qconf->rx_port_list[i];
-		RTE_LOG(INFO, L2FWD_POLICER,
-			" -- lcoreid=%u portid=%u\n", lcore_id, portid);
-	}
 
 	while (!force_quit) {
 
@@ -360,36 +346,9 @@ l2fwd_policer_main_loop(void)
 		 * TX burst queue drain
 		 */
 		diff_tsc = cur_tsc - prev_tsc;
-		if (unlikely(diff_tsc > drain_tsc)) {
-
-			for (i = 0; i < qconf->n_rx_port; i++) {
-
-				portid = l2fwd_policer_dst_ports[qconf->rx_port_list[i]];
-				buffer = tx_buffer[portid];
-
-				sent = rte_eth_tx_buffer_flush(portid, 0, buffer);
-				if (sent)
-					port_statistics[portid].tx += sent;
-
-			}
-
-			/* if timer is enabled */
-			if (timer_period > 0) {
-
-				/* advance the timer */
-				timer_tsc += diff_tsc;
-
-				/* if timer has reached its timeout */
-				if (unlikely(timer_tsc >= timer_period)) {
-
-					/* do this only on main core */
-					if (lcore_id == rte_get_main_lcore()) {
-						print_stats();
-						/* reset the timer */
-						timer_tsc = 0;
-					}
-				}
-			}
+		if (unlikely(timer_period > 0 &&
+			diff_tsc > timer_period)) {
+			print_stats();
 
 			prev_tsc = cur_tsc;
 		}
@@ -400,18 +359,27 @@ l2fwd_policer_main_loop(void)
 		 *
 		 * Read packet from RX queues
 		 */
-		nb_rx = rte_dpaa2_scheduler_rx(sch_handle,
+		nb_rx = rte_dpaa2_scheduler_rx(qconf->sch_handle,
 			pkts_burst, MAX_PKT_BURST);
 		if (unlikely(!nb_rx))
 			continue;
 
 		for (i = 0; i < nb_rx; i++) {
 			m = pkts_burst[i];
-			portid = pkts_burst[i]->port;
-			rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-			l2fwd_policer_simple_forward(m, portid);
+			rx_ports[i] = m->port;
+			port_statistics[rx_ports[i]].rx++;
+			tx_ports[i] = l2fwd_policer_dst_ports[rx_ports[i]];
+			if (mac_updating)
+				l2fwd_policer_mac_updating(m, tx_ports[i]);
+			if (!tx_multi_ports)
+				l2fwd_policer_simple_forward(pkts_burst[i], tx_ports[i]);
 		}
-		port_statistics[portid].rx += nb_rx;
+		if (tx_multi_ports) {
+			sent = rte_dpaa2_dev_tx_multi_ports(tx_ports,
+				NULL, pkts_burst, nb_rx);
+			for (i = 0; i < sent; i++)
+				port_statistics[tx_ports[i]].tx++;
+		}
 		/* End of read packet from RX queues. */
 	}
 }
@@ -435,7 +403,7 @@ l2fwd_policer_usage(const char *prgname)
 		"      When enabled:\n"
 		"       - The source MAC address is replaced by the TX port MAC address\n"
 		"       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
-		"  --no-enable-flow: Disable vlan flow control (default is enable)\n"
+		"  --enable-flow: Enable/Disable vlan flow control (default is enable)\n"
 		"  --config:(portid,vlanid,vlan_prio)[,(portid,vlanid,vlan_prio)]\n"
 		"      Example: --config='(0,100,3),(1,400,4)'\n"
 		"      portid are acceptable which are used in portmask\n"
@@ -456,7 +424,9 @@ l2fwd_policer_usage(const char *prgname)
 		"  NOTE: In bytes mode, configure L3 rate(kbps) in cir and pir\n"
 		"  --meter_action: Configure meter flow action type (meter_mark or meter)\n"
 		"      Default: meter_mark, directly get profile and(or) policy to\n"
-		"      configure flow action dynamically.",
+		"      configure flow action dynamically.\n"
+		"  --queue_config: Configure (port,queue,core)\n"
+		"  --tx_multi_ports: 0 disable, 1 enable, Default: enable.\n",
 		prgname);
 }
 
@@ -625,6 +595,82 @@ l2fwd_policer_parse_default_color(const char *optarg)
 	}
 }
 
+static int
+l2fwd_policer_parse_queue_config(const char *optarg)
+{
+	char s[256];
+	const char *p, *p0 = optarg;
+	char *end;
+	enum fieldnames {
+		FLD_PORT = 0,
+		FLD_QUEUE,
+		FLD_LCORE,
+		_NUM_FLD
+	};
+	int int_fld[_NUM_FLD];
+	char *str_fld[_NUM_FLD];
+	int i, num;
+	unsigned int size;
+	uint16_t lcore_id, port_id, queue_id;
+	struct lcore_queue_conf *conf;
+
+	p = strchr(p0, '(');
+	while (p) {
+		++p;
+		p0 = strchr(p, ')');
+		if (!p0)
+			return -EINVAL;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -EINVAL;
+
+		snprintf(s, sizeof(s), "%.*s", size, p);
+		num = rte_strsplit(s, sizeof(s), str_fld,
+			_NUM_FLD, ',');
+		if (num > _NUM_FLD || num <= 0)
+			return -EINVAL;
+		for (i = 0; i < num; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno || end == str_fld[i])
+				return -EINVAL;
+		}
+
+		lcore_id = RTE_MAX_LCORE;
+		port_id = RTE_MAX_ETHPORTS;
+		queue_id = 0;
+		if (num > FLD_PORT) {
+			port_id = int_fld[FLD_PORT];
+			if (port_id >= RTE_MAX_ETHPORTS)
+				return -EINVAL;
+		} else {
+			return -EINVAL;
+		}
+		if (num > FLD_QUEUE)
+			queue_id = int_fld[FLD_QUEUE];
+		else
+			return -EINVAL;
+		if (num > FLD_LCORE) {
+			lcore_id = int_fld[FLD_LCORE];
+			if (lcore_id >= RTE_MAX_LCORE)
+				return -EINVAL;
+		} else {
+			return -EINVAL;
+		}
+		conf = &s_lcore_queue_conf[lcore_id];
+		if (conf->n_rx_port >= MAX_RX_QUEUE_PER_LCORE)
+			return -EINVAL;
+		conf->rx_port_list[conf->n_rx_port].port_id = port_id;
+		conf->rx_port_list[conf->n_rx_port].queue_id = queue_id;
+		conf->n_rx_port++;
+		s_port_queue_nb[port_id]++;
+		p = strchr(p0, '(');
+	}
+
+	return 0;
+}
+
 static const char short_options[] =
 	"p:"  /* portmask */
 	"P"   /* promiscuous */
@@ -632,7 +678,7 @@ static const char short_options[] =
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
-#define CMD_LINE_OPT_ENABLE_FLOW "no-enable-flow"
+#define CMD_LINE_OPT_ENABLE_FLOW "enable-flow"
 #define CMD_LINE_OPT_CONFIG "config"
 #define CMD_LINE_OPT_RATE_UNIT_CONFIG "unit"
 #define CMD_LINE_OPT_RATE_COLOR_CONFIG "color"
@@ -643,6 +689,8 @@ static const char short_options[] =
 #define CMD_LINE_OPT_PIR_CONFIG "pir"
 #define CMD_LINE_OPT_PBS_CONFIG "pbs"
 #define CMD_LINE_OPT_METER_ACTION_CONFIG "meter_action"
+#define CMD_LINE_OPT_TX_MULTI_PORTS_CONFIG "tx_multi_ports"
+#define CMD_LINE_OPT_QUEUE_CONFIG "queue_config"
 
 enum {
 	/* long options mapped to a short option */
@@ -661,7 +709,9 @@ enum {
 	CMD_LINE_OPT_CBS,
 	CMD_LINE_OPT_PIR,
 	CMD_LINE_OPT_PBS,
-	CMD_LINE_OPT_METER_ACTION
+	CMD_LINE_OPT_METER_ACTION,
+	CMD_LINE_OPT_TX_MULTI_PORTS,
+	CMD_LINE_OPT_QUEUE_CONFIG_NUM
 };
 
 static const struct option lgopts[] = {
@@ -678,6 +728,8 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_PIR_CONFIG, 1, 0, CMD_LINE_OPT_PIR},
 	{CMD_LINE_OPT_PBS_CONFIG, 1, 0, CMD_LINE_OPT_PBS},
 	{CMD_LINE_OPT_METER_ACTION_CONFIG, 1, 0, CMD_LINE_OPT_METER_ACTION},
+	{CMD_LINE_OPT_TX_MULTI_PORTS_CONFIG, 1, 0, CMD_LINE_OPT_TX_MULTI_PORTS},
+	{CMD_LINE_OPT_QUEUE_CONFIG, 1, 0, CMD_LINE_OPT_QUEUE_CONFIG_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -785,6 +837,16 @@ l2fwd_policer_parse_args(int argc, char **argv)
 				l2fwd_policer_usage(prgname);
 				return ret;
 			}
+			break;
+
+		case CMD_LINE_OPT_TX_MULTI_PORTS:
+			tx_multi_ports = atoi(optarg);
+			break;
+
+		case CMD_LINE_OPT_QUEUE_CONFIG_NUM:
+			ret = l2fwd_policer_parse_queue_config(optarg);
+			if (ret)
+				return ret;
 			break;
 
 		default:
@@ -1480,17 +1542,109 @@ signal_handler(int signum)
 	}
 }
 
+static int
+l2fwd_policer_lcore_port_queue_add(uint16_t lcore,
+	uint16_t portid, uint16_t queue_id)
+{
+	struct lcore_queue_conf *queue_conf;
+	struct rte_eth_rxq_info qinfo;
+	uint16_t flow_id;
+	uint8_t tc_id;
+	int ret;
+
+	ret = rte_eth_rx_queue_info_get(portid, queue_id, &qinfo);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"Get port%d-rxq%d info failed(%d).\n",
+			portid, queue_id, ret);
+	}
+	rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc_id, &flow_id);
+
+	queue_conf = &s_lcore_queue_conf[lcore];
+	queue_conf->rx_port_list[queue_conf->n_rx_port].port_id = portid;
+	queue_conf->rx_port_list[queue_conf->n_rx_port].queue_id = queue_id;
+	queue_conf->n_rx_port++;
+	if (!queue_conf->sch_handle) {
+		queue_conf->sch_handle = rte_dpaa2_scheduler_init();
+		if (!queue_conf->sch_handle) {
+			rte_exit(EXIT_FAILURE,
+				"Init core%d's schedule failed.\n", lcore);
+		}
+		ret = rte_dpaa2_scheduler_start(queue_conf->sch_handle);
+		if (ret) {
+			rte_exit(EXIT_FAILURE,
+				"rte_dpaa2_scheduler_start:err=%d,\n", ret);
+		}
+	}
+	ret = rte_dpaa2_scheduler_add(queue_conf->sch_handle,
+		portid, queue_id, tc_id);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"Schedule port%d-rxq%d failed(%d).\n",
+			portid, queue_id, ret);
+	}
+
+	return 0;
+}
+
+static int
+l2fwd_policer_lcore_port_queue_config(uint16_t lcore,
+	uint16_t portid)
+{
+	struct lcore_queue_conf *queue_conf;
+	struct rte_eth_rxq_info qinfo;
+	uint16_t i, queue_id, flow_id;
+	uint8_t tc_id;
+	int ret;
+
+	queue_conf = &s_lcore_queue_conf[lcore];
+	for (i = 0; i < queue_conf->n_rx_port; i++) {
+		if (queue_conf->rx_port_list[i].port_id != portid)
+			continue;
+		queue_id = queue_conf->rx_port_list[i].queue_id;
+
+		ret = rte_eth_rx_queue_info_get(portid, queue_id, &qinfo);
+		if (ret) {
+			rte_exit(EXIT_FAILURE,
+				"Get port%d-rxq%d info failed(%d).\n",
+				portid, queue_id, ret);
+		}
+		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo,
+			&tc_id, &flow_id);
+		if (!queue_conf->sch_handle) {
+			queue_conf->sch_handle = rte_dpaa2_scheduler_init();
+			if (!queue_conf->sch_handle) {
+				rte_exit(EXIT_FAILURE,
+					"Init core%d's schedule failed.\n", lcore);
+			}
+			ret = rte_dpaa2_scheduler_start(queue_conf->sch_handle);
+			if (ret) {
+				rte_exit(EXIT_FAILURE,
+					"rte_dpaa2_scheduler_start:err=%d,\n", ret);
+			}
+		}
+
+		/* set the scheduler WQ priority
+		 * TC[0] traffic in WQ prio 0, TC[1] traffic in WQ prio 1 and so on
+		 */
+		ret = rte_dpaa2_scheduler_add(queue_conf->sch_handle,
+			portid, queue_id, tc_id);
+		if (ret) {
+			rte_exit(EXIT_FAILURE,
+				"Schedule port%d-rxq%d failed(%d).\n",
+				portid, queue_id, ret);
+		}
+	}
+
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
-	uint16_t nb_ports_available = 0;
-	struct lcore_queue_conf *qconf;
-	unsigned lcore_id, rx_lcore_id;
-	unsigned nb_ports_in_mask = 0;
-	uint16_t portid, last_port;
-	unsigned int nb_lcores = 0;
-	unsigned int nb_mbufs;
-	uint16_t nb_ports, i;
+	uint16_t nb_ports_available = 0, nb_ports_in_mask = 0;
+	uint16_t lcore_id, portid, last_port, nb_ports, i;
+	uint32_t nb_mbufs;
 	int ret;
 	pthread_t pid;
 
@@ -1537,9 +1691,6 @@ main(int argc, char **argv)
 		l2fwd_policer_dst_ports[portid] = 0;
 	last_port = 0;
 
-	/* initialize the scheduler and get the handle */
-	sch_handle = rte_dpaa2_scheduler_init();
-
 	/* populate destination port details */
 	RTE_ETH_FOREACH_DEV(portid) {
 		/* skip ports that are not enabled */
@@ -1562,31 +1713,8 @@ main(int argc, char **argv)
 	}
 	/* >8 End of initialization of the driver. */
 
-	rx_lcore_id = rte_lcore_id();
-	qconf = NULL;
-
-	/* Initialize the port/queue configuration of each logical core */
-	RTE_ETH_FOREACH_DEV(portid) {
-		/* skip ports that are not enabled */
-		if ((l2fwd_policer_enabled_port_mask & (1 << portid)) == 0)
-			continue;
-		if (qconf != &lcore_queue_conf[rx_lcore_id]) {
-			/* Assigned a new logical core in the loop above. */
-			qconf = &lcore_queue_conf[rx_lcore_id];
-			nb_lcores++;
-		}
-
-		qconf->rx_port_list[qconf->n_rx_port] = portid;
-		qconf->n_rx_port++;
-		RTE_LOG(INFO, L2FWD_POLICER,
-			"Lcore %u: RX port %u TX port %u\n",
-			rx_lcore_id, portid,
-			l2fwd_policer_dst_ports[portid]);
-	}
-
 	nb_mbufs = RTE_MAX(nb_ports * (nb_rxd +
-		nb_txd + MAX_PKT_BURST +
-		nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
+		nb_txd + MAX_PKT_BURST), (uint16_t)8192);
 
 	/* Create the mbuf pool. 8< */
 	l2fwd_policer_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
@@ -1680,21 +1808,32 @@ main(int argc, char **argv)
 			rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo,
 				&tc_id, &flow_id);
 
-			/* set the scheduler WQ priority
-			 * TC[0] traffic in WQ prio 0, TC[1] traffic in WQ prio 1 and so on
-			 */
-			ret = rte_dpaa2_scheduler_add(sch_handle,
-				portid, i, tc_id);
-			if (ret) {
-				rte_exit(EXIT_FAILURE,
-					"Schedule port%d-rxq%d failed(%d).\n",
-					portid, i, ret);
-			}
 			queue_num = s_port_param[portid].queue_num[tc_id];
 			s_port_param[portid].queue_ids[tc_id][queue_num] = i;
 			s_port_param[portid].flow_ids[tc_id][queue_num] = flow_id;
 			s_port_param[portid].queue_num[tc_id]++;
 			/* >8 End of RX queue setup. */
+		}
+
+		if (!s_port_queue_nb[portid]) {
+			lcore_id = rte_get_main_lcore();
+			for (i = 0; i < dev_info.max_rx_queues; i++) {
+				ret = l2fwd_policer_lcore_port_queue_add(lcore_id, portid, i);
+				if (ret) {
+					rte_exit(EXIT_FAILURE,
+						"Add port(%d) lcore(%d) queue(%d): err=%d\n",
+						portid, lcore_id, i, ret);
+				}
+			}
+		} else {
+			for (i = 0; i < RTE_MAX_LCORE; i++) {
+				ret = l2fwd_policer_lcore_port_queue_config(i, portid);
+				if (ret) {
+					rte_exit(EXIT_FAILURE,
+						"Config port(%d) i(%d): err=%d\n",
+						portid, i, ret);
+				}
+			}
 		}
 
 		/* Init one TX queue on each port. 8< */
@@ -1709,26 +1848,7 @@ main(int argc, char **argv)
 				ret, portid);
 		/* >8 End of init one TX queue on each port. */
 
-		/* Initialize TX buffers */
-		tx_buffer[portid] = rte_zmalloc_socket("tx_buffer",
-				RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
-				rte_eth_dev_socket_id(portid));
-		if (tx_buffer[portid] == NULL)
-			rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
-					portid);
-
-		rte_eth_tx_buffer_init(tx_buffer[portid], MAX_PKT_BURST);
-
-		ret = rte_eth_tx_buffer_set_err_callback(tx_buffer[portid],
-				rte_eth_tx_buffer_count_callback,
-				&port_statistics[portid].dropped);
-		if (ret < 0)
-			rte_exit(EXIT_FAILURE,
-			"Cannot set error callback for tx buffer on port %u\n",
-				 portid);
-
-		ret = rte_eth_dev_set_ptypes(portid, RTE_PTYPE_UNKNOWN, NULL,
-					     0);
+		ret = rte_eth_dev_set_ptypes(portid, RTE_PTYPE_UNKNOWN, NULL, 0);
 		if (ret) {
 			RTE_LOG(WARNING, L2FWD_POLICER,
 				"Port %u, Failed to disable Ptype parsing\n",
@@ -1781,12 +1901,6 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* start the scheduler */
-	ret = rte_dpaa2_scheduler_start(sch_handle);
-	if (ret < 0)
-		rte_exit(EXIT_FAILURE, "rte_dpaa2_scheduler_start:err=%d,\n", ret);
-
-
 	if (!nb_ports_available) {
 		rte_exit(EXIT_FAILURE,
 			"All available ports are disabled. Please set portmask.\n");
@@ -1808,7 +1922,7 @@ main(int argc, char **argv)
 		if (!(l2fwd_policer_enabled_port_mask & (1 << portid)))
 			continue;
 		for (i = 0; i < POLICER_TC_MAX_NUM; i++) {
-			if (!s_port_param[portid].tc_flow[i].valid)
+			if (!s_port_param[portid].tc_flow[i].flow)
 				continue;
 			ret = rte_flow_destroy(portid,
 				s_port_param[portid].tc_flow[i].flow, NULL);
