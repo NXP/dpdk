@@ -33,13 +33,89 @@
 
 #include <dpaax_iova_table.h>
 
+#define DPAA2_POOL_MP_SYNC "dpaa2_pool_mp_sync"
+#define DPAA2_POOL_OPS_IDX_REQ 0x100
+#define DPAA2_POOL_OPS_IDX_RSP 0x101
+
+static int s_dpaa2_pool_mp_msg_setup;
+
+struct dpaa2_pool_mp_msg {
+	uint16_t msg_type;
+	uint8_t msg_data[];
+};
+
 struct dpaa2_bp_info *rte_dpaa2_bpid_info;
 static struct dpaa2_bp_list *h_bp_list;
 
 static int16_t s_dpaa2_pool_ops_idx = RTE_MEMPOOL_MAX_OPS_IDX;
 
+static int
+dpaa2_mbuf_pool_mp_primary(const struct rte_mp_msg *msg,
+	const void *peer)
+{
+	struct rte_mp_msg reply;
+	const struct dpaa2_pool_mp_msg *req_msg = (const void *)msg->param;
+	struct dpaa2_pool_mp_msg *rsp_msg = (void *)reply.param;
+
+	memset(&reply, 0, sizeof(reply));
+
+	switch (req_msg->msg_type) {
+	case DPAA2_POOL_OPS_IDX_REQ:
+		rsp_msg->msg_type = DPAA2_POOL_OPS_IDX_RSP;
+		rte_memcpy(rsp_msg->msg_data, &s_dpaa2_pool_ops_idx,
+			sizeof(s_dpaa2_pool_ops_idx));
+		break;
+	default:
+		DPAA2_MEMPOOL_ERR("%s received invalid request(%d)",
+			__func__, req_msg->msg_type);
+		return -ENOTSUP;
+	}
+
+	strcpy(reply.name, DPAA2_POOL_MP_SYNC);
+	return rte_mp_reply(&reply, peer);
+}
+
 int rte_dpaa2_mpool_get_ops_idx(void)
 {
+	struct rte_mp_msg mp_req;
+	struct rte_mp_reply mp_reply;
+	struct timespec ts = {.tv_sec = 5, .tv_nsec = 0};
+	int ret = 0;
+	struct dpaa2_pool_mp_msg *req_msg = (void *)mp_req.param;
+	struct dpaa2_pool_mp_msg *rsp_msg;
+
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY ||
+		s_dpaa2_pool_ops_idx != RTE_MEMPOOL_MAX_OPS_IDX)
+		return s_dpaa2_pool_ops_idx;
+
+	strcpy(mp_req.name, DPAA2_POOL_MP_SYNC);
+	req_msg->msg_type = DPAA2_POOL_OPS_IDX_REQ;
+	memset(&mp_reply, 0, sizeof(struct rte_mp_reply));
+	ret = rte_mp_request_sync(&mp_req, &mp_reply, &ts);
+	if (ret) {
+		DPAA2_MEMPOOL_ERR("%s Failed to get response(%d)",
+			__func__, ret);
+		return ret;
+	}
+	if (!mp_reply.msgs) {
+		DPAA2_MEMPOOL_ERR("%s Failed to get response message",
+			__func__);
+		return -EINVAL;
+	}
+	rsp_msg = (void *)mp_reply.msgs;
+	if (rsp_msg->msg_type == DPAA2_POOL_OPS_IDX_RSP) {
+		rte_memcpy(&s_dpaa2_pool_ops_idx, rsp_msg->msg_data,
+			sizeof(s_dpaa2_pool_ops_idx));
+		ret = 0;
+	} else {
+		DPAA2_MEMPOOL_ERR("%s received invalid response(%d)",
+			__func__, rsp_msg->msg_type);
+		ret = -EINVAL;
+	}
+	free(mp_reply.msgs);
+
+	if (ret)
+		return ret;
 	return s_dpaa2_pool_ops_idx;
 }
 
@@ -152,8 +228,16 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	if (s_dpaa2_pool_ops_idx == RTE_MEMPOOL_MAX_OPS_IDX) {
 		s_dpaa2_pool_ops_idx = mp->ops_index;
 	} else if (s_dpaa2_pool_ops_idx != mp->ops_index) {
-		DPAA2_MEMPOOL_ERR("Only single ops index only\n");
+		DPAA2_MEMPOOL_ERR("Single ops index only\n");
 		return -EINVAL;
+	}
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY &&
+		!s_dpaa2_pool_mp_msg_setup) {
+		ret = rte_mp_action_register(DPAA2_POOL_MP_SYNC,
+			dpaa2_mbuf_pool_mp_primary);
+		if (ret)
+			return ret;
+		s_dpaa2_pool_mp_msg_setup = 1;
 	}
 
 	bp_list->next = h_bp_list;
