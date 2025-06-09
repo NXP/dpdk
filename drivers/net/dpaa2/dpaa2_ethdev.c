@@ -870,7 +870,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint8_t options = 0;
 	uint8_t flow_id;
 	uint32_t bpid;
-	int i, ret;
+	int i, ret, ops_idx;
 
 	DPAA2_PMD_DEBUG("dev =%p, queue =%d, pool = %p, conf =%p",
 			dev, rx_queue_id, mb_pool, rx_conf);
@@ -886,6 +886,13 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (rx_conf->rx_deferred_start) {
 		DPAA2_PMD_ERR("%s:Rx deferred start not supported",
 			dev->data->name);
+		return -EINVAL;
+	}
+
+	ops_idx = rte_dpaa2_mpool_get_ops_idx();
+	if (ops_idx != mb_pool->ops_index) {
+		DPAA2_PMD_ERR("MP(%s)'s ops index(%d) != %d\n",
+			mb_pool->name, mb_pool->ops_index, ops_idx);
 		return -EINVAL;
 	}
 
