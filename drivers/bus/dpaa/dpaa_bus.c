@@ -815,14 +815,13 @@ rte_dpaa_bus_probe(void)
 			     dev->device.devargs->policy == RTE_DEV_BLOCKED))
 				continue;
 
-			if (probe_all ||
-			    (dev->device.devargs &&
-			     dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
+			if (probe_all || !dev->device.devargs ||
+				(dev->device.devargs &&
+				dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
 				ret = drv->probe(drv, dev);
 				if (ret && !getenv("OLDEV_ENABLED") &&
-				    ret != -ENODEV) {
-					DPAA_BUS_ERR("unable to probe:%s",
-						     dev->name);
+					ret != -ENODEV) {
+					DPAA_BUS_ERR("unable to probe:%s", dev->name);
 				} else {
 					dev->driver = drv;
 					dev->device.driver = &drv->driver;
