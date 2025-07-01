@@ -1193,6 +1193,7 @@ Currently, The below test cases are not supported on I.MX943:
 
   In TX-only mode:
 	./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
+
   'dpdk-test' Application
   ~~~~~~~~~~~~~~~~~~
 
@@ -1380,6 +1381,10 @@ Currently, The below test cases are not supported on I.MX943:
 		4: IP_FRAG_UDP_AND_GTP
 		5: IP_FRAG_PROTO
 		6: IP_FRAG_UDP_AND_GTP_AND_ESP
+
+  Note: e.g. w.r.t. mux_conn_id:
+	dpdmux.0.2 (for dpni.3) = > mux_conn_id should be '2' means => Send the specified filtered traffic to dpdk
+	dpdmux.0.1 (for dpni.1) = > mux_conn_id should be '1' means => Send the specified filtered traffic to linux
 
   IPsec Gateway 'dpdk-ipsec-secgw' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
