@@ -1382,6 +1382,10 @@ Currently, The below test cases are not supported on I.MX943:
 		5: IP_FRAG_PROTO
 		6: IP_FRAG_UDP_AND_GTP_AND_ESP
 
+  Note: e.g. w.r.t. mux_conn_id:
+	dpdmux.0.2 (for dpni.3) = > mux_conn_id should be '2' means => Send the specified filtered traffic to dpdk
+	dpdmux.0.1 (for dpni.1) = > mux_conn_id should be '1' means => Send the specified filtered traffic to linux
+
   IPsec Gateway 'dpdk-ipsec-secgw' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
