@@ -480,7 +480,7 @@ rte_fslmc_probe(void)
 				continue;
 			}
 
-			if (probe_all ||
+			if (probe_all || !dev->device.devargs ||
 			   (dev->device.devargs &&
 			    dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
 				ret = drv->probe(drv, dev);
