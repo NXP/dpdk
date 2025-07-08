@@ -2385,16 +2385,8 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	 * and confirm them back to us.
 	 */
 	do {
-		ret = dpni_disable(dpni, 0, priv->token);
-		if (ret) {
-			DPAA2_PMD_ERR("dpni disable failed (%d)", ret);
-			return ret;
-		}
-		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
-		if (ret) {
-			DPAA2_PMD_ERR("dpni enable check failed (%d)", ret);
-			return ret;
-		}
+		dpni_disable(dpni, 0, priv->token);
+		dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
 		if (dpni_enabled)
 			/* Allow the MC some slack */
 			rte_delay_us(100 * 1000);
