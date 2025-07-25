@@ -80,9 +80,6 @@ static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
 	.align = __alignof__(struct dpaa2_dyn_rx_protocol_pos),
 };
 
-/* Enable error queue */
-bool dpaa2_enable_err_queue;
-
 bool dpaa2_print_parser_result;
 
 int dpaa2_tx_cnf_fd_overflow = 65535;
@@ -562,7 +559,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail;
 	}
 
-	if (dpaa2_enable_err_queue) {
+	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
 		priv->rx_err_vq = rte_zmalloc("dpni_rx_err",
 			sizeof(struct dpaa2_queue), 0);
 		if (!priv->rx_err_vq) {
@@ -640,7 +637,7 @@ fail:
 		priv->rx_vq[i--] = NULL;
 	}
 
-	if (dpaa2_enable_err_queue) {
+	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
 		dpaa2_q = priv->rx_err_vq;
 		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 	}
@@ -946,7 +943,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		options |= DPNI_QUEUE_OPT_FLC;
 		cfg->flc.stash_control = true;
 		dpaa2_flc_stashing_clear_all(&cfg->flc.value);
-		if (getenv("DPAA2_DATA_STASHING_OFF")) {
+		if (priv->flags & DPAAX_RX_DATA_STASHING_OFF_FLAG) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0,
 				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 1;
@@ -1426,7 +1423,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_q->fqid = qid.fqid;
 	}
 
-	if (dpaa2_enable_err_queue) {
+	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
 		ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
 				     DPNI_QUEUE_RX_ERR, 0, 0, &cfg, &qid);
 		if (ret) {
@@ -1447,6 +1444,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		err_cfg.errors = DPNI_ERROR_L3CE | DPNI_ERROR_L4CE;
 
 		/* if packet with parse error are not to be dropped */
+		if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
 		err_cfg.errors |= DPNI_ERROR_PHE | DPNI_ERROR_BLE;
 
 		err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
@@ -2385,8 +2383,16 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 	 * and confirm them back to us.
 	 */
 	do {
-		dpni_disable(dpni, 0, priv->token);
-		dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
+		ret = dpni_disable(dpni, 0, priv->token);
+		if (ret) {
+			DPAA2_PMD_ERR("dpni disable failed (%d)", ret);
+			return ret;
+		}
+		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
+		if (ret) {
+			DPAA2_PMD_ERR("dpni enable check failed (%d)", ret);
+			return ret;
+		}
 		if (dpni_enabled)
 			/* Allow the MC some slack */
 			rte_delay_us(100 * 1000);
@@ -2646,7 +2652,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		ocfg.oloe = 1;
 		eth_priv->en_loose_ordered = 1;
 		/* Strict ordering enabled if explicitly set */
-		if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+		if (eth_priv->flags & DPAAX_RX_SCHED_STRICT_ORDER_FLAG) {
 			ocfg.oloe = 0;
 			eth_priv->en_loose_ordered = 0;
 		}
@@ -2792,7 +2798,7 @@ int rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id)
 	eth_priv->en_loose_ordered = 1;
 
 	/* Strict ordering enabled if explicitly set */
-	if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+	if (eth_priv->flags & DPAAX_RX_SCHED_STRICT_ORDER_FLAG) {
 		ocfg.oloe = 0;
 		eth_priv->en_loose_ordered = 0;
 	}
@@ -3034,10 +3040,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpaa2_key_extract *extract;
 	char *penv;
 
-	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
+	dpni_dev = rte_zmalloc(NULL, sizeof(struct fsl_mc_io), 0);
 	if (!dpni_dev) {
 		DPAA2_PMD_ERR("Memory allocation failed for dpni device");
-		return -1;
+		return -ENOMEM;
 	}
 	dpni_dev->regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
 	eth_dev->process_private = dpni_dev;
@@ -3181,7 +3187,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (dpaa2_get_devargs(dev->devargs, DRIVER_ERROR_QUEUE) ||
 		getenv("DPAA2_ENABLE_ERROR_QUEUE")) {
-		dpaa2_enable_err_queue = 1;
+		priv->flags |= DPAAX_RX_ERROR_QUEUE_FLAG;
 		DPAA2_PMD_INFO("Enable error queue");
 	}
 
@@ -3191,8 +3197,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA2_TX_CGR_OFF"))
 		priv->flags |= DPAA2_TX_CGR_OFF;
 
-	penv = getenv("DPAA2_RX_GET_PROTOCOL_OFFSET");
-	if (penv) {
+	if (getenv("DPAA2_RX_GET_PROTOCOL_OFFSET")) {
 		ret = rte_mbuf_dynfield_register(&s_dpaa2_rx_protocol_pos_dyn);
 		if (ret < 0) {
 			DPAA2_PMD_ERR("Failed to register for protocol pos");
@@ -3202,7 +3207,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 			ret);
 		dpaa2_rx_protocol_pos_mbuf_offset = ret;
 	}
-
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
 		priv->flags |= DPAA2_PARSE_ERR_DROP;
@@ -3211,6 +3215,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
 		dpaa2_print_parser_result = 1;
+
+	if (getenv("DPAA2_DATA_STASHING_OFF"))
+			priv->flags |= DPAAX_RX_DATA_STASHING_OFF_FLAG;
+
+	if (getenv("DPAA2_STRICT_ORDERING_ENABLE"))
+			priv->flags |= DPAAX_RX_SCHED_STRICT_ORDER_FLAG;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
@@ -3533,8 +3543,8 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 				       sizeof(struct dpaa2_dev_priv),
 				       RTE_CACHE_LINE_SIZE);
 		if (dev_priv == NULL) {
-			DPAA2_PMD_CRIT(
-				"Unable to allocate memory for private data");
+			DPAA2_PMD_CRIT("Allocate %s's private data failed",
+				dpaa2_dev->device.name);
 			rte_eth_dev_release_port(eth_dev);
 			return -ENOMEM;
 		}

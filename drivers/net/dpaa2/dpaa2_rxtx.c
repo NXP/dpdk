@@ -27,21 +27,34 @@
 #include "base/dpaa2_hw_dpni_annot.h"
 #include "dpaa2_parser_decode.h"
 
-static inline uint32_t __rte_hot
-dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
-			struct dpaa2_annot_hdr *annotation);
+static inline void
+dpaa2_dev_rx_annot_prefetch(const struct qbman_fd *fd)
+{
+	size_t fd_addr;
+	void *hw_annot_addr;
 
-static void enable_tx_tstamp(struct qbman_fd *fd) __rte_unused;
+	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	hw_annot_addr = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
+	rte_prefetch0(hw_annot_addr);
+}
 
 static inline void
-dpaa2_parse_result_offset(struct rte_mbuf *mbuf,
-	const struct dpaa2_annot_hdr *annotation)
+dpaa2_dev_rx_parse_offset(struct dpaa2_dev_priv *priv __rte_unused,
+	struct rte_mbuf *mbuf, const struct qbman_fd *fd)
 {
+	size_t fd_addr;
+	const struct dpaa2_annot_hdr *annotation;
 	uint64_t word6;
 	struct dpaa2_psr_result_word6 *decoded;
 	struct dpaa2_dyn_rx_protocol_pos *pos;
 
-	if (dpaa2_rx_protocol_pos_mbuf_offset < 0)
+	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	annotation = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
+	if (!(dpaa2_rx_protocol_pos_mbuf_offset >=
+		(int)offsetof(struct rte_mbuf, dynfield1[0]) &&
+		dpaa2_rx_protocol_pos_mbuf_offset <
+		(int)((sizeof(struct rte_mbuf) -
+		sizeof(struct dpaa2_dyn_rx_protocol_pos)))))
 		return;
 
 	pos = (void *)((uint8_t *)mbuf + dpaa2_rx_protocol_pos_mbuf_offset);
@@ -69,6 +82,24 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 	DPAA2_RESET_FD_CTRL(_fd);		\
 	DPAA2_RESET_FD_FLC(_fd);		\
 } while (0)
+
+static inline void
+dpaa2_dev_rx_print_parser_result(struct dpaa2_dev_priv *priv __rte_unused,
+	const struct qbman_fd *fd)
+{
+	size_t fd_addr;
+	void *hw_annot_addr;
+
+	if (likely(!(dpaa2_print_parser_result)))
+		return;
+
+	if (dpaa2_svr_family == SVR_LX2160A)
+		dpaa2_print_fd_frc(fd);
+
+	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
+	hw_annot_addr = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
+	dpaa2_print_parse_result(hw_annot_addr);
+}
 
 static inline void
 dpaa2_dev_rx_mbuf_sched_set(struct rte_mbuf *m,
@@ -107,11 +138,6 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_TMST;
 	}
 #endif
-
-	if (unlikely(dpaa2_print_parser_result)) {
-		dpaa2_print_fd_frc(fd);
-		dpaa2_print_parse_result(annotation);
-	}
 
 	m->packet_type = RTE_PTYPE_UNKNOWN;
 	if (unlikely(is_vlan)) {
@@ -323,9 +349,6 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 	DPAA2_PMD_DP_DEBUG("(fast parse) Annotation = 0x%" PRIx64 "\t",
 			   annotation->word4);
 
-	if (unlikely(dpaa2_print_parser_result))
-		dpaa2_print_parse_result(annotation);
-
 	if (unlikely(dpaa2_enable_ts[mbuf->port])) {
 		*dpaa2_timestamp_dynfield(mbuf) = annotation->word2;
 		mbuf->ol_flags |= dpaa2_timestamp_rx_dynflag;
@@ -363,10 +386,21 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 }
 
 int
-rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
+rte_pmd_dpaa2_rx_get_offset(uint16_t port_id, struct rte_mbuf *m,
 	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off)
 {
+	struct rte_eth_dev *dev;
 	struct dpaa2_dyn_rx_protocol_pos *pos;
+
+	if (unlikely(!rte_pmd_dpaa2_dev_is_dpaa2(port_id)))
+		return -EINVAL;
+
+	dev = &rte_eth_devices[port_id];
+	if (!dev->data)
+		return -EINVAL;
+
+	if (!dev->data->dev_private)
+		return -EINVAL;
 
 	if (unlikely(dpaa2_rx_protocol_pos_mbuf_offset < 0)) {
 		DPAA2_PMD_ERR("%s: Not register for RX protocol pos.\n",
@@ -397,8 +431,6 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 
 	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 	hw_annot_addr = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
-	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
-		rte_prefetch0(hw_annot_addr);
 
 	/* Get Scatter gather table address */
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
@@ -425,8 +457,6 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 			hw_annot_addr);
 	}
 	dpaa2_dev_rx_mbuf_sched_set(first_seg, fd);
-
-	dpaa2_parse_result_offset(first_seg, hw_annot_addr);
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
@@ -471,19 +501,14 @@ eth_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 	void *hw_annot_addr = v_addr + DPAA2_FD_PTA_SIZE;
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(v_addr,
 		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
-	int is_vlan = false, prefetch = false;
+	int is_vlan = false;
 
-	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0) {
-		rte_prefetch0(hw_annot_addr);
-		prefetch = true;
-	}
 	if (unlikely(dpaa2_svr_family == SVR_LX2160A &&
 		(DPAA2_GET_FD_FRC_PARSE_SUM(fd) &
 		DPAA2_PKT_TYPE_VLAN))) {
 		mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
 		rte_prefetch0(rte_pktmbuf_mtod(mbuf, void *));
-		if (!prefetch)
-			rte_prefetch0(hw_annot_addr);
+		rte_prefetch0(hw_annot_addr);
 		is_vlan = true;
 	}
 
@@ -514,8 +539,6 @@ eth_fd_to_mbuf(const struct qbman_fd *fd, uint16_t port_id)
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf, hw_annot_addr);
 	dpaa2_dev_rx_mbuf_sched_set(mbuf, fd);
-
-	dpaa2_parse_result_offset(mbuf, hw_annot_addr);
 
 	DPAA2_PMD_DP_DEBUG("to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d",
@@ -775,6 +798,7 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 	struct dpaa2_fas *fas;
 	struct rte_mbuf *mbuf;
 	char title[32];
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -830,17 +854,16 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 		hw_annot_addr = (void *)((size_t)v_addr + DPAA2_FD_PTA_SIZE);
 		fas = hw_annot_addr;
 
+		dpaa2_dev_rx_print_parser_result(priv, fd);
+
+		if (dpaa2_rx_protocol_pos_mbuf_offset)
+			dpaa2_dev_rx_annot_prefetch(fd);
 		if (DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg)
 			mbuf = eth_sg_fd_to_mbuf(fd, eth_data->port_id);
 		else
 			mbuf = eth_fd_to_mbuf(fd, eth_data->port_id);
-
-		if (!dpaa2_print_parser_result) {
-			/** Don't print parse result twice.*/
-			if (dpaa2_svr_family == SVR_LX2160A)
-				dpaa2_print_fd_frc(fd);
-			dpaa2_print_parse_result(hw_annot_addr);
-		}
+		if (dpaa2_rx_protocol_pos_mbuf_offset)
+			dpaa2_dev_rx_parse_offset(priv, mbuf, fd);
 
 		DPAA2_PMD_ERR("Err pkt on port[%d]:", eth_data->port_id);
 		DPAA2_PMD_ERR("FD offset: %d, FD err: %x, FAS status: %x",
@@ -896,7 +919,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 	q_storage = dpaa2_q->q_storage[rte_lcore_id()];
 
-	if (unlikely(dpaa2_enable_err_queue))
+	if (unlikely(priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG))
 		dump_err_pkts(priv->rx_err_vq);
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
@@ -993,10 +1016,17 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			dpaa2_dev_prefetch_next_psr(dq_storage);
 
 		fd = qbman_result_DQ_fd(dq_storage);
+		dpaa2_dev_rx_print_parser_result(priv, fd);
+
+		if (dpaa2_rx_protocol_pos_mbuf_offset)
+			dpaa2_dev_rx_annot_prefetch(fd);
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 			bufs[num_rx] = eth_sg_fd_to_mbuf(fd, eth_data->port_id);
 		else
 			bufs[num_rx] = eth_fd_to_mbuf(fd, eth_data->port_id);
+		if (dpaa2_rx_protocol_pos_mbuf_offset)
+			dpaa2_dev_rx_parse_offset(priv, bufs[num_rx], fd);
+
 #if defined(RTE_LIBRTE_IEEE1588)
 		if (bufs[num_rx]->ol_flags & RTE_MBUF_F_RX_IEEE1588_TMST) {
 			priv->rx_timestamp =
@@ -1049,10 +1079,8 @@ dpaa2_dev_process_parallel_event(struct qbman_swp *swp,
 	struct dpaa2_queue *rxq,
 	struct rte_event *ev)
 {
-	if (dpaa2_svr_family != SVR_LX2160A) {
-		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
-			DPAA2_FD_PTA_SIZE));
-	}
+	if (dpaa2_svr_family != SVR_LX2160A)
+		dpaa2_dev_rx_annot_prefetch(fd);
 
 	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
@@ -1069,10 +1097,8 @@ dpaa2_dev_process_atomic_event(struct qbman_swp *swp __rte_unused,
 {
 	uint8_t dqrr_index;
 
-	if (dpaa2_svr_family != SVR_LX2160A) {
-		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
-			DPAA2_FD_PTA_SIZE));
-	}
+	if (dpaa2_svr_family != SVR_LX2160A)
+		dpaa2_dev_rx_annot_prefetch(fd);
 
 	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
@@ -1091,10 +1117,8 @@ dpaa2_dev_process_ordered_event(struct qbman_swp *swp,
 	struct dpaa2_queue *rxq,
 	struct rte_event *ev)
 {
-	if (dpaa2_svr_family != SVR_LX2160A) {
-		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
-			DPAA2_FD_PTA_SIZE));
-	}
+	if (dpaa2_svr_family != SVR_LX2160A)
+		dpaa2_dev_rx_annot_prefetch(fd);
 
 	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
@@ -1121,7 +1145,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 
-	if (unlikely(dpaa2_enable_err_queue))
+	if (unlikely(priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG))
 		dump_err_pkts(priv->rx_err_vq);
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
@@ -1191,12 +1215,16 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				dpaa2_dev_prefetch_next_psr(dq_storage);
 
 			fd = qbman_result_DQ_fd(dq_storage);
+			dpaa2_dev_rx_print_parser_result(priv, fd);
+
+			if (dpaa2_rx_protocol_pos_mbuf_offset)
+				dpaa2_dev_rx_annot_prefetch(fd);
 			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
-				bufs[num_rx] = eth_sg_fd_to_mbuf(fd,
-							eth_data->port_id);
+				bufs[num_rx] = eth_sg_fd_to_mbuf(fd, eth_data->port_id);
 			else
-				bufs[num_rx] = eth_fd_to_mbuf(fd,
-							eth_data->port_id);
+				bufs[num_rx] = eth_fd_to_mbuf(fd, eth_data->port_id);
+			if (dpaa2_rx_protocol_pos_mbuf_offset)
+				dpaa2_dev_rx_parse_offset(priv, bufs[num_rx], fd);
 
 #if defined(RTE_LIBRTE_IEEE1588)
 		if (bufs[num_rx]->ol_flags & RTE_MBUF_F_RX_IEEE1588_TMST) {
@@ -1666,6 +1694,7 @@ dq_next:
 	return num_tx_conf;
 }
 
+#ifdef RTE_LIBRTE_IEEE1588
 /* Configure the egress frame annotation for timestamp update */
 static void enable_tx_tstamp(struct qbman_fd *fd)
 {
@@ -1687,6 +1716,7 @@ static void enable_tx_tstamp(struct qbman_fd *fd)
 	fd_faead->ctrl = DPAA2_ANNOT_FAEAD_A2V | DPAA2_ANNOT_FAEAD_UPDV |
 				DPAA2_ANNOT_FAEAD_UPD;
 }
+#endif
 
 static inline void
 config_dynamic_tx_confirm(struct qbman_fd *fd,

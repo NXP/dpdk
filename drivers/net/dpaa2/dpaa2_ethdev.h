@@ -68,36 +68,42 @@
 /* Enable TX Congestion control support
  * default is disable
  */
-#define DPAA2_TX_CGR_OFF	RTE_BIT64(0)
+#define DPAA2_TX_CGR_OFF	RTE_BIT32(0)
 
 /* Drop packets with parsing error in hw */
-#define DPAA2_PARSE_ERR_DROP	RTE_BIT64(1)
+#define DPAA2_PARSE_ERR_DROP	RTE_BIT32(1)
 
 /* Disable RX tail drop, default is enable */
-#define DPAA2_RX_TAILDROP_OFF	RTE_BIT64(2)
+#define DPAA2_RX_TAILDROP_OFF	RTE_BIT32(2)
 
 /* Disable prefetch Rx mode to get exact requested packets */
-#define DPAA2_NO_PREFETCH_RX	RTE_BIT64(3)
+#define DPAA2_NO_PREFETCH_RX	RTE_BIT32(3)
 
 /* Driver level loop mode to simply transmit the ingress traffic */
-#define DPAA2_RX_LOOPBACK_MODE	RTE_BIT64(4)
+#define DPAA2_RX_LOOPBACK_MODE	RTE_BIT32(4)
 
 /* HW loopback the egress traffic to self ingress*/
-#define DPAA2_TX_MAC_LOOPBACK_MODE	RTE_BIT64(5)
+#define DPAA2_TX_MAC_LOOPBACK_MODE	RTE_BIT32(5)
 
-#define DPAA2_TX_SERDES_LOOPBACK_MODE	RTE_BIT64(6)
+#define DPAA2_TX_SERDES_LOOPBACK_MODE	RTE_BIT32(6)
 
-#define DPAA2_TX_DPNI_LOOPBACK_MODE	RTE_BIT64(7)
+#define DPAA2_TX_DPNI_LOOPBACK_MODE	RTE_BIT32(7)
 
 /* Tx confirmation enabled */
-#define DPAA2_TX_CONF_ENABLE	RTE_BIT64(8)
+#define DPAA2_TX_CONF_ENABLE	RTE_BIT32(8)
 
 /* Tx dynamic confirmation enabled,
  * only valid with Tx confirmation enabled.
  */
-#define DPAA2_TX_DYNAMIC_CONF_ENABLE	RTE_BIT64(9)
+#define DPAA2_TX_DYNAMIC_CONF_ENABLE	RTE_BIT32(9)
 
-#define DPAA2_TX_PREFETCH_DYNAMIC_CONF	RTE_BIT64(10)
+#define DPAA2_TX_PREFETCH_DYNAMIC_CONF	RTE_BIT32(10)
+
+#define DPAAX_RX_ERROR_QUEUE_FLAG	RTE_BIT32(11)
+
+#define DPAAX_RX_DATA_STASHING_OFF_FLAG	RTE_BIT32(12)
+
+#define DPAAX_RX_SCHED_STRICT_ORDER_FLAG RTE_BIT32(13)
 
 /* DPDMUX index for DPMAC */
 #define DPAA2_DPDMUX_DPMAC_IDX 0
@@ -226,8 +232,6 @@ extern int dpaa2_timestamp_dynfield_offset;
 extern const struct rte_flow_ops dpaa2_flow_ops;
 
 extern const struct rte_tm_ops dpaa2_tm_ops;
-
-extern bool dpaa2_enable_err_queue;
 
 extern bool dpaa2_print_parser_result;
 
