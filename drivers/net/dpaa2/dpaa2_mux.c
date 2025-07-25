@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2024 NXP
+ * Copyright 2018-2025 NXP
  */
 
 #include <sys/queue.h>
@@ -62,7 +62,7 @@ TAILQ_HEAD(dpdmux_dev_list, dpaa2_dpdmux_dev);
 static struct dpdmux_dev_list dpdmux_dev_list =
 	TAILQ_HEAD_INITIALIZER(dpdmux_dev_list); /*!< DPDMUX device list */
 
-static char *dpaa2_mux_flow_log;
+static bool dpaa2_mux_flow_log;
 
 static inline void
 dpaa2_mux_extracts_log(const struct dpaa2_dpdmux_dev *dpdmux_dev)
@@ -332,8 +332,6 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct dpaa2_mux_flow *flow = NULL;
 	struct dpaa2_mux_flow *_flow;
 	char zero_cmp[256];
-
-	dpaa2_mux_flow_log = getenv("DPAA2_MUX_FLOW_LOG");
 
 	/* Find the DPDMUX from dpdmux_id in our list */
 	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
@@ -1025,6 +1023,9 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 		DPAA2_PMD_ERR("Memory allocation failed for DPDMUX Device");
 		return -ENOMEM;
 	}
+
+	if(getenv("DPAA2_MUX_FLOW_LOG"))
+		dpaa2_mux_flow_log = 1;
 
 	/* Open the dpdmux object */
 	dpdmux_dev->dpdmux.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);

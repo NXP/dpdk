@@ -24,7 +24,7 @@
 #include <dpaa2_pmd_logs.h>
 #include "dpaa2_parser_decode.h"
 
-static char *dpaa2_flow_control_log;
+static bool dpaa2_flow_control_log;
 
 static int dpaa2_sp_loaded = -1;
 
@@ -440,7 +440,8 @@ dpaa2_soft_parser_loaded(void)
 	int fd, i, ret = 0;
 	struct dpaa2_parser_ccsr *parser_ccsr = NULL;
 
-	dpaa2_flow_control_log = getenv("DPAA2_FLOW_CONTROL_LOG");
+	if (getenv("DPAA2_FLOW_CONTROL_LOG"))
+		dpaa2_flow_control_log = 1;
 
 	if (dpaa2_sp_loaded >= 0)
 		return dpaa2_sp_loaded;
@@ -5264,7 +5265,8 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	int ret;
 	uint64_t iova;
 
-	dpaa2_flow_control_log = getenv("DPAA2_FLOW_CONTROL_LOG");
+	if (getenv("DPAA2_FLOW_CONTROL_LOG"))
+		dpaa2_flow_control_log = 1;
 
 	dpaa2_dump_extract_map(priv, "Start creating flow");
 
