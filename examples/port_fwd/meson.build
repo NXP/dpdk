@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017 Intel Corporation
-# Copyright 2022-2024 NXP
+# Copyright 2022-2025 NXP
 #
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -10,6 +10,9 @@
 #allow_experimental_apis = true
 if dpdk_conf.has('RTE_NET_DPAA2')
         deps += ['net_dpaa2']
+endif
+if dpdk_conf.has('RTE_NET_DPAA')
+        deps += ['net_dpaa']
 endif
 deps += ['pdump']
 sources = files(
