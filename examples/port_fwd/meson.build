@@ -11,6 +11,9 @@
 if dpdk_conf.has('RTE_NET_DPAA2')
         deps += ['net_dpaa2']
 endif
+if dpdk_conf.has('RTE_NET_DPAA')
+        deps += ['net_dpaa']
+endif
 deps += ['pdump']
 sources = files(
 	'main.c',

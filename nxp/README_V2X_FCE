@@ -1,0 +1,51 @@
+================================
+DPDK with V2X Fast Crypto Engine
+================================
+
+The purpose of this write-up is to show the steps for running the DPDK applications with v2x fce.
+For Building the applications and basic steps please refer to nxp/README file.
+
+Prerequisite:
+  bootargs must be updated to add `mem=2096M` on platforms with V2X FCE support
+  as V2X FCE can only accept 32 bit addresses.
+
+	e.g. bootargs "console=ttyLP,115200 earlycon root=/dev/mmcblk0p2 rootwait rw mem=2096M"
+
+==================================================================
+Run DPDK applications on i.MX943 boards
+==================================================================
+
+  1. Bring up the board with fce firmware support and latest kernel.
+
+  2. On Linux mount the hugetlbfs required for DPDK applications:
+	1. mkdir -p /dev/hugepages
+	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
+
+  3. Manually allocate hugepages
+	e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+
+  4. To run dpdk-test with v2X fast crypto engine
+
+	$ dpdk-test --vdev 'v2x_fce,dispatcher_core_id=1' --log-level=6
+	  >>cryptodev_v2x_fce_autotest
+
+	where dispatcher_core_id can be 0,1,2,3
+
+  'dpdk-test-crypto-perf' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  $ dpdk-test-crypto-perf -c 0xc --vdev 'v2x_fce,dispatcher_core_id=0' -- --devtype v2x_fce \
+		--optype auth-only --auth-algo sha2-256-hmac --auth-op generate --auth-key-sz 64 \
+		--digest-sz 32 --ptest throughput --total-ops 100000 \
+		--burst-sz 252 --buffer-sz 8192
+
+  A script 'v2x_fce_perf_test.sh' is added in nxp/ folder to run all supported cases
+  in one go. Some default parameters are added in the script which can be modified as per
+  requirement.
+
+  To use the script
+  $./v2x_fce_perf_test.sh v2x_fce
+
+  Note:
+  1. If the dispatcher_core_id is same as application core_id performance will be half.
+     So choose dispatcher_core_id different from application core_id.

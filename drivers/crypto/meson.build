@@ -18,6 +18,7 @@ drivers = [
         'openssl',
         'scheduler',
         'uadk',
+        'v2x_fce',
         'virtio',
 ]
 
