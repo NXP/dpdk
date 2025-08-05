@@ -11,7 +11,7 @@
 #include "v2x_fce_pvt.h"
 #include "v2x_fce_api.h"
 
-extern struct fce_crypto_qp *fce_qp;
+extern volatile struct fce_crypto_qp *fce_qp;
 
 static int
 fce_cipher_init(struct fce_crypto_private *internals,

@@ -20,7 +20,7 @@
 #define PLAT_DIR		"/sys/firmware/devicetree/base/compatible"
 
 static uint8_t cryptodev_driver_id;
-struct fce_crypto_qp *fce_qp;
+volatile struct fce_crypto_qp *fce_qp;
 
 void *dispatcher(__rte_unused void *arg);
 
@@ -258,8 +258,12 @@ fce_enqueue_burst(void *queue_pair,
 	return num_enqueue;
 }
 
+#ifdef __GNUC__
+#pragma GCC push_options
+#pragma GCC optimize("O0")
+#endif
 void *
-dispatcher(__rte_unused void *arg)
+dispatcher(void *arg)
 {
 	struct rte_crypto_op *ops[FCE_MAX_OPS];
 	int enq_id[FCE_MAX_OPS];
@@ -301,6 +305,9 @@ dispatcher(__rte_unused void *arg)
 
 	return NULL;
 }
+#ifdef __GNUC__
+#pragma GCC pop_options
+#endif
 
 static int
 check_compatible_plat(void)
