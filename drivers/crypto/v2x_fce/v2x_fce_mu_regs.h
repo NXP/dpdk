@@ -37,10 +37,10 @@ struct mu_type {
 };
 
 struct fce_msg {
-	uint8_t version;
-	uint8_t size;
-	uint8_t command;
-	uint8_t tag;
+	volatile uint8_t version;
+	volatile uint8_t size;
+	volatile uint8_t command;
+	volatile uint8_t tag;
 	uint32_t data[(FCE_MAX_MSG - 1U)];
 };
 
