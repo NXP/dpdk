@@ -531,10 +531,12 @@ static int dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	/* DPAA FM deconfig */
 	if (!(default_q || fmc_q)) {
-		ret = dpaa_fm_deconfig(dpaa_intf, dev->process_private);
-		if (ret) {
-			DPAA_PMD_WARN("%s: FM deconfig failed(%d)",
-				dev->data->name, ret);
+		if (dpaa_intf->port_handle) {
+			ret = dpaa_fm_deconfig(dpaa_intf, dev->process_private);
+			if (ret) {
+				DPAA_PMD_WARN("%s: FM deconfig failed(%d)",
+					dev->data->name, ret);
+			}
 		}
 	}
 
