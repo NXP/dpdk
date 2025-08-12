@@ -27,7 +27,7 @@ imx_mu_word_copy(uint32_t *buf, uint32_t *data, uint8_t size)
 	uint8_t i;
 
 	for (i = 0; i < size; i++)
-		buf[i] = data[i];
+		*((volatile uint32_t *)buf + i) = data[i];
 }
 
 void
