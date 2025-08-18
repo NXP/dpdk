@@ -26,16 +26,19 @@ static int
 match_fce_dev_name(const char *uio_path, const char *uio_name)
 {
 	char tmp[ARR_LEN] = {0};
+	ssize_t bytes;
 	int fd;
 
 	fd = open(uio_path, O_RDONLY);
 	if (fd < 0)
 		return errno;
 
-	if (read(fd, tmp, sizeof(tmp)) <= 0) {
+	bytes = read(fd, tmp, sizeof(tmp) - 1);
+	if (bytes <= 0) {
 		close(fd);
 		return errno;
 	}
+	tmp[bytes] = '\0';
 
 	if (strstr(tmp, uio_name) == NULL) {
 		close(fd);
@@ -102,16 +105,19 @@ static int
 read_val(const char *path, long *val)
 {
 	char tmp[ARR_LEN] = {0};
+	ssize_t bytes;
 	int fd;
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
 		return errno;
 
-	if (read(fd, tmp, sizeof(tmp)) <= 0) {
+	bytes = read(fd, tmp, sizeof(tmp) - 1);
+	if (bytes <= 0) {
 		close(fd);
 		return errno;
 	}
+	tmp[bytes] = '\0';
 
 	*val = strtol(tmp, NULL, 16);
 
