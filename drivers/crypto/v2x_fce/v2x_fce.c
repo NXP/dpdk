@@ -313,16 +313,19 @@ static int
 check_compatible_plat(void)
 {
 	char plat_str[ARR_LEN] = {0};
+	ssize_t bytes;
 	int i, fd;
 
 	fd = open(PLAT_DIR, O_RDONLY);
 	if (fd < 0)
 		return -errno;
 
-	if (read(fd, plat_str, sizeof(plat_str)) <= 0) {
+	bytes = read(fd, plat_str, sizeof(plat_str) - 1);
+	if (bytes <= 0) {
 		close(fd);
 		return -errno;
 	}
+	plat_str[bytes] = '\0';
 
 	for (i = 0; fce_info[i].plat_name != NULL; i++) {
 		if (strstr(plat_str, fce_info[i].plat_name) != NULL) {
