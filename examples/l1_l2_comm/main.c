@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2024 NXP
+ * Copyright 2019-2025 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -220,6 +220,7 @@ l2_app_downlink_prepare(void)
 		rte_pktmbuf_free_bulk(mbufs, L1_L2_MAX_CHAIN_NB);
 		return;
 	}
+
 	if (chain_count < (int)L1_L2_MAX_CHAIN_NB) {
 		mbufs_free_prepare(&mbufs[chain_count],
 			L1_L2_MAX_CHAIN_NB - chain_count);

@@ -835,7 +835,7 @@ l2fwd_policer_parse_args(int argc, char **argv)
 				fprintf(stderr, "Invalid meter action: %s\n",
 					optarg);
 				l2fwd_policer_usage(prgname);
-				return ret;
+				return -EINVAL;
 			}
 			break;
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2024 NXP
+ * Copyright 2018-2025 NXP
  */
 
 /* System headers */
@@ -833,7 +833,15 @@ lcore_qdma_iova_seg_to_continue(uint32_t lcore_id)
 	}
 
 	seg_num = g_burst;
-	total_size = seg_size * seg_num;
+
+	if (seg_size <= UINT64_MAX / seg_num) {
+		total_size = seg_size * seg_num;
+	} else {
+		RTE_LOG(ERR, qdma_demo,
+			"Segment size multiplication overflow: seg_size=%u, seg_num=%u\n",
+			seg_size, seg_num);
+		return -EINVAL;
+	}
 
 	vir_base = mmap(NULL, total_size, PROT_WRITE | PROT_READ,
 			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
