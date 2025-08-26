@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2024 NXP
+ * Copyright 2021-2025 NXP
  */
 
 #include <bus_dpaa_driver.h>
@@ -827,6 +827,11 @@ eq_sg:
 				break;
 			}
 		}
+	}
+
+	if (num == 0 || num > FSL_QDMA_SG_MAX_ENTRY) {
+		DPAA_QDMA_ERR("Invalid scatter-gather entry count: num=%u\n", num);
+		return -EINVAL;
 	}
 
 	ft->desc_ssge[num - 1].final = 1;
