@@ -261,13 +261,15 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	 * number of buffers that can be released to HW buffer pool in
 	 * a single API call.
 	 */
-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-		cache = &mp->local_cache[lcore_id];
-		DPAA2_MEMPOOL_DEBUG("lCore %d: cache->flushthresh %d -> %d",
-							lcore_id, cache->flushthresh,
-							(uint32_t)(cache->size + DPAA2_MBUF_MAX_ACQ_REL));
+	if (mp->cache_size > 0) {
+		for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+			cache = &mp->local_cache[lcore_id];
+			DPAA2_MEMPOOL_DEBUG("%s's local_cache[%d]'s flushthresh %d -> %d",
+				mp->name, lcore_id, cache->flushthresh,
+				cache->size + DPAA2_MBUF_MAX_ACQ_REL);
 		if (cache->flushthresh)
 			cache->flushthresh = cache->size + DPAA2_MBUF_MAX_ACQ_REL;
+		}
 	}
 
 	return 0;

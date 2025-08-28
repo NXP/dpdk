@@ -129,10 +129,12 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	 * number of buffers that can be released to HW buffer pool in
 	 * a single API call.
 	 */
-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-		cache = &mp->local_cache[lcore_id];
-		if (cache->flushthresh)
-			cache->flushthresh = cache->size + DPAA_MBUF_MAX_ACQ_REL;
+	if (mp->cache_size > 0) {
+		for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+			cache = &mp->local_cache[lcore_id];
+			if (cache->flushthresh)
+				cache->flushthresh = cache->size + DPAA_MBUF_MAX_ACQ_REL;
+		}
 	}
 
 	DPAA_MEMPOOL_INFO("BMAN pool created for bpid =%d", bpid);
