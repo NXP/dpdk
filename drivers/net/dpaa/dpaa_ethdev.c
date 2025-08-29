@@ -1134,6 +1134,9 @@ _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
+	/* Shutdown FQ before configure */
+	qman_shutdown_fq_new(rxq->fqid);
+
 	if (rxq->vsp_id >= 0) {
 		vsp = &dpaa_intf->vsp[rxq->vsp_id];
 	} else {
