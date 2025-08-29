@@ -740,19 +740,17 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 
 static inline int __rte_hot
 eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
-		    struct qbman_fd *fd, uint16_t bpid)
+	struct qbman_fd *fd, struct rte_mempool *hw_mp)
 {
 	struct rte_mbuf *m;
-	void *mb = NULL;
+	struct dpaa2_bp_info *bp_info = hw_mp->pool_data;
 
-	if (rte_dpaa2_mbuf_alloc_bulk(
-		rte_dpaa2_bpid_info[bpid].bp_list->mp, &mb, 1)) {
-		DPAA2_PMD_DP_DEBUG("Unable to allocated DPAA2 buffer");
-		return -1;
-	}
-	m = (struct rte_mbuf *)mb;
+	m = rte_pktmbuf_alloc(hw_mp);
+	if (!m)
+		return -ENOMEM;
+
 	memcpy((char *)m->buf_addr + mbuf->data_off,
-	       (void *)((char *)mbuf->buf_addr + mbuf->data_off),
+		(char *)mbuf->buf_addr + mbuf->data_off,
 		mbuf->pkt_len);
 
 	/* Copy required fields */
@@ -761,7 +759,7 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 	m->packet_type = mbuf->packet_type;
 	m->tx_offload = mbuf->tx_offload;
 
-	DPAA2_MBUF_TO_CONTIG_FD(m, fd, bpid);
+	DPAA2_MBUF_TO_CONTIG_FD(m, fd, bp_info->bpid);
 
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 	rte_mempool_check_cookies(rte_mempool_from_obj((void *)m),
@@ -1907,7 +1905,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				bpid = priv->bp_list->buf_pool.bpid;
 
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					DPAA2_PMD_ERR("S/G support not added"
@@ -1915,7 +1912,7 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					goto send_n_return;
 				}
 				if (eth_copy_mbuf_to_fd(*bufs,
-							&fd_arr[loop], bpid)) {
+					&fd_arr[loop], priv->bp_list->mp)) {
 					goto send_n_return;
 				}
 				/* free the original packet */
@@ -2422,15 +2419,14 @@ dpaa2_dev_tx_multi_txq_ordered(void **queue,
 			/* alloc should be from the default buffer pool
 			 * attached to this interface
 			 */
-			bpid = priv->bp_list->buf_pool.bpid;
 
 			if (unlikely((*bufs)->nb_segs > 1)) {
 				DPAA2_PMD_ERR(
 					"S/G not supp for non hw offload buffer");
 				goto send_frames;
 			}
-			if (eth_copy_mbuf_to_fd(*bufs,
-						&fd_arr[loop], bpid)) {
+			if (eth_copy_mbuf_to_fd(*bufs, &fd_arr[loop],
+				priv->bp_list->mp)) {
 				goto send_frames;
 			}
 			/* free the original packet */
@@ -2575,14 +2571,13 @@ dpaa2_dev_tx_multi_txqs(void **queue,
 			/* alloc should be from the default buffer pool
 			 * attached to this interface
 			 */
-			bpid = priv->bp_list->buf_pool.bpid;
 
 			if (unlikely((*bufs)->nb_segs > 1)) {
 				DPAA2_PMD_ERR("S/G support HW pool only.\n");
 				goto send_frames;
 			}
-			if (eth_copy_mbuf_to_fd(*bufs,
-					&fd_arr[loop], bpid)) {
+			if (eth_copy_mbuf_to_fd(*bufs, &fd_arr[loop],
+				priv->bp_list->mp)) {
 				goto send_frames;
 			}
 			/* free the original packet */
@@ -2767,15 +2762,14 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 				/* alloc should be from the default buffer pool
 				 * attached to this interface
 				 */
-				bpid = priv->bp_list->buf_pool.bpid;
 
 				if (unlikely((*bufs)->nb_segs > 1)) {
 					DPAA2_PMD_ERR(
 						"S/G not supp for non hw offload buffer");
 					goto send_n_return;
 				}
-				if (eth_copy_mbuf_to_fd(*bufs,
-							&fd_arr[loop], bpid)) {
+				if (eth_copy_mbuf_to_fd(*bufs, &fd_arr[loop],
+					priv->bp_list->mp)) {
 					goto send_n_return;
 				}
 				/* free the original packet */
