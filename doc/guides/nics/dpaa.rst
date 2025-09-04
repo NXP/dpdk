@@ -250,14 +250,6 @@ pass port mask as 0x3.
 
 DPAA drivers uses the following devargs:
 
-- ``drv_ieee1588``
-
- This is used to indicate if IEEE 1588 is enabled for the driver.
- It can be passed in the EAL args as:
-	-a dpaa_bus:fm1-mac9,drv_ieee1588=1
-
-	eg. $ ./dpdk-l2fwd -c 0x3 -n 1  -a dpaa_bus:fm1-mac9,drv_ieee1588=1 --  -p 0x1 -q 1 -T 0
-
 - ``recv_err_pkts``
 
 This is used to enable main queue to receive error packets as well. This is
