@@ -182,7 +182,7 @@ enetc_xmit_pkts_nc(void *tx_queue,
 			seg_len = rte_pktmbuf_data_len(seg);
 			data = rte_pktmbuf_mtod(seg, void *);
 
-			for (j = 0; j <= seg_len; j += RTE_CACHE_LINE_SIZE)
+			for (j = 0; j < seg_len; j += RTE_CACHE_LINE_SIZE)
 				dcbf(data + j);
 
 			txbd = ENETC_TXBD(*tx_ring, i);
@@ -566,7 +566,7 @@ enetc_clean_rx_ring_nc(struct enetc_bdr *rx_ring,
 			cur_seg = seg;
 		}
 		data = rte_pktmbuf_mtod(seg, void *);
-		for (j = 0; j <= data_len; j += RTE_CACHE_LINE_SIZE)
+		for (j = 0; j < data_len; j += RTE_CACHE_LINE_SIZE)
 			dccivac(data + j);
 		if (bd_status & ENETC_RXBD_LSTATUS_F) {
 			seg->next = NULL;
