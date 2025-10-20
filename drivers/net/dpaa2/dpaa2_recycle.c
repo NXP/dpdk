@@ -1,6 +1,6 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2019-2023 NXP
+ *   Copyright 2019-2023,2025 NXP
  *
  */
 
@@ -25,7 +25,6 @@
 #include <dpaa2_hw_dpio.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
-#include "dpaa2_sparser.h"
 #include <fsl_qbman_debug.h>
 
 #include <rte_io.h>
