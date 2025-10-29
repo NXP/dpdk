@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2025 NXP
+ * Copyright 2016-2026 NXP
  *
  */
 #ifndef __FSL_DPNI_H
@@ -121,6 +121,9 @@ struct fsl_mc_io;
  * The stashing is enabled by default.
  */
 #define DPNI_OPT_STASHING_DIS			0x002000
+
+#define DPNI_OPT_V1_PFDR_IN_PEB			0x80000000
+
 /**
  * Software sequence maximum layout size
  */
