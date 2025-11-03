@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020 NXP
+ * Copyright 2020-2025 NXP
  */
 
 #ifndef __ENETFEC_REGS_H
@@ -18,6 +18,8 @@
 #define RX_BD_INT	0x00800000
 #define RX_BD_ICE	0x00000020
 #define RX_BD_PCR	0x00000010
+#define RX_BD_ERR	(RX_BD_TR | RX_BD_OV | RX_BD_CR | \
+			 RX_BD_SH | RX_BD_NO | RX_BD_LG | RX_BD_LAST)
 
 /*
  * 0 The next BD in consecutive location
