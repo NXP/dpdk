@@ -140,9 +140,9 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			(struct enetfec_priv_tx_q *)tx_queue;
 	struct rte_eth_stats *stats = &txq->fep->stats;
 	struct bufdesc *bdp, *last_bdp, temp_bdp;
-	unsigned int i, pkt_t = 0;
+	unsigned int i, pkt_t = 0, free_cnt = 0;
 	uint64_t *src64, *dst64;
-	struct rte_mbuf *mbuf;
+	struct rte_mbuf *mbuf, *free_buf[256];
 	unsigned short status;
 	unsigned short buflen;
 	unsigned int index;
@@ -153,6 +153,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		if (mbuf->nb_segs > 1) {
 			ENETFEC_DP_LOG(DEBUG, "SG not supported");
 			stats->opackets += pkt_t;
+			rte_pktmbuf_free_bulk(free_buf, free_cnt);
 			return pkt_t;
 		}
 
@@ -172,7 +173,8 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			break;
 		}
 		if (txq->tx_mbuf[index]) {
-			rte_pktmbuf_free(txq->tx_mbuf[index]);
+			free_buf[free_cnt] = txq->tx_mbuf[index];
+			free_cnt++;
 			txq->tx_mbuf[index] = NULL;
 		}
 
@@ -211,6 +213,7 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		bdp = enet_get_nextdesc(last_bdp, &txq->bd);
 		txq->bd.cur = bdp;
 	}
+	rte_pktmbuf_free_bulk(free_buf, free_cnt);
 	stats->opackets += pkt_t;
 
 	return pkt_t;
