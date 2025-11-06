@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023-2024 NXP
+ * Copyright 2023-2025 NXP
  */
 #ifndef __ENETQOS_ETHDEV_
 #define  __ENETQOS_ETHDEV_
@@ -181,8 +181,8 @@ void enetqos_set_tx_tail_ptr(void *ioaddr, dma_addr_t tail_ptr, uint32_t chan)
 static
 void enetqos_set_addr(struct dma_desc *p, dma_addr_t addr)
 {
-	rte_write32(rte_cpu_to_le_32(lower_32_bits(addr)), &p->des0);
-	rte_write32(rte_cpu_to_le_32(upper_32_bits(addr)), &p->des1);
+	rte_write32_relaxed(lower_32_bits(addr), &p->des0);
+	rte_write32_relaxed(upper_32_bits(addr), &p->des1);
 }
 
 uint16_t enetqos_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
