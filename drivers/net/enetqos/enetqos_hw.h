@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023-2024 NXP
+ * Copyright 2023-2025 NXP
  */
 #ifndef __ENETQOS_HW_
 #define __ENETQOS_HW_
@@ -275,4 +275,6 @@ struct eqos_dma_ch_regs {
 #define ENETQ_RDES1_IPHE			BIT(3) /* IP Header Error */
 #define ENETQ_RDES1_IPCE			BIT(7) /* IP Payload Error */
 
+#define ENETQ_RDES_NOTVALID (ENETQ_RDES3_OWN | ENETQ_RDES3_CTX_DESC | ENETQ_RDES3_LAST_DESC | \
+			ENETQ_RDES3_ERR_SUMMARY | ENETQ_RDES1_IPHE | ENETQ_RDES1_IPCE)
 #endif /*__ENETQOS_HW_*/
