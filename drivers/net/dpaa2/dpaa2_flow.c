@@ -5010,17 +5010,15 @@ dpaa2_flow_rule_data_valid(struct dpaa2_dev_flow *flow,
 	uint8_t key_offset, uint8_t key_size,
 	enum dpaa2_flow_dist_type type)
 {
-	uint8_t *key, *mask, i;
+	uint8_t *mask, i;
 	int valid = 0;
 	struct dpaa2_generic_flow *_flow;
 
-	_flow = type == DPAA2_FLOW_QOS_TYPE ?
-		flow->qos_flow : flow->fs_flow;
-	key = _flow->key_addr + key_offset;
+	_flow = type == DPAA2_FLOW_QOS_TYPE ? flow->qos_flow : flow->fs_flow;
 	mask = _flow->mask_addr + key_offset;
 
 	for (i = 0; i < key_size; i++) {
-		if (key[i] & mask[i]) {
+		if (mask[i]) {
 			valid = 1;
 			break;
 		}
