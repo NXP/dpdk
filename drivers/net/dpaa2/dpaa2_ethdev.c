@@ -929,6 +929,27 @@ fail:
 }
 
 static void
+dpaa2_clear_queue_active_dps(struct dpaa2_queue *q, int num_lcores)
+{
+	int i;
+
+	for (i = 0; i < num_lcores; i++) {
+		struct queue_storage_info_t *qs = q->q_storage[i];
+
+		if (!qs)
+			continue;
+
+		if (qs->active_dqs) {
+			while (!qbman_check_command_complete(qs->active_dqs))
+				continue; /* wait */
+
+			clear_swp_active_dqs(qs->active_dpio_id);
+			qs->active_dqs = NULL;
+		}
+	}
+}
+
+static void
 dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -942,16 +963,20 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		/* cleaning up queue storage */
 		for (i = 0; i < priv->nb_rx_queues; i++) {
 			dpaa2_q = priv->rx_vq[i];
+			dpaa2_clear_queue_active_dps(dpaa2_q,
+						RTE_MAX_LCORE);
 			dpaa2_queue_storage_free(dpaa2_q,
 				RTE_MAX_LCORE);
 			if (dpaa2_q->cfg)
 				rte_free(dpaa2_q->cfg);
 			dpaa2_q->cfg = NULL;
+			priv->rx_vq[i] = NULL;
 		}
 		/* cleanup tx queue cscn */
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			dpaa2_q = priv->tx_vq[i];
 			rte_free(dpaa2_q->cscn);
+			priv->tx_vq[i] = NULL;
 		}
 		if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 			/* cleanup tx conf queue storage */
@@ -959,8 +984,14 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 				dpaa2_q = priv->tx_conf_vq[i];
 				dpaa2_queue_storage_free(dpaa2_q,
 					RTE_MAX_LCORE);
+				priv->tx_conf_vq[i] = NULL;
 			}
 		}
+		if (priv->flags & DPAA2_RX_ERROR_QUEUE_FLAG) {
+			dpaa2_q = priv->rx_err_vq;
+			dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
+		}
+
 		/*free memory for all queues (RX+TX) */
 		rte_free(priv->rx_vq[0]);
 		priv->rx_vq[0] = NULL;
@@ -3844,11 +3875,16 @@ static int
 rte_dpaa2_remove(struct rte_dpaa2_device *dpaa2_dev)
 {
 	struct rte_eth_dev *eth_dev;
-	int ret;
+	int ret = 0;
 
-	eth_dev = dpaa2_dev->eth_dev;
-	dpaa2_dev_close(eth_dev);
-	ret = rte_eth_dev_release_port(eth_dev);
+	eth_dev = rte_eth_dev_allocated(dpaa2_dev->device.name);
+	if (eth_dev) {
+		ret = dpaa2_dev_close(eth_dev);
+		if (ret)
+			DPAA2_PMD_ERR("dpaa2_dev_close ret= %d", ret);
+
+		ret = rte_eth_dev_release_port(eth_dev);
+	}
 
 	return ret;
 }
