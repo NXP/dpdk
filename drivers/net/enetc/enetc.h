@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019,2024 NXP
+ * Copyright 2018-2019,2024-2025 NXP
  */
 
 #ifndef _ENETC_H_
@@ -13,6 +13,7 @@
 #include "base/enetc4_hw.h"
 #include "enetc_logs.h"
 #include "ntmp.h"
+#include <dpaax_usermem.h>
 
 #define PCI_VENDOR_ID_FREESCALE 0x1957
 
@@ -77,6 +78,7 @@ struct enetc_swbd {
 
 struct enetc_bdr {
 	void *bd_base;			/* points to Rx or Tx BD ring */
+	uint64_t bd_base_p;
 	struct enetc_swbd *q_swbd;
 	union {
 		void *tcir;
@@ -110,6 +112,10 @@ struct enetc_eth_hw {
 	uint32_t max_rx_queues;
 	uint32_t max_tx_queues;
 	uint32_t *txq_prior;
+	uint32_t max_queue_size;
+	uint8_t reserve;
+	struct dpaax_usmem_alloc alloc;
+	struct dpaax_usmem_ctx ctx;
 };
 
 /*
