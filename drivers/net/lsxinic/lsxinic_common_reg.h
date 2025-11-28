@@ -645,39 +645,6 @@ struct lsinic_eth_reg {  /* offset 0x300-0x3FF */
 #endif
 } __packed;
 
-#define LSINIC_REG_BAR_MAX_SIZE \
-	(LSINIC_ETH_REG_OFFSET + sizeof(struct lsinic_eth_reg))
-
-#define LSXINIC_BAR_MIN_SIZE 0x1000
-static inline uint64_t lsinic_reg_bar_size(void)
-{
-	uint64_t size = rte_align64pow2(LSINIC_REG_BAR_MAX_SIZE);
-
-	return size > LSXINIC_BAR_MIN_SIZE ? size : LSXINIC_BAR_MIN_SIZE;
-}
-
-static inline uint64_t lsinic_ring_bar_size(void)
-{
-	uint64_t size = LSINIC_RING_PAIR_SIZE(LSINIC_RING_MAX_COUNT);
-
-	size += LSINIC_RING_BD_OFFSET;
-
-	size = rte_align64pow2(size);
-	return size > LSXINIC_BAR_MIN_SIZE ? size : LSXINIC_BAR_MIN_SIZE;
-}
-
-static inline uint64_t lsinic_reg_ring_bar_size(void)
-{
-	return lsinic_reg_bar_size() + lsinic_ring_bar_size();
-}
-
-static inline uint64_t lsinic_reg_ring_bar_offset(int is_reg)
-{
-	if (is_reg)
-		return 0;
-	return lsinic_reg_bar_size();
-}
-
 #define LSINIC_RC_BD_DESC(R, i)	(&(R)->rc_bd_desc[i])
 #define LSINIC_EP_BD_DESC(R, i)	(&(R)->ep_bd_desc[i])
 
