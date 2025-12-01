@@ -2210,17 +2210,17 @@ dpaa2_flow_vlan_extract_rule_set(struct dpaa2_generic_flow *flow,
 	spec = pattern->spec;
 	mask = pattern->mask ? pattern->mask : &dpaa2_flow_item_vlan_mask;
 
-	if (!spec) {
-		ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
+	ret = dpaa2_protocol_psr_bit_offset(&bit_offset,
 			DPAA2_PARSER_VLAN_ID);
-		if (ret)
-			return ret;
+	if (ret)
+		return ret;
 
-		ret = dpaa2_flow_identify_by_faf(priv, flow,
+	ret = dpaa2_flow_identify_by_faf(priv, flow,
 			bit_offset, dist_type, attr->group, &local_cfg);
-		if (ret)
-			return ret;
+	if (ret)
+		return ret;
 
+	if (!spec) {
 		if (extract_cfg)
 			(*extract_cfg) |= local_cfg;
 		return 0;
