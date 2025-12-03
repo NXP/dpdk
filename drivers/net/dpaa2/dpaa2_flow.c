@@ -862,18 +862,12 @@ dpaa2_flow_rule_add_all(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *curr = LIST_FIRST(&priv->flows);
 	struct dpaa2_generic_flow *qos_flow;
 	struct dpaa2_generic_flow *fs_flow;
-	struct dpaa2_dev_flow_fs_action *fs_action;
 	int ret;
 
 	while (curr) {
-		fs_action = NULL;
 		qos_flow = curr->qos_flow;
 		fs_flow = curr->fs_flow;
-		if (fs_flow)
-			fs_action = &fs_flow->flow_action.fs_action;
-		if (qos_flow && dist_type == DPAA2_FLOW_QOS_TYPE &&
-			fs_action && fs_action->action_type ==
-			RTE_FLOW_ACTION_TYPE_RSS) {
+		if (qos_flow && dist_type == DPAA2_FLOW_QOS_TYPE) {
 			qos_flow->rule_cfg.key_size = entry_size;
 			ret = dpaa2_flow_add_qos_rule(priv, qos_flow);
 			if (ret)
