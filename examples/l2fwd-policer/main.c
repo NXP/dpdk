@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
- * Copyright 2024-2025 NXP
+ * Copyright 2024-2026 NXP
  */
 
 #include <stdio.h>
@@ -1443,7 +1443,7 @@ l2fwd_policer_fs_flow_action_update(uint16_t port_id,
 static void *
 l2fwd_policer_fs_flow_item_update(uint16_t port_id,
 	struct rte_flow_item *pattern, void *flow,
-	uint16_t tc_id, uint16_t flow_id,
+	uint16_t tc_id, uint16_t prio, uint16_t queue_id,
 	int flow_tb_level)
 {
 	struct rte_flow_attr flow_attr;
@@ -1455,10 +1455,10 @@ l2fwd_policer_fs_flow_item_update(uint16_t port_id,
 	flow_attr.ingress = 1;
 
 	flow_attr.group = tc_id;
-	flow_attr.priority = 0;
+	flow_attr.priority = prio;
 
 	flow_action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-	action_queue.index = flow_id;
+	action_queue.index = queue_id;
 	flow_action[0].conf = &action_queue;
 	flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
 
@@ -1466,16 +1466,18 @@ l2fwd_policer_fs_flow_item_update(uint16_t port_id,
 	if (ret)
 		return NULL;
 
-	if (flow_tb_level > 1)
-		rte_dpaa2_fs_flow_attr_set(&flow_attr);
+	if (flow_tb_level > 1) {
+		return rte_dpaa2_flow_create(port_id, &flow_attr, pattern,
+			flow_action, NULL, RTE_DPAA2_FS_GROUP_FLOW);
+	}
 
 	return rte_flow_create(port_id, &flow_attr, pattern, flow_action, NULL);
 }
 
 static void *
 l2fwd_policer_qos_flow_item_update(uint16_t port_id,
-	struct rte_flow_item *pattern, void *flow, uint8_t tc,
-	uint16_t max_tcs)
+	struct rte_flow_item *pattern, void *flow, uint8_t prio,
+	uint8_t tc, uint16_t max_tcs)
 {
 	struct rte_flow_attr flow_attr;
 	struct rte_flow_action flow_action[MAX_ACTION_NUM];
@@ -1487,7 +1489,7 @@ l2fwd_policer_qos_flow_item_update(uint16_t port_id,
 
 	/** The grounp ID > any TC ID, which means the flow is QoS flow.*/
 	flow_attr.group = max_tcs;
-	flow_attr.priority = 0; /** Ignore for QoS flow.*/
+	flow_attr.priority = prio;
 
 	flow_action[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
 	action_jump.group = tc;
@@ -1497,7 +1499,6 @@ l2fwd_policer_qos_flow_item_update(uint16_t port_id,
 	ret = rte_flow_destroy(port_id, flow, NULL);
 	if (ret)
 		return NULL;
-	rte_dpaa2_qos_flow_attr_set(&flow_attr);
 
 	return rte_flow_create(port_id, &flow_attr, pattern, flow_action, NULL);
 }
@@ -1515,14 +1516,11 @@ l2fwd_policer_qos_flow_vlan_config(uint16_t port_id,
 	struct rte_flow_action_jump action_jump;
 	struct rte_flow *qos_flow;
 
+	prio = l2fwd_policer_tc_map_vlan_prio(tc);
 	memset(&flow_attr, 0, sizeof(struct rte_flow_attr));
 	flow_attr.ingress = 1;
-
-	/** Ignore group and priority of attr.
-	 * flow_attr.group = xxx;
-	 * flow_attr.priority = xxx;
-	 */
-	prio = l2fwd_policer_tc_map_vlan_prio(tc);
+	flow_attr.group = s_port_param[port_id].max_tcs;
+	flow_attr.priority = prio;
 	memset(&vlan_item, 0, sizeof(struct rte_flow_item_vlan));
 	memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
 	vlan_item.hdr.vlan_tci = rte_cpu_to_be_16(prio + vlan_id);
@@ -1539,13 +1537,10 @@ l2fwd_policer_qos_flow_vlan_config(uint16_t port_id,
 	flow_action[0].conf = &action_jump;
 	flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
 
-	rte_dpaa2_qos_flow_attr_set(&flow_attr);
-	qos_flow = rte_flow_create(port_id,
-		&flow_attr, flow_item, flow_action, NULL);
+	qos_flow = rte_flow_create(port_id, &flow_attr, flow_item, flow_action, NULL);
 	if (!qos_flow) {
 		rte_exit(EXIT_FAILURE,
-			"Cannot create QoS flow of TC%d on port=%d\n",
-			tc, port_id);
+			"Cannot create QoS flow of TC%d on port=%d\n", tc, port_id);
 	}
 	RTE_LOG(INFO, L2FWD_POLICER,
 		"Create port%d QoS flow to direct tci=0x%04x traffic to TC%d\n",
@@ -1555,8 +1550,7 @@ l2fwd_policer_qos_flow_vlan_config(uint16_t port_id,
 
 static struct rte_flow *
 l2fwd_policer_meter_flow_create(uint16_t port_id,
-	uint16_t tc, struct l2fwd_policer_meter_param *meter_param,
-	int flow_tb_level)
+	uint16_t tc, struct l2fwd_policer_meter_param *meter_param)
 {
 	struct rte_flow_attr flow_attr;
 	struct rte_flow_action flow_action[MAX_ACTION_NUM];
@@ -1572,7 +1566,7 @@ l2fwd_policer_meter_flow_create(uint16_t port_id,
 	flow_attr.ingress = 1;
 
 	flow_attr.group = tc;
-	flow_attr.priority = 0; /** Ignore for QoS flow.*/
+	flow_attr.priority = 0; /** Ignore for meter flow.*/
 
 	if (s_meter_action == RTE_FLOW_ACTION_TYPE_METER_MARK) {
 		l2fwd_policer_meter_mark_action_config(port_id,
@@ -1584,8 +1578,6 @@ l2fwd_policer_meter_flow_create(uint16_t port_id,
 		flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
 	}
 
-	if (flow_tb_level > 1)
-		rte_dpaa2_fs_flow_attr_set(&flow_attr);
 	meter_flow = rte_flow_create(port_id,
 		&flow_attr, NULL, flow_action, NULL);
 	if (!meter_flow) {
@@ -1700,9 +1692,9 @@ l2fwd_policer_fs_flow_config(uint16_t port_id,
 		return NULL;
 	}
 
-	rte_dpaa2_fs_flow_attr_set(&flow_attr);
-	fs_flow = rte_flow_create(port_id,
-		&flow_attr, flow_item, flow_action, NULL);
+	fs_flow = rte_dpaa2_flow_create(port_id,
+		&flow_attr, flow_item, flow_action, NULL,
+		RTE_DPAA2_FS_GROUP_FLOW);
 	if (fs_flow) {
 		RTE_LOG(INFO, L2FWD_POLICER,
 			"Create port%d-TC%d-flow%d to direct x.x.x.%d to queue%d\n",
@@ -2026,7 +2018,7 @@ l2fwd_policer_flow_init_config(uint16_t port_id,
 			param->tc_ids[tc] = tc;
 			tc_desc = &param->tc_descs[tc];
 			tc_desc->meter_flow = l2fwd_policer_meter_flow_create(port_id,
-				tc, &tc_desc->meter_param, param->flow_tb_level);
+				tc, &tc_desc->meter_param);
 			if (s_rss) {
 				tc_desc->rss_flow = l2fwd_policer_rss_flow_config(port_id,
 					tc, tc_desc);
@@ -2059,8 +2051,8 @@ complete_flow_config:
 		if (tc_desc->miss_drop) {
 			flow_action[0].type = RTE_FLOW_ACTION_TYPE_DROP;
 			flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
-			ret = rte_flow_group_set_miss_actions(port_id,
-				tc, NULL, flow_action, NULL);
+			ret = rte_dpaa2_flow_group_set_miss_actions(port_id,
+				tc, RTE_DPAA2_FS_GROUP_FLOW, NULL, flow_action, NULL);
 			if (ret) {
 				rte_exit(EXIT_FAILURE,
 					"Set miss action of TC%d on port=%d\n", tc, port_id);
@@ -2082,7 +2074,7 @@ complete_flow_config:
 
 static void
 l2fwd_policer_meter_action_update(uint16_t port_id,
-	uint8_t tc, uint32_t update, int flow_tb_level)
+	uint8_t tc, uint32_t update)
 {
 	int ret, idx;
 	struct rte_flow_action flow_action[MAX_ACTION_NUM];
@@ -2128,8 +2120,6 @@ l2fwd_policer_meter_action_update(uint16_t port_id,
 				port_id, tc, ret);
 		}
 	} else {
-		if (flow_tb_level > 1)
-			rte_dpaa2_fs_flow_attr_set(&flow_attr);
 		tc_desc->meter_flow = rte_flow_create(port_id,
 			&flow_attr, NULL, flow_action, NULL);
 	}
@@ -2179,7 +2169,7 @@ l2fwd_policer_qos_flow_update(uint16_t portid,
 		tc = s_port_param[portid].tc_ids[idx];
 		flow = l2fwd_policer_qos_flow_item_update(portid,
 			s_port_param[portid].qos_update_pattern,
-			s_port_param[portid].qos_flows[idx], tc,
+			s_port_param[portid].qos_flows[idx], idx, tc,
 			s_port_param[portid].max_tcs);
 		RTE_ASSERT(flow);
 		s_port_param[portid].qos_flows[idx] = flow;
@@ -2198,8 +2188,7 @@ l2fwd_policer_tc_meter_update(uint16_t portid,
 	old_policy_id = NULL;
 	l2fwd_policer_meter_update(portid, &tc_desc->meter_param, update,
 		&old_profile_id, &old_policy_id);
-	l2fwd_policer_meter_action_update(portid, tc, update,
-		s_port_param[portid].flow_tb_level);
+	l2fwd_policer_meter_action_update(portid, tc, update);
 	l2fwd_policer_meter_profile_del(portid, old_profile_id);
 	l2fwd_policer_meter_policy_del(portid, old_policy_id);
 }
@@ -2230,7 +2219,7 @@ l2fwd_policer_tc_flow_update(uint16_t portid,
 			tc_desc->fs_update_pattern,
 			s_port_param[portid].flow_tb_level == 1 ?
 			tc_desc->one_level_flows[idx] :
-			tc_desc->fs_flows[idx], tc,
+			tc_desc->fs_flows[idx], tc, idx,
 			tc_desc->flow_queue_ids[idx],
 			s_port_param[portid].flow_tb_level);
 		RTE_ASSERT(flow);
