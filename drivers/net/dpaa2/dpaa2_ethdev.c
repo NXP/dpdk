@@ -1,7 +1,7 @@
 /* * SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2025 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -1917,13 +1917,12 @@ dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 static int
 dpaa2_dev_start(struct rte_eth_dev *dev)
 {
-	struct rte_device *rdev = dev->device;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_dev_data *data = dev->data;
 	struct dpaa2_dev_priv *priv = data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpni_queue cfg;
-	struct dpni_error_cfg	err_cfg;
+	struct dpni_error_cfg err_cfg;
 	struct dpni_queue_id qid;
 	struct dpaa2_queue *dpaa2_q;
 	int ret, i;
@@ -1932,7 +1931,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	intr_handle = dpaa2_dev->intr_handle;
 
 	if (priv->enable_bp_flow_ctrl) {
@@ -2049,13 +2048,12 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = dev->process_private;
 	int ret;
 	struct rte_eth_link link;
-	struct rte_device *rdev = dev->device;
 	struct rte_intr_handle *intr_handle;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_fc_conf *fc_conf;
 	uint16_t i;
 
-	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	intr_handle = dpaa2_dev->intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
@@ -3484,7 +3482,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		return 0;
 	}
 
-	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	hw_id = dpaa2_dev->object_id;
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2025 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -36,6 +36,10 @@
 #define MAX_TX_QUEUES		16
 #define MAX_DPNI		8
 #define DPAA2_MAX_CHANNELS	16
+
+#define DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv) \
+	container_of((((struct dpaa2_dev_priv *)priv)->eth_dev->device), \
+	struct rte_dpaa2_device, device)
 
 #define DPAA2_EXTRACT_PARAM_MAX_SIZE \
 	RTE_ALIGN(sizeof(struct dpni_ext_set_rx_tc_dist), 256)

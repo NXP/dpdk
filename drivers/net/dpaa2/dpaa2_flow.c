@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2025 NXP
+ * Copyright 2018-2026 NXP
  */
 
 #include <sys/queue.h>
@@ -746,13 +746,12 @@ static int
 dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow)
 {
-	struct rte_device *rte_dev = priv->eth_dev->device;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_key_extract *extract;
 	int ret;
 	struct fsl_mc_io *dpni = priv->hw;
 
-	dpaa2_dev = container_of(rte_dev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	extract = &priv->extract.tc_key_extract[flow->tc_id];
 	if (dpaa2_flow_entry_map_get(extract->entry_map,
@@ -3725,7 +3724,6 @@ dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow,
 	const struct rte_flow_action *rte_action)
 {
-	struct rte_device *rte_dev = priv->eth_dev->device;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_dev *dest_dev;
 	struct dpaa2_dev_priv *dest_priv;
@@ -3735,7 +3733,7 @@ dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 	uint16_t num_tokens;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 
-	dpaa2_dev = container_of(rte_dev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	fs_action = &flow->flow_action.fs_action;
 	if (fs_action->action_type != RTE_FLOW_ACTION_TYPE_END) {
@@ -5960,7 +5958,6 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	const struct rte_flow_action actions[],
 	struct rte_flow_error *error)
 {
-	struct rte_device *rte_dev = dev->device;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow;
@@ -5975,7 +5972,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	uint8_t spec_buf[1024];
 	struct rte_flow_attr attr;
 
-	dpaa2_dev = container_of(rte_dev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	/* check for the valid flow */
 	flow = (void *)_flow;
