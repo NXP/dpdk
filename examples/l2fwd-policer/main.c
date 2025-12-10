@@ -146,6 +146,14 @@ static int tx_multi_ports = 1;
 static int s_print_stat;
 
 enum {
+	POLICER_RX,
+	POLICER_RX_DCB,
+	POLICER_RX_DCB_RSS
+};
+
+static int s_dcb = POLICER_RX;
+
+enum {
 	ACTION_POLICER_PROFILE_UPDATE = (1 << 0),
 	ACTION_POLICER_POLICY_UPDATE = (1 << 1),
 	ACTION_QOS_JUMP_UPDATE = (1 << 2),
@@ -796,7 +804,8 @@ l2fwd_policer_usage(const char *prgname)
 		"  --flow_table_level: 1 or 2, Default: 2.\n"
 		"  --print_stat: Print port and TC traffic statistics.\n"
 		"  --rx_sch_mode: Select RX schedule mode (pull or push), Default: push.\n"
-		"  --xstat: Print xstat (dev, mac, both or off), Default: dev.\n",
+		"  --xstat: Print xstat (dev, mac, both or off), Default: dev.\n"
+		"  --dcb: DCB mode (dcb or dcb_rss) to configure QoS/TC flow by configuring device.\n",
 		prgname);
 }
 
@@ -989,6 +998,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_RSS_PER_TC_CONFIG "rss_per_tc"
 #define CMD_LINE_OPT_RX_SCH_MODE_CONFIG "rx_sch_mode"
 #define CMD_LINE_OPT_XSTAT_CONFIG "xstat"
+#define CMD_LINE_OPT_DCB_CONFIG "dcb"
 
 enum {
 	/* long options mapped to a short option */
@@ -1014,7 +1024,8 @@ enum {
 	CMD_LINE_OPT_PRINT_STAT,
 	CMD_LINE_OPT_RSS_PER_TC,
 	CMD_LINE_OPT_RX_SCH_MODE,
-	CMD_LINE_OPT_XSTAT
+	CMD_LINE_OPT_XSTAT,
+	CMD_LINE_OPT_DCB
 };
 
 static const struct option lgopts[] = {
@@ -1042,6 +1053,7 @@ static const struct option lgopts[] = {
 		CMD_LINE_OPT_FLOW_TABLE_LEVEL},
 	{CMD_LINE_OPT_RX_SCH_MODE_CONFIG, 1, 0, CMD_LINE_OPT_RX_SCH_MODE},
 	{CMD_LINE_OPT_XSTAT_CONFIG, 1, 0, CMD_LINE_OPT_XSTAT},
+	{CMD_LINE_OPT_DCB_CONFIG, 1, 0, CMD_LINE_OPT_DCB},
 	{NULL, 0, 0, 0}
 };
 
@@ -1202,6 +1214,17 @@ l2fwd_policer_parse_args(int argc, char **argv)
 					optarg);
 				l2fwd_policer_usage(prgname);
 				return -EINVAL;
+			}
+			break;
+
+		case CMD_LINE_OPT_DCB:
+			if (!strcmp(optarg, "dcb")) {
+				s_dcb = POLICER_RX_DCB;
+			} else if (!strcmp(optarg, "dcb_rss")) {
+				s_dcb = POLICER_RX_DCB_RSS;
+			} else {
+				fprintf(stderr, "Invalid dcb mode: %s\n", optarg);
+				l2fwd_policer_usage(prgname);
 			}
 			break;
 
@@ -2296,7 +2319,7 @@ l2fwd_policer_tc_flow_config(uint16_t port_id,
 	flow_attr.priority = prio;
 	dest_queue.index = queue_id;
 
-	if (port_param->flow_tb_level == 1) {
+	if (port_param->flow_tb_level == 1 && s_dcb == POLICER_RX) {
 		memset(&vlan_item, 0, sizeof(struct rte_flow_item_vlan));
 		memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
 		vlan_item.hdr.vlan_tci = rte_cpu_to_be_16(RTE_VLAN_TCI_MAKE(0, tc, 0));
@@ -2330,7 +2353,7 @@ l2fwd_policer_tc_flow_config(uint16_t port_id,
 		return NULL;
 	}
 
-	if (port_param->flow_tb_level == 1) {
+	if (port_param->flow_tb_level == 1 && s_dcb == POLICER_RX) {
 		_flow = rte_flow_create(port_id, &flow_attr, flow_item,
 			flow_action, NULL);
 	} else {
@@ -2467,7 +2490,8 @@ l2fwd_policer_no_fs_flow_init_config(uint16_t port_id)
 		param->has_qos_flow = true;
 	}
 
-	l2fwd_policer_qos_miss_update(port_id, ACTION_MISS_QOS_QUEUE_UPDATE);
+	if (s_dcb == POLICER_RX)
+		l2fwd_policer_qos_miss_update(port_id, ACTION_MISS_QOS_QUEUE_UPDATE);
 }
 
 static void
@@ -2481,7 +2505,7 @@ l2fwd_policer_qos_fs_flow_init_config(uint16_t port_id)
 	param = &s_port_param[port_id];
 
 	for (tc = 0; tc < param->max_tcs; tc++) {
-		if (param->flow_tb_level == 2) {
+		if (param->flow_tb_level == 2 && s_dcb == POLICER_RX) {
 			flow = l2fwd_policer_qos_flow_vlan_config(port_id, tc, tc);
 			if (!flow) {
 				rte_exit(EXIT_FAILURE,
@@ -2497,7 +2521,7 @@ l2fwd_policer_qos_fs_flow_init_config(uint16_t port_id)
 		if (!tc_desc->valid)
 			continue;
 
-		if (tc_desc->is_rss_flow) {
+		if (tc_desc->is_rss_flow && s_dcb != POLICER_RX_DCB_RSS) {
 			tc_desc->rss_flow = l2fwd_policer_rss_flow_config(port_id, tc, tc_desc);
 			if (!tc_desc->rss_flow) {
 				rte_exit(EXIT_FAILURE,
@@ -2521,10 +2545,12 @@ l2fwd_policer_qos_fs_flow_init_config(uint16_t port_id)
 			tc_desc->flow_queue_ids[qidx] = tc_desc->tc_queue_ids[qidx];
 		}
 
-		l2fwd_policer_fs_miss_update(port_id, tc);
+		if (s_dcb == POLICER_RX)
+			l2fwd_policer_fs_miss_update(port_id, tc);
 	}
 
-	l2fwd_policer_qos_miss_update(port_id, ACTION_MISS_QOS_TC_UPDATE);
+	if (s_dcb == POLICER_RX)
+		l2fwd_policer_qos_miss_update(port_id, ACTION_MISS_QOS_TC_UPDATE);
 }
 
 static void
@@ -3619,6 +3645,8 @@ start_again:
 			goto start_again;
 		}
 		update = 0;
+		if (s_dcb != POLICER_RX)
+			goto start_again;
 		fprintf(stdout, "\r\nStart flow update:\r\n");
 
 		ret = l2fwd_policer_runtime_update_select_port(&portid);
@@ -3823,10 +3851,12 @@ l2fwd_policer_port_qos_init(uint16_t portid,
 
 static void
 l2fwd_policer_port_tc_fs_init(uint16_t portid, uint8_t tc,
-	uint16_t fs_entries, uint16_t queues_per_tc)
+	uint16_t fs_entries, uint16_t queues_per_tc, uint16_t queue_base,
+	struct rte_dpaa2_default_action_conf *default_action)
 {
 	struct l2fwd_policer_port_params *port_param;
 	struct l2fwd_policer_tc_desc *tc_desc;
+	int i;
 
 	port_param = &s_port_param[portid];
 	tc_desc = &port_param->tc_descs[tc];
@@ -3834,6 +3864,7 @@ l2fwd_policer_port_tc_fs_init(uint16_t portid, uint8_t tc,
 	tc_desc->valid = true;
 	tc_desc->fs_max_num = fs_entries;
 	tc_desc->queue_max_num = queues_per_tc;
+	tc_desc->default_queue = queue_base + queues_per_tc - 1;
 	if (tc_desc->fs_max_num) {
 		tc_desc->fs_flows = rte_zmalloc(NULL,
 			sizeof(void *) * tc_desc->fs_max_num, 0);
@@ -3852,8 +3883,14 @@ l2fwd_policer_port_tc_fs_init(uint16_t portid, uint8_t tc,
 			"Failed to malloc queue memory of port%d-tc%d\n",
 			portid, tc);
 	}
+	for (i = 0; i < queues_per_tc; i++)
+		tc_desc->tc_queue_ids[i] = queue_base + i;
 	tc_desc->is_rss_flow = s_rss;
 	tc_desc->miss_drop = s_miss_drop;
+	if (default_action) {
+		default_action->default_flows[tc] =
+			s_miss_drop ? queues_per_tc : queues_per_tc - 1;
+	}
 }
 
 static void
@@ -3924,6 +3961,27 @@ l2fwd_policer_port_free(uint16_t portid)
 		l2fwd_policer_port_tc_free(portid, i);
 
 	rte_free(port_param->tc_descs);
+}
+
+static void
+l2fwd_policer_port_dcb_configure(uint16_t portid,
+	const struct rte_eth_dcb_info *dcb_info)
+{
+	int i, j;
+	struct l2fwd_policer_port_params *port_param;
+	struct l2fwd_policer_tc_desc *tc_desc;
+
+	port_param = &s_port_param[portid];
+
+	port_param->max_tcs = dcb_info->nb_tcs;
+	port_param->max_queues = 0;
+	for (i = 0; i < dcb_info->nb_tcs; i++) {
+		port_param->max_queues += dcb_info->tc_queue.tc_rxq[0][i].nb_queue;
+		tc_desc = &port_param->tc_descs[i];
+		tc_desc->queue_max_num = dcb_info->tc_queue.tc_rxq[0][i].nb_queue;
+		for (j = 0; j < port_param->tc_descs[i].queue_max_num; j++)
+			tc_desc->tc_queue_ids[j] = dcb_info->tc_queue.tc_rxq[0][i].base + j;
+	}
 }
 
 int
@@ -4004,10 +4062,10 @@ main(int argc, char **argv)
 		struct rte_eth_conf local_port_conf = port_conf;
 		struct rte_eth_dev_info dev_info;
 		struct rte_eth_rxq_info qinfo;
+		struct rte_eth_dcb_info dcb_info;
 		uint8_t tc_id;
-		uint16_t flow_id, tc_num, qos_entries, fs_entries, queues_per_tc;
-		uint16_t queue_num[POLICER_TC_MAX_NUM];
-		struct l2fwd_policer_tc_desc *tc_desc;
+		uint16_t tc_num, qos_entries, fs_entries, queues_per_tc, base;
+		struct rte_dpaa2_default_action_conf *default_action;
 
 		/* skip ports that are not enabled */
 		if (!(l2fwd_policer_enabled_port_mask & (1 << portid))) {
@@ -4033,17 +4091,54 @@ main(int argc, char **argv)
 
 		rte_pmd_dpaa2_dev_parse_tc_info(&dev_info, &tc_num,
 			&qos_entries, &fs_entries, &queues_per_tc);
+		default_action = rte_zmalloc(NULL,
+			sizeof(struct rte_dpaa2_default_action_conf) +
+			tc_num * sizeof(uint16_t), 0);
+		if (!default_action) {
+			rte_exit(EXIT_FAILURE,
+				"Failed to malloc default action: port=%u\n",
+				portid);
+		}
 		l2fwd_policer_port_qos_init(portid, tc_num, qos_entries,
 			dev_info.max_rx_queues);
 		if (fs_entries)
 			s_port_param[portid].has_fs_table = true;
-		memset(queue_num, 0, sizeof(queue_num));
+		default_action->default_tc = s_port_param[portid].miss_drop ?
+			s_port_param[portid].max_tcs : s_port_param[portid].default_tc;
+		default_action->max_tc = s_port_param[portid].max_tcs;
+		base = 0;
 		for (tc_id = 0; tc_id < tc_num; tc_id++) {
 			l2fwd_policer_port_tc_fs_init(portid, tc_id,
-				fs_entries, queues_per_tc);
+				fs_entries, queues_per_tc, base, default_action);
+			base += queues_per_tc;
+			if (queues_per_tc > s_max_qn_per_tc)
+				s_max_qn_per_tc = queues_per_tc;
+		}
+		if (s_dcb != POLICER_RX) {
+			ret = rte_eth_dev_get_dcb_info(portid, &dcb_info);
+			if (ret) {
+				rte_exit(EXIT_FAILURE,
+					"Failed to get dcb info: err=%d, port=%u\n",
+					ret, portid);
+			}
+			l2fwd_policer_port_dcb_configure(portid, &dcb_info);
+			local_port_conf.rx_adv_conf.dcb_rx_conf.nb_tcs = dcb_info.nb_tcs;
+			for (i = 0; i < dcb_info.nb_tcs; i++) {
+				local_port_conf.rx_adv_conf.dcb_rx_conf.dcb_tc[i] =
+					dcb_info.prio_tc[i];
+			}
+			local_port_conf.dcb_capability_en = RTE_ETH_DCB_PFC_SUPPORT;
+			if (s_dcb == POLICER_RX_DCB) {
+				local_port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_DCB;
+			} else if (s_dcb == POLICER_RX_DCB_RSS) {
+				local_port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_DCB_RSS;
+				local_port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_IP;
+				local_port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
+			}
 		}
 
 		/* Configure the number of queues for a port. */
+		local_port_conf.rxmode.reserved_ptrs[0] = default_action;
 		ret = rte_eth_dev_configure(portid, dev_info.max_rx_queues,
 			dev_info.max_tx_queues, &local_port_conf);
 		if (ret) {
@@ -4051,6 +4146,7 @@ main(int argc, char **argv)
 				"Cannot configure device: err=%d, port=%u\n",
 				ret, portid);
 		}
+		rte_free(default_action);
 		/* >8 End of configuration of the number of queues for a port. */
 
 		ret = rte_eth_dev_adjust_nb_rx_tx_desc(portid, &nb_rxd, &nb_txd);
@@ -4103,20 +4199,6 @@ main(int argc, char **argv)
 					"Get port%d-rxq%d info failed(%d).\n",
 					portid, i, ret);
 			}
-			rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo,
-				&tc_id, &flow_id);
-			if (tc_id != (i / queues_per_tc)) {
-				RTE_LOG(ERR, L2FWD_POLICER,
-					"port%d.rxq%d' tc(%d) is not expected(%d)\n",
-					portid, i, tc_id, (i / queues_per_tc));
-			}
-			tc_desc = &s_port_param[portid].tc_descs[tc_id];
-			tc_desc->tc_queue_ids[queue_num[tc_id]] = i;
-			if (queue_num[tc_id] == tc_desc->queue_max_num - 1)
-				tc_desc->default_queue = i;
-			queue_num[tc_id]++;
-			if (queue_num[tc_id] > s_max_qn_per_tc)
-				s_max_qn_per_tc = queue_num[tc_id];
 			/* >8 End of RX queue setup. */
 		}
 
@@ -4193,7 +4275,7 @@ main(int argc, char **argv)
 			l2fwd_policer_meter_flow_init_config(portid);
 			if (s_port_param[portid].has_fs_table)
 				l2fwd_policer_qos_fs_flow_init_config(portid);
-			else
+			else if (s_dcb == POLICER_RX)
 				l2fwd_policer_no_fs_flow_init_config(portid);
 		}
 
