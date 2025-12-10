@@ -589,25 +589,19 @@ static int
 dpaa2_fw_version_get(struct rte_eth_dev *dev,
 	char *fw_version, size_t fw_size)
 {
+	struct rte_dpaa2_device *dpaa2_dev;
 	int ret;
-	struct fsl_mc_io *dpni = dev->process_private;
-	struct mc_soc_version mc_plat_info = {0};
-	struct mc_version mc_ver_info = {0};
+	uint32_t major, minor, rev;
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (mc_get_soc_version(dpni, CMD_PRI_LOW, &mc_plat_info))
-		DPAA2_PMD_WARN("\tmc_get_soc_version failed");
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(dev->data->dev_private);
+	major = RTE_FSL_MC_REV_MAJOR(dpaa2_dev->bus_info->mc_rev);
+	minor = RTE_FSL_MC_REV_MINOR(dpaa2_dev->bus_info->mc_rev);
+	rev = RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev);
 
-	if (mc_get_version(dpni, CMD_PRI_LOW, &mc_ver_info))
-		DPAA2_PMD_WARN("\tmc_get_version failed");
-
-	ret = snprintf(fw_version, fw_size,
-		       "%x-%d.%d.%d",
-		       mc_plat_info.svr,
-		       mc_ver_info.major,
-		       mc_ver_info.minor,
-		       mc_ver_info.revision);
+	ret = snprintf(fw_version, fw_size, "%x-%d.%d.%d",
+		dpaa2_dev->bus_info->svr, major, minor, rev);
 	if (ret < 0)
 		return -EINVAL;
 
@@ -2448,11 +2442,12 @@ dpaa2_dev_xstat_check_avail(struct rte_eth_dev *dev,
 	uint16_t xstat_idx)
 {
 	enum dpaa2_xstats_type xstats_type;
-	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint8_t tc, i;
-	int ret;
-	struct mc_version mc_ver_info;
+	struct rte_dpaa2_device *dpaa2_dev;
+	uint64_t rev_mac_support;
+
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	xstats_type = dpaa2_xstats_strings[xstat_idx].xstats_type;
 	if (xstats_type == DPAA2_GENERAL_XSTATS_TYPE) {
@@ -2469,14 +2464,8 @@ dpaa2_dev_xstat_check_avail(struct rte_eth_dev *dev,
 	} else if (xstats_type == DPAA2_MAC_XSTATS_TYPE) {
 		if (priv->ep_dev_type != DPAA2_MAC)
 			return false;
-		memset(&mc_ver_info, 0, sizeof(mc_ver_info));
-		ret = mc_get_version(dpni, CMD_PRI_LOW, &mc_ver_info);
-		if (ret)
-			return false;
-
-		if (mc_ver_info.major >= MC_VER_MAJOR &&
-			mc_ver_info.minor >= MC_VER_MINOR &&
-			mc_ver_info.revision > 0)
+		rev_mac_support = RTE_FSL_MC_REV(MC_VER_MAJOR, MC_VER_MINOR, 0);
+		if (dpaa2_dev->bus_info->mc_rev >= rev_mac_support)
 			return true;
 	}
 
@@ -3730,13 +3719,13 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	eth_dev->data->mtu = RTE_ETHER_MTU;
 
-	priv->sp_protocol = dpaa2_dev->sp_protocol;
+	priv->sp_protocol = dpaa2_dev->bus_info->sp_protocol;
 
 	DPAA2_PMD_INFO("%s: netdev created, connected to %s",
 		eth_dev->data->name, priv->ep_name);
 
 	priv->speed_capa = dpaa2_dev_get_speed_capability(eth_dev);
-	priv->tx_sg_pool = dpaa2_dev->mem_pool;
+	priv->tx_sg_pool = dpaa2_dev->bus_info->mem_pool;
 
 	return 0;
 init_err:

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2019-2023,2025 NXP
+ *   Copyright 2016,2019-2023,2025-2026 NXP
  *
  */
 
@@ -63,8 +63,16 @@ extern uint32_t dpaa2_cluster_size;
 #define SVR_LS2088A	0x87090000
 #define SVR_LX2160A	0x87360000
 
+#define MC_MAJOR_OFFSET 32
+#define MC_MINOR_OFFSET 16
+#define MC_MINOR_MASK ((((uint64_t)1) << (MC_MAJOR_OFFSET - MC_MINOR_OFFSET)) - 1)
+#define MC_REVISION_MASK ((((uint64_t)1) << MC_MINOR_OFFSET) - 1)
 #define RTE_FSL_MC_REV(major, minor, revision) \
-	((((uint64_t)(major)) << 32) + (((uint64_t)(major)) << 16) + (revision))
+	((((uint64_t)(major)) << MC_MAJOR_OFFSET) + \
+	(((uint64_t)(minor)) << MC_MINOR_OFFSET) + (revision))
+#define RTE_FSL_MC_REV_MAJOR(rev) ((uint32_t)((rev) >> MC_MAJOR_OFFSET))
+#define RTE_FSL_MC_REV_MINOR(rev) ((uint32_t)(((rev) >> MC_MINOR_OFFSET) & MC_MINOR_MASK))
+#define RTE_FSL_MC_REV_REVISION(rev) ((uint32_t)((rev) & MC_REVISION_MASK))
 
 __rte_internal
 int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);

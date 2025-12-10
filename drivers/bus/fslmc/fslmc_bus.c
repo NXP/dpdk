@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2025 NXP
+ *   Copyright 2016,2018-2026 NXP
  *
  */
 
@@ -75,6 +75,7 @@ fslmc_soft_parser_protocol_supported(void)
 	void *map_addr = NULL;
 	const struct dpaa2_parser_ccsr *parser_ccsr = NULL;
 	const uint16_t *magic_num;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	fd = open("/dev/mem", O_RDWR | O_SYNC);
 	if (fd < 0) {
@@ -101,7 +102,7 @@ fslmc_soft_parser_protocol_supported(void)
 	if (*magic_num == SP_PROTOCOL_MAGIC_DATA) {
 		#define SP_PRINT_LEN 128
 
-		rte_fslmc_bus.sp_protocol_support = true;
+		bus_info->sp_protocol = true;
 		DPAA2_BUS_INFO("Soft parser protocol support.\r\n");
 		fprintf(stderr, "First %d bytes of sp protocol firmware:\r\n",
 			SP_PRINT_LEN);
@@ -427,6 +428,12 @@ rte_fslmc_scan(void)
 	ret = fslmc_get_container_group(group_name, &groupid);
 	if (ret != 0)
 		goto scan_fail;
+	rte_fslmc_bus.bus_info = malloc(sizeof(struct rte_fslmc_bus_info));
+	if (!rte_fslmc_bus.bus_info) {
+		DPAA2_BUS_ERR("Failed to alloc mc bus info");
+		goto scan_fail;
+	}
+	memset(rte_fslmc_bus.bus_info, 0, sizeof(struct rte_fslmc_bus_info));
 
 	/* Scan devices on the group */
 	snprintf(fslmc_dirpath, sizeof(fslmc_dirpath), "%s/%s",
@@ -489,14 +496,17 @@ static int
 rte_fslmc_close(void)
 {
 	int ret = 0;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	ret = fslmc_vfio_close_group();
 	if (ret)
 		DPAA2_BUS_ERR("Unable to close devices %d", ret);
-	if (rte_fslmc_bus.mem_pool) {
-		rte_mempool_free(rte_fslmc_bus.mem_pool);
-		rte_fslmc_bus.mem_pool = NULL;
+	if (bus_info->mem_pool) {
+		rte_mempool_free(bus_info->mem_pool);
+		bus_info->mem_pool = NULL;
 	}
+	free(bus_info);
+	rte_fslmc_bus.bus_info = NULL;
 
 	return 0;
 }
@@ -509,6 +519,7 @@ rte_fslmc_probe(void)
 
 	struct rte_dpaa2_device *dev;
 	struct rte_dpaa2_driver *drv;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	static const struct rte_mbuf_dynfield dpaa2_seqn_dynfield_desc = {
 		.name = DPAA2_SEQN_DYNFIELD_NAME,
@@ -553,7 +564,7 @@ rte_fslmc_probe(void)
 	}
 
 	/** Create SG pool after dpbp objects are created.*/
-	rte_fslmc_bus.mem_pool = rte_pktmbuf_pool_create("dpaa2_sg_pool",
+	bus_info->mem_pool = rte_pktmbuf_pool_create("dpaa2_sg_pool",
 		DPAA2_POOL_SIZE, DPAA2_POOL_CACHE_SIZE, 0,
 		DPAA2_MAX_SGS * sizeof(struct qbman_sge),
 		rte_socket_id());
@@ -582,9 +593,7 @@ rte_fslmc_probe(void)
 			if (probe_all || !dev->device.devargs ||
 				(dev->device.devargs &&
 				dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
-				dev->mem_pool = rte_fslmc_bus.mem_pool;
-				dev->sp_protocol = rte_fslmc_bus.sp_protocol_support;
-				dev->mc_rev = rte_fslmc_bus.rev;
+				dev->bus_info = rte_fslmc_bus.bus_info;
 				ret = drv->probe(drv, dev);
 				if (ret) {
 					DPAA2_BUS_ERR("Failed(%d) to probe %s",

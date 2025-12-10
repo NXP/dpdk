@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2025 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -237,20 +237,45 @@ rte_fslmc_object_register(struct rte_dpaa2_object *object)
 }
 
 static int
-fslmc_vfio_soc_type_init(void)
+fslmc_vfio_get_bus_info(void *regs, struct rte_fslmc_bus_info *bus_info)
 {
 	struct fsl_mc_io mc_io;
+	struct mc_version mc_ver_info = {0};
 	struct mc_soc_version mc_plat_info;
 	int ret;
 	size_t i;
 
-	mc_io.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
+	mc_io.regs = regs;
+
+	ret = mc_get_version(&mc_io, CMD_PRI_LOW, &mc_ver_info);
+	if (ret) {
+		DPAA2_BUS_ERR("Failed(%d) to obtain MC version.", ret);
+		return ret;
+	}
+	DPAA2_BUS_INFO("MC version is %d.%d.%d.", mc_ver_info.major,
+		mc_ver_info.minor, mc_ver_info.revision);
+
+	bus_info->mc_rev = RTE_FSL_MC_REV(mc_ver_info.major,
+		mc_ver_info.minor, mc_ver_info.revision);
+
+	if (bus_info->mc_rev < RTE_FSL_MC_REV(MC_VER_MAJOR, MC_VER_MINOR, 0)) {
+		DPAA2_BUS_ERR("DPAA2 MC version not compatible! %d.%d.%d < %d.%d.0",
+			mc_ver_info.major, mc_ver_info.minor, mc_ver_info.revision,
+			MC_VER_MAJOR, MC_VER_MINOR);
+		return -EPERM;
+	}
 
 	memset(&mc_plat_info, 0, sizeof(struct mc_soc_version));
 	ret = mc_get_soc_version(&mc_io, CMD_PRI_LOW, &mc_plat_info);
 	if (ret) {
-		DPAA2_BUS_ERR("Unable to get SoC version err:%d\r\n",
-			ret);
+		DPAA2_BUS_ERR("Unable to get SoC version err:%d\r\n", ret);
+		return ret;
+	}
+
+	memset(&mc_plat_info, 0, sizeof(struct mc_soc_version));
+	ret = mc_get_soc_version(&mc_io, CMD_PRI_LOW, &mc_plat_info);
+	if (ret) {
+		DPAA2_BUS_ERR("Unable to get SoC version err:%d\r\n", ret);
 		return ret;
 	}
 
@@ -268,6 +293,9 @@ fslmc_vfio_soc_type_init(void)
 		DPAA2_BUS_ERR("Invalid SoC version: 0x%08x", mc_plat_info.svr);
 		return -ENODEV;
 	}
+
+	bus_info->svr = mc_plat_info.svr;
+	bus_info->pvr = mc_plat_info.pvr;
 
 	return 0;
 }
@@ -1346,9 +1374,9 @@ fslmc_vfio_setup_device(const char *dev_addr,
 			dev_addr);
 }
 
-static intptr_t vfio_map_mcp_obj(const char *mcp_obj)
+static void *fslmc_vfio_map_mcp_obj(const char *mcp_obj)
 {
-	intptr_t v_addr = (intptr_t)MAP_FAILED;
+	void *v_addr = MAP_FAILED;
 	int32_t ret, mc_fd;
 	struct vfio_group_status status = { .argsz = sizeof(status) };
 
@@ -1364,7 +1392,7 @@ static intptr_t vfio_map_mcp_obj(const char *mcp_obj)
 		goto MC_FAILURE;
 	}
 
-	v_addr = (size_t)mmap(NULL, reg_info.size,
+	v_addr = mmap(NULL, reg_info.size,
 		PROT_WRITE | PROT_READ, MAP_SHARED,
 		mc_fd, reg_info.offset);
 
@@ -1485,7 +1513,7 @@ rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 }
 
 static void
-fslmc_close_iodevices(struct rte_dpaa2_device *dev,
+fslmc_vfio_close_iodevices(struct rte_dpaa2_device *dev,
 	int vfio_fd)
 {
 	struct rte_dpaa2_object *object = NULL;
@@ -1539,11 +1567,11 @@ fslmc_close_iodevices(struct rte_dpaa2_device *dev,
 }
 
 /*
- * fslmc_process_iodevices for processing only IO (ETH, CRYPTO, and possibly
+ * fslmc_vfio_process_iodevices for processing only IO (ETH, CRYPTO, and possibly
  * EVENT) devices.
  */
 static int
-fslmc_process_iodevices(struct rte_dpaa2_device *dev)
+fslmc_vfio_process_iodevices(struct rte_dpaa2_device *dev)
 {
 	int dev_fd, ret;
 	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
@@ -1584,12 +1612,11 @@ fslmc_process_iodevices(struct rte_dpaa2_device *dev)
 }
 
 static int
-fslmc_process_mcp(struct rte_dpaa2_device *dev)
+fslmc_vfio_process_mcp(struct rte_dpaa2_device *dev)
 {
 	int ret;
-	intptr_t v_addr;
-	struct fsl_mc_io dpmng  = {0};
-	struct mc_version mc_ver_info = {0};
+	void *v_addr;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	rte_mcp_ptr_list = malloc(sizeof(void *) * (MC_PORTAL_INDEX + 1));
 	if (!rte_mcp_ptr_list) {
@@ -1598,41 +1625,26 @@ fslmc_process_mcp(struct rte_dpaa2_device *dev)
 		goto cleanup;
 	}
 
-	v_addr = vfio_map_mcp_obj(dev->device.name);
-	if (v_addr == (intptr_t)MAP_FAILED) {
+	v_addr = fslmc_vfio_map_mcp_obj(dev->device.name);
+	if (v_addr == MAP_FAILED) {
 		DPAA2_BUS_ERR("Error mapping region (errno = %d)", errno);
-		ret = -1;
+		ret = -EFAULT;
 		goto cleanup;
 	}
-
-	/* check the MC version compatibility */
-	dpmng.regs = (void *)v_addr;
 
 	/* In case of secondary processes, MC version check is no longer
 	 * required.
 	 */
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
-		rte_mcp_ptr_list[MC_PORTAL_INDEX] = (void *)v_addr;
+		rte_mcp_ptr_list[MC_PORTAL_INDEX] = v_addr;
 		return 0;
 	}
 
-	if (mc_get_version(&dpmng, CMD_PRI_LOW, &mc_ver_info)) {
-		DPAA2_BUS_ERR("Unable to obtain MC version");
-		ret = -1;
+	ret = fslmc_vfio_get_bus_info(v_addr, bus_info);
+	if (ret)
 		goto cleanup;
-	}
 
-	rte_fslmc_bus.rev = RTE_FSL_MC_REV(mc_ver_info.major,
-		mc_ver_info.minor, mc_ver_info.revision);
-
-	if (rte_fslmc_bus.rev < RTE_FSL_MC_REV(MC_VER_MAJOR, MC_VER_MINOR, 0)) {
-		DPAA2_BUS_ERR("DPAA2 MC version not compatible! %d.%d.%d < %d.%d.0",
-			mc_ver_info.major, mc_ver_info.minor, mc_ver_info.revision,
-			MC_VER_MAJOR, MC_VER_MINOR);
-		ret = -EPERM;
-		goto cleanup;
-	}
-	rte_mcp_ptr_list[MC_PORTAL_INDEX] = (void *)v_addr;
+	rte_mcp_ptr_list[MC_PORTAL_INDEX] = v_addr;
 
 	return 0;
 
@@ -1675,7 +1687,7 @@ fslmc_vfio_close_group(void)
 		case DPAA2_QDMA:
 		case DPAA2_BPOOL:
 		case DPAA2_IO:
-			fslmc_close_iodevices(dev, vfio_group_fd);
+			fslmc_vfio_close_iodevices(dev, vfio_group_fd);
 			break;
 		case DPAA2_CON:
 		case DPAA2_CI:
@@ -1683,7 +1695,7 @@ fslmc_vfio_close_group(void)
 			if (rte_eal_process_type() == RTE_PROC_SECONDARY)
 				continue;
 
-			fslmc_close_iodevices(dev, vfio_group_fd);
+			fslmc_vfio_close_iodevices(dev, vfio_group_fd);
 			break;
 		case DPAA2_DPRTC:
 		default:
@@ -1755,17 +1767,12 @@ fslmc_vfio_process_group(void)
 			}
 
 			if (!found_mportal) {
-				ret = fslmc_process_mcp(dev);
+				ret = fslmc_vfio_process_mcp(dev);
 				if (ret) {
 					DPAA2_BUS_ERR("Unable to map MC Portal");
 					return ret;
 				}
 				found_mportal = 1;
-				ret = fslmc_vfio_soc_type_init();
-				if (ret) {
-					DPAA2_BUS_ERR("SoC type init failed(%d)", ret);
-					return ret;
-				}
 			}
 
 			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
@@ -1789,7 +1796,7 @@ fslmc_vfio_process_group(void)
 	current_device = 0;
 	RTE_TAILQ_FOREACH_SAFE(dev, &rte_fslmc_bus.device_list, next, dev_temp) {
 		if (dev->dev_type == DPAA2_DPRC) {
-			ret = fslmc_process_iodevices(dev);
+			ret = fslmc_vfio_process_iodevices(dev);
 			if (ret) {
 				DPAA2_BUS_ERR("Unable to process dprc");
 				return ret;
@@ -1832,7 +1839,7 @@ fslmc_vfio_process_group(void)
 		case DPAA2_CRYPTO:
 		case DPAA2_QDMA:
 		case DPAA2_BPOOL:
-			ret = fslmc_process_iodevices(dev);
+			ret = fslmc_vfio_process_iodevices(dev);
 			if (ret) {
 				DPAA2_BUS_DEBUG("Dev (%s) init failed",
 						dev->device.name);
@@ -1854,7 +1861,7 @@ fslmc_vfio_process_group(void)
 			/* Call the object creation routine and remove the
 			 * device entry from device list
 			 */
-			ret = fslmc_process_iodevices(dev);
+			ret = fslmc_vfio_process_iodevices(dev);
 			if (ret) {
 				DPAA2_BUS_DEBUG("Dev (%s) init failed",
 						dev->device.name);
@@ -1881,7 +1888,7 @@ fslmc_vfio_process_group(void)
 				}
 			}
 
-			ret = fslmc_process_iodevices(dev);
+			ret = fslmc_vfio_process_iodevices(dev);
 			if (ret) {
 				DPAA2_BUS_DEBUG("Dev (%s) init failed",
 						dev->device.name);

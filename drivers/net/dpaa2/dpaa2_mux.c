@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2025 NXP
+ * Copyright 2018-2026 NXP
  */
 
 #include <sys/queue.h>
@@ -1598,7 +1598,7 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 		goto init_err;
 	}
 	rte_spinlock_init(&dpdmux_dev->lock);
-	dpdmux_dev->sp_protocol = obj->sp_protocol;
+	dpdmux_dev->sp_protocol = obj->bus_info->sp_protocol;
 	dpdmux_dev->max_flow_num = attr.max_dmat_entries;
 
 	TAILQ_INSERT_TAIL(&dpdmux_dev_list, dpdmux_dev, next);

@@ -763,7 +763,7 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 
 	dpaa2_flow_fs_entry_log("Add", flow);
 
-	if (dpaa2_dev->mc_rev >= DPAA2_FLOW_FRM_REPLICATION_ACTION_MC_REV) {
+	if (dpaa2_dev->bus_info->mc_rev >= DPAA2_FLOW_FRM_REPLICATION_ACTION_MC_REV) {
 		ret = dpni_add_fs_entry(dpni, CMD_PRI_LOW,
 			priv->token, flow->tc_id, flow->entry_index,
 			&flow->rule_cfg, &flow->flow_action.fs_action.fs_action_cfg);
@@ -3737,7 +3737,7 @@ dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 
 	fs_action = &flow->flow_action.fs_action;
 	if (fs_action->action_type != RTE_FLOW_ACTION_TYPE_END) {
-		if (dpaa2_dev->mc_rev >= DPAA2_FLOW_FRM_REPLICATION_ACTION_MC_REV &&
+		if (dpaa2_dev->bus_info->mc_rev >= DPAA2_FLOW_FRM_REPLICATION_ACTION_MC_REV &&
 			(fs_action->action_type == RTE_FLOW_ACTION_TYPE_PORT_ID ||
 			fs_action->action_type == RTE_FLOW_ACTION_TYPE_PORT_REPRESENTOR)) {
 			if (rte_action->type != RTE_FLOW_ACTION_TYPE_PORT_ID &&
@@ -6023,7 +6023,7 @@ action_update:
 	if (fs_action_num > 0 &&
 		fs_actions[0].type != RTE_FLOW_ACTION_TYPE_PORT_ID &&
 		fs_actions[0].type != RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT &&
-		dpaa2_dev->mc_rev >= DPAA2_FLOW_HW_ACTION_UPDATE_MC_REV) {
+		dpaa2_dev->bus_info->mc_rev >= DPAA2_FLOW_HW_ACTION_UPDATE_MC_REV) {
 		/** Action HW update doesn't support redirecting frames to other DPNIs.*/
 		hw_update = true;
 		goto skip_remove_fs_entry;

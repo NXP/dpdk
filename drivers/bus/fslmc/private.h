@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- *   Copyright 2016,2021,2025 NXP
+ *   Copyright 2016,2021,2025-2026 NXP
  */
 
 #ifndef BUS_FSLMC_PRIVATE_H
@@ -20,9 +20,7 @@ struct rte_fslmc_bus {
 				/**< FSLMC DPAA2 Driver list */
 	int device_count[DPAA2_DEVTYPE_MAX];
 				/**< Count of all devices scanned */
-	void *mem_pool;
-	int sp_protocol_support;
-	uint64_t rev;
+	void *bus_info;
 };
 
 extern struct rte_fslmc_bus rte_fslmc_bus;
