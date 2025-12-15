@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2025 NXP
+ * Copyright 2018-2026 NXP
  */
 
 #ifndef _RTE_PMD_DPAA2_H
@@ -226,21 +226,51 @@ rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
 int
 rte_pmd_dpaa2_flow_table_query(uint16_t portid);
 
-enum rte_pmd_dpaa2_flow_attr {
-	RTE_DPAA2_ONE_LEVEL_FLOW_CREATE_ATTR = 0, /** Default*/
-	RTE_DPAA2_QOS_FLOW_CREATE_ATTR = 1,
-	RTE_DPAA2_FS_FLOW_CREATE_ATTR = 2
-};
+#define RTE_DPAA2_ONE_LEVEL_GROUP_FLOW 0
+#define RTE_DPAA2_QOS_GROUP_FLOW 1
+#define RTE_DPAA2_FS_GROUP_FLOW 2
 
-static inline void
-rte_dpaa2_qos_flow_attr_set(struct rte_flow_attr *attr)
+#define RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET 8
+#define RTE_PMD_DPAA2_FLOW_GROUP_ID_MASK \
+	((((uint32_t)1) << RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET) - 1)
+
+#define RTE_DPAA2_FLOW_GROUP_TYPE_SET(group, type) \
+	((group) |= ((type) << RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET))
+
+#define RTE_DPAA2_FLOW_GROUP_TYPE_GET(group) \
+	((group) >> RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET)
+
+#define RTE_DPAA2_FLOW_GROUP_ID_GET(group) \
+	((group) & RTE_PMD_DPAA2_FLOW_GROUP_ID_MASK)
+
+/** Parameter "type" should be:
+ *RTE_DPAA2_ONE_LEVEL_GROUP_FLOW or
+ *RTE_DPAA2_QOS_GROUP_FLOW or
+ *RTE_DPAA2_FS_GROUP_FLOW
+ */
+static inline struct rte_flow *
+rte_dpaa2_flow_create(uint16_t port_id,
+		const struct rte_flow_attr *attr,
+		const struct rte_flow_item pattern[],
+		const struct rte_flow_action actions[],
+		struct rte_flow_error *error, uint32_t type)
 {
-	attr->reserved = RTE_DPAA2_QOS_FLOW_CREATE_ATTR;
+	struct rte_flow_attr _attr;
+
+	rte_memcpy(&_attr, attr, sizeof(struct rte_flow_attr));
+	RTE_DPAA2_FLOW_GROUP_TYPE_SET(_attr.group, type);
+	return rte_flow_create(port_id, &_attr, pattern, actions, error);
 }
 
-static inline void
-rte_dpaa2_fs_flow_attr_set(struct rte_flow_attr *attr)
+static inline int
+rte_dpaa2_flow_group_set_miss_actions(uint16_t port_id,
+		uint32_t group_id, uint32_t type,
+		const struct rte_flow_group_attr *attr,
+		const struct rte_flow_action actions[],
+		struct rte_flow_error *error)
 {
-	attr->reserved = RTE_DPAA2_FS_FLOW_CREATE_ATTR;
+	RTE_DPAA2_FLOW_GROUP_TYPE_SET(group_id, type);
+	return rte_flow_group_set_miss_actions(port_id,
+		group_id, attr, actions, error);
 }
 #endif /* _RTE_PMD_DPAA2_H */

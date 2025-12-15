@@ -23,6 +23,24 @@
 #include <dpaa2_pmd_logs.h>
 #include "dpaa2_parser_decode.h"
 
+#ifndef RTE_DPAA2_ONE_LEVEL_GROUP_FLOW
+#define RTE_DPAA2_ONE_LEVEL_GROUP_FLOW 0
+#endif
+#ifndef RTE_DPAA2_QOS_GROUP_FLOW
+#define RTE_DPAA2_QOS_GROUP_FLOW 1
+#endif
+#ifndef RTE_DPAA2_FS_GROUP_FLOW
+#define RTE_DPAA2_FS_GROUP_FLOW 2
+#endif
+
+#ifndef RTE_DPAA2_FLOW_GROUP_TYPE_GET
+#define RTE_DPAA2_FLOW_GROUP_TYPE_GET(group) RTE_DPAA2_ONE_LEVEL_GROUP_FLOW
+#endif
+
+#ifndef RTE_DPAA2_FLOW_GROUP_ID_GET
+#define RTE_DPAA2_FLOW_GROUP_ID_GET(group) (group)
+#endif
+
 static bool dpaa2_flow_control_log;
 
 /* Default size of a key */
@@ -5641,16 +5659,27 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	int ret, is_rss = false;
 	struct dpaa2_generic_flow *qos_flow = NULL;
 	struct dpaa2_generic_flow *fs_flow = NULL;
-	enum rte_pmd_dpaa2_flow_attr flow_attr = attr->reserved;
+	uint32_t group_id, group_type;
 	const struct rte_flow_action_rss *rss_conf;
 	struct rte_flow_item items[DPKG_MAX_NUM_OF_EXTRACTS + 1];
 	int rss_item = false, err_code = 0;
 	uint8_t spec_buf[1024];
 	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
 	const char *err_str = NULL;
+	struct rte_flow_attr local_attr;
 
 	if (getenv("DPAA2_FLOW_CONTROL_LOG"))
 		dpaa2_flow_control_log = 1;
+
+	group_type = RTE_DPAA2_FLOW_GROUP_TYPE_GET(attr->group);
+	group_id = RTE_DPAA2_FLOW_GROUP_ID_GET(attr->group);
+	if (group_id >= priv->num_rx_tc &&
+		group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW) {
+		group_type = RTE_DPAA2_QOS_GROUP_FLOW;
+		group_id = 0;
+	}
+	rte_memcpy(&local_attr, attr, sizeof(struct rte_flow_attr));
+	local_attr.group = group_id;
 
 	if (actions) {
 		is_rss = dpaa2_flow_action_is_rss(actions);
@@ -5661,15 +5690,15 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 			goto flow_failure;
 		}
 	}
-	if (is_rss && flow_attr == RTE_DPAA2_QOS_FLOW_CREATE_ATTR) {
+	if (is_rss && group_type == RTE_DPAA2_QOS_GROUP_FLOW) {
 		err_str = "RSS doesn't supports QoS table!";
 		error_type = RTE_FLOW_ERROR_TYPE_ATTR;
 		err_code = -EINVAL;
 		goto flow_failure;
 	}
-	if (is_rss && flow_attr != RTE_DPAA2_FS_FLOW_CREATE_ATTR) {
-		DPAA2_PMD_WARN("Force using FS table for RSS action!\n");
-		flow_attr = RTE_DPAA2_FS_FLOW_CREATE_ATTR;
+	if (is_rss && group_type != RTE_DPAA2_FS_GROUP_FLOW) {
+		DPAA2_PMD_WARN("RSS distribution in TC%d.", group_id);
+		group_type = RTE_DPAA2_FS_GROUP_FLOW;
 	}
 	if (is_rss && !pattern) {
 		rss_conf = actions[0].conf;
@@ -5677,7 +5706,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 			spec_buf, 1024);
 		if (ret < 0) {
 			DPAA2_PMD_ERR("TC[%d] converts to RSS items failed(%d)",
-				attr->group, ret);
+				group_id, ret);
 			error_type = RTE_FLOW_ERROR_TYPE_ITEM;
 			err_code = ret;
 			err_str = "Failed to converts RSS config type to RSS items!";
@@ -5688,7 +5717,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 
 	if (!pattern && !rss_item) {
 		/** Assume it's meter flow per TC.*/
-		flow = (void *)dpaa2_flow_create_meter_flow(dev, attr, actions);
+		flow = (void *)dpaa2_flow_create_meter_flow(dev, &local_attr, actions);
 		if (flow)
 			return (struct rte_flow *)flow;
 		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
@@ -5697,12 +5726,12 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 		goto flow_failure;
 	}
 
-	DPAA2_PMD_DEBUG("Port %s-%s: flow_attr:%d, group:%d, total RX TCs:%d\n",
-		dev->data->name, __func__, flow_attr, attr->group, priv->num_rx_tc);
+	DPAA2_PMD_DEBUG("Port %s-%s: group type:%d, group id:%d, total RX TCs:%d\n",
+		dev->data->name, __func__, group_type, group_id, priv->num_rx_tc);
 
-	if (flow_attr == RTE_DPAA2_ONE_LEVEL_FLOW_CREATE_ATTR) {
+	if (group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW) {
 		if (priv->qos_entries > 0) {
-			qos_flow = dpaa2_flow_generic_flow_create(dev, attr, pattern,
+			qos_flow = dpaa2_flow_generic_flow_create(dev, &local_attr, pattern,
 				actions, error, DPAA2_FLOW_QOS_TYPE, true, is_rss);
 			if (!qos_flow) {
 				err_str = "Failed to create QoS flow!";
@@ -5712,7 +5741,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 			}
 		}
 		if (priv->fs_entries > 0) {
-			fs_flow = dpaa2_flow_generic_flow_create(dev, attr, pattern,
+			fs_flow = dpaa2_flow_generic_flow_create(dev, &local_attr, pattern,
 				actions, error, DPAA2_FLOW_FS_TYPE, true, is_rss);
 			if (!fs_flow) {
 				if (qos_flow) {
@@ -5729,14 +5758,14 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 				goto flow_failure;
 			}
 		}
-	} else if (flow_attr == RTE_DPAA2_QOS_FLOW_CREATE_ATTR) {
+	} else if (group_type == RTE_DPAA2_QOS_GROUP_FLOW) {
 		if (!priv->qos_entries) {
 			err_str = "No QoS entry available!";
 			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
 			err_code = -EINVAL;
 			goto flow_failure;
 		}
-		qos_flow = dpaa2_flow_generic_flow_create(dev, attr, pattern,
+		qos_flow = dpaa2_flow_generic_flow_create(dev, &local_attr, pattern,
 			actions, error, DPAA2_FLOW_QOS_TYPE, false, is_rss);
 		if (!qos_flow) {
 			err_str = "QoS flow create failed!";
@@ -5744,14 +5773,14 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 			err_code = -EINVAL;
 			goto flow_failure;
 		}
-	} else if (flow_attr == RTE_DPAA2_FS_FLOW_CREATE_ATTR) {
+	} else if (group_type == RTE_DPAA2_FS_GROUP_FLOW) {
 		if (!priv->fs_entries && !is_rss) {
 			err_str = "No FS entry available!";
 			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
 			err_code = -EINVAL;
 			goto flow_failure;
 		}
-		fs_flow = dpaa2_flow_generic_flow_create(dev, attr,
+		fs_flow = dpaa2_flow_generic_flow_create(dev, &local_attr,
 			rss_item ? items : pattern,
 			actions, error, DPAA2_FLOW_FS_TYPE, false, is_rss);
 		if (!fs_flow) {
@@ -5784,7 +5813,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	flow->fs_flow = fs_flow;
 	flow->priv = priv;
 	if (fs_flow && fs_flow->is_rss)
-		priv->flow_profile.tc_profile[attr->group].rss_flow = flow;
+		priv->flow_profile.tc_profile[group_id].rss_flow = flow;
 
 	/* New rules are inserted. */
 	curr = LIST_FIRST(&priv->flows);
@@ -5917,7 +5946,7 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 
 static int
 dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
-	uint32_t group_id, const struct rte_flow_group_attr *attr,
+	uint32_t group, const struct rte_flow_group_attr *attr,
 	const struct rte_flow_action actions[], struct rte_flow_error *err)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -5925,10 +5954,23 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 	int end_of_list = 0, i = 0, discard = false;
 	const struct rte_flow_action_jump *action_jump = NULL;
 	const struct rte_flow_action_queue *dest_queue = NULL;
+	uint32_t group_id, group_type;
 
 	RTE_SET_USED(attr);
 	RTE_SET_USED(err);
-	if (group_id >= priv->num_rx_tc)
+
+	group_type = RTE_DPAA2_FLOW_GROUP_TYPE_GET(group);
+	group_id = RTE_DPAA2_FLOW_GROUP_ID_GET(group);
+	if (group_id >= priv->num_rx_tc &&
+		group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW) {
+		group_type = RTE_DPAA2_QOS_GROUP_FLOW;
+		group_id = 0;
+	}
+	if (group_type == RTE_DPAA2_QOS_GROUP_FLOW)
+		flow_type = DPAA2_FLOW_QOS_TYPE;
+	else if (group_type == RTE_DPAA2_FS_GROUP_FLOW)
+		flow_type = DPAA2_FLOW_FS_TYPE;
+	else if (group >= priv->num_rx_tc)
 		flow_type = DPAA2_FLOW_QOS_TYPE;
 	else
 		flow_type = DPAA2_FLOW_FS_TYPE;
