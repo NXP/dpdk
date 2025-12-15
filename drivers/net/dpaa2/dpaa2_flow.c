@@ -5649,6 +5649,11 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 	}
 	if (idx < 0 && !is_rss)
 		return NULL;
+	if (idx >= 0 && idx < RTE_ETH_DCB_NUM_USER_PRIORITIES && !is_rss &&
+		type == DPAA2_FLOW_QOS_TYPE && priv->dcb_flow[idx]) {
+		DPAA2_PMD_ERR("QoS flow[%d] added conflicts with dcb flow", idx);
+		return NULL;
+	}
 
 	if (!is_rss) {
 		ret = dpaa2_flow_verify_entry(priv, attr->group, idx, type);

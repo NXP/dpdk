@@ -390,6 +390,9 @@ struct dpaa2_dev_priv {
 	char ep_name[RTE_DEV_NAME_MAX_LEN];
 
 	struct dpaa2_flow_profile flow_profile;
+	uint8_t nb_dcb_tcs;
+	uint8_t prio_dcb_tc[RTE_ETH_DCB_NUM_USER_PRIORITIES];
+	void *dcb_flow[RTE_ETH_DCB_NUM_USER_PRIORITIES];
 
 	uint16_t ss_offset;
 	uint64_t ss_iova;

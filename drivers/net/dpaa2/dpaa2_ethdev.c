@@ -296,7 +296,7 @@ dpaa2_setup_table_miss_action(struct rte_eth_dev *eth_dev,
 }
 
 static int
-dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
+dpaa2_setup_flow_rss_dist(struct rte_eth_dev *eth_dev,
 	uint64_t req_dist_set, int tc_index)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
@@ -340,12 +340,57 @@ dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
 			__func__, tc_index);
 		return -EIO;
 	}
+	RTE_ASSERT(priv->extract.tc_key_extract[tc_index].rss_flow == rss_flow);
+	RTE_ASSERT(priv->extract.tc_key_extract[tc_index].is_rss);
 
 	return 0;
 }
 
 static int
-dpaa2_remove_flow_dist(struct rte_eth_dev *eth_dev,
+dpaa2_setup_flow_dcb_dist(struct rte_eth_dev *eth_dev,
+	uint8_t prio, uint8_t tc)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct rte_flow_attr attr;
+	struct rte_flow_action actions[2];
+	struct rte_flow_item_vlan vlan_item;
+	struct rte_flow_item_vlan vlan_mask;
+	struct rte_flow_item items[2];
+	struct rte_flow_action_jump action_jump;
+	struct rte_flow *qos_flow;
+
+	memset(&attr, 0, sizeof(struct rte_flow_attr));
+	attr.ingress = 1;
+
+	attr.group = priv->num_rx_tc;
+	attr.priority = prio;
+	memset(&vlan_item, 0, sizeof(struct rte_flow_item_vlan));
+	memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
+	vlan_item.hdr.vlan_tci = rte_cpu_to_be_16(RTE_VLAN_TCI_MAKE(0, prio, 0));
+	vlan_mask.hdr.vlan_tci = rte_cpu_to_be_16(RTE_VLAN_PRI_MASK);
+	items[0].spec = &vlan_item;
+	items[0].mask = &vlan_mask;
+	items[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+	items[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+	actions[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
+	action_jump.group = tc;
+	actions[0].conf = &action_jump;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+	qos_flow = rte_flow_create(eth_dev->data->port_id,
+		&attr, items, actions, NULL);
+	if (!qos_flow) {
+		DPAA2_PMD_WARN("Failed to direct vlan with prio(%d) to tc%d", prio, tc);
+		return -EIO;
+	}
+	priv->dcb_flow[prio] = qos_flow;
+
+	return 0;
+}
+
+static int
+dpaa2_remove_flow_rss_dist(struct rte_eth_dev *eth_dev,
 	uint8_t tc_index)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
@@ -367,7 +412,7 @@ dpaa2_remove_flow_dist(struct rte_eth_dev *eth_dev,
 }
 
 static int
-dpaa2_update_flow_dist(struct rte_eth_dev *eth_dev,
+dpaa2_update_flow_rss_dist(struct rte_eth_dev *eth_dev,
 	uint64_t req_dist_set, int tc_index)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
@@ -993,6 +1038,28 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 }
 
 static int
+dpaa2_dev_dcb_info(struct rte_eth_dev *dev,
+	struct rte_eth_dcb_info *dcb_info)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	int i;
+
+	if (!priv->nb_dcb_tcs)
+		return -ENOTSUP;
+
+	memset(dcb_info, 0, sizeof(struct rte_eth_dcb_info));
+	dcb_info->nb_tcs = priv->nb_dcb_tcs;
+	rte_memcpy(dcb_info->prio_tc, priv->prio_dcb_tc,
+		sizeof(uint8_t) * RTE_ETH_DCB_NUM_USER_PRIORITIES);
+	for (i = 0; i < dcb_info->nb_tcs; i++) {
+		dcb_info->tc_queue.tc_rxq[0][i].base = priv->dist_queues * i;
+		dcb_info->tc_queue.tc_rxq[0][i].nb_queue = priv->dist_queues;
+	}
+
+	return 0;
+}
+
+static int
 dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
@@ -1004,8 +1071,10 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int rx_l4_csum_offload = false;
 	int tx_l3_csum_offload = false;
 	int tx_l4_csum_offload = false;
-	int ret, tc_index;
+	int ret, tc_index, nb_tcs;
 	uint32_t max_rx_pktlen;
+	struct rte_eth_rss_conf *rss_conf;
+	struct rte_eth_dcb_rx_conf *dcb_rx_conf;
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
@@ -1024,7 +1093,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (max_rx_pktlen <= DPAA2_MAX_RX_PKT_LEN) {
 		ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW,
 			priv->token, max_rx_pktlen - RTE_ETHER_CRC_LEN);
-		if (ret != 0) {
+		if (ret) {
 			DPAA2_PMD_ERR("Unable to set mtu. check config");
 			return ret;
 		}
@@ -1033,25 +1102,47 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	} else {
 		DPAA2_PMD_ERR("Configured mtu %d and calculated max-pkt-len is %d which should be <= %d",
 			eth_conf->rxmode.mtu, max_rx_pktlen, DPAA2_MAX_RX_PKT_LEN);
-		return -1;
+		return -ENOTSUP;
 	}
 
-	if (eth_conf->rxmode.mq_mode == RTE_ETH_MQ_RX_RSS) {
-		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_setup_flow_dist(dev,
-					eth_conf->rx_adv_conf.rss_conf.rss_hf,
-					tc_index);
-			if (ret) {
-				DPAA2_PMD_ERR("Set flow dist on tc%d err(%d)",
-					tc_index, ret);
-				return ret;
-			}
-			if (!priv->flow_profile.tc_profile[tc_index].enabled)
-				continue;
+	rss_conf = &eth_conf->rx_adv_conf.rss_conf;
+	dcb_rx_conf = &eth_conf->rx_adv_conf.dcb_rx_conf;
+
+	for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+		if (priv->fs_entries) {
 			ret = dpaa2_setup_table_miss_action(dev, tc_index);
 			if (ret) {
 				DPAA2_PMD_ERR("Error(%d) to set miss action of %s-tc%d table",
 					ret, dev->data->name, tc_index);
+			}
+		}
+	}
+	ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
+	if (ret) {
+		DPAA2_PMD_ERR("Error(%d) to set miss action of %s-QoS table",
+			ret, dev->data->name);
+	}
+
+	if (eth_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS) {
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_rss_dist(dev, rss_conf->rss_hf, tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("RSS dist on tc%d err(%d)", tc_index, ret);
+				return ret;
+			}
+		}
+	}
+
+	if ((eth_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_DCB) && priv->qos_entries) {
+		nb_tcs = dcb_rx_conf->nb_tcs;
+		for (tc_index = 0; tc_index < nb_tcs; tc_index++) {
+			if (tc_index >= priv->num_rx_tc)
+				break;
+			ret = dpaa2_setup_flow_dcb_dist(dev, dcb_rx_conf->dcb_tc[tc_index],
+				tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("DCB direct to tc%d err(%d)", tc_index, ret);
+				return ret;
 			}
 		}
 	}
@@ -2127,6 +2218,8 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 
 	dpaa2_tm_deinit(dev);
 	dpaa2_flow_clean(dev, MAX_TCS);
+	/** No matter dcb flows are created or not, they are destroyed in flow clean.*/
+	memset(priv->dcb_flow, 0, sizeof(void *) * RTE_ETH_DCB_NUM_USER_PRIORITIES);
 	/* Clean the device first */
 	ret = dpni_reset(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
@@ -2879,14 +2972,14 @@ dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 
 	if (rss_conf->rss_hf) {
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_update_flow_dist(dev, rss_conf->rss_hf,
+			ret = dpaa2_update_flow_rss_dist(dev, rss_conf->rss_hf,
 				tc_index);
 			if (ret)
 				break;
 		}
 	} else {
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_remove_flow_dist(dev, tc_index);
+			ret = dpaa2_remove_flow_rss_dist(dev, tc_index);
 			if (ret)
 				break;
 		}
@@ -3263,6 +3356,7 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.timesync_read_rx_timestamp = dpaa2_timesync_read_rx_timestamp,
 	.timesync_read_tx_timestamp = dpaa2_timesync_read_tx_timestamp,
 	.mtr_ops_get = dpaa2_mtr_ops_get,
+	.get_dcb_info = dpaa2_dev_dcb_info
 };
 
 /* Populate the mac address from physically available (u-boot/firmware) and/or
@@ -3709,6 +3803,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		if (!tbl_profile->entry_map)
 			goto init_err;
 	}
+
+	for (i = 0; i < priv->num_rx_tc; i++) {
+		if (i >= RTE_ETH_DCB_NUM_USER_PRIORITIES)
+			break;
+		if (i >= priv->qos_entries)
+			break;
+		priv->prio_dcb_tc[i] = i;
+	}
+	priv->nb_dcb_tcs = i;
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
 					RTE_ETHER_MAX_LEN - RTE_ETHER_CRC_LEN
