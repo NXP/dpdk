@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2025 NXP
+ * Copyright 2019-2026 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -113,6 +113,19 @@ static uint16_t s_pqc_num;
 static struct port_queue_lcore_param s_tx_pqc[MAX_LCORE_PARAMS];
 static uint16_t s_tx_pqc_num;
 
+static uint8_t s_def_tc = RTE_ETH_8_TCS;
+static uint16_t s_def_flow = 0xffff;
+static int s_def_set;
+
+#define PORT_FWD_MAX_FLOW_PER_TC 16
+uint64_t s_tc_count[RTE_MAX_ETHPORTS][RTE_ETH_8_TCS];
+uint64_t s_flow_count[RTE_MAX_ETHPORTS][RTE_ETH_8_TCS][PORT_FWD_MAX_FLOW_PER_TC];
+uint64_t s_tc_bytes[RTE_MAX_ETHPORTS][RTE_ETH_8_TCS];
+uint64_t s_flow_bytes[RTE_MAX_ETHPORTS][RTE_ETH_8_TCS][PORT_FWD_MAX_FLOW_PER_TC];
+
+#define PORT_FWD_MAX_FLOW (RTE_ETH_8_TCS * PORT_FWD_MAX_FLOW_PER_TC)
+static struct rte_dpaa2_default_action_conf *s_act_def[RTE_MAX_ETHPORTS];
+
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mq_mode = RTE_ETH_MQ_RX_RSS,
@@ -122,6 +135,10 @@ static struct rte_eth_conf port_conf = {
 		.rss_conf = {
 			.rss_key = NULL,
 			.rss_hf = RTE_ETH_RSS_IP,
+		},
+		.dcb_rx_conf = {
+			.nb_tcs = RTE_ETH_8_TCS,
+			.dcb_tc = {0, 1, 2, 3, 4, 5, 6, 7},
 		},
 	},
 };
@@ -337,15 +354,12 @@ port_fwd_rx_seg_port(uint16_t rx_port)
 static void
 port_fwd_drain_tx_cnf(struct lcore_conf *qconf)
 {
-	uint16_t drain, i, portid, queueid;
+	uint16_t drain, i, queueid;
 	int dstportid;
 
-	for (i = 0; i < qconf->n_rx_queue; i++) {
-		portid = qconf->rx_queue_list[i].port_id;
-		dstportid = port_fwd_dst_port(portid);
-		if (dstportid < 0)
-			continue;
-		queueid = qconf->rx_queue_list[i].queue_id;
+	for (i = 0; i < qconf->n_tx_queue; i++) {
+		dstportid = qconf->tx_queue_list[i].port_id;
+		queueid = qconf->tx_queue_list[i].queue_id;
 		if (!rte_pmd_dpaa2_dev_is_dpaa2(dstportid))
 			continue;
 		rte_delay_us(10000);
@@ -745,22 +759,86 @@ copy_clean_again:
 	return i;
 }
 
+static struct lcore_statistic *
+port_fwd_lcoreq_find_statistic(uint16_t portid, uint8_t queueid,
+	struct lcore_conf *qconf, int is_rx)
+{
+	uint16_t i;
+	struct lcore_statistic *statistic = NULL;
+
+	if (is_rx) {
+		for (i = 0; i < MAX_RX_QUEUE_PER_LCORE; i++) {
+			if (qconf->rx_queue_list[i].port_id == portid &&
+				qconf->rx_queue_list[i].queue_id == queueid) {
+				statistic = &qconf->rx_queue_list[i].statistic;
+				break;
+			}
+		}
+	} else {
+		for (i = 0; i < MAX_TX_QUEUE_PER_LCORE; i++) {
+			if (qconf->tx_queue_list[i].port_id == portid &&
+				qconf->tx_queue_list[i].queue_id == queueid) {
+				statistic = &qconf->tx_queue_list[i].statistic;
+				break;
+			}
+		}
+	}
+
+	return statistic;
+}
+
+union statistic_param {
+	uint64_t tx_len;
+	struct rte_mbuf *rx_mbuf;
+};
+
+static inline void
+port_fwd_lcoreq_rx_tx_statistic(uint16_t portid, uint8_t queueid,
+	uint16_t nb, union statistic_param param[],
+	struct lcore_conf *qconf, int rx_mbuf)
+{
+	uint16_t i;
+	struct lcore_statistic *statistic = NULL;
+
+	statistic = port_fwd_lcoreq_find_statistic(portid, queueid, qconf, rx_mbuf);
+	if (!statistic) {
+		RTE_LOG(ERR, port_fwd,
+			"Port%d-%squeue%d is not in the q-list!\n",
+			portid, rx_mbuf ? "rx" : "tx", queueid);
+		return;
+	}
+
+	for (i = 0; i < nb; i++) {
+		if (rx_mbuf) {
+			statistic->bytes += param[i].rx_mbuf->pkt_len;
+			statistic->bytes_fcs += PORT_FWD_MBUF_FCS(param[i].rx_mbuf);
+			statistic->bytes_overhead += PORT_FWD_MBUF_OVERHEAD(param[i].rx_mbuf);
+		} else {
+			statistic->bytes += param[i].tx_len;
+			statistic->bytes_fcs += param[i].tx_len + PKTGEN_ETH_FCS_SIZE;
+			statistic->bytes_overhead += param[i].tx_len + PKTGEN_ETH_OVERHEAD_SIZE;
+		}
+	}
+	statistic->packets += nb;
+}
+
 static void
 port_fwd_simple_xmit_burst(struct rte_mbuf **pkts_burst,
 	uint16_t dstportid, uint8_t queueid, uint16_t nb_tx,
-	uint64_t tx_len[], struct lcore_conf *qconf)
+	uint64_t tx_len[], struct lcore_conf *qconf, uint8_t sent_flag[])
 {
 	uint16_t sent, i;
+	union statistic_param param[nb_tx];
+
+	for (i = 0; i < nb_tx; i++)
+		param[i].tx_len = tx_len[i];
 
 	sent = rte_eth_tx_burst(dstportid, queueid, pkts_burst, nb_tx);
-	for (i = 0; i < sent; i++) {
-		qconf->tx_statistic[dstportid].bytes += tx_len[i];
-		qconf->tx_statistic[dstportid].bytes_fcs +=
-			tx_len[i] + PKTGEN_ETH_FCS_SIZE;
-		qconf->tx_statistic[dstportid].bytes_overhead +=
-			tx_len[i] + PKTGEN_ETH_OVERHEAD_SIZE;
-	}
-	qconf->tx_statistic[dstportid].packets += sent;
+	port_fwd_lcoreq_rx_tx_statistic(dstportid, queueid, sent, param,
+		qconf, false);
+
+	if (sent_flag)
+		memset(sent_flag, 1, sent);
 
 	/* Free any unsent packets. */
 	for (i = sent; i < nb_tx; i++)
@@ -779,14 +857,10 @@ port_fwd_reassemble_process(struct lcore_rx_queue *lc_rxq,
 	struct rte_ip_frag_tbl *tbl;
 	struct rte_ip_frag_death_row *dr = &lc_rxq->dr;
 	uint8_t *pay_load;
-	uint32_t lcore_id = rte_lcore_id();
-	struct lcore_conf *qconf;
 	uint64_t frag_cycles;
 	uint32_t bucket_num = 0x1000, bucket_entries = 16, max_entries = 0x1000;
 
 	frag_cycles = (rte_get_tsc_hz() + MS_PER_S - 1) / MS_PER_S * MS_PER_S;
-
-	qconf = &s_lcore_conf[lcore_id];
 
 	if (!lc_rxq->tbl) {
 		lc_rxq->tbl = rte_ip_frag_table_create(bucket_num,
@@ -818,8 +892,8 @@ port_fwd_reassemble_process(struct lcore_rx_queue *lc_rxq,
 			dr, mbufs[i], rte_rdtsc(), ip_hdr);
 		if (!mo)
 			continue;
-		qconf->rx_reassemble_count[lc_rxq->port_id]++;
-		qconf->rx_reassemble_bytes[lc_rxq->port_id] += mo->pkt_len;
+		lc_rxq->statistic.rx_reassemble_count++;
+		lc_rxq->statistic.rx_reassemble_bytes += mo->pkt_len;
 
 free_buf:
 		rte_pktmbuf_free(mo);
@@ -838,6 +912,8 @@ main_frag_tx_test_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	uint64_t tx_len[MAX_PKT_BURST * MAX_FRAG_NUM];
+	uint8_t jumb_flag[MAX_PKT_BURST];
+	uint8_t sent_flag[MAX_PKT_BURST * MAX_FRAG_NUM];
 	unsigned int lcore_id;
 	int i, j, num, k;
 	int dstportid;
@@ -849,6 +925,7 @@ main_frag_tx_test_loop(void)
 	struct rte_mbuf *frag_pkts[MAX_PKT_BURST * MAX_FRAG_NUM], **pkts;
 	struct rte_ether_hdr eth_hdr;
 	struct rte_ipv4_hdr *ip_hdr;
+	struct lcore_statistic *statistic;
 
 	penv = getenv("PORT_FWD_INJECTION_BURST_SIZE");
 	if (penv) {
@@ -867,32 +944,34 @@ main_frag_tx_test_loop(void)
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
 
-	if (qconf->n_rx_queue == 0) {
+	if (!qconf->n_tx_queue) {
 		RTE_LOG(INFO, port_fwd,
-			"lcore %u has nothing to do\n", lcore_id);
+			"%s: lcore %u has nothing to do\n",
+			__func__, lcore_id);
 		return 0;
 	}
 
 	RTE_LOG(INFO, port_fwd,
-		"entering injection test loop on lcore %u\n",
+		"entering frag TX test loop on lcore %u\n",
 		lcore_id);
 
-	for (i = 0; i < qconf->n_rx_queue; i++) {
-		portid = qconf->rx_queue_list[i].port_id;
-		queueid = qconf->rx_queue_list[i].queue_id;
+	for (i = 0; i < qconf->n_tx_queue; i++) {
+		portid = qconf->tx_queue_list[i].port_id;
+		queueid = qconf->tx_queue_list[i].queue_id;
 		RTE_LOG(INFO, port_fwd,
-			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
+			" -- lcoreid=%u portid=%u txqueueid=%hhu\n",
 			lcore_id, portid, queueid);
 	}
 
 	while (!force_quit) {
 		/* Read packet from RX queues
 		 */
-		for (i = 0; i < qconf->n_rx_queue; i++) {
-			portid = qconf->rx_queue_list[i].port_id;
-			queueid = qconf->rx_queue_list[i].queue_id;
+		for (i = 0; i < qconf->n_tx_queue; i++) {
+			portid = qconf->tx_queue_list[i].port_id;
+			queueid = qconf->tx_queue_list[i].queue_id;
 
 			dstportid = portid;
+			statistic = &qconf->tx_queue_list[i].statistic;
 
 			if (s_fragment_tx_port != dstportid)
 				continue;
@@ -907,8 +986,6 @@ main_frag_tx_test_loop(void)
 				pkts_burst[j]->data_off = RTE_PKTMBUF_HEADROOM;
 				pkts_burst[j]->pkt_len = inject_size;
 				pkts_burst[j]->data_len = inject_size;
-				qconf->tx_jumbo_count[dstportid]++;
-				qconf->tx_jumbo_bytes[dstportid] += inject_size;
 				rte_memcpy(&eth_hdr, rte_pktmbuf_mtod(pkts_burst[j], void *),
 					sizeof(struct rte_ether_hdr));
 				rte_pktmbuf_adj(pkts_burst[j], sizeof(struct rte_ether_hdr));
@@ -932,12 +1009,29 @@ main_frag_tx_test_loop(void)
 						(RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM);
 					pkts[k]->l2_len = sizeof(struct rte_ether_hdr);
 					tx_len[frag_count + k] = pkts[k]->pkt_len;
+					sent_flag[frag_count + k] = 0;
 				}
+				jumb_flag[j] = num;
 				frag_count += num;
 			}
 
 			port_fwd_simple_xmit_burst(frag_pkts, dstportid,
-				queueid, frag_count, tx_len, qconf);
+				queueid, frag_count, tx_len, qconf, sent_flag);
+			for (j = 0; j < nb_tx; j++) {
+				num = jumb_flag[j];
+				k = 0;
+				while (sent_flag[k]) {
+					k++;
+					if (k >= num)
+						break;
+				}
+				if (k == num) {
+					statistic->tx_jumbo_count++;
+					statistic->tx_jumbo_bytes += inject_size;
+				} else {
+					break;
+				}
+			}
 		}
 
 		if (wait_s)
@@ -959,6 +1053,7 @@ static int
 main_reassemble_rx_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	union statistic_param param[MAX_PKT_BURST];
 	unsigned int lcore_id;
 	int i, j, nb_rx;
 	uint16_t portid;
@@ -995,16 +1090,10 @@ main_reassemble_rx_loop(void)
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				MAX_PKT_BURST);
-
-			for (j = 0; j < nb_rx; j++) {
-				qconf->rx_statistic[portid].bytes +=
-					pkts_burst[j]->pkt_len;
-				qconf->rx_statistic[portid].bytes_fcs +=
-					PORT_FWD_MBUF_FCS(pkts_burst[j]);
-				qconf->rx_statistic[portid].bytes_overhead +=
-					PORT_FWD_MBUF_OVERHEAD(pkts_burst[j]);
-			}
-			qconf->rx_statistic[portid].packets += nb_rx;
+			for (j = 0; j < nb_rx; j++)
+				param[j].rx_mbuf = pkts_burst[j];
+			port_fwd_lcoreq_rx_tx_statistic(portid, queueid, nb_rx,
+				param, qconf, true);
 
 			if (s_reassemble_rx_port == portid) {
 				if (nb_rx > 0) {
@@ -1029,6 +1118,7 @@ static __rte_noinline int
 main_injection_test_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST], *pkt;
+	union statistic_param param[MAX_PKT_BURST];
 	uint64_t tx_len[MAX_PKT_BURST];
 	unsigned int lcore_id;
 	int i, nb_rx, j;
@@ -1085,17 +1175,10 @@ main_injection_test_loop(void)
 				MAX_PKT_BURST);
 			if (!nb_rx)
 				continue;
-
-			for (j = 0; j < nb_rx; j++) {
-				qconf->rx_statistic[portid].bytes +=
-					pkts_burst[j]->pkt_len;
-				qconf->rx_statistic[portid].bytes_fcs +=
-					PORT_FWD_MBUF_FCS(pkts_burst[j]);
-				qconf->rx_statistic[portid].bytes_overhead +=
-					PORT_FWD_MBUF_OVERHEAD(pkts_burst[j]);
-				tx_len[j] = pkts_burst[j]->pkt_len;
-			}
-			qconf->rx_statistic[portid].packets += nb_rx;
+			for (j = 0; j < nb_rx; j++)
+				param[j].rx_mbuf = pkts_burst[j];
+			port_fwd_lcoreq_rx_tx_statistic(portid, queueid, nb_rx,
+				param, qconf, true);
 
 			if (qconf->rx_queue_list[i].send_q) {
 				tx_ring = qconf->rx_queue_list[i].send_q;
@@ -1111,7 +1194,7 @@ main_injection_test_loop(void)
 				continue;
 			}
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_rx, tx_len, qconf);
+				queueid, nb_rx, tx_len, qconf, NULL);
 		}
 
 		for (i = 0; i < qconf->n_tx_queue; i++) {
@@ -1146,7 +1229,7 @@ main_injection_test_loop(void)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_tx, tx_len, qconf);
+				queueid, nb_tx, tx_len, qconf, NULL);
 		}
 	}
 
@@ -1274,6 +1357,7 @@ port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 {
 	uint16_t i, single_nb = 0, j, nb_tx, nb_tx_expected;
 	struct rte_mbuf *pkts_tx[MAX_PKT_BURST];
+	struct lcore_statistic *stat;
 	struct rte_mbuf *curr, *tmp;
 	int dstportid = port_fwd_dst_port(rx_portid);
 	uint64_t bytes_overhead[MAX_PKT_BURST];
@@ -1300,15 +1384,8 @@ port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 			bytes[j] = pkts_tx[j]->pkt_len;
 			bytes_fcs[j] = PORT_FWD_MBUF_FCS(pkts_tx[j]);
 			bytes_overhead[j] = PORT_FWD_MBUF_OVERHEAD(pkts_tx[j]);
-			qconf->rx_statistic[rx_portid].bytes +=
-					bytes[j];
-			qconf->rx_statistic[rx_portid].bytes_fcs +=
-					bytes_fcs[j];
-			qconf->rx_statistic[rx_portid].bytes_overhead +=
-					bytes_overhead[j];
 			j++;
 		}
-		qconf->rx_statistic[rx_portid].packets += j;
 		nb_tx_expected = j;
 		if (unlikely(s_dump_mbuf)) {
 			for (j = 0; j < nb_tx_expected; j++)
@@ -1319,17 +1396,17 @@ port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 			continue;
 		nb_tx = port_fwd_xmit_burst(pkts_tx, nb_tx_expected,
 			rx_portid, dstportid, queue_id, sent, re_send_max);
-		for (j = 0; j < nb_tx_expected; j++) {
+		stat = port_fwd_lcoreq_find_statistic(dstportid, queue_id, qconf, false);
+		if (!stat)
+			continue;
+		for (j = 0; j < nb_tx; j++) {
 			if (!sent[j])
 				continue;
-			qconf->tx_statistic[dstportid].bytes +=
-				bytes[j];
-			qconf->tx_statistic[dstportid].bytes_fcs +=
-				bytes_fcs[j];
-			qconf->tx_statistic[dstportid].bytes_overhead +=
-				bytes_overhead[j];
+			stat->bytes += bytes[j];
+			stat->bytes_fcs += bytes_fcs[j];
+			stat->bytes_overhead += bytes_overhead[j];
 		}
-		qconf->tx_statistic[dstportid].packets += nb_tx;
+		stat->packets += nb_tx;
 	}
 
 	return single_nb;
@@ -1341,9 +1418,11 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *tx_burst[MAX_PKT_BURST];
 	struct rte_mbuf *tx_burst_dup[MAX_PKT_BURST];
+	union statistic_param param[MAX_PKT_BURST];
+	struct lcore_statistic *stat;
 	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
-	int i, nb_rx, j;
+	int i, nb_rx, j, ret;
 	uint16_t nb_tx, rx_left, idx, portid, rx_burst;
 	int dstportid;
 	uint8_t queueid;
@@ -1355,31 +1434,45 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_ring *tx_ring, *rx_ring;
 	uint8_t sents[MAX_PKT_BURST];
 	int re_send_max = 0, fragment_tx = 0, reassemble_rx = 0;
+	struct rte_eth_rxq_info qinfo;
+	struct lcore_rx_queue *rxq;
+	struct lcore_tx_queue *txq;
+
+	lcore_id = rte_lcore_id();
+	qconf = &s_lcore_conf[lcore_id];
+	for (i = 0; i < qconf->n_rx_queue; i++) {
+		rxq = &qconf->rx_queue_list[i];
+		if (rxq->port_id == s_reassemble_rx_port)
+			reassemble_rx = 1;
+
+		if (!qconf->n_tx_queue) {
+			memset(&qconf->tx_queue_list[i], 0, sizeof(struct lcore_tx_queue));
+			qconf->tx_queue_list[i].port_id = rxq->port_id;
+			qconf->tx_queue_list[i].queue_id = rxq->queue_id;
+		}
+
+		if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id))
+			continue;
+		ret = rte_eth_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
+		if (ret)
+			continue;
+		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &rxq->tc_id, &rxq->flow_id);
+	}
 
 	if (s_inject || s_tx_pqc_num) {
 		main_injection_test_loop();
 		return 0;
 	}
-	lcore_id = rte_lcore_id();
-	qconf = &s_lcore_conf[lcore_id];
-	if (s_fragment_tx_port >= 0) {
-		for (i = 0; i < qconf->n_rx_queue; i++) {
-			portid = qconf->rx_queue_list[i].port_id;
-			if (portid == s_fragment_tx_port) {
-				fragment_tx = 1;
-				break;
-			}
-		}
+
+	if (!qconf->n_tx_queue)
+		qconf->n_tx_queue = qconf->n_rx_queue;
+
+	for (i = 0; i < qconf->n_tx_queue; i++) {
+		txq = &qconf->tx_queue_list[i];
+		if (txq->port_id == s_fragment_tx_port)
+			fragment_tx = 1;
 	}
-	if (s_reassemble_rx_port >= 0) {
-		for (i = 0; i < qconf->n_rx_queue; i++) {
-			portid = qconf->rx_queue_list[i].port_id;
-			if (portid == s_reassemble_rx_port) {
-				reassemble_rx = 1;
-				break;
-			}
-		}
-	}
+
 	if (fragment_tx && reassemble_rx) {
 		RTE_LOG(ERR, port_fwd,
 			"fragment and reassemble can't run on same core(%d)\n",
@@ -1436,20 +1529,10 @@ main_loop(__attribute__((unused)) void *dummy)
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				rx_burst);
-			for (j = 0; j < nb_rx; j++) {
-				bytes[j] = pkts_burst[j]->pkt_len;
-				bytes_fcs[j] =
-					PORT_FWD_MBUF_FCS(pkts_burst[j]);
-				bytes_overhead[j] =
-					PORT_FWD_MBUF_OVERHEAD(pkts_burst[j]);
-				qconf->rx_statistic[portid].bytes +=
-					bytes[j];
-				qconf->rx_statistic[portid].bytes_fcs +=
-					bytes_fcs[j];
-				qconf->rx_statistic[portid].bytes_overhead +=
-					bytes_overhead[j];
-			}
-			qconf->rx_statistic[portid].packets += nb_rx;
+			for (j = 0; j < nb_rx; j++)
+				param[j].rx_mbuf = pkts_burst[j];
+			port_fwd_lcoreq_rx_tx_statistic(portid, queueid, nb_rx,
+				param, qconf, true);
 			if (nb_rx > 0) {
 				tx_ring = qconf->rx_queue_list[i].send_q;
 				nb_tx = rte_ring_enqueue_burst(tx_ring,
@@ -1467,7 +1550,7 @@ main_loop(__attribute__((unused)) void *dummy)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, portid, queueid,
-				nb_rx, bytes, qconf);
+				nb_rx, bytes, qconf, NULL);
 		}
 		continue;
 
@@ -1482,8 +1565,12 @@ port_forwarding:
 
 			nb_rx = rte_eth_rx_burst(portid, queueid, pkts_burst,
 				rx_burst);
-			if (nb_rx == 0)
+			if (!nb_rx)
 				continue;
+			for (j = 0; j < nb_rx; j++)
+				param[j].rx_mbuf = pkts_burst[j];
+			port_fwd_lcoreq_rx_tx_statistic(portid, queueid, nb_rx,
+				param, qconf, true);
 			if (unlikely(s_mpool_select_by_size &&
 				s_mpool_select_by_size_debug)) {
 				for (j = 0; j < nb_rx; j++) {
@@ -1497,23 +1584,14 @@ port_forwarding:
 			rx_left = port_fwd_handle_seg_rx(pkts_burst,
 				tx_burst, qconf, portid, nb_rx, queueid,
 				re_send_max);
-
 			for (j = 0; j < rx_left; j++) {
 				bytes[j] = tx_burst[j]->pkt_len;
 				bytes_fcs[j] =
 					PORT_FWD_MBUF_FCS(tx_burst[j]);
 				bytes_overhead[j] =
 					PORT_FWD_MBUF_OVERHEAD(tx_burst[j]);
-				qconf->rx_statistic[portid].bytes +=
-					bytes[j];
-				qconf->rx_statistic[portid].bytes_fcs +=
-					bytes_fcs[j];
-				qconf->rx_statistic[portid].bytes_overhead +=
-					bytes_overhead[j];
-				dump_mbuf_data(tx_burst[j], 0, portid,
-					qconf);
+				dump_mbuf_data(tx_burst[j], 0, portid, qconf);
 			}
-			qconf->rx_statistic[portid].packets += rx_left;
 
 			if (dstportid < 0) {
 				rte_pktmbuf_free_bulk(tx_burst, rx_left);
@@ -1531,17 +1609,17 @@ port_forwarding:
 
 			nb_tx = port_fwd_xmit_burst(tx_pkts, rx_left,
 				portid, dstportid, queueid, sents, re_send_max);
+			stat = port_fwd_lcoreq_find_statistic(dstportid, queueid, qconf, false);
+			if (!stat)
+				continue;
 			for (j = 0; j < rx_left; j++) {
 				if (!sents[j])
 					continue;
-				qconf->tx_statistic[dstportid].bytes +=
-					bytes[j];
-				qconf->tx_statistic[dstportid].bytes_fcs +=
-					bytes_fcs[j];
-				qconf->tx_statistic[dstportid].bytes_overhead +=
-					bytes_overhead[j];
+				stat->bytes += bytes[j];
+				stat->bytes_fcs += bytes_fcs[j];
+				stat->bytes_overhead += bytes_overhead[j];
 			}
-			qconf->tx_statistic[dstportid].packets += nb_tx;
+			stat->packets += nb_tx;
 		}
 	}
 
@@ -1950,6 +2028,9 @@ static const char short_options[] =
 
 #define CMD_LINE_OPT_TX_FRAG_PORT "tx-frag-port"
 #define CMD_LINE_OPT_RX_REASSEMBLE_PORT "rx-reassemble-port"
+#define CMD_LINE_OPT_DCB "dcb"
+#define CMD_LINE_OPT_DEFAULT_TC "default_tc"
+#define CMD_LINE_OPT_DEFAULT_FLOW "default_flow"
 
 enum {
 	/* long options mapped to a short option */
@@ -1968,7 +2049,10 @@ enum {
 	CMD_LINE_OPT_TX_ONLY_SEG_NUM,
 	CMD_LINE_OPT_TX_ONLY_BUF_TYPE_NUM,
 	CMD_LINE_OPT_RX_REASSEMBLE_PORT_NUM,
-	CMD_LINE_OPT_PER_PORT_POOL_NUM
+	CMD_LINE_OPT_PER_PORT_POOL_NUM,
+	CMD_LINE_OPT_DCB_NUM,
+	CMD_LINE_OPT_DEFAULT_TC_NUM,
+	CMD_LINE_OPT_DEFAULT_FLOW_NUM
 };
 
 static const struct option lgopts[] = {
@@ -1994,6 +2078,9 @@ static const struct option lgopts[] = {
 		CMD_LINE_OPT_RX_REASSEMBLE_PORT_NUM},
 	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0,
 		CMD_LINE_OPT_PER_PORT_POOL_NUM},
+	{CMD_LINE_OPT_DCB, 1, 0, CMD_LINE_OPT_DCB_NUM},
+	{CMD_LINE_OPT_DEFAULT_TC, 1, 0, CMD_LINE_OPT_DEFAULT_TC_NUM},
+	{CMD_LINE_OPT_DEFAULT_FLOW, 1, 0, CMD_LINE_OPT_DEFAULT_FLOW_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -2099,6 +2186,24 @@ parse_args(int argc, char **argv)
 			break;
 		case CMD_LINE_OPT_PER_PORT_POOL_NUM:
 			s_per_port_pool = 1;
+			break;
+		case CMD_LINE_OPT_DCB_NUM:
+			if (!strcmp(optarg, "dcb")) {
+				port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_DCB;
+			} else if (!strcmp(optarg, "dcb_rss")) {
+				port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_DCB_RSS;
+			} else {
+				RTE_LOG(ERR, port_fwd, "Invalid dcb mode(%s)\n", optarg);
+				return -EINVAL;
+			}
+			break;
+		case CMD_LINE_OPT_DEFAULT_TC_NUM:
+			s_def_tc = atoi(optarg);
+			s_def_set = true;
+			break;
+		case CMD_LINE_OPT_DEFAULT_FLOW_NUM:
+			s_def_flow = atoi(optarg);
+			s_def_set = true;
 			break;
 
 		default:
@@ -2308,13 +2413,66 @@ port_fwd_dump_port_status(struct rte_eth_stats *stats)
 		(unsigned long)stats->ierrors);
 }
 
+static void
+port_fwd_dump_tc_flow_count(uint16_t portid, int second)
+{
+	int i, j;
+	struct lcore_rx_queue *rx;
+	uint64_t tc_bytes[RTE_ETH_8_TCS];
+	uint64_t flow_bytes[RTE_ETH_8_TCS][PORT_FWD_MAX_FLOW_PER_TC];
+	double diff;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(portid))
+		return;
+
+	rte_memcpy(&tc_bytes[0], &s_tc_bytes[portid][0],
+		sizeof(uint64_t) * RTE_ETH_8_TCS);
+	rte_memcpy(&flow_bytes[0][0], &s_flow_bytes[portid][0][0],
+		sizeof(uint64_t) * PORT_FWD_MAX_FLOW);
+	memset(s_tc_count[portid], 0, sizeof(uint64_t) * RTE_ETH_8_TCS);
+	memset(s_flow_count[portid], 0, sizeof(uint64_t) * PORT_FWD_MAX_FLOW);
+	memset(s_tc_bytes[portid], 0, sizeof(uint64_t) * RTE_ETH_8_TCS);
+	memset(s_flow_bytes[portid], 0, sizeof(uint64_t) * PORT_FWD_MAX_FLOW);
+
+	for (i = 0; i < RTE_MAX_LCORE; i++) {
+		for (j = 0; j < s_lcore_conf[i].n_rx_queue; j++) {
+			rx = &s_lcore_conf[i].rx_queue_list[j];
+			if (rx->port_id != portid)
+				continue;
+			s_flow_count[portid][rx->tc_id][rx->flow_id] = rx->statistic.packets;
+			s_tc_count[portid][rx->tc_id] += rx->statistic.packets;
+			s_flow_bytes[portid][rx->tc_id][rx->flow_id] = rx->statistic.bytes_overhead;
+			s_tc_bytes[portid][rx->tc_id] += rx->statistic.bytes_overhead;
+		}
+	}
+
+	for (i = 0; i < RTE_ETH_8_TCS; i++) {
+		if (!s_tc_count[portid][i])
+			continue;
+
+		diff = (s_tc_bytes[portid][i] - tc_bytes[i]) * 8;
+		RTE_LOG(INFO, port_fwd,
+			"RX TC%d: %ld packets, %fGbps\n", i, s_tc_count[portid][i],
+			diff / (second * G_BITS_SIZE));
+		for (j = 0; j < PORT_FWD_MAX_FLOW_PER_TC; j++) {
+			if (!s_flow_count[portid][i][j])
+				continue;
+			diff = (s_flow_bytes[portid][i][j] - flow_bytes[i][j]) * 8;
+			RTE_LOG(INFO, port_fwd,
+				"RX TC%d.flow%d: %ld packets, %fGbps\n", i, j,
+				s_flow_count[portid][i][j], diff / (second * G_BITS_SIZE));
+		}
+	}
+}
+
 static void *perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
-	unsigned int lcore_id, port_id;
+	unsigned int lcore_id, port_id, qid;
 	int port_num, ret;
 	struct lcore_conf *qconf;
 	struct lcore_statistic *rxs, *txs;
+
 	uint64_t rx_pkts[RTE_MAX_ETHPORTS];
 	uint64_t tx_pkts[RTE_MAX_ETHPORTS];
 	uint64_t rx_bytes_fcs[RTE_MAX_ETHPORTS];
@@ -2360,23 +2518,30 @@ loop:
 			continue;
 		qconf = &s_lcore_conf[lcore_id];
 		port_num = enabled_port_num;
-		for (port_id = 0; port_id < RTE_MAX_ETHPORTS; port_id++) {
-			rxs = &qconf->rx_statistic[port_id];
-			txs = &qconf->tx_statistic[port_id];
-			if (enabled_port_mask & (1 << port_id) &&
-				port_num > 0) {
-				rx_pkts[port_id] += rxs->packets;
-				tx_pkts[port_id] += txs->packets;
-				rx_bytes_fcs[port_id] += rxs->bytes_fcs;
-				tx_bytes_fcs[port_id] += txs->bytes_fcs;
-				rx_bytes_oh[port_id] +=	rxs->bytes_overhead;
-				tx_bytes_oh[port_id] +=	txs->bytes_overhead;
-				tx_jumbo_count[port_id] += qconf->tx_jumbo_count[port_id];
-				tx_jumbo_bytes[port_id] += qconf->tx_jumbo_bytes[port_id];
-				rx_reassemble_count[port_id] += qconf->rx_reassemble_count[port_id];
-				rx_reassemble_bytes[port_id] += qconf->rx_reassemble_bytes[port_id];
-				port_num--;
-			}
+		for (qid = 0; qid < MAX_RX_QUEUE_PER_LCORE; qid++) {
+			port_id = qconf->rx_queue_list[qid].port_id;
+			if (!(enabled_port_mask & (1 << port_id)))
+				continue;
+			rxs = &qconf->rx_queue_list[qid].statistic;
+
+			rx_pkts[port_id] += rxs->packets;
+			rx_bytes_fcs[port_id] += rxs->bytes_fcs;
+			rx_bytes_oh[port_id] += rxs->bytes_overhead;
+			rx_reassemble_count[port_id] += rxs->rx_reassemble_count;
+			rx_reassemble_bytes[port_id] += rxs->rx_reassemble_bytes;
+		}
+
+		for (qid = 0; qid < MAX_TX_QUEUE_PER_LCORE; qid++) {
+			port_id = qconf->tx_queue_list[qid].port_id;
+			if (!(enabled_port_mask & (1 << port_id)))
+				continue;
+			txs = &qconf->tx_queue_list[qid].statistic;
+
+			tx_pkts[port_id] += txs->packets;
+			tx_bytes_fcs[port_id] += txs->bytes_fcs;
+			tx_bytes_oh[port_id] += txs->bytes_overhead;
+			tx_jumbo_count[port_id] += txs->tx_jumbo_count;
+			tx_jumbo_bytes[port_id] += txs->tx_jumbo_bytes;
 		}
 	}
 
@@ -2388,6 +2553,8 @@ loop:
 			int get_st_ret;
 
 			RTE_LOG(INFO, port_fwd, "PORT%d:\r\n", port_id);
+			port_fwd_dump_tc_flow_count(port_id,
+				PKTGEN_STATISTICS_INTERVAL);
 			get_st_ret = rte_eth_stats_get(port_id, &stats);
 			if (get_st_ret)
 				goto skip_print_hw_status;
@@ -2492,6 +2659,29 @@ loop:
 quit:
 
 	return arg;
+}
+
+static void
+port_fwd_set_default_action(uint16_t port_nb, struct rte_eth_conf *port_conf)
+{
+	uint16_t i;
+
+	if (!s_def_set)
+		return;
+
+	s_act_def[port_nb] = rte_zmalloc(NULL,
+		sizeof(struct rte_dpaa2_default_action_conf) +
+		sizeof(uint16_t) * RTE_ETH_8_TCS, 0);
+	if (!s_act_def[port_nb]) {
+		rte_panic("Failed to port%d's alloc default action description!",
+			port_nb);
+	}
+
+	s_act_def[port_nb]->default_tc = s_def_tc;
+	s_act_def[port_nb]->max_tc = RTE_ETH_8_TCS;
+	for (i = 0; i < RTE_ETH_8_TCS; i++)
+		s_act_def[port_nb]->default_flows[i] = s_def_flow;
+	port_conf->rxmode.reserved_ptrs[0] = s_act_def[port_nb];
 }
 
 int
@@ -2691,6 +2881,8 @@ main(int argc, char **argv)
 		local_port_conf[portid].rx_adv_conf.rss_conf.rss_hf &=
 			dev_info.flow_type_rss_offloads;
 
+		port_fwd_set_default_action(portid, &local_port_conf[portid]);
+
 		ret = rte_eth_dev_configure(portid, nb_rx_queue[portid],
 				nb_tx_queue[portid], &local_port_conf[portid]);
 		if (ret < 0)
@@ -2858,6 +3050,8 @@ main(int argc, char **argv)
 		rte_eth_dev_stop(portid);
 		rte_eth_dev_close(portid);
 		RTE_LOG(INFO, port_fwd, " Done\n");
+		if (s_act_def[portid])
+			rte_free(s_act_def[portid]);
 	}
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		rx_queue = s_lcore_conf[lcore_id].rx_queue_list;

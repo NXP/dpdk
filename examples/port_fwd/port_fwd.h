@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022, 2024-2025 NXP
+ * Copyright 2019-2022, 2024-2026 NXP
  * Code was mostly borrowed from examples/l3fwd/l3fwd.h
  * See examples/l3fwd/l3fwd.h for additional Copyrights.
  */
@@ -24,27 +24,41 @@ struct mbuf_table {
 	struct rte_mbuf *m_table[MAX_PKT_BURST];
 };
 
+struct lcore_statistic {
+	uint64_t packets;
+	uint64_t bytes;
+	uint64_t bytes_fcs;
+	uint64_t bytes_overhead;
+	union {
+		uint64_t rx_reassemble_count;
+		uint64_t tx_jumbo_count;
+	};
+	union {
+		uint64_t rx_reassemble_bytes;
+		uint64_t tx_jumbo_bytes;
+	};
+};
+
 struct lcore_rx_queue {
 	uint16_t port_id;
 	uint8_t queue_id;
+	uint8_t tc_id;
+	uint16_t flow_id;
 	void *send_q;
 	void *recv_q;
 	struct rte_ip_frag_tbl *tbl;
 	struct rte_ip_frag_death_row dr;
+
+	struct lcore_statistic statistic;
 } __rte_cache_aligned;
 
 struct lcore_tx_queue {
 	void *tx_ring;
 	uint16_t port_id;
 	uint8_t queue_id;
-} __rte_cache_aligned;
 
-struct lcore_statistic {
-	uint64_t packets;
-	uint64_t bytes;
-	uint64_t bytes_fcs;
-	uint64_t bytes_overhead;
-};
+	struct lcore_statistic statistic;
+} __rte_cache_aligned;
 
 #include "rte_tm.h"
 
@@ -60,15 +74,7 @@ struct lcore_conf {
 	uint16_t n_tx_queue;
 	struct lcore_tx_queue tx_queue_list[MAX_TX_QUEUE_PER_LCORE];
 	struct mbuf_table tx_mbufs[RTE_MAX_ETHPORTS];
-
-	struct lcore_statistic tx_statistic[RTE_MAX_ETHPORTS];
-	struct lcore_statistic rx_statistic[RTE_MAX_ETHPORTS];
 	uint32_t tx_ip[RTE_MAX_ETHPORTS];
-
-	uint64_t tx_jumbo_count[RTE_MAX_ETHPORTS];
-	uint64_t tx_jumbo_bytes[RTE_MAX_ETHPORTS];
-	uint64_t rx_reassemble_count[RTE_MAX_ETHPORTS];
-	uint64_t rx_reassemble_bytes[RTE_MAX_ETHPORTS];
 	char *dump_buf;
 } __rte_cache_aligned;
 
