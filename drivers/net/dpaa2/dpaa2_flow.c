@@ -137,14 +137,19 @@ enum rte_flow_item_type dpaa2_sp_supported_pattern_type[] = {
 	RTE_FLOW_ITEM_TYPE_GENEVE
 };
 
-static const
-enum rte_flow_action_type dpaa2_supported_action_type[] = {
-	RTE_FLOW_ACTION_TYPE_END,
+static const enum rte_flow_action_type dpaa2_supported_fs_action_type[] = {
 	RTE_FLOW_ACTION_TYPE_QUEUE,
 	RTE_FLOW_ACTION_TYPE_PORT_ID,
 	RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT,
 	RTE_FLOW_ACTION_TYPE_RSS,
-	RTE_FLOW_ACTION_TYPE_DROP,
+	RTE_FLOW_ACTION_TYPE_DROP
+};
+
+static const enum rte_flow_action_type dpaa2_supported_qos_action_type[] = {
+	RTE_FLOW_ACTION_TYPE_JUMP
+};
+
+static const enum rte_flow_action_type dpaa2_supported_meter_action_type[] = {
 	RTE_FLOW_ACTION_TYPE_METER_MARK,
 	RTE_FLOW_ACTION_TYPE_METER
 };
@@ -3924,18 +3929,17 @@ dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
 		tbl_profile->default_drop = true;
 		tc_cfg->fs_miss_flow_id = DPNI_FS_MISS_ACTION_DROP;
 	} else {
-		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id,
-			default_queue);
+		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id, default_queue);
 		if (!queue)
 			return -EINVAL;
 		tbl_profile->default_drop = false;
 		tbl_profile->default_queue.index = default_queue;
 		tc_cfg->fs_miss_flow_id = queue->flow_id;
 	}
-	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW,
-		priv->token, tc_cfg);
+	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW, priv->token, tc_cfg);
 	if (ret < 0) {
-		DPAA2_PMD_ERR("TC[%d] FS configured failed", tc_id);
+		DPAA2_PMD_ERR("%s: Failed(%d) to set default action of TC[%d]",
+			__func__, ret, tc_id);
 		return ret;
 	}
 
@@ -4012,8 +4016,7 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 			tbl_profile->default_queue.index);
 		tc_cfg->fs_miss_flow_id = queue->flow_id;
 	}
-	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW,
-			priv->token, tc_cfg);
+	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW, priv->token, tc_cfg);
 	if (ret < 0) {
 		DPAA2_PMD_ERR("TC[%d] FS configured failed", tc_id);
 		return ret;
@@ -4056,7 +4059,8 @@ dpaa2_flow_qos_table_set_default(struct dpaa2_dev_priv *priv,
 
 	ret = dpni_set_qos_table(dpni, CMD_PRI_LOW, priv->token, qos_cfg);
 	if (ret < 0) {
-		DPAA2_PMD_ERR("QoS table set failed(%d)", ret);
+		DPAA2_PMD_ERR("%s: Failed(%d) to set default action of QoS",
+			__func__, ret);
 		return ret;
 	}
 
@@ -4699,29 +4703,77 @@ end_extract_set:
 }
 
 static inline int
-dpaa2_flow_verify_attr(struct dpni_attr *dpni_attr,
-	const struct rte_flow_attr *attr)
+dpaa2_flow_verify_attr(struct dpaa2_dev_priv *priv,
+	const struct rte_flow_attr *attr, uint32_t *pgroup_type,
+	uint32_t *pgroup_id)
 {
 	int ret = 0;
+	uint32_t group_id, group_type;
 
-	if (unlikely(attr->group >= dpni_attr->num_rx_tcs)) {
-		DPAA2_PMD_ERR("Group/TC(%d) is out of range(%d)",
-			attr->group, dpni_attr->num_rx_tcs);
-		ret = -ENOTSUP;
+	group_type = RTE_DPAA2_FLOW_GROUP_TYPE_GET(attr->group);
+	group_id = RTE_DPAA2_FLOW_GROUP_ID_GET(attr->group);
+	if (group_id >= priv->num_rx_tc &&
+		group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW) {
+		group_type = RTE_DPAA2_QOS_GROUP_FLOW;
+		group_id = 0;
 	}
-	if (unlikely(attr->priority >= dpni_attr->fs_entries)) {
-		DPAA2_PMD_ERR("Priority(%d) within group is out of range(%d)",
-			attr->priority, dpni_attr->fs_entries);
-		ret = -ENOTSUP;
+
+	if (!priv->fs_entries || group_type == RTE_DPAA2_QOS_GROUP_FLOW) {
+		if (group_type == RTE_DPAA2_FS_GROUP_FLOW) {
+			DPAA2_PMD_ERR("No FS table created to support FS flow!");
+			ret = -EINVAL;
+			goto complete_verify;
+		}
+		if (attr->priority >= priv->qos_entries) {
+			DPAA2_PMD_ERR("Prior(%d) is out of range(%d)",
+				attr->priority, priv->qos_entries);
+			ret = -ENOTSUP;
+			goto complete_verify;
+		}
+		goto complete_verify_group;
 	}
+
+	if (group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW ||
+		group_type == RTE_DPAA2_FS_GROUP_FLOW) {
+		if (group_id >= priv->num_rx_tc) {
+			DPAA2_PMD_ERR("Group(%d) is out of range(%d)",
+				group_id, priv->num_rx_tc);
+			ret = -ENOTSUP;
+			goto complete_verify;
+		}
+		if (group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW &&
+			(attr->priority + priv->fs_entries * group_id) >= priv->qos_entries) {
+			DPAA2_PMD_ERR("Prior(%d) + fs entries(%d) * group(%d) is out of range(%d)",
+				attr->priority, priv->fs_entries, group_id,
+				priv->qos_entries);
+			ret = -ENOTSUP;
+			goto complete_verify;
+		}
+	} else {
+		DPAA2_PMD_ERR("Invalid group type(%d)", group_type);
+		ret = -EINVAL;
+		goto complete_verify;
+	}
+
+complete_verify_group:
 	if (unlikely(attr->egress)) {
 		DPAA2_PMD_ERR("Egress flow configuration is not supported");
 		ret = -ENOTSUP;
+		goto complete_verify;
 	}
 	if (unlikely(!attr->ingress)) {
 		DPAA2_PMD_ERR("Ingress flag must be configured");
 		ret = -EINVAL;
 	}
+
+complete_verify:
+	if (!ret) {
+		if (pgroup_type)
+			*pgroup_type = group_type;
+		if (pgroup_id)
+			*pgroup_id = group_id;
+	}
+
 	return ret;
 }
 
@@ -4771,34 +4823,32 @@ dpaa2_flow_verify_patterns(const struct rte_flow_item pattern[],
 }
 
 static inline int
-dpaa2_flow_check_actions_support(const struct rte_flow_action actions[])
+dpaa2_flow_check_actions_support(const struct rte_flow_action actions[],
+	const enum rte_flow_action_type supported[], uint16_t len)
 {
 	unsigned int i, j, is_found = 0;
 
 	for (j = 0; actions[j].type != RTE_FLOW_ACTION_TYPE_END; j++) {
 		is_found = 0;
-		for (i = 0; i < RTE_DIM(dpaa2_supported_action_type); i++) {
-			if (dpaa2_supported_action_type[i] == actions[j].type) {
+		for (i = 0; i < len; i++) {
+			if (supported[i] == actions[j].type) {
 				is_found = 1;
 				break;
 			}
 		}
-		if (!is_found) {
-			DPAA2_PMD_ERR("actions[%d].type(%d) not supported",
-				j, actions[j].type);
-			return -ENOTSUP;
-		}
+		if (!is_found)
+			return false;
 	}
 	for (j = 0; actions[j].type != RTE_FLOW_ACTION_TYPE_END; j++) {
 		if (actions[j].type != RTE_FLOW_ACTION_TYPE_DROP &&
 			!actions[j].conf) {
 			DPAA2_PMD_ERR("No config for actions[%d].type(%d)",
 				j, actions[j].type);
-			return -EINVAL;
+			return false;
 		}
 	}
 
-	return 0;
+	return true;
 }
 
 static int
@@ -4809,50 +4859,79 @@ dpaa2_flow_validate(struct rte_eth_dev *dev,
 	struct rte_flow_error *error)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct dpni_attr dpni_attr;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)priv->hw;
-	uint16_t token = priv->token;
+	uint16_t supported_len = 0;
 	int ret = 0;
-
-	memset(&dpni_attr, 0, sizeof(struct dpni_attr));
-	ret = dpni_get_attributes(dpni, CMD_PRI_LOW, token, &dpni_attr);
-	if (ret < 0) {
-		DPAA2_PMD_ERR("Get dpni@%d attribute failed(%d)",
-			priv->hw_id, ret);
-		rte_flow_error_set(error, EPERM,
-			RTE_FLOW_ERROR_TYPE_ATTR,
-			flow_attr, "invalid");
-		return ret;
-	}
+	uint32_t group_type;
+	const enum rte_flow_action_type *supported = NULL;
+	const char *err_str = NULL;
+	const void *cause = NULL;
+	enum rte_flow_error_type err_type = RTE_FLOW_ERROR_TYPE_NONE;
 
 	/* Verify input attributes */
-	ret = dpaa2_flow_verify_attr(&dpni_attr, flow_attr);
-	if (ret < 0) {
-		DPAA2_PMD_ERR("Invalid attributes are given");
-		rte_flow_error_set(error, EPERM,
-			RTE_FLOW_ERROR_TYPE_ATTR,
-			flow_attr, "invalid");
-		goto not_valid_params;
+	ret = dpaa2_flow_verify_attr(priv, flow_attr, &group_type, NULL);
+	if (ret) {
+		err_str = "Invalid attributes are given";
+		cause = flow_attr;
+		err_type = RTE_FLOW_ERROR_TYPE_ATTR;
+		goto invalid_params;
 	}
-	/* Verify input pattern list */
-	ret = dpaa2_flow_verify_patterns(pattern, priv->sp_protocol);
-	if (ret < 0) {
-		DPAA2_PMD_ERR("Invalid pattern list is given");
-		rte_flow_error_set(error, EPERM,
-			RTE_FLOW_ERROR_TYPE_ITEM,
-			pattern, "invalid");
-		goto not_valid_params;
+
+	if (pattern) {
+		/* Verify input pattern list */
+		ret = dpaa2_flow_verify_patterns(pattern, priv->sp_protocol);
+		if (ret) {
+			err_str = "Invalid pattern list is given";
+			cause = pattern;
+			err_type = RTE_FLOW_ERROR_TYPE_ITEM;
+			goto invalid_params;
+		}
 	}
+
+	supported = dpaa2_supported_meter_action_type;
+	supported_len = RTE_DIM(dpaa2_supported_meter_action_type);
+	if (dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
+		DPAA2_PMD_DEBUG("This is meter flow.\n");
+		if (group_type == RTE_DPAA2_QOS_GROUP_FLOW) {
+			err_str = "Meter flow's type can't be QoS flow.";
+			cause = actions;
+			err_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			ret = -EPERM;
+			goto invalid_params;
+		}
+		if (actions[1].type != RTE_FLOW_ACTION_TYPE_END) {
+			err_str = "Meter flow can't support multi-actions.";
+			cause = actions;
+			err_type = RTE_FLOW_ERROR_TYPE_ACTION_NUM;
+			ret = -EPERM;
+			goto invalid_params;
+		}
+		if (pattern)
+			DPAA2_PMD_WARN("Meter flow ingores flow items!\n");
+		return 0;
+	}
+
 	/* Verify input action list */
-	ret = dpaa2_flow_check_actions_support(actions);
-	if (ret < 0) {
-		DPAA2_PMD_ERR("Invalid action list is given");
-		rte_flow_error_set(error, EPERM,
-			RTE_FLOW_ERROR_TYPE_ACTION,
-			actions, "invalid");
-		goto not_valid_params;
+	if (group_type == RTE_DPAA2_ONE_LEVEL_GROUP_FLOW ||
+		group_type == RTE_DPAA2_FS_GROUP_FLOW) {
+		supported = dpaa2_supported_fs_action_type;
+		supported_len = RTE_DIM(dpaa2_supported_fs_action_type);
+	} else {
+		supported = dpaa2_supported_qos_action_type;
+		supported_len = RTE_DIM(dpaa2_supported_qos_action_type);
 	}
-not_valid_params:
+	if (!dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
+		err_str = "Invalid action list is given";
+		cause = actions;
+		err_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		ret = -ENOTSUP;
+		goto invalid_params;
+	}
+
+invalid_params:
+	if (err_str)
+		DPAA2_PMD_ERR("%s: %s\n", __func__, err_str);
+	rte_flow_error_set(error, -ret, err_type, cause, err_str);
+
 	return ret;
 }
 
@@ -5715,8 +5794,22 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 		rss_item = true;
 	}
 
-	if (!pattern && !rss_item) {
+	if (dpaa2_flow_check_actions_support(actions,
+		dpaa2_supported_meter_action_type,
+		RTE_DIM(dpaa2_supported_meter_action_type))) {
 		/** Assume it's meter flow per TC.*/
+		if (group_type == RTE_DPAA2_QOS_GROUP_FLOW) {
+			error_type = RTE_FLOW_ERROR_TYPE_ATTR_GROUP;
+			err_code = -EINVAL;
+			err_str = "Failed to converts RSS config type to RSS items!";
+			goto flow_failure;
+		}
+		if (actions[1].type != RTE_FLOW_ACTION_TYPE_END) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION_NUM;
+			err_code = -EPERM;
+			err_str = "Meter flow can't support multi-actions.";
+			goto flow_failure;
+		}
 		flow = (void *)dpaa2_flow_create_meter_flow(dev, &local_attr, actions);
 		if (flow)
 			return (struct rte_flow *)flow;
@@ -5951,13 +6044,15 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	enum dpaa2_flow_dist_type flow_type = DPAA2_FLOW_NULL_TYPE;
-	int end_of_list = 0, i = 0, discard = false;
+	int end_of_list = 0, i = 0, discard = false, err_code = 0;
 	const struct rte_flow_action_jump *action_jump = NULL;
 	const struct rte_flow_action_queue *dest_queue = NULL;
 	uint32_t group_id, group_type;
+	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
+	const char *err_str = NULL;
+	struct dpaa2_queue *miss_rxq = NULL;
 
 	RTE_SET_USED(attr);
-	RTE_SET_USED(err);
 
 	group_type = RTE_DPAA2_FLOW_GROUP_TYPE_GET(group);
 	group_id = RTE_DPAA2_FLOW_GROUP_ID_GET(group);
@@ -5978,12 +6073,17 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 	while (!end_of_list) {
 		switch (actions[i].type) {
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
-			if (flow_type == DPAA2_FLOW_FS_TYPE)
-				dest_queue = actions[i].conf;
+			dest_queue = actions[i].conf;
+			if (dest_queue->index >= dev->data->nb_rx_queues) {
+				error_type = RTE_FLOW_ERROR_TYPE_ACTION_CONF;
+				err_code = -EINVAL;
+				err_str = "Queue index overflows";
+				goto failure_to_set_miss_actions;
+			}
+			miss_rxq = priv->rx_vq[dest_queue->index];
 			break;
 		case RTE_FLOW_ACTION_TYPE_JUMP:
-			if (flow_type == DPAA2_FLOW_QOS_TYPE)
-				action_jump = actions[i].conf;
+			action_jump = actions[i].conf;
 			break;
 		case RTE_FLOW_ACTION_TYPE_DROP:
 			discard = true;
@@ -6000,21 +6100,60 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 	}
 
 	if (flow_type == DPAA2_FLOW_QOS_TYPE) {
-		if (!discard && !action_jump) {
-			DPAA2_PMD_ERR("No miss action set for QoS table");
-			return -EINVAL;
+		if (!priv->qos_entries) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_code = -EINVAL;
+			err_str = "No QoS table available!";
+			goto failure_to_set_miss_actions;
 		}
-		return dpaa2_flow_qos_table_set_default(priv, discard,
+		if (!discard && !action_jump) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_code = -EINVAL;
+			err_str = "Invalid miss action set for QoS table";
+			goto failure_to_set_miss_actions;
+		}
+		err_code = dpaa2_flow_qos_table_set_default(priv, discard,
 			action_jump ? action_jump->group : 0);
+		if (err_code) {
+			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
+			err_str = "Failed to set miss action for QoS table";
+			goto failure_to_set_miss_actions;
+		}
+
+		return 0;
 	}
 
-	if (!discard && !dest_queue) {
-		DPAA2_PMD_ERR("No miss action set for FS table[%d]",
-			group_id);
-		return -EINVAL;
+	if (!priv->fs_entries) {
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_code = -EINVAL;
+		err_str = "No FS table available!";
+		goto failure_to_set_miss_actions;
 	}
-	return dpaa2_flow_fs_table_set_default(priv, group_id, discard,
+	if (!discard && !miss_rxq) {
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_code = -EINVAL;
+		err_str = "Invalid miss action set for FS table";
+		goto failure_to_set_miss_actions;
+	}
+	if (miss_rxq && miss_rxq->tc_index != group_id) {
+		error_type = RTE_FLOW_ERROR_TYPE_ATTR_GROUP;
+		err_code = -EINVAL;
+		err_str = "Group conflicts with dest queue's TC ID";
+		goto failure_to_set_miss_actions;
+	}
+	err_code = dpaa2_flow_fs_table_set_default(priv, group_id, discard,
 		dest_queue ? dest_queue->index : 0);
+	if (err_code) {
+		error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
+		err_str = "Failed to set miss action for FS table";
+	}
+
+failure_to_set_miss_actions:
+	if (err_str)
+		DPAA2_PMD_ERR("%s: %s\n", __func__, err_str);
+	rte_flow_error_set(err, -err_code, error_type, NULL, err_str);
+
+	return err_code;
 }
 
 static int
@@ -6027,7 +6166,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_flow_tbl_profile *tbl_profile = NULL;
-	int ret, is_rss = false, hw_update = false;
+	int ret = 0, is_rss = false, hw_update = false;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id;
 	struct rte_flow_action qos_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
@@ -6036,6 +6175,8 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct rte_flow_item items[DPKG_MAX_NUM_OF_EXTRACTS + 1];
 	uint8_t spec_buf[1024];
 	struct rte_flow_attr attr;
+	const enum rte_flow_action_type *supported = NULL;
+	uint16_t supported_len = 0;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
@@ -6045,7 +6186,15 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 		RTE_ASSERT(flow->fs_flow);
 		tc_id = flow->fs_flow->tc_id;
 		RTE_ASSERT(priv->flow_profile.mtr_flow[tc_id] == flow);
-		return dpaa2_flow_fs_action_update(priv, flow->fs_flow, actions);
+		supported = dpaa2_supported_meter_action_type;
+		supported_len = RTE_DIM(dpaa2_supported_meter_action_type);
+		if (!dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
+			DPAA2_PMD_ERR("%s: Failed to verify meter action.\n", __func__);
+			ret = -ENOTSUP;
+			goto quit;
+		}
+		ret = dpaa2_flow_fs_action_update(priv, flow->fs_flow, actions);
+		goto quit;
 	}
 	LIST_FOREACH(flow, &priv->flows, next) {
 		if ((struct rte_flow *)flow == _flow)
@@ -6058,21 +6207,29 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	goto quit;
 
 action_update:
-	ret = dpaa2_flow_check_actions_support(actions);
-	if (ret) {
-		DPAA2_PMD_ERR("%s: verify new action failed(%d)\n",
-			__func__, ret);
+	if (flow->fs_flow) {
+		supported = dpaa2_supported_fs_action_type;
+		supported_len = RTE_DIM(dpaa2_supported_fs_action_type);
+	} else {
+		supported = dpaa2_supported_qos_action_type;
+		supported_len = RTE_DIM(dpaa2_supported_qos_action_type);
+	}
+	if (!dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
+		DPAA2_PMD_ERR("%s: verify new action failed.\n", __func__);
+		ret = -ENOTSUP;
 		goto quit;
 	}
 	ret = dpaa2_flow_qos_fs_action_set(actions, qos_actions, fs_actions,
 		&qos_action_num, &fs_action_num);
 	if (ret)
-		return ret;
+		goto quit;
 	flow = (struct dpaa2_dev_flow *)_flow;
-	if (!flow->fs_flow && fs_action_num > 0)
+	if ((!flow->fs_flow && fs_action_num > 0) ||
+		(!flow->qos_flow && qos_action_num > 0)) {
+		ret = -EINVAL;
 		goto quit;
-	if (!flow->qos_flow && qos_action_num > 0)
-		goto quit;
+	}
+
 	if (!flow->fs_flow)
 		goto qos_action_update;
 	fs_action = &flow->fs_flow->flow_action.fs_action;
@@ -6083,6 +6240,8 @@ action_update:
 		if (tbl_profile->rss_flow != flow) {
 			DPAA2_PMD_ERR("%s: RSS flow(%p) != TC[%d]'s rss flow(%p)",
 				__func__, flow, flow->fs_flow->tc_id, tbl_profile->rss_flow);
+			ret = -EINVAL;
+			goto quit;
 		}
 	}
 	if (fs_action_num > 0 &&
