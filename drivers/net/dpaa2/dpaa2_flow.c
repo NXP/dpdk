@@ -3930,20 +3930,26 @@ dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
 	uint8_t tc_id, int discard, uint16_t default_queue)
 {
 	int ret;
+	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpni_rx_dist_cfg *tc_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_queue *queue;
+	char mc_rev[1024];
 
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	tbl_profile = &priv->flow_profile.tc_profile[tc_id];
-
-	if (!tbl_profile->enabled) {
-		DPAA2_PMD_WARN("%s: TC[%d] FS table not configured!",
-			__func__, tc_id);
+	snprintf(mc_rev, 1024, "MC rev(%d.%d.%d)",
+		RTE_FSL_MC_REV_MAJOR(dpaa2_dev->bus_info->mc_rev),
+		RTE_FSL_MC_REV_MINOR(dpaa2_dev->bus_info->mc_rev),
+		RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev));
+	if (!tbl_profile->dpkg.num_extracts &&
+		dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV) {
+		DPAA2_PMD_WARN("%s can't set miss action of FS table indepentently.",
+			mc_rev);
+		return 0;
 	}
-
 	tc_cfg = &tbl_profile->tc_cfg;
-
 	tc_cfg->enable = true;
 	if (discard) {
 		tbl_profile->default_drop = true;
@@ -4055,34 +4061,57 @@ successful_config:
 
 static int
 dpaa2_flow_qos_table_set_default(struct dpaa2_dev_priv *priv,
-	int discard, uint8_t default_tc)
+	int discard, uint8_t default_tc, uint16_t default_flow)
 {
 	int ret;
-	struct dpni_qos_tbl_cfg *qos_cfg;
+	struct rte_dpaa2_device *dpaa2_dev;
+	struct dpni_qos_tbl_cfg qos_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpaa2_flow_tbl_profile *tbl_profile;
+	char mc_rev[1024];
 
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	tbl_profile = &priv->flow_profile.qos_profile;
-	if (!tbl_profile->enabled)
-		DPAA2_PMD_WARN("%s: QoS table not configured!", __func__);
-
-	qos_cfg = &tbl_profile->qos_cfg;
-	qos_cfg->default_tc = default_tc;
-	if (discard) {
-		tbl_profile->default_drop = true;
-		qos_cfg->discard_on_miss = true;
-	} else {
-		tbl_profile->default_drop = false;
-		tbl_profile->default_jump.group = default_tc;
-		qos_cfg->discard_on_miss = false;
+	snprintf(mc_rev, 1024, "MC rev(%d.%d.%d)",
+		RTE_FSL_MC_REV_MAJOR(dpaa2_dev->bus_info->mc_rev),
+		RTE_FSL_MC_REV_MINOR(dpaa2_dev->bus_info->mc_rev),
+		RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev));
+	if (!tbl_profile->dpkg.num_extracts &&
+		dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV) {
+		DPAA2_PMD_WARN("%s can't set miss action of QoS table indepentently.",
+			mc_rev);
+		return 0;
+	}
+	if (default_flow < priv->dist_queues &&
+		dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_MISS_FLOW_ACTION_MC_REV) {
+		DPAA2_PMD_WARN("%s can't direct miss traffic to TC%d-flow%d by QoS table only.",
+			mc_rev, default_tc, default_flow);
+		return 0;
 	}
 
-	ret = dpni_set_qos_table(dpni, CMD_PRI_LOW, priv->token, qos_cfg);
+	rte_memcpy(&qos_cfg, &tbl_profile->qos_cfg, sizeof(struct dpni_qos_tbl_cfg));
+	qos_cfg.key_cfg_iova = 0;
+	qos_cfg.default_tc = default_tc;
+	qos_cfg.default_flow_id = default_flow;
+	qos_cfg.discard_on_miss = discard ? true : false;
+	qos_cfg.set_default_flow_id = default_flow < priv->dist_queues ? true : false;
+
+	ret = dpni_set_qos_table(dpni, CMD_PRI_LOW, priv->token, &qos_cfg);
 	if (ret < 0) {
 		DPAA2_PMD_ERR("%s: Failed(%d) to set default action of QoS",
 			__func__, ret);
 		return ret;
 	}
+	if (discard) {
+		tbl_profile->default_drop = true;
+	} else {
+		tbl_profile->default_drop = false;
+		tbl_profile->default_jump.group = default_tc;
+	}
+	rte_memcpy(&tbl_profile->qos_cfg.discard_on_miss,
+		&qos_cfg.discard_on_miss,
+		sizeof(struct dpni_qos_tbl_cfg) -
+		offsetof(struct dpni_qos_tbl_cfg, discard_on_miss));
 
 	return 0;
 }
@@ -4091,6 +4120,7 @@ static int
 dpaa2_flow_qos_table_config(struct dpaa2_dev_priv *priv,
 	int rss_dist)
 {
+	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_flow_tbl_profile *tbl_profile;
 	uint8_t *key_cfg_buf;
 	int ret;
@@ -4152,7 +4182,11 @@ dpaa2_flow_qos_table_config(struct dpaa2_dev_priv *priv,
 			qos_cfg->discard_on_miss = false;
 	}
 
-	ret = dpni_set_qos_table(dpni, CMD_PRI_LOW, priv->token, qos_cfg);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
+	if (dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV)
+		ret = dpni_set_qos_table_v2(dpni, CMD_PRI_LOW, priv->token, qos_cfg);
+	else
+		ret = dpni_set_qos_table(dpni, CMD_PRI_LOW, priv->token, qos_cfg);
 	if (ret < 0) {
 		DPAA2_PMD_ERR("QoS table set failed(%d)", ret);
 		return ret;
@@ -6068,6 +6102,8 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
 	const char *err_str = NULL;
 	struct dpaa2_queue *miss_rxq = NULL;
+	uint8_t qos_tc = 0xff;
+	uint16_t qos_flow = 0xffff;
 
 	RTE_SET_USED(attr);
 
@@ -6123,14 +6159,28 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 			err_str = "No QoS table available!";
 			goto failure_to_set_miss_actions;
 		}
-		if (!discard && !action_jump) {
+		if (action_jump && miss_rxq) {
+			if (action_jump->group != miss_rxq->tc_index) {
+				error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+				err_code = -EINVAL;
+				err_str = "Jump group conflicts to miss queue's TC";
+				goto failure_to_set_miss_actions;
+			}
+		}
+		if (action_jump)
+			qos_tc = action_jump->group;
+		if (miss_rxq) {
+			qos_tc = miss_rxq->tc_index;
+			qos_flow = miss_rxq->flow_id;
+		}
+		if ((!discard && qos_tc == 0xff) ||
+			(discard && qos_tc != 0xff)) {
 			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 			err_code = -EINVAL;
 			err_str = "Invalid miss action set for QoS table";
 			goto failure_to_set_miss_actions;
 		}
-		err_code = dpaa2_flow_qos_table_set_default(priv, discard,
-			action_jump ? action_jump->group : 0);
+		err_code = dpaa2_flow_qos_table_set_default(priv, discard, qos_tc, qos_flow);
 		if (err_code) {
 			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
 			err_str = "Failed to set miss action for QoS table";

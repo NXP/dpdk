@@ -20,6 +20,7 @@
 #define DPNI_CMD_VERSION_7			7
 #define DPNI_CMD_ID_OFFSET			4
 
+#define DPNI_CMD_VER(cmd_id) ((cmd_id) & ((1 << DPNI_CMD_ID_OFFSET) - 1))
 #define DPNI_CMD(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_BASE_VERSION)
 #define DPNI_CMD_V2(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_VERSION_2)
 #define DPNI_CMD_V3(id)	(((id) << DPNI_CMD_ID_OFFSET) | DPNI_CMD_VERSION_3)
@@ -80,7 +81,8 @@
 #define DPNI_CMDID_SET_RX_TC_POLICING_V1	DPNI_CMD(0x23E)
 #define DPNI_CMDID_SET_RX_TC_POLICING		DPNI_CMD_V2(0x23E)
 
-#define DPNI_CMDID_SET_QOS_TBL			DPNI_CMD_V2(0x240)
+#define DPNI_CMDID_SET_QOS_TBL			DPNI_CMD_V3(0x240)
+#define DPNI_CMDID_SET_QOS_TBL_V2		DPNI_CMD_V2(0x240)
 #define DPNI_CMDID_ADD_QOS_ENT			DPNI_CMD_V2(0x241)
 #define DPNI_CMDID_REMOVE_QOS_ENT		DPNI_CMD(0x242)
 #define DPNI_CMDID_CLR_QOS_TBL			DPNI_CMD(0x243)
@@ -609,12 +611,14 @@ struct dpni_cmd_set_queue {
 #define DPNI_DISCARD_ON_MISS_SIZE	1
 #define DPNI_KEEP_QOS_ENTRIES_SHIFT		1
 #define DPNI_KEEP_QOS_ENTRIES_SIZE		1
+#define DPNI_SET_DEFAULT_FLOW_ID_SHIFT  2
+#define DPNI_SET_DEFAULT_FLOW_ID_SIZE   1
 
 struct dpni_cmd_set_qos_table {
-	uint32_t pad;
+	uint16_t pad;
+	uint16_t default_flow_id;
 	uint8_t default_tc;
-	/* only the LSB */
-	uint8_t discard_on_miss;
+	uint8_t flags;
 	uint16_t pad1[21];
 	uint64_t key_cfg_iova;
 };

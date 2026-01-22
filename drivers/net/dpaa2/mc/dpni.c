@@ -1931,30 +1931,41 @@ int dpni_get_queue_tx_confirmation_mode(struct fsl_mc_io *mc_io,
  *
  * Return:	'0' on Success; Error code otherwise.
  */
-int dpni_set_qos_table(struct fsl_mc_io *mc_io,
-		       uint32_t cmd_flags,
-		       uint16_t token,
-		       const struct dpni_qos_tbl_cfg *cfg)
+static int
+_dpni_set_qos_table(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
+	uint16_t token, const struct dpni_qos_tbl_cfg *cfg, uint16_t cmd_id)
 {
 	struct dpni_cmd_set_qos_table *cmd_params;
 	struct mc_command cmd = { 0 };
 
 	/* prepare command */
-	cmd.header = mc_encode_cmd_header(DPNI_CMDID_SET_QOS_TBL,
-					  cmd_flags,
-					  token);
-	cmd_params = (struct dpni_cmd_set_qos_table *)cmd.params;
+	cmd.header = mc_encode_cmd_header(cmd_id, cmd_flags, token);
+	cmd_params = (void *)cmd.params;
 	cmd_params->default_tc = cfg->default_tc;
 	cmd_params->key_cfg_iova = cpu_to_le64(cfg->key_cfg_iova);
-	dpni_set_field(cmd_params->discard_on_miss,
-		       ENABLE,
-		       cfg->discard_on_miss);
-	dpni_set_field(cmd_params->discard_on_miss,
-					KEEP_QOS_ENTRIES,
-			       cfg->keep_entries);
+	if (DPNI_CMD_VER(cmd_id) > DPNI_CMD_VERSION_2)
+		cmd_params->default_flow_id = cpu_to_le16(cfg->default_flow_id);
+	dpni_set_field(cmd_params->flags, DISCARD_ON_MISS, cfg->discard_on_miss);
+	dpni_set_field(cmd_params->flags, KEEP_QOS_ENTRIES, cfg->keep_entries);
+	if (DPNI_CMD_VER(cmd_id) > DPNI_CMD_VERSION_2)
+		dpni_set_field(cmd_params->flags, SET_DEFAULT_FLOW_ID, cfg->set_default_flow_id);
 
 	/* send command to mc*/
 	return mc_send_command(mc_io, &cmd);
+}
+
+int
+dpni_set_qos_table(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
+	uint16_t token, const struct dpni_qos_tbl_cfg *cfg)
+{
+	return _dpni_set_qos_table(mc_io, cmd_flags, token, cfg, DPNI_CMDID_SET_QOS_TBL);
+}
+
+int
+dpni_set_qos_table_v2(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
+	uint16_t token, const struct dpni_qos_tbl_cfg *cfg)
+{
+	return _dpni_set_qos_table(mc_io, cmd_flags, token, cfg, DPNI_CMDID_SET_QOS_TBL_V2);
 }
 
 /**

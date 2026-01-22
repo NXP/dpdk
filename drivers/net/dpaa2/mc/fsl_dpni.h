@@ -1548,9 +1548,16 @@ struct dpni_qos_tbl_cfg {
 	int discard_on_miss;
 	int keep_entries;
 	uint8_t default_tc;
+	int set_default_flow_id;
+	uint16_t default_flow_id;
 };
 
 int dpni_set_qos_table(struct fsl_mc_io *mc_io,
+		       uint32_t cmd_flags,
+		       uint16_t token,
+		       const struct dpni_qos_tbl_cfg *cfg);
+
+int dpni_set_qos_table_v2(struct fsl_mc_io *mc_io,
 		       uint32_t cmd_flags,
 		       uint16_t token,
 		       const struct dpni_qos_tbl_cfg *cfg);
