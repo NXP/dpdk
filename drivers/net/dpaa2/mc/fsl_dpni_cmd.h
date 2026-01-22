@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2025 NXP
+ * Copyright 2016-2026 NXP
  *
  */
 #ifndef _FSL_DPNI_CMD_H
@@ -77,7 +77,8 @@
 
 #define DPNI_CMDID_SET_RX_TC_DIST		DPNI_CMD_V4(0x235)
 
-#define DPNI_CMDID_SET_RX_TC_POLICING		DPNI_CMD(0x23E)
+#define DPNI_CMDID_SET_RX_TC_POLICING_V1	DPNI_CMD(0x23E)
+#define DPNI_CMDID_SET_RX_TC_POLICING		DPNI_CMD_V2(0x23E)
 
 #define DPNI_CMDID_SET_QOS_TBL			DPNI_CMD_V2(0x240)
 #define DPNI_CMDID_ADD_QOS_ENT			DPNI_CMD_V2(0x241)

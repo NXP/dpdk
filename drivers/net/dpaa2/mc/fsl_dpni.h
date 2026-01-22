@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2025 NXP
+ * Copyright 2016-2026 NXP
  *
  */
 #ifndef __FSL_DPNI_H
@@ -1106,6 +1106,11 @@ int dpni_set_rx_tc_dist(struct fsl_mc_io *mc_io,
 #define DPNI_POLICER_OPT_DISCARD_RED	0x00000002
 
 /**
+ * Do NOT reset counters generally for policer update
+ */
+#define DPNI_POLICER_OPT_DO_NOT_RESET_COUNTERS	0x00000004
+
+/**
  * enum dpni_policer_mode - selecting the policer mode
  * @DPNI_POLICER_MODE_NONE: Policer is disabled
  * @DPNI_POLICER_MODE_PASS_THROUGH: Policer pass through
@@ -1172,8 +1177,13 @@ struct dpni_rx_tc_policing_cfg {
 	uint32_t ebs;
 };
 
-
 int dpni_set_rx_tc_policing(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t tc_id,
+			    const struct dpni_rx_tc_policing_cfg *cfg);
+
+int dpni_set_rx_tc_policing_v1(struct fsl_mc_io *mc_io,
 			    uint32_t cmd_flags,
 			    uint16_t token,
 			    uint8_t tc_id,

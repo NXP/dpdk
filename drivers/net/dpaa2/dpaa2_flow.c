@@ -4252,6 +4252,7 @@ static int
 dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 	uint8_t tc_id, const struct rte_flow_action_meter_mark *meter_mark)
 {
+	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpni_rx_tc_policing_cfg policing_cfg;
 	const struct dpaa2_dev_meter_profile *dpaa2_profile;
 	const struct dpaa2_dev_meter_policy *dpaa2_policy = NULL;
@@ -4262,6 +4263,8 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 			DPNI_OPT_HAS_POLICING, priv->options);
 		return -ENOTSUP;
 	}
+
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	dpaa2_profile = (void *)meter_mark->profile;
 	if (!dpaa2_profile) {
@@ -4280,6 +4283,14 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 	} else if (!dpaa2_policy) {
 		/** Default: Red is discarded if no policy specified.*/
 		policing_cfg.options |= DPNI_POLICER_OPT_DISCARD_RED;
+	}
+
+	if (priv->extract.mtr_flow[tc_id]) {
+		/** Update existing policer.*/
+		dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
+		policing_cfg.options |= DPNI_POLICER_OPT_DO_NOT_RESET_COUNTERS;
+		if (dpaa2_dev->bus_info->mc_rev < DPAA2_POLICER_NOT_RESET_COUNTER_MC_REV)
+			DPAA2_PMD_WARN("The existing policer's counters will be cleaned.");
 	}
 
 	if (meter_mark->init_color == RTE_COLOR_GREEN) {
@@ -4313,8 +4324,13 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 	policing_cfg.eir = dpaa2_profile->pir;
 	policing_cfg.ebs = dpaa2_profile->pbs;
 
-	ret = dpni_set_rx_tc_policing(priv->hw, CMD_PRI_LOW,
-		priv->token, tc_id, &policing_cfg);
+	if (dpaa2_dev->bus_info->mc_rev < DPAA2_POLICER_SET_V2_MC_REV) {
+		ret = dpni_set_rx_tc_policing_v1(priv->hw, CMD_PRI_LOW,
+			priv->token, tc_id, &policing_cfg);
+	} else {
+		ret = dpni_set_rx_tc_policing(priv->hw, CMD_PRI_LOW,
+			priv->token, tc_id, &policing_cfg);
+	}
 	DPAA2_PMD_INFO("%s RX TC%d policer configure %s.",
 		priv->eth_dev->data->name, tc_id,
 		ret ? "failed" : "successfully");
@@ -5811,18 +5827,25 @@ static int
 dpaa2_flow_destroy_meter_flow(struct rte_eth_dev *dev,
 	struct dpaa2_dev_flow *flow)
 {
+	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpni_rx_tc_policing_cfg cfg;
 	int ret;
 	uint8_t tc_id;
 
 	RTE_ASSERT(!flow->qos_flow && flow->fs_flow);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	tc_id = flow->fs_flow->tc_id;
 	RTE_ASSERT(priv->extract.mtr_flow[tc_id] == flow);
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.mode = DPNI_POLICER_MODE_NONE;
-	ret = dpni_set_rx_tc_policing(priv->hw, CMD_PRI_LOW,
-		priv->token, tc_id, &cfg);
+	if (dpaa2_dev->bus_info->mc_rev < DPAA2_POLICER_SET_V2_MC_REV) {
+		ret = dpni_set_rx_tc_policing_v1(priv->hw, CMD_PRI_LOW,
+			priv->token, tc_id, &cfg);
+	} else {
+		ret = dpni_set_rx_tc_policing(priv->hw, CMD_PRI_LOW,
+			priv->token, tc_id, &cfg);
+	}
 	if (ret)
 		return ret;
 	priv->extract.tc_mtr_profile[tc_id] = NULL;
