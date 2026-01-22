@@ -53,7 +53,7 @@ struct dpaa2_dpdmux_dev {
 	uint32_t dpdmux_id; /*HW ID for DPDMUX object */
 	uint8_t num_ifs;   /* Number of interfaces in DPDMUX */
 	struct dpaa2_mux_ep *mux_eps;
-	struct dpaa2_key_extract key_extract;
+	struct dpaa2_flow_tbl_profile tbl_profile;
 	uint8_t *key_param;
 	uint64_t key_param_iova;
 	uint16_t max_flow_num;
@@ -77,8 +77,8 @@ dpaa2_mux_extracts_log(const struct dpaa2_dpdmux_dev *dpdmux_dev)
 
 	DPAA2_FLOW_DUMP("DPDMUX[%d] flow table: %d extracts\r\n",
 		dpdmux_dev->dpdmux_id,
-		dpdmux_dev->key_extract.dpkg.num_extracts);
-	dpaa2_dump_dpkg(&dpdmux_dev->key_extract.dpkg);
+		dpdmux_dev->tbl_profile.dpkg.num_extracts);
+	dpaa2_dump_dpkg(&dpdmux_dev->tbl_profile.dpkg);
 }
 
 static inline void
@@ -174,12 +174,12 @@ _dpaa2_mux_add_parser_extract(struct dpkg_extract *extract,
 }
 
 static int
-dpaa2_mux_find_extract(struct dpaa2_key_extract *key_ext,
+dpaa2_mux_find_extract(struct dpaa2_flow_tbl_profile *tbl_profile,
 	struct dpkg_extract *ext)
 {
 	uint8_t i;
-	struct dpkg_profile_cfg *dpkg = &key_ext->dpkg;
-	struct dpaa2_key_profile *key_profile = &key_ext->key_profile;
+	struct dpkg_profile_cfg *dpkg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *key_profile = &tbl_profile->key_profile;
 
 	for (i = 0; i < dpkg->num_extracts; i++) {
 		if (!memcmp(ext, &dpkg->extracts[i], sizeof(*ext)))
@@ -195,11 +195,11 @@ dpaa2_mux_add_parser_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	struct dpaa2_mux_flow *flow, int *extract_update)
 {
 	int ret, pos;
-	struct dpaa2_key_extract *key_ext = &dpdmux_dev->key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile = &dpdmux_dev->tbl_profile;
 	struct dpkg_extract extract;
 	uint8_t local_key, local_mask, offset = 0xff, idx;
-	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
-	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+	struct dpkg_profile_cfg *kg_cfg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *profile = &tbl_profile->key_profile;
 	uint8_t *key_va = flow->key_addr, *mask_va = flow->mask_addr;
 	struct key_prot_field prot;
 
@@ -215,7 +215,7 @@ dpaa2_mux_add_parser_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	if (ret)
 		return ret;
 
-	pos = dpaa2_mux_find_extract(key_ext, &extract);
+	pos = dpaa2_mux_find_extract(tbl_profile, &extract);
 	if (pos >= 0)
 		goto set_rule;
 
@@ -253,10 +253,10 @@ dpaa2_mux_add_hdr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 {
 	int pos;
 	uint8_t offset = 0xff, idx;
-	struct dpaa2_key_extract *key_ext = &dpdmux_dev->key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile = &dpdmux_dev->tbl_profile;
 	struct dpkg_extract extract;
-	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
-	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+	struct dpkg_profile_cfg *kg_cfg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *profile = &tbl_profile->key_profile;
 	uint8_t *key_va = flow->key_addr, *mask_va = flow->mask_addr;
 	struct key_prot_field prot_field;
 
@@ -272,7 +272,7 @@ dpaa2_mux_add_hdr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	extract.extract.from_hdr.field = field;
 	extract.extract.from_hdr.type = DPKG_FULL_FIELD;
 
-	pos = dpaa2_mux_find_extract(key_ext, &extract);
+	pos = dpaa2_mux_find_extract(tbl_profile, &extract);
 	if (pos >= 0)
 		goto set_rule;
 
@@ -314,10 +314,10 @@ dpaa2_mux_add_spr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 {
 	int pos;
 	uint8_t offset = 0xff, idx;
-	struct dpaa2_key_extract *key_ext = &dpdmux_dev->key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile = &dpdmux_dev->tbl_profile;
 	struct dpkg_extract extract;
-	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
-	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+	struct dpkg_profile_cfg *kg_cfg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *profile = &tbl_profile->key_profile;
 	uint8_t *key_va = flow->key_addr, *mask_va = flow->mask_addr;
 	struct key_prot_field prot_field;
 
@@ -332,7 +332,7 @@ dpaa2_mux_add_spr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	extract.extract.from_parse.size = spr_size;
 	extract.extract.from_parse.offset = spr_offset;
 
-	pos = dpaa2_mux_find_extract(key_ext, &extract);
+	pos = dpaa2_mux_find_extract(tbl_profile, &extract);
 	if (pos >= 0)
 		goto set_rule;
 
@@ -362,7 +362,7 @@ set_rule:
 }
 
 static int
-dpaa2_mux_add_ipaddr_extract(struct dpaa2_key_extract *key_ext,
+dpaa2_mux_add_ipaddr_extract(struct dpaa2_flow_tbl_profile *tbl_profile,
 	enum net_prot prot, uint32_t field, uint32_t field_size,
 	const void *field_data, const void *field_mask,
 	struct dpaa2_mux_flow *flow, int *extract_update)
@@ -427,8 +427,8 @@ dpaa2_mux_add_ipaddr_extract(struct dpaa2_key_extract *key_ext,
 		return -EINVAL;
 	}
 
-	key_profile = &key_ext->key_profile;
-	dpkg = &key_ext->dpkg;
+	key_profile = &tbl_profile->key_profile;
+	dpkg = &tbl_profile->dpkg;
 	num = key_profile->num;
 
 	if (num >= DPKG_MAX_NUM_OF_EXTRACTS) {
@@ -493,10 +493,10 @@ dpaa2_mux_add_non_hdr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	struct dpaa2_mux_flow *flow, int *extract_update)
 {
 	int pos;
-	struct dpaa2_key_extract *key_ext = &dpdmux_dev->key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile = &dpdmux_dev->tbl_profile;
 	struct dpkg_extract extract;
-	struct dpkg_profile_cfg *kg_cfg = &key_ext->dpkg;
-	struct dpaa2_key_profile *profile = &key_ext->key_profile;
+	struct dpkg_profile_cfg *kg_cfg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *profile = &tbl_profile->key_profile;
 	uint8_t offset = 0xff, idx;
 	uint8_t *key_va = flow->key_addr, *mask_va = flow->mask_addr;
 	struct key_prot_field prot;
@@ -518,7 +518,7 @@ dpaa2_mux_add_non_hdr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	extract.extract.from_parse.offset = hdr_offset;
 	extract.extract.from_parse.size = size;
 
-	pos = dpaa2_mux_find_extract(key_ext, &extract);
+	pos = dpaa2_mux_find_extract(tbl_profile, &extract);
 	if (pos >= 0)
 		goto set_rule;
 
@@ -579,7 +579,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct rte_flow_action actions[])
 {
 	struct dpaa2_dpdmux_dev *dpdmux_dev;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	const struct rte_flow_action_vf *vf_conf = NULL;
 	int ret = 0, loop = 0, extract_update = 0;
@@ -626,8 +626,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		goto creation_error;
 	}
 
-	key_extract = &dpdmux_dev->key_extract;
-	dpkg = &key_extract->dpkg;
+	tbl_profile = &dpdmux_dev->tbl_profile;
+	dpkg = &tbl_profile->dpkg;
 
 	flow->key_addr = rte_zmalloc(NULL, DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE,
 		RTE_CACHE_LINE_SIZE);
@@ -712,7 +712,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			}
 
 			if (spec && mask && mask->hdr.src_addr) {
-				ret = dpaa2_mux_add_ipaddr_extract(key_extract,
+				ret = dpaa2_mux_add_ipaddr_extract(tbl_profile,
 					NET_PROT_IPV4, NH_FLD_IPV4_SRC_IP,
 					sizeof(rte_be32_t),
 					&spec->hdr.src_addr,
@@ -722,7 +722,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 					goto creation_error;
 			}
 			if (spec && mask && mask->hdr.dst_addr) {
-				ret = dpaa2_mux_add_ipaddr_extract(key_extract,
+				ret = dpaa2_mux_add_ipaddr_extract(tbl_profile,
 					NET_PROT_IPV4, NH_FLD_IPV4_DST_IP,
 					sizeof(rte_be32_t),
 					&spec->hdr.dst_addr,
@@ -751,7 +751,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			if (memcmp(mask->hdr.src_addr, zero_cmp,
 				NH_FLD_IPV6_ADDR_SIZE)) {
-				ret = dpaa2_mux_add_ipaddr_extract(key_extract,
+				ret = dpaa2_mux_add_ipaddr_extract(tbl_profile,
 					NET_PROT_IPV6, NH_FLD_IPV6_SRC_IP,
 					NH_FLD_IPV6_ADDR_SIZE,
 					&spec->hdr.src_addr,
@@ -763,7 +763,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 
 			if (memcmp(mask->hdr.dst_addr, zero_cmp,
 				NH_FLD_IPV6_ADDR_SIZE)) {
-				ret = dpaa2_mux_add_ipaddr_extract(key_extract,
+				ret = dpaa2_mux_add_ipaddr_extract(tbl_profile,
 					NET_PROT_IPV6, NH_FLD_IPV6_DST_IP,
 					NH_FLD_IPV6_ADDR_SIZE,
 					&spec->hdr.dst_addr,

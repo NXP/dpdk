@@ -275,7 +275,7 @@ dpaa2_flow_extracts_log(const struct dpaa2_dev_priv *priv,
 	const char *prefix, uint8_t tc_id)
 {
 	char string[1024];
-	const struct dpaa2_key_extract *extract;
+	const struct dpaa2_flow_tbl_profile *tbl_profile;
 	int offset = 0;
 
 	if (!dpaa2_flow_control_log)
@@ -284,17 +284,17 @@ dpaa2_flow_extracts_log(const struct dpaa2_dev_priv *priv,
 	offset += sprintf(&string[offset],
 		"%s's", priv->eth_dev->data->name);
 	if (tc_id >= MAX_TCS) {
-		extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 		offset += sprintf(&string[offset], " QoS");
 	} else {
-		extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 		offset += sprintf(&string[offset], " FS[%d]", tc_id);
 	}
 	offset += sprintf(&string[offset],
 		" table: %d extracts/%d entries\n",
-		extract->dpkg.num_extracts, extract->entry_num);
+		tbl_profile->dpkg.num_extracts, tbl_profile->entry_num);
 	DPAA2_FLOW_DUMP("\n%s %s", prefix, string);
-	dpaa2_dump_dpkg(&extract->dpkg);
+	dpaa2_dump_dpkg(&tbl_profile->dpkg);
 }
 
 static inline void
@@ -375,7 +375,7 @@ dpaa2_dump_extract_map(const struct dpaa2_dev_priv *priv,
 {
 	int idx, offset = 0;
 	char string[2048];
-	const struct dpaa2_key_extract *extract;
+	const struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	if (!dpaa2_flow_control_log)
 		return;
@@ -383,9 +383,9 @@ dpaa2_dump_extract_map(const struct dpaa2_dev_priv *priv,
 	DPAA2_FLOW_DUMP("%s: %s\n", priv->eth_dev->data->name, prefix);
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE) {
-		extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 		offset += sprintf(&string[offset], "QoS entry map:");
-		if (!extract->entry_num) {
+		if (!tbl_profile->entry_num) {
 			offset += sprintf(&string[offset], " empty\n");
 			goto qos_dump_end;
 		} else {
@@ -393,7 +393,7 @@ dpaa2_dump_extract_map(const struct dpaa2_dev_priv *priv,
 		}
 		for (idx = 0; idx < priv->qos_entries; idx++) {
 			offset += sprintf(&string[offset], "%d ",
-				dpaa2_flow_entry_map_get(extract->entry_map, idx) ?
+				dpaa2_flow_entry_map_get(tbl_profile->entry_map, idx) ?
 					1 : 0);
 			if (!((idx + 1) % 16) || (idx + 1) == priv->qos_entries)
 				offset += sprintf(&string[offset], "\n");
@@ -405,17 +405,17 @@ qos_dump_end:
 		return;
 	}
 
-	extract = &priv->extract.tc_key_extract[group];
-	if (!extract->entry_num) {
+	tbl_profile = &priv->flow_profile.tc_profile[group];
+	if (!tbl_profile->entry_num) {
 		DPAA2_FLOW_DUMP("FS[%d] table is empty\n\n", group);
 		return;
 	}
 
 	offset = sprintf(&string[offset],
-		"FS[%d] %d entries:\n", group, extract->entry_num);
+		"FS[%d] %d entries:\n", group, tbl_profile->entry_num);
 	for (idx = 0; idx < priv->fs_entries; idx++) {
 		offset += sprintf(&string[offset], "%d ",
-			dpaa2_flow_entry_map_get(extract->entry_map, idx) ?
+			dpaa2_flow_entry_map_get(tbl_profile->entry_map, idx) ?
 			1 : 0);
 		if (!((idx + 1) % 16) || (idx + 1) == priv->fs_entries)
 			offset += sprintf(&string[offset], "\n");
@@ -691,7 +691,7 @@ static int
 dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow)
 {
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	int ret;
 	struct fsl_mc_io *dpni = priv->hw;
 
@@ -700,8 +700,8 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 			flow->entry_index, priv->qos_entries);
 		return -EINVAL;
 	}
-	extract = &priv->extract.qos_key_extract;
-	if (dpaa2_flow_entry_map_get(extract->entry_map,
+	tbl_profile = &priv->flow_profile.qos_profile;
+	if (dpaa2_flow_entry_map_get(tbl_profile->entry_map,
 		flow->entry_index)) {
 		DPAA2_PMD_ERR("QoS entry[%d] has been occupied",
 			flow->entry_index);
@@ -736,8 +736,8 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 			flow->flow_action.qos_action.action_jump_cfg.group);
 		return ret;
 	}
-	dpaa2_flow_entry_map_set(extract->entry_map, flow->entry_index, 1);
-	extract->entry_num++;
+	dpaa2_flow_entry_map_set(tbl_profile->entry_map, flow->entry_index, 1);
+	tbl_profile->entry_num++;
 
 	return 0;
 }
@@ -747,14 +747,14 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow)
 {
 	struct rte_dpaa2_device *dpaa2_dev;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	int ret;
 	struct fsl_mc_io *dpni = priv->hw;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
-	extract = &priv->extract.tc_key_extract[flow->tc_id];
-	if (dpaa2_flow_entry_map_get(extract->entry_map,
+	tbl_profile = &priv->flow_profile.tc_profile[flow->tc_id];
+	if (dpaa2_flow_entry_map_get(tbl_profile->entry_map,
 		flow->entry_index)) {
 		DPAA2_PMD_ERR("FS[%d].entry[%d] has been occupied",
 			flow->tc_id, flow->entry_index);
@@ -778,8 +778,8 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 		return ret;
 	}
 
-	dpaa2_flow_entry_map_set(extract->entry_map, flow->entry_index, 1);
-	extract->entry_num++;
+	dpaa2_flow_entry_map_set(tbl_profile->entry_map, flow->entry_index, 1);
+	tbl_profile->entry_num++;
 
 	return 0;
 }
@@ -907,9 +907,9 @@ dpaa2_flow_faf_advance(struct dpaa2_dev_priv *priv,
 	struct key_prot_field prot;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_profile = &priv->extract.qos_key_extract.key_profile;
+		key_profile = &priv->flow_profile.qos_profile.key_profile;
 	else
-		key_profile = &priv->extract.tc_key_extract[tc_id].key_profile;
+		key_profile = &priv->flow_profile.tc_profile[tc_id].key_profile;
 
 	if (key_profile->num >= DPKG_MAX_NUM_OF_EXTRACTS) {
 		DPAA2_PMD_ERR("Number of extracts overflows");
@@ -939,9 +939,9 @@ dpaa2_flow_pr_advance(struct dpaa2_dev_priv *priv,
 	struct key_prot_field prot;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_profile = &priv->extract.qos_key_extract.key_profile;
+		key_profile = &priv->flow_profile.qos_profile.key_profile;
 	else
-		key_profile = &priv->extract.tc_key_extract[tc_id].key_profile;
+		key_profile = &priv->flow_profile.tc_profile[tc_id].key_profile;
 
 	if (key_profile->num >= DPKG_MAX_NUM_OF_EXTRACTS) {
 		DPAA2_PMD_ERR("Number of extracts overflows");
@@ -983,9 +983,9 @@ dpaa2_flow_key_profile_advance(enum net_prot prot,
 	}
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_profile = &priv->extract.qos_key_extract.key_profile;
+		key_profile = &priv->flow_profile.qos_profile.key_profile;
 	else
-		key_profile = &priv->extract.tc_key_extract[tc_id].key_profile;
+		key_profile = &priv->flow_profile.tc_profile[tc_id].key_profile;
 
 	if (key_profile->num >= DPKG_MAX_NUM_OF_EXTRACTS) {
 		DPAA2_PMD_ERR("Number of extracts overflows");
@@ -1024,16 +1024,16 @@ dpaa2_flow_faf_add_hdr(int faf_byte,
 	int *insert_offset)
 {
 	int extract_idx;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract extract;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	dpkg = &key_extract->dpkg;
+	dpkg = &tbl_profile->dpkg;
 
 	if (dpkg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
 		DPAA2_PMD_ERR("Number of extracts overflows");
@@ -1062,7 +1062,7 @@ dpaa2_flow_pr_add_hdr(uint32_t pr_offset,
 	int *insert_offset)
 {
 	int extract_idx;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract extract;
 
@@ -1073,11 +1073,11 @@ dpaa2_flow_pr_add_hdr(uint32_t pr_offset,
 	}
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	dpkg = &key_extract->dpkg;
+	dpkg = &tbl_profile->dpkg;
 
 	if (dpkg->num_extracts >= DPKG_MAX_NUM_OF_EXTRACTS) {
 		DPAA2_PMD_ERR("Number of extracts overflows");
@@ -1107,16 +1107,16 @@ dpaa2_flow_extract_add_hdr(enum net_prot prot,
 	int *insert_offset)
 {
 	int extract_idx;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpkg_extract extract;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	dpkg = &key_extract->dpkg;
+	dpkg = &tbl_profile->dpkg;
 
 	if (dpaa2_flow_ip_address_extract(prot, field)) {
 		DPAA2_PMD_ERR("%s only for none IP address extract",
@@ -1194,7 +1194,7 @@ _dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	int offset, int size,
 	enum dpaa2_flow_dist_type dist_type, int tc_id)
 {
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpaa2_key_profile *key_profile;
 	int last_extract_size, index, raw_idx, item_size;
@@ -1203,12 +1203,12 @@ _dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	int ret;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	dpkg = &key_extract->dpkg;
-	key_profile = &key_extract->key_profile;
+	dpkg = &tbl_profile->dpkg;
+	key_profile = &tbl_profile->key_profile;
 
 	last_extract_size = (size % DPAA2_FLOW_MAX_KEY_SIZE);
 	num_extracts = (size / DPAA2_FLOW_MAX_KEY_SIZE);
@@ -1292,17 +1292,17 @@ dpaa2_flow_faf_add_rule(struct dpaa2_dev_priv *priv,
 	int offset;
 	uint8_t *key_addr;
 	uint8_t *mask_addr;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_key_profile *key_profile;
 	uint8_t faf_byte = faf_bit_off / 8;
 	uint8_t faf_bit_in_byte = faf_bit_off % 8;
 
 	faf_bit_in_byte = 7 - faf_bit_in_byte;
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[group];
-	key_profile = &key_extract->key_profile;
+		tbl_profile = &priv->flow_profile.tc_profile[group];
+	key_profile = &tbl_profile->key_profile;
 	offset = dpaa2_flow_extract_key_offset(key_profile,
 			DPAA2_FAF_KEY, NET_PROT_NONE, faf_byte);
 	if (offset < 0) {
@@ -1546,13 +1546,13 @@ dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 	enum dpaa2_flow_dist_type dist_type, int group, int *recfg)
 {
 	int ret, index, local_cfg = false;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_key_profile *key_profile;
 	uint8_t faf_byte = faf_bit_off / 8;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE) {
-		extract = &priv->extract.qos_key_extract;
-		key_profile = &extract->key_profile;
+		tbl_profile = &priv->flow_profile.qos_profile;
+		key_profile = &tbl_profile->key_profile;
 
 		index = dpaa2_flow_extract_search(key_profile,
 				DPAA2_FAF_KEY, NET_PROT_NONE, faf_byte);
@@ -1575,8 +1575,8 @@ dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 			return ret;
 		}
 	} else if (dist_type == DPAA2_FLOW_FS_TYPE) {
-		extract = &priv->extract.tc_key_extract[group];
-		key_profile = &extract->key_profile;
+		tbl_profile = &priv->flow_profile.tc_profile[group];
+		key_profile = &tbl_profile->key_profile;
 
 		index = dpaa2_flow_extract_search(key_profile,
 				DPAA2_FAF_KEY, NET_PROT_NONE, faf_byte);
@@ -1616,16 +1616,16 @@ dpaa2_flow_add_pr_extract_rule(struct dpaa2_generic_flow *flow,
 	enum dpaa2_flow_dist_type dist_type)
 {
 	int index, ret, local_cfg = false;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_key_profile *key_profile;
 	uint32_t pr_field = pr_offset << 16 | pr_size;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	key_profile = &key_extract->key_profile;
+	key_profile = &tbl_profile->key_profile;
 
 	index = dpaa2_flow_extract_search(key_profile,
 			DPAA2_PR_KEY, NET_PROT_NONE, pr_field);
@@ -1665,18 +1665,18 @@ dpaa2_flow_add_hdr_extract_rule(struct dpaa2_generic_flow *flow,
 	enum dpaa2_flow_dist_type dist_type)
 {
 	int index, ret, local_cfg = false;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_key_profile *key_profile;
 
 	if (dpaa2_flow_ip_address_extract(prot, field))
 		return -EINVAL;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	key_profile = &key_extract->key_profile;
+	key_profile = &tbl_profile->key_profile;
 
 	index = dpaa2_flow_extract_search(key_profile,
 			DPAA2_NET_PROT_KEY, prot, field);
@@ -1716,7 +1716,7 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_generic_flow *flow,
 	enum dpaa2_flow_dist_type dist_type)
 {
 	int local_cfg = false, update = 0, ret, pos = 0;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_key_profile *key_profile;
 	struct dpkg_profile_cfg *dpkg;
 	uint8_t *key_addr, *mask_addr, num;
@@ -1777,12 +1777,12 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_generic_flow *flow,
 	}
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	key_profile = &key_extract->key_profile;
-	dpkg = &key_extract->dpkg;
+	key_profile = &tbl_profile->key_profile;
+	dpkg = &tbl_profile->dpkg;
 	num = key_profile->num;
 	key_addr = flow->key_addr;
 	mask_addr = flow->mask_addr;
@@ -3343,7 +3343,7 @@ dpaa2_flow_raw_extract_rule_set(struct dpaa2_generic_flow *flow,
 {
 	struct dpaa2_dev_priv *priv = flow->priv;
 	int local_cfg = 0, ret;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	const struct rte_flow_item *pattern = &dpaa2_pattern->generic_item;
 	const struct rte_flow_item_raw *spec = pattern->spec;
 	const struct rte_flow_item_raw *mask = pattern->mask;
@@ -3380,9 +3380,9 @@ dpaa2_flow_raw_extract_rule_set(struct dpaa2_generic_flow *flow,
 	}
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[attr->group];
+		tbl_profile = &priv->flow_profile.tc_profile[attr->group];
 
 	ret = dpaa2_flow_extract_add_raw(priv,
 		spec->offset, spec->length, dist_type,
@@ -3395,7 +3395,7 @@ dpaa2_flow_raw_extract_rule_set(struct dpaa2_generic_flow *flow,
 	if (dist_type == DPAA2_FLOW_QOS_TYPE ||
 		dist_type == DPAA2_FLOW_FS_TYPE) {
 		ret = dpaa2_flow_raw_rule_data_set(flow,
-			&key_extract->key_profile,
+			&tbl_profile->key_profile,
 			spec->offset, spec->length,
 			spec->pattern, mask->pattern,
 			dist_type);
@@ -3530,22 +3530,22 @@ dpaa2_flow_acquire_entry_idx(struct dpaa2_dev_priv *priv,
 {
 	int occupied = -1;
 	uint16_t max_entries;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE) {
-		extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 		max_entries = priv->qos_entries;
 	} else {
-		extract = &priv->extract.tc_key_extract[group];
+		tbl_profile = &priv->flow_profile.tc_profile[group];
 		max_entries = priv->fs_entries;
 	}
 
-	if (!dpaa2_flow_entry_map_get(extract->entry_map, idx))
+	if (!dpaa2_flow_entry_map_get(tbl_profile->entry_map, idx))
 		return idx;
 
 	idx = 0;
 	while (idx < max_entries) {
-		if (!dpaa2_flow_entry_map_get(extract->entry_map, idx)) {
+		if (!dpaa2_flow_entry_map_get(tbl_profile->entry_map, idx)) {
 			occupied = idx;
 			break;
 		}
@@ -3874,8 +3874,8 @@ dpaa2_flow_clear_fs_table(struct dpaa2_dev_priv *priv,
 			DPAA2_PMD_ERR("TC[%d] clear failed", tc_id);
 			return ret;
 		}
-		priv->extract.tc_key_extract[tc_id].entry_num = 0;
-		memset(priv->extract.tc_key_extract[tc_id].entry_map,
+		priv->flow_profile.tc_profile[tc_id].entry_num = 0;
+		memset(priv->flow_profile.tc_profile[tc_id].entry_map,
 			0, priv->fs_entries);
 	}
 
@@ -3889,29 +3889,29 @@ dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
 	int ret;
 	struct dpni_rx_dist_cfg *tc_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_queue *queue;
 
-	extract = &priv->extract.tc_key_extract[tc_id];
+	tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	if (!extract->enabled) {
+	if (!tbl_profile->enabled) {
 		DPAA2_PMD_WARN("%s: TC[%d] FS table not configured!",
 			__func__, tc_id);
 	}
 
-	tc_cfg = &extract->tc_cfg;
+	tc_cfg = &tbl_profile->tc_cfg;
 
 	tc_cfg->enable = true;
 	if (discard) {
-		extract->default_drop = true;
+		tbl_profile->default_drop = true;
 		tc_cfg->fs_miss_flow_id = DPNI_FS_MISS_ACTION_DROP;
 	} else {
 		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id,
 			default_queue);
 		if (!queue)
 			return -EINVAL;
-		extract->default_drop = false;
-		extract->default_queue.index = default_queue;
+		tbl_profile->default_drop = false;
+		tbl_profile->default_queue.index = default_queue;
 		tc_cfg->fs_miss_flow_id = queue->flow_id;
 	}
 	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW,
@@ -3928,7 +3928,7 @@ static int
 dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 	uint8_t tc_id, int rss_dist)
 {
-	struct dpaa2_key_extract *tc_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	uint8_t *key_cfg_buf;
 	int ret;
 	struct dpni_rx_dist_cfg *tc_cfg;
@@ -3943,24 +3943,24 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 		return ret;
 	}
 
-	tc_extract = &priv->extract.tc_key_extract[tc_id];
-	if (!tc_extract->dpkg.num_extracts)
+	tbl_profile = &priv->flow_profile.tc_profile[tc_id];
+	if (!tbl_profile->dpkg.num_extracts)
 		return 0;
 
-	key_cfg_buf = priv->extract.tc_key_extract[tc_id].extract_param;
+	key_cfg_buf = priv->flow_profile.tc_profile[tc_id].extract_param;
 
-	key_max_size = tc_extract->key_profile.key_max_size;
+	key_max_size = tbl_profile->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
 	dpaa2_flow_extracts_log(priv, "Configure", tc_id);
-	ret = dpkg_prepare_key_cfg(&tc_extract->dpkg,
+	ret = dpkg_prepare_key_cfg(&tbl_profile->dpkg,
 			key_cfg_buf);
 	if (ret < 0) {
 		DPAA2_PMD_ERR("TC[%d] prepare key failed", tc_id);
 		return ret;
 	}
 
-	tc_cfg = &tc_extract->tc_cfg;
+	tc_cfg = &tbl_profile->tc_cfg;
 	if (rss_dist)
 		tc_cfg->enable = true;
 	else
@@ -3980,18 +3980,18 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 	}
 
 	if (rss_dist) {
-		tc_extract->is_rss = true;
+		tbl_profile->is_rss = true;
 		goto successful_config;
 	}
 
-	tc_extract->is_rss = false;
+	tbl_profile->is_rss = false;
 
 	tc_cfg->enable = true;
-	if (tc_extract->default_drop) {
+	if (tbl_profile->default_drop) {
 		tc_cfg->fs_miss_flow_id = DPNI_FS_MISS_ACTION_DROP;
 	} else {
 		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id,
-			tc_extract->default_queue.index);
+			tbl_profile->default_queue.index);
 		tc_cfg->fs_miss_flow_id = queue->flow_id;
 	}
 	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW,
@@ -4007,7 +4007,7 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 		return ret;
 
 successful_config:
-	tc_extract->enabled = true;
+	tbl_profile->enabled = true;
 
 	return 0;
 }
@@ -4019,20 +4019,20 @@ dpaa2_flow_qos_table_set_default(struct dpaa2_dev_priv *priv,
 	int ret;
 	struct dpni_qos_tbl_cfg *qos_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
-	extract = &priv->extract.qos_key_extract;
-	if (!extract->enabled)
+	tbl_profile = &priv->flow_profile.qos_profile;
+	if (!tbl_profile->enabled)
 		DPAA2_PMD_WARN("%s: QoS table not configured!", __func__);
 
-	qos_cfg = &extract->qos_cfg;
+	qos_cfg = &tbl_profile->qos_cfg;
 	qos_cfg->default_tc = default_tc;
 	if (discard) {
-		extract->default_drop = true;
+		tbl_profile->default_drop = true;
 		qos_cfg->discard_on_miss = true;
 	} else {
-		extract->default_drop = false;
-		extract->default_jump.group = default_tc;
+		tbl_profile->default_drop = false;
+		tbl_profile->default_jump.group = default_tc;
 		qos_cfg->discard_on_miss = false;
 	}
 
@@ -4049,7 +4049,7 @@ static int
 dpaa2_flow_qos_table_config(struct dpaa2_dev_priv *priv,
 	int rss_dist)
 {
-	struct dpaa2_key_extract *qos_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	uint8_t *key_cfg_buf;
 	int ret;
 	struct dpni_qos_tbl_cfg *qos_cfg;
@@ -4076,35 +4076,35 @@ dpaa2_flow_qos_table_config(struct dpaa2_dev_priv *priv,
 			DPAA2_PMD_ERR("QoS table clear failed(%d)", ret);
 			return ret;
 		}
-		priv->extract.qos_key_extract.entry_num = 0;
-		memset(priv->extract.qos_key_extract.entry_map,
+		priv->flow_profile.qos_profile.entry_num = 0;
+		memset(priv->flow_profile.qos_profile.entry_map,
 			0, priv->qos_entries);
 		break;
 	}
 
-	qos_extract = &priv->extract.qos_key_extract;
-	if (!qos_extract->dpkg.num_extracts)
+	tbl_profile = &priv->flow_profile.qos_profile;
+	if (!tbl_profile->dpkg.num_extracts)
 		return 0;
 
-	key_cfg_buf = priv->extract.qos_key_extract.extract_param;
+	key_cfg_buf = priv->flow_profile.qos_profile.extract_param;
 
-	key_max_size = qos_extract->key_profile.key_max_size;
+	key_max_size = tbl_profile->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
 	dpaa2_flow_extracts_log(priv, "Configure", MAX_TCS);
 
-	ret = dpkg_prepare_key_cfg(&qos_extract->dpkg,
+	ret = dpkg_prepare_key_cfg(&tbl_profile->dpkg,
 			key_cfg_buf);
 	if (ret < 0) {
 		DPAA2_PMD_ERR("QoS prepare extract failed");
 		return ret;
 	}
-	qos_cfg = &qos_extract->qos_cfg;
+	qos_cfg = &tbl_profile->qos_cfg;
 	if (rss_dist) {
 		qos_cfg->discard_on_miss = true;
 	} else {
-		qos_cfg->default_tc = qos_extract->default_jump.group;
-		if (qos_extract->default_drop)
+		qos_cfg->default_tc = tbl_profile->default_jump.group;
+		if (tbl_profile->default_drop)
 			qos_cfg->discard_on_miss = true;
 		else
 			qos_cfg->discard_on_miss = false;
@@ -4115,7 +4115,7 @@ dpaa2_flow_qos_table_config(struct dpaa2_dev_priv *priv,
 		DPAA2_PMD_ERR("QoS table set failed(%d)", ret);
 		return ret;
 	}
-	qos_extract->enabled = true;
+	tbl_profile->enabled = true;
 
 	ret = dpaa2_flow_rule_add_all(priv, DPAA2_FLOW_QOS_TYPE,
 			entry_size, 0);
@@ -4285,7 +4285,7 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 		policing_cfg.options |= DPNI_POLICER_OPT_DISCARD_RED;
 	}
 
-	if (priv->extract.mtr_flow[tc_id]) {
+	if (priv->flow_profile.mtr_flow[tc_id]) {
 		/** Update existing policer.*/
 		dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 		policing_cfg.options |= DPNI_POLICER_OPT_DO_NOT_RESET_COUNTERS;
@@ -4335,7 +4335,7 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 		priv->eth_dev->data->name, tc_id,
 		ret ? "failed" : "successfully");
 	if (!ret)
-		priv->extract.tc_mtr_profile[tc_id] = (void *)meter_mark->profile;
+		priv->flow_profile.tc_mtr_profile[tc_id] = (void *)meter_mark->profile;
 
 	return ret;
 }
@@ -4483,7 +4483,7 @@ dpaa2_flow_generic_extract_rule_set(struct dpaa2_generic_flow *flow,
 	int ret = 0, i = 0;
 	struct dpaa2_dev_priv *priv = flow->priv;
 	uint16_t key_size;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct rte_dpaa2_flow_item *dpaa2_pattern = NULL;
 
 	ret = dpaa2_flow_item_convert(pattern, &dpaa2_pattern,
@@ -4496,21 +4496,21 @@ dpaa2_flow_generic_extract_rule_set(struct dpaa2_generic_flow *flow,
 	flow->ip_dst = NET_PROT_NONE;
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[attr->group];
+		tbl_profile = &priv->flow_profile.tc_profile[attr->group];
 
-	if (is_rss || (!is_rss && key_extract->is_rss)) {
+	if (is_rss || (!is_rss && tbl_profile->is_rss)) {
 		RTE_ASSERT(dist_type == DPAA2_FLOW_FS_TYPE);
 		if (!update) {
 			dpaa2_flow_clean(priv->eth_dev, attr->group);
-			key_extract->rss_flow = NULL;
+			tbl_profile->rss_flow = NULL;
 		}
 		if (!is_rss)
-			key_extract->tc_cfg.dist_size = priv->dist_queues;
-		memset(&key_extract->dpkg, 0,
+			tbl_profile->tc_cfg.dist_size = priv->dist_queues;
+		memset(&tbl_profile->dpkg, 0,
 			sizeof(struct dpkg_profile_cfg));
-		memset(&key_extract->key_profile, 0,
+		memset(&tbl_profile->key_profile, 0,
 			sizeof(struct dpaa2_key_profile));
 	}
 
@@ -4665,7 +4665,7 @@ dpaa2_flow_generic_extract_rule_set(struct dpaa2_generic_flow *flow,
 		i++;
 	}
 
-	key_size = key_extract->key_profile.key_max_size;
+	key_size = tbl_profile->key_profile.key_max_size;
 	flow->rule_cfg.key_size = dpaa2_flow_entry_size(key_size);
 
 	if (!extract_cfg)
@@ -4868,12 +4868,12 @@ dpaa2_flow_ip_addr_extract_pos(uint32_t field,
 
 static int
 dpaa2_flow_key_offset_size(struct dpaa2_dev_flow *flow,
-	struct dpaa2_key_extract *key_extract, uint8_t idx,
+	struct dpaa2_flow_tbl_profile *tbl_profile, uint8_t idx,
 	uint8_t *offset, uint8_t *size,
 	enum dpaa2_flow_dist_type type)
 {
-	struct dpkg_profile_cfg *dpkg = &key_extract->dpkg;
-	struct dpaa2_key_profile *profile = &key_extract->key_profile;
+	struct dpkg_profile_cfg *dpkg = &tbl_profile->dpkg;
+	struct dpaa2_key_profile *profile = &tbl_profile->key_profile;
 	int pos, prev_ip_addr_pos;
 	uint32_t field;
 	uint8_t ip_addr_size = 0, ip_addr_offset = 0;
@@ -4983,7 +4983,7 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow, *next;
 	uint8_t i, key_offset, key_size, j, remove_conut = 0;
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpkg_profile_cfg *dpkg;
 	struct dpaa2_key_profile *key_profile;
 	int valid[DPKG_MAX_NUM_OF_EXTRACTS], update = 0, ret, ipaddr;
@@ -4999,12 +4999,12 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 	}
 
 	if (type == DPAA2_FLOW_QOS_TYPE)
-		key_extract = &priv->extract.qos_key_extract;
+		tbl_profile = &priv->flow_profile.qos_profile;
 	else
-		key_extract = &priv->extract.tc_key_extract[tc_id];
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
 
-	dpkg = &key_extract->dpkg;
-	key_profile = &key_extract->key_profile;
+	dpkg = &tbl_profile->dpkg;
+	key_profile = &tbl_profile->key_profile;
 	for (i = 0; i < key_profile->num; i++) {
 		valid[i] = 0;
 		flow = LIST_FIRST(&priv->flows);
@@ -5022,7 +5022,7 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 			key_offset = 0;
 			key_size = 0;
 
-			ret = dpaa2_flow_key_offset_size(flow, key_extract, i,
+			ret = dpaa2_flow_key_offset_size(flow, tbl_profile, i,
 				&key_offset, &key_size, type);
 			if (ret)
 				goto skip_validation;
@@ -5231,7 +5231,7 @@ dpaa2_flow_remove_generic_entry(struct rte_eth_dev *dev,
 	int ret = 0;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = priv->hw;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 	uint8_t tc_id;
 
@@ -5254,9 +5254,9 @@ dpaa2_flow_remove_generic_entry(struct rte_eth_dev *dev,
 			dpaa2_flow_fs_entry_log("Delete failed", flow);
 		} else {
 			dpaa2_flow_fs_entry_log("Delete success", flow);
-			extract = &priv->extract.tc_key_extract[tc_id];
-			extract->entry_num--;
-			dpaa2_flow_entry_map_set(extract->entry_map,
+			tbl_profile = &priv->flow_profile.tc_profile[tc_id];
+			tbl_profile->entry_num--;
+			dpaa2_flow_entry_map_set(tbl_profile->entry_map,
 				flow->entry_index, 0);
 		}
 		break;
@@ -5283,9 +5283,9 @@ remove_qos_flow:
 			/** Will not remove FS entry.*/
 		} else {
 			dpaa2_flow_qos_entry_log("Delete success", flow);
-			extract = &priv->extract.qos_key_extract;
-			extract->entry_num--;
-			dpaa2_flow_entry_map_set(extract->entry_map,
+			tbl_profile = &priv->flow_profile.qos_profile;
+			tbl_profile->entry_num--;
+			dpaa2_flow_entry_map_set(tbl_profile->entry_map,
 				flow->entry_index, 0);
 		}
 	}
@@ -5399,7 +5399,7 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 	struct rte_flow_action fs_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
 	struct rte_flow_action_jump action_jump;
 	const struct rte_flow_action_rss *action_rss;
-	struct dpaa2_key_extract *tc_ext;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	if (type != DPAA2_FLOW_QOS_TYPE && type != DPAA2_FLOW_FS_TYPE)
 		return NULL;
@@ -5522,8 +5522,8 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 	priv->cur_flow = flow;
 	if (is_rss) {
 		action_rss = actions[0].conf;
-		tc_ext = &priv->extract.tc_key_extract[attr->group];
-		tc_ext->tc_cfg.dist_size = action_rss->queue_num;
+		tbl_profile = &priv->flow_profile.tc_profile[attr->group];
+		tbl_profile->tc_cfg.dist_size = action_rss->queue_num;
 	}
 	ret = dpaa2_flow_generic_extract_rule_set(flow,
 		attr, pattern, is_rss, type, false);
@@ -5596,7 +5596,7 @@ dpaa2_flow_create_meter_flow(struct rte_eth_dev *dev,
 	if (attr->group >= priv->num_rx_tc)
 		return NULL;
 
-	if (priv->extract.mtr_flow[attr->group])
+	if (priv->flow_profile.mtr_flow[attr->group])
 		return NULL;
 
 	fs_flow = rte_zmalloc(NULL, sizeof(struct dpaa2_generic_flow),
@@ -5624,7 +5624,7 @@ dpaa2_flow_create_meter_flow(struct rte_eth_dev *dev,
 		return NULL;
 	}
 	flow->is_meter_flow = true;
-	priv->extract.mtr_flow[fs_flow->tc_id] = flow;
+	priv->flow_profile.mtr_flow[fs_flow->tc_id] = flow;
 
 	return (struct rte_flow *)flow;
 }
@@ -5784,7 +5784,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	flow->fs_flow = fs_flow;
 	flow->priv = priv;
 	if (fs_flow && fs_flow->is_rss)
-		priv->extract.tc_key_extract[attr->group].rss_flow = flow;
+		priv->flow_profile.tc_profile[attr->group].rss_flow = flow;
 
 	/* New rules are inserted. */
 	curr = LIST_FIRST(&priv->flows);
@@ -5836,7 +5836,7 @@ dpaa2_flow_destroy_meter_flow(struct rte_eth_dev *dev,
 	RTE_ASSERT(!flow->qos_flow && flow->fs_flow);
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	tc_id = flow->fs_flow->tc_id;
-	RTE_ASSERT(priv->extract.mtr_flow[tc_id] == flow);
+	RTE_ASSERT(priv->flow_profile.mtr_flow[tc_id] == flow);
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.mode = DPNI_POLICER_MODE_NONE;
 	if (dpaa2_dev->bus_info->mc_rev < DPAA2_POLICER_SET_V2_MC_REV) {
@@ -5848,8 +5848,8 @@ dpaa2_flow_destroy_meter_flow(struct rte_eth_dev *dev,
 	}
 	if (ret)
 		return ret;
-	priv->extract.tc_mtr_profile[tc_id] = NULL;
-	priv->extract.mtr_flow[tc_id] = NULL;
+	priv->flow_profile.tc_mtr_profile[tc_id] = NULL;
+	priv->flow_profile.mtr_flow[tc_id] = NULL;
 	rte_free(flow->fs_flow);
 	rte_free(flow);
 
@@ -5863,7 +5863,7 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	int qos_ret = 0, fs_ret = 0;
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct dpaa2_key_extract *tc_ext;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	uint8_t tc_id;
 
 	RTE_SET_USED(error);
@@ -5901,8 +5901,8 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 			rte_free(flow->fs_flow->mask_addr);
 		if (flow->fs_flow->is_rss) {
 			tc_id = flow->fs_flow->tc_id;
-			tc_ext = &priv->extract.tc_key_extract[tc_id];
-			tc_ext->rss_flow = NULL;
+			tbl_profile = &priv->flow_profile.tc_profile[tc_id];
+			tbl_profile->rss_flow = NULL;
 		}
 		rte_free(flow->fs_flow);
 		flow->fs_flow = NULL;
@@ -5984,7 +5984,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow;
-	struct dpaa2_key_extract *tc_ext = NULL;
+	struct dpaa2_flow_tbl_profile *tbl_profile = NULL;
 	int ret, is_rss = false, hw_update = false;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id;
@@ -6002,7 +6002,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	if (flow->is_meter_flow) {
 		RTE_ASSERT(flow->fs_flow);
 		tc_id = flow->fs_flow->tc_id;
-		RTE_ASSERT(priv->extract.mtr_flow[tc_id] == flow);
+		RTE_ASSERT(priv->flow_profile.mtr_flow[tc_id] == flow);
 		return dpaa2_flow_fs_action_update(priv, flow->fs_flow, actions);
 	}
 	LIST_FOREACH(flow, &priv->flows, next) {
@@ -6037,10 +6037,10 @@ action_update:
 	if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_RSS) {
 		is_rss = true;
 		tc_id = flow->fs_flow->tc_id;
-		tc_ext = &priv->extract.tc_key_extract[tc_id];
-		if (tc_ext->rss_flow != flow) {
+		tbl_profile = &priv->flow_profile.tc_profile[tc_id];
+		if (tbl_profile->rss_flow != flow) {
 			DPAA2_PMD_ERR("%s: RSS flow(%p) != TC[%d]'s rss flow(%p)",
-				__func__, flow, flow->fs_flow->tc_id, tc_ext->rss_flow);
+				__func__, flow, flow->fs_flow->tc_id, tbl_profile->rss_flow);
 		}
 	}
 	if (fs_action_num > 0 &&
@@ -6076,7 +6076,7 @@ skip_remove_fs_entry:
 		memset(&attr, 0, sizeof(attr));
 		attr.group = flow->fs_flow->tc_id;
 		attr.ingress = 1;
-		tc_ext->tc_cfg.dist_size = rss_conf->queue_num;
+		tbl_profile->tc_cfg.dist_size = rss_conf->queue_num;
 		if (ret > 0) {
 			memset(&flow->fs_flow->rule_cfg, 0,
 				sizeof(struct dpni_rule_cfg));

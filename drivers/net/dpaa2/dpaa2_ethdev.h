@@ -284,7 +284,7 @@ struct dpaa2_key_profile {
 	uint16_t key_max_size;
 };
 
-struct dpaa2_key_extract {
+struct dpaa2_flow_tbl_profile {
 	struct dpkg_profile_cfg dpkg;
 	struct dpaa2_key_profile key_profile;
 	uint8_t *extract_param;
@@ -304,9 +304,9 @@ struct dpaa2_key_extract {
 	};
 };
 
-struct extract_s {
-	struct dpaa2_key_extract qos_key_extract;
-	struct dpaa2_key_extract tc_key_extract[MAX_TCS];
+struct dpaa2_flow_profile {
+	struct dpaa2_flow_tbl_profile qos_profile;
+	struct dpaa2_flow_tbl_profile tc_profile[MAX_TCS];
 	/** Meter per TC.*/
 	struct dpaa2_dev_meter_profile *tc_mtr_profile[MAX_TCS];
 	void *mtr_flow[MAX_TCS];
@@ -386,7 +386,7 @@ struct dpaa2_dev_priv {
 	uint16_t ep_object_id;                 /**< Endpoint DPAA2 Object ID */
 	char ep_name[RTE_DEV_NAME_MAX_LEN];
 
-	struct extract_s extract;
+	struct dpaa2_flow_profile flow_profile;
 
 	uint16_t ss_offset;
 	uint64_t ss_iova;

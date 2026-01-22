@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2025 NXP
+ * Copyright 2025-2026 NXP
  */
 
 #include <sys/queue.h>
@@ -250,7 +250,7 @@ dpaa2_mtr_profile_tc_check(struct dpaa2_dev_priv *priv,
 	int i;
 
 	for (i = 0; i < MAX_TCS; i++) {
-		if (priv->extract.tc_mtr_profile[i] == dpaa2_profile) {
+		if (priv->flow_profile.tc_mtr_profile[i] == dpaa2_profile) {
 			DPAA2_PMD_ERR("The TC[%d]'s meter flow is referring this profile.",
 				i);
 			DPAA2_PMD_ERR("The TC[%d]'s meter flow should be destroyed by user.",

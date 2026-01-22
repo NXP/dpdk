@@ -268,25 +268,25 @@ dpaa2_setup_table_miss_action(struct rte_eth_dev *eth_dev,
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct rte_flow_group_attr attr;
 	struct rte_flow_action actions[2];
-	struct dpaa2_key_extract *key_extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	memset(&attr, 0, sizeof(attr));
 	attr.ingress = 1;
 	if (tc_index < priv->num_rx_tc) {
-		key_extract = &priv->extract.tc_key_extract[tc_index];
-		if (key_extract->default_drop)
+		tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+		if (tbl_profile->default_drop) {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
-		else {
+		} else {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-			actions[0].conf = &key_extract->default_queue;
+			actions[0].conf = &tbl_profile->default_queue;
 		}
 	} else {
-		key_extract = &priv->extract.qos_key_extract;
-		if (key_extract->default_drop)
+		tbl_profile = &priv->flow_profile.qos_profile;
+		if (tbl_profile->default_drop) {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
-		else {
+		} else {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
-			actions[0].conf = &key_extract->default_jump;
+			actions[0].conf = &tbl_profile->default_jump;
 		}
 	}
 	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
@@ -349,19 +349,19 @@ dpaa2_remove_flow_dist(struct rte_eth_dev *eth_dev,
 	uint8_t tc_index)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct dpaa2_key_extract *tc_ext;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	int ret;
 
-	tc_ext = &priv->extract.tc_key_extract[tc_index];
-	if (!tc_ext->rss_flow || !tc_ext->is_rss) {
+	tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+	if (!tbl_profile->rss_flow || !tbl_profile->is_rss) {
 		DPAA2_PMD_WARN("%s'TC[%d] is not RSS distributed",
 			eth_dev->data->name, tc_index);
 		return 0;
 	}
-	ret = rte_flow_destroy(eth_dev->data->port_id, tc_ext->rss_flow, NULL);
+	ret = rte_flow_destroy(eth_dev->data->port_id, tbl_profile->rss_flow, NULL);
 	if (ret)
 		return ret;
-	tc_ext->rss_flow = NULL;
+	tbl_profile->rss_flow = NULL;
 
 	return 0;
 }
@@ -371,13 +371,13 @@ dpaa2_update_flow_dist(struct rte_eth_dev *eth_dev,
 	uint64_t req_dist_set, int tc_index)
 {
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
-	struct dpaa2_key_extract *tc_ext;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	struct rte_flow_action_rss action_rss;
 	struct rte_flow_action actions[2];
 	int ret;
 
-	tc_ext = &priv->extract.tc_key_extract[tc_index];
-	if (!tc_ext->rss_flow || !tc_ext->is_rss) {
+	tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+	if (!tbl_profile->rss_flow || !tbl_profile->is_rss) {
 		DPAA2_PMD_WARN("%s'TC[%d] is not RSS distributed",
 			eth_dev->data->name, tc_index);
 		return 0;
@@ -386,13 +386,13 @@ dpaa2_update_flow_dist(struct rte_eth_dev *eth_dev,
 	action_rss.level = 0;
 	action_rss.types = req_dist_set;
 	action_rss.key_len = 0;
-	action_rss.queue_num = tc_ext->tc_cfg.dist_size;
+	action_rss.queue_num = tbl_profile->tc_cfg.dist_size;
 	action_rss.key = NULL;
 	action_rss.queue = NULL;
 	actions[0].type = RTE_FLOW_ACTION_TYPE_RSS;
 	actions[0].conf = &action_rss;
 	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
-	ret = rte_flow_actions_update(eth_dev->data->port_id, tc_ext->rss_flow,
+	ret = rte_flow_actions_update(eth_dev->data->port_id, tbl_profile->rss_flow,
 		actions, NULL);
 
 	return ret;
@@ -413,17 +413,17 @@ dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
 	uint8_t bp_idx;
 	struct rte_mempool *mp = bp_list->mp;
 
-	if (priv->extract.mempool[tc_id] != mp) {
-		if (!priv->extract.mempool[tc_id]) {
+	if (priv->flow_profile.mempool[tc_id] != mp) {
+		if (!priv->flow_profile.mempool[tc_id]) {
 			bp_idx = bpool_cfg->num_dpbp;
 			bpool_cfg->num_dpbp++;
-			priv->extract.bp_idx[tc_id] = bp_idx;
+			priv->flow_profile.bp_idx[tc_id] = bp_idx;
 		} else {
-			bp_idx = priv->extract.bp_idx[tc_id];
+			bp_idx = priv->flow_profile.bp_idx[tc_id];
 		}
-		priv->extract.mempool[tc_id] = mp;
+		priv->flow_profile.mempool[tc_id] = mp;
 	} else {
-		bp_idx = priv->extract.bp_idx[tc_id];
+		bp_idx = priv->flow_profile.bp_idx[tc_id];
 	}
 
 	/* ... rx buffer layout .
@@ -1046,7 +1046,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 					tc_index, ret);
 				return ret;
 			}
-			if (!priv->extract.tc_key_extract[tc_index].enabled)
+			if (!priv->flow_profile.tc_profile[tc_index].enabled)
 				continue;
 			ret = dpaa2_setup_table_miss_action(dev, tc_index);
 			if (ret) {
@@ -2108,7 +2108,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = dev->process_private;
 	int i, ret;
 	struct rte_eth_link link;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2160,13 +2160,13 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 
 	for (i = 0; i < (MAX_TCS + 1); i++) {
 		if (i < MAX_TCS)
-			extract = &priv->extract.tc_key_extract[i];
+			tbl_profile = &priv->flow_profile.tc_profile[i];
 		else
-			extract = &priv->extract.qos_key_extract;
-		rte_free(extract->extract_param);
-		extract->extract_param = NULL;
-		rte_free(extract->entry_map);
-		extract->entry_map = NULL;
+			tbl_profile = &priv->flow_profile.qos_profile;
+		rte_free(tbl_profile->extract_param);
+		tbl_profile->extract_param = NULL;
+		rte_free(tbl_profile->entry_map);
+		tbl_profile->entry_map = NULL;
 	}
 
 	DPAA2_PMD_DEBUG("%s: netdev deleted", dev->data->name);
@@ -2459,7 +2459,7 @@ dpaa2_dev_xstat_check_avail(struct rte_eth_dev *dev,
 		}
 	} else if (xstats_type == DPAA2_POLICER_XSTATS_TYPE) {
 		tc = dpaa2_xstats_strings[xstat_idx].param;
-		if (priv->extract.mtr_flow[tc])
+		if (priv->flow_profile.mtr_flow[tc])
 			return true;
 	} else if (xstats_type == DPAA2_MAC_XSTATS_TYPE) {
 		if (priv->ep_dev_type != DPAA2_MAC)
@@ -3429,7 +3429,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
 	int ret, hw_id, i, entry_num;
-	struct dpaa2_key_extract *extract;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 	uint64_t iova;
 	char *penv;
 
@@ -3675,38 +3675,38 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	/* Init fields w.r.t. classification */
 	for (i = 0; i < (MAX_TCS + 1); i++) {
 		if (i < MAX_TCS) {
-			extract = &priv->extract.tc_key_extract[i];
+			tbl_profile = &priv->flow_profile.tc_profile[i];
 			entry_num = priv->fs_entries;
 		} else {
-			extract = &priv->extract.qos_key_extract;
+			tbl_profile = &priv->flow_profile.qos_profile;
 			entry_num = priv->qos_entries;
 		}
-		memset(extract, 0, sizeof(struct dpaa2_key_extract));
-		extract->extract_param = rte_zmalloc(NULL,
+		memset(tbl_profile, 0, sizeof(struct dpaa2_flow_tbl_profile));
+		tbl_profile->extract_param = rte_zmalloc(NULL,
 			DPAA2_EXTRACT_PARAM_MAX_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		if (!extract->extract_param)
+		if (!tbl_profile->extract_param)
 			goto init_err;
-		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(extract->extract_param,
+		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(tbl_profile->extract_param,
 			DPAA2_EXTRACT_PARAM_MAX_SIZE);
-		extract->default_drop = false;
+		tbl_profile->default_drop = false;
 		if (i < MAX_TCS) {
-			extract->tc_cfg.dist_size = priv->dist_queues;
-			extract->tc_cfg.key_cfg_iova = iova;
-			extract->tc_cfg.tc = i;
+			tbl_profile->tc_cfg.dist_size = priv->dist_queues;
+			tbl_profile->tc_cfg.key_cfg_iova = iova;
+			tbl_profile->tc_cfg.tc = i;
 			/** First flow of TC as default flow, otherwise, may be dropped.*/
-			extract->default_queue.index = priv->dist_queues * i;
+			tbl_profile->default_queue.index = priv->dist_queues * i;
 		} else {
-			extract->qos_cfg.key_cfg_iova = iova;
-			extract->qos_cfg.keep_entries = true;
+			tbl_profile->qos_cfg.key_cfg_iova = iova;
+			tbl_profile->qos_cfg.keep_entries = true;
 			/** First TC as default TC, otherwise, may be dropped.*/
-			extract->default_jump.group = 0;
+			tbl_profile->default_jump.group = 0;
 		}
 		if (!entry_num)
 			continue;
 
-		extract->entry_map = rte_zmalloc(NULL, entry_num / 8 + 1, 0);
-		if (!extract->entry_map)
+		tbl_profile->entry_map = rte_zmalloc(NULL, entry_num / 8 + 1, 0);
+		if (!tbl_profile->entry_map)
 			goto init_err;
 	}
 
