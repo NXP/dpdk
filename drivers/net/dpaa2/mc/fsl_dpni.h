@@ -1567,6 +1567,10 @@ struct dpni_rule_cfg {
 	uint8_t key_size;
 };
 
+#define DPNI_QOS_OPT_SET_TC_ONLY 0x0
+#define DPNI_QOS_OPT_SET_FLOW_ID 0x1
+#define DPNI_QOS_OPT_UPDATE_IF_EXISTS 0x2
+
 int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
 		       uint32_t cmd_flags,
 		       uint16_t token,

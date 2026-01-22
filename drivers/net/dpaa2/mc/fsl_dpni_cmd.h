@@ -619,9 +619,6 @@ struct dpni_cmd_set_qos_table {
 	uint64_t key_cfg_iova;
 };
 
-#define DPNI_QOS_OPT_SET_TC_ONLY 0x0
-#define DPNI_QOS_OPT_SET_FLOW_ID 0x1
-
 struct dpni_cmd_add_qos_entry {
 	uint8_t flags;
 	uint8_t flow_id;

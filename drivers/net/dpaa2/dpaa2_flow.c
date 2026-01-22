@@ -808,6 +808,30 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 }
 
 static int
+dpaa2_flow_update_qos_rule_action(struct dpaa2_dev_priv *priv,
+	struct dpaa2_generic_flow *flow)
+{
+	int ret;
+	struct fsl_mc_io *dpni = priv->hw;
+
+	dpaa2_flow_qos_entry_log("Update action", flow);
+
+	/** This option doesn't support legacy operation.*/
+	ret = dpni_add_qos_entry(dpni, CMD_PRI_LOW,
+			priv->token, &flow->rule_cfg,
+			flow->flow_action.qos_action.action_jump_cfg.group,
+			flow->entry_index,
+			DPNI_QOS_OPT_UPDATE_IF_EXISTS, 0);
+	if (ret < 0) {
+		DPAA2_PMD_ERR("Update rule(%d) in QOS table failed(%d)",
+			flow->entry_index, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
 dpaa2_flow_update_fs_rule_action(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow)
 {
@@ -4435,8 +4459,7 @@ dpaa2_flow_fs_action_update(struct dpaa2_dev_priv *priv,
 		case RTE_FLOW_ACTION_TYPE_PORT_ID:
 		case RTE_FLOW_ACTION_TYPE_DROP:
 		case RTE_FLOW_ACTION_TYPE_RSS:
-			ret = dpaa2_flow_fs_action_config(priv, fs_flow,
-					&actions[i]);
+			ret = dpaa2_flow_fs_action_config(priv, fs_flow, &actions[i]);
 			if (ret)
 				goto end_action_set;
 
@@ -6160,7 +6183,7 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_flow_tbl_profile *tbl_profile = NULL;
-	int ret = 0, is_rss = false, hw_update = false;
+	int ret = 0, is_rss = false, hw_update = false, err_code = 0;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id;
 	struct rte_flow_action qos_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
@@ -6171,6 +6194,8 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct rte_flow_attr attr;
 	const enum rte_flow_action_type *supported = NULL;
 	uint16_t supported_len = 0;
+	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
+	const char *err_str = NULL;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
@@ -6183,11 +6208,17 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 		supported = dpaa2_supported_meter_action_type;
 		supported_len = RTE_DIM(dpaa2_supported_meter_action_type);
 		if (!dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
-			DPAA2_PMD_ERR("%s: Failed to verify meter action.\n", __func__);
-			ret = -ENOTSUP;
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "Failed to verify meter action!";
+			err_code = -ENOTSUP;
 			goto quit;
 		}
 		ret = dpaa2_flow_fs_action_update(priv, flow->fs_flow, actions);
+		if (ret) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "Failed to update meter action!";
+			err_code = ret;
+		}
 		goto quit;
 	}
 	LIST_FOREACH(flow, &priv->flows, next) {
@@ -6196,8 +6227,10 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	}
 	DPAA2_PMD_ERR("%s: Flow(%p) is not in %s's flow list\n",
 		__func__, flow, dev->data->name);
+	error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
+	err_str = "Invalid flow for action update!";
+	err_code = -EINVAL;
 
-	ret = -EINVAL;
 	goto quit;
 
 action_update:
@@ -6209,18 +6242,31 @@ action_update:
 		supported_len = RTE_DIM(dpaa2_supported_qos_action_type);
 	}
 	if (!dpaa2_flow_check_actions_support(actions, supported, supported_len)) {
-		DPAA2_PMD_ERR("%s: verify new action failed.\n", __func__);
-		ret = -ENOTSUP;
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Failed to verify QoS/FS action!";
+		err_code = -ENOTSUP;
 		goto quit;
 	}
 	ret = dpaa2_flow_qos_fs_action_set(actions, qos_actions, fs_actions,
 		&qos_action_num, &fs_action_num);
-	if (ret)
+	if (ret) {
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Failed to set QoS/FS action!";
+		err_code = ret;
 		goto quit;
+	}
 	flow = (struct dpaa2_dev_flow *)_flow;
+	if (flow->fs_flow && flow->qos_flow && qos_action_num > 0) {
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION_NUM;
+		err_str = "One-level flow can't update QoS action!";
+		err_code = -ENOTSUP;
+		goto quit;
+	}
 	if ((!flow->fs_flow && fs_action_num > 0) ||
 		(!flow->qos_flow && qos_action_num > 0)) {
-		ret = -EINVAL;
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Flow type and flow action don't match!";
+		err_code = -EINVAL;
 		goto quit;
 	}
 
@@ -6234,14 +6280,16 @@ action_update:
 		if (tbl_profile->rss_flow != flow) {
 			DPAA2_PMD_ERR("%s: RSS flow(%p) != TC[%d]'s rss flow(%p)",
 				__func__, flow, flow->fs_flow->tc_id, tbl_profile->rss_flow);
-			ret = -EINVAL;
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "The flow to update is not specified TC's RSS flow!";
+			err_code = -EINVAL;
 			goto quit;
 		}
 	}
 	if (fs_action_num > 0 &&
 		fs_actions[0].type != RTE_FLOW_ACTION_TYPE_PORT_ID &&
 		fs_actions[0].type != RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT &&
-		dpaa2_dev->bus_info->mc_rev >= DPAA2_FLOW_HW_ACTION_UPDATE_MC_REV) {
+		dpaa2_dev->bus_info->mc_rev >= DPAA2_FS_FLOW_HW_ACTION_UPDATE_MC_REV) {
 		/** Action HW update doesn't support redirecting frames to other DPNIs.*/
 		hw_update = true;
 		goto skip_remove_fs_entry;
@@ -6253,6 +6301,9 @@ action_update:
 		if (ret) {
 			DPAA2_PMD_ERR("%s: remove flow fs entry failed(%d)",
 				__func__, ret);
+			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
+			err_str = "Failed to remove flow in flow action update!";
+			err_code = ret;
 
 			goto quit;
 		}
@@ -6266,72 +6317,107 @@ skip_remove_fs_entry:
 		if (ret < 0) {
 			DPAA2_PMD_ERR("TC[%d] converts to RSS items failed(%d)",
 				flow->fs_flow->tc_id, ret);
+			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
+			err_str = "Failed to gen rss items in flow action update!";
+			err_code = ret;
+			goto quit;
+		} else if (!ret) {
+			DPAA2_PMD_ERR("No item is generated by rss type(0x%lx)",
+				rss_conf->types);
+			error_type = RTE_FLOW_ERROR_TYPE_ITEM;
+			err_str = "No item is generated by rss type!";
+			err_code = -ENOTSUP;
 			goto quit;
 		}
 		memset(&attr, 0, sizeof(attr));
 		attr.group = flow->fs_flow->tc_id;
 		attr.ingress = 1;
 		tbl_profile->tc_cfg.dist_size = rss_conf->queue_num;
-		if (ret > 0) {
-			memset(&flow->fs_flow->rule_cfg, 0,
-				sizeof(struct dpni_rule_cfg));
-			memset(flow->fs_flow->key_addr, 0,
-				DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
-			memset(flow->fs_flow->mask_addr, 0,
-				DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
-			flow->fs_flow->rule_size = 0;
-			flow->fs_flow->ip_key = NET_PROT_NONE;
-			flow->fs_flow->ip_src = NET_PROT_NONE;
-			flow->fs_flow->ip_dst = NET_PROT_NONE;
-			ret = dpaa2_flow_generic_extract_rule_set(flow->fs_flow, &attr,
+		memset(&flow->fs_flow->rule_cfg, 0, sizeof(struct dpni_rule_cfg));
+		memset(flow->fs_flow->key_addr, 0, DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+		memset(flow->fs_flow->mask_addr, 0, DPAA2_EXTRACT_ALLOC_KEY_MAX_SIZE);
+		flow->fs_flow->rule_size = 0;
+		flow->fs_flow->ip_key = NET_PROT_NONE;
+		flow->fs_flow->ip_src = NET_PROT_NONE;
+		flow->fs_flow->ip_dst = NET_PROT_NONE;
+		ret = dpaa2_flow_generic_extract_rule_set(flow->fs_flow, &attr,
 				items, true, DPAA2_FLOW_FS_TYPE, true);
-		} else {
-			ret = dpaa2_flow_table_update(priv, DPAA2_FLOW_FS_TYPE,
-				attr.group, true);
-		}
-		if (ret)
+		if (ret) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "RSS action update failed!";
+			err_code = ret;
 			goto quit;
+		}
 	} else {
 		ret = dpaa2_flow_fs_action_update(priv, flow->fs_flow, fs_actions);
 		if (ret) {
-			DPAA2_PMD_ERR("%s: FS action update failed(%d)",
-				__func__, ret);
-
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "FS action update failed!";
+			err_code = ret;
 			goto quit;
 		}
 		if (hw_update)
 			ret = dpaa2_flow_update_fs_rule_action(priv, flow->fs_flow);
 		else
 			ret = dpaa2_flow_add_fs_rule(priv, flow->fs_flow);
-		if (ret)
+		if (ret) {
+			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+			err_str = "FS rule action update failed!";
+			err_code = ret;
 			goto quit;
+		}
 	}
 qos_action_update:
 	if (!flow->qos_flow)
 		goto quit;
+
+	hw_update = false;
+	if (dpaa2_dev->bus_info->mc_rev >= DPAA2_QOS_FLOW_HW_ACTION_UPDATE_MC_REV) {
+		/** Action HW update doesn't support redirecting frames to other DPNIs.*/
+		hw_update = true;
+		goto skip_remove_qos_entry;
+	}
 
 	ret = dpaa2_flow_remove_generic_entry(dev, flow->qos_flow,
 		DPAA2_FLOW_QOS_TYPE);
 	if (ret) {
 		DPAA2_PMD_ERR("%s: remove flow qos entry failed(%d)",
 			__func__, ret);
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Failed to remove QoS entry in action update!";
+		err_code = ret;
 
 		goto quit;
 	}
+
+skip_remove_qos_entry:
 	ret = dpaa2_flow_qos_action_update(priv, flow->qos_flow, qos_actions,
 		false);
 	if (ret) {
 		DPAA2_PMD_ERR("%s: QoS action update failed(%d)",
 			__func__, ret);
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Failed to QoS action update!";
+		err_code = ret;
 
 		goto quit;
 	}
-	ret = dpaa2_flow_add_qos_rule(priv, flow->qos_flow);
+	if (hw_update)
+		ret = dpaa2_flow_update_qos_rule_action(priv, flow->qos_flow);
+	else
+		ret = dpaa2_flow_add_qos_rule(priv, flow->qos_flow);
+	if (ret) {
+		DPAA2_PMD_ERR("%s: %s qos flow entry failed(%d)",
+			__func__, hw_update ? "update" : "add", ret);
+		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
+		err_str = "Failed to update QoS entry action to HW!";
+		err_code = ret;
+	}
 
 quit:
-	return rte_flow_error_set(error, -ret,
-			RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
-			NULL, "unknown");
+	if (err_str)
+		DPAA2_PMD_ERR("%s: %s\n", __func__, err_str);
+	return rte_flow_error_set(error, -err_code, error_type, NULL, err_str);
 }
 
 /**
