@@ -64,6 +64,7 @@ all_examples = [
         'server_node_efd/node',
         'server_node_efd/server',
         'service_cores',
+        'simple-flow-steering',
         'skeleton',
         'timer',
         'vdpa',
