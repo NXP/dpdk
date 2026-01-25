@@ -1388,7 +1388,7 @@ dpaa2_flow_hdr_rule_data_set(struct dpaa2_generic_flow *flow,
 	const void *key, const void *mask,
 	enum dpaa2_flow_dist_type dist_type)
 {
-	int offset;
+	int offset, i;
 	char offset_info[64], size_info[64], rule_size_info[64];
 
 	if (dpaa2_flow_ip_address_extract(prot, field)) {
@@ -1411,8 +1411,10 @@ dpaa2_flow_hdr_rule_data_set(struct dpaa2_generic_flow *flow,
 		dist_type == DPAA2_FLOW_QOS_TYPE ? "QoS" : "FS",
 		flow->rule_size);
 
-	memcpy((flow->key_addr + offset), key, size);
-	memcpy((flow->mask_addr + offset), mask, size);
+	for (i = 0; i < size; i++) {
+		*(flow->key_addr + offset + i) |= *((const uint8_t *)key + i);
+		*(flow->mask_addr + offset + i) |= *((const uint8_t *)mask + i);
+	}
 	if (!(flow->ip_src || flow->ip_dst)) {
 		if (offset >= flow->rule_size) {
 			flow->rule_size = offset + size;
