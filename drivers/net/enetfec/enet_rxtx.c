@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2024 NXP
+ * Copyright 2021-2026 NXP
  */
 
 #include <rte_mbuf.h>
@@ -8,6 +8,7 @@
 #include "enet_regs.h"
 #include "enet_ethdev.h"
 #include "enet_pmd_logs.h"
+#include "compat.h"
 
 /* This function does enetfec_rx_queue processing. Dequeue packet from Rx queue
  * When update through the ring, just set the empty indicator.
@@ -192,35 +193,35 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 	struct enetfec_priv_tx_q *txq  =
 			(struct enetfec_priv_tx_q *)tx_queue;
 	struct rte_eth_stats *stats = &txq->fep->stats;
-	struct bufdesc *bdp, *last_bdp;
+	struct bufdesc *bdp, *last_bdp, temp_bdp;
+	unsigned int i, pkt_t = 0;
+	uint64_t *src64, *dst64;
 	struct rte_mbuf *mbuf;
 	unsigned short status;
 	unsigned short buflen;
-	unsigned int index, estatus = 0;
-	unsigned int i, pkt_transmitted = 0;
+	unsigned int index;
 	uint8_t *data;
-	int tx_st = 1;
 
-	while (tx_st) {
-		if (pkt_transmitted >= nb_pkts) {
-			tx_st = 0;
-			break;
-		}
-
-		mbuf = *(tx_pkts);
+	while (pkt_t < nb_pkts) {
+		mbuf = tx_pkts[pkt_t];
 		if (mbuf->nb_segs > 1) {
 			ENETFEC_DP_LOG(DEBUG, "SG not supported");
-			return pkt_transmitted;
+			stats->opackets += pkt_t;
+			return pkt_t;
 		}
 
-		tx_pkts++;
+		/* Get current descriptor */
 		bdp = txq->bd.cur;
+		/* copy local and check status */
+		dst64 = (uint64_t *)&temp_bdp;
+		src64 = (uint64_t *)bdp;
+		*dst64 = *src64;
 
-		/* First clean the ring */
 		index = enet_get_bd_index(bdp, &txq->bd);
-		status = rte_le_to_cpu_16(rte_read16(&bdp->bd_sc));
+		status = temp_bdp.bd_sc;
 
 		if (status & TX_BD_READY) {
+			/* Queue is full */
 			stats->oerrors++;
 			break;
 		}
@@ -229,60 +230,42 @@ enetfec_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 			txq->tx_mbuf[index] = NULL;
 		}
 
-		/* Fill in a Tx ring entry */
-		last_bdp = bdp;
-		status &= ~TX_BD_STATS;
+		/* Save mbuf pointer to free next time */
+		txq->tx_mbuf[index] = mbuf;
 
 		/* Set buffer length and buffer pointer */
 		buflen = rte_pktmbuf_pkt_len(mbuf);
-		stats->opackets++;
-		stats->obytes += buflen;
-
-		status |= (TX_BD_LAST);
 		data = rte_pktmbuf_mtod(mbuf, void *);
-		for (i = 0; i <= buflen; i += RTE_CACHE_LINE_SIZE)
-			dccivac(data + i);
 
-		rte_write32(rte_cpu_to_le_32(rte_pktmbuf_iova(mbuf)),
-			    &bdp->bd_bufaddr);
-		rte_write16(rte_cpu_to_le_16(buflen), &bdp->bd_datlen);
+		for (i = 0; i < buflen; i += RTE_CACHE_LINE_SIZE)
+			dcbf(data + i);
 
-		if (txq->fep->bufdesc_ex) {
-			struct bufdesc_ex *ebdp = (struct bufdesc_ex *)bdp;
+		temp_bdp.bd_bufaddr = rte_pktmbuf_iova(mbuf);
+		temp_bdp.bd_datlen = buflen;
+		status &= ~TX_BD_STATS;
+		status |= TX_BD_LAST;
 
-			if (mbuf->ol_flags & (RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_TCP_CKSUM |
-					RTE_MBUF_F_TX_UDP_CKSUM | RTE_MBUF_F_TX_SCTP_CKSUM))
-				estatus |= TX_BD_PINS | TX_BD_IINS;
-
-			rte_write32(0, &ebdp->bd_bdu);
-			rte_write32(rte_cpu_to_le_32(estatus),
-				    &ebdp->bd_esc);
-		}
-
-		index = enet_get_bd_index(last_bdp, &txq->bd);
-		/* Save mbuf pointer */
-		txq->tx_mbuf[index] = mbuf;
-
+		last_bdp = bdp;
 		/* Make sure the updates to rest of the descriptor are performed
 		 * before transferring ownership.
 		 */
 		status |= (TX_BD_READY | TX_BD_TC);
-		rte_wmb();
-		rte_write16(rte_cpu_to_le_16(status), &bdp->bd_sc);
+
+		temp_bdp.bd_sc = status;
+		/* write back to original */
+		*src64 = *dst64;
 
 		/* Trigger transmission start */
-		rte_write32(0, txq->bd.active_reg_desc);
-		pkt_transmitted++;
-
+		rte_write32_relaxed(0, txq->bd.active_reg_desc);
+		pkt_t++;
+		stats->obytes += buflen;
 		/* If this was the last BD in the ring, start at the
 		 * beginning again.
 		 */
 		bdp = enet_get_nextdesc(last_bdp, &txq->bd);
-
-		/* Make sure the update to bdp and tx_skbuff are performed
-		 * before txq->bd.cur.
-		 */
 		txq->bd.cur = bdp;
 	}
-	return pkt_transmitted;
+	stats->opackets += pkt_t;
+
+	return pkt_t;
 }
