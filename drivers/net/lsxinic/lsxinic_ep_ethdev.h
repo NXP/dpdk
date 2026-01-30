@@ -22,56 +22,11 @@
 
 #define INIC_VERSION (001)
 
-static inline uint16_t lsinic_read_reg16(void *addr)
-{
-	return rte_be_to_cpu_16(rte_read16(addr));
-}
-
-static inline uint32_t lsinic_read_reg32(void *addr)
-{
-	return rte_be_to_cpu_32(rte_read32(addr));
-}
-
-static inline uint64_t lsinic_read_reg64(void *addr)
-{
-	return rte_be_to_cpu_64(rte_read64(addr));
-}
-
-static inline void lsinic_write_reg16(void *addr, uint16_t val)
-{
-	rte_write16((rte_cpu_to_be_16(val)), addr);
-}
-
-static inline void lsinic_write_reg32(void *addr, uint32_t val)
-{
-	rte_write32((rte_cpu_to_be_32(val)), addr);
-}
-
-static inline void lsinic_write_reg64(void *addr, uint64_t val)
-{
-	rte_write64((rte_cpu_to_be_64(val)), addr);
-}
-
-#ifndef ALIGN
-#define ALIGN(x, a) \
-	(((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
-#endif
-
 /* Structure to store private data for each driver instance (for each port).
  */
 #define LSINIC_EP_CAP_TXQ_DMA_NO_RSP RTE_BIT32(0)
 #define LSINIC_EP_CAP_TXQ_SG_DMA RTE_BIT32(1)
 #define LSINIC_EP_CAP_RXQ_SG_DMA RTE_BIT32(2)
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-#define LSINIC_EP_CAP_HW_MERGE_PKTS RTE_BIT32(3)
-#define LSINIC_EP_CAP_HW_SPLIT_PKTS RTE_BIT32(4)
-#define LSINIC_EP_CAP_MBUF_CLONE_SPLIT_PKTS RTE_BIT32(5)
-#define LSINIC_EP_CAP_SW_MERGE_PKTS RTE_BIT32(6)
-#define LSINIC_EP_CAP_SW_SPLIT_PKTS RTE_BIT32(7)
-#define LSINIC_EP_CAP_HW_DIRECT_EGRESS RTE_BIT32(8)
-#define LSINIC_EP_CAP_RCV_MERGE_RECYCLE_RX RTE_BIT32(9)
-#define LSINIC_EP_CAP_RCV_SPLIT_RECYCLE_RX RTE_BIT32(10)
-#endif
 #define LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE RTE_BIT32(11)
 #define LSINIC_EP_CAP_RXQ_BD_DMA_UPDATE_DBG RTE_BIT32(12)
 #define LSINIC_EP_CAP_TXQ_ADDR_DMA_READ_DBG RTE_BIT32(13)
@@ -123,17 +78,6 @@ struct lsinic_adapter {
 
 	struct lsinic_queue *txqs;
 	struct lsinic_queue *rxqs;
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	struct rte_dpaa2_device *merge_dev;
-	struct rte_dpaa2_device *split_dev;
-	struct rte_dpaa2_device *split_dst_dev;
-	rte_spinlock_t merge_dev_cfg_lock;
-	rte_spinlock_t split_dev_cfg_lock;
-	int merge_dev_cfg_done;
-	int split_dev_cfg_done;
-	int rx_mbuf_clone;
-	uint32_t merge_threshold;
-#endif
 	uint32_t cap;
 	rte_spinlock_t cap_lock;
 	uint32_t ep_cap;
@@ -204,10 +148,4 @@ lsinic_byte_memset(void *s, uint8_t ch, size_t n)
 		asm volatile ("" : : : "memory");
 	}
 }
-
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-int
-lsinic_split_dev_flow_create(struct lsinic_adapter *adapter);
-#endif
-
 #endif /* _LSXINIC_EP_ETHDEV_H_ */

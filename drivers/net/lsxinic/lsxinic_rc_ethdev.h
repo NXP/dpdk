@@ -168,9 +168,9 @@ struct lxsnic_seg_mbuf {
 struct lxsnic_ring {
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 	struct lxsnic_ring *pair;
-	enum LSINIC_QEUE_TYPE type;
+	enum lsinic_queue_type type;
 	uint32_t port;
-	enum LSINIC_QEUE_STATUS status;
+	enum lsinic_queue_status status;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
 	uint32_t core_id;
@@ -219,11 +219,7 @@ struct lxsnic_ring {
 
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
-#else
 	struct lsinic_rc_rx_len_idx *rx_len_idx;
-#endif
 	struct lsinic_rc_rx_seg *rx_seg;
 
 	/* For RC TX*/
@@ -382,9 +378,6 @@ struct lxsnic_adapter {
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	uint32_t merge_threshold;
-#endif
 	uint16_t max_data_room;
 	uint32_t pkt_addr_interval;
 	uint64_t pkt_addr_base;

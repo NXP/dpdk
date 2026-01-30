@@ -16,12 +16,6 @@
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_ethtool.h"
 
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-#include <dpaa2_hw_mempool.h>
-#include <dpaa2_hw_pvt.h>
-#include <dpaa2_ethdev.h>
-#endif
-
 #include "lsxinic_rc_rxtx.h"
 #include "lsxinic_rc_ethdev.h"
 #include "lsxinic_rc_hw.h"
@@ -126,47 +120,6 @@ lsinic_mbuf_print_all(const struct rte_mbuf *mbuf)
 
 #define G_SIZE ((double)(1000 * 1000 * 1000))
 
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-static int
-lsinic_ep_rx_drop_count(struct rte_eth_dev *eth_dev,
-	unsigned long long *dev_imissed)
-{
-	struct dpaa2_queue *recycle_txq;
-	struct rte_eth_dev_data *dpaa2_data;
-	struct dpaa2_dev_priv *dpaa2_priv;
-	struct rte_eth_dev *dpaa2_dev;
-	struct rte_eth_stats igb_stats;
-	struct lsinic_queue *rxq;
-
-	rxq = eth_dev->data->rx_queues[0];
-
-	if (rxq->split_type == LSINIC_HW_SPLIT) {
-		recycle_txq = rxq->recycle_txq;
-		if (!recycle_txq)
-			return -EINVAL;
-
-		dpaa2_data = recycle_txq->eth_data;
-		if (!dpaa2_data)
-			return -EINVAL;
-
-		dpaa2_priv = dpaa2_data->dev_private;
-		if (!dpaa2_priv)
-			return -EINVAL;
-
-		dpaa2_dev = dpaa2_priv->eth_dev;
-		if (!dpaa2_dev)
-			return -EINVAL;
-
-		dpaa2_dev->dev_ops->stats_get(dpaa2_dev, &igb_stats);
-		*dev_imissed = (unsigned long long)igb_stats.imissed;
-
-		return 0;
-	}
-
-	return -1;
-}
-#endif
-
 static void
 print_queue_status(void *queue,
 	unsigned long long *packets,
@@ -209,15 +162,9 @@ print_queue_status(void *queue,
 		(unsigned long long)epq->loop_total,
 		(unsigned long long)epq->loop_avail);
 
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	perf_log("\tEP dmaq=%d next_dma_idx=%d in_dma=%ld in_dpni=%ld\n",
-		epq->dma_vq, epq->next_dma_idx,
-		epq->pkts_eq - epq->pkts_dq, (long)epq->recycle_pending);
-#else
 	perf_log("\tEP dmaq=%d next_dma_idx=%d in_dma=%ld\n",
 		epq->dma_vq, epq->next_dma_idx,
 		epq->pkts_eq - epq->pkts_dq);
-#endif
 
 #ifdef LSXINIC_LATENCY_PROFILING
 	perf_log("\tEP latency_min=%.1f avg_latency=%.1f\n",
@@ -333,11 +280,6 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	unsigned long long ibytes_fcs = 0, obytes_fcs = 0;
 	unsigned long long missed = 0;
 	int ret = -1;
-
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	if (port_type == LSINIC_EP_PORT)
-		ret = lsinic_ep_rx_drop_count(eth_dev, &missed);
-#endif
 
 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
 		queue = eth_dev->data->tx_queues[i];
