@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2025 NXP
+ * Copyright 2019-2026 NXP
  */
 
 #ifndef _LSXINIC_COMMON_REG_H_
@@ -173,6 +173,7 @@ enum RC_MEM_BD_TYPE {
 };
 
 struct lsinic_ring_reg {
+	uint32_t ready;
 	uint32_t cr;
 	uint32_t sr;
 	uint32_t barl;

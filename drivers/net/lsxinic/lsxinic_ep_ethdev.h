@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2025 NXP
+ * Copyright 2019-2026 NXP
  */
 
 #ifndef _LSXINIC_EP_ETHDEV_H_
@@ -85,7 +85,6 @@ struct lsinic_adapter {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 
-	uint16_t max_qpairs;
 	uint8_t rbp_enable;
 	int txq_dma_id;
 	int rxq_dma_id;
