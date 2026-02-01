@@ -113,12 +113,8 @@ enum EP_MEM_BD_TYPE {
 	EP_MEM_LONG_BD,
 	/* For RC to set dest addr in RC memory, EP->RC*/
 	EP_MEM_DST_ADDR_BD,
-	EP_MEM_DST_ADDRL_BD,
-	EP_MEM_DST_ADDRX_BD,
 	EP_MEM_DST_ADDR_SEG,
 	/* For RC to set source addr in RC memory, RC->EP*/
-	EP_MEM_SRC_ADDRL_BD,
-	EP_MEM_SRC_ADDRX_BD,
 	EP_MEM_SRC_SEG_BD
 };
 
@@ -268,14 +264,6 @@ struct lsinic_ep_tx_dst_addr {
 	uint64_t pkt_addr;
 } __packed;
 
-struct lsinic_ep_tx_dst_addrl {
-	uint32_t pkt_addr_low;
-} __packed;
-
-struct lsinic_ep_tx_dst_addrx {
-	uint16_t pkt_addr_idx;
-} __packed;
-
 #define LSINIC_SEG_OFFSET_MAX (RTE_BIT64(31) - 1)
 struct lsinic_ep_tx_seg_entry {
 	union {
@@ -293,26 +281,6 @@ struct lsinic_ep_tx_seg_dst_addr {
 	struct lsinic_ep_tx_seg_entry entry[LSINIC_EP_TX_SEG_MAX_ENTRY];
 	uint8_t rsv[7];
 	uint8_t ready;
-} __packed;
-
-struct lsinic_ep_rx_src_addrl {
-	union {
-		uint64_t addr_cmd_len;
-		struct {
-			uint32_t pkt_addr_low;
-			uint32_t len_cmd;
-		};
-	};
-} __packed;
-
-struct lsinic_ep_rx_src_addrx {
-	union {
-		uint32_t idx_cmd_len;
-		struct {
-			uint16_t pkt_idx;
-			uint16_t len;
-		};
-	};
 } __packed;
 
 #ifndef RTE_MAX
@@ -350,18 +318,6 @@ struct lsinic_ep_rx_src_addrx {
 
 #define LSINIC_DST_ADDR_RING_SIZE \
 	(sizeof(struct lsinic_ep_tx_dst_addr) * LSINIC_BD_ENTRY_COUNT)
-
-#define LSINIC_DST_ADDRL_RING_SIZE \
-	(sizeof(struct lsinic_ep_tx_dst_addrl) * LSINIC_BD_ENTRY_COUNT)
-
-#define LSINIC_DST_ADDRX_RING_SIZE \
-	(sizeof(struct lsinic_ep_tx_dst_addrx) * LSINIC_BD_ENTRY_COUNT)
-
-#define LSINIC_SRC_ADDRL_RING_SIZE \
-	(sizeof(struct lsinic_ep_rx_src_addrl) * LSINIC_BD_ENTRY_COUNT)
-
-#define LSINIC_SRC_ADDRX_RING_SIZE \
-	(sizeof(struct lsinic_ep_rx_src_addrx) * LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_RING_SIZE \
 	(LSINIC_MAX_BD_ENTRY_SIZE * LSINIC_BD_ENTRY_COUNT)
@@ -481,27 +437,7 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE \
 	RTE_BIT32(LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE_POS)
 
-enum rc_set_addr_type {
-	RC_SET_ADDRF_TYPE = 0,
-	RC_SET_ADDRL_TYPE = 1,
-	RC_SET_ADDRX_TYPE = 2,
-	RC_SET_ADDR_TYPE_MASK = 3
-};
-
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS 8
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) \
-	(((cap) >> LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS) & \
-	RC_SET_ADDR_TYPE_MASK)
-#define LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_SET(cap, type) \
-	do { \
-		(cap) &= ~(RC_SET_ADDR_TYPE_MASK << \
-			LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS); \
-		(cap) |= ((type) << LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS); \
-	} while (0)
-
-#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS \
-	(LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_POS + \
-	val_bit_len(RC_SET_ADDR_TYPE_MASK))
+#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS 8
 
 enum rc_xmit_cnf_type {
 	RC_XMIT_BD_CNF = 0,

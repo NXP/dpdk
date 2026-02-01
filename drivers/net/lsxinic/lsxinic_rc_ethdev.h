@@ -186,24 +186,12 @@ struct lxsnic_ring {
 
 	/* For RC TX*/
 	struct lsinic_seg_desc *ep_tx_sg;
-	/* EP_MEM_SRC_ADDRL_BD*/
-	struct lsinic_ep_rx_src_addrl *ep_tx_addrl;
-	/* EP_MEM_SRC_ADDRX_BD*/
-	struct lsinic_ep_rx_src_addrx *ep_tx_addrx;
 
 	/* For RC RX*/
 	/* EP_MEM_DST_ADDR_BD*/
 	struct lsinic_ep_tx_dst_addr *ep_rx_addr;
 	/* DMA read source*/
 	struct lsinic_ep_tx_dst_addr *rc_rx_addr;
-	/* EP_MEM_DST_ADDRL_BD*/
-	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
-	/* DMA read source*/
-	struct lsinic_ep_tx_dst_addrl *rc_rx_addrl;
-	/* EP_MEM_DST_ADDX_BD*/
-	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
-	/* DMA read source*/
-	struct lsinic_ep_tx_dst_addrx *rc_rx_addrx;
 	/* EP_MEM_DST_ADDR_SEG*/
 	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
 	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
@@ -212,8 +200,6 @@ struct lxsnic_ring {
 	void *rc_bd_shared_addr;
 	/* RC_MEM_LONG_BD*/
 	struct lsinic_bd_desc *rc_bd_desc;
-	struct lsinic_ep_rx_src_addrl *rc_tx_addrl;
-	struct lsinic_ep_rx_src_addrx *rc_tx_addrx;
 
 	struct lsinic_seg_desc *rc_sg_desc;
 
@@ -379,8 +365,6 @@ struct lxsnic_adapter {
 	struct lxsnic_hw_stats stats;
 	uint32_t cap;
 	uint16_t max_data_room;
-	uint32_t pkt_addr_interval;
-	uint64_t pkt_addr_base;
 };
 
 enum lxsnic_state_t {
@@ -391,13 +375,8 @@ enum lxsnic_state_t {
 	__LXSNIC_IN_SFP_INIT,
 };
 
-#define LXSNIC_DEV_PRIVATE(adapter) \
-	((struct lxsnic_adapter *)adapter)
-#define LXSNIC_DEV_PRIVATE_TO_HW(adapter)\
-	(&((struct lxsnic_adapter *)adapter)->hw)
-
-#define LXSNIC_DEV_PRIVATE_TO_EP_PHY_BASE(adapter)\
-	(&((struct lxsnic_adapter *)adapter)->ep_ring_phy_base)\
+#define LXSNIC_DEV_PRIVATE(dev) \
+	(((struct rte_eth_dev *)(dev))->data->dev_private)
 
 #define LXSNIC_DEV_PRIVATE_TO_P_VFDATA(adapter)\
 	 (&((struct lxsnic_adapter *)adapter)->vfinfo)
