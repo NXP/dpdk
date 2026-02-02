@@ -346,7 +346,7 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 	struct lsinic_ring_reg *tx_ring_reg;
 	uint32_t reg_val = 0, i;
 	char *penv = getenv("LSINIC_RC_PRINT_STATUS");
-	int print_status = 0, ret, q_pair = 1;
+	int print_status = 0, ret, q_pair = 1, xmit_bd_64 = 1;
 	struct lxsnic_ring *tx_queue;
 
 	if (penv)
@@ -370,6 +370,10 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 	if (q_pair)
 		lxsnic_dev_rx_tx_bind(dev);
 
+	penv = getenv("LSINIC_RC_XMIT_BD_64");
+	if (penv)
+		xmit_bd_64 = atoi(penv);
+
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
 		tx_queue->ep_mem_bd_type = EP_MEM_LONG_BD;
@@ -381,6 +385,8 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			tx_queue->rc_mem_bd_type = RC_MEM_IDX_CNF;
 			tx_queue->ep_mem_bd_type = EP_MEM_SRC_SEG_BD;
 		}
+		if (xmit_bd_64 && tx_queue->ep_mem_bd_type != EP_MEM_SRC_SEG_BD)
+			tx_queue->ep_mem_bd_type = EP_MEM_SRC_BD_64;
 		tx_ring_reg = &bdr_reg->tx_ring[i];
 		LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
 			tx_queue->ep_mem_bd_type);
@@ -388,6 +394,8 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			tx_queue->rc_mem_bd_type);
 		if (tx_queue->ep_mem_bd_type == EP_MEM_LONG_BD) {
 			tx_queue->ep_bd_desc = tx_queue->ep_bd_mapped_addr;
+		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
+			tx_queue->ep_bd_desc_64 = tx_queue->ep_bd_mapped_addr;
 		} else if (tx_queue->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
 			tx_queue->ep_tx_sg = tx_queue->ep_bd_mapped_addr;
 		} else {

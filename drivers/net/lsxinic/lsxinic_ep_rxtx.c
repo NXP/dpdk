@@ -1566,6 +1566,10 @@ lsinic_rxq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		LSXINIC_PMD_INFO("RXQ%d notify by RC with long bd",
 			q->queue_id);
 		q->rdma_bd_len = sizeof(struct lsinic_bd_desc);
+	} else if (q->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
+		q->rx_bd_desc_64 = q->ep_bd_shared_addr;
+		LSXINIC_PMD_INFO("RXQ%d notify by RC with 64b bd",
+			q->queue_id);
 	} else if (q->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
 		q->rx_src_seg = q->ep_bd_shared_addr;
 		if (q->dma_bd_update & DMA_BD_RC2EP_UPDATE)
@@ -2549,19 +2553,64 @@ lsinic_recv_seg_bd(struct lsinic_queue *rxq)
 	return rxdp->nb;
 }
 
+static inline int
+lsinic_recv_bd_64_extract(struct lsinic_queue *rxq, uint16_t bd_idx,
+	uint64_t *pdma, uint16_t *psize)
+{
+	union lsinic_bd_desc_64 *rxdp_64;
+
+	rxdp_64 = &rxq->rx_bd_desc_64[bd_idx];
+
+	if (unlikely(!rxdp_64->len_cmd)) {
+		rxq->rxq_dma_eq(rxq, false, true);
+		return false;
+	}
+
+	*pdma = rxdp_64->pkt_addr;
+	*psize = rxdp_64->len_cmd;
+	rxdp_64->desc = 0;
+
+	return true;
+}
+
+static inline int
+lsinic_recv_bd_extract(struct lsinic_queue *rxq, uint16_t bd_idx,
+	uint64_t *pdma, uint16_t *psize)
+{
+	struct lsinic_bd_desc *rxdp;
+
+	rxdp = &rxq->ep_bd_desc[bd_idx];
+
+	if (!(((uint64_t)rxdp) & RTE_CACHE_LINE_MASK)) {
+		rte_lsinic_prefetch((const uint8_t *)rxdp +
+			RTE_CACHE_LINE_SIZE);
+	}
+
+	if ((rxdp->bd_status & RING_BD_STATUS_MASK) !=
+		RING_BD_AVAILABLE) {
+		rxq->rxq_dma_eq(rxq, false, true);
+		return false;
+	}
+	rxdp->bd_status &= ~((uint32_t)RING_BD_STATUS_MASK);
+	rxdp->bd_status |= RING_BD_HW_PROCESSING;
+
+	*pdma = rxdp->pkt_addr;
+	*psize = rxdp->len_cmd & LSINIC_BD_LEN_MASK;
+
+	return true;
+}
+
 static uint16_t
 lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 {
-	struct lsinic_bd_desc *rxdp;
 	struct lsinic_dma_job *dma_job[DEFAULT_TX_RS_THRESH];
 	struct lsinic_sw_bd *rxe = NULL;
 	struct rte_mbuf *rxm[DEFAULT_TX_RS_THRESH];
 
 	uint32_t pkt_len[DEFAULT_TX_RS_THRESH];
-	uint16_t bd_idx, first_bd_idx;
-	uint32_t size;
-	uint32_t len_cmd;
-	uint16_t bd_num = 0, idx;
+	uint16_t bd_idx, first_bd_idx, i, size, bd_num = 0;
+	uint64_t dma;
+	int ret;
 
 	first_bd_idx = lsinic_queue_next_avail_idx(rxq, 0);
 
@@ -2570,62 +2619,36 @@ lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 			lsinic_queue_next_used_idx(rxq, 0)))
 			break;
 		bd_idx = lsinic_queue_next_avail_idx(rxq, 0);
-		rxdp = &rxq->ep_bd_desc[bd_idx];
-
-		if (!(((uint64_t)rxdp) & RTE_CACHE_LINE_MASK)) {
-			rte_lsinic_prefetch((const uint8_t *)rxdp +
-				RTE_CACHE_LINE_SIZE);
+		if (rxq->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
+			if (!lsinic_recv_bd_64_extract(rxq, bd_idx, &dma, &size))
+				break;
+		} else {
+			if (!lsinic_recv_bd_extract(rxq, bd_idx, &dma, &size))
+				break;
 		}
-
-		if ((rxdp->bd_status & RING_BD_STATUS_MASK) !=
-			RING_BD_AVAILABLE) {
-			rxq->rxq_dma_eq(rxq, false, true);
-			break;
-		}
-		rxdp->bd_status &= ~((uint32_t)RING_BD_STATUS_MASK);
-		rxdp->bd_status |= RING_BD_HW_PROCESSING;
-
-		len_cmd = rxdp->len_cmd;
-		size = len_cmd & LSINIC_BD_LEN_MASK;
 		if (unlikely(size > rxq->adapter->data_room_size)) {
-			LSXINIC_PMD_ERR("port%d rxq%d BD%d len_cmd:0x%08x",
-				rxq->port_id, rxq->queue_id, bd_idx, len_cmd);
 			rxq->errors++;
-			rte_panic("line %d\tassert \"%s\" failed\n",
-				__LINE__, "size err");
-			/* to do skip this bd */
-			/* TODO
-			 * dma_job for this entry should also be skipped
-			 */
-
-			break;
+			rte_panic("port%d rxq%d BD%d size:%d > %d\n",
+				rxq->port_id, rxq->queue_id, bd_idx, size,
+				rxq->adapter->data_room_size);
+			/** Don't handle this error.*/
 		}
 
 		dma_job[bd_num] = &rxq->dma_jobs[bd_idx];
-
 		rxe = &rxq->sw_ring[bd_idx];
-
 		dma_job[bd_num]->cnxt = (uint64_t)rxe;
-
-		LSXINIC_PMD_DBG("port%d rxq%d bd_idx=%d pkt_len=%d",
-			rxq->port_id, rxq->queue_id,
-			bd_idx, size);
-
-		dma_job[bd_num]->src = rxdp->pkt_addr + rxq->ob_base;
+		dma_job[bd_num]->src = dma + rxq->ob_base;
 		/* qdma read memory must be aligned 64 */
 		rxe->align_dma_offset =
 			LSINIC_ALIGN_DMA_CALC_OFFSET(dma_job[bd_num]->src);
 		dma_job[bd_num]->src -= rxe->align_dma_offset;
 #ifdef LSINIC_CHECK_DMA_ALIGNED
 		if (!rte_is_aligned((void *)dma_job[bd_num]->src,
-			64)) {
+			RTE_CACHE_LINE_SIZE)) {
 			LSXINIC_PMD_DBG("BD%d src:0x%lx %s",
-				bd_num,
-				dma_job->src,
-				"not aligned with 64");
+				bd_num, dma_job->src, "not aligned with cache line");
 		}
 #endif
-
 		pkt_len[bd_num] = size - rxq->crc_len;
 		dma_job[bd_num]->len = pkt_len[bd_num] +
 			rxe->align_dma_offset;
@@ -2642,35 +2665,27 @@ lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 	if (unlikely(!bd_num))
 		return 0;
 
-	if (likely(!rte_pktmbuf_alloc_bulk(rxq->mb_pool,
-		rxm, bd_num))) {
-		if (rxq->adapter->rxq_dma_silent) {
-			for (idx = 0; idx < bd_num; idx++) {
-				lsinic_local_bd_status_update(rxq,
-					(first_bd_idx + idx) &
-					(rxq->nb_desc - 1),
-					RING_BD_ADDR_CHECK |
-					RING_BD_HW_COMPLETE);
-				rxq->rx_dma_mbuf_set(dma_job[idx],
-					rxm[idx], pkt_len[idx],
-					rxq->port_id, 1);
-			}
-		} else {
-			for (idx = 0; idx < bd_num; idx++) {
-				rxq->rx_dma_mbuf_set(dma_job[idx],
-					rxm[idx], pkt_len[idx],
-					rxq->port_id, 0);
-			}
-		}
-		for (idx = 0; idx < bd_num; idx++) {
-			rxq->jobs_pending++;
-			rxq->rxq_dma_eq(rxq, true, false);
-		}
-		rxq->rxq_dma_eq(rxq, false, true);
-	} else {
+	ret = rte_pktmbuf_alloc_bulk(rxq->mb_pool, rxm, bd_num);
+	if (ret) {
+		/** Roll back.*/
 		rxq->next_avail_idx -= bd_num;
+		goto quit;
 	}
 
+	for (i = 0; i < bd_num; i++) {
+		if (rxq->adapter->rxq_dma_silent) {
+			lsinic_local_bd_status_update(rxq,
+				(first_bd_idx + i) & (rxq->nb_desc - 1),
+				RING_BD_ADDR_CHECK | RING_BD_HW_COMPLETE);
+		}
+		rxq->rx_dma_mbuf_set(dma_job[i], rxm[i], pkt_len[i],
+			rxq->port_id, rxq->adapter->rxq_dma_silent);
+		rxq->jobs_pending++;
+		rxq->rxq_dma_eq(rxq, true, false);
+	}
+	rxq->rxq_dma_eq(rxq, false, true);
+
+quit:
 	if (bd_num > 0)
 		rxq->loop_avail++;
 
@@ -2954,7 +2969,7 @@ lsinic_recv_cnf_burst_update(struct lsinic_queue *rxq,
 	}
 }
 
-static uint16_t
+static void
 lsinic_recv_pkts_to_cache_seg(struct lsinic_queue *rxq)
 {
 	struct rte_mbuf *rxm;
@@ -2966,7 +2981,7 @@ lsinic_recv_pkts_to_cache_seg(struct lsinic_queue *rxq)
 
 	rx_count = rxq->next_avail_idx - rxq->next_used_idx;
 	if (!rx_count)
-		return 0;
+		return;
 
 	first_idx = lsinic_queue_next_used_idx(rxq, 0);
 	while (nb_rx < rx_count) {
@@ -2997,11 +3012,9 @@ lsinic_recv_pkts_to_cache_seg(struct lsinic_queue *rxq)
 	}
 
 	lsinic_recv_cnf_burst_update(rxq, nb_rx, first_idx);
-
-	return nb_rx;
 }
 
-static uint16_t
+static void
 lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 {
 	struct rte_mbuf *rxm;
@@ -3012,7 +3025,7 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 
 	rx_count = rxq->next_avail_idx - rxq->next_used_idx;
 	if (!rx_count)
-		return 0;
+		return;
 
 	first_idx = lsinic_queue_next_used_idx(rxq, 0);
 	while (nb_rx < rx_count) {
@@ -3037,8 +3050,6 @@ lsinic_recv_pkts_to_cache(struct lsinic_queue *rxq)
 	}
 
 	lsinic_recv_cnf_burst_update(rxq, nb_rx, first_idx);
-
-	return nb_rx;
 }
 
 uint16_t

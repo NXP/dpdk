@@ -112,6 +112,7 @@ struct lsinic_queue {
 	struct lsinic_ep_tx_seg_dst_addr *tx_seg_dst_addr;
 
 	/* For RX ring*/
+	union lsinic_bd_desc_64 *rx_bd_desc_64;
 	struct lsinic_seg_desc *rx_src_seg;
 
 	/* point to RC mem */

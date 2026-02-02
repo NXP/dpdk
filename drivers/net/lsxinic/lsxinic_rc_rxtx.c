@@ -195,28 +195,32 @@ static void lxsnic_tx_ring_idx_clean(struct lxsnic_ring *tx_ring)
 
 static int
 lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
-	uint16_t mg_num, struct lsinic_bd_desc *local_desc)
+	uint16_t idx, union lsinic_ep2rc_notify *notify)
 {
 	dma_addr_t dma;
 	uint32_t cmd_type;
 	uint16_t bd_idx = 0;
 	uint32_t pkt_len = 0, bd_status;
-	struct lsinic_bd_desc *ep_tx_desc = 0;
+	struct lsinic_bd_desc *ep_tx_desc = NULL;
 	struct lsinic_bd_desc local_tx_desc;
+	union lsinic_bd_desc_64 *ep_tx_desc_64 = NULL;
+	union lsinic_bd_desc_64 local_tx_desc_64;
 	struct lsinic_bd_desc *tx_complete_desc;
+	uint8_t ep_stat;
 	uint32_t mbuf_idx = 0;
 	char *pdata = NULL;
 	uint8_t *tx_complete;
 	uint32_t cap = tx_ring->adapter->cap;
-
-	UNUSED(mg_num);
 
 	if (tx_pkt->nb_segs > 1)
 		return -EINVAL;
 
 	bd_idx = tx_ring->last_avail_idx & (tx_ring->count - 1);
 
-	ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
+	if (tx_ring->ep_bd_desc)
+		ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
+	else
+		ep_tx_desc_64 = &tx_ring->ep_bd_desc_64[bd_idx];
 
 	if (tx_ring->rc_mem_bd_type == RC_MEM_IDX_CNF) {
 		if (unlikely(((bd_idx + 1) &
@@ -234,15 +238,14 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	} else if (tx_ring->rc_mem_bd_type == RC_MEM_BD_CNF) {
 		tx_complete = &tx_ring->tx_complete[bd_idx].bd_complete;
 		if (*tx_complete != RING_BD_READY) {
-			uint8_t current_ep_status;
-
-			ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
-			current_ep_status =
-				ep_tx_desc->bd_status & RING_BD_STATUS_MASK;
-			if (current_ep_status == RING_BD_HW_COMPLETE) {
-				/** Workaround to sync with EP BD status.*/
-				*tx_complete = RING_BD_HW_COMPLETE;
-				tx_ring->sync_err++;
+			if (tx_ring->ep_bd_desc) {
+				ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
+				ep_stat = ep_tx_desc->bd_status & RING_BD_STATUS_MASK;
+				if (ep_stat == RING_BD_HW_COMPLETE) {
+					/** Workaround to sync with EP BD status.*/
+					*tx_complete = RING_BD_HW_COMPLETE;
+					tx_ring->sync_err++;
+				}
 			}
 #ifdef LXSNIC_DEBUG_RX_TX
 			tx_ring->adapter->stats.tx_desc_err++;
@@ -285,18 +288,30 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 	}
 
 	/* write last descriptor with RS and EOP bits */
-	cmd_type |= pkt_len;
 
-	local_tx_desc.pkt_addr = dma;
-	local_tx_desc.len_cmd = cmd_type;
-	local_tx_desc.bd_status = (mbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
-	local_tx_desc.bd_status |= RING_BD_AVAILABLE;
-	if (local_desc) {
-		memcpy(local_desc, &local_tx_desc,
-			sizeof(struct lsinic_bd_desc));
+	if (ep_tx_desc) {
+		cmd_type |= pkt_len;
+		local_tx_desc.pkt_addr = dma;
+		local_tx_desc.len_cmd = cmd_type;
+		local_tx_desc.bd_status = (mbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
+		local_tx_desc.bd_status |= RING_BD_AVAILABLE;
+		if (notify) {
+			rte_memcpy(&notify->ep_tx_addr[idx], &local_tx_desc,
+				sizeof(struct lsinic_bd_desc));
+		} else {
+			rte_memcpy(ep_tx_desc, &local_tx_desc,
+				sizeof(struct lsinic_bd_desc));
+		}
 	} else {
-		memcpy(ep_tx_desc, &local_tx_desc,
-			sizeof(struct lsinic_bd_desc));
+		local_tx_desc_64.pkt_addr = dma;
+		local_tx_desc_64.len_cmd = pkt_len;
+		if (notify) {
+			rte_memcpy(&notify->ep_tx_addr_64[idx], &local_tx_desc_64,
+				sizeof(union lsinic_bd_desc_64));
+		} else {
+			rte_memcpy(ep_tx_desc_64, &local_tx_desc_64,
+				sizeof(union lsinic_bd_desc_64));
+		}
 	}
 
 	tx_ring->packets++;
@@ -409,28 +424,38 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 
 static inline void
 lxsnic_eth_xmit_notify(struct lxsnic_ring *txq,
-	uint16_t first_idx, uint16_t notify_len,
-	union lsinic_ep2rc_notify *notify)
+	uint16_t start, uint16_t notify_len, union lsinic_ep2rc_notify *notify)
 {
-	struct lsinic_bd_desc *desc;
+	struct lsinic_bd_desc *desc = NULL, *src_desc;
+	union lsinic_bd_desc_64 *desc_64 = NULL, *src_desc_64;
 	void *src, *dst;
-	int i;
-
-	if (txq->rdma)
-		desc = txq->rc_bd_desc;
-	else
-		desc = txq->ep_bd_desc;
+	int i, dst_idx;
 
 	if (txq->ep_mem_bd_type == EP_MEM_LONG_BD) {
-		int dst_idx;
-		struct lsinic_bd_desc *src_desc;
+		if (txq->rdma)
+			desc = txq->rc_bd_desc;
+		else
+			desc = txq->ep_bd_desc;
 
 		src_desc = notify->ep_tx_addr;
 		for (i = 0; i < notify_len; i++) {
 			src = (void *)&src_desc[i];
-			dst_idx = (first_idx + i) & (txq->count - 1);
+			dst_idx = (start + i) & (txq->count - 1);
 			dst = (void *)&desc[dst_idx];
 			mem_cp128b_atomic(dst, src);
+		}
+	} else if (txq->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
+		desc_64 = txq->ep_bd_desc_64;
+		src_desc_64 = notify->ep_tx_addr_64;
+		if ((start + notify_len) <= txq->count) {
+			rte_memcpy(&desc_64[start], src_desc_64,
+				notify_len * sizeof(union lsinic_bd_desc_64));
+		} else {
+			rte_memcpy(&desc_64[start], src_desc_64,
+				(txq->count - start) * sizeof(union lsinic_bd_desc_64));
+			rte_memcpy(&desc_64[0], &src_desc_64[txq->count - start],
+				(notify_len - (txq->count - start)) *
+				sizeof(union lsinic_bd_desc_64));
 		}
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of bd in ep mem un-support",
@@ -439,9 +464,9 @@ lxsnic_eth_xmit_notify(struct lxsnic_ring *txq,
 		return;
 	}
 
-	if (txq->rdma) {
+	if (txq->rdma && desc) {
 		rte_wmb();
-		txq->ep_reg->pir = (first_idx + notify_len) & (txq->count - 1);
+		txq->ep_reg->pir = (start + notify_len) & (txq->count - 1);
 	}
 }
 
@@ -553,8 +578,7 @@ eq_start:
 
 	while (nb_pkts) {
 		ret = lxsnic_xmit_one_pkt(tx_ring,
-			tx_pkts[tx_num], 0,
-			&notify.ep_tx_addr[notify_len]);
+			tx_pkts[tx_num], notify_len, &notify);
 		if (ret)
 			goto end_of_tx;
 

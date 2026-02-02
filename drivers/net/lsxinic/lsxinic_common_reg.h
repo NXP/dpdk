@@ -115,6 +115,7 @@ enum EP_MEM_BD_TYPE {
 	EP_MEM_DST_ADDR_BD,
 	EP_MEM_DST_ADDR_SEG,
 	/* For RC to set source addr in RC memory, RC->EP*/
+	EP_MEM_SRC_BD_64,
 	EP_MEM_SRC_SEG_BD
 };
 
@@ -207,6 +208,14 @@ struct lsinic_bd_desc {
 			uint32_t len_cmd;	/* length and command */
 			uint32_t bd_status;
 		};
+	};
+} __packed;
+
+union lsinic_bd_desc_64 {
+	uint64_t desc;
+	struct {
+		uint64_t pkt_addr:48;	/* Packet buffer address */
+		uint16_t len_cmd:16;
 	};
 } __packed;
 

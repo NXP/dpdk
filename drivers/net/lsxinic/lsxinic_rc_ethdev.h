@@ -183,6 +183,7 @@ struct lxsnic_ring {
 	void *ep_bd_mapped_addr;
 	/* EP_MEM_LONG_BD*/
 	struct lsinic_bd_desc *ep_bd_desc;
+	union lsinic_bd_desc_64 *ep_bd_desc_64;
 
 	/* For RC TX*/
 	struct lsinic_seg_desc *ep_tx_sg;
