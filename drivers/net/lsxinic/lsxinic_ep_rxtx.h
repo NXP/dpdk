@@ -69,10 +69,8 @@ enum queue_dma_bd_update {
 #define LSINIC_DATA_DMA_START 0
 #define LSINIC_E2R_BD_DMA_START \
 	(LSINIC_DATA_DMA_START + LSINIC_BD_ENTRY_COUNT)
-#define LSINIC_R2E_BD_DMA_START \
-	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 #define LSINIC_BD_DMA_MAX_COUNT \
-	(LSINIC_R2E_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
+	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_BD_DMA_START_FLAG MAX_U16
 struct lsinic_queue {
@@ -152,7 +150,7 @@ struct lsinic_queue {
 	uint16_t *dma_idx;
 
 	void (*txq_dma_eq)(void *queue, int append);
-	void (*rxq_dma_eq)(void *queue, int append, int dma_bd);
+	void (*rxq_dma_eq)(void *queue, int append);
 	uint16_t (*dma_dq)(void *queue);
 	void (*rx_dma_mbuf_set)(void *job,
 		struct rte_mbuf *mbuf,
@@ -160,10 +158,7 @@ struct lsinic_queue {
 		int complete_check);
 
 	uint16_t wdma_bd_len;
-	uint16_t rdma_bd_len;
-
 	uint32_t wdma_bd_start;
-	uint32_t rdma_bd_start;
 
 	pthread_t pid;
 	uint32_t core_id;
