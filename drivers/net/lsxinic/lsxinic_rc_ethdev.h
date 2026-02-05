@@ -177,7 +177,6 @@ struct lxsnic_ring {
 	pthread_t pid;
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
-	uint32_t rdma;
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	/* point to EP memory */
 	void *ep_bd_mapped_addr;

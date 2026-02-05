@@ -133,9 +133,6 @@ struct __rte_packed_begin lsinic_ring_reg {
 	uint32_t barl;
 	uint32_t pir;	/* rc produce data, then modify the register */
 	uint32_t cir;	/* ep consume data, then modify the register */
-	uint32_t rdma;
-	uint32_t rdmal;
-	uint32_t rdmah;
 	/**
 	 * Interrupt Coalescing Register
 	 * Interrupt vector bits 31:16
@@ -433,15 +430,7 @@ static inline int val_bit_len(uint64_t mask)
 #define LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD \
 	RTE_BIT32(LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD_POS)
 
-#define LSINIC_CAP_RC_XFER_BD_DMA_UPDATE_POS 6
-#define LSINIC_CAP_RC_XFER_BD_DMA_UPDATE \
-	RTE_BIT32(LSINIC_CAP_RC_XFER_BD_DMA_UPDATE_POS)
-
-#define LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE_POS 7
-#define LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE \
-	RTE_BIT32(LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE_POS)
-
-#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS 8
+#define LSINIC_CAP_XFER_RC_XMIT_CNF_TYPE_POS 6
 
 enum rc_xmit_cnf_type {
 	RC_XMIT_BD_CNF = 0,

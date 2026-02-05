@@ -525,14 +525,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 
 	/* Above capability is handled only on EP side and no sensible to RC.*/
 
-	if (0) {
-		/* Disable BD read by DMA by default,
-		 * this is workaround to fix one-way traffic halt between PFs.
-		 */
-		adapter->cap = LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
-		adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
-	}
-
 	penv = getenv("LSINIC_RC_XFER_SEGMENT_OFFLOAD");
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_RC_XFER_SEGMENT_OFFLOAD;
@@ -540,30 +532,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	penv = getenv("LSINIC_RC_RECV_SEGMENT_OFFLOAD");
 	if (penv && atoi(penv))
 		adapter->cap |= LSINIC_CAP_RC_RECV_SEGMENT_OFFLOAD;
-
-	penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE");
-	if (penv && atoi(penv))
-		adapter->cap |= LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
-	else if (penv && !atoi(penv))
-		adapter->cap &= ~LSINIC_CAP_RC_XFER_BD_DMA_UPDATE;
-
-	if (adapter->cap & LSINIC_CAP_RC_XFER_BD_DMA_UPDATE) {
-		penv = getenv("LSINIC_RXQ_QDMA_BD_UPDATE_DBG");
-		if (penv && atoi(penv))
-			adapter->ep_cap |= LSINIC_EP_CAP_RXQ_BD_DMA_UPDATE_DBG;
-	}
-
-	penv = getenv("LSINIC_TXQ_QDMA_ADDR_READ");
-	if (penv && atoi(penv))
-		adapter->cap |= LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
-	else if (penv && !atoi(penv))
-		adapter->cap &= ~LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE;
-
-	if (adapter->cap & LSINIC_CAP_RC_RECV_ADDR_DMA_UPDATE) {
-		penv = getenv("LSINIC_TXQ_QDMA_ADDR_READ_DBG");
-		if (penv && atoi(penv))
-			adapter->ep_cap |= LSINIC_EP_CAP_TXQ_ADDR_DMA_READ_DBG;
-	}
 
 	penv = getenv("LSINIC_RXQ_QDMA_NO_RESPONSE");
 	if (penv && atoi(penv))
