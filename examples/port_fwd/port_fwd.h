@@ -69,6 +69,7 @@ struct lcore_tx_queue {
 	RTE_TM_ETH_FRAMING_OVERHEAD_FCS
 
 struct lcore_conf {
+	void *sch_dev;
 	uint16_t n_rx_queue;
 	struct lcore_rx_queue rx_queue_list[MAX_RX_QUEUE_PER_LCORE];
 	uint16_t n_tx_queue;
