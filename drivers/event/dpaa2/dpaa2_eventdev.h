@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017 NXP
+ * Copyright 2017-2026 NXP
  */
 
 #ifndef __DPAA2_EVENTDEV_H__
@@ -53,23 +53,39 @@ enum {
  * the ethdev to eventdev with DPAA2 devices.
  */
 
+#define DPAA2_EVENTQ_LINK_CONF_MAX 4 /** Max schedule type + 1.*/
+#define DPAA2_EVENTQ_DPNI_RXQ_ATTACH_MAX 128
 struct dpaa2_eventq {
+	int valid;
+	void *event_port;
 	/* DPcon device */
 	struct dpaa2_dpcon_dev *dpcon;
 	/* Attached DPCI device */
 	struct dpaa2_dpci_dev *dpci;
-	/* Mapped event port */
-	struct dpaa2_io_portal_t *event_port;
 	/* Configuration provided by the user */
 	uint32_t event_queue_cfg;
 	uint32_t event_queue_id;
+	struct dpaa2_queue *dpci_txqs[DPAA2_EVENTQ_LINK_CONF_MAX];
+	uint8_t dpni_rxq_num;
+	struct dpaa2_queue *dpni_rxqs[DPAA2_EVENTQ_DPNI_RXQ_ATTACH_MAX];
 };
 
 struct dpaa2_port {
-	struct dpaa2_eventq evq_info[DPAA2_EVENT_MAX_QUEUES];
+	struct rte_eventdev *eventdev;
+	struct dpaa2_dpio_dev *dpio_dev;
+	int port_atomic;
+	rte_spinlock_t port_lock;
+	int cpu_affine;
+	struct dpaa2_eventq *evq_info[DPAA2_EVENT_MAX_QUEUES];
+	uint8_t port_id;
 	uint8_t num_linked_evq;
-	uint8_t is_port_linked;
 	uint64_t timeout_us;
+};
+
+enum dpaa2_eventdev_status {
+	DPAA2_EVENTDEV_CREATED,
+	DPAA2_EVENTDEV_STARTED,
+	DPAA2_EVENTDEV_STOPED
 };
 
 struct dpaa2_eventdev {
@@ -78,15 +94,12 @@ struct dpaa2_eventdev {
 	uint8_t max_event_queues;
 	uint8_t nb_event_queues;
 	uint8_t nb_event_ports;
-	uint8_t resvd_1;
+	uint8_t status;
 	uint32_t nb_event_queue_flows;
 	uint32_t nb_event_port_dequeue_depth;
 	uint32_t nb_event_port_enqueue_depth;
 	uint32_t event_dev_cfg;
 };
-
-struct dpaa2_dpcon_dev *rte_dpaa2_alloc_dpcon_dev(void);
-void rte_dpaa2_free_dpcon_dev(struct dpaa2_dpcon_dev *dpcon);
 
 int test_eventdev_dpaa2(void);
 

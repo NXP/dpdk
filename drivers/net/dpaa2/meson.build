@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2026 NXP
 
 if not is_linux
     build = false
@@ -8,7 +8,6 @@ endif
 
 deps += ['mempool_dpaa2']
 sources = files(
-        'base/dpaa2_hw_dpni.c',
         'base/dpaa2_tlu_hash.c',
         'dpaa2_tm.c',
         'dpaa2_mux.c',
@@ -16,8 +15,8 @@ sources = files(
         'dpaa2_flow.c',
         'dpaa2_recycle.c',
         'dpaa2_rxtx.c',
-        'dpaa2_sparser.c',
         'dpaa2_ptp.c',
+        'dpaa2_meter.c',
         'mc/dprtc.c',
         'mc/dpkg.c',
         'mc/dpdmux.c',

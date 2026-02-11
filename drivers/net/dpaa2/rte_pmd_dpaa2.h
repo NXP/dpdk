@@ -40,6 +40,9 @@ int
 rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
 	uint8_t mac_addr[6], uint16_t vlan_id, int dest_if);
 
+uint8_t
+rte_pmd_dpaa2_mux_multi_enum(uint8_t num, uint32_t ids[]);
+
 /**
  * @warning
  * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
@@ -74,29 +77,14 @@ __rte_experimental
 int
 rte_pmd_dpaa2_mux_rx_frame_len(uint32_t dpdmux_id, uint16_t max_rx_frame_len);
 
-/**
- * Create a custom hash key on basis of offset of start of packet and size.
- * for e.g. if we need GRE packets (non-vlan and without any extra headers)
- * to be hashed on basis of inner IP header, we will provide offset as:
- * 14 (eth) + 20 (IP) + 4 (GRE) + 12 (Inner Src offset) = 50 and size
- * as 8 bytes.
- *
- * @param port_id
- *    The port identifier of the Ethernet device.
- * @param offset
- *    Offset from the start of packet which needs to be included to
- *    calculate hash
- * @param size
- *    Size of the hash input key
- *
- * @return
- *   - 0 if successful.
- *   - Negative in case of failure.
- */
+__rte_experimental
 int
-rte_pmd_dpaa2_set_custom_hash(uint16_t port_id,
-			      uint16_t offset,
-			      uint8_t size);
+rte_pmd_dpaa2_mux_default_id(uint32_t dpdmux_id, uint16_t *id);
+
+__rte_experimental
+int
+rte_pmd_dpaa2_mux_ep_name(uint32_t dpdmux_id,
+	uint16_t id, const char **name);
 
 /**
  * @warning
@@ -130,19 +118,24 @@ rte_pmd_dpaa2_get_tlu_hash(uint8_t *key, int size);
 
 __rte_experimental
 int
+rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id);
+
+__rte_experimental
+int
 rte_pmd_dpaa2_dev_is_dpaa2(uint32_t eth_id);
 __rte_experimental
 const char *
 rte_pmd_dpaa2_ep_name(uint32_t eth_id);
-
-#if defined(RTE_LIBRTE_IEEE1588)
-__rte_experimental
+uint16_t
+rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
+	uint16_t txq_id);
 int
-rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_update);
-__rte_experimental
-int
-rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query);
-#endif
+rte_pmd_dpaa2_rx_get_offset(uint16_t port_id, struct rte_mbuf *m,
+	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off);
+uint16_t
+rte_dpaa2_dev_tx_multi_ports(uint16_t port_id[],
+	uint16_t txq_id[], struct rte_mbuf **bufs,
+	uint16_t nb_pkts);
 
 #define RTE_DPAA2_DEV_TC_INFO_RSV_IDX 0
 union __rte_packed_begin rte_pmd_dpaa2_dev_tc_desc {
@@ -198,4 +191,94 @@ rte_pmd_dpaa2_rxq_parse_tc_info(const struct rte_eth_rxq_info *rxq_info,
 	if (flow_id)
 		*flow_id = desc.flow_id;
 }
+
+enum rte_dpaa2_sch_mode {
+	RTE_DPAA2_SCH_PULL,
+	RTE_DPAA2_SCH_PUSH
+};
+
+__rte_experimental
+void *
+rte_dpaa2_scheduler_init(enum rte_dpaa2_sch_mode sch_mode);
+__rte_experimental
+int
+rte_dpaa2_scheduler_start(void *scheduler_handle);
+__rte_experimental
+int
+rte_dpaa2_scheduler_destroy(void *scheduler_handle);
+__rte_experimental
+int
+rte_dpaa2_scheduler_add(void *scheduler_handle,
+	uint16_t port_id, uint16_t rxq_id, uint8_t priority);
+
+/* rte_dpaa2_scheduler_rx()- DPCON scheduler receive function
+ * @scheduler_handle: DPCON scheduler handle
+ * @mbuf:             Packet mbuf
+ * @nb_pkts:          Number of packets to be received.
+ * Return Number of received packet.
+ */
+__rte_experimental
+uint16_t
+rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
+	uint16_t nb_pkts);
+
+#define RTE_DPAA2_EVENT_PORT_CFG_ATOMIC RTE_BIT32(31)
+
+int
+rte_pmd_dpaa2_flow_table_query(uint16_t portid);
+
+/** User sets default actions(TC/flow) and attaches it to
+ * struct rte_eth_rxmode->reserved_ptrs to configure by
+ * rte_eth_dev_configure.
+ */
+struct rte_dpaa2_default_action_conf {
+	uint8_t default_tc;
+	uint8_t max_tc;
+	uint16_t default_flows[];
+};
+
+#define RTE_DPAA2_ONE_LEVEL_GROUP_FLOW 0
+#define RTE_DPAA2_QOS_GROUP_FLOW 1
+#define RTE_DPAA2_FS_GROUP_FLOW 2
+
+#define RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET 8
+#define RTE_PMD_DPAA2_FLOW_GROUP_ID_MASK \
+	((((uint32_t)1) << RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET) - 1)
+
+#define RTE_DPAA2_FLOW_GROUP_TYPE_SET(group, type) \
+	((group) |= ((type) << RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET))
+
+#define RTE_DPAA2_FLOW_GROUP_TYPE_GET(group) \
+	((group) >> RTE_PMD_DPAA2_FLOW_GROUP_TYPE_OFFSET)
+
+#define RTE_DPAA2_FLOW_GROUP_ID_GET(group) \
+	((group) & RTE_PMD_DPAA2_FLOW_GROUP_ID_MASK)
+
+/** Parameter "type" should be:
+ *RTE_DPAA2_ONE_LEVEL_GROUP_FLOW or
+ *RTE_DPAA2_QOS_GROUP_FLOW or
+ *RTE_DPAA2_FS_GROUP_FLOW
+ */
+__rte_experimental
+static inline struct rte_flow *
+rte_dpaa2_flow_create(uint16_t port_id,
+		const struct rte_flow_attr *attr,
+		const struct rte_flow_item pattern[],
+		const struct rte_flow_action actions[],
+		struct rte_flow_error *error, uint32_t type)
+{
+	struct rte_flow_attr _attr;
+
+	rte_memcpy(&_attr, attr, sizeof(struct rte_flow_attr));
+	RTE_DPAA2_FLOW_GROUP_TYPE_SET(_attr.group, type);
+	return rte_flow_create(port_id, &_attr, pattern, actions, error);
+}
+
+__rte_experimental
+int
+rte_dpaa2_flow_group_set_miss_actions(uint16_t port_id,
+		uint32_t group_id, uint32_t type,
+		const struct rte_flow_group_attr *attr,
+		const struct rte_flow_action actions[],
+		struct rte_flow_error *error);
 #endif /* _RTE_PMD_DPAA2_H */

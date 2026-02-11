@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2024 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 
@@ -13,6 +13,7 @@
 #include <dpaax_iova_table.h>
 
 #include <mc/fsl_mc_sys.h>
+#include <mc/fsl_dpci.h>
 #include <fsl_qbman_portal.h>
 #include <bus_fslmc_driver.h>
 
@@ -147,6 +148,7 @@ struct dpaa2_dpbp_dev {
 
 struct queue_storage_info_t {
 	struct qbman_result *dq_storage[NUM_DQS_PER_QUEUE];
+	uint64_t iova_dq_storage[NUM_DQS_PER_QUEUE];
 	struct qbman_result *active_dqs;
 	uint8_t active_dpio_id;
 	uint8_t toggle;
@@ -155,7 +157,7 @@ struct queue_storage_info_t {
 
 struct dpaa2_queue;
 
-typedef void (dpaa2_queue_cb_dqrr_t)(struct qbman_swp *swp,
+typedef void (dpaa2_queue_cb_dqrr_t)(struct dpaa2_dpio_dev *dpio_dev,
 		const struct qbman_fd *fd,
 		const struct qbman_result *dq,
 		struct dpaa2_queue *rxq,
@@ -183,7 +185,11 @@ struct __rte_cache_aligned dpaa2_queue {
 		/**Egress*/
 		struct qbman_result *cscn;
 	};
+	void *cfg;
+	uint8_t options;
 	struct rte_event ev;
+	struct rte_mempool *env_pool;
+	uint8_t event_attached;
 	dpaa2_queue_cb_dqrr_t *cb;
 	dpaa2_queue_cb_eqresp_free_t *cb_eqresp_free;
 	struct dpaa2_bp_info *bp_array;
@@ -194,6 +200,7 @@ struct __rte_cache_aligned dpaa2_queue {
 	uint16_t tm_sw_td;	/*!< TM software taildrop */
 	uint64_t offloads;
 	uint64_t lpbk_cntx;
+	int32_t ts_to_cnfd;
 	uint8_t data_stashing_off;
 };
 
@@ -257,8 +264,11 @@ struct dpaa2_dpci_dev {
 	uint16_t token;
 	rte_atomic16_t in_use;
 	uint32_t dpci_id; /*HW ID for DPCI object */
-	struct dpaa2_queue rx_queue[DPAA2_DPCI_MAX_QUEUES];
-	struct dpaa2_queue tx_queue[DPAA2_DPCI_MAX_QUEUES];
+	uint32_t peer_id;
+	uint16_t rx_queue_num;
+	uint16_t tx_queue_num;
+	struct dpaa2_queue *rx_queue;
+	struct dpaa2_queue *tx_queue;
 };
 
 struct dpaa2_dpcon_dev {
@@ -472,26 +482,6 @@ dpaa2_mem_va_to_iova_check(void *va, uint64_t size)
 #define DPAA2_IOVA_TO_VADDR_AND_CHECK(_iova, size) \
 	rte_fslmc_cold_mem_iova_to_vaddr(_iova, size)
 
-static inline
-int check_swp_active_dqs(uint16_t dpio_index)
-{
-	if (rte_global_active_dqs_list[dpio_index].global_active_dqs != NULL)
-		return 1;
-	return 0;
-}
-
-static inline
-void clear_swp_active_dqs(uint16_t dpio_index)
-{
-	rte_global_active_dqs_list[dpio_index].global_active_dqs = NULL;
-}
-
-static inline
-struct qbman_result *get_swp_active_dqs(uint16_t dpio_index)
-{
-	return rte_global_active_dqs_list[dpio_index].global_active_dqs;
-}
-
 /* 00 00 00 - last 6 bit represent data, annotation,
  * context stashing setting 01 01 00 (0x14)
  * (in following order ->DS AS CS)
@@ -536,6 +526,26 @@ dpaa2_flc_stashing_clear_all(uint64_t *flc)
 }
 
 static inline
+int check_swp_active_dqs(uint16_t dpio_index)
+{
+	if (rte_global_active_dqs_list[dpio_index].global_active_dqs != NULL)
+		return 1;
+	return 0;
+}
+
+static inline
+void clear_swp_active_dqs(uint16_t dpio_index)
+{
+	rte_global_active_dqs_list[dpio_index].global_active_dqs = NULL;
+}
+
+static inline
+struct qbman_result *get_swp_active_dqs(uint16_t dpio_index)
+{
+	return rte_global_active_dqs_list[dpio_index].global_active_dqs;
+}
+
+static inline
 void set_swp_active_dqs(uint16_t dpio_index, struct qbman_result *dqs)
 {
 	rte_global_active_dqs_list[dpio_index].global_active_dqs = dqs;
@@ -555,6 +565,24 @@ struct dpaa2_dpci_dev *rte_dpaa2_alloc_dpci_dev(void);
 
 __rte_internal
 void rte_dpaa2_free_dpci_dev(struct dpaa2_dpci_dev *dpci);
+
+__rte_internal
+struct dpaa2_dpcon_dev *rte_dpaa2_alloc_dpcon_dev(void);
+
+__rte_internal
+void rte_dpaa2_free_dpcon_dev(struct dpaa2_dpcon_dev *dpcon);
+
+__rte_internal
+int32_t rte_dpaa2_dpcon_start(struct dpaa2_dpcon_dev *dpcon_dev);
+
+__rte_internal
+int32_t rte_dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev);
+
+__rte_internal
+int
+rte_dpaa2_dpci_link_attach(struct dpaa2_dpci_dev *dpci_dev,
+	enum dpci_dest dest_type, uint32_t dest_id, uint8_t priority,
+	dpaa2_queue_cb_dqrr_t *rx_cb, struct dpaa2_queue **txq);
 
 /* Global MCP pointer */
 __rte_internal

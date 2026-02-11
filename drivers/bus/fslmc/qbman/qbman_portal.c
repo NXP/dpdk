@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014-2016 Freescale Semiconductor, Inc.
- * Copyright 2018-2020,2023-2024 NXP
+ * Copyright 2018-2020,2023-2026 NXP
  *
  */
 
@@ -1878,6 +1878,7 @@ void qbman_pull_desc_set_wq(struct qbman_pull_desc *d, uint32_t wqid,
 	d->pull.dq_src = wqid;
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(qbman_pull_desc_set_channel)
 void qbman_pull_desc_set_channel(struct qbman_pull_desc *d, uint32_t chid,
 				 enum qbman_pull_type_e dct)
 {

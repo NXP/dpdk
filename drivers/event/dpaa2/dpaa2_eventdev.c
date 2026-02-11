@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017,2019-2022 NXP
+ * Copyright 2017,2019-2026 NXP
  */
 
 #include <assert.h>
@@ -41,6 +41,33 @@
 #include <portal/dpaa2_hw_pvt.h>
 #include <mc/fsl_dpci.h>
 
+static int
+dpaa2_eventdev_attach_eth_rxq(const struct rte_eth_dev *dev,
+	struct dpaa2_eventdev *priv, uint16_t rxq_id,
+	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
+{
+	int ret;
+	uint8_t ev_qid = queue_conf->ev.queue_id;
+	uint8_t idx = priv->evq_info[ev_qid].dpni_rxq_num;
+	struct dpaa2_dpcon_dev *dpcon = priv->evq_info[ev_qid].dpcon;
+
+	if (idx >= DPAA2_EVENTQ_DPNI_RXQ_ATTACH_MAX) {
+		DPAA2_EVENTDEV_ERR("Too many queues to attach.");
+		return -ENOMEM;
+	}
+	ret = dpaa2_eth_eventq_attach(dev, rxq_id, dpcon, queue_conf, false);
+	if (ret) {
+		DPAA2_EVENTDEV_ERR("Event queue attach failed: err(%d)",
+			ret);
+
+		return ret;
+	}
+	priv->evq_info[ev_qid].dpni_rxqs[idx] = dev->data->rx_queues[rxq_id];
+	priv->evq_info[ev_qid].dpni_rxq_num++;
+
+	return 0;
+}
+
 /* Clarifications
  * Evendev = SoC Instance
  * Eventport = DPIO Instance
@@ -55,91 +82,75 @@ static uint16_t
 dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 			     uint16_t nb_events)
 {
-
 	struct dpaa2_port *dpaa2_portal = port;
 	struct dpaa2_dpio_dev *dpio_dev;
-	uint32_t queue_id = ev[0].queue_id;
+	struct rte_eventdev *eventdev = dpaa2_portal->eventdev;
+	struct dpaa2_eventdev *priv = eventdev->data->dev_private;
 	struct dpaa2_eventq *evq_info;
-	uint32_t fqid, retry_count;
+	uint32_t queue_id, retry_count, loop, frames_to_send;
 	struct qbman_swp *swp;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
-	uint32_t loop, frames_to_send;
 	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
 	uint16_t num_tx = 0;
-	int i, n, ret;
-	uint8_t channel_index;
+	int ret;
+	uint8_t dqrr_index;
+	const struct rte_event *event;
+	struct dpaa2_queue *dpci_txq;
+	struct rte_event *ev_tx;
 
-	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
-		/* Affine current thread context to a qman portal */
-		ret = dpaa2_affine_qbman_swp();
-		if (ret < 0) {
-			DPAA2_EVENTDEV_ERR(
-				"Failed to allocate IO portal, tid: %d",
-				rte_gettid());
-			return 0;
-		}
+	if (unlikely(!dpaa2_portal->dpio_dev)) {
+		DPAA2_EVENTDEV_ERR("Event port%d not setup", dpaa2_portal->port_id);
+		return 0;
 	}
-	/* todo - dpaa2_portal shall have dpio_dev - no per thread variable */
-	dpio_dev = DPAA2_PER_LCORE_DPIO;
-	swp = DPAA2_PER_LCORE_PORTAL;
 
-	if (likely(dpaa2_portal->is_port_linked))
-		goto skip_linking;
-
-	/* Create mapping between portal and channel to receive packets */
-	for (i = 0; i < DPAA2_EVENT_MAX_QUEUES; i++) {
-		evq_info = &dpaa2_portal->evq_info[i];
-		if (!evq_info->event_port)
-			continue;
-
-		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
-						      CMD_PRI_LOW,
-						      dpio_dev->token,
-						      evq_info->dpcon->dpcon_id,
-						      &channel_index);
-		if (ret < 0) {
-			DPAA2_EVENTDEV_ERR(
-				"Static dequeue config failed: err(%d)", ret);
-			goto err;
-		}
-
-		qbman_swp_push_set(swp, channel_index, 1);
-		evq_info->dpcon->channel_index = channel_index;
+	if (unlikely(!dpaa2_portal->num_linked_evq)) {
+		DPAA2_EVENTDEV_ERR("%s: Event port%d no queue linked",
+			__func__, dpaa2_portal->port_id);
+		return 0;
 	}
-	dpaa2_portal->is_port_linked = true;
 
-skip_linking:
-	evq_info = &dpaa2_portal->evq_info[queue_id];
+	if (dpaa2_portal->port_atomic)
+		rte_spinlock_lock(&dpaa2_portal->port_lock);
+	else if (unlikely(dpaa2_portal->cpu_affine < 0))
+		dpaa2_portal->cpu_affine = rte_lcore_id();
+
+	if (unlikely(!dpaa2_portal->port_atomic &&
+		dpaa2_portal->cpu_affine != (int)rte_lcore_id())) {
+		DPAA2_EVENTDEV_WARN("%s: Data path cpu(%d) != event port%d's cpu(%d)",
+			__func__, rte_lcore_id(), dpaa2_portal->port_id,
+			dpaa2_portal->cpu_affine);
+	}
+
+	dpio_dev = dpaa2_portal->dpio_dev;
+	swp = dpio_dev->sw_portal;
 
 	while (nb_events) {
 		frames_to_send = (nb_events > dpaa2_eqcr_size) ?
 			dpaa2_eqcr_size : nb_events;
 
 		for (loop = 0; loop < frames_to_send; loop++) {
-			const struct rte_event *event = &ev[num_tx + loop];
-
-			if (event->sched_type != RTE_SCHED_TYPE_ATOMIC)
-				fqid = evq_info->dpci->rx_queue[
-					DPAA2_EVENT_DPCI_PARALLEL_QUEUE].fqid;
-			else
-				fqid = evq_info->dpci->rx_queue[
-					DPAA2_EVENT_DPCI_ATOMIC_QUEUE].fqid;
+			event = &ev[num_tx + loop];
+			queue_id = event->queue_id;
+			evq_info = &priv->evq_info[queue_id];
+			if (unlikely(evq_info->event_port != dpaa2_portal)) {
+				DPAA2_EVENTDEV_ERR("Event queue%d is not handled by port%d",
+					queue_id, dpaa2_portal->port_id);
+				goto send_partial;
+			}
+			dpci_txq = evq_info->dpci_txqs[event->sched_type];
 
 			/* Prepare enqueue descriptor */
 			qbman_eq_desc_clear(&eqdesc[loop]);
-			qbman_eq_desc_set_fq(&eqdesc[loop], fqid);
+			qbman_eq_desc_set_fq(&eqdesc[loop], dpci_txq->fqid);
 			qbman_eq_desc_set_no_orp(&eqdesc[loop], 0);
 			qbman_eq_desc_set_response(&eqdesc[loop], 0, 0);
 
-			if (event->sched_type == RTE_SCHED_TYPE_ATOMIC
-				&& *dpaa2_seqn(event->mbuf)) {
-				uint8_t dqrr_index =
-					*dpaa2_seqn(event->mbuf) - 1;
-
-				qbman_eq_desc_set_dca(&eqdesc[loop], 1,
-						      dqrr_index, 0);
-				DPAA2_PER_LCORE_DQRR_SIZE--;
-				DPAA2_PER_LCORE_DQRR_HELD &= ~(1 << dqrr_index);
+			if (event->sched_type == RTE_SCHED_TYPE_ATOMIC &&
+				*dpaa2_seqn(event->mbuf)) {
+				dqrr_index = *dpaa2_seqn(event->mbuf) - 1;
+				qbman_eq_desc_set_dca(&eqdesc[loop], 1, dqrr_index, 0);
+				dpio_dev->dpaa2_held_bufs.dqrr_size--;
+				dpio_dev->dpaa2_held_bufs.dqrr_held &= ~(1 << dqrr_index);
 			}
 
 			memset(&fd_arr[loop], 0, sizeof(struct qbman_fd));
@@ -148,21 +159,16 @@ skip_linking:
 			 * todo - need to align with hw context data
 			 * to avoid copy
 			 */
-			struct rte_event *ev_temp = rte_malloc(NULL,
-						sizeof(struct rte_event), 0);
-
-			if (!ev_temp) {
-				if (!loop)
-					return num_tx;
-				frames_to_send = loop;
-				DPAA2_EVENTDEV_ERR(
-					"Unable to allocate event object");
+			ret = rte_mempool_get(dpci_txq->env_pool, (void **)&ev_tx);
+			if (ret) {
+				DPAA2_EVENTDEV_ERR("Allocate event object failed from %s",
+					dpci_txq->env_pool->name);
 				goto send_partial;
 			}
-			rte_memcpy(ev_temp, event, sizeof(struct rte_event));
-			DPAA2_SET_FD_ADDR((&fd_arr[loop]), (size_t)ev_temp);
-			DPAA2_SET_FD_LEN((&fd_arr[loop]),
-					 sizeof(struct rte_event));
+
+			rte_memcpy(ev_tx, event, sizeof(struct rte_event));
+			DPAA2_SET_FD_ADDR((&fd_arr[loop]), (size_t)ev_tx);
+			DPAA2_SET_FD_LEN((&fd_arr[loop]), sizeof(struct rte_event));
 		}
 send_partial:
 		loop = 0;
@@ -176,7 +182,7 @@ send_partial:
 				if (retry_count > DPAA2_EV_TX_RETRY_COUNT) {
 					num_tx += loop;
 					nb_events -= loop;
-					return num_tx;
+					goto quit;
 				}
 			} else {
 				loop += ret;
@@ -187,19 +193,10 @@ send_partial:
 		nb_events -= loop;
 	}
 
+quit:
+	if (dpaa2_portal->port_atomic)
+		rte_spinlock_unlock(&dpaa2_portal->port_lock);
 	return num_tx;
-err:
-	for (n = 0; n < i; n++) {
-		evq_info = &dpaa2_portal->evq_info[n];
-		if (!evq_info->event_port)
-			continue;
-		qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
-		dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
-						dpio_dev->token,
-						evq_info->dpcon->dpcon_id);
-	}
-	return 0;
-
 }
 
 static void dpaa2_eventdev_dequeue_wait(uint64_t timeout_ticks)
@@ -213,109 +210,84 @@ static void dpaa2_eventdev_dequeue_wait(uint64_t timeout_ticks)
 			 &epoll_ev, 1, timeout_ticks);
 }
 
-static void dpaa2_eventdev_process_parallel(struct qbman_swp *swp,
-					    const struct qbman_fd *fd,
-					    const struct qbman_result *dq,
-					    struct dpaa2_queue *rxq,
-					    struct rte_event *ev)
+static void dpaa2_eventdev_process_parallel(struct dpaa2_dpio_dev *dpio_dev,
+	const struct qbman_fd *fd, const struct qbman_result *dq,
+	struct dpaa2_queue *rxq, struct rte_event *ev)
 {
-	struct rte_event *ev_temp =
-		(struct rte_event *)(size_t)DPAA2_GET_FD_ADDR(fd);
+	struct rte_event *rx_ev = (void *)DPAA2_GET_FD_ADDR(fd);
+	struct qbman_swp *swp = dpio_dev->sw_portal;
 
-	RTE_SET_USED(rxq);
-
-	*ev = *ev_temp;
-	rte_free(ev_temp);
+	rte_memcpy(ev, rx_ev, sizeof(struct rte_event));
+	rte_mempool_put(rxq->env_pool, rx_ev);
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
 
-static void dpaa2_eventdev_process_atomic(struct qbman_swp *swp,
-					  const struct qbman_fd *fd,
-					  const struct qbman_result *dq,
-					  struct dpaa2_queue *rxq,
-					  struct rte_event *ev)
+static void dpaa2_eventdev_process_atomic(struct dpaa2_dpio_dev *dpio_dev,
+	const struct qbman_fd *fd, const struct qbman_result *dq,
+	struct dpaa2_queue *rxq, struct rte_event *ev)
 {
-	struct rte_event *ev_temp =
-		(struct rte_event *)(size_t)DPAA2_GET_FD_ADDR(fd);
+	struct rte_event *rx_ev = (void *)DPAA2_GET_FD_ADDR(fd);
 	uint8_t dqrr_index = qbman_get_dqrr_idx(dq);
 
-	RTE_SET_USED(swp);
-	RTE_SET_USED(rxq);
-
-	*ev = *ev_temp;
-	rte_free(ev_temp);
+	rte_memcpy(ev, rx_ev, sizeof(struct rte_event));
+	rte_mempool_put(rxq->env_pool, rx_ev);
 	*dpaa2_seqn(ev->mbuf) = dqrr_index + 1;
-	DPAA2_PER_LCORE_DQRR_SIZE++;
-	DPAA2_PER_LCORE_DQRR_HELD |= 1 << dqrr_index;
-	DPAA2_PER_LCORE_DQRR_MBUF(dqrr_index) = ev->mbuf;
+	dpio_dev->dpaa2_held_bufs.dqrr_size++;
+	dpio_dev->dpaa2_held_bufs.dqrr_held |= 1 << dqrr_index;
+	dpio_dev->dpaa2_held_bufs.mbuf[dqrr_index] = ev->mbuf;
 }
 
 static uint16_t
 dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
-			     uint16_t nb_events, uint64_t timeout_ticks)
+	uint16_t nb_events, uint64_t timeout_ticks)
 {
 	const struct qbman_result *dq;
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	struct dpaa2_port *dpaa2_portal = port;
-	struct dpaa2_eventq *evq_info;
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct dpaa2_queue *rxq;
-	int num_pkts = 0, ret, i = 0, n;
-	uint8_t channel_index;
+	uint16_t num_pkts = 0, i = 0;
 
-	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
-		/* Affine current thread context to a qman portal */
-		ret = dpaa2_affine_qbman_swp();
-		if (ret < 0) {
-			DPAA2_EVENTDEV_ERR(
-				"Failed to allocate IO portal, tid: %d",
-				rte_gettid());
-			return 0;
-		}
+	if (unlikely(!dpaa2_portal->dpio_dev)) {
+		DPAA2_EVENTDEV_ERR("Event port%d not setup", dpaa2_portal->port_id);
+		return 0;
 	}
 
-	dpio_dev = DPAA2_PER_LCORE_DPIO;
-	swp = DPAA2_PER_LCORE_PORTAL;
-
-	if (likely(dpaa2_portal->is_port_linked))
-		goto skip_linking;
-
-	/* Create mapping between portal and channel to receive packets */
-	for (i = 0; i < DPAA2_EVENT_MAX_QUEUES; i++) {
-		evq_info = &dpaa2_portal->evq_info[i];
-		if (!evq_info->event_port)
-			continue;
-
-		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
-						      CMD_PRI_LOW,
-						      dpio_dev->token,
-						      evq_info->dpcon->dpcon_id,
-						      &channel_index);
-		if (ret < 0) {
-			DPAA2_EVENTDEV_ERR(
-				"Static dequeue config failed: err(%d)", ret);
-			goto err;
-		}
-
-		qbman_swp_push_set(swp, channel_index, 1);
-		evq_info->dpcon->channel_index = channel_index;
+	if (unlikely(!dpaa2_portal->num_linked_evq)) {
+		DPAA2_EVENTDEV_WARN("%s: Event port%d no queue linked",
+			__func__, dpaa2_portal->port_id);
+		rte_delay_us(10000);
+		return 0;
 	}
-	dpaa2_portal->is_port_linked = true;
 
-skip_linking:
+	if (dpaa2_portal->port_atomic)
+		rte_spinlock_lock(&dpaa2_portal->port_lock);
+	else if (unlikely(dpaa2_portal->cpu_affine < 0))
+		dpaa2_portal->cpu_affine = rte_lcore_id();
+
+	if (unlikely(!dpaa2_portal->port_atomic &&
+		dpaa2_portal->cpu_affine != (int)rte_lcore_id())) {
+		DPAA2_EVENTDEV_WARN("%s: Data path cpu(%d) != event port%d's cpu(%d)",
+			__func__, rte_lcore_id(), dpaa2_portal->port_id,
+			dpaa2_portal->cpu_affine);
+	}
+
+	dpio_dev = dpaa2_portal->dpio_dev;
+	swp = dpio_dev->sw_portal;
+
 	/* Check if there are atomic contexts to be released */
-	while (DPAA2_PER_LCORE_DQRR_SIZE) {
-		if (DPAA2_PER_LCORE_DQRR_HELD & (1 << i)) {
+	while (dpio_dev->dpaa2_held_bufs.dqrr_size) {
+		if (dpio_dev->dpaa2_held_bufs.dqrr_held & (1 << i)) {
 			qbman_swp_dqrr_idx_consume(swp, i);
-			DPAA2_PER_LCORE_DQRR_SIZE--;
-			*dpaa2_seqn(DPAA2_PER_LCORE_DQRR_MBUF(i)) =
+			dpio_dev->dpaa2_held_bufs.dqrr_size--;
+			*dpaa2_seqn(dpio_dev->dpaa2_held_bufs.mbuf[i]) =
 				DPAA2_INVALID_MBUF_SEQN;
 		}
 		i++;
 	}
-	DPAA2_PER_LCORE_DQRR_HELD = 0;
+	dpio_dev->dpaa2_held_bufs.dqrr_held = 0;
 
 	do {
 		dq = qbman_swp_dqrr_next(swp);
@@ -325,41 +297,29 @@ skip_linking:
 				timeout_ticks = 0;
 				continue;
 			}
-			return num_pkts;
+			goto quit;
 		}
 		qbman_swp_prefetch_dqrr_next(swp);
 
 		fd = qbman_result_DQ_fd(dq);
-		rxq = (struct dpaa2_queue *)(size_t)qbman_result_DQ_fqd_ctx(dq);
-		if (rxq) {
-			rxq->cb(swp, fd, dq, rxq, &ev[num_pkts]);
-		} else {
+		rxq = (void *)qbman_result_DQ_fqd_ctx(dq);
+		if (rxq && rxq->cb)
+			rxq->cb(dpio_dev, fd, dq, rxq, &ev[num_pkts]);
+		else
 			qbman_swp_dqrr_consume(swp, dq);
-			DPAA2_EVENTDEV_ERR("Null Return VQ received");
-			return 0;
-		}
 
 		num_pkts++;
 	} while (num_pkts < nb_events);
 
+quit:
+	if (dpaa2_portal->port_atomic)
+		rte_spinlock_unlock(&dpaa2_portal->port_lock);
 	return num_pkts;
-err:
-	for (n = 0; n < i; n++) {
-		evq_info = &dpaa2_portal->evq_info[n];
-		if (!evq_info->event_port)
-			continue;
-
-		qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
-		dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
-							dpio_dev->token,
-						evq_info->dpcon->dpcon_id);
-	}
-	return 0;
 }
 
 static void
 dpaa2_eventdev_info_get(struct rte_eventdev *dev,
-			struct rte_event_dev_info *dev_info)
+	struct rte_event_dev_info *dev_info)
 {
 	struct dpaa2_eventdev *priv = dev->data->dev_private;
 
@@ -382,6 +342,8 @@ dpaa2_eventdev_info_get(struct rte_eventdev *dev,
 	dev_info->max_event_priority_levels =
 		DPAA2_EVENT_MAX_EVENT_PRIORITY_LEVELS;
 	dev_info->max_event_ports = rte_fslmc_get_device_count(DPAA2_IO);
+	if (dev_info->max_event_ports > dev_info->max_event_queues)
+		dev_info->max_event_ports = dev_info->max_event_queues;
 	/* we only support dpio up to number of cores */
 	if (dev_info->max_event_ports > rte_lcore_count())
 		dev_info->max_event_ports = rte_lcore_count();
@@ -440,9 +402,11 @@ dpaa2_eventdev_configure(const struct rte_eventdev *dev)
 static int
 dpaa2_eventdev_start(struct rte_eventdev *dev)
 {
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
+
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
+	priv->status = DPAA2_EVENTDEV_STARTED;
 
 	return 0;
 }
@@ -450,19 +414,136 @@ dpaa2_eventdev_start(struct rte_eventdev *dev)
 static void
 dpaa2_eventdev_stop(struct rte_eventdev *dev)
 {
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
+	uint16_t num, i;
+	struct rte_event ev;
+	struct dpaa2_port *dpaa2_portal;
+	int cpu_affine;
+
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
+	for (i = 0; i < dev->data->nb_ports; i++) {
+		dpaa2_portal = dev->data->ports[i];
+		if (!dpaa2_portal || !dpaa2_portal->num_linked_evq)
+			continue;
+dq_agin:
+		rte_delay_ms(1);
+		cpu_affine = dpaa2_portal->cpu_affine;
+		dpaa2_portal->cpu_affine = rte_lcore_id();
+		num = dpaa2_eventdev_dequeue_burst(dpaa2_portal, &ev, 1, 0);
+		dpaa2_portal->cpu_affine = cpu_affine;
+		if (!num)
+			continue;
+		if (dev->dev_ops->dev_stop_flush) {
+			dev->dev_ops->dev_stop_flush(dev->data->dev_id,
+				ev, dev->data->dev_stop_flush_arg);
+		}
+		goto dq_agin;
+	}
+
+	priv->status = DPAA2_EVENTDEV_STOPED;
+}
+
+static void
+dpaa2_eventdev_port_release(void *port)
+{
+	struct dpaa2_port *portal = port;
+	uint8_t port_id = portal->port_id;
+	struct rte_eventdev *eventdev = portal->eventdev;
+	int ret;
+
+	EVENTDEV_INIT_FUNC_TRACE();
+
+	if (!portal)
+		return;
+
+	/* TODO: Cleanup is required when ports are in linked state. */
+	if (portal->num_linked_evq) {
+		ret = rte_event_port_unlink(eventdev->data->dev_id, port_id, NULL, 0);
+		if (ret < 0) {
+			DPAA2_EVENTDEV_ERR("Event port.%d unlink all failed(%d)",
+				portal->port_id, ret);
+		}
+	}
+
+	rte_dpaa2_free_dpio_device(portal->dpio_dev);
+
+	rte_free(portal);
+	eventdev->data->ports[port_id] = NULL;
+}
+
+static int
+dpaa2_eventdev_eth_queue_del(const struct rte_eventdev *dev,
+	const struct rte_eth_dev *eth_dev, int32_t rx_queue_id)
+{
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
+	struct dpaa2_eventq *evq;
+	uint8_t i, j, k, found = false;
+	int ret;
+
+	EVENTDEV_INIT_FUNC_TRACE();
+
+	if (!eth_dev || rx_queue_id < 0) {
+		for (i = 0; i < priv->max_event_queues; i++) {
+			if (!priv->evq_info[i].valid)
+				continue;
+			evq = &priv->evq_info[i];
+			for (j = 0; j < evq->dpni_rxq_num; j++) {
+				ret = dpaa2_eth_eventq_detach_by_rxq(evq->dpni_rxqs[j]);
+				if (ret)
+					return ret;
+			}
+			evq->dpni_rxq_num = 0;
+		}
+
+		return 0;
+	}
+
+	for (i = 0; i < priv->max_event_queues; i++) {
+		if (!priv->evq_info[i].valid)
+			continue;
+		evq = &priv->evq_info[i];
+		for (j = 0; j < evq->dpni_rxq_num; j++) {
+			if (evq->dpni_rxqs[j] == eth_dev->data->rx_queues[rx_queue_id]) {
+				found = true;
+				for (k = j + 1; k < evq->dpni_rxq_num; k++)
+					evq->dpni_rxqs[k - 1] = evq->dpni_rxqs[k];
+				evq->dpni_rxq_num--;
+				goto start_detach;
+			}
+		}
+	}
+
+start_detach:
+	if (found)
+		return dpaa2_eth_eventq_detach(eth_dev, rx_queue_id);
+
+	return -ENODEV;
 }
 
 static int
 dpaa2_eventdev_close(struct rte_eventdev *dev)
 {
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
+	int i, ret;
+
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
+	if (priv->status == DPAA2_EVENTDEV_CREATED)
+		return 0;
+	if (priv->status == DPAA2_EVENTDEV_STARTED)
+		dpaa2_eventdev_stop(dev);
 
-	return 0;
+	for (i = 0; i < dev->data->nb_ports; i++) {
+		if (dev->data->ports[i])
+			dpaa2_eventdev_port_release(dev->data->ports[i]);
+	}
+
+	ret = dpaa2_eventdev_eth_queue_del(dev, NULL, -1);
+	if (!ret)
+		priv->status = DPAA2_EVENTDEV_CREATED;
+
+	return ret;
 }
 
 static void
@@ -533,115 +614,184 @@ dpaa2_eventdev_port_def_conf(struct rte_eventdev *dev, uint8_t port_id,
 }
 
 static int
-dpaa2_eventdev_port_setup(struct rte_eventdev *dev, uint8_t port_id,
-			  const struct rte_event_port_conf *port_conf)
+dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
+	uint8_t queues[], uint16_t nb_unlinks)
 {
-	char event_port_name[32];
-	struct dpaa2_port *portal;
+	struct dpaa2_port *dpaa2_portal = port;
+	int i, j, ret, num = 0, idx = 0;
+	struct dpaa2_dpio_dev *dpio_dev = NULL;
+	struct dpaa2_eventq *evq_info;
+	struct qbman_swp *swp;
+	uint8_t total_queues[DPAA2_EVENT_MAX_QUEUES];
+	struct dpaa2_eventq *evq_infos[DPAA2_EVENT_MAX_QUEUES];
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(port_conf);
-
-	sprintf(event_port_name, "event-port-%d", port_id);
-	portal = rte_malloc(event_port_name, sizeof(struct dpaa2_port), 0);
-	if (!portal) {
-		DPAA2_EVENTDEV_ERR("Memory allocation failure");
-		return -ENOMEM;
+	RTE_SET_USED(dev);
+	if (!queues) {
+		queues = total_queues;
+		nb_unlinks = dpaa2_portal->num_linked_evq;
+		for (i = 0; i < nb_unlinks; i++)
+			queues[i] = dpaa2_portal->evq_info[i]->event_queue_id;
 	}
 
-	memset(portal, 0, sizeof(struct dpaa2_port));
-	dev->data->ports[port_id] = portal;
-	return 0;
-}
+	for (i = 0; i < nb_unlinks; i++) {
+		for (j = 0; j < dpaa2_portal->num_linked_evq; j++) {
+			evq_info = dpaa2_portal->evq_info[j];
+			if (evq_info && evq_info->event_queue_id == queues[i]) {
+				dpio_dev = dpaa2_portal->dpio_dev;
+				swp = dpio_dev->sw_portal;
+				qbman_swp_push_set(swp, evq_info->dpcon->channel_index, 0);
+				ret = dpio_remove_static_dequeue_channel(dpio_dev->dpio,
+					0, dpio_dev->token, evq_info->dpcon->dpcon_id);
+				if (ret)
+					return ret;
+				evq_info->event_port = NULL;
+				dpaa2_portal->evq_info[j] = NULL;
+				num++;
+				break;
+			}
+		}
+		if (j == dpaa2_portal->num_linked_evq) {
+			DPAA2_EVENTDEV_WARN("%s: Event port%d doesn't handle queue[%d]:%d",
+				__func__, dpaa2_portal->port_id, i, queues[i]);
+		}
+	}
 
-static void
-dpaa2_eventdev_port_release(void *port)
-{
-	struct dpaa2_port *portal = port;
+	for (i = 0; i < dpaa2_portal->num_linked_evq; i++) {
+		if (dpaa2_portal->evq_info[i]) {
+			evq_infos[idx] = dpaa2_portal->evq_info[i];
+			idx++;
+			dpaa2_portal->evq_info[i] = NULL;
+		}
+	}
+	for (i = 0; i < idx; i++)
+		dpaa2_portal->evq_info[i] = evq_infos[i];
 
-	EVENTDEV_INIT_FUNC_TRACE();
+	dpaa2_portal->num_linked_evq -= num;
 
-	if (portal == NULL)
-		return;
-
-	/* TODO: Cleanup is required when ports are in linked state. */
-	if (portal->is_port_linked)
-		DPAA2_EVENTDEV_WARN("Event port must be unlinked before release");
-
-	rte_free(portal);
+	return num;
 }
 
 static int
 dpaa2_eventdev_port_link(struct rte_eventdev *dev, void *port,
-			 const uint8_t queues[], const uint8_t priorities[],
-			uint16_t nb_links)
+	const uint8_t queues[], const uint8_t priorities[],
+	uint16_t nb_links)
 {
 	struct dpaa2_eventdev *priv = dev->data->dev_private;
 	struct dpaa2_port *dpaa2_portal = port;
+	struct dpaa2_dpio_dev *dpio_dev = dpaa2_portal->dpio_dev;
 	struct dpaa2_eventq *evq_info;
+	int ret = 0;
 	uint16_t i;
+	uint8_t channel_index;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
 	RTE_SET_USED(priorities);
 
+	if (dpaa2_portal->num_linked_evq > 0) {
+		ret = rte_event_port_unlink(dev->data->dev_id,
+			dpaa2_portal->port_id, NULL, 0);
+		if (ret)
+			return ret;
+	}
+
 	for (i = 0; i < nb_links; i++) {
 		evq_info = &priv->evq_info[queues[i]];
-		dpaa2_portal->evq_info[queues[i]] = *evq_info;
-		dpaa2_portal->evq_info[queues[i]].event_port = port;
+		if (!evq_info->valid) {
+			DPAA2_EVENTDEV_WARN("%s: Event port%d.queue%d is not valid!",
+				__func__, dpaa2_portal->port_id, queues[i]);
+			return -EINVAL;
+		}
+		if (evq_info->event_port) {
+			dpaa2_portal = evq_info->event_port;
+			DPAA2_EVENTDEV_WARN("%s: queue%d is occupied by event port%d",
+				__func__, queues[i], dpaa2_portal->port_id);
+			return -ENODEV;
+		}
+	}
+
+	for (i = 0; i < nb_links; i++) {
+		evq_info = &priv->evq_info[queues[i]];
+		ret = dpio_add_static_dequeue_channel(dpio_dev->dpio,
+			CMD_PRI_LOW, dpio_dev->token,
+			evq_info->dpcon->dpcon_id, &channel_index);
+		if (ret) {
+			DPAA2_EVENTDEV_ERR("Event port%d.queue%d static dequeue config failed(%d)",
+				dpaa2_portal->port_id, queues[i], ret);
+			goto err;
+		}
+
+		qbman_swp_push_set(dpio_dev->sw_portal, channel_index, 1);
+		evq_info->dpcon->channel_index = channel_index;
+
+		dpaa2_portal->evq_info[dpaa2_portal->num_linked_evq] = evq_info;
+		evq_info->event_port = dpaa2_portal;
 		dpaa2_portal->num_linked_evq++;
+	}
+
+err:
+	if (ret) {
+		nb_links = i;
+		for (i = 0; i < nb_links; i++) {
+			evq_info = &priv->evq_info[queues[i]];
+			evq_info->event_port = NULL;
+			qbman_swp_push_set(dpio_dev->sw_portal, channel_index, 0);
+			if (dpio_remove_static_dequeue_channel(dpio_dev->dpio,
+				0, dpio_dev->token, evq_info->dpcon->dpcon_id)) {
+				DPAA2_EVENTDEV_ERR("Event port%d.queue%d remove failed!",
+					dpaa2_portal->port_id, queues[i]);
+			}
+		}
+		return ret;
 	}
 
 	return (int)nb_links;
 }
 
 static int
-dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
-			   uint8_t queues[], uint16_t nb_unlinks)
+dpaa2_eventdev_port_setup(struct rte_eventdev *dev, uint8_t port_id,
+	const struct rte_event_port_conf *port_conf)
 {
-	struct dpaa2_port *dpaa2_portal = port;
-	int i;
-	struct dpaa2_dpio_dev *dpio_dev = NULL;
-	struct dpaa2_eventq *evq_info;
-	struct qbman_swp *swp;
+	char event_port_name[32];
+	struct dpaa2_port *portal;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
-	RTE_SET_USED(queues);
-
-	for (i = 0; i < nb_unlinks; i++) {
-		evq_info = &dpaa2_portal->evq_info[queues[i]];
-
-		if (DPAA2_PER_LCORE_DPIO && evq_info->dpcon) {
-			/* todo dpaa2_portal shall have dpio_dev-no per lcore*/
-			dpio_dev = DPAA2_PER_LCORE_DPIO;
-			swp = DPAA2_PER_LCORE_PORTAL;
-
-			qbman_swp_push_set(swp,
-					evq_info->dpcon->channel_index, 0);
-			dpio_remove_static_dequeue_channel(dpio_dev->dpio, 0,
-						dpio_dev->token,
-						evq_info->dpcon->dpcon_id);
-		}
-		memset(evq_info, 0, sizeof(struct dpaa2_eventq));
-		if (dpaa2_portal->num_linked_evq)
-			dpaa2_portal->num_linked_evq--;
+	if (dev->data->ports[port_id]) {
+		DPAA2_EVENTDEV_WARN("Event port%d exists!", port_id);
+		dpaa2_eventdev_port_release(dev->data->ports[port_id]);
 	}
 
-	if (!dpaa2_portal->num_linked_evq)
-		dpaa2_portal->is_port_linked = false;
+	sprintf(event_port_name, "event-port-%d", port_id);
+	portal = rte_zmalloc(event_port_name, sizeof(struct dpaa2_port), 0);
+	if (!portal) {
+		DPAA2_EVENTDEV_ERR("Memory allocation failure");
+		return -ENOMEM;
+	}
 
-	return (int)nb_unlinks;
+	portal->dpio_dev = rte_dpaa2_alloc_dpio_device();
+	if (!portal->dpio_dev)
+		return -ENODEV;
+	if (port_conf &&
+		(port_conf->event_port_cfg & RTE_DPAA2_EVENT_PORT_CFG_ATOMIC)) {
+		portal->port_atomic = true;
+		rte_spinlock_init(&portal->port_lock);
+	}
+	portal->cpu_affine = -1;
+	portal->eventdev = dev;
+
+	portal->port_id = port_id;
+	dev->data->ports[port_id] = portal;
+	return 0;
 }
-
 
 static int
 dpaa2_eventdev_timeout_ticks(struct rte_eventdev *dev, uint64_t ns,
 			     uint64_t *timeout_ticks)
 {
-	uint32_t scale = 1000*1000;
+	uint32_t scale = 1000 * 1000;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
@@ -662,16 +812,13 @@ dpaa2_eventdev_dump(struct rte_eventdev *dev, FILE *f)
 
 static int
 dpaa2_eventdev_eth_caps_get(const struct rte_eventdev *dev,
-			    const struct rte_eth_dev *eth_dev,
-			    uint32_t *caps)
+	const struct rte_eth_dev *eth_dev, uint32_t *caps)
 {
-	const char *ethdev_driver = eth_dev->device->driver->name;
-
 	EVENTDEV_INIT_FUNC_TRACE();
 
 	RTE_SET_USED(dev);
 
-	if (!strcmp(ethdev_driver, "net_dpaa2"))
+	if (rte_pmd_dpaa2_dev_is_dpaa2(eth_dev->data->port_id))
 		*caps = RTE_EVENT_ETH_RX_ADAPTER_DPAA2_CAP;
 	else
 		*caps = RTE_EVENT_ETH_RX_ADAPTER_SW_CAP;
@@ -685,27 +832,16 @@ dpaa2_eventdev_eth_queue_add_all(const struct rte_eventdev *dev,
 		const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
 {
 	struct dpaa2_eventdev *priv = dev->data->dev_private;
-	uint8_t ev_qid = queue_conf->ev.queue_id;
-	struct dpaa2_dpcon_dev *dpcon = priv->evq_info[ev_qid].dpcon;
 	int i, ret;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
 	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
-		ret = dpaa2_eth_eventq_attach(eth_dev, i,
-					      dpcon, queue_conf);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"Event queue attach failed: err(%d)", ret);
-			goto fail;
-		}
+		ret = dpaa2_eventdev_attach_eth_rxq(eth_dev, priv, i, queue_conf);
+		if (ret)
+			return ret;
 	}
 	return 0;
-fail:
-	for (i = (i - 1); i >= 0 ; i--)
-		dpaa2_eth_eventq_detach(eth_dev, i);
-
-	return ret;
 }
 
 static int
@@ -715,68 +851,15 @@ dpaa2_eventdev_eth_queue_add(const struct rte_eventdev *dev,
 		const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
 {
 	struct dpaa2_eventdev *priv = dev->data->dev_private;
-	uint8_t ev_qid = queue_conf->ev.queue_id;
-	struct dpaa2_dpcon_dev *dpcon = priv->evq_info[ev_qid].dpcon;
-	int ret;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	if (rx_queue_id == -1)
+	if (rx_queue_id < 0) {
 		return dpaa2_eventdev_eth_queue_add_all(dev,
 				eth_dev, queue_conf);
-
-	ret = dpaa2_eth_eventq_attach(eth_dev, rx_queue_id,
-				      dpcon, queue_conf);
-	if (ret) {
-		DPAA2_EVENTDEV_ERR(
-			"Event queue attach failed: err(%d)", ret);
-		return ret;
-	}
-	return 0;
-}
-
-static int
-dpaa2_eventdev_eth_queue_del_all(const struct rte_eventdev *dev,
-			     const struct rte_eth_dev *eth_dev)
-{
-	int i, ret;
-
-	EVENTDEV_INIT_FUNC_TRACE();
-
-	RTE_SET_USED(dev);
-
-	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
-		ret = dpaa2_eth_eventq_detach(eth_dev, i);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"Event queue detach failed: err(%d)", ret);
-			return ret;
-		}
 	}
 
-	return 0;
-}
-
-static int
-dpaa2_eventdev_eth_queue_del(const struct rte_eventdev *dev,
-			     const struct rte_eth_dev *eth_dev,
-			     int32_t rx_queue_id)
-{
-	int ret;
-
-	EVENTDEV_INIT_FUNC_TRACE();
-
-	if (rx_queue_id == -1)
-		return dpaa2_eventdev_eth_queue_del_all(dev, eth_dev);
-
-	ret = dpaa2_eth_eventq_detach(eth_dev, rx_queue_id);
-	if (ret) {
-		DPAA2_EVENTDEV_ERR(
-			"Event queue detach failed: err(%d)", ret);
-		return ret;
-	}
-
-	return 0;
+	return dpaa2_eventdev_attach_eth_rxq(eth_dev, priv, rx_queue_id, queue_conf);
 }
 
 static int
@@ -793,12 +876,39 @@ dpaa2_eventdev_eth_start(const struct rte_eventdev *dev,
 
 static int
 dpaa2_eventdev_eth_stop(const struct rte_eventdev *dev,
-			const struct rte_eth_dev *eth_dev)
+	const struct rte_eth_dev *eth_dev)
 {
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
+	int i, j, k, ret;
+	struct dpaa2_eventq *evq;
+	struct rte_eventdev _dev;
+
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
-	RTE_SET_USED(eth_dev);
+	/** Drain ingress traffic.*/
+	rte_memcpy(&_dev, dev, sizeof(struct rte_eventdev));
+	dpaa2_eventdev_stop(&_dev);
+	dpaa2_eventdev_start(&_dev);
+
+	for (i = 0; i < priv->max_event_queues; i++) {
+		evq = &priv->evq_info[i];
+		if (!evq->valid)
+			continue;
+search_again:
+		for (j = 0; j < evq->dpni_rxq_num; j++) {
+			if (evq->dpni_rxqs[j]->eth_data == eth_dev->data) {
+				ret = dpaa2_eth_eventq_detach_by_rxq(evq->dpni_rxqs[j]);
+				if (ret) {
+					DPAA2_EVENTDEV_ERR("detach rxq failed(%d)", ret);
+					return ret;
+				}
+				for (k = j + 1; k < evq->dpni_rxq_num; k++)
+					evq->dpni_rxqs[k - 1] = evq->dpni_rxqs[k];
+				evq->dpni_rxq_num--;
+				goto search_again;
+			}
+		}
+	}
 
 	return 0;
 }
@@ -837,17 +947,11 @@ dpaa2_eventdev_crypto_queue_add_all(const struct rte_eventdev *dev,
 	for (i = 0; i < cryptodev->data->nb_queue_pairs; i++) {
 		ret = dpaa2_sec_eventq_attach(cryptodev, i, dpcon, ev);
 		if (ret) {
-			DPAA2_EVENTDEV_ERR("dpaa2_sec_eventq_attach failed: ret %d",
-				    ret);
-			goto fail;
+			DPAA2_EVENTDEV_ERR("dpaa2_sec_eventq_attach failed: ret %d", ret);
+			return ret;
 		}
 	}
 	return 0;
-fail:
-	for (i = (i - 1); i >= 0 ; i--)
-		dpaa2_sec_eventq_detach(cryptodev, i);
-
-	return ret;
 }
 
 static int
@@ -878,45 +982,15 @@ dpaa2_eventdev_crypto_queue_add(const struct rte_eventdev *dev,
 }
 
 static int
-dpaa2_eventdev_crypto_queue_del_all(const struct rte_eventdev *dev,
-			     const struct rte_cryptodev *cdev)
-{
-	int i, ret;
-
-	EVENTDEV_INIT_FUNC_TRACE();
-
-	RTE_SET_USED(dev);
-
-	for (i = 0; i < cdev->data->nb_queue_pairs; i++) {
-		ret = dpaa2_sec_eventq_detach(cdev, i);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"dpaa2_sec_eventq_detach failed:ret %d", ret);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static int
 dpaa2_eventdev_crypto_queue_del(const struct rte_eventdev *dev,
 			     const struct rte_cryptodev *cryptodev,
 			     int32_t rx_queue_id)
 {
-	int ret;
-
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	if (rx_queue_id == -1)
-		return dpaa2_eventdev_crypto_queue_del_all(dev, cryptodev);
-
-	ret = dpaa2_sec_eventq_detach(cryptodev, rx_queue_id);
-	if (ret) {
-		DPAA2_EVENTDEV_ERR(
-			"dpaa2_sec_eventq_detach failed: ret: %d", ret);
-		return ret;
-	}
+	RTE_SET_USED(dev);
+	RTE_SET_USED(cryptodev);
+	RTE_SET_USED(rx_queue_id);
 
 	return 0;
 }
@@ -981,8 +1055,14 @@ dpaa2_eventdev_txa_enqueue_same_dest(void *port,
 	m0 = (struct rte_mbuf *)ev[0].mbuf;
 	qid = rte_event_eth_tx_adapter_txq_get(m0);
 
-	for (i = 0; i < nb_events; i++)
-		m[i] = (struct rte_mbuf *)ev[i].mbuf;
+	for (i = 0; i < nb_events; i++) {
+		m[i] = ev[i].mbuf;
+		if (unlikely(m[i]->port != m0->port)) {
+			DPAA2_EVENTDEV_ERR("m[%d]->port(%d) != port(%d)",
+				i, m[i]->port, m0->port);
+			return 0;
+		}
+	}
 
 	return rte_eth_tx_burst(m0->port, qid, m, nb_events);
 }
@@ -1039,92 +1119,79 @@ static struct eventdev_ops dpaa2_eventdev_ops = {
 };
 
 static int
-dpaa2_eventdev_setup_dpci(struct dpaa2_dpci_dev *dpci_dev,
-			  struct dpaa2_dpcon_dev *dpcon_dev)
-{
-	struct dpci_rx_queue_cfg rx_queue_cfg;
-	int ret, i;
-
-	/*Do settings to get the frame on a DPCON object*/
-	rx_queue_cfg.options = DPCI_QUEUE_OPT_DEST |
-		  DPCI_QUEUE_OPT_USER_CTX;
-	rx_queue_cfg.dest_cfg.dest_type = DPCI_DEST_DPCON;
-	rx_queue_cfg.dest_cfg.dest_id = dpcon_dev->dpcon_id;
-	rx_queue_cfg.dest_cfg.priority = DPAA2_EVENT_DEFAULT_DPCI_PRIO;
-
-	dpci_dev->rx_queue[DPAA2_EVENT_DPCI_PARALLEL_QUEUE].cb =
-		dpaa2_eventdev_process_parallel;
-	dpci_dev->rx_queue[DPAA2_EVENT_DPCI_ATOMIC_QUEUE].cb =
-		dpaa2_eventdev_process_atomic;
-
-	for (i = 0 ; i < DPAA2_EVENT_DPCI_MAX_QUEUES; i++) {
-		rx_queue_cfg.user_ctx = (size_t)(&dpci_dev->rx_queue[i]);
-		ret = dpci_set_rx_queue(&dpci_dev->dpci,
-					CMD_PRI_LOW,
-					dpci_dev->token, i,
-					&rx_queue_cfg);
-		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				"DPCI Rx queue setup failed: err(%d)",
-				ret);
-			return ret;
-		}
-	}
-	return 0;
-}
-
-static int
 dpaa2_eventdev_create(const char *name, struct rte_vdev_device *vdev)
 {
 	struct rte_eventdev *eventdev;
 	struct dpaa2_eventdev *priv;
 	struct dpaa2_dpcon_dev *dpcon_dev = NULL;
 	struct dpaa2_dpci_dev *dpci_dev = NULL;
+	struct dpaa2_eventq *evq_info;
 	int ret;
 
 	eventdev = rte_event_pmd_vdev_init(name,
-					   sizeof(struct dpaa2_eventdev),
-					   rte_socket_id(), vdev);
-	if (eventdev == NULL) {
+		sizeof(struct dpaa2_eventdev), rte_socket_id(), vdev);
+	if (!eventdev) {
 		DPAA2_EVENTDEV_ERR("Failed to create Event device %s", name);
 		goto fail;
 	}
 
-	eventdev->dev_ops       = &dpaa2_eventdev_ops;
+	eventdev->dev_ops = &dpaa2_eventdev_ops;
 	eventdev->enqueue_burst = dpaa2_eventdev_enqueue_burst;
 	eventdev->enqueue_new_burst = dpaa2_eventdev_enqueue_burst;
 	eventdev->enqueue_forward_burst = dpaa2_eventdev_enqueue_burst;
 	eventdev->dequeue_burst = dpaa2_eventdev_dequeue_burst;
-	eventdev->txa_enqueue	= dpaa2_eventdev_txa_enqueue;
-	eventdev->txa_enqueue_same_dest	= dpaa2_eventdev_txa_enqueue_same_dest;
+	eventdev->txa_enqueue = dpaa2_eventdev_txa_enqueue;
+	eventdev->txa_enqueue_same_dest = dpaa2_eventdev_txa_enqueue_same_dest;
 
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		goto done;
 
 	priv = eventdev->data->dev_private;
-	priv->max_event_queues = 0;
+	memset(priv, 0, sizeof(struct dpaa2_eventdev));
 
 	do {
+		evq_info = &priv->evq_info[priv->max_event_queues];
 		dpcon_dev = rte_dpaa2_alloc_dpcon_dev();
 		if (!dpcon_dev)
 			break;
-		priv->evq_info[priv->max_event_queues].dpcon = dpcon_dev;
+		evq_info->dpcon = dpcon_dev;
 
 		dpci_dev = rte_dpaa2_alloc_dpci_dev();
 		if (!dpci_dev) {
 			rte_dpaa2_free_dpcon_dev(dpcon_dev);
 			break;
 		}
-		priv->evq_info[priv->max_event_queues].dpci = dpci_dev;
+		evq_info->dpci = dpci_dev;
 
-		ret = dpaa2_eventdev_setup_dpci(dpci_dev, dpcon_dev);
+		ret = rte_dpaa2_dpci_link_attach(dpci_dev, DPCI_DEST_DPCON,
+				dpcon_dev->dpcon_id, 0,
+				dpaa2_eventdev_process_parallel,
+				&evq_info->dpci_txqs[RTE_SCHED_TYPE_PARALLEL]);
 		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				    "DPCI setup failed: err(%d)", ret);
+			DPAA2_EVENTDEV_ERR("DPCI attach parallel RX failed: err(%d)", ret);
 			return ret;
 		}
+
+		ret = rte_dpaa2_dpci_link_attach(dpci_dev, DPCI_DEST_DPCON,
+				dpcon_dev->dpcon_id, 0,
+				dpaa2_eventdev_process_atomic,
+				&evq_info->dpci_txqs[RTE_SCHED_TYPE_ATOMIC]);
+		if (ret) {
+			DPAA2_EVENTDEV_ERR("DPCI attach parallel RX failed: err(%d)", ret);
+			return ret;
+		}
+		/** TO DO: order schedule.*/
+		/** Borrow atomic tx.*/
+		evq_info->dpci_txqs[RTE_SCHED_TYPE_ORDERED] =
+			evq_info->dpci_txqs[RTE_SCHED_TYPE_ATOMIC];
+
+		evq_info->valid = true;
+		evq_info->event_port = NULL;
+
 		priv->max_event_queues++;
+		if (priv->max_event_queues >= DPAA2_EVENT_MAX_QUEUES)
+			break;
 	} while (dpcon_dev && dpci_dev);
 
 	DPAA2_EVENTDEV_INFO("%s eventdev created", name);
@@ -1160,7 +1227,6 @@ dpaa2_eventdev_destroy(const char *name)
 
 		if (priv->evq_info[i].dpci)
 			rte_dpaa2_free_dpci_dev(priv->evq_info[i].dpci);
-
 	}
 	priv->max_event_queues = 0;
 

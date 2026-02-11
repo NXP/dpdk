@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2019-2023 NXP
+ *   Copyright 2016,2019-2026 NXP
  *
  */
 
@@ -9,6 +9,8 @@
 #define _FSLMC_VFIO_H_
 
 #include <rte_compat.h>
+#include <rte_vfio.h>
+#include <rte_interrupts.h>
 
 /* Pathname of FSL-MC devices directory. */
 #define SYSFS_FSL_MC_DEVICES	"/sys/bus/fsl-mc/devices"
@@ -44,6 +46,30 @@ struct fslmc_vfio_container {
 
 extern char *fslmc_container;
 
+extern uint32_t dpaa2_svr_family;
+extern uint32_t dpaa2_dqrr_size;
+extern uint32_t dpaa2_eqcr_size;
+extern uint32_t dpaa2_cluster_base;
+extern uint32_t dpaa2_cluster_size;
+
+#define DPAA2_SVR_MASK 0xffff0000
+
+#define SVR_LS1080A	0x87030000
+#define SVR_LS2080A	0x87010000
+#define SVR_LS2088A	0x87090000
+#define SVR_LX2160A	0x87360000
+
+#define MC_MAJOR_OFFSET 32
+#define MC_MINOR_OFFSET 16
+#define MC_MINOR_MASK ((((uint64_t)1) << (MC_MAJOR_OFFSET - MC_MINOR_OFFSET)) - 1)
+#define MC_REVISION_MASK ((((uint64_t)1) << MC_MINOR_OFFSET) - 1)
+#define RTE_FSL_MC_REV(major, minor, revision) \
+	((((uint64_t)(major)) << MC_MAJOR_OFFSET) + \
+	(((uint64_t)(minor)) << MC_MINOR_OFFSET) + (revision))
+#define RTE_FSL_MC_REV_MAJOR(rev) ((uint32_t)((rev) >> MC_MAJOR_OFFSET))
+#define RTE_FSL_MC_REV_MINOR(rev) ((uint32_t)(((rev) >> MC_MINOR_OFFSET) & MC_MINOR_MASK))
+#define RTE_FSL_MC_REV_REVISION(rev) ((uint32_t)((rev) & MC_REVISION_MASK))
+
 __rte_internal
 int rte_dpaa2_intr_enable(struct rte_intr_handle *intr_handle, int index);
 
@@ -60,4 +86,6 @@ int fslmc_vfio_close_group(void);
 char *fslmc_get_container(void);
 int fslmc_get_container_group(const char *group_name, int *gropuid);
 int fslmc_vfio_dmamap(void);
+int fslmc_vfio_core_cluster_sdest(uint32_t cpu_id);
+
 #endif /* _FSLMC_VFIO_H_ */

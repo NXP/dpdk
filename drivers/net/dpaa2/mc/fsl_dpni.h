@@ -122,6 +122,7 @@ struct fsl_mc_io;
  */
 #define DPNI_OPT_STASHING_DIS			0x002000
 
+#define DPNI_OPT_V8_HAS_REPLICATION		0x00004000
 #define DPNI_OPT_V1_PFDR_IN_PEB			0x80000000
 
 /**
@@ -1105,6 +1106,11 @@ int dpni_set_rx_tc_dist(struct fsl_mc_io *mc_io,
 #define DPNI_POLICER_OPT_DISCARD_RED	0x00000002
 
 /**
+ * Do NOT reset counters generally for policer update
+ */
+#define DPNI_POLICER_OPT_DO_NOT_RESET_COUNTERS	0x00000004
+
+/**
  * enum dpni_policer_mode - selecting the policer mode
  * @DPNI_POLICER_MODE_NONE: Policer is disabled
  * @DPNI_POLICER_MODE_PASS_THROUGH: Policer pass through
@@ -1120,12 +1126,17 @@ enum dpni_policer_mode {
 
 /**
  * enum dpni_policer_unit - DPNI policer units
- * @DPNI_POLICER_UNIT_BYTES: bytes units
+ * @DPNI_POLICER_UNIT_BYTES_L3: bytes units (for each frame takes into account
+ * FD length - L3 offset)
  * @DPNI_POLICER_UNIT_FRAMES: frames units
+ * @DPNI_POLICER_UNIT_BYTES_L2_WITHOUT_FCS: bytes units (for each frame takes
+ * into account FD length - L2 offset, which means L2 size without the 4 bytes
+ * for the FCS)
  */
 enum dpni_policer_unit {
-	DPNI_POLICER_UNIT_BYTES = 0,
-	DPNI_POLICER_UNIT_FRAMES
+	DPNI_POLICER_UNIT_BYTES_L3 = 0,
+	DPNI_POLICER_UNIT_FRAMES,
+	DPNI_POLICER_UNIT_BYTES_L2_WITHOUT_FCS,
 };
 
 /**
@@ -1166,8 +1177,13 @@ struct dpni_rx_tc_policing_cfg {
 	uint32_t ebs;
 };
 
-
 int dpni_set_rx_tc_policing(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    uint8_t tc_id,
+			    const struct dpni_rx_tc_policing_cfg *cfg);
+
+int dpni_set_rx_tc_policing_v1(struct fsl_mc_io *mc_io,
 			    uint32_t cmd_flags,
 			    uint16_t token,
 			    uint8_t tc_id,
@@ -1532,9 +1548,16 @@ struct dpni_qos_tbl_cfg {
 	int discard_on_miss;
 	int keep_entries;
 	uint8_t default_tc;
+	int set_default_flow_id;
+	uint16_t default_flow_id;
 };
 
 int dpni_set_qos_table(struct fsl_mc_io *mc_io,
+		       uint32_t cmd_flags,
+		       uint16_t token,
+		       const struct dpni_qos_tbl_cfg *cfg);
+
+int dpni_set_qos_table_v2(struct fsl_mc_io *mc_io,
 		       uint32_t cmd_flags,
 		       uint16_t token,
 		       const struct dpni_qos_tbl_cfg *cfg);
@@ -1550,6 +1573,10 @@ struct dpni_rule_cfg {
 	uint64_t mask_iova;
 	uint8_t key_size;
 };
+
+#define DPNI_QOS_OPT_SET_TC_ONLY 0x0
+#define DPNI_QOS_OPT_SET_FLOW_ID 0x1
+#define DPNI_QOS_OPT_UPDATE_IF_EXISTS 0x2
 
 int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
 		       uint32_t cmd_flags,
@@ -1612,6 +1639,22 @@ int dpni_clear_qos_table(struct fsl_mc_io *mc_io,
 #define DPNI_FS_OPT_REDIRECT_TO_DPNI_TX		0x10
 
 /**
+ * Redirect matching traffic into multiple Tx queues of other dpni objects.
+ * The frame will be transmitted directly
+ */
+#define DPNI_FS_OPT_REDIRECT_TO_MULTIPLE_DPNI_TX	0x20
+
+/**
+ * In case the FS rule already exists (key and mask), update its action.
+ * Cannot be used with the actions which redirect the frame towards other DPNIs.
+ */
+#define DPNI_FS_OPT_UPDATE_IF_EXISTS	0x40
+
+#ifndef DPNI_FS_REDIR_MAX_NUM
+#define DPNI_FS_REDIR_MAX_NUM 8
+#endif
+
+/**
  * struct dpni_fs_action_cfg - Action configuration for table look-up
  * @flc: FLC value for traffic matching this rule.  Please check the Frame
  * Descriptor section in the hardware documentation for more information.
@@ -1628,15 +1671,49 @@ int dpni_clear_qos_table(struct fsl_mc_io *mc_io,
  * - if DPNI_FS_OPT_DISCARD is cleared the frame will be enqueued in queue with
  *   index provided in flow_id parameter.
  * @options: Any combination of DPNI_FS_OPT_ values.
+ * @token_num: Number of tokens supplied. For DPNI_FS_OPT_REDIRECT_TO_DPNI_RX
+ *	 or DPNI_FS_OPT_REDIRECT_TO_DPNI_TX, the token_num must be 1 since there is
+ *	 only one token which is necessary. Accepted values are in the
+ *	 [1-8] range in case a REDIRECT option is requested.
+ * @redir_tokens: Array of tokens that identify the object where frame is redirected
+ *	 when this rule is hit. This parameter is used only when one
+ *	 of the flags DPNI_FS_OPT_REDIRECT_TO_DPNI_RX,
+ *	 DPNI_FS_OPT_REDIRECT_TO_DPNI_TX or
+ *	 DPNI_FS_OPT_REDIRECT_TO_MULTIPLE_DPNI_TX is set. The tokens
+ *	 are obtained using dpni_open() API call. The objects must
+ *	 stay open during the operation to ensure the fact that
+ *	 application has access on them.
+ *	 If the object is destroyed of closed, the following actions
+ *	 will take place:
+ *	 - In case of DPNI_FS_OPT_REDIRECT_TO_DPNI_TX and
+ *	 DPNI_FS_OPT_REDIRECT_TO_DPNI_RX:
+ *			 + if DPNI_FS_OPT_DISCARD is set the frame will be
+ *			 discarded by current dpni
+ *			 + if DPNI_FS_OPT_DISCARD is cleared the frame will be
+ *			 enqueued in queue with index provided in flow_id
+ *			 parameter.
+ *	 - In case of DPNI_FS_OPT_REDIRECT_TO_MULTIPLE_DPNI_TX, the
+ *	 frame will be redirected to the remaining opened target
+ *	 DPNIs. If there are no more opened target DPNIs, the frame
+ *	 will be discarded.
  */
 struct dpni_fs_action_cfg {
 	uint64_t flc;
 	uint16_t flow_id;
-	uint16_t redirect_obj_token;
 	uint16_t options;
+	uint16_t num_tokens;
+	uint16_t redir_tokens[DPNI_FS_REDIR_MAX_NUM];
 };
 
 int dpni_add_fs_entry(struct fsl_mc_io *mc_io,
+		      uint32_t cmd_flags,
+		      uint16_t token,
+		      uint8_t tc_id,
+		      uint16_t index,
+		      const struct dpni_rule_cfg *cfg,
+		      const struct dpni_fs_action_cfg *action);
+
+int dpni_add_fs_entry_legacy(struct fsl_mc_io *mc_io,
 		      uint32_t cmd_flags,
 		      uint16_t token,
 		      uint8_t tc_id,
@@ -1906,22 +1983,23 @@ void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
  * When used for queue_idx in function dpni_set_rx_dist_default_queue will signal to dpni
  * to drop all unclassified frames
  */
-#define DPNI_FS_MISS_DROP		((uint16_t)-1)
+#define DPNI_FS_MISS_ACTION_DROP		((uint16_t)-1)
 
 /**
  * struct dpni_rx_dist_cfg - distribution configuration
  * @dist_size:	distribution size; supported values: 1,2,3,4,6,7,8,
  *		12,14,16,24,28,32,48,56,64,96,112,128,192,224,256,384,448,
- *		512,768,896,1024
+ * 		512,768,896,1024
  * @key_cfg_iova: I/O virtual address of 256 bytes DMA-able memory filled with
  *		the extractions to be used for the distribution key by calling
  *		dpkg_prepare_key_cfg() relevant only when enable!=0 otherwise it can be '0'
  * @enable: enable/disable the distribution.
  * @tc: TC id for which distribution is set
  * @fs_miss_flow_id: when packet misses all rules from flow steering table and hash is
- *		disabled it will be put into this queue id; use DPNI_FS_MISS_DROP to drop
- *		frames. The value of this field is used only when flow steering distribution
- *		is enabled and hash distribution is disabled
+ *		disabled it will be put into this queue id;
+ *		use DPNI_FS_MISS_ACTION_DROP to drop frames.
+ *		The value of this field is used only when flow steering
+ *		distribution is enabled and hash distribution is disabled.
  */
 struct dpni_rx_dist_cfg {
 	uint16_t dist_size;
@@ -1945,9 +2023,9 @@ int dpni_remove_custom_tpid(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_
 
 /**
  * struct dpni_custom_tpid_cfg - custom TPID configuration. Contains custom TPID values
- *		used in current dpni object to detect 802.1q frames.
- *	@tpid1: first tag. Not used if zero.
- *	@tpid2: second tag. Not used if zero.
+ * 		used in current dpni object to detect 802.1q frames.
+ * 	@tpid1: first tag. Not used if zero.
+ * 	@tpid2: second tag. Not used if zero.
  */
 struct dpni_custom_tpid_cfg {
 	uint16_t tpid1;
@@ -2013,6 +2091,29 @@ enum dpni_table_type {
 	DPNI_VLAN_TABLE = 4,
 };
 
+struct __rte_packed_begin dpni_dump_table_header {
+	uint16_t table_type;
+	uint16_t table_num_entries;
+	uint16_t table_max_entries;
+	uint8_t default_action;
+	uint8_t match_type;
+	uint8_t reserved[24];
+} __rte_packed_end;
+
+struct __rte_packed_begin dpni_dump_table_entry {
+	uint8_t key[DPNI_MAX_KEY_SIZE];
+	uint8_t mask[DPNI_MAX_KEY_SIZE];
+	uint8_t key_action;
+	uint16_t result[3];
+	uint16_t rule_index;
+	uint8_t reserved[19];
+} __rte_packed_end;
+
+struct __rte_packed_begin dpni_dump_table_rsp {
+	struct dpni_dump_table_header hdr;
+	struct dpni_dump_table_entry entry[];
+} __rte_packed_end;
+
 int dpni_dump_table(struct fsl_mc_io *mc_io,
 			 uint32_t cmd_flags,
 			 uint16_t token,
@@ -2029,7 +2130,7 @@ int dpni_dump_table(struct fsl_mc_io *mc_io,
 /**
  * SP Profile on Egress DPNI
  */
-#define DPNI_SP_PROFILE_EGRESS	0x2
+#define DPNI_SP_PROFILE_EGRESS 	0x2
 
 int dpni_set_sp_profile(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
 		uint8_t sp_profile[], uint8_t type);
@@ -2037,8 +2138,337 @@ int dpni_set_sp_profile(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t to
 int dpni_sp_enable(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
 		uint8_t type, uint8_t en);
 
-int dpni_get_mac_statistics(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
-			    uint64_t iova_cnt, uint64_t iova_values, uint32_t num_cnt);
+int dpni_is_macsec_capable(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			   int *macsec_capable);
+
+/**
+ * enum macsec_validation_mode - validation function for received frames
+ *
+ * @MACSEC_SECY_VALIDATION_DISABLE: disable the validation function
+ * @MACSEC_SECY_VALIDATION_CHECK: enable the validation function but only for
+ *      checking without filtering out invalid frames
+ * @MACSEC_SECY_VALIDATION_STRICT: enable the validation function and also
+ *      strictly filter out those invalid frames
+ */
+enum macsec_validation_mode {
+	MACSEC_SECY_VALIDATION_DISABLE = 0x00,
+	MACSEC_SECY_VALIDATION_CHECK = 0x01,
+	MACSEC_SECY_VALIDATION_STRICT = 0x02
+};
+
+/* enum macsec_cipher_suite - Cipher Suite used for protecting transmitted
+ *      frames and decrypting received frames
+ *
+ * @MACSEC_CIPHER_SUITE_GCM_AES_128: GCM-AES-128
+ * @MACSEC_CIPHER_SUITE_GCM_AES_256: GCM-AES-256
+ */
+enum macsec_cipher_suite {
+	MACSEC_CIPHER_SUITE_GCM_AES_128 = 0x00,
+	MACSEC_CIPHER_SUITE_GCM_AES_256 = 0x01
+};
+
+/**
+ *struct macsec_cipher_suite_cfg - Cipher Suite configuration
+ *
+ *@cipher_suite                         Cipher Suite
+ *@confidentiality:                     '1' for enabling confidentiality
+ *                                      protection; 0 for disabling
+ *@confidentiality_offset:              Number of bytes from the frame data
+ *                                      start that are not confidentiality
+ *                                      protected
+ */
+struct macsec_cipher_suite_cfg {
+	enum macsec_cipher_suite cipher_suite;
+	int confidentiality;
+	uint8_t co_offset;
+};
+
+/**
+ * struct macsec_secy_cfg - SecY configuration
+ *
+ * @cs: Cipher Suite configuration
+ * @tx_sci: SCI of transmitting channel. It should be composed of 48-bytes
+ *          source MAC address concatenated with 16-bit port id.  In case of
+ *          point-to-point mode, this field has no meaning.
+ * @is_ptp: Point-to-Point mode. In this mode the SCI is not presented in the
+ *          outgoing frame; Instead, the second end-point should be configured
+ *          to point-to-point mode as well and be set with the same key.
+ * @validation_mode: Validation mode for received frames.
+ * @max_rx_sc: Maximum number of receiving-SC that can be created on this SecY.
+ *             Ignored in point-to-point mode.
+ */
+struct macsec_secy_cfg {
+	struct macsec_cipher_suite_cfg cs;
+	uint64_t tx_sci;
+	int is_ptp;
+	enum macsec_validation_mode validation_mode;
+	uint8_t max_rx_sc;
+};
+
+int dpni_add_secy(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+		  const struct macsec_secy_cfg *cfg, uint8_t *secy_id);
+
+int dpni_remove_secy(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token, uint8_t secy_id);
+
+int dpni_secy_set_state(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			uint8_t secy_id, int active);
+
+int dpni_secy_set_tx_protection(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+				uint8_t secy_id, int protect);
+
+int dpni_secy_set_replay_protection(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+				    uint8_t secy_id, int en, uint32_t window);
+
+/**
+ * struct macsec_tx_sa_cfg - transmitting-SA configuration
+ *
+ * @an: Association Number (AN). 2-bits value (0-3)
+ * @key: Key used for protecting outgoing frames
+ * @next_pn: The PN field value for the first outgoing frame from this SA
+ */
+struct macsec_tx_sa_cfg {
+	uint8_t key[32];
+	uint32_t next_pn;
+	uint8_t an;
+};
+
+int dpni_secy_add_tx_sa(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			uint8_t secy_id, struct macsec_tx_sa_cfg *cfg);
+
+int dpni_secy_remove_tx_sa(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			   uint8_t secy_id, uint8_t an);
+
+int dpni_secy_set_active_tx_sa(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			       uint8_t secy_id, uint8_t assoc_num);
+
+int dpni_secy_add_rx_sc(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			uint8_t secy_id, uint64_t sci);
+
+int dpni_secy_remove_rx_sc(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			   uint8_t secy_id, uint64_t sci);
+
+int dpni_secy_set_rx_sc_state(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, uint64_t sci, int active);
+
+/**
+ * struct macsec_rx_sa_cfg - receiving-SA configuration
+ *
+ * @key: Key used for decrypting received frames
+ * @lowest_pn: Initial lowest PN field allowed for received frames
+ * @an: Association Number (AN). 2-bits value (0-3)
+ */
+struct macsec_rx_sa_cfg {
+	uint8_t key[32];
+	uint32_t lowest_pn;
+	uint8_t an;
+};
+
+int dpni_secy_add_rx_sa(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			uint8_t secy_id, uint64_t sci, struct macsec_rx_sa_cfg *cfg);
+
+int dpni_secy_remove_rx_sa(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			   uint8_t secy_id, uint64_t sci, uint8_t an);
+
+int dpni_secy_set_rx_sa_next_pn(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+				uint8_t secy_id, uint64_t sci, uint8_t an, uint32_t next_pn);
+
+int dpni_secy_set_rx_sa_state(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, uint64_t sci, uint8_t an, int active);
+
+/**
+ * union macsec_secy_stats - per SecY statistics
+ *
+ * @page_0: Page_0 statistics structure
+ * @page_0.cnt_ing_bytes: Count ingress bytes on the controlled port
+ * @page_0.cnt_ing_ucast_frames: Count ingress unicast-frames on the controlled port
+ * @page_0.cnt_ing_mcast_frames: Count ingress multicast-frames on the controlled port
+ * @page_0.cnt_ing_bcast_frames: Count ingress broadcast-frames on the controlled port
+ * @page_0.cnt_egr_bytes: Count egress bytes
+ * @page_0.cnt_egr_ucast_frames: Count egress unicast-frames
+ * @page_0.cnt_egr_mcast_frames: Count egress multicast-frames
+ *
+ * @page_1: Page_1 statistics structure
+ * @page_1.cnt_egr_bcast_frames: Count egress broadcast-frames
+ *
+ */
+union macsec_secy_stats {
+	struct {
+		uint64_t cnt_ing_bytes;
+		uint64_t cnt_ing_ucast_frames;
+		uint64_t cnt_ing_mcast_frames;
+		uint64_t cnt_ing_bcast_frames;
+		uint64_t cnt_egr_bytes;
+		uint64_t cnt_egr_ucast_frames;
+		uint64_t cnt_egr_mcast_frames;
+	} page_0;
+	struct {
+		uint64_t cnt_egr_bcast_frames;
+	} page_1;
+	struct {
+		uint64_t counter[DPNI_STATISTICS_CNT];
+	} raw;
+};
+
+int dpni_secy_get_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			uint8_t secy_id, uint8_t page, union macsec_secy_stats *stats);
+
+/**
+ * union macsec_secy_tx_sc_stats - per Tx SC statistics
+ *
+ * @page_0: Page_0 statistics structure
+ * @page_0.protected_frames: Count protected frames.
+ * @page_0.encrypted_frames: Count encrypted frames.
+ * @page_0.protected_bytes: Count total bytes of all protected frames.
+ * @page_0.encrypted_bytes: Count total bytes of all encrypted frames.
+ */
+union macsec_secy_tx_sc_stats {
+	struct {
+		uint64_t protected_frames;
+		uint64_t encrypted_frames;
+		uint64_t protected_bytes;
+		uint64_t encrypted_bytes;
+	} page_0;
+	struct {
+		uint64_t counter[DPNI_STATISTICS_CNT];
+	} raw;
+};
+
+int dpni_secy_get_tx_sc_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, union macsec_secy_tx_sc_stats *stats);
+
+/**
+ * union macsec_secy_tx_sa_stats - per Tx SA statistics
+ *
+ * @page_0: Page_0 statistics structure
+ * @page_0.protected_frames: Count protected frames.
+ * @page_0.encrypted_frames: Count encrypted frames.
+ */
+union macsec_secy_tx_sa_stats {
+	struct {
+		uint32_t protected_frames;
+		uint32_t encrypted_frames;
+	} page_0;
+	struct {
+		uint32_t counter[DPNI_STATISTICS_32_CNT];
+	} raw;
+};
+
+int dpni_secy_get_tx_sa_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, uint8_t an, union macsec_secy_tx_sa_stats *stats);
+
+/**
+ * union macsec_secy_rx_sc_stats - per Rx SC statistics
+ *
+ * @page_0: Page_0 statistics structure
+ * @page_0.unused_frames: Count frames received on the SC's disabled SAs where
+ *                        the SecY validateFrame property is not 'Strict' and
+ *                        the frame C bit is not set
+ * @page_0.not_using_sa_frames: Count frames received on the SC's disabled SAs
+ *                              where the SecY validateFrame property is
+ *                              'Strict' or the frame C bit is set
+ * @page_0.invalid_frames: Count frames that failed integrity check where the
+ *                         SecY validateFrame property is 'Check'
+ * @page_0.not_valid_frames: Count frames that failed integrity check where the
+ *                           SecY validateFrame property is 'Strict' or the
+ *                           frame C bit is set
+ * @page_0.late_frames: Count frames discarded on the SC's SA due to PN field
+ *                      value lower then the SA lowestPN property where the
+ *                      SecY replay protection is enabled
+ * @page_0.delayed_frames: Count frames discarded on the SC's SA due to PN
+ *                         field value lower then the SA lowestPN property
+ *                         where the SecY replay protection is disabled and
+ *                         where the frame does not satisfying the conditions
+ *                         for increasing MACSEC_SECY_CNT_RX_SC_INVALID_FRAME
+ *                         or MACSEC_SECY_CNT_RX_SC_NOT_VALID_FRAME counters
+ * @page_0.unchecked_frames: Count frames that failed integrity check having C
+ *                           bit not set where the SecY validateFrame property
+ *                           is 'Disabled'
+ *
+ * @page_1: Page_1 statistics structure
+ * @page_1.ok_frames: Count frames that passed integrity check having PN field
+ *                    value above the SA lowestPN property
+ * @page_1.validated_bytes: Count bytes of frames that passed integrity check
+ *                          having E bit not set where the SecY validateFrame
+ *                          property is not 'Disabled'
+ * @page_1.decrypted_bytes: Count bytes of frames that passed integrity check
+ *                          having E bit set where the SecY validateFrame
+ *                          property is not 'Disabled'
+ */
+union macsec_secy_rx_sc_stats {
+	struct {
+		uint64_t unused_frames;
+		uint64_t not_using_sa_frames;
+		uint64_t invalid_frames;
+		uint64_t not_valid_frames;
+		uint64_t late_frames;
+		uint64_t delayed_frames;
+		uint64_t unchecked_frames;
+	} page_0;
+	struct {
+		uint64_t ok_frames;
+		uint64_t validated_bytes;
+		uint64_t decrypted_bytes;
+	} page_1;
+	struct {
+		uint64_t counter[DPNI_STATISTICS_CNT];
+	} raw;
+};
+
+int dpni_secy_get_rx_sc_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, uint64_t sci, uint8_t page,
+			      union macsec_secy_rx_sc_stats *stats);
+
+/**
+ * enum macsec_secy_rx_sa_counter - per Rx SA statistics
+ *
+ * @page_0.unused_sa_frames: Count frames received when the SA is disabled
+ *                           where the SecY validateFrame property is not
+ *                           'Strict' and the frame C bit is not set
+ * @page_0.not_using_sa_frames: Count frames received when the SA is disabled
+ *                              where the SecY validateFrame property is
+ *                              'Strict' or the frame C bit is set
+ * @page_0.invalid_frames: Count frames that failed integrity check where the
+ *                         SecY validateFrame property is 'Check'
+ * @page_0.not_valid_frames: Count frames that failed integrity check where the
+ *                           SecY validateFrame property is 'Strict' or the
+ *                           frame C bit is set
+ * @page_0.ok_frames: Count frames that passed integrity check having PN field
+ *                    value above the SA lowestPN property
+ */
+union macsec_secy_rx_sa_stats {
+	struct {
+		uint32_t unused_sa_frames;
+		uint32_t not_using_sa_frames;
+		uint32_t invalid_frames;
+		uint32_t not_valid_frames;
+		uint32_t ok_frames;
+	} page_0;
+	struct {
+		uint32_t counter[DPNI_STATISTICS_32_CNT];
+	} raw;
+};
+
+int dpni_secy_get_rx_sa_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			      uint8_t secy_id, uint64_t sci, uint8_t an,
+			      union macsec_secy_rx_sa_stats *stats);
+
+union macsec_global_stats {
+	struct {
+		uint32_t in_without_tag_frames;
+		uint32_t in_kay_frames;
+		uint32_t in_bag_tag_frames;
+		uint32_t in_sci_not_found_frames;
+		uint32_t in_unsupported_ec_frames;
+		uint32_t in_too_long_frames;
+		uint32_t out_discarded_frames;
+	} page_0;
+	struct {
+		uint32_t counter[DPNI_STATISTICS_32_CNT];
+	} raw;
+};
+
+int dpni_get_macsec_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
+			  union macsec_global_stats *stats);
 
 int dpni_get_mac_statistics(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
 			    uint64_t iova_cnt, uint64_t iova_values, uint32_t num_cnt);

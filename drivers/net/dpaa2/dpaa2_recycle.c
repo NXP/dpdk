@@ -25,7 +25,6 @@
 #include <dpaa2_hw_dpio.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
-#include "dpaa2_sparser.h"
 #include <fsl_qbman_debug.h>
 
 #include <rte_io.h>
@@ -188,6 +187,12 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 	start = addr & PAGE_MASK;
 	offset = addr - start;
 	len = len & PAGE_MASK;
+
+	if (PAGE_SIZE < 1) {
+		close(fd);
+		return NULL;
+	}
+
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
 
@@ -724,6 +729,66 @@ dpaa2_dev_recycle_deconfig(struct rte_eth_dev *eth_dev)
 
 	if (priv->flags & DPAA2_TX_DPNI_LOOPBACK_MODE)
 		priv->flags &= ~DPAA2_TX_DPNI_LOOPBACK_MODE;
+
+	return ret;
+}
+
+int
+rte_pmd_dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
+	uint16_t qidx, uint64_t cntx,
+	eth_tx_burst_t tx_lpbk, eth_rx_burst_t rx_lpbk,
+	struct dpaa2_queue **txq,
+	struct dpaa2_queue **rxq)
+{
+	struct rte_eth_dev *dev;
+	struct rte_eth_dev_data *data;
+	struct dpaa2_queue *txq_tmp;
+	struct dpaa2_queue *rxq_tmp;
+	struct dpaa2_dev_priv *priv;
+	int ret = 0;
+
+	dev = dpaa2_dev->eth_dev;
+	data = dev->data;
+	priv = data->dev_private;
+
+	if (!(priv->flags & DPAA2_TX_LOOPBACK_MODE) &&
+		(tx_lpbk || rx_lpbk)) {
+		DPAA2_PMD_ERR("%s is NOT recycle device!", data->name);
+
+		return -EINVAL;
+	}
+
+	if (qidx >= data->nb_rx_queues || qidx >= data->nb_tx_queues)
+		return -EINVAL;
+
+	rte_spinlock_lock(&priv->lpbk_qp_lock);
+
+	if (dev->data->dev_started) {
+		ret = rte_eth_dev_stop(dev->data->port_id);
+		if (ret)
+			goto setup_quit;
+	}
+
+	if (tx_lpbk)
+		dev->tx_pkt_burst = tx_lpbk;
+
+	if (rx_lpbk)
+		dev->rx_pkt_burst = rx_lpbk;
+
+	txq_tmp = data->tx_queues[qidx];
+	txq_tmp->lpbk_cntx = cntx;
+	rxq_tmp = data->rx_queues[qidx];
+	rxq_tmp->lpbk_cntx = cntx;
+
+	if (txq)
+		*txq = txq_tmp;
+	if (rxq)
+		*rxq = rxq_tmp;
+
+	ret = rte_eth_dev_start(dev->data->port_id);
+
+setup_quit:
+	rte_spinlock_unlock(&priv->lpbk_qp_lock);
 
 	return ret;
 }

@@ -20,6 +20,7 @@
 #include <sys/queue.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <linux/vfio.h>
 
 #include <rte_compat.h>
 #include <rte_debug.h>
@@ -91,18 +92,33 @@ enum rte_dpaa2_dev_type {
 	DPAA2_DEVTYPE_MAX,
 };
 
+struct rte_fslmc_bus_info {
+	void *mem_pool;
+	int sp_protocol;
+	uint64_t mc_rev;
+	uint32_t svr;
+	uint32_t pvr;
+};
+
 /**
  * A structure describing a DPAA2 device.
  */
 struct rte_dpaa2_device {
 	TAILQ_ENTRY(rte_dpaa2_device) next; /**< Next probed DPAA2 device. */
 	struct rte_device device;           /**< Inherit core device */
+	union {
+		struct rte_eth_dev *eth_dev;        /**< ethernet device */
+		struct rte_cryptodev *cryptodev;    /**< Crypto Device */
+		struct rte_dma_dev *dmadev;          /**< DMA Device */
+		struct rte_rawdev *rawdev;          /**< Raw Device */
+	};
 	enum rte_dpaa2_dev_type dev_type;   /**< Device Type */
 	uint16_t object_id;                 /**< DPAA2 Object ID */
 	struct dpaa2_dprc_dev *container;
 	struct rte_intr_handle *intr_handle; /**< Interrupt handle */
 	struct rte_dpaa2_driver *driver;    /**< Associated driver */
 	char name[FSLMC_OBJECT_MAX_LEN];    /**< DPAA2 Object name*/
+	const struct rte_fslmc_bus_info *bus_info;
 };
 
 typedef int (*rte_dpaa2_obj_create_t)(int vdev_fd,
@@ -170,6 +186,8 @@ rte_fslmc_io_vaddr_to_iova(void *vaddr);
 __rte_internal
 void *
 rte_fslmc_io_iova_to_vaddr(uint64_t iova);
+int
+rte_fslmc_bus_available(void);
 
 /**
  * Register a DPAA2 driver.

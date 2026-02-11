@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2022 NXP
+ *   Copyright 2016-2026 NXP
  *
  */
 #include <uapi/linux/vfio.h>
@@ -16,6 +16,7 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sched.h>
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/ioctl.h>
@@ -63,44 +64,8 @@ static struct dpio_dev_list dpio_dev_list
 	= TAILQ_HEAD_INITIALIZER(dpio_dev_list); /*!< DPIO device list */
 static uint32_t io_space_count;
 
-/* Variable to store DPAA2 platform type */
-RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_svr_family)
-uint32_t dpaa2_svr_family;
-
-/* Variable to store DPAA2 DQRR size */
-RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_dqrr_size)
-uint8_t dpaa2_dqrr_size;
-/* Variable to store DPAA2 EQCR size */
-RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_eqcr_size)
-uint8_t dpaa2_eqcr_size;
-
 /* Variable to hold the portal_key, once created.*/
 static pthread_key_t dpaa2_portal_key;
-
-/*Stashing Macros default for LS208x*/
-static int dpaa2_core_cluster_base = 0x04;
-static int dpaa2_cluster_sz = 2;
-
-/* For LS208X platform There are four clusters with following mapping:
- * Cluster 1 (ID = x04) : CPU0, CPU1;
- * Cluster 2 (ID = x05) : CPU2, CPU3;
- * Cluster 3 (ID = x06) : CPU4, CPU5;
- * Cluster 4 (ID = x07) : CPU6, CPU7;
- */
-/* For LS108X platform There are two clusters with following mapping:
- * Cluster 1 (ID = x02) : CPU0, CPU1, CPU2, CPU3;
- * Cluster 2 (ID = x03) : CPU4, CPU5, CPU6, CPU7;
- */
-/* For LX2160 platform There are four clusters with following mapping:
- * Cluster 1 (ID = x00) : CPU0, CPU1;
- * Cluster 2 (ID = x01) : CPU2, CPU3;
- * Cluster 3 (ID = x02) : CPU4, CPU5;
- * Cluster 4 (ID = x03) : CPU6, CPU7;
- * Cluster 1 (ID = x04) : CPU8, CPU9;
- * Cluster 2 (ID = x05) : CPU10, CP11;
- * Cluster 3 (ID = x06) : CPU12, CPU13;
- * Cluster 4 (ID = x07) : CPU14, CPU15;
- */
 
 static struct dpaa2_dpio_dev *get_dpio_dev_from_id(int32_t dpio_id)
 {
@@ -141,31 +106,31 @@ dpaa2_get_core_id(void)
 	return cpu_id;
 }
 
-static int
-dpaa2_core_cluster_sdest(int cpu_id)
-{
-	int x = cpu_id / dpaa2_cluster_sz;
-
-	return dpaa2_core_cluster_base + x;
-}
-
 #ifdef RTE_EVENT_DPAA2
 static void
 dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 {
 #define STRING_LEN	28
 #define AFFINITY_LEN	128
+#define CMD_LEN			300
 	uint32_t cpu_mask = 1;
-	size_t len = 0;
-	char *temp = NULL, *token = NULL;
+	size_t len = CMD_LEN;
+	char *temp, *token = NULL;
 	char string[STRING_LEN];
 	char smp_affinity[AFFINITY_LEN];
 	FILE *file;
+
+	temp = (char *)malloc(len * sizeof(char));
+	if ( temp == NULL) {
+		DPAA2_BUS_WARN("Unable to allocate temp buffer");
+		return;
+	}
 
 	snprintf(string, STRING_LEN, "dpio.%d", dpio_id);
 	file = fopen("/proc/interrupts", "r");
 	if (!file) {
 		DPAA2_BUS_WARN("Failed to open /proc/interrupts file");
+		free(temp);
 		return;
 	}
 	while (getline(&temp, &len, file) != -1) {
@@ -184,7 +149,9 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 	}
 
 	cpu_mask = cpu_mask << cpu_id;
-	snprintf(smp_affinity, AFFINITY_LEN, "/proc/irq/%s/smp_affinity", token);
+	snprintf(smp_affinity, AFFINITY_LEN,
+		 "/proc/irq/%s/smp_affinity", token);
+	/* Free 'temp' memory after using the substring 'token' */
 	free(temp);
 	fclose(file);
 
@@ -262,18 +229,31 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
 
+	/*
+	 *  In case of running DPDK on the Virtual Machine the Stashing
+	 *  Destination gets set in the H/W w.r.t. the Virtual CPU ID's.
+	 *  As a W.A. environment variable HOST_START_CPU tells which
+	 *  the offset of the host start core of the Virtual Machine threads.
+	 */
+	if (getenv("DPAA2_HOST_START_CPU")) {
+		cpu_id += atoi(getenv("DPAA2_HOST_START_CPU"));
+		cpu_id = cpu_id % NUM_HOST_CPUS;
+	}
+
 	/* Set the STASH Destination depending on Current CPU ID.
 	 * Valid values of SDEST are 4,5,6,7. Where,
 	 */
-	sdest = dpaa2_core_cluster_sdest(cpu_id);
+	sdest = fslmc_vfio_core_cluster_sdest(cpu_id);
 	DPAA2_BUS_DEBUG("Portal= %d  CPU= %u SDEST= %d",
 			dpio_dev->index, cpu_id, sdest);
+	if (sdest < 0)
+		return sdest;
 
 	ret = dpio_set_stashing_destination(dpio_dev->dpio, CMD_PRI_LOW,
 					    dpio_dev->token, sdest);
 	if (ret) {
 		DPAA2_BUS_ERR("%d ERROR in SDEST",  ret);
-		return -1;
+		return ret;
 	}
 
 #ifdef RTE_EVENT_DPAA2
@@ -281,8 +261,27 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
 		return -1;
 	}
-	dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
 #endif
+
+	if (getenv("NXP_CHRT_PERF_MODE")) {
+		pid_t tid;
+		struct sched_param sp = { .sched_priority = 90 };
+
+		tid = rte_gettid();
+		ret = sched_setscheduler(tid, SCHED_RR, &sp);
+		if (ret < 0)
+			DPAA2_BUS_WARN("Failed to change thread(%d) priority", tid);
+		else
+			DPAA2_BUS_DEBUG("Thread %d Priority is updated", tid);
+
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
+#ifdef RTE_EVENT_DPAA2
+		dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
+#endif
+	}
 
 	return 0;
 }
@@ -395,6 +394,42 @@ static void dpaa2_portal_finish(void *arg)
 	pthread_setspecific(dpaa2_portal_key, NULL);
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(rte_dpaa2_alloc_dpio_device)
+struct dpaa2_dpio_dev *
+rte_dpaa2_alloc_dpio_device(void)
+{
+	struct dpaa2_dpio_dev *dpio_dev = NULL;
+
+	/* Get DPIO dev handle from list using index */
+	TAILQ_FOREACH(dpio_dev, &dpio_dev_list, next) {
+		if (dpio_dev && rte_atomic16_test_and_set(&dpio_dev->ref_count))
+			break;
+	}
+	if (!dpio_dev) {
+		DPAA2_BUS_ERR("No software portal resource left");
+		return NULL;
+	}
+
+	DPAA2_BUS_DEBUG("New Portal %p (%d) affined thread - %u",
+		dpio_dev, dpio_dev->index, rte_gettid());
+
+#ifdef RTE_EVENT_DPAA2
+	if (dpaa2_dpio_intr_init(dpio_dev)) {
+		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
+		rte_atomic16_clear(&dpio_dev->ref_count);
+		return NULL;
+	}
+#endif
+
+	return dpio_dev;
+}
+
+RTE_EXPORT_INTERNAL_SYMBOL(rte_dpaa2_free_dpio_device)
+void rte_dpaa2_free_dpio_device(struct dpaa2_dpio_dev *dpio_dev)
+{
+	dpaa2_put_qbman_swp(dpio_dev);
+}
+
 static void
 dpaa2_close_dpio_device(int object_id)
 {
@@ -481,33 +516,6 @@ dpaa2_create_dpio_device(int vdev_fd,
 				dpio_dev->token, &attr)) {
 		DPAA2_BUS_ERR("DPIO Get attribute failed");
 		goto err;
-	}
-
-	/* find the SoC type for the first time */
-	if (!dpaa2_svr_family) {
-		struct mc_soc_version mc_plat_info = {0};
-
-		if (mc_get_soc_version(dpio_dev->dpio,
-				       CMD_PRI_LOW, &mc_plat_info)) {
-			DPAA2_BUS_ERR("Unable to get SoC version information");
-		} else if ((mc_plat_info.svr & 0xffff0000) == SVR_LS1080A) {
-			dpaa2_core_cluster_base = 0x02;
-			dpaa2_cluster_sz = 4;
-			DPAA2_BUS_DEBUG("LS108x (A53) Platform Detected");
-		} else if ((mc_plat_info.svr & 0xffff0000) == SVR_LX2160A) {
-			dpaa2_core_cluster_base = 0x00;
-			dpaa2_cluster_sz = 2;
-			DPAA2_BUS_DEBUG("LX2160 Platform Detected");
-		}
-		dpaa2_svr_family = (mc_plat_info.svr & 0xffff0000);
-
-		if (dpaa2_svr_family == SVR_LX2160A) {
-			dpaa2_dqrr_size = DPAA2_LX2_DQRR_RING_SIZE;
-			dpaa2_eqcr_size = DPAA2_LX2_EQCR_RING_SIZE;
-		} else {
-			dpaa2_dqrr_size = DPAA2_DQRR_RING_SIZE;
-			dpaa2_eqcr_size = DPAA2_EQCR_RING_SIZE;
-		}
 	}
 
 	if (dpaa2_svr_family == SVR_LX2160A)
@@ -643,12 +651,17 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 {
 	int i = 0;
 
+	if (!dpaa2_dqrr_size)
+		rte_exit(EXIT_FAILURE, "DQRR size is not set yet!\n");
+
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
 		q_storage->dq_storage[i] = rte_zmalloc(NULL,
 			dpaa2_dqrr_size * sizeof(struct qbman_result),
 			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
 			goto fail;
+		q_storage->iova_dq_storage[i] =
+			DPAA2_VADDR_TO_IOVA(q_storage->dq_storage[i]);
 	}
 	return 0;
 fail:

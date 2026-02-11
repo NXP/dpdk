@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2024 NXP
+ * Copyright 2018-2026 NXP
  */
 
 #include <rte_eal.h>
@@ -10,6 +10,7 @@
 
 #include <mc/fsl_dpdmai.h>
 
+#include <fslmc_vfio.h>
 #include <rte_pmd_dpaax_qdma.h>
 #include "dpaa2_hw_dpio.h"
 #include "dpaa2_qdma.h"

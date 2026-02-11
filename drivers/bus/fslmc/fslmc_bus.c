@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2021 NXP
+ *   Copyright 2016,2018-2026 NXP
  *
  */
 
@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <stdalign.h>
 #include <stdbool.h>
+#include <sys/mman.h>
 
 #include <eal_export.h>
 #include <rte_log.h>
@@ -24,15 +25,105 @@
 #include "fslmc_logs.h"
 
 #include <dpaax_iova_table.h>
+#include <dpaa2_hw_pvt.h>
 
 #define VFIO_IOMMU_GROUP_PATH "/sys/kernel/iommu_groups"
 #define FSLMC_BUS_NAME	fslmc
 
+#define FSLMC_CONTAINER_MAX_LEN 8 /**< Of the format dprc.XX */
+
 struct rte_fslmc_bus rte_fslmc_bus;
+
+/* Maximum SG segments */
+#define DPAA2_MAX_SGS 128
+/* SG pool size */
+#define DPAA2_POOL_SIZE 2048
+/* SG pool cache size */
+#define DPAA2_POOL_CACHE_SIZE 256
 
 #define DPAA2_SEQN_DYNFIELD_NAME "dpaa2_seqn_dynfield"
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_seqn_dynfield_offset)
 int dpaa2_seqn_dynfield_offset = -1;
+
+/** For LX2160A, LS2088A and LS1088A*/
+#define WRIOP_CCSR_BASE 0x8b80000
+#define WRIOP_CCSR_CTLU_OFFSET 0
+#define WRIOP_CCSR_CTLU_PARSER_OFFSET 0
+#define WRIOP_CCSR_CTLU_PARSER_INGRESS_OFFSET 0
+
+#define WRIOP_INGRESS_PARSER_PHY \
+	(WRIOP_CCSR_BASE + WRIOP_CCSR_CTLU_OFFSET + \
+	WRIOP_CCSR_CTLU_PARSER_OFFSET + \
+	WRIOP_CCSR_CTLU_PARSER_INGRESS_OFFSET)
+
+struct __rte_packed_begin dpaa2_parser_ccsr {
+	uint32_t psr_cfg;
+	uint32_t psr_idle;
+	uint32_t psr_pclm;
+	uint8_t psr_ver_min;
+	uint8_t psr_ver_maj;
+	uint8_t psr_id1_l;
+	uint8_t psr_id1_h;
+	uint32_t psr_rev2;
+	uint8_t rsv[0x2c];
+	uint8_t sp_ins[4032];
+} __rte_packed_end;
+
+#define SP_PROTOCOL_MAGIC_DATA 0xabcd
+#define SP_PROTOCOL_MAGIC_OFFSET 0x4
+
+static void
+fslmc_soft_parser_protocol_supported(void)
+{
+	int fd, i;
+	void *map_addr = NULL;
+	const struct dpaa2_parser_ccsr *parser_ccsr = NULL;
+	const uint16_t *magic_num;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
+
+	fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (fd < 0) {
+		DPAA2_BUS_ERR("open \"/dev/mem\" ERROR(%d)", fd);
+		goto exit;
+	}
+
+	map_addr = mmap(NULL, sizeof(struct dpaa2_parser_ccsr),
+		PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+		WRIOP_INGRESS_PARSER_PHY);
+	parser_ccsr = map_addr;
+	if (!parser_ccsr) {
+		DPAA2_BUS_ERR("Map 0x%lx(size=0x%lx) failed",
+			(uint64_t)WRIOP_INGRESS_PARSER_PHY,
+			sizeof(struct dpaa2_parser_ccsr));
+		goto exit;
+	}
+
+	DPAA2_BUS_DEBUG("Soft ParserID:0x%02x%02x, Rev:maj(%02x), min(%02x)",
+		parser_ccsr->psr_id1_h, parser_ccsr->psr_id1_l,
+		parser_ccsr->psr_ver_maj, parser_ccsr->psr_ver_min);
+
+	magic_num = (const void *)&parser_ccsr->sp_ins[SP_PROTOCOL_MAGIC_OFFSET];
+	if (*magic_num == SP_PROTOCOL_MAGIC_DATA) {
+		#define SP_PRINT_LEN 128
+
+		bus_info->sp_protocol = true;
+		DPAA2_BUS_INFO("Soft parser protocol support.");
+		fprintf(stderr, "First %d bytes of sp protocol firmware:\r\n",
+			SP_PRINT_LEN);
+		for (i = 0; i < SP_PRINT_LEN; i++) {
+			fprintf(stderr, "%02x ", parser_ccsr->sp_ins[i]);
+			if ((i + 1) % 16 == 0)
+				fprintf(stderr, "\r\n");
+		}
+		fprintf(stderr, "\r\n");
+	}
+
+exit:
+	if (map_addr)
+		munmap(map_addr, sizeof(struct dpaa2_parser_ccsr));
+	if (fd >= 0)
+		close(fd);
+}
 
 RTE_EXPORT_INTERNAL_SYMBOL(rte_fslmc_get_device_count)
 uint32_t
@@ -104,7 +195,7 @@ static struct rte_devargs *
 fslmc_devargs_lookup(struct rte_dpaa2_device *dev)
 {
 	struct rte_devargs *devargs;
-	char dev_name[32];
+	char dev_name[RTE_DEV_NAME_MAX_LEN];
 
 	RTE_EAL_DEVARGS_FOREACH("fslmc", devargs) {
 		devargs->bus->parse(devargs->name, &dev_name);
@@ -313,7 +404,7 @@ err_out:
 static int
 rte_fslmc_scan(void)
 {
-	int ret;
+	int ret = 0;
 	char fslmc_dirpath[PATH_MAX];
 	DIR *dir;
 	struct dirent *entry;
@@ -334,10 +425,21 @@ rte_fslmc_scan(void)
 		ret = -EINVAL;
 		goto scan_fail;
 	}
+	if (strlen(group_name) >= FSLMC_CONTAINER_MAX_LEN) {
+		DPAA2_BUS_ERR("Invalid container name: %s", group_name);
+		ret = -EINVAL;
+		goto scan_fail;
+	}
 
 	ret = fslmc_get_container_group(group_name, &groupid);
 	if (ret != 0)
 		goto scan_fail;
+	rte_fslmc_bus.bus_info = malloc(sizeof(struct rte_fslmc_bus_info));
+	if (!rte_fslmc_bus.bus_info) {
+		DPAA2_BUS_ERR("Failed to alloc mc bus info");
+		goto scan_fail;
+	}
+	memset(rte_fslmc_bus.bus_info, 0, sizeof(struct rte_fslmc_bus_info));
 
 	/* Scan devices on the group */
 	sprintf(fslmc_dirpath, "%s/%s", SYSFS_FSL_MC_DEVICES, group_name);
@@ -346,6 +448,7 @@ rte_fslmc_scan(void)
 		DPAA2_BUS_ERR("Unable to open VFIO group directory");
 		goto scan_fail;
 	}
+	fslmc_soft_parser_protocol_supported();
 
 	/* Scan the DPRC container object */
 	ret = scan_one_fslmc_device(group_name);
@@ -398,10 +501,17 @@ static int
 rte_fslmc_close(void)
 {
 	int ret = 0;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	ret = fslmc_vfio_close_group();
 	if (ret)
-		DPAA2_BUS_INFO("Unable to close devices %d", ret);
+		DPAA2_BUS_ERR("Unable to close devices %d", ret);
+	if (bus_info->mem_pool) {
+		rte_mempool_free(bus_info->mem_pool);
+		bus_info->mem_pool = NULL;
+	}
+	free(bus_info);
+	rte_fslmc_bus.bus_info = NULL;
 
 	return 0;
 }
@@ -414,6 +524,7 @@ rte_fslmc_probe(void)
 
 	struct rte_dpaa2_device *dev;
 	struct rte_dpaa2_driver *drv;
+	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
 	static const struct rte_mbuf_dynfield dpaa2_seqn_dynfield_desc = {
 		.name = DPAA2_SEQN_DYNFIELD_NAME,
@@ -457,6 +568,12 @@ rte_fslmc_probe(void)
 		return 0;
 	}
 
+	/** Create SG pool after dpbp objects are created.*/
+	bus_info->mem_pool = rte_pktmbuf_pool_create("dpaa2_sg_pool",
+		DPAA2_POOL_SIZE, DPAA2_POOL_CACHE_SIZE, 0,
+		DPAA2_MAX_SGS * sizeof(struct qbman_sge),
+		rte_socket_id());
+
 	probe_all = rte_fslmc_bus.bus.conf.scan_mode != RTE_BUS_SCAN_ALLOWLIST;
 
 	TAILQ_FOREACH(dev, &rte_fslmc_bus.device_list, next) {
@@ -478,12 +595,14 @@ rte_fslmc_probe(void)
 				continue;
 			}
 
-			if (probe_all ||
-			   (dev->device.devargs &&
-			    dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
+			if (probe_all || !dev->device.devargs ||
+				(dev->device.devargs &&
+				dev->device.devargs->policy == RTE_DEV_ALLOWED)) {
+				dev->bus_info = rte_fslmc_bus.bus_info;
 				ret = drv->probe(drv, dev);
 				if (ret) {
-					DPAA2_BUS_ERR("Unable to probe");
+					DPAA2_BUS_ERR("Failed(%d) to probe %s",
+						ret, dev->device.name);
 				} else {
 					dev->driver = drv;
 					dev->device.driver = &drv->driver;
@@ -575,6 +694,9 @@ fslmc_all_device_support_iova(void)
 static enum rte_iova_mode
 rte_dpaa2_get_iommu_class(void)
 {
+	bool is_vfio_noiommu_enabled = 1;
+	bool has_iova_va;
+
 	if (rte_eal_iova_mode() == RTE_IOVA_PA)
 		return RTE_IOVA_PA;
 
@@ -582,7 +704,14 @@ rte_dpaa2_get_iommu_class(void)
 		return RTE_IOVA_DC;
 
 	/* check if all devices on the bus support Virtual addressing or not */
-	if (fslmc_all_device_support_iova() != 0 && rte_vfio_noiommu_is_enabled() == 0)
+	has_iova_va = fslmc_all_device_support_iova();
+
+#ifdef VFIO_PRESENT
+	is_vfio_noiommu_enabled = rte_vfio_noiommu_is_enabled() == true ?
+						true : false;
+#endif
+
+	if (has_iova_va && !is_vfio_noiommu_enabled)
 		return RTE_IOVA_VA;
 
 	return RTE_IOVA_PA;
@@ -690,6 +819,15 @@ fslmc_bus_dev_iterate(const void *start, const char *str,
 
 	free(dup);
 	return NULL;
+}
+
+int
+rte_fslmc_bus_available(void)
+{
+	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
+		return false;
+
+	return true;
 }
 
 struct rte_fslmc_bus rte_fslmc_bus = {

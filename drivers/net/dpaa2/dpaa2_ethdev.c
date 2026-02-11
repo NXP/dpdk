@@ -29,7 +29,6 @@
 #include <fsl_dprc.h>
 #include <mc/fsl_dpmng.h>
 #include "dpaa2_ethdev.h"
-#include "dpaa2_sparser.h"
 #include <fsl_qbman_debug.h>
 
 #define DRIVER_LOOPBACK_MODE "drv_loopback"
@@ -70,12 +69,11 @@ static uint64_t dev_tx_offloads_sup =
 static uint64_t dev_tx_offloads_nodis =
 		RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
 
-/* enable timestamp in mbuf */
-bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
-uint64_t dpaa2_timestamp_rx_dynflag;
-int dpaa2_timestamp_dynfield_offset = -1;
-
-bool dpaa2_print_parser_result;
+static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
+	.name = "dpaa2_rx_protocol_pos_dyn",
+	.size = sizeof(struct dpaa2_dyn_rx_protocol_pos),
+	.align = __alignof__(struct dpaa2_dyn_rx_protocol_pos),
+};
 
 #define DPAA2_MAX_NB_RX_DESC_IN_PEB (11 * 1024)
 static uint32_t dpaa2_total_nb_rx_desc;
@@ -267,11 +265,289 @@ static const struct dpaa2_xstats_name_desc dpaa2_xstats_strings[] = {
 	(RTE_DIM(dpaa2_xstats_strings) - DPAA2_MAC_NUM_STATS)
 
 static struct rte_dpaa2_driver rte_dpaa2_pmd;
-static int dpaa2_dev_link_update(struct rte_eth_dev *dev,
-				 int wait_to_complete);
-static int dpaa2_dev_set_link_up(struct rte_eth_dev *dev);
-static int dpaa2_dev_set_link_down(struct rte_eth_dev *dev);
-static int dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
+
+static int
+dpaa2_setup_table_miss_action(struct rte_eth_dev *eth_dev,
+	uint8_t tc_index)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct rte_flow_group_attr attr;
+	struct rte_flow_action actions[2];
+	struct dpaa2_flow_tbl_profile *tbl_profile;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.ingress = 1;
+	if (tc_index < priv->num_rx_tc) {
+		tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+		if (tbl_profile->default_drop) {
+			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
+		} else if (tbl_profile->default_queue.index >= eth_dev->data->nb_rx_queues) {
+			DPAA2_PMD_WARN("%s-tc%d-default-rxq(%d) >= max rxq(%d), Force to drop.",
+				eth_dev->data->name, tc_index, tbl_profile->default_queue.index,
+				eth_dev->data->nb_rx_queues);
+			tbl_profile->default_drop = true;
+			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
+		} else {
+			actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+			actions[0].conf = &tbl_profile->default_queue;
+		}
+	} else {
+		tbl_profile = &priv->flow_profile.qos_profile;
+		if (tbl_profile->default_drop) {
+			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
+		} else if (tbl_profile->default_jump.group >= priv->num_rx_tc) {
+			DPAA2_PMD_WARN("%s-default-tc(%d) >= max tc(%d), Force to drop.",
+				eth_dev->data->name, tbl_profile->default_jump.group,
+				priv->num_rx_tc);
+			tbl_profile->default_drop = true;
+			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
+		} else {
+			actions[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
+			actions[0].conf = &tbl_profile->default_jump;
+		}
+	}
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+	return rte_flow_group_set_miss_actions(eth_dev->data->port_id,
+			tc_index, &attr, actions, NULL);
+}
+
+static int
+dpaa2_setup_flow_rss_dist(struct rte_eth_dev *eth_dev,
+	uint64_t req_dist_set, int tc_index)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	int tc_dist_queues;
+	struct rte_flow_attr attr;
+	struct rte_flow_action_rss action_rss;
+	struct rte_flow_action actions[2];
+	struct rte_flow *rss_flow;
+
+	/*TC distribution size is set with dist_queues or
+	 * nb_rx_queues % dist_queues in order of TC priority index.
+	 * Calculating dist size for this tc_index:-
+	 */
+	tc_dist_queues = eth_dev->data->nb_rx_queues -
+		tc_index * priv->dist_queues;
+	if (tc_dist_queues <= 0) {
+		DPAA2_PMD_DEBUG("No distribution on TC%d", tc_index);
+		return 0;
+	}
+
+	if (tc_dist_queues > priv->dist_queues)
+		tc_dist_queues = priv->dist_queues;
+
+	memset(&attr, 0, sizeof(attr));
+	action_rss.func = RTE_ETH_HASH_FUNCTION_DEFAULT;
+	action_rss.level = 0;
+	action_rss.types = req_dist_set;
+	action_rss.key_len = 0;
+	action_rss.key = NULL;
+	action_rss.queue = NULL;
+	action_rss.queue_num = tc_dist_queues;
+
+	actions[0].type = RTE_FLOW_ACTION_TYPE_RSS;
+	actions[0].conf = &action_rss;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+	attr.group = tc_index;
+	attr.ingress = 1;
+	rss_flow = rte_flow_create(eth_dev->data->port_id, &attr, NULL, actions, NULL);
+	if (!rss_flow) {
+		DPAA2_PMD_WARN("%s: Set RSS flow dist on tc%d failed",
+			__func__, tc_index);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int
+dpaa2_setup_flow_dcb_dist(struct rte_eth_dev *eth_dev,
+	uint8_t prio, uint8_t tc)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct rte_flow_attr attr;
+	struct rte_flow_action actions[2];
+	struct rte_flow_item_vlan vlan_item;
+	struct rte_flow_item_vlan vlan_mask;
+	struct rte_flow_item items[2];
+	struct rte_flow_action_jump action_jump;
+	struct rte_flow *qos_flow;
+
+	memset(&attr, 0, sizeof(struct rte_flow_attr));
+	attr.ingress = 1;
+
+	attr.group = priv->num_rx_tc;
+	attr.priority = prio;
+	memset(&vlan_item, 0, sizeof(struct rte_flow_item_vlan));
+	memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
+	vlan_item.hdr.vlan_tci = rte_cpu_to_be_16(RTE_VLAN_TCI_MAKE(0, prio, 0));
+	vlan_mask.hdr.vlan_tci = rte_cpu_to_be_16(RTE_VLAN_PRI_MASK);
+	items[0].spec = &vlan_item;
+	items[0].mask = &vlan_mask;
+	items[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+	items[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+	actions[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
+	action_jump.group = tc;
+	actions[0].conf = &action_jump;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+	qos_flow = rte_flow_create(eth_dev->data->port_id,
+		&attr, items, actions, NULL);
+	if (!qos_flow) {
+		DPAA2_PMD_WARN("Failed to direct vlan with prio(%d) to tc%d", prio, tc);
+		return -EIO;
+	}
+	priv->dcb_flow[prio] = qos_flow;
+
+	return 0;
+}
+
+static int
+dpaa2_remove_flow_rss_dist(struct rte_eth_dev *eth_dev,
+	uint8_t tc_index)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
+	int ret;
+
+	tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+	if (!tbl_profile->rss_flow || !tbl_profile->is_rss) {
+		DPAA2_PMD_WARN("%s'TC[%d] is not RSS distributed",
+			eth_dev->data->name, tc_index);
+		return 0;
+	}
+	ret = rte_flow_destroy(eth_dev->data->port_id, tbl_profile->rss_flow, NULL);
+	if (ret)
+		return ret;
+	tbl_profile->rss_flow = NULL;
+
+	return 0;
+}
+
+static int
+dpaa2_update_flow_rss_dist(struct rte_eth_dev *eth_dev,
+	uint64_t req_dist_set, int tc_index)
+{
+	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
+	struct rte_flow_action_rss action_rss;
+	struct rte_flow_action actions[2];
+	int ret;
+
+	tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+	if (!tbl_profile->rss_flow || !tbl_profile->is_rss) {
+		DPAA2_PMD_WARN("%s'TC[%d] is not RSS distributed",
+			eth_dev->data->name, tc_index);
+		return 0;
+	}
+	action_rss.func = RTE_ETH_HASH_FUNCTION_DEFAULT;
+	action_rss.level = 0;
+	action_rss.types = req_dist_set;
+	action_rss.key_len = 0;
+	action_rss.queue_num = tbl_profile->tc_cfg.dist_size;
+	action_rss.key = NULL;
+	action_rss.queue = NULL;
+	actions[0].type = RTE_FLOW_ACTION_TYPE_RSS;
+	actions[0].conf = &action_rss;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+	ret = rte_flow_actions_update(eth_dev->data->port_id, tbl_profile->rss_flow,
+		actions, NULL);
+
+	return ret;
+}
+
+static int
+dpaa2_attach_bp_list(struct dpaa2_dev_priv *priv,
+	struct fsl_mc_io *dpni, void *blist, uint8_t tc_id)
+{
+	/* Function to attach a DPNI with a buffer pool list. Buffer pool list
+	 * handle is passed in blist.
+	 */
+	int32_t retcode;
+	struct dpni_pools_cfg *bpool_cfg = &priv->pools_cfg;
+	struct dpaa2_bp_list *bp_list = blist;
+	struct dpni_buffer_layout layout;
+	int tot_size, out_min_hdr_room, in_min_hdr_room;
+	uint8_t bp_idx;
+	struct rte_mempool *mp = bp_list->mp;
+
+	if (priv->flow_profile.mempool[tc_id] != mp) {
+		if (!priv->flow_profile.mempool[tc_id]) {
+			bp_idx = bpool_cfg->num_dpbp;
+			bpool_cfg->num_dpbp++;
+			priv->flow_profile.bp_idx[tc_id] = bp_idx;
+		} else {
+			bp_idx = priv->flow_profile.bp_idx[tc_id];
+		}
+		priv->flow_profile.mempool[tc_id] = mp;
+	} else {
+		bp_idx = priv->flow_profile.bp_idx[tc_id];
+	}
+
+	/* ... rx buffer layout .
+	 * Check alignment for buffer layouts first
+	 */
+
+	/* ... rx buffer layout ... */
+	if (priv->tx_conf_type == DPAA2_TX_DYNAMIC_CONF) {
+		/** Additional headroom layout for IPSec with TX configure
+		 * dynamic enabled.
+		 */
+		in_min_hdr_room = DPAA2_RX_MIN_FD_OFFSET +
+			DPAA2_SEC_SIMPLE_FD_IB_MIN;
+		out_min_hdr_room = DPAA2_DYN_TX_MIN_FD_OFFSET +
+			DPAA2_SEC_SIMPLE_FD_OB_MIN;
+		tot_size = RTE_MAX(in_min_hdr_room, out_min_hdr_room);
+		if (tot_size < RTE_PKTMBUF_HEADROOM)
+			tot_size = RTE_PKTMBUF_HEADROOM;
+	} else {
+		tot_size = RTE_PKTMBUF_HEADROOM;
+	}
+	tot_size = RTE_ALIGN_CEIL(tot_size, DPAA2_PACKET_LAYOUT_ALIGN);
+
+	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
+	layout.options = DPNI_BUF_LAYOUT_OPT_DATA_HEAD_ROOM |
+		DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
+		DPNI_BUF_LAYOUT_OPT_PARSER_RESULT |
+		DPNI_BUF_LAYOUT_OPT_DATA_ALIGN |
+		DPNI_BUF_LAYOUT_OPT_TIMESTAMP |
+		DPNI_BUF_LAYOUT_OPT_PRIVATE_DATA_SIZE;
+
+	layout.pass_timestamp = true;
+	layout.pass_frame_status = 1;
+	layout.private_data_size = DPAA2_FD_PTA_SIZE;
+	layout.pass_parser_result = 1;
+	layout.data_align = DPAA2_PACKET_LAYOUT_ALIGN;
+	layout.data_head_room = tot_size - DPAA2_FD_PTA_SIZE -
+		DPAA2_MBUF_HW_ANNOTATION;
+	retcode = dpni_set_buffer_layout(dpni, CMD_PRI_LOW, priv->token,
+			DPNI_QUEUE_RX, &layout);
+	if (retcode) {
+		DPAA2_PMD_ERR("Error configuring buffer pool Rx layout (%d)",
+			retcode);
+		return retcode;
+	}
+
+	/*Attach buffer pool to the network interface as described by the user*/
+	bpool_cfg->pools[bp_idx].dpbp_id = bp_list->buf_pool.dpbp_node->dpbp_id;
+	bpool_cfg->pools[bp_idx].backup_pool = 0;
+	bpool_cfg->pools[bp_idx].buffer_size = RTE_ALIGN_CEIL(bp_list->buf_pool.size,
+		DPAA2_PACKET_LAYOUT_ALIGN);
+	bpool_cfg->pools[bp_idx].priority_mask = tc_id;
+
+	retcode = dpni_set_pools(dpni, CMD_PRI_LOW, priv->token, bpool_cfg);
+	if (retcode) {
+		DPAA2_PMD_ERR("Error(%d) configuring pools[%d](id=%d) on %s.",
+			retcode, bp_idx, bpool_cfg->pools[bp_idx].dpbp_id,
+			priv->eth_dev->data->name);
+		return retcode;
+	}
+
+	priv->bp_list = bp_list;
+	return 0;
+}
 
 static int
 dpaa2_vlan_filter_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on)
@@ -373,25 +649,19 @@ static int
 dpaa2_fw_version_get(struct rte_eth_dev *dev,
 	char *fw_version, size_t fw_size)
 {
+	struct rte_dpaa2_device *dpaa2_dev;
 	int ret;
-	struct fsl_mc_io *dpni = dev->process_private;
-	struct mc_soc_version mc_plat_info = {0};
-	struct mc_version mc_ver_info = {0};
+	uint32_t major, minor, rev;
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (mc_get_soc_version(dpni, CMD_PRI_LOW, &mc_plat_info))
-		DPAA2_PMD_WARN("\tmc_get_soc_version failed");
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(dev->data->dev_private);
+	major = RTE_FSL_MC_REV_MAJOR(dpaa2_dev->bus_info->mc_rev);
+	minor = RTE_FSL_MC_REV_MINOR(dpaa2_dev->bus_info->mc_rev);
+	rev = RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev);
 
-	if (mc_get_version(dpni, CMD_PRI_LOW, &mc_ver_info))
-		DPAA2_PMD_WARN("\tmc_get_version failed");
-
-	ret = snprintf(fw_version, fw_size,
-		       "%x-%d.%d.%d",
-		       mc_plat_info.svr,
-		       mc_ver_info.major,
-		       mc_ver_info.minor,
-		       mc_ver_info.revision);
+	ret = snprintf(fw_version, fw_size, "%x-%d.%d.%d",
+		dpaa2_dev->bus_info->svr, major, minor, rev);
 	if (ret < 0)
 		return -EINVAL;
 
@@ -608,7 +878,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	PMD_INIT_FUNC_TRACE();
 
 	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
-	if (priv->flags & DPAA2_TX_CONF_ENABLE)
+	if (priv->tx_conf_type != DPAA2_TX_NO_CONF)
 		tot_queues = priv->nb_rx_queues + 2 * priv->nb_tx_queues;
 	else
 		tot_queues = priv->nb_rx_queues + priv->nb_tx_queues;
@@ -629,7 +899,7 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail;
 	}
 
-	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
+	if (priv->flags & DPAA2_RX_ERROR_QUEUE_FLAG) {
 		priv->rx_err_vq = rte_zmalloc("dpni_rx_err",
 			sizeof(struct dpaa2_queue), 0);
 		if (!priv->rx_err_vq) {
@@ -648,16 +918,17 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->eth_data = dev->data;
 		mc_q->flow_id = DPAA2_INVALID_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
-		dpaa2_q = (struct dpaa2_queue *)priv->tx_vq[i];
+		dpaa2_q = priv->tx_vq[i];
 		dpaa2_q->cscn = rte_malloc(NULL,
-					   sizeof(struct qbman_result), 16);
+			sizeof(struct qbman_result),
+			RTE_CACHE_LINE_SIZE);
 		if (!dpaa2_q->cscn) {
 			ret = -ENOBUFS;
 			goto fail_tx;
 		}
 	}
 
-	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+	if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 		/*Setup tx confirmation queues*/
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			mc_q->eth_data = dev->data;
@@ -706,7 +977,7 @@ fail:
 		priv->rx_vq[i--] = NULL;
 	}
 
-	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
+	if (priv->flags & DPAA2_RX_ERROR_QUEUE_FLAG) {
 		dpaa2_q = priv->rx_err_vq;
 		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 	}
@@ -754,6 +1025,9 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 						RTE_MAX_LCORE);
 			dpaa2_queue_storage_free(dpaa2_q,
 				RTE_MAX_LCORE);
+			if (dpaa2_q->cfg)
+				rte_free(dpaa2_q->cfg);
+			dpaa2_q->cfg = NULL;
 			priv->rx_vq[i] = NULL;
 		}
 		/* cleanup tx queue cscn */
@@ -762,7 +1036,7 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 			rte_free(dpaa2_q->cscn);
 			priv->tx_vq[i] = NULL;
 		}
-		if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+		if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 			/* cleanup tx conf queue storage */
 			for (i = 0; i < priv->nb_tx_queues; i++) {
 				dpaa2_q = priv->tx_conf_vq[i];
@@ -771,7 +1045,7 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 				priv->tx_conf_vq[i] = NULL;
 			}
 		}
-		if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
+		if (priv->flags & DPAA2_RX_ERROR_QUEUE_FLAG) {
 			dpaa2_q = priv->rx_err_vq;
 			dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 		}
@@ -780,6 +1054,28 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		rte_free(priv->rx_vq[0]);
 		priv->rx_vq[0] = NULL;
 	}
+}
+
+static int
+dpaa2_dev_dcb_info(struct rte_eth_dev *dev,
+	struct rte_eth_dcb_info *dcb_info)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	int i;
+
+	if (!priv->nb_dcb_tcs)
+		return -ENOTSUP;
+
+	memset(dcb_info, 0, sizeof(struct rte_eth_dcb_info));
+	dcb_info->nb_tcs = priv->nb_dcb_tcs;
+	rte_memcpy(dcb_info->prio_tc, priv->prio_dcb_tc,
+		sizeof(uint8_t) * RTE_ETH_DCB_NUM_USER_PRIORITIES);
+	for (i = 0; i < dcb_info->nb_tcs; i++) {
+		dcb_info->tc_queue.tc_rxq[0][i].base = priv->dist_queues * i;
+		dcb_info->tc_queue.tc_rxq[0][i].nb_queue = priv->dist_queues;
+	}
+
+	return 0;
 }
 
 static int
@@ -794,28 +1090,23 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int rx_l4_csum_offload = false;
 	int tx_l3_csum_offload = false;
 	int tx_l4_csum_offload = false;
-	int ret, tc_index;
-	uint32_t max_rx_pktlen;
-#if defined(RTE_LIBRTE_IEEE1588)
-	uint16_t ptp_correction_offset;
-#endif
-
-	PMD_INIT_FUNC_TRACE();
+	int ret, tc_index, nb_tcs;
+	uint32_t max_rx_pktlen, base;
+	struct rte_eth_rss_conf *rss_conf;
+	struct rte_eth_dcb_rx_conf *dcb_rx_conf;
+	struct rte_dpaa2_default_action_conf *def_act_conf;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA2_PMD_INFO(
-		"Some of rx offloads enabled by default - requested 0x%" PRIx64
-		" fixed are 0x%" PRIx64,
-		rx_offloads, dev_rx_offloads_nodis);
+		DPAA2_PMD_DEBUG("RX offloads requested/fixed: 0x%lx/0x%lx",
+			rx_offloads, dev_rx_offloads_nodis);
 	}
 
 	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA2_PMD_INFO(
-		"Some of tx offloads enabled by default - requested 0x%" PRIx64
-		" fixed are 0x%" PRIx64,
-		tx_offloads, dev_tx_offloads_nodis);
+		DPAA2_PMD_DEBUG("TX offloads requested/fixed: 0x%lx/0x%lx",
+			tx_offloads, dev_tx_offloads_nodis);
 	}
 
 	max_rx_pktlen = eth_conf->rxmode.mtu + RTE_ETHER_HDR_LEN +
@@ -823,7 +1114,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	if (max_rx_pktlen <= DPAA2_MAX_RX_PKT_LEN) {
 		ret = dpni_set_max_frame_length(dpni, CMD_PRI_LOW,
 			priv->token, max_rx_pktlen - RTE_ETHER_CRC_LEN);
-		if (ret != 0) {
+		if (ret) {
 			DPAA2_PMD_ERR("Unable to set mtu. check config");
 			return ret;
 		}
@@ -832,18 +1123,67 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	} else {
 		DPAA2_PMD_ERR("Configured mtu %d and calculated max-pkt-len is %d which should be <= %d",
 			eth_conf->rxmode.mtu, max_rx_pktlen, DPAA2_MAX_RX_PKT_LEN);
-		return -1;
+		return -ENOTSUP;
 	}
 
-	if (eth_conf->rxmode.mq_mode == RTE_ETH_MQ_RX_RSS) {
-		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_setup_flow_dist(dev,
-					eth_conf->rx_adv_conf.rss_conf.rss_hf,
-					tc_index);
+	rss_conf = &eth_conf->rx_adv_conf.rss_conf;
+	dcb_rx_conf = &eth_conf->rx_adv_conf.dcb_rx_conf;
+	def_act_conf = eth_conf->rxmode.reserved_ptrs[0];
+
+	for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+		tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+		base = priv->dist_queues * tc_index;
+		if (def_act_conf && tc_index < def_act_conf->max_tc) {
+			if (def_act_conf->default_flows[tc_index] >= priv->dist_queues) {
+				tbl_profile->default_drop = true;
+			} else {
+				tbl_profile->default_drop = false;
+				tbl_profile->default_queue.index = base +
+					def_act_conf->default_flows[tc_index];
+			}
+		}
+		if (priv->fs_entries) {
+			ret = dpaa2_setup_table_miss_action(dev, tc_index);
 			if (ret) {
-				DPAA2_PMD_ERR(
-					"Unable to set flow distribution on tc%d."
-					"Check queue config", tc_index);
+				DPAA2_PMD_ERR("Error(%d) to set miss action of %s-tc%d table",
+					ret, dev->data->name, tc_index);
+			}
+		}
+	}
+	if (def_act_conf) {
+		tbl_profile = &priv->flow_profile.qos_profile;
+		if (def_act_conf->default_tc >= priv->num_rx_tc) {
+			tbl_profile->default_drop = true;
+		} else {
+			tbl_profile->default_drop = false;
+			tbl_profile->default_jump.group = def_act_conf->default_tc;
+		}
+	}
+	ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
+	if (ret) {
+		DPAA2_PMD_ERR("Error(%d) to set miss action of %s-QoS table",
+			ret, dev->data->name);
+	}
+
+	if (eth_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS) {
+		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+			ret = dpaa2_setup_flow_rss_dist(dev, rss_conf->rss_hf, tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("RSS dist on tc%d err(%d)", tc_index, ret);
+				return ret;
+			}
+		}
+	}
+
+	if ((eth_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_DCB) && priv->qos_entries) {
+		nb_tcs = dcb_rx_conf->nb_tcs;
+		for (tc_index = 0; tc_index < nb_tcs; tc_index++) {
+			if (tc_index >= priv->num_rx_tc)
+				break;
+			ret = dpaa2_setup_flow_dcb_dist(dev, dcb_rx_conf->dcb_tc[tc_index],
+				tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("DCB direct to tc%d err(%d)", tc_index, ret);
 				return ret;
 			}
 		}
@@ -871,25 +1211,15 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		return ret;
 	}
 
-#if !defined(RTE_LIBRTE_IEEE1588)
-	if (rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
-#endif
-	{
-		ret = rte_mbuf_dyn_rx_timestamp_register(
-				&dpaa2_timestamp_dynfield_offset,
-				&dpaa2_timestamp_rx_dynflag);
-		if (ret != 0) {
+	if (rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP) {
+		ret = rte_mbuf_dyn_rx_timestamp_register(&priv->rx_ts_offset,
+			&priv->rx_ts_flag);
+		if (ret) {
 			DPAA2_PMD_ERR("Error to register timestamp field/flag");
-			return -rte_errno;
+			return ret;
 		}
-		dpaa2_enable_ts[dev->data->port_id] = true;
 	}
 
-#if defined(RTE_LIBRTE_IEEE1588)
-	/* By default setting ptp correction offset for Ethernet SYNC packets */
-	ptp_correction_offset = RTE_ETHER_HDR_LEN + 8;
-	rte_pmd_dpaa2_set_one_step_ts(dev->data->port_id, ptp_correction_offset, 0);
-#endif
 	if (tx_offloads & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
 		tx_l3_csum_offload = true;
 
@@ -973,13 +1303,12 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpaa2_queue *dpaa2_q;
-	struct dpni_queue cfg;
-	uint8_t options = 0;
-	uint8_t flow_id;
+	struct dpni_queue *cfg;
+	struct dpni_taildrop taildrop;
+	uint8_t qopt = 0;
+	uint16_t flow_id;
 	uint32_t bpid;
-	int i, ret;
-
-	PMD_INIT_FUNC_TRACE();
+	int ret, ops_idx;
 
 	DPAA2_PMD_DEBUG("dev =%p, queue =%d, pool = %p, conf =%p",
 			dev, rx_queue_id, mb_pool, rx_conf);
@@ -995,10 +1324,19 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			nb_rx_desc);
 	}
 
+	dpaa2_q = priv->rx_vq[rx_queue_id];
+
 	/* Rx deferred start is not supported */
 	if (rx_conf->rx_deferred_start) {
-		DPAA2_PMD_ERR("%p:Rx deferred start not supported",
-				(void *)dev);
+		DPAA2_PMD_ERR("%s:Rx deferred start not supported",
+			dev->data->name);
+		return -EINVAL;
+	}
+
+	ops_idx = rte_dpaa2_mpool_get_ops_idx();
+	if (ops_idx != mb_pool->ops_index) {
+		DPAA2_PMD_ERR("MP(%s)'s ops index(%d) != %d",
+			mb_pool->name, mb_pool->ops_index, ops_idx);
 		return -EINVAL;
 	}
 
@@ -1010,11 +1348,15 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		}
 		bpid = mempool_to_bpid(mb_pool);
 		ret = dpaa2_attach_bp_list(priv, dpni,
-				rte_dpaa2_bpid_info[bpid].bp_list);
+				rte_dpaa2_bpid_info[bpid].bp_list,
+				dpaa2_q->tc_index);
 		if (ret)
 			return ret;
 	}
-	dpaa2_q = priv->rx_vq[rx_queue_id];
+	cfg = rte_zmalloc(NULL, sizeof(struct dpni_queue), 0);
+	if (!cfg)
+		return -ENOMEM;
+	dpaa2_q->cfg = cfg;
 	dpaa2_q->mb_pool = mb_pool; /**< mbuf pool to populate RX ring. */
 	dpaa2_q->bp_array = rte_dpaa2_bpid_info;
 	dpaa2_q->nb_desc = UINT16_MAX;
@@ -1025,114 +1367,92 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	/*Get the flow id from given VQ id*/
 	flow_id = dpaa2_q->flow_id;
-	memset(&cfg, 0, sizeof(struct dpni_queue));
+	memset(cfg, 0, sizeof(struct dpni_queue));
 
-	options = options | DPNI_QUEUE_OPT_USER_CTX;
-	cfg.user_context = (size_t)(dpaa2_q);
+	qopt |= DPNI_QUEUE_OPT_USER_CTX;
+	cfg->user_context = (size_t)(dpaa2_q);
+	cfg->destination.type = DPNI_DEST_NONE;
 
-	/* check if a private cgr available. */
-	for (i = 0; i < priv->max_cgs; i++) {
-		if (!priv->cgid_in_use[i]) {
-			priv->cgid_in_use[i] = 1;
-			break;
-		}
-	}
-
-	if (i < priv->max_cgs) {
-		options |= DPNI_QUEUE_OPT_SET_CGID;
-		cfg.cgid = i;
-		dpaa2_q->cgid = cfg.cgid;
+	/** RXQs in same TC share same cgid.*/
+	if (dpaa2_q->tc_index < priv->max_cgs) {
+		qopt |= DPNI_QUEUE_OPT_SET_CGID;
+		cfg->cgid = dpaa2_q->tc_index;
+		priv->cgid_in_use[dpaa2_q->tc_index]++;
 	} else {
-		dpaa2_q->cgid = DPAA2_INVALID_CGID;
+		cfg->cgid = DPAA2_INVALID_CGID;
 	}
 
 	/*if ls2088 or rev2 device, enable the stashing */
 
 	if ((dpaa2_svr_family & 0xffff0000) != SVR_LS2080A) {
-		options |= DPNI_QUEUE_OPT_FLC;
-		cfg.flc.stash_control = true;
-		dpaa2_flc_stashing_clear_all(&cfg.flc.value);
-		if (getenv("DPAA2_DATA_STASHING_OFF")) {
+		qopt |= DPNI_QUEUE_OPT_FLC;
+		cfg->flc.stash_control = true;
+		dpaa2_flc_stashing_clear_all(&cfg->flc.value);
+		if (priv->flags & DPAA2_RX_DATA_STASHING_OFF_FLAG) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0,
-				&cfg.flc.value);
+				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 1;
 		} else {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
-				&cfg.flc.value);
+				&cfg->flc.value);
 			dpaa2_q->data_stashing_off = 0;
 		}
-		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
+		if (dpaa2_svr_family != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
-				&cfg.flc.value);
+				&cfg->flc.value);
 		}
 	}
+
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
-			dpaa2_q->tc_index, flow_id, options, &cfg);
+			dpaa2_q->tc_index, flow_id, qopt, cfg);
 	if (ret) {
+		rte_free(dpaa2_q->cfg);
+		dpaa2_q->cfg = NULL;
 		DPAA2_PMD_ERR("Error in setting the rx flow: = %d", ret);
 		return ret;
 	}
 
-	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF)) {
-		struct dpni_taildrop taildrop;
-
+	dpaa2_q->nb_desc = nb_rx_desc;
+	memset(&taildrop, 0, sizeof(struct dpni_taildrop));
+	if (!(priv->flags & DPAA2_RX_TAILDROP_OFF))
 		taildrop.enable = 1;
-		dpaa2_q->nb_desc = nb_rx_desc;
-		/* Private CGR will use tail drop length as nb_rx_desc.
-		 * for rest cases we can use standard byte based tail drop.
-		 * There is no HW restriction, but number of CGRs are limited,
-		 * hence this restriction is placed.
-		 */
-		if (dpaa2_q->cgid != DPAA2_INVALID_CGID) {
-			/*enabling per rx queue congestion control */
-			taildrop.threshold = nb_rx_desc;
-			taildrop.units = DPNI_CONGESTION_UNIT_FRAMES;
-			taildrop.oal = 0;
-			DPAA2_PMD_DEBUG("Enabling CG Tail Drop on queue = %d",
-					rx_queue_id);
-			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
-						DPNI_CP_CONGESTION_GROUP,
-						DPNI_QUEUE_RX,
-						dpaa2_q->tc_index,
-						dpaa2_q->cgid, &taildrop);
-		} else {
-			/*enabling per rx queue congestion control */
-			taildrop.threshold = CONG_THRESHOLD_RX_BYTES_Q;
-			taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
-			taildrop.oal = CONG_RX_OAL;
-			DPAA2_PMD_DEBUG("Enabling Byte based Drop on queue= %d",
-					rx_queue_id);
-			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
-						DPNI_CP_QUEUE, DPNI_QUEUE_RX,
-						dpaa2_q->tc_index, flow_id,
-						&taildrop);
-		}
-		if (ret) {
-			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
-				ret);
-			return ret;
-		}
-	} else { /* Disable tail Drop */
-		struct dpni_taildrop taildrop = {0};
-		DPAA2_PMD_INFO("Tail drop is disabled on queue");
-
-		taildrop.enable = 0;
-		if (dpaa2_q->cgid != DPAA2_INVALID_CGID) {
-			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
-					DPNI_CP_CONGESTION_GROUP, DPNI_QUEUE_RX,
-					dpaa2_q->tc_index,
-					dpaa2_q->cgid, &taildrop);
-		} else {
-			ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
-					DPNI_CP_QUEUE, DPNI_QUEUE_RX,
-					dpaa2_q->tc_index, flow_id, &taildrop);
-		}
-		if (ret) {
-			DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)",
-				ret);
-			return ret;
-		}
+	/* Private CGR will use tail drop length as nb_rx_desc * queues per TC.
+	 * For rest cases we can use standard byte based tail drop.
+	 * There is no HW restriction, but number of CGRs are limited,
+	 * hence this restriction is placed.
+	 */
+	if (cfg->cgid != DPAA2_INVALID_CGID &&
+		priv->cgid_in_use[dpaa2_q->tc_index] == 1) {
+		/*enabling per TC congestion control */
+		taildrop.threshold = nb_rx_desc * priv->dist_queues;
+		taildrop.units = DPNI_CONGESTION_UNIT_FRAMES;
+		taildrop.oal = 0;
+		DPAA2_PMD_DEBUG("%s CG Tail Drop on TC%d",
+			taildrop.enable ? "Enabling" : "Disabling",
+			dpaa2_q->tc_index);
+		ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
+			DPNI_CP_CONGESTION_GROUP, DPNI_QUEUE_RX,
+			dpaa2_q->tc_index, cfg->cgid, &taildrop);
+	} else if (cfg->cgid == DPAA2_INVALID_CGID) {
+		/*enabling per rx queue congestion control */
+		taildrop.threshold = CONG_THRESHOLD_RX_BYTES_Q;
+		taildrop.units = DPNI_CONGESTION_UNIT_BYTES;
+		taildrop.oal = CONG_RX_OAL;
+		DPAA2_PMD_DEBUG("%s Byte based Drop on TC[%d].flow%d",
+			taildrop.enable ? "Enabling" : "Disabling",
+			dpaa2_q->tc_index, flow_id);
+		ret = dpni_set_taildrop(dpni, CMD_PRI_LOW, priv->token,
+			DPNI_CP_QUEUE, DPNI_QUEUE_RX,
+			dpaa2_q->tc_index, flow_id, &taildrop);
 	}
+	if (ret) {
+		rte_free(dpaa2_q->cfg);
+		dpaa2_q->cfg = NULL;
+		DPAA2_PMD_ERR("Error in setting taildrop. err=(%d)", ret);
+		return ret;
+	}
+
+	dpaa2_q->options = qopt;
 
 	dev->data->rx_queues[rx_queue_id] = dpaa2_q;
 	return 0;
@@ -1151,9 +1471,9 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpni_queue tx_conf_cfg;
 	struct dpni_queue tx_flow_cfg;
-	uint8_t options = 0, flow_id;
+	uint8_t qopt = 0;
 	uint8_t ceetm_ch_idx;
-	uint16_t channel_id;
+	uint16_t channel_id, flow_id;
 	struct dpni_queue_id qid;
 	uint32_t tc_id;
 	int ret;
@@ -1161,15 +1481,15 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa2_q->nb_desc = UINT16_MAX;
-	dpaa2_q->offloads = tx_conf->offloads;
-
 	/* Tx deferred start is not supported */
 	if (tx_conf->tx_deferred_start) {
-		DPAA2_PMD_ERR("%p:Tx deferred start not supported",
-				(void *)dev);
+		DPAA2_PMD_ERR("%s:Tx deferred start not supported",
+			dev->data->name);
 		return -EINVAL;
 	}
+
+	dpaa2_q->nb_desc = UINT16_MAX;
+	dpaa2_q->offloads = tx_conf->offloads;
 
 	/* Return if queue already configured */
 	if (dpaa2_q->flow_id != DPAA2_INVALID_FLOW_ID) {
@@ -1185,7 +1505,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			ceetm_ch_idx <= (priv->num_channels - 1);
 			ceetm_ch_idx++) {
 			/*Set tx-conf and error configuration*/
-			if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+			if (priv->tx_conf_type == DPAA2_TX_ABSOLUTE_CONF) {
 				ret = dpni_set_tx_confirmation_mode(dpni,
 						CMD_PRI_LOW, priv->token,
 						ceetm_ch_idx,
@@ -1209,7 +1529,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	flow_id = 0;
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
-			((channel_id << 8) | tc_id), flow_id, options, &tx_flow_cfg);
+			((channel_id << 8) | tc_id), flow_id, qopt, &tx_flow_cfg);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in setting the tx flow: "
 			"tc_id=%d, flow=%d err=%d",
@@ -1268,19 +1588,21 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			   ret);
 			return ret;
 		}
+	} else {
+		DPAA2_PMD_INFO("Tx congestion notification is disabled");
 	}
 	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
 	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 
-	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+	if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 		dpaa2_q->tx_conf_queue = dpaa2_tx_conf_q;
-		options = options | DPNI_QUEUE_OPT_USER_CTX;
+		qopt |= DPNI_QUEUE_OPT_USER_CTX;
 		tx_conf_cfg.user_context = (size_t)(dpaa2_q);
 		ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
 				DPNI_QUEUE_TX_CONFIRM,
 				((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
 				dpaa2_tx_conf_q->flow_id,
-				options, &tx_conf_cfg);
+				qopt, &tx_conf_cfg);
 		if (ret) {
 			DPAA2_PMD_ERR("Set TC[%d].TX[%d] conf flow err=%d",
 				dpaa2_tx_conf_q->tc_index,
@@ -1307,28 +1629,29 @@ dpaa2_dev_rx_queue_release(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	struct dpaa2_queue *dpaa2_q = dev->data->rx_queues[rx_queue_id];
 	struct dpaa2_dev_priv *priv = dpaa2_q->eth_data->dev_private;
 	struct fsl_mc_io *dpni = priv->eth_dev->process_private;
-	uint8_t options = 0;
+	uint8_t qopt = 0;
 	int ret;
-	struct dpni_queue cfg;
+	struct dpni_queue *cfg = dpaa2_q->cfg;
 
-	memset(&cfg, 0, sizeof(struct dpni_queue));
 	PMD_INIT_FUNC_TRACE();
+
+	if (dpaa2_q->event_attached)
+		return;
 
 	dpaa2_total_nb_rx_desc -= dpaa2_q->nb_desc;
 
-	if (dpaa2_q->cgid != DPAA2_INVALID_CGID) {
-		options = DPNI_QUEUE_OPT_CLEAR_CGID;
-		cfg.cgid = dpaa2_q->cgid;
-
+	if (cfg && cfg->cgid != DPAA2_INVALID_CGID) {
+		qopt = DPNI_QUEUE_OPT_CLEAR_CGID;
 		ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
-				     DPNI_QUEUE_RX,
-				     dpaa2_q->tc_index, dpaa2_q->flow_id,
-				     options, &cfg);
-		if (ret)
-			DPAA2_PMD_ERR("Unable to clear CGR from q=%u err=%d",
-					dpaa2_q->fqid, ret);
-		priv->cgid_in_use[dpaa2_q->cgid] = 0;
-		dpaa2_q->cgid = DPAA2_INVALID_CGID;
+			DPNI_QUEUE_RX, dpaa2_q->tc_index, dpaa2_q->flow_id,
+			qopt, cfg);
+		if (ret) {
+			DPAA2_PMD_ERR("Unable to clear CGR from TC[%d].flow%d err=%d",
+				dpaa2_q->tc_index, dpaa2_q->flow_id, ret);
+		}
+		priv->cgid_in_use[cfg->cgid]--;
+		rte_free(cfg);
+		dpaa2_q->cfg = NULL;
 	}
 }
 
@@ -1376,6 +1699,7 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev, size_t *no_of_elements)
 		RTE_PTYPE_L4_UDP,
 		RTE_PTYPE_L4_SCTP,
 		RTE_PTYPE_L4_ICMP,
+		RTE_PTYPE_UNKNOWN
 	};
 
 	if (dev->rx_pkt_burst == dpaa2_dev_prefetch_rx ||
@@ -1385,6 +1709,56 @@ dpaa2_supported_ptypes_get(struct rte_eth_dev *dev, size_t *no_of_elements)
 		return ptypes;
 	}
 	return NULL;
+}
+
+/* return 0 means link status changed, -1 means not changed */
+static int
+dpaa2_dev_link_update(struct rte_eth_dev *dev,
+	int wait_to_complete)
+{
+	int ret;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = dev->process_private;
+	struct rte_eth_link link;
+	struct dpni_link_state state = {0};
+	uint8_t count;
+
+	if (!dpni) {
+		DPAA2_PMD_ERR("dpni is NULL");
+		return 0;
+	}
+
+	for (count = 0; count <= MAX_REPEAT_TIME; count++) {
+		ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token,
+					  &state);
+		if (ret < 0) {
+			DPAA2_PMD_DEBUG("error: dpni_get_link_state %d", ret);
+			return ret;
+		}
+		if (state.up == RTE_ETH_LINK_DOWN &&
+		    wait_to_complete)
+			rte_delay_ms(CHECK_INTERVAL);
+		else
+			break;
+	}
+
+	memset(&link, 0, sizeof(struct rte_eth_link));
+	link.link_status = state.up;
+	link.link_speed = state.rate;
+
+	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
+		link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
+	else
+		link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
+
+	ret = rte_eth_linkstatus_set(dev, &link);
+	if (ret < 0)
+		DPAA2_PMD_DEBUG("No change in status");
+	else
+		DPAA2_PMD_INFO("Port %d Link is %s", dev->data->port_id,
+			       link.link_status ? "Up" : "Down");
+
+	return ret;
 }
 
 /**
@@ -1461,17 +1835,222 @@ dpaa2_eth_setup_irqs(struct rte_eth_dev *dev, int enable)
 
 	return err;
 }
-static int dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf);
+
+/**
+ * Toggle the DPNI to enable, if not already enabled.
+ * This is not strictly PHY up/down - it is more of logical toggling.
+ */
+static int
+dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	int en = 0;
+	struct dpni_link_state state = {0};
+
+	priv = dev->data->dev_private;
+	dpni = dev->process_private;
+
+	if (!dpni) {
+		DPAA2_PMD_ERR("dpni is NULL");
+		return ret;
+	}
+
+	/* Check if DPNI is currently enabled */
+	ret = dpni_is_enabled(dpni, CMD_PRI_LOW, priv->token, &en);
+	if (ret) {
+		/* Unable to obtain dpni status; Not continuing */
+		DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
+		return ret;
+	}
+
+	/* Enable link if not already enabled */
+	if (!en) {
+		ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
+		if (ret) {
+			DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
+			return ret;
+		}
+	}
+	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
+	if (ret < 0) {
+		DPAA2_PMD_DEBUG("Unable to get link state (%d)", ret);
+		return ret;
+	}
+
+	/* changing tx burst function to start enqueues */
+	/** For recycle device, don't set TX callback
+	 * if it has been set by rte_pmd_dpaa2_dev_recycle_qp_setup.
+	 */
+	if (!dev->tx_pkt_burst ||
+		dev->tx_pkt_burst == rte_eth_pkt_burst_dummy)
+		dev->tx_pkt_burst = dpaa2_dev_tx;
+
+	dev->data->dev_link.link_status = state.up;
+	dev->data->dev_link.link_speed = state.rate;
+
+	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
+		dev->data->dev_link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
+	else
+		dev->data->dev_link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
+
+	if (state.up)
+		DPAA2_PMD_DEBUG("Port %d Link is Up", dev->data->port_id);
+	else
+		DPAA2_PMD_DEBUG("Port %d Link is Down", dev->data->port_id);
+	return ret;
+}
+
+/**
+ * Toggle the DPNI to disable, if not already disabled.
+ * This is not strictly PHY up/down - it is more of logical toggling.
+ */
+static int
+dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	int dpni_enabled = 0;
+	int retries = 10;
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = dev->process_private;
+
+	if (!dpni) {
+		DPAA2_PMD_ERR("Device has not yet been configured");
+		return ret;
+	}
+
+	/*changing  tx burst function to avoid any more enqueues */
+	dev->tx_pkt_burst = rte_eth_pkt_burst_dummy;
+
+	/* Loop while dpni_disable() attempts to drain the egress FQs
+	 * and confirm them back to us.
+	 */
+	do {
+		ret = dpni_disable(dpni, 0, priv->token);
+		if (ret) {
+			DPAA2_PMD_ERR("dpni disable failed (%d)", ret);
+			return ret;
+		}
+		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
+		if (ret) {
+			DPAA2_PMD_ERR("dpni enable check failed (%d)", ret);
+			return ret;
+		}
+		if (dpni_enabled)
+			/* Allow the MC some slack */
+			rte_delay_us(100 * 1000);
+	} while (dpni_enabled && --retries);
+
+	if (!retries) {
+		DPAA2_PMD_WARN("Retry count exceeded disabling dpni");
+		/* todo- we may have to manually cleanup queues.
+		 */
+	} else {
+		DPAA2_PMD_INFO("Port %d Link DOWN successful",
+			       dev->data->port_id);
+	}
+
+	dev->data->dev_link.link_status = 0;
+
+	return ret;
+}
+
+static int
+dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
+{
+	int ret = -EINVAL;
+	struct dpaa2_dev_priv *priv;
+	struct fsl_mc_io *dpni;
+	struct dpni_link_cfg cfg = {0};
+
+	PMD_INIT_FUNC_TRACE();
+
+	priv = dev->data->dev_private;
+	dpni = dev->process_private;
+
+	if (!dpni) {
+		DPAA2_PMD_ERR("dpni is NULL");
+		return ret;
+	}
+
+	/* It is necessary to obtain the current cfg before setting fc_conf
+	 * as MC would return error in case rate, autoneg or duplex values are
+	 * different.
+	 */
+	ret = dpni_get_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
+	if (ret) {
+		DPAA2_PMD_ERR("Unable to get link cfg (err=%d)", ret);
+		return ret;
+	}
+
+	/* Disable link before setting configuration */
+	dpaa2_dev_set_link_down(dev);
+
+	/* update cfg with fc_conf */
+	switch (fc_conf->mode) {
+	case RTE_ETH_FC_FULL:
+		/* Full flow control;
+		 * OPT_PAUSE set, ASYM_PAUSE not set
+		 */
+		cfg.options |= DPNI_LINK_OPT_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+		break;
+	case RTE_ETH_FC_TX_PAUSE:
+		/* Enable RX flow control
+		 * OPT_PAUSE not set;
+		 * ASYM_PAUSE set;
+		 */
+		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+		break;
+	case RTE_ETH_FC_RX_PAUSE:
+		/* Enable TX Flow control
+		 * OPT_PAUSE set
+		 * ASYM_PAUSE set
+		 */
+		cfg.options |= DPNI_LINK_OPT_PAUSE;
+		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
+		break;
+	case RTE_ETH_FC_NONE:
+		/* Disable Flow control
+		 * OPT_PAUSE not set
+		 * ASYM_PAUSE not set
+		 */
+		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
+		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
+		break;
+	default:
+		DPAA2_PMD_ERR("Incorrect Flow control flag (%d)",
+			      fc_conf->mode);
+		return -EINVAL;
+	}
+
+	ret = dpni_set_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
+	if (ret)
+		DPAA2_PMD_ERR("Unable to set Link configuration (err=%d)",
+			      ret);
+
+	/* Enable link */
+	dpaa2_dev_set_link_up(dev);
+
+	return ret;
+}
+
 static int
 dpaa2_dev_start(struct rte_eth_dev *dev)
 {
-	struct rte_device *rdev = dev->device;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_dev_data *data = dev->data;
 	struct dpaa2_dev_priv *priv = data->dev_private;
 	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
 	struct dpni_queue cfg;
-	struct dpni_error_cfg	err_cfg;
+	struct dpni_error_cfg err_cfg;
 	struct dpni_queue_id qid;
 	struct dpaa2_queue *dpaa2_q;
 	int ret, i;
@@ -1480,7 +2059,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	intr_handle = dpaa2_dev->intr_handle;
 
 	if (priv->enable_bp_flow_ctrl) {
@@ -1520,7 +2099,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 		dpaa2_q->fqid = qid.fqid;
 	}
 
-	if (priv->flags & DPAAX_RX_ERROR_QUEUE_FLAG) {
+	if (priv->flags & DPAA2_RX_ERROR_QUEUE_FLAG) {
 		ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
 				     DPNI_QUEUE_RX_ERR, 0, 0, &cfg, &qid);
 		if (ret) {
@@ -1542,7 +2121,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 
 		/* if packet with parse error are not to be dropped */
 		if (!(priv->flags & DPAA2_PARSE_ERR_DROP))
-			err_cfg.errors |= DPNI_ERROR_PHE | DPNI_ERROR_BLE;
+		err_cfg.errors |= DPNI_ERROR_PHE | DPNI_ERROR_BLE;
 
 		err_cfg.error_action = DPNI_ERROR_ACTION_CONTINUE;
 	}
@@ -1597,13 +2176,12 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = dev->process_private;
 	int ret;
 	struct rte_eth_link link;
-	struct rte_device *rdev = dev->device;
 	struct rte_intr_handle *intr_handle;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct rte_eth_fc_conf *fc_conf;
 	uint16_t i;
 
-	dpaa2_dev = container_of(rdev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	intr_handle = dpaa2_dev->intr_handle;
 
 	PMD_INIT_FUNC_TRACE();
@@ -1635,8 +2213,8 @@ dpaa2_dev_stop(struct rte_eth_dev *dev)
 					     dpaa2_interrupt_handler,
 					     (void *)dev);
 	}
-
-	dpaa2_dev_set_link_down(dev);
+	//TODO : Do not set link down for shared interface.
+	//dpaa2_dev_set_link_down(dev);
 
 	ret = dpni_disable(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
@@ -1664,6 +2242,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = dev->process_private;
 	int i, ret;
 	struct rte_eth_link link;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1675,8 +2254,15 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 		return -EINVAL;
 	}
 
+	if (priv->evq_attach_num) {
+		DPAA2_PMD_WARN("%s's %d rxq(s) are not detached from event device..",
+			dev->data->name, priv->evq_attach_num);
+	}
+
 	dpaa2_tm_deinit(dev);
-	dpaa2_flow_clean(dev);
+	dpaa2_flow_clean(dev, MAX_TCS);
+	/** No matter dcb flows are created or not, they are destroyed in flow clean.*/
+	memset(priv->dcb_flow, 0, sizeof(void *) * RTE_ETH_DCB_NUM_USER_PRIORITIES);
 	/* Clean the device first */
 	ret = dpni_reset(dpni, CMD_PRI_LOW, priv->token);
 	if (ret) {
@@ -1704,15 +2290,22 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	priv->cnt_idx_dma_mem = NULL;
 	priv->cnt_values_dma_mem = NULL;
 	priv->hw = NULL;
+	priv->tx_sg_pool = NULL;
 	dev->process_private = NULL;
 	rte_free(dpni);
 
-	for (i = 0; i < MAX_TCS; i++)
-		rte_free(priv->extract.tc_extract_param[i]);
+	for (i = 0; i < (MAX_TCS + 1); i++) {
+		if (i < MAX_TCS)
+			tbl_profile = &priv->flow_profile.tc_profile[i];
+		else
+			tbl_profile = &priv->flow_profile.qos_profile;
+		rte_free(tbl_profile->extract_param);
+		tbl_profile->extract_param = NULL;
+		rte_free(tbl_profile->entry_map);
+		tbl_profile->entry_map = NULL;
+	}
 
-	rte_free(priv->extract.qos_extract_param);
-
-	DPAA2_PMD_INFO("%s: netdev deleted", dev->data->name);
+	DPAA2_PMD_DEBUG("%s: netdev deleted", dev->data->name);
 	return 0;
 }
 
@@ -1777,7 +2370,7 @@ dpaa2_dev_allmulticast_enable(
 {
 	int ret;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
+	struct fsl_mc_io *dpni = dev->process_private;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1860,7 +2453,7 @@ dpaa2_dev_add_mac_addr(struct rte_eth_dev *dev,
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (dpni == NULL) {
+	if (!dpni) {
 		DPAA2_PMD_ERR("dpni is NULL");
 		return -EINVAL;
 	}
@@ -1937,6 +2530,7 @@ dpaa2_dev_xstat_mac_setup_mem(struct rte_eth_dev *dev)
 			DPAA2_PMD_ERR("Failure to allocate memory for mac index");
 			goto out;
 		}
+
 		priv->cnt_idx_iova = rte_mem_virt2iova(priv->cnt_idx_dma_mem);
 		if (priv->cnt_idx_iova == RTE_BAD_IOVA) {
 			ret = -ENOBUFS;
@@ -1984,11 +2578,12 @@ dpaa2_dev_xstat_check_avail(struct rte_eth_dev *dev,
 	uint16_t xstat_idx)
 {
 	enum dpaa2_xstats_type xstats_type;
-	struct fsl_mc_io *dpni = dev->process_private;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	uint8_t i;
-	int ret;
-	struct mc_version mc_ver_info;
+	uint8_t tc, i;
+	struct rte_dpaa2_device *dpaa2_dev;
+	uint64_t rev_mac_support;
+
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	xstats_type = dpaa2_xstats_strings[xstat_idx].xstats_type;
 	if (xstats_type == DPAA2_GENERAL_XSTATS_TYPE) {
@@ -1998,17 +2593,15 @@ dpaa2_dev_xstat_check_avail(struct rte_eth_dev *dev,
 			if (priv->cgid_in_use[i])
 				return true;
 		}
+	} else if (xstats_type == DPAA2_POLICER_XSTATS_TYPE) {
+		tc = dpaa2_xstats_strings[xstat_idx].param;
+		if (priv->flow_profile.mtr_flow[tc])
+			return true;
 	} else if (xstats_type == DPAA2_MAC_XSTATS_TYPE) {
 		if (priv->ep_dev_type != DPAA2_MAC)
 			return false;
-		memset(&mc_ver_info, 0, sizeof(mc_ver_info));
-		ret = mc_get_version(dpni, CMD_PRI_LOW, &mc_ver_info);
-		if (ret)
-			return false;
-
-		if (mc_ver_info.major >= MC_VER_MAJOR &&
-			mc_ver_info.minor >= MC_VER_MINOR &&
-			mc_ver_info.revision > 0)
+		rev_mac_support = RTE_FSL_MC_REV(MC_VER_MAJOR, MC_VER_MINOR, 0);
+		if (dpaa2_dev->bus_info->mc_rev >= rev_mac_support)
 			return true;
 	}
 
@@ -2029,7 +2622,6 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	union dpni_statistics values;
 	uint8_t page_id, stats_id;
-
 	enum dpaa2_xstats_type xstats_type;
 	uint64_t *cnt_values, val;
 	int retcode;
@@ -2067,6 +2659,7 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 			val = 0;
 			goto dpni_set_xstat;
 		}
+
 dpmac_get_xstat:
 		retcode = dpaa2_dev_xstat_mac_setup_mem(dev);
 		if (retcode) {
@@ -2074,7 +2667,6 @@ dpmac_get_xstat:
 				__func__, retcode, dev->data->name);
 			return retcode;
 		}
-
 		retcode = dpni_get_mac_statistics(dpni, CMD_PRI_LOW,
 			priv->token, priv->cnt_idx_iova,
 			priv->cnt_values_iova, DPAA2_MAC_NUM_STATS);
@@ -2254,7 +2846,7 @@ dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 
 	if (!stats) {
 		DPAA2_PMD_ERR("stats is NULL");
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	memset(stats, 0, sizeof(struct rte_eth_stats));
@@ -2279,7 +2871,8 @@ dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 		DPAA2_PMD_ERR("%s: Failed to get xstats (%d)counters by %d IDs",
 			__func__, retcode, stats_len);
 		if (retcode >= 0)
-			return -EINVAL;
+			retcode = -EINVAL;
+		return retcode;
 	}
 
 	for (i = 0; i < stats_len; i++) {
@@ -2292,8 +2885,7 @@ dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 	}
 	stats->imissed = stats->ierrors + stats->rx_nombuf + ifiltered;
 
-	/* Fill in per queue stats */
-	if (qstats != NULL) {
+	if (qstats) {
 		/* Fill in per queue stats */
 		num = RTE_MIN(priv->nb_rx_queues, RTE_ETHDEV_QUEUE_STAT_CNTRS);
 		for (i = 0; i < num; i++) {
@@ -2356,175 +2948,6 @@ error:
 	return retcode;
 };
 
-/* return 0 means link status changed, -1 means not changed */
-static int
-dpaa2_dev_link_update(struct rte_eth_dev *dev,
-		      int wait_to_complete)
-{
-	int ret;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = dev->process_private;
-	struct rte_eth_link link;
-	struct dpni_link_state state = {0};
-	uint8_t count;
-
-	if (!dpni) {
-		DPAA2_PMD_ERR("dpni is NULL");
-		return 0;
-	}
-
-	for (count = 0; count <= MAX_REPEAT_TIME; count++) {
-		ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token,
-					  &state);
-		if (ret < 0) {
-			DPAA2_PMD_DEBUG("error: dpni_get_link_state %d", ret);
-			return ret;
-		}
-		if (state.up == RTE_ETH_LINK_DOWN &&
-		    wait_to_complete)
-			rte_delay_ms(CHECK_INTERVAL);
-		else
-			break;
-	}
-
-	memset(&link, 0, sizeof(struct rte_eth_link));
-	link.link_status = state.up;
-	link.link_speed = state.rate;
-
-	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
-		link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
-	else
-		link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
-
-	ret = rte_eth_linkstatus_set(dev, &link);
-	if (ret < 0)
-		DPAA2_PMD_DEBUG("No change in status");
-	else
-		DPAA2_PMD_INFO("Port %d Link is %s", dev->data->port_id,
-			       link.link_status ? "Up" : "Down");
-
-	return ret;
-}
-
-/**
- * Toggle the DPNI to enable, if not already enabled.
- * This is not strictly PHY up/down - it is more of logical toggling.
- */
-static int
-dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
-{
-	int ret = -EINVAL;
-	struct dpaa2_dev_priv *priv;
-	struct fsl_mc_io *dpni;
-	int en = 0;
-	struct dpni_link_state state = {0};
-
-	priv = dev->data->dev_private;
-	dpni = dev->process_private;
-
-	if (!dpni) {
-		DPAA2_PMD_ERR("dpni is NULL");
-		return ret;
-	}
-
-	/* Check if DPNI is currently enabled */
-	ret = dpni_is_enabled(dpni, CMD_PRI_LOW, priv->token, &en);
-	if (ret) {
-		/* Unable to obtain dpni status; Not continuing */
-		DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
-		return ret;
-	}
-
-	/* Enable link if not already enabled */
-	if (!en) {
-		ret = dpni_enable(dpni, CMD_PRI_LOW, priv->token);
-		if (ret) {
-			DPAA2_PMD_ERR("Interface Link UP failed (%d)", ret);
-			return ret;
-		}
-	}
-	ret = dpni_get_link_state(dpni, CMD_PRI_LOW, priv->token, &state);
-	if (ret < 0) {
-		DPAA2_PMD_DEBUG("Unable to get link state (%d)", ret);
-		return ret;
-	}
-
-	/* changing tx burst function to start enqueues */
-	dev->tx_pkt_burst = dpaa2_dev_tx;
-	dev->data->dev_link.link_status = state.up;
-	dev->data->dev_link.link_speed = state.rate;
-
-	if (state.options & DPNI_LINK_OPT_HALF_DUPLEX)
-		dev->data->dev_link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
-	else
-		dev->data->dev_link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
-
-	if (state.up)
-		DPAA2_PMD_DEBUG("Port %d Link is Up", dev->data->port_id);
-	else
-		DPAA2_PMD_DEBUG("Port %d Link is Down", dev->data->port_id);
-	return ret;
-}
-
-/**
- * Toggle the DPNI to disable, if not already disabled.
- * This is not strictly PHY up/down - it is more of logical toggling.
- */
-static int
-dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
-{
-	int ret = -EINVAL;
-	struct dpaa2_dev_priv *priv;
-	struct fsl_mc_io *dpni;
-	int dpni_enabled = 0;
-	int retries = 10;
-
-	PMD_INIT_FUNC_TRACE();
-
-	priv = dev->data->dev_private;
-	dpni = dev->process_private;
-
-	if (!dpni) {
-		DPAA2_PMD_ERR("Device has not yet been configured");
-		return ret;
-	}
-
-	/*changing  tx burst function to avoid any more enqueues */
-	dev->tx_pkt_burst = rte_eth_pkt_burst_dummy;
-
-	/* Loop while dpni_disable() attempts to drain the egress FQs
-	 * and confirm them back to us.
-	 */
-	do {
-		ret = dpni_disable(dpni, 0, priv->token);
-		if (ret) {
-			DPAA2_PMD_ERR("dpni disable failed (%d)", ret);
-			return ret;
-		}
-		ret = dpni_is_enabled(dpni, 0, priv->token, &dpni_enabled);
-		if (ret) {
-			DPAA2_PMD_ERR("dpni enable check failed (%d)", ret);
-			return ret;
-		}
-		if (dpni_enabled)
-			/* Allow the MC some slack */
-			rte_delay_us(100 * 1000);
-	} while (dpni_enabled && --retries);
-
-	if (!retries) {
-		DPAA2_PMD_WARN("Retry count exceeded disabling dpni");
-		/* todo- we may have to manually cleanup queues.
-		 */
-	} else {
-		DPAA2_PMD_INFO("Port %d Link DOWN successful",
-			       dev->data->port_id);
-	}
-
-	dev->data->dev_link.link_status = 0;
-
-	return ret;
-}
-
 static int
 dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 {
@@ -2580,87 +3003,6 @@ dpaa2_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	return ret;
 }
 
-int
-dpaa2_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
-{
-	int ret = -EINVAL;
-	struct dpaa2_dev_priv *priv;
-	struct fsl_mc_io *dpni;
-	struct dpni_link_cfg cfg = {0};
-
-	PMD_INIT_FUNC_TRACE();
-
-	priv = dev->data->dev_private;
-	dpni = dev->process_private;
-
-	if (!dpni) {
-		DPAA2_PMD_ERR("dpni is NULL");
-		return ret;
-	}
-
-	/* It is necessary to obtain the current cfg before setting fc_conf
-	 * as MC would return error in case rate, autoneg or duplex values are
-	 * different.
-	 */
-	ret = dpni_get_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
-	if (ret) {
-		DPAA2_PMD_ERR("Unable to get link cfg (err=%d)", ret);
-		return ret;
-	}
-
-	/* Disable link before setting configuration */
-	dpaa2_dev_set_link_down(dev);
-
-	/* update cfg with fc_conf */
-	switch (fc_conf->mode) {
-	case RTE_ETH_FC_FULL:
-		/* Full flow control;
-		 * OPT_PAUSE set, ASYM_PAUSE not set
-		 */
-		cfg.options |= DPNI_LINK_OPT_PAUSE;
-		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
-		break;
-	case RTE_ETH_FC_TX_PAUSE:
-		/* Enable RX flow control
-		 * OPT_PAUSE not set;
-		 * ASYM_PAUSE set;
-		 */
-		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
-		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
-		break;
-	case RTE_ETH_FC_RX_PAUSE:
-		/* Enable TX Flow control
-		 * OPT_PAUSE set
-		 * ASYM_PAUSE set
-		 */
-		cfg.options |= DPNI_LINK_OPT_PAUSE;
-		cfg.options |= DPNI_LINK_OPT_ASYM_PAUSE;
-		break;
-	case RTE_ETH_FC_NONE:
-		/* Disable Flow control
-		 * OPT_PAUSE not set
-		 * ASYM_PAUSE not set
-		 */
-		cfg.options &= ~DPNI_LINK_OPT_PAUSE;
-		cfg.options &= ~DPNI_LINK_OPT_ASYM_PAUSE;
-		break;
-	default:
-		DPAA2_PMD_ERR("Incorrect Flow control flag (%d)",
-			      fc_conf->mode);
-		return -EINVAL;
-	}
-
-	ret = dpni_set_link_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
-	if (ret)
-		DPAA2_PMD_ERR("Unable to set Link configuration (err=%d)",
-			      ret);
-
-	/* Enable link */
-	dpaa2_dev_set_link_up(dev);
-
-	return ret;
-}
-
 static int
 dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 			  struct rte_eth_rss_conf *rss_conf)
@@ -2674,24 +3016,24 @@ dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 
 	if (rss_conf->rss_hf) {
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf,
+			ret = dpaa2_update_flow_rss_dist(dev, rss_conf->rss_hf,
 				tc_index);
-			if (ret) {
-				DPAA2_PMD_ERR("Unable to set flow dist on tc%d",
-					tc_index);
-				return ret;
-			}
+			if (ret)
+				break;
 		}
 	} else {
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-			ret = dpaa2_remove_flow_dist(dev, tc_index);
-			if (ret) {
-				DPAA2_PMD_ERR(
-					"Unable to remove flow dist on tc%d",
-					tc_index);
-				return ret;
-			}
+			ret = dpaa2_remove_flow_rss_dist(dev, tc_index);
+			if (ret)
+				break;
 		}
+	}
+	if (ret) {
+		DPAA2_PMD_ERR("%s: %s flow dist on tc%d err(%d)",
+			data->name, rss_conf->rss_hf ? "set" : "remove",
+			tc_index, ret);
+
+		return ret;
 	}
 	eth_conf->rx_adv_conf.rss_conf.rss_hf = rss_conf->rss_hf;
 	return 0;
@@ -2711,50 +3053,73 @@ dpaa2_dev_rss_hash_conf_get(struct rte_eth_dev *dev,
 }
 
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_eth_eventq_attach)
-int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
-		int eth_rx_queue_id,
-		struct dpaa2_dpcon_dev *dpcon,
-		const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
+int
+dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
+	uint16_t queue_id, struct dpaa2_dpcon_dev *dpcon,
+	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf,
+	int ignore_sched_type)
 {
 	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[eth_rx_queue_id];
-	uint8_t flow_id = dpaa2_ethq->flow_id;
-	struct dpni_queue cfg;
-	uint8_t options, priority;
+	struct fsl_mc_io *dpni = dev->process_private;
+	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[queue_id];
+	uint8_t flow_id;
+	struct dpni_queue *cfg;
+	uint8_t priority, priority_step, num_priorities;
 	int ret;
 
-	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_PARALLEL)
+	if (queue_id >= eth_priv->nb_rx_queues) {
+		DPAA2_PMD_ERR("Error setting queue ID(%d) >= max number(%d)",
+			queue_id, eth_priv->nb_rx_queues);
+
+		return -EINVAL;
+	}
+
+	dpaa2_ethq = eth_priv->rx_vq[queue_id];
+	flow_id = dpaa2_ethq->flow_id;
+	cfg = dpaa2_ethq->cfg;
+
+	if (ignore_sched_type)
+		dpaa2_ethq->cb = NULL;
+	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_PARALLEL)
 		dpaa2_ethq->cb = dpaa2_dev_process_parallel_event;
 	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC)
 		dpaa2_ethq->cb = dpaa2_dev_process_atomic_event;
 	else if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED)
 		dpaa2_ethq->cb = dpaa2_dev_process_ordered_event;
 	else
+		dpaa2_ethq->cb = NULL;
+
+	num_priorities = dpcon->num_priorities ? dpcon->num_priorities : 1;
+
+	if (!cfg) {
+		DPAA2_PMD_ERR("%s: %s-rxq%d was not setup yet!",
+			__func__, dev->data->name, queue_id);
 		return -EINVAL;
+	}
 
-	priority = (RTE_EVENT_DEV_PRIORITY_LOWEST / queue_conf->ev.priority) *
-		   (dpcon->num_priorities - 1);
+	priority_step = (RTE_EVENT_DEV_PRIORITY_LOWEST + 1 -
+		RTE_EVENT_DEV_PRIORITY_HIGHEST) / num_priorities;
+	priority = priority_step ? queue_conf->ev.priority / priority_step : 0;
 
-	memset(&cfg, 0, sizeof(struct dpni_queue));
-	options = DPNI_QUEUE_OPT_DEST;
-	cfg.destination.type = DPNI_DEST_DPCON;
-	cfg.destination.id = dpcon->dpcon_id;
-	cfg.destination.priority = priority;
+	dpaa2_ethq->options |= DPNI_QUEUE_OPT_DEST;
+	cfg->destination.type = DPNI_DEST_DPCON;
+	cfg->destination.id = dpcon->dpcon_id;
+	cfg->destination.priority = priority;
 
-	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC) {
-		options |= DPNI_QUEUE_OPT_HOLD_ACTIVE;
-		cfg.destination.hold_active = 1;
+	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ATOMIC &&
+		!ignore_sched_type) {
+		dpaa2_ethq->options |= DPNI_QUEUE_OPT_HOLD_ACTIVE;
+		cfg->destination.hold_active = 1;
 	}
 
 	if (queue_conf->ev.sched_type == RTE_SCHED_TYPE_ORDERED &&
-			!eth_priv->en_ordered) {
+		!eth_priv->en_ordered && !ignore_sched_type) {
 		struct opr_cfg ocfg;
 
 		/* Restoration window size = 256 frames */
 		ocfg.oprrws = 3;
 		/* Restoration window size = 512 frames for LX2 */
-		if (dpaa2_svr_family == SVR_LX2160A)
+		if ((dpaa2_svr_family & 0xffff0000) == SVR_LX2160A)
 			ocfg.oprrws = 4;
 		/* Auto advance NESN window enabled */
 		ocfg.oa = 1;
@@ -2766,14 +3131,14 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		ocfg.oloe = 1;
 		eth_priv->en_loose_ordered = 1;
 		/* Strict ordering enabled if explicitly set */
-		if (getenv("DPAA2_STRICT_ORDERING_ENABLE")) {
+		if (eth_priv->flags & DPAA2_RX_SCHED_STRICT_ORDER_FLAG) {
 			ocfg.oloe = 0;
 			eth_priv->en_loose_ordered = 0;
 		}
 
 		ret = dpni_set_opr(dpni, CMD_PRI_LOW, eth_priv->token,
-				   dpaa2_ethq->tc_index, flow_id,
-				   OPR_OPT_CREATE, &ocfg, 0);
+			dpaa2_ethq->tc_index, flow_id,
+			OPR_OPT_CREATE, &ocfg, 0);
 		if (ret) {
 			DPAA2_PMD_ERR("Error setting opr: ret: %d", ret);
 			return ret;
@@ -2782,43 +3147,79 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		eth_priv->en_ordered = 1;
 	}
 
-	options |= DPNI_QUEUE_OPT_USER_CTX;
-	cfg.user_context = (size_t)(dpaa2_ethq);
+	dpaa2_ethq->options |= DPNI_QUEUE_OPT_USER_CTX;
+	cfg->user_context = (size_t)dpaa2_ethq;
+
+	DPAA2_PMD_DEBUG("%s: set queue to dpcon: tc%d-flow%d with priority(%d)",
+		__func__, dpaa2_ethq->tc_index, flow_id,
+		cfg->destination.priority);
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, eth_priv->token, DPNI_QUEUE_RX,
-			     dpaa2_ethq->tc_index, flow_id, options, &cfg);
+		dpaa2_ethq->tc_index, flow_id, dpaa2_ethq->options, cfg);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in dpni_set_queue: ret: %d", ret);
 		return ret;
 	}
 
-	memcpy(&dpaa2_ethq->ev, &queue_conf->ev, sizeof(struct rte_event));
+	rte_memcpy(&dpaa2_ethq->ev, &queue_conf->ev,
+		sizeof(struct rte_event));
+	dpaa2_ethq->ev.flow_id = flow_id;
+	dpaa2_ethq->ev.event_type = RTE_EVENT_TYPE_ETHDEV;
+	dpaa2_ethq->ev.op = RTE_EVENT_OP_NEW;
+	dpaa2_ethq->event_attached = true;
+	eth_priv->evq_attach_num++;
+
+	return 0;
+}
+
+RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_eth_eventq_detach_by_rxq)
+int
+dpaa2_eth_eventq_detach_by_rxq(struct dpaa2_queue *dpaa2_ethq)
+{
+	struct dpaa2_dev_priv *eth_priv = dpaa2_ethq->eth_data->dev_private;
+	struct fsl_mc_io *dpni = eth_priv->hw;
+	struct dpni_queue *cfg;
+	int ret;
+
+	if (!dpaa2_ethq->event_attached) {
+		DPAA2_PMD_ERR("%s-tc%d-flow%d is not attached to event device.",
+			dpaa2_ethq->eth_data->name, dpaa2_ethq->tc_index,
+			dpaa2_ethq->flow_id);
+
+		return -EINVAL;
+	}
+	cfg = dpaa2_ethq->cfg;
+	cfg->destination.type = DPNI_DEST_NONE;
+	dpaa2_ethq->options &= ~DPNI_QUEUE_OPT_DEST;
+
+	ret = dpni_set_queue(dpni, CMD_PRI_LOW, eth_priv->token, DPNI_QUEUE_RX,
+		dpaa2_ethq->tc_index, dpaa2_ethq->flow_id, dpaa2_ethq->options, cfg);
+	if (ret) {
+		DPAA2_PMD_ERR("Error in dpni_set_queue: ret: %d", ret);
+		return ret;
+	}
+
+	dpaa2_ethq->event_attached = false;
+	eth_priv->evq_attach_num--;
 
 	return 0;
 }
 
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_eth_eventq_detach)
-int dpaa2_eth_eventq_detach(const struct rte_eth_dev *dev,
-		int eth_rx_queue_id)
+int
+dpaa2_eth_eventq_detach(const struct rte_eth_dev *dev,
+	uint16_t queue_id)
 {
 	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = (struct fsl_mc_io *)dev->process_private;
-	struct dpaa2_queue *dpaa2_ethq = eth_priv->rx_vq[eth_rx_queue_id];
-	uint8_t flow_id = dpaa2_ethq->flow_id;
-	struct dpni_queue cfg;
-	uint8_t options;
-	int ret;
 
-	memset(&cfg, 0, sizeof(struct dpni_queue));
-	options = DPNI_QUEUE_OPT_DEST;
-	cfg.destination.type = DPNI_DEST_NONE;
+	if (queue_id >= eth_priv->nb_rx_queues) {
+		DPAA2_PMD_ERR("Error setting queue ID(%d) >= max number(%d)",
+			queue_id, eth_priv->nb_rx_queues);
 
-	ret = dpni_set_queue(dpni, CMD_PRI_LOW, eth_priv->token, DPNI_QUEUE_RX,
-			     dpaa2_ethq->tc_index, flow_id, options, &cfg);
-	if (ret)
-		DPAA2_PMD_ERR("Error in dpni_set_queue: ret: %d", ret);
+		return -EINVAL;
+	}
 
-	return ret;
+	return dpaa2_eth_eventq_detach_by_rxq(eth_priv->rx_vq[queue_id]);
 }
 
 static int
@@ -2905,6 +3306,54 @@ rte_pmd_dpaa2_thread_init(void)
 	}
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa2_set_opr, 25.11)
+int rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id)
+{
+	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	struct dpaa2_dev_priv *eth_priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = dev->process_private;
+	struct dpaa2_queue *dpaa2_q = eth_priv->rx_vq[rx_queue_id];
+	struct opr_cfg ocfg;
+	uint8_t flow_id = dpaa2_q->flow_id, options = 0;
+	int ret;
+
+	/* Restoration window size = 256 frames */
+	ocfg.oprrws = 3;
+	/* Restoration window size = 512 frames for LX2 */
+	if (dpaa2_svr_family == SVR_LX2160A)
+		ocfg.oprrws = 4;
+	/* Auto advance NESN window enabled */
+	ocfg.oa = 1;
+	/* Late arrival window size disabled */
+	ocfg.olws = 0;
+	/* ORL resource exhaustaion advance NESN disabled */
+	ocfg.oeane = 0;
+	/* Loose ordering enabled */
+	ocfg.oloe = 1;
+	eth_priv->en_loose_ordered = 1;
+
+	/* Strict ordering enabled if explicitly set */
+	if (eth_priv->flags & DPAA2_RX_SCHED_STRICT_ORDER_FLAG) {
+		ocfg.oloe = 0;
+		eth_priv->en_loose_ordered = 0;
+	}
+
+	options |= (OPR_OPT_ASSIGN | OPR_OPT_CREATE);
+
+	/* opr_id=x means use xth opr allocated for this dpni" */
+	ret = dpni_set_opr(dpni, CMD_PRI_LOW, eth_priv->token,
+			   dpaa2_q->tc_index, flow_id, options, &ocfg,
+			   rx_queue_id);
+	if (ret) {
+		DPAA2_PMD_ERR("Error setting opr: ret: %d", ret);
+		return ret;
+	}
+
+	eth_priv->en_ordered = 1;
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.dev_configure	  = dpaa2_eth_dev_configure,
 	.dev_start	      = dpaa2_dev_start,
@@ -2947,7 +3396,6 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.rxq_info_get	      = dpaa2_rxq_info_get,
 	.txq_info_get	      = dpaa2_txq_info_get,
 	.tm_ops_get	      = dpaa2_tm_ops_get,
-#if defined(RTE_LIBRTE_IEEE1588)
 	.timesync_enable      = dpaa2_timesync_enable,
 	.timesync_disable     = dpaa2_timesync_disable,
 	.timesync_read_time   = dpaa2_timesync_read_time,
@@ -2955,7 +3403,8 @@ static struct eth_dev_ops dpaa2_ethdev_ops = {
 	.timesync_adjust_time = dpaa2_timesync_adjust_time,
 	.timesync_read_rx_timestamp = dpaa2_timesync_read_rx_timestamp,
 	.timesync_read_tx_timestamp = dpaa2_timesync_read_tx_timestamp,
-#endif
+	.mtr_ops_get = dpaa2_mtr_ops_get,
+	.get_dcb_info = dpaa2_dev_dcb_info
 };
 
 /* Populate the mac address from physically available (u-boot/firmware) and/or
@@ -3120,25 +3569,30 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpni_attr attr;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
-	int ret, hw_id, i;
+	int ret, hw_id, i, entry_num;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
+	uint64_t iova;
+	char *penv;
 
 	PMD_INIT_FUNC_TRACE();
 
-	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
+	dpni_dev = rte_zmalloc(NULL, sizeof(struct fsl_mc_io), 0);
 	if (!dpni_dev) {
 		DPAA2_PMD_ERR("Memory allocation failed for dpni device");
-		return -1;
+		return -ENOMEM;
 	}
 	dpni_dev->regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
 	eth_dev->process_private = dpni_dev;
 
 	/* RX no prefetch mode? */
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)) {
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_PREFETCH_MODE)
+		|| getenv("DPAA2_NO_PREFETCH_RX")) {
 		priv->flags |= DPAA2_NO_PREFETCH_RX;
 		DPAA2_PMD_INFO("No RX prefetch mode");
 	}
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)) {
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_LOOPBACK_MODE)
+		|| getenv("DPAA2_LOOPBACK")) {
 		priv->flags |= DPAA2_RX_LOOPBACK_MODE;
 		DPAA2_PMD_INFO("Rx loopback mode");
 	}
@@ -3160,14 +3614,13 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		return 0;
 	}
 
-	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
+	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
 	hw_id = dpaa2_dev->object_id;
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
-		DPAA2_PMD_ERR(
-			     "Failure in opening dpni@%d with err code %d",
-			     hw_id, ret);
+		DPAA2_PMD_ERR("Failure in opening dpni@%d with err code %d",
+			hw_id, ret);
 		rte_free(dpni_dev);
 		return ret;
 	}
@@ -3179,7 +3632,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpni_reset(dpni_dev, CMD_PRI_LOW, priv->token);
 	if (ret) {
 		DPAA2_PMD_ERR("Failure cleaning dpni@%d with err code %d",
-			      hw_id, ret);
+			hw_id, ret);
 		goto init_err;
 	}
 
@@ -3190,17 +3643,17 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		goto init_err;
 	}
 
-	ret = dpaa2_dev_ep_init(dpaa2_dev, priv);
-	if (ret) {
-		DPAA2_PMD_ERR("Failure in get dpni@%d's endpoint, err code %d",
-			hw_id, ret);
-		goto init_err;
-	}
-
 	ret = dpni_get_api_version(dpni_dev, CMD_PRI_LOW, &priv->dpni_ver_major,
 				   &priv->dpni_ver_minor);
 	if (ret) {
 		DPAA2_PMD_ERR("Failure in get dpni@%d API version, err code %d",
+			hw_id, ret);
+		goto init_err;
+	}
+
+	ret = dpaa2_dev_ep_init(dpaa2_dev, priv);
+	if (ret) {
+		DPAA2_PMD_ERR("Failure in get dpni@%d's endpoint, err code %d",
 			hw_id, ret);
 		goto init_err;
 	}
@@ -3215,10 +3668,15 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	rte_spinlock_init(&priv->lpbk_qp_lock);
 
 	/* only if the custom CG is enabled */
-	if (attr.options & DPNI_OPT_CUSTOM_CG)
+	if (attr.options & DPNI_OPT_CUSTOM_CG) {
 		priv->max_cgs = attr.num_cgs;
-	else
+		if (priv->max_cgs < priv->num_rx_tc) {
+			DPAA2_PMD_WARN("DPNI%d has no enough cgids(%d) to set %d TCs",
+				hw_id, priv->max_cgs, priv->num_rx_tc);
+		}
+	} else {
 		priv->max_cgs = 0;
+	}
 
 	for (i = 0; i < priv->max_cgs; i++)
 		priv->cgid_in_use[i] = 0;
@@ -3237,30 +3695,63 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->options = attr.options;
 	priv->max_mac_filters = attr.mac_filter_entries;
 	priv->max_vlan_filters = attr.vlan_filter_entries;
-	priv->flags = 0;
-#if defined(RTE_LIBRTE_IEEE1588)
-	DPAA2_PMD_INFO("DPDK IEEE1588 is enabled");
-	priv->flags |= DPAA2_TX_CONF_ENABLE;
-#endif
+	priv->tx_conf_type = DPAA2_TX_NO_CONF;
+
 	/* Used with ``fslmc:dpni.1,drv_tx_conf=1`` */
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_TX_CONF)) {
-		priv->flags |= DPAA2_TX_CONF_ENABLE;
-		DPAA2_PMD_INFO("TX_CONF Enabled");
+	if ((dpaa2_get_devargs(dev->devargs, DRIVER_TX_CONF) ||
+		getenv("DPAA2_TX_CONF")) && !getenv("DPAA2_TX_DYNAMIC_CONF")) {
+		priv->tx_conf_type = DPAA2_TX_ABSOLUTE_CONF;
+		DPAA2_PMD_INFO("TX_ABSOLUTE_CONF Enabled");
+	} else if (getenv("DPAA2_TX_DYNAMIC_CONF")) {
+		priv->tx_conf_type = DPAA2_TX_DYNAMIC_CONF;
+		DPAA2_PMD_INFO("TX_DYNAMIC_CONF Enabled");
+		priv->flags |= DPAA2_TX_PREFETCH_DYNAMIC_CONF;
+		penv = getenv("DPAA2_TX_DYNAMIC_CONF_PREFETCH");
+		if (penv && !atoi(penv))
+			priv->flags &= ~DPAA2_TX_PREFETCH_DYNAMIC_CONF;
+		DPAA2_PMD_INFO("Tx dynamic prefetch confirm %s",
+			(priv->flags & DPAA2_TX_PREFETCH_DYNAMIC_CONF) ?
+			"enabled" : "disabled");
 	}
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_ERROR_QUEUE)) {
-		priv->flags |= DPAAX_RX_ERROR_QUEUE_FLAG;
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_ERROR_QUEUE) ||
+		getenv("DPAA2_ENABLE_ERROR_QUEUE")) {
+		priv->flags |= DPAA2_RX_ERROR_QUEUE_FLAG;
 		DPAA2_PMD_INFO("Enable error queue");
 	}
 
+	if (getenv("DPAA2_RX_TAILDROP_OFF"))
+		priv->flags |= DPAA2_RX_TAILDROP_OFF;
+
+	if (getenv("DPAA2_TX_CGR_OFF"))
+		priv->flags |= DPAA2_TX_CGR_OFF;
+
+	priv->psr_dynfield_offset = -1;
+	if (getenv("DPAA2_RX_GET_PROTOCOL_OFFSET")) {
+		ret = rte_mbuf_dynfield_register(&s_dpaa2_rx_protocol_pos_dyn);
+		if (ret < 0) {
+			DPAA2_PMD_ERR("Failed to register for protocol pos");
+			goto init_err;
+		}
+		DPAA2_PMD_INFO("Register mbuf offset(%d) for protocol pos",
+			ret);
+		priv->psr_dynfield_offset = ret;
+	}
 	/* Packets with parse error to be dropped in hw */
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_RX_PARSE_ERR_DROP)) {
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_RX_PARSE_ERR_DROP) ||
+		getenv("DPAA2_PARSE_ERR_DROP")) {
 		priv->flags |= DPAA2_PARSE_ERR_DROP;
 		DPAA2_PMD_INFO("Drop parse error packets in hw");
 	}
 
 	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
-		dpaa2_print_parser_result = 1;
+		priv->flags |= DPAA2_RX_PRINT_PSR_RESULT_FLAG;
+
+	if (getenv("DPAA2_DATA_STASHING_OFF"))
+		priv->flags |= DPAA2_RX_DATA_STASHING_OFF_FLAG;
+
+	if (getenv("DPAA2_STRICT_ORDERING_ENABLE"))
+		priv->flags |= DPAA2_RX_SCHED_STRICT_ORDER_FLAG;
 
 	/* Allocate memory for hardware structure for queues */
 	ret = dpaa2_alloc_rx_tx_queues(eth_dev);
@@ -3293,34 +3784,22 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	/* ... tx buffer layout ... */
 	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
-		layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS |
-				 DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
-		layout.pass_timestamp = true;
-	} else {
-		layout.options = DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
-	}
-	layout.pass_frame_status = 1;
-	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
-				     DPNI_QUEUE_TX, &layout);
-	if (ret) {
-		DPAA2_PMD_ERR("Error (%d) in setting tx buffer layout", ret);
-		goto init_err;
-	}
-
-	/* ... tx-conf and error buffer layout ... */
-	memset(&layout, 0, sizeof(struct dpni_buffer_layout));
-	if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+	if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 		layout.options = DPNI_BUF_LAYOUT_OPT_TIMESTAMP;
 		layout.pass_timestamp = true;
 	}
 	layout.options |= DPNI_BUF_LAYOUT_OPT_FRAME_STATUS;
 	layout.pass_frame_status = 1;
 	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
-				     DPNI_QUEUE_TX_CONFIRM, &layout);
+			DPNI_QUEUE_TX, &layout);
 	if (ret) {
-		DPAA2_PMD_ERR("Error (%d) in setting tx-conf buffer layout",
-			     ret);
+		DPAA2_PMD_ERR("Error (%d) in setting tx buffer layout", ret);
+		goto init_err;
+	}
+	ret = dpni_set_buffer_layout(dpni_dev, CMD_PRI_LOW, priv->token,
+			DPNI_QUEUE_TX_CONFIRM, &layout);
+	if (ret) {
+		DPAA2_PMD_ERR("Error (%d) in setting tx conf buffer layout", ret);
 		goto init_err;
 	}
 
@@ -3338,27 +3817,51 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 
 	/* Init fields w.r.t. classification */
-	memset(&priv->extract.qos_key_extract, 0,
-		sizeof(struct dpaa2_key_extract));
-	priv->extract.qos_extract_param = rte_zmalloc(NULL,
-		DPAA2_EXTRACT_PARAM_MAX_SIZE,
-		RTE_CACHE_LINE_SIZE);
-	if (!priv->extract.qos_extract_param) {
-		DPAA2_PMD_ERR("Memory alloc failed");
-		goto init_err;
-	}
-
-	for (i = 0; i < MAX_TCS; i++) {
-		memset(&priv->extract.tc_key_extract[i], 0,
-			sizeof(struct dpaa2_key_extract));
-		priv->extract.tc_extract_param[i] = rte_zmalloc(NULL,
+	for (i = 0; i < (MAX_TCS + 1); i++) {
+		if (i < MAX_TCS) {
+			tbl_profile = &priv->flow_profile.tc_profile[i];
+			entry_num = priv->fs_entries;
+		} else {
+			tbl_profile = &priv->flow_profile.qos_profile;
+			entry_num = priv->qos_entries;
+		}
+		memset(tbl_profile, 0, sizeof(struct dpaa2_flow_tbl_profile));
+		tbl_profile->extract_param = rte_zmalloc(NULL,
 			DPAA2_EXTRACT_PARAM_MAX_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		if (!priv->extract.tc_extract_param[i]) {
-			DPAA2_PMD_ERR("Memory alloc failed");
+		if (!tbl_profile->extract_param)
 			goto init_err;
+		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(tbl_profile->extract_param,
+			DPAA2_EXTRACT_PARAM_MAX_SIZE);
+		tbl_profile->default_drop = false;
+		if (i < MAX_TCS) {
+			tbl_profile->tc_cfg.dist_size = priv->dist_queues;
+			tbl_profile->tc_cfg.key_cfg_iova = iova;
+			tbl_profile->tc_cfg.tc = i;
+			/** First flow of TC as default flow, otherwise, may be dropped.*/
+			tbl_profile->default_queue.index = priv->dist_queues * i;
+		} else {
+			tbl_profile->qos_cfg.key_cfg_iova = iova;
+			tbl_profile->qos_cfg.keep_entries = true;
+			/** First TC as default TC, otherwise, may be dropped.*/
+			tbl_profile->default_jump.group = 0;
 		}
+		if (!entry_num)
+			continue;
+
+		tbl_profile->entry_map = rte_zmalloc(NULL, entry_num / 8 + 1, 0);
+		if (!tbl_profile->entry_map)
+			goto init_err;
 	}
+
+	for (i = 0; i < priv->num_rx_tc; i++) {
+		if (i >= RTE_ETH_DCB_NUM_USER_PRIORITIES)
+			break;
+		if (i >= priv->qos_entries)
+			break;
+		priv->prio_dcb_tc[i] = i;
+	}
+	priv->nb_dcb_tcs = i;
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,
 					RTE_ETHER_MAX_LEN - RTE_ETHER_CRC_LEN
@@ -3369,37 +3872,13 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	eth_dev->data->mtu = RTE_ETHER_MTU;
 
-	/*TODO To enable soft parser support DPAA2 driver needs to integrate
-	 * with external entity to receive byte code for software sequence
-	 * and same will be offload to the H/W using MC interface.
-	 * Currently it is assumed that DPAA2 driver has byte code by some
-	 * mean and same if offloaded to H/W.
-	 */
-	if (getenv("DPAA2_ENABLE_SOFT_PARSER")) {
-		WRIOP_SS_INITIALIZER(priv);
-		ret = dpaa2_eth_load_wriop_soft_parser(priv, DPNI_SS_INGRESS);
-		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in loading softparser",
-				      ret);
-			return ret;
-		}
+	priv->sp_protocol = dpaa2_dev->bus_info->sp_protocol;
 
-		ret = dpaa2_eth_enable_wriop_soft_parser(priv,
-							 DPNI_SS_INGRESS);
-		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in enabling softparser",
-				      ret);
-			return ret;
-		}
-	}
-
-	ret = dpaa2_soft_parser_loaded();
-	if (ret > 0)
-		DPAA2_PMD_INFO("soft parser is loaded");
 	DPAA2_PMD_INFO("%s: netdev created, connected to %s",
 		eth_dev->data->name, priv->ep_name);
 
 	priv->speed_capa = dpaa2_dev_get_speed_capability(eth_dev);
+	priv->tx_sg_pool = dpaa2_dev->bus_info->mem_pool;
 
 	return 0;
 init_err:
@@ -3449,87 +3928,26 @@ rte_pmd_dpaa2_ep_name(uint32_t eth_id)
 	return priv->ep_name;
 }
 
-#if defined(RTE_LIBRTE_IEEE1588)
-RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa2_get_one_step_ts, 24.11)
-int
-rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query)
+uint16_t
+rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id, uint16_t txq_id)
 {
-	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = priv->eth_dev->process_private;
-	struct dpni_single_step_cfg ptp_cfg;
-	int err;
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_priv *priv;
+	struct dpaa2_queue *txq;
 
-	if (!mc_query)
-		return priv->ptp_correction_offset;
-
-	err = dpni_get_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &ptp_cfg);
-	if (err) {
-		DPAA2_PMD_ERR("Failed to retrieve onestep configuration");
-		return err;
-	}
-
-	if (!ptp_cfg.ptp_onestep_reg_base) {
-		DPAA2_PMD_ERR("1588 onestep reg not available");
-		return -1;
-	}
-
-	priv->ptp_correction_offset = ptp_cfg.offset;
-
-	return priv->ptp_correction_offset;
-}
-
-RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa2_set_one_step_ts, 24.11)
-int
-rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_update)
-{
-	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	struct fsl_mc_io *dpni = dev->process_private;
-	struct dpni_single_step_cfg cfg;
-	int err;
-
-	cfg.en = 1;
-	cfg.ch_update = ch_update;
-	cfg.offset = offset;
-	cfg.peer_delay = 0;
-
-	err = dpni_set_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
-	if (err)
-		return err;
-
-	priv->ptp_correction_offset = offset;
-
-	return 0;
-}
-#endif
-
-static int dpaa2_tx_sg_pool_init(void)
-{
-	char name[RTE_MEMZONE_NAMESIZE];
-
-	if (dpaa2_tx_sg_pool)
+	if (unlikely(!rte_pmd_dpaa2_dev_is_dpaa2(eth_id))) {
+		DPAA2_PMD_WARN("eth%d is NOT dpaa2 device", eth_id);
 		return 0;
-
-	sprintf(name, "dpaa2_mbuf_tx_sg_pool");
-	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
-		dpaa2_tx_sg_pool = rte_pktmbuf_pool_create(name,
-			DPAA2_POOL_SIZE,
-			DPAA2_POOL_CACHE_SIZE, 0,
-			DPAA2_MAX_SGS * sizeof(struct qbman_sge),
-			rte_socket_id());
-		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool creation failed");
-			return -ENOMEM;
-		}
-	} else {
-		dpaa2_tx_sg_pool = rte_mempool_lookup(name);
-		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool lookup failed");
-			return -ENOMEM;
-		}
 	}
 
+	dev = &rte_eth_devices[eth_id];
+	priv = dev->data->dev_private;
+	txq = dev->data->tx_queues[txq_id];
+
+	if (priv->tx_conf_type != DPAA2_TX_NO_CONF)
+		return dpaa2_dev_tx_conf(txq, true);
+
+	DPAA2_PMD_WARN("TX confirm not enabled on %s", dev->data->name);
 	return 0;
 }
 
@@ -3558,8 +3976,8 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 				       sizeof(struct dpaa2_dev_priv),
 				       RTE_CACHE_LINE_SIZE);
 		if (dev_priv == NULL) {
-			DPAA2_PMD_CRIT(
-				"Unable to allocate memory for private data");
+			DPAA2_PMD_CRIT("Allocate %s's private data failed",
+				dpaa2_dev->device.name);
 			rte_eth_dev_release_port(eth_dev);
 			return -ENOMEM;
 		}
@@ -3576,6 +3994,7 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 
 	eth_dev->device = &dpaa2_dev->device;
 
+	dpaa2_dev->eth_dev = eth_dev;
 	eth_dev->data->rx_mbuf_alloc_failed = 0;
 
 	if (dpaa2_drv->drv_flags & RTE_DPAA2_DRV_INTR_LSC)
@@ -3586,11 +4005,7 @@ rte_dpaa2_probe(struct rte_dpaa2_driver *dpaa2_drv,
 	/* Invoke PMD device initialization function */
 	diag = dpaa2_dev_init(eth_dev);
 	if (!diag) {
-		diag = dpaa2_tx_sg_pool_init();
-		if (diag)
-			return diag;
 		rte_eth_dev_probing_finish(eth_dev);
-		dpaa2_valid_dev++;
 		return 0;
 	}
 
@@ -3611,12 +4026,6 @@ rte_dpaa2_remove(struct rte_dpaa2_device *dpaa2_dev)
 			DPAA2_PMD_ERR("dpaa2_dev_close ret= %d", ret);
 
 		ret = rte_eth_dev_release_port(eth_dev);
-	}
-
-	dpaa2_valid_dev--;
-	if (!dpaa2_valid_dev) {
-		rte_mempool_free(dpaa2_tx_sg_pool);
-		dpaa2_tx_sg_pool = NULL;
 	}
 
 	return ret;
