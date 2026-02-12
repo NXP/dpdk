@@ -1725,8 +1725,9 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 		goto huge_page_ib_configure;
 
 	strcat(str, "_mz");
+	/** Real memory zone size is doubled for simulator with RC kernel.*/
 	ep_dev->ib_zone[bar_idx] = rte_memzone_reserve_aligned(str,
-			size, 0, RTE_MEMZONE_IOVA_CONTIG, size);
+			size * 2, 0, RTE_MEMZONE_IOVA_CONTIG, size * 2);
 	if (!ep_dev->ib_zone[bar_idx]) {
 		LSX_PCIEP_BUS_ERR("%s: Reserve %s size(%ld) failed",
 			__func__, str, size);
