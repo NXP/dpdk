@@ -160,9 +160,6 @@ static struct rte_mempool *pktmbuf_pool_tx_only;
 #define RTE_MAX_QUEUES 128
 static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
 
-static uint64_t max_mbuf_addr;
-static uint64_t min_mbuf_addr = (~((uint64_t)0));
-
 static int s_dump_mbuf;
 static int s_inject;
 static uint16_t s_inject_pkt_size = 64;
@@ -2219,45 +2216,6 @@ parse_args(int argc, char **argv)
 	return ret;
 }
 
-static void
-port_fwd_mp_max_min_addr(struct rte_mempool *mp)
-{
-	uint32_t num = mp->size, i, alloced = 0, bulk_size;
-	int ret;
-	struct rte_mbuf **mbuf_arry =
-		malloc(sizeof(struct rte_mbuf *) * num);
-
-	if (!mbuf_arry)
-		return;
-
-	while (num) {
-		bulk_size = num > RTE_MEMPOOL_CACHE_MAX_SIZE ?
-			RTE_MEMPOOL_CACHE_MAX_SIZE : num;
-		ret = rte_pktmbuf_alloc_bulk(mp,
-			&mbuf_arry[alloced], bulk_size);
-		if (ret) {
-			RTE_LOG(ERR, port_fwd,
-				"Drain %d bufs from %s failed\r\n",
-				num, mp->name);
-			if (alloced)
-				rte_pktmbuf_free_bulk(mbuf_arry, alloced);
-			free(mbuf_arry);
-			return;
-		}
-		alloced += bulk_size;
-		num -= bulk_size;
-	}
-
-	for (i = 0; i < mp->size; i++) {
-		if (mbuf_arry[i]->buf_iova > max_mbuf_addr)
-			max_mbuf_addr = mbuf_arry[i]->buf_iova;
-		if (mbuf_arry[i]->buf_iova < min_mbuf_addr)
-			min_mbuf_addr = mbuf_arry[i]->buf_iova;
-	}
-	rte_pktmbuf_free_bulk(mbuf_arry, mp->size);
-	free(mbuf_arry);
-}
-
 static int
 init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 {
@@ -2363,10 +2321,6 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 
 	if (!pktmbuf_pool)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
-
-	port_fwd_mp_max_min_addr(pktmbuf_pool);
-	if (pktmbuf_pool_tx_only)
-		port_fwd_mp_max_min_addr(pktmbuf_pool_tx_only);
 
 	return 0;
 }
@@ -2912,8 +2866,6 @@ main(int argc, char **argv)
 		}
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = port_conf.rxmode.offloads;
-		rxq_conf.reserved_64s[0] = min_mbuf_addr;
-		rxq_conf.reserved_64s[1] = max_mbuf_addr;
 		for (q_nb = 0; q_nb < nb_rx_queue[portid]; q_nb++) {
 			if (s_mpool_select_by_size) {
 				ret = rte_dpaa_eth_rx_queue_mp_setup(portid,
