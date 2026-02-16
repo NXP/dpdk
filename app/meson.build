@@ -39,6 +39,7 @@ cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
 COMMON_HEADERS_DIR = cmd.stdout().strip()
 if COMMON_HEADERS_DIR != ''
   apps += 'test-bbdev'
+  apps += 'bbdev-du'
 endif
 
 if get_option('tests')

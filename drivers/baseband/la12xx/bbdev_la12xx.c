@@ -349,6 +349,17 @@ get_l1_pcie_addr(ipc_userspace_t *ipc_priv, void *addr)
         }
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_get_la12xx_mapaddr, 22.11)
+int
+rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr)
+{
+	struct rte_bbdev *dev = &rte_bbdev_devices[dev_id];
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+	ipc_userspace_t *ipc_priv = priv->ipc_priv;
+
+	return get_l1_pcie_addr(ipc_priv, addr);
+}
+
 static int
 la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		struct bbdev_la12xx_q_priv *q_priv,
@@ -450,6 +461,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		ch->la12xx_core_id =
 			rte_cpu_to_be_32(LA12XX_LDPC_DEC_CORE);
 		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_dec_queues++);
+		q_priv->per_op_hw_id = queue_conf->per_op_hw_id;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
 		if (priv->num_polar_enc_queues >=
