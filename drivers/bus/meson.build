@@ -12,6 +12,7 @@ drivers = [
         'uacce',
         'vdev',
         'vmbus',
+	'lsx_pciep'
 ]
 
 std_deps = ['eal']
