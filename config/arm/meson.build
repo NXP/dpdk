@@ -502,13 +502,53 @@ soc_dpaa = {
     'part_number': '0xd08',
     'flags': [
         ['RTE_MACHINE', '"dpaa"'],
-        ['RTE_LIBRTE_DPAA2_USE_PHYS_IOVA', false],
+        ['RTE_USE_NON_CACHE_MEM', 0],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
-        ['RTE_DMA_DPAA_ERRATA_ERR050757', true],
-        ['RTE_DMA_DPAA_ERRATA_ERR050265', true],
+	['RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
+	['RTE_LIBRTE_PMD_CAAM_JR_BE', false],
+	['RTE_LIBRTE_IEEE1588', false],
+	['RTE_DMA_DPAA_ERRATA_ERR050757', true],
+	['RTE_DMA_DPAA_ERRATA_ERR050265', true],
+	['RTE_DMA_DPAA_ERR_CHK', false],
+
+	# Enable this flag to use dedicated socket memory
+	# for LA12XX usecases, as RTE_LA12XX_SOCKET=y
+	# Valid only for 1G size hugepages.
+	['RTE_LA12XX_SOCKET', false],
+
+	# When RTE_LA12XX_SOCKET flag is enabled,
+	# update RTE_MAX_NUMA_NODES to 2 to enable 2 sockets.
+	# Keep RTE_MAX_NUMA_NODES=1 for non LA12XX use cases.
+	# Maximum 2 NUMA nodes are supported.
+	['RTE_MAX_NUMA_NODES', 1],
+
+	# LA12XX device socket ID.
+	# Application will use this socket ID to allocate memory
+	# for LA12XX use cases.
+	# Value range can be 0 to "RTE_MAX_NUMA_NODES - 1".
+	# Keep RTE_LIBRTE_LA12XX_SOCKET value to 1 if system is
+	# already allocating memory from socket 0.
+	# Flag is applicable only when RTE_LA12XX_SOCKET is enabled.
+	['RTE_LA12XX_SOCKET_ID', 1],
+
+	# Maximum segments a LA12XX socket can have.
+	# For 1G size hugepages, 1 segment = 1 hugepage.
+	# default is 1, maximum can be 2. But in case 2 segments,
+	# there are chances that allocated memory may not be mapped
+	# to PCIe as we can map only 1.7Gb memory to PCIe address space.
+	# Flag is applicable only when RTE_LA12XX_SOCKET is enabled.
+	['RTE_LA12XX_SOCKET_MAX_SEG', 1],
+	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1],
+	['RTE_ARM64_GENERIC_COUNTER_CHECK', false],
+
     ],
-    'numa': false
+    'numa': false,
+	#disable unwanted drivers/libs for DPAA platforms
+        # add disabled drivers
+        # valid values are dir/subdirs in the drivers directory
+        # wildcards are allowed
+     'disable_drivers':'crypto/bcmfs,crypto/ipsec*,crypto/m*,crypto/n*,crypto/octeontx,baseband/fpga*,baseband/acc,baseband/turbo_sw,bus/auxiliary,bus/ifpga,compress/*,event/opdl,event/dsw,net/ark,net/avp,net/bnxt,net/axgbe,net/cxgbe,net/ena,net/gve,net/hinic,net/hns3,/net/iavf,net/igc,net/ice,net/ionic,net/liquidio,net/nfp,net/ngbe,net/netvsc,net/oct*,net/s*,net/thunderx,net/qede,net/vmxnet3,common/c*,common/i*,common/oct*,common/qat,common/sfc*,dma/hi*,raw/ntb*,vdpa/*,gpu/*'
 }
 
 soc_elba = {
@@ -585,10 +625,20 @@ soc_imx = {
     'part_number': '0xd05',
     'flags': [
         ['RTE_MACHINE', '"armv8a"'],
-        ['RTE_MAX_LCORE', 6],
+        ['RTE_USE_NON_CACHE_MEM', 1],
+        ['RTE_MAX_LCORE', 8],
         ['RTE_MAX_NUMA_NODES', 1],
+	# Reserve ring memory of iMX platform using
+	# rte_memzone_reserve_aligned() instead of
+	# rte_eal_memalloc_alloc_seg()
+	['RTE_IMX_MEMZONE_RING_MEMORY', false],
     ],
     'numa': false,
+        #disable unwanted drivers/libs for imx platforms
+        # add disabled drivers
+        # valid values are dir/subdirs in the drivers directory
+        # wildcards are allowed
+     'disable_drivers':'crypto/bcmfs,crypto/ipsec*,crypto/m*,crypto/n*,crypto/octeontx,baseband/fpga*,baseband/acc,baseband/turbo_sw,bus/auxiliary,bus/ifpga,compress/*,event/opdl,event/dsw,net/ark,net/avp,net/bnxt,net/axgbe,net/cxgbe,net/ena,net/gve,net/hinic,net/hns3,/net/iavf,net/igc,net/ice,net/ionic,net/liquidio,net/nfp,net/ngbe,net/netvsc,net/oct*,net/s*,net/thunderx,net/qede,net/vmxnet3,common/c*,common/i*,common/oct*,common/qat,common/sfc*,dma/hi*,raw/ntb*,vdpa/*,gpu/*'
 }
 
 soc_kunpeng920 = {
