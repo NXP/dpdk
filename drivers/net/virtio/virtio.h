@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation
  * Copyright(c) 2021 Red Hat, Inc.
+ * Copyright 2026 NXP
  */
 
 #ifndef _VIRTIO_H_
 #define _VIRTIO_H_
 
+#include <eal_export.h>
 #include <rte_ether.h>
 
 /* The feature bitmap for virtio net */
@@ -248,6 +250,7 @@ struct virtio_ops {
 /*
  * This structure stores per-process data. Only virtio_ops for now.
  */
+RTE_EXPORT_INTERNAL_SYMBOL(virtio_hw_internal)
 struct virtio_hw_internal {
 	const struct virtio_ops *virtio_ops;
 };

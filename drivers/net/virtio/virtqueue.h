@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation
+ * Copyright 2026 NXP
  */
 
 #ifndef _VIRTQUEUE_H_
@@ -415,9 +416,11 @@ int virtqueue_txvq_reset_packed(struct virtqueue *vq);
 
 void virtqueue_txq_indirect_headers_init(struct virtqueue *vq);
 
+__rte_internal
 struct virtqueue *virtqueue_alloc(struct virtio_hw *hw, uint16_t index,
 		uint16_t num, int type, int node, const char *name);
 
+__rte_internal
 void virtqueue_free(struct virtqueue *vq);
 
 static inline int

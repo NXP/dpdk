@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2015 Intel Corporation
+ * Copyright 2026 NXP
  */
 #include <stdint.h>
 #include <unistd.h>
@@ -418,6 +419,7 @@ virtio_rxq_sw_ring_free(struct virtqueue *vq)
 	vq->rxq.sw_ring = NULL;
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(virtqueue_alloc)
 struct virtqueue *
 virtqueue_alloc(struct virtio_hw *hw, uint16_t index, uint16_t num, int type,
 		int node, const char *name)
@@ -508,6 +510,7 @@ free_vq:
 	return NULL;
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(virtqueue_free)
 void
 virtqueue_free(struct virtqueue *vq)
 {

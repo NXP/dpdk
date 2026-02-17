@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
+ * Copyright 2026 NXP
  */
 
 #include <stdint.h>
@@ -147,6 +148,7 @@ static const struct rte_virtio_xstats_name_off rte_virtio_txq_stat_strings[] = {
 #define VIRTIO_NB_TXQ_XSTATS (sizeof(rte_virtio_txq_stat_strings) / \
 			    sizeof(rte_virtio_txq_stat_strings[0]))
 
+RTE_EXPORT_INTERNAL_SYMBOL(virtio_hw_internal)
 struct virtio_hw_internal virtio_hw_internal[RTE_MAX_ETHPORTS];
 
 static int
@@ -2834,5 +2836,6 @@ __rte_unused uint8_t is_rx)
 	return 0;
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(virtio_logtype_init)
 RTE_LOG_REGISTER_SUFFIX(virtio_logtype_init, init, NOTICE);
 RTE_LOG_REGISTER_SUFFIX(virtio_logtype_driver, driver, NOTICE);

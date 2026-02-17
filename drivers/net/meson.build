@@ -64,6 +64,7 @@ drivers = [
         'vdev_netvsc',
         'vhost',
         'virtio',
+        'lsxinic',
         'vmxnet3',
         'xsc',
         'zxdh',
