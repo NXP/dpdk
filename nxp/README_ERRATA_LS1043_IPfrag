@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 NXP
+
+The following writeup is only valid for LS1043ARDB board.
+
+The current workaround for A-050385 Errata (16B aligned size) is reallocation of
+buffer in DPAA driver, but it impacts performance.
+So a solution, to avoid the reallocation of the buffers, is developed in
+rte_ipv4_fragment_packet() API to create fragments in such a way that the
+following errata conditions are satisfied i.e.
+
+-> All FMAN DMA start addresses are 16B aligned.
+	(for example, BMAN buffer address, FD[address] + FD[offset])
+
+-> SG table and buffer addresses are 16B aligned and the size of SG buffers are
+multiple of 16 bytes, except for the last SG buffer that can be of any size.
+
+
+Summary of the workaround:
+---------------------------
+-> Each fragment is stored such that there is a direct mbuf containing header
+data, and this direct mbuf's next pointer points to the indirect mbuf pointing
+to the data of original packet.
+
+The code maintains the length of the chain of the mbufs to be of size <= 2.
+i.e.
+A fragment will always be stored such as below,
+this chain can't extend in any case ->
+	Direct Buffer -> Indirect Buffer
+
+
+-> To fulfill the errata conditions, the code satisfies them by->
+	 --> Adjusting the data_offset of direct buffer and indirect_buffer of
+	     the fragment created.
+	 --> Adjusting the data_len of the direct buffer of the fragment created.
+	     The data_len of indirect buffer need not be taken care, as the
+	     errata condition follows:  size of SG buffers are multiple of 16
+	     bytes, *except for the last SG buffer* that can be of any size.
+	     This will be the last SG buffer as per the code implementation.
+
+-> The data length of direct buff is adjusted after copying  the required bytes
+of data (to make it a 16's multiple) from original buffer. Indirect buffer data
+pointer is adjusted accordingly.
+
+There can be 2 cases here:
+		a. If bytes_to_adjust_len > second buffer's data len
+			In this case whole of length of the second buffer is
+			copied to the direct buffer and the indirect buffer is freed.
+		b. If bytes_to_adjust_len  < second buffer's data len
+			In this case the required bytes are shifted from indirect
+			buffer to the direct buffer and the data len and data off
+			of both buffers is adjusted accordingly.
+
+-> The data offset of indirect buffer is maintained to be a 16's multiple. It is
+implemented such that, the length of data in indirect buffer is a multiple of 16.
+So the offset calculation stays a 16 multiple.
+
+Limitation:
+--------------
+-> Do not support VLAN traffic for now
+-> Do not support segmented packets (Packet size > 3268), For this case fallback
+   solution i.e. reallocate_mbuf (driver solution) will work.
+

@@ -1,0 +1,100 @@
+DPDK on Docker
+================
+
+Docker provides the ability to package and run an application in a loosely isolated environment called a container.
+
+Running Docker Container on DPAA1
+=================================
+
+On Ubuntu:
+-----------
+
+On host:
+
+1. Use the command below to get generic prebuilt images.
+	docker pull ubuntu:latest
+	-> All downloaded images can be verified using the command below:
+		docker images
+2. Once Docker is installed, you need to start the Docker daemon.
+	sudo systemctl start docker
+3. Below command will execute a docker container named as docker0:
+	docker run --privileged --interactive --env LD_LIBRARY_PATH=/usr/local/lib --name=docker0 --hostname=docker0 --detach --volume=/usr:/usr --volume=/sys:/sys --volume=/dev:/dev ubuntu:latest
+4. To copy binary from host to container:
+	docker cp <path_to_binary> container_id:/<target_path>
+		-> container_id can be obtained using 'docker ps' command.
+5. Following command attaches to the docker console which was run in command 3:
+	docker exec -it docker0 bash
+
+On docker container:
+
+1. Make sure fmc -x is run on the host and FMC is not configured for DPDK as with docker only fmcless mode is supported.
+	export DPAA_FMCLESS_MODE=1
+2. Execute the DPDK application
+	./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+
+
+
+On yocto:
+---------
+
+On host:
+
+1. Import docker image from archived yocto rootfs:
+	cat <path_to_yocto_rootfs> | docker import - yocto:dpdk
+2. docker run --privileged --interactive --env LD_LIBRARY_PATH=/usr/lib --name=docker0 --hostname=docker0 --detach --volume=/usr:/usr --volume=/sys:/sys --volume=/dev:/dev yocto:dpdk bash
+3. To copy binary from host to container:
+        docker cp <path_to_binary> container_id:/<target_path>
+                -> container_id can be obtained using 'docker ps' command.
+4. docker exec -it docker0 bash
+
+On docker container:
+
+1. export DPAA_FMCLESS_MODE=1
+2. Execute the dpdk-application
+	./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x10 -P --config="(4,0,1)"
+
+
+
+Running Docker Container on DPAA2
+==================================
+
+On ubuntu:
+----------
+
+On host:
+
+1. docker pull ubuntu:latest
+2. sudo systemctl start docker
+3. export DPRC="dprc.<index>"
+4. export VFIO_NO=`readlink /sys/bus/fsl-mc/devices/$DPRC/iommu_group | xargs basename`
+5. docker run --privileged --interactive --env DPRC=$DPRC --device=/dev/vfio/vfio:/dev/vfio/vfio --device=/dev/vfio/$VFIO_NO:/dev/vfio/$VFIO_NO --name=docker0 --hostname=docker0 --detach --volume=/usr:/usr --volume=/sys:/sys --volume=/dev:/dev ubuntu:latest
+6. To copy binary from host to container:
+        docker cp <path_to_binary> container_id:/<target_path>
+                -> container_id can be obtained using 'docker ps' command.
+7. docker exec -it docker0 bash
+
+On docker container:
+
+1. Execute the dpdk-application
+	./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x10 -P --config="(4,0,1)"
+
+
+On yocto:
+---------
+
+On host:
+
+1. cat <path_to_archived_yocto_rootfs> | docker import - yocto:dpdk
+2. export DPRC="dprc.<index>"
+3. export VFIO_NO=`readlink /sys/bus/fsl-mc/devices/$DPRC/iommu_group | xargs basename`
+4. docker run --privileged --interactive --env DPRC=$DPRC --env LD_LIBRARY_PATH=/usr/lib --device=/dev/vfio/vfio:/dev/vfio/vfio --device=/dev/vfio/$VFIO_NO:/dev/vfio/$VFIO_NO --name=docker0 --hostname=docker0 --detach -v /usr:/usr -v /sys:/sys -v /dev:/dev yocto:dpdk bash
+5. To copy binary from host to container:
+        docker cp <path_to_binary> container_id:/<target_path>
+                -> container_id can be obtained using 'docker ps' command.
+6. docker exec -it docker0 bash
+
+On docker container:
+
+1. Execute the dpdk-application:
+        ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x10 -P --config="(4,0,1)"
+

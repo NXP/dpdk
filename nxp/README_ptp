@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018-2022 NXP
+
+NXP DPDK PTP (IEEE1588) README
+============================
+Supported Platforms (and their derivatives):
+1. DPAA2 : LS108x, LS208x, LX2160
+2. DPAA : LS1046, LS1043
+
+The feature is based on the asusmption
+that test application will be single-threaded.
+
+PTP feature can be tested using DPDK ptpclient
+application present in example directory.
+
+Build Procedure
+============================
+Build DPDK
+---------------
+
+Now, follow DPDK build procedure mentioned in nxp/README to build DPDK
+
+To build ptpclient application/enable IEEE1588 fwd mode in testpmd:
+----------------------------------------------------------------------
+Remove any previously installed arm64-build directory and rebuild it with
+IEEE1588 support enabled.
+
+#meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=ptpclient -Dc_args="-DRTE_LIBRTE_IEEE1588=1"
+
+IEEE1588 forwarding mode in testpmd:
+====================================
+The test checks that each received packet is a valid IEEE1588 PTP sync packet
+and that the packet has been identified and timestamped by the hardware.
+
+The test then sends the received packet as-is on the same port,
+requesting for its transmission to be timestamped by the hardware.
+
+Test Procedure:
+-----------------
+Start testpmd with following parameters
+	./dpdk-testpmd -c f -n 3 -- -i --rxpt=0 --rxht=0 --rxwt=0 --txpt=39 --txht=0 --txwt=0
+Select the ieee1588 test forwarding mode and start the test:
+	testpmd> set fwd ieee1588
+	testpmd> start
+On the spirent send IEEE1588 PTP sync packets to get recorded Rx/Tx timestamp values as the output.
+
+
+PTP Client Sample Application
+==============================
+The PTP (Precision Time Protocol) client sample application communicates
+with a PTP master clock to synchronize the time on the NIC and, optionally
+on the Linux system.
+
+dpdk-ptpclient executable gets generated in arm64-build/examples/ dir
+
+Test Set-up and pre-requisite
+=============================
+Two machines are required to be connected back-to-back
+	1)Tester Machine to run ptp4l test application
+	2)DUT (Board NXP platform) to run ptp4client test application
+
+ptp4l test application can be directly installed on tester machine
+via apt-install type commands
+or build by downloading linuxptp package
+
+Test Procedure with ptpclient on DPAA2:
+=======================================
+----------------------
+<Tester Machine>
+	Start ptp server on tester machine.
+	This will act as PTP Master
+	Set the Ethernet port to be used:
+		#ifconfig eth1 <valid ip address>
+
+	eth1 is port on tester machine which is connected to DUT
+		#./ptp4l -i eth1  -m -2
+
+
+<DUT Machine>
+	This will act as PTP Slave
+	Create DPRTC instance and attach DPAA2 port to DPDK
+	#export DPRTC_COUNT=1
+	#source ./dynamic_dpl.sh dpmac.1
+
+	Start ptpclient test application
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x1 -T 0
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock and additionally update system kernel clock
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x1 -T 1
+	To verfiy if System kernel clock is updated, read time before and
+	after execution of above ptpclient command using date command.
+
+Test Procedure with ptpclient on DPAA:
+=======================================
+
+Non-VSP Case:
+-------------
+<Tester Machine>
+	Start ptp server on tester machine.
+	This will act as PTP Master
+
+	When using ptp4l with DPAA interfaces, it fails to create a clock
+	because, in the default Kernel configuration file, CONFIG_FSL_DPAA_1588
+	is not enabled, the software timestamping is used by default.
+
+	We need to enable CONFIG_FSL_DPAA_1588 so that DPAA HW timestamping
+	support is enabled.
+
+	Set the Ethernet port to be used:
+		#ifconfig fm1-mac9 <valid ip address>
+	fm1-mac9 is port on tester machine which is connected to DUT
+		#./ptp4l -i fm1-mac9  -m -2
+
+
+<DUT Machine>
+	This will act as PTP Slave
+	Start ptpclient test application
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x10 -T 0
+
+	To synchronize DUT PTP Hardware clock with Tester Machine
+	PTP Hardware clock and additionally update system kernel clock
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x10 -T 1
+	To verfiy if System kernel clock is updated, read time before and
+	after execution of above ptpclient command using date command.
+
+VSP Case:
+----------
+<Tester Machine>
+
+	Similar to Non-VSP case
+
+<DUT Machine>
+
+1. Reboot the board and set dtb as fsl-ls1046a-rdb-usdpaa-shared.dtb on the bank from which board is being booted
+and boot up the board.
+2. fmc -x
+3. Set the Ethernet ports to be used:
+	#ifconfig fm1-mac9 <valid ip address>
+4. Setup VSP fmc configuration: usdpaa_policy_vsp_24g_classif_ptp_1queue.xml splits the traffic with ptp proto to dpdk
+	#fmc -c /usr/local/dpdk/dpaa/usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_vsp_24g_classif_ptp_1queue.xml -a
+5. Run ptpclient application:
+	#./dpdk-ptpclient -l 1 -n 1 -- -p 0x10 -T 1
