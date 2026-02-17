@@ -821,6 +821,7 @@ fslmc_bus_dev_iterate(const void *start, const char *str,
 	return NULL;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_fslmc_bus_available, 25.11)
 int
 rte_fslmc_bus_available(void)
 {

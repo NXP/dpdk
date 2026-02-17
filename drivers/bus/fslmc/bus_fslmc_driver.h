@@ -186,6 +186,7 @@ rte_fslmc_io_vaddr_to_iova(void *vaddr);
 __rte_internal
 void *
 rte_fslmc_io_iova_to_vaddr(uint64_t iova);
+__rte_experimental
 int
 rte_fslmc_bus_available(void);
 
