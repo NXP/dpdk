@@ -535,7 +535,6 @@ enetc_clean_rx_ring_nc(struct enetc_bdr *rx_ring,
 	rx_swbd = &rx_ring->q_swbd[i];
 
 	while (likely(rx_frm_cnt < work_limit)) {
-		rxbd_temp = *rxbd;
 #ifdef RTE_ARCH_32
 		rte_memcpy(&rxbd_temp, rxbd, 16);
 #else
