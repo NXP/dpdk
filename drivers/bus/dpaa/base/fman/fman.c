@@ -634,7 +634,7 @@ fman_if_init(const struct device_node *dpa_node, int fd)
 	if (!rx_phandle) {
 		_errno = -EINVAL;
 		if (!getenv("OLDEV_ENABLED")) {
-			FMAN_ERR(_errno, "%s: no fsl,qman-frame-queues-rx\n",
+			FMAN_ERR(_errno, "%s: no fsl,qman-frame-queues-rx",
 				 dname);
 		}
 		goto err;
@@ -1133,7 +1133,7 @@ fman_init(void)
 		_errno = fman_if_init(dpa_node, fd);
 		if (_errno) {
 			if (!getenv("OLDEV_ENABLED")) {
-				FMAN_ERR(_errno, "if_init(%s)\n",
+				FMAN_ERR(_errno, "if_init(%s)",
 					 dpa_node->full_name);
 				return _errno;
 			}
