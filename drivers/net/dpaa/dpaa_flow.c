@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2019,2021-2025 NXP
+ * Copyright 2017-2019,2021-2026 NXP
  */
 
 /* System headers */
@@ -1111,7 +1111,7 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 	port_rate_limit.max_burst_size = burst;
 	port_rate_limit.rate_limit = rate;
 
-	DPAA_PMD_DEBUG("Setting Rate Limiter for port:%s  Max Burst =%u Max Rate =%u \n",
+	DPAA_PMD_DEBUG("Setting Rate Limiter for port:%s  Max Burst =%u Max Rate =%u",
 		       dpaa_intf->name, burst, rate);
 
 	if (!dpaa_intf->port_handle) {
@@ -1130,7 +1130,7 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 		handle = fm_port_open(&fm_port_params);
 		fm_close(fm_port_params.h_fm);
 		if (!handle) {
-			DPAA_PMD_ERR("%s: Can't open handle %p \n",
+			DPAA_PMD_ERR("%s: Can't open handle %p",
 				     __FUNCTION__, fm_info.fman_handle);
 			return -ENODEV;
 		}
@@ -1145,12 +1145,12 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 		ret = fm_port_set_rate_limit(handle, &port_rate_limit);
 
 	if (ret) {
-		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x\n",
+		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x",
 			     __FUNCTION__, -ret);
 		return -ret;
 	}
 
-	DPAA_PMD_DEBUG("%s: FM_PORT_SetRateLimit ret = %#x\n",
+	DPAA_PMD_DEBUG("%s: FM_PORT_SetRateLimit ret = %#x",
 		       __FUNCTION__, -ret);
 
 	if (!port_handle_exists)

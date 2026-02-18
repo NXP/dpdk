@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021 NXP
+ * Copyright 2020-2026 NXP
  */
 
 #include <stdio.h>
@@ -11,6 +11,7 @@
 #include <dpaa_rxtx.h>
 #include <dpaa_mempool.h>
 
+#include <eal_export.h>
 #include <fsl_fman.h>
 
 #include "rte_pmd_dpaa_oldev.h"
@@ -202,6 +203,7 @@ static int dpaa_ol_dev_info(struct rte_eth_dev *dev,
 	return 0;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa_ol_set_classif_info, 25.11)
 int rte_pmd_dpaa_ol_set_classif_info(
 			struct rte_pmd_dpaa_uplink_cls_info_s *classif_info)
 {
@@ -210,7 +212,7 @@ int rte_pmd_dpaa_ol_set_classif_info(
 		return ret;
 
 	if (classif_info == NULL) {
-		DPAA_PMD_ERR("No classification data available\n");
+		DPAA_PMD_ERR("No classification data available");
 		return -1;
 	}
 
@@ -218,7 +220,7 @@ int rte_pmd_dpaa_ol_set_classif_info(
 	if (!ret) {
 		DPAA_PMD_DEBUG("Set classification info successful");
 		for (i = 0; i < classif_info->num_ports; i++) {
-			DPAA_PMD_DEBUG("UDP dest port: %d\n",
+			DPAA_PMD_DEBUG("UDP dest port: %d",
 				       classif_info->gtp_udp_port[i]);
 		}
 		DPAA_PMD_DEBUG("Protocol ID: %d",
@@ -231,6 +233,7 @@ int rte_pmd_dpaa_ol_set_classif_info(
 	return ret;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa_ol_reset_classif_info, 25.11)
 int rte_pmd_dpaa_ol_reset_classif_info(void)
 {
 	struct rte_pmd_dpaa_uplink_cls_info_s classif_info;
@@ -252,6 +255,7 @@ int rte_pmd_dpaa_ol_reset_classif_info(void)
 	return ret;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa_ol_set_lgw_info, 25.11)
 int rte_pmd_dpaa_ol_set_lgw_info(
 			struct rte_pmd_dpaa_lgw_info_s *lgw_info)
 {
@@ -260,12 +264,12 @@ int rte_pmd_dpaa_ol_set_lgw_info(
 		return ret;
 
 	if (lgw_info == NULL) {
-		DPAA_PMD_ERR("No LGW data available\n");
+		DPAA_PMD_ERR("No LGW data available");
 		return -1;
 	}
 	ret = ioctl(fd, ASK_CTRL_SET_LGW_INFO, lgw_info);
 	if (!ret) {
-		DPAA_PMD_DEBUG("Set LGW info successful\n");
+		DPAA_PMD_DEBUG("Set LGW info successful");
 	} else {
 		DPAA_PMD_ERR("Set LGW info ioctl failed with errno: %s",
 			     strerror(errno));
@@ -274,6 +278,7 @@ int rte_pmd_dpaa_ol_set_lgw_info(
 	return ret;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pmd_dpaa_ol_reset_lgw_info, 25.11)
 int rte_pmd_dpaa_ol_reset_lgw_info(void)
 {
 	struct rte_pmd_dpaa_lgw_info_s lgw_info;
@@ -330,7 +335,7 @@ dpaa_poll_queue_default_config(struct qm_mcc_initfq *opts)
 	opts->fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK | QM_FQCTRL_CTXASTASHING |
 			    QM_FQCTRL_PREFERINCACHE;
 	opts->fqd.context_a.stashing.exclusive = 0;
-	if (dpaa_svr_family != SVR_LS1046A_FAMILY)
+	if ((dpaa_soc_ver() != SVR_LS1046A_FAMILY))
 		opts->fqd.context_a.stashing.annotation_cl =
 				DPAA_IF_RX_ANNOTATION_STASH;
 	opts->fqd.context_a.stashing.data_cl = DPAA_IF_RX_DATA_STASH;
@@ -562,7 +567,7 @@ static int dpaa_oldev_init(struct rte_eth_dev *eth_dev)
 					   sizeof(struct qman_fq) * num_fqs,
 					   MAX_CACHELINE);
 	if (!dpaa_intf->rx_queues) {
-		DPAA_PMD_ERR("Failed to alloc mem for RX queues\n");
+		DPAA_PMD_ERR("Failed to alloc mem for RX queues");
 		return -ENOMEM;
 	}
 
@@ -577,7 +582,7 @@ static int dpaa_oldev_init(struct rte_eth_dev *eth_dev)
 					   sizeof(struct qman_fq) * num_fqs,
 					   MAX_CACHELINE);
 	if (!dpaa_intf->tx_queues) {
-		DPAA_PMD_ERR("Failed to alloc mem for TX queues\n");
+		DPAA_PMD_ERR("Failed to alloc mem for TX queues");
 		ret = -ENOMEM;
 		goto free_rx;
 	}

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2025 NXP
+ *   Copyright 2017-2026 NXP
  *
  */
 /* System headers */
@@ -2602,8 +2602,8 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv,
 				}
 			}
 		} else {
-			RTE_LOG(INFO, PMD, "Using FMC script mode,"
-			"RXQs will be setup according to FMC configuration\n");
+			DPAA_PMD_INFO("Using FMC script mode,"
+			"RXQs will be setup according to FMC configuration");
 		}
 
 		if (!(default_q || fmc_q)) {
