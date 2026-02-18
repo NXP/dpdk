@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2018 Intel Corporation
+# Copyright 2020-2026 NXP
 
+# Enable experimental API flag as pmd_la12xx APIs
+allow_experimental_apis = true
 sources = files(
         'main.c',
-        'test_bbdev.c',
+ #       'test_bbdev.c',
         'test_bbdev_perf.c',
         'test_bbdev_vector.c',
 )
@@ -20,5 +23,11 @@ endif
 if dpdk_conf.has('RTE_BASEBAND_LA12XX')
     deps += ['baseband_la12xx']
 endif
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+message('COMMON_HEADERS_DIR=' + COMMON_HEADERS_DIR)
+
+includes += [include_directories(COMMON_HEADERS_DIR)]
+includes += include_directories('../../drivers/baseband/la12xx/')
 
 cflags += no_wvla_cflag

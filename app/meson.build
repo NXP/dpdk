@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
+# Copyright 2026 NXP
 
 disable_apps = ',' + get_option('disable_apps')
 disable_apps = run_command(list_dir_globs, disable_apps, check: true).stdout().split()
@@ -18,7 +19,6 @@ apps = [
         'pdump',
         'proc-info',
         'test-acl',
-        'test-bbdev',
         'test-cmdline',
         'test-compress-perf',
         'test-crypto-perf',
@@ -34,6 +34,12 @@ apps = [
         'test-sad',
         'test-security-perf',
 ]
+
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+if COMMON_HEADERS_DIR != ''
+  apps += 'test-bbdev'
+endif
 
 if get_option('tests')
 # build the auto test app if enabled.
