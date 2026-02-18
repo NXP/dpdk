@@ -105,6 +105,7 @@ enetc4_vf_dev_infos_get(struct rte_eth_dev *dev,
 	dev_info->max_mac_addrs = ENETC4_MAC_ENTRIES;
 	dev_info->rx_offload_capa = dev_rx_offloads_sup;
 	dev_info->tx_offload_capa = dev_tx_offloads_sup;
+	dev_info->flow_type_rss_offloads = ENETC_RSS_OFFLOAD_ALL;
 
 	return 0;
 }
