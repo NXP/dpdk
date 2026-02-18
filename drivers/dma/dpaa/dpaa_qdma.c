@@ -828,7 +828,7 @@ eq_sg:
 	}
 
 	if (num == 0 || num > FSL_QDMA_SG_MAX_ENTRY) {
-		DPAA_QDMA_ERR("Invalid scatter-gather entry count: num=%u\n", num);
+		DPAA_QDMA_ERR("Invalid scatter-gather entry count: num=%u", num);
 		return -EINVAL;
 	}
 
