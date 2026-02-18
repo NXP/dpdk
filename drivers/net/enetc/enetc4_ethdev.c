@@ -1005,7 +1005,7 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		rss_table = rte_malloc(NULL, hw->num_rss * sizeof(*rss_table), ENETC_CBDR_ALIGN);
 		if (!rss_table) {
 			enetc4_rss_configure(enetc_hw, false);
-			netc_free_cbdr(&hw->cbdr);
+			enetc_free_cbdr(&hw->cbdr);
 			dpaax_release_reserve_memctx(&hw->ctx);
 			return -ENOMEM;
 		}
