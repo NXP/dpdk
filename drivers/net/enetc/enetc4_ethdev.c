@@ -322,11 +322,11 @@ mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
 		bdr->bd_base = mz->addr;
 	else {
 		ENETC_PMD_ERR("Failed to allocate memzone!!,"
-			      " please reserve 2MB size pages\n");
+			      " please reserve 2MB size pages");
 		return -ENOMEM;
 	}
 	if (mz->hugepage_sz != size)
-		ENETC_PMD_WARN("Hugepage size of queue memzone %lx\n",
+		ENETC_PMD_WARN("Hugepage size of queue memzone %lx",
 				mz->hugepage_sz);
 	bdr->mz = mz;
 #else
@@ -334,7 +334,7 @@ mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
 
 	memseg = rte_eal_memalloc_alloc_seg(SIZE_2MB, 0);
 	if (memseg == NULL)
-		ENETC_PMD_ERR("No 2MB size hugepage available\n");
+		ENETC_PMD_ERR("No 2MB size hugepage available");
 
 	bdr->bd_base = memseg->addr;
 	bdr->memseg = memseg;
@@ -342,9 +342,9 @@ mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
 #endif
 	/* Double check memzone alignment and hugepage size */
 	if (!rte_is_aligned(bdr->bd_base, size))
-		ENETC_PMD_WARN("Memzone is not aligned to %x\n", size);
+		ENETC_PMD_WARN("Memzone is not aligned to %x", size);
 
-	ENETC_PMD_DEBUG("Ring Hugepage start address = %p\n", bdr->bd_base);
+	ENETC_PMD_DEBUG("Ring Hugepage start address = %p", bdr->bd_base);
 	/* Mark memory NON-CACHEABLE */
 	huge_page =
 		(uint64_t)RTE_PTR_ALIGN_FLOOR(bdr->bd_base, size);
@@ -962,7 +962,7 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		}
 		ENETC_PMD_DEBUG("allocated virtual = 0x%" PRIx64", physical = 0x%" PRIx64", "
 				"size = 0x%" PRIx64" chunk_size = 0x%lx, "
-				"free chunks = %lu\n",
+				"free chunks = %lu",
 				hw->alloc.virt_addr,
 				hw->alloc.phy_addr, hw->alloc.size,
 				info.chunk_size, info.free_chunks);
