@@ -354,7 +354,7 @@ mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
 }
 
 static int
-enetc4_alloc_txbdr(struct enetc_bdr *txr, uint16_t nb_desc)
+enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 {
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
