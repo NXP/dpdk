@@ -275,6 +275,12 @@ enetc4_msg_vsi_send(struct enetc_hw *enetc_hw, struct enetc_msg_swbd *msg)
 
 	enetc4_msg_vsi_write_msg(enetc_hw, msg);
 
+	if (getenv("ENETC4_VSI_WAIT_TIMEOUT_UPDATE"))
+		timeout = atoi(getenv("ENETC4_VSI_WAIT_TIMEOUT_UPDATE"));
+
+	if (getenv("ENETC4_VSI_WAIT_DELAY_UPDATE"))
+		delay_us = atoi(getenv("ENETC4_VSI_WAIT_DELAY_UPDATE"));
+
 	do {
 		vsimsgsr = enetc_rd(enetc_hw, ENETC4_VSIMSGSR);
 		if (!(vsimsgsr & ENETC4_VSIMSGSR_MB))
