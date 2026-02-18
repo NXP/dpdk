@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017 Intel Corporation
+ * Copyright 2021-2026 NXP
  */
 
 #include <stdint.h>
@@ -8,15 +9,19 @@
 #include <sys/queue.h>
 
 #include <eal_export.h>
+#include <rte_compat.h>
 #include <rte_common.h>
 #include <rte_errno.h>
 #include <rte_log.h>
+#include <rte_debug.h>
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <rte_mempool.h>
 #include <rte_memzone.h>
 #include <rte_lcore.h>
+#include <rte_dev.h>
 #include <rte_spinlock.h>
+#include <rte_tailq.h>
 #include <rte_interrupts.h>
 
 #include "rte_bbdev_op.h"
@@ -25,9 +30,6 @@
 #include "bbdev_trace.h"
 
 #define DEV_NAME "BBDEV"
-
-/* Number of supported operation types in *rte_bbdev_op_type*. */
-#define BBDEV_OP_TYPE_COUNT 7
 
 /* BBDev library logging ID */
 RTE_LOG_REGISTER_DEFAULT(bbdev_logtype, NOTICE);
@@ -500,7 +502,7 @@ rte_bbdev_queue_configure(uint16_t dev_id, uint16_t queue_id,
 			}
 		}
 		if (ret == 0) {
-			rte_bbdev_log(ERR, "Invalid operation type");
+			rte_bbdev_log(ERR, "Invalid operation type = %d", conf->op_type);
 			return -EINVAL;
 		}
 		if (conf->queue_size > dev_info.queue_size_lim) {
@@ -946,10 +948,10 @@ rte_bbdev_op_pool_create(const char *name, enum rte_bbdev_op_type type,
 		return NULL;
 	}
 
-	if (type >= BBDEV_OP_TYPE_COUNT) {
+	if (type >= RTE_BBDEV_OP_TYPE_COUNT) {
 		rte_bbdev_log(ERR,
 				"Invalid op type (%u), should be less than %u",
-				type, BBDEV_OP_TYPE_COUNT);
+				type, RTE_BBDEV_OP_TYPE_COUNT);
 		return NULL;
 	}
 
@@ -1186,14 +1188,18 @@ rte_bbdev_op_type_str(enum rte_bbdev_op_type op_type)
 		"RTE_BBDEV_OP_TURBO_ENC",
 		"RTE_BBDEV_OP_LDPC_DEC",
 		"RTE_BBDEV_OP_LDPC_ENC",
+		"RTE_BBDEV_OP_POLAR_DEC",
+		"RTE_BBDEV_OP_POLAR_ENC",
+		"RTE_BBDEV_OP_LA12XX_RAW",
+		"RTE_BBDEV_OP_LA12XX_VSPA",
 		"RTE_BBDEV_OP_FFT",
 		"RTE_BBDEV_OP_MLDTS",
 	};
 
-	if (op_type < BBDEV_OP_TYPE_COUNT)
+	if (op_type < RTE_BBDEV_OP_TYPE_COUNT)
 		return op_types[op_type];
 
-	rte_bbdev_log(ERR, "Invalid operation type");
+	rte_bbdev_log(ERR, "Invalid operation type = %d", op_type);
 	return NULL;
 }
 
