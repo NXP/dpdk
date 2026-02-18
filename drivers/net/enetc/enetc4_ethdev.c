@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2024-2025 NXP
+ * Copyright 2024-2026 NXP
  */
 
 #include <stdbool.h>
@@ -7,6 +7,7 @@
 #include <ethdev_pci.h>
 #include <rte_random.h>
 #include <dpaax_iova_table.h>
+#include <kpage_ncache_api.h>
 #include <rte_kvargs.h>
 #include "base/enetc4_hw.h"
 #include "enetc_logs.h"
@@ -307,8 +308,55 @@ enetc4_dev_infos_get(struct rte_eth_dev *dev,
 }
 
 static int
+mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
+{
+	uint64_t huge_page;
+
+#ifdef RTE_IMX_MEMZONE_RING_MEMORY
+	const struct rte_memzone *mz;
+
+	mz = rte_memzone_reserve_aligned(mz_name,
+			size, SOCKET_ID_ANY,
+			RTE_MEMZONE_2MB, size);
+	if (mz)
+		bdr->bd_base = mz->addr;
+	else {
+		ENETC_PMD_ERR("Failed to allocate memzone!!,"
+			      " please reserve 2MB size pages\n");
+		return -ENOMEM;
+	}
+	if (mz->hugepage_sz != size)
+		ENETC_PMD_WARN("Hugepage size of queue memzone %lx\n",
+				mz->hugepage_sz);
+	bdr->mz = mz;
+#else
+	struct rte_memseg *memseg;
+
+	memseg = rte_eal_memalloc_alloc_seg(SIZE_2MB, 0);
+	if (memseg == NULL)
+		ENETC_PMD_ERR("No 2MB size hugepage available\n");
+
+	bdr->bd_base = memseg->addr;
+	bdr->memseg = memseg;
+	RTE_SET_USED(mz_name);
+#endif
+	/* Double check memzone alignment and hugepage size */
+	if (!rte_is_aligned(bdr->bd_base, size))
+		ENETC_PMD_WARN("Memzone is not aligned to %x\n", size);
+
+	ENETC_PMD_DEBUG("Ring Hugepage start address = %p\n", bdr->bd_base);
+	/* Mark memory NON-CACHEABLE */
+	huge_page =
+		(uint64_t)RTE_PTR_ALIGN_FLOOR(bdr->bd_base, size);
+	mark_kpage_ncache(huge_page);
+
+	return 0;
+}
+
+static int
 enetc4_alloc_txbdr(struct enetc_bdr *txr, uint16_t nb_desc)
 {
+	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
 	struct enetc_eth_hw *hw =
 		ENETC_DEV_PRIVATE_TO_HW(txr->ndev->data->dev_private);
@@ -506,6 +554,7 @@ enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 static int
 enetc4_alloc_rxbdr(struct enetc_bdr *rxr, uint16_t nb_desc)
 {
+	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
 	struct enetc_eth_hw *hw =
 		ENETC_DEV_PRIVATE_TO_HW(rxr->ndev->data->dev_private);

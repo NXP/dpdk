@@ -16,3 +16,4 @@ sources = files(
 )
 
 includes += include_directories('base')
+includes += include_directories('../../../kernel/linux/kpage_ncache')
