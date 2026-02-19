@@ -552,7 +552,8 @@ enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 }
 
 static int
-enetc4_alloc_rxbdr(struct enetc_bdr *rxr, uint16_t nb_desc)
+enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
+		  uint16_t nb_desc)
 {
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
