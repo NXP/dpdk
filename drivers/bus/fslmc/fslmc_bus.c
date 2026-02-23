@@ -503,13 +503,13 @@ rte_fslmc_close(void)
 	int ret = 0;
 	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
-	ret = fslmc_vfio_close_group();
-	if (ret)
-		DPAA2_BUS_ERR("Unable to close devices %d", ret);
 	if (bus_info->mem_pool) {
 		rte_mempool_free(bus_info->mem_pool);
 		bus_info->mem_pool = NULL;
 	}
+	ret = fslmc_vfio_close_group();
+	if (ret)
+		DPAA2_BUS_ERR("Unable to close devices %d", ret);
 	free(bus_info);
 	rte_fslmc_bus.bus_info = NULL;
 
