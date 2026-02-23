@@ -282,7 +282,7 @@ dpaa2_setup_table_miss_action(struct rte_eth_dev *eth_dev,
 		if (tbl_profile->default_drop) {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
 		} else if (tbl_profile->default_queue.index >= eth_dev->data->nb_rx_queues) {
-			DPAA2_PMD_WARN("%s-tc%d-default-rxq(%d) >= max rxq(%d), Force to drop.",
+			DPAA2_PMD_DEBUG("%s-tc%d-default-rxq(%d) >= max rxq(%d), Force to drop.",
 				eth_dev->data->name, tc_index, tbl_profile->default_queue.index,
 				eth_dev->data->nb_rx_queues);
 			tbl_profile->default_drop = true;
@@ -296,7 +296,7 @@ dpaa2_setup_table_miss_action(struct rte_eth_dev *eth_dev,
 		if (tbl_profile->default_drop) {
 			actions[0].type = RTE_FLOW_ACTION_TYPE_DROP;
 		} else if (tbl_profile->default_jump.group >= priv->num_rx_tc) {
-			DPAA2_PMD_WARN("%s-default-tc(%d) >= max tc(%d), Force to drop.",
+			DPAA2_PMD_DEBUG("%s-default-tc(%d) >= max tc(%d), Force to drop.",
 				eth_dev->data->name, tbl_profile->default_jump.group,
 				priv->num_rx_tc);
 			tbl_profile->default_drop = true;

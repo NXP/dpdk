@@ -3950,7 +3950,7 @@ dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
 		RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev));
 	if (!tbl_profile->dpkg.num_extracts &&
 		dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV) {
-		DPAA2_PMD_WARN("%s can't set miss action of FS table indepentently.",
+		DPAA2_PMD_DEBUG("%s can't set miss action of FS table indepentently.",
 			mc_rev);
 		return 0;
 	}
@@ -4083,7 +4083,7 @@ dpaa2_flow_qos_table_set_default(struct dpaa2_dev_priv *priv,
 		RTE_FSL_MC_REV_REVISION(dpaa2_dev->bus_info->mc_rev));
 	if (!tbl_profile->dpkg.num_extracts &&
 		dpaa2_dev->bus_info->mc_rev < DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV) {
-		DPAA2_PMD_WARN("%s can't set miss action of QoS table indepentently.",
+		DPAA2_PMD_DEBUG("%s can't set miss action of QoS table indepentently.",
 			mc_rev);
 		return 0;
 	}
