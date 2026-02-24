@@ -528,7 +528,6 @@ dpaa2_eth_fd_to_mbuf(struct dpaa2_dev_priv *priv, const struct qbman_fd *fd)
 	mbuf->pkt_len = mbuf->data_len;
 	mbuf->port = priv->eth_dev->data->port_id;
 	mbuf->next = NULL;
-	mbuf->hash.sched.color = DPAA2_GET_FD_DROPP(fd);
 	rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 	rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
