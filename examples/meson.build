@@ -27,6 +27,7 @@ all_examples = [
         'ipsec-secgw',
         'ipsec-ike',
         'ipv4_multicast',
+        'l1_l2_comm',
         'l2fwd',
         'l2fwd-cat',
         'l2fwd-crypto',
