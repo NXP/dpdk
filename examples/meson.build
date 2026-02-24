@@ -35,6 +35,7 @@ all_examples = [
         'l2fwd-jobstats',
         'l2fwd-keepalive',
         'l2fwd-macsec',
+        'l2fwd-policer',
         'l3fwd',
         'l3fwd-graph',
         'l3fwd-power',
