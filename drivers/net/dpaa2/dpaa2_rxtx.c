@@ -260,13 +260,6 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 			"(4)=0x%" PRIx64 "\t",
 			annotation->word3, annotation->word4);
 
-#if defined(RTE_LIBRTE_IEEE1588)
-	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IEEE1588_PTP;
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IEEE1588_TMST;
-	}
-#endif
-
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT)) {
 		vlan_tci = rte_pktmbuf_mtod_offset(mbuf, uint16_t *,
 			(VLAN_TCI_OFFSET_1(annotation->word5) >> 16));
