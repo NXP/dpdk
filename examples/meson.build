@@ -25,6 +25,7 @@ all_examples = [
         'ip_pipeline',
         'ip_reassembly',
         'ipsec-secgw',
+        'ipsec-ike',
         'ipv4_multicast',
         'l2fwd',
         'l2fwd-cat',
