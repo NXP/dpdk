@@ -204,7 +204,7 @@ static struct rte_devargs *
 dpaa_devargs_lookup(struct rte_dpaa_device *dev)
 {
 	struct rte_devargs *devargs;
-	char dev_name[32];
+	char dev_name[RTE_DEV_NAME_MAX_LEN];
 
 	RTE_EAL_DEVARGS_FOREACH("dpaa_bus", devargs) {
 		devargs->bus->parse(devargs->name, &dev_name);
@@ -335,7 +335,7 @@ dpaa_create_device_list(void)
 	 * interfaces) that can be created.
 	 */
 
-	if (dpaa_sec_available()) {
+	if (dpaa_sec_available() || getenv("DPAA_SEC_DISABLE")) {
 		DPAA_BUS_LOG(INFO, "DPAA SEC devices are not available");
 		goto qdma_dpaa;
 	}
@@ -421,6 +421,8 @@ dpaa_clean_device_list(void)
 	}
 }
 
+#define COMMAND_LEN	256
+
 RTE_EXPORT_INTERNAL_SYMBOL(rte_dpaa_portal_init)
 int rte_dpaa_portal_init(void *arg)
 {
@@ -431,6 +433,8 @@ int rte_dpaa_portal_init(void *arg)
 	};
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
+	pid_t tid;
+	char command[COMMAND_LEN];
 
 	BUS_INIT_FUNC_TRACE();
 
@@ -484,6 +488,21 @@ int rte_dpaa_portal_init(void *arg)
 	DPAA_PER_LCORE_PORTAL->qman_idx = qman_get_portal_index();
 	DPAA_PER_LCORE_PORTAL->bman_idx = bman_get_portal_index();
 	DPAA_PER_LCORE_PORTAL->tid = rte_gettid();
+
+	if (getenv("NXP_CHRT_PERF_MODE")) {
+		tid = rte_gettid();
+		snprintf(command, COMMAND_LEN, "chrt -p 90 %d", tid);
+		ret = system(command);
+		if (ret < 0)
+			DPAA_BUS_WARN("Failed to change thread priority");
+		else
+			DPAA_BUS_DEBUG(" %s command is executed", command);
+
+		/* Above would only work when the CPU governors are configured
+		 * for performance mode; It is assumed that this is taken
+		 * care of by the application.
+		 */
+	}
 
 	ret = pthread_setspecific(dpaa_portal_key,
 				  (void *)DPAA_PER_LCORE_PORTAL);
