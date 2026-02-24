@@ -49,6 +49,7 @@ all_examples = [
         'packet_ordering',
         'pipeline',
 	'pkt_gen_ext',
+        'pkt_split_app',
         'port_fwd',
         'ptpclient',
         'qdma_demo',
