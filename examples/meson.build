@@ -12,6 +12,7 @@ all_examples = [
         'bbdev_app',
         'bond',
         'cmdline',
+        'dfe_app',
         'distributor',
         'dma',
         'geul_ipc_benchmark',
