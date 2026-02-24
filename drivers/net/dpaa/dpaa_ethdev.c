@@ -157,6 +157,20 @@ static int dpaa_eth_link_update(struct rte_eth_dev *dev,
 
 static void dpaa_interrupt_handler(void *param);
 
+static bool is_dpaa_device(uint16_t dev_id)
+{
+	struct rte_eth_dev *dev;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(dev_id, false);
+
+	dev = &rte_eth_devices[dev_id];
+	if (strcmp(dev->device->driver->name,
+		rte_dpaa_pmd.driver.name))
+		return false;
+
+	return true;
+}
+
 static inline void
 dpaa_poll_queue_default_config(struct qm_mcc_initfq *opts)
 {
@@ -1103,12 +1117,13 @@ static inline int dpaa_eth_rx_queue_bp_check(struct rte_eth_dev *dev,
 }
 
 static
-int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
+int _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 			    uint16_t nb_desc,
 			    unsigned int socket_id __rte_unused,
 			    const struct rte_eth_rxconf *rx_conf,
-			    struct rte_mempool *mp)
+			    struct rte_mempool **mmp, uint8_t pool_num __rte_unused)
 {
+	struct rte_mempool *mp = mmp[0];
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct fman_if *fif = dev->process_private;
 	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
@@ -1341,6 +1356,36 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	}
 
 	return 0;
+}
+
+static int
+dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
+	uint16_t queue_idx, uint16_t nb_desc,
+	uint32_t socket_id,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool *mp)
+{
+	return _dpaa_eth_rx_queue_setup(dev, queue_idx, nb_desc,
+		socket_id, rx_conf, &mp, 1);
+}
+
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_dpaa_eth_rx_queue_mp_setup, 25.11)
+int
+rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
+	uint16_t queue_idx, uint16_t nb_desc,
+	const struct rte_eth_rxconf *rx_conf,
+	struct rte_mempool **mps, uint8_t pool_num)
+{
+	struct rte_eth_dev *dev;
+
+	if (!is_dpaa_device(dev_id))
+		return -EINVAL;
+
+	RTE_ASSERT(RTE_ETH_DPAA_RX_MAX_MPOOLS <= FMAN_PORT_MAX_EXT_POOLS_NUM);
+
+	dev = &rte_eth_devices[dev_id];
+	return _dpaa_eth_rx_queue_setup(dev, queue_idx, nb_desc,
+		0, rx_conf, mps, pool_num);
 }
 
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa_eth_eventq_attach)
