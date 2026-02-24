@@ -854,7 +854,7 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 			goto skip_parse_bd;
 		}
 		rx_desc = &rx_queue->rc_bd_desc[idx];
-		mem_cp128b_atomic((uint8_t *)&local_desc, (uint8_t *)rx_desc);
+		mem_cp128b_atomic(&local_desc, rx_desc);
 		if (local_desc.bd_status != RING_BD_HW_COMPLETE)
 			break;
 		rx_desc = &local_desc;

@@ -257,8 +257,8 @@ lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx)
 {
 	if (queue->local_bd_128) {
-		mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
-			(const uint8_t *)&queue->local_bd_128[used_idx]);
+		mem_cp128b_atomic(&queue->rc_bd_desc[used_idx],
+			&queue->local_bd_128[used_idx]);
 	} else {
 		queue->rc_bd_desc[used_idx].bd_status = RING_BD_HW_COMPLETE;
 	}
