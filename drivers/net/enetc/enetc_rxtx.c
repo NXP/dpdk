@@ -187,6 +187,7 @@ enetc_xmit_pkts_nc(void *tx_queue,
 				dcbf(data + j);
 
 			txbd = ENETC_TXBD(*tx_ring, i);
+			txbd->flags = 0;
 			if (is_first_seg) {
 				tx_ring->q_swbd[i].buffer_addr = seg;
 				txbd->frm_len = rte_pktmbuf_pkt_len(seg);
@@ -205,7 +206,7 @@ enetc_xmit_pkts_nc(void *tx_queue,
 				i = 0;
 		}
 
-		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
+		txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
 		start++;
 	}
 
