@@ -2828,6 +2828,7 @@ main(int argc, char **argv)
 	struct lcore_rx_queue *rx_queue;
 	struct lcore_tx_queue *tx_queue;
 	pthread_t pid;
+	uint16_t mtu;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -2872,6 +2873,15 @@ main(int argc, char **argv)
 	if (penv)
 		s_dump_mbuf = atoi(penv);
 
+	penv = getenv("PORT_FWD_DATA_ROOM_SIZE");
+	if (penv) {
+		data_room_size = atoi(penv);
+		if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
+			data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
+		else
+			data_room_size = RTE_ALIGN(data_room_size, 1024);
+	}
+
 	penv = getenv("PORT_FWD_INJECTION_TEST");
 	if (penv)
 		s_inject = atoi(penv);
@@ -2880,7 +2890,7 @@ main(int argc, char **argv)
 		if (penv) {
 			s_inject_pkt_size = atoi(penv);
 			if (s_inject_pkt_size < 64 ||
-				s_inject_pkt_size > 1518)
+				s_inject_pkt_size > data_room_size)
 				s_inject_pkt_size = 64;
 		}
 	}
@@ -2917,14 +2927,6 @@ main(int argc, char **argv)
 	if (s_fragment_tx_port >= 0)
 		data_room_size = s_jumbo_size + 100;
 
-	penv = getenv("PORT_FWD_DATA_ROOM_SIZE");
-	if (penv) {
-		data_room_size = atoi(penv);
-		if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
-			data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
-		else
-			data_room_size = RTE_ALIGN(data_room_size, 1024);
-	}
 	port_conf.rxmode.max_lro_pkt_size = data_room_size;
 
 	RTE_ETH_FOREACH_DEV(portid) {
@@ -3063,8 +3065,7 @@ main(int argc, char **argv)
 			}
 		}
 		txconf = &dev_info.default_txconf;
-		txconf->offloads =
-				local_port_conf[portid].txmode.offloads;
+		txconf->offloads = local_port_conf[portid].txmode.offloads;
 		for (q_nb = 0; q_nb < nb_tx_queue[portid]; q_nb++) {
 			ret = rte_eth_tx_queue_setup(portid,
 				tx_queues[portid][q_nb], nb_txd,
@@ -3082,6 +3083,15 @@ main(int argc, char **argv)
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0)
 			continue;
+		if (data_room_size > RTE_MBUF_DEFAULT_DATAROOM) {
+			mtu = data_room_size - RTE_ETHER_HDR_LEN - RTE_VLAN_HLEN;
+			ret = rte_eth_dev_set_mtu(portid, mtu);
+			if (ret) {
+				RTE_LOG(WARNING, port_fwd,
+					"Port%d MTU(%d) set failed(%d)\n",
+					portid, mtu, ret);
+			}
+		}
 		/* Start device */
 		ret = rte_eth_dev_start(portid);
 		if (ret < 0)
