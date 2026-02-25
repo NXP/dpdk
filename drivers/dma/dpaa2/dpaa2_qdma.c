@@ -67,15 +67,23 @@ qdma_cntx_idx_ring_eq(struct qdma_cntx_idx_ring *ring,
 	const uint16_t *elem, uint16_t nb,
 	uint16_t *free_space)
 {
-	uint16_t i;
-
 	if (unlikely(nb > ring->free_space))
 		return 0;
 
-	for (i = 0; i < nb; i++) {
-		ring->cntx_idx_ring[ring->tail] = elem[i];
-		ring->tail = (ring->tail + 1) &
-			(DPAA2_QDMA_MAX_DESC - 1);
+	if ((ring->tail + nb) < DPAA2_QDMA_MAX_DESC) {
+		rte_memcpy(&ring->cntx_idx_ring[ring->tail],
+			elem, nb * sizeof(uint16_t));
+		ring->tail += nb;
+	} else {
+		rte_memcpy(&ring->cntx_idx_ring[ring->tail],
+			elem,
+			(DPAA2_QDMA_MAX_DESC - ring->tail) *
+			sizeof(uint16_t));
+		rte_memcpy(&ring->cntx_idx_ring[0],
+			&elem[DPAA2_QDMA_MAX_DESC - ring->tail],
+			(nb - DPAA2_QDMA_MAX_DESC + ring->tail) *
+			sizeof(uint16_t));
+		ring->tail = (ring->tail + nb) & (DPAA2_QDMA_MAX_DESC - 1);
 	}
 	ring->free_space -= nb;
 	ring->nb_in_ring += nb;
@@ -188,7 +196,14 @@ fle_sdd_pre_populate(struct qdma_cntx_fle_sdd *fle_sdd,
 {
 	struct qbman_fle *fle = fle_sdd->fle;
 	struct qdma_sdd *sdd = fle_sdd->sdd;
-	uint64_t sdd_iova = DPAA2_VADDR_TO_IOVA(sdd);
+	uint64_t sdd_iova, iova_size;
+
+	iova_size = sizeof(struct qdma_sdd) * DPAA2_QDMA_MAX_SDD;
+	sdd_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(sdd, iova_size);
+	if (sdd_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for sdd(%p)(size=%lx)",
+			sdd, iova_size);
+	}
 
 	/* first frame list to source descriptor */
 	DPAA2_SET_FLE_ADDR(&fle[DPAA2_QDMA_SDD_FLE], sdd_iova);
@@ -290,13 +305,25 @@ fle_sdd_sg_pre_populate(struct qdma_cntx_sg *sg_cntx,
 {
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
-	rte_iova_t src_sge_iova, dst_sge_iova;
+	rte_iova_t src_sge_iova, dst_sge_iova, iova_size;
 	struct dpaa2_qdma_rbp *rbp = &qdma_vq->rbp;
 
 	memset(sg_cntx, 0, sizeof(struct qdma_cntx_sg));
 
-	src_sge_iova = DPAA2_VADDR_TO_IOVA(src_sge);
-	dst_sge_iova = DPAA2_VADDR_TO_IOVA(dst_sge);
+	iova_size = RTE_DPAAX_QDMA_JOB_SUBMIT_MAX *
+		sizeof(struct qdma_sg_entry);
+
+	src_sge_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(src_sge, iova_size);
+	if (src_sge_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for src_sge(%p)(size=%lx)",
+			src_sge, iova_size);
+	}
+
+	dst_sge_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(dst_sge, iova_size);
+	if (dst_sge_iova == RTE_BAD_IOVA) {
+		rte_panic("No IOMMU map for dst_sge(%p)(size=%lx)",
+			dst_sge, iova_size);
+	}
 
 	sg_entry_pre_populate(sg_cntx);
 	fle_sdd_pre_populate(&sg_cntx->fle_sdd,
@@ -1457,9 +1484,6 @@ dpaa2_qdma_stop(struct rte_dma_dev *dev)
 }
 
 static int
-dpaa2_dpdmai_dev_uninit(struct rte_dma_dev *dev);
-
-static int
 dpaa2_qdma_close(struct rte_dma_dev *dev)
 {
 	struct dpaa2_dpdmai_dev *dpdmai_dev = dev->data->dev_private;
@@ -1508,8 +1532,6 @@ dpaa2_qdma_close(struct rte_dma_dev *dev)
 
 	/* Reset QDMA device structure */
 	qdma_dev->num_vqs = 0;
-
-	dpaa2_dpdmai_dev_uninit(dev);
 
 	return 0;
 }
@@ -1709,6 +1731,7 @@ dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 		return -EINVAL;
 	}
 
+	dpaa2_dev->dmadev = dmadev;
 	dmadev->dev_ops = &dpaa2_qdma_ops;
 	dmadev->device = &dpaa2_dev->device;
 	dmadev->fp_obj->dev_private = dmadev->data->dev_private;
@@ -1732,9 +1755,12 @@ dpaa2_qdma_probe(struct rte_dpaa2_driver *dpaa2_drv,
 static int
 dpaa2_qdma_remove(struct rte_dpaa2_device *dpaa2_dev)
 {
+	struct rte_dma_dev *dmadev = dpaa2_dev->dmadev;
 	int ret;
 
 	DPAA2_QDMA_FUNC_TRACE();
+
+	dpaa2_dpdmai_dev_uninit(dmadev);
 
 	ret = rte_dma_pmd_release(dpaa2_dev->device.name);
 	if (ret)
