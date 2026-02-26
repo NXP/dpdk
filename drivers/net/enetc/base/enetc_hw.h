@@ -268,7 +268,7 @@ struct enetc_tx_bd {
 			uint8_t l3t:1;
 			uint8_t resv:5;
 			uint8_t l4t:3;
-			uint16_t flags;
+			uint8_t flags;
 		};/* default layout */
 		uint32_t txstart;
 		uint32_t lstatus;
