@@ -675,7 +675,10 @@ static inline int get_rx_port_type(struct fman_if *fif)
 
 static inline int get_tx_port_type(struct fman_if *fif)
 {
-	if (fif->mac_type == fman_mac_1g)
+	if (fif->mac_type == fman_offline_internal ||
+			fif->mac_type == fman_onic)
+		return e_FM_PORT_TYPE_OH_OFFLINE_PARSING;
+	else if (fif->mac_type == fman_mac_1g)
 		return e_FM_PORT_TYPE_TX;
 	else if (fif->mac_type == fman_mac_2_5g)
 		return e_FM_PORT_TYPE_TX_2_5G;
@@ -683,7 +686,7 @@ static inline int get_tx_port_type(struct fman_if *fif)
 		return e_FM_PORT_TYPE_TX_10G;
 
 	DPAA_PMD_ERR("MAC type unsupported");
-	return -1;
+	return e_FM_PORT_TYPE_DUMMY;
 }
 
 static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
