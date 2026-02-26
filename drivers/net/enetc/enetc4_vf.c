@@ -1218,7 +1218,6 @@ static const struct eth_dev_ops enetc4_vf_ops_no_vsi_m = {
 static int
 enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 {
-	uint32_t *mac = (uint32_t *)hw->mac.addr;
 	struct enetc_hw *enetc_hw = &hw->hw;
 	uint32_t high_mac = 0;
 	uint16_t low_mac = 0;
@@ -1228,27 +1227,19 @@ enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 
 	/* Enabling Station Interface */
 	enetc4_wr(enetc_hw, ENETC_SIMR, ENETC_SIMR_EN);
-	*mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR0);
-	high_mac = (uint32_t)*mac;
-	mac++;
-	*mac = (uint16_t)enetc_rd(enetc_hw, ENETC_SIPMAR1);
-	low_mac = (uint16_t)*mac;
+	high_mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR0);
+	low_mac = (uint16_t)enetc_rd(enetc_hw, ENETC_SIPMAR1);
 
 	if ((high_mac | low_mac) == 0) {
-		char *first_byte;
 		ENETC_PMD_NOTICE("MAC is not available for this SI, "
-				 "set random MAC");
-		mac = (uint32_t *)hw->mac.addr;
-		*mac = (uint32_t)rte_rand();
-		first_byte = (char *)mac;
-		*first_byte &= 0xfe;    /* clear multicast bit */
-		*first_byte |= 0x02;    /* set local assignment bit (IEEE802) */
-		enetc4_port_wr(enetc_hw, ENETC4_PMAR0, *mac);
-		mac++;
-		*mac = (uint16_t)rte_rand();
-		enetc4_port_wr(enetc_hw, ENETC4_PMAR1, *mac);
+				"set random MAC");
+		rte_eth_random_addr(hw->mac.addr);
+		high_mac = *(uint32_t *)hw->mac.addr;
+		enetc4_port_wr(enetc_hw, ENETC4_PMAR0, high_mac);
+		low_mac = *(uint16_t *)(hw->mac.addr + 4);
+		enetc4_port_wr(enetc_hw, ENETC4_PMAR1, low_mac);
 		enetc_print_ethaddr("New address: ",
-			(const struct rte_ether_addr *)hw->mac.addr);
+			      (const struct rte_ether_addr *)hw->mac.addr);
 	}
 
 	/* Allocate memory for storing MAC addresses */
