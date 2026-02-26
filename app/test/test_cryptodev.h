@@ -79,7 +79,7 @@
 #define CRYPTODEV_NAME_MLX5_PMD		crypto_mlx5
 #define CRYPTODEV_NAME_UADK_PMD		crypto_uadk
 #define CRYPTODEV_NAME_ZSDA_SYM_PMD	crypto_zsda
-
+#define CRYPTODEV_NAME_V2X_FCE_PMD	crypto_v2x_fce
 
 enum cryptodev_api_test_type {
 	CRYPTODEV_API_TEST = 0,

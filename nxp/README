@@ -677,6 +677,8 @@ Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
 	use --vdev 'crypto_openssl'
   For armv8_crypto mode:
 	use --vdev 'crypto_armv8'
+  For v2x_fce mode (valid for iMX943 only):
+	use --vdev 'v2x_fce'
 
   You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
    export DPAA_SEC_DISABLE=1

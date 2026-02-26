@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2015-2020 Intel Corporation
- * Copyright 2020 NXP
+ * Copyright 2020,2026 NXP
  */
 
 #include <stdbool.h>
@@ -20089,6 +20089,12 @@ test_cryptodev_mrvl(void)
 	return run_cryptodev_testsuite(RTE_STR(CRYPTODEV_NAME_MVSAM_PMD));
 }
 
+static int
+test_cryptodev_v2x_fce(void)
+{
+	return run_cryptodev_testsuite(RTE_STR(CRYPTODEV_NAME_V2X_FCE_PMD));
+}
+
 #ifdef RTE_CRYPTO_SCHEDULER
 
 static int
@@ -20347,3 +20353,4 @@ REGISTER_DRIVER_TEST(cryptodev_bcmfs_autotest, test_cryptodev_bcmfs);
 REGISTER_DRIVER_TEST(cryptodev_cn9k_autotest, test_cryptodev_cn9k);
 REGISTER_DRIVER_TEST(cryptodev_cn10k_autotest, test_cryptodev_cn10k);
 REGISTER_DRIVER_TEST(cryptodev_zsda_autotest, test_cryptodev_zsda);
+REGISTER_DRIVER_TEST(cryptodev_v2x_fce_autotest, test_cryptodev_v2x_fce);
