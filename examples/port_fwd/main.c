@@ -178,6 +178,12 @@ static uint16_t s_tx_seg = 1;
 static int s_mpool_select_by_size;
 static int s_mpool_select_by_size_debug;
 
+static struct rte_eth_xstat_name *s_port_fwd_xs_nms[RTE_MAX_ETHPORTS];
+static uint64_t *s_port_fwd_xs_vals[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_reset[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_val_len[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_nm_len[RTE_MAX_ETHPORTS];
+
 static uint8_t s_inject_pkt_base[] = {
 	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
 	0x94, 0x00, 0x00, 0x01, 0x08, 0x00, 0x45, 0x00,
@@ -2501,6 +2507,83 @@ port_fwd_dump_tc_flow_count(uint16_t portid, int second)
 	}
 }
 
+static void
+port_fwd_xstats_display(uint16_t port_id)
+{
+	int len = 0, ret, i;
+
+	if (!s_port_fwd_xs_reset[port_id]) {
+		ret = rte_eth_xstats_reset(port_id);
+		if (ret) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to reset xstats\n",
+				__func__, ret);
+			return;
+		}
+		s_port_fwd_xs_reset[port_id] = 1;
+	}
+
+	if (!s_port_fwd_xs_vals[port_id]) {
+		len = rte_eth_xstats_get_names_by_id(port_id, NULL, 0, NULL);
+		if (len < 0) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to get xstats' length\n",
+				__func__, len);
+			return;
+		}
+		s_port_fwd_xs_vals[port_id] = rte_zmalloc(NULL,
+			sizeof(uint64_t) * len, 0);
+		if (!s_port_fwd_xs_vals[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_vals alloc failed\n",
+				__func__);
+			return;
+		}
+		s_port_fwd_xs_val_len[port_id] = len;
+	} else {
+		len = s_port_fwd_xs_val_len[port_id];
+	}
+
+	if (!s_port_fwd_xs_nms[port_id] && len > 0) {
+		s_port_fwd_xs_nms[port_id] = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_xstat_name) * len, 0);
+		if (!s_port_fwd_xs_nms[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_nms alloc failed\n", __func__);
+			return;
+		}
+	}
+
+	if (!s_port_fwd_xs_nm_len[port_id] && s_port_fwd_xs_val_len[port_id]) {
+		s_port_fwd_xs_nm_len[port_id] = rte_eth_xstats_get_names_by_id(port_id,
+			s_port_fwd_xs_nms[port_id], s_port_fwd_xs_val_len[port_id], NULL);
+		if (s_port_fwd_xs_nm_len[port_id] != s_port_fwd_xs_val_len[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Get xstats' name length(%d) != val length(%d)\n",
+				__func__, s_port_fwd_xs_nm_len[port_id],
+				s_port_fwd_xs_val_len[port_id]);
+			return;
+		}
+	}
+
+	ret = rte_eth_xstats_get_by_id(port_id, NULL,
+		s_port_fwd_xs_vals[port_id], s_port_fwd_xs_val_len[port_id]);
+	if (ret < 0 || ret > s_port_fwd_xs_val_len[port_id]) {
+		RTE_LOG(ERR, port_fwd,
+			"%s: Err(%d) to get xstats by ID, len=%d\n",
+			__func__, ret, s_port_fwd_xs_val_len[port_id]);
+		return;
+	}
+
+	for (i = 0; i < ret; i++) {
+		if (!s_port_fwd_xs_vals[port_id][i])
+			continue;
+
+		printf("Xstat Port%d-%s:%ld\r\n", port_id,
+			s_port_fwd_xs_nms[port_id][i].name, s_port_fwd_xs_vals[port_id][i]);
+	}
+}
+
 static void *perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
@@ -2591,6 +2674,7 @@ loop:
 			RTE_LOG(INFO, port_fwd, "PORT%d:\r\n", port_id);
 			port_fwd_dump_tc_flow_count(port_id,
 				PKTGEN_STATISTICS_INTERVAL);
+			port_fwd_xstats_display(port_id);
 			get_st_ret = rte_eth_stats_get(port_id, &stats);
 			if (get_st_ret)
 				goto skip_print_hw_status;
