@@ -503,6 +503,9 @@ rte_fslmc_close(void)
 	int ret = 0;
 	struct rte_fslmc_bus_info *bus_info = rte_fslmc_bus.bus_info;
 
+	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
+		return 0;
+
 	if (bus_info->mem_pool) {
 		rte_mempool_free(bus_info->mem_pool);
 		bus_info->mem_pool = NULL;
