@@ -2084,6 +2084,8 @@ parse_config(const char *q_arg,
 			param->queue_id = int_fld[FLD_QUEUE];
 		if (num > FLD_LCORE)
 			param->lcore_id = int_fld[FLD_LCORE];
+		if (param->port_id >= 0 && param->queue_id >= 0)
+			s_pq_map[param->port_id][param->queue_id] = 1;
 
 		param_num++;
 		param++;
