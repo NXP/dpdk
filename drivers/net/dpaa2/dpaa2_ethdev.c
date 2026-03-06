@@ -37,6 +37,7 @@
 #define DRIVER_RX_PARSE_ERR_DROP "drv_rx_parse_drop"
 #define DRIVER_ERROR_QUEUE  "drv_err_queue"
 #define DRIVER_NO_TAILDROP  "drv_no_taildrop"
+#define DRIVER_NO_DATA_STASHING "drv_no_data_stashing"
 #define CHECK_INTERVAL         100  /* 100ms */
 #define MAX_REPEAT_TIME        90   /* 9s (90 * 100ms) in total */
 
@@ -3579,6 +3580,12 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA2_PMD_INFO("Rx taildrop disabled");
 	}
 
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_NO_DATA_STASHING) ||
+	    getenv("DPAA2_DATA_STASHING_OFF")) {
+		priv->flags |= DPAA2_RX_DATA_STASHING_OFF_FLAG;
+		DPAA2_PMD_INFO("Data stashing disabled");
+	}
+
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		/* In case of secondary, only burst and ops API need to be
@@ -3728,9 +3735,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
 		priv->flags |= DPAA2_RX_PRINT_PSR_RESULT_FLAG;
-
-	if (getenv("DPAA2_DATA_STASHING_OFF"))
-		priv->flags |= DPAA2_RX_DATA_STASHING_OFF_FLAG;
 
 	if (getenv("DPAA2_STRICT_ORDERING_ENABLE"))
 		priv->flags |= DPAA2_RX_SCHED_STRICT_ORDER_FLAG;
@@ -4027,5 +4031,6 @@ RTE_PMD_REGISTER_PARAM_STRING(NET_DPAA2_PMD_DRIVER_NAME,
 		DRIVER_TX_CONF "=<int>"
 		DRIVER_RX_PARSE_ERR_DROP "=<int>"
 		DRIVER_ERROR_QUEUE "=<int>"
-		DRIVER_NO_TAILDROP "=<int>");
+		DRIVER_NO_TAILDROP "=<int>"
+		DRIVER_NO_DATA_STASHING "=<int>");
 RTE_LOG_REGISTER_DEFAULT(dpaa2_logtype_pmd, NOTICE);
