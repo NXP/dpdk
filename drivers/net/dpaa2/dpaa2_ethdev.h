@@ -218,6 +218,8 @@
 #define DPAA2_MAC_STATS_INDEX_DMA_SIZE (DPAA2_MAC_NUM_STATS * sizeof(uint32_t))
 #define DPAA2_MAC_STATS_VALUE_DMA_SIZE (DPAA2_MAC_NUM_STATS * sizeof(uint64_t))
 
+/* Maximum SG segments */
+#define DPAA2_MAX_SGS 128
 /* Externally defined */
 extern const struct rte_flow_ops dpaa2_flow_ops;
 
