@@ -11,7 +11,7 @@
 #define DPAAX_DEVICE_FILE_BASE "/dev/"
 #define DPAAX_DEVICE_PHYADDR_BASE "/sys/class/"
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaax_alloc_reserve_memctx)
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(dpaax_alloc_reserve_memctx, 25.11)
 int
 dpaax_alloc_reserve_memctx(const char *device_name, struct dpaax_usmem_ctx *ctx)
 {
@@ -35,7 +35,7 @@ dpaax_alloc_reserve_memctx(const char *device_name, struct dpaax_usmem_ctx *ctx)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaax_release_reserve_memctx)
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(dpaax_release_reserve_memctx, 25.11)
 void
 dpaax_release_reserve_memctx(struct dpaax_usmem_ctx *ctx)
 {
@@ -45,7 +45,7 @@ dpaax_release_reserve_memctx(struct dpaax_usmem_ctx *ctx)
 	}
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaax_get_reserve_meminfo)
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(dpaax_get_reserve_meminfo, 25.11)
 int
 dpaax_get_reserve_meminfo(struct dpaax_usmem_ctx *ctx, struct nxp_usmem_info *info)
 {
@@ -67,7 +67,7 @@ dpaax_get_reserve_meminfo(struct dpaax_usmem_ctx *ctx, struct nxp_usmem_info *in
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaax_alloc_reserve_memory)
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(dpaax_alloc_reserve_memory, 25.11)
 int
 dpaax_alloc_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_alloc *alloc)
 {
@@ -133,7 +133,7 @@ dpaax_alloc_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_alloc
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaax_release_reserve_memory)
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(dpaax_release_reserve_memory, 25.11)
 void
 dpaax_release_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_alloc *alloc)
 {

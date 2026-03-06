@@ -55,26 +55,26 @@ struct dpaax_usmem_alloc {
  * This context must be released after use by calling dpaax_release_reserve_memctx().
  * The caller is responsible for freeing the context once all operations are complete.
  */
-__rte_internal
+__rte_experimental
 int
 dpaax_alloc_reserve_memctx(const char *device_name, struct dpaax_usmem_ctx *ctx);
 
 /* Get current reserve memory information */
-__rte_internal
+__rte_experimental
 int
 dpaax_get_reserve_meminfo(struct dpaax_usmem_ctx *ctx, struct nxp_usmem_info *info);
 
 /* Allocate reserve memory. Memory will be allocated in chunks*/
-__rte_internal
+__rte_experimental
 int
 dpaax_alloc_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_alloc *alloc);
 
 /* Release reserved memory */
-__rte_internal
+__rte_experimental
 void
 dpaax_release_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_alloc *alloc);
 
 /* Release reserved memory context */
-__rte_internal
+__rte_experimental
 void
 dpaax_release_reserve_memctx(struct dpaax_usmem_ctx *ctx);
