@@ -1684,9 +1684,8 @@ tx_again:
 			*dpaa2_seqn(*bufs) = DPAA2_INVALID_MBUF_SEQN;
 		}
 
-		if (unlikely(((*bufs)->ol_flags & RTE_MBUF_F_TX_VLAN) ||
-			(eth_data->dev_conf.txmode.offloads
-			& RTE_ETH_TX_OFFLOAD_VLAN_INSERT))) {
+		if (unlikely((*bufs)->ol_flags
+		 & RTE_MBUF_F_TX_VLAN)) {
 			ret = rte_vlan_insert(bufs);
 			if (ret)
 				goto send_n_return;
