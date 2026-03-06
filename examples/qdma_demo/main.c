@@ -1216,7 +1216,7 @@ lcore_qdma_process_latency(uint16_t burst_nb,
 	struct rte_dma_sge src_sge[burst_nb];
 	struct rte_dma_sge dst_sge[burst_nb];
 	uint32_t i, job_num, dq_num = 0, miss = 0;
-	uint64_t flags, cycle1 = 0, cycle2 = 0, cycle3, cycle4;
+	uint64_t flags, cycle1 = 0, cycle2 = 0, cycle3 = 0, cycle4 = 0;
 	uint32_t lcore_id = rte_lcore_id();
 	bool error = false;
 	uint16_t dq_idx[burst_nb];
