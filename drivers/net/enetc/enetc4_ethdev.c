@@ -239,14 +239,18 @@ enetc4_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	uint32_t high_mac = 0;
 	uint16_t low_mac = 0;
 	char eth_name[ENETC_ETH_NAMESIZE];
+	uint32_t *mac = (uint32_t *)hw->mac.addr;
 
 	PMD_INIT_FUNC_TRACE();
 
 	/* Enabling Station Interface */
 	enetc4_wr(enetc_hw, ENETC_SIMR, ENETC_SIMR_EN);
 
-	high_mac = (uint32_t)enetc4_port_rd(enetc_hw, ENETC4_PSIPMAR0(0));
-	low_mac = (uint16_t)enetc4_port_rd(enetc_hw, ENETC4_PSIPMAR1(0));
+	*mac = (uint32_t)enetc4_port_rd(enetc_hw, ENETC4_PSIPMAR0(0));
+	high_mac = (uint32_t)*mac;
+	mac++;
+	*mac = (uint16_t)enetc4_port_rd(enetc_hw, ENETC4_PSIPMAR1(0));
+	low_mac = (uint16_t)*mac;
 
 	if ((high_mac | low_mac) == 0) {
 		ENETC_PMD_NOTICE("MAC is not available for this SI, "
