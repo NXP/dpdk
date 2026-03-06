@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
+ * Copyright 2026 NXP
  */
 
 #include <stdio.h>
@@ -37,6 +38,8 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_string_fns.h>
+
+#include <dpaax_usermem.h>
 
 static volatile bool force_quit;
 
@@ -111,6 +114,10 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 #define MAX_TIMER_PERIOD 86400 /* 1 day max */
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
+
+struct dpaax_usmem_alloc l2fwd_alloc = {0};
+struct dpaax_usmem_ctx l2fwd_ctx = {0};
+uint64_t l2fwd_resv_mem_bytes = 0;
 
 /* Print out statistics on packets dropped */
 static void
@@ -314,6 +321,7 @@ l2fwd_usage(const char *prgname)
 	       "  -P : Enable promiscuous mode\n"
 	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
 	       "  -T PERIOD: statistics will be refreshed each PERIOD seconds (0 to disable, 10 default, 86400 maximum)\n"
+	       "  -r : use reserve memory, value is memory size in bytes\n"
 	       "  --no-mac-updating: Disable MAC addresses updating (enabled by default)\n"
 	       "      When enabled:\n"
 	       "       - The source MAC address is replaced by the TX port MAC address\n"
@@ -411,6 +419,23 @@ l2fwd_parse_nqueue(const char *q_arg)
 }
 
 static int
+l2fwd_parse_bytes_u64(const char *s, uint64_t *out)
+{
+    if (!s || !out) return -1;
+
+    errno = 0;
+    char *end = NULL;
+    unsigned long long v = strtoull(s, &end, 10);
+
+    if (errno == ERANGE || end == s || *end != '\0') {
+        return -1;
+    }
+
+    *out = (uint64_t)v;
+    return 0;
+}
+
+static int
 l2fwd_parse_timer_period(const char *q_arg)
 {
 	char *end = NULL;
@@ -431,6 +456,7 @@ static const char short_options[] =
 	"P"   /* promiscuous */
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
+	"r:"  /* reserve memory */
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
@@ -490,7 +516,14 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			break;
-
+		case 'r':
+			if (l2fwd_parse_bytes_u64(optarg, &l2fwd_resv_mem_bytes) != 0) {
+				fprintf(stderr, "Invalid -r value: '%s' (expected bytes as an unsigned integer)\n",
+						optarg);
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			break;
 		/* timer period */
 		case 'T':
 			timer_secs = l2fwd_parse_timer_period(optarg);
@@ -647,6 +680,53 @@ signal_handler(int signum)
 	}
 }
 
+
+static struct rte_mempool *
+create_pool_from_external_no_port(void *ext_va,
+				rte_iova_t ext_iova_base,
+				size_t ext_len,
+				uint16_t data_room_size,
+				const char *name)
+{
+	const size_t page_sz = 4096;
+
+	if (((uintptr_t)ext_va % page_sz) || (ext_len % page_sz)) {
+		fprintf(stderr, "extmem not page aligned / length not multiple of page size\n");
+		return NULL;
+	}
+
+	if (rte_extmem_register(ext_va, ext_len,
+				/*iova_addrs=*/NULL, /*n_pages=*/0, page_sz) < 0) {
+		fprintf(stderr, "rte_extmem_register: %s\n", rte_strerror(rte_errno));
+		return NULL;
+	}
+
+	struct rte_pktmbuf_extmem extmem = {
+		.buf_ptr  = ext_va,
+		.buf_iova = ext_iova_base,
+		.buf_len  = ext_len,
+		.elt_size = data_room_size,
+	};
+
+	unsigned n_mbufs = ext_len / data_room_size;
+	if (!n_mbufs) {
+		fprintf(stderr, "region too small for data_room_size\n");
+		rte_extmem_unregister(ext_va, ext_len);
+		return NULL;
+	}
+
+	struct rte_mempool *mp = rte_pktmbuf_pool_create_extbuf(
+		name, n_mbufs,
+		MEMPOOL_CACHE_SIZE, /*priv_size=*/0, data_room_size,
+		SOCKET_ID_ANY, &extmem, /*ext_num=*/1);
+	if (!mp) {
+		fprintf(stderr, "pktmbuf_pool_create_extbuf: %s\n", rte_strerror(rte_errno));
+		rte_extmem_unregister(ext_va, ext_len);
+		return NULL;
+	}
+	return mp;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -765,13 +845,46 @@ main(int argc, char **argv)
 		       portid, l2fwd_dst_ports[portid]);
 	}
 
-	nb_mbufs = RTE_MAX(nb_ports * (nb_rxd + nb_txd + MAX_PKT_BURST +
-		nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
+	if (l2fwd_resv_mem_bytes != 0) {
+		struct nxp_usmem_info info;
 
-	/* Create the mbuf pool. 8< */
-	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
-		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
-		rte_socket_id());
+		ret = dpaax_alloc_reserve_memctx(NXP_USMEM_DEVICE, &l2fwd_ctx);
+		if (ret)
+			rte_exit(EXIT_FAILURE, "fails to get reserve memory context\n");
+
+		ret = dpaax_get_reserve_meminfo(&l2fwd_ctx, &info);
+		if (ret)
+			rte_exit(EXIT_FAILURE, "fails to get reserve memory info\n");
+
+		printf("Reserve memory chunk size = %lx and free chunks %ld\n",
+				info.chunk_size, info.free_chunks);
+		l2fwd_alloc.request_mem = l2fwd_resv_mem_bytes;
+		l2fwd_alloc.res.mem_cp = NXP_CP_WB;
+		ret = dpaax_alloc_reserve_memory(&l2fwd_ctx, &l2fwd_alloc);
+		if (ret != 0) {
+			dpaax_release_reserve_memctx(&l2fwd_ctx);
+			rte_exit(EXIT_FAILURE, "No reserve memory available\n");
+		}
+		printf("allocated virtual = 0x%" PRIx64", physical = 0x%" PRIx64", "
+			"size = 0x%" PRIx64" \n",
+			l2fwd_alloc.virt_addr,
+			l2fwd_alloc.phy_addr, l2fwd_alloc.size);
+
+		l2fwd_pktmbuf_pool = create_pool_from_external_no_port((void *)(uintptr_t)l2fwd_alloc.virt_addr,
+			l2fwd_alloc.phy_addr, l2fwd_alloc.size,
+			RTE_MBUF_DEFAULT_BUF_SIZE,
+			"resv_mem_mbuf_pool");
+
+		printf("Number of mbufs available in mempool = %d\n", rte_mempool_avail_count(l2fwd_pktmbuf_pool));
+	} else {
+		nb_mbufs = RTE_MAX(nb_ports * (nb_rxd + nb_txd + MAX_PKT_BURST +
+			nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
+
+		/* Create the mbuf pool. 8< */
+		l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
+			MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+			rte_socket_id());
+	}
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 	/* >8 End of create the mbuf pool. */
@@ -925,6 +1038,10 @@ main(int argc, char **argv)
 		printf(" Done\n");
 	}
 
+	if (l2fwd_resv_mem_bytes != 0) {
+		dpaax_release_reserve_memory(&l2fwd_ctx, &l2fwd_alloc);
+		dpaax_release_reserve_memctx(&l2fwd_ctx);
+	}
 	/* clean up the EAL */
 	rte_eal_cleanup();
 	printf("Bye...\n");

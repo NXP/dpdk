@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017 Intel Corporation
+# Copyright 2026 NXP
 
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -8,6 +9,7 @@
 
 # Enable experimental API flag as l2fwd uses rte_ethdev_set_ptype API
 allow_experimental_apis = true
+deps += ['common_dpaax']
 sources = files(
         'main.c',
 )
