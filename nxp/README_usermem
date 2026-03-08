@@ -1,71 +1,212 @@
-# SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2025 NXP
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- Copyright 2026 NXP -->
 
-NXP Userspace Reserved Memory Driver Usage Guide
-============================================
+# NXP Userspace Reserved Memory Driver
 
-Overview
---------
-This document describes the usage of the NXP Userspace Reserved Memory driver, which allows applications to allocate contiguous reserved memory regions with configurable cache policies (WB, WT, WC). The driver interacts with a kernel module and uses IOCTLs for memory management.
+---
 
-Dependencies
-------------
-This driver is dependent on kernel module user_resv_mem.ko and a node in dts.
-Refere module README: https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse/linux/user_resv_mem.ko/README
+# 1. Usage Guide
 
-Sample entry in DTS:
-- Put it in "reserved-memory {" node:
-	/* Userspace drivers memory */
-               usmem_reserved: usmembuffer@a1100000 {
-                       reg = <0 0xa1100000 0 0x2000000>;
-                       no-map;
-               };
+## Overview
+The **NXP Userspace Reserved Memory driver** enables userspace applications to allocate contiguous memory from a reserved region with configurable cache policies such as **WB**, **WT**, and **WC**. The driver communicates with the kernel via IOCTLs and requires a supporting device-tree node or dynamic DT modification at boot time.
 
-- Put it in main "soc" node:
-       usmem: usmem@a1100000 {
-               compatible = "nxp,us-devmem";
-               memory-region = <&usmem_reserved>;
-               reg = <0 0xa1100000 0 0x2000000>;
-        };
+---
 
-- Optionally, pass "device-name" in usmem to change default name "nxp_usmem"
+## Dependencies
 
+The driver depends on:
 
-Device Files
-------------
-- Device file base: /dev/
-- Sysfs base: /sys/class/
-- Device name: nxp_usmem (user can modify it in dts)
+- The kernel module: **user_resv_mem.ko**
+- A device-tree node providing a reserved memory block
 
-Cache Policies
---------------
-- NXP_CP_DEFAULT: Default cache policy
-- NXP_CP_WC: Write Combine
-- NXP_CP_WB: Write Back
-- NXP_CP_WT: Write Through
+Reference module README:  
+https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse/linux/user_resv_mem/README
 
-IOCTLs
--------
-- IOCTL_ALLOC_CHUNKS (_IOWR('N', 1, struct nxp_usmem_reserve)): Allocate memory chunks
-- IOCTL_GET_MEM_INFO (_IOR('N', 2, struct nxp_usmem_info)): Get memory info
-- IOCTL_RELEASE_CHUNKS (_IOWR('N', 3, struct nxp_usmem_reserve)): Release memory chunks
+### A. DTS Modification (Preferred Method)
+Add in the`/reserved-memory` node:
+```dts
+/* Userspace drivers memory */
+usmem_reserved: usmembuffer@a1100000 {
+        reg = <0 0xa1100000 0 0x2000000>;
+        no-map;
+};
+```
+and add in the main `/` node:
+```dts
+usmem: usmem@a1100000 {
+        compatible = "nxp,us-devmem";
+        memory-region = <&usmem_reserved>;
+        reg = <0 0xa1100000 0 0x2000000>;
+};
+```
+Optionally, add `"device-name"` to override default `"nxp_usmem"` to create a different name node in /dev/.
 
-Data Structures
----------------
-- struct nxp_usmem_reserve: { int chunks; unsigned long offset; enum nxp_mem_cp mem_cp; }
-- struct nxp_usmem_info: { unsigned long phys_base; unsigned long chunk_size; unsigned long total_size; unsigned long free_chunks; }
-- struct dpaax_usmem_alloc: { uint64_t request_mem; uint64_t virt_addr; uint64_t phy_addr; uint64_t size; struct nxp_usmem_reserve res; }
+Note: Make sure no other module is using 0xa1100000 memory address.
+---
 
-API Usage
----------
-- dpaax_alloc_reserve_memctx(): Initialize context for reserved memory
-- dpaax_get_reserve_meminfo(): Retrieve memory info
-- dpaax_alloc_reserve_memory(): Allocate memory chunks
-- dpaax_release_reserve_memory(): Release allocated memory
-- dpaax_release_reserve_memctx(): Free context
+### B. Alternate Method: Modify FDT from U‑Boot (No DTS Change Required)
 
-Example Workflow
-----------------
+```bash
+fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image
+fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}
+fdt addr ${fdt_addr}
+fdt resize
+```
+Create reserved memory node:
+```bash
+fdt mknode /reserved-memory usmem@a1100000
+fdt set /reserved-memory/usmem@a1100000 reg <0x0 0x0a1100000 0x0 0x01000000>
+fdt set /reserved-memory/usmem@a1100000 no-map
+```
+Create device node:
+```bash
+fdt mknode / enetc_usmem@a1100000
+fdt set /enetc_usmem@a1100000 compatible "nxp,us-devmem"
+fdt set /enetc_usmem@a1100000 reg <0x0 0x0a1100000 0x0 0x01000000>
+```
+Assign phandles:
+```bash
+if test -z "${PH}"; then setenv PH 0x700;     fdt set /reserved-memory/usmem@a1100000 phandle <${PH}>; fi
+
+if test -z "${PH2}"; then     fdt set /enetc_usmem@a1100000 phandle <0x701>; fi
+
+if test -z "${PH}"; then     fdt get value PH /reserved-memory/usmem@a1100000 phandle; fi
+
+fdt set /enetc_usmem@a1100000 memory-region <${PH}>
+```
+Verify nodes:
+```bash
+u-boot=> fdt print /reserved-memory/usmem@a1100000
+u-boot=> fdt print /enetc_usmem@a1100000
+```
+Expect Output:
+```bash
+usmem@a1100000 {
+        phandle = <0x00000700>;
+        no-map;
+        reg = <0x00000000 0xa1100000 0x00000000 0x01000000>;
+};
+
+enetc_usmem@a1100000 {
+        memory-region = <0x00000700>;
+        phandle = <0x00000701>;
+        reg = <0x00000000 0xa1100000 0x00000000 0x01000000>;
+        compatible = "nxp,us-devmem";
+};
+```
+
+Please note that the DTS changes have already been merged for the i.MX95 platform; therefore, no additional DTS modifications are required.
+---
+
+### Boot the Kernel
+Append chunk size:
+```bash
+edit mmcargs
+user_resv_mem.chunk_size=2097152
+```
+This loads the module with a 2 MB chunk size.
+
+```bash
+mmc dev ${mmcdev}
+run mmcargs
+booti ${loadaddr} - ${fdt_addr}
+```
+
+---
+
+### After Linux Boot
+Verify kernel output:
+```
+[    0.000000] OF: reserved mem: 0x00000000a1100000..0x00000000a20fffff (16384 KiB) nomap non-reusable usmem@a1100000
+[   18.669409] Created /dev/nxp_usmem for reserved memory at 0xa1100000, total chunks = 8, chunk size = 0x200000, total mem_size = 0x1000000
+```
+Manual load:
+```bash
+modprobe -r user_resv_mem 2>/dev/null
+modprobe user_resv_mem chunk_size=2097152
+```
+
+---
+
+## DPDK Integration
+Reserved memory support is enabled for drivers **enetfec**, **enetqos**, **enetc4** for:
+- BD rings.
+- Data buffers (in l2fwd example)
+
+### Examples
+I/O rings only:
+```bash
+dpdk-l2fwd -c 0xc -a 0002:00:02.0,resv_mem=2097152 -- -p 0x1 -T 0
+```
+I/O + buffers:
+```bash
+dpdk-l2fwd -c 0xc -a 0002:00:12.0,resv_mem=2097152 -- -p 0x1 -T 0 -r 4194304
+```
+
+update "0002:00:12.0" device with the device name in use. -r is reserved memory for data buffers in bytes.
+
+---
+
+# 2. Developer Guide
+
+## Device Files
+- Device file: `/dev/nxp_usmem`
+- Sysfs base: `/sys/class/`
+- Device name override: via DTS property
+
+---
+
+## Cache Policies
+- `NXP_CP_DEFAULT` – Default
+- `NXP_CP_WC` – Write Combine
+- `NXP_CP_WB` – Write Back
+- `NXP_CP_WT` – Write Through
+
+---
+
+## IOCTLs
+- `IOCTL_ALLOC_CHUNKS` – Allocate chunks
+- `IOCTL_GET_MEM_INFO` – Get info
+- `IOCTL_RELEASE_CHUNKS` – Release chunks
+
+---
+
+## Data Structures
+```c
+struct nxp_usmem_reserve {
+    int chunks;
+    unsigned long offset;
+    enum nxp_mem_cp mem_cp;
+};
+
+struct nxp_usmem_info {
+    unsigned long phys_base;
+    unsigned long chunk_size;
+    unsigned long total_size;
+    unsigned long free_chunks;
+};
+
+struct dpaax_usmem_alloc {
+    uint64_t request_mem;
+    uint64_t virt_addr;
+    uint64_t phy_addr;
+    uint64_t size;
+    struct nxp_usmem_reserve res;
+};
+```
+
+---
+
+## APIs
+- `dpaax_alloc_reserve_memctx()`
+- `dpaax_get_reserve_meminfo()`
+- `dpaax_alloc_reserve_memory()`
+- `dpaax_release_reserve_memory()`
+- `dpaax_release_reserve_memctx()`
+
+---
+
+## Example Workflow
 1. Call dpaax_alloc_reserve_memctx() with device name to create context
 2. Use dpaax_get_reserve_meminfo() to query available memory
 3. Allocate memory using dpaax_alloc_reserve_memory() specifying size and cache policy
