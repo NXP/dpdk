@@ -76,8 +76,6 @@ static uint8_t s_proc_type = proc_primary;
 
 static uint8_t s_layer = 1;
 
-static uint8_t s_core = 1;
-
 static uint16_t s_port_id;
 
 static char s_port_name[64];
@@ -85,6 +83,10 @@ static char s_port_name[64];
 static uint8_t s_l2_uplink_print;
 
 static uint8_t s_l1_downlink_print;
+
+static int s_perf_print = true;
+
+static struct rte_eth_link s_link;
 
 enum up_down_handle {
 	LINK_DISABLE = 0,
@@ -117,9 +119,9 @@ static struct data_loop_conf s_data_loop_conf;
 
 static uint64_t s_l1_l2_cycs_per_us;
 
-static int s_calculate_latency = 1;
+static int s_calculate_latency;
 
-static int s_l2_sync = 1;
+static int s_l2_sync;
 
 #define L1_TB_SIZE 17500
 
@@ -350,7 +352,8 @@ l2_app_uplink_handle(void)
 static void l2_app_handle(void)
 {
 	while (!force_quit) {
-		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
+		if ((s_l1_l2_handle & DOWN_LINK_ENABLE) &&
+			s_link.link_status == RTE_ETH_LINK_UP)
 			l2_app_downlink_prepare(); /* Send to L1*/
 		/** Always receive.*/
 		l2_app_uplink_handle(); /* Recv from L1*/
@@ -474,14 +477,14 @@ l1_app_uplink_process(void)
 	s_data_loop_conf.tx_statistic.bytes += tx_bytes;
 }
 
-
 static void l1_app_handle(void)
 {
 	while (!force_quit) {
 		/* Recv from L2 then send to air.*/
 		/** Always receive.*/
 		l1_app_downlink_handle();
-		if (s_l1_l2_handle & UP_LINK_ENABLE) {
+		if ((s_l1_l2_handle & UP_LINK_ENABLE) &&
+			s_link.link_status == RTE_ETH_LINK_UP) {
 			/* Recv from air then send to L2*/
 			l1_app_uplink_process();
 		}
@@ -492,6 +495,8 @@ static int
 main_loop(__attribute__((unused)) void *dummy)
 {
 	char nm[RTE_MEMZONE_NAMESIZE];
+
+	RTE_LOG(ERR, L1_L2, "Handle traffic on core%d\r\n", rte_lcore_id());
 
 	l1_l2_calculate_cycles_per_us();
 	if (s_calculate_latency && s_layer == 1) {
@@ -547,19 +552,6 @@ parse_link_disable(const char *link_name)
 }
 
 static int
-parse_core(const char *score)
-{
-	int core = atoi(score);
-
-	if (core > RTE_MAX_LCORE)
-		return -EINVAL;
-
-	s_core = core;
-
-	return 0;
-}
-
-static int
 parse_layer(const char *slayer)
 {
 	int layer = atoi(slayer);
@@ -574,12 +566,12 @@ parse_layer(const char *slayer)
 #define MEMPOOL_CACHE_SIZE 256
 
 #define CMD_LINE_OPT_PNAME "port-nm"
-#define CMD_LINE_OPT_CORE "core"
 #define CMD_LINE_OPT_LAYER "layer"
 #define CMD_LINE_OPT_LINK_DIS "link-disable"
 #define CMD_LINE_OPT_L1_TB "tb-size"
 #define CMD_LINE_OPT_L2_SDU "sdu-size"
 #define CMD_LINE_OPT_LATENCY "latency-test"
+#define CMD_LINE_OPT_PERF_PRINT "perf-print"
 
 enum {
 	/* long options mapped to a short option */
@@ -589,22 +581,22 @@ enum {
 	 */
 	CMD_LINE_OPT_MIN_NUM = 256,
 	CMD_LINE_OPT_PNAME_NUM,
-	CMD_LINE_OPT_CORE_NUM,
 	CMD_LINE_OPT_LAYER_NUM,
 	CMD_LINE_OPT_LINK_DIS_NUM,
 	CMD_LINE_OPT_L1_TB_NUM,
 	CMD_LINE_OPT_L2_SDU_NUM,
-	CMD_LINE_OPT_LATENCY_NUM
+	CMD_LINE_OPT_LATENCY_NUM,
+	CMD_LINE_OPT_PERF_PRINT_NUM
 };
 
 static const struct option lgopts[] = {
 	{CMD_LINE_OPT_PNAME, 1, 0, CMD_LINE_OPT_PNAME_NUM},
-	{CMD_LINE_OPT_CORE, 1, 0, CMD_LINE_OPT_CORE_NUM},
 	{CMD_LINE_OPT_LAYER, 1, 0, CMD_LINE_OPT_LAYER_NUM},
 	{CMD_LINE_OPT_LINK_DIS, 1, 0, CMD_LINE_OPT_LINK_DIS_NUM},
 	{CMD_LINE_OPT_L1_TB, 1, 0, CMD_LINE_OPT_L1_TB_NUM},
 	{CMD_LINE_OPT_L2_SDU, 1, 0, CMD_LINE_OPT_L2_SDU_NUM},
 	{CMD_LINE_OPT_LATENCY, 1, 0, CMD_LINE_OPT_LATENCY_NUM},
+	{CMD_LINE_OPT_PERF_PRINT, 1, 0, CMD_LINE_OPT_PERF_PRINT_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -635,14 +627,6 @@ parse_args(int argc, char **argv)
 			}
 			break;
 
-		case CMD_LINE_OPT_CORE_NUM:
-			ret = parse_core(optarg);
-			if (ret) {
-				fprintf(stderr, "Invalid core\n");
-				return ret;
-			}
-			break;
-
 		case CMD_LINE_OPT_LAYER_NUM:
 			ret = parse_layer(optarg);
 			if (ret) {
@@ -668,6 +652,9 @@ parse_args(int argc, char **argv)
 			break;
 		case CMD_LINE_OPT_LATENCY_NUM:
 			s_calculate_latency = atoi(optarg);
+			break;
+		case CMD_LINE_OPT_PERF_PRINT_NUM:
+			s_perf_print = atoi(optarg);
 			break;
 		default:
 			return -ENOTSUP;
@@ -816,6 +803,47 @@ skip_print_hw_status:
 	return arg;
 }
 
+#define CHECK_INTERVAL 1 /* 1s */
+
+static void *
+l1_l2_check_link_stat(void *arg)
+{
+	struct rte_eth_link link_get;
+	int ret;
+
+loop:
+	sleep(1);
+	if (force_quit)
+		goto quit;
+
+	ret = rte_eth_link_get_nowait(s_port_id, &link_get);
+	if (ret < 0) {
+		RTE_LOG(WARNING, L1_L2,
+			"Port %u link get failed: %s\n",
+			s_port_id, rte_strerror(-ret));
+		goto loop;
+	}
+	if (memcmp(&link_get, &s_link, sizeof(struct rte_eth_link))) {
+		if (link_get.link_status == RTE_ETH_LINK_UP) {
+			RTE_LOG(INFO, L1_L2,
+				"Port%d Link Up. Speed %u Mbps -%s\n",
+				s_port_id, link_get.link_speed,
+				(link_get.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
+				("full-duplex") : ("half-duplex"));
+		} else {
+			RTE_LOG(WARNING, L1_L2,
+				"Port %d Link Down\n", s_port_id);
+		}
+	}
+	rte_memcpy(&s_link, &link_get, sizeof(struct rte_eth_link));
+
+	goto loop;
+
+quit:
+
+	return arg;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -827,7 +855,7 @@ main(int argc, char **argv)
 	struct rte_eth_conf local_port_conf;
 	struct rte_eth_rxconf rxq_conf;
 	uint32_t data_room_size;
-	struct rte_eth_link link;
+	pthread_t pid;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -898,6 +926,11 @@ main(int argc, char **argv)
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 		}
 
+		if (s_layer == 2) {
+			local_port_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
+			local_port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
+		}
+
 		local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
 			dev_info.flow_type_rss_offloads;
 
@@ -906,12 +939,6 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				"Cannot configure device: err=%d, port=%d\n",
 				ret, portid);
-		}
-
-		if (!rte_lcore_is_enabled(s_core)) {
-			rte_exit(EXIT_FAILURE,
-				"Core %d is not enabled\n",
-				s_core);
 		}
 
 		rxq_conf = dev_info.default_rxconf;
@@ -946,24 +973,6 @@ main(int argc, char **argv)
 				rte_strerror(-ret), portid);
 		}
 
-		ret = rte_eth_link_get_nowait(portid, &link);
-		if (ret < 0) {
-			RTE_LOG(ERR, L1_L2,
-				"Port %u link get failed: %s\n",
-				portid, rte_strerror(-ret));
-		} else {
-			if (link.link_status) {
-				RTE_LOG(INFO, L1_L2,
-					"Port%d Link Up. Speed %u Mbps -%s\n",
-					portid, link.link_speed,
-					(link.link_duplex ==
-					RTE_ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex"));
-			} else {
-				RTE_LOG(INFO, L1_L2,
-					"Port %d Link Down\n", portid);
-			}
-		}
 		port_found = 1;
 		break;
 	}
@@ -975,13 +984,15 @@ main(int argc, char **argv)
 	}
 
 	s_port_id = portid;
-	ret = 0;
 
-	if (getenv("L1_L2_PERF_STATISTICS")) {
-		pthread_t pid;
-
-		pthread_create(&pid, NULL, perf_statistics, &s_layer);
+	ret = pthread_create(&pid, NULL, l1_l2_check_link_stat, NULL);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"check link thread create failed(%d)\n", ret);
 	}
+
+	if (s_perf_print)
+		pthread_create(&pid, NULL, perf_statistics, &s_layer);
 
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MAIN);
