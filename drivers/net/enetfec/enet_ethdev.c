@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021,2023-2025 NXP
+ * Copyright 2020-2021,2023-2026 NXP
  */
 
 #include <inttypes.h>
@@ -625,7 +625,7 @@ pmd_enetfec_probe(struct rte_vdev_device *vdev)
 	unsigned int bdsize;
 	const char *name;
 	int rc, i;
-	uint32_t phy, size;
+	uint32_t phy, size = 0;
 	uint64_t virt;
 
 	name = rte_vdev_device_name(vdev);
@@ -666,7 +666,10 @@ pmd_enetfec_probe(struct rte_vdev_device *vdev)
 		virt = fep->alloc.virt_addr;
 		phy = (uint32_t)fep->alloc.phy_addr;
 		size = (uint32_t)fep->alloc.size;
-		bdsize = size / NUM_OF_BD_QUEUES;
+		if (size > fep->bd_size)
+			bdsize = fep->bd_size / NUM_OF_BD_QUEUES;
+		else
+			bdsize = size / NUM_OF_BD_QUEUES;
 	} else {
 		virt = (uint64_t)fep->bd_addr_v;
 		phy = fep->bd_addr_p;
