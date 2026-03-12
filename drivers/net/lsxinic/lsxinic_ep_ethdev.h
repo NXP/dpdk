@@ -77,6 +77,7 @@ struct lsinic_adapter {
 	uint8_t ep_mem_dbg;
 
 	uint32_t data_room_size;
+	uint32_t max_tx_size;
 	uint64_t rc_dma_base;
 	uint32_t rc_dma_elt_size;
 	const struct rte_memzone *local_mz;
