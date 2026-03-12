@@ -288,6 +288,17 @@ read_again:
 }
 
 static int
+lxsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	/* TODO: Add proper implementation */
+
+	RTE_SET_USED(dev);
+	RTE_SET_USED(mtu);
+
+	return 0;
+}
+
+static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
 {
 	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
@@ -587,6 +598,7 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	enum EP_MEM_BD_TYPE ep_bd = EP_MEM_DST_ADDR_BD;
 	enum RC_MEM_BD_TYPE rc_bd = RC_MEM_LEN_CMD;
 	char *penv;
+	uint16_t mp_data_room;
 
 	LSXINIC_PMD_DBG("config rx_queue");
 	ep_ring_base = adapter->bd_desc_base + base_offset;
@@ -620,12 +632,10 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	LSXINIC_PMD_DBG("config rx_queue %d rx desc %d max desc %d",
 		queue_idx, nb_desc, adapter->rx_ring_bd_count);
 
-	if (adapter->max_data_room >
-		(rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM)) {
-		adapter->max_data_room = rte_pktmbuf_data_room_size(mp) -
-			RTE_PKTMBUF_HEADROOM;
-		LSINIC_WRITE_REG(&eth_reg->max_data_room,
-			adapter->max_data_room);
+	mp_data_room = rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
+	if (adapter->max_data_room > mp_data_room) {
+		adapter->max_data_room = mp_data_room;
+		LSINIC_WRITE_REG(&eth_reg->max_data_room, mp_data_room);
 		if (lxsnic_set_netdev(adapter, PCIDEV_COMMAND_SET_MTU)) {
 			LSXINIC_PMD_ERR("Set %s's MTU failed!",
 				adapter->eth_dev->data->name);
@@ -1198,7 +1208,7 @@ lxsnic_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->device = &pci_dev->device;
 	dev_info->max_rx_queues = adapter->num_rx_queues;
 	dev_info->max_tx_queues = adapter->num_tx_queues;
-	dev_info->max_rx_pktlen = 4096; /* includes CRC, cf MAXFRS register */
+	dev_info->max_rx_pktlen = 15872; /* includes CRC, cf MAXFRS register */
 	dev_info->max_mac_addrs = 1;
 
 	dev_info->rx_desc_lim = rx_desc_lim;
@@ -1296,6 +1306,7 @@ static struct eth_dev_ops eth_lxsnic_eth_dev_ops = {
 	.dev_stop             = lxsnic_dev_stop,
 	.dev_close            = lxsnic_dev_close,
 	.dev_infos_get        = lxsnic_dev_info_get,
+	.mtu_set	      = lxsinic_dev_mtu_set,
 	.rx_queue_setup       = lxsnic_dev_rx_queue_setup,
 	.rx_queue_release     = lxsnic_dev_rx_queue_release,
 	.tx_queue_setup       = lxsnic_dev_tx_queue_setup,

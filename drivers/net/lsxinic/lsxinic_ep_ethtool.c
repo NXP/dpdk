@@ -130,21 +130,26 @@ static int lsinic_set_mac(struct rte_eth_dev *dev)
 
 static int lsinic_set_mtu(struct rte_eth_dev *dev)
 {
-	int mtu;
+	uint32_t mtu;
 	struct lsinic_adapter *adapter = dev->process_private;
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 
 	mtu = LSINIC_READ_REG(&eth_reg->max_data_room);
 
-	if (!adapter->is_vf)
+	if (!adapter->is_vf) {
 		LSXINIC_PMD_INFO("pcie%d:pf%d align mtu(%d) with RC",
 			adapter->pcie_idx, adapter->pf_idx, mtu);
-	else
+	} else {
 		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d align mtu(%d) with RC",
 			adapter->pcie_idx, adapter->pf_idx,
 			adapter->vf_idx, mtu);
-	adapter->data_room_size = mtu;
+	}
+	if (mtu > adapter->data_room_size) {
+		LSXINIC_PMD_ERR("Invalid mtu(%d) > %d", mtu, adapter->data_room_size);
+		return PCIDEV_RESULT_FAILED;
+	}
+	adapter->max_tx_size = mtu;
 
 	return PCIDEV_RESULT_SUCCEED;
 }

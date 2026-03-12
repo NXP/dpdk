@@ -1063,10 +1063,14 @@ lsinic_dev_info_get(struct rte_eth_dev *dev,
 static int
 lsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
-	/* TODO: Add proper implementation */
+	struct lsinic_adapter *adapter = dev->process_private;
+	uint16_t max = mtu + RTE_ETHER_HDR_LEN + RTE_VLAN_HLEN;
+	struct lsinic_eth_reg *eth_reg;
 
-	RTE_SET_USED(dev);
-	RTE_SET_USED(mtu);
+	adapter->data_room_size = max;
+	adapter->max_tx_size = max;
+	eth_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	LSINIC_WRITE_REG(&eth_reg->max_data_room, adapter->data_room_size);
 
 	return 0;
 }

@@ -839,6 +839,13 @@ lsinic_xmit_one_pkt(struct lsinic_queue *txq,
 				txq->ep_reg->pir);
 			return 0;
 		}
+
+		if (unlikely(tx_pkt->pkt_len >= txq->adapter->max_tx_size)) {
+			LSXINIC_PMD_WARN("xmit packet len(%d) > max(%d)",
+				tx_pkt->pkt_len, txq->adapter->max_tx_size);
+			return 0;
+		}
+
 		src_len = &txq->local_src_len[bd_idx];
 
 		dma_job = &txq->dma_jobs[bd_idx];
@@ -2886,8 +2893,8 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (env)
 		rxq->rc_bd_check = atoi(env);
 
-	adapter->data_room_size =
-		rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
+	adapter->data_room_size = rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
+	adapter->max_tx_size = adapter->data_room_size;
 	LSINIC_WRITE_REG(&eth_reg->max_data_room, adapter->data_room_size);
 
 	rxq->rx_dma_mbuf_set = lsinic_recv_mbuf_dma_set;
