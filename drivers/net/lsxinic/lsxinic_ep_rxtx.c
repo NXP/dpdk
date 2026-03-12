@@ -1526,24 +1526,21 @@ lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
  *  TX functions
  *
  **********************************************************************/
-static void
-lsinic_tx_notify_burst_to_rc(struct lsinic_queue *txq)
+static uint16_t
+lsinic_tx_len_notify_to_rc(struct lsinic_queue *txq, uint16_t pending)
 {
-	uint16_t pending, burst1 = 0, burst2 = 0;
+	uint16_t burst1 = 0, burst2 = 0;
 	uint16_t bd_idx, bd_idx_first, i;
-	struct lsinic_bd_desc_128 *local_bd;
 	struct lsinic_rc_rx_len *remote_len = txq->tx_len;
 
-	pending = txq->next_dma_idx - txq->next_used_idx;
 	bd_idx_first = lsinic_queue_next_used_idx(txq, 0);
 	for (i = 0; i < pending; i++) {
 		bd_idx = lsinic_queue_next_used_idx(txq, i);
-		local_bd = &txq->local_bd_128[bd_idx];
-		if (local_bd->bd_status != RING_BD_HW_COMPLETE) {
+		if (txq->local_bd_128[bd_idx].bd_status != RING_BD_HW_COMPLETE) {
 			/* Due to OOO DMA*/
 			break;
 		}
-		lsinic_ep_notify_to_rc(txq, bd_idx, 0);
+		txq->local_bd_128[bd_idx].bd_status = RING_BD_READY;
 	}
 	if ((bd_idx_first + i) > txq->nb_desc) {
 		burst1 = txq->nb_desc - bd_idx_first;
@@ -1560,19 +1557,17 @@ lsinic_tx_notify_burst_to_rc(struct lsinic_queue *txq)
 			&txq->local_src_len[0],
 			burst2 * sizeof(struct lsinic_rc_rx_len));
 	}
-	txq->next_used_idx += i;
-	if (likely(i > 0))
-		lsinic_queue_trigger_interrupt(txq);
+
+	return i;
 }
 
-static void
-lsinic_tx_seg_notify_to_rc(struct lsinic_queue *txq)
+static uint16_t
+lsinic_tx_seg_notify_to_rc(struct lsinic_queue *txq, uint16_t pending)
 {
-	uint16_t pending, burst1 = 0, burst2 = 0;
+	uint16_t burst1 = 0, burst2 = 0;
 	uint16_t bd_idx_first;
 	struct lsinic_rc_rx_seg *tx_seg = txq->tx_seg;
 
-	pending = txq->next_dma_idx - txq->next_used_idx;
 	bd_idx_first = lsinic_queue_next_used_idx(txq, 0);
 	if ((bd_idx_first + pending) > txq->nb_desc) {
 		burst1 = txq->nb_desc - bd_idx_first;
@@ -1591,39 +1586,29 @@ lsinic_tx_seg_notify_to_rc(struct lsinic_queue *txq)
 			burst2 * sizeof(struct lsinic_rc_rx_seg));
 	}
 
-	txq->next_used_idx += pending;
-	if (likely(pending > 0))
-		lsinic_queue_trigger_interrupt(txq);
+	return pending;
 }
 
 static void
 lsinic_tx_update_to_rc(struct lsinic_queue *txq)
 {
 	uint16_t pending, bd_idx, i;
-	struct lsinic_bd_desc_128 *local_bd;
-
-	if (txq->rc_mem_bd_type == RC_MEM_SEG_LEN) {
-		lsinic_tx_seg_notify_to_rc(txq);
-
-		return;
-	} else if (txq->rc_mem_bd_type == RC_MEM_LEN_CMD) {
-		lsinic_tx_notify_burst_to_rc(txq);
-
-		return;
-	}
 
 	pending = txq->next_dma_idx - txq->next_used_idx;
-	for (i = 0; i < pending; i++) {
-		bd_idx = lsinic_queue_next_used_idx(txq, i);
-		local_bd = &txq->local_bd_128[bd_idx];
-		if (local_bd->bd_status != RING_BD_HW_COMPLETE) {
-			/* Due to OOO DMA*/
-			break;
-		}
-		if (txq->rc_mem_bd_type == RC_MEM_LEN_CMD)
-			lsinic_ep_notify_to_rc(txq, bd_idx, 1);
-		else
+	if (txq->rc_mem_bd_type == RC_MEM_SEG_LEN) {
+		i = lsinic_tx_seg_notify_to_rc(txq, pending);
+	} else if (txq->rc_mem_bd_type == RC_MEM_LEN_CMD) {
+		i = lsinic_tx_len_notify_to_rc(txq, pending);
+	} else {
+		for (i = 0; i < pending; i++) {
+			bd_idx = lsinic_queue_next_used_idx(txq, i);
+			if (txq->local_bd_128[bd_idx].bd_status != RING_BD_HW_COMPLETE) {
+				/* Due to OOO DMA*/
+				break;
+			}
 			lsinic_bd_update_used_to_rc(txq, bd_idx);
+			txq->local_bd_128[bd_idx].bd_status = RING_BD_READY;
+		}
 	}
 
 	txq->next_used_idx += i;
@@ -1670,6 +1655,8 @@ lsinic_txq_dma_dq(void *q)
 		if (txq->ep_bd_desc) {
 			bd = &txq->ep_bd_desc[txe->my_idx];
 			lsinic_bd_dma_complete_update(txq, txe->my_idx, bd);
+		} else {
+			lsinic_bd_dma_complete_update(txq, txe->my_idx, NULL);
 		}
 		if (likely(!(txe->mbuf->ol_flags & LSINIC_SHARED_MBUF))) {
 			rte_pktmbuf_free(txe->mbuf);
@@ -1945,6 +1932,8 @@ lsinic_rxq_dma_dq(void *q)
 		dma_job = &rxq->dma_jobs[idx];
 		rxq->bytes_dq += dma_job->len;
 		rxq->pkts_dq++;
+		if (unlikely(rxe->dma_complete))
+			LSXINIC_PMD_WARN("RX BD[%d] DMA complete already??", idx);
 		rxe->dma_complete = 1;
 		if (rxq->ep_bd_desc) {
 			rxdp = &rxq->ep_bd_desc[rxe->my_idx];
