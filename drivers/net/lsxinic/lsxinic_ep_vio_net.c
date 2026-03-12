@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2024 NXP  */
+/* Copyright 2020-2024, 2026 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -84,20 +84,10 @@ lsxvio_dev_info_get(struct rte_eth_dev *dev,
 
 static int lsxvio_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
 
-static int
-lsxvio_dev_link_update(struct rte_eth_dev *dev,
-	int wait_to_complete);
-
 static int lsxvio_dev_promiscuous_enable(struct rte_eth_dev *dev);
 static int lsxvio_dev_promiscuous_disable(struct rte_eth_dev *dev);
 static int lsxvio_dev_allmulticast_enable(struct rte_eth_dev *dev);
 static int lsxvio_dev_allmulticast_disable(struct rte_eth_dev *dev);
-static int
-lsxvio_dev_stats_get(struct rte_eth_dev *dev,
-	struct rte_eth_stats *stats);
-
-static int lsxvio_dev_stats_reset(struct rte_eth_dev *dev);
-static int is_valid_ether_addr(uint8_t *addr);
 
 static const struct rte_eth_desc_lim rx_desc_lim = {
 	.nb_max = LSINIC_BD_ENTRY_COUNT,
@@ -111,12 +101,110 @@ static const struct rte_eth_desc_lim tx_desc_lim = {
 	.nb_align = 8,
 };
 
-static int
-is_valid_ether_addr(uint8_t *addr)
+static uint64_t
+lsxvio_xstats_get_ipackets(struct rte_eth_dev *dev)
 {
-	const char zaddr[6] = { 0, };
+	return lsxinic_common_get_ipackets(dev, struct lsxvio_queue *);
+}
 
-	return !(addr[0] & 1) && memcmp(addr, zaddr, 6);
+static uint64_t
+lsxvio_xstats_get_ibytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibytes(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_epackets(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_epackets(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_ebytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ebytes(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_ierrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ierrs(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_eerrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_eerrs(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_ibd_errs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibd_errs(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_efulls(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_efulls(dev, struct lsxvio_queue *);
+}
+
+static uint64_t
+lsxvio_xstats_get_edrops(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_edrops(dev, struct lsxvio_queue *);
+}
+
+static const lsxinic_common_xstats_count s_lsxvio_xstat_cbs[] = {
+	lsxvio_xstats_get_ipackets,
+	lsxvio_xstats_get_ibytes,
+	lsxvio_xstats_get_epackets,
+	lsxvio_xstats_get_ebytes,
+	lsxvio_xstats_get_ierrs,
+	lsxvio_xstats_get_eerrs,
+	lsxvio_xstats_get_ibd_errs,
+	lsxvio_xstats_get_efulls,
+	lsxvio_xstats_get_edrops
+};
+
+/* Staticstic related function */
+static int
+lsxvio_dev_stats_get(struct rte_eth_dev *dev,
+	struct rte_eth_stats *stats)
+{
+	stats->ipackets = lsxinic_common_get_ipackets(dev, struct lsxvio_queue *);
+	stats->ibytes = lsxinic_common_get_ibytes(dev, struct lsxvio_queue *);
+	stats->ierrors = lsxinic_common_get_ierrs(dev, struct lsxvio_queue *);
+
+	stats->opackets = lsxinic_common_get_epackets(dev, struct lsxvio_queue *);
+	stats->obytes = lsxinic_common_get_ebytes(dev, struct lsxvio_queue *);
+	stats->oerrors = lsxinic_common_get_eerrs(dev, struct lsxvio_queue *);
+
+	return 0;
+}
+
+static int
+lsxvio_dev_stats_reset(struct rte_eth_dev *dev)
+{
+	lsxinic_common_q_reset(dev, struct lsxvio_queue *);
+
+	return 0;
+}
+
+static int
+lsxvio_dev_xstats_reset(struct rte_eth_dev *dev)
+{
+	return lsxvio_dev_stats_reset(dev);
+}
+
+static int
+lsxvio_dev_link_update(struct rte_eth_dev *dev,
+	int wait_to_complete __rte_unused)
+{
+	struct lsxvio_adapter *adapter = dev->data->dev_private;
+
+	return lsxinic_common_link_update(dev,
+		adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK);
 }
 
 static struct eth_dev_ops lsxvio_eth_dev_ops = {
@@ -137,6 +225,11 @@ static struct eth_dev_ops lsxvio_eth_dev_ops = {
 	.allmulticast_disable = lsxvio_dev_allmulticast_disable,
 	.stats_get            = lsxvio_dev_stats_get,
 	.stats_reset          = lsxvio_dev_stats_reset,
+	.xstats_get	       = lsxinic_common_xstats_get,
+	.xstats_get_by_id     = lsinic_common_xstats_get_by_id,
+	.xstats_get_names_by_id = lsinic_common_xstats_get_names_by_id,
+	.xstats_get_names      = lsxinic_common_xstats_get_names,
+	.xstats_reset          = lsxvio_dev_xstats_reset,
 };
 
 static int
@@ -876,61 +969,6 @@ lsxvio_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	return 0;
 }
 
-/**
- * Atomically writes the link status information into global
- * structure rte_eth_dev.
- *
- * @param dev
- *   - Pointer to the structure rte_eth_dev to read from.
- *   - Pointer to the buffer to be saved with the link status.
- *
- * @return
- *   - On success, zero.
- *   - On failure, negative value.
- */
-static inline int
-rte_lsxvio_dev_atomic_write_link_status(struct rte_eth_dev *dev,
-	struct rte_eth_link *link)
-{
-	struct rte_eth_link *dst = &dev->data->dev_link;
-	struct rte_eth_link *src = link;
-
-	if (rte_atomic64_cmpset((uint64_t *)dst, *(uint64_t *)dst,
-		*(uint64_t *)src) == 0)
-		return -1;
-
-	return 0;
-}
-
-/* return 0 means link status changed, -1 means not changed */
-static int
-lsxvio_dev_link_update(struct rte_eth_dev *dev,
-	int wait_to_complete __rte_unused)
-{
-	struct rte_eth_link link;
-	struct rte_eth_link *src, *dst;
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
-
-	memset(&link, 0, sizeof(struct rte_eth_link));
-	if (adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK) {
-		link.link_status = RTE_ETH_LINK_UP;
-		link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_25G;
-	} else {
-		link.link_status = RTE_ETH_LINK_DOWN;
-		link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_NONE;
-	}
-
-	src = &(link);
-	dst = &dev->data->dev_link;
-	if (rte_atomic64_cmpset((uint64_t *)dst, *(uint64_t *)dst,
-		*((uint64_t *)src)) == 0)
-		return -1;
-
-	return 0;
-}
-
 static int
 lsxvio_dev_promiscuous_enable(struct rte_eth_dev *dev __rte_unused)
 {
@@ -952,86 +990,6 @@ lsxvio_dev_allmulticast_enable(struct rte_eth_dev *dev __rte_unused)
 static int
 lsxvio_dev_allmulticast_disable(struct rte_eth_dev *dev __rte_unused)
 {
-	return 0;
-}
-
-/* Staticstic related function */
-static int
-lsxvio_dev_stats_get(struct rte_eth_dev *dev,
-	struct rte_eth_stats *stats)
-{
-	uint64_t total_ipackets, total_ibytes, total_ierrors;
-	uint64_t total_opackets, total_obytes, total_oerrors;
-	struct lsxvio_tx_queue *txq, *txtmp;
-	struct lsxvio_rx_queue *rxq, *rxtmp;
-	uint32_t i, j;
-
-	total_ipackets = 0;
-	total_ibytes = 0;
-	total_ierrors = 0;
-	total_opackets = 0;
-	total_obytes = 0;
-	total_oerrors = 0;
-
-	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		txq = dev->data->tx_queues[i];
-		txtmp = txq;
-		for (j = 0; j < txq->nb_q; j++) {
-			total_opackets += txtmp->packets;
-			total_obytes += txtmp->bytes;
-			total_oerrors += txtmp->errors;
-			txtmp = txtmp->sibling;
-		}
-	}
-
-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		rxq = dev->data->rx_queues[i];
-		rxtmp = rxq;
-		for (j = 0; j < rxq->nb_q; j++) {
-			total_ipackets += rxtmp->packets;
-			total_ibytes += rxtmp->bytes;
-			total_ierrors += rxtmp->errors;
-			rxtmp = rxtmp->sibling;
-		}
-	}
-
-	stats->ipackets = total_ipackets;
-	stats->opackets = total_opackets;
-	stats->ibytes = total_ibytes;
-	stats->obytes = total_obytes;
-	stats->ierrors = total_ierrors;
-	stats->oerrors = total_oerrors;
-
-	return 0;
-}
-
-static int
-lsxvio_dev_stats_reset(struct rte_eth_dev *dev)
-{
-	struct lsxvio_tx_queue *txq;
-	struct lsxvio_rx_queue *rxq;
-	uint32_t i, j;
-
-	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		txq = dev->data->tx_queues[i];
-		for (j = 0; j < txq->nb_q; j++) {
-			txq->packets = 0;
-			txq->bytes = 0;
-			txq->errors = 0;
-			txq = txq->sibling;
-		}
-	}
-
-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		rxq = dev->data->rx_queues[i];
-		for (j = 0; j < rxq->nb_q; j++) {
-			rxq->packets = 0;
-			rxq->bytes = 0;
-			rxq->errors = 0;
-			rxq = rxq->sibling;
-		}
-	}
-
 	return 0;
 }
 
@@ -1077,6 +1035,12 @@ rte_lsxvio_remove(struct rte_lsx_pciep_device *lsx_dev)
 	return 0;
 }
 
+static void
+lsxvio_xstat_cb_init(void)
+{
+	lsxinic_common_xstats_add_cb(s_lsxvio_xstat_cbs);
+}
+
 static struct rte_lsx_pciep_driver rte_lsxvio_pmd = {
 	.drv_type = 0,
 	.name = LSX_PCIEP_VIRT_NAME_PREFIX "_driver",
@@ -1084,4 +1048,5 @@ static struct rte_lsx_pciep_driver rte_lsxvio_pmd = {
 	.remove = rte_lsxvio_remove,
 };
 
+RTE_INIT(lsxvio_xstat_cb_init);
 RTE_PMD_REGISTER_LSX_PCIEP(net_lsx, rte_lsxvio_pmd);

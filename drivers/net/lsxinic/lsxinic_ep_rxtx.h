@@ -213,12 +213,6 @@ struct lsinic_queue {
 	uint64_t loop_avail;
 	uint64_t align_err;
 
-	/* point to the working queue */
-	struct lsinic_queue *working;
-	/* point to the next queue belonged to the same core */
-	struct lsinic_queue *sibling;
-	uint32_t nb_q;
-
 	struct rte_eth_dev *dev;
 
 	uint16_t mhead;

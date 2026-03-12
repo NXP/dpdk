@@ -58,9 +58,6 @@
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common.h"
 
-#define  LXSNIC_DEBUG_RX_TX
-
-#undef INIC_RC_EP_DEBUG_ENABLE
 #define LXSNIC_INTERRUPT_THRESHOLD  (32)
 #define LXSNIC_INTERRUPT_INTERVAL   (100) /* 100ns */
 
@@ -127,27 +124,6 @@
 #endif
 
 typedef uint64_t dma_addr_t;
-
-struct lxsnic_queue_stats {
-	uint64_t packets;
-	uint64_t bytes;
-};
-
-struct lxsnic_tx_queue_stats {
-	uint64_t restart_queue;
-	uint64_t tx_busy;
-	uint64_t tx_done_old;
-};
-
-struct lxsnic_rx_queue_stats {
-	uint64_t rsc_count;
-	uint64_t rsc_flush;
-	uint64_t non_eop_descs;
-	uint64_t alloc_rx_page_failed;
-	uint64_t alloc_rx_buff_failed;
-	uint64_t alloc_rx_dma_failed;
-	uint64_t csum_err;
-};
 
 enum lxsnic_ring_state_t {
 	__LXSNIC_TX_FDIR_INIT_DONE,
@@ -248,11 +224,7 @@ struct lxsnic_ring {
 	uint64_t sync_err;
 	uint64_t loop_total;
 	uint64_t loop_avail;
-	struct lxsnic_queue_stats stats;
-	union {
-		struct lxsnic_tx_queue_stats tx_stats;
-		struct lxsnic_rx_queue_stats rx_stats;
-	};
+	uint64_t align_err;
 	struct lxsnic_adapter *adapter;
 	uint16_t mhead;
 	uint16_t mtail;
@@ -284,19 +256,6 @@ struct vf_data_storage {
 	uint16_t vlan_count;
 	uint8_t spoofchk_enabled;
 	unsigned int vf_api;
-};
-
-struct lxsnic_hw_stats {
-	uint64_t rx_alloc_mbuf_fail;
-	uint64_t rx_clean_count;
-	uint64_t rx_desc_clean_num;
-	uint64_t rx_desc_clean_fail;
-	uint64_t rx_desc_err;
-	uint64_t tx_mbuf_err;
-	uint64_t tx_clean_count;
-	uint64_t tx_desc_clean_num;
-	uint64_t tx_desc_clean_fail;
-	uint64_t tx_desc_err;
 };
 
 enum lxsnic_rc_self_test {
@@ -359,7 +318,6 @@ struct lxsnic_adapter {
 	unsigned int num_vfs;
 	struct vf_data_storage *vfinfo;
 	int vf_rate_link_speed;
-	struct lxsnic_hw_stats stats;
 	uint8_t dma_mem_complete;
 	uint16_t max_data_room;
 };
