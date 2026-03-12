@@ -232,32 +232,6 @@ static void *lxsnic_rc_debug_status(void *arg)
 	return NULL;
 }
 
-static int lxsnic_wait_tx_lbd_ready(struct lxsnic_ring *tx_ring)
-{
-	uint32_t i, bd_status, count;
-	struct lsinic_bd_desc_128 *rc_tx_desc;
-
-	for (i = 0; i < tx_ring->count; i++) {
-		rc_tx_desc = &tx_ring->rc_bd_desc[i];
-		bd_status = rc_tx_desc->bd_status;
-		count = 0;
-		while (bd_status != RING_BD_READY) {
-			rte_delay_us(1000);
-			bd_status = rc_tx_desc->bd_status;
-			rte_rmb();
-			count++;
-			if (count > 10000) {
-				LSXINIC_PMD_ERR("PORT%d:TXQ%d:BD%d not ready!",
-					tx_ring->port, tx_ring->queue_index,
-					i);
-				return -1;
-			}
-		}
-	}
-
-	return 0;
-}
-
 static void
 lxsnic_dev_rx_tx_bind(struct rte_eth_dev *dev)
 {
@@ -277,6 +251,40 @@ lxsnic_dev_rx_tx_bind(struct rte_eth_dev *dev)
 		rxq->pair = txq;
 		txq->pair = rxq;
 	}
+}
+
+static int
+lxsnic_dev_queues_ready(struct rte_eth_dev *dev,
+	struct lsinic_bdr_reg *bdr_reg, enum lsinic_queue_type type)
+{
+	uint32_t i, nb, count, reg_val;
+	struct lsinic_ring_reg *ring_reg;
+
+	if (type == LSINIC_QUEUE_RX) {
+		nb = dev->data->nb_rx_queues;
+		ring_reg = bdr_reg->rx_ring;
+	} else {
+		nb = dev->data->nb_tx_queues;
+		ring_reg = bdr_reg->tx_ring;
+	}
+
+	for (i = 0; i < nb; i++) {
+		count = 0;
+read_again:
+		reg_val = LSINIC_READ_REG(&ring_reg[i].sr);
+		count++;
+		if (reg_val != LSINIC_QUEUE_RUNNING) {
+			if (count > 1000) {
+				LSXINIC_PMD_ERR("%s%d not ready!",
+					type == LSINIC_QUEUE_RX ? "RXQ" : "TXQ", i);
+				return -EIO;
+			}
+			rte_delay_us(1000);
+			goto read_again;
+		}
+	}
+
+	return 0;
 }
 
 static int
@@ -328,8 +336,8 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 	if (penv)
 		tx_cnf = atoi(penv);
 
-	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
-		tx_queue = adapter->eth_dev->data->tx_queues[i];
+	for (i = 0; i < dev->data->nb_tx_queues; i++) {
+		tx_queue = dev->data->tx_queues[i];
 		tx_queue->ep_mem_bd_type = EP_MEM_BD_128;
 		tx_queue->rc_mem_bd_type = tx_cnf;
 
@@ -347,8 +355,7 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 			tx_queue->ep_tx_sg = tx_queue->ep_bd_mapped_addr;
 		} else {
 			rte_panic("TXQ%d invalid ep mem type(%d)",
-				tx_queue->queue_index,
-				tx_queue->ep_mem_bd_type);
+				tx_queue->queue_index, tx_queue->ep_mem_bd_type);
 		}
 
 		if (tx_queue->rc_mem_bd_type == RC_MEM_BD_128) {
@@ -407,14 +414,12 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 
 	lxsnic_up_complete(adapter);
 
-	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
-		tx_queue = adapter->eth_dev->data->tx_queues[i];
-		if (tx_queue->rc_mem_bd_type == RC_MEM_BD_128) {
-			ret = lxsnic_wait_tx_lbd_ready(tx_queue);
-			if (ret)
-				return ret;
-		}
-	}
+	ret = lxsnic_dev_queues_ready(dev, bdr_reg, LSINIC_QUEUE_RX);
+	if (ret)
+		return ret;
+	ret = lxsnic_dev_queues_ready(dev, bdr_reg, LSINIC_QUEUE_TX);
+	if (ret)
+		return ret;
 
 	if (print_status) {
 		ret = pthread_create(&debug_pid, NULL,
