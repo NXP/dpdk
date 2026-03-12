@@ -265,24 +265,11 @@ lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 }
 
 static __rte_always_inline void
-lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
-	uint16_t used_idx, int remote)
-{
-	struct lsinic_bd_desc_128 *ep_bd_desc = &queue->local_bd_128[used_idx];
-	struct lsinic_rc_rx_len *tx_len = &queue->tx_len[used_idx];
-	struct lsinic_rc_rx_len *local_len = &queue->local_src_len[used_idx];
-
-	local_len->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
-
-	if (remote)
-		tx_len->total_len = local_len->total_len;
-}
-
-static __rte_always_inline void
 lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
 	uint16_t used_idx, const struct lsinic_bd_desc_128 *bd)
 {
-	rte_memcpy(&queue->local_bd_128[used_idx], bd, sizeof(struct lsinic_bd_desc_128));
+	if (bd)
+		rte_memcpy(&queue->local_bd_128[used_idx], bd, sizeof(struct lsinic_bd_desc_128));
 	queue->local_bd_128[used_idx].bd_status = RING_BD_HW_COMPLETE;
 }
 
