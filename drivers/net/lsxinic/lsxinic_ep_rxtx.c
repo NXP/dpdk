@@ -236,6 +236,7 @@ lsinic_qdma_rx_seg_enqueue(struct lsinic_queue *queue)
 	struct lsinic_dma_seg_job *job;
 	uint32_t len_total = 0;
 	uint64_t flags;
+	uint64_t bmt = queue->bypass_iommu ? RTE_DPAAX_QDMA_BMT_FLAG : 0;
 
 	/* Qdma multi-enqueue support, max enqueue 32 entries once.
 	 * if there are 32 entries or time out, handle them in batch
@@ -262,7 +263,7 @@ lsinic_qdma_rx_seg_enqueue(struct lsinic_queue *queue)
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
-			job->seg_nb, job->seg_nb, flags);
+			job->seg_nb, job->seg_nb, flags | bmt);
 		if (likely(ret >= 0)) {
 			queue->pkts_eq += job->seg_nb;
 		} else {
@@ -290,6 +291,7 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 	uint32_t txq_dma_bd_start = queue->wdma_bd_start;
 	uint32_t total_len = 0;
 	uint64_t flags;
+	uint64_t bmt = queue->bypass_iommu ? RTE_DPAAX_QDMA_BMT_FLAG : 0;
 
 	jobs_avail_idx = queue->jobs_avail_idx;
 
@@ -329,7 +331,7 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 	flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 	ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
-			src, dst, sg_nb, sg_nb, flags);
+			src, dst, sg_nb, sg_nb, flags | bmt);
 	if (likely(ret >= 0)) {
 		queue->jobs_pending--;
 		queue->jobs_avail_idx++;
@@ -355,6 +357,7 @@ lsinic_rxq_dma_eq(void *q, int append)
 	struct lsinic_dma_job *job;
 	uint32_t len_total = 0;
 	uint64_t flags;
+	uint64_t bmt = queue->bypass_iommu ? RTE_DPAAX_QDMA_BMT_FLAG : 0;
 
 	/* Qdma multi-enqueue support, max enqueue 32 entries once.
 	 * if there are 32 entries or time out, handle them in batch
@@ -392,13 +395,13 @@ eq_again:
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
-			nb_jobs, nb_jobs, flags);
+			nb_jobs, nb_jobs, flags | bmt);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
 			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(queue->dma_idx[i], 0);
 			ret = rte_dma_copy(queue->dma_id,
 				queue->dma_vq, src[i].addr,
-				dst[i].addr, src[i].length, flags);
+				dst[i].addr, src[i].length, flags | bmt);
 			if (unlikely(ret < 0))
 				break;
 		}
@@ -447,6 +450,7 @@ lsinic_txq_dma_eq(void *q, int append)
 	uint16_t txq_bd_step = queue->wdma_bd_len;
 	struct lsinic_bd_desc_128 *ep_bd_desc = NULL;
 	uint64_t flags;
+	uint64_t bmt = queue->bypass_iommu ? RTE_DPAAX_QDMA_BMT_FLAG : 0;
 
 	if (queue->dma_bd_update & DMA_BD_EP2RC_UPDATE) {
 		/* At most 2 TX DMA bd jobs.*/
@@ -526,13 +530,12 @@ eq_again:
 		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
-			src, dst,
-			nb_jobs, nb_jobs, flags);
+			src, dst, nb_jobs, nb_jobs, flags | bmt);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
 			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(queue->dma_idx[i], 0);
 			ret = rte_dma_copy(queue->dma_id, queue->dma_vq,
-				src[i].addr, dst[i].addr, src[i].length, flags);
+				src[i].addr, dst[i].addr, src[i].length, flags | bmt);
 			if (unlikely(ret < 0))
 				break;
 		}
