@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2025 NXP
+ * Copyright 2017-2026 NXP
  */
 /* System headers */
 #include <stdio.h>
@@ -792,10 +792,8 @@ rte_dpaa_bus_probe(void)
 	}
 
 	/* Disabling the default push mode for LS1043A */
-	if (s_rte_dpaa_bus.svr_ver == SVR_LS1043A_FAMILY) {
+	if (s_rte_dpaa_bus.svr_ver == SVR_LS1043A_FAMILY)
 		s_rte_dpaa_bus.max_push_rxq_num = 0;
-		return 0;
-	}
 
 	penv = getenv("DPAA_PUSH_QUEUES_NUMBER");
 	if (penv)
