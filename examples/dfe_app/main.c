@@ -30,7 +30,7 @@
 
 #define APP_VERSION       "1.0.1"
 
-int cpu_id = 0;
+int cpu_id;
 int cpu_mask = 0x3;
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
@@ -40,19 +40,19 @@ struct dfe_state state;
 #define MAX_CMD_LEN 100
 char cmd_line_to_run[MAX_CMD_LEN];
 int interactive = 1;
-int wait_response = 0;
+int wait_response;
 
-uint32_t tti_irq_count = 0;
-uint32_t tti_msg_count = 0;
-uint16_t sfn_no = 0;
-uint16_t slot_no = 0;
+uint32_t tti_irq_count;
+uint32_t tti_msg_count;
+uint16_t sfn_no;
+uint16_t slot_no;
 
 struct sched_param param_new = { .sched_priority = APP_SCHED_PRIORITY };
 
 /* error to string helper */
 static const char *modem_error_to_text(uint32_t status_code)
 {
-	switch(status_code) {
+	switch (status_code) {
 	case DFE_NO_ERROR:
 		return "OK";
 	case DFE_INVALID_COMMAND:
@@ -512,7 +512,7 @@ void cmd_do_config_sfn_slot(/*enum cmd_tdd_sfn_slot_action*/ uint32_t cmd_action
 	if (!msg)
 		return;
 
-	msg->type = (cmd_action == CLI_TDD_CONFIG_SFN_SLOT_DELTA) ? DFE_TDD_SFN_SLOT_DELTA : DFE_TDD_SFN_SLOT_SET ;
+	msg->type = (cmd_action == CLI_TDD_CONFIG_SFN_SLOT_DELTA) ? DFE_TDD_SFN_SLOT_DELTA : DFE_TDD_SFN_SLOT_SET;
 	msg->payload[0] = sfn;
 	msg->payload[1] = slot;
 
@@ -587,6 +587,40 @@ void cmd_do_qec_config(uint32_t tx_rx, uint32_t mode, uint32_t index, uint32_t v
 	msg->payload[1] = mode;
 	msg->payload[2] = index;
 	msg->payload[3] = value;
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+
+}
+
+/* config qec parameters */
+void cmd_do_lime_set_chan(uint32_t tx_rx, uint32_t chan, uint64_t value)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send Lime set channel command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	if (value > 0xffffffff) {
+	    app_print_err("Failed freq>0xffffffff\n");
+	return;
+	}
+
+	if (tx_rx == QEC_TX_CORR) {
+	    msg->type = DFE_LMS7002M_TX_CH_SET;
+	} else {
+	    msg->type = DFE_LMS7002M_RX_CH_SET;
+	}
+	msg->payload[0] = chan;
+	msg->payload[1] = (uint32_t)value;
 
 	/* user wants his answer */
 	wait_response = 1;
@@ -692,7 +726,7 @@ int main(int argc, char **argv)
 	rte_log_set_global_level(rte_log_level);
 
 	/* assign to core and modify pre-defined EAL params */
-	eal_argv[3] = (char *) calloc (MAX_EAL_ARGV, sizeof(char));
+	eal_argv[3] = (char *) calloc(MAX_EAL_ARGV, sizeof(char));
 	sprintf(eal_argv[3], "%#x", cpu_mask);
 	assign_to_core(cpu_id);
 
@@ -701,7 +735,7 @@ int main(int argc, char **argv)
 
 	/* chrt */
 	tid = rte_sys_get_tid();
-	sprintf(syscmd, "chrt -p %d %d", APP_SCHED_PRIORITY,tid);
+	sprintf(syscmd, "chrt -p %d %d", APP_SCHED_PRIORITY, tid);
 	if (system(syscmd) < 0)
 		printf("error setting chrt prio\n");
 

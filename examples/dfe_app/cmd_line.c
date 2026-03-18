@@ -463,6 +463,7 @@ cmd_config_rx_sym_num_parsed(void *parsed_result,
 			     __attribute__((unused)) void *data)
 {
 	struct cmd_config_rx_sym_num_result *res = parsed_result;
+
 	cmd_do_tx_rx_sym_nr_config(DFE_CFG_RX_SYM_NUM, res->rx_sym_num);
 }
 
@@ -483,6 +484,7 @@ cmd_config_tx_sym_num_parsed(void *parsed_result,
 			     __attribute__((unused)) void *data)
 {
 	struct cmd_config_tx_sym_num_result *res = parsed_result;
+
 	cmd_do_tx_rx_sym_nr_config(DFE_CFG_TX_SYM_NUM, res->tx_sym_num);
 }
 
@@ -491,7 +493,7 @@ cmd_axiq_lb_enable_parsed(__attribute__((unused)) void *parsed_result,
 			  __attribute__((unused)) struct cmdline *cl,
 			  __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_CFG_AXIQ_LB_ENABLE,"AXIQ LB enable [CH2(rx)-CH5(tx)]");
+	cmd_do_simple(DFE_CFG_AXIQ_LB_ENABLE, "AXIQ LB enable [CH2(rx)-CH5(tx)]");
 }
 
 void
@@ -510,7 +512,7 @@ cmd_axiq_lb_disable_parsed(__attribute__((unused)) void *parsed_result,
 			   __attribute__((unused)) struct cmdline *cl,
 			   __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_CFG_AXIQ_LB_DISABLE,"AXIQ LB disable [CH2(rx)-CH5(tx)]");
+	cmd_do_simple(DFE_CFG_AXIQ_LB_DISABLE, "AXIQ LB disable [CH2(rx)-CH5(tx)]");
 }
 
 void
@@ -519,7 +521,8 @@ cmd_debug_parsed(__attribute__((unused)) void *parsed_result,
 		      __attribute__((unused)) void *data)
 {
 	struct cmd_debug_result *res = parsed_result;
-	cmd_do_debug(res->cmd,"DFE debug command");
+
+	cmd_do_debug(res->cmd, "DFE debug command");
 }
 
 void
@@ -527,7 +530,7 @@ cmd_vspa_debug_parsed(__attribute__((unused)) void *parsed_result,
 		      __attribute__((unused)) struct cmdline *cl,
 		      __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_DEBUG_CMD,"VSPA debug break-point");
+	cmd_do_simple(DFE_DEBUG_CMD, "VSPA debug break-point");
 }
 
 void
@@ -664,7 +667,7 @@ void cmd_config_qec_iqtaps_parsed(void *parsed_result,
 
 	for (int i = 0; i <= MBOX_IQ_CORR_FTAP11; i++) {
 		iqtap_tmp_val = strtof(res->t[i], NULL);
-		app_print_info("iqtap_tmp_val[%d] = %f (%#x)\n", i, iqtap_tmp_val, *(uint32_t*)&iqtap_tmp_val);
+		app_print_info("iqtap_tmp_val[%d] = %f (%#x)\n", i, iqtap_tmp_val, *(uint32_t *)&iqtap_tmp_val);
 
 		/* prevent flooding VSPA & M4 with messages */
 		cmd_do_wait_response();
@@ -673,3 +676,30 @@ void cmd_config_qec_iqtaps_parsed(void *parsed_result,
 	}
 #pragma GCC diagnostic pop
 }
+
+
+void cmd_lime_set_chan_parsed(void *parsed_result,
+				  __attribute__((unused)) struct cmdline *cl,
+				  __attribute__((unused)) void *data)
+{
+	struct cmd_lime_result *res = parsed_result;
+
+	uint32_t txrx;
+
+	app_print_info("cmd_lime_set_chan_parsed: res->txrx = %s\n", res->txrx);
+	app_print_info("cmd_lime_set_chan_parsed: res->chan = %d\n", res->chan);
+	app_print_info("cmd_lime_set_chan_parsed: res->freq = %s\n", res->freq);
+	app_print_info("cmd_lime_set_chan_parsed: res->freqHz = %d\n", res->freqHz);
+	if (!strncmp(res->txrx, "tx", strlen("tx"))) {
+		txrx = QEC_TX_CORR;
+	} else if (!strncmp(res->txrx, "rx", strlen("rx"))) {
+		txrx = QEC_RX_CORR;
+	} else {
+		printf("wrong argument\r");
+		return;
+	}
+
+	/* send qec fractional delay for tx or rx with given values */
+	cmd_do_lime_set_chan(txrx, res->chan, res->freqHz);
+}
+
