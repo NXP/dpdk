@@ -653,7 +653,7 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	lsinic_set_init_flag(adapter, adapter->single_bar);
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 #ifdef LSXINIC_LATENCY_PROFILING
-	adapter->cycs_per_us = calculate_cycles_per_us();
+	adapter->cycs_per_us = lsinic_common_cycles_per_us();
 #endif
 
 	return 0;
@@ -667,7 +667,6 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 {
 	int err;
 	pthread_t thread;
-	static uint32_t thread_init_flag;
 	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 
 	adapter->rc_ring_phy_base = 0;
@@ -686,13 +685,9 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 
 	lsinic_dev_rx_tx_bind(eth_dev);
 
-	if (!thread_init_flag) {
-		if (pthread_create(&thread, NULL, lsinic_poll_dev_cmd, NULL)) {
-			LSXINIC_PMD_ERR("Failed to create poll thread");
-			return -EIO;
-		}
-
-		thread_init_flag = 1;
+	if (pthread_create(&thread, NULL, lsinic_poll_dev_cmd, eth_dev)) {
+		LSXINIC_PMD_ERR("Failed to create poll thread");
+		return -EIO;
 	}
 
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_START);
@@ -713,6 +708,11 @@ lsinic_dev_stop(struct rte_eth_dev *dev)
 	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
 	if (ret)
 		return ret;
+	if (adapter->poll_stat == LSINIC_POLL_START) {
+		adapter->poll_stat = LSINIC_POLL_STOP;
+		while (adapter->poll_stat != LSINIC_POLL_INIT)
+			rte_delay_ms(10);
+	}
 
 	/* disable all enabled rx & tx queues */
 	rx_stop = lsinic_dev_rx_stop(dev, 0);
@@ -983,27 +983,6 @@ end_probe:
 	rte_eth_dev_probing_finish(eth_dev);
 	return 0;
 }
-
-#ifdef LSXINIC_LATENCY_PROFILING
-static uint64_t s_cycs_per_us;
-static uint64_t
-calculate_cycles_per_us(void)
-{
-	uint64_t start_cycles, end_cycles;
-
-	if (s_cycs_per_us)
-		return s_cycs_per_us;
-
-	start_cycles = rte_get_timer_cycles();
-	rte_delay_ms(1000);
-	end_cycles = rte_get_timer_cycles();
-	s_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
-	LSXINIC_PMD_INFO("Cycles per us is: %ld",
-		(unsigned long)s_cycs_per_us);
-
-	return s_cycs_per_us;
-}
-#endif
 
 #ifdef RTE_ARCH_ARM64
 #define dccivac(p) \

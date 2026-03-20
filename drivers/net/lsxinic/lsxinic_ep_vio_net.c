@@ -674,45 +674,7 @@ lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev)
 	return 0;
 }
 
-#define DEBUG_PRINT_INTERVAL 4
 #define	LSX_CMD_POLLING_INTERVAL 2
-
-static void lsxvio_print_ep_status(void)
-{
-	static int debug_interval;
-	struct rte_lsx_pciep_device *dev;
-	struct rte_eth_dev *eth_dev;
-	struct lsxvio_adapter *adapter;
-	uint64_t core_mask = 0;
-
-	if (debug_interval < DEBUG_PRINT_INTERVAL) {
-		debug_interval++;
-		return;
-	}
-
-	debug_interval = 0;
-	dev = rte_lsx_pciep_first_dev();
-
-	while (dev) {
-		eth_dev = dev->eth_dev;
-		adapter = LSINIC_DEV_PRIVATE(eth_dev);
-
-		if (!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK))
-			continue;
-
-		printf("\n\nPF%d", dev->pf);
-		if (dev->vf >= 0)
-			printf("-VF%d", dev->vf);
-		printf("-Port%d -- statistics:\n", eth_dev->data->port_id);
-
-		print_port_status(eth_dev, &core_mask,
-			(DEBUG_PRINT_INTERVAL + 1) * LSX_CMD_POLLING_INTERVAL,
-			LSINIC_EPVIO_PORT);
-
-		printf("\r\n\r\n");
-		dev = TAILQ_NEXT(dev, next);
-	}
-}
 
 static inline void
 lsxvio_dev_print_link_status(int pcie_idx,
@@ -730,90 +692,83 @@ lsxvio_dev_print_link_status(int pcie_idx,
 	}
 }
 
-static void *lsxvio_poll_dev(void *arg __rte_unused)
+static void *lsxvio_poll_dev(void *arg)
 {
-	struct rte_lsx_pciep_device *dev;
-	struct lsxvio_adapter *adapter;
+	struct rte_eth_dev *eth_dev = arg;
+	struct rte_lsx_pciep_device *dev = eth_dev->process_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	struct lsxvio_common_cfg *common;
 	uint8_t status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
 
+	adapter->cycs = rte_get_timer_cycles();
+
 	if (penv)
 		print_status = atoi(penv);
 
 	while (1) {
-		dev = rte_lsx_pciep_first_dev();
-		while (dev) {
-			adapter = LSINIC_DEV_PRIVATE(dev->eth_dev);
-			if (adapter->dev_type != LSINIC_VIRTIO_DEV) {
-				dev = TAILQ_NEXT(dev, next);
+		if (adapter->poll_stat != LSINIC_POLL_START) {
+			adapter->poll_stat = LSINIC_POLL_INIT;
+			return arg;
+		}
+		common = BASE_TO_COMMON(adapter->cfg_base);
+		status = common->device_status;
+
+		if (status == adapter->status)
+			goto next_loop;
+
+		if (status == VIRTIO_CONFIG_STATUS_SEND_RESET) {
+			lsxvio_dev_reset(eth_dev);
+			if (!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK))
 				continue;
-			}
-			common = BASE_TO_COMMON(adapter->cfg_base);
-			status = common->device_status;
-
-			if (status == adapter->status) {
-				dev = TAILQ_NEXT(dev, next);
-				continue;
-			}
-
-			if (status == VIRTIO_CONFIG_STATUS_SEND_RESET) {
-				lsxvio_dev_reset(dev->eth_dev);
-				dev = TAILQ_NEXT(dev, next);
-				if (!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK))
-					continue;
-				lsxvio_dev_print_link_status(adapter->pcie_idx,
-					adapter->pf_idx, adapter->vf_idx,
-					adapter->is_vf, "down");
-				continue;
-			}
-
-			if ((adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
-				(status & VIRTIO_CONFIG_STATUS_NEEDS_RESET)) {
-				/* Wait for the driver to reset the device*/
-				rte_lsx_pciep_start_msix(adapter->msix_cfg_addr,
-					adapter->msix_cfg_cmd);
-			}
-
-			if (status & VIRTIO_CONFIG_STATUS_FEATURES_OK) {
-				/* ??? */
-				if (!lsxvio_virtio_check_driver_feature(common))
-					common->device_status &= ~VIRTIO_CONFIG_STATUS_FEATURES_OK;
-			}
-			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
-				!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
-				lsxvio_dev_print_link_status(adapter->pcie_idx,
-					adapter->pf_idx, adapter->vf_idx,
-					adapter->is_vf, "ok");
-			}
-			if ((status & VIRTIO_CONFIG_STATUS_START) &&
-				!(adapter->status & VIRTIO_CONFIG_STATUS_START)) {
-				ret = lsxvio_virtio_config_fromrc(dev);
-				if (ret) {
-					LSXINIC_PMD_ERR("%s link failed",
-						dev->name);
-					dev = TAILQ_NEXT(dev, next);
-					continue;
-				}
-
-				lsxvio_dev_print_link_status(adapter->pcie_idx,
-					adapter->pf_idx, adapter->vf_idx,
-					adapter->is_vf, "up");
-			}
-
-			adapter->status = status;
-
-			dev = TAILQ_NEXT(dev, next);
+			lsxvio_dev_print_link_status(adapter->pcie_idx,
+				adapter->pf_idx, adapter->vf_idx,
+				adapter->is_vf, "down");
+			continue;
 		}
 
+		if ((adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
+			(status & VIRTIO_CONFIG_STATUS_NEEDS_RESET)) {
+			/* Wait for the driver to reset the device*/
+			rte_lsx_pciep_start_msix(adapter->msix_cfg_addr,
+				adapter->msix_cfg_cmd);
+		}
+
+		if (status & VIRTIO_CONFIG_STATUS_FEATURES_OK) {
+			/* ??? */
+			if (!lsxvio_virtio_check_driver_feature(common))
+				common->device_status &= ~VIRTIO_CONFIG_STATUS_FEATURES_OK;
+		}
+		if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
+			!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
+			lsxvio_dev_print_link_status(adapter->pcie_idx,
+				adapter->pf_idx, adapter->vf_idx,
+				adapter->is_vf, "ok");
+		}
+		if ((status & VIRTIO_CONFIG_STATUS_START) &&
+			!(adapter->status & VIRTIO_CONFIG_STATUS_START)) {
+			ret = lsxvio_virtio_config_fromrc(dev);
+			if (ret) {
+				LSXINIC_PMD_ERR("%s link failed", eth_dev->data->name);
+				continue;
+			}
+
+			lsxvio_dev_print_link_status(adapter->pcie_idx,
+				adapter->pf_idx, adapter->vf_idx,
+				adapter->is_vf, "up");
+		}
+
+		adapter->status = status;
+
+next_loop:
 		if (print_status)
-			lsxvio_print_ep_status();
+			print_port_status_cycle(eth_dev, &adapter->cycs, LSINIC_EPVIO_PORT);
 
 		sleep(LSX_CMD_POLLING_INTERVAL);
 	}
 
-	return NULL;
+	return arg;
 }
 
 static int
@@ -862,7 +817,6 @@ lsxvio_dev_start(struct rte_eth_dev *eth_dev)
 {
 	int err;
 	pthread_t thread;
-	static uint32_t thread_init_flag;
 	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 
 	adapter->status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
@@ -880,13 +834,11 @@ lsxvio_dev_start(struct rte_eth_dev *eth_dev)
 
 	lsxvio_dev_rx_tx_bind(eth_dev);
 
-	if (!thread_init_flag) {
-		if (pthread_create(&thread, NULL, lsxvio_poll_dev, NULL)) {
-			LSXINIC_PMD_ERR("Could not create pol pthread");
-			return -1;
-		}
+	adapter->poll_stat = LSINIC_POLL_START;
 
-		thread_init_flag = 1;
+	if (pthread_create(&thread, NULL, lsxvio_poll_dev, eth_dev)) {
+		LSXINIC_PMD_ERR("Could not create pol pthread");
+		return -1;
 	}
 
 	return 0;

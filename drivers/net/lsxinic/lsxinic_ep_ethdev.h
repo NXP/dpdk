@@ -35,6 +35,7 @@ struct lsinic_adapter {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 	int single_bar;
+	enum lsinic_ep_poll_stat poll_stat;
 
 	uint8_t rbp_enable;
 	int txq_dma_id;
@@ -85,6 +86,7 @@ struct lsinic_adapter {
 	uint64_t rc_dma_phy;
 
 	uint64_t cycs_per_us;
+	uint64_t cycs;
 };
 
 #define LSINIC_DEV_PCIE_DEV(dev) \

@@ -22,8 +22,6 @@
 
 #include "lsxinic_ep_vio_rxtx.h"
 
-#define perf_log printf
-
 static inline struct rte_ipv4_hdr *
 ip_hdr(const struct rte_mbuf *mbuf)
 {
@@ -265,7 +263,7 @@ print_ep_virtio_queue_status(void *queue,
 		(*core_mask) |= (((uint64_t)1) << q->core_id);
 }
 
-void print_port_status(struct rte_eth_dev *eth_dev,
+static void print_port_status(struct rte_eth_dev *eth_dev,
 	uint64_t *core_mask, uint32_t debug_interval,
 	enum lsinic_port_type port_type)
 {
@@ -321,4 +319,31 @@ void print_port_status(struct rte_eth_dev *eth_dev,
 	perf_log("RX performance: %fGbps, fcs bits: %lld\r\n",
 		ibytes_diff * 8 /
 		(debug_interval * G_SIZE), ibytes_fcs * 8);
+}
+
+#define DEBUG_PRINT_CYCLE_S 4
+
+void print_port_status_cycle(struct rte_eth_dev *eth_dev,
+	uint64_t *prev_cycs, enum lsinic_port_type port_type)
+{
+	uint64_t core_mask = 0, cycs, us;
+	static uint64_t cycs_per_us;
+
+	if (!cycs_per_us)
+		cycs_per_us = lsinic_common_cycles_per_us();
+
+	cycs = rte_get_timer_cycles();
+	us = (cycs - *prev_cycs) / cycs_per_us;
+	if ((us / (1000 * 1000)) < DEBUG_PRINT_CYCLE_S)
+		return;
+
+	*prev_cycs = cycs;
+
+	perf_log("\n\n%s", eth_dev->data->name);
+	perf_log("-Port%d -- statistics:\n", eth_dev->data->port_id);
+
+	print_port_status(eth_dev, &core_mask,
+		(us / (1000 * 1000)), port_type);
+
+	perf_log("\r\n\r\n");
 }

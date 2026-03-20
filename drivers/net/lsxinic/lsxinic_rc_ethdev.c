@@ -274,6 +274,7 @@ static void *lxsnic_rc_debug_status(void *arg)
 {
 	struct rte_eth_dev *eth_dev = arg;
 	int ret;
+	uint64_t cycles;
 	cpu_set_t cpuset;
 
 	CPU_SET(0, &cpuset);
@@ -285,14 +286,11 @@ static void *lxsnic_rc_debug_status(void *arg)
 
 	LSXINIC_PMD_INFO("RC start to print status thread");
 
+	cycles = rte_get_timer_cycles();
 	while (1) {
 		sleep(DEBUG_STATUS_INTERVAL);
 
-		printf("%s-Port%d -- statistics:\r\n",
-			eth_dev->data->name, eth_dev->data->port_id);
-		print_port_status(eth_dev, NULL, DEBUG_STATUS_INTERVAL,
-			LSINIC_RC_PORT);
-		printf("\r\n\r\n");
+		print_port_status_cycle(eth_dev, &cycles, LSINIC_RC_PORT);
 	}
 
 	return NULL;

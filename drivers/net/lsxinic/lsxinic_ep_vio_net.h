@@ -41,6 +41,10 @@ struct lsxvio_adapter {
 	uint8_t status;
 	uint16_t vtnet_hdr_size;
 
+	enum lsinic_ep_poll_stat poll_stat;
+
+	uint64_t cycs;
+
 	int txq_dma_id;
 	int rxq_dma_id;
 	int txq_dma_silent;

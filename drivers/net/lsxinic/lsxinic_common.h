@@ -71,6 +71,13 @@ enum lsinic_port_type {
 	LSINIC_EPVIO_PORT
 };
 
+enum lsinic_ep_poll_stat {
+	LSINIC_POLL_INIT,
+	LSINIC_POLL_START,
+	LSINIC_POLL_STOP
+};
+
+
 #define LSINIC_RING_MAX_COUNT 8
 #define LSINIC_RING_DEFAULT_MAX_QP 4
 

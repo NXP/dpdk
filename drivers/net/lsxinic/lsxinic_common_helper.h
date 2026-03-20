@@ -13,6 +13,21 @@
 #endif
 #include "lsxinic_common_reg.h"
 
+#ifndef LSINIC_KMOD
+#define perf_log printf
+
+static inline uint64_t
+lsinic_common_cycles_per_us(void)
+{
+	uint64_t start_cycles, end_cycles;
+
+	start_cycles = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end_cycles = rte_get_timer_cycles();
+	return (end_cycles - start_cycles) / (1000 * 1000);
+}
+#endif
+
 static inline uint32_t LSINIC_READ_REG(void *reg)
 {
 #ifdef LSINIC_KMOD
@@ -93,8 +108,7 @@ static inline uint64_t lsinic_reg_ring_bar_offset(int is_reg)
 
 #ifndef LSINIC_KMOD
 void lsinic_mbuf_print_all(const struct rte_mbuf *mbuf);
-void print_port_status(struct rte_eth_dev *eth_dev,
-	uint64_t *core_mask, uint32_t debug_interval,
-	enum lsinic_port_type port_type);
+void print_port_status_cycle(struct rte_eth_dev *eth_dev,
+	uint64_t *prev_cycs, enum lsinic_port_type port_type);
 #endif
 #endif /* _LSXINIC_COMMON_HELPER_H_ */

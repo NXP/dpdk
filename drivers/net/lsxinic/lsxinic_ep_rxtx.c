@@ -1335,12 +1335,13 @@ lsinic_queue_init(struct lsinic_queue *q)
 	struct lsinic_ring_reg *ring_reg = q->ep_reg;
 
 	ring_reg->barl = q->nb_desc;
-	LSINIC_WRITE_REG(&q->rc_reg->barl, q->nb_desc);
 
 	q->status = LSINIC_QUEUE_UNAVAILABLE;
 	ring_reg->sr = q->status;
-	if (q->rc_reg)
+	if (q->rc_reg) {
+		LSINIC_WRITE_REG(&q->rc_reg->barl, q->nb_desc);
 		LSINIC_WRITE_REG(&q->rc_reg->sr, q->status);
+	}
 
 	return 0;
 }
@@ -2788,7 +2789,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	/* using RC's rx ring to send EP's packets */
 	txq->ep_reg = &bdr_reg->rx_ring[queue_idx];
 	txq->rc_bd_desc = NULL;
-	txq->rc_reg = txq->ep_reg;
+	txq->rc_reg = NULL;
 	txq->dev = dev;
 	txq->ep_bd_shared_addr = txq_base + q_offset;
 
@@ -2913,7 +2914,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	/* using RC's tx ring to receive EP's packets */
 	rxq->ep_reg = &bdr_reg->tx_ring[queue_idx];
 	rxq->rc_bd_desc = NULL;
-	rxq->rc_reg = rxq->ep_reg;
+	rxq->rc_reg = NULL;
 	rxq->dev = dev;
 	rxq->ep_bd_shared_addr = rxq_base + q_offset;
 
