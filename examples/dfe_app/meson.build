@@ -20,12 +20,24 @@ sources = files(
 cmd = run_command('sh', '-c', 'echo $LA9310_COMMON_HEADERS')
 LA9310_COMMON_HEADERS = cmd.stdout().strip()
 
+cmd = run_command('sh', '-c', 'echo $LA9310_HOST_SW_UAPI')
+LA9310_HOST_SW_UAPI = cmd.stdout().strip()
+
 if LA9310_COMMON_HEADERS != ''
 message('LA9310_COMMON_HEADERS=' + LA9310_COMMON_HEADERS)
 includes += [include_directories(LA9310_COMMON_HEADERS)]
 else
     build = false
     reason = 'missing LA9310_COMMON_HEADERS'
+    subdir_done()
+endif
+
+if LA9310_HOST_SW_UAPI != ''
+message('LA9310_HOST_SW_UAPI=' + LA9310_HOST_SW_UAPI)
+includes += [include_directories(LA9310_HOST_SW_UAPI)]
+else
+    build = false
+    reason = 'missing LA9310_HOST_SW_UAPI'
     subdir_done()
 endif
 

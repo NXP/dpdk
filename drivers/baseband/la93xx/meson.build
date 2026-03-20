@@ -12,4 +12,9 @@ LA9310_COMMON_HEADERS = cmd.stdout().strip()
 message('LA9310_COMMON_HEADERS=' + LA9310_COMMON_HEADERS)
 includes += [include_directories(LA9310_COMMON_HEADERS)]
 
+cmd = run_command('sh', '-c', 'echo $LA9310_HOST_SW_UAPI')
+LA9310_HOST_SW_UAPI = cmd.stdout().strip()
+message('LA9310_HOST_SW_UAPI=' + LA9310_HOST_SW_UAPI)
+includes += [include_directories(LA9310_HOST_SW_UAPI)]
+
 headers = files('rte_pmd_bbdev_la93xx.h')
