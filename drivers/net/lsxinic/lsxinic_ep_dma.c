@@ -22,15 +22,45 @@ static int s_lsinic_dma_idx;
 
 static rte_spinlock_t s_lsinic_dma_sl = RTE_SPINLOCK_INITIALIZER;
 
+struct lsinic_dma_dir_cap_map {
+	enum lsinic_dma_direction dir;
+	uint64_t cap_flag;
+	const char *str;
+};
+
 int
-lsinic_dma_acquire(int silent,
-	uint16_t nb_vchans, uint16_t nb_desc,
-	enum lsinic_dma_direction dir,
+lsinic_dma_acquire(int silent, uint16_t nb_vchans,
+	uint16_t nb_desc, enum lsinic_dma_direction dir,
 	int *dma_id_acquired)
 {
 	struct rte_dma_info dev_info;
 	struct rte_dma_conf dev_conf;
-	int ret, dma_idx;
+	int ret = 0, dma_idx;
+	uint32_t i;
+	const struct lsinic_dma_dir_cap_map dir_cap[] = {
+		{
+			LSINIC_DMA_MEM_TO_PCIE,
+			RTE_DMA_CAPA_MEM_TO_DEV,
+			"mem2dev"
+		},
+		{
+			LSINIC_DMA_PCIE_TO_MEM,
+			RTE_DMA_CAPA_DEV_TO_MEM,
+			"dev2mem"
+		},
+		{
+			LSINIC_DMA_MEM_TO_MEM,
+			RTE_DMA_CAPA_MEM_TO_MEM,
+			"mem2mem"
+		},
+		{
+			LSINIC_DMA_PCIE_TO_PCIE,
+			RTE_DMA_CAPA_DEV_TO_DEV,
+			"dev2dev"
+		}
+	};
+
+	memset(&dev_conf, 0, sizeof(struct rte_dma_conf));
 
 	rte_spinlock_lock(&s_lsinic_dma_sl);
 
@@ -39,15 +69,16 @@ acquire_again:
 	if (dma_idx < 0) {
 		LSXINIC_PMD_ERR("No DMA available from DMA%d",
 			s_lsinic_dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_quit;
 	}
 	s_lsinic_dma_idx = dma_idx + 1;
 
 	ret = rte_dma_info_get(dma_idx, &dev_info);
 	if (ret) {
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return ret;
+		LSXINIC_PMD_ERR("Failed(%d) to get info from DMA%d",
+			ret, s_lsinic_dma_idx);
+		goto err_quit;
 	}
 
 	if (dev_info.nb_vchans) {
@@ -59,71 +90,56 @@ acquire_again:
 	if (nb_vchans > dev_info.max_vchans) {
 		LSXINIC_PMD_ERR("acquire chan(%d) > dma[%d] max chan(%d)",
 			nb_vchans, dma_idx, dev_info.max_vchans);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
+		ret = -ENOTSUP;
+		goto err_quit;
 	}
 
 	if (nb_desc > dev_info.max_desc) {
 		LSXINIC_PMD_ERR("acquire desc(%d) > dma[%d] max desc(%d)",
 			nb_desc, dma_idx, dev_info.max_desc);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
+		ret = -ENOTSUP;
+		goto err_quit;
 	}
 
 	if (silent && !(dev_info.dev_capa & RTE_DMA_CAPA_SILENT)) {
-		LSXINIC_PMD_ERR("dma[%d] not support silent mode",
-			dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
+		LSXINIC_PMD_ERR("dma[%d] not support silent mode", dma_idx);
+		ret = -ENOTSUP;
+		goto err_quit;
 	}
 
-	if (dir == LSINIC_DMA_MEM_TO_PCIE &&
-		!(dev_info.dev_capa & RTE_DMA_CAPA_MEM_TO_DEV)) {
-		LSXINIC_PMD_ERR("dma[%d] not support mem2dev",
-			dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
+	for (i = 0; i < RTE_DIM(dir_cap); i++) {
+		if (dir != dir_cap[i].dir)
+			continue;
+		if (!(dev_info.dev_capa & dir_cap[i].cap_flag)) {
+			LSXINIC_PMD_ERR("dma[%d] not support %s",
+				dma_idx, dir_cap[i].str);
+			ret = -ENOTSUP;
+			goto err_quit;
+		}
+		break;
 	}
-
-	if (dir == LSINIC_DMA_PCIE_TO_MEM &&
-		!(dev_info.dev_capa & RTE_DMA_CAPA_DEV_TO_MEM)) {
-		LSXINIC_PMD_ERR("dma[%d] not support dev2mem",
-			dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
-	}
-
-	if (dir == LSINIC_DMA_MEM_TO_MEM &&
-		!(dev_info.dev_capa & RTE_DMA_CAPA_MEM_TO_MEM)) {
-		LSXINIC_PMD_ERR("dma[%d] not support mem2mem",
-			dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
-	}
-
-	if (dir == LSINIC_DMA_PCIE_TO_PCIE &&
-		!(dev_info.dev_capa & RTE_DMA_CAPA_DEV_TO_DEV)) {
-		LSXINIC_PMD_ERR("dma[%d] not support dev2dev",
-			dma_idx);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return -ENOTSUP;
+	if (i == RTE_DIM(dir_cap)) {
+		LSXINIC_PMD_ERR("Invalid DMA direction(%d)", dir);
+		ret = -EINVAL;
+		goto err_quit;
 	}
 
 	dev_conf.nb_vchans = nb_vchans;
+	if (silent)
+		dev_conf.flags |= RTE_DMA_CFG_FLAG_SILENT;
 	ret = rte_dma_configure(dma_idx, &dev_conf);
 	if (ret) {
-		LSXINIC_PMD_ERR("dma[%d] configure failed(%d)",
-			dma_idx, ret);
-		rte_spinlock_unlock(&s_lsinic_dma_sl);
-		return ret;
+		LSXINIC_PMD_ERR("dma[%d] configure failed(%d)", dma_idx, ret);
+		goto err_quit;
 	}
 
 	if (dma_id_acquired)
 		*dma_id_acquired = dma_idx;
 
+err_quit:
 	rte_spinlock_unlock(&s_lsinic_dma_sl);
 
-	return 0;
+	return ret;
 }
 
 int
