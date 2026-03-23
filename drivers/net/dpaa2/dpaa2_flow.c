@@ -3215,7 +3215,7 @@ dpaa2_flow_ecpri_extract_rule_set(struct dpaa2_generic_flow *flow,
 	memset(&fafe, 0, sizeof(union dpaa2_sp_fafe_parse));
 	extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
 		rule_data, mask_data, extract_size, extract_off,
-		&fafe);
+		&fafe, DPAA2_ECPRI_MAX_EXTRACT_NB);
 	if (extract_nb < 0) {
 		DPAA2_PMD_ERR("Extract eCPRI from spec/mask failed(%d)",
 			extract_nb);
