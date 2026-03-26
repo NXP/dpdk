@@ -59,16 +59,6 @@
 #define STMMAC_GET_ENTRY(x, size)	((x + 1) & (size - 1))
 #define MAP_PAGE_SIZE			4096
 
-#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
-#define dcbf(p) { asm volatile("dc cvac, %0" : : "r"(p) : "memory"); }
-#define dcbf_64(p) dcbf(p)
-#define dccivac(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
-#else
-#define dcbf(p) RTE_SET_USED(p)
-#define dcbf_64(p) RTE_SET_USED(p)
-#define dccivac(p) RTE_SET_USED(p)
-#endif
-
 /* RX Buffer size must be multiple of 4/8/16 bytes */
 #define BUF_SIZE_16KiB 16368
 #define BUF_SIZE_8KiB 8188
