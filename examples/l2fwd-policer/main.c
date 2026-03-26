@@ -2173,7 +2173,7 @@ l2fwd_policer_qos_miss_update(uint16_t portid, uint32_t update)
 	struct rte_flow_action flow_action[MAX_ACTION_NUM];
 	struct rte_flow_action_queue action_queue;
 	struct rte_flow_action_jump action_jump;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 
 	port_param = &s_port_param[portid];
 
@@ -2186,14 +2186,14 @@ l2fwd_policer_qos_miss_update(uint16_t portid, uint32_t update)
 			goto jump_action_config;
 		}
 
-		ret = rte_eth_rx_queue_info_get(portid,
+		ret = rte_pmd_dpaa2_rx_queue_info_get(portid,
 			port_param->default_queue, &qinfo);
 		if (ret) {
 			rte_exit(EXIT_FAILURE,
 				"Get port%d-rxq%d info failed(%d).\n",
 				portid, port_param->default_queue, ret);
 		}
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc, NULL);
+		tc = qinfo.tc_id;
 		if (tc >= port_param->max_tcs) {
 			RTE_LOG(ERR, L2FWD_POLICER,
 				"Invalid TC(%d) of default queue(%d)\n",
@@ -2299,18 +2299,18 @@ l2fwd_policer_tc_flow_config(uint16_t port_id,
 	uint16_t flow_id, queue_id, item_idx = 0;
 	struct l2fwd_policer_port_params *port_param;
 	struct l2fwd_policer_tc_desc *tc_desc;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 
 	port_param = &s_port_param[port_id];
 	tc_desc = &port_param->tc_descs[tc];
 	queue_id = tc_desc->tc_queue_ids[qid];
-	ret = rte_eth_rx_queue_info_get(port_id, queue_id, &qinfo);
+	ret = rte_pmd_dpaa2_rx_queue_info_get(port_id, queue_id, &qinfo);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"Get port%d-rxq%d info failed(%d).\n",
 			port_id, queue_id, ret);
 	}
-	rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, NULL, &flow_id);
+	flow_id = qinfo.flow_id;
 
 	memset(&flow_attr, 0, sizeof(flow_attr));
 	flow_attr.ingress = 1;
@@ -2385,15 +2385,16 @@ l2fwd_policer_qos_flow_no_fs_config(uint16_t port_id,
 	void *_flow;
 	uint8_t tc;
 	uint16_t flow_id;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 
-	ret = rte_eth_rx_queue_info_get(port_id, qid, &qinfo);
+	ret = rte_pmd_dpaa2_rx_queue_info_get(port_id, qid, &qinfo);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"Get port%d-rxq%d info failed(%d).\n",
 			port_id, qid, ret);
 	}
-	rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc, &flow_id);
+	tc = qinfo.tc_id;
+	flow_id = qinfo.flow_id;
 
 	memset(&flow_attr, 0, sizeof(flow_attr));
 	flow_attr.ingress = 1;
@@ -3700,18 +3701,17 @@ l2fwd_policer_lcore_port_queue_add(uint16_t lcore,
 	uint16_t portid, uint16_t queue_id)
 {
 	struct lcore_queue_conf *queue_conf;
-	struct rte_eth_rxq_info qinfo;
-	uint16_t flow_id;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	uint8_t tc_id;
 	int ret;
 
-	ret = rte_eth_rx_queue_info_get(portid, queue_id, &qinfo);
+	ret = rte_pmd_dpaa2_rx_queue_info_get(portid, queue_id, &qinfo);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"Get port%d-rxq%d info failed(%d).\n",
 			portid, queue_id, ret);
 	}
-	rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc_id, &flow_id);
+	tc_id = qinfo.tc_id;
 
 	queue_conf = &s_lcore_queue_conf[lcore];
 	if (queue_conf->n_rx_port >= MAX_RX_QUEUE_PER_LCORE) {
@@ -3750,8 +3750,8 @@ l2fwd_policer_lcore_port_queue_config(uint16_t lcore,
 	uint16_t portid)
 {
 	struct lcore_queue_conf *queue_conf;
-	struct rte_eth_rxq_info qinfo;
-	uint16_t i, queue_id, flow_id;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
+	uint16_t i, queue_id;
 	uint8_t tc_id;
 	int ret;
 
@@ -3761,14 +3761,13 @@ l2fwd_policer_lcore_port_queue_config(uint16_t lcore,
 			continue;
 		queue_id = queue_conf->rx_port_list[i].queue_id;
 
-		ret = rte_eth_rx_queue_info_get(portid, queue_id, &qinfo);
+		ret = rte_pmd_dpaa2_rx_queue_info_get(portid, queue_id, &qinfo);
 		if (ret) {
 			rte_exit(EXIT_FAILURE,
 				"Get port%d-rxq%d info failed(%d).\n",
 				portid, queue_id, ret);
 		}
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo,
-			&tc_id, &flow_id);
+		tc_id = qinfo.tc_id;
 		if (!queue_conf->sch_handle) {
 			queue_conf->sch_handle = rte_dpaa2_scheduler_init(s_sch_mode);
 			if (!queue_conf->sch_handle) {
@@ -4060,8 +4059,8 @@ main(int argc, char **argv)
 		struct rte_eth_rxconf rxq_conf;
 		struct rte_eth_txconf txq_conf;
 		struct rte_eth_conf local_port_conf = port_conf;
+		struct rte_pmd_dpaa2_dev_info dpaa2_dev_info;
 		struct rte_eth_dev_info dev_info;
-		struct rte_eth_rxq_info qinfo;
 		struct rte_eth_dcb_info dcb_info;
 		uint8_t tc_id;
 		uint16_t tc_num, qos_entries, fs_entries, queues_per_tc, base;
@@ -4079,18 +4078,23 @@ main(int argc, char **argv)
 		printf("Initializing port %u... ", portid);
 		fflush(stdout);
 
-		ret = rte_eth_dev_info_get(portid, &dev_info);
-		if (ret != 0)
+		ret = rte_pmd_dpaa2_dev_info_get(portid, &dpaa2_dev_info);
+		if (ret) {
 			rte_exit(EXIT_FAILURE,
 				"Error during getting device (port %u) info: %s\n",
 				portid, strerror(-ret));
+		}
 
-		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
+		rte_memcpy(&dev_info, &dpaa2_dev_info.dev_info, sizeof(dev_info));
+		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE) {
 			local_port_conf.txmode.offloads |=
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+		}
+		tc_num = dpaa2_dev_info.rx_tc_num;
+		qos_entries = dpaa2_dev_info.qos_entries;
+		fs_entries = dpaa2_dev_info.fs_entries;
+		queues_per_tc = dpaa2_dev_info.dist_queues;
 
-		rte_pmd_dpaa2_dev_parse_tc_info(&dev_info, &tc_num,
-			&qos_entries, &fs_entries, &queues_per_tc);
 		default_action = rte_zmalloc(NULL,
 			sizeof(struct rte_dpaa2_default_action_conf) +
 			tc_num * sizeof(uint16_t), 0);
@@ -4190,13 +4194,6 @@ main(int argc, char **argv)
 			if (ret) {
 				rte_exit(EXIT_FAILURE,
 					"Setup port%d-rxq%d failed(%d).\n",
-					portid, i, ret);
-			}
-
-			ret = rte_eth_rx_queue_info_get(portid, i, &qinfo);
-			if (ret) {
-				rte_exit(EXIT_FAILURE,
-					"Get port%d-rxq%d info failed(%d).\n",
 					portid, i, ret);
 			}
 			/* >8 End of RX queue setup. */
