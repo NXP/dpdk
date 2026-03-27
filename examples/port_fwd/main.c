@@ -1989,7 +1989,7 @@ parse_config(const char *q_arg,
 		if (param_num >= MAX_LCORE_PARAMS) {
 			RTE_LOG(ERR, port_fwd,
 				"exceeded max number port/queue/core params: %hu\n",
-				param_num);
+				(unsigned short)param_num);
 			return -EINVAL;
 		}
 		if (num > FLD_PORT)
