@@ -92,7 +92,7 @@ dpaa2_mux_flow_rule_log(struct dpaa2_mux_flow *flow,
 		return;
 
 	DPAA2_FLOW_DUMP("DPMUX: %s flow(%p):\r\n", prefix, flow);
-	DPAA2_FLOW_DUMP("key_iova:0x%lx, mask_iova:0x%lx\r\n",
+	DPAA2_FLOW_DUMP("key_iova:0x%" PRIx64 ", mask_iova:0x%" PRIx64 "\r\n",
 		flow->rule.key_iova, flow->rule.mask_iova);
 	DPAA2_FLOW_DUMP("key_size:%d, entry_index:%d\r\n",
 		flow->rule.key_size, flow->rule.entry_index);

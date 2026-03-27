@@ -49,7 +49,7 @@ static inline void mark_kpage_ncache(uint64_t huge_page)
 			KPG_NC_DEVICE_PATH);
 		return;
 	}
-	RTE_LOG(DEBUG, EAL, KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
+	RTE_LOG(DEBUG, EAL, KCYN "%s: Huge_Page addr =" KNRM " 0x%" PRIx64 "\n",
 		__func__, huge_page);
 	ret = ioctl(fd, KPG_NC_IOCTL_UPDATE, (size_t)&huge_page);
 	if (ret) {

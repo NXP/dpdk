@@ -104,7 +104,7 @@ dpaa2_scheduler_swp_mbuf_dq(struct dpaa2_sch_dev *sch_dev,
 
 	qbman_swp_prefetch_dqrr_next(swp);
 	fd = qbman_result_DQ_fd(dq);
-	rxq = (void *)qbman_result_DQ_fqd_ctx(dq);
+	rxq = (struct dpaa2_queue *)(uintptr_t)qbman_result_DQ_fqd_ctx(dq);
 	priv = rxq->eth_data->dev_private;
 	if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 		mbuf = dpaa2_eth_sg_fd_to_mbuf(priv, fd);
@@ -302,7 +302,7 @@ dpaa2_scheduler_recv(struct dpaa2_sch_dev *sch_dev,
 			}
 
 			fd = qbman_result_DQ_fd(dq_sch_storage);
-			rvq = (void *)qbman_result_DQ_fqd_ctx(dq_sch_storage);
+			rvq = (struct dpaa2_queue *)(uintptr_t)qbman_result_DQ_fqd_ctx(dq_sch_storage);
 			priv = rvq->eth_data->dev_private;
 			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 				mbuf[rcvd_pkts] = dpaa2_eth_sg_fd_to_mbuf(priv, fd);
@@ -429,7 +429,7 @@ pull_active_dqs:
 		}
 
 		fd = qbman_result_DQ_fd(dq_storage);
-		rvq = (void *)qbman_result_DQ_fqd_ctx(dq_storage);
+		rvq = (struct dpaa2_queue *)(uintptr_t)qbman_result_DQ_fqd_ctx(dq_storage);
 		priv = rvq->eth_data->dev_private;
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
 			mbuf[rcvd_pkts] = dpaa2_eth_sg_fd_to_mbuf(priv, fd);

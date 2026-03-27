@@ -1852,9 +1852,9 @@ l2fwd_policer_rss_flow_config(uint16_t port_id,
 	struct rte_flow *fs_flow;
 
 	action_rss.func = RTE_ETH_HASH_FUNCTION_DEFAULT;
-	action_rss.level = 0,
-	action_rss.types = RTE_ETH_RSS_IPV4,
-	action_rss.key_len = 0,
+	action_rss.level = 0;
+	action_rss.types = RTE_ETH_RSS_IPV4;
+	action_rss.key_len = 0;
 	action_rss.queue_num = tc_desc->queue_max_num;
 	action_rss.key = NULL;
 	action_rss.queue = NULL;
