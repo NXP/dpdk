@@ -185,6 +185,12 @@ enetc_xmit_pkts_nc(void *tx_queue,
 			for (j = 0; j < seg_len; j += RTE_CACHE_LINE_SIZE)
 				dcbf(data + j);
 
+			/* Perform a cache flush on the last byte of an unaligned buffer to ensure
+			 * that all associated cache lines are cleaned to the Point of Coherency (PoC).
+			 * Using cache‑line‑aligned buffers is recommended for optimal performance.
+			 * For unaligned buffers, this operation may flush additional adjacent memory.
+			 */
+			dcbf(data + (seg_len - 1));
 			txbd = ENETC_TXBD(*tx_ring, i);
 			txbd->flags = 0;
 			if (is_first_seg) {
