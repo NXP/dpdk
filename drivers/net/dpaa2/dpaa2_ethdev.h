@@ -498,7 +498,7 @@ dpaa2_timestamp_debug(struct dpaa2_dev_priv *priv,
 
 	ts = rte_ns_to_timespec(timestamp);
 	fprintf(stderr,
-		"DPAA2 TS DBG: %s: ns(%ld)->%ld seconds/%ld nanoseconds\n",
+		"DPAA2 TS DBG: %s: ns(%" PRIu64 ")->%ld seconds/%ld nanoseconds\n",
 		prefix, timestamp, ts.tv_sec, ts.tv_nsec);
 }
 

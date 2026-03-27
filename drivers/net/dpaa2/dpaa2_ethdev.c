@@ -1075,13 +1075,13 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA2_PMD_DEBUG("RX offloads requested/fixed: 0x%lx/0x%lx",
+		DPAA2_PMD_DEBUG("RX offloads requested/fixed: 0x%" PRIx64 "/0x%" PRIx64,
 			rx_offloads, dev_rx_offloads_nodis);
 	}
 
 	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA2_PMD_DEBUG("TX offloads requested/fixed: 0x%lx/0x%lx",
+		DPAA2_PMD_DEBUG("TX offloads requested/fixed: 0x%" PRIx64 "/0x%" PRIx64,
 			tx_offloads, dev_tx_offloads_nodis);
 	}
 
@@ -2797,7 +2797,7 @@ dpaa2_xstats_get_names_by_id(struct rte_eth_dev *dev,
 
 	for (i = 0; i < limit; i++) {
 		if (ids[i] >= stat_cnt) {
-			DPAA2_PMD_ERR("xstats id[%d] value(%ld) >= max count(%d)",
+			DPAA2_PMD_ERR("xstats id[%d] value(%" PRIu64 ") >= max count(%d)",
 				i, ids[i], stat_cnt);
 			return -EINVAL;
 		}
