@@ -13,7 +13,6 @@
 #define VSPA_LSB_OFFSET         0x684
 #define VSPA_MSB_OFFSET         0x680
 
-#define MAX_CHANNEL_DEPTH 16
 /* private data structure */
 struct bbdev_la12xx_private {
 	ipc_userspace_t *ipc_priv;
@@ -33,7 +32,7 @@ struct bbdev_la12xx_private {
 
 	struct wdog *wdog;
 	/* Private memory for queues */
-	struct bbdev_la12xx_q_priv *queues_priv[32];
+	struct bbdev_la12xx_q_priv *queues_priv[IPC_MAX_CHANNEL_COUNT];
 };
 
 struct hugepage_info {
