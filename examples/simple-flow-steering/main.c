@@ -477,7 +477,7 @@ simple_flow_steering_two_level_table_flow_init(uint16_t tc_num,
 static void
 simple_flow_steering_sch_dev_init(uint16_t queue_num)
 {
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	uint16_t flow_id, i;
 	uint8_t tc_id;
 	int ret;
@@ -490,10 +490,12 @@ simple_flow_steering_sch_dev_init(uint16_t queue_num)
 		rte_exit(EXIT_FAILURE, "Start schedule failed(%d).\n", ret);
 
 	for (i = 0; i < queue_num; i++) {
-		ret = rte_eth_rx_queue_info_get(0, i, &qinfo);
+		memset(&qinfo, 0, sizeof(struct rte_pmd_dpaa2_rxq_info));
+		ret = rte_pmd_dpaa2_rx_queue_info_get(0, i, &qinfo);
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Get rxq%d info failed(%d).\n", i, ret);
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc_id, &flow_id);
+		tc_id = qinfo.tc_id;
+		flow_id = qinfo.flow_id;
 		s_queue_id[tc_id][flow_id] = i;
 		ret = rte_dpaa2_scheduler_add(s_sch_handle, 0, i, tc_id);
 		if (ret)
@@ -515,8 +517,7 @@ main(int argc, char **argv)
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_txconf txq_conf;
 	struct rte_eth_conf local_port_conf = port_conf;
-	struct rte_eth_dev_info dev_info;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_dev_info dpaa2_dev_info;
 	struct rte_eth_link link;
 	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 	uint16_t tc_num, qos_entries, fs_entries, queues_per_tc;
@@ -548,18 +549,20 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "DPAA2 support only\n");
 
 	/* init port */
-	ret = rte_eth_dev_info_get(0, &dev_info);
+	memset(&dpaa2_dev_info, 0, sizeof(struct rte_pmd_dpaa2_dev_info));
+	ret = rte_pmd_dpaa2_dev_info_get(0, &dpaa2_dev_info);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
-			"Error during getting device info: %s\n",
+			"Error during getting dpaa2 device info: %s\n",
 			strerror(-ret));
 	}
+	tc_num = dpaa2_dev_info.rx_tc_num;
+	qos_entries = dpaa2_dev_info.qos_entries;
+	fs_entries = dpaa2_dev_info.fs_entries;
+	queues_per_tc = dpaa2_dev_info.dist_queues;
 
-	rte_pmd_dpaa2_dev_parse_tc_info(&dev_info, &tc_num,
-		&qos_entries, &fs_entries, &queues_per_tc);
-
-	ret = rte_eth_dev_configure(0, dev_info.max_rx_queues,
-			dev_info.max_tx_queues, &local_port_conf);
+	ret = rte_eth_dev_configure(0, dpaa2_dev_info.dev_info.max_rx_queues,
+			dpaa2_dev_info.dev_info.max_tx_queues, &local_port_conf);
 	if (ret)
 		rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d\n", ret);
 
@@ -568,20 +571,16 @@ main(int argc, char **argv)
 	if (!pktmbuf_pool)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
-	rxq_conf = dev_info.default_rxconf;
+	rxq_conf = dpaa2_dev_info.dev_info.default_rxconf;
 	rxq_conf.offloads = local_port_conf.rxmode.offloads;
-	for (i = 0; i < dev_info.max_rx_queues; i++) {
+	for (i = 0; i < dpaa2_dev_info.dev_info.max_rx_queues; i++) {
 		/* RX queue setup. 8< */
 		ret = rte_eth_rx_queue_setup(0, i, 1024, 0, &rxq_conf, pktmbuf_pool);
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Setup rxq%d failed(%d).\n", i, ret);
-
-		ret = rte_eth_rx_queue_info_get(0, i, &qinfo);
-		if (ret)
-			rte_exit(EXIT_FAILURE, "Get rxq%d info failed(%d).\n", i, ret);
 	}
 
-	txq_conf = dev_info.default_txconf;
+	txq_conf = dpaa2_dev_info.dev_info.default_txconf;
 	txq_conf.offloads = local_port_conf.txmode.offloads;
 	ret = rte_eth_tx_queue_setup(0, 0, 1024, 0, &txq_conf);
 	if (ret)
@@ -596,7 +595,7 @@ main(int argc, char **argv)
 	if (ret)
 		rte_exit(EXIT_FAILURE, "Enable promisc failed(%d)\n", ret);
 
-	simple_flow_steering_sch_dev_init(dev_info.max_rx_queues);
+	simple_flow_steering_sch_dev_init(dpaa2_dev_info.dev_info.max_rx_queues);
 
 	if (s_flow_table_level == 1) {
 		simple_flow_steering_one_level_table_flow_init(tc_num,
