@@ -733,8 +733,7 @@ fslmc_bus_plug(struct rte_device *rte_dev)
 	struct rte_dpaa2_driver *drv;
 
 	TAILQ_FOREACH(drv, &rte_fslmc_bus.driver_list, next) {
-		ret = rte_fslmc_match(drv, dev);
-		if (ret)
+		if (rte_fslmc_match(drv, dev))
 			continue;
 
 		if (!drv->probe)
