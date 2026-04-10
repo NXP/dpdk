@@ -218,6 +218,8 @@
 #define DPAA2_MAC_STATS_INDEX_DMA_SIZE (DPAA2_MAC_NUM_STATS * sizeof(uint32_t))
 #define DPAA2_MAC_STATS_VALUE_DMA_SIZE (DPAA2_MAC_NUM_STATS * sizeof(uint64_t))
 
+/* Maximum SG segments */
+#define DPAA2_MAX_SGS 128
 /* Externally defined */
 extern const struct rte_flow_ops dpaa2_flow_ops;
 
@@ -496,7 +498,7 @@ dpaa2_timestamp_debug(struct dpaa2_dev_priv *priv,
 
 	ts = rte_ns_to_timespec(timestamp);
 	fprintf(stderr,
-		"DPAA2 TS DBG: %s: ns(%ld)->%ld seconds/%ld nanoseconds\n",
+		"DPAA2 TS DBG: %s: ns(%" PRIu64 ")->%ld seconds/%ld nanoseconds\n",
 		prefix, timestamp, ts.tv_sec, ts.tv_nsec);
 }
 

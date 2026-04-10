@@ -1743,7 +1743,7 @@ for compilation steps of DPDK on host.
 	$ export RTE_SDK=<path to compiled DPDK source code containing build folder>
 	$ export RTE_TARGET=arm64-build
 	$ export PKG_CONFIG_PATH=<path to meson-private in arm64-build folder>
-	$ git clone -b pktgen-19.12.0 http://dpdk.org/git/apps/pktgen-dpdk
+	$ git clone -b  pktgen-26.02.4 https://github.com/pktgen/pktgen-dpdk.git 
 	$ cd pktgen-dpdk/
 	$ meson build -Dc_args="-DRTE_FORCE_INTRINSICS"
 	$ ninja -C build install
@@ -1751,7 +1751,7 @@ for compilation steps of DPDK on host.
 Pktgen app location: pktgen-dpdk/build/app/pktgen
 Pktgen Pktgen.lua location: pktgen-dpdk/Pktgen.lua
 
-Pktgen Tag being used: pktgen-19.12.0
+Pktgen Tag being used: pktgen-26.02.4
 
 ===============================================================================
 
@@ -1769,7 +1769,7 @@ compilation steps.
 Clone OVS repository:
 	$ git clone ssh://git@bitbucket.sw.nxp.com/dqns/ovs-dpdk.git
 	$ cd ovs-dpdk
-	$ git checkout branch-3.1-qoriq
+	$ git checkout branch-3.7-qoriq
 
 Build OVS:
 	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed DPDK directory>/lib:<Path to installed openssl directory>/lib
@@ -2216,8 +2216,8 @@ On non-root user:
 
 ======================================================================================================================================================
 
-Minimum NXP LSDK version supported: LSDK2108 (https://lsdk.github.io/)
-DPDK base version used: Release 22.11
+Minimum NXP LSDK version supported: LSDK2512 (https://lsdk.github.io/)
+DPDK base version used: Release 25.11
 More info on DPDK :  www.dpdk.org
 
 NXP contact: hemant.agrawal@nxp.com, dpdk-team@nxp1.onmicrosoft.com

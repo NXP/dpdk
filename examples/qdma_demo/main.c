@@ -255,6 +255,9 @@ qdma_demo_dma_init(struct rte_dma_info *dma_info)
 	struct rte_dma_info local_dma_info;
 	int ret, i = 0, max_avail = rte_dma_count_avail();
 
+	memset(&dma_config, 0, sizeof(struct rte_dma_conf));
+	memset(&local_dma_info, 0, sizeof(struct rte_dma_info));
+
 	if (TEST_DMA_INIT_FLAG) {
 		ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
 		if (ret) {
@@ -285,8 +288,14 @@ init_dma:
 		goto init_dma;
 	}
 
+	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT) && g_silent) {
+		RTE_LOG(WARNING, qdma_demo,
+			"Silent mode is not supported by DMA\n");
+		g_silent = 0;
+	}
 	dma_config.nb_vchans = local_dma_info.max_vchans;
-
+	if (g_silent)
+		dma_config.flags |= RTE_DMA_CFG_FLAG_SILENT;
 	ret = rte_dma_configure(qdma_dev_id, &dma_config);
 	if (ret) {
 		RTE_LOG(WARNING, qdma_demo,
@@ -310,13 +319,6 @@ init_dma:
 	}
 	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
 		s_flags_cntx = 1;
-	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT)) {
-		if (g_silent) {
-			RTE_LOG(WARNING, qdma_demo,
-				"Silent mode is not supported by DMA\n");
-			g_silent = 0;
-		}
-	}
 
 	if (dma_info) {
 		rte_memcpy(dma_info, &local_dma_info,

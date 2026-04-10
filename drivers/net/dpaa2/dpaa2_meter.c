@@ -289,6 +289,7 @@ dpaa2_mtr_profile_delete(struct rte_eth_dev *dev,
 
 	ret = dpaa2_mtr_profile_tc_check(priv, dpaa2_profile);
 	if (ret) {
+		rte_spinlock_unlock(&priv->meter_lock);
 		return -rte_mtr_error_set(error, -ret,
 			RTE_MTR_ERROR_TYPE_METER_PROFILE,
 			dpaa2_profile, "Meter profile is referred.");
@@ -538,6 +539,7 @@ dpaa2_mtr_meter_policy_update(struct rte_eth_dev *dev,
 	int found = 0, ret = 0;
 	enum rte_mtr_error_type err_type = RTE_MTR_ERROR_TYPE_NONE;
 
+	rte_spinlock_lock(&priv->meter_lock);
 	meter = LIST_FIRST(&priv->meters);
 	while (meter) {
 		if (meter->meter_id == mtr_id) {

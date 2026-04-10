@@ -40,7 +40,6 @@
 
 /*  Initialisation params structure that can be used by LA12xx BBDEV driver */
 struct bbdev_la12xx_params {
-	uint8_t queues_num;
 	int8_t modem_id;
 };
 
@@ -53,7 +52,6 @@ struct la12xx_meta {
 
 int bbdev_socket_id;
 
-#define LA12XX_MAX_NB_QUEUES_ARG	"max_nb_queues"
 #define LA12XX_VDEV_MODEM_ID_ARG	"modem"
 #define LA12XX_MAX_MODEM 4
 
@@ -67,8 +65,6 @@ int bbdev_socket_id;
 #define LA12XX_POLAR_DEC_CORE	3
 #define LA12XX_RAW_CORE		0
 
-#define LA12XX_MAX_LDPC_ENC_QUEUES	4
-#define LA12XX_MAX_LDPC_DEC_QUEUES	4
 
 #define VSPA_MAILBOX_DUMMY_WRITE	0x1234
 
@@ -86,7 +82,6 @@ int bbdev_socket_id;
 #define FECA_JOB_SD_DCM_BE	0x8000000 /* BE for 8 */
 
 static const char * const bbdev_la12xx_valid_params[] = {
-	LA12XX_MAX_NB_QUEUES_ARG,
 	LA12XX_VDEV_MODEM_ID_ARG,
 };
 
@@ -153,20 +148,20 @@ static const struct rte_bbdev_op_cap bbdev_capabilities[] = {
 	RTE_BBDEV_END_OF_CAPABILITIES_LIST()
 };
 
-static struct rte_bbdev_queue_conf default_queue_conf = {
-	.queue_size = MAX_CHANNEL_DEPTH,
-};
+static struct rte_bbdev_queue_conf default_queue_conf;
 
 /* Get device info */
 static void
-la12xx_info_get(struct rte_bbdev *dev __rte_unused,
+la12xx_info_get(struct rte_bbdev *dev,
 		struct rte_bbdev_driver_info *dev_info)
 {
+	struct bbdev_la12xx_private *priv = dev->data->dev_private;
+
 	PMD_INIT_FUNC_TRACE();
 
 	dev_info->driver_name = RTE_STR(DRIVER_NAME);
-	dev_info->max_num_queues = LA12XX_MAX_QUEUES;
-	dev_info->queue_size_lim = MAX_CHANNEL_DEPTH;
+	dev_info->max_num_queues = priv->max_queues;
+	dev_info->queue_size_lim = default_queue_conf.queue_size;
 	dev_info->hardware_accelerated = true;
 	dev_info->max_dl_queue_priority = 0;
 	dev_info->max_ul_queue_priority = 0;
@@ -201,13 +196,6 @@ la12xx_queue_release(struct rte_bbdev *dev, uint16_t q_id)
 	return 0;
 }
 
-#define HUGEPG_OFFSET(A) \
-		((uint64_t) ((unsigned long) (A) \
-		- ((uint64_t)ipc_priv->hugepg_start->host_vaddr)))
-
-#define MODEM_P2V(A) \
-	((uint64_t) ((unsigned long) (A) \
-		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
 
 #ifdef RTE_LA12XX_SOCKET
 static int
@@ -360,6 +348,14 @@ rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr)
 	return get_l1_pcie_addr(ipc_priv, addr);
 }
 
+#define MODEM_P2V(A) \
+	((uint64_t) ((unsigned long) (A) \
+		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
+
+#ifdef RTE_TOOLCHAIN_GCC
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
+#endif
 static int
 la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		struct bbdev_la12xx_q_priv *q_priv,
@@ -372,37 +368,20 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	ipc_metadata_t *ipc_md;
 	ipc_ch_t *ch;
 	int instance_id = 0;
-	uint32_t i;
 	void *vaddr;
+	uint32_t i;
 	void *cd_crc_stat;
 	feca_job_t *feca_jobs;
 
 	PMD_INIT_FUNC_TRACE();
 
-	mhif = (struct gul_hif *)ipc_priv->mhif_start.host_vaddr;
-	/* offset is from start of PEB */
-	ipc_md = (ipc_metadata_t *)((uintptr_t)ipc_priv->peb_start.host_vaddr +
-		mhif->ipc_regs.ipc_mdata_offset);
-	ch = &ipc_md->instance_list[instance_id].ch_list[q_priv->q_id];
+	rte_bbdev_log_debug("setting up queue %d", q_priv->q_id);
 
 	if (q_priv->q_id < priv->num_valid_queues) {
-		ipc_br_md_t *md = &(ch->md);
-
-		q_priv->feca_blk_id = rte_cpu_to_be_32(ch->feca_blk_id);
-		q_priv->feca_blk_id_be32 = ch->feca_blk_id;
-		q_priv->host_pi = rte_be_to_cpu_32(md->pi);
-		q_priv->host_ci = rte_be_to_cpu_32(md->ci);
-		q_priv->host_params = (host_ipc_params_t *)(uintptr_t)
-			(rte_be_to_cpu_32(ch->host_ipc_params) +
-			((uint64_t)ipc_priv->hugepg_start->host_vaddr));
-
-		for (i = 0; i < q_priv->queue_size; i++) {
-			uint32_t h, l;
-
-			h = ch->bd_h[i].host_virt_h;
-			l = ch->bd_h[i].host_virt_l;
-			q_priv->msg_ch_vaddr[i] = (void *)join_32_bits(h, l);
-		}
+		q_priv->host_pi = 0;
+		q_priv->host_ci = 0;
+		q_priv->host_params->pi = 0;
+		q_priv->host_params->ci = 0;
 
 		rte_bbdev_log(WARNING,
 			"Queue [%d] already configured, not configuring again",
@@ -443,24 +422,24 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 	/* Set queue properties for LA12xx device */
 	switch (q_priv->op_type) {
 	case RTE_BBDEV_OP_LDPC_ENC:
-		if (priv->num_ldpc_enc_queues >= LA12XX_MAX_LDPC_ENC_QUEUES) {
+		if (priv->num_ldpc_enc_queues >=
+				ipc_priv->instance->max_ldpc_enc_feca_queues) {
 			rte_bbdev_log(ERR,
 				"num_ldpc_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(LA12XX_LDPC_ENC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_enc_queues++);
+		q_priv->la12xx_core_id = LA12XX_LDPC_ENC_CORE;
+		q_priv->feca_blk_id = priv->num_ldpc_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_LDPC_DEC:
-		if (priv->num_ldpc_dec_queues >= LA12XX_MAX_LDPC_DEC_QUEUES) {
+		if (priv->num_ldpc_dec_queues >=
+				ipc_priv->instance->max_ldpc_dec_feca_queues) {
 			rte_bbdev_log(ERR,
 				"num_ldpc_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(LA12XX_LDPC_DEC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_ldpc_dec_queues++);
+		q_priv->la12xx_core_id = LA12XX_LDPC_DEC_CORE;
+		q_priv->feca_blk_id = priv->num_ldpc_dec_queues++;
 		q_priv->per_op_hw_id = queue_conf->per_op_hw_id;
 		break;
 	case RTE_BBDEV_OP_POLAR_ENC:
@@ -470,9 +449,9 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_polar_enc_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(LA12XX_POLAR_ENC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_polar_enc_queues++);
+		q_priv->la12xx_core_id = LA12XX_POLAR_ENC_CORE;
+		q_priv->feca_blk_id = 0;
+		priv->num_polar_enc_queues++;
 		break;
 	case RTE_BBDEV_OP_POLAR_DEC:
 		if (priv->num_polar_dec_queues >=
@@ -481,9 +460,8 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 				"num_polar_dec_queues reached max value");
 			return -1;
 		}
-		ch->la12xx_core_id =
-			rte_cpu_to_be_32(LA12XX_POLAR_DEC_CORE);
-		ch->feca_blk_id = rte_cpu_to_be_32(priv->num_polar_dec_queues++);
+		q_priv->la12xx_core_id = LA12XX_POLAR_DEC_CORE;
+		q_priv->feca_blk_id = 0;
 		cd_crc_stat = rte_malloc_socket(NULL, sizeof(uint32_t),
 				RTE_CACHE_LINE_SIZE, dev->data->socket_id);
 		if (!cd_crc_stat) {
@@ -491,6 +469,7 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 			return -1;
 		}
 		q_priv->cd_crc_stat_addr = get_l1_pcie_addr(ipc_priv, cd_crc_stat);
+		priv->num_polar_dec_queues++;
 		break;
 	case RTE_BBDEV_OP_RAW:
 		if (queue_conf->raw_queue_conf.modem_core_id >=
@@ -507,17 +486,18 @@ la12xx_e200_queue_setup(struct rte_bbdev *dev,
 			return -1;
 		}
 
-		ch->la12xx_core_id =
+		q_priv->la12xx_core_id =
 			queue_conf->raw_queue_conf.modem_core_id;
-		ch->is_host_to_modem =
+		q_priv->is_host_to_modem =
 			queue_conf->raw_queue_conf.direction;
-		ch->conf_enable =
+		q_priv->conf_enable =
 			queue_conf->raw_queue_conf.conf_enable;
 
 		priv->num_raw_queues++;
 		break;
 	default:
-		rte_bbdev_log(ERR, "Not supported op type");
+		rte_bbdev_log(ERR, "Unsupported op type: %d",
+			q_priv->op_type);
 		return -1;
 	}
 	if (!q_priv->is_host_to_modem) {
@@ -651,13 +631,15 @@ la12xx_queue_setup(struct rte_bbdev *dev, uint16_t q_id,
 
 	/* If queue already configured, skip allocation */
 	if (!q_priv) {
-		q_data->queue_private = rte_zmalloc(NULL,
-				sizeof(struct bbdev_la12xx_q_priv), 0);
-		if (!q_data->queue_private) {
+		q_priv = rte_zmalloc_socket(NULL,
+			sizeof(struct bbdev_la12xx_q_priv), 0,
+			dev->data->socket_id);
+		if (!q_priv) {
 			rte_bbdev_log(ERR, "Memory allocation failed for qpriv");
 			return -ENOMEM;
 		}
-		q_priv = q_data->queue_private;
+
+		q_data->queue_private = q_priv;
 		q_priv->q_id = q_id;
 		q_priv->bbdev_priv = dev->data->dev_private;
 		q_priv->queue_size = queue_conf->queue_size;
@@ -869,9 +851,6 @@ static const struct rte_bbdev_ops pmd_ops = {
 	.start = la12xx_start
 };
 
-#ifdef RTE_TOOLCHAIN_GCC
-#pragma GCC push_options
-#endif
 static int
 fill_feca_desc_enc(struct bbdev_la12xx_q_priv *q_priv,
 		   struct rte_bbdev_enc_op *bbdev_enc_op,

@@ -63,4 +63,5 @@ void reset_tti_stats(void);
 void dump_tti_stats(void);
 int rte_sys_get_tid(void);
 void assign_to_core(int core_id);
+void cmd_do_lime_set_chan(uint32_t tx_rx, uint32_t chan, uint64_t value);
 #endif

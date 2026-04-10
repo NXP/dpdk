@@ -1042,7 +1042,7 @@ end_mapping:
 			fslmc_mem_va2iova = RTE_BAD_IOVA;
 		TAILQ_INSERT_TAIL(&fslmc_memsegs, dmaseg, next);
 	}
-	DPAA2_BUS_LOG(NOTICE,
+	DPAA2_BUS_LOG(DEBUG,
 		"%s(%zx): VA(%" PRIx64 "):IOVA(%" PRIx64 "):PHY(%" PRIx64 ")",
 		is_io ? "DMA I/O map size" : "DMA MEM map size",
 		len, vaddr, iovaddr, phy);
@@ -1650,6 +1650,10 @@ fslmc_vfio_process_mcp(struct rte_dpaa2_device *dev)
 		goto cleanup;
 	}
 
+	ret = fslmc_vfio_get_bus_info(v_addr, bus_info);
+	if (ret)
+		goto cleanup;
+
 	/* In case of secondary processes, MC version check is no longer
 	 * required.
 	 */
@@ -1657,10 +1661,6 @@ fslmc_vfio_process_mcp(struct rte_dpaa2_device *dev)
 		rte_mcp_ptr_list[MC_PORTAL_INDEX] = v_addr;
 		return 0;
 	}
-
-	ret = fslmc_vfio_get_bus_info(v_addr, bus_info);
-	if (ret)
-		goto cleanup;
 
 	rte_mcp_ptr_list[MC_PORTAL_INDEX] = v_addr;
 

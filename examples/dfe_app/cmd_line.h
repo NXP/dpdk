@@ -49,7 +49,8 @@
 	"\tconfig qec <tx/rx> iq_taps [ 0 f2 h2(4) h1(4) h2(3) h1(3) h2(2) h1(2) h2(1) h1(1) h2(0) h1(0)]\n" \
 	"\tvspa debug\n" \
 	"\tvspa benchmark size <size_bytes> mode <read/write> dma <num of DMAs> iter <number of iterations>\n" \
-	"\tvspa fr1fr2_test_tool host-handshake-bypass-flag <0/1>\n"
+	"\tvspa fr1fr2_test_tool host-handshake-bypass-flag <0/1>\n"\
+	"\tlime <tx/rx> chan <chanID> freq <freq_Hz>\n"
 
 /* add your callbacks here */
 extern void cmd_quit_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -83,6 +84,7 @@ extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmd
 extern void cmd_tdd_config_ul_ta_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_time_offset_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_sfn_slot_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_lime_set_chan_parsed(void *parsed_result, struct cmdline *cl, void *data);
 
 #if 0
 extern void cmd_cell_search_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -1012,7 +1014,7 @@ static cmdline_parse_inst_t cmd_tdd_sfn_slot = {
 
 #if 0 /* future */
 struct cmd_cell_search_result {
-	cmdline_fixed_string_t cell ;
+	cmdline_fixed_string_t cell;
 	cmdline_fixed_string_t search;
 	cmdline_fixed_string_t action;
 	cmdline_fixed_string_t args;
@@ -1041,7 +1043,7 @@ static cmdline_parse_inst_t cmd_cell_search = {
 };
 
 struct cmd_cell_attach_result {
-	cmdline_fixed_string_t cell ;
+	cmdline_fixed_string_t cell;
 	cmdline_fixed_string_t attach;
 	uint16_t sfn;
 	uint16_t slot;
@@ -1071,7 +1073,7 @@ static cmdline_parse_inst_t cmd_cell_attach = {
 #endif
 
 struct cmd_rf_switch_result {
-	cmdline_fixed_string_t rf_switch ;
+	cmdline_fixed_string_t rf_switch;
 	cmdline_fixed_string_t action;
 };
 
@@ -1093,7 +1095,7 @@ static cmdline_parse_inst_t cmd_rf_switch = {
 };
 
 struct cmd_tti_stats_result {
-	cmdline_fixed_string_t tti_stats ;
+	cmdline_fixed_string_t tti_stats;
 };
 
 static cmdline_parse_token_string_t cmd_tti_stats_tok =
@@ -1105,6 +1107,39 @@ static cmdline_parse_inst_t cmd_tti_stats = {
 	.help_str = "",
 	.tokens = {
 		(void *)&cmd_tti_stats_tok,
+		NULL,
+	}
+};
+
+struct cmd_lime_result {
+	cmdline_fixed_string_t lime;
+	cmdline_fixed_string_t txrx;
+	uint32_t chan;
+	cmdline_fixed_string_t freq;
+	uint32_t freqHz;
+};
+
+static cmdline_parse_token_string_t cmd_lime_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_lime_result, lime, "lime");
+static cmdline_parse_token_string_t cmd_lime_txrx_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_lime_result, txrx, "tx#rx");
+static cmdline_parse_token_num_t cmd_lime_chan_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_lime_result, chan, RTE_UINT32);
+static cmdline_parse_token_string_t cmd_lime_freq_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_lime_result, freq, "freq");
+static cmdline_parse_token_num_t cmd_lime_freqHz_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_lime_result, freqHz, RTE_UINT32);
+
+static cmdline_parse_inst_t cmd_lime = {
+	.f = cmd_lime_set_chan_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_lime_tok,
+		(void *)&cmd_lime_txrx_tok,
+		(void *)&cmd_lime_chan_tok,
+		(void *)&cmd_lime_freq_tok,
+		(void *)&cmd_lime_freqHz_tok,
 		NULL,
 	}
 };
@@ -1148,6 +1183,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_tdd_tti,
 	&cmd_tti_stats,
 	&cmd_debug,
+	&cmd_lime,
 	NULL
 };
 

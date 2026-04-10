@@ -2676,14 +2676,14 @@ pcie_dw_fun_init_ext(struct lsx_pciep_hw_low *hw,
 			&cfg->sub_vendor_id,
 			&sub_vendor_id, sizeof(uint16_t), 1);
 		if (ret)
-			return ret;
+			goto err_ret3;
 	}
 	if (sub_device_id && sub_device_id != RTE_PCI_ANY_ID) {
 		ret = pcie_dw_write_config_reg(hw, pf, access,
 			&cfg->sub_device_id,
 			&sub_device_id, sizeof(uint16_t), 1);
 		if (ret)
-			return ret;
+			goto err_ret3;
 	}
 
 err_ret1:
@@ -2691,6 +2691,7 @@ err_ret1:
 
 err_ret2:
 	pcie_dw_free(info);
+err_ret3:
 	rte_spinlock_unlock(&s_f_lock);
 
 	return ret;
@@ -2764,6 +2765,7 @@ pcie_dw_config(struct lsx_pciep_hw_low *hw)
 		LSX_PCIEP_BUS_ERR("%s prepare buf for read %s failed",
 			__func__,
 			PCIEP_DW_GLOBE_INFO_F);
+		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}
 
@@ -2883,10 +2885,9 @@ pcie_dw_deconfig(struct lsx_pciep_hw_low *hw)
 
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "rb");
 	if (!f_dw_cfg) {
-		if (pcie_dw_proc_info_empty(hw))
-			return;
-		LSX_PCIEP_BUS_ERR("%s: %s read open failed",
-			__func__, PCIEP_DW_GLOBE_INFO_F);
+		if (!pcie_dw_proc_info_empty(hw))
+			LSX_PCIEP_BUS_ERR("%s: %s read open failed",
+				__func__, PCIEP_DW_GLOBE_INFO_F);
 		rte_spinlock_unlock(&s_f_lock);
 		return;
 	}

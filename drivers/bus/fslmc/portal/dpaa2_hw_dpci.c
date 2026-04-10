@@ -141,7 +141,7 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 	ret = dpci_get_peer_attributes(&dpci_node->dpci,
 		CMD_PRI_LOW, dpci_node->token, &peer_attr);
 	if (ret || peer_attr.peer_id < 0) {
-		DPAA2_BUS_WARN("DPCI.%d has no peer, self connected.",
+		DPAA2_BUS_DEBUG("DPCI.%d has no peer, self connected.",
 			dpci_node->dpci_id);
 		/** Connect to self.*/
 		dpci_node->peer_id = dpci_node->dpci_id;

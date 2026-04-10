@@ -160,9 +160,6 @@ static struct rte_mempool *pktmbuf_pool_tx_only;
 #define RTE_MAX_QUEUES 128
 static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
 
-static uint64_t max_mbuf_addr;
-static uint64_t min_mbuf_addr = (~((uint64_t)0));
-
 static int s_dump_mbuf;
 static int s_inject;
 static uint16_t s_inject_pkt_size = 64;
@@ -178,6 +175,12 @@ static uint16_t s_tx_seg = 1;
 /** DPAA1 platform support only now.*/
 static int s_mpool_select_by_size;
 static int s_mpool_select_by_size_debug;
+
+static struct rte_eth_xstat_name *s_port_fwd_xs_nms[RTE_MAX_ETHPORTS];
+static uint64_t *s_port_fwd_xs_vals[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_reset[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_val_len[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_nm_len[RTE_MAX_ETHPORTS];
 
 static uint8_t s_inject_pkt_base[] = {
 	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
@@ -1434,7 +1437,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_ring *tx_ring, *rx_ring;
 	uint8_t sents[MAX_PKT_BURST];
 	int re_send_max = 0, fragment_tx = 0, reassemble_rx = 0;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	struct lcore_rx_queue *rxq;
 	struct lcore_tx_queue *txq;
 
@@ -1453,10 +1456,11 @@ main_loop(__attribute__((unused)) void *dummy)
 
 		if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id))
 			continue;
-		ret = rte_eth_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
+		ret = rte_pmd_dpaa2_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
 		if (ret)
 			continue;
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &rxq->tc_id, &rxq->flow_id);
+		rxq->tc_id = qinfo.tc_id;
+		rxq->flow_id = qinfo.flow_id;
 	}
 
 	if (s_inject || s_tx_pqc_num) {
@@ -1989,7 +1993,7 @@ parse_config(const char *q_arg,
 		if (param_num >= MAX_LCORE_PARAMS) {
 			RTE_LOG(ERR, port_fwd,
 				"exceeded max number port/queue/core params: %hu\n",
-				param_num);
+				(unsigned short)param_num);
 			return -EINVAL;
 		}
 		if (num > FLD_PORT)
@@ -2219,45 +2223,6 @@ parse_args(int argc, char **argv)
 	return ret;
 }
 
-static void
-port_fwd_mp_max_min_addr(struct rte_mempool *mp)
-{
-	uint32_t num = mp->size, i, alloced = 0, bulk_size;
-	int ret;
-	struct rte_mbuf **mbuf_arry =
-		malloc(sizeof(struct rte_mbuf *) * num);
-
-	if (!mbuf_arry)
-		return;
-
-	while (num) {
-		bulk_size = num > RTE_MEMPOOL_CACHE_MAX_SIZE ?
-			RTE_MEMPOOL_CACHE_MAX_SIZE : num;
-		ret = rte_pktmbuf_alloc_bulk(mp,
-			&mbuf_arry[alloced], bulk_size);
-		if (ret) {
-			RTE_LOG(ERR, port_fwd,
-				"Drain %d bufs from %s failed\r\n",
-				num, mp->name);
-			if (alloced)
-				rte_pktmbuf_free_bulk(mbuf_arry, alloced);
-			free(mbuf_arry);
-			return;
-		}
-		alloced += bulk_size;
-		num -= bulk_size;
-	}
-
-	for (i = 0; i < mp->size; i++) {
-		if (mbuf_arry[i]->buf_iova > max_mbuf_addr)
-			max_mbuf_addr = mbuf_arry[i]->buf_iova;
-		if (mbuf_arry[i]->buf_iova < min_mbuf_addr)
-			min_mbuf_addr = mbuf_arry[i]->buf_iova;
-	}
-	rte_pktmbuf_free_bulk(mbuf_arry, mp->size);
-	free(mbuf_arry);
-}
-
 static int
 init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 {
@@ -2364,10 +2329,6 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 	if (!pktmbuf_pool)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
 
-	port_fwd_mp_max_min_addr(pktmbuf_pool);
-	if (pktmbuf_pool_tx_only)
-		port_fwd_mp_max_min_addr(pktmbuf_pool_tx_only);
-
 	return 0;
 }
 
@@ -2465,6 +2426,83 @@ port_fwd_dump_tc_flow_count(uint16_t portid, int second)
 	}
 }
 
+static void
+port_fwd_xstats_display(uint16_t port_id)
+{
+	int len = 0, ret, i;
+
+	if (!s_port_fwd_xs_reset[port_id]) {
+		ret = rte_eth_xstats_reset(port_id);
+		if (ret) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to reset xstats\n",
+				__func__, ret);
+			return;
+		}
+		s_port_fwd_xs_reset[port_id] = 1;
+	}
+
+	if (!s_port_fwd_xs_vals[port_id]) {
+		len = rte_eth_xstats_get_names_by_id(port_id, NULL, 0, NULL);
+		if (len < 0) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to get xstats' length\n",
+				__func__, len);
+			return;
+		}
+		s_port_fwd_xs_vals[port_id] = rte_zmalloc(NULL,
+			sizeof(uint64_t) * len, 0);
+		if (!s_port_fwd_xs_vals[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_vals alloc failed\n",
+				__func__);
+			return;
+		}
+		s_port_fwd_xs_val_len[port_id] = len;
+	} else {
+		len = s_port_fwd_xs_val_len[port_id];
+	}
+
+	if (!s_port_fwd_xs_nms[port_id] && len > 0) {
+		s_port_fwd_xs_nms[port_id] = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_xstat_name) * len, 0);
+		if (!s_port_fwd_xs_nms[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_nms alloc failed\n", __func__);
+			return;
+		}
+	}
+
+	if (!s_port_fwd_xs_nm_len[port_id] && s_port_fwd_xs_val_len[port_id]) {
+		s_port_fwd_xs_nm_len[port_id] = rte_eth_xstats_get_names_by_id(port_id,
+			s_port_fwd_xs_nms[port_id], s_port_fwd_xs_val_len[port_id], NULL);
+		if (s_port_fwd_xs_nm_len[port_id] != s_port_fwd_xs_val_len[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Get xstats' name length(%d) != val length(%d)\n",
+				__func__, s_port_fwd_xs_nm_len[port_id],
+				s_port_fwd_xs_val_len[port_id]);
+			return;
+		}
+	}
+
+	ret = rte_eth_xstats_get_by_id(port_id, NULL,
+		s_port_fwd_xs_vals[port_id], s_port_fwd_xs_val_len[port_id]);
+	if (ret < 0 || ret > s_port_fwd_xs_val_len[port_id]) {
+		RTE_LOG(ERR, port_fwd,
+			"%s: Err(%d) to get xstats by ID, len=%d\n",
+			__func__, ret, s_port_fwd_xs_val_len[port_id]);
+		return;
+	}
+
+	for (i = 0; i < ret; i++) {
+		if (!s_port_fwd_xs_vals[port_id][i])
+			continue;
+
+		printf("Xstat Port%d-%s:%ld\r\n", port_id,
+			s_port_fwd_xs_nms[port_id][i].name, s_port_fwd_xs_vals[port_id][i]);
+	}
+}
+
 static void *perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
@@ -2555,6 +2593,7 @@ loop:
 			RTE_LOG(INFO, port_fwd, "PORT%d:\r\n", port_id);
 			port_fwd_dump_tc_flow_count(port_id,
 				PKTGEN_STATISTICS_INTERVAL);
+			port_fwd_xstats_display(port_id);
 			get_st_ret = rte_eth_stats_get(port_id, &stats);
 			if (get_st_ret)
 				goto skip_print_hw_status;
@@ -2912,8 +2951,6 @@ main(int argc, char **argv)
 		}
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = port_conf.rxmode.offloads;
-		rxq_conf.reserved_64s[0] = min_mbuf_addr;
-		rxq_conf.reserved_64s[1] = max_mbuf_addr;
 		for (q_nb = 0; q_nb < nb_rx_queue[portid]; q_nb++) {
 			if (s_mpool_select_by_size) {
 				ret = rte_dpaa_eth_rx_queue_mp_setup(portid,

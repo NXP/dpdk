@@ -40,7 +40,7 @@ check_devargs_handler(__rte_unused const char *key, const char *value,
 	}
 	hw->alloc.request_mem = num;
 	hw->alloc.res.mem_cp = NXP_CP_WC;
-	ENETQOS_PMD_DEBUG("Requested reserve memory = 0x%lx", hw->alloc.request_mem);
+	ENETQOS_PMD_DEBUG("Requested reserve memory = 0x%" PRIx64, hw->alloc.request_mem);
 
 	return 0;
 }
@@ -121,7 +121,8 @@ reset_poll_timeout(void *ioaddr, uint32_t value, int delay_us, int timeout_us)
 	int ret = 0;
 
 	do {
-		value = rte_read32((void *)((size_t)ioaddr + ENETQ_DMA_MODE));
+		value = rte_read32((const volatile void *)((size_t)ioaddr + ENETQ_DMA_MODE));
+
 		rte_delay_us(delay_us);
 		wait_time += delay_us;
 
@@ -1116,7 +1117,7 @@ mark_memory_ncache(struct enetqos_priv *priv, const char *mz_name, int size) {
 
 			if (tz) {
 				if (priv->bd_addr_v == tz->addr) {
-					priv->bd_addr_v = (void*) ((uintptr_t)tz->addr + non_alloc_diff);
+					priv->bd_addr_v = (void *)(uintptr_t)((uint64_t)tz->addr + non_alloc_diff);
 					priv->bd_addr_p = tz->iova + non_alloc_diff;
 				} else {
 					/* If the memzone allocation after freeing it is different
@@ -1193,7 +1194,7 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		virt = priv->alloc.virt_addr;
 		phy = priv->alloc.phy_addr;
 		bd_total = priv->alloc.size;
-		priv->bd_addr_v = (void *)virt;
+		priv->bd_addr_v = (void *)(uintptr_t)virt;
 		priv->bd_addr_p = phy;
 	} else {
 		if (mark_memory_ncache(priv, mz_name, bd_total)) {
@@ -1203,7 +1204,7 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		}
 	}
 
-	ENETQOS_PMD_LOG(INFO,"QOS Ring Base virtual = %p, Physical = %lx",
+	ENETQOS_PMD_LOG(INFO,"QOS Ring Base virtual = %p, Physical = %" PRIx64,
 			priv->bd_addr_v, priv->bd_addr_p);
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
@@ -1220,8 +1221,9 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 
 		/* fread success */
 		if (cnt) {
-			ret = sscanf(EXTRACT_CCSR_ADDR(dtb_entry), "%lx",
-				     &ccsr_addr);
+			unsigned long tmp;
+
+			ret = sscanf(EXTRACT_CCSR_ADDR(dtb_entry), "%lx", &tmp);
 			if (ret != 1) {
 				ENETQOS_PMD_ERR("sscanf failed!!");
 				rt = -1;
@@ -1229,6 +1231,7 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 				fclose(file);
 				goto err;
 			}
+			ccsr_addr = (size_t)tmp;
 			ccsr_size = ENETQ_CCSR_SIZE;
 		}
 		free(dtb_entry);

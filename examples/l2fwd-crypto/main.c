@@ -2537,7 +2537,7 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 			return -1;
 		}
 
-		qp_conf.nb_descriptors = 2048;
+		qp_conf.nb_descriptors = 16384;
 		qp_conf.mp_session = session_pool_socket[socket_id].sess_mp;
 
 		retval = rte_cryptodev_queue_pair_setup(cdev_id, 0, &qp_conf,
