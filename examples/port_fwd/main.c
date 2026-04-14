@@ -1459,7 +1459,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_ring *tx_ring, *rx_ring;
 	uint8_t sents[MAX_PKT_BURST];
 	int re_send_max = 0, fragment_tx = 0, reassemble_rx = 0;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	struct lcore_rx_queue *rxq;
 	struct lcore_tx_queue *txq;
 	struct rte_mbuf_sched *sched;
@@ -1479,10 +1479,11 @@ main_loop(__attribute__((unused)) void *dummy)
 
 		if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id))
 			continue;
-		ret = rte_eth_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
+		ret = rte_pmd_dpaa2_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
 		if (ret)
 			continue;
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &rxq->tc_id, &rxq->flow_id);
+		rxq->tc_id = qinfo.tc_id;
+		rxq->flow_id = qinfo.flow_id;
 	}
 
 	if (s_inject || s_tx_pqc_num) {
