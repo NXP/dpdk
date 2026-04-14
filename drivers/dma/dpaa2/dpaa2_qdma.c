@@ -38,13 +38,10 @@ qdma_cntx_idx_ring_eq(struct qdma_cntx_idx_ring *ring,
 		ring->tail += nb;
 	} else {
 		rte_memcpy(&ring->cntx_idx_ring[ring->tail],
-			elem,
-			(DPAA2_QDMA_MAX_DESC - ring->tail) *
-			sizeof(uint16_t));
+			elem, (DPAA2_QDMA_MAX_DESC - ring->tail) * sizeof(uint16_t));
 		rte_memcpy(&ring->cntx_idx_ring[0],
 			&elem[DPAA2_QDMA_MAX_DESC - ring->tail],
-			(nb - DPAA2_QDMA_MAX_DESC + ring->tail) *
-			sizeof(uint16_t));
+			(nb + ring->tail - DPAA2_QDMA_MAX_DESC) * sizeof(uint16_t));
 		ring->tail = (ring->tail + nb) & (DPAA2_QDMA_MAX_DESC - 1);
 	}
 	ring->free_space -= nb;
@@ -919,35 +916,26 @@ dpaa2_qdma_dq_fd(const struct qbman_fd *fd,
 	enum dpaa2_qdma_fd_type type;
 	int ret;
 	struct qdma_cntx_sg *cntx_sg;
-	struct qdma_cntx_fle_sdd *fle_sdd;
+	struct qdma_cntx_fle_sdd *fle_sdd = NULL;
 
 	att = dpaa2_qdma_fd_get_att(fd);
 	type = DPAA2_QDMA_FD_ATT_TYPE(att);
-	if (type == DPAA2_QDMA_FD_SHORT) {
-		idx = DPAA2_QDMA_FD_ATT_CNTX(att);
-		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
-				&idx, 1, free_space);
-		if (unlikely(ret != 1))
-			return -ENOSPC;
-
-		return 0;
-	}
-	if (type == DPAA2_QDMA_FD_LONG) {
-		idx = DPAA2_QDMA_FD_ATT_CNTX(att);
+	if (type == DPAA2_QDMA_FD_LONG || type == DPAA2_QDMA_FD_SG) {
 		fle_sdd = (void *)DPAA2_GET_FD_FLC(fd);
 		qdma_vq->fle_elem[*fle_elem_nb] = fle_sdd;
 		(*fle_elem_nb)++;
+	}
+	if (type == DPAA2_QDMA_FD_SHORT ||
+		type == DPAA2_QDMA_FD_LONG) {
+		idx = DPAA2_QDMA_FD_ATT_CNTX(att);
+		qdma_vq->idxs[0] = idx;
 		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
-				&idx, 1, free_space);
+			qdma_vq->idxs, 1, free_space);
 		if (unlikely(ret != 1))
 			return -ENOSPC;
-
 		return 0;
 	}
 	if (type == DPAA2_QDMA_FD_SG) {
-		fle_sdd = (void *)DPAA2_GET_FD_FLC(fd);
-		qdma_vq->fle_elem[*fle_elem_nb] = fle_sdd;
-		(*fle_elem_nb)++;
 		cntx_sg = container_of(fle_sdd,
 				struct qdma_cntx_sg, fle_sdd);
 		ret = qdma_cntx_idx_ring_eq(qdma_vq->ring_cntx_idx,
