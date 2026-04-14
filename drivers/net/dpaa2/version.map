@@ -29,6 +29,8 @@ EXPERIMENTAL {
 	rte_pmd_dpaa2_mux_dump_counter;
 	rte_pmd_dpaa2_mux_default_id;
 	rte_pmd_dpaa2_mux_ep_name;
+	rte_pmd_dpaa2_rx_queue_info_get;
+	rte_pmd_dpaa2_dev_info_get;
 };
 
 INTERNAL {

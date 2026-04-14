@@ -747,7 +747,6 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	union rte_pmd_dpaa2_dev_tc_desc tc_desc;
 
 	dev_info->max_mac_addrs = priv->max_mac_filters;
 	dev_info->max_rx_pktlen = DPAA2_MAX_RX_PKT_LEN;
@@ -775,15 +774,6 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 	dev_info->default_rxportconf.ring_size = DPAA2_RX_DEFAULT_NBDESC;
 
 	dev_info->speed_capa = priv->speed_capa;
-
-	tc_desc.rx_tc_num = priv->num_rx_tc;
-	tc_desc.tx_tc_num = priv->num_tx_tc;
-	tc_desc.qos_entries = priv->qos_entries;
-	tc_desc.fs_entries = priv->fs_entries;
-	tc_desc.dist_queues = priv->dist_queues;
-
-	dev_info->reserved_64s[RTE_DPAA2_DEV_TC_INFO_RSV_IDX] =
-		tc_desc.tc_info;
 
 	return 0;
 }
@@ -3229,26 +3219,20 @@ dpaa2_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = dev->process_private;
 	uint16_t max_frame_length;
-	union rte_pmd_dpaa2_rxq_tc_desc desc;
 
 	rxq = dev->data->rx_queues[queue_id];
 
 	qinfo->mp = rxq->mb_pool;
 	qinfo->scattered_rx = dev->data->scattered_rx;
 	qinfo->nb_desc = rxq->nb_desc;
-	if (dpni_get_max_frame_length(dpni, CMD_PRI_LOW, priv->token,
-				&max_frame_length) == 0)
+	if (!dpni_get_max_frame_length(dpni, CMD_PRI_LOW, priv->token,
+		&max_frame_length))
 		qinfo->rx_buf_size = max_frame_length;
 
 	qinfo->conf.rx_free_thresh = 1;
 	qinfo->conf.rx_drop_en = 1;
 	qinfo->conf.rx_deferred_start = 0;
 	qinfo->conf.offloads = rxq->offloads;
-
-	desc.tc_id = rxq->tc_index;
-	desc.flow_id = rxq->flow_id;
-	qinfo->conf.reserved_64s[RTE_DPAA2_RXQ_TC_INFO_RSV_IDX] =
-		desc.tc_info;
 }
 
 static void
@@ -3909,6 +3893,53 @@ rte_pmd_dpaa2_ep_name(uint32_t eth_id)
 	priv = dev->data->dev_private;
 
 	return priv->ep_name;
+}
+
+int
+rte_pmd_dpaa2_rx_queue_info_get(uint16_t port_id, uint16_t queue_id,
+	struct rte_pmd_dpaa2_rxq_info *qinfo)
+{
+	int ret;
+	struct rte_eth_dev *dev;
+	struct dpaa2_queue *rxq;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(port_id))
+		return -EINVAL;
+
+	ret = rte_eth_rx_queue_info_get(port_id, queue_id, &qinfo->rxq_info);
+	if (ret)
+		return ret;
+	dev = &rte_eth_devices[port_id];
+	rxq = dev->data->rx_queues[queue_id];
+	qinfo->tc_id = rxq->tc_index;
+	qinfo->flow_id = rxq->flow_id;
+
+	return 0;
+}
+
+int
+rte_pmd_dpaa2_dev_info_get(uint16_t port_id,
+	struct rte_pmd_dpaa2_dev_info *dev_info)
+{
+	int ret;
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_priv *priv;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(port_id))
+		return -EINVAL;
+
+	ret = rte_eth_dev_info_get(port_id, &dev_info->dev_info);
+	if (ret)
+		return ret;
+	dev = &rte_eth_devices[port_id];
+	priv = dev->data->dev_private;
+	dev_info->rx_tc_num = priv->num_rx_tc;
+	dev_info->tx_tc_num = priv->num_tx_tc;
+	dev_info->qos_entries = priv->qos_entries;
+	dev_info->fs_entries = priv->fs_entries;
+	dev_info->dist_queues = priv->dist_queues;
+
+	return 0;
 }
 
 uint16_t
