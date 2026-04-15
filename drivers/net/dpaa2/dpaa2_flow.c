@@ -977,7 +977,7 @@ dpaa2_flow_faf_advance(struct dpaa2_dev_priv *priv,
 {
 	struct dpaa2_key_profile *key_profile;
 	uint8_t idx, offset = 0xff;
-	struct key_prot_field prot;
+	struct key_prot_field prot = {0};
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_profile = &priv->flow_profile.qos_profile.key_profile;
@@ -1009,7 +1009,7 @@ dpaa2_flow_pr_advance(struct dpaa2_dev_priv *priv,
 {
 	struct dpaa2_key_profile *key_profile;
 	uint8_t idx, offset = 0xff;
-	struct key_prot_field prot;
+	struct key_prot_field prot = {0};
 
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_profile = &priv->flow_profile.qos_profile.key_profile;
@@ -4333,7 +4333,7 @@ dpaa2_flow_set_police_action(struct dpaa2_dev_priv *priv,
 	uint8_t tc_id, const struct rte_flow_action_meter_mark *meter_mark)
 {
 	struct rte_dpaa2_device *dpaa2_dev;
-	struct dpni_rx_tc_policing_cfg policing_cfg;
+	struct dpni_rx_tc_policing_cfg policing_cfg = {0};
 	const struct dpaa2_dev_meter_profile *dpaa2_profile;
 	const struct dpaa2_dev_meter_policy *dpaa2_policy = NULL;
 	int ret;
