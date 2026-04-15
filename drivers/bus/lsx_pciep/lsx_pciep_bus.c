@@ -285,6 +285,13 @@ void *lsx_pciep_map_region(uint64_t addr, size_t len)
 	start = addr & PAGE_MASK;
 	offset = addr - start;
 	len = len & PAGE_MASK;
+
+	if (PAGE_SIZE <= 0) {
+		LSX_PCIEP_BUS_ERR("Page size is negative or NULL\n");
+		return NULL;
+	}
+
+	len = len & ~(PAGE_SIZE -1);
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
 
