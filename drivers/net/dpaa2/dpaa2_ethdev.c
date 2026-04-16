@@ -853,14 +853,11 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t dist_idx;
-	uint32_t vq_id;
-	uint8_t num_rxqueue_per_tc;
 	struct dpaa2_queue *mc_q, *mcq;
 	uint32_t tot_queues;
 	int i, ret = 0;
 	struct dpaa2_queue *dpaa2_q;
 
-	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
 	if (priv->tx_conf_type != DPAA2_TX_NO_CONF)
 		tot_queues = priv->nb_rx_queues + 2 * priv->nb_tx_queues;
 	else
@@ -926,12 +923,12 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		}
 	}
 
-	vq_id = 0;
 	for (dist_idx = 0; dist_idx < priv->nb_rx_queues; dist_idx++) {
-		mcq = priv->rx_vq[vq_id];
-		mcq->tc_index = dist_idx / num_rxqueue_per_tc;
-		mcq->flow_id = dist_idx % num_rxqueue_per_tc;
-		vq_id++;
+		mcq = priv->rx_vq[dist_idx];
+		ret = dpaa2_rxq_id_to_tc_and_flow(priv, dist_idx,
+			&mcq->tc_index, &mcq->flow_id);
+		if (ret)
+			goto fail_tx_conf;
 	}
 
 	return 0;
@@ -1142,10 +1139,12 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 			tbl_profile->default_jump.group = def_act_conf->default_tc;
 		}
 	}
-	ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
-	if (ret) {
-		DPAA2_PMD_ERR("Error(%d) to set miss action of %s-QoS table",
-			ret, dev->data->name);
+	if (priv->qos_entries) {
+		ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
+		if (ret) {
+			DPAA2_PMD_ERR("Error(%d) to set miss action of %s-QoS table",
+				ret, dev->data->name);
+		}
 	}
 
 	if (eth_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS) {
@@ -1374,11 +1373,9 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (priv->flags & DPAA2_RX_DATA_STASHING_OFF_FLAG) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0,
 				&cfg->flc.value);
-			dpaa2_q->data_stashing_off = 1;
 		} else {
 			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
 				&cfg->flc.value);
-			dpaa2_q->data_stashing_off = 0;
 		}
 		if (dpaa2_svr_family != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
@@ -1436,6 +1433,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	}
 
 	dpaa2_q->options = qopt;
+	dpaa2_q->is_setup = true;
 
 	dev->data->rx_queues[rx_queue_id] = dpaa2_q;
 	return 0;
@@ -1471,14 +1469,20 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		return -EINVAL;
 	}
 
-	dpaa2_q->nb_desc = UINT16_MAX;
-	dpaa2_q->offloads = tx_conf->offloads;
-
-	/* Return if queue already configured */
-	if (dpaa2_q->flow_id != DPAA2_INVALID_FLOW_ID) {
+	/* Return if queue is already setup */
+	if (dpaa2_q->is_setup) {
+		if (dev->data->tx_queues[tx_queue_id] &&
+			dev->data->tx_queues[tx_queue_id] != dpaa2_q) {
+			DPAA2_PMD_ERR("TXQ[%d] was setup with un-expected queue!",
+				tx_queue_id);
+			return -EINVAL;
+		}
 		dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 		return 0;
 	}
+
+	dpaa2_q->nb_desc = UINT16_MAX;
+	dpaa2_q->offloads = tx_conf->offloads;
 
 	memset(&tx_conf_cfg, 0, sizeof(struct dpni_queue));
 	memset(&tx_flow_cfg, 0, sizeof(struct dpni_queue));
@@ -1575,7 +1579,6 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		DPAA2_PMD_INFO("Tx congestion notification is disabled");
 	}
 	dpaa2_q->cb_eqresp_free = dpaa2_dev_free_eqresp_buf;
-	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 
 	if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
 		dpaa2_q->tx_conf_queue = dpaa2_tx_conf_q;
@@ -1603,6 +1606,10 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		}
 		dpaa2_tx_conf_q->fqid = qid.fqid;
 	}
+
+	dpaa2_q->is_setup = true;
+	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
+
 	return 0;
 }
 
@@ -2044,6 +2051,11 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	intr_handle = dpaa2_dev->intr_handle;
 
+	if (!dpaa2_flow_check_all_actions_ready(dev)) {
+		DPAA2_PMD_ERR("Not all flows' actions are ready!");
+		return -EINVAL;
+	}
+
 	if (priv->enable_bp_flow_ctrl) {
 		fc_conf = rte_zmalloc(NULL, sizeof(struct rte_eth_fc_conf),
 				RTE_CACHE_LINE_SIZE);
@@ -2109,11 +2121,9 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	}
 	err_cfg.set_frame_annotation = true;
 
-	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW,
-				       priv->token, &err_cfg);
+	ret = dpni_set_errors_behavior(dpni, CMD_PRI_LOW, priv->token, &err_cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("Error to dpni_set_errors_behavior: code = %d",
-			      ret);
+		DPAA2_PMD_ERR("Error to dpni_set_errors_behavior: code = %d", ret);
 		return ret;
 	}
 
@@ -2121,9 +2131,7 @@ dpaa2_dev_start(struct rte_eth_dev *dev)
 	if (intr_handle && rte_intr_fd_get(intr_handle) &&
 	    dev->data->dev_conf.intr_conf.lsc != 0) {
 		/* Registering LSC interrupt handler */
-		rte_intr_callback_register(intr_handle,
-					   dpaa2_interrupt_handler,
-					   (void *)dev);
+		rte_intr_callback_register(intr_handle, dpaa2_interrupt_handler, (void *)dev);
 
 		/* enable vfio intr/eventfd mapping
 		 * Interrupt index 0 is required, so we can not use

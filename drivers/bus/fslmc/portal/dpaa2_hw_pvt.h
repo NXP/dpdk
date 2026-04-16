@@ -199,7 +199,7 @@ struct dpaa2_queue {
 	uint64_t offloads;
 	uint64_t lpbk_cntx;
 	int32_t ts_to_cnfd;
-	uint8_t data_stashing_off;
+	int is_setup;
 } __rte_cache_aligned;
 
 struct swp_active_dqs {
