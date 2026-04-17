@@ -852,8 +852,13 @@ port_fwd_simple_xmit_burst(struct rte_mbuf **pkts_burst,
 	uint16_t sent, i;
 	union statistic_param param[nb_tx];
 
-	for (i = 0; i < nb_tx; i++)
-		param[i].tx_len = tx_len[i];
+	if (tx_len) {
+		for (i = 0; i < nb_tx; i++)
+			param[i].tx_len = tx_len[i];
+	} else {
+		for (i = 0; i < nb_tx; i++)
+			param[i].tx_len = pkts_burst[i]->pkt_len;
+	}
 
 	sent = rte_eth_tx_burst(dstportid, queueid, pkts_burst, nb_tx);
 	port_fwd_lcoreq_rx_tx_statistic(dstportid, queueid, sent, param,
@@ -1141,7 +1146,6 @@ main_injection_test_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST], *pkt;
 	union statistic_param param[MAX_PKT_BURST];
-	uint64_t tx_len[MAX_PKT_BURST];
 	unsigned int lcore_id;
 	int i, nb_rx, j;
 	int dstportid;
@@ -1216,7 +1220,7 @@ main_injection_test_loop(void)
 				continue;
 			}
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_rx, tx_len, qconf, NULL);
+				queueid, nb_rx, NULL, qconf, NULL);
 		}
 
 		for (i = 0; i < qconf->n_tx_queue; i++) {
@@ -1244,14 +1248,13 @@ main_injection_test_loop(void)
 							(inject_size - total);
 						total += pkt->data_len;
 					}
-					tx_len[j] = inject_size;
 				}
 			}
 			if (!nb_tx)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_tx, tx_len, qconf, NULL);
+				queueid, nb_tx, NULL, qconf, NULL);
 		}
 	}
 
@@ -1593,7 +1596,7 @@ main_loop(__attribute__((unused)) void *dummy)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, portid, queueid,
-				nb_rx, bytes, qconf, NULL);
+				nb_rx, NULL, qconf, NULL);
 		}
 		continue;
 
