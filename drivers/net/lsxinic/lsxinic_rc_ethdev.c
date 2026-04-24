@@ -561,9 +561,15 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
 			LSINIC_RING_REG_OFFSET);
 	uint8_t reg_idx = ring->queue_index;
-	uint32_t rxdctl = 0, i;
+	uint32_t rxdctl = 0, i, ready;
 	struct lsinic_ring_reg *ring_reg = &bdr_reg->rx_ring[reg_idx];
 	struct lsinic_ring_reg *rc_ring_reg = &rc_bdr_reg->rx_ring[reg_idx];
+
+	ready = LSINIC_READ_REG(&ring_reg->ready);
+	if (ready != LSINIC_INIT_FLAG) {
+		LSXINIC_PMD_ERR("RX Ring%d is not ready(0x%08x)!", reg_idx, ready);
+		return -EIO;
+	}
 
 	/* disable queue to avoid issues while updating state */
 	LSINIC_WRITE_REG(&ring_reg->cr, 0);
@@ -682,19 +688,21 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
+	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 	struct lxsnic_ring *rx_ring;
 	int ret;
-	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(adapter->max_qpairs);
-	uint8_t *ep_ring_base = adapter->bd_desc_base + base_offset;
-	uint8_t *rc_ring_base = adapter->rc_bd_desc_base + base_offset;
+	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(max_qpairs);
+	uint8_t *ep_ring_base, *rc_ring_base;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 	uint64_t total_offset = base_offset + q_offset;
 
 	LSXINIC_PMD_DBG("config rx_queue");
+	ep_ring_base = adapter->bd_desc_base + base_offset;
+	rc_ring_base = adapter->rc_bd_desc_base + base_offset;
 
-	if (adapter->config_rx_queues >= adapter->max_qpairs) {
-		LSXINIC_PMD_ERR("config rxq number(%d) > max qpair(%d)",
-			adapter->config_rx_queues + 1, adapter->max_qpairs);
+	if (queue_idx >= max_qpairs) {
+		LSXINIC_PMD_ERR("config rxq index(%d) >= max qpair(%d)",
+			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
 	rx_ring = rte_zmalloc_socket("lsnic ethdev RX queue",
@@ -893,7 +901,7 @@ lxsnic_dev_tx_queue_release(struct rte_eth_dev *dev,
 	}
 }
 
-static void
+static int
 lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	struct lxsnic_ring *ring)
 {
@@ -904,9 +912,15 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 		LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
 			LSINIC_RING_REG_OFFSET);
 	uint8_t reg_idx = ring->queue_index;
-	uint32_t txdctl = LSINIC_CR_ENABLE | LSINIC_CR_BUSY;
+	uint32_t txdctl = LSINIC_CR_ENABLE | LSINIC_CR_BUSY, ready;
 	struct lsinic_ring_reg *ring_reg = &bdr_reg->tx_ring[reg_idx];
 	struct lsinic_ring_reg *rc_ring_reg = &rc_bdr_reg->tx_ring[reg_idx];
+
+	ready = LSINIC_READ_REG(&ring_reg->ready);
+	if (ready != LSINIC_INIT_FLAG) {
+		LSXINIC_PMD_ERR("TX Ring%d is not ready(0x%08x)!", reg_idx, ready);
+		return -EIO;
+	}
 
 	/* disable queue to avoid issues while updating state */
 	LSINIC_WRITE_REG(&ring_reg->cr, LSINIC_CR_DISABLE);
@@ -942,6 +956,8 @@ lxsnic_configure_tx_ring(struct lxsnic_adapter *adapter,
 	}
 	/* enable queue */
 	LSINIC_WRITE_REG(&ring_reg->cr, txdctl);
+
+	return 0;
 }
 
 static int
@@ -954,13 +970,19 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	struct lxsnic_ring *tx_ring = NULL;
 	struct lxsnic_adapter *adapter =
 		LXSNIC_DEV_PRIVATE(dev->data->dev_private);
-	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(adapter->max_qpairs);
+	struct lsinic_eth_reg *eth_reg =
+		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
+	uint64_t base_offset, total_offset;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
-	uint64_t total_offset = base_offset + q_offset;
+	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
+	int ret;
 
-	if (adapter->config_tx_queues >= adapter->max_qpairs) {
-		LSXINIC_PMD_ERR("config txq number(%d) > max qpair(%d)",
-			adapter->config_tx_queues + 1, adapter->max_qpairs);
+	base_offset = LSINIC_RC2EP_RING_OFFSET(max_qpairs);
+	total_offset = base_offset + q_offset;
+
+	if (queue_idx >= max_qpairs) {
+		LSXINIC_PMD_ERR("config txq index(%d) >= max qpair(%d)",
+			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
 	tx_ring = rte_zmalloc_socket("lsnic ethdev TX queue",
@@ -999,11 +1021,14 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->rc_bd_shared_addr = adapter->rc_bd_desc_base + total_offset;
 	tx_ring->rc_bd_desc_dma = adapter->rc_bd_desc_phy + total_offset;
 
+	ret = lxsnic_configure_tx_ring(adapter, tx_ring);
+	if (ret)
+		return ret;
+
 	tx_ring->q_mbuf = rte_zmalloc(NULL,
 		sizeof(void *) * tx_ring->count,
 		RTE_CACHE_LINE_SIZE);
 	RTE_ASSERT(tx_ring->q_mbuf);
-	lxsnic_configure_tx_ring(adapter, tx_ring);
 	dev->data->tx_queues[queue_idx] = tx_ring;
 	adapter->config_tx_queues++;
 	return 0;
@@ -1429,24 +1454,23 @@ static struct rte_pci_id pci_id_lxsnic_map[32];
 
 static void lxsnic_pre_init_pci_id(void)
 {
-	int i, num;
-
-	num = sizeof(s_lsinic_rev2_id_map) /
-		sizeof(struct lsinic_pcie_svr_map);
+	int i, num = RTE_DIM(s_lsinic_rev2_id_map);
+	char *penv = getenv("LSINIC_PCI_DEVICE_ID");
 
 	memset(pci_id_lxsnic_map, 0, sizeof(pci_id_lxsnic_map));
 	for (i = 0; i < (num + 1); i++) {
 		pci_id_lxsnic_map[i].class_id = RTE_CLASS_ANY_ID;
 		pci_id_lxsnic_map[i].vendor_id = NXP_PCI_VENDOR_ID;
-		if (i < num) {
-			pci_id_lxsnic_map[i].device_id =
-				s_lsinic_rev2_id_map[i].pci_dev_id;
-		} else {
-			pci_id_lxsnic_map[i].device_id =
-				NXP_PCI_DEV_ID_LS2088A;
-		}
 		pci_id_lxsnic_map[i].subsystem_vendor_id = RTE_PCI_ANY_ID;
 		pci_id_lxsnic_map[i].subsystem_device_id = RTE_PCI_ANY_ID;
+		if (penv) {
+			pci_id_lxsnic_map[i].device_id = strtol(penv, 0, 16);
+			break;
+		}
+		if (i < num)
+			pci_id_lxsnic_map[i].device_id = s_lsinic_rev2_id_map[i].pci_dev_id;
+		else
+			pci_id_lxsnic_map[i].device_id = NXP_PCI_DEV_ID_LS2088A;
 	}
 }
 
@@ -1553,7 +1577,6 @@ lxsnic_sw_init(struct lxsnic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 
 	/* get ring setting */
-	adapter->max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 	adapter->tx_ring_bd_count = LSINIC_READ_REG(&eth_reg->tx_entry_num);
 	adapter->rx_ring_bd_count = LSINIC_READ_REG(&eth_reg->rx_entry_num);
 	adapter->num_tx_queues = LSINIC_READ_REG(&eth_reg->tx_ring_num);
@@ -1698,13 +1721,14 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 			lsinic_reg_ring_bar_offset(0);
 		adapter->ep_ring_virt_base = (uint8_t *)reg_mem_res->addr +
 			lsinic_reg_ring_bar_offset(0);
-		adapter->rc_ring_win_size = lsinic_ring_bar_size();
+		adapter->rc_ring_align_size = reg_mem_res->len - lsinic_reg_bar_size();
+		adapter->rc_ring_align_size = rte_align64pow2(adapter->rc_ring_align_size);
 	} else {
 		/* eb_ring pci phy mem get */
 		adapter->ep_ring_phy_base = ring_mem_res->phys_addr;
 		/* ep_ring pci bar addr get */
 		adapter->ep_ring_virt_base = ring_mem_res->addr;
-		adapter->rc_ring_win_size = ring_mem_res->len;
+		adapter->rc_ring_align_size = ring_mem_res->len;
 	}
 	if (!adapter->ep_ring_phy_base) {
 		LSXINIC_PMD_ERR("eb_ring_phy_base if err");
@@ -1728,9 +1752,8 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	 * (pci mem) to rc ring (local mem)
 	 */
 	rc_ring_mem = rte_eth_dma_zone_reserve(eth_dev, "rc_ring", 0,
-			adapter->rc_ring_win_size,
-			adapter->rc_ring_win_size,
-			eth_dev->data->numa_node);
+		adapter->rc_ring_align_size, adapter->rc_ring_align_size,
+		eth_dev->data->numa_node);
 	if (!rc_ring_mem) {
 		LSXINIC_PMD_ERR("rc_ring_mem is dma alloc failed");
 		error = -ENODEV;
@@ -1760,8 +1783,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 	}
 	rc_ring_mem = rte_eth_dma_zone_reserve(eth_dev,
 			"rc_memzone", 0, 32 * 1024 * 1024,
-			32 * 1024 * 1024,
-			eth_dev->data->numa_node);
+			32 * 1024 * 1024, eth_dev->data->numa_node);
 	if (!rc_ring_mem) {
 		LSXINIC_PMD_WARN("rc_memzone_vir reserve failed");
 		adapter->rc_mz = NULL;

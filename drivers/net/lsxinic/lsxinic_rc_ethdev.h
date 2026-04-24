@@ -353,7 +353,7 @@ struct lxsnic_adapter {
 	const struct rte_memzone *rc_ring_mz;
 	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
-	uint64_t rc_ring_win_size;
+	uint64_t rc_ring_align_size;
 	uint16_t  num_rx_queues;
 	uint16_t  config_rx_queues;
 	uint16_t  num_tx_queues;
@@ -364,7 +364,6 @@ struct lxsnic_adapter {
 
 	/* hardware ring is full can't send pkt */
 	uint64_t tx_busy;
-	uint16_t max_qpairs;
 	/*total apapter tx pkt rx pkt num */
 	unsigned int tx_ring_bd_count;
 	unsigned int rx_ring_bd_count;

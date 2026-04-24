@@ -85,7 +85,6 @@ struct lsinic_adapter {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 
-	uint16_t max_qpairs;
 	uint8_t rbp_enable;
 	int txq_dma_id;
 	int rxq_dma_id;

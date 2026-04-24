@@ -161,18 +161,23 @@ lsinic_sw_init(struct lsinic_adapter *adapter)
 }
 
 static int
-lsinic_txrx_queues_create(struct lsinic_adapter *adapter)
+lsinic_txrx_queues_create(struct lsinic_adapter *adapter,
+	uint16_t ring_num)
 {
-	adapter->txqs = rte_zmalloc_socket("ethdev queue",
-					sizeof(struct lsinic_queue) *
-					adapter->max_qpairs,
-					RTE_CACHE_LINE_SIZE, 0);
-	adapter->rxqs = rte_zmalloc_socket("ethdev queue",
-					sizeof(struct lsinic_queue) *
-					adapter->max_qpairs,
-					RTE_CACHE_LINE_SIZE, 0);
+	adapter->txqs = rte_zmalloc(NULL,
+		sizeof(struct lsinic_queue) * ring_num,
+		RTE_CACHE_LINE_SIZE);
+	adapter->rxqs = rte_zmalloc(NULL,
+		sizeof(struct lsinic_queue) * ring_num,
+		RTE_CACHE_LINE_SIZE);
 	if (!adapter->txqs || !adapter->rxqs) {
 		LSXINIC_PMD_ERR("Cannot allocate txqs/rxqs");
+		if (adapter->txqs)
+			rte_free(adapter->txqs);
+		if (adapter->rxqs)
+			rte_free(adapter->rxqs);
+		adapter->txqs = NULL;
+		adapter->rxqs = NULL;
 		return -ENODEV;
 	}
 
@@ -226,7 +231,8 @@ lsinic_set_init_flag(struct lsinic_adapter *adapter, int single_bar)
 }
 
 static int
-lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
+lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev,
+	uint16_t ring_num)
 {
 	struct rte_eth_dev *eth_dev = lsinic_dev->eth_dev;
 	struct lsinic_adapter *adapter = eth_dev->process_private;
@@ -252,10 +258,9 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 	}
 
 	size_reg = lsinic_reg_bar_size();
-	size_ring = lsinic_ring_bar_size();
-
+	size_ring = lsinic_ring_bar_size(ring_num);
 	if (lsinic_dev->single_bar) {
-		total_size = lsinic_reg_ring_bar_size();
+		total_size = lsinic_reg_ring_bar_size(ring_num);
 		ret = rte_lsx_pciep_set_ib_win(lsinic_dev,
 			LSX_PCIEP_REG_BAR_IDX, total_size);
 		if (ret) {
@@ -399,7 +404,8 @@ lsinic_release_dma(struct rte_lsx_pciep_device *lsinic_dev)
 }
 
 static int
-lsinic_dev_config_init(struct lsinic_adapter *adapter)
+lsinic_dev_config_init(struct lsinic_adapter *adapter,
+	uint16_t ring_num)
 {
 	uint64_t size;
 	struct lsinic_dev_reg *cfg = LSINIC_REG_OFFSET(adapter->hw_addr,
@@ -407,9 +413,9 @@ lsinic_dev_config_init(struct lsinic_adapter *adapter)
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 
 	cfg->rev = INIC_VERSION;
-	cfg->rx_ring_max_num = adapter->max_qpairs;
+	cfg->rx_ring_max_num = ring_num;
 	cfg->rx_entry_max_num = LSINIC_BD_ENTRY_COUNT;
-	cfg->tx_ring_max_num = adapter->max_qpairs;
+	cfg->tx_ring_max_num = ring_num;
 	cfg->tx_entry_max_num = LSINIC_BD_ENTRY_COUNT;
 	cfg->dev_reg_offset = LSINIC_ETH_REG_OFFSET;
 	if (adapter->is_vf)
@@ -559,7 +565,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	char env_name[128];
 #endif
 	char *penv;
-	uint16_t max_qpairs;
 	struct lsinic_adapter *adapter = eth_dev->process_private;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	enum PEX_TYPE pex_type =
@@ -571,22 +576,6 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 	if (penv && atoi(penv) > 0)
 		lsinic_dev->single_bar = true;
 
-	adapter->max_qpairs = LSINIC_RING_DEFAULT_MAX_QP;
-	penv = getenv("LSINIC_RING_MAX_QUEUE_PAIRS");
-	if (penv && atoi(penv) > 0) {
-		max_qpairs = atoi(penv);
-		if (rte_is_power_of_2(max_qpairs)) {
-			if (max_qpairs > LSINIC_RING_MAX_COUNT) {
-				LSXINIC_PMD_ERR("Max qpair(%d) > MAX(%d)",
-					max_qpairs, LSINIC_RING_MAX_COUNT);
-			} else {
-				adapter->max_qpairs = max_qpairs;
-			}
-		} else {
-			LSXINIC_PMD_ERR("Max qpair(%d) is not power of 2",
-				max_qpairs);
-		}
-	}
 	adapter->ep_cap = LSINIC_EP_CAP_TXQ_SG_DMA;
 	adapter->ep_cap |= LSINIC_EP_CAP_RXQ_SG_DMA;
 	adapter->ep_cap |= LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE;
@@ -839,7 +828,8 @@ lsinic_netdev_env_init(struct rte_eth_dev *eth_dev)
 }
 
 static void
-lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
+lsinic_netdev_reg_init(struct lsinic_adapter *adapter,
+	uint16_t ring_num)
 {
 	int i;
 	uint32_t macaddrl = 0;
@@ -850,7 +840,7 @@ lsinic_netdev_reg_init(struct lsinic_adapter *adapter)
 
 	lsinic_byte_memset(reg, 0, sizeof(*reg));
 
-	LSINIC_WRITE_REG(&reg->max_qpairs, adapter->max_qpairs);
+	LSINIC_WRITE_REG(&reg->max_qpairs, ring_num);
 	LSINIC_WRITE_REG(&reg->rev, INIC_VERSION);
 	if (adapter->is_vf) {
 		LSINIC_WRITE_REG(&reg->fmidx,
@@ -1088,6 +1078,10 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	char env_name[128];
 	char *penv;
 	int err, dma_silent;
+	uint16_t ring_num;
+
+	ring_num = RTE_MAX(eth_dev->data->nb_rx_queues,
+			eth_dev->data->nb_tx_queues);
 
 	vendor_id = NXP_PCI_VENDOR_ID;
 	class_id = NXP_PCI_CLASS_ID;
@@ -1136,7 +1130,7 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 	if (err)
 		return err;
 
-	err = lsinic_init_bar_addr(lsinic_dev);
+	err = lsinic_init_bar_addr(lsinic_dev, ring_num);
 	if (err)
 		return err;
 
@@ -1146,10 +1140,8 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		adapter->max_qpairs,
-		LSINIC_BD_ENTRY_COUNT,
-		LSINIC_DMA_MEM_TO_PCIE,
+	err = lsinic_dma_acquire(dma_silent, ring_num,
+		LSINIC_BD_ENTRY_COUNT, LSINIC_DMA_MEM_TO_PCIE,
 		&adapter->txq_dma_id);
 	if (err)
 		return err;
@@ -1159,19 +1151,17 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		dma_silent = 1;
 	else
 		dma_silent = 0;
-	err = lsinic_dma_acquire(dma_silent,
-		adapter->max_qpairs,
-		LSINIC_BD_ENTRY_COUNT,
-		LSINIC_DMA_PCIE_TO_MEM,
+	err = lsinic_dma_acquire(dma_silent, ring_num,
+		LSINIC_BD_ENTRY_COUNT, LSINIC_DMA_PCIE_TO_MEM,
 		&adapter->rxq_dma_id);
 	if (err)
 		return err;
 	adapter->rxq_dma_silent = dma_silent;
 
-	lsinic_netdev_reg_init(adapter);
-	lsinic_dev_config_init(adapter);
+	lsinic_netdev_reg_init(adapter, ring_num);
+	lsinic_dev_config_init(adapter, ring_num);
 
-	err = lsinic_txrx_queues_create(adapter);
+	err = lsinic_txrx_queues_create(adapter, ring_num);
 	if (err)
 		return -ENODEV;
 
@@ -1604,11 +1594,9 @@ static int
 lsinic_dev_info_get(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
-
 	dev_info->device = dev->device;
-	dev_info->max_rx_queues = adapter->max_qpairs;
-	dev_info->max_tx_queues = adapter->max_qpairs;
+	dev_info->max_rx_queues = LSINIC_RING_MAX_COUNT;
+	dev_info->max_tx_queues = LSINIC_RING_MAX_COUNT;
 	dev_info->min_rx_bufsize = 1024; /* cf BSIZEPACKET in SRRCTL register */
 	dev_info->max_rx_pktlen = 15872; /* includes CRC, cf MAXFRS register */
 	dev_info->max_vfs = PCIE_MAX_VF_NUM;
@@ -1665,8 +1653,11 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 	void *vir_addr;
 	uint64_t mask, size;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	struct lsinic_eth_reg *eth_reg =
+		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 
-	size = LSINIC_RING_PAIR_SIZE(adapter->max_qpairs);
+	size = LSINIC_RING_PAIR_SIZE(max_qpairs);
 	size += LSINIC_RING_BD_OFFSET;
 	sim = rte_lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	if (sim) {

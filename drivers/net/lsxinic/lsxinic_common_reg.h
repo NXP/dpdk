@@ -169,6 +169,7 @@ enum RC_MEM_BD_TYPE {
 };
 
 struct __rte_packed_begin lsinic_ring_reg {
+	uint32_t ready;
 	uint32_t cr;
 	uint32_t sr;
 	uint32_t barl;

@@ -5914,13 +5914,14 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_queue *txq;
 	int ret;
-	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(adapter->max_qpairs);
+	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
+	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(max_qpairs);
 	uint8_t *txq_base = adapter->bd_desc_base + base_offset;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 
-	if ((queue_idx + 1) > adapter->max_qpairs) {
-		LSXINIC_PMD_ERR("config txq number(%d) > max qpair(%d)",
-			queue_idx + 1, adapter->max_qpairs);
+	if (queue_idx >= eth_reg->max_qpairs) {
+		LSXINIC_PMD_ERR("config txq index(%d) >= max qpair(%d)",
+			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
 	/* Note: ep-tx == rc-rx */
@@ -5987,6 +5988,8 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	if (!txq->dma_idx)
 		return -ENOMEM;
 
+	LSINIC_WRITE_REG(&txq->ep_reg->ready, LSINIC_INIT_FLAG);
+
 	return 0;
 }
 
@@ -6030,16 +6033,15 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_queue *rxq;
 	int ret;
-	struct lsinic_eth_reg *reg =
-		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 	struct rte_lsx_pciep_device *lsinic_dev;
-	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(adapter->max_qpairs);
+	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(max_qpairs);
 	uint8_t *rxq_base = adapter->bd_desc_base + base_offset;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 
-	if ((queue_idx + 1) > adapter->max_qpairs) {
-		LSXINIC_PMD_ERR("config rxq number(%d) > max qpair(%d)",
-			queue_idx + 1, adapter->max_qpairs);
+	if (queue_idx >= max_qpairs) {
+		LSXINIC_PMD_ERR("config rxq index(%d) >= max qpair(%d)",
+			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
 	lsinic_dev = adapter->lsinic_dev;
@@ -6058,7 +6060,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	adapter->data_room_size =
 		rte_pktmbuf_data_room_size(mp) - RTE_PKTMBUF_HEADROOM;
-	LSINIC_WRITE_REG(&reg->max_data_room, adapter->data_room_size);
+	LSINIC_WRITE_REG(&eth_reg->max_data_room, adapter->data_room_size);
 
 	rxq->rx_dma_mbuf_set = lsinic_recv_mbuf_dma_set;
 	rxq->rxq_dma_eq = lsinic_rxq_dma_eq;
@@ -6150,6 +6152,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 #ifdef LSXINIC_LATENCY_PROFILING
 	rxq->latency_min = 1000 * 1000;
 #endif
+	LSINIC_WRITE_REG(&rxq->ep_reg->ready, LSINIC_INIT_FLAG);
 
 	return 0;
 }

@@ -21,9 +21,9 @@ static inline uint64_t lsinic_reg_bar_size(void)
 	return size > LSXINIC_BAR_MIN_SIZE ? size : LSXINIC_BAR_MIN_SIZE;
 }
 
-static inline uint64_t lsinic_ring_bar_size(void)
+static inline uint64_t lsinic_ring_bar_size(uint16_t ring_num)
 {
-	uint64_t size = LSINIC_RING_PAIR_SIZE(LSINIC_RING_MAX_COUNT);
+	uint64_t size = LSINIC_RING_PAIR_SIZE(ring_num);
 
 	size += LSINIC_RING_BD_OFFSET;
 
@@ -31,9 +31,9 @@ static inline uint64_t lsinic_ring_bar_size(void)
 	return size > LSXINIC_BAR_MIN_SIZE ? size : LSXINIC_BAR_MIN_SIZE;
 }
 
-static inline uint64_t lsinic_reg_ring_bar_size(void)
+static inline uint64_t lsinic_reg_ring_bar_size(uint16_t ring_num)
 {
-	return lsinic_reg_bar_size() + lsinic_ring_bar_size();
+	return lsinic_reg_bar_size() + lsinic_ring_bar_size(ring_num);
 }
 
 static inline uint64_t lsinic_reg_ring_bar_offset(int is_reg)
