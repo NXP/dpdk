@@ -237,7 +237,7 @@ static int
 lxsnic_dev_configure(struct rte_eth_dev *dev)
 {
 	struct rte_eth_conf *cfg = &dev->data->dev_conf;
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	LSXINIC_PMD_DBG("Configured Physical Function port id: %d",
 		dev->data->port_id);
@@ -367,7 +367,7 @@ lxsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 static int
 lxsnic_dev_start(struct rte_eth_dev *dev)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	uint8_t __iomem *hw_addr = adapter->hw.hw_addr;
 	struct lsinic_dev_reg *ep_reg;
 	struct lsinic_rcs_reg *rcs_reg;
@@ -651,7 +651,7 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	const struct rte_eth_rxconf *rx_conf __rte_unused,
 	struct rte_mempool *mp)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
@@ -916,7 +916,7 @@ lxsnic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	const struct rte_eth_txconf *tx_conf __rte_unused)
 {
 	struct lxsnic_ring *tx_ring = NULL;
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_ETH_REG_OFFSET);
 	uint64_t base_offset, total_offset;
@@ -1016,7 +1016,7 @@ static void
 lxsnic_down(struct rte_eth_dev *dev)
 {
 	int i;
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	/* signal that we are down to the interrupt handler */
 
 	struct lxsnic_ring *ring = NULL;
@@ -1143,7 +1143,7 @@ static int
 lxsnic_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	dev_info->device = &pci_dev->device;
 	dev_info->max_rx_queues = adapter->num_rx_queues;
@@ -1163,7 +1163,7 @@ lxsnic_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 static int
 lxsnic_dev_close(struct rte_eth_dev *dev)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	int ret;
 
 	ret = lxsnic_dev_stop(dev);
@@ -1181,7 +1181,7 @@ lxsnic_dev_link_update(struct rte_eth_dev *dev,
 {
 	uint32_t rc_state = 0;
 	int up = 0, ret;
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_RCS_REG_OFFSET);
 	struct lsinic_dev_reg *ep_reg =
@@ -1340,7 +1340,7 @@ lxsnic_service_event_complete(struct lxsnic_adapter *adapter)
 static void
 eth_lxsnic_interrupt_handler(void *param)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(param);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(param);
 
 	lxsnic_watchdog_subtask(adapter);
 	lxsnic_service_event_complete(adapter);
@@ -1415,7 +1415,7 @@ static int
 eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 {
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(eth_dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
 	struct lxsnic_hw *hw = &adapter->hw;
 	struct lsinic_dev_reg *ep_reg = NULL;
@@ -1788,7 +1788,7 @@ eth_lxsnic_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 static void
 eth_lxsnic_close(struct rte_eth_dev *dev)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	if (!adapter)
 		return;
@@ -1817,7 +1817,7 @@ static int
 eth_lxsnic_dev_uninit(struct rte_eth_dev *eth_dev)
 {
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(eth_dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
 
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)

@@ -75,7 +75,6 @@ enum queue_dma_bd_update {
 #define LSINIC_BD_DMA_START_FLAG MAX_U16
 #define LSINIC_RC_BD_CHECK_PP_MAX 100
 struct lsinic_queue {
-	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
 	enum lsinic_queue_type type;
 	enum lsinic_queue_status status;
@@ -213,6 +212,7 @@ struct lsinic_queue {
 	uint64_t loop_avail;
 	uint64_t align_err;
 
+	/** queue is not accessed by multi process, safe to point to eth dev.*/
 	struct rte_eth_dev *dev;
 
 	uint16_t mhead;
@@ -230,6 +230,9 @@ struct lsinic_queue {
 	/* Pointer to Next instance used by q list */
 	TAILQ_ENTRY(lsinic_queue) next;
 };
+
+#define LSINIC_QUEUE_PCIE_DEV(q) \
+	container_of((q)->dev->device, struct rte_lsx_pciep_device, device)
 
 #define LSINIC_ALIGN_DMA_CALC_OFFSET(addr)   ((addr) & (64 - 1))
 
@@ -301,9 +304,7 @@ void lsinic_queue_reset(struct lsinic_queue *q);
 void lsinic_queue_release(struct lsinic_queue *q);
 
 struct lsinic_queue *
-lsinic_queue_alloc(struct lsinic_adapter *adapter,
-	uint16_t queue_idx,
-	int socket_id, uint32_t nb_desc,
-	enum lsinic_queue_type type);
+lsinic_queue_alloc(struct rte_eth_dev *dev, uint16_t queue_idx,
+	int socket_id, uint32_t nb_desc, enum lsinic_queue_type type);
 
 #endif

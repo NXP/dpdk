@@ -59,7 +59,6 @@ struct lsxvio_adapter {
 	char *ep_ring_virt_base;  /* EP ring base */
 	uint64_t ep_ring_phy_base;
 
-	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	uint64_t rc_ring_phy_base;
 	uint64_t rc_ring_align_size;
 

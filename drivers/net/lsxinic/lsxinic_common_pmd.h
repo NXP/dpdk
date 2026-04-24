@@ -18,6 +18,11 @@
 
 #define LSINIC_ETH_OVERHEAD_SIZE RTE_TM_ETH_FRAMING_OVERHEAD_FCS
 
+#define LSINIC_DEV_PRIVATE(dev) \
+	(((struct rte_eth_dev *)(dev))->data->dev_private)
+
+#define LSINIC_QUEUE_PRIVATE(q) LSINIC_DEV_PRIVATE((q)->dev)
+
 static inline int
 is_valid_ether_addr(uint8_t *addr)
 {

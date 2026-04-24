@@ -201,7 +201,7 @@ static int
 lsxvio_dev_link_update(struct rte_eth_dev *dev,
 	int wait_to_complete __rte_unused)
 {
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	return lsxinic_common_link_update(dev,
 		adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK);
@@ -237,8 +237,7 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 	uint64_t lsx_feature)
 {
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
-	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
-		eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	uint16_t device_id;
 	enum lsx_pcie_pf_idx pf_idx = lsx_dev->pf;
 	uint64_t mask, size;
@@ -301,8 +300,7 @@ static int
 lsxvio_uninit_bar_addr(struct rte_lsx_pciep_device *lsx_dev)
 {
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
-	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
-		eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 
 	adapter->cfg_base = NULL;
 	adapter->ring_base = NULL;
@@ -318,8 +316,7 @@ static int
 lsxvio_release_dma(struct rte_lsx_pciep_device *lsx_dev)
 {
 	struct rte_eth_dev *eth_dev = lsx_dev->eth_dev;
-	struct lsxvio_adapter *adapter = (struct lsxvio_adapter *)
-		eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	int ret;
 
 	ret = lsinic_dma_release(adapter->txq_dma_id);
@@ -543,6 +540,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 
 		adapter = eth_dev->data->dev_private;
 	}
+	eth_dev->process_private = lsx_dev;
 
 	adapter->dev_type = LSINIC_VIRTIO_DEV;
 
@@ -559,12 +557,14 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	lsx_dev->driver = lsx_drv;
 	lsx_dev->eth_dev = eth_dev;
 	lsx_dev->chk_eth_status = lsxvio_dev_chk_eth_status;
-	eth_dev->data->rx_mbuf_alloc_failed = 0;
 
 	eth_dev->dev_ops = &lsxvio_eth_dev_ops;
 	eth_dev->rx_pkt_burst = lsxvio_recv_pkts;
 	eth_dev->tx_pkt_burst = lsxvio_xmit_pkts;
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		goto end_probe;
 
+	eth_dev->data->rx_mbuf_alloc_failed = 0;
 	rbp = rte_lsx_pciep_hw_rbp_get(lsx_dev->pcie_id);
 	if (rbp)
 		adapter->rbp_enable = 1;
@@ -648,8 +648,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	}
 
 	/* Allocate memory for storing MAC addresses */
-	eth_dev->data->mac_addrs =
-		rte_zmalloc("lsx", RTE_ETHER_ADDR_LEN, 0);
+	eth_dev->data->mac_addrs = rte_zmalloc("lsx", RTE_ETHER_ADDR_LEN, 0);
 	if (!eth_dev->data->mac_addrs) {
 		LSXINIC_PMD_ERR("Failed to allocate mac addr mem");
 		return -ENOMEM;
@@ -658,6 +657,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 	rte_ether_addr_copy((struct rte_ether_addr *)adapter->port_mac_addr,
 		&eth_dev->data->mac_addrs[0]);
 
+end_probe:
 	lsx_dev->init_flag = 1;
 	rte_eth_dev_probing_finish(eth_dev);
 	return 0;
@@ -666,7 +666,7 @@ rte_lsxvio_probe(struct rte_lsx_pciep_driver *lsx_drv,
 int
 lsxvio_dev_chk_eth_status(struct rte_eth_dev *dev)
 {
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	if (adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)
 		return 1;
@@ -695,7 +695,7 @@ static void lsxvio_print_ep_status(void)
 
 	while (dev) {
 		eth_dev = dev->eth_dev;
-		adapter = eth_dev->data->dev_private;
+		adapter = LSINIC_DEV_PRIVATE(eth_dev);
 
 		if (!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK))
 			continue;
@@ -710,8 +710,7 @@ static void lsxvio_print_ep_status(void)
 			LSINIC_EPVIO_PORT);
 
 		printf("\r\n\r\n");
-		dev = (struct rte_lsx_pciep_device *)
-			TAILQ_NEXT(dev, next);
+		dev = TAILQ_NEXT(dev, next);
 	}
 }
 
@@ -739,7 +738,6 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	uint8_t status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
-	enum lsinic_dev_type *dev_type;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -747,28 +745,23 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 	while (1) {
 		dev = rte_lsx_pciep_first_dev();
 		while (dev) {
-			dev_type = dev->eth_dev->data->dev_private;
-			if (*dev_type != LSINIC_VIRTIO_DEV) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
+			adapter = LSINIC_DEV_PRIVATE(dev->eth_dev);
+			if (adapter->dev_type != LSINIC_VIRTIO_DEV) {
+				dev = TAILQ_NEXT(dev, next);
 				continue;
 			}
-			adapter = dev->eth_dev->data->dev_private;
 			common = BASE_TO_COMMON(adapter->cfg_base);
 			status = common->device_status;
 
 			if (status == adapter->status) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
+				dev = TAILQ_NEXT(dev, next);
 				continue;
 			}
 
 			if (status == VIRTIO_CONFIG_STATUS_SEND_RESET) {
 				lsxvio_dev_reset(dev->eth_dev);
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
-				if (!(adapter->status &
-					VIRTIO_CONFIG_STATUS_DRIVER_OK))
+				dev = TAILQ_NEXT(dev, next);
+				if (!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK))
 					continue;
 				lsxvio_dev_print_link_status(adapter->pcie_idx,
 					adapter->pf_idx, adapter->vf_idx,
@@ -776,8 +769,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 				continue;
 			}
 
-			if ((adapter->status &
-				VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
+			if ((adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
 				(status & VIRTIO_CONFIG_STATUS_NEEDS_RESET)) {
 				/* Wait for the driver to reset the device*/
 				rte_lsx_pciep_start_msix(adapter->msix_cfg_addr,
@@ -787,25 +779,21 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 			if (status & VIRTIO_CONFIG_STATUS_FEATURES_OK) {
 				/* ??? */
 				if (!lsxvio_virtio_check_driver_feature(common))
-					common->device_status &=
-					~VIRTIO_CONFIG_STATUS_FEATURES_OK;
+					common->device_status &= ~VIRTIO_CONFIG_STATUS_FEATURES_OK;
 			}
 			if ((status & VIRTIO_CONFIG_STATUS_DRIVER_OK) &&
-				!(adapter->status &
-				VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
+				!(adapter->status & VIRTIO_CONFIG_STATUS_DRIVER_OK)) {
 				lsxvio_dev_print_link_status(adapter->pcie_idx,
 					adapter->pf_idx, adapter->vf_idx,
 					adapter->is_vf, "ok");
 			}
 			if ((status & VIRTIO_CONFIG_STATUS_START) &&
-				!(adapter->status &
-				VIRTIO_CONFIG_STATUS_START)) {
+				!(adapter->status & VIRTIO_CONFIG_STATUS_START)) {
 				ret = lsxvio_virtio_config_fromrc(dev);
 				if (ret) {
 					LSXINIC_PMD_ERR("%s link failed",
 						dev->name);
-					dev = (struct rte_lsx_pciep_device *)
-						TAILQ_NEXT(dev, next);
+					dev = TAILQ_NEXT(dev, next);
 					continue;
 				}
 
@@ -816,8 +804,7 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 
 			adapter->status = status;
 
-			dev = (struct rte_lsx_pciep_device *)
-				TAILQ_NEXT(dev, next);
+			dev = TAILQ_NEXT(dev, next);
 		}
 
 		if (print_status)
@@ -832,10 +819,9 @@ static void *lsxvio_poll_dev(void *arg __rte_unused)
 static int
 lsxvio_dev_configure(struct rte_eth_dev *dev)
 {
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	int dma_silent, err;
-	struct lsxvio_common_cfg *common =
-		BASE_TO_COMMON(adapter->cfg_base);
+	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 
 	if (common->lsx_feature & LSX_VIO_EP2RC_DMA_NORSP)
 		dma_silent = 1;
@@ -877,7 +863,7 @@ lsxvio_dev_start(struct rte_eth_dev *eth_dev)
 	int err;
 	pthread_t thread;
 	static uint32_t thread_init_flag;
-	struct lsxvio_adapter *adapter = eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 
 	adapter->status = VIRTIO_CONFIG_STATUS_NEEDS_RESET;
 

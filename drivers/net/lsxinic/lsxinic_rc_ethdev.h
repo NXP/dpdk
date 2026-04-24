@@ -330,9 +330,6 @@ enum lxsnic_state_t {
 	__LXSNIC_IN_SFP_INIT,
 };
 
-#define LXSNIC_DEV_PRIVATE(dev) \
-	(((struct rte_eth_dev *)(dev))->data->dev_private)
-
 #define LXSNIC_DEV_PRIVATE_TO_P_VFDATA(adapter)\
 	 (&((struct lxsnic_adapter *)adapter)->vfinfo)
 

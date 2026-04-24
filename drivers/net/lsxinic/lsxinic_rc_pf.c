@@ -33,7 +33,7 @@ lxsnic_disable_sriov(struct lxsnic_adapter *adapter)
 void
 lxsnic_pf_host_init(struct rte_eth_dev *eth_dev)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(eth_dev);
+	struct lxsnic_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	struct vf_data_storage **vfinfo = &adapter->vfinfo;
 	uint16_t vf_num;
 

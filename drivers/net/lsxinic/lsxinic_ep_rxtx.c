@@ -118,8 +118,10 @@ lsinic_queue_running(struct lsinic_queue *q)
 static bool
 lsinic_queue_msi_masked(struct lsinic_queue *q)
 {
-	struct lsinic_rcs_reg *rcs_reg =
-		LSINIC_REG_OFFSET(q->adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(q);
+	struct lsinic_rcs_reg *rcs_reg;
+
+	rcs_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 
 	return rcs_reg->msix_mask[q->msix_irq];
 }
@@ -161,13 +163,12 @@ static int
 lsinic_queue_dma_clean(struct lsinic_queue *q)
 {
 	uint16_t idx_completed[LSINIC_QDMA_DQ_MAX_NB];
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(q);
 	int ret, i;
 
 	if (q->pkts_eq == q->pkts_dq ||
-		(q->type == LSINIC_QUEUE_TX &&
-		q->adapter->txq_dma_silent) ||
-		(q->type == LSINIC_QUEUE_RX &&
-		q->adapter->rxq_dma_silent))
+		(q->type == LSINIC_QUEUE_TX && adapter->txq_dma_silent) ||
+		(q->type == LSINIC_QUEUE_RX && adapter->rxq_dma_silent))
 		return 0;
 
 	ret = rte_dma_completed(q->dma_id, q->dma_vq,
@@ -349,6 +350,7 @@ static inline void
 lsinic_rxq_dma_eq(void *q, int append)
 {
 	struct lsinic_queue *queue = q;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(queue);
 	int ret, loop;
 	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx, dq;
 	struct rte_dma_sge src[LSINIC_QDMA_EQ_MAX_NB];
@@ -390,7 +392,7 @@ lsinic_rxq_dma_eq(void *q, int append)
 	}
 
 eq_again:
-	if (queue->adapter->perf_opt & LSINIC_DMA_OPT_RXQ_SG_DMA) {
+	if (adapter->perf_opt & LSINIC_DMA_OPT_RXQ_SG_DMA) {
 		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
@@ -413,7 +415,7 @@ eq_again:
 		queue->bytes_eq += len_total;
 		queue->pkts_eq += nb_jobs;
 	} else {
-		if (!queue->adapter->rxq_dma_silent) {
+		if (!adapter->rxq_dma_silent) {
 			loop = 0;
 			dq = 0;
 			while (!dq) {
@@ -438,6 +440,7 @@ static inline void
 lsinic_txq_dma_eq(void *q, int append)
 {
 	struct lsinic_queue *queue = q;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(queue);
 	int ret, loop;
 	uint16_t nb_jobs = 0, jobs_idx, i, jobs_avail_idx;
 	struct rte_dma_sge src[LSINIC_QDMA_EQ_MAX_NB];
@@ -526,7 +529,7 @@ lsinic_txq_dma_eq(void *q, int append)
 	}
 
 eq_again:
-	if (queue->adapter->perf_opt & LSINIC_DMA_OPT_TXQ_SG_DMA) {
+	if (adapter->perf_opt & LSINIC_DMA_OPT_TXQ_SG_DMA) {
 		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
@@ -550,7 +553,7 @@ eq_again:
 		queue->pkts_eq += (nb_jobs - txq_bd_jobs_num);
 		queue->bd_eq += txq_bd_jobs_num;
 	} else {
-		if (!queue->adapter->txq_dma_silent) {
+		if (!adapter->txq_dma_silent) {
 			loop = 0;
 			dq = 0;
 			while (!dq) {
@@ -698,6 +701,7 @@ static uint16_t
 lsinic_xmit_seg_pkt(struct lsinic_queue *txq,
 	struct rte_mbuf *tx_pkt)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(txq);
 	struct lsinic_ep_tx_seg_dst_addr *dst_addr;
 	struct lsinic_sw_bd *txe;
 	uint16_t bd_idx, seg_size = tx_pkt->tso_segsz, idx = 0;
@@ -720,17 +724,15 @@ lsinic_xmit_seg_pkt(struct lsinic_queue *txq,
 	if (unlikely(!dst_addr->ready)) {
 		txq->ring_full++;
 		txq->drop_packet_num++;
-		LSXINIC_PMD_DBG("%s:TXQ%d:buf[%d] unavailable",
-			txq->adapter->lsinic_dev->name,
+		LSXINIC_PMD_DBG("TXQ%d:buf[%d] unavailable",
 			txq->queue_id, bd_idx);
 
 		return 0;
 	}
-	if (unlikely(!txe->dma_complete && !txq->adapter->txq_dma_silent)) {
+	if (unlikely(!txe->dma_complete && !adapter->txq_dma_silent)) {
 		txq->ring_full++;
 		txq->drop_packet_num++;
-		LSXINIC_PMD_DBG("%s:TXQ%d:buf[%d] last dma not complete",
-			txq->adapter->lsinic_dev->name,
+		LSXINIC_PMD_DBG("TXQ%d:buf[%d] last dma not complete",
 			txq->queue_id, bd_idx);
 		return 0;
 	}
@@ -794,6 +796,7 @@ static uint16_t
 lsinic_xmit_one_pkt(struct lsinic_queue *txq,
 	struct rte_mbuf *tx_pkt, struct rte_mbuf **free_pkt)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(txq);
 	const struct lsinic_bd_desc_128 *ep_txd = NULL;
 	struct lsinic_ep_tx_dst_addr *dst_addr = NULL;
 	struct lsinic_sw_bd *txe;
@@ -840,9 +843,9 @@ lsinic_xmit_one_pkt(struct lsinic_queue *txq,
 			return 0;
 		}
 
-		if (unlikely(tx_pkt->pkt_len >= txq->adapter->max_tx_size)) {
+		if (unlikely(tx_pkt->pkt_len >= adapter->max_tx_size)) {
 			LSXINIC_PMD_WARN("xmit packet len(%d) > max(%d)",
-				tx_pkt->pkt_len, txq->adapter->max_tx_size);
+				tx_pkt->pkt_len, adapter->max_tx_size);
 			return 0;
 		}
 
@@ -991,8 +994,9 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 	uint64_t dma_src_base, dma_dst_base;
 	int ret;
 	struct lsinic_dma_job *dma_jobs;
-	struct lsinic_adapter *adapter = q->adapter;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(q);
 	struct lsinic_bdr_reg *rc_bdr_reg;
+	void *rc_ring_base;
 
 	if (q->ep_reg->isr && adapter->txq_dma_silent) {
 		LSXINIC_PMD_ERR("TXQ%d unable to trigger ISR in %s",
@@ -1008,8 +1012,8 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 
 	dma_dst_base = q->ob_base + bd_bus_addr;
 
-	rc_bdr_reg = LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
-		LSINIC_RING_REG_OFFSET);
+	rc_ring_base = LSINIC_DEV_RC_RING_VIR(LSINIC_DEV_PCIE_DEV(q->dev));
+	rc_bdr_reg = LSINIC_REG_OFFSET(rc_ring_base, LSINIC_RING_REG_OFFSET);
 
 	if (q->ep_mem_bd_type == EP_MEM_BD_128) {
 		q->ep_bd_desc = q->ep_bd_shared_addr;
@@ -1095,10 +1099,7 @@ lsinic_txq_start(struct lsinic_queue *q, uint64_t bd_bus_addr)
 		dma_jobs[i].dst = dma_dst_base + i * q->wdma_bd_len;
 	}
 	/* Note: ep-rx == rc-tx */
-	if (adapter->rc_ring_virt_base)
-		q->rc_reg = &rc_bdr_reg->rx_ring[q->queue_id];
-	else
-		q->rc_reg = q->ep_reg;
+	q->rc_reg = &rc_bdr_reg->rx_ring[q->queue_id];
 
 	lsinic_queue_reset(q);
 
@@ -1127,8 +1128,9 @@ lsinic_rxq_start(struct lsinic_queue *q)
 	uint32_t i;
 	struct lsinic_bd_desc_128 *bd_desc;
 	int ret;
-	struct lsinic_adapter *adapter = q->adapter;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(q);
 	struct lsinic_bdr_reg *rc_bdr_reg;
+	void *rc_ring_base;
 
 	if (q->ep_reg->isr && adapter->rxq_dma_silent) {
 		LSXINIC_PMD_ERR("RXQ%d unable to trigger ISR in %s",
@@ -1138,8 +1140,8 @@ lsinic_rxq_start(struct lsinic_queue *q)
 	}
 	q->local_bd_128 = NULL;
 
-	rc_bdr_reg = LSINIC_REG_OFFSET(adapter->rc_ring_virt_base,
-			LSINIC_RING_REG_OFFSET);
+	rc_ring_base = LSINIC_DEV_RC_RING_VIR(LSINIC_DEV_PCIE_DEV(q->dev));
+	rc_bdr_reg = LSINIC_REG_OFFSET(rc_ring_base, LSINIC_RING_REG_OFFSET);
 
 	if (q->ep_mem_bd_type == EP_MEM_BD_128) {
 		q->ep_bd_desc = q->ep_bd_shared_addr;
@@ -1204,10 +1206,7 @@ lsinic_rxq_start(struct lsinic_queue *q)
 	else
 		q->recv_update = lsinic_recv_rxbd_update;
 
-	if (adapter->rc_ring_virt_base)
-		q->rc_reg = &rc_bdr_reg->tx_ring[q->queue_id];
-	else
-		q->rc_reg = q->ep_reg;
+	q->rc_reg = &rc_bdr_reg->tx_ring[q->queue_id];
 
 	lsinic_queue_reset(q);
 
@@ -1252,22 +1251,23 @@ lsinic_queue_start(struct lsinic_queue *q)
 	struct lsinic_ring_reg *ring_reg = q->ep_reg;
 	uint32_t msix_vector;
 	uint64_t bd_bus_addr, ob_offset, ob_size;
-	struct lsinic_adapter *adapter = q->adapter;
-	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(q);
+	struct rte_lsx_pciep_device *ep_dev = LSINIC_QUEUE_PCIE_DEV(q);
+	uint8_t *rc_ring_base = LSINIC_DEV_RC_RING_VIR(LSINIC_DEV_PCIE_DEV(q->dev));
 
 	LSXINIC_PMD_INFO("port%d %sq%d start, nb_desc:%d",
 		q->port_id,
 		q->type == LSINIC_QUEUE_TX ? "tx" : "rx",
 		q->reg_idx, q->nb_desc);
 
-	if (lsinic_dev->mmsi_flag != LSINIC_DONT_INT) {
+	if (ep_dev->mmsi_flag != LSINIC_DONT_INT) {
 		msix_vector =
 			(LSINIC_READ_REG(&ring_reg->icr) >>
 			LSINIC_INT_VECTOR_SHIFT);
 		q->msix_irq = msix_vector;
 		if (!rte_lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
-			q->msix_cmd = lsinic_dev->msix_data[msix_vector];
-			q->msix_vaddr = lsinic_dev->msix_addr[msix_vector];
+			q->msix_cmd = ep_dev->msix_data[msix_vector];
+			q->msix_vaddr = ep_dev->msix_addr[msix_vector];
 			if (q->msix_vaddr == 0) {
 				LSXINIC_PMD_ERR("q->msix_vaddr == NULL");
 				return -EINVAL;
@@ -1298,7 +1298,7 @@ lsinic_queue_start(struct lsinic_queue *q)
 				"OB PCIe size", ob_size);
 			return -EINVAL;
 		}
-		q->rc_bd_mapped_addr = adapter->rc_ring_virt_base + ob_offset;
+		q->rc_bd_mapped_addr = rc_ring_base + ob_offset;
 	} else {
 		LSXINIC_PMD_ERR("%s%d No bd addr set from RC",
 			q->type == LSINIC_QUEUE_RX ?
@@ -1442,12 +1442,12 @@ lsinic_queue_release(struct lsinic_queue *q)
 }
 
 struct lsinic_queue *
-lsinic_queue_alloc(struct lsinic_adapter *adapter,
-	uint16_t queue_idx,
-	int socket_id, uint32_t nb_desc,
+lsinic_queue_alloc(struct rte_eth_dev *dev,
+	uint16_t queue_idx, int socket_id, uint32_t nb_desc,
 	enum lsinic_queue_type type)
 {
 	struct lsinic_queue *q;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	/* Validate number of transmit descriptors.
 	 * It must not exceed hardware maximum, and must be multiple
@@ -1465,7 +1465,7 @@ lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	else
 		q = &adapter->txqs[queue_idx];
 
-	q->adapter = adapter;
+	q->dev = dev;
 	q->type = type;
 
 	q->nb_desc = nb_desc;
@@ -1510,15 +1510,15 @@ static void
 lsinic_queue_trigger_interrupt(struct lsinic_queue *q)
 {
 	struct lsinic_adapter *adapter;
-	struct rte_lsx_pciep_device *lsinic_dev;
+	struct rte_lsx_pciep_device *ep_dev;
 
 	if (likely(!q->ep_reg->isr))
 		return;
 
-	adapter = q->adapter;
-	lsinic_dev = adapter->lsinic_dev;
+	adapter = LSINIC_QUEUE_PRIVATE(q);
+	ep_dev = LSINIC_QUEUE_PCIE_DEV(q);
 
-	if (likely(lsinic_dev->mmsi_flag == LSX_PCIEP_DONT_INT))
+	if (likely(ep_dev->mmsi_flag == LSX_PCIEP_DONT_INT))
 		return;
 
 	if (lsinic_queue_msi_masked(q))
@@ -1630,6 +1630,7 @@ static uint16_t
 lsinic_txq_dma_dq(void *q)
 {
 	struct lsinic_queue *txq = q;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(txq);
 	struct lsinic_dma_job *dma_job;
 	struct lsinic_dma_seg_job *seg_job;
 	struct lsinic_sw_bd *txe = NULL;
@@ -1638,7 +1639,7 @@ lsinic_txq_dma_dq(void *q)
 	int i, ret = 0;
 	uint16_t idx_completed[LSINIC_QDMA_DQ_MAX_NB], idx;
 
-	ret = rte_dma_completed(txq->adapter->txq_dma_id,
+	ret = rte_dma_completed(adapter->txq_dma_id,
 		txq->dma_vq, LSINIC_QDMA_DQ_MAX_NB,
 		idx_completed, NULL);
 	if (!ret)
@@ -1733,6 +1734,7 @@ static inline int
 lsinic_tx_bd_available(struct lsinic_queue *txq,
 	uint16_t bd_idx)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(txq);
 	const struct lsinic_bd_desc_128 *ep_txd = &txq->ep_bd_desc[bd_idx];
 	int full_count = 0;
 
@@ -1741,7 +1743,7 @@ lsinic_tx_bd_available(struct lsinic_queue *txq,
 			RTE_CACHE_LINE_SIZE);
 
 	while (unlikely(ep_txd->bd_status != RING_BD_READY)) {
-		if (!txq->adapter->txq_dma_silent) {
+		if (!adapter->txq_dma_silent) {
 			if (txq->pkts_eq > txq->pkts_dq) {
 				txq->dma_dq(txq);
 				if (!(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
@@ -1818,9 +1820,9 @@ uint16_t
 lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	uint16_t nb_pkts)
 {
-	struct lsinic_queue *txq;
+	struct lsinic_queue *txq = tx_queue;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(txq);
 
-	txq = tx_queue;
 	if (unlikely(txq->core_id == RTE_MAX_LCORE && txq->pair)) {
 		/* This txq has not been added to list from it's pair.*/
 		return 0;
@@ -1849,10 +1851,8 @@ lsinic_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 
 			sprintf(ring_name,
 				"txq_mpsc_%d_%d_%d_%d_%d",
-				txq->adapter->pcie_idx,
-				txq->adapter->pf_idx,
-				txq->adapter->is_vf,
-				txq->adapter->vf_idx,
+				adapter->pcie_idx, adapter->pf_idx,
+				adapter->is_vf, adapter->vf_idx,
 				txq->queue_id);
 			rte_spinlock_lock(&txq->multi_core_lock);
 			if (txq->multi_core_ring) {
@@ -1910,6 +1910,7 @@ static uint16_t
 lsinic_rxq_dma_dq(void *q)
 {
 	struct lsinic_queue *rxq = q;
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(rxq);
 	struct lsinic_sw_bd *rxe;
 	struct lsinic_bd_desc_128 *rxdp;
 	struct lsinic_dma_job *dma_job;
@@ -1920,7 +1921,7 @@ lsinic_rxq_dma_dq(void *q)
 		rxq->bd_eq == rxq->bd_dq)
 		return 0;
 
-	ret = rte_dma_completed(rxq->adapter->rxq_dma_id,
+	ret = rte_dma_completed(adapter->rxq_dma_id,
 		rxq->dma_vq, LSINIC_QDMA_DQ_MAX_NB,
 		idx_completed, NULL);
 	if (!ret)
@@ -2004,6 +2005,7 @@ lsinic_recv_mbuf_dma_set(void *job,
 static uint16_t
 lsinic_recv_seg_bd(struct lsinic_queue *rxq)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(rxq);
 	struct lsinic_seg_desc *rxdp, *rc_rxdp;
 	struct lsinic_dma_seg_job *dma_seg_job;
 	struct rte_mbuf *rxm;
@@ -2086,7 +2088,7 @@ quit_recv:
 		align_len++;
 	rxm->tso_segsz = align_len / rxdp->nb;
 
-	if (rxq->adapter->rxq_dma_silent) {
+	if (adapter->rxq_dma_silent) {
 		rxe->complete = rte_pktmbuf_mtod_offset(rxm,
 			char *, offset);
 		(*rxe->complete) = LSINIC_XFER_COMPLETE_INIT_FLAG;
@@ -2189,6 +2191,7 @@ quit_recv:
 static uint16_t
 lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(rxq);
 	struct lsinic_dma_job *dma_job[DEFAULT_TX_RS_THRESH];
 	struct lsinic_sw_bd *rxe = NULL;
 	struct rte_mbuf *rxm[DEFAULT_TX_RS_THRESH];
@@ -2210,11 +2213,11 @@ lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 			if (!lsinic_recv_bd_extract(rxq, bd_idx, &dma, &size))
 				break;
 		}
-		if (unlikely(size > rxq->adapter->data_room_size)) {
+		if (unlikely(size > adapter->data_room_size)) {
 			rxq->errors++;
 			rte_panic("port%d rxq%d BD%d size:%d > %d\n",
 				rxq->port_id, rxq->queue_id, bd_idx, size,
-				rxq->adapter->data_room_size);
+				adapter->data_room_size);
 			/** Don't handle this error.*/
 		}
 
@@ -2252,13 +2255,13 @@ lsinic_recv_bd_bulk_alloc_buf(struct lsinic_queue *rxq)
 	if (ret) {
 		/** Roll back.*/
 		rxq->next_avail_idx -= bd_num;
-		rxq->adapter->lsinic_dev->eth_dev->data->rx_mbuf_alloc_failed += bd_num;
+		adapter->eth_data->rx_mbuf_alloc_failed += bd_num;
 		goto quit;
 	}
 
 	for (i = 0; i < bd_num; i++) {
 		rxq->rx_dma_mbuf_set(dma_job[i], rxm[i], pkt_len[i],
-			rxq->port_id, rxq->adapter->rxq_dma_silent);
+			rxq->port_id, adapter->rxq_dma_silent);
 		rxq->jobs_pending++;
 		rxq->rxq_dma_eq(rxq, true);
 	}
@@ -2274,6 +2277,7 @@ quit:
 static uint16_t
 lsinic_recv_bd(struct lsinic_queue *rxq)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(rxq);
 	struct lsinic_bd_desc_128 *rxdp;
 	struct lsinic_dma_job *dma_job;
 	struct lsinic_sw_bd *rxe = NULL;
@@ -2305,7 +2309,7 @@ lsinic_recv_bd(struct lsinic_queue *rxq)
 
 		len_cmd = rxdp->len_cmd;
 		size = len_cmd & LSINIC_BD_LEN_MASK;
-		if (unlikely(size > rxq->adapter->data_room_size)) {
+		if (unlikely(size > adapter->data_room_size)) {
 			LSXINIC_PMD_ERR("port%d rxq%d BD%d len_cmd:0x%08x",
 				rxq->port_id, rxq->queue_id, bd_idx, len_cmd);
 			rxq->errors++;
@@ -2327,7 +2331,7 @@ lsinic_recv_bd(struct lsinic_queue *rxq)
 
 		rxm = rte_mbuf_raw_alloc(rxq->mb_pool);
 		if (unlikely(!rxm)) {
-			rxq->adapter->lsinic_dev->eth_dev->data->rx_mbuf_alloc_failed++;
+			adapter->eth_data->rx_mbuf_alloc_failed++;
 
 			LSXINIC_PMD_DBG("Port%d RXQ%d mbuf alloc failed",
 				rxq->port_id, rxq->queue_id);
@@ -2360,12 +2364,9 @@ lsinic_recv_bd(struct lsinic_queue *rxq)
 		rxm->data_off = RTE_PKTMBUF_HEADROOM +
 			rxe->align_dma_offset;
 
-		if (rxq->adapter->rxq_dma_silent) {
-			rxe->complete =
-				rte_pktmbuf_mtod_offset(rxm,
-					char *, dma_job->len);
-			(*rxe->complete) =
-				LSINIC_XFER_COMPLETE_INIT_FLAG;
+		if (adapter->rxq_dma_silent) {
+			rxe->complete = rte_pktmbuf_mtod_offset(rxm, char *, dma_job->len);
+			(*rxe->complete) = LSINIC_XFER_COMPLETE_INIT_FLAG;
 			dma_job->len++;
 		} else {
 			rxe->dma_complete = 0;
@@ -2403,7 +2404,7 @@ lsinic_txq_loop(uint16_t dq_sync)
 
 	/* Check if txq already added to list */
 	RTE_TAILQ_FOREACH_SAFE(q, &RTE_PER_LCORE(lsinic_txq_list), next, tq) {
-		adapter = q->adapter;
+		adapter = LSINIC_QUEUE_PRIVATE(q);
 		if (unlikely(!lsinic_queue_running(q))) {
 			lsinic_queue_status_update(q);
 			if (!lsinic_queue_running(q))
@@ -2454,6 +2455,7 @@ lsinic_txq_loop(uint16_t dq_sync)
 static int
 lsinic_rxq_loop(struct lsinic_queue *rxq)
 {
+	struct lsinic_adapter *adapter = LSINIC_QUEUE_PRIVATE(rxq);
 	const int bulk_alloc = 1;
 	uint16_t rc_recvd = 0;
 
@@ -2480,7 +2482,7 @@ lsinic_rxq_loop(struct lsinic_queue *rxq)
 		rc_recvd = lsinic_recv_bd(rxq);
 	}
 
-	if (!rxq->adapter->rxq_dma_silent)
+	if (!adapter->rxq_dma_silent)
 		rxq->dma_dq(rxq);
 
 	return rc_recvd;
@@ -2631,7 +2633,7 @@ lsinic_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	uint8_t *tick_load_8 = (uint8_t *)&tick_load;
 	uint8_t *tick_save;
 	uint8_t i;
-	double cyc_per_us = rxq->adapter->cycs_per_us;
+	double cyc_per_us = (struct lsinic_adapter *)LSINIC_QUEUE_PRIVATE(rxq)->cycs_per_us;
 	double curr_latency;
 #endif
 	uint64_t pkt_old = rxq->packets;
@@ -2743,28 +2745,28 @@ lsinic_dev_tx_queue_release(struct rte_eth_dev *dev,
 
 int
 lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t queue_idx,
-	uint16_t nb_desc,
-	unsigned int socket_id,
+	uint16_t queue_idx, uint16_t nb_desc, uint32_t socket_id,
 	const struct rte_eth_txconf *tx_conf __rte_unused)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
-	struct lsinic_bdr_reg *bdr_reg =
-		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
-			LSINIC_RING_REG_OFFSET);
-	struct lsinic_eth_reg *eth_reg =
-		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
+	struct lsinic_bdr_reg *bdr_reg;
+	struct lsinic_eth_reg *eth_reg;
 	struct lsinic_queue *txq;
-	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
-	uint64_t base_offset = LSINIC_EP2RC_RING_OFFSET(max_qpairs);
-	uint8_t *txq_base = adapter->bd_desc_base + base_offset;
+	uint16_t max_qpairs;
+	uint64_t base_offset;
+	uint8_t *txq_base;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 
-	if (queue_idx >= eth_reg->max_qpairs) {
+	bdr_reg = LSINIC_REG_OFFSET(adapter->ep_ring_virt_base, LSINIC_RING_REG_OFFSET);
+	eth_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
+	if (queue_idx >= max_qpairs) {
 		LSXINIC_PMD_ERR("config txq index(%d) >= max qpair(%d)",
 			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
+	base_offset = LSINIC_EP2RC_RING_OFFSET(max_qpairs);
+	txq_base = adapter->bd_desc_base + base_offset;
 	/* Note: ep-tx == rc-rx */
 
 	/* Free memory prior to re-allocation if needed... */
@@ -2772,7 +2774,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		lsinic_queue_release(dev->data->tx_queues[queue_idx]);
 
 	/* First allocate the tx queue data structure */
-	txq = lsinic_queue_alloc(adapter, queue_idx, socket_id,
+	txq = lsinic_queue_alloc(dev, queue_idx, socket_id,
 			nb_desc, LSINIC_QUEUE_TX);
 	if (!txq)
 		return -ENOMEM;
@@ -2850,32 +2852,31 @@ lsinic_dev_mempool_continue_mz(struct rte_mempool *mp)
 
 int
 lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
-	uint16_t queue_idx,
-	uint16_t nb_desc,
-	unsigned int socket_id,
-	const struct rte_eth_rxconf *rx_conf,
-	struct rte_mempool *mp)
+	uint16_t queue_idx, uint16_t nb_desc, uint32_t socket_id,
+	const struct rte_eth_rxconf *rx_conf, struct rte_mempool *mp)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
-	struct lsinic_bdr_reg *bdr_reg =
-		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
-			LSINIC_RING_REG_OFFSET);
-	struct lsinic_eth_reg *eth_reg =
-		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
+	struct lsinic_bdr_reg *bdr_reg;
+	struct lsinic_eth_reg *eth_reg;
 	struct lsinic_queue *rxq;
-	uint16_t max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
-	struct rte_lsx_pciep_device *lsinic_dev;
-	uint64_t base_offset = LSINIC_RC2EP_RING_OFFSET(max_qpairs);
-	uint8_t *rxq_base = adapter->bd_desc_base + base_offset;
+	uint16_t max_qpairs;
+	struct rte_lsx_pciep_device *ep_dev;
+	uint64_t base_offset;
+	uint8_t *rxq_base;
 	uint64_t q_offset = queue_idx * LSINIC_RING_SIZE;
 	char *env = getenv("LSINIC_EP_RXQ_RC_BD_CHECK");
 
+	bdr_reg = LSINIC_REG_OFFSET(adapter->ep_ring_virt_base, LSINIC_RING_REG_OFFSET);
+	eth_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	max_qpairs = LSINIC_READ_REG(&eth_reg->max_qpairs);
 	if (queue_idx >= max_qpairs) {
 		LSXINIC_PMD_ERR("config rxq index(%d) >= max qpair(%d)",
 			queue_idx, max_qpairs);
 		return -EINVAL;
 	}
-	lsinic_dev = adapter->lsinic_dev;
+	base_offset = LSINIC_RC2EP_RING_OFFSET(max_qpairs);
+	rxq_base = adapter->bd_desc_base + base_offset;
+	ep_dev = LSINIC_DEV_PCIE_DEV(dev);
 
 	/* Note: ep-rx == rc-tx */
 
@@ -2884,7 +2885,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		lsinic_queue_release(dev->data->rx_queues[queue_idx]);
 
 	/* First allocate the tx queue data structure */
-	rxq = lsinic_queue_alloc(adapter, queue_idx, socket_id,
+	rxq = lsinic_queue_alloc(dev, queue_idx, socket_id,
 			nb_desc, LSINIC_QUEUE_RX);
 	if (!rxq)
 		return -ENOMEM;
@@ -2933,7 +2934,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	}
 
 	if (adapter->ep_mem_dbg &&
-		!lsinic_dev->virt_addr[LSX_PCIEP_EP_MEM_POOL_BAR_IDX]) {
+		!ep_dev->virt_addr[LSX_PCIEP_EP_MEM_POOL_BAR_IDX]) {
 		const struct rte_memzone *mz;
 		int ret, bar;
 		uint64_t mask;
@@ -2942,7 +2943,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (!mz)
 			return -ENOMEM;
 
-		mask = rte_lsx_pciep_bus_win_mask(lsinic_dev);
+		mask = rte_lsx_pciep_bus_win_mask(ep_dev);
 		if (mask && (mask & mz->len)) {
 			LSXINIC_PMD_ERR("!Align Len(0x%lx)-mask(0x%lx)",
 				mz->len, mask);
@@ -2950,16 +2951,15 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		}
 
 		bar = LSX_PCIEP_EP_MEM_POOL_BAR_IDX;
-		lsinic_dev->virt_addr[bar] = mz->addr;
-		lsinic_dev->iov_addr[bar] = mz->iova;
-		lsinic_dev->phy_addr[bar] = rte_mem_virt2phy(mz->addr);
+		ep_dev->virt_addr[bar] = mz->addr;
+		ep_dev->iov_addr[bar] = mz->iova;
+		ep_dev->phy_addr[bar] = rte_mem_virt2phy(mz->addr);
 
-		ret = rte_lsx_pciep_set_ib_win(lsinic_dev, bar, mz->len);
+		ret = rte_lsx_pciep_set_ib_win(ep_dev, bar, mz->len);
 		if (ret)
 			return ret;
-		if (rte_lsx_pciep_hw_sim_get(adapter->pcie_idx) &&
-			!lsinic_dev->is_vf) {
-			ret = rte_lsx_pciep_sim_dev_map_inbound(lsinic_dev);
+		if (rte_lsx_pciep_hw_sim_get(adapter->pcie_idx) && !ep_dev->is_vf) {
+			ret = rte_lsx_pciep_sim_dev_map_inbound(ep_dev);
 			if (ret)
 				return ret;
 		}

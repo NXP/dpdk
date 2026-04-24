@@ -118,7 +118,7 @@ lsxvio_vio_queue_desc_map(struct rte_lsx_pciep_device *dev,
 	uint8_t *virt[], uint64_t desc_addr[], uint64_t *ob_base,
 	uint16_t num)
 {
-	struct lsxvio_adapter *adapter = dev->eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev->eth_dev);
 	struct lsxvio_queue_cfg *queue;
 	uint32_t i, enabled = 0;
 	uint64_t desc_addr_min = 0, desc_addr_max = 0, size, mask;
@@ -222,7 +222,7 @@ lsxvio_vio_rxq_configure_fromrc(struct lsxvio_queue *vq,
 int
 lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 {
-	struct lsxvio_adapter *adapter = dev->eth_dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev->eth_dev);
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 	struct lsxvio_queue_cfg *queue;
 	struct lsxvio_queue *vq;
@@ -405,7 +405,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 
 void lsxvio_virtio_reset_dev(struct rte_eth_dev *dev)
 {
-	struct lsxvio_adapter *adapter = dev->data->dev_private;
+	struct lsxvio_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsxvio_common_cfg *common = BASE_TO_COMMON(adapter->cfg_base);
 	struct lsxvio_queue_cfg *queue;
 	int i;

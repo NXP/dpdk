@@ -34,6 +34,7 @@ struct lsinic_adapter {
 	uint16_t vendor_id;
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
+	int single_bar;
 
 	uint8_t rbp_enable;
 	int txq_dma_id;
@@ -52,11 +53,11 @@ struct lsinic_adapter {
 	uint32_t num_rx_queues;
 	uint32_t rc_state;
 	uint32_t ep_state;
+	struct rte_eth_dev_data *eth_data;
 
 	uint8_t *ep_ring_virt_base;  /* EP ring base */
 	rte_iova_t ep_ring_phy_base;
 
-	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	rte_iova_t rc_ring_phy_base;
 	dma_addr_t rc_ring_bus_base;
 	uint64_t rc_ring_size;
@@ -68,7 +69,6 @@ struct lsinic_adapter {
 	int pf_idx;
 	int vf_idx;
 	int is_vf;
-	struct rte_lsx_pciep_device *lsinic_dev;
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
 
 	struct lsinic_queue *txqs;
@@ -82,11 +82,21 @@ struct lsinic_adapter {
 	uint32_t rc_dma_elt_size;
 	const struct rte_memzone *local_mz;
 
-	void *rc_dma_vir;
 	uint64_t rc_dma_phy;
 
 	uint64_t cycs_per_us;
 };
+
+#define LSINIC_DEV_PCIE_DEV(dev) \
+	container_of((dev)->device, struct rte_lsx_pciep_device, device)
+
+#define LSINIC_DEV_RC_RING_VIR(ep_dev) ((uint8_t *)(ep_dev)->reserve_data[0])
+#define LSINIC_DEV_SET_RC_RING_VIR(ep_dev, ptr) \
+	((ep_dev)->reserve_data[0] = (uint64_t)(ptr))
+
+#define LSINIC_DEV_RC_DMA_VIR(ep_dev) ((uint8_t *)(ep_dev)->reserve_data[1])
+#define LSINIC_DEV_SET_RC_DMA_VIR(ep_dev, ptr) \
+	((ep_dev)->reserve_data[1] = (uint64_t)(ptr))
 
 /* RX/TX function prototypes
  */
@@ -125,11 +135,11 @@ int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
 
-int lsinic_dma_test_mem_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_dma_test_mem_config_fromrc(struct rte_eth_dev *dev);
 
-int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_reset_config_fromrc(struct rte_eth_dev *dev);
 
-int lsinic_remove_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_remove_config_fromrc(struct rte_eth_dev *dev);
 
 static inline void
 lsinic_byte_memset(void *s, uint8_t ch, size_t n)
