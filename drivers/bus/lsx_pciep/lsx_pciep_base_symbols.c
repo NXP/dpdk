@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 2026 NXP
+ */
+
+#include <eal_export.h>
+
+/* Symbols from the base driver are exported separately below. */
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_alloc_pci_ob)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_ob_dma_size)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_ob_mapped)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_win_mask)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_ctl_get_device_id)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_register)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_unregister)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_first_dev)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_fun_config)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_fun_set_ext)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_hw_rbp_get)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_hw_sim_get)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_ib_cache_mark)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_multi_msix_init)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_multi_msix_remove)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_rbp_ob_overlap)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_set_ib_win)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_set_ob_win)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_sim_dev_map_inbound)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_start_msix)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_type_get)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_unset_ib_win)
+RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_unset_ob_win)
