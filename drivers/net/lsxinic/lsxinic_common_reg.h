@@ -370,6 +370,7 @@ struct __rte_packed_begin lsinic_rcs_reg {  /* offset 0x200-0x2FF */
 	uint64_t r_dma_base;
 	uint32_t r_dma_elt_size;
 	uint32_t dma_mem_complete;
+	uint32_t bypass_iommu;
 	uint32_t msi_flag;
 	uint32_t msix_mask[LSINIC_DEV_MSIX_MAX_NB];
 } __rte_packed_end;

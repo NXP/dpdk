@@ -1352,7 +1352,7 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
-	int sim, ret = 0;
+	int sim, ret = 0, bypass_iommu;
 	uint32_t i, snoop;
 	struct lsinic_queue *q;
 	struct lsx_pciep_outbound *ob_win;
@@ -1432,13 +1432,16 @@ skip_map_rc_ring:
 			return -EIO;
 		}
 	}
+	bypass_iommu = LSINIC_READ_REG(&rcs_reg->bypass_iommu);
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		q = &adapter->rxqs[i];
 		q->ob_base = ob_base;
+		q->bypass_iommu = bypass_iommu;
 	}
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		q = &adapter->txqs[i];
 		q->ob_base = ob_base;
+		q->bypass_iommu = bypass_iommu;
 	}
 
 	adapter->rc_dma_base = LSINIC_READ_REG_64B(&rcs_reg->r_dma_base);

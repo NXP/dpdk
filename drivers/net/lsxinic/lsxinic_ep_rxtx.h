@@ -81,6 +81,7 @@ struct lsinic_queue {
 	enum lsinic_queue_status status;
 	int ep_enabled;
 	int rc_bd_check;
+	int bypass_iommu;
 	uint32_t rc_bd_check_pp;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
