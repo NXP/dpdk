@@ -12,8 +12,6 @@
 
 union lsinic_ep2rc_notify {
 	struct lsinic_bd_desc ep_tx_addr[U_BURST_MAX];
-	struct lsinic_ep_rx_src_addrl ep_tx_addrl[U_BURST_MAX];
-	struct lsinic_ep_rx_src_addrx ep_tx_addrx[U_BURST_MAX];
 };
 
 uint16_t
