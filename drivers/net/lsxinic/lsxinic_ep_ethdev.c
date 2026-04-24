@@ -69,35 +69,71 @@
 
 static struct rte_lsx_pciep_driver rte_lsinic_pmd;
 
-static int
-lsinic_dev_configure(struct rte_eth_dev *dev);
-static int
-lsinic_dev_start(struct rte_eth_dev *dev);
-static int
-lsinic_dev_stop(struct rte_eth_dev *dev);
-static int
-lsinic_dev_close(struct rte_eth_dev *dev);
-static int
-lsinic_dev_info_get(struct rte_eth_dev *dev,
-	struct rte_eth_dev_info *dev_info);
-static int
-lsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
-static int
-lsinic_dev_link_update(struct rte_eth_dev *dev,
-	int wait_to_complete);
-static int
-lsinic_dev_promiscuous_enable(struct rte_eth_dev *dev);
-static int
-lsinic_dev_promiscuous_disable(struct rte_eth_dev *dev);
-static int
-lsinic_dev_allmulticast_enable(struct rte_eth_dev *dev);
-static int
-lsinic_dev_allmulticast_disable(struct rte_eth_dev *dev);
-static int
-lsinic_dev_stats_get(struct rte_eth_dev *dev,
-	struct rte_eth_stats *stats, struct eth_queue_stats *qstats);
-static int
-lsinic_dev_stats_reset(struct rte_eth_dev *dev);
+static uint64_t
+lsinic_xstats_get_ipackets(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ipackets(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_ibytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibytes(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_epackets(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_epackets(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_ebytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ebytes(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_ierrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ierrs(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_eerrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_eerrs(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_ibd_errs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibd_errs(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_efulls(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_efulls(dev, struct lsinic_queue *);
+}
+
+static uint64_t
+lsinic_xstats_get_edrops(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_edrops(dev, struct lsinic_queue *);
+}
+
+static const lsxinic_common_xstats_count s_lsinic_xstat_cbs[] = {
+	lsinic_xstats_get_ipackets,
+	lsinic_xstats_get_ibytes,
+	lsinic_xstats_get_epackets,
+	lsinic_xstats_get_ebytes,
+	lsinic_xstats_get_ierrs,
+	lsinic_xstats_get_eerrs,
+	lsinic_xstats_get_ibd_errs,
+	lsinic_xstats_get_efulls,
+	lsinic_xstats_get_edrops
+};
 
 static const struct rte_eth_desc_lim rx_desc_lim = {
 	.nb_max = LSINIC_BD_ENTRY_COUNT,
@@ -109,26 +145,6 @@ static const struct rte_eth_desc_lim tx_desc_lim = {
 	.nb_max = LSINIC_BD_ENTRY_COUNT,
 	.nb_min = LSINIC_BD_ENTRY_COUNT,
 	.nb_align = 8,
-};
-
-static struct eth_dev_ops lsinic_eth_dev_ops = {
-	.dev_configure        = lsinic_dev_configure,
-	.dev_start            = lsinic_dev_start,
-	.dev_stop             = lsinic_dev_stop,
-	.dev_close            = lsinic_dev_close,
-	.dev_infos_get        = lsinic_dev_info_get,
-	.mtu_set	      = lsinic_dev_mtu_set,
-	.rx_queue_setup       = lsinic_dev_rx_queue_setup,
-	.rx_queue_release     = lsinic_dev_rx_queue_release,
-	.tx_queue_setup       = lsinic_dev_tx_queue_setup,
-	.tx_queue_release     = lsinic_dev_tx_queue_release,
-	.link_update          = lsinic_dev_link_update,
-	.promiscuous_enable   = lsinic_dev_promiscuous_enable,
-	.promiscuous_disable  = lsinic_dev_promiscuous_disable,
-	.allmulticast_enable  = lsinic_dev_allmulticast_enable,
-	.allmulticast_disable = lsinic_dev_allmulticast_disable,
-	.stats_get            = lsinic_dev_stats_get,
-	.stats_reset          = lsinic_dev_stats_reset,
 };
 
 /**
@@ -543,132 +559,6 @@ lsinic_mac_init(struct rte_ether_addr *mac_addrs,
 	mac_addrs->addr_bytes[5] = vf_idx;
 }
 
-/* rte_lsinic_probe:
- *
- * Interrupt is used only for link status notification on dpdk.
- * we don't think about the interrupt handlle situation right now.
- * we can port our MSIX interrupt in iNIC host driver to dpdk,
- * need to test the performance.
- */
-
-static int
-rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
-	struct rte_lsx_pciep_device *lsinic_dev)
-{
-	struct rte_eth_dev *eth_dev = NULL;
-	struct lsinic_adapter *adapter = NULL;
-	int err, end;
-
-	end = LSINIC_RING_REG_OFFSET + sizeof(struct lsinic_bdr_reg);
-	if (end > LSINIC_RING_BD_OFFSET) {
-		rte_panic("%s(%d) > %s(%d)", "RING REG end",
-			end, "RING BD offset", LSINIC_RING_BD_OFFSET);
-	}
-
-	end = LSINIC_DEV_REG_OFFSET + sizeof(struct lsinic_dev_reg);
-	if (end > LSINIC_RCS_REG_OFFSET) {
-		rte_panic("%s(%d) > %s(%d)", "DEV REG end",
-			end, "RCS REG offset", LSINIC_RCS_REG_OFFSET);
-	}
-
-	end = LSINIC_RCS_REG_OFFSET + sizeof(struct lsinic_rcs_reg);
-	if (end > LSINIC_ETH_REG_OFFSET) {
-		rte_panic("%s(%d) > %s(%d)", "RCS REG end",
-			end, "ETH REG offset", LSINIC_ETH_REG_OFFSET);
-	}
-
-	if (lsinic_dev->init_flag) {
-		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
-			lsinic_dev->pf, lsinic_dev->vf);
-		return 0;
-	}
-
-	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
-		eth_dev = rte_eth_dev_allocate(lsinic_dev->device.name);
-		if (!eth_dev) {
-			LSXINIC_PMD_ERR("Cannot allocate eth_dev");
-			return -ENODEV;
-		}
-	} else {
-		eth_dev = rte_eth_dev_attach_secondary(lsinic_dev->device.name);
-		if (!eth_dev) {
-			LSXINIC_PMD_ERR("Cannot attach eth_dev");
-			return -ENODEV;
-		}
-	}
-
-	adapter = rte_zmalloc("ethdev process private adapter",
-				sizeof(struct lsinic_adapter),
-				RTE_CACHE_LINE_SIZE);
-	if (!adapter) {
-		LSXINIC_PMD_ERR("Cannot allocate memzone for private data");
-		rte_eth_dev_release_port(eth_dev);
-		return -ENOMEM;
-	}
-	eth_dev->process_private = adapter;
-
-	adapter->dev_type = LSINIC_NXP_DEV;
-	rte_spinlock_init(&adapter->txq_dma_start_lock);
-	rte_spinlock_init(&adapter->rxq_dma_start_lock);
-	adapter->lsinic_dev = lsinic_dev;
-
-	eth_dev->device = &lsinic_dev->device;
-	eth_dev->device->driver = &lsinic_drv->driver;
-	lsinic_dev->driver = lsinic_drv;
-	lsinic_dev->eth_dev = eth_dev;
-	lsinic_dev->chk_eth_status = lsinic_dev_chk_eth_status;
-	eth_dev->data->rx_mbuf_alloc_failed = 0;
-
-	eth_dev->dev_ops = &lsinic_eth_dev_ops;
-	eth_dev->rx_pkt_burst = lsinic_recv_pkts;
-	eth_dev->tx_pkt_burst = lsinic_xmit_pkts;
-
-	/* Allocate memory for storing MAC addresses */
-	if (!eth_dev->data->mac_addrs) {
-		eth_dev->data->mac_addrs =
-			rte_zmalloc("lsinic", RTE_ETHER_ADDR_LEN, 0);
-		if (!eth_dev->data->mac_addrs) {
-			LSXINIC_PMD_ERR("Failed to allocate MAC address");
-			return -ENOMEM;
-		}
-
-		lsinic_mac_init(eth_dev->data->mac_addrs, lsinic_dev);
-	}
-	err = lsinic_netdev_env_init(eth_dev);
-	if (err) {
-		LSXINIC_PMD_ERR("%s init env failed(%d)",
-			eth_dev->data->name, err);
-		return err;
-	}
-	lsinic_dev->init_flag = 1;
-	adapter->txq_dma_id = -1;
-	adapter->rxq_dma_id = -1;
-
-	rte_eth_dev_probing_finish(eth_dev);
-	return 0;
-}
-
-#ifdef LSXINIC_LATENCY_PROFILING
-static uint64_t s_cycs_per_us;
-static uint64_t
-calculate_cycles_per_us(void)
-{
-	uint64_t start_cycles, end_cycles;
-
-	if (s_cycs_per_us)
-		return s_cycs_per_us;
-
-	start_cycles = rte_get_timer_cycles();
-	rte_delay_ms(1000);
-	end_cycles = rte_get_timer_cycles();
-	s_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
-	LSXINIC_PMD_INFO("Cycles per us is: %ld",
-		(unsigned long)s_cycs_per_us);
-
-	return s_cycs_per_us;
-}
-#endif
-
 static inline uint16_t
 lsinic_dev_pcie_dev_id(void)
 {
@@ -829,6 +719,306 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+/* Stop device: disable rx and tx functions to allow for reconfiguring.
+ */
+static int
+lsinic_dev_stop(struct rte_eth_dev *dev)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+	int ret;
+	uint16_t rx_stop, tx_stop;
+
+	/* disable the netdev receive */
+	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	if (ret)
+		return ret;
+
+	/* disable all enabled rx & tx queues */
+	rx_stop = lsinic_dev_rx_stop(dev, 0);
+	tx_stop = lsinic_dev_tx_stop(dev, 0);
+	if (rx_stop == dev->data->nb_rx_queues &&
+		tx_stop == dev->data->nb_tx_queues) {
+		/* disable the netdev receive */
+		lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
+	}
+
+	lsinic_dev_clear_queues(dev);
+
+	return 0;
+}
+
+/* Reest and stop device.
+ */
+static int
+lsinic_dev_close(struct rte_eth_dev *dev)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+	int ret;
+
+	ret = lsinic_dev_stop(dev);
+	if (ret)
+		return ret;
+
+	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
+	if (ret)
+		return ret;
+	if (adapter->local_mz) {
+		rte_eth_dma_zone_free(dev,
+			adapter->local_mz->name, 0);
+		adapter->local_mz = NULL;
+	}
+
+	return ret;
+}
+
+static int
+lsinic_dev_info_get(struct rte_eth_dev *dev,
+	struct rte_eth_dev_info *dev_info)
+{
+	dev_info->device = dev->device;
+	dev_info->max_rx_queues = LSINIC_RING_MAX_COUNT;
+	dev_info->max_tx_queues = LSINIC_RING_MAX_COUNT;
+	dev_info->min_rx_bufsize = 1024; /* cf BSIZEPACKET in SRRCTL register */
+	dev_info->max_rx_pktlen = 15872; /* includes CRC, cf MAXFRS register */
+	dev_info->max_vfs = PCIE_MAX_VF_NUM;
+
+	dev_info->rx_desc_lim = rx_desc_lim;
+	dev_info->tx_desc_lim = tx_desc_lim;
+	dev_info->rx_offload_capa = RTE_ETH_RX_OFFLOAD_CHECKSUM;
+
+	return 0;
+}
+
+static int
+lsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+	uint16_t max = mtu + RTE_ETHER_HDR_LEN + RTE_VLAN_HLEN;
+	struct lsinic_eth_reg *eth_reg;
+
+	adapter->data_room_size = max;
+	adapter->max_tx_size = max;
+	eth_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
+	LSINIC_WRITE_REG(&eth_reg->max_data_room, adapter->data_room_size);
+
+	return 0;
+}
+
+static int
+lsinic_dev_promiscuous_enable(struct rte_eth_dev *dev __rte_unused)
+{
+	return 0;
+}
+
+static int
+lsinic_dev_promiscuous_disable(struct rte_eth_dev *dev __rte_unused)
+{
+	return 0;
+}
+
+static int
+lsinic_dev_allmulticast_enable(struct rte_eth_dev *dev __rte_unused)
+{
+	return 0;
+}
+
+static int
+lsinic_dev_allmulticast_disable(struct rte_eth_dev *dev __rte_unused)
+{
+	return 0;
+}
+
+/* Staticstic related function
+ */
+static int
+lsinic_dev_stats_get(struct rte_eth_dev *dev,
+	struct rte_eth_stats *stats, __rte_unused struct eth_queue_stats *qstats)
+{
+	stats->ipackets = lsxinic_common_get_ipackets(dev, struct lsinic_queue *);
+	stats->opackets = lsxinic_common_get_epackets(dev, struct lsinic_queue *);
+	stats->ibytes = lsxinic_common_get_ibytes(dev, struct lsinic_queue *);
+	stats->obytes = lsxinic_common_get_ebytes(dev, struct lsinic_queue *);
+	stats->ierrors = lsxinic_common_get_ierrs(dev, struct lsinic_queue *);
+	stats->oerrors = lsxinic_common_get_eerrs(dev, struct lsinic_queue *);
+
+	return 0;
+}
+
+static int
+lsinic_dev_stats_reset(struct rte_eth_dev *dev)
+{
+	lsxinic_common_q_reset(dev, struct lsinic_queue *);
+
+	return 0;
+}
+
+static int
+lsinic_dev_xstats_reset(struct rte_eth_dev *dev)
+{
+	return lsinic_dev_stats_reset(dev);
+}
+
+/* return 0 means link status changed, -1 means not changed */
+static int
+lsinic_dev_link_update(struct rte_eth_dev *dev,
+	int wait_to_complete __rte_unused)
+{
+	struct lsinic_adapter *adapter = dev->process_private;
+
+	return lsxinic_common_link_update(dev, adapter->rc_state);
+}
+
+static struct eth_dev_ops lsinic_eth_dev_ops = {
+	.dev_configure        = lsinic_dev_configure,
+	.dev_start            = lsinic_dev_start,
+	.dev_stop             = lsinic_dev_stop,
+	.dev_close            = lsinic_dev_close,
+	.dev_infos_get        = lsinic_dev_info_get,
+	.mtu_set	      = lsinic_dev_mtu_set,
+	.rx_queue_setup       = lsinic_dev_rx_queue_setup,
+	.rx_queue_release     = lsinic_dev_rx_queue_release,
+	.tx_queue_setup       = lsinic_dev_tx_queue_setup,
+	.tx_queue_release     = lsinic_dev_tx_queue_release,
+	.link_update          = lsinic_dev_link_update,
+	.promiscuous_enable   = lsinic_dev_promiscuous_enable,
+	.promiscuous_disable  = lsinic_dev_promiscuous_disable,
+	.allmulticast_enable  = lsinic_dev_allmulticast_enable,
+	.allmulticast_disable = lsinic_dev_allmulticast_disable,
+	.stats_get            = lsinic_dev_stats_get,
+	.stats_reset          = lsinic_dev_stats_reset,
+	.xstats_get	       = lsxinic_common_xstats_get,
+	.xstats_get_by_id     = lsinic_common_xstats_get_by_id,
+	.xstats_get_names_by_id = lsinic_common_xstats_get_names_by_id,
+	.xstats_get_names      = lsxinic_common_xstats_get_names,
+	.xstats_reset          = lsinic_dev_xstats_reset,
+};
+
+/* rte_lsinic_probe:
+ *
+ * Interrupt is used only for link status notification on dpdk.
+ * we don't think about the interrupt handlle situation right now.
+ * we can port our MSIX interrupt in iNIC host driver to dpdk,
+ * need to test the performance.
+ */
+
+static int
+rte_lsinic_probe(struct rte_lsx_pciep_driver *lsinic_drv,
+	struct rte_lsx_pciep_device *lsinic_dev)
+{
+	struct rte_eth_dev *eth_dev = NULL;
+	struct lsinic_adapter *adapter = NULL;
+	int err, end;
+
+	end = LSINIC_RING_REG_OFFSET + sizeof(struct lsinic_bdr_reg);
+	if (end > LSINIC_RING_BD_OFFSET) {
+		rte_panic("%s(%d) > %s(%d)", "RING REG end",
+			end, "RING BD offset", LSINIC_RING_BD_OFFSET);
+	}
+
+	end = LSINIC_DEV_REG_OFFSET + sizeof(struct lsinic_dev_reg);
+	if (end > LSINIC_RCS_REG_OFFSET) {
+		rte_panic("%s(%d) > %s(%d)", "DEV REG end",
+			end, "RCS REG offset", LSINIC_RCS_REG_OFFSET);
+	}
+
+	end = LSINIC_RCS_REG_OFFSET + sizeof(struct lsinic_rcs_reg);
+	if (end > LSINIC_ETH_REG_OFFSET) {
+		rte_panic("%s(%d) > %s(%d)", "RCS REG end",
+			end, "ETH REG offset", LSINIC_ETH_REG_OFFSET);
+	}
+
+	if (lsinic_dev->init_flag) {
+		LSXINIC_PMD_ERR("pf:%d vf:%d has been initialized!",
+			lsinic_dev->pf, lsinic_dev->vf);
+		return 0;
+	}
+
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		eth_dev = rte_eth_dev_allocate(lsinic_dev->device.name);
+		if (!eth_dev) {
+			LSXINIC_PMD_ERR("Cannot allocate eth_dev");
+			return -ENODEV;
+		}
+	} else {
+		eth_dev = rte_eth_dev_attach_secondary(lsinic_dev->device.name);
+		if (!eth_dev) {
+			LSXINIC_PMD_ERR("Cannot attach eth_dev");
+			return -ENODEV;
+		}
+	}
+
+	adapter = rte_zmalloc("ethdev process private adapter",
+				sizeof(struct lsinic_adapter),
+				RTE_CACHE_LINE_SIZE);
+	if (!adapter) {
+		LSXINIC_PMD_ERR("Cannot allocate memzone for private data");
+		rte_eth_dev_release_port(eth_dev);
+		return -ENOMEM;
+	}
+	eth_dev->process_private = adapter;
+
+	adapter->dev_type = LSINIC_NXP_DEV;
+	rte_spinlock_init(&adapter->txq_dma_start_lock);
+	rte_spinlock_init(&adapter->rxq_dma_start_lock);
+	adapter->lsinic_dev = lsinic_dev;
+
+	eth_dev->device = &lsinic_dev->device;
+	eth_dev->device->driver = &lsinic_drv->driver;
+	lsinic_dev->driver = lsinic_drv;
+	lsinic_dev->eth_dev = eth_dev;
+	lsinic_dev->chk_eth_status = lsinic_dev_chk_eth_status;
+	eth_dev->data->rx_mbuf_alloc_failed = 0;
+
+	eth_dev->dev_ops = &lsinic_eth_dev_ops;
+	eth_dev->rx_pkt_burst = lsinic_recv_pkts;
+	eth_dev->tx_pkt_burst = lsinic_xmit_pkts;
+
+	/* Allocate memory for storing MAC addresses */
+	if (!eth_dev->data->mac_addrs) {
+		eth_dev->data->mac_addrs =
+			rte_zmalloc("lsinic", RTE_ETHER_ADDR_LEN, 0);
+		if (!eth_dev->data->mac_addrs) {
+			LSXINIC_PMD_ERR("Failed to allocate MAC address");
+			return -ENOMEM;
+		}
+
+		lsinic_mac_init(eth_dev->data->mac_addrs, lsinic_dev);
+	}
+	err = lsinic_netdev_env_init(eth_dev);
+	if (err) {
+		LSXINIC_PMD_ERR("%s init env failed(%d)",
+			eth_dev->data->name, err);
+		return err;
+	}
+	lsinic_dev->init_flag = 1;
+	adapter->txq_dma_id = -1;
+	adapter->rxq_dma_id = -1;
+
+	rte_eth_dev_probing_finish(eth_dev);
+	return 0;
+}
+
+#ifdef LSXINIC_LATENCY_PROFILING
+static uint64_t s_cycs_per_us;
+static uint64_t
+calculate_cycles_per_us(void)
+{
+	uint64_t start_cycles, end_cycles;
+
+	if (s_cycs_per_us)
+		return s_cycs_per_us;
+
+	start_cycles = rte_get_timer_cycles();
+	rte_delay_ms(1000);
+	end_cycles = rte_get_timer_cycles();
+	s_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
+	LSXINIC_PMD_INFO("Cycles per us is: %ld",
+		(unsigned long)s_cycs_per_us);
+
+	return s_cycs_per_us;
+}
+#endif
+
 #ifdef RTE_ARCH_ARM64
 #define dccivac(p) \
 	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
@@ -986,117 +1176,6 @@ rte_lsinic_dev_start_poll_rc(void *_dev)
 	}
 
 	lsinic_set_netdev(adapter, PCIDEV_COMMAND_START);
-
-	return 0;
-}
-
-/* Stop device: disable rx and tx functions to allow for reconfiguring.
- */
-static int
-lsinic_dev_stop(struct rte_eth_dev *dev)
-{
-	struct lsinic_adapter *adapter = dev->process_private;
-	int ret;
-	uint16_t rx_stop, tx_stop;
-
-	/* disable the netdev receive */
-	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
-	if (ret)
-		return ret;
-
-	/* disable all enabled rx & tx queues */
-	rx_stop = lsinic_dev_rx_stop(dev, 0);
-	tx_stop = lsinic_dev_tx_stop(dev, 0);
-	if (rx_stop == dev->data->nb_rx_queues &&
-		tx_stop == dev->data->nb_tx_queues) {
-		/* disable the netdev receive */
-		lsinic_set_netdev(adapter, PCIDEV_COMMAND_STOP);
-	}
-
-	lsinic_dev_clear_queues(dev);
-
-	return 0;
-}
-
-/* Reest and stop device.
- */
-static int
-lsinic_dev_close(struct rte_eth_dev *dev)
-{
-	struct lsinic_adapter *adapter = dev->process_private;
-	int ret;
-
-	ret = lsinic_dev_stop(dev);
-	if (ret)
-		return ret;
-
-	ret = lsinic_set_netdev(adapter, PCIDEV_COMMAND_REMOVE);
-	if (ret)
-		return ret;
-	if (adapter->local_mz) {
-		rte_eth_dma_zone_free(dev,
-			adapter->local_mz->name, 0);
-		adapter->local_mz = NULL;
-	}
-
-	return ret;
-}
-
-static int
-lsinic_dev_info_get(struct rte_eth_dev *dev,
-	struct rte_eth_dev_info *dev_info)
-{
-	dev_info->device = dev->device;
-	dev_info->max_rx_queues = LSINIC_RING_MAX_COUNT;
-	dev_info->max_tx_queues = LSINIC_RING_MAX_COUNT;
-	dev_info->min_rx_bufsize = 1024; /* cf BSIZEPACKET in SRRCTL register */
-	dev_info->max_rx_pktlen = 15872; /* includes CRC, cf MAXFRS register */
-	dev_info->max_vfs = PCIE_MAX_VF_NUM;
-
-	dev_info->rx_desc_lim = rx_desc_lim;
-	dev_info->tx_desc_lim = tx_desc_lim;
-	dev_info->rx_offload_capa = RTE_ETH_RX_OFFLOAD_CHECKSUM;
-
-	return 0;
-}
-
-static int
-lsinic_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
-{
-	struct lsinic_adapter *adapter = dev->process_private;
-	uint16_t max = mtu + RTE_ETHER_HDR_LEN + RTE_VLAN_HLEN;
-	struct lsinic_eth_reg *eth_reg;
-
-	adapter->data_room_size = max;
-	adapter->max_tx_size = max;
-	eth_reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
-	LSINIC_WRITE_REG(&eth_reg->max_data_room, adapter->data_room_size);
-
-	return 0;
-}
-
-/**
- * Atomically writes the link status information into global
- * structure rte_eth_dev.
- *
- * @param dev
- *   - Pointer to the structure rte_eth_dev to read from.
- *   - Pointer to the buffer to be saved with the link status.
- *
- * @return
- *   - On success, zero.
- *   - On failure, negative value.
- */
-static inline int
-rte_lsinic_dev_atomic_write_link_status(struct rte_eth_dev *dev,
-	struct rte_eth_link *link)
-{
-	struct rte_eth_link *dst = &dev->data->dev_link;
-	struct rte_eth_link *src = link;
-
-	if (rte_atomic64_cmpset((uint64_t *)dst, *(uint64_t *)dst,
-			*(uint64_t *)src) == 0)
-		return -1;
 
 	return 0;
 }
@@ -1497,30 +1576,6 @@ lsinic_remove_config_fromrc(struct lsinic_adapter *adapter)
 	return 0;
 }
 
-/* return 0 means link status changed, -1 means not changed */
-static int
-lsinic_dev_link_update(struct rte_eth_dev *dev,
-	int wait_to_complete __rte_unused)
-{
-	struct lsinic_adapter *adapter;
-	struct rte_eth_link link;
-
-	adapter = dev->process_private;
-	if (adapter->rc_state == LSINIC_DEV_UP) {
-		link.link_status = RTE_ETH_LINK_UP;
-		link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_25G;
-	} else {
-		link.link_status = RTE_ETH_LINK_DOWN;
-		link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_NONE;
-	}
-
-	rte_lsinic_dev_atomic_write_link_status(dev, &link);
-
-	return 0;
-}
-
 int
 lsinic_dev_chk_eth_status(struct rte_eth_dev *dev)
 {
@@ -1532,111 +1587,6 @@ lsinic_dev_chk_eth_status(struct rte_eth_dev *dev)
 		return 0;
 	else
 		return 1;
-}
-
-static int
-lsinic_dev_promiscuous_enable(struct rte_eth_dev *dev __rte_unused)
-{
-	return 0;
-}
-
-static int
-lsinic_dev_promiscuous_disable(struct rte_eth_dev *dev __rte_unused)
-{
-	return 0;
-}
-
-static int
-lsinic_dev_allmulticast_enable(struct rte_eth_dev *dev __rte_unused)
-{
-	return 0;
-}
-
-static int
-lsinic_dev_allmulticast_disable(struct rte_eth_dev *dev __rte_unused)
-{
-	return 0;
-}
-
-/* Staticstic related function
- */
-static int
-lsinic_dev_stats_get(struct rte_eth_dev *dev,
-	struct rte_eth_stats *stats, __rte_unused struct eth_queue_stats *qstats)
-{
-	uint64_t total_ipackets, total_ibytes, total_ierrors;
-	uint64_t total_opackets, total_obytes, total_oerrors;
-	struct lsinic_tx_queue *txq, *txtmp;
-	struct lsinic_rx_queue *rxq, *rxtmp;
-	uint32_t i, j;
-
-	total_ipackets = 0;
-	total_ibytes = 0;
-	total_ierrors = 0;
-	total_opackets = 0;
-	total_obytes = 0;
-	total_oerrors = 0;
-
-	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		txq = dev->data->tx_queues[i];
-		txtmp = txq;
-		for (j = 0; j < txq->nb_q; j++) {
-			total_opackets += txtmp->packets;
-			total_obytes += txtmp->bytes;
-			total_oerrors += txtmp->errors;
-			txtmp = txtmp->sibling;
-		}
-	}
-
-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		rxq = dev->data->rx_queues[i];
-		rxtmp = rxq;
-		for (j = 0; j < rxq->nb_q; j++) {
-			total_ipackets += rxtmp->packets;
-			total_ibytes += rxtmp->bytes;
-			total_ierrors += rxtmp->errors;
-			rxtmp = rxtmp->sibling;
-		}
-	}
-
-	stats->ipackets = total_ipackets;
-	stats->opackets = total_opackets;
-	stats->ibytes = total_ibytes;
-	stats->obytes = total_obytes;
-	stats->ierrors = total_ierrors;
-	stats->oerrors = total_oerrors;
-
-	return 0;
-}
-
-static int
-lsinic_dev_stats_reset(struct rte_eth_dev *dev)
-{
-	struct lsinic_tx_queue *txq;
-	struct lsinic_rx_queue *rxq;
-	uint32_t i, j;
-
-	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		txq = dev->data->tx_queues[i];
-		for (j = 0; j < txq->nb_q; j++) {
-			txq->packets = 0;
-			txq->bytes = 0;
-			txq->errors = 0;
-			txq = txq->sibling;
-		}
-	}
-
-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		rxq = dev->data->rx_queues[i];
-		for (j = 0; j < rxq->nb_q; j++) {
-			rxq->packets = 0;
-			rxq->bytes = 0;
-			rxq->errors = 0;
-			rxq = rxq->sibling;
-		}
-	}
-
-	return 0;
 }
 
 static int
@@ -1686,6 +1636,12 @@ rte_lsinic_remove(struct rte_lsx_pciep_device *lsinic_dev)
 	return 0;
 }
 
+static void
+lsinic_xstat_cb_init(void)
+{
+	lsxinic_common_xstats_add_cb(s_lsinic_xstat_cbs);
+}
+
 static struct rte_lsx_pciep_driver rte_lsinic_pmd = {
 	.drv_type = 0,
 	.name = LSX_PCIEP_NXP_NAME_PREFIX "_driver",
@@ -1693,5 +1649,6 @@ static struct rte_lsx_pciep_driver rte_lsinic_pmd = {
 	.remove = rte_lsinic_remove,
 };
 
+RTE_INIT(lsinic_xstat_cb_init);
 RTE_PMD_REGISTER_LSX_PCIEP(net_lsinic, rte_lsinic_pmd);
 RTE_LOG_REGISTER_DEFAULT(lsxinic_logtype_pmd, INFO);

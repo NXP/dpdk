@@ -189,12 +189,7 @@ struct lsxvio_queue {
 	uint64_t ring_full;
 	uint64_t loop_total;
 	uint64_t loop_avail;
-
-	/* point to the working queue */
-	struct lsxvio_queue *working;
-	/* point to the next queue belonged to the same core */
-	struct lsxvio_queue *sibling;
-	uint32_t nb_q;
+	uint64_t align_err;
 
 	struct rte_eth_dev *dev;
 
@@ -214,19 +209,16 @@ struct lsxvio_queue {
 	TAILQ_ENTRY(lsxvio_queue) next;
 };
 
-#define  lsxvio_rx_queue lsxvio_queue
-#define  lsxvio_tx_queue lsxvio_queue
+void lsxvio_rx_queue_release_mbufs(struct lsxvio_queue *rxq);
+void lsxvio_rx_queue_release(struct lsxvio_queue *rxq);
+void lsxvio_reset_rx_queue(struct lsxvio_queue *rxq);
+void lsxvio_tx_queue_release(struct lsxvio_queue *txq);
+void lsxvio_reset_tx_queue(struct lsxvio_queue *txq);
 
-void lsxvio_rx_queue_release_mbufs(struct lsxvio_rx_queue *rxq);
-void lsxvio_rx_queue_release(struct lsxvio_rx_queue *rxq);
-void lsxvio_reset_rx_queue(struct lsxvio_rx_queue *rxq);
-void lsxvio_tx_queue_release(struct lsxvio_tx_queue *txq);
-void lsxvio_reset_tx_queue(struct lsxvio_tx_queue *txq);
-
-int lsxvio_dev_rxq_init(struct lsxvio_rx_queue *rxq);
-int lsxvio_dev_txq_init(struct lsxvio_tx_queue *txq);
-int lsxvio_dev_rx_mq_init(struct lsxvio_rx_queue *rxq);
-int lsxvio_dev_tx_mq_init(struct lsxvio_tx_queue *txq);
+int lsxvio_dev_rxq_init(struct lsxvio_queue *rxq);
+int lsxvio_dev_txq_init(struct lsxvio_queue *txq);
+int lsxvio_dev_rx_mq_init(struct lsxvio_queue *rxq);
+int lsxvio_dev_tx_mq_init(struct lsxvio_queue *txq);
 void lsxvio_dev_rx_tx_bind(struct rte_eth_dev *dev);
 void lsxvio_dev_rx_stop(struct rte_eth_dev *dev);
 void lsxvio_dev_tx_stop(struct rte_eth_dev *dev);

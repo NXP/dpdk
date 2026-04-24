@@ -1471,7 +1471,6 @@ lsinic_queue_alloc(struct lsinic_adapter *adapter,
 	q->nb_desc = nb_desc;
 	q->queue_id = queue_idx;
 	q->reg_idx = queue_idx;
-	q->nb_q = 1;
 	q->dma_vq = -1;
 
 	/* Allocate software ring */
@@ -2984,49 +2983,34 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 void
 lsinic_dev_clear_queues(struct rte_eth_dev *dev)
 {
-	unsigned int i, j;
+	uint32_t i;
+	struct lsinic_queue *txq, *rxq;
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		struct lsinic_queue *txq = dev->data->tx_queues[i];
-		struct lsinic_queue *next = txq;
+		txq = dev->data->tx_queues[i];
 
-		if (!txq)
+		if (!txq || txq->status == LSINIC_QUEUE_RUNNING)
 			continue;
-		for (j = 0; j < txq->nb_q; j++) {
-			if (!next)
-				break;
 
-			if (next->status != LSINIC_QUEUE_RUNNING) {
-				lsinic_queue_release_mbufs(next);
-				lsinic_queue_reset(next);
-				if (next->multi_core_ring) {
-					rte_ring_free(next->multi_core_ring);
-					next->multi_core_ring = NULL;
-				}
-			}
-			next = next->sibling;
+		lsinic_queue_release_mbufs(txq);
+		lsinic_queue_reset(txq);
+		if (txq->multi_core_ring) {
+			rte_ring_free(txq->multi_core_ring);
+			txq->multi_core_ring = NULL;
 		}
 	}
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		struct lsinic_queue *rxq = dev->data->rx_queues[i];
-		struct lsinic_queue *next = rxq;
+		rxq = dev->data->rx_queues[i];
 
-		if (!rxq)
+		if (!rxq || rxq->status == LSINIC_QUEUE_RUNNING)
 			continue;
-		for (j = 0; j < rxq->nb_q; j++) {
-			if (!next)
-				break;
 
-			if (next->status != LSINIC_QUEUE_RUNNING) {
-				lsinic_queue_release_mbufs(next);
-				lsinic_queue_reset(next);
-				if (next->multi_core_ring) {
-					rte_ring_free(next->multi_core_ring);
-					next->multi_core_ring = NULL;
-				}
-			}
-			next = next->sibling;
+		lsinic_queue_release_mbufs(rxq);
+		lsinic_queue_reset(rxq);
+		if (rxq->multi_core_ring) {
+			rte_ring_free(rxq->multi_core_ring);
+			rxq->multi_core_ring = NULL;
 		}
 	}
 }

@@ -241,9 +241,6 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring,
 				*tx_complete = RING_BD_HW_COMPLETE;
 				tx_ring->sync_err++;
 			}
-#ifdef LXSNIC_DEBUG_RX_TX
-			tx_ring->adapter->stats.tx_desc_err++;
-#endif
 			tx_ring->ring_full++;
 			tx_ring->errors++;
 			return -EAGAIN;
@@ -253,9 +250,6 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring,
 	} else if (tx_ring->rc_mem_bd_type == RC_MEM_BD_128) {
 		rc_tx_desc = &tx_ring->rc_bd_desc[bd_idx];
 		if (rc_tx_desc->bd_status != RING_BD_READY) {
-#ifdef LXSNIC_DEBUG_RX_TX
-			tx_ring->adapter->stats.tx_desc_err++;
-#endif
 			tx_ring->ring_full++;
 			tx_ring->errors++;
 			return -EAGAIN;

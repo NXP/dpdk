@@ -82,6 +82,72 @@ static struct rte_eth_dev_data *lxsnic_proc_2nd_eth_dev_data;
 static rte_spinlock_t lxsnic_proc_2nd_dev_alloc_lock =
 	RTE_SPINLOCK_INITIALIZER;
 
+static uint64_t
+lxsinic_xstats_get_ipackets(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ipackets(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_ibytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibytes(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_epackets(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_epackets(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_ebytes(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ebytes(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_ierrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ierrs(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_eerrs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_eerrs(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_ibd_errs(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_ibd_errs(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_efulls(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_efulls(dev, struct lxsnic_ring *);
+}
+
+static uint64_t
+lxsinic_xstats_get_edrops(struct rte_eth_dev *dev)
+{
+	return lsxinic_common_get_edrops(dev, struct lxsnic_ring *);
+}
+
+static const lsxinic_common_xstats_count s_lxsnic_xstat_cbs[] = {
+	lxsinic_xstats_get_ipackets,
+	lxsinic_xstats_get_ibytes,
+	lxsinic_xstats_get_epackets,
+	lxsinic_xstats_get_ebytes,
+	lxsinic_xstats_get_ierrs,
+	lxsinic_xstats_get_eerrs,
+	lxsinic_xstats_get_ibd_errs,
+	lxsinic_xstats_get_efulls,
+	lxsinic_xstats_get_edrops
+};
+
 int
 lxsnic_set_netdev_state(struct lxsnic_adapter *adapter,
 	enum PCIDEV_COMMAND cmd)
@@ -1012,160 +1078,34 @@ lxsnic_dev_allmulticast_disable(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
-struct rte_lxsnic_xstats_name_off {
-	char name[RTE_ETH_XSTATS_NAME_SIZE];
-	uint32_t offset;
-};
-
-static const struct rte_lxsnic_xstats_name_off rte_lxsnic_stats_strings[] = {
-	{"rx_alloc_mbuf_failed", offsetof(struct lxsnic_hw_stats,
-			rx_alloc_mbuf_fail)},
-	{"rx clean queue count", offsetof(struct lxsnic_hw_stats,
-			rx_clean_count)},
-	{"rx once success clean", offsetof(struct lxsnic_hw_stats,
-			rx_desc_clean_num)},
-	{"rx clean queue failed", offsetof(struct lxsnic_hw_stats,
-			rx_desc_clean_fail)},
-	{"rx desc is error", offsetof(struct lxsnic_hw_stats,
-			rx_desc_err)},
-	{"tx free mbuf is null", offsetof(struct lxsnic_hw_stats,
-			tx_mbuf_err)},
-	{"tx clean queue count", offsetof(struct lxsnic_hw_stats,
-			tx_clean_count)},
-	{"tx once clean success", offsetof(struct lxsnic_hw_stats,
-			tx_desc_clean_num)},
-	{"tx clean queue failed", offsetof(struct lxsnic_hw_stats,
-			tx_desc_clean_fail)},
-	{"tx rc desc is illegal", offsetof(struct lxsnic_hw_stats,
-			tx_desc_err)},
-};
-
-#define LXSNIC_NB_RXQ_PRIO_STATS (sizeof(rte_lxsnic_stats_strings) / \
-			   sizeof(rte_lxsnic_stats_strings[0]))
-
 static int
-lxsnic_dev_xstats_get(struct rte_eth_dev *dev,
-	struct rte_eth_xstat *xstats, unsigned n __rte_unused)
+lxsnic_dev_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats,
+	struct eth_queue_stats *qstats __rte_unused)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
-	uint8_t stat = 0;
-	struct lxsnic_hw_stats *stats = &adapter->stats;
-	uint32_t count = 0;
+	stats->ipackets = lsxinic_common_get_ipackets(dev, struct lxsnic_ring *);
+	stats->opackets = lsxinic_common_get_epackets(dev, struct lxsnic_ring *);
+	stats->ibytes = lsxinic_common_get_ibytes(dev, struct lxsnic_ring *);
+	stats->obytes = lsxinic_common_get_ebytes(dev, struct lxsnic_ring *);
+	stats->ierrors = lsxinic_common_get_ierrs(dev, struct lxsnic_ring *);
+	stats->oerrors = lsxinic_common_get_eerrs(dev, struct lxsnic_ring *);
+	stats->rx_nombuf = dev->data->rx_mbuf_alloc_failed;
 
-	for (stat = 0; stat < LXSNIC_NB_RXQ_PRIO_STATS; stat++) {
-		xstats[count].value = *(uint64_t *)(((char *)stats) +
-					rte_lxsnic_stats_strings[stat].offset);
-		xstats[count].id = count;
-		count++;
-	}
-
-	return count;
-}
-
-static unsigned
-lxsnic_xstats_calc_num(void)
-{
-	return LXSNIC_NB_RXQ_PRIO_STATS;
-}
-
-static int
-lxsnic_dev_xstats_reset(struct rte_eth_dev *dev)
-{
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
-	struct lxsnic_hw_stats *stats = &adapter->stats;
-	/* HW registers are cleared on read TODO */
-	/* Reset software totals */
-	memset(stats, 0, sizeof(*stats));
-
-	return 0;
-}
-
-static int
-lxsnic_dev_xstats_get_names(__rte_unused struct rte_eth_dev *dev,
-	struct rte_eth_xstat_name *xstats_names,
-	__rte_unused unsigned int size)
-{
-	const uint32_t cnt_stats = lxsnic_xstats_calc_num();
-	uint32_t i = 0, count = 0;
-
-	if (xstats_names) {
-		for (i = 0; i < LXSNIC_NB_RXQ_PRIO_STATS; i++) {
-			snprintf(xstats_names[count].name,
-				sizeof(xstats_names[count].name),
-				"%s",
-				rte_lxsnic_stats_strings[i].name);
-			count++;
-		}
-	}
-
-	return cnt_stats;
-}
-
-static int
-lxsnic_dev_stats_get(struct rte_eth_dev *dev,
-	struct rte_eth_stats *lxsnic_stats, struct eth_queue_stats *qstats)
-{
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
-	struct lxsnic_ring *rx_queue = NULL, *tx_queue = NULL;
-	uint8_t i = 0;
-
-	for (i = 0; i < adapter->config_rx_queues; i++) {
-		rx_queue = dev->data->rx_queues[i];
-		if (!rx_queue)
-			continue;
-
-		if (qstats) {
-			qstats->q_ipackets[i] = rx_queue->packets;
-			qstats->q_ibytes[i] = rx_queue->bytes;
-			qstats->q_errors[i] = rx_queue->errors;
-		}
-		lxsnic_stats->ipackets += rx_queue->packets;
-		lxsnic_stats->ibytes += rx_queue->bytes;
-		lxsnic_stats->ierrors += rx_queue->errors;
-	}
-	for (i = 0; i < adapter->config_tx_queues; i++) {
-		tx_queue = dev->data->tx_queues[i];
-		if (!tx_queue)
-			continue;
-		if (qstats) {
-			qstats->q_opackets[i] = tx_queue->packets;
-			qstats->q_obytes[i] = tx_queue->bytes;
-			qstats->q_errors[i] = tx_queue->errors;
-		}
-		lxsnic_stats->opackets += tx_queue->packets;
-		lxsnic_stats->obytes += tx_queue->bytes;
-		lxsnic_stats->oerrors += tx_queue->errors;
-	}
-	lxsnic_stats->rx_nombuf = dev->data->rx_mbuf_alloc_failed;
 	return 0;
 }
 
 static int
 lxsnic_dev_stats_reset(struct rte_eth_dev *dev)
 {
-	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
-	struct lxsnic_ring *rx_queue = NULL, *tx_queue = NULL;
-	uint8_t i = 0;
-
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		rx_queue = dev->data->rx_queues[i];
-		if (!rx_queue)
-			continue;
-		rx_queue->packets = 0;
-		rx_queue->bytes = 0;
-		rx_queue->errors = 0;
-	}
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		tx_queue = dev->data->tx_queues[i];
-		if (!tx_queue)
-			continue;
-		tx_queue->packets = 0;
-		tx_queue->bytes = 0;
-		tx_queue->errors = 0;
-	}
+	lsxinic_common_q_reset(dev, struct lxsnic_ring *);
 	dev->data->rx_mbuf_alloc_failed = 0;
 
 	return 0;
+}
+
+static int
+lxsnic_dev_xstats_reset(struct rte_eth_dev *dev)
+{
+	return lxsnic_dev_stats_reset(dev);
 }
 
 static void
@@ -1235,38 +1175,12 @@ lxsnic_dev_close(struct rte_eth_dev *dev)
 	return ret;
 }
 
-/* Atomically writes the link status information into global
- * structure rte_eth_dev.
- *
- * @param dev
- *   - Pointer to the structure rte_eth_dev to read from.
- *   - Pointer to the buffer to be saved with the link status.
- *
- * @return
- *   - On success, zero.
- *   - On failure, negative value.
- */
-
-static inline int
-rte_lxsnic_dev_atomic_write_link_status(struct rte_eth_dev *dev,
-	struct rte_eth_link *link)
-{
-	struct rte_eth_link *dst = &dev->data->dev_link;
-	struct rte_eth_link *src = link;
-
-	if (rte_atomic64_cmpset((uint64_t *)dst,
-			*(uint64_t *)dst, *(uint64_t *)src) == 0)
-		return -1;
-
-	return 0;
-}
-
 static int
 lxsnic_dev_link_update(struct rte_eth_dev *dev,
-		int wait_to_complete __rte_unused)
+	int wait_to_complete __rte_unused)
 {
-	struct rte_eth_link link;
 	uint32_t rc_state = 0;
+	int up = 0, ret;
 	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(dev);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_RCS_REG_OFFSET);
@@ -1282,20 +1196,15 @@ lxsnic_dev_link_update(struct rte_eth_dev *dev,
 	}
 	adapter->rc_state = rc_state;
 	adapter->ep_state = LSINIC_READ_REG(&ep_reg->ep_state);
-	if (rc_state == LSINIC_DEV_UP &&
-		adapter->ep_state == LSINIC_DEV_UP) {
-		link.link_status = RTE_ETH_LINK_UP;
-		link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_10G;
-	} else {
-		link.link_status = RTE_ETH_LINK_DOWN;
-		link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
-		link.link_speed = RTE_ETH_SPEED_NUM_NONE;
-	}
 
-	adapter->link_up = link.link_status;
-	adapter->link_speed = link.link_speed;
-	rte_lxsnic_dev_atomic_write_link_status(dev, &link);
+	if (rc_state == LSINIC_DEV_UP && adapter->ep_state == LSINIC_DEV_UP)
+		up = 1;
+	ret = lsxinic_common_link_update(dev, up);
+	if (ret)
+		return ret;
+
+	adapter->link_up = dev->data->dev_link.link_status;
+	adapter->link_speed = dev->data->dev_link.link_speed;
 
 	return 0;
 }
@@ -1318,9 +1227,11 @@ static struct eth_dev_ops eth_lxsnic_eth_dev_ops = {
 	.allmulticast_disable = lxsnic_dev_allmulticast_disable,
 	.stats_get            = lxsnic_dev_stats_get,
 	.stats_reset          = lxsnic_dev_stats_reset,
-	.xstats_get           = lxsnic_dev_xstats_get,
-	.xstats_get_names     = lxsnic_dev_xstats_get_names,
-	.xstats_reset         = lxsnic_dev_xstats_reset,
+	.xstats_get	       = lsxinic_common_xstats_get,
+	.xstats_get_by_id     = lsinic_common_xstats_get_by_id,
+	.xstats_get_names_by_id = lsinic_common_xstats_get_names_by_id,
+	.xstats_get_names      = lsxinic_common_xstats_get_names,
+	.xstats_reset          = lxsnic_dev_xstats_reset,
 	.rxq_info_get			= lxsnic_dev_rxq_info,
 	.txq_info_get			= lxsnic_dev_txq_info,
 };
@@ -1362,7 +1273,7 @@ lxsnic_watchdog_update_link(struct lxsnic_adapter *adapter)
 	bool link_up = adapter->link_up;
 	struct lsinic_dev_reg *dev_reg =
 		LSINIC_REG_OFFSET(adapter->hw.hw_addr, LSINIC_DEV_REG_OFFSET);
-	uint32_t  i;
+	uint32_t i;
 
 	ep_state = LSINIC_READ_REG(&dev_reg->ep_state);
 	if (ep_state != LSINIC_DEV_UP) {
@@ -1485,14 +1396,6 @@ lxsnic_get_mac_addr(struct lxsnic_hw *hw)
 			RTE_ETHER_ADDR_LEN);
 	memcpy(hw->mac.perm_addr, mac_address,
 			RTE_ETHER_ADDR_LEN);
-}
-
-static int
-is_valid_ether_addr(uint8_t *addr)
-{
-	const char zaddr[6] = { 0,  };
-
-	return !(addr[0] & 1) && memcmp(addr, zaddr, 6);
 }
 
 static void
@@ -2087,6 +1990,8 @@ lxsnic_dev_construct(void)
 	char *penv = getenv("LSINIC_RC_SIM");
 
 	lxsnic_pre_init_pci_id();
+
+	lsxinic_common_xstats_add_cb(s_lxsnic_xstat_cbs);
 
 	if (penv)
 		g_lsxinic_rc_sim = atoi(penv);

@@ -228,8 +228,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	q->nb_desc = nb_desc;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
-	q->nb_q = 1;
-	q->sibling = NULL;
 
 	/* Allocate software ring */
 	q->sw_ring = rte_zmalloc_socket("q->sw_ring",
@@ -681,11 +679,11 @@ void lsxvio_dev_tx_stop(struct rte_eth_dev *dev)
 void
 lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 {
-	uint32_t i, j;
+	uint32_t i;
+	struct lsxvio_queue *txq, *rxq;
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		struct lsxvio_queue *txq = dev->data->tx_queues[i];
-		struct lsxvio_queue *next = txq;
+		txq = dev->data->tx_queues[i];
 
 		if (txq->shadow_pdesc_mz) {
 			rte_memzone_free(txq->shadow_pdesc_mz);
@@ -703,19 +701,12 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			txq->shadow_used_split = NULL;
 		}
 
-		for (j = 0; j < txq->nb_q; j++) {
-			if (next == NULL)
-				break;
-
-			lsxvio_queue_release_mbufs(txq);
-			lsxvio_queue_reset(next);
-			next = next->sibling;
-		}
+		lsxvio_queue_release_mbufs(txq);
+		lsxvio_queue_reset(txq);
 	}
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		struct lsxvio_queue *rxq = dev->data->rx_queues[i];
-		struct lsxvio_queue *next = rxq;
+		rxq = dev->data->rx_queues[i];
 
 		if (rxq->shadow_pdesc_mz) {
 			rte_memzone_free(rxq->shadow_pdesc_mz);
@@ -733,14 +724,8 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			rxq->shadow_used_split = NULL;
 		}
 
-		for (j = 0; j < rxq->nb_q; j++) {
-			if (!next)
-				break;
-
-			lsxvio_queue_release_mbufs(rxq);
-			lsxvio_queue_reset(next);
-			next = next->sibling;
-		}
+		lsxvio_queue_release_mbufs(rxq);
+		lsxvio_queue_reset(rxq);
 	}
 }
 
