@@ -153,6 +153,8 @@ static struct rte_mempool *pktmbuf_pools[RTE_ETH_DPAA_RX_MAX_MPOOLS];
 static struct rte_mempool *pktmbuf_per_port_pool[RTE_MAX_ETHPORTS];
 static int s_default_pool[RTE_MAX_ETHPORTS];
 
+static int s_sch_port_en[RTE_MAX_ETHPORTS];
+
 static struct rte_mempool *pktmbuf_pool_tx_only;
 
 #define MAX_FRAG_NUM 10
@@ -788,6 +790,23 @@ port_fwd_lcoreq_find_statistic(uint16_t portid, uint8_t queueid,
 	}
 
 	return statistic;
+}
+
+static struct lcore_rx_queue *
+port_fwd_find_rxq_by_port_tc_flow(uint16_t portid, uint8_t tc,
+	uint16_t flow_id, struct lcore_conf *qconf)
+{
+	uint16_t i;
+
+	for (i = 0; i < MAX_RX_QUEUE_PER_LCORE; i++) {
+		if (qconf->rx_queue_list[i].port_id == portid &&
+			qconf->rx_queue_list[i].tc_id == tc &&
+			qconf->rx_queue_list[i].flow_id == flow_id) {
+			return &qconf->rx_queue_list[i];
+		}
+	}
+
+	return NULL;
 }
 
 union statistic_param {
@@ -1426,7 +1445,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
 	int i, nb_rx, j, ret;
-	uint16_t nb_tx, rx_left, idx, portid, rx_burst;
+	uint16_t nb_tx, rx_left, idx, portid, rx_burst, len;
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
@@ -1440,6 +1459,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_pmd_dpaa2_rxq_info qinfo;
 	struct lcore_rx_queue *rxq;
 	struct lcore_tx_queue *txq;
+	struct rte_mbuf_sched *sched;
 
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
@@ -1516,11 +1536,30 @@ main_loop(__attribute__((unused)) void *dummy)
 		"entering main loop on lcore %u\n", lcore_id);
 
 	for (i = 0; i < qconf->n_rx_queue; i++) {
-		portid = qconf->rx_queue_list[i].port_id;
-		queueid = qconf->rx_queue_list[i].queue_id;
+		rxq = &qconf->rx_queue_list[i];
 		RTE_LOG(INFO, port_fwd,
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
-			lcore_id, portid, queueid);
+			lcore_id, rxq->port_id, rxq->queue_id);
+		if (s_sch_port_en[rxq->port_id]) {
+			if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id)) {
+				RTE_LOG(WARNING, port_fwd,
+					"Port%u is not DPAA2 port to add in scheduler\n",
+					rxq->port_id);
+				continue;
+			}
+			if (!qconf->sch_dev) {
+				qconf->sch_dev = rte_dpaa2_scheduler_init(RTE_DPAA2_SCH_PUSH);
+				ret = rte_dpaa2_scheduler_start(qconf->sch_dev);
+				if (ret)
+					rte_exit(EXIT_FAILURE, "Start schedule failed(%d).\n", ret);
+			}
+			ret = rte_dpaa2_scheduler_add(qconf->sch_dev,
+				rxq->port_id, rxq->queue_id, rxq->tc_id);
+			if (ret) {
+				rte_exit(EXIT_FAILURE, "Schedule rxq%d failed(%d).\n",
+					rxq->queue_id, ret);
+			}
+		}
 	}
 
 	while (!force_quit) {
@@ -1564,6 +1603,8 @@ port_forwarding:
 		for (i = 0; i < qconf->n_rx_queue; ++i) {
 			portid = qconf->rx_queue_list[i].port_id;
 			queueid = qconf->rx_queue_list[i].queue_id;
+			if (s_sch_port_en[portid])
+				continue;
 
 			dstportid = port_fwd_dst_port(portid);
 
@@ -1624,6 +1665,44 @@ port_forwarding:
 				stat->bytes_overhead += bytes_overhead[j];
 			}
 			stat->packets += nb_tx;
+		}
+
+		if (qconf->sch_dev) {
+			nb_rx = rte_dpaa2_scheduler_rx(qconf->sch_dev, pkts_burst, MAX_PKT_BURST);
+			if (unlikely(!nb_rx))
+				continue;
+			for (i = 0; i < nb_rx; i++) {
+				param[i].rx_mbuf = pkts_burst[i];
+				sched = &pkts_burst[i]->hash.sched;
+				rxq = port_fwd_find_rxq_by_port_tc_flow(pkts_burst[i]->port,
+					sched->traffic_class, sched->queue_id, qconf);
+				if (!rxq) {
+					RTE_LOG(ERR, port_fwd,
+						"Unexpected rx packet(port%d-tc%d-flow%d) on core%d\n",
+						pkts_burst[i]->port, sched->traffic_class,
+						sched->queue_id, lcore_id);
+					continue;
+				}
+				stat = &rxq->statistic;
+				stat->bytes += pkts_burst[i]->pkt_len;
+				stat->bytes_fcs += PORT_FWD_MBUF_FCS(pkts_burst[i]);
+				stat->bytes_overhead += PORT_FWD_MBUF_OVERHEAD(pkts_burst[i]);
+				stat->packets++;
+				dstportid = port_fwd_dst_port(pkts_burst[i]->port);
+				len = pkts_burst[i]->pkt_len;
+				nb_tx = rte_eth_tx_burst(dstportid, rxq->queue_id,
+					&pkts_burst[i], 1);
+				if (nb_tx == 1) {
+					stat = port_fwd_lcoreq_find_statistic(dstportid,
+						rxq->queue_id, qconf, false);
+					if (!stat)
+						continue;
+					stat->bytes += len;
+					stat->bytes_fcs += len + PKTGEN_ETH_FCS_SIZE;
+					stat->bytes_overhead += len + PKTGEN_ETH_OVERHEAD_SIZE;
+					stat->packets++;
+				}
+			}
 		}
 	}
 
@@ -2855,6 +2934,11 @@ main(int argc, char **argv)
 		penv = getenv(env_name);
 		if (penv)
 			s_default_pool[portid] = atoi(penv);
+
+		sprintf(env_name, "PORT%d_SCHEDULE_DEV", portid);
+		penv = getenv(env_name);
+		if (penv)
+			s_sch_port_en[portid] = atoi(penv);
 
 		nb_rx_queue[portid] = get_port_n_rx_queues(portid,
 			rx_queues[portid]);
