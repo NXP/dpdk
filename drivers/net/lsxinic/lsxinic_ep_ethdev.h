@@ -22,12 +22,9 @@
 
 #define INIC_VERSION (001)
 
-/* Structure to store private data for each driver instance (for each port).
- */
-#define LSINIC_EP_CAP_TXQ_DMA_NO_RSP RTE_BIT32(0)
-#define LSINIC_EP_CAP_TXQ_SG_DMA RTE_BIT32(1)
-#define LSINIC_EP_CAP_RXQ_SG_DMA RTE_BIT32(2)
-#define LSINIC_EP_CAP_TXQ_BD_DMA_UPDATE RTE_BIT32(11)
+#define LSINIC_DMA_OPT_TXQ_SG_DMA RTE_BIT32(0)
+#define LSINIC_DMA_OPT_RXQ_SG_DMA RTE_BIT32(1)
+#define LSINIC_DMA_OPT_TXQ_BD_DMA_UPDATE RTE_BIT32(2)
 
 struct lsinic_adapter {
 	enum lsinic_dev_type dev_type;
@@ -76,10 +73,8 @@ struct lsinic_adapter {
 
 	struct lsinic_queue *txqs;
 	struct lsinic_queue *rxqs;
-	uint32_t cap;
-	rte_spinlock_t cap_lock;
-	uint32_t ep_cap;
-	uint8_t *complete_src;
+	uint32_t perf_opt;
+	uint8_t ep_mem_dbg;
 
 	uint32_t data_room_size;
 	uint64_t rc_dma_base;
@@ -129,7 +124,7 @@ int lsinic_chk_dev_link_update(struct rte_eth_dev *dev);
 
 int lsinic_dev_chk_eth_status(struct rte_eth_dev *dev);
 
-int lsinic_dma_config_fromrc(struct lsinic_adapter *adapter);
+int lsinic_dma_test_mem_config_fromrc(struct lsinic_adapter *adapter);
 
 int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 

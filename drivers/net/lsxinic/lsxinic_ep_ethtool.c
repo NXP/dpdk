@@ -23,7 +23,7 @@ static int lsinic_if_dma_test(struct rte_eth_dev *dev)
 {
 	struct lsinic_adapter *adapter = dev->process_private;
 
-	if (lsinic_dma_config_fromrc(adapter))
+	if (lsinic_dma_test_mem_config_fromrc(adapter))
 		return PCIDEV_RESULT_FAILED;
 
 	return PCIDEV_RESULT_SUCCEED;

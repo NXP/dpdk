@@ -103,7 +103,6 @@ static int lxsnic_add_txq_to_list(struct lxsnic_ring *txq)
 static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 {
 	uint16_t bd_idx;
-	uint32_t mbuf_idx;
 	struct rte_mbuf *last_mbuf;
 	uint8_t *tx_complete = &tx_ring->tx_complete->bd_complete;
 
@@ -115,10 +114,7 @@ static void lxsnic_tx_complete_ring_clean(struct lxsnic_ring *tx_ring)
 		if (tx_complete[bd_idx] != RING_BD_HW_COMPLETE)
 			break;
 
-		mbuf_idx = bd_idx;
-		if (mbuf_idx == LSINIC_BD_CTX_IDX_INVALID)
-			break;
-		last_mbuf = (struct rte_mbuf *)tx_ring->q_mbuf[mbuf_idx];
+		last_mbuf = tx_ring->q_mbuf[bd_idx];
 		RTE_ASSERT(last_mbuf);
 		rte_pktmbuf_free(last_mbuf);
 
@@ -136,14 +132,13 @@ static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 {
 	uint16_t bd_idx;
 	uint32_t status;
-	uint32_t mbuf_idx;
-	struct lsinic_bd_desc *rc_tx_desc;
+	struct lsinic_bd_desc_128 *rc_tx_desc;
 	struct rte_mbuf *last_mbuf;
 
 	bd_idx = tx_ring->last_used_idx & (tx_ring->count - 1);
 	rc_tx_desc = &tx_ring->rc_bd_desc[bd_idx];
 
-	status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
+	status = rc_tx_desc->bd_status;
 
 	rte_rmb();
 
@@ -151,19 +146,17 @@ static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 		if (status != RING_BD_HW_COMPLETE)
 			break;
 
-		mbuf_idx = lsinic_bd_ctx_idx(rc_tx_desc->bd_status);
-		last_mbuf = (struct rte_mbuf *)tx_ring->q_mbuf[mbuf_idx];
+		last_mbuf = tx_ring->q_mbuf[bd_idx];
 		RTE_ASSERT(last_mbuf);
 		rte_pktmbuf_free(last_mbuf);
 
-		rc_tx_desc->bd_status &= (~((uint32_t)RING_BD_STATUS_MASK));
-		rc_tx_desc->bd_status |= RING_BD_READY;
+		rc_tx_desc->bd_status = RING_BD_READY;
 
 		tx_ring->last_used_idx++;
 
 		bd_idx = tx_ring->last_used_idx & (tx_ring->count - 1);
 		rc_tx_desc = &tx_ring->rc_bd_desc[bd_idx];
-		status = rc_tx_desc->bd_status & RING_BD_STATUS_MASK;
+		status = rc_tx_desc->bd_status;
 
 		rte_rmb();
 	} while (1);
@@ -171,81 +164,82 @@ static void lxsnic_tx_ring_clean(struct lxsnic_ring *tx_ring)
 
 static void lxsnic_tx_ring_idx_clean(struct lxsnic_ring *tx_ring)
 {
-	uint32_t start_free_idx = tx_ring->tx_free_start_idx;
+	uint32_t start_free_idx = tx_ring->last_used_idx, i = 0;
 	const uint32_t last_free_idx = tx_ring->rc_reg->cir;
-	uint32_t mbuf_idx;
-	struct rte_mbuf *last_mbuf;
+	struct rte_mbuf *mbufs[LSINIC_MAX_BURST_NUM];
+	struct lsinic_bd_desc_128 *rc_bd_desc = tx_ring->rc_bd_desc;
+	union lsinic_bd_desc_64 *rc_bd_desc_64 = tx_ring->rc_bd_desc_64;
+	struct lsinic_seg_desc *rc_sg_desc = tx_ring->rc_sg_desc;
 
-	if (!tx_ring->tx_free_len)
-		return;
+	start_free_idx = start_free_idx & (tx_ring->count - 1);
 
 	while (start_free_idx != last_free_idx) {
-		mbuf_idx = start_free_idx;
-		last_mbuf = (struct rte_mbuf *)tx_ring->q_mbuf[mbuf_idx];
-		rte_pktmbuf_free(last_mbuf);
+		mbufs[i] = tx_ring->q_mbuf[start_free_idx];
+		i++;
+
+		if (rc_bd_desc)
+			rc_bd_desc[start_free_idx].bd_status = RING_BD_READY;
+		else if (rc_bd_desc_64)
+			rc_bd_desc_64[start_free_idx].desc = 0;
+		else if (rc_sg_desc)
+			rc_sg_desc[start_free_idx].nb = 0;
 
 		tx_ring->last_used_idx++;
 		start_free_idx = (start_free_idx + 1) & (tx_ring->count - 1);
-		tx_ring->tx_free_len--;
-		RTE_ASSERT(tx_ring->tx_free_len >= 0);
+		if (i >= LSINIC_MAX_BURST_NUM)
+			break;
 	}
 
-	tx_ring->tx_free_start_idx = start_free_idx;
+	if (i > 0)
+		rte_pktmbuf_free_bulk(mbufs, i);
 }
 
 static int
-lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
-	uint16_t idx, union lsinic_ep2rc_notify *notify)
+lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring,
+	struct rte_mbuf *tx_pkt)
 {
 	dma_addr_t dma;
-	uint32_t cmd_type;
 	uint16_t bd_idx = 0;
-	uint32_t pkt_len = 0, bd_status;
-	struct lsinic_bd_desc *ep_tx_desc = NULL;
-	struct lsinic_bd_desc local_tx_desc;
-	union lsinic_bd_desc_64 *ep_tx_desc_64 = NULL;
-	union lsinic_bd_desc_64 local_tx_desc_64;
-	struct lsinic_bd_desc *tx_complete_desc;
-	uint8_t ep_stat;
-	uint32_t mbuf_idx = 0;
-	char *pdata = NULL;
+	uint32_t cmd_type, pkt_len = 0;
+	struct lsinic_bd_desc_128 *rc_tx_desc;
+	union lsinic_bd_desc_64 *rc_tx_desc_64;
 	uint8_t *tx_complete;
-	uint32_t cap = tx_ring->adapter->cap;
+	char *pdata = NULL;
 
 	if (tx_pkt->nb_segs > 1)
 		return -EINVAL;
 
+	dma = rte_mbuf_data_iova(tx_pkt);
+	if (tx_ring->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
+		if (dma & (~LSINIC_BD_DESC_64_ADDR_MASK)) {
+			LSXINIC_PMD_DBG("Fatal TX addr(0x%lx) > 0x%lx",
+				dma, LSINIC_BD_DESC_64_ADDR_MASK);
+			return -EINVAL;
+		}
+	}
+
 	bd_idx = tx_ring->last_avail_idx & (tx_ring->count - 1);
 
-	if (tx_ring->ep_bd_desc)
-		ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
-	else
-		ep_tx_desc_64 = &tx_ring->ep_bd_desc_64[bd_idx];
-
 	if (tx_ring->rc_mem_bd_type == RC_MEM_IDX_CNF) {
-		if (unlikely(((bd_idx + 1) &
-			(tx_ring->count - 1)) ==
-			tx_ring->tx_free_start_idx)) {
+		if (unlikely(((bd_idx + 1) & (tx_ring->count - 1)) ==
+			(tx_ring->last_used_idx & (tx_ring->count - 1)))) {
 			/** Make special room, otherwise no way to
 			 * identify ring is empty or full.
 			 */
 			tx_ring->ring_full++;
 			tx_ring->errors++;
+			LSXINIC_PMD_DBG("TX ring is full, BD=%d", bd_idx);
 			return -EAGAIN;
 		}
-		mbuf_idx = bd_idx;
-		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
+		tx_ring->q_mbuf[bd_idx] = tx_pkt;
 	} else if (tx_ring->rc_mem_bd_type == RC_MEM_BD_CNF) {
 		tx_complete = &tx_ring->tx_complete[bd_idx].bd_complete;
 		if (*tx_complete != RING_BD_READY) {
-			if (tx_ring->ep_bd_desc) {
-				ep_tx_desc = &tx_ring->ep_bd_desc[bd_idx];
-				ep_stat = ep_tx_desc->bd_status & RING_BD_STATUS_MASK;
-				if (ep_stat == RING_BD_HW_COMPLETE) {
-					/** Workaround to sync with EP BD status.*/
-					*tx_complete = RING_BD_HW_COMPLETE;
-					tx_ring->sync_err++;
-				}
+			if (tx_ring->ep_bd_desc &&
+				tx_ring->ep_bd_desc[bd_idx].bd_status == RING_BD_HW_COMPLETE) {
+				/** Workaround to sync with EP BD status.*/
+				*tx_complete = RING_BD_HW_COMPLETE;
+				tx_ring->sync_err++;
 			}
 #ifdef LXSNIC_DEBUG_RX_TX
 			tx_ring->adapter->stats.tx_desc_err++;
@@ -255,12 +249,10 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			return -EAGAIN;
 		}
 		*tx_complete = RING_BD_AVAILABLE;
-		mbuf_idx = bd_idx;
-		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
-	} else if (tx_ring->rc_mem_bd_type == RC_MEM_LONG_BD) {
-		tx_complete_desc = &tx_ring->rc_bd_desc[bd_idx];
-		bd_status = tx_complete_desc->bd_status;
-		if ((bd_status & RING_BD_STATUS_MASK) != RING_BD_READY) {
+		tx_ring->q_mbuf[bd_idx] = tx_pkt;
+	} else if (tx_ring->rc_mem_bd_type == RC_MEM_BD_128) {
+		rc_tx_desc = &tx_ring->rc_bd_desc[bd_idx];
+		if (rc_tx_desc->bd_status != RING_BD_READY) {
 #ifdef LXSNIC_DEBUG_RX_TX
 			tx_ring->adapter->stats.tx_desc_err++;
 #endif
@@ -268,57 +260,38 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 			tx_ring->errors++;
 			return -EAGAIN;
 		}
-		mbuf_idx = lsinic_bd_ctx_idx(bd_status);
-		if (unlikely(mbuf_idx == LSINIC_BD_CTX_IDX_INVALID))
-			mbuf_idx = bd_idx;
 
-		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
-		tx_complete_desc->bd_status &=
-			(~((uint32_t)RING_BD_STATUS_MASK));
-		tx_complete_desc->bd_status |= RING_BD_HW_PROCESSING;
+		tx_ring->q_mbuf[bd_idx] = tx_pkt;
+		rc_tx_desc->bd_status = RING_BD_AVAILABLE;
 	}
 
 	pkt_len = tx_pkt->pkt_len;  /* total packet length */
 	cmd_type = LSINIC_BD_CMD_EOP;
-	dma = rte_mbuf_data_iova(tx_pkt);
-	if (cap & LSINIC_CAP_XFER_COMPLETE) {
+	if (tx_ring->adapter->dma_mem_complete) {
 		pdata = (char *)rte_pktmbuf_mtod(tx_pkt, char *);
-		*((uint8_t *)pdata + pkt_len) =
-			LSINIC_XFER_COMPLETE_DONE_FLAG;
+		*((uint8_t *)pdata + pkt_len) = LSINIC_XFER_COMPLETE_DONE_FLAG;
 	}
 
 	/* write last descriptor with RS and EOP bits */
 
-	if (ep_tx_desc) {
+	if (tx_ring->ep_mem_bd_type == EP_MEM_BD_128) {
+		RTE_ASSERT(tx_ring->rc_bd_desc);
+		rc_tx_desc = &tx_ring->rc_bd_desc[bd_idx];
 		cmd_type |= pkt_len;
-		local_tx_desc.pkt_addr = dma;
-		local_tx_desc.len_cmd = cmd_type;
-		local_tx_desc.bd_status = (mbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
-		local_tx_desc.bd_status |= RING_BD_AVAILABLE;
-		if (notify) {
-			rte_memcpy(&notify->ep_tx_addr[idx], &local_tx_desc,
-				sizeof(struct lsinic_bd_desc));
-		} else {
-			rte_memcpy(ep_tx_desc, &local_tx_desc,
-				sizeof(struct lsinic_bd_desc));
-		}
+		rc_tx_desc->pkt_addr = dma;
+		rc_tx_desc->len_cmd = cmd_type;
+		rc_tx_desc->bd_status = RING_BD_AVAILABLE;
 	} else {
-		local_tx_desc_64.pkt_addr = dma;
-		local_tx_desc_64.len_cmd = pkt_len;
-		if (notify) {
-			rte_memcpy(&notify->ep_tx_addr_64[idx], &local_tx_desc_64,
-				sizeof(union lsinic_bd_desc_64));
-		} else {
-			rte_memcpy(ep_tx_desc_64, &local_tx_desc_64,
-				sizeof(union lsinic_bd_desc_64));
-		}
+		RTE_ASSERT(tx_ring->rc_bd_desc_64);
+		rc_tx_desc_64 = &tx_ring->rc_bd_desc_64[bd_idx];
+		rc_tx_desc_64->pkt_addr = dma;
+		rc_tx_desc_64->len_cmd = pkt_len;
 	}
 
 	tx_ring->packets++;
 	tx_ring->bytes += tx_pkt->pkt_len;
 	tx_ring->bytes_fcs += tx_pkt->pkt_len + LSINIC_ETH_FCS_SIZE;
 	tx_ring->bytes_overhead += tx_pkt->pkt_len + LSINIC_ETH_OVERHEAD_SIZE;
-	tx_ring->tx_free_len++;
 	tx_ring->last_avail_idx++;
 
 	return 0;
@@ -326,24 +299,23 @@ lxsnic_xmit_one_pkt(struct lxsnic_ring *tx_ring, struct rte_mbuf *tx_pkt,
 
 static int
 lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
-	struct rte_mbuf *tx_pkt, struct lsinic_seg_desc *local_desc)
+	struct rte_mbuf *tx_pkt)
 {
 	dma_addr_t dma;
 	struct rte_mbuf *pkt_curr = NULL;
 	uint16_t bd_idx = 0, idx, copy_len;
 	struct lsinic_seg_desc *ep_sg_desc = 0;
-	struct lsinic_seg_desc local_sg_desc;
-	uint32_t mbuf_idx = 0;
+	struct lsinic_seg_desc *local_sg_desc;
 	char *pdata = NULL;
 
 	bd_idx = tx_ring->last_avail_idx & (tx_ring->count - 1);
 
 	ep_sg_desc = &tx_ring->ep_tx_sg[bd_idx];
+	local_sg_desc = &tx_ring->rc_sg_desc[bd_idx];
 
 	if (tx_ring->rc_mem_bd_type == RC_MEM_IDX_CNF) {
-		if (unlikely(((bd_idx + 1) &
-			(tx_ring->count - 1)) ==
-			tx_ring->tx_free_start_idx)) {
+		if (unlikely(((bd_idx + 1) & (tx_ring->count - 1)) ==
+			(tx_ring->last_used_idx & (tx_ring->count - 1)))) {
 			/** Make special room, otherwise no way to
 			 * identify ring is empty or full.
 			 */
@@ -351,40 +323,39 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 			tx_ring->errors++;
 			return -EAGAIN;
 		}
-		mbuf_idx = bd_idx;
-		tx_ring->q_mbuf[mbuf_idx] = tx_pkt;
+		tx_ring->q_mbuf[bd_idx] = tx_pkt;
 	} else {
 		return -EINVAL;
 	}
 
-	local_sg_desc.base_addr = tx_pkt->buf_iova + tx_pkt->data_off;
-	local_sg_desc.entry[0].positive = 0;
-	local_sg_desc.entry[0].offset = 0;
+	local_sg_desc->base_addr = tx_pkt->buf_iova + tx_pkt->data_off;
+	local_sg_desc->entry[0].positive = 0;
+	local_sg_desc->entry[0].offset = 0;
 	if (tx_pkt->data_len == tx_pkt->pkt_len ||
 		tx_pkt->nb_segs <= 1) {
-		local_sg_desc.entry[0].len = tx_pkt->pkt_len;
-		local_sg_desc.nb = 1;
+		local_sg_desc->entry[0].len = tx_pkt->pkt_len;
+		local_sg_desc->nb = 1;
 	} else {
 		pkt_curr = tx_pkt;
-		local_sg_desc.entry[0].len = pkt_curr->data_len;
+		local_sg_desc->entry[0].len = pkt_curr->data_len;
 		for (idx = 1; idx < tx_pkt->nb_segs; idx++) {
 			pkt_curr = pkt_curr->next;
 			dma = pkt_curr->buf_iova + pkt_curr->data_off;
-			if (dma > local_sg_desc.base_addr) {
-				local_sg_desc.entry[idx].positive = 1;
-				local_sg_desc.entry[idx].offset =
-					dma - local_sg_desc.base_addr;
+			if (dma > local_sg_desc->base_addr) {
+				local_sg_desc->entry[idx].positive = 1;
+				local_sg_desc->entry[idx].offset =
+					dma - local_sg_desc->base_addr;
 			} else {
-				local_sg_desc.entry[idx].positive = 0;
-				local_sg_desc.entry[idx].offset =
-					local_sg_desc.base_addr - dma;
+				local_sg_desc->entry[idx].positive = 0;
+				local_sg_desc->entry[idx].offset =
+					local_sg_desc->base_addr - dma;
 			}
-			local_sg_desc.entry[idx].len = pkt_curr->data_len;
+			local_sg_desc->entry[idx].len = pkt_curr->data_len;
 		}
-		local_sg_desc.nb = tx_pkt->nb_segs;
+		local_sg_desc->nb = tx_pkt->nb_segs;
 	}
 
-	if (tx_ring->adapter->cap & LSINIC_CAP_XFER_COMPLETE) {
+	if (tx_ring->adapter->dma_mem_complete) {
 		if (pkt_curr) {
 			pdata = (char *)rte_pktmbuf_mtod(pkt_curr, char *);
 			*((uint8_t *)pdata + pkt_curr->data_len) =
@@ -396,27 +367,20 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 		}
 	}
 
-	if (local_desc) {
-		memcpy(local_desc, &local_sg_desc,
-			sizeof(struct lsinic_seg_desc));
-	} else {
-		copy_len = sizeof(uint64_t) +
-			sizeof(struct lsinic_seg_desc_entry) *
-			local_sg_desc.nb;
+	copy_len = sizeof(uint64_t) +
+		sizeof(struct lsinic_seg_desc_entry) * local_sg_desc->nb;
 
-		lsinic_pcie_memcp_align(ep_sg_desc,
-			&local_sg_desc, copy_len);
-		rte_wmb();
-		ep_sg_desc->nb = local_sg_desc.nb;
-	}
+	lsinic_pcie_memcp_align(ep_sg_desc,
+		local_sg_desc, copy_len);
+	rte_wmb();
+	ep_sg_desc->nb = local_sg_desc->nb;
 
-	tx_ring->packets += local_sg_desc.nb;
+	tx_ring->packets += local_sg_desc->nb;
 	tx_ring->bytes += tx_pkt->pkt_len;
 	tx_ring->bytes_fcs += tx_pkt->pkt_len + LSINIC_ETH_FCS_SIZE;
 	tx_ring->bytes_overhead += tx_pkt->pkt_len +
 			LSINIC_ETH_OVERHEAD_SIZE;
 
-	tx_ring->tx_free_len++;
 	tx_ring->last_avail_idx++;
 
 	return 0;
@@ -424,34 +388,31 @@ lxsnic_xmit_one_seg_pkt(struct lxsnic_ring *tx_ring,
 
 static inline void
 lxsnic_eth_xmit_notify(struct lxsnic_ring *txq,
-	uint16_t start, uint16_t notify_len, union lsinic_ep2rc_notify *notify)
+	uint16_t start, uint16_t num)
 {
-	struct lsinic_bd_desc *desc = NULL, *src_desc;
-	union lsinic_bd_desc_64 *desc_64 = NULL, *src_desc_64;
 	void *src, *dst;
-	int i, dst_idx;
+	uint16_t i, idx;
 
-	if (txq->ep_mem_bd_type == EP_MEM_LONG_BD) {
-		desc = txq->ep_bd_desc;
-		src_desc = notify->ep_tx_addr;
-		for (i = 0; i < notify_len; i++) {
-			src = (void *)&src_desc[i];
-			dst_idx = (start + i) & (txq->count - 1);
-			dst = (void *)&desc[dst_idx];
+	if (txq->ep_mem_bd_type == EP_MEM_BD_128) {
+		for (i = 0; i < num; i++) {
+			idx = (start + i) & (txq->count - 1);
+			src = &txq->rc_bd_desc[idx];
+			dst = &txq->ep_bd_desc[idx];
 			mem_cp128b_atomic(dst, src);
 		}
 	} else if (txq->ep_mem_bd_type == EP_MEM_SRC_BD_64) {
-		desc_64 = txq->ep_bd_desc_64;
-		src_desc_64 = notify->ep_tx_addr_64;
-		if ((start + notify_len) <= txq->count) {
-			rte_memcpy(&desc_64[start], src_desc_64,
-				notify_len * sizeof(union lsinic_bd_desc_64));
+		src = &txq->rc_bd_desc_64[start];
+		dst = &txq->ep_bd_desc_64[start];
+		if ((start + num) <= txq->count) {
+			rte_memcpy(dst, src,
+				num * sizeof(union lsinic_bd_desc_64));
 		} else {
-			rte_memcpy(&desc_64[start], src_desc_64,
+			rte_memcpy(dst, src,
 				(txq->count - start) * sizeof(union lsinic_bd_desc_64));
-			rte_memcpy(&desc_64[0], &src_desc_64[txq->count - start],
-				(notify_len - (txq->count - start)) *
-				sizeof(union lsinic_bd_desc_64));
+			dst = &txq->ep_bd_desc_64[0];
+			src = &txq->rc_bd_desc_64[0];
+			rte_memcpy(dst, src,
+				(num - (txq->count - start)) * sizeof(union lsinic_bd_desc_64));
 		}
 	} else {
 		LSXINIC_PMD_ERR("%s: type(%d) of bd in ep mem un-support",
@@ -467,14 +428,11 @@ _lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 {
 	int ret = 0;
 	uint8_t ret_val = 0;
-	uint16_t tx_num = 0;
 	uint16_t total_nb_pkts = nb_pkts;
 	struct lxsnic_ring *tx_ring = tx_queue;
 	struct rte_mbuf *free_pkts[LSINIC_MAX_BURST_NUM];
-	uint16_t free_nb = 0, notify_len = 0;
-	uint16_t first_idx =
-		tx_ring->last_avail_idx & (tx_ring->count - 1);
-	union lsinic_ep2rc_notify notify;
+	uint16_t free_nb = 0, tx_num = 0;
+	uint16_t start = tx_ring->last_avail_idx & (tx_ring->count - 1);
 
 	tx_ring->loop_total++;
 
@@ -555,8 +513,7 @@ eq_start:
 
 	if (tx_ring->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
 		while (nb_pkts) {
-			ret = lxsnic_xmit_one_seg_pkt(tx_ring,
-				tx_pkts[tx_num], NULL);
+			ret = lxsnic_xmit_one_seg_pkt(tx_ring, tx_pkts[tx_num]);
 			if (likely(!ret)) {
 				tx_num++;
 				nb_pkts--;
@@ -568,18 +525,17 @@ eq_start:
 	}
 
 	while (nb_pkts) {
-		ret = lxsnic_xmit_one_pkt(tx_ring,
-			tx_pkts[tx_num], notify_len, &notify);
+		ret = lxsnic_xmit_one_pkt(tx_ring, tx_pkts[tx_num]);
 		if (ret)
 			goto end_of_tx;
 
-		notify_len++;
 		tx_num++;
 		nb_pkts--;
 	}
 
 end_of_tx:
-	lxsnic_eth_xmit_notify(tx_ring, first_idx, notify_len, &notify);
+	if (tx_num > 0)
+		lxsnic_eth_xmit_notify(tx_ring, start, tx_num);
 
 	if (free_nb > 0)
 		rte_pktmbuf_free_bulk(free_pkts, free_nb);
@@ -609,31 +565,17 @@ lxsnic_fetch_rx_buffer(struct lxsnic_ring *rx_queue,
 	void *rx_desc)
 {
 	struct rte_mbuf *mbuf;
-	uint16_t rx_packet_len;
-	struct lsinic_bd_desc *bd_desc;
-	uint32_t mbuf_idx;
-	struct lsinic_rc_rx_len_idx *rx_len_idx;
-	const uint32_t cap = rx_queue->adapter->cap;
+	uint16_t rx_packet_len, mbuf_idx;
+	struct lsinic_bd_desc_128 *bd_desc;
+	struct lsinic_rc_rx_len *rx_len;
 
+	mbuf_idx = rx_queue->last_used_idx & (rx_queue->count - 1);
+	mbuf = rx_queue->q_mbuf[mbuf_idx];
 	if (rx_queue->rc_mem_bd_type == RC_MEM_LEN_CMD) {
-		rx_len_idx = rx_desc;
-		if (cap & LSINIC_CAP_XFER_ORDER_PRSV) {
-			mbuf_idx = rx_queue->last_used_idx &
-				(rx_queue->count - 1);
-		} else {
-			mbuf_idx = rx_len_idx->idx;
-		}
-		mbuf = (struct rte_mbuf *)rx_queue->q_mbuf[mbuf_idx];
-		rx_packet_len = rx_len_idx->total_len;
+		rx_len = rx_desc;
+		rx_packet_len = rx_len->total_len;
 	} else {
 		bd_desc = rx_desc;
-		if (cap & LSINIC_CAP_XFER_ORDER_PRSV) {
-			mbuf_idx = rx_queue->last_used_idx &
-				(rx_queue->count - 1);
-		} else {
-			mbuf_idx = lsinic_bd_ctx_idx(bd_desc->bd_status);
-		}
-		mbuf = (struct rte_mbuf *)rx_queue->q_mbuf[mbuf_idx];
 		rx_packet_len = LSINIC_READ_REG(&bd_desc->len_cmd) &
 			LSINIC_BD_LEN_MASK;
 	}
@@ -663,16 +605,14 @@ lxsnic_fetch_rx_buffer(struct lxsnic_ring *rx_queue,
 }
 
 static inline void
-lxsnic_rx_lbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
+lxsnic_rx_bd_128b_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 	struct rte_mbuf *mbufs[], int count)
 {
 	int cnt = 0;
 	uint64_t dma_addr = 0;
 	uint16_t idx = start_idx;
-	uint32_t mbuf_idx;
-	struct lsinic_bd_desc *ep_rx_desc = NULL, *rc_rx_desc = NULL;
-	struct lsinic_bd_desc local_rx_desc;
-	struct lsinic_rc_rx_len_idx *rx_len_idx;
+	struct lsinic_bd_desc_128 *ep_rx_desc = NULL, *rc_rx_desc = NULL;
+	struct lsinic_bd_desc_128 local_rx_desc;
 
 	ep_rx_desc = rx_queue->ep_bd_desc;
 	while (cnt < count) {
@@ -680,37 +620,31 @@ lxsnic_rx_lbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		mbufs[cnt]->port = rx_queue->port;
 		dma_addr = rte_mbuf_data_iova_default(mbufs[cnt]);
 
-		if (rx_queue->rc_mem_bd_type == RC_MEM_LONG_BD) {
+		if (rx_queue->rc_mem_bd_type == RC_MEM_BD_128) {
 			rc_rx_desc = &rx_queue->rc_bd_desc[idx];
-			mbuf_idx = lsinic_bd_ctx_idx(rc_rx_desc->bd_status);
 		} else {
-			rx_len_idx = &rx_queue->rx_len_idx[idx];
-			mbuf_idx = rx_len_idx->idx;
-			rx_len_idx->len_idx = 0;
+			rx_queue->rx_len[idx].total_len = 0;
 			rc_rx_desc = &local_rx_desc;
-			memset(rc_rx_desc, 0, sizeof(struct lsinic_bd_desc));
+			memset(rc_rx_desc, 0, sizeof(struct lsinic_bd_desc_128));
 		}
 		rc_rx_desc->pkt_addr = dma_addr;
-		rc_rx_desc->bd_status = RING_BD_READY |
-			(mbuf_idx << LSINIC_BD_CTX_IDX_SHIFT);
+		rc_rx_desc->bd_status = RING_BD_READY;
 		rte_memcpy(&ep_rx_desc[idx], rc_rx_desc,
-			sizeof(struct lsinic_bd_desc));
-		rx_queue->q_mbuf[mbuf_idx] = mbufs[cnt];
+			sizeof(struct lsinic_bd_desc_128));
+		rx_queue->q_mbuf[idx] = mbufs[cnt];
 		cnt++;
 		idx = (idx + 1) & (rx_queue->count - 1);
 	}
 }
 
 static inline void
-lxsnic_rx_sbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
+lxsnic_rx_bd_addr_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 	struct rte_mbuf *mbufs[], int count)
 {
 	int cnt = 0;
 	uint64_t dma_addr = 0;
 	uint16_t idx = start_idx;
-	uint32_t mbuf_idx;
 	struct lsinic_ep_tx_dst_addr *local_recv_addr;
-	struct lsinic_rc_rx_len_idx *rx_len_idx;
 
 	local_recv_addr = rx_queue->rc_rx_addr;
 
@@ -719,13 +653,10 @@ lxsnic_rx_sbd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		mbufs[cnt]->port = rx_queue->port;
 		dma_addr = rte_mbuf_data_iova_default(mbufs[cnt]);
 
-		mbuf_idx = idx;
 		local_recv_addr[idx].pkt_addr = dma_addr;
-		if (rx_queue->rc_mem_bd_type == RC_MEM_LEN_CMD) {
-			rx_len_idx = &rx_queue->rx_len_idx[idx];
-			rx_len_idx->len_idx = 0;
-		}
-		rx_queue->q_mbuf[mbuf_idx] = mbufs[cnt];
+		if (rx_queue->rc_mem_bd_type == RC_MEM_LEN_CMD)
+			rx_queue->rx_len[idx].total_len = 0;
+		rx_queue->q_mbuf[idx] = mbufs[cnt];
 		cnt++;
 		idx = (idx + 1) & (rx_queue->count - 1);
 	}
@@ -754,9 +685,9 @@ lxsnic_rx_bd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 		return;
 
 	if (rx_queue->ep_mem_bd_type == EP_MEM_DST_ADDR_BD)
-		lxsnic_rx_sbd_fill(rx_queue, start_idx, mbufs, count);
+		lxsnic_rx_bd_addr_fill(rx_queue, start_idx, mbufs, count);
 	else
-		lxsnic_rx_lbd_fill(rx_queue, start_idx, mbufs, count);
+		lxsnic_rx_bd_128b_fill(rx_queue, start_idx, mbufs, count);
 }
 
 static inline void
@@ -791,8 +722,7 @@ lxsnic_rx_seg_bd_fill(struct lxsnic_ring *rx_queue, uint16_t start_idx,
 	}
 
 	lsinic_pcie_memcp_align(ep_rx_addr_seg,
-		local_seg,
-		sizeof(uint64_t) +
+		local_seg, sizeof(uint64_t) +
 		sizeof(struct lsinic_ep_tx_seg_entry) * count);
 	rte_wmb();
 	ep_rx_addr_seg->ready = count;
@@ -863,8 +793,7 @@ lxsnic_eth_recv_seg_pkts_to_cache(struct lxsnic_ring *rxq)
 
 		rxq->last_used_idx++;  /* step to next */
 		ret = rte_pktmbuf_alloc_bulk(rxq->mb_pool,
-			rxq->seg_mbufs[idx].mbufs,
-			total_nb);
+			rxq->seg_mbufs[idx].mbufs, total_nb);
 		if (ret)
 			break;
 
@@ -887,9 +816,8 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 	int count = 0;
 	uint32_t ret_val = 0;
 	uint16_t nb_rx = 0;
-	struct lsinic_bd_desc *rx_desc;
-	struct lsinic_bd_desc local_desc;
-	struct lsinic_rc_rx_len_idx *rx_len_idx = NULL;
+	struct lsinic_bd_desc_128 *rx_desc, local_desc;
+	struct lsinic_rc_rx_len *rx_len = NULL;
 	struct rte_mbuf *mbuf = NULL;
 	uint16_t idx = 0;
 
@@ -915,20 +843,19 @@ lxsnic_eth_recv_pkts_to_cache(struct lxsnic_ring *rx_queue)
 	rx_queue->ep_sr = ret_val;
 
 	if (rx_queue->rc_mem_bd_type == RC_MEM_LEN_CMD)
-		rx_len_idx = rx_queue->rx_len_idx;
+		rx_len = rx_queue->rx_len;
 
 	while (nb_rx < rx_queue->count) {
 		idx = rx_queue->last_used_idx & (rx_queue->count - 1);
 
-		if (rx_len_idx) {
-			if (!rx_len_idx[idx].len_idx)
+		if (rx_len) {
+			if (!rx_len[idx].total_len)
 				break;
 			goto skip_parse_bd;
 		}
 		rx_desc = &rx_queue->rc_bd_desc[idx];
 		mem_cp128b_atomic((uint8_t *)&local_desc, (uint8_t *)rx_desc);
-		if ((local_desc.bd_status & RING_BD_STATUS_MASK) !=
-			RING_BD_HW_COMPLETE)
+		if (local_desc.bd_status != RING_BD_HW_COMPLETE)
 			break;
 		rx_desc = &local_desc;
 
@@ -940,14 +867,11 @@ skip_parse_bd:
 		 * descriptor has been written back
 		 */
 		count = 0;
-		if (rx_len_idx) {
-			mbuf = lxsnic_fetch_rx_buffer(rx_queue,
-					&rx_len_idx[idx]);
+		if (rx_len) {
+			mbuf = lxsnic_fetch_rx_buffer(rx_queue, &rx_len[idx]);
 			if (mbuf) {
-				rx_queue->mcache[rx_queue->mtail] =
-					mbuf;
-				rx_queue->mtail = (rx_queue->mtail + 1)
-					& MCACHE_MASK;
+				rx_queue->mcache[rx_queue->mtail] = mbuf;
+				rx_queue->mtail = (rx_queue->mtail + 1) & MCACHE_MASK;
 				rx_queue->mcnt++;
 				count = 1;
 			}

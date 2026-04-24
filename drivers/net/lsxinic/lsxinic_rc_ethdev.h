@@ -180,8 +180,8 @@ struct lxsnic_ring {
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	/* point to EP memory */
 	void *ep_bd_mapped_addr;
-	/* EP_MEM_LONG_BD*/
-	struct lsinic_bd_desc *ep_bd_desc;
+	/* EP_MEM_BD_128*/
+	struct lsinic_bd_desc_128 *ep_bd_desc;
 	union lsinic_bd_desc_64 *ep_bd_desc_64;
 
 	/* For RC TX*/
@@ -198,14 +198,15 @@ struct lxsnic_ring {
 
 	enum RC_MEM_BD_TYPE rc_mem_bd_type;
 	void *rc_bd_shared_addr;
-	/* RC_MEM_LONG_BD*/
-	struct lsinic_bd_desc *rc_bd_desc;
+	/* RC_MEM_BD_128*/
+	struct lsinic_bd_desc_128 *rc_bd_desc;
+	union lsinic_bd_desc_64 *rc_bd_desc_64;
 
 	struct lsinic_seg_desc *rc_sg_desc;
 
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
-	struct lsinic_rc_rx_len_idx *rx_len_idx;
+	struct lsinic_rc_rx_len *rx_len;
 	struct lsinic_rc_rx_seg *rx_seg;
 
 	/* For RC TX*/
@@ -233,14 +234,8 @@ struct lxsnic_ring {
 	/* use for manage queue */
 	uint16_t last_avail_idx;
 	uint16_t last_used_idx;
-	union {
-		uint16_t tx_free_start_idx;
-		uint16_t rx_fill_start_idx;
-	};
-	union {
-		int tx_free_len;
-		int rx_fill_len;
-	};
+	uint16_t rx_fill_start_idx;
+	int rx_fill_len;
 	/* statistics */
 	uint64_t packets;
 	uint64_t bytes;
@@ -316,6 +311,8 @@ struct lxsnic_adapter {
 	unsigned long state;
 	uint32_t rc_state;
 	uint32_t ep_state;
+	uint8_t tx_segment;
+	uint8_t rx_split;
 
 	struct lxsnic_hw hw;
 	struct rte_eth_dev *eth_dev;
@@ -363,7 +360,7 @@ struct lxsnic_adapter {
 	struct vf_data_storage *vfinfo;
 	int vf_rate_link_speed;
 	struct lxsnic_hw_stats stats;
-	uint32_t cap;
+	uint8_t dma_mem_complete;
 	uint16_t max_data_room;
 };
 

@@ -73,12 +73,15 @@ enum queue_dma_bd_update {
 	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_BD_DMA_START_FLAG MAX_U16
+#define LSINIC_RC_BD_CHECK_PP_MAX 100
 struct lsinic_queue {
 	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
 	enum lsinic_queue_type type;
 	enum lsinic_queue_status status;
 	int ep_enabled;
+	int rc_bd_check;
+	uint32_t rc_bd_check_pp;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
 #ifdef LSXINIC_LATENCY_PROFILING
@@ -100,9 +103,9 @@ struct lsinic_queue {
 
 	/* point to EP mem */
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
-	struct lsinic_bd_desc *local_src_bd_desc;
+	struct lsinic_bd_desc_128 *local_bd_128;
 	void *ep_bd_shared_addr;
-	struct lsinic_bd_desc *ep_bd_desc;
+	struct lsinic_bd_desc_128 *ep_bd_desc;
 	/* For TX ring*/
 	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
 	/* For debug*/
@@ -118,10 +121,11 @@ struct lsinic_queue {
 	void *rc_bd_mapped_addr;
 
 	/* For debug*/
-	struct lsinic_bd_desc *rc_bd_desc;
+	struct lsinic_bd_desc_128 *rc_bd_desc;
+	union lsinic_bd_desc_64 *rc_bd_desc_64;
 
 	/* For TX ring*/
-	struct lsinic_rc_rx_len_idx *tx_len_idx;
+	struct lsinic_rc_rx_len *tx_len;
 	struct lsinic_rc_rx_seg *tx_seg;
 
 	/* For RX ring*/
@@ -132,7 +136,7 @@ struct lsinic_queue {
 	uint32_t dma_bd_update;
 	union {
 		/* For TX ring*/
-		struct lsinic_rc_rx_len_idx *local_src_len_idx;
+		struct lsinic_rc_rx_len *local_src_len;
 		struct lsinic_rc_rx_seg *local_src_seg;
 		/* For RX ring*/
 		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
@@ -206,6 +210,7 @@ struct lsinic_queue {
 	uint64_t ring_full;
 	uint64_t loop_total;
 	uint64_t loop_avail;
+	uint64_t align_err;
 
 	/* point to the working queue */
 	struct lsinic_queue *working;
@@ -251,42 +256,34 @@ static __rte_always_inline void
 lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx)
 {
-	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
-		(const uint8_t *)&queue->local_src_bd_desc[used_idx]);
+	if (queue->local_bd_128) {
+		mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
+			(const uint8_t *)&queue->local_bd_128[used_idx]);
+	} else {
+		queue->rc_bd_desc[used_idx].bd_status = RING_BD_HW_COMPLETE;
+	}
 }
 
 static __rte_always_inline void
 lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx, int remote)
 {
-	struct lsinic_bd_desc *ep_bd_desc =
-		&queue->local_src_bd_desc[used_idx];
-	struct lsinic_rc_rx_len_idx *tx_len_idx =
-		&queue->tx_len_idx[used_idx];
-	struct lsinic_rc_rx_len_idx *local_len_idx =
-		&queue->local_src_len_idx[used_idx];
-	uint32_t *local_32 = (uint32_t *)local_len_idx;
-	uint32_t *remote_32 = (uint32_t *)tx_len_idx;
+	struct lsinic_bd_desc_128 *ep_bd_desc = &queue->local_bd_128[used_idx];
+	struct lsinic_rc_rx_len *tx_len = &queue->tx_len[used_idx];
+	struct lsinic_rc_rx_len *local_len = &queue->local_src_len[used_idx];
 
-	local_len_idx->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
-	local_len_idx->idx = lsinic_bd_ctx_idx(ep_bd_desc->bd_status);
+	local_len->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
 
 	if (remote)
-		*remote_32 = *local_32;
+		tx_len->total_len = local_len->total_len;
 }
 
 static __rte_always_inline void
 lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
-	uint16_t used_idx, const struct lsinic_bd_desc *bd)
+	uint16_t used_idx, const struct lsinic_bd_desc_128 *bd)
 {
-	rte_memcpy(&queue->local_src_bd_desc[used_idx], bd,
-		sizeof(struct lsinic_bd_desc));
-	queue->local_src_bd_desc[used_idx].bd_status &=
-		~((uint32_t)RING_BD_STATUS_MASK);
-	queue->local_src_bd_desc[used_idx].bd_status |=
-		RING_BD_ADDR_CHECK;
-	queue->local_src_bd_desc[used_idx].bd_status |=
-		RING_BD_HW_COMPLETE;
+	rte_memcpy(&queue->local_bd_128[used_idx], bd, sizeof(struct lsinic_bd_desc_128));
+	queue->local_bd_128[used_idx].bd_status = RING_BD_HW_COMPLETE;
 }
 
 void lsinic_rx_queue_release_mbufs(struct lsinic_rx_queue *rxq);
