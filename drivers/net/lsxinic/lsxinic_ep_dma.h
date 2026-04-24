@@ -8,6 +8,10 @@
 #include <rte_dmadev.h>
 #include <rte_pmd_dpaax_qdma.h>
 
+#define LSINIC_QDMA_EQ_MAX_NB RTE_DPAAX_QDMA_JOB_SUBMIT_MAX
+#define LSINIC_QDMA_DQ_MAX_NB 64
+#define LSINIC_QDMA_EQ_DATA_MAX_NB (LSINIC_QDMA_EQ_MAX_NB - 8)
+
 struct lsinic_dma_job {
 	rte_iova_t src;
 	rte_iova_t dst;
@@ -17,9 +21,9 @@ struct lsinic_dma_job {
 };
 
 struct lsinic_dma_seg_job {
-	rte_iova_t src[RTE_DPAAX_QDMA_JOB_SUBMIT_MAX];
-	rte_iova_t dst[RTE_DPAAX_QDMA_JOB_SUBMIT_MAX];
-	uint32_t len[RTE_DPAAX_QDMA_JOB_SUBMIT_MAX];
+	rte_iova_t src[LSINIC_QDMA_EQ_MAX_NB];
+	rte_iova_t dst[LSINIC_QDMA_EQ_MAX_NB];
+	uint32_t len[LSINIC_QDMA_EQ_MAX_NB];
 	uint32_t seg_nb;
 	uint64_t cnxt;
 };
@@ -30,11 +34,6 @@ enum lsinic_dma_direction {
 	LSINIC_DMA_MEM_TO_MEM,
 	LSINIC_DMA_PCIE_TO_PCIE
 };
-
-#define LSINIC_QDMA_EQ_MAX_NB RTE_DPAAX_QDMA_JOB_SUBMIT_MAX
-#define LSINIC_QDMA_DQ_MAX_NB 64
-#define LSINIC_QDMA_EQ_DATA_MAX_NB \
-	(RTE_DPAAX_QDMA_JOB_SUBMIT_MAX - 8)
 
 #define LSINIC_DMA_BURST_ASSERT(nb) \
 	do { \

@@ -78,8 +78,6 @@ struct lsxvio_adapter {
 	void *msix_cfg_addr;
 
 	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUES];
-	struct rte_dpaa2_device *merge_dev;
-	struct rte_dpaa2_device *split_dev;
 	uint8_t txq_list_initialized[RTE_MAX_LCORE];
 	uint8_t txq_num_in_list[RTE_MAX_LCORE];
 	struct lsxvio_tx_queue_list txq_list[RTE_MAX_LCORE];

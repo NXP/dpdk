@@ -9,7 +9,6 @@
 #include <rte_interrupts.h>
 #include <rte_lsx_pciep_bus.h>
 #include <ethdev_driver.h>
-#include <dpaa2_hw_pvt.h>
 
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_vio_common.h"
@@ -291,8 +290,7 @@ lsxvio_virtio_config_fromrc(struct rte_lsx_pciep_device *dev)
 		if (rte_lsx_pciep_hw_sim_get(adapter->pcie_idx)) {
 			desc_addr[i] = (queue->queue_desc_lo |
 				((uint64_t)(queue->queue_desc_hi) << 32));
-			virt[i] = DPAA2_IOVA_TO_VADDR_AND_CHECK(desc_addr[i],
-				0);
+			virt[i] = rte_mem_iova2virt(desc_addr[i]);
 		}
 
 		if (!virt[i]) {

@@ -46,7 +46,6 @@
 #include <rte_string_fns.h>
 #include <rte_errno.h>
 #include <ethdev_driver.h>
-#include <dpaa2_hw_pvt.h>
 
 #include "lsxinic_common.h"
 #include "lsxinic_common_pmd.h"
@@ -54,7 +53,6 @@
 #include "lsxinic_ep_vio_net.h"
 #include "lsxinic_ep_vio_rxtx.h"
 #include "lsxinic_ep_dma.h"
-#include <rte_pmd_dpaax_qdma.h>
 
 #define DEFAULT_BURST_THRESH LSINIC_QDMA_EQ_DATA_MAX_NB
 
@@ -1245,8 +1243,7 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 		virt = rte_lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE, NULL);
 	} else {
-		virt = DPAA2_IOVA_TO_VADDR_AND_CHECK(remote_addr,
-			LSXVIO_PER_RING_MEM_MAX_SIZE);
+		virt = rte_mem_iova2virt(remote_addr);
 	}
 
 	print_buf = rte_malloc(NULL, len * 16 + 1024, 0);

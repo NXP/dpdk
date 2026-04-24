@@ -6,7 +6,6 @@
 
 #include <rte_ethdev.h>
 #include <rte_dmadev.h>
-#include <rte_pmd_dpaax_qdma.h>
 
 #include "virtio.h"
 #include "virtio_ring.h"
