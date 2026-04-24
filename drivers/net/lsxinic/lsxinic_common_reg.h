@@ -5,6 +5,11 @@
 #ifndef _LSXINIC_COMMON_REG_H_
 #define _LSXINIC_COMMON_REG_H_
 
+#ifdef LSINIC_KMOD
+#define __rte_packed_begin
+#define __rte_packed_end __attribute__((__packed__))
+#endif
+
 #include "lsxinic_common.h"
 
 /* INIC device information */
