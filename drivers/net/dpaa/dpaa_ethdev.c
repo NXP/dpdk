@@ -1144,9 +1144,6 @@ _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
-	/* Shutdown FQ before configure */
-	qman_shutdown_fq(rxq->fqid);
-
 	if (rxq->vsp_id >= 0) {
 		vsp = &dpaa_intf->vsp[rxq->vsp_id];
 	} else {
@@ -2425,6 +2422,13 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 			fqid = dev_rx_fqids[loop];
 
 		vsp_id = dev_vspids[loop];
+
+		/* Shutdown FQ before configure to clean the queue */
+		ret = qman_shutdown_fq(fqid);
+		if (ret < 0) {
+			DPAA_PMD_ERR("Failed shutdown %s:rxq-%d-fqid = 0x%08x",
+				dpaa_intf->name, loop, fqid);
+		}
 
 		if (dpaa_intf->cgr_rx)
 			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
