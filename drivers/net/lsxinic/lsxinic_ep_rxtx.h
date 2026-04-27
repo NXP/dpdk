@@ -47,28 +47,11 @@ struct lsinic_sw_bd {
 	struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
 	uint16_t my_idx; /* const after initalization*/
 	uint16_t align_dma_offset;
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	uint16_t mg;
-	struct lsinic_mg_header mg_header;
-#endif
 	union {
 		char *complete;
 		uint8_t dma_complete;
 	};
 };
-
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-struct lsinic_dpni_mg_dsc {
-	struct rte_mbuf *attach_mbuf;
-	struct lsinic_mg_header mg_header;
-};
-
-enum lsinix_split_type {
-	LSINIC_CPU_SPLIT,
-	LSINIC_HW_SPLIT,
-	LSINIC_MBUF_CLONE_SPLIT
-};
-#endif
 
 /**
  * Structure associated with each RX queue.
@@ -86,18 +69,19 @@ enum queue_dma_bd_update {
 #define LSINIC_DATA_DMA_START 0
 #define LSINIC_E2R_BD_DMA_START \
 	(LSINIC_DATA_DMA_START + LSINIC_BD_ENTRY_COUNT)
-#define LSINIC_R2E_BD_DMA_START \
-	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 #define LSINIC_BD_DMA_MAX_COUNT \
-	(LSINIC_R2E_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
+	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 
 #define LSINIC_BD_DMA_START_FLAG MAX_U16
+#define LSINIC_RC_BD_CHECK_PP_MAX 100
 struct lsinic_queue {
-	struct lsinic_adapter *adapter;
 	struct lsinic_queue *pair;
-	enum LSINIC_QEUE_TYPE type;
-	enum LSINIC_QEUE_STATUS status;
+	enum lsinic_queue_type type;
+	enum lsinic_queue_status status;
 	int ep_enabled;
+	int rc_bd_check;
+	int bypass_iommu;
+	uint32_t rc_bd_check_pp;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
 #ifdef LSXINIC_LATENCY_PROFILING
@@ -119,9 +103,9 @@ struct lsinic_queue {
 
 	/* point to EP mem */
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
-	struct lsinic_bd_desc *local_src_bd_desc;
+	struct lsinic_bd_desc_128 *local_bd_128;
 	void *ep_bd_shared_addr;
-	struct lsinic_bd_desc *ep_bd_desc;
+	struct lsinic_bd_desc_128 *ep_bd_desc;
 	/* For TX ring*/
 	struct lsinic_ep_tx_dst_addr *tx_dst_addr;
 	/* For debug*/
@@ -129,8 +113,7 @@ struct lsinic_queue {
 	struct lsinic_ep_tx_seg_dst_addr *tx_seg_dst_addr;
 
 	/* For RX ring*/
-	struct lsinic_ep_rx_src_addrl *rx_src_addrl;
-	struct lsinic_ep_rx_src_addrx *rx_src_addrx;
+	union lsinic_bd_desc_64 *rx_bd_desc_64;
 	struct lsinic_seg_desc *rx_src_seg;
 
 	/* point to RC mem */
@@ -138,33 +121,22 @@ struct lsinic_queue {
 	void *rc_bd_mapped_addr;
 
 	/* For debug*/
-	struct lsinic_bd_desc *rc_bd_desc;
+	struct lsinic_bd_desc_128 *rc_bd_desc;
+	union lsinic_bd_desc_64 *rc_bd_desc_64;
 
 	/* For TX ring*/
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	struct lsinic_rc_rx_len_cmd *tx_len_cmd;
-#else
-	struct lsinic_rc_rx_len_idx *tx_len_idx;
-#endif
+	struct lsinic_rc_rx_len *tx_len;
 	struct lsinic_rc_rx_seg *tx_seg;
 
 	/* For RX ring*/
 	struct lsinic_rc_tx_bd_cnf *rc_rx_complete;
-	/* For RX dma bd update debug*/
-	struct lsinic_ep_rx_src_addrl *rc_rx_src_addrl;
-	/* For RX dma bd update debug*/
-	struct lsinic_ep_rx_src_addrx *rc_rx_src_addrx;
 	/* For RX dma bd update debug*/
 	struct lsinic_seg_desc *rc_rx_src_seg;
 
 	uint32_t dma_bd_update;
 	union {
 		/* For TX ring*/
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-		struct lsinic_rc_rx_len_cmd *local_src_len_cmd;
-#else
-		struct lsinic_rc_rx_len_idx *local_src_len_idx;
-#endif
+		struct lsinic_rc_rx_len *local_src_len;
 		struct lsinic_rc_rx_seg *local_src_seg;
 		/* For RX ring*/
 		struct lsinic_rc_tx_idx_cnf *local_src_free_idx;
@@ -176,19 +148,13 @@ struct lsinic_queue {
 	void (*recv_update)(struct lsinic_queue *rxq,
 		uint16_t bd_idx);
 
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	struct lsinic_dpni_mg_dsc *mg_dsc;
-	uint16_t mg_dsc_head;
-	uint16_t mg_dsc_tail;
-#endif
-
 	/* DMA */
 	struct lsinic_dma_job *dma_jobs;
 	struct lsinic_dma_seg_job *dma_seg_jobs;
 	uint16_t *dma_idx;
 
 	void (*txq_dma_eq)(void *queue, int append);
-	void (*rxq_dma_eq)(void *queue, int append, int dma_bd);
+	void (*rxq_dma_eq)(void *queue, int append);
 	uint16_t (*dma_dq)(void *queue);
 	void (*rx_dma_mbuf_set)(void *job,
 		struct rte_mbuf *mbuf,
@@ -196,10 +162,7 @@ struct lsinic_queue {
 		int complete_check);
 
 	uint16_t wdma_bd_len;
-	uint16_t rdma_bd_len;
-
 	uint32_t wdma_bd_start;
-	uint32_t rdma_bd_start;
 
 	pthread_t pid;
 	uint32_t core_id;
@@ -247,28 +210,15 @@ struct lsinic_queue {
 	uint64_t ring_full;
 	uint64_t loop_total;
 	uint64_t loop_avail;
+	uint64_t align_err;
 
-	/* point to the working queue */
-	struct lsinic_queue *working;
-	/* point to the next queue belonged to the same core */
-	struct lsinic_queue *sibling;
-	uint32_t nb_q;
-
+	/** queue is not accessed by multi process, safe to point to eth dev.*/
 	struct rte_eth_dev *dev;
 
 	uint16_t mhead;
 	uint16_t mtail;
 	uint32_t mcnt;
 	struct rte_mbuf *mcache[MCACHE_NUM];
-
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	enum lsinix_split_type split_type;
-	void *recycle_txq;
-	void *recycle_rxq;
-	struct qbman_fd *recycle_fd;
-	uint16_t split_cnt[MCACHE_NUM];
-	int64_t recycle_pending;
-#endif
 
 	uint64_t bytes_dq;
 	uint64_t bytes_eq;
@@ -280,6 +230,9 @@ struct lsinic_queue {
 	/* Pointer to Next instance used by q list */
 	TAILQ_ENTRY(lsinic_queue) next;
 };
+
+#define LSINIC_QUEUE_PCIE_DEV(q) \
+	container_of((q)->dev->device, struct rte_lsx_pciep_device, device)
 
 #define LSINIC_ALIGN_DMA_CALC_OFFSET(addr)   ((addr) & (64 - 1))
 
@@ -301,63 +254,21 @@ static __rte_always_inline void
 lsinic_bd_update_used_to_rc(struct lsinic_queue *queue,
 	uint16_t used_idx)
 {
-	mem_cp128b_atomic((uint8_t *)&queue->rc_bd_desc[used_idx],
-		(const uint8_t *)&queue->local_src_bd_desc[used_idx]);
-}
-
-static __rte_always_inline void
-lsinic_ep_notify_to_rc(struct lsinic_queue *queue,
-	uint16_t used_idx, int remote)
-{
-	struct lsinic_bd_desc *ep_bd_desc =
-		&queue->local_src_bd_desc[used_idx];
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	uint16_t cnt;
-	struct lsinic_rc_rx_len_cmd *tx_len_cmd =
-		&queue->tx_len_cmd[used_idx];
-	struct lsinic_rc_rx_len_cmd *local_len_cmd =
-		&queue->local_src_len_cmd[used_idx];
-	uint32_t *local_32 = (uint32_t *)local_len_cmd;
-	uint32_t *remote_32 = (uint32_t *)tx_len_cmd;
-
-	local_len_cmd->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
-	if (ep_bd_desc->len_cmd & LSINIC_BD_CMD_MG) {
-		cnt = (ep_bd_desc->len_cmd & LSINIC_BD_MG_NUM_MASK) >>
-			LSINIC_BD_MG_NUM_SHIFT;
+	if (queue->local_bd_128) {
+		mem_cp128b_atomic(&queue->rc_bd_desc[used_idx],
+			&queue->local_bd_128[used_idx]);
 	} else {
-		cnt = 0;
+		queue->rc_bd_desc[used_idx].bd_status = RING_BD_HW_COMPLETE;
 	}
-	EP2RC_TX_IDX_CNT_SET(local_len_cmd->cnt_idx,
-		lsinic_bd_ctx_idx(ep_bd_desc->bd_status),
-		cnt);
-#else
-	struct lsinic_rc_rx_len_idx *tx_len_idx =
-		&queue->tx_len_idx[used_idx];
-	struct lsinic_rc_rx_len_idx *local_len_idx =
-		&queue->local_src_len_idx[used_idx];
-	uint32_t *local_32 = (uint32_t *)local_len_idx;
-	uint32_t *remote_32 = (uint32_t *)tx_len_idx;
-
-	local_len_idx->total_len = ep_bd_desc->len_cmd & LSINIC_BD_LEN_MASK;
-	local_len_idx->idx = lsinic_bd_ctx_idx(ep_bd_desc->bd_status);
-#endif
-
-	if (remote)
-		*remote_32 = *local_32;
 }
 
 static __rte_always_inline void
 lsinic_bd_dma_complete_update(struct lsinic_queue *queue,
-	uint16_t used_idx, const struct lsinic_bd_desc *bd)
+	uint16_t used_idx, const struct lsinic_bd_desc_128 *bd)
 {
-	rte_memcpy(&queue->local_src_bd_desc[used_idx], bd,
-		sizeof(struct lsinic_bd_desc));
-	queue->local_src_bd_desc[used_idx].bd_status &=
-		~((uint32_t)RING_BD_STATUS_MASK);
-	queue->local_src_bd_desc[used_idx].bd_status |=
-		RING_BD_ADDR_CHECK;
-	queue->local_src_bd_desc[used_idx].bd_status |=
-		RING_BD_HW_COMPLETE;
+	if (bd)
+		rte_memcpy(&queue->local_bd_128[used_idx], bd, sizeof(struct lsinic_bd_desc_128));
+	queue->local_bd_128[used_idx].bd_status = RING_BD_HW_COMPLETE;
 }
 
 void lsinic_rx_queue_release_mbufs(struct lsinic_rx_queue *rxq);
@@ -393,9 +304,7 @@ void lsinic_queue_reset(struct lsinic_queue *q);
 void lsinic_queue_release(struct lsinic_queue *q);
 
 struct lsinic_queue *
-lsinic_queue_alloc(struct lsinic_adapter *adapter,
-	uint16_t queue_idx,
-	int socket_id, uint32_t nb_desc,
-	enum LSINIC_QEUE_TYPE type);
+lsinic_queue_alloc(struct rte_eth_dev *dev, uint16_t queue_idx,
+	int socket_id, uint32_t nb_desc, enum lsinic_queue_type type);
 
 #endif

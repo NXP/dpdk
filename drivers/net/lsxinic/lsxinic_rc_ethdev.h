@@ -58,9 +58,6 @@
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common.h"
 
-#define  LXSNIC_DEBUG_RX_TX
-
-#undef INIC_RC_EP_DEBUG_ENABLE
 #define LXSNIC_INTERRUPT_THRESHOLD  (32)
 #define LXSNIC_INTERRUPT_INTERVAL   (100) /* 100ns */
 
@@ -128,27 +125,6 @@
 
 typedef uint64_t dma_addr_t;
 
-struct lxsnic_queue_stats {
-	uint64_t packets;
-	uint64_t bytes;
-};
-
-struct lxsnic_tx_queue_stats {
-	uint64_t restart_queue;
-	uint64_t tx_busy;
-	uint64_t tx_done_old;
-};
-
-struct lxsnic_rx_queue_stats {
-	uint64_t rsc_count;
-	uint64_t rsc_flush;
-	uint64_t non_eop_descs;
-	uint64_t alloc_rx_page_failed;
-	uint64_t alloc_rx_buff_failed;
-	uint64_t alloc_rx_dma_failed;
-	uint64_t csum_err;
-};
-
 enum lxsnic_ring_state_t {
 	__LXSNIC_TX_FDIR_INIT_DONE,
 	__LXSNIC_TX_DETECT_HANG,
@@ -168,62 +144,45 @@ struct lxsnic_seg_mbuf {
 struct lxsnic_ring {
 	struct rte_mempool  *mb_pool; /**< mbuf pool to populate RX ring. */
 	struct lxsnic_ring *pair;
-	enum LSINIC_QEUE_TYPE type;
+	enum lsinic_queue_type type;
 	uint32_t port;
-	enum LSINIC_QEUE_STATUS status;
+	enum lsinic_queue_status status;
 	struct rte_ring *multi_core_ring;
 	rte_spinlock_t multi_core_lock;
 	uint32_t core_id;
 	pthread_t pid;
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
-	uint32_t rdma;
 	enum EP_MEM_BD_TYPE ep_mem_bd_type;
 	/* point to EP memory */
 	void *ep_bd_mapped_addr;
-	/* EP_MEM_LONG_BD*/
-	struct lsinic_bd_desc *ep_bd_desc;
+	/* EP_MEM_BD_128*/
+	struct lsinic_bd_desc_128 *ep_bd_desc;
+	union lsinic_bd_desc_64 *ep_bd_desc_64;
 
 	/* For RC TX*/
 	struct lsinic_seg_desc *ep_tx_sg;
-	/* EP_MEM_SRC_ADDRL_BD*/
-	struct lsinic_ep_rx_src_addrl *ep_tx_addrl;
-	/* EP_MEM_SRC_ADDRX_BD*/
-	struct lsinic_ep_rx_src_addrx *ep_tx_addrx;
 
 	/* For RC RX*/
 	/* EP_MEM_DST_ADDR_BD*/
 	struct lsinic_ep_tx_dst_addr *ep_rx_addr;
 	/* DMA read source*/
 	struct lsinic_ep_tx_dst_addr *rc_rx_addr;
-	/* EP_MEM_DST_ADDRL_BD*/
-	struct lsinic_ep_tx_dst_addrl *ep_rx_addrl;
-	/* DMA read source*/
-	struct lsinic_ep_tx_dst_addrl *rc_rx_addrl;
-	/* EP_MEM_DST_ADDX_BD*/
-	struct lsinic_ep_tx_dst_addrx *ep_rx_addrx;
-	/* DMA read source*/
-	struct lsinic_ep_tx_dst_addrx *rc_rx_addrx;
 	/* EP_MEM_DST_ADDR_SEG*/
 	struct lsinic_ep_tx_seg_dst_addr *ep_rx_addr_seg;
 	struct lsinic_ep_tx_seg_dst_addr *local_rx_addr_seg;
 
 	enum RC_MEM_BD_TYPE rc_mem_bd_type;
 	void *rc_bd_shared_addr;
-	/* RC_MEM_LONG_BD*/
-	struct lsinic_bd_desc *rc_bd_desc;
-	struct lsinic_ep_rx_src_addrl *rc_tx_addrl;
-	struct lsinic_ep_rx_src_addrx *rc_tx_addrx;
+	/* RC_MEM_BD_128*/
+	struct lsinic_bd_desc_128 *rc_bd_desc;
+	union lsinic_bd_desc_64 *rc_bd_desc_64;
 
 	struct lsinic_seg_desc *rc_sg_desc;
 
 	/* For RC RX*/
 	/* RC_MEM_LEN_CMD*/
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	struct lsinic_rc_rx_len_cmd *rx_len_cmd;
-#else
-	struct lsinic_rc_rx_len_idx *rx_len_idx;
-#endif
+	struct lsinic_rc_rx_len *rx_len;
 	struct lsinic_rc_rx_seg *rx_seg;
 
 	/* For RC TX*/
@@ -251,14 +210,8 @@ struct lxsnic_ring {
 	/* use for manage queue */
 	uint16_t last_avail_idx;
 	uint16_t last_used_idx;
-	union {
-		uint16_t tx_free_start_idx;
-		uint16_t rx_fill_start_idx;
-	};
-	union {
-		int tx_free_len;
-		int rx_fill_len;
-	};
+	uint16_t rx_fill_start_idx;
+	int rx_fill_len;
 	/* statistics */
 	uint64_t packets;
 	uint64_t bytes;
@@ -271,11 +224,7 @@ struct lxsnic_ring {
 	uint64_t sync_err;
 	uint64_t loop_total;
 	uint64_t loop_avail;
-	struct lxsnic_queue_stats stats;
-	union {
-		struct lxsnic_tx_queue_stats tx_stats;
-		struct lxsnic_rx_queue_stats rx_stats;
-	};
+	uint64_t align_err;
 	struct lxsnic_adapter *adapter;
 	uint16_t mhead;
 	uint16_t mtail;
@@ -309,19 +258,6 @@ struct vf_data_storage {
 	unsigned int vf_api;
 };
 
-struct lxsnic_hw_stats {
-	uint64_t rx_alloc_mbuf_fail;
-	uint64_t rx_clean_count;
-	uint64_t rx_desc_clean_num;
-	uint64_t rx_desc_clean_fail;
-	uint64_t rx_desc_err;
-	uint64_t tx_mbuf_err;
-	uint64_t tx_clean_count;
-	uint64_t tx_desc_clean_num;
-	uint64_t tx_desc_clean_fail;
-	uint64_t tx_desc_err;
-};
-
 enum lxsnic_rc_self_test {
 	LXSNIC_RC_SELF_NONE_TEST = 0,
 	LXSNIC_RC_SELF_PMD_TEST,
@@ -334,6 +270,8 @@ struct lxsnic_adapter {
 	unsigned long state;
 	uint32_t rc_state;
 	uint32_t ep_state;
+	uint8_t tx_segment;
+	uint8_t rx_split;
 
 	struct lxsnic_hw hw;
 	struct rte_eth_dev *eth_dev;
@@ -353,7 +291,7 @@ struct lxsnic_adapter {
 	const struct rte_memzone *rc_ring_mz;
 	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	dma_addr_t rc_ring_phy_base;
-	uint64_t rc_ring_win_size;
+	uint64_t rc_ring_align_size;
 	uint16_t  num_rx_queues;
 	uint16_t  config_rx_queues;
 	uint16_t  num_tx_queues;
@@ -364,7 +302,6 @@ struct lxsnic_adapter {
 
 	/* hardware ring is full can't send pkt */
 	uint64_t tx_busy;
-	uint16_t max_qpairs;
 	/*total apapter tx pkt rx pkt num */
 	unsigned int tx_ring_bd_count;
 	unsigned int rx_ring_bd_count;
@@ -381,14 +318,8 @@ struct lxsnic_adapter {
 	unsigned int num_vfs;
 	struct vf_data_storage *vfinfo;
 	int vf_rate_link_speed;
-	struct lxsnic_hw_stats stats;
-	uint32_t cap;
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-	uint32_t merge_threshold;
-#endif
+	uint8_t dma_mem_complete;
 	uint16_t max_data_room;
-	uint32_t pkt_addr_interval;
-	uint64_t pkt_addr_base;
 };
 
 enum lxsnic_state_t {
@@ -398,14 +329,6 @@ enum lxsnic_state_t {
 	__LXSNIC_SERVICE_SCHED,
 	__LXSNIC_IN_SFP_INIT,
 };
-
-#define LXSNIC_DEV_PRIVATE(adapter) \
-	((struct lxsnic_adapter *)adapter)
-#define LXSNIC_DEV_PRIVATE_TO_HW(adapter)\
-	(&((struct lxsnic_adapter *)adapter)->hw)
-
-#define LXSNIC_DEV_PRIVATE_TO_EP_PHY_BASE(adapter)\
-	(&((struct lxsnic_adapter *)adapter)->ep_ring_phy_base)\
 
 #define LXSNIC_DEV_PRIVATE_TO_P_VFDATA(adapter)\
 	 (&((struct lxsnic_adapter *)adapter)->vfinfo)

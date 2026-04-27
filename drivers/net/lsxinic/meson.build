@@ -15,7 +15,7 @@ if not dpdk_conf.get('RTE_ARCH_64')
     subdir_done()
 endif
 
-deps += ['bus_lsx_pciep', 'dmadev', 'dma_dpaa2', 'net_dpaa2', 'net_virtio']
+deps += ['bus_lsx_pciep', 'dmadev', 'net_virtio']
 sources = files(
 	'lsxinic_common_helper.c',
 	'lsxinic_ep_ethdev.c',
@@ -34,12 +34,6 @@ sources = files(
 )
 
 includes += include_directories(
-	'../../bus/fslmc',
-	'../../bus/fslmc/mc',
-	'../../bus/fslmc/portal',
-	'../../bus/fslmc/qbman/include',
-	'../../mempool/dpaa2',
-	'../dpaa2/mc',
 	'../virtio'
 )
 

@@ -376,7 +376,6 @@ lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 	return ret;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_first_dev)
 struct rte_lsx_pciep_device *
 rte_lsx_pciep_first_dev(void)
 {
@@ -538,7 +537,6 @@ static struct rte_lsx_pciep_bus lsx_pciep_bus = {
 };
 
 /* register a lsinic_vdev bus based lsinic driver */
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_register)
 void
 rte_lsx_pciep_driver_register(struct rte_lsx_pciep_driver *driver)
 {
@@ -549,7 +547,6 @@ rte_lsx_pciep_driver_register(struct rte_lsx_pciep_driver *driver)
 	driver->lsx_pciep_bus = &lsx_pciep_bus;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_unregister)
 /* un-register a lsinic_vdev bus based lsinic driver */
 void
 rte_lsx_pciep_driver_unregister(struct rte_lsx_pciep_driver *driver)

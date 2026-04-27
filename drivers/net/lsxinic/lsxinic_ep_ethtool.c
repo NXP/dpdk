@@ -21,9 +21,7 @@
 
 static int lsinic_if_dma_test(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
-
-	if (lsinic_dma_config_fromrc(adapter))
+	if (lsinic_dma_test_mem_config_fromrc(dev))
 		return PCIDEV_RESULT_FAILED;
 
 	return PCIDEV_RESULT_SUCCEED;
@@ -31,11 +29,11 @@ static int lsinic_if_dma_test(struct rte_eth_dev *dev)
 
 static int lsinic_if_init(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	adapter->rc_state = LSINIC_DEV_INITED;
 
-	if (lsinic_reset_config_fromrc(adapter))
+	if (lsinic_reset_config_fromrc(dev))
 		return PCIDEV_RESULT_FAILED;
 
 	return PCIDEV_RESULT_SUCCEED;
@@ -43,7 +41,7 @@ static int lsinic_if_init(struct rte_eth_dev *dev)
 
 static int lsinic_if_link_up(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	if (adapter->rc_state != LSINIC_DEV_INITED) {
 		LSXINIC_PMD_INFO("Please first send init command");
@@ -66,7 +64,7 @@ static int lsinic_if_link_up(struct rte_eth_dev *dev)
 
 static int lsinic_if_link_down(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	if (adapter->is_vf) {
 		LSXINIC_PMD_INFO("pice%d:pf%d:vf%d link down",
@@ -84,7 +82,7 @@ static int lsinic_if_link_down(struct rte_eth_dev *dev)
 
 static int lsinic_if_remove(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 
 	if (adapter->rc_state == LSINIC_DEV_UP)
 		lsinic_if_link_down(dev);
@@ -96,7 +94,7 @@ static int lsinic_if_remove(struct rte_eth_dev *dev)
 
 static int lsinic_set_mac(struct rte_eth_dev *dev)
 {
-	struct lsinic_adapter *adapter = dev->process_private;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
@@ -130,79 +128,41 @@ static int lsinic_set_mac(struct rte_eth_dev *dev)
 
 static int lsinic_set_mtu(struct rte_eth_dev *dev)
 {
-	int mtu;
-	struct lsinic_adapter *adapter = dev->process_private;
+	uint32_t mtu;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(dev);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 
 	mtu = LSINIC_READ_REG(&eth_reg->max_data_room);
 
-	if (!adapter->is_vf)
+	if (!adapter->is_vf) {
 		LSXINIC_PMD_INFO("pcie%d:pf%d align mtu(%d) with RC",
 			adapter->pcie_idx, adapter->pf_idx, mtu);
-	else
+	} else {
 		LSXINIC_PMD_INFO("pcie%d:pf%d:vf%d align mtu(%d) with RC",
 			adapter->pcie_idx, adapter->pf_idx,
 			adapter->vf_idx, mtu);
-	adapter->data_room_size = mtu;
+	}
+	if (mtu > adapter->data_room_size) {
+		LSXINIC_PMD_ERR("Invalid mtu(%d) > %d", mtu, adapter->data_room_size);
+		return PCIDEV_RESULT_FAILED;
+	}
+	adapter->max_tx_size = mtu;
 
 	return PCIDEV_RESULT_SUCCEED;
 }
 
-#define DEBUG_PRINT_INTERVAL 4
-
-static void lsinic_print_ep_status(void)
+void *lsinic_poll_dev_cmd(void *arg)
 {
-	static int debug_interval;
-	struct rte_lsx_pciep_device *dev;
-	struct rte_eth_dev *eth_dev;
-	struct lsinic_adapter *adapter;
-	uint64_t core_mask = 0;
-
-	if (debug_interval < DEBUG_PRINT_INTERVAL) {
-		debug_interval++;
-		return;
-	}
-
-	debug_interval = 0;
-	dev = rte_lsx_pciep_first_dev();
-
-	while (dev) {
-		eth_dev = dev->eth_dev;
-		adapter = eth_dev->process_private;
-
-		if (adapter->ep_state != LSINIC_DEV_UP) {
-			dev = (struct rte_lsx_pciep_device *)
-				TAILQ_NEXT(dev, next);
-			continue;
-		}
-
-		printf("\n\nPF%d", dev->pf);
-		if (dev->is_vf)
-			printf("-VF%d", dev->vf);
-		printf("-Port%d -- statistics:\n", eth_dev->data->port_id);
-
-		print_port_status(eth_dev, &core_mask,
-			(DEBUG_PRINT_INTERVAL + 1) *
-			LSINIC_CMD_POLLING_INTERVAL, LSINIC_EP_PORT);
-
-		printf("\r\n\r\n");
-		dev = (struct rte_lsx_pciep_device *)
-			TAILQ_NEXT(dev, next);
-	}
-}
-
-void *lsinic_poll_dev_cmd(void *arg __rte_unused)
-{
-	struct rte_lsx_pciep_device *dev;
-	struct rte_lsx_pciep_device *first_dev;
-	struct lsinic_adapter *adapter;
+	struct rte_eth_dev *eth_dev = arg;
+	struct lsinic_adapter *adapter = LSINIC_DEV_PRIVATE(eth_dev);
 	struct lsinic_dev_reg *reg;
 	uint32_t command, status;
 	char *penv = getenv("LSINIC_EP_PRINT_STATUS");
 	int print_status = 0, ret;
 	cpu_set_t cpuset;
-	enum lsinic_dev_type *dev_type;
+
+	adapter->poll_stat = LSINIC_POLL_START;
 
 	if (penv)
 		print_status = atoi(penv);
@@ -213,83 +173,63 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 	LSXINIC_PMD_INFO("Cmd/status thread affinity to control cpu 0 %s",
 		ret ? "failed" : "success");
 
+	adapter->cycs = rte_get_timer_cycles();
+
 	while (1) {
-		first_dev = rte_lsx_pciep_first_dev();
-		dev = first_dev;
-		while (dev) {
-			dev_type = dev->eth_dev->process_private;
-			if (*dev_type != LSINIC_NXP_DEV) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
-				if (dev == first_dev)
-					dev = NULL;
-				continue;
-			}
-			adapter = dev->eth_dev->process_private;
-			if (!adapter->hw_addr) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
-				if (dev == first_dev)
-					dev = NULL;
-				continue;
-			}
-			reg = LSINIC_REG_OFFSET(adapter->hw_addr,
-					LSINIC_DEV_REG_OFFSET);
+		if (adapter->poll_stat != LSINIC_POLL_START) {
+			adapter->poll_stat = LSINIC_POLL_INIT;
+			LSXINIC_PMD_DBG("%s: Quit from polling command",
+				eth_dev->data->name);
+			return arg;
+		}
+		if (!adapter->hw_addr)
+			goto next_loop;
 
-			command = LSINIC_READ_REG(&reg->command);
-			if (command == PCIDEV_COMMAND_IDLE) {
-				dev = (struct rte_lsx_pciep_device *)
-					TAILQ_NEXT(dev, next);
-				if (dev == first_dev)
-					dev = NULL;
-				continue;
-			}
+		reg = LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
+		command = LSINIC_READ_REG(&reg->command);
+		if (command == PCIDEV_COMMAND_IDLE)
+			goto next_loop;
 
-			switch (command) {
-			case PCIDEV_COMMAND_DMA_TEST:
-				status = lsinic_if_dma_test(dev->eth_dev);
-				break;
-			case PCIDEV_COMMAND_INIT:
-				status = lsinic_if_init(dev->eth_dev);
-				break;
-
-			case PCIDEV_COMMAND_START:
-				status = lsinic_if_link_up(dev->eth_dev);
-				break;
-			case PCIDEV_COMMAND_STOP:
-				status = lsinic_if_link_down(dev->eth_dev);
-				break;
-			case PCIDEV_COMMAND_REMOVE:
-				status = lsinic_if_remove(dev->eth_dev);
-				break;
-			case PCIDEV_COMMAND_SET_MAC:
-				status = lsinic_set_mac(dev->eth_dev);
-				break;
-			case PCIDEV_COMMAND_SET_MTU:
-				status = lsinic_set_mtu(dev->eth_dev);
-				break;
-			default:
-				status = PCIDEV_RESULT_FAILED;
-			}
-
-			LSINIC_WRITE_REG(&reg->result, status);
-			rte_wmb();
-			status = LSINIC_READ_REG(&reg->result);
-			rte_rmb();
-			LSINIC_WRITE_REG(&reg->command, PCIDEV_COMMAND_IDLE);
-
-			if (command == PCIDEV_COMMAND_REMOVE &&
-				status == PCIDEV_RESULT_SUCCEED)
-				lsinic_remove_config_fromrc(adapter);
-
-			dev = (struct rte_lsx_pciep_device *)
-				TAILQ_NEXT(dev, next);
-			if (dev == first_dev)
-				dev = NULL;
+		switch (command) {
+		case PCIDEV_COMMAND_DMA_TEST:
+			status = lsinic_if_dma_test(eth_dev);
+			break;
+		case PCIDEV_COMMAND_INIT:
+			status = lsinic_if_init(eth_dev);
+			break;
+		case PCIDEV_COMMAND_START:
+			status = lsinic_if_link_up(eth_dev);
+			break;
+		case PCIDEV_COMMAND_STOP:
+			status = lsinic_if_link_down(eth_dev);
+			break;
+		case PCIDEV_COMMAND_REMOVE:
+			status = lsinic_if_remove(eth_dev);
+			break;
+		case PCIDEV_COMMAND_SET_MAC:
+			status = lsinic_set_mac(eth_dev);
+			break;
+		case PCIDEV_COMMAND_SET_MTU:
+			status = lsinic_set_mtu(eth_dev);
+			break;
+		default:
+			status = PCIDEV_RESULT_FAILED;
 		}
 
-		if (print_status)
-			lsinic_print_ep_status();
+		LSINIC_WRITE_REG(&reg->result, status);
+		rte_wmb();
+		status = LSINIC_READ_REG(&reg->result);
+		rte_rmb();
+		LSINIC_WRITE_REG(&reg->command, PCIDEV_COMMAND_IDLE);
+
+		if (command == PCIDEV_COMMAND_REMOVE && status == PCIDEV_RESULT_SUCCEED)
+			lsinic_remove_config_fromrc(eth_dev);
+
+next_loop:
+		if (print_status && adapter->ep_state == LSINIC_DEV_UP)
+			print_port_status_cycle(eth_dev, &adapter->cycs, LSINIC_EP_PORT);
 		sleep(LSINIC_CMD_POLLING_INTERVAL);
 	}
+
+	return arg;
 }
