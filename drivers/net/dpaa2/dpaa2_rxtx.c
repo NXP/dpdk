@@ -59,7 +59,7 @@ dpaa2_dev_rx_parse_offset(struct dpaa2_dev_priv *priv,
 		sizeof(struct dpaa2_dyn_rx_protocol_pos)));
 	pos = (void *)((uint8_t *)mbuf + priv->psr_dynfield_offset);
 
-	word6 = rte_cpu_to_be_64(annotation->word6);
+	word6 = rte_be_to_cpu_64(annotation->word6);
 	decoded = (void *)&word6;
 	pos->l3_offset = decoded->l3_off;
 	pos->l4_offset = decoded->l4_off;
