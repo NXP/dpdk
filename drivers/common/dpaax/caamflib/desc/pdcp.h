@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause or GPL-2.0+
  * Copyright 2008-2013 Freescale Semiconductor, Inc.
- * Copyright 2019-2025 NXP
+ * Copyright 2019-2026 NXP
  */
 
 #ifndef __DESC_PDCP_H__
@@ -2697,7 +2697,7 @@ cnstr_shdsc_pdcp_u_plane_encap(uint32_t *descbuf,
 	if (authdata)
 		SHR_HDR(p, desc_share[cipherdata->algtype][authdata->algtype], 0, 0);
 	else
-		SHR_HDR(p, SHR_WAIT, 0, 0);
+		SHR_HDR(p, SHR_ALWAYS, 0, 0);
 	pdb_type = cnstr_pdcp_u_plane_pdb(p, sn_size, hfn,
 					  bearer, direction, hfn_threshold,
 					  cipherdata, authdata);
