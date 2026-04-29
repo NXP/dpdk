@@ -1242,6 +1242,44 @@ pcie_dw_set_bar_size(struct lsx_pciep_hw_low *hw,
 }
 
 static int
+pcie_dw_get_ib_win_size(struct lsx_pciep_hw_low *hw,
+	int pf, int is_vf, int bar, uint64_t *size_get)
+{
+	int ret = 0, bar_apply, is_64b;
+
+	if (!hw->is_sriov && (pf > PF0_IDX || is_vf)) {
+		LSX_PCIEP_BUS_ERR("%s: PCIe%d is NONE-SRIOV",
+			__func__, hw->index);
+		return -EIO;
+	}
+
+	if (bar >= PCI_MAX_RESOURCE) {
+		LSX_PCIEP_BUS_ERR("Invalid bar(%d)", bar);
+
+		return -EIO;
+	}
+
+	if (pcie_dw_using_32b_bar(bar)) {
+		bar_apply = bar;
+		is_64b = 0;
+	} else {
+		bar_apply = lsx_pciep_32bar_to_64bar(bar);
+		is_64b = 1;
+	}
+	*size_get = 0;
+
+	ret = pcie_dw_get_bar_size(hw, pf, is_vf, bar_apply,
+			is_64b, size_get);
+	if (ret) {
+		LSX_PCIEP_BUS_ERR("Failed(%d) to get Bar[%d] size!",
+			ret, bar);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
 pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	int pf, int is_vf, int vf, int bar,
 	uint64_t phys, uint64_t size)
@@ -1299,10 +1337,14 @@ pcie_dw_set_ib_win(struct lsx_pciep_hw_low *hw,
 	if (ret)
 		goto err_ret;
 
-	ret = pcie_dw_set_bar_size(hw, pf, is_vf, bar_apply, size,
+	if (size > size_orig) {
+		ret = pcie_dw_set_bar_size(hw, pf, is_vf, bar_apply, size,
 			is_64b);
-	if (ret)
-		goto err_ret;
+		if (ret)
+			goto err_ret;
+	} else {
+		size = size_orig;
+	}
 	ret = pcie_dw_get_bar_size(hw, pf, is_vf, bar_apply,
 			is_64b, &size_get);
 	if (ret || size_get != size)
@@ -1633,18 +1675,18 @@ pcie_dw_msix_bar_resize(struct lsx_pciep_hw_low *hw,
 	uint8_t bar)
 {
 	int ret, bar_64b;
-	uint64_t bar_size;
+	uint64_t orig_size, bar_size;
 
 	if (pcie_dw_using_32b_bar(bar)) {
 		ret = pcie_dw_get_bar_size(hw, pf, is_vf,
-				bar, 0, &bar_size);
+				bar, 0, &orig_size);
 	} else {
 		bar_64b = lsx_pciep_32bar_to_64bar(bar);
 		if (bar_64b < 0) {
 			ret = bar_64b;
 		} else {
 			ret = pcie_dw_get_bar_size(hw, pf, is_vf,
-					bar_64b, 1, &bar_size);
+					bar_64b, 1, &orig_size);
 		}
 	}
 	if (ret) {
@@ -1654,16 +1696,21 @@ pcie_dw_msix_bar_resize(struct lsx_pciep_hw_low *hw,
 	}
 
 	LSX_PCIEP_BUS_INFO("MSIX bar(%d)'s original size is 0x%lx",
-		bar, bar_size);
+		bar, orig_size);
 
-	if (!bar_size)
+	if (!orig_size)
 		bar_size = end;
+	else
+		bar_size = orig_size;
 
 	while (bar_size < end)
 		bar_size = bar_size * 2;
 
 	if (bar_size < (LSX_PCIEP_DW_WIN_MASK + 1))
 		bar_size = (LSX_PCIEP_DW_WIN_MASK + 1);
+
+	if (bar_size == orig_size)
+		return 0;
 
 	ret = pcie_dw_set_bar_size(hw, pf, is_vf, bar, bar_size,
 			!pcie_dw_using_32b_bar(bar));
@@ -3010,6 +3057,7 @@ static struct lsx_pciep_ops pcie_dw_ops = {
 	.pcie_disable_ib_win = pcie_dw_disable_ib_win,
 	.pcie_map_ob_win = pcie_dw_map_ob_win,
 	.pcie_cfg_ob_win = pcie_dw_set_ob_win,
+	.pcie_get_ib_win_size = pcie_dw_get_ib_win_size,
 	.pcie_cfg_ib_win = pcie_dw_set_ib_win,
 	.pcie_msix_cfg = pcie_dw_msix_cfg,
 	.pcie_msix_decfg = pcie_dw_msix_decfg,

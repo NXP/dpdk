@@ -221,6 +221,7 @@ dpaa2_mux_add_parser_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 		goto set_rule;
 
 	prot.type = DPAA2_PR_KEY;
+	prot.prot = NET_PROT_NONE;
 	prot.key_field = (extract.extract.from_parse.offset << 16) |
 		extract.extract.from_parse.size;
 	idx = dpaa2_profile_insert_no_ipaddr_extract(profile,
@@ -338,6 +339,7 @@ dpaa2_mux_add_spr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 		goto set_rule;
 
 	prot_field.type = DPAA2_PR_KEY;
+	prot_field.prot = NET_PROT_NONE;
 	prot_field.key_field = (spr_offset << 16) | spr_size;
 	idx = dpaa2_profile_insert_no_ipaddr_extract(profile,
 		spr_size, &offset, &pos, &prot_field);
@@ -529,6 +531,7 @@ dpaa2_mux_add_non_hdr_extract(struct dpaa2_dpdmux_dev *dpdmux_dev,
 		prot.key_field = (((uint32_t)hdr_offset) << 16) | size;
 	} else {
 		prot.type = DPAA2_FAF_KEY;
+		prot.prot = NET_PROT_NONE;
 		prot.key_field = hdr_offset;
 	}
 	idx = dpaa2_profile_insert_no_ipaddr_extract(profile,

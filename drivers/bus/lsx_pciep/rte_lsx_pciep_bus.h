@@ -121,7 +121,6 @@ struct rte_lsx_pciep_device {
 	void **msix_addr;
 	uint32_t *msix_data;
 
-	int single_bar;
 	/*PCIe inbound*/
 	uint8_t *virt_addr[PCI_MAX_RESOURCE];
 	uint64_t phy_addr[PCI_MAX_RESOURCE];
@@ -133,6 +132,7 @@ struct rte_lsx_pciep_device {
 	uint32_t mmsi_flag;
 	uint32_t init_flag;
 	int (*chk_eth_status)(struct rte_eth_dev *dev);
+	uint64_t reserve_data[4];
 };
 
 /**

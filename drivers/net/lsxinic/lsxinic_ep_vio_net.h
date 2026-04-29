@@ -41,6 +41,10 @@ struct lsxvio_adapter {
 	uint8_t status;
 	uint16_t vtnet_hdr_size;
 
+	enum lsinic_ep_poll_stat poll_stat;
+
+	uint64_t cycs;
+
 	int txq_dma_id;
 	int rxq_dma_id;
 	int txq_dma_silent;
@@ -59,9 +63,8 @@ struct lsxvio_adapter {
 	char *ep_ring_virt_base;  /* EP ring base */
 	uint64_t ep_ring_phy_base;
 
-	uint8_t *rc_ring_virt_base;  /* RC ring shadow base */
 	uint64_t rc_ring_phy_base;
-	uint64_t rc_ring_win_size;
+	uint64_t rc_ring_align_size;
 
 	uint64_t rx_pcidma_dbg;
 	uint64_t tx_pcidma_dbg;
@@ -78,8 +81,6 @@ struct lsxvio_adapter {
 	void *msix_cfg_addr;
 
 	struct lsxvio_queue *vqs[LSXVIO_MAX_QUEUES];
-	struct rte_dpaa2_device *merge_dev;
-	struct rte_dpaa2_device *split_dev;
 	uint8_t txq_list_initialized[RTE_MAX_LCORE];
 	uint8_t txq_num_in_list[RTE_MAX_LCORE];
 	struct lsxvio_tx_queue_list txq_list[RTE_MAX_LCORE];

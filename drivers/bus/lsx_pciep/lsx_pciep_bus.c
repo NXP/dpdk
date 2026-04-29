@@ -285,6 +285,13 @@ void *lsx_pciep_map_region(uint64_t addr, size_t len)
 	start = addr & PAGE_MASK;
 	offset = addr - start;
 	len = len & PAGE_MASK;
+
+	if (PAGE_SIZE <= 0) {
+		LSX_PCIEP_BUS_ERR("Page size is negative or NULL\n");
+		return NULL;
+	}
+
+	len = len & ~(PAGE_SIZE -1);
 	if (len < (size_t)PAGE_SIZE)
 		len = PAGE_SIZE;
 
@@ -369,7 +376,6 @@ lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
 	return ret;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_first_dev)
 struct rte_lsx_pciep_device *
 rte_lsx_pciep_first_dev(void)
 {
@@ -531,7 +537,6 @@ static struct rte_lsx_pciep_bus lsx_pciep_bus = {
 };
 
 /* register a lsinic_vdev bus based lsinic driver */
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_register)
 void
 rte_lsx_pciep_driver_register(struct rte_lsx_pciep_driver *driver)
 {
@@ -542,7 +547,6 @@ rte_lsx_pciep_driver_register(struct rte_lsx_pciep_driver *driver)
 	driver->lsx_pciep_bus = &lsx_pciep_bus;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_driver_unregister)
 /* un-register a lsinic_vdev bus based lsinic driver */
 void
 rte_lsx_pciep_driver_unregister(struct rte_lsx_pciep_driver *driver)

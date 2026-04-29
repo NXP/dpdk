@@ -177,6 +177,8 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 	void *tmp;
 	uint64_t start;
 	uint64_t offset;
+	long page_size;
+	size_t map_len;
 
 	fd = open("/dev/mem", O_RDWR);
 	if (fd < 0) {
@@ -184,26 +186,27 @@ static void *lsx_ccsr_map_region(uint64_t addr, size_t len)
 		return NULL;
 	}
 
+	page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0) {
+		close (fd);
+		return NULL;
+	}
 	start = addr & PAGE_MASK;
 	offset = addr - start;
 	len = len & PAGE_MASK;
 
-	if (PAGE_SIZE < 1) {
-		close(fd);
-		return NULL;
-	}
-
-	if (len < (size_t)PAGE_SIZE)
-		len = PAGE_SIZE;
+	map_len = len & ~(page_size -1);
+	if (map_len < (size_t)page_size)
+		map_len = (size_t)page_size;
 
 	tmp = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, start);
 
 	close(fd);
 
-	if (tmp != MAP_FAILED)
-		return (uint8_t *)tmp + offset;
-	else
+	if (tmp == MAP_FAILED)
 		return NULL;
+
+	return (uint8_t *)tmp + offset;
 }
 
 static const uint8_t ls_sd1_prot_idx_map[] = {

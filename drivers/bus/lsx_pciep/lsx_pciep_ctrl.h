@@ -454,6 +454,9 @@ struct lsx_pciep_ops {
 			uint64_t cpu_addr, uint64_t pci_addr,
 			uint64_t size);
 
+	int (*pcie_get_ib_win_size)(struct lsx_pciep_hw_low *hw,
+			int pf, int is_vf, int bar, uint64_t *size);
+
 	int (*pcie_cfg_ib_win)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, int vf, int bar,
 			uint64_t phys, uint64_t size);

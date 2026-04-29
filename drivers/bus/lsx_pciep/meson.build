@@ -12,7 +12,8 @@ sources = files(
 	'lsx_pciep_bus.c',
 	'lsx_pciep_pcie.c',
 	'lsx_pciep_dw.c',
-	'lsx_pciep_mv.c'
+	'lsx_pciep_mv.c',
+	'lsx_pciep_base_symbols.c'
 )
 
 includes += include_directories('../../../lib/pci')

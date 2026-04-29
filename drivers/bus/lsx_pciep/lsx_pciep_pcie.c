@@ -691,7 +691,6 @@ int lsx_pciep_ctl_idx_validated(uint8_t pcie_idx)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_type_get)
 enum PEX_TYPE
 rte_lsx_pciep_type_get(uint8_t pciep_idx)
 {
@@ -699,7 +698,6 @@ rte_lsx_pciep_type_get(uint8_t pciep_idx)
 	return s_pctl_hw[pciep_idx].type;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_hw_rbp_get)
 int
 rte_lsx_pciep_hw_rbp_get(uint8_t pciep_idx)
 {
@@ -707,7 +705,6 @@ rte_lsx_pciep_hw_rbp_get(uint8_t pciep_idx)
 	return s_pctl_hw[pciep_idx].rbp;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_hw_sim_get)
 int
 rte_lsx_pciep_hw_sim_get(uint8_t pciep_idx)
 {
@@ -812,7 +809,6 @@ lsx_pciep_hw_enable_clear_win(void)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_ctl_get_device_id)
 uint16_t
 rte_lsx_pciep_ctl_get_device_id(uint8_t pcie_idx,
 	enum lsx_pcie_pf_idx pf_idx)
@@ -1115,7 +1111,6 @@ static int lsx_pciep_sim_rm_dir(const char *dir)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_sim_dev_map_inbound)
 int
 rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 {
@@ -1308,7 +1303,6 @@ rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_fun_config)
 int
 rte_lsx_pciep_fun_config(uint16_t vendor_id,
 	uint16_t device_id, uint16_t class_id,
@@ -1378,7 +1372,6 @@ rte_lsx_pciep_fun_config(uint16_t vendor_id,
 	return ret;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_fun_set_ext)
 int
 rte_lsx_pciep_fun_set_ext(uint16_t sub_vendor_id,
 	uint16_t sub_device_id, uint8_t pcie_id,
@@ -1649,7 +1642,6 @@ lsx_get_hugepage_size(void)
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_set_ib_win)
 int
 rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, uint64_t size)
@@ -1664,6 +1656,7 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t min_size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
 	uint64_t iova = 0, phy = 0, vir = 0;
 	uint64_t offset = 0, page_sz, adjust = 0;
+	uint64_t orig_size = 0;
 
 	if (is_vf) {
 		sprintf(str, "LSX_PCIE%d_PF%d_VF%d_BAR%d_MIN_SIZE",
@@ -1696,6 +1689,31 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 		return -EINVAL;
 	}
 
+	if (is_vf) {
+		sprintf(str, "PCIE%d_PF%d_VF%d_BAR%d",
+			pcie_id, pf, vf, bar_idx);
+	} else {
+		sprintf(str, "PCIE%d_PF%d_BAR%d",
+			pcie_id, pf, bar_idx);
+	}
+
+	if (!rte_lsx_pciep_hw_sim_get(ctlhw->hw.index) &&
+		ctlhw->ops->pcie_get_ib_win_size) {
+		ret = ctlhw->ops->pcie_get_ib_win_size(&ctlhw->hw,
+			pf, is_vf, bar_idx, &orig_size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: Failed(%d) to get %s's orig size!",
+				__func__, ret, str);
+			return ret;
+		}
+		if (orig_size >= size) {
+			size = orig_size;
+		} else {
+			LSX_PCIEP_BUS_WARN("Risk to realloc PCIe space(0x%lx) from 0x%lx in RC",
+				size, orig_size);
+		}
+	}
+
 	if (ep_dev->virt_addr[bar_idx] &&
 		ep_dev->phy_addr[bar_idx] &&
 		ep_dev->iov_addr[bar_idx]) {
@@ -1706,16 +1724,10 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	if (lsx_pciep_nonsnoop_env_get(pcie_id))
 		goto huge_page_ib_configure;
 
-	if (is_vf) {
-		sprintf(str, "PCIE%d_PF%d_VF%d_BAR%d_mz",
-			pcie_id, pf, vf, bar_idx);
-	} else {
-		sprintf(str, "PCIE%d_PF%d_BAR%d_mz",
-			pcie_id, pf, bar_idx);
-	}
-
+	strcat(str, "_mz");
+	/** Real memory zone size is doubled for simulator with RC kernel.*/
 	ep_dev->ib_zone[bar_idx] = rte_memzone_reserve_aligned(str,
-			size, 0, RTE_MEMZONE_IOVA_CONTIG, size);
+			size * 2, 0, RTE_MEMZONE_IOVA_CONTIG, size * 2);
 	if (!ep_dev->ib_zone[bar_idx]) {
 		LSX_PCIEP_BUS_ERR("%s: Reserve %s size(%ld) failed",
 			__func__, str, size);
@@ -1813,7 +1825,6 @@ configure_this_win:
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_unset_ib_win)
 int
 rte_lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx)
@@ -1852,7 +1863,6 @@ rte_lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_ib_cache_mark)
 void
 rte_lsx_pciep_ib_cache_mark(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, int cached)
@@ -1898,7 +1908,6 @@ rte_lsx_pciep_ib_cache_mark(struct rte_lsx_pciep_device *ep_dev,
 		(unsigned long)bus, \
 		(unsigned long)size
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_rbp_ob_overlap)
 int
 rte_lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size)
@@ -2104,7 +2113,6 @@ return_pcie_map_vir:
 	return ob_win->ob_virt_base + pci_map;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_alloc_pci_ob)
 void *
 rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size, uint64_t *phy_base)
@@ -2157,7 +2165,6 @@ rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
 	return vaddr;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_set_ob_win)
 void *
 rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr, uint64_t size, uint64_t *pphy)
@@ -2309,7 +2316,6 @@ lsx_pciep_unset_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 	return 0;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_unset_ob_win)
 int
 rte_lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t pci_addr)
@@ -2341,7 +2347,6 @@ lsx_pciep_misx_addr_start(uint64_t msix_addr[], int num)
 	return min_idx;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_multi_msix_init)
 int
 rte_lsx_pciep_multi_msix_init(struct rte_lsx_pciep_device *ep_dev,
 	int vector_total)
@@ -2409,7 +2414,6 @@ failed_init_msix:
 	return ret;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_multi_msix_remove)
 int
 rte_lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev)
 {
@@ -2452,7 +2456,6 @@ rte_lsx_pciep_multi_msix_remove(struct rte_lsx_pciep_device *ep_dev)
 	return ret;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_start_msix)
 void
 rte_lsx_pciep_start_msix(void *addr, uint32_t cmd)
 {
@@ -2460,7 +2463,6 @@ rte_lsx_pciep_start_msix(void *addr, uint32_t cmd)
 		rte_write32(cmd, addr);
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_ob_mapped)
 int
 rte_lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t bus_addr)
@@ -2496,7 +2498,6 @@ rte_lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 }
 
 #define DMA_64BIT_MAX  0xffffffffffffffffULL
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_ob_dma_size)
 uint64_t
 rte_lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev)
 {
@@ -2508,7 +2509,6 @@ rte_lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev)
 	return ep_dev->ob_win[0].ob_win_size * ep_dev->ob_win[0].ob_win_nb;
 }
 
-RTE_EXPORT_INTERNAL_SYMBOL(rte_lsx_pciep_bus_win_mask)
 uint64_t
 rte_lsx_pciep_bus_win_mask(struct rte_lsx_pciep_device *ep_dev)
 {
