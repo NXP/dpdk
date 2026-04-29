@@ -31,3 +31,14 @@ includes += [include_directories(COMMON_HEADERS_DIR)]
 includes += include_directories('../../drivers/baseband/la12xx/')
 
 cflags += no_wvla_cflag
+
+# Standalone helper tool, but built with the same include paths/cflags as DPDK apps
+parse_bbdev_vector_bin = executable(
+  'parse_bbdev_vector',
+  files('parse_bbdev_vector.c'),
+  include_directories: includes,
+  c_args: cflags,
+  link_args: ldflags,
+  dependencies: ext_deps + dep_objs,
+  install: true
+)
