@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2024 NXP
+ * Copyright 2021-2024, 2026 NXP
  */
 
 #ifndef _RTE_PMD_DPAAX_QDMA_H_
 #define _RTE_PMD_DPAAX_QDMA_H_
 
 #include <rte_compat.h>
+
+#define RTE_DPAAX_QDMA_BMT_FLAG RTE_BIT64(7)
 
 #define RTE_DPAAX_QDMA_COPY_IDX_OFFSET 8
 #define RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN \

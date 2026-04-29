@@ -153,15 +153,14 @@ static struct rte_mempool *pktmbuf_pools[RTE_ETH_DPAA_RX_MAX_MPOOLS];
 static struct rte_mempool *pktmbuf_per_port_pool[RTE_MAX_ETHPORTS];
 static int s_default_pool[RTE_MAX_ETHPORTS];
 
+static int s_sch_port_en[RTE_MAX_ETHPORTS];
+
 static struct rte_mempool *pktmbuf_pool_tx_only;
 
 #define MAX_FRAG_NUM 10
 
 #define RTE_MAX_QUEUES 128
 static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
-
-static uint64_t max_mbuf_addr;
-static uint64_t min_mbuf_addr = (~((uint64_t)0));
 
 static int s_dump_mbuf;
 static int s_inject;
@@ -178,6 +177,12 @@ static uint16_t s_tx_seg = 1;
 /** DPAA1 platform support only now.*/
 static int s_mpool_select_by_size;
 static int s_mpool_select_by_size_debug;
+
+static struct rte_eth_xstat_name *s_port_fwd_xs_nms[RTE_MAX_ETHPORTS];
+static uint64_t *s_port_fwd_xs_vals[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_reset[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_val_len[RTE_MAX_ETHPORTS];
+static int s_port_fwd_xs_nm_len[RTE_MAX_ETHPORTS];
 
 static uint8_t s_inject_pkt_base[] = {
 	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
@@ -787,6 +792,23 @@ port_fwd_lcoreq_find_statistic(uint16_t portid, uint8_t queueid,
 	return statistic;
 }
 
+static struct lcore_rx_queue *
+port_fwd_find_rxq_by_port_tc_flow(uint16_t portid, uint8_t tc,
+	uint16_t flow_id, struct lcore_conf *qconf)
+{
+	uint16_t i;
+
+	for (i = 0; i < MAX_RX_QUEUE_PER_LCORE; i++) {
+		if (qconf->rx_queue_list[i].port_id == portid &&
+			qconf->rx_queue_list[i].tc_id == tc &&
+			qconf->rx_queue_list[i].flow_id == flow_id) {
+			return &qconf->rx_queue_list[i];
+		}
+	}
+
+	return NULL;
+}
+
 union statistic_param {
 	uint64_t tx_len;
 	struct rte_mbuf *rx_mbuf;
@@ -830,8 +852,13 @@ port_fwd_simple_xmit_burst(struct rte_mbuf **pkts_burst,
 	uint16_t sent, i;
 	union statistic_param param[nb_tx];
 
-	for (i = 0; i < nb_tx; i++)
-		param[i].tx_len = tx_len[i];
+	if (tx_len) {
+		for (i = 0; i < nb_tx; i++)
+			param[i].tx_len = tx_len[i];
+	} else {
+		for (i = 0; i < nb_tx; i++)
+			param[i].tx_len = pkts_burst[i]->pkt_len;
+	}
 
 	sent = rte_eth_tx_burst(dstportid, queueid, pkts_burst, nb_tx);
 	port_fwd_lcoreq_rx_tx_statistic(dstportid, queueid, sent, param,
@@ -1119,7 +1146,6 @@ main_injection_test_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST], *pkt;
 	union statistic_param param[MAX_PKT_BURST];
-	uint64_t tx_len[MAX_PKT_BURST];
 	unsigned int lcore_id;
 	int i, nb_rx, j;
 	int dstportid;
@@ -1194,7 +1220,7 @@ main_injection_test_loop(void)
 				continue;
 			}
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_rx, tx_len, qconf, NULL);
+				queueid, nb_rx, NULL, qconf, NULL);
 		}
 
 		for (i = 0; i < qconf->n_tx_queue; i++) {
@@ -1222,14 +1248,13 @@ main_injection_test_loop(void)
 							(inject_size - total);
 						total += pkt->data_len;
 					}
-					tx_len[j] = inject_size;
 				}
 			}
 			if (!nb_tx)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, dstportid,
-				queueid, nb_tx, tx_len, qconf, NULL);
+				queueid, nb_tx, NULL, qconf, NULL);
 		}
 	}
 
@@ -1423,7 +1448,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
 	int i, nb_rx, j, ret;
-	uint16_t nb_tx, rx_left, idx, portid, rx_burst;
+	uint16_t nb_tx, rx_left, idx, portid, rx_burst, len;
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
@@ -1434,9 +1459,10 @@ main_loop(__attribute__((unused)) void *dummy)
 	struct rte_ring *tx_ring, *rx_ring;
 	uint8_t sents[MAX_PKT_BURST];
 	int re_send_max = 0, fragment_tx = 0, reassemble_rx = 0;
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	struct lcore_rx_queue *rxq;
 	struct lcore_tx_queue *txq;
+	struct rte_mbuf_sched *sched;
 
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
@@ -1453,10 +1479,11 @@ main_loop(__attribute__((unused)) void *dummy)
 
 		if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id))
 			continue;
-		ret = rte_eth_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
+		ret = rte_pmd_dpaa2_rx_queue_info_get(rxq->port_id, rxq->queue_id, &qinfo);
 		if (ret)
 			continue;
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &rxq->tc_id, &rxq->flow_id);
+		rxq->tc_id = qinfo.tc_id;
+		rxq->flow_id = qinfo.flow_id;
 	}
 
 	if (s_inject || s_tx_pqc_num) {
@@ -1512,11 +1539,30 @@ main_loop(__attribute__((unused)) void *dummy)
 		"entering main loop on lcore %u\n", lcore_id);
 
 	for (i = 0; i < qconf->n_rx_queue; i++) {
-		portid = qconf->rx_queue_list[i].port_id;
-		queueid = qconf->rx_queue_list[i].queue_id;
+		rxq = &qconf->rx_queue_list[i];
 		RTE_LOG(INFO, port_fwd,
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
-			lcore_id, portid, queueid);
+			lcore_id, rxq->port_id, rxq->queue_id);
+		if (s_sch_port_en[rxq->port_id]) {
+			if (!rte_pmd_dpaa2_dev_is_dpaa2(rxq->port_id)) {
+				RTE_LOG(WARNING, port_fwd,
+					"Port%u is not DPAA2 port to add in scheduler\n",
+					rxq->port_id);
+				continue;
+			}
+			if (!qconf->sch_dev) {
+				qconf->sch_dev = rte_dpaa2_scheduler_init(RTE_DPAA2_SCH_PUSH);
+				ret = rte_dpaa2_scheduler_start(qconf->sch_dev);
+				if (ret)
+					rte_exit(EXIT_FAILURE, "Start schedule failed(%d).\n", ret);
+			}
+			ret = rte_dpaa2_scheduler_add(qconf->sch_dev,
+				rxq->port_id, rxq->queue_id, rxq->tc_id);
+			if (ret) {
+				rte_exit(EXIT_FAILURE, "Schedule rxq%d failed(%d).\n",
+					rxq->queue_id, ret);
+			}
+		}
 	}
 
 	while (!force_quit) {
@@ -1550,7 +1596,7 @@ main_loop(__attribute__((unused)) void *dummy)
 				continue;
 
 			port_fwd_simple_xmit_burst(pkts_burst, portid, queueid,
-				nb_rx, bytes, qconf, NULL);
+				nb_rx, NULL, qconf, NULL);
 		}
 		continue;
 
@@ -1560,6 +1606,8 @@ port_forwarding:
 		for (i = 0; i < qconf->n_rx_queue; ++i) {
 			portid = qconf->rx_queue_list[i].port_id;
 			queueid = qconf->rx_queue_list[i].queue_id;
+			if (s_sch_port_en[portid])
+				continue;
 
 			dstportid = port_fwd_dst_port(portid);
 
@@ -1620,6 +1668,44 @@ port_forwarding:
 				stat->bytes_overhead += bytes_overhead[j];
 			}
 			stat->packets += nb_tx;
+		}
+
+		if (qconf->sch_dev) {
+			nb_rx = rte_dpaa2_scheduler_rx(qconf->sch_dev, pkts_burst, MAX_PKT_BURST);
+			if (unlikely(!nb_rx))
+				continue;
+			for (i = 0; i < nb_rx; i++) {
+				param[i].rx_mbuf = pkts_burst[i];
+				sched = &pkts_burst[i]->hash.sched;
+				rxq = port_fwd_find_rxq_by_port_tc_flow(pkts_burst[i]->port,
+					sched->traffic_class, sched->queue_id, qconf);
+				if (!rxq) {
+					RTE_LOG(ERR, port_fwd,
+						"Unexpected rx packet(port%d-tc%d-flow%d) on core%d\n",
+						pkts_burst[i]->port, sched->traffic_class,
+						sched->queue_id, lcore_id);
+					continue;
+				}
+				stat = &rxq->statistic;
+				stat->bytes += pkts_burst[i]->pkt_len;
+				stat->bytes_fcs += PORT_FWD_MBUF_FCS(pkts_burst[i]);
+				stat->bytes_overhead += PORT_FWD_MBUF_OVERHEAD(pkts_burst[i]);
+				stat->packets++;
+				dstportid = port_fwd_dst_port(pkts_burst[i]->port);
+				len = pkts_burst[i]->pkt_len;
+				nb_tx = rte_eth_tx_burst(dstportid, rxq->queue_id,
+					&pkts_burst[i], 1);
+				if (nb_tx == 1) {
+					stat = port_fwd_lcoreq_find_statistic(dstportid,
+						rxq->queue_id, qconf, false);
+					if (!stat)
+						continue;
+					stat->bytes += len;
+					stat->bytes_fcs += len + PKTGEN_ETH_FCS_SIZE;
+					stat->bytes_overhead += len + PKTGEN_ETH_OVERHEAD_SIZE;
+					stat->packets++;
+				}
+			}
 		}
 	}
 
@@ -2219,45 +2305,6 @@ parse_args(int argc, char **argv)
 	return ret;
 }
 
-static void
-port_fwd_mp_max_min_addr(struct rte_mempool *mp)
-{
-	uint32_t num = mp->size, i, alloced = 0, bulk_size;
-	int ret;
-	struct rte_mbuf **mbuf_arry =
-		malloc(sizeof(struct rte_mbuf *) * num);
-
-	if (!mbuf_arry)
-		return;
-
-	while (num) {
-		bulk_size = num > RTE_MEMPOOL_CACHE_MAX_SIZE ?
-			RTE_MEMPOOL_CACHE_MAX_SIZE : num;
-		ret = rte_pktmbuf_alloc_bulk(mp,
-			&mbuf_arry[alloced], bulk_size);
-		if (ret) {
-			RTE_LOG(ERR, port_fwd,
-				"Drain %d bufs from %s failed\r\n",
-				num, mp->name);
-			if (alloced)
-				rte_pktmbuf_free_bulk(mbuf_arry, alloced);
-			free(mbuf_arry);
-			return;
-		}
-		alloced += bulk_size;
-		num -= bulk_size;
-	}
-
-	for (i = 0; i < mp->size; i++) {
-		if (mbuf_arry[i]->buf_iova > max_mbuf_addr)
-			max_mbuf_addr = mbuf_arry[i]->buf_iova;
-		if (mbuf_arry[i]->buf_iova < min_mbuf_addr)
-			min_mbuf_addr = mbuf_arry[i]->buf_iova;
-	}
-	rte_pktmbuf_free_bulk(mbuf_arry, mp->size);
-	free(mbuf_arry);
-}
-
 static int
 init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 {
@@ -2364,10 +2411,6 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size, uint16_t nb_ports)
 	if (!pktmbuf_pool)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
 
-	port_fwd_mp_max_min_addr(pktmbuf_pool);
-	if (pktmbuf_pool_tx_only)
-		port_fwd_mp_max_min_addr(pktmbuf_pool_tx_only);
-
 	return 0;
 }
 
@@ -2465,6 +2508,83 @@ port_fwd_dump_tc_flow_count(uint16_t portid, int second)
 	}
 }
 
+static void
+port_fwd_xstats_display(uint16_t port_id)
+{
+	int len = 0, ret, i;
+
+	if (!s_port_fwd_xs_reset[port_id]) {
+		ret = rte_eth_xstats_reset(port_id);
+		if (ret) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to reset xstats\n",
+				__func__, ret);
+			return;
+		}
+		s_port_fwd_xs_reset[port_id] = 1;
+	}
+
+	if (!s_port_fwd_xs_vals[port_id]) {
+		len = rte_eth_xstats_get_names_by_id(port_id, NULL, 0, NULL);
+		if (len < 0) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Failed(%d) to get xstats' length\n",
+				__func__, len);
+			return;
+		}
+		s_port_fwd_xs_vals[port_id] = rte_zmalloc(NULL,
+			sizeof(uint64_t) * len, 0);
+		if (!s_port_fwd_xs_vals[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_vals alloc failed\n",
+				__func__);
+			return;
+		}
+		s_port_fwd_xs_val_len[port_id] = len;
+	} else {
+		len = s_port_fwd_xs_val_len[port_id];
+	}
+
+	if (!s_port_fwd_xs_nms[port_id] && len > 0) {
+		s_port_fwd_xs_nms[port_id] = rte_zmalloc(NULL,
+			sizeof(struct rte_eth_xstat_name) * len, 0);
+		if (!s_port_fwd_xs_nms[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: s_port_fwd_xs_nms alloc failed\n", __func__);
+			return;
+		}
+	}
+
+	if (!s_port_fwd_xs_nm_len[port_id] && s_port_fwd_xs_val_len[port_id]) {
+		s_port_fwd_xs_nm_len[port_id] = rte_eth_xstats_get_names_by_id(port_id,
+			s_port_fwd_xs_nms[port_id], s_port_fwd_xs_val_len[port_id], NULL);
+		if (s_port_fwd_xs_nm_len[port_id] != s_port_fwd_xs_val_len[port_id]) {
+			RTE_LOG(ERR, port_fwd,
+				"%s: Get xstats' name length(%d) != val length(%d)\n",
+				__func__, s_port_fwd_xs_nm_len[port_id],
+				s_port_fwd_xs_val_len[port_id]);
+			return;
+		}
+	}
+
+	ret = rte_eth_xstats_get_by_id(port_id, NULL,
+		s_port_fwd_xs_vals[port_id], s_port_fwd_xs_val_len[port_id]);
+	if (ret < 0 || ret > s_port_fwd_xs_val_len[port_id]) {
+		RTE_LOG(ERR, port_fwd,
+			"%s: Err(%d) to get xstats by ID, len=%d\n",
+			__func__, ret, s_port_fwd_xs_val_len[port_id]);
+		return;
+	}
+
+	for (i = 0; i < ret; i++) {
+		if (!s_port_fwd_xs_vals[port_id][i])
+			continue;
+
+		printf("Xstat Port%d-%s:%ld\r\n", port_id,
+			s_port_fwd_xs_nms[port_id][i].name, s_port_fwd_xs_vals[port_id][i]);
+	}
+}
+
 static void *perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
@@ -2555,6 +2675,7 @@ loop:
 			RTE_LOG(INFO, port_fwd, "PORT%d:\r\n", port_id);
 			port_fwd_dump_tc_flow_count(port_id,
 				PKTGEN_STATISTICS_INTERVAL);
+			port_fwd_xstats_display(port_id);
 			get_st_ret = rte_eth_stats_get(port_id, &stats);
 			if (get_st_ret)
 				goto skip_print_hw_status;
@@ -2707,6 +2828,7 @@ main(int argc, char **argv)
 	struct lcore_rx_queue *rx_queue;
 	struct lcore_tx_queue *tx_queue;
 	pthread_t pid;
+	uint16_t mtu;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -2751,6 +2873,15 @@ main(int argc, char **argv)
 	if (penv)
 		s_dump_mbuf = atoi(penv);
 
+	penv = getenv("PORT_FWD_DATA_ROOM_SIZE");
+	if (penv) {
+		data_room_size = atoi(penv);
+		if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
+			data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
+		else
+			data_room_size = RTE_ALIGN(data_room_size, 1024);
+	}
+
 	penv = getenv("PORT_FWD_INJECTION_TEST");
 	if (penv)
 		s_inject = atoi(penv);
@@ -2759,7 +2890,7 @@ main(int argc, char **argv)
 		if (penv) {
 			s_inject_pkt_size = atoi(penv);
 			if (s_inject_pkt_size < 64 ||
-				s_inject_pkt_size > 1518)
+				s_inject_pkt_size > data_room_size)
 				s_inject_pkt_size = 64;
 		}
 	}
@@ -2796,14 +2927,6 @@ main(int argc, char **argv)
 	if (s_fragment_tx_port >= 0)
 		data_room_size = s_jumbo_size + 100;
 
-	penv = getenv("PORT_FWD_DATA_ROOM_SIZE");
-	if (penv) {
-		data_room_size = atoi(penv);
-		if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
-			data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
-		else
-			data_room_size = RTE_ALIGN(data_room_size, 1024);
-	}
 	port_conf.rxmode.max_lro_pkt_size = data_room_size;
 
 	RTE_ETH_FOREACH_DEV(portid) {
@@ -2816,6 +2939,11 @@ main(int argc, char **argv)
 		penv = getenv(env_name);
 		if (penv)
 			s_default_pool[portid] = atoi(penv);
+
+		sprintf(env_name, "PORT%d_SCHEDULE_DEV", portid);
+		penv = getenv(env_name);
+		if (penv)
+			s_sch_port_en[portid] = atoi(penv);
 
 		nb_rx_queue[portid] = get_port_n_rx_queues(portid,
 			rx_queues[portid]);
@@ -2912,8 +3040,6 @@ main(int argc, char **argv)
 		}
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = port_conf.rxmode.offloads;
-		rxq_conf.reserved_64s[0] = min_mbuf_addr;
-		rxq_conf.reserved_64s[1] = max_mbuf_addr;
 		for (q_nb = 0; q_nb < nb_rx_queue[portid]; q_nb++) {
 			if (s_mpool_select_by_size) {
 				ret = rte_dpaa_eth_rx_queue_mp_setup(portid,
@@ -2939,8 +3065,7 @@ main(int argc, char **argv)
 			}
 		}
 		txconf = &dev_info.default_txconf;
-		txconf->offloads =
-				local_port_conf[portid].txmode.offloads;
+		txconf->offloads = local_port_conf[portid].txmode.offloads;
 		for (q_nb = 0; q_nb < nb_tx_queue[portid]; q_nb++) {
 			ret = rte_eth_tx_queue_setup(portid,
 				tx_queues[portid][q_nb], nb_txd,
@@ -2958,6 +3083,15 @@ main(int argc, char **argv)
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0)
 			continue;
+		if (data_room_size > RTE_MBUF_DEFAULT_DATAROOM) {
+			mtu = data_room_size - RTE_ETHER_HDR_LEN - RTE_VLAN_HLEN;
+			ret = rte_eth_dev_set_mtu(portid, mtu);
+			if (ret) {
+				RTE_LOG(WARNING, port_fwd,
+					"Port%d MTU(%d) set failed(%d)\n",
+					portid, mtu, ret);
+			}
+		}
 		/* Start device */
 		ret = rte_eth_dev_start(portid);
 		if (ret < 0)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2024 NXP  */
+/* Copyright 2020-2024, 2026 NXP  */
 
 #include <sys/queue.h>
 
@@ -46,7 +46,6 @@
 #include <rte_string_fns.h>
 #include <rte_errno.h>
 #include <ethdev_driver.h>
-#include <dpaa2_hw_pvt.h>
 
 #include "lsxinic_common.h"
 #include "lsxinic_common_pmd.h"
@@ -54,7 +53,6 @@
 #include "lsxinic_ep_vio_net.h"
 #include "lsxinic_ep_vio_rxtx.h"
 #include "lsxinic_ep_dma.h"
-#include <rte_pmd_dpaax_qdma.h>
 
 #define DEFAULT_BURST_THRESH LSINIC_QDMA_EQ_DATA_MAX_NB
 
@@ -230,8 +228,6 @@ lsxvio_queue_alloc(struct lsxvio_adapter *adapter,
 	q->nb_desc = nb_desc;
 	q->queue_id = queue_idx;
 	q->dma_vq = -1;
-	q->nb_q = 1;
-	q->sibling = NULL;
 
 	/* Allocate software ring */
 	q->sw_ring = rte_zmalloc_socket("q->sw_ring",
@@ -683,11 +679,11 @@ void lsxvio_dev_tx_stop(struct rte_eth_dev *dev)
 void
 lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 {
-	uint32_t i, j;
+	uint32_t i;
+	struct lsxvio_queue *txq, *rxq;
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
-		struct lsxvio_queue *txq = dev->data->tx_queues[i];
-		struct lsxvio_queue *next = txq;
+		txq = dev->data->tx_queues[i];
 
 		if (txq->shadow_pdesc_mz) {
 			rte_memzone_free(txq->shadow_pdesc_mz);
@@ -705,19 +701,12 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			txq->shadow_used_split = NULL;
 		}
 
-		for (j = 0; j < txq->nb_q; j++) {
-			if (next == NULL)
-				break;
-
-			lsxvio_queue_release_mbufs(txq);
-			lsxvio_queue_reset(next);
-			next = next->sibling;
-		}
+		lsxvio_queue_release_mbufs(txq);
+		lsxvio_queue_reset(txq);
 	}
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		struct lsxvio_queue *rxq = dev->data->rx_queues[i];
-		struct lsxvio_queue *next = rxq;
+		rxq = dev->data->rx_queues[i];
 
 		if (rxq->shadow_pdesc_mz) {
 			rte_memzone_free(rxq->shadow_pdesc_mz);
@@ -735,14 +724,8 @@ lsxvio_dev_clear_queues(struct rte_eth_dev *dev)
 			rxq->shadow_used_split = NULL;
 		}
 
-		for (j = 0; j < rxq->nb_q; j++) {
-			if (!next)
-				break;
-
-			lsxvio_queue_release_mbufs(rxq);
-			lsxvio_queue_reset(next);
-			next = next->sibling;
-		}
+		lsxvio_queue_release_mbufs(rxq);
+		lsxvio_queue_reset(rxq);
 	}
 }
 
@@ -1245,8 +1228,7 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 		virt = rte_lsx_pciep_set_ob_win(adapter->lsx_dev,
 			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE, NULL);
 	} else {
-		virt = DPAA2_IOVA_TO_VADDR_AND_CHECK(remote_addr,
-			LSXVIO_PER_RING_MEM_MAX_SIZE);
+		virt = rte_mem_iova2virt(remote_addr);
 	}
 
 	print_buf = rte_malloc(NULL, len * 16 + 1024, 0);

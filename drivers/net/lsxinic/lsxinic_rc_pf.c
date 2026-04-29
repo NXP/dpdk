@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2023, 2026 NXP
  */
 
 #include "lsxinic_rc_ethdev.h"
@@ -33,10 +33,8 @@ lxsnic_disable_sriov(struct lxsnic_adapter *adapter)
 void
 lxsnic_pf_host_init(struct rte_eth_dev *eth_dev)
 {
-	struct vf_data_storage **vfinfo =
-		LXSNIC_DEV_PRIVATE_TO_P_VFDATA(eth_dev->data->dev_private);
-	struct lxsnic_adapter *adapter =
-		LXSNIC_DEV_PRIVATE(eth_dev->data->dev_private);
+	struct lxsnic_adapter *adapter = LXSNIC_DEV_PRIVATE(eth_dev);
+	struct vf_data_storage **vfinfo = &adapter->vfinfo;
 	uint16_t vf_num;
 
 	RTE_ETH_DEV_SRIOV(eth_dev).active = 0;

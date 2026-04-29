@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2023, 2026 NXP
  */
 
 #ifndef _LSX_PCIEP_CTRL_H_
@@ -457,6 +457,9 @@ struct lsx_pciep_ops {
 			int idx, int pf, int is_vf, int vf,
 			uint64_t cpu_addr, uint64_t pci_addr,
 			uint64_t size);
+
+	int (*pcie_get_ib_win_size)(struct lsx_pciep_hw_low *hw,
+			int pf, int is_vf, int bar, uint64_t *size);
 
 	int (*pcie_cfg_ib_win)(struct lsx_pciep_hw_low *hw,
 			int pf, int is_vf, int vf, int bar,

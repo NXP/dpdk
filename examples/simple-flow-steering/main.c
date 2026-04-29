@@ -477,7 +477,7 @@ simple_flow_steering_two_level_table_flow_init(uint16_t tc_num,
 static void
 simple_flow_steering_sch_dev_init(uint16_t queue_num)
 {
-	struct rte_eth_rxq_info qinfo;
+	struct rte_pmd_dpaa2_rxq_info qinfo;
 	uint16_t flow_id, i;
 	uint8_t tc_id;
 	int ret;
@@ -490,10 +490,11 @@ simple_flow_steering_sch_dev_init(uint16_t queue_num)
 		rte_exit(EXIT_FAILURE, "Start schedule failed(%d).\n", ret);
 
 	for (i = 0; i < queue_num; i++) {
-		ret = rte_eth_rx_queue_info_get(0, i, &qinfo);
+		ret = rte_pmd_dpaa2_rx_queue_info_get(0, i, &qinfo);
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Get rxq%d info failed(%d).\n", i, ret);
-		rte_pmd_dpaa2_rxq_parse_tc_info(&qinfo, &tc_id, &flow_id);
+		tc_id = qinfo.tc_id;
+		flow_id = qinfo.flow_id;
 		s_queue_id[tc_id][flow_id] = i;
 		ret = rte_dpaa2_scheduler_add(s_sch_handle, 0, i, tc_id);
 		if (ret)
@@ -515,6 +516,7 @@ main(int argc, char **argv)
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_txconf txq_conf;
 	struct rte_eth_conf local_port_conf = port_conf;
+	struct rte_pmd_dpaa2_dev_info dpaa2_dev_info;
 	struct rte_eth_dev_info dev_info;
 	struct rte_eth_rxq_info qinfo;
 	struct rte_eth_link link;
@@ -548,15 +550,17 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "DPAA2 support only\n");
 
 	/* init port */
-	ret = rte_eth_dev_info_get(0, &dev_info);
+	ret = rte_pmd_dpaa2_dev_info_get(0, &dpaa2_dev_info);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"Error during getting device info: %s\n",
 			strerror(-ret));
 	}
-
-	rte_pmd_dpaa2_dev_parse_tc_info(&dev_info, &tc_num,
-		&qos_entries, &fs_entries, &queues_per_tc);
+	rte_memcpy(&dev_info, &dpaa2_dev_info.dev_info, sizeof(struct rte_eth_dev_info));
+	tc_num = dpaa2_dev_info.rx_tc_num;
+	qos_entries = dpaa2_dev_info.qos_entries;
+	fs_entries = dpaa2_dev_info.fs_entries;
+	queues_per_tc = dpaa2_dev_info.dist_queues;
 
 	ret = rte_eth_dev_configure(0, dev_info.max_rx_queues,
 			dev_info.max_tx_queues, &local_port_conf);

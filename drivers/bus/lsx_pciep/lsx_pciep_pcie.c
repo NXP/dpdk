@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2024 NXP
+ * Copyright 2019-2024, 2026 NXP
  */
 
 #include <unistd.h>
@@ -1655,6 +1655,7 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint64_t min_size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
 	uint64_t iova = 0, phy = 0, vir = 0;
 	uint64_t offset = 0, page_sz, adjust = 0;
+	uint64_t orig_size = 0;
 
 	if (is_vf) {
 		sprintf(str, "LSX_PCIE%d_PF%d_VF%d_BAR%d_MIN_SIZE",
@@ -1687,6 +1688,31 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 		return -EINVAL;
 	}
 
+	if (is_vf) {
+		sprintf(str, "PCIE%d_PF%d_VF%d_BAR%d",
+			pcie_id, pf, vf, bar_idx);
+	} else {
+		sprintf(str, "PCIE%d_PF%d_BAR%d",
+			pcie_id, pf, bar_idx);
+	}
+
+	if (!rte_lsx_pciep_hw_sim_get(ctlhw->hw.index) &&
+		ctlhw->ops->pcie_get_ib_win_size) {
+		ret = ctlhw->ops->pcie_get_ib_win_size(&ctlhw->hw,
+			pf, is_vf, bar_idx, &orig_size);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s: Failed(%d) to get %s's orig size!",
+				__func__, ret, str);
+			return ret;
+		}
+		if (orig_size >= size) {
+			size = orig_size;
+		} else {
+			LSX_PCIEP_BUS_WARN("Risk to realloc PCIe space(0x%lx) from 0x%lx in RC",
+				size, orig_size);
+		}
+	}
+
 	if (ep_dev->virt_addr[bar_idx] &&
 		ep_dev->phy_addr[bar_idx] &&
 		ep_dev->iov_addr[bar_idx]) {
@@ -1697,16 +1723,10 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	if (lsx_pciep_nonsnoop_env_get(pcie_id))
 		goto huge_page_ib_configure;
 
-	if (is_vf) {
-		sprintf(str, "PCIE%d_PF%d_VF%d_BAR%d_mz",
-			pcie_id, pf, vf, bar_idx);
-	} else {
-		sprintf(str, "PCIE%d_PF%d_BAR%d_mz",
-			pcie_id, pf, bar_idx);
-	}
-
+	strcat(str, "_mz");
+	/** Real memory zone size is doubled for simulator with RC kernel.*/
 	ep_dev->ib_zone[bar_idx] = rte_memzone_reserve_aligned(str,
-			size, 0, RTE_MEMZONE_IOVA_CONTIG, size);
+			size * 2, 0, RTE_MEMZONE_IOVA_CONTIG, size * 2);
 	if (!ep_dev->ib_zone[bar_idx]) {
 		LSX_PCIEP_BUS_ERR("%s: Reserve %s size(%ld) failed",
 			__func__, str, size);

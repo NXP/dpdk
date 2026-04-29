@@ -573,6 +573,60 @@ rte_pmd_dpaa2_mux_multi_enum(uint8_t num, uint32_t ids[])
 	return i;
 }
 
+static int
+dpaa2_mux_ecpri_flow_create(struct dpaa2_dpdmux_dev *dpdmux_dev,
+	struct rte_flow_item pattern[], struct dpaa2_mux_flow *flow, int loop,
+	int *extract_update)
+{
+	const struct rte_flow_item_ecpri *spec, *mask;
+	int extract_nb, i;
+	uint64_t rule_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
+	uint64_t mask_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
+	uint8_t extract_size[DPAA2_ECPRI_MAX_EXTRACT_NB];
+	uint8_t extract_off[DPAA2_ECPRI_MAX_EXTRACT_NB];
+	union dpaa2_sp_fafe_parse fafe;
+	int ret;
+
+	spec = pattern[loop].spec;
+	mask = pattern[loop].mask;
+
+	ret = dpaa2_mux_add_parser_extract(dpdmux_dev,
+		DPAA2_PARSER_ECPRI_ID, flow, extract_update);
+	if (ret)
+		return ret;
+
+	if (!spec || !mask)
+		return 0;
+
+	extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
+		rule_data, mask_data, extract_size, extract_off,
+		&fafe, DPAA2_ECPRI_MAX_EXTRACT_NB);
+	if (extract_nb < 0) {
+		DPAA2_PMD_ERR("MUX Extract eCPRI failed(%d)", extract_nb);
+
+		return extract_nb;
+	}
+	for (i = 0; i < extract_nb; i++) {
+		if (extract_size[i] > sizeof(uint64_t)) {
+			/** Fix:
+			 * warning: array subscript 2 is outside array bounds of 'uint64_t[8]'
+			 * {aka'long unsigned int[8]'} [-Warray-bounds]
+			 * We never reach here.
+			 */
+			return -EINVAL;
+		}
+		ret = dpaa2_mux_add_non_hdr_extract(dpdmux_dev,
+			extract_off[i], extract_size[i],
+			DPKG_EXTRACT_FROM_PARSE,
+			&rule_data[i], &mask_data[i],
+			flow, extract_update);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct rte_flow_item pattern[],
@@ -1040,48 +1094,10 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 		break;
 
 		case RTE_FLOW_ITEM_TYPE_ECPRI:
-		{
-			const struct rte_flow_item_ecpri *spec, *mask;
-			int extract_nb, i;
-			uint64_t rule_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
-			uint64_t mask_data[DPAA2_ECPRI_MAX_EXTRACT_NB];
-			uint8_t extract_size[DPAA2_ECPRI_MAX_EXTRACT_NB];
-			uint8_t extract_off[DPAA2_ECPRI_MAX_EXTRACT_NB];
-			union dpaa2_sp_fafe_parse fafe;
-
-			spec = pattern[loop].spec;
-			mask = pattern[loop].mask;
-
-			ret = dpaa2_mux_add_parser_extract(dpdmux_dev,
-					DPAA2_PARSER_ECPRI_ID,
-					flow, &extract_update);
-			if (ret)
-				goto creation_error;
-
-			if (!spec || !mask)
-				break;
-
-			extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
-				rule_data, mask_data, extract_size, extract_off,
-				&fafe);
-			if (extract_nb < 0) {
-				DPAA2_PMD_ERR("MUX Extract eCPRI failed(%d)",
-					extract_nb);
-
-				ret = extract_nb;
-
-				goto creation_error;
-			}
-			for (i = 0; i < extract_nb; i++) {
-				ret = dpaa2_mux_add_non_hdr_extract(dpdmux_dev,
-					extract_off[i], extract_size[i],
-					DPKG_EXTRACT_FROM_PARSE,
-					&rule_data[i], &mask_data[i],
-					flow, &extract_update);
-				if (ret)
-					goto creation_error;
-			}
-		}
+		ret = dpaa2_mux_ecpri_flow_create(dpdmux_dev, pattern, flow,
+			loop, &extract_update);
+		if (ret)
+			goto creation_error;
 		break;
 
 		default:

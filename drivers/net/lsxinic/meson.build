@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2022-2024 NXP
+# Copyright 2022-2024, 2026 NXP
 
 if not is_linux
     build = false
@@ -15,7 +15,7 @@ if not dpdk_conf.get('RTE_ARCH_64')
     subdir_done()
 endif
 
-deps += ['bus_lsx_pciep', 'dmadev', 'dma_dpaa2', 'net_dpaa2']
+deps += ['bus_lsx_pciep', 'dmadev']
 sources = files(
 	'lsxinic_common_helper.c',
 	'lsxinic_ep_ethdev.c',
@@ -34,12 +34,6 @@ sources = files(
 )
 
 includes += include_directories(
-	'../../bus/fslmc',
-	'../../bus/fslmc/mc',
-	'../../bus/fslmc/portal',
-	'../../bus/fslmc/qbman/include',
-	'../../mempool/dpaa2',
-	'../dpaa2/mc',
 	'../virtio'
 )
 

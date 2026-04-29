@@ -31,6 +31,7 @@
 #define DPAA2_POLICER_NOT_RESET_COUNTER_MC_REV DPAA2_POLICER_SET_V2_MC_REV
 #define DPAA2_QOS_FLOW_TABLE_MISS_FLOW_ACTION_MC_REV RTE_FSL_MC_REV(10, 39, 109)
 #define DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV RTE_FSL_MC_REV(10, 39, 109)
+#define DPAA2_MAC_XSTATS_MC_REV RTE_FSL_MC_REV(10, 39, 109)
 
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
@@ -436,6 +437,60 @@ struct dpaa2_dev_priv {
 	LIST_HEAD(shaper_profiles, dpaa2_tm_shaper_profile) shaper_profiles;
 };
 
+static inline int
+dpaa2_rxq_id_to_tc_and_flow(struct dpaa2_dev_priv *priv,
+	uint16_t queue_id, uint8_t *tc_id, uint16_t *flow_id)
+{
+	if (queue_id >= priv->nb_rx_queues)
+		return -EINVAL;
+
+	if (tc_id)
+		*tc_id = queue_id / priv->dist_queues;
+	if (flow_id)
+		*flow_id = queue_id % priv->dist_queues;
+
+	return 0;
+}
+
+static inline int
+dpaa2_tc_and_flow_to_rxq_id(struct dpaa2_dev_priv *priv,
+	uint16_t *queue_id, uint8_t tc_id, uint16_t flow_id)
+{
+	uint16_t _qid;
+
+	if (flow_id >= priv->dist_queues || tc_id >= priv->num_rx_tc)
+		return -EINVAL;
+
+	_qid = tc_id * priv->dist_queues + flow_id;
+	if (_qid >= priv->nb_rx_queues)
+		return -EINVAL;
+
+	if (queue_id)
+		*queue_id = _qid;
+
+	return 0;
+}
+
+static inline int
+dpaa2_check_rxq_setup_by_tc_flow(struct dpaa2_dev_priv *priv,
+	uint8_t tc_id, uint16_t flow_id)
+{
+	int ret;
+	uint16_t queue_id;
+	struct dpaa2_queue *dpaa2_q;
+
+	ret = dpaa2_tc_and_flow_to_rxq_id(priv, &queue_id, tc_id, flow_id);
+	if (ret)
+		return false;
+	if (queue_id >= MAX_RX_QUEUES)
+		return false;
+	dpaa2_q = priv->rx_vq[queue_id];
+	if (!dpaa2_q->is_setup)
+		return false;
+
+	return true;
+}
+
 #define DPNI_GET_MAC_SUPPORTED_IFS_VER_MAJOR	8
 #define DPNI_GET_MAC_SUPPORTED_IFS_VER_MINOR	6
 
@@ -809,6 +864,7 @@ uint16_t dpaa2_dev_tx_multi_txq_ordered(void **queue,
 
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev, uint8_t tc_id);
+int dpaa2_flow_check_all_actions_ready(struct rte_eth_dev *dev);
 uint16_t dpaa2_dev_tx_conf(void *txq, int drain);
 
 void

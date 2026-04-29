@@ -683,50 +683,77 @@ int dpni_get_tx_data_offset(struct fsl_mc_io *mc_io,
  * @page_6.tx_pending_frames_cnt: total number of frames pending in Tx queues
  * @raw: raw statistics structure, used to index counters
  */
+enum dpni_statistics_page_id {
+	DPNI_INGRESS_STATISTICS_PAGE_ID = 0,
+	DPNI_EGRESS_STATISTICS_PAGE_ID = 1,
+	DPNI_ERR_STATISTICS_PAGE_ID = 2,
+	DPNI_CEETM_STATISTICS_PAGE_ID = 3,
+	DPNI_CGR_STATISTICS_PAGE_ID = 4,
+	DPNI_POLICER_STATISTICS_PAGE_ID = 5,
+	DPNI_TX_PENDING_STATISTICS_PAGE_ID = 6,
+	DPNI_MAX_STATISTICS_PAGE_ID
+};
+
+struct dpni_statistics_page_0 {
+	uint64_t ingress_all_frames;
+	uint64_t ingress_all_bytes;
+	uint64_t ingress_multicast_frames;
+	uint64_t ingress_multicast_bytes;
+	uint64_t ingress_broadcast_frames;
+	uint64_t ingress_broadcast_bytes;
+};
+
+struct dpni_statistics_page_1 {
+	uint64_t egress_all_frames;
+	uint64_t egress_all_bytes;
+	uint64_t egress_multicast_frames;
+	uint64_t egress_multicast_bytes;
+	uint64_t egress_broadcast_frames;
+	uint64_t egress_broadcast_bytes;
+};
+
+struct dpni_statistics_page_2 {
+	uint64_t ingress_filtered_frames;
+	uint64_t ingress_discarded_frames;
+	uint64_t ingress_nobuffer_discards;
+	uint64_t egress_discarded_frames;
+	uint64_t egress_confirmed_frames;
+};
+
+struct dpni_statistics_page_3 {
+	uint64_t ceetm_dequeue_bytes;
+	uint64_t ceetm_dequeue_frames;
+	uint64_t ceetm_reject_bytes;
+	uint64_t ceetm_reject_frames;
+};
+
+struct dpni_statistics_page_4 {
+	uint64_t cgr_reject_frames;
+	uint64_t cgr_reject_bytes;
+};
+
+struct dpni_statistics_page_5 {
+	uint64_t policer_cnt_red;
+	uint64_t policer_cnt_yellow;
+	uint64_t policer_cnt_green;
+	uint64_t policer_cnt_re_red;
+	uint64_t policer_cnt_re_yellow;
+};
+
+struct dpni_statistics_page_6 {
+	uint64_t tx_pending_frames_cnt;
+};
+
+#define DPNI_STAT_MAX_PARAM DPNI_MAX_TC
+
 union dpni_statistics {
-	struct {
-		uint64_t ingress_all_frames;
-		uint64_t ingress_all_bytes;
-		uint64_t ingress_multicast_frames;
-		uint64_t ingress_multicast_bytes;
-		uint64_t ingress_broadcast_frames;
-		uint64_t ingress_broadcast_bytes;
-	} page_0;
-	struct {
-		uint64_t egress_all_frames;
-		uint64_t egress_all_bytes;
-		uint64_t egress_multicast_frames;
-		uint64_t egress_multicast_bytes;
-		uint64_t egress_broadcast_frames;
-		uint64_t egress_broadcast_bytes;
-	} page_1;
-	struct {
-		uint64_t ingress_filtered_frames;
-		uint64_t ingress_discarded_frames;
-		uint64_t ingress_nobuffer_discards;
-		uint64_t egress_discarded_frames;
-		uint64_t egress_confirmed_frames;
-	} page_2;
-	struct {
-		uint64_t ceetm_dequeue_bytes;
-		uint64_t ceetm_dequeue_frames;
-		uint64_t ceetm_reject_bytes;
-		uint64_t ceetm_reject_frames;
-	} page_3;
-	struct {
-		uint64_t cgr_reject_frames;
-		uint64_t cgr_reject_bytes;
-	} page_4;
-	struct {
-		uint64_t policer_cnt_red;
-		uint64_t policer_cnt_yellow;
-		uint64_t policer_cnt_green;
-		uint64_t policer_cnt_re_red;
-		uint64_t policer_cnt_re_yellow;
-	} page_5;
-	struct {
-		uint64_t tx_pending_frames_cnt;
-	} page_6;
+	struct dpni_statistics_page_0 page_0;
+	struct dpni_statistics_page_1 page_1;
+	struct dpni_statistics_page_2 page_2;
+	struct dpni_statistics_page_3 page_3;
+	struct dpni_statistics_page_4 page_4;
+	struct dpni_statistics_page_5 page_5;
+	struct dpni_statistics_page_6 page_6;
 	struct {
 		uint64_t counter[DPNI_STATISTICS_CNT];
 	} raw;

@@ -45,6 +45,10 @@ static bool dpaa2_flow_control_log;
 
 #define DPAA2_FLOW_QOS_GROUP_ID 0xff
 
+#define DPAA2_INVALID_TC_ID 0xff
+#define DPAA2_INVALID_FLOW_ID 0xffff
+#define DPAA2_INVALID_QUEUE_ID 0xffff
+
 /* Default size of a key */
 #define DPNI_DEFAULT_KEY_SIZE                   24
 
@@ -100,7 +104,7 @@ struct dpaa2_generic_flow {
 	};
 	union dpaa2_dev_flow_action flow_action;
 	int is_rss;
-	int direct_queue;
+	int steer_by_qos;
 };
 
 struct dpaa2_dev_flow {
@@ -758,7 +762,7 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 
 	dpaa2_flow_qos_entry_log("Add", flow);
 
-	if (flow->direct_queue) {
+	if (flow->steer_by_qos) {
 		flags |= DPNI_QOS_OPT_SET_FLOW_ID;
 		flow_id = flow->flow_id;
 	}
@@ -830,7 +834,7 @@ dpaa2_flow_update_qos_rule_action(struct dpaa2_dev_priv *priv,
 
 	dpaa2_flow_qos_entry_log("Update action", flow);
 
-	if (flow->direct_queue) {
+	if (flow->steer_by_qos) {
 		flags |= DPNI_QOS_OPT_SET_FLOW_ID;
 		flow_id = flow->flow_id;
 	}
@@ -3202,7 +3206,7 @@ dpaa2_flow_ecpri_extract_rule_set(struct dpaa2_generic_flow *flow,
 	memset(&fafe, 0, sizeof(union dpaa2_sp_fafe_parse));
 	extract_nb = dpaa2_parser_ecpri_extract(spec, mask,
 		rule_data, mask_data, extract_size, extract_off,
-		&fafe);
+		&fafe, DPAA2_ECPRI_MAX_EXTRACT_NB);
 	if (extract_nb < 0) {
 		DPAA2_PMD_ERR("Extract eCPRI from spec/mask failed(%d)",
 			extract_nb);
@@ -3655,28 +3659,27 @@ dpaa2_flow_verify_fs_action(struct dpaa2_dev_priv *priv,
 	const struct rte_flow_attr *attr,
 	const struct rte_flow_action actions[])
 {
-	int end_of_list = 0, i, j = 0;
+	uint32_t end_of_list = 0, i, j = 0;
+	int ret;
 	const struct rte_flow_action_queue *dest_queue;
 	const struct rte_flow_action_rss *rss_conf;
-	struct dpaa2_queue *rxq;
+	uint8_t tc_id = DPAA2_INVALID_TC_ID;
 
 	while (!end_of_list) {
 		switch (actions[j].type) {
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
 			dest_queue = actions[j].conf;
-			if (dest_queue->index >= MAX_RX_QUEUES ||
-				!priv->rx_vq[dest_queue->index]) {
-				DPAA2_PMD_ERR("Invalid FSQ index(%d)",
+			ret = dpaa2_rxq_id_to_tc_and_flow(priv,
+				dest_queue->index, &tc_id, NULL);
+			if (ret) {
+				DPAA2_PMD_ERR("Invalid queue(%d) to direct",
 					dest_queue->index);
 
-				return -EINVAL;
+				return ret;
 			}
-			rxq = priv->rx_vq[dest_queue->index];
-			if (attr->group != rxq->tc_index) {
-				DPAA2_PMD_ERR("FSQ(%d.%d) not in TC[%d]",
-					rxq->tc_index, rxq->flow_id,
-					attr->group);
-
+			if (tc_id != attr->group) {
+				DPAA2_PMD_ERR("FSQ index(%d)'s TC(%d) not in group(%d)",
+					dest_queue->index, tc_id, attr->group);
 				return -EINVAL;
 			}
 			break;
@@ -3693,17 +3696,20 @@ dpaa2_flow_verify_fs_action(struct dpaa2_dev_priv *priv,
 				DPAA2_PMD_ERR("RSS number too large");
 				return -EINVAL;
 			}
-			if (rss_conf->queue) {
-				for (i = 0; i < (int)rss_conf->queue_num; i++) {
-					if (rss_conf->queue[i] >= priv->nb_rx_queues) {
-						DPAA2_PMD_ERR("RSS queue not in range");
-						return -EINVAL;
-					}
-					rxq = priv->rx_vq[rss_conf->queue[i]];
-					if (rxq->tc_index != attr->group) {
-						DPAA2_PMD_ERR("RSS queue not in group");
-						return -EINVAL;
-					}
+			if (!rss_conf->queue)
+				break;
+			for (i = 0; i < rss_conf->queue_num; i++) {
+				ret = dpaa2_rxq_id_to_tc_and_flow(priv,
+						rss_conf->queue[i], &tc_id, NULL);
+				if (ret) {
+					DPAA2_PMD_ERR("Invalid RSS queue[%d]:(%d)",
+						i, rss_conf->queue[i]);
+					return ret;
+				}
+				if (tc_id != attr->group) {
+					DPAA2_PMD_ERR("RSS queue[%d](%d):(tc(%d) != group(%d))",
+						i, rss_conf->queue[i], tc_id, attr->group);
+					return -EINVAL;
 				}
 			}
 
@@ -3729,31 +3735,6 @@ dpaa2_flow_verify_fs_action(struct dpaa2_dev_priv *priv,
 	return 0;
 }
 
-static struct dpaa2_queue *
-dpaa2_flow_queue_action_to_queue(struct dpaa2_dev_priv *priv,
-	uint8_t tc_id, uint16_t queue_id)
-{
-	struct dpaa2_queue *dest_q;
-
-	if (queue_id >= MAX_RX_QUEUES ||
-		!priv->rx_vq[queue_id]) {
-		DPAA2_PMD_ERR("Invalid FSQ index(%d)", queue_id);
-
-		return NULL;
-	}
-	dest_q = priv->rx_vq[queue_id];
-	if (tc_id != dest_q->tc_index) {
-		DPAA2_PMD_ERR("RXQ[%d](%d.%d) not in TC[%d]",
-			queue_id,
-			dest_q->tc_index, dest_q->flow_id,
-			tc_id);
-
-		return NULL;
-	}
-
-	return dest_q;
-}
-
 static int
 dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 	struct dpaa2_generic_flow *flow,
@@ -3763,9 +3744,10 @@ dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 	struct rte_eth_dev *dest_dev;
 	struct dpaa2_dev_priv *dest_priv;
 	const struct rte_flow_action_queue *dest_queue;
-	struct dpaa2_queue *dest_q;
 	uint64_t flc = 0;
-	uint16_t num_tokens;
+	uint8_t tc_id = DPAA2_INVALID_TC_ID;
+	uint16_t num_tokens, flow_id = DPAA2_INVALID_FLOW_ID;
+	int ret;
 	struct dpaa2_dev_flow_fs_action *fs_action;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
@@ -3791,31 +3773,29 @@ dpaa2_flow_fs_action_config(struct dpaa2_dev_priv *priv,
 
 	if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_QUEUE) {
 		dest_queue = rte_action->conf;
-		dest_q = dpaa2_flow_queue_action_to_queue(priv,
-			flow->tc_id, dest_queue->index);
-		if (!dest_q)
-			return -EINVAL;
+		ret = dpaa2_rxq_id_to_tc_and_flow(priv,
+			dest_queue->index, &tc_id, &flow_id);
+		if (ret)
+			return ret;
 
-		fs_action->fs_action_cfg.options =
-			DPNI_FS_OPT_SET_FLC | DPNI_FS_OPT_SET_STASH_CONTROL;
+		if ((dpaa2_svr_family & 0xffff0000) != SVR_LS2080A) {
+			fs_action->fs_action_cfg.options = DPNI_FS_OPT_SET_FLC |
+				DPNI_FS_OPT_SET_STASH_CONTROL;
 
-		if (dest_q->data_stashing_off) {
-			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING,
-				0, &flc);
-		} else {
-			dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING,
-				1, &flc);
-		}
-		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
-			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING,
-				1, &flc);
+			if (priv->flags & DPAA2_RX_DATA_STASHING_OFF_FLAG)
+				dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0, &flc);
+			else
+				dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1, &flc);
+
+			if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A)
+				dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1, &flc);
 		}
 
 		flc |= ((uint64_t)1) << DPAA2_FS_FLC_FS_MARK_OFFSET;
-		flc |= ((uint64_t)dest_q->tc_index) << DPAA2_FS_FLC_TC_OFFSET;
-		flc |= ((uint64_t)dest_q->flow_id) << DPAA2_FS_FLC_FLOW_OFFSET;
+		flc |= ((uint64_t)tc_id) << DPAA2_FS_FLC_TC_OFFSET;
+		flc |= ((uint64_t)flow_id) << DPAA2_FS_FLC_FLOW_OFFSET;
 		fs_action->fs_action_cfg.flc = flc;
-		fs_action->fs_action_cfg.flow_id = dest_q->flow_id;
+		fs_action->fs_action_cfg.flow_id = flow_id;
 	} else if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_PORT_ID ||
 		fs_action->action_type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
 		dest_dev = dpaa2_flow_redirect_dev(priv, rte_action);
@@ -3919,15 +3899,15 @@ dpaa2_flow_clear_fs_table(struct dpaa2_dev_priv *priv,
 
 static int
 dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
-	uint8_t tc_id, int discard, uint16_t default_queue)
+	uint8_t tc_id, int discard, uint16_t default_flow)
 {
 	int ret;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpni_rx_dist_cfg *tc_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
 	struct dpaa2_flow_tbl_profile *tbl_profile;
-	struct dpaa2_queue *queue;
 	char mc_rev[1024];
+	uint16_t default_queue = DPAA2_INVALID_QUEUE_ID;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 	tbl_profile = &priv->flow_profile.tc_profile[tc_id];
@@ -3947,12 +3927,15 @@ dpaa2_flow_fs_table_set_default(struct dpaa2_dev_priv *priv,
 		tbl_profile->default_drop = true;
 		tc_cfg->fs_miss_flow_id = DPNI_FS_MISS_ACTION_DROP;
 	} else {
-		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id, default_queue);
-		if (!queue)
+		ret = dpaa2_tc_and_flow_to_rxq_id(priv, &default_queue,
+			tc_id, default_flow);
+		if (ret)
+			return ret;
+		if (default_queue == DPAA2_INVALID_QUEUE_ID)
 			return -EINVAL;
 		tbl_profile->default_drop = false;
 		tbl_profile->default_queue.index = default_queue;
-		tc_cfg->fs_miss_flow_id = queue->flow_id;
+		tc_cfg->fs_miss_flow_id = default_flow;
 	}
 	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW, priv->token, tc_cfg);
 	if (ret < 0) {
@@ -3969,13 +3952,13 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 	uint8_t tc_id, int rss_dist)
 {
 	struct dpaa2_flow_tbl_profile *tbl_profile;
-	uint8_t *key_cfg_buf;
+	uint8_t *key_cfg_buf, _tc_id = DPAA2_INVALID_TC_ID;
+	uint16_t flow_id = DPAA2_INVALID_FLOW_ID;
 	int ret;
 	struct dpni_rx_dist_cfg *tc_cfg;
 	struct fsl_mc_io *dpni = priv->hw;
 	uint16_t entry_size;
 	uint16_t key_max_size;
-	struct dpaa2_queue *queue;
 
 	ret = dpaa2_flow_clear_fs_table(priv, tc_id);
 	if (ret < 0) {
@@ -4030,9 +4013,14 @@ dpaa2_flow_fs_rss_table_config(struct dpaa2_dev_priv *priv,
 	if (tbl_profile->default_drop) {
 		tc_cfg->fs_miss_flow_id = DPNI_FS_MISS_ACTION_DROP;
 	} else {
-		queue = dpaa2_flow_queue_action_to_queue(priv, tc_id,
-			tbl_profile->default_queue.index);
-		tc_cfg->fs_miss_flow_id = queue->flow_id;
+		ret = dpaa2_rxq_id_to_tc_and_flow(priv,
+			tbl_profile->default_queue.index,
+			&_tc_id, &flow_id);
+		if (ret)
+			return ret;
+		if (_tc_id != tc_id)
+			return -EINVAL;
+		tc_cfg->fs_miss_flow_id = flow_id;
 	}
 	ret = dpni_set_rx_fs_dist(dpni, CMD_PRI_LOW, priv->token, tc_cfg);
 	if (ret < 0) {
@@ -5533,16 +5521,16 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 	struct dpaa2_generic_flow *flow = NULL;
 	struct rte_dpaa2_device *dpaa2_dev;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	int ret, idx = -1;
+	int ret, idx = -1, steer_by_qos = 0;
 	uint64_t iova, mc_rev;
-	uint8_t qos_action_num = 0, fs_action_num = 0;
+	uint16_t flow_id = DPAA2_INVALID_FLOW_ID;
+	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id = DPAA2_INVALID_TC_ID;
 	struct rte_flow_action qos_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
 	struct rte_flow_action fs_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
 	struct rte_flow_action_jump action_jump;
 	const struct rte_flow_action_rss *action_rss;
 	const struct rte_flow_action_queue *action_q;
 	struct dpaa2_flow_tbl_profile *tbl_profile;
-	struct dpaa2_queue *dir_rxq = NULL;
 
 	if (type != DPAA2_FLOW_QOS_TYPE && type != DPAA2_FLOW_FS_TYPE)
 		return NULL;
@@ -5561,11 +5549,11 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 			dpaa2_flow_action_single_type_check(fs_actions,
 				RTE_FLOW_ACTION_TYPE_QUEUE)) {
 			action_q = fs_actions[0].conf;
-			if (action_q->index >= dev->data->nb_rx_queues) {
-				DPAA2_PMD_ERR("direct queue index(%d) >= max(%d)",
-					action_q->index,
-					dev->data->nb_rx_queues);
-				ret = -EINVAL;
+			ret = dpaa2_rxq_id_to_tc_and_flow(priv, action_q->index,
+					&tc_id, &flow_id);
+			if (ret) {
+				DPAA2_PMD_ERR("Invalid queue index(%d) to direct.",
+					action_q->index);
 				goto creation_error;
 			}
 			if ((mc_rev < DPAA2_QOS_FLOW_HW_ACTION_UPDATE_MC_REV ||
@@ -5575,9 +5563,9 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 				 * because this version doesn't support QoS flow HW update
 				 * and QoS table miss flow.
 				 */
-				dir_rxq = NULL;
+				steer_by_qos = 0;
 			} else {
-				dir_rxq = dev->data->rx_queues[action_q->index];
+				steer_by_qos = 1;
 			}
 		}
 	}
@@ -5595,19 +5583,19 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 		}
 	}
 
-	if (dir_rxq) {
+	if (steer_by_qos) {
 		qos_actions[0].type = RTE_FLOW_ACTION_TYPE_JUMP;
 		qos_actions[0].conf = &action_jump;
 		qos_actions[1].type = RTE_FLOW_ACTION_TYPE_END;
 		/** Ignore attr->group*/
 		if ((mix_extract || type == DPAA2_FLOW_FS_TYPE) &&
 			attr->group < priv->num_rx_tc &&
-			attr->group != dir_rxq->tc_index) {
+			attr->group != tc_id) {
 			DPAA2_PMD_ERR("Attribute group(%d) conflicts with dest queue's TC(%d)",
-				attr->group, dir_rxq->tc_index);
+				attr->group, tc_id);
 			return NULL;
 		}
-		action_jump.group = dir_rxq->tc_index;
+		action_jump.group = tc_id;
 		if (attr->group >= priv->num_rx_tc)
 			idx = attr->priority;
 		else if (!priv->fs_entries)
@@ -5737,9 +5725,9 @@ dpaa2_flow_generic_flow_create(struct rte_eth_dev *dev,
 		ret = dpaa2_flow_qos_action_update(priv, flow, qos_actions, true);
 		if (ret)
 			goto creation_error;
-		if (dir_rxq) {
-			flow->direct_queue = true;
-			flow->flow_id = dir_rxq->flow_id;
+		if (steer_by_qos) {
+			flow->steer_by_qos = true;
+			flow->flow_id = flow_id;
 		}
 		ret = dpaa2_flow_add_qos_rule(priv, flow);
 		if (ret)
@@ -5927,7 +5915,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 				goto flow_failure;
 			}
 		}
-		if (priv->fs_entries > 0 && !(qos_flow && qos_flow->direct_queue)) {
+		if (priv->fs_entries > 0 && !(qos_flow && qos_flow->steer_by_qos)) {
 			fs_flow = dpaa2_flow_generic_flow_create(dev, &local_attr, pattern,
 				actions, error, DPAA2_FLOW_FS_TYPE, true, is_rss);
 			if (!fs_flow) {
@@ -6144,9 +6132,8 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 	uint32_t group_id, group_type;
 	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
 	const char *err_str = NULL;
-	struct dpaa2_queue *miss_rxq = NULL;
-	uint8_t qos_tc = 0xff;
-	uint16_t qos_flow = 0xffff;
+	uint8_t tc_id = DPAA2_INVALID_TC_ID;
+	uint16_t flow_id = DPAA2_INVALID_FLOW_ID;
 
 	RTE_SET_USED(attr);
 
@@ -6170,13 +6157,13 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 		switch (actions[i].type) {
 		case RTE_FLOW_ACTION_TYPE_QUEUE:
 			dest_queue = actions[i].conf;
-			if (dest_queue->index >= dev->data->nb_rx_queues) {
+			err_code = dpaa2_rxq_id_to_tc_and_flow(priv,
+				dest_queue->index, &tc_id, &flow_id);
+			if (err_code) {
 				error_type = RTE_FLOW_ERROR_TYPE_ACTION_CONF;
-				err_code = -EINVAL;
-				err_str = "Queue index overflows";
+				err_str = "Invalid queue index";
 				goto failure_to_set_miss_actions;
 			}
-			miss_rxq = priv->rx_vq[dest_queue->index];
 			break;
 		case RTE_FLOW_ACTION_TYPE_JUMP:
 			action_jump = actions[i].conf;
@@ -6202,8 +6189,8 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 			err_str = "No QoS table available!";
 			goto failure_to_set_miss_actions;
 		}
-		if (action_jump && miss_rxq) {
-			if (action_jump->group != miss_rxq->tc_index) {
+		if (action_jump && tc_id != DPAA2_INVALID_TC_ID) {
+			if (action_jump->group != tc_id) {
 				error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 				err_code = -EINVAL;
 				err_str = "Jump group conflicts to miss queue's TC";
@@ -6211,19 +6198,15 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 			}
 		}
 		if (action_jump)
-			qos_tc = action_jump->group;
-		if (miss_rxq) {
-			qos_tc = miss_rxq->tc_index;
-			qos_flow = miss_rxq->flow_id;
-		}
-		if ((!discard && qos_tc == 0xff) ||
-			(discard && qos_tc != 0xff)) {
+			tc_id = action_jump->group;
+		if ((!discard && tc_id == DPAA2_INVALID_TC_ID) ||
+			(discard && tc_id != DPAA2_INVALID_TC_ID)) {
 			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 			err_code = -EINVAL;
 			err_str = "Invalid miss action set for QoS table";
 			goto failure_to_set_miss_actions;
 		}
-		err_code = dpaa2_flow_qos_table_set_default(priv, discard, qos_tc, qos_flow);
+		err_code = dpaa2_flow_qos_table_set_default(priv, discard, tc_id, flow_id);
 		if (err_code) {
 			error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
 			err_str = "Failed to set miss action for QoS table";
@@ -6239,20 +6222,19 @@ dpaa2_flow_set_miss_actions(struct rte_eth_dev *dev,
 		err_str = "No FS table available!";
 		goto failure_to_set_miss_actions;
 	}
-	if (!discard && !miss_rxq) {
+	if (!discard && flow_id == DPAA2_INVALID_FLOW_ID) {
 		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 		err_code = -EINVAL;
 		err_str = "Invalid miss action set for FS table";
 		goto failure_to_set_miss_actions;
 	}
-	if (miss_rxq && miss_rxq->tc_index != group_id) {
+	if (tc_id != DPAA2_INVALID_TC_ID && tc_id != group_id) {
 		error_type = RTE_FLOW_ERROR_TYPE_ATTR_GROUP;
 		err_code = -EINVAL;
 		err_str = "Group conflicts with dest queue's TC ID";
 		goto failure_to_set_miss_actions;
 	}
-	err_code = dpaa2_flow_fs_table_set_default(priv, group_id, discard,
-		dest_queue ? dest_queue->index : 0);
+	err_code = dpaa2_flow_fs_table_set_default(priv, group_id, discard, flow_id);
 	if (err_code) {
 		error_type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
 		err_str = "Failed to set miss action for FS table";
@@ -6276,9 +6258,9 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_flow_tbl_profile *tbl_profile = NULL;
-	int ret = 0, is_rss = false, hw_update = false, err_code = 0, qos_direct;
+	int ret = 0, is_rss = false, hw_update = false, err_code = 0, steer_by_qos = false;
 	struct dpaa2_dev_flow_fs_action *fs_action;
-	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id;
+	uint8_t qos_action_num = 0, fs_action_num = 0, tc_id = DPAA2_INVALID_TC_ID;
 	struct rte_flow_action qos_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
 	struct rte_flow_action fs_actions[DPAA2_MAX_ACTION_PER_FLOW_NUM];
 	const struct rte_flow_action_rss *rss_conf;
@@ -6287,11 +6269,11 @@ dpaa2_flow_actions_update(struct rte_eth_dev *dev,
 	uint8_t spec_buf[1024];
 	struct rte_flow_attr attr;
 	const enum rte_flow_action_type *supported = NULL;
-	uint16_t supported_len = 0;
+	uint16_t supported_len = 0, flow_id = DPAA2_INVALID_FLOW_ID;
 	enum rte_flow_error_type error_type = RTE_FLOW_ERROR_TYPE_NONE;
 	const char *err_str = NULL;
 	const struct rte_flow_action_queue *action_q;
-	struct dpaa2_queue *rxq = NULL;
+	int queue_action = false;
 
 	dpaa2_dev = DPAA2_DEV_PRIV_TO_DPAA2_DEV(priv);
 
@@ -6352,16 +6334,16 @@ action_update:
 		goto quit;
 	}
 	flow = (struct dpaa2_dev_flow *)_flow;
-	qos_direct = false;
-	if (flow->qos_flow && flow->qos_flow->direct_queue)
-		qos_direct = true;
+	steer_by_qos = false;
+	if (flow->qos_flow && flow->qos_flow->steer_by_qos)
+		steer_by_qos = true;
 	if (flow->fs_flow && flow->qos_flow && qos_action_num > 0) {
 		error_type = RTE_FLOW_ERROR_TYPE_ACTION_NUM;
 		err_str = "One-level flow can't update QoS action!";
 		err_code = -ENOTSUP;
 		goto quit;
 	}
-	if ((!flow->fs_flow && fs_action_num > 0 && !qos_direct) ||
+	if ((!flow->fs_flow && fs_action_num > 0 && !steer_by_qos) ||
 		(!flow->qos_flow && qos_action_num > 0)) {
 		error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 		err_str = "Flow type and flow action don't match!";
@@ -6372,19 +6354,21 @@ action_update:
 		dpaa2_flow_action_single_type_check(fs_actions,
 		RTE_FLOW_ACTION_TYPE_QUEUE)) {
 		action_q = fs_actions[0].conf;
-		if (action_q->index >= dev->data->nb_rx_queues) {
+		ret = dpaa2_rxq_id_to_tc_and_flow(priv, action_q->index,
+			&tc_id, &flow_id);
+		if (ret) {
 			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
-			err_str = "Queue index is too large!";
-			err_code = -EINVAL;
+			err_str = "Invalid queue index!";
+			err_code = ret;
 			goto quit;
 		}
-		rxq = dev->data->rx_queues[action_q->index];
-		if (flow->fs_flow && flow->fs_flow->tc_id != rxq->tc_index) {
+		if (flow->fs_flow && flow->fs_flow->tc_id != tc_id) {
 			error_type = RTE_FLOW_ERROR_TYPE_ACTION;
 			err_str = "Update queue is not in this TC!";
 			err_code = -EINVAL;
 			goto quit;
 		}
+		queue_action = true;
 	}
 
 	if (!flow->fs_flow)
@@ -6488,8 +6472,8 @@ qos_action_update:
 	if (!flow->qos_flow)
 		goto quit;
 
-	if (rxq) {
-		jump_conf.group = rxq->tc_index;
+	if (queue_action) {
+		jump_conf.group = tc_id;
 		qos_actions[qos_action_num].type = RTE_FLOW_ACTION_TYPE_JUMP;
 		qos_actions[qos_action_num].conf = &jump_conf;
 		qos_actions[qos_action_num + 1].type = RTE_FLOW_ACTION_TYPE_END;
@@ -6526,9 +6510,9 @@ skip_remove_qos_entry:
 
 		goto quit;
 	}
-	if (rxq) {
-		flow->qos_flow->direct_queue = true;
-		flow->qos_flow->flow_id = rxq->flow_id;
+	if (queue_action) {
+		flow->qos_flow->steer_by_qos = true;
+		flow->qos_flow->flow_id = flow_id;
 	}
 	if (hw_update)
 		ret = dpaa2_flow_update_qos_rule_action(priv, flow->qos_flow);
@@ -6877,6 +6861,61 @@ clean_all:
 		}
 		flow = LIST_FIRST(&priv->flows);
 	}
+}
+
+static int
+dpaa2_flow_check_action_ready(struct rte_eth_dev *dev,
+	struct dpaa2_dev_flow *flow)
+{
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	uint16_t i;
+	struct dpaa2_dev_flow_qos_action *qos_action;
+	struct dpaa2_dev_flow_fs_action *fs_action;
+
+	if (flow->qos_flow && flow->qos_flow->steer_by_qos) {
+		qos_action = &flow->qos_flow->flow_action.qos_action;
+		if (qos_action->action_jump_type != RTE_FLOW_ACTION_TYPE_JUMP)
+			return false;
+		if (!dpaa2_check_rxq_setup_by_tc_flow(priv,
+			qos_action->action_jump_cfg.group,
+			flow->qos_flow->flow_id))
+			return false;
+	}
+	if (flow->fs_flow) {
+		fs_action = &flow->fs_flow->flow_action.fs_action;
+		if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_RSS) {
+			for (i = 0; i < dev->data->nb_rx_queues; i++) {
+				if (!dpaa2_check_rxq_setup_by_tc_flow(priv,
+					flow->fs_flow->tc_id, i))
+					return false;
+			}
+		} else if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_QUEUE) {
+			if (!dpaa2_check_rxq_setup_by_tc_flow(priv,
+				flow->fs_flow->tc_id, fs_action->fs_action_cfg.flow_id))
+				return false;
+		} else if (fs_action->action_type == RTE_FLOW_ACTION_TYPE_PORT_ID ||
+			fs_action->action_type == RTE_FLOW_ACTION_TYPE_PORT_REPRESENTOR) {
+			/**TBD*/
+		}
+	}
+
+	return true;
+}
+
+int
+dpaa2_flow_check_all_actions_ready(struct rte_eth_dev *dev)
+{
+	struct dpaa2_dev_flow *flow;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+
+	flow = LIST_FIRST(&priv->flows);
+	while (flow) {
+		if (!dpaa2_flow_check_action_ready(dev, flow))
+			return false;
+		flow = LIST_NEXT(flow, next);
+	}
+
+	return true;
 }
 
 const struct rte_flow_ops dpaa2_flow_ops = {

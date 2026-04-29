@@ -1,19 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2025 NXP
+ * Copyright 2019-2026 NXP
  */
 
 #ifndef _LSXINIC_COMMON_H_
 #define _LSXINIC_COMMON_H_
-
-#ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
-#define LSINIC_MERGE_DEFAULT_THRESHOLD (600) /* bytes */
-#endif
-
-#define LSINIC_ETH_FCS_SIZE \
-	(RTE_TM_ETH_FRAMING_OVERHEAD_FCS - RTE_TM_ETH_FRAMING_OVERHEAD)
-
-#define LSINIC_ETH_OVERHEAD_SIZE \
-	RTE_TM_ETH_FRAMING_OVERHEAD_FCS
 
 #ifndef RTE_VERIFY
 #define RTE_VERIFY(exp) do {} while (0)
@@ -91,11 +81,11 @@ enum lsinic_port_type {
 
 #define UNUSED(x) (void)(x)
 
-static inline __attribute__((always_inline))
-void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)
+static inline __always_inline void
+mem_cp128b_atomic(void *dst, const void *src)
 {
-	__uint128_t *dst128 = (__uint128_t *)dst;
-	const __uint128_t *src128 = (const __uint128_t *)src;
+	__uint128_t *dst128 = dst;
+	const __uint128_t *src128 = src;
 	*dst128 = *src128;
 }
 
@@ -297,7 +287,6 @@ lsinic_pcie_memcp_align(void *vdst,
 #define PCI_CONFIG_SPACE_SIZE 0x1000
 #define PCI_DEVCTL_NOSNOOP	0x0800
 
-#define LSINIC_EP_MAP_MEM_ENV \
-	"LSINIC_XFER_HOST_ACCESS_EP_MEM"
+#define LSINIC_EP_MAP_MEM_ENV "LSINIC_XFER_HOST_ACCESS_EP_MEM"
 
 #endif /*  _LSXINIC_COMMON_H_ */
