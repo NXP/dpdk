@@ -2910,150 +2910,148 @@ qman_shutdown_fq(u32 fqid)
 	case QM_MCR_NP_STATE_TRU_SCHED:
 	case QM_MCR_NP_STATE_ACTIVE:
 	case QM_MCR_NP_STATE_PARKED:
-		DPAA_BUS_DEBUG("Inshutdown state is %d", state);
-                orl_empty = 0;
-                mcc = qm_mc_start(&p->p);
+		DPAA_BUS_DEBUG("In shutdown state is %d", state);
+		orl_empty = 0;
+		mcc = qm_mc_start(&p->p);
 		mcc->alterfq.fqid = cpu_to_be32(fqid);
-                qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_RETIRE);
-                if (!qm_mc_result_timeout(&p->p, &mcr)) {
-                        DPAA_BUS_ERR("ALTER_RETIRE timeout");
-                        ret = -ETIMEDOUT;
-                        goto out;
-                }
-                res = mcr->result; /* Make a copy as we reuse MCR below */
+		qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_RETIRE);
+		if (!qm_mc_result_timeout(&p->p, &mcr)) {
+			DPAA_BUS_ERR("ALTER_RETIRE timeout");
+			ret = -ETIMEDOUT;
+			goto out;
+		}
+		res = mcr->result; /* Make a copy as we reuse MCR below */
 
-                if (res == QM_MCR_RESULT_OK)
-                        drain_mr_fqrni(&p->p);
+		if (res == QM_MCR_RESULT_OK)
+			drain_mr_fqrni(&p->p);
 
-                if (res == QM_MCR_RESULT_PENDING) {
-                        /*
-                         * Need to wait for the FQRN in the message ring, which
-                         * will only occur once the FQ has been drained.  In
-                         * order for the FQ to drain the portal needs to be set
-                         * to dequeue from the channel the FQ is scheduled on
-                         */
-                        int found_fqrn = 0;
+		if (res == QM_MCR_RESULT_PENDING) {
+			/*
+			 * Need to wait for the FQRN in the message ring, which
+			 * will only occur once the FQ has been drained.  In
+			 * order for the FQ to drain the portal needs to be set
+			 * to dequeue from the channel the FQ is scheduled on
+			 */
+			int found_fqrn = 0;
 
-                        /* Flag that we need to drain FQ */
-                        drain = 1;
+			/* Flag that we need to drain FQ */
+			drain = 1;
 
 			__maybe_unused u16 dequeue_wq = 0;
 			if (channel >= qm_channel_pool1 &&
-                            channel < (u16)(qm_channel_pool1 + 15)) {
-                                /* Pool channel, enable the bit in the portal */
-                                dequeue_wq = (channel -
-                                              qm_channel_pool1 + 1) << 4 | wq;
-                        } else if (channel < qm_channel_pool1) {
-                                /* Dedicated channel */
-                                dequeue_wq = wq;
-                        } else {
-                                DPAA_BUS_ERR("Can't recover FQ 0x%x, ch: 0x%x",
-                                        fqid, channel);
-                                ret = -EBUSY;
-                                goto out;
-                        }
-                        /* Set the sdqcr to drain this channel */
-                        if (channel < qm_channel_pool1)
-                                qm_dqrr_sdqcr_set(&p->p,
-                                                  QM_SDQCR_TYPE_ACTIVE |
-                                                  QM_SDQCR_CHANNELS_DEDICATED);
-                        else
-                                qm_dqrr_sdqcr_set(&p->p,
-                                                  QM_SDQCR_TYPE_ACTIVE |
-                                                  QM_SDQCR_CHANNELS_POOL_CONV
-                                                  (channel));
+			    channel < (u16)(qm_channel_pool1 + 15)) {
+				/* Pool channel, enable the bit in the portal */
+				dequeue_wq = (channel -
+					      qm_channel_pool1 + 1) << 4 | wq;
+			} else if (channel < qm_channel_pool1) {
+				/* Dedicated channel */
+				dequeue_wq = wq;
+			} else {
+				DPAA_BUS_ERR("Can't recover FQ 0x%x, ch: 0x%x",
+					fqid, channel);
+				ret = -EBUSY;
+				goto out;
+			}
+			/* Set the sdqcr to drain this channel */
+			if (channel < qm_channel_pool1)
+				qm_dqrr_sdqcr_set(&p->p,
+						  QM_SDQCR_TYPE_ACTIVE |
+						  QM_SDQCR_CHANNELS_DEDICATED);
+			else
+				qm_dqrr_sdqcr_set(&p->p,
+						  QM_SDQCR_TYPE_ACTIVE |
+						  QM_SDQCR_CHANNELS_POOL_CONV
+						  (channel));
 			do {
-                                /* Keep draining DQRR while checking the MR*/
-                                qm_dqrr_drain_nomatch(&p->p);
-                                /* Process message ring too */
-                                found_fqrn = qm_mr_drain(&p->p,
-                                                         FQRN);
-                                cpu_relax();
-                        } while (!found_fqrn);
-                        /* Restore SDQCR */
-                        qm_dqrr_sdqcr_set(&p->p,
-                                          p->sdqcr);
+				/* Keep draining DQRR while checking the MR*/
+				qm_dqrr_drain_nomatch(&p->p);
+				/* Process message ring too */
+				found_fqrn = qm_mr_drain(&p->p, FQRN);
+				cpu_relax();
+			} while (!found_fqrn);
+			/* Restore SDQCR */
+			qm_dqrr_sdqcr_set(&p->p, p->sdqcr);
 
-                }
-                if (res != QM_MCR_RESULT_OK &&
-                    res != QM_MCR_RESULT_PENDING) {
-                        DPAA_BUS_ERR("retire_fq failed: FQ 0x%x, res=0x%x",
-                                fqid, res);
-                        ret = -EIO;
-                        goto out;
-                }
-                if (!(mcr->alterfq.fqs & QM_MCR_FQS_ORLPRESENT)) {
-                        /*
-                         * ORL had no entries, no need to wait until the
-                         * ERNs come in
-                         */
-                        orl_empty = 1;
-                }
-                /*
-                 * Retirement succeeded, check to see if FQ needs
-                 * to be drained
-                 */
-                if (drain || mcr->alterfq.fqs & QM_MCR_FQS_NOTEMPTY) {
-                        /* FQ is Not Empty, drain using volatile DQ commands */
-                        do {
-                                u32 vdqcr = fqid | QM_VDQCR_NUMFRAMES_SET(3);
+		}
+		if (res != QM_MCR_RESULT_OK &&
+		    res != QM_MCR_RESULT_PENDING) {
+			DPAA_BUS_ERR("retire_fq failed: FQ 0x%x, res=0x%x",
+				fqid, res);
+			ret = -EIO;
+			goto out;
+		}
+		if (!(mcr->alterfq.fqs & QM_MCR_FQS_ORLPRESENT)) {
+			/*
+			 * ORL had no entries, no need to wait until the
+			 * ERNs come in
+			 */
+			orl_empty = 1;
+		}
+		/*
+		 * Retirement succeeded, check to see if FQ needs
+		 * to be drained
+		 */
+		if (drain || mcr->alterfq.fqs & QM_MCR_FQS_NOTEMPTY) {
+			/* FQ is Not Empty, drain using volatile DQ commands */
+			do {
+				u32 vdqcr = fqid | QM_VDQCR_NUMFRAMES_SET(3);
 
-                                qm_dqrr_vdqcr_set(&p->p, vdqcr);
-                                /*
-                                 * Wait for a dequeue and process the dequeues,
-                                 * making sure to empty the ring completely
-                                 */
-                        } while (!qm_dqrr_drain_wait(&p->p, fqid, FQ_EMPTY));
-                }
+				qm_dqrr_vdqcr_set(&p->p, vdqcr);
+				/*
+				 * Wait for a dequeue and process the dequeues,
+				 * making sure to empty the ring completely
+				 */
+			} while (!qm_dqrr_drain_wait(&p->p, fqid, FQ_EMPTY));
+		}
 		while (!orl_empty) {
-                        /* Wait for the ORL to have been completely drained */
-                        orl_empty = qm_mr_drain(&p->p, FQRL);
-                        cpu_relax();
-                }
-                mcc = qm_mc_start(&p->p);
+			/* Wait for the ORL to have been completely drained */
+			orl_empty = qm_mr_drain(&p->p, FQRL);
+			cpu_relax();
+		}
+		mcc = qm_mc_start(&p->p);
 		mcc->alterfq.fqid = cpu_to_be32(fqid);
-                qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_OOS);
-                if (!qm_mc_result_timeout(&p->p, &mcr)) {
+		qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_OOS);
+		if (!qm_mc_result_timeout(&p->p, &mcr)) {
 			DPAA_BUS_ERR("OOS Timeout");
-                        ret = -ETIMEDOUT;
-                        goto out;
-                }
+			ret = -ETIMEDOUT;
+			goto out;
+		}
 
-                if (mcr->result != QM_MCR_RESULT_OK) {
-                        DPAA_BUS_ERR("OOS after drain fail: FQ 0x%x (0x%x)",
-                                fqid, mcr->result);
-                        ret = -EIO;
-                        goto out;
-                }
-                break;
+		if (mcr->result != QM_MCR_RESULT_OK) {
+			DPAA_BUS_ERR("OOS after drain fail: FQ 0x%x (0x%x)",
+				fqid, mcr->result);
+			ret = -EIO;
+			goto out;
+		}
+		break;
 
-        case QM_MCR_NP_STATE_RETIRED:
-                /* Send OOS Command */
-                mcc = qm_mc_start(&p->p);
+	case QM_MCR_NP_STATE_RETIRED:
+		/* Send OOS Command */
+		mcc = qm_mc_start(&p->p);
 		mcc->alterfq.fqid = cpu_to_be32(fqid);
-                qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_OOS);
-                if (!qm_mc_result_timeout(&p->p, &mcr)) {
+		qm_mc_commit(&p->p, QM_MCC_VERB_ALTER_OOS);
+		if (!qm_mc_result_timeout(&p->p, &mcr)) {
 			DPAA_BUS_ERR("In RTEIRED to OOS timeout");
-                        ret = -ETIMEDOUT;
-                        goto out;
-                }
+			ret = -ETIMEDOUT;
+			goto out;
+		}
 
-                if (mcr->result != QM_MCR_RESULT_OK) {
-                        DPAA_BUS_ERR("OOS fail: FQ 0x%x (0x%x)",
-                                fqid, mcr->result);
-                        ret = -EIO;
-                        goto out;
-                }
-                break;
+		if (mcr->result != QM_MCR_RESULT_OK) {
+			DPAA_BUS_ERR("OOS fail: FQ 0x%x (0x%x)",
+				fqid, mcr->result);
+			ret = -EIO;
+			goto out;
+		}
+		break;
 
-        case QM_MCR_NP_STATE_OOS:
-                /*  Done */
-                break;
+	case QM_MCR_NP_STATE_OOS:
+		/*  Done */
+		break;
 
-        default:
-                ret = -EIO;
-        }
+	default:
+		ret = -EIO;
+	}
 
 out:
-        return ret;
+	return ret;
 }
