@@ -2732,6 +2732,7 @@ RTE_FINI_PRIO(dpaa_finish, 103)
 	struct rte_eth_dev *dev;
 
 	PMD_INIT_FUNC_TRACE();
+	dpaax_enter_destructor();
 	/* For secondary, primary will do all the cleanup */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		return;

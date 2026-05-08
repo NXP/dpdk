@@ -2,7 +2,7 @@
  *
  * Copyright 2011 Freescale Semiconductor, Inc.
  * All rights reserved.
- * Copyright 2019-2020 NXP
+ * Copyright 2019-2020, 2026 NXP
  *
  */
 
@@ -336,11 +336,23 @@ static inline void copy_bytes(void *dest, const void *src, size_t sz)
 #define copy_bytes memcpy
 #endif
 
-/* Allocator stuff */
-#define kmalloc(sz, t)	rte_malloc(NULL, sz, 0)
-#define kzalloc(sz, t)  rte_zmalloc(NULL, sz, 0)
+__rte_internal
+void dpaax_enter_destructor(void);
+__rte_internal
+int is_dpaax_in_destructor(void);
+
+/* Allocator stuff, make sure the eal memory pool is available when calling.*/
+#define kmalloc(sz, t) rte_malloc(NULL, sz, 0)
+#define kzalloc(sz, t) rte_zmalloc(NULL, sz, 0)
 #define vmalloc(sz)	rte_malloc(NULL, sz, 0)
-#define kfree(p)	rte_free(p)
+
+#define kfree(p) \
+({ \
+	if (!is_dpaax_in_destructor()) \
+		rte_free(p); \
+	else \
+		pr_debug("Eal memory has been destroyed.\n"); \
+})
 
 static inline unsigned long get_zeroed_page(gfp_t __foo __rte_unused)
 {

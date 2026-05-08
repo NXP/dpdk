@@ -1047,6 +1047,7 @@ RTE_FINI_PRIO(dpaa_cleanup, 102)
 	if (!dpaa_bus_global_init)
 		return;
 
+	dpaax_enter_destructor();
 	/* cleanup portals in case non-graceful exit */
 	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		/* Check for non zero id */

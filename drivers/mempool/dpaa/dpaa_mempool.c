@@ -531,6 +531,8 @@ RTE_FINI_PRIO(dpaa_mpool_finish, 104)
 {
 	uint16_t bpid;
 
+	dpaax_enter_destructor();
+
 	for (bpid = 0; bpid < DPAA_MAX_BPOOLS; bpid++) {
 		if (s_dpaa_bpid_allocated_flag[bpid].used) {
 			bman_free_bpid(bpid, s_dpaa_bpid_allocated_flag[bpid].flags);

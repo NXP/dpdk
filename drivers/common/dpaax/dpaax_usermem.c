@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2025 NXP
+ * Copyright 2025-2026 NXP
  */
 
 #include "dpaax_usermem.h"
@@ -7,6 +7,8 @@
 
 #include <eal_export.h>
 #include <sys/ioctl.h>
+
+static int s_dpaax_in_destructor;
 
 #define DPAAX_DEVICE_FILE_BASE "/dev/"
 #define DPAAX_DEVICE_PHYADDR_BASE "/sys/class/"
@@ -152,4 +154,16 @@ dpaax_release_reserve_memory(struct dpaax_usmem_ctx *ctx, struct dpaax_usmem_all
 		DPAAX_LOG(ERR, "Failed to free reserve memory chunks %d for device fd %d, err = %s",
 				alloc->res.chunks, ctx->fd, strerror(errno));
 	}
+}
+
+RTE_EXPORT_INTERNAL_SYMBOL(dpaax_enter_destructor)
+void dpaax_enter_destructor(void)
+{
+	s_dpaax_in_destructor = true;
+}
+
+RTE_EXPORT_INTERNAL_SYMBOL(is_dpaax_in_destructor)
+int is_dpaax_in_destructor(void)
+{
+	return s_dpaax_in_destructor;
 }
