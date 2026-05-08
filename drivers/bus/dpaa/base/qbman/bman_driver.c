@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2008-2016 Freescale Semiconductor Inc.
- * Copyright 2017 NXP
+ * Copyright 2017,2026 NXP
  *
  */
 
@@ -182,7 +182,12 @@ int bman_init_ccsr(const struct device_node *node)
 int bman_global_init(void)
 {
 	const struct device_node *dt_node;
+	const rte_be32_t *range;
+	uint32_t start, count;
+	int ret;
 	static int done;
+#define BPID_RANGE_START_INDEX 0
+#define BPID_RANGE_COUNT_INDEX 1
 
 	if (done)
 		return -EBUSY;
@@ -197,36 +202,49 @@ int bman_global_init(void)
 	if (of_device_is_compatible(dt_node, "fsl,bman-portal-1.0") ||
 	    of_device_is_compatible(dt_node, "fsl,bman-portal-1.0.0")) {
 		bman_ip_rev = BMAN_REV10;
-		bman_pool_max = 64;
 	} else if (of_device_is_compatible(dt_node, "fsl,bman-portal-2.0") ||
 		of_device_is_compatible(dt_node, "fsl,bman-portal-2.0.8")) {
 		bman_ip_rev = BMAN_REV20;
-		bman_pool_max = 8;
 	} else if (of_device_is_compatible(dt_node, "fsl,bman-portal-2.1.0") ||
 		of_device_is_compatible(dt_node, "fsl,bman-portal-2.1.1") ||
 		of_device_is_compatible(dt_node, "fsl,bman-portal-2.1.2") ||
 		of_device_is_compatible(dt_node, "fsl,bman-portal-2.1.3")) {
 		bman_ip_rev = BMAN_REV21;
-		bman_pool_max = 64;
 	} else {
-		pr_warn("unknown BMan version in portal node,default "
-			"to rev1.0");
+		pr_warn("unknown BMan version in portal node, default to rev1.0");
 		bman_ip_rev = BMAN_REV10;
-		bman_pool_max = 64;
 	}
 
 	if (!bman_ip_rev) {
 		pr_err("Unknown bman portal version\n");
 		return -ENODEV;
 	}
-	{
-		const struct device_node *dn = of_find_compatible_node(NULL,
-							NULL, "fsl,bman");
-		if (!dn)
-			pr_err("No bman device node available");
 
-		if (bman_init_ccsr(dn))
-			pr_err("BMan CCSR map failed.");
+	for_each_compatible_node(dt_node, NULL, "fsl,bpid-range") {
+		range = of_get_property(dt_node, "fsl,bpid-range", NULL);
+		if (!range)
+			continue;
+		start = rte_be_to_cpu_32(range[BPID_RANGE_START_INDEX]);
+		count = rte_be_to_cpu_32(range[BPID_RANGE_COUNT_INDEX]);
+		bman_pool_max = start + count;
+		pr_info("Max BPID: %d, fixed BPID < %d", bman_pool_max, start);
+		break;
+	}
+	if (!bman_pool_max) {
+		pr_err("No BPID range found");
+		return -ENODEV;
+	}
+
+	dt_node = of_find_compatible_node(NULL, NULL, "fsl,bman");
+	if (!dt_node) {
+		pr_err("No bman device node available");
+		return -ENODEV;
+	}
+
+	ret = bman_init_ccsr(dt_node);
+	if (ret) {
+		pr_err("Failed(%d) to init bman ccsr", ret);
+		return ret;
 	}
 
 	done = 1;
