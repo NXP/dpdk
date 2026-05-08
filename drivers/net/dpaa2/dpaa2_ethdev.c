@@ -764,6 +764,7 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 					dev_rx_offloads_nodis;
 	dev_info->tx_offload_capa = dev_tx_offloads_sup |
 					dev_tx_offloads_nodis;
+	dev_info->dev_capa = 0;
 	dev_info->dev_capa &= ~RTE_ETH_DEV_CAPA_FLOW_RULE_KEEP;
 
 	dev_info->max_hash_mac_addrs = 0;
@@ -1605,16 +1606,18 @@ dpaa2_dev_rx_queue_release(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 
 	dpaa2_total_nb_rx_desc -= dpaa2_q->nb_desc;
 
-	if (cfg && cfg->cgid != DPAA2_INVALID_CGID) {
-		qopt = DPNI_QUEUE_OPT_CLEAR_CGID;
-		ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
-			DPNI_QUEUE_RX, dpaa2_q->tc_index, dpaa2_q->flow_id,
-			qopt, cfg);
-		if (ret) {
-			DPAA2_PMD_ERR("Unable to clear CGR from TC[%d].flow%d err=%d",
-				dpaa2_q->tc_index, dpaa2_q->flow_id, ret);
+	if (cfg) {
+		if (cfg->cgid != DPAA2_INVALID_CGID) {
+			qopt = DPNI_QUEUE_OPT_CLEAR_CGID;
+			ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
+				DPNI_QUEUE_RX, dpaa2_q->tc_index, dpaa2_q->flow_id,
+				qopt, cfg);
+			if (ret) {
+				DPAA2_PMD_ERR("Unable to clear CGR from TC[%d].flow%d err=%d",
+					dpaa2_q->tc_index, dpaa2_q->flow_id, ret);
+			}
+			priv->cgid_in_use[cfg->cgid]--;
 		}
-		priv->cgid_in_use[cfg->cgid]--;
 		rte_free(cfg);
 		dpaa2_q->cfg = NULL;
 	}
@@ -2251,10 +2254,8 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	}
 
 	/* Free the allocated memory for ethernet private data and dpni*/
-	if (!priv->cnt_idx_dma_mem)
-		rte_free(priv->cnt_idx_dma_mem);
-	if (!priv->cnt_values_dma_mem)
-		rte_free(priv->cnt_values_dma_mem);
+	rte_free(priv->cnt_idx_dma_mem);
+	rte_free(priv->cnt_values_dma_mem);
 	priv->cnt_idx_dma_mem = NULL;
 	priv->cnt_values_dma_mem = NULL;
 	priv->hw = NULL;

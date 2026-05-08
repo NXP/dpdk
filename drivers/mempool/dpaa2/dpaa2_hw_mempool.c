@@ -239,7 +239,7 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 		!s_dpaa2_pool_mp_msg_setup) {
 		ret = rte_mp_action_register(DPAA2_POOL_MP_SYNC,
 			dpaa2_mbuf_pool_mp_primary);
-		if (ret)
+		if (ret && rte_errno != ENOTSUP)
 			return ret;
 		s_dpaa2_pool_mp_msg_setup = 1;
 	}
@@ -295,7 +295,7 @@ rte_hw_mbuf_free_pool(struct rte_mempool *mp)
 	struct dpaa2_dpbp_dev *dpbp_node;
 
 	if (!mp->pool_data) {
-		DPAA2_MEMPOOL_ERR("Not a valid dpaa2 buffer pool");
+		DPAA2_MEMPOOL_ERR("Not a valid dpaa2 buffer pool %s", mp->name);
 		return;
 	}
 

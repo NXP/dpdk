@@ -125,7 +125,7 @@ static const struct rte_dpaa_xstats_name_off dpaa_xstats_strings[] = {
 		offsetof(struct dpaa_if_stats, terr)},
 	{"tx_vlan_frame",
 		offsetof(struct dpaa_if_stats, tvlan)},
-	{"rx_undersized",
+	{"tx_undersized",
 		offsetof(struct dpaa_if_stats, tund)},
 	{"rx_frame_counter",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rfrc)},
@@ -135,11 +135,11 @@ static const struct rte_dpaa_xstats_name_off dpaa_xstats_strings[] = {
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rlfc)},
 	{"rx_filter_frames_count",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rffc)},
-	{"rx_frame_discrad_count",
+	{"rx_frame_discard_count",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rfdc)},
 	{"rx_frame_list_dma_err_count",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rfldec)},
-	{"rx_out_of_buffer_discard ",
+	{"rx_out_of_buffer_discard",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rodc)},
 	{"rx_buf_diallocate",
 		offsetof(struct dpaa_if_rx_bmi_stats, fmbm_rbdc)},
@@ -465,8 +465,6 @@ dpaa_supported_ptypes_get(struct rte_eth_dev *dev, size_t *no_of_elements)
 		RTE_PTYPE_L4_TCP,
 		RTE_PTYPE_L4_UDP,
 		RTE_PTYPE_L4_FRAG,
-		RTE_PTYPE_L4_TCP,
-		RTE_PTYPE_L4_UDP,
 		RTE_PTYPE_L4_SCTP,
 		RTE_PTYPE_TUNNEL_ESP,
 		RTE_PTYPE_TUNNEL_GRE,
@@ -630,6 +628,7 @@ static int dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	/* release configuration memory */
 	rte_free(dpaa_intf->fc_conf);
+	dpaa_intf->fc_conf = NULL;
 
 	/* Release RX congestion Groups */
 	if (dpaa_intf->cgr_rx) {
@@ -674,6 +673,10 @@ static int dpaa_eth_dev_close(struct rte_eth_dev *dev)
 
 	rte_free(dpaa_intf->tx_queues);
 	dpaa_intf->tx_queues = NULL;
+
+	rte_free(dpaa_intf->tx_conf_queues);
+	dpaa_intf->tx_conf_queues = NULL;
+
 	if (dpaa_intf->port_handle) {
 		ret = dpaa_fm_deconfig(dpaa_intf, fif);
 		if (ret) {
@@ -993,7 +996,7 @@ dpaa_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 			values[i] =
 				values_copy[dpaa_xstats_strings[i].offset / 8];
 
-		fman_if_bmi_stats_get_all(dev->process_private, values);
+		fman_if_bmi_stats_get_all(dev->process_private, values_copy);
 		for (j = 0; i < stat_cnt; i++, j++)
 			values[i] = values_copy[j];
 
@@ -1144,9 +1147,6 @@ _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 	DPAA_PMD_INFO("Rx queue setup for queue index: %d fq_id (0x%x)",
 			queue_idx, rxq->fqid);
 
-	/* Shutdown FQ before configure */
-	qman_shutdown_fq(rxq->fqid);
-
 	if (rxq->vsp_id >= 0) {
 		vsp = &dpaa_intf->vsp[rxq->vsp_id];
 	} else {
@@ -1170,7 +1170,7 @@ _dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 		if (vsp->vsp_bp[i] && vsp->vsp_bp[i] != bp_info) {
 			DPAA_PMD_WARN("VSP%d' pool%d mp (%s) is replaced by %s",
 				rxq->vsp_id >= 0 ?
-				rxq->vsp_id >= 0 : dpaa_intf->base_vsp,
+				rxq->vsp_id : dpaa_intf->base_vsp,
 				i, vsp->vsp_bp[i]->mp->name, mps[i]->name);
 			mp_update = 1;
 		} else if (!vsp->vsp_bp[i]) {
@@ -2426,6 +2426,13 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 
 		vsp_id = dev_vspids[loop];
 
+		/* Shutdown FQ before configure to clean the queue */
+		ret = qman_shutdown_fq(fqid);
+		if (ret < 0) {
+			DPAA_PMD_ERR("Failed shutdown %s:rxq-%d-fqid = 0x%08x",
+				dpaa_intf->name, loop, fqid);
+		}
+
 		if (dpaa_intf->cgr_rx)
 			dpaa_intf->cgr_rx[loop].cgrid = cgrid[loop];
 
@@ -2569,6 +2576,8 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 	return 0;
 
 free_tx:
+	rte_free(dpaa_intf->tx_conf_queues);
+	dpaa_intf->tx_conf_queues= NULL;
 	rte_free(dpaa_intf->tx_queues);
 	dpaa_intf->tx_queues = NULL;
 	dpaa_intf->nb_tx_queues = 0;
