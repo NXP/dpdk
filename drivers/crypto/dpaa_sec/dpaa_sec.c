@@ -82,7 +82,7 @@ dpaa_sec_alloc_ctx(dpaa_sec_session *ses, int sg_count)
 			ses->qp[rte_lcore_id() % MAX_DPAA_CORES]->ctx_pool,
 			(void **)(&ctx));
 	if (!ctx || retval) {
-		DPAA_SEC_DP_WARN("Alloc sec descriptor failed!");
+		DPAA_SEC_DP_DEBUG("Alloc sec descriptor failed!");
 		return NULL;
 	}
 	/*
@@ -2134,7 +2134,7 @@ dpaa_sec_queue_pair_release(struct rte_cryptodev *dev,
 /** Setup a queue pair */
 static int
 dpaa_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
-		__rte_unused const struct rte_cryptodev_qp_conf *qp_conf,
+		const struct rte_cryptodev_qp_conf *qp_conf,
 		__rte_unused int socket_id)
 {
 	struct dpaa_sec_dev_private *internals;
@@ -2156,7 +2156,7 @@ dpaa_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 			dev->data->dev_id, qp_id);
 	if (!qp->ctx_pool) {
 		qp->ctx_pool = rte_mempool_create((const char *)str,
-							CTX_POOL_NUM_BUFS,
+							qp_conf->nb_descriptors,
 							CTX_POOL_BUF_SIZE,
 							CTX_POOL_CACHE_SIZE, 0,
 							NULL, NULL, NULL, NULL,
