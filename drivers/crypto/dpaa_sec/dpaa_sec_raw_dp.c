@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2022, 2025 NXP
+ * Copyright 2021-2022, 2025-2026 NXP
  */
 
 #include <rte_byteorder.h>
@@ -68,7 +68,7 @@ dpaa_sec_alloc_raw_ctx(dpaa_sec_session *ses, int sg_count)
 			ses->qp[rte_lcore_id() % MAX_DPAA_CORES]->ctx_pool,
 			(void **)(&ctx));
 	if (!ctx || retval) {
-		DPAA_SEC_DP_WARN("Alloc sec descriptor failed!");
+		DPAA_SEC_DP_DEBUG("Alloc sec descriptor failed!");
 		return NULL;
 	}
 	/*
