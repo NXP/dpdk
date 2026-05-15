@@ -42,10 +42,10 @@ Following information can be used to obtain these components:
     Use following command to get the DPDK code
 
     - Internal git repository:
-      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 25.11-qoriq-lf-rel
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 25.11-lf-rel
       OR,
      - External Github Repository:
-      $ git clone https://github.com/NXP/dpdk.git -b 25.11-qoriq-lf-rel
+      $ git clone https://github.com/NXP/dpdk.git -b 25.11-lf-rel
 
       $ cd dpdk # Change directory to cloned DPDK source code
 
@@ -624,8 +624,8 @@ Run DPDK applications on i.MX8MM, i.MX8MP, i.MX91 and i.MX93 boards:
      '$PREFIX_SCRIPT_PATH/' or '$PREFIX_BIN_PATH/'.
 
   5. Run-
-     ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
-     ./dpdk-l3fwd -c 0x1 --vdev='net_enetfec'  -n 1 -- -p 0x1 --config="(0,0,0)" -P --parse-ptype
+     ./dpdk-l2fwd -l 0 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
+     ./dpdk-l3fwd -l 0 --vdev='net_enetfec'  -n 1 -- -p 0x1 --config="(0,0,0)" -P --parse-ptype
      Note: In l3fwd for ENET-FEC Ethernet interface add '--parse-ptype'.
 
   6. Run/observe traffic
@@ -678,7 +678,12 @@ Booting steps:
     => setenv dpdk_enable "setenv fdtfile imx8dxl-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
        setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
        run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+       fdt resize 4096;
        fdt set /bus@5b000000/ethernet@5b050000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+       fdt set /aliases "ethernet1" "/soc@0/bus@5b000000/ethernet@5b050000";
+       fdt rm /bus@5b000000/ethernet@5b050000/mdio/ethernet-phy@0 "reset-gpios";
+       fdt rm /bus@5b000000/ethernet@5b050000/mdio/ethernet-phy@0 "reset-assert-us";
+       fdt rm /bus@5b000000/ethernet@5b050000/mdio/ethernet-phy@0 "reset-deassert-us";
        setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
@@ -731,9 +736,9 @@ Run DPDK applications on i.MX8MP, i.MX8DXL, i.MX91 and i.MX93 boards:
 	'$PREFIX_SCRIPT_PATH/' or '$PREFIX_BIN_PATH/'.
 
   5. Run -
-	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
-	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
-	./dpdk-l3fwd -c 0x2 -n 1 --vdev 'net_enetqos' -- -p 0x1 --config="(0,0,1)" -P
+	./dpdk-l2fwd -l 0,1 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
+	./dpdk-testpmd -l 0,1 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
+	./dpdk-l3fwd -l 1 -n 1 --vdev 'net_enetqos' -- -p 0x1 --config="(0,0,1)" -P
 	Note: In l3fwd for ENET-QOS Ethernet interface add '--parse-ptype'.
 
 Forwarding between both FEC and QOS:
@@ -741,9 +746,9 @@ Forwarding between both FEC and QOS:
 	To use both FEC and QOS interfaces on supported platforms i.e. i.MX 8MP, i.MX91 & i.MX93
 	follow both ports boot steps, refer sectons- Steps for ENET-FEC(Booting steps) & Steps for ENET-QOS(Booting steps).
 	Run-
-	    ./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
-	    ./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
-	    ./dpdk-l3fwd -c 0x1 -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 --config="(0,0,0), (1,0,0)" -P --parse-ptype
+	    ./dpdk-l2fwd -l 0-3 -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
+	    ./dpdk-testpmd -l 0-3 -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+	    ./dpdk-l3fwd -l 0 -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 --config="(0,0,0), (1,0,0)" -P --parse-ptype
 
 	Note: i.MX91 is single core platform, so it has limitaion to use core 0. Also-
 	      dpdk-testpmd is not supported.
@@ -785,9 +790,9 @@ For running ENETC PF ports in DPDK:
         $ dpdk-devbind.py -b enetc4_uio 0002:00:10.0
 
 3. Run dpdk-application:
-        $ dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1 -T 0
-        $ dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 --config="(0,0,1)"
-        $ dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1 --forward-mode=mac
+        $ dpdk-l2fwd -l 0,1 -n 1 -- -p 0x1 -T 0
+        $ dpdk-l3fwd -l 1 -n 1 -- -p 0x1 --config="(0,0,1)"
+        $ dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1 --forward-mode=mac
                 testpmd> set promisc all off
                 testpmd> start
 
@@ -864,15 +869,15 @@ them.
               eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
                 0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
 3. Run:
-	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
-	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
-	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
-	$ ./dpdk-ip_fragmentation -c 0x2 -n 1 -- -p 0x1
-	$ ./dpdk-ip_reassembly -c 0x2 -n 1 -- -p 0x1
+	$ ./dpdk-l2fwd -l 0,1 -n 1 -- -p 0x1
+	$ ./dpdk-l3fwd -l 1 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+	$ ./dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1
+	$ ./dpdk-ip_fragmentation -l 1 -n 1 -- -p 0x1
+	$ ./dpdk-ip_reassembly -l 1 -n 1 -- -p 0x1
 
 	Examples to run multiqueue:
-	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
-	$ ./dpdk-testpmd -c 0x3f -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
+	$ ./dpdk-l3fwd -l 0-5 -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
+	$ ./dpdk-testpmd -l 0-5 -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
 
 	Note: Use option "--no-lsc-interrupt" in dpdk-testpmd when using uio_pci_generic framework to avoid
 	      link interrupts registration related errors.
@@ -945,7 +950,7 @@ Run below commands to bind the device to igb_uio:
 	4. echo 0002:00:12.0 > /sys/bus/pci/drivers/igb_uio/bind
 
 Run dpdk-testpmd for checking status interrupts:
-	$ ./dpdk-testpmd -c 0xc --log-level=*:debug -n 1 -- -i --portmask 0x1
+	$ ./dpdk-testpmd -l 2,3 --log-level=*:debug -n 1 -- -i --portmask 0x1
 
 Open a new terminal and try to change the link status using either below commands
 or attach and de-attach cable:
@@ -983,8 +988,8 @@ PF and VF0 must be owned by kernel while testing.
               eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
                    0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
 7. Run:
-	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
-	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+	$ ./dpdk-l2fwd -l 0,1 -n 1 -- -p 0x1
+	$ ./dpdk-l3fwd -l 1 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 
 
 Running DPDK as Non-Root User with sudo permission:
@@ -1019,7 +1024,7 @@ Step 2: Setup Board for Non-Root User (as Root)
 
 Step 3: Run DPDK Application using Sudo
 
-	$ sudo dpdk-l2fwd -c 0x3 -- -p 0x3 -T 0
+	$ sudo dpdk-l2fwd -l 0,1 -- -p 0x3 -T 0
 
 TSN-QBV
 =======
@@ -1080,7 +1085,7 @@ $ tc -d -s qdisc show dev eth1 root
   argument as used in the below command.
 - The priorities for each queue are seperated by '|' in devargs.
 
-$ ./dpdk-testpmd -c 0xf -n 1 -a 0002:00:12.0,enetc4_txq_prior="1|2|3|4|5" --
+$ ./dpdk-testpmd -l 0-3 -n 1 -a 0002:00:12.0,enetc4_txq_prior="1|2|3|4|5" --
    -i --nb-ports=1 --nb-cores=3 --forward-mode=txonly --txq=3
    --txonly_vlan_multiq_enable --txpkts=1500
 
@@ -1140,9 +1145,9 @@ For running external ENETC PF ports in DPDK:
 	$ echo 512 > /proc/sys/vm/nr_hugepages
 
 6. Run dpdk-application:
-	$ dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1 -T 0
-	$ dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 --config="(0,0,1)"
-	$ dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1 --forward-mode=mac
+	$ dpdk-l2fwd -l 0,1 -n 1 -- -p 0x1 -T 0
+	$ dpdk-l3fwd -l 1 -n 1 -- -p 0x1 --config="(0,0,1)"
+	$ dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1 --forward-mode=mac
 		testpmd> set promisc all off
 		testpmd> start
 
@@ -1184,9 +1189,9 @@ CPU port. External ENETC ports do not support VF.
 		same MAC when run in mac mode.
 9. Run dpdk-application:
 
-	$ dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -T 0
-	$ dpdk-l3fwd -c 0x2 -n 1 -- -p 0x3 --config="(0,0,1), (1,0,1)"
-	$ dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x3 --forward-mode=mac
+	$ dpdk-l2fwd -l 0,1 -n 1 -- -p 0x3 -T 0
+	$ dpdk-l3fwd -l 1 -n 1 -- -p 0x3 --config="(0,0,1), (1,0,1)"
+	$ dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x3 --forward-mode=mac
 		testpmd> set promisc all off
 		testpmd> start
 10. To run dpdk-application with v2X fast crypto engine
@@ -1229,7 +1234,7 @@ Currently, The below test cases are not supported on I.MX943:
 
   Execute following commands to run DPDK testpmd
 
-  $./dpdk-testpmd -c 0xF -n 1 -- -i --portmask=0x3 --nb-cores=2
+  $./dpdk-testpmd -l 0-3 -n 1 -- -i --portmask=0x3 --nb-cores=2
 
   Above command uses a port mask of first two ports. On DPAA and DPAA2 platforms
   this is defined by their respective configuration. See note above.
@@ -1248,10 +1253,10 @@ Currently, The below test cases are not supported on I.MX943:
   as command help.
 
   On i.mx8mm platform
-  ./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=io
+  ./dpdk-testpmd -l 1,2 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=io
 
   In TX-only mode:
-	./dpdk-testpmd -c 0x6 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
+	./dpdk-testpmd -l 1,2 -n 1 --vdev='net_enetfec' -- -i --portmask=0x1 --nb-ports=1 --forward-mode=tx_only
 
   'dpdk-test' Application
   ~~~~~~~~~~~~~~~~~~
@@ -1298,11 +1303,11 @@ Currently, The below test cases are not supported on I.MX943:
 
   Execute following commands to run the 'l2fwd' example application:
 
-  $ ./dpdk-l2fwd -c 0x1 -n 1 -- -p 0x1 -q 1 -P
+  $ ./dpdk-l2fwd -l 0 -n 1 -- -p 0x1 -q 1 -P
 
   OR
 
-  $ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -P
+  $ ./dpdk-l2fwd -l 0,1 -n 1 -- -p 0x3 -q 1 -P
 
   In the above commands, the port mask has been modified to support first and
   first two ports, respectively. Also, the Core mask has been modified to
@@ -1323,13 +1328,13 @@ Currently, The below test cases are not supported on I.MX943:
   Execute following commands to run the 'l2fwd-crypto' example application:
 
   #cipher mode only
-  $ ./dpdk-l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 --chain CIPHER_ONLY --cipher_op ENCRYPT --cipher_algo aes-cbc --cipher_key 00:01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f
+  $ ./dpdk-l2fwd-crypto -l 0 -n 1 -- -p 0x1 --chain CIPHER_ONLY --cipher_op ENCRYPT --cipher_algo aes-cbc --cipher_key 00:01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f
 
   #auth mode only
-  $ ./dpdk-l2fwd-crypto -c 0x1 -n 1 -- -p 0x1 -q 1 --chain HASH_ONLY --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+  $ ./dpdk-l2fwd-crypto -l 0 -n 1 -- -p 0x1 -q 1 --chain HASH_ONLY --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
 
   #cipher-auth mode
-  $ ./dpdk-l2fwd-crypto -c 0xf -n 1 -- -p 0x1 --chain CIPHER_HASH --cipher_op ENCRYPT --cipher_algo aes-cbc --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
+  $ ./dpdk-l2fwd-crypto -l 0-3 -n 1 -- -p 0x1 --chain CIPHER_HASH --cipher_op ENCRYPT --cipher_algo aes-cbc --auth_algo sha1-hmac --auth_op GENERATE --auth_key_random_size 64
 
   For caam_jr mode:
 	use  --vdev 'crypto_caam_jr1'
@@ -1351,7 +1356,7 @@ Currently, The below test cases are not supported on I.MX943:
 
   Basic command with least parameters, running on single core(core 1) and handle single port:
 
-  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P
+  $ ./dpdk-l2fwd-policer -l 1 -- -p 0x1 -P
 
   Application processes all the RXQs belonging to all TCs(MAX_TCS x MAX_QUEUES), the flows are distributed
   by vlan ID, vlan priority and IPv4 address.
@@ -1408,19 +1413,19 @@ Currently, The below test cases are not supported on I.MX943:
 
   For 1 core - 1 Port, 1 queue per port =>
 
-  $ ./dpdk-l3fwd -c 0x1 -n 1 -- -p 0x1 --config="(0,0,0)"
+  $ ./dpdk-l3fwd -l 0 -n 1 -- -p 0x1 --config="(0,0,0)"
 
   For 4 core - 2 Port, 2 queue per port =>
 
-  $ ./dpdk-l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
+  $ ./dpdk-l3fwd -l 0-3 -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)"
 
   For 4 core - 2 Port with dest mac =>
 
-  $ ./dpdk-l3fwd -c 0xF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
+  $ ./dpdk-l3fwd -l 0-3 -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3)" --eth-dest=0,11:11:11:11:11:11 --eth-dest=1,00:00:00:11:11:11
 
   For 8 core - 4 Port with 4 queue per port =>
 
-  $ ./dpdk-l3fwd -c 0xFF -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
+  $ ./dpdk-l3fwd -l 0-7 -n 1 -- -p 0x3 -P --config="(0,0,0),(0,1,1),(1,0,2),(1,1,3),(2,0,4),(2,1,5),(3,0,6),(3,1,7)"
 
   Hereafter, use the packet generator (Spirent, for example) to send traffic
   streams with below configuration of the destination IP address in the frames
@@ -1456,7 +1461,7 @@ Currently, The below test cases are not supported on I.MX943:
 
   2. Run l3fwd application providing 'traffic-split-config' option for configuring DPDMUC rules:
 
-  $ ./dpdk-l3fwd -c 0x6 -n 1 -- -p 0x1 --config="(0,0,1),(0,1,2)" -P --traffic-split-config="(3,2152,2)"
+  $ ./dpdk-l3fwd -l 1,2 -n 1 -- -p 0x1 --config="(0,0,1),(0,1,2)" -P --traffic-split-config="(3,2152,2)"
 
   Here "--traffic-split-config - (type,val,mux_conn_id)" is defined by
        'type' - 1: ETHTYPE,
@@ -1486,13 +1491,13 @@ Currently, The below test cases are not supported on I.MX943:
   Endpoint0 Command:
   -----------------
   * Example command for 4 cores and 4 ports:
-  dpdk-ipsec-secgw -c 0xf -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
+  dpdk-ipsec-secgw -l 0-3 -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
   ep0_64X64_proto.cfg
 
   Endpoint1 Command:
   -----------------
   * Example command for 4 cores and 4 ports:
-  dpdk-ipsec-secgw -c 0xf -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
+  dpdk-ipsec-secgw -l 0-3 -n 1 -- -p 0xf -P -u 0xa --config="(0,0,0),(1,0,1),(2,0,2),(3,0,3)" -f
   ep1_64X64_proto.cfg
 
   IPsec Gateway 'dpdk-ipsec-secgw' Application using eventdev
@@ -1513,15 +1518,15 @@ Currently, The below test cases are not supported on I.MX943:
 
   -- With parallel queue configuration
 
-  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=parallel
+  $ ./dpdk-ipsec-secgw -l 2,3 --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=parallel
 
   -- With atomic queue configuration
 
-  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=atomic
+  $ ./dpdk-ipsec-secgw -l 2,3 --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=atomic
 
   -- With ordered queue configuration
 
-  $ ./dpdk-ipsec-secgw -c 0xc --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=ordered
+  $ ./dpdk-ipsec-secgw -l 2,3 --vdev="event_dpaa1" --vdev="event_dpaa1" -- -p 0x30 -P -u 0x20 -f ./ep0_64X64_proto.cfg --transfer-mode=event --event-schedule-type=ordered
 
   Note:
       * Above commands are for the 1st endpoint, to run on 2nd endpoint just change the configuration file "ep0_64X64_proto.cfg" to "ep1_64X64_proto.cfg"
@@ -1549,19 +1554,19 @@ Currently, The below test cases are not supported on I.MX943:
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=parallel
+  $ dpdk-l2fwd-event -l 1,4 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=parallel
 
   -- With atomic queue configuration
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=atomic
+  $ dpdk-l2fwd-event -l 1,4 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=atomic
 
   -- With ordered queue configuration
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l2fwd-event -c 0x14 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=ordered
+  $ dpdk-l2fwd-event -l 1,4 -n 1 --vdev=event_dpaa2 -- -p 0x1 -T 0 --mode=eventdev -q 1 --eventq-sched=ordered
 
   Layer-3 Forwarding 'dpdk-l3fwd' Application using eventdev
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1585,19 +1590,19 @@ Currently, The below test cases are not supported on I.MX943:
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l3fwd -c 0x2 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=parallel --event-eth-rxqs=1 -P
+  $ dpdk-l3fwd -l 1 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=parallel --event-eth-rxqs=1 -P
 
   -- With atomic queue configuration
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l3fwd -c 0x2 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=atomic --event-eth-rxqs=1 -P
+  $ dpdk-l3fwd -l 1 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=atomic --event-eth-rxqs=1 -P
 
   -- With ordered queue configuration
 
   For 1 core, 1 Port, 1 queue per port=>
 
-  $ dpdk-l3fwd -c 0x2 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=ordered --event-eth-rxqs=1 -P
+  $ dpdk-l3fwd -l 1 -n 1 --vdev="event_dpaa2" -- -p 0x1 --mode=eventdev --eventq-sched=ordered --event-eth-rxqs=1 -P
 
 ================================================================================
 Executing dpdk-pdump/dpdk-procinfo on DPAA2
@@ -1669,7 +1674,7 @@ Executing 'dpdk-pdump':
 
     Step 1: Execute testpmd using routine commands
 
-    $ dpdk-testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+    $ dpdk-testpmd -l 0-7 -n 1 -- -i --portmask=0x3 --nb-ports=2
 
     Step 2: Get testpmd ready for IO by selecting the mode
 
@@ -1709,7 +1714,7 @@ Executing `dpdk-procinfo`:
     Step 1: Execute any DPDK application using routine commands. For example,
     testpmd
 
-    $ testpmd -c 0xff -n 1 -- -i --portmask=0x3 --nb-ports=2
+    $ testpmd -l 0-7 -n 1 -- -i --portmask=0x3 --nb-ports=2
 
     Step 2: Execute 'dpdk-procinfo' on a separate terminal:
 
@@ -1804,14 +1809,14 @@ fragmentation and reassembly.
 Steps to execute IP-fragmentation:
 ----------------------------------
 1. Run the following command:
-	./dpdk-ip_fragmentation -c 0xf -n 1 -- -p 0x20
+	./dpdk-ip_fragmentation -l 0-3 -n 1 -- -p 0x20
 2. Send different sized packets from spirent and capture the frames to verify
    the fragments formed in every case.
 
 Steps to execute Reassembly application:
 -----------------------------------------
 1. Run the following command:
-	./dpdk-ip_reassembly -c 0xf -n 1 -- -p 0x20 --maxflows=1024
+	./dpdk-ip_reassembly -l 0-3 -n 1 -- -p 0x20 --maxflows=1024
 2. Create fragmented packets on Spirent and capture the output to verify the
    reassembled packet.
 
@@ -1929,7 +1934,7 @@ Applications validated DPAA/DPAA2 Platform
  3. l2fwd-crypto
  4. l2fwd-keepalive
  5. link_status_interrupt
-       (link_status_interrupt -c 0xf -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
+       (link_status_interrupt -l 0-3 -n 1  --log-level=8  -- -p 0x30 -q 1 -T 30)
  6. ip_fragmentation
  7. ip_reassembly
  8. ipv4_multicast
@@ -1969,7 +1974,7 @@ On non-root user:
 
 1. export DPRC=dprc.2
 2. Execute the following command to run the 'l2fwd' example application:
-       ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1
+       ./dpdk-l2fwd -l 0,1 -n 1 -- -p 0x3 -q 1
 
 ================================================================================
 
@@ -2134,7 +2139,7 @@ DPAA drivers uses the following devargs:
  It can be passed in the EAL args as:
         -a dpaa_bus:fm1-mac9,drv_ieee1588=1
 
-        eg. $ ./dpdk-l2fwd -c 0x3 -n 1  -a dpaa_bus:fm1-mac9,drv_ieee1588=1 --  -p 0x1 -q 1 -T 0
+        eg. $ ./dpdk-l2fwd -l 0,1 -n 1  -a dpaa_bus:fm1-mac9,drv_ieee1588=1 --  -p 0x1 -q 1 -T 0
 
 - ``recv_err_pkts``
 
@@ -2145,7 +2150,7 @@ packets to the main queue in VSP mode.
 It can be passed in the EAL args as:
         -a dpaa_bus:fm1-mac9,recv_err_pkts=1
 
-        eg. $ ./dpdk-l2fwd -c 0x3 -n 1  -a dpaa_bus:fm1-mac9,recv_err_pkts=1 --  -p 0x1 -q 1 -T 0
+        eg. $ ./dpdk-l2fwd -l 0,1 -n 1  -a dpaa_bus:fm1-mac9,recv_err_pkts=1 --  -p 0x1 -q 1 -T 0
 
 ================================================================================
 
@@ -2211,13 +2216,13 @@ On non-root user:
 
 1. export DPRC=dprc.2
 2. Execute the following command to run the 'l2fwd' example application:
-       ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x3 -q 1 -P
+       ./dpdk-l2fwd -l 0,1 -n 1 -- -p 0x3 -q 1 -P
 
 
 ======================================================================================================================================================
 
-Minimum NXP LSDK version supported: LSDK2512 (https://lsdk.github.io/)
+NXP Linux Factory Release version: Linux 6.18.2_2.0.0 (https://www.nxp.com/design/design-center/software/embedded-software/i-mx-software/embedded-linux-for-i-mx-applications-processors:IMXLINUX)
 DPDK base version used: Release 25.11
 More info on DPDK :  www.dpdk.org
 
-NXP contact: hemant.agrawal@nxp.com, dpdk-team@nxp1.onmicrosoft.com
+NXP contact: hemant.agrawal@nxp.com, g.singh@nxp.com, dpdk-team@nxp1.onmicrosoft.com

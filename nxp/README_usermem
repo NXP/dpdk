@@ -95,7 +95,6 @@ enetc_usmem@a1100000 {
 };
 ```
 
-Please note that the DTS changes have already been merged for the i.MX95 platform; therefore, no additional DTS modifications are required.
 ---
 
 ### Boot the Kernel
@@ -136,11 +135,11 @@ Reserved memory support is enabled for drivers **enetfec**, **enetqos**, **enetc
 ### Examples
 I/O rings only:
 ```bash
-dpdk-l2fwd -c 0xc -a 0002:00:02.0,resv_mem=2097152 -- -p 0x1 -T 0
+dpdk-l2fwd -l 2,3 -a 0002:00:02.0,resv_mem=2097152 -- -p 0x1 -T 0
 ```
 I/O + buffers:
 ```bash
-dpdk-l2fwd -c 0xc -a 0002:00:12.0,resv_mem=2097152 -- -p 0x1 -T 0 -r 4194304
+dpdk-l2fwd -l 2,3 -a 0002:00:12.0,resv_mem=2097152 -- -p 0x1 -T 0 -r 4194304
 ```
 
 update "0002:00:12.0" device with the device name in use. -r is reserved memory for data buffers in bytes.
