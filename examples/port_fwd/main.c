@@ -96,6 +96,8 @@ static uint32_t s_data_room_size;
 /* Global variables. */
 
 static bool force_quit;
+static bool stat_thread;
+static bool link_thread;
 
 /* mask of enabled ports */
 static uint32_t enabled_port_mask;
@@ -2587,7 +2589,7 @@ port_fwd_xstats_display(uint16_t port_id)
 	}
 }
 
-static void *perf_statistics(void *arg)
+static void *port_fwd_perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
 	unsigned int lcore_id, port_id, qid;
@@ -2619,9 +2621,13 @@ static void *perf_statistics(void *arg)
 		"affinity statistics thread to cpu 0 %s\r\n",
 		ret ? "failed" : "success");
 
+	stat_thread = true;
+
 loop:
-	if (force_quit)
+	if (force_quit) {
+		stat_thread = false;
 		return arg;
+	}
 
 	sleep(PKTGEN_STATISTICS_INTERVAL);
 	memset(rx_pkts, 0, RTE_MAX_ETHPORTS * sizeof(uint64_t));
@@ -2727,6 +2733,8 @@ skip_print_hw_status:
 
 	goto loop;
 
+	stat_thread = false;
+
 	return arg;
 }
 
@@ -2740,6 +2748,7 @@ port_fwd_check_link_stat(void *arg)
 	int ret;
 
 	memset(link, 0, sizeof(link));
+	link_thread = true;
 
 loop:
 	if (force_quit)
@@ -2780,6 +2789,7 @@ loop:
 	goto loop;
 
 quit:
+	link_thread = false;
 
 	return arg;
 }
@@ -3133,36 +3143,32 @@ main(int argc, char **argv)
 
 	init_lcore_tx_queues();
 
-	ret = pthread_create(&pid, NULL,
-			port_fwd_check_link_stat, NULL);
-	if (ret) {
-		rte_exit(EXIT_FAILURE,
-			"check link thread create failed(%d)\n", ret);
-	}
+	ret = pthread_create(&pid, NULL, port_fwd_check_link_stat, NULL);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "check link thread create failed(%d)\n", ret);
 
 	if (getenv("PORT_FWD_PERF_STATISTICS")) {
-		ret = pthread_create(&pid, NULL, perf_statistics,
-				NULL);
+		ret = pthread_create(&pid, NULL, port_fwd_perf_statistics, NULL);
 		if (ret) {
 			rte_exit(EXIT_FAILURE,
-				"perf statistics thread create failed(%d)\n",
-				ret);
+				"perf statistics thread create failed(%d)\n", ret);
 		}
 	}
 
 	ret = rte_remote_direct_traffic(s_remote_dir, &force_quit);
-	if (ret) {
-		rte_exit(EXIT_FAILURE,
-			"direct traffic failed!(%d)\n", ret);
-	}
+	if (ret)
+		rte_exit(EXIT_FAILURE, "direct traffic failed!(%d)\n", ret);
 
 	/* launch per-lcore init on every lcore */
 	ret = rte_eal_mp_remote_launch(port_fwd_demo.main_loop,
 			NULL, CALL_MAIN);
-	if (ret) {
-		rte_exit(EXIT_FAILURE,
-			"remote launch thread failed!(%d)\n", ret);
-	}
+	if (ret)
+		rte_exit(EXIT_FAILURE, "remote launch thread failed!(%d)\n", ret);
+
+	while (stat_thread)
+		sleep(1);
+	while (link_thread)
+		sleep(1);
 
 	if (pktmbuf_pool_tx_only) {
 		uint32_t avail;
@@ -3172,10 +3178,8 @@ main(int argc, char **argv)
 			"default pool(%s) avail=%d, total=%d\n",
 			pktmbuf_pool_tx_only->name,
 			avail, nb_mbuf);
-		if (avail != nb_mbuf) {
-			RTE_LOG(ERR, port_fwd,
-				"Leak or(and) duplicated buf error!\n");
-		}
+		if (avail != nb_mbuf)
+			RTE_LOG(ERR, port_fwd, "Leak or(and) duplicated buf error!\n");
 	}
 
 	/* stop ports */
