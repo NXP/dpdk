@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017,2019,2023-2025 NXP
+ *   Copyright 2017,2019,2023-2026 NXP
  *
  */
 
@@ -50,7 +50,7 @@ static int
 dpaa_mbuf_create_pool(struct rte_mempool *mp)
 {
 	struct bman_pool *bp;
-	struct bm_buffer bufs[8];
+	struct bm_buffer bufs[FSL_BM_BURST_MAX];
 	struct dpaa_bp_info *bp_info;
 	uint8_t bpid;
 	int num_bufs = 0, ret = 0;
@@ -85,8 +85,8 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 		 * then in 1s for the remainder.
 		 */
 		if (ret != 1)
-			ret = bman_acquire(bp, bufs, 8, 0);
-		if (ret < 8)
+			ret = bman_acquire(bp, bufs, FSL_BM_BURST_MAX, 0);
+		if (ret < FSL_BM_BURST_MAX)
 			ret = bman_acquire(bp, bufs, 1, 0);
 		if (ret > 0)
 			num_bufs += ret;
