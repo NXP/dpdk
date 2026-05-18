@@ -57,10 +57,9 @@ static void ossl_legacy_provider_load(void)
 {
 	/* Load Multiple providers into the default (NULL) library context */
 	legacy = OSSL_PROVIDER_load(NULL, "legacy");
-	if (legacy == NULL) {
-		OPENSSL_LOG(ERR, "Failed to load Legacy provider");
-		return;
-	}
+	if (legacy == NULL)
+		OPENSSL_LOG(WARNING, "Failed to load Legacy provider,"
+				" loading default provider");
 
 	deflt = OSSL_PROVIDER_load(NULL, "default");
 	if (deflt == NULL) {
