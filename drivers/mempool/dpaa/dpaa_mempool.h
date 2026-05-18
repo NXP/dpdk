@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017,2019,2024 -2025 NXP
+ *   Copyright 2017,2019,2024 -2026 NXP
  *
  */
 #ifndef __DPAA_MEMPOOL_H__
@@ -24,6 +24,7 @@
 
 /* total number of bpools on SoC */
 #define DPAA_MAX_BPOOLS	256
+#define DPAA_INVALID_BPID DPAA_MAX_BPOOLS
 
 /* Maximum release/acquire from BMAN */
 #define DPAA_MBUF_MAX_ACQ_REL  FSL_BM_BURST_MAX

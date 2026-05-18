@@ -25,9 +25,21 @@
 #include <rte_eal.h>
 #include <rte_malloc.h>
 #include <rte_ring.h>
+#include <rte_common.h>
 
 #include <dpaa_mempool.h>
 #include <dpaax_iova_table.h>
+
+struct dpaa_bpid_flag {
+	uint32_t flags;
+	int used;
+};
+
+/** Be referenced in destructor to release bpid allocated.
+ * Destructor can't access bman_pool from eal mem,
+ * we release ID with flag directly.
+ */
+static struct dpaa_bpid_flag s_dpaa_bpid_allocated_flag[DPAA_MAX_BPOOLS];
 
 #define FMAN_ERRATA_BOUNDARY ((uint64_t)4096)
 #define FMAN_ERRATA_BOUNDARY_MASK (~(FMAN_ERRATA_BOUNDARY - 1))
@@ -117,7 +129,7 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	rte_dpaa_bpid_info[bpid].ptov_off = 0;
 	rte_dpaa_bpid_info[bpid].flags = 0;
 
-	bp_info = rte_malloc(NULL,
+	bp_info = rte_zmalloc(NULL,
 			     sizeof(struct dpaa_bp_info),
 			     RTE_CACHE_LINE_SIZE);
 	if (!bp_info) {
@@ -129,6 +141,8 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	rte_memcpy(bp_info, (void *)&rte_dpaa_bpid_info[bpid],
 		   sizeof(struct dpaa_bp_info));
 	mp->pool_data = (void *)bp_info;
+	s_dpaa_bpid_allocated_flag[bpid].flags = params.flags;
+	s_dpaa_bpid_allocated_flag[bpid].used = true;
 	/* Update per core mempool cache threshold to optimal value which is
 	 * number of buffers that can be released to HW buffer pool in
 	 * a single API call.
@@ -150,6 +164,7 @@ static void
 dpaa_mbuf_free_pool(struct rte_mempool *mp)
 {
 	struct dpaa_bp_info *bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+	uint16_t i;
 
 	MEMPOOL_INIT_FUNC_TRACE();
 
@@ -157,9 +172,24 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 		bman_free_pool(bp_info->bp);
 		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d",
 				  bp_info->bpid);
-		rte_free(mp->pool_data);
-		bp_info->bp = NULL;
+		rte_dpaa_bpid_info[bp_info->bpid].mp = NULL;
+		rte_dpaa_bpid_info[bp_info->bpid].bp = NULL;
+		s_dpaa_bpid_allocated_flag[bp_info->bpid].used = false;
+		rte_free(bp_info);
 		mp->pool_data = NULL;
+	}
+
+	if (!rte_dpaa_bpid_info)
+		return;
+
+	for (i = 0; i < DPAA_MAX_BPOOLS; i++) {
+		if (rte_dpaa_bpid_info[i].mp)
+			break;
+	}
+
+	if (i == DPAA_MAX_BPOOLS) {
+		rte_free(rte_dpaa_bpid_info);
+		rte_dpaa_bpid_info = NULL;
 	}
 }
 
@@ -494,5 +524,22 @@ static const struct rte_mempool_ops dpaa_mpool_ops = {
 	.get_count = dpaa_mbuf_get_count,
 	.populate = dpaa_populate,
 };
+
+#define RTE_PRIORITY_104 104
+
+RTE_FINI_PRIO(dpaa_mpool_finish, 104)
+{
+	uint16_t bpid;
+
+	for (bpid = 0; bpid < DPAA_MAX_BPOOLS; bpid++) {
+		if (s_dpaa_bpid_allocated_flag[bpid].used) {
+			bman_free_bpid(bpid, s_dpaa_bpid_allocated_flag[bpid].flags);
+			s_dpaa_bpid_allocated_flag[bpid].used = false;
+		}
+	}
+	/** The rte_dpaa_bpid_info and bman_pool from EAL mem have been released
+	 * with EAL mem pool being destroyed.
+	 */
+}
 
 RTE_MEMPOOL_REGISTER_OPS(dpaa_mpool_ops);
