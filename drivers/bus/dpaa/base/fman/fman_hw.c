@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright 2017,2020,2022-2024 NXP
+ * Copyright 2017,2020,2022-2026 NXP
  *
  */
 
@@ -15,9 +15,7 @@
 #include <fsl_fman.h>
 #include <fsl_fman_crc64.h>
 #include <fsl_bman.h>
-
-#define FMAN_SP_SG_DISABLE                          0x80000000
-#define FMAN_SP_EXT_BUF_MARG_START_SHIFT            16
+#include <rte_dpaa_logs.h>
 
 /* Instantiate the global variable that the inline CRC64 implementation (in
  * <fsl_fman.h>) depends on.
@@ -39,8 +37,8 @@ fman_if_set_mcast_filter_table(struct fman_if *p)
 	void *hashtable_ctrl;
 	uint32_t i;
 
-	hashtable_ctrl = &((struct memac_regs *)__if->ccsr_map)->hashtable_ctrl;
-	for (i = 0; i < 64; i++)
+	hashtable_ctrl = &((struct memac_regs *)__if->memac_map)->hashtable_ctrl;
+	for (i = 0; i < MEMAC_HASH_ADDR_MAX_COMBINE; i++)
 		out_be32(hashtable_ctrl, i|HASH_CTRL_MCAST_EN);
 }
 
@@ -51,8 +49,8 @@ fman_if_reset_mcast_filter_table(struct fman_if *p)
 	void *hashtable_ctrl;
 	uint32_t i;
 
-	hashtable_ctrl = &((struct memac_regs *)__if->ccsr_map)->hashtable_ctrl;
-	for (i = 0; i < 64; i++)
+	hashtable_ctrl = &((struct memac_regs *)__if->memac_map)->hashtable_ctrl;
+	for (i = 0; i < MEMAC_HASH_ADDR_MAX_COMBINE; i++)
 		out_be32(hashtable_ctrl, i & ~HASH_CTRL_MCAST_EN);
 }
 
@@ -63,7 +61,7 @@ uint32_t get_mac_hash_code(uint64_t eth_addr)
 	uint32_t	xorVal = 0;
 	uint8_t		i, j;
 
-	for (i = 0; i < 6; i++) {
+	for (i = 0; i < RTE_ETHER_ADDR_LEN; i++) {
 		mask1 = eth_addr & (uint64_t)0x01;
 		eth_addr >>= 1;
 
@@ -101,7 +99,7 @@ fman_if_add_hash_mac_addr(struct fman_if *p, uint8_t *eth)
 	hash = get_mac_hash_code(eth_addr) & HASH_CTRL_ADDR_MASK;
 	hash = hash | HASH_CTRL_MCAST_EN;
 
-	hashtable_ctrl = &((struct memac_regs *)__if->ccsr_map)->hashtable_ctrl;
+	hashtable_ctrl = &((struct memac_regs *)__if->memac_map)->hashtable_ctrl;
 	out_be32(hashtable_ctrl, hash);
 
 	return 0;
@@ -111,27 +109,26 @@ int
 fman_if_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	void *mac_reg =
-		&((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_l;
-	u32 val = in_be32(mac_reg);
+	struct memac_regs *memac = __if->memac_map;
+	u32 val;
 	int i;
 
 	/* Get mac addr not supported on Offline port and onic port */
 	/* Return NULL mac address */
 	if (__if->__if.mac_type == fman_offline_internal ||
 	    __if->__if.mac_type == fman_onic) {
-		for (i = 0; i < 6; i++)
+		for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
 			eth[i] = 0x0;
 		return 0;
 	}
 
+	val = in_be32(&memac->mac_addr0.mac_addr_l);
 	eth[0] = (val & 0x000000ff) >> 0;
 	eth[1] = (val & 0x0000ff00) >> 8;
 	eth[2] = (val & 0x00ff0000) >> 16;
 	eth[3] = (val & 0xff000000) >> 24;
 
-	mac_reg =  &((struct memac_regs *)__if->ccsr_map)->mac_addr0.mac_addr_u;
-	val = in_be32(mac_reg);
+	val = in_be32(&memac->mac_addr0.mac_addr_u);
 
 	eth[4] = (val & 0x000000ff) >> 0;
 	eth[5] = (val & 0x0000ff00) >> 8;
@@ -142,25 +139,29 @@ fman_if_get_primary_mac_addr(struct fman_if *p, uint8_t *eth)
 void
 fman_if_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct memac_regs *memac = __if->memac_map;
 	void *reg;
 
 	/* Clear mac addr not supported on Offline port and onic port */
-	if (m->__if.mac_type == fman_offline_internal ||
-	    m->__if.mac_type == fman_onic)
+	if (__if->__if.mac_type == fman_offline_internal ||
+	    __if->__if.mac_type == fman_onic)
 		return;
 
+	if (addr_num > MEMAC_NUM_OF_PADDRS) {
+		DPAA_BUS_ERR("Invalid mac address index(%d)", addr_num);
+		return;
+	}
+
 	if (addr_num) {
-		reg = &((struct memac_regs *)m->ccsr_map)->
-				mac_addr[addr_num-1].mac_addr_l;
+		reg = &memac->mac_addr[addr_num - 1].mac_addr_l;
 		out_be32(reg, 0x0);
-		reg = &((struct memac_regs *)m->ccsr_map)->
-					mac_addr[addr_num-1].mac_addr_u;
+		reg = &memac->mac_addr[addr_num - 1].mac_addr_u;
 		out_be32(reg, 0x0);
 	} else {
-		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
+		reg = &memac->mac_addr0.mac_addr_l;
 		out_be32(reg, 0x0);
-		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
+		reg = &memac->mac_addr0.mac_addr_u;
 		out_be32(reg, 0x0);
 	}
 }
@@ -168,37 +169,41 @@ fman_if_clear_mac_addr(struct fman_if *p, uint8_t addr_num)
 int
 fman_if_add_mac_addr(struct fman_if *p, uint8_t *eth, uint8_t addr_num)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct memac_regs *memac = __if->memac_map;
 	void *reg;
 	u32 val;
 
 	/* Set mac addr not supported on Offline port and onic port */
-	if (m->__if.mac_type == fman_offline_internal ||
-	    m->__if.mac_type == fman_onic)
+	if (__if->__if.mac_type == fman_offline_internal ||
+	    __if->__if.mac_type == fman_onic)
 		return 0;
 
-	memcpy(&m->__if.mac_addr, eth, ETHER_ADDR_LEN);
+	if (addr_num > MEMAC_NUM_OF_PADDRS) {
+		DPAA_BUS_ERR("Invalid mac address index(%d)", addr_num);
+		return -EINVAL;
+	}
+
+	rte_memcpy(&__if->__if.mac_addr, eth, ETHER_ADDR_LEN);
 
 	if (addr_num)
-		reg = &((struct memac_regs *)m->ccsr_map)->
-					mac_addr[addr_num-1].mac_addr_l;
+		reg = &memac->mac_addr[addr_num - 1].mac_addr_l;
 	else
-		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_l;
+		reg = &memac->mac_addr0.mac_addr_l;
 
-	val = (m->__if.mac_addr.addr_bytes[0] |
-	       (m->__if.mac_addr.addr_bytes[1] << 8) |
-	       (m->__if.mac_addr.addr_bytes[2] << 16) |
-	       (m->__if.mac_addr.addr_bytes[3] << 24));
+	val = (__if->__if.mac_addr.addr_bytes[0] |
+			(__if->__if.mac_addr.addr_bytes[1] << 8) |
+			(__if->__if.mac_addr.addr_bytes[2] << 16) |
+			(__if->__if.mac_addr.addr_bytes[3] << 24));
 	out_be32(reg, val);
 
 	if (addr_num)
-		reg = &((struct memac_regs *)m->ccsr_map)->
-					mac_addr[addr_num-1].mac_addr_u;
+		reg = &memac->mac_addr[addr_num - 1].mac_addr_u;
 	else
-		reg = &((struct memac_regs *)m->ccsr_map)->mac_addr0.mac_addr_u;
+		reg = &memac->mac_addr0.mac_addr_u;
 
-	val = ((m->__if.mac_addr.addr_bytes[4] << 0) |
-	       (m->__if.mac_addr.addr_bytes[5] << 8));
+	val = ((__if->__if.mac_addr.addr_bytes[4] << 0) |
+	       (__if->__if.mac_addr.addr_bytes[5] << 8));
 	out_be32(reg, val);
 
 	return 0;
@@ -211,10 +216,8 @@ fman_if_set_rx_ignore_pause_frames(struct fman_if *p, bool enable)
 	u32 value = 0;
 	void *cmdcfg;
 
-	assert(fman_ccsr_map_fd != -1);
-
 	/* Set Rx Ignore Pause Frames */
-	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	cmdcfg = &((struct memac_regs *)__if->memac_map)->command_config;
 	if (enable)
 		value = in_be32(cmdcfg) | CMD_CFG_PAUSE_IGNORE;
 	else
@@ -229,10 +232,8 @@ fman_if_conf_max_frame_len(struct fman_if *p, unsigned int max_frame_len)
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	unsigned int *maxfrm;
 
-	assert(fman_ccsr_map_fd != -1);
-
 	/* Set Max frame length */
-	maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+	maxfrm = &((struct memac_regs *)__if->memac_map)->maxfrm;
 	out_be32(maxfrm, (MAXFRM_RX_MASK & max_frame_len));
 }
 
@@ -240,7 +241,7 @@ void
 fman_if_stats_get(struct fman_if *p, struct rte_eth_stats *stats)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct memac_regs *regs = m->ccsr_map;
+	struct memac_regs *regs = m->memac_map;
 
 	/* read recved packet count */
 	stats->ipackets = (u64)in_be32(&regs->rfrm_l) |
@@ -263,7 +264,7 @@ void
 fman_if_stats_get_all(struct fman_if *p, uint64_t *value, int n)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct memac_regs *regs = m->ccsr_map;
+	struct memac_regs *regs = m->memac_map;
 	int i;
 	uint64_t base_offset = offsetof(struct memac_regs, reoct_l);
 
@@ -278,7 +279,7 @@ void
 fman_if_stats_reset(struct fman_if *p)
 {
 	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct memac_regs *regs = m->ccsr_map;
+	struct memac_regs *regs = m->memac_map;
 	uint32_t tmp;
 
 	tmp = in_be32(&regs->statn_config);
@@ -294,62 +295,50 @@ fman_if_stats_reset(struct fman_if *p)
 void
 fman_if_bmi_stats_enable(struct fman_if *p)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
 	uint32_t tmp;
 
-	tmp = in_be32(&regs->fmbm_rstc);
-
+	tmp = in_be32(&rx_bmi->fmbm_rstc);
 	tmp |= FMAN_BMI_COUNTERS_EN;
-
-	out_be32(&regs->fmbm_rstc, tmp);
+	out_be32(&rx_bmi->fmbm_rstc, tmp);
 }
 
 void
 fman_if_bmi_stats_disable(struct fman_if *p)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
 	uint32_t tmp;
 
-	tmp = in_be32(&regs->fmbm_rstc);
-
+	tmp = in_be32(&rx_bmi->fmbm_rstc);
 	tmp &= ~FMAN_BMI_COUNTERS_EN;
-
-	out_be32(&regs->fmbm_rstc, tmp);
+	out_be32(&rx_bmi->fmbm_rstc, tmp);
 }
 
 void
 fman_if_bmi_stats_get_all(struct fman_if *p, uint64_t *value)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
-	int i = 0;
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	uint8_t *bmi = __if->rx_bmi_map;
+	uint32_t offset = FMAN_IF_BMI_RX_STAT_OFFSET_START;
+	int i, n = FMAN_IF_BMI_RX_STAT_OFFSET_END - FMAN_IF_BMI_RX_STAT_OFFSET_START;
 
-	value[i++] = (u32)in_be32(&regs->fmbm_rfrc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rfbc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rlfc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rffc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rfdc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rfldec);
-	value[i++] = (u32)in_be32(&regs->fmbm_rodc);
-	value[i++] = (u32)in_be32(&regs->fmbm_rbdc);
+	for (i = 0; i < n; i++)
+		value[i] = in_be32(bmi + offset + i * sizeof(rte_be32_t));
 }
 
 void
 fman_if_bmi_stats_reset(struct fman_if *p)
 {
-	struct __fman_if *m = container_of(p, struct __fman_if, __if);
-	struct rx_bmi_regs *regs = (struct rx_bmi_regs *)m->bmi_map;
+	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	uint8_t *rx_bmi = __if->rx_bmi_map;
+	uint32_t offset;
 
-	out_be32(&regs->fmbm_rfrc, 0);
-	out_be32(&regs->fmbm_rfbc, 0);
-	out_be32(&regs->fmbm_rlfc, 0);
-	out_be32(&regs->fmbm_rffc, 0);
-	out_be32(&regs->fmbm_rfdc, 0);
-	out_be32(&regs->fmbm_rfldec, 0);
-	out_be32(&regs->fmbm_rodc, 0);
-	out_be32(&regs->fmbm_rbdc, 0);
+	for (offset = FMAN_IF_BMI_RX_STAT_OFFSET_START;
+		offset <= FMAN_IF_BMI_RX_STAT_OFFSET_END;
+		offset += sizeof(rte_be32_t))
+		out_be32(rx_bmi + offset, 0);
 }
 
 void
@@ -358,10 +347,8 @@ fman_if_promiscuous_enable(struct fman_if *p)
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *cmdcfg;
 
-	assert(fman_ccsr_map_fd != -1);
-
 	/* Enable Rx promiscuous mode */
-	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	cmdcfg = &((struct memac_regs *)__if->memac_map)->command_config;
 	out_be32(cmdcfg, in_be32(cmdcfg) | CMD_CFG_PROMIS_EN);
 }
 
@@ -371,10 +358,8 @@ fman_if_promiscuous_disable(struct fman_if *p)
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	void *cmdcfg;
 
-	assert(fman_ccsr_map_fd != -1);
-
 	/* Disable Rx promiscuous mode */
-	cmdcfg = &((struct memac_regs *)__if->ccsr_map)->command_config;
+	cmdcfg = &((struct memac_regs *)__if->memac_map)->command_config;
 	out_be32(cmdcfg, in_be32(cmdcfg) & (~CMD_CFG_PROMIS_EN));
 }
 
@@ -382,33 +367,38 @@ void
 fman_if_enable_rx(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct memac_regs *memac = __if->memac_map;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(memac);
 
 	/* enable Rx and Tx */
-	out_be32(__if->ccsr_map + 8, in_be32(__if->ccsr_map + 8) | 3);
+	out_be32(&memac->command_config,
+		in_be32(&memac->command_config) | MEMAC_TX_ENABLE | MEMAC_RX_ENABLE);
 }
 
 void
 fman_if_disable_rx(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct memac_regs *memac = __if->memac_map;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(memac);
 
 	/* only disable Rx, not Tx */
-	out_be32(__if->ccsr_map + 8, in_be32(__if->ccsr_map + 8) & ~(u32)2);
+	out_be32(&memac->command_config,
+		in_be32(&memac->command_config) & ~MEMAC_RX_ENABLE);
 }
 
 int
 fman_if_get_rx_status(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
+	struct memac_regs *memac = __if->memac_map;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(memac);
 
 	/* return true if RX bit is set */
-	return !!(in_be32(__if->ccsr_map + 8) & (u32)2);
+	return !!(in_be32(&memac->command_config) & MEMAC_RX_ENABLE);
 }
 
 void
@@ -416,16 +406,14 @@ fman_if_loopback_enable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
-
 	/* Enable loopback mode */
 	if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
 		unsigned int *ifmode =
-			&((struct memac_regs *)__if->ccsr_map)->if_mode;
+			&((struct memac_regs *)__if->memac_map)->if_mode;
 		out_be32(ifmode, in_be32(ifmode) | IF_MODE_RLP);
 	} else{
 		unsigned int *cmdcfg =
-			&((struct memac_regs *)__if->ccsr_map)->command_config;
+			&((struct memac_regs *)__if->memac_map)->command_config;
 		out_be32(cmdcfg, in_be32(cmdcfg) | CMD_CFG_LOOPBACK_EN);
 	}
 }
@@ -435,38 +423,36 @@ fman_if_loopback_disable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
 	/* Disable loopback mode */
 	if ((__if->__if.is_memac) && (__if->__if.is_rgmii)) {
 		unsigned int *ifmode =
-			&((struct memac_regs *)__if->ccsr_map)->if_mode;
+			&((struct memac_regs *)__if->memac_map)->if_mode;
 		out_be32(ifmode, in_be32(ifmode) & ~IF_MODE_RLP);
 	} else {
 		unsigned int *cmdcfg =
-			&((struct memac_regs *)__if->ccsr_map)->command_config;
+			&((struct memac_regs *)__if->memac_map)->command_config;
 		out_be32(cmdcfg, in_be32(cmdcfg) & ~CMD_CFG_LOOPBACK_EN);
 	}
 }
 
 void
-fman_if_set_bp(struct fman_if *fm_if, int bpid,
-	size_t bufsize, uint16_t idx)
+fman_if_set_bp(struct fman_if *fm_if, uint32_t bpid,
+	uint32_t bufsize, uint8_t idx)
 {
 	u32 fmbm_ebmpi;
-	u32 ebmpi_val_ace = 0xc0000000;
-	u32 ebmpi_mask = 0xffc00000;
-
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(rx_bmi && idx < FMAN_PORT_MAX_EXT_POOLS_NUM);
 
-	fmbm_ebmpi =
-		in_be32(&((struct rx_bmi_regs*)__if->bmi_map)->fmbm_ebmpi[idx]);
-	fmbm_ebmpi = ebmpi_val_ace | (fmbm_ebmpi & ebmpi_mask) | (bpid << 16) |
-		     (bufsize);
+	bpid = bpid & BMI_PORT_EXT_BMP_BPID_MASK;
+	bpid = bpid << BMI_PORT_EXT_BMP_BPID_SHIFT;
+	bufsize = bufsize & BMI_PORT_EXT_BMP_BSIZE_MASK;
+	bufsize = bufsize << BMI_PORT_EXT_BMP_BSIZE_SHIFT;
 
-	out_be32(&((struct rx_bmi_regs*)__if->bmi_map)->fmbm_ebmpi[idx],
-		 fmbm_ebmpi);
+	fmbm_ebmpi = BMI_PORT_EXT_BMP_VALID | BMI_PORT_EXT_BMP_ACE | bpid | bufsize;
+
+	out_be32(&rx_bmi->fmbm_ebmpi[idx], fmbm_ebmpi);
 }
 
 int
@@ -475,9 +461,7 @@ fman_if_get_fc_threshold(struct fman_if *fm_if)
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *fmbm_mpd;
 
-	assert(fman_ccsr_map_fd != -1);
-
-	fmbm_mpd = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_mpd;
+	fmbm_mpd = &((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_mpd;
 	return in_be32(fmbm_mpd);
 }
 
@@ -488,9 +472,7 @@ fman_if_set_fc_threshold(struct fman_if *fm_if, u32 high_water,
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *fmbm_mpd;
 
-	assert(fman_ccsr_map_fd != -1);
-
-	fmbm_mpd = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_mpd;
+	fmbm_mpd = &((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_mpd;
 	out_be32(fmbm_mpd, FMAN_ENABLE_BPOOL_DEPLETION);
 	return bm_pool_set_hw_threshold(bpid, low_water, high_water);
 
@@ -501,9 +483,7 @@ fman_if_get_fc_quanta(struct fman_if *fm_if)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
-
-	return in_be32(&((struct memac_regs *)__if->ccsr_map)->pause_quanta[0]);
+	return in_be32(&((struct memac_regs *)__if->memac_map)->pause_quanta[0]);
 }
 
 int
@@ -511,9 +491,7 @@ fman_if_set_fc_quanta(struct fman_if *fm_if, u16 pause_quanta)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
-
-	out_be32(&((struct memac_regs *)__if->ccsr_map)->pause_quanta[0],
+	out_be32(&((struct memac_regs *)__if->memac_map)->pause_quanta[0],
 		 pause_quanta);
 	return 0;
 }
@@ -526,11 +504,9 @@ fman_if_get_fdoff(struct fman_if *fm_if)
 
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
+	fmbm_rebm = in_be32(&((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_rebm);
 
-	fmbm_rebm = in_be32(&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rebm);
-
-	fdoff = (fmbm_rebm >> FMAN_SP_EXT_BUF_MARG_START_SHIFT) & 0x1ff;
+	fdoff = (fmbm_rebm >> BMI_PORT_REBM_BSM_SHIFT) & BMI_PORT_REBM_BSM_MASK;
 
 	return fdoff;
 }
@@ -540,10 +516,8 @@ fman_if_set_err_fqid(struct fman_if *fm_if, uint32_t err_fqid)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
-
 	unsigned int *fmbm_refqid =
-			&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_refqid;
+			&((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_refqid;
 	out_be32(fmbm_refqid, err_fqid);
 }
 
@@ -551,20 +525,23 @@ int
 fman_if_get_ic_params(struct fman_if *fm_if, struct fman_if_ic_params *icp)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
-	int val = 0;
-	int iceof_mask = 0x001f0000;
-	int icsz_mask = 0x0000001f;
-	int iciof_mask = 0x00000f00;
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	u32 val, iceof, iciof, icsz;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(rx_bmi);
 
-	unsigned int *fmbm_ricp =
-		&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_ricp;
-	val = in_be32(fmbm_ricp);
+	val = in_be32(&rx_bmi->fmbm_ricp);
 
-	icp->iceof = (val & iceof_mask) >> 12;
-	icp->iciof = (val & iciof_mask) >> 4;
-	icp->icsz = (val & icsz_mask) << 4;
+	iceof = val >> BMI_PORT_ICP_ICEOF_SHIFT;
+	iceof = iceof & BMI_PORT_ICP_ICEOF_MASK;
+	iciof = val >> BMI_PORT_ICP_ICIOF_SHIFT;
+	iciof = iciof & BMI_PORT_ICP_ICIOF_MASK;
+	icsz = val >> BMI_PORT_ICP_ICSZ_SHIFT;
+	icsz = icsz & BMI_PORT_ICP_ICSZ_MASK;
+
+	icp->iceof = iceof * BMI_PORT_ICP_SIZE_UNIT;
+	icp->iciof = iciof * BMI_PORT_ICP_SIZE_UNIT;
+	icp->icsz = icsz * BMI_PORT_ICP_SIZE_UNIT;
 
 	return 0;
 }
@@ -574,24 +551,24 @@ fman_if_set_ic_params(struct fman_if *fm_if,
 			  const struct fman_if_ic_params *icp)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
-	int val = 0;
-	int iceof_mask = 0x001f0000;
-	int icsz_mask = 0x0000001f;
-	int iciof_mask = 0x00000f00;
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	struct tx_bmi_regs *tx_bmi = __if->tx_bmi_map;
+	u32 val, iceof, iciof, icsz;
 
-	assert(fman_ccsr_map_fd != -1);
+	RTE_ASSERT(rx_bmi && tx_bmi);
 
-	val |= (icp->iceof << 12) & iceof_mask;
-	val |= (icp->iciof << 4) & iciof_mask;
-	val |= (icp->icsz >> 4) & icsz_mask;
+	iceof = (icp->iceof / BMI_PORT_ICP_SIZE_UNIT) & BMI_PORT_ICP_ICEOF_MASK;
+	iciof = (icp->iciof / BMI_PORT_ICP_SIZE_UNIT) & BMI_PORT_ICP_ICIOF_MASK;
+	icsz = (icp->icsz / BMI_PORT_ICP_SIZE_UNIT) & BMI_PORT_ICP_ICSZ_MASK;
 
-	unsigned int *fmbm_ricp =
-		&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_ricp;
-	out_be32(fmbm_ricp, val);
+	iceof = iceof << BMI_PORT_ICP_ICEOF_SHIFT;
+	iciof = iciof << BMI_PORT_ICP_ICIOF_SHIFT;
+	icsz = icsz << BMI_PORT_ICP_ICSZ_SHIFT;
+	val = iceof | iciof | icsz;
 
-	unsigned int *fmbm_ticp =
-		&((struct tx_bmi_regs *)__if->tx_bmi_map)->fmbm_ticp;
-	out_be32(fmbm_ticp, val);
+	out_be32(&rx_bmi->fmbm_ricp, val);
+	if (tx_bmi)
+		out_be32(&tx_bmi->fmbm_ticp, val);
 
 	return 0;
 }
@@ -600,17 +577,18 @@ void
 fman_if_set_fdoff(struct fman_if *fm_if, uint32_t fd_offset)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
-	unsigned int *fmbm_rebm;
-	int val = 0;
-	int fmbm_mask = 0x01ff0000;
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	uint32_t val;
 
-	val = fd_offset << FMAN_SP_EXT_BUF_MARG_START_SHIFT;
+	RTE_ASSERT(rx_bmi);
 
-	assert(fman_ccsr_map_fd != -1);
+	val = in_be32(&rx_bmi->fmbm_rebm);
+	val &= ~(BMI_PORT_REBM_BSM_MASK << BMI_PORT_REBM_BSM_SHIFT);
+	fd_offset &= BMI_PORT_REBM_BSM_MASK;
+	fd_offset = fd_offset << BMI_PORT_REBM_BSM_SHIFT;
+	val |= fd_offset;
 
-	fmbm_rebm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rebm;
-
-	out_be32(fmbm_rebm, (in_be32(fmbm_rebm) & ~fmbm_mask) | val);
+	out_be32(&rx_bmi->fmbm_rebm, val);
 }
 
 void
@@ -619,9 +597,7 @@ fman_if_set_maxfrm(struct fman_if *fm_if, uint16_t max_frm)
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *reg_maxfrm;
 
-	assert(fman_ccsr_map_fd != -1);
-
-	reg_maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+	reg_maxfrm = &((struct memac_regs *)__if->memac_map)->maxfrm;
 
 	out_be32(reg_maxfrm, (in_be32(reg_maxfrm) & 0xFFFF0000) | max_frm);
 }
@@ -632,9 +608,7 @@ fman_if_get_maxfrm(struct fman_if *fm_if)
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *reg_maxfrm;
 
-	assert(fman_ccsr_map_fd != -1);
-
-	reg_maxfrm = &((struct memac_regs *)__if->ccsr_map)->maxfrm;
+	reg_maxfrm = &((struct memac_regs *)__if->memac_map)->maxfrm;
 
 	return (in_be32(reg_maxfrm) | 0x0000FFFF);
 }
@@ -653,11 +627,9 @@ fman_if_get_sg_enable(struct fman_if *fm_if)
 
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 
-	assert(fman_ccsr_map_fd != -1);
+	fmbm_rebm = in_be32(&((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_rebm);
 
-	fmbm_rebm = in_be32(&((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rebm);
-
-	return (fmbm_rebm & FMAN_SP_SG_DISABLE) ? 0 : 1;
+	return (fmbm_rebm & BMI_PORT_REBM_SG_DISABLE) ? 0 : 1;
 }
 
 void
@@ -666,16 +638,14 @@ fman_if_set_sg(struct fman_if *fm_if, int enable)
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *fmbm_rebm;
 	int val;
-	int fmbm_mask = FMAN_SP_SG_DISABLE;
+	int fmbm_mask = BMI_PORT_REBM_SG_DISABLE;
 
 	if (enable)
 		val = 0;
 	else
-		val = FMAN_SP_SG_DISABLE;
+		val = BMI_PORT_REBM_SG_DISABLE;
 
-	assert(fman_ccsr_map_fd != -1);
-
-	fmbm_rebm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rebm;
+	fmbm_rebm = &((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_rebm;
 
 	out_be32(fmbm_rebm, (in_be32(fmbm_rebm) & ~fmbm_mask) | val);
 }
@@ -686,28 +656,30 @@ fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia)
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *fmqm_pndn;
 
-	assert(fman_ccsr_map_fd != -1);
-
 	fmqm_pndn = &((struct fman_port_qmi_regs *)__if->qmi_map)->fmqm_pndn;
 
 	out_be32(fmqm_pndn, nia);
 }
 
 void
-fman_if_discard_rx_errors(struct fman_if *fm_if)
+fman_if_discard_rx_errors(struct fman_if *fm_if,
+	uint32_t err_discard)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
 	unsigned int *fmbm_rfsdm, *fmbm_rfsem;
 
-	fmbm_rfsem = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsem;
+	fmbm_rfsem = &((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_rfsem;
 	out_be32(fmbm_rfsem, 0);
 
 	/* Configure the discard mask to discard the error packets which have
 	 * DMA errors, Frame size error, Header error etc. The mask 0x010EE3F0
 	 * is to configured discard all the errors which come in the FD[STATUS]
 	 */
-	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsdm;
-	out_be32(fmbm_rfsdm, 0x010EE3F0);
+	if (!err_discard)
+		err_discard = 0x010EE3F0;
+
+	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->rx_bmi_map)->fmbm_rfsdm;
+	out_be32(fmbm_rfsdm, err_discard);
 }
 
 void
@@ -715,16 +687,13 @@ fman_if_receive_rx_errors(struct fman_if *fm_if,
 	unsigned int err_eq)
 {
 	struct __fman_if *__if = container_of(fm_if, struct __fman_if, __if);
-	unsigned int *fmbm_rcfg, *fmbm_rfsdm, *fmbm_rfsem;
-	unsigned int val;
+	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	uint32_t val;
 
-	fmbm_rcfg = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rcfg;
-	fmbm_rfsdm = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsdm;
-	fmbm_rfsem = &((struct rx_bmi_regs *)__if->bmi_map)->fmbm_rfsem;
+	val = in_be32(&rx_bmi->fmbm_rcfg);
+	out_be32(&rx_bmi->fmbm_rcfg, val | BMI_PORT_CFG_FDOVR);
 
-	val = in_be32(fmbm_rcfg);
-	out_be32(fmbm_rcfg, val | BMI_PORT_CFG_FDOVR);
-
-	out_be32(fmbm_rfsdm, 0);
-	out_be32(fmbm_rfsem, err_eq);
+	val = in_be32(&rx_bmi->fmbm_rfsdm);
+	out_be32(&rx_bmi->fmbm_rfsdm, val & (~err_eq));
+	out_be32(&rx_bmi->fmbm_rfsem, err_eq);
 }

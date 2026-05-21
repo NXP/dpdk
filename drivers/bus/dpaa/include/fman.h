@@ -84,6 +84,9 @@ struct mac_addr {
 
 #define MEMAC_RX_ENABLE ((uint32_t)0x2)
 #define MEMAC_TX_ENABLE ((uint32_t)0x1)
+#define MEMAC_HASH_ADDR_MASK 0x3f
+#define MEMAC_HASH_ADDR_MAX_COMBINE (MEMAC_HASH_ADDR_MASK + 1)
+
 struct memac_regs {
 	/* General Control and Status */
 	uint32_t res0000[2];
@@ -230,6 +233,29 @@ struct memac_regs {
 };
 
 #define BMI_PORT_CFG_FDOVR 0x02000000
+#define BMI_PORT_EXT_BMP_VALID 0x80000000
+#define BMI_PORT_EXT_BMP_ACE 0x40000000
+#define BMI_PORT_EXT_BMP_BP 0x20000000
+#define BMI_PORT_EXT_BMP_BPID_SHIFT 16
+#define BMI_PORT_EXT_BMP_BPID_MASK ((uint32_t)0x3f)
+#define BMI_PORT_EXT_BMP_BSIZE_SHIFT 0
+#define BMI_PORT_EXT_BMP_BSIZE_MASK ((uint32_t)0xffff)
+
+#define BMI_PORT_ICP_ICEOF_SHIFT 16
+#define BMI_PORT_ICP_ICIOF_SHIFT 8
+#define BMI_PORT_ICP_ICSZ_SHIFT 0
+
+#define BMI_PORT_ICP_ICEOF_MASK ((uint32_t)0x1f)
+#define BMI_PORT_ICP_ICIOF_MASK ((uint32_t)0x0f)
+#define BMI_PORT_ICP_ICSZ_MASK ((uint32_t)0x1f)
+
+#define BMI_PORT_ICP_SIZE_UNIT 16
+
+#define BMI_PORT_REBM_BSM_SHIFT 16
+#define BMI_PORT_REBM_BSM_MASK ((uint32_t)0x1ff)
+#define BMI_PORT_REBM_BEM_SHIFT 0
+#define BMI_PORT_REBM_BEM_MASK ((uint32_t)0x1ff)
+#define BMI_PORT_REBM_SG_DISABLE 0x80000000
 
 struct rx_bmi_regs {
 	uint32_t fmbm_rcfg;		/**< Rx Configuration */
@@ -462,18 +488,24 @@ struct __fman_if {
 	char node_name[IF_NAME_MAX_LEN];
 	char node_path[PATH_MAX];
 	uint64_t regs_size;
-	void *ccsr_map;
-	void *bmi_map;
+	void *memac_map;
+	void *rx_bmi_map;
 	void *tx_bmi_map;
 	void *qmi_map;
 };
+
+#define MEMMAC_REG_OFFSET(reg) offsetof(struct memac_regs, reg)
+#define BMI_RX_REG_OFFSET(reg) offsetof(struct rx_bmi_regs, reg)
+#define BMI_TX_REG_OFFSET(reg) offsetof(struct tx_bmi_regs, reg)
+
+#define FMAN_IF_BMI_RX_STAT_OFFSET_START BMI_RX_REG_OFFSET(fmbm_rfrc)
+
+#define FMAN_IF_BMI_RX_STAT_OFFSET_END BMI_RX_REG_OFFSET(fmbm_rbdc)
 
 /* And this is the base list node that the interfaces are added to. (See
  * fman_if_enable_all_rx() below for an example of its use.)
  */
 extern const struct list_head *fman_if_list;
-
-extern int fman_ccsr_map_fd;
 
 /* To iterate the "bpool_list" for an interface. Eg;
  *        struct fman_if *p = get_ptr_to_some_interface();

@@ -15,7 +15,7 @@
 #include <rte_dpaa_logs.h>
 #include <rte_string_fns.h>
 
-int fman_ccsr_map_fd = -1;
+static int fman_ccsr_map_fd = -1;
 static COMPAT_LIST_HEAD(__ifs);
 static COMPAT_LIST_HEAD(__fmans);
 
@@ -464,9 +464,9 @@ fman_if_init(const struct device_node *dpa_node, int fd)
 			 mname, regs_addr);
 		goto err;
 	}
-	__if->ccsr_map = mmap(NULL, __if->regs_size,
+	__if->memac_map = mmap(NULL, __if->regs_size,
 		PROT_READ | PROT_WRITE, MAP_SHARED, fd, phys_addr);
-	if (__if->ccsr_map == MAP_FAILED) {
+	if (__if->memac_map == MAP_FAILED) {
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")", phys_addr);
 		goto err;
 	}
@@ -598,9 +598,9 @@ fman_if_init(const struct device_node *dpa_node, int fd)
 		goto err;
 	}
 
-	__if->bmi_map = mmap(NULL, __if->regs_size,
+	__if->rx_bmi_map = mmap(NULL, __if->regs_size,
 		PROT_READ | PROT_WRITE, MAP_SHARED, fd, phys_addr);
-	if (__if->bmi_map == MAP_FAILED) {
+	if (__if->rx_bmi_map == MAP_FAILED) {
 		FMAN_ERR(-errno, "mmap(0x%"PRIx64")", phys_addr);
 		goto err;
 	}
@@ -1173,13 +1173,13 @@ fman_finish(void)
 		}
 
 		/* disable Rx and Tx */
-		regs = __if->ccsr_map;
+		regs = __if->memac_map;
 		cfg = in_be32(&regs->command_config);
 		out_be32(&regs->command_config,
 			cfg & (~(MEMAC_RX_ENABLE | MEMAC_TX_ENABLE)));
 
 		/* release the mapping */
-		_errno = munmap(__if->ccsr_map, __if->regs_size);
+		_errno = munmap(__if->memac_map, __if->regs_size);
 		if (unlikely(_errno < 0))
 			FMAN_ERR(_errno, "munmap() = (%s)", strerror(errno));
 		DPAA_BUS_INFO("Tearing down %s", __if->node_path);

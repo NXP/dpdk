@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
- * Copyright 2017,2023-2024 NXP
+ * Copyright 2017,2023-2026 NXP
  *
  */
 
@@ -100,8 +100,8 @@ void fman_if_loopback_disable(struct fman_if *p);
 
 /* Set buffer pool on specific interface */
 __rte_internal
-void fman_if_set_bp(struct fman_if *fm_if, int bpid,
-		    size_t bufsize, uint16_t idx);
+void fman_if_set_bp(struct fman_if *fm_if, uint32_t bpid,
+	uint32_t bufsize, uint8_t idx);
 
 /* Get Flow Control threshold parameters on specific interface */
 __rte_internal
@@ -161,7 +161,7 @@ void fman_if_set_dnia(struct fman_if *fm_if, uint32_t nia);
 
 /* discard error packets on rx */
 __rte_internal
-void fman_if_discard_rx_errors(struct fman_if *fm_if);
+void fman_if_discard_rx_errors(struct fman_if *fm_if, uint32_t err_discard);
 
 __rte_internal
 void fman_if_receive_rx_errors(struct fman_if *fm_if,
