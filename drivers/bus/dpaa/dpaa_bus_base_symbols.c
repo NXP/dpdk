@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2025 Red Hat, Inc.
+ * Copyright 2026 NXP
  */
 
 #include <eal_export.h>
@@ -94,6 +95,7 @@ RTE_EXPORT_INTERNAL_SYMBOL(qman_create_cgr)
 RTE_EXPORT_INTERNAL_SYMBOL(qman_delete_cgr)
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa_get_qm_channel_caam)
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa_get_qm_channel_pool)
+RTE_EXPORT_INTERNAL_SYMBOL(dpaa_get_qm_channel_pool_num)
 RTE_EXPORT_INTERNAL_SYMBOL(qman_thread_fd)
 RTE_EXPORT_INTERNAL_SYMBOL(qman_thread_irq)
 RTE_EXPORT_INTERNAL_SYMBOL(qman_fq_portal_thread_irq)
