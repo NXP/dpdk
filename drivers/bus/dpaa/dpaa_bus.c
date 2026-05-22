@@ -227,40 +227,15 @@ dpaa_create_device_list(void)
 
 	rte_dpaa_bus.device_count = 0;
 
-	/* Creating OL Device */
-	if (getenv("OLDEV_ENABLED")) {
-		dev = calloc(1, sizeof(struct rte_dpaa_device));
-		if (!dev) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate OL devices");
-			return -1;
-		}
-
-		dev->device_type = FSL_DPAA_OL;
-		dev->id.ol_id = 0;
-		dev->id.dev_id = rte_dpaa_bus.device_count;
-
-		/* Create device name */
-		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
-		sprintf(dev->name, "oldev%d", (dev->id.ol_id + 1));
-		DPAA_BUS_LOG(INFO, "%s oldev added", dev->name);
-		dev->device.name = dev->name;
-		dev->device.devargs = dpaa_devargs_lookup(dev);
-
-		dpaa_add_to_device_list(dev);
-		rte_dpaa_bus.device_count++;
-	}
-
 	if (!dpaa_netcfg && getenv("OLDEV_ENABLED"))
 		return 0;
 
-	rte_dpaa_bus.device_count = 0;
-
 	/* Creating OL Device */
 	if (getenv("OLDEV_ENABLED")) {
 		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate OL devices");
-			return -1;
+			DPAA_BUS_ERR("Failed to allocate OL devices");
+			return -ENOMEM;
 		}
 
 		dev->device_type = FSL_DPAA_OL;
@@ -270,7 +245,7 @@ dpaa_create_device_list(void)
 		/* Create device name */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
 		sprintf(dev->name, "oldev%d", (dev->id.ol_id + 1));
-		DPAA_BUS_LOG(INFO, "%s oldev added", dev->name);
+		DPAA_BUS_INFO("%s oldev added", dev->name);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);
 
@@ -282,7 +257,7 @@ dpaa_create_device_list(void)
 	for (i = 0; dpaa_netcfg && (i < dpaa_netcfg->num_ethports); i++) {
 		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate ETH devices");
+			DPAA_BUS_ERR("Failed to allocate ETH devices");
 			ret = -ENOMEM;
 			goto cleanup;
 		}
@@ -294,7 +269,7 @@ dpaa_create_device_list(void)
 		dev->intr_handle =
 			rte_intr_instance_alloc(RTE_INTR_INSTANCE_F_PRIVATE);
 		if (dev->intr_handle == NULL) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate intr handle");
+			DPAA_BUS_ERR("Failed to allocate intr handle");
 			ret = -ENOMEM;
 			free(dev);
 			goto cleanup;
@@ -336,7 +311,7 @@ dpaa_create_device_list(void)
 	 */
 
 	if (dpaa_sec_available() || getenv("DPAA_SEC_DISABLE")) {
-		DPAA_BUS_LOG(INFO, "DPAA SEC devices are not available");
+		DPAA_BUS_INFO("DPAA SEC devices are not available");
 		goto qdma_dpaa;
 	}
 
@@ -344,8 +319,8 @@ dpaa_create_device_list(void)
 	for (i = 0; i < RTE_LIBRTE_DPAA_MAX_CRYPTODEV; i++) {
 		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate SEC devices");
-			ret = -1;
+			DPAA_BUS_ERR("Failed to allocate SEC devices");
+			ret = -ENOMEM;
 			goto cleanup;
 		}
 
@@ -353,7 +328,7 @@ dpaa_create_device_list(void)
 		dev->intr_handle =
 			rte_intr_instance_alloc(RTE_INTR_INSTANCE_F_PRIVATE);
 		if (dev->intr_handle == NULL) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate intr handle");
+			DPAA_BUS_ERR("Failed to allocate intr handle");
 			ret = -ENOMEM;
 			free(dev);
 			goto cleanup;
@@ -368,7 +343,7 @@ dpaa_create_device_list(void)
 		 */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
 		sprintf(dev->name, "dpaa_sec-%d", i+1);
-		DPAA_BUS_LOG(INFO, "%s cryptodev added", dev->name);
+		DPAA_BUS_INFO("%s cryptodev added", dev->name);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);
 
@@ -382,8 +357,8 @@ qdma_dpaa:
 	for (i = 0; i < RTE_DPAA_QDMA_DEVICES; i++) {
 		dev = calloc(1, sizeof(struct rte_dpaa_device));
 		if (!dev) {
-			DPAA_BUS_LOG(ERR, "Failed to allocate QDMA device");
-			ret = -1;
+			DPAA_BUS_ERR("Failed to allocate QDMA device");
+			ret = -ENOMEM;
 			goto cleanup;
 		}
 
@@ -392,7 +367,7 @@ qdma_dpaa:
 
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
 		sprintf(dev->name, "dpaa_qdma-%d", i+1);
-		DPAA_BUS_LOG(INFO, "%s qdma device added", dev->name);
+		DPAA_BUS_INFO("%s qdma device added", dev->name);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);
 
@@ -449,37 +424,35 @@ int rte_dpaa_portal_init(void *arg)
 	dpaa_seqn_dynfield_offset =
 		rte_mbuf_dynfield_register(&dpaa_seqn_dynfield_desc);
 	if (dpaa_seqn_dynfield_offset < 0) {
-		DPAA_BUS_LOG(ERR, "Failed to register mbuf field for dpaa sequence number");
+		DPAA_BUS_ERR("Failed to register mbuf field for dpaa sequence number");
 		return -rte_errno;
 	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "bman_thread_init failed on core %u"
-			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
+		DPAA_BUS_ERR("Failed(%d) to init bman thread on cpu%d/lcore%d",
+			ret, cpu, lcore);
 		return ret;
 	}
 
-	DPAA_BUS_LOG(DEBUG, "BMAN thread initialized - CPU=%d lcore=%d",
-		     cpu, lcore);
+	DPAA_BUS_DEBUG("BMAN thread initialized - CPU=%d lcore=%d", cpu, lcore);
 
 	/* Initialise qman thread portals */
 	ret = qman_thread_init();
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "qman_thread_init failed on core %u"
-			    " (lcore=%u) with ret: %d", cpu, lcore, ret);
+		DPAA_BUS_ERR("Failed(%d) to init qman thread on cpu%d/lcore%d",
+			ret, cpu, lcore);
 		bman_thread_finish();
 		return ret;
 	}
 
-	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized - CPU=%d lcore=%d",
-		     cpu, lcore);
+	DPAA_BUS_DEBUG("QMAN thread initialized - CPU=%d lcore=%d", cpu, lcore);
 
 	DPAA_PER_LCORE_PORTAL = rte_malloc(NULL, sizeof(struct dpaa_portal),
 				    RTE_CACHE_LINE_SIZE);
 	if (!DPAA_PER_LCORE_PORTAL) {
-		DPAA_BUS_LOG(ERR, "Unable to allocate memory");
+		DPAA_BUS_ERR("Unable to allocate memory");
 		bman_thread_finish();
 		qman_thread_finish();
 		return -ENOMEM;
@@ -507,15 +480,15 @@ int rte_dpaa_portal_init(void *arg)
 	ret = pthread_setspecific(dpaa_portal_key,
 				  (void *)DPAA_PER_LCORE_PORTAL);
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "pthread_setspecific failed on core %u"
-			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
+		DPAA_BUS_ERR("Failed(%d) to set portal per thread on cpu%u/lcore%u",
+			ret, cpu, lcore);
 		dpaa_portal_finish(NULL);
 
 		return ret;
 	}
 	dpaa_portals[lcore] = DPAA_PER_LCORE_PORTAL;
 
-	DPAA_BUS_LOG(DEBUG, "QMAN thread initialized");
+	DPAA_BUS_DEBUG("QMAN thread initialized");
 
 	return 0;
 }
@@ -531,7 +504,7 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init(arg);
 		if (ret < 0) {
-			DPAA_BUS_LOG(ERR, "portal initialization failure");
+			DPAA_BUS_ERR("portal initialization failure");
 			return ret;
 		}
 	}
@@ -539,7 +512,7 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 	/* Initialise qman specific portals */
 	ret = fsl_qman_fq_portal_init(fq->qp);
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "Unable to init fq portal");
+		DPAA_BUS_ERR("Unable to init fq portal");
 		return -1;
 	}
 
@@ -561,7 +534,7 @@ dpaa_portal_finish(void *arg)
 	struct dpaa_portal *dpaa_io_portal = (struct dpaa_portal *)arg;
 
 	if (!dpaa_io_portal) {
-		DPAA_BUS_LOG(DEBUG, "Portal already cleaned");
+		DPAA_BUS_DEBUG("Portal already cleaned");
 		return;
 	}
 
@@ -656,7 +629,7 @@ rte_dpaa_bus_scan(void)
 
 	if ((access(DPAA_DEV_PATH1, F_OK) != 0) &&
 	    (access(DPAA_DEV_PATH2, F_OK) != 0)) {
-		DPAA_BUS_LOG(DEBUG, "DPAA Bus not present. Skipping.");
+		DPAA_BUS_DEBUG("DPAA Bus not present. Skipping.");
 		return 0;
 	}
 
@@ -670,7 +643,7 @@ rte_dpaa_bus_scan(void)
 	 */
 	ret = pthread_key_create(&dpaa_portal_key, dpaa_portal_finish);
 	if (ret) {
-		DPAA_BUS_LOG(DEBUG, "Unable to create pthread key. (%d)", ret);
+		DPAA_BUS_DEBUG("Unable to create pthread key. (%d)", ret);
 		dpaa_clean_device_list();
 		return ret;
 	}
@@ -723,17 +696,15 @@ rte_dpaa_bus_dev_build(void)
 	/* Load the device-tree driver */
 	ret = of_init();
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "of_init failed with ret: %d", ret);
-		return -1;
+		DPAA_BUS_ERR("Failed(%d) to init device tree", ret);
+		return ret;
 	}
 
 	/* Get the interface configurations from device-tree */
 	dpaa_netcfg = netcfg_acquire();
 	if (!dpaa_netcfg && !getenv("OLDEV_ENABLED")) {
-		DPAA_BUS_LOG(ERR,
-			"netcfg failed: /dev/fsl_usdpaa device not available");
-		DPAA_BUS_WARN(
-			"Check if you are using USDPAA based device tree");
+		DPAA_BUS_ERR("netcfg failed: /dev/fsl_usdpaa device not available");
+		DPAA_BUS_WARN("Check if you are using USDPAA based device tree");
 		return -EINVAL;
 	}
 
@@ -741,7 +712,7 @@ rte_dpaa_bus_dev_build(void)
 
 	if (!getenv("OLDEV_ENABLED")) {
 		if (!dpaa_netcfg->num_ethports) {
-			DPAA_BUS_LOG(INFO, "NO DPDK mapped net interfaces available");
+			DPAA_BUS_INFO("NO DPDK mapped net interfaces available");
 			/* This is not an error */
 		}
 	}
@@ -750,12 +721,12 @@ rte_dpaa_bus_dev_build(void)
 	dump_netcfg(dpaa_netcfg, stdout);
 #endif
 	if (!getenv("OLDEV_ENABLED")) {
-		DPAA_BUS_LOG(DEBUG, "Number of ethernet devices = %d",
+		DPAA_BUS_DEBUG("Number of ethernet devices = %d",
 			     dpaa_netcfg->num_ethports);
 	}
 	ret = dpaa_create_device_list();
 	if (ret) {
-		DPAA_BUS_LOG(ERR, "Unable to create device list. (%d)", ret);
+		DPAA_BUS_ERR("Unable to create device list. (%d)", ret);
 		return ret;
 	}
 	return 0;
@@ -811,12 +782,11 @@ rte_dpaa_bus_probe(void)
 		rte_dpaa_bus.svr_ver = 0;
 	}
 	if (rte_dpaa_bus.svr_ver == SVR_LS1046A_FAMILY) {
-		DPAA_BUS_LOG(INFO, "This is LS1046A family SoC.");
+		DPAA_BUS_INFO("This is LS1046A family SoC.");
 	} else if (rte_dpaa_bus.svr_ver == SVR_LS1043A_FAMILY) {
-		DPAA_BUS_LOG(INFO, "This is LS1043A family SoC.");
+		DPAA_BUS_INFO("This is LS1043A family SoC.");
 	} else {
-		DPAA_BUS_LOG(WARNING,
-			"This is Unknown(%08x) DPAA1 family SoC.",
+		DPAA_BUS_WARN("This is Unknown(%08x) DPAA1 family SoC.",
 			rte_dpaa_bus.svr_ver);
 	}
 
