@@ -297,11 +297,18 @@ fman_if_bmi_stats_enable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	struct tx_bmi_regs *tx_bmi = __if->tx_bmi_map;
 	uint32_t tmp;
 
 	tmp = in_be32(&rx_bmi->fmbm_rstc);
 	tmp |= FMAN_BMI_COUNTERS_EN;
 	out_be32(&rx_bmi->fmbm_rstc, tmp);
+
+	if (tx_bmi) {
+		tmp = in_be32(&tx_bmi->fmbm_tstc);
+		tmp |= FMAN_BMI_COUNTERS_EN;
+		out_be32(&tx_bmi->fmbm_tstc, tmp);
+	}
 }
 
 void
@@ -309,23 +316,37 @@ fman_if_bmi_stats_disable(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	struct rx_bmi_regs *rx_bmi = __if->rx_bmi_map;
+	struct tx_bmi_regs *tx_bmi = __if->tx_bmi_map;
 	uint32_t tmp;
 
 	tmp = in_be32(&rx_bmi->fmbm_rstc);
 	tmp &= ~FMAN_BMI_COUNTERS_EN;
 	out_be32(&rx_bmi->fmbm_rstc, tmp);
+
+	if (tx_bmi) {
+		tmp = in_be32(&tx_bmi->fmbm_tstc);
+		tmp &= ~FMAN_BMI_COUNTERS_EN;
+		out_be32(&tx_bmi->fmbm_tstc, tmp);
+	}
 }
 
 void
 fman_if_bmi_stats_get_all(struct fman_if *p, uint64_t *value)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
-	uint8_t *bmi = __if->rx_bmi_map;
+	uint8_t *rx_bmi = __if->rx_bmi_map;
+	uint8_t *tx_bmi = __if->tx_bmi_map;
 	uint32_t offset = FMAN_IF_BMI_RX_STAT_OFFSET_START;
-	int i, n = FMAN_IF_BMI_RX_STAT_OFFSET_END - FMAN_IF_BMI_RX_STAT_OFFSET_START;
+	int i, j, n = FMAN_IF_BMI_RX_STAT_OFFSET_END - FMAN_IF_BMI_RX_STAT_OFFSET_START;
 
 	for (i = 0; i < n; i++)
-		value[i] = in_be32(bmi + offset + i * sizeof(rte_be32_t));
+		value[i] = in_be32(rx_bmi + offset + i * sizeof(rte_be32_t));
+		
+	offset = FMAN_IF_BMI_TX_STAT_OFFSET_START;
+	n = FMAN_IF_BMI_TX_STAT_OFFSET_END - FMAN_IF_BMI_TX_STAT_OFFSET_START;
+
+	for (j = 0; j < n; j++)
+		value[i + j] = in_be32(tx_bmi + offset + j * sizeof(rte_be32_t));
 }
 
 void
@@ -333,12 +354,19 @@ fman_if_bmi_stats_reset(struct fman_if *p)
 {
 	struct __fman_if *__if = container_of(p, struct __fman_if, __if);
 	uint8_t *rx_bmi = __if->rx_bmi_map;
+	uint8_t *tx_bmi = __if->tx_bmi_map;
 	uint32_t offset;
 
 	for (offset = FMAN_IF_BMI_RX_STAT_OFFSET_START;
 		offset <= FMAN_IF_BMI_RX_STAT_OFFSET_END;
 		offset += sizeof(rte_be32_t))
 		out_be32(rx_bmi + offset, 0);
+	if (tx_bmi) {
+		for (offset = FMAN_IF_BMI_TX_STAT_OFFSET_START;
+			offset <= FMAN_IF_BMI_TX_STAT_OFFSET_END;
+			offset += sizeof(rte_be32_t))
+			out_be32(tx_bmi + offset, 0);
+	}
 }
 
 void

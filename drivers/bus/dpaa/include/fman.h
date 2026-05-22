@@ -332,6 +332,21 @@ struct tx_bmi_regs {
 	uint32_t fmbm_tfene;		/**< Tx Frame Enqueue Next Engine*/
 	uint32_t fmbm_trlmts;		/**< Tx Rate Limiter Scale*/
 	uint32_t fmbm_trlmt;		/**< Tx Rate Limiter*/
+	uint32_t reserved0034[0x73];/**< (0x0034 0x01FF) */
+	uint32_t fmbm_tstc;		/**< Tx Statistics Counters*/
+	uint32_t fmbm_tfrc;		/**< Tx Frame Counter*/
+	uint32_t fmbm_tfdc;		/**< Tx Frames Discard Counter*/
+	uint32_t fmbm_tfledc;	/**< Tx Frames Length Error Discard*/
+	uint32_t fmbm_tfufdc;	/**< Tx Frames Unsupported Format*/
+	uint32_t fmbm_tbdc;		/**< Tx Buffers Deallocate Counter */
+	uint32_t reserved0218[0x1a];/**< (0x0218 0x027F) */
+	uint32_t fmbm_tpc;		/**< Tx Performance Counters*/
+	uint32_t fmbm_tpcp;		/**< Tx Performance Count Parameters */
+	uint32_t fmbm_tccn;		/**< Tx Cycle Counter*/
+	uint32_t fmbm_ttuc;		/**< Tx Tasks Utilization Counter */
+	uint32_t fmbm_ttcquc;	/**< Tx Transmit Confirm Queue Utilization Counter*/
+	uint32_t fmbm_tduc;		/**< Tx DMA Utilization Counter */
+	uint32_t fmbm_tfuc;		/**< Tx FIFO Utilization Counter */
 };
 
 /* Description FM RTC timer alarm */
@@ -501,6 +516,10 @@ struct __fman_if {
 #define FMAN_IF_BMI_RX_STAT_OFFSET_START BMI_RX_REG_OFFSET(fmbm_rfrc)
 
 #define FMAN_IF_BMI_RX_STAT_OFFSET_END BMI_RX_REG_OFFSET(fmbm_rbdc)
+
+#define FMAN_IF_BMI_TX_STAT_OFFSET_START BMI_TX_REG_OFFSET(fmbm_tfrc)
+
+#define FMAN_IF_BMI_TX_STAT_OFFSET_END BMI_TX_REG_OFFSET(fmbm_tbdc)
 
 /* And this is the base list node that the interfaces are added to. (See
  * fman_if_enable_all_rx() below for an example of its use.)
