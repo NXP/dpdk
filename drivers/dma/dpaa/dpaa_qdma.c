@@ -1367,6 +1367,9 @@ dpaa_qdma_init(struct rte_dma_dev *dmadev)
 	uint32_t i, j, k;
 	char *penv;
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+                return -ENOTSUP;
+
 	if (dpaa_get_devargs(dmadev->device->devargs, DPAA_DMA_ERROR_CHECK)) {
 		s_hw_err_check = true;
 		DPAA_QDMA_INFO("Enable DMA error checks");
