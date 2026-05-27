@@ -2776,6 +2776,9 @@ rte_dpaa_remove(struct rte_dpaa_device *dpaa_dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	eth_dev = dpaa_dev->eth_dev;
 	if (eth_dev->state !=  RTE_ETH_DEV_UNUSED) {
 		dpaa_eth_dev_close(eth_dev);
