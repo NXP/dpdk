@@ -1605,8 +1605,12 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 		goto init_err;
 	}
 	rte_spinlock_init(&dpdmux_dev->lock);
-	if (obj->bus_info)
-		dpdmux_dev->sp_protocol = obj->bus_info->sp_protocol;
+	if (!obj->bus_info) {
+		DPAA2_PMD_ERR("No bus info attached to dpdmux%d", dpdmux_id);
+		ret = -EIO;
+		goto init_err;
+	}
+	dpdmux_dev->sp_protocol = obj->bus_info->sp_protocol;
 	dpdmux_dev->max_flow_num = attr.max_dmat_entries;
 
 	TAILQ_INSERT_TAIL(&dpdmux_dev_list, dpdmux_dev, next);
