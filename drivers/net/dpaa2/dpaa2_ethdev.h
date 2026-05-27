@@ -702,7 +702,7 @@ dpaa2_profile_insert_no_ipaddr_extract(struct dpaa2_key_profile *profile,
 	uint8_t size, uint8_t *poffset, int *ppos,
 	const struct key_prot_field *prot)
 {
-	uint8_t idx, ip_addr_num = 0, offset = 0xff;
+	uint8_t idx, ip_addr_num = 0, offset;
 
 	if (profile->ip_addr_extracts[0].field &&
 		profile->ip_addr_extracts[1].field) {
@@ -715,14 +715,10 @@ dpaa2_profile_insert_no_ipaddr_extract(struct dpaa2_key_profile *profile,
 		idx = profile->num;
 	}
 
-	if (profile->ip_addr_extracts[0].field) {
-		if (idx > 0) {
-			offset = profile->key_offset[idx - 1] +
-				profile->key_size[idx - 1];
-		} else {
-			offset = 0;
-		}
-	}
+	if (idx > 0)
+		offset = profile->key_offset[idx - 1] + profile->key_size[idx - 1];
+	else
+		offset = 0;
 
 	if (idx > 0) {
 		profile->key_offset[idx] =
