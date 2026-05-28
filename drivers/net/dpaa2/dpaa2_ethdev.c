@@ -828,17 +828,13 @@ static int
 dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	uint16_t dist_idx;
-	uint32_t vq_id;
-	uint8_t num_rxqueue_per_tc;
-	struct dpaa2_queue *mc_q, *mcq;
+	uint8_t num_queue_per_tc;
+	struct dpaa2_queue *mc_q, *dpaa2_q;
 	uint32_t tot_queues;
 	int i, ret = 0;
-	struct dpaa2_queue *dpaa2_q;
 
 	PMD_INIT_FUNC_TRACE();
 
-	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
 	if (priv->tx_conf_type != DPAA2_TX_NO_CONF)
 		tot_queues = priv->nb_rx_queues + 2 * priv->nb_tx_queues;
 	else
@@ -850,8 +846,12 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		return -ENOBUFS;
 	}
 
+	num_queue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
 	for (i = 0; i < priv->nb_rx_queues; i++) {
 		mc_q->eth_data = dev->data;
+		mc_q->tc_index = i / num_queue_per_tc;
+		mc_q->flow_id = i % num_queue_per_tc;
+		mc_q->fqid = DPAA2_INVALID_FQ_ID;
 		priv->rx_vq[i] = mc_q++;
 		dpaa2_q = priv->rx_vq[i];
 		ret = dpaa2_queue_storage_alloc(dpaa2_q,
@@ -875,9 +875,12 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail;
 	}
 
+	num_queue_per_tc = (priv->nb_tx_queues / priv->num_tx_tc);
 	for (i = 0; i < priv->nb_tx_queues; i++) {
 		mc_q->eth_data = dev->data;
-		mc_q->flow_id = DPAA2_INVALID_FLOW_ID;
+		mc_q->tc_index = i / num_queue_per_tc;
+		mc_q->flow_id = i % num_queue_per_tc;
+		mc_q->fqid = DPAA2_INVALID_FQ_ID;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = priv->tx_vq[i];
 		dpaa2_q->cscn = rte_malloc(NULL,
@@ -893,8 +896,9 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		/*Setup tx confirmation queues*/
 		for (i = 0; i < priv->nb_tx_queues; i++) {
 			mc_q->eth_data = dev->data;
-			mc_q->tc_index = i;
-			mc_q->flow_id = 0;
+			mc_q->tc_index = i / num_queue_per_tc;
+			mc_q->flow_id = i % num_queue_per_tc;
+			mc_q->fqid = DPAA2_INVALID_FQ_ID;
 			priv->tx_conf_vq[i] = mc_q++;
 			dpaa2_q = priv->tx_conf_vq[i];
 			ret = dpaa2_queue_storage_alloc(dpaa2_q,
@@ -902,14 +906,6 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			if (ret)
 				goto fail_tx_conf;
 		}
-	}
-
-	vq_id = 0;
-	for (dist_idx = 0; dist_idx < priv->nb_rx_queues; dist_idx++) {
-		mcq = priv->rx_vq[vq_id];
-		mcq->tc_index = dist_idx / num_rxqueue_per_tc;
-		mcq->flow_id = dist_idx % num_rxqueue_per_tc;
-		vq_id++;
 	}
 
 	return 0;
@@ -1292,6 +1288,12 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	}
 
 	dpaa2_q = priv->rx_vq[rx_queue_id];
+	if (dpaa2_q->fqid != DPAA2_INVALID_FQ_ID) {
+		DPAA2_PMD_WARN("%s: RXQ[%d] has been setup",
+			dev->data->name, rx_queue_id);
+		dev->data->rx_queues[rx_queue_id] = dpaa2_q;
+		return 0;
+	}
 
 	/* Rx deferred start is not supported */
 	if (rx_conf->rx_deferred_start) {
@@ -1458,7 +1460,9 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dpaa2_q->offloads = tx_conf->offloads;
 
 	/* Return if queue already configured */
-	if (dpaa2_q->flow_id != DPAA2_INVALID_FLOW_ID) {
+	if (dpaa2_q->fqid != DPAA2_INVALID_FQ_ID) {
+		DPAA2_PMD_WARN("%s: TXQ[%d] has been setup",
+			dev->data->name, tx_queue_id);
 		dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 		return 0;
 	}
@@ -1490,25 +1494,23 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		}
 	}
 
-	tc_id = tx_queue_id % priv->num_tx_tc;
-	channel_id = (uint8_t)(tx_queue_id / priv->num_tx_tc) % priv->num_channels;
-	flow_id = 0;
+	tc_id = dpaa2_q->tc_index;
+	flow_id = dpaa2_q->flow_id;
+	if (tc_id < priv->num_channels)
+		channel_id = priv->tx_channels[tc_id];
+	else
+		channel_id = priv->tx_channels[priv->num_channels - 1];
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
-			((channel_id << 8) | tc_id), flow_id, qopt, &tx_flow_cfg);
+			DPNI_BUILD_PARAM(channel_id, tc_id), flow_id, qopt, &tx_flow_cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("Error in setting the tx flow: "
-			"tc_id=%d, flow=%d err=%d",
-			tc_id, flow_id, ret);
-			return ret;
+		DPAA2_PMD_ERR("Failed(%d) to set %s's TC[%d].txq[%d]",
+			ret, dev->data->name, tc_id, flow_id);
+		return ret;
 	}
 
-	dpaa2_q->flow_id = flow_id;
-
-	dpaa2_q->tc_index = tc_id;
-
 	ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
-			DPNI_QUEUE_TX, ((channel_id << 8) | dpaa2_q->tc_index),
+			DPNI_QUEUE_TX, DPNI_BUILD_PARAM(channel_id, tc_id),
 			dpaa2_q->flow_id, &tx_flow_cfg, &qid);
 	if (ret) {
 		DPAA2_PMD_ERR("Error in getting LFQID err=%d", ret);
@@ -1548,10 +1550,9 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 		ret = dpni_set_congestion_notification(dpni,
 				CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
-				((channel_id << 8) | tc_id), &cong_notif_cfg);
+				DPNI_BUILD_PARAM(channel_id, tc_id), &cong_notif_cfg);
 		if (ret) {
-			DPAA2_PMD_ERR("Set TX congestion notification err=%d",
-			   ret);
+			DPAA2_PMD_ERR("Set TX congestion notification err=%d", ret);
 			return ret;
 		}
 	} else {
@@ -1561,31 +1562,32 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	dev->data->tx_queues[tx_queue_id] = dpaa2_q;
 
 	if (priv->tx_conf_type != DPAA2_TX_NO_CONF) {
+		tc_id = dpaa2_tx_conf_q->tc_index;
+		flow_id = dpaa2_tx_conf_q->flow_id;
 		dpaa2_q->tx_conf_queue = dpaa2_tx_conf_q;
 		qopt |= DPNI_QUEUE_OPT_USER_CTX;
 		tx_conf_cfg.user_context = (size_t)(dpaa2_q);
 		ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token,
 				DPNI_QUEUE_TX_CONFIRM,
-				((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
-				dpaa2_tx_conf_q->flow_id,
-				qopt, &tx_conf_cfg);
+				DPNI_BUILD_PARAM(channel_id, tc_id),
+				flow_id, qopt, &tx_conf_cfg);
 		if (ret) {
 			DPAA2_PMD_ERR("Set TC[%d].TX[%d] conf flow err=%d",
-				dpaa2_tx_conf_q->tc_index,
-				dpaa2_tx_conf_q->flow_id, ret);
+				tc_id, flow_id, ret);
 			return ret;
 		}
 
 		ret = dpni_get_queue(dpni, CMD_PRI_LOW, priv->token,
 				DPNI_QUEUE_TX_CONFIRM,
-				((channel_id << 8) | dpaa2_tx_conf_q->tc_index),
-				dpaa2_tx_conf_q->flow_id, &tx_conf_cfg, &qid);
+				DPNI_BUILD_PARAM(channel_id, tc_id),
+				flow_id, &tx_conf_cfg, &qid);
 		if (ret) {
 			DPAA2_PMD_ERR("Error in getting LFQID err=%d", ret);
 			return ret;
 		}
 		dpaa2_tx_conf_q->fqid = qid.fqid;
 	}
+
 	return 0;
 }
 
@@ -3656,10 +3658,28 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	for (i = 0; i < priv->max_cgs; i++)
 		priv->cgid_in_use[i] = 0;
 
-	for (i = 0; i < attr.num_rx_tcs; i++)
-		priv->nb_rx_queues += attr.num_queues;
-
-	priv->nb_tx_queues = attr.num_tx_tcs * attr.num_channels;
+	priv->nb_rx_queues = attr.num_rx_tcs * attr.num_queues;
+	if (priv->nb_rx_queues > MAX_RX_QUEUES) {
+		DPAA2_PMD_WARN("Too many RXQs(%d) > %d, reduce it to %d",
+			priv->nb_rx_queues, MAX_RX_QUEUES, MAX_RX_QUEUES);
+		priv->nb_rx_queues = MAX_RX_QUEUES;
+	}
+	if (attr.options & DPNI_OPT_SINGLE_SENDER)
+		priv->nb_tx_queues = attr.num_tx_tcs * 1;
+	else
+		priv->nb_tx_queues = attr.num_tx_tcs * attr.num_queues;
+	if (priv->nb_tx_queues > MAX_TX_QUEUES) {
+		DPAA2_PMD_WARN("Too many TXQs(%d) > %d, reduce it to %d",
+			priv->nb_tx_queues, MAX_TX_QUEUES, MAX_TX_QUEUES);
+		priv->nb_tx_queues = MAX_TX_QUEUES;
+	}
+	if (priv->num_channels > DPAA2_MAX_CHANNELS) {
+		DPAA2_PMD_WARN("Too many TX channels(%d) > %d, reduce it to %d",
+			priv->num_channels, DPAA2_MAX_CHANNELS, DPAA2_MAX_CHANNELS);
+		priv->num_channels = DPAA2_MAX_CHANNELS;
+	}
+	for (i = 0; i < priv->num_channels; i++)
+		priv->tx_channels[i] = i;
 
 	DPAA2_PMD_DEBUG("RX-TC= %d, rx_queues= %d, tx_queues=%d, max_cgs=%d",
 			priv->num_rx_tc, priv->nb_rx_queues,
