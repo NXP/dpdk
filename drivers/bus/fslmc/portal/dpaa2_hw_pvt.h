@@ -82,7 +82,7 @@
 #define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
 
 #define DPAA2_DPCI_MAX_QUEUES 2
-#define DPAA2_INVALID_FLOW_ID 0xffff
+#define DPAA2_INVALID_FQ_ID ((uint32_t)(-1))
 #define DPAA2_INVALID_CGID 0xff
 
 #define SEC_FLC_DHR_OUTBOUND	(-114)
