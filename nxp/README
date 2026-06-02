@@ -144,7 +144,36 @@ Following information can be used to obtain these components:
 	$ make CC=${CROSS}gcc
 	$ export PKG_CONFIG_PATH=<AArch64cryptolib>/pkgconfig:$PKG_CONFIG_PATH
 
-   NOTE:--reconfigure in meson may not work. Better you delete the meson build
+
+   Getting IPsec MB ARM library: (Cross Compilation)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   DPDK IPsec_MB is a cryptodev driver that provides high-performance software cryptographic
+   processing using the ARM-based IPsec Multi-Buffer library.
+
+   Clone Repository and Build for aarch64:
+
+	$ cd /opt
+	$ git clone https://gitlab.arm.com/arm-reference-solutions/ipsec-mb/
+	$ cd ipsec-mb/
+	$ git checkout SECLIB-IPSEC-2026.05.30
+	$ cmake -S . -B build-aarch64   -DCMAKE_TOOLCHAIN_FILE=$PWD/ipsec-mb-toolchain-aarch64.cmake   -DCMAKE_BUILD_TYPE=Release   -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PWD/install -DTOOLCHAIN_PATH=<toolchain path>
+		NOTE: please copy the "ipsec-mb-toolchain-aarch64.cmake" from dpdk/nxp/ipsec-mb-toolchain-aarch64.cmake to IPsec_MB.
+			Set TOOLCHAIN_PATH without adding tool names. CMake will automatically append the required tool names such as gcc and ar.
+			e.g. if GCC path is /opt/toolchain/bin/aarch64-none-linux-gnu-gcc then set path as /opt/toolchain/bin/aarch64-none-linux-gnu
+	$ cmake --build build-aarch64 --parallel
+	$ cmake --install build-aarch64
+		NOTE: Confirm installed headers and library in $PWD/install.
+
+	Now link the library and give headers path to DPDK by adding following lines in the cross config file:
+
+	[properties]
+	ipsec_mb_libdir = '/opt/ipsec-mb/install/lib'
+	ipsec_mb_incdir = '/opt/ipsec-mb/install/include'
+
+	$ Use meson and build command with the updated config file to compile dpdk.
+
+   NOTE: --reconfigure in meson may not work. Better you delete the meson build
    folder and recreate it to use the updated PKG_CONFIG_PATH
 ===============================================================================
 
@@ -1340,6 +1369,10 @@ Currently, The below test cases are not supported on I.MX943:
 	use  --vdev 'crypto_caam_jr1'
   For openssl mode:
 	use --vdev 'crypto_openssl'
+  For ipsec_mb mode:
+	use --vdev 'crypto_aesni_mb0' # To run various algos combinations e.g SNOW-ZUC, ZUC-SNOW
+	use --vdev 'crypto_snow3g'  # To run only SNOW3G cases.
+	use --vdev 'crypto_zuc' # To run only ZUC cases.
   For armv8_crypto mode:
 	use --vdev 'crypto_armv8'
   For v2x_fce mode (valid for iMX943 only):
