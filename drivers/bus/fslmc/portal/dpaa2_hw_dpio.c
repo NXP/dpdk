@@ -289,6 +289,8 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 static void dpaa2_put_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 {
 	if (dpio_dev) {
+		/** Flush portal DQRR.*/
+		qbman_swp_dqrr_consume(dpio_dev->sw_portal, NULL);
 #ifdef RTE_EVENT_DPAA2
 		dpaa2_dpio_intr_deinit(dpio_dev);
 #endif

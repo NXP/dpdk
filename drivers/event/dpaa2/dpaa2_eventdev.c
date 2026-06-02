@@ -213,7 +213,7 @@ static void dpaa2_eventdev_process_parallel(struct dpaa2_dpio_dev *dpio_dev,
 	const struct qbman_fd *fd, const struct qbman_result *dq,
 	struct dpaa2_queue *rxq, struct rte_event *ev)
 {
-	struct rte_event *rx_ev = (struct rte_event *)(uintptr_t)DPAA2_GET_FD_ADDR(fd);
+	struct rte_event *rx_ev = (void *)DPAA2_GET_FD_ADDR(fd);
 	struct qbman_swp *swp = dpio_dev->sw_portal;
 
 	rte_memcpy(ev, rx_ev, sizeof(struct rte_event));
@@ -226,7 +226,7 @@ static void dpaa2_eventdev_process_atomic(struct dpaa2_dpio_dev *dpio_dev,
 	const struct qbman_fd *fd, const struct qbman_result *dq,
 	struct dpaa2_queue *rxq, struct rte_event *ev)
 {
-	struct rte_event *rx_ev = (struct rte_event *)(uintptr_t)DPAA2_GET_FD_ADDR(fd);
+	struct rte_event *rx_ev = (void *)DPAA2_GET_FD_ADDR(fd);
 	uint8_t dqrr_index = qbman_get_dqrr_idx(dq);
 
 	rte_memcpy(ev, rx_ev, sizeof(struct rte_event));
@@ -301,7 +301,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		qbman_swp_prefetch_dqrr_next(swp);
 
 		fd = qbman_result_DQ_fd(dq);
-		rxq = (struct dpaa2_queue *)(uintptr_t)qbman_result_DQ_fqd_ctx(dq);
+		rxq = (void *)qbman_result_DQ_fqd_ctx(dq);
 		if (rxq && rxq->cb)
 			rxq->cb(dpio_dev, fd, dq, rxq, &ev[num_pkts]);
 		else
@@ -311,6 +311,10 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 	} while (num_pkts < nb_events);
 
 quit:
+	if (unlikely(!num_pkts)) {
+		/** Flush*/
+		qbman_swp_dqrr_consume(swp, NULL);
+	}
 	if (dpaa2_portal->port_atomic)
 		rte_spinlock_unlock(&dpaa2_portal->port_lock);
 	return num_pkts;

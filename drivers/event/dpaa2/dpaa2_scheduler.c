@@ -99,8 +99,11 @@ dpaa2_scheduler_swp_mbuf_dq(struct dpaa2_sch_dev *sch_dev,
 	struct rte_mbuf *mbuf;
 
 	dq = qbman_swp_dqrr_next(swp);
-	if (!dq)
+	if (!dq) {
+		/** Flush*/
+		qbman_swp_dqrr_consume(swp, NULL);
 		return NULL;
+	}
 
 	qbman_swp_prefetch_dqrr_next(swp);
 	fd = qbman_result_DQ_fd(dq);
