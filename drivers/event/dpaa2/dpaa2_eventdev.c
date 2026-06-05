@@ -48,11 +48,11 @@ dpaa2_eventdev_attach_eth_rxq(const struct rte_eth_dev *dev,
 {
 	int ret;
 	uint8_t ev_qid = queue_conf->ev.queue_id;
-	uint8_t idx = priv->evq_info[ev_qid].dpni_rxq_num;
+	uint16_t idx = priv->evq_info[ev_qid].dpni_rxq_num;
 	struct dpaa2_dpcon_dev *dpcon = priv->evq_info[ev_qid].dpcon;
 
-	if (idx >= DPAA2_EVENTQ_DPNI_RXQ_ATTACH_MAX) {
-		DPAA2_EVENTDEV_ERR("Too many queues to attach.");
+	if (idx >= DPAA2_EVENT_MAX_QUEUE_FLOWS) {
+		DPAA2_EVENTDEV_ERR("Too many flows to attach eventq%d", ev_qid);
 		return -ENOMEM;
 	}
 	ret = dpaa2_eth_eventq_attach(dev, rxq_id, dpcon, queue_conf, false);
