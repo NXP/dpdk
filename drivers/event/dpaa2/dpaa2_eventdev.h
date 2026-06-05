@@ -56,7 +56,7 @@ enum {
 #define DPAA2_EVENTQ_LINK_CONF_MAX 4 /** Max schedule type + 1.*/
 struct dpaa2_eventq {
 	int valid;
-	void *event_port;
+	uint8_t link_num;
 	/* DPcon device */
 	struct dpaa2_dpcon_dev *dpcon;
 	/* Attached DPCI device */
@@ -76,6 +76,7 @@ struct dpaa2_port {
 	rte_spinlock_t port_lock;
 	int cpu_affine;
 	struct dpaa2_eventq *evq_info[DPAA2_EVENT_MAX_QUEUES];
+	struct dpaa2_eventq *evq_map[DPAA2_EVENT_MAX_QUEUES];
 	uint8_t port_id;
 	uint8_t num_linked_evq;
 	uint64_t timeout_us;
