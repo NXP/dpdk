@@ -66,6 +66,7 @@ enum qbman_sdqcr_fc {
 static struct qbman_swp *portal_idx_map[MAX_QBMAN_PORTALS];
 
 uint32_t qman_version;
+static uint32_t dpaa2_portal_dqrr_size = 8;
 
 /* Internal Function declaration */
 static int
@@ -232,6 +233,14 @@ static int (*qbman_swp_release_ptr)(struct qbman_swp *s,
 			const uint64_t *buffers, unsigned int num_buffers)
 			= qbman_swp_release_direct;
 
+RTE_EXPORT_INTERNAL_SYMBOL(qbman_swp_portal_dqrr_size)
+uint32_t qbman_swp_portal_dqrr_size(struct qbman_swp *p)
+{
+	if (p)
+		return p->dqrr.dqrr_size;
+	return dpaa2_portal_dqrr_size;
+}
+
 /*********************************/
 /* Portal constructor/destructor */
 /*********************************/
@@ -284,6 +293,7 @@ struct qbman_swp *qbman_swp_init(const struct qbman_swp_desc *d)
 		p->dqrr.dqrr_size = 8;
 		p->dqrr.reset_bug = 0;
 	}
+	dpaa2_portal_dqrr_size = p->dqrr.dqrr_size;
 
 	ret = qbman_swp_sys_init(&p->sys, d, p->dqrr.dqrr_size);
 	if (ret) {

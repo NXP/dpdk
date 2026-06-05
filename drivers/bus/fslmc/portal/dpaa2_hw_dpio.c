@@ -430,6 +430,21 @@ void rte_dpaa2_free_dpio_device(struct dpaa2_dpio_dev *dpio_dev)
 	dpaa2_put_qbman_swp(dpio_dev);
 }
 
+RTE_EXPORT_INTERNAL_SYMBOL(rte_dpaa2_available_dpio_device)
+uint16_t
+rte_dpaa2_available_dpio_device(void)
+{
+	struct dpaa2_dpio_dev *dpio_dev = NULL;
+	uint16_t available_num = 0;
+
+	TAILQ_FOREACH(dpio_dev, &dpio_dev_list, next) {
+		if (dpio_dev && !rte_atomic16_read(&dpio_dev->ref_count))
+			available_num++;
+	}
+
+	return available_num;
+}
+
 static void
 dpaa2_close_dpio_device(int object_id)
 {

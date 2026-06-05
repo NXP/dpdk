@@ -15,6 +15,7 @@
 
 #define DPAA2_EVENT_DEFAULT_DPCI_PRIO 0
 
+#define DPAA2_EVENT_MAX_PORTS			16
 #define DPAA2_EVENT_MAX_QUEUES			16
 #define DPAA2_EVENT_MIN_DEQUEUE_TIMEOUT		1
 #define DPAA2_EVENT_MAX_DEQUEUE_TIMEOUT		(UINT32_MAX - 1)
@@ -22,8 +23,6 @@
 #define DPAA2_EVENT_MAX_QUEUE_FLOWS		1024
 #define DPAA2_EVENT_MAX_QUEUE_PRIORITY_LEVELS	8
 #define DPAA2_EVENT_MAX_EVENT_PRIORITY_LEVELS	0
-#define DPAA2_EVENT_MAX_PORT_DEQUEUE_DEPTH	8
-#define DPAA2_EVENT_MAX_PORT_ENQUEUE_DEPTH	8
 #define DPAA2_EVENT_MAX_NUM_EVENTS		(INT32_MAX - 1)
 
 #define DPAA2_EVENT_QUEUE_ATOMIC_FLOWS		2048
@@ -53,7 +52,7 @@ enum {
  * the ethdev to eventdev with DPAA2 devices.
  */
 
-#define DPAA2_EVENTQ_LINK_CONF_MAX 4 /** Max schedule type + 1.*/
+#define DPAA2_EVENTQ_LINK_CONF_MAX (RTE_SCHED_TYPE_PARALLEL + 1) /** Max schedule type + 1.*/
 struct dpaa2_eventq {
 	int valid;
 	uint8_t link_num;
