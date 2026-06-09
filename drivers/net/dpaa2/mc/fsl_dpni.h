@@ -2501,6 +2501,152 @@ union macsec_global_stats {
 int dpni_get_macsec_stats(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
 			  union macsec_global_stats *stats);
 
+struct dpni_dpmac_counters {
+	/** 0x00: Counts received 64-bytes frames, good or bad */
+	uint64_t rx_64_bytes;
+
+	/** 0x01: Counts received 65- to 127-bytes frames, good or bad */
+	uint64_t rx_65_127_bytes;
+
+	/** 0x02: Counts received 128- to 255-bytes frames, good or bad */
+	uint64_t rx_128_255_bytes;
+
+	/** 0x03: Counts received 256- to 511-bytes frames, good or bad */
+	uint64_t rx_256_511_bytes;
+
+	/** 0x04: Counts received 512- to 1023-bytes frames, good or bad */
+	uint64_t rx_512_1023_bytes;
+
+	/** 0x05: Counts received 1024- to 1518-bytes frames, good or bad */
+	uint64_t rx_1024_1518_bytes;
+
+	/** 0x06: Counts received frames >=1519 bytes */
+	uint64_t rx_1519_max_bytes;
+
+	/** 0x07: <64B frames with bad CRC */
+	uint64_t rx_fragments;
+
+	/** 0x08: >max length frames with bad FCS */
+	uint64_t rx_jabber;
+
+	/** 0x09: FIFO overflow drops (including truncated frames) */
+	uint64_t rx_drop_fifo;
+
+	/** 0x0A: Alignment error frames */
+	uint64_t rx_alignment_error;
+
+	/** 0x0B: TX <64B frames with good CRC */
+	uint64_t tx_undersize_good;
+
+	/** 0x0C: >max length frames with good FCS */
+	uint64_t rx_oversize_good;
+
+	/** 0x0D: Received pause frames (including PFC) */
+	uint64_t rx_pause;
+
+	/** 0x0E: Transmitted pause frames (including PFC) */
+	uint64_t tx_pause;
+
+	/** 0x0F: Received bytes (valid frames, exclude preamble) */
+	uint64_t rx_good_bytes;
+
+	/** 0x10: Received multicast frames */
+	uint64_t rx_multicast;
+
+	/** 0x11: Received broadcast frames */
+	uint64_t rx_broadcast;
+
+	/** 0x12: Received frames (good + bad) */
+	uint64_t rx_all_frames;
+
+	/** 0x13: Received unicast frames */
+	uint64_t rx_unicast;
+
+	/** 0x14: Received error frames (excluding fragments) */
+	uint64_t rx_error;
+
+	/** 0x15: Transmitted bytes (valid frames) */
+	uint64_t tx_good_bytes;
+
+	/** 0x16: Transmitted multicast frames */
+	uint64_t tx_multicast;
+
+	/** 0x17: Transmitted broadcast frames */
+	uint64_t tx_broadcast;
+
+	/** 0x18: Transmitted unicast frames */
+	uint64_t tx_unicast;
+
+	/** 0x19: Transmitted error frames */
+	uint64_t tx_error;
+
+	/** 0x1A: Received valid frames (no error) */
+	uint64_t rx_valid_frames;
+
+	/** 0x1B: Transmitted valid frames (no error) */
+	uint64_t tx_valid_frames;
+
+	/** 0x1C: TX 64-byte frames */
+	uint64_t tx_64_bytes;
+
+	/** 0x1D: TX 65-127-byte frames */
+	uint64_t tx_65_127_bytes;
+
+	/** 0x1E: TX 128-255-byte frames */
+	uint64_t tx_128_255_bytes;
+
+	/** 0x1F: TX 256-511-byte frames */
+	uint64_t tx_256_511_bytes;
+
+	/** 0x20: TX 512-1023-byte frames */
+	uint64_t tx_512_1023_bytes;
+
+	/** 0x21: TX 1024-1518-byte frames */
+	uint64_t tx_1024_1518_bytes;
+
+	/** 0x22: TX >=1519-byte frames */
+	uint64_t tx_1519_max_bytes;
+
+	/** 0x23: RX bytes (good + bad frames) */
+	uint64_t rx_bytes_all;
+
+	/** 0x24: RX CRC-32 error frames */
+	uint64_t rx_crc_error;
+
+	/** 0x25: Valid VLAN-tagged RX frames */
+	uint64_t rx_vlan;
+
+	/** 0x26: RX <64B frames with good CRC */
+	uint64_t rx_undersize_good;
+
+	/** 0x27: RX control frames (0x8808, non-pause) */
+	uint64_t rx_ctrl_non_pause;
+
+	/** 0x28: Fully dropped frames due to MAC client FIFO overflow */
+	uint64_t rx_drop_full;
+
+	/** 0x29: TX bytes (good + bad frames) */
+	uint64_t tx_bytes_all;
+
+	/** 0x2A: TX CRC-32 error frames */
+	uint64_t tx_crc_error;
+
+	/** 0x2B: Valid VLAN-tagged TX frames */
+	uint64_t tx_vlan;
+
+	/** 0x2C: All TX frames (good + bad) */
+	uint64_t tx_all_frames;
+
+	/** 0x2D: TX control frames (0x8808, non-pause) */
+	uint64_t tx_ctrl_non_pause;
+
+	/** 0x2E-0x35: RX PFC frames per priority (0-7) */
+	uint64_t rx_pfc_class[DPNI_MAX_TC];
+
+	/** 0x36-0x3D: TX PFC frames per priority (0-7) */
+	uint64_t tx_pfc_class[DPNI_MAX_TC];
+};
+
 int dpni_get_mac_statistics(struct fsl_mc_io *mc_io, uint32_t cmd_flags, uint16_t token,
 			    uint64_t iova_cnt, uint64_t iova_values, uint32_t num_cnt);
 
