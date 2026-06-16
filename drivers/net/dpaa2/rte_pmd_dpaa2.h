@@ -197,15 +197,18 @@ rte_dpaa2_scheduler_rx(void *scheduler_handle, struct rte_mbuf **mbuf,
 int
 rte_pmd_dpaa2_flow_table_query(uint16_t portid);
 
-/** User sets default actions(TC/flow) and attaches it to
- * struct rte_eth_rxmode->reserved_ptrs to configure by
- * rte_eth_dev_configure.
+/** User sets default actions(TC/flow) by private configuration.
  */
 struct rte_dpaa2_default_action_conf {
 	uint8_t default_tc;
 	uint8_t max_tc;
 	uint16_t default_flows[];
 };
+
+__rte_experimental
+int
+rte_dpaa2_eth_dev_configure_default_action(uint16_t port_id,
+	struct rte_dpaa2_default_action_conf *def_act_conf);
 
 #define RTE_DPAA2_ONE_LEVEL_GROUP_FLOW 0
 #define RTE_DPAA2_QOS_GROUP_FLOW 1

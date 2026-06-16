@@ -1044,6 +1044,61 @@ dpaa2_dev_dcb_info(struct rte_eth_dev *dev,
 	return 0;
 }
 
+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_dpaa2_eth_dev_configure_default_action, 25.11)
+int
+rte_dpaa2_eth_dev_configure_default_action(uint16_t port_id,
+	struct rte_dpaa2_default_action_conf *def_act_conf)
+{
+	int ret;
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_priv *priv;
+	struct dpaa2_flow_tbl_profile *tbl_profile;
+	uint16_t base, tc_index, default_flow;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(port_id))
+		return -EINVAL;
+
+	dev = &rte_eth_devices[port_id];
+	priv = dev->data->dev_private;
+
+	for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
+		tbl_profile = &priv->flow_profile.tc_profile[tc_index];
+		base = priv->dist_queues * tc_index;
+		if (tc_index >= def_act_conf->max_tc)
+			break;
+		default_flow = def_act_conf->default_flows[tc_index];
+		if (default_flow >= priv->dist_queues) {
+			tbl_profile->default_drop = true;
+		} else {
+			tbl_profile->default_drop = false;
+			tbl_profile->default_queue.index = base + default_flow;
+		}
+		if (priv->fs_entries) {
+			ret = dpaa2_setup_table_miss_action(dev, tc_index);
+			if (ret) {
+				DPAA2_PMD_ERR("Error(%d) to set miss action of %s-tc%d table",
+					ret, dev->data->name, tc_index);
+				return ret;
+			}
+		}
+	}
+
+	tbl_profile = &priv->flow_profile.qos_profile;
+	if (def_act_conf->default_tc >= priv->num_rx_tc) {
+		tbl_profile->default_drop = true;
+	} else {
+		tbl_profile->default_drop = false;
+		tbl_profile->default_jump.group = def_act_conf->default_tc;
+	}
+	ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
+	if (ret) {
+		DPAA2_PMD_ERR("Error(%d) to set miss action of %s-QoS table",
+			ret, dev->data->name);
+	}
+
+	return ret;
+}
+
 static int
 dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 {
@@ -1057,11 +1112,9 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int tx_l3_csum_offload = false;
 	int tx_l4_csum_offload = false;
 	int ret, tc_index, nb_tcs;
-	uint32_t max_rx_pktlen, base;
+	uint32_t max_rx_pktlen;
 	struct rte_eth_rss_conf *rss_conf;
 	struct rte_eth_dcb_rx_conf *dcb_rx_conf;
-	struct rte_dpaa2_default_action_conf *def_act_conf;
-	struct dpaa2_flow_tbl_profile *tbl_profile;
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
@@ -1094,35 +1147,14 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 
 	rss_conf = &eth_conf->rx_adv_conf.rss_conf;
 	dcb_rx_conf = &eth_conf->rx_adv_conf.dcb_rx_conf;
-	def_act_conf = eth_conf->rxmode.reserved_ptrs[0];
 
 	for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
-		tbl_profile = &priv->flow_profile.tc_profile[tc_index];
-		base = priv->dist_queues * tc_index;
-		if (def_act_conf && tc_index < def_act_conf->max_tc) {
-			if (def_act_conf->default_flows[tc_index] >= priv->dist_queues) {
-				tbl_profile->default_drop = true;
-			} else {
-				tbl_profile->default_drop = false;
-				tbl_profile->default_queue.index = base +
-					def_act_conf->default_flows[tc_index];
-			}
-		}
 		if (priv->fs_entries) {
 			ret = dpaa2_setup_table_miss_action(dev, tc_index);
 			if (ret) {
 				DPAA2_PMD_ERR("Error(%d) to set miss action of %s-tc%d table",
 					ret, dev->data->name, tc_index);
 			}
-		}
-	}
-	if (def_act_conf) {
-		tbl_profile = &priv->flow_profile.qos_profile;
-		if (def_act_conf->default_tc >= priv->num_rx_tc) {
-			tbl_profile->default_drop = true;
-		} else {
-			tbl_profile->default_drop = false;
-			tbl_profile->default_jump.group = def_act_conf->default_tc;
 		}
 	}
 	ret = dpaa2_setup_table_miss_action(dev, priv->num_rx_tc);
