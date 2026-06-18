@@ -26,6 +26,7 @@ static uint64_t dev_tx_offloads_sup =
 	RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
 
 #define ENETC4_TXQ_PRIORITIES "enetc4_txq_prior"
+#define ENETC4_NC_MEMORY      "nc"
 
 static int parse_reserve(const char *key __rte_unused,
 			 const char *value __rte_unused,
@@ -49,6 +50,20 @@ static int parse_reserve(const char *key __rte_unused,
 
 	return 0;
 }
+
+static int parse_nc(const char *key __rte_unused,
+		    const char *value, void *extra_args)
+{
+	struct rte_eth_dev *dev = extra_args;
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+
+	if (value && atoi(value) == 1)
+		hw->nc_mode = 1;
+
+	return 0;
+}
+
 
 static int parse_txq_prior(const char *key __rte_unused, const char *value,
 				void *opaque)
@@ -105,6 +120,13 @@ enetc4_get_devargs(struct rte_eth_dev *dev, const char *key)
 	if (!strcmp(key, NXP_RESERVE_MEMORY)) {
 		if (rte_kvargs_process(kvlist, key,
 					parse_reserve, (void *)dev) < 0) {
+			rte_kvargs_free(kvlist);
+			return 0;
+		}
+	}
+	if (!strcmp(key, ENETC4_NC_MEMORY)) {
+		if (rte_kvargs_process(kvlist, key,
+					parse_nc, (void *)dev) < 0) {
 			rte_kvargs_free(kvlist);
 			return 0;
 		}
@@ -367,11 +389,13 @@ enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 	uint32_t offset;
 
 	size = nb_desc * sizeof(struct enetc_swbd);
-	txr->q_swbd = rte_malloc(NULL, size, ENETC_BD_RING_ALIGN);
+	/* Zero q_swbd so buffer_addr is NULL for all uninitialized slots. */
+	txr->q_swbd = rte_zmalloc(NULL, size, ENETC_BD_RING_ALIGN);
 	if (txr->q_swbd == NULL)
 		return -ENOMEM;
 
 	if (hw->reserve) {
+		/* Reserve memory path: pre-allocated contiguous physical memory. */
 		if ((nb_desc * sizeof(struct enetc_tx_bd)) > hw->max_queue_size) {
 			ENETC_PMD_ERR("Not enough reserve memory!");
 			rte_free(txr->q_swbd);
@@ -384,10 +408,27 @@ enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 		txr->bd_base_p = hw->alloc.phy_addr + offset;
 		ENETC_PMD_LOG(INFO,"ENETC TX Ring %d, Base virtual = %p, Physical = %" PRIx64,
 			txr->index, txr->bd_base, txr->bd_base_p);
-	} else {
+	} else if (hw->nc_mode) {
+		/* Non-cacheable path: hugepage memory marked non-cacheable via SMMU. */
 		snprintf(mz_name, sizeof(mz_name), "bdt_addr_%d_%d", port_id, txr->index);
 		if (mark_memory_ncache(txr, mz_name, SIZE_2MB)) {
 			ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
+			rte_free(txr->q_swbd);
+			txr->q_swbd = NULL;
+			return -ENOMEM;
+		}
+		txr->bd_base_p = 0;
+	} else {
+		/*
+		 * Default cacheable path: use rte_zmalloc for BD ring memory.
+		 * RX/TX ops will be the _cacheable variants which use dccivac/dcbf
+		 * to maintain coherency on non-snooping platforms like i.MX95.
+		 */
+		int bd_size = nb_desc * sizeof(struct enetc_tx_bd);
+
+		txr->bd_base = rte_zmalloc(NULL, bd_size, ENETC_BD_RING_ALIGN);
+		if (txr->bd_base == NULL) {
+			ENETC_PMD_ERR("Failed to allocate TX BD ring memory!");
 			rte_free(txr->q_swbd);
 			txr->q_swbd = NULL;
 			return -ENOMEM;
@@ -407,7 +448,10 @@ enetc4_free_bdr(struct enetc_bdr *rxr)
 	struct enetc_eth_hw *hw =
 		ENETC_DEV_PRIVATE_TO_HW(rxr->ndev->data->dev_private);
 
-	if (!hw->reserve) {
+	if (hw->reserve) {
+		/* Reserve path: bd_base points into pre-allocated block, nothing to free. */
+	} else if (hw->nc_mode) {
+		/* Non-cacheable path: hugepage was allocated via memseg or memzone. */
 #ifdef RTE_IMX_MEMZONE_RING_MEMORY
 		rte_memzone_free(rxr->mz);
 		rxr->mz = NULL;
@@ -415,10 +459,13 @@ enetc4_free_bdr(struct enetc_bdr *rxr)
 		rte_eal_memalloc_free_seg(rxr->memseg);
 		rxr->memseg = NULL;
 #endif
+	} else {
+		/* Default cacheable path: bd_base was allocated with rte_zmalloc. */
+		rte_free(rxr->bd_base);
 	}
+	rxr->bd_base = NULL;
 	rte_free(rxr->q_swbd);
 	rxr->q_swbd = NULL;
-	rxr->bd_base = NULL;
 }
 
 static void
@@ -566,11 +613,13 @@ enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
 	uint32_t offset;
 
 	size = nb_desc * sizeof(struct enetc_swbd);
-	rxr->q_swbd = rte_malloc(NULL, size, ENETC_BD_RING_ALIGN);
+	/* Zero q_swbd so buffer_addr is NULL for all uninitialized slots. */
+	rxr->q_swbd = rte_zmalloc(NULL, size, ENETC_BD_RING_ALIGN);
 	if (rxr->q_swbd == NULL)
 		return -ENOMEM;
 
 	if (hw->reserve) {
+		/* Reserve memory path: pre-allocated contiguous physical memory. */
 		if ((nb_desc * sizeof(union enetc_rx_bd)) > hw->max_queue_size) {
 			ENETC_PMD_ERR("Not enough reserve memory for RX!");
 			rte_free(rxr->q_swbd);
@@ -583,10 +632,27 @@ enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
 
 		ENETC_PMD_LOG(INFO,"ENETC RX Ring %d Base virtual = %p, Physical = %" PRIx64,
 			rxr->index, rxr->bd_base, rxr->bd_base_p);
-	} else {
+	} else if (hw->nc_mode) {
+		/* Non-cacheable path: hugepage memory marked non-cacheable via SMMU. */
 		snprintf(mz_name, sizeof(mz_name), "bdr_addr_%d_%d", port_id, rxr->index);
 		if (mark_memory_ncache(rxr, mz_name, SIZE_2MB)) {
 			ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
+			rte_free(rxr->q_swbd);
+			rxr->q_swbd = NULL;
+			return -ENOMEM;
+		}
+		rxr->bd_base_p = 0;
+	} else {
+		/*
+		 * Default cacheable path: use rte_zmalloc for BD ring memory.
+		 * RX/TX ops will be the _cacheable variants which use dccivac/dcbf
+		 * to maintain coherency on non-snooping platforms like i.MX95.
+		 */
+		int bd_size = nb_desc * sizeof(union enetc_rx_bd);
+
+		rxr->bd_base = rte_zmalloc(NULL, bd_size, ENETC_BD_RING_ALIGN);
+		if (rxr->bd_base == NULL) {
+			ENETC_PMD_ERR("Failed to allocate RX BD ring memory!");
 			rte_free(rxr->q_swbd);
 			rxr->q_swbd = NULL;
 			return -ENOMEM;
@@ -628,7 +694,7 @@ enetc4_setup_rxbdr(struct enetc_hw *hw, struct enetc_bdr *rx_ring,
 	rx_ring->mb_pool = mb_pool;
 	rx_ring->rcir = (void *)((size_t)hw->reg +
 			ENETC_BDR(RX, idx, ENETC_RBCIR));
-	enetc_refill_rx_ring(rx_ring, (enetc_bd_unused(rx_ring)));
+	enetc_refill_rx_ring(rx_ring, ENETC_BD_ALIGN_DOWN(enetc_bd_unused(rx_ring)));
 	buf_size = (uint16_t)(rte_pktmbuf_data_room_size(rx_ring->mb_pool) -
 		   RTE_PKTMBUF_HEADROOM);
 	enetc4_rxbdr_wr(hw, idx, ENETC_RBBSR, buf_size);
@@ -942,8 +1008,33 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		enetc4_rxbdr_wr(enetc_hw, i, ENETC_TBMR, ENETC_BMR_RESET);
 
 	hw->reserve = 0;
+	hw->nc_mode = 0;
 	enetc4_get_devargs(dev, ENETC4_TXQ_PRIORITIES);
 	enetc4_get_devargs(dev, NXP_RESERVE_MEMORY);
+	enetc4_get_devargs(dev, ENETC4_NC_MEMORY);
+
+	/*
+	 * Select RX/TX burst ops based on BD memory type:
+	 *   reserve/nc=1 -> non-cacheable memory -> use _nc ops (no SW cache maintenance)
+	 *   default       -> cacheable zmalloc    -> use _cacheable ops (dccivac/dcbf)
+	 */
+	if (hw->reserve || hw->nc_mode) {
+		/* Non-cacheable BD memory: HW and CPU see same physical memory
+		 * without coherency; no SW cache maintenance needed.
+		 */
+		dev->rx_pkt_burst = &enetc_recv_pkts_nc;
+		dev->tx_pkt_burst = &enetc_xmit_pkts_nc;
+		dev->lb_pkt_burst = &enetc_loopback_pkts_nc;
+		ENETC_PMD_LOG(INFO, "Using non-cacheable BD memory ops (_nc)");
+	} else {
+		/* Cacheable BD memory (default): SW issues dccivac/dcbf to
+		 * maintain coherency on non-snooping platforms (i.MX95).
+		 */
+		dev->rx_pkt_burst = &enetc_recv_pkts_cacheable;
+		dev->tx_pkt_burst = &enetc_xmit_pkts_cacheable;
+		dev->lb_pkt_burst = &enetc_loopback_pkts_cacheable;
+		ENETC_PMD_LOG(INFO, "Using cacheable BD memory ops (_cacheable)");
+	}
 
 	if (hw->reserve) {
 		struct nxp_usmem_info info;
@@ -1224,9 +1315,10 @@ enetc4_dev_hw_init(struct rte_eth_dev *eth_dev)
 		ENETC_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
 
-	eth_dev->rx_pkt_burst = &enetc_recv_pkts_nc;
-	eth_dev->tx_pkt_burst = &enetc_xmit_pkts_nc;
-	eth_dev->lb_pkt_burst = &enetc_loopback_pkts_nc;
+	/* Default: cacheable hugepage BD memory with SW cache maintenance ops. */
+	eth_dev->rx_pkt_burst = &enetc_recv_pkts_cacheable;
+	eth_dev->tx_pkt_burst = &enetc_xmit_pkts_cacheable;
+	eth_dev->lb_pkt_burst = &enetc_loopback_pkts_cacheable;
 
 	/* Retrieving and storing the HW base address of device */
 	hw->hw.reg = (void *)pci_dev->mem_resource[0].addr;
@@ -1323,6 +1415,7 @@ RTE_PMD_REGISTER_PCI(net_enetc4, rte_enetc4_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_enetc4, pci_id_enetc4_map);
 RTE_PMD_REGISTER_PARAM_STRING(net_enetc4,
 				ENETC4_TXQ_PRIORITIES "=<string>"
-				NXP_RESERVE_MEMORY "=<int>");
+				NXP_RESERVE_MEMORY "=<int>"
+				ENETC4_NC_MEMORY "=<int>");
 RTE_PMD_REGISTER_KMOD_DEP(net_enetc4, "* vfio-pci | enetc4_uio");
 RTE_LOG_REGISTER_DEFAULT(enetc4_logtype_pmd, NOTICE);

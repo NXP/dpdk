@@ -152,7 +152,7 @@ enetc4_tx_offload_checksum(struct rte_mbuf *mbuf, struct enetc_tx_bd *txbd)
 }
 
 uint16_t
-enetc_xmit_pkts_nc(void *tx_queue,
+enetc_xmit_pkts_cacheable(void *tx_queue,
 		struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts)
 {
@@ -164,10 +164,17 @@ enetc_xmit_pkts_nc(void *tx_queue,
 	struct rte_mbuf *seg;
 	uint16_t seg_len, segs_per_pkt;
 	bool is_first_seg;
+	int first_bd_idx, bd_count;
 
 	i = tx_ring->next_to_use;
 	bds_to_use = enetc_bd_unused(tx_ring);
+	bd_count = tx_ring->bd_count;
 	start = 0;
+
+	/* Remember the first BD index of this batch so we can flush the
+	 * BD cache lines to PoC after all descriptors are written.
+	 */
+	first_bd_idx = i;
 
 	while (start < nb_pkts) {
 		seg = tx_pkts[start];
@@ -182,13 +189,15 @@ enetc_xmit_pkts_nc(void *tx_queue,
 			seg_len = rte_pktmbuf_data_len(seg);
 			data = rte_pktmbuf_mtod(seg, void *);
 
+			/* Flush packet data cache lines to PoC so HW DMA
+			 * reads the correct payload from memory.
+			 */
 			for (j = 0; j < seg_len; j += RTE_CACHE_LINE_SIZE)
 				dcbf(data + j);
 
-			/* Perform a cache flush on the last byte of an unaligned buffer to ensure
-			 * that all associated cache lines are cleaned to the Point of Coherency (PoC).
-			 * Using cache‑line‑aligned buffers is recommended for optimal performance.
-			 * For unaligned buffers, this operation may flush additional adjacent memory.
+			/* Cover the last byte of an unaligned buffer to ensure
+			 * the full payload is clean to the Point of Coherency.
+			 * For unaligned buffers this may clean one extra line.
 			 */
 			dcbf(data + (seg_len - 1));
 			txbd = ENETC_TXBD(*tx_ring, i);
@@ -207,12 +216,45 @@ enetc_xmit_pkts_nc(void *tx_queue,
 			i++;
 			bds_to_use--;
 
-			if (unlikely(i == tx_ring->bd_count))
+			if (unlikely(i == bd_count))
 				i = 0;
 		}
 
+		/* Set the frame-last flag on the final BD of this packet.
+		 * This is the last write to the BD group; the cache flush
+		 * below will push all BDs to memory afterwards.
+		 */
 		txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
 		start++;
+	}
+
+	/*
+	 * Flush TX BDs to PoC so HW (non-cache-coherent i.MX95) can read
+	 * the descriptors from memory.  TX BDs are 16 B each; 4 BDs share
+	 * one 64-byte cache line.  Walk from the cache-line-aligned start of
+	 * first_bd_idx to just past the last written BD, one dcbf per line.
+	 *
+	 * The flush must happen AFTER all BD fields (including flags_F) are
+	 * written, so HW never sees a partial descriptor.
+	 */
+	if (likely(start > 0)) {
+		/* Align the flush start down to a 4-BD (cache-line) boundary. */
+		int n = first_bd_idx & ~ENETC_BD_PER_CL_MASK;
+		/*
+		 * Number of BDs to cover: from aligned start to last written
+		 * BD, rounded up to the next group of 4.  Add the alignment
+		 * offset so partial leading groups are also counted.
+		 */
+		int written = (i - n + bd_count) % bd_count;
+		if (written == 0)
+			written = bd_count; /* full-ring wrap - should not happen */
+		written = (written + ENETC_BD_PER_CL_MASK) & ~ENETC_BD_PER_CL_MASK;
+
+		while (written > 0) {
+			dcbf((void *)ENETC_TXBD(*tx_ring, n));
+			n = (n + ENETC_BD_PER_CL) % bd_count;
+			written -= ENETC_BD_PER_CL;
+		}
 	}
 
 	/* we're only cleaning up the Tx ring here, on the assumption that
@@ -232,7 +274,7 @@ int
 enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt)
 {
 	struct enetc_swbd *rx_swbd;
-	union enetc_rx_bd *rxbd;
+	union enetc_rx_bd *rxbd, *grp_start_rxbd;
 	int i, j, k = ENETC_RXBD_BUNDLE;
 	struct rte_mbuf *m[ENETC_RXBD_BUNDLE];
 	struct rte_mempool *mb_pool;
@@ -241,6 +283,14 @@ enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt)
 	mb_pool = rx_ring->mb_pool;
 	rx_swbd = &rx_ring->q_swbd[i];
 	rxbd = ENETC_RXBD(*rx_ring, i);
+
+	/*
+	 * grp_start_rxbd tracks the first BD of the current 4-BD group.
+	 * After writing all 4 BDs in a group we flush the cache line so
+	 * the HW (non-cache-coherent on i.MX95) can read the new entries.
+	 */
+	grp_start_rxbd = rxbd;
+
 	for (j = 0; j < buff_cnt; j++) {
 		/* bulk alloc for the next up to 8 BDs */
 		if (k == ENETC_RXBD_BUNDLE) {
@@ -255,18 +305,36 @@ enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt)
 		rxbd->w.addr = (uint64_t)(uintptr_t)
 			       rx_swbd->buffer_addr->buf_iova +
 			       rx_swbd->buffer_addr->data_off;
-		/* clear 'R" as well */
+		/* clear 'R' as well */
 		rxbd->r.lstatus = 0;
 		rx_swbd++;
 		rxbd++;
 		i++;
 		k++;
+
 		if (unlikely(i == rx_ring->bd_count)) {
+			/*
+			 * Ring wrap: flush the current partial or full group
+			 * before resetting the pointer to index 0.
+			 */
+			dcbf((void *)grp_start_rxbd);
 			i = 0;
 			rxbd = ENETC_RXBD(*rx_ring, i);
 			rx_swbd = &rx_ring->q_swbd[i];
+			grp_start_rxbd = rxbd;
+		} else if ((i & ENETC_BD_PER_CL_MASK) == 0) {
+			/*
+			 * Completed a full 4-BD group (one cache line).
+			 * Flush it to PoC so HW sees the updated descriptors.
+			 */
+			dcbf((void *)grp_start_rxbd);
+			grp_start_rxbd = rxbd;
 		}
 	}
+
+	/* Flush any remaining partial group at the end of the fill. */
+	if (j && (i & ENETC_BD_PER_CL_MASK) != 0)
+		dcbf((void *)grp_start_rxbd);
 
 	if (likely(j)) {
 		rx_ring->next_to_alloc = i;
@@ -513,9 +581,366 @@ enetc_clean_rx_ring(struct enetc_bdr *rx_ring,
 	}
 
 	rx_ring->next_to_clean = i;
-	enetc_refill_rx_ring(rx_ring, cleaned_cnt);
+	enetc_refill_rx_ring(rx_ring, ENETC_BD_ALIGN_DOWN(cleaned_cnt));
 
 	return rx_frm_cnt;
+}
+
+static int
+enetc_clean_rx_ring_cacheable(struct enetc_bdr *rx_ring,
+		    struct rte_mbuf **rx_pkts,
+		    int work_limit)
+{
+	int rx_frm_cnt = 0;
+	int cleaned_cnt, i;
+	struct enetc_swbd *rx_swbd;
+	union enetc_rx_bd *rxbd, rxbd_temp;
+	struct rte_mbuf *first_seg = NULL, *cur_seg = NULL;
+	uint32_t bd_status;
+	uint8_t *data;
+	uint32_t j;
+	struct rte_mbuf *seg;
+	uint16_t data_len;
+
+	/* next descriptor to process */
+	i = rx_ring->next_to_clean;
+	rxbd = ENETC_RXBD(*rx_ring, i);
+	cleaned_cnt = enetc_bd_unused(rx_ring);
+	rx_swbd = &rx_ring->q_swbd[i];
+
+	/*
+	 * On i.MX95 the BD ring is in cacheable hugepage memory but the
+	 * platform is non-cache-coherent.  HW writes RX BDs to DDR
+	 * without snooping the CPU cache, so stale cached copies of BD
+	 * status fields must be discarded before the CPU reads them.
+	 *
+	 * Ideal instruction: DC IVAC (invalidate only, no writeback).
+	 * ARM64 constraint: DC IVAC requires EL1 privilege; executing it
+	 * from EL0 (DPDK userspace) raises a fault.  The only EL0-safe
+	 * cache maintenance instruction that invalidates is DC CIVAC
+	 * (clean + invalidate, dccivac).
+	 *
+	 * Safety of using dccivac here:
+	 * enetc_refill_rx_ring() issues dcbf() on every BD group before
+	 * returning ownership to HW.  After dcbf the CPU cache lines are
+	 * marked clean (no dirty data).  When dccivac runs, the "clean"
+	 * phase finds nothing dirty to write back, so it behaves as a
+	 * pure invalidate - exactly what we need.  There is no window
+	 * where a dirty CPU line can overwrite HW-written BD data.
+	 *
+	 * Granularity: BD = 16 B, cache line = 64 B, so one dccivac
+	 * covers exactly 4 BDs.  Invalidate at each 4-BD boundary.
+	 */
+	/*
+	 * Always invalidate the cache line that contains next_to_clean.
+	 * dccivac operates on a full 64-byte line (4 BDs).  This must be
+	 * unconditional: if a previous call stopped mid-group (e.g. at
+	 * next_to_clean=1), those BDs are still in the CPU cache.  HW may
+	 * have written them to DDR since; without this invalidate SW would
+	 * read the stale cached lstatus=0 and stop immediately.
+	 */
+	dccivac((void *)ENETC_RXBD(*rx_ring,
+			  (i & ~(int)ENETC_BD_PER_CL_MASK)));
+
+	while (likely(rx_frm_cnt < work_limit)) {
+		/*
+		 * Atomically copy the 16-byte BD into a local shadow so we
+		 * work on a stable snapshot.
+		 */
+#ifdef RTE_ARCH_32
+		rte_memcpy(&rxbd_temp, rxbd, 16);
+#else
+		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
+		const __uint128_t *src128 = (const __uint128_t *)rxbd;
+		*dst128 = *src128;
+#endif
+		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
+
+		if (!(bd_status & ENETC_RXBD_LSTATUS_R))
+			break;
+		if (rxbd_temp.r.error)
+			rx_ring->ierrors++;
+
+		seg = rx_swbd->buffer_addr;
+		data_len = rte_le_to_cpu_16(rxbd_temp.r.buf_len);
+		seg->data_len = data_len;
+		if (!first_seg) {
+			first_seg = seg;
+			cur_seg = seg;
+			first_seg->pkt_len = data_len;
+			enetc_dev_rx_parse(first_seg,
+						rxbd_temp.r.parse_summary);
+			first_seg->hash.rss = rxbd_temp.r.rss_hash;
+		} else {
+			first_seg->pkt_len += data_len;
+			first_seg->nb_segs++;
+			cur_seg->next = seg;
+			cur_seg = seg;
+		}
+
+		/* Invalidate packet data cache lines so the CPU reads the
+		 * payload that HW DMA'd into memory, not stale cached bytes.
+		 */
+		data = rte_pktmbuf_mtod(seg, void *);
+		for (j = 0; j < data_len; j += RTE_CACHE_LINE_SIZE)
+			dccivac(data + j);
+		/* Cover the last byte of an unaligned buffer. */
+		dccivac(data + (data_len - 1));
+
+		if (bd_status & ENETC_RXBD_LSTATUS_F) {
+			seg->next = NULL;
+			first_seg->pkt_len -= rx_ring->crc_len;
+			rx_pkts[rx_frm_cnt] = first_seg;
+			rx_frm_cnt++;
+			first_seg = NULL;
+		}
+
+		cleaned_cnt++;
+		rx_swbd++;
+		i++;
+		if (unlikely(i == rx_ring->bd_count)) {
+			i = 0;
+			rx_swbd = &rx_ring->q_swbd[i];
+		}
+		rxbd = ENETC_RXBD(*rx_ring, i);
+
+		/*
+		 * Crossed a 4-BD (cache-line) boundary: invalidate the new
+		 * group so the next four status reads fetch fresh DDR data
+		 * written by HW.  dccivac is used instead of dcivac because
+		 * DC IVAC is EL1-only and cannot be called from EL0 userspace.
+		 * The clean phase is safe: refill guarantees these lines are
+		 * already clean (see comment above).
+		 * Guard with work_limit check to skip the invalidate when no
+		 * further BD reads are expected in this call.
+		 */
+		if ((i & ENETC_BD_PER_CL_MASK) == 0 &&
+		    likely(rx_frm_cnt < work_limit))
+			dccivac((void *)rxbd);
+	}
+
+	rx_ring->next_to_clean = i;
+	enetc_refill_rx_ring(rx_ring, ENETC_BD_ALIGN_DOWN(cleaned_cnt));
+
+	return rx_frm_cnt;
+}
+
+static int
+enetc_lb_cacheable(struct enetc_bdr *rx_ring,
+	    struct enetc_bdr *tx_ring)
+{
+	int rx_frm_cnt = 0;
+	int cleaned_cnt, i, bds_to_use;
+	struct enetc_swbd *rx_swbd;
+	union enetc_rx_bd *rxbd, rxbd_temp;
+	uint32_t bd_status, buflen;
+	struct enetc_tx_bd *txbd;
+	struct enetc_swbd *tx_swbd;
+	int j;
+	int retries = 0;
+
+	/* next descriptor to process */
+	i = rx_ring->next_to_clean;
+	/* next descriptor to process */
+	rxbd = ENETC_RXBD(*rx_ring, i);
+
+	cleaned_cnt = enetc_bd_unused(rx_ring);
+	rx_swbd = &rx_ring->q_swbd[i];
+
+retry:
+	j = tx_ring->next_to_use;
+	bds_to_use = enetc_bd_unused(tx_ring);
+	if (!bds_to_use) {
+		if (++retries > 1000)
+			return 0;
+
+		rte_delay_us(1);
+		goto retry;
+	}
+
+	while (likely(rx_frm_cnt < ENETC_LB_BURST)) {
+#ifdef RTE_ARCH_32
+		rte_memcpy(&rxbd_temp, rxbd, 16);
+#else
+		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
+		const __uint128_t *src128 = (const __uint128_t *)rxbd;
+		*dst128 = *src128;
+#endif
+		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
+		if (!bd_status)
+			break;
+
+		if (rxbd_temp.r.error)
+			ENETC_PMD_LOG(WARNING, "ERR packets received");
+
+		cleaned_cnt++;
+		rx_swbd++;
+		i++;
+		if (unlikely(i == rx_ring->bd_count)) {
+			i = 0;
+			rx_swbd = &rx_ring->q_swbd[i];
+		}
+		rxbd = ENETC_RXBD(*rx_ring, i);
+
+		/* TX path */
+		tx_ring->q_swbd[j].buffer_addr = rx_swbd->buffer_addr;
+
+		buflen = rxbd_temp.r.buf_len - rx_ring->crc_len;
+
+		txbd = ENETC_TXBD(*tx_ring, j);
+		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
+
+		tx_swbd = &tx_ring->q_swbd[j];
+		txbd->frm_len = buflen;
+		txbd->buf_len = txbd->frm_len;
+		txbd->addr = (uint64_t)(uintptr_t)
+		rte_cpu_to_le_64((size_t)tx_swbd->buffer_addr->buf_iova +
+				 tx_swbd->buffer_addr->data_off);
+		j++;
+		rx_frm_cnt++;
+		if (rx_frm_cnt > bds_to_use) {
+			/*FIXIT otherwise memory leak*/
+			ENETC_PMD_LOG(WARNING, "Cannot enqueue");
+		}
+		if (unlikely(j == tx_ring->bd_count))
+			j = 0;
+	}
+
+	rx_ring->next_to_clean = i;
+	enetc_refill_rx_ring(rx_ring, ENETC_BD_ALIGN_DOWN(cleaned_cnt));
+
+	/* we're only cleaning up the Tx ring here, on the assumption that
+	 * software is slower than hardware and hardware completed sending
+	 * older frames out by now.
+	 * We're also cleaning up the ring before kicking off Tx for the new
+	 * batch to minimize chances of contention on the Tx ring
+	 */
+	enetc_clean_tx_ring(tx_ring);
+
+	tx_ring->next_to_use = j;
+	enetc_wr_reg(tx_ring->tcir, j);
+
+
+	return 0;
+}
+
+uint16_t
+enetc_recv_pkts_cacheable(void *rxq, struct rte_mbuf **rx_pkts,
+		uint16_t nb_pkts)
+{
+	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
+
+	return enetc_clean_rx_ring_cacheable(rx_ring, rx_pkts, nb_pkts);
+}
+
+uint16_t
+enetc_loopback_pkts_cacheable(void *rxq, void *txq, const uint16_t mode)
+{
+	struct rte_mbuf *pkts[ENETC_LB_BURST];
+	int nb_pkts, tx_pkts, i;
+	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
+	struct enetc_bdr *tx_ring = (struct enetc_bdr *)txq;
+
+	switch (mode) {
+	case RTE_LB_MODE0:
+		while (!rte_eth_get_quit()) {
+			i = 0;
+			nb_pkts = enetc_clean_rx_ring_cacheable(rx_ring, pkts, ENETC_LB_BURST);
+			while (nb_pkts) {
+				tx_pkts = enetc_xmit_pkts_cacheable(txq, &pkts[i], nb_pkts);
+				nb_pkts -= tx_pkts;
+				i += tx_pkts;
+			}
+		}
+		break;
+	case RTE_LB_MODE1:
+		/* Optimized reflector mode, No packet processing */
+		while (!rte_eth_get_quit())
+			enetc_lb_cacheable(rx_ring, tx_ring);
+
+		break;
+	default:
+		ENETC_PMD_LOG(ERR, "Loopback mode is not supported/Available");
+	}
+
+	return 0;
+}
+
+uint16_t
+enetc_xmit_pkts_nc(void *tx_queue,
+		struct rte_mbuf **tx_pkts,
+		uint16_t nb_pkts)
+{
+	int i, start, bds_to_use;
+	struct enetc_tx_bd *txbd;
+	struct enetc_bdr *tx_ring = (struct enetc_bdr *)tx_queue;
+	unsigned int j;
+	uint8_t *data;
+	struct rte_mbuf *seg;
+	uint16_t seg_len, segs_per_pkt;
+	bool is_first_seg;
+
+	i = tx_ring->next_to_use;
+	bds_to_use = enetc_bd_unused(tx_ring);
+	start = 0;
+
+	while (start < nb_pkts) {
+		seg = tx_pkts[start];
+		segs_per_pkt = seg->nb_segs;
+
+		if (bds_to_use < segs_per_pkt)
+			break;
+
+		is_first_seg = true;
+		while (seg) {
+			tx_ring->q_swbd[i].buffer_addr = NULL;
+			seg_len = rte_pktmbuf_data_len(seg);
+			data = rte_pktmbuf_mtod(seg, void *);
+
+			for (j = 0; j < seg_len; j += RTE_CACHE_LINE_SIZE)
+				dcbf(data + j);
+
+			/* Perform a cache flush on the last byte of an unaligned buffer to ensure
+			 * that all associated cache lines are cleaned to the Point of Coherency (PoC).
+			 * Using cache‑line‑aligned buffers is recommended for optimal performance.
+			 * For unaligned buffers, this operation may flush additional adjacent memory.
+			 */
+			dcbf(data + (seg_len - 1));
+			txbd = ENETC_TXBD(*tx_ring, i);
+			txbd->flags = 0;
+			if (is_first_seg) {
+				tx_ring->q_swbd[i].buffer_addr = seg;
+				txbd->frm_len = rte_pktmbuf_pkt_len(seg);
+				if (seg->ol_flags & ENETC4_TX_CKSUM_OFFLOAD_MASK)
+					enetc4_tx_offload_checksum(seg, txbd);
+				is_first_seg = false;
+			}
+
+			txbd->buf_len = rte_cpu_to_le_16(seg_len);
+			txbd->addr = rte_cpu_to_le_64(rte_mbuf_data_iova(seg));
+			seg = seg->next;
+			i++;
+			bds_to_use--;
+
+			if (unlikely(i == tx_ring->bd_count))
+				i = 0;
+		}
+
+		txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
+		start++;
+	}
+
+	/* we're only cleaning up the Tx ring here, on the assumption that
+	 * software is slower than hardware and hardware completed sending
+	 * older frames out by now.
+	 * We're also cleaning up the ring before kicking off Tx for the new
+	 * batch to minimize chances of contention on the Tx ring
+	 */
+	enetc_clean_tx_ring(tx_ring);
+	tx_ring->next_to_use = i;
+	enetc_wr_reg(tx_ring->tcir, i);
+
+	return start;
 }
 
 static int

@@ -223,7 +223,7 @@ application:
 
   5. ninja -C arm64-build install
 
-All binaries will be there in arm64-build folder and a “dpdk-“ prefix will be
+All binaries will be there in arm64-build folder and a â€œdpdk-â€œ prefix will be
 added in the name of app binary. Example applications can be found in
 arm64-build/examples directory.
 
@@ -803,9 +803,11 @@ Generic steps on i.MX95 before running dpdk:
 	setenv fdtfile imx95-19x19-evk.dtb
 3. Boot the board
 	boot
-4. Load the non-cacheable module.
+4. Load the non-cacheable module. (optional on i.MX95 and i.MX943)
 	insmod kpage_ncache.ko
-	Note: Refer ENET-QOS section for detailed compilation info about this module.
+	Note: On i.MX95 and i.MX943, the enetc4 driver uses cacheable BD memory by
+	      default (no kpage_ncache.ko required). Load kpage_ncache.ko only if you
+	      intend to use non-cacheable BD memory via the "nc=1" devarg (see below).
 5. Manually allocate hugepages
 	echo 512 > /proc/sys/vm/nr_hugepages
 
@@ -824,6 +826,9 @@ For running ENETC PF ports in DPDK:
         $ dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1 --forward-mode=mac
                 testpmd> set promisc all off
                 testpmd> start
+
+   Optional: Test with non-cacheable BD memory (requires kpage_ncache.ko loaded):
+        $ dpdk-l2fwd -l 2,3 -a 0002:00:02.0,nc=1 -- -p 0x1 -T 0
 
 Multi-queue:
 ============
@@ -1167,8 +1172,11 @@ For running external ENETC PF ports in DPDK:
 3. Bind the PFs to the DPDK-compatible enetc4_uio driver
 	$ dpdk-devbind.py -b enetc4_uio 0001:01:08.0
 
-4. Load the non-cacheable module:
-        $ modprobe kpage_ncache.ko
+4. Load the non-cacheable module: (optional on i.MX943 and i.MX95)
+	$ modprobe kpage_ncache.ko
+	Note: kpage_ncache.ko is not required by default. The enetc4 driver uses
+	      cacheable BD memory. Load it only if testing with nc=1 devarg:
+	      $ dpdk-l2fwd -l 2,3 -a 0001:01:08.0,nc=1 -- -p 0x1 -T 0
 
 5. Allocate hugepages for DPDK memory
 	$ echo 512 > /proc/sys/vm/nr_hugepages
@@ -1514,8 +1522,8 @@ Currently, The below test cases are not supported on I.MX943:
 
   For IPsec application, two DUTs need to be configured as endpoint 0 (ep0) and endpoint 1 (ep1). Assuming that endpoint
   have 4 ports each:
-  ¿ Connect Port 1 and Port 1 of the ep0 and ep1 to each other (back-to-back).
-  ¿ Connect Port 0 and Port 0 of the ep0 and ep1 to packet generator (for example, Spirent).
+   - Connect Port 1 and Port 1 of the ep0 and ep1 to each other (back-to-back).
+   - Connect Port 0 and Port 0 of the ep0 and ep1 to packet generator (for example, Spirent).
 
   The sample configurations for both ep0 and ep1 are available at "nxp/ipsec".
   Custom port mappings, SA/SP and the routes can be configured in the corresponding
