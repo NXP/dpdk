@@ -804,8 +804,8 @@ dpaa2_dev_tx(void *queue,
 uint16_t dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
 			      uint16_t nb_pkts);
 __rte_internal
-uint16_t dpaa2_dev_tx_multi_txq_ordered(void **queue,
-		struct rte_mbuf **bufs, uint16_t nb_pkts);
+uint16_t dpaa2_dev_tx_multi_txq_ordered(struct dpaa2_queue **dpaa2_q,
+	struct rte_mbuf **bufs, uint16_t nb_pkts);
 
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev, uint8_t tc_id);

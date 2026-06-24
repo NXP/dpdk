@@ -1103,7 +1103,7 @@ static uint16_t
 dpaa2_eventdev_txa_enqueue(void *port, struct rte_event ev[],
 	uint16_t nb_events)
 {
-	void *txq[MAX_TX_RING_SLOTS];
+	struct dpaa2_queue *txq[MAX_TX_RING_SLOTS];
 	struct rte_mbuf *m[MAX_TX_RING_SLOTS];
 	uint8_t qid, i;
 	uint16_t port_id, burst, tx_num = 0;
@@ -1117,9 +1117,9 @@ tx_again:
 		m[i] = ev[tx_num + i].mbuf;
 		qid = rte_event_eth_tx_adapter_txq_get(m[i]);
 		port_id = m[i]->port;
-		if (port_id >= RTE_MAX_ETHPORTS ||
+		if (unlikely(port_id >= RTE_MAX_ETHPORTS ||
 			!rte_eth_devices[port_id].data ||
-			qid >= rte_eth_devices[port_id].data->nb_tx_queues) {
+			qid >= rte_eth_devices[port_id].data->nb_tx_queues)) {
 			DPAA2_EVENTDEV_ERR("Invalid port ID(%d) or TXQ ID(%d)", port_id, qid);
 			return tx_num;
 		}

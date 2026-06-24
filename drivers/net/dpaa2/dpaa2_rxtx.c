@@ -738,8 +738,7 @@ dpaa2_dev_tx_conf_mbuf_to_sge(struct qbman_sge *sgt,
 static int __rte_noinline __rte_hot
 dpaa2_dev_tx_mbuf_to_sg_fd(struct rte_mempool *hw_mp,
 	struct rte_mbuf *mbuf, struct qbman_fd *fd,
-	struct dpaa2_queue *txq, enum dpaa2_tx_conf_type conf,
-	uint8_t *dy_conf, int tstamp)
+	struct dpaa2_queue *txq, enum dpaa2_tx_conf_type conf, int tstamp)
 {
 	struct rte_mbuf *cur_seg = mbuf, *sg_mbuf;
 	struct qbman_sge *sgt;
@@ -842,8 +841,6 @@ dpaa2_dev_tx_mbuf_to_sg_fd(struct rte_mempool *hw_mp,
 		if (ret)
 			return ret;
 	}
-	if (dy_conf && need_dyconf)
-		*dy_conf = true;
 
 	return 0;
 }
@@ -868,8 +865,7 @@ dpaa2_dev_prefetch_next_psr(const struct qbman_result *dq)
 static int __rte_noinline __rte_hot
 dpaa2_dev_tx_mbuf_to_simple_fd(struct rte_mempool *hw_mp,
 	struct rte_mbuf *mbuf, struct qbman_fd *fd,
-	struct dpaa2_queue *txq, enum dpaa2_tx_conf_type conf,
-	uint8_t *dy_conf, int tstamp)
+	struct dpaa2_queue *txq, enum dpaa2_tx_conf_type conf, int tstamp)
 {
 	int need_dyconf = false, need_conf = false;
 	struct rte_mbuf *mi;
@@ -909,13 +905,10 @@ quit:
 		rte_pktmbuf_free(mbuf);
 	}
 
-	if (need_dyconf) {
+	if (need_dyconf)
 		dpaa2_dev_tx_config_dynamic_confirm(fd, txq, true, tstamp);
-		if (dy_conf)
-			*dy_conf = true;
-	} else if (tstamp) {
+	else if (tstamp)
 		dpaa2_dev_tx_enable_tstamp(fd);
-	}
 
 	return ret;
 }
@@ -1580,12 +1573,10 @@ conf_again:
 }
 
 static inline int
-dpaa2_dev_tx_fast_mbuf_to_fd(struct rte_eth_dev_data *dev,
-	struct rte_mbuf *buf, struct qbman_fd *fd,
-	enum dpaa2_tx_conf_type conf)
+dpaa2_dev_tx_fast_mbuf_to_fd(struct dpaa2_dev_priv *priv,
+	struct rte_mbuf *buf, struct qbman_fd *fd)
 {
 	struct rte_mempool *mp = buf->pool;
-	struct dpaa2_dev_priv *priv = dev->dev_private;
 
 	if (likely(RTE_MBUF_DIRECT(buf) &&
 		mp && mp->ops_index ==
@@ -1596,7 +1587,7 @@ dpaa2_dev_tx_fast_mbuf_to_fd(struct rte_eth_dev_data *dev,
 			DPAA2_PMD_WARN("Single mbuf has next segment(%p)",
 				buf->next);
 		}
-		if (unlikely(conf == DPAA2_TX_ABSOLUTE_CONF))
+		if (unlikely(priv->tx_conf_type == DPAA2_TX_ABSOLUTE_CONF))
 			DPAA2_MBUF_TO_CONF_CONTIG_FD(buf, fd);
 		else
 			DPAA2_MBUF_TO_CONTIG_FD(buf, fd, mempool_to_bpid(mp));
@@ -1629,7 +1620,6 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct rte_mempool *hw_mp;
 	uint32_t flags[MAX_TX_RING_SLOTS] = {0};
-	uint8_t dy_conf[MAX_TX_RING_SLOTS];
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1676,7 +1666,6 @@ tx_again:
 		dpaa2_eqcr_size : nb_pkts;
 
 	for (loop = 0; loop < frames_to_send; loop++) {
-		dy_conf[loop] = false;
 		if (*dpaa2_seqn(*bufs)) {
 			uint8_t dqrr_index = *dpaa2_seqn(*bufs) - 1;
 
@@ -1706,8 +1695,7 @@ tx_again:
 			goto skip_fast_mbuf2fd;
 		}
 
-		ret = dpaa2_dev_tx_fast_mbuf_to_fd(eth_data,
-			*bufs, &fd_arr[loop], priv->tx_conf_type);
+		ret = dpaa2_dev_tx_fast_mbuf_to_fd(priv, *bufs, &fd_arr[loop]);
 		if (likely(!ret)) {
 			bufs++;
 			continue;
@@ -1716,10 +1704,10 @@ tx_again:
 skip_fast_mbuf2fd:
 		if (unlikely((*bufs)->nb_segs > 1)) {
 			ret = dpaa2_dev_tx_mbuf_to_sg_fd(hw_mp, *bufs, &fd_arr[loop],
-				dpaa2_q, priv->tx_conf_type, &dy_conf[loop], tstamp[loop]);
+				dpaa2_q, priv->tx_conf_type, tstamp[loop]);
 		} else {
 			ret = dpaa2_dev_tx_mbuf_to_simple_fd(hw_mp, *bufs, &fd_arr[loop],
-				dpaa2_q, priv->tx_conf_type, &dy_conf[loop], tstamp[loop]);
+				dpaa2_q, priv->tx_conf_type, tstamp[loop]);
 		}
 		if (ret)
 			goto send_n_return;
@@ -1813,8 +1801,7 @@ static void
 dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 	struct rte_mbuf *m, struct qbman_eq_desc *eqdesc)
 {
-	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
-	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+	struct dpaa2_dev_priv *priv = dpaa2_q->eth_data->dev_private;
 	struct dpaa2_dpio_dev *dpio_dev = DPAA2_PER_LCORE_DPIO;
 	struct eqresp_metadata *eqresp_meta;
 	uint16_t orpid, seqnum;
@@ -1857,22 +1844,19 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 
 RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_dev_tx_multi_txq_ordered)
 uint16_t
-dpaa2_dev_tx_multi_txq_ordered(void **queue,
+dpaa2_dev_tx_multi_txq_ordered(struct dpaa2_queue **dpaa2_q,
 	struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function to transmit the frames to multiple queues respectively.*/
-	uint32_t loop, retry_count, sent = 0, i;
+	uint32_t loop, retry_count, i;
 	int32_t ret = 0, tstamp[MAX_TX_RING_SLOTS], ptp_set_count, ptp_set;
 	struct qbman_fd fd_arr[MAX_TX_RING_SLOTS];
 	uint32_t frames_to_send, num_free_eq_desc = 0;
 	struct rte_mempool *hw_mp;
 	struct qbman_eq_desc eqdesc[MAX_TX_RING_SLOTS];
-	struct dpaa2_queue *dpaa2_q[MAX_TX_RING_SLOTS];
 	struct qbman_swp *swp;
-	struct rte_eth_dev_data *eth_data;
 	struct dpaa2_dev_priv *priv;
 	struct dpaa2_queue *order_sendq;
-	uint8_t dy_conf[MAX_TX_RING_SLOTS];
 
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
@@ -1884,25 +1868,12 @@ dpaa2_dev_tx_multi_txq_ordered(void **queue,
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-tx_again:
 	ptp_set_count = 0;
 	frames_to_send = (nb_pkts > dpaa2_eqcr_size) ?
 		dpaa2_eqcr_size : nb_pkts;
 
 	for (loop = 0; loop < frames_to_send; loop++) {
-		dpaa2_q[loop] = queue[loop];
-		if (dpaa2_q[loop]->tx_conf_queue)
-			dpaa2_dev_tx_conf(dpaa2_q[loop], false);
-		eth_data = dpaa2_q[loop]->eth_data;
-		priv = eth_data->dev_private;
-		dy_conf[loop] = false;
-		if (unlikely(!priv->bp_list)) {
-			DPAA2_PMD_ERR("%s's buffer pool not initialized!",
-				eth_data->name);
-			ret = -ENOMEM;
-			goto send_frames;
-		}
-		hw_mp = priv->bp_list->mp;
+		priv = dpaa2_q[loop]->eth_data->dev_private;
 		if (!priv->en_loose_ordered &&
 			(*dpaa2_seqn(*bufs) & DPAA2_ENQUEUE_FLAG_ORP)) {
 			if (!num_free_eq_desc) {
@@ -1914,9 +1885,6 @@ tx_again:
 			}
 			num_free_eq_desc--;
 		}
-
-		DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d",
-			eth_data, dpaa2_q[loop]->fqid);
 
 		/* Check if the queue is congested */
 		retry_count = 0;
@@ -1954,27 +1922,27 @@ tx_again:
 			goto skip_fast_mbuf2fd;
 		}
 
-		ret = dpaa2_dev_tx_fast_mbuf_to_fd(eth_data,
-				*bufs, &fd_arr[loop], priv->tx_conf_type);
+		ret = dpaa2_dev_tx_fast_mbuf_to_fd(priv, *bufs, &fd_arr[loop]);
 		if (likely(!ret)) {
-			if (priv->tx_conf_type == DPAA2_TX_ABSOLUTE_CONF)
-				dy_conf[loop] = true;
 			bufs++;
 			continue;
 		}
 
 skip_fast_mbuf2fd:
+		if (unlikely(!priv->bp_list)) {
+			ret = -ENOMEM;
+			goto send_frames;
+		}
+		hw_mp = priv->bp_list->mp;
 		if (unlikely((*bufs)->nb_segs > 1)) {
 			ret = dpaa2_dev_tx_mbuf_to_sg_fd(hw_mp, *bufs, &fd_arr[loop],
-				dpaa2_q[loop], priv->tx_conf_type, &dy_conf[loop], tstamp[loop]);
+				dpaa2_q[loop], priv->tx_conf_type, tstamp[loop]);
 		} else {
 			ret = dpaa2_dev_tx_mbuf_to_simple_fd(hw_mp, *bufs, &fd_arr[loop],
-				dpaa2_q[loop], priv->tx_conf_type, &dy_conf[loop], tstamp[loop]);
+				dpaa2_q[loop], priv->tx_conf_type, tstamp[loop]);
 		}
 		if (ret)
 			goto send_frames;
-		if (priv->tx_conf_type == DPAA2_TX_ABSOLUTE_CONF)
-			dy_conf[loop] = true;
 		bufs++;
 	}
 
@@ -1984,8 +1952,7 @@ send_frames:
 	retry_count = 0;
 	while (loop < frames_to_send) {
 		ret = qbman_swp_enqueue_multiple_desc(swp, &eqdesc[loop],
-				&fd_arr[loop],
-				frames_to_send - loop);
+				&fd_arr[loop], frames_to_send - loop);
 		if (likely(ret > 0)) {
 			loop += ret;
 			retry_count = 0;
@@ -1995,16 +1962,15 @@ send_frames:
 				break;
 		}
 	}
-	nb_pkts -= loop;
-	sent += loop;
 	for (i = 0; i < loop; i++) {
-		if (tstamp[i] && dpaa2_q[i]->tx_conf_queue)
-			dpaa2_q[i]->tx_conf_queue->ts_to_cnfd++;
+		if (unlikely(dpaa2_q[i]->tx_conf_queue)) {
+			dpaa2_dev_tx_conf(dpaa2_q[i], false);
+			if (tstamp[i])
+				dpaa2_q[i]->tx_conf_queue->ts_to_cnfd++;
+		}
 	}
-	if (nb_pkts > 0 && !ret)
-		goto tx_again;
 
-	return sent;
+	return loop;
 }
 
 /* Callback to handle sending ordered packets through WRIOP based interface */
@@ -2014,7 +1980,7 @@ rte_dpaa2_dev_tx_multi_ports(uint16_t port_id[],
 	uint16_t nb_pkts)
 {
 	uint16_t i;
-	void *txq[nb_pkts];
+	struct dpaa2_queue *txq[nb_pkts];
 	struct rte_eth_dev_data *data;
 
 	if (txq_id) {
@@ -2037,7 +2003,7 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
 	uint16_t nb_pkts)
 {
 	uint16_t i;
-	void *mq[nb_pkts];
+	struct dpaa2_queue *mq[nb_pkts];
 
 	for (i = 0; i < nb_pkts; i++)
 		mq[i] = queue;
