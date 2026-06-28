@@ -662,7 +662,7 @@ dpaa2_eventdev_port_unlink(struct rte_eventdev *dev, void *port,
 unlink_evq:
 	for (i = 0; i < nb_unlinks; i++) {
 		evq_info = evq_infos[i];
-		if (dpaa2_portal->evq_map[evq_info->event_queue_id] == evq_info) {
+		if (dpaa2_portal->evq_map[evq_info->event_queue_id] != evq_info) {
 			DPAA2_EVENTDEV_ERR("Event queue mapping[%d] mismatch.",
 				evq_info->event_queue_id);
 			return -EINVAL;
