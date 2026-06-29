@@ -5,8 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <ethdev_pci.h>
-#include <ethdev_driver.h>
+
 #include "rte_ethdev.h"
 #include "rte_malloc.h"
 #include "rte_memzone.h"
@@ -19,8 +18,6 @@
 #define ENETC_CACHE_LINE_RXBDS	(RTE_CACHE_LINE_SIZE / \
 				 sizeof(union enetc_rx_bd))
 #define ENETC_RXBD_BUNDLE 16 /* Number of buffers to allocate at once */
-#define ENETC_LB_BURST 64
-#define ENETC_LB_DELAY_US 5000
 
 static int
 enetc_clean_tx_ring(struct enetc_bdr *tx_ring)
@@ -751,105 +748,6 @@ enetc_clean_rx_ring_cacheable(struct enetc_bdr *rx_ring,
 	return rx_frm_cnt;
 }
 
-static int
-enetc_lb_cacheable(struct enetc_bdr *rx_ring,
-	    struct enetc_bdr *tx_ring)
-{
-	int rx_frm_cnt = 0;
-	int cleaned_cnt, i, bds_to_use;
-	struct enetc_swbd *rx_swbd;
-	union enetc_rx_bd *rxbd, rxbd_temp;
-	uint32_t bd_status, buflen;
-	struct enetc_tx_bd *txbd;
-	struct enetc_swbd *tx_swbd;
-	int j;
-	int retries = 0;
-
-	/* next descriptor to process */
-	i = rx_ring->next_to_clean;
-	/* next descriptor to process */
-	rxbd = ENETC_RXBD(*rx_ring, i);
-
-	cleaned_cnt = enetc_bd_unused(rx_ring);
-	rx_swbd = &rx_ring->q_swbd[i];
-
-retry:
-	j = tx_ring->next_to_use;
-	bds_to_use = enetc_bd_unused(tx_ring);
-	if (!bds_to_use) {
-		if (++retries > 1000)
-			return 0;
-
-		rte_delay_us(1);
-		goto retry;
-	}
-
-	while (likely(rx_frm_cnt < ENETC_LB_BURST)) {
-#ifdef RTE_ARCH_32
-		rte_memcpy(&rxbd_temp, rxbd, 16);
-#else
-		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
-		const __uint128_t *src128 = (const __uint128_t *)rxbd;
-		*dst128 = *src128;
-#endif
-		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
-		if (!bd_status)
-			break;
-
-		if (rxbd_temp.r.error)
-			ENETC_PMD_LOG(WARNING, "ERR packets received");
-
-		cleaned_cnt++;
-		rx_swbd++;
-		i++;
-		if (unlikely(i == rx_ring->bd_count)) {
-			i = 0;
-			rx_swbd = &rx_ring->q_swbd[i];
-		}
-		rxbd = ENETC_RXBD(*rx_ring, i);
-
-		/* TX path */
-		tx_ring->q_swbd[j].buffer_addr = rx_swbd->buffer_addr;
-
-		buflen = rxbd_temp.r.buf_len - rx_ring->crc_len;
-
-		txbd = ENETC_TXBD(*tx_ring, j);
-		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
-
-		tx_swbd = &tx_ring->q_swbd[j];
-		txbd->frm_len = buflen;
-		txbd->buf_len = txbd->frm_len;
-		txbd->addr = (uint64_t)(uintptr_t)
-		rte_cpu_to_le_64((size_t)tx_swbd->buffer_addr->buf_iova +
-				 tx_swbd->buffer_addr->data_off);
-		j++;
-		rx_frm_cnt++;
-		if (rx_frm_cnt > bds_to_use) {
-			/*FIXIT otherwise memory leak*/
-			ENETC_PMD_LOG(WARNING, "Cannot enqueue");
-		}
-		if (unlikely(j == tx_ring->bd_count))
-			j = 0;
-	}
-
-	rx_ring->next_to_clean = i;
-	enetc_refill_rx_ring(rx_ring, ENETC_BD_ALIGN_DOWN(cleaned_cnt));
-
-	/* we're only cleaning up the Tx ring here, on the assumption that
-	 * software is slower than hardware and hardware completed sending
-	 * older frames out by now.
-	 * We're also cleaning up the ring before kicking off Tx for the new
-	 * batch to minimize chances of contention on the Tx ring
-	 */
-	enetc_clean_tx_ring(tx_ring);
-
-	tx_ring->next_to_use = j;
-	enetc_wr_reg(tx_ring->tcir, j);
-
-
-	return 0;
-}
-
 uint16_t
 enetc_recv_pkts_cacheable(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
@@ -857,39 +755,6 @@ enetc_recv_pkts_cacheable(void *rxq, struct rte_mbuf **rx_pkts,
 	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
 
 	return enetc_clean_rx_ring_cacheable(rx_ring, rx_pkts, nb_pkts);
-}
-
-uint16_t
-enetc_loopback_pkts_cacheable(void *rxq, void *txq, const uint16_t mode)
-{
-	struct rte_mbuf *pkts[ENETC_LB_BURST];
-	int nb_pkts, tx_pkts, i;
-	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
-	struct enetc_bdr *tx_ring = (struct enetc_bdr *)txq;
-
-	switch (mode) {
-	case RTE_LB_MODE0:
-		while (!rte_eth_get_quit()) {
-			i = 0;
-			nb_pkts = enetc_clean_rx_ring_cacheable(rx_ring, pkts, ENETC_LB_BURST);
-			while (nb_pkts) {
-				tx_pkts = enetc_xmit_pkts_cacheable(txq, &pkts[i], nb_pkts);
-				nb_pkts -= tx_pkts;
-				i += tx_pkts;
-			}
-		}
-		break;
-	case RTE_LB_MODE1:
-		/* Optimized reflector mode, No packet processing */
-		while (!rte_eth_get_quit())
-			enetc_lb_cacheable(rx_ring, tx_ring);
-
-		break;
-	default:
-		ENETC_PMD_LOG(ERR, "Loopback mode is not supported/Available");
-	}
-
-	return 0;
 }
 
 uint16_t
@@ -1055,103 +920,6 @@ enetc_clean_rx_ring_nc(struct enetc_bdr *rx_ring,
 	return rx_frm_cnt;
 }
 
-static int
-enetc_lb_nc(struct enetc_bdr *rx_ring,
-	    struct enetc_bdr *tx_ring)
-{
-	int rx_frm_cnt = 0;
-	int cleaned_cnt, i, bds_to_use;
-	struct enetc_swbd *rx_swbd;
-	union enetc_rx_bd *rxbd, rxbd_temp;
-	uint32_t bd_status, buflen;
-	struct enetc_tx_bd *txbd;
-	struct enetc_swbd *tx_swbd;
-	int j;
-
-	/* next descriptor to process */
-	i = rx_ring->next_to_clean;
-	/* next descriptor to process */
-	rxbd = ENETC_RXBD(*rx_ring, i);
-
-	cleaned_cnt = enetc_bd_unused(rx_ring);
-	rx_swbd = &rx_ring->q_swbd[i];
-
-retry:
-	/* TX path */
-	j = tx_ring->next_to_use;
-	bds_to_use = enetc_bd_unused(tx_ring);
-	if (!bds_to_use) {
-		/*TODO: Add timeout here */
-		ENETC_PMD_LOG(WARNING, "Retry for free TX BDs");
-		goto retry;
-	}
-
-	while (likely(rx_frm_cnt < ENETC_LB_BURST)) {
-#ifdef RTE_ARCH_32
-		rte_memcpy(&rxbd_temp, rxbd, 16);
-#else
-		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
-		const __uint128_t *src128 = (const __uint128_t *)rxbd;
-		*dst128 = *src128;
-#endif
-		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
-		if (!bd_status)
-			break;
-
-		if (rxbd_temp.r.error)
-			ENETC_PMD_LOG(WARNING, "ERR packets received");
-
-		cleaned_cnt++;
-		rx_swbd++;
-		i++;
-		if (unlikely(i == rx_ring->bd_count)) {
-			i = 0;
-			rx_swbd = &rx_ring->q_swbd[i];
-		}
-		rxbd = ENETC_RXBD(*rx_ring, i);
-
-		/* TX path */
-		tx_ring->q_swbd[j].buffer_addr = rx_swbd->buffer_addr;
-
-		buflen = rxbd_temp.r.buf_len - rx_ring->crc_len;
-
-		txbd = ENETC_TXBD(*tx_ring, j);
-		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
-
-		tx_swbd = &tx_ring->q_swbd[j];
-		txbd->frm_len = buflen;
-		txbd->buf_len = txbd->frm_len;
-		txbd->addr = (uint64_t)(uintptr_t)
-		rte_cpu_to_le_64((size_t)tx_swbd->buffer_addr->buf_iova +
-				 tx_swbd->buffer_addr->data_off);
-		j++;
-		rx_frm_cnt++;
-		if (rx_frm_cnt > bds_to_use) {
-			/*FIXIT otherwise memory leak*/
-			ENETC_PMD_LOG(WARNING, "Cannot enqueue");
-		}
-		if (unlikely(j == tx_ring->bd_count))
-			j = 0;
-	}
-
-	rx_ring->next_to_clean = i;
-	enetc_refill_rx_ring(rx_ring, cleaned_cnt);
-
-	/* we're only cleaning up the Tx ring here, on the assumption that
-	 * software is slower than hardware and hardware completed sending
-	 * older frames out by now.
-	 * We're also cleaning up the ring before kicking off Tx for the new
-	 * batch to minimize chances of contention on the Tx ring
-	 */
-	enetc_clean_tx_ring(tx_ring);
-
-	tx_ring->next_to_use = j;
-	enetc_wr_reg(tx_ring->tcir, j);
-
-
-	return 0;
-}
-
 uint16_t
 enetc_recv_pkts_nc(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
@@ -1159,39 +927,6 @@ enetc_recv_pkts_nc(void *rxq, struct rte_mbuf **rx_pkts,
 	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
 
 	return enetc_clean_rx_ring_nc(rx_ring, rx_pkts, nb_pkts);
-}
-
-uint16_t
-enetc_loopback_pkts_nc(void *rxq, void *txq, const uint16_t mode)
-{
-	struct rte_mbuf *pkts[ENETC_LB_BURST];
-	int nb_pkts, tx_pkts, i;
-	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
-	struct enetc_bdr *tx_ring = (struct enetc_bdr *)txq;
-
-	switch (mode) {
-	case RTE_LB_MODE0:
-		while (!rte_eth_get_quit()) {
-			i = 0;
-			nb_pkts = enetc_clean_rx_ring_nc(rx_ring, pkts, ENETC_LB_BURST);
-			while (nb_pkts) {
-				tx_pkts = enetc_xmit_pkts_nc(txq, &pkts[i], nb_pkts);
-				nb_pkts -= tx_pkts;
-				i += tx_pkts;
-			}
-		}
-		break;
-	case RTE_LB_MODE1:
-		/* Optimized reflector mode, No packet processing */
-		while (!rte_eth_get_quit())
-			enetc_lb_nc(rx_ring, tx_ring);
-
-		break;
-	default:
-		ENETC_PMD_LOG(ERR, "Loopback mode is not supported/Available");
-	}
-
-	return 0;
 }
 
 uint16_t

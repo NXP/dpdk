@@ -1038,7 +1038,6 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		 */
 		dev->rx_pkt_burst = &enetc_recv_pkts_nc;
 		dev->tx_pkt_burst = &enetc_xmit_pkts_nc;
-		dev->lb_pkt_burst = &enetc_loopback_pkts_nc;
 		ENETC_PMD_LOG(INFO, "Using non-cacheable BD memory ops (_nc)");
 	} else {
 		/* Cacheable BD memory (default): SW issues dccivac/dcbf to
@@ -1046,7 +1045,6 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		 */
 		dev->rx_pkt_burst = &enetc_recv_pkts_cacheable;
 		dev->tx_pkt_burst = &enetc_xmit_pkts_cacheable;
-		dev->lb_pkt_burst = &enetc_loopback_pkts_cacheable;
 		ENETC_PMD_LOG(INFO, "Using cacheable BD memory ops (_cacheable)");
 	}
 
@@ -1332,7 +1330,6 @@ enetc4_dev_hw_init(struct rte_eth_dev *eth_dev)
 	/* Default: cacheable hugepage BD memory with SW cache maintenance ops. */
 	eth_dev->rx_pkt_burst = &enetc_recv_pkts_cacheable;
 	eth_dev->tx_pkt_burst = &enetc_xmit_pkts_cacheable;
-	eth_dev->lb_pkt_burst = &enetc_loopback_pkts_cacheable;
 
 	/* Retrieving and storing the HW base address of device */
 	hw->hw.reg = (void *)pci_dev->mem_resource[0].addr;
