@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 
+#include <eal_export.h>
 #include <dpaa_ethdev.h>
 #include <dpaa_flow.h>
 #include <rte_dpaa_logs.h>
@@ -1100,6 +1101,7 @@ int dpaa_port_vsp_cleanup(struct dpaa_if *dpaa_intf)
 	return E_OK;
 }
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa_port_set_rate_limit)
 int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 				     uint32_t rate)
 {

@@ -544,6 +544,7 @@ set_rule:
 	return 0;
 }
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa2_mux_multi_enum)
 uint8_t
 rte_pmd_dpaa2_mux_multi_enum(uint8_t num, uint32_t ids[])
 {
@@ -614,6 +615,7 @@ dpaa2_mux_ecpri_flow_create(struct dpaa2_dpdmux_dev *dpdmux_dev,
 	return 0;
 }
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa2_mux_flow_create)
 int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct rte_flow_item pattern[],
@@ -1191,6 +1193,7 @@ creation_error:
 	return ret;
 }
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa2_mux_flow_destroy)
 int
 rte_pmd_dpaa2_mux_flow_destroy(uint32_t dpdmux_id,
 	uint16_t entry_index)
@@ -1242,6 +1245,7 @@ rte_pmd_dpaa2_mux_flow_destroy(uint32_t dpdmux_id,
 	return -EINVAL;
 }
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa2_mux_flow_l2)
 int
 rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
 	uint8_t mac_addr[6], uint16_t vlan_id, int dest_if)

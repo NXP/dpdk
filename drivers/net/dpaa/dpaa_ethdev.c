@@ -1372,6 +1372,7 @@ dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev,
 		socket_id, rx_conf, &mp, 1);
 }
 
+RTE_EXPORT_SYMBOL(rte_dpaa_eth_rx_queue_mp_setup)
 int
 rte_dpaa_eth_rx_queue_mp_setup(uint16_t dev_id,
 	uint16_t queue_idx, uint16_t nb_desc,
@@ -1919,6 +1920,7 @@ static struct eth_dev_ops dpaa_devops = {
 	.timesync_read_tx_timestamp = dpaa_timesync_read_tx_timestamp,
 };
 
+RTE_EXPORT_SYMBOL(rte_pmd_dpaa_set_tx_loopback)
 int
 rte_pmd_dpaa_set_tx_loopback(uint16_t port, uint8_t on)
 {
