@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2019,2024-2025 NXP
+ * Copyright 2018-2019,2024-2026 NXP
  */
 
 #ifndef _ENETC_H_
@@ -93,6 +93,7 @@ struct enetc_bdr {
 		void *tcisr; /* Tx */
 		int next_to_alloc; /* Rx */
 	};
+
 	struct rte_mempool *mb_pool;   /* mbuf pool to populate RX ring. */
 	struct rte_eth_dev *ndev;
 	union {
@@ -102,6 +103,7 @@ struct enetc_bdr {
 	uint64_t ierrors;
 	uint8_t rx_deferred_start;
 	uint8_t tx_deferred_start;
+	uint8_t lso_enable;
 };
 
 struct enetc_eth_hw {
@@ -317,6 +319,9 @@ uint16_t enetc_xmit_pkts(void *txq, struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts);
 uint16_t enetc_xmit_pkts_cacheable(void *txq, struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts);
+uint16_t enetc_xmit_pkts_lso(void *txq, struct rte_mbuf **tx_pkts,
+		uint16_t nb_pkts);
+
 uint16_t enetc_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
 uint16_t enetc_recv_pkts_cacheable(void *rxq, struct rte_mbuf **rx_pkts,

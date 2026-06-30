@@ -916,6 +916,21 @@ them.
 	Note: Use option "--no-lsc-interrupt" in dpdk-testpmd when using uio_pci_generic framework to avoid
 	      link interrupts registration related errors.
 
+	TSO (TCP/UDP segmentation offload) on VF:
+	TSO is offloaded per Tx queue. Use the testpmd csum engine to drive it:
+	$ ./dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1 --tx-offloads=0x00008000
+		testpmd> port stop 0
+		testpmd> port config 0 tx_offload tcp_tso on
+		testpmd> csum set ip hw 0
+		testpmd> csum set tcp hw 0
+		testpmd> csum set udp hw 0
+		testpmd> tso set 256 0
+		testpmd> port start 0
+		testpmd> set fwd csum
+		testpmd> start
+	Note: For UDP segmentation, also enable the udp_tso offload:
+	      testpmd> port config 0 tx_offload udp_tso on
+
 PSI-VSI messaging:
 ------------------
 The hardware supports VF to send messages to PF by the VSI-TO-PSI
