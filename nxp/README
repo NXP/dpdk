@@ -931,6 +931,20 @@ them.
 	Note: For UDP segmentation, also enable the udp_tso offload:
 	      testpmd> port config 0 tx_offload udp_tso on
 
+	LRO (Large Receive Offload) via hardware RSC:
+	LRO is offloaded through the ENETC Receive Segment Coalesce (RSC) engine
+	and is enabled per port when the TCP LRO Rx offload is requested. RSC
+	requires the FCS to be stripped, so it cannot be combined with KEEP_CRC.
+	$ ./dpdk-testpmd -l 0,1 -n 1 -- -i --portmask=0x1 --rx-offloads=0x00004000
+		testpmd> port stop 0
+		testpmd> port config 0 rx_offload tcp_lro on
+		testpmd> port config all max-lro-pkt-size 1200
+		testpmd> port start 0
+		testpmd> set fwd rxonly
+		testpmd> start
+	Note: Coalesced frames are delivered with the RTE_MBUF_F_RX_LRO flag set;
+	      use "show port stats 0" to observe reduced packet counts.
+
 PSI-VSI messaging:
 ------------------
 The hardware supports VF to send messages to PF by the VSI-TO-PSI

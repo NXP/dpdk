@@ -104,6 +104,8 @@ struct enetc_bdr {
 	uint8_t rx_deferred_start;
 	uint8_t tx_deferred_start;
 	uint8_t lso_enable;
+	void *rbidr;
+	uint8_t rsc_enable;
 };
 
 struct enetc_eth_hw {
@@ -326,12 +328,15 @@ uint16_t enetc_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
 uint16_t enetc_recv_pkts_cacheable(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
+uint16_t enetc_recv_pkts_rsc(void *rxq, struct rte_mbuf **rx_pkts,
+		uint16_t nb_pkts);
 uint16_t enetc_xmit_pkts_nc(void *txq, struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts);
 uint16_t enetc_recv_pkts_nc(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
 
 int enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt);
+int enetc_refill_rx_ring_rsc(struct enetc_bdr *rx_ring, const int buff_cnt);
 void enetc4_dev_hw_init(struct rte_eth_dev *eth_dev);
 void enetc_print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr);
 
