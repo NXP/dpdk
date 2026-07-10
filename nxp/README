@@ -1171,6 +1171,11 @@ VLAN priority 0 is seen for 100 microsec, then a break of 50 microsec should be 
 then again for 100 microsec VLAN priority 1 is seen, then a break of 50 microsec
 and so on..
 
+CBS shaper (IEEE 802.1Qav) with a DPDK VF
+
+- The ENETC Tx Credit-Based Shaper (CBS) can rate-limit traffic from a DPDK VF
+  driven by the enetc4_vf PMD. See nxp/README_enetc4_vf_cbs for the full guide.
+
 Notes:
 ======
 -> i.MX95 supports jumbo frame, device supports maximum frame size to 2000 Bytes.
