@@ -1356,7 +1356,7 @@ enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 	return 0;
 }
 
-static void
+void
 enetc4_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 			struct rte_eth_rxq_info *qinfo)
 {
@@ -1370,7 +1370,7 @@ enetc4_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	qinfo->conf.rx_drop_en = 0;
 }
 
-static void
+void
 enetc4_txq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 			struct rte_eth_txq_info *qinfo)
 {
