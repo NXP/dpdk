@@ -404,6 +404,18 @@ enetc_bd_unused(struct enetc_bdr *bdr)
 /* Round n DOWN to the nearest multiple of ENETC_BD_PER_CL. */
 #define ENETC_BD_ALIGN_DOWN(n)	((n) & ~(unsigned int)ENETC_BD_PER_CL_MASK)
 
+/* Per-ring Tx BDR registers dumped by .get_reg (shared by PF and VF) */
+static const uint32_t enetc4_txbdr_regs[] = {
+	ENETC_TBMR, ENETC_TBSR, ENETC_TBBAR0, ENETC_TBBAR1,
+	ENETC_TBCIR, ENETC_TBLENR,
+};
+
+/* Per-ring Rx BDR registers dumped by .get_reg (shared by PF and VF) */
+static const uint32_t enetc4_rxbdr_regs[] = {
+	ENETC_RBMR, ENETC_RBSR, ENETC_RBBSR, ENETC_RBCIR,
+	ENETC_RBBAR0, ENETC_RBBAR1, ENETC_RBPIR, ENETC_RBLENR,
+};
+
 /* CBDR prototypes */
 int enetc4_setup_cbdr(struct rte_eth_dev *dev, struct enetc_hw *hw,
 			int bd_count, struct netc_cbdr *cbdr);
