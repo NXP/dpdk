@@ -1549,6 +1549,9 @@ dpaa2_sec_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 			ret = build_sec_fd(*ops, &fd_arr[loop], bpid, dpaa2_qp);
 			if (ret) {
 				DPAA2_SEC_DP_DEBUG("FD build failed");
+				frames_to_send = loop + 1;
+				for (loop = 0; loop < frames_to_send; loop++)
+					free_fle(&fd_arr[loop], dpaa2_qp);
 				goto skip_tx;
 			}
 			ops++;
@@ -1908,6 +1911,9 @@ dpaa2_sec_enqueue_burst_ordered(void *qp, struct rte_crypto_op **ops,
 			ret = build_sec_fd(*ops, &fd_arr[loop], bpid, dpaa2_qp);
 			if (ret) {
 				DPAA2_SEC_DP_DEBUG("FD build failed");
+				frames_to_send = loop + 1;
+				for (loop = 0; loop < frames_to_send; loop++)
+					free_fle(&fd_arr[loop], dpaa2_qp);
 				goto skip_tx;
 			}
 			ops++;
