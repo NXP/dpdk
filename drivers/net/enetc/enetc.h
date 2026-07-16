@@ -108,6 +108,21 @@ struct enetc_bdr {
 	uint8_t rsc_enable;
 };
 
+/*
+ * Saved SI counter baseline for VF stats reset. Since the SI-level
+ * hardware counters (SIROCT0, SIRFRM0, SITOCT0, SITFRM0, SITDFCR)
+ * are read-only for a VF and cannot be directly zeroed, stats_reset
+ * captures the current counter values as a baseline. stats_get then
+ * reports the delta: current_hw_value - baseline.
+ */
+struct enetc4_vf_stats_saved {
+	uint64_t ipackets;
+	uint64_t opackets;
+	uint64_t ibytes;
+	uint64_t obytes;
+	uint64_t oerrors;
+};
+
 struct enetc_eth_hw {
 	struct rte_eth_dev *ndev;
 	struct enetc_hw hw;
@@ -129,6 +144,8 @@ struct enetc_eth_hw {
 	uint8_t vf_link_legacy;
 	struct dpaax_usmem_alloc alloc;
 	struct dpaax_usmem_ctx ctx;
+	/* Baseline snapshot for VF stats reset (software delta approach). */
+	struct enetc4_vf_stats_saved vf_stats_saved;
 };
 
 /*
