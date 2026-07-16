@@ -175,7 +175,8 @@ enum enetc_msg_cmd_class_id {
 	ENETC_CLASS_ID_MAC_FILTER = 0x20,
 	ENETC_CLASS_ID_VLAN_FILTER = 0x21,
 	ENETC_CLASS_ID_LINK_STATUS = 0x80,
-	ENETC_CLASS_ID_LINK_SPEED = 0x81
+	ENETC_CLASS_ID_LINK_SPEED = 0x81,
+	ENETC_CLASS_ID_GET_IP_VER = 0xF0
 };
 
 /* Enum for command IDs */
@@ -189,8 +190,17 @@ enum enetc_msg_cmd_id {
 	ENETC_CMD_ID_GET_LINK_STATUS = 0,
 	ENETC_CMD_ID_REGISTER_LINK_NOTIF = 1,
 	ENETC_CMD_ID_UNREGISTER_LINK_NOTIF = 2,
-	ENETC_CMD_ID_GET_LINK_SPEED = 0
+	ENETC_CMD_ID_GET_LINK_SPEED = 0,
+	/* Get IP version command IDs (class ID 0xF0) */
+	ENETC_CMD_ID_GET_IP_MJ = 0,
+	ENETC_CMD_ID_GET_IP_MN = 1,
+	ENETC_CMD_ID_GET_IP_INT = 2,
+	ENETC_CMD_ID_GET_IP_MNT = 3,
+	ENETC_CMD_ID_GET_IP_CFG = 4
 };
+
+/* IP_VER value returned when the version is not available */
+#define ENETC_IP_VER_NOT_AVAILABLE	0xFF
 
 enum mac_addr_status {
 	ENETC_INVALID_MAC_ADDR = 0x0,
@@ -279,6 +289,11 @@ struct enetc_msg_cmd_get_link_speed {
 	struct enetc_msg_cmd_header header;
 };
 
+/* Get IP version command message format (class ID 0xF0) */
+struct enetc_msg_cmd_get_ip_ver {
+	struct enetc_msg_cmd_header header;
+};
+
 struct enetc_msg_cmd_set_vlan_promisc {
 	struct enetc_msg_cmd_header header;
 	uint8_t op;
@@ -329,6 +344,10 @@ int enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx);
 void enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid);
 const uint32_t *enetc4_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused,
 			size_t *no_of_elements);
+void enetc4_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			 struct rte_eth_rxq_info *qinfo);
+void enetc4_txq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			 struct rte_eth_txq_info *qinfo);
 
 /*
  * enetc4_vf function prototype
@@ -388,6 +407,18 @@ enetc_bd_unused(struct enetc_bdr *bdr)
 #define ENETC_BD_PER_CL_MASK	(ENETC_BD_PER_CL - 1)
 /* Round n DOWN to the nearest multiple of ENETC_BD_PER_CL. */
 #define ENETC_BD_ALIGN_DOWN(n)	((n) & ~(unsigned int)ENETC_BD_PER_CL_MASK)
+
+/* Per-ring Tx BDR registers dumped by .get_reg (shared by PF and VF) */
+static const uint32_t enetc4_txbdr_regs[] = {
+	ENETC_TBMR, ENETC_TBSR, ENETC_TBBAR0, ENETC_TBBAR1,
+	ENETC_TBCIR, ENETC_TBLENR,
+};
+
+/* Per-ring Rx BDR registers dumped by .get_reg (shared by PF and VF) */
+static const uint32_t enetc4_rxbdr_regs[] = {
+	ENETC_RBMR, ENETC_RBSR, ENETC_RBBSR, ENETC_RBCIR,
+	ENETC_RBBAR0, ENETC_RBBAR1, ENETC_RBPIR, ENETC_RBLENR,
+};
 
 /* CBDR prototypes */
 int enetc4_setup_cbdr(struct rte_eth_dev *dev, struct enetc_hw *hw,
