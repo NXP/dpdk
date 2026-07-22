@@ -138,6 +138,7 @@ struct enetc_eth_hw {
 	uint32_t max_queue_size;
 	uint8_t reserve;
 	uint8_t nc_mode; /* 1 = non-cacheable BD memory (mark_ncache path) */
+	uint8_t rxq_intr_en;
 	/* 1 = legacy PF-to-VF link message layout (4-bit speed / 4-bit cookie),
 	 * for PF kernel versions before 6.18.37. Set via vf_link_legacy devarg.
 	 */

@@ -1539,6 +1539,52 @@ static const struct rte_pci_id pci_vf_id_enetc4_map[] = {
 	{ .vendor_id = 0, /* sentinel */ },
 };
 
+static int
+enetc4_vf_rx_queue_intr_enable(struct rte_eth_dev *dev, uint16_t queue_id)
+{
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	uint16_t vec;
+
+	if (hw->nc_mode)
+		return -ENOTSUP;
+
+	if (!hw->rxq_intr_en)
+		return -ENOTSUP;
+
+	vec = queue_id + ENETC4_VF_RX_VEC_BASE;
+
+	enetc_wr(enetc_hw, ENETC_SIMSIRRV(queue_id), vec);
+	enetc4_rxbdr_wr(enetc_hw, queue_id, ENETC4_RBICR1, 0);
+	enetc4_rxbdr_wr(enetc_hw, queue_id, ENETC4_RBICR0,
+			ENETC4_RBICR0_ICEN | ENETC4_RBICR0_ICPT(1));
+	enetc_wr(enetc_hw, ENETC_SIRXIDR, BIT(queue_id));
+
+	enetc4_rxbdr_wr(enetc_hw, queue_id, ENETC_RBIER, ENETC_RBIER_RXTIE);
+
+	return 0;
+}
+
+static int
+enetc4_vf_rx_queue_intr_disable(struct rte_eth_dev *dev, uint16_t queue_id)
+{
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+
+	if (hw->nc_mode)
+		return -ENOTSUP;
+
+	if (!hw->rxq_intr_en)
+		return 0;
+
+	enetc4_rxbdr_wr(enetc_hw, queue_id, ENETC_RBIER, 0);
+	enetc_wr(enetc_hw, ENETC_SIMSIRRV(queue_id), 0);
+
+	return 0;
+}
+
 /* Features supported by this driver */
 static const struct eth_dev_ops enetc4_vf_ops = {
 	.dev_configure        = enetc4_dev_configure,
@@ -1560,16 +1606,18 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 	.link_update	      = enetc4_vf_link_update,
 	.vlan_filter_set      = enetc4_vf_vlan_filter_set,
 	.vlan_offload_set     = enetc4_vf_vlan_offload_set,
-	.rx_queue_setup       = enetc4_rx_queue_setup,
-	.rx_queue_start       = enetc4_rx_queue_start,
-	.rx_queue_stop        = enetc4_rx_queue_stop,
-	.rx_queue_release     = enetc4_rx_queue_release,
-	.rxq_info_get         = enetc4_rxq_info_get,
-	.tx_queue_setup       = enetc4_tx_queue_setup,
-	.tx_queue_start       = enetc4_tx_queue_start,
-	.tx_queue_stop        = enetc4_tx_queue_stop,
-	.tx_queue_release     = enetc4_tx_queue_release,
-	.txq_info_get         = enetc4_txq_info_get,
+	.rx_queue_setup        = enetc4_rx_queue_setup,
+	.rx_queue_start        = enetc4_rx_queue_start,
+	.rx_queue_stop         = enetc4_rx_queue_stop,
+	.rx_queue_release      = enetc4_rx_queue_release,
+	.rxq_info_get          = enetc4_rxq_info_get,
+	.rx_queue_intr_enable  = enetc4_vf_rx_queue_intr_enable,
+	.rx_queue_intr_disable = enetc4_vf_rx_queue_intr_disable,
+	.tx_queue_setup        = enetc4_tx_queue_setup,
+	.tx_queue_start        = enetc4_tx_queue_start,
+	.tx_queue_stop         = enetc4_tx_queue_stop,
+	.tx_queue_release      = enetc4_tx_queue_release,
+	.txq_info_get          = enetc4_txq_info_get,
 	.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
 };
 
@@ -1583,16 +1631,18 @@ static const struct eth_dev_ops enetc4_vf_ops_no_vsi_m = {
 	.dev_infos_get        = enetc4_vf_dev_infos_get,
 	.get_reg              = enetc4_vf_get_regs,
 	.link_update	      = enetc4_vf_link_update_dummy,
-	.rx_queue_setup       = enetc4_rx_queue_setup,
-	.rx_queue_start       = enetc4_rx_queue_start,
-	.rx_queue_stop        = enetc4_rx_queue_stop,
-	.rx_queue_release     = enetc4_rx_queue_release,
-	.rxq_info_get         = enetc4_rxq_info_get,
-	.tx_queue_setup       = enetc4_tx_queue_setup,
-	.tx_queue_start       = enetc4_tx_queue_start,
-	.tx_queue_stop        = enetc4_tx_queue_stop,
-	.tx_queue_release     = enetc4_tx_queue_release,
-	.txq_info_get         = enetc4_txq_info_get,
+	.rx_queue_setup        = enetc4_rx_queue_setup,
+	.rx_queue_start        = enetc4_rx_queue_start,
+	.rx_queue_stop         = enetc4_rx_queue_stop,
+	.rx_queue_release      = enetc4_rx_queue_release,
+	.rxq_info_get          = enetc4_rxq_info_get,
+	.rx_queue_intr_enable  = enetc4_vf_rx_queue_intr_enable,
+	.rx_queue_intr_disable = enetc4_vf_rx_queue_intr_disable,
+	.tx_queue_setup        = enetc4_tx_queue_setup,
+	.tx_queue_start        = enetc4_tx_queue_start,
+	.tx_queue_stop         = enetc4_tx_queue_stop,
+	.tx_queue_release      = enetc4_tx_queue_release,
+	.txq_info_get          = enetc4_txq_info_get,
 	.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
 };
 
@@ -1772,6 +1822,36 @@ enetc4_vf_dev_intr(struct rte_eth_dev *eth_dev, bool enable)
 		/* Vector index 0 */
 		enetc_wr(enetc_hw, ENETC4_SIMSIVR, ENETC4_SI_INT_IDX);
 
+		if (rte_intr_cap_multiple(intr_handle) &&
+		    eth_dev->data->nb_rx_queues > 0) {
+			uint16_t nb_rx = eth_dev->data->nb_rx_queues;
+			uint16_t i;
+
+			ret = rte_intr_efd_enable(intr_handle,
+					nb_rx + ENETC4_VF_RX_VEC_BASE);
+			if (ret) {
+				ENETC_PMD_WARN("Failed to enable per-queue Rx eventfds: %d",
+					       ret);
+				ret = 0;
+				hw->rxq_intr_en = 0;
+			} else {
+				ret = rte_intr_vec_list_alloc(intr_handle,
+						"enetc4_vf_rx_intr", nb_rx);
+				if (ret) {
+					ENETC_PMD_WARN("Failed to alloc intr vec list: %d",
+						       ret);
+					rte_intr_efd_disable(intr_handle);
+					hw->rxq_intr_en = 0;
+				} else {
+					for (i = 0; i < nb_rx; i++)
+						rte_intr_vec_list_index_set(
+							intr_handle, i,
+							i + ENETC4_VF_RX_VEC_BASE);
+					hw->rxq_intr_en = 1;
+				}
+			}
+		}
+
 		/* enable uio/vfio intr/eventfd mapping */
 		ret = rte_intr_enable(intr_handle);
 		if (ret) {
@@ -1795,6 +1875,7 @@ enetc4_vf_dev_intr(struct rte_eth_dev *eth_dev, bool enable)
 		ENETC_PMD_WARN("Failed to un-register link notification %d", ret);
 disable:
 	enetc_vf_enable_mr_int(enetc_hw, false);
+	hw->rxq_intr_en = 0;
 	ret = rte_intr_disable(intr_handle);
 	if (ret)
 		ENETC_PMD_WARN("Failed to disable INTR %d", ret);
@@ -1814,7 +1895,7 @@ static struct rte_pci_driver rte_enetc4_vf_pmd = {
 
 RTE_PMD_REGISTER_PCI(net_enetc4_vf, rte_enetc4_vf_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_enetc4_vf, pci_vf_id_enetc4_map);
-RTE_PMD_REGISTER_KMOD_DEP(net_enetc4_vf, "* igb_uio | uio_pci_generic");
+RTE_PMD_REGISTER_KMOD_DEP(net_enetc4_vf, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_PMD_REGISTER_PARAM_STRING(net_enetc4_vf,
 				ENETC_VF_LINK_LEGACY "=<0|1>");
 
