@@ -569,8 +569,11 @@ enetc4_msg_vsi_send(struct enetc_hw *enetc_hw, struct enetc_msg_swbd *msg)
 		case ENETC_CLASS_ID_LINK_STATUS:
 		case ENETC_CLASS_ID_LINK_SPEED:
 		case ENETC_CLASS_ID_GET_IP_VER:
+		case ENETC_CLASS_ID_SI_VLAN_ISO:
 			break;
 		default:
+			ENETC_PMD_ERR("Unexpected reply class_id=0x%02x vsimsgsr=0x%08x",
+				      class_id, vsimsgsr);
 			err = -EIO;
 		}
 	}
@@ -1476,6 +1479,87 @@ static int enetc4_vf_vlan_offload_set(struct rte_eth_dev *dev, int mask __rte_un
 	return 0;
 }
 
+/* Configure SI-based VLAN insertion/removal via VSI-PSI mailbox (class 0x24). */
+static int
+enetc4_vf_vlan_pvid_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_si_vlan_iso *cmd;
+	struct enetc_msg_swbd *msg;
+	struct enetc_psi_reply_msg *reply_msg;
+	uint32_t msg_size;
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
+	if (!reply_msg) {
+		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
+		return -ENOMEM;
+	}
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_si_vlan_iso),
+			     ENETC_VSI_PSI_MSG_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg body");
+		rte_free(msg);
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+	msg->dma = rte_mem_virt2iova((const void *)msg->vaddr);
+	if (msg->dma == RTE_BAD_IOVA) {
+		ENETC_PMD_ERR("Failed to get IOVA for SI VLAN isolation msg body");
+		rte_free(msg->vaddr);
+		rte_free(msg);
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+	msg->size = msg_size;
+
+	cmd = (struct enetc_msg_si_vlan_iso *)msg->vaddr;
+
+	if (on) {
+		cmd->ctrl = (uint8_t)ENETC_SI_VLAN_ISO_E;
+		cmd->pcp_dei_vid_hi = (uint8_t)((vlan_id >> 8) & 0x0f);
+		cmd->vid_lo = (uint8_t)(vlan_id & 0xff);
+		cmd->flags = (uint8_t)(ENETC_SI_VLAN_ISO_SVIE | ENETC_SI_VLAN_ISO_VTE);
+	}
+	/* on=0: all fields zero (rte_zmalloc cleared the buffer) */
+
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_SI_VLAN_ISO,
+				     ENETC_CMD_ID_SET_SI_VLAN_ISO, 0, 0, 0);
+
+	/* send the command and wait for PSI reply */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err) {
+		ENETC_PMD_ERR("VSI message send error for SI VLAN isolation");
+		goto end;
+	}
+
+	enetc4_msg_vsi_reply_msg(enetc_hw, reply_msg);
+
+	if (reply_msg->class_id != ENETC_MSG_CLASS_ID_CMD_SUCCESS) {
+		ENETC_PMD_ERR("SI VLAN isolation command failed: class_id=0x%x status=0x%x",
+			      reply_msg->class_id, reply_msg->status);
+		err = -EINVAL;
+	}
+
+end:
+	rte_free(msg->vaddr);
+	rte_free(msg);
+	rte_free(reply_msg);
+	return err;
+}
+
 static int
 enetc4_vf_mtu_set(struct rte_eth_dev *dev __rte_unused, uint16_t mtu __rte_unused)
 {
@@ -1606,6 +1690,7 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 	.link_update	      = enetc4_vf_link_update,
 	.vlan_filter_set      = enetc4_vf_vlan_filter_set,
 	.vlan_offload_set     = enetc4_vf_vlan_offload_set,
+	.vlan_pvid_set        = enetc4_vf_vlan_pvid_set,
 	.rx_queue_setup        = enetc4_rx_queue_setup,
 	.rx_queue_start        = enetc4_rx_queue_start,
 	.rx_queue_stop         = enetc4_rx_queue_stop,

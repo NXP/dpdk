@@ -1,0 +1,167 @@
+diff --git a/drivers/net/ethernet/freescale/enetc/enetc4_hw.h b/drivers/net/ethernet/freescale/enetc/enetc4_hw.h
+index f8f994b21c37..98ac3e2386f8 100644
+--- a/drivers/net/ethernet/freescale/enetc/enetc4_hw.h
++++ b/drivers/net/ethernet/freescale/enetc/enetc4_hw.h
+@@ -182,6 +182,8 @@
+ 
+ /* Port station interface a configuration register 0/2 */
+ #define ENETC4_PSICFGR0(a)		((a) * 0x80 + 0x2010)
++#define  PSICFGR0_VTE			BIT(12)
++#define  PSICFGR0_SIVIE			BIT(14)
+ #define  PSICFGR0_VASE			BIT(13)
+ #define  PSICFGR0_ASE			BIT(15)
+ #define  PSICFGR0_ANTI_SPOOFING		(PSICFGR0_VASE | PSICFGR0_ASE)
+diff --git a/drivers/net/ethernet/freescale/enetc/enetc4_pf.c b/drivers/net/ethernet/freescale/enetc/enetc4_pf.c
+index 621963da0a93..00d1e91cc19c 100644
+--- a/drivers/net/ethernet/freescale/enetc/enetc4_pf.c
++++ b/drivers/net/ethernet/freescale/enetc/enetc4_pf.c
+@@ -427,6 +427,33 @@ static void enetc4_pf_set_si_vlan_promisc(struct enetc_hw *hw, int si, bool en)
+ 	enetc_port_wr(hw, ENETC4_PSIPVMR, val);
+ }
+ 
++/* enetc4_pf_set_si_vlan_iso - program SI-based VLAN insertion and removal.
++ * si is the SI index (VF 0 -> si=1, VF 1 -> si=2, ...).
++ * When enable=true: write VID+PCP to PSIaVLANR, set SIVIE+VTE in PSIaCFGR0.
++ * When enable=false: clear VID register and SIVIE+VTE bits.
++ */
++static void enetc4_pf_set_si_vlan_iso(struct enetc_hw *hw, int si,
++				      bool enable, u16 vid, u8 pcp)
++{
++	u32 vlanr, cfgr;
++
++	if (enable) {
++		vlanr = vid & PSIVLANR_VID;
++		vlanr = u32_replace_bits(vlanr, pcp, PSIVLANR_PCP);
++		vlanr |= PSIVLANR_E;
++		enetc_port_wr(hw, ENETC4_PSIVLANR(si), vlanr);
++
++		cfgr = enetc_port_rd(hw, ENETC4_PSICFGR0(si));
++		cfgr |= PSICFGR0_SIVIE | PSICFGR0_VTE;
++		enetc_port_wr(hw, ENETC4_PSICFGR0(si), cfgr);
++	} else {
++		cfgr = enetc_port_rd(hw, ENETC4_PSICFGR0(si));
++		cfgr &= ~(PSICFGR0_SIVIE | PSICFGR0_VTE);
++		enetc_port_wr(hw, ENETC4_PSICFGR0(si), cfgr);
++		enetc_port_wr(hw, ENETC4_PSIVLANR(si), 0);
++	}
++}
++
+ static struct phylink_pcs *enetc4_pf_create_pcs(struct enetc_pf *pf,
+ 						struct mii_bus *bus)
+ {
+@@ -453,6 +480,7 @@ static const struct enetc_pf_ops enetc4_pf_ops = {
+ 	.set_si_mac_hash_filter = enetc4_pf_set_si_mac_hash_filter,
+ 	.set_si_vlan_promisc = enetc4_pf_set_si_vlan_promisc,
+ 	.set_si_vlan_hash_filter = enetc_set_si_vlan_ht_filter,
++	.set_si_vlan_iso = enetc4_pf_set_si_vlan_iso,
+ 	.create_pcs = enetc4_pf_create_pcs,
+ 	.destroy_pcs = enetc4_pf_destroy_pcs,
+ };
+diff --git a/drivers/net/ethernet/freescale/enetc/enetc_mailbox.h b/drivers/net/ethernet/freescale/enetc/enetc_mailbox.h
+index 37f130383601..f81cd939f0ff 100644
+--- a/drivers/net/ethernet/freescale/enetc/enetc_mailbox.h
++++ b/drivers/net/ethernet/freescale/enetc/enetc_mailbox.h
+@@ -17,6 +17,7 @@
+ /* Common Class ID for PSI-TO-VSI and VSI-TO-PSI messages */
+ #define ENETC_MSG_CLASS_ID_MAC_FILTER		0x20
+ #define ENETC_MSG_CLASS_ID_VLAN_FILTER		0x21
++#define ENETC_MSG_CLASS_ID_SI_VLAN_ISO		0x24
+ #define ENETC_MSG_CLASS_ID_LINK_STATUS		0x80
+ #define ENETC_MSG_CLASS_ID_LINK_SPEED		0x81
+ #define ENETC_MSG_CLASS_ID_IP_REVISION		0xf0
+@@ -212,6 +213,30 @@ struct enetc_msg_vlan_promisc_mode {
+ 	u8 resv:6;
+ };
+ 
++/* message format of class_id 0x24, cmd_id: 0x1,
++ * set SI-based VLAN insertion/removal (privileged VFs only)
++ *
++ * ctrl:        E[7]=1 enable, VTEA[6]=strip tag on Tx too, TPID[1:0]
++ * pcp_dei_vid_hi: PCP[7:5], DEI[4], VID[11:8] in bits[3:0]
++ * vid_lo:      VID[7:0]
++ * flags:       SVIE[2]=Tx insert enable, VTE[1]=Rx remove enable
++ */
++#define ENETC_SI_VLAN_ISO_CMD_SET	0x1
++
++#define ENETC_SI_VLAN_ISO_CTRL_E	BIT(7)
++#define ENETC_SI_VLAN_ISO_FLAGS_SVIE	BIT(2)
++#define ENETC_SI_VLAN_ISO_FLAGS_VTE	BIT(1)
++
++struct enetc_msg_si_vlan_iso {
++	struct enetc_msg_header hdr;
++	u8 ctrl;
++	u8 pcp_dei_vid_hi;
++	u8 vid_lo;
++	u8 reserved_0;
++	u8 flags;
++	u8 reserved_1[3];
++};
++
+ /* The generic message format applies to the following messages:
+  * Get IP revision message, class_id: 0xf0
+  * cmd_id 1: get IP minor revision
+diff --git a/drivers/net/ethernet/freescale/enetc/enetc_msg.c b/drivers/net/ethernet/freescale/enetc/enetc_msg.c
+index 3862962e77d9..d93b4c2a9bb9 100644
+--- a/drivers/net/ethernet/freescale/enetc/enetc_msg.c
++++ b/drivers/net/ethernet/freescale/enetc/enetc_msg.c
+@@ -244,6 +244,37 @@ static u16 enetc_msg_handle_vlan_filter(struct enetc_msg_header *msg_hdr,
+ 	}
+ }
+ 
++/* Handle SI VLAN isolation command from VF (class 0x24, cmd 0x1).
++ * Decodes ctrl/pcp_dei_vid_hi/vid_lo/flags from the message body and
++ * programs PSIaVLANR + PSIaCFGR0 for the requesting SI via the PF ops.
++ */
++static u16 enetc_msg_handle_si_vlan_iso(struct enetc_msg_header *msg_hdr,
++					struct enetc_pf *pf, int vf_id)
++{
++	struct enetc_msg_si_vlan_iso *msg;
++	struct enetc_hw *hw = &pf->si->hw;
++	bool enable;
++	u16 vid;
++	u8 pcp;
++
++	if (msg_hdr->cmd_id != ENETC_SI_VLAN_ISO_CMD_SET)
++		return ENETC_MSG_CODE_NOT_SUPPORT;
++
++	if (!pf->ops->set_si_vlan_iso)
++		return ENETC_MSG_CODE_NOT_SUPPORT;
++
++	msg = (struct enetc_msg_si_vlan_iso *)pf->rxmsg[vf_id].vaddr;
++
++	enable = !!(msg->ctrl & ENETC_SI_VLAN_ISO_CTRL_E);
++	vid = ((u16)(msg->pcp_dei_vid_hi & 0x0f) << 8) | msg->vid_lo;
++	pcp = (msg->pcp_dei_vid_hi >> 5) & 0x7;
++
++	/* si index for VF 0 is 1, VF 1 is 2, etc. */
++	pf->ops->set_si_vlan_iso(hw, vf_id + 1, enable, vid, pcp);
++
++	return ENETC_MSG_CODE_SUCCESS;
++}
++
+ static u16 enetc_msg_pf_reply_link_status(struct enetc_pf *pf)
+ {
+ 	struct net_device *ndev = pf->si->ndev;
+@@ -450,6 +481,9 @@ static void enetc_msg_handle_rxmsg(struct enetc_pf *pf, int vf_id,
+ 	case ENETC_MSG_CLASS_ID_VLAN_FILTER:
+ 		*msg_code = enetc_msg_handle_vlan_filter(msg_hdr, pf, vf_id);
+ 		break;
++	case ENETC_MSG_CLASS_ID_SI_VLAN_ISO:
++		*msg_code = enetc_msg_handle_si_vlan_iso(msg_hdr, pf, vf_id);
++		break;
+ 	default:
+ 		*msg_code = ENETC_MSG_CODE_NOT_SUPPORT;
+ 	}
+diff --git a/drivers/net/ethernet/freescale/enetc/enetc_pf.h b/drivers/net/ethernet/freescale/enetc/enetc_pf.h
+index a397813aabba..e3769032f2b5 100644
+--- a/drivers/net/ethernet/freescale/enetc/enetc_pf.h
++++ b/drivers/net/ethernet/freescale/enetc/enetc_pf.h
+@@ -58,6 +58,8 @@ struct enetc_pf_ops {
+ 				       enum enetc_mac_addr_type type, u64 hash);
+ 	void (*set_si_vlan_promisc)(struct enetc_hw *hw, int si, bool en);
+ 	void (*set_si_vlan_hash_filter)(struct enetc_si *si, int si_id, u64 hash);
++	void (*set_si_vlan_iso)(struct enetc_hw *hw, int si, bool enable,
++				u16 vid, u8 pcp);
+ };
+ 
+ struct enetc_pf {

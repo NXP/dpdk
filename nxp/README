@@ -929,6 +929,7 @@ ENETC-4 with i.mx95
     * MAC Exact Match filtering
     * VLAN Exact Match filtering
     * Enable/Disable VLAN promiscous mode
+    * SI-based port VLAN insertion/removal (pvid)
     * Link status interrupts
 
   1. Follow the above steps to run dpdk-testpmd.
@@ -971,6 +972,38 @@ ENETC-4 with i.mx95
   Note:
 	Currently, maximum MAC and VLAN address exact match filter table entries that
 	can be added are 4 per ENETC.
+
+  SI-based port VLAN insertion/removal (pvid):
+  --------------------------------------------
+
+  There are 2 methods to test this feature:
+  1. Using Linux netdev function, e.g:
+	ip link set eth1 vf 0 vlan 200
+
+  OR
+
+  2. Configures per-SI hardware VLAN tag insertion on Tx and removal on Rx.
+  On a privileged VF the request is forwarded to the kernel PF via the
+  VSI-PSI mailbox (class 0x24). The kernel PF programs PSIaVLANR (VID +
+  enable bit) and PSIaCFGR0 (SIVIE for Tx insertion, VTE for Rx removal).
+
+  Requirements:
+	- Kernel PF must support VSI-PSI class 0x24 (SI VLAN isolation).
+	  If the kernel does not yet include this support, apply the patch:
+	    nxp/enetc/0001-net-enetc-add-SI-based-VLAN-insertion-and-removal-su.patch
+	- VF must have trust enabled:
+		ip link set <pf-eth-iface> vf 0 trust on
+
+  Run below commands on dpdk-testpmd cmdline:
+	1. Enable SI VLAN insertion (Tx) and removal (Rx) with VID 200:
+		-> tx_vlan set pvid 0 200 on
+	2. Disable SI VLAN insertion/removal:
+		-> tx_vlan set pvid 0 200 off
+
+  Note: This command atomically enables both Tx VLAN tag insertion and
+        Rx VLAN tag removal. Incoming packets with the configured VID
+        are stripped by hardware before reaching the Rx descriptor ring.
+
 
   Link status interrupts:
   -----------------------
