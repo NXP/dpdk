@@ -1005,6 +1005,12 @@ ENETC-4 with i.mx95
         are stripped by hardware before reaching the Rx descriptor ring.
 
 
+  Antispoof check:
+  ---------------
+
+  i.MX95 supports MAC and VLAN antispoofing. use the following command to enable:
+	$ ip link set eth1 vf 0 spoofchk on
+
   Link status interrupts:
   -----------------------
   DPDK is dependent on igb_uio module instead of uio_pci_generic for interrupts.
