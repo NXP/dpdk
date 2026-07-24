@@ -1011,6 +1011,21 @@ ENETC-4 with i.mx95
   i.MX95 supports MAC and VLAN antispoofing. use the following command to enable:
 	$ ip link set eth1 vf 0 spoofchk on
 
+  Multiple processes:
+  ------------------
+  To run multiple processes with different VFs, run the following steps:
+	$ echo 2 > /sys/bus/pci/devices/0002\:00\:10.0/sriov_numvfs
+	$ echo uio_pci_generic > /sys/bus/pci/devices/0002\:00\:12.0/driver_override
+	$ echo uio_pci_generic > /sys/bus/pci/devices/0002\:00\:14.0/driver_override
+	$ echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+	$ echo 0002:00:12.0 > /sys/bus/pci/drivers/uio_pci_generic/bind
+	$ echo 0002:00:14.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+	$ echo 0002:00:14.0 > /sys/bus/pci/drivers/uio_pci_generic/bind
+	$ ip link set eth1 vf 0 trust on
+	$ ip link set eth1 vf 1 trust on
+	$ ./dpdk-l2fwd -c 0x3 -a 0002:00:12.0 --file-prefix=vf0 -- -p 0x1 -T 0 &
+	$ ./dpdk-l2fwd -c 0xc -a 0002:00:14.0 --file-prefix=vf1 -- -p 0x1 -T 0 &
+
   Link status interrupts:
   -----------------------
   DPDK is dependent on igb_uio module instead of uio_pci_generic for interrupts.
