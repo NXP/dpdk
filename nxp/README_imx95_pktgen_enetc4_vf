@@ -1,0 +1,574 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 NXP
+
+===============================================================================
+pktgen-dpdk with ENETC4 VF on NXP i.MX95 EVK (DPDK 25.11 / pktgen 26.03)
+===============================================================================
+
+Overview
+========
+This guide covers cross-compiling pktgen-dpdk (traffic generator) for the NXP
+i.MX95 EVK target using the ENETC4 Virtual Function (VF) DPDK PMD driver with
+the uio_pci_generic kernel driver (no IOMMU / VFIO required).
+
+Two build approaches are described:
+
+  A - Shared DPDK  : pktgen + DPDK .so files + system libs on target
+  B - Static DPDK  : DPDK .a archives baked into pktgen binary (recommended)
+                     Only system shared libs (libc, libpcap) needed on target.
+
+A fully static binary (no .so at all) is not possible because static libc.a
+and libpcap.a are not typically available in the Arm GNU sysroot.
+
+
+Prerequisites - Host machine
+=============================
+
+1. Arm GNU cross-toolchain (aarch64-none-linux-gnu)
+   Download from: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
+   Tested version: arm-gnu-toolchain-13.2.Rel1-x86_64-aarch64-none-linux-gnu
+
+   Install to any directory, e.g. /opt/toolchain/arm-gnu-13.2/
+   Add the bin/ subdirectory to PATH:
+
+     export TOOLCHAIN=/opt/toolchain/arm-gnu-13.2/bin
+     export PATH=$TOOLCHAIN:$PATH
+
+   The following tools from this toolchain are required:
+     aarch64-none-linux-gnu-gcc
+     aarch64-none-linux-gnu-g++
+     aarch64-none-linux-gnu-ar
+     aarch64-none-linux-gnu-strip
+     aarch64-linux-gnu-pkg-config   (usually from host distro libtool package)
+
+2. Meson >= 0.58 and ninja
+     pip3 install --user meson ninja
+   or
+     apt-get install meson ninja-build
+
+3. Python 3.6+, git
+
+4. Aarch64 sysroot containing:
+     libnuma headers and shared library  (libnuma-dev)
+     libpcap headers and shared library  (libpcap-dev)
+     libbsd headers and shared library   (libbsd-dev)
+
+   The sysroot can be obtained from:
+   - NXP i.MX Yocto SDK:  bitbake meta-toolchain (or -populate-sdk)
+   - NXP Linarox / IMX Linux BSP SDK installer (produces a sysroot directory)
+   - Manually assembled by multiarch-apt or debootstrap for aarch64
+
+   Set the path:
+     export SYSROOT=/path/to/aarch64-sysroot
+
+   Verify the key files exist:
+     $SYSROOT/usr/include/pcap.h
+     $SYSROOT/usr/lib/aarch64-linux-gnu/libpcap.so
+     $SYSROOT/usr/lib/aarch64-linux-gnu/libnuma.so
+
+
+Cross-Compilation File for pktgen
+==================================
+pktgen-dpdk does not use the DPDK config/arm/ cross files directly.  A
+separate meson cross-compilation INI file is needed for pktgen.  Create it
+once and keep it alongside the pktgen source tree (or in any convenient
+location):
+
+  File: cross_arm64_imx.ini
+
+  [binaries]
+  c   = '/opt/toolchain/arm-gnu-13.2/bin/aarch64-none-linux-gnu-gcc'
+  cpp = '/opt/toolchain/arm-gnu-13.2/bin/aarch64-none-linux-gnu-g++'
+  ar  = '/opt/toolchain/arm-gnu-13.2/bin/aarch64-none-linux-gnu-ar'
+  as  = '/opt/toolchain/arm-gnu-13.2/bin/aarch64-none-linux-gnu-as'
+  strip = '/opt/toolchain/arm-gnu-13.2/bin/aarch64-none-linux-gnu-strip'
+  pkgconfig  = 'aarch64-linux-gnu-pkg-config'
+  pkg-config = 'aarch64-linux-gnu-pkg-config'
+  pcap-config = ''
+
+  [host_machine]
+  system     = 'linux'
+  cpu_family = 'aarch64'
+  cpu        = 'armv8.2-a'
+  endian     = 'little'
+
+NOTE: Adjust the toolchain path to match your installation.
+
+Cross-Compilation File for DPDK
+================================
+DPDK ships its own cross files under config/arm/.  The file that matches the
+Arm GNU aarch64-none-linux-gnu toolchain for i.MX platforms is:
+
+  config/arm/arm64_imx_linux_gnu_gcc
+
+This file already references aarch64-none-linux-gnu-gcc and sets
+platform=imx.  Use it directly when building DPDK - no changes to DPDK source
+code are required:
+
+  meson setup arm64-build \
+    --cross-file config/arm/arm64_imx_linux_gnu_gcc \
+    ...
+
+
+Step 1 - Clone Sources
+=======================
+
+1a. Clone this DPDK repository (already done if you are reading this file):
+
+  git clone <dpdk-repo-url> dpdk
+  cd dpdk
+  # This guide is tested against DPDK 25.11.x NXP branch.
+  # Use the branch/tag recommended by your BSP release notes.
+
+1b. Clone pktgen-dpdk:
+
+  git clone https://github.com/pktgen/pktgen-dpdk.git pktgen-dpdk
+  cd pktgen-dpdk
+  git checkout pktgen-26.03.0
+
+  Verify the version tag:
+    git describe --tags
+    # Expected: pktgen-26.03.0
+
+
+Step 2 - Build DPDK Statically (Approach B, recommended)
+==========================================================
+The static DPDK build tree is consumed directly by pktgen via the
+meson-uninstalled pkgconfig file.  No 'ninja install' step is needed.
+
+  export SYSROOT=/path/to/aarch64-sysroot
+  cd dpdk
+
+  # Remove any previous arm64 build directory
+  rm -rf arm64-build
+
+  meson setup arm64-build \
+    --cross-file config/arm/arm64_imx_linux_gnu_gcc \
+    --default-library=static \
+    -Denable_kmods=false \
+    -Dtests=false \
+    -Dc_args="-I${SYSROOT}/usr/include" \
+    -Dc_link_args="-L${SYSROOT}/usr/lib/aarch64-linux-gnu \
+                   -L${SYSROOT}/lib/aarch64-linux-gnu"
+
+  ninja -C arm64-build
+
+After a successful build:
+  arm64-build/lib/librte_*.a       (static archives)
+  arm64-build/drivers/librte_*.a
+  arm64-build/meson-uninstalled/   (pkgconfig used by pktgen)
+
+Key meson options:
+
+  --default-library=static   Produce .a archives instead of .so shared libs
+  -Denable_kmods=false       Skip kernel module build
+  -Dtests=false              Skip unit tests to save build time
+
+
+Step 3 - Build pktgen with DPDK Statically Linked (Approach B)
+================================================================
+pktgen reads DPDK build info via pkg-config.  Point PKG_CONFIG_PATH at the
+DPDK meson-uninstalled tree and the sysroot pkgconfig directory:
+
+  export SYSROOT=/path/to/aarch64-sysroot
+  export PKG_CONFIG_PATH=<path-to-dpdk>/arm64-build/meson-uninstalled:${SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig
+
+  cd pktgen-dpdk
+  rm -rf arm64-build
+
+  # -Dprefer_static=true causes meson to pass --static to pkg-config,
+  # which activates the Libs.private whole-archive entries in the DPDK
+  # .pc file so that .a archives are linked instead of .so files.
+  meson setup arm64-build \
+    --cross-file cross_arm64_imx.ini \
+    --default-library=static \
+    -Dprefer_static=true \
+    -Dwerror=false \
+    -Dbuildtype=release
+
+  ninja -C arm64-build
+
+Result: arm64-build/app/pktgen
+
+Verify the binary:
+  file arm64-build/app/pktgen
+  # ELF 64-bit LSB executable, ARM aarch64 ...
+
+  # Confirm no DPDK .so dependencies remain
+  aarch64-none-linux-gnu-readelf -d arm64-build/app/pktgen | grep NEEDED
+  # Expected output: libm.so.6  libpcap.so.0.8  libc.so.6
+  # (no librte_*.so should appear)
+
+Optional - strip debug symbols to reduce binary size:
+  aarch64-none-linux-gnu-strip arm64-build/app/pktgen
+
+
+Step 4 - Build DPDK as Shared Libraries (Approach A)
+=====================================================
+Use this if you prefer the classic shared-library deployment model.
+
+  export SYSROOT=/path/to/aarch64-sysroot
+  cd dpdk
+  rm -rf arm64-build-shared
+
+  meson setup arm64-build-shared \
+    --cross-file config/arm/arm64_imx_linux_gnu_gcc \
+    --default-library=shared \
+    -Denable_kmods=false \
+    -Dtests=false \
+    -Dprefix=<path-to-dpdk>/arm64-build-shared/install \
+    -Dc_args="-I${SYSROOT}/usr/include" \
+    -Dc_link_args="-L${SYSROOT}/usr/lib/aarch64-linux-gnu \
+                   -L${SYSROOT}/lib/aarch64-linux-gnu"
+
+  ninja -C arm64-build-shared
+  ninja -C arm64-build-shared install
+
+Build pktgen against shared DPDK:
+
+  export PKG_CONFIG_PATH=<path-to-dpdk>/arm64-build-shared/install/lib/aarch64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+
+  cd pktgen-dpdk
+  rm -rf arm64-build-shared
+
+  meson setup arm64-build-shared \
+    --cross-file cross_arm64_imx.ini \
+    -Dwerror=false \
+    -Dbuildtype=release
+
+  ninja -C arm64-build-shared
+
+Result: arm64-build-shared/app/pktgen
+
+
+libpcap - Where to Obtain It
+==============================
+libpcap is required at both build time (headers + .so for linking) and
+runtime (shared library on the target).
+
+Static build (Approach B):
+  libpcap must be present in the sysroot as a shared library for linking
+  during the pktgen build.  The resulting pktgen binary will have
+  libpcap.so.0.8 as a runtime dependency and that library must exist on
+  the target board.
+
+Sources for aarch64 libpcap:
+  - NXP i.MX Yocto SDK / BSP sysroot (recommended - matches target rootfs)
+  - Debian/Ubuntu multiarch:
+      dpkg --add-architecture arm64
+      apt-get install libpcap-dev:arm64
+      # Headers in /usr/include, .so in /usr/lib/aarch64-linux-gnu/
+  - Build from source (tcpdump.org):
+      ./configure --host=aarch64-none-linux-gnu CC=aarch64-none-linux-gnu-gcc
+      make
+
+Runtime library on target:
+  The libpcap .so is usually already present in standard i.MX BSP images.
+  If not, copy from the sysroot:
+
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libpcap.so.1.9.1 root@<board>:/usr/lib/
+    ssh root@<board> "cd /usr/lib && ln -sf libpcap.so.1.9.1 libpcap.so.0.8 && ldconfig"
+
+
+Step 5 - Deploy to Target Board
+=================================
+
+Approach B (Static DPDK - recommended):
+  Only the pktgen binary and system runtime libraries need to be copied.
+
+    TARGET=root@<board-ip>
+    PKTGEN_BUILD=<path-to-pktgen-dpdk>/arm64-build
+    SYSROOT=/path/to/aarch64-sysroot
+
+    # Copy pktgen binary (DPDK baked in)
+    scp ${PKTGEN_BUILD}/app/pktgen ${TARGET}:/usr/local/bin/
+    ssh ${TARGET} chmod +x /usr/local/bin/pktgen
+
+    # Copy system runtime libs if not already present on target
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libpcap.so.1*  ${TARGET}:/usr/lib/
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libnuma.so.1*  ${TARGET}:/usr/lib/
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libbsd.so.0*   ${TARGET}:/usr/lib/
+    ssh ${TARGET} ldconfig
+
+Approach A (Shared DPDK):
+  The pktgen binary, DPDK shared libraries, and system libraries must all
+  be copied to the target.
+
+    TARGET=root@<board-ip>
+    DPDK_INST=<path-to-dpdk>/arm64-build-shared/install
+    PKTGEN_BUILD=<path-to-pktgen-dpdk>/arm64-build-shared
+    SYSROOT=/path/to/aarch64-sysroot
+
+    scp ${PKTGEN_BUILD}/app/pktgen ${TARGET}:/usr/local/bin/
+
+    # DPDK core shared libs
+    scp ${DPDK_INST}/lib/aarch64-linux-gnu/librte_*.so.26.0 ${TARGET}:/usr/lib/
+
+    # DPDK PMD plugins
+    ssh ${TARGET} mkdir -p /usr/lib/dpdk
+    scp ${DPDK_INST}/lib/aarch64-linux-gnu/dpdk/pmds-26.0/librte_*.so.26.0 \
+        ${TARGET}:/usr/lib/dpdk/
+
+    # System runtime libs
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libpcap.so.1*  ${TARGET}:/usr/lib/
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libnuma.so.1*  ${TARGET}:/usr/lib/
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libbsd.so.0*   ${TARGET}:/usr/lib/
+
+    ssh ${TARGET} "echo /usr/lib/dpdk > /etc/ld.so.conf.d/dpdk.conf && ldconfig"
+
+
+Step 6 - Target Board Setup
+=============================
+
+6.1 Hugepages
+-------------
+pktgen requires hugepages.  Configure at least 512 x 2MB hugepages:
+
+  # Mount hugetlbfs if not already mounted
+  mkdir -p /mnt/huge
+  mount -t hugetlbfs nodev /mnt/huge
+
+  # Allocate 2MB hugepages (512 pages = 1 GB total)
+  echo 512 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+
+  # Verify
+  cat /proc/meminfo | grep -i huge
+
+For persistent allocation add to /etc/default/grub:
+  GRUB_CMDLINE_LINUX="... default_hugepagesz=2M hugepagesz=2M hugepages=512"
+And run update-grub.
+
+6.2 ENETC4 VF - uio_pci_generic binding
+-----------------------------------------
+The ENETC4 DPDK PMD uses uio_pci_generic for DMA access (no IOMMU required).
+
+On i.MX95 EVK the PF is at PCIe address 0002:00:00.0 and VFs appear at
+0002:00:10.x and above after SR-IOV is enabled.  The exact VF address
+depends on the number of VFs created and the PCI topology.
+
+  # Load kernel modules
+  modprobe uio
+  modprobe uio_pci_generic
+
+  # Create 1 VF on the enetc4 PF (adjust PF address if different)
+  echo 1 > /sys/bus/pci/devices/0002:00:10.0/sriov_numvfs
+
+  # Verify VF appeared
+  lspci | grep -i enetc
+  # Expected: 0002:00:12.0 Ethernet controller: NXP ...
+
+  # Grant the VF trust mode on the PF netdev (required for promiscuous mode)
+  ip link set eth1 vf 0 trust on
+
+  # Unbind VF from its default Linux driver
+  echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+
+  # Bind VF to uio_pci_generic
+  echo uio_pci_generic > /sys/bus/pci/devices/0002:00:12.0/driver_override
+  echo 0002:00:12.0 > /sys/bus/pci/drivers/uio_pci_generic/bind
+
+  # Verify binding
+  ls /sys/bus/pci/drivers/uio_pci_generic/
+  # 0002:00:12.0 should appear in the list
+
+  # Verify /dev/uioX node appeared
+  ls /dev/uio*
+
+Notes:
+- The PF net interface name (eth1 above) may differ on your board.
+  Use 'ip link' or 'ls /sys/class/net/' to identify it.
+- If the VF is already unbound (no driver), skip the unbind step.
+- To make the binding persistent across reboots, add the modprobe and
+  bind commands to /etc/rc.local or create a udev rule.
+
+6.3 CPU Isolation (optional but recommended for accurate measurements)
+----------------------------------------------------------------------
+Add to /etc/default/grub and run update-grub:
+  GRUB_CMDLINE_LINUX="... isolcpus=2-5 nohz_full=2-5 rcu_nocbs=2-5"
+
+
+Step 7 - Running pktgen
+========================
+
+7.1 Basic command syntax
+  pktgen [EAL options] -- [pktgen options]
+
+  Use -a (--allow) to whitelist the VF PCI address.
+  Map lcores to ports with -m "lcore.port".
+
+7.2 Single VF port (1 TX/RX queue)
+
+  pktgen \
+    -l 0,2 \
+    -n 4 \
+    --proc-type primary \
+    --file-prefix pktgen \
+    -a 0002:00:12.0 \
+    -- \
+    -T \
+    -P \
+    -m "2.0"
+
+  Option summary:
+    -l 0,2          Use lcore 0 (main) and lcore 2 (port 0 TX/RX)
+    -n 4            4 memory channels
+    -a 0002:00:12.0 Allow/whitelist VF PCI address
+    -T              Enable color terminal output
+    -P              Enable promiscuous mode on all ports
+    -m "2.0"        Map lcore 2 to port 0, queue 0
+
+7.3 Two VF ports back-to-back throughput test
+
+  # First enable 2 VFs:
+  echo 2 > /sys/bus/pci/devices/0002:00:10.0/sriov_numvfs
+  ip link set eth1 vf 0 trust on
+  ip link set eth1 vf 1 trust on
+  # Bind both VFs to uio_pci_generic (0002:00:12.0 and 0002:00:12.4 or similar)
+  for VF in 0002:00:12.0 0002:00:12.4; do
+    echo $VF > /sys/bus/pci/drivers/fsl_enetc_vf/unbind 2>/dev/null
+    echo uio_pci_generic > /sys/bus/pci/devices/$VF/driver_override
+    echo $VF > /sys/bus/pci/drivers/uio_pci_generic/bind
+  done
+
+  pktgen \
+    -l 0,2,3 \
+    -n 4 \
+    -a 0002:00:12.0 \
+    -a 0002:00:12.4 \
+    -- \
+    -T \
+    -P \
+    -m "2.0, 3.1"
+
+  -m "2.0, 3.1":
+    lcore 2 -> port 0, queue 0
+    lcore 3 -> port 1, queue 0
+
+7.4 Using LD_LIBRARY_PATH for shared DPDK build only
+  export LD_LIBRARY_PATH=/usr/lib/dpdk:$LD_LIBRARY_PATH
+  pktgen -l 0,2 -n 4 -a 0002:00:12.0 -- -T -P -m "2.0"
+
+
+Step 8 - pktgen Interactive CLI
+================================
+Once pktgen starts an interactive terminal is presented.  Example commands:
+
+  # Start / stop traffic on port 0
+  start 0
+  stop  0
+  start all
+  stop  all
+
+  # Configure packet parameters
+  set 0 size 64
+  set 0 rate 100
+  set 0 count 0          # 0 = infinite
+  set 0 src ip 10.0.0.1/24
+  set 0 dst ip 10.0.0.2
+  set 0 src mac 00:11:22:33:44:55
+  set 0 dst mac 00:aa:bb:cc:dd:ee
+  set 0 proto udp
+  set 0 sport 1234
+  set 0 dport 5678
+
+  # Statistics
+  clr      # clear counters
+  str      # start traffic
+  stp      # stop traffic
+
+  # Quit
+  quit
+
+
+Step 9 - Example Lua Script
+=============================
+Save as /root/pktgen_test.lua and pass with -f flag:
+
+  package.path = package.path ..";?.lua;test/?.lua;app/?.lua;"
+  pktgen.clr()
+  pktgen.set("0", "size",  64)
+  pktgen.set("0", "rate",  100)
+  pktgen.set("0", "count", 0)
+  pktgen.set_ipaddr("0", "dst", "10.0.0.2")
+  pktgen.set_ipaddr("0", "src", "10.0.0.1/24")
+  pktgen.set_mac("0",  "dst", "00:aa:bb:cc:dd:ee")
+  pktgen.set("0", "proto", "udp")
+  pktgen.set("0", "sport", 1234)
+  pktgen.set("0", "dport", 5678)
+  pktgen.delay(1000)
+  pktgen.start("0")
+  pktgen.delay(10000)
+  pktgen.stop("0")
+  pktgen.delay(500)
+  local stats = pktgen.portStats("all", "port")
+  for i, s in pairs(stats) do
+      print(string.format("Port %d: TX=%d RX=%d", i, s["opackets"], s["ipackets"]))
+  end
+
+Run:
+  pktgen -l 0,2 -n 4 -a 0002:00:12.0 -- -T -P -m "2.0" -f /root/pktgen_test.lua
+
+
+Troubleshooting
+================
+
+"EAL: No free hugepages"
+  echo 512 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+
+"EAL: No probed ethernet devices" / device not found
+  Verify uio_pci_generic is loaded and the VF is bound:
+    ls /sys/bus/pci/drivers/uio_pci_generic/   # must list 0002:00:12.0
+    ls /dev/uio*                                # must show /dev/uio0 etc.
+
+"cannot open shared object file: librte_*.so" (shared build only)
+  echo /usr/lib/dpdk > /etc/ld.so.conf.d/dpdk.conf && ldconfig
+  # or: export LD_LIBRARY_PATH=/usr/lib/dpdk:$LD_LIBRARY_PATH
+
+"cannot open shared object file: libpcap.so.0.8"
+  The runtime libpcap is missing.  Copy it from the sysroot:
+    scp ${SYSROOT}/usr/lib/aarch64-linux-gnu/libpcap.so.1.* root@<board>:/usr/lib/
+    ssh root@<board> "cd /usr/lib && ln -sf libpcap.so.1.* libpcap.so.0.8 && ldconfig"
+
+uio_pci_generic bind fails - "write error: No such device"
+  The VF may still be attached to its kernel driver.  Unbind first:
+    echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+
+"PMD: enetc4_vf: no descriptor rings"
+  The PF must be probed (network interface up) and VFs created before
+  binding the VF to uio_pci_generic.
+
+Port shows 0 RX packets in back-to-back test
+  Set the destination MAC to the actual MAC of the peer port:
+    set 0 dst mac <mac-of-port1>
+
+Low throughput
+  - Increase hugepages to 1 GB (hugepages=512 of 2MB).
+  - Isolate pktgen lcores from OS scheduler (isolcpus= kernel cmdline).
+  - Assign multiple lcores per port: -m "[2:3].0"
+  - Try larger burst size: set 0 burst 64
+
+
+Quick Reference
+================
+
+  # On target - initial setup
+  echo 512 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+  modprobe uio
+  modprobe uio_pci_generic
+  echo 1 > /sys/bus/pci/devices/0002:00:10.0/sriov_numvfs
+  ip link set eth1 vf 0 trust on
+  echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+  echo uio_pci_generic > /sys/bus/pci/devices/0002:00:12.0/driver_override
+  echo 0002:00:12.0 > /sys/bus/pci/drivers/uio_pci_generic/bind
+
+  # Run pktgen
+  pktgen -l 0,2 -n 4 -a 0002:00:12.0 -- -T -P -m "2.0"
+
+  # Inside pktgen CLI - flood 64-byte UDP at 100% rate
+  Pktgen> set 0 size 64
+  Pktgen> set 0 rate 100
+  Pktgen> set 0 dst mac 00:aa:bb:cc:dd:ee
+  Pktgen> start 0
+  # ... observe stats ...
+  Pktgen> stop 0
+  Pktgen> quit
