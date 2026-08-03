@@ -1,7 +1,6 @@
 # Ignore following Paths
 build/
 */build/
-doc/
 license/
 
 ##### Followings are to make cody processing light weight
