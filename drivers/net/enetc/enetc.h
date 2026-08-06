@@ -135,6 +135,7 @@ struct enetc_eth_hw {
 	uint32_t max_rx_queues;
 	uint32_t max_tx_queues;
 	uint32_t *txq_prior;
+	uint32_t *txq_wrr;    /* TBaMR[WRR] pre-shifted value per ring (bits [6:4]) */
 	uint32_t max_queue_size;
 	uint8_t reserve;
 	uint8_t nc_mode; /* 1 = non-cacheable BD memory (mark_ncache path) */

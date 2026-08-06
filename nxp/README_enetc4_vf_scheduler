@@ -1,0 +1,120 @@
+ENETC4 VF Tx Scheduler - Strict Priority, Round Robin, and WRR
+==============================================================
+
+Platform: i.MX95 (NETC, standalone ENETC instances)
+Driver:   drivers/net/enetc (DPDK PMD for ENETC4 VF)
+
+
+Devargs
+-------
+
+Two devargs control the Tx scheduler per-ring:
+
+  enetc4_txq_prior="p0|p1|p2|..."
+      Strict priority for each Tx ring, values 0..7 (0=lowest, 7=highest).
+      Higher PRIO value always wins over lower PRIO value regardless of WRR.
+      Default: 0 for all rings (all equal priority).
+
+  enetc4_txq_wrr="w0|w1|w2|..."
+      WRR weight for each Tx ring, values 1..8.
+      Only applies between rings sharing the same PRIO value.
+      Weight N means the ring gets N consecutive selections before
+      the scheduler moves to the next same-priority ring.
+      Default: not set (hardware default weight applies).
+
+Both devargs accept pipe-separated values, one per ring, in ring index order.
+Unspecified trailing rings retain hardware defaults.
+
+
+Setup Steps (i.MX95)
+--------------------
+
+1. Configure the PF to provide enough Tx rings to the VF.
+   The si_num_rings parameter is encoded as (num_tx << 8 | num_rx).
+   Example: 3 Tx rings and 3 Rx rings = 0x0303:
+
+     devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 0x0303
+     devlink dev reload pci/0002:00:10.0
+
+2. Create a VF:
+
+     echo 1 > /sys/bus/pci/devices/0002\:00\:10.0/sriov_numvfs
+
+3. Bind the VF to uio_pci_generic (or vfio-pci):
+
+     echo uio_pci_generic > /sys/bus/pci/devices/0002\:00\:12.0/driver_override
+     echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+     echo 0002:00:12.0 > /sys/bus/pci/drivers/uio_pci_generic/bind
+
+4. Enable VF trust on the PF netdev (required for promiscuous and MAC control):
+
+     ip link set eth1 vf 0 trust on
+
+
+Test Cases
+----------
+
+### 1. Strict Priority (3 queues, different priorities)
+
+Ring 0 = PRIO 3 (highest), Ring 1 = PRIO 2, Ring 2 = PRIO 1 (lowest).
+When all rings have traffic, ring 0 drains first, then ring 1, then ring 2.
+
+    ./dpdk-testpmd -c 0xf -a 0002:00:12.0,enetc4_txq_prior="3|2|1" \
+        -- -i --portmask=0x1 --nb-cores=3 --txq=3 --rxq=3
+
+    set fwd txonly
+    set txpkts 1518
+    start
+
+Expected: nearly all TX bytes on queue 0 when the port is congested.
+
+
+### 2. Default Round Robin (equal priority, no WRR)
+
+All rings get PRIO 0 and default WRR weight. The hardware arbitrates
+among active rings in round-robin order.
+
+    ./dpdk-testpmd -c 0xf -a 0002:00:12.0 \
+        -- -i --portmask=0x1 --nb-cores=3 --txq=3 --rxq=3
+
+    set fwd txonly
+    set txpkts 1518
+    start
+
+Expected: roughly equal TX bytes across all queues.
+
+
+### 3. Weighted Fair Queuing (same priority, WRR weights 2:4:1)
+
+All rings share PRIO 1. Ring 0 gets weight 2, ring 1 gets weight 4,
+ring 2 gets weight 1. Ratio of frames is approximately 2:4:1.
+
+    ./dpdk-testpmd -c 0xf -a 0002:00:12.0,enetc4_txq_prior="1|1|1",enetc4_txq_wrr="2|4|1" \
+        -- -i --portmask=0x1 --nb-cores=3 --txq=3 --rxq=3
+
+    set fwd txonly
+    set txpkts 1518
+    start
+
+Expected: TX packet ratio close to 2:4:1 across the three queues.
+
+
+Notes
+-----
+
+- WRR weight is frame-based, not byte-based. With 1518-byte frames the
+  byte ratio matches the weight ratio. With mixed frame sizes the ratio
+  is by frame count, not bytes.
+
+- Rings with different PRIO values never share WRR arbitration; the
+  higher-priority ring always preempts lower-priority rings.
+
+- The enetc4_txq_prior and enetc4_txq_wrr devargs can be combined freely.
+  For example, two priority groups each using WRR internally:
+
+    enetc4_txq_prior="2|2|1|1",enetc4_txq_wrr="3|1|2|1"
+
+  Rings 0,1 (PRIO=2) use WRR 3:1 among themselves.
+  Rings 2,3 (PRIO=1) use WRR 2:1 among themselves.
+  The PRIO=2 group always wins over PRIO=1 when both have frames ready.
+
