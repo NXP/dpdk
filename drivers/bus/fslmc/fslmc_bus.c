@@ -694,24 +694,13 @@ fslmc_all_device_support_iova(void)
 static enum rte_iova_mode
 rte_dpaa2_get_iommu_class(void)
 {
-	bool is_vfio_noiommu_enabled = 1;
-	bool has_iova_va;
-
 	if (rte_eal_iova_mode() == RTE_IOVA_PA)
 		return RTE_IOVA_PA;
 
 	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
 		return RTE_IOVA_DC;
 
-	/* check if all devices on the bus support Virtual addressing or not */
-	has_iova_va = fslmc_all_device_support_iova();
-
-#ifdef VFIO_PRESENT
-	is_vfio_noiommu_enabled = rte_vfio_noiommu_is_enabled() == true ?
-						true : false;
-#endif
-
-	if (has_iova_va && !is_vfio_noiommu_enabled)
+	if (fslmc_all_device_support_iova() && !rte_vfio_noiommu_is_enabled())
 		return RTE_IOVA_VA;
 
 	return RTE_IOVA_PA;
