@@ -198,15 +198,13 @@ quit:
 	return num_tx;
 }
 
-static void dpaa2_eventdev_dequeue_wait(uint64_t timeout_ticks)
+static void dpaa2_eventdev_dequeue_wait(struct dpaa2_dpio_dev *dpio_dev,
+	uint64_t timeout_ticks)
 {
 	struct epoll_event epoll_ev;
 
-	qbman_swp_interrupt_clear_status(DPAA2_PER_LCORE_PORTAL,
-					 QBMAN_SWP_INTERRUPT_DQRI);
-
-	epoll_wait(DPAA2_PER_LCORE_DPIO->epoll_fd,
-			 &epoll_ev, 1, timeout_ticks);
+	qbman_swp_interrupt_clear_status(dpio_dev->sw_portal, QBMAN_SWP_INTERRUPT_DQRI);
+	epoll_wait(dpio_dev->epoll_fd, &epoll_ev, 1, timeout_ticks);
 }
 
 static void dpaa2_eventdev_process_parallel(struct dpaa2_dpio_dev *dpio_dev,
@@ -292,7 +290,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		dq = qbman_swp_dqrr_next(swp);
 		if (!dq) {
 			if (!num_pkts && timeout_ticks) {
-				dpaa2_eventdev_dequeue_wait(timeout_ticks);
+				dpaa2_eventdev_dequeue_wait(dpio_dev, timeout_ticks);
 				timeout_ticks = 0;
 				continue;
 			}
