@@ -92,6 +92,10 @@ const struct qbman_swp_desc *qbman_swp_get_desc(struct qbman_swp *p);
 /* Volatile dequeue command interrupt */
 #define QBMAN_SWP_INTERRUPT_VDCI ((uint32_t)0x00000020)
 
+#define QBMAN_SWP_INTERRUPT_ALL \
+	(QBMAN_SWP_INTERRUPT_EQRI | QBMAN_SWP_INTERRUPT_EQDI | \
+	QBMAN_SWP_INTERRUPT_DQRI | QBMAN_SWP_INTERRUPT_RCRI | \
+	QBMAN_SWP_INTERRUPT_RCDI | QBMAN_SWP_INTERRUPT_VDCI)
 /**
  * qbman_swp_interrupt_get_vanish() - Get the data in software portal
  * interrupt status disable register.
@@ -138,9 +142,9 @@ uint32_t qbman_swp_dqrr_thrshld_read_status(struct qbman_swp *p);
  * qbman_swp_dqrr_thrshld_write() - Set the data in software portal
  * DQRR interrupt threshold register.
  * @p: the given software portal object.
- * @mask: The value to set in SWP_DQRR_ITR register.
+ * @threshold: The value to set in SWP_DQRR_ITR register.
  */
-void qbman_swp_dqrr_thrshld_write(struct qbman_swp *p, uint32_t mask);
+void qbman_swp_dqrr_thrshld_write(struct qbman_swp *p, uint32_t threshold);
 
 /**
  * qbman_swp_intr_timeout_read_status() - Get the data in software portal
@@ -153,9 +157,9 @@ uint32_t qbman_swp_intr_timeout_read_status(struct qbman_swp *p);
  * qbman_swp_intr_timeout_write() - Set the data in software portal
  * Interrupt Time-Out period register.
  * @p: the given software portal object.
- * @mask: The value to set in SWP_ITPR register.
+ * @qbman_tick: The value to set in SWP_ITPR register.
  */
-void qbman_swp_intr_timeout_write(struct qbman_swp *p, uint32_t mask);
+void qbman_swp_intr_timeout_write(struct qbman_swp *p, uint32_t qbman_tick);
 
 /**
  * qbman_swp_interrupt_get_trigger() - Get the data in software portal

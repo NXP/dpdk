@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014-2016 Freescale Semiconductor, Inc.
- * Copyright 2019-2020 NXP
+ * Copyright 2019-2020, 2026 NXP
  */
 /* qbman_sys_decl.h and qbman_sys.h are the two platform-specific files in the
  * driver. They are only included via qbman_private.h, which is itself a
@@ -46,6 +46,8 @@
 #define QBMAN_CINH_SWP_ISDR         0xe80
 #define QBMAN_CINH_SWP_IIR          0xec0
 #define QBMAN_CINH_SWP_ITPR         0xf40
+
+#define QBMAN_CINH_SWP_ITPR_MAX ((1 << 12) - 1)
 
 /* CENA register offsets */
 #define QBMAN_CENA_SWP_EQCR(n) (0x000 + ((uint32_t)(n) << 6))

@@ -440,9 +440,14 @@ uint32_t qbman_swp_dqrr_thrshld_read_status(struct qbman_swp *p)
 	return qbman_cinh_read(&p->sys, QBMAN_CINH_SWP_DQRR_ITR);
 }
 
-void qbman_swp_dqrr_thrshld_write(struct qbman_swp *p, uint32_t mask)
+void qbman_swp_dqrr_thrshld_write(struct qbman_swp *p, uint32_t threshold)
 {
-	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_DQRR_ITR, mask);
+	if (threshold >= p->dqrr.dqrr_size) {
+		pr_warn("Invalid threshold(%d) >= DRQQ size(%d)",
+			threshold, p->dqrr.dqrr_size);
+		threshold = p->dqrr.dqrr_size - 1;
+	}
+	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_DQRR_ITR, threshold);
 }
 
 uint32_t qbman_swp_intr_timeout_read_status(struct qbman_swp *p)
@@ -450,9 +455,14 @@ uint32_t qbman_swp_intr_timeout_read_status(struct qbman_swp *p)
 	return qbman_cinh_read(&p->sys, QBMAN_CINH_SWP_ITPR);
 }
 
-void qbman_swp_intr_timeout_write(struct qbman_swp *p, uint32_t mask)
+void qbman_swp_intr_timeout_write(struct qbman_swp *p, uint32_t qbman_tick)
 {
-	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_ITPR, mask);
+	if (qbman_tick > QBMAN_CINH_SWP_ITPR_MAX) {
+		pr_warn("Invalid tick(%d) > MAX ISR time-out period(%d)",
+			qbman_tick, QBMAN_CINH_SWP_ITPR_MAX);
+		qbman_tick = QBMAN_CINH_SWP_ITPR_MAX;
+	}
+	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_ITPR, qbman_tick);
 }
 
 uint32_t qbman_swp_interrupt_get_trigger(struct qbman_swp *p)
@@ -472,8 +482,7 @@ int qbman_swp_interrupt_get_inhibit(struct qbman_swp *p)
 
 void qbman_swp_interrupt_set_inhibit(struct qbman_swp *p, int inhibit)
 {
-	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_IIR,
-			 inhibit ? 0xffffffff : 0);
+	qbman_cinh_write(&p->sys, QBMAN_CINH_SWP_IIR, inhibit ? 1 : 0);
 }
 
 /***********************/

@@ -176,13 +176,13 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 {
 	struct epoll_event epoll_ev;
 	int eventfd, dpio_epoll_fd, ret;
-	int threshold = 0x3, timeout = 0xFF;
+	uint32_t threshold = 0, timeout = 0xFF;
 
 	dpio_epoll_fd = epoll_create(1);
 	ret = rte_dpaa2_intr_enable(dpio_dev->intr_handle, 0);
 	if (ret) {
 		DPAA2_BUS_ERR("Interrupt registration failed");
-		return -1;
+		return ret;
 	}
 
 	if (getenv("DPAA2_PORTAL_INTR_THRESHOLD"))
@@ -191,9 +191,8 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 	if (getenv("DPAA2_PORTAL_INTR_TIMEOUT"))
 		sscanf(getenv("DPAA2_PORTAL_INTR_TIMEOUT"), "%x", &timeout);
 
-	qbman_swp_interrupt_set_trigger(dpio_dev->sw_portal,
-					QBMAN_SWP_INTERRUPT_DQRI);
-	qbman_swp_interrupt_clear_status(dpio_dev->sw_portal, 0xffffffff);
+	qbman_swp_interrupt_set_trigger(dpio_dev->sw_portal, QBMAN_SWP_INTERRUPT_DQRI);
+	qbman_swp_interrupt_clear_status(dpio_dev->sw_portal, QBMAN_SWP_INTERRUPT_ALL);
 	qbman_swp_interrupt_set_inhibit(dpio_dev->sw_portal, 0);
 	qbman_swp_dqrr_thrshld_write(dpio_dev->sw_portal, threshold);
 	qbman_swp_intr_timeout_write(dpio_dev->sw_portal, timeout);
@@ -204,8 +203,8 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 
 	ret = epoll_ctl(dpio_epoll_fd, EPOLL_CTL_ADD, eventfd, &epoll_ev);
 	if (ret < 0) {
-		DPAA2_BUS_ERR("epoll_ctl failed");
-		return -1;
+		DPAA2_BUS_ERR("epoll_ctl failed(%d)", -errno);
+		return -errno;
 	}
 	dpio_dev->epoll_fd = dpio_epoll_fd;
 
