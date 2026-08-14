@@ -19,7 +19,6 @@
 #define DPAA2_EVENT_MAX_QUEUES			16
 #define DPAA2_EVENT_MIN_DEQUEUE_TIMEOUT		1
 #define DPAA2_EVENT_MAX_DEQUEUE_TIMEOUT		(UINT32_MAX - 1)
-#define DPAA2_EVENT_PORT_DEQUEUE_TIMEOUT_NS	100UL
 #define DPAA2_EVENT_MAX_QUEUE_FLOWS		1024
 #define DPAA2_EVENT_MAX_QUEUE_PRIORITY_LEVELS	8
 #define DPAA2_EVENT_MAX_EVENT_PRIORITY_LEVELS	0
@@ -98,6 +97,7 @@ struct dpaa2_eventdev {
 	uint32_t nb_event_port_dequeue_depth;
 	uint32_t nb_event_port_enqueue_depth;
 	uint32_t event_dev_cfg;
+	uint64_t event_hz;
 };
 
 int test_eventdev_dpaa2(void);

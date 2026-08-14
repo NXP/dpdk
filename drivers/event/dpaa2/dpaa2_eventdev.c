@@ -199,12 +199,12 @@ quit:
 }
 
 static void dpaa2_eventdev_dequeue_wait(struct dpaa2_dpio_dev *dpio_dev,
-	uint64_t timeout_ticks)
+	uint32_t timeout_ms)
 {
 	struct epoll_event epoll_ev;
 
 	qbman_swp_interrupt_clear_status(dpio_dev->sw_portal, QBMAN_SWP_INTERRUPT_DQRI);
-	epoll_wait(dpio_dev->epoll_fd, &epoll_ev, 1, timeout_ticks);
+	epoll_wait(dpio_dev->epoll_fd, &epoll_ev, 1, timeout_ms);
 }
 
 static void dpaa2_eventdev_process_parallel(struct dpaa2_dpio_dev *dpio_dev,
@@ -242,10 +242,12 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 	const struct qbman_result *dq;
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
 	struct dpaa2_port *dpaa2_portal = port;
+	struct dpaa2_eventdev *priv = dpaa2_portal->eventdev->data->dev_private;
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct dpaa2_queue *rxq;
 	uint16_t num_pkts = 0, i = 0;
+	uint32_t timeout_ms, time_out_flush;
 
 	if (unlikely(!dpaa2_portal->dpio_dev)) {
 		DPAA2_EVENTDEV_ERR("Event port%d not setup", dpaa2_portal->port_id);
@@ -285,13 +287,18 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		i++;
 	}
 	dpio_dev->dpaa2_held_bufs.dqrr_held = 0;
+	if (timeout_ticks)
+		timeout_ms = timeout_ticks * 1000 / priv->event_hz;
+	else
+		timeout_ms = priv->dequeue_timeout_ns / (1000 * 1000);
+	time_out_flush = timeout_ms;
 
 	do {
 		dq = qbman_swp_dqrr_next(swp);
 		if (!dq) {
-			if (!num_pkts && timeout_ticks) {
-				dpaa2_eventdev_dequeue_wait(dpio_dev, timeout_ticks);
-				timeout_ticks = 0;
+			if (!num_pkts && timeout_ms) {
+				dpaa2_eventdev_dequeue_wait(dpio_dev, timeout_ms);
+				timeout_ms = 0;
 				continue;
 			}
 			goto quit;
@@ -309,7 +316,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 	} while (num_pkts < nb_events);
 
 quit:
-	if (unlikely(!num_pkts)) {
+	if (unlikely(!num_pkts || time_out_flush)) {
 		/** Flush*/
 		qbman_swp_dqrr_consume(swp, NULL);
 	}
@@ -333,8 +340,7 @@ dpaa2_eventdev_info_get(struct rte_eventdev *dev,
 		DPAA2_EVENT_MIN_DEQUEUE_TIMEOUT;
 	dev_info->max_dequeue_timeout_ns =
 		DPAA2_EVENT_MAX_DEQUEUE_TIMEOUT;
-	dev_info->dequeue_timeout_ns =
-		DPAA2_EVENT_PORT_DEQUEUE_TIMEOUT_NS;
+	dev_info->dequeue_timeout_ns = priv->dequeue_timeout_ns;
 	dev_info->max_event_queues = priv->max_event_queues;
 	dev_info->max_event_queue_flows =
 		DPAA2_EVENT_MAX_QUEUE_FLOWS;
@@ -375,6 +381,7 @@ dpaa2_eventdev_configure(const struct rte_eventdev *dev)
 	priv->nb_event_port_dequeue_depth = conf->nb_event_port_dequeue_depth;
 	priv->nb_event_port_enqueue_depth = conf->nb_event_port_enqueue_depth;
 	priv->event_dev_cfg = conf->event_dev_cfg;
+	priv->event_hz = rte_get_timer_hz();
 
 	/* Check dequeue timeout method is per dequeue or global */
 	if (priv->event_dev_cfg & RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT) {
@@ -384,8 +391,6 @@ dpaa2_eventdev_configure(const struct rte_eventdev *dev)
 		 */
 		priv->dequeue_timeout_ns = 0;
 
-	} else if (conf->dequeue_timeout_ns == 0) {
-		priv->dequeue_timeout_ns = DPAA2_EVENT_PORT_DEQUEUE_TIMEOUT_NS;
 	} else {
 		priv->dequeue_timeout_ns = conf->dequeue_timeout_ns;
 	}
@@ -810,14 +815,16 @@ dpaa2_eventdev_port_setup(struct rte_eventdev *dev, uint8_t port_id,
 
 static int
 dpaa2_eventdev_timeout_ticks(struct rte_eventdev *dev, uint64_t ns,
-			     uint64_t *timeout_ticks)
+	uint64_t *timeout_ticks)
 {
-	uint32_t scale = 1000 * 1000;
+	struct dpaa2_eventdev *priv = dev->data->dev_private;
 
 	EVENTDEV_INIT_FUNC_TRACE();
 
-	RTE_SET_USED(dev);
-	*timeout_ticks = ns / scale;
+	if (!priv->event_hz)
+		priv->event_hz = rte_get_timer_hz();
+
+	*timeout_ticks = ns * priv->event_hz / 1000000000ULL;
 
 	return 0;
 }
