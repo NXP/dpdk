@@ -4143,12 +4143,17 @@ main(int argc, char **argv)
 		}
 
 		/* Configure the number of queues for a port. */
-		local_port_conf.rxmode.reserved_ptrs[0] = default_action;
 		ret = rte_eth_dev_configure(portid, dev_info.max_rx_queues,
 			dev_info.max_tx_queues, &local_port_conf);
 		if (ret) {
 			rte_exit(EXIT_FAILURE,
 				"Cannot configure device: err=%d, port=%u\n",
+				ret, portid);
+		}
+		ret = rte_dpaa2_eth_dev_configure_default_action(portid, default_action);
+		if (ret) {
+			rte_exit(EXIT_FAILURE,
+				"Cannot configure default action of device: err=%d, port=%u\n",
 				ret, portid);
 		}
 		rte_free(default_action);
