@@ -405,8 +405,8 @@ struct port_rxq_pair {
 
 struct lcore_queue_conf {
 	void *sch_handle;
-	uint16_t n_rx_port;
-	struct port_rxq_pair rx_port_list[MAX_RX_QUEUE_PER_LCORE];
+	uint16_t n_rx_queue;
+	struct port_rxq_pair port_qp_list[MAX_RX_QUEUE_PER_LCORE];
 };
 
 static struct lcore_queue_conf s_lcore_queue_conf[RTE_MAX_LCORE];
@@ -720,7 +720,7 @@ l2fwd_policer_main_loop(void)
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_queue_conf[lcore_id];
 
-	if (qconf->n_rx_port == 0) {
+	if (qconf->n_rx_queue == 0) {
 		RTE_LOG(WARNING, L2FWD_POLICER,
 			"lcore %u has nothing to do\n", lcore_id);
 		return;
@@ -963,11 +963,11 @@ l2fwd_policer_parse_queue_config(const char *optarg)
 			return -EINVAL;
 		}
 		conf = &s_lcore_queue_conf[lcore_id];
-		if (conf->n_rx_port >= MAX_RX_QUEUE_PER_LCORE)
+		if (conf->n_rx_queue >= MAX_RX_QUEUE_PER_LCORE)
 			return -EINVAL;
-		conf->rx_port_list[conf->n_rx_port].port_id = port_id;
-		conf->rx_port_list[conf->n_rx_port].queue_id = queue_id;
-		conf->n_rx_port++;
+		conf->port_qp_list[conf->n_rx_queue].port_id = port_id;
+		conf->port_qp_list[conf->n_rx_queue].queue_id = queue_id;
+		conf->n_rx_queue++;
 		s_port_queue_nb[port_id]++;
 		p = strchr(p0, '(');
 	}
@@ -3715,14 +3715,12 @@ l2fwd_policer_lcore_port_queue_add(uint16_t lcore,
 	tc_id = qinfo.tc_id;
 
 	queue_conf = &s_lcore_queue_conf[lcore];
-	if (queue_conf->n_rx_port >= MAX_RX_QUEUE_PER_LCORE) {
-		rte_exit(EXIT_FAILURE,
-			"Too many queues(%d) are handled on core%d.\n",
-			queue_conf->n_rx_port, lcore);
-	}
-	queue_conf->rx_port_list[queue_conf->n_rx_port].port_id = portid;
-	queue_conf->rx_port_list[queue_conf->n_rx_port].queue_id = queue_id;
-	queue_conf->n_rx_port++;
+	if (queue_conf->n_rx_queue >= MAX_RX_QUEUE_PER_LCORE)
+		return -ENOSPC;
+
+	queue_conf->port_qp_list[queue_conf->n_rx_queue].port_id = portid;
+	queue_conf->port_qp_list[queue_conf->n_rx_queue].queue_id = queue_id;
+	queue_conf->n_rx_queue++;
 	if (!queue_conf->sch_handle) {
 		queue_conf->sch_handle = rte_dpaa2_scheduler_init(s_sch_mode);
 		if (!queue_conf->sch_handle) {
@@ -3757,10 +3755,10 @@ l2fwd_policer_lcore_port_queue_config(uint16_t lcore,
 	int ret;
 
 	queue_conf = &s_lcore_queue_conf[lcore];
-	for (i = 0; i < queue_conf->n_rx_port; i++) {
-		if (queue_conf->rx_port_list[i].port_id != portid)
+	for (i = 0; i < queue_conf->n_rx_queue; i++) {
+		if (queue_conf->port_qp_list[i].port_id != portid)
 			continue;
-		queue_id = queue_conf->rx_port_list[i].queue_id;
+		queue_id = queue_conf->port_qp_list[i].queue_id;
 
 		ret = rte_pmd_dpaa2_rx_queue_info_get(portid, queue_id, &qinfo);
 		if (ret) {
@@ -4209,6 +4207,8 @@ main(int argc, char **argv)
 			lcore_id = rte_get_main_lcore();
 			for (i = 0; i < dev_info.max_rx_queues; i++) {
 				ret = l2fwd_policer_lcore_port_queue_add(lcore_id, portid, i);
+				if (ret == -ENOSPC)
+					break;
 				if (ret) {
 					rte_exit(EXIT_FAILURE,
 						"Add port(%d) lcore(%d) queue(%d): err=%d\n",
