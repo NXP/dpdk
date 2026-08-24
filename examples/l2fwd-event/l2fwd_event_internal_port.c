@@ -25,8 +25,10 @@ l2fwd_event_device_setup_internal_port(struct l2fwd_resources *rsrc)
 		.nb_events_limit  = 4096,
 		.nb_event_queue_flows = 1024,
 		.nb_event_port_dequeue_depth = 128,
-		.nb_event_port_enqueue_depth = 128
+		.nb_event_port_enqueue_depth = 128,
+		.dequeue_timeout_ns = rsrc->deq_timeout_ns
 	};
+
 	struct rte_event_dev_info dev_info;
 	const uint8_t event_d_id = 0; /* Always use first event device only */
 	uint32_t event_queue_cfg = 0;

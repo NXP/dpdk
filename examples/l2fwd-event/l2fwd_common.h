@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(C) 2019 Marvell International Ltd.
+ * Copyright 2026 NXP
  */
 
 #ifndef __L2FWD_COMMON_H__
@@ -58,6 +59,8 @@
 #define VECTOR_SIZE_DEFAULT   MAX_PKT_BURST
 #define VECTOR_TMO_NS_DEFAULT 1E6 /* 1ms */
 
+#define DEFAULT_DEQUEUE_TIMEOUT_NS 0 /* 0 = no wait (busy poll) */
+
 /* Per-port statistics struct */
 struct __rte_cache_aligned l2fwd_port_statistics {
 	uint64_t dropped;
@@ -83,6 +86,8 @@ struct __rte_cache_aligned l2fwd_resources {
 	uint16_t nb_txd;
 	uint32_t enabled_port_mask;
 	uint64_t timer_period;
+	uint64_t deq_timeout_ns;
+	uint64_t deq_timeout_ticks;
 	struct rte_mempool *pktmbuf_pool;
 	struct rte_mempool *evt_vec_pool;
 	uint32_t dst_ports[RTE_MAX_ETHPORTS];
@@ -130,6 +135,7 @@ l2fwd_get_rsrc(void)
 		rsrc->rx_queue_per_lcore = 1;
 		rsrc->sched_type = RTE_SCHED_TYPE_ATOMIC;
 		rsrc->timer_period = 10 * rte_get_timer_hz();
+		rsrc->deq_timeout_ns = DEFAULT_DEQUEUE_TIMEOUT_NS;
 
 		return mz->addr;
 	}

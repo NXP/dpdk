@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(C) 2019 Marvell International Ltd.
+ * Copyright 2026 NXP
  */
 
 #include <rte_string_fns.h>
@@ -28,9 +29,13 @@ l2fwd_event_usage(const char *prgname)
 	       "  --event-vector:  Enable event vectorization.\n"
 	       "  --event-vector-size: Max vector size if event vectorization is enabled.\n"
 	       "  --event-vector-tmo: Max timeout to form vector in nanoseconds if event vectorization is enabled\n"
+	       "  --dequeue-timeout: Event dequeue timeout in nanoseconds\n"
+	       "                     (0 to disable/busy poll, default 0)\n"
+	       "                     Valid only if --mode=eventdev\n"
 	       "  --config: Configure forwarding port pair mapping\n"
 	       "	    Default: alternate port pairs\n\n",
 	       prgname);
+
 }
 
 static int
@@ -181,8 +186,10 @@ static const char short_options[] =
 #define CMD_LINE_OPT_ENABLE_VECTOR "event-vector"
 #define CMD_LINE_OPT_VECTOR_SIZE "event-vector-size"
 #define CMD_LINE_OPT_VECTOR_TMO_NS "event-vector-tmo"
+#define CMD_LINE_OPT_DEQUEUE_TMO_NS "dequeue-timeout"
 
 enum {
+
 	/* long options mapped to a short option */
 
 	/* first long only option value must be >= 256, so that we won't
@@ -194,8 +201,10 @@ enum {
 	CMD_LINE_OPT_PORT_PAIR_CONF_NUM,
 	CMD_LINE_OPT_ENABLE_VECTOR_NUM,
 	CMD_LINE_OPT_VECTOR_SIZE_NUM,
-	CMD_LINE_OPT_VECTOR_TMO_NS_NUM
+	CMD_LINE_OPT_VECTOR_TMO_NS_NUM,
+	CMD_LINE_OPT_DEQUEUE_TMO_NS_NUM
 };
+
 
 /* Parse the argument given in the command line of the application */
 static int
@@ -217,7 +226,10 @@ l2fwd_event_parse_args(int argc, char **argv, struct l2fwd_resources *rsrc)
 					CMD_LINE_OPT_VECTOR_SIZE_NUM},
 		{CMD_LINE_OPT_VECTOR_TMO_NS, required_argument, NULL,
 					CMD_LINE_OPT_VECTOR_TMO_NS_NUM},
+		{CMD_LINE_OPT_DEQUEUE_TMO_NS, required_argument, NULL,
+					CMD_LINE_OPT_DEQUEUE_TMO_NS_NUM},
 		{NULL, 0, 0, 0}
+
 	};
 	int opt, ret, timer_secs;
 	char *prgname = argv[0];
@@ -295,6 +307,10 @@ l2fwd_event_parse_args(int argc, char **argv, struct l2fwd_resources *rsrc)
 		case CMD_LINE_OPT_VECTOR_TMO_NS_NUM:
 			rsrc->evt_vec.timeout_ns = strtoull(optarg, NULL, 10);
 			break;
+		case CMD_LINE_OPT_DEQUEUE_TMO_NS_NUM:
+			rsrc->deq_timeout_ns = strtoull(optarg, NULL, 10);
+			break;
+
 
 		/* long options */
 		case 0:

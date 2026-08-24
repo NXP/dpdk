@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(C) 2019 Marvell International Ltd.
+ * Copyright 2026 NXP
  */
 
 #include <stdbool.h>
@@ -194,6 +195,7 @@ l2fwd_event_loop_single(struct l2fwd_resources *rsrc,
 					evt_rsrc->evq.nb_queues - 1];
 	const uint64_t timer_period = rsrc->timer_period;
 	const uint8_t event_d_id = evt_rsrc->event_d_id;
+	const uint64_t deq_tmo_ticks = rsrc->deq_timeout_ticks;
 	uint8_t enq = 0, deq = 0;
 	struct rte_event ev;
 
@@ -205,7 +207,8 @@ l2fwd_event_loop_single(struct l2fwd_resources *rsrc,
 
 	while (!rsrc->force_quit) {
 		/* Read packet from eventdev */
-		deq = rte_event_dequeue_burst(event_d_id, port_id, &ev, 1, 0);
+		deq = rte_event_dequeue_burst(event_d_id, port_id, &ev, 1,
+					      deq_tmo_ticks);
 		if (!deq)
 			continue;
 
@@ -240,6 +243,7 @@ l2fwd_event_loop_burst(struct l2fwd_resources *rsrc,
 	const uint64_t timer_period = rsrc->timer_period;
 	const uint8_t event_d_id = evt_rsrc->event_d_id;
 	const uint8_t deq_len = evt_rsrc->deq_depth;
+	const uint64_t deq_tmo_ticks = rsrc->deq_timeout_ticks;
 	struct rte_event ev[MAX_PKT_BURST];
 	uint16_t nb_rx = 0, nb_tx = 0;
 	uint8_t i;
@@ -253,7 +257,7 @@ l2fwd_event_loop_burst(struct l2fwd_resources *rsrc,
 	while (!rsrc->force_quit) {
 		/* Read packet from eventdev. 8< */
 		nb_rx = rte_event_dequeue_burst(event_d_id, port_id, ev,
-						deq_len, 0);
+						deq_len, deq_tmo_ticks);
 		if (nb_rx == 0)
 			continue;
 
@@ -424,6 +428,7 @@ l2fwd_event_loop_vector(struct l2fwd_resources *rsrc, const uint32_t flags)
 	const uint64_t timer_period = rsrc->timer_period;
 	const uint8_t event_d_id = evt_rsrc->event_d_id;
 	const uint8_t deq_len = evt_rsrc->deq_depth;
+	const uint64_t deq_tmo_ticks = rsrc->deq_timeout_ticks;
 	struct rte_event ev[MAX_PKT_BURST];
 	uint16_t nb_rx = 0, nb_tx = 0;
 	uint8_t i;
@@ -436,7 +441,7 @@ l2fwd_event_loop_vector(struct l2fwd_resources *rsrc, const uint32_t flags)
 
 	while (!rsrc->force_quit) {
 		nb_rx = rte_event_dequeue_burst(event_d_id, port_id, ev,
-						deq_len, 0);
+						deq_len, deq_tmo_ticks);
 		if (nb_rx == 0)
 			continue;
 
@@ -579,6 +584,19 @@ l2fwd_event_resource_setup(struct l2fwd_resources *rsrc)
 	ret = rte_event_dev_start(evt_rsrc->event_d_id);
 	if (ret < 0)
 		rte_panic("Error in starting eventdev\n");
+
+	/* Convert the requested dequeue timeout (ns) into device ticks so the
+	 * worker loops can wait in the eventdev dequeue call instead of busy
+	 * polling. A value of 0 keeps the previous busy-poll behaviour.
+	 */
+	if (rsrc->deq_timeout_ns) {
+		ret = rte_event_dequeue_timeout_ticks(evt_rsrc->event_d_id,
+				rsrc->deq_timeout_ns, &rsrc->deq_timeout_ticks);
+		if (ret)
+			rte_panic("Error(%d) in getting dequeue timeout ticks\n", ret);
+	} else {
+		rsrc->deq_timeout_ticks = 0;
+	}
 
 	evt_rsrc->ops.l2fwd_event_loop =
 		event_loop[rsrc->evt_vec.enabled][rsrc->mac_updating]
