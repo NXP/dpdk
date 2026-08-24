@@ -603,6 +603,14 @@ signal_handler(int signum)
 		printf("\n\nSignal %d received, preparing to exit...\n",
 				signum);
 		rsrc->force_quit = true;
+		/*
+		 * Workers may be blocked in rte_event_dequeue_burst() when a
+		 * large --dequeue-timeout is used. Inject wake-up events so
+		 * they return and observe force_quit without waiting for the
+		 * timeout to expire.
+		 */
+		if (rsrc->event_mode)
+			l2fwd_event_wakeup(rsrc);
 	}
 }
 

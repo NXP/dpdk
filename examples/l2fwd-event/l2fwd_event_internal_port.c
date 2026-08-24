@@ -33,7 +33,7 @@ l2fwd_event_device_setup_internal_port(struct l2fwd_resources *rsrc)
 	const uint8_t event_d_id = 0; /* Always use first event device only */
 	uint32_t event_queue_cfg = 0;
 	uint16_t ethdev_count = 0;
-	uint16_t num_workers = 0;
+	uint8_t num_workers = 0;
 	uint16_t port_id;
 	int ret;
 
@@ -79,7 +79,16 @@ l2fwd_event_device_setup_internal_port(struct l2fwd_resources *rsrc)
 	if (dev_info.max_event_ports < num_workers)
 		num_workers = dev_info.max_event_ports;
 
-	event_d_conf.nb_event_ports = num_workers;
+	/*
+	 * Reserve an extra main-lcore port and a dedicated wake-up queue for
+	 * shutdown wake-up injection. Internal-port mode has no Tx single-link
+	 * queue, so the wake queue is simply appended (tx_last = false).
+	 */
+	l2fwd_event_wake_reserve(evt_rsrc,
+		rsrc->deq_timeout_ns >= L2FWD_EVENT_WAKEUP_THRESHOLD_NS,
+		dev_info.max_event_ports, num_workers,
+		dev_info.max_event_queues, false,
+		&event_d_conf.nb_event_ports, &event_d_conf.nb_event_queues);
 	evt_rsrc->evp.nb_ports = num_workers;
 	evt_rsrc->evq.nb_queues = event_d_conf.nb_event_queues;
 	evt_rsrc->has_burst = !!(dev_info.event_dev_cap &
@@ -155,6 +164,9 @@ l2fwd_event_port_setup_internal_port(struct l2fwd_resources *rsrc)
 		/* init spinlock */
 		rte_spinlock_init(&evt_rsrc->evp.lock);
 	}
+
+	/* Wake-up port used only for shutdown injection; not linked. */
+	l2fwd_event_wake_port_setup(evt_rsrc, &event_p_conf);
 
 	evt_rsrc->def_p_conf = event_p_conf;
 	evt_rsrc->deq_depth = event_p_conf.dequeue_depth;

@@ -61,6 +61,16 @@
 
 #define DEFAULT_DEQUEUE_TIMEOUT_NS 0 /* 0 = no wait (busy poll) */
 
+/*
+ * Only arm the shutdown wake-up mechanism (dedicated event port/queue plus
+ * event injection on quit) when the configured dequeue timeout is at least
+ * this many nanoseconds. Below this threshold the extra blocking added to a
+ * worker's dequeue is short enough that it exits promptly on force_quit, so
+ * the wake-up is not worth the extra event port and queue.
+ */
+#define L2FWD_EVENT_WAKEUP_THRESHOLD_NS (2000 * 1000 * 1000) /* 2 s */
+
+
 /* Per-port statistics struct */
 struct __rte_cache_aligned l2fwd_port_statistics {
 	uint64_t dropped;

@@ -602,3 +602,79 @@ l2fwd_event_resource_setup(struct l2fwd_resources *rsrc)
 		event_loop[rsrc->evt_vec.enabled][rsrc->mac_updating]
 			  [evt_rsrc->tx_mode_q][evt_rsrc->has_burst];
 }
+
+void
+l2fwd_event_wakeup(struct l2fwd_resources *rsrc)
+{
+	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
+	uint8_t event_d_id, enq_port, queue_id;
+	uint16_t i;
+	struct rte_mbuf *m;
+	struct rte_event ev;
+
+	/*
+	 * When a large --dequeue-timeout is used the workers block inside
+	 * rte_event_dequeue_burst() and only test force_quit between calls.
+	 * Inject one NEW event per worker on the dedicated wake-up queue so
+	 * every worker returns from its blocking dequeue, observes force_quit
+	 * and exits immediately instead of waiting for the timeout to elapse.
+	 *
+	 * The enqueue is done from the main lcore, so it must use the
+	 * dedicated wake-up port owned by the main lcore rather than a
+	 * worker's event port. Some PMDs (e.g. DPAA2) bind an event port to
+	 * the first lcore that accesses it (CPU affinity) and warn if it is
+	 * later driven from a different core. If no spare port was available
+	 * at setup time, skip the wake-up; the workers will still exit once
+	 * their current dequeue timeout elapses.
+	 *
+	 * There is no deterministic mapping from an injected event to a
+	 * specific worker port: the wake-up queue is load balanced across the
+	 * worker ports by the PMD/hardware. DPAA2, for example, dispatches by
+	 * portal availability and ignores ev.flow_id entirely (flow_id only
+	 * helps spread events on software scheduler PMDs). Injecting all
+	 * events at once could therefore let a single not-yet-exited worker
+	 * consume several of them while another worker gets none. To cover
+	 * every worker, the events are injected one at a time with a delay
+	 * between them: the worker woken by the previous event exits its
+	 * dequeue loop and stops competing, so the next event is delivered to
+	 * a worker that is still blocked. The dequeue timeout remains the
+	 * final backstop for any worker not reached this way.
+	 */
+	if (!evt_rsrc || !rsrc->pktmbuf_pool)
+		return;
+
+	if (!evt_rsrc->has_wake_port)
+		return;
+
+	event_d_id = evt_rsrc->event_d_id;
+	enq_port = evt_rsrc->wake_p_id;
+	queue_id = evt_rsrc->wake_q_id;
+
+	for (i = 0; i < evt_rsrc->evp.nb_ports; i++) {
+		m = rte_pktmbuf_alloc(rsrc->pktmbuf_pool);
+		if (!m)
+			continue;
+
+		m->port = 0;
+		memset(&ev, 0, sizeof(ev));
+		ev.op = RTE_EVENT_OP_NEW;
+		ev.event_type = RTE_EVENT_TYPE_CPU;
+		ev.sched_type = rsrc->sched_type;
+		ev.queue_id = queue_id;
+		ev.flow_id = i;
+		ev.priority = RTE_EVENT_DEV_PRIORITY_NORMAL;
+		ev.mbuf = m;
+
+		if (i) {
+			/**
+			 * Make sure one of workers was woken up by previous injection.
+			 */
+			rte_delay_us_sleep(1000 * 100);
+		}
+
+		if (rte_event_enqueue_burst(event_d_id, enq_port, &ev, 1) != 1)
+			rte_pktmbuf_free(m);
+		else
+			printf("Wake up worker\n");
+	}
+}
