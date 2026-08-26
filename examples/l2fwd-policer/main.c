@@ -48,7 +48,7 @@
 #define L2FWD_POLICER_FCS_SIZE \
 	(RTE_TM_ETH_FRAMING_OVERHEAD_FCS - RTE_TM_ETH_FRAMING_OVERHEAD)
 
-#define L2FWD_POLICER_PRINT_INTERVAL 5
+#define L2FWD_POLICER_PRINT_INTERVAL 5000 /** ms*/
 /* Traffic classes */
 enum {
 	POLICER_TC0 = 0,
@@ -145,7 +145,13 @@ static int s_flow_table_level = 2;
 
 static int tx_multi_ports = 1;
 
-static int s_print_stat;
+enum {
+	PRINT_STAT_NONE,
+	PRINT_STAT_FULL,
+	PRINT_STAT_MINIMAL
+};
+
+static int s_print_stat = PRINT_STAT_NONE;
 
 enum {
 	POLICER_RX,
@@ -221,6 +227,14 @@ struct policer_item_update {
 	uint8_t mask[512];
 	int (*item_parse)(const char *str, struct policer_item_update *item);
 };
+
+static inline uint64_t l2fwd_policer_get_time_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 static int
 l2fwd_policer_item_eth_parse(const char *str,
@@ -444,9 +458,9 @@ static struct l2fwd_policer_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 static struct l2fwd_policer_byte_statistics *tc_statistics;
 static struct l2fwd_policer_byte_statistics *prev_tc_statistics;
 
-#define MAX_TIMER_PERIOD 86400 /* 1 day max */
 /* A tsc-based timer responsible for triggering statistics printout */
-static uint16_t timer_period = L2FWD_POLICER_PRINT_INTERVAL;
+static uint32_t s_ms_period = L2FWD_POLICER_PRINT_INTERVAL;
+#define SEC_PERIOD (((double)s_ms_period) / 1000)
 
 #define POLICER_UPDATE_RED_DROP "red drop"
 #define POLICER_UPDATE_RED_PASS "red pass"
@@ -560,6 +574,9 @@ l2fwd_policer_xstats_display(uint16_t port_id)
 		return;
 	}
 
+	if (s_print_stat != PRINT_STAT_FULL)
+		return;
+
 	for (i = 0; i < ret; i++) {
 		if (!s_xstats_values[port_id][i])
 			continue;
@@ -589,16 +606,19 @@ static void *l2fwd_policer_print_stats(void *arg)
 	struct l2fwd_policer_byte_statistics *curr[s_max_qn_per_tc];
 	struct l2fwd_policer_byte_statistics *prev[s_max_qn_per_tc];
 	double tc_diff, flow_diff;
-	uint64_t tc_total;
+	uint64_t tc_total, t1, t2, ms;
+	struct timespec ts;
 
 	RTE_SET_USED(arg);
 
 	const char clr[] = { 27, '[', '2', 'J', '\0' };
 	const char topLeft[] = { 27, '[', '1', ';', '1', 'H','\0' };
 
-		/* Clear screen and move to top left */
+	/* Clear screen and move to top left */
+	memset(&ts, 0, sizeof(struct timespec));
 again:
-	if (!s_print_stat)
+	t1 = l2fwd_policer_get_time_ms();
+	if (s_print_stat == PRINT_STAT_NONE)
 		goto skip_print;
 	printf("%s%s", clr, topLeft);
 
@@ -642,7 +662,7 @@ again:
 					printf("\n");
 				flow_diff = curr[j]->bytes_overhead - prev[j]->bytes_overhead;
 				printf("	Port%d.TC%d.flow%d: %fGbps, %ld\r\n",
-					portid, i, j, flow_diff * 8 / timer_period /
+					portid, i, j, flow_diff * 8 / SEC_PERIOD /
 					(1000 * 1000 * 1000),
 					curr[j]->bytes_overhead * 8);
 				prev[j]->bytes = curr[j]->bytes;
@@ -653,13 +673,17 @@ again:
 			}
 			if (num) {
 				printf("Port%d.TC%d: %fGbps, %ld\r\n",
-					portid, i, tc_diff * 8 / timer_period /
+					portid, i, tc_diff * 8 / SEC_PERIOD /
 					(1000 * 1000 * 1000),
 					tc_total * 8);
 			}
 		}
 		l2fwd_policer_xstats_display(portid);
 	}
+
+	if (s_print_stat != PRINT_STAT_FULL)
+		goto skip_print;
+
 	printf("\nAggregate statistics ==============================="
 		   "\nTotal packets sent: %18"PRIu64
 		   "\nTotal packets received: %14"PRIu64
@@ -671,7 +695,17 @@ again:
 
 skip_print:
 	fflush(stdout);
-	sleep(timer_period);
+	t2 = l2fwd_policer_get_time_ms();
+	if (s_ms_period >= (t2 - t1)) {
+		ms = s_ms_period - (t2 - t1);
+		ts.tv_sec = ms / 1000;
+		ts.tv_nsec = (ms % 1000) * 1000000;
+		nanosleep(&ts, NULL);
+	} else if (s_print_stat != PRINT_STAT_NONE) {
+		RTE_LOG(WARNING, L2FWD_POLICER,
+			"Too short period(%d <= %ld)\n", s_ms_period, (t2 - t1));
+		return NULL;
+	}
 	goto again;
 
 	return NULL;
@@ -779,7 +813,7 @@ l2fwd_policer_usage(const char *prgname)
 	printf("%s [EAL options] -- -p PORTMASK [-P] [-q NQ]\n"
 		"  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
 		"  -P : Enable promiscuous mode\n"
-		"  -T PERIOD: statistics will be refreshed each PERIOD seconds (0 to disable, 10 default, 86400 maximum)\n"
+		"  -T PERIOD: statistics will be refreshed each PERIOD milliseconds\n"
 		"  --no-mac-updating: Disable MAC addresses updating (enabled by default)\n"
 		"      When enabled:\n"
 		"       - The source MAC address is replaced by the TX port MAC address\n"
@@ -826,16 +860,14 @@ l2fwd_policer_parse_portmask(const char *portmask)
 }
 
 static int
-l2fwd_policer_parse_timer_period(const char *q_arg)
+l2fwd_policer_parse_timer_period(const char *arg)
 {
 	char *end = NULL;
 	int n;
 
 	/* parse number string */
-	n = strtol(q_arg, &end, 10);
-	if ((q_arg[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
-	if (n >= MAX_TIMER_PERIOD)
+	n = strtol(arg, &end, 10);
+	if ((arg[0] == '\0') || (end == NULL) || (*end != '\0'))
 		return -1;
 
 	return n;
@@ -1063,7 +1095,7 @@ static const struct option lgopts[] = {
 static int
 l2fwd_policer_parse_args(int argc, char **argv)
 {
-	int opt, ret, timer_secs, option_index;
+	int opt, ret, timer_msecs, option_index;
 	char **argvopt;
 	char *prgname = argv[0];
 
@@ -1090,14 +1122,14 @@ l2fwd_policer_parse_args(int argc, char **argv)
 
 		/* timer period */
 		case 'T':
-			timer_secs = l2fwd_policer_parse_timer_period(optarg);
-			if (timer_secs < 0) {
+			timer_msecs = l2fwd_policer_parse_timer_period(optarg);
+			if (timer_msecs <= 0) {
 				RTE_LOG(ERR, L2FWD_POLICER,
-					"invalid timer period\n");
+					"invalid timer period(%d)\n", timer_msecs);
 				l2fwd_policer_usage(prgname);
 				return -EINVAL;
 			}
-			timer_period = timer_secs;
+			s_ms_period = timer_msecs;
 			break;
 
 		case CMD_LINE_OPT_NO_MAC_UPDATING_NUM:
@@ -1181,7 +1213,13 @@ l2fwd_policer_parse_args(int argc, char **argv)
 			break;
 
 		case CMD_LINE_OPT_PRINT_STAT:
-			s_print_stat = true;
+			s_print_stat = atoi(optarg);
+			if (s_print_stat < PRINT_STAT_NONE ||
+				s_print_stat > PRINT_STAT_MINIMAL) {
+				RTE_LOG(ERR, L2FWD_POLICER,
+					"Invalid print stat(%d)\n", s_print_stat);
+				return -EINVAL;
+			}
 			break;
 
 		case CMD_LINE_OPT_RSS_PER_TC:
@@ -2680,19 +2718,25 @@ l2fwd_policer_tc_flow_update(uint16_t portid,
 	}
 }
 
-static int
-l2fwd_policer_runtime_control_print_stat(int start)
+static void
+l2fwd_policer_runtime_control_print_stat(void)
 {
 	char command[256];
 
 	fprintf(stdout, "%s print stat?",
-		start ? "Start" : "Stop");
+		s_print_stat == PRINT_STAT_NONE ? "Start" : "Stop");
 	if (fgets(command, 256, stdin)) {
-		if (command[0] == 'y')
-			return true;
+		if (command[0] == 'y') {
+			if (s_print_stat == PRINT_STAT_NONE)
+				s_print_stat = PRINT_STAT_FULL;
+			else
+				s_print_stat = PRINT_STAT_NONE;
+		} else if (command[0] == 'm' &&
+			s_print_stat == PRINT_STAT_NONE) {
+			/**minimal*/
+			s_print_stat = PRINT_STAT_MINIMAL;
+		}
 	}
-
-	return false;
 }
 
 static int
@@ -3604,7 +3648,7 @@ l2fwd_policer_runtime_fs_flow_action_update(uint16_t portid,
 static void *
 l2fwd_policer_runtime_policer_update(void *arg)
 {
-	int ret, meter_enable = false;
+	int ret, meter_enable = false, print_stat;
 	uint16_t portid;
 	uint32_t update = 0;
 	uint8_t tc;
@@ -3631,19 +3675,10 @@ l2fwd_policer_runtime_policer_update(void *arg)
 start_again:
 		if (force_quit)
 			return arg;
-		if (s_print_stat) {
-			ret = l2fwd_policer_runtime_control_print_stat(false);
-			if (ret == true) {
-				s_print_stat = false;
-				sleep(timer_period);
-			} else {
-				goto start_again;
-			}
-		}
-		ret = l2fwd_policer_runtime_control_print_stat(true);
-		if (ret == true) {
-			s_print_stat = true;
-			sleep(timer_period);
+		print_stat = s_print_stat;
+		l2fwd_policer_runtime_control_print_stat();
+		if (print_stat != s_print_stat) {
+			rte_delay_us_sleep(s_ms_period * 1000);
 			goto start_again;
 		}
 		update = 0;
@@ -3982,13 +4017,51 @@ l2fwd_policer_port_dcb_configure(uint16_t portid,
 	}
 }
 
+static int
+l2fwd_policer_build_non_rte_cpuset(cpu_set_t *set)
+{
+	long nconf = sysconf(_SC_NPROCESSORS_CONF);
+	uint32_t lcore_id, c;
+	rte_cpuset_t lc;
+	cpu_set_t rte_set;
+	int cpu;
+
+	if (nconf <= 0 || nconf > CPU_SETSIZE)
+		nconf = CPU_SETSIZE;
+
+	/* Collect every CPU that an EAL lcore is pinned to (RTE cores). */
+	CPU_ZERO(&rte_set);
+	RTE_LCORE_FOREACH(lcore_id) {
+		lc = rte_lcore_cpuset(lcore_id);
+		for (c = 0; c < CPU_SETSIZE; c++)
+			if (CPU_ISSET(c, &lc))
+				CPU_SET(c, &rte_set);
+	}
+
+	/* Non-RTE = online CPUs that are not in the EAL set. */
+	CPU_ZERO(set);
+	for (cpu = nconf - 1; cpu >= 0; cpu--) {
+		if (CPU_ISSET(cpu, &rte_set))
+			continue; /* skip RTE cores */
+
+		CPU_SET(cpu, set);
+		RTE_LOG(INFO, L2FWD_POLICER,
+			"Build non rte thread on cpu%d\n", cpu);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
 int
 main(int argc, char **argv)
 {
 	uint16_t nb_ports_available = 0, nb_ports_in_mask = 0;
 	uint16_t lcore_id, portid, last_port, nb_ports, i;
 	int ret;
-	pthread_t pid;
+	pthread_t stat_pid, runtime_pid;
+	pthread_attr_t attr;
+	cpu_set_t no_rte_set;
 	char nm[RTE_MEMZONE_NAMESIZE];
 
 	/* Init EAL. 8< */
@@ -4282,7 +4355,7 @@ main(int argc, char **argv)
 				l2fwd_policer_no_fs_flow_init_config(portid);
 		}
 
-		ret = pthread_create(&pid, NULL,
+		ret = pthread_create(&runtime_pid, NULL,
 			l2fwd_policer_runtime_policer_update, NULL);
 		if (ret) {
 			rte_exit(EXIT_FAILURE,
@@ -4313,7 +4386,19 @@ main(int argc, char **argv)
 
 	check_all_ports_link_status(l2fwd_policer_enabled_port_mask);
 
-	ret = pthread_create(&pid, NULL, l2fwd_policer_print_stats, NULL);
+	ret = l2fwd_policer_build_non_rte_cpuset(&no_rte_set);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"No CPU available to run statistics thread\n");
+	}
+	pthread_attr_init(&attr);
+	ret = pthread_attr_setaffinity_np(&attr, sizeof(no_rte_set), &no_rte_set);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"Failed(%d) to set affinity of statistics thread\n", ret);
+	}
+
+	ret = pthread_create(&stat_pid, &attr, l2fwd_policer_print_stats, NULL);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"perf statistics thread create failed(%d)\n",
@@ -4328,6 +4413,13 @@ main(int argc, char **argv)
 			break;
 		}
 	}
+
+	if (enable_flow) {
+		pthread_cancel(runtime_pid);
+		pthread_join(runtime_pid, NULL);
+	}
+	pthread_cancel(stat_pid);
+	pthread_join(stat_pid, NULL);
 
 	for (i = 0; i < RTE_MAX_LCORE; i++) {
 		struct lcore_queue_conf *queue_conf = &s_lcore_queue_conf[i];
