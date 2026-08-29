@@ -31,6 +31,7 @@
 #define DPAA2_POLICER_NOT_RESET_COUNTER_MC_REV DPAA2_POLICER_SET_V2_MC_REV
 #define DPAA2_QOS_FLOW_TABLE_MISS_FLOW_ACTION_MC_REV RTE_FSL_MC_REV(10, 39, 109)
 #define DPAA2_QOS_FLOW_TABLE_SET_V3_MC_REV RTE_FSL_MC_REV(10, 39, 109)
+#define DPAA2_MAC_XSTATS_MC_REV RTE_FSL_MC_REV(10, 39, 109)
 
 #define DPAA2_MIN_RX_BUF_SIZE 512
 #define DPAA2_MAX_RX_PKT_LEN  10240 /*WRIOP support*/
@@ -428,6 +429,12 @@ struct dpaa2_dev_priv {
 	uint64_t *cnt_values_dma_mem;
 	uint64_t cnt_idx_iova, cnt_values_iova;
 	uint64_t mc_rev;
+
+	/* Cache one dpni_statistics result per (page_id, param) pair to avoid
+	 * redundant MC commands when multiple xstats share the same page.
+	 * Put it in heap to avoid allocating multi-KB stack in runtime.
+	 */
+	union dpni_statistics pg_xstats[DPNI_MAX_STATISTICS_PAGE_ID][DPNI_STAT_MAX_PARAM];
 
 	struct rte_mempool *tx_sg_pool;
 
