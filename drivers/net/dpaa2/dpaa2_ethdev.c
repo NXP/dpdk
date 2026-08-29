@@ -80,7 +80,7 @@ static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
 #define DPAA2_MAX_NB_RX_DESC_IN_PEB (11 * 1024)
 static uint32_t dpaa2_total_nb_rx_desc;
 
-struct dpaa2_dpni_xstats_pg_seq {
+struct dpaa2_xstats_seq {
 	struct dpni_statistics_page_0 pg0;
 	struct dpni_statistics_page_1 pg1;
 	struct dpni_statistics_page_2 pg2;
@@ -88,119 +88,81 @@ struct dpaa2_dpni_xstats_pg_seq {
 	struct dpni_statistics_page_4 pg4;
 	struct dpni_statistics_page_5 pg5[MAX_TCS];
 	struct dpni_statistics_page_6 pg6;
+	struct dpni_dpmac_counters mac_cnt;
 };
 
 #define DPAA2_DPNI_XSTAT_MAX_NUM \
-	(sizeof(struct dpaa2_dpni_xstats_pg_seq) / sizeof(uint64_t))
+	(offsetof(struct dpaa2_xstats_seq, mac_cnt) / sizeof(uint64_t))
 
-struct dpaa2_dpni_xstats_pg {
-	uint64_t page_offset;
-	enum dpni_statistics_page_id page_id;
-	uint16_t param;
-	uint16_t size;
-};
+#define DPAA2_DPNI_STAT_SET_PAGE_PARAM(param) \
+({ \
+	int ret = false; \
+	\
+	if ((id) >= this_offset && (id) < (this_offset + pg_size)) { \
+		_stat_id = (id) - this_offset; \
+		_param = param; \
+		_size = pg_size; \
+		ret = true; \
+	} \
+	ret; \
+})
 
-static const struct dpaa2_dpni_xstats_pg s_dpaa2_dpni_xstats_pgs[] = {
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg0),
-		DPNI_INGRESS_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_0)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg1),
-		DPNI_EGRESS_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_1)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg2),
-		DPNI_ERR_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_2)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg3),
-		DPNI_CEETM_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_3)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg4),
-		DPNI_CGR_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_4)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[0]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[1]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 1,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[2]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 2,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[3]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 3,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[4]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 4,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[5]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 5,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[6]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 6,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg5[7]),
-		DPNI_POLICER_STATISTICS_PAGE_ID, 7,
-		sizeof(struct dpni_statistics_page_5)
-	},
-	{
-		offsetof(struct dpaa2_dpni_xstats_pg_seq, pg6),
-		DPNI_TX_PENDING_STATISTICS_PAGE_ID, 0,
-		sizeof(struct dpni_statistics_page_6)
-	},
-	{
-		sizeof(struct dpaa2_dpni_xstats_pg_seq),
-		0, 0, 0
-	}
-};
+#define DPAA2_DPNI_STAT_PAGE_PARAM(pid) \
+({ \
+	uint64_t this_offset = offsetof(struct dpaa2_xstats_seq, pg##pid) / sizeof(uint64_t); \
+	uint64_t pg_size = sizeof(struct dpni_statistics_page_##pid) / sizeof(uint64_t); \
+	int ret; \
+	\
+	ret = DPAA2_DPNI_STAT_SET_PAGE_PARAM(0); \
+	if (!ret) \
+		_page++; \
+	ret; \
+})
+
+#define DPAA2_DPNI_STAT_POLICER_PAGE_PARAM() \
+({ \
+	int ret = false; \
+	uint8_t tc_id; \
+	uint64_t this_offset; \
+	uint64_t pg_size = sizeof(struct dpni_statistics_page_5) / sizeof(uint64_t); \
+	\
+	for (tc_id = 0; tc_id < MAX_TCS; tc_id++) { \
+		this_offset = offsetof(struct dpaa2_xstats_seq, pg5[tc_id]) / sizeof(uint64_t); \
+		ret = DPAA2_DPNI_STAT_SET_PAGE_PARAM(tc_id); \
+		if (ret) \
+			break; \
+	} \
+	if (!ret) \
+		_page++; \
+	ret; \
+})
 
 static inline int
 dpaa2_xstats_id_parse(uint32_t id, uint8_t *page,
 	uint8_t *stat_id, uint16_t *param, uint16_t *size)
 {
-	int found = 0;
-	uint8_t _page = 0, _stat_id = 0;
+	uint8_t _page = DPNI_INGRESS_STATISTICS_PAGE_ID, _stat_id = 0;
 	uint16_t _param = 0, _size = 0;
-	uint64_t offset = id * sizeof(uint64_t), page_offset = 0, i;
 
-	for (i = 1; i < RTE_DIM(s_dpaa2_dpni_xstats_pgs); i++) {
-		if (offset < s_dpaa2_dpni_xstats_pgs[i].page_offset) {
-			page_offset = s_dpaa2_dpni_xstats_pgs[i - 1].page_offset;
-			_page = s_dpaa2_dpni_xstats_pgs[i - 1].page_id;
-			_stat_id = (offset - page_offset) / sizeof(uint64_t);
-			_param = s_dpaa2_dpni_xstats_pgs[i - 1].param;
-			_size = s_dpaa2_dpni_xstats_pgs[i - 1].size / sizeof(uint64_t);
-			found = 1;
-			break;
-		}
-	}
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(0))
+		goto found_id;
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(1))
+		goto found_id;
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(2))
+		goto found_id;
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(3))
+		goto found_id;
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(4))
+		goto found_id;
+	if (DPAA2_DPNI_STAT_POLICER_PAGE_PARAM())
+		goto found_id;
+	if (DPAA2_DPNI_STAT_PAGE_PARAM(6))
+		goto found_id;
 
-	if (!found)
-		return -EINVAL;
+	DPAA2_PMD_ERR("ID(%d) was not found in DPNI page statistics", id);
+	return -EINVAL;
 
+found_id:
 	if (page)
 		*page = _page;
 	if (stat_id)
@@ -213,156 +175,155 @@ dpaa2_xstats_id_parse(uint32_t id, uint8_t *page,
 	return 0;
 }
 
-struct dpaa2_stats_name_off {
-	char name[RTE_ETH_XSTATS_NAME_SIZE];
-	uint64_t offset;
+#define DPAA2_XSTAT_STR_SET(pg, field) \
+	.pg.field = (uint64_t)RTE_STR(field)
+
+#define DPAA2_XSTAT_TC_STR_SET(pg, tc, field) \
+	.pg[tc].field = (uint64_t)("TC" RTE_STR(tc)"_" RTE_STR(field))
+
+#define DPAA2_XSTAT_TC_COLOR_STR_SET(pg, tc) \
+	DPAA2_XSTAT_TC_STR_SET(pg, tc, policer_cnt_red), \
+	DPAA2_XSTAT_TC_STR_SET(pg, tc, policer_cnt_yellow), \
+	DPAA2_XSTAT_TC_STR_SET(pg, tc, policer_cnt_green), \
+	DPAA2_XSTAT_TC_STR_SET(pg, tc, policer_cnt_re_red), \
+	DPAA2_XSTAT_TC_STR_SET(pg, tc, policer_cnt_re_yellow)
+
+#define MAC_STR(name) ("mac_" #name)
+#define MAC_STR_ADDR(name) ((size_t)MAC_STR(name))
+
+static const struct dpaa2_xstats_seq dpaa2_xstats_strings = {
+	DPAA2_XSTAT_STR_SET(pg0, ingress_all_frames),
+	DPAA2_XSTAT_STR_SET(pg0, ingress_all_bytes),
+	DPAA2_XSTAT_STR_SET(pg0, ingress_multicast_frames),
+	DPAA2_XSTAT_STR_SET(pg0, ingress_multicast_bytes),
+	DPAA2_XSTAT_STR_SET(pg0, ingress_broadcast_frames),
+	DPAA2_XSTAT_STR_SET(pg0, ingress_broadcast_bytes),
+
+	DPAA2_XSTAT_STR_SET(pg1, egress_all_frames),
+	DPAA2_XSTAT_STR_SET(pg1, egress_all_bytes),
+	DPAA2_XSTAT_STR_SET(pg1, egress_multicast_frames),
+	DPAA2_XSTAT_STR_SET(pg1, egress_multicast_bytes),
+	DPAA2_XSTAT_STR_SET(pg1, egress_broadcast_frames),
+	DPAA2_XSTAT_STR_SET(pg1, egress_broadcast_bytes),
+
+	DPAA2_XSTAT_STR_SET(pg2, ingress_filtered_frames),
+	DPAA2_XSTAT_STR_SET(pg2, ingress_discarded_frames),
+	DPAA2_XSTAT_STR_SET(pg2, ingress_nobuffer_discards),
+	DPAA2_XSTAT_STR_SET(pg2, egress_discarded_frames),
+	DPAA2_XSTAT_STR_SET(pg2, egress_confirmed_frames),
+
+	DPAA2_XSTAT_STR_SET(pg3, ceetm_dequeue_bytes),
+	DPAA2_XSTAT_STR_SET(pg3, ceetm_dequeue_frames),
+	DPAA2_XSTAT_STR_SET(pg3, ceetm_reject_bytes),
+	DPAA2_XSTAT_STR_SET(pg3, ceetm_reject_frames),
+
+	DPAA2_XSTAT_STR_SET(pg4, cgr_reject_frames),
+	DPAA2_XSTAT_STR_SET(pg4, cgr_reject_bytes),
+
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 0),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 1),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 2),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 3),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 4),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 5),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 6),
+	DPAA2_XSTAT_TC_COLOR_STR_SET(pg5, 7),
+
+	DPAA2_XSTAT_STR_SET(pg6, tx_pending_frames_cnt),
+
+	.mac_cnt.rx_64_bytes		= MAC_STR_ADDR(rx_64_bytes),
+	.mac_cnt.rx_65_127_bytes	= MAC_STR_ADDR(rx_65_127_bytes),
+	.mac_cnt.rx_128_255_bytes	= MAC_STR_ADDR(rx_128_255_bytes),
+	.mac_cnt.rx_256_511_bytes	= MAC_STR_ADDR(rx_256_511_bytes),
+	.mac_cnt.rx_512_1023_bytes	= MAC_STR_ADDR(rx_512_1023_bytes),
+	.mac_cnt.rx_1024_1518_bytes	= MAC_STR_ADDR(rx_1024_1518_bytes),
+	.mac_cnt.rx_1519_max_bytes	= MAC_STR_ADDR(rx_1519_max_bytes),
+
+	.mac_cnt.rx_fragments		= MAC_STR_ADDR(rx_fragments),
+	.mac_cnt.rx_jabber			= MAC_STR_ADDR(rx_jabber),
+	.mac_cnt.rx_drop_fifo		= MAC_STR_ADDR(rx_drop_fifo),
+	.mac_cnt.rx_alignment_error	= MAC_STR_ADDR(rx_alignment_error),
+
+	.mac_cnt.tx_undersize_good	= MAC_STR_ADDR(tx_undersize_good),
+	.mac_cnt.rx_oversize_good	= MAC_STR_ADDR(rx_oversize_good),
+
+	.mac_cnt.rx_pause			= MAC_STR_ADDR(rx_pause),
+	.mac_cnt.tx_pause			= MAC_STR_ADDR(tx_pause),
+
+	.mac_cnt.rx_good_bytes		= MAC_STR_ADDR(rx_good_bytes),
+	.mac_cnt.rx_multicast		= MAC_STR_ADDR(rx_multicast),
+	.mac_cnt.rx_broadcast		= MAC_STR_ADDR(rx_broadcast),
+	.mac_cnt.rx_all_frames		= MAC_STR_ADDR(rx_all_frames),
+	.mac_cnt.rx_unicast			= MAC_STR_ADDR(rx_unicast),
+	.mac_cnt.rx_error			= MAC_STR_ADDR(rx_error),
+
+	.mac_cnt.tx_good_bytes		= MAC_STR_ADDR(tx_good_bytes),
+	.mac_cnt.tx_multicast		= MAC_STR_ADDR(tx_multicast),
+	.mac_cnt.tx_broadcast		= MAC_STR_ADDR(tx_broadcast),
+	.mac_cnt.tx_unicast			= MAC_STR_ADDR(tx_unicast),
+	.mac_cnt.tx_error			= MAC_STR_ADDR(tx_error),
+
+	.mac_cnt.rx_valid_frames	= MAC_STR_ADDR(rx_valid_frames),
+	.mac_cnt.tx_valid_frames	= MAC_STR_ADDR(tx_valid_frames),
+
+	.mac_cnt.tx_64_bytes		= MAC_STR_ADDR(tx_64_bytes),
+	.mac_cnt.tx_65_127_bytes	= MAC_STR_ADDR(tx_65_127_bytes),
+	.mac_cnt.tx_128_255_bytes	= MAC_STR_ADDR(tx_128_255_bytes),
+	.mac_cnt.tx_256_511_bytes	= MAC_STR_ADDR(tx_256_511_bytes),
+	.mac_cnt.tx_512_1023_bytes	= MAC_STR_ADDR(tx_512_1023_bytes),
+	.mac_cnt.tx_1024_1518_bytes	= MAC_STR_ADDR(tx_1024_1518_bytes),
+	.mac_cnt.tx_1519_max_bytes	= MAC_STR_ADDR(tx_1519_max_bytes),
+
+	.mac_cnt.rx_bytes_all		= MAC_STR_ADDR(rx_bytes_all),
+	.mac_cnt.rx_crc_error		= MAC_STR_ADDR(rx_crc_error),
+	.mac_cnt.rx_vlan			= MAC_STR_ADDR(rx_vlan),
+	.mac_cnt.rx_undersize_good	= MAC_STR_ADDR(rx_undersize_good),
+	.mac_cnt.rx_ctrl_non_pause	= MAC_STR_ADDR(rx_ctrl_non_pause),
+	.mac_cnt.rx_drop_full		= MAC_STR_ADDR(rx_drop_full),
+
+	.mac_cnt.tx_bytes_all		= MAC_STR_ADDR(tx_bytes_all),
+	.mac_cnt.tx_crc_error		= MAC_STR_ADDR(tx_crc_error),
+	.mac_cnt.tx_vlan			= MAC_STR_ADDR(tx_vlan),
+	.mac_cnt.tx_all_frames		= MAC_STR_ADDR(tx_all_frames),
+	.mac_cnt.tx_ctrl_non_pause	= MAC_STR_ADDR(tx_ctrl_non_pause),
+
+	.mac_cnt.rx_pfc_class[0]	= MAC_STR_ADDR(rx_pfc_class_0),
+	.mac_cnt.rx_pfc_class[1]	= MAC_STR_ADDR(rx_pfc_class_1),
+	.mac_cnt.rx_pfc_class[2]	= MAC_STR_ADDR(rx_pfc_class_2),
+	.mac_cnt.rx_pfc_class[3]	= MAC_STR_ADDR(rx_pfc_class_3),
+	.mac_cnt.rx_pfc_class[4]	= MAC_STR_ADDR(rx_pfc_class_4),
+	.mac_cnt.rx_pfc_class[5]	= MAC_STR_ADDR(rx_pfc_class_5),
+	.mac_cnt.rx_pfc_class[6]	= MAC_STR_ADDR(rx_pfc_class_6),
+	.mac_cnt.rx_pfc_class[7]	= MAC_STR_ADDR(rx_pfc_class_7),
+
+	.mac_cnt.tx_pfc_class[0]	= MAC_STR_ADDR(tx_pfc_class_0),
+	.mac_cnt.tx_pfc_class[1]	= MAC_STR_ADDR(tx_pfc_class_1),
+	.mac_cnt.tx_pfc_class[2]	= MAC_STR_ADDR(tx_pfc_class_2),
+	.mac_cnt.tx_pfc_class[3]	= MAC_STR_ADDR(tx_pfc_class_3),
+	.mac_cnt.tx_pfc_class[4]	= MAC_STR_ADDR(tx_pfc_class_4),
+	.mac_cnt.tx_pfc_class[5]	= MAC_STR_ADDR(tx_pfc_class_5),
+	.mac_cnt.tx_pfc_class[6]	= MAC_STR_ADDR(tx_pfc_class_6),
+	.mac_cnt.tx_pfc_class[7]	= MAC_STR_ADDR(tx_pfc_class_7)
 };
 
-#define DPAA2_STATS_IPACKETS_STR "ingress_all_frames"
-#define DPAA2_STATS_OPACKETS_STR "egress_all_frames"
-#define DPAA2_STATS_IBYTES_STR "ingress_all_bytes"
-#define DPAA2_STATS_OBYTES_STR "egress_all_bytes"
-#define DPAA2_STATS_IERRORS_STR "ingress_discarded_frames"
-#define DPAA2_STATS_OERRORS_STR "egress_discarded_frames"
-#define DPAA2_STATS_RX_NOMBUF_STR "ingress_nobuffer_discards"
-#define DPAA2_STATS_FILTERED_STR "ingress_filtered_frames"
+#define DPAA2_DPNI_XSTAT_FIELD_ID(field) \
+	(offsetof(struct dpaa2_xstats_seq, field) / sizeof(uint64_t))
 
-static const struct dpaa2_stats_name_off dpaa2_stats_strings[] = {
-	{
-		DPAA2_STATS_IPACKETS_STR,
-		offsetof(struct rte_eth_stats, ipackets)
-	},
-	{
-		DPAA2_STATS_OPACKETS_STR,
-		offsetof(struct rte_eth_stats, opackets)
-	},
-	{
-		DPAA2_STATS_IBYTES_STR,
-		offsetof(struct rte_eth_stats, ibytes)
-	},
-	{
-		DPAA2_STATS_OBYTES_STR,
-		offsetof(struct rte_eth_stats, obytes)
-	},
-	{
-		DPAA2_STATS_FILTERED_STR,
-		sizeof(struct rte_eth_stats)
-	},
-	{
-		DPAA2_STATS_IERRORS_STR,
-		offsetof(struct rte_eth_stats, ierrors)
-	},
-	{
-		DPAA2_STATS_OERRORS_STR,
-		offsetof(struct rte_eth_stats, oerrors)
-	},
-	{
-		DPAA2_STATS_RX_NOMBUF_STR,
-		offsetof(struct rte_eth_stats, rx_nombuf)
-	}
+static const struct rte_eth_stats dpaa2_stats_xstat_ids = {
+	.ipackets = DPAA2_DPNI_XSTAT_FIELD_ID(pg0.ingress_all_frames),
+	.opackets = DPAA2_DPNI_XSTAT_FIELD_ID(pg1.egress_all_frames),
+	.ibytes = DPAA2_DPNI_XSTAT_FIELD_ID(pg0.ingress_all_bytes),
+	.obytes = DPAA2_DPNI_XSTAT_FIELD_ID(pg1.egress_all_bytes),
+	.imissed = DPAA2_DPNI_XSTAT_FIELD_ID(pg2.ingress_filtered_frames),
+	.ierrors = DPAA2_DPNI_XSTAT_FIELD_ID(pg2.ingress_discarded_frames),
+	.oerrors = DPAA2_DPNI_XSTAT_FIELD_ID(pg2.egress_discarded_frames),
+	.rx_nombuf = DPAA2_DPNI_XSTAT_FIELD_ID(pg2.ingress_nobuffer_discards)
 };
 
-#define DPAA2_STATS_SET_BY_OFFSET(p_stats, offset, val) \
-	(*((uint64_t *)((uint8_t *)(p_stats) + (offset))) = (val))
+#define DPAA2_STATS_XSTATS_NUM \
+	(sizeof(dpaa2_stats_xstat_ids) / sizeof(uint64_t))
 
-#define DPAA2_TC_COLOR(tc) \
-	"TC_"#tc"_policer_cnt_red", \
-	"TC_"#tc"_policer_cnt_yellow", \
-	"TC_"#tc"_policer_cnt_green", \
-	"TC_"#tc"_policer_cnt_re_red", \
-	"TC_"#tc"_policer_cnt_re_yellow" \
-
-static const char * const dpaa2_dpni_xstats_strings[] = {
-	DPAA2_STATS_IPACKETS_STR,
-	DPAA2_STATS_IBYTES_STR,
-	"ingress_multicast_frames",
-	"ingress_multicast_bytes",
-	"ingress_broadcast_frames",
-	"ingress_broadcast_bytes",
-
-	DPAA2_STATS_OPACKETS_STR,
-	DPAA2_STATS_OBYTES_STR,
-	"egress_multicast_frames",
-	"egress_multicast_bytes",
-	"egress_broadcast_frames",
-	"egress_broadcast_bytes",
-
-	DPAA2_STATS_FILTERED_STR,
-	DPAA2_STATS_IERRORS_STR,
-	DPAA2_STATS_RX_NOMBUF_STR,
-	DPAA2_STATS_OERRORS_STR,
-	"egress_confirmed_frames",
-
-	"cgr_reject_frames",
-	"cgr_reject_bytes",
-
-	"ceetm_dequeue_bytes",
-	"ceetm_dequeue_frames",
-	"ceetm_reject_bytes",
-	"ceetm_reject_frames",
-	DPAA2_TC_COLOR(0),
-	DPAA2_TC_COLOR(1),
-	DPAA2_TC_COLOR(2),
-	DPAA2_TC_COLOR(3),
-	DPAA2_TC_COLOR(4),
-	DPAA2_TC_COLOR(5),
-	DPAA2_TC_COLOR(6),
-	DPAA2_TC_COLOR(7),
-
-	"tx_pending_frames_cnt"
-};
-
-static const char * const dpaa2_mac_xstats_strings[] = {
-	"mac_rx_64 bytes",
-	"mac_rx_65-127 bytes",
-	"mac_rx_128-255 bytes",
-	"mac_rx_256-511 bytes",
-	"mac_rx_512-1023 bytes",
-	"mac_rx_1024-1518 bytes",
-	"mac_rx_1519-max bytes",
-	"mac_rx_frags",
-	"mac_rx_jabber",
-	"mac_rx_frame discards",
-	"mac_rx_align errors",
-	"mac_tx_undersized",
-	"mac_rx_oversized",
-	"mac_rx_pause",
-	"mac_tx_b-pause",
-	"mac_rx_bytes",
-	"mac_rx_m-cast",
-	"mac_rx_b-cast",
-	"mac_rx_all frames",
-	"mac_rx_u-cast",
-	"mac_rx_frame errors",
-	"mac_tx_bytes",
-	"mac_tx_m-cast",
-	"mac_tx_b-cast",
-	"mac_tx_u-cast",
-	"mac_tx_frame errors",
-	"mac_rx_frames ok",
-	"mac_tx_frames ok",
-	"mac_tx_64 bytes",
-	"mac_tx_65-127 bytes",
-	"mac_tx_128-255 bytes",
-	"mac_tx_256-511 bytes",
-	"mac_tx_512-1023 bytes",
-	"mac_tx_1024-1518 bytes",
-	"mac_tx_1519-max bytes",
-	"mac_rx_all_bytes",
-	"mac_rx_fcs_err",
-	"mac_rx_vlan_frame",
-	"mac_rx_undersized",
-	"mac_rx_control_frame",
-	"mac_rx_frame_discard_not_trunc",
-	"mac_tx_all_bytes",
-	"mac_tx_fcs_err",
-	"mac_tx_vlan_frame",
-	"mac_tx_all_frame",
-	"mac_tx_control_frame"
-};
-
-#define DPAA2_MAC_XSTATS_START_ID \
-	(sizeof(struct dpaa2_dpni_xstats_pg_seq) / sizeof(uint64_t))
+#define DPAA2_MAC_XSTATS_START_ID DPAA2_DPNI_XSTAT_MAX_NUM
 
 static struct rte_dpaa2_driver rte_dpaa2_pmd;
 
@@ -2799,6 +2760,7 @@ dpaa2_dev_xstats_get_names(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
+	uint64_t xstat_str[sizeof(struct dpaa2_xstats_seq) / sizeof(uint64_t)];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
 	if (priv->ep_dev_type == DPAA2_MAC)
@@ -2813,16 +2775,10 @@ dpaa2_dev_xstats_get_names(struct rte_eth_dev *dev,
 	if (!xstats_names)
 		return stat_cnt;
 
-	for (i = 0; i < stat_cnt; i++) {
-		if (i < DPAA2_DPNI_XSTAT_MAX_NUM) {
-			rte_strscpy(xstats_names[i].name, dpaa2_dpni_xstats_strings[i],
-				RTE_ETH_XSTATS_NAME_SIZE);
-		} else {
-			rte_strscpy(xstats_names[i].name,
-				dpaa2_mac_xstats_strings[i - DPAA2_DPNI_XSTAT_MAX_NUM],
-				RTE_ETH_XSTATS_NAME_SIZE);
-		}
-	}
+	rte_memcpy(xstat_str, &dpaa2_xstats_strings, sizeof(xstat_str));
+
+	for (i = 0; i < stat_cnt; i++)
+		rte_strscpy(xstats_names[i].name, (char *)xstat_str[i], RTE_ETH_XSTATS_NAME_SIZE);
 
 	return stat_cnt;
 }
@@ -2930,6 +2886,7 @@ dpaa2_dev_xstats_get_names_by_id(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
+	uint64_t xstat_str[sizeof(struct dpaa2_xstats_seq) / sizeof(uint64_t)];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
 	if (priv->ep_dev_type == DPAA2_MAC)
@@ -2938,20 +2895,15 @@ dpaa2_dev_xstats_get_names_by_id(struct rte_eth_dev *dev,
 	if (!ids)
 		return dpaa2_dev_xstats_get_names(dev, xstats_names, limit);
 
+	rte_memcpy(xstat_str, &dpaa2_xstats_strings, sizeof(xstat_str));
+
 	for (i = 0; i < limit; i++) {
 		if (ids[i] >= stat_cnt) {
 			DPAA2_PMD_ERR("xstats id[%d] value(%" PRIu64 ") >= max count(%d)",
 				i, ids[i], stat_cnt);
 			return -EINVAL;
 		}
-		if (ids[i] < DPAA2_DPNI_XSTAT_MAX_NUM) {
-			rte_strscpy(xstats_names[i].name, dpaa2_dpni_xstats_strings[ids[i]],
-				RTE_ETH_XSTATS_NAME_SIZE);
-		} else {
-			rte_strscpy(xstats_names[i].name,
-				dpaa2_mac_xstats_strings[ids[i] - DPAA2_DPNI_XSTAT_MAX_NUM],
-				RTE_ETH_XSTATS_NAME_SIZE);
-		}
+		rte_strscpy(xstats_names[i].name, (char *)xstat_str[ids[i]], RTE_ETH_XSTATS_NAME_SIZE);
 	}
 	return limit;
 }
@@ -2962,66 +2914,24 @@ dpaa2_dev_stats_get(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	int32_t retcode;
-	uint16_t i, j, num;
-	uint16_t stats_len = RTE_DIM(dpaa2_stats_strings);
-	uint16_t xstats_len;
+	uint16_t i, num;
+	uint64_t ids[DPAA2_STATS_XSTATS_NUM], counts[DPAA2_STATS_XSTATS_NUM] = {0};
 	struct dpaa2_queue *dpaa2_q;
-	uint64_t ids[stats_len];
-	uint64_t counts[stats_len];
-	uint64_t ifiltered = 0;
-	int ret;
-	const char **dpni_nms = (const char **)&dpaa2_dpni_xstats_strings;
 
 	PMD_INIT_FUNC_TRACE();
 
-	xstats_len = DPAA2_DPNI_XSTAT_MAX_NUM;
-	if (priv->ep_dev_type == DPAA2_MAC)
-		xstats_len += DPAA2_MAC_NUM_STATS;
-
-	if (!stats) {
-		DPAA2_PMD_ERR("stats is NULL");
-		return -EINVAL;
-	}
-
-	memset(stats, 0, sizeof(struct rte_eth_stats));
-
-	for (i = 0; i < stats_len; i++) {
-		for (j = 0; j < xstats_len; j++) {
-			if (j < DPAA2_DPNI_XSTAT_MAX_NUM)
-				ret = strcmp(dpaa2_stats_strings[i].name, dpni_nms[j]);
-			else
-				ret = strcmp(dpaa2_stats_strings[i].name,
-					dpaa2_mac_xstats_strings[j - DPAA2_DPNI_XSTAT_MAX_NUM]);
-			if (!ret) {
-				ids[i] = j;
-				break;
-			}
-		}
-		if (j == xstats_len) {
-			DPAA2_PMD_ERR("%s: stat(%s) not found in xstat!",
-				__func__, dpaa2_stats_strings[i].name);
-			return -EINVAL;
-		}
-	}
-
-	retcode = dpaa2_dev_xstats_get_by_id(dev, ids, counts, stats_len);
-	if (retcode != stats_len) {
-		DPAA2_PMD_ERR("%s: Failed to get xstats (%d)counters by %d IDs",
-			__func__, retcode, stats_len);
+	rte_memcpy(ids, &dpaa2_stats_xstat_ids, sizeof(dpaa2_stats_xstat_ids));
+	retcode = dpaa2_dev_xstats_get_by_id(dev, ids, counts, DPAA2_STATS_XSTATS_NUM);
+	if (retcode != RTE_DIM(ids)) {
+		DPAA2_PMD_ERR("%s: Failed to get xstats (%d)counters by %ld IDs",
+			__func__, retcode, DPAA2_STATS_XSTATS_NUM);
 		if (retcode >= 0)
 			retcode = -EINVAL;
 		return retcode;
 	}
 
-	for (i = 0; i < stats_len; i++) {
-		if (dpaa2_stats_strings[i].offset < sizeof(struct rte_eth_stats)) {
-			DPAA2_STATS_SET_BY_OFFSET(stats,
-				dpaa2_stats_strings[i].offset, counts[i]);
-		} else {
-			ifiltered = counts[i];
-		}
-	}
-	stats->imissed = stats->ierrors + stats->rx_nombuf + ifiltered;
+	rte_memcpy(stats, counts, sizeof(struct rte_eth_stats));
+	stats->imissed += stats->ierrors + stats->rx_nombuf;
 
 	if (qstats) {
 		/* Fill in per queue stats */
