@@ -80,9 +80,6 @@ static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
 #define DPAA2_MAX_NB_RX_DESC_IN_PEB (11 * 1024)
 static uint32_t dpaa2_total_nb_rx_desc;
 
-int dpaa2_valid_dev;
-struct rte_mempool *dpaa2_tx_sg_pool;
-
 enum dpaa2_xstats_type {
 	DPAA2_GENERAL_XSTATS_TYPE = 0,
 	DPAA2_CGR_XSTATS_TYPE = 1,
