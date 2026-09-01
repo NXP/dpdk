@@ -1518,6 +1518,7 @@ DPDK on i.mx943:
   --s_rss: Distribute TC's traffic by RSS, default is FS distribution.
   --rx_sch_mode: Select RX schedule mode (pull or push), default: push.
   --xstat: Print xstat (dev, mac, both or off), default: dev.
+  -T: Statistics will be refreshed each PERIOD milliseconds.
 
   Dynamic configuration by runtime commands:
   Enter Port ID to update: range[0, enter to skip]:
