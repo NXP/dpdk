@@ -97,6 +97,10 @@ struct dpaa2_xstats_seq {
 #define DPAA2_DPNI_XSTAT_MAX_NUM \
 	(offsetof(struct dpaa2_xstats_seq, mac_cnt) / sizeof(uint64_t))
 
+#define DPAA2_MAC_XSTAT_MAX_NUM DPAA2_MAC_NUM_STATS
+
+static_assert((DPAA2_DPNI_XSTAT_MAX_NUM + DPAA2_MAC_XSTAT_MAX_NUM) == DPAA2_XSTAT_MAX_NUM);
+
 #define DPAA2_DPNI_STAT_SET_PAGE_PARAM(param) \
 ({ \
 	int ret = false; \
@@ -2562,7 +2566,6 @@ static int
 dpaa2_dev_xstat_mac_setup_mem(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	uint32_t *cnt_idx, i;
 	int ret = 0;
 
 	if (!priv->cnt_idx_dma_mem) {
@@ -2581,9 +2584,6 @@ dpaa2_dev_xstat_mac_setup_mem(struct rte_eth_dev *dev)
 				__func__, priv->cnt_idx_dma_mem);
 			goto err_dma_map;
 		}
-		cnt_idx = priv->cnt_idx_dma_mem;
-		for (i = 0; i < DPAA2_MAC_NUM_STATS; i++)
-			cnt_idx[i] = rte_cpu_to_le_32(i);
 	}
 
 	if (!priv->cnt_values_dma_mem) {
@@ -2659,13 +2659,12 @@ static int
 dpaa2_dev_xstats_get_names(struct rte_eth_dev *dev,
 	struct rte_eth_xstat_name *xstats_names, uint32_t limit)
 {
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
 	uint64_t xstat_str[DPAA2_XSTAT_MAX_NUM];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
-	if (priv->ep_dev_type == DPAA2_MAC)
-		stat_cnt += DPAA2_MAC_NUM_STATS;
+	if (dpaa2_dev_mac_xstats_avail(dev))
+		stat_cnt += DPAA2_MAC_XSTAT_MAX_NUM;
 
 	if (!limit)
 		return stat_cnt;
@@ -2688,20 +2687,28 @@ static int
 dpaa2_dev_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 	uint64_t *values, uint32_t n)
 {
-	uint16_t i, id, stat_cnt;
+	uint16_t i, id, stat_cnt, mac_num = 0;
 	uint8_t page_id, stat_id;
 	uint16_t param;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = dev->process_private;
 	bool page_fetched[DPNI_MAX_STATISTICS_PAGE_ID][DPNI_STAT_MAX_PARAM];
-	/* Fetch all MAC counters in a single MC command on first MAC xstat. */
-	bool mac_fetched = false;
+	/* Fetch required MAC counters in a single MC command. */
 	int retcode;
-	uint64_t *cnt_values;
+	uint32_t *mac_idx;
+	uint64_t *mac_val[DPAA2_MAC_XSTAT_MAX_NUM];
+
+	retcode = dpaa2_dev_xstat_mac_setup_mem(dev);
+	if (retcode) {
+		DPAA2_PMD_ERR("%s: Failed(%d) to setup %s's MAC statistics!",
+			__func__, retcode, dev->data->name);
+		return retcode;
+	}
+	mac_idx = priv->cnt_idx_dma_mem;
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
-	if (priv->ep_dev_type == DPAA2_MAC)
-		stat_cnt += DPAA2_MAC_NUM_STATS;
+	if (dpaa2_dev_mac_xstats_avail(dev))
+		stat_cnt += DPAA2_MAC_XSTAT_MAX_NUM;
 
 	memset(page_fetched, 0, sizeof(page_fetched));
 
@@ -2712,16 +2719,13 @@ dpaa2_dev_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 		}
 		id = ids ? ids[i] : i;
 		if (id >= DPAA2_MAC_XSTATS_START_ID) {
-			if (!dpaa2_dev_mac_xstats_avail(dev)) {
-				values[i] = 0;
-				continue;
+			values[i] = 0;
+			if (dpaa2_dev_mac_xstats_avail(dev)) {
+				mac_idx[mac_num] = rte_cpu_to_le_32(id - DPAA2_MAC_XSTATS_START_ID);
+				mac_val[mac_num] = &values[i];
+				mac_num++;
 			}
-			if (mac_fetched) {
-				cnt_values = priv->cnt_values_dma_mem;
-				values[i] = cnt_values[id - DPAA2_MAC_XSTATS_START_ID];
-				continue;
-			}
-			goto dpmac_get_xstat;
+			continue;
 		}
 		page_id = 0;
 		stat_id = 0;
@@ -2733,35 +2737,10 @@ dpaa2_dev_xstats_get_by_id(struct rte_eth_dev *dev, const uint64_t *ids,
 			values[i] = 0;
 			continue;
 		}
-		if (!page_fetched[page_id][param])
-			goto dpni_get_xstat;
-		values[i] = priv->pg_xstats[page_id][param].raw.counter[stat_id];
-		continue;
-
-dpmac_get_xstat:
-		/* Single MC call fetches all MAC counters at once;
-		 * reuse the result for every subsequent MAC xstat.
-		 */
-		retcode = dpaa2_dev_xstat_mac_setup_mem(dev);
-		if (retcode) {
-			DPAA2_PMD_ERR("%s: Failed(%d) to setup %s's MAC statistics!",
-				__func__, retcode, dev->data->name);
-			return retcode;
+		if (page_fetched[page_id][param]) {
+			values[i] = priv->pg_xstats[page_id][param].raw.counter[stat_id];
+			continue;
 		}
-		retcode = dpni_get_mac_statistics(dpni, CMD_PRI_LOW,
-			priv->token, priv->cnt_idx_iova,
-			priv->cnt_values_iova, DPAA2_MAC_NUM_STATS);
-		if (retcode) {
-			DPAA2_PMD_ERR("%s: Failed(%d) to get %s's MAC statistics!",
-				__func__, retcode, dev->data->name);
-			return retcode;
-		}
-		mac_fetched = true;
-		cnt_values = priv->cnt_values_dma_mem;
-		values[i] = cnt_values[id - DPAA2_MAC_XSTATS_START_ID];
-		continue;
-
-dpni_get_xstat:
 		/* Cache dpni page results: multiple xstats can share
 		 * the same (page_id, param), so only fetch each pair once.
 		 */
@@ -2777,6 +2756,19 @@ dpni_get_xstat:
 		values[i] = priv->pg_xstats[page_id][param].raw.counter[stat_id];
 	}
 
+	if (mac_num > 0) {
+		retcode = dpni_get_mac_statistics(dpni, CMD_PRI_LOW,
+			priv->token, priv->cnt_idx_iova,
+			priv->cnt_values_iova, mac_num);
+		if (retcode) {
+			DPAA2_PMD_ERR("%s: Failed(%d) to get %s's %d MAC statistics!",
+				__func__, retcode, dev->data->name, mac_num);
+			return retcode;
+		}
+		for (i = 0; i < mac_num; i++)
+			*mac_val[i] = priv->cnt_values_dma_mem[i];
+	}
+
 	return n;
 }
 
@@ -2785,13 +2777,12 @@ dpaa2_dev_xstats_get_names_by_id(struct rte_eth_dev *dev,
 	const uint64_t *ids, struct rte_eth_xstat_name *xstats_names,
 	uint32_t limit)
 {
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
 	uint64_t xstat_str[DPAA2_XSTAT_MAX_NUM];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
-	if (priv->ep_dev_type == DPAA2_MAC)
-		stat_cnt += DPAA2_MAC_NUM_STATS;
+	if (dpaa2_dev_mac_xstats_avail(dev))
+		stat_cnt += DPAA2_MAC_XSTAT_MAX_NUM;
 
 	if (!ids)
 		return dpaa2_dev_xstats_get_names(dev, xstats_names, limit);
