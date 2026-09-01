@@ -91,6 +91,9 @@ struct dpaa2_xstats_seq {
 	struct dpni_dpmac_counters mac_cnt;
 };
 
+#define DPAA2_XSTAT_MAX_NUM \
+	(sizeof(struct dpaa2_xstats_seq) / sizeof(uint64_t))
+
 #define DPAA2_DPNI_XSTAT_MAX_NUM \
 	(offsetof(struct dpaa2_xstats_seq, mac_cnt) / sizeof(uint64_t))
 
@@ -2652,115 +2655,13 @@ dpaa2_dev_dpni_xstats_avail(struct rte_eth_dev *dev,
 	return false;
 }
 
-/*
- * dpaa2_dev_xstats_get(): Get counters of dpni and dpmac.
- * MAC (mac_*) counters are supported on MC version > 10.39.0
- * TC_x_policer_* counters are supported only when Policer is enable.
- */
-static int
-dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
-	struct rte_eth_xstat *xstats, uint32_t n)
-{
-	struct fsl_mc_io *dpni = dev->process_private;
-	uint16_t i, j, param, stat_cnt, size;
-	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	union dpni_statistics values;
-	uint8_t page_id, stat_id;
-	uint64_t *cnt_values;
-	int retcode;
-
-	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
-	if (priv->ep_dev_type == DPAA2_MAC)
-		stat_cnt += DPAA2_MAC_NUM_STATS;
-
-	if (n > stat_cnt) {
-		DPAA2_PMD_ERR("%s: Expected number(%d) > max number(%d)",
-			__func__, n, stat_cnt);
-		return -EINVAL;
-	}
-
-	if (!xstats)
-		return 0;
-
-	i = 0;
-	while (i < n) {
-		if (i >= DPAA2_MAC_XSTATS_START_ID) {
-			if (!dpaa2_dev_mac_xstats_avail(dev)) {
-				for (j = i; j < n; j++) {
-					xstats[j].id = j;
-					xstats[j].value = 0;
-				}
-				i = n;
-				break;
-			}
-			goto dpmac_get_xstat;
-		}
-
-		page_id = 0;
-		stat_id = 0;
-		param = 0;
-		retcode = dpaa2_xstats_id_parse(i, &page_id, &stat_id, &param, &size);
-		if (retcode)
-			return retcode;
-		if (!dpaa2_dev_dpni_xstats_avail(dev, page_id, param)) {
-			xstats[i].id = i;
-			xstats[i].value = 0;
-			i++;
-			continue;
-		}
-		retcode = dpni_get_statistics(dpni, CMD_PRI_LOW,
-			priv->token, page_id, param, &values);
-		if (retcode) {
-			DPAA2_PMD_ERR("%s: Failed(%d) to get %s's statistcis of page%d!",
-				__func__, retcode, dev->data->name, page_id);
-			return retcode;
-		}
-		cnt_values = (void *)&values;
-		j = stat_id;
-		while (i < n && j < size) {
-			xstats[i].id = i;
-			xstats[i].value = cnt_values[j];
-			i++;
-			j++;
-		}
-		continue;
-
-dpmac_get_xstat:
-		retcode = dpaa2_dev_xstat_mac_setup_mem(dev);
-		if (retcode) {
-			DPAA2_PMD_ERR("%s: Failed(%d) to setup %s MAC statistics!",
-				__func__, retcode, dev->data->name);
-			return retcode;
-		}
-		retcode = dpni_get_mac_statistics(dpni, CMD_PRI_LOW,
-			priv->token, priv->cnt_idx_iova,
-			priv->cnt_values_iova, DPAA2_MAC_NUM_STATS);
-		if (retcode) {
-			DPAA2_PMD_ERR("%s: Failed(%d) to get %s's MAC statistics!",
-				__func__, retcode, dev->data->name);
-			return retcode;
-		}
-		cnt_values = priv->cnt_values_dma_mem;
-
-		j = i - DPAA2_MAC_XSTATS_START_ID;
-		while (i < n && j < DPAA2_MAC_NUM_STATS) {
-			xstats[i].id = i;
-			xstats[i].value = cnt_values[j];
-			i++;
-			j++;
-		}
-	}
-
-	return i;
-}
-
 static int
 dpaa2_dev_xstats_get_names(struct rte_eth_dev *dev,
 	struct rte_eth_xstat_name *xstats_names, uint32_t limit)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
-	uint64_t xstat_str[sizeof(struct dpaa2_xstats_seq) / sizeof(uint64_t)];
+	uint64_t xstat_str[DPAA2_XSTAT_MAX_NUM];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
 	if (priv->ep_dev_type == DPAA2_MAC)
@@ -2886,7 +2787,7 @@ dpaa2_dev_xstats_get_names_by_id(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	uint16_t i, stat_cnt;
-	uint64_t xstat_str[sizeof(struct dpaa2_xstats_seq) / sizeof(uint64_t)];
+	uint64_t xstat_str[DPAA2_XSTAT_MAX_NUM];
 
 	stat_cnt = DPAA2_DPNI_XSTAT_MAX_NUM;
 	if (priv->ep_dev_type == DPAA2_MAC)
@@ -2906,6 +2807,43 @@ dpaa2_dev_xstats_get_names_by_id(struct rte_eth_dev *dev,
 		rte_strscpy(xstats_names[i].name, (char *)xstat_str[ids[i]], RTE_ETH_XSTATS_NAME_SIZE);
 	}
 	return limit;
+}
+
+/*
+ * dpaa2_dev_xstats_get(): Get counters of dpni and dpmac.
+ * MAC (mac_*) counters are supported on MC version > 10.39.0
+ * TC_x_policer_* counters are supported only when Policer is enable.
+ */
+static int
+dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
+	struct rte_eth_xstat *xstats, uint32_t n)
+{
+	int retcode;
+	uint32_t i;
+	uint64_t ids[DPAA2_XSTAT_MAX_NUM], vals[DPAA2_XSTAT_MAX_NUM];
+
+	if (!xstats || !n)
+		return 0;
+
+	if (n > DPAA2_XSTAT_MAX_NUM) {
+		DPAA2_PMD_WARN("%s: Expected xstat number(%d) > max(%ld)",
+			__func__, n, DPAA2_XSTAT_MAX_NUM);
+		n = DPAA2_XSTAT_MAX_NUM;
+	}
+	for (i = 0; i < n; i++) {
+		ids[i] = i;
+		xstats[i].id = i;
+		xstats[i].value = 0;
+	}
+
+	retcode = dpaa2_dev_xstats_get_by_id(dev, ids, vals, n);
+	if (retcode < 0)
+		return retcode;
+
+	for (i = 0; i < (uint32_t)retcode; i++)
+		xstats[i].value = vals[i];
+
+	return retcode;
 }
 
 static int
