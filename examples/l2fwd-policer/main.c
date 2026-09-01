@@ -178,6 +178,24 @@ enum {
 	FS_FLOW_ADD = (1 << 13)
 };
 
+enum policer_xstats_type {
+	POLICER_XSTAT_NULL_TYPE = 0,
+	POLICER_XSTAT_DEV_TYPE = (1 << 0),
+	POLICER_XSTAT_MAC_TYPE = (1 << 1)
+};
+
+#define POLICER_XSTAT_MAX_NUM 256
+struct l2fwd_policer_port_xstat {
+	enum policer_xstats_type xstat_type;
+	int is_reset;
+	int total_num;
+	int ref_num;
+	uint64_t xstats_ids[POLICER_XSTAT_MAX_NUM];
+	struct rte_eth_xstat_name xstats_names[POLICER_XSTAT_MAX_NUM];
+	/** Point to elem of xstats_names*/
+	struct rte_eth_xstat_name *xstats_names_ref[POLICER_XSTAT_MAX_NUM];
+};
+
 /* port and vlan id pair configuration */
 struct l2fwd_policer_port_params {
 	int enable;
@@ -199,6 +217,8 @@ struct l2fwd_policer_port_params {
 	struct l2fwd_policer_tc_desc *tc_descs;
 	uint16_t max_tcs;
 	uint16_t max_queues;
+
+	struct l2fwd_policer_port_xstat port_xstat;
 };
 
 static struct l2fwd_policer_port_params s_port_param[RTE_MAX_ETHPORTS];
@@ -478,37 +498,30 @@ static uint32_t s_meter_ids[RTE_MAX_ETHPORTS][POLICER_MAX_ID_NUM];
 static uint32_t s_profile_ids[RTE_MAX_ETHPORTS][POLICER_MAX_ID_NUM];
 static uint32_t s_policy_ids[RTE_MAX_ETHPORTS][POLICER_MAX_ID_NUM];
 
-enum policer_xstats_type {
-	POLICER_XSTAT_NULL_TYPE = 0,
-	POLICER_XSTAT_DEV_TYPE = (1 << 0),
-	POLICER_XSTAT_MAC_TYPE = (1 << 1)
-};
-
-static struct rte_eth_xstat_name *s_xstats_names[RTE_MAX_ETHPORTS];
-static uint64_t *s_xstats_values[RTE_MAX_ETHPORTS];
-static int s_xstats_reset[RTE_MAX_ETHPORTS];
-static int s_xstats_val_len[RTE_MAX_ETHPORTS];
-static int s_xstats_name_len[RTE_MAX_ETHPORTS];
-static enum policer_xstats_type *s_xstats_type[RTE_MAX_ETHPORTS];
 static enum policer_xstats_type s_xstats_print_type = POLICER_XSTAT_DEV_TYPE;
 
 static void
 l2fwd_policer_xstats_display(uint16_t port_id)
 {
-	int len = 0, ret, i, enter = 1;
+	int len, ret, i, enter = 1, init = 0;
+	uint64_t xstats_values[POLICER_XSTAT_MAX_NUM], id;
+	struct l2fwd_policer_port_xstat *port_xstat = &s_port_param[port_id].port_xstat;
 
-	if (!s_xstats_reset[port_id]) {
+	if (port_xstat->xstat_type == POLICER_XSTAT_NULL_TYPE)
+		return;
+
+	if (!port_xstat->is_reset) {
 		ret = rte_eth_xstats_reset(port_id);
 		if (ret) {
 			RTE_LOG(ERR, L2FWD_POLICER,
-				"%s: Failed(%d) to reset xstats\n",
-				__func__, ret);
+				"Failed(%d) to reset port%d's xstats\n", ret, port_id);
 			return;
 		}
-		s_xstats_reset[port_id] = 1;
+		port_xstat->is_reset = true;
+		init = 1;
 	}
 
-	if (!s_xstats_values[port_id]) {
+	if (port_xstat->total_num <= 0) {
 		len = rte_eth_xstats_get_names_by_id(port_id, NULL, 0, NULL);
 		if (len < 0) {
 			RTE_LOG(ERR, L2FWD_POLICER,
@@ -516,82 +529,70 @@ l2fwd_policer_xstats_display(uint16_t port_id)
 				__func__, len);
 			return;
 		}
-		s_xstats_values[port_id] = rte_zmalloc(NULL,
-			sizeof(uint64_t) * len, 0);
-		if (!s_xstats_values[port_id]) {
+		if (len > POLICER_XSTAT_MAX_NUM) {
 			RTE_LOG(ERR, L2FWD_POLICER,
-				"%s: s_xstats_values alloc failed\n",
-				__func__);
+				"%s: Port%d's xstat len(%d) > max(%d)\n",
+				__func__, port_id, len, POLICER_XSTAT_MAX_NUM);
 			return;
 		}
-		s_xstats_val_len[port_id] = len;
+		port_xstat->total_num = len;
 	} else {
-		len = s_xstats_val_len[port_id];
+		len = port_xstat->total_num;
 	}
 
-	if (!s_xstats_names[port_id] && len > 0) {
-		s_xstats_names[port_id] = rte_zmalloc(NULL,
-			sizeof(struct rte_eth_xstat_name) * len, 0);
-		if (!s_xstats_names[port_id]) {
-			RTE_LOG(ERR, L2FWD_POLICER,
-				"%s: s_xstats_names alloc failed\n", __func__);
-			return;
-		}
-	}
+	if (!init)
+		goto get_xstats_by_id;
 
-	if (!s_xstats_name_len[port_id] && s_xstats_val_len[port_id]) {
-		s_xstats_name_len[port_id] = rte_eth_xstats_get_names_by_id(port_id,
-			s_xstats_names[port_id], s_xstats_val_len[port_id], NULL);
-		if (s_xstats_name_len[port_id] != s_xstats_val_len[port_id]) {
-			RTE_LOG(ERR, L2FWD_POLICER,
-				"%s: Get xstats' name length(%d) != val length(%d)\n",
-				__func__, s_xstats_name_len[port_id],
-				s_xstats_val_len[port_id]);
-			return;
-		}
-		s_xstats_type[port_id] = rte_zmalloc(NULL,
-			s_xstats_val_len[port_id] * sizeof(enum policer_xstats_type), 0);
-		if (!s_xstats_type[port_id]) {
-			RTE_LOG(ERR, L2FWD_POLICER,
-				"%s: Failed to malloc xstat type mem\n",
-				__func__);
-			return;
-		}
-		for (i = 0; i < s_xstats_val_len[port_id]; i++) {
-			if (!strncmp(s_xstats_names[port_id][i].name, "mac", 3))
-				s_xstats_type[port_id][i] = POLICER_XSTAT_MAC_TYPE;
-			else
-				s_xstats_type[port_id][i] = POLICER_XSTAT_DEV_TYPE;
-		}
-	}
-
-	ret = rte_eth_xstats_get_by_id(port_id, NULL,
-		s_xstats_values[port_id], s_xstats_val_len[port_id]);
-	if (ret < 0 || ret > s_xstats_val_len[port_id]) {
+	len = rte_eth_xstats_get_names_by_id(port_id, port_xstat->xstats_names,
+		port_xstat->total_num, NULL);
+	if (len != port_xstat->total_num) {
 		RTE_LOG(ERR, L2FWD_POLICER,
-			"%s: Err(%d) to get xstats by ID, len=%d\n",
-			__func__, ret, s_xstats_val_len[port_id]);
+			"Get xstats of port%d' name length(%d) != val length(%d)\n",
+			port_id, len, port_xstat->total_num);
 		return;
 	}
 
+	for (i = 0; i < port_xstat->total_num; i++) {
+		ret = rte_eth_xstats_get_id_by_name(port_id,
+			port_xstat->xstats_names[i].name, &id);
+		if (ret) {
+			RTE_LOG(ERR, L2FWD_POLICER,
+				"Failed(%d) to get port%d's xstat id of xstats_names[%d](%s)\n",
+				ret, port_id, i, port_xstat->xstats_names[i].name);
+			continue;
+		}
+		if ((port_xstat->xstat_type == POLICER_XSTAT_DEV_TYPE &&
+			!strncmp(port_xstat->xstats_names[i].name, "mac", 3)) ||
+			(port_xstat->xstat_type == POLICER_XSTAT_MAC_TYPE &&
+			strncmp(port_xstat->xstats_names[i].name, "mac", 3)))
+			continue;
+
+		port_xstat->xstats_names_ref[port_xstat->ref_num] = &port_xstat->xstats_names[i];
+		port_xstat->xstats_ids[port_xstat->ref_num] = id;
+		port_xstat->ref_num++;
+	}
+
+get_xstats_by_id:
+	ret = rte_eth_xstats_get_by_id(port_id, port_xstat->xstats_ids,
+			xstats_values, port_xstat->ref_num);
+	if (ret < 0 || ret > port_xstat->ref_num) {
+		RTE_LOG(ERR, L2FWD_POLICER,
+			"%s: Err(%d) to get xstats by ID, number=%d\n",
+			__func__, ret, port_xstat->ref_num);
+		return;
+	}
 	if (s_print_stat != PRINT_STAT_FULL)
 		return;
 
 	for (i = 0; i < ret; i++) {
-		if (!s_xstats_values[port_id][i])
-			continue;
-		if (!(s_xstats_print_type & POLICER_XSTAT_DEV_TYPE) &&
-			s_xstats_type[port_id][i] == POLICER_XSTAT_DEV_TYPE)
-			continue;
-		if (!(s_xstats_print_type & POLICER_XSTAT_MAC_TYPE) &&
-			s_xstats_type[port_id][i] == POLICER_XSTAT_MAC_TYPE)
+		if (!xstats_values[i])
 			continue;
 
 		if (enter)
 			printf("\r\n");
 		enter = 0;
 		printf("Port%d-%s:%ld\r\n", port_id,
-			s_xstats_names[port_id][i].name, s_xstats_values[port_id][i]);
+			port_xstat->xstats_names_ref[i]->name, xstats_values[i]);
 	}
 }
 
@@ -4116,6 +4117,7 @@ main(int argc, char **argv)
 		} else {
 			last_port = portid;
 		}
+		s_port_param[portid].port_xstat.xstat_type = s_xstats_print_type;
 		nb_ports_in_mask++;
 	}
 
@@ -4463,14 +4465,6 @@ main(int argc, char **argv)
 	}
 	rte_free(tc_statistics);
 	rte_free(prev_tc_statistics);
-	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
-		if (s_xstats_names[i])
-			rte_free(s_xstats_names[i]);
-		if (s_xstats_values[i])
-			rte_free(s_xstats_values[i]);
-		if (s_xstats_type[i])
-			rte_free(s_xstats_type[i]);
-	}
 
 	/* clean up the EAL */
 	rte_eal_cleanup();
