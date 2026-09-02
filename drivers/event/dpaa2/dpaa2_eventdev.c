@@ -114,7 +114,7 @@ dpaa2_eventdev_enqueue_burst(void *port, const struct rte_event ev[],
 		return 0;
 	}
 
-	if (dpaa2_portal->port_atomic)
+	if (unlikely(dpaa2_portal->port_atomic))
 		rte_spinlock_lock(&dpaa2_portal->port_lock);
 	else if (unlikely(dpaa2_portal->cpu_affine < 0))
 		dpaa2_portal->cpu_affine = rte_lcore_id();
@@ -251,6 +251,7 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 	struct dpaa2_queue *rxq;
 	uint16_t num_pkts = 0, i = 0;
 	uint32_t timeout_ms, time_out_flush;
+	int ret;
 
 	if (unlikely(!dpaa2_portal->dpio_dev)) {
 		DPAA2_EVENTDEV_ERR("Event port%d not setup", dpaa2_portal->port_id);
@@ -264,10 +265,27 @@ dpaa2_eventdev_dequeue_burst(void *port, struct rte_event ev[],
 		return 0;
 	}
 
-	if (dpaa2_portal->port_atomic)
+	if (unlikely(dpaa2_portal->port_atomic)) {
 		rte_spinlock_lock(&dpaa2_portal->port_lock);
-	else if (unlikely(dpaa2_portal->cpu_affine < 0))
+	} else if (unlikely(dpaa2_portal->cpu_affine < 0)) {
 		dpaa2_portal->cpu_affine = rte_lcore_id();
+		ret = dpaa2_dpio_intr_affinity_set(dpaa2_portal->dpio_dev,
+			dpaa2_portal->cpu_affine);
+		if (ret) {
+			DPAA2_EVENTDEV_ERR("Failed(%d) to affinity dpio.%d's interrupt on core%d",
+				ret, dpaa2_portal->dpio_dev->hw_id, dpaa2_portal->cpu_affine);
+		}
+		ret = dpaa2_dpio_cpufreq_governor(dpaa2_portal->cpu_affine, false);
+		if (ret) {
+			DPAA2_EVENTDEV_WARN("Failed(%d) to set governor of core%d",
+				ret, rte_lcore_id());
+		}
+		ret = dpaa2_dpio_configure_stashing(dpaa2_portal->dpio_dev, rte_lcore_id());
+		if (ret) {
+			DPAA2_EVENTDEV_WARN("Failed(%d) to configure dpio.%d's stashing on core%d",
+				ret, dpaa2_portal->dpio_dev->hw_id, rte_lcore_id());
+		}
+	}
 
 	if (unlikely(!dpaa2_portal->port_atomic &&
 		dpaa2_portal->cpu_affine != (int)rte_lcore_id())) {
@@ -543,6 +561,15 @@ dpaa2_eventdev_close(struct rte_eventdev *dev)
 			dpaa2_eventdev_port_release(dev->data->ports[i]);
 	}
 
+	/*
+	 * Restore any CPU-frequency governor that the optional first-touch
+	 * binding may have forced (see dpaa2_dpio_cpufreq_governor(cpu, false)).
+	 * Best-effort and a no-op when the governor was never touched.
+	 */
+	ret = dpaa2_dpio_cpufreq_governor(-1, true);
+	if (ret)
+		DPAA2_EVENTDEV_ERR("Failed(%d) to restore all cpus' governors", ret);
+
 	ret = dpaa2_eventdev_eth_queue_del(dev, NULL, -1);
 	if (!ret)
 		priv->status = DPAA2_EVENTDEV_CREATED;
@@ -800,7 +827,7 @@ dpaa2_eventdev_port_setup(struct rte_eventdev *dev, uint8_t port_id,
 		return -ENOMEM;
 	}
 
-	portal->dpio_dev = rte_dpaa2_alloc_dpio_device();
+	portal->dpio_dev = rte_dpaa2_alloc_dpio_device(true);
 	if (!portal->dpio_dev)
 		return -ENODEV;
 	if (port_conf &&

@@ -35,6 +35,15 @@ RTE_DECLARE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 #define DPAA2_PER_LCORE_DQRR_MBUF(i) \
 	RTE_PER_LCORE(_dpaa2_io).dpio_dev->dpaa2_held_bufs.mbuf[i]
 
+__rte_internal int
+dpaa2_dpio_intr_affinity_set(struct dpaa2_dpio_dev *dpio_dev, int cpu_id);
+
+__rte_internal int
+dpaa2_dpio_cpufreq_governor(int cpu_id, bool restore);
+
+__rte_internal int
+dpaa2_dpio_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id);
+
 /* Affine a DPIO portal to current processing thread */
 __rte_internal
 int dpaa2_affine_qbman_swp(void);
@@ -60,7 +69,7 @@ dpaa2_free_eq_descriptors(void);
 
 __rte_internal
 struct dpaa2_dpio_dev *
-rte_dpaa2_alloc_dpio_device(void);
+rte_dpaa2_alloc_dpio_device(int isr_en);
 
 __rte_internal
 void

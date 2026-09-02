@@ -77,8 +77,7 @@ __rte_internal
 int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index);
 
 int rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
-			      int vfio_dev_fd,
-			      int num_irqs);
+	int vfio_dev_fd, int num_irqs, uint32_t flag);
 
 int fslmc_vfio_setup_group(void);
 int fslmc_vfio_process_group(void);

@@ -132,6 +132,10 @@ struct dpaa2_dpio_dev {
 		/**< Physical address of Cache Inhibit Area */
 	uintptr_t ci_size; /**< Size of the CI region */
 	struct rte_intr_handle *intr_handle; /* Interrupt related info */
+	int32_t vfio_fd;
+	uint32_t num_irqs;
+	bool intr_en;
+	int32_t intr_index;
 	int32_t hw_id; /**< An unique ID of this DPIO device instance */
 	struct dpaa2_portal_dqrr dpaa2_held_bufs;
 };

@@ -67,6 +67,13 @@ static uint32_t io_space_count;
 /* Variable to hold the portal_key, once created.*/
 static pthread_key_t dpaa2_portal_key;
 
+struct dpaa2_dpio_gov_save {
+	char prev[32];
+	uint8_t valid;
+};
+
+static struct dpaa2_dpio_gov_save s_dpaa2_dpio_gov_save[RTE_MAX_LCORE];
+
 static struct dpaa2_dpio_dev *get_dpio_dev_from_id(int32_t dpio_id)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
@@ -106,82 +113,202 @@ dpaa2_get_core_id(void)
 	return cpu_id;
 }
 
-#ifdef RTE_EVENT_DPAA2
-static void
-dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
+RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_dpio_intr_affinity_set)
+int dpaa2_dpio_intr_affinity_set(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
-#define STRING_LEN	28
-#define AFFINITY_LEN	128
-#define CMD_LEN			300
-	uint32_t cpu_mask = 1;
-	size_t len = CMD_LEN;
-	char *temp, *token = NULL;
-	char string[STRING_LEN];
-	char smp_affinity[AFFINITY_LEN];
-	FILE *file;
+	char line[512], match[32], path[64];
+	FILE *fp;
+	long irq = -1;
+	int32_t dpio_id = dpio_dev->hw_id, ret = 0;
 
-	temp = (char *)malloc(len * sizeof(char));
-	if ( temp == NULL) {
-		DPAA2_BUS_WARN("Unable to allocate temp buffer");
-		return;
+#define IRQ_ALL_F "/proc/interrupts"
+#define IRQ_SMP_AFFINITY_F "/proc/irq/%ld/smp_affinity_list"
+
+	if (cpu_id < 0 || cpu_id >= RTE_MAX_LCORE)
+		return -EINVAL;
+
+	/* Token we look for on each /proc/interrupts line, e.g. "dpio.17". */
+	snprintf(match, sizeof(match), "dpio.%d", dpio_id);
+
+	fp = fopen(IRQ_ALL_F, "r");
+	if (!fp) {
+		DPAA2_BUS_ERR("Failed to open %s: %s", IRQ_ALL_F, strerror(errno));
+		return -errno;
 	}
 
-	snprintf(string, STRING_LEN, "dpio.%d", dpio_id);
-	file = fopen("/proc/interrupts", "r");
-	if (!file) {
-		DPAA2_BUS_WARN("Failed to open /proc/interrupts file");
-		free(temp);
-		return;
-	}
-	while (getline(&temp, &len, file) != -1) {
-		if ((strstr(temp, string)) != NULL) {
-			token = strtok(temp, ":");
-			break;
-		}
-	}
+	while (fgets(line, sizeof(line), fp)) {
+		char *p, next;
 
-	if (!token) {
-		DPAA2_BUS_WARN("Failed to get interrupt id for dpio.%d",
-			       dpio_id);
-		free(temp);
-		fclose(file);
-		return;
+		/*
+		 * Match the exact device token. Use the trailing '(' or ')'
+		 * naming so that "dpio.17" does not accidentally match
+		 * "dpio.170". We look for "dpio.<id>)" or "dpio.<id>(".
+		 */
+		p = strstr(line, match);
+		if (!p)
+			continue;
+
+		/* Ensure the char right after the id is not another digit,
+		 * so "dpio.17" won't match "dpio.170".
+		 */
+		next = p[strlen(match)];
+		if (next >= '0' && next <= '9')
+			continue;
+
+		/* IRQ number is the leading integer before the first ':'. */
+		irq = strtol(line, NULL, 10);
+		break;
 	}
+	fclose(fp);
 
-	cpu_mask = cpu_mask << cpu_id;
-	snprintf(smp_affinity, AFFINITY_LEN,
-		 "/proc/irq/%s/smp_affinity", token);
-	/* Free 'temp' memory after using the substring 'token' */
-	free(temp);
-	fclose(file);
-
-	file = fopen(smp_affinity, "w");
-	if (file == NULL) {
-		DPAA2_BUS_WARN("Failed to open %s", smp_affinity);
-		return;
-	}
-	fprintf(file, "%X\n", cpu_mask);
-	fflush(file);
-
-	if (ferror(file)) {
-		fclose(file);
-		DPAA2_BUS_WARN("Failed to write to %s", smp_affinity);
-		return;
+	if (irq < 0) {
+		DPAA2_BUS_ERR("IRQ for dpio.%d not found in %s", dpio_id, IRQ_ALL_F);
+		return -ENOENT;
 	}
 
-	fclose(file);
+	/*
+	 * Write the CPU as a decimal list to smp_affinity_list; this is the
+	 * simplest and least error-prone form (no hex bitmask math needed).
+	 * Equivalent to writing (1 << cpu_id) in hex to smp_affinity.
+	 */
+	snprintf(path, sizeof(path), IRQ_SMP_AFFINITY_F, irq);
+
+	fp = fopen(path, "w");
+	if (!fp) {
+		DPAA2_BUS_ERR("Failed to open %s: %s", path, strerror(errno));
+		return -errno;
+	}
+
+	if (fprintf(fp, "%d\n", cpu_id) < 0) {
+		DPAA2_BUS_ERR("Failed to write %s: %s", path, strerror(errno));
+		ret = -EIO;
+		goto close_f;
+	}
+
+	if (fflush(fp) != 0 || ferror(fp)) {
+		DPAA2_BUS_ERR("Error writing affinity to %s", path);
+		fclose(fp);
+		ret = -EIO;
+	}
+
+close_f:
+	fclose(fp);
+
+	if (!ret) {
+		DPAA2_BUS_INFO("dpio.%d -> IRQ %ld affinity set to CPU %d",
+			dpio_id, irq, cpu_id);
+	}
+
+	return ret;
 }
 
+static int _dpaa2_dpio_cpufreq_governor(uint32_t cpu_id, bool restore)
+{
+	struct dpaa2_dpio_gov_save *gov;
+	char path[64], prev[32];
+	FILE *fp;
+	int ret = 0;
+	const char *str;
+
+#define CPU_FREQ_SCALING_GOVERNOR_F \
+	"/sys/devices/system/cpu/cpu%d/cpufreq/scaling_governor"
+
+	if (cpu_id >= RTE_MAX_LCORE)
+		return -EINVAL;
+
+	gov = &s_dpaa2_dpio_gov_save[cpu_id];
+	if (!gov->valid && restore)
+		return 0;
+
+	snprintf(path, sizeof(path), CPU_FREQ_SCALING_GOVERNOR_F, cpu_id);
+	if (restore) {
+		str = gov->prev;
+		goto set_governor;
+	}
+
+	if (!gov->valid) {
+		fp = fopen(path, "r");
+		if (!fp) {
+			DPAA2_BUS_ERR("Failed to open %s in r mode: %s", path, strerror(errno));
+			return -errno;
+		}
+		if (fgets(prev, sizeof(prev), fp)) {
+			prev[strcspn(prev, "\n")] = '\0';
+			snprintf(gov->prev, sizeof(gov->prev), "%s", prev);
+		}
+		fclose(fp);
+	}
+	str = "performance";
+
+set_governor:
+	fp = fopen(path, "w");
+	if (!fp) {
+		DPAA2_BUS_ERR("Failed to open %s in w mode: %s", path, strerror(errno));
+		return -errno;
+	}
+
+	if (fprintf(fp, "%s\n", str) < 0) {
+		DPAA2_BUS_ERR("Failed to write %s to %s: %s", str, path, strerror(errno));
+		ret = -EIO;
+		goto close_f;
+	}
+
+	if (fflush(fp)) {
+		DPAA2_BUS_ERR("Failed to flush %s: %s", path, strerror(errno));
+		ret = -EIO;
+	}
+
+close_f:
+	fclose(fp);
+
+	if (!ret) {
+		DPAA2_BUS_INFO("Set cpu%d's freq as performance mode.", cpu_id);
+		gov->valid = restore ? 0 : 1;
+	}
+
+	return ret;
+}
+
+RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_dpio_cpufreq_governor)
+int dpaa2_dpio_cpufreq_governor(int cpu_id, bool restore)
+{
+	bool governor_all = cpu_id < 0 ? true : false;
+	int ret = 0;
+
+	if (cpu_id >= RTE_MAX_LCORE)
+		return -EINVAL;
+
+	if (governor_all) {
+		for (cpu_id = 0; cpu_id < RTE_MAX_LCORE; cpu_id++) {
+			ret = _dpaa2_dpio_cpufreq_governor(cpu_id, restore);
+			if (ret)
+				break;
+		}
+	} else {
+		ret = _dpaa2_dpio_cpufreq_governor(cpu_id, restore);
+	}
+
+	return ret;
+}
+
+#ifdef RTE_EVENT_DPAA2
 static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 {
 	struct rte_epoll_event *epoll_ev;
-	int eventfd, dpio_epoll_fd, ret;
+	int eventfd, dpio_epoll_fd, ret, index;
 	uint32_t threshold = 0, timeout = 0xFF;
+
+	index = rte_dpaa2_vfio_setup_intr(dpio_dev->intr_handle, dpio_dev->vfio_fd,
+		dpio_dev->num_irqs, VFIO_IRQ_INFO_EVENTFD);
+	if (index < 0) {
+		DPAA2_BUS_ERR("Fail(%d) to setup interrupt for %d", index, dpio_dev->hw_id);
+		return index;
+	}
 
 	dpio_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 	if (dpio_epoll_fd < 0)
 		return -errno;
-	ret = rte_dpaa2_intr_enable(dpio_dev->intr_handle, 0);
+	ret = rte_dpaa2_intr_enable(dpio_dev->intr_handle, index);
 	if (ret) {
 		DPAA2_BUS_ERR("Interrupt enable failed(%d)", ret);
 		goto int_enable_err;
@@ -218,9 +345,12 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 	qbman_swp_dqrr_thrshld_write(dpio_dev->sw_portal, threshold);
 	qbman_swp_intr_timeout_write(dpio_dev->sw_portal, timeout);
 
+	dpio_dev->intr_index = index;
+	dpio_dev->intr_en = true;
+
 	return 0;
 fd_get_err:
-	rte_dpaa2_intr_disable(dpio_dev->intr_handle, 0);
+	rte_dpaa2_intr_disable(dpio_dev->intr_handle, index);
 int_enable_err:
 	close(dpio_epoll_fd);
 	return ret;
@@ -243,7 +373,7 @@ static void dpaa2_dpio_intr_deinit(struct dpaa2_dpio_dev *dpio_dev)
 	if (ret < 0)
 		DPAA2_BUS_ERR("Epoll control delete failed(%d)", ret);
 
-	ret = rte_dpaa2_intr_disable(dpio_dev->intr_handle, 0);
+	ret = rte_dpaa2_intr_disable(dpio_dev->intr_handle, dpio_dev->intr_index);
 	if (ret)
 		DPAA2_BUS_ERR("DPIO interrupt disable failed(%d)", ret);
 
@@ -251,8 +381,9 @@ static void dpaa2_dpio_intr_deinit(struct dpaa2_dpio_dev *dpio_dev)
 }
 #endif
 
-static int
-dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
+RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_dpio_configure_stashing)
+int
+dpaa2_dpio_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 {
 	int sdest, ret;
 
@@ -283,13 +414,6 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		return ret;
 	}
 
-#ifdef RTE_EVENT_DPAA2
-	if (dpaa2_dpio_intr_init(dpio_dev)) {
-		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
-		return -1;
-	}
-#endif
-
 	if (getenv("NXP_CHRT_PERF_MODE")) {
 		pid_t tid;
 		struct sched_param sp = { .sched_priority = 90 };
@@ -305,9 +429,6 @@ dpaa2_configure_stashing(struct dpaa2_dpio_dev *dpio_dev, int cpu_id)
 		 * for performance mode; It is assumed that this is taken
 		 * care of by the application.
 		 */
-#ifdef RTE_EVENT_DPAA2
-		dpaa2_affine_dpio_intr_to_respective_core(dpio_dev->hw_id, cpu_id);
-#endif
 	}
 
 	return 0;
@@ -319,7 +440,9 @@ static void dpaa2_put_qbman_swp(struct dpaa2_dpio_dev *dpio_dev)
 		/** Flush portal DQRR.*/
 		qbman_swp_dqrr_consume(dpio_dev->sw_portal, NULL);
 #ifdef RTE_EVENT_DPAA2
-		dpaa2_dpio_intr_deinit(dpio_dev);
+		if (dpio_dev->intr_en)
+			dpaa2_dpio_intr_deinit(dpio_dev);
+		dpio_dev->intr_en = false;
 #endif
 		rte_atomic16_clear(&dpio_dev->ref_count);
 	}
@@ -351,9 +474,9 @@ static struct dpaa2_dpio_dev *dpaa2_get_qbman_swp(void)
 		if (dpaa2_svr_family != SVR_LX2160A)
 			qbman_swp_update(dpio_dev->sw_portal, 1);
 	} else {
-		ret = dpaa2_configure_stashing(dpio_dev, cpu_id);
+		ret = dpaa2_dpio_configure_stashing(dpio_dev, cpu_id);
 		if (ret) {
-			DPAA2_BUS_ERR("dpaa2_configure_stashing failed");
+			DPAA2_BUS_ERR("Failed(%d) to configure stashing", ret);
 			rte_atomic16_clear(&dpio_dev->ref_count);
 			return NULL;
 		}
@@ -425,9 +548,10 @@ static void dpaa2_portal_finish(void *arg)
 
 RTE_EXPORT_INTERNAL_SYMBOL(rte_dpaa2_alloc_dpio_device)
 struct dpaa2_dpio_dev *
-rte_dpaa2_alloc_dpio_device(void)
+rte_dpaa2_alloc_dpio_device(int isr_en)
 {
 	struct dpaa2_dpio_dev *dpio_dev = NULL;
+	int ret;
 
 	/* Get DPIO dev handle from list using index */
 	TAILQ_FOREACH(dpio_dev, &dpio_dev_list, next) {
@@ -442,13 +566,19 @@ rte_dpaa2_alloc_dpio_device(void)
 	DPAA2_BUS_DEBUG("New Portal %p (%d) affined thread - %u",
 		dpio_dev, dpio_dev->index, rte_gettid());
 
+	if (isr_en) {
 #ifdef RTE_EVENT_DPAA2
-	if (dpaa2_dpio_intr_init(dpio_dev)) {
-		DPAA2_BUS_ERR("Interrupt registration failed for dpio");
-		rte_atomic16_clear(&dpio_dev->ref_count);
-		return NULL;
-	}
+		ret = dpaa2_dpio_intr_init(dpio_dev);
+#else
+		ret = -EOPNOTSUPP;
 #endif
+		if (ret) {
+			DPAA2_BUS_ERR("Failed(%d) to init dpio.%d's interrupt.",
+				ret, dpio_dev->hw_id);
+			rte_atomic16_clear(&dpio_dev->ref_count);
+			return NULL;
+		}
+	}
 
 	return dpio_dev;
 }
@@ -520,17 +650,12 @@ dpaa2_create_dpio_device(int vdev_fd,
 
 	dpio_dev->dpio = NULL;
 	dpio_dev->hw_id = object_id;
+	dpio_dev->vfio_fd = vdev_fd;
+	dpio_dev->intr_handle = obj->intr_handle;
+	dpio_dev->num_irqs = obj_info->num_irqs;
 	rte_atomic16_init(&dpio_dev->ref_count);
 	/* Using single portal  for all devices */
 	dpio_dev->mc_portal = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
-
-	/* Allocate interrupt instance */
-	dpio_dev->intr_handle =
-		rte_intr_instance_alloc(RTE_INTR_INSTANCE_F_SHARED);
-	if (!dpio_dev->intr_handle) {
-		DPAA2_BUS_ERR("Failed to allocate intr handle");
-		goto err;
-	}
 
 	dpio_dev->dpio = rte_zmalloc(NULL, sizeof(struct fsl_mc_io),
 				     RTE_CACHE_LINE_SIZE);
@@ -607,12 +732,6 @@ dpaa2_create_dpio_device(int vdev_fd,
 	io_space_count++;
 	dpio_dev->index = io_space_count;
 
-	if (rte_dpaa2_vfio_setup_intr(dpio_dev->intr_handle, vdev_fd, 1)) {
-		DPAA2_BUS_ERR("Fail to setup interrupt for %d",
-			      dpio_dev->hw_id);
-		goto err;
-	}
-
 	dpio_dev->eqresp = rte_zmalloc(NULL, MAX_EQ_RESP_ENTRIES *
 				     (sizeof(struct qbman_result) +
 				     sizeof(struct eqresp_metadata)),
@@ -655,7 +774,6 @@ err:
 		rte_free(dpio_dev->dpio);
 	}
 
-	rte_intr_instance_free(dpio_dev->intr_handle);
 	rte_free(dpio_dev);
 
 	/* For each element in the list, cleanup */
@@ -667,7 +785,6 @@ err:
 				dpio_dev->token);
 			rte_free(dpio_dev->dpio);
 		}
-		rte_intr_instance_free(dpio_dev->intr_handle);
 		rte_free(dpio_dev);
 	}
 

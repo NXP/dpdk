@@ -1476,41 +1476,35 @@ int rte_dpaa2_intr_disable(struct rte_intr_handle *intr_handle, int index)
 	return ret;
 }
 
-/* set up interrupt support (but not enable interrupts) */
+/* Set up interrupt with flag, return interrupt index in success, minus in failure. */
 int
 rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
-			  int vfio_dev_fd,
-			  int num_irqs)
+	int vfio_dev_fd, int num_irqs, uint32_t flag)
 {
-	int i, ret;
+	int i, ret, fd;
 
-	/* start from MSI-X interrupt type */
+	/* Find interrupt with given flag. */
 	for (i = 0; i < num_irqs; i++) {
 		struct vfio_irq_info irq_info = { .argsz = sizeof(irq_info) };
-		int fd = -1;
 
 		irq_info.index = i;
 
 		ret = ioctl(vfio_dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info);
 		if (ret < 0) {
-			DPAA2_BUS_ERR("Cannot get IRQ(%d) info, error %i (%s)",
-				      i, errno, strerror(errno));
-			return ret;
+			DPAA2_BUS_ERR("Failed(%d) to get IRQ(%d) info (%s)",
+				-errno, i, strerror(errno));
+			continue;
 		}
 
-		/* if this vector cannot be used with eventfd,
-		 * fail if we explicitly
-		 * specified interrupt type, otherwise continue
-		 */
-		if ((irq_info.flags & VFIO_IRQ_INFO_EVENTFD) == 0)
+		if (!(irq_info.flags & flag))
 			continue;
 
 		/* set up an eventfd for interrupts */
 		fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 		if (fd < 0) {
-			DPAA2_BUS_ERR("Cannot set up eventfd, error %i (%s)",
-				errno, strerror(errno));
-			return fd;
+			DPAA2_BUS_ERR("Cannot set up eventfd, error %d (%s)",
+				-errno, strerror(errno));
+			return -errno;
 		}
 
 		if (rte_intr_fd_set(intr_handle, fd))
@@ -1522,7 +1516,7 @@ rte_dpaa2_vfio_setup_intr(struct rte_intr_handle *intr_handle,
 		if (rte_intr_dev_fd_set(intr_handle, vfio_dev_fd))
 			return -rte_errno;
 
-		return 0;
+		return i;
 	}
 
 	/* if we're here, we haven't found a suitable interrupt vector */
@@ -1602,8 +1596,8 @@ fslmc_vfio_process_iodevices(struct rte_dpaa2_device *dev)
 	switch (dev->dev_type) {
 	case DPAA2_ETH:
 		ret = rte_dpaa2_vfio_setup_intr(dev->intr_handle, dev_fd,
-				device_info.num_irqs);
-		if (ret)
+				device_info.num_irqs, VFIO_IRQ_INFO_EVENTFD);
+		if (ret < 0)
 			return ret;
 		break;
 	case DPAA2_CON:
