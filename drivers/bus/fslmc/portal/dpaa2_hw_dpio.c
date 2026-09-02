@@ -174,15 +174,36 @@ dpaa2_affine_dpio_intr_to_respective_core(int32_t dpio_id, int cpu_id)
 
 static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 {
-	struct epoll_event epoll_ev;
+	struct rte_epoll_event *epoll_ev;
 	int eventfd, dpio_epoll_fd, ret;
 	uint32_t threshold = 0, timeout = 0xFF;
 
-	dpio_epoll_fd = epoll_create(1);
+	dpio_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+	if (dpio_epoll_fd < 0)
+		return -errno;
 	ret = rte_dpaa2_intr_enable(dpio_dev->intr_handle, 0);
 	if (ret) {
-		DPAA2_BUS_ERR("Interrupt registration failed");
-		return ret;
+		DPAA2_BUS_ERR("Interrupt enable failed(%d)", ret);
+		goto int_enable_err;
+	}
+
+	eventfd = rte_intr_fd_get(dpio_dev->intr_handle);
+	if (eventfd < 0) {
+		ret = eventfd;
+		goto fd_get_err;
+	}
+	epoll_ev = rte_intr_elist_index_get(dpio_dev->intr_handle, 0);
+	if (rte_atomic_load_explicit(&epoll_ev->status,
+		rte_memory_order_relaxed) != RTE_EPOLL_INVALID) {
+		DPAA2_BUS_ERR("Event already been added.");
+		ret = -EEXIST;
+		goto fd_get_err;
+	}
+	epoll_ev->epdata.event = EPOLLIN | EPOLLPRI | EPOLLET;
+	ret = rte_epoll_ctl(dpio_epoll_fd, EPOLL_CTL_ADD, eventfd, epoll_ev);
+	if (ret < 0) {
+		DPAA2_BUS_ERR("Epoll control add failed(%d)", ret);
+		goto fd_get_err;
 	}
 
 	if (getenv("DPAA2_PORTAL_INTR_THRESHOLD"))
@@ -197,29 +218,36 @@ static int dpaa2_dpio_intr_init(struct dpaa2_dpio_dev *dpio_dev)
 	qbman_swp_dqrr_thrshld_write(dpio_dev->sw_portal, threshold);
 	qbman_swp_intr_timeout_write(dpio_dev->sw_portal, timeout);
 
-	eventfd = rte_intr_fd_get(dpio_dev->intr_handle);
-	epoll_ev.events = EPOLLIN | EPOLLPRI | EPOLLET;
-	epoll_ev.data.fd = eventfd;
-
-	ret = epoll_ctl(dpio_epoll_fd, EPOLL_CTL_ADD, eventfd, &epoll_ev);
-	if (ret < 0) {
-		DPAA2_BUS_ERR("epoll_ctl failed(%d)", -errno);
-		return -errno;
-	}
-	dpio_dev->epoll_fd = dpio_epoll_fd;
-
 	return 0;
+fd_get_err:
+	rte_dpaa2_intr_disable(dpio_dev->intr_handle, 0);
+int_enable_err:
+	close(dpio_epoll_fd);
+	return ret;
 }
 
 static void dpaa2_dpio_intr_deinit(struct dpaa2_dpio_dev *dpio_dev)
 {
-	int ret;
+	int ret, epfd;
+	struct rte_epoll_event *epoll_ev;
+
+	epoll_ev = rte_intr_elist_index_get(dpio_dev->intr_handle, 0);
+	if (rte_atomic_load_explicit(&epoll_ev->status,
+		rte_memory_order_relaxed) == RTE_EPOLL_INVALID) {
+		DPAA2_BUS_ERR("Event does not exist.");
+		return;
+	}
+	epoll_ev->epdata.event = EPOLLIN | EPOLLPRI | EPOLLET;
+	epfd = epoll_ev->epfd;
+	ret = rte_epoll_ctl(epfd, EPOLL_CTL_DEL, epoll_ev->fd, epoll_ev);
+	if (ret < 0)
+		DPAA2_BUS_ERR("Epoll control delete failed(%d)", ret);
 
 	ret = rte_dpaa2_intr_disable(dpio_dev->intr_handle, 0);
 	if (ret)
-		DPAA2_BUS_ERR("DPIO interrupt disable failed");
+		DPAA2_BUS_ERR("DPIO interrupt disable failed(%d)", ret);
 
-	close(dpio_dev->epoll_fd);
+	close(epfd);
 }
 #endif
 

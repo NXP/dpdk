@@ -201,10 +201,13 @@ quit:
 static void dpaa2_eventdev_dequeue_wait(struct dpaa2_dpio_dev *dpio_dev,
 	uint32_t timeout_ms)
 {
-	struct epoll_event epoll_ev;
+	int ret;
+	struct rte_epoll_event *epoll_event;
 
 	qbman_swp_interrupt_clear_status(dpio_dev->sw_portal, QBMAN_SWP_INTERRUPT_DQRI);
-	epoll_wait(dpio_dev->epoll_fd, &epoll_ev, 1, timeout_ms);
+	epoll_event = rte_intr_elist_index_get(dpio_dev->intr_handle, 0);
+	ret = rte_epoll_wait(epoll_event->epfd, epoll_event, 1, timeout_ms);
+	DPAA2_PMD_DP_DEBUG("%s: poll return(%d)", __func__, ret);
 }
 
 static void dpaa2_eventdev_process_parallel(struct dpaa2_dpio_dev *dpio_dev,
