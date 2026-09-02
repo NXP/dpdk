@@ -51,8 +51,6 @@
 
 #define NUM_HOST_CPUS RTE_MAX_LCORE
 
-RTE_EXPORT_INTERNAL_SYMBOL(dpaa2_io_portal)
-struct dpaa2_io_portal_t dpaa2_io_portal[RTE_MAX_LCORE];
 RTE_EXPORT_INTERNAL_SYMBOL(per_lcore__dpaa2_io)
 RTE_DEFINE_PER_LCORE(struct dpaa2_io_portal_t, _dpaa2_io);
 
@@ -499,12 +497,12 @@ dpaa2_affine_qbman_swp(void)
 	struct dpaa2_dpio_dev *dpio_dev;
 	uint64_t tid = rte_gettid();
 
-	/* Populate the dpaa2_io_portal structure */
+	/* Populate the IO portal structure */
 	if (!RTE_PER_LCORE(_dpaa2_io).dpio_dev) {
 		dpio_dev = dpaa2_get_qbman_swp();
 		if (!dpio_dev) {
 			DPAA2_BUS_ERR("Error in software portal allocation");
-			return -1;
+			return -EIO;
 		}
 		RTE_PER_LCORE(_dpaa2_io).dpio_dev = dpio_dev;
 
@@ -521,12 +519,12 @@ dpaa2_affine_qbman_ethrx_swp(void)
 	struct dpaa2_dpio_dev *dpio_dev;
 	uint64_t tid = rte_gettid();
 
-	/* Populate the dpaa2_io_portal structure */
+	/* Populate the IO portal structure */
 	if (!RTE_PER_LCORE(_dpaa2_io).ethrx_dpio_dev) {
 		dpio_dev = dpaa2_get_qbman_swp();
 		if (!dpio_dev) {
 			DPAA2_BUS_ERR("Error in software portal allocation");
-			return -1;
+			return -EIO;
 		}
 		RTE_PER_LCORE(_dpaa2_io).ethrx_dpio_dev = dpio_dev;
 
